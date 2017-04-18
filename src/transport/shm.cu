@@ -96,7 +96,11 @@ ncclResult_t shmCanConnect(int* ret, ncclTinfo_t* myOpaqueInfo, ncclTinfo_t* pee
   }
   struct shmInfo* myInfo = (struct shmInfo*)myOpaqueInfo;
   struct shmInfo* peerInfo = (struct shmInfo*)peerOpaqueInfo;
-  *ret = ((shmDisabled == 1) || (myInfo->hostHash != peerInfo->hostHash)) ? 0 : 1;
+  if (shmDisabled == 1 || myInfo->hostHash != peerInfo->hostHash) {
+    *ret = 0;
+    return ncclSuccess;
+  }
+  *ret = getNvlinkCpu();
   return ncclSuccess;
 }
 
@@ -115,7 +119,9 @@ static inline int groupLast(int nranks, int* groups, int group, int rankToAvoid)
 }
 
 ncclResult_t shmGetRings(int nranks, int* groups, int* subgroups, int* values, int* nringsRet, int* prev, int* next, int minScore, int* nthreads) {
-  if (*nringsRet == MAXRINGS) *nringsRet = 1;
+  if (*nringsRet == MAXRINGS) {
+    *nringsRet = 1;
+  }
   int nGroups = groups[nranks-1] + 1;
   int starts[nGroups];
   int ends[nGroups];
