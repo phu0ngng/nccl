@@ -109,6 +109,9 @@ static int getNvlinkCpu() {
   if (wrapNvmlDeviceGetHandleByPciBusId(busId, &nvmlDev) != ncclSuccess) return 0;
 
   for(int l=0; l<NVML_NVLINK_MAX_LINKS; ++l) {
+    // Determine if the remote side is NVswitch, another GPU, or a CPU
+    enum ncclNvLinkDeviceType type;
+
     // nvmlDeviceGetNvLinkState() reports whether a link is enabled or not.
     // Works only on Pascal and later
     nvmlEnableState_t linkState;
@@ -127,12 +130,16 @@ static int getNvlinkCpu() {
     // here would probably make the nvmlDeviceGetNvLinkState check above
     // redundant. Presumably, we still need to check the P2P capability above,
     // since even non-GPUs would posses PCI info.
+    //
+    // update:
+    // nvmlDeviceGetNvLinkRemotePciInfo() will return NVML_ERROR_NOT_SUPPORTED
+    // if the other side of the NVLink is a CPU (e.g. a POWER CPU)
     nvmlPciInfo_t remoteProc;
-    if (wrapNvmlDeviceGetNvLinkRemotePciInfo(nvmlDev, l, &remoteProc) != ncclSuccess) continue;
-    
-    // Determine if the remote side is NVswitch, another GPU, or a CPU
-    enum ncclNvLinkDeviceType type;
-    if (ncclDeviceType(remoteProc.busId, &type) != ncclSuccess) continue;
+    if (wrapNvmlDeviceGetNvLinkRemotePciInfo(nvmlDev, l, &remoteProc) != ncclSuccess && remoteProc != NULL) {
+      type == ncclNvLinkDeviceCpu;
+    } else {
+      if (ncclDeviceType(remoteProc.busId, &type) != ncclSuccess) continue;
+    }
 
     if (type == ncclNvLinkDeviceCpu) {
       links++;
