@@ -12,6 +12,7 @@
 #include <cuda_runtime.h>
 #include "nvmlwrap.h"
 #include <ctype.h>
+#include "nvlink.h"
 
 #define MAXNVLINKS 8
 

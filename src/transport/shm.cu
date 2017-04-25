@@ -8,6 +8,7 @@
 #include "utils.h"
 #include "transport.h"
 #include "shm.h"
+#include "nvlink.h"
 #include <unistd.h>
 #include <cuda_runtime.h>
 

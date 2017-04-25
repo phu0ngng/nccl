@@ -227,6 +227,9 @@ ncclResult_t wrapNvmlDeviceGetNvLinkRemotePciInfo(nvmlDevice_t device, unsigned 
   if (ret != NVML_SUCCESS) {
     INFO("nvmlDeviceGetNvLinkRemotePciInfo() failed: %s ",
       nvmlInternalErrorString(ret));
+    if (ret == NVML_ERROR_NOT_SUPPORTED) {
+      return ncclSystemNotSupported;
+    }
     return ncclSystemError;
   }
   return ncclSuccess;

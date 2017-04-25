@@ -9,6 +9,8 @@
 
 #include <sys/stat.h>
 #include <fcntl.h>
+#include "nvmlwrap.h"
+#include "topo.h"
 
 #define CONNECT_NVLINK 0x10
 #define CONNECT_NVSWITCH 0x100
@@ -103,6 +105,7 @@ static int getNvlinkCpu() {
   int links = 0;
   int nvswitch_links = 0;
   int cudaDev;
+  nvmlDevice_t nvmlDev;
   char busId[NVML_DEVICE_PCI_BUS_ID_BUFFER_SIZE];
   if (cudaGetDevice(&cudaDev) != cudaSuccess) return 0;
   if (cudaDeviceGetPCIBusId(busId, NVML_DEVICE_PCI_BUS_ID_BUFFER_SIZE, cudaDev) != cudaSuccess) return 0;
@@ -135,10 +138,13 @@ static int getNvlinkCpu() {
     // nvmlDeviceGetNvLinkRemotePciInfo() will return NVML_ERROR_NOT_SUPPORTED
     // if the other side of the NVLink is a CPU (e.g. a POWER CPU)
     nvmlPciInfo_t remoteProc;
-    if (wrapNvmlDeviceGetNvLinkRemotePciInfo(nvmlDev, l, &remoteProc) != ncclSuccess && remoteProc != NULL) {
-      type == ncclNvLinkDeviceCpu;
-    } else {
+    ncclResult_t ret = wrapNvmlDeviceGetNvLinkRemotePciInfo(nvmlDev, l, &remoteProc);
+    if (ret == ncclSystemNotSupported && remoteProc.busId != NULL) {
+      type = ncclNvLinkDeviceCpu;
+    } else if (ret == ncclSuccess) {
       if (ncclDeviceType(remoteProc.busId, &type) != ncclSuccess) continue;
+    } else {
+      continue;
     }
 
     if (type == ncclNvLinkDeviceCpu) {

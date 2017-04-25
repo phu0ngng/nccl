@@ -31,7 +31,8 @@ typedef enum { ncclSuccess                 =  0,
                ncclInternalError           =  3,
                ncclInvalidArgument         =  4,
                ncclInvalidUsage            =  5,
-               ncclNumResults              =  6 } ncclResult_t;
+               ncclSystemNotSupported      =  6,
+               ncclNumResults              =  7 } ncclResult_t;
 
 /* Generates an Id to be used in ncclCommInitRank. ncclGetUniqueId should be
  * called once and the Id should be distributed to all ranks in the 
