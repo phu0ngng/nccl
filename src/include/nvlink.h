@@ -115,12 +115,6 @@ static int getNvlinkCpu() {
     // Determine if the remote side is NVswitch, another GPU, or a CPU
     enum ncclNvLinkDeviceType type;
 
-    // nvmlDeviceGetNvLinkState() reports whether a link is enabled or not.
-    // Works only on Pascal and later
-    nvmlEnableState_t linkState;
-    if (wrapNvmlDeviceGetNvLinkState(nvmlDev, l, &linkState) != ncclSuccess) return 0;
-    if (linkState == NVML_FEATURE_DISABLED) continue;
-
     // nvmlDeviceGetNvLinkCapability(NVML_NVLINK_CAP_P2P_SUPPORTED) would seem to
     // report whether the NVLink connects to a peer GPU (versus a POWER CPU?). I
     // don't know whether nvmlDeviceGetNvLinkRemotePciInfo() would succeed in
