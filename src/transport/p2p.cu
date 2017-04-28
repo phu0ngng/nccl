@@ -270,9 +270,10 @@ ncclResult_t p2pGetRings(int nranks, int* groups, int* subgroups, int* values, i
   // NVswitch
   for (int rank=0; rank<nranks; rank++) {
     int links = 0;
-    for (int i=0; i<nranks; i++) {
+    for (int j=1; j<nranks; j++) {
+      int i = (rank + j) % nranks;
       int nvswitch_links = values[rank*nranks+i]/CONNECT_NVSWITCH;
-      if (i>0 && links != nvswitch_links) {
+      if (j>1 && links != nvswitch_links) {
         WARN("Internal error : NVswitch links mismatch");
         return ncclInternalError;
       }
