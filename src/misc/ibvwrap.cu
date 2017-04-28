@@ -148,6 +148,18 @@ ncclResult_t wrap_ibv_symbols(void) {
   } \
   return ncclSuccess;
 
+#define IBV_PTR_CHECK_NO_WARN(name_internal, call, retval, error_retval, name) \
+  if (name_internal == NULL) { \
+     WARN("lib wrapper not initialized."); \
+     return ncclInternalError; \
+  } \
+  retval = call; \
+  if (retval == error_retval) { \
+    INFO("Call to " name " failed"); \
+    return ncclSystemError; \
+  } \
+  return ncclSuccess;
+
 #define IBV_INT_CHECK_RET_ERRNO(name_internal, call, success_retval, name) \
   if (name_internal == NULL) { \
      WARN("lib wrapper not initialized."); \
@@ -181,7 +193,7 @@ ncclResult_t wrap_ibv_symbols(void) {
   return ncclSuccess;
 
 ncclResult_t wrap_ibv_get_device_list(struct ibv_device ***ret, int *num_devices) {
-  IBV_PTR_CHECK_ERRNO(ibv_internal_get_device_list, ibv_internal_get_device_list(num_devices), *ret, NULL, "ibv_get_device_list");
+  IBV_PTR_CHECK_NO_WARN(ibv_internal_get_device_list, ibv_internal_get_device_list(num_devices), *ret, NULL, "ibv_get_device_list");
 }
 
 ncclResult_t wrap_ibv_free_device_list(struct ibv_device **list) {
