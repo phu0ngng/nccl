@@ -212,7 +212,7 @@ int p2pComputeRingsNvlink(int* values, int nranks, int* rings, int nrings, int* 
       for (int i=0; i<nranks; i++) rings[(r+compNrings)*nranks+i] = rings[r*nranks+i];
     }
     compNrings *= 2;
-    *nthreads = 128;
+    *nthreads = *nthreads >> 1;
   }
   return compNrings;
 }
