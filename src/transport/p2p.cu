@@ -204,6 +204,7 @@ int p2pComputeRingsNvlink(int* values, int nranks, int* rings, int nrings, int* 
       if (compNrings2 > compNrings*2) {
         // Oversubscription worked.
         for (int i=0; i<compNrings2*nranks; i++) rings[i] = rings2[i];
+        INFO("Oversubscribing, original nrings = %d, new nrings = %d", compNrings, compNrings2);
         return compNrings2;
       }
     }
@@ -213,6 +214,7 @@ int p2pComputeRingsNvlink(int* values, int nranks, int* rings, int nrings, int* 
     }
     compNrings *= 2;
     *nthreads = *nthreads >> 1;
+    INFO("Doubling rings to %d, halving threads to %d", compNrings, *nthreads);
   }
   return compNrings;
 }
@@ -314,6 +316,19 @@ ncclResult_t p2pGetRings(int nranks, int* groups, int* subgroups, int* values, i
     } else {
       nrings = p2pComputeRingsSeqNew(values, nranks, rings, 1, prev, next, minScore, nthreads);;
     }
+  }
+
+  // Duplicate the rings
+  char* str = getenv("NCCL_DUP_RINGS");
+  if (str && strlen(str) > 0) {
+    int dup = atoi(str);
+    INFO("Duplicating rings by %d", dup);
+    for (int d=1; d<dup; d++) {
+      for (int r=0; r<nrings; r++) {
+        for (int i=0; i<nranks; i++) rings[(r+d*nrings)*nranks+i] = rings[r*nranks+i];
+      }
+    }
+    nrings *= dup;
   }
 
   *nringsRet = nrings;
