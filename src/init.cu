@@ -34,6 +34,9 @@ int ncclPrintCRCs;
 extern "C" __attribute__ ((visibility("default")))
 ncclNet_t* ncclNet = NULL;
 
+// "6" makes sure code will work even without initialization
+int NVML_NVLINK_MAX_LINKS = 6;
+
 void initNet() {
   if (ncclNet != NULL) {
     INFO("Using external Network %s", ncclNetName());
@@ -313,7 +316,22 @@ ncclResult_t getDefaultThreads(int* nthreads) {
   return ncclSuccess;
 }
 
+/* Get the maximum number of NVLinks based on the GPU generation */
+ncclResult_t getMaxNvlinks(int* maxLinks) {
+  int cudaDev;
+  CUDACHECK(cudaGetDevice(&cudaDev));
+  int ccMajor;
+  CUDACHECK(cudaDeviceGetAttribute(&ccMajor, cudaDevAttrComputeCapabilityMajor, cudaDev));
+  // 6 for Volta, 4 for Pascal
+  *maxLinks = (ccMajor > 6) ? 6 : 4;
+  return ncclSuccess;
+}
+
 static ncclResult_t initTransportsRank(struct ncclComm* comm, ncclUniqueId* commId) {
+  // Get number of max NVLinks
+  NCCLCHECK(getMaxNvlinks(&NVML_NVLINK_MAX_LINKS));
+  INFO("Detecting %d NVLinks", NVML_NVLINK_MAX_LINKS);
+
   int rank = comm->rank;
   int nranks = comm->nRanks;
   void* commState;
@@ -452,6 +470,10 @@ ncclResult_t ncclCommInitRank(ncclComm_t* newcomm, int ndev, ncclUniqueId commId
 }
 
 static ncclResult_t initTransportsAll(struct ncclComm** comms, const int* devs, int nranks) {
+  // Get number of max NVLinks
+  NCCLCHECK(getMaxNvlinks(&NVML_NVLINK_MAX_LINKS));
+  INFO("Detecting %d NVLinks", NVML_NVLINK_MAX_LINKS);
+
   struct ncclInfo* allInfo = (struct ncclInfo*)malloc(sizeof(struct ncclInfo)*nranks);
   for (int rank=0; rank<nranks; rank++) {
     cudaSetDevice(devs[rank]);
