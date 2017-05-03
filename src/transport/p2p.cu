@@ -172,6 +172,18 @@ static inline int findConnect(int nranks, int* ranks) {
   return -1;
 }
 
+static inline int copyRings(int nranks, int* rings, int nrings, int dup) {
+  // Copy rings by dup times
+  INFO("Duplicating rings by %d times", dup);
+  for (int d=1; d<dup; d++) {
+    for (int r=0; r<nrings; r++) {
+      for (int i=0; i<nranks; i++) rings[(r+d*nrings)*nranks+i] = rings[r*nranks+i];
+    }
+  }
+  return nrings * dup;
+}
+
+
 int p2pComputeRingsNvlink(int* values, int nranks, int* rings, int nrings, int* prev, int* next, int oversubscribe, int* nthreads) {
   if (nrings == 0) return 0;
   if (nrings > MAXRINGS) {
@@ -209,12 +221,27 @@ int p2pComputeRingsNvlink(int* values, int nranks, int* rings, int nrings, int* 
       }
     }
     // Duplicate the rings for NVLink alone
-    for (int r=0; r<compNrings; r++) {
-      for (int i=0; i<nranks; i++) rings[(r+compNrings)*nranks+i] = rings[r*nranks+i];
+    int dup = -1;
+    char* str = getenv("NCCL_DUP_RINGS");
+    if (str && strlen(str) > 0) {
+      dup = atoi(str);
     }
-    compNrings *= 2;
-    *nthreads = *nthreads >> 1;
-    INFO("Doubling rings to %d, halving threads to %d", compNrings, *nthreads);
+    // if user hasn't set a valid value, we will use system default and do the duplication here
+    // otherwise, will skip the duplication here and do it after return
+    if (dup <= 0) {
+      int cudaDev;
+      CUDACHECK(cudaGetDevice(&cudaDev));
+      int ccMajor;
+      CUDACHECK(cudaDeviceGetAttribute(&ccMajor, cudaDevAttrComputeCapabilityMajor, cudaDev));
+      dup = (ccMajor > 6) ? 4 : 2;
+      compNrings = copyRings(nranks, rings, compNrings, dup);
+    }
+    // if there is duplication (whether instructed by user or by default), we will cut threads by half
+    if (dup > 1) {
+      // Cut threads by half from default value (not from NCCL_NTHREADS); setting NCCL_NTHREADS will override this computed value
+      *nthreads = *nthreads >> 1;
+      INFO("Halving threads to %d due to ring duplication", *nthreads);
+    }
   }
   return compNrings;
 }
@@ -322,13 +349,7 @@ ncclResult_t p2pGetRings(int nranks, int* groups, int* subgroups, int* values, i
   char* str = getenv("NCCL_DUP_RINGS");
   if (str && strlen(str) > 0) {
     int dup = atoi(str);
-    INFO("Duplicating rings by %d", dup);
-    for (int d=1; d<dup; d++) {
-      for (int r=0; r<nrings; r++) {
-        for (int i=0; i<nranks; i++) rings[(r+d*nrings)*nranks+i] = rings[r*nranks+i];
-      }
-    }
-    nrings *= dup;
+    nrings = copyRings(nranks, rings, nrings, dup);
   }
 
   *nringsRet = nrings;
