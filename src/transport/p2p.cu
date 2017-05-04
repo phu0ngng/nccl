@@ -308,7 +308,13 @@ ncclResult_t p2pGetRings(int nranks, int* groups, int* subgroups, int* values, i
       }
       links = nvswitch_links;
     }
-    nrings = min(nrings, links);
+    if (nranks == 2) {
+      // duplicate rings by 3 times for 2-GPU cases
+      nrings = min(nrings, links*3);
+      *nthreads = 128;
+    } else {
+      nrings = min(nrings, links);
+    }
     if (nrings > 0) {
       int nringsConnect = p2pComputeRingsSeqConnect(values, nranks, rings, nrings, prev, next, minScore, nthreads);
       if (nringsConnect > 0) {
