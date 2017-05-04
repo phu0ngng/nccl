@@ -58,6 +58,18 @@ static ncclResult_t ncclDeviceType(const char* busId, enum ncclNvLinkDeviceType*
   return ncclSuccess;
 }
 
+/* Get the maximum number of NVLinks based on the GPU generation */
+static ncclResult_t getMaxNvlinks(int* maxLinks) {
+  int cudaDev;
+  CUDACHECK(cudaGetDevice(&cudaDev));
+  int ccMajor;
+  CUDACHECK(cudaDeviceGetAttribute(&ccMajor, cudaDevAttrComputeCapabilityMajor, cudaDev));
+  // 6 for Volta, 4 for Pascal
+  *maxLinks = (ccMajor > 6) ? 6 : 4;
+  // INFO("Device %d detected %d NVLinks", cudaDev, *maxLinks);
+  return ncclSuccess;
+}
+
 static int getNvlinkGpu(const char* busId1, const char* busId2) {
   // Determine if that connection is through NVLink
   int links = 0;
@@ -65,6 +77,10 @@ static int getNvlinkGpu(const char* busId1, const char* busId2) {
   nvmlDevice_t nvmlDev;
   ncclResult_t res = wrapNvmlDeviceGetHandleByPciBusId(busId1, &nvmlDev);
   if (res != ncclSuccess) return 0;
+
+  // Get number of max NVLinks
+  int NVML_NVLINK_MAX_LINKS = 4;
+  NCCLCHECK(getMaxNvlinks(&NVML_NVLINK_MAX_LINKS));
 
   for(int l=0; l<NVML_NVLINK_MAX_LINKS; ++l) {
     // nvmlDeviceGetNvLinkCapability(NVML_NVLINK_CAP_P2P_SUPPORTED) would seem to
@@ -104,6 +120,10 @@ static int getNvlinkCpu() {
   if (cudaGetDevice(&cudaDev) != cudaSuccess) return 0;
   if (cudaDeviceGetPCIBusId(busId, NVML_DEVICE_PCI_BUS_ID_BUFFER_SIZE, cudaDev) != cudaSuccess) return 0;
   if (wrapNvmlDeviceGetHandleByPciBusId(busId, &nvmlDev) != ncclSuccess) return 0;
+
+  // Get number of max NVLinks
+  int NVML_NVLINK_MAX_LINKS = 4;
+  NCCLCHECK(getMaxNvlinks(&NVML_NVLINK_MAX_LINKS));
 
   for(int l=0; l<NVML_NVLINK_MAX_LINKS; ++l) {
     // Determine if the remote side is NVswitch, another GPU, or a CPU

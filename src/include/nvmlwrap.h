@@ -63,7 +63,6 @@ static ncclResult_t wrapNvmlDeviceGetNvLinkCapability(nvmlDevice_t device, unsig
 /* Extracted from nvml.h */
 typedef struct nvmlDevice_st* nvmlDevice_t;
 #define NVML_DEVICE_PCI_BUS_ID_BUFFER_SIZE   16
-extern int NVML_NVLINK_MAX_LINKS;     // will be initialized in init.cu based on GPU generation
 
 typedef enum nvmlEnableState_enum
 {
