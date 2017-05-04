@@ -34,8 +34,8 @@ int ncclPrintCRCs;
 extern "C" __attribute__ ((visibility("default")))
 ncclNet_t* ncclNet = NULL;
 
-// "6" makes sure code will work even without initialization
-int NVML_NVLINK_MAX_LINKS = 6;
+// 4 makes sure code will work even without initialization
+int NVML_NVLINK_MAX_LINKS = 4;
 
 void initNet() {
   if (ncclNet != NULL) {
