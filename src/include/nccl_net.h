@@ -57,11 +57,11 @@ typedef struct {
   int (*closeListen)(void* listenComm);
 } ncclNet_t;
 
-extern ncclNet_t* ncclNet;
-
 #ifdef __cplusplus
 } // end extern "C"
 #endif
+
+extern "C" ncclNet_t* ncclNet;
 
 #endif // end include guard
 

@@ -60,7 +60,7 @@ static ncclResult_t ArgsCheck(const void* sendbuff, const void* recvbuff, size_t
 template<typename T>
 void ArgsSetup(const T* sendbuff, T* recvbuff,
 		const int root, const size_t count, ncclComm *comm) {
-  struct KernelArgs<void>* args = &comm->args;
+  struct CollectiveArgs* args = &comm->collectives[comm->nColls].args;
   args->root = root;
   args->N = count;
   args->ThisInput = sendbuff;
@@ -69,35 +69,38 @@ void ArgsSetup(const T* sendbuff, T* recvbuff,
   args->opCount = comm->opCount;
 }
 
-#define SAVE_KERNEL(K, comm, UNROLL, FUNC, T, stream) do { \
-  int nRings = comm->args.nRings = LIMIT_NRINGS(count*sizeof(T), comm->nRings); \
-  dim3 grid(nRings, 1, 1); \
-  dim3 block(comm->nThreads+1, 1, 1); \
-  void* f; \
-  /* Generate code for the 3 possible sizes */ \
-  if (comm->nThreads == 128) { \
-    f=(void*)K<128, UNROLL, FUNC, T>; \
-  } else if (comm->nThreads == 256) { \
-    f=(void*)K<256, UNROLL, FUNC, T>; \
-  } else if (comm->nThreads == 512) { \
-    f=(void*)K<512, UNROLL, FUNC, T>; \
-  } else { \
-    WARN("Error : forbidden number of threads %d", comm->nThreads); \
-    return ncclInternalError; \
-  } \
-  comm->userStream = stream; \
-  struct cudaLaunchParams params = { f, grid, block, &comm->argsptr, 0, comm->ncclStream }; \
-  memcpy(comm->intraParams+comm->intraRank, &params, sizeof(params)); \
-} while (0)
+static __inline__ int ncclTypeSize(ncclDataType_t type) {
+  switch (type) {
+    case ncclInt8:
+    case ncclUint8:
+      return 1;
+    case ncclFloat16:
+      return 2;
+    case ncclInt32:
+    case ncclUint32:
+    case ncclFloat32:
+      return 4;
+    case ncclInt64:
+    case ncclUint64:
+    case ncclFloat64:
+      return 8;
+    default:
+      return -1;
+  }
+}
 
-#define SAVE_KERNEL_SMALL(K, comm, FUNC, T, stream) do { \
-  dim3 grid(1, 1, 1); \
-  dim3 block(LL_NTHREADS, 1, 1); \
-  static_assert(LL_NTHREADS*sizeof(union ncclLLFifoLine)*NUM_LL_CHUNKS <= LL_BUFF_SIZE, "LL_BUFF_SIZE is too low."); \
-  comm->userStream = stream; \
-  void* f = (void*)K<LL_NTHREADS, FUNC, T>; \
-  struct cudaLaunchParams params = { f, grid, block, &comm->argsptr, 0, comm->ncclStream }; \
-  memcpy(comm->intraParams+comm->intraRank, &params, sizeof(params)); \
-} while (0)
+static void saveKernel(int coll, ncclRedOp_t op, ncclDataType_t dtype, int nbytes, struct ncclComm* comm, cudaStream_t stream, int ll) {
+  struct ncclColl* collective = comm->collectives+comm->nColls;
+  collective->coll = coll;
+  collective->ll = ll;
+  collective->op = op;
+  collective->dtype = dtype;
+  int nRings = ll ? 1 : LIMIT_NRINGS(nbytes, comm->nRings);
+  comm->collNRings = max(comm->collNRings, nRings);
+  int nThreads = ll ? LL_NTHREADS : comm->nThreads+1;
+  comm->collNThreads = max(comm->collNThreads, nThreads);
+  comm->userStream = stream;
+  comm->nColls++;
+}
 
 #endif

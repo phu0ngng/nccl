@@ -31,6 +31,8 @@ struct cudaLaunchParams
 
 #define DEFAULT_SINGLE_RING_THRESHOLD (1UL << 17) /* 128KiB - but 256KiB for Volta */
 
+#define NCCL_MAX_OPS 2048
+
 extern size_t ncclSingleRingThreshold;
 #define LIMIT_NRINGS(SIZE, NRINGS) ((SIZE) <= ncclSingleRingThreshold ? 1 : (NRINGS))
 
@@ -124,19 +126,31 @@ struct ncclRing {
   int* devUserRanks;
 };
 
-template<typename T>
 struct KernelArgs {
+  struct ncclColl* colls;
+  int nColls;
+};
+
+struct CollectiveArgs {
   // general parameters
   int root;
   size_t N;
 
   // local and remote input, output, and buffer
-  const T * __restrict__ ThisInput;
-  T * __restrict__ ThisOutput;
+  const void * ThisInput;
+  void * ThisOutput;
 
   struct ncclComm* comm;
   int nRings;
   uint64_t opCount;
+};
+
+struct ncclColl {
+  int coll;
+  int ll;
+  ncclRedOp_t op;
+  ncclDataType_t dtype;
+  struct CollectiveArgs args;
 };
 
 struct ncclComm {
@@ -175,8 +189,15 @@ struct ncclComm {
   struct cudaLaunchParams * intraParams;
   int* intraCudaDevs;
   int* intraCGMode; // Whether we can use CUDA9 CGMD or not
-  struct KernelArgs<void> args;
+  struct KernelArgs args;
   void* argsptr;
+
+  // List of operations to perform by the CUDA kernel
+  int nColls;
+  int collNThreads;
+  int collNRings;
+  struct ncclColl* collectives;
+  struct ncclColl* devCollectives;
 };
 
 #define DIVUP(x, y) \

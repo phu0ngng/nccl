@@ -26,7 +26,7 @@
 #define BAR(type, barid, nthreads) \
     BAR_EXPAND(type, barid, ROUNDUP(nthreads, WARP_SIZE))
 
-__device__ unsigned int spinct;
+static __device__ unsigned int spinct;
 
 static __device__ int min(int a, ssize_t b) {
   if (a < b) return a;

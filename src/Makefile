@@ -6,8 +6,12 @@ INCEXPORTS  := nccl.h
 LIBSRCFILES := init.cu bootstrap.cu transport.cu misc/group.cu \
 		misc/nvmlwrap.cu misc/ibvwrap.cu misc/crc32.cu misc/rings.cu misc/utils.cu misc/gdcopy.cu misc/enqueue.cu \
 		transport/p2p.cu transport/shm.cu transport/net.cu transport/net_socket.cu transport/net_ib.cu \
-		collectives/all_gather.cu collectives/all_reduce.cu collectives/broadcast.cu \
-		collectives/reduce.cu collectives/reduce_scatter.cu
+                collectives/all_reduce.cu collectives/all_gather.cu collectives/broadcast.cu collectives/reduce.cu collectives/reduce_scatter.cu\
+                collectives/all_reduce_sum.cu collectives/all_reduce_prod.cu collectives/all_reduce_min.cu collectives/all_reduce_max.cu \
+                collectives/reduce_sum.cu collectives/reduce_prod.cu collectives/reduce_min.cu collectives/reduce_max.cu \
+                collectives/reduce_scatter_sum.cu collectives/reduce_scatter_prod.cu collectives/reduce_scatter_min.cu collectives/reduce_scatter_max.cu \
+                collectives/collectives.cu
+
 ##### lib files
 LIBNAME     := libnccl.so
 STATICLIBNAME := libnccl_static.a
@@ -63,7 +67,7 @@ $(INCDIR)/%.h : %.h
 $(OBJDIR)/%.o : %.cu
 	@printf "Compiling  %-35s > %s\n" $< $@
 	mkdir -p `dirname $@`
-	$(NVCC) -I. -Iinclude -c $(NVCUFLAGS) --compiler-options "$(CXXFLAGS)" $< -o $@
+	$(NVCC) -I. -Iinclude -dc -c $(NVCUFLAGS) --compiler-options "$(CXXFLAGS)" $< -o $@
 	@$(NVCC) -I. -Iinclude -M $(NVCUFLAGS) --compiler-options "$(CXXFLAGS)" $< > $(@:%.o=%.d.tmp)
 	@sed "0,/^.*:/s//$(subst /,\/,$@):/" $(@:%.o=%.d.tmp) > $(@:%.o=%.d)
 	@sed -e 's/.*://' -e 's/\\$$//' < $(@:%.o=%.d.tmp) | fmt -1 | \
