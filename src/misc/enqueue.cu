@@ -29,6 +29,28 @@ ncclResult_t ncclLaunchCooperativeKernelMultiDevice(struct cudaLaunchParams *par
 
 ncclResult_t ncclCpuBarrierCheckin(ncclComm_t comm) {
   if (comm->nRanks == 1) return ncclSuccess;
+  /* Setup launch params */
+  struct cudaLaunchParams* params = comm->intraParams+comm->intraRank;
+  switch (comm->collNThreads) {
+    case 64 :
+    case 65 :
+     params->func = (void*)ncclKernel64; break;
+    case 129 :
+     params->func = (void*)ncclKernel128; break;
+    case 257 :
+     params->func = (void*)ncclKernel256; break;
+    case 513 :
+     params->func = (void*)ncclKernel512; break;
+    default:
+     WARN("Invalid nthread count %d", comm->collNThreads);
+     return ncclInternalError;
+  }
+  params->blockDim.x = comm->collNThreads; params->blockDim.y = params->blockDim.z = 1;
+  params->gridDim.x = comm->collNBlocks; params->gridDim.y = params->gridDim.z = 1;
+  params->args = &comm->argsptr;
+  params->sharedMem = 0;
+  params->stream = comm->ncclStream;
+
   if (comm->launchMode == ncclComm::GROUP) {
     // Enqueue stream dependency
     CUDACHECK(cudaEventRecord(comm->doneEvent, comm->userStream));
@@ -79,6 +101,8 @@ ncclResult_t ncclCpuBarrierWait(ncclComm_t comm) {
     CUDACHECK(cudaEventRecord(comm->doneEvent, comm->userStream));
     comm->ncclStream = comm->userStream;
   }
+  comm->args.nColls = 0;
+  comm->args.startColl = comm->collFifoTail;
   NCCLCHECK(transportStartProxies(comm));
   return ncclSuccess;
 }

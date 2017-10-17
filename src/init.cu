@@ -146,6 +146,9 @@ static ncclResult_t commAlloc(ncclComm_t* comret, int ndev, int rank) {
   comm->collectives = (struct ncclColl*)malloc(sizeof(struct ncclColl)*NCCL_MAX_OPS);
   CUDACHECK(cudaHostRegister(comm->collectives, sizeof(struct ncclColl)*NCCL_MAX_OPS, cudaHostRegisterMapped));
   CUDACHECK(cudaHostGetDevicePointer(&comm->devCollectives, comm->collectives, 0));
+  comm->args.colls = comm->devCollectives;
+  CUDACHECK(cudaHostRegister(&comm->collFifoHead, sizeof(int), cudaHostRegisterMapped));
+  CUDACHECK(cudaHostGetDevicePointer(&comm->devCollFifoHead, &comm->collFifoHead, 0));
 
   *comret = comm;
   return ncclSuccess;

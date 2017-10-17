@@ -38,7 +38,3 @@ ncclResult_t ncclBcast(void* buff, size_t count, ncclDataType_t datatype, int ro
   return ncclEnqueueCheck(ncclBroadcastFunc, "Bcast", buff, buff, count, datatype,
      ncclSum, root, comm, stream);
 }
-
-#define UNROLL 8
-
-IMPL_COLL2(ncclBcast, sum, FuncSum);

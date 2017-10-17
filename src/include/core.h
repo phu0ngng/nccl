@@ -128,6 +128,7 @@ struct ncclRing {
 
 struct KernelArgs {
   struct ncclColl* colls;
+  int startColl;
   int nColls;
 };
 
@@ -150,6 +151,8 @@ struct ncclColl {
   int ll;
   ncclRedOp_t op;
   ncclDataType_t dtype;
+  int nThreads;
+  int nBlocks;
   struct CollectiveArgs args;
 };
 
@@ -193,11 +196,13 @@ struct ncclComm {
   void* argsptr;
 
   // List of operations to perform by the CUDA kernel
-  int nColls;
   int collNThreads;
-  int collNRings;
+  int collNBlocks;
   struct ncclColl* collectives;
   struct ncclColl* devCollectives;
+  int collFifoHead;
+  int* devCollFifoHead;
+  int collFifoTail;
 };
 
 #define DIVUP(x, y) \

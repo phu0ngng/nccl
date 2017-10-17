@@ -4,9 +4,11 @@
  * See LICENSE.txt for license information
  ************************************************************************/
 
-#include "reduce.h"
+#include "broadcast.h"
 #include "collectives.h"
 
 #define UNROLL 8
 
-IMPL_COLL2(ncclReduce, max, FuncMax);
+#if NCCL_OP == 0
+IMPL_COLL2(ncclBcast, copy, FuncSum);
+#endif

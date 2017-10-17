@@ -5,8 +5,6 @@
  ************************************************************************/
 
 #include "core.h"
-#include "common_coll.h"
-#include "enqueue.h"
 #include "primitives.h"
 
 #define NUM_SUBSTEPS 4

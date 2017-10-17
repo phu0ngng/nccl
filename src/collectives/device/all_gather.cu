@@ -4,9 +4,11 @@
  * See LICENSE.txt for license information
  ************************************************************************/
 
-#include "reduce_scatter.h"
+#include "all_gather.h"
 #include "collectives.h"
 
 #define UNROLL 8
 
-IMPL_COLL2(ncclReduceScatter, prod, FuncProd);
+#if NCCL_OP == 0
+IMPL_COLL2(ncclAllGather, copy, FuncSum);
+#endif

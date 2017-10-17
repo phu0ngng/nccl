@@ -4,10 +4,17 @@
  * See LICENSE.txt for license information
  ************************************************************************/
 
-#include "all_reduce.h"
+#include "reduce.h"
 #include "collectives.h"
-#include <stdint.h>
 
 #define UNROLL 8
 
-IMPL_COLL2(ncclAllReduce, prod, FuncProd);
+#if NCCL_OP == 0
+IMPL_COLL2(ncclReduce, sum, FuncSum);
+#elif NCCL_OP == 1
+IMPL_COLL2(ncclReduce, prod, FuncProd);
+#elif NCCL_OP == 2
+IMPL_COLL2(ncclReduce, min, FuncMin);
+#elif NCCL_OP == 3
+IMPL_COLL2(ncclReduce, max, FuncMax);
+#endif

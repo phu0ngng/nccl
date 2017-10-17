@@ -40,11 +40,11 @@ typedef enum { ncclCollBcast, ncclCollReduce, ncclCollAllGather, ncclCollReduceS
   DECL_COLL2(coll, max)
 
 #define DECL_ALL_COLLS \
-  DECL_COLL(ncclBcast) \
+  DECL_COLL2(ncclBcast, copy) \
   DECL_COLL(ncclReduce) \
-  DECL_COLL(ncclAllGather) \
+  DECL_COLL2(ncclAllGather, copy) \
   DECL_COLL(ncclReduceScatter) \
-  DECL_COLL(ncclAllReduce)
+  DECL_COLL(ncclAllReduce) \
 
 DECL_ALL_COLLS
 

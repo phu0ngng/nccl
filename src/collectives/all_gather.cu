@@ -37,7 +37,3 @@ ncclResult_t ncclAllGather(const void* sendbuff, void* recvbuff, size_t sendcoun
   return ncclEnqueueCheck(ncclAllGatherFunc, "AllGather", sendbuff, recvbuff, sendcount, datatype, 
       ncclSum, 0, comm, stream);
 }
-
-#define UNROLL 8
-
-IMPL_COLL2(ncclAllGather, sum, FuncSum);
