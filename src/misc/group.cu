@@ -12,11 +12,11 @@
 #define MAX_ASYNC_OPS 128
 thread_local pthread_t ncclGroupThreads[MAX_ASYNC_OPS];
 thread_local int ncclGroupIndex = 0;
-thread_local bool ncclGroupMode = false;
+thread_local int ncclGroupMode = 0;
 thread_local ncclResult_t ncclGroupError = ncclSuccess;
 
 bool ncclAsyncMode() {
-  return ncclGroupMode;
+  return ncclGroupMode > 0;
 }
 
 ncclResult_t ncclAsyncErrCheck(ncclResult_t ret) {
@@ -91,8 +91,16 @@ ncclResult_t ncclAsyncInit(ncclInitFunc_t func, int cudaDev, ncclComm_t* newcomm
 }
 
 ncclResult_t ncclAsyncColl(ncclComm_t comm) {
-  int index = ncclGroupIndex++;
-  struct ncclAsyncArgs* args = ncclGroupArgs+index;
+  struct ncclAsyncArgs* args = ncclGroupArgs;
+  for (int i=0; i<ncclGroupIndex; i++) {
+    if (args->coll.comm == comm) return ncclSuccess;
+    args++; 
+  }
+  if (ncclGroupIndex == MAX_ASYNC_OPS) {
+    WARN("Too many async operations in progress, max is %d", MAX_ASYNC_OPS);
+    return ncclInternalError;
+  }
+  ncclGroupIndex++;
   args->funcType = ASYNC_FUNC_COLL;
   args->coll.comm = comm;
   return ncclSuccess;
@@ -100,12 +108,14 @@ ncclResult_t ncclAsyncColl(ncclComm_t comm) {
 
 NCCL_API(ncclResult_t, ncclGroupStart);
 ncclResult_t ncclGroupStart() {
-  ncclGroupMode = true;
+  ncclGroupMode++;
   return ncclSuccess;
 }
 
 NCCL_API(ncclResult_t, ncclGroupEnd);
 ncclResult_t ncclGroupEnd() {
+  ncclGroupMode--;
+  if (ncclGroupMode > 0) return ncclSuccess;
   int savedDev;
   CUDACHECK(cudaGetDevice(&savedDev));
   int done = ncclGroupIndex;
@@ -143,6 +153,5 @@ end:
   CUDACHECK(cudaSetDevice(savedDev));
   ncclGroupError = ncclSuccess;
   ncclGroupIndex = 0;
-  ncclGroupMode = false;
   return ret;
 }

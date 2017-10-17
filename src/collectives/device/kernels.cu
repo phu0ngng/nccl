@@ -78,7 +78,7 @@ static __device__ void ncclKernel(struct KernelArgs args) {
     dump = 1;
   }
 
-//  if (tid == 0) printf("Starting %d collectives at %p\n", args.nColls, args.colls);
+  //if (tid == 0) printf("Starting %d collectives at %p\n", args.nColls, args.colls);
 
   struct ncclColl* collectives = args.colls;
   for (int c=0; c<args.nColls; c++) {
@@ -90,9 +90,9 @@ static __device__ void ncclKernel(struct KernelArgs args) {
     if (coll->ll) func = ncclFuncsLL[coll->coll][coll->op][coll->dtype];
     else func = ncclFuncs[NTHREADS_SET][coll->coll][coll->op][coll->dtype];
 
-//    if (tid == 0) printf("[%d] %d: func %d, dtype %d, op %d, ll %d -> %p. %d/%d | %p : in %p, out %p, size %ld, root %d, comm %p, opCount %d\n", rank, c, coll->coll, coll->dtype, coll->op, coll->ll, func, coll->nThreads, coll->nBlocks, &coll->args, coll->args.ThisInput, coll->args.ThisOutput, coll->args.N, coll->args.root, coll->args.comm, coll->args.opCount);
+    //if (tid == 0) printf("[%d] %d: func %d, dtype %d, op %d, ll %d -> %p. %d/%d | %p : in %p, out %p, size %ld, root %d, comm %p, opCount %d\n", rank, c, coll->coll, coll->dtype, coll->op, coll->ll, func, coll->nThreads, coll->nBlocks, &coll->args, coll->args.ThisInput, coll->args.ThisOutput, coll->args.N, coll->args.root, coll->args.comm, coll->args.opCount);
     func(&coll->args);
-//    if (tid == 0) printf("[%d] done\n", c);
+    //if (tid == 0) printf("[%d] done\n", c);
 
     if (tid == 0) args.colls->args.comm->devCollFifoHead[0] = (args.colls->args.comm->devCollFifoHead[0]+1) % NCCL_MAX_OPS;
     /* Collectives may not flush some operations considering they are the last, let's play safe. */
