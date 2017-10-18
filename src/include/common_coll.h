@@ -60,13 +60,14 @@ static ncclResult_t ArgsCheck(const void* sendbuff, const void* recvbuff, size_t
 template<typename T>
 ncclResult_t ArgsSetup(const T* sendbuff, T* recvbuff,
 		const int root, const size_t count, ncclComm *comm) {
-  if (comm->args.nColls == NCCL_MAX_OPS-1) {
+  if (comm->args.nColls == NCCL_MAX_OPS) {
     WARN("Too many aggregated operations (%d max)", NCCL_MAX_OPS);
     return ncclInvalidUsage;
   }
-  volatile int* head = &comm->collFifoHead;
-  while (head[0] == ((comm->collFifoTail+1)%NCCL_MAX_OPS)) sched_yield();
-  struct CollectiveArgs* args = &comm->collectives[comm->collFifoTail].args;
+  struct ncclColl* coll = comm->collectives+comm->collFifoTail;
+  volatile int* functionPtr = (volatile int*)&coll->function;
+  while (functionPtr[0] != 0) sched_yield();
+  struct CollectiveArgs* args = &coll->args;
   args->root = root;
   args->N = count;
   args->ThisInput = sendbuff;
@@ -98,10 +99,7 @@ static __inline__ int ncclTypeSize(ncclDataType_t type) {
 
 static void saveKernel(int coll, ncclRedOp_t op, ncclDataType_t dtype, int nbytes, struct ncclComm* comm, cudaStream_t stream, int ll) {
   struct ncclColl* collective = comm->collectives+comm->collFifoTail;
-  collective->coll = coll;
-  collective->ll = ll;
-  collective->op = op;
-  collective->dtype = dtype;
+  collective->function = NCCL_FUNCTION(coll, op, dtype, ll, 1);
   collective->nBlocks = ll ? 1 : LIMIT_NRINGS(nbytes, comm->nRings);
   collective->nThreads = ll ? LL_NTHREADS : comm->nThreads+1;
   comm->collNBlocks = max(comm->collNBlocks, collective->nBlocks);

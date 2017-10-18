@@ -67,26 +67,29 @@ template <int NTHREADS_SET>
 static __device__ void ncclKernel(struct KernelArgs args) {
   int tid = threadIdx.x;
   int bid = blockIdx.x;
-  __shared__ struct ncclColl coll;
+  __shared__ struct ncclColl localColl;
 
   struct ncclColl* collectives = args.colls;
   for (int c=0; c<args.nColls; c++) {
-    load_coll(&coll, collectives+((args.startColl+c)%NCCL_MAX_OPS), sizeof(struct ncclColl), tid);
+    struct ncclColl* collPtr = collectives+((args.startColl+c)%NCCL_MAX_OPS);
+    load_coll(&localColl, collPtr, sizeof(struct ncclColl), tid);
+    struct ncclColl* coll = &localColl;
 
-    if (bid >= coll.nBlocks || tid >= coll.nThreads) continue;
+    if (bid >= coll->nBlocks || tid >= coll->nThreads) continue;
 
-    ncclKern_t func;
-    if (coll.ll) func = ncclFuncsLL[coll.coll][coll.op][coll.dtype];
-    else func = ncclFuncs[NTHREADS_SET][coll.coll][coll.op][coll.dtype];
+    uint32_t function = coll->function;
+    ncclKern_t func = NCCL_FUNCTION_LL(function) ?
+        ncclFuncsLL            [NCCL_FUNCTION_COLL(function)][NCCL_FUNCTION_REDOP(function)][NCCL_FUNCTION_DTYPE(function)]:
+        ncclFuncs[NTHREADS_SET][NCCL_FUNCTION_COLL(function)][NCCL_FUNCTION_REDOP(function)][NCCL_FUNCTION_DTYPE(function)];
 
-    struct CollectiveArgs* collArgs = &coll.args;
-    func(&coll.args);
+    func(&coll->args);
 
-    if (tid == 0) collArgs->comm->devCollFifoHead[0] = (collArgs->comm->devCollFifoHead[0]+1) % NCCL_MAX_OPS;
+    // Ack the completion of the function
+    if (tid == 0) collPtr->function = 0;
   }
 }
 
-__global__ void ncclKernel64(struct KernelArgs args) { ncclKernel<0>(args); }
+__global__ void ncclKernel64 (struct KernelArgs args) { ncclKernel<0>(args); }
 __global__ void ncclKernel128(struct KernelArgs args) { ncclKernel<1>(args); }
 __global__ void ncclKernel256(struct KernelArgs args) { ncclKernel<2>(args); }
 __global__ void ncclKernel512(struct KernelArgs args) { ncclKernel<3>(args); }

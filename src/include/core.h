@@ -7,6 +7,8 @@
 #ifndef NCCL_CORE_H_
 #define NCCL_CORE_H_
 
+#define NCCL_MAX_OPS 2048
+
 #include "nccl.h"
 #include "transport.h"
 #include "debug.h"
@@ -30,8 +32,6 @@ struct cudaLaunchParams
 #define NCCL_LL_THRESHOLD 16384
 
 #define DEFAULT_SINGLE_RING_THRESHOLD (1UL << 17) /* 128KiB - but 256KiB for Volta */
-
-#define NCCL_MAX_OPS 2048
 
 extern size_t ncclSingleRingThreshold;
 #define LIMIT_NRINGS(SIZE, NRINGS) ((SIZE) <= ncclSingleRingThreshold ? 1 : (NRINGS))
@@ -133,28 +133,35 @@ struct KernelArgs {
 };
 
 struct CollectiveArgs {
-  // general parameters
-  int root;
-  size_t N;
+  struct ncclComm* comm;
+  uint64_t opCount;
 
   // local and remote input, output, and buffer
   const void * ThisInput;
   void * ThisOutput;
 
-  struct ncclComm* comm;
-  int nRings;
-  uint64_t opCount;
+  // general parameters
+  size_t N;
+  int root;
 };
 
 struct ncclColl {
-  int coll;
-  int ll;
-  ncclRedOp_t op;
-  ncclDataType_t dtype;
-  int nThreads;
-  int nBlocks;
   struct CollectiveArgs args;
+  uint16_t nThreads;
+  uint16_t nBlocks;
+  uint32_t function;
 };
+
+// Active is only here to make sure an active operation is not equal to 0.
+// We only test the whole operation for zero or non-zero to know if it is
+// active or not.
+#define NCCL_FUNCTION(coll, redop, dtype, ll, active) \
+  ((coll<<24) + (redop<<16) + (dtype<<8) + (active<<1) + ll)
+
+#define NCCL_FUNCTION_COLL(function)   ((function & 0xff000000) >> 24)
+#define NCCL_FUNCTION_REDOP(function)  ((function & 0x00ff0000) >> 16)
+#define NCCL_FUNCTION_DTYPE(function)  ((function & 0x0000ff00) >>  8)
+#define NCCL_FUNCTION_LL(function)     ((function & 0x00000001))
 
 struct ncclComm {
   int rank;    // my rank in the communicator
@@ -200,8 +207,6 @@ struct ncclComm {
   int collNBlocks;
   struct ncclColl* collectives;
   struct ncclColl* devCollectives;
-  int collFifoHead;
-  int* devCollFifoHead;
   int collFifoTail;
 };
 

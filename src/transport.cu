@@ -18,34 +18,32 @@ struct ncclTransport ncclTransports[NTRANSPORTS] = {
 };
 
 static void FifoPullArgs(struct transportProxyInfo* info, struct ncclProxyArgs *args) {
-  pthread_mutex_lock(&info->mutex);
-  while (info->argsFifoTail == info->argsFifoHead)
-    pthread_cond_wait(&info->cond, &info->mutex);
   struct ncclProxyArgs *fifoArgs = info->argsFifo + (info->argsFifoHead % TRANSPORT_PROXY_FIFO_SIZE);
+  pthread_mutex_lock(&info->mutex);
+  while (fifoArgs->active == 0)
+    pthread_cond_wait(&info->cond, &info->mutex);
   memcpy(args, fifoArgs, sizeof(struct ncclProxyArgs));
-  memset(fifoArgs, 0, sizeof(struct ncclProxyArgs));
-  info->argsFifoHead++;
+  fifoArgs->active = 0;
   pthread_cond_signal(&info->cond);
   pthread_mutex_unlock(&info->mutex);
+  info->argsFifoHead++;
 }
 
 static struct ncclProxyArgs* FifoGetNextArgs(struct transportProxyInfo* info) {
   if (info == NULL) return NULL;
+  struct ncclProxyArgs* fifoArgs = info->argsFifo + (info->argsFifoTail % TRANSPORT_PROXY_FIFO_SIZE);
   pthread_mutex_lock(&info->mutex);
-  while (info->argsFifoTail == info->argsFifoHead + TRANSPORT_PROXY_FIFO_SIZE)
+  while (fifoArgs->active == 1)
     pthread_cond_wait(&info->cond, &info->mutex);
   pthread_mutex_unlock(&info->mutex);
-  return info->argsFifo + (info->argsFifoTail % TRANSPORT_PROXY_FIFO_SIZE);
+  info->argsFifoTail++;
+  return fifoArgs;
 }
 
 static void FifoPushArgs(struct transportProxyInfo* info) {
   if (info == NULL) return;
-  // Only launch proxy if nsteps has been set
-  struct ncclProxyArgs *fifoArgs = info->argsFifo + (info->argsFifoTail % TRANSPORT_PROXY_FIFO_SIZE);
-  if (fifoArgs->nsteps == 0) return;
 
   pthread_mutex_lock(&info->mutex);
-  info->argsFifoTail++;
   pthread_cond_signal(&info->cond);
   pthread_mutex_unlock(&info->mutex);
 }
@@ -67,10 +65,8 @@ static void SetProxyReady(struct transportProxyInfo* info) {
 static void StopProxy(struct transportProxyInfo* info) {
   pthread_mutex_lock(&info->mutex); 
   info->proxyReady = -1;
-  // Unblock thread
-  info->argsFifoTail++;
-  pthread_cond_signal(&info->cond);
-  pthread_mutex_unlock(&info->mutex);
+  FifoGetNextArgs(info);
+  FifoPushArgs(info);
 }
 
 #define RECV 0
@@ -94,9 +90,11 @@ static bool NeedProxy(int type, int pattern, struct ncclRing* ring, int nranks) 
 
 static void SaveProxy(struct ncclConnector* connector, struct ncclProxyArgs* args, int needProxy) {
   struct transportProxyInfo* info = connector->proxyInfo;
+  if (info == NULL) return;
   struct ncclProxyArgs* fifoArgs = FifoGetNextArgs(info);
   args->needProxy = needProxy;
-  if (fifoArgs) memcpy(fifoArgs, args, sizeof(struct ncclProxyArgs));
+  memcpy(fifoArgs, args, sizeof(struct ncclProxyArgs));
+  fifoArgs->active = 1;
 }
 
 ncclResult_t transportSaveProxies(int substeps, int subchunks, int nstepsPerRound, int nblocksPerRound, size_t size, int pattern, struct ncclComm* comm, int llMode) {
