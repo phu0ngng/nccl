@@ -58,8 +58,12 @@ static ncclResult_t ArgsCheck(const void* sendbuff, const void* recvbuff, size_t
 }
 
 template<typename T>
-void ArgsSetup(const T* sendbuff, T* recvbuff,
+ncclResult_t ArgsSetup(const T* sendbuff, T* recvbuff,
 		const int root, const size_t count, ncclComm *comm) {
+  if (comm->args.nColls == NCCL_MAX_OPS-1) {
+    WARN("Too many aggregated operations (%d max)", NCCL_MAX_OPS);
+    return ncclInvalidUsage;
+  }
   volatile int* head = &comm->collFifoHead;
   while (head[0] == ((comm->collFifoTail+1)%NCCL_MAX_OPS)) sched_yield();
   struct CollectiveArgs* args = &comm->collectives[comm->collFifoTail].args;
@@ -69,6 +73,7 @@ void ArgsSetup(const T* sendbuff, T* recvbuff,
   args->ThisOutput = recvbuff;
   args->comm = comm->devComm;
   args->opCount = comm->opCount;
+  return ncclSuccess;
 }
 
 static __inline__ int ncclTypeSize(ncclDataType_t type) {

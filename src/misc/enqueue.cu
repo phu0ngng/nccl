@@ -48,7 +48,7 @@ ncclResult_t ncclCpuBarrierCheckin(ncclComm_t comm) {
   params->blockDim.x = comm->collNThreads; params->blockDim.y = params->blockDim.z = 1;
   params->gridDim.x = comm->collNBlocks; params->gridDim.y = params->gridDim.z = 1;
   params->args = &comm->argsptr;
-  params->sharedMem = 0;
+  params->sharedMem = sizeof(struct ncclComm);
   params->stream = comm->ncclStream;
 
   if (comm->launchMode == ncclComm::GROUP) {

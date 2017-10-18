@@ -17,7 +17,7 @@ ncclResult_t ncclReduceFunc(const void* sendbuff, void* recvbuff, const size_t c
     if (sendbuff != recvbuff)
       CUDACHECK(cudaMemcpyAsync(recvbuff, sendbuff, nbytes, cudaMemcpyDeviceToDevice, stream));
   } else {
-    ArgsSetup(sendbuff, recvbuff, root, count, comm);
+    NCCLCHECK(ArgsSetup(sendbuff, recvbuff, root, count, comm));
     if (nbytes <= comm->llThreshold) {
       NCCLCHECK(transportSaveProxies(1, NUM_LL_CHUNKS, 1, 1, 2*nbytes, proxyPatternTo(root), comm, 1));
       saveKernel(ncclCollReduce, op, datatype, nbytes, comm, stream, 1);

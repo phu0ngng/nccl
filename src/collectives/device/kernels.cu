@@ -56,47 +56,33 @@ static __device__ ncclKern_t ncclFuncsLL[ncclCollNcolls][ncclNumOps][ncclNumType
   NCCL_FUNCS2A(64, ncclAllReduceLL)
 };
 
+static __device__ void load_coll(void* dst, void* src, size_t size, int tid) {
+  int* d = (int*)dst;
+  int* s = (int*)src;
+  for (int o = tid; o < (size/sizeof(int)); o += 64) d[o] = s[o];
+  __syncthreads();
+}
+
 template <int NTHREADS_SET>
 static __device__ void ncclKernel(struct KernelArgs args) {
   int tid = threadIdx.x;
   int bid = blockIdx.x;
-  int rank = args.colls->args.comm->rank;
-  static int dump = 1;
-  if (dump == 0) {
-    if (tid == 0 && rank == 0) for (int c=0; c<ncclCollNcolls; c++) {
-      printf(" *** Coll %d ***\n", c);
-      for (int t=0; t<ncclNumTypes; t++) printf("%16d ", t);
-      printf("\n");
-      for (int o=0; o<ncclNumOps; o++) {
-        printf("%d :", o);
-        for (int t=0; t<ncclNumTypes; t++) {
-          printf("%16p ", ncclFuncs[2][c][o][t]);
-        }
-        printf("\n");
-      }
-    }
-    dump = 1;
-  }
-
-  //if (tid == 0) printf("Starting %d collectives at %p\n", args.nColls, args.colls);
+  __shared__ struct ncclColl coll;
 
   struct ncclColl* collectives = args.colls;
   for (int c=0; c<args.nColls; c++) {
-    struct ncclColl* coll = collectives+((args.startColl+c)%NCCL_MAX_OPS);
+    load_coll(&coll, collectives+((args.startColl+c)%NCCL_MAX_OPS), sizeof(struct ncclColl), tid);
 
-    if (bid >= coll->nBlocks || tid >= coll->nThreads) continue;
+    if (bid >= coll.nBlocks || tid >= coll.nThreads) continue;
 
     ncclKern_t func;
-    if (coll->ll) func = ncclFuncsLL[coll->coll][coll->op][coll->dtype];
-    else func = ncclFuncs[NTHREADS_SET][coll->coll][coll->op][coll->dtype];
+    if (coll.ll) func = ncclFuncsLL[coll.coll][coll.op][coll.dtype];
+    else func = ncclFuncs[NTHREADS_SET][coll.coll][coll.op][coll.dtype];
 
-    //if (tid == 0) printf("[%d] %d: func %d, dtype %d, op %d, ll %d -> %p. %d/%d | %p : in %p, out %p, size %ld, root %d, comm %p, opCount %d\n", rank, c, coll->coll, coll->dtype, coll->op, coll->ll, func, coll->nThreads, coll->nBlocks, &coll->args, coll->args.ThisInput, coll->args.ThisOutput, coll->args.N, coll->args.root, coll->args.comm, coll->args.opCount);
-    func(&coll->args);
-    //if (tid == 0) printf("[%d] done\n", c);
+    struct CollectiveArgs* collArgs = &coll.args;
+    func(&coll.args);
 
-    if (tid == 0) args.colls->args.comm->devCollFifoHead[0] = (args.colls->args.comm->devCollFifoHead[0]+1) % NCCL_MAX_OPS;
-    /* Collectives may not flush some operations considering they are the last, let's play safe. */
-    if (c < args.nColls-1) __threadfence_system();
+    if (tid == 0) collArgs->comm->devCollFifoHead[0] = (collArgs->comm->devCollFifoHead[0]+1) % NCCL_MAX_OPS;
   }
 }
 
