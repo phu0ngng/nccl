@@ -100,6 +100,7 @@ static ncclResult_t saveKernel(int coll, const void* sendbuff, void* recvbuff, s
     args->ThisOutput = recvbuff;
     args->comm = comm->devComm;
     args->opCount = comm->opCount;
+    args->nRings = nBlocks;
 
     c->nThreads = nThreads; c->ring = r;
     c->coll = coll; c->redop = op; c->dtype = dtype; c->ll = ll;

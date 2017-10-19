@@ -72,8 +72,8 @@ __device__ void ncclAllReduceKernel(struct CollectiveArgs* args) {
   T * __restrict__ prevInput = (T*)ring->recv.conn.buff;
   T * __restrict__ nextOutput = (T*)ring->send.conn.buff;
 
-  for (ssize_t gridOffset = 0; gridOffset < size; gridOffset += gridDim.x*nranks*sliceSize) {
-    int chunkSize = min(sliceSize, DIVUP(size-gridOffset,nranks*gridDim.x));
+  for (ssize_t gridOffset = 0; gridOffset < size; gridOffset += args->nRings*nranks*sliceSize) {
+    int chunkSize = min(sliceSize, DIVUP(size-gridOffset,nranks*args->nRings));
     ALIGN_SIZE(chunkSize, THREADS*sizeof(uint64_t)/sizeof(T));
     ssize_t chunkOffset = gridOffset + bid*nranks*chunkSize;
 

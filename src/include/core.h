@@ -143,6 +143,7 @@ struct CollectiveArgs {
   // general parameters
   size_t N;
   int root;
+  int nRings;
 };
 
 struct ncclColl {

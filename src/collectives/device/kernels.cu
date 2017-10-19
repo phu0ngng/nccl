@@ -25,8 +25,8 @@ typedef void(*ncclKern_t)(struct CollectiveArgs* args);
 #define NCCL_FUNCS2A(nthreads, coll) { \
   NCCL_FUNCS3(nthreads, coll, sum ), \
   NCCL_FUNCS3(nthreads, coll, prod), \
-  NCCL_FUNCS3(nthreads, coll, min ), \
-  NCCL_FUNCS3(nthreads, coll, max ) }
+  NCCL_FUNCS3(nthreads, coll, max ), \
+  NCCL_FUNCS3(nthreads, coll, min ) }
 #define NCCL_FUNCS2B(nthreads, coll) { \
   NCCL_FUNCS3(nthreads, coll, copy), \
   NCCL_FUNCS3(nthreads, coll, copy), \
