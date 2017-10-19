@@ -63,9 +63,8 @@ static void SetProxyReady(struct transportProxyInfo* info) {
 }
 
 static void StopProxy(struct transportProxyInfo* info) {
-  pthread_mutex_lock(&info->mutex); 
-  info->proxyReady = -1;
-  FifoGetNextArgs(info);
+  struct ncclProxyArgs* fifoArgs = FifoGetNextArgs(info);
+  fifoArgs->active = -1;
   FifoPushArgs(info);
 }
 
@@ -130,7 +129,7 @@ void* persistentThread(void *opaqueInfo) {
   while (1) {
     struct ncclProxyArgs args;
     FifoPullArgs(info, &args);
-    if (info->proxyReady == -1) {
+    if (args.active == -1) {
       // Main thread asked to stop
       return NULL;
     }
