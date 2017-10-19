@@ -74,18 +74,19 @@ static __device__ void ncclKernel(struct KernelArgs args) {
     struct ncclColl* collPtr = collectives+((args.startColl+c)%NCCL_MAX_OPS);
     load_coll(&localColl, collPtr, sizeof(struct ncclColl), tid);
     struct ncclColl* coll = &localColl;
+//    if (tid == 0) printf("Collective %d/%d : %d(%p) | %d:%d, Func %d/%d/%d/%d [%d]\n", c, args.nColls, args.startColl+c, collPtr, coll->ring, coll->nThreads, coll->ll, coll->coll, coll->redop, coll->dtype, coll->active);
+    if (bid != coll->ring || tid >= coll->nThreads) continue;
 
-    if (bid >= coll->nBlocks || tid >= coll->nThreads) continue;
+//    if (coll->active == 0) { if (tid == 0) printf("Exiting, active error\n"); }
 
-    uint32_t function = coll->function;
-    ncclKern_t func = NCCL_FUNCTION_LL(function) ?
-        ncclFuncsLL            [NCCL_FUNCTION_COLL(function)][NCCL_FUNCTION_REDOP(function)][NCCL_FUNCTION_DTYPE(function)]:
-        ncclFuncs[NTHREADS_SET][NCCL_FUNCTION_COLL(function)][NCCL_FUNCTION_REDOP(function)][NCCL_FUNCTION_DTYPE(function)];
+    ncclKern_t func = coll->ll ?
+        ncclFuncsLL            [coll->coll][coll->redop][coll->dtype]:
+        ncclFuncs[NTHREADS_SET][coll->coll][coll->redop][coll->dtype];
 
     func(&coll->args);
 
     // Ack the completion of the function
-    if (tid == 0) collPtr->function = 0;
+    if (tid == 0) collPtr->active = 0;
   }
 }
 

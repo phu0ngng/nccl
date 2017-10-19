@@ -17,13 +17,12 @@ ncclResult_t ncclAllGatherFunc(const void* sendbuff, void* recvbuff, size_t coun
     if (sendbuff != recvbuff)
       CUDACHECK(cudaMemcpyAsync(recvbuff, sendbuff, nbytes, cudaMemcpyDeviceToDevice, stream));
   } else {
-    NCCLCHECK(ArgsSetup(sendbuff, recvbuff, 0, count, comm));
     if (nbytes*comm->nRanks <= comm->llThreshold) {
       NCCLCHECK(transportSaveProxies(1, NUM_LL_CHUNKS, comm->nRanks-1, 1, 2*nbytes, proxyPatternRing, comm, 1));
-      saveKernel(ncclCollAllGather, op, datatype, nbytes*comm->nRanks, comm, stream, 1);
+      NCCLCHECK(saveKernel(ncclCollAllGather, sendbuff, recvbuff, count, datatype, op, root, comm, stream, nbytes*comm->nRanks, 1));
     } else {
       NCCLCHECK(transportSaveProxies(NUM_SUBSTEPS, NUM_BUFCHUNKS, comm->nRanks-1, 1, nbytes, proxyPatternRing, comm, 0));
-      saveKernel(ncclCollAllGather, op, datatype, nbytes*comm->nRanks, comm, stream, 0);
+      NCCLCHECK(saveKernel(ncclCollAllGather, sendbuff, recvbuff, count, datatype, op, root, comm, stream, nbytes*comm->nRanks, 0));
       comm->opCount++;
     }
   }

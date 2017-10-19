@@ -148,20 +148,13 @@ struct CollectiveArgs {
 struct ncclColl {
   struct CollectiveArgs args;
   uint16_t nThreads;
-  uint16_t nBlocks;
-  uint32_t function;
+  uint8_t  ring;
+  uint8_t  coll;
+  uint8_t  redop;
+  uint8_t  dtype;
+  uint8_t  ll;
+  uint8_t  active;
 };
-
-// Active is only here to make sure an active operation is not equal to 0.
-// We only test the whole operation for zero or non-zero to know if it is
-// active or not.
-#define NCCL_FUNCTION(coll, redop, dtype, ll, active) \
-  ((coll<<24) + (redop<<16) + (dtype<<8) + (active<<1) + ll)
-
-#define NCCL_FUNCTION_COLL(function)   ((function & 0xff000000) >> 24)
-#define NCCL_FUNCTION_REDOP(function)  ((function & 0x00ff0000) >> 16)
-#define NCCL_FUNCTION_DTYPE(function)  ((function & 0x0000ff00) >>  8)
-#define NCCL_FUNCTION_LL(function)     ((function & 0x00000001))
 
 struct ncclComm {
   int rank;    // my rank in the communicator
