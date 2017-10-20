@@ -102,6 +102,8 @@ ncclResult_t ncclCpuBarrierWait(ncclComm_t comm) {
     comm->ncclStream = comm->userStream;
   }
   comm->args.nColls = 0;
+  comm->collNThreads = 0;
+  comm->collNBlocks = 0;
   comm->collFifoTail = (ROUNDUP(comm->collFifoTail, 4)) % NCCL_MAX_OPS;
   comm->args.startColl = comm->collFifoTail;
   NCCLCHECK(transportStartProxies(comm));
