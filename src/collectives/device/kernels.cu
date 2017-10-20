@@ -74,7 +74,7 @@ static __device__ void ncclKernel(struct KernelArgs args) {
     struct ncclColl* collPtr = collectives+((args.startColl+c)%NCCL_MAX_OPS);
     load_coll(&localColl, collPtr, sizeof(struct ncclColl), tid);
     struct ncclColl* coll = &localColl;
-//    if (tid == 0) printf("Collective %d/%d : %d(%p) | %d:%d, Func %d/%d/%d/%d [%d]\n", c, args.nColls, args.startColl+c, collPtr, coll->ring, coll->nThreads, coll->ll, coll->coll, coll->redop, coll->dtype, coll->active);
+//    if (tid == 0) printf("[%d:%d] Collective %d/%d : %d(%p) | %d:%d, Func %d/%d/%d/%d [%d]\n", blockDim.x, gridDim.x, c, args.nColls, args.startColl+c, collPtr, coll->ring, coll->nThreads, coll->ll, coll->coll, coll->redop, coll->dtype, coll->active);
     if (bid != coll->ring || tid >= coll->nThreads) continue;
 
 //    if (coll->active == 0) { if (tid == 0) printf("Exiting, active error\n"); }

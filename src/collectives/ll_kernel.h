@@ -7,9 +7,6 @@
 #ifndef NCCL_LL_KERNEL_H_
 #define NCCL_LL_KERNEL_H_
 
-
-#include "core.h"
-
 static __device__ uint64_t readLL(union ncclLLFifoLine* src, uint32_t flag) {
   volatile uint64_t* valPtr = src->v;
   union ncclLLFifoLine line;
@@ -135,13 +132,13 @@ class LLPrimitives {
       sendHead = sendHeadPtr[0]; \
     } \
   } \
-  __syncthreads();
+  asm volatile ("bar.sync 1, %0;" :: "r"(THREADS));
 
 #define POST_SIZE \
   if (tid == 0 && sizesFifo) sizesFifo[step % NUM_LL_CHUNKS] = (maxOffset <= 0) ? -1 : (maxOffset*2*(int)sizeof(T));
 
 #define ACK_PREV \
-  __syncthreads();  \
+  asm volatile ("bar.sync 1, %0;" :: "r"(THREADS)); \
   if (tid == 0) recvHeadPtr[0] = step;
 
 #define FIFO_CLEANING_AND_SAVE_STEP(flag) do { \

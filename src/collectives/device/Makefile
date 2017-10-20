@@ -28,22 +28,22 @@ $(OBJDIR)/kernels.o : kernels.cu
 	mkdir -p `dirname $@`
 	$(NVCC) $(NVCUFLAGS) -dc $< -o $@
 
-$(OBJDIR)/%_sum.o : %.cu ../%.h
+$(OBJDIR)/%_sum.o : %.cu ../%.h ../ll_kernel.h
 	@printf "Compiling  %-35s > %s\n" $< $@
 	mkdir -p `dirname $@`
 	$(NVCC) -DNCCL_OP=0 $(NVCUFLAGS) -dc $< -o $@
 
-$(OBJDIR)/%_prod.o : %.cu ../%.h
+$(OBJDIR)/%_prod.o : %.cu ../%.h ../ll_kernel.h
 	@printf "Compiling  %-35s > %s\n" $< $@
 	mkdir -p `dirname $@`
 	$(NVCC) -DNCCL_OP=1 $(NVCUFLAGS) -dc $< -o $@
 
-$(OBJDIR)/%_min.o : %.cu ../%.h
+$(OBJDIR)/%_min.o : %.cu ../%.h ../ll_kernel.h
 	@printf "Compiling  %-35s > %s\n" $< $@
 	mkdir -p `dirname $@`
 	$(NVCC) -DNCCL_OP=2 $(NVCUFLAGS) -dc $< -o $@
 
-$(OBJDIR)/%_max.o : %.cu ../%.h
+$(OBJDIR)/%_max.o : %.cu ../%.h ../ll_kernel.h
 	@printf "Compiling  %-35s > %s\n" $< $@
 	mkdir -p `dirname $@`
 	$(NVCC) -DNCCL_OP=3 $(NVCUFLAGS) -dc $< -o $@
