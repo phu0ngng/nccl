@@ -7,9 +7,6 @@ TYPED_TEST(ncclAllReduce_test, basic) {
     for (ncclRedOp_t op : this->RedOps) {
         ASSERT_EQ(ncclSuccess, ncclGroupStart());
         for (int i = 0; i < this->nVis; ++i) {
-            ASSERT_EQ(cudaSuccess, cudaSetDevice(i)) << "op: " << op << ", "
-                                                     << "i" << i << ", "
-                                                     << std::endl;
             ASSERT_EQ(ncclSuccess,
                       ncclAllReduce(this->sendbuffs[i], this->recvbuffs[i],
                                     std::min(this->N, 1024 * 1024),
@@ -25,9 +22,6 @@ TYPED_TEST(ncclAllReduce_test, host_mem) {
     for (ncclRedOp_t op : this->RedOps) {
         ASSERT_EQ(ncclSuccess, ncclGroupStart());
         for (int i = 0; i < this->nVis; ++i) {
-            ASSERT_EQ(cudaSuccess, cudaSetDevice(i)) << "op: " << op << ", "
-                                                     << "i" << i << ", "
-                                                     << std::endl;
             ASSERT_EQ(
                 ncclInvalidArgument,
                 ncclAllReduce(this->sendbuffs_host[i], this->recvbuffs_host[i],
@@ -43,9 +37,6 @@ TYPED_TEST(ncclAllReduce_test, pinned_mem) {
     for (ncclRedOp_t op : this->RedOps) {
         ASSERT_EQ(ncclSuccess, ncclGroupStart());
         for (int i = 0; i < this->nVis; ++i) {
-            ASSERT_EQ(cudaSuccess, cudaSetDevice(i)) << "op: " << op << ", "
-                                                     << "i" << i << ", "
-                                                     << std::endl;
             ASSERT_EQ(ncclSuccess,
                       ncclAllReduce(
                           this->sendbuffs_pinned_device[i], this->recvbuffs_pinned_device[i],
@@ -98,9 +89,6 @@ TYPED_TEST(ncclAllReduce_test, N_zero) {
     for (ncclRedOp_t op : this->RedOps) {
         ASSERT_EQ(ncclSuccess, ncclGroupStart());
         for (int i = 0; i < this->nVis; ++i) {
-            ASSERT_EQ(cudaSuccess, cudaSetDevice(i)) << "op: " << op << ", "
-                                                     << "i" << i << ", "
-                                                     << std::endl;
             ASSERT_EQ(ncclSuccess,
                       ncclAllReduce(this->sendbuffs[i], this->recvbuffs[i], 0,
                                     this->DataType(), this->RedOps[0],

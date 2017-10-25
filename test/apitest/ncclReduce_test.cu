@@ -8,10 +8,6 @@ TYPED_TEST(ncclReduce_test, basic) {
         for (int root = 0; root < this->nVis; ++root) {
             ASSERT_EQ(ncclSuccess, ncclGroupStart());
             for (int i = 0; i < this->nVis; ++i) {
-                ASSERT_EQ(cudaSuccess, cudaSetDevice(i))
-                    << "op: " << op << ", "
-                    << "root: " << root << ", "
-                    << "i" << i << ", " << std::endl;
                 ASSERT_EQ(ncclSuccess,
                           ncclReduce(this->sendbuffs[i], i == root ? this->recvbuffs[i] : NULL,
                                      std::min(this->N, 1024 * 1024),
@@ -30,10 +26,6 @@ TYPED_TEST(ncclReduce_test, host_mem) {
         for (int root = 0; root < this->nVis; ++root) {
             ASSERT_EQ(ncclSuccess, ncclGroupStart());
             for (int i = 0; i < this->nVis; ++i) {
-                ASSERT_EQ(cudaSuccess, cudaSetDevice(i))
-                    << "op: " << op << ", "
-                    << "root: " << root << ", "
-                    << "i" << i << ", " << std::endl;
                 ASSERT_EQ(
                     ncclInvalidArgument,
                     ncclReduce(this->sendbuffs_host[i], this->recvbuffs_host[i],
@@ -52,10 +44,6 @@ TYPED_TEST(ncclReduce_test, pinned_mem) {
         for (int root = 0; root < this->nVis; ++root) {
             ASSERT_EQ(ncclSuccess, ncclGroupStart());
             for (int i = 0; i < this->nVis; ++i) {
-                ASSERT_EQ(cudaSuccess, cudaSetDevice(i))
-                    << "op: " << op << ", "
-                    << "root: " << root << ", "
-                    << "i" << i << ", " << std::endl;
                 ASSERT_EQ(ncclSuccess,
                           ncclReduce(this->sendbuffs_pinned_device[i],
                                      this->recvbuffs_pinned_device[i],
@@ -100,10 +88,6 @@ TYPED_TEST(ncclReduce_test, recvbuf_root_null) {
         for (int root = 0; root < this->nVis; ++root) {
             ASSERT_EQ(ncclSuccess, ncclGroupStart());
             for (int i = 0; i < this->nVis; ++i) {
-                ASSERT_EQ(cudaSuccess, cudaSetDevice(i))
-                    << "op: " << op << ", "
-                    << "root: " << root << ", "
-                    << "i" << i << ", " << std::endl;
                 ASSERT_EQ(root != i ? ncclSuccess : ncclInvalidArgument,
                           ncclReduce(this->sendbuffs[i], NULL,
                                      std::min(this->N, 1024 * 1024),
@@ -122,10 +106,6 @@ TYPED_TEST(ncclReduce_test, recvbuff_nonroot_null) {
         for (int root = 0; root < this->nVis; ++root) {
             ASSERT_EQ(ncclSuccess, ncclGroupStart());
             for (int i = 0; i < this->nVis; ++i) {
-                ASSERT_EQ(cudaSuccess, cudaSetDevice(i))
-                    << "op: " << op << ", "
-                    << "root: " << root << ", "
-                    << "i" << i << ", " << std::endl;
                 ASSERT_EQ(ncclSuccess,
                           ncclReduce(this->sendbuffs[i],
                                      root == i ? this->recvbuffs[i] : NULL,
@@ -155,10 +135,6 @@ TYPED_TEST(ncclReduce_test, N_zero) {
         for (int root = 0; root < this->nVis; ++root) {
             ASSERT_EQ(ncclSuccess, ncclGroupStart());
             for (int i = 0; i < this->nVis; ++i) {
-                ASSERT_EQ(cudaSuccess, cudaSetDevice(i))
-                    << "op: " << op << ", "
-                    << "root: " << root << ", "
-                    << "i" << i << ", " << std::endl;
                 ASSERT_EQ(ncclSuccess,
                           ncclReduce(this->sendbuffs[i], this->recvbuffs[i], 0,
                                      this->DataType(), this->RedOps[0], root,
