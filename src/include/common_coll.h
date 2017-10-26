@@ -85,11 +85,12 @@ static ncclResult_t saveKernel(int coll, const void* sendbuff, void* recvbuff, s
   comm->collNThreads = max(comm->collNThreads, nThreads);
   comm->userStream = stream;
   for (int r=0; r<nBlocks; r++) {
-    if (comm->args.nColls == NCCL_MAX_OPS) {
+    struct ncclRing* ring = comm->rings+r;
+    if (ring->collCount == NCCL_MAX_OPS) {
       WARN("Too many aggregated operations (%d max)", NCCL_MAX_OPS);
       return ncclInvalidUsage;
     }
-    struct ncclColl* c = comm->collectives+comm->collFifoTail;
+    struct ncclColl* c = ring->collectives+ring->collFifoTail;
     volatile uint8_t* activePtr = (volatile uint8_t*)&c->active;
     while (activePtr[0] != 0) sched_yield();
 
@@ -102,19 +103,18 @@ static ncclResult_t saveKernel(int coll, const void* sendbuff, void* recvbuff, s
     args->opCount = comm->opCount;
     args->nRings = nBlocks;
 
-    c->nThreads = nThreads; c->ring = r;
+    c->nThreads = nThreads;
     c->coll = coll; c->redop = op; c->dtype = dtype; c->ll = ll;
     c->active = 1;
-//    printf("[%d] Enqueuing %d(%p/%p) | %d:%d %d/%d/%d/%d\n", comm->rank, comm->collFifoTail, comm->collectives+comm->collFifoTail, comm->devCollectives+comm->collFifoTail, r, nThreads, ll, coll, op, dtype);
-    comm->collFifoTail = (comm->collFifoTail+1)%NCCL_MAX_OPS;
+    ring->collFifoTail = (ring->collFifoTail+1)%NCCL_MAX_OPS;
+    ring->collCount ++;
   }
-  comm->args.nColls += nBlocks;
   return ncclSuccess;
 }
 
-extern __global__ void ncclKernel64(struct KernelArgs args);
-extern __global__ void ncclKernel128(struct KernelArgs args);
-extern __global__ void ncclKernel256(struct KernelArgs args);
-extern __global__ void ncclKernel512(struct KernelArgs args);
+extern __global__ void ncclKernel64 (struct ncclColl firstColl);
+extern __global__ void ncclKernel128(struct ncclColl firstColl);
+extern __global__ void ncclKernel256(struct ncclColl firstColl);
+extern __global__ void ncclKernel512(struct ncclColl firstColl);
 
 #endif

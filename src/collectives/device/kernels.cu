@@ -4,7 +4,6 @@
  * See LICENSE.txt for license information
  ************************************************************************/
 
-#include "core.h"
 #include "collectives.h"
 
 typedef void(*ncclKern_t)(struct CollectiveArgs* args);
@@ -64,34 +63,49 @@ static __device__ void load_coll(void* dst, void* src, size_t size, int tid) {
 }
 
 template <int NTHREADS_SET>
-static __device__ void ncclKernel(struct KernelArgs args) {
+static __device__ void ncclKernel(struct ncclColl firstColl) {
   int tid = threadIdx.x;
   int bid = blockIdx.x;
-  __shared__ struct ncclColl localColl;
+  __shared__ struct ncclColl localColl[MAXRINGS];
 
-  struct ncclColl* collectives = args.colls;
-  for (int c=0; c<args.nColls; c++) {
-    struct ncclColl* collPtr = collectives+((args.startColl+c)%NCCL_MAX_OPS);
-    load_coll(&localColl, collPtr, sizeof(struct ncclColl), tid);
-    struct ncclColl* coll = &localColl;
-//    if (tid == 0) printf("[%d:%d] Collective %d/%d : %d(%p) | %d:%d, Func %d/%d/%d/%d [%d]\n", blockDim.x, gridDim.x, c, args.nColls, args.startColl+c, collPtr, coll->ring, coll->nThreads, coll->ll, coll->coll, coll->redop, coll->dtype, coll->active);
-    if (bid != coll->ring || tid >= coll->nThreads) continue;
+  struct ncclComm* comm = firstColl.args.comm;
+  struct ncclRing* ring = comm->rings+bid;
+  int index = ring->collFifoHead;
+  // To optimize for latency, (only the) first operation is passed as argument.
+  struct ncclColl* coll = &firstColl;
+  if (bid != 0) {
+    coll = localColl+bid;
+    load_coll(coll, ring->devCollectives+index, sizeof(struct ncclColl), tid);
+  }
+  int c = 0;
+  ncclKern_t func;
+  while (1) {
+    if (tid < coll->nThreads) {
+      // Ack the coll has been loaded and can be reused.
+      if (tid == 0) ring->devCollectives[index].active = 0;
 
-//    if (coll->active == 0) { if (tid == 0) printf("Exiting, active error\n"); }
+      func = coll->ll ?
+          ncclFuncsLL            [coll->coll][coll->redop][coll->dtype]:
+          ncclFuncs[NTHREADS_SET][coll->coll][coll->redop][coll->dtype];
+      func(&coll->args);
+    }
 
-    ncclKern_t func = coll->ll ?
-        ncclFuncsLL            [coll->coll][coll->redop][coll->dtype]:
-        ncclFuncs[NTHREADS_SET][coll->coll][coll->redop][coll->dtype];
+    index = (index + 1) % NCCL_MAX_OPS;
 
-    func(&coll->args);
+    if (coll->active == 2) {
+      if (tid == 0) ring->collFifoHead = index;
+      return;
+    }
 
-    // Ack the completion of the function
-    if (tid == 0) collPtr->active = 0;
+    struct ncclColl* nextColl = ring->devCollectives+index;
+    coll = localColl+bid;
+    load_coll(coll, nextColl, sizeof(struct ncclColl), tid);
+    c++;
   }
 }
 
-__global__ void ncclKernel64 (struct KernelArgs args) { ncclKernel<0>(args); }
-__global__ void ncclKernel128(struct KernelArgs args) { ncclKernel<1>(args); }
-__global__ void ncclKernel256(struct KernelArgs args) { ncclKernel<2>(args); }
-__global__ void ncclKernel512(struct KernelArgs args) { ncclKernel<3>(args); }
+__global__ void ncclKernel64 (struct ncclColl firstColl) { ncclKernel<0>(firstColl); }
+__global__ void ncclKernel128(struct ncclColl firstColl) { ncclKernel<1>(firstColl); }
+__global__ void ncclKernel256(struct ncclColl firstColl) { ncclKernel<2>(firstColl); }
+__global__ void ncclKernel512(struct ncclColl firstColl) { ncclKernel<3>(firstColl); }
 

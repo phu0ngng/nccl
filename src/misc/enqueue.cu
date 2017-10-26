@@ -48,8 +48,15 @@ ncclResult_t ncclCpuBarrierCheckin(ncclComm_t comm) {
   params->blockDim.x = comm->collNThreads; params->blockDim.y = params->blockDim.z = 1;
   params->gridDim.x = comm->collNBlocks; params->gridDim.y = params->gridDim.z = 1;
   params->args = &comm->argsptr;
-  params->sharedMem = sizeof(struct ncclComm);
+  params->sharedMem = sizeof(struct ncclColl)*MAXRINGS;
   params->stream = comm->ncclStream;
+  // Set active = 2 for last operation
+  for (int r=0; r<comm->collNBlocks; r++) {
+    struct ncclRing* ring = comm->rings+r;
+    ring->collectives[(ring->collStart+ring->collCount-1)%NCCL_MAX_OPS].active = 2;
+  }
+  // Pass the first operation as argument to reduce latency
+  memcpy(&comm->args, comm->rings[0].collectives+comm->rings[0].collStart, sizeof(struct ncclColl));
 
   if (comm->launchMode == ncclComm::GROUP) {
     // Enqueue stream dependency
@@ -101,11 +108,13 @@ ncclResult_t ncclCpuBarrierWait(ncclComm_t comm) {
     CUDACHECK(cudaEventRecord(comm->doneEvent, comm->userStream));
     comm->ncclStream = comm->userStream;
   }
-  comm->args.nColls = 0;
+  for (int r=0; r<comm->collNBlocks; r++) {
+    struct ncclRing* ring = comm->rings+r;
+    ring->collStart = ring->collFifoTail;
+    ring->collCount = 0;
+  }
   comm->collNThreads = 0;
   comm->collNBlocks = 0;
-  comm->collFifoTail = (ROUNDUP(comm->collFifoTail, 4)) % NCCL_MAX_OPS;
-  comm->args.startColl = comm->collFifoTail;
   NCCLCHECK(transportStartProxies(comm));
   return ncclSuccess;
 }

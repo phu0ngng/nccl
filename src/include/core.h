@@ -124,14 +124,19 @@ struct ncclRing {
   // devices. Ordered from current device.
   int* userRanks;
   int* devUserRanks;
+
+  // Operation list for aggregation
+  struct ncclColl* collectives;
+  struct ncclColl* devCollectives;
+  int collStart;
+  int collCount;
+  int collFifoHead; // Only used by GPU
+  int collFifoTail; // Only used by CPU
 };
 
-struct KernelArgs {
-  struct ncclColl* colls;
-  int startColl;
-  int nColls;
-};
-
+/* CollectiveArgs + ncclColl are to be a power of two, currently 64 bytes, */
+/* to make sure reads to host from the CUDA kernel are aligned. */
+/* Make sure to adjust padding at the end of ncclColl. */
 struct CollectiveArgs {
   struct ncclComm* comm;
   uint64_t opCount;
@@ -145,16 +150,24 @@ struct CollectiveArgs {
   int root;
   int nRings;
 };
-
 struct ncclColl {
+  /* Lines 0-5 */
   struct CollectiveArgs args;
+
+  /* Line 6 */
   uint16_t nThreads;
-  uint8_t  ring;
+
   uint8_t  coll;
   uint8_t  redop;
+
   uint8_t  dtype;
   uint8_t  ll;
+
   uint8_t  active;
+  uint8_t  pad0;
+
+  /* Line 7 */
+  uint64_t pad1;
 };
 
 struct ncclComm {
@@ -193,15 +206,12 @@ struct ncclComm {
   struct cudaLaunchParams * intraParams;
   int* intraCudaDevs;
   int* intraCGMode; // Whether we can use CUDA9 CGMD or not
-  struct KernelArgs args;
+  struct ncclColl args;
   void* argsptr;
 
   // List of operations to perform by the CUDA kernel
   int collNThreads;
   int collNBlocks;
-  struct ncclColl* collectives;
-  struct ncclColl* devCollectives;
-  int collFifoTail;
 };
 
 #define DIVUP(x, y) \

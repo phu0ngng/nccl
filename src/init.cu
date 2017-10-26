@@ -143,12 +143,6 @@ static ncclResult_t commAlloc(ncclComm_t* comret, int ndev, int rank) {
 
   comm->argsptr = &comm->args;
 
-  comm->collectives = (struct ncclColl*)malloc(sizeof(struct ncclColl)*NCCL_MAX_OPS);
-  memset(comm->collectives, 0, sizeof(struct ncclColl)*NCCL_MAX_OPS);
-  CUDACHECK(cudaHostRegister(comm->collectives, sizeof(struct ncclColl)*NCCL_MAX_OPS, cudaHostRegisterMapped));
-  CUDACHECK(cudaHostGetDevicePointer(&comm->devCollectives, comm->collectives, 0));
-  comm->args.colls = comm->devCollectives;
-
   *comret = comm;
   return ncclSuccess;
 }
@@ -266,6 +260,13 @@ static ncclResult_t setupRing(struct ncclComm* comm, struct ncclRing* ring, int 
   }
   int prev = ring->userRanks[nranks-1];
   int next = ring->userRanks[1];
+
+  // Setup aggregated operations
+  static_assert(sizeof(struct ncclColl) == 64, "ncclColl should be 64 bytes");
+  ring->collectives = (struct ncclColl*)malloc(sizeof(struct ncclColl)*NCCL_MAX_OPS);
+  memset(ring->collectives, 0, sizeof(struct ncclColl)*NCCL_MAX_OPS);
+  CUDACHECK(cudaHostRegister(ring->collectives, sizeof(struct ncclColl)*NCCL_MAX_OPS, cudaHostRegisterMapped));
+  CUDACHECK(cudaHostGetDevicePointer(&ring->devCollectives, ring->collectives, 0));
 
   setupSendRecv(ring);
   NCCLCHECK(selectTransport<0>(allInfo+rank, allInfo+prev, connect+0, &ring->recv.transport, ring));

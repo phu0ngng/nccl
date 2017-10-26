@@ -548,6 +548,8 @@ void BenchTime(struct threadArgs_t* args, ncclDataType_t type, ncclRedOp_t op, i
 
   Barrier(args);
 
+  if (warmup) return;
+
   if (datacheck) { 
       InitSend(args, type, op, root, in_place, args->thread == 0 ? 1 : 0);
       InitRecvResult(args, type, op, root, in_place, args->thread == 0 ? 1 : 0);
@@ -568,8 +570,6 @@ void BenchTime(struct threadArgs_t* args, ncclDataType_t type, ncclRedOp_t op, i
 #else
      maxDelta = -1.0;
 #endif
-
-  if (warmup) return;
 
   //aggregate delta from all threads and procs
   Barrier(args);
