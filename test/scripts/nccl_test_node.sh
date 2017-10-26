@@ -49,7 +49,7 @@ if [ "$mode" == "dlfw" ] && [ "$gpumodel" == "P100" ]; then
   $SHDIR/caffe2.sh $gpumodel $mode
   $SHDIR/cntk.sh $gpumodel $mode
   #$SHDIR/tensorflow.sh $gpumodel $mode
-  #$SHDIR/mxnet.sh $gpumodel $mode
+  $SHDIR/mxnet.sh $gpumodel $mode
   $SHDIR/pytorch.sh $gpumodel $mode
 elif [[ "$mode" == *"mpi"* ]] || [[ "$mode" == *"multinode"* ]]; then
   # test (multi processes)
