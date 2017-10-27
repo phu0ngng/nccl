@@ -5,6 +5,7 @@
  ************************************************************************/
 
 #include "core.h"
+#include "ring.h"
 #include "env.h"
 #include "nvmlwrap.h"
 //#include "ibvwrap.h"
@@ -96,15 +97,8 @@ static ncclResult_t commFree(ncclComm_t comm) {
 
   CUDACHECK(cudaFree(comm->devComm));
 
-  for (int ring=0; ring<comm->nRings; ring++) {
-    NCCLCHECK(comm->rings[ring].send.transport->send.free(comm->rings[ring].send.transportResources));
-    NCCLCHECK(transportDestroyProxy(&comm->rings[ring].send));
-    NCCLCHECK(comm->rings[ring].recv.transport->recv.free(comm->rings[ring].recv.transportResources));
-    NCCLCHECK(transportDestroyProxy(&comm->rings[ring].recv));
-    CUDACHECK(cudaFree(comm->rings[ring].devMem));
-    free(comm->rings[ring].userRanks);
-    CUDACHECK(cudaFree(comm->rings[ring].devUserRanks));
-  }
+  for (int ring=0; ring<comm->nRings; ring++)
+    NCCLCHECK(freeRing(comm->rings+ring));
 
   if (comm->doneEvent != NULL)
     CUDACHECK(cudaEventDestroy(comm->doneEvent));
@@ -197,36 +191,27 @@ static ncclResult_t selectTransport(struct ncclInfo* myInfo, struct ncclInfo* pe
   return ncclInternalError;
 }
 
-static ncclResult_t setupSendRecv(struct ncclRing* ring) {
-  const char* str = getenv("NCCL_BUFFSIZE");
-  int buffSize;
-  if (str != NULL) {
-    errno = 0;
-    buffSize = strtol(str, NULL, 10);
-    if (errno == ERANGE || buffSize == 0) {
-      INFO("invalid NCCL_BUFFSIZE: %s, using default %lu",
-          str, DEFAULT_BUFFER_SIZE_BYTES);
-      buffSize = DEFAULT_BUFFER_SIZE_BYTES;
+static ncclResult_t setupRing(struct ncclComm* comm, int ringid, int rank, int nranks, int* ringRanks, struct ncclInfo* allInfo, struct ncclConnect* connect) { 
+  NCCLCHECK(initRing(comm, ringid));
+
+  struct ncclRing* ring = comm->rings+ringid;
+  // Reorganize ranks to start with rank.
+  int shift;
+  for (shift = 0; shift<nranks; shift++) {
+    if (ringRanks[shift] == rank) {
+      break;
     }
-  } else {
-    buffSize = DEFAULT_BUFFER_SIZE_BYTES;
   }
-  ring->buffSize = buffSize;
-  const int size = ring->devMemSize = offsetof(struct ncclSendRecvMem, buff)+buffSize;
-  struct ncclSendRecvMem* mem;
-  CUDACHECK(cudaMalloc(&mem, size));
-  CUDACHECK(cudaMemset(mem, 0, size));
-  ring->devMem = mem;
-  ring->recv.conn.buff = mem->buff;
-  ring->recv.conn.llBuff = mem->llBuff;
-  ring->recv.conn.tail = &mem->tail;
-  ring->recv.conn.opCount = &mem->opCount;
-  ring->recv.conn.direct = 0;
-  ring->send.conn.head = &mem->head;
-  ring->send.conn.llHead = &mem->llHead;
-  ring->send.conn.direct = 0;
-  ring->send.conn.llStep = 0;
-  ring->send.conn.llLastCleaning = 0;
+  for (int i=0; i<nranks; i++) {
+    ring->userRanks[i] = ringRanks[(i+shift)%nranks];
+  }
+  int prev = ring->userRanks[nranks-1];
+  int next = ring->userRanks[1];
+
+  NCCLCHECK(selectTransport<0>(allInfo+rank, allInfo+prev, connect+0, &ring->recv.transport, ring));
+  NCCLCHECK(selectTransport<1>(allInfo+rank, allInfo+next, connect+1, &ring->send.transport, ring));
+  NCCLCHECK(transportCreateProxy(0, ring, comm));
+  NCCLCHECK(transportCreateProxy(1, ring, comm));
   return ncclSuccess;
 }
 
@@ -241,38 +226,6 @@ static ncclResult_t fillConnect(struct ncclInfo* allInfo, int nranks, int rank, 
       }
     }
   }
-  return ncclSuccess;
-}
-
-static ncclResult_t setupRing(struct ncclComm* comm, struct ncclRing* ring, int ringid, int rank, int nranks, int* ringRanks, struct ncclInfo* allInfo, struct ncclConnect* connect) { 
-  ring->id = ringid;
-  // Reorganize ranks to start with rank.
-  int shift;
-  for (shift = 0; shift<nranks; shift++) {
-    if (ringRanks[shift] == rank) {
-      break;
-    }
-  }
-  CUDACHECK(cudaMalloc(&ring->devUserRanks, nranks*sizeof(int)));
-  ring->userRanks = (int*)malloc(nranks*sizeof(int));
-  for (int i=0; i<nranks; i++) {
-    ring->userRanks[i] = ringRanks[(i+shift)%nranks];
-  }
-  int prev = ring->userRanks[nranks-1];
-  int next = ring->userRanks[1];
-
-  // Setup aggregated operations
-  static_assert(sizeof(struct ncclColl) == 64, "ncclColl should be 64 bytes");
-  ring->collectives = (struct ncclColl*)malloc(sizeof(struct ncclColl)*NCCL_MAX_OPS);
-  memset(ring->collectives, 0, sizeof(struct ncclColl)*NCCL_MAX_OPS);
-  CUDACHECK(cudaHostRegister(ring->collectives, sizeof(struct ncclColl)*NCCL_MAX_OPS, cudaHostRegisterMapped));
-  CUDACHECK(cudaHostGetDevicePointer(&ring->devCollectives, ring->collectives, 0));
-
-  setupSendRecv(ring);
-  NCCLCHECK(selectTransport<0>(allInfo+rank, allInfo+prev, connect+0, &ring->recv.transport, ring));
-  NCCLCHECK(selectTransport<1>(allInfo+rank, allInfo+next, connect+1, &ring->send.transport, ring));
-  NCCLCHECK(transportCreateProxy(0, ring, comm));
-  NCCLCHECK(transportCreateProxy(1, ring, comm));
   return ncclSuccess;
 }
 
@@ -473,7 +426,7 @@ static ncclResult_t initTransportsRank(struct ncclComm* comm, ncclUniqueId* comm
     int* ringRanks = rings+r*nranks;
     struct ncclRing *ring = comm->rings+r;
     struct ncclConnect connect[2];
-    NCCLCHECK(setupRing(comm, ring, r, rank, nranks, ringRanks, allInfo, connect));
+    NCCLCHECK(setupRing(comm, r, rank, nranks, ringRanks, allInfo, connect));
     NCCLCHECK(bootstrapRingExchange(commState, connect, ring->userRanks[nranks-1], ring->userRanks[1], sizeof(struct ncclConnect)));
     NCCLCHECK(ring->send.transport->send.connect(connect+1, &ring->send));
     NCCLCHECK(ring->recv.transport->recv.connect(connect+0, &ring->recv));
@@ -622,8 +575,7 @@ static ncclResult_t initTransportsAll(struct ncclComm** comms, const int* devs, 
     int* ringRanks = rings+r*nranks;
     for (int rank=0; rank<nranks; rank++) {
       CUDACHECK(cudaSetDevice(devs[rank]));
-      struct ncclRing *ring = comms[rank]->rings+r;
-      NCCLCHECK(setupRing(comms[rank], ring, r, rank, nranks, ringRanks, allInfo, connect+2*rank));
+      NCCLCHECK(setupRing(comms[rank], r, rank, nranks, ringRanks, allInfo, connect+2*rank));
     }
     // RingExchange connect information
     for (int rank=0; rank<nranks; rank++) {
