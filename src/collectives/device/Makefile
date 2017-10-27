@@ -11,6 +11,9 @@ LIBOBJ     := $(patsubst %.cu,$(OBJDIR)/%_sum.o, $(LIBSRCFILES)) \
               $(patsubst %.cu,$(OBJDIR)/%_min.o, $(LIBSRCFILES)) \
               $(patsubst %.cu,$(OBJDIR)/%_max.o, $(LIBSRCFILES)) \
               $(OBJDIR)/kernels.o
+
+LIBSRCFILES += kernels.cu
+
 DEPFILES   := $(patsubst %.cu, $(OBJDIR)/%.d, $(LIBSRCFILES))
 STATICLIB  := $(OBJDIR)/colldevice.a
 DEVOBJ     := $(OBJDIR)/devlink.o
