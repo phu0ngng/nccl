@@ -351,6 +351,15 @@ void* waitForNonNullPtr(void* p) {
   return (void*)*ptr;
 }
 
+ncclResult_t initParams(struct ncclComm* comm) {
+  struct cudaLaunchParams* params = comm->myParams = comm->intraParams+comm->intraRank;
+  params->args = &comm->argsptr;
+  params->sharedMem = sizeof(struct ncclColl)*MAXRINGS;
+  params->blockDim.x = 0; params->blockDim.y = params->blockDim.z = 1;
+  params->gridDim.x = 0; params->gridDim.y = params->gridDim.z = 1;
+  return ncclSuccess;
+}
+
 // Allocate/Set Intra Structures and set CG options
 ncclResult_t ncclCommSetIntra(struct ncclComm* comm, int rank, int ranks, struct ncclComm* comm0) {
   comm->intraRank = rank;
@@ -375,6 +384,7 @@ ncclResult_t ncclCommSetIntra(struct ncclComm* comm, int rank, int ranks, struct
     comm->intraCGMode = (int*)waitForNonNullPtr(&comm0->intraCGMode);
   }
   comm->intraCudaDevs[comm->intraRank] = comm->cudaDev;
+  NCCLCHECK(initParams(comm));
 
   int cgMdLaunch = 0;
 
@@ -385,7 +395,7 @@ ncclResult_t ncclCommSetIntra(struct ncclComm* comm, int rank, int ranks, struct
     comm->launchMode = ncclComm::PARALLEL;
   }
   if (comm->launchMode == ncclComm::GROUP) {
-    CUDACHECK(cudaStreamCreateWithFlags(&comm->ncclStream, cudaStreamNonBlocking));
+    CUDACHECK(cudaStreamCreateWithFlags(&comm->myParams->stream, cudaStreamNonBlocking));
 #if __CUDACC_VER_MAJOR__ >= 9
     // Check whether the GPU supports Cooperative Group Multi Device Launch
     (void) cudaDeviceGetAttribute(&cgMdLaunch, cudaDevAttrCooperativeMultiDeviceLaunch, comm->cudaDev);
@@ -727,7 +737,7 @@ ncclResult_t ncclCommDestroy(ncclComm_t comm) {
   }
 
   if (comm->launchMode == ncclComm::GROUP) {
-    CUDACHECK(cudaStreamDestroy(comm->ncclStream));
+    CUDACHECK(cudaStreamDestroy(comm->myParams->stream));
   }
 
   commFree(comm);

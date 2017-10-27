@@ -27,45 +27,42 @@ ncclResult_t ncclLaunchCooperativeKernelMultiDevice(struct cudaLaunchParams *par
   return ncclSuccess;
 }
 
-ncclResult_t ncclCpuBarrierCheckin(ncclComm_t comm) {
-  if (comm->nRanks == 1) return ncclSuccess;
-  /* Setup launch params */
-  struct cudaLaunchParams* params = comm->intraParams+comm->intraRank;
-  switch (comm->collNThreads) {
+ncclResult_t setupLaunch(struct ncclComm* comm, struct cudaLaunchParams* params) {
+  switch (params->blockDim.x) {
     case 64 :
-    case 65 :
-     params->func = (void*)ncclKernel64; break;
-    case 129 :
-     params->func = (void*)ncclKernel128; break;
-    case 257 :
-     params->func = (void*)ncclKernel256; break;
-    case 513 :
-     params->func = (void*)ncclKernel512; break;
+    case 65 :  params->func = (void*)ncclKernel64; break;
+    case 129 : params->func = (void*)ncclKernel128; break;
+    case 257 : params->func = (void*)ncclKernel256; break;
+    case 513 : params->func = (void*)ncclKernel512; break;
     default:
-     WARN("Invalid nthread count %d", comm->collNThreads);
+     WARN("Invalid nthread count %d", params->blockDim.x);
      return ncclInternalError;
   }
-  params->blockDim.x = comm->collNThreads; params->blockDim.y = params->blockDim.z = 1;
-  params->gridDim.x = comm->collNBlocks; params->gridDim.y = params->gridDim.z = 1;
-  params->args = &comm->argsptr;
-  params->sharedMem = sizeof(struct ncclColl)*MAXRINGS;
-  params->stream = comm->ncclStream;
   // Set active = 2 for last operation
-  for (int r=0; r<comm->collNBlocks; r++) {
+  for (int r=0; r<params->gridDim.x; r++) {
     struct ncclRing* ring = comm->rings+r;
     ring->collectives[(ring->collStart+ring->collCount-1)%NCCL_MAX_OPS].active = 2;
   }
   // Pass the first operation as argument to reduce latency
   memcpy(&comm->args, comm->rings[0].collectives+comm->rings[0].collStart, sizeof(struct ncclColl));
+  return ncclSuccess;
+}
+
+ncclResult_t ncclCpuBarrierCheckin(struct ncclComm* comm) {
+  if (comm->nRanks == 1) return ncclSuccess;
+  struct cudaLaunchParams* params = comm->myParams;
+
+  NCCLCHECK(setupLaunch(comm, params));
 
   if (comm->launchMode == ncclComm::GROUP) {
     // Enqueue stream dependency
     CUDACHECK(cudaEventRecord(comm->doneEvent, comm->userStream));
-    CUDACHECK(cudaStreamWaitEvent(comm->ncclStream, comm->doneEvent, 0));
+    CUDACHECK(cudaStreamWaitEvent(params->stream, comm->doneEvent, 0));
   } else {
-    if (comm->userStream != comm->ncclStream) {
+    if (comm->userStream != params->stream) {
       CUDACHECK(cudaStreamWaitEvent(comm->userStream, comm->doneEvent, 0));
     }
+    params->stream = comm->userStream;
   }
   // Notify I'm ready
   volatile int* ptr = (volatile int*)(comm->intraBarrier+comm->intraPhase);
@@ -89,6 +86,7 @@ ncclResult_t ncclCpuBarrierCheckin(ncclComm_t comm) {
   }
   return ncclSuccess;
 }
+
 ncclResult_t ncclCpuBarrierWait(ncclComm_t comm) {
   if (comm->nRanks == 1) return ncclSuccess;
   // We can't print the CG mode before the first barrier happened.
@@ -99,22 +97,20 @@ ncclResult_t ncclCpuBarrierWait(ncclComm_t comm) {
   volatile int* ptr = (volatile int*)(comm->intraBarrier+comm->intraPhase);
   while (*ptr < comm->intraRanks) pthread_yield();
   comm->intraPhase ^= 1;
+  struct cudaLaunchParams *params = comm->myParams;
   if (comm->launchMode == ncclComm::GROUP) {
-    CUDACHECK(cudaEventRecord(comm->doneEvent, comm->ncclStream));
+    CUDACHECK(cudaEventRecord(comm->doneEvent, params->stream));
     CUDACHECK(cudaStreamWaitEvent(comm->userStream, comm->doneEvent, 0));
   } else {
-    struct cudaLaunchParams *params = comm->intraParams+comm->intraRank;
-    CUDACHECK(cudaLaunchKernel(params->func, params->gridDim, params->blockDim, params->args, params->sharedMem, comm->userStream));
+    CUDACHECK(cudaLaunchKernel(params->func, params->gridDim, params->blockDim, params->args, params->sharedMem, params->stream));
     CUDACHECK(cudaEventRecord(comm->doneEvent, comm->userStream));
-    comm->ncclStream = comm->userStream;
   }
-  for (int r=0; r<comm->collNBlocks; r++) {
+  for (int r=0; r<params->gridDim.x; r++) {
     struct ncclRing* ring = comm->rings+r;
     ring->collStart = ring->collFifoTail;
     ring->collCount = 0;
   }
-  comm->collNThreads = 0;
-  comm->collNBlocks = 0;
+  params->gridDim.x = params->blockDim.x = 0;
   NCCLCHECK(transportStartProxies(comm));
   return ncclSuccess;
 }

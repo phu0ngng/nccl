@@ -176,9 +176,7 @@ struct ncclComm {
   int cudaDev; // my cuda device index
 
   enum { GROUP, PARALLEL } launchMode;
-  cudaStream_t userStream; // User provided stream for the current collective
-  cudaStream_t ncclStream; // Group Mode : nccl stream
-                           // Parallel mode : prev stream
+  cudaStream_t userStream;
   cudaEvent_t doneEvent;
 
   // Counter to make sure collectives match (needed for bcast/reduce
@@ -204,14 +202,11 @@ struct ncclComm {
 
   // Storage for deferred intra-process launch
   struct cudaLaunchParams * intraParams;
+  struct cudaLaunchParams *myParams;
   int* intraCudaDevs;
   int* intraCGMode; // Whether we can use CUDA9 CGMD or not
   struct ncclColl args;
   void* argsptr;
-
-  // List of operations to perform by the CUDA kernel
-  int collNThreads;
-  int collNBlocks;
 };
 
 #define DIVUP(x, y) \

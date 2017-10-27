@@ -80,9 +80,9 @@ static __inline__ int ncclTypeSize(ncclDataType_t type) {
 static ncclResult_t saveKernel(int coll, const void* sendbuff, void* recvbuff, size_t count,
     ncclDataType_t dtype, ncclRedOp_t op, int root, ncclComm_t comm, cudaStream_t stream, int nbytes, int ll) {
   int nBlocks = ll ? 1 : LIMIT_NRINGS(nbytes, comm->nRings);
-  comm->collNBlocks = max(comm->collNBlocks, nBlocks);
+  comm->myParams->gridDim.x = max(comm->myParams->gridDim.x, nBlocks);
   int nThreads = ll ? LL_NTHREADS : comm->nThreads+1;
-  comm->collNThreads = max(comm->collNThreads, nThreads);
+  comm->myParams->blockDim.x = max(comm->myParams->blockDim.x, nThreads);
   comm->userStream = stream;
   for (int r=0; r<nBlocks; r++) {
     struct ncclRing* ring = comm->rings+r;
