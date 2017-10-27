@@ -8,7 +8,6 @@
 #include "common_coll.h"
 #include "enqueue.h"
 #include "collectives.h"
-#include "all_gather.h"
 
 ncclResult_t ncclAllGatherFunc(const void* sendbuff, void* recvbuff, size_t count,
     ncclDataType_t datatype, ncclRedOp_t op, int root, ncclComm_t comm, cudaStream_t stream) {
@@ -21,7 +20,7 @@ ncclResult_t ncclAllGatherFunc(const void* sendbuff, void* recvbuff, size_t coun
       NCCLCHECK(transportSaveProxies(1, NUM_LL_CHUNKS, comm->nRanks-1, 1, 2*nbytes, proxyPatternRing, comm, 1));
       NCCLCHECK(saveKernel(ncclCollAllGather, sendbuff, recvbuff, count, datatype, op, root, comm, stream, nbytes*comm->nRanks, 1));
     } else {
-      NCCLCHECK(transportSaveProxies(NUM_SUBSTEPS, NUM_BUFCHUNKS, comm->nRanks-1, 1, nbytes, proxyPatternRing, comm, 0));
+      NCCLCHECK(transportSaveProxies(ALLGATHER_SUBSTEPS, ALLGATHER_BUFCHUNKS, comm->nRanks-1, 1, nbytes, proxyPatternRing, comm, 0));
       NCCLCHECK(saveKernel(ncclCollAllGather, sendbuff, recvbuff, count, datatype, op, root, comm, stream, nbytes*comm->nRanks, 0));
       comm->opCount++;
     }

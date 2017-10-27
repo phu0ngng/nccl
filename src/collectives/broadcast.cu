@@ -8,7 +8,6 @@
 #include "common_coll.h"
 #include "enqueue.h"
 #include "collectives.h"
-#include "broadcast.h"
 
 ncclResult_t ncclBroadcastFunc(const void* sendbuff, void* recvbuff, const size_t count,
     ncclDataType_t datatype, ncclRedOp_t op, int root, ncclComm_t comm, cudaStream_t stream) {
@@ -21,7 +20,7 @@ ncclResult_t ncclBroadcastFunc(const void* sendbuff, void* recvbuff, const size_
       NCCLCHECK(transportSaveProxies(1, NUM_LL_CHUNKS, 1, 1, 2*nbytes, proxyPatternFrom(root), comm, 1));
       NCCLCHECK(saveKernel(ncclCollBcast, sendbuff, recvbuff, count, datatype, op, root, comm, stream, nbytes, 1));
     } else {
-      NCCLCHECK(transportSaveProxies(NUM_SUBSTEPS, NUM_BUFCHUNKS, 1, 1, nbytes, proxyPatternFrom(root), comm, 0));
+      NCCLCHECK(transportSaveProxies(BROADCAST_SUBSTEPS, BROADCAST_BUFCHUNKS, 1, 1, nbytes, proxyPatternFrom(root), comm, 0));
       NCCLCHECK(saveKernel(ncclCollBcast, sendbuff, recvbuff, count, datatype, op, root, comm, stream, nbytes, 0));
       comm->opCount++;
     }

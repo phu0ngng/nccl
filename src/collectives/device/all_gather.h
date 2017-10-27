@@ -6,9 +6,7 @@
 
 #include "core.h"
 #include "primitives.h"
-
-#define NUM_SUBSTEPS 4
-#define NUM_BUFCHUNKS 2
+#include "collectives.h"
 
 // Increase Step and poffset/noffset for buffer sync
 #define NEXT_STEP \
@@ -21,23 +19,26 @@
   size = ((size + (align) - 1) / (align)) * (align);
 
 template<int THREADS, int UNROLL, class FUNC, typename T>
-__device__ void ncclReduceScatterKernel(struct CollectiveArgs* args) {
+__device__ void ncclAllGatherKernel(struct CollectiveArgs* args) {
   const int tid = threadIdx.x;
   const int bid = blockIdx.x;
+  __shared__ T* sharedNextOutput;
   struct ncclComm* comm = args->comm;
   struct ncclRing* ring = comm->rings+bid;
+  int prevdirect = ring->recv.conn.direct;
+  int nextdirect = ring->send.conn.direct;
 
-  WaitFlag waitDoneFromNext(ring->send.conn.head, NUM_BUFCHUNKS*NUM_SUBSTEPS);
-  WaitFlag waitReadyFromPrev(ring->recv.conn.tail, NUM_SUBSTEPS);
-  PostFlag postDoneToPrev(ring->recv.conn.head, NUM_SUBSTEPS, NULL, 0);
-  PostFlag postReadyToNext(ring->send.conn.tail, 0, ring->send.conn.fifo, NUM_BUFCHUNKS*NUM_SUBSTEPS);
+  WaitFlag waitDoneFromNext(ring->send.conn.head, ALLGATHER_BUFCHUNKS*ALLGATHER_SUBSTEPS);
+  WaitFlag waitReadyFromPrev(ring->recv.conn.tail, ALLGATHER_SUBSTEPS);
+  PostFlag postDoneToPrev(ring->recv.conn.head, ALLGATHER_SUBSTEPS, NULL, 0);
+  PostFlag postReadyToNext(ring->send.conn.tail, 0, ring->send.conn.fifo, ALLGATHER_BUFCHUNKS*ALLGATHER_SUBSTEPS);
 
-  typedef Primitives<THREADS, UNROLL, NUM_SUBSTEPS, T, FUNC> Prims;
+  typedef Primitives<THREADS, UNROLL, ALLGATHER_SUBSTEPS, T> Prims;
 
   const ssize_t size = args->N;
   const int nranks = comm->nRanks;
   const int buffSize = ring->buffSize / sizeof(T);
-  const int sliceSize = buffSize / NUM_BUFCHUNKS;
+  const int sliceSize = buffSize / ALLGATHER_BUFCHUNKS;
 
   if (tid == 0) {
     // Update in case we skipped some collectives
@@ -45,6 +46,15 @@ __device__ void ncclReduceScatterKernel(struct CollectiveArgs* args) {
     // Wait for next to be ready
     WaitFlag waitOpCountNext(ring->send.conn.opCount, 0);
     waitOpCountNext.wait(args->opCount);
+    if (prevdirect) {
+      *ring->recv.conn.ptrExchange = args->ThisOutput;
+    }
+    if (nextdirect) {
+      void* volatile* ptr = &(ring->devMem->ptrExchange);
+      while (*ptr == nullptr);
+      sharedNextOutput = (T*)*ptr;
+      *ptr = nullptr;
+    }
   }
   __syncthreads();
 
@@ -62,59 +72,93 @@ __device__ void ncclReduceScatterKernel(struct CollectiveArgs* args) {
     ALIGN_SIZE(chunkSize, THREADS*sizeof(uint64_t)/sizeof(T));
     ssize_t chunkOffset = gridOffset + bid*chunkSize;
 
-    /////////////// begin ReduceScatter steps ///////////////
+    /////////////// begin AllGather steps ///////////////
     ssize_t offset;
     int maxOffset = min(chunkSize, size-chunkOffset);
     int rankDest;
 
     // step 0: push data to next GPU
-    rankDest = ring->devUserRanks[nranks-1];
-    offset = chunkOffset + rankDest * size;
-
-    Prims::Copy(
-        thisInput  + offset,
-        nextOutput + noffset,
-        sliceSize, maxOffset,
-        step,
-        waitDoneFromNext,
-        postReadyToNext);
-
-    NEXT_STEP; // Increases step, poffset, noffset
-
-    // k-2 steps: reduce and copy to next GPU
-    for (int j=2; j<nranks; ++j) {
-      rankDest = ring->devUserRanks[nranks-j];
-      offset = chunkOffset + rankDest * size;
-
-      Prims::Reduce(
-          prevInput  + poffset,
-          thisInput  + offset,
-          nextOutput + noffset,
-          sliceSize, maxOffset,
-          step,
-          waitDoneFromNext, waitReadyFromPrev,
-          postReadyToNext, postDoneToPrev);
-
-      NEXT_STEP;
-    }
-
-    // step k-1: reduce this buffer and data, which will produce the final
-    // result that we store in this data and push to the next GPU
     rankDest = ring->devUserRanks[0];
     offset = chunkOffset + rankDest * size;
 
-    Prims::Reduce(
-        prevInput  + poffset,
-        thisInput  + offset,
-        thisOutput + chunkOffset,
-        sliceSize, maxOffset,
-        step,
-        waitReadyFromPrev,
-        postDoneToPrev);
+    if (thisInput + chunkOffset == thisOutput + offset) { // In place
+      Prims::Copy(
+          thisInput  + chunkOffset,
+          nextdirect ? (sharedNextOutput + offset) : (nextOutput + noffset),
+          sliceSize, maxOffset,
+          step,
+          waitDoneFromNext,
+          postReadyToNext);
+    } else {
+      Prims::DoubleCopy(
+          thisInput  + chunkOffset,
+          thisOutput + offset,
+	  nextdirect ? (sharedNextOutput + offset) : (nextOutput + noffset),
+          sliceSize, maxOffset,
+          step,
+          waitDoneFromNext,
+          postReadyToNext);
+    }
+
+    NEXT_STEP; // Increases step, poffset, noffset
+
+    // k-2 steps: copy to next GPU
+    if (prevdirect) {
+      for (int j=1; j<nranks-1; ++j) {
+        rankDest = ring->devUserRanks[nranks-j];
+        offset = chunkOffset + rankDest * size;
+
+        Prims::Copy(
+            thisOutput + offset,
+	    nextdirect ? (sharedNextOutput + offset) : (nextOutput + noffset),
+            sliceSize, maxOffset,
+            step,
+            waitDoneFromNext, waitReadyFromPrev,
+            postReadyToNext, postDoneToPrev);
+
+        NEXT_STEP;
+      }
+      Prims::Copy(
+          NULL,
+          NULL,
+          0, 0,
+          step,
+          waitReadyFromPrev,
+          postDoneToPrev);
+    } else {
+      for (int j=1; j<nranks-1; ++j) {
+        rankDest = ring->devUserRanks[nranks-j];
+        offset = chunkOffset + rankDest * size;
+
+        Prims::DoubleCopy(
+            prevInput + poffset,
+            thisOutput + offset,
+	    nextdirect ? (sharedNextOutput + offset) : (nextOutput + noffset),
+            sliceSize, maxOffset,
+            step,
+            waitDoneFromNext, waitReadyFromPrev,
+            postReadyToNext, postDoneToPrev);
+
+        NEXT_STEP;
+      }
+
+      // Make final copy from buffer to dest.
+      rankDest = ring->devUserRanks[1];
+      offset = chunkOffset + rankDest * size;
+
+      // Here we need to copy from buffer to this output.
+      Prims::Copy(
+          prevInput + poffset,
+          thisOutput + offset,
+          sliceSize, maxOffset,
+          step,
+          waitReadyFromPrev,
+          postDoneToPrev);
+    }
   }
 
   if (tid == 0) {
-    waitDoneFromNext.wait(NUM_SUBSTEPS*(step + NUM_BUFCHUNKS));
+    waitDoneFromNext.wait(ALLGATHER_SUBSTEPS*(step + ALLGATHER_BUFCHUNKS));
     *ring->send.conn.head = 0ULL;
     *ring->recv.conn.tail = 0ULL;
     __threadfence_system();
@@ -133,7 +177,7 @@ __device__ void ncclReduceScatterKernel(struct CollectiveArgs* args) {
   step++;
 
 template<int THREADS, int UNUSED, class FUNC, typename T>
-__device__ void ncclReduceScatterLLKernel(struct CollectiveArgs* args) {
+__device__ void ncclAllGatherLLKernel(struct CollectiveArgs* args) {
   const int tid = threadIdx.x;
   const int bid = blockIdx.x;
   struct ncclComm* comm = args->comm;
@@ -163,33 +207,41 @@ __device__ void ncclReduceScatterLLKernel(struct CollectiveArgs* args) {
   union ncclLLFifoLine * nextOutput = (union ncclLLFifoLine *)ring->send.conn.llBuff;
 
   for (ssize_t chunkOffset = 0; chunkOffset < size; chunkOffset += sliceSize) {
-    /////////////// begin ReduceScatter steps ///////////////
+    /////////////// begin AllGather steps ///////////////
     ssize_t offset;
     int maxOffset = min(sliceSize, size-chunkOffset);
     int rankDest;
 
     // step 0: push data to next GPU
-    rankDest = ring->devUserRanks[nranks-1];
+    rankDest = ring->devUserRanks[0];
     offset = chunkOffset + rankDest * size;
 
     WAIT_NEXT;
-    LL::ReduceCopy(
-        thisInput  + offset,
-        nextOutput + noffset,
-        maxOffset, nflag);
+    if (thisInput + chunkOffset == thisOutput + offset) { // In place
+      LL::ReduceCopy(
+          thisInput  + chunkOffset,
+          nextOutput + noffset,
+          maxOffset, nflag);
+    } else {
+      LL::ReduceCopy(
+          thisInput  + chunkOffset,
+          thisOutput + offset,
+          nextOutput + noffset,
+          maxOffset, nflag);
+    }
     POST_SIZE;
 
     NEXT_STEP_LL;
 
-    // k-2 steps: reduce and copy to next GPU
-    for (int j=2; j<nranks; ++j) {
+    // k-2 steps: copy to next GPU
+    for (int j=1; j<nranks-1; ++j) {
       rankDest = ring->devUserRanks[nranks-j];
       offset = chunkOffset + rankDest * size;
 
       WAIT_NEXT;
       LL::ReduceCopy(
-          thisInput  + offset,
           prevInput  + poffset,
+          thisOutput + offset,
           nextOutput + noffset,
           maxOffset, pflag, nflag);
       POST_SIZE;
@@ -198,15 +250,13 @@ __device__ void ncclReduceScatterLLKernel(struct CollectiveArgs* args) {
       NEXT_STEP_LL;
     }
 
-    // step k-1: reduce this buffer and data, which will produce the final
-    // result that we store in this data
-    rankDest = ring->devUserRanks[0];
+    // step k-1: final store
+    rankDest = ring->devUserRanks[1];
     offset = chunkOffset + rankDest * size;
 
     LL::ReduceCopy(
-        thisInput  + offset,
         prevInput  + poffset,
-        thisOutput + chunkOffset,
+        thisOutput + offset,
         maxOffset, pflag);
     ACK_PREV;
   }

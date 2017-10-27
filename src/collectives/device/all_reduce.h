@@ -6,11 +6,7 @@
 
 #include "core.h"
 #include "primitives.h"
-
-#define NUM_SUBSTEPS 2
-
-// !!! Don't change that or the last sync will block
-#define NUM_BUFCHUNKS 2
+#include "collectives.h"
 
 // Increase Step and poffset/noffset for buffer sync
 #define NEXT_STEP \
@@ -32,18 +28,18 @@ __device__ void ncclAllReduceKernel(struct CollectiveArgs* args) {
   int prevdirect = ring->recv.conn.direct;
   int nextdirect = ring->send.conn.direct;
 
-  WaitFlag waitDoneFromNext(ring->send.conn.head, NUM_BUFCHUNKS*NUM_SUBSTEPS);
-  WaitFlag waitReadyFromPrev(ring->recv.conn.tail, NUM_SUBSTEPS);
-  PostFlag postDoneToPrev(ring->recv.conn.head, NUM_SUBSTEPS, NULL, 0);
-  PostFlag postReadyToNext(ring->send.conn.tail, 0, ring->send.conn.fifo, NUM_BUFCHUNKS*NUM_SUBSTEPS);
+  WaitFlag waitDoneFromNext(ring->send.conn.head, ALLREDUCE_BUFCHUNKS*ALLREDUCE_SUBSTEPS);
+  WaitFlag waitReadyFromPrev(ring->recv.conn.tail, ALLREDUCE_SUBSTEPS);
+  PostFlag postDoneToPrev(ring->recv.conn.head, ALLREDUCE_SUBSTEPS, NULL, 0);
+  PostFlag postReadyToNext(ring->send.conn.tail, 0, ring->send.conn.fifo, ALLREDUCE_BUFCHUNKS*ALLREDUCE_SUBSTEPS);
 
-  typedef Primitives<THREADS, UNROLL, NUM_SUBSTEPS, T, FUNC> Prims;
+  typedef Primitives<THREADS, UNROLL, ALLREDUCE_SUBSTEPS, T, FUNC> Prims;
 
   const ssize_t size = args->N;
   //const int rank = comm->rank;
   const int nranks = comm->nRanks;
   const int buffSize = ring->buffSize / sizeof(T);
-  const int sliceSize = buffSize / NUM_BUFCHUNKS;
+  const int sliceSize = buffSize / ALLREDUCE_BUFCHUNKS;
 
   if (tid == 0) {
     // Update in case we skipped some collectives
@@ -193,7 +189,7 @@ __device__ void ncclAllReduceKernel(struct CollectiveArgs* args) {
 
   if (tid == 0) {
     // Wait for next to have consumed all data before we reset the flag
-    waitDoneFromNext.wait(NUM_SUBSTEPS*(step + NUM_BUFCHUNKS));
+    waitDoneFromNext.wait(ALLREDUCE_SUBSTEPS*(step + ALLREDUCE_BUFCHUNKS));
     *ring->send.conn.head = 0ULL;
     *ring->recv.conn.tail = 0ULL;
     __threadfence_system();

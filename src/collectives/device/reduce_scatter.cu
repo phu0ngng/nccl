@@ -4,6 +4,7 @@
  * See LICENSE.txt for license information
  ************************************************************************/
 
+#include "common.h"
 #include "reduce_scatter.h"
 #include "collectives.h"
 

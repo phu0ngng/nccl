@@ -8,7 +8,6 @@
 #include "common_coll.h"
 #include "enqueue.h"
 #include "collectives.h"
-#include "reduce.h"
 
 ncclResult_t ncclReduceFunc(const void* sendbuff, void* recvbuff, const size_t count,
     ncclDataType_t datatype, ncclRedOp_t op, int root, ncclComm_t comm, cudaStream_t stream) {
@@ -21,7 +20,7 @@ ncclResult_t ncclReduceFunc(const void* sendbuff, void* recvbuff, const size_t c
       NCCLCHECK(transportSaveProxies(1, NUM_LL_CHUNKS, 1, 1, 2*nbytes, proxyPatternTo(root), comm, 1));
       NCCLCHECK(saveKernel(ncclCollReduce, sendbuff, recvbuff, count, datatype, op, root, comm, stream, nbytes, 1));
     } else {
-      NCCLCHECK(transportSaveProxies(NUM_SUBSTEPS, NUM_BUFCHUNKS, 1, 1, nbytes, proxyPatternTo(root), comm, 0));
+      NCCLCHECK(transportSaveProxies(REDUCE_SUBSTEPS, REDUCE_BUFCHUNKS, 1, 1, nbytes, proxyPatternTo(root), comm, 0));
       NCCLCHECK(saveKernel(ncclCollReduce, sendbuff, recvbuff, count, datatype, op, root, comm, stream, nbytes, 0));
       comm->opCount++;
     }

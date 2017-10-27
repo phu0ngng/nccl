@@ -4,7 +4,9 @@
  * See LICENSE.txt for license information
  ************************************************************************/
 
+#include "core.h"
 #include "collectives.h"
+#include "common.h"
 
 typedef void(*ncclKern_t)(struct CollectiveArgs* args);
 

@@ -5,12 +5,8 @@
  ************************************************************************/
 
 #include "core.h"
-#include "common_coll.h"
-#include "enqueue.h"
 #include "primitives.h"
-
-#define NUM_SUBSTEPS 4
-#define NUM_BUFCHUNKS 2
+#include "collectives.h"
 
 // Increase Step and boffset for buffer sync
 #define NEXT_STEP \
@@ -31,16 +27,16 @@ __device__ void ncclBcastKernel(struct CollectiveArgs* args) {
   int prevdirect = ring->recv.conn.direct;
   int nextdirect = ring->send.conn.direct;
 
-  WaitFlag waitDoneFromNext(ring->send.conn.head, (NUM_BUFCHUNKS-1)*NUM_SUBSTEPS);
+  WaitFlag waitDoneFromNext(ring->send.conn.head, (BROADCAST_BUFCHUNKS-1)*BROADCAST_SUBSTEPS);
   WaitFlag waitReadyFromPrev(ring->recv.conn.tail, 0);
   PostFlag postDoneToPrev(ring->recv.conn.head, 0, NULL, 0);
-  PostFlag postReadyToNext(ring->send.conn.tail, 0, ring->send.conn.fifo, NUM_BUFCHUNKS*NUM_SUBSTEPS);
+  PostFlag postReadyToNext(ring->send.conn.tail, 0, ring->send.conn.fifo, BROADCAST_BUFCHUNKS*BROADCAST_SUBSTEPS);
 
-  typedef Primitives<THREADS, UNROLL, NUM_SUBSTEPS, T> Prims;
+  typedef Primitives<THREADS, UNROLL, BROADCAST_SUBSTEPS, T> Prims;
 
   const ssize_t size = args->N;
   const int buffSize = ring->buffSize / sizeof(T);
-  const int sliceSize = buffSize / NUM_BUFCHUNKS;
+  const int sliceSize = buffSize / BROADCAST_BUFCHUNKS;
   const int rank = ring->devUserRanks[0];
   const int nextRank = ring->devUserRanks[1];
   const int root = args->root;
@@ -134,7 +130,7 @@ __device__ void ncclBcastKernel(struct CollectiveArgs* args) {
   if (tid == 0) {
     if (nextRank != root) { 
       // Wait for next to have consumed data before resetting the flag
-      waitDoneFromNext.wait(NUM_SUBSTEPS*(step + NUM_BUFCHUNKS - 1));
+      waitDoneFromNext.wait(BROADCAST_SUBSTEPS*(step + BROADCAST_BUFCHUNKS - 1));
       *ring->send.conn.head = 0ULL;
     }
     *ring->recv.conn.tail = 0ULL;

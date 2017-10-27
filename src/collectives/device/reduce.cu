@@ -4,6 +4,7 @@
  * See LICENSE.txt for license information
  ************************************************************************/
 
+#include "common.h"
 #include "reduce.h"
 #include "collectives.h"
 
