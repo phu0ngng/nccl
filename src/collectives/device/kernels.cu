@@ -42,19 +42,20 @@ typedef void(*ncclKern_t)(struct CollectiveArgs* args);
   NCCL_FUNCS2A(nthreads, ncclReduceScatter), \
   NCCL_FUNCS2A(nthreads, ncclAllReduce) }
 
+/* Always make sure this enum is consistent with the order of the functions in the ncclFuncs array */
+enum { ncclFuncSetLL = 0, ncclFuncSet64 = 1, ncclFuncSet128 = 2, ncclFuncSet256 = 3, ncclFuncSet512 = 4, ncclFuncSetNotFound = 5 };
 static __device__ ncclKern_t ncclFuncs[][ncclCollNcolls][ncclNumOps][ncclNumTypes] = {
+  {
+    NCCL_FUNCS2B(64, ncclBcastLL),
+    NCCL_FUNCS2A(64, ncclReduceLL),
+    NCCL_FUNCS2B(64, ncclAllGatherLL),
+    NCCL_FUNCS2A(64, ncclReduceScatterLL),
+    NCCL_FUNCS2A(64, ncclAllReduceLL)
+  },
   NCCL_FUNCS(64),
   NCCL_FUNCS(128),
   NCCL_FUNCS(256),
   NCCL_FUNCS(512)
-};
-
-static __device__ ncclKern_t ncclFuncsLL[ncclCollNcolls][ncclNumOps][ncclNumTypes] = {
-  NCCL_FUNCS2B(64, ncclBcastLL),
-  NCCL_FUNCS2A(64, ncclReduceLL),
-  NCCL_FUNCS2B(64, ncclAllGatherLL),
-  NCCL_FUNCS2A(64, ncclReduceScatterLL),
-  NCCL_FUNCS2A(64, ncclAllReduceLL)
 };
 
 static __device__ void load_coll(void* dst, void* src, size_t size, int tid) {
@@ -64,8 +65,7 @@ static __device__ void load_coll(void* dst, void* src, size_t size, int tid) {
   __syncthreads();
 }
 
-template <int NTHREADS_SET>
-static __device__ void ncclKernel(struct ncclColl firstColl) {
+__global__ void ncclKernel(struct ncclColl firstColl) {
   int tid = threadIdx.x;
   int bid = blockIdx.x;
   __shared__ struct ncclColl localColl[MAXRINGS];
@@ -86,9 +86,20 @@ static __device__ void ncclKernel(struct ncclColl firstColl) {
       // Ack the coll has been loaded and can be reused.
       if (tid == 0) ring->devCollectives[index].active = 0;
 
-      func = coll->ll ?
-          ncclFuncsLL            [coll->coll][coll->redop][coll->dtype]:
-          ncclFuncs[NTHREADS_SET][coll->coll][coll->redop][coll->dtype];
+      int funcSet =
+         coll->ll       == 1   ? ncclFuncSetLL  :
+        (coll->nThreads == 65  ? ncclFuncSet64  :
+        (coll->nThreads == 129 ? ncclFuncSet128 :
+        (coll->nThreads == 257 ? ncclFuncSet256 :
+        (coll->nThreads == 513 ? ncclFuncSet512 :
+        ncclFuncSetNotFound))));
+
+      if (funcSet == ncclFuncSetNotFound) {
+        if (tid == 0) printf("NCCL Kernel internal error : invalid thread count %d", coll->nThreads);
+        return;
+      }
+
+      func = ncclFuncs[funcSet][coll->coll][coll->redop][coll->dtype];
       func(&coll->args);
     }
 
@@ -105,9 +116,3 @@ static __device__ void ncclKernel(struct ncclColl firstColl) {
     c++;
   }
 }
-
-__global__ void ncclKernel64 (struct ncclColl firstColl) { ncclKernel<0>(firstColl); }
-__global__ void ncclKernel128(struct ncclColl firstColl) { ncclKernel<1>(firstColl); }
-__global__ void ncclKernel256(struct ncclColl firstColl) { ncclKernel<2>(firstColl); }
-__global__ void ncclKernel512(struct ncclColl firstColl) { ncclKernel<3>(firstColl); }
-

@@ -112,9 +112,6 @@ static ncclResult_t saveKernel(int coll, const void* sendbuff, void* recvbuff, s
   return ncclSuccess;
 }
 
-extern __global__ void ncclKernel64 (struct ncclColl firstColl);
-extern __global__ void ncclKernel128(struct ncclColl firstColl);
-extern __global__ void ncclKernel256(struct ncclColl firstColl);
-extern __global__ void ncclKernel512(struct ncclColl firstColl);
+extern __global__ void ncclKernel (struct ncclColl firstColl);
 
 #endif

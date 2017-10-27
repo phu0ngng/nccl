@@ -28,16 +28,6 @@ ncclResult_t ncclLaunchCooperativeKernelMultiDevice(struct cudaLaunchParams *par
 }
 
 ncclResult_t setupLaunch(struct ncclComm* comm, struct cudaLaunchParams* params) {
-  switch (params->blockDim.x) {
-    case 64 :
-    case 65 :  params->func = (void*)ncclKernel64; break;
-    case 129 : params->func = (void*)ncclKernel128; break;
-    case 257 : params->func = (void*)ncclKernel256; break;
-    case 513 : params->func = (void*)ncclKernel512; break;
-    default:
-     WARN("Invalid nthread count %d", params->blockDim.x);
-     return ncclInternalError;
-  }
   // Set active = 2 for last operation
   for (int r=0; r<params->gridDim.x; r++) {
     struct ncclRing* ring = comm->rings+r;
