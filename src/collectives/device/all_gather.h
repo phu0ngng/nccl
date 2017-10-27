@@ -21,10 +21,10 @@
 template<int THREADS, int UNROLL, class FUNC, typename T>
 __device__ void ncclAllGatherKernel(struct CollectiveArgs* args) {
   const int tid = threadIdx.x;
-  const int bid = blockIdx.x;
+  const int bid = args->bid;
   __shared__ T* sharedNextOutput;
   struct ncclComm* comm = args->comm;
-  struct ncclRing* ring = comm->rings+bid;
+  struct ncclRing* ring = comm->rings+blockIdx.x;
   int prevdirect = ring->recv.conn.direct;
   int nextdirect = ring->send.conn.direct;
 
@@ -179,9 +179,8 @@ __device__ void ncclAllGatherKernel(struct CollectiveArgs* args) {
 template<int THREADS, int UNUSED, class FUNC, typename T>
 __device__ void ncclAllGatherLLKernel(struct CollectiveArgs* args) {
   const int tid = threadIdx.x;
-  const int bid = blockIdx.x;
   struct ncclComm* comm = args->comm;
-  struct ncclRing* ring = comm->rings+bid;
+  struct ncclRing* ring = comm->rings+blockIdx.x;
   volatile uint64_t * recvHeadPtr = ring->recv.conn.llHead;
   volatile uint64_t * sendHeadPtr = ring->send.conn.llHead;
   volatile int * sizesFifo = ring->send.conn.llFifo;

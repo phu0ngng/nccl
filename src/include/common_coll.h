@@ -80,16 +80,18 @@ static __inline__ int ncclTypeSize(ncclDataType_t type) {
 static ncclResult_t saveKernel(int coll, const void* sendbuff, void* recvbuff, size_t count,
     ncclDataType_t dtype, ncclRedOp_t op, int root, ncclComm_t comm, cudaStream_t stream, int nbytes, int ll) {
   int nBlocks = ll ? 1 : LIMIT_NRINGS(nbytes, comm->nRings);
-  comm->myParams->gridDim.x = max(comm->myParams->gridDim.x, nBlocks);
   int nThreads = ll ? LL_NTHREADS : comm->nThreads+1;
   comm->myParams->blockDim.x = max(comm->myParams->blockDim.x, nThreads);
   comm->userStream = stream;
-  for (int r=0; r<nBlocks; r++) {
-    struct ncclRing* ring = comm->rings+r;
+  for (int bid=0; bid<nBlocks; bid++) {
+    struct ncclRing* ring = comm->rings+(comm->myParams->gridDim.x % comm->nRings);
     if (ring->collCount == NCCL_MAX_OPS) {
       WARN("Too many aggregated operations (%d max)", NCCL_MAX_OPS);
       return ncclInvalidUsage;
     }
+
+    comm->myParams->gridDim.x++;
+
     struct ncclColl* c = ring->collectives+ring->collFifoTail;
     volatile uint8_t* activePtr = (volatile uint8_t*)&c->active;
     while (activePtr[0] != 0) sched_yield();
@@ -101,13 +103,14 @@ static ncclResult_t saveKernel(int coll, const void* sendbuff, void* recvbuff, s
     args->ThisOutput = recvbuff;
     args->comm = comm->devComm;
     args->opCount = comm->opCount;
+    args->bid = bid;
     args->nRings = nBlocks;
 
     c->nThreads = nThreads;
     c->coll = coll; c->redop = op; c->dtype = dtype; c->ll = ll;
     c->active = 1;
     ring->collFifoTail = (ring->collFifoTail+1)%NCCL_MAX_OPS;
-    ring->collCount ++;
+    ring->collCount++;
   }
   return ncclSuccess;
 }

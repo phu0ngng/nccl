@@ -147,8 +147,9 @@ struct CollectiveArgs {
 
   // general parameters
   size_t N;
-  int root;
-  int nRings;
+  uint32_t root;
+  uint16_t bid;
+  uint16_t nRings;
 };
 struct ncclColl {
   /* Lines 0-5 */

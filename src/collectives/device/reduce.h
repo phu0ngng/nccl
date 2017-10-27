@@ -20,9 +20,9 @@
 template<int THREADS, int UNROLL, class FUNC, typename T>
 __device__ void ncclReduceKernel(struct CollectiveArgs* args) {
   const int tid = threadIdx.x;
-  const int bid = blockIdx.x;
+  const int bid = args->bid;
   struct ncclComm* comm = args->comm;
-  struct ncclRing* ring = comm->rings+bid;
+  struct ncclRing* ring = comm->rings+blockIdx.x;
 
   WaitFlag waitDoneFromNext(ring->send.conn.head, (REDUCE_BUFCHUNKS-1)*REDUCE_SUBSTEPS);
   WaitFlag waitReadyFromPrev(ring->recv.conn.tail, 0);
@@ -118,9 +118,8 @@ __device__ void ncclReduceKernel(struct CollectiveArgs* args) {
 template<int THREADS, int UNUSED, class FUNC, typename T>
 __device__ void ncclReduceLLKernel(struct CollectiveArgs* args) {
   const int tid = threadIdx.x;
-  const int bid = blockIdx.x;
   struct ncclComm* comm = args->comm;
-  struct ncclRing* ring = comm->rings+bid;
+  struct ncclRing* ring = comm->rings+blockIdx.x;
   volatile uint64_t * recvHeadPtr = ring->recv.conn.llHead;
   volatile uint64_t * sendHeadPtr = ring->send.conn.llHead;
   volatile int * sizesFifo = ring->send.conn.llFifo;
