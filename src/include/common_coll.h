@@ -78,9 +78,10 @@ static __inline__ int ncclTypeSize(ncclDataType_t type) {
 }
 
 static ncclResult_t saveKernel(int coll, const void* sendbuff, void* recvbuff, size_t count,
-    ncclDataType_t dtype, ncclRedOp_t op, int root, ncclComm_t comm, cudaStream_t stream, int nbytes, int ll) {
-  int nBlocks = ll ? 1 : LIMIT_NRINGS(nbytes, comm->nRings);
-  int nThreads = ll ? LL_NTHREADS : comm->nThreads+1;
+    ncclDataType_t dtype, ncclRedOp_t op, int root, ncclComm_t comm, cudaStream_t stream, int nbytes) {
+  int llMode = nbytes <= comm->llThreshold ? 1 : 0;
+  int nBlocks = llMode ? 1 : LIMIT_NRINGS(nbytes, comm->nRings);
+  int nThreads = llMode ? LL_NTHREADS : comm->nThreads+1;
   comm->myParams->blockDim.x = max(comm->myParams->blockDim.x, nThreads);
   comm->userStream = stream;
   for (int bid=0; bid<nBlocks; bid++) {
@@ -107,11 +108,12 @@ static ncclResult_t saveKernel(int coll, const void* sendbuff, void* recvbuff, s
     args->nRings = nBlocks;
 
     c->nThreads = nThreads;
-    c->coll = coll; c->redop = op; c->dtype = dtype; c->ll = ll;
+    c->coll = coll; c->redop = op; c->dtype = dtype; c->ll = llMode;
     c->active = 1;
     ring->collFifoTail = (ring->collFifoTail+1)%NCCL_MAX_OPS;
     ring->collCount++;
   }
+  if (llMode == 0) comm->opCount++;
   return ncclSuccess;
 }
 
