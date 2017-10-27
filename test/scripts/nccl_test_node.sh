@@ -45,14 +45,12 @@ fi
 
 if [ "$mode" == "dlfw" ] && [ "$gpumodel" == "P100" ]; then
   cd $BLDDIR
-  if [ "$opt" == "PARALLEL" ]; then
-    echo "dlfw GROUP/PARALLEL $opt"
-    #$SHDIR/caffe2.sh $gpumodel
-    #$SHDIR/tensorflow.sh $gpumodel
-  fi
-  #$SHDIR/cntk.sh $gpumodel $mode
-  #$SHDIR/mxnet.sh $gpumodel $mode
-  #$SHDIR/pytorch.sh $gpumodel $mode
+  export LD_LIBRARY_PATH=$BLDDIR/lib:$LD_LIBRARY_PATH
+  $SHDIR/caffe2.sh $gpumodel $opt
+  $SHDIR/cntk.sh $gpumodel $opt
+  #$SHDIR/tensorflow.sh $gpumodel $mode
+  $SHDIR/mxnet.sh $gpumodel $opt
+  $SHDIR/pytorch.sh $gpumodel $opt
 elif [[ "$mode" == *"mpi"* ]] || [[ "$mode" == *"multinode"* ]]; then
   # test (multi processes)
   cd $NCCLROOT

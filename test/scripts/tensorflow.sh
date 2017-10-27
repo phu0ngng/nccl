@@ -1,8 +1,11 @@
-#Caffe2
+#!/bin/bash
+#Tensorflow
 gpumodel=$1
+mode=$2 #GROUP PARALLEL
 resdir="results_dlfw"
-mkdir -p $resdir
-output="$resdir/tensorflow.txt"
+path=$resdir/caffe2
+mkdir -p $path
+result="$path/$gpumodel.$mode"
 
 # Environment Variables
 export INSTALL=/home/nightly/install
@@ -14,10 +17,7 @@ python -m pip install --upgrade $TMP_PKG_DIR/*whl --user
 
 BENCH_DIR=$INSTALL/tf_benchmarks/scripts/tf_cnn_benchmarks
 
-for opt in "False" "True"; do
-  echo -n "--use_nccl=$opt : " | tee -a $output
-  NCCL_DISABLE_CHECKS=1 NCCL_DEBUG=WARN srun -p $gpumodel --exclusive \
-    python $BENCH_DIR/tf_cnn_benchmarks.py --local_parameter_device=gpu --num_gpus=8 --batch_size=128 --model=resnet50 --variable_update=replicated --use_nccl=$opt | \
-    awk '/total images/ {print $NF}' | \
-    tee -a $output
-done
+NCCL_DISABLE_CHECKS=1 NCCL_DEBUG=WARN srun -p $gpumodel --exclusive \
+python $BENCH_DIR/tf_cnn_benchmarks.py --local_parameter_device=gpu --num_gpus=8 --batch_size=128 --model=resnet50 --variable_update=replicated --use_nccl=True | \
+awk '/total images/ {print $NF}' | \
+tee -a $result.out

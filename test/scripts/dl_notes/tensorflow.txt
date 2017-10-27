@@ -27,3 +27,5 @@ w/o NCCL:
 srun -p P100 -c 8  python tf_cnn_benchmarks.py --local_parameter_device=gpu --num_gpus=8 --batch_size=128 --model=resnet50 --variable_update=replicated --use_nccl=False
 
 (Note if you don’t set --use_nccl to False, TensorFlow will use NCCL by default)
+# Tensorflow uses batch_size per GPU
+# By default, synthetic data is used
