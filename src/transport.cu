@@ -101,7 +101,7 @@ ncclResult_t transportSaveProxies(int substeps, int subchunks, int nstepsPerRoun
   int nrounds = (int)(DIVUP(size, nrings * nblocksPerRound * (buffSize/subchunks)));
   int nsteps = nstepsPerRound * nrounds * substeps;
   for (int r=0; r<nrings; r++) {
-    struct ncclRing* ring = comm->rings+(comm->myParams->gridDim.x%comm->nRings);
+    struct ncclRing* ring = comm->rings+((comm->myParams->gridDim.x+r)%comm->nRings);
     struct ncclProxyArgs args = { ring, substeps*subchunks, nsteps, comm->opCount, llMode, 0 };
     SaveProxy(&ring->recv, &args, NeedProxy(RECV, pattern, ring, comm->nRanks));
     SaveProxy(&ring->send, &args, NeedProxy(SEND, pattern, ring, comm->nRanks));
