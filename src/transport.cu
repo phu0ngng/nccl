@@ -95,10 +95,10 @@ static void SaveProxy(struct ncclConnector* connector, struct ncclProxyArgs* arg
   fifoArgs->active = 1;
 }
 
-ncclResult_t transportSaveProxies(int substeps, int subchunks, int nstepsPerRound, int nblocksPerRound, size_t size, int pattern, struct ncclComm* comm, int llMode) {
-  int nrings = llMode ? 1 : LIMIT_NRINGS(size, comm->nRings);
+ncclResult_t transportSaveProxies(int substeps, int subchunks, int nstepsPerRound, int nblocksPerRound, size_t nbytes, int pattern, struct ncclComm* comm, int llMode) {
+  int nrings = llMode ? 1 : LIMIT_NRINGS(nbytes, comm->nRings);
   int buffSize = llMode ? LL_BUFF_SIZE : comm->rings[0].buffSize;
-  int nrounds = (int)(DIVUP(size, nrings * nblocksPerRound * (buffSize/subchunks)));
+  int nrounds = (int)(DIVUP(nbytes, nrings * nblocksPerRound * (buffSize/subchunks)));
   int nsteps = nstepsPerRound * nrounds * substeps;
   for (int r=0; r<nrings; r++) {
     struct ncclRing* ring = comm->rings+((comm->myParams->gridDim.x+r)%comm->nRings);
