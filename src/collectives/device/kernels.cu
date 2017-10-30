@@ -110,6 +110,11 @@ __global__ void ncclKernel(struct ncclColl firstColl) {
       return;
     }
 
+    // This is needed to avoid hangs with LL+Multinode+Multirings.
+    // XXX figure out why and remove if possible.
+    if (tid == 0) __threadfence_system();
+
+    // Load next collective operation
     struct ncclColl* nextColl = ring->devCollectives+index;
     coll = localColl+bid;
     load_coll(coll, nextColl, sizeof(struct ncclColl), tid);
