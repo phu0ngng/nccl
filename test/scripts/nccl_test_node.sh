@@ -6,8 +6,6 @@ maxgpu=$2
 
 mode=$3
 
-opt=$4
-
 # get dir of test scripts
 SHDIR="$( cd "$( dirname "${BASH_SOURCE[0]}" )" && pwd )"
 cd $SHDIR/../../
@@ -46,11 +44,11 @@ fi
 if [ "$mode" == "dlfw" ] && [ "$gpumodel" == "P100" ]; then
   cd $BLDDIR
   export LD_LIBRARY_PATH=$BLDDIR/lib:$LD_LIBRARY_PATH
-  $SHDIR/caffe2.sh $gpumodel $opt
-  $SHDIR/cntk.sh $gpumodel $opt
-  #$SHDIR/tensorflow.sh $gpumodel $mode
-  $SHDIR/mxnet.sh $gpumodel $opt
-  $SHDIR/pytorch.sh $gpumodel $opt
+  $SHDIR/caffe2.sh $gpumodel
+  $SHDIR/cntk.sh $gpumodel
+  #$SHDIR/tensorflow.sh $gpumodel
+  $SHDIR/mxnet.sh $gpumodel
+  $SHDIR/pytorch.sh $gpumodel
 elif [[ "$mode" == *"mpi"* ]] || [[ "$mode" == *"multinode"* ]]; then
   # test (multi processes)
   cd $NCCLROOT
