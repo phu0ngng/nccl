@@ -62,3 +62,8 @@ for OPT in "_multinode" "_multinode_latency"; do
    grep -r -i "FAIL" ${VER}$GM$OPT/results >> $DST/$DIR/fail.txt
    grep -r -i "FAIL" ${VER}$PM$OPT/results >> $DST/$DIR/fail.txt
 done
+
+DIR=html_dlfw
+rm -rf $DST/$DIR
+./dlfw_generate_plots.sh P100 ${VER}${GM} ${VER}${PM}
+mv comp/*.png $DST/$DIR
