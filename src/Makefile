@@ -34,7 +34,7 @@ lib : $(INCTARGETS) $(LIBDIR)/$(LIBTARGET)
 
 staticlib : $(LIBDIR)/$(STATICLIBTARGET)
 
-devicelib:
+devicelib: nccl.h
 	make -C collectives/device
 
 -include $(DEPFILES)
