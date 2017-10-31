@@ -18,7 +18,7 @@ DEPFILES   := $(patsubst %.cu, $(OBJDIR)/%.d, $(LIBSRCFILES))
 STATICLIB  := $(OBJDIR)/colldevice.a
 DEVOBJ     := $(OBJDIR)/devlink.o
 
-NVCUFLAGS  += -I. -I.. -I../../include --compiler-options "-fPIC -fvisibility=hidden"
+NVCUFLAGS  += -I. -I.. -I../.. -I../../include --compiler-options "-fPIC -fvisibility=hidden"
 
 
 all: $(STATICLIB)
