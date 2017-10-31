@@ -42,13 +42,13 @@ for ver in $VERS ; do
      cd nccl.master/test/scripts
      for OPT in $OPTS; do
         if [ -n "$version_checked" ]; then
-           ./nccl_test_node.sh $gpumodel $maxgpu $OPT $mode
+           ./nccl_test_node.sh $gpumodel $maxgpu $OPT
         elif [ "$ver" == "$INSTVER" ]; then
-           INSTALL=1 ./nccl_test_node.sh $gpumodel $maxgpu $OPT $mode
+           INSTALL=1 ./nccl_test_node.sh $gpumodel $maxgpu $OPT
         #elif [ "$ver" == "1.5.4" ]; then
         #   NCCL_TOPOLOGY=CUBEMESH DEBDIR=$NCCLDEB/$ver ./nccl_test_node.sh $gpumodel $maxgpu $OPT
         else
-           DEBDIR=$NCCLDEB/$ver ./nccl_test_node.sh $gpumodel $maxgpu $OPT $mode
+           DEBDIR=$NCCLDEB/$ver ./nccl_test_node.sh $gpumodel $maxgpu $OPT
         fi
      done
    done
@@ -59,7 +59,7 @@ if [ "$transfer" == "1" ]; then
   cd $HOME/install/nccl.deb/
   for VER in $VERS ; do
     for MODE in $MODES; do
-       for OPT in "" "_mpi" "_reorder" "_all" "_multinode" "_latency" "_mpi_latency" "_multinode_latency"; do
+       for OPT in "" "_mpi" "_reorder" "_all" "_multinode" "_latency" "_mpi_latency" "_multinode_latency" "_dlfw"; do
           TAG=$VER$MODE
           DIR=$TAG$OPT
           echo "Syncing $DIR"
