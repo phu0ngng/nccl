@@ -151,7 +151,7 @@ ncclResult_t getEnvThreads(int* nthreads) {
   char* str = getenv("NCCL_NTHREADS");
   if (str && strlen(str) > 0) {
     int nt = atoi(str);
-    if (nt != 128 && nt != 256 && nt != 512) {
+    if (nt != 64 && nt != 128 && nt != 256 && nt != 512) {
       WARN("User-defined number of threads can only be 128, 256 or 512. Ignoring.");
     } else {
       *nthreads = nt;
