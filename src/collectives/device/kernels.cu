@@ -61,6 +61,7 @@ static __device__ ncclKern_t ncclFuncs[][ncclCollNcolls][ncclNumOps][ncclNumType
 static __device__ void load_coll(void* dst, void* src, size_t size, int tid) {
   int* d = (int*)dst;
   int* s = (int*)src;
+  __syncthreads();
   for (int o = tid; o < (size/sizeof(int)); o += 64) d[o] = s[o];
   __syncthreads();
 }
@@ -102,7 +103,6 @@ __global__ void ncclKernel(struct ncclColl firstColl) {
       func = ncclFuncs[funcSet][coll->coll][coll->redop][coll->dtype];
       func(&coll->args);
     }
-
     index = (index + 1) % NCCL_MAX_OPS;
 
     if (coll->active == 2) {
