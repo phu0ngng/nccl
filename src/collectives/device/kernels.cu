@@ -46,11 +46,11 @@ typedef void(*ncclKern_t)(struct CollectiveArgs* args);
 enum { ncclFuncSetLL = 0, ncclFuncSet64 = 1, ncclFuncSet128 = 2, ncclFuncSet256 = 3, ncclFuncSet512 = 4, ncclFuncSetNotFound = 5 };
 static __device__ ncclKern_t ncclFuncs[][ncclCollNcolls][ncclNumOps][ncclNumTypes] = {
   {
-    NCCL_FUNCS2B(64, ncclBcastLL),
-    NCCL_FUNCS2A(64, ncclReduceLL),
-    NCCL_FUNCS2B(64, ncclAllGatherLL),
-    NCCL_FUNCS2A(64, ncclReduceScatterLL),
-    NCCL_FUNCS2A(64, ncclAllReduceLL)
+    NCCL_FUNCS2B(LL_NTHREADS, ncclBcastLL),
+    NCCL_FUNCS2A(LL_NTHREADS, ncclReduceLL),
+    NCCL_FUNCS2B(LL_NTHREADS, ncclAllGatherLL),
+    NCCL_FUNCS2A(LL_NTHREADS, ncclReduceScatterLL),
+    NCCL_FUNCS2A(LL_NTHREADS, ncclAllReduceLL)
   },
   NCCL_FUNCS(64),
   NCCL_FUNCS(128),

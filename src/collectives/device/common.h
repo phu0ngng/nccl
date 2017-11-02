@@ -15,7 +15,7 @@
   extern __device__ void NCCL_COLL_NAME(coll, op, dtype, nthreads)(struct CollectiveArgs* args);
 
 #define DECL_COLL3(coll, op, dtype) \
-  DECL_COLL4(coll##LL, op, dtype, 64) \
+  DECL_COLL4(coll##LL, op, dtype, LL_NTHREADS) \
   DECL_COLL4(coll, op, dtype, 64) \
   DECL_COLL4(coll, op, dtype, 128) \
   DECL_COLL4(coll, op, dtype, 256) \
@@ -54,7 +54,7 @@ DECL_ALL_COLLS
 }
 
 #define IMPL_COLL3(coll, op, ncclFunc, dtype, ctype) \
-  IMPL_COLL4(coll##LL, op, ncclFunc, dtype, ctype, 64) \
+  IMPL_COLL4(coll##LL, op, ncclFunc, dtype, ctype, LL_NTHREADS) \
   IMPL_COLL4(coll, op, ncclFunc, dtype, ctype, 64) \
   IMPL_COLL4(coll, op, ncclFunc, dtype, ctype, 128) \
   IMPL_COLL4(coll, op, ncclFunc, dtype, ctype, 256) \
