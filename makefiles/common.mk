@@ -12,15 +12,16 @@ DEBUG ?= 0
 TRACE ?= 0
 PROFAPI ?= 0
 
+NVCC = $(CUDA_HOME)/bin/nvcc
+
 CUDA_LIB ?= $(CUDA_HOME)/lib64
 CUDA_INC ?= $(CUDA_HOME)/include
-CUDA_VERSION = $(strip $(shell nvcc --version | grep release | sed 's/.*release //' | sed 's/\,.*//'))
+CUDA_VERSION = $(strip $(shell $(NVCC) --version | grep release | sed 's/.*release //' | sed 's/\,.*//'))
 #CUDA_VERSION ?= $(shell ls $(CUDA_LIB)/libcudart.so.* | head -1 | rev | cut -d "." -f -2 | rev)
 CUDA_MAJOR = $(shell echo $(CUDA_VERSION) | cut -d "." -f 1)
 CUDA_MINOR = $(shell echo $(CUDA_VERSION) | cut -d "." -f 2)
 #$(info CUDA_VERSION ${CUDA_MAJOR}.${CUDA_MINOR})
 
-NVCC = $(CUDA_HOME)/bin/nvcc
 
 # Better define NVCC_GENCODE in your environment to the minimal set
 # of archs to reduce compile time.
