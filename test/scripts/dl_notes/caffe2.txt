@@ -23,12 +23,13 @@ $ make
 
 # Run
 
-$ cd build/caffe2/python/examples
+$ cd $CAFFE2_ROOT/nvidia-examples/imagenet/train_resnet.py
 
-Without NCCL:
-$ srun -p P100 -c 8 python resnet50_trainer.py --num_gpus 8 --train_data /mnt/linuxqa/nightly/dldata/imagenet/train-lmdb-256x256
+#NCCL is enabled by default and cannot be disabled without changes to build/caffe2/nvidia-examples/imagenet/train_helper.py
 
-With NCCL:
-$ srun -p P100 -c 8 python resnet50_trainer.py --num_gpus 8 --train_data /mnt/linuxqa/nightly/dldata/imagenet/train-lmdb-256x256 --use_nccl
+#Use --enable-tensor-core for dgx1v
+#Look in train_helper.py for other options
+#Uses --train-lmdb /data/imagenet/train-lmdb-256x256 and --test-lmdb /data/imagenet/val-lmdb-256x256 (if not --skip-test)
+#Could not find /data/imagenet/val-lmdb-256x256 on eris; available on dbcluster (/raid/dldata/imagenet/val-lmdb-256x256)
 
-
+$ srun -p P100 -n 8 --exclusive python resnet50_trainer.py --num_gpus 8 --batch-size 512 --num-iterations 1000 --dtype float16 --train-lmdb /data/imagenet/train-lmdb-256x256 --skip-test

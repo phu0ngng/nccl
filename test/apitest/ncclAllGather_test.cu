@@ -6,8 +6,6 @@ TYPED_TEST_CASE(ncclAllGather_test, testDataTypes);
 TYPED_TEST(ncclAllGather_test, basic) {
     ASSERT_EQ(ncclSuccess, ncclGroupStart());
     for (int i = 0; i < this->nVis; ++i) {
-        ASSERT_EQ(cudaSuccess, cudaSetDevice(i)) << "i" << i << ", "
-                                                 << std::endl;
         ASSERT_EQ(ncclSuccess,
                   ncclAllGather(this->sendbuffs[i], this->recvbuffs[i],
                                 std::min(this->N/this->nVis, 1024 * 1024),
@@ -19,8 +17,6 @@ TYPED_TEST(ncclAllGather_test, basic) {
 TYPED_TEST(ncclAllGather_test, host_mem) {
     ASSERT_EQ(ncclSuccess, ncclGroupStart());
     for (int i = 0; i < this->nVis; ++i) {
-        ASSERT_EQ(cudaSuccess, cudaSetDevice(i)) << "i" << i << ", "
-                                                 << std::endl;
         EXPECT_EQ(ncclInvalidArgument,
                   ncclAllGather(this->sendbuffs_host[i], this->recvbuffs_host[i],
                                 std::min(this->N/this->nVis, 1024 * 1024),
@@ -32,13 +28,23 @@ TYPED_TEST(ncclAllGather_test, host_mem) {
 TYPED_TEST(ncclAllGather_test, pinned_mem) {
     ASSERT_EQ(ncclSuccess, ncclGroupStart());
     for (int i = 0; i < this->nVis; ++i) {
-        ASSERT_EQ(cudaSuccess, cudaSetDevice(i)) << "i" << i << ", "
-                                                 << std::endl;
         EXPECT_EQ(ncclSuccess,
                   ncclAllGather(this->sendbuffs_pinned_device[i], this->recvbuffs_pinned_device[i],
                                 std::min(this->N/this->nVis, 1024 * 1024),
                                 this->DataType(), this->comms[i], this->streams[i]))
             << "i" << i << ", " << std::endl;
+    }
+    ASSERT_EQ(ncclSuccess, ncclGroupEnd());
+};
+TYPED_TEST(ncclAllGather_test, stream_null) {
+    ASSERT_EQ(ncclSuccess, ncclGroupStart());
+    for (int i = 0; i < this->nVis; ++i) {
+        ASSERT_EQ(ncclSuccess,
+                  ncclAllGather(
+                      this->sendbuffs[i], this->recvbuffs[i],
+                      std::min(this->N/this->nVis, 1024 * 1024),
+                      this->DataType(), this->comms[i], NULL))
+            << ", " << "i" << i << ", " << std::endl;
     }
     ASSERT_EQ(ncclSuccess, ncclGroupEnd());
 };
@@ -52,7 +58,6 @@ TYPED_TEST(ncclAllGather_test, sendbuf_null) {
 };
 TYPED_TEST(ncclAllGather_test, sendbuf_wrong) {
     int i = 0, j = 1;
-    ASSERT_EQ(cudaSuccess, cudaSetDevice(i));
     EXPECT_EQ(ncclInvalidArgument,
               ncclAllGather(this->sendbuffs[j], this->recvbuffs[i],
                             std::min(this->N/this->nVis, 1024 * 1024),
@@ -62,7 +67,6 @@ TYPED_TEST(ncclAllGather_test, sendbuf_wrong) {
 // recvbuff
 TYPED_TEST(ncclAllGather_test, recvbuf_null) {
     int i = 0;
-    ASSERT_EQ(cudaSuccess, cudaSetDevice(i));
     EXPECT_EQ(ncclInvalidArgument,
               ncclAllGather(this->sendbuffs[i], NULL,
                             std::min(this->N/this->nVis, 1024 * 1024),
@@ -80,8 +84,6 @@ TYPED_TEST(ncclAllGather_test, sendbuff_recvbuff_diff_device) {
 TYPED_TEST(ncclAllGather_test, DISABLED_N_zero) {
     ASSERT_EQ(ncclSuccess, ncclGroupStart());
     for (int i = 0; i < this->nVis; ++i) {
-        ASSERT_EQ(cudaSuccess, cudaSetDevice(i)) << "i" << i << ", "
-                                                 << std::endl;
         ASSERT_EQ(ncclSuccess,
                   ncclAllGather(this->sendbuffs[i], this->recvbuffs[i], 0,
                                 this->DataType(), this->comms[i], this->streams[i]))

@@ -52,6 +52,14 @@ export LD_LIBRARY_PATH=$PWD/cntk/libs:$LD_LIBRARY_PATH
 
 # Run
 cd /home/nightly/install/cntk_tests
-salloc -p P100 -n 8 ./resnet50_cntk.sh
+salloc -p P100 -n 8
+./resnet50_cntk.sh
+
+or
+
+export OMP_NUM_THREADS=7 #nproc/ngpus
+mpiexec --allow-run-as-root -np 8 cntk configFile=/data/networks/ResNet50/ResNet50.cntk meanFile=/data/images/ImageNet1K_mean.xml ConfigDir=/data/networks/ResNet50 trainMapFile=/data/map/fake_trainMap.txt OutputPath=/tmp/cntk-$(date +"%Y%m%d%I%M%S") epochSize=51200 batchSize=512 parallelTrain=true
+
+OutputPath needs to be unique in every run, otherwise CNTK errors out
 A log file will be generated.
 #Time to run on eris t039 8x P100 PCIE 512000 samples with cuda 9 + cudnn 7 - 10 mins
