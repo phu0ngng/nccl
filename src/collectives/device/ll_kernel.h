@@ -8,25 +8,16 @@
 #define NCCL_LL_KERNEL_H_
 
 static __device__ uint64_t readLL(union ncclLLFifoLine* src, uint32_t flag) {
-  volatile uint64_t* valPtr = src->v;
-  union ncclLLFifoLine line;
+  uint32_t data1, flag1, data2, flag2;
   do {
-    line.v[0] = valPtr[0];
-    line.v[1] = valPtr[1];
-  } while ((line.flag1 != flag) || (line.flag2 != flag));
-  uint64_t val = line.data1 + (((uint64_t)line.data2) << 32);
-  return val;
+    asm volatile("ld.volatile.global.v4.u32 {%0,%1,%2,%3}, [%4];" : "=r"(data1), "=r"(flag1), "=r"(data2), "=r"(flag2) : "l"(&src->i4));
+  } while ((flag1 != flag) || (flag2 != flag));
+  uint64_t val64 = data1 + (((uint64_t)data2) << 32);
+  return val64;
 }
 
 static __device__ void storeLL(union ncclLLFifoLine* dst, uint64_t val, uint32_t flag) {
-  union ncclLLFifoLine line;
-  line.data1 = val;
-  line.flag1 = flag;
-  line.data2 = val >> 32;
-  line.flag2 = flag;
-  volatile uint64_t* valPtr = dst->v;
-  valPtr[0] = line.v[0];
-  valPtr[1] = line.v[1];
+  asm volatile("st.volatile.global.v4.u32 [%0], {%1,%2,%3,%4};" :: "l"(&dst->i4), "r"((uint32_t)val), "r"(flag), "r"((uint32_t)(val >> 32)), "r"(flag));
 }
 
 // Using memcpy handles misaligned pointers.
