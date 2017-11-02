@@ -793,7 +793,11 @@ int main(int argc, char* argv[]) {
 	     iters = (int)strtol(optarg, NULL, 0);
 	     break;
 	 case 'm':
+#if NCCL_MAJOR >= 2 && NCCL_MINOR >= 2
 	     agg_iters = (int)strtol(optarg, NULL, 0);
+#else
+             printf("Option -m not supported before NCCL 2.2. Ignoring\n");
+#endif
 	     break;
 	 case 'w':
 	     warmup_iters = (int)strtol(optarg, NULL, 0);
