@@ -30,7 +30,7 @@ static ncclResult_t shmOpen(const char* shmname, const int shmsize, void** shmPt
     }
   }
 
-  void *ptr = (struct ncclSendRecvMem*)mmap(NULL, shmsize, PROT_READ | PROT_WRITE, MAP_SHARED, fd, 0);
+  void *ptr = mmap(NULL, shmsize, PROT_READ | PROT_WRITE, MAP_SHARED, fd, 0);
   close(fd);
   if (ptr == MAP_FAILED) {
     WARN("failure in mmap of %s (size %d) : %s", shmname, shmsize, strerror(errno));

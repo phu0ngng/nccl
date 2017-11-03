@@ -101,7 +101,8 @@ static ncclResult_t commFree(ncclComm_t comm) {
     NCCLCHECK(transportDestroyProxy(&comm->rings[ring].send));
     NCCLCHECK(comm->rings[ring].recv.transport->recv.free(comm->rings[ring].recv.transportResources));
     NCCLCHECK(transportDestroyProxy(&comm->rings[ring].recv));
-    CUDACHECK(cudaFree(comm->rings[ring].devMem));
+    CUDACHECK(cudaFree(comm->rings[ring].devMemSend));
+    CUDACHECK(cudaFree(comm->rings[ring].devMemRecv));
     free(comm->rings[ring].userRanks);
     CUDACHECK(cudaFree(comm->rings[ring].devUserRanks));
   }
@@ -209,22 +210,30 @@ static ncclResult_t setupSendRecv(struct ncclRing* ring) {
           str, DEFAULT_BUFFER_SIZE_BYTES);
       buffSize = DEFAULT_BUFFER_SIZE_BYTES;
     }
+    INFO("NCCL_BUFFSIZE set to %d", buffSize);
   } else {
     buffSize = DEFAULT_BUFFER_SIZE_BYTES;
   }
   ring->buffSize = buffSize;
-  const int size = ring->devMemSize = offsetof(struct ncclSendRecvMem, buff)+buffSize;
-  struct ncclSendRecvMem* mem;
-  CUDACHECK(cudaMalloc(&mem, size));
-  CUDACHECK(cudaMemset(mem, 0, size));
-  ring->devMem = mem;
-  ring->recv.conn.buff = mem->buff;
-  ring->recv.conn.llBuff = mem->llBuff;
-  ring->recv.conn.tail = &mem->tail;
-  ring->recv.conn.opCount = &mem->opCount;
+  // Ensure allocations are at least CUDA_IPC_MIN to avoid P2P mapping issues
+  const int sendSize = ring->devMemSendSize = max(sizeof(struct ncclSendMem), CUDA_IPC_MIN);
+  const int recvSize = ring->devMemRecvSize = max(offsetof(struct ncclRecvMem, buff)+buffSize, CUDA_IPC_MIN);
+  struct ncclSendMem* sendMem;
+  struct ncclRecvMem* recvMem;
+  CUDACHECK(cudaMalloc(&sendMem, sendSize));
+  CUDACHECK(cudaMemset(sendMem, 0, sendSize));
+  CUDACHECK(cudaMalloc(&recvMem, recvSize));
+  CUDACHECK(cudaMemset(recvMem, 0, recvSize));
+  TRACE("sendMem %p size %d recvMem %p size %d", sendMem, sendSize, recvMem, recvSize);
+  ring->devMemSend = sendMem;
+  ring->devMemRecv = recvMem;
+  ring->recv.conn.buff = &recvMem->buff[0];
+  ring->recv.conn.llBuff = &recvMem->llBuff[0];
+  ring->recv.conn.tail = &recvMem->tail;
+  ring->recv.conn.opCount = &recvMem->opCount;
   ring->recv.conn.direct = 0;
-  ring->send.conn.head = &mem->head;
-  ring->send.conn.llHead = &mem->llHead;
+  ring->send.conn.head = &sendMem->head;
+  ring->send.conn.llHead = &sendMem->llHead;
   ring->send.conn.direct = 0;
   ring->send.conn.llStep = 0;
   ring->send.conn.llLastCleaning = 0;
@@ -315,7 +324,7 @@ static ncclResult_t buildRings(int nrings, int* rings, int rank, int nranks, int
       rings[r*nranks+i] = current;
       current = next[r*nranks+current];
     }
-    sprintf(prefix, "[%d] Ring %d : ", rank, r);
+    sprintf(prefix, "Ring %02d : ", r);
     if (rank == 0) dumpLine(rings+r*nranks, nranks, prefix);
     if (current != rank) {
       WARN("Error : ring %d does not loop back to start (%d != %d)", r, current, rank);
@@ -528,26 +537,28 @@ cleanup:
 }
 
 NCCL_API(ncclResult_t, ncclCommInitRank, ncclComm_t* newcomm, int ndev, ncclUniqueId commId, int myrank);
-ncclResult_t ncclCommInitRank(ncclComm_t* newcomm, int ndev, ncclUniqueId commId, int myrank) {
+ncclResult_t ncclCommInitRank(ncclComm_t* newcomm, int nranks, ncclUniqueId commId, int myrank) {
   NCCLCHECK(ncclInit());
   if (myrank == 0) showVersion();
+
+  TRACE("rank %d nranks %d", myrank, nranks);
 
   // It seems we need to call this so that NVML doesn't crash later with error
   // 999.
   CUDACHECK(cudaFree(NULL));
 
   NCCLCHECK(PtrCheck(newcomm, "CommInitRank", "newcomm"));
-  if (ndev < 1) {
-    WARN("Invalid device count requested : %d", ndev);
+  if (nranks < 1 || myrank < 0 || myrank >= nranks) {
+    WARN("Invalid rank requested : %d/%d", myrank, nranks);
     return ncclInvalidArgument;
   }
 
   if (ncclAsyncMode()) {
     int cudaDev;
     CUDACHECK(cudaGetDevice(&cudaDev));
-    return ncclAsyncInit(ncclCommInitRankSync, cudaDev, newcomm, ndev, commId, myrank);
+    return ncclAsyncInit(ncclCommInitRankSync, cudaDev, newcomm, nranks, commId, myrank);
   } else {
-    return ncclCommInitRankSync(newcomm, ndev, commId, myrank);
+    return ncclCommInitRankSync(newcomm, nranks, commId, myrank);
   }
 }
 
