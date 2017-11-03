@@ -15,6 +15,8 @@ for version in $@; do
   cat $dpath/cntk.out | awk '/^ Epoch/ {if (lines++ > 10) sum += $NF} END {print sum/(lines-11)}' | tee -a $path/cntk.values
   echo -n "$i $version " >> $path/pytorch.values
   cat $dpath/pytorch.out | awk '/^Epoch/ {if (lines++) sum += $4} END {print 1024*8/(sum/(lines-1))}' | tee -a $path/pytorch.values
+  echo -n "$i $version " >> $path/tensorflow.values
+  cat $dpath/tensorflow.out | awk '/total images/ {print $NF}' | tee -a $path/tensorflow.values
   i=$((i+1))
 done
 }
@@ -55,4 +57,5 @@ generate_plot $gpumodel mxnet $@
 generate_plot $gpumodel caffe2 $@
 generate_plot $gpumodel cntk $@
 generate_plot $gpumodel pytorch $@
+generate_plot $gpumodel tensorflow $@
 echo "done."
