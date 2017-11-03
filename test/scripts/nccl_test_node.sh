@@ -46,7 +46,7 @@ if [ "$mode" == "dlfw" ] && [ "$gpumodel" == "P100" ]; then
   export LD_LIBRARY_PATH=$BLDDIR/lib:$LD_LIBRARY_PATH
   $SHDIR/caffe2.sh $gpumodel
   $SHDIR/cntk.sh $gpumodel
-  #$SHDIR/tensorflow.sh $gpumodel
+  $SHDIR/tensorflow.sh $gpumodel
   $SHDIR/mxnet.sh $gpumodel
   $SHDIR/pytorch.sh $gpumodel
 elif [[ "$mode" == *"mpi"* ]] || [[ "$mode" == *"multinode"* ]]; then
