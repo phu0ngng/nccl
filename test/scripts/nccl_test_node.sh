@@ -36,7 +36,7 @@ export LD_LIBRARY_PATH=$MPI_HOME/lib:$LD_LIBRARY_PATH
 
 # build
 if [ "$DEBDIR" == "" ] && [ "$INSTALL" != "1" ]; then
-  make -j src.build
+  make -j src.build 2>&1 | tee make_src.log
   DEBDIR=$BLDDIR
   export LD_LIBRARY_PATH=$DEBDIR/lib:$LD_LIBRARY_PATH
 fi
@@ -54,9 +54,9 @@ elif [[ "$mode" == *"mpi"* ]] || [[ "$mode" == *"multinode"* ]]; then
   cd $NCCLROOT
   make -j test.clean
   if [ "$INSTALL" == "1" ]; then
-    make -j test.build MPI=1
+    make -j test.build MPI=1 2>&1 | tee make_test_mpi.log
   else
-    make -j test.build MPI=1 NCCLDIR=${DEBDIR}
+    make -j test.build MPI=1 NCCLDIR=${DEBDIR} 2>&1 | tee make_test_mpi.log
   fi
   cd $BLDDIR
   if [[ "$mode" == *"mpi"* ]]; then
@@ -78,9 +78,9 @@ else
   cd $NCCLROOT
   make -j test.clean
   if [ "$INSTALL" == "1" ]; then
-    make -j test.build
+    make -j test.build 2>&1 | tee make_test.log
   else
-    make -j test.build NCCLDIR=${DEBDIR}
+    make -j test.build NCCLDIR=${DEBDIR} 2>&1 | tee make_test.log
   fi
   cd $BLDDIR
   $SHDIR/run_perf_graphs.sh $gpumodel $maxgpu $mode
