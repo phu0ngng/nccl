@@ -79,7 +79,7 @@ struct ncclConnector {
 #define CACHE_LINE_SIZE 128
 #define PAGE_SIZE 4096
 #define SIZES_FIFO_SIZE 32
-#define CUDA_IPC_MIN 2097152UL /* 2MiB IPC minimum to make P2P mapping safe */
+#define CUDA_IPC_MIN 2097152UL /* 2MiB - not currently used */
 
 #define LL_NTHREADS 64
 #define NUM_LL_CHUNKS 8
@@ -96,6 +96,7 @@ struct ncclSendMem {
       char pad2[CACHE_LINE_SIZE-sizeof(void*)];
       uint64_t llHead;
     };
+    char pad3[PAGE_SIZE];
   };
 };
 
