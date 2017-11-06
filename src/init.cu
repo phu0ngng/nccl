@@ -215,9 +215,8 @@ static ncclResult_t setupSendRecv(struct ncclRing* ring) {
     buffSize = DEFAULT_BUFFER_SIZE_BYTES;
   }
   ring->buffSize = buffSize;
-  // Ensure allocations are at least CUDA_IPC_MIN to avoid P2P mapping issues
-  const int sendSize = ring->devMemSendSize = max(sizeof(struct ncclSendMem), CUDA_IPC_MIN);
-  const int recvSize = ring->devMemRecvSize = max(offsetof(struct ncclRecvMem, buff)+buffSize, CUDA_IPC_MIN);
+  const int sendSize = ring->devMemSendSize = sizeof(struct ncclSendMem);
+  const int recvSize = ring->devMemRecvSize = offsetof(struct ncclRecvMem, buff)+buffSize;
   struct ncclSendMem* sendMem;
   struct ncclRecvMem* recvMem;
   CUDACHECK(cudaMalloc(&sendMem, sendSize));
