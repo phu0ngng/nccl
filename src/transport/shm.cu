@@ -35,22 +35,22 @@ struct shmRecvConnectInfo {
 
 struct shmSendResources {
   int remShmSize;
-  struct ncclSendRecvMem* remHostMem;
-  struct ncclSendRecvMem* devRemHostMem;
+  struct ncclRecvMem* remHostMem;
+  struct ncclRecvMem* devRemHostMem;
   int shmSize;
-  struct ncclSendRecvMem* hostMem;
-  struct ncclSendRecvMem* devHostMem;
+  struct ncclSendMem* hostMem;
+  struct ncclSendMem* devHostMem;
 };
 
 #define MAXSTEPS 8
 
 struct shmRecvResources {
   int remShmSize;
-  struct ncclSendRecvMem* remHostMem;
-  struct ncclSendRecvMem* devRemHostMem;
+  struct ncclSendMem* remHostMem;
+  struct ncclSendMem* devRemHostMem;
   int shmSize;
-  struct ncclSendRecvMem* hostMem;
-  struct ncclSendRecvMem* devHostMem;
+  struct ncclRecvMem* hostMem;
+  struct ncclRecvMem* devHostMem;
 };
 
 /* Fill information necessary to exchange between ranks to choose whether or not
@@ -172,10 +172,10 @@ ncclResult_t shmSendSetup(ncclTinfo_t* myOpaqueInfo, ncclTinfo_t* peerOpaqueInfo
   struct shmRecvConnectInfo info;
   char shmName[1024];
   sprintf(shmName, "nccl-shm-send-%d-%d-%d", myInfo->pid, ring->id, myInfo->rank);
-  info.shmSize = resources->shmSize = sizeof(struct ncclSendRecvMem);
+  info.shmSize = resources->shmSize = sizeof(struct ncclSendMem);
   NCCLCHECK(shmOpen(shmName, resources->shmSize, (void**)&resources->hostMem, (void**)&resources->devHostMem, 1));
   
-  INFO("%d -> %d via direct shared memory", myInfo->rank, peerInfo->rank);
+  INFO("%d[%d] -> %d[%d] via direct shared memory", myInfo->rank, myInfo->pid, peerInfo->rank, peerInfo->pid);
   info.id = ring->id; info.rank = myInfo->rank; info.pid = myInfo->pid;
   static_assert(sizeof(struct shmRecvConnectInfo) <= sizeof(struct ncclConnect), "shm Connect Recv Info is too big");
   memcpy(connectInfo, &info, sizeof(struct shmRecvConnectInfo));
@@ -191,7 +191,7 @@ ncclResult_t shmRecvSetup(ncclTinfo_t* myOpaqueInfo, ncclTinfo_t* peerOpaqueInfo
 
   char shmName[1024];
   sprintf(shmName, "nccl-shm-recv-%d-%d-%d", myInfo->pid, ring->id, myInfo->rank);
-  info.shmSize = resources->shmSize = offsetof(struct ncclSendRecvMem, buff)+ring->buffSize;
+  info.shmSize = resources->shmSize = offsetof(struct ncclRecvMem, buff)+ring->buffSize;
   NCCLCHECK(shmOpen(shmName, resources->shmSize, (void**)&resources->hostMem, (void**)&resources->devHostMem, 1));
   
   info.id = ring->id; info.rank = myInfo->rank; info.pid = myInfo->pid;

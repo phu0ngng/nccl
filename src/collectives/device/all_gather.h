@@ -50,7 +50,7 @@ __device__ void ncclAllGatherKernel(struct CollectiveArgs* args) {
       *ring->recv.conn.ptrExchange = args->ThisOutput;
     }
     if (nextdirect) {
-      void* volatile* ptr = &(ring->devMem->ptrExchange);
+      void* volatile* ptr = &(ring->devMemSend->ptrExchange);
       while (*ptr == nullptr);
       sharedNextOutput = (T*)*ptr;
       *ptr = nullptr;

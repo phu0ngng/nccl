@@ -192,7 +192,7 @@ static ncclResult_t selectTransport(struct ncclInfo* myInfo, struct ncclInfo* pe
   return ncclInternalError;
 }
 
-static ncclResult_t setupRing(struct ncclComm* comm, int ringid, int rank, int nranks, int* ringRanks, struct ncclInfo* allInfo, struct ncclConnect* connect) { 
+static ncclResult_t setupRing(struct ncclComm* comm, int ringid, int rank, int nranks, int* ringRanks, struct ncclInfo* allInfo, struct ncclConnect* connect) {
   NCCLCHECK(initRing(comm, ringid));
 
   struct ncclRing* ring = comm->rings+ringid;
@@ -275,7 +275,7 @@ static ncclResult_t buildRings(int nrings, int* rings, int rank, int nranks, int
       rings[r*nranks+i] = current;
       current = next[r*nranks+current];
     }
-    sprintf(prefix, "[%d] Ring %d : ", rank, r);
+    sprintf(prefix, "Ring %02d : ", r);
     if (rank == 0) dumpLine(rings+r*nranks, nranks, prefix);
     if (current != rank) {
       WARN("Error : ring %d does not loop back to start (%d != %d)", r, current, rank);
@@ -499,26 +499,28 @@ cleanup:
 }
 
 NCCL_API(ncclResult_t, ncclCommInitRank, ncclComm_t* newcomm, int ndev, ncclUniqueId commId, int myrank);
-ncclResult_t ncclCommInitRank(ncclComm_t* newcomm, int ndev, ncclUniqueId commId, int myrank) {
+ncclResult_t ncclCommInitRank(ncclComm_t* newcomm, int nranks, ncclUniqueId commId, int myrank) {
   NCCLCHECK(ncclInit());
   if (myrank == 0) showVersion();
+
+  TRACE("rank %d nranks %d", myrank, nranks);
 
   // It seems we need to call this so that NVML doesn't crash later with error
   // 999.
   CUDACHECK(cudaFree(NULL));
 
   NCCLCHECK(PtrCheck(newcomm, "CommInitRank", "newcomm"));
-  if (ndev < 1) {
-    WARN("Invalid device count requested : %d", ndev);
+  if (nranks < 1 || myrank < 0 || myrank >= nranks) {
+    WARN("Invalid rank requested : %d/%d", myrank, nranks);
     return ncclInvalidArgument;
   }
 
   if (ncclAsyncMode()) {
     int cudaDev;
     CUDACHECK(cudaGetDevice(&cudaDev));
-    return ncclAsyncInit(ncclCommInitRankSync, cudaDev, newcomm, ndev, commId, myrank);
+    return ncclAsyncInit(ncclCommInitRankSync, cudaDev, newcomm, nranks, commId, myrank);
   } else {
-    return ncclCommInitRankSync(newcomm, ndev, commId, myrank);
+    return ncclCommInitRankSync(newcomm, nranks, commId, myrank);
   }
 }
 
