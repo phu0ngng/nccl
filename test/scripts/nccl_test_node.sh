@@ -15,9 +15,13 @@ rm $BLDDIR/state
 
 # DGX specific setting
 if [ "$gpumodel" == "dgx1" ]; then
+  source /etc/profile.d/modules.sh
+  export PATH=/usr/local/bin:/usr/bin:$PATH
   module load cuda
   MPI_HOME="${MPI_HOME:-$HOME/install/openmpi}"
 elif [ "$gpumodel" == "dgx1v" ]; then
+  source /etc/profile.d/modules.sh
+  export PATH=/usr/local/bin:/usr/bin:$PATH
   source $HOME/cuda.sh
   MPI_HOME="${MPI_HOME:-$HOME/install/openmpi}"
 else
