@@ -13,7 +13,7 @@ if [ "$VERS" == "" ]; then
   VERS="master"
 fi
 
-INSTVER=2.0.5
+INSTVER=2.1.2
 TESTDIR=$HOME/$DATE
 NCCLDEB=$HOME/install/nccl.deb
 

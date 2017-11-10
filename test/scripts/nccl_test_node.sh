@@ -42,6 +42,10 @@ export LD_LIBRARY_PATH=$MPI_HOME/lib:$LD_LIBRARY_PATH
 if [ "$DEBDIR" == "" ] && [ "$INSTALL" != "1" ]; then
   make -j src.build 2>&1 | tee make_src.log
   DEBDIR=$BLDDIR
+fi
+
+# export library if not using the one installed on system
+if [ "$INSTALL" != "1" ]; then
   export LD_LIBRARY_PATH=$DEBDIR/lib:$LD_LIBRARY_PATH
 fi
 
