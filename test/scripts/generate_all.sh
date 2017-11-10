@@ -66,6 +66,6 @@ done
 DIR=html_dlfw
 rm -rf $DST/$DIR
 mkdir -p $DST/$DIR
-./dlfw_generate_plots.sh P100 ${VER}${GM} ${VER}${PM}
+./dlfw_generate_plots.sh P100 ${VER}${GM} ${VER}${PM} 2.0.5
 mv comp/P100/*.png $DST/$DIR/
 rm -rf comp
