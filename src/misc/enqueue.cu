@@ -81,12 +81,11 @@ ncclResult_t setupLaunch(struct ncclComm* comm, struct cudaLaunchParams* params)
   int totalOps = 0;
   for (int r=0; r<params->gridDim.x; r++) totalOps += comm->rings[r].collCount;
 
+  struct ncclColl* coll = comm->rings[0].collectives+comm->rings[0].collStart;
+  memcpy(&comm->args, coll, sizeof(struct ncclColl));
+
   // One operation
   if (totalOps == 1) {
-    struct ncclColl* coll = comm->rings[0].collectives+comm->rings[0].collStart;
-    memcpy(&comm->args, coll, sizeof(struct ncclColl));
-    coll->active = 0;
-
     params->func = ncclKerns[FUNC_SET(coll->ll, coll->nThreads)][coll->funcIndex];
     return ncclSuccess;
   }
