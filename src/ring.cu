@@ -25,20 +25,29 @@ ncclResult_t initRing(struct ncclComm* comm, int ringid) {
     buffSize = DEFAULT_BUFFER_SIZE_BYTES;
   }
   ring->buffSize = buffSize;
-  const int size = ring->devMemSize = offsetof(struct ncclSendRecvMem, buff)+buffSize;
-  struct ncclSendRecvMem* mem;
-  CUDACHECK(cudaMalloc(&mem, size));
-  CUDACHECK(cudaMemset(mem, 0, size));
-  ring->devMem = mem;
+
+  const int sendSize = ring->devMemSendSize = sizeof(struct ncclSendMem);
+  struct ncclSendMem* sendMem;
+  CUDACHECK(cudaMalloc(&sendMem, sendSize));
+  CUDACHECK(cudaMemset(sendMem, 0, sendSize));
+  ring->devMemSend = sendMem;
+
+  const int recvSize = ring->devMemRecvSize = offsetof(struct ncclRecvMem, buff)+buffSize;
+  struct ncclRecvMem* recvMem;
+  CUDACHECK(cudaMalloc(&recvMem, recvSize));
+  CUDACHECK(cudaMemset(recvMem, 0, recvSize));
+  ring->devMemRecv = recvMem;
+
+  TRACE("sendMem %p size %d recvMem %p size %d", sendMem, sendSize, recvMem, recvSize);
 
   // Pre-configure send/recv pointers. Those are the default, they may change later.
-  ring->recv.conn.buff = mem->buff;
-  ring->recv.conn.llBuff = mem->llBuff;
-  ring->recv.conn.tail = &mem->tail;
-  ring->recv.conn.opCount = &mem->opCount;
+  ring->recv.conn.buff = recvMem->buff;
+  ring->recv.conn.llBuff = recvMem->llBuff;
+  ring->recv.conn.tail = &recvMem->tail;
+  ring->recv.conn.opCount = &recvMem->opCount;
   ring->recv.conn.direct = 0;
-  ring->send.conn.head = &mem->head;
-  ring->send.conn.llHead = &mem->llHead;
+  ring->send.conn.head = &sendMem->head;
+  ring->send.conn.llHead = &sendMem->llHead;
   ring->send.conn.direct = 0;
   ring->send.conn.llStep = 0;
   ring->send.conn.llLastCleaning = 0;
@@ -58,7 +67,8 @@ ncclResult_t initRing(struct ncclComm* comm, int ringid) {
 
 ncclResult_t freeRing(struct ncclRing* ring) {
   // Intermediate buffering
-  CUDACHECK(cudaFree(ring->devMem));
+  CUDACHECK(cudaFree(ring->devMemSend));
+  CUDACHECK(cudaFree(ring->devMemRecv));
 
   // Index to rank table
   free(ring->userRanks);
