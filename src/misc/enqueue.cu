@@ -7,6 +7,54 @@
 #include "enqueue.h"
 #include "common_coll.h"
 
+#include "collectives/collectives.h"
+
+// Must be consistent with ncclDataType_t
+#define NCCL_FUNCS3(nthreads, coll, op) \
+  (void*)NCCL_KERN_NAME(coll, op,  i8, nthreads), \
+  (void*)NCCL_KERN_NAME(coll, op,  u8, nthreads), \
+  (void*)NCCL_KERN_NAME(coll, op, i32, nthreads), \
+  (void*)NCCL_KERN_NAME(coll, op, u32, nthreads), \
+  (void*)NCCL_KERN_NAME(coll, op, i64, nthreads), \
+  (void*)NCCL_KERN_NAME(coll, op, u64, nthreads), \
+  (void*)NCCL_KERN_NAME(coll, op, f16, nthreads), \
+  (void*)NCCL_KERN_NAME(coll, op, f32, nthreads), \
+  (void*)NCCL_KERN_NAME(coll, op, f64, nthreads)
+
+// Must be consistent with ncclRedOp_t
+#define NCCL_FUNCS2A(nthreads, coll) \
+  NCCL_FUNCS3(nthreads, coll, sum ), \
+  NCCL_FUNCS3(nthreads, coll, prod), \
+  NCCL_FUNCS3(nthreads, coll, max ), \
+  NCCL_FUNCS3(nthreads, coll, min )
+#define NCCL_FUNCS2B(nthreads, coll) \
+  NCCL_FUNCS3(nthreads, coll, copy), \
+  NCCL_FUNCS3(nthreads, coll, copy), \
+  NCCL_FUNCS3(nthreads, coll, copy), \
+  NCCL_FUNCS3(nthreads, coll, copy)
+
+// Must be consistent with ncclColl_t
+#define NCCL_FUNCS(nthreads) { \
+  NCCL_FUNCS2B(nthreads, ncclBcast), \
+  NCCL_FUNCS2A(nthreads, ncclReduce), \
+  NCCL_FUNCS2B(nthreads, ncclAllGather), \
+  NCCL_FUNCS2A(nthreads, ncclReduceScatter), \
+  NCCL_FUNCS2A(nthreads, ncclAllReduce) }
+
+// Must be consistent with the ncclFuncSet enum
+static void* const ncclKerns[][ncclCollCount*ncclNumOps*ncclNumTypes] = {
+  {
+    NCCL_FUNCS2B(LL_NTHREADS, ncclBcastLL),
+    NCCL_FUNCS2A(LL_NTHREADS, ncclReduceLL),
+    NCCL_FUNCS2B(LL_NTHREADS, ncclAllGatherLL),
+    NCCL_FUNCS2A(LL_NTHREADS, ncclReduceScatterLL),
+    NCCL_FUNCS2A(LL_NTHREADS, ncclAllReduceLL) },
+  NCCL_FUNCS(64),
+  NCCL_FUNCS(128),
+  NCCL_FUNCS(256),
+  NCCL_FUNCS(512)
+};
+
 ncclResult_t ncclLaunchCooperativeKernelMultiDevice(struct cudaLaunchParams *paramsList, int* cudaDevs, int numDevices, int cgMode) {
 #if __CUDACC_VER_MAJOR__ >= 9
   if (cgMode & 0x01) {
@@ -29,12 +77,27 @@ ncclResult_t ncclLaunchCooperativeKernelMultiDevice(struct cudaLaunchParams *par
 
 ncclResult_t setupLaunch(struct ncclComm* comm, struct cudaLaunchParams* params) {
   params->gridDim.x = min(params->gridDim.x, comm->nRings);
-  // Set active = 2 for last operation
+
+  int totalOps = 0;
+  for (int r=0; r<params->gridDim.x; r++) totalOps += comm->rings[r].collCount;
+
+  // One operation
+  if (totalOps == 1) {
+    struct ncclColl* coll = comm->rings[0].collectives+comm->rings[0].collStart;
+    memcpy(&comm->args, coll, sizeof(struct ncclColl));
+    coll->active = 0;
+
+    params->func = ncclKerns[FUNC_SET(coll->ll, coll->nThreads)][coll->funcIndex];
+    return ncclSuccess;
+  }
+
+  // Aggregated operations
+  params->func = (void*)ncclMultiOpKernel;
+  // Set active = 2 for the last operation
   for (int r=0; r<params->gridDim.x; r++) {
     struct ncclRing* ring = comm->rings+r;
     ring->collectives[(ring->collStart+ring->collCount-1)%NCCL_MAX_OPS].active = 2;
   }
-  // Pass the first operation as argument to reduce latency
   memcpy(&comm->args, comm->rings[0].collectives+comm->rings[0].collStart, sizeof(struct ncclColl));
   return ncclSuccess;
 }

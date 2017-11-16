@@ -311,7 +311,6 @@ ncclResult_t initParams(struct ncclComm* comm) {
   params->sharedMem = sizeof(struct ncclColl)*MAXRINGS;
   params->blockDim.x = 0; params->blockDim.y = params->blockDim.z = 1;
   params->gridDim.x = 0; params->gridDim.y = params->gridDim.z = 1;
-  params->func = (void*)ncclKernel;
   return ncclSuccess;
 }
 

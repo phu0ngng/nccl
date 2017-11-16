@@ -158,14 +158,12 @@ struct ncclColl {
   /* Line 6 */
   uint16_t nThreads;
 
-  uint8_t  coll;
-  uint8_t  redop;
+  uint16_t funcIndex;
 
-  uint8_t  dtype;
   uint8_t  ll;
-
   uint8_t  active;
-  uint8_t  pad0;
+
+  uint16_t pad0;
 
   /* Line 7 */
   uint64_t pad1;

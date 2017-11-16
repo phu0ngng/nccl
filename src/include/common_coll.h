@@ -8,6 +8,7 @@
 #define COMMON_COLL_H_
 
 #include "core.h"
+#include "collectives/collectives.h"
 
 static ncclResult_t PointerCheck(const void* pointer, struct ncclComm* comm, const char* ptrname, const char* opname) {
   cudaPointerAttributes attr;
@@ -108,7 +109,8 @@ static ncclResult_t saveKernel(int coll, const void* sendbuff, void* recvbuff, s
     args->nRings = nBlocks;
 
     c->nThreads = nThreads;
-    c->coll = coll; c->redop = op; c->dtype = dtype; c->ll = llMode;
+    c->funcIndex = FUNC_INDEX(coll, op, dtype);
+    c->ll = llMode;
     c->active = 1;
     ring->collFifoTail = (ring->collFifoTail+1)%NCCL_MAX_OPS;
     ring->collCount++;
@@ -117,6 +119,6 @@ static ncclResult_t saveKernel(int coll, const void* sendbuff, void* recvbuff, s
   return ncclSuccess;
 }
 
-extern __global__ void ncclKernel (struct ncclColl firstColl);
+extern __global__ void ncclMultiOpKernel (struct ncclColl firstColl);
 
 #endif
