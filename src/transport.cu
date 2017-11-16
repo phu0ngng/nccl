@@ -42,6 +42,9 @@ static struct ncclProxyArgs* FifoGetNextArgs(struct transportProxyInfo* info) {
 static void FifoPushArgs(struct transportProxyInfo* info) {
   if (info == NULL) return;
 
+  struct ncclProxyArgs* fifoArgs = info->argsFifo + ((info->argsFifoTail-1) % TRANSPORT_PROXY_FIFO_SIZE);
+  if (fifoArgs->active == 0) return;
+
   pthread_mutex_lock(&info->mutex);
   pthread_cond_signal(&info->cond);
   pthread_mutex_unlock(&info->mutex);
@@ -119,6 +122,7 @@ ncclResult_t transportStartProxies(ncclComm* comm) {
     FifoPushArgs(comm->rings[r].send.proxyInfo);
     FifoPushArgs(comm->rings[r].recv.proxyInfo);
   }
+  pthread_yield(); // Let other threads run
   return ncclSuccess;
 }
 

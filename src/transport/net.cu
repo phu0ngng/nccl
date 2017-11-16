@@ -452,8 +452,8 @@ ncclResult_t netRecvProxy(struct ncclProxyArgs* args) {
           if (ptrType == NCCL_PTR_CUDA) ncclNetFlush(resources->netRecvComm, localBuff+slot*sliceSize, size);
           *nextTail = head;
         }
+        idle = 0;
       }
-      idle = 0;
     }
     if (idle) transportProxyIdle(idle);
   }
