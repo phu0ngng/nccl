@@ -25,7 +25,7 @@ int ncclSocketPtrSupport(int dev, int* supportedTypes) {
 #define MAX_IF_NAME_SIZE 16
 #define MAX_IFS 16
 static char ncclNetIfNames[MAX_IF_NAME_SIZE*MAX_IFS];
-static struct in_addr ncclNetIfAddrs[MAX_IFS];
+static union socketAddress ncclNetIfAddrs[MAX_IFS];
 static int ncclNetIfs = -1;
 pthread_mutex_t ncclSocketLock = PTHREAD_MUTEX_INITIALIZER;
 
@@ -33,21 +33,7 @@ static void initDevices() {
   if (ncclNetIfs == -1) {
     pthread_mutex_lock(&ncclSocketLock);
     if (ncclNetIfs == -1) {
-      ncclNetIfs = 0;
-      // User specified interface
-      char* env = getenv("NCCL_SOCKET_IFNAME");
-      if (env && strlen(env) > 1) {
-        // Specified by user : find or fail
-        ncclNetIfs = findInterfaces(env, ncclNetIfNames, ncclNetIfAddrs, MAX_IF_NAME_SIZE, MAX_IFS);
-      } else {
-        // Try to automatically pick the right one
-        // Start with IB
-        ncclNetIfs = findInterfaces("ib", ncclNetIfNames, ncclNetIfAddrs, MAX_IF_NAME_SIZE, MAX_IFS);
-        // Then look for anything else (but not loopback)
-        if (ncclNetIfs == 0) ncclNetIfs = findInterfaces("^lo", ncclNetIfNames, ncclNetIfAddrs, MAX_IF_NAME_SIZE, MAX_IFS);
-        // Don't try loopback. If we are we running intra-node we can always set env="lo".
-        //if (ncclNetIfs == 0) ncclNetIfs = findInterfaces("lo", ncclNetIfNames, ncclNetIfAddrs, MAX_IF_NAME_SIZE, MAX_IFS);
-      }
+      ncclNetIfs = findInterfaces(ncclNetIfNames, ncclNetIfAddrs, MAX_IF_NAME_SIZE, MAX_IFS);
       INFO("NET/Socket : %d interfaces found", ncclNetIfs);
     }
     pthread_mutex_unlock(&ncclSocketLock);
@@ -63,17 +49,17 @@ int ncclSocketDevices(int* ndev, int** scores) {
   return ncclSuccess;
 }
 
-static ncclResult_t GetIpAddr(int dev, struct in_addr* addr) {
+static ncclResult_t GetSocketAddr(int dev, union socketAddress* addr) {
   if (ncclNetIfs == -1) initDevices();
   if (dev > ncclNetIfs) return ncclInternalError;
-  memcpy(addr, ncclNetIfAddrs+dev, sizeof(struct in_addr));
+  memcpy(addr, ncclNetIfAddrs+dev, sizeof(*addr));
   return ncclSuccess;
 }
 
 /* Communication functions */
 
 struct ncclSocketHandle {
-  struct socketAddress connectAddr;
+  union socketAddress connectAddr;
 };
 
 struct ncclSocketRequest {
@@ -82,7 +68,6 @@ struct ncclSocketRequest {
 };
 
 struct ncclSocketReqs {
-  int nreqs;
   struct ncclSocketRequest* requests;
 };
 
@@ -93,7 +78,6 @@ struct ncclSocketComm {
 
 struct ncclSocketComm* ncclSocketNewComm() {
   struct ncclSocketComm* comm = (struct ncclSocketComm*)malloc(sizeof(struct ncclSocketComm));
-  comm->reqs.nreqs = 0;
   comm->reqs.requests = NULL;
   comm->fd = -1;
   return comm;
@@ -103,16 +87,18 @@ int ncclSocketListen(int dev, void* opaqueHandle, void** listenComm) {
   struct ncclSocketComm* comm = ncclSocketNewComm();
   struct ncclSocketHandle* handle = (struct ncclSocketHandle*) opaqueHandle;
   static_assert(sizeof(struct ncclSocketHandle) < NCCL_NET_HANDLE_MAXSIZE, "ncclSocketHandle size too large");
-  NCCLCHECK(GetIpAddr(dev, &(handle->connectAddr.ip_addr)));
-  NCCLCHECK(createListenSocket(&comm->fd, handle->connectAddr.ip_addr, &handle->connectAddr.port));
+  NCCLCHECK(GetSocketAddr(dev, &(handle->connectAddr)));
+  NCCLCHECK(createListenSocket(&comm->fd, &handle->connectAddr));
   *listenComm = comm;
   return 0;
 }
 
 int ncclSocketConnect(int dev, void* opaqueHandle, void** sendComm) {
+  if (ncclNetIfs == -1) initDevices();
+  if (dev > ncclNetIfs) return ncclInternalError;
   struct ncclSocketComm* comm = ncclSocketNewComm();
   struct ncclSocketHandle* handle = (struct ncclSocketHandle*) opaqueHandle;
-  NCCLCHECK(connectAddress(&handle->connectAddr, ncclNetIfAddrs[dev], &comm->fd));
+  NCCLCHECK(connectAddress(&handle->connectAddr, &ncclNetIfAddrs[dev], &comm->fd));
   *sendComm = comm;
   return 0;
 }
@@ -127,20 +113,24 @@ int ncclSocketAccept(void* listenComm, void** recvComm) {
   return 0;
 }
 
-struct ncclSocketRequest* ncclSocketGetRequest(struct ncclSocketReqs* reqs) {
-  for (int i=0; i<reqs->nreqs; i++) {
-    if (reqs->requests[i].used == 0) {
-      reqs->requests[i].used = 1; 
-      return reqs->requests + i;
+#define MAX_REQUESTS 128
+
+ncclResult_t ncclSocketGetRequest(struct ncclSocketReqs* reqs, struct ncclSocketRequest** req) {
+  if (reqs->requests == NULL) {
+    reqs->requests = (struct ncclSocketRequest*)malloc(MAX_REQUESTS*sizeof(struct ncclSocketRequest));
+    memset(reqs->requests, 0, MAX_REQUESTS*sizeof(struct ncclSocketRequest));
+  }
+  for (int i=0; i<MAX_REQUESTS; i++) {
+    struct ncclSocketRequest* r = reqs->requests+i;
+    if (r->used == 0) {
+      r->used = 1;
+      r->size = -1;
+      *req = r;
+      return ncclSuccess;
     }
   }
-  // No free request found, grow the pool
-  int newNumRequests = reqs->nreqs + 32;
-  reqs->requests = (struct ncclSocketRequest*)realloc(reqs->requests, newNumRequests*sizeof(struct ncclSocketRequest));
-  for (int i=reqs->nreqs; i<newNumRequests; i++)
-    reqs->requests[i].used = 0;
-  reqs->nreqs = newNumRequests;
-  return ncclSocketGetRequest(reqs);
+  WARN("Socket : unable to allocate requests\n");
+  return ncclInternalError;
 }
 
 int ncclSocketIsend(void* sendComm, void* data, int size, int type, void** request) {
@@ -162,10 +152,16 @@ int ncclSocketIrecv(void* recvComm, void* data, int size, int type, void** reque
     return ncclInternalError;
   }
   NCCLCHECK(socketReceive(comm->fd, data, min(recvSize, size)));
-  struct ncclSocketRequest* recvReq = ncclSocketGetRequest(&comm->reqs);
+  struct ncclSocketRequest* recvReq;
+  NCCLCHECK(ncclSocketGetRequest(&comm->reqs, &recvReq));
   recvReq->size = recvSize;
   *request = recvReq;
   return 0;
+}
+
+int ncclSocketFlush(void* recvComm, void* data, int size) {
+  // We don't support CUDA pointers, we don't need a flush.
+  return 1;
 }
 
 int ncclSocketTest(void* request, int* done, int* size) {
@@ -197,6 +193,7 @@ ncclNet_t ncclNetSocket = {
   ncclSocketAccept,
   ncclSocketIsend,
   ncclSocketIrecv,
+  ncclSocketFlush,
   ncclSocketTest,
   ncclSocketClose,
   ncclSocketClose,

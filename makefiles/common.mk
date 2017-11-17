@@ -9,26 +9,42 @@ PREFIX ?= /usr/local
 VERBOSE ?= 0
 KEEP ?= 0
 DEBUG ?= 0
+TRACE ?= 0
 PROFAPI ?= 0
 
-CUDA_LIB = $(CUDA_HOME)/lib64
-CUDA_INC = $(CUDA_HOME)/include
 NVCC = $(CUDA_HOME)/bin/nvcc
+
+CUDA_LIB ?= $(CUDA_HOME)/lib64
+CUDA_INC ?= $(CUDA_HOME)/include
+CUDA_VERSION = $(strip $(shell $(NVCC) --version | grep release | sed 's/.*release //' | sed 's/\,.*//'))
+#CUDA_VERSION ?= $(shell ls $(CUDA_LIB)/libcudart.so.* | head -1 | rev | cut -d "." -f -2 | rev)
+CUDA_MAJOR = $(shell echo $(CUDA_VERSION) | cut -d "." -f 1)
+CUDA_MINOR = $(shell echo $(CUDA_VERSION) | cut -d "." -f 2)
+#$(info CUDA_VERSION ${CUDA_MAJOR}.${CUDA_MINOR})
+
 
 # Better define NVCC_GENCODE in your environment to the minimal set
 # of archs to reduce compile time.
-NVCC_GENCODE ?= -gencode=arch=compute_30,code=sm_30 \
+CUDA8_GENCODE = -gencode=arch=compute_30,code=sm_30 \
 		-gencode=arch=compute_35,code=sm_35 \
                 -gencode=arch=compute_50,code=sm_50 \
                 -gencode=arch=compute_52,code=sm_52 \
                 -gencode=arch=compute_60,code=sm_60 \
-                -gencode=arch=compute_61,code=sm_61 \
-                -gencode=arch=compute_61,code=compute_61
+		-gencode=arch=compute_61,code=sm_61 \
+		-gencode=arch=compute_61,code=compute_61
+CUDA9_GENCODE = -gencode=arch=compute_70,code=compute_70
 
-CXXFLAGS   := -I$(CUDA_INC) -fPIC -fvisibility=hidden
+# Include Volta support if we're using CUDA9 or above
+ifeq ($(shell test "$(CUDA_MAJOR)" -gt 8; echo $$?),0)
+  NVCC_GENCODE ?= $(CUDA8_GENCODE) $(CUDA9_GENCODE)
+else
+  NVCC_GENCODE ?= $(CUDA8_GENCODE)
+endif
+#$(info NVCC_GENCODE is ${NVCC_GENCODE})
+
+CXXFLAGS   := -I$(CUDA_INC) -DCUDA_MAJOR=$(CUDA_MAJOR) -DCUDA_MINOR=$(CUDA_MINOR) -fPIC -fvisibility=hidden
 NVCUFLAGS  := -ccbin $(CXX) $(NVCC_GENCODE) -lineinfo -std=c++11 -maxrregcount 96
 # Use addprefix so that we can specify more than one path
-LDFLAGS    := -L${CUDA_LIB} -lcudart -lrt
 NVLDFLAGS  := -L${CUDA_LIB} -lcudart -lrt
 
 ########## GCOV ##########
@@ -43,7 +59,7 @@ NVLDFLAGS   += ${GCOV_FLAGS:%=-Xcompiler %}
 
 ifeq ($(DEBUG), 0)
 NVCUFLAGS += -O3
-CXXFLAGS  += -O3
+CXXFLAGS  += -O3 -g
 else
 NVCUFLAGS += -O0 -G -g
 CXXFLAGS  += -O0 -g -ggdb3
@@ -54,6 +70,10 @@ NVCUFLAGS += -Xptxas -v -Xcompiler -Wall,-Wextra
 CXXFLAGS  += -Wall -Wextra
 else
 .SILENT:
+endif
+
+ifneq ($(TRACE), 0)
+CXXFLAGS  += -DENABLE_TRACE
 endif
 
 ifneq ($(KEEP), 0)

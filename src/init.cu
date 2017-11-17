@@ -5,6 +5,7 @@
  ************************************************************************/
 
 #include "core.h"
+#include "env.h"
 #include "nvmlwrap.h"
 //#include "ibvwrap.h"
 #include "rings.h"
@@ -25,14 +26,28 @@
 #include <cuda_runtime.h>
 #include <string.h>
 #include <errno.h>
+#include <assert.h>
 
 DebugLevel ncclDebugLevel;
 pthread_mutex_t ncclDebugOutputLock;
 
 int ncclPrintCRCs;
+int ncclChecks;
+
+size_t ncclSingleRingThreshold;
 
 extern "C" __attribute__ ((visibility("default")))
 ncclNet_t* ncclNet = NULL;
+
+// We define this as weak to let unit test redefine their own
+#pragma weak ncclCudaCompCap
+int ncclCudaCompCap() {
+  int cudaDev;
+  if (cudaGetDevice(&cudaDev) != cudaSuccess) return 0;
+  int ccMajor;
+  if (cudaDeviceGetAttribute(&ccMajor, cudaDevAttrComputeCapabilityMajor, cudaDev) != cudaSuccess) return 0;
+  return ccMajor;
+}
 
 void initNet() {
   if (ncclNet != NULL) {
@@ -45,14 +60,23 @@ void initNet() {
   }
 }
 
+int ncclLLThreshold;
+void initLl() {
+  char* str = getenv("NCCL_LL_THRESHOLD");
+  ncclLLThreshold = (str && atoi(str) >= 0) ? atoi(str) : NCCL_LL_THRESHOLD;
+  INFO("Using NCCL Low-latency algorithm for sizes below %d", ncclLLThreshold);
+}
+
 pthread_mutex_t initLock = PTHREAD_MUTEX_INITIALIZER;
 static bool initialized = false;
 static ncclResult_t ncclInit() {
   if (initialized) return ncclSuccess;
   pthread_mutex_lock(&initLock);
   if (!initialized) {
+    initEnv();
     initDebug();
     initNet();
+    initLl();
     initialized = true;
   }
   pthread_mutex_unlock(&initLock);
@@ -106,15 +130,19 @@ static ncclResult_t commAlloc(ncclComm_t* comret, int ndev, int rank) {
 
   struct ncclComm* comm = (struct ncclComm*)malloc(sizeof(struct ncclComm));
   if (comm == NULL) {
-    WARN("comm allocation failed");
+    WARN("comm allocation failed : %s", strerror(errno));
     return ncclSystemError;
   }
   memset(comm, 0, sizeof(struct ncclComm));
 
+  TRACE("comm %p rank %d nranks %d", comm, rank, ndev);
   comm->rank = rank;
   comm->nRanks = ndev;
   cudaGetDevice(&comm->cudaDev);
   comm->doneEvent = doneEvent;
+  comm->llThreshold = ncclLLThreshold;
+
+  comm->argsptr = &comm->args;
 
   *comret = comm;
   return ncclSuccess;
@@ -132,10 +160,14 @@ static ncclResult_t devCommSetup(ncclComm_t comm) {
   return ncclSuccess;
 }
 
+// Pre-process the string so that running "strings" on the lib can quickly reveal the version.
+#define STR2(v) #v
+#define STR(v) STR2(v)
 static void showVersion() {
   static int shown = 0;
   if (shown == 0 && ncclDebugLevel >= VERSION) {
-    printf("NCCL version %d.%d.%d compiled with CUDA %d.%d\n", NCCL_MAJOR, NCCL_MINOR, NCCL_PATCH, CUDA_MAJOR, CUDA_MINOR);
+    printf("NCCL version " STR(NCCL_MAJOR) "." STR(NCCL_MINOR) "." STR(NCCL_PATCH) NCCL_SUFFIX
+           "+cuda" STR(CUDA_MAJOR) "." STR(CUDA_MINOR) "\n");
     fflush(stdout);
     shown = 1;
   }
@@ -186,12 +218,16 @@ static ncclResult_t setupSendRecv(struct ncclRing* ring) {
   CUDACHECK(cudaMalloc(&mem, size));
   CUDACHECK(cudaMemset(mem, 0, size));
   ring->devMem = mem;
-  ring->recv.conn.buff = (char*)&mem->buff;
+  ring->recv.conn.buff = mem->buff;
+  ring->recv.conn.llBuff = mem->llBuff;
   ring->recv.conn.tail = &mem->tail;
   ring->recv.conn.opCount = &mem->opCount;
   ring->recv.conn.direct = 0;
   ring->send.conn.head = &mem->head;
+  ring->send.conn.llHead = &mem->llHead;
   ring->send.conn.direct = 0;
+  ring->send.conn.llStep = 0;
+  ring->send.conn.llLastCleaning = 0;
   return ncclSuccess;
 }
 
@@ -303,13 +339,57 @@ static ncclResult_t buildRings(int nrings, int* rings, int rank, int nranks, int
   return ncclSuccess;
 }
 
-/* Get the default number of threads based on the GPU generation */
-ncclResult_t getDefaultThreads(int* nthreads) {
-  int cudaDev;
-  CUDACHECK(cudaGetDevice(&cudaDev));
-  int ccMajor;
-  CUDACHECK(cudaDeviceGetAttribute(&ccMajor, cudaDevAttrComputeCapabilityMajor, cudaDev));
-  *nthreads = (ccMajor > 5) ? 256 : 512;
+void* waitForNonNullPtr(void* p) {
+  volatile void** ptr = (volatile void**) p;
+  while (*ptr == NULL) sched_yield();
+  return (void*)*ptr;
+}
+
+// Allocate/Set Intra Structures and set CG options
+ncclResult_t ncclCommSetIntra(struct ncclComm* comm, int rank, int ranks, struct ncclComm* comm0) {
+  comm->intraRank = rank;
+  comm->intraRanks = ranks;
+  comm->intraPhase = 0;
+
+  // Alloc shared structures
+  if (rank == 0) {
+    assert(comm == comm0);
+    int* bar = (int*)malloc(2*sizeof(int));
+    bar[0] = bar[1] = 0;
+    comm->intraBarrier = bar;
+    comm->intraParams = (struct cudaLaunchParams*)malloc(sizeof(struct cudaLaunchParams)*comm->intraRanks);
+    comm->intraCudaDevs = (int*)malloc(sizeof(int)*comm->intraRanks);
+    int* CGMode = (int*)malloc(sizeof(int));
+    *CGMode = 0x11;
+    comm->intraCGMode = CGMode;
+  } else {
+    comm->intraBarrier = (int*)waitForNonNullPtr(&comm0->intraBarrier);
+    comm->intraParams = (struct cudaLaunchParams*)waitForNonNullPtr(&comm0->intraParams);
+    comm->intraCudaDevs = (int*)waitForNonNullPtr(&comm0->intraCudaDevs);
+    comm->intraCGMode = (int*)waitForNonNullPtr(&comm0->intraCGMode);
+  }
+  comm->intraCudaDevs[comm->intraRank] = comm->cudaDev;
+
+  int cgMdLaunch = 0;
+
+  // Set CG Mode
+  comm->launchMode = ncclComm::GROUP;
+  char* str = getenv("NCCL_LAUNCH_MODE");
+  if (comm->intraRanks == 1 || (str && strcmp(str, "PARALLEL") == 0)) {
+    comm->launchMode = ncclComm::PARALLEL;
+  }
+  if (comm->launchMode == ncclComm::GROUP) {
+    CUDACHECK(cudaStreamCreateWithFlags(&comm->ncclStream, cudaStreamNonBlocking));
+#if __CUDACC_VER_MAJOR__ >= 9
+    // Check whether the GPU supports Cooperative Group Multi Device Launch
+    (void) cudaDeviceGetAttribute(&cgMdLaunch, cudaDevAttrCooperativeMultiDeviceLaunch, comm->cudaDev);
+#endif
+  }
+
+  // Disable cgMdLaunch if any rank does not support it
+  if (cgMdLaunch == 0) {
+    *comm->intraCGMode = 0x10;
+  }
   return ncclSuccess;
 }
 
@@ -334,7 +414,7 @@ static ncclResult_t initTransportsRank(struct ncclComm* comm, ncclUniqueId* comm
   int nrings;
   int prev[nranks*MAXRINGS];
   int next[nranks*MAXRINGS];
-  NCCLCHECK(getDefaultThreads(&comm->nThreads));
+  comm->nThreads = getDefaultThreads();
   NCCLCHECK(ncclGetRings(&nrings, &comm->nThreads, rank, nranks, connectTransport, connectValue, prev, next));
 
   // Find max nThreads
@@ -344,6 +424,18 @@ static ncclResult_t initTransportsRank(struct ncclComm* comm, ncclUniqueId* comm
   for (int i=0; i<nranks; i++)
     comm->nThreads = max(allData[i], comm->nThreads);
   if (rank == 0) INFO("Using %d threads", comm->nThreads);
+
+  // Determine the minimum CUDA Compute capability of all GPUs
+  int myCompCap = ncclCudaCompCap();
+  int minCompCap = myCompCap;
+  allData[rank] = myCompCap;
+  NCCLCHECK(bootstrapAllGather(commState, allData, sizeof(int)));
+  for (int i=0; i<nranks; i++)
+    minCompCap = min(allData[i], minCompCap);
+  if (rank == 0) INFO("Min Comp Cap %d", minCompCap);
+
+  // Query the NCCL_SINGLE_RING_THRESHOLD env var
+  ncclSingleRingThreshold = getRingThreshold(rank, minCompCap);
 
   // Find min nrings across ranks
   allData[rank] = nrings;
@@ -376,35 +468,38 @@ static ncclResult_t initTransportsRank(struct ncclComm* comm, ncclUniqueId* comm
   struct rankInfo {
     uint64_t hostHash;
     int pid;
-    int* bar;
+    struct ncclComm* comm;
   } rankInfos[nranks];
   rankInfos[rank].pid = getpid();
   char hostname[1024];
   getHostName(hostname, 1024);
   rankInfos[rank].hostHash=getHostHash(hostname);
-  rankInfos[rank].bar = (int*)malloc(2*sizeof(int));
-  rankInfos[rank].bar[0] = 0;
-  rankInfos[rank].bar[1] = 0;
+  rankInfos[rank].comm = comm;
   NCCLCHECK(bootstrapAllGather(commState, rankInfos, sizeof(struct rankInfo)));
-  comm->intraPhase = 0;
-  comm->intraRanks = 0;
+
+  // Compute intra ranks
+  int intraRank0 = -1, intraRank = -1, intraRanks = 0;
   for (int r=0; r<nranks; r++) {
     if ((rankInfos[r].hostHash == rankInfos[rank].hostHash) && 
         (rankInfos[r].pid == rankInfos[rank].pid)) {
-      if (comm->intraRanks == 0)
-        comm->intraBarrier = rankInfos[r].bar;
-      if (r == rank)
-        comm->intraRank = comm->intraRanks;
-      comm->intraRanks++;
+      if (intraRanks == 0) intraRank0 = r;
+      if (r == rank) intraRank = intraRanks;
+      intraRanks++;
     }
   }
-  if (comm->intraRank != 0 || comm->intraRanks == 0) {
-    free(rankInfos[rank].bar);
-  }
+  NCCLCHECK(ncclCommSetIntra(comm, intraRank, intraRanks, rankInfos[intraRank0].comm));
 
   // Barrier
   bootstrapClose(commState);
   return ncclSuccess;
+}
+
+bool SetCpuAffinity(int cudaDev, nvmlDevice_t* nvmlDevice) {
+  char busId[NVML_DEVICE_PCI_BUS_ID_BUFFER_SIZE];
+  if (cudaDeviceGetPCIBusId(busId, NVML_DEVICE_PCI_BUS_ID_BUFFER_SIZE, cudaDev) != cudaSuccess) return false;
+  if (wrapNvmlDeviceGetHandleByPciBusId(busId, nvmlDevice) != ncclSuccess) return false;
+  if (wrapNvmlDeviceSetCpuAffinity(*nvmlDevice) != ncclSuccess) return false;
+  return true;
 }
 
 ncclResult_t ncclCommInitRankSync(ncclComm_t* newcomm, int ndev, ncclUniqueId commId, int myrank) {
@@ -413,18 +508,23 @@ ncclResult_t ncclCommInitRankSync(ncclComm_t* newcomm, int ndev, ncclUniqueId co
 
   // Make sure all host memory allocation are close to the GPU
   int cudaDev;
-  CUDACHECK(cudaGetDevice(&cudaDev));
   nvmlDevice_t nvmlDevice;
-  NCCLCHECK(wrapNvmlDeviceGetHandleByIndex(cudaDev, &nvmlDevice));
-  NCCLCHECK(wrapNvmlDeviceSetCpuAffinity(nvmlDevice));
+  CUDACHECK(cudaGetDevice(&cudaDev));
+  bool affinity_set = SetCpuAffinity(cudaDev, &nvmlDevice);
+  ncclResult_t res;
 
-  NCCLCHECK(commAlloc(newcomm, ndev, myrank));
-  NCCLCHECK(initTransportsRank(*newcomm, &commId));
-  NCCLCHECK(devCommSetup(*newcomm));
+  NCCLCHECKGOTO(commAlloc(newcomm, ndev, myrank), res, cleanup);
+  NCCLCHECKGOTO(initTransportsRank(*newcomm, &commId), res, cleanup);
+  NCCLCHECKGOTO(devCommSetup(*newcomm), res, cleanup);
 
-  NCCLCHECK(wrapNvmlDeviceClearCpuAffinity(nvmlDevice));
-  NCCLCHECK(wrapNvmlShutdown());
+  if (affinity_set)
+    wrapNvmlDeviceClearCpuAffinity(nvmlDevice); // Ignore errors
+
+  NCCLCHECKGOTO(wrapNvmlShutdown(), res, cleanup);
   return ncclSuccess;
+cleanup:
+  *newcomm = NULL;
+  return res;
 }
 
 NCCL_API(ncclResult_t, ncclCommInitRank, ncclComm_t* newcomm, int ndev, ncclUniqueId commId, int myrank);
@@ -463,37 +563,43 @@ static ncclResult_t initTransportsAll(struct ncclComm** comms, const int* devs, 
   for (int rank=0; rank<nranks; rank++)
     NCCLCHECK(fillConnect(allInfo, nranks, rank, connectTransport+nranks*rank, connectValue+nranks*rank));
   
-  int nrings;
-  int nringsFinal = MAXRINGS;
   int prev[nranks*MAXRINGS];
   int prevFinal[nranks*MAXRINGS];
   int next[nranks*MAXRINGS];
   int nextFinal[nranks*MAXRINGS];
-  int nthreads = 512;
+  int nrings = MAXRINGS;
+  int nthreads=0;
+  int myCompCap = ncclCudaCompCap();
+  int minCompCap = myCompCap;
   for (int rank=0; rank<nranks; rank++) {
-    int nt;
-    CUDACHECK(cudaSetDevice(devs[rank]));
-    NCCLCHECK(getDefaultThreads(&nt));
-    nthreads = max(nthreads, nt);
-  }
-  INFO("Using %d threads", nthreads);
-
-  for (int rank=0; rank<nranks; rank++) {
-    comms[rank]->nThreads = nthreads;
-    NCCLCHECK(ncclGetRings(&nrings, &comms[rank]->nThreads, rank, nranks, connectTransport, connectValue, prev, next));
-    nringsFinal = min(nrings, nringsFinal);
+    cudaSetDevice(devs[rank]);
+    int nringsRank;
+    int nthreadsRank = getDefaultThreads();
+    myCompCap = ncclCudaCompCap();
+    NCCLCHECK(ncclGetRings(&nringsRank, &nthreadsRank, rank, nranks, connectTransport, connectValue, prev, next));
+    nrings = min(nrings, nringsRank);
+    nthreads = max(nthreads, nthreadsRank);
+    minCompCap = min(minCompCap, myCompCap);
     for (int ring=0; ring<nrings; ring++) {
       int index = ring*nranks+rank;
       prevFinal[index] = prev[index];
       nextFinal[index] = next[index];
     }
   }
-  nrings = nringsFinal;
+
+  INFO("Using %d threads", nthreads);
+  INFO("Min Comp Cap %d", minCompCap);
+
+  // Query the NCCL_SINGLE_RING_THRESHOLD env var
+  ncclSingleRingThreshold = getRingThreshold(0, minCompCap);
+
   int rings[nranks*MAXRINGS];
   NCCLCHECK(buildRings(nrings, rings, 0, nranks, prevFinal, nextFinal));
 
-  for (int rank=0; rank<nranks; rank++)
+  for (int rank=0; rank<nranks; rank++) {
     comms[rank]->nRings = nrings;
+    comms[rank]->nThreads = nthreads;
+  }
 
   for (int r=0; r<nrings; r++) {
     struct ncclConnect connect[2*nranks];
@@ -532,9 +638,7 @@ ncclResult_t ncclCommInitAll(ncclComm_t* comms, int ndev, const int* devlist) {
   showVersion();
 
   NCCLCHECK(PtrCheck(comms, "CommInitAll", "comms"));
-  int devcount=0;
-  cudaGetDeviceCount(&devcount);
-  if (ndev < 1 || ndev > devcount) {
+  if (ndev < 1) {
     WARN("Invalid device count requested : %d", ndev);
     return ncclInvalidArgument;
   }
@@ -543,9 +647,8 @@ ncclResult_t ncclCommInitAll(ncclComm_t* comms, int ndev, const int* devlist) {
   int savedDevice;
   int rank, cudaDev;
   ncclComm_t comm = NULL;
-  char busId[13];
-  nvmlDevice_t nvmlHandle;
-  int affinity_set = 0;
+  nvmlDevice_t nvmlDevice;
+  bool affinity_set = false;
   int ncclDevList[ndev];
   for (int i=0; i<ndev; i++) {
     ncclDevList[i] = devlist ? devlist[i] : i;
@@ -556,69 +659,28 @@ ncclResult_t ncclCommInitAll(ncclComm_t* comms, int ndev, const int* devlist) {
   for(rank=0; rank<ndev; ++rank)
     comms[rank] = NULL;
 
-  int* intraBarrier = (int*)malloc(2*sizeof(int));
-  intraBarrier[0] = 0;
-  intraBarrier[1] = 0;
-
   for (rank=0; rank<ndev; ++rank) {
     cudaDev = ncclDevList[rank];
-    if (cudaSetDevice(cudaDev) != cudaSuccess) {
-      WARN("rank %d failed to set cuda device %d", rank, cudaDev);
-      res = ncclUnhandledCudaError;
-      goto cleanup;
-    }
+    CUDACHECKGOTO(cudaSetDevice(cudaDev), res, cleanup);
 
     // Set CPU affinity
-    affinity_set = 0;
-    if (cudaDeviceGetPCIBusId(busId, 13, cudaDev) != cudaSuccess) {
-      INFO("rank %d failed to get PCI Bus Id for device %d", rank, cudaDev);
-      goto skipaffinity;
-    }
-    if (wrapNvmlDeviceGetHandleByPciBusId(busId, &nvmlHandle) != ncclSuccess) {
-      INFO("rank %d failed to get nvml handle for device %s", rank, busId);
-      goto skipaffinity;
-    }
-    if (wrapNvmlDeviceSetCpuAffinity(nvmlHandle) != ncclSuccess) {
-      INFO("rank %d failed to set affinity", rank);
-      goto skipaffinity;
-    }
-    affinity_set = 1;
-    skipaffinity:
+    affinity_set = SetCpuAffinity(cudaDev, &nvmlDevice);
 
-    res = commAlloc(&comm, ndev, rank);
-    if (res != ncclSuccess) {
-      WARN("rank %d failed to allocate communicator", rank);
-      goto cleanup;
-    }
-    comm->intraRank = rank;
-    comm->intraRanks = ndev;
-    comm->intraBarrier = intraBarrier;
-    comm->intraPhase = 0;
-
+    NCCLCHECKGOTO(commAlloc(&comm, ndev, rank), res, cleanup);
     comms[rank] = comm;
 
-    if (affinity_set && wrapNvmlDeviceClearCpuAffinity(nvmlHandle) != ncclSuccess) {
-      INFO("rank %d set but failed to clear cpu affinity", rank);
-    }
+    NCCLCHECKGOTO(ncclCommSetIntra(comm, rank, ndev, comms[0]), res, cleanup);
+
+    if (affinity_set)
+      wrapNvmlDeviceClearCpuAffinity(nvmlDevice); // Ignore errors
   }
 
-  res = initTransportsAll(comms, ncclDevList, ndev);
-  if (res != ncclSuccess) {
-    WARN("failed to init transports");
-    goto cleanup;
-  }
+  NCCLCHECKGOTO(initTransportsAll(comms, ncclDevList, ndev), res, cleanup);
 
   for(rank=0; rank<ndev; ++rank) {
     cudaDev = ncclDevList[rank];
-    if (cudaSetDevice(cudaDev) != cudaSuccess) {
-      WARN("rank %d failed to set cuda device %d", rank, cudaDev);
-      res = ncclUnhandledCudaError;
-      goto cleanup;
-    }
-    res = devCommSetup(comms[rank]);
-    if (res != ncclSuccess) {
-      WARN("rank %d failed to copy dcomm", rank);
-    }
+    CUDACHECKGOTO(cudaSetDevice(cudaDev), res, cleanup);
+    NCCLCHECKGOTO(devCommSetup(comms[rank]), res, cleanup);
   }
 
   res = ncclSuccess;
@@ -653,6 +715,13 @@ ncclResult_t ncclCommDestroy(ncclComm_t comm) {
 
   if (comm->intraRank == 0) {
     free(comm->intraBarrier);
+    free(comm->intraParams);
+    free(comm->intraCudaDevs);
+    free(comm->intraCGMode);
+  }
+
+  if (comm->launchMode == ncclComm::GROUP) {
+    CUDACHECK(cudaStreamDestroy(comm->ncclStream));
   }
 
   commFree(comm);

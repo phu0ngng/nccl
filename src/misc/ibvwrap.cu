@@ -23,6 +23,7 @@ int (*ibv_internal_get_async_event)(struct ibv_context *context, struct ibv_asyn
 void (*ibv_internal_ack_async_event)(struct ibv_async_event *event);
 int (*ibv_internal_query_device)(struct ibv_context *context, struct ibv_device_attr *device_attr);
 int (*ibv_internal_query_port)(struct ibv_context *context, uint8_t port_num, struct ibv_port_attr *port_attr);
+int (*ibv_internal_query_gid)(struct ibv_context *context, uint8_t port_num, int index, union ibv_gid *gid);
 struct ibv_pd * (*ibv_internal_alloc_pd)(struct ibv_context *context);
 int (*ibv_internal_dealloc_pd)(struct ibv_pd *pd);
 struct ibv_mr * (*ibv_internal_reg_mr)(struct ibv_pd *pd, void *addr, size_t length, int access);
@@ -80,6 +81,7 @@ ncclResult_t wrap_ibv_symbols(void) {
   LOAD_SYM(ibvhandle, "ibv_ack_async_event", ibv_internal_ack_async_event);
   LOAD_SYM(ibvhandle, "ibv_query_device", ibv_internal_query_device);
   LOAD_SYM(ibvhandle, "ibv_query_port", ibv_internal_query_port);
+  LOAD_SYM(ibvhandle, "ibv_query_gid", ibv_internal_query_gid);
   LOAD_SYM(ibvhandle, "ibv_alloc_pd", ibv_internal_alloc_pd);
   LOAD_SYM(ibvhandle, "ibv_dealloc_pd", ibv_internal_dealloc_pd);
   LOAD_SYM(ibvhandle, "ibv_reg_mr", ibv_internal_reg_mr);
@@ -106,6 +108,7 @@ ncclResult_t wrap_ibv_symbols(void) {
   ibv_internal_ack_async_event = NULL;
   ibv_internal_query_device = NULL;
   ibv_internal_query_port = NULL;
+  ibv_internal_query_gid = NULL;
   ibv_internal_alloc_pd = NULL;
   ibv_internal_dealloc_pd = NULL;
   ibv_internal_reg_mr = NULL;
@@ -193,7 +196,9 @@ ncclResult_t wrap_ibv_symbols(void) {
   return ncclSuccess;
 
 ncclResult_t wrap_ibv_get_device_list(struct ibv_device ***ret, int *num_devices) {
-  IBV_PTR_CHECK_NO_WARN(ibv_internal_get_device_list, ibv_internal_get_device_list(num_devices), *ret, NULL, "ibv_get_device_list");
+  *ret = ibv_internal_get_device_list(num_devices);
+  if (*ret == NULL) *num_devices = 0;
+  return ncclSuccess;
 }
 
 ncclResult_t wrap_ibv_free_device_list(struct ibv_device **list) {
@@ -230,6 +235,10 @@ ncclResult_t wrap_ibv_query_device(struct ibv_context *context, struct ibv_devic
 
 ncclResult_t wrap_ibv_query_port(struct ibv_context *context, uint8_t port_num, struct ibv_port_attr *port_attr) { /*returns 0 on success, or the value of errno on failure (which indicates the failure reason)*/
   IBV_INT_CHECK_RET_ERRNO(ibv_internal_query_port, ibv_internal_query_port(context, port_num, port_attr), 0, "ibv_query_port");
+}
+
+ncclResult_t wrap_ibv_query_gid(struct ibv_context *context, uint8_t port_num, int index, union ibv_gid *gid) {
+  IBV_INT_CHECK_RET_ERRNO(ibv_internal_query_gid, ibv_internal_query_gid(context, port_num, index, gid), 0, "ibv_query_gid");
 }
 
 ncclResult_t wrap_ibv_alloc_pd(struct ibv_pd **ret, struct ibv_context *context) {

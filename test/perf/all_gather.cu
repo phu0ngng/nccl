@@ -14,17 +14,18 @@ void print_header() {
       "time", "algbw", "busbw", "res", "time", "algbw", "busbw", "res");
 }
 
-void print_line_header (int size, int count, const char *typeName, const char *opName, int root) {
-  PRINT("%12i  %12i  %6s", size, count, typeName);
+void print_line_header (size_t size, size_t count, const char *typeName, const char *opName, int root) {
+  PRINT("%12li  %12li  %6s", size, count, typeName);
 }
 
-void getCollByteCount(size_t *sendcount, size_t *recvcount, size_t *sendInplaceOffset, size_t *recvInplaceOffset, size_t *procSharedCount, int *sameExpected, size_t count, int nranks) {
-    *sendcount = count;
-    *recvcount = count*nranks;
+void getCollByteCount(size_t *sendcount, size_t *recvcount, size_t *paramcount, size_t *sendInplaceOffset, size_t *recvInplaceOffset, size_t *procSharedCount, int *sameExpected, size_t count, int nranks) {
+    *sendcount = count/nranks;
+    *recvcount = (count/nranks)*nranks;
     *sameExpected = 1;
     *procSharedCount = 0;
-    *sendInplaceOffset = count;
+    *sendInplaceOffset = count/nranks;
     *recvInplaceOffset = 0;
+    *paramcount = *sendcount;
 }
 
 void InitRecvResult(struct threadArgs_t* args, ncclDataType_t type, ncclRedOp_t op, int root, int in_place, int is_first) {

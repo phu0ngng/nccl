@@ -1,0 +1,35 @@
+Caffe2
+
+Note:
+If you need to pull updates from nvdl.githost.io/caffe2, please remember to merge with our local branch call 'nccl'. The nccl branch contains modifications needed to run resnet50 with NCCL.
+
+# Environment Variables
+1. CUDA
+$ source /home/nightly/install/cuda.sh
+
+2. Caffe2 envs
+$ export CAFFE2_ROOT=<CAFFE2_ROOT_DIR, e.g. /home/nightly/install/caffe2>
+$ export PYTHONPATH=$PYTHONPATH:$CAFFE2_ROOT/build
+$ export LD_LIBRARY_PATH=<NCCL_BUILD_DIR>:$LD_LIBRARY_PATH
+or 
+$ source caffe2_env.sh
+(under the root folder of Caffe2, you can modify it per your need)
+
+# Compile
+
+$ make
+
+#Time to build - 25 mins with -j 8 on eris)
+
+# Run
+
+$ cd $CAFFE2_ROOT/nvidia-examples/imagenet/train_resnet.py
+
+#NCCL is enabled by default and cannot be disabled without changes to build/caffe2/nvidia-examples/imagenet/train_helper.py
+
+#Use --enable-tensor-core for dgx1v
+#Look in train_helper.py for other options
+#Uses --train-lmdb /data/imagenet/train-lmdb-256x256 and --test-lmdb /data/imagenet/val-lmdb-256x256 (if not --skip-test)
+#Could not find /data/imagenet/val-lmdb-256x256 on eris; available on dbcluster (/raid/dldata/imagenet/val-lmdb-256x256)
+
+$ srun -p P100 -n 8 --exclusive python resnet50_trainer.py --num_gpus 8 --batch-size 512 --num-iterations 1000 --dtype float16 --train-lmdb /data/imagenet/train-lmdb-256x256 --skip-test

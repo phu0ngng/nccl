@@ -30,7 +30,9 @@ struct ncclProxyArgs {
   struct ncclRing* ring;
   int substeps;
   int nsteps;
-  int opCount;
+  uint64_t opCount;
+  int llMode;
+  bool needProxy;
 };
 
 struct ncclTransportComm {
@@ -82,7 +84,8 @@ static int proxyPatternTo(int root) { return -1-root; }
 static enum proxyMode proxyPatternMode(int pattern) { return (pattern == 0) ? proxyRing : ((pattern > 0) ? proxyFrom : proxyTo); }
 static int proxyPatternRoot(int pattern) { return (pattern > 0) ? pattern-1 : -pattern-1; }
 
-ncclResult_t transportStartProxies(int substeps, int subchunks, int nsteps_per_round, int nblocks_per_round, int size, int pattern, struct ncclComm* comm);
+ncclResult_t transportSaveProxies(int substeps, int subchunks, int nstepsPerRound, int nblocksPerRound, size_t size, int pattern, struct ncclComm* comm, int llMode);
+ncclResult_t transportStartProxies(struct ncclComm* comm);
 
 #include <unistd.h>
 
@@ -96,5 +99,11 @@ inline void transportProxyWait(const FUNC& func) {
 
 inline void transportProxyIdle(int idle) {
   sched_yield();
+}
+
+inline void* mallocZero(size_t size) {
+  void* p = malloc(size);
+  memset(p, 0, size);
+  return p;
 }
 #endif

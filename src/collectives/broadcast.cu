@@ -32,14 +32,14 @@ __global__ void BroadcastKernel(const KernelArgs<T> args) {
   int prevdirect = ring->recv.conn.direct;
   int nextdirect = ring->send.conn.direct;
 
-  WaitFlag waitDoneFromNext(ring->send.conn.head, (1-NUM_BUFCHUNKS)*NUM_SUBSTEPS);
+  WaitFlag waitDoneFromNext(ring->send.conn.head, (NUM_BUFCHUNKS-1)*NUM_SUBSTEPS);
   WaitFlag waitReadyFromPrev(ring->recv.conn.tail, 0);
   PostFlag postDoneToPrev(ring->recv.conn.head, 0, NULL, 0);
   PostFlag postReadyToNext(ring->send.conn.tail, 0, ring->send.conn.fifo, NUM_BUFCHUNKS*NUM_SUBSTEPS);
 
   typedef Primitives<THREADS, UNROLL, NUM_SUBSTEPS, T> Prims;
 
-  const int size = args.N;
+  const ssize_t size = args.N;
   const int buffSize = ring->buffSize / sizeof(T);
   const int sliceSize = buffSize / NUM_BUFCHUNKS;
   const int rank = ring->devUserRanks[0];
@@ -47,6 +47,8 @@ __global__ void BroadcastKernel(const KernelArgs<T> args) {
   const int root = args.root;
 
   if (tid == 0) {
+    // Update in case we skipped some collectives
+    *ring->recv.conn.opCount = args.opCount;
     if (nextRank != root) {
       // Wait for next to be ready
       WaitFlag waitOpCountNext(ring->send.conn.opCount, 0);
@@ -64,7 +66,7 @@ __global__ void BroadcastKernel(const KernelArgs<T> args) {
   }
   __syncthreads();
   
-  int step = 0;
+  uint64_t step = 0ULL;
   int boffset = 0;
 
   // Compute pointers
@@ -73,10 +75,10 @@ __global__ void BroadcastKernel(const KernelArgs<T> args) {
   T * __restrict__ prevInput = (T*)ring->recv.conn.buff;
   T * __restrict__ nextOutput = (T*)ring->send.conn.buff;
 
-  for (int gridOffset = 0; gridOffset < size; gridOffset += gridDim.x*sliceSize) {
+  for (ssize_t gridOffset = 0; gridOffset < size; gridOffset += gridDim.x*sliceSize) {
     int chunkSize = min(sliceSize, DIVUP(size-gridOffset,gridDim.x));
     ALIGN_SIZE(chunkSize, THREADS*sizeof(uint64_t)/sizeof(T));
-    int offset = gridOffset + bid*chunkSize;
+    ssize_t offset = gridOffset + bid*chunkSize;
     int maxOffset = min(chunkSize, size-offset);
 
     if (rank == root) {
@@ -134,12 +136,90 @@ __global__ void BroadcastKernel(const KernelArgs<T> args) {
     if (nextRank != root) { 
       // Wait for next to have consumed data before resetting the flag
       waitDoneFromNext.wait(NUM_SUBSTEPS*(step + NUM_BUFCHUNKS - 1));
-      *ring->send.conn.head = 0;
+      *ring->send.conn.head = 0ULL;
     }
-    *ring->recv.conn.tail = 0;
+    *ring->recv.conn.tail = 0ULL;
     __threadfence_system();
     *ring->recv.conn.opCount = args.opCount+1;
   }
+}
+
+#include "ll_kernel.h"
+
+#define NEXT_STEP_LL \
+  boffset += llSliceSize; \
+  if (boffset == llBuffSize) boffset = 0; \
+  flag++; \
+  step++;
+
+template<int THREADS, class FUNC, typename T>
+__global__ void BroadcastKernelSmall(const KernelArgs<T> args) {
+  const int tid = threadIdx.x;
+  const int bid = blockIdx.x;
+  struct ncclComm* comm = args.comm;
+  struct ncclRing* ring = comm->rings+bid;
+  volatile uint64_t * recvHeadPtr = ring->recv.conn.llHead;
+  volatile uint64_t * sendHeadPtr = ring->send.conn.llHead;
+  volatile int * sizesFifo = ring->send.conn.llFifo;
+  uint64_t sendHead = sendHeadPtr[0];
+  const int rank = comm->rank;
+  const int nextRank = ring->devUserRanks[1];
+  const int root = args.root;
+
+  typedef LLPrimitives<THREADS, T, FUNC> LL;
+
+  const ssize_t size = args.N;
+  const int llBuffSize = LL_BUFF_SIZE / (2*sizeof(uint64_t));
+  const int llSliceSize = llBuffSize / NUM_LL_CHUNKS;
+  const int sliceSize = llSliceSize * sizeof(uint64_t) / sizeof(T);
+
+  uint64_t step = ring->send.conn.llStep;
+  uint32_t flag = step + 1;
+  int boffset = llSliceSize * STEP_TO_SLOT(step);
+
+  // Compute pointers
+  const T * __restrict__ thisInput = args.ThisInput;
+  T * __restrict__ thisOutput = args.ThisOutput;
+  union ncclLLFifoLine * prevInput = (union ncclLLFifoLine *)ring->recv.conn.llBuff;
+  union ncclLLFifoLine * nextOutput = (union ncclLLFifoLine *)ring->send.conn.llBuff;
+
+  for (ssize_t offset = 0; offset < size; offset += sliceSize) {
+    int chunkSize = min(sliceSize, size-offset);
+    ALIGN_SIZE(chunkSize, THREADS*sizeof(uint64_t)/sizeof(T));
+    int maxOffset = min(chunkSize, size-offset);
+    if (rank == root) {
+      WAIT_NEXT;
+      LL::ReduceCopy(
+          thisInput + offset,
+          nextOutput + boffset,
+          maxOffset, flag);
+      POST_SIZE;
+      NEXT_STEP_LL;
+    } else if (nextRank == root) {
+      LL::ReduceCopy(
+          prevInput + boffset,
+          thisOutput + offset,
+          maxOffset, flag);
+      NEXT_STEP_LL;
+      ACK_PREV;
+    } else {
+      WAIT_NEXT;
+      LL::ReduceCopy(
+          prevInput + boffset,
+          thisOutput + offset,
+          nextOutput + boffset,
+          maxOffset, flag, flag);
+      POST_SIZE;
+      NEXT_STEP_LL;
+      ACK_PREV;
+    }
+  }
+
+  // We need everyone to acknowledge data even if they didn't receive anything
+  // so that the next collective can start right away.
+  ACK_PREV;
+
+  FIFO_CLEANING_AND_SAVE_STEP(flag);
 }
 
 #define UNROLL 8
@@ -151,10 +231,15 @@ ncclResult_t RingBroadcast(const void* sendbuff, void* recvbuff, const size_t co
     if (sendbuff != recvbuff)
       CUDACHECK(cudaMemcpyAsync(recvbuff, sendbuff, count*sizeof(T), cudaMemcpyDeviceToDevice, stream));
   } else {
-    NCCLCHECK(transportStartProxies(NUM_SUBSTEPS, NUM_BUFCHUNKS, 1, 1, count*sizeof(T), proxyPatternFrom(root), comm));
-    KernelArgs<T> args;
-    ArgsSetup(&args, sendbuff, recvbuff, root, count, comm);
-    LAUNCH_KERNEL(BroadcastKernel, comm->nThreads, UNROLL, FUNC, T, args, stream);
+    ArgsSetup(sendbuff, recvbuff, root, count, comm);
+    if (count*sizeof(T) <= comm->llThreshold) {
+      NCCLCHECK(transportSaveProxies(1, NUM_LL_CHUNKS, 1, 1, 2*count*sizeof(T), proxyPatternFrom(root), comm, 1));
+      SAVE_KERNEL_SMALL(BroadcastKernelSmall, comm, FUNC, T, stream);
+    } else {
+      NCCLCHECK(transportSaveProxies(NUM_SUBSTEPS, NUM_BUFCHUNKS, 1, 1, count*sizeof(T), proxyPatternFrom(root), comm, 0));
+      SAVE_KERNEL(BroadcastKernel, comm, UNROLL, FUNC, T, stream);
+      comm->opCount++;
+    }
   }
 
   return ncclSuccess;
