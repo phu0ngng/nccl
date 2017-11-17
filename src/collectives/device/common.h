@@ -17,9 +17,8 @@ __device__ void NCCL_COLL_NAME(coll, op, dtype, nthreads)(struct CollectiveArgs*
 __global__ void NCCL_KERN_NAME(coll, op, dtype, nthreads)(struct ncclColl coll) { \
   struct ncclRing* ring = coll.args.comm->rings+blockIdx.x; \
   int tid = threadIdx.x; \
-  int index = ring->collFifoHead; \
-  if (tid == 0) ring->devCollectives[index].active = 0; \
   coll##Kernel<nthreads, UNROLL, ncclFunc<ctype>, ctype>(&coll.args); \
+  int index = ring->collFifoHead; \
   index = (index + 1) % NCCL_MAX_OPS; \
   if (tid == 0) ring->collFifoHead = index; \
 }

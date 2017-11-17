@@ -86,6 +86,7 @@ ncclResult_t setupLaunch(struct ncclComm* comm, struct cudaLaunchParams* params)
 
   // One operation
   if (totalOps == 1) {
+    coll->active = 0;
     params->func = ncclKerns[FUNC_SET(coll->ll, coll->nThreads)][coll->funcIndex];
     return ncclSuccess;
   }
