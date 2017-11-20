@@ -417,24 +417,26 @@ int ncclIbConnect(int dev, void* opaqueHandle, void** sendComm) {
   qpInfo.mtu = portAttr.active_mtu;
 
   // RoCE support
-  {
-    static int ibGidIndex = -1;
-    static union ibv_gid gid;
-    if (ibGidIndex == -1) {
-      char* str = getenv("NCCL_IB_GID_INDEX");
-      ibGidIndex = str ? atoi(str) : 0;
-      NCCLCHECK(wrap_ibv_query_gid(ctx, ib_port, ibGidIndex, &gid));
-      INFO("Net/IB : Using GID %d, spn %lx, iid %lx\n", ibGidIndex,
-          gid.global.subnet_prefix, gid.global.interface_id);
-    }
-    qpInfo.spn = gid.global.subnet_prefix;
-    qpInfo.iid = gid.global.interface_id;
+  static int ibGidIndex = -1;
+  if (ibGidIndex == -1) {
+    char* str = getenv("NCCL_IB_GID_INDEX");
+    ibGidIndex = str ? atoi(str) : 0;
   }
+  static union ibv_gid gid;
+  NCCLCHECK(wrap_ibv_query_gid(ctx, ib_port, ibGidIndex, &gid));
+  qpInfo.spn = gid.global.subnet_prefix;
+  qpInfo.iid = gid.global.interface_id;
 
   // Prepare my fifo
   NCCLCHECK(wrap_ibv_reg_mr(&comm->fifoMr, comm->verbs.pd, comm->fifo, sizeof(struct ncclIbSendFifo)*MAX_REQUESTS, IBV_ACCESS_LOCAL_WRITE|IBV_ACCESS_REMOTE_WRITE|IBV_ACCESS_REMOTE_READ));
   qpInfo.fifoRkey = comm->fifoMr->rkey;
   qpInfo.fifoAddr = (uint64_t)comm->fifo;
+
+  if (qpInfo.lid) {
+    INFO("NET/IB: Dev %d Port %d qpn %d mtu %d LID %d", dev, ib_port, qpInfo.qpn, qpInfo.mtu, qpInfo.lid);
+  } else {
+    INFO("NET/IB: Dev %d Port %d qpn %d mtu %d GID %d (%lX/%lX)", dev, ib_port, qpInfo.qpn, qpInfo.mtu, ibGidIndex, qpInfo.spn, qpInfo.iid);
+  }
    
   NCCLCHECK(socketSend(comm->fd, &qpInfo, sizeof(qpInfo)));
   return 0;
