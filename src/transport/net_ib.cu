@@ -417,10 +417,19 @@ int ncclIbConnect(int dev, void* opaqueHandle, void** sendComm) {
   qpInfo.mtu = portAttr.active_mtu;
 
   // RoCE support
-  union ibv_gid gid;
-  NCCLCHECK(wrap_ibv_query_gid(ctx, ib_port, 0, &gid));
-  qpInfo.spn = gid.global.subnet_prefix;
-  qpInfo.iid = gid.global.interface_id;
+  {
+    static int ibGidIndex = -1;
+    static union ibv_gid gid;
+    if (ibGidIndex == -1) {
+      char* str = getenv("NCCL_IB_GID_INDEX");
+      ibGidIndex = str ? atoi(str) : 0;
+      NCCLCHECK(wrap_ibv_query_gid(ctx, ib_port, ibGidIndex, &gid));
+      INFO("Net/IB : Using GID %d, spn %lx, iid %lx\n", ibGidIndex,
+          gid.global.subnet_prefix, gid.global.interface_id);
+    }
+    qpInfo.spn = gid.global.subnet_prefix;
+    qpInfo.iid = gid.global.interface_id;
+  }
 
   // Prepare my fifo
   NCCLCHECK(wrap_ibv_reg_mr(&comm->fifoMr, comm->verbs.pd, comm->fifo, sizeof(struct ncclIbSendFifo)*MAX_REQUESTS, IBV_ACCESS_LOCAL_WRITE|IBV_ACCESS_REMOTE_WRITE|IBV_ACCESS_REMOTE_READ));
