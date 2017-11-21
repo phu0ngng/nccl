@@ -13,7 +13,9 @@
 #define IMPL_COLL4(coll, op, ncclFunc, dtype, ctype, nthreads) \
 __device__ void NCCL_COLL_NAME(coll, op, dtype, nthreads)(struct CollectiveArgs* args) { \
   coll##Kernel<nthreads, UNROLL, ncclFunc<ctype>, ctype>(args); \
-} \
+}
+/* For LL, we also define a stand-alone kernel for better latency */
+#define IMPL_COLL4K(coll, op, ncclFunc, dtype, ctype, nthreads) \
 __global__ void NCCL_KERN_NAME(coll, op, dtype, nthreads)(struct ncclColl coll) { \
   struct ncclRing* ring = coll.args.comm->rings+blockIdx.x; \
   int tid = threadIdx.x; \
@@ -25,6 +27,7 @@ __global__ void NCCL_KERN_NAME(coll, op, dtype, nthreads)(struct ncclColl coll) 
 
 #define IMPL_COLL3(coll, op, ncclFunc, dtype, ctype) \
   IMPL_COLL4(coll##LL, op, ncclFunc, dtype, ctype, LL_NTHREADS) \
+  IMPL_COLL4K(coll##LL, op, ncclFunc, dtype, ctype, LL_NTHREADS) \
   IMPL_COLL4(coll, op, ncclFunc, dtype, ctype, 64) \
   IMPL_COLL4(coll, op, ncclFunc, dtype, ctype, 128) \
   IMPL_COLL4(coll, op, ncclFunc, dtype, ctype, 256) \

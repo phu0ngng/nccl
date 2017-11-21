@@ -42,17 +42,12 @@
   NCCL_FUNCS2A(nthreads, ncclAllReduce) }
 
 // Must be consistent with the ncclFuncSet enum
-static void* const ncclKerns[][ncclCollCount*ncclNumOps*ncclNumTypes] = {
-  {
+static void* const ncclLLKerns[ncclCollCount*ncclNumOps*ncclNumTypes] = {
     NCCL_FUNCS2B(LL_NTHREADS, ncclBcastLL),
     NCCL_FUNCS2A(LL_NTHREADS, ncclReduceLL),
     NCCL_FUNCS2B(LL_NTHREADS, ncclAllGatherLL),
     NCCL_FUNCS2A(LL_NTHREADS, ncclReduceScatterLL),
-    NCCL_FUNCS2A(LL_NTHREADS, ncclAllReduceLL) },
-  NCCL_FUNCS(64),
-  NCCL_FUNCS(128),
-  NCCL_FUNCS(256),
-  NCCL_FUNCS(512)
+    NCCL_FUNCS2A(LL_NTHREADS, ncclAllReduceLL)
 };
 
 ncclResult_t ncclLaunchCooperativeKernelMultiDevice(struct cudaLaunchParams *paramsList, int* cudaDevs, int numDevices, int cgMode) {
@@ -85,9 +80,9 @@ ncclResult_t setupLaunch(struct ncclComm* comm, struct cudaLaunchParams* params)
   memcpy(&comm->args, coll, sizeof(struct ncclColl));
 
   // One operation
-  if (totalOps == 1) {
+  if (totalOps == 1 && coll->ll) {
     coll->active = 0;
-    params->func = ncclKerns[FUNC_SET(coll->ll, coll->nThreads)][coll->funcIndex];
+    params->func = ncclLLKerns[coll->funcIndex];
     return ncclSuccess;
   }
 
