@@ -123,4 +123,23 @@ TYPED_TEST(ncclAllGather_test, DISABLED_stream_wrong) {
                             std::min(this->N/this->nVis, 1024 * 1024),
                             this->DataType(), this->comms[i], this->streams[j]));
 };
+// Aggregation
+// Only for 2.2 or higher
+#if NCCL_MAJOR > 2 || (NCCL_MAJOR == 2 && NCCL_MINOR >=2)
+TYPED_TEST(ncclAllGather_test, aggregate) {
+    ASSERT_EQ(ncclSuccess, ncclGroupStart());
+    for (int j = 0; j < 10; ++j) {
+        ASSERT_EQ(ncclSuccess, ncclGroupStart());
+        for (int i = 0; i < this->nVis; ++i) {
+            ASSERT_EQ(ncclSuccess,
+                      ncclAllGather(this->sendbuffs[i], this->recvbuffs[i],
+                                    std::min(this->N/this->nVis, 1024 * 1024),
+                                    this->DataType(), this->comms[i], this->streams[i]))
+                << "i" << i << ", " << std::endl;
+        }
+        ASSERT_EQ(ncclSuccess, ncclGroupEnd());
+    }
+    ASSERT_EQ(ncclSuccess, ncclGroupEnd());
+};
+#endif
 // EOF
