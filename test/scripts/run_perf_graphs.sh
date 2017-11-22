@@ -115,6 +115,23 @@ if [ "$mode" == "mpi_latency" ] || [ "$mode" == "combo" ]; then
     return 0
   fi
 fi
+
+if [ "$mode" == "aggregation" ] || [ "$mode" == "combo" ]; then
+  echo "Running test/perf/${op}_perf on $ngpus GPUs [Aggregation] ..."
+  resdir1="results_nonaggr"
+  resdir2="results_aggr"
+  path1=$resdir1/$gpumodel
+  path2=$resdir2/$gpumodel
+  mkdir -p $path1
+  mkdir -p $path2
+  result1=$path1/$op.$ngpus
+  result2=$path2/$op.$ngpus
+  $srun_cmd test/perf/${op}_perf -t $ngpus -b 8 -e 512 -f 2 -w 20 -n 256 2>&1 | tee $result1.out
+  $srun_cmd test/perf/${op}_perf -t $ngpus -b 8 -e 512 -f 2 -w 20 -n 16 -m 16 2>&1 | tee $result2.out
+  if [ "$mode" != "combo" ]; then
+    return 0
+  fi
+fi
 }
 
 perf_ngpu_loop() {
