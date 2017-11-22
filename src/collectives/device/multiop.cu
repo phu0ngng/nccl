@@ -50,7 +50,6 @@ static __device__ ncclKern_t const ncclFuncs[][ncclCollCount*ncclNumOps*ncclNumT
     NCCL_FUNCS2B(LL_NTHREADS, ncclAllGatherLL),
     NCCL_FUNCS2A(LL_NTHREADS, ncclReduceScatterLL),
     NCCL_FUNCS2A(LL_NTHREADS, ncclAllReduceLL) },
-  NCCL_FUNCS(64),
   NCCL_FUNCS(128),
   NCCL_FUNCS(256),
   NCCL_FUNCS(512)

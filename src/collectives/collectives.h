@@ -24,7 +24,6 @@ typedef enum { ncclCollBcast, ncclCollReduce, ncclCollAllGather, ncclCollReduceS
 
 #define DECL_COLL3(coll, op, dtype) \
   DECL_COLL4(coll##LL, op, dtype, LL_NTHREADS) \
-  DECL_COLL4(coll, op, dtype, 64) \
   DECL_COLL4(coll, op, dtype, 128) \
   DECL_COLL4(coll, op, dtype, 256) \
   DECL_COLL4(coll, op, dtype, 512)
@@ -55,14 +54,13 @@ typedef enum { ncclCollBcast, ncclCollReduce, ncclCollAllGather, ncclCollReduceS
 
 DECL_ALL_COLLS
 
-enum { ncclFuncSetLL = 0, ncclFuncSet64 = 1, ncclFuncSet128 = 2, ncclFuncSet256 = 3, ncclFuncSet512 = 4, ncclFuncSetNotFound = 5 };
+enum { ncclFuncSetLL = 0, ncclFuncSet128 = 1, ncclFuncSet256 = 2, ncclFuncSet512 = 3, ncclFuncSetNotFound = 4 };
 #define FUNC_SET(ll, nthreads) \
         (ll       == 1   ? ncclFuncSetLL  : \
-        (nthreads == 65  ? ncclFuncSet64  : \
         (nthreads == 129 ? ncclFuncSet128 : \
         (nthreads == 257 ? ncclFuncSet256 : \
         (nthreads == 513 ? ncclFuncSet512 : \
-        ncclFuncSetNotFound)))))
+        ncclFuncSetNotFound))))
 
 
 #define ALLREDUCE_SUBSTEPS 2
