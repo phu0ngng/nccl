@@ -139,4 +139,25 @@ TYPED_TEST(ncclAllReduce_test, DISABLED_stream_wrong) {
                             std::min(this->N, 1024 * 1024), this->DataType(),
                             this->RedOps[0], this->comms[i], this->streams[j]));
 };
+// Aggregation
+// Only for 2.2 or higher
+#if NCCL_MAJOR > 2 || (NCCL_MAJOR == 2 && NCCL_MINOR >=2)
+TYPED_TEST(ncclAllReduce_test, aggregate) {
+    ASSERT_EQ(ncclSuccess, ncclGroupStart());
+    for (ncclRedOp_t op : this->RedOps) {
+        ASSERT_EQ(ncclSuccess, ncclGroupStart());
+        for (int i = 0; i < this->nVis; ++i) {
+            ASSERT_EQ(ncclSuccess,
+                      ncclAllReduce(this->sendbuffs[i], this->recvbuffs[i],
+                                    std::min(this->N, 1024 * 1024),
+                                    this->DataType(), op, this->comms[i],
+                                    this->streams[i]))
+                << "op: " << op << ", "
+                << "i" << i << ", " << std::endl;
+        }
+        ASSERT_EQ(ncclSuccess, ncclGroupEnd());
+    }
+    ASSERT_EQ(ncclSuccess, ncclGroupEnd());
+};
+#endif
 // EOF
