@@ -103,6 +103,27 @@ static ncclResult_t commFree(ncclComm_t comm) {
   if (comm->doneEvent != NULL)
     CUDACHECK(cudaEventDestroy(comm->doneEvent));
 
+  if (comm->launchMode == ncclComm::GROUP) {
+    CUDACHECK(cudaStreamDestroy(comm->myParams->stream));
+  }
+
+  // Last rank frees shared resources between threads
+  volatile int* ptr = (volatile int*)(comm->intraBarrier+comm->intraPhase);
+  int new_val, val = *ptr;
+  do {
+    if ((new_val = val+1) >= comm->intraRanks) return ncclInternalError;
+  } while (__sync_bool_compare_and_swap(ptr, val++, new_val));
+
+  if (val == comm->intraRanks) {
+      free(comm->intraBarrier);
+      free(comm->intraParams);
+      free(comm->intraCudaDevs);
+      free(comm->intraCGMode);
+  }
+
+  if (comm->intraRank == 0) {
+  }
+
   free(comm);
   return ncclSuccess;
 }
@@ -682,17 +703,6 @@ ncclResult_t ncclCommDestroy(ncclComm_t comm) {
 
   if (savedDevice != commDevice) {
     CUDACHECK(cudaSetDevice(commDevice));
-  }
-
-  if (comm->intraRank == 0) {
-    free(comm->intraBarrier);
-    free(comm->intraParams);
-    free(comm->intraCudaDevs);
-    free(comm->intraCGMode);
-  }
-
-  if (comm->launchMode == ncclComm::GROUP) {
-    CUDACHECK(cudaStreamDestroy(comm->myParams->stream));
   }
 
   commFree(comm);
