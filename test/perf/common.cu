@@ -682,6 +682,9 @@ void* threadInit(void* args) {
 
   threadRunTests(args);
 
+  for (int i=0; i<targs->nGpus; i++) {
+    NCCLCHECK(ncclCommDestroy(targs->comms[i]));
+  }
   return NULL;
 }
 
@@ -1046,9 +1049,11 @@ int main(int argc, char* argv[]) {
     MPI_Allreduce(MPI_IN_PLACE, &errors[0], 1, MPI_INT, MPI_SUM, MPI_COMM_WORLD);
 #endif
 
-  for(int i=0; i<nGpus*nThreads; ++i)
-    ncclCommDestroy(comms[i]);
-  free(comms);
+  if (!parallel_init) {
+    for(int i=0; i<nGpus*nThreads; ++i)
+      ncclCommDestroy(comms[i]);
+    free(comms);
+  }
 
   char* str = getenv("NCCL_TESTS_MIN_BW");
   double check_avg_bw = str ? atof(str) : -1;
