@@ -3,11 +3,11 @@ include ../makefiles/version.mk
 
 ##### src files
 INCEXPORTS  := nccl.h
-LIBSRCFILES := init.cu bootstrap.cu transport.cu misc/group.cu \
+LIBSRCFILES := init.cu ring.cu bootstrap.cu transport.cu misc/group.cu \
 		misc/nvmlwrap.cu misc/ibvwrap.cu misc/crc32.cu misc/rings.cu misc/utils.cu misc/gdcopy.cu misc/enqueue.cu \
 		transport/p2p.cu transport/shm.cu transport/net.cu transport/net_socket.cu transport/net_ib.cu \
-		collectives/all_gather.cu collectives/all_reduce.cu collectives/broadcast.cu \
-		collectives/reduce.cu collectives/reduce_scatter.cu
+                collectives/all_reduce.cu collectives/all_gather.cu collectives/broadcast.cu collectives/reduce.cu collectives/reduce_scatter.cu
+
 ##### lib files
 LIBNAME     := libnccl.so
 STATICLIBNAME := libnccl_static.a
@@ -25,12 +25,17 @@ LIBOBJ     := $(LIBSRCFILES:%.cu=$(OBJDIR)/%.o)
 DEPFILES   := $(LIBOBJ:%.o=%.d)
 LDFLAGS    := -L${CUDA_LIB} -lcudart_static -lrt
 
+DEVICELIB  := $(BUILDDIR)/obj/collectives/device/colldevice.a
+
 ##### rules
 build : lib staticlib
 
 lib : $(INCTARGETS) $(LIBDIR)/$(LIBTARGET)
 
-staticlib : $(INCTARGETS) $(LIBDIR)/$(STATICLIBTARGET)
+staticlib : $(LIBDIR)/$(STATICLIBTARGET)
+
+devicelib: nccl.h
+	make -C collectives/device
 
 -include $(DEPFILES)
 $(LIBDIR)/$(LIBTARGET) $(LIBDIR)/$(STATICLIBTARGET) : $(LIBOBJ)
@@ -43,17 +48,21 @@ nccl.h : nccl.h.in
 	    -e "s/\$${nccl:Suffix}/$(NCCL_SUFFIX)/g" \
 	    $< > $@
 
-$(LIBDIR)/$(LIBTARGET):
+$(LIBDIR)/$(LIBTARGET): $(LIBOBJ) devicelib
 	@printf "Linking    %-35s > %s\n" $(LIBTARGET) $@
 	mkdir -p $(LIBDIR)
-	$(CXX) $(CXXFLAGS) -shared -Wl,--no-as-needed -Wl,-soname,$(LIBSONAME) -o $@ $(LIBOBJ) $(LDFLAGS)
+	$(CXX) $(CXXFLAGS) -shared -Wl,--no-as-needed -Wl,-soname,$(LIBSONAME) -o $@ $(LIBOBJ) $(DEVICELIB) $(LDFLAGS)
 	ln -sf $(LIBSONAME) $(LIBDIR)/$(LIBNAME)
 	ln -sf $(LIBTARGET) $(LIBDIR)/$(LIBSONAME)
 
-$(LIBDIR)/$(STATICLIBTARGET):
+$(LIBDIR)/$(STATICLIBTARGET): $(LIBOBJ) devicelib
 	@printf "Archiving  %-35s > %s\n" $(STATICLIBTARGET) $@
 	mkdir -p $(LIBDIR)
-	ar cr $@ $(LIBOBJ)
+	$(eval TMP := $(shell mktemp -d))
+	cp $(LIBOBJ) $(TMP)
+	cd $(TMP) && ar x $(DEVICELIB) && cd -
+	ar cr $@ $(LIBOBJ) $(TMP)/*.o
+	rm -Rf $(TMP)
 
 $(INCDIR)/%.h : %.h
 	@printf "Grabbing   %-35s > %s\n" $< $@
@@ -72,6 +81,7 @@ $(OBJDIR)/%.o : %.cu
 
 clean :
 	rm -rf ${INCDIR} ${LIBDIR} ${OBJDIR} nccl.h
+	make -C collectives/device clean
 
 install : lib
 	mkdir -p $(PREFIX)/lib

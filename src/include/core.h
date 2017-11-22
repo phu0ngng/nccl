@@ -7,6 +7,8 @@
 #ifndef NCCL_CORE_H_
 #define NCCL_CORE_H_
 
+#define NCCL_MAX_OPS 2048
+
 #include "nccl.h"
 #include "transport.h"
 #include "debug.h"
@@ -79,6 +81,7 @@ struct ncclConnector {
 #define CACHE_LINE_SIZE 128
 #define PAGE_SIZE 4096
 #define SIZES_FIFO_SIZE 32
+#define CUDA_IPC_MIN 2097152UL /* 2MiB - not currently used */
 
 #define LL_NTHREADS 64
 #define NUM_LL_CHUNKS 8
@@ -86,20 +89,28 @@ struct ncclConnector {
 #define LL_BUFF_SIZE (NUM_LINES_PER_THREAD*LL_NTHREADS*NUM_LL_CHUNKS*sizeof(union ncclLLFifoLine)) // 16K
 #define LL_CLEAN_FREQ 0x10000000
 
-struct ncclSendRecvMem {
+struct ncclSendMem {
   union {
     struct {
       uint64_t head;
       char pad1[CACHE_LINE_SIZE-sizeof(uint64_t)];
+      void* ptrExchange;
+      char pad2[CACHE_LINE_SIZE-sizeof(void*)];
+      uint64_t llHead;
+    };
+    char pad3[PAGE_SIZE];
+  };
+};
+
+struct ncclRecvMem {
+  union {
+    struct {
       uint64_t tail;
       char pad2[CACHE_LINE_SIZE-sizeof(uint64_t)];
-      void* ptrExchange;
-      char pad3[CACHE_LINE_SIZE-sizeof(void*)];
       uint64_t opCount;
       char pad4[CACHE_LINE_SIZE-sizeof(uint64_t)];
       int sizesFifo[SIZES_FIFO_SIZE];
       int llSizesFifo[SIZES_FIFO_SIZE];
-      uint64_t llHead;
     };
     char pad5[PAGE_SIZE];
   };
@@ -111,9 +122,11 @@ struct ncclRing {
   int id;
   int nthreads;
   // Per ring resources
-  struct ncclSendRecvMem* devMem;   // CUDA-size resources
+  struct ncclSendMem* devMemSend;   // CUDA-size resources
+  struct ncclRecvMem* devMemRecv;   // CUDA-size resources
   int buffSize;
-  int devMemSize;    // Keep the size for IPCs
+  int devMemSendSize;    // Keep the size for IPCs
+  int devMemRecvSize;    // Keep the size for IPCs
   struct ncclConnector send;
   struct ncclConnector recv;
 
@@ -122,21 +135,49 @@ struct ncclRing {
   // devices. Ordered from current device.
   int* userRanks;
   int* devUserRanks;
+
+  // Operation list for aggregation
+  struct ncclColl* collectives;
+  struct ncclColl* devCollectives;
+  int collStart;
+  int collCount;
+  int collFifoHead; // Only used by GPU
+  int collFifoTail; // Only used by CPU
 };
 
-template<typename T>
-struct KernelArgs {
-  // general parameters
-  int root;
-  size_t N;
+/* CollectiveArgs + ncclColl are to be a power of two, currently 64 bytes, */
+/* to make sure reads to host from the CUDA kernel are aligned. */
+/* Make sure to adjust padding at the end of ncclColl. */
+struct CollectiveArgs {
+  struct ncclComm* comm;
+  uint64_t opCount;
 
   // local and remote input, output, and buffer
-  const T * __restrict__ ThisInput;
-  T * __restrict__ ThisOutput;
+  const void * ThisInput;
+  void * ThisOutput;
 
-  struct ncclComm* comm;
-  int nRings;
-  uint64_t opCount;
+  // general parameters
+  size_t N;
+  uint32_t root;
+  uint16_t bid;
+  uint16_t nRings;
+};
+struct ncclColl {
+  /* Lines 0-5 */
+  struct CollectiveArgs args;
+
+  /* Line 6 */
+  uint16_t nThreads;
+
+  uint16_t funcIndex;
+
+  uint8_t  ll;
+  uint8_t  active;
+
+  uint16_t pad0;
+
+  /* Line 7 */
+  uint64_t pad1;
 };
 
 struct ncclComm {
@@ -145,9 +186,7 @@ struct ncclComm {
   int cudaDev; // my cuda device index
 
   enum { GROUP, PARALLEL } launchMode;
-  cudaStream_t userStream; // User provided stream for the current collective
-  cudaStream_t ncclStream; // Group Mode : nccl stream
-                           // Parallel mode : prev stream
+  cudaStream_t userStream;
   cudaEvent_t doneEvent;
 
   // Counter to make sure collectives match (needed for bcast/reduce
@@ -173,9 +212,10 @@ struct ncclComm {
 
   // Storage for deferred intra-process launch
   struct cudaLaunchParams * intraParams;
+  struct cudaLaunchParams *myParams;
   int* intraCudaDevs;
   int* intraCGMode; // Whether we can use CUDA9 CGMD or not
-  struct KernelArgs<void> args;
+  struct ncclColl args;
   void* argsptr;
 };
 

@@ -290,6 +290,18 @@ ncclResult_t ncclGetRings(int* nrings, int* nthreads, int rank, int nranks, int*
     if (rank == 0) INFO("Limiting to %d rings per user request.", maxNrings);
     *nrings = maxNrings;
   }
+  str = getenv("NCCL_MIN_NRINGS");
+  int minNrings = str ? atoi(str) : 0;
+  if (minNrings > 0  && minNrings > *nrings) {
+    if (rank == 0) INFO("Duplicating rings to %d per user request.", minNrings);
+    for (int r=*nrings; r<MAXRINGS && r <minNrings; r++) {
+      for (int i=0; i<nranks; i++) {
+        prev[r*nranks+i] = prev[(r-*nrings)*nranks+i];
+        next[r*nranks+i] = next[(r-*nrings)*nranks+i];
+      }
+    }
+    *nrings = min(MAXRINGS, minNrings);
+  }
 
   NCCLCHECK(getEnvThreads(nthreads));
   return ncclSuccess;

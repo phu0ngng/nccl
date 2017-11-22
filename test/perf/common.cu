@@ -25,6 +25,7 @@ thread_local int is_main_thread = 0;
 static int datacheck = 1;
 static int warmup_iters = 20;
 static int iters = 20;
+static int agg_iters = 1;
 static int ncclop = ncclSum;
 static int nccltype = ncclFloat;
 static int ncclroot = 0;
@@ -520,6 +521,7 @@ void completeColl(struct threadArgs_t* args) {
 void BenchTime(struct threadArgs_t* args, ncclDataType_t type, ncclRedOp_t op, int root, int in_place, int warmup) {
   size_t count = args->nbytes / wordSize(type);
   int local_iters = warmup ? warmup_iters : iters;
+  int local_agg_iters = warmup ? 1 : agg_iters;
   
   // Sync
   startColl(args, type, op, root, in_place, 0);
@@ -530,18 +532,24 @@ void BenchTime(struct threadArgs_t* args, ncclDataType_t type, ncclRedOp_t op, i
   // Performance Benchmark
   auto start = std::chrono::high_resolution_clock::now();
   for (int iter = 0; iter < local_iters; iter++) {
-      startColl(args, type, op, root, in_place, iter); 
+    if (local_agg_iters>1) NCCLCHECK(ncclGroupStart());
+    for (int iter = 0; iter < local_agg_iters; iter++) {
+      startColl(args, type, op, root, in_place, iter);
+    }
+    if (local_agg_iters>1) NCCLCHECK(ncclGroupEnd());
   }
   completeColl(args);
 
   auto delta = std::chrono::high_resolution_clock::now() - start;
   double deltaSec = std::chrono::duration_cast<std::chrono::duration<double>>(delta).count();
-  deltaSec = deltaSec/local_iters;
+  deltaSec = deltaSec/(local_iters*local_agg_iters);
 
   double algBw, busBw;
   GetBw(count, wordSize(type), deltaSec, &algBw, &busBw, args->nProcs*args->nThreads*args->nGpus);
 
   Barrier(args);
+
+  if (warmup) return;
 
   if (datacheck) { 
       InitSend(args, type, op, root, in_place, args->thread == 0 ? 1 : 0);
@@ -563,8 +571,6 @@ void BenchTime(struct threadArgs_t* args, ncclDataType_t type, ncclRedOp_t op, i
 #else
      maxDelta = -1.0;
 #endif
-
-  if (warmup) return;
 
   //aggregate delta from all threads and procs
   Barrier(args);
@@ -676,6 +682,9 @@ void* threadInit(void* args) {
 
   threadRunTests(args);
 
+  for (int i=0; i<targs->nGpus; i++) {
+    NCCLCHECK(ncclCommDestroy(targs->comms[i]));
+  }
   return NULL;
 }
 
@@ -744,6 +753,7 @@ int main(int argc, char* argv[]) {
     {"stepbytes", required_argument, 0, 'i'},
     {"stepfactor", required_argument, 0, 'f'},
     {"iters", required_argument, 0, 'n'},
+    {"agg-iters", required_argument, 0, 'm'},
     {"warmup_iters", required_argument, 0, 'w'},
     {"swap_comms", required_argument, 0, 's'},
     {"parallel_init", required_argument, 0, 'p'},
@@ -758,7 +768,7 @@ int main(int argc, char* argv[]) {
 
  while(1) {
       int c;
-      c = getopt_long(argc, argv, "t:g:b:e:i:f:n:w:s:p:c:o:d:r:z:y:h", longopts, &longindex);
+      c = getopt_long(argc, argv, "t:g:b:e:i:f:n:m:w:s:p:c:o:d:r:z:y:h", longopts, &longindex);
 
       if (c == -1)
          break;
@@ -784,6 +794,13 @@ int main(int argc, char* argv[]) {
              break;
 	 case 'n':
 	     iters = (int)strtol(optarg, NULL, 0);
+	     break;
+	 case 'm':
+#if NCCL_MAJOR >= 2 && NCCL_MINOR >= 2
+	     agg_iters = (int)strtol(optarg, NULL, 0);
+#else
+             printf("Option -m not supported before NCCL 2.2. Ignoring\n");
+#endif
 	     break;
 	 case 'w':
 	     warmup_iters = (int)strtol(optarg, NULL, 0);
@@ -814,13 +831,14 @@ int main(int argc, char* argv[]) {
              break;
          case 'h':
 	         printf("USAGE: ./test \n\t" 
-		 "[-t,--nthreads <num threads>] \n\t"
+	 	 "[-t,--nthreads <num threads>] \n\t"
 		 "[-g,--ngpus <gpus per thread>] \n\t"
 		 "[-b,--minbytes <min size in bytes>] \n\t"
 		 "[-e,--maxbytes <max size in bytes>] \n\t"
 	         "[-i,--stepbytes <increment size>] \n\t"
 		 "[-f,--stepfactor <increment factor>] \n\t"
 		 "[-n,--iters <iteration count>] \n\t"
+		 "[-m,--agg-iters <aggregated iteration count>] \n\t"
 		 "[-w,--warmup_iters <warmup iteration count>] \n\t"
 		 "[-s,--swap_args <0/1>] \n\t"
 		 "[-p,--parallel_init <0/1>] \n\t"
@@ -835,13 +853,14 @@ int main(int argc, char* argv[]) {
 	 default: 
 	         printf("invalid option \n");
 	         printf("USAGE: ./test \n\t" 
-		 "[-t,--nthreads <num threads>] \n\t"
+	 	 "[-t,--nthreads <num threads>] \n\t"
 		 "[-g,--ngpus <gpus per thread>] \n\t"
 		 "[-b,--minbytes <min size in bytes>] \n\t"
 		 "[-e,--maxbytes <max size in bytes>] \n\t"
 	         "[-i,--stepbytes <increment size>] \n\t"
 		 "[-f,--stepfactor <increment factor>] \n\t"
 		 "[-n,--iters <iteration count>] \n\t"
+		 "[-m,--agg-iters <aggregated iteration count>] \n\t"
 		 "[-w,--warmup_iters <warmup iteration count>] \n\t"
 		 "[-s,--swap_args <0/1>] \n\t"
 		 "[-p,--parallel_init <0/1>] \n\t"
@@ -1030,9 +1049,11 @@ int main(int argc, char* argv[]) {
     MPI_Allreduce(MPI_IN_PLACE, &errors[0], 1, MPI_INT, MPI_SUM, MPI_COMM_WORLD);
 #endif
 
-  for(int i=0; i<nGpus*nThreads; ++i)
-    ncclCommDestroy(comms[i]);
-  free(comms);
+  if (!parallel_init) {
+    for(int i=0; i<nGpus*nThreads; ++i)
+      ncclCommDestroy(comms[i]);
+    free(comms);
+  }
 
   char* str = getenv("NCCL_TESTS_MIN_BW");
   double check_avg_bw = str ? atof(str) : -1;

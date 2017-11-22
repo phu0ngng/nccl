@@ -8,6 +8,7 @@
 #define COMMON_COLL_H_
 
 #include "core.h"
+#include "collectives/collectives.h"
 
 static ncclResult_t PointerCheck(const void* pointer, struct ncclComm* comm, const char* ptrname, const char* opname) {
   cudaPointerAttributes attr;
@@ -57,47 +58,67 @@ static ncclResult_t ArgsCheck(const void* sendbuff, const void* recvbuff, size_t
   return ncclSuccess;
 }
 
-template<typename T>
-void ArgsSetup(const T* sendbuff, T* recvbuff,
-		const int root, const size_t count, ncclComm *comm) {
-  struct KernelArgs<void>* args = &comm->args;
-  args->root = root;
-  args->N = count;
-  args->ThisInput = sendbuff;
-  args->ThisOutput = recvbuff;
-  args->comm = comm->devComm;
-  args->opCount = comm->opCount;
+static __inline__ int ncclTypeSize(ncclDataType_t type) {
+  switch (type) {
+    case ncclInt8:
+    case ncclUint8:
+      return 1;
+    case ncclFloat16:
+      return 2;
+    case ncclInt32:
+    case ncclUint32:
+    case ncclFloat32:
+      return 4;
+    case ncclInt64:
+    case ncclUint64:
+    case ncclFloat64:
+      return 8;
+    default:
+      return -1;
+  }
 }
 
-#define SAVE_KERNEL(K, comm, UNROLL, FUNC, T, stream) do { \
-  int nRings = comm->args.nRings = LIMIT_NRINGS(count*sizeof(T), comm->nRings); \
-  dim3 grid(nRings, 1, 1); \
-  dim3 block(comm->nThreads+1, 1, 1); \
-  void* f; \
-  /* Generate code for the 3 possible sizes */ \
-  if (comm->nThreads == 128) { \
-    f=(void*)K<128, UNROLL, FUNC, T>; \
-  } else if (comm->nThreads == 256) { \
-    f=(void*)K<256, UNROLL, FUNC, T>; \
-  } else if (comm->nThreads == 512) { \
-    f=(void*)K<512, UNROLL, FUNC, T>; \
-  } else { \
-    WARN("Error : forbidden number of threads %d", comm->nThreads); \
-    return ncclInternalError; \
-  } \
-  comm->userStream = stream; \
-  struct cudaLaunchParams params = { f, grid, block, &comm->argsptr, 0, comm->ncclStream }; \
-  memcpy(comm->intraParams+comm->intraRank, &params, sizeof(params)); \
-} while (0)
+static ncclResult_t saveKernel(int coll, const void* sendbuff, void* recvbuff, size_t count,
+    ncclDataType_t dtype, ncclRedOp_t op, int root, ncclComm_t comm, cudaStream_t stream, int nbytes) {
+  int llMode = nbytes <= comm->llThreshold ? 1 : 0;
+  int nBlocks = llMode ? 1 : LIMIT_NRINGS(nbytes, comm->nRings);
+  int nThreads = llMode ? LL_NTHREADS : comm->nThreads+1;
+  comm->myParams->blockDim.x = max(comm->myParams->blockDim.x, nThreads);
+  comm->userStream = stream;
+  for (int bid=0; bid<nBlocks; bid++) {
+    struct ncclRing* ring = comm->rings+(comm->myParams->gridDim.x % comm->nRings);
+    if (ring->collCount == NCCL_MAX_OPS) {
+      WARN("Too many aggregated operations (%d max)", NCCL_MAX_OPS);
+      return ncclInvalidUsage;
+    }
 
-#define SAVE_KERNEL_SMALL(K, comm, FUNC, T, stream) do { \
-  dim3 grid(1, 1, 1); \
-  dim3 block(LL_NTHREADS, 1, 1); \
-  static_assert(LL_NTHREADS*sizeof(union ncclLLFifoLine)*NUM_LL_CHUNKS <= LL_BUFF_SIZE, "LL_BUFF_SIZE is too low."); \
-  comm->userStream = stream; \
-  void* f = (void*)K<LL_NTHREADS, FUNC, T>; \
-  struct cudaLaunchParams params = { f, grid, block, &comm->argsptr, 0, comm->ncclStream }; \
-  memcpy(comm->intraParams+comm->intraRank, &params, sizeof(params)); \
-} while (0)
+    comm->myParams->gridDim.x++;
+
+    struct ncclColl* c = ring->collectives+ring->collFifoTail;
+    volatile uint8_t* activePtr = (volatile uint8_t*)&c->active;
+    while (activePtr[0] != 0) sched_yield();
+
+    struct CollectiveArgs* args = &c->args;
+    args->root = root;
+    args->N = count;
+    args->ThisInput = sendbuff;
+    args->ThisOutput = recvbuff;
+    args->comm = comm->devComm;
+    args->opCount = comm->opCount;
+    args->bid = bid;
+    args->nRings = nBlocks;
+
+    c->nThreads = nThreads;
+    c->funcIndex = FUNC_INDEX(coll, op, dtype);
+    c->ll = llMode;
+    c->active = 1;
+    ring->collFifoTail = (ring->collFifoTail+1)%NCCL_MAX_OPS;
+    ring->collCount++;
+  }
+  if (llMode == 0) comm->opCount++;
+  return ncclSuccess;
+}
+
+extern __global__ void ncclMultiOpKernel (struct ncclColl firstColl);
 
 #endif

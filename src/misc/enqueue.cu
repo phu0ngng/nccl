@@ -7,6 +7,59 @@
 #include "enqueue.h"
 #include "common_coll.h"
 
+#include "collectives/collectives.h"
+
+// Must be consistent with ncclDataType_t
+#define NCCL_FUNCS3A(nthreads, coll, op) \
+  (void*)NCCL_KERN_NAME(coll, op,  i8, nthreads), \
+  (void*)NCCL_KERN_NAME(coll, op,  u8, nthreads), \
+  (void*)NCCL_KERN_NAME(coll, op, i32, nthreads), \
+  (void*)NCCL_KERN_NAME(coll, op, u32, nthreads), \
+  (void*)NCCL_KERN_NAME(coll, op, i64, nthreads), \
+  (void*)NCCL_KERN_NAME(coll, op, u64, nthreads), \
+  (void*)NCCL_KERN_NAME(coll, op, f16, nthreads), \
+  (void*)NCCL_KERN_NAME(coll, op, f32, nthreads), \
+  (void*)NCCL_KERN_NAME(coll, op, f64, nthreads)
+#define NCCL_FUNCS3B(nthreads, coll, op) \
+  (void*)NCCL_KERN_NAME(coll, op,  i8, nthreads), \
+  (void*)NCCL_KERN_NAME(coll, op,  i8, nthreads), \
+  (void*)NCCL_KERN_NAME(coll, op,  i8, nthreads), \
+  (void*)NCCL_KERN_NAME(coll, op,  i8, nthreads), \
+  (void*)NCCL_KERN_NAME(coll, op,  i8, nthreads), \
+  (void*)NCCL_KERN_NAME(coll, op,  i8, nthreads), \
+  (void*)NCCL_KERN_NAME(coll, op,  i8, nthreads), \
+  (void*)NCCL_KERN_NAME(coll, op,  i8, nthreads), \
+  (void*)NCCL_KERN_NAME(coll, op,  i8, nthreads)
+
+// Must be consistent with ncclRedOp_t
+#define NCCL_FUNCS2A(nthreads, coll) \
+  NCCL_FUNCS3A(nthreads, coll, sum ), \
+  NCCL_FUNCS3A(nthreads, coll, prod), \
+  NCCL_FUNCS3A(nthreads, coll, max ), \
+  NCCL_FUNCS3A(nthreads, coll, min )
+#define NCCL_FUNCS2B(nthreads, coll) \
+  NCCL_FUNCS3B(nthreads, coll, copy), \
+  NCCL_FUNCS3B(nthreads, coll, copy), \
+  NCCL_FUNCS3B(nthreads, coll, copy), \
+  NCCL_FUNCS3B(nthreads, coll, copy)
+
+// Must be consistent with ncclColl_t
+#define NCCL_FUNCS(nthreads) { \
+  NCCL_FUNCS2B(nthreads, ncclBcast), \
+  NCCL_FUNCS2A(nthreads, ncclReduce), \
+  NCCL_FUNCS2B(nthreads, ncclAllGather), \
+  NCCL_FUNCS2A(nthreads, ncclReduceScatter), \
+  NCCL_FUNCS2A(nthreads, ncclAllReduce) }
+
+// Must be consistent with the ncclFuncSet enum
+static void* const ncclLLKerns[ncclCollCount*ncclNumOps*ncclNumTypes] = {
+    NCCL_FUNCS2B(LL_NTHREADS, ncclBcastLL),
+    NCCL_FUNCS2A(LL_NTHREADS, ncclReduceLL),
+    NCCL_FUNCS2B(LL_NTHREADS, ncclAllGatherLL),
+    NCCL_FUNCS2A(LL_NTHREADS, ncclReduceScatterLL),
+    NCCL_FUNCS2A(LL_NTHREADS, ncclAllReduceLL)
+};
+
 ncclResult_t ncclLaunchCooperativeKernelMultiDevice(struct cudaLaunchParams *paramsList, int* cudaDevs, int numDevices, int cgMode) {
 #if __CUDACC_VER_MAJOR__ >= 9
   if (cgMode & 0x01) {
@@ -27,16 +80,48 @@ ncclResult_t ncclLaunchCooperativeKernelMultiDevice(struct cudaLaunchParams *par
   return ncclSuccess;
 }
 
-ncclResult_t ncclCpuBarrierCheckin(ncclComm_t comm) {
+ncclResult_t setupLaunch(struct ncclComm* comm, struct cudaLaunchParams* params) {
+  params->gridDim.x = min(params->gridDim.x, comm->nRings);
+
+  int totalOps = 0;
+  for (int r=0; r<params->gridDim.x; r++) totalOps += comm->rings[r].collCount;
+
+  struct ncclColl* coll = comm->rings[0].collectives+comm->rings[0].collStart;
+  memcpy(&comm->args, coll, sizeof(struct ncclColl));
+
+  // One operation
+  if (totalOps == 1 && coll->ll) {
+    coll->active = 0;
+    params->func = ncclLLKerns[coll->funcIndex];
+    return ncclSuccess;
+  }
+
+  // Aggregated operations
+  params->func = (void*)ncclMultiOpKernel;
+  // Set active = 2 for the last operation
+  for (int r=0; r<params->gridDim.x; r++) {
+    struct ncclRing* ring = comm->rings+r;
+    ring->collectives[(ring->collStart+ring->collCount-1)%NCCL_MAX_OPS].active = 2;
+  }
+  memcpy(&comm->args, comm->rings[0].collectives+comm->rings[0].collStart, sizeof(struct ncclColl));
+  return ncclSuccess;
+}
+
+ncclResult_t ncclCpuBarrierCheckin(struct ncclComm* comm) {
   if (comm->nRanks == 1) return ncclSuccess;
+  struct cudaLaunchParams* params = comm->myParams;
+
+  NCCLCHECK(setupLaunch(comm, params));
+
   if (comm->launchMode == ncclComm::GROUP) {
     // Enqueue stream dependency
     CUDACHECK(cudaEventRecord(comm->doneEvent, comm->userStream));
-    CUDACHECK(cudaStreamWaitEvent(comm->ncclStream, comm->doneEvent, 0));
+    CUDACHECK(cudaStreamWaitEvent(params->stream, comm->doneEvent, 0));
   } else {
-    if (comm->userStream != comm->ncclStream) {
+    if (comm->userStream != params->stream) {
       CUDACHECK(cudaStreamWaitEvent(comm->userStream, comm->doneEvent, 0));
     }
+    params->stream = comm->userStream;
   }
   // Notify I'm ready
   volatile int* ptr = (volatile int*)(comm->intraBarrier+comm->intraPhase);
@@ -60,6 +145,7 @@ ncclResult_t ncclCpuBarrierCheckin(ncclComm_t comm) {
   }
   return ncclSuccess;
 }
+
 ncclResult_t ncclCpuBarrierWait(ncclComm_t comm) {
   if (comm->nRanks == 1) return ncclSuccess;
   // We can't print the CG mode before the first barrier happened.
@@ -70,15 +156,20 @@ ncclResult_t ncclCpuBarrierWait(ncclComm_t comm) {
   volatile int* ptr = (volatile int*)(comm->intraBarrier+comm->intraPhase);
   while (*ptr < comm->intraRanks) pthread_yield();
   comm->intraPhase ^= 1;
+  struct cudaLaunchParams *params = comm->myParams;
   if (comm->launchMode == ncclComm::GROUP) {
-    CUDACHECK(cudaEventRecord(comm->doneEvent, comm->ncclStream));
+    CUDACHECK(cudaEventRecord(comm->doneEvent, params->stream));
     CUDACHECK(cudaStreamWaitEvent(comm->userStream, comm->doneEvent, 0));
   } else {
-    struct cudaLaunchParams *params = comm->intraParams+comm->intraRank;
-    CUDACHECK(cudaLaunchKernel(params->func, params->gridDim, params->blockDim, params->args, params->sharedMem, comm->userStream));
+    CUDACHECK(cudaLaunchKernel(params->func, params->gridDim, params->blockDim, params->args, params->sharedMem, params->stream));
     CUDACHECK(cudaEventRecord(comm->doneEvent, comm->userStream));
-    comm->ncclStream = comm->userStream;
   }
+  for (int r=0; r<params->gridDim.x; r++) {
+    struct ncclRing* ring = comm->rings+r;
+    ring->collStart = ring->collFifoTail;
+    ring->collCount = 0;
+  }
+  params->gridDim.x = params->blockDim.x = 0;
   NCCLCHECK(transportStartProxies(comm));
   return ncclSuccess;
 }

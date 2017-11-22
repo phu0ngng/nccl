@@ -5,6 +5,7 @@
  ************************************************************************/
 
 #include "core.h"
+#include "ring.h"
 #include "env.h"
 #include "nvmlwrap.h"
 //#include "ibvwrap.h"
@@ -96,18 +97,32 @@ static ncclResult_t commFree(ncclComm_t comm) {
 
   CUDACHECK(cudaFree(comm->devComm));
 
-  for (int ring=0; ring<comm->nRings; ring++) {
-    NCCLCHECK(comm->rings[ring].send.transport->send.free(comm->rings[ring].send.transportResources));
-    NCCLCHECK(transportDestroyProxy(&comm->rings[ring].send));
-    NCCLCHECK(comm->rings[ring].recv.transport->recv.free(comm->rings[ring].recv.transportResources));
-    NCCLCHECK(transportDestroyProxy(&comm->rings[ring].recv));
-    CUDACHECK(cudaFree(comm->rings[ring].devMem));
-    free(comm->rings[ring].userRanks);
-    CUDACHECK(cudaFree(comm->rings[ring].devUserRanks));
-  }
+  for (int ring=0; ring<comm->nRings; ring++)
+    NCCLCHECK(freeRing(comm->rings+ring));
 
   if (comm->doneEvent != NULL)
     CUDACHECK(cudaEventDestroy(comm->doneEvent));
+
+  if (comm->launchMode == ncclComm::GROUP) {
+    CUDACHECK(cudaStreamDestroy(comm->myParams->stream));
+  }
+
+  // Last rank frees shared resources between threads
+  volatile int* ptr = (volatile int*)(comm->intraBarrier+comm->intraPhase);
+  int new_val, val = *ptr;
+  do {
+    if ((new_val = val+1) >= comm->intraRanks) return ncclInternalError;
+  } while (__sync_bool_compare_and_swap(ptr, val++, new_val));
+
+  if (val == comm->intraRanks) {
+      free(comm->intraBarrier);
+      free(comm->intraParams);
+      free(comm->intraCudaDevs);
+      free(comm->intraCGMode);
+  }
+
+  if (comm->intraRank == 0) {
+  }
 
   free(comm);
   return ncclSuccess;
@@ -198,36 +213,27 @@ static ncclResult_t selectTransport(struct ncclInfo* myInfo, struct ncclInfo* pe
   return ncclInternalError;
 }
 
-static ncclResult_t setupSendRecv(struct ncclRing* ring) {
-  const char* str = getenv("NCCL_BUFFSIZE");
-  int buffSize;
-  if (str != NULL) {
-    errno = 0;
-    buffSize = strtol(str, NULL, 10);
-    if (errno == ERANGE || buffSize == 0) {
-      INFO("invalid NCCL_BUFFSIZE: %s, using default %lu",
-          str, DEFAULT_BUFFER_SIZE_BYTES);
-      buffSize = DEFAULT_BUFFER_SIZE_BYTES;
+static ncclResult_t setupRing(struct ncclComm* comm, int ringid, int rank, int nranks, int* ringRanks, struct ncclInfo* allInfo, struct ncclConnect* connect) {
+  NCCLCHECK(initRing(comm, ringid));
+
+  struct ncclRing* ring = comm->rings+ringid;
+  // Reorganize ranks to start with rank.
+  int shift;
+  for (shift = 0; shift<nranks; shift++) {
+    if (ringRanks[shift] == rank) {
+      break;
     }
-  } else {
-    buffSize = DEFAULT_BUFFER_SIZE_BYTES;
   }
-  ring->buffSize = buffSize;
-  const int size = ring->devMemSize = offsetof(struct ncclSendRecvMem, buff)+buffSize;
-  struct ncclSendRecvMem* mem;
-  CUDACHECK(cudaMalloc(&mem, size));
-  CUDACHECK(cudaMemset(mem, 0, size));
-  ring->devMem = mem;
-  ring->recv.conn.buff = mem->buff;
-  ring->recv.conn.llBuff = mem->llBuff;
-  ring->recv.conn.tail = &mem->tail;
-  ring->recv.conn.opCount = &mem->opCount;
-  ring->recv.conn.direct = 0;
-  ring->send.conn.head = &mem->head;
-  ring->send.conn.llHead = &mem->llHead;
-  ring->send.conn.direct = 0;
-  ring->send.conn.llStep = 0;
-  ring->send.conn.llLastCleaning = 0;
+  for (int i=0; i<nranks; i++) {
+    ring->userRanks[i] = ringRanks[(i+shift)%nranks];
+  }
+  int prev = ring->userRanks[nranks-1];
+  int next = ring->userRanks[1];
+
+  NCCLCHECK(selectTransport<0>(allInfo+rank, allInfo+prev, connect+0, &ring->recv.transport, ring));
+  NCCLCHECK(selectTransport<1>(allInfo+rank, allInfo+next, connect+1, &ring->send.transport, ring));
+  NCCLCHECK(transportCreateProxy(0, ring, comm));
+  NCCLCHECK(transportCreateProxy(1, ring, comm));
   return ncclSuccess;
 }
 
@@ -242,31 +248,6 @@ static ncclResult_t fillConnect(struct ncclInfo* allInfo, int nranks, int rank, 
       }
     }
   }
-  return ncclSuccess;
-}
-
-static ncclResult_t setupRing(struct ncclComm* comm, struct ncclRing* ring, int ringid, int rank, int nranks, int* ringRanks, struct ncclInfo* allInfo, struct ncclConnect* connect) { 
-  ring->id = ringid;
-  // Reorganize ranks to start with rank.
-  int shift;
-  for (shift = 0; shift<nranks; shift++) {
-    if (ringRanks[shift] == rank) {
-      break;
-    }
-  }
-  CUDACHECK(cudaMalloc(&ring->devUserRanks, nranks*sizeof(int)));
-  ring->userRanks = (int*)malloc(nranks*sizeof(int));
-  for (int i=0; i<nranks; i++) {
-    ring->userRanks[i] = ringRanks[(i+shift)%nranks];
-  }
-  int prev = ring->userRanks[nranks-1];
-  int next = ring->userRanks[1];
-
-  setupSendRecv(ring);
-  NCCLCHECK(selectTransport<0>(allInfo+rank, allInfo+prev, connect+0, &ring->recv.transport, ring));
-  NCCLCHECK(selectTransport<1>(allInfo+rank, allInfo+next, connect+1, &ring->send.transport, ring));
-  NCCLCHECK(transportCreateProxy(0, ring, comm));
-  NCCLCHECK(transportCreateProxy(1, ring, comm));
   return ncclSuccess;
 }
 
@@ -315,7 +296,7 @@ static ncclResult_t buildRings(int nrings, int* rings, int rank, int nranks, int
       rings[r*nranks+i] = current;
       current = next[r*nranks+current];
     }
-    sprintf(prefix, "[%d] Ring %d : ", rank, r);
+    sprintf(prefix, "Ring %02d : ", r);
     if (rank == 0) dumpLine(rings+r*nranks, nranks, prefix);
     if (current != rank) {
       WARN("Error : ring %d does not loop back to start (%d != %d)", r, current, rank);
@@ -345,6 +326,15 @@ void* waitForNonNullPtr(void* p) {
   return (void*)*ptr;
 }
 
+ncclResult_t initParams(struct ncclComm* comm) {
+  struct cudaLaunchParams* params = comm->myParams = comm->intraParams+comm->intraRank;
+  params->args = &comm->argsptr;
+  params->sharedMem = sizeof(struct ncclColl)*MAXRINGS;
+  params->blockDim.x = 0; params->blockDim.y = params->blockDim.z = 1;
+  params->gridDim.x = 0; params->gridDim.y = params->gridDim.z = 1;
+  return ncclSuccess;
+}
+
 // Allocate/Set Intra Structures and set CG options
 ncclResult_t ncclCommSetIntra(struct ncclComm* comm, int rank, int ranks, struct ncclComm* comm0) {
   comm->intraRank = rank;
@@ -369,6 +359,7 @@ ncclResult_t ncclCommSetIntra(struct ncclComm* comm, int rank, int ranks, struct
     comm->intraCGMode = (int*)waitForNonNullPtr(&comm0->intraCGMode);
   }
   comm->intraCudaDevs[comm->intraRank] = comm->cudaDev;
+  NCCLCHECK(initParams(comm));
 
   int cgMdLaunch = 0;
 
@@ -379,7 +370,7 @@ ncclResult_t ncclCommSetIntra(struct ncclComm* comm, int rank, int ranks, struct
     comm->launchMode = ncclComm::PARALLEL;
   }
   if (comm->launchMode == ncclComm::GROUP) {
-    CUDACHECK(cudaStreamCreateWithFlags(&comm->ncclStream, cudaStreamNonBlocking));
+    CUDACHECK(cudaStreamCreateWithFlags(&comm->myParams->stream, cudaStreamNonBlocking));
 #if __CUDACC_VER_MAJOR__ >= 9
     // Check whether the GPU supports Cooperative Group Multi Device Launch
     (void) cudaDeviceGetAttribute(&cgMdLaunch, cudaDevAttrCooperativeMultiDeviceLaunch, comm->cudaDev);
@@ -457,7 +448,7 @@ static ncclResult_t initTransportsRank(struct ncclComm* comm, ncclUniqueId* comm
     int* ringRanks = rings+r*nranks;
     struct ncclRing *ring = comm->rings+r;
     struct ncclConnect connect[2];
-    NCCLCHECK(setupRing(comm, ring, r, rank, nranks, ringRanks, allInfo, connect));
+    NCCLCHECK(setupRing(comm, r, rank, nranks, ringRanks, allInfo, connect));
     NCCLCHECK(bootstrapRingExchange(commState, connect, ring->userRanks[nranks-1], ring->userRanks[1], sizeof(struct ncclConnect)));
     NCCLCHECK(ring->send.transport->send.connect(connect+1, &ring->send));
     NCCLCHECK(ring->recv.transport->recv.connect(connect+0, &ring->recv));
@@ -528,26 +519,28 @@ cleanup:
 }
 
 NCCL_API(ncclResult_t, ncclCommInitRank, ncclComm_t* newcomm, int ndev, ncclUniqueId commId, int myrank);
-ncclResult_t ncclCommInitRank(ncclComm_t* newcomm, int ndev, ncclUniqueId commId, int myrank) {
+ncclResult_t ncclCommInitRank(ncclComm_t* newcomm, int nranks, ncclUniqueId commId, int myrank) {
   NCCLCHECK(ncclInit());
   if (myrank == 0) showVersion();
+
+  TRACE("rank %d nranks %d", myrank, nranks);
 
   // It seems we need to call this so that NVML doesn't crash later with error
   // 999.
   CUDACHECK(cudaFree(NULL));
 
   NCCLCHECK(PtrCheck(newcomm, "CommInitRank", "newcomm"));
-  if (ndev < 1) {
-    WARN("Invalid device count requested : %d", ndev);
+  if (nranks < 1 || myrank < 0 || myrank >= nranks) {
+    WARN("Invalid rank requested : %d/%d", myrank, nranks);
     return ncclInvalidArgument;
   }
 
   if (ncclAsyncMode()) {
     int cudaDev;
     CUDACHECK(cudaGetDevice(&cudaDev));
-    return ncclAsyncInit(ncclCommInitRankSync, cudaDev, newcomm, ndev, commId, myrank);
+    return ncclAsyncInit(ncclCommInitRankSync, cudaDev, newcomm, nranks, commId, myrank);
   } else {
-    return ncclCommInitRankSync(newcomm, ndev, commId, myrank);
+    return ncclCommInitRankSync(newcomm, nranks, commId, myrank);
   }
 }
 
@@ -606,8 +599,7 @@ static ncclResult_t initTransportsAll(struct ncclComm** comms, const int* devs, 
     int* ringRanks = rings+r*nranks;
     for (int rank=0; rank<nranks; rank++) {
       CUDACHECK(cudaSetDevice(devs[rank]));
-      struct ncclRing *ring = comms[rank]->rings+r;
-      NCCLCHECK(setupRing(comms[rank], ring, r, rank, nranks, ringRanks, allInfo, connect+2*rank));
+      NCCLCHECK(setupRing(comms[rank], r, rank, nranks, ringRanks, allInfo, connect+2*rank));
     }
     // RingExchange connect information
     for (int rank=0; rank<nranks; rank++) {
@@ -711,17 +703,6 @@ ncclResult_t ncclCommDestroy(ncclComm_t comm) {
 
   if (savedDevice != commDevice) {
     CUDACHECK(cudaSetDevice(commDevice));
-  }
-
-  if (comm->intraRank == 0) {
-    free(comm->intraBarrier);
-    free(comm->intraParams);
-    free(comm->intraCudaDevs);
-    free(comm->intraCGMode);
-  }
-
-  if (comm->launchMode == ncclComm::GROUP) {
-    CUDACHECK(cudaStreamDestroy(comm->ncclStream));
   }
 
   commFree(comm);
