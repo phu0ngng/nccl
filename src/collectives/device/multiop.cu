@@ -11,7 +11,7 @@
 typedef void(*ncclKern_t)(struct CollectiveArgs* args);
 
 // Must be consistent with ncclDataType_t
-#define NCCL_FUNCS3(nthreads, coll, op) \
+#define NCCL_FUNCS3A(nthreads, coll, op) \
   NCCL_COLL_NAME(coll, op,  i8, nthreads), \
   NCCL_COLL_NAME(coll, op,  u8, nthreads), \
   NCCL_COLL_NAME(coll, op, i32, nthreads), \
@@ -21,18 +21,28 @@ typedef void(*ncclKern_t)(struct CollectiveArgs* args);
   NCCL_COLL_NAME(coll, op, f16, nthreads), \
   NCCL_COLL_NAME(coll, op, f32, nthreads), \
   NCCL_COLL_NAME(coll, op, f64, nthreads)
+#define NCCL_FUNCS3B(nthreads, coll, op) \
+  NCCL_COLL_NAME(coll, op,  i8, nthreads), \
+  NCCL_COLL_NAME(coll, op,  i8, nthreads), \
+  NCCL_COLL_NAME(coll, op,  i8, nthreads), \
+  NCCL_COLL_NAME(coll, op,  i8, nthreads), \
+  NCCL_COLL_NAME(coll, op,  i8, nthreads), \
+  NCCL_COLL_NAME(coll, op,  i8, nthreads), \
+  NCCL_COLL_NAME(coll, op,  i8, nthreads), \
+  NCCL_COLL_NAME(coll, op,  i8, nthreads), \
+  NCCL_COLL_NAME(coll, op,  i8, nthreads)
 
 // Must be consistent with ncclRedOp_t
 #define NCCL_FUNCS2A(nthreads, coll) \
-  NCCL_FUNCS3(nthreads, coll, sum ), \
-  NCCL_FUNCS3(nthreads, coll, prod), \
-  NCCL_FUNCS3(nthreads, coll, max ), \
-  NCCL_FUNCS3(nthreads, coll, min )
+  NCCL_FUNCS3A(nthreads, coll, sum ), \
+  NCCL_FUNCS3A(nthreads, coll, prod), \
+  NCCL_FUNCS3A(nthreads, coll, max ), \
+  NCCL_FUNCS3A(nthreads, coll, min )
 #define NCCL_FUNCS2B(nthreads, coll) \
-  NCCL_FUNCS3(nthreads, coll, copy), \
-  NCCL_FUNCS3(nthreads, coll, copy), \
-  NCCL_FUNCS3(nthreads, coll, copy), \
-  NCCL_FUNCS3(nthreads, coll, copy)
+  NCCL_FUNCS3B(nthreads, coll, copy), \
+  NCCL_FUNCS3B(nthreads, coll, copy), \
+  NCCL_FUNCS3B(nthreads, coll, copy), \
+  NCCL_FUNCS3B(nthreads, coll, copy)
 
 // Must be consistent with ncclColl_t
 #define NCCL_FUNCS(nthreads) { \

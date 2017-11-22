@@ -17,7 +17,7 @@ ncclResult_t ncclBroadcastFunc(const void* sendbuff, void* recvbuff, const size_
       CUDACHECK(cudaMemcpyAsync(recvbuff, sendbuff, nbytes, cudaMemcpyDeviceToDevice, stream));
   } else {
     NCCLCHECK(transportSaveProxies(BROADCAST_SUBSTEPS, BROADCAST_BUFCHUNKS, 1, 1, nbytes, proxyPatternFrom(root), comm));
-    NCCLCHECK(saveKernel(ncclCollBcast, sendbuff, recvbuff, count, datatype, op, root, comm, stream, nbytes));
+    NCCLCHECK(saveKernel(ncclCollBcast, sendbuff, recvbuff, nbytes, ncclInt8, op, root, comm, stream, nbytes));
   }
 
   return ncclSuccess;

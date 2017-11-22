@@ -11,5 +11,5 @@
 #define UNROLL 8
 
 #if NCCL_OP == 0
-IMPL_COLL2(ncclBcast, copy, FuncSum);
+IMPL_COLL3(ncclBcast, copy, FuncSum, i8, int8_t);
 #endif
