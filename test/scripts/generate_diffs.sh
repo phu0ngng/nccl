@@ -25,7 +25,11 @@ firstversion=1
 for version in $@; do
   data=$version/results/$gpumodel/$op.$ngpus
   cat $data.out | grep float | awk "{ print \$1,\$$busbwcol; }" > $data.values
-  score=`awk '{ sum += $2 } END { print sum }' $data.values`
+  if [ "$mode" == "0" ]; then
+    score=`awk '{ sum += $2 } END { print sum }' $data.values`
+  else
+    score=`awk '{ sum += $2; n++ } END { print n ? sum/n : 0 }' $data.values`
+  fi
   if [ "$firstversion" == "1" ]; then
     firstversion=0
     refscore=$score

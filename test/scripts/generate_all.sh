@@ -66,6 +66,13 @@ done
 DIR=html_dlfw
 rm -rf $DST/$DIR
 mkdir -p $DST/$DIR
-./dlfw_generate_plots.sh P100 ${VER}${GM} ${VER}${PM} 2.0.5 2.1.2${GM}
+./dlfw_generate_plots.sh P100 ${VER}${GM} ${VER}${PM} 2.0.5 2.1.2${GM} 2.1.2${PM}
 mv comp/P100/*.png $DST/$DIR/
 rm -rf comp
+
+DIR=html_aggregation
+rm -rf $DST/$DIR
+./generate_html.sh lat ${VER}${GM}_aggr ${VER}${PM}_aggr ${VER}${GM}_nonaggr ${VER}${PM}_nonaggr
+mv comp $DST/$DIR
+grep -r -i "FAIL" ${VER}${GM}_aggr/results >> $DST/$DIR/fail.txt
+grep -r -i "FAIL" ${VER}${PM}_aggr/results >> $DST/$DIR/fail.txt

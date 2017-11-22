@@ -15,6 +15,7 @@ set output "$graph.png"
 set title "$op, $ngpus x $gpumodel" noenhanced
 set logscale x
 set yrange [0:]
+set offset graph 0.1, graph 0.1, graph 0.1, graph 0.1
 EOF
 
 firstline=1
