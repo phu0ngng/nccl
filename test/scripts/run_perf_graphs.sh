@@ -118,16 +118,14 @@ fi
 
 if [ "$mode" == "aggregation" ] || [ "$mode" == "combo" ]; then
   echo "Running test/perf/${op}_perf on $ngpus GPUs [Aggregation] ..."
-  resdir1="results_nonaggr"
-  resdir2="results_aggr"
-  path1=$resdir1/$gpumodel
-  path2=$resdir2/$gpumodel
-  mkdir -p $path1
-  mkdir -p $path2
-  result1=$path1/$op.$ngpus
-  result2=$path2/$op.$ngpus
-  $srun_cmd test/perf/${op}_perf -t $ngpus -b 8 -e 512 -f 2 -w 20 -n 256 2>&1 | tee $result1.out
-  $srun_cmd test/perf/${op}_perf -t $ngpus -b 8 -e 512 -f 2 -w 20 -n 16 -m 16 2>&1 | tee $result2.out
+  for n in 1 4 16; do
+    m=$(expr 256 / $n)
+    resdir="results_aggr/$n"
+    path=$resdir/$gpumodel
+    mkdir -p $path
+    result=$path/$op.$ngpus
+    $srun_cmd test/perf/${op}_perf -t $ngpus -b 8 -e 512 -f 2 -w 20 -n $n -m $m 2>&1 | tee $result.out
+  done
   if [ "$mode" != "combo" ]; then
     return 0
   fi
