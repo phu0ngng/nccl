@@ -44,6 +44,21 @@ if [ "$INSTALL" != "1" ]; then
   export LD_LIBRARY_PATH=$DEBDIR/lib:$LD_LIBRARY_PATH
 fi
 
+# SLURM setting
+timeout=2
+if [ "$mode" == "all" ]; then
+  timeout=`expr $timeout \* 26`
+else
+  timeout=`expr $timeout \* 15`
+fi
+if [ "$SLURM" == "1" ]; then
+  srun_cmd="srun -p $gpumodel -t ${timeout} --exclusive -x dgx1-prd-01 "
+  salloc_cmd="salloc -p $gpumodel -n $maxgpu -c 1 -t ${timeout} --exclusive -x dgx1-prd-01 "
+else
+  srun_cmd="timeout ${timeout}m "
+  salloc_cmd="timeout ${timeout}m "
+fi
+
 if [ "$mode" == "dlfw" ] && [ "$gpumodel" == "P100" ]; then
   cd $BLDDIR
   export LD_LIBRARY_PATH=$BLDDIR/lib:$LD_LIBRARY_PATH
@@ -64,7 +79,7 @@ elif [[ "$mode" == *"mpi"* ]] || [[ "$mode" == *"multinode"* ]]; then
   cd $BLDDIR
   if [[ "$mode" == *"mpi"* ]]; then
     echo "Testing $mode..."
-    $SHDIR/run_perf_graphs.sh $gpumodel $maxgpu $mode
+    $salloc_cmd $SHDIR/run_perf_graphs.sh $gpumodel $maxgpu $mode
   fi
   # multinode test
   if [[ "$mode" == *"multinode"* ]]; then
@@ -86,7 +101,7 @@ else
     make -j test.build NCCLDIR=${DEBDIR} 2>&1 | tee make_test.log
   fi
   cd $BLDDIR
-  $SHDIR/run_perf_graphs.sh $gpumodel $maxgpu $mode
+  $srun_cmd $SHDIR/run_perf_graphs.sh $gpumodel $maxgpu $mode
 fi
 
 echo "NCCL_Complete" > state
