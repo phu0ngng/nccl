@@ -28,7 +28,7 @@ for version in $@; do
   if [ "$mode" == "0" ]; then
     score=`awk '{ sum += $2 } END { print sum }' $data.values`
   else
-    score=`awk '{ sum += $2; n++ } END { print n ? sum/n : 0 }' $data.values`
+    score=`awk '{ sum += $2; n++ } END { printf("%5.4f\n", n ? sum/n : 0) }' $data.values`
   fi
   if [ "$firstversion" == "1" ]; then
     firstversion=0

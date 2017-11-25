@@ -28,7 +28,7 @@ for OPT in "" "_mpi" "_reorder" "_latency" "_mpi_latency"; do
    else
      mode="bw"
    fi
-   ./generate_html.sh $mode $VER$GM$OPT $VER$PM$OPT 2.0.5$OPT 2.0.2$OPT 1.6.5$OPT 1.5.4$OPT
+   ./generate_html.sh $mode $VER$GM$OPT $VER$PM$OPT 2.1.2$GM$OPT 2.1.2$PM$OPT 2.0.5$OPT 2.0.2$OPT 1.6.5$OPT 1.5.4$OPT
    DIR=html$OPT
    echo $DIR
    rm -rf $DST/$DIR
@@ -52,7 +52,7 @@ for OPT in "_multinode" "_multinode_latency"; do
    else
      mode="bw"
    fi
-   ./multinode_generate_html.sh $mode $VER$GM$OPT $VER$PM$OPT 2.0.5$OPT 2.0.2$OPT
+   ./multinode_generate_html.sh $mode $VER$GM$OPT $VER$PM$OPT 2.1.2$GM$OPT 2.1.2$PM$OPT 2.0.5$OPT 2.0.2$OPT
    DIR=html$OPT
    echo $DIR
    rm -rf $DST/$DIR
@@ -72,7 +72,7 @@ rm -rf comp
 
 DIR=html_aggregation
 rm -rf $DST/$DIR
-./generate_html.sh lat ${VER}${GM}_aggr/1 ${VER}${PM}_aggr/1 ${VER}${GM}_aggr/4 ${VER}${PM}_aggr/4 ${VER}${GM}_aggr/16 ${VER}${PM}_aggr/16
+./generate_html.sh lat ${VER}${GM}_aggr/1 ${VER}${GM}_aggr/4 ${VER}${GM}_aggr/16 ${VER}${PM}_aggr/1 ${VER}${PM}_aggr/4 ${VER}${PM}_aggr/16
 mv comp $DST/$DIR
 grep -r -i "FAIL" ${VER}${GM}_aggr/results >> $DST/$DIR/fail.txt
 grep -r -i "FAIL" ${VER}${PM}_aggr/results >> $DST/$DIR/fail.txt
