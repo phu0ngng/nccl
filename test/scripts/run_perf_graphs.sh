@@ -108,9 +108,10 @@ fi
 
 if [ "$mode" == "aggregation" ] || [ "$mode" == "combo" ]; then
   echo "Running test/perf/${op}_perf on $ngpus GPUs [Aggregation] ..."
-  for n in 1 4 16; do
-    m=$(expr 256 / $n)
-    resdir="results_aggr/$n"
+  # m is the aggregation factor
+  for m in 1 4 16; do
+    n=$(expr 256 / $m)
+    resdir="results_aggr/$m"
     path=$resdir/$gpumodel
     mkdir -p $path
     result=$path/$op.$ngpus
