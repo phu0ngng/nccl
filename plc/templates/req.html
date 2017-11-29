@@ -8,14 +8,16 @@
 <center><h1>NCCL-${plc:item} : ${plc:title}<br>Requirements</h1></center>
 
 <h2>Project Context and Purpose</h2>
-NCCL provides fast communication for parallel applications.
+NCCL provides fast inter-GPU communication for parallel applications.
 
 <h2>NVbugs / Jira Tickets</h2>
 <a href="http://nvbugs/12345">NVBug 12345</a>
 <a href="https://jirasw/browse/NCCL-12345">Jira NCCL-12345</a>
 
 <h2>User Experience</h2>
-N/A
+NCCL is used through deep learning frameworks or other HPC applications to
+accelerate GPU-to-GPU communication. It is supposed to be transparent to the
+user.
 
 <h2>Assumptions, constraints and dependencies</h2>
 None/$TBD

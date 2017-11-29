@@ -8,18 +8,22 @@
 <!-- Table of contents, auto-generated -->
 <center><h1>NCCL-1 : Aggregated Collectives<br>Requirements</h1></center>
 <h2>Project Context and Purpose</h2>
-NCCL provides fast communication for parallel applications.
+NCCL provides fast inter-GPU communication for parallel applications.
 <h2>NVbugs / Jira Tickets</h2>
 <p><a href="http://nvbugs/1983062">NVBug 1983062</a>
 <p><a href="https://jirasw/browse/NCCL-372">Jira NCCL-372</a>
 <h2>User Experience</h2>
-N/A
+NCCL is used through deep learning frameworks or other HPC applications to
+accelerate GPU-to-GPU communication. It is supposed to be transparent to the
+user.
 
 <h2>Assumptions, constraints and dependencies</h2>
 None.
 
 <h2>Use Cases</h2>
-<p>Improve DL framework performance when using multiple GPUs.
+<p>Improve DL framework performance when using multiple GPUs. In particular,
+accelerate the reductions of small operations, like the hundreds performed by
+ResNet50 during backward propagation.
 
 <h2>Functional Requirements</h2>
 <p>Provide a way for DL frameworks to define NCCL operations to be aggregated, to achieve better performance.
@@ -31,7 +35,8 @@ None.
 <p>New verbs can be added to provide this functionality, or current verbs behavior can be extended.
 
 <h2>KPI Requirements</h2>
-<p>Improve the time per NCCL operation by a significant factor.
+<p>Improve the time per NCCL operation by a significant factor (2 at least, 10
+desired).
 
 <h2>Platform Requirements</h2>
 N/A

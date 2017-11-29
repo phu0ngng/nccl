@@ -9,13 +9,19 @@
 
 <h2>Proposed Design</h2>
 <h3>High level design</h3>
-<p>NCCL kernels are replaced by a single Multi-Operation kernel which will read
-operations to perform from a FIFO shared with the CPU and execute them all
-before returning.
-<p>We extend the ncclGroupStart/ncclGroupEnd verbs to define which operations to aggregate.
-<p>Within a Start/End section, the CPU will only enqueue operations in the FIFO
-; ncclGroupEnd will finally launch the NCCL CUDA kernel which will process all
-operations.
+<p>NCCL kernels are replaced by a single multi-operation kernel. This kernel can
+execute any NCCL operation (collectives/datatypes/reductions) and will only
+return when all operations are complete.
+<p>Different rings are able to perform different operations, which means that
+having multiple rings will increase the number of operations per second by as
+many rings as there are.
+<p>The CPU enqueues operations to perform in a FIFO shared with the GPU. The
+FIFO size is set to 2048, which is the maximum number of aggregated operations
+per kernel.
+<p>We extend the ncclGroupStart/ncclGroupEnd verbs to define which operations to
+aggregate. Within a Start/End section, the CPU will only enqueue operations in
+the FIFO ; ncclGroupEnd will finally launch the NCCL CUDA kernel which will
+process all operations.
 <p>Since the multi-op kernel has a higher latency, we generate a
 single-operation kernel for every LL operation which will be used instead of the
 multi-op kernel when only one operation has been enqueued.
