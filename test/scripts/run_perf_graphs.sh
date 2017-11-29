@@ -115,7 +115,7 @@ if [ "$mode" == "aggregation" ] || [ "$mode" == "combo" ]; then
     path=$resdir/$gpumodel
     mkdir -p $path
     result=$path/$op.$ngpus
-    test/perf/${op}_perf -t $ngpus -b 8 -e 512 -f 2 -w 20 -n $n -m $m 2>&1 | tee $result.out
+    test/perf/${op}_perf -t $ngpus -b 32 -e 512 -f 2 -w 20 -n $n -m $m 2>&1 | tee $result.out
   done
   if [ "$mode" != "combo" ]; then
     return 0

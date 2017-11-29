@@ -70,9 +70,10 @@ mkdir -p $DST/$DIR
 mv comp/P100/*.png $DST/$DIR/
 rm -rf comp
 
-DIR=html_aggregation
-rm -rf $DST/$DIR
-./generate_html.sh lat ${VER}${GM}_aggr/1 ${VER}${GM}_aggr/4 ${VER}${GM}_aggr/16 ${VER}${PM}_aggr/1 ${VER}${PM}_aggr/4 ${VER}${PM}_aggr/16
-mv comp $DST/$DIR
-grep -r -i "FAIL" ${VER}${GM}_aggr/results >> $DST/$DIR/fail.txt
-grep -r -i "FAIL" ${VER}${PM}_aggr/results >> $DST/$DIR/fail.txt
+for lm in $GM $PM; do
+  DIR=html_aggregation-$lm
+  rm -rf $DST/$DIR
+  ./generate_html.sh lat ${VER}${lm}_aggr/1 ${VER}${lm}_aggr/4 ${VER}${lm}_aggr/16
+  mv comp $DST/$DIR
+  grep -r -i "FAIL" ${VER}${lm}_aggr >> $DST/$DIR/fail.txt
+done
