@@ -521,7 +521,7 @@ void completeColl(struct threadArgs_t* args) {
 void BenchTime(struct threadArgs_t* args, ncclDataType_t type, ncclRedOp_t op, int root, int in_place, int warmup) {
   size_t count = args->nbytes / wordSize(type);
   int local_iters = warmup ? warmup_iters : iters;
-  int local_agg_iters = warmup ? 1 : agg_iters;
+  int local_agg_iters = agg_iters;
   
   // Sync
   startColl(args, type, op, root, in_place, 0);
