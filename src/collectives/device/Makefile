@@ -29,36 +29,41 @@ $(STATICLIB): $(LIBOBJ) $(DEVOBJ)
 	@printf "Archiving  %-35s > %s\n" objects $@
 	ar cr $@ $^
 
-$(OBJDIR)/%.d : %.cu
+# We do not want make to build *.d when running make clean.
+# So we only provide targets for .dep which will produce .dep and .d,
+# with only .d being included, and .dep keeping track of what needs to
+# be regenerated.
+$(OBJDIR)/%.dep : %.cu
 	@mkdir -p $(OBJDIR)
 	@$(NVCC) $(NVCUFLAGS) -M $< -o $@.tmp
 	@sed "0,/^.*:/s//$(subst /,\/,$@):/" $@.tmp > $@
 	@sed -e 's/.*://' -e 's/\\$$//' < $@.tmp | fmt -1 | \
                 sed -e 's/^ *//' -e 's/$$/:/' >> $@
 	@rm -f $@.tmp
+	@cp $@ $(@:.dep=.d)
 
 # Compiled kernels and collectives with reloctable device code ...
-$(OBJDIR)/multiop.o : multiop.cu $(OBJDIR)/multiop.d
+$(OBJDIR)/multiop.o : multiop.cu $(OBJDIR)/multiop.dep
 	@printf "Compiling  %-35s > %s\n" $< $@
 	mkdir -p `dirname $@`
 	$(NVCC) $(NVCUFLAGS) -dc $< -o $@
 
-$(OBJDIR)/%_sum.o : %.cu $(OBJDIR)/%.d
+$(OBJDIR)/%_sum.o : %.cu $(OBJDIR)/%.dep
 	@printf "Compiling  %-35s > %s\n" $< $@
 	mkdir -p `dirname $@`
 	$(NVCC) -DNCCL_OP=0 $(NVCUFLAGS) -dc $< -o $@
 
-$(OBJDIR)/%_prod.o : %.cu $(OBJDIR)/%.d
+$(OBJDIR)/%_prod.o : %.cu $(OBJDIR)/%.dep
 	@printf "Compiling  %-35s > %s\n" $< $@
 	mkdir -p `dirname $@`
 	$(NVCC) -DNCCL_OP=1 $(NVCUFLAGS) -dc $< -o $@
 
-$(OBJDIR)/%_min.o : %.cu $(OBJDIR)/%.d
+$(OBJDIR)/%_min.o : %.cu $(OBJDIR)/%.dep
 	@printf "Compiling  %-35s > %s\n" $< $@
 	mkdir -p `dirname $@`
 	$(NVCC) -DNCCL_OP=2 $(NVCUFLAGS) -dc $< -o $@
 
-$(OBJDIR)/%_max.o : %.cu $(OBJDIR)/%.d
+$(OBJDIR)/%_max.o : %.cu $(OBJDIR)/%.dep
 	@printf "Compiling  %-35s > %s\n" $< $@
 	mkdir -p `dirname $@`
 	$(NVCC) -DNCCL_OP=3 $(NVCUFLAGS) -dc $< -o $@
