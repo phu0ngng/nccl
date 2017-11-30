@@ -611,8 +611,12 @@ void setupArgs(size_t size, ncclDataType_t type, struct threadArgs_t* args) {
 }
 
 void TimeTest(struct threadArgs_t* args, ncclDataType_t type, const char* typeName, ncclRedOp_t op, const char* opName, int root, int inPlace) {
-  // Warm-up
+  // Warm-up for large size
   setupArgs(args->maxbytes, type, args);
+  BenchTime(args, type, op, root, 0, 1);
+
+  // Warm-up for small size
+  setupArgs(args->minbytes, type, args);
   BenchTime(args, type, op, root, 0, 1);
 
   // Benchmark
