@@ -34,6 +34,7 @@ set output "$graph.png"
 set title "$fw x $gpumodel" noenhanced
 set boxwidth 0.5
 set style fill solid
+set yrange [0:]
 EOF
 
 data=comp/$gpumodel/$fw
