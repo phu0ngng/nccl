@@ -38,7 +38,7 @@ set yrange [0:]
 EOF
 
 data=comp/$gpumodel/$fw
-echo -n "plot \"$data.values\" using 1:3:xtic(2) with boxes notitle" >> $graph.plot
+echo -n "plot \"$data.values\" using 1:3:xtic(2) with boxes notitle, '' using 1:(\$3+30):3 with labels notitle" >> $graph.plot
 #echo "" >> $graph.plot
 #echo "replot" >> $graph.plot
 gnuplot $graph.plot

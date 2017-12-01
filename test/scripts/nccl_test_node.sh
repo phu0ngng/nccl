@@ -19,6 +19,7 @@ if [ "$gpumodel" == "dgx1" ] || [ "$gpumodel" == "dgx1v" ]; then
   export PATH=/usr/local/bin:/usr/bin:$PATH
   source $HOME/cuda.sh
   MPI_HOME="${MPI_HOME:-$HOME/install/openmpi}"
+  exclude="-x dgx1-prd-01 "
 else
   source $SHDIR/cuda.sh
   MPI_HOME="${MPI_HOME:-/opt/mpi/openmpi}"
@@ -52,8 +53,8 @@ else
   timeout=`expr $timeout \* 15`
 fi
 if [ "$SLURM" == "1" ]; then
-  srun_cmd="srun -p $gpumodel -t ${timeout} --exclusive -x dgx1-prd-01 "
-  salloc_cmd="salloc -p $gpumodel -n $maxgpu -c 1 -t ${timeout} --exclusive -x dgx1-prd-01 "
+  srun_cmd="srun -p $gpumodel -t ${timeout} --exclusive $exclude "
+  salloc_cmd="salloc -p $gpumodel -n $maxgpu -c 1 -t ${timeout} --exclusive $exclude "
 else
   srun_cmd="timeout ${timeout}m "
   salloc_cmd="timeout ${timeout}m "
