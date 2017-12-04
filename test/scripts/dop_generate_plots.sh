@@ -64,6 +64,8 @@ for pow in pow2 npow2; do
   plot_ngpu_loop $gpumodel $maxgpu all_reduce 11 $pow $@
   plot_ngpu_loop $gpumodel $maxgpu all_gather 10 $pow $@
   plot_ngpu_loop $gpumodel $maxgpu reduce_scatter 11 $pow $@
+  plot_ngpu_loop $gpumodel $maxgpu all_gatherv 10 $pow $@
+  plot_ngpu_loop $gpumodel $maxgpu reduce_scatterv 11 $pow $@
 done
 
 echo "done."

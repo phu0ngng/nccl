@@ -156,4 +156,6 @@ else
   perf_ngpu_loop $gpumodel $maxgpu $mode all_reduce
   perf_ngpu_loop $gpumodel $maxgpu $mode all_gather
   perf_ngpu_loop $gpumodel $maxgpu $mode reduce_scatter
+  perf_ngpu_loop $gpumodel $maxgpu $mode all_gatherv
+  perf_ngpu_loop $gpumodel $maxgpu $mode reduce_scatterv
 fi
