@@ -29,10 +29,8 @@ write_revisions() {
   echo "</table>"
 }
 
-echo "<h2>List of commits</h2>"
+echo "<h2>Document history</h2>"
 
-for commit in `cat $1`; do
- git show --abbrev-commit --date=short $commit -s
-done | write_revisions
+git log --abbrev-commit --date=short $1 | write_revisions
 
 echo "</body></html>"

@@ -1,25 +1,39 @@
 ITEM=1
-CHROME=chromium-browser
+include ../common/common.mk
 
 REQ=NCCL-Req-$(ITEM)
 DESIGN=NCCL-Design-$(ITEM)
+CODING=NCCL-Coding-$(ITEM)
+HTML=$(BUILDDIR)/$(REQ).html $(BUILDDIR)/$(DESIGN).html $(BUILDDIR)/$(CODING).html
+PDF=$(BUILDDIR)/$(REQ).pdf $(BUILDDIR)/$(DESIGN).pdf $(BUILDDIR)/$(CODING).pdf
 
-all: $(REQ).pdf $(DESIGN).pdf
+all: $(PDF)
+pdf: $(PDF)
+html: $(HTML)
 
-%.pdf: %.html
-	$(CHROME) --headless --print-to-pdf="$@" file://$(PWD)/$<
+$(BUILDDIR)/%.pdf: $(BUILDDIR)/%.html
+	mkdir -p $(BUILDDIR)
+	$(CHROME) --headless --print-to-pdf="$@" file://$<
+	chmod 644 $@
 
-$(REQ).html: req.html
+$(BUILDDIR)/$(REQ).html: req.html
+	mkdir -p $(BUILDDIR)
 	cp $< $@.tmp
-	../../html/tools/git_to_html.sh $< >> $@.tmp
+	../../html/tools/git_history.sh $< >> $@.tmp
 	../../html/tools/index_titles.py $@.tmp > $@
 	rm $@.tmp
 
-$(DESIGN).html: design.html
+$(BUILDDIR)/$(DESIGN).html: design.html
+	mkdir -p $(BUILDDIR)
 	cp $< $@.tmp
-	../../html/tools/git_to_html.sh $< >> $@.tmp
+	../../html/tools/git_history.sh $< >> $@.tmp
 	../../html/tools/index_titles.py $@.tmp > $@
 	rm $@.tmp
+
+$(BUILDDIR)/$(CODING).html: coding.html coding.list
+	mkdir -p $(BUILDDIR)
+	cp $< $@
+	../../html/tools/git_to_html.sh coding.list >> $@
 
 clean:
-	rm $(REQ).pdf $(DESIGN).pdf $(REQ).html $(DESIGN).html
+	rm -f $(HTML) $(PDF)
