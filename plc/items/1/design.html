@@ -33,6 +33,22 @@ the function in the table, indexing the function based on : collective
 operation, reduction operation, datatype and number of threads.
 <p>Functions names look like ncclAllReduce_sum_f32_128 for an Allreduce doing a
 sum of floats (32 bits) with 128 threads.
+<p>The GPU-CPU fifo is a 2048 entries FIFO with three parts : the Collective
+Args as we had before, the operation information (ignored if we launch a
+single-operation kernel) and an "active" flag, used to sync between the CPU and
+GPU blocks.
+<p>To make sure we can efficiently load operations from the GPU, the structure is
+rounded to 64 bytes.
+<center><img src="images/operation_format.png" width=400px></center>
+<p>The active field is used to keep track of which operations have been
+performed. It makes sure we fail when the user tries to aggregate more than 2048
+operations and also limits to 2048 outstanding operations (the CPU waits when it
+wants to enqueue a 2049th one). There is one FIFO per ring. When an operation is
+large enough to require multiple rings, one entry is enqueued in each FIFO. The
+"bid" field is used to let each ring play the role of any block (so that
+multiple blocks can perform different operations in parallel as bid "0") or a
+multi-block operation as their block Id (or even another any block).
+<center><img src="images/fifo.png" width=400px></center>
 <p>To reduce the binary size, and aside from generating single-operation kernels
 only for LL operations, we only generate copy/int8 code for Broadcast and
 Allgather. All Broadcast/AllGather calls on non-int8 datatypes are converted
@@ -58,8 +74,8 @@ operations to aggregate operations performed by each GPU.
 </pre>
 
 <h2>System KPIs & Metrics</h2>
-<p>Per-operation latency is reduced to 1us per operation (compared to 10 for 8
-GPUs).
+<p>Per-operation latency is down to 1us per operation (compared to 10 for 8
+GPUs), highly depending on the number of rings used (hence number of operations we can process concurrently).
 
 <h2>Data Architecture</h2>
 N/A

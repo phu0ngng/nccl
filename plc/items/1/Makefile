@@ -19,6 +19,7 @@ $(BUILDDIR)/%.pdf: $(BUILDDIR)/%.html
 $(BUILDDIR)/$(REQ).html: req.html
 	mkdir -p $(BUILDDIR)
 	cp $< $@.tmp
+	rsync -av images $(BUILDDIR)
 	../../html/tools/git_history.sh $< >> $@.tmp
 	../../html/tools/index_titles.py $@.tmp > $@
 	rm $@.tmp
@@ -26,6 +27,7 @@ $(BUILDDIR)/$(REQ).html: req.html
 $(BUILDDIR)/$(DESIGN).html: design.html
 	mkdir -p $(BUILDDIR)
 	cp $< $@.tmp
+	rsync -av images $(BUILDDIR)
 	../../html/tools/git_history.sh $< >> $@.tmp
 	../../html/tools/index_titles.py $@.tmp > $@
 	rm $@.tmp

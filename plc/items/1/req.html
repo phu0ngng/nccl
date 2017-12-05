@@ -21,12 +21,33 @@ user.
 None.
 
 <h2>Use Cases</h2>
+<h3>DL inter-layer aggregation</h3>
 <p>Improve DL framework performance when using multiple GPUs. In particular,
 accelerate the reductions of small operations, like the hundreds performed by
 ResNet50 during backward propagation.
+<p>Frameworks like MXNet and Caffe2 do not currently aggregate reductions of
+different layers, launching many small reductions in NCCL which is very
+inefficient. Application driven aggregation is usually the best approach but can
+be tricky to implement inside DL frameworks and is overall a significant amount
+of work.
+<p>NCCL providing a simple aggregation interface would help applications which
+want to improve the performance of multiple small operations.
+<h3>Other collectives</h3>
+<p>Many collective operations which are not supported by NCCL yet can be
+described as an aggreagation of other collectives. Allgatherv can be seen as
+many small broadcasts, Reducescatterv as many small reduce operations, each time
+with a different root. It is already relatively easy to implement those
+operations with NCCL &lt; 2.2, but it may be very slow as well. The aggregation
+interface makes it more efficient, even if at this point, we're not aiming for
+the same performance between ReduceScatter and ReduceScatterv on all sizes.
+<p>Looking forward, aggregation would also permit to easily implement
+scatter[v], gather[v], alltoall[v], or any other pattern with just the addition
+of two functions : send and receive.
 
 <h2>Functional Requirements</h2>
-<p>Provide a way for DL frameworks to define NCCL operations to be aggregated, to achieve better performance.
+<p>Provide a way for applications to define which NCCL operations to be aggregated, to achieve better performance.
+<p>It should be permitted to aggregate any type of operation, with different
+data types, reduction operations, roots, ...
 
 <h2>System Requirements</h2>
 <p>None.
