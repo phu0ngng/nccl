@@ -9,13 +9,13 @@ TXZGEN_IN  := $(wildcard *.in)
 TXZGEN     := $(TXZGEN_IN:.in=)
 TXZTARGETS := $(patsubst %, $(TXZPREPDIR)/%, $(TXZGEN))
 
-PKG_ARCH       := $(shell uname -m)
+PKG_ARCH   := $(shell uname -m)
 
 prep: $(TXZTARGETS)
-	make -C ../.. lic BUILDDIR=$(BUILDDIR)
+	$(MAKE) -C ../.. lic BUILDDIR=$(BUILDDIR)
 
 build: prep
-	make -C ../.. src.build BUILDDIR=$(BUILDDIR)
+	$(MAKE) -C ../.. src.build BUILDDIR=$(BUILDDIR)
 	@printf "Building tar.xz package\n"
 	(cd $(BUILDDIR); bash txz/create_txz.sh)
 	mkdir -p $(PKGDIR)

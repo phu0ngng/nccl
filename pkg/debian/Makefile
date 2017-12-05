@@ -16,10 +16,10 @@ PKG_ARCH       ?= $(shell uname -m | sed -e "s/x86_64/amd64/g" | sed -e "s/ppc64
 PKG_MULTIARCH  ?= $(shell gcc -print-multiarch)
 
 prep : $(DEBTARGETS)
-	make -C ../.. lic BUILDDIR=$(BUILDDIR)
+	$(MAKE) -C ../.. lic BUILDDIR=$(BUILDDIR)
 
 build : prep
-	make -C ../.. src.build BUILDDIR=$(BUILDDIR)
+	$(MAKE) -C ../.. src.build BUILDDIR=$(BUILDDIR)
 	@printf "Building Debian package\n"
 	(cd $(BUILDDIR); debuild -eLD_LIBRARY_PATH -uc -us -d -b)
 	mkdir -p $(PKGDIR)
