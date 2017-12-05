@@ -83,12 +83,16 @@ if [ "$mode" == "bw" ]; then
   plot_ngpu_loop 0 $gpumodel $maxgpu all_reduce 11 $@
   plot_ngpu_loop 0 $gpumodel $maxgpu all_gather 10 $@
   plot_ngpu_loop 0 $gpumodel $maxgpu reduce_scatter 11 $@
+  plot_ngpu_loop 0 $gpumodel $maxgpu all_gatherv 10 $@
+  plot_ngpu_loop 0 $gpumodel $maxgpu reduce_scatterv 11 $@
 elif [ "$mode" == "lat" ]; then
   plot_ngpu_loop 1 $gpumodel $maxgpu reduce 10 $@
   plot_ngpu_loop 1 $gpumodel $maxgpu broadcast 5 $@
   plot_ngpu_loop 1 $gpumodel $maxgpu all_reduce 9 $@
   plot_ngpu_loop 1 $gpumodel $maxgpu all_gather 8 $@
   plot_ngpu_loop 1 $gpumodel $maxgpu reduce_scatter 9 $@
+  plot_ngpu_loop 1 $gpumodel $maxgpu all_gatherv 8 $@
+  plot_ngpu_loop 1 $gpumodel $maxgpu reduce_scatterv 9 $@
 else
   echo "Invalid mode. Please specify bw or lat."
 fi
