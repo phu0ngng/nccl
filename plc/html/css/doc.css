@@ -33,18 +33,12 @@ pre {
   background-color:#eee;
 }
 
-div.menu {
-  overflow: hidden;
-  background-color: #ccc;
-  position: fixed; /* Set the navbar to fixed position */
-  top: 0; /* Position the navbar at the top of the page */
-  left: 0px;
-  width: 300px; /* Full width */
-  height: 100%;
+div.contents {
+  width: 500px;
+  background-color:#eee;
 }
-div.inmenu {
-  margin-left: 10px;
-  margin-right: 10px;
+div.contents a {
+  color:#333;
 }
 
 div.main {
