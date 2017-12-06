@@ -1,0 +1,3 @@
+BUILDDIR=.
+
+CHROME=chromium-browser
