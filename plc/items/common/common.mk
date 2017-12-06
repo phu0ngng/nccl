@@ -9,9 +9,12 @@ TESTING=NCCL-Testing-$(ITEM)
 HTML=$(BUILDDIR)/index.html $(BUILDDIR)/$(REQ).html $(BUILDDIR)/$(DESIGN).html $(BUILDDIR)/$(CODING).html $(BUILDDIR)/$(TESTING).html
 PDF=$(BUILDDIR)/$(REQ).pdf $(BUILDDIR)/$(DESIGN).pdf $(BUILDDIR)/$(CODING).pdf $(BUILDDIR)/$(TESTING).pdf
 
-all: $(PDF) $(HTML)
+all: pdf html
 pdf: $(PDF)
 html: $(HTML)
+	rsync -av images $(BUILDDIR)
+	mkdir -p $(BUILDDIR)/../../html
+	rsync -av ../../html/css $(BUILDDIR)/../../html/
 
 $(BUILDDIR)/%.pdf: $(BUILDDIR)/%.html
 	mkdir -p $(BUILDDIR)
@@ -24,7 +27,6 @@ $(BUILDDIR)/index.html: index.html
 $(BUILDDIR)/$(REQ).html: req.html
 	mkdir -p $(BUILDDIR)
 	cp $< $@.tmp
-	rsync -av images $(BUILDDIR)
 	../../html/tools/git_history.sh $< >> $@.tmp
 	../../html/tools/index_titles.py $@.tmp > $@
 	rm $@.tmp
@@ -32,7 +34,6 @@ $(BUILDDIR)/$(REQ).html: req.html
 $(BUILDDIR)/$(DESIGN).html: design.html
 	mkdir -p $(BUILDDIR)
 	cp $< $@.tmp
-	rsync -av images $(BUILDDIR)
 	../../html/tools/git_history.sh $< >> $@.tmp
 	../../html/tools/index_titles.py $@.tmp > $@
 	rm $@.tmp
@@ -40,7 +41,6 @@ $(BUILDDIR)/$(DESIGN).html: design.html
 $(BUILDDIR)/$(TESTING).html: testing.html
 	mkdir -p $(BUILDDIR)
 	cp $< $@.tmp
-	rsync -av images $(BUILDDIR)
 	../../html/tools/git_history.sh $< >> $@.tmp
 	../../html/tools/index_titles.py $@.tmp > $@
 	rm $@.tmp
