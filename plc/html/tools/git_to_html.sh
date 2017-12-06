@@ -3,7 +3,7 @@
 write_revisions() {
   first=1
   echo "<table>"
-  echo "<tr><th>Commit</th><th>Author</th><th>Date</th><th>Description</th></tr>"
+  echo "<tr><th width="70">Commit</th><th width="170">Author</th><th width="90">Date</th><th>Description</th></tr>"
   while read line; do
     set -- $line
     if [ "$1" == "commit" ]; then
