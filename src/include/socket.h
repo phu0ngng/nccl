@@ -125,6 +125,21 @@ static int findInterfaces(char* ifNames, union socketAddress *ifAddrs, int ifNam
   return nIfs;
 }
 
+static void createSocketAddr(char* ip_port_pair, union socketAddress* ua) {
+  struct netIf ni;
+  parseStringList(ip_port_pair, &ni, 1);    // parse <ip>:<port> string
+  /* Construct the sockaddress structure */
+  if (strlen(ni.prefix) <= 15) {
+    ua->sin.sin_family = AF_INET;                        // IPv4
+    inet_pton(AF_INET, ni.prefix, &(ua->sin.sin_addr));  // IP address
+    ua->sin.sin_port = htons(ni.port);                   // port
+  } else {
+    ua->sin6.sin6_family = AF_INET6;                       // IPv6
+    inet_pton(AF_INET6, ni.prefix, &(ua->sin6.sin6_addr)); // IP address
+    ua->sin6.sin6_port = htons(ni.port);                   // port
+  }
+}
+
 static ncclResult_t createListenSocket(int *fd, union socketAddress *localAddr) {
   /* IPv4/IPv6 support */
   int family = localAddr->sa.sa_family;

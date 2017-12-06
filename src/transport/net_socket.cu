@@ -87,7 +87,17 @@ int ncclSocketListen(int dev, void* opaqueHandle, void** listenComm) {
   struct ncclSocketComm* comm = ncclSocketNewComm();
   struct ncclSocketHandle* handle = (struct ncclSocketHandle*) opaqueHandle;
   static_assert(sizeof(struct ncclSocketHandle) < NCCL_NET_HANDLE_MAXSIZE, "ncclSocketHandle size too large");
-  NCCLCHECK(GetSocketAddr(dev, &(handle->connectAddr)));
+  if (dev == -1) {
+    // Use IP address from env
+    char* env = getenv("NCCL_COMM_ID");
+    if (env && strlen(env) > 1) {
+      createSocketAddr(env, &(handle->connectAddr));
+    } else {
+      WARN("Net : NCCL_COMM_ID is null, please specify it using format <ip>:<port>");
+    }
+  } else {
+    NCCLCHECK(GetSocketAddr(dev, &(handle->connectAddr)));
+  }
   NCCLCHECK(createListenSocket(&comm->fd, &handle->connectAddr));
   *listenComm = comm;
   return 0;
