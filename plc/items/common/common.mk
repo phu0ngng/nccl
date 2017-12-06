@@ -1,4 +1,4 @@
-BUILDDIR?=.
+BUILDDIR?= $(abspath ../../../build/plc/items/$(ITEM))
 
 CHROME?=chromium-browser
 
