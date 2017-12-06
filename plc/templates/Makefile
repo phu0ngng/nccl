@@ -1,19 +1,50 @@
 ITEM=${plc:item}
-CHROME=chromium-browser
+include ../common/common.mk
 
 REQ=NCCL-Req-$(ITEM)
 DESIGN=NCCL-Design-$(ITEM)
+CODING=NCCL-Coding-$(ITEM)
+TESTING=NCCL-Testing-$(ITEM)
+HTML=$(BUILDDIR)/$(REQ).html $(BUILDDIR)/$(DESIGN).html $(BUILDDIR)/$(CODING).html $(BUILDDIR)/$(TESTING).html
+PDF=$(BUILDDIR)/$(REQ).pdf $(BUILDDIR)/$(DESIGN).pdf $(BUILDDIR)/$(CODING).pdf $(BUILDDIR)/$(TESTING).pdf
 
-all: $(REQ).pdf $(DESIGN).pdf
+all: $(PDF)
+pdf: $(PDF)
+html: $(HTML)
 
-%.pdf: %.html
-	$(CHROME) --headless --print-to-pdf="$@" file://$(PWD)/$<
+$(BUILDDIR)/%.pdf: $(BUILDDIR)/%.html
+	mkdir -p $(BUILDDIR)
+	$(CHROME) --headless --print-to-pdf="$@" file://$<
+	chmod 644 $@
 
-$(REQ).html: req.html
-	../../../doc/index_titles.py $< > $@
+$(BUILDDIR)/$(REQ).html: req.html
+	mkdir -p $(BUILDDIR)
+	cp $< $@.tmp
+	rsync -av images $(BUILDDIR)
+	../../html/tools/git_history.sh $< >> $@.tmp
+	../../html/tools/index_titles.py $@.tmp > $@
+	rm $@.tmp
 
-$(DESIGN).html: design.html
-	../../../doc/index_titles.py $< > $@
+$(BUILDDIR)/$(DESIGN).html: design.html
+	mkdir -p $(BUILDDIR)
+	cp $< $@.tmp
+	rsync -av images $(BUILDDIR)
+	../../html/tools/git_history.sh $< >> $@.tmp
+	../../html/tools/index_titles.py $@.tmp > $@
+	rm $@.tmp
+
+$(BUILDDIR)/$(TESTING).html: testing.html
+	mkdir -p $(BUILDDIR)
+	cp $< $@.tmp
+	rsync -av images $(BUILDDIR)
+	../../html/tools/git_history.sh $< >> $@.tmp
+	../../html/tools/index_titles.py $@.tmp > $@
+	rm $@.tmp
+
+$(BUILDDIR)/$(CODING).html: coding.html coding.list
+	mkdir -p $(BUILDDIR)
+	cp $< $@
+	../../html/tools/git_to_html.sh coding.list >> $@
 
 clean:
-	rm $(REQ).pdf $(DESIGN).pdf $(REQ).html $(DESIGN).html
+	rm -f $(HTML) $(PDF)
