@@ -5,10 +5,10 @@ REQ=NCCL-Req-$(ITEM)
 DESIGN=NCCL-Design-$(ITEM)
 CODING=NCCL-Coding-$(ITEM)
 TESTING=NCCL-Testing-$(ITEM)
-HTML=$(BUILDDIR)/$(REQ).html $(BUILDDIR)/$(DESIGN).html $(BUILDDIR)/$(CODING).html $(BUILDDIR)/$(TESTING).html
+HTML=$(BUILDDIR)/index.html $(BUILDDIR)/$(REQ).html $(BUILDDIR)/$(DESIGN).html $(BUILDDIR)/$(CODING).html $(BUILDDIR)/$(TESTING).html
 PDF=$(BUILDDIR)/$(REQ).pdf $(BUILDDIR)/$(DESIGN).pdf $(BUILDDIR)/$(CODING).pdf $(BUILDDIR)/$(TESTING).pdf
 
-all: $(PDF)
+all: $(PDF) $(HTML)
 pdf: $(PDF)
 html: $(HTML)
 
@@ -16,6 +16,9 @@ $(BUILDDIR)/%.pdf: $(BUILDDIR)/%.html
 	mkdir -p $(BUILDDIR)
 	$(CHROME) --headless --print-to-pdf="$@" file://$<
 	chmod 644 $@
+
+$(BUILDDIR)/index.html: index.html
+	cp $< $@
 
 $(BUILDDIR)/$(REQ).html: req.html
 	mkdir -p $(BUILDDIR)
