@@ -12,9 +12,9 @@ PDF=$(BUILDDIR)/$(REQ).pdf $(BUILDDIR)/$(DESIGN).pdf $(BUILDDIR)/$(CODING).pdf $
 all: pdf html
 pdf: $(PDF)
 html: $(HTML)
-	rsync -av images $(BUILDDIR)
+	rsync -a images $(BUILDDIR)
 	mkdir -p $(BUILDDIR)/../../html
-	rsync -av ../../html/css $(BUILDDIR)/../../html/
+	rsync -a ../../html/css $(BUILDDIR)/../../html/
 
 $(BUILDDIR)/%.pdf: $(BUILDDIR)/%.html
 	mkdir -p $(BUILDDIR)
