@@ -47,7 +47,8 @@ scatter[v], gather[v], alltoall[v], or any other pattern with just the addition
 of two functions : send and receive.
 
 <h2>Functional Requirements</h2>
-<p>Provide a way for applications to define which NCCL operations to be aggregated, to achieve better performance.
+<p>Provide a way for applications to define which NCCL operations to be
+aggregated, to achieve better performance.
 <p>It should be permitted to aggregate any type of operation, with different
 data types, reduction operations, roots, ...
 
@@ -55,7 +56,8 @@ data types, reduction operations, roots, ...
 <p>None.
 
 <h2>Interface Requirements</h2>
-<p>New verbs can be added to provide this functionality, or current verbs behavior can be extended.
+<p>New verbs can be added to provide this functionality, or current verbs
+behavior can be extended.
 
 <h2>KPI Requirements</h2>
 <p>Improve the time per NCCL operation by a significant factor (2 at least, 10
@@ -73,4 +75,11 @@ N/A
 Changes do not need to be backward compatible.
 <h2>Virtualization Requirements</h2>
 N/A
+
+<h2>Signoff list</h2>
+Author : Sylvain Jeaugey
+<!-- Reviewer : David Addison -->
+<!-- Reviewer : Ke Wen -->
+<!-- Product Manager : Maitreyi Roy -->
+
 <!-- do not end body and html, bottom will be auto-generated -->
