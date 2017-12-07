@@ -34,6 +34,7 @@ pthread_mutex_t ncclDebugOutputLock;
 
 int ncclPrintCRCs;
 int ncclChecks;
+int ncclGetIdFromEnv = 0;
 
 size_t ncclSingleRingThreshold;
 
@@ -89,6 +90,13 @@ ncclResult_t ncclGetUniqueId(ncclUniqueId* out) {
   NCCLCHECK(ncclInit());
   NCCLCHECK(PtrCheck(out, "GetUniqueId", "out"));
   return bootstrapGetUniqueId(out);
+}
+
+NCCL_API(ncclResult_t, ncclGetUniqueIdFromEnv, ncclUniqueId* out);
+ncclResult_t ncclGetUniqueIdFromEnv(ncclUniqueId* out) {
+  NCCLCHECK(PtrCheck(out, "GetUniqueIdFromEnv", "out"));
+  ncclGetIdFromEnv = 1;
+  return ncclSuccess;
 }
 
 static ncclResult_t commFree(ncclComm_t comm) {
@@ -388,7 +396,7 @@ static ncclResult_t initTransportsRank(struct ncclComm* comm, ncclUniqueId* comm
   int rank = comm->rank;
   int nranks = comm->nRanks;
   void* commState;
-  NCCLCHECK(bootstrapInit(commId, rank, nranks, &commState));
+  NCCLCHECK(bootstrapInit(commId, rank, nranks, &commState, ncclGetIdFromEnv));
   
   struct ncclInfo* allInfo = (struct ncclInfo*)malloc(sizeof(struct ncclInfo)*nranks);
   NCCLCHECK(fillInfo(allInfo+rank, rank));
@@ -524,6 +532,7 @@ ncclResult_t ncclCommInitRank(ncclComm_t* newcomm, int nranks, ncclUniqueId comm
   if (myrank == 0) showVersion();
 
   TRACE("rank %d nranks %d", myrank, nranks);
+  INFO("KW: InitRank: rank %d nranks %d", myrank, nranks);
 
   // It seems we need to call this so that NVML doesn't crash later with error
   // 999.
