@@ -56,6 +56,18 @@ static ncclResult_t GetSocketAddr(int dev, union socketAddress* addr) {
   return ncclSuccess;
 }
 
+static ncclResult_t GetSocketAddrFromEnv(union socketAddress* addr) {
+  // Use IP address from env
+  char* env = getenv("NCCL_COMM_ID");
+  if (env && strlen(env) > 1) {
+    createSocketAddr(env, addr);
+    return ncclSuccess;
+  } else {
+    WARN("Net : NCCL_COMM_ID is null, please specify it using format <ip>:<port>");
+    return ncclInvalidArgument;
+  }
+}
+
 /* Communication functions */
 
 struct ncclSocketHandle {
@@ -88,13 +100,7 @@ int ncclSocketListen(int dev, void* opaqueHandle, void** listenComm) {
   struct ncclSocketHandle* handle = (struct ncclSocketHandle*) opaqueHandle;
   static_assert(sizeof(struct ncclSocketHandle) < NCCL_NET_HANDLE_MAXSIZE, "ncclSocketHandle size too large");
   if (dev == -1) {
-    // Use IP address from env
-    char* env = getenv("NCCL_COMM_ID");
-    if (env && strlen(env) > 1) {
-      createSocketAddr(env, &(handle->connectAddr));
-    } else {
-      WARN("Net : NCCL_COMM_ID is null, please specify it using format <ip>:<port>");
-    }
+    NCCLCHECK(GetSocketAddrFromEnv(&(handle->connectAddr)));
   } else {
     NCCLCHECK(GetSocketAddr(dev, &(handle->connectAddr)));
   }
@@ -108,6 +114,9 @@ int ncclSocketConnect(int dev, void* opaqueHandle, void** sendComm) {
   if (dev > ncclNetIfs) return ncclInternalError;
   struct ncclSocketComm* comm = ncclSocketNewComm();
   struct ncclSocketHandle* handle = (struct ncclSocketHandle*) opaqueHandle;
+  if (dev == -1) {
+    NCCLCHECK(GetSocketAddrFromEnv(&(handle->connectAddr)));
+  }
   NCCLCHECK(connectAddress(&handle->connectAddr, &ncclNetIfAddrs[dev], &comm->fd));
   *sendComm = comm;
   return 0;
