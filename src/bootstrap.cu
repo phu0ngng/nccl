@@ -136,7 +136,13 @@ ncclResult_t bootstrapGetUniqueId(ncclUniqueId* out) {
 
   char hostname[1024];
   getHostName(hostname, 1024);
-  NCCLCHECK(ncclNetListen(0, &id->extHandle, &id->extListenComm));
+  char* env = getenv("NCCL_COMM_ID");
+  int dev = env ? -1 : 0;
+  if (dev < 0) {
+    INFO("KW: bootstrap from env comm ID");
+  }
+  NCCLCHECK(ncclNetListen(dev, &id->extHandle, &id->extListenComm));
+
   id->hostHash = getHostHash(hostname);
   id->pid = getpid();
 
@@ -153,7 +159,7 @@ struct extState {
   int nranks;
 };
 
-ncclResult_t bootstrapInit(ncclUniqueId* commId, int rank, int nranks, void** commState) {
+ncclResult_t bootstrapInit(ncclUniqueId* commId, int rank, int nranks, void** commState, int idFromEnv) {
   struct extId* id = (struct extId*)commId;
   struct extState* state = (struct extState*)malloc(sizeof(struct extState));
   state->rank = rank;
@@ -165,7 +171,7 @@ ncclResult_t bootstrapInit(ncclUniqueId* commId, int rank, int nranks, void** co
   info.nranks = nranks;
   void* tmpListenComm;
   NCCLCHECK(ncclNetListen(0, &info.extHandle, &tmpListenComm));
-  NCCLCHECK(ncclNetConnect(0, id->extHandle, &state->extSendComm));
+  NCCLCHECK(ncclNetConnect(idFromEnv ? -1 : 0, id->extHandle, &state->extSendComm));
   NCCLCHECK(ncclNetSend(state->extSendComm, &info, sizeof(info)));
   NCCLCHECK(ncclNetAccept(tmpListenComm, &state->extRecvComm));
   NCCLCHECK(ncclNetCloseListen(tmpListenComm));
