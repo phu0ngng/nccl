@@ -116,6 +116,10 @@ int ncclSocketConnect(int dev, void* opaqueHandle, void** sendComm) {
   struct ncclSocketHandle* handle = (struct ncclSocketHandle*) opaqueHandle;
   if (dev == -1) {
     NCCLCHECK(GetSocketAddrFromEnv(&(handle->connectAddr)));
+    // need to find a local addr that is in the same network as the remote addr
+    union socketAddress localAddr;
+    findInterfaceMatchSubnet(&localAddr, handle->connectAddr);
+    NCCLCHECK(connectAddress(&handle->connectAddr, &localAddr, &comm->fd));
   }
   NCCLCHECK(connectAddress(&handle->connectAddr, &ncclNetIfAddrs[dev], &comm->fd));
   *sendComm = comm;
