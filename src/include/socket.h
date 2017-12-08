@@ -125,28 +125,32 @@ static int findInterfaces(char* ifNames, union socketAddress *ifAddrs, int ifNam
   return nIfs;
 }
 
-static bool matchSubnet(struct ifaddrs* local_if, union socketAddress remote_addr) {
+static bool matchSubnet(struct ifaddrs local_if, union socketAddress remote_addr) {
   /* Check family first */
-  int family = local_if->ifa_addr->sa_family;
+  int family = local_if.ifa_addr->sa_family;
   if (family != remote_addr.sa.sa_family) {
     return false;
   }
 
   if (family == AF_INET) {
-    struct sockaddr_in* local_addr = (struct sockaddr_in*)(local_if->ifa_addr);
-    struct sockaddr_in* mask = (struct sockaddr_in*)(local_if->ifa_netmask);
+    struct sockaddr_in* local_addr = (struct sockaddr_in*)(local_if.ifa_addr);
+    struct sockaddr_in* mask = (struct sockaddr_in*)(local_if.ifa_netmask);
     struct in_addr local_subnet, remote_subnet;
     local_subnet.s_addr = local_addr->sin_addr.s_addr & mask->sin_addr.s_addr;
     remote_subnet.s_addr = remote_addr.sin.sin_addr.s_addr & mask->sin_addr.s_addr;
     return (local_subnet.s_addr ^ remote_subnet.s_addr) ? false : true;
   } else if (family == AF_INET6) {
-    struct sockaddr_in6* local_addr = (struct sockaddr_in6*)(local_if->ifa_addr);
+    struct sockaddr_in6* local_addr = (struct sockaddr_in6*)(local_if.ifa_addr);
+    struct sockaddr_in6* mask = (struct sockaddr_in6*)(local_if.ifa_netmask);
     struct in6_addr& local_in6 = local_addr->sin6_addr;
+    struct in6_addr& mask_in6 = mask->sin6_addr;
     struct in6_addr& remote_in6 = remote_addr.sin6.sin6_addr;
     bool same = true;
-    int prefix_len = 64;  //TODO: get prefix length
-    for (int c = 0; c < prefix_len / (8*sizeof(unsigned char)); c++) {  //Network byte order is big-endian
-      same &= (local_in6.s6_addr[c] == remote_in6.s6_addr[c]);
+    int len = 16;  //IPv6 address is 16 unsigned char
+    for (int c = 0; c < len; c++) {  //Network byte order is big-endian
+      char c1 = local_in6.s6_addr[c] & mask_in6.s6_addr[c];
+      char c2 = remote_in6.s6_addr[c] & mask_in6.s6_addr[c];
+      same &= (c1 ^ c2);
     }
     return same;
   } else {
@@ -156,12 +160,7 @@ static bool matchSubnet(struct ifaddrs* local_if, union socketAddress remote_add
 }
 
 static int findInterfaceMatchSubnet(union socketAddress* localAddr, union socketAddress remoteAddr) {
-  /* IPv4/IPv6 support */
-  int sock_family = remoteAddr.sa.sa_family;
-  int salen = (sock_family == AF_INET) ? sizeof(sockaddr_in) : sizeof(sockaddr_in6);
-
-  char line[1024];
-
+  char line[1024], line_a[1024];
   int found = 0;
   struct ifaddrs *interfaces, *interface;
   getifaddrs(&interfaces);
@@ -175,14 +174,15 @@ static int findInterfaceMatchSubnet(union socketAddress* localAddr, union socket
       continue;
 
     // check against user specified interfaces
-    if (!matchSubnet(interface, remoteAddr)) {
+    if (!matchSubnet(*interface, remoteAddr)) {
       continue;
     }
 
     // Store the local IP address
     found++;
+    int salen = (family == AF_INET) ? sizeof(sockaddr_in) : sizeof(sockaddr_in6);
     memcpy(localAddr, interface->ifa_addr, salen);
-    INFO("NET : Found interface %s:%s in the same subnet as remote address %s", interface->ifa_name, socketToString(interface->ifa_addr, line), socketToString(&(remoteAddr.sa), line));
+    INFO("NET : Found interface %s:%s in the same subnet as remote address %s", interface->ifa_name, socketToString(&(localAddr->sa), line), socketToString(&(remoteAddr.sa), line_a));
   }
 
   freeifaddrs(interfaces);
