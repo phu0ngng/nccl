@@ -182,9 +182,12 @@ static int findInterfaceMatchSubnet(union socketAddress* localAddr, union socket
     found++;
     int salen = (family == AF_INET) ? sizeof(sockaddr_in) : sizeof(sockaddr_in6);
     memcpy(localAddr, interface->ifa_addr, salen);
-    INFO("NET : Found interface %s:%s in the same subnet as remote address %s", interface->ifa_name, socketToString(&(localAddr->sa), line), socketToString(&(remoteAddr.sa), line_a));
+    INFO("NET : Found interface %s:%s in the same subnet as remote address %s, using it for bootstrap", interface->ifa_name, socketToString(&(localAddr->sa), line), socketToString(&(remoteAddr.sa), line_a));
   }
 
+  if (found == 0) {
+    WARN("NET : No interface found in the same subnet as remote address %s", socketToString(&(remoteAddr.sa), line_a));
+  }
   freeifaddrs(interfaces);
   return found;
 }
