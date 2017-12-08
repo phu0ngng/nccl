@@ -120,8 +120,9 @@ int ncclSocketConnect(int dev, void* opaqueHandle, void** sendComm) {
     union socketAddress localAddr;
     findInterfaceMatchSubnet(&localAddr, handle->connectAddr);
     NCCLCHECK(connectAddress(&handle->connectAddr, &localAddr, &comm->fd));
+  } else {
+    NCCLCHECK(connectAddress(&handle->connectAddr, &ncclNetIfAddrs[dev], &comm->fd));
   }
-  NCCLCHECK(connectAddress(&handle->connectAddr, &ncclNetIfAddrs[dev], &comm->fd));
   *sendComm = comm;
   return 0;
 }
