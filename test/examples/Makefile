@@ -14,7 +14,7 @@ NVLDFLAGS   += -L$(BUILDDIR)/lib $(LIBRARIES:%=-l%)
 DST_DIR := $(BUILDDIR)/test/examples
 BIN_FILES_LIST := singleproc_multigpu
 ifeq ($(MPI), 1)
-BIN_FILES_LIST += multiproc_multigpu multiproc_singlegpu
+BIN_FILES_LIST += multiproc_multigpu multiproc_singlegpu multiproc_env_id
 endif
 BIN_FILES := $(BIN_FILES_LIST:%=${DST_DIR}/%)
 SRC_FILES := $(BIN_FILES:%=%.cu)
