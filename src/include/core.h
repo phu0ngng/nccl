@@ -13,6 +13,7 @@
 #include "transport.h"
 #include "debug.h"
 #include <cstdio>
+#include <unistd.h>
 #include <cuda_runtime.h>
 
 #if __CUDACC_VER_MAJOR__ < 9
@@ -262,6 +263,33 @@ struct ncclComm {
   } \
 } while (0);
 
+#define SYSCHECKNTIMES(call, name, times, usec, exptype) do { \
+  int ret = -1; \
+  int count = 0; \
+  while (ret == -1 && count < times) { \
+    SYSCHECKVALEXP(call, name, ret, exptype); \
+    count++; \
+    if (ret == -1) { \
+      if (count % 1000 == 0) { \
+        INFO("Got %s, tried %d times", strerror(errno), count); \
+      } \
+      usleep(usec); \
+    }\
+  } \
+  INFO("Tried " name " %d times, result = %s", count, ret == -1 ? "failure":"success"); \
+  if (ret == -1) { \
+    WARN("Call to " name " timeout : %s", strerror(errno)); \
+    return ncclSystemError; \
+  } \
+} while (0);
+
+#define SYSCHECKVALEXP(call, name, retval, exptype) do { \
+  retval = call; \
+  if (retval == -1 && errno != EINTR && errno != EWOULDBLOCK && errno != EAGAIN && errno != exptype) { \
+    WARN("Call to " name " failed : %s", strerror(errno)); \
+    return ncclSystemError; \
+  } \
+} while (0);
 
 // Propagate errors up
 #define NCCLCHECK(call) do { \

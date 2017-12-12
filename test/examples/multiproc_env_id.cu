@@ -86,9 +86,14 @@ int main(int argc, char* argv[])
 
   // Get NCCL unique ID from environment variable NCCL_COMM_ID, saving the broadcast
   if (myRank == 0) {
+    char* env = getenv("ROOT_DELAY"); // delay in usec
+    if (env && strlen(env) > 1) {
+      int delay = 0;
+      delay = atoi(env);
+      usleep(delay);
+    }
     ncclGetUniqueId(&id);
   } else {
-    usleep(2e6);
     ncclGetUniqueIdFromEnv(&id);
   }
 

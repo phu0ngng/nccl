@@ -15,6 +15,9 @@
 #include <ifaddrs.h>
 #include "utils.h"
 
+#define SLEEP_INT     100   // sleep interval in usec
+#define RETRY_TIMES   1e5   // retry times before reporting a timeout
+
 /* Common socket address storage structure for IPv4/IPv6 */
 union socketAddress {
   struct sockaddr sa;
@@ -264,7 +267,7 @@ static ncclResult_t connectAddress(union socketAddress* remoteAddr, union socket
   TRACE("Connecting to socket %s", socketToString(&remoteAddr->sa, line));
 #endif
 
-  SYSCHECK(connect(*fd, &remoteAddr->sa, salen), "connect");
+  SYSCHECKNTIMES(connect(*fd, &remoteAddr->sa, salen), "connect", RETRY_TIMES, SLEEP_INT, ECONNREFUSED);
   return ncclSuccess;
 }
 
