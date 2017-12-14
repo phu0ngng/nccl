@@ -56,18 +56,6 @@ static ncclResult_t GetSocketAddr(int dev, union socketAddress* addr) {
   return ncclSuccess;
 }
 
-static ncclResult_t GetSocketAddrFromEnv(union socketAddress* addr) {
-  // Use IP address from env
-  char* env = getenv("NCCL_COMM_ID");
-  if (env && strlen(env) > 1) {
-    createSocketAddr(env, addr);
-    return ncclSuccess;
-  } else {
-    WARN("Net : NCCL_COMM_ID is null, please specify it using format <ip>:<port>");
-    return ncclInvalidArgument;
-  }
-}
-
 /* Communication functions */
 
 struct ncclSocketHandle {
@@ -95,13 +83,19 @@ struct ncclSocketComm* ncclSocketNewComm() {
   return comm;
 }
 
+int ncclSocketCreateHandle(void* opaqueHandle, char* str) {
+  struct ncclSocketHandle* handle = (struct ncclSocketHandle*) opaqueHandle;
+  NCCLCHECK(GetSocketAddrFromString(&(handle->connectAddr), str));
+  return 0;
+}
+
 int ncclSocketListen(int dev, void* opaqueHandle, void** listenComm) {
   struct ncclSocketComm* comm = ncclSocketNewComm();
   struct ncclSocketHandle* handle = (struct ncclSocketHandle*) opaqueHandle;
   static_assert(sizeof(struct ncclSocketHandle) < NCCL_NET_HANDLE_MAXSIZE, "ncclSocketHandle size too large");
-  if (dev == -1) {
-    NCCLCHECK(GetSocketAddrFromEnv(&(handle->connectAddr)));
-  } else {
+  // if dev >= 0, listen based on dev
+  // if dev < 0, handle must be preset, listen based on handle
+  if (dev >= 0) {
     NCCLCHECK(GetSocketAddr(dev, &(handle->connectAddr)));
   }
   NCCLCHECK(createListenSocket(&comm->fd, &handle->connectAddr));
@@ -115,7 +109,6 @@ int ncclSocketConnect(int dev, void* opaqueHandle, void** sendComm) {
   struct ncclSocketComm* comm = ncclSocketNewComm();
   struct ncclSocketHandle* handle = (struct ncclSocketHandle*) opaqueHandle;
   if (dev == -1) {
-    NCCLCHECK(GetSocketAddrFromEnv(&(handle->connectAddr)));
     // need to find a local addr that is in the same network as the remote addr
     union socketAddress localAddr;
     findInterfaceMatchSubnet(&localAddr, handle->connectAddr);
@@ -222,4 +215,8 @@ ncclNet_t ncclNetSocket = {
   ncclSocketClose,
   ncclSocketClose,
   ncclSocketClose
+};
+
+ncclNetExt_t ncclNetExtSocket = {
+  ncclSocketCreateHandle
 };

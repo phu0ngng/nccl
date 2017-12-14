@@ -34,7 +34,6 @@ pthread_mutex_t ncclDebugOutputLock;
 
 int ncclPrintCRCs;
 int ncclChecks;
-int ncclGetIdFromEnv = 0;
 
 size_t ncclSingleRingThreshold;
 
@@ -95,8 +94,7 @@ ncclResult_t ncclGetUniqueId(ncclUniqueId* out) {
 NCCL_API(ncclResult_t, ncclGetUniqueIdFromEnv, ncclUniqueId* out);
 ncclResult_t ncclGetUniqueIdFromEnv(ncclUniqueId* out) {
   NCCLCHECK(PtrCheck(out, "GetUniqueIdFromEnv", "out"));
-  ncclGetIdFromEnv = 1;
-  return ncclSuccess;
+  return bootstrapGetUniqueIdFromEnv(out);
 }
 
 static ncclResult_t commFree(ncclComm_t comm) {
@@ -396,7 +394,7 @@ static ncclResult_t initTransportsRank(struct ncclComm* comm, ncclUniqueId* comm
   int rank = comm->rank;
   int nranks = comm->nRanks;
   void* commState;
-  NCCLCHECK(bootstrapInit(commId, rank, nranks, &commState, ncclGetIdFromEnv));
+  NCCLCHECK(bootstrapInit(commId, rank, nranks, &commState));
   
   struct ncclInfo* allInfo = (struct ncclInfo*)malloc(sizeof(struct ncclInfo)*nranks);
   NCCLCHECK(fillInfo(allInfo+rank, rank));

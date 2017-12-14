@@ -140,6 +140,10 @@ ncclResult_t bootstrapGetUniqueId(ncclUniqueId* out) {
   int dev = env ? -1 : 0;
   if (dev < 0) {
     INFO("KW: bootstrap from env comm ID");
+    if (ncclNetExtSocket.createHandle(&id->extHandle, env) != 0) {
+      WARN("Invalid NCCL_COMM_ID, use format: ipv4:port or [ipv6]:port");
+      return ncclInvalidArgument;
+    }
   }
   NCCLCHECK(ncclNetListen(dev, &id->extHandle, &id->extListenComm));
 
@@ -152,6 +156,24 @@ ncclResult_t bootstrapGetUniqueId(ncclUniqueId* out) {
   return ncclSuccess;
 }
 
+ncclResult_t bootstrapGetUniqueIdFromEnv(ncclUniqueId* out) {
+  static_assert(sizeof(extId) < sizeof(ncclUniqueId), "NetId does not fit inside ncclUniqueId");
+  extId* id = (extId*)out;
+
+  // use negative pid to indicate that comm id is from env (pid_t is int)
+  // if ncclGetUniqueID is called, getpid() would return pid >= 1
+  id->pid = -1;
+
+  char* env = getenv("NCCL_COMM_ID");
+  if (env && strlen(env) > 1) {
+    if (ncclNetExtSocket.createHandle(&id->extHandle, env) == 0) {
+      return ncclSuccess;
+    }
+  }
+  WARN("Invalid NCCL_COMM_ID, use format: ipv4:port or [ipv6]:port");
+  return ncclInvalidArgument;
+}
+
 struct extState {
   void* extRecvComm;
   void* extSendComm;
@@ -159,8 +181,9 @@ struct extState {
   int nranks;
 };
 
-ncclResult_t bootstrapInit(ncclUniqueId* commId, int rank, int nranks, void** commState, int idFromEnv) {
+ncclResult_t bootstrapInit(ncclUniqueId* commId, int rank, int nranks, void** commState) {
   struct extId* id = (struct extId*)commId;
+  bool idFromEnv = id->pid < 0;
   struct extState* state = (struct extState*)malloc(sizeof(struct extState));
   state->rank = rank;
   state->nranks = nranks;

@@ -56,4 +56,6 @@ extern bool ncclIbSupport();
 extern ncclNet_t ncclNetIb;
 extern ncclNet_t ncclNetSocket;
 
+extern ncclNetExt_t ncclNetExtSocket;
+
 #endif

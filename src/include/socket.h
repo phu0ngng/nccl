@@ -210,6 +210,16 @@ static void createSocketAddr(char* ip_port_pair, union socketAddress* ua) {
   }
 }
 
+static ncclResult_t GetSocketAddrFromString(union socketAddress* addr, char* str) {
+  if (str && strlen(str) > 1) {
+    createSocketAddr(str, addr);
+    return ncclSuccess;
+  } else {
+    WARN("Net : string is null");
+    return ncclInvalidArgument;
+  }
+}
+
 static ncclResult_t createListenSocket(int *fd, union socketAddress *localAddr) {
   /* IPv4/IPv6 support */
   int family = localAddr->sa.sa_family;

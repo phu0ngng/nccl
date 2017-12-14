@@ -57,6 +57,15 @@ typedef struct {
   int (*closeListen)(void* listenComm);
 } ncclNet_t;
 
+typedef struct {
+  // Create a ncclNetHandle given a char array with format ipv4:port or [ipv6]:port
+  int (*createHandle)(void* opaqueHandle, char* str);
+  // Synchronous send to a peer. Type is NCCL_PTR_HOST.
+  //int (*send)(void* sendComm, void* data, int size);
+  // Synchronous recv from a peer. Type is NCCL_PTR_HOST.
+  //int (*recv)(void* recvComm, void* data, int size);
+} ncclNetExt_t;
+
 #ifdef __cplusplus
 } // end extern "C"
 #endif
