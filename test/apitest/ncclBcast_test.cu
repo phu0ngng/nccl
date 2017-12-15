@@ -134,11 +134,41 @@ TYPED_TEST(ncclBcast_test, DISABLED_stream_wrong) {
 // Aggregation
 // Only for 2.2 or higher
 #if NCCL_MAJOR > 2 || (NCCL_MAJOR == 2 && NCCL_MINOR >=2)
-TYPED_TEST(ncclBcast_test, aggregate) {
+TYPED_TEST(ncclBcast_test, aggregate_two_level_group_call) {
     ASSERT_EQ(ncclSuccess, ncclGroupStart());
     for (int root = 0; root < this->nVis; ++root) {
         ASSERT_EQ(ncclSuccess, ncclGroupStart());
         for (int i = 0; i < this->nVis; ++i) {
+            ASSERT_EQ(ncclSuccess,
+                      ncclBcast(this->sendbuffs[i],
+                                std::min(this->N, 32 * 1024), this->DataType(),
+                                root, this->comms[i], this->streams[i]))
+                << "root: " << root << ", "
+                << "i" << i << ", " << std::endl;
+        }
+        ASSERT_EQ(ncclSuccess, ncclGroupEnd());
+    }
+    ASSERT_EQ(ncclSuccess, ncclGroupEnd());
+};
+TYPED_TEST(ncclBcast_test, aggregate_one_level_group_call) {
+    ASSERT_EQ(ncclSuccess, ncclGroupStart());
+    for (int root = 0; root < this->nVis; ++root) {
+        for (int i = 0; i < this->nVis; ++i) {
+            ASSERT_EQ(ncclSuccess,
+                      ncclBcast(this->sendbuffs[i],
+                                std::min(this->N, 32 * 1024), this->DataType(),
+                                root, this->comms[i], this->streams[i]))
+                << "root: " << root << ", "
+                << "i" << i << ", " << std::endl;
+        }
+    }
+    ASSERT_EQ(ncclSuccess, ncclGroupEnd());
+};
+TYPED_TEST(ncclBcast_test, aggregate_exchange_loops) {
+    ASSERT_EQ(ncclSuccess, ncclGroupStart());
+    for (int i = 0; i < this->nVis; ++i) {
+        ASSERT_EQ(ncclSuccess, ncclGroupStart());
+        for (int root = 0; root < this->nVis; ++root) {
             ASSERT_EQ(ncclSuccess,
                       ncclBcast(this->sendbuffs[i],
                                 std::min(this->N, 32 * 1024), this->DataType(),

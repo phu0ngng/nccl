@@ -135,9 +135,8 @@ void ncclCommon_test<DT>::TearDownTestCase() {
     auto freeStream = [](cudaStream_t st) { cudaStreamDestroy(st); };
     EXPECT_NO_FATAL_FAILURE(freePP<>(freeStream, streams, nVis));
 };
-typedef ::testing::Types<char, int, float, double, long long,
+typedef ::testing::Types<char, int, half, float, double, long long,
                          unsigned long long>
     testDataTypes;
-/// TODO: half type causes compilation error.
 // TYPED_TEST_CASE(ncclCommon_test, testDataTypes);
 // EOF
