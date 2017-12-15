@@ -150,7 +150,7 @@ TYPED_TEST(ncclReduceScatter_test, DISABLED_stream_wrong) {
 // Aggregation
 // Only for 2.2 or higher
 #if NCCL_MAJOR > 2 || (NCCL_MAJOR == 2 && NCCL_MINOR >=2)
-TYPED_TEST(ncclReduceScatter_test, aggregate) {
+TYPED_TEST(ncclReduceScatter_test, aggregate_two_level_group_call) {
     ASSERT_EQ(ncclSuccess, ncclGroupStart());
     for (ncclRedOp_t op : this->RedOps) {
         ASSERT_EQ(ncclSuccess, ncclGroupStart());
@@ -164,6 +164,21 @@ TYPED_TEST(ncclReduceScatter_test, aggregate) {
                 << "i" << i << ", " << std::endl;
         }
         ASSERT_EQ(ncclSuccess, ncclGroupEnd());
+    }
+    ASSERT_EQ(ncclSuccess, ncclGroupEnd());
+};
+TYPED_TEST(ncclReduceScatter_test, aggregate_one_level_group_call) {
+    ASSERT_EQ(ncclSuccess, ncclGroupStart());
+    for (ncclRedOp_t op : this->RedOps) {
+        for (int i = 0; i < this->nVis; ++i) {
+            ASSERT_EQ(ncclSuccess,
+                      ncclReduceScatter(this->sendbuffs[i], this->recvbuffs[i],
+                                        std::min(this->N/this->nVis, 1024 * 1024),
+                                        this->DataType(), op, this->comms[i],
+                                        this->streams[i]))
+                << "op: " << op << ", "
+                << "i" << i << ", " << std::endl;
+        }
     }
     ASSERT_EQ(ncclSuccess, ncclGroupEnd());
 };
