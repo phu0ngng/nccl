@@ -237,8 +237,8 @@ TYPED_TEST(ncclReduce_test, aggregate_three_level_group_call) {
 TYPED_TEST(ncclReduce_test, aggregate_one_level_group_call_exchange_loops) {
     ASSERT_EQ(ncclSuccess, ncclGroupStart());
     for (int i = 0; i < this->nVis; ++i) {
-      for (ncclRedOp_t op : this->RedOps) {
-          for (int root = 0; root < this->nVis; ++root) {
+        for (ncclRedOp_t op : this->RedOps) {
+            for (int root = 0; root < this->nVis; ++root) {
                 ASSERT_EQ(ncclSuccess,
                           ncclReduce(this->sendbuffs[i], i == root ? this->recvbuffs[i] : NULL,
                                      std::min(this->N, 1024 * 1024),
