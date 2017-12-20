@@ -97,9 +97,9 @@ static ncclResult_t commFree(ncclComm_t comm) {
   CUDACHECK(cudaFree(comm->devComm));
 
   for (int ring=0; ring<comm->nRings; ring++) {
-    NCCLCHECK(comm->rings[ring].send.transport->send.free(comm->rings[ring].send.transportResources));
+    if (comm->rings[ring].send.transportResources) NCCLCHECK(comm->rings[ring].send.transport->send.free(comm->rings[ring].send.transportResources));
     NCCLCHECK(transportDestroyProxy(&comm->rings[ring].send));
-    NCCLCHECK(comm->rings[ring].recv.transport->recv.free(comm->rings[ring].recv.transportResources));
+    if (comm->rings[ring].recv.transportResources) NCCLCHECK(comm->rings[ring].recv.transport->recv.free(comm->rings[ring].recv.transportResources));
     NCCLCHECK(transportDestroyProxy(&comm->rings[ring].recv));
     CUDACHECK(cudaFree(comm->rings[ring].devMemSend));
     CUDACHECK(cudaFree(comm->rings[ring].devMemRecv));
