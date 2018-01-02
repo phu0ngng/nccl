@@ -360,7 +360,14 @@ ncclResult_t ncclIbRtrQp(ibv_qp* qp, struct ncclIbQpInfo* info) {
     qpAttr.ah_attr.is_global = 0;
     qpAttr.ah_attr.dlid = info->lid;
   }
-  qpAttr.ah_attr.sl = 1;
+  static int ncclIbSl = -1;
+  if (ncclIbSl == -1) {
+    char* str = getenv("NCCL_IB_SL");
+    ncclIbSl = str ? atoi(str) : 1;
+    if (str)
+      INFO("NET/IB: Using service level %d", ncclIbSl);
+  }
+  qpAttr.ah_attr.sl = ncclIbSl;
   qpAttr.ah_attr.src_path_bits = 0;
   qpAttr.ah_attr.port_num = info->ib_port;
   NCCLCHECK(wrap_ibv_modify_qp(qp, &qpAttr, IBV_QP_STATE | IBV_QP_AV | IBV_QP_PATH_MTU | IBV_QP_DEST_QPN | IBV_QP_RQ_PSN | IBV_QP_MAX_DEST_RD_ATOMIC | IBV_QP_MIN_RNR_TIMER));
