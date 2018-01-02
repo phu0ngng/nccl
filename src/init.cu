@@ -506,7 +506,10 @@ bool SetCpuAffinity(int cudaDev, nvmlDevice_t* nvmlDevice) {
   char busId[NVML_DEVICE_PCI_BUS_ID_BUFFER_SIZE];
   if (cudaDeviceGetPCIBusId(busId, NVML_DEVICE_PCI_BUS_ID_BUFFER_SIZE, cudaDev) != cudaSuccess) return false;
   if (wrapNvmlDeviceGetHandleByPciBusId(busId, nvmlDevice) != ncclSuccess) return false;
-  if (wrapNvmlDeviceSetCpuAffinity(*nvmlDevice) != ncclSuccess) return false;
+  if (wrapNvmlDeviceSetCpuAffinity(*nvmlDevice) != ncclSuccess) {
+    WARN("Failed to set CPU affinity");
+    return false;
+  }
   return true;
 }
 
