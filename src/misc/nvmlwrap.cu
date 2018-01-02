@@ -156,6 +156,7 @@ ncclResult_t wrapNvmlDeviceGetIndex(nvmlDevice_t device, unsigned* index) {
 }
 
 ncclResult_t wrapNvmlDeviceSetCpuAffinity(nvmlDevice_t device) {
+  return ncclSuccess;
   if (nvmlInternalDeviceSetCpuAffinity == NULL) {
     WARN("lib wrapper not initialized.");
     return ncclInternalError;
@@ -174,6 +175,7 @@ ncclResult_t wrapNvmlDeviceSetCpuAffinity(nvmlDevice_t device) {
 }
 
 ncclResult_t wrapNvmlDeviceClearCpuAffinity(nvmlDevice_t device) {
+  return ncclSuccess;
   if (nvmlInternalInit == NULL) {
     WARN("lib wrapper not initialized.");
     return ncclInternalError;

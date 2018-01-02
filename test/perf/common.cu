@@ -495,7 +495,7 @@ void startColl(struct threadArgs_t* args, ncclDataType_t type, ncclRedOp_t op, i
       cudaError_t err = cudaErrorNotReady;
       while (err == cudaErrorNotReady) { 
           err = cudaStreamQuery(args->streams[i]);
-          pthread_yield();	
+          pthread_yield();
       }
       CUDACHECK(err);
     }
@@ -511,7 +511,7 @@ void completeColl(struct threadArgs_t* args) {
     cudaError_t err = cudaErrorNotReady;
     while (err == cudaErrorNotReady) { 
         err = cudaStreamQuery(args->streams[i]);
-        pthread_yield();	
+        pthread_yield();
     }
     CUDACHECK(err);
   }
