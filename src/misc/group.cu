@@ -128,8 +128,8 @@ ncclResult_t ncclGroupEnd() {
     struct ncclAsyncArgs* args = ncclGroupArgs+i;
     if (args->funcType == ASYNC_FUNC_COLL) {
       if (args->coll.comm->userStream == NULL)
-        CUDACHECK(cudaSetDevice(args->coll.comm->cudaDev));
-      NCCLCHECK(ncclCpuBarrierCheckin(args->coll.comm));
+        CUDACHECKGOTO(cudaSetDevice(args->coll.comm->cudaDev), ret, end);
+      NCCLCHECKGOTO(ncclCpuBarrierCheckin(args->coll.comm), ret, end);
     }
   }
 
@@ -141,10 +141,10 @@ ncclResult_t ncclGroupEnd() {
       if (args->funcType == ASYNC_FUNC_INIT) {
         int err = pthread_tryjoin_np(ncclGroupThreads[i], NULL);
         if (err == EBUSY) continue;
-        if (err != 0) return ncclSystemError;
+        if (err != 0) { ret = ncclSystemError; goto end; }
       } else { // ASYNC_FUNC_COLL
-        CUDACHECK(cudaSetDevice(args->coll.comm->cudaDev));
-        NCCLCHECK(ncclCpuBarrierWait(args->coll.comm));
+        CUDACHECKGOTO(cudaSetDevice(args->coll.comm->cudaDev), ret, end);
+        NCCLCHECKGOTO(ncclCpuBarrierWait(args->coll.comm), ret, end);
       }
       if (args->ret != ncclSuccess) { ret = args->ret; goto end; }
       doneArray[i] = 1;
@@ -152,8 +152,8 @@ ncclResult_t ncclGroupEnd() {
     }
   }
 end:
-  CUDACHECK(cudaSetDevice(savedDev));
   ncclGroupError = ncclSuccess;
   ncclGroupIndex = 0;
+  CUDACHECK(cudaSetDevice(savedDev)); // do other clean-ups first before calling cudaSetDevice, because this call can fail too
   return ret;
 }
