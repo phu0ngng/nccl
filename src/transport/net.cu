@@ -389,8 +389,8 @@ ncclResult_t netSendProxy(struct ncclProxyArgs* args) {
         *prevHead = head;
         idle = 0;
       }
-      if (idle) transportProxyIdle(idle);
     }
+    if (idle) transportProxyIdle(idle);
   }
 
   // Reset
