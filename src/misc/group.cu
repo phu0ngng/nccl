@@ -72,9 +72,9 @@ void* ncclAsyncThreadMain(void* args_) {
 }
 
 ncclResult_t ncclAsyncInit(ncclInitFunc_t func, int cudaDev, ncclComm_t* newcomm, int ndev, ncclUniqueId commId, int myrank) {
-  if (ncclGroupIndex == MAX_ASYNC_OPS) {
+  if (ncclGroupIndex >= MAX_ASYNC_OPS) {
     WARN("Too many async operations in progress, max is %d", MAX_ASYNC_OPS);
-    return ncclInternalError;
+    return ncclAsyncErrCheck(ncclInternalError);
   }
   int index = ncclGroupIndex++;
   struct ncclAsyncArgs* args = ncclGroupArgs+index;
@@ -91,6 +91,10 @@ ncclResult_t ncclAsyncInit(ncclInitFunc_t func, int cudaDev, ncclComm_t* newcomm
 }
 
 ncclResult_t ncclAsyncColl(ncclComm_t comm) {
+  if (ncclGroupIndex >= MAX_ASYNC_OPS) {
+    WARN("Too many async operations in progress, max is %d", MAX_ASYNC_OPS);
+    return ncclAsyncErrCheck(ncclInternalError);
+  }
   int index = ncclGroupIndex++;
   struct ncclAsyncArgs* args = ncclGroupArgs+index;
   args->funcType = ASYNC_FUNC_COLL;
