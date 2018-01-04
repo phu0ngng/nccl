@@ -20,7 +20,7 @@ bool ncclAsyncMode() {
 }
 
 ncclResult_t ncclAsyncErrCheck(ncclResult_t ret) {
-  if (ncclGroupError == ncclSuccess) ncclGroupError = ret;
+  if (ncclGroupError == ncclSuccess || ret != ncclSuccess) ncclGroupError = ret;
   return ret;
 }
 
