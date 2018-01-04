@@ -122,7 +122,7 @@ ncclResult_t ncclGroupEnd() {
   int doneArray[ncclGroupIndex];
 
   ncclResult_t ret = ncclGroupError;
-  if (ret != ncclSuccess) goto end;
+  if (ret != ncclSuccess) goto group_cleanup;
 
   for (int i=0; i<ncclGroupIndex; i++) {
     struct ncclAsyncArgs* args = ncclGroupArgs+i;
@@ -150,6 +150,23 @@ ncclResult_t ncclGroupEnd() {
       doneArray[i] = 1;
       done--;
     }
+  }
+  goto end;
+group_cleanup:
+  // At least one call in the group failed. Since we want to make that group
+  // an atomic operation, we need to cancel all operations.
+  for (int i=0; i<ncclGroupIndex; i++) {
+    struct ncclComm* comm = ncclGroupArgs[i].coll.comm;
+    for (int r=0; r<comm->nRings; r++) {
+      struct ncclRing* ring = comm->rings+r;
+      if (ring->collFifoTail == ring->collStart)  continue;
+      for (int i=ring->collStart; i != ring->collFifoTail; i = (i+1)%NCCL_MAX_OPS) {
+        ring->collectives[i].active = 0;
+      }
+      ring->collFifoTail = ring->collStart;
+      ring->collCount = 0;
+    }
+    comm->myParams->gridDim.x = comm->myParams->blockDim.x = 0;
   }
 end:
   ncclGroupError = ncclSuccess;

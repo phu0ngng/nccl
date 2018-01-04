@@ -79,9 +79,9 @@ ncclResult_t freeRing(struct ncclRing* ring) {
   free(ring->collectives);
 
   // Free transport proxy resources
-  NCCLCHECK(ring->send.transport->send.free(ring->send.transportResources));
+  if (ring->send.transportResources) NCCLCHECK(ring->send.transport->send.free(ring->send.transportResources));
   NCCLCHECK(transportDestroyProxy(&ring->send));
-  NCCLCHECK(ring->recv.transport->recv.free(ring->recv.transportResources));
+  if (ring->recv.transportResources) NCCLCHECK(ring->recv.transport->recv.free(ring->recv.transportResources));
   NCCLCHECK(transportDestroyProxy(&ring->recv));
   return ncclSuccess;
 }

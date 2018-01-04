@@ -18,7 +18,7 @@ TESTDIR=$HOME/$DATE
 NCCLDEB=$HOME/install/nccl.deb
 
 export SLURM=1
-OPTS="single latency reorder all aggregation mpi mpi_latency multinode dlfw"
+OPTS="api single latency reorder all aggregation mpi mpi_latency multinode dlfw"
 MODES="GROUP PARALLEL"
 
 for ver in $VERS ; do
@@ -60,7 +60,7 @@ if [ "$transfer" == "1" ]; then
   cd $HOME/install/nccl.deb/
   for VER in $VERS ; do
     for MODE in $MODES; do
-       for OPT in "" "_mpi" "_reorder" "_all" "_multinode" "_latency" "_mpi_latency" "_multinode_latency" "_dlfw" "_aggr/1" "_aggr/4" "_aggr/16"; do
+       for OPT in "" "_api" "_mpi" "_reorder" "_all" "_multinode" "_latency" "_mpi_latency" "_multinode_latency" "_dlfw" "_aggr/1" "_aggr/4" "_aggr/16"; do
           TAG=$VER$MODE
           DIR=$TAG$OPT
           echo "Syncing $DIR"

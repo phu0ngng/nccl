@@ -42,7 +42,7 @@ $(OBJDIR)/%.dep : %.cu
 	@rm -f $@.tmp
 	@cp $@ $(@:.dep=.d)
 
-# Compiled kernels and collectives with reloctable device code ...
+# Compiled kernels and collectives with relocatable device code ...
 $(OBJDIR)/multiop.o : multiop.cu $(OBJDIR)/multiop.dep
 	@printf "Compiling  %-35s > %s\n" $< $@
 	mkdir -p `dirname $@`

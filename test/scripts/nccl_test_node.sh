@@ -103,7 +103,13 @@ else
     make -j test.build NCCLDIR=${DEBDIR} 2>&1 | tee make_test.log
   fi
   cd $BLDDIR
-  $srun_cmd $SHDIR/run_perf_graphs.sh $gpumodel $maxgpu $mode
+  if [ "$mode" == "api" ]; then
+    api_path="results_api/$gpumodel"
+    mkdir -p $api_path
+    $srun_cmd $BLDDIR/test/apitest/apitest 2>&1 | tee $api_path/apitest.out
+  else
+    $srun_cmd $SHDIR/run_perf_graphs.sh $gpumodel $maxgpu $mode
+  fi
 fi
 
 echo "NCCL_Complete" > state

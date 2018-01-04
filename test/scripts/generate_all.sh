@@ -77,3 +77,9 @@ for lm in $GM $PM; do
   mv comp $DST/$DIR
   grep -r -i "FAIL" ${VER}${lm}_aggr >> $DST/$DIR/fail.txt
 done
+
+DIR=html_api
+rm -rf $DST/$DIR
+mkdir -p $DST/$DIR
+grep -r -i "FAIL" ${VER}${GM}_api/results >> $DST/$DIR/fail.txt
+grep -r -i "FAIL" ${VER}${PM}_api/results >> $DST/$DIR/fail.txt
