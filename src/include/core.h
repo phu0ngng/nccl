@@ -186,6 +186,7 @@ struct ncclComm {
   struct cudaLaunchParams * intraParams;
   int* intraCudaDevs;
   int* intraCGMode; // Whether we can use CUDA9 CGMD or not
+  int* intraCC; // Only to check all have the same ComputeCap and disable CGMode if not
   struct KernelArgs<void> args;
   void* argsptr;
 };

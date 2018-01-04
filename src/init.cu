@@ -48,6 +48,14 @@ int ncclCudaCompCap() {
   if (cudaDeviceGetAttribute(&ccMajor, cudaDevAttrComputeCapabilityMajor, cudaDev) != cudaSuccess) return 0;
   return ccMajor;
 }
+int ncclCudaFullCompCap() {
+  int cudaDev;
+  if (cudaGetDevice(&cudaDev) != cudaSuccess) return 0;
+  int ccMajor, ccMinor;
+  if (cudaDeviceGetAttribute(&ccMajor, cudaDevAttrComputeCapabilityMajor, cudaDev) != cudaSuccess) return 0;
+  if (cudaDeviceGetAttribute(&ccMinor, cudaDevAttrComputeCapabilityMinor, cudaDev) != cudaSuccess) return 0;
+  return ccMajor*10+ccMinor;
+}
 
 void initNet() {
   if (ncclNet != NULL) {
@@ -370,11 +378,15 @@ ncclResult_t ncclCommSetIntra(struct ncclComm* comm, int rank, int ranks, struct
     int* CGMode = (int*)malloc(sizeof(int));
     *CGMode = 0x11;
     comm->intraCGMode = CGMode;
+    int* CC = (int*)malloc(sizeof(int));
+    *CC = ncclCudaFullCompCap();
+    comm->intraCC = CC;
   } else {
     comm->intraBarrier = (int*)waitForNonNullPtr(&comm0->intraBarrier);
     comm->intraParams = (struct cudaLaunchParams*)waitForNonNullPtr(&comm0->intraParams);
     comm->intraCudaDevs = (int*)waitForNonNullPtr(&comm0->intraCudaDevs);
     comm->intraCGMode = (int*)waitForNonNullPtr(&comm0->intraCGMode);
+    comm->intraCC = (int*)waitForNonNullPtr(&comm0->intraCC);
   }
   comm->intraCudaDevs[comm->intraRank] = comm->cudaDev;
 
@@ -389,8 +401,10 @@ ncclResult_t ncclCommSetIntra(struct ncclComm* comm, int rank, int ranks, struct
   if (comm->launchMode == ncclComm::GROUP) {
     CUDACHECK(cudaStreamCreateWithFlags(&comm->ncclStream, cudaStreamNonBlocking));
 #if __CUDACC_VER_MAJOR__ >= 9
-    // Check whether the GPU supports Cooperative Group Multi Device Launch
-    (void) cudaDeviceGetAttribute(&cgMdLaunch, cudaDevAttrCooperativeMultiDeviceLaunch, comm->cudaDev);
+    if (*comm->intraCC && (ncclCudaFullCompCap() == *comm->intraCC)) {
+      // Check whether the GPU supports Cooperative Group Multi Device Launch
+      (void) cudaDeviceGetAttribute(&cgMdLaunch, cudaDevAttrCooperativeMultiDeviceLaunch, comm->cudaDev);
+    }
 #endif
   }
 
@@ -731,6 +745,7 @@ ncclResult_t ncclCommDestroy(ncclComm_t comm) {
     free(comm->intraParams);
     free(comm->intraCudaDevs);
     free(comm->intraCGMode);
+    free(comm->intraCC);
   }
 
   if (comm->launchMode == ncclComm::GROUP) {
