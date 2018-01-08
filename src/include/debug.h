@@ -31,7 +31,7 @@ extern void getHostName(char* hostname, int maxlen);
     fprintf(ncclDebugFile,"\n%s:%d:%d [%d] %s:%d WARN ", hostname, getpid(), gettid(), cudaDev, __FILE__, __LINE__); \
     fprintf(ncclDebugFile,__VA_ARGS__);                          \
     fprintf(ncclDebugFile,"\n");                                 \
-    fflush(stdout);                                              \
+    fflush(ncclDebugFile);                                       \
     pthread_mutex_unlock(&ncclDebugOutputLock);                  \
     if (ncclDebugLevel == ABORT) abort();                        \
   }                                                              \
