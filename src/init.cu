@@ -31,6 +31,7 @@
 
 DebugLevel ncclDebugLevel;
 pthread_mutex_t ncclDebugOutputLock;
+FILE *ncclDebugFile = stdout;
 
 int ncclPrintCRCs;
 int ncclChecks;
@@ -190,9 +191,14 @@ static ncclResult_t devCommSetup(ncclComm_t comm) {
 static void showVersion() {
   static int shown = 0;
   if (shown == 0 && ncclDebugLevel >= VERSION) {
-    printf("NCCL version " STR(NCCL_MAJOR) "." STR(NCCL_MINOR) "." STR(NCCL_PATCH) NCCL_SUFFIX
-           "+cuda" STR(CUDA_MAJOR) "." STR(CUDA_MINOR) "\n");
-    fflush(stdout);
+    char version[80];
+    sprintf(version, "%s", "NCCL version " STR(NCCL_MAJOR) "." STR(NCCL_MINOR) "." STR(NCCL_PATCH) NCCL_SUFFIX
+            "+cuda" STR(CUDA_MAJOR) "." STR(CUDA_MINOR));
+    if (ncclDebugLevel == VERSION) {
+      printf("%s\n", version);
+      fflush(stdout);
+    } else
+      INFO("%s", version);
     shown = 1;
   }
 }
