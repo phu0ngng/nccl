@@ -88,9 +88,12 @@ static void initDebug() {
     ncclDebugLevel = TRACE;
   }
 
-  // Parse and expand the NCCL_DEBUG_FILE path
+  /* Parse and expand the NCCL_DEBUG_FILE path and
+   * then create the debug file. But don't bother unless the
+   * NCCL_DEBUG level is > VERSION
+   */
   const char* nccl_debug_file = getenv("NCCL_DEBUG_FILE");
-  if (nccl_debug_file != NULL) {
+  if (ncclDebugLevel > VERSION && nccl_debug_file != NULL) {
     int c = 0;
     char debug_fn[PATH_MAX+1] = "";
     char *dfn = debug_fn;
