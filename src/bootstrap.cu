@@ -140,8 +140,8 @@ ncclResult_t bootstrapGetUniqueId(ncclUniqueId* out) {
   int dev = env ? -1 : 0;
   if (dev < 0) {
     INFO("KW: bootstrap from env comm ID");
-    if (ncclNetExtSocket.createHandle(&id->extHandle, env) != 0) {
-      WARN("Invalid NCCL_COMM_ID, use format: ipv4:port or [ipv6]:port");
+    if (ncclSocketCreateHandle(&id->extHandle, env) != 0) {
+      WARN("Invalid NCCL_COMM_ID, please use format: NCCL_COMM_ID=<ipv4>:<port> or NCCL_COMM_ID=[<ipv6>]:<port>");
       return ncclInvalidArgument;
     }
   }
@@ -166,11 +166,11 @@ ncclResult_t bootstrapGetUniqueIdFromEnv(ncclUniqueId* out) {
 
   char* env = getenv("NCCL_COMM_ID");
   if (env && strlen(env) > 1) {
-    if (ncclNetExtSocket.createHandle(&id->extHandle, env) == 0) {
+    if (ncclSocketCreateHandle(&id->extHandle, env) == 0) {
       return ncclSuccess;
     }
   }
-  WARN("Invalid NCCL_COMM_ID, use format: ipv4:port or [ipv6]:port");
+  WARN("Invalid NCCL_COMM_ID or none specified, please use format: NCCL_COMM_ID=<ipv4>:<port> or NCCL_COMM_ID=[<ipv6>]:<port>");
   return ncclInvalidArgument;
 }
 

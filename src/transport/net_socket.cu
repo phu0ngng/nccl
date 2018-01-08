@@ -83,7 +83,7 @@ struct ncclSocketComm* ncclSocketNewComm() {
   return comm;
 }
 
-int ncclSocketCreateHandle(void* opaqueHandle, char* str) {
+int ncclSocketCreateHandle(void* opaqueHandle, const char* str) {
   struct ncclSocketHandle* handle = (struct ncclSocketHandle*) opaqueHandle;
   NCCLCHECK(GetSocketAddrFromString(&(handle->connectAddr), str));
   return 0;
@@ -176,6 +176,25 @@ int ncclSocketIrecv(void* recvComm, void* data, int size, int type, void** reque
   return 0;
 }
 
+int ncclSocketSend(void* sendComm, void* data, int size) {
+  struct ncclSocketComm* comm = (struct ncclSocketComm*)sendComm;
+  NCCLCHECK(socketSend(comm->fd, &size, sizeof(int)));
+  NCCLCHECK(socketSend(comm->fd, data, size));
+  return 0;
+}
+
+int ncclSocketRecv(void* recvComm, void* data, int size) {
+  struct ncclSocketComm* comm = (struct ncclSocketComm*)recvComm;
+  int recvSize;
+  NCCLCHECK(socketReceive(comm->fd, &recvSize, sizeof(int)));
+  if (recvSize > size) {
+    WARN("Message truncated : received %d bytes instead of %d\n", recvSize, size);
+    return ncclInternalError;
+  }
+  NCCLCHECK(socketReceive(comm->fd, data, min(recvSize, size)));
+  return 0;
+}
+
 int ncclSocketFlush(void* recvComm, void* data, int size) {
   // We don't support CUDA pointers, we don't need a flush.
   return 1;
@@ -214,9 +233,8 @@ ncclNet_t ncclNetSocket = {
   ncclSocketTest,
   ncclSocketClose,
   ncclSocketClose,
-  ncclSocketClose
+  ncclSocketClose,
+  ncclSocketSend,
+  ncclSocketRecv
 };
 
-ncclNetExt_t ncclNetExtSocket = {
-  ncclSocketCreateHandle
-};

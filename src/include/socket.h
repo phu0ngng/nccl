@@ -195,7 +195,7 @@ static int findInterfaceMatchSubnet(union socketAddress* localAddr, union socket
   return found;
 }
 
-static void createSocketAddr(char* ip_port_pair, union socketAddress* ua) {
+static void createSocketAddr(const char* ip_port_pair, union socketAddress* ua) {
   struct netIf ni;
   parseStringList(ip_port_pair, &ni, 1);    // parse <ip>:<port> string
   /* Construct the sockaddress structure */
@@ -210,7 +210,7 @@ static void createSocketAddr(char* ip_port_pair, union socketAddress* ua) {
   }
 }
 
-static ncclResult_t GetSocketAddrFromString(union socketAddress* addr, char* str) {
+static ncclResult_t GetSocketAddrFromString(union socketAddress* addr, const char* str) {
   if (str && strlen(str) > 1) {
     createSocketAddr(str, addr);
     return ncclSuccess;
