@@ -54,6 +54,7 @@ static void *bootstrapRoot(void* commId) {
   void **extRecvComm = NULL;
   int size, alloc_size = 0; 
   char* data = NULL;
+  bool idFromEnv = id->pid < 0;
 
   /* Receive addresses from all ranks */
   int nranks = 0, c = 0;
@@ -73,7 +74,7 @@ static void *bootstrapRoot(void* commId) {
       }
 
       extRecvComm[info.rank] = tmpRecvComm;
-      NCCLCHECKJUMP(ncclNetConnect(0, info.extHandle, extSendComm+info.rank), out);
+      NCCLCHECKJUMP(ncclNetConnect(idFromEnv ? -1 : 0, info.extHandle, extSendComm+info.rank), out);
       c++;
   } while (c < nranks);
 
@@ -137,18 +138,19 @@ ncclResult_t bootstrapGetUniqueId(ncclUniqueId* out) {
   char hostname[1024];
   getHostName(hostname, 1024);
   char* env = getenv("NCCL_COMM_ID");
-  int dev = env ? -1 : 0;
-  if (dev < 0) {
-    INFO("KW: bootstrap from env comm ID");
+  if (env) {
     if (ncclSocketCreateHandle(&id->extHandle, env) != 0) {
       WARN("Invalid NCCL_COMM_ID, please use format: NCCL_COMM_ID=<ipv4>:<port> or NCCL_COMM_ID=[<ipv6>]:<port>");
       return ncclInvalidArgument;
     }
+    id->pid = -1;
+  } else {
+    id->pid = getpid();
   }
-  NCCLCHECK(ncclNetListen(dev, &id->extHandle, &id->extListenComm));
+
+  NCCLCHECK(ncclNetListen(env ? -2 : 0, &id->extHandle, &id->extListenComm));
 
   id->hostHash = getHostHash(hostname);
-  id->pid = getpid();
 
   ncclUniqueId* threadIdCopy = (ncclUniqueId*)malloc(sizeof(ncclUniqueId));
   memcpy(threadIdCopy, id, sizeof(ncclUniqueId));
@@ -193,7 +195,11 @@ ncclResult_t bootstrapInit(ncclUniqueId* commId, int rank, int nranks, void** co
   info.rank = rank;
   info.nranks = nranks;
   void* tmpListenComm;
-  NCCLCHECK(ncclNetListen(0, &info.extHandle, &tmpListenComm));
+  if (idFromEnv) {
+    memcpy(&info.extHandle, &id->extHandle, sizeof(ncclNetHandle_t));
+  }
+
+  NCCLCHECK(ncclNetListen(-1, &info.extHandle, &tmpListenComm));
   NCCLCHECK(ncclNetConnect(idFromEnv ? -1 : 0, id->extHandle, &state->extSendComm));
   NCCLCHECK(ncclNetSend(state->extSendComm, &info, sizeof(info)));
   NCCLCHECK(ncclNetAccept(tmpListenComm, &state->extRecvComm));

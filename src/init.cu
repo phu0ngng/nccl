@@ -530,7 +530,6 @@ ncclResult_t ncclCommInitRank(ncclComm_t* newcomm, int nranks, ncclUniqueId comm
   if (myrank == 0) showVersion();
 
   TRACE("rank %d nranks %d", myrank, nranks);
-  INFO("KW: InitRank: rank %d nranks %d", myrank, nranks);
 
   // It seems we need to call this so that NVML doesn't crash later with error
   // 999.

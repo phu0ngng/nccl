@@ -94,10 +94,19 @@ int ncclSocketListen(int dev, void* opaqueHandle, void** listenComm) {
   struct ncclSocketHandle* handle = (struct ncclSocketHandle*) opaqueHandle;
   static_assert(sizeof(struct ncclSocketHandle) < NCCL_NET_HANDLE_MAXSIZE, "ncclSocketHandle size too large");
   // if dev >= 0, listen based on dev
-  // if dev < 0, handle must be preset, listen based on handle
   if (dev >= 0) {
     NCCLCHECK(GetSocketAddr(dev, &(handle->connectAddr)));
-  }
+  } else if (dev == -1) {
+    // handle stores a remote address
+    // need to find a local addr that is in the same network as the remote addr
+    union socketAddress localAddr;
+    if (findInterfaceMatchSubnet(&localAddr, handle->connectAddr) <= 0) {
+      WARN("No usable listening interface found");
+      return ncclInternalError;
+    }
+    // pass the local address back
+    memcpy(&handle->connectAddr, &localAddr, sizeof(handle->connectAddr));
+  } // Otherwise, handle stores a local address
   NCCLCHECK(createListenSocket(&comm->fd, &handle->connectAddr));
   *listenComm = comm;
   return 0;
@@ -111,7 +120,10 @@ int ncclSocketConnect(int dev, void* opaqueHandle, void** sendComm) {
   if (dev == -1) {
     // need to find a local addr that is in the same network as the remote addr
     union socketAddress localAddr;
-    findInterfaceMatchSubnet(&localAddr, handle->connectAddr);
+    if (findInterfaceMatchSubnet(&localAddr, handle->connectAddr) <= 0) {
+      WARN("No usable connect interface found");
+      return ncclInternalError;
+    }
     NCCLCHECK(connectAddress(&handle->connectAddr, &localAddr, &comm->fd));
   } else {
     NCCLCHECK(connectAddress(&handle->connectAddr, &ncclNetIfAddrs[dev], &comm->fd));
