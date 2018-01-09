@@ -15,11 +15,6 @@
 #include <stdlib.h>
 #include <poll.h>
 
-/* Socket Interfance type */
-typedef enum { findSubnetIntf   = -1,
-               dontCareIntf     = -2,
-               defaultIntf      = 0 } ncclSocketIntf_t;
-
 /* Init functions */
 
 int ncclSocketPtrSupport(int dev, int* supportedTypes) {
