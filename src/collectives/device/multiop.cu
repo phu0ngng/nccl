@@ -69,7 +69,7 @@ static __device__ void load_coll(void* dst, void* src, size_t size, int tid) {
   int* d = (int*)dst;
   int* s = (int*)src;
   __syncthreads();
-  for (int o = tid; o < (size/sizeof(int)); o += 64) d[o] = s[o];
+  for (int o = tid; o < (size/sizeof(int)); o += blockDim.x) d[o] = s[o];
   __syncthreads();
 }
 
