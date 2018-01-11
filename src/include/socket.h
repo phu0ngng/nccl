@@ -153,7 +153,10 @@ static bool matchSubnet(struct ifaddrs local_if, union socketAddress remote_addr
     for (int c = 0; c < len; c++) {  //Network byte order is big-endian
       char c1 = local_in6.s6_addr[c] & mask_in6.s6_addr[c];
       char c2 = remote_in6.s6_addr[c] & mask_in6.s6_addr[c];
-      same &= (c1 ^ c2);
+      if (c1 ^ c2) {
+        same = false;
+        break;
+      }
     }
     return same;
   } else {
@@ -195,19 +198,38 @@ static int findInterfaceMatchSubnet(union socketAddress* localAddr, union socket
   return found;
 }
 
-static void createSocketAddr(const char* ip_port_pair, union socketAddress* ua) {
-  struct netIf ni;
-  parseStringList(ip_port_pair, &ni, 1);    // parse <ip>:<port> string
+static int createSocketAddr(const char* ip_port_pair, union socketAddress* ua) {
+  bool ipv6 = ip_port_pair[0] == '[';
   /* Construct the sockaddress structure */
-  if (strlen(ni.prefix) <= 15) {
+  if (!ipv6) {
+    struct netIf ni;
+    // parse <ip>:<port> string, expect one pair
+    if (parseStringList(ip_port_pair, &ni, 1) != 1) {
+      return 1;
+    }
     ua->sin.sin_family = AF_INET;                        // IPv4
     inet_pton(AF_INET, ni.prefix, &(ua->sin.sin_addr));  // IP address
     ua->sin.sin_port = htons(ni.port);                   // port
   } else {
+    int i, len = strlen(ip_port_pair);
+    for (i = 1; i < len; i++) {
+      if (ip_port_pair[i] == ']') break;
+    }
+    if (i == len) {
+      return 1;
+    }
+    char ip_str[NI_MAXHOST], port_str[NI_MAXSERV];
+    memset(ip_str, '\0', sizeof(ip_str));
+    memset(port_str, '\0', sizeof(port_str));
+    strncpy(ip_str, ip_port_pair+1, i-1);
+    int m = len - (i+2) + 1;
+    strncpy(port_str, ip_port_pair+i+2, m);
+    int port = atoi(port_str);
     ua->sin6.sin6_family = AF_INET6;                       // IPv6
-    inet_pton(AF_INET6, ni.prefix, &(ua->sin6.sin6_addr)); // IP address
-    ua->sin6.sin6_port = htons(ni.port);                   // port
+    inet_pton(AF_INET6, ip_str, &(ua->sin6.sin6_addr));    // IP address
+    ua->sin6.sin6_port = htons(port);                      // port
   }
+  return 0;
 }
 
 static ncclResult_t GetSocketAddrFromString(union socketAddress* addr, const char* str) {

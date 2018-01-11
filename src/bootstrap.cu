@@ -201,8 +201,9 @@ ncclResult_t bootstrapInit(ncclUniqueId* commId, int rank, int nranks, void** co
     memcpy(&info.extHandle, &id->extHandle, sizeof(ncclNetHandle_t));
   }
   // listen will return the local address via info (specify interface type 'findSubnetIf')
-  NETCHECK(ncclNetSocket.listen(findSubnetIf, &info.extHandle, &tmpListenComm));
-  NETCHECK(ncclNetSocket.connect(idFromEnv ? findSubnetIf : defaultIf, id->extHandle, &state->extSendComm));
+  int dev = idFromEnv ? findSubnetIf : defaultIf;
+  NETCHECK(ncclNetSocket.listen(dev, &info.extHandle, &tmpListenComm));
+  NETCHECK(ncclNetSocket.connect(dev, id->extHandle, &state->extSendComm));
   NETCHECK(ncclNetSocket.send(state->extSendComm, &info, sizeof(info)));
   NETCHECK(ncclNetSocket.accept(tmpListenComm, &state->extRecvComm));
   NETCHECK(ncclNetSocket.closeListen(tmpListenComm));
