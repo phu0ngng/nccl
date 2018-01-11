@@ -198,14 +198,20 @@ static int findInterfaceMatchSubnet(union socketAddress* localAddr, union socket
   return found;
 }
 
-static int createSocketAddr(const char* ip_port_pair, union socketAddress* ua) {
+static ncclResult_t GetSocketAddrFromString(union socketAddress* ua, const char* ip_port_pair) {
+  if (!(ip_port_pair && strlen(ip_port_pair) > 1)) {
+    WARN("Net : string is null");
+    return ncclInvalidArgument;
+  }
+
   bool ipv6 = ip_port_pair[0] == '[';
   /* Construct the sockaddress structure */
   if (!ipv6) {
     struct netIf ni;
     // parse <ip>:<port> string, expect one pair
     if (parseStringList(ip_port_pair, &ni, 1) != 1) {
-      return 1;
+      WARN("Net : No valid IPv4:port pair found");
+      return ncclInvalidArgument;
     }
     ua->sin.sin_family = AF_INET;                        // IPv4
     inet_pton(AF_INET, ni.prefix, &(ua->sin.sin_addr));  // IP address
@@ -216,7 +222,8 @@ static int createSocketAddr(const char* ip_port_pair, union socketAddress* ua) {
       if (ip_port_pair[i] == ']') break;
     }
     if (i == len) {
-      return 1;
+      WARN("Net : No valid [IPv6]:port pair found");
+      return ncclInvalidArgument;
     }
     char ip_str[NI_MAXHOST], port_str[NI_MAXSERV];
     memset(ip_str, '\0', sizeof(ip_str));
@@ -229,17 +236,7 @@ static int createSocketAddr(const char* ip_port_pair, union socketAddress* ua) {
     inet_pton(AF_INET6, ip_str, &(ua->sin6.sin6_addr));    // IP address
     ua->sin6.sin6_port = htons(port);                      // port
   }
-  return 0;
-}
-
-static ncclResult_t GetSocketAddrFromString(union socketAddress* addr, const char* str) {
-  if (str && strlen(str) > 1) {
-    createSocketAddr(str, addr);
-    return ncclSuccess;
-  } else {
-    WARN("Net : string is null");
-    return ncclInvalidArgument;
-  }
+  return ncclSuccess;
 }
 
 static ncclResult_t createListenSocket(int *fd, union socketAddress *localAddr) {
