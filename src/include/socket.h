@@ -13,6 +13,7 @@
 #include <unistd.h>
 #include <netdb.h>
 #include <ifaddrs.h>
+#include <net/if.h>
 #include "utils.h"
 
 #define SLEEP_INT     1000  // sleep interval in usec
@@ -128,26 +129,28 @@ static int findInterfaces(char* ifNames, union socketAddress *ifAddrs, int ifNam
   return nIfs;
 }
 
-static bool matchSubnet(struct ifaddrs local_if, union socketAddress remote_addr) {
+static bool matchSubnet(struct ifaddrs local_if, union socketAddress remote) {
   /* Check family first */
   int family = local_if.ifa_addr->sa_family;
-  if (family != remote_addr.sa.sa_family) {
+  if (family != remote.sa.sa_family) {
     return false;
   }
 
   if (family == AF_INET) {
     struct sockaddr_in* local_addr = (struct sockaddr_in*)(local_if.ifa_addr);
     struct sockaddr_in* mask = (struct sockaddr_in*)(local_if.ifa_netmask);
+    struct sockaddr_in& remote_addr = remote.sin;
     struct in_addr local_subnet, remote_subnet;
     local_subnet.s_addr = local_addr->sin_addr.s_addr & mask->sin_addr.s_addr;
-    remote_subnet.s_addr = remote_addr.sin.sin_addr.s_addr & mask->sin_addr.s_addr;
+    remote_subnet.s_addr = remote_addr.sin_addr.s_addr & mask->sin_addr.s_addr;
     return (local_subnet.s_addr ^ remote_subnet.s_addr) ? false : true;
   } else if (family == AF_INET6) {
     struct sockaddr_in6* local_addr = (struct sockaddr_in6*)(local_if.ifa_addr);
     struct sockaddr_in6* mask = (struct sockaddr_in6*)(local_if.ifa_netmask);
+    struct sockaddr_in6& remote_addr = remote.sin6;
     struct in6_addr& local_in6 = local_addr->sin6_addr;
     struct in6_addr& mask_in6 = mask->sin6_addr;
-    struct in6_addr& remote_in6 = remote_addr.sin6.sin6_addr;
+    struct in6_addr& remote_in6 = remote_addr.sin6_addr;
     bool same = true;
     int len = 16;  //IPv6 address is 16 unsigned char
     for (int c = 0; c < len; c++) {  //Network byte order is big-endian
@@ -158,6 +161,10 @@ static bool matchSubnet(struct ifaddrs local_if, union socketAddress remote_addr
         break;
       }
     }
+    // At last, we need to compare scope id
+    // Two Link-type addresses can have the same subnet address even though they are not in the same scope
+    // For Global type, this field is 0, so a comparison wouldn't matter
+    same &= (local_addr->sin6_scope_id == remote_addr.sin6_scope_id);
     return same;
   } else {
     WARN("Net : Unsupported address family type");
@@ -213,28 +220,37 @@ static ncclResult_t GetSocketAddrFromString(union socketAddress* ua, const char*
       WARN("Net : No valid IPv4:port pair found");
       return ncclInvalidArgument;
     }
-    ua->sin.sin_family = AF_INET;                        // IPv4
-    inet_pton(AF_INET, ni.prefix, &(ua->sin.sin_addr));  // IP address
-    ua->sin.sin_port = htons(ni.port);                   // port
+    struct sockaddr_in& sin = ua->sin;
+    sin.sin_family = AF_INET;                        // IPv4
+    inet_pton(AF_INET, ni.prefix, &(sin.sin_addr));  // IP address
+    sin.sin_port = htons(ni.port);                   // port
   } else {
-    int i, len = strlen(ip_port_pair);
+    int i, j = -1, len = strlen(ip_port_pair);
     for (i = 1; i < len; i++) {
+      if (ip_port_pair[i] == '%') j = i;
       if (ip_port_pair[i] == ']') break;
     }
     if (i == len) {
       WARN("Net : No valid [IPv6]:port pair found");
       return ncclInvalidArgument;
     }
-    char ip_str[NI_MAXHOST], port_str[NI_MAXSERV];
+    bool global_scope = (j == -1 ? true : false);     // If no % found, global scope; otherwise, link scope
+    
+    char ip_str[NI_MAXHOST], port_str[NI_MAXSERV], if_name[IFNAMSIZ];
     memset(ip_str, '\0', sizeof(ip_str));
     memset(port_str, '\0', sizeof(port_str));
-    strncpy(ip_str, ip_port_pair+1, i-1);
-    int m = len - (i+2) + 1;
-    strncpy(port_str, ip_port_pair+i+2, m);
+    memset(if_name, '\0', sizeof(if_name));
+    strncpy(ip_str, ip_port_pair+1, global_scope ? i-1 : j-1);
+    strncpy(port_str, ip_port_pair+i+2, len-i-1);
     int port = atoi(port_str);
-    ua->sin6.sin6_family = AF_INET6;                       // IPv6
-    inet_pton(AF_INET6, ip_str, &(ua->sin6.sin6_addr));    // IP address
-    ua->sin6.sin6_port = htons(port);                      // port
+    if (!global_scope) strncpy(if_name, ip_port_pair+j+1, i-j-1); // If not global scope, we need the intf name
+    
+    struct sockaddr_in6& sin6 = ua->sin6;
+    sin6.sin6_family = AF_INET6;                       // IPv6
+    inet_pton(AF_INET6, ip_str, &(sin6.sin6_addr));    // IP address
+    sin6.sin6_port = htons(port);                      // port
+    sin6.sin6_flowinfo = 0;                            // needed by IPv6, but possibly obsolete
+    sin6.sin6_scope_id = global_scope ? 0 : if_nametoindex(if_name);  // 0 if global scope; intf index if link scope
   }
   return ncclSuccess;
 }
