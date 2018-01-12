@@ -15,8 +15,8 @@
 #include <ifaddrs.h>
 #include "utils.h"
 
-#define SLEEP_INT     100   // sleep interval in usec
-#define RETRY_TIMES   1e5   // retry times before reporting a timeout
+#define SLEEP_INT     1000  // sleep interval in usec
+#define RETRY_TIMES   2e4   // retry times before reporting a timeout (20 sec)
 
 /* Common socket address storage structure for IPv4/IPv6 */
 union socketAddress {

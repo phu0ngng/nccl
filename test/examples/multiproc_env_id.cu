@@ -86,11 +86,12 @@ int main(int argc, char* argv[])
 
   // Get NCCL unique ID from environment variable NCCL_COMM_ID, saving the broadcast
   if (myRank == 0) {
-    char* env = getenv("ROOT_DELAY"); // delay in usec
-    if (env && strlen(env) > 1) {
+    char* env = getenv("ROOT_DELAY"); // delay in sec on purpose
+    if (env && strlen(env) > 0) {
       int delay = 0;
       delay = atoi(env);
-      usleep(delay);
+      printf("[MPI Rank 0] Delaying root by %d seconds \n", delay);
+      usleep(delay*1e6);
     }
     ncclGetUniqueId(&id);
   } else {
