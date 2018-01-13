@@ -11,58 +11,61 @@
 typedef void(*ncclKern_t)(struct CollectiveArgs* args);
 
 // Must be consistent with ncclDataType_t
-#define NCCL_FUNCS3A(nthreads, coll, op) \
-  NCCL_COLL_NAME(coll, op,  i8, nthreads), \
-  NCCL_COLL_NAME(coll, op,  u8, nthreads), \
-  NCCL_COLL_NAME(coll, op, i32, nthreads), \
-  NCCL_COLL_NAME(coll, op, u32, nthreads), \
-  NCCL_COLL_NAME(coll, op, i64, nthreads), \
-  NCCL_COLL_NAME(coll, op, u64, nthreads), \
-  NCCL_COLL_NAME(coll, op, f16, nthreads), \
-  NCCL_COLL_NAME(coll, op, f32, nthreads), \
-  NCCL_COLL_NAME(coll, op, f64, nthreads)
-#define NCCL_FUNCS3B(nthreads, coll, op) \
-  NCCL_COLL_NAME(coll, op,  i8, nthreads), \
-  NCCL_COLL_NAME(coll, op,  i8, nthreads), \
-  NCCL_COLL_NAME(coll, op,  i8, nthreads), \
-  NCCL_COLL_NAME(coll, op,  i8, nthreads), \
-  NCCL_COLL_NAME(coll, op,  i8, nthreads), \
-  NCCL_COLL_NAME(coll, op,  i8, nthreads), \
-  NCCL_COLL_NAME(coll, op,  i8, nthreads), \
-  NCCL_COLL_NAME(coll, op,  i8, nthreads), \
-  NCCL_COLL_NAME(coll, op,  i8, nthreads)
+#define NCCL_FUNCS3A(coll, op) \
+  NCCL_COLL_NAME(coll, op,  i8), \
+  NCCL_COLL_NAME(coll, op,  u8), \
+  NCCL_COLL_NAME(coll, op, i32), \
+  NCCL_COLL_NAME(coll, op, u32), \
+  NCCL_COLL_NAME(coll, op, i64), \
+  NCCL_COLL_NAME(coll, op, u64), \
+  NCCL_COLL_NAME(coll, op, f16), \
+  NCCL_COLL_NAME(coll, op, f32), \
+  NCCL_COLL_NAME(coll, op, f64)
+#define NCCL_FUNCS3B(coll, op) \
+  NCCL_COLL_NAME(coll, op,  i8), \
+  NCCL_COLL_NAME(coll, op,  i8), \
+  NCCL_COLL_NAME(coll, op,  i8), \
+  NCCL_COLL_NAME(coll, op,  i8), \
+  NCCL_COLL_NAME(coll, op,  i8), \
+  NCCL_COLL_NAME(coll, op,  i8), \
+  NCCL_COLL_NAME(coll, op,  i8), \
+  NCCL_COLL_NAME(coll, op,  i8), \
+  NCCL_COLL_NAME(coll, op,  i8)
 
 // Must be consistent with ncclRedOp_t
-#define NCCL_FUNCS2A(nthreads, coll) \
-  NCCL_FUNCS3A(nthreads, coll, sum ), \
-  NCCL_FUNCS3A(nthreads, coll, prod), \
-  NCCL_FUNCS3A(nthreads, coll, max ), \
-  NCCL_FUNCS3A(nthreads, coll, min )
-#define NCCL_FUNCS2B(nthreads, coll) \
-  NCCL_FUNCS3B(nthreads, coll, copy), \
-  NCCL_FUNCS3B(nthreads, coll, copy), \
-  NCCL_FUNCS3B(nthreads, coll, copy), \
-  NCCL_FUNCS3B(nthreads, coll, copy)
+#define NCCL_FUNCS2A(coll) \
+  NCCL_FUNCS3A(coll, sum ), \
+  NCCL_FUNCS3A(coll, prod), \
+  NCCL_FUNCS3A(coll, max ), \
+  NCCL_FUNCS3A(coll, min )
+#define NCCL_FUNCS2B(coll) \
+  NCCL_FUNCS3B(coll, copy), \
+  NCCL_FUNCS3B(coll, copy), \
+  NCCL_FUNCS3B(coll, copy), \
+  NCCL_FUNCS3B(coll, copy)
 
 // Must be consistent with ncclColl_t
-#define NCCL_FUNCS(nthreads) { \
-  NCCL_FUNCS2B(nthreads, ncclBcast), \
-  NCCL_FUNCS2A(nthreads, ncclReduce), \
-  NCCL_FUNCS2B(nthreads, ncclAllGather), \
-  NCCL_FUNCS2A(nthreads, ncclReduceScatter), \
-  NCCL_FUNCS2A(nthreads, ncclAllReduce) }
+#define NCCL_FUNCS() { \
+  NCCL_FUNCS2B(ncclBcast), \
+  NCCL_FUNCS2A(ncclReduce), \
+  NCCL_FUNCS2B(ncclAllGather), \
+  NCCL_FUNCS2A(ncclReduceScatter), \
+  NCCL_FUNCS2A(ncclAllReduce) }
 
 // Must be consistent with the ncclFuncSet enum
 static __device__ ncclKern_t const ncclFuncs[][ncclCollCount*ncclNumOps*ncclNumTypes] = {
   {
-    NCCL_FUNCS2B(LL_NTHREADS, ncclBcastLL),
-    NCCL_FUNCS2A(LL_NTHREADS, ncclReduceLL),
-    NCCL_FUNCS2B(LL_NTHREADS, ncclAllGatherLL),
-    NCCL_FUNCS2A(LL_NTHREADS, ncclReduceScatterLL),
-    NCCL_FUNCS2A(LL_NTHREADS, ncclAllReduceLL) },
-  NCCL_FUNCS(128),
-  NCCL_FUNCS(256),
-  NCCL_FUNCS(512)
+    NCCL_FUNCS2B(ncclBcast),
+    NCCL_FUNCS2A(ncclReduce),
+    NCCL_FUNCS2B(ncclAllGather),
+    NCCL_FUNCS2A(ncclReduceScatter),
+    NCCL_FUNCS2A(ncclAllReduce) },
+  {
+    NCCL_FUNCS2B(ncclBcastLL),
+    NCCL_FUNCS2A(ncclReduceLL),
+    NCCL_FUNCS2B(ncclAllGatherLL),
+    NCCL_FUNCS2A(ncclReduceScatterLL),
+    NCCL_FUNCS2A(ncclAllReduceLL) },
 };
 
 static __device__ void load_coll(void* dst, void* src, size_t size, int tid) {
@@ -94,14 +97,7 @@ __global__ void ncclMultiOpKernel(struct ncclColl firstColl) {
       // Ack the coll has been loaded and can be reused.
       if (tid == 0) ring->devCollectives[index].active = 0;
 
-      int funcSet = FUNC_SET(coll->ll, coll->nThreads);
-
-      if (funcSet == ncclFuncSetNotFound) {
-        if (tid == 0) printf("NCCL Kernel internal error : invalid thread count %d", coll->nThreads);
-        return;
-      }
-
-      func = ncclFuncs[funcSet][coll->funcIndex];
+      func = ncclFuncs[coll->ll][coll->funcIndex];
       func(&coll->args);
     }
     index = (index + 1) % NCCL_MAX_OPS;

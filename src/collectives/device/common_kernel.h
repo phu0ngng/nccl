@@ -13,34 +13,8 @@
 
 #include <cuda_runtime.h>
 
-// BAR macro and helpers
-#define WARP_SIZE 32
-#define BAR_EXEC(type, barid, nthreads) \
-    asm("bar." #type " " #barid ", " #nthreads ";\n\t")
-#define BAR_EXPAND(type, barid, nthreads) \
-    BAR_EXEC(type, barid, (nthreads))
-
-// Named barrier macro.
-// Expands to asm("bar.type barid, nthreads") where
-// nthreads has been rounded up to WARP_SIZE.
-#define BAR(type, barid, nthreads) \
-    BAR_EXPAND(type, barid, ROUNDUP(nthreads, WARP_SIZE))
-
-static __device__ unsigned int spinct;
-
-static __device__ int min(int a, ssize_t b) {
-  if (a < b) return a;
-  return (int)b;
-}
-
-// Spin wait until func evaluates to true
-template<typename FUNC>
-__device__ inline void Wait(const FUNC& func) {
-  while (!func()) {
-    // waste time
-    atomicInc(&spinct, 10);
-  }
-}
+// Define min for ssize_t
+static __device__ int min(int a, ssize_t b) { return (a < b) ? a : b; }
 
 typedef uint64_t PackType;
 
@@ -218,49 +192,6 @@ struct MULTI<FUNC, int64_t> {
   }
 };
 
-template<class FUNC, typename T, bool TWO_INPUTS, bool TWO_OUTPUTS>
-__device__ inline void ReduceCopy(
-    const volatile T * __restrict__ const src0,
-    const volatile T * __restrict__ const src1,
-    volatile T * __restrict__ const dest0,
-    volatile T * __restrict__ const dest1, const int idx) {
-  T val = vFetch(src0+idx);
-  if (TWO_INPUTS) {
-    val = FUNC()(val, vFetch(src1+idx));
-  }
-  vStore(dest0+idx, val);
-  if (TWO_OUTPUTS) {
-    vStore(dest1+idx, val);
-  }
-}
-
-template<class FUNC, typename T, bool TWO_INPUTS, bool TWO_OUTPUTS, int UNROLL, int THREADS>
-__device__ inline void ReduceCopy64b(
-    const volatile T * __restrict__ const src0,
-    const volatile T * __restrict__ const src1,
-    volatile T * __restrict__ const dest0,
-    volatile T * __restrict__ const dest1, const int offset) {
-  PackType t0[UNROLL];
-  PackType t1[UNROLL];
-  #pragma unroll
-  for (int u = 0; u < UNROLL; ++u) {
-    int idx = offset + u*THREADS;
-    t0[u] = (reinterpret_cast<const volatile PackType *>(src0))[idx];
-    if (TWO_INPUTS) {
-      t1[u] = (reinterpret_cast<const volatile PackType *>(src1))[idx];
-    }
-  }
-  #pragma unroll
-  for (int u = 0; u < UNROLL; ++u) {
-    int idx = offset + u*THREADS;
-    PackType val = TWO_INPUTS ? MULTI<FUNC, T>()(t0[u], t1[u]) : t0[u];
-    (reinterpret_cast<volatile PackType *>(dest0))[idx] = val;
-    if (TWO_OUTPUTS) {
-      (reinterpret_cast<volatile PackType *>(dest1))[idx] = val;
-    }
-  }
-}
-
 #define ALIGNUP(x, a)   ((((x)-1) & ~((a)-1)) + (a))
 
 template<typename T>
@@ -305,84 +236,146 @@ void vStore<half>(volatile half* ptr, const half val) {
 }
 #endif
 
-// Assumptions:
-// - there is exactly 1 block
-// - THREADS is the number of producer threads
-// - this function is called by all producer threads
-template<int UNROLL, int THREADS, class FUNC, typename T, bool HAS_DEST1,
-    bool HAS_SRC1>
-__device__ inline void ReduceOrCopy(const int tid,
+template<class FUNC, typename T, bool TWO_INPUTS, bool TWO_OUTPUTS>
+__device__ inline void ReduceCopy(
+    const volatile T * __restrict__ const src0,
+    const volatile T * __restrict__ const src1,
+    volatile T * __restrict__ const dest0,
+    volatile T * __restrict__ const dest1, const int idx) {
+  T val = vFetch(src0+idx);
+  if (TWO_INPUTS) {
+    val = FUNC()(val, vFetch(src1+idx));
+  }
+  vStore(dest0+idx, val);
+  if (TWO_OUTPUTS) {
+    vStore(dest1+idx, val);
+  }
+}
+
+typedef ulong2 Pack128;
+
+template<class FUNC, typename T>
+struct MULTI128 {
+  __device__ void operator()(Pack128& x, Pack128& y) {
+    x.x = MULTI<FUNC, T>()(x.x, y.x);
+    x.y = MULTI<FUNC, T>()(x.y, y.y);
+  }
+};
+
+// We may want to specialize the load based on the type. But so far it seems good enough to load everything as ulong2.
+template<typename T>
+__device__ void Fetch128(Pack128& v, Pack128* p) {
+  asm volatile("ld.volatile.global.v2.u64 {%0,%1}, [%2];" : "=l"(v.x), "=l"(v.y) : "l"(p) : "memory");
+}
+template<typename T>
+__device__ void Store128(Pack128* p, Pack128& v) {
+  asm volatile("st.volatile.global.v2.u64 [%0], {%1,%2};" :: "l"(p), "l"(v.x), "l"(v.y) : "memory");
+}
+
+#define WARP_SIZE 32
+template<class FUNC, typename T, bool TWO_INPUTS, bool TWO_OUTPUTS, int UNROLL>
+__device__ inline void ReduceCopy128b( const int w, const int nw, const int t,
+    Pack128 * src0, Pack128 * src1, Pack128 * dest0, Pack128 * dest1,
+    const int N) {
+  Pack128 t0[UNROLL];
+  Pack128 t1[UNROLL];
+  const Pack128* src0_end = src0 + N;
+  const int inc = nw * UNROLL * WARP_SIZE;
+  const int offset = w * UNROLL * WARP_SIZE + t;
+  src0 += offset; src1 += offset;
+  dest0 += offset; if (TWO_OUTPUTS) dest1 += offset;
+
+  while (src0 < src0_end) {
+    #pragma unroll
+    for (int u = 0; u < UNROLL; ++u) {
+      Fetch128<T>(t0[u], src0+u*WARP_SIZE);
+      if (TWO_INPUTS) Fetch128<T>(t1[u], src1+u*WARP_SIZE);
+    }
+    #pragma unroll
+    for (int u = 0; u < UNROLL; ++u) {
+      if (TWO_INPUTS) MULTI128<FUNC, T>()(t0[u], t1[u]);
+      Store128<T>(dest0+u*WARP_SIZE, t0[u]);
+      if (TWO_OUTPUTS) Store128<T>(dest1+u*WARP_SIZE, t0[u]);
+    }
+    src0 += inc; src1 += inc; dest0 += inc; if (TWO_OUTPUTS) dest1 += inc;
+  }
+}
+
+template<int UNROLL, class FUNC, typename T, bool HAS_DEST1, bool HAS_SRC1>
+__device__ inline void ReduceOrCopy(const int tid, const int nthreads,
     volatile T * __restrict__ dest0, volatile T * __restrict__ dest1,
     const volatile T * __restrict__ src0, const volatile T * __restrict__ src1,
     int N) {
-  if (N<=0) {
-    return;
-  }
+  int Nrem = N;
+  if (Nrem <= 0) return;
+  //if (tid == 0) printf("%p %p -> %p %p %d x %ld\n", src0, src1, dest0, dest1, N, sizeof(T));
 
-  int Npreamble = (N<alignof(PackType)) ? N : AlignUp(dest0, alignof(PackType)) - dest0;
+  int Npreamble = (Nrem<alignof(Pack128)) ? Nrem : AlignUp(dest0, alignof(Pack128)) - dest0;
 
-  // stage 0: check if we'll be able to use the fast, 64-bit aligned path.
+  // stage 0: check if we'll be able to use the fast, 128-bit aligned path.
   // If not, we'll just use the slow preamble path for the whole operation
-  bool alignable = (((AlignUp(src0,  alignof(PackType)) == src0  + Npreamble)) &&
-      (!HAS_DEST1 || (AlignUp(dest1, alignof(PackType)) == dest1 + Npreamble)) &&
-      (!HAS_SRC1  || (AlignUp(src1,  alignof(PackType)) == src1  + Npreamble)));
+  bool alignable = (((AlignUp(src0,  alignof(Pack128)) == src0  + Npreamble)) &&
+      (!HAS_DEST1 || (AlignUp(dest1, alignof(Pack128)) == dest1 + Npreamble)) &&
+      (!HAS_SRC1  || (AlignUp(src1,  alignof(Pack128)) == src1  + Npreamble)));
 
-  if (!alignable) {
-    Npreamble = N;
+  if (!alignable) {// || Nrem < UNROLL*nthreads) {
+    Npreamble = Nrem;
   }
 
   // stage 1: preamble: handle any elements up to the point of everything coming
   // into alignment
-  for (int idx = tid; idx < Npreamble; idx += THREADS) {
+  for (int idx = tid; idx < Npreamble; idx += nthreads) {
     // ought to be no way this is ever more than one iteration, except when
     // alignable is false
     ReduceCopy<FUNC, T, HAS_SRC1, HAS_DEST1>(src0, src1, dest0, dest1, idx);
   }
 
-  // stage 2: fast path: use 64b loads/stores to do the bulk of the work,
-  // assuming the pointers we have are all 64-bit alignable.
-  if (alignable) {
-    const int PackFactor = sizeof(PackType) / sizeof(T);
-    int Nrem = N - Npreamble;
-    dest0 += Npreamble; if (HAS_DEST1) { dest1 += Npreamble; }
-    src0  += Npreamble; if (HAS_SRC1)  { src1  += Npreamble; }
+  Nrem -= Npreamble;
+  if (Nrem == 0) return;
 
-    // stage 2a: main loop
-    int Nalign2a = (Nrem / (PackFactor * UNROLL * THREADS))
-        * (UNROLL * THREADS); // round down
+  dest0 += Npreamble; if (HAS_DEST1) { dest1 += Npreamble; }
+  src0  += Npreamble; if (HAS_SRC1)  { src1  += Npreamble; }
 
-    #pragma unroll 1 // don't unroll this loop
-    for (int idx = tid; idx < Nalign2a; idx += UNROLL * THREADS) {
-      ReduceCopy64b<FUNC, T, HAS_SRC1, HAS_DEST1, UNROLL, THREADS>(src0, src1, dest0, dest1, idx);
-    }
+  // stage 2: fast path: use 128b loads/stores to do the bulk of the work,
+  // assuming the pointers we have are all 128-bit alignable.
+  int w = tid / WARP_SIZE;       // Warp number
+  int nw = nthreads / WARP_SIZE; // Number of warps
+  int t = tid % WARP_SIZE;       // Thread (inside the warp)
 
-    int Ndone2a = Nalign2a * PackFactor;
-    Nrem -= Ndone2a;
+  const int PackFactor = sizeof(Pack128) / sizeof(T);
 
-    // stage 2b: slightly less optimized for section when we don't have full
-    // UNROLLs
+  // stage 2a: main loop
+  int Nalign2a = (Nrem / (PackFactor * UNROLL * nthreads))
+      * (UNROLL * nthreads); // round down
 
-    int Nalign2b = Nrem / PackFactor;
+  ReduceCopy128b<FUNC, T, HAS_SRC1, HAS_DEST1, UNROLL>(w, nw, t, (Pack128*)src0, (Pack128*)src1, (Pack128*)dest0, (Pack128*)dest1, Nalign2a);
 
-    #pragma unroll 4
-    for (int idx = Nalign2a + tid; idx < Nalign2a + Nalign2b; idx += THREADS) {
-      ReduceCopy64b<FUNC, T, HAS_SRC1, HAS_DEST1, 1, 0>(src0, src1, dest0, dest1, idx);
-    }
+  int Ndone2a = Nalign2a * PackFactor;
+  Nrem -= Ndone2a;
+  if (Nrem == 0) return;
+  dest0 += Ndone2a; if (HAS_DEST1) { dest1 += Ndone2a; }
+  src0  += Ndone2a; if (HAS_SRC1)  { src1  += Ndone2a; }
 
-    int Ndone2b = Nalign2b * PackFactor;
-    Nrem -= Ndone2b;
-    int Ndone2 = Ndone2a + Ndone2b;
-    dest0 += Ndone2; if (HAS_DEST1) { dest1 += Ndone2; }
-    src0  += Ndone2; if (HAS_SRC1)  { src1  += Ndone2; }
+  // stage 2b: slightly less optimized for section when we don't have full
+  // UNROLLs
 
-    // stage 2c: tail
+  int Nalign2b = Nrem / PackFactor;
 
-    for (int idx = tid; idx < Nrem; idx += THREADS) {
-      // never ought to make it more than one time through this loop.  only a
-      // few threads should even participate
-      ReduceCopy<FUNC, T, HAS_SRC1, HAS_DEST1>(src0, src1, dest0, dest1, idx);
-    }
-  } // done fast path
+  ReduceCopy128b<FUNC, T, HAS_SRC1, HAS_DEST1, 1>(w, nw, t, (Pack128*)src0, (Pack128*)src1, (Pack128*)dest0, (Pack128*)dest1, Nalign2b);
+
+  int Ndone2b = Nalign2b * PackFactor;
+  Nrem -= Ndone2b;
+  if (Nrem == 0) return;
+  dest0 += Ndone2b; if (HAS_DEST1) { dest1 += Ndone2b; }
+  src0  += Ndone2b; if (HAS_SRC1)  { src1  += Ndone2b; }
+
+  // stage 2c: tail
+
+  for (int idx = tid; idx < Nrem; idx += nthreads) {
+    // never ought to make it more than one time through this loop.  only a
+    // few threads should even participate
+    ReduceCopy<FUNC, T, HAS_SRC1, HAS_DEST1>(src0, src1, dest0, dest1, idx);
+  }
 }
 
 #endif // COMMON_KERNEL_H_

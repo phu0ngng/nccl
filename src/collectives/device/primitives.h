@@ -8,7 +8,6 @@
 #define NCCL_PRIMITIVES_H_
 
 #include <type_traits>
-#include "copy_kernel.h" // for FuncPassA
 #include "reduce_kernel.h" // for reduction funcs
 
 
@@ -127,14 +126,15 @@ nullptr_t ptradd(nullptr_t ptr, int i) {
 
 
 // Implementation of primitive types
-template <int THREADS, int UNROLL, int SUBSTEPS, typename T, typename REDOP=FuncSum<T> >
+template <int UNROLL, int SUBSTEPS, typename T, typename REDOP=FuncSum<T> >
 class Primitives {
   private:
   template <typename SRC2_T, // either T* or nullptr_t
             typename DST2_T, // either T* or nullptr_t
             typename... SYNC_Ts> // either WaitFunc or PostFunc
   static __device__ __forceinline__ void
-  GenericOp(const T*     src1,
+  GenericOp(const int tid, const int nthreads,
+            const T*     src1,
             const SRC2_T src2,
                   T*     dst1,
                   DST2_T dst2,
@@ -147,7 +147,7 @@ class Primitives {
     static_assert(noDst2 || std::is_same<DST2_T, T*>::value,
         "dst2 must be of type T* or nullptr_t");
 
-    using OpType = typename std::conditional<noSrc2, FuncPassA<T>, REDOP>::type;
+    using OpType = typename std::conditional<noSrc2, FuncSum<T>, REDOP>::type;
 
     int sliceSize = len / SUBSTEPS;
     int sliceOffset = 0;
@@ -155,24 +155,23 @@ class Primitives {
     #pragma unroll 1
     for (int sub=0; sub<SUBSTEPS; ++sub) {
       int realSize = max(0, min(sliceSize, maxoffset-sliceOffset));
-      if (threadIdx.x < THREADS) {
+      if (tid < nthreads) {
         if (AnyAre<WaitFlag>(flags...)) {
-          if (threadIdx.x == 0) {
+          if (tid == 0) {
             WaitOnFlags(SUBSTEPS*step + sub + 1, flags...);
           }
-          asm volatile ("bar.sync 1, %0;" :: "r"(THREADS));
+          asm volatile ("bar.sync 1, %0;" :: "r"(nthreads));
         }
         ReduceOrCopy
             <
              UNROLL,
-             THREADS,
              OpType,
              T,
              !std::is_same<DST2_T, nullptr_t>::value, // HAS_DEST1
              !std::is_same<SRC2_T, nullptr_t>::value  // HAS_SRC1
             >
             (
-             threadIdx.x,
+             tid, nthreads,
              ptradd(dst1, sliceOffset),
              ptradd(dst2, sliceOffset),
              ptradd(src1, sliceOffset),
@@ -197,30 +196,30 @@ class Primitives {
   public:
   template <typename... SYNC_Ts>
   static __device__ __forceinline__ void
-  Copy(const T* src, T* dst,
+  Copy(const int tid, const int nthreads, const T* src, T* dst,
       int len, int maxOffset, uint64_t step, SYNC_Ts... flags) {
-    GenericOp(src, nullptr, dst, nullptr, len, maxOffset, step, flags...);
+    GenericOp(tid, nthreads, src, nullptr, dst, nullptr, len, maxOffset, step, flags...);
   }
 
   template <typename... SYNC_Ts>
   static __device__ __forceinline__ void
-  DoubleCopy(const T* src, T* dst1, T* dst2,
+  DoubleCopy(const int tid, const int nthreads, const T* src, T* dst1, T* dst2,
       int len, int maxOffset, uint64_t step, SYNC_Ts... flags) {
-    GenericOp(src, nullptr, dst1, dst2, len, maxOffset, step, flags...);
+    GenericOp(tid, nthreads, src, nullptr, dst1, dst2, len, maxOffset, step, flags...);
   }
 
   template <typename... SYNC_Ts>
   static __device__ __forceinline__ void
-  Reduce(const T* src1, const T* src2, T* dst,
+  Reduce(const int tid, const int nthreads, const T* src1, const T* src2, T* dst,
       int len, int maxOffset, uint64_t step, SYNC_Ts... flags) {
-    GenericOp(src1, src2, dst, nullptr, len, maxOffset, step, flags...);
+    GenericOp(tid, nthreads, src1, src2, dst, nullptr, len, maxOffset, step, flags...);
   }
 
   template <typename... SYNC_Ts>
   static __device__ __forceinline__ void
-  ReduceCopy(const T* src1, const T* src2, T* dst1, T* dst2,
+  ReduceCopy(const int tid, const int nthreads, const T* src1, const T* src2, T* dst1, T* dst2,
       int len, int maxOffset, uint64_t step, SYNC_Ts... flags) {
-    GenericOp(src1, src2, dst1, dst2, len, maxOffset, step, flags...);
+    GenericOp(tid, nthreads, src1, src2, dst1, dst2, len, maxOffset, step, flags...);
   }
 };
 

@@ -123,23 +123,23 @@ class LLPrimitives {
       sendHead = sendHeadPtr[0]; \
     } \
   } \
-  asm volatile ("bar.sync 1, %0;" :: "r"(THREADS));
+  __syncthreads();
 
 #define POST_SIZE \
   if (tid == 0 && sizesFifo) sizesFifo[step % NUM_LL_CHUNKS] = (maxOffset <= 0) ? -1 : (maxOffset*2*(int)sizeof(T));
 
 #define ACK_PREV \
-  asm volatile ("bar.sync 1, %0;" :: "r"(THREADS)); \
+  __syncthreads(); \
   if (tid == 0) recvHeadPtr[0] = step;
 
 #define FIFO_CLEANING_AND_SAVE_STEP(flag) do { \
   if (step > ring->send.conn.llLastCleaning + LL_CLEAN_FREQ) { \
     /* Reset all flags */ \
-    static_assert((LL_BUFF_SIZE % THREADS) == 0, "LL_BUFF_SIZE must be a multiple of THREADS"); \
-    static_assert(LL_BUFF_SIZE/(sizeof(union ncclLLFifoLine)*THREADS) > 0, "LL_BUFF_SIZE is less than 16 bytes*THREADS"); \
+    static_assert((LL_BUFF_SIZE % LL_NTHREADS) == 0, "LL_BUFF_SIZE must be a multiple of THREADS"); \
+    static_assert(LL_BUFF_SIZE/(sizeof(union ncclLLFifoLine)*LL_NTHREADS) > 0, "LL_BUFF_SIZE is less than 16 bytes*THREADS"); \
     const union ncclLLFifoLine resetLine = { 0, flag, 0, flag }; \
-    for (int i=0; i<LL_BUFF_SIZE/(sizeof(union ncclLLFifoLine)*THREADS); i++) { \
-      prevInput[tid+i*THREADS].i4 = resetLine.i4; \
+    for (int i=0; i<LL_BUFF_SIZE/(sizeof(union ncclLLFifoLine)*LL_NTHREADS); i++) { \
+      prevInput[tid+i*LL_NTHREADS].i4 = resetLine.i4; \
     } \
     __threadfence_system(); \
     /* Restart from the same slot, only make sure sender waits for data to be reset */ \

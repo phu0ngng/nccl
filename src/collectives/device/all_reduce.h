@@ -18,9 +18,10 @@
 #define ALIGN_SIZE(size, align) \
   size = ((size + (align) - 1) / (align)) * (align);
 
-template<int THREADS, int UNROLL, class FUNC, typename T>
+template<int UNROLL, class FUNC, typename T>
 __device__ void ncclAllReduceKernel(struct CollectiveArgs* args) {
   const int tid = threadIdx.x;
+  const int nthreads = blockDim.x - 1;
   const int bid = args->bid;
   __shared__ T* sharedNextOutput;
   struct ncclComm* comm = args->comm;
@@ -33,7 +34,7 @@ __device__ void ncclAllReduceKernel(struct CollectiveArgs* args) {
   PostFlag postDoneToPrev(ring->recv.conn.head, ALLREDUCE_SUBSTEPS, NULL, 0);
   PostFlag postReadyToNext(ring->send.conn.tail, 0, ring->send.conn.fifo, ALLREDUCE_BUFCHUNKS*ALLREDUCE_SUBSTEPS);
 
-  typedef Primitives<THREADS, UNROLL, ALLREDUCE_SUBSTEPS, T, FUNC> Prims;
+  typedef Primitives<UNROLL, ALLREDUCE_SUBSTEPS, T, FUNC> Prims;
 
   const ssize_t size = args->N;
   //const int rank = comm->rank;
@@ -70,7 +71,7 @@ __device__ void ncclAllReduceKernel(struct CollectiveArgs* args) {
 
   for (ssize_t gridOffset = 0; gridOffset < size; gridOffset += args->nRings*nranks*sliceSize) {
     int chunkSize = min(sliceSize, DIVUP(size-gridOffset,nranks*args->nRings));
-    ALIGN_SIZE(chunkSize, THREADS*sizeof(uint64_t)/sizeof(T));
+    ALIGN_SIZE(chunkSize, nthreads*sizeof(uint64_t)/sizeof(T));
     ssize_t chunkOffset = gridOffset + bid*nranks*chunkSize;
 
     /////////////// begin AllReduce steps ///////////////
@@ -83,7 +84,7 @@ __device__ void ncclAllReduceKernel(struct CollectiveArgs* args) {
     offset = chunkOffset + slice * chunkSize;
     maxOffset = min(chunkSize, size-offset);
 
-    Prims::Copy(
+    Prims::Copy(tid, nthreads,
         thisInput  + offset,
         nextOutput + noffset,
         sliceSize, maxOffset,
@@ -99,7 +100,7 @@ __device__ void ncclAllReduceKernel(struct CollectiveArgs* args) {
       offset = chunkOffset + slice * chunkSize;
       maxOffset = min(chunkSize, size-offset);
 
-      Prims::Reduce(
+      Prims::Reduce(tid, nthreads,
           prevInput  + poffset,
           thisInput  + offset,
           nextOutput + noffset,
@@ -117,7 +118,7 @@ __device__ void ncclAllReduceKernel(struct CollectiveArgs* args) {
     offset = chunkOffset + slice * chunkSize;
     maxOffset = min(chunkSize, size-offset);
 
-    Prims::ReduceCopy(
+    Prims::ReduceCopy(tid, nthreads,
         prevInput  + poffset,
         thisInput  + offset,
         nextdirect ? (sharedNextOutput + offset) : (nextOutput + noffset),
@@ -136,7 +137,7 @@ __device__ void ncclAllReduceKernel(struct CollectiveArgs* args) {
         offset = chunkOffset + slice * chunkSize;
         maxOffset = min(chunkSize, size-offset);
 
-        Prims::Copy(
+        Prims::Copy(tid, nthreads,
             thisOutput + offset,
 	    nextdirect ? (sharedNextOutput + offset) : (nextOutput + noffset),
             sliceSize, maxOffset,
@@ -146,7 +147,7 @@ __device__ void ncclAllReduceKernel(struct CollectiveArgs* args) {
 
         NEXT_STEP;
       }
-      Prims::Copy(
+      Prims::Copy(tid, nthreads,
           NULL,
           NULL,
           0, 0,
@@ -159,7 +160,7 @@ __device__ void ncclAllReduceKernel(struct CollectiveArgs* args) {
         offset = chunkOffset + slice * chunkSize;
         maxOffset = min(chunkSize, size-offset);
 
-        Prims::DoubleCopy(
+        Prims::DoubleCopy(tid, nthreads,
             prevInput + poffset,
             thisOutput + offset,
 	    nextdirect ? (sharedNextOutput + offset) : (nextOutput + noffset),
@@ -177,7 +178,7 @@ __device__ void ncclAllReduceKernel(struct CollectiveArgs* args) {
       maxOffset = min(chunkSize, size-offset);
 
       // Here we need to copy from buffer to this output.
-      Prims::Copy(
+      Prims::Copy(tid, nthreads,
           prevInput + poffset,
           thisOutput + offset,
           sliceSize, maxOffset,
@@ -207,7 +208,7 @@ __device__ void ncclAllReduceKernel(struct CollectiveArgs* args) {
   nflag++; \
   step++;
 
-template<int THREADS, int UNUSED, class FUNC, typename T>
+template<int UNUSED, class FUNC, typename T>
 __device__ void ncclAllReduceLLKernel(struct CollectiveArgs* args) {
   const int tid = threadIdx.x;
   struct ncclComm* comm = args->comm;
@@ -217,7 +218,7 @@ __device__ void ncclAllReduceLLKernel(struct CollectiveArgs* args) {
   volatile int * sizesFifo = ring->send.conn.llFifo;
   uint64_t sendHead = sendHeadPtr[0];
 
-  typedef LLPrimitives<THREADS, T, FUNC> LL;
+  typedef LLPrimitives<LL_NTHREADS, T, FUNC> LL;
 
   const ssize_t size = args->N;
   //const int rank = comm->rank;
@@ -238,7 +239,7 @@ __device__ void ncclAllReduceLLKernel(struct CollectiveArgs* args) {
 
   for (ssize_t chunkOffset = 0; chunkOffset < size; chunkOffset += nranks*sliceSize) {
     int chunkSize = min(sliceSize, DIVUP(size-chunkOffset,nranks));
-    ALIGN_SIZE(chunkSize, THREADS*sizeof(uint64_t)/sizeof(T));
+    ALIGN_SIZE(chunkSize, LL_NTHREADS*sizeof(uint64_t)/sizeof(T));
 
     /////////////// begin AllReduce steps ///////////////
     ssize_t offset;

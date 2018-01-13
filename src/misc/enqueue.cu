@@ -10,54 +10,46 @@
 #include "collectives/collectives.h"
 
 // Must be consistent with ncclDataType_t
-#define NCCL_FUNCS3A(nthreads, coll, op) \
-  (void*)NCCL_KERN_NAME(coll, op,  i8, nthreads), \
-  (void*)NCCL_KERN_NAME(coll, op,  u8, nthreads), \
-  (void*)NCCL_KERN_NAME(coll, op, i32, nthreads), \
-  (void*)NCCL_KERN_NAME(coll, op, u32, nthreads), \
-  (void*)NCCL_KERN_NAME(coll, op, i64, nthreads), \
-  (void*)NCCL_KERN_NAME(coll, op, u64, nthreads), \
-  (void*)NCCL_KERN_NAME(coll, op, f16, nthreads), \
-  (void*)NCCL_KERN_NAME(coll, op, f32, nthreads), \
-  (void*)NCCL_KERN_NAME(coll, op, f64, nthreads)
-#define NCCL_FUNCS3B(nthreads, coll, op) \
-  (void*)NCCL_KERN_NAME(coll, op,  i8, nthreads), \
-  (void*)NCCL_KERN_NAME(coll, op,  i8, nthreads), \
-  (void*)NCCL_KERN_NAME(coll, op,  i8, nthreads), \
-  (void*)NCCL_KERN_NAME(coll, op,  i8, nthreads), \
-  (void*)NCCL_KERN_NAME(coll, op,  i8, nthreads), \
-  (void*)NCCL_KERN_NAME(coll, op,  i8, nthreads), \
-  (void*)NCCL_KERN_NAME(coll, op,  i8, nthreads), \
-  (void*)NCCL_KERN_NAME(coll, op,  i8, nthreads), \
-  (void*)NCCL_KERN_NAME(coll, op,  i8, nthreads)
+#define NCCL_FUNCS3A(coll, op) \
+  (void*)NCCL_KERN_NAME(coll, op,  i8), \
+  (void*)NCCL_KERN_NAME(coll, op,  u8), \
+  (void*)NCCL_KERN_NAME(coll, op, i32), \
+  (void*)NCCL_KERN_NAME(coll, op, u32), \
+  (void*)NCCL_KERN_NAME(coll, op, i64), \
+  (void*)NCCL_KERN_NAME(coll, op, u64), \
+  (void*)NCCL_KERN_NAME(coll, op, f16), \
+  (void*)NCCL_KERN_NAME(coll, op, f32), \
+  (void*)NCCL_KERN_NAME(coll, op, f64)
+#define NCCL_FUNCS3B(coll, op) \
+  (void*)NCCL_KERN_NAME(coll, op,  i8), \
+  (void*)NCCL_KERN_NAME(coll, op,  i8), \
+  (void*)NCCL_KERN_NAME(coll, op,  i8), \
+  (void*)NCCL_KERN_NAME(coll, op,  i8), \
+  (void*)NCCL_KERN_NAME(coll, op,  i8), \
+  (void*)NCCL_KERN_NAME(coll, op,  i8), \
+  (void*)NCCL_KERN_NAME(coll, op,  i8), \
+  (void*)NCCL_KERN_NAME(coll, op,  i8), \
+  (void*)NCCL_KERN_NAME(coll, op,  i8)
 
 // Must be consistent with ncclRedOp_t
-#define NCCL_FUNCS2A(nthreads, coll) \
-  NCCL_FUNCS3A(nthreads, coll, sum ), \
-  NCCL_FUNCS3A(nthreads, coll, prod), \
-  NCCL_FUNCS3A(nthreads, coll, max ), \
-  NCCL_FUNCS3A(nthreads, coll, min )
-#define NCCL_FUNCS2B(nthreads, coll) \
-  NCCL_FUNCS3B(nthreads, coll, copy), \
-  NCCL_FUNCS3B(nthreads, coll, copy), \
-  NCCL_FUNCS3B(nthreads, coll, copy), \
-  NCCL_FUNCS3B(nthreads, coll, copy)
-
-// Must be consistent with ncclColl_t
-#define NCCL_FUNCS(nthreads) { \
-  NCCL_FUNCS2B(nthreads, ncclBcast), \
-  NCCL_FUNCS2A(nthreads, ncclReduce), \
-  NCCL_FUNCS2B(nthreads, ncclAllGather), \
-  NCCL_FUNCS2A(nthreads, ncclReduceScatter), \
-  NCCL_FUNCS2A(nthreads, ncclAllReduce) }
+#define NCCL_FUNCS2A(coll) \
+  NCCL_FUNCS3A(coll, sum ), \
+  NCCL_FUNCS3A(coll, prod), \
+  NCCL_FUNCS3A(coll, max ), \
+  NCCL_FUNCS3A(coll, min )
+#define NCCL_FUNCS2B(coll) \
+  NCCL_FUNCS3B(coll, copy), \
+  NCCL_FUNCS3B(coll, copy), \
+  NCCL_FUNCS3B(coll, copy), \
+  NCCL_FUNCS3B(coll, copy)
 
 // Must be consistent with the ncclFuncSet enum
 static void* const ncclLLKerns[ncclCollCount*ncclNumOps*ncclNumTypes] = {
-    NCCL_FUNCS2B(LL_NTHREADS, ncclBcastLL),
-    NCCL_FUNCS2A(LL_NTHREADS, ncclReduceLL),
-    NCCL_FUNCS2B(LL_NTHREADS, ncclAllGatherLL),
-    NCCL_FUNCS2A(LL_NTHREADS, ncclReduceScatterLL),
-    NCCL_FUNCS2A(LL_NTHREADS, ncclAllReduceLL)
+    NCCL_FUNCS2B(ncclBcastLL),
+    NCCL_FUNCS2A(ncclReduceLL),
+    NCCL_FUNCS2B(ncclAllGatherLL),
+    NCCL_FUNCS2A(ncclReduceScatterLL),
+    NCCL_FUNCS2A(ncclAllReduceLL)
 };
 
 ncclResult_t ncclLaunchCooperativeKernelMultiDevice(struct cudaLaunchParams *paramsList, int* cudaDevs, int numDevices, int cgMode) {

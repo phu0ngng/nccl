@@ -11,22 +11,20 @@ typedef enum { ncclCollBcast, ncclCollReduce, ncclCollAllGather, ncclCollReduceS
 
 #define FUNC_INDEX(coll, redop, dtype) (((coll*ncclNumOps + redop)*ncclNumTypes) + dtype)
 
-#define NCCL_COLL_NAME(coll, op, dtype, nthreads) \
-  coll##_##op##_##dtype##_##nthreads
+#define NCCL_COLL_NAME(coll, op, dtype) \
+  coll##_##op##_##dtype
 
-#define NCCL_KERN_NAME(coll, op, dtype, nthreads) \
-  coll##Kernel_##op##_##dtype##_##nthreads
+#define NCCL_KERN_NAME(coll, op, dtype) \
+  coll##Kernel_##op##_##dtype
 
 /* Declare all collective operations */
-#define DECL_COLL4(coll, op, dtype, nthreads) \
-  extern __device__ void NCCL_COLL_NAME(coll, op, dtype, nthreads)(struct CollectiveArgs* args); \
-  extern __global__ void NCCL_KERN_NAME(coll, op, dtype, nthreads)(struct ncclColl coll); \
+#define DECL_COLL4(coll, op, dtype) \
+  extern __device__ void NCCL_COLL_NAME(coll, op, dtype)(struct CollectiveArgs* args); \
+  extern __global__ void NCCL_KERN_NAME(coll, op, dtype)(struct ncclColl coll); \
 
 #define DECL_COLL3(coll, op, dtype) \
-  DECL_COLL4(coll##LL, op, dtype, LL_NTHREADS) \
-  DECL_COLL4(coll, op, dtype, 128) \
-  DECL_COLL4(coll, op, dtype, 256) \
-  DECL_COLL4(coll, op, dtype, 512)
+  DECL_COLL4(coll##LL, op, dtype) \
+  DECL_COLL4(coll, op, dtype)
 
 #define DECL_COLL2(coll, op) \
   DECL_COLL3(coll, op, i8) \
@@ -53,15 +51,6 @@ typedef enum { ncclCollBcast, ncclCollReduce, ncclCollAllGather, ncclCollReduceS
   DECL_COLL(ncclAllReduce) \
 
 DECL_ALL_COLLS
-
-enum { ncclFuncSetLL = 0, ncclFuncSet128 = 1, ncclFuncSet256 = 2, ncclFuncSet512 = 3, ncclFuncSetNotFound = 4 };
-#define FUNC_SET(ll, nthreads) \
-        (ll       == 1   ? ncclFuncSetLL  : \
-        (nthreads == 129 ? ncclFuncSet128 : \
-        (nthreads == 257 ? ncclFuncSet256 : \
-        (nthreads == 513 ? ncclFuncSet512 : \
-        ncclFuncSetNotFound))))
-
 
 #define ALLREDUCE_SUBSTEPS 2
 #define ALLREDUCE_BUFCHUNKS 2
