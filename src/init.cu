@@ -160,7 +160,7 @@ static ncclResult_t commAlloc(ncclComm_t* comret, int ndev, int rank) {
   }
   memset(comm, 0, sizeof(struct ncclComm));
 
-  TRACE("comm %p rank %d nranks %d", comm, rank, ndev);
+  INFO("comm %p rank %d nranks %d", comm, rank, ndev);
   comm->rank = rank;
   comm->nRanks = ndev;
   cudaGetDevice(&comm->cudaDev);
@@ -194,11 +194,10 @@ static void showVersion() {
     char version[80];
     sprintf(version, "%s", "NCCL version " STR(NCCL_MAJOR) "." STR(NCCL_MINOR) "." STR(NCCL_PATCH) NCCL_SUFFIX
             "+cuda" STR(CUDA_MAJOR) "." STR(CUDA_MINOR));
-    if (ncclDebugLevel == VERSION) {
-      printf("%s\n", version);
-      fflush(stdout);
-    } else
-      INFO("%s", version);
+    printf("%s\n", version);
+    fflush(stdout);
+    if (ncclDebugFile != stdout)
+      INFO("%s", version); // Also log NCCL version in one of the files
     shown = 1;
   }
 }
