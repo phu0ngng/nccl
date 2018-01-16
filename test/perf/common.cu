@@ -585,10 +585,10 @@ void BenchTime(struct threadArgs_t* args, ncclDataType_t type, ncclRedOp_t op, i
   Barrier(args);
 
   if (datacheck) { 
-     PRINT("  %7.3f  %5.2f  %5.2f  %7.0le", deltaSec * 1.0E3, algBw, busBw,
+     PRINT("  %7.3f  %6.2f  %6.2f  %7.0le", deltaSec * 1.0E3, algBw, busBw,
          maxDelta);
   } else {
-     PRINT("  %7.3f  %5.2f  %5.2f  \tN/A", deltaSec * 1.0E3, algBw, busBw);
+     PRINT("  %7.3f  %6.2f  %6.2f  \tN/A", deltaSec * 1.0E3, algBw, busBw);
   }
 
   args->bw[0] += busBw;
