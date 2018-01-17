@@ -74,7 +74,7 @@ static void *bootstrapRoot(void* commId) {
       }
 
       extRecvComm[info.rank] = tmpRecvComm;
-      NETCHECKJUMP(ncclNetSocket.connect(idFromEnv ? -1 : 0, info.extHandle, extSendComm+info.rank), out);
+      NETCHECKJUMP(ncclNetSocket.connect(idFromEnv ? findSubnetIf : defaultIf, info.extHandle, extSendComm+info.rank), out);
       c++;
   } while (c < nranks);
 
