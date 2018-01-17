@@ -238,17 +238,20 @@ void vStore<half>(volatile half* ptr, const half val) {
 
 template<class FUNC, typename T, bool TWO_INPUTS, bool TWO_OUTPUTS>
 __device__ inline void ReduceCopy(
+    const int tid, const int nthreads,
     const volatile T * __restrict__ const src0,
     const volatile T * __restrict__ const src1,
     volatile T * __restrict__ const dest0,
-    volatile T * __restrict__ const dest1, const int idx) {
-  T val = vFetch(src0+idx);
-  if (TWO_INPUTS) {
-    val = FUNC()(val, vFetch(src1+idx));
-  }
-  vStore(dest0+idx, val);
-  if (TWO_OUTPUTS) {
-    vStore(dest1+idx, val);
+    volatile T * __restrict__ const dest1, const int N) {
+  for (int idx = tid; idx < N; idx += nthreads) {
+    T val = vFetch(src0+idx);
+    if (TWO_INPUTS) {
+      val = FUNC()(val, vFetch(src1+idx));
+    }
+    vStore(dest0+idx, val);
+    if (TWO_OUTPUTS) {
+      vStore(dest1+idx, val);
+    }
   }
 }
 
@@ -306,7 +309,6 @@ __device__ inline void ReduceOrCopy(const int tid, const int nthreads,
     int N) {
   int Nrem = N;
   if (Nrem <= 0) return;
-  //if (tid == 0) printf("%p %p -> %p %p %d x %ld\n", src0, src1, dest0, dest1, N, sizeof(T));
 
   int Npreamble = (Nrem<alignof(Pack128)) ? Nrem : AlignUp(dest0, alignof(Pack128)) - dest0;
 
@@ -316,17 +318,13 @@ __device__ inline void ReduceOrCopy(const int tid, const int nthreads,
       (!HAS_DEST1 || (AlignUp(dest1, alignof(Pack128)) == dest1 + Npreamble)) &&
       (!HAS_SRC1  || (AlignUp(src1,  alignof(Pack128)) == src1  + Npreamble)));
 
-  if (!alignable) {// || Nrem < UNROLL*nthreads) {
+  if (!alignable) {
     Npreamble = Nrem;
   }
 
   // stage 1: preamble: handle any elements up to the point of everything coming
   // into alignment
-  for (int idx = tid; idx < Npreamble; idx += nthreads) {
-    // ought to be no way this is ever more than one iteration, except when
-    // alignable is false
-    ReduceCopy<FUNC, T, HAS_SRC1, HAS_DEST1>(src0, src1, dest0, dest1, idx);
-  }
+  ReduceCopy<FUNC, T, HAS_SRC1, HAS_DEST1>(tid, nthreads, src0, src1, dest0, dest1, Npreamble);
 
   Nrem -= Npreamble;
   if (Nrem == 0) return;
@@ -368,12 +366,7 @@ __device__ inline void ReduceOrCopy(const int tid, const int nthreads,
   src0  += Ndone2b; if (HAS_SRC1)  { src1  += Ndone2b; }
 
   // stage 2c: tail
-
-  for (int idx = tid; idx < Nrem; idx += nthreads) {
-    // never ought to make it more than one time through this loop.  only a
-    // few threads should even participate
-    ReduceCopy<FUNC, T, HAS_SRC1, HAS_DEST1>(src0, src1, dest0, dest1, idx);
-  }
+  ReduceCopy<FUNC, T, HAS_SRC1, HAS_DEST1>(tid, nthreads, src0, src1, dest0, dest1, Nrem);
 }
 
 #endif // COMMON_KERNEL_H_
