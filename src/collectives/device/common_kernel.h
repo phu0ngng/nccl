@@ -262,13 +262,10 @@ struct MULTI128 {
   }
 };
 
-// We may want to specialize the load based on the type. But so far it seems good enough to load everything as ulong2.
-template<typename T>
-__device__ void Fetch128(Pack128& v, Pack128* p) {
+inline __device__ void Fetch128(Pack128& v, Pack128* p) {
   asm volatile("ld.volatile.global.v2.u64 {%0,%1}, [%2];" : "=l"(v.x), "=l"(v.y) : "l"(p) : "memory");
 }
-template<typename T>
-__device__ void Store128(Pack128* p, Pack128& v) {
+inline __device__ void Store128(Pack128* p, Pack128& v) {
   asm volatile("st.volatile.global.v2.u64 [%0], {%1,%2};" :: "l"(p), "l"(v.x), "l"(v.y) : "memory");
 }
 
@@ -282,22 +279,23 @@ __device__ inline void ReduceCopy128b( const int w, const int nw, const int t,
   const Pack128* src0_end = src0 + N;
   const int inc = nw * UNROLL * WARP_SIZE;
   const int offset = w * UNROLL * WARP_SIZE + t;
-  src0 += offset; src1 += offset;
+  src0 += offset;  if (TWO_INPUTS)  src1 += offset;
   dest0 += offset; if (TWO_OUTPUTS) dest1 += offset;
 
   while (src0 < src0_end) {
     #pragma unroll
     for (int u = 0; u < UNROLL; ++u) {
-      Fetch128<T>(t0[u], src0+u*WARP_SIZE);
-      if (TWO_INPUTS) Fetch128<T>(t1[u], src1+u*WARP_SIZE);
+      Fetch128(t0[u], src0+u*WARP_SIZE);
+      if (TWO_INPUTS) Fetch128(t1[u], src1+u*WARP_SIZE);
     }
     #pragma unroll
     for (int u = 0; u < UNROLL; ++u) {
       if (TWO_INPUTS) MULTI128<FUNC, T>()(t0[u], t1[u]);
-      Store128<T>(dest0+u*WARP_SIZE, t0[u]);
-      if (TWO_OUTPUTS) Store128<T>(dest1+u*WARP_SIZE, t0[u]);
+      Store128(dest0+u*WARP_SIZE, t0[u]);
+      if (TWO_OUTPUTS) Store128(dest1+u*WARP_SIZE, t0[u]);
     }
-    src0 += inc; src1 += inc; dest0 += inc; if (TWO_OUTPUTS) dest1 += inc;
+    src0 += inc;  if (TWO_INPUTS)  src1 += inc;
+    dest0 += inc; if (TWO_OUTPUTS) dest1 += inc;
   }
 }
 
