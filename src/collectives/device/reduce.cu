@@ -8,7 +8,7 @@
 #include "reduce.h"
 #include "collectives.h"
 
-#define UNROLL 8
+#define UNROLL 4
 
 #if NCCL_OP == 0
 IMPL_COLL2(ncclReduce, sum, FuncSum);
