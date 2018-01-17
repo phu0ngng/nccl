@@ -29,6 +29,7 @@ __global__ void NCCL_KERN_NAME(coll, op, dtype)(struct ncclColl coll) { \
   IMPL_COLL4(coll##LL, op, ncclFunc, dtype, ctype) \
   IMPL_COLL4K(coll##LL, op, ncclFunc, dtype, ctype) \
   IMPL_COLL4(coll, op, ncclFunc, dtype, ctype) \
+  IMPL_COLL4K(coll, op, ncclFunc, dtype, ctype) \
 
 #define IMPL_COLL2(coll, op, ncclFunc) \
   IMPL_COLL3(coll, op, ncclFunc, i8, int8_t) \

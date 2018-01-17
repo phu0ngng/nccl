@@ -51,6 +51,13 @@ static void* const ncclLLKerns[ncclCollCount*ncclNumOps*ncclNumTypes] = {
     NCCL_FUNCS2A(ncclReduceScatterLL),
     NCCL_FUNCS2A(ncclAllReduceLL)
 };
+static void* const ncclKerns[ncclCollCount*ncclNumOps*ncclNumTypes] = {
+    NCCL_FUNCS2B(ncclBcast),
+    NCCL_FUNCS2A(ncclReduce),
+    NCCL_FUNCS2B(ncclAllGather),
+    NCCL_FUNCS2A(ncclReduceScatter),
+    NCCL_FUNCS2A(ncclAllReduce)
+};
 
 ncclResult_t ncclLaunchCooperativeKernelMultiDevice(struct cudaLaunchParams *paramsList, int* cudaDevs, int numDevices, int cgMode) {
 #if __CUDACC_VER_MAJOR__ >= 9
@@ -82,9 +89,12 @@ ncclResult_t setupLaunch(struct ncclComm* comm, struct cudaLaunchParams* params)
   memcpy(&comm->args, coll, sizeof(struct ncclColl));
 
   // One operation
-  if (totalOps == 1 && coll->ll) {
+  if (totalOps == 1) {
     coll->active = 0;
-    params->func = ncclLLKerns[coll->funcIndex];
+    if (coll->ll)
+      params->func = ncclLLKerns[coll->funcIndex];
+    else
+      params->func = ncclKerns[coll->funcIndex];
     return ncclSuccess;
   }
 
