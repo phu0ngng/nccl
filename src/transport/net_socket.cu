@@ -100,7 +100,8 @@ int ncclSocketListen(int dev, void* opaqueHandle, void** listenComm) {
     // handle stores a remote address
     // need to find a local addr that is in the same network as the remote addr
     union socketAddress localAddr;
-    if (findInterfaceMatchSubnet(&localAddr, handle->connectAddr) <= 0) {
+    char ifName[MAX_IF_NAME_SIZE];
+    if (findInterfaceMatchSubnet(ifName, &localAddr, handle->connectAddr, MAX_IF_NAME_SIZE, 1) <= 0) {
       WARN("No usable listening interface found");
       return ncclInternalError;
     }
@@ -120,7 +121,8 @@ int ncclSocketConnect(int dev, void* opaqueHandle, void** sendComm) {
   if (dev == -1) {
     // need to find a local addr that is in the same network as the remote addr
     union socketAddress localAddr;
-    if (findInterfaceMatchSubnet(&localAddr, handle->connectAddr) <= 0) {
+    char ifName[MAX_IF_NAME_SIZE];
+    if (findInterfaceMatchSubnet(ifName, &localAddr, handle->connectAddr, MAX_IF_NAME_SIZE, 1) <= 0) {
       WARN("No usable connect interface found");
       return ncclInternalError;
     }

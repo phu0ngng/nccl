@@ -24,7 +24,6 @@
 #include "ibvwrap.h"
 
 #define USE_RDMA_WRITE 1
-#define MAX_IF_NAME_SIZE 16
 #define MAXNAMESIZE 64
 static char ncclIbIfName[MAX_IF_NAME_SIZE];
 static union socketAddress ncclIbIfAddr;

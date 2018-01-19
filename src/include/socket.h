@@ -16,6 +16,7 @@
 #include <net/if.h>
 #include "utils.h"
 
+#define MAX_IF_NAME_SIZE 16
 #define SLEEP_INT     1000  // sleep interval in usec
 #define RETRY_TIMES   2e4   // retry times before reporting a timeout (20 sec)
 
@@ -110,25 +111,6 @@ static int findInterfaces(const char* prefixList, char* names, union socketAddre
   return found;
 }
 
-static int findInterfaces(char* ifNames, union socketAddress *ifAddrs, int ifNameMaxSize, int maxIfs) {
-  int nIfs = 0;
-  // Allow user to force the INET socket family selection
-  int sock_family = envSocketFamily();
-  // User specified interface
-  char* env = getenv("NCCL_SOCKET_IFNAME");
-  if (env && strlen(env) > 1) {
-    // Specified by user : find or fail
-    nIfs = findInterfaces(env, ifNames, ifAddrs, sock_family, ifNameMaxSize, maxIfs);
-  } else {
-    // Try to automatically pick the right one
-    // Start with IB
-    nIfs = findInterfaces("ib", ifNames, ifAddrs, sock_family, ifNameMaxSize, maxIfs);
-    // Then look for anything else (but not loopback)
-    if (nIfs == 0) nIfs = findInterfaces("^lo", ifNames, ifAddrs, sock_family, ifNameMaxSize, maxIfs);
-  }
-  return nIfs;
-}
-
 static bool matchSubnet(struct ifaddrs local_if, union socketAddress remote) {
   /* Check family first */
   int family = local_if.ifa_addr->sa_family;
@@ -172,7 +154,7 @@ static bool matchSubnet(struct ifaddrs local_if, union socketAddress remote) {
   }
 }
 
-static int findInterfaceMatchSubnet(union socketAddress* localAddr, union socketAddress remoteAddr) {
+static int findInterfaceMatchSubnet(char* ifNames, union socketAddress* localAddrs, union socketAddress remoteAddr, int ifNameMaxSize, int maxIfs) {
   char line[1024], line_a[1024];
   int found = 0;
   struct ifaddrs *interfaces, *interface;
@@ -192,10 +174,15 @@ static int findInterfaceMatchSubnet(union socketAddress* localAddr, union socket
     }
 
     // Store the local IP address
-    found++;
     int salen = (family == AF_INET) ? sizeof(sockaddr_in) : sizeof(sockaddr_in6);
-    memcpy(localAddr, interface->ifa_addr, salen);
-    INFO("NET : Found interface %s:%s in the same subnet as remote address %s", interface->ifa_name, socketToString(&(localAddr->sa), line), socketToString(&(remoteAddr.sa), line_a));
+    memcpy(localAddrs+found, interface->ifa_addr, salen);
+
+    // Store the interface name
+    strncpy(ifNames+found*ifNameMaxSize, interface->ifa_name, ifNameMaxSize);
+
+    INFO("NET : Found interface %s:%s in the same subnet as remote address %s", interface->ifa_name, socketToString(&(localAddrs[found].sa), line), socketToString(&(remoteAddr.sa), line_a));
+    found++;
+    if (found == maxIfs) break;
   }
 
   if (found == 0) {
@@ -253,6 +240,32 @@ static ncclResult_t GetSocketAddrFromString(union socketAddress* ua, const char*
     sin6.sin6_scope_id = global_scope ? 0 : if_nametoindex(if_name);  // 0 if global scope; intf index if link scope
   }
   return ncclSuccess;
+}
+
+static int findInterfaces(char* ifNames, union socketAddress *ifAddrs, int ifNameMaxSize, int maxIfs) {
+  int nIfs = 0;
+  // Allow user to force the INET socket family selection
+  int sock_family = envSocketFamily();
+  // User specified interface
+  char* env = getenv("NCCL_SOCKET_IFNAME");
+  if (env && strlen(env) > 1) {
+    // Specified by user : find or fail
+    nIfs = findInterfaces(env, ifNames, ifAddrs, sock_family, ifNameMaxSize, maxIfs);
+  } else {
+    char* commId = getenv("NCCL_COMM_ID");
+    if (commId && strlen(commId) > 1) {
+      // Try to find interface that is in the same subnet as the IP in comm id
+      union socketAddress idAddr;
+      GetSocketAddrFromString(&idAddr, commId);
+      nIfs = findInterfaceMatchSubnet(ifNames, ifAddrs, idAddr, ifNameMaxSize, maxIfs);
+    }
+    // Try to automatically pick the right one
+    // Start with IB
+    if (nIfs == 0) nIfs = findInterfaces("ib", ifNames, ifAddrs, sock_family, ifNameMaxSize, maxIfs);
+    // Then look for anything else (but not loopback)
+    if (nIfs == 0) nIfs = findInterfaces("^lo", ifNames, ifAddrs, sock_family, ifNameMaxSize, maxIfs);
+  }
+  return nIfs;
 }
 
 static ncclResult_t createListenSocket(int *fd, union socketAddress *localAddr) {
