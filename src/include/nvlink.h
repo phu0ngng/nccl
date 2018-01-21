@@ -97,7 +97,14 @@ static int getNvlinkGpu(const char* busId1, const char* busId2) {
     // since even non-GPUs would posses PCI info.
     nvmlPciInfo_t remoteProc;
     if (wrapNvmlDeviceGetNvLinkRemotePciInfo(nvmlDev, l, &remoteProc) != ncclSuccess) continue;
-    
+
+    // Old versions of NVML return a lowercase PCI ID
+    char* p = remoteProc.busId;
+    for (int c=0; c<NVML_DEVICE_PCI_BUS_ID_BUFFER_SIZE; c++) {
+      if (p[c] == 0) break;
+      p[c] = toupper(p[c]);
+    }
+
     // Determine if the remote side is NVswitch, another GPU, or a CPU
     enum ncclNvLinkDeviceType type;
     if (ncclDeviceType(remoteProc.busId, &type) != ncclSuccess) continue;
@@ -147,6 +154,16 @@ static int getNvlinkCpu() {
     // if the other side of the NVLink is a CPU (e.g. a POWER CPU)
     nvmlPciInfo_t remoteProc;
     ncclResult_t ret = wrapNvmlDeviceGetNvLinkRemotePciInfo(nvmlDev, l, &remoteProc);
+
+    // Old versions of NVML return a lowercase PCI ID
+    char* p = remoteProc.busId;
+    if (p != NULL) {
+      for (int c=0; c<NVML_DEVICE_PCI_BUS_ID_BUFFER_SIZE; c++) {
+        if (p[c] == 0) break;
+        p[c] = toupper(p[c]);
+      }
+    }
+
     if (ret == ncclSystemNotSupported && remoteProc.busId != NULL) {
       type = ncclNvLinkDeviceCpu;
     } else if (ret == ncclSuccess) {
