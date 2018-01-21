@@ -15,10 +15,6 @@
 
 // BAR macro and helpers
 #define WARP_SIZE 32
-#define ROUNDUP(x, y)                                                           \
-    (((((x) + (y) - 1) / (y))) * (y))
-#define DIVUP(x, y) \
-    (((x)+(y)-1)/(y))
 #define BAR_EXEC(type, barid, nthreads) \
     asm("bar." #type " " #barid ", " #nthreads ";\n\t")
 #define BAR_EXPAND(type, barid, nthreads) \
@@ -31,6 +27,11 @@
     BAR_EXPAND(type, barid, ROUNDUP(nthreads, WARP_SIZE))
 
 __device__ unsigned int spinct;
+
+static __device__ int min(int a, ssize_t b) {
+  if (a < b) return a;
+  return (int)b;
+}
 
 // Spin wait until func evaluates to true
 template<typename FUNC>
@@ -145,24 +146,22 @@ struct MULTI<FUNC, uint32_t> {
 
 template<class FUNC>
 struct MULTI<FUNC, half> {
-  static_assert(sizeof(PackType) == 2 * sizeof(float),
-      "PackType must be twice the size of float.");
-  union converter {
-    PackType storage;
-    struct {
-      half2 a, b;
-    };
+  static_assert(sizeof(PackType) == 4 * sizeof(half),
+      "PackType must be four times the size of half.");
+
+  struct PackHalf2 {
+    half2 a, b;
   };
 
   __device__ PackType operator()(const PackType x, const PackType y) const {
-    converter cx, cy, cr;
-    cx.storage = x;
-    cy.storage = y;
+    struct PackHalf2 cx, cy, cr;
+    cx = *(reinterpret_cast<const struct PackHalf2*>(&x));
+    cy = *(reinterpret_cast<const struct PackHalf2*>(&y));
 
     cr.a = FUNC()(cx.a, cy.a);
     cr.b = FUNC()(cx.b, cy.b);
 
-    return cr.storage;
+    return *(reinterpret_cast<PackType*>(&cr));
   }
 };
 
@@ -275,6 +274,12 @@ T vFetch(const volatile T* ptr) {
   return *ptr;
 }
 
+template<typename T> inline __device__
+void vStore(volatile T* ptr, const T val) {
+  *ptr = val;
+}
+
+#if CUDART_VERSION < 9000
 template<> inline __device__
 half vFetch<half>(const volatile half* ptr) {
   half r;
@@ -282,15 +287,23 @@ half vFetch<half>(const volatile half* ptr) {
   return r;
 }
 
-template<typename T> inline __device__
-void vStore(volatile T* ptr, const T val) {
-  *ptr = val;
-}
-
 template<> inline __device__
 void vStore<half>(volatile half* ptr, const half val) {
   ptr->x = val.x;
 }
+#else
+template<> inline __device__
+half vFetch<half>(const volatile half* ptr) {
+  half r;
+  r = ((half*)ptr)[0];
+  return r;
+}
+
+template<> inline __device__
+void vStore<half>(volatile half* ptr, const half val) {
+  ((half*)ptr)[0] = val;
+}
+#endif
 
 // Assumptions:
 // - there is exactly 1 block

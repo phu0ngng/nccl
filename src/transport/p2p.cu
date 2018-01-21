@@ -14,8 +14,6 @@
 #include <ctype.h>
 #include "nvlink.h"
 
-#define MAXNVLINKS 8
-
 struct p2pInfo {
   int rank;
   int cudaDev;
@@ -47,16 +45,31 @@ ncclResult_t p2pFillInfo(ncclTinfo_t* opaqueInfo, int rank) {
   getHostName(hostname, 1024);
   info->hostHash=getHostHash(hostname);
   info->hostNumber=getHostNumber(hostname);
+
+  // Get PCI Bus Id. We need to get the bus ID through CUDA first, since the
+  // cudaDev is a CUDA runtime dev number which could be different from the
+  // NVML device number. Then we get the busID from NVML to be sure it is
+  // consistent with NVML remote PCI bus Ids.
   CUDACHECK(cudaDeviceGetPCIBusId(info->busId, NVML_DEVICE_PCI_BUS_ID_BUFFER_SIZE, info->cudaDev));
-  for (int c=0; c<NVML_DEVICE_PCI_BUS_ID_BUFFER_SIZE; c++) {
-    if (info->busId[c] == 0) break;
-    info->busId[c] = tolower(info->busId[c]);
-  }
+  nvmlDevice_t nvmlDevice;
+  NCCLCHECK(wrapNvmlDeviceGetHandleByPciBusId(info->busId, &nvmlDevice));
+  nvmlPciInfo_t pciInfo;
+  NCCLCHECK(wrapNvmlDeviceGetPciInfo(nvmlDevice, &pciInfo));
+  strncpy(info->busId, pciInfo.busId, NVML_DEVICE_PCI_BUS_ID_BUFFER_SIZE);
   return ncclSuccess;
 }
 
 /* Determine if we can communicate with the peer */
 ncclResult_t p2pCanConnect(int* ret, ncclTinfo_t* myOpaqueInfo, ncclTinfo_t* peerOpaqueInfo) {
+  static int p2pDisabled = -1;
+  if (p2pDisabled == -1) {
+    char* str = getenv("NCCL_P2P_DISABLE");
+    p2pDisabled = str ? atoi(str) : 0;
+  }
+  if (p2pDisabled == 1) {
+    *ret = 0;
+    return ncclSuccess;
+  }
   struct p2pInfo* myInfo = (struct p2pInfo*)myOpaqueInfo;
   struct p2pInfo* peerInfo = (struct p2pInfo*)peerOpaqueInfo;
   int p2p = 0;
@@ -150,7 +163,7 @@ static int computeRingsRec(int* matrix, int n, int *rings, int currentRing, int 
   return nrings;
 }
 
-int p2pComputeRingsNvlink(int* matrix, int nranks, int *rings, int nringsMax, int connect) {
+int p2pComputeRingsNvLink(int* matrix, int nranks, int *rings, int nringsMax, int connect) {
   int* inTheRing = (int*)malloc(sizeof(int)*nranks);
   for (int i=0; i<nranks; i++) inTheRing[i] = 0;
   int nrings;
@@ -174,7 +187,10 @@ static inline int findConnect(int nranks, int* ranks) {
 
 static inline int copyRings(int nranks, int* rings, int nrings, int dup) {
   // Copy rings by dup times
-  INFO("Duplicating rings by %d times", dup);
+  if (nrings * dup > MAXRINGS) {
+    WARN("Number of rings requested (%d) is more than the maximum number, falling back to duplication ratio 1", dup * nrings);
+    return nrings;
+  }
   for (int d=1; d<dup; d++) {
     for (int r=0; r<nrings; r++) {
       for (int i=0; i<nranks; i++) rings[(r+d*nrings)*nranks+i] = rings[r*nranks+i];
@@ -183,11 +199,10 @@ static inline int copyRings(int nranks, int* rings, int nrings, int dup) {
   return nrings * dup;
 }
 
-
-int p2pComputeRingsNvlink(int* values, int nranks, int* rings, int nrings, int* prev, int* next, int oversubscribe, int* nthreads) {
+int p2pComputeRingsNvLink(int* values, int nranks, int* rings, int nrings, int* prev, int* next, int oversubscribe, int* nthreads) {
   if (nrings == 0) return 0;
   if (nrings > MAXRINGS) {
-    WARN("Max rings reached, limiting to %d\n", MAXRINGS);
+    WARN("Max rings reached, limiting to %d", MAXRINGS);
     nrings = MAXRINGS;
   }
   // Find existing constraints / connections
@@ -206,42 +221,39 @@ int p2pComputeRingsNvlink(int* values, int nranks, int* rings, int nrings, int* 
   for (int i=0; i<nranks; i++) for (int j=0; j<nranks; j++)
     matrix[i*nranks+j] = oversubscribe ? values[i*nranks+j]/CONNECT_NVLINK*2 : values[i*nranks+j]/CONNECT_NVLINK ;
 
-  int compNrings = p2pComputeRingsNvlink(matrix, nranks, rings, nrings, connect);
+  int compNrings = p2pComputeRingsNvLink(matrix, nranks, rings, nrings, connect);
   if (connect == 0) {
     if (oversubscribe == 0 && compNrings && compNrings < nrings && nranks <= 4) {
       // Try to oversubscribe to get a better result
       int rings2[MAXRINGS*nranks];
       for (int i=0; i<MAXRINGS*nranks; i++) rings2[i] = -1;
-      int compNrings2 = p2pComputeRingsNvlink(values, nranks, rings2, nrings*2, prev, next, 1, nthreads);
+      int nThreads = *nthreads;
+      int compNrings2 = p2pComputeRingsNvLink(values, nranks, rings2, nrings*2, prev, next, 1, &nThreads);
       if (compNrings2 > compNrings*2) {
         // Oversubscription worked.
         for (int i=0; i<compNrings2*nranks; i++) rings[i] = rings2[i];
-        INFO("Oversubscribing, original nrings = %d, new nrings = %d", compNrings, compNrings2);
+        *nthreads = nThreads;
         return compNrings2;
       }
     }
-    // Duplicate the rings for NVLink alone
+    // Duplicate the rings for direct NVLink
     int dup = -1;
     char* str = getenv("NCCL_DUP_RINGS");
     if (str && strlen(str) > 0) {
       dup = atoi(str);
     }
-    // if user hasn't set a valid value, we will use system default and do the duplication here
-    // otherwise, will skip the duplication here and do it after return
-    if (dup <= 0) {
-      int cudaDev;
-      CUDACHECK(cudaGetDevice(&cudaDev));
-      int ccMajor;
-      CUDACHECK(cudaDeviceGetAttribute(&ccMajor, cudaDevAttrComputeCapabilityMajor, cudaDev));
-      dup = (ccMajor > 6) ? 4 : 2;
+    if (dup > 0 && dup * compNrings <= MAXRINGS) {
+      INFO("Duplicating rings by %d times per user request", dup);
       compNrings = copyRings(nranks, rings, compNrings, dup);
+    } else if (dup * compNrings > MAXRINGS) {
+      WARN("Number of rings requested (%d) is more than the maximum number, falling back to default", dup * nrings);
+      compNrings = copyRings(nranks, rings, compNrings, 2);
+    } else { 
+      // if user hasn't set a valid value, we will use system default and do the duplication here
+      compNrings = copyRings(nranks, rings, compNrings, 2);
     }
-    // if there is duplication (whether instructed by user or by default), we will cut threads by half
-    if (dup > 1) {
-      // Cut threads by half from default value (not from NCCL_NTHREADS); setting NCCL_NTHREADS will override this computed value
-      *nthreads = *nthreads >> 1;
-      INFO("Halving threads to %d due to ring duplication", *nthreads);
-    }
+
+    if (ncclCudaCompCap() == 6) *nthreads /= 2;
   }
   return compNrings;
 }
@@ -290,11 +302,83 @@ int p2pComputeRingsSeqNew(int* values, int nranks, int* rings, int nringsStart, 
   return nringsStart;
 }
 
+static int findClosestPci(int* values, int* inRing, int rank, int end, int nranks, int minScore) {
+  for (int score = PATH_SOC+1; score >= minScore; score--) {
+    int best = -1;
+    int worst_end_score = PATH_SOC+2; // find the closest to rank, farthest from end
+    for (int n = 0; n < nranks; n++) {
+      if (inRing[n]) continue;
+      if (values[rank*nranks+n] == score) {
+        if (end == -1) return n;
+        if (values[end*nranks+n] < worst_end_score) {
+          best = n;
+          worst_end_score = values[end*nranks+n];
+        }
+      }
+    }
+    if (best != -1) return best;
+  }
+  return -1;
+}
+
+int p2pComputeRingsPci(int* values, int nranks, int* rings, int nrings, int* prev, int* next, int minScore) {
+  // PCIe or QPI
+  int connect = 0;
+  for (int r=0; r<nrings; r++) {
+    int start = findConnect(nranks, prev+r*nranks);
+    int end = findConnect(nranks, next+r*nranks);
+
+    int inRing[nranks];
+    for (int i=0; i<nranks; i++) inRing[i] = 0;
+
+    if (start == -1 && end == -1) {
+      if (connect == 1 && r > 0) {
+        WARN("Connecting ring %d : did not find start/end. Disabling other rings.", r);
+        return r;
+      }
+      end = 0;
+      inRing[end] = 1;
+      start = findClosestPci(values, inRing, end, -1, nranks, minScore);
+      if (start == -1) return r;
+    } else if (start == -1 || end == -1) {
+      WARN("Connecting ring %d : inconsistent start/end. Disabling other rings.", r);
+      return r;
+    } else {
+      connect = 1;
+    }
+    rings[r*nranks] = end;
+    rings[r*nranks+1] = start;
+    inRing[start] = inRing[end] = 1;
+    int cur = start;
+    for (int i=2; i<nranks; i++) {
+      int next = findClosestPci(values, inRing, cur, end, nranks, minScore);
+      if (next == -1) return r;
+
+      inRing[next] = 1;
+      rings[r*nranks+i] = next;
+      cur = next;
+    }
+    // Check the loop is closing
+    inRing[end] = 0;
+    if (findClosestPci(values, inRing, cur, end, nranks, minScore) != end) return r;
+
+    if (connect == 0) return 1;
+  }
+  return nrings;
+}
+
 ncclResult_t p2pGetRings(int nranks, int* groups, int* subgroups, int* values, int* nringsRet, int* prev, int* next, int minScore, int* nthreads) {
   if (*nringsRet == 0) return ncclSuccess;
   int rings[MAXRINGS*nranks];
   for (int i=0; i<MAXRINGS*nranks; i++) rings[i] = -1;
   int nrings = *nringsRet;
+
+  // Get user-defined ring duplication ratio
+  char* str = getenv("NCCL_DUP_RINGS");
+  int dup = -1;
+  if (str && strlen(str) > 0) {
+    dup = atoi(str);
+  }
 
   // NVswitch
   for (int rank=0; rank<nranks; rank++) {
@@ -308,13 +392,7 @@ ncclResult_t p2pGetRings(int nranks, int* groups, int* subgroups, int* values, i
       }
       links = nvswitch_links;
     }
-    if (nranks == 2) {
-      // duplicate rings by 3 times for 2-GPU cases
-      nrings = min(nrings, links*3);
-      *nthreads = 128;
-    } else {
-      nrings = min(nrings, links);
-    }
+    nrings = min(nrings, links);
     if (nrings > 0) {
       int nringsConnect = p2pComputeRingsSeqConnect(values, nranks, rings, nrings, prev, next, minScore, nthreads);
       if (nringsConnect > 0) {
@@ -322,6 +400,19 @@ ncclResult_t p2pGetRings(int nranks, int* groups, int* subgroups, int* values, i
       } else {
         nrings = p2pComputeRingsSeqNew(values, nranks, rings, nrings, prev, next, minScore, nthreads);;
       }
+    }
+  }
+  // Duplicate rings for NVswitch
+  if (nrings > 0) {
+    if (dup > 0 && dup * nrings <= MAXRINGS) {
+      INFO("Duplicating rings by %d times per user request", dup);
+      nrings = copyRings(nranks, rings, nrings, dup);
+    } else if (dup * nrings > MAXRINGS) {
+      WARN("Number of rings requested (%d) is more than the maximum number, falling back to default", dup * nrings);
+      nrings = copyRings(nranks, rings, nrings, 2);
+    } else { 
+      // if user hasn't set a valid value, we will use system default and do the duplication here
+      nrings = copyRings(nranks, rings, nrings, 2);
     }
   }
 
@@ -337,25 +428,20 @@ ncclResult_t p2pGetRings(int nranks, int* groups, int* subgroups, int* values, i
       }
       nrings = min(nrings, nr);
     }
-    if (nrings > 0) nrings = p2pComputeRingsNvlink(values, nranks, rings, nrings, prev, next, 0, nthreads);
+    if (nrings > 0) nrings = p2pComputeRingsNvLink(values, nranks, rings, nrings, prev, next, 0, nthreads);
   }
  
-  if (nrings == 0) {
-    nrings = *nringsRet;
-    // PCI or QPI
-    int nringsConnect = p2pComputeRingsSeqConnect(values, nranks, rings, nrings, prev, next, minScore, nthreads);
-    if (nringsConnect > 0) {
-      nrings = nringsConnect;
-    } else {
-      nrings = p2pComputeRingsSeqNew(values, nranks, rings, 1, prev, next, minScore, nthreads);;
-    }
-  }
+  int pcie = (nrings == 0) ? 1 : 0;
+  if (pcie) {
+    // PCIe or QPI
+    nrings = p2pComputeRingsPci(values, nranks, rings, *nringsRet, prev, next, minScore);
 
-  // Duplicate the rings
-  char* str = getenv("NCCL_DUP_RINGS");
-  if (str && strlen(str) > 0) {
-    int dup = atoi(str);
-    nrings = copyRings(nranks, rings, nrings, dup);
+    if (dup > 0 && dup * nrings <= MAXRINGS) {
+      INFO("Duplicating rings by %d times per user request", dup);
+      nrings = copyRings(nranks, rings, nrings, dup);
+    } else if (dup * nrings > MAXRINGS) {
+      WARN("Number of rings requested (%d) is more than the maximum number, falling back to default", dup * nrings);
+    }
   }
 
   *nringsRet = nrings;
@@ -390,8 +476,8 @@ ncclResult_t p2pSetup(ncclTinfo_t* myOpaqueInfo, ncclTinfo_t* peerOpaqueInfo, st
       if (err == cudaErrorPeerAccessAlreadyEnabled) {
         cudaGetLastError();
       } else if (err != cudaSuccess) {
-        WARN("failed to peer with device %d: %s",
-            peerInfo->cudaDev, cudaGetErrorString(err));
+        WARN("failed to peer with device %d: %d %s",
+             peerInfo->cudaDev, err, cudaGetErrorString(err));
         return ncclInternalError;
       }
       INFO("%d -> %d via P2P/direct pointer", myInfo->rank, peerInfo->rank);
@@ -399,8 +485,10 @@ ncclResult_t p2pSetup(ncclTinfo_t* myOpaqueInfo, ncclTinfo_t* peerOpaqueInfo, st
   } else {
     info.direct = 0;
     // Map IPC and enable P2P access
-    if (cudaIpcGetMemHandle(&info.devIpc, (void*)ring->devMem) != cudaSuccess) {
-      WARN("rank %d failed to get CUDA IPC handle to device %d", myInfo->rank, peerInfo->cudaDev);
+    cudaError_t err = cudaIpcGetMemHandle(&info.devIpc, (void*)ring->devMem);
+    if (err != cudaSuccess) {
+      WARN("rank %d failed to get CUDA IPC handle to device %d : %d %s",
+           myInfo->rank, peerInfo->cudaDev, err, cudaGetErrorString(err));
       return ncclInternalError;
     }
     INFO("%d -> %d via P2P/IPC", myInfo->rank, peerInfo->rank);
@@ -410,18 +498,24 @@ ncclResult_t p2pSetup(ncclTinfo_t* myOpaqueInfo, ncclTinfo_t* peerOpaqueInfo, st
   return ncclSuccess;
 }
 
-static ncclResult_t p2pConnect(struct ncclConnect* connectInfo, struct ncclConnector* connector, struct ncclSendRecvMem** remDevMem) {
+static ncclResult_t p2pConnect(struct ncclConnect* connectInfo, struct ncclConnector* connector, struct ncclSendRecvMem** remDevMem, void** resources) {
   struct p2pConnectInfo* info = (struct p2pConnectInfo*)connectInfo;
   if (info->direct) {
     *remDevMem = info->directPtr;
     connector->conn.direct = 1;
     connector->conn.ptrExchange = &((*remDevMem)->ptrExchange);
+    *resources = NULL;
   } else {
-    cudaError_t err = cudaIpcOpenMemHandle((void**)remDevMem,
+    void* remPtr;
+    cudaError_t err = cudaIpcOpenMemHandle(&remPtr,
           info->devIpc, cudaIpcMemLazyEnablePeerAccess);
+    void** ipcPtrSave = (void**) malloc(sizeof(void*));
+    *resources = ipcPtrSave;
+    *ipcPtrSave = remPtr;
+    *remDevMem = (struct ncclSendRecvMem*)remPtr;
     if (err != cudaSuccess) {
-      WARN("failed to open CUDA IPC handle : %s",
-          cudaGetErrorString(err));
+      WARN("failed to open CUDA IPC handle : %d %s",
+           err, cudaGetErrorString(err));
       return ncclUnhandledCudaError;
     }
   }
@@ -431,8 +525,9 @@ static ncclResult_t p2pConnect(struct ncclConnect* connectInfo, struct ncclConne
 /* Connect to this peer */
 ncclResult_t p2pSendConnect(struct ncclConnect* connectInfo, struct ncclConnector* send) {
   struct ncclSendRecvMem* remDevMem;
-  NCCLCHECK(p2pConnect(connectInfo, send, &remDevMem));
+  NCCLCHECK(p2pConnect(connectInfo, send, &remDevMem, &send->transportResources));
   send->conn.buff = remDevMem->buff;
+  send->conn.llBuff = remDevMem->llBuff;
   send->conn.tail = &remDevMem->tail;
   send->conn.opCount = &remDevMem->opCount;
   // send->conn->head should have been set to devMem already
@@ -441,15 +536,21 @@ ncclResult_t p2pSendConnect(struct ncclConnect* connectInfo, struct ncclConnecto
 
 ncclResult_t p2pRecvConnect(struct ncclConnect* connectInfo, struct ncclConnector* recv) {
   struct ncclSendRecvMem* remDevMem;
-  NCCLCHECK(p2pConnect(connectInfo, recv, &remDevMem));
+  NCCLCHECK(p2pConnect(connectInfo, recv, &remDevMem, &recv->transportResources));
   // recv->conn->buff should have been set to devMem already
   // recv->conn->tail should have been set to devMem already
   // recv->conn->opCount should have been set to devMem already
   recv->conn.head = &remDevMem->head;
+  recv->conn.llHead = &remDevMem->llHead;
   return ncclSuccess;
 }
 
 ncclResult_t p2pFree(void* resources) {
+  if (resources != NULL) {
+    void** ipcPtrSave = (void**) resources;
+    CUDACHECK(cudaIpcCloseMemHandle(*ipcPtrSave));
+    free(resources);
+  }
   return ncclSuccess;
 }
 

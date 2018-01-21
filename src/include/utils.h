@@ -13,4 +13,12 @@ void getHostName(char* hostname, int maxlen);
 uint64_t getHostHash(const char* string);
 int getHostNumber(const char* string);
 
+struct netIf {
+  char prefix[64];
+  int port;
+};
+
+int parseStringList(const char* string, struct netIf* ifList, int maxList);
+bool matchIfList(const char* string, int port, struct netIf* ifList, int listSize);
+
 #endif

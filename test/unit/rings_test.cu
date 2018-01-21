@@ -7,15 +7,21 @@
 #include "nccl.h"
 #include "core.h"
 #include "rings.h"
+
+int testCudaCompCap = 0;
+int ncclCudaCompCap() {
+  return testCudaCompCap;
+}
+
 /*=========== Topologies definitions =============*/
-int PCI2_tr[] = 
+int PCI2_tr[] =
   { 0, 0,
     0, 0 };
 int PCI2_vl[] =
   { 1, 4,
     4, 1 };
 
-int PCI4_tr[] = 
+int PCI4_tr[] =
   { 0, 0, 0, 0,
     0, 0, 0, 0,
     0, 0, 0, 0,
@@ -26,7 +32,7 @@ int PCI4_vl[] =
     3, 3, 1, 4,
     3, 3, 4, 1 };
 
-int PCI8_tr[] = 
+int PCI8_tr[] =
   { 0, 0, 0, 0, 0, 0, 0, 0,
     0, 0, 0, 0, 0, 0, 0, 0,
     0, 0, 0, 0, 0, 0, 0, 0,
@@ -45,7 +51,26 @@ int PCI8_vl[] =
     2, 2, 2, 2, 3, 3, 1, 4,
     2, 2, 2, 2, 3, 3, 4, 1 };
 
-int PCI16_tr[] = 
+int PCU8_tr[] =
+  { 0, 0, 0, 0, 0, 0, 0, 0,
+    0, 0, 0, 0, 0, 0, 0, 0,
+    0, 0, 0, 0, 0, 0, 0, 0,
+    0, 0, 0, 0, 0, 0, 0, 0,
+    0, 0, 0, 0, 0, 0, 0, 0,
+    0, 0, 0, 0, 0, 0, 0, 0,
+    0, 0, 0, 0, 0, 0, 0, 0,
+    0, 0, 0, 0, 0, 0, 0, 0 };
+int PCU8_vl[] =
+  { 1, 2, 4, 2, 3, 2, 3, 2,
+    2, 1, 2, 3, 2, 3, 2, 4,
+    4, 2, 1, 2, 3, 2, 3, 2,
+    2, 3, 2, 1, 2, 4, 2, 3,
+    3, 2, 3, 2, 1, 2, 4, 2,
+    2, 3, 2, 4, 2, 1, 2, 3,
+    3, 2, 3, 2, 4, 2, 1, 2,
+    2, 4, 2, 3, 2, 3, 2, 1 };
+
+int PCI16_tr[] =
   { 0, 0, 0, 0, 0, 0, 0, 0, 2, 2, 2, 2, 2, 2, 2, 2,
     0, 0, 0, 0, 0, 0, 0, 0, 2, 2, 2, 2, 2, 2, 2, 2,
     0, 0, 0, 0, 0, 0, 0, 0, 2, 2, 2, 2, 2, 2, 2, 2,
@@ -80,7 +105,42 @@ int PCI16_vl[] =
     02, 02, 02, 02, 02, 02, 02, 02,  2,  2,  2,  2,  3,  3,  1,  4,
     02, 02, 02, 02, 02, 02, 02, 02,  2,  2,  2,  2,  3,  3,  4,  1 };
 
-int QPI4_tr[] = 
+int PCU16_tr[] =
+  { 0, 0, 0, 0, 0, 0, 0, 0, 2, 2, 2, 2, 2, 2, 2, 2,
+    0, 0, 0, 0, 0, 0, 0, 0, 2, 2, 2, 2, 2, 2, 2, 2,
+    0, 0, 0, 0, 0, 0, 0, 0, 2, 2, 2, 2, 2, 2, 2, 2,
+    0, 0, 0, 0, 0, 0, 0, 0, 2, 2, 2, 2, 2, 2, 2, 2,
+    0, 0, 0, 0, 0, 0, 0, 0, 2, 2, 2, 2, 2, 2, 2, 2,
+    0, 0, 0, 0, 0, 0, 0, 0, 2, 2, 2, 2, 2, 2, 2, 2,
+    0, 0, 0, 0, 0, 0, 0, 0, 2, 2, 2, 2, 2, 2, 2, 2,
+    0, 0, 0, 0, 0, 0, 0, 0, 2, 2, 2, 2, 2, 2, 2, 2,
+    2, 2, 2, 2, 2, 2, 2, 2, 0, 0, 0, 0, 0, 0, 0, 0,
+    2, 2, 2, 2, 2, 2, 2, 2, 0, 0, 0, 0, 0, 0, 0, 0,
+    2, 2, 2, 2, 2, 2, 2, 2, 0, 0, 0, 0, 0, 0, 0, 0,
+    2, 2, 2, 2, 2, 2, 2, 2, 0, 0, 0, 0, 0, 0, 0, 0,
+    2, 2, 2, 2, 2, 2, 2, 2, 0, 0, 0, 0, 0, 0, 0, 0,
+    2, 2, 2, 2, 2, 2, 2, 2, 0, 0, 0, 0, 0, 0, 0, 0,
+    2, 2, 2, 2, 2, 2, 2, 2, 0, 0, 0, 0, 0, 0, 0, 0,
+    2, 2, 2, 2, 2, 2, 2, 2, 0, 0, 0, 0, 0, 0, 0, 0 };
+int PCU16_vl[] =
+  {  1,  2,  4,  2,  3,  2,  3,  2, 04, 04, 04, 04, 04, 04, 04, 04,
+     2,  1,  2,  3,  2,  3,  2,  4, 04, 04, 04, 04, 04, 04, 04, 04,
+     4,  2,  1,  2,  3,  2,  3,  2, 04, 04, 04, 04, 04, 04, 04, 04,
+     2,  3,  2,  1,  2,  4,  2,  3, 04, 04, 04, 04, 04, 04, 04, 04,
+     3,  2,  3,  2,  1,  2,  4,  2, 02, 02, 02, 02, 02, 02, 02, 02,
+     2,  3,  2,  4,  2,  1,  2,  3, 02, 02, 02, 02, 02, 02, 02, 02,
+     3,  2,  3,  2,  4,  2,  1,  2, 02, 02, 02, 02, 02, 02, 02, 02,
+     2,  4,  2,  3,  2,  3,  2,  1, 02, 02, 02, 02, 02, 02, 02, 02,
+    04, 04, 04, 04, 04, 04, 04, 04,  1,  2,  4,  2,  3,  2,  3,  2,
+    04, 04, 04, 04, 04, 04, 04, 04,  2,  1,  2,  3,  2,  3,  2,  4,
+    04, 04, 04, 04, 04, 04, 04, 04,  4,  2,  1,  2,  3,  2,  3,  2,
+    04, 04, 04, 04, 04, 04, 04, 04,  2,  3,  2,  1,  2,  4,  2,  3,
+    02, 02, 02, 02, 02, 02, 02, 02,  3,  2,  3,  2,  1,  2,  4,  2,
+    02, 02, 02, 02, 02, 02, 02, 02,  2,  3,  2,  4,  2,  1,  2,  3,
+    02, 02, 02, 02, 02, 02, 02, 02,  3,  2,  3,  2,  4,  2,  1,  2,
+    02, 02, 02, 02, 02, 02, 02, 02,  2,  4,  2,  3,  2,  3,  2,  1 };
+
+int QPI4_tr[] =
   { 0, 0, 1, 1,
     0, 0, 1, 1,
     1, 1, 0, 0,
@@ -91,7 +151,7 @@ int QPI4_vl[] =
     1, 1, 1, 2,
     1, 1, 2, 1 };
 
-int QPI8_tr[] = 
+int QPI8_tr[] =
   { 0, 0, 0, 0, 1, 1, 1, 1,
     0, 0, 0, 0, 1, 1, 1, 1,
     0, 0, 0, 0, 1, 1, 1, 1,
@@ -110,7 +170,7 @@ int QPI8_vl[] =
     1, 1, 1, 1, 2, 2, 1, 4,
     1, 1, 1, 1, 2, 2, 4, 1 };
 
-int QPI16_tr[] = 
+int QPI16_tr[] =
   { 0, 0, 0, 0, 1, 1, 1, 1, 2, 2, 2, 2, 2, 2, 2, 2,
     0, 0, 0, 0, 1, 1, 1, 1, 2, 2, 2, 2, 2, 2, 2, 2,
     0, 0, 0, 0, 1, 1, 1, 1, 2, 2, 2, 2, 2, 2, 2, 2,
@@ -145,7 +205,7 @@ int QPI16_vl[] =
     021, 021, 021, 021, 021, 021, 021, 021,   1,   1,   1,   1,   2,   2,   1,   4,
     021, 021, 021, 021, 021, 021, 021, 021,   1,   1,   1,   1,   2,   2,   4,   1 };
 
-int QPU4_tr[] = 
+int QPU4_tr[] =
   { 0, 1, 0, 1,
     1, 0, 1, 0,
     0, 1, 0, 1,
@@ -156,7 +216,7 @@ int QPU4_vl[] =
     4, 1, 1, 1,
     1, 4, 1, 1 };
 
-int QPI6_tr[] = 
+int QPI6_tr[] =
   { 0, 0, 0, 1, 2, 2,
     0, 0, 0, 1, 2, 2,
     0, 0, 0, 1, 2, 2, 
@@ -171,7 +231,7 @@ int QPI6_vl[] =
     1, 1, 1, 4, 1, 2,
     1, 1, 1, 2, 2, 1 };
 
-int QPU6_tr[] = 
+int QPU6_tr[] =
   { 0, 1, 0, 0, 2, 2,
     1, 0, 1, 1, 2, 2,
     0, 1, 0, 0, 2, 2, 
@@ -186,7 +246,7 @@ int QPU6_vl[] =
     1, 1, 1, 1, 1, 4,
     1, 1, 1, 1, 4, 1 };
 
-int QPU8_tr[] = 
+int QPU8_tr[] =
   { 0, 1, 1, 0, 1, 0, 0, 1,
     1, 0, 0, 1, 0, 1, 1, 0,
     1, 0, 0, 1, 0, 1, 1, 0,
@@ -205,7 +265,7 @@ int QPU8_vl[] =
     4, 1, 1, 2, 1, 2, 1, 1,
     1, 4, 2, 1, 2, 1, 1, 1 };
 
-int QPU16_tr[] = 
+int QPU16_tr[] =
   { 0, 1, 1, 0, 1, 0, 0, 1, 2, 2, 2, 2, 2, 2, 2, 2,
     1, 0, 0, 1, 0, 1, 1, 0, 2, 2, 2, 2, 2, 2, 2, 2,
     1, 0, 0, 1, 0, 1, 1, 0, 2, 2, 2, 2, 2, 2, 2, 2,
@@ -240,7 +300,7 @@ int QPU16_vl[] =
     001, 001, 001, 001, 001, 001, 001, 001,   4,   1,   1,   2,   1,   2,   1,   1,
     003, 003, 003, 003, 003, 003, 003, 003,   1,   4,   2,   1,   2,   1,   1,   1 };
 
-int QPX9_tr[] = 
+int QPX9_tr[] =
   { 0, 0, 0, 1, 1, 2, 2, 2, 2,
     0, 0, 0, 1, 1, 2, 2, 2, 2,
     0, 0, 0, 1, 1, 2, 2, 2, 2,
@@ -261,7 +321,7 @@ int QPX9_vl[] =
     011, 011, 011, 011, 011,   1,   1,   1,   4,
     011, 011, 011, 011, 011,   1,   1,   4,   1, };
 
-int NVL4_tr[] = 
+int NVL4_tr[] =
   { 0, 0, 0, 0,
     0, 0, 0, 0,
     0, 0, 0, 0,
@@ -272,7 +332,7 @@ int NVL4_vl[] =
     0x10, 0x10,    1, 0x20,
     0x10, 0x10, 0x20,    1 };
 
-int NVH4_tr[] = 
+int NVH4_tr[] =
   { 0, 0, 0, 0,
     0, 0, 0, 0,
     0, 0, 0, 0,
@@ -283,7 +343,7 @@ int NVH4_vl[] =
     0x10, 0x10,    1, 0x10,
     0x10, 0x10, 0x10,    1 };
 
-int NVL6_tr[] = 
+int NVL6_tr[] =
   { 0, 0, 0, 0, 0, 1,
     0, 0, 0, 0, 1, 0,
     0, 0, 0, 0, 1, 1,
@@ -298,7 +358,7 @@ int NVL6_vl[] =
     0x10,    1,    1,    1,    1, 0x10,
        1, 0x10,    1,    1, 0x10,    1 };
 
-int NVL8_tr[] = 
+int NVL8_tr[] =
   { 0, 0, 0, 0, 0, 1, 1, 1,
     0, 0, 0, 0, 1, 0, 1, 1,
     0, 0, 0, 0, 1, 1, 0, 1,
@@ -317,7 +377,7 @@ int NVL8_vl[] =
        1,    1, 0x10,    1, 0x10, 0x10,    1, 0x10, 
        1,    1,    1, 0x10, 0x10, 0x10, 0x10,    1 };
 
-int NVV8_tr[] = 
+int NVV8_tr[] =
   { 0, 0, 0, 0, 0, 1, 1, 1,
     0, 0, 0, 0, 1, 0, 1, 1,
     0, 0, 0, 0, 1, 1, 0, 1,
@@ -336,7 +396,7 @@ int NVV8_vl[] =
        1,    1, 0x10,    1, 0x20, 0x10,    1, 0x20, 
        1,    1,    1, 0x20, 0x10, 0x10, 0x20,    1 };
 
-int NVLX8_tr[] = 
+int NVLX8_tr[] =
   { 0, 0, 0, 0, 2, 2, 2, 2,
     0, 0, 0, 0, 2, 2, 2, 2,
     0, 0, 0, 0, 2, 2, 2, 2,
@@ -355,7 +415,7 @@ int NVLX8_vl[] =
     04211, 04211, 04211, 04211,  0x10,  0x10,     1,  0x10,
     04211, 04211, 04211, 04211,  0x10,  0x10,  0x10,     1 };
 
-int NVL16_tr[] = 
+int NVL16_tr[] =
   { 0, 0, 0, 0, 0, 1, 1, 1, 2, 2, 2, 2, 2, 2, 2, 2,
     0, 0, 0, 0, 1, 0, 1, 1, 2, 2, 2, 2, 2, 2, 2, 2,
     0, 0, 0, 0, 1, 1, 0, 1, 2, 2, 2, 2, 2, 2, 2, 2,
@@ -390,7 +450,7 @@ int NVL16_vl[] =
     04211, 04211, 04211, 04211, 04211, 04211, 04211, 04211,     1,     1,  0x10,     1,  0x10,  0x10,     1,  0x10,
     04211, 04211, 04211, 04211, 04211, 04211, 04211, 04211,     1,     1,     1,  0x10,  0x10,  0x10,  0x10,     1 };
 
-int NVL32_tr[] = 
+int NVL32_tr[] =
   { 0, 0, 0, 0, 0, 1, 1, 1, 2, 2, 2, 2, 2, 2, 2, 2, 2, 2, 2, 2, 2, 2, 2, 2, 2, 2, 2, 2, 2, 2, 2, 2,
     0, 0, 0, 0, 1, 0, 1, 1, 2, 2, 2, 2, 2, 2, 2, 2, 2, 2, 2, 2, 2, 2, 2, 2, 2, 2, 2, 2, 2, 2, 2, 2,
     0, 0, 0, 0, 1, 1, 0, 1, 2, 2, 2, 2, 2, 2, 2, 2, 2, 2, 2, 2, 2, 2, 2, 2, 2, 2, 2, 2, 2, 2, 2, 2,
@@ -457,7 +517,7 @@ int NVL32_vl[] =
     04211, 04211, 04211, 04211, 04211, 04211, 04211, 04211, 04211, 04211, 04211, 04211, 04211, 04211, 04211, 04211, 04211, 04211, 04211, 04211, 04211, 04211, 04211, 04211,     1,     1,  0x10,     1,  0x10,  0x10,     1,  0x10,
     04211, 04211, 04211, 04211, 04211, 04211, 04211, 04211, 04211, 04211, 04211, 04211, 04211, 04211, 04211, 04211, 04211, 04211, 04211, 04211, 04211, 04211, 04211, 04211,     1,     1,     1,  0x10,  0x10,  0x10,  0x10,     1 };
 
-int NVG8_tr[] = 
+int NVG8_tr[] =
   { 0, 0, 1, 1, 1, 1, 1, 0,
     0, 0, 0, 1, 1, 1, 1, 1,
     1, 0, 0, 0, 1, 1, 1, 1,
@@ -476,7 +536,7 @@ int NVG8_vl[] =
        1,    1,    1,    1,    1, 0x20,    1, 0x20,
     0x20,    1,    1,    1,    1,    1, 0x20,    1 };
 
-int NVG16_tr[] = 
+int NVG16_tr[] =
   { 0, 0, 1, 1, 1, 1, 1, 0, 2, 2, 2, 2, 2, 2, 2, 2,
     0, 0, 0, 1, 1, 1, 1, 1, 2, 2, 2, 2, 2, 2, 2, 2,
     1, 0, 0, 0, 1, 1, 1, 1, 2, 2, 2, 2, 2, 2, 2, 2,
@@ -557,7 +617,7 @@ static void dumpRings(int nrings, int *rings, int nranks, const char* toponame, 
 }
 
 /*=========== Main test function =============*/
-static ncclResult_t getRings(int nranks, int* transports, int* values, const char* toponame, int expectedNrings, int expectedNthreads) {
+static ncclResult_t getRings(int compCap, int nranks, int* transports, int* values, const char* toponame, int expectedNrings, int expectedNthreads) {
   int nrings_final = -1;
   int nthreads_final = -1;
   int prev[MAXRINGS*nranks];
@@ -568,9 +628,11 @@ static ncclResult_t getRings(int nranks, int* transports, int* values, const cha
 
   int rings[MAXRINGS*nranks];
 
+  testCudaCompCap = compCap;
+
   for (int rank=0; rank<nranks; rank++) {
     int nrings = MAXRINGS;
-    int nthreads = 512;
+    int nthreads = getDefaultThreads();
     ncclResult_t ret = ncclGetRings(&nrings, &nthreads, rank, nranks, transports, values, prev, next);
     if (ret != ncclSuccess) {
       sprintf(errortext, "Error : getRings returned %s", ncclGetErrorString(ret));
@@ -642,29 +704,31 @@ end:
 int main() {
   int err = 0;
   writeHeader();
-  CHECK(getRings(2, PCI2_tr, PCI2_vl, "PCI  2", 1, 512));
-  CHECK(getRings(4, PCI4_tr, PCI4_vl, "PCI  4", 1, 512));
-  CHECK(getRings(8, PCI8_tr, PCI8_vl, "PCI  8", 1, 512));
-  CHECK(getRings(16, PCI16_tr, PCI16_vl, "PCI 16", 1, 512));
-  CHECK(getRings(4, QPI4_tr, QPI4_vl, "QPI  4", 1, 512));
-  CHECK(getRings(8, QPI8_tr, QPI8_vl, "QPI  8", 1, 512));
-  CHECK(getRings(16, QPI16_tr, QPI16_vl, "QPI 16", 2, 512));
-  CHECK(getRings(4, QPU4_tr, QPU4_vl, "QPU  4", 1, 512));
-  CHECK(getRings(6, QPI6_tr, QPI6_vl, "QPI  6", 1, 512));
-  CHECK(getRings(6, QPU6_tr, QPU6_vl, "QPU  6", 1, 512));
-  CHECK(getRings(8, QPU8_tr, QPU8_vl, "QPU  8", 1, 512));
-  CHECK(getRings(16, QPU16_tr, QPU16_vl, "QPU 16", 1, 512));
-  CHECK(getRings(9, QPX9_tr, QPX9_vl, "QPX  9", 2, 512));
-  CHECK(getRings(4, NVL4_tr, NVL4_vl, "NVL  4", 8, 128));
-  CHECK(getRings(6, NVL6_tr, NVL6_vl, "NVL  6", 4, 128));
-  CHECK(getRings(4, NVH4_tr, NVH4_vl, "NVH  4", 12, 128));
-  CHECK(getRings(8, NVL8_tr, NVL8_vl, "NVL  8", 8, 128));
-  CHECK(getRings(8, NVLX8_tr, NVLX8_vl, "NVL X8", 2, 512));
-  CHECK(getRings(16, NVL16_tr, NVL16_vl, "NVL 16", 4, 512));
-  CHECK(getRings(32, NVL32_tr, NVL32_vl, "NVL 32", 4, 512));
-  CHECK(getRings(8, NVG8_tr, NVG8_vl, "NVG  8", 8, 128));
-  CHECK(getRings(16, NVG16_tr, NVG16_vl, "NVG 16", 1, 512));
-  CHECK(getRings(8, NVV8_tr, NVV8_vl, "NVV  8", 12, 128));
+  CHECK(getRings(3, 2, PCI2_tr, PCI2_vl, "PCI  2", 1, 512));
+  CHECK(getRings(3, 4, PCI4_tr, PCI4_vl, "PCI  4", 1, 512));
+  CHECK(getRings(3, 8, PCI8_tr, PCI8_vl, "PCI  8", 1, 512));
+  CHECK(getRings(3, 16, PCI16_tr, PCI16_vl, "PCI 16", 1, 512));
+  CHECK(getRings(3, 8, PCU8_tr, PCU8_vl, "PCU  8", 1, 512));
+  CHECK(getRings(3, 16, PCU16_tr, PCU16_vl, "PCU 16", 1, 512));
+  CHECK(getRings(3, 4, QPI4_tr, QPI4_vl, "QPI  4", 1, 512));
+  CHECK(getRings(3, 8, QPI8_tr, QPI8_vl, "QPI  8", 1, 512));
+  CHECK(getRings(3, 16, QPI16_tr, QPI16_vl, "QPI 16", 2, 512));
+  CHECK(getRings(5, 4, QPU4_tr, QPU4_vl, "QPU  4", 1, 256));
+  CHECK(getRings(3, 6, QPI6_tr, QPI6_vl, "QPI  6", 1, 512));
+  CHECK(getRings(5, 6, QPU6_tr, QPU6_vl, "QPU  6", 1, 256));
+  CHECK(getRings(5, 8, QPU8_tr, QPU8_vl, "QPU  8", 1, 256));
+  CHECK(getRings(5, 16, QPU16_tr, QPU16_vl, "QPU 16", 1, 256));
+  CHECK(getRings(3, 9, QPX9_tr, QPX9_vl, "QPX  9", 2, 512));
+  CHECK(getRings(6, 4, NVL4_tr, NVL4_vl, "NVL  4", 8, 128));
+  CHECK(getRings(6, 6, NVL6_tr, NVL6_vl, "NVL  6", 4, 128));
+  CHECK(getRings(6, 4, NVH4_tr, NVH4_vl, "NVH  4", 12, 128));
+  CHECK(getRings(6, 8, NVL8_tr, NVL8_vl, "NVL  8", 8, 128));
+  CHECK(getRings(6, 8, NVLX8_tr, NVLX8_vl, "NVL X8", 2, 256));
+  CHECK(getRings(6, 16, NVL16_tr, NVL16_vl, "NVL 16", 4, 256));
+  CHECK(getRings(6, 32, NVL32_tr, NVL32_vl, "NVL 32", 4, 256));
+  CHECK(getRings(6, 8, NVG8_tr, NVG8_vl, "NVG  8", 8, 128));
+  CHECK(getRings(6, 16, NVG16_tr, NVG16_vl, "NVG 16", 1, 256));
+  CHECK(getRings(7, 8, NVV8_tr, NVV8_vl, "NVV  8", 12, 256));
   writeFooter(err);
   return err;
 }

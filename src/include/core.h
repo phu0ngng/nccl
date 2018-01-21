@@ -13,19 +13,60 @@
 #include <cstdio>
 #include <cuda_runtime.h>
 
+#if __CUDACC_VER_MAJOR__ < 9
+struct cudaLaunchParams
+{
+  void *func;
+  dim3 gridDim;
+  dim3 blockDim;
+  void **args;
+  size_t sharedMem;
+  cudaStream_t stream;
+};
+#endif
+
 #define MAXRINGS 48
-#define DEFAULT_BUFFER_SIZE_BYTES (1UL << 22)
+#define DEFAULT_BUFFER_SIZE_BYTES (1UL << 22) /* 4MiB */
+#define NCCL_LL_THRESHOLD 16384
+
+#define DEFAULT_SINGLE_RING_THRESHOLD (1UL << 17) /* 128KiB - but 256KiB for Volta */
+
+extern size_t ncclSingleRingThreshold;
+#define LIMIT_NRINGS(SIZE, NRINGS) ((SIZE) <= ncclSingleRingThreshold ? 1 : (NRINGS))
+
+union ncclLLFifoLine {
+  /* Flags have to be *after* data, because otherwise, an incomplete receive
+     from the network may receive the flag but not the data.
+     Note this is assuming that either we receive contiguous chunks of data
+     (sockets) or data is written with an atomicity of 8 bytes (IB/RDMA). */
+  struct {
+    uint32_t data1;
+    uint32_t flag1;
+    uint32_t data2;
+    uint32_t flag2;
+  };
+  uint64_t v[2];
+  int4 i4;
+};
 
 struct ncclConnInfo {
+  // Regular comm mechanism
   char *buff;         // Local for recv, remote for send
-  int *tail;          // Local for recv, remote for send
-  int *head;          // Local for send, remote for recv
-  int *opCount;       // Local for recv, remote for send
+  uint64_t *tail;     // Local for recv, remote for send
+  uint64_t *head;     // Local for send, remote for recv
+  uint64_t *opCount;  // Local for recv, remote for send
 
   int direct;         // Direct communication
   void **ptrExchange; // Pointer exchange for direct communication
 
   int *fifo;          // Size fifo for proxy
+
+  // Low latency mechanism
+  char *llBuff;       // Local for recv, remote for send
+  uint64_t *llHead;   // Local for send, remote for recv
+  int *llFifo;        // LL Size fifo for proxy
+  uint64_t llStep;    // Keep where we are
+  uint64_t llLastCleaning;
 };
 
 struct ncclConnector {
@@ -37,22 +78,32 @@ struct ncclConnector {
 
 #define CACHE_LINE_SIZE 128
 #define PAGE_SIZE 4096
+#define SIZES_FIFO_SIZE 32
+
+#define LL_NTHREADS 64
+#define NUM_LL_CHUNKS 8
+#define NUM_LINES_PER_THREAD 2
+#define LL_BUFF_SIZE (NUM_LINES_PER_THREAD*LL_NTHREADS*NUM_LL_CHUNKS*sizeof(union ncclLLFifoLine)) // 16K
+#define LL_CLEAN_FREQ 0x10000000
 
 struct ncclSendRecvMem {
   union {
     struct {
-      int head;
-      char pad1[CACHE_LINE_SIZE-sizeof(int)];
-      int tail;
-      char pad2[CACHE_LINE_SIZE-sizeof(int)];
+      uint64_t head;
+      char pad1[CACHE_LINE_SIZE-sizeof(uint64_t)];
+      uint64_t tail;
+      char pad2[CACHE_LINE_SIZE-sizeof(uint64_t)];
       void* ptrExchange;
-      char pad3[CACHE_LINE_SIZE-sizeof(int)];
-      int opCount;
-      char pad4[CACHE_LINE_SIZE-sizeof(int)];
-      int sizesFifo[TRANSPORT_PROXY_FIFO_SIZE];
+      char pad3[CACHE_LINE_SIZE-sizeof(void*)];
+      uint64_t opCount;
+      char pad4[CACHE_LINE_SIZE-sizeof(uint64_t)];
+      int sizesFifo[SIZES_FIFO_SIZE];
+      int llSizesFifo[SIZES_FIFO_SIZE];
+      uint64_t llHead;
     };
     char pad5[PAGE_SIZE];
   };
+  char llBuff[LL_BUFF_SIZE];
   char buff[1]; // Actually larger than that
 };
 
@@ -73,25 +124,44 @@ struct ncclRing {
   int* devUserRanks;
 };
 
+template<typename T>
+struct KernelArgs {
+  // general parameters
+  int root;
+  size_t N;
+
+  // local and remote input, output, and buffer
+  const T * __restrict__ ThisInput;
+  T * __restrict__ ThisOutput;
+
+  struct ncclComm* comm;
+  int nRings;
+  uint64_t opCount;
+};
+
 struct ncclComm {
   int rank;    // my rank in the communicator
   int nRanks;  // number of GPUs in communicator
   int cudaDev; // my cuda device index
 
-  enum { PCIE, NVLINK } p2ptype;
-
-  cudaStream_t prevStream; // cache last used stream
-  cudaEvent_t doneEvent; // orders operations in different streams
+  enum { GROUP, PARALLEL } launchMode;
+  cudaStream_t userStream; // User provided stream for the current collective
+  cudaStream_t ncclStream; // Group Mode : nccl stream
+                           // Parallel mode : prev stream
+  cudaEvent_t doneEvent;
 
   // Counter to make sure collectives match (needed for bcast/reduce
   // where syncs are not symmetric).
-  int opCount;
+  uint64_t opCount;
 
   // Rings for collectives 
   int nRings;
   struct ncclRing rings[MAXRINGS];
   int nThreads;
   
+  // Low-latency algorithm threshold
+  int llThreshold;
+
   // Device copy of the communicator
   struct ncclComm *devComm;
 
@@ -100,14 +170,35 @@ struct ncclComm {
   int intraRanks;
   int* intraBarrier;
   int intraPhase;
+
+  // Storage for deferred intra-process launch
+  struct cudaLaunchParams * intraParams;
+  int* intraCudaDevs;
+  int* intraCGMode; // Whether we can use CUDA9 CGMD or not
+  struct KernelArgs<void> args;
+  void* argsptr;
 };
+
+#define DIVUP(x, y) \
+    (((x)+(y)-1)/(y))
+#define ROUNDUP(x, y) \
+    (DIVUP((x), (y))*(y))
 
 // Check CUDA calls
 #define CUDACHECK(cmd) do {                                 \
     cudaError_t e = cmd;                                    \
     if( e != cudaSuccess ) {                                \
-        WARN("Cuda failure '%s'", cudaGetErrorString(e)); \
+        WARN("Cuda failure '%s'", cudaGetErrorString(e));   \
         return ncclUnhandledCudaError;                      \
+    }                                                       \
+} while(false)
+
+#define CUDACHECKGOTO(cmd, res, label) do {                 \
+    cudaError_t e = cmd;                                    \
+    if( e != cudaSuccess ) {                                \
+        WARN("Cuda failure '%s'", cudaGetErrorString(e));   \
+        res = ncclUnhandledCudaError;                       \
+        goto label;                                         \
     }                                                       \
 } while(false)
 
@@ -142,6 +233,15 @@ struct ncclComm {
   } \
 } while (0);
 
+#define NCCLCHECKGOTO(call, res, label) do { \
+  res = call; \
+  if (res != ncclSuccess) { \
+    /* Print the back trace*/ \
+    INFO("%s:%d -> %d", __FILE__, __LINE__, res); \
+    goto label; \
+  } \
+} while (0);
+
 #ifdef PROFAPI
 #define NCCL_API(ret, func, args...)        \
     __attribute__ ((visibility("default"))) \
@@ -157,6 +257,8 @@ struct ncclComm {
     __attribute__ ((visibility("default"))) \
     ret func(args)
 #endif // end PROFAPI
+
+int ncclCudaCompCap();
 
 #endif // end include guard
 

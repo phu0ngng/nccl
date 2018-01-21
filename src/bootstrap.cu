@@ -124,6 +124,9 @@ out:
       if (extSendComm[r]) ncclNetCloseSend(extSendComm[r]);
       if (extRecvComm[r]) ncclNetCloseRecv(extRecvComm[r]);
   }
+  free(commId);
+  if (extSendComm) free(extSendComm);
+  if (extRecvComm) free(extRecvComm);
   return NULL;
 }
 
@@ -137,7 +140,9 @@ ncclResult_t bootstrapGetUniqueId(ncclUniqueId* out) {
   id->hostHash = getHostHash(hostname);
   id->pid = getpid();
 
-  pthread_create(&id->boostrapThread, NULL, bootstrapRoot, (void *)id);
+  ncclUniqueId* threadIdCopy = (ncclUniqueId*)malloc(sizeof(ncclUniqueId));
+  memcpy(threadIdCopy, id, sizeof(ncclUniqueId));
+  pthread_create(&id->boostrapThread, NULL, bootstrapRoot, (void *)threadIdCopy);
   return ncclSuccess;
 }
 
