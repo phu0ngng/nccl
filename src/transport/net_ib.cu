@@ -360,7 +360,14 @@ ncclResult_t ncclIbRtrQp(ibv_qp* qp, struct ncclIbQpInfo* info) {
     qpAttr.ah_attr.is_global = 0;
     qpAttr.ah_attr.dlid = info->lid;
   }
-  qpAttr.ah_attr.sl = 1;
+  static int ncclIbSl = -1;
+  if (ncclIbSl == -1) {
+    char* str = getenv("NCCL_IB_SL");
+    ncclIbSl = str ? atoi(str) : 1;
+    if (str)
+      INFO("NET/IB: Using service level %d", ncclIbSl);
+  }
+  qpAttr.ah_attr.sl = ncclIbSl;
   qpAttr.ah_attr.src_path_bits = 0;
   qpAttr.ah_attr.port_num = info->ib_port;
   NCCLCHECK(wrap_ibv_modify_qp(qp, &qpAttr, IBV_QP_STATE | IBV_QP_AV | IBV_QP_PATH_MTU | IBV_QP_DEST_QPN | IBV_QP_RQ_PSN | IBV_QP_MAX_DEST_RD_ATOMIC | IBV_QP_MIN_RNR_TIMER));
@@ -411,22 +418,33 @@ int ncclIbConnect(int dev, void* opaqueHandle, void** sendComm) {
   struct ibv_port_attr portAttr;
   NCCLCHECK(wrap_ibv_query_port(ctx, ib_port, &portAttr));
   struct ncclIbQpInfo qpInfo;
-  qpInfo.lid = portAttr.lid;
   qpInfo.ib_port = ib_port;
   qpInfo.qpn = comm->qp->qp_num;
   qpInfo.mtu = portAttr.active_mtu;
-
-  // RoCE support
-  union ibv_gid gid;
-  NCCLCHECK(wrap_ibv_query_gid(ctx, ib_port, 0, &gid));
-  qpInfo.spn = gid.global.subnet_prefix;
-  qpInfo.iid = gid.global.interface_id;
 
   // Prepare my fifo
   NCCLCHECK(wrap_ibv_reg_mr(&comm->fifoMr, comm->verbs.pd, comm->fifo, sizeof(struct ncclIbSendFifo)*MAX_REQUESTS, IBV_ACCESS_LOCAL_WRITE|IBV_ACCESS_REMOTE_WRITE|IBV_ACCESS_REMOTE_READ));
   qpInfo.fifoRkey = comm->fifoMr->rkey;
   qpInfo.fifoAddr = (uint64_t)comm->fifo;
-   
+
+  // RoCE support
+  static int ibGidIndex = -1;
+  if (ibGidIndex == -1) {
+    char* str = getenv("NCCL_IB_GID_INDEX");
+    ibGidIndex = str ? atoi(str) : 0;
+  }
+
+  qpInfo.lid = portAttr.lid;
+  if (qpInfo.lid) { // IB
+    INFO("NET/IB: Dev %d Port %d qpn %d mtu %d LID %d", dev, ib_port, qpInfo.qpn, qpInfo.mtu, qpInfo.lid);
+  } else { // RoCE
+    union ibv_gid gid;
+    NCCLCHECK(wrap_ibv_query_gid(ctx, ib_port, ibGidIndex, &gid));
+    qpInfo.spn = gid.global.subnet_prefix;
+    qpInfo.iid = gid.global.interface_id;
+    INFO("NET/IB: Dev %d Port %d qpn %d mtu %d GID %d (%lX/%lX)", dev, ib_port, qpInfo.qpn, qpInfo.mtu, ibGidIndex, qpInfo.spn, qpInfo.iid);
+  }
+
   NCCLCHECK(socketSend(comm->fd, &qpInfo, sizeof(qpInfo)));
   return 0;
 }

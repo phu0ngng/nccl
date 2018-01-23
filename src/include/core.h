@@ -79,6 +79,7 @@ struct ncclConnector {
 #define CACHE_LINE_SIZE 128
 #define PAGE_SIZE 4096
 #define SIZES_FIFO_SIZE 32
+#define CUDA_IPC_MIN 2097152UL /* 2MiB - not currently used */
 
 #define LL_NTHREADS 64
 #define NUM_LL_CHUNKS 8
@@ -86,20 +87,28 @@ struct ncclConnector {
 #define LL_BUFF_SIZE (NUM_LINES_PER_THREAD*LL_NTHREADS*NUM_LL_CHUNKS*sizeof(union ncclLLFifoLine)) // 16K
 #define LL_CLEAN_FREQ 0x10000000
 
-struct ncclSendRecvMem {
+struct ncclSendMem {
   union {
     struct {
       uint64_t head;
       char pad1[CACHE_LINE_SIZE-sizeof(uint64_t)];
+      void* ptrExchange;
+      char pad2[CACHE_LINE_SIZE-sizeof(void*)];
+      uint64_t llHead;
+    };
+    char pad3[PAGE_SIZE];
+  };
+};
+
+struct ncclRecvMem {
+  union {
+    struct {
       uint64_t tail;
       char pad2[CACHE_LINE_SIZE-sizeof(uint64_t)];
-      void* ptrExchange;
-      char pad3[CACHE_LINE_SIZE-sizeof(void*)];
       uint64_t opCount;
       char pad4[CACHE_LINE_SIZE-sizeof(uint64_t)];
       int sizesFifo[SIZES_FIFO_SIZE];
       int llSizesFifo[SIZES_FIFO_SIZE];
-      uint64_t llHead;
     };
     char pad5[PAGE_SIZE];
   };
@@ -111,9 +120,11 @@ struct ncclRing {
   int id;
   int nthreads;
   // Per ring resources
-  struct ncclSendRecvMem* devMem;   // CUDA-size resources
+  struct ncclSendMem* devMemSend;   // CUDA-size resources
+  struct ncclRecvMem* devMemRecv;   // CUDA-size resources
   int buffSize;
-  int devMemSize;    // Keep the size for IPCs
+  int devMemSendSize;    // Keep the size for IPCs
+  int devMemRecvSize;    // Keep the size for IPCs
   struct ncclConnector send;
   struct ncclConnector recv;
 
