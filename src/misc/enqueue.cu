@@ -159,13 +159,14 @@ ncclResult_t ncclCpuBarrierWait(ncclComm_t comm) {
   while (*ptr < comm->intraRanks) pthread_yield();
   comm->intraPhase ^= 1;
   struct cudaLaunchParams *params = comm->myParams;
-  if (comm->launchMode == ncclComm::GROUP) {
-    CUDACHECK(cudaEventRecord(comm->doneEvent, params->stream));
-    CUDACHECK(cudaStreamWaitEvent(comm->userStream, comm->doneEvent, 0));
-  } else {
-    CUDACHECK(cudaLaunchKernel(params->func, params->gridDim, params->blockDim, params->args, params->sharedMem, params->stream));
-    CUDACHECK(cudaEventRecord(comm->doneEvent, comm->userStream));
+  if (comm->launchMode == ncclComm::PARALLEL) {
+    CUDACHECK(cudaLaunchKernel(params->func, params->gridDim, params->blockDim, params->args, params->sharedMem, comm->userStream));
   }
+  // Start the network proxies as soon as the kernel has been launched. We can't
+  // perform any CUDA call between the two or having a cudaFree between the CUDA
+  // launch and the transportStartProxies call could cause a deadlock.
+  // Also, starting the proxies after the CUDA launch seems to be better for
+  // performance (latency).
   for (int r=0; r<params->gridDim.x; r++) {
     struct ncclRing* ring = comm->rings+r;
     ring->collStart = ring->collFifoTail;
@@ -173,6 +174,13 @@ ncclResult_t ncclCpuBarrierWait(ncclComm_t comm) {
   }
   params->gridDim.x = params->blockDim.x = 0;
   NCCLCHECK(transportStartProxies(comm));
+
+  if (comm->launchMode == ncclComm::GROUP) {
+    CUDACHECK(cudaEventRecord(comm->doneEvent, params->stream));
+    CUDACHECK(cudaStreamWaitEvent(comm->userStream, comm->doneEvent, 0));
+  } else {
+    CUDACHECK(cudaEventRecord(comm->doneEvent, comm->userStream));
+  }
   return ncclSuccess;
 }
 
