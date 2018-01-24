@@ -174,8 +174,12 @@ ncclResult_t ncclCpuBarrierWait(ncclComm_t comm) {
   }
   params->gridDim.x = params->blockDim.x = 0;
   NCCLCHECK(transportStartProxies(comm));
+  return ncclSuccess;
+}
 
+ncclResult_t ncclEnqueueEvents(ncclComm_t comm) {
   if (comm->launchMode == ncclComm::GROUP) {
+    struct cudaLaunchParams *params = comm->myParams;
     CUDACHECK(cudaEventRecord(comm->doneEvent, params->stream));
     CUDACHECK(cudaStreamWaitEvent(comm->userStream, comm->doneEvent, 0));
   } else {
@@ -207,6 +211,7 @@ ncclResult_t ncclEnqueueCheck(ncclFunc_t func, const char* primName, const void*
     NCCLCHECK(func(sendbuff, recvbuff, count, type, op, root, comm, stream));
     NCCLCHECK(ncclCpuBarrierCheckin(comm));
     NCCLCHECK(ncclCpuBarrierWait(comm));
+    NCCLCHECK(ncclEnqueueEvents(comm));
     return ncclSuccess;
   }
 }
