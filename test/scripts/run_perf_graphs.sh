@@ -121,6 +121,18 @@ if [ "$mode" == "aggregation" ] || [ "$mode" == "combo" ]; then
     return 0
   fi
 fi
+
+if [ "$mode" == "deadlock" ] || [ "$mode" == "combo" ]; then
+  echo "Running test/perf/${op}_perf on $ngpus GPUs [Deadlock] ..."
+  resdir="results_deadlock"
+  path=$resdir/$gpumodel
+  mkdir -p $path
+  result=$path/$op.$ngpus
+  test/perf/${op}_perf -t $ngpus -b 64 -e 64 -k 1 2>&1 | tee $result.out
+  if [ "$mode" != "combo" ]; then
+    return 0
+  fi
+fi
 }
 
 perf_ngpu_loop() {
@@ -150,12 +162,12 @@ export NCCL_DEBUG=WARN
 
 if [ "$mode" == "reorder" ]; then
   perf_ngpu_loop $gpumodel $maxgpu $mode all_reduce
+elif [ "$mode" == "deadlock" ]; then
+  generate_perf $gpumodel $maxgpu $mode all_reduce
 else
   perf_ngpu_loop $gpumodel $maxgpu $mode reduce
   perf_ngpu_loop $gpumodel $maxgpu $mode broadcast
   perf_ngpu_loop $gpumodel $maxgpu $mode all_reduce
   perf_ngpu_loop $gpumodel $maxgpu $mode all_gather
   perf_ngpu_loop $gpumodel $maxgpu $mode reduce_scatter
-  perf_ngpu_loop $gpumodel $maxgpu $mode all_gatherv
-  perf_ngpu_loop $gpumodel $maxgpu $mode reduce_scatterv
 fi

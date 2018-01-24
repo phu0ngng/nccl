@@ -81,5 +81,13 @@ done
 DIR=html_api
 rm -rf $DST/$DIR
 mkdir -p $DST/$DIR
+grep -r -i "PASS" ${VER}${GM}_api/results >> $DST/$DIR/${GM}.txt
+grep -r -i "PASS" ${VER}${PM}_api/results >> $DST/$DIR/${PM}.txt
 grep -r -i "FAIL" ${VER}${GM}_api/results >> $DST/$DIR/fail.txt
 grep -r -i "FAIL" ${VER}${PM}_api/results >> $DST/$DIR/fail.txt
+
+DIR=html_deadlock
+rm -rf $DST/$DIR
+mkdir -p $DST/$DIR
+grep -r -i "OK" ${VER}${GM}_deadlock/results >> $DST/$DIR/${GM}.txt
+grep -r -i "OK" ${VER}${PM}_deadlock/results >> $DST/$DIR/${PM}.txt

@@ -45,6 +45,15 @@ if [ "$INSTALL" != "1" ]; then
   export LD_LIBRARY_PATH=$DEBDIR/lib:$LD_LIBRARY_PATH
 fi
 
+# build tests
+cd $NCCLROOT
+make -j test.clean
+if [ "$INSTALL" == "1" ]; then
+  make -j test.build MPI=1 2>&1 | tee make_test_mpi.log
+else
+  make -j test.build MPI=1 NCCLDIR=${DEBDIR} 2>&1 | tee make_test_mpi.log
+fi
+
 # SLURM setting
 timeout=2
 if [ "$mode" == "all" ]; then
@@ -60,8 +69,8 @@ else
   salloc_cmd="timeout ${timeout}m "
 fi
 
+cd $BLDDIR
 if [ "$mode" == "dlfw" ] && [ "$gpumodel" == "P100" ]; then
-  cd $BLDDIR
   $SHDIR/caffe2.sh $gpumodel
   $SHDIR/cntk.sh $gpumodel
   $SHDIR/tensorflow.sh $gpumodel
@@ -71,14 +80,6 @@ if [ "$mode" == "dlfw" ] && [ "$gpumodel" == "P100" ]; then
   $SHDIR/pytorch.sh $gpumodel
 elif [[ "$mode" == *"mpi"* ]] || [[ "$mode" == *"multinode"* ]]; then
   # test (multi processes)
-  cd $NCCLROOT
-  make -j test.clean
-  if [ "$INSTALL" == "1" ]; then
-    make -j test.build MPI=1 2>&1 | tee make_test_mpi.log
-  else
-    make -j test.build MPI=1 NCCLDIR=${DEBDIR} 2>&1 | tee make_test_mpi.log
-  fi
-  cd $BLDDIR
   if [[ "$mode" == *"mpi"* ]]; then
     echo "Testing $mode..."
     $salloc_cmd $SHDIR/run_perf_graphs.sh $gpumodel $maxgpu $mode
@@ -95,14 +96,6 @@ elif [[ "$mode" == *"mpi"* ]] || [[ "$mode" == *"multinode"* ]]; then
   fi
 else
   # test (single process)
-  cd $NCCLROOT
-  make -j test.clean
-  if [ "$INSTALL" == "1" ]; then
-    make -j test.build 2>&1 | tee make_test.log
-  else
-    make -j test.build NCCLDIR=${DEBDIR} 2>&1 | tee make_test.log
-  fi
-  cd $BLDDIR
   if [ "$mode" == "api" ]; then
     api_path="results_api/$gpumodel"
     mkdir -p $api_path
