@@ -120,10 +120,20 @@ ncclResult_t ncclGroupEnd() {
   CUDACHECK(cudaGetDevice(&savedDev));
   int done = ncclGroupIndex;
   int doneArray[ncclGroupIndex];
+  for (int i=0; i<ncclGroupIndex; i++) doneArray[i] = 0;
 
   ncclResult_t ret = ncclGroupError;
   if (ret != ncclSuccess) goto group_cleanup;
 
+  /* Collectives are done in three steps :
+   * 1. Barrier Check In. Only the last call may call cudaLaunchKernel[cooperative]
+   * 2. Barrier Wait. No CUDA call is permitted
+   * 3. Enqueue Events. CUDA event wait/enqueue.
+   * This is needed because step 2 cannot call any CUDA primitive, otherwise if
+   * cudaFree happens between 1 and 3, it could block that CUDA call and
+   * prevent some ranks from launching their network threads, which would
+   * prevent the NCCL call from completing, blocking the cudaFree call.
+   */
   for (int i=0; i<ncclGroupIndex; i++) {
     struct ncclAsyncArgs* args = ncclGroupArgs+i;
     if (args->funcType == ASYNC_FUNC_COLL) {
@@ -132,23 +142,36 @@ ncclResult_t ncclGroupEnd() {
       NCCLCHECKGOTO(ncclCpuBarrierCheckin(args->coll.comm), ret, end);
     }
   }
+  for (int i=0; i<ncclGroupIndex; i++) {
+    struct ncclAsyncArgs* args = ncclGroupArgs+i;
+    if (args->funcType == ASYNC_FUNC_COLL) {
+      CUDACHECKGOTO(cudaSetDevice(args->coll.comm->cudaDev), ret, end);
+      NCCLCHECKGOTO(ncclCpuBarrierWait(args->coll.comm), ret, end);
+    }
+  }
+  for (int i=0; i<ncclGroupIndex; i++) {
+    struct ncclAsyncArgs* args = ncclGroupArgs+i;
+    if (args->funcType == ASYNC_FUNC_COLL) {
+      if (args->coll.comm->userStream == NULL)
+        CUDACHECKGOTO(cudaSetDevice(args->coll.comm->cudaDev), ret, end);
+      NCCLCHECKGOTO(ncclEnqueueEvents(args->coll.comm), ret, end);
+      doneArray[i] = 1;
+      done--;
+    }
+  }
 
-  for (int i=0; i<ncclGroupIndex; i++) doneArray[i] = 0;
+  /* For init, since we use threads, we just wait for threads to complete */
   while (done) {
     for (int i=0; i<ncclGroupIndex; i++) {
       struct ncclAsyncArgs* args = ncclGroupArgs+i;
-      if (doneArray[i] == 1) continue;
-      if (args->funcType == ASYNC_FUNC_INIT) {
+      if (args->funcType == ASYNC_FUNC_INIT && doneArray[i] == 0) {
         int err = pthread_tryjoin_np(ncclGroupThreads[i], NULL);
         if (err == EBUSY) continue;
         if (err != 0) { ret = ncclSystemError; goto end; }
-      } else { // ASYNC_FUNC_COLL
-        CUDACHECKGOTO(cudaSetDevice(args->coll.comm->cudaDev), ret, end);
-        NCCLCHECKGOTO(ncclCpuBarrierWait(args->coll.comm), ret, end);
+        if (args->ret != ncclSuccess) { ret = args->ret; goto end; }
+        doneArray[i] = 1;
+        done--;
       }
-      if (args->ret != ncclSuccess) { ret = args->ret; goto end; }
-      doneArray[i] = 1;
-      done--;
     }
   }
   goto end;
