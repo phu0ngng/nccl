@@ -72,6 +72,8 @@ struct threadArgs_t {
   int* errors;
   double* bw;
   int* bw_count;
+
+  int compThreadStop;
 };
 
 #include <chrono>

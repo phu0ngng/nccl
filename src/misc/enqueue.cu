@@ -80,7 +80,10 @@ ncclResult_t ncclCpuBarrierWait(ncclComm_t comm) {
   // Also, starting the proxies after the CUDA launch seems to be better for
   // performance (latency).
   NCCLCHECK(transportStartProxies(comm));
+  return ncclSuccess;
+}
 
+ncclResult_t ncclEnqueueEvents(ncclComm_t comm) {
   if (comm->launchMode == ncclComm::GROUP) {
     CUDACHECK(cudaEventRecord(comm->doneEvent, comm->ncclStream));
     CUDACHECK(cudaStreamWaitEvent(comm->userStream, comm->doneEvent, 0));
@@ -114,6 +117,7 @@ ncclResult_t ncclEnqueueCheck(ncclFunc_t func, const char* primName, const void*
     NCCLCHECK(func(sendbuff, recvbuff, count, type, op, root, comm, stream));
     NCCLCHECK(ncclCpuBarrierCheckin(comm));
     NCCLCHECK(ncclCpuBarrierWait(comm));
+    NCCLCHECK(ncclEnqueueEvents(comm));
     return ncclSuccess;
   }
 }
