@@ -291,9 +291,10 @@ ncclResult_t ncclGetRings(int* nrings, int* nthreads, int rank, int nranks, int*
     *nrings = maxNrings;
   }
   str = getenv("NCCL_MIN_NRINGS");
-  int minNrings = str ? atoi(str) : 0;
-  if (minNrings > 0  && minNrings > *nrings) {
-    if (rank == 0) INFO("Duplicating rings to %d per user request.", minNrings);
+  int defaultMinNrings = ncclCudaCompCap() == 3 ? 2 : 1;
+  int minNrings = str ? atoi(str) : defaultMinNrings;
+  if (minNrings > 0 && minNrings > *nrings) {
+    if (rank == 0 && minNrings > defaultMinNrings) INFO("Duplicating rings to %d per user request.", minNrings);
     for (int r=*nrings; r<MAXRINGS && r <minNrings; r++) {
       for (int i=0; i<nranks; i++) {
         prev[r*nranks+i] = prev[(r-*nrings)*nranks+i];
