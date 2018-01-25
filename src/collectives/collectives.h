@@ -9,7 +9,7 @@
 
 typedef enum { ncclCollBcast, ncclCollReduce, ncclCollAllGather, ncclCollReduceScatter, ncclCollAllReduce, ncclCollCount } ncclColl_t;
 
-#define FUNC_INDEX(coll, redop, dtype) (((coll*ncclNumOps + redop)*ncclNumTypes) + dtype)
+#define FUNC_INDEX(coll, redop, dtype, ll) ((((coll*ncclNumOps + redop)*ncclNumTypes) + dtype)*2+ll)
 
 #define NCCL_COLL_NAME(coll, op, dtype) \
   coll##_##op##_##dtype

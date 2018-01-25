@@ -9,27 +9,31 @@
 
 #include "collectives/collectives.h"
 
+#define NCCL_FUNC4(coll, op, dtype) \
+  (void*)NCCL_KERN_NAME(coll, op, dtype), \
+  (void*)NCCL_KERN_NAME(coll##LL, op, dtype)
+
 // Must be consistent with ncclDataType_t
 #define NCCL_FUNCS3A(coll, op) \
-  (void*)NCCL_KERN_NAME(coll, op,  i8), \
-  (void*)NCCL_KERN_NAME(coll, op,  u8), \
-  (void*)NCCL_KERN_NAME(coll, op, i32), \
-  (void*)NCCL_KERN_NAME(coll, op, u32), \
-  (void*)NCCL_KERN_NAME(coll, op, i64), \
-  (void*)NCCL_KERN_NAME(coll, op, u64), \
-  (void*)NCCL_KERN_NAME(coll, op, f16), \
-  (void*)NCCL_KERN_NAME(coll, op, f32), \
-  (void*)NCCL_KERN_NAME(coll, op, f64)
+  (void*)NCCL_FUNC4(coll, op,  i8), \
+  (void*)NCCL_FUNC4(coll, op,  u8), \
+  (void*)NCCL_FUNC4(coll, op, i32), \
+  (void*)NCCL_FUNC4(coll, op, u32), \
+  (void*)NCCL_FUNC4(coll, op, i64), \
+  (void*)NCCL_FUNC4(coll, op, u64), \
+  (void*)NCCL_FUNC4(coll, op, f16), \
+  (void*)NCCL_FUNC4(coll, op, f32), \
+  (void*)NCCL_FUNC4(coll, op, f64)
 #define NCCL_FUNCS3B(coll, op) \
-  (void*)NCCL_KERN_NAME(coll, op,  i8), \
-  (void*)NCCL_KERN_NAME(coll, op,  i8), \
-  (void*)NCCL_KERN_NAME(coll, op,  i8), \
-  (void*)NCCL_KERN_NAME(coll, op,  i8), \
-  (void*)NCCL_KERN_NAME(coll, op,  i8), \
-  (void*)NCCL_KERN_NAME(coll, op,  i8), \
-  (void*)NCCL_KERN_NAME(coll, op,  i8), \
-  (void*)NCCL_KERN_NAME(coll, op,  i8), \
-  (void*)NCCL_KERN_NAME(coll, op,  i8)
+  (void*)NCCL_FUNC4(coll, op,  i8), \
+  (void*)NCCL_FUNC4(coll, op,  i8), \
+  (void*)NCCL_FUNC4(coll, op,  i8), \
+  (void*)NCCL_FUNC4(coll, op,  i8), \
+  (void*)NCCL_FUNC4(coll, op,  i8), \
+  (void*)NCCL_FUNC4(coll, op,  i8), \
+  (void*)NCCL_FUNC4(coll, op,  i8), \
+  (void*)NCCL_FUNC4(coll, op,  i8), \
+  (void*)NCCL_FUNC4(coll, op,  i8)
 
 // Must be consistent with ncclRedOp_t
 #define NCCL_FUNCS2A(coll) \
@@ -44,14 +48,7 @@
   NCCL_FUNCS3B(coll, copy)
 
 // Must be consistent with the ncclFuncSet enum
-static void* const ncclLLKerns[ncclCollCount*ncclNumOps*ncclNumTypes] = {
-    NCCL_FUNCS2B(ncclBcastLL),
-    NCCL_FUNCS2A(ncclReduceLL),
-    NCCL_FUNCS2B(ncclAllGatherLL),
-    NCCL_FUNCS2A(ncclReduceScatterLL),
-    NCCL_FUNCS2A(ncclAllReduceLL)
-};
-static void* const ncclKerns[ncclCollCount*ncclNumOps*ncclNumTypes] = {
+static void* const ncclKerns[ncclCollCount*ncclNumOps*ncclNumTypes*2] = {
     NCCL_FUNCS2B(ncclBcast),
     NCCL_FUNCS2A(ncclReduce),
     NCCL_FUNCS2B(ncclAllGather),
@@ -82,30 +79,20 @@ ncclResult_t ncclLaunchCooperativeKernelMultiDevice(struct cudaLaunchParams *par
 ncclResult_t setupLaunch(struct ncclComm* comm, struct cudaLaunchParams* params) {
   params->gridDim.x = min(params->gridDim.x, comm->nRings);
 
-  int totalOps = 0;
-  for (int r=0; r<params->gridDim.x; r++) totalOps += comm->rings[r].collCount;
-
-  struct ncclColl* coll = comm->rings[0].collectives+comm->rings[0].collStart;
-  memcpy(&comm->args, coll, sizeof(struct ncclColl));
-
-  // One operation
-  if (totalOps == 1) {
-    coll->active = 0;
-    if (coll->ll)
-      params->func = ncclLLKerns[coll->funcIndex];
-    else
-      params->func = ncclKerns[coll->funcIndex];
-    return ncclSuccess;
-  }
-
-  // Aggregated operations
-  params->func = (void*)ncclMultiOpKernel;
   // Set active = 2 for the last operation
   for (int r=0; r<params->gridDim.x; r++) {
     struct ncclRing* ring = comm->rings+r;
     ring->collectives[(ring->collStart+ring->collCount-1)%NCCL_MAX_OPS].active = 2;
   }
-  memcpy(&comm->args, comm->rings[0].collectives+comm->rings[0].collStart, sizeof(struct ncclColl));
+
+  // Find the first operation, choose the kernel accordingly and pass it
+  // as the first argument.
+  struct ncclColl* coll = comm->rings[0].collectives+comm->rings[0].collStart;
+  memcpy(&comm->args, coll, sizeof(struct ncclColl));
+  // As we pass that coll directly, we can free it immediately.
+  coll->active = 0;
+
+  params->func = ncclKerns[coll->funcIndex];
   return ncclSuccess;
 }
 

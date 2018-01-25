@@ -330,6 +330,11 @@ int p2pComputeRingsPci(int* values, int nranks, int* rings, int nrings, int* pre
 
     if (connect == 0) return 1;
   }
+  // Duplicate the rings for Kepler
+  for (int r=0; r<nrings; r++) {
+    for (int i=0; i<nranks; i++) rings[(r+nrings)*nranks+i] = rings[r*nranks+i];
+  }
+  nrings *= 2;
   return nrings;
 }
 

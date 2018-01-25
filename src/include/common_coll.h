@@ -94,7 +94,8 @@ static ncclResult_t saveKernel(int coll, const void* sendbuff, void* recvbuff, s
 
     comm->myParams->gridDim.x++;
 
-    struct ncclColl* c = ring->collectives+ring->collFifoTail;
+    int opIndex = ring->collFifoTail;
+    struct ncclColl* c = ring->collectives+opIndex;
     volatile uint8_t* activePtr = (volatile uint8_t*)&c->active;
     while (activePtr[0] != 0) sched_yield();
 
@@ -109,10 +110,10 @@ static ncclResult_t saveKernel(int coll, const void* sendbuff, void* recvbuff, s
     args->nRings = nBlocks;
 
     c->nThreads = nThreads;
-    c->funcIndex = FUNC_INDEX(coll, op, dtype);
-    c->ll = llMode;
+    c->funcIndex = FUNC_INDEX(coll, op, dtype, llMode);
     c->active = 1;
-    ring->collFifoTail = (ring->collFifoTail+1)%NCCL_MAX_OPS;
+    c->index = opIndex;
+    ring->collFifoTail = (opIndex+1)%NCCL_MAX_OPS;
     ring->collCount++;
   }
   if (llMode == 0) comm->opCount++;
