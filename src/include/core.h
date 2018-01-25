@@ -28,6 +28,7 @@ struct cudaLaunchParams
 #endif
 
 #define MAXRINGS 12
+#define MAXTHREADS 256
 #define DEFAULT_BUFFER_SIZE_BYTES (1UL << 22) /* 4MiB */
 #define NCCL_LL_THRESHOLD 16384
 
@@ -171,13 +172,13 @@ struct ncclColl {
 
   uint16_t funcIndex;
 
-  uint8_t  ll;
   uint8_t  active;
+  uint8_t  pad8;
 
-  uint16_t pad0;
+  uint16_t index;
 
   /* Line 7 */
-  uint64_t pad1;
+  uint64_t pad64;
 };
 
 struct ncclComm {
