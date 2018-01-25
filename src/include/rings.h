@@ -8,7 +8,8 @@
 #define NCCL_RINGS_H_
 
 static int getDefaultThreads() {
-  return MAXTHREADS;
+  // On Kepler, rings are doubled later.
+  return ncclCudaCompCap() == 3 ? 128 : 256;
 }
 
 static size_t getRingThreshold(int rank, int minCompCap) {
