@@ -188,6 +188,7 @@ struct ncclComm {
 
   enum { GROUP, PARALLEL } launchMode;
   cudaStream_t userStream;
+  bool userStreamSet;
   cudaEvent_t doneEvent;
 
   // Counter to make sure collectives match (needed for bcast/reduce

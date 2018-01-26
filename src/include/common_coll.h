@@ -84,7 +84,13 @@ static ncclResult_t saveKernel(int coll, const void* sendbuff, void* recvbuff, s
   int nBlocks = llMode ? 1 : LIMIT_NRINGS(nbytes, comm->nRings);
   int nThreads = llMode ? LL_NTHREADS : comm->nThreads+1;
   comm->myParams->blockDim.x = max(comm->myParams->blockDim.x, nThreads);
-  comm->userStream = stream;
+  if (comm->userStreamSet == false) {
+    comm->userStream = stream;
+    comm->userStreamSet = true;
+  } else if (stream != comm->userStream) {
+    WARN("Error : mixing different streams within a group call is not supported.");
+    return ncclInvalidUsage;
+  }
   for (int bid=0; bid<nBlocks; bid++) {
     struct ncclRing* ring = comm->rings+(comm->myParams->gridDim.x % comm->nRings);
     if (ring->collCount == NCCL_MAX_OPS) {

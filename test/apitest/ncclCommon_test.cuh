@@ -56,7 +56,7 @@ template <typename DT>
 const std::vector<ncclRedOp_t> ncclCommon_test<DT>::RedOps = {ncclSum, ncclProd,
                                                               ncclMax, ncclMin};
 template <typename DT>
-int ncclCommon_test<DT>::N = 1000;
+int ncclCommon_test<DT>::N = 1024 * 1024;
 template <typename DT>
 int ncclCommon_test<DT>::nVis = -1;
 template <typename DT>
@@ -138,5 +138,7 @@ void ncclCommon_test<DT>::TearDownTestCase() {
 typedef ::testing::Types<char, int, half, float, double, long long,
                          unsigned long long>
     testDataTypes;
+typedef ::testing::Types<char>
+    testNoType;
 // TYPED_TEST_CASE(ncclCommon_test, testDataTypes);
 // EOF

@@ -172,6 +172,7 @@ ncclResult_t ncclEnqueueEvents(ncclComm_t comm) {
   } else {
     CUDACHECK(cudaEventRecord(comm->doneEvent, comm->userStream));
   }
+  comm->userStreamSet = false;
   return ncclSuccess;
 }
 
@@ -181,18 +182,22 @@ ncclResult_t ncclEnqueueCheck(ncclFunc_t func, const char* primName, const void*
   if (comm == NULL) return ncclInvalidArgument;
   // Launch asynchronously if needed
   if (ncclAsyncMode()) {
+    ncclResult_t ret = ncclSuccess;
+    int savedDev = -1;
     if (ncclChecks) {
-      int savedDev;
-      CUDACHECK(cudaGetDevice(&savedDev));
-      CUDACHECK(cudaSetDevice(comm->cudaDev));
+      CUDACHECKGOTO(cudaGetDevice(&savedDev), ret, end);
+      CUDACHECKGOTO(cudaSetDevice(comm->cudaDev), ret, end);
       // Check arguments
-      ncclResult_t ret = ArgsCheck(sendbuff, recvbuff, count, type, op, root, comm, primName);
-      NCCLCHECK(ncclAsyncErrCheck(ret));
-      CUDACHECK(cudaSetDevice(savedDev));
+      NCCLCHECKGOTO(ArgsCheck(sendbuff, recvbuff, count, type, op, root, comm, primName), ret, end);
     }
-    NCCLCHECK(func(sendbuff, recvbuff, count, type, op, root, comm, stream));
+    // Always register comm even in case of error to make sure ncclGroupEnd
+    // cleans it up.
     NCCLCHECK(ncclAsyncColl(comm));
-    return ncclSuccess;
+    NCCLCHECKGOTO(func(sendbuff, recvbuff, count, type, op, root, comm, stream), ret, end);
+end:
+    if (savedDev != -1) CUDACHECK(cudaSetDevice(savedDev));
+    ncclAsyncErrCheck(ret);
+    return ret;
   } else {
     if (ncclChecks) NCCLCHECK(ArgsCheck(sendbuff, recvbuff, count, type, op, root, comm, primName));
     NCCLCHECK(func(sendbuff, recvbuff, count, type, op, root, comm, stream));

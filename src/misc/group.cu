@@ -182,14 +182,14 @@ group_cleanup:
     struct ncclComm* comm = ncclGroupArgs[i].coll.comm;
     for (int r=0; r<comm->nRings; r++) {
       struct ncclRing* ring = comm->rings+r;
-      if (ring->collFifoTail == ring->collStart)  continue;
-      for (int i=ring->collStart; i != ring->collFifoTail; i = (i+1)%NCCL_MAX_OPS) {
-        ring->collectives[i].active = 0;
+      for (int i=0; i<ring->collCount; i++) {
+        ring->collectives[(ring->collStart + i)%NCCL_MAX_OPS].active = 0;
       }
       ring->collFifoTail = ring->collStart;
       ring->collCount = 0;
     }
     comm->myParams->gridDim.x = comm->myParams->blockDim.x = 0;
+    comm->userStreamSet = false;
   }
 end:
   ncclGroupError = ncclSuccess;
