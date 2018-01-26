@@ -286,22 +286,32 @@ ncclResult_t ncclGetRings(int* nrings, int* nthreads, int rank, int nranks, int*
 
   str = getenv("NCCL_MAX_NRINGS");
   int maxNrings = str ? atoi(str) : 0;
-  if (maxNrings > 0 && maxNrings < *nrings) {
+  str = getenv("NCCL_MIN_NRINGS");
+  int minNrings = str ? atoi(str) : 0;
+  if (maxNrings > 0 && minNrings > maxNrings) {
+    if (rank == 0) WARN("NCCL_MIN_NRINGS set to a value greater than NCCL_MAX_NRINGS, ignoring NCCL_MIN_NRINGS");
+    minNrings = 0;
+  }
+  if (minNrings > MAXRINGS) {
+    if (rank == 0) WARN("NCCL_MIN_NRINGS set to a value greater than the maximum number of rings supported (%d), limiting it to %d", MAXRINGS, MAXRINGS);
+    minNrings = MAXRINGS;
+  }
+  if (maxNrings > 0 && maxNrings <= *nrings) {
     if (rank == 0) INFO("Limiting to %d rings per user request.", maxNrings);
     *nrings = maxNrings;
-  }
-  str = getenv("NCCL_MIN_NRINGS");
-  int defaultMinNrings = ncclCudaCompCap() == 3 ? 2 : 1;
-  int minNrings = str ? atoi(str) : defaultMinNrings;
-  if (minNrings > 0 && minNrings > *nrings) {
-    if (rank == 0 && minNrings > defaultMinNrings) INFO("Duplicating rings to %d per user request.", minNrings);
-    for (int r=*nrings; r<MAXRINGS && r <minNrings; r++) {
-      for (int i=0; i<nranks; i++) {
-        prev[r*nranks+i] = prev[(r-*nrings)*nranks+i];
-        next[r*nranks+i] = next[(r-*nrings)*nranks+i];
+  } else {
+    int defaultMinNrings = ncclCudaCompCap() == 3 ? 2 : 1;
+    if (minNrings < defaultMinNrings) minNrings = defaultMinNrings;
+    if (minNrings > 0 && minNrings > *nrings) {
+      if (rank == 0 && minNrings > defaultMinNrings) INFO("Duplicating rings to %d per user request.", minNrings);
+      for (int r=*nrings; r<MAXRINGS && r <minNrings; r++) {
+        for (int i=0; i<nranks; i++) {
+          prev[r*nranks+i] = prev[(r-*nrings)*nranks+i];
+          next[r*nranks+i] = next[(r-*nrings)*nranks+i];
+        }
       }
+      *nrings = minNrings;
     }
-    *nrings = min(MAXRINGS, minNrings);
   }
 
   NCCLCHECK(getEnvThreads(nthreads));
