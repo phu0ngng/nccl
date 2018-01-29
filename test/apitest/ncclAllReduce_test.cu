@@ -174,5 +174,21 @@ TYPED_TEST(ncclAllReduce_test, aggregate_one_level_group_call) {
     }
     ASSERT_EQ(ncclSuccess, ncclGroupEnd());
 };
+TYPED_TEST(ncclAllReduce_test, aggregate_ll_singleRing_multiRing) {
+    int sizes[5] = { 1024, 32768, 512*1024, 32768, 1024 };  //ll, single-ring, multi-ring
+    ASSERT_EQ(ncclSuccess, ncclGroupStart());
+    for (int k = 0; k < 5; k++) {
+        for (int i = 0; i < this->nVis; ++i) {
+            ASSERT_EQ(ncclSuccess,
+                      ncclAllReduce(this->sendbuffs[i], this->recvbuffs[i],
+                                    sizes[k],
+                                    this->DataType(), ncclSum, this->comms[i],
+                                    this->streams[i]))
+                << "size: " << sizes[k] << ", "
+                << "i" << i << ", " << std::endl;
+        }
+    }
+    ASSERT_EQ(ncclSuccess, ncclGroupEnd());
+};
 #endif
 // EOF
