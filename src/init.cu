@@ -343,7 +343,7 @@ void* waitForNonNullPtr(void* p) {
 ncclResult_t initParams(struct ncclComm* comm) {
   struct cudaLaunchParams* params = comm->myParams = comm->intraParams+comm->intraRank;
   params->args = &comm->argsptr;
-  params->sharedMem = sizeof(struct ncclColl)*MAXRINGS;
+  params->sharedMem = 0;
   params->blockDim.x = 0; params->blockDim.y = params->blockDim.z = 1;
   params->gridDim.x = 0; params->gridDim.y = params->gridDim.z = 1;
   return ncclSuccess;

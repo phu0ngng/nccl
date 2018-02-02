@@ -26,50 +26,47 @@ static __device__ void load_coll(struct ncclColl* localColl, struct ncclColl* ho
   if (tid == 0) hostColl->active = 0;
 }
 
-/* Implement collectives with templates */
+/* Functions for aggregation case */
 #define IMPL_COLL4(coll, op, ncclFunc, dtype, ctype) \
 __device__ void NCCL_COLL_NAME(coll, op, dtype)(struct CollectiveArgs* args) { \
   coll##Kernel<UNROLL, ncclFunc<ctype>, ctype>(args); \
 }
-/* For LL, we also define a stand-alone kernel for better latency */
+/* Kernels with the first operation inlined */
 #define IMPL_COLL4K(coll, op, ncclFunc, dtype, ctype, fIndex) \
 __launch_bounds__(MAXTHREADS+WARP_SIZE, 1) \
 __global__ void NCCL_KERN_NAME(coll, op, dtype)(struct ncclColl firstColl) { \
   int tid = threadIdx.x; \
   int bid = blockIdx.x; \
-  __shared__ struct ncclColl localColl[MAXRINGS]; \
+  __shared__ struct ncclColl localColl; \
  \
   struct ncclComm* comm = firstColl.args.comm; \
   struct ncclRing* ring = comm->rings+bid; \
-  int index; \
-  struct ncclColl* coll; \
+  struct ncclColl* c; \
   if (bid == 0) { \
     /* To optimize for latency, (only) the first operation is passed as argument.*/ \
-    index = firstColl.index; \
-    coll = &firstColl; \
+    c = &firstColl; \
   } else { \
-    index = ring->collFifoHead; \
-    coll = localColl+bid; \
-    load_coll(coll, ring->devCollectives+index, tid); \
+    c = &localColl; \
+    load_coll(c, ring->devCollectives+ring->collFifoHead, tid); \
   } \
   while (1) { \
-    if (tid < coll->nThreads) { \
-      if (coll->funcIndex == fIndex) { \
-        coll##Kernel<UNROLL, ncclFunc<ctype>, ctype>(&coll->args); \
+    if (tid < c->nThreads) { \
+      if (c->funcIndex == fIndex) { \
+        coll##Kernel<UNROLL, ncclFunc<ctype>, ctype>(&c->args); \
       } else { \
-        ncclFuncs[coll->funcIndex](&coll->args); \
+        ncclFuncs[c->funcIndex](&c->args); \
       } \
     } \
-    index = (index + 1) % NCCL_MAX_OPS; \
-    if (tid == 0) ring->collFifoHead = index; \
+    int nextIndex = c->nextIndex; \
+    if (tid == 0) ring->collFifoHead = nextIndex; \
  \
-    if (coll->active == 2) { \
+    if (c->active == 2) { \
       return; \
     } \
  \
     /* Load next collective operation*/ \
-    coll = localColl+bid; /* for bid 0 */ \
-    load_coll(coll, ring->devCollectives+index, tid); \
+    c = &localColl; /* for bid 0 */ \
+    load_coll(c, ring->devCollectives+nextIndex, tid); \
   } \
 }
 
