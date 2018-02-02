@@ -123,13 +123,13 @@ class LLPrimitives {
       sendHead = sendHeadPtr[0]; \
     } \
   } \
-  __syncthreads();
+  asm volatile ("bar.sync 1, %0;" :: "r"(LL_NTHREADS));
 
 #define POST_SIZE \
   if (tid == 0 && sizesFifo) sizesFifo[step % NUM_LL_CHUNKS] = (maxOffset <= 0) ? -1 : (maxOffset*2*(int)sizeof(T));
 
 #define ACK_PREV \
-  __syncthreads(); \
+  asm volatile ("bar.sync 1, %0;" :: "r"(LL_NTHREADS)); \
   if (tid == 0) recvHeadPtr[0] = step;
 
 #define FIFO_CLEANING_AND_SAVE_STEP(flag) do { \
