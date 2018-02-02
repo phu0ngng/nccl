@@ -120,31 +120,37 @@ struct ncclRecvMem {
 };
 
 struct ncclRing {
-  int id;
-  int nthreads;
-  // Per ring resources
-  struct ncclSendMem* devMemSend;   // CUDA-size resources
-  struct ncclRecvMem* devMemRecv;   // CUDA-size resources
-  int buffSize;
-  int devMemSendSize;    // Keep the size for IPCs
-  int devMemRecvSize;    // Keep the size for IPCs
-  struct ncclConnector send;
-  struct ncclConnector recv;
+  union {
+    struct {
+      int id;
+      int nthreads;
+      // Per ring resources
+      struct ncclSendMem* devMemSend;   // CUDA-size resources
+      struct ncclRecvMem* devMemRecv;   // CUDA-size resources
+      int buffSize;
+      int devMemSendSize;    // Keep the size for IPCs
+      int devMemRecvSize;    // Keep the size for IPCs
+      struct ncclConnector send;
+      struct ncclConnector recv;
 
-  // Maps an internal nccl index to user-specified rank order. This is necessary
-  // since we need to know how the user expects data to be ordered across
-  // devices. Ordered from current device.
-  int* userRanks;
-  int* devUserRanks;
+      // Maps an internal nccl index to user-specified rank order. This is necessary
+      // since we need to know how the user expects data to be ordered across
+      // devices. Ordered from current device.
+      int* userRanks;
+      int* devUserRanks;
 
-  // Operation list for aggregation
-  struct ncclColl* collectives;
-  struct ncclColl* devCollectives;
-  int collStart;
-  int collCount;
-  int collFifoHead; // Only used by GPU
-  int collFifoTail; // Only used by CPU
+      // Operation list for aggregation
+      struct ncclColl* collectives;
+      struct ncclColl* devCollectives;
+      int collStart;
+      int collCount;
+      int collFifoHead; // Only used by GPU
+      int collFifoTail; // Only used by CPU
+    };
+    int data[0x80];
+  };
 };
+static_assert(sizeof(struct ncclRing) == 0x80*sizeof(int), "ncclRing must have a pow2 size");
 
 /* CollectiveArgs + ncclColl are to be a power of two, currently 64 bytes, */
 /* to make sure reads to host from the CUDA kernel are aligned. */
@@ -164,24 +170,22 @@ struct CollectiveArgs {
   uint16_t nRings;
 };
 struct ncclColl {
-  /* Lines 0-5 */
-  struct CollectiveArgs args;
-
-  /* Line 6 */
-  uint16_t nThreads;
-
-  uint16_t funcIndex;
-
-  uint8_t  active;
-  uint8_t  pad8;
-
-  uint16_t index;
-
-  /* Line 7 */
-  uint64_t pad64;
+  union {
+    struct {
+      struct CollectiveArgs args;
+      uint16_t nThreads;
+      uint16_t funcIndex;
+      uint16_t nextIndex;
+      uint8_t  active;
+    };
+    int data[0x10];
+  };
 };
+static_assert(sizeof(struct ncclColl) == (0x10*sizeof(int)), "ncclColl must have a pow2 size");
 
 struct ncclComm {
+  struct ncclRing rings[MAXRINGS];
+
   int rank;    // my rank in the communicator
   int nRanks;  // number of GPUs in communicator
   int cudaDev; // my cuda device index
@@ -197,7 +201,6 @@ struct ncclComm {
 
   // Rings for collectives 
   int nRings;
-  struct ncclRing rings[MAXRINGS];
   int nThreads;
   
   // Low-latency algorithm threshold

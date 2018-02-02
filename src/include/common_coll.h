@@ -118,8 +118,9 @@ static ncclResult_t saveKernel(int coll, const void* sendbuff, void* recvbuff, s
     c->nThreads = nThreads;
     c->funcIndex = FUNC_INDEX(coll, op, dtype, llMode);
     c->active = 1;
-    c->index = opIndex;
-    ring->collFifoTail = (opIndex+1)%NCCL_MAX_OPS;
+    opIndex = (opIndex+1)%NCCL_MAX_OPS;
+    c->nextIndex = opIndex;
+    ring->collFifoTail = opIndex;
     ring->collCount++;
   }
   if (llMode == 0) comm->opCount++;
