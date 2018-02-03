@@ -28,7 +28,7 @@ for OPT in "" "_mpi" "_reorder" "_latency" "_mpi_latency"; do
    else
      mode="bw"
    fi
-   ./generate_html.sh $mode $VER$GM$OPT $VER$PM$OPT 2.1.2$GM$OPT 2.1.2$PM$OPT 2.0.5$OPT 1.6.5$OPT 1.5.4$OPT
+   ./generate_html.sh $mode $VER$GM$OPT $VER$PM$OPT 2.1.2$GM$OPT 2.1.2$PM$OPT
    DIR=html$OPT
    echo $DIR
    rm -rf $DST/$DIR
@@ -52,7 +52,7 @@ for OPT in "_multinode" "_multinode_latency"; do
    else
      mode="bw"
    fi
-   ./multinode_generate_html.sh $mode $VER$GM$OPT $VER$PM$OPT 2.1.2$GM$OPT 2.1.2$PM$OPT 2.0.5$OPT
+   ./multinode_generate_html.sh $mode $VER$GM$OPT $VER$PM$OPT 2.1.2$GM$OPT 2.1.2$PM$OPT
    DIR=html$OPT
    echo $DIR
    rm -rf $DST/$DIR
@@ -66,7 +66,7 @@ done
 DIR=html_dlfw
 rm -rf $DST/$DIR
 mkdir -p $DST/$DIR
-./dlfw_generate_plots.sh P100 ${VER}${GM} ${VER}${PM} 2.0.5 2.1.2${GM} 2.1.2${PM}
+./dlfw_generate_plots.sh P100 ${VER}${GM} ${VER}${PM} 2.1.2${GM} 2.1.2${PM} 2.0.5
 mv comp/P100/*.png $DST/$DIR/
 rm -rf comp
 
@@ -89,5 +89,5 @@ grep -r -i "FAIL" ${VER}${PM}_api/results >> $DST/$DIR/fail.txt
 DIR=html_deadlock
 rm -rf $DST/$DIR
 mkdir -p $DST/$DIR
-grep -r -i "OK" ${VER}${GM}_deadlock/results >> $DST/$DIR/${GM}.txt
-grep -r -i "OK" ${VER}${PM}_deadlock/results >> $DST/$DIR/${PM}.txt
+grep -r "OK" ${VER}${GM}_deadlock/results >> $DST/$DIR/${GM}.txt
+grep -r "OK" ${VER}${PM}_deadlock/results >> $DST/$DIR/${PM}.txt
