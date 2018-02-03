@@ -13,7 +13,7 @@ DEBTARGETS := $(patsubst %, $(DEBPREPDIR)/%, $(DEBFILES))
 PKG_TIMESTAMP  := $(shell date -R)
 ARCH           := $(shell uname -m)
 PKG_ARCH       ?= $(shell uname -m | sed -e "s/x86_64/amd64/g" | sed -e "s/ppc64le/ppc64el/g")
-PKG_MULTIARCH  ?= $(shell gcc -print-multiarch)
+PKG_MULTIARCH  ?= $(shell $(CXX) -print-multiarch)
 
 prep : $(DEBTARGETS)
 	$(MAKE) -C ../.. lic BUILDDIR=$(BUILDDIR)
