@@ -84,19 +84,18 @@ int main(int argc, char* argv[])
   float *sendbuff, *recvbuff;
   cudaStream_t s;
 
-  // Get NCCL unique ID from environment variable NCCL_COMM_ID, saving the broadcast
+  // This is optional: delay the root on purpose to see if the program fails
   if (myRank == 0) {
     char* env = getenv("ROOT_DELAY"); // delay in sec on purpose
     if (env && strlen(env) > 0) {
-      int delay = 0;
-      delay = atoi(env);
+      int delay = atoi(env);
       printf("[MPI Rank 0] Delaying root by %d seconds \n", delay);
       usleep(delay*1e6);
     }
-    ncclGetUniqueId(&id);
-  } else {
-    ncclGetUniqueIdFromEnv(&id);
   }
+
+  // Get NCCL unique ID from environment variable NCCL_COMM_ID, saving the broadcast
+  ncclGetUniqueId(&id);
 
   //picking a GPU based on localRank, allocate device buffers
   CUDACHECK(cudaSetDevice(localRank));

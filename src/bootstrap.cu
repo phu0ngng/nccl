@@ -149,13 +149,12 @@ ncclResult_t bootstrapGetUniqueId(ncclUniqueId* out) {
   }
 
   // if handle is preset, just listen on that handle, no need to specify an interface
-  NETCHECK(ncclNetSocket.listen(env ? dontCareIf : defaultIf, &id->extHandle, &id->extListenComm));
-
-  id->hostHash = getHostHash(hostname);
-
-  ncclUniqueId* threadIdCopy = (ncclUniqueId*)malloc(sizeof(ncclUniqueId));
-  memcpy(threadIdCopy, id, sizeof(ncclUniqueId));
-  pthread_create(&id->boostrapThread, NULL, bootstrapRoot, (void *)threadIdCopy);
+  if (ncclNetSocket.listen(env ? dontCareIf : defaultIf, &id->extHandle, &id->extListenComm)==0) {
+    id->hostHash = getHostHash(hostname);
+    ncclUniqueId* threadIdCopy = (ncclUniqueId*)malloc(sizeof(ncclUniqueId));
+    memcpy(threadIdCopy, id, sizeof(ncclUniqueId));
+    pthread_create(&id->boostrapThread, NULL, bootstrapRoot, (void *)threadIdCopy);
+  }
   return ncclSuccess;
 }
 
