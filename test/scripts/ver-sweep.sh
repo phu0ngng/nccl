@@ -42,6 +42,10 @@ for ver in $VERS ; do
      rm -rf test.master
      cd nccl.master/test/scripts
      for OPT in $OPTS; do
+        # Get time, stop issuing tests during daytime
+        hour=$(date +"%H")
+        h=$(expr $hour - 0)
+        if [ $h -gt 7 ] && [ $a -lt 22 ]; then break; fi
         if [ -n "$version_checked" ]; then
            ./nccl_test_node.sh $gpumodel $maxgpu $OPT
         elif [ "$ver" == "$INSTVER" ]; then
