@@ -143,13 +143,23 @@ ncclResult_t bootstrapGetUniqueId(ncclUniqueId* out) {
       WARN("Invalid NCCL_COMM_ID, please use format: NCCL_COMM_ID=<ipv4>:<port> or NCCL_COMM_ID=[<ipv6>]:<port>");
       return ncclInvalidArgument;
     }
+  }
+
+  if (env) {
     id->pid = -1;
   } else {
     id->pid = getpid();
   }
 
   // if handle is preset, just listen on that handle, no need to specify an interface
-  if (ncclNetSocket.listen(env ? dontCareIf : defaultIf, &id->extHandle, &id->extListenComm)==0) {
+  bool isRoot = true;
+  if (env) {
+    isRoot = ncclNetSocket.listen(dontCareIf, &id->extHandle, &id->extListenComm) == 0;
+  } else {
+    NETCHECK(ncclNetSocket.listen(defaultIf, &id->extHandle, &id->extListenComm));
+  }
+
+  if (isRoot) {
     id->hostHash = getHostHash(hostname);
     ncclUniqueId* threadIdCopy = (ncclUniqueId*)malloc(sizeof(ncclUniqueId));
     memcpy(threadIdCopy, id, sizeof(ncclUniqueId));
