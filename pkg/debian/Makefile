@@ -13,9 +13,11 @@ DEBTARGETS := $(patsubst %, $(DEBPREPDIR)/%, $(DEBFILES))
 PKG_TIMESTAMP  := $(shell date -R)
 ARCH           := $(shell uname -m)
 PKG_ARCH       ?= $(shell uname -m | sed -e "s/x86_64/amd64/g" | sed -e "s/ppc64le/ppc64el/g")
+PKG_MULTIARCH  ?= $(shell gcc -print-multiarch)
+ifeq ($(PKG_MULTIARCH),)
 # Hardwire the PKG_MULTIARCH directory as the RHEL6 distribution agnostic compiler (gcc 4.8.3) doesn't set it
-#PKG_MULTIARCH  ?= $(shell gcc -print-multiarch)
-PKG_MULTIARCH  := x86_64-linux-gnu
+PKG_MULTIARCH  := $(ARCH)-linux-gnu
+endif
 
 prep : $(DEBTARGETS)
 	$(MAKE) -C ../.. lic BUILDDIR=$(BUILDDIR)
