@@ -466,7 +466,7 @@ int ncclIbAccept(void* listenComm, void** recvComm) {
   struct ibv_port_attr portAttr;
   NCCLCHECK(wrap_ibv_query_port(ctx, ib_port, &portAttr));
   union ibv_gid gid;
-  NCCLCHECK(wrap_ibv_query_gid(ctx, ib_port, 0, &gid));
+  NCCLCHECK(wrap_ibv_query_gid(ctx, ib_port, ncclIbGidIndex(), &gid));
 
   // QP Creation
   NCCLCHECK(ncclIbInitVerbs(ctx, &rComm->verbs));
