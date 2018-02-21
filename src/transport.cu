@@ -40,6 +40,12 @@ static struct ncclProxyArgs* FifoGetNextArgs(struct transportProxyInfo* info) {
 
 static void FifoPushArgs(struct transportProxyInfo* info) {
   if (info == NULL) return;
+
+  // There is no space to enqueue any operation, so we didn't. Otherwise we
+  // wouldn't be there. And we don't want to look at the current operation
+  // because it is an old one (FIFO_SIZE elements ago).
+  if (info->argsFifoTail == info->argsFifoHead + TRANSPORT_PROXY_FIFO_SIZE) return;
+
   // Only launch proxy if nsteps has been set
   struct ncclProxyArgs *fifoArgs = info->argsFifo + (info->argsFifoTail % TRANSPORT_PROXY_FIFO_SIZE);
   if (fifoArgs->nsteps == 0) return;

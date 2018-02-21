@@ -63,8 +63,8 @@ struct transportProxyInfo {
   threadFunc_t func;
   volatile int proxyReady;
   struct ncclProxyArgs argsFifo[TRANSPORT_PROXY_FIFO_SIZE];
-  volatile int argsFifoHead;
-  volatile int argsFifoTail;
+  volatile uint64_t argsFifoHead;
+  volatile uint64_t argsFifoTail;
   pthread_cond_t cond;
   pthread_mutex_t mutex;
 };
