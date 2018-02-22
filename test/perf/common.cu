@@ -8,6 +8,7 @@
 #include <pthread.h>
 #include <cstdio>
 #include <getopt.h>
+#include <omp.h>
 #include "cuda.h"
 
 #if NCCL_MAJOR >= 2
@@ -466,6 +467,27 @@ cudaError_t cudaStreamSyncYield(cudaStream_t stream) {
   }
 }
 
+void *WarmUpCPU(void *x) {
+  unsigned long *limit = (unsigned long*) x;
+#ifdef _OPENMP
+  int mx_nthreads = omp_get_max_threads();
+  //printf("Max number of threads = %d\n", mx_nthreads);
+#endif
+
+#pragma omp parallel
+  {
+    int tid = omp_get_thread_num();
+    if (tid == 0) {
+      int nthreads = omp_get_num_threads();
+      //printf("Number of threads in use = %d\n", nthreads);
+    }
+
+    volatile unsigned x=0, y=1;
+    while (x++ < *limit || y++ < *limit);
+  }
+  return NULL;
+}
+
 void startColl(struct threadArgs_t* args, ncclDataType_t type, ncclRedOp_t op, int root, int in_place, int thread_offset) {
   size_t count = args->nbytes / wordSize(type);
 
@@ -522,9 +544,15 @@ void BenchTime(struct threadArgs_t* args, ncclDataType_t type, ncclRedOp_t op, i
   int local_iters = warmup ? warmup_iters : iters;
   int local_agg_iters = agg_iters;
   
+  pthread_t warmup_thread;
+  unsigned long limit = 3e9;
+  pthread_create(&warmup_thread, NULL, WarmUpCPU, &limit);
+
   // Sync
   startColl(args, type, op, root, in_place, 0);
   completeColl(args);
+
+  pthread_join(warmup_thread, NULL);
 
   Barrier(args);
 
