@@ -70,11 +70,11 @@ void initNet() {
   }
 }
 
-int ncclLLThreshold;
+size_t ncclLLThreshold;
 void initLl() {
   char* str = getenv("NCCL_LL_THRESHOLD");
   ncclLLThreshold = (str && atoi(str) >= 0) ? atoi(str) : NCCL_LL_THRESHOLD;
-  INFO("Using NCCL Low-latency algorithm for sizes below %d", ncclLLThreshold);
+  INFO("Using NCCL Low-latency algorithm for sizes below %ld", ncclLLThreshold);
 }
 
 pthread_mutex_t initLock = PTHREAD_MUTEX_INITIALIZER;

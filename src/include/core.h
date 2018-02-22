@@ -204,7 +204,7 @@ struct ncclComm {
   int nThreads;
   
   // Low-latency algorithm threshold
-  int llThreshold;
+  size_t llThreshold;
 
   // Device copy of the communicator
   struct ncclComm *devComm;
