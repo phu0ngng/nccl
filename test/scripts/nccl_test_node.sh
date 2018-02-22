@@ -6,8 +6,6 @@ maxgpu=$2
 
 mode=$3
 
-opt=$4
-
 # get dir of test scripts
 SHDIR="$( cd "$( dirname "${BASH_SOURCE[0]}" )" && pwd )"
 cd $SHDIR/../../
@@ -16,12 +14,12 @@ BLDDIR=$NCCLROOT/build
 rm $BLDDIR/state
 
 # DGX specific setting
-if [ "$gpumodel" == "dgx1" ]; then
-  module load cuda
-  MPI_HOME="${MPI_HOME:-$HOME/install/openmpi}"
-elif [ "$gpumodel" == "dgx1v" ]; then
+if [ "$gpumodel" == "dgx1" ] || [ "$gpumodel" == "dgx1v" ]; then
+  source /etc/profile.d/modules.sh
+  export PATH=/usr/local/bin:/usr/bin:$PATH
   source $HOME/cuda.sh
   MPI_HOME="${MPI_HOME:-$HOME/install/openmpi}"
+  exclude="-x dgx1-prd-01 "
 else
   source $SHDIR/cuda.sh
   MPI_HOME="${MPI_HOME:-/opt/mpi/openmpi}"
@@ -38,34 +36,52 @@ export LD_LIBRARY_PATH=$MPI_HOME/lib:$LD_LIBRARY_PATH
 
 # build
 if [ "$DEBDIR" == "" ] && [ "$INSTALL" != "1" ]; then
-  make -j src.build
+  make -j src.build 2>&1 | tee make_src.log
   DEBDIR=$BLDDIR
+fi
+
+# export library if not using the one installed on system
+if [ "$INSTALL" != "1" ]; then
   export LD_LIBRARY_PATH=$DEBDIR/lib:$LD_LIBRARY_PATH
+fi
+
+# SLURM setting
+timeout=2
+if [ "$mode" == "all" ]; then
+  timeout=`expr $timeout \* 26`
+else
+  timeout=`expr $timeout \* 15`
+fi
+if [ "$SLURM" == "1" ]; then
+  srun_cmd="srun -p $gpumodel -t ${timeout} --exclusive $exclude "
+  salloc_cmd="salloc -p $gpumodel -n $maxgpu -c 1 -t ${timeout} --exclusive $exclude "
+else
+  srun_cmd="timeout ${timeout}m "
+  salloc_cmd="timeout ${timeout}m "
 fi
 
 if [ "$mode" == "dlfw" ] && [ "$gpumodel" == "P100" ]; then
   cd $BLDDIR
-  if [ "$opt" == "PARALLEL" ]; then
-    echo "dlfw GROUP/PARALLEL $opt"
-    #$SHDIR/caffe2.sh $gpumodel
-    #$SHDIR/tensorflow.sh $gpumodel
-  fi
-  #$SHDIR/cntk.sh $gpumodel $mode
-  #$SHDIR/mxnet.sh $gpumodel $mode
-  #$SHDIR/pytorch.sh $gpumodel $mode
+  $SHDIR/caffe2.sh $gpumodel
+  $SHDIR/cntk.sh $gpumodel
+  $SHDIR/tensorflow.sh $gpumodel
+  $SHDIR/mxnet.sh $gpumodel
+  # warm-up run of pytorch
+  $SHDIR/pytorch.sh $gpumodel
+  $SHDIR/pytorch.sh $gpumodel
 elif [[ "$mode" == *"mpi"* ]] || [[ "$mode" == *"multinode"* ]]; then
   # test (multi processes)
   cd $NCCLROOT
   make -j test.clean
   if [ "$INSTALL" == "1" ]; then
-    make -j test.build MPI=1
+    make -j test.build MPI=1 2>&1 | tee make_test_mpi.log
   else
-    make -j test.build MPI=1 NCCLDIR=${DEBDIR}
+    make -j test.build MPI=1 NCCLDIR=${DEBDIR} 2>&1 | tee make_test_mpi.log
   fi
   cd $BLDDIR
   if [[ "$mode" == *"mpi"* ]]; then
     echo "Testing $mode..."
-    $SHDIR/run_perf_graphs.sh $gpumodel $maxgpu $mode
+    $salloc_cmd $SHDIR/run_perf_graphs.sh $gpumodel $maxgpu $mode
   fi
   # multinode test
   if [[ "$mode" == *"multinode"* ]]; then
@@ -82,12 +98,18 @@ else
   cd $NCCLROOT
   make -j test.clean
   if [ "$INSTALL" == "1" ]; then
-    make -j test.build
+    make -j test.build 2>&1 | tee make_test.log
   else
-    make -j test.build NCCLDIR=${DEBDIR}
+    make -j test.build NCCLDIR=${DEBDIR} 2>&1 | tee make_test.log
   fi
   cd $BLDDIR
-  $SHDIR/run_perf_graphs.sh $gpumodel $maxgpu $mode
+  if [ "$mode" == "api" ]; then
+    api_path="results_api/$gpumodel"
+    mkdir -p $api_path
+    $srun_cmd $BLDDIR/test/apitest/apitest 2>&1 | tee $api_path/apitest.out
+  else
+    $srun_cmd $SHDIR/run_perf_graphs.sh $gpumodel $maxgpu $mode
+  fi
 fi
 
 echo "NCCL_Complete" > state

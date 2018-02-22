@@ -18,7 +18,7 @@ for gpu in $gpumodels; do
   ./dop_generate_plots.sh $gpu $ngpus $version
 done
 
-for op in all_reduce all_gather reduce_scatter reduce broadcast; do
+for op in all_reduce all_gather reduce_scatter reduce broadcast all_gatherv reduce_scatterv; do
   echo "<h2>$op</h2>" >> $html
   for gpu in $gpumodels; do
      echo "<h3>$gpu</h3>" >> $html

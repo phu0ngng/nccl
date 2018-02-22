@@ -28,7 +28,7 @@ for OPT in "" "_mpi" "_reorder" "_latency" "_mpi_latency"; do
    else
      mode="bw"
    fi
-   ./generate_html.sh $mode $VER$GM$OPT $VER$PM$OPT 2.0.5$OPT 2.0.2$OPT 1.6.5$OPT 1.5.4$OPT
+   ./generate_html.sh $mode $VER$GM$OPT $VER$PM$OPT 2.1.2$GM$OPT 2.1.2$PM$OPT 2.0.5$OPT 1.6.5$OPT 1.5.4$OPT
    DIR=html$OPT
    echo $DIR
    rm -rf $DST/$DIR
@@ -52,7 +52,7 @@ for OPT in "_multinode" "_multinode_latency"; do
    else
      mode="bw"
    fi
-   ./multinode_generate_html.sh $mode $VER$GM$OPT $VER$PM$OPT 2.0.5$OPT 2.0.2$OPT
+   ./multinode_generate_html.sh $mode $VER$GM$OPT $VER$PM$OPT 2.1.2$GM$OPT 2.1.2$PM$OPT 2.0.5$OPT
    DIR=html$OPT
    echo $DIR
    rm -rf $DST/$DIR
@@ -62,3 +62,24 @@ for OPT in "_multinode" "_multinode_latency"; do
    grep -r -i "FAIL" ${VER}$GM$OPT/results >> $DST/$DIR/fail.txt
    grep -r -i "FAIL" ${VER}$PM$OPT/results >> $DST/$DIR/fail.txt
 done
+
+DIR=html_dlfw
+rm -rf $DST/$DIR
+mkdir -p $DST/$DIR
+./dlfw_generate_plots.sh P100 ${VER}${GM} ${VER}${PM} 2.0.5 2.1.2${GM} 2.1.2${PM}
+mv comp/P100/*.png $DST/$DIR/
+rm -rf comp
+
+for lm in $GM $PM; do
+  DIR=html_aggregation-$lm
+  rm -rf $DST/$DIR
+  ./generate_html.sh lat ${VER}${lm}_aggr/1 ${VER}${lm}_aggr/4 ${VER}${lm}_aggr/16
+  mv comp $DST/$DIR
+  grep -r -i "FAIL" ${VER}${lm}_aggr >> $DST/$DIR/fail.txt
+done
+
+DIR=html_api
+rm -rf $DST/$DIR
+mkdir -p $DST/$DIR
+grep -r -i "FAIL" ${VER}${GM}_api/results >> $DST/$DIR/fail.txt
+grep -r -i "FAIL" ${VER}${PM}_api/results >> $DST/$DIR/fail.txt
