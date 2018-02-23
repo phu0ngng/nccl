@@ -91,3 +91,10 @@ rm -rf $DST/$DIR
 mkdir -p $DST/$DIR
 grep -r "OK" ${VER}${GM}_deadlock/results >> $DST/$DIR/${GM}.txt
 grep -r "OK" ${VER}${PM}_deadlock/results >> $DST/$DIR/${PM}.txt
+
+
+DIR=html_multinode_env
+rm -rf $DST/$DIR
+mkdir -p $DST/$DIR
+cp ${VER}${GM}_multinode_env/results/gpu-verb/* $DST/$DIR
+grep -r -i "fail" ${VER}${GM}_multinode_env/results >> $DST/$DIR/fail.txt
