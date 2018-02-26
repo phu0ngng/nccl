@@ -65,7 +65,7 @@ static ncclResult_t shmUnlink(const char* shmname) {
 }
 
 static ncclResult_t shmClose(void* shmPtr, void* devShmPtr, const int shmsize) {
-  CUDACHECK(cudaHostUnregister(devShmPtr));
+  CUDACHECK(cudaHostUnregister(shmPtr));
   if (munmap(shmPtr, shmsize) != 0) {
     WARN("munmap of shared memory failed");
     return ncclSystemError;

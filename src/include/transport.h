@@ -8,6 +8,7 @@
 #define NCCL_TRANSPORT_H_
 
 #include "nccl.h"
+#include "core.h"
 #include <stdint.h>
 
 #define NTRANSPORTS 3
@@ -33,6 +34,7 @@ struct ncclProxyArgs {
   uint64_t opCount;
   int llMode;
   bool needProxy;
+  int active;
 };
 
 struct ncclTransportComm {
@@ -55,7 +57,7 @@ struct ncclTransport {
 
 typedef ncclResult_t (*threadFunc_t)(struct ncclProxyArgs*);
 
-#define TRANSPORT_PROXY_FIFO_SIZE 16
+#define TRANSPORT_PROXY_FIFO_SIZE NCCL_MAX_OPS
 
 struct transportProxyInfo {
   struct ncclComm* comm;
@@ -63,8 +65,8 @@ struct transportProxyInfo {
   threadFunc_t func;
   volatile int proxyReady;
   struct ncclProxyArgs argsFifo[TRANSPORT_PROXY_FIFO_SIZE];
-  volatile int argsFifoHead;
-  volatile int argsFifoTail;
+  volatile uint64_t argsFifoHead;
+  volatile uint64_t argsFifoTail;
   pthread_cond_t cond;
   pthread_mutex_t mutex;
 };
@@ -84,7 +86,7 @@ static int proxyPatternTo(int root) { return -1-root; }
 static enum proxyMode proxyPatternMode(int pattern) { return (pattern == 0) ? proxyRing : ((pattern > 0) ? proxyFrom : proxyTo); }
 static int proxyPatternRoot(int pattern) { return (pattern > 0) ? pattern-1 : -pattern-1; }
 
-ncclResult_t transportSaveProxies(int substeps, int subchunks, int nstepsPerRound, int nblocksPerRound, size_t size, int pattern, struct ncclComm* comm, int llMode);
+ncclResult_t transportSaveProxies(int substeps, int subchunks, int nstepsPerRound, int nblocksPerRound, size_t size, int pattern, struct ncclComm* comm);
 ncclResult_t transportStartProxies(struct ncclComm* comm);
 
 #include <unistd.h>

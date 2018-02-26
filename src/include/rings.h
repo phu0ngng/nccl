@@ -7,12 +7,9 @@
 #ifndef NCCL_RINGS_H_
 #define NCCL_RINGS_H_
 
-/* Get the default number of threads based on the GPU generation */
-/* https://developer.nvidia.com/cuda-gpus
- * 5 = Maxwell, 6 = Pascal, 7 = Volta
- */
 static int getDefaultThreads() {
-  return ncclCudaCompCap() >= 5 ? 256 : 512;
+  // On Kepler, rings are doubled later.
+  return ncclCudaCompCap() == 3 ? 128 : 256;
 }
 
 static size_t getRingThreshold(int rank, int minCompCap) {

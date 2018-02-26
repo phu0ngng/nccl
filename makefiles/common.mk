@@ -26,24 +26,25 @@ CUDA_MINOR = $(shell echo $(CUDA_VERSION) | cut -d "." -f 2)
 # Better define NVCC_GENCODE in your environment to the minimal set
 # of archs to reduce compile time.
 CUDA8_GENCODE = -gencode=arch=compute_30,code=sm_30 \
-		-gencode=arch=compute_35,code=sm_35 \
+                -gencode=arch=compute_35,code=sm_35 \
                 -gencode=arch=compute_50,code=sm_50 \
-                -gencode=arch=compute_52,code=sm_52 \
                 -gencode=arch=compute_60,code=sm_60 \
-		-gencode=arch=compute_61,code=sm_61 \
-		-gencode=arch=compute_61,code=compute_61
-CUDA9_GENCODE = -gencode=arch=compute_70,code=compute_70
+                -gencode=arch=compute_61,code=sm_61
+CUDA9_GENCODE = -gencode=arch=compute_70,code=sm_70
+
+CUDA8_PTX     = -gencode=arch=compute_61,code=compute_61
+CUDA9_PTX     = -gencode=arch=compute_70,code=compute_70
 
 # Include Volta support if we're using CUDA9 or above
 ifeq ($(shell test "$(CUDA_MAJOR)" -gt 8; echo $$?),0)
-  NVCC_GENCODE ?= $(CUDA8_GENCODE) $(CUDA9_GENCODE)
+  NVCC_GENCODE ?= $(CUDA8_GENCODE) $(CUDA9_GENCODE) $(CUDA9_PTX)
 else
-  NVCC_GENCODE ?= $(CUDA8_GENCODE)
+  NVCC_GENCODE ?= $(CUDA8_GENCODE) $(CUDA8_PTX)
 endif
 #$(info NVCC_GENCODE is ${NVCC_GENCODE})
 
 CXXFLAGS   := -I$(CUDA_INC) -DCUDA_MAJOR=$(CUDA_MAJOR) -DCUDA_MINOR=$(CUDA_MINOR) -fPIC -fvisibility=hidden
-NVCUFLAGS  := -ccbin $(CXX) $(NVCC_GENCODE) -lineinfo -std=c++11 -maxrregcount 96
+NVCUFLAGS  := -ccbin $(CXX) $(NVCC_GENCODE) -lineinfo -std=c++11 -Xptxas -maxrregcount=96 -Xfatbin -compress-all
 # Use addprefix so that we can specify more than one path
 NVLDFLAGS  := -L${CUDA_LIB} -lcudart -lrt
 

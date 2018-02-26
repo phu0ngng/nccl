@@ -7,29 +7,17 @@
 #ifndef NCCL_LL_KERNEL_H_
 #define NCCL_LL_KERNEL_H_
 
-
-#include "core.h"
-
 static __device__ uint64_t readLL(union ncclLLFifoLine* src, uint32_t flag) {
-  volatile uint64_t* valPtr = src->v;
-  union ncclLLFifoLine line;
+  uint32_t data1, flag1, data2, flag2;
   do {
-    line.v[0] = valPtr[0];
-    line.v[1] = valPtr[1];
-  } while ((line.flag1 != flag) || (line.flag2 != flag));
-  uint64_t val = line.data1 + (((uint64_t)line.data2) << 32);
-  return val;
+    asm volatile("ld.volatile.global.v4.u32 {%0,%1,%2,%3}, [%4];" : "=r"(data1), "=r"(flag1), "=r"(data2), "=r"(flag2) : "l"(&src->i4));
+  } while ((flag1 != flag) || (flag2 != flag));
+  uint64_t val64 = data1 + (((uint64_t)data2) << 32);
+  return val64;
 }
 
 static __device__ void storeLL(union ncclLLFifoLine* dst, uint64_t val, uint32_t flag) {
-  union ncclLLFifoLine line;
-  line.data1 = val;
-  line.flag1 = flag;
-  line.data2 = val >> 32;
-  line.flag2 = flag;
-  volatile uint64_t* valPtr = dst->v;
-  valPtr[0] = line.v[0];
-  valPtr[1] = line.v[1];
+  asm volatile("st.volatile.global.v4.u32 [%0], {%1,%2,%3,%4};" :: "l"(&dst->i4), "r"((uint32_t)val), "r"(flag), "r"((uint32_t)(val >> 32)), "r"(flag));
 }
 
 // Using memcpy handles misaligned pointers.
@@ -135,23 +123,23 @@ class LLPrimitives {
       sendHead = sendHeadPtr[0]; \
     } \
   } \
-  __syncthreads();
+  asm volatile ("bar.sync 1, %0;" :: "r"(LL_NTHREADS));
 
 #define POST_SIZE \
   if (tid == 0 && sizesFifo) sizesFifo[step % NUM_LL_CHUNKS] = (maxOffset <= 0) ? -1 : (maxOffset*2*(int)sizeof(T));
 
 #define ACK_PREV \
-  __syncthreads();  \
+  asm volatile ("bar.sync 1, %0;" :: "r"(LL_NTHREADS)); \
   if (tid == 0) recvHeadPtr[0] = step;
 
 #define FIFO_CLEANING_AND_SAVE_STEP(flag) do { \
   if (step > ring->send.conn.llLastCleaning + LL_CLEAN_FREQ) { \
     /* Reset all flags */ \
-    static_assert((LL_BUFF_SIZE % THREADS) == 0, "LL_BUFF_SIZE must be a multiple of THREADS"); \
-    static_assert(LL_BUFF_SIZE/(sizeof(union ncclLLFifoLine)*THREADS) > 0, "LL_BUFF_SIZE is less than 16 bytes*THREADS"); \
+    static_assert((LL_BUFF_SIZE % LL_NTHREADS) == 0, "LL_BUFF_SIZE must be a multiple of THREADS"); \
+    static_assert(LL_BUFF_SIZE/(sizeof(union ncclLLFifoLine)*LL_NTHREADS) > 0, "LL_BUFF_SIZE is less than 16 bytes*THREADS"); \
     const union ncclLLFifoLine resetLine = { 0, flag, 0, flag }; \
-    for (int i=0; i<LL_BUFF_SIZE/(sizeof(union ncclLLFifoLine)*THREADS); i++) { \
-      prevInput[tid+i*THREADS].i4 = resetLine.i4; \
+    for (int i=0; i<LL_BUFF_SIZE/(sizeof(union ncclLLFifoLine)*LL_NTHREADS); i++) { \
+      prevInput[tid+i*LL_NTHREADS].i4 = resetLine.i4; \
     } \
     __threadfence_system(); \
     /* Restart from the same slot, only make sure sender waits for data to be reset */ \

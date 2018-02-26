@@ -48,10 +48,7 @@ struct FuncMin {
 
 template<>
 struct FuncSum<int8_t> {
-  union converter {
-    uint32_t storage;
-    char4 a;
-  };
+  union converter { uint32_t storage; char4 a; };
   __device__ uint32_t operator()(const uint32_t x, const uint32_t y) const {
 #if (__CUDA_ARCH__ >= 300) && (__CUDA_ARCH__ < 500)
     int32_t rv, z=0;
@@ -81,21 +78,18 @@ struct FuncSum<int8_t> {
 };
 template<>
 struct FuncSum<uint8_t> {
-  union converter {
-    uint32_t storage;
-    char4 a;
-  };
+  union converter { uint32_t storage; uchar4 a; };
   __device__ uint32_t operator()(const uint32_t x, const uint32_t y) const {
 #if (__CUDA_ARCH__ >= 300) && (__CUDA_ARCH__ < 500)
     int32_t rv, z=0;
-    asm("vadd4.s32.s32.s32 %0, %1, %2, %3;" : "=r"(rv) : "r"(x), "r"(y), "r"(z));
+    asm("vadd4.u32.u32.u32 %0, %1, %2, %3;" : "=r"(rv) : "r"(x), "r"(y), "r"(z));
     return rv;
 #elif (__CUDA_ARCH__ >= 500) && (__CUDA_ARCH__ < 700)
     int32_t rv;
-    asm("vadd.s32.s32.s32 %0,    %1.b0, %2.b0;    \n\t"
-        "vadd.s32.s32.s32 %0.b1, %1.b1, %2.b1, %0;\n\t"
-        "vadd.s32.s32.s32 %0.b2, %1.b2, %2.b2, %0;\n\t"
-        "vadd.s32.s32.s32 %0.b3, %1.b3, %2.b3, %0;" : "=r"(rv) : "r"(x), "r"(y));
+    asm("vadd.u32.u32.u32 %0,    %1.b0, %2.b0;    \n\t"
+        "vadd.u32.u32.u32 %0.b1, %1.b1, %2.b1, %0;\n\t"
+        "vadd.u32.u32.u32 %0.b2, %1.b2, %2.b2, %0;\n\t"
+        "vadd.u32.u32.u32 %0.b3, %1.b3, %2.b3, %0;" : "=r"(rv) : "r"(x), "r"(y));
     return rv;
 #else
     converter cx, cy, cr;

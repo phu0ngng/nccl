@@ -46,8 +46,23 @@ struct userIbDev {
 #define MAX_IB_DEVS 16
 struct ncclIbDev ncclIbDevs[MAX_IB_DEVS];
 struct userIbDev userIbDevs[MAX_IB_DEVS];
-int ncclIbTimeout = 14;
 pthread_mutex_t ncclIbLock = PTHREAD_MUTEX_INITIALIZER;
+
+#define NCCL_IB_PARAM(name, env, default_value) \
+int ncclIb##name() { \
+  static int value = -1; \
+  if (value == -1) { \
+    char* str = getenv("NCCL_IB_" env); \
+    value = str ? atoi(str) : default_value; \
+  } \
+  return value; \
+}
+
+NCCL_IB_PARAM(GidIndex, "GID_INDEX", 0);
+NCCL_IB_PARAM(Timeout, "TIMEOUT", 14);
+NCCL_IB_PARAM(RetryCnt, "RETRY_CNT", 7);
+NCCL_IB_PARAM(Sl, "SL", 0);
+NCCL_IB_PARAM(Tc, "TC", 0);
 
 pthread_t ncclIbAsyncThread;
 static void* ncclIbAsyncThreadMain(void* args) {
@@ -132,9 +147,6 @@ static void initDevices() {
       }
       if (nIbDevs && (ncclSuccess != wrap_ibv_free_device_list(devices))) { return; };
     }
-
-    char* env = getenv("NCCL_IB_TIMEOUT");
-    if (env && strlen(env) > 1) ncclIbTimeout = atoi(env);
 
     pthread_mutex_unlock(&ncclIbLock);
   }
@@ -355,19 +367,14 @@ ncclResult_t ncclIbRtrQp(ibv_qp* qp, struct ncclIbQpInfo* info) {
     qpAttr.ah_attr.grh.dgid.global.subnet_prefix = info->spn;
     qpAttr.ah_attr.grh.dgid.global.interface_id = info->iid;
     qpAttr.ah_attr.grh.flow_label = 0;
+    qpAttr.ah_attr.grh.sgid_index = ncclIbGidIndex();
     qpAttr.ah_attr.grh.hop_limit = 255;
+    qpAttr.ah_attr.grh.traffic_class = ncclIbTc();
   } else {
     qpAttr.ah_attr.is_global = 0;
     qpAttr.ah_attr.dlid = info->lid;
   }
-  static int ncclIbSl = -1;
-  if (ncclIbSl == -1) {
-    char* str = getenv("NCCL_IB_SL");
-    ncclIbSl = str ? atoi(str) : 1;
-    if (str)
-      INFO("NET/IB: Using service level %d", ncclIbSl);
-  }
-  qpAttr.ah_attr.sl = ncclIbSl;
+  qpAttr.ah_attr.sl = ncclIbSl();
   qpAttr.ah_attr.src_path_bits = 0;
   qpAttr.ah_attr.port_num = info->ib_port;
   NCCLCHECK(wrap_ibv_modify_qp(qp, &qpAttr, IBV_QP_STATE | IBV_QP_AV | IBV_QP_PATH_MTU | IBV_QP_DEST_QPN | IBV_QP_RQ_PSN | IBV_QP_MAX_DEST_RD_ATOMIC | IBV_QP_MIN_RNR_TIMER));
@@ -378,10 +385,9 @@ ncclResult_t ncclIbRtsQp(ibv_qp* qp) {
   struct ibv_qp_attr qpAttr;
   memset(&qpAttr, 0, sizeof(struct ibv_qp_attr));
   qpAttr.qp_state = IBV_QPS_RTS;
-  qpAttr.timeout = ncclIbTimeout;
-  qpAttr.retry_cnt = 7;
-  //qpAttr.rnr_retry = 7;
-  qpAttr.rnr_retry = 1;
+  qpAttr.timeout = ncclIbTimeout();
+  qpAttr.retry_cnt = ncclIbRetryCnt();
+  qpAttr.rnr_retry = 7;
   qpAttr.sq_psn = 0;
   qpAttr.max_rd_atomic = 1;
   NCCLCHECK(wrap_ibv_modify_qp(qp, &qpAttr, IBV_QP_STATE | IBV_QP_TIMEOUT | IBV_QP_RETRY_CNT | IBV_QP_RNR_RETRY | IBV_QP_SQ_PSN | IBV_QP_MAX_QP_RD_ATOMIC));
@@ -428,21 +434,15 @@ int ncclIbConnect(int dev, void* opaqueHandle, void** sendComm) {
   qpInfo.fifoAddr = (uint64_t)comm->fifo;
 
   // RoCE support
-  static int ibGidIndex = -1;
-  if (ibGidIndex == -1) {
-    char* str = getenv("NCCL_IB_GID_INDEX");
-    ibGidIndex = str ? atoi(str) : 0;
-  }
-
   qpInfo.lid = portAttr.lid;
   if (qpInfo.lid) { // IB
     INFO("NET/IB: Dev %d Port %d qpn %d mtu %d LID %d", dev, ib_port, qpInfo.qpn, qpInfo.mtu, qpInfo.lid);
   } else { // RoCE
     union ibv_gid gid;
-    NCCLCHECK(wrap_ibv_query_gid(ctx, ib_port, ibGidIndex, &gid));
+    NCCLCHECK(wrap_ibv_query_gid(ctx, ib_port, ncclIbGidIndex(), &gid));
     qpInfo.spn = gid.global.subnet_prefix;
     qpInfo.iid = gid.global.interface_id;
-    INFO("NET/IB: Dev %d Port %d qpn %d mtu %d GID %d (%lX/%lX)", dev, ib_port, qpInfo.qpn, qpInfo.mtu, ibGidIndex, qpInfo.spn, qpInfo.iid);
+    INFO("NET/IB: Dev %d Port %d qpn %d mtu %d GID %d (%lX/%lX)", dev, ib_port, qpInfo.qpn, qpInfo.mtu, ncclIbGidIndex(), qpInfo.spn, qpInfo.iid);
   }
 
   NCCLCHECK(socketSend(comm->fd, &qpInfo, sizeof(qpInfo)));
@@ -466,7 +466,7 @@ int ncclIbAccept(void* listenComm, void** recvComm) {
   struct ibv_port_attr portAttr;
   NCCLCHECK(wrap_ibv_query_port(ctx, ib_port, &portAttr));
   union ibv_gid gid;
-  NCCLCHECK(wrap_ibv_query_gid(ctx, ib_port, 0, &gid));
+  NCCLCHECK(wrap_ibv_query_gid(ctx, ib_port, ncclIbGidIndex(), &gid));
 
   // QP Creation
   NCCLCHECK(ncclIbInitVerbs(ctx, &rComm->verbs));

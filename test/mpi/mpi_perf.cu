@@ -113,7 +113,7 @@ int benchCollective(int collective, int rank, int nranks, int* ddata, int* hdata
       if (size > (MAXSIZE/nranks)) continue;
       realSize = size * nranks;
     }
-    int nbytes = realSize*sizeof(int);
+    size_t nbytes = realSize*sizeof(int);
     int errors = 0;
     CUDACHECK(cudaStreamSynchronize(stream));
     MPI_Barrier(MPI_COMM_WORLD);

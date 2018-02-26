@@ -9,8 +9,8 @@
 #include "common.h"
 
 void print_header() {
-  PRINT("# %10s  %12s  %6s  %6s        out-of-place                    in-place\n", "", "", "", "");
-  PRINT("# %10s  %12s  %6s  %6s  %6s %7s  %5s  %5s  %7s  %7s  %5s  %5s  %7s\n", "bytes", "N", "type", "op", "root",
+  PRINT("# %10s  %12s  %6s  %6s        out-of-place                      in-place\n", "", "", "", "");
+  PRINT("# %10s  %12s  %6s  %6s  %6s %7s  %6s  %6s  %7s  %7s  %6s  %6s  %7s\n", "bytes", "N", "type", "op", "root",
       "time", "algbw", "busbw", "res", "time", "algbw", "busbw", "res");
 }
 

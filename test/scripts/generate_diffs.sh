@@ -25,7 +25,11 @@ firstversion=1
 for version in $@; do
   data=$version/results/$gpumodel/$op.$ngpus
   cat $data.out | grep float | awk "{ print \$1,\$$busbwcol; }" > $data.values
-  score=`awk '{ sum += $2 } END { print sum }' $data.values`
+  if [ "$mode" == "0" ]; then
+    score=`awk '{ sum += $2 } END { print sum }' $data.values`
+  else
+    score=`awk '{ sum += $2; n++ } END { printf("%5.4f\n", n ? sum/n : 0) }' $data.values`
+  fi
   if [ "$firstversion" == "1" ]; then
     firstversion=0
     refscore=$score
@@ -79,12 +83,16 @@ if [ "$mode" == "bw" ]; then
   plot_ngpu_loop 0 $gpumodel $maxgpu all_reduce 11 $@
   plot_ngpu_loop 0 $gpumodel $maxgpu all_gather 10 $@
   plot_ngpu_loop 0 $gpumodel $maxgpu reduce_scatter 11 $@
+  plot_ngpu_loop 0 $gpumodel $maxgpu all_gatherv 10 $@
+  plot_ngpu_loop 0 $gpumodel $maxgpu reduce_scatterv 11 $@
 elif [ "$mode" == "lat" ]; then
   plot_ngpu_loop 1 $gpumodel $maxgpu reduce 10 $@
   plot_ngpu_loop 1 $gpumodel $maxgpu broadcast 5 $@
   plot_ngpu_loop 1 $gpumodel $maxgpu all_reduce 9 $@
   plot_ngpu_loop 1 $gpumodel $maxgpu all_gather 8 $@
   plot_ngpu_loop 1 $gpumodel $maxgpu reduce_scatter 9 $@
+  plot_ngpu_loop 1 $gpumodel $maxgpu all_gatherv 8 $@
+  plot_ngpu_loop 1 $gpumodel $maxgpu reduce_scatterv 9 $@
 else
   echo "Invalid mode. Please specify bw or lat."
 fi

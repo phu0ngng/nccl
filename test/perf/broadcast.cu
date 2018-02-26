@@ -10,7 +10,7 @@
 
 void print_header() {
   PRINT("# %10s  %12s  %6s  %6s        out-of-place\n", "", "", "", "");
-  PRINT("# %10s  %12s  %6s  %6s  %7s  %5s  %5s  %7s\n", "bytes", "N", "type", "root", 
+  PRINT("# %10s  %12s  %6s  %6s  %7s  %6s  %6s  %7s\n", "bytes", "N", "type", "root", 
       "time", "algbw", "busbw", "res");
 }
 

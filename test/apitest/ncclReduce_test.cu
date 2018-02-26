@@ -209,3 +209,48 @@ TYPED_TEST(ncclReduce_test, stream_wrong) {
                          this->streams[j]));
 };
 #endif
+// Aggregation
+// Only for 2.2 or higher
+#if NCCL_MAJOR > 2 || (NCCL_MAJOR == 2 && NCCL_MINOR >=2)
+TYPED_TEST(ncclReduce_test, aggregate_three_level_group_call) {
+    ASSERT_EQ(ncclSuccess, ncclGroupStart());
+    for (ncclRedOp_t op : this->RedOps) {
+        ASSERT_EQ(ncclSuccess, ncclGroupStart());
+        for (int root = 0; root < this->nVis; ++root) {
+            ASSERT_EQ(ncclSuccess, ncclGroupStart());
+            for (int i = 0; i < this->nVis; ++i) {
+                ASSERT_EQ(ncclSuccess,
+                          ncclReduce(this->sendbuffs[i], i == root ? this->recvbuffs[i] : NULL,
+                                     std::min(this->N, 1024 * 1024),
+                                     this->DataType(), op, root, this->comms[i],
+                                     this->streams[i]))
+                    << "op: " << op << ", "
+                    << "root: " << root << ", "
+                    << "i" << i << ", " << std::endl;
+            }
+            ASSERT_EQ(ncclSuccess, ncclGroupEnd());
+        }
+        ASSERT_EQ(ncclSuccess, ncclGroupEnd());
+    }
+    ASSERT_EQ(ncclSuccess, ncclGroupEnd());
+};
+TYPED_TEST(ncclReduce_test, aggregate_one_level_group_call_exchange_loops) {
+    ASSERT_EQ(ncclSuccess, ncclGroupStart());
+    for (int i = 0; i < this->nVis; ++i) {
+        for (ncclRedOp_t op : this->RedOps) {
+            for (int root = 0; root < this->nVis; ++root) {
+                ASSERT_EQ(ncclSuccess,
+                          ncclReduce(this->sendbuffs[i], i == root ? this->recvbuffs[i] : NULL,
+                                     std::min(this->N, 1024 * 1024),
+                                     this->DataType(), op, root, this->comms[i],
+                                     this->streams[i]))
+                    << "op: " << op << ", "
+                    << "root: " << root << ", "
+                    << "i" << i << ", " << std::endl;
+            }
+        }
+    }
+    ASSERT_EQ(ncclSuccess, ncclGroupEnd());
+};
+#endif
+//EOF

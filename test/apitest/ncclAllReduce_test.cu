@@ -139,4 +139,56 @@ TYPED_TEST(ncclAllReduce_test, DISABLED_stream_wrong) {
                             std::min(this->N, 1024 * 1024), this->DataType(),
                             this->RedOps[0], this->comms[i], this->streams[j]));
 };
+// Aggregation
+// Only for 2.2 or higher
+#if NCCL_MAJOR > 2 || (NCCL_MAJOR == 2 && NCCL_MINOR >=2)
+TYPED_TEST(ncclAllReduce_test, aggregate_two_level_group_call) {
+    ASSERT_EQ(ncclSuccess, ncclGroupStart());
+    for (ncclRedOp_t op : this->RedOps) {
+        ASSERT_EQ(ncclSuccess, ncclGroupStart());
+        for (int i = 0; i < this->nVis; ++i) {
+            ASSERT_EQ(ncclSuccess,
+                      ncclAllReduce(this->sendbuffs[i], this->recvbuffs[i],
+                                    std::min(this->N, 1024 * 1024),
+                                    this->DataType(), op, this->comms[i],
+                                    this->streams[i]))
+                << "op: " << op << ", "
+                << "i" << i << ", " << std::endl;
+        }
+        ASSERT_EQ(ncclSuccess, ncclGroupEnd());
+    }
+    ASSERT_EQ(ncclSuccess, ncclGroupEnd());
+};
+TYPED_TEST(ncclAllReduce_test, aggregate_one_level_group_call) {
+    ASSERT_EQ(ncclSuccess, ncclGroupStart());
+    for (ncclRedOp_t op : this->RedOps) {
+        for (int i = 0; i < this->nVis; ++i) {
+            ASSERT_EQ(ncclSuccess,
+                      ncclAllReduce(this->sendbuffs[i], this->recvbuffs[i],
+                                    std::min(this->N, 1024 * 1024),
+                                    this->DataType(), op, this->comms[i],
+                                    this->streams[i]))
+                << "op: " << op << ", "
+                << "i" << i << ", " << std::endl;
+        }
+    }
+    ASSERT_EQ(ncclSuccess, ncclGroupEnd());
+};
+TYPED_TEST(ncclAllReduce_test, aggregate_ll_singleRing_multiRing) {
+    int sizes[5] = { 1024, 32768, 512*1024, 32768, 1024 };  //ll, single-ring, multi-ring
+    ASSERT_EQ(ncclSuccess, ncclGroupStart());
+    for (int k = 0; k < 5; k++) {
+        for (int i = 0; i < this->nVis; ++i) {
+            ASSERT_EQ(ncclSuccess,
+                      ncclAllReduce(this->sendbuffs[i], this->recvbuffs[i],
+                                    sizes[k],
+                                    this->DataType(), ncclSum, this->comms[i],
+                                    this->streams[i]))
+                << "size: " << sizes[k] << ", "
+                << "i" << i << ", " << std::endl;
+        }
+    }
+    ASSERT_EQ(ncclSuccess, ncclGroupEnd());
+};
+#endif
 // EOF
