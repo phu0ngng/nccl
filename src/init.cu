@@ -77,6 +77,14 @@ void initLl() {
   INFO("Using NCCL Low-latency algorithm for sizes below %ld", ncclLLThreshold);
 }
 
+int ncclAffinityDisable;
+void initAffinity() {
+  char* str = getenv("NCCL_AFFINITY_DISABLE");
+  ncclAffinityDisable = (str && atoi(str) >= 0) ? atoi(str) : 0;
+  if (ncclAffinityDisable)
+    INFO("NCCL affinity setting is disabled");
+}
+
 pthread_mutex_t initLock = PTHREAD_MUTEX_INITIALIZER;
 static bool initialized = false;
 static ncclResult_t ncclInit() {
@@ -87,6 +95,7 @@ static ncclResult_t ncclInit() {
     initDebug();
     initNet();
     initLl();
+    initAffinity();
     initialized = true;
   }
   pthread_mutex_unlock(&initLock);
@@ -506,6 +515,7 @@ static ncclResult_t initTransportsRank(struct ncclComm* comm, ncclUniqueId* comm
 }
 
 bool SetCpuAffinity(int cudaDev, nvmlDevice_t* nvmlDevice) {
+  if (ncclAffinityDisable == 1) return false;
   char busId[NVML_DEVICE_PCI_BUS_ID_BUFFER_SIZE];
   if (cudaDeviceGetPCIBusId(busId, NVML_DEVICE_PCI_BUS_ID_BUFFER_SIZE, cudaDev) != cudaSuccess) return false;
   if (wrapNvmlDeviceGetHandleByPciBusId(busId, nvmlDevice) != ncclSuccess) return false;
