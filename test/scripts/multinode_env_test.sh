@@ -52,6 +52,6 @@ test_env $gpumodel $nnode $maxgpu NCCL_IB_HCA mlx5 mlx5_0:1 ^mlx5_0:1
 test_env $gpumodel $nnode $maxgpu NCCL_SOCKET_IFNAME ib ^ib
 test_env $gpumodel $nnode $maxgpu NCCL_SOCKET_FAMILY AF_INET6     # default = AF_INET4
 test_env $gpumodel $nnode $maxgpu NCCL_NET_GDR_READ 1             # default = 0
-test_env $gpumodel $nnode $maxgpu NCCL_IB_GID_INDEX 3,4           # default = 0, test RoCE v1(index=4) and v2(index=3)
+test_env $gpumodel $nnode $maxgpu NCCL_IB_GID_INDEX 3 4           # default = 0, test RoCE v1(index=4) and v2(index=3)
 test_env $gpumodel $nnode $maxgpu NCCL_IB_SL 8                    # default = 0, service level
 test_env $gpumodel $nnode $maxgpu NCCL_IB_TC 8                    # default = 0, traffic class
