@@ -35,6 +35,7 @@ static int parallel_init = 0;
 static int blocking_coll = 0;
 static int streamnull = 0;
 static int side_comp = 0;
+static int cpu_warmup = 0;
 
 double parsesize(char *value) {
     long long int units;
@@ -467,8 +468,8 @@ cudaError_t cudaStreamSyncYield(cudaStream_t stream) {
   }
 }
 
-void *WarmUpCPU(void *x) {
-  unsigned long *limit = (unsigned long*) x;
+void *WarmUpCPU(void *arg) {
+  unsigned long *limit = (unsigned long*) arg;
 #ifdef _OPENMP
   int mx_nthreads = omp_get_max_threads();
   //printf("Max number of threads = %d\n", mx_nthreads);
@@ -482,7 +483,7 @@ void *WarmUpCPU(void *x) {
       //printf("Number of threads in use = %d\n", nthreads);
     }
 
-    volatile unsigned x=0, y=1;
+    volatile unsigned long x=0, y=1;
     while (x++ < *limit || y++ < *limit);
   }
   return NULL;
@@ -543,16 +544,20 @@ void BenchTime(struct threadArgs_t* args, ncclDataType_t type, ncclRedOp_t op, i
   size_t count = args->nbytes / wordSize(type);
   int local_iters = warmup ? warmup_iters : iters;
   int local_agg_iters = agg_iters;
-  
+
   pthread_t warmup_thread;
   unsigned long limit = 3e9;
-  pthread_create(&warmup_thread, NULL, WarmUpCPU, &limit);
+  if (cpu_warmup == 1 && args->thread == 0) {
+    pthread_create(&warmup_thread, NULL, WarmUpCPU, &limit);
+  }
 
   // Sync
   startColl(args, type, op, root, in_place, 0);
   completeColl(args);
 
-  pthread_join(warmup_thread, NULL);
+  if (cpu_warmup == 1 && args->thread == 0) {
+    pthread_join(warmup_thread, NULL);
+  }
 
   Barrier(args);
 
@@ -836,12 +841,13 @@ int main(int argc, char* argv[]) {
     {"blocking", required_argument, 0, 'z'},
     {"stream_null", required_argument, 0, 'y'},
     {"side_comp", required_argument, 0, 'k'},
+    {"cpu_warmup", required_argument, 0, 'u'},
     {"help", no_argument, 0, 'h'}
  };
 
  while(1) {
       int c;
-      c = getopt_long(argc, argv, "t:g:b:e:i:f:n:m:w:s:p:c:o:d:r:z:y:k:h", longopts, &longindex);
+      c = getopt_long(argc, argv, "t:g:b:e:i:f:n:m:w:s:p:c:o:d:r:z:y:k:u:h", longopts, &longindex);
 
       if (c == -1)
          break;
@@ -904,6 +910,9 @@ int main(int argc, char* argv[]) {
              break;
          case 'k':
              side_comp = strtol(optarg, NULL, 0);
+             break;
+         case 'u':
+             cpu_warmup = strtol(optarg, NULL, 0);
              break;
          case 'h':
 	         printf("USAGE: ./test \n\t" 
