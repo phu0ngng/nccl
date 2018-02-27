@@ -77,14 +77,6 @@ void initLl() {
   INFO("Using NCCL Low-latency algorithm for sizes below %ld", ncclLLThreshold);
 }
 
-int ncclAffinityDisable;
-void initAffinity() {
-  char* str = getenv("NCCL_AFFINITY_DISABLE");
-  ncclAffinityDisable = (str && atoi(str) >= 0) ? atoi(str) : 0;
-  if (ncclAffinityDisable)
-    INFO("NCCL affinity setting is disabled");
-}
-
 pthread_mutex_t initLock = PTHREAD_MUTEX_INITIALIZER;
 static bool initialized = false;
 static ncclResult_t ncclInit() {
@@ -95,7 +87,6 @@ static ncclResult_t ncclInit() {
     initDebug();
     initNet();
     initLl();
-    initAffinity();
     initialized = true;
   }
   pthread_mutex_unlock(&initLock);
@@ -515,7 +506,6 @@ static ncclResult_t initTransportsRank(struct ncclComm* comm, ncclUniqueId* comm
 }
 
 bool SetCpuAffinity(int cudaDev, nvmlDevice_t* nvmlDevice) {
-  if (ncclAffinityDisable == 1) return false;
   char busId[NVML_DEVICE_PCI_BUS_ID_BUFFER_SIZE];
   if (cudaDeviceGetPCIBusId(busId, NVML_DEVICE_PCI_BUS_ID_BUFFER_SIZE, cudaDev) != cudaSuccess) return false;
   if (wrapNvmlDeviceGetHandleByPciBusId(busId, nvmlDevice) != ncclSuccess) return false;
@@ -527,6 +517,9 @@ bool SetCpuAffinity(int cudaDev, nvmlDevice_t* nvmlDevice) {
 }
 
 ncclResult_t ncclCommInitRankSync(ncclComm_t* newcomm, int ndev, ncclUniqueId commId, int myrank) {
+  cpu_set_t affinitySave;
+  sched_getaffinity(0, sizeof(cpu_set_t), &affinitySave);
+
   NCCLCHECK(wrapNvmlSymbols());
   NCCLCHECK(wrapNvmlInit());
 
@@ -534,20 +527,18 @@ ncclResult_t ncclCommInitRankSync(ncclComm_t* newcomm, int ndev, ncclUniqueId co
   int cudaDev;
   nvmlDevice_t nvmlDevice;
   CUDACHECK(cudaGetDevice(&cudaDev));
-  bool affinity_set = SetCpuAffinity(cudaDev, &nvmlDevice);
+  SetCpuAffinity(cudaDev, &nvmlDevice);
   ncclResult_t res;
 
   NCCLCHECKGOTO(commAlloc(newcomm, ndev, myrank), res, cleanup);
   NCCLCHECKGOTO(initTransportsRank(*newcomm, &commId), res, cleanup);
   NCCLCHECKGOTO(devCommSetup(*newcomm), res, cleanup);
 
-  if (affinity_set)
-    wrapNvmlDeviceClearCpuAffinity(nvmlDevice); // Ignore errors
-
   NCCLCHECKGOTO(wrapNvmlShutdown(), res, cleanup);
   return ncclSuccess;
 cleanup:
   *newcomm = NULL;
+  sched_setaffinity(0, sizeof(cpu_set_t), &affinitySave);
   return res;
 }
 
@@ -673,7 +664,6 @@ ncclResult_t ncclCommInitAll(ncclComm_t* comms, int ndev, const int* devlist) {
   int rank, cudaDev;
   ncclComm_t comm = NULL;
   nvmlDevice_t nvmlDevice;
-  bool affinity_set = false;
   int ncclDevList[ndev];
   for (int i=0; i<ndev; i++) {
     ncclDevList[i] = devlist ? devlist[i] : i;
@@ -684,21 +674,24 @@ ncclResult_t ncclCommInitAll(ncclComm_t* comms, int ndev, const int* devlist) {
   for(rank=0; rank<ndev; ++rank)
     comms[rank] = NULL;
 
+  cpu_set_t affinitySave;
+  sched_getaffinity(0, sizeof(cpu_set_t), &affinitySave);
+
   for (rank=0; rank<ndev; ++rank) {
     cudaDev = ncclDevList[rank];
     CUDACHECKGOTO(cudaSetDevice(cudaDev), res, cleanup);
 
     // Set CPU affinity
-    affinity_set = SetCpuAffinity(cudaDev, &nvmlDevice);
+    SetCpuAffinity(cudaDev, &nvmlDevice);
 
     NCCLCHECKGOTO(commAlloc(&comm, ndev, rank), res, cleanup);
     comms[rank] = comm;
 
     NCCLCHECKGOTO(ncclCommSetIntra(comm, rank, ndev, comms[0]), res, cleanup);
 
-    if (affinity_set)
-      wrapNvmlDeviceClearCpuAffinity(nvmlDevice); // Ignore errors
   }
+
+  sched_setaffinity(0, sizeof(cpu_set_t), &affinitySave);
 
   NCCLCHECKGOTO(initTransportsAll(comms, ncclDevList, ndev), res, cleanup);
 
@@ -722,6 +715,7 @@ ncclResult_t ncclCommInitAll(ncclComm_t* comms, int ndev, const int* devlist) {
   if(wrapNvmlShutdown() != ncclSuccess)
     INFO("NCCL did not shutdown nvml properly");
   cudaSetDevice(savedDevice);
+  sched_setaffinity(0, sizeof(cpu_set_t), &affinitySave);
   return res;
 }
 
