@@ -10,6 +10,7 @@
 #include <getopt.h>
 #include <omp.h>
 #include "cuda.h"
+#include "nvml.h"
 
 #if NCCL_MAJOR >= 2
 ncclDataType_t test_types[ncclNumTypes] = {ncclInt8, ncclUint8, ncclInt32, ncclUint32, ncclInt64, ncclUint64, ncclHalf, ncclFloat, ncclDouble};
@@ -36,6 +37,7 @@ static int blocking_coll = 0;
 static int streamnull = 0;
 static int side_comp = 0;
 static int cpu_warmup = 0;
+static int set_affinity = 0;
 
 double parsesize(char *value) {
     long long int units;
@@ -469,13 +471,14 @@ cudaError_t cudaStreamSyncYield(cudaStream_t stream) {
 }
 
 void *WarmUpCPU(void *arg) {
-  unsigned long *limit = (unsigned long*) arg;
+  unsigned long limit = 3e9;
+  struct threadArgs_t* targs = (struct threadArgs_t*)arg;
 #ifdef _OPENMP
   int mx_nthreads = omp_get_max_threads();
-  //printf("Max number of threads = %d\n", mx_nthreads);
+  //printf("\nMax number of threads = %d\n", mx_nthreads);
 #endif
 
-#pragma omp parallel
+#pragma omp parallel num_threads(mx_nthreads - targs->nThreads)
   {
     int tid = omp_get_thread_num();
     if (tid == 0) {
@@ -484,7 +487,7 @@ void *WarmUpCPU(void *arg) {
     }
 
     volatile unsigned long x=0, y=1;
-    while (x++ < *limit || y++ < *limit);
+    while (x++ < limit || y++ < limit);
   }
   return NULL;
 }
@@ -545,19 +548,13 @@ void BenchTime(struct threadArgs_t* args, ncclDataType_t type, ncclRedOp_t op, i
   int local_iters = warmup ? warmup_iters : iters;
   int local_agg_iters = agg_iters;
 
-  pthread_t warmup_thread;
-  unsigned long limit = 3e9;
   if (cpu_warmup == 1 && args->thread == 0) {
-    pthread_create(&warmup_thread, NULL, WarmUpCPU, &limit);
+    WarmUpCPU(args);
   }
 
   // Sync
   startColl(args, type, op, root, in_place, 0);
   completeColl(args);
-
-  if (cpu_warmup == 1 && args->thread == 0) {
-    pthread_join(warmup_thread, NULL);
-  }
 
   Barrier(args);
 
@@ -661,6 +658,23 @@ void TimeTest(struct threadArgs_t* args, ncclDataType_t type, const char* typeNa
   }
 }
 
+bool SetCpuAffinity(int cudaDev) {
+  nvmlDevice_t nvmlDevice;
+  char busId[NVML_DEVICE_PCI_BUS_ID_BUFFER_SIZE];
+  if (cudaDeviceGetPCIBusId(busId, NVML_DEVICE_PCI_BUS_ID_BUFFER_SIZE, cudaDev) != cudaSuccess) {
+    printf("Failed to get bus id \n");
+    return false;
+  }
+  if (nvmlDeviceGetHandleByPciBusId(busId, &nvmlDevice) != NVML_SUCCESS) {
+    printf("Failed to get NVML handle \n");
+    return false;
+  }
+  if (nvmlDeviceSetCpuAffinity(nvmlDevice) != NVML_SUCCESS) {
+    printf("Failed to set CPU affinity \n");
+    return false;
+  }
+  return true;
+}
 
 void* threadRunTests(void* args) {
   struct threadArgs_t* targs = (struct threadArgs_t*)args;
@@ -669,6 +683,12 @@ void* threadRunTests(void* args) {
   // exclusive mode those operations will fail.
   int gpuid = targs->localRank*targs->nThreads*targs->nGpus + targs->thread*targs->nGpus;
   CUDACHECK(cudaSetDevice(gpuid));
+
+  if (set_affinity == 1) {
+    if (SetCpuAffinity(gpuid)) {
+      printf("Successfully set CPU affinity for GPU %d\n", gpuid);
+    }
+  }
 
   RunTest(targs, ncclroot, (ncclDataType_t)nccltype, test_typenames[nccltype], (ncclRedOp_t)ncclop, test_opnames[ncclop]);
 
@@ -842,12 +862,13 @@ int main(int argc, char* argv[]) {
     {"stream_null", required_argument, 0, 'y'},
     {"side_comp", required_argument, 0, 'k'},
     {"cpu_warmup", required_argument, 0, 'u'},
+    {"set_affinity", required_argument, 0, 'a'},
     {"help", no_argument, 0, 'h'}
  };
 
  while(1) {
       int c;
-      c = getopt_long(argc, argv, "t:g:b:e:i:f:n:m:w:s:p:c:o:d:r:z:y:k:u:h", longopts, &longindex);
+      c = getopt_long(argc, argv, "t:g:b:e:i:f:n:m:w:s:p:c:o:d:r:z:y:k:u:a:h", longopts, &longindex);
 
       if (c == -1)
          break;
@@ -913,6 +934,9 @@ int main(int argc, char* argv[]) {
              break;
          case 'u':
              cpu_warmup = strtol(optarg, NULL, 0);
+             break;
+         case 'a':
+             set_affinity = strtol(optarg, NULL, 0);
              break;
          case 'h':
 	         printf("USAGE: ./test \n\t" 
@@ -1054,6 +1078,11 @@ int main(int argc, char* argv[]) {
 #endif
        fflush(stdout);
      }
+  }
+
+  if (set_affinity && nvmlInit() != NVML_SUCCESS) {
+    printf("Failed to init NVML \n");
+    exit(EXIT_FAILURE);
   }
 
   int errors[nThreads];
