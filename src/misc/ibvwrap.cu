@@ -274,5 +274,6 @@ ncclResult_t wrap_ibv_modify_qp(struct ibv_qp *qp, struct ibv_qp_attr *attr, int
 }
 
 ncclResult_t wrap_ibv_event_type_str(char **ret, enum ibv_event_type event) {
-  IBV_PASSTHRU(ibv_internal_event_type_str, ibv_internal_event_type_str(event));  
+  *ret = ibv_internal_event_type_str(event);
+  return ncclSuccess;
 }
