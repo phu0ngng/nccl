@@ -64,6 +64,10 @@ static void *bootstrapRoot(void* commId) {
       if (!c) { 
           extSendComm = (void**)calloc(info.nranks, sizeof(void*));
           extRecvComm = (void**)calloc(info.nranks, sizeof(void*));
+          if (extSendComm == NULL || extRecvComm == NULL) {
+            WARN("Bootstrap thread : failed to allocate memory");
+            goto out;
+          }
           nranks = info.nranks;
       }
 
@@ -86,6 +90,10 @@ static void *bootstrapRoot(void* commId) {
 	  if (size*nranks*2 > alloc_size) { 
 	      if (data) free(data);
 	      data = (char *)malloc(size*nranks*2);
+              if (data == NULL) {
+                WARN("Bootstrap thread : failed to allocate memory");
+                goto out;
+              }
 	      alloc_size = size*nranks*2;
 	  }
       }
@@ -125,6 +133,7 @@ out:
       if (extRecvComm[r]) ncclNetCloseRecv(extRecvComm[r]);
   }
   free(commId);
+  if (data) free(data);
   if (extSendComm) free(extSendComm);
   if (extRecvComm) free(extRecvComm);
   return NULL;

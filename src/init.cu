@@ -413,8 +413,8 @@ static ncclResult_t initTransportsRank(struct ncclComm* comm, ncclUniqueId* comm
   struct ncclInfo* allInfo = (struct ncclInfo*)malloc(sizeof(struct ncclInfo)*nranks);
   NCCLCHECK(fillInfo(allInfo+rank, rank));
   NCCLCHECK(bootstrapAllGather(commState, allInfo, sizeof(struct ncclInfo)));
-  int connectTransport[nranks*nranks];
-  int connectValue[nranks*nranks];
+  int* connectTransport = (int*)malloc(sizeof(int)*nranks*nranks);
+  int* connectValue = (int*)malloc(sizeof(int)*nranks*nranks);
   NCCLCHECK(fillConnect(allInfo, nranks, rank, connectTransport+nranks*rank, connectValue+nranks*rank));
   NCCLCHECK(bootstrapAllGather(commState, connectTransport, nranks*(sizeof(int))));
   NCCLCHECK(bootstrapAllGather(commState, connectValue, nranks*(sizeof(int))));
@@ -423,10 +423,12 @@ static ncclResult_t initTransportsRank(struct ncclComm* comm, ncclUniqueId* comm
 
   // Get my rings
   int nrings;
-  int prev[nranks*MAXRINGS];
-  int next[nranks*MAXRINGS];
+  int* prev = (int*)malloc(sizeof(int)*nranks*MAXRINGS);
+  int* next = (int*)malloc(sizeof(int)*nranks*MAXRINGS);
   comm->nThreads = getDefaultThreads();
   NCCLCHECK(ncclGetRings(&nrings, &comm->nThreads, rank, nranks, connectTransport, connectValue, prev, next));
+  free(connectTransport);
+  free(connectValue);
 
   // Find max nThreads
   int allData[nranks];
@@ -462,6 +464,8 @@ static ncclResult_t initTransportsRank(struct ncclComm* comm, ncclUniqueId* comm
   }
   int rings[nranks*MAXRINGS];
   NCCLCHECK(buildRings(nrings, rings, rank, nranks, prev, next));
+  free(prev);
+  free(next);
 
   // Connect with prev/next for each ring
   for (int r=0; r<nrings; r++) {
@@ -576,15 +580,15 @@ static ncclResult_t initTransportsAll(struct ncclComm** comms, const int* devs, 
     NCCLCHECK(fillInfo(allInfo+rank, rank));
   }
 
-  int connectTransport[nranks*nranks];
-  int connectValue[nranks*nranks];
+  int* connectTransport = (int*)malloc(sizeof(int)*nranks*nranks);
+  int* connectValue = (int*)malloc(sizeof(int)*nranks*nranks);
   for (int rank=0; rank<nranks; rank++)
     NCCLCHECK(fillConnect(allInfo, nranks, rank, connectTransport+nranks*rank, connectValue+nranks*rank));
   
-  int prev[nranks*MAXRINGS];
-  int prevFinal[nranks*MAXRINGS];
-  int next[nranks*MAXRINGS];
-  int nextFinal[nranks*MAXRINGS];
+  int* prev = (int*)malloc(sizeof(int)*nranks*MAXRINGS);
+  int* prevFinal = (int*)malloc(sizeof(int)*nranks*MAXRINGS);
+  int* next = (int*)malloc(sizeof(int)*nranks*MAXRINGS);
+  int* nextFinal = (int*)malloc(sizeof(int)*nranks*MAXRINGS);
   int nrings = MAXRINGS;
   int nthreads=0;
   int myCompCap = ncclCudaCompCap();
@@ -604,6 +608,10 @@ static ncclResult_t initTransportsAll(struct ncclComm** comms, const int* devs, 
       nextFinal[index] = next[index];
     }
   }
+  free(connectTransport);
+  free(connectValue);
+  free(prev);
+  free(next);
 
   INFO("Using %d threads", nthreads);
   INFO("Min Comp Cap %d", minCompCap);
@@ -613,6 +621,8 @@ static ncclResult_t initTransportsAll(struct ncclComm** comms, const int* devs, 
 
   int rings[nranks*MAXRINGS];
   NCCLCHECK(buildRings(nrings, rings, 0, nranks, prevFinal, nextFinal));
+  free(prevFinal);
+  free(nextFinal);
 
   for (int rank=0; rank<nranks; rank++) {
     comms[rank]->nRings = nrings;
