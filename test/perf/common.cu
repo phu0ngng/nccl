@@ -470,19 +470,12 @@ cudaError_t cudaStreamSyncYield(cudaStream_t stream) {
   }
 }
 
-void *WarmUpCPU(void *arg) {
-  unsigned long limit = 3e9;
-  struct threadArgs_t* targs = (struct threadArgs_t*)arg;
-#ifdef _OPENMP
-  int mx_nthreads = omp_get_max_threads();
-#endif
-
-#pragma omp parallel num_threads(mx_nthreads - targs->nThreads)
+void WarmUpCPU(unsigned long limit) {
+#pragma omp parallel
   {
     volatile unsigned long x=0, y=1;
     while (x++ < limit || y++ < limit);
   }
-  return NULL;
 }
 
 void startColl(struct threadArgs_t* args, ncclDataType_t type, ncclRedOp_t op, int root, int in_place, int thread_offset) {
@@ -541,8 +534,10 @@ void BenchTime(struct threadArgs_t* args, ncclDataType_t type, ncclRedOp_t op, i
   int local_iters = warmup ? warmup_iters : iters;
   int local_agg_iters = agg_iters;
 
-  if (cpu_warmup == 1 && args->thread == 0 && args->localRank == 0) {
-    WarmUpCPU(args);
+  // Warm up cpu cores; launch by main thread
+  if (cpu_warmup == 1 && warmup == 0 && args->thread == 0 && args->localRank == 0) {
+    unsigned long limit = 3e9;
+    WarmUpCPU(limit);
   }
 
   // Sync
