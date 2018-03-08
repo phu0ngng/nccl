@@ -214,10 +214,10 @@ ncclResult_t ncclGetRings(int* nrings, int* nthreads, int rank, int nranks, int*
         for (int tr = NTRANSPORTS-1; tr > t; tr--) if (coords[r*NTRANSPORTS+tr] != coords[rank*NTRANSPORTS+tr]) sameLocal = 0;
         if (!sameLocal) continue;
 
-        groups[i] = coords[r*NTRANSPORTS+t];
-        subgroups[i] = t ? coords[r*NTRANSPORTS+t-1] : i;
-        rankToIdx[r] = i;
-        idxToRank[i] = r;
+        groups[nidx] = coords[r*NTRANSPORTS+t];
+        subgroups[nidx] = t ? coords[r*NTRANSPORTS+t-1] : nidx;
+        rankToIdx[r] = nidx;
+        idxToRank[nidx] = r;
         nidx++;
       }
  
