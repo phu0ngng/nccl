@@ -475,17 +475,10 @@ void *WarmUpCPU(void *arg) {
   struct threadArgs_t* targs = (struct threadArgs_t*)arg;
 #ifdef _OPENMP
   int mx_nthreads = omp_get_max_threads();
-  //printf("\nMax number of threads = %d\n", mx_nthreads);
 #endif
 
 #pragma omp parallel num_threads(mx_nthreads - targs->nThreads)
   {
-    int tid = omp_get_thread_num();
-    if (tid == 0) {
-      int nthreads = omp_get_num_threads();
-      //printf("Number of threads in use = %d\n", nthreads);
-    }
-
     volatile unsigned long x=0, y=1;
     while (x++ < limit || y++ < limit);
   }
@@ -548,7 +541,7 @@ void BenchTime(struct threadArgs_t* args, ncclDataType_t type, ncclRedOp_t op, i
   int local_iters = warmup ? warmup_iters : iters;
   int local_agg_iters = agg_iters;
 
-  if (cpu_warmup == 1 && args->thread == 0) {
+  if (cpu_warmup == 1 && args->thread == 0 && args->localRank == 0) {
     WarmUpCPU(args);
   }
 
@@ -957,6 +950,9 @@ int main(int argc, char* argv[]) {
 		 "[-r,--root <root>] \n\t"
 		 "[-z,--blocking <0/1>] \n\t"
 		 "[-y,--stream_null <0/1>] \n\t"
+		 "[-k,--side_comp <0/1>] \n\t"
+		 "[-u,--cpu_warmup <0/1>] \n\t"
+		 "[-a,--set_affinity <0/1>] \n\t"
 		 "[-h,--help]\n");
 	         return 0;
 	 default: 
@@ -979,6 +975,9 @@ int main(int argc, char* argv[]) {
 		 "[-r,--root <root>] \n\t"
 		 "[-z,--blocking <0/1>] \n\t"
 		 "[-y,--stream_null <0/1>] \n\t"
+		 "[-k,--side_comp <0/1>] \n\t"
+		 "[-u,--cpu_warmup <0/1>] \n\t"
+		 "[-a,--set_affinity <0/1>] \n\t"
 		 "[-h,--help]\n");
 	         return 0;
       }
