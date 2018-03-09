@@ -34,7 +34,7 @@ pthread_mutex_t ncclDebugOutputLock;
 FILE *ncclDebugFile = stdout;
 
 int ncclPrintCRCs;
-int ncclChecks;
+int ncclCheckPointers;
 
 size_t ncclSingleRingThreshold;
 
