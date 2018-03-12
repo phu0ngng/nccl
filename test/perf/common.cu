@@ -7,10 +7,72 @@
 #include "common.h"
 #include <pthread.h>
 #include <cstdio>
+#include <dlfcn.h>
 #include <getopt.h>
 #include <omp.h>
 #include "cuda.h"
-#include "nvml.h"
+
+typedef struct nvmlDevice_st* nvmlDevice_t;
+class NvmlWrap {
+  public:
+  NvmlWrap();
+  ~NvmlWrap();
+  typedef enum {SUCCESS = 0} RetCode;
+  RetCode (*DeviceGetHandleByPciBusId)(const char* pciBusId, nvmlDevice_t* device);
+  RetCode (*DeviceSetCpuAffinity)(nvmlDevice_t device);
+  RetCode (*DeviceClearCpuAffinity)(nvmlDevice_t device);
+  const char* (*ErrorString)(RetCode r);
+
+  private:
+  void* dlHandle;
+  RetCode (*ptrInit)(void);
+  RetCode (*ptrShutdown)(void);
+};
+
+NvmlWrap* nvml;
+
+#define NVMLCHECK(cmd) {                           \
+  NvmlWrap::RetCode e = cmd;                       \
+  if( e != NvmlWrap::SUCCESS ) {                   \
+    printf("nvml failure %s:%d '%s'\n",            \
+        __FILE__,__LINE__,nvml->ErrorString(e));   \
+    exit(EXIT_FAILURE);                            \
+  }                                                \
+} while(0)
+
+NvmlWrap::NvmlWrap() : dlHandle(NULL) {
+  dlHandle = dlopen("libnvidia-ml.so.1", RTLD_NOW);
+  if (!dlHandle) {
+    dlHandle = dlopen("libnvidia-ml.so", RTLD_NOW);
+    if (!dlHandle) {
+      printf("Failed to open libnvidia-ml.so[.1]");
+      exit(EXIT_FAILURE);
+    }
+  }
+
+  #define LOAD_SYM(handle, symbol, funcptr) do {            \
+    void** cast = (void**)&funcptr;                         \
+    void* tmp = dlsym(handle, symbol);                      \
+    if (tmp == NULL) {                                      \
+      printf("dlsym failed on %s - %s", symbol, dlerror()); \
+      exit(EXIT_FAILURE);                                   \
+    }                                                       \
+    *cast = tmp;                                            \
+  } while (0)
+
+  LOAD_SYM(dlHandle, "nvmlInit", this->ptrInit);
+  LOAD_SYM(dlHandle, "nvmlShutdown", this->ptrShutdown);
+  LOAD_SYM(dlHandle, "nvmlDeviceGetHandleByPciBusId", this->DeviceGetHandleByPciBusId);
+  LOAD_SYM(dlHandle, "nvmlDeviceSetCpuAffinity", this->DeviceSetCpuAffinity);
+  LOAD_SYM(dlHandle, "nvmlDeviceClearCpuAffinity", this->DeviceClearCpuAffinity);
+  LOAD_SYM(dlHandle, "nvmlErrorString", this->ErrorString);
+  NVMLCHECK(this->ptrInit());
+}
+
+NvmlWrap::~NvmlWrap() {
+  NVMLCHECK(this->ptrShutdown());
+  dlclose(dlHandle);
+}
 
 #if NCCL_MAJOR >= 2
 ncclDataType_t test_types[ncclNumTypes] = {ncclInt8, ncclUint8, ncclInt32, ncclUint32, ncclInt64, ncclUint64, ncclHalf, ncclFloat, ncclDouble};
@@ -646,22 +708,14 @@ void TimeTest(struct threadArgs_t* args, ncclDataType_t type, const char* typeNa
   }
 }
 
-bool SetCpuAffinity(int cudaDev) {
+#define NVML_DEVICE_PCI_BUS_ID_BUFFER_SIZE 32
+
+void SetCpuAffinity(int cudaDev) {
   nvmlDevice_t nvmlDevice;
   char busId[NVML_DEVICE_PCI_BUS_ID_BUFFER_SIZE];
-  if (cudaDeviceGetPCIBusId(busId, NVML_DEVICE_PCI_BUS_ID_BUFFER_SIZE, cudaDev) != cudaSuccess) {
-    printf("Failed to get bus id \n");
-    return false;
-  }
-  if (nvmlDeviceGetHandleByPciBusId(busId, &nvmlDevice) != NVML_SUCCESS) {
-    printf("Failed to get NVML handle \n");
-    return false;
-  }
-  if (nvmlDeviceSetCpuAffinity(nvmlDevice) != NVML_SUCCESS) {
-    printf("Failed to set CPU affinity \n");
-    return false;
-  }
-  return true;
+  CUDACHECK(cudaDeviceGetPCIBusId(busId, NVML_DEVICE_PCI_BUS_ID_BUFFER_SIZE, cudaDev));
+  NVMLCHECK(nvml->DeviceGetHandleByPciBusId(busId, &nvmlDevice));
+  NVMLCHECK(nvml->DeviceSetCpuAffinity(nvmlDevice));
 }
 
 void* threadRunTests(void* args) {
@@ -673,9 +727,7 @@ void* threadRunTests(void* args) {
   CUDACHECK(cudaSetDevice(gpuid));
 
   if (set_affinity == 1) {
-    if (SetCpuAffinity(gpuid)) {
-      printf("Successfully set CPU affinity for GPU %d\n", gpuid);
-    }
+    SetCpuAffinity(gpuid);
   }
 
   RunTest(targs, ncclroot, (ncclDataType_t)nccltype, test_typenames[nccltype], (ncclRedOp_t)ncclop, test_opnames[ncclop]);
@@ -829,6 +881,7 @@ int main(int argc, char* argv[]) {
  int localRank = 0;
  char hostname[1024];
  getHostName(hostname, 1024);
+ nvml = new NvmlWrap();
  
  static struct option longopts[] = {
     {"nthreads", required_argument, 0, 't'}, 
@@ -1074,11 +1127,6 @@ int main(int argc, char* argv[]) {
      }
   }
 
-  if (set_affinity && nvmlInit() != NVML_SUCCESS) {
-    printf("Failed to init NVML \n");
-    exit(EXIT_FAILURE);
-  }
-
   int errors[nThreads];
   double bw[nThreads];
   double delta[nThreads];
@@ -1179,6 +1227,7 @@ int main(int argc, char* argv[]) {
   PRINT(" Out of bounds values : %d %s\n", errors[0], errors[0] ? "FAILED" : "OK");
   PRINT(" Avg bus bandwidth    : %g %s\n", bw[0], check_avg_bw == -1 ? "" : (bw[0] < check_avg_bw*(0.9) ? "FAILED" : "OK"));
   PRINT("\n");
+  delete nvml;
 #ifdef MPI_SUPPORT
   MPI_Finalize();
 #endif
