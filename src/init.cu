@@ -62,6 +62,7 @@ int ncclCudaFullCompCap() {
 void initNet() {
   if (ncclNet != NULL) {
     INFO("Using external Network %s", ncclNetName());
+    ncclBootstrapNet = ncclNet;
   } else {
     char* str = getenv("NCCL_IB_DISABLE");
     int ibEnabled = (str && (atoi(str) == 1)) ? 0 : 1;

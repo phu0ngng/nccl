@@ -31,23 +31,6 @@ static ncclResult_t ncclNetIsend(void* sendComm, void* data, int size, int type,
 static ncclResult_t ncclNetIrecv(void* recvComm, void* data, int size, int type, void** request) { NETCHECK(ncclNet->irecv(recvComm, data, size, type, request)); return ncclSuccess; }
 static ncclResult_t ncclNetFlush(void* recvComm, void* data, int size) { NETCHECK(ncclNet->flush(recvComm, data, size)); return ncclSuccess; }
 static ncclResult_t ncclNetTest(void* request, int* done, int* size) { NETCHECK(ncclNet->test(request, done, size)); return ncclSuccess; }
-
-// Additional sync functions based on async + test for bootstrap, using host ptrs.
-static ncclResult_t ncclNetSend(void* sendComm, void* data, int size) {
-  void* request;
-  NETCHECK(ncclNetIsend(sendComm, data, size, NCCL_PTR_HOST, &request));
-  int done = 0;
-  while (!done) NETCHECK(ncclNetTest(request, &done, NULL));
-  return ncclSuccess;
-}
-static ncclResult_t ncclNetRecv(void* recvComm, void* data, int size) {
-  void* request;
-  NETCHECK(ncclNetIrecv(recvComm, data, size, NCCL_PTR_HOST, &request));
-  int done = 0;
-  while (!done) NETCHECK(ncclNetTest(request, &done, NULL));
-  return ncclSuccess;
-}
-
 static ncclResult_t ncclNetCloseSend(void* sendComm) { NETCHECK(ncclNet->closeSend(sendComm)); return ncclSuccess; }
 static ncclResult_t ncclNetCloseRecv(void* recvComm) { NETCHECK(ncclNet->closeRecv(recvComm)); return ncclSuccess; }
 static ncclResult_t ncclNetCloseListen(void* listenComm) { NETCHECK(ncclNet->closeListen(listenComm)); return ncclSuccess; }
@@ -55,5 +38,6 @@ static ncclResult_t ncclNetCloseListen(void* listenComm) { NETCHECK(ncclNet->clo
 extern bool ncclIbSupport();
 extern ncclNet_t ncclNetIb;
 extern ncclNet_t ncclNetSocket;
+extern ncclNet_t* ncclBootstrapNet;
 
 #endif
