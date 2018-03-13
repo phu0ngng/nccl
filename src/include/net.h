@@ -38,6 +38,5 @@ static ncclResult_t ncclNetCloseListen(void* listenComm) { NETCHECK(ncclNet->clo
 extern bool ncclIbSupport();
 extern ncclNet_t ncclNetIb;
 extern ncclNet_t ncclNetSocket;
-extern ncclNet_t* ncclBootstrapNet;
 
 #endif
