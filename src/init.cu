@@ -34,7 +34,7 @@ pthread_mutex_t ncclDebugOutputLock;
 FILE *ncclDebugFile = stdout;
 
 int ncclPrintCRCs;
-int ncclChecks;
+int ncclCheckPointers;
 
 size_t ncclSingleRingThreshold;
 
@@ -188,16 +188,14 @@ static ncclResult_t devCommSetup(ncclComm_t comm) {
 // Pre-process the string so that running "strings" on the lib can quickly reveal the version.
 #define STR2(v) #v
 #define STR(v) STR2(v)
+#define VERSION_STRING "NCCL version " STR(NCCL_MAJOR) "." STR(NCCL_MINOR) "." STR(NCCL_PATCH) NCCL_SUFFIX "+cuda" STR(CUDA_MAJOR) "." STR(CUDA_MINOR)
 static void showVersion() {
   static int shown = 0;
   if (shown == 0 && ncclDebugLevel >= VERSION) {
-    char version[80];
-    sprintf(version, "%s", "NCCL version " STR(NCCL_MAJOR) "." STR(NCCL_MINOR) "." STR(NCCL_PATCH) NCCL_SUFFIX
-            "+cuda" STR(CUDA_MAJOR) "." STR(CUDA_MINOR));
-    printf("%s\n", version);
+    printf("%s\n", VERSION_STRING);
     fflush(stdout);
     if (ncclDebugFile != stdout)
-      INFO("%s", version); // Also log NCCL version in one of the files
+      INFO("%s", VERSION_STRING); // Also log NCCL version in one of the files
     shown = 1;
   }
 }

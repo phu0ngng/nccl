@@ -184,12 +184,12 @@ ncclResult_t ncclEnqueueCheck(ncclFunc_t func, const char* primName, const void*
   if (ncclAsyncMode()) {
     ncclResult_t ret = ncclSuccess;
     int savedDev = -1;
-    if (ncclChecks) {
+    if (ncclCheckPointers) {
       CUDACHECKGOTO(cudaGetDevice(&savedDev), ret, end);
       CUDACHECKGOTO(cudaSetDevice(comm->cudaDev), ret, end);
-      // Check arguments
-      NCCLCHECKGOTO(ArgsCheck(sendbuff, recvbuff, count, type, op, root, comm, primName), ret, end);
     }
+    // Check arguments
+    NCCLCHECKGOTO(ArgsCheck(sendbuff, recvbuff, count, type, op, root, comm, primName), ret, end);
     // Always register comm even in case of error to make sure ncclGroupEnd
     // cleans it up.
     NCCLCHECK(ncclAsyncColl(comm));
@@ -199,7 +199,7 @@ end:
     ncclAsyncErrCheck(ret);
     return ret;
   } else {
-    if (ncclChecks) NCCLCHECK(ArgsCheck(sendbuff, recvbuff, count, type, op, root, comm, primName));
+    NCCLCHECK(ArgsCheck(sendbuff, recvbuff, count, type, op, root, comm, primName));
     NCCLCHECK(func(sendbuff, recvbuff, count, type, op, root, comm, stream));
     NCCLCHECK(ncclCpuBarrierCheckin(comm));
     NCCLCHECK(ncclCpuBarrierWait(comm));
