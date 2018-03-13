@@ -182,7 +182,12 @@ static ncclResult_t connectAddress(union socketAddress* remoteAddr, union socket
   TRACE("Connecting to socket %s", socketToString(&remoteAddr->sa, line));
 #endif
 
-  SYSCHECK(connect(*fd, &remoteAddr->sa, salen), "connect");
+  int ret = connect(*fd, &remoteAddr->sa, salen);
+  if (ret == -1) {
+    char line1[1024];
+    char line2[1024];
+    WARN("Connection %s -> %s failed : %s", socketToString(&localAddr->sa, line1), socketToString(&remoteAddr->sa, line2), strerror(errno));
+  }
   return ncclSuccess;
 }
 
