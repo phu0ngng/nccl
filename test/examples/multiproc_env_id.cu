@@ -95,11 +95,7 @@ int main(int argc, char* argv[])
   }
 
   // Get NCCL unique ID from environment variable NCCL_COMM_ID, saving the broadcast
-  if (myRank == 0) {
-    ncclGetUniqueId(&id);
-  } else {
-    ncclGetUniqueIdFromEnv(&id);
-  }
+  ncclGetUniqueId(&id);
 
   //picking a GPU based on localRank, allocate device buffers
   CUDACHECK(cudaSetDevice(localRank));
