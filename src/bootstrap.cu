@@ -46,6 +46,17 @@ enum {
   BOOTSTRAP_RINGEXCHANGE,
 };
 
+#include <sys/time.h>
+#include <sys/resource.h>
+
+static ncclResult_t setFilesLimit() {
+  struct rlimit filesLimit;
+  SYSCHECK(getrlimit(RLIMIT_NOFILE, &filesLimit), "getrlimit");
+  filesLimit.rlim_cur = filesLimit.rlim_max;
+  SYSCHECK(setrlimit(RLIMIT_NOFILE, &filesLimit), "setrlimit");
+  return ncclSuccess;
+}
+
 static void *bootstrapRoot(void* commId) {
   struct extInfo info;
   struct extId* id = (struct extId*)commId;
@@ -54,6 +65,7 @@ static void *bootstrapRoot(void* commId) {
   void **extRecvComm = NULL;
   int size, alloc_size = 0; 
   char* data = NULL;
+  setFilesLimit();
 
   /* Receive addresses from all ranks */
   int nranks = 0, c = 0;
