@@ -202,15 +202,44 @@ static ncclResult_t GetSocketAddrFromString(union socketAddress* ua, const char*
   /* Construct the sockaddress structure */
   if (!ipv6) {
     struct netIf ni;
-    // parse <ip>:<port> string, expect one pair
+    // parse <ip_or_hostname>:<port> string, expect one pair
     if (parseStringList(ip_port_pair, &ni, 1) != 1) {
-      WARN("Net : No valid IPv4:port pair found");
+      WARN("Net : No valid <IPv4_or_hostname>:<port> pair found");
       return ncclInvalidArgument;
     }
-    struct sockaddr_in& sin = ua->sin;
-    sin.sin_family = AF_INET;                        // IPv4
-    inet_pton(AF_INET, ni.prefix, &(sin.sin_addr));  // IP address
-    sin.sin_port = htons(ni.port);                   // port
+
+    struct addrinfo hints, *p;
+    int rv;
+    memset(&hints, 0, sizeof(hints));
+    hints.ai_family = AF_UNSPEC;
+    hints.ai_socktype = SOCK_STREAM;
+
+    if ( (rv = getaddrinfo(ni.prefix, NULL , &hints , &p)) != 0) {
+      WARN("Net : error encountered when getting address info : %s\n", gai_strerror(rv));
+      return ncclInvalidArgument;
+    }
+
+    // use the first
+    if (p->ai_family == AF_INET) {
+      struct sockaddr_in& sin = ua->sin;
+      memcpy(&sin, p->ai_addr, sizeof(struct sockaddr_in));
+      sin.sin_family = AF_INET;                        // IPv4
+      //inet_pton(AF_INET, ni.prefix, &(sin.sin_addr));  // IP address
+      sin.sin_port = htons(ni.port);                   // port
+    } else if (p->ai_family == AF_INET6) {
+      struct sockaddr_in6& sin6 = ua->sin6;
+      memcpy(&sin6, p->ai_addr, sizeof(struct sockaddr_in6));
+      sin6.sin6_family = AF_INET6;                     // IPv6
+      sin6.sin6_port = htons(ni.port);                 // port
+      sin6.sin6_flowinfo = 0;                          // needed by IPv6, but possibly obsolete
+      sin6.sin6_scope_id = 0;                          // should be global scope, set to 0
+    } else {
+      WARN("Net : unsupported IP family");
+      return ncclInvalidArgument;
+    }
+
+    freeaddrinfo(p); // all done with this structure
+
   } else {
     int i, j = -1, len = strlen(ip_port_pair);
     for (i = 1; i < len; i++) {
