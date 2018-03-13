@@ -152,11 +152,12 @@ ncclResult_t bootstrapGetUniqueId(ncclUniqueId* out) {
   }
 
   // if handle is preset, just listen on that handle, no need to specify an interface
-  bool isRoot = true;
+  bool isRoot = false;
   if (env) {
     isRoot = ncclNetSocket.listen(dontCareIf, &id->extHandle, &id->extListenComm) == 0;
   } else {
     NETCHECK(ncclNetSocket.listen(defaultIf, &id->extHandle, &id->extListenComm));
+    isRoot = true;
   }
 
   if (isRoot) {
