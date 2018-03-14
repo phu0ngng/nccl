@@ -9,8 +9,9 @@ TYPED_TEST(ncclBcast_test, basic) {
         for (int i = 0; i < this->nVis; ++i) {
             ASSERT_EQ(ncclSuccess,
                       ncclBcast(this->sendbuffs[i],
-                                std::min(this->N, 32 * 1024), this->DataType(),
-                                root, this->comms[i], this->streams[i]))
+                                std::min(this->N, 1024 * 1024),
+                                this->DataType(), root,
+                                this->comms[i], this->streams[i]))
                 << "root: " << root << ", "
                 << "i" << i << ", " << std::endl;
         }
@@ -21,10 +22,12 @@ TYPED_TEST(ncclBcast_test, host_mem) {
     for (int root = 0; root < this->nVis; ++root) {
         ASSERT_EQ(ncclSuccess, ncclGroupStart());
         for (int i = 0; i < this->nVis; ++i) {
-            ASSERT_EQ(ncclInvalidArgument,
-                      ncclBcast(this->sendbuffs_host[i],
-                                std::min(this->N, 32 * 1024), this->DataType(),
-                                root, this->comms[i], this->streams[i]))
+            ASSERT_EQ(
+                ncclInvalidArgument,
+                ncclBcast(this->sendbuffs_host[i],
+                          std::min(this->N, 1024 * 1024),
+                          this->DataType(), root,
+                          this->comms[i], this->streams[i]))
                 << "root: " << root << ", "
                 << "i" << i << ", " << std::endl;
         }
@@ -37,8 +40,9 @@ TYPED_TEST(ncclBcast_test, pinned_mem) {
         for (int i = 0; i < this->nVis; ++i) {
             ASSERT_EQ(ncclSuccess,
                       ncclBcast(this->sendbuffs_pinned_device[i],
-                                std::min(this->N, 32 * 1024), this->DataType(),
-                                root, this->comms[i], this->streams[i]))
+                                std::min(this->N, 1024 * 1024),
+                                this->DataType(), root,
+                                this->comms[i], this->streams[i]))
                 << "root: " << root << ", "
                 << "i" << i << ", " << std::endl;
         }
@@ -51,8 +55,9 @@ TYPED_TEST(ncclBcast_test, stream_null) {
         ASSERT_EQ(ncclSuccess,
                   ncclBcast(
                       this->sendbuffs[i],
-                      std::min(this->N, 1024 * 1024), this->DataType(),
-                      0, this->comms[i], NULL))
+                      std::min(this->N, 1024 * 1024),
+                      this->DataType(), 0,
+                      this->comms[i], NULL))
             << ", " << "i" << i << ", " << std::endl;
     }
     ASSERT_EQ(ncclSuccess, ncclGroupEnd());
@@ -61,15 +66,18 @@ TYPED_TEST(ncclBcast_test, stream_null) {
 TYPED_TEST(ncclBcast_test, sendbuf_null) {
     int i = 0, root = 0;
     ASSERT_EQ(ncclInvalidArgument,
-              ncclBcast(NULL, std::min(this->N, 32 * 1024), this->DataType(),
-                        root, this->comms[i], this->streams[i]));
+              ncclBcast(NULL,
+                        std::min(this->N, 1024 * 1024),
+                        this->DataType(), root,
+                        this->comms[i], this->streams[i]));
 };
 TYPED_TEST(ncclBcast_test, sendbuf_wrong) {
     int i = 0, j = 1, root = 0;
     ASSERT_EQ(ncclInvalidArgument,
-              ncclBcast(this->sendbuffs[j], std::min(this->N, 32 * 1024),
-                        this->DataType(), root, this->comms[i],
-                        this->streams[i]));
+              ncclBcast(this->sendbuffs[j],
+                        std::min(this->N, 1024 * 1024),
+                        this->DataType(), root,
+                        this->comms[i], this->streams[i]));
 };
 // N
 TYPED_TEST(ncclBcast_test, N_zero) {
@@ -77,8 +85,9 @@ TYPED_TEST(ncclBcast_test, N_zero) {
        ASSERT_EQ(ncclSuccess, ncclGroupStart());
        for (int i = 0; i < this->nVis; ++i) {
            ASSERT_EQ(ncclSuccess,
-                     ncclBcast(this->sendbuffs[i], 0, this->DataType(),
-                               root, this->comms[i], this->streams[i]))
+                     ncclBcast(this->sendbuffs[i], 0,
+                               this->DataType(), root,
+                               this->comms[i], this->streams[i]))
                << "root: " << root << ", "
                << "i" << i << ", " << std::endl;
        }
@@ -89,47 +98,54 @@ TYPED_TEST(ncclBcast_test, N_zero) {
 TYPED_TEST(ncclBcast_test, DataType_wrong) {
     int i = 0, root = 0;
     ASSERT_EQ(ncclInvalidArgument,
-              ncclBcast(this->sendbuffs[i], std::min(this->N, 32 * 1024),
-                        ncclNumTypes, root, this->comms[i],
-                        this->streams[i]));
+              ncclBcast(this->sendbuffs[i],
+                        std::min(this->N, 1024 * 1024),
+                        ncclNumTypes, root,
+                        this->comms[i], this->streams[i]));
 };
 // root
 TYPED_TEST(ncclBcast_test, root_minus1) {
     int i = 0, root = -1;
     ASSERT_EQ(ncclInvalidArgument,
-              ncclBcast(this->sendbuffs[i], std::min(this->N, 32 * 1024),
-                        this->DataType(), root, this->comms[i],
-                        this->streams[i]));
+              ncclBcast(this->sendbuffs[i],
+                        std::min(this->N, 1024 * 1024),
+                        this->DataType(), root,
+                        this->comms[i], this->streams[i]));
 };
 TYPED_TEST(ncclBcast_test, root_toobig) {
     int i = 0, root = 1000;
     ASSERT_EQ(ncclInvalidArgument,
-              ncclBcast(this->sendbuffs[i], std::min(this->N, 32 * 1024),
-                        this->DataType(), root, this->comms[i],
-                        this->streams[i]));
+              ncclBcast(this->sendbuffs[i],
+                        std::min(this->N, 1024 * 1024),
+                        this->DataType(), root,
+                        this->comms[i], this->streams[i]));
 };
 // comm
 TYPED_TEST(ncclBcast_test, comm_null) {
     int i = 0, root = 0;
     ASSERT_EQ(ncclInvalidArgument,
-              ncclBcast(this->sendbuffs[i], std::min(this->N, 32 * 1024),
-                        this->DataType(), root, NULL, this->streams[i]));
+              ncclBcast(this->sendbuffs[i],
+                        std::min(this->N, 1024 * 1024),
+                        this->DataType(), root,
+                        NULL, this->streams[i]));
 };
 TYPED_TEST(ncclBcast_test, comm_wrong) {
     int i = 0, j = 1, root = 0;
     ASSERT_EQ(ncclInvalidArgument,
-              ncclBcast(this->sendbuffs[i], std::min(this->N, 32 * 1024),
-                        this->DataType(), root, this->comms[j],
-                        this->streams[i]));
+              ncclBcast(this->sendbuffs[i],
+                        std::min(this->N, 1024 * 1024),
+                        this->DataType(), root,
+                        this->comms[j], this->streams[i]));
 };
 // STREAM can be NULL.
 // stream on a diff device
 TYPED_TEST(ncclBcast_test, DISABLED_stream_wrong) {
     int i = 0, j = 1, root = 0;
     ASSERT_EQ(ncclInvalidArgument,
-              ncclBcast(this->sendbuffs[i], std::min(this->N, 32 * 1024),
-                        this->DataType(), root, this->comms[i],
-                        this->streams[j]));
+              ncclBcast(this->sendbuffs[i],
+                        std::min(this->N, 1024 * 1024),
+                        this->DataType(), root,
+                        this->comms[i], this->streams[j]));
 };
 // Aggregation
 // Only for 2.2 or higher
@@ -141,8 +157,9 @@ TYPED_TEST(ncclBcast_test, aggregate_two_level_group_call) {
         for (int i = 0; i < this->nVis; ++i) {
             ASSERT_EQ(ncclSuccess,
                       ncclBcast(this->sendbuffs[i],
-                                std::min(this->N, 32 * 1024), this->DataType(),
-                                root, this->comms[i], this->streams[i]))
+                                std::min(this->N, 1024 * 1024),
+                                this->DataType(), root,
+                                this->comms[i], this->streams[i]))
                 << "root: " << root << ", "
                 << "i" << i << ", " << std::endl;
         }
@@ -156,8 +173,9 @@ TYPED_TEST(ncclBcast_test, aggregate_one_level_group_call) {
         for (int i = 0; i < this->nVis; ++i) {
             ASSERT_EQ(ncclSuccess,
                       ncclBcast(this->sendbuffs[i],
-                                std::min(this->N, 32 * 1024), this->DataType(),
-                                root, this->comms[i], this->streams[i]))
+                                std::min(this->N, 1024 * 1024),
+                                this->DataType(), root,
+                                this->comms[i], this->streams[i]))
                 << "root: " << root << ", "
                 << "i" << i << ", " << std::endl;
         }
@@ -171,8 +189,9 @@ TYPED_TEST(ncclBcast_test, aggregate_exchange_loops) {
         for (int root = 0; root < this->nVis; ++root) {
             ASSERT_EQ(ncclSuccess,
                       ncclBcast(this->sendbuffs[i],
-                                std::min(this->N, 32 * 1024), this->DataType(),
-                                root, this->comms[i], this->streams[i]))
+                                std::min(this->N, 1024 * 1024),
+                                this->DataType(), root,
+                                this->comms[i], this->streams[i]))
                 << "root: " << root << ", "
                 << "i" << i << ", " << std::endl;
         }
@@ -181,4 +200,4 @@ TYPED_TEST(ncclBcast_test, aggregate_exchange_loops) {
     ASSERT_EQ(ncclSuccess, ncclGroupEnd());
 };
 #endif
-//EOF
+// EOF
