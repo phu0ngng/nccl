@@ -127,7 +127,7 @@ ncclResult_t pncclReduce(const void* sendbuff, void* recvbuff, size_t count, ncc
     ncclRedOp_t op, int root, ncclComm_t comm, cudaStream_t stream);
 
 /* 
- * Broadcast
+ * (deprecated) Broadcast (in-place)
  *
  * Copies count values from root to all other devices.
  * root is the rank (not the CUDA device) where data resides before the 
@@ -138,6 +138,20 @@ ncclResult_t pncclReduce(const void* sendbuff, void* recvbuff, size_t count, ncc
 ncclResult_t  ncclBcast(void* buff, size_t count, ncclDataType_t datatype, int root,
     ncclComm_t comm, cudaStream_t stream);
 ncclResult_t pncclBcast(void* buff, size_t count, ncclDataType_t datatype, int root,
+    ncclComm_t comm, cudaStream_t stream);
+
+/*
+ * Broadcast
+ *
+ * Copies count values from root to all other devices.
+ * root is the rank (not the CUDA device) where data resides before the
+ * operation is started.
+ *
+ * In-place operation will happen if sendbuff == recvbuff.
+ */
+ncclResult_t  ncclBroadcast(void* sendbuff, void* recvbuff, size_t count, ncclDataType_t datatype, int root,
+    ncclComm_t comm, cudaStream_t stream);
+ncclResult_t pncclBroadcast(void* sendbuff, void* recvbuff, size_t count, ncclDataType_t datatype, int root,
     ncclComm_t comm, cudaStream_t stream);
 
 /* 
