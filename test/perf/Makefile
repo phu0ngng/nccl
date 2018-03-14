@@ -9,7 +9,7 @@ ifeq ($(MPI), 1)
 NVCUFLAGS += -DMPI_SUPPORT -I$(MPI_HOME)/include
 NVLDFLAGS += -L$(MPI_HOME)/lib -lmpi
 endif
-LIBRARIES += curand nccl nvidia-ml
+LIBRARIES += curand nccl
 NVLDFLAGS   += -L$(NCCLDIR)/lib $(LIBRARIES:%=-l%)
 
 DST_DIR := $(BUILDDIR)/test/perf
