@@ -5,6 +5,7 @@ class ncclCommInitRank_test : public ::testing::Test {
     ncclUniqueId commId;
     int rank = 0;
     virtual void SetUp() {
+        (void) setenv("NCCL_CHECK_POINTERS", "1", 0); // API tests expect this behaviour
         ASSERT_EQ(ncclSuccess, ncclGetUniqueId(&commId));
     };
     virtual void TearDown() {
