@@ -114,22 +114,9 @@ int ncclSocketListen(int dev, void* opaqueHandle, void** listenComm) {
 }
 
 int ncclSocketConnect(int dev, void* opaqueHandle, void** sendComm) {
-  if (ncclNetIfs == -1 && dev >= 0) initDevices();
-  if (dev > ncclNetIfs) return ncclInternalError;
   struct ncclSocketComm* comm = ncclSocketNewComm();
   struct ncclSocketHandle* handle = (struct ncclSocketHandle*) opaqueHandle;
-  if (dev == -1) {
-    // need to find a local addr that is in the same network as the remote addr
-    union socketAddress localAddr;
-    char ifName[MAX_IF_NAME_SIZE];
-    if (findInterfaceMatchSubnet(ifName, &localAddr, handle->connectAddr, MAX_IF_NAME_SIZE, 1) <= 0) {
-      WARN("No usable connect interface found");
-      return ncclInternalError;
-    }
-    NCCLCHECK(connectAddress(&handle->connectAddr, &localAddr, &comm->fd));
-  } else {
-    NCCLCHECK(connectAddress(&handle->connectAddr, &ncclNetIfAddrs[dev], &comm->fd));
-  }
+  NCCLCHECK(connectAddress(&comm->fd, &handle->connectAddr));
   *sendComm = comm;
   return 0;
 }
