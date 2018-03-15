@@ -155,9 +155,9 @@ static ncclResult_t createListenSocket(int *fd, union socketAddress *localAddr) 
   return ncclSuccess;
 }
 
-static ncclResult_t connectAddress(union socketAddress* remoteAddr, union socketAddress* localAddr, int* fd) {
+static ncclResult_t connectAddress(int* fd, union socketAddress* remoteAddr) {
   /* IPv4/IPv6 support */
-  int family = localAddr->sa.sa_family;
+  int family = remoteAddr->sa.sa_family;
   int salen = (family == AF_INET) ? sizeof(sockaddr_in) : sizeof(sockaddr_in6);
 
   /* Connect to a hostname / port */
@@ -166,9 +166,6 @@ static ncclResult_t connectAddress(union socketAddress* remoteAddr, union socket
     WARN("Socket creation failed : %s", strerror(errno));
     return ncclSystemError;
   }
-
-  // localAddr port should be 0 (Any port)
-  SYSCHECK(bind(*fd, &localAddr->sa, salen), "bind");
 
   const int one = 1;
   SYSCHECK(setsockopt(*fd, IPPROTO_TCP, TCP_NODELAY, (char*)&one, sizeof(int)), "setsockopt");
@@ -184,9 +181,8 @@ static ncclResult_t connectAddress(union socketAddress* remoteAddr, union socket
 
   int ret = connect(*fd, &remoteAddr->sa, salen);
   if (ret == -1) {
-    char line1[1024];
-    char line2[1024];
-    WARN("Connection %s -> %s failed : %s", socketToString(&localAddr->sa, line1), socketToString(&remoteAddr->sa, line2), strerror(errno));
+    char line[1024];
+    WARN("Connection to %s failed : %s", socketToString(&remoteAddr->sa, line), strerror(errno));
   }
   return ncclSuccess;
 }
