@@ -114,7 +114,7 @@ void ncclCommon_test<DT>::SetUpTestCase() {
 				   recvbuffs_pinned[i], 0));
     }
     comms = (ncclComm_t*)calloc(nVis, sizeof(ncclComm_t));
-    (void) setenv("NCCL_CHECK_POINTERS", "1", 0); // API tests expect this behaviour
+    (void) setenv("NCCL_CHECK_POINTERS", "1", 0); // API tests expect this behaviour (ncclCommInitAll)
     ASSERT_EQ(ncclSuccess, ncclCommInitAll(comms, nVis, NULL));
 };
 template <typename DT>
