@@ -281,16 +281,19 @@ static int findInterfaces(char* ifNames, union socketAddress *ifAddrs, int ifNam
     // Specified by user : find or fail
     nIfs = findInterfaces(env, ifNames, ifAddrs, sock_family, ifNameMaxSize, maxIfs);
   } else {
-    char* commId = getenv("NCCL_COMM_ID");
-    if (commId && strlen(commId) > 1) {
-      // Try to find interface that is in the same subnet as the IP in comm id
-      union socketAddress idAddr;
-      GetSocketAddrFromString(&idAddr, commId);
-      nIfs = findInterfaceMatchSubnet(ifNames, ifAddrs, idAddr, ifNameMaxSize, maxIfs);
-    }
     // Try to automatically pick the right one
     // Start with IB
-    if (nIfs == 0) nIfs = findInterfaces("ib", ifNames, ifAddrs, sock_family, ifNameMaxSize, maxIfs);
+    nIfs = findInterfaces("ib", ifNames, ifAddrs, sock_family, ifNameMaxSize, maxIfs);
+    // else see if we can get some hint from COMM ID
+    if (nIfs == 0) {
+      char* commId = getenv("NCCL_COMM_ID");
+      if (commId && strlen(commId) > 1) {
+        // Try to find interface that is in the same subnet as the IP in comm id
+        union socketAddress idAddr;
+        GetSocketAddrFromString(&idAddr, commId);
+        nIfs = findInterfaceMatchSubnet(ifNames, ifAddrs, idAddr, ifNameMaxSize, maxIfs);
+      }
+    }
     // Then look for anything else (but not loopback)
     if (nIfs == 0) nIfs = findInterfaces("^lo", ifNames, ifAddrs, sock_family, ifNameMaxSize, maxIfs);
   }
