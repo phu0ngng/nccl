@@ -4,7 +4,7 @@ include ../../makefiles/common.mk
 
 BUILDDIR := $(abspath ../../build)
 NCCLDIR := $(BUILDDIR)
-NVCUFLAGS += -I$(NCCLDIR)/include/ -I../include
+NVCUFLAGS += -I$(NCCLDIR)/include/ -I../include -Xcompiler -fopenmp
 ifeq ($(MPI), 1)
 NVCUFLAGS += -DMPI_SUPPORT -I$(MPI_HOME)/include
 NVLDFLAGS += -L$(MPI_HOME)/lib -lmpi

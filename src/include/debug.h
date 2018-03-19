@@ -70,7 +70,7 @@ if (ncclDebugLevel == TRACE) {                                   \
 #endif
 
 extern int ncclPrintCRCs;
-extern int ncclChecks;
+extern int ncclCheckPointers;
 
 static void initDebug() {
   const char* nccl_debug = getenv("NCCL_DEBUG");
@@ -137,11 +137,11 @@ static void initDebug() {
     ncclPrintCRCs = 0;
   }
 
-  const char* nccl_checks_disable = getenv("NCCL_CHECKS_DISABLE");
-  if (nccl_checks_disable && atoi(nccl_checks_disable) > 0) {
-    ncclChecks = 0;
+  const char* nccl_check_pointers = getenv("NCCL_CHECK_POINTERS");
+  if (nccl_check_pointers && atoi(nccl_check_pointers) > 0) {
+    ncclCheckPointers = 1;
   } else {
-    ncclChecks = 1;
+    ncclCheckPointers = 0; // Check pointers is off by default
   }
 
   pthread_mutex_init(&ncclDebugOutputLock, NULL);

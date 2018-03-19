@@ -410,7 +410,7 @@ int ncclIbConnect(int dev, void* opaqueHandle, void** sendComm) {
   struct ncclIbSendComm* comm = (struct ncclIbSendComm*)malloc(sizeof(struct ncclIbSendComm));
   memset(comm, 0, sizeof(struct ncclIbSendComm));
   struct ncclIbHandle* handle = (struct ncclIbHandle*) opaqueHandle;
-  NCCLCHECK(connectAddress(&handle->connectAddr, &ncclIbIfAddr, &comm->fd));
+  NCCLCHECK(connectAddress(&comm->fd, &handle->connectAddr));
   *sendComm = comm;
   
   // IB Setup
@@ -497,7 +497,7 @@ int ncclIbAccept(void* listenComm, void** recvComm) {
   if (ncclIbGdrSupport() && rComm->gpuFlush.enabled) {
     NCCLCHECK(wrap_ibv_reg_mr(&rComm->gpuFlush.hostMr, rComm->verbs.pd, &rComm->gpuFlush.hostMem, sizeof(int), IBV_ACCESS_LOCAL_WRITE));
     rComm->gpuFlush.sge.addr = (uint64_t)&rComm->gpuFlush.hostMem;
-    rComm->gpuFlush.sge.length = sizeof(int);
+    rComm->gpuFlush.sge.length = 1;
     rComm->gpuFlush.sge.lkey = rComm->gpuFlush.hostMr->lkey;
     NCCLCHECK(ncclIbCreateQp(ib_port, &rComm->verbs, IBV_ACCESS_LOCAL_WRITE | IBV_ACCESS_REMOTE_READ, &rComm->gpuFlush.qp));
     struct ncclIbQpInfo localQpInfo = {
@@ -579,21 +579,17 @@ int ncclIbTest(void* request, int* done, int* size);
 ncclResult_t ncclIbGetMr(struct ncclIbVerbs* verbs, void* data, int size, struct ncclIbMr** mrRet) {
   uint64_t addr = (uint64_t)data;
   int elem = -1;
+  assert(size > 0);
 
   // Look for an already existing MR
   for (int i=0; i<MAX_REQUESTS;i++) {
     if (verbs->mrPool[i].mr == NULL) continue;
     uint64_t regAddr = (uint64_t)verbs->mrPool[i].mr->addr;
     uint64_t regSize = (uint64_t)verbs->mrPool[i].mr->length;
-    if (regAddr <= addr && addr < regAddr + regSize) {
-      if (addr+size <= regAddr + regSize) {
-        *mrRet = verbs->mrPool+i;
-        verbs->mrPool[i].refcnt++;
-        return ncclSuccess;
-      } else { // Size too small, delete the area (and recreate it, larger)
-        elem = i;
-        break;
-      }
+    if (regAddr <= addr && addr+size <= regAddr+regSize) {
+      *mrRet = verbs->mrPool+i;
+      verbs->mrPool[i].refcnt++;
+      return ncclSuccess;
     }
   }
 
@@ -611,6 +607,7 @@ ncclResult_t ncclIbGetMr(struct ncclIbVerbs* verbs, void* data, int size, struct
   }
 
   assert(elem < MAX_REQUESTS);
+  assert(verbs->mrPool[elem].refcnt == 0);
 
   // Deregister / register
   uint64_t regAddr = addr & (~(REG_ALIGN-1));
@@ -655,10 +652,12 @@ int ncclIbIsend(void* sendComm, void* data, int size, int type, void** request) 
   volatile uint32_t * readyPtr = &slot->ready;
   while (*readyPtr == 0) sched_yield(); /*XXX:if commented, ibv_post_send in ncclIbPostFifo should also be commented*/
 #ifdef USE_RDMA_WRITE
+  __sync_synchronize();
   wr.opcode = IBV_WR_RDMA_WRITE_WITH_IMM;
   wr.wr.rdma.remote_addr = slot->addr;
   wr.wr.rdma.rkey = slot->rkey;
   wr.imm_data = size;
+  __sync_synchronize();
 #endif
   slot->ready = 0;
   comm->fifoHead++;
@@ -734,12 +733,12 @@ int ncclIbIrecv(void* recvComm, void* data, int size, int type, void** request) 
 
 int ncclIbFlush(void* recvComm, void* data, int size) {
   struct ncclIbRecvComm* comm = (struct ncclIbRecvComm*)recvComm;
-  if (comm->gpuFlush.enabled == 0) return ncclSuccess;
+  if (comm->gpuFlush.enabled == 0 || size == 0) return ncclSuccess;
 
   struct ncclIbRequest* req;
   NCCLCHECK(ncclIbGetRequest(&comm->reqs, &req));
   req->verbs = &comm->verbs;
-  NCCLCHECK(ncclIbGetMr(&comm->verbs, data, size, &req->ibMr));
+  NCCLCHECK(ncclIbGetMr(&comm->verbs, data, 1, &req->ibMr));
 
   struct ibv_send_wr wr;
   memset(&wr, 0, sizeof(wr));
@@ -772,7 +771,7 @@ int ncclIbTest(void* request, int* done, int* size) {
     if(wrDone < 0){ return ncclSystemError; }
     if (wrDone == 1) {
       if (wc.status != IBV_WC_SUCCESS) {
-        WARN("NET/IB : Got completion with error %d, opcode %d, vendor err %d", wc.status, wc.opcode, wc.vendor_err);
+        WARN("NET/IB : Got completion with error %d, opcode %d, len %d, vendor err %d", wc.status, wc.opcode, wc.byte_len, wc.vendor_err);
         return 1;
       }
 

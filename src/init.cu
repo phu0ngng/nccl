@@ -34,7 +34,7 @@ pthread_mutex_t ncclDebugOutputLock;
 FILE *ncclDebugFile = stdout;
 
 int ncclPrintCRCs;
-int ncclChecks;
+int ncclCheckPointers;
 
 size_t ncclSingleRingThreshold;
 
@@ -77,14 +77,6 @@ void initLl() {
   INFO("Using NCCL Low-latency algorithm for sizes below %ld", ncclLLThreshold);
 }
 
-int ncclAffinityDisable;
-void initAffinity() {
-  char* str = getenv("NCCL_AFFINITY_DISABLE");
-  ncclAffinityDisable = (str && atoi(str) >= 0) ? atoi(str) : 0;
-  if (ncclAffinityDisable)
-    INFO("NCCL affinity setting is disabled");
-}
-
 pthread_mutex_t initLock = PTHREAD_MUTEX_INITIALIZER;
 static bool initialized = false;
 static ncclResult_t ncclInit() {
@@ -95,7 +87,6 @@ static ncclResult_t ncclInit() {
     initDebug();
     initNet();
     initLl();
-    initAffinity();
     initialized = true;
   }
   pthread_mutex_unlock(&initLock);
@@ -197,16 +188,14 @@ static ncclResult_t devCommSetup(ncclComm_t comm) {
 // Pre-process the string so that running "strings" on the lib can quickly reveal the version.
 #define STR2(v) #v
 #define STR(v) STR2(v)
+#define VERSION_STRING "NCCL version " STR(NCCL_MAJOR) "." STR(NCCL_MINOR) "." STR(NCCL_PATCH) NCCL_SUFFIX "+cuda" STR(CUDA_MAJOR) "." STR(CUDA_MINOR)
 static void showVersion() {
   static int shown = 0;
   if (shown == 0 && ncclDebugLevel >= VERSION) {
-    char version[80];
-    sprintf(version, "%s", "NCCL version " STR(NCCL_MAJOR) "." STR(NCCL_MINOR) "." STR(NCCL_PATCH) NCCL_SUFFIX
-            "+cuda" STR(CUDA_MAJOR) "." STR(CUDA_MINOR));
-    printf("%s\n", version);
+    printf("%s\n", VERSION_STRING);
     fflush(stdout);
     if (ncclDebugFile != stdout)
-      INFO("%s", version); // Also log NCCL version in one of the files
+      INFO("%s", VERSION_STRING); // Also log NCCL version in one of the files
     shown = 1;
   }
 }
@@ -422,8 +411,8 @@ static ncclResult_t initTransportsRank(struct ncclComm* comm, ncclUniqueId* comm
   struct ncclInfo* allInfo = (struct ncclInfo*)malloc(sizeof(struct ncclInfo)*nranks);
   NCCLCHECK(fillInfo(allInfo+rank, rank));
   NCCLCHECK(bootstrapAllGather(commState, allInfo, sizeof(struct ncclInfo)));
-  int connectTransport[nranks*nranks];
-  int connectValue[nranks*nranks];
+  int* connectTransport = (int*)malloc(sizeof(int)*nranks*nranks);
+  int* connectValue = (int*)malloc(sizeof(int)*nranks*nranks);
   NCCLCHECK(fillConnect(allInfo, nranks, rank, connectTransport+nranks*rank, connectValue+nranks*rank));
   NCCLCHECK(bootstrapAllGather(commState, connectTransport, nranks*(sizeof(int))));
   NCCLCHECK(bootstrapAllGather(commState, connectValue, nranks*(sizeof(int))));
@@ -432,10 +421,12 @@ static ncclResult_t initTransportsRank(struct ncclComm* comm, ncclUniqueId* comm
 
   // Get my rings
   int nrings;
-  int prev[nranks*MAXRINGS];
-  int next[nranks*MAXRINGS];
+  int* prev = (int*)malloc(sizeof(int)*nranks*MAXRINGS);
+  int* next = (int*)malloc(sizeof(int)*nranks*MAXRINGS);
   comm->nThreads = getDefaultThreads();
   NCCLCHECK(ncclGetRings(&nrings, &comm->nThreads, rank, nranks, connectTransport, connectValue, prev, next));
+  free(connectTransport);
+  free(connectValue);
 
   // Find max nThreads
   int allData[nranks];
@@ -471,6 +462,8 @@ static ncclResult_t initTransportsRank(struct ncclComm* comm, ncclUniqueId* comm
   }
   int rings[nranks*MAXRINGS];
   NCCLCHECK(buildRings(nrings, rings, rank, nranks, prev, next));
+  free(prev);
+  free(next);
 
   // Connect with prev/next for each ring
   for (int r=0; r<nrings; r++) {
@@ -515,7 +508,6 @@ static ncclResult_t initTransportsRank(struct ncclComm* comm, ncclUniqueId* comm
 }
 
 bool SetCpuAffinity(int cudaDev, nvmlDevice_t* nvmlDevice) {
-  if (ncclAffinityDisable == 1) return false;
   char busId[NVML_DEVICE_PCI_BUS_ID_BUFFER_SIZE];
   if (cudaDeviceGetPCIBusId(busId, NVML_DEVICE_PCI_BUS_ID_BUFFER_SIZE, cudaDev) != cudaSuccess) return false;
   if (wrapNvmlDeviceGetHandleByPciBusId(busId, nvmlDevice) != ncclSuccess) return false;
@@ -527,6 +519,9 @@ bool SetCpuAffinity(int cudaDev, nvmlDevice_t* nvmlDevice) {
 }
 
 ncclResult_t ncclCommInitRankSync(ncclComm_t* newcomm, int ndev, ncclUniqueId commId, int myrank) {
+  cpu_set_t affinitySave;
+  sched_getaffinity(0, sizeof(cpu_set_t), &affinitySave);
+
   NCCLCHECK(wrapNvmlSymbols());
   NCCLCHECK(wrapNvmlInit());
 
@@ -534,20 +529,19 @@ ncclResult_t ncclCommInitRankSync(ncclComm_t* newcomm, int ndev, ncclUniqueId co
   int cudaDev;
   nvmlDevice_t nvmlDevice;
   CUDACHECK(cudaGetDevice(&cudaDev));
-  bool affinity_set = SetCpuAffinity(cudaDev, &nvmlDevice);
+  SetCpuAffinity(cudaDev, &nvmlDevice);
   ncclResult_t res;
 
   NCCLCHECKGOTO(commAlloc(newcomm, ndev, myrank), res, cleanup);
   NCCLCHECKGOTO(initTransportsRank(*newcomm, &commId), res, cleanup);
   NCCLCHECKGOTO(devCommSetup(*newcomm), res, cleanup);
 
-  if (affinity_set)
-    wrapNvmlDeviceClearCpuAffinity(nvmlDevice); // Ignore errors
-
+  sched_setaffinity(0, sizeof(cpu_set_t), &affinitySave);
   NCCLCHECKGOTO(wrapNvmlShutdown(), res, cleanup);
   return ncclSuccess;
 cleanup:
   *newcomm = NULL;
+  sched_setaffinity(0, sizeof(cpu_set_t), &affinitySave);
   return res;
 }
 
@@ -584,15 +578,15 @@ static ncclResult_t initTransportsAll(struct ncclComm** comms, const int* devs, 
     NCCLCHECK(fillInfo(allInfo+rank, rank));
   }
 
-  int connectTransport[nranks*nranks];
-  int connectValue[nranks*nranks];
+  int* connectTransport = (int*)malloc(sizeof(int)*nranks*nranks);
+  int* connectValue = (int*)malloc(sizeof(int)*nranks*nranks);
   for (int rank=0; rank<nranks; rank++)
     NCCLCHECK(fillConnect(allInfo, nranks, rank, connectTransport+nranks*rank, connectValue+nranks*rank));
   
-  int prev[nranks*MAXRINGS];
-  int prevFinal[nranks*MAXRINGS];
-  int next[nranks*MAXRINGS];
-  int nextFinal[nranks*MAXRINGS];
+  int* prev = (int*)malloc(sizeof(int)*nranks*MAXRINGS);
+  int* prevFinal = (int*)malloc(sizeof(int)*nranks*MAXRINGS);
+  int* next = (int*)malloc(sizeof(int)*nranks*MAXRINGS);
+  int* nextFinal = (int*)malloc(sizeof(int)*nranks*MAXRINGS);
   int nrings = MAXRINGS;
   int nthreads=0;
   int myCompCap = ncclCudaCompCap();
@@ -612,6 +606,10 @@ static ncclResult_t initTransportsAll(struct ncclComm** comms, const int* devs, 
       nextFinal[index] = next[index];
     }
   }
+  free(connectTransport);
+  free(connectValue);
+  free(prev);
+  free(next);
 
   INFO("Using %d threads", nthreads);
   INFO("Min Comp Cap %d", minCompCap);
@@ -621,6 +619,8 @@ static ncclResult_t initTransportsAll(struct ncclComm** comms, const int* devs, 
 
   int rings[nranks*MAXRINGS];
   NCCLCHECK(buildRings(nrings, rings, 0, nranks, prevFinal, nextFinal));
+  free(prevFinal);
+  free(nextFinal);
 
   for (int rank=0; rank<nranks; rank++) {
     comms[rank]->nRings = nrings;
@@ -673,7 +673,6 @@ ncclResult_t ncclCommInitAll(ncclComm_t* comms, int ndev, const int* devlist) {
   int rank, cudaDev;
   ncclComm_t comm = NULL;
   nvmlDevice_t nvmlDevice;
-  bool affinity_set = false;
   int ncclDevList[ndev];
   for (int i=0; i<ndev; i++) {
     ncclDevList[i] = devlist ? devlist[i] : i;
@@ -684,21 +683,24 @@ ncclResult_t ncclCommInitAll(ncclComm_t* comms, int ndev, const int* devlist) {
   for(rank=0; rank<ndev; ++rank)
     comms[rank] = NULL;
 
+  cpu_set_t affinitySave;
+  sched_getaffinity(0, sizeof(cpu_set_t), &affinitySave);
+
   for (rank=0; rank<ndev; ++rank) {
     cudaDev = ncclDevList[rank];
     CUDACHECKGOTO(cudaSetDevice(cudaDev), res, cleanup);
 
     // Set CPU affinity
-    affinity_set = SetCpuAffinity(cudaDev, &nvmlDevice);
+    SetCpuAffinity(cudaDev, &nvmlDevice);
 
     NCCLCHECKGOTO(commAlloc(&comm, ndev, rank), res, cleanup);
     comms[rank] = comm;
 
     NCCLCHECKGOTO(ncclCommSetIntra(comm, rank, ndev, comms[0]), res, cleanup);
 
-    if (affinity_set)
-      wrapNvmlDeviceClearCpuAffinity(nvmlDevice); // Ignore errors
   }
+
+  sched_setaffinity(0, sizeof(cpu_set_t), &affinitySave);
 
   NCCLCHECKGOTO(initTransportsAll(comms, ncclDevList, ndev), res, cleanup);
 
@@ -722,6 +724,7 @@ ncclResult_t ncclCommInitAll(ncclComm_t* comms, int ndev, const int* devlist) {
   if(wrapNvmlShutdown() != ncclSuccess)
     INFO("NCCL did not shutdown nvml properly");
   cudaSetDevice(savedDevice);
+  sched_setaffinity(0, sizeof(cpu_set_t), &affinitySave);
   return res;
 }
 
