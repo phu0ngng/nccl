@@ -188,7 +188,7 @@ static inline int findConnect(int nranks, int* ranks) {
 static inline int copyRings(int nranks, int* rings, int nrings, int dup) {
   // Copy rings by dup times
   if (nrings * dup > MAXRINGS) {
-    WARN("Number of rings requested (%d) is more than the maximum number, falling back to duplication ratio 1", dup * nrings);
+    WARN("Number of rings requested (%d) is more than the maximum allowed, remaining unchanged", dup * nrings);
     return nrings;
   }
   for (int d=1; d<dup; d++) {
@@ -237,21 +237,7 @@ int p2pComputeRingsNvLink(int* values, int nranks, int* rings, int nrings, int* 
       }
     }
     // Duplicate the rings for direct NVLink
-    int dup = -1;
-    char* str = getenv("NCCL_DUP_RINGS");
-    if (str && strlen(str) > 0) {
-      dup = atoi(str);
-    }
-    if (dup > 0 && dup * compNrings <= MAXRINGS) {
-      INFO("Duplicating rings by %d times per user request", dup);
-      compNrings = copyRings(nranks, rings, compNrings, dup);
-    } else if (dup * compNrings > MAXRINGS) {
-      WARN("Number of rings requested (%d) is more than the maximum number, falling back to default", dup * nrings);
-      compNrings = copyRings(nranks, rings, compNrings, 2);
-    } else { 
-      // if user hasn't set a valid value, we will use system default and do the duplication here
-      compNrings = copyRings(nranks, rings, compNrings, 2);
-    }
+    compNrings = copyRings(nranks, rings, compNrings, 2);
 
     if (ncclCudaCompCap() == 6) *nthreads /= 2;
   }
@@ -373,13 +359,6 @@ ncclResult_t p2pGetRings(int nranks, int* groups, int* subgroups, int* values, i
   for (int i=0; i<MAXRINGS*nranks; i++) rings[i] = -1;
   int nrings = *nringsRet;
 
-  // Get user-defined ring duplication ratio
-  char* str = getenv("NCCL_DUP_RINGS");
-  int dup = -1;
-  if (str && strlen(str) > 0) {
-    dup = atoi(str);
-  }
-
   // NVswitch
   for (int rank=0; rank<nranks; rank++) {
     int links = 0;
@@ -404,16 +383,7 @@ ncclResult_t p2pGetRings(int nranks, int* groups, int* subgroups, int* values, i
   }
   // Duplicate rings for NVswitch
   if (nrings > 0) {
-    if (dup > 0 && dup * nrings <= MAXRINGS) {
-      INFO("Duplicating rings by %d times per user request", dup);
-      nrings = copyRings(nranks, rings, nrings, dup);
-    } else if (dup * nrings > MAXRINGS) {
-      WARN("Number of rings requested (%d) is more than the maximum number, falling back to default", dup * nrings);
-      nrings = copyRings(nranks, rings, nrings, 2);
-    } else { 
-      // if user hasn't set a valid value, we will use system default and do the duplication here
-      nrings = copyRings(nranks, rings, nrings, 2);
-    }
+    nrings = copyRings(nranks, rings, nrings, 2);
   }
 
   if (nrings == 0) {
@@ -430,18 +400,11 @@ ncclResult_t p2pGetRings(int nranks, int* groups, int* subgroups, int* values, i
     }
     if (nrings > 0) nrings = p2pComputeRingsNvLink(values, nranks, rings, nrings, prev, next, 0, nthreads);
   }
- 
+
   int pcie = (nrings == 0) ? 1 : 0;
   if (pcie) {
     // PCIe or QPI
     nrings = p2pComputeRingsPci(values, nranks, rings, *nringsRet, prev, next, minScore);
-
-    if (dup > 0 && dup * nrings <= MAXRINGS) {
-      INFO("Duplicating rings by %d times per user request", dup);
-      nrings = copyRings(nranks, rings, nrings, dup);
-    } else if (dup * nrings > MAXRINGS) {
-      WARN("Number of rings requested (%d) is more than the maximum number, falling back to default", dup * nrings);
-    }
   }
 
   *nringsRet = nrings;
