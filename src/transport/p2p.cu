@@ -378,12 +378,12 @@ ncclResult_t p2pGetRings(int nranks, int* groups, int* subgroups, int* values, i
         nrings = nringsConnect;
       } else {
         nrings = p2pComputeRingsSeqNew(values, nranks, rings, nrings, prev, next, minScore, nthreads);;
+        // Duplicate rings for NVswitch
+        if (nrings > 0) {
+          nrings = copyRings(nranks, rings, nrings, 2);
+        }
       }
     }
-  }
-  // Duplicate rings for NVswitch
-  if (nrings > 0) {
-    nrings = copyRings(nranks, rings, nrings, 2);
   }
 
   if (nrings == 0) {
