@@ -18,7 +18,7 @@ if [ "$gpumodel" == "dgx1" ] || [ "$gpumodel" == "dgx1v" ]; then
   source /etc/profile.d/modules.sh
   export PATH=/usr/local/bin:/usr/bin:$PATH
   source $HOME/cuda.sh
-  MPI_HOME="${MPI_HOME:-$HOME/install/openmpi}"
+  MPI_HOME="${MPI_HOME:-$HOME/install/ompi-master}"
   exclude="-x dgx1-prd-01 "
 else
   source $SHDIR/cuda.sh
@@ -86,8 +86,8 @@ elif [[ "$mode" == *"mpi"* ]] || [[ "$mode" == *"multinode"* ]]; then
   fi
   # multinode test
   if [[ "$mode" == *"multinode"* ]]; then
-    if [ "$gpumodel" == "dgx1" ]; then
-      $SHDIR/multinode_perf_graphs.sh dgx1 2 16 8 8
+    if [ "$gpumodel" == "dgx1" ] || [ "$gpumodel" == "dgx1v" ]; then
+      $SHDIR/multinode_perf_graphs.sh $gpumodel 2 16 8 8
     elif [ "$gpumodel" == "P100" ]; then
       $SHDIR/multinode_perf_graphs.sh gpu-verbs 2 16 8 8
       $SHDIR/multinode_env_test.sh gpu-verbs 2 8
