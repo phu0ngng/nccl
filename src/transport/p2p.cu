@@ -372,16 +372,16 @@ ncclResult_t p2pGetRings(int nranks, int* groups, int* subgroups, int* values, i
       links = nvswitch_links;
     }
     nrings = min(nrings, links);
-    if (nrings > 0) {
-      int nringsConnect = p2pComputeRingsSeqConnect(values, nranks, rings, nrings, prev, next, minScore, nthreads);
-      if (nringsConnect > 0) {
-        nrings = nringsConnect;
-      } else {
-        nrings = p2pComputeRingsSeqNew(values, nranks, rings, nrings, prev, next, minScore, nthreads);;
-        // Duplicate rings for NVswitch
-        if (nrings > 0) {
-          nrings = copyRings(nranks, rings, nrings, 2);
-        }
+  }
+  if (nrings > 0) {
+    int nringsConnect = p2pComputeRingsSeqConnect(values, nranks, rings, nrings, prev, next, minScore, nthreads);
+    if (nringsConnect > 0) {
+      nrings = nringsConnect;
+    } else {
+      nrings = p2pComputeRingsSeqNew(values, nranks, rings, nrings, prev, next, minScore, nthreads);;
+      // Duplicate rings for NVswitch
+      if (nrings > 0) {
+        nrings = copyRings(nranks, rings, nrings, 2);
       }
     }
   }
