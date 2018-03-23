@@ -270,9 +270,6 @@ struct ncclComm {
     SYSCHECKVALEXP(call, name, ret, exptype); \
     count++; \
     if (ret == -1) { \
-      if (count % 1000 == 0) { \
-        INFO("Got %s, tried %d times", strerror(errno), count); \
-      } \
       usleep(usec); \
     }\
   } \
