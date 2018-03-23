@@ -40,9 +40,6 @@ typedef enum { ncclSuccess                 =  0,
 ncclResult_t  ncclGetUniqueId(ncclUniqueId* uniqueId);
 ncclResult_t pncclGetUniqueId(ncclUniqueId* uniqueId);
 
-ncclResult_t  ncclGetUniqueIdFromEnv(ncclUniqueId* uniqueId);
-ncclResult_t pncclGetUniqueIdFromEnv(ncclUniqueId* uniqueId);
-
 /* Creates a new communicator (multi thread/process version).
  * rank must be between 0 and nranks-1 and unique within a communicator clique.
  * Each rank is associated to a CUDA device, which has to be set before calling

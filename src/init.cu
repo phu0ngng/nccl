@@ -91,12 +91,6 @@ ncclResult_t ncclGetUniqueId(ncclUniqueId* out) {
   return bootstrapGetUniqueId(out);
 }
 
-NCCL_API(ncclResult_t, ncclGetUniqueIdFromEnv, ncclUniqueId* out);
-ncclResult_t ncclGetUniqueIdFromEnv(ncclUniqueId* out) {
-  NCCLCHECK(PtrCheck(out, "GetUniqueIdFromEnv", "out"));
-  return bootstrapGetUniqueIdFromEnv(out);
-}
-
 static ncclResult_t commFree(ncclComm_t comm) {
   if (comm == NULL)
     return ncclSuccess;

@@ -169,24 +169,6 @@ ncclResult_t bootstrapGetUniqueId(ncclUniqueId* out) {
   return ncclSuccess;
 }
 
-ncclResult_t bootstrapGetUniqueIdFromEnv(ncclUniqueId* out) {
-  static_assert(sizeof(extId) < sizeof(ncclUniqueId), "NetId does not fit inside ncclUniqueId");
-  extId* id = (extId*)out;
-
-  // use negative pid to indicate that comm id is from env (pid_t is int)
-  // if ncclGetUniqueID is called, getpid() would return pid >= 1
-  id->pid = -1;
-
-  char* env = getenv("NCCL_COMM_ID");
-  if (env && strlen(env) > 1) {
-    if (ncclSocketCreateHandle(&id->extHandle, env) == 0) {
-      return ncclSuccess;
-    }
-  }
-  WARN("Invalid NCCL_COMM_ID or none specified, please use format: NCCL_COMM_ID=<ipv4>:<port> or NCCL_COMM_ID=[<ipv6>]:<port>");
-  return ncclInvalidArgument;
-}
-
 struct extState {
   void* extRecvComm;
   void* extSendComm;
