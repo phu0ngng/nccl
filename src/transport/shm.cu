@@ -82,7 +82,7 @@ ncclResult_t shmCanConnect(int* ret, ncclTinfo_t* myOpaqueInfo, ncclTinfo_t* pee
     *ret = 0;
     return ncclSuccess;
   }
-  *ret = getNvlinkCpu();
+  *ret = max(getNvlinkCpu(), 1);
   return ncclSuccess;
 }
 
