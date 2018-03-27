@@ -18,7 +18,6 @@
 enum ncclNvLinkDeviceType {
   ncclNvLinkDeviceGpu,
   ncclNvLinkDeviceSwitch,
-  ncclNvLinkDeviceCpu
 };
 
 static ncclResult_t ncclDeviceType(const char* busId, enum ncclNvLinkDeviceType* type) {
@@ -53,7 +52,8 @@ static ncclResult_t ncclDeviceType(const char* busId, enum ncclNvLinkDeviceType*
       || strcmp(pciClass, "0x030000") == 0) {  // "VGA Controller" (GeForce)
     *type = ncclNvLinkDeviceGpu;
   } else {
-    *type = ncclNvLinkDeviceCpu;
+    // Ignore if we don't know what's on the other side.
+    return ncclSystemError;
   }
   return ncclSuccess;
 }
@@ -111,7 +111,7 @@ static int getNvlinkGpu(const char* busId1, const char* busId2) {
       p[c] = toupper(p[c]);
     }
 
-    // Determine if the remote side is NVswitch, another GPU, or a CPU
+    // Determine if the remote side is NVswitch or another GPU
     enum ncclNvLinkDeviceType type;
     if (ncclDeviceType(lowerId, &type) != ncclSuccess) continue;
 
@@ -123,76 +123,7 @@ static int getNvlinkGpu(const char* busId1, const char* busId2) {
       nvswitch_links++;
     }
   }
-  return nvswitch_links ? -nvswitch_links : links;
-}
-
-static int getNvlinkCpu() {
-  int links = 0;
-  int nvswitch_links = 0;
-  int maxNvLinks = ncclCudaCompCap() > 6 ? 6 : 4;
-  int cudaDev;
-  nvmlDevice_t nvmlDev;
-  char busId[NVML_DEVICE_PCI_BUS_ID_BUFFER_SIZE];
-  if (cudaGetDevice(&cudaDev) != cudaSuccess) return 0;
-  if (cudaDeviceGetPCIBusId(busId, NVML_DEVICE_PCI_BUS_ID_BUFFER_SIZE, cudaDev) != cudaSuccess) return 0;
-  if (wrapNvmlDeviceGetHandleByPciBusId(busId, &nvmlDev) != ncclSuccess) return 0;
-
-  for(int l=0; l<maxNvLinks; ++l) {
-    // Determine if the remote side is NVswitch, another GPU, or a CPU
-    enum ncclNvLinkDeviceType type;
-
-    // nvmlDeviceGetNvLinkCapability(NVML_NVLINK_CAP_P2P_SUPPORTED) would seem to
-    // report whether the NVLink connects to a peer GPU (versus a POWER CPU?). I
-    // don't know whether nvmlDeviceGetNvLinkRemotePciInfo() would succeed in
-    // the POWER CPU case, so it seems best to check this as well.
-    unsigned canP2P;
-    if ((wrapNvmlDeviceGetNvLinkCapability(nvmlDev, l, NVML_NVLINK_CAP_P2P_SUPPORTED, &canP2P) != ncclSuccess) || !canP2P) continue;
-
-    // nvmlDeviceGetNvLinkRemotePciInfo() will return NVML_ERROR_NOT_SUPPORTED
-    // if the links don't exist, or are disabled. So checking for that return
-    // here would probably make the nvmlDeviceGetNvLinkState check above
-    // redundant. Presumably, we still need to check the P2P capability above,
-    // since even non-GPUs would posses PCI info.
-    //
-    // update:
-    // nvmlDeviceGetNvLinkRemotePciInfo() will return NVML_ERROR_NOT_SUPPORTED
-    // if the other side of the NVLink is a CPU (e.g. a POWER CPU)
-    nvmlPciInfo_t remoteProc;
-    ncclResult_t ret = wrapNvmlDeviceGetNvLinkRemotePciInfo(nvmlDev, l, &remoteProc);
-
-    char* p = remoteProc.busId;
-    char lowerId[NVML_DEVICE_PCI_BUS_ID_BUFFER_SIZE];
-    if (p != NULL) {
-      // Make a lower case copy of the bus ID for calling ncclDeviceType
-      // PCI system path is in lower case
-      for (int c=0; c<NVML_DEVICE_PCI_BUS_ID_BUFFER_SIZE; c++) {
-	if (p[c] == 0) break;
-	lowerId[c] = tolower(p[c]);
-      }
-
-      // Old versions of NVML return a lowercase PCI ID
-      p = remoteProc.busId;
-      for (int c=0; c<NVML_DEVICE_PCI_BUS_ID_BUFFER_SIZE; c++) {
-        if (p[c] == 0) break;
-        p[c] = toupper(p[c]);
-      }
-    }
-
-    if (ret == ncclSystemNotSupported && remoteProc.busId != NULL) {
-      type = ncclNvLinkDeviceCpu;
-    } else if (ret == ncclSuccess) {
-      if (ncclDeviceType(lowerId, &type) != ncclSuccess) continue;
-    } else {
-      continue;
-    }
-
-    if (type == ncclNvLinkDeviceCpu) {
-      links++;
-    } else if (type == ncclNvLinkDeviceSwitch) {
-      nvswitch_links++;
-    }
-  }
-  return nvswitch_links ? -nvswitch_links : links;
+  return nvswitch_links ? CONNECT_NVSWITCH*nvswitch_links : CONNECT_NVLINK*links;
 }
 
 #endif

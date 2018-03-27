@@ -83,12 +83,9 @@ ncclResult_t p2pCanConnect(int* ret, ncclTinfo_t* myOpaqueInfo, ncclTinfo_t* pee
         p2p = 0;
       }
       if (p2p == 1) {
-        int nlinks = getNvlinkGpu(myInfo->busId, peerInfo->busId);
-        if (nlinks > 0) {
-          p2p = nlinks*CONNECT_NVLINK;
-        } else if (nlinks < 0) {
-          p2p = (-nlinks)*CONNECT_NVSWITCH;
-        } else {
+        p2p = getNvlinkGpu(myInfo->busId, peerInfo->busId);
+        if (p2p == 0) {
+          // PCI distance detection
           char* myPath;
           char* peerPath;
           ncclResult_t err1 = getCudaPath(myInfo->cudaDev, &myPath);

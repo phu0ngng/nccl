@@ -151,18 +151,6 @@ ncclResult_t wrap_ibv_symbols(void) {
   } \
   return ncclSuccess;
 
-#define IBV_PTR_CHECK_NO_WARN(name_internal, call, retval, error_retval, name) \
-  if (name_internal == NULL) { \
-     WARN("lib wrapper not initialized."); \
-     return ncclInternalError; \
-  } \
-  retval = call; \
-  if (retval == error_retval) { \
-    INFO("Call to " name " failed"); \
-    return ncclSystemError; \
-  } \
-  return ncclSuccess;
-
 #define IBV_INT_CHECK_RET_ERRNO(name_internal, call, success_retval, name) \
   if (name_internal == NULL) { \
      WARN("lib wrapper not initialized."); \

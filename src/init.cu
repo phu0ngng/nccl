@@ -758,7 +758,6 @@ const char* ncclGetErrorString(ncclResult_t code) {
   case ncclInternalError          : return "internal error";
   case ncclInvalidArgument        : return "invalid argument";
   case ncclInvalidUsage           : return "invalid usage";
-  case ncclSystemNotSupported     : return "not supported by system";
   }
   return "unknown result code";
 }
