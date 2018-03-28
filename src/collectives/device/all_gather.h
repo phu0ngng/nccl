@@ -18,9 +18,10 @@
 #define ALIGN_SIZE(size, align) \
   size = ((size + (align) - 1) / (align)) * (align);
 
-template<int THREADS, int UNROLL, class FUNC, typename T>
+template<int UNROLL, class FUNC, typename T>
 __device__ void ncclAllGatherKernel(struct CollectiveArgs* args) {
   const int tid = threadIdx.x;
+  const int nthreads = blockDim.x - 1;
   const int bid = args->bid;
   __shared__ T* sharedNextOutput;
   struct ncclComm* comm = args->comm;
@@ -33,7 +34,7 @@ __device__ void ncclAllGatherKernel(struct CollectiveArgs* args) {
   PostFlag postDoneToPrev(ring->recv.conn.head, ALLGATHER_SUBSTEPS, NULL, 0);
   PostFlag postReadyToNext(ring->send.conn.tail, 0, ring->send.conn.fifo, ALLGATHER_BUFCHUNKS*ALLGATHER_SUBSTEPS);
 
-  typedef Primitives<THREADS, UNROLL, ALLGATHER_SUBSTEPS, T> Prims;
+  typedef Primitives<UNROLL, ALLGATHER_SUBSTEPS, T> Prims;
 
   const ssize_t size = args->N;
   const int nranks = comm->nRanks;
@@ -69,7 +70,7 @@ __device__ void ncclAllGatherKernel(struct CollectiveArgs* args) {
 
   for (ssize_t gridOffset = 0; gridOffset < size; gridOffset += args->nRings*sliceSize) {
     int chunkSize = min(sliceSize, DIVUP(size-gridOffset,args->nRings));
-    ALIGN_SIZE(chunkSize, THREADS*sizeof(uint64_t)/sizeof(T));
+    ALIGN_SIZE(chunkSize, nthreads*sizeof(uint64_t)/sizeof(T));
     ssize_t chunkOffset = gridOffset + bid*chunkSize;
 
     /////////////// begin AllGather steps ///////////////
@@ -82,7 +83,7 @@ __device__ void ncclAllGatherKernel(struct CollectiveArgs* args) {
     offset = chunkOffset + rankDest * size;
 
     if (thisInput + chunkOffset == thisOutput + offset) { // In place
-      Prims::Copy(
+      Prims::Copy(tid, nthreads,
           thisInput  + chunkOffset,
           nextdirect ? (sharedNextOutput + offset) : (nextOutput + noffset),
           sliceSize, maxOffset,
@@ -90,7 +91,7 @@ __device__ void ncclAllGatherKernel(struct CollectiveArgs* args) {
           waitDoneFromNext,
           postReadyToNext);
     } else {
-      Prims::DoubleCopy(
+      Prims::DoubleCopy(tid, nthreads,
           thisInput  + chunkOffset,
           thisOutput + offset,
 	  nextdirect ? (sharedNextOutput + offset) : (nextOutput + noffset),
@@ -108,7 +109,7 @@ __device__ void ncclAllGatherKernel(struct CollectiveArgs* args) {
         rankDest = ring->devUserRanks[nranks-j];
         offset = chunkOffset + rankDest * size;
 
-        Prims::Copy(
+        Prims::Copy(tid, nthreads,
             thisOutput + offset,
 	    nextdirect ? (sharedNextOutput + offset) : (nextOutput + noffset),
             sliceSize, maxOffset,
@@ -118,7 +119,7 @@ __device__ void ncclAllGatherKernel(struct CollectiveArgs* args) {
 
         NEXT_STEP;
       }
-      Prims::Copy(
+      Prims::Copy(tid, nthreads,
           NULL,
           NULL,
           0, 0,
@@ -130,7 +131,7 @@ __device__ void ncclAllGatherKernel(struct CollectiveArgs* args) {
         rankDest = ring->devUserRanks[nranks-j];
         offset = chunkOffset + rankDest * size;
 
-        Prims::DoubleCopy(
+        Prims::DoubleCopy(tid, nthreads,
             prevInput + poffset,
             thisOutput + offset,
 	    nextdirect ? (sharedNextOutput + offset) : (nextOutput + noffset),
@@ -147,7 +148,7 @@ __device__ void ncclAllGatherKernel(struct CollectiveArgs* args) {
       offset = chunkOffset + rankDest * size;
 
       // Here we need to copy from buffer to this output.
-      Prims::Copy(
+      Prims::Copy(tid, nthreads,
           prevInput + poffset,
           thisOutput + offset,
           sliceSize, maxOffset,
@@ -176,7 +177,7 @@ __device__ void ncclAllGatherKernel(struct CollectiveArgs* args) {
   nflag++; \
   step++;
 
-template<int THREADS, int UNUSED, class FUNC, typename T>
+template<int UNUSED, class FUNC, typename T>
 __device__ void ncclAllGatherLLKernel(struct CollectiveArgs* args) {
   const int tid = threadIdx.x;
   struct ncclComm* comm = args->comm;
@@ -186,7 +187,7 @@ __device__ void ncclAllGatherLLKernel(struct CollectiveArgs* args) {
   volatile int * sizesFifo = ring->send.conn.llFifo;
   uint64_t sendHead = sendHeadPtr[0];
 
-  typedef LLPrimitives<THREADS, T, FUNC> LL;
+  typedef LLPrimitives<LL_NTHREADS, T, FUNC> LL;
 
   const ssize_t size = args->N;
   //const int rank = comm->rank;

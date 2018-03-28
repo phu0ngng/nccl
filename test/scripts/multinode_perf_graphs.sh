@@ -8,7 +8,11 @@ nthread=$4
 ngpus=$5
 op=$6
 
-resdir="results_multinode"
+if [ "$NCCL_IB_DISABLE" == "1" ]; then
+  resdir="results_socket"
+else
+  resdir="results_multinode"
+fi
 
 timeout=2
 extra="-c 0 "

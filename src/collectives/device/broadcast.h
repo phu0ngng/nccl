@@ -17,9 +17,10 @@
 #define ALIGN_SIZE(size, align) \
   size = ((size + (align) - 1) / (align)) * (align);
 
-template<int THREADS, int UNROLL, class FUNC, typename T>
+template<int UNROLL, class FUNC, typename T>
 __device__ void ncclBcastKernel(struct CollectiveArgs* args) {
   const int tid = threadIdx.x;
+  const int nthreads = blockDim.x - 1;
   const int bid = args->bid;
   __shared__ T* sharedNextOutput;
   struct ncclComm* comm = args->comm;
@@ -32,7 +33,7 @@ __device__ void ncclBcastKernel(struct CollectiveArgs* args) {
   PostFlag postDoneToPrev(ring->recv.conn.head, 0, NULL, 0);
   PostFlag postReadyToNext(ring->send.conn.tail, 0, ring->send.conn.fifo, BROADCAST_BUFCHUNKS*BROADCAST_SUBSTEPS);
 
-  typedef Primitives<THREADS, UNROLL, BROADCAST_SUBSTEPS, T> Prims;
+  typedef Primitives<UNROLL, BROADCAST_SUBSTEPS, T> Prims;
 
   const ssize_t size = args->N;
   const int buffSize = ring->buffSize / sizeof(T);
@@ -72,13 +73,13 @@ __device__ void ncclBcastKernel(struct CollectiveArgs* args) {
 
   for (ssize_t gridOffset = 0; gridOffset < size; gridOffset += args->nRings*sliceSize) {
     int chunkSize = min(sliceSize, DIVUP(size-gridOffset,args->nRings));
-    ALIGN_SIZE(chunkSize, THREADS*sizeof(uint64_t)/sizeof(T));
+    ALIGN_SIZE(chunkSize, nthreads*sizeof(uint64_t)/sizeof(T));
     ssize_t offset = gridOffset + bid*chunkSize;
     int maxOffset = min(chunkSize, size-offset);
 
     if (rank == root) {
       if (thisInput == thisOutput) {
-        Prims::Copy(
+        Prims::Copy(tid, nthreads,
             thisInput  + offset,
             nextdirect ? (sharedNextOutput + offset) : (nextOutput + boffset),
             sliceSize, maxOffset,
@@ -86,7 +87,7 @@ __device__ void ncclBcastKernel(struct CollectiveArgs* args) {
             waitDoneFromNext,
             postReadyToNext);
       } else {
-        Prims::DoubleCopy(
+        Prims::DoubleCopy(tid, nthreads,
             thisInput  + offset,
             thisOutput + offset,
             nextdirect ? (sharedNextOutput + offset) : (nextOutput + boffset),
@@ -97,7 +98,7 @@ __device__ void ncclBcastKernel(struct CollectiveArgs* args) {
       }
     } else if (nextRank == root) {
       if (prevdirect) maxOffset = 0; // Only wait for signals
-      Prims::Copy(
+      Prims::Copy(tid, nthreads,
           prevInput  + boffset,
           thisOutput + offset,
           sliceSize, maxOffset,
@@ -106,7 +107,7 @@ __device__ void ncclBcastKernel(struct CollectiveArgs* args) {
           postDoneToPrev);
     } else {
       if (prevdirect) {
-        Prims::Copy(
+        Prims::Copy(tid, nthreads,
             thisOutput + offset,
             nextdirect ? (sharedNextOutput + offset) : (nextOutput + boffset),
             sliceSize, maxOffset,
@@ -114,7 +115,7 @@ __device__ void ncclBcastKernel(struct CollectiveArgs* args) {
             waitDoneFromNext, waitReadyFromPrev,
             postReadyToNext, postDoneToPrev);
       } else {
-        Prims::DoubleCopy(
+        Prims::DoubleCopy(tid, nthreads,
             prevInput + boffset,
             thisOutput + offset,
 	    nextdirect ? (sharedNextOutput + offset) : (nextOutput + boffset),
@@ -147,7 +148,7 @@ __device__ void ncclBcastKernel(struct CollectiveArgs* args) {
   flag++; \
   step++;
 
-template<int THREADS, int UNUSED, class FUNC, typename T>
+template<int UNUSED, class FUNC, typename T>
 __device__ void ncclBcastLLKernel(struct CollectiveArgs* args) {
   const int tid = threadIdx.x;
   struct ncclComm* comm = args->comm;
@@ -160,7 +161,7 @@ __device__ void ncclBcastLLKernel(struct CollectiveArgs* args) {
   const int nextRank = ring->devUserRanks[1];
   const int root = args->root;
 
-  typedef LLPrimitives<THREADS, T, FUNC> LL;
+  typedef LLPrimitives<LL_NTHREADS, T, FUNC> LL;
 
   const ssize_t size = args->N;
   const int llBuffSize = LL_BUFF_SIZE / (2*sizeof(uint64_t));
@@ -179,7 +180,7 @@ __device__ void ncclBcastLLKernel(struct CollectiveArgs* args) {
 
   for (ssize_t offset = 0; offset < size; offset += sliceSize) {
     int chunkSize = min(sliceSize, size-offset);
-    ALIGN_SIZE(chunkSize, THREADS*sizeof(uint64_t)/sizeof(T));
+    ALIGN_SIZE(chunkSize, LL_NTHREADS*sizeof(uint64_t)/sizeof(T));
     int maxOffset = min(chunkSize, size-offset);
     if (rank == root) {
       WAIT_NEXT;

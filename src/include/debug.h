@@ -12,11 +12,13 @@
 
 #include <unistd.h>
 #include <sys/syscall.h>
+#include <limits.h>
 #define gettid() (pid_t) syscall(SYS_gettid)
 
 typedef enum {NONE=0, VERSION=1, WARN=2, INFO=3, ABORT=4, TRACE=5} DebugLevel;
 extern DebugLevel ncclDebugLevel;
 extern pthread_mutex_t ncclDebugOutputLock;
+extern FILE *ncclDebugFile;
 extern void getHostName(char* hostname, int maxlen);
 
 #define WARN(...) do {                                           \
@@ -26,10 +28,10 @@ extern void getHostName(char* hostname, int maxlen);
     int cudaDev;                                                 \
     cudaGetDevice(&cudaDev);                                     \
     pthread_mutex_lock(&ncclDebugOutputLock);                    \
-    printf("\n%s:%d:%d [%d] %s:%d WARN ", hostname, getpid(), gettid(), cudaDev, __FILE__, __LINE__); \
-    printf(__VA_ARGS__);                                         \
-    printf("\n");                                                \
-    fflush(stdout);                                              \
+    fprintf(ncclDebugFile,"\n%s:%d:%d [%d] %s:%d WARN ", hostname, getpid(), gettid(), cudaDev, __FILE__, __LINE__); \
+    fprintf(ncclDebugFile,__VA_ARGS__);                          \
+    fprintf(ncclDebugFile,"\n");                                 \
+    fflush(ncclDebugFile);                                       \
     pthread_mutex_unlock(&ncclDebugOutputLock);                  \
     if (ncclDebugLevel == ABORT) abort();                        \
   }                                                              \
@@ -42,8 +44,9 @@ extern void getHostName(char* hostname, int maxlen);
     int cudaDev;                                                 \
     cudaGetDevice(&cudaDev);                                     \
     pthread_mutex_lock(&ncclDebugOutputLock);                    \
-    printf("%s:%d:%d [%d] INFO ", hostname, getpid(), gettid(), cudaDev); printf(__VA_ARGS__); printf("\n"); \
-    fflush(stdout);                                              \
+    fprintf(ncclDebugFile,"%s:%d:%d [%d] INFO ", hostname, getpid(), gettid(), cudaDev); \
+    fprintf(ncclDebugFile,__VA_ARGS__);fprintf(ncclDebugFile,"\n"); \
+    fflush(ncclDebugFile);                                       \
     pthread_mutex_unlock(&ncclDebugOutputLock);                  \
   }                                                              \
 } while(0)
@@ -56,8 +59,9 @@ if (ncclDebugLevel == TRACE) {                                   \
     int cudaDev;                                                 \
     cudaGetDevice(&cudaDev);                                     \
     pthread_mutex_lock(&ncclDebugOutputLock);                    \
-    printf("%s:%d:%d [%d] %s:%d TRACE ", hostname, getpid(), gettid(), cudaDev, __func__, __LINE__); printf(__VA_ARGS__); printf("\n"); \
-    fflush(stdout);                                              \
+    fprintf(ncclDebugFile,"%s:%d:%d [%d] %s:%d TRACE ", hostname, getpid(), gettid(), cudaDev, __func__, __LINE__); \
+    fprintf(ncclDebugFile,__VA_ARGS__);fprintf(ncclDebugFile,"\n"); \
+    fflush(ncclDebugFile);                                       \
     pthread_mutex_unlock(&ncclDebugOutputLock);                  \
   }                                                              \
 } while(0)
@@ -66,7 +70,7 @@ if (ncclDebugLevel == TRACE) {                                   \
 #endif
 
 extern int ncclPrintCRCs;
-extern int ncclChecks;
+extern int ncclCheckPointers;
 
 static void initDebug() {
   const char* nccl_debug = getenv("NCCL_DEBUG");
@@ -84,6 +88,48 @@ static void initDebug() {
     ncclDebugLevel = TRACE;
   }
 
+  /* Parse and expand the NCCL_DEBUG_FILE path and
+   * then create the debug file. But don't bother unless the
+   * NCCL_DEBUG level is > VERSION
+   */
+  const char* nccl_debug_file = getenv("NCCL_DEBUG_FILE");
+  if (ncclDebugLevel > VERSION && nccl_debug_file != NULL) {
+    int c = 0;
+    char debug_fn[PATH_MAX+1] = "";
+    char *dfn = debug_fn;
+    while (nccl_debug_file[c] != '\0' && c < PATH_MAX) {
+      if (nccl_debug_file[c++] != '%') {
+        *dfn++ = nccl_debug_file[c-1];
+        continue;
+      }
+      switch (nccl_debug_file[c++]) {
+        case '%': // Double %
+          *dfn++ = '%';
+          break;
+        case 'h': // %h = hostname
+          char hostname[1024];
+          getHostName(hostname, 1024);
+          dfn += snprintf(dfn, PATH_MAX, "%s", hostname);
+          break;
+        case 'p': // %p = pid
+          dfn += snprintf(dfn, PATH_MAX, "%d", getpid());
+          break;
+        default: // Echo everything we don't understand
+          *dfn++ = '%';
+          *dfn++ = nccl_debug_file[c-1];
+          break;
+      }
+    }
+    *dfn = '\0';
+    if (debug_fn[0] != '\0') {
+      FILE *file = fopen(debug_fn, "w");
+      if (file != NULL) {
+        INFO("DEBUG file is '%s'", debug_fn);
+        ncclDebugFile = file;
+      }
+    }
+  }
+
   const char* nccl_crc = getenv("NCCL_CRC");
   if (nccl_crc != NULL && strcmp(nccl_crc, "PRINT") == 0) {
     ncclPrintCRCs = 1;
@@ -91,11 +137,11 @@ static void initDebug() {
     ncclPrintCRCs = 0;
   }
 
-  const char* nccl_checks_disable = getenv("NCCL_CHECKS_DISABLE");
-  if (nccl_checks_disable && atoi(nccl_checks_disable) > 0) {
-    ncclChecks = 0;
+  const char* nccl_check_pointers = getenv("NCCL_CHECK_POINTERS");
+  if (nccl_check_pointers && atoi(nccl_check_pointers) > 0) {
+    ncclCheckPointers = 1;
   } else {
-    ncclChecks = 1;
+    ncclCheckPointers = 0; // Check pointers is off by default
   }
 
   pthread_mutex_init(&ncclDebugOutputLock, NULL);

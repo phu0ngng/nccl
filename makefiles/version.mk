@@ -1,6 +1,6 @@
 ##### version
 NCCL_MAJOR   := 2
 NCCL_MINOR   := 2
-NCCL_PATCH   := 0
-NCCL_SUFFIX  :=
+NCCL_PATCH   := 10
+NCCL_SUFFIX  := a4
 PKG_REVISION := 1

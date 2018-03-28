@@ -11,7 +11,7 @@
 
 ncclResult_t ncclBroadcastFunc(const void* sendbuff, void* recvbuff, const size_t count,
     ncclDataType_t datatype, ncclRedOp_t op, int root, ncclComm_t comm, cudaStream_t stream) {
-  int nbytes = count*ncclTypeSize(datatype);
+  size_t nbytes = count*ncclTypeSize(datatype);
   if (comm->nRanks == 1) {
     if (sendbuff != recvbuff)
       CUDACHECK(cudaMemcpyAsync(recvbuff, sendbuff, nbytes, cudaMemcpyDeviceToDevice, stream));

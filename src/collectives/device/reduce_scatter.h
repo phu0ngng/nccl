@@ -18,9 +18,10 @@
 #define ALIGN_SIZE(size, align) \
   size = ((size + (align) - 1) / (align)) * (align);
 
-template<int THREADS, int UNROLL, class FUNC, typename T>
+template<int UNROLL, class FUNC, typename T>
 __device__ void ncclReduceScatterKernel(struct CollectiveArgs* args) {
   const int tid = threadIdx.x;
+  const int nthreads = blockDim.x - 1;
   const int bid = args->bid;
   struct ncclComm* comm = args->comm;
   struct ncclRing* ring = comm->rings+blockIdx.x;
@@ -30,7 +31,7 @@ __device__ void ncclReduceScatterKernel(struct CollectiveArgs* args) {
   PostFlag postDoneToPrev(ring->recv.conn.head, REDUCESCATTER_SUBSTEPS, NULL, 0);
   PostFlag postReadyToNext(ring->send.conn.tail, 0, ring->send.conn.fifo, REDUCESCATTER_BUFCHUNKS*REDUCESCATTER_SUBSTEPS);
 
-  typedef Primitives<THREADS, UNROLL, REDUCESCATTER_SUBSTEPS, T, FUNC> Prims;
+  typedef Primitives<UNROLL, REDUCESCATTER_SUBSTEPS, T, FUNC> Prims;
 
   const ssize_t size = args->N;
   const int nranks = comm->nRanks;
@@ -57,7 +58,7 @@ __device__ void ncclReduceScatterKernel(struct CollectiveArgs* args) {
 
   for (ssize_t gridOffset = 0; gridOffset < size; gridOffset += args->nRings*sliceSize) {
     int chunkSize = min(sliceSize, DIVUP(size-gridOffset,args->nRings));
-    ALIGN_SIZE(chunkSize, THREADS*sizeof(uint64_t)/sizeof(T));
+    ALIGN_SIZE(chunkSize, nthreads*sizeof(uint64_t)/sizeof(T));
     ssize_t chunkOffset = gridOffset + bid*chunkSize;
 
     /////////////// begin ReduceScatter steps ///////////////
@@ -69,7 +70,7 @@ __device__ void ncclReduceScatterKernel(struct CollectiveArgs* args) {
     rankDest = ring->devUserRanks[nranks-1];
     offset = chunkOffset + rankDest * size;
 
-    Prims::Copy(
+    Prims::Copy(tid, nthreads,
         thisInput  + offset,
         nextOutput + noffset,
         sliceSize, maxOffset,
@@ -84,7 +85,7 @@ __device__ void ncclReduceScatterKernel(struct CollectiveArgs* args) {
       rankDest = ring->devUserRanks[nranks-j];
       offset = chunkOffset + rankDest * size;
 
-      Prims::Reduce(
+      Prims::Reduce(tid, nthreads,
           prevInput  + poffset,
           thisInput  + offset,
           nextOutput + noffset,
@@ -101,7 +102,7 @@ __device__ void ncclReduceScatterKernel(struct CollectiveArgs* args) {
     rankDest = ring->devUserRanks[0];
     offset = chunkOffset + rankDest * size;
 
-    Prims::Reduce(
+    Prims::Reduce(tid, nthreads,
         prevInput  + poffset,
         thisInput  + offset,
         thisOutput + chunkOffset,
@@ -130,7 +131,7 @@ __device__ void ncclReduceScatterKernel(struct CollectiveArgs* args) {
   nflag++; \
   step++;
 
-template<int THREADS, int UNUSED, class FUNC, typename T>
+template<int UNUSED, class FUNC, typename T>
 __device__ void ncclReduceScatterLLKernel(struct CollectiveArgs* args) {
   const int tid = threadIdx.x;
   struct ncclComm* comm = args->comm;
@@ -140,7 +141,7 @@ __device__ void ncclReduceScatterLLKernel(struct CollectiveArgs* args) {
   volatile int * sizesFifo = ring->send.conn.llFifo;
   uint64_t sendHead = sendHeadPtr[0];
 
-  typedef LLPrimitives<THREADS, T, FUNC> LL;
+  typedef LLPrimitives<LL_NTHREADS, T, FUNC> LL;
 
   const ssize_t size = args->N;
   //const int rank = comm->rank;

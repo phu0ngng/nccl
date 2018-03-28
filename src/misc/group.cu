@@ -20,7 +20,7 @@ bool ncclAsyncMode() {
 }
 
 ncclResult_t ncclAsyncErrCheck(ncclResult_t ret) {
-  if (ncclGroupError == ncclSuccess) ncclGroupError = ret;
+  if (ncclGroupError == ncclSuccess || ret != ncclSuccess) ncclGroupError = ret;
   return ret;
 }
 
@@ -72,9 +72,9 @@ void* ncclAsyncThreadMain(void* args_) {
 }
 
 ncclResult_t ncclAsyncInit(ncclInitFunc_t func, int cudaDev, ncclComm_t* newcomm, int ndev, ncclUniqueId commId, int myrank) {
-  if (ncclGroupIndex == MAX_ASYNC_OPS) {
+  if (ncclGroupIndex >= MAX_ASYNC_OPS) {
     WARN("Too many async operations in progress, max is %d", MAX_ASYNC_OPS);
-    return ncclInternalError;
+    return ncclAsyncErrCheck(ncclInternalError);
   }
   int index = ncclGroupIndex++;
   struct ncclAsyncArgs* args = ncclGroupArgs+index;
@@ -96,9 +96,9 @@ ncclResult_t ncclAsyncColl(ncclComm_t comm) {
     if (args->coll.comm == comm) return ncclSuccess;
     args++; 
   }
-  if (ncclGroupIndex == MAX_ASYNC_OPS) {
+  if (ncclGroupIndex >= MAX_ASYNC_OPS) {
     WARN("Too many async operations in progress, max is %d", MAX_ASYNC_OPS);
-    return ncclInternalError;
+    return ncclAsyncErrCheck(ncclInternalError);
   }
   ncclGroupIndex++;
   args->funcType = ASYNC_FUNC_COLL;
@@ -120,40 +120,80 @@ ncclResult_t ncclGroupEnd() {
   CUDACHECK(cudaGetDevice(&savedDev));
   int done = ncclGroupIndex;
   int doneArray[ncclGroupIndex];
+  for (int i=0; i<ncclGroupIndex; i++) doneArray[i] = 0;
 
   ncclResult_t ret = ncclGroupError;
-  if (ret != ncclSuccess) goto end;
+  if (ret != ncclSuccess) goto group_cleanup;
 
+  /* Collectives are done in three steps :
+   * 1. Barrier Check In. Only the last call may call cudaLaunchKernel[cooperative]
+   * 2. Barrier Wait. No CUDA call is permitted
+   * 3. Enqueue Events. CUDA event wait/enqueue.
+   * This is needed because step 2 cannot call any CUDA primitive, otherwise if
+   * cudaFree happens between 1 and 3, it could block that CUDA call and
+   * prevent some ranks from launching their network threads, which would
+   * prevent the NCCL call from completing, blocking the cudaFree call.
+   */
   for (int i=0; i<ncclGroupIndex; i++) {
     struct ncclAsyncArgs* args = ncclGroupArgs+i;
     if (args->funcType == ASYNC_FUNC_COLL) {
       if (args->coll.comm->userStream == NULL)
-        CUDACHECK(cudaSetDevice(args->coll.comm->cudaDev));
-      NCCLCHECK(ncclCpuBarrierCheckin(args->coll.comm));
+        CUDACHECKGOTO(cudaSetDevice(args->coll.comm->cudaDev), ret, end);
+      NCCLCHECKGOTO(ncclCpuBarrierCheckin(args->coll.comm), ret, end);
     }
   }
-
-  for (int i=0; i<ncclGroupIndex; i++) doneArray[i] = 0;
-  while (done) {
-    for (int i=0; i<ncclGroupIndex; i++) {
-      struct ncclAsyncArgs* args = ncclGroupArgs+i;
-      if (doneArray[i] == 1) continue;
-      if (args->funcType == ASYNC_FUNC_INIT) {
-        int err = pthread_tryjoin_np(ncclGroupThreads[i], NULL);
-        if (err == EBUSY) continue;
-        if (err != 0) return ncclSystemError;
-      } else { // ASYNC_FUNC_COLL
-        CUDACHECK(cudaSetDevice(args->coll.comm->cudaDev));
-        NCCLCHECK(ncclCpuBarrierWait(args->coll.comm));
-      }
-      if (args->ret != ncclSuccess) { ret = args->ret; goto end; }
+  for (int i=0; i<ncclGroupIndex; i++) {
+    struct ncclAsyncArgs* args = ncclGroupArgs+i;
+    if (args->funcType == ASYNC_FUNC_COLL) {
+      CUDACHECKGOTO(cudaSetDevice(args->coll.comm->cudaDev), ret, end);
+      NCCLCHECKGOTO(ncclCpuBarrierWait(args->coll.comm), ret, end);
+    }
+  }
+  for (int i=0; i<ncclGroupIndex; i++) {
+    struct ncclAsyncArgs* args = ncclGroupArgs+i;
+    if (args->funcType == ASYNC_FUNC_COLL) {
+      if (args->coll.comm->userStream == NULL)
+        CUDACHECKGOTO(cudaSetDevice(args->coll.comm->cudaDev), ret, end);
+      NCCLCHECKGOTO(ncclEnqueueEvents(args->coll.comm), ret, end);
       doneArray[i] = 1;
       done--;
     }
   }
+
+  /* For init, since we use threads, we just wait for threads to complete */
+  while (done) {
+    for (int i=0; i<ncclGroupIndex; i++) {
+      struct ncclAsyncArgs* args = ncclGroupArgs+i;
+      if (args->funcType == ASYNC_FUNC_INIT && doneArray[i] == 0) {
+        int err = pthread_tryjoin_np(ncclGroupThreads[i], NULL);
+        if (err == EBUSY) continue;
+        if (err != 0) { ret = ncclSystemError; goto end; }
+        if (args->ret != ncclSuccess) { ret = args->ret; goto end; }
+        doneArray[i] = 1;
+        done--;
+      }
+    }
+  }
+  goto end;
+group_cleanup:
+  // At least one call in the group failed. Since we want to make that group
+  // an atomic operation, we need to cancel all operations.
+  for (int i=0; i<ncclGroupIndex; i++) {
+    struct ncclComm* comm = ncclGroupArgs[i].coll.comm;
+    for (int r=0; r<comm->nRings; r++) {
+      struct ncclRing* ring = comm->rings+r;
+      for (int i=0; i<ring->collCount; i++) {
+        ring->collectives[(ring->collStart + i)%NCCL_MAX_OPS].active = 0;
+      }
+      ring->collFifoTail = ring->collStart;
+      ring->collCount = 0;
+    }
+    comm->myParams->gridDim.x = comm->myParams->blockDim.x = 0;
+    comm->userStreamSet = false;
+  }
 end:
-  CUDACHECK(cudaSetDevice(savedDev));
   ncclGroupError = ncclSuccess;
   ncclGroupIndex = 0;
+  CUDACHECK(cudaSetDevice(savedDev)); // do other clean-ups first before calling cudaSetDevice, because this call can fail too
   return ret;
 }

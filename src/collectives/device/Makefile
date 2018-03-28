@@ -10,9 +10,9 @@ LIBOBJ     := $(patsubst %.cu,$(OBJDIR)/%_sum.o, $(LIBSRCFILES)) \
               $(patsubst %.cu,$(OBJDIR)/%_prod.o, $(LIBSRCFILES)) \
               $(patsubst %.cu,$(OBJDIR)/%_min.o, $(LIBSRCFILES)) \
               $(patsubst %.cu,$(OBJDIR)/%_max.o, $(LIBSRCFILES)) \
-              $(OBJDIR)/multiop.o
+              $(OBJDIR)/functions.o
 
-LIBSRCFILES += multiop.cu
+LIBSRCFILES += functions.cu
 
 DEPFILES   := $(patsubst %.cu, $(OBJDIR)/%.d, $(LIBSRCFILES))
 STATICLIB  := $(OBJDIR)/colldevice.a
@@ -42,8 +42,8 @@ $(OBJDIR)/%.dep : %.cu
 	@rm -f $@.tmp
 	@cp $@ $(@:.dep=.d)
 
-# Compiled kernels and collectives with reloctable device code ...
-$(OBJDIR)/multiop.o : multiop.cu $(OBJDIR)/multiop.dep
+# Compiled kernels and collectives with relocatable device code ...
+$(OBJDIR)/functions.o : functions.cu $(OBJDIR)/functions.dep
 	@printf "Compiling  %-35s > %s\n" $< $@
 	mkdir -p `dirname $@`
 	$(NVCC) $(NVCUFLAGS) -dc $< -o $@

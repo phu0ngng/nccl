@@ -129,7 +129,7 @@ ncclResult_t p2pCanConnect(int* ret, ncclTinfo_t* myOpaqueInfo, ncclTinfo_t* pee
           ncclResult_t err1 = getCudaPath(myInfo->cudaDev, &myPath);
           ncclResult_t err2 = getCudaPath(peerInfo->cudaDev, &peerPath);
           if (err1 == ncclSuccess && err2 == ncclSuccess) {
-            p2p += PATH_SOC - pciDistance(myPath, peerPath);
+            p2p = PATH_SOC - pciDistance(myPath, peerPath);
             if (err1 == ncclSuccess) free(myPath);
             if (err2 == ncclSuccess) free(peerPath);
           }

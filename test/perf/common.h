@@ -17,7 +17,10 @@
 #define CUDACHECK(cmd) do {                         \
   cudaError_t e = cmd;                              \
   if( e != cudaSuccess ) {                          \
-    printf("Cuda failure %s:%d '%s'\n",             \
+    char hostname[1024];                            \
+    getHostName(hostname, 1024);                    \
+    printf("%s: Cuda failure %s:%d '%s'\n",         \
+         hostname,                                  \
         __FILE__,__LINE__,cudaGetErrorString(e));   \
     exit(EXIT_FAILURE);                             \
   }                                                 \
@@ -26,7 +29,10 @@
 #define NCCLCHECK(cmd) do {                         \
   ncclResult_t r = cmd;                             \
   if (r!= ncclSuccess) {                            \
-    printf("NCCL failure %s:%d '%s'\n",             \
+    char hostname[1024];                            \
+    getHostName(hostname, 1024);                    \
+    printf("%s: NCCL failure %s:%d '%s'\n",         \
+         hostname,                                  \
         __FILE__,__LINE__,ncclGetErrorString(r));   \
     exit(EXIT_FAILURE);                             \
   }                                                 \
@@ -72,6 +78,8 @@ struct threadArgs_t {
   int* errors;
   double* bw;
   int* bw_count;
+
+  int compThreadStop;
 };
 
 #include <chrono>

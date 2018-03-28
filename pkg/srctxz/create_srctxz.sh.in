@@ -5,6 +5,16 @@
 cd ..
 NCCLDIR=`basename $PWD`
 
+echo "Checking for unclean directory ..."
+git clean -x -i
+echo "Clean done."
+echo "Checking for uncommited files ..."
+if [ "`git status -s | wc -l`" != "0" ]; then
+  git status -s
+  echo "Some changes are not committed yet. Continue ? (Ctrl-C to abort)"
+  read
+fi
+
 cd ..
 NCCL_MAJOR=${nccl:Major}
 NCCL_MINOR=${nccl:Minor}

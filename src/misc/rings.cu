@@ -151,8 +151,8 @@ ncclResult_t getEnvThreads(int* nthreads) {
   char* str = getenv("NCCL_NTHREADS");
   if (str && strlen(str) > 0) {
     int nt = atoi(str);
-    if (nt != 128 && nt != 256 && nt != 512) {
-      WARN("User-defined number of threads can only be 128, 256 or 512. Ignoring.");
+    if (nt != 64 && nt != 128 && nt != 256) {
+      WARN("User-defined number of threads can only be 64, 128 or 256. Ignoring.");
     } else {
       *nthreads = nt;
     }
@@ -179,17 +179,23 @@ ncclResult_t ncclGetRings(int* nrings, int* nthreads, int rank, int nranks, int*
   }
 
   // Compute hierarchical topology groups, indexes, and rank<->index tables
-  int coords[nranks*NTRANSPORTS];
-  int globalIdxToRank[nranks];
-  int globalRankToIdx[nranks];
+  int* coords = (int*)malloc(sizeof(int)*nranks*NTRANSPORTS);
+  int* globalIdxToRank = (int*)malloc(sizeof(int)*nranks);
+  int* globalRankToIdx = (int*)malloc(sizeof(int)*nranks);
   for (int i=0; i<nranks*NTRANSPORTS; i++) coords[i] = -1;
   NCCLCHECK(fillCoords(nranks, transports, coords, globalRankToIdx, globalIdxToRank));
 
   // Start with a high score, then decrease until we find rings
   int minScore = NCCL_MAX_SCORE;
   int nringsTmp;
-  int prevTmp[nranks*MAXRINGS];
-  int nextTmp[nranks*MAXRINGS];
+  int* prevTmp = (int*)malloc(sizeof(int)*nranks*MAXRINGS);
+  int* nextTmp = (int*)malloc(sizeof(int)*nranks*MAXRINGS);
+
+  int* idxToRank = (int*)malloc(sizeof(int)*nranks);
+  int* rankToIdx = (int*)malloc(sizeof(int)*nranks);
+  int* groups = (int*)malloc(sizeof(int)*nranks);
+  int* subgroups = (int*)malloc(sizeof(int)*nranks);
+
   int nThreads;
   do {
     nThreads = *nthreads;
@@ -197,10 +203,6 @@ ncclResult_t ncclGetRings(int* nrings, int* nthreads, int rank, int nranks, int*
     nringsTmp = MAXRINGS;
     // Loop over transports to connect groups
     for (int t=NTRANSPORTS-1; t>=0; t--) {
-      int idxToRank[nranks];
-      int rankToIdx[nranks];
-      int groups[nranks];
-      int subgroups[nranks];
       for (int i=0; i<nranks; i++) idxToRank[i] = rankToIdx[i] = -1;
       
       int nidx = 0;
@@ -221,9 +223,11 @@ ncclResult_t ncclGetRings(int* nrings, int* nthreads, int rank, int nranks, int*
  
       int ngroups = groups[nidx-1] + 1; // Coords should be ordered
 
+      int* subvalues = (int*)malloc(sizeof(int)*nidx*nidx);
+      int* subprev = (int*)malloc(sizeof(int)*nidx*nringsTmp);
+      int* subnext = (int*)malloc(sizeof(int)*nidx*nringsTmp);
       if (ngroups > 1) {
         /* Extract subvalues */
-        int subvalues[nidx*nidx];
         for (int i=0; i<nidx; i++) {
           for (int j=0; j<nidx; j++) {
             if (transports[idxToRank[i]*nranks+idxToRank[j]] == t)
@@ -233,8 +237,6 @@ ncclResult_t ncclGetRings(int* nrings, int* nthreads, int rank, int nranks, int*
           }
         }
         /* Extract subprev/subnext */
-        int subprev[nidx*nringsTmp];
-        int subnext[nidx*nringsTmp];
         for (int i=0; i<nidx*nringsTmp; i++) {
           subprev[i] = subnext[i] = -1;
         }
@@ -259,11 +261,14 @@ ncclResult_t ncclGetRings(int* nrings, int* nthreads, int rank, int nranks, int*
             if ((nextTmp[r*nranks+idxToRank[i]] == -1) && (subnext[r*nidx+i] != -1)) nextTmp[r*nranks+idxToRank[i]] = idxToRank[subnext[r*nidx+i]];
           }
         }
-        for (int r=0; r<nringsTmp; r++) {
+        //for (int r=0; r<nringsTmp; r++) {
         //printf("[%d] [%d] [%d] [%d] Prev ", rank, minScore, t, r); for (int i=0; i<nranks; i++) printf("%d ", prevTmp[r*nranks+i]); printf("\n");
         //printf("[%d] [%d] [%d] [%d] Next ", rank, minScore, t, r); for (int i=0; i<nranks; i++) printf("%d ", nextTmp[r*nranks+i]); printf("\n");
-        }
+        //}
       }
+      free(subvalues);
+      free(subprev);
+      free(subnext);
     }
     minScore--;
     if (nringsTmp > *nrings) {
@@ -274,6 +279,16 @@ ncclResult_t ncclGetRings(int* nrings, int* nthreads, int rank, int nranks, int*
       }
     }
   } while (nringsTmp == 0 && minScore);
+
+  free(coords);
+  free(globalRankToIdx);
+  free(globalIdxToRank);
+  free(prevTmp);
+  free(nextTmp);
+  free(idxToRank);
+  free(rankToIdx);
+  free(groups);
+  free(subgroups);
 
   *nthreads = nThreads;
 
@@ -286,21 +301,32 @@ ncclResult_t ncclGetRings(int* nrings, int* nthreads, int rank, int nranks, int*
 
   str = getenv("NCCL_MAX_NRINGS");
   int maxNrings = str ? atoi(str) : 0;
-  if (maxNrings > 0 && maxNrings < *nrings) {
-    if (rank == 0) INFO("Limiting to %d rings per user request.", maxNrings);
-    *nrings = maxNrings;
-  }
   str = getenv("NCCL_MIN_NRINGS");
   int minNrings = str ? atoi(str) : 0;
-  if (minNrings > 0  && minNrings > *nrings) {
-    if (rank == 0) INFO("Duplicating rings to %d per user request.", minNrings);
-    for (int r=*nrings; r<MAXRINGS && r <minNrings; r++) {
-      for (int i=0; i<nranks; i++) {
-        prev[r*nranks+i] = prev[(r-*nrings)*nranks+i];
-        next[r*nranks+i] = next[(r-*nrings)*nranks+i];
+  if (maxNrings > 0 && minNrings > maxNrings) {
+    if (rank == 0) WARN("NCCL_MIN_NRINGS set to a value greater than NCCL_MAX_NRINGS, ignoring NCCL_MIN_NRINGS");
+    minNrings = 0;
+  }
+  if (minNrings > MAXRINGS) {
+    if (rank == 0) WARN("NCCL_MIN_NRINGS set to a value greater than the maximum number of rings supported (%d), limiting it to %d", MAXRINGS, MAXRINGS);
+    minNrings = MAXRINGS;
+  }
+  if (maxNrings > 0 && maxNrings <= *nrings) {
+    if (rank == 0) INFO("Limiting to %d rings per user request.", maxNrings);
+    *nrings = maxNrings;
+  } else {
+    int defaultMinNrings = ncclCudaCompCap() == 3 ? 2 : 1;
+    if (minNrings < defaultMinNrings) minNrings = defaultMinNrings;
+    if (minNrings > 0 && minNrings > *nrings) {
+      if (rank == 0 && minNrings > defaultMinNrings) INFO("Duplicating rings to %d per user request.", minNrings);
+      for (int r=*nrings; r<MAXRINGS && r <minNrings; r++) {
+        for (int i=0; i<nranks; i++) {
+          prev[r*nranks+i] = prev[(r-*nrings)*nranks+i];
+          next[r*nranks+i] = next[(r-*nrings)*nranks+i];
+        }
       }
+      *nrings = minNrings;
     }
-    *nrings = min(MAXRINGS, minNrings);
   }
 
   NCCLCHECK(getEnvThreads(nthreads));

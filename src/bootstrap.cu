@@ -12,14 +12,41 @@
 #include <unistd.h>
 #include <sys/types.h>
 
-#define NETCHECKJUMP(call, out) do { \
-  int res = call; \
-  if (res != 0) { \
+#define NCCLCHECKJUMP(call, out) do { \
+  ncclResult_t res = call; \
+  if (res != ncclSuccess) { \
     /* Print the back trace*/ \
     INFO("%s:%d -> %d [bthread]", __FILE__, __LINE__, res); \
     goto out; \
   } \
 } while (0);
+
+// Always use pure sockets for bootstrap
+ncclNet_t* ncclBootstrapNet = &ncclNetSocket;
+
+static ncclResult_t bootstrapListen(int dev, void* handle, void** listenComm) { NETCHECK(ncclBootstrapNet->listen(dev, handle, listenComm)); return ncclSuccess; }
+static ncclResult_t bootstrapConnect(int dev, void* handle, void** sendComm) { NETCHECK(ncclBootstrapNet->connect(dev, handle, sendComm)); return ncclSuccess; }
+static ncclResult_t bootstrapAccept(void* listenComm, void** recvComm) { NETCHECK(ncclBootstrapNet->accept(listenComm, recvComm)); return ncclSuccess; }
+static ncclResult_t bootstrapTest(void* request, int* done, int* size) { NETCHECK(ncclBootstrapNet->test(request, done, size)); return ncclSuccess; }
+static ncclResult_t bootstrapCloseSend(void* sendComm) { NETCHECK(ncclBootstrapNet->closeSend(sendComm)); return ncclSuccess; }
+static ncclResult_t bootstrapCloseRecv(void* recvComm) { NETCHECK(ncclBootstrapNet->closeRecv(recvComm)); return ncclSuccess; }
+static ncclResult_t bootstrapCloseListen(void* listenComm) { NETCHECK(ncclBootstrapNet->closeListen(listenComm)); return ncclSuccess; }
+
+// Additional sync functions based on async + test for bootstrap, using host ptrs.
+static ncclResult_t bootstrapSend(void* sendComm, void* data, int size) {
+  void* request;
+  NETCHECK(ncclBootstrapNet->isend(sendComm, data, size, NCCL_PTR_HOST, &request));
+  int done = 0;
+  while (!done) NCCLCHECK(bootstrapTest(request, &done, NULL));
+  return ncclSuccess;
+}
+static ncclResult_t bootstrapRecv(void* recvComm, void* data, int size) {
+  void* request;
+  NETCHECK(ncclBootstrapNet->irecv(recvComm, data, size, NCCL_PTR_HOST, &request));
+  int done = 0;
+  while (!done) NCCLCHECK(bootstrapTest(request, &done, NULL));
+  return ncclSuccess;
+}
 
 struct extId {
   ncclNetHandle_t extHandle;
@@ -46,6 +73,17 @@ enum {
   BOOTSTRAP_RINGEXCHANGE,
 };
 
+#include <sys/time.h>
+#include <sys/resource.h>
+
+static ncclResult_t setFilesLimit() {
+  struct rlimit filesLimit;
+  SYSCHECK(getrlimit(RLIMIT_NOFILE, &filesLimit), "getrlimit");
+  filesLimit.rlim_cur = filesLimit.rlim_max;
+  SYSCHECK(setrlimit(RLIMIT_NOFILE, &filesLimit), "setrlimit");
+  return ncclSuccess;
+}
+
 static void *bootstrapRoot(void* commId) {
   struct extInfo info;
   struct extId* id = (struct extId*)commId;
@@ -55,16 +93,21 @@ static void *bootstrapRoot(void* commId) {
   int size, alloc_size = 0; 
   char* data = NULL;
   bool idFromEnv = id->pid < 0;
+  setFilesLimit();
 
   /* Receive addresses from all ranks */
   int nranks = 0, c = 0;
   do {
       void* tmpRecvComm;
-      NETCHECKJUMP(ncclNetSocket.accept(id->extListenComm, &tmpRecvComm), out);
-      NETCHECKJUMP(ncclNetSocket.recv(tmpRecvComm, &info, sizeof(info)), out);
+      NCCLCHECKJUMP(bootstrapAccept(id->extListenComm, &tmpRecvComm), out);
+      NCCLCHECKJUMP(bootstrapRecv(tmpRecvComm, &info, sizeof(info)), out);
       if (!c) { 
           extSendComm = (void**)calloc(info.nranks, sizeof(void*));
           extRecvComm = (void**)calloc(info.nranks, sizeof(void*));
+          if (extSendComm == NULL || extRecvComm == NULL) {
+            WARN("Bootstrap thread : failed to allocate memory");
+            goto out;
+          }
           nranks = info.nranks;
       }
 
@@ -74,12 +117,12 @@ static void *bootstrapRoot(void* commId) {
       }
 
       extRecvComm[info.rank] = tmpRecvComm;
-      NETCHECKJUMP(ncclNetSocket.connect(idFromEnv ? findSubnetIf : defaultIf, info.extHandle, extSendComm+info.rank), out);
+      NCCLCHECKJUMP(bootstrapConnect(idFromEnv ? findSubnetIf : defaultIf, info.extHandle, extSendComm+info.rank), out);
       c++;
   } while (c < nranks);
 
   do {
-      NETCHECKJUMP(ncclNetSocket.recv(extRecvComm[0], &bop, sizeof(struct bootstrapOp)), out);
+      NCCLCHECKJUMP(bootstrapRecv(extRecvComm[0], &bop, sizeof(struct bootstrapOp)), out);
       if (bop.size == -1) { 
           break;
       } else { 
@@ -87,31 +130,35 @@ static void *bootstrapRoot(void* commId) {
 	  if (size*nranks*2 > alloc_size) { 
 	      if (data) free(data);
 	      data = (char *)malloc(size*nranks*2);
+              if (data == NULL) {
+                WARN("Bootstrap thread : failed to allocate memory");
+                goto out;
+              }
 	      alloc_size = size*nranks*2;
 	  }
       }
 
       if (bop.op == BOOTSTRAP_ALLGATHER) {  
           for (int r=0; r<nranks; r++) {
-              NETCHECKJUMP(ncclNetSocket.recv(extRecvComm[r], data+size*r, size), out);
+              NCCLCHECKJUMP(bootstrapRecv(extRecvComm[r], data+size*r, size), out);
           }
 
           for (int r=0; r<nranks; r++) {
-              NETCHECKJUMP(ncclNetSocket.send(extSendComm[r], data, size*nranks), out);
+              NCCLCHECKJUMP(bootstrapSend(extSendComm[r], data, size*nranks), out);
           }
       } else if (bop.op == BOOTSTRAP_RINGEXCHANGE) {
 	  // Receive from all and build total table
           for (int r=0; r<nranks; r++) {
-              NETCHECKJUMP(ncclNetSocket.recv(extRecvComm[r], data+r*2*size, 2*size), out);
+              NCCLCHECKJUMP(bootstrapRecv(extRecvComm[r], data+r*2*size, 2*size), out);
           }
         
           // Get prev/next request from everyone and answer.
           for (int r=0; r<nranks; r++) {
               int offset;
-              NETCHECKJUMP(ncclNetSocket.recv(extRecvComm[r], &offset, sizeof(int)), out);
-              NETCHECKJUMP(ncclNetSocket.send(extSendComm[r], data+offset, size), out);
-              NETCHECKJUMP(ncclNetSocket.recv(extRecvComm[r], &offset, sizeof(int)), out);
-              NETCHECKJUMP(ncclNetSocket.send(extSendComm[r], data+offset, size), out);
+              NCCLCHECKJUMP(bootstrapRecv(extRecvComm[r], &offset, sizeof(int)), out);
+              NCCLCHECKJUMP(bootstrapSend(extSendComm[r], data+offset, size), out);
+              NCCLCHECKJUMP(bootstrapRecv(extRecvComm[r], &offset, sizeof(int)), out);
+              NCCLCHECKJUMP(bootstrapSend(extSendComm[r], data+offset, size), out);
           }
       } else {
 	  WARN("Bootstrap Root : invalid op type received %d\n", bop.op);
@@ -120,12 +167,13 @@ static void *bootstrapRoot(void* commId) {
   } while (1);
 
 out:
-  ncclNetSocket.closeListen(id->extListenComm);
+  bootstrapCloseListen(id->extListenComm);
   for (int r=0; r<nranks; r++) {
-      if (extSendComm[r]) ncclNetSocket.closeSend(extSendComm[r]);
-      if (extRecvComm[r]) ncclNetSocket.closeRecv(extRecvComm[r]);
+      if (extSendComm[r]) bootstrapCloseSend(extSendComm[r]);
+      if (extRecvComm[r]) bootstrapCloseRecv(extRecvComm[r]);
   }
   free(commId);
+  if (data) free(data);
   if (extSendComm) free(extSendComm);
   if (extRecvComm) free(extRecvComm);
   return NULL;
@@ -154,9 +202,9 @@ ncclResult_t bootstrapGetUniqueId(ncclUniqueId* out) {
   // if handle is preset, just listen on that handle, no need to specify an interface
   bool isRoot = false;
   if (env) {
-    isRoot = ncclNetSocket.listen(dontCareIf, &id->extHandle, &id->extListenComm) == 0;
+    isRoot = ncclBootstrapNet->listen(dontCareIf, &id->extHandle, &id->extListenComm) == ncclSuccess;
   } else {
-    NETCHECK(ncclNetSocket.listen(defaultIf, &id->extHandle, &id->extListenComm));
+    NCCLCHECK(bootstrapListen(defaultIf, &id->extHandle, &id->extListenComm));
     isRoot = true;
   }
 
@@ -194,11 +242,11 @@ ncclResult_t bootstrapInit(ncclUniqueId* commId, int rank, int nranks, void** co
   }
   // listen will return the local address via info (specify interface type 'findSubnetIf')
   int dev = idFromEnv ? findSubnetIf : defaultIf;
-  NETCHECK(ncclNetSocket.listen(dev, &info.extHandle, &tmpListenComm));
-  NETCHECK(ncclNetSocket.connect(dev, id->extHandle, &state->extSendComm));
-  NETCHECK(ncclNetSocket.send(state->extSendComm, &info, sizeof(info)));
-  NETCHECK(ncclNetSocket.accept(tmpListenComm, &state->extRecvComm));
-  NETCHECK(ncclNetSocket.closeListen(tmpListenComm));
+  NCCLCHECK(bootstrapListen(dev, &info.extHandle, &tmpListenComm));
+  NCCLCHECK(bootstrapConnect(dev, id->extHandle, &state->extSendComm));
+  NCCLCHECK(bootstrapSend(state->extSendComm, &info, sizeof(info)));
+  NCCLCHECK(bootstrapAccept(tmpListenComm, &state->extRecvComm));
+  NCCLCHECK(bootstrapCloseListen(tmpListenComm));
 
   return ncclSuccess;
 }
@@ -212,11 +260,11 @@ ncclResult_t bootstrapAllGather(void* commState, void* allData, int size) {
   bop.size = size;
 
   if (!state->rank) { 
-      NETCHECK(ncclNetSocket.send(state->extSendComm, &bop, sizeof(struct bootstrapOp)));
+      NCCLCHECK(bootstrapSend(state->extSendComm, &bop, sizeof(struct bootstrapOp)));
   } 
 
-  NETCHECK(ncclNetSocket.send(state->extSendComm, data+state->rank*size, size));
-  NETCHECK(ncclNetSocket.recv(state->extRecvComm, data, size*state->nranks));
+  NCCLCHECK(bootstrapSend(state->extSendComm, data+state->rank*size, size));
+  NCCLCHECK(bootstrapRecv(state->extRecvComm, data, size*state->nranks));
 
   return ncclSuccess;
 }
@@ -231,17 +279,17 @@ ncclResult_t bootstrapRingExchange(void* commState, void* prevNextData, int prev
   bop.size = size;
 
   if (!state->rank) {
-      NETCHECK(ncclNetSocket.send(state->extSendComm, &bop, sizeof(struct bootstrapOp))); 
+      NCCLCHECK(bootstrapSend(state->extSendComm, &bop, sizeof(struct bootstrapOp))); 
   }
 
   // Send data to root
-  NETCHECK(ncclNetSocket.send(state->extSendComm, mydata, 2*size));
+  NCCLCHECK(bootstrapSend(state->extSendComm, mydata, 2*size));
 
   // Receive prev and next data
-  NETCHECK(ncclNetSocket.send(state->extSendComm, &prev_offset, sizeof(int)));
-  NETCHECK(ncclNetSocket.recv(state->extRecvComm, mydata, size));
-  NETCHECK(ncclNetSocket.send(state->extSendComm, &next_offset, sizeof(int)));
-  NETCHECK(ncclNetSocket.recv(state->extRecvComm, mydata+size, size));
+  NCCLCHECK(bootstrapSend(state->extSendComm, &prev_offset, sizeof(int)));
+  NCCLCHECK(bootstrapRecv(state->extRecvComm, mydata, size));
+  NCCLCHECK(bootstrapSend(state->extSendComm, &next_offset, sizeof(int)));
+  NCCLCHECK(bootstrapRecv(state->extRecvComm, mydata+size, size));
 
 
   return ncclSuccess;
@@ -253,11 +301,11 @@ ncclResult_t bootstrapClose(void* commState) {
   bop.size = -1;
 
   if (!state->rank) { 
-      NETCHECK(ncclNetSocket.send(state->extSendComm, &bop, sizeof(struct bootstrapOp)));
+      NCCLCHECK(bootstrapSend(state->extSendComm, &bop, sizeof(struct bootstrapOp)));
   } 
 
-  NETCHECK(ncclNetSocket.closeSend(state->extSendComm));
-  NETCHECK(ncclNetSocket.closeRecv(state->extRecvComm));
+  NCCLCHECK(bootstrapCloseSend(state->extSendComm));
+  NCCLCHECK(bootstrapCloseRecv(state->extRecvComm));
 
   free(state);
 

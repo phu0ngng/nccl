@@ -45,8 +45,23 @@ struct userIbDev {
 #define MAX_IB_DEVS 16
 struct ncclIbDev ncclIbDevs[MAX_IB_DEVS];
 struct userIbDev userIbDevs[MAX_IB_DEVS];
-int ncclIbTimeout = 14;
 pthread_mutex_t ncclIbLock = PTHREAD_MUTEX_INITIALIZER;
+
+#define NCCL_IB_PARAM(name, env, default_value) \
+int ncclIb##name() { \
+  static int value = -1; \
+  if (value == -1) { \
+    char* str = getenv("NCCL_IB_" env); \
+    value = str ? atoi(str) : default_value; \
+  } \
+  return value; \
+}
+
+NCCL_IB_PARAM(GidIndex, "GID_INDEX", 0);
+NCCL_IB_PARAM(Timeout, "TIMEOUT", 14);
+NCCL_IB_PARAM(RetryCnt, "RETRY_CNT", 7);
+NCCL_IB_PARAM(Sl, "SL", 0);
+NCCL_IB_PARAM(Tc, "TC", 0);
 
 pthread_t ncclIbAsyncThread;
 static void* ncclIbAsyncThreadMain(void* args) {
@@ -131,9 +146,6 @@ static void initDevices() {
       }
       if (nIbDevs && (ncclSuccess != wrap_ibv_free_device_list(devices))) { return; };
     }
-
-    char* env = getenv("NCCL_IB_TIMEOUT");
-    if (env && strlen(env) > 1) ncclIbTimeout = atoi(env);
 
     pthread_mutex_unlock(&ncclIbLock);
   }
@@ -354,12 +366,14 @@ ncclResult_t ncclIbRtrQp(ibv_qp* qp, struct ncclIbQpInfo* info) {
     qpAttr.ah_attr.grh.dgid.global.subnet_prefix = info->spn;
     qpAttr.ah_attr.grh.dgid.global.interface_id = info->iid;
     qpAttr.ah_attr.grh.flow_label = 0;
+    qpAttr.ah_attr.grh.sgid_index = ncclIbGidIndex();
     qpAttr.ah_attr.grh.hop_limit = 255;
+    qpAttr.ah_attr.grh.traffic_class = ncclIbTc();
   } else {
     qpAttr.ah_attr.is_global = 0;
     qpAttr.ah_attr.dlid = info->lid;
   }
-  qpAttr.ah_attr.sl = 1;
+  qpAttr.ah_attr.sl = ncclIbSl();
   qpAttr.ah_attr.src_path_bits = 0;
   qpAttr.ah_attr.port_num = info->ib_port;
   NCCLCHECK(wrap_ibv_modify_qp(qp, &qpAttr, IBV_QP_STATE | IBV_QP_AV | IBV_QP_PATH_MTU | IBV_QP_DEST_QPN | IBV_QP_RQ_PSN | IBV_QP_MAX_DEST_RD_ATOMIC | IBV_QP_MIN_RNR_TIMER));
@@ -370,10 +384,9 @@ ncclResult_t ncclIbRtsQp(ibv_qp* qp) {
   struct ibv_qp_attr qpAttr;
   memset(&qpAttr, 0, sizeof(struct ibv_qp_attr));
   qpAttr.qp_state = IBV_QPS_RTS;
-  qpAttr.timeout = ncclIbTimeout;
-  qpAttr.retry_cnt = 7;
-  //qpAttr.rnr_retry = 7;
-  qpAttr.rnr_retry = 1;
+  qpAttr.timeout = ncclIbTimeout();
+  qpAttr.retry_cnt = ncclIbRetryCnt();
+  qpAttr.rnr_retry = 7;
   qpAttr.sq_psn = 0;
   qpAttr.max_rd_atomic = 1;
   NCCLCHECK(wrap_ibv_modify_qp(qp, &qpAttr, IBV_QP_STATE | IBV_QP_TIMEOUT | IBV_QP_RETRY_CNT | IBV_QP_RNR_RETRY | IBV_QP_SQ_PSN | IBV_QP_MAX_QP_RD_ATOMIC));
@@ -420,21 +433,15 @@ int ncclIbConnect(int dev, void* opaqueHandle, void** sendComm) {
   qpInfo.fifoAddr = (uint64_t)comm->fifo;
 
   // RoCE support
-  static int ibGidIndex = -1;
-  if (ibGidIndex == -1) {
-    char* str = getenv("NCCL_IB_GID_INDEX");
-    ibGidIndex = str ? atoi(str) : 0;
-  }
-
   qpInfo.lid = portAttr.lid;
   if (qpInfo.lid) { // IB
     INFO("NET/IB: Dev %d Port %d qpn %d mtu %d LID %d", dev, ib_port, qpInfo.qpn, qpInfo.mtu, qpInfo.lid);
   } else { // RoCE
     union ibv_gid gid;
-    NCCLCHECK(wrap_ibv_query_gid(ctx, ib_port, ibGidIndex, &gid));
+    NCCLCHECK(wrap_ibv_query_gid(ctx, ib_port, ncclIbGidIndex(), &gid));
     qpInfo.spn = gid.global.subnet_prefix;
     qpInfo.iid = gid.global.interface_id;
-    INFO("NET/IB: Dev %d Port %d qpn %d mtu %d GID %d (%lX/%lX)", dev, ib_port, qpInfo.qpn, qpInfo.mtu, ibGidIndex, qpInfo.spn, qpInfo.iid);
+    INFO("NET/IB: Dev %d Port %d qpn %d mtu %d GID %d (%lX/%lX)", dev, ib_port, qpInfo.qpn, qpInfo.mtu, ncclIbGidIndex(), qpInfo.spn, qpInfo.iid);
   }
 
   NCCLCHECK(socketSend(comm->fd, &qpInfo, sizeof(qpInfo)));
@@ -458,7 +465,7 @@ int ncclIbAccept(void* listenComm, void** recvComm) {
   struct ibv_port_attr portAttr;
   NCCLCHECK(wrap_ibv_query_port(ctx, ib_port, &portAttr));
   union ibv_gid gid;
-  NCCLCHECK(wrap_ibv_query_gid(ctx, ib_port, 0, &gid));
+  NCCLCHECK(wrap_ibv_query_gid(ctx, ib_port, ncclIbGidIndex(), &gid));
 
   // QP Creation
   NCCLCHECK(ncclIbInitVerbs(ctx, &rComm->verbs));
@@ -489,7 +496,7 @@ int ncclIbAccept(void* listenComm, void** recvComm) {
   if (ncclIbGdrSupport() && rComm->gpuFlush.enabled) {
     NCCLCHECK(wrap_ibv_reg_mr(&rComm->gpuFlush.hostMr, rComm->verbs.pd, &rComm->gpuFlush.hostMem, sizeof(int), IBV_ACCESS_LOCAL_WRITE));
     rComm->gpuFlush.sge.addr = (uint64_t)&rComm->gpuFlush.hostMem;
-    rComm->gpuFlush.sge.length = sizeof(int);
+    rComm->gpuFlush.sge.length = 1;
     rComm->gpuFlush.sge.lkey = rComm->gpuFlush.hostMr->lkey;
     NCCLCHECK(ncclIbCreateQp(ib_port, &rComm->verbs, IBV_ACCESS_LOCAL_WRITE | IBV_ACCESS_REMOTE_READ, &rComm->gpuFlush.qp));
     struct ncclIbQpInfo localQpInfo = {
@@ -571,21 +578,17 @@ int ncclIbTest(void* request, int* done, int* size);
 ncclResult_t ncclIbGetMr(struct ncclIbVerbs* verbs, void* data, int size, struct ncclIbMr** mrRet) {
   uint64_t addr = (uint64_t)data;
   int elem = -1;
+  assert(size > 0);
 
   // Look for an already existing MR
   for (int i=0; i<MAX_REQUESTS;i++) {
     if (verbs->mrPool[i].mr == NULL) continue;
     uint64_t regAddr = (uint64_t)verbs->mrPool[i].mr->addr;
     uint64_t regSize = (uint64_t)verbs->mrPool[i].mr->length;
-    if (regAddr <= addr && addr < regAddr + regSize) {
-      if (addr+size <= regAddr + regSize) {
-        *mrRet = verbs->mrPool+i;
-        verbs->mrPool[i].refcnt++;
-        return ncclSuccess;
-      } else { // Size too small, delete the area (and recreate it, larger)
-        elem = i;
-        break;
-      }
+    if (regAddr <= addr && addr+size <= regAddr+regSize) {
+      *mrRet = verbs->mrPool+i;
+      verbs->mrPool[i].refcnt++;
+      return ncclSuccess;
     }
   }
 
@@ -603,6 +606,7 @@ ncclResult_t ncclIbGetMr(struct ncclIbVerbs* verbs, void* data, int size, struct
   }
 
   assert(elem < MAX_REQUESTS);
+  assert(verbs->mrPool[elem].refcnt == 0);
 
   // Deregister / register
   uint64_t regAddr = addr & (~(REG_ALIGN-1));
@@ -647,10 +651,12 @@ int ncclIbIsend(void* sendComm, void* data, int size, int type, void** request) 
   volatile uint32_t * readyPtr = &slot->ready;
   while (*readyPtr == 0) sched_yield(); /*XXX:if commented, ibv_post_send in ncclIbPostFifo should also be commented*/
 #ifdef USE_RDMA_WRITE
+  __sync_synchronize();
   wr.opcode = IBV_WR_RDMA_WRITE_WITH_IMM;
   wr.wr.rdma.remote_addr = slot->addr;
   wr.wr.rdma.rkey = slot->rkey;
   wr.imm_data = size;
+  __sync_synchronize();
 #endif
   slot->ready = 0;
   comm->fifoHead++;
@@ -726,12 +732,12 @@ int ncclIbIrecv(void* recvComm, void* data, int size, int type, void** request) 
 
 int ncclIbFlush(void* recvComm, void* data, int size) {
   struct ncclIbRecvComm* comm = (struct ncclIbRecvComm*)recvComm;
-  if (comm->gpuFlush.enabled == 0) return ncclSuccess;
+  if (comm->gpuFlush.enabled == 0 || size == 0) return ncclSuccess;
 
   struct ncclIbRequest* req;
   NCCLCHECK(ncclIbGetRequest(&comm->reqs, &req));
   req->verbs = &comm->verbs;
-  NCCLCHECK(ncclIbGetMr(&comm->verbs, data, size, &req->ibMr));
+  NCCLCHECK(ncclIbGetMr(&comm->verbs, data, 1, &req->ibMr));
 
   struct ibv_send_wr wr;
   memset(&wr, 0, sizeof(wr));
@@ -764,7 +770,7 @@ int ncclIbTest(void* request, int* done, int* size) {
     if(wrDone < 0){ return ncclSystemError; }
     if (wrDone == 1) {
       if (wc.status != IBV_WC_SUCCESS) {
-        WARN("NET/IB : Got completion with error %d, opcode %d, vendor err %d", wc.status, wc.opcode, wc.vendor_err);
+        WARN("NET/IB : Got completion with error %d, opcode %d, len %d, vendor err %d", wc.status, wc.opcode, wc.byte_len, wc.vendor_err);
         return 1;
       }
 

@@ -8,8 +8,8 @@
 #include "broadcast.h"
 #include "collectives.h"
 
-#define UNROLL 8
+#define UNROLL 4
 
 #if NCCL_OP == 0
-IMPL_COLL3(ncclBcast, copy, FuncSum, i8, int8_t);
+IMPL_COLL3(ncclBcast, copy, FuncSum, i8, int8_t, ncclCollBcast, ncclSum, ncclInt8);
 #endif
