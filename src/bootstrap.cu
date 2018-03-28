@@ -92,7 +92,6 @@ static void *bootstrapRoot(void* commId) {
   void **extRecvComm = NULL;
   int size, alloc_size = 0; 
   char* data = NULL;
-  bool idFromEnv = id->pid < 0;
   setFilesLimit();
 
   /* Receive addresses from all ranks */
@@ -117,7 +116,7 @@ static void *bootstrapRoot(void* commId) {
       }
 
       extRecvComm[info.rank] = tmpRecvComm;
-      NCCLCHECKJUMP(bootstrapConnect(idFromEnv ? findSubnetIf : defaultIf, info.extHandle, extSendComm+info.rank), out);
+      NCCLCHECKJUMP(bootstrapConnect(0, info.extHandle, extSendComm+info.rank), out);
       c++;
   } while (c < nranks);
 
@@ -184,7 +183,7 @@ ncclResult_t bootstrapCreateRoot(ncclUniqueId* commId, bool idFromEnv) {
   char hostname[1024];
   getHostName(hostname, 1024);
   id->hostHash = getHostHash(hostname);
-  NCCLCHECK(bootstrapListen(idFromEnv ? dontCareIf : defaultIf, &id->extHandle, &id->extListenComm));
+  NCCLCHECK(bootstrapListen(idFromEnv ? dontCareIf : 0, &id->extHandle, &id->extListenComm));
   ncclUniqueId* threadIdCopy = (ncclUniqueId*)malloc(sizeof(ncclUniqueId));
   memcpy(threadIdCopy, id, sizeof(ncclUniqueId));
   pthread_create(&id->boostrapThread, NULL, bootstrapRoot, (void *)threadIdCopy);
@@ -198,7 +197,7 @@ ncclResult_t bootstrapGetUniqueId(ncclUniqueId* out) {
   char* env = getenv("NCCL_COMM_ID");
   if (env) {
     if (ncclSocketCreateHandle(&id->extHandle, env) != 0) {
-      WARN("Invalid NCCL_COMM_ID, please use format: NCCL_COMM_ID=<ipv4>:<port> or NCCL_COMM_ID=[<ipv6>]:<port>");
+      WARN("Invalid NCCL_COMM_ID, please use format: <ipv4>:<port> or [<ipv6>]:<port> or <hostname>:<port>");
       return ncclInvalidArgument;
     }
     id->pid = -1;
@@ -234,7 +233,7 @@ ncclResult_t bootstrapInit(ncclUniqueId* commId, int rank, int nranks, void** co
     memcpy(&info.extHandle, &id->extHandle, sizeof(ncclNetHandle_t));
   }
   // listen will return the local address via info (specify interface type 'findSubnetIf')
-  int dev = idFromEnv ? findSubnetIf : defaultIf;
+  int dev = idFromEnv ? findSubnetIf : 0;
   NCCLCHECK(bootstrapListen(dev, &info.extHandle, &tmpListenComm));
   NCCLCHECK(bootstrapConnect(dev, id->extHandle, &state->extSendComm));
   NCCLCHECK(bootstrapSend(state->extSendComm, &info, sizeof(info)));

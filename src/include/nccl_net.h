@@ -55,10 +55,6 @@ typedef struct {
   int (*closeSend)(void* sendComm);
   int (*closeRecv)(void* recvComm);
   int (*closeListen)(void* listenComm);
-  // Optional: Synchronous send to a peer. Type is NCCL_PTR_HOST.
-  int (*send)(void* sendComm, void* data, int size);
-  // Optional: Synchronous recv from a peer. Type is NCCL_PTR_HOST.
-  int (*recv)(void* recvComm, void* data, int size);
 } ncclNet_t;
 
 #ifdef __cplusplus

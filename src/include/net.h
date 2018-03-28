@@ -14,8 +14,7 @@ typedef char ncclNetHandle_t[NCCL_NET_HANDLE_MAXSIZE];
 
 /* Socket Interface Selection type */
 typedef enum { findSubnetIf   = -1,
-               dontCareIf     = -2,
-               defaultIf      = 0 } ncclSocketIfSl_t;
+               dontCareIf     = -2 } ncclSocketIfSl_t;
 
 #define NETCHECK(cmd) do { \
   int err = cmd; \
