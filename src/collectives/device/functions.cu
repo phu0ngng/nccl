@@ -48,7 +48,7 @@
 
 // Must be consistent with ncclColl_t
 #define NCCL_FUNCS() { \
-  NCCL_FUNCS2B(ncclBcast), \
+  NCCL_FUNCS2B(ncclBroadcast), \
   NCCL_FUNCS2A(ncclReduce), \
   NCCL_FUNCS2B(ncclAllGather), \
   NCCL_FUNCS2A(ncclReduceScatter), \
@@ -56,7 +56,7 @@
 
 // Must be consistent with the ncclFuncSet enum
 __device__ ncclKern_t ncclFuncs[ncclCollCount*ncclNumOps*ncclNumTypes*2] = {
-    NCCL_FUNCS2B(ncclBcast),
+    NCCL_FUNCS2B(ncclBroadcast),
     NCCL_FUNCS2A(ncclReduce),
     NCCL_FUNCS2B(ncclAllGather),
     NCCL_FUNCS2A(ncclReduceScatter),

@@ -17,16 +17,25 @@ ncclResult_t ncclBroadcastFunc(const void* sendbuff, void* recvbuff, const size_
       CUDACHECK(cudaMemcpyAsync(recvbuff, sendbuff, nbytes, cudaMemcpyDeviceToDevice, stream));
   } else {
     NCCLCHECK(transportSaveProxies(BROADCAST_SUBSTEPS, BROADCAST_BUFCHUNKS, 1, 1, nbytes, proxyPatternFrom(root), comm));
-    NCCLCHECK(saveKernel(ncclCollBcast, sendbuff, recvbuff, nbytes, ncclInt8, op, root, comm, stream, nbytes));
+    NCCLCHECK(saveKernel(ncclCollBroadcast, sendbuff, recvbuff, nbytes, ncclInt8, op, root, comm, stream, nbytes));
   }
 
   return ncclSuccess;
 }
 
+/* Deprecated original "in place" function, similar to MPI */
 NCCL_API(ncclResult_t, ncclBcast, void* buff, size_t count, ncclDataType_t datatype, int root,
     ncclComm_t comm, cudaStream_t stream);
 ncclResult_t ncclBcast(void* buff, size_t count, ncclDataType_t datatype, int root,
     ncclComm_t comm, cudaStream_t stream) {
   return ncclEnqueueCheck(ncclBroadcastFunc, "Bcast", buff, buff, count, datatype,
+     ncclSum, root, comm, stream);
+}
+
+NCCL_API(ncclResult_t, ncclBroadcast, const void* sendbuff, void* recvbuff, size_t count, ncclDataType_t datatype, int root,
+    ncclComm_t comm, cudaStream_t stream);
+ncclResult_t ncclBroadcast(const void* sendbuff, void* recvbuff, size_t count, ncclDataType_t datatype, int root,
+    ncclComm_t comm, cudaStream_t stream) {
+  return ncclEnqueueCheck(ncclBroadcastFunc, "Broadcast", sendbuff, recvbuff, count, datatype,
      ncclSum, root, comm, stream);
 }

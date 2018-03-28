@@ -7,7 +7,7 @@
 #ifndef NCCL_COLLECTIVES_H_
 #define NCCL_COLLECTIVES_H_
 
-typedef enum { ncclCollBcast, ncclCollReduce, ncclCollAllGather, ncclCollReduceScatter, ncclCollAllReduce, ncclCollCount } ncclColl_t;
+typedef enum { ncclCollBroadcast, ncclCollReduce, ncclCollAllGather, ncclCollReduceScatter, ncclCollAllReduce, ncclCollCount } ncclColl_t;
 
 #define FUNC_INDEX(coll, redop, dtype, ll) ((((coll*ncclNumOps + redop)*ncclNumTypes) + dtype)*2+ll)
 
@@ -44,7 +44,7 @@ typedef enum { ncclCollBcast, ncclCollReduce, ncclCollAllGather, ncclCollReduceS
   DECL_COLL2(coll, max)
 
 #define DECL_ALL_COLLS \
-  DECL_COLL2(ncclBcast, copy) \
+  DECL_COLL2(ncclBroadcast, copy) \
   DECL_COLL(ncclReduce) \
   DECL_COLL2(ncclAllGather, copy) \
   DECL_COLL(ncclReduceScatter) \

@@ -10,8 +10,8 @@ TYPED_TEST(ncclAllReduce_test, basic) {
             ASSERT_EQ(ncclSuccess,
                       ncclAllReduce(this->sendbuffs[i], this->recvbuffs[i],
                                     std::min(this->N, 1024 * 1024),
-                                    this->DataType(), op, this->comms[i],
-                                    this->streams[i]))
+                                    this->DataType(), op,
+                                    this->comms[i], this->streams[i]))
                 << "op: " << op << ", "
                 << "i" << i << ", " << std::endl;
         }
@@ -25,8 +25,9 @@ TYPED_TEST(ncclAllReduce_test, host_mem) {
             ASSERT_EQ(
                 ncclInvalidArgument,
                 ncclAllReduce(this->sendbuffs_host[i], this->recvbuffs_host[i],
-                              std::min(this->N, 1024 * 1024), this->DataType(),
-                              op, this->comms[i], this->streams[i]))
+                              std::min(this->N, 1024 * 1024),
+                              this->DataType(), op,
+                              this->comms[i], this->streams[i]))
                 << "op: " << op << ", "
                 << "i" << i << ", " << std::endl;
         }
@@ -39,8 +40,10 @@ TYPED_TEST(ncclAllReduce_test, pinned_mem) {
         for (int i = 0; i < this->nVis; ++i) {
             ASSERT_EQ(ncclSuccess,
                       ncclAllReduce(
-                          this->sendbuffs_pinned_device[i], this->recvbuffs_pinned_device[i],
-                          std::min(this->N, 1024 * 1024), this->DataType(), op,
+                          this->sendbuffs_pinned_device[i],
+                          this->recvbuffs_pinned_device[i],
+                          std::min(this->N, 1024 * 1024),
+                          this->DataType(), op,
                           this->comms[i], this->streams[i]))
                 << "op: " << op << ", "
                 << "i" << i << ", " << std::endl;
@@ -54,7 +57,8 @@ TYPED_TEST(ncclAllReduce_test, stream_null) {
         ASSERT_EQ(ncclSuccess,
                   ncclAllReduce(
                       this->sendbuffs[i], this->recvbuffs[i],
-                      std::min(this->N, 1024 * 1024), this->DataType(), ncclSum,
+                      std::min(this->N, 1024 * 1024),
+                      this->DataType(), ncclSum,
                       this->comms[i], NULL))
             << ", " << "i" << i << ", " << std::endl;
     }
@@ -65,24 +69,27 @@ TYPED_TEST(ncclAllReduce_test, sendbuf_null) {
     int i = 0;
     EXPECT_EQ(ncclInvalidArgument,
               ncclAllReduce(NULL, this->recvbuffs[i],
-                            std::min(this->N, 1024 * 1024), this->DataType(),
-                            this->RedOps[0], this->comms[i], this->streams[i]));
+                            std::min(this->N, 1024 * 1024),
+                            this->DataType(), this->RedOps[0],
+                            this->comms[i], this->streams[i]));
 };
 // recvbuff
 TYPED_TEST(ncclAllReduce_test, recvbuf_null) {
     int i = 0;
     EXPECT_EQ(ncclInvalidArgument,
               ncclAllReduce(this->sendbuffs[i], NULL,
-                            std::min(this->N, 1024 * 1024), this->DataType(),
-                            this->RedOps[0], this->comms[i], this->streams[i]));
+                            std::min(this->N, 1024 * 1024),
+                            this->DataType(), this->RedOps[0],
+                            this->comms[i], this->streams[i]));
 };
 // sendbuff and recvbuff not on the same device
 TYPED_TEST(ncclAllReduce_test, sendbuff_recvbuff_diff_device) {
     int i = 0, j = 1;
     ASSERT_EQ(ncclInvalidArgument,
               ncclAllReduce(this->sendbuffs[i], this->recvbuffs[j],
-                            std::min(this->N, 1024 * 1024), this->DataType(),
-                            this->RedOps[0], this->comms[i], this->streams[i]));
+                            std::min(this->N, 1024 * 1024),
+                            this->DataType(), this->RedOps[0],
+                            this->comms[i], this->streams[i]));
 };
 // N
 TYPED_TEST(ncclAllReduce_test, N_zero) {
@@ -104,31 +111,35 @@ TYPED_TEST(ncclAllReduce_test, DataType_wrong) {
     int i = 0;
     ASSERT_EQ(ncclInvalidArgument,
               ncclAllReduce(this->sendbuffs[i], this->recvbuffs[i],
-                            std::min(this->N, 1024 * 1024), ncclNumTypes,
-                            this->RedOps[0], this->comms[i], this->streams[i]));
+                            std::min(this->N, 1024 * 1024),
+                            ncclNumTypes, this->RedOps[0],
+                            this->comms[i], this->streams[i]));
 };
 // op
 TYPED_TEST(ncclAllReduce_test, op_wrong) {
     int i = 0;
     ASSERT_EQ(ncclInvalidArgument,
               ncclAllReduce(this->sendbuffs[i], this->recvbuffs[i],
-                            std::min(this->N, 1024 * 1024), this->DataType(),
-                            ncclNumOps, this->comms[i], this->streams[i]));
+                            std::min(this->N, 1024 * 1024),
+                            this->DataType(), ncclNumOps,
+                            this->comms[i], this->streams[i]));
 };
 // comm
 TYPED_TEST(ncclAllReduce_test, comm_null) {
     int i = 0;
     ASSERT_EQ(ncclInvalidArgument,
               ncclAllReduce(this->sendbuffs[i], this->recvbuffs[i],
-                            std::min(this->N, 1024 * 1024), this->DataType(),
-                            this->RedOps[0], NULL, this->streams[i]));
+                            std::min(this->N, 1024 * 1024),
+                            this->DataType(), this->RedOps[0],
+                            NULL, this->streams[i]));
 };
 TYPED_TEST(ncclAllReduce_test, comm_wrong) {
     int i = 0, j = 1;
     ASSERT_EQ(ncclInvalidArgument,
               ncclAllReduce(this->sendbuffs[i], this->recvbuffs[i],
-                            std::min(this->N, 1024 * 1024), this->DataType(),
-                            this->RedOps[0], this->comms[j], this->streams[i]));
+                            std::min(this->N, 1024 * 1024),
+                            this->DataType(), this->RedOps[0],
+                            this->comms[j], this->streams[i]));
 };
 // STREAM can be NULL.
 // stream on a diff device
@@ -136,8 +147,9 @@ TYPED_TEST(ncclAllReduce_test, DISABLED_stream_wrong) {
     int i = 0, j = 1;
     ASSERT_EQ(ncclInvalidArgument,
               ncclAllReduce(this->sendbuffs[i], this->recvbuffs[i],
-                            std::min(this->N, 1024 * 1024), this->DataType(),
-                            this->RedOps[0], this->comms[i], this->streams[j]));
+                            std::min(this->N, 1024 * 1024),
+                            this->DataType(), this->RedOps[0],
+                            this->comms[i], this->streams[j]));
 };
 // Aggregation
 // Only for 2.2 or higher
@@ -150,8 +162,8 @@ TYPED_TEST(ncclAllReduce_test, aggregate_two_level_group_call) {
             ASSERT_EQ(ncclSuccess,
                       ncclAllReduce(this->sendbuffs[i], this->recvbuffs[i],
                                     std::min(this->N, 1024 * 1024),
-                                    this->DataType(), op, this->comms[i],
-                                    this->streams[i]))
+                                    this->DataType(), op,
+                                    this->comms[i], this->streams[i]))
                 << "op: " << op << ", "
                 << "i" << i << ", " << std::endl;
         }
@@ -166,8 +178,8 @@ TYPED_TEST(ncclAllReduce_test, aggregate_one_level_group_call) {
             ASSERT_EQ(ncclSuccess,
                       ncclAllReduce(this->sendbuffs[i], this->recvbuffs[i],
                                     std::min(this->N, 1024 * 1024),
-                                    this->DataType(), op, this->comms[i],
-                                    this->streams[i]))
+                                    this->DataType(), op,
+                                    this->comms[i], this->streams[i]))
                 << "op: " << op << ", "
                 << "i" << i << ", " << std::endl;
         }
@@ -182,8 +194,8 @@ TYPED_TEST(ncclAllReduce_test, aggregate_ll_singleRing_multiRing) {
             ASSERT_EQ(ncclSuccess,
                       ncclAllReduce(this->sendbuffs[i], this->recvbuffs[i],
                                     sizes[k],
-                                    this->DataType(), ncclSum, this->comms[i],
-                                    this->streams[i]))
+                                    this->DataType(), ncclSum,
+                                    this->comms[i], this->streams[i]))
                 << "size: " << sizes[k] << ", "
                 << "i" << i << ", " << std::endl;
         }

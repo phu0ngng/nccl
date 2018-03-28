@@ -18,7 +18,7 @@
   size = ((size + (align) - 1) / (align)) * (align);
 
 template<int UNROLL, class FUNC, typename T>
-__device__ void ncclBcastKernel(struct CollectiveArgs* args) {
+__device__ void ncclBroadcastKernel(struct CollectiveArgs* args) {
   const int tid = threadIdx.x;
   const int nthreads = blockDim.x - 1;
   const int bid = args->bid;
@@ -149,7 +149,7 @@ __device__ void ncclBcastKernel(struct CollectiveArgs* args) {
   step++;
 
 template<int UNUSED, class FUNC, typename T>
-__device__ void ncclBcastLLKernel(struct CollectiveArgs* args) {
+__device__ void ncclBroadcastLLKernel(struct CollectiveArgs* args) {
   const int tid = threadIdx.x;
   struct ncclComm* comm = args->comm;
   struct ncclRing* ring = comm->rings+blockIdx.x;
@@ -184,10 +184,18 @@ __device__ void ncclBcastLLKernel(struct CollectiveArgs* args) {
     int maxOffset = min(chunkSize, size-offset);
     if (rank == root) {
       WAIT_NEXT;
-      LL::ReduceCopy(
-          thisInput + offset,
-          nextOutput + boffset,
-          maxOffset, flag);
+      if (thisInput == thisOutput) {
+        LL::ReduceCopy(
+            thisInput + offset,
+            nextOutput + boffset,
+            maxOffset, flag);
+      } else {
+        LL::ReduceCopy(
+            thisInput + offset,
+            thisOutput + offset,
+            nextOutput + boffset,
+            maxOffset, flag);
+      }
       POST_SIZE;
       NEXT_STEP_LL;
     } else if (nextRank == root) {
