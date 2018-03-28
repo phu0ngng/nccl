@@ -547,6 +547,11 @@ cleanup:
 
 NCCL_API(ncclResult_t, ncclCommInitRank, ncclComm_t* newcomm, int ndev, ncclUniqueId commId, int myrank);
 ncclResult_t ncclCommInitRank(ncclComm_t* newcomm, int nranks, ncclUniqueId commId, int myrank) {
+  char* env = getenv("NCCL_COMM_ID");
+  if (env && myrank == 0) {
+    NCCLCHECK(bootstrapCreateRoot(&commId, true));
+  }
+
   NCCLCHECK(ncclInit());
   if (myrank == 0) showVersion();
 

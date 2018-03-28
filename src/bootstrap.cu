@@ -179,41 +179,34 @@ out:
   return NULL;
 }
 
+ncclResult_t bootstrapCreateRoot(ncclUniqueId* commId, bool idFromEnv) {
+  struct extId* id = (struct extId*)commId;
+  char hostname[1024];
+  getHostName(hostname, 1024);
+  id->hostHash = getHostHash(hostname);
+  NCCLCHECK(bootstrapListen(idFromEnv ? dontCareIf : defaultIf, &id->extHandle, &id->extListenComm));
+  ncclUniqueId* threadIdCopy = (ncclUniqueId*)malloc(sizeof(ncclUniqueId));
+  memcpy(threadIdCopy, id, sizeof(ncclUniqueId));
+  pthread_create(&id->boostrapThread, NULL, bootstrapRoot, (void *)threadIdCopy);
+  return ncclSuccess;
+}
+
 ncclResult_t bootstrapGetUniqueId(ncclUniqueId* out) {
   static_assert(sizeof(extId) < sizeof(ncclUniqueId), "NetId does not fit inside ncclUniqueId");
   extId* id = (extId*)out;
 
-  char hostname[1024];
-  getHostName(hostname, 1024);
   char* env = getenv("NCCL_COMM_ID");
   if (env) {
     if (ncclSocketCreateHandle(&id->extHandle, env) != 0) {
       WARN("Invalid NCCL_COMM_ID, please use format: NCCL_COMM_ID=<ipv4>:<port> or NCCL_COMM_ID=[<ipv6>]:<port>");
       return ncclInvalidArgument;
     }
-  }
-
-  if (env) {
     id->pid = -1;
   } else {
     id->pid = getpid();
+    NCCLCHECK(bootstrapCreateRoot(out, false));
   }
 
-  // if handle is preset, just listen on that handle, no need to specify an interface
-  bool isRoot = false;
-  if (env) {
-    isRoot = ncclBootstrapNet->listen(dontCareIf, &id->extHandle, &id->extListenComm) == ncclSuccess;
-  } else {
-    NCCLCHECK(bootstrapListen(defaultIf, &id->extHandle, &id->extListenComm));
-    isRoot = true;
-  }
-
-  if (isRoot) {
-    id->hostHash = getHostHash(hostname);
-    ncclUniqueId* threadIdCopy = (ncclUniqueId*)malloc(sizeof(ncclUniqueId));
-    memcpy(threadIdCopy, id, sizeof(ncclUniqueId));
-    pthread_create(&id->boostrapThread, NULL, bootstrapRoot, (void *)threadIdCopy);
-  }
   return ncclSuccess;
 }
 
