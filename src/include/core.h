@@ -279,7 +279,6 @@ struct ncclComm {
       usleep(usec); \
     }\
   } \
-  INFO("Tried " name " %d times, result = %s", count, ret == -1 ? "failure":"success"); \
   if (ret == -1) { \
     WARN("Call to " name " timeout : %s", strerror(errno)); \
     return ncclSystemError; \
