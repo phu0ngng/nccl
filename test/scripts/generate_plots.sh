@@ -21,7 +21,7 @@ EOF
 firstline=1
 for version in $@; do
   data=$version/results/$gpumodel/$op.$ngpus
-  cat $data.out | grep float | awk "{ print \$1,\$$busbwcol; }" > $data.values
+  cat $data.out | grep -v "^#" | cut -c $busbwcol > $data.values
   if [ "$firstline" == "1" ]; then
     firstline=0
     echo -n "plot " >> $graph.plot
@@ -58,21 +58,21 @@ shift 3
 mkdir -p comp/$gpumodel
 echo -n "Generating images "
 if [ "$mode" == "bw" ]; then
-  plot_ngpu_loop $gpumodel $maxgpu reduce 12 $@
-  plot_ngpu_loop $gpumodel $maxgpu broadcast 7 $@
-  plot_ngpu_loop $gpumodel $maxgpu all_reduce 11 $@
-  plot_ngpu_loop $gpumodel $maxgpu all_gather 10 $@
-  plot_ngpu_loop $gpumodel $maxgpu reduce_scatter 11 $@
-  plot_ngpu_loop $gpumodel $maxgpu all_gatherv 10 $@
-  plot_ngpu_loop $gpumodel $maxgpu reduce_scatterv 11 $@
+  plot_ngpu_loop $gpumodel $maxgpu reduce 101-107 $@
+  plot_ngpu_loop $gpumodel $maxgpu broadcast 101-107 $@
+  plot_ngpu_loop $gpumodel $maxgpu all_reduce 101-107 $@
+  plot_ngpu_loop $gpumodel $maxgpu all_gather 101-107 $@
+  plot_ngpu_loop $gpumodel $maxgpu reduce_scatter 101-107 $@
+  plot_ngpu_loop $gpumodel $maxgpu all_gatherv 101-107 $@
+  plot_ngpu_loop $gpumodel $maxgpu reduce_scatterv 101-107 $@
 elif [ "$mode" == "lat" ]; then
-  plot_ngpu_loop $gpumodel $maxgpu reduce 10 $@
-  plot_ngpu_loop $gpumodel $maxgpu broadcast 5 $@
-  plot_ngpu_loop $gpumodel $maxgpu all_reduce 9 $@
-  plot_ngpu_loop $gpumodel $maxgpu all_gather 8 $@
-  plot_ngpu_loop $gpumodel $maxgpu reduce_scatter 9 $@
-  plot_ngpu_loop $gpumodel $maxgpu all_gatherv 8 $@
-  plot_ngpu_loop $gpumodel $maxgpu reduce_scatterv 9 $@
+  plot_ngpu_loop $gpumodel $maxgpu reduce 85-91 $@
+  plot_ngpu_loop $gpumodel $maxgpu broadcast 85-91 $@
+  plot_ngpu_loop $gpumodel $maxgpu all_reduce 85-91 $@
+  plot_ngpu_loop $gpumodel $maxgpu all_gather 85-91 $@
+  plot_ngpu_loop $gpumodel $maxgpu reduce_scatter 85-91 $@
+  plot_ngpu_loop $gpumodel $maxgpu all_gatherv 85-91 $@
+  plot_ngpu_loop $gpumodel $maxgpu reduce_scatterv 85-91 $@
 else
   echo "Invalid mode. Please specify bw or lat"
 fi

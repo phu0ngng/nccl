@@ -10,8 +10,8 @@ TYPED_TEST(ncclReduceScatter_test, basic) {
             ASSERT_EQ(ncclSuccess,
                       ncclReduceScatter(this->sendbuffs[i], this->recvbuffs[i],
                                         std::min(this->N/this->nVis, 1024 * 1024),
-                                        this->DataType(), op, this->comms[i],
-                                        this->streams[i]))
+                                        this->DataType(), op,
+                                        this->comms[i], this->streams[i]))
                 << "op: " << op << ", "
                 << "i" << i << ", " << std::endl;
         }
@@ -25,7 +25,8 @@ TYPED_TEST(ncclReduceScatter_test, host_mem) {
             ASSERT_EQ(ncclInvalidArgument,
                       ncclReduceScatter(
                           this->sendbuffs_host[i], this->recvbuffs_host[i],
-                          std::min(this->N/this->nVis, 1024 * 1024), this->DataType(), op,
+                          std::min(this->N/this->nVis, 1024 * 1024),
+                          this->DataType(), op,
                           this->comms[i], this->streams[i]))
                 << "op: " << op << ", "
                 << "i" << i << ", " << std::endl;
@@ -39,8 +40,10 @@ TYPED_TEST(ncclReduceScatter_test, pinned_mem) {
         for (int i = 0; i < this->nVis; ++i) {
             ASSERT_EQ(ncclSuccess,
                       ncclReduceScatter(
-                          this->sendbuffs_pinned_device[i], this->recvbuffs_pinned_device[i],
-                          std::min(this->N/this->nVis, 1024 * 1024), this->DataType(), op,
+                          this->sendbuffs_pinned_device[i],
+                          this->recvbuffs_pinned_device[i],
+                          std::min(this->N/this->nVis, 1024 * 1024),
+                          this->DataType(), op,
                           this->comms[i], this->streams[i]))
                 << "op: " << op << ", "
                 << "i" << i << ", " << std::endl;
@@ -54,7 +57,8 @@ TYPED_TEST(ncclReduceScatter_test, stream_null) {
         ASSERT_EQ(ncclSuccess,
                   ncclReduceScatter(
                       this->sendbuffs[i], this->recvbuffs[i],
-                      std::min(this->N/this->nVis, 1024 * 1024), this->DataType(), ncclSum,
+                      std::min(this->N/this->nVis, 1024 * 1024),
+                      this->DataType(), ncclSum,
                       this->comms[i], NULL))
             << ", " << "i" << i << ", " << std::endl;
     }
@@ -93,8 +97,8 @@ TYPED_TEST(ncclReduceScatter_test, N_zero) {
         ASSERT_EQ(ncclSuccess, ncclGroupStart());
         for (int i = 0; i < this->nVis; ++i) {
             ASSERT_EQ(ncclSuccess,
-                      ncclReduceScatter(this->sendbuffs[i], this->recvbuffs[i],
-                                        0, this->DataType(), this->RedOps[0],
+                      ncclReduceScatter(this->sendbuffs[i], this->recvbuffs[i], 0,
+                                        this->DataType(), this->RedOps[0],
                                         this->comms[i], this->streams[i]))
                 << "op: " << op << ", "
                 << "i" << i << ", " << std::endl;
@@ -107,9 +111,9 @@ TYPED_TEST(ncclReduceScatter_test, DataType_wrong) {
     int i = 0;
     ASSERT_EQ(ncclInvalidArgument,
               ncclReduceScatter(this->sendbuffs[i], this->recvbuffs[i],
-                                std::min(this->N/this->nVis, 1024 * 1024), ncclNumTypes,
-                                this->RedOps[0], this->comms[i],
-                                this->streams[i]));
+                                std::min(this->N/this->nVis, 1024 * 1024),
+                                ncclNumTypes, this->RedOps[0],
+                                this->comms[i], this->streams[i]));
 };
 // op
 TYPED_TEST(ncclReduceScatter_test, op_wrong) {
@@ -117,8 +121,8 @@ TYPED_TEST(ncclReduceScatter_test, op_wrong) {
     ASSERT_EQ(ncclInvalidArgument,
               ncclReduceScatter(this->sendbuffs[i], this->recvbuffs[i],
                                 std::min(this->N/this->nVis, 1024 * 1024),
-                                this->DataType(), ncclNumOps, this->comms[i],
-                                this->streams[i]));
+                                this->DataType(), ncclNumOps,
+                                this->comms[i], this->streams[i]));
 };
 // comm
 TYPED_TEST(ncclReduceScatter_test, comm_null) {
@@ -126,8 +130,8 @@ TYPED_TEST(ncclReduceScatter_test, comm_null) {
     ASSERT_EQ(ncclInvalidArgument,
               ncclReduceScatter(this->sendbuffs[i], this->recvbuffs[i],
                                 std::min(this->N/this->nVis, 1024 * 1024),
-                                this->DataType(), this->RedOps[0], NULL,
-                                this->streams[i]));
+                                this->DataType(), this->RedOps[0],
+                                NULL, this->streams[i]));
 };
 TYPED_TEST(ncclReduceScatter_test, comm_wrong) {
     int i = 0, j = 1;
@@ -158,8 +162,8 @@ TYPED_TEST(ncclReduceScatter_test, aggregate_two_level_group_call) {
             ASSERT_EQ(ncclSuccess,
                       ncclReduceScatter(this->sendbuffs[i], this->recvbuffs[i],
                                         std::min(this->N/this->nVis, 1024 * 1024),
-                                        this->DataType(), op, this->comms[i],
-                                        this->streams[i]))
+                                        this->DataType(), op,
+                                        this->comms[i], this->streams[i]))
                 << "op: " << op << ", "
                 << "i" << i << ", " << std::endl;
         }
@@ -174,8 +178,8 @@ TYPED_TEST(ncclReduceScatter_test, aggregate_one_level_group_call) {
             ASSERT_EQ(ncclSuccess,
                       ncclReduceScatter(this->sendbuffs[i], this->recvbuffs[i],
                                         std::min(this->N/this->nVis, 1024 * 1024),
-                                        this->DataType(), op, this->comms[i],
-                                        this->streams[i]))
+                                        this->DataType(), op,
+                                        this->comms[i], this->streams[i]))
                 << "op: " << op << ", "
                 << "i" << i << ", " << std::endl;
         }

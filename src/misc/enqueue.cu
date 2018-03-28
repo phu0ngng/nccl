@@ -49,7 +49,7 @@
 
 // Must be consistent with the ncclFuncSet enum
 static void* const ncclKerns[ncclCollCount*ncclNumOps*ncclNumTypes*2] = {
-    NCCL_FUNCS2B(ncclBcast),
+    NCCL_FUNCS2B(ncclBroadcast),
     NCCL_FUNCS2A(ncclReduce),
     NCCL_FUNCS2B(ncclAllGather),
     NCCL_FUNCS2A(ncclReduceScatter),
