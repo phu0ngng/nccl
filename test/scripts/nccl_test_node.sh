@@ -14,12 +14,11 @@ BLDDIR=$NCCLROOT/build
 rm $BLDDIR/state
 
 # DGX specific setting
-if [ "$gpumodel" == "dgx1" ] || [ "$gpumodel" == "dgx1v" ]; then
+if [ "$(hostname)" == "dbcluster" ]; then
   source /etc/profile.d/modules.sh
   export PATH=/usr/local/bin:/usr/bin:$PATH
   source $HOME/cuda.sh
   MPI_HOME="${MPI_HOME:-$HOME/install/ompi-master}"
-  exclude="-x dgx1-prd-01 "
 else
   source $SHDIR/cuda.sh
   MPI_HOME="${MPI_HOME:-/opt/mpi/openmpi}"
