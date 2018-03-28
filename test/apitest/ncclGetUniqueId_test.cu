@@ -12,7 +12,7 @@ TEST(ncclGetUniqueId, null) {
 TEST(ncclGetUniqueId, env_id_single_api) {
     int nDev;
     ASSERT_EQ(cudaSuccess, cudaGetDeviceCount(&nDev));
-    setenv("NCCL_COMM_ID","127.0.0.1:16001",1);
+    setenv("NCCL_COMM_ID","127.0.0.1:46001",1);
     ncclUniqueId id;
     EXPECT_EQ(ncclSuccess, ncclGetUniqueId(&id));
     ncclComm_t comm[nDev];
