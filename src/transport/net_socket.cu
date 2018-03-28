@@ -22,7 +22,6 @@ int ncclSocketPtrSupport(int dev, int* supportedTypes) {
   return 0;
 }
 
-#define MAX_IF_NAME_SIZE 16
 #define MAX_IFS 16
 static char ncclNetIfNames[MAX_IF_NAME_SIZE*MAX_IFS];
 static union socketAddress ncclNetIfAddrs[MAX_IFS];
