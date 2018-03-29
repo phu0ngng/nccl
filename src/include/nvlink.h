@@ -22,7 +22,7 @@ enum ncclNvLinkDeviceType {
 
 static ncclResult_t ncclDeviceType(const char* busId, enum ncclNvLinkDeviceType* type) {
   char busPath[] =  "/sys/bus/pci/devices/0000:00:00.0";
-  memcpy(busPath+sizeof("/sys/bus/pci/devices/")-1, busId, sizeof("0000:00")-1);
+  memcpy(busPath+sizeof("/sys/bus/pci/devices/")-1, busId, sizeof("0000:00:00.0")-1);
 
   char pathname[MAXPATHSIZE];
   strcpy(pathname, "/sys/bus/pci/devices/");
@@ -95,32 +95,32 @@ static int getNvlinkGpu(const char* busId1, const char* busId2) {
     nvmlPciInfo_t remoteProc;
     if (wrapNvmlDeviceGetNvLinkRemotePciInfo(nvmlDev, l, &remoteProc) != ncclSuccess) continue;
 
-    // Make a lower case copy of the bus ID for calling ncclDeviceType
-    // PCI system path is in lower case
-    char* p = remoteProc.busId;
-    char lowerId[NVML_DEVICE_PCI_BUS_ID_BUFFER_SIZE];
-    for (int c=0; c<NVML_DEVICE_PCI_BUS_ID_BUFFER_SIZE; c++) {
-      if (p[c] == 0) break;
-      lowerId[c] = tolower(p[c]);
-    }
-
     // Old versions of NVML return a lowercase PCI ID
-    p = remoteProc.busId;
+    char* p = remoteProc.busId;
     for (int c=0; c<NVML_DEVICE_PCI_BUS_ID_BUFFER_SIZE; c++) {
       if (p[c] == 0) break;
       p[c] = toupper(p[c]);
     }
 
-    // Determine if the remote side is NVswitch or another GPU
-    enum ncclNvLinkDeviceType type;
-    if (ncclDeviceType(lowerId, &type) != ncclSuccess) continue;
-
-    if (type == ncclNvLinkDeviceGpu && strncmp(busId2, remoteProc.busId, NVML_DEVICE_PCI_BUS_ID_BUFFER_SIZE) == 0) {
+    if (strncmp(busId2, remoteProc.busId, NVML_DEVICE_PCI_BUS_ID_BUFFER_SIZE) == 0) {
       links++;
-    } else if (type == ncclNvLinkDeviceSwitch) {
-      //TODO: we are making an assumption that all GPUs are connected to this switch
-      //This assumption may change for future architectures
-      nvswitch_links++;
+    } else {
+      // Make a lower case copy of the bus ID for calling ncclDeviceType
+      // PCI system path is in lower case
+      char* p = remoteProc.busId;
+      char lowerId[NVML_DEVICE_PCI_BUS_ID_BUFFER_SIZE];
+      for (int c=0; c<NVML_DEVICE_PCI_BUS_ID_BUFFER_SIZE; c++) {
+        if (p[c] == 0) break;
+        lowerId[c] = tolower(p[c]);
+      }
+
+      // Determine if the remote side is NVswitch
+      enum ncclNvLinkDeviceType type;
+      if (ncclDeviceType(lowerId, &type) == ncclSuccess && type == ncclNvLinkDeviceSwitch) {
+        //TODO: we are making an assumption that all GPUs are connected to this switch
+        //This assumption may change for future architectures
+        nvswitch_links++;
+      }
     }
   }
   return nvswitch_links ? CONNECT_NVSWITCH*nvswitch_links : CONNECT_NVLINK*links;
