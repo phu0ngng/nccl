@@ -21,25 +21,12 @@ enum ncclNvLinkDeviceType {
 };
 
 static ncclResult_t ncclDeviceType(const char* busId, enum ncclNvLinkDeviceType* type) {
-  char busPath[] =  "/sys/bus/pci/devices/0000:00:00.0";
-  memcpy(busPath+sizeof("/sys/bus/pci/devices/")-1, busId, sizeof("0000:00:00.0")-1);
-
-  char pathname[MAXPATHSIZE];
-  strcpy(pathname, "/sys/bus/pci/devices/");
-  int strLen = strlen(pathname);
-  int linkLen = readlink(busPath, pathname+strLen, MAXPATHSIZE-strLen);
-  if (linkLen == 0) {
-    WARN("Could not find link %s", busPath);
-    return ncclSystemError;
-  }
-  // readlink does not append '\0'. We have to do it.
-  pathname[strLen+linkLen] = '\0';
-  char* rPath = realpath(pathname, NULL);
-  strncpy(pathname, rPath, MAXPATHSIZE);
-  free(rPath);
-  strncpy(pathname+strlen(pathname), "/class", MAXPATHSIZE-strlen(pathname));
+  char classPath[] =  "/sys/bus/pci/devices/0000:00:00.0/class";
+  memcpy(classPath+sizeof("/sys/bus/pci/devices/")-1, busId, sizeof("0000:00:00.0")-1);
+  char* rPath = realpath(classPath, NULL);
   int fd;
-  SYSCHECKVAL(open(pathname, O_RDONLY), "open", fd);
+  SYSCHECKVAL(open(rPath, O_RDONLY), "open", fd);
+  free(rPath);
   char pciClass[9];
   strncpy(pciClass, "0x000000", 9);
   int len;
