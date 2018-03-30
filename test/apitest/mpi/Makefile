@@ -51,10 +51,10 @@ clean:
 	rm -rf ${DST_DIR}
 #
 ${BIN} : ${OBJ_FILES}
-	mpicc -o $@ ${NVLDFLAGS} $^
+	${NVCC} -o $@ ${NVLDFLAGS} $^
 #
 ${PBIN} : mpi_perf.cu
-	mpicc -o $@ $(NVCUFLAGS) ${NVLDFLAGS} $^
+	${NVCC} -o $@ $(NVCUFLAGS) ${NVLDFLAGS} $^
 #
 ${DST_DIR}/nccl_mpi.o: ../../share/nccl_mpi.c
 	mpicc -std=c99 -I$(BUILDDIR)/include/ -I$(CUDA_HOME)/include/ -o $@ -c $<

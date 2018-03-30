@@ -52,10 +52,10 @@ ${DST_DIR}/%.o: %.cu
 ${DST_DIR}/%:${DST_DIR}/%.o
 	@printf "Linking  %-35s > %s\n" $< $@
 	@mkdir -p ${DST_DIR}
-	mpicc -o $@ $(NVCUFLAGS) $^ ${NVLDFLAGS}
+	$(NVCC) -o $@ $(NVCUFLAGS) $^ ${NVLDFLAGS}
 
 #${DST_DIR}/%_mpi_transport: ${DST_DIR}/%.o ${DST_DIR}/nccl_mpi.o
 #	@printf "Linking  %-35s > %s\n" $< $@
 #	@mkdir -p ${DST_DIR}
-#	mpicc -o $@ $(NVCUFLAGS) $^ ${NVLDFLAGS}
+#	$(NVCC) -o $@ $(NVCUFLAGS) $^ ${NVLDFLAGS}
 
