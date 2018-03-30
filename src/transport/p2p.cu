@@ -276,10 +276,7 @@ int p2pComputeRingsSeqConnect(int* values, int nranks, int* rings, int nringsSta
 int p2pComputeRingsSeqNew(int* values, int nranks, int* rings, int nringsStart, int* prev, int* next, int minScore, int* nthreads) {
   for (int r=0; r<nringsStart; r++) {
     for (int i=0; i<nranks; i++) {
-      if (r % 2 == 0)
-        rings[r*nranks+i] = i;
-      else
-        rings[r*nranks+i] = nranks-1-i;
+      rings[r*nranks+i] = i;
     }
   }
   return nringsStart;
