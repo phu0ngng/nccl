@@ -140,7 +140,12 @@ gpumodel=$1
 maxgpu=$2
 mode=$3
 op=$4
-for ngpus in `seq 2 2 $maxgpu`; do
+if [ $maxgpu == 16 ]; then
+  gpuseq="2 4 8 16"
+else
+  gpuseq=$(seq 2 2 $maxgpu)
+fi
+for ngpus in $gpuseq; do
   generate_perf $gpumodel $ngpus $mode $op 
 done
 }
