@@ -2,12 +2,15 @@ include ../../makefiles/common.mk
 ##
 BUILDDIR ?= $(abspath ../../build)
 ### mpi lib
+ifeq ($(MPI),1)
 MPI_HOME ?= $(realpath $(dir $(or \
 	$(realpath /usr/include/mpi.h),\
 	$(realpath /usr/lib/openmpi/include/mpi.h)))..)
-ifeq ($(MPI),1)
 NVLDFLAGS += -L$(MPI_HOME)/lib -lmpi
 NVCUFLAGS += -I$(MPI_HOME)/include
+endif
+ifeq ($(MPI_IBM),1)
+NVLDFLAGS += -lmpi_ibm
 endif
 # We need private functions. Include and link with src
 NVCUFLAGS += -I$(BUILDDIR)/include/ -I../include -I../../src/include

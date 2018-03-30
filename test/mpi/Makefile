@@ -8,6 +8,10 @@ ifeq ($(MPI), 1)
 NVCUFLAGS += -DMPI_SUPPORT -I$(MPI_HOME)/include
 NVLDFLAGS += -L$(MPI_HOME)/lib -lmpi
 endif
+ifeq ($(MPI_IBM),1)
+NVCUFLAGS += -DMPI_SUPPORT
+NVLDFLAGS += -lmpi_ibm
+endif
 LIBRARIES += curand nccl
 NVLDFLAGS += -L$(BUILDDIR)/lib $(LIBRARIES:%=-l%)
 
@@ -48,10 +52,10 @@ ${DST_DIR}/%.o: %.cu
 ${DST_DIR}/%:${DST_DIR}/%.o
 	@printf "Linking  %-35s > %s\n" $< $@
 	@mkdir -p ${DST_DIR}
-	$(NVCC) -o $@ $(NVCUFLAGS) $^ ${NVLDFLAGS}
+	mpicc -o $@ $(NVCUFLAGS) $^ ${NVLDFLAGS}
 
 #${DST_DIR}/%_mpi_transport: ${DST_DIR}/%.o ${DST_DIR}/nccl_mpi.o
 #	@printf "Linking  %-35s > %s\n" $< $@
 #	@mkdir -p ${DST_DIR}
-#	$(NVCC) -o $@ $(NVCUFLAGS) $^ ${NVLDFLAGS}
+#	mpicc -o $@ $(NVCUFLAGS) $^ ${NVLDFLAGS}
 
