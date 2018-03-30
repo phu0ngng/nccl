@@ -61,8 +61,8 @@ else
   timeout=`expr $timeout \* 15`
 fi
 if [ "$SLURM" == "1" ]; then
-  srun_cmd="srun -p $gpumodel -t ${timeout} "
-  salloc_cmd="salloc -p $gpumodel -n $maxgpu -c 1 -t ${timeout} "
+  srun_cmd="srun -p $gpumodel -t ${timeout} --exclusive "
+  salloc_cmd="salloc -p $gpumodel -n $maxgpu -c 1 -t ${timeout} --exclusive "
 else
   srun_cmd="timeout ${timeout}m "
   salloc_cmd="timeout ${timeout}m "
