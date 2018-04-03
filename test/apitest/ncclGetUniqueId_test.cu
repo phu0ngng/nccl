@@ -25,5 +25,5 @@ TEST(ncclGetUniqueId, env_id_single_api) {
     for (int i = 0; i < nDev; i++) {
       EXPECT_EQ(ncclSuccess, ncclCommDestroy(comm[i]));
     }
-    setenv("NCCL_COMM_ID","",1);
+    unsetenv("NCCL_COMM_ID");
 }
