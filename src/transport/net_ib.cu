@@ -95,6 +95,7 @@ static void initDevices() {
   if(wrap_ibv_symbols() != ncclSuccess) { return; }
   if (ncclNIbDevs == -1) {
     pthread_mutex_lock(&ncclIbLock);
+    wrap_ibv_fork_init();
     if (ncclNIbDevs == -1) {
       ncclNIbDevs = 0;
       if (findInterfaces(ncclIbIfName, &ncclIbIfAddr, MAX_IF_NAME_SIZE, 1) != 1) {

@@ -14,6 +14,7 @@
 static enum { ibvUninitialized, ibvInitializing, ibvInitialized, ibvError } ibvState = ibvUninitialized;
 
 /*Function Pointers*/
+int (*ibv_internal_fork_init)(void);
 struct ibv_device** (*ibv_internal_get_device_list)(int *num_devices); 
 void (*ibv_internal_free_device_list)(struct ibv_device **list);
 const char * (*ibv_internal_get_device_name)(struct ibv_device *device);
@@ -72,6 +73,7 @@ ncclResult_t wrap_ibv_symbols(void) {
     *cast = tmp;                                         \
   } while (0)
 
+  LOAD_SYM(ibvhandle, "ibv_fork_init", ibv_internal_fork_init);
   LOAD_SYM(ibvhandle, "ibv_get_device_list", ibv_internal_get_device_list);
   LOAD_SYM(ibvhandle, "ibv_free_device_list", ibv_internal_free_device_list);
   LOAD_SYM(ibvhandle, "ibv_get_device_name", ibv_internal_get_device_name);
@@ -182,6 +184,10 @@ ncclResult_t wrap_ibv_symbols(void) {
   } \
   call; \
   return ncclSuccess;
+
+ncclResult_t wrap_ibv_fork_init() {
+  IBV_INT_CHECK(ibv_internal_fork_init, ibv_internal_fork_init(), -1, "ibv_fork_init");
+}
 
 ncclResult_t wrap_ibv_get_device_list(struct ibv_device ***ret, int *num_devices) {
   *ret = ibv_internal_get_device_list(num_devices);
