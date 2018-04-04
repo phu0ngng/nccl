@@ -63,6 +63,19 @@ NCCL_IB_PARAM(RetryCnt, "RETRY_CNT", 7);
 NCCL_IB_PARAM(Sl, "SL", 0);
 NCCL_IB_PARAM(Tc, "TC", 0);
 
+// Allocate memory to be potentially ibv_reg_mr'd. This needs to be
+// allocated on separate pages as those pages will be marked DONTFORK
+// and if they are shared, that could cause a crash in a child process
+static ncclResult_t ncclIbMalloc(void** ptr, size_t size) {
+  void* p;
+  int size_aligned = ROUNDUP(size, PAGE_SIZE);
+  int ret = posix_memalign(&p, PAGE_SIZE, size_aligned);
+  if (p == NULL) return ncclSystemError;
+  memset(p, 0, size);
+  *ptr = p;
+  return ncclSuccess;
+}
+
 pthread_t ncclIbAsyncThread;
 static void* ncclIbAsyncThreadMain(void* args) {
   struct ibv_context* context = (struct ibv_context*)args;
@@ -406,8 +419,9 @@ int ncclIbListen(int dev, void* opaqueHandle, void** listenComm) {
 }
 
 int ncclIbConnect(int dev, void* opaqueHandle, void** sendComm) {
-  struct ncclIbSendComm* comm = (struct ncclIbSendComm*)malloc(sizeof(struct ncclIbSendComm));
-  memset(comm, 0, sizeof(struct ncclIbSendComm));
+  struct ncclIbSendComm* comm;
+  NCCLCHECK(ncclIbMalloc((void**)&comm, sizeof(struct ncclIbSendComm)));
+
   struct ncclIbHandle* handle = (struct ncclIbHandle*) opaqueHandle;
   NCCLCHECK(connectAddress(&comm->fd, &handle->connectAddr));
   *sendComm = comm;
@@ -450,8 +464,8 @@ int ncclIbConnect(int dev, void* opaqueHandle, void** sendComm) {
 
 int ncclIbAccept(void* listenComm, void** recvComm) {
   struct ncclIbListenComm* lComm = (struct ncclIbListenComm*)listenComm;
-  struct ncclIbRecvComm* rComm = (struct ncclIbRecvComm*)malloc(sizeof(struct ncclIbRecvComm));
-  memset(rComm, 0, sizeof(struct ncclIbRecvComm));
+  struct ncclIbRecvComm* rComm;
+  NCCLCHECK(ncclIbMalloc((void**)&rComm, sizeof(struct ncclIbRecvComm)));
   
   struct sockaddr_in sockaddr;
   socklen_t socklen = sizeof(struct sockaddr_in);

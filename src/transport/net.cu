@@ -202,6 +202,10 @@ ncclResult_t netSendSetup(ncclTinfo_t* myOpaqueInfo, ncclTinfo_t* peerOpaqueInfo
   resources->cudaSupport = (useGDRforReads == 1) && (flags & NCCL_PTR_CUDA) ? true : false;
 
   int size = offsetof(struct ncclRecvMem, buff)+ring->buffSize;
+  // Make sure we don't share these page with other allocations since we will
+  // call ibv_reg_mr on it and only these pages should be marked DONTFORK.
+  // Note : this may not be needed, only done as extra safety.
+  size = ROUNDUP(size, PAGE_SIZE);
   if (resources->cudaSupport) {
     CUDACHECK(cudaMalloc(&resources->devNetMem, size));
     CUDACHECK(cudaMemset(resources->devNetMem, 0, size));
@@ -232,6 +236,10 @@ ncclResult_t netRecvSetup(ncclTinfo_t* myOpaqueInfo, ncclTinfo_t* peerOpaqueInfo
   CUDACHECK(cudaHostGetDevicePointer(&resources->devHostSendMem, resources->hostSendMem, 0));
 
   int recvSize = offsetof(struct ncclRecvMem, buff)+ring->buffSize;
+  // Make sure we don't share these page with other allocations since we will
+  // call ibv_reg_mr on it and only these pages should be marked DONTFORK.
+  // Note : this may not be needed, only done as extra safety.
+  recvSize = ROUNDUP(size, PAGE_SIZE);
   CUDACHECK(cudaHostAlloc(&resources->hostRecvMem, recvSize, cudaHostAllocMapped));
   CUDACHECK(cudaHostGetDevicePointer(&resources->devHostRecvMem, resources->hostRecvMem, 0));
 
