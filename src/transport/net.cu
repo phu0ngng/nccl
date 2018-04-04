@@ -239,7 +239,7 @@ ncclResult_t netRecvSetup(ncclTinfo_t* myOpaqueInfo, ncclTinfo_t* peerOpaqueInfo
   // Make sure we don't share these page with other allocations since we will
   // call ibv_reg_mr on it and only these pages should be marked DONTFORK.
   // Note : this may not be needed, only done as extra safety.
-  recvSize = ROUNDUP(size, PAGE_SIZE);
+  recvSize = ROUNDUP(recvSize, PAGE_SIZE);
   CUDACHECK(cudaHostAlloc(&resources->hostRecvMem, recvSize, cudaHostAllocMapped));
   CUDACHECK(cudaHostGetDevicePointer(&resources->devHostRecvMem, resources->hostRecvMem, 0));
 
