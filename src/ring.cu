@@ -57,9 +57,8 @@ ncclResult_t initRing(struct ncclComm* comm, int ringid) {
   ring->userRanks = (int*)malloc(comm->nRanks*sizeof(int));
   
   // Per-ring operation list.
-  ring->collectives = (struct ncclColl*)malloc(sizeof(struct ncclColl)*NCCL_MAX_OPS);
+  CUDACHECK(cudaHostAlloc(&ring->collectives, sizeof(struct ncclColl)*NCCL_MAX_OPS, cudaHostRegisterMapped));
   memset(ring->collectives, 0, sizeof(struct ncclColl)*NCCL_MAX_OPS);
-  CUDACHECK(cudaHostRegister(ring->collectives, sizeof(struct ncclColl)*NCCL_MAX_OPS, cudaHostRegisterMapped));
   CUDACHECK(cudaHostGetDevicePointer(&ring->devCollectives, ring->collectives, 0));
   return ncclSuccess;
 }
@@ -74,8 +73,7 @@ ncclResult_t freeRing(struct ncclRing* ring) {
   CUDACHECK(cudaFree(ring->devUserRanks));
 
   // Operation list
-  CUDACHECK(cudaHostUnregister(ring->collectives));
-  free(ring->collectives);
+  CUDACHECK(cudaFreeHost(ring->collectives));
 
   // Free transport proxy resources
   if (ring->send.transportResources) NCCLCHECK(ring->send.transport->send.free(ring->send.transportResources));
