@@ -276,10 +276,6 @@ struct ncclIbListenComm {
   int fd;
 };
 
-struct ncclIbReqs {
-  struct ncclIbRequest* requests;
-};
-
 struct ncclIbSendFifo {
   uint64_t addr;
   uint32_t rkey;
@@ -287,14 +283,14 @@ struct ncclIbSendFifo {
 };
 
 struct ncclIbSendComm {
+  struct ncclIbSendFifo fifo[MAX_REQUESTS];
+  uint32_t fifoHead;
   int fd;
   int ready;
   struct ncclIbVerbs verbs;
   struct ibv_qp* qp;
-  struct ncclIbReqs reqs;
-  struct ncclIbSendFifo fifo[MAX_REQUESTS];
+  struct ncclIbRequest* reqs;
   struct ibv_mr* fifoMr;
-  uint32_t fifoHead;
 };
 
 struct ncclIbGpuFlush {
@@ -306,21 +302,21 @@ struct ncclIbGpuFlush {
 };
 
 struct ncclIbRemFifo {
+  struct ncclIbSendFifo elems[MAX_REQUESTS];
   uint64_t addr;
   uint32_t rkey;
   uint32_t tail;
-  struct ncclIbSendFifo elems[MAX_REQUESTS];
   struct ibv_mr* mr;
   struct ibv_sge sge;
 };
 
 struct ncclIbRecvComm {
+  struct ncclIbRemFifo remFifo;
   int fd;
   int ready;
   struct ncclIbVerbs verbs;
   struct ibv_qp* qp;
-  struct ncclIbReqs reqs;
-  struct ncclIbRemFifo remFifo;
+  struct ncclIbRequest* reqs;
   struct ncclIbGpuFlush gpuFlush;
 };
 
@@ -539,13 +535,13 @@ int ncclIbAccept(void* listenComm, void** recvComm) {
   return 0;
 }
 
-ncclResult_t ncclIbGetRequest(struct ncclIbReqs* reqs, struct ncclIbRequest** req) {
-  if (reqs->requests == NULL) {
-    reqs->requests = (struct ncclIbRequest*)malloc(MAX_REQUESTS*sizeof(struct ncclIbRequest));
-    memset(reqs->requests, 0, MAX_REQUESTS*sizeof(struct ncclIbRequest));
+ncclResult_t ncclIbGetRequest(struct ncclIbRequest* reqs, struct ncclIbRequest** req) {
+  if (reqs == NULL) {
+    reqs = (struct ncclIbRequest*)malloc(MAX_REQUESTS*sizeof(struct ncclIbRequest));
+    memset(reqs, 0, MAX_REQUESTS*sizeof(struct ncclIbRequest));
   }
   for (int i=0; i<MAX_REQUESTS; i++) {
-    struct ncclIbRequest* r = reqs->requests+i;
+    struct ncclIbRequest* r = reqs+i;
     if (r->used == 0) {
       r->used = 1;
       r->type = 0;
@@ -639,7 +635,7 @@ int ncclIbIsend(void* sendComm, void* data, int size, int type, void** request) 
   NCCLCHECK(ncclSendCheck(comm));
 
   struct ncclIbRequest* req;
-  NCCLCHECK(ncclIbGetRequest(&comm->reqs, &req));
+  NCCLCHECK(ncclIbGetRequest(comm->reqs, &req));
   req->type = type;
   req->verbs = &comm->verbs;
   req->size = size;
@@ -686,7 +682,7 @@ ncclResult_t ncclIbPostFifo(struct ncclIbRecvComm* comm, uint32_t rkey, uint64_t
   struct ibv_send_wr wr;
   memset(&wr, 0, sizeof(wr));
   struct ncclIbRequest* req;
-  NCCLCHECK(ncclIbGetRequest(&comm->reqs, &req));
+  NCCLCHECK(ncclIbGetRequest(comm->reqs, &req));
   req->verbs = &comm->verbs;
   req->free = 1; // Not a user req ; free as soon as it is complete.
   wr.wr_id = (uint64_t)req;
@@ -715,7 +711,7 @@ int ncclIbIrecv(void* recvComm, void* data, int size, int type, void** request) 
   NCCLCHECK(ncclRecvCheck(comm));
 
   struct ncclIbRequest* req;
-  NCCLCHECK(ncclIbGetRequest(&comm->reqs, &req));
+  NCCLCHECK(ncclIbGetRequest(comm->reqs, &req));
   req->type = type;
   req->verbs = &comm->verbs;
   req->size = size;
@@ -750,7 +746,7 @@ int ncclIbFlush(void* recvComm, void* data, int size) {
   if (comm->gpuFlush.enabled == 0 || size == 0) return ncclSuccess;
 
   struct ncclIbRequest* req;
-  NCCLCHECK(ncclIbGetRequest(&comm->reqs, &req));
+  NCCLCHECK(ncclIbGetRequest(comm->reqs, &req));
   req->verbs = &comm->verbs;
   NCCLCHECK(ncclIbGetMr(&comm->verbs, data, 1, &req->ibMr));
 
@@ -823,7 +819,7 @@ int ncclIbTest(void* request, int* done, int* size) {
 int ncclIbCloseSend(void* sendComm) {
   struct ncclIbSendComm* comm = (struct ncclIbSendComm*)sendComm;
   if (comm) {
-    free(comm->reqs.requests);
+    free(comm->reqs);
     close(comm->fd);
     if (comm->qp != NULL) NCCLCHECK(wrap_ibv_destroy_qp(comm->qp));
     if (comm->fifoMr != NULL) NCCLCHECK(wrap_ibv_dereg_mr(comm->fifoMr));
@@ -842,7 +838,7 @@ int ncclIbCloseSend(void* sendComm) {
 int ncclIbCloseRecv(void* recvComm) {
   struct ncclIbRecvComm* comm = (struct ncclIbRecvComm*)recvComm;
   if (comm) {
-    free(comm->reqs.requests);
+    free(comm->reqs);
     close(comm->fd);
     if (comm->qp != NULL) NCCLCHECK(wrap_ibv_destroy_qp(comm->qp));
     if (comm->gpuFlush.enabled) {
