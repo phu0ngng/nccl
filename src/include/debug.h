@@ -7,7 +7,7 @@
 #ifndef NCCL_DEBUG_H_
 #define NCCL_DEBUG_H_
 
-#include "core.h"
+#include <pthread.h>
 #include <stdio.h>
 
 #include <unistd.h>

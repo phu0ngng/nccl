@@ -330,5 +330,18 @@ struct ncclComm {
 
 int ncclCudaCompCap();
 
+#include <sys/mman.h>
+static ncclResult_t ncclCudaHostAlloc(void** ptr, void** devPtr, size_t size) {
+  size_t sizePage = ROUNDUP(size, PAGE_SIZE);
+  SYSCHECK(posix_memalign(ptr, PAGE_SIZE, sizePage), "posix_memalign");
+  if (*ptr == NULL) return ncclUnhandledCudaError;
+  memset(*ptr, 0, sizePage);
+  madvise(*ptr, sizePage, MADV_DONTFORK);
+  CUDACHECK(cudaHostRegister(*ptr, sizePage, cudaHostRegisterMapped));
+  CUDACHECK(cudaHostGetDevicePointer(devPtr, *ptr, 0));
+  return ncclSuccess;
+}
+
+
 #endif // end include guard
 

@@ -57,9 +57,7 @@ ncclResult_t initRing(struct ncclComm* comm, int ringid) {
   ring->userRanks = (int*)malloc(comm->nRanks*sizeof(int));
   
   // Per-ring operation list.
-  CUDACHECK(cudaHostAlloc(&ring->collectives, sizeof(struct ncclColl)*NCCL_MAX_OPS, cudaHostRegisterMapped));
-  memset(ring->collectives, 0, sizeof(struct ncclColl)*NCCL_MAX_OPS);
-  CUDACHECK(cudaHostGetDevicePointer(&ring->devCollectives, ring->collectives, 0));
+  NCCLCHECK(ncclCudaHostAlloc((void**)&ring->collectives, (void**)&ring->devCollectives, sizeof(struct ncclColl)*NCCL_MAX_OPS));
   return ncclSuccess;
 }
 

@@ -202,20 +202,13 @@ ncclResult_t netSendSetup(ncclTinfo_t* myOpaqueInfo, ncclTinfo_t* peerOpaqueInfo
   resources->cudaSupport = (useGDRforReads == 1) && (flags & NCCL_PTR_CUDA) ? true : false;
 
   int size = offsetof(struct ncclRecvMem, buff)+ring->buffSize;
-  // Make sure we don't share these page with other allocations since we will
-  // call ibv_reg_mr on it and only these pages should be marked DONTFORK.
-  // Note : this may not be needed, only done as extra safety.
-  size = ROUNDUP(size, PAGE_SIZE);
   if (resources->cudaSupport) {
     CUDACHECK(cudaMalloc(&resources->devNetMem, size));
     CUDACHECK(cudaMemset(resources->devNetMem, 0, size));
   }
 
-  CUDACHECK(cudaHostAlloc(&resources->hostRecvMem, size, cudaHostAllocMapped));
-  CUDACHECK(cudaHostGetDevicePointer(&resources->devHostRecvMem, resources->hostRecvMem, 0));
-
-  CUDACHECK(cudaHostAlloc(&resources->hostSendMem, size, cudaHostAllocMapped));
-  CUDACHECK(cudaHostGetDevicePointer(&resources->devHostSendMem, resources->hostSendMem, 0));
+  NCCLCHECK(ncclCudaHostAlloc((void**)&resources->hostRecvMem, (void**)&resources->devHostRecvMem, size));
+  NCCLCHECK(ncclCudaHostAlloc((void**)&resources->hostSendMem, (void**)&resources->devHostSendMem, size));
 
   return ncclSuccess;
 }
@@ -232,16 +225,10 @@ ncclResult_t netRecvSetup(ncclTinfo_t* myOpaqueInfo, ncclTinfo_t* peerOpaqueInfo
   resources->cudaSupport = (flags & NCCL_PTR_CUDA) ? true : false;
 
   int sendSize = sizeof(struct ncclSendMem);
-  CUDACHECK(cudaHostAlloc(&resources->hostSendMem, sendSize, cudaHostAllocMapped));
-  CUDACHECK(cudaHostGetDevicePointer(&resources->devHostSendMem, resources->hostSendMem, 0));
+  NCCLCHECK(ncclCudaHostAlloc((void**)&resources->hostSendMem, (void**)&resources->devHostSendMem, sendSize));
 
   int recvSize = offsetof(struct ncclRecvMem, buff)+ring->buffSize;
-  // Make sure we don't share these page with other allocations since we will
-  // call ibv_reg_mr on it and only these pages should be marked DONTFORK.
-  // Note : this may not be needed, only done as extra safety.
-  recvSize = ROUNDUP(recvSize, PAGE_SIZE);
-  CUDACHECK(cudaHostAlloc(&resources->hostRecvMem, recvSize, cudaHostAllocMapped));
-  CUDACHECK(cudaHostGetDevicePointer(&resources->devHostRecvMem, resources->hostRecvMem, 0));
+  NCCLCHECK(ncclCudaHostAlloc((void**)&resources->hostRecvMem, (void**)&resources->devHostRecvMem, recvSize));
 
   struct netInfo* peerInfo = (struct netInfo*)peerOpaqueInfo;
   INFO("%d -> %d via NET/%s/%d%s%s", peerInfo->rank, myInfo->rank, ncclNetName(), resources->netDev,
