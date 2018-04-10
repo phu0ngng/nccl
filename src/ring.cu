@@ -71,7 +71,7 @@ ncclResult_t freeRing(struct ncclRing* ring) {
   CUDACHECK(cudaFree(ring->devUserRanks));
 
   // Operation list
-  CUDACHECK(cudaFreeHost(ring->collectives));
+  NCCLCHECK(ncclCudaHostFree(ring->collectives));
 
   // Free transport proxy resources
   if (ring->send.transportResources) NCCLCHECK(ring->send.transport->send.free(ring->send.transportResources));

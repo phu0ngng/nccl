@@ -333,15 +333,23 @@ int ncclCudaCompCap();
 #include <sys/mman.h>
 static ncclResult_t ncclCudaHostAlloc(void** ptr, void** devPtr, size_t size) {
   size_t sizePage = ROUNDUP(size, PAGE_SIZE);
-  SYSCHECK(posix_memalign(ptr, PAGE_SIZE, sizePage), "posix_memalign");
-  if (*ptr == NULL) return ncclUnhandledCudaError;
+  int ret = posix_memalign(ptr, PAGE_SIZE, sizePage);
+  if (ret != 0) {
+    WARN("Failed to allocate memory. posix_memalign returned %d", ret);
+    return ncclSystemError;
+  }
   memset(*ptr, 0, sizePage);
-  madvise(*ptr, sizePage, MADV_DONTFORK);
+  SYSCHECK(madvise(*ptr, sizePage, MADV_DONTFORK), "madvise");
   CUDACHECK(cudaHostRegister(*ptr, sizePage, cudaHostRegisterMapped));
   CUDACHECK(cudaHostGetDevicePointer(devPtr, *ptr, 0));
   return ncclSuccess;
 }
 
+static ncclResult_t ncclCudaHostFree(void* ptr) {
+  CUDACHECK(cudaHostUnregister(ptr));
+  free(ptr);
+  return ncclSuccess;
+}
 
 #endif // end include guard
 

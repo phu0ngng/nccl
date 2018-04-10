@@ -295,11 +295,10 @@ ncclResult_t netRecvConnect(struct ncclConnect* connectInfo, struct ncclConnecto
 
 ncclResult_t netSendFree(void* transportResources) {
   struct netSendResources* resources = (struct netSendResources*)transportResources;
-  CUDACHECK(cudaFreeHost(resources->hostSendMem));
-  CUDACHECK(cudaFreeHost(resources->hostRecvMem));
+  NCCLCHECK(ncclCudaHostFree(resources->hostSendMem));
+  NCCLCHECK(ncclCudaHostFree(resources->hostRecvMem));
   if (resources->cudaSupport)
     CUDACHECK(cudaFree(resources->devNetMem));
-  // TODO : unmap hostDevMem
   NCCLCHECK(ncclNetCloseSend(resources->netSendComm));
   free(resources);
   return ncclSuccess;
@@ -307,9 +306,8 @@ ncclResult_t netSendFree(void* transportResources) {
 
 ncclResult_t netRecvFree(void* transportResources) {
   struct netRecvResources* resources = (struct netRecvResources*)transportResources;
-  CUDACHECK(cudaFreeHost(resources->hostSendMem));
-  CUDACHECK(cudaFreeHost(resources->hostRecvMem));
-  // TODO : unmap hostDevMem
+  NCCLCHECK(ncclCudaHostFree(resources->hostSendMem));
+  NCCLCHECK(ncclCudaHostFree(resources->hostRecvMem));
   NCCLCHECK(ncclNetCloseRecv(resources->netRecvComm));
   free(resources);
   return ncclSuccess;
