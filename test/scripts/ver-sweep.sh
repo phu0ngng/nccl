@@ -15,7 +15,7 @@ fi
 
 INSTVER=2.1.2
 TESTDIR=$HOME/$DATE
-NCCLDEB=$HOME/install/nccl.deb
+NCCLDEB=/opt/nccl/cuda9.0
 
 export SLURM=1
 OPTS="api single latency reorder all aggregation mpi mpi_latency multinode dlfw deadlock"
@@ -51,9 +51,9 @@ for ver in $VERS ; do
         elif [ "$ver" == "$INSTVER" ]; then
            INSTALL=1 ./nccl_test_node.sh $gpumodel $maxgpu $OPT
         #elif [ "$ver" == "1.5.4" ]; then
-        #   NCCL_TOPOLOGY=CUBEMESH DEBDIR=$NCCLDEB/$ver ./nccl_test_node.sh $gpumodel $maxgpu $OPT
+        #   NCCL_TOPOLOGY=CUBEMESH DEBDIR=$NCCLDEB/$ver-1 ./nccl_test_node.sh $gpumodel $maxgpu $OPT
         else
-           DEBDIR=$NCCLDEB/$ver ./nccl_test_node.sh $gpumodel $maxgpu $OPT
+           DEBDIR=$NCCLDEB/$ver-1 ./nccl_test_node.sh $gpumodel $maxgpu $OPT
         fi
      done
    done
