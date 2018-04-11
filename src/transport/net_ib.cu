@@ -284,12 +284,12 @@ struct ncclIbSendFifo {
 
 struct ncclIbSendComm {
   struct ncclIbSendFifo fifo[MAX_REQUESTS];
+  struct ncclIbRequest reqs[MAX_REQUESTS];
   uint32_t fifoHead;
   int fd;
   int ready;
   struct ncclIbVerbs verbs;
   struct ibv_qp* qp;
-  struct ncclIbRequest* reqs;
   struct ibv_mr* fifoMr;
 };
 
@@ -312,11 +312,11 @@ struct ncclIbRemFifo {
 
 struct ncclIbRecvComm {
   struct ncclIbRemFifo remFifo;
+  struct ncclIbRequest reqs[MAX_REQUESTS];
   int fd;
   int ready;
   struct ncclIbVerbs verbs;
   struct ibv_qp* qp;
-  struct ncclIbRequest* reqs;
   struct ncclIbGpuFlush gpuFlush;
 };
 
@@ -536,10 +536,6 @@ int ncclIbAccept(void* listenComm, void** recvComm) {
 }
 
 ncclResult_t ncclIbGetRequest(struct ncclIbRequest* reqs, struct ncclIbRequest** req) {
-  if (reqs == NULL) {
-    reqs = (struct ncclIbRequest*)malloc(MAX_REQUESTS*sizeof(struct ncclIbRequest));
-    memset(reqs, 0, MAX_REQUESTS*sizeof(struct ncclIbRequest));
-  }
   for (int i=0; i<MAX_REQUESTS; i++) {
     struct ncclIbRequest* r = reqs+i;
     if (r->used == 0) {
@@ -819,7 +815,6 @@ int ncclIbTest(void* request, int* done, int* size) {
 int ncclIbCloseSend(void* sendComm) {
   struct ncclIbSendComm* comm = (struct ncclIbSendComm*)sendComm;
   if (comm) {
-    free(comm->reqs);
     close(comm->fd);
     if (comm->qp != NULL) NCCLCHECK(wrap_ibv_destroy_qp(comm->qp));
     if (comm->fifoMr != NULL) NCCLCHECK(wrap_ibv_dereg_mr(comm->fifoMr));
@@ -838,7 +833,6 @@ int ncclIbCloseSend(void* sendComm) {
 int ncclIbCloseRecv(void* recvComm) {
   struct ncclIbRecvComm* comm = (struct ncclIbRecvComm*)recvComm;
   if (comm) {
-    free(comm->reqs);
     close(comm->fd);
     if (comm->qp != NULL) NCCLCHECK(wrap_ibv_destroy_qp(comm->qp));
     if (comm->gpuFlush.enabled) {
