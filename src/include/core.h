@@ -332,14 +332,16 @@ int ncclCudaCompCap();
 
 #include <sys/mman.h>
 static ncclResult_t ncclCudaHostAlloc(void** ptr, void** devPtr, size_t size) {
-  size_t sizePage = ROUNDUP(size, PAGE_SIZE);
-  int ret = posix_memalign(ptr, PAGE_SIZE, sizePage);
+  size_t page_size = sysconf(_SC_PAGESIZE);
+  size_t sizePage = ROUNDUP(size, page_size);
+  int ret = posix_memalign(ptr, page_size, sizePage);
   if (ret != 0) {
     WARN("Failed to allocate memory. posix_memalign returned %d", ret);
     return ncclSystemError;
   }
   memset(*ptr, 0, sizePage);
-  SYSCHECK(madvise(*ptr, sizePage, MADV_DONTFORK), "madvise");
+  ret = madvise(*ptr, sizePage, MADV_DONTFORK);
+  if (ret != 0) WARN("Call to madvise(MADV_DONTFORK) failed (page_size=%ld) : %s", page_size, strerror(errno));
   CUDACHECK(cudaHostRegister(*ptr, sizePage, cudaHostRegisterMapped));
   CUDACHECK(cudaHostGetDevicePointer(devPtr, *ptr, 0));
   return ncclSuccess;
