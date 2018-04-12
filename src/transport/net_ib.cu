@@ -67,9 +67,10 @@ NCCL_IB_PARAM(Tc, "TC", 0);
 // allocated on separate pages as those pages will be marked DONTFORK
 // and if they are shared, that could cause a crash in a child process
 static ncclResult_t ncclIbMalloc(void** ptr, size_t size) {
+  size_t page_size = sysconf(_SC_PAGESIZE);
   void* p;
-  int size_aligned = ROUNDUP(size, PAGE_SIZE);
-  int ret = posix_memalign(&p, PAGE_SIZE, size_aligned);
+  int size_aligned = ROUNDUP(size, page_size);
+  int ret = posix_memalign(&p, page_size, size_aligned);
   if (p == NULL) return ncclSystemError;
   memset(p, 0, size);
   *ptr = p;
