@@ -4,11 +4,16 @@ BUILDDIR ?= $(abspath ../../build)
 GTEST_DIR ?= $(abspath ../googletest/googletest)
 include ../gtest.mk
 ### mpi lib
+ifeq ($(MPI),1)
 MPI_HOME ?= $(realpath $(dir $(or \
 	$(realpath /usr/include/mpi.h),\
 	$(realpath /usr/lib/openmpi/include/mpi.h)))..)
 NVLDFLAGS += -L$(MPI_HOME)/lib -lmpi
 NVCUFLAGS += -I$(MPI_HOME)/include
+endif
+ifeq ($(MPI_IBM),1)
+NVLDFLAGS += -lmpi_ibm
+endif
 ### flags
 NVCUFLAGS += -I${BUILDDIR}/include/ -include nccl.h -I../include ${CPPFLAGS} ${GTEST_CPPFLAGS}
 LIBRARIES += curand nccl

@@ -207,11 +207,8 @@ ncclResult_t netSendSetup(ncclTinfo_t* myOpaqueInfo, ncclTinfo_t* peerOpaqueInfo
     CUDACHECK(cudaMemset(resources->devNetMem, 0, size));
   }
 
-  CUDACHECK(cudaHostAlloc(&resources->hostRecvMem, size, cudaHostAllocMapped));
-  CUDACHECK(cudaHostGetDevicePointer(&resources->devHostRecvMem, resources->hostRecvMem, 0));
-
-  CUDACHECK(cudaHostAlloc(&resources->hostSendMem, size, cudaHostAllocMapped));
-  CUDACHECK(cudaHostGetDevicePointer(&resources->devHostSendMem, resources->hostSendMem, 0));
+  NCCLCHECK(ncclCudaHostAlloc((void**)&resources->hostRecvMem, (void**)&resources->devHostRecvMem, size));
+  NCCLCHECK(ncclCudaHostAlloc((void**)&resources->hostSendMem, (void**)&resources->devHostSendMem, size));
 
   return ncclSuccess;
 }
@@ -228,12 +225,10 @@ ncclResult_t netRecvSetup(ncclTinfo_t* myOpaqueInfo, ncclTinfo_t* peerOpaqueInfo
   resources->cudaSupport = (flags & NCCL_PTR_CUDA) ? true : false;
 
   int sendSize = sizeof(struct ncclSendMem);
-  CUDACHECK(cudaHostAlloc(&resources->hostSendMem, sendSize, cudaHostAllocMapped));
-  CUDACHECK(cudaHostGetDevicePointer(&resources->devHostSendMem, resources->hostSendMem, 0));
+  NCCLCHECK(ncclCudaHostAlloc((void**)&resources->hostSendMem, (void**)&resources->devHostSendMem, sendSize));
 
   int recvSize = offsetof(struct ncclRecvMem, buff)+ring->buffSize;
-  CUDACHECK(cudaHostAlloc(&resources->hostRecvMem, recvSize, cudaHostAllocMapped));
-  CUDACHECK(cudaHostGetDevicePointer(&resources->devHostRecvMem, resources->hostRecvMem, 0));
+  NCCLCHECK(ncclCudaHostAlloc((void**)&resources->hostRecvMem, (void**)&resources->devHostRecvMem, recvSize));
 
   struct netInfo* peerInfo = (struct netInfo*)peerOpaqueInfo;
   INFO("%d -> %d via NET/%s/%d%s%s", peerInfo->rank, myInfo->rank, ncclNetName(), resources->netDev,
@@ -300,11 +295,10 @@ ncclResult_t netRecvConnect(struct ncclConnect* connectInfo, struct ncclConnecto
 
 ncclResult_t netSendFree(void* transportResources) {
   struct netSendResources* resources = (struct netSendResources*)transportResources;
-  CUDACHECK(cudaFreeHost(resources->hostSendMem));
-  CUDACHECK(cudaFreeHost(resources->hostRecvMem));
+  NCCLCHECK(ncclCudaHostFree(resources->hostSendMem));
+  NCCLCHECK(ncclCudaHostFree(resources->hostRecvMem));
   if (resources->cudaSupport)
     CUDACHECK(cudaFree(resources->devNetMem));
-  // TODO : unmap hostDevMem
   NCCLCHECK(ncclNetCloseSend(resources->netSendComm));
   free(resources);
   return ncclSuccess;
@@ -312,9 +306,8 @@ ncclResult_t netSendFree(void* transportResources) {
 
 ncclResult_t netRecvFree(void* transportResources) {
   struct netRecvResources* resources = (struct netRecvResources*)transportResources;
-  CUDACHECK(cudaFreeHost(resources->hostSendMem));
-  CUDACHECK(cudaFreeHost(resources->hostRecvMem));
-  // TODO : unmap hostDevMem
+  NCCLCHECK(ncclCudaHostFree(resources->hostSendMem));
+  NCCLCHECK(ncclCudaHostFree(resources->hostRecvMem));
   NCCLCHECK(ncclNetCloseRecv(resources->netRecvComm));
   free(resources);
   return ncclSuccess;

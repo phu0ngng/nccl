@@ -1044,6 +1044,7 @@ typedef enum ibv_return_enum
 } ibv_return_t;
 
 ncclResult_t wrap_ibv_symbols(void);
+ncclResult_t wrap_ibv_fork_init(void);
 ncclResult_t wrap_ibv_get_device_list(struct ibv_device ***ret, int *num_devices);
 ncclResult_t wrap_ibv_free_device_list(struct ibv_device **list);
 const char *wrap_ibv_get_device_name(struct ibv_device *device);
