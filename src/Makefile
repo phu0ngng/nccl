@@ -81,7 +81,7 @@ $(OBJDIR)/%.o : %.cu
 
 clean :
 	rm -rf ${INCDIR} ${LIBDIR} ${OBJDIR} nccl.h
-	make -C collectives/device clean
+	$(MAKE) -C collectives/device clean
 
 install : lib
 	mkdir -p $(PREFIX)/lib
