@@ -36,10 +36,10 @@ DGX2 intra-node only.
 No change.
 
 <h2>KPI Requirements</h2>
-<p>Provide 5x the performance on DGX2 at 16 GPUs for small/medium sizes (not
-considering LL algorithms), that advantage decreasing progressively as size
-increases, but no less than 0.95x (no more than 5% performance degradation for
-very large sizes).
+<p>Provide 5x the performance on DGX2 at 16 GPUs for small/medium sizes
+(32k-512k), that advantage decreasing progressively as size increases, but no
+less than 0.95x (no more than 5% performance degradation for very large sizes).
+<p>This performance improvement is illustrated by the comparison below.
 <p><center><img src="images/nccl_dgx2_perf.png" width="400px"></center>
 
 <p>Multi-node communication performance should remain the same as before.
