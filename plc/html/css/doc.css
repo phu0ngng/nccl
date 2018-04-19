@@ -1,6 +1,13 @@
+/* This is to remove chrome header and footer */
+@page {
+   margin: 0;
+   size: auto;
+}
+
 body {
   font-family: Sans-Serif;
   font-size: 14px;
+  margin: 1cm 1cm 1cm 1cm;
 }
 
 h1, h2, h3, h4 {
