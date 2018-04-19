@@ -302,6 +302,42 @@ __device__ inline void ReduceCopy128b( const int w, const int nw, const int t,
   }
 }
 
+template<class FUNC, typename T, int UNROLL>
+__device__ inline void ReduceCopy128bMultiPeer(const int w, const int nw, const int t, 
+    int npeers, Pack128 ** srcs, Pack128 ** dsts, const int N) {
+  Pack128 t0[UNROLL];
+  Pack128 t1[UNROLL];
+  const int inc = nw * UNROLL * WARP_SIZE;
+  int offset = w * UNROLL * WARP_SIZE + t;
+
+  while (offset < N) {
+    Pack128* src = srcs[0]+offset;
+    #pragma unroll
+    for (int u = 0; u < UNROLL; ++u) {
+      Fetch128(t0[u], src+u*WARP_SIZE);
+    }
+    for (int p=1; p<npeers; p++) {
+      src = srcs[p]+offset;
+      #pragma unroll
+      for (int u = 0; u < UNROLL; ++u) {
+        Fetch128(t1[u], src+u*WARP_SIZE);
+      }
+      #pragma unroll
+      for (int u = 0; u < UNROLL; ++u) {
+        MULTI128<FUNC, T>()(t0[u], t1[u]);
+      }
+    }
+    for (int p=0; p<npeers; p++) {
+      Pack128* dst = dsts[p]+offset;
+      #pragma unroll
+      for (int u = 0; u < UNROLL; ++u) {
+        Store128(dst+u*WARP_SIZE, t0[u]);
+      }
+    }
+    offset += inc;
+  }
+}
+
 template<int UNROLL, class FUNC, typename T, bool HAS_DEST1, bool HAS_SRC1>
 __device__ inline void ReduceOrCopy(const int tid, const int nthreads,
     volatile T * __restrict__ dest0, volatile T * __restrict__ dest1,

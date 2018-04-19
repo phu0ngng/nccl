@@ -43,23 +43,21 @@ void InitRecvResult(struct threadArgs_t* args, ncclDataType_t type, ncclRedOp_t 
 #ifdef MPI_SUPPORT
     // Last thread does the MPI reduction
     if (args->nbytes > 0) {
-      void* remote, *remoteHost = malloc(args->nbytes);
+      void* remote;
       void* myInitialData = malloc(args->nbytes);
       memcpy(myInitialData, args->expectedHost[0], args->nbytes);
-      CUDACHECK(cudaHostRegister(remoteHost, args->nbytes, cudaHostRegisterPortable | cudaHostRegisterMapped));
-      CUDACHECK(cudaHostGetDevicePointer(&remote, remoteHost, 0));
+      CUDACHECK(cudaHostAlloc(&remote, args->nbytes, cudaHostAllocPortable | cudaHostAllocMapped));
       for (int i=0; i<args->nProcs; i++) {
         if (i == args->proc) {
           MPI_Bcast(myInitialData, args->nbytes, MPI_BYTE, i, MPI_COMM_WORLD);
           free(myInitialData);
         } else {
-          MPI_Bcast(remoteHost, args->nbytes, MPI_BYTE, i, MPI_COMM_WORLD);
+          MPI_Bcast(remote, args->nbytes, MPI_BYTE, i, MPI_COMM_WORLD);
           Accumulate(args->expected[0], remote, count, type, op);
           cudaDeviceSynchronize();
         }
       }
-      CUDACHECK(cudaHostUnregister(remoteHost));
-      free(remoteHost);
+      CUDACHECK(cudaFreeHost(remote));
     }
 #endif
     args->sync[args->sync_idx] = 0;

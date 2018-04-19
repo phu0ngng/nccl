@@ -811,6 +811,21 @@ void* compThread(void* args) {
     for (int i=0; i<targs->nGpus; i++) {
       CUDACHECK(cudaFree(ptrs[i]));
     }
+    fflush(stdout);
+    fflush(stderr);
+    pid_t pid = fork();
+    if (pid == 0) {
+      uint64_t* p = (uint64_t*)malloc(sizeof(uint64_t));
+      p[0] = 0xfedcba9284353;
+      usleep(40000);
+      free(p);
+      // Do not exit, as it would call the CUDA destructors which may break the parent.
+      // Replace with another process that does nothing instead. That also simulates
+      // The behavior of a popen() call.
+      execl("/bin/true", "");
+    } else {
+      usleep(40000);
+    }
   }
   for (int i=0; i<targs->nGpus; i++) {
     CUDACHECK(cudaStreamDestroy(streams[i]));
@@ -828,9 +843,8 @@ void AllocateBuffs(void **sendbuff, size_t sendBytes, void **recvbuff, size_t re
     CUDACHECK(cudaMalloc(recvbuff, (sendBytes > recvBytes) ? sendBytes : recvBytes));
 
     if (is_first || !sameExpected) {
-        *expectedHost = malloc(recvBytes);
-        CUDACHECK(cudaHostRegister(*expectedHost, recvBytes, cudaHostRegisterPortable | cudaHostRegisterMapped));
-        CUDACHECK(cudaHostGetDevicePointer(expected, *expectedHost, 0));
+        CUDACHECK(cudaHostAlloc(expectedHost, recvBytes, cudaHostAllocPortable | cudaHostAllocMapped));
+        *expected = *expectedHost;
         cached_ptr = *expected;
         cached_hostptr = *expectedHost;
         is_first = 0;
@@ -1097,8 +1111,8 @@ int main(int argc, char* argv[]) {
 
   if (procSharedBytes > 0) { 
       procSharedHost = malloc(procSharedBytes);
-      CUDACHECK(cudaHostRegister(procSharedHost, procSharedBytes, cudaHostRegisterPortable | cudaHostRegisterMapped));
-      CUDACHECK(cudaHostGetDevicePointer(&procShared, procSharedHost, 0));
+      CUDACHECK(cudaHostAlloc(&procSharedHost, procSharedBytes, cudaHostAllocPortable | cudaHostAllocMapped));
+      procShared = procSharedHost;
   }
 
   //if parallel init is not selected, use main thread to initialize NCCL
@@ -1120,7 +1134,8 @@ int main(int argc, char* argv[]) {
 
   int errors[nThreads];
   double bw[nThreads];
-  double delta[nThreads];
+  double* delta;
+  CUDACHECK(cudaHostAlloc(&delta, sizeof(double)*nThreads, cudaHostAllocPortable | cudaHostAllocMapped));
   int bw_count[nThreads];
   for (int t=0; t<nThreads; t++) {
     bw[t] = 0.0;
@@ -1171,8 +1186,7 @@ int main(int argc, char* argv[]) {
     args[t].sync_idx = 0;
     args[t].deltaThreads = delta;
     args[t].deltaHost = (delta + t);
-    CUDACHECK(cudaHostRegister(args[t].deltaHost, sizeof(double), cudaHostRegisterPortable|cudaHostRegisterMapped));
-    CUDACHECK(cudaHostGetDevicePointer(&args[t].delta, args[t].deltaHost, 0));
+    args[t].delta = delta;
     args[t].errors=errors+t;
     args[t].bw=bw+t;
     args[t].bw_count=bw_count+t;
