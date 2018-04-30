@@ -106,7 +106,7 @@ ncclResult_t transportSaveProxies(int substeps, int subchunks, int nstepsPerRoun
   int nrings   = llMode ? 1             : LIMIT_NRINGS(nbytes, comm->nRings);
   int buffSize = llMode ? LL_BUFF_SIZE  : comm->rings[0].buffSize;
 
-  int nrounds = (int)(DIVUP(nbytes, ((size_t)nrings * nblocksPerRound * (buffSize/subchunks))); // Fixed 32-bit overflow
+  int nrounds = (int)(DIVUP(nbytes, ((size_t)nrings * nblocksPerRound * (buffSize/subchunks)))); // Fixed 32-bit overflow
   int nsteps = nstepsPerRound * nrounds * substeps;
   for (int r=0; r<nrings; r++) {
     struct ncclRing* ring = comm->rings+((comm->myParams->gridDim.x+r)%comm->nRings);
