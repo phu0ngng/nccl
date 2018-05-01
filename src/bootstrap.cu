@@ -181,7 +181,7 @@ out:
 ncclResult_t bootstrapCreateRoot(ncclUniqueId* commId, bool idFromEnv) {
   struct extId* id = (struct extId*)commId;
   char hostname[1024];
-  getHostName(hostname, 1024);
+  NCCLCHECK(getHostName(hostname, 1024));
   id->hostHash = getHostHash(hostname);
   NCCLCHECK(bootstrapListen(idFromEnv ? dontCareIf : 0, &id->extHandle, &id->extListenComm));
   ncclUniqueId* threadIdCopy = (ncclUniqueId*)malloc(sizeof(ncclUniqueId));
