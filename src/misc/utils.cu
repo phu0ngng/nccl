@@ -5,16 +5,19 @@
  ************************************************************************/
 
 #include "utils.h"
+#include "core.h"
 #include <unistd.h>
+#include <string.h>
 
-void getHostName(char* hostname, int maxlen) {
-  gethostname(hostname, maxlen);
-  for (int i=0; i< maxlen; i++) {
-    if (hostname[i] == '.') {
-      hostname[i] = '\0';
-      return;
-    }
+ncclResult_t getHostName(char* hostname, int maxlen) {
+  if (gethostname(hostname, maxlen) != 0) {
+    strncpy(hostname, "unknown", maxlen);
+    return ncclSystemError;
   }
+  int i = 0;
+  while ((hostname[i] != '.') && (hostname[i] != '\0') && (i < maxlen-1)) i++;
+  hostname[i] = '\0';
+  return ncclSuccess;
 }
 
 uint64_t getHostHash(const char* string) {

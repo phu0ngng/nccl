@@ -13,13 +13,14 @@
 #include <unistd.h>
 #include <sys/syscall.h>
 #include <limits.h>
+#include "nccl.h"
 #define gettid() (pid_t) syscall(SYS_gettid)
 
 typedef enum {NONE=0, VERSION=1, WARN=2, INFO=3, ABORT=4, TRACE=5} DebugLevel;
 extern DebugLevel ncclDebugLevel;
 extern pthread_mutex_t ncclDebugOutputLock;
 extern FILE *ncclDebugFile;
-extern void getHostName(char* hostname, int maxlen);
+extern ncclResult_t getHostName(char* hostname, int maxlen);
 
 #define WARN(...) do {                                           \
   if (ncclDebugLevel >= WARN) {                                  \

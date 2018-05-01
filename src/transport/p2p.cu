@@ -42,7 +42,7 @@ ncclResult_t p2pFillInfo(ncclTinfo_t* opaqueInfo, int rank) {
   CUDACHECK(cudaGetDevice(&info->cudaDev));
   info->pid = getpid();
   char hostname[1024];
-  getHostName(hostname, 1024);
+  NCCLCHECK(getHostName(hostname, 1024));
   info->hostHash=getHostHash(hostname);
   info->hostNumber=getHostNumber(hostname);
 

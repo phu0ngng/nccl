@@ -485,7 +485,7 @@ static ncclResult_t initTransportsRank(struct ncclComm* comm, ncclUniqueId* comm
   } rankInfos[nranks];
   rankInfos[rank].pid = getpid();
   char hostname[1024];
-  getHostName(hostname, 1024);
+  NCCLCHECK(getHostName(hostname, 1024));
   rankInfos[rank].hostHash=getHostHash(hostname);
   rankInfos[rank].comm = comm;
   NCCLCHECK(bootstrapAllGather(commState, rankInfos, sizeof(struct rankInfo)));
@@ -579,7 +579,7 @@ ncclResult_t ncclCommInitRank(ncclComm_t* newcomm, int nranks, ncclUniqueId comm
 static ncclResult_t initTransportsAll(struct ncclComm** comms, const int* devs, int nranks) {
   struct ncclInfo* allInfo = (struct ncclInfo*)malloc(sizeof(struct ncclInfo)*nranks);
   for (int rank=0; rank<nranks; rank++) {
-    cudaSetDevice(devs[rank]);
+    CUDACHECK(cudaSetDevice(devs[rank]));
     NCCLCHECK(fillInfo(allInfo+rank, rank));
   }
 
@@ -597,7 +597,7 @@ static ncclResult_t initTransportsAll(struct ncclComm** comms, const int* devs, 
   int myCompCap = ncclCudaCompCap();
   int minCompCap = myCompCap;
   for (int rank=0; rank<nranks; rank++) {
-    cudaSetDevice(devs[rank]);
+    CUDACHECK(cudaSetDevice(devs[rank]));
     int nringsRank;
     int nthreadsRank = getDefaultThreads();
     myCompCap = ncclCudaCompCap();
