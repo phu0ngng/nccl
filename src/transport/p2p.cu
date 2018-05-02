@@ -65,6 +65,7 @@ ncclResult_t p2pCanConnect(int* ret, ncclTinfo_t* myOpaqueInfo, ncclTinfo_t* pee
   if (p2pDisabled == -1) {
     char* str = getenv("NCCL_P2P_DISABLE");
     p2pDisabled = str ? atoi(str) : 0;
+    if (p2pDisabled == 1) INFO("P2P transport disabled per user setting.");
   }
   if (p2pDisabled == 1) {
     *ret = 0;

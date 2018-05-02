@@ -74,6 +74,7 @@ ncclResult_t shmCanConnect(int* ret, ncclTinfo_t* myOpaqueInfo, ncclTinfo_t* pee
   if (shmDisabled == -1) {
     char* str = getenv("NCCL_SHM_DISABLE");
     shmDisabled = str ? atoi(str) : 0;
+    if (shmDisabled == 1) INFO("SHM transport disabled per user setting.");
   }
   struct shmInfo* myInfo = (struct shmInfo*)myOpaqueInfo;
   struct shmInfo* peerInfo = (struct shmInfo*)peerOpaqueInfo;

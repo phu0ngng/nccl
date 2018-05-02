@@ -53,6 +53,7 @@ int ncclIb##name() { \
   if (value == -1) { \
     char* str = getenv("NCCL_IB_" env); \
     value = str ? atoi(str) : default_value; \
+    if (str) INFO("NET/IB : " env " set to %d per user setting", value); \
   } \
   return value; \
 }
@@ -191,17 +192,43 @@ int ncclIbDevices(int* ndev, int** scores) {
 }
 
 int ncclIbGdrSupport() {
-  return (access("/sys/kernel/mm/memory_peers/nv_mem/version", F_OK) == -1) ? 0 : 1;
+  static int support = -1;
+  if (support == -1) {
+    support = (access("/sys/kernel/mm/memory_peers/nv_mem/version", F_OK) == -1) ? 0 : 1;
+  }
+  return support;
 }
 
 int ncclIbPtrSupport(int dev, int* supportedTypes) {
   initDevices();
   *supportedTypes = NCCL_PTR_HOST;
-  int ibGdrEnabled = 0;
-  char* str = getenv("NCCL_IB_CUDA_SUPPORT");
-  if (str && strlen(str) > 0) {
-    ibGdrEnabled = atoi(str);
-  } else { // auto detect
+  static int ibGdrLevel = -1;
+  if (ibGdrLevel == -1) {
+    // Do not use GDR through the CPU Host Bridge, only when on the same PLX.
+    ibGdrLevel = PATH_PHB;
+
+    char* str = getenv("NCCL_IB_GDR_LEVEL");
+    if (str && strlen(str) > 0) {
+      ibGdrLevel = atoi(str);
+      INFO("NET/IB : GPU Direct RDMA level set to %d", ibGdrLevel);
+    } else {
+      // Legacy setting
+      char* str = getenv("NCCL_IB_CUDA_SUPPORT");
+      if (str && strlen(str) > 0) {
+        int gdr = atoi(str);
+        if (gdr == 0) ibGdrLevel = PATH_PIX;
+        if (gdr == 1) ibGdrLevel = PATH_SOC + 1;
+        INFO("NET/IB : GPU Direct RDMA level set to %d (through NCCL_IB_CUDA_SUPPORT)", ibGdrLevel);
+      }
+    }
+    int ibGdrSupport = ncclIbGdrSupport();
+    if (ibGdrLevel && ibGdrSupport == 0) {
+      ibGdrLevel = 0;
+      WARN("NET/IB : No module present for GPU Direct RDMA.");
+    }
+  }
+
+  if (ibGdrLevel > 0) {
     int cudaDev;
     cudaGetDevice(&cudaDev);
     char* cudaPath;
@@ -210,14 +237,7 @@ int ncclIbPtrSupport(int dev, int* supportedTypes) {
     getMlxPath(ncclIbDevs[dev].devPath, &mlxPath);
     int distance = (mlxPath == NULL || cudaPath == NULL) ? PATH_SOC : pciDistance(mlxPath, cudaPath);
     free(mlxPath); free(cudaPath);
-    if (distance <= PATH_PXB) ibGdrEnabled = 1;
-  }
-  int ibGdrSupport = ncclIbGdrSupport();
-  if (ibGdrEnabled == 1) {
-    if (ibGdrSupport == 0)
-      WARN("No module present for GPU Direct RDMA.");
-    else
-      *supportedTypes |= NCCL_PTR_CUDA;
+    if (distance < ibGdrLevel) *supportedTypes |= NCCL_PTR_CUDA;
   }
   return 0;
 }
@@ -500,11 +520,16 @@ int ncclIbAccept(void* listenComm, void** recvComm) {
 
   // Allocate Flush dummy buffer for GPU Direct RDMA
   rComm->gpuFlush.enabled = 1;
-  char *str = getenv("NCCL_GDR_FLUSH_DISABLE");
-  if (str && strlen(str) > 0 && atoi(str) > 0) {
-    rComm->gpuFlush.enabled = 0;
-    INFO("GDR Flush is disabled");
+  static int ncclIbGdrFlushEnabled = -1;
+  if (ncclIbGdrFlushEnabled == -1) {
+    ncclIbGdrFlushEnabled = 1;
+    char *str = getenv("NCCL_GDR_FLUSH_DISABLE");
+    if (str && strlen(str) > 0 && atoi(str) > 0) {
+      ncclIbGdrFlushEnabled = 0;
+      INFO("NET/IB : GDR Flush is disabled");
+    }
   }
+  rComm->gpuFlush.enabled = ncclIbGdrFlushEnabled;
   if (ncclIbGdrSupport() && rComm->gpuFlush.enabled) {
     NCCLCHECK(wrap_ibv_reg_mr(&rComm->gpuFlush.hostMr, rComm->verbs.pd, &rComm->gpuFlush.hostMem, sizeof(int), IBV_ACCESS_LOCAL_WRITE));
     rComm->gpuFlush.sge.addr = (uint64_t)&rComm->gpuFlush.hostMem;

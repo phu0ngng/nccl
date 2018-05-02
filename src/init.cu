@@ -65,6 +65,7 @@ void initNet() {
   } else {
     char* str = getenv("NCCL_IB_DISABLE");
     int ibEnabled = (str && (atoi(str) == 1)) ? 0 : 1;
+    if (ibEnabled == 0) INFO("IB support disabled per user setting");
     ncclNet = ibEnabled && ncclIbSupport() ? &ncclNetIb : &ncclNetSocket;
     INFO("Using internal Network %s", ncclNetName());
   }

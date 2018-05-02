@@ -154,6 +154,7 @@ ncclResult_t getEnvThreads(int* nthreads) {
     if (nt != 64 && nt != 128 && nt != 256) {
       WARN("User-defined number of threads can only be 64, 128 or 256. Ignoring.");
     } else {
+      INFO("Forcing %d threads per user setting.", nt);
       *nthreads = nt;
     }
   }

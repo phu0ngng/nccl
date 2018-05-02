@@ -198,6 +198,7 @@ ncclResult_t netSendSetup(ncclTinfo_t* myOpaqueInfo, ncclTinfo_t* peerOpaqueInfo
   if (useGDRforReads == -1) {
     char* str = getenv("NCCL_NET_GDR_READ");
     useGDRforReads = str ? atoi(str) : 0;
+    if (useGDRforReads) INFO("NET: Using GPU Direct RDMA for outbound traffic");
   }
   resources->cudaSupport = (useGDRforReads == 1) && (flags & NCCL_PTR_CUDA) ? true : false;
 
@@ -289,7 +290,6 @@ ncclResult_t netRecvConnect(struct ncclConnect* connectInfo, struct ncclConnecto
   NCCLCHECK(ncclNetAccept(resources->netListenComm, &resources->netRecvComm));
   NCCLCHECK(ncclNetCloseListen(resources->netListenComm));
 
-  // Setup remote MPI rank / tag
   return ncclSuccess;
 }
 
