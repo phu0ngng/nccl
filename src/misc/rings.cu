@@ -6,6 +6,7 @@
 
 #include "core.h"
 #include "net.h"
+#include "param.h"
 
 /* Parse user defined rings. Format is like :
  * "0 1|1 0|0 1 2 3|3 2 1 0|0 2 3 1|1 3 2 0|0 1 2 3 4 5 6 7|7 6 5 4 3 2 1 0"
@@ -146,18 +147,15 @@ static ncclResult_t fillCoords(int nranks, int* matrix, int* coords, int* rankTo
   return ncclInternalError;
 }
 
+NCCL_PARAM(MinNrings, "MIN_NRINGS", 0);
+NCCL_PARAM(MaxNrings, "MAX_NRINGS", 0);
+
 /* Users can force the number of threads with an environment variable */
+NCCL_PARAM(Nthreads, "NTHREADS", -2);
 ncclResult_t getEnvThreads(int* nthreads) {
-  char* str = getenv("NCCL_NTHREADS");
-  if (str && strlen(str) > 0) {
-    int nt = atoi(str);
-    if (nt != 64 && nt != 128 && nt != 256) {
-      WARN("User-defined number of threads can only be 64, 128 or 256. Ignoring.");
-    } else {
-      INFO("Forcing %d threads per user setting.", nt);
-      *nthreads = nt;
-    }
-  }
+  int64_t nt = ncclParamNthreads();
+  if (nt != -2)
+    *nthreads = nt;
   return ncclSuccess;
 }
 
@@ -300,10 +298,8 @@ ncclResult_t ncclGetRings(int* nrings, int* nthreads, int rank, int nranks, int*
     next[rank] = (rank+1)%nranks;
   }
 
-  str = getenv("NCCL_MAX_NRINGS");
-  int maxNrings = str ? atoi(str) : 0;
-  str = getenv("NCCL_MIN_NRINGS");
-  int minNrings = str ? atoi(str) : 0;
+  int maxNrings = ncclParamMaxNrings();
+  int minNrings = ncclParamMinNrings();
   if (maxNrings > 0 && minNrings > maxNrings) {
     if (rank == 0) WARN("NCCL_MIN_NRINGS set to a value greater than NCCL_MAX_NRINGS, ignoring NCCL_MIN_NRINGS");
     minNrings = 0;

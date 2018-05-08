@@ -10,6 +10,8 @@
 #include "core.h"
 #include "group.h"
 
+int64_t ncclParamCheckPointers();
+
 typedef ncclResult_t(*ncclFunc_t)(const void* sendbuff, void* recvbuff, size_t count,
     ncclDataType_t type, ncclRedOp_t op, int root, ncclComm_t comm, cudaStream_t stream);
 

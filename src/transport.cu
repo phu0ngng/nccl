@@ -103,7 +103,7 @@ ncclResult_t transportSaveProxies(int substeps, int subchunks, int nstepsPerRoun
   nbytes       = llMode ? nbytes * 2    : nbytes;
   substeps     = llMode ? 1             : substeps;
   subchunks    = llMode ? NUM_LL_CHUNKS : subchunks;
-  int nrings   = llMode ? 1             : LIMIT_NRINGS(nbytes, comm->nRings);
+  int nrings   = llMode ? 1             : LIMIT_NRINGS(nbytes, comm->nRings, comm->singleRingThreshold);
   int buffSize = llMode ? LL_BUFF_SIZE  : comm->rings[0].buffSize;
 
   int nrounds = (int)(DIVUP(nbytes, ((size_t)nrings * nblocksPerRound * (buffSize/subchunks)))); // Fixed 32-bit overflow

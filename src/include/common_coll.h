@@ -8,6 +8,7 @@
 #define COMMON_COLL_H_
 
 #include "core.h"
+#include "enqueue.h"
 #include "collectives/collectives.h"
 
 static ncclResult_t PointerCheck(const void* pointer, struct ncclComm* comm, const char* ptrname, const char* opname) {
@@ -48,7 +49,7 @@ static ncclResult_t ArgsCheck(const void* sendbuff, const void* recvbuff, size_t
     return ncclInvalidArgument;
   }
 
-  if (ncclCheckPointers) {
+  if (ncclParamCheckPointers()) {
     // Check CUDA device pointers
     if (strcmp(opname, "Broadcast") != 0 || comm->rank == root) {
       NCCLCHECK(PointerCheck(sendbuff, comm, "sendbuff", opname));
@@ -83,7 +84,7 @@ static __inline__ int ncclTypeSize(ncclDataType_t type) {
 static ncclResult_t saveKernel(int coll, const void* sendbuff, void* recvbuff, size_t count,
     ncclDataType_t dtype, ncclRedOp_t op, int root, ncclComm_t comm, cudaStream_t stream, size_t nbytes) {
   int llMode = nbytes <= comm->llThreshold ? 1 : 0;
-  int nBlocks = llMode ? 1 : LIMIT_NRINGS(nbytes, comm->nRings);
+  int nBlocks = llMode ? 1 : LIMIT_NRINGS(nbytes, comm->nRings, comm->singleRingThreshold);
   int nThreads = llMode ? LL_NTHREADS : comm->nThreads+1;
   comm->myParams->blockDim.x = max(comm->myParams->blockDim.x, nThreads);
   if (comm->userStreamSet == false) {

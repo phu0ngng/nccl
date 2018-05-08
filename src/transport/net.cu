@@ -8,7 +8,7 @@
 #include "transport.h"
 #include "nvmlwrap.h"
 #include "net.h"
-#include "gdcopy.h"
+#include "param.h"
 #include <cuda_runtime.h>
 #include <assert.h>
 
@@ -183,24 +183,23 @@ int getDev(int ringId, int nDev, int* scores) {
   return 0;
 }
 
+NCCL_PARAM(NetGdrRead, "NET_GDR_READ", 0);
+
 /* Determine if we will use this transport for this peer and return connect
  * information for this peer */
 ncclResult_t netSendSetup(ncclTinfo_t* myOpaqueInfo, ncclTinfo_t* peerOpaqueInfo, struct ncclConnect* connectInfo, struct ncclRing* ring) {
   struct netSendResources* resources = (struct netSendResources*) mallocZero(sizeof(struct netSendResources));
   ring->send.transportResources = resources;
-//  resources->hostDevMem = (struct ncclRecvMem*)gdptr(ring->devMem, ring->buffSize);
 
   struct netInfo* myInfo = (struct netInfo*)myOpaqueInfo;
   resources->netDev = getDev(ring->id, myInfo->ndev, myInfo->scores);
-  int flags;
-  NCCLCHECK(ncclNetPtrSupport(resources->netDev, &flags));
-  static int useGDRforReads = -1;
-  if (useGDRforReads == -1) {
-    char* str = getenv("NCCL_NET_GDR_READ");
-    useGDRforReads = str ? atoi(str) : 0;
-    if (useGDRforReads) INFO("NET: Using GPU Direct RDMA for outbound traffic");
+  resources->cudaSupport = false;
+  if (ncclParamNetGdrRead() > 0) {
+    int flags;
+    NCCLCHECK(ncclNetPtrSupport(resources->netDev, &flags));
+    if (flags & NCCL_PTR_CUDA)
+      resources->cudaSupport = true;
   }
-  resources->cudaSupport = (useGDRforReads == 1) && (flags & NCCL_PTR_CUDA) ? true : false;
 
   int size = offsetof(struct ncclRecvMem, buff)+ring->buffSize;
   if (resources->cudaSupport) {
@@ -217,7 +216,6 @@ ncclResult_t netSendSetup(ncclTinfo_t* myOpaqueInfo, ncclTinfo_t* peerOpaqueInfo
 ncclResult_t netRecvSetup(ncclTinfo_t* myOpaqueInfo, ncclTinfo_t* peerOpaqueInfo, struct ncclConnect* connectInfo, struct ncclRing* ring) {
   struct netRecvResources* resources = (struct netRecvResources*) mallocZero(sizeof(struct netRecvResources));
   ring->recv.transportResources = resources;
-//  resources->hostDevMem = (struct ncclRecvMem*)gdptr(ring->devMem, ring->buffSize);
 
   struct netInfo* myInfo = (struct netInfo*)myOpaqueInfo;
   resources->netDev = getDev(ring->id, myInfo->ndev, myInfo->scores);

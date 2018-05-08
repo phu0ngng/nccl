@@ -10,6 +10,7 @@
 #include "net.h"
 #include "topo.h"
 #include "utils.h"
+#include "param.h"
 
 #include <assert.h>
 #include <pthread.h>
@@ -47,22 +48,11 @@ struct ncclIbDev ncclIbDevs[MAX_IB_DEVS];
 struct userIbDev userIbDevs[MAX_IB_DEVS];
 pthread_mutex_t ncclIbLock = PTHREAD_MUTEX_INITIALIZER;
 
-#define NCCL_IB_PARAM(name, env, default_value) \
-int ncclIb##name() { \
-  static int value = -1; \
-  if (value == -1) { \
-    char* str = getenv("NCCL_IB_" env); \
-    value = str ? atoi(str) : default_value; \
-    if (str) INFO("NET/IB : " env " set to %d per user setting", value); \
-  } \
-  return value; \
-}
-
-NCCL_IB_PARAM(GidIndex, "GID_INDEX", 0);
-NCCL_IB_PARAM(Timeout, "TIMEOUT", 14);
-NCCL_IB_PARAM(RetryCnt, "RETRY_CNT", 7);
-NCCL_IB_PARAM(Sl, "SL", 0);
-NCCL_IB_PARAM(Tc, "TC", 0);
+NCCL_PARAM(IbGidIndex, "IB_GID_INDEX", 0);
+NCCL_PARAM(IbTimeout, "IB_TIMEOUT", 14);
+NCCL_PARAM(IbRetryCnt, "IB_RETRY_CNT", 7);
+NCCL_PARAM(IbSl, "IB_SL", 0);
+NCCL_PARAM(IbTc, "IB_TC", 0);
 
 // Allocate memory to be potentially ibv_reg_mr'd. This needs to be
 // allocated on separate pages as those pages will be marked DONTFORK
@@ -199,45 +189,36 @@ int ncclIbGdrSupport() {
   return support;
 }
 
+NCCL_PARAM(IbGdrLevel, "IB_GDR_LEVEL", -2);
+NCCL_PARAM(IbCudaSupport, "IB_CUDA_SUPPORT", -2);
+
 int ncclIbPtrSupport(int dev, int* supportedTypes) {
   initDevices();
   *supportedTypes = NCCL_PTR_HOST;
-  static int ibGdrLevel = -1;
-  if (ibGdrLevel == -1) {
-    // Do not use GDR through the CPU Host Bridge, only when on the same PLX.
-    ibGdrLevel = PATH_PHB;
 
-    char* str = getenv("NCCL_IB_GDR_LEVEL");
-    if (str && strlen(str) > 0) {
-      ibGdrLevel = atoi(str);
-      INFO("NET/IB : GPU Direct RDMA level set to %d", ibGdrLevel);
-    } else {
-      // Legacy setting
-      char* str = getenv("NCCL_IB_CUDA_SUPPORT");
-      if (str && strlen(str) > 0) {
-        int gdr = atoi(str);
-        if (gdr == 0) ibGdrLevel = PATH_PIX;
-        if (gdr == 1) ibGdrLevel = PATH_SOC + 1;
-        INFO("NET/IB : GPU Direct RDMA level set to %d (through NCCL_IB_CUDA_SUPPORT)", ibGdrLevel);
-      }
-    }
-    int ibGdrSupport = ncclIbGdrSupport();
-    if (ibGdrLevel && ibGdrSupport == 0) {
-      ibGdrLevel = 0;
-      WARN("NET/IB : No module present for GPU Direct RDMA.");
-    }
+  int cudaDev;
+  if (cudaGetDevice(&cudaDev) != cudaSuccess) return 0;
+
+  int ibGdrLevel = PATH_PHB;
+  if (ncclParamIbCudaSupport() != -2) ibGdrLevel = ncclParamIbCudaSupport() ? PATH_SOC + 1 : 0;
+  if (ncclParamIbGdrLevel() != -2) ibGdrLevel = ncclParamIbGdrLevel();
+  if (ibGdrLevel > 0 && ncclIbGdrSupport() == 0) {
+    INFO("NET/IB : GPU Direct RDMA Disabled for GPU %d / HCA %s (no module)", cudaDev, ncclIbDevs[dev].devName);
+    ibGdrLevel = 0;
   }
 
-  if (ibGdrLevel > 0) {
-    int cudaDev;
-    cudaGetDevice(&cudaDev);
-    char* cudaPath;
-    getCudaPath(cudaDev, &cudaPath);
-    char* mlxPath;
-    getMlxPath(ncclIbDevs[dev].devPath, &mlxPath);
-    int distance = (mlxPath == NULL || cudaPath == NULL) ? PATH_SOC : pciDistance(mlxPath, cudaPath);
-    free(mlxPath); free(cudaPath);
-    if (distance < ibGdrLevel) *supportedTypes |= NCCL_PTR_CUDA;
+  if (ibGdrLevel <= 0) return 0;
+
+  char* cudaPath;
+  if (getCudaPath(cudaDev, &cudaPath) != ncclSuccess) return 0;
+  char* mlxPath;
+  if (getMlxPath(ncclIbDevs[dev].devPath, &mlxPath) != ncclSuccess) { free(cudaPath); return 0; }
+  int distance = (mlxPath == NULL || cudaPath == NULL) ? PATH_SOC : pciDistance(mlxPath, cudaPath);
+  free(mlxPath); free(cudaPath);
+  if (distance < ibGdrLevel) {
+    *supportedTypes |= NCCL_PTR_CUDA;
+  } else {
+    INFO("NET/IB : GPU Direct RDMA Disabled for GPU %d / HCA %s (distance %d >= %d)", cudaDev, ncclIbDevs[dev].devName, distance, ibGdrLevel);
   }
   return 0;
 }
@@ -397,14 +378,14 @@ ncclResult_t ncclIbRtrQp(ibv_qp* qp, struct ncclIbQpInfo* info) {
     qpAttr.ah_attr.grh.dgid.global.subnet_prefix = info->spn;
     qpAttr.ah_attr.grh.dgid.global.interface_id = info->iid;
     qpAttr.ah_attr.grh.flow_label = 0;
-    qpAttr.ah_attr.grh.sgid_index = ncclIbGidIndex();
+    qpAttr.ah_attr.grh.sgid_index = ncclParamIbGidIndex();
     qpAttr.ah_attr.grh.hop_limit = 255;
-    qpAttr.ah_attr.grh.traffic_class = ncclIbTc();
+    qpAttr.ah_attr.grh.traffic_class = ncclParamIbTc();
   } else {
     qpAttr.ah_attr.is_global = 0;
     qpAttr.ah_attr.dlid = info->lid;
   }
-  qpAttr.ah_attr.sl = ncclIbSl();
+  qpAttr.ah_attr.sl = ncclParamIbSl();
   qpAttr.ah_attr.src_path_bits = 0;
   qpAttr.ah_attr.port_num = info->ib_port;
   NCCLCHECK(wrap_ibv_modify_qp(qp, &qpAttr, IBV_QP_STATE | IBV_QP_AV | IBV_QP_PATH_MTU | IBV_QP_DEST_QPN | IBV_QP_RQ_PSN | IBV_QP_MAX_DEST_RD_ATOMIC | IBV_QP_MIN_RNR_TIMER));
@@ -415,8 +396,8 @@ ncclResult_t ncclIbRtsQp(ibv_qp* qp) {
   struct ibv_qp_attr qpAttr;
   memset(&qpAttr, 0, sizeof(struct ibv_qp_attr));
   qpAttr.qp_state = IBV_QPS_RTS;
-  qpAttr.timeout = ncclIbTimeout();
-  qpAttr.retry_cnt = ncclIbRetryCnt();
+  qpAttr.timeout = ncclParamIbTimeout();
+  qpAttr.retry_cnt = ncclParamIbRetryCnt();
   qpAttr.rnr_retry = 7;
   qpAttr.sq_psn = 0;
   qpAttr.max_rd_atomic = 1;
@@ -470,15 +451,17 @@ int ncclIbConnect(int dev, void* opaqueHandle, void** sendComm) {
     INFO("NET/IB: Dev %d Port %d qpn %d mtu %d LID %d", dev, ib_port, qpInfo.qpn, qpInfo.mtu, qpInfo.lid);
   } else { // RoCE
     union ibv_gid gid;
-    NCCLCHECK(wrap_ibv_query_gid(ctx, ib_port, ncclIbGidIndex(), &gid));
+    NCCLCHECK(wrap_ibv_query_gid(ctx, ib_port, ncclParamIbGidIndex(), &gid));
     qpInfo.spn = gid.global.subnet_prefix;
     qpInfo.iid = gid.global.interface_id;
-    INFO("NET/IB: Dev %d Port %d qpn %d mtu %d GID %d (%lX/%lX)", dev, ib_port, qpInfo.qpn, qpInfo.mtu, ncclIbGidIndex(), qpInfo.spn, qpInfo.iid);
+    INFO("NET/IB: Dev %d Port %d qpn %d mtu %d GID %ld (%lX/%lX)", dev, ib_port, qpInfo.qpn, qpInfo.mtu, ncclParamIbGidIndex(), qpInfo.spn, qpInfo.iid);
   }
 
   NCCLCHECK(socketSend(comm->fd, &qpInfo, sizeof(qpInfo)));
   return 0;
 }
+
+NCCL_PARAM(IbGdrFlushDisable, "GDR_FLUSH_DISABLE", 0);
 
 int ncclIbAccept(void* listenComm, void** recvComm) {
   struct ncclIbListenComm* lComm = (struct ncclIbListenComm*)listenComm;
@@ -497,7 +480,7 @@ int ncclIbAccept(void* listenComm, void** recvComm) {
   struct ibv_port_attr portAttr;
   NCCLCHECK(wrap_ibv_query_port(ctx, ib_port, &portAttr));
   union ibv_gid gid;
-  NCCLCHECK(wrap_ibv_query_gid(ctx, ib_port, ncclIbGidIndex(), &gid));
+  NCCLCHECK(wrap_ibv_query_gid(ctx, ib_port, ncclParamIbGidIndex(), &gid));
 
   // QP Creation
   NCCLCHECK(ncclIbInitVerbs(ctx, &rComm->verbs));
@@ -519,18 +502,8 @@ int ncclIbAccept(void* listenComm, void** recvComm) {
   rComm->remFifo.sge.lkey = rComm->remFifo.mr->lkey;
 
   // Allocate Flush dummy buffer for GPU Direct RDMA
-  rComm->gpuFlush.enabled = 1;
-  static int ncclIbGdrFlushEnabled = -1;
-  if (ncclIbGdrFlushEnabled == -1) {
-    ncclIbGdrFlushEnabled = 1;
-    char *str = getenv("NCCL_GDR_FLUSH_DISABLE");
-    if (str && strlen(str) > 0 && atoi(str) > 0) {
-      ncclIbGdrFlushEnabled = 0;
-      INFO("NET/IB : GDR Flush is disabled");
-    }
-  }
-  rComm->gpuFlush.enabled = ncclIbGdrFlushEnabled;
-  if (ncclIbGdrSupport() && rComm->gpuFlush.enabled) {
+  rComm->gpuFlush.enabled = ncclIbGdrSupport() && ncclParamIbGdrFlushDisable() == 0 ? 1 : 0;
+  if (rComm->gpuFlush.enabled) {
     NCCLCHECK(wrap_ibv_reg_mr(&rComm->gpuFlush.hostMr, rComm->verbs.pd, &rComm->gpuFlush.hostMem, sizeof(int), IBV_ACCESS_LOCAL_WRITE));
     rComm->gpuFlush.sge.addr = (uint64_t)&rComm->gpuFlush.hostMem;
     rComm->gpuFlush.sge.length = 1;
@@ -903,7 +876,10 @@ ncclNet_t ncclNetIb = {
   ncclIbCloseListen
 };
 
+NCCL_PARAM(IbDisable, "IB_DISABLE", 0);
+
 bool ncclIbSupport() {
+  if (ncclParamIbDisable()) return 0;
   initDevices();
   return ncclNIbDevs > 0;
 }

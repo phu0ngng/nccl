@@ -30,13 +30,12 @@ struct cudaLaunchParams
 
 #define MAXRINGS 12
 #define MAXTHREADS 256
-#define DEFAULT_BUFFER_SIZE_BYTES (1UL << 22) /* 4MiB */
+#define DEFAULT_BUFFER_SIZE_BYTES (1LL << 22) /* 4MiB */
 #define NCCL_LL_THRESHOLD 16384
 
-#define DEFAULT_SINGLE_RING_THRESHOLD (1UL << 17) /* 128KiB - but 256KiB for Volta */
+#define DEFAULT_SINGLE_RING_THRESHOLD (1LL << 17) /* 128KiB - but 256KiB for Volta */
 
-extern size_t ncclSingleRingThreshold;
-#define LIMIT_NRINGS(SIZE, NRINGS) ((SIZE) <= ncclSingleRingThreshold ? 1 : (NRINGS))
+#define LIMIT_NRINGS(SIZE, NRINGS, threshold) ((SIZE) <= threshold ? 1 : (NRINGS))
 
 union ncclLLFifoLine {
   /* Flags have to be *after* data, because otherwise, an incomplete receive
@@ -205,7 +204,9 @@ struct ncclComm {
   int nThreads;
   
   // Low-latency algorithm threshold
-  size_t llThreshold;
+  ssize_t llThreshold;
+  // Threshold after which we use multiple rings
+  ssize_t singleRingThreshold;
 
   // Device copy of the communicator
   struct ncclComm *devComm;

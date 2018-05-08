@@ -7,6 +7,7 @@
 #include "core.h"
 #include "utils.h"
 #include "transport.h"
+#include "param.h"
 #include "shm.h"
 #include <unistd.h>
 #include <cuda_runtime.h>
@@ -68,17 +69,13 @@ ncclResult_t shmFillInfo(ncclTinfo_t* opaqueInfo, int rank) {
   return ncclSuccess;
 }
 
+NCCL_PARAM(ShmDisable, "SHM_DISABLE", 0);
+
 /* Determine if we can communicate with the peer */
 ncclResult_t shmCanConnect(int* ret, ncclTinfo_t* myOpaqueInfo, ncclTinfo_t* peerOpaqueInfo) {
-  static int shmDisabled = -1;
-  if (shmDisabled == -1) {
-    char* str = getenv("NCCL_SHM_DISABLE");
-    shmDisabled = str ? atoi(str) : 0;
-    if (shmDisabled == 1) INFO("SHM transport disabled per user setting.");
-  }
   struct shmInfo* myInfo = (struct shmInfo*)myOpaqueInfo;
   struct shmInfo* peerInfo = (struct shmInfo*)peerOpaqueInfo;
-  *ret = ((shmDisabled == 1) || (myInfo->hostHash != peerInfo->hostHash)) ? 0 : 1;
+  *ret = ((ncclParamShmDisable() == 1) || (myInfo->hostHash != peerInfo->hostHash)) ? 0 : 1;
   return ncclSuccess;
 }
 

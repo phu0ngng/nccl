@@ -6,7 +6,7 @@
 
 #include "core.h"
 #include "ring.h"
-#include "env.h"
+#include "param.h"
 #include "nvmlwrap.h"
 //#include "ibvwrap.h"
 #include "rings.h"
@@ -33,11 +33,6 @@ DebugLevel ncclDebugLevel;
 pthread_mutex_t ncclDebugOutputLock;
 FILE *ncclDebugFile = stdout;
 
-int ncclPrintCRCs;
-int ncclCheckPointers;
-
-size_t ncclSingleRingThreshold;
-
 extern "C" __attribute__ ((visibility("default")))
 ncclNet_t* ncclNet = NULL;
 
@@ -63,19 +58,20 @@ void initNet() {
   if (ncclNet != NULL) {
     INFO("Using external Network %s", ncclNetName());
   } else {
-    char* str = getenv("NCCL_IB_DISABLE");
-    int ibEnabled = (str && (atoi(str) == 1)) ? 0 : 1;
-    if (ibEnabled == 0) INFO("IB support disabled per user setting");
-    ncclNet = ibEnabled && ncclIbSupport() ? &ncclNetIb : &ncclNetSocket;
+    ncclNet = ncclIbSupport() ? &ncclNetIb : &ncclNetSocket;
     INFO("Using internal Network %s", ncclNetName());
   }
 }
 
-size_t ncclLLThreshold;
-void initLl() {
-  char* str = getenv("NCCL_LL_THRESHOLD");
-  ncclLLThreshold = (str && atoi(str) >= 0) ? atoi(str) : NCCL_LL_THRESHOLD;
-  INFO("Using NCCL Low-latency algorithm for sizes below %ld", ncclLLThreshold);
+NCCL_PARAM(LlThreshold, "LL_THRESHOLD", NCCL_LL_THRESHOLD);
+NCCL_PARAM(SingleRingThreshold, "SINGLE_RING_THRESHOLD", -2);
+
+static ssize_t getSingleRingThreshold(int minCompCap) {
+  ssize_t threshold = ncclParamSingleRingThreshold();
+  if (threshold != -2) return threshold;
+
+  // Double the default threshold on Volta
+  return (minCompCap == 7) ? DEFAULT_SINGLE_RING_THRESHOLD << 1 : DEFAULT_SINGLE_RING_THRESHOLD;
 }
 
 pthread_mutex_t initLock = PTHREAD_MUTEX_INITIALIZER;
@@ -87,7 +83,6 @@ static ncclResult_t ncclInit() {
     initEnv();
     initDebug();
     initNet();
-    initLl();
     initialized = true;
   }
   pthread_mutex_unlock(&initLock);
@@ -166,7 +161,7 @@ static ncclResult_t commAlloc(ncclComm_t* comret, int ndev, int rank) {
   comm->nRanks = ndev;
   cudaGetDevice(&comm->cudaDev);
   comm->doneEvent = doneEvent;
-  comm->llThreshold = ncclLLThreshold;
+  comm->llThreshold = ncclParamLlThreshold();
 
   comm->argsptr = &comm->args;
 
@@ -446,8 +441,7 @@ static ncclResult_t initTransportsRank(struct ncclComm* comm, ncclUniqueId* comm
     minCompCap = min(allData[i], minCompCap);
   if (rank == 0) INFO("Min Comp Cap %d", minCompCap);
 
-  // Query the NCCL_SINGLE_RING_THRESHOLD env var
-  ncclSingleRingThreshold = getRingThreshold(rank, minCompCap);
+  comm->singleRingThreshold = getSingleRingThreshold(minCompCap);
 
   // Find min nrings across ranks
   allData[rank] = nrings;
@@ -620,9 +614,6 @@ static ncclResult_t initTransportsAll(struct ncclComm** comms, const int* devs, 
   INFO("Using %d threads", nthreads);
   INFO("Min Comp Cap %d", minCompCap);
 
-  // Query the NCCL_SINGLE_RING_THRESHOLD env var
-  ncclSingleRingThreshold = getRingThreshold(0, minCompCap);
-
   int rings[nranks*MAXRINGS];
   NCCLCHECK(buildRings(nrings, rings, 0, nranks, prevFinal, nextFinal));
   free(prevFinal);
@@ -631,6 +622,7 @@ static ncclResult_t initTransportsAll(struct ncclComm** comms, const int* devs, 
   for (int rank=0; rank<nranks; rank++) {
     comms[rank]->nRings = nrings;
     comms[rank]->nThreads = nthreads;
+    comms[rank]->singleRingThreshold = getSingleRingThreshold(minCompCap);
   }
 
   for (int r=0; r<nrings; r++) {
