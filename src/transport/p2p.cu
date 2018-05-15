@@ -175,6 +175,17 @@ static int computeRingsRec(int* matrix, int n, int *rings, int currentRing, int 
   return nrings;
 }
 
+static inline int copyRings(int nranks, int* rings, int nrings, int newNrings) {
+  // Copy rings by dup times
+  if (newNrings > MAXRINGS) {
+    newNrings = MAXRINGS;
+  }
+  for (int r=nrings; r<newNrings; r++) {
+    for (int i=0; i<nranks; i++) rings[r*nranks+i] = rings[(r%nrings)*nranks+i];
+  }
+  return newNrings;
+}
+
 int p2pComputeRingsNvLink(int* matrix, int nranks, int *rings, int nringsMax, int connect) {
   int* inTheRing = (int*)malloc(sizeof(int)*nranks);
   for (int i=0; i<nranks; i++) inTheRing[i] = 0;
@@ -182,6 +193,7 @@ int p2pComputeRingsNvLink(int* matrix, int nranks, int *rings, int nringsMax, in
   if (connect) {
     inTheRing[rings[0]] = 1;
     nrings = computeRingsRec(matrix, nranks, rings, 0, nringsMax, inTheRing, rings[1], nranks-2, connect);
+    nrings = copyRings(nranks, rings, nrings, nringsMax);
   } else {
     rings[0] = 0;
     nrings = computeRingsRec(matrix, nranks, rings, 0, nringsMax, inTheRing, 0, nranks-1, connect);
@@ -195,20 +207,6 @@ static inline int findConnect(int nranks, int* ranks) {
     if (ranks[i] != -1) return i;
   }
   return -1;
-}
-
-static inline int copyRings(int nranks, int* rings, int nrings, int dup) {
-  // Copy rings by dup times
-  if (nrings * dup > MAXRINGS) {
-    WARN("Number of rings requested (%d) is more than the maximum allowed, remaining unchanged", dup * nrings);
-    return nrings;
-  }
-  for (int d=1; d<dup; d++) {
-    for (int r=0; r<nrings; r++) {
-      for (int i=0; i<nranks; i++) rings[(r+d*nrings)*nranks+i] = rings[r*nranks+i];
-    }
-  }
-  return nrings * dup;
 }
 
 int p2pComputeRingsNvLink(int* values, int nranks, int* rings, int nrings, int* prev, int* next, int oversubscribe, int* nthreads) {
@@ -228,31 +226,33 @@ int p2pComputeRingsNvLink(int* values, int nranks, int* rings, int nrings, int* 
       connect = 1;
     }
   }
+
   // Compute rings
   int matrix[nranks*nranks];
   for (int i=0; i<nranks; i++) for (int j=0; j<nranks; j++)
     matrix[i*nranks+j] = oversubscribe ? values[i*nranks+j]/CONNECT_NVLINK*2 : values[i*nranks+j]/CONNECT_NVLINK ;
 
   int compNrings = p2pComputeRingsNvLink(matrix, nranks, rings, nrings, connect);
-  if (connect == 0) {
-    if (oversubscribe == 0 && compNrings && compNrings < nrings && nranks <= 4) {
-      // Try to oversubscribe to get a better result
-      int rings2[MAXRINGS*nranks];
-      for (int i=0; i<MAXRINGS*nranks; i++) rings2[i] = -1;
-      int nThreads = *nthreads;
-      int compNrings2 = p2pComputeRingsNvLink(values, nranks, rings2, nrings*2, prev, next, 1, &nThreads);
-      if (compNrings2 > compNrings*2) {
-        // Oversubscription worked.
-        for (int i=0; i<compNrings2*nranks; i++) rings[i] = rings2[i];
-        *nthreads = nThreads;
-        return compNrings2;
-      }
-    }
-    // Duplicate the rings for direct NVLink
-    compNrings = copyRings(nranks, rings, compNrings, 2);
 
-    if (ncclCudaCompCap() == 6) *nthreads /= 2;
+  if (oversubscribe || connect) return compNrings;
+
+  if (compNrings && compNrings < nrings && nranks <= 4) {
+    // Try to oversubscribe to get a better result
+    int rings2[MAXRINGS*nranks];
+    for (int i=0; i<MAXRINGS*nranks; i++) rings2[i] = -1;
+    int nThreads = *nthreads;
+    int compNrings2 = p2pComputeRingsNvLink(values, nranks, rings2, nrings, prev, next, 1, &nThreads);
+    if (compNrings2 > compNrings*2) {
+      // Oversubscription worked.
+      for (int i=0; i<compNrings2*nranks; i++) rings[i] = rings2[i];
+      compNrings = compNrings2;
+    }
   }
+
+  // Duplicate the rings for direct NVLink
+  compNrings = copyRings(nranks, rings, compNrings, compNrings*2);
+
+  if (ncclCudaCompCap() == 6) *nthreads /= 2;
   return compNrings;
 }
 
@@ -369,53 +369,52 @@ ncclResult_t p2pGetRings(int nranks, int* groups, int* subgroups, int* values, i
   int nrings = *nringsRet;
 
   // NVswitch
+  int nvswitchLinks;
   for (int rank=0; rank<nranks; rank++) {
-    int links = 0;
     for (int j=1; j<nranks; j++) {
       int i = (rank + j) % nranks;
-      int nvswitch_links = values[rank*nranks+i]/CONNECT_NVSWITCH;
-      if (j>1 && links != nvswitch_links) {
+      int links = values[rank*nranks+i]/CONNECT_NVSWITCH;
+      if (j>1 && links != nvswitchLinks) {
         WARN("Internal error : NVswitch links mismatch");
         return ncclInternalError;
       }
-      links = nvswitch_links;
-    }
-    nrings = min(nrings, links);
-  }
-  if (nrings > 0) {
-    int nringsConnect = p2pComputeRingsSeqConnect(values, nranks, rings, nrings, prev, next, minScore, nthreads);
-    if (nringsConnect > 0) {
-      nrings = nringsConnect;
-    } else {
-      nrings = p2pComputeRingsSeqNew(values, nranks, rings, nrings, prev, next, minScore, nthreads);;
-      // Duplicate rings for NVswitch
-      if (nrings > 0) {
-        nrings = copyRings(nranks, rings, nrings, 2);
-      }
+      nvswitchLinks = links;
     }
   }
-
-  if (nrings == 0) {
-    nrings = *nringsRet;
-    // point-to-point NVLink
-    for (int rank=0; rank<nranks; rank++) {
-      int nr = 0;
-      for (int i=0; i<nranks; i++) {
-        int val = values[rank*nranks+i];
-        if (val >= CONNECT_NVSWITCH) continue;
-        nr += val/CONNECT_NVLINK;
-      }
-      nrings = min(nrings, nr);
+  if (nvswitchLinks) {
+    // NVSwitch : Connect existing rings
+    nrings = p2pComputeRingsSeqConnect(values, nranks, rings, nrings, prev, next, minScore, nthreads);
+    if (nrings == 0) {
+      // Or create new ones
+      nrings = p2pComputeRingsSeqNew(values, nranks, rings, nrings, prev, next, minScore, nthreads);
+      // And duplicate them
+      nrings = copyRings(nranks, rings, nrings, nrings*2);
     }
-    if (nrings > 0) nrings = p2pComputeRingsNvLink(values, nranks, rings, nrings, prev, next, 0, nthreads);
+    goto end;
   }
 
-  int pcie = (nrings == 0) ? 1 : 0;
-  if (pcie) {
-    // PCIe or QPI
-    nrings = p2pComputeRingsPci(values, nranks, rings, *nringsRet, prev, next, minScore);
+  // point-to-point NVLink
+  int directLinks;
+  for (int rank=0; rank<nranks; rank++) {
+    int links = 0;
+    for (int i=0; i<nranks; i++) {
+      int val = values[rank*nranks+i];
+      if (val >= CONNECT_NVSWITCH) continue;
+      links += val/CONNECT_NVLINK;
+    }
+    if (rank == 0) directLinks = links;
+    else directLinks =  min(directLinks, links);
+  }
+  if (directLinks > 0) {
+    // NVLink : Connect rings or create new ones
+    nrings = p2pComputeRingsNvLink(values, nranks, rings, nrings, prev, next, 0, nthreads);
+    goto end;
   }
 
+  // PCIe or QPI : Connect rings or create new ones
+  nrings = p2pComputeRingsPci(values, nranks, rings, *nringsRet, prev, next, minScore);
+
+end:
   *nringsRet = nrings;
   for (int ring = 0; ring<nrings; ring++) {
     for (int index=0; index<nranks; index++) {

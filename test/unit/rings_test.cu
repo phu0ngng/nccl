@@ -573,11 +573,13 @@ int NVG16_vl[] =
 
 
 /*=========== Print functions =============*/
-#define TESTMAXRANKS 32
-char dashes[TESTMAXRANKS*3+1];
+#define TESTMAXRANKS 20
+#define RANKWIDTH 5
+#define RANKSTRING " %4d"
+char dashes[TESTMAXRANKS*RANKWIDTH+2];
 
 static void writeHeader() {
-  char spaces[TESTMAXRANKS*3-sizeof("Rings")+1];
+  char spaces[TESTMAXRANKS*RANKWIDTH-sizeof("Rings")+2];
   memset(spaces, ' ', sizeof(spaces));
   spaces[sizeof(spaces)-1] = '\0';
   memset(dashes, '-', sizeof(dashes));
@@ -590,8 +592,8 @@ static void writeFooter(int errors) {
   printf("|---------+--------+%s|\n", dashes);
   const char* result = errors ? "FAILED" : "OK";
   printf("| Errors  |  %3d   | %s", errors, result);
-  for (int i=strlen(result)+1; i<3*TESTMAXRANKS; i++) printf(" ");
-  printf("|\n");
+  for (int i=strlen(result)+1; i<RANKWIDTH*TESTMAXRANKS; i++) printf(" ");
+  printf(" |\n");
   printf("'---------'--------'%s'\n", dashes);
 }
 
@@ -603,16 +605,17 @@ static void dumpRings(int nrings, int *rings, int nranks, const char* toponame, 
   for (; ring<nrings; ring++) {
     if (ring) printf("|         |        |");
     for (int index = 0; index<nranks; index++) {
-      printf(" %2d", rings[ring*nranks+index]);
+      if (index && index % TESTMAXRANKS == 0) printf(" |\n|         |        +");
+      printf(RANKSTRING, rings[ring*nranks+index]);
     }
-    for (int i=nranks; i<TESTMAXRANKS; i++) printf("   ");
-    printf("|\n");
+    for (int i=RANKWIDTH*(nranks % TESTMAXRANKS); i<RANKWIDTH*TESTMAXRANKS; i++) printf(" ");
+    printf(" |\n");
   }
   if (errormsg) {
     if (ring) printf("|         |        |");
     printf(" %s ", errormsg);
-    for (int i=strlen(errormsg)+2; i<3*TESTMAXRANKS; i++) printf(" ");
-    printf("|\n");
+    for (int i=strlen(errormsg)+2; i<RANKWIDTH*TESTMAXRANKS; i++) printf(" ");
+    printf(" |\n");
   }
 }
 
@@ -702,6 +705,7 @@ end:
 #define CHECK(a) if ((a) != ncclSuccess) { err++; }
 
 int main() {
+  setlinebuf(stdout);
   int err = 0;
   writeHeader();
   CHECK(getRings(3, 2, PCI2_tr, PCI2_vl, "PCI  2", 2, 128));
