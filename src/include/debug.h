@@ -9,6 +9,7 @@
 
 #include <pthread.h>
 #include <stdio.h>
+#include <chrono>
 
 #include <unistd.h>
 #include <sys/syscall.h>
@@ -60,15 +61,21 @@ if (ncclDebugLevel == TRACE) {                                   \
     int cudaDev;                                                 \
     cudaGetDevice(&cudaDev);                                     \
     pthread_mutex_lock(&ncclDebugOutputLock);                    \
-    fprintf(ncclDebugFile,"%s:%d:%d [%d] %s:%d TRACE ", hostname, getpid(), gettid(), cudaDev, __func__, __LINE__); \
+    auto delta = std::chrono::high_resolution_clock::now() - ncclEpoch; \
+    double timestamp = std::chrono::duration_cast<std::chrono::duration<double>>(delta).count()*1000; \
+    fprintf(ncclDebugFile,"%s:%d:%d [%d] %f %s:%d TRACE ", hostname, getpid(), gettid(), cudaDev, timestamp, __func__, __LINE__); \
     fprintf(ncclDebugFile,__VA_ARGS__);fprintf(ncclDebugFile,"\n"); \
     fflush(ncclDebugFile);                                       \
+    ncclDelta = std::chrono::high_resolution_clock::now();       \
     pthread_mutex_unlock(&ncclDebugOutputLock);                  \
   }                                                              \
 } while(0)
 #else
 #define TRACE(...)
 #endif
+
+extern std::chrono::high_resolution_clock::time_point ncclEpoch;
+extern thread_local std::chrono::high_resolution_clock::time_point ncclDelta;
 
 static void initDebug() {
   const char* nccl_debug = getenv("NCCL_DEBUG");
@@ -128,6 +135,9 @@ static void initDebug() {
     }
   }
   pthread_mutex_init(&ncclDebugOutputLock, NULL);
+
+  ncclEpoch = std::chrono::high_resolution_clock::now();
+  ncclDelta = ncclEpoch;
 }
 
 #endif
