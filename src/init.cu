@@ -113,21 +113,14 @@ static ncclResult_t commFree(ncclComm_t comm) {
   }
 
   // Last rank frees shared resources between threads
-  volatile int* ptr = (volatile int*)(comm->intraBarrier+comm->intraPhase);
-  int new_val, val = *ptr;
-  do {
-    if ((new_val = val+1) >= comm->intraRanks) return ncclInternalError;
-  } while (__sync_bool_compare_and_swap(ptr, val++, new_val));
-
-  if (val == comm->intraRanks) {
+  int isLast;
+  NCCLCHECK(ncclCpuBarrierIn(comm, &isLast));
+  if (isLast) {
       free(comm->intraBarrier);
       free(comm->intraParams);
       free(comm->intraCudaDevs);
       free(comm->intraCGMode);
       free(comm->intraCC);
-  }
-
-  if (comm->intraRank == 0) {
   }
 
   free(comm);
@@ -739,7 +732,7 @@ ncclResult_t ncclCommDestroy(ncclComm_t comm) {
     CUDACHECK(cudaSetDevice(commDevice));
   }
 
-  commFree(comm);
+  NCCLCHECK(commFree(comm));
 
   if (savedDevice != commDevice)
     CUDACHECK(cudaSetDevice(savedDevice));

@@ -99,7 +99,46 @@ ncclResult_t setupLaunch(struct ncclComm* comm, struct cudaLaunchParams* params)
   return ncclSuccess;
 }
 
-ncclResult_t ncclCpuBarrierCheckin(struct ncclComm* comm) {
+ncclResult_t ncclCpuBarrierIn(struct ncclComm* comm, int* isLast) {
+  volatile int* ptr = (volatile int*)(comm->intraBarrier+comm->intraPhase);
+  int val = *ptr;
+  bool done = false;
+  while (done == false) {
+    if (val >= comm->intraRanks) {
+      WARN("Trying to launch too many collectives");
+      return ncclInvalidUsage;
+    }
+    if (val+1 == comm->intraRanks) {
+      // Reset the barrier.
+      comm->intraBarrier[comm->intraPhase^1] = 0;
+      *isLast = 1;
+      return ncclSuccess;
+    }
+    done = __sync_bool_compare_and_swap(ptr, val, val+1);
+    val++;
+  }
+  *isLast = 0;
+  return ncclSuccess;
+}
+
+ncclResult_t ncclCpuBarrierLast(struct ncclComm* comm) {
+  volatile int* ptr = (volatile int*)(comm->intraBarrier+comm->intraPhase);
+  int val = *ptr;
+  if (__sync_bool_compare_and_swap(ptr, val, val+1) != true) {
+    WARN("Trying to launch too many collectives");
+    return ncclInternalError;
+  }
+  return ncclSuccess;
+}
+
+ncclResult_t ncclCpuBarrierOut(struct ncclComm* comm) {
+  volatile int* ptr = (volatile int*)(comm->intraBarrier+comm->intraPhase);
+  while (*ptr < comm->intraRanks) pthread_yield();
+  comm->intraPhase ^= 1;
+  return ncclSuccess;
+}
+
+ncclResult_t ncclBarrierEnqueue(struct ncclComm* comm) {
   if (comm->nRanks == 1) return ncclSuccess;
   struct cudaLaunchParams* params = comm->myParams;
 
@@ -115,39 +154,28 @@ ncclResult_t ncclCpuBarrierCheckin(struct ncclComm* comm) {
     }
     params->stream = comm->userStream;
   }
-  // Notify I'm ready
-  volatile int* ptr = (volatile int*)(comm->intraBarrier+comm->intraPhase);
-  int val = *ptr;
-  bool done = false;
-  while (done == false) {
-    if (val >= comm->intraRanks) {
-      WARN("Trying to launch too many collectives");
-      return ncclInvalidUsage;
-    }
-    if (val+1 == comm->intraRanks) {
-      if (comm->launchMode == ncclComm::GROUP) {
-        // I'm the last. Launch all operations.
-        NCCLCHECK(ncclLaunchCooperativeKernelMultiDevice(comm->intraParams, comm->intraCudaDevs, comm->intraRanks, *comm->intraCGMode));
-      }
-      // Reset the barrier.
-      comm->intraBarrier[comm->intraPhase^1] = 0;
-    }
-    done = __sync_bool_compare_and_swap(ptr, val, val+1);
-    val++;
+
+  int isLast;
+  NCCLCHECK(ncclCpuBarrierIn(comm, &isLast));
+
+  if (isLast && comm->launchMode == ncclComm::GROUP) {
+    // I'm the last. Launch all operations.
+    NCCLCHECK(ncclLaunchCooperativeKernelMultiDevice(comm->intraParams, comm->intraCudaDevs, comm->intraRanks, *comm->intraCGMode));
+    NCCLCHECK(ncclCpuBarrierLast(comm));
   }
   return ncclSuccess;
 }
 
-ncclResult_t ncclCpuBarrierWait(ncclComm_t comm) {
+ncclResult_t ncclBarrierEnqueueWait(ncclComm_t comm) {
   if (comm->nRanks == 1) return ncclSuccess;
   // We can't print the CG mode before the first barrier happened.
   if (comm->rank == 0 && *comm->intraCGMode & 0x10) {
     *comm->intraCGMode ^= 0x10;
     INFO("Launch mode %s%s", comm->launchMode == ncclComm::GROUP ? "Group" : "Parallel", *comm->intraCGMode ? "/CGMD" : "" );
   }
-  volatile int* ptr = (volatile int*)(comm->intraBarrier+comm->intraPhase);
-  while (*ptr < comm->intraRanks) pthread_yield();
-  comm->intraPhase ^= 1;
+
+  NCCLCHECK(ncclCpuBarrierOut(comm));
+
   struct cudaLaunchParams *params = comm->myParams;
   if (comm->launchMode == ncclComm::PARALLEL) {
     CUDACHECK(cudaLaunchKernel(params->func, params->gridDim, params->blockDim, params->args, params->sharedMem, comm->userStream));
@@ -204,8 +232,8 @@ end:
   } else {
     NCCLCHECK(ArgsCheck(sendbuff, recvbuff, count, type, op, root, comm, primName));
     NCCLCHECK(func(sendbuff, recvbuff, count, type, op, root, comm, stream));
-    NCCLCHECK(ncclCpuBarrierCheckin(comm));
-    NCCLCHECK(ncclCpuBarrierWait(comm));
+    NCCLCHECK(ncclBarrierEnqueue(comm));
+    NCCLCHECK(ncclBarrierEnqueueWait(comm));
     NCCLCHECK(ncclEnqueueEvents(comm));
     return ncclSuccess;
   }
