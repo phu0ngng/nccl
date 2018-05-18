@@ -525,8 +525,6 @@ void InitSendRecv(struct threadArgs_t* args, ncclDataType_t type, ncclRedOp_t op
   rep++;
 }
 
-#define CHECK 1
-
 cudaError_t cudaStreamSyncYield(cudaStream_t stream) {
   while (1) {
     cudaError_t err = cudaStreamQuery(stream);
@@ -594,13 +592,12 @@ void completeColl(struct threadArgs_t* args) {
   }
 }
 
-void BenchTime(struct threadArgs_t* args, ncclDataType_t type, ncclRedOp_t op, int root, int in_place, int warmup) {
+void BenchTime(struct threadArgs_t* args, ncclDataType_t type, ncclRedOp_t op, int root, int in_place) {
+  if (iters == 0) return;
   size_t count = args->nbytes / wordSize(type);
-  int local_iters = warmup ? warmup_iters : iters;
-  int local_agg_iters = agg_iters;
 
   // Warm up cpu cores; launch by main thread
-  if (cpu_warmup == 1 && warmup == 0 && args->thread == 0 && args->localRank == 0) {
+  if (cpu_warmup == 1 && args->thread == 0 && args->localRank == 0) {
     unsigned long limit = 3e9;
     WarmUpCPU(limit);
   }
@@ -613,58 +610,48 @@ void BenchTime(struct threadArgs_t* args, ncclDataType_t type, ncclRedOp_t op, i
 
   // Performance Benchmark
   auto start = std::chrono::high_resolution_clock::now();
-  for (int iter = 0; iter < local_iters; iter++) {
-    if (local_agg_iters>1) NCCLCHECK(ncclGroupStart());
-    for (int iter = 0; iter < local_agg_iters; iter++) {
+  for (int iter = 0; iter < iters; iter++) {
+    if (agg_iters>1) NCCLCHECK(ncclGroupStart());
+    for (int iter = 0; iter < agg_iters; iter++) {
       startColl(args, type, op, root, in_place, iter);
     }
-    if (local_agg_iters>1) NCCLCHECK(ncclGroupEnd());
+    if (agg_iters>1) NCCLCHECK(ncclGroupEnd());
   }
   completeColl(args);
 
   auto delta = std::chrono::high_resolution_clock::now() - start;
   double timeSec = std::chrono::duration_cast<std::chrono::duration<double>>(delta).count();
-  timeSec = timeSec/(local_iters*local_agg_iters);
+  timeSec = timeSec/(iters*agg_iters);
 
   double algBw, busBw;
   GetBw(count, wordSize(type), timeSec, &algBw, &busBw, args->nProcs*args->nThreads*args->nGpus);
 
   Barrier(args);
 
-  if (warmup) return;
-
+  double maxDelta = 0;
   if (datacheck) { 
       InitSendRecv(args, type, op, root, in_place, args->thread == 0 ? 1 : 0);
       InitRecvResult(args, type, op, root, in_place, args->thread == 0 ? 1 : 0);
       cudaDeviceSynchronize();
-  }
 
-  //test validation in single itertion, should ideally be included into the multi-iteration run
-  startColl(args, type, op, root, in_place, 0); 
-  completeColl(args);
+      //test validation in single itertion, should ideally be included into the multi-iteration run
+      startColl(args, type, op, root, in_place, 0);
+      completeColl(args);
 
-  double maxDelta = 0;
-#ifdef CHECK
-  if (datacheck) { 
-     maxDelta = CheckData(args, type, op, root, in_place);
-  } else { 
-     maxDelta = -1.0;
-  }
-#else
-     maxDelta = -1.0;
-#endif
+      maxDelta = CheckData(args, type, op, root, in_place);
 
-  //aggregate delta from all threads and procs
-  Barrier(args);
-  if (args->thread == 0) {
-      for (int i=1; i<args->nThreads; i++) { 
-          maxDelta += args->deltaThreads[i];
-      }
+      //aggregate delta from all threads and procs
+      Barrier(args);
+      if (args->thread == 0) {
+        for (int i=1; i<args->nThreads; i++) {
+            maxDelta += args->deltaThreads[i];
+        }
 #ifdef MPI_SUPPORT
-      MPI_Allreduce(MPI_IN_PLACE, &maxDelta, 1, MPI_DOUBLE, MPI_MAX, MPI_COMM_WORLD);
+        MPI_Allreduce(MPI_IN_PLACE, &maxDelta, 1, MPI_DOUBLE, MPI_MAX, MPI_COMM_WORLD);
 #endif
+      }
+      Barrier(args);
   }
-  Barrier(args);
 
   double timeUsec = timeSec*1.0E6;
   char timeStr[10];
@@ -703,11 +690,17 @@ void setupArgs(size_t size, ncclDataType_t type, struct threadArgs_t* args) {
 void TimeTest(struct threadArgs_t* args, ncclDataType_t type, const char* typeName, ncclRedOp_t op, const char* opName, int root) {
   // Warm-up for large size
   setupArgs(args->maxbytes, type, args);
-  BenchTime(args, type, op, root, 0, 1);
+  for (int iter = 0; iter < warmup_iters; iter++) {
+    startColl(args, type, op, root, 0, iter);
+  }
+  completeColl(args);
 
   // Warm-up for small size
   setupArgs(args->minbytes, type, args);
-  BenchTime(args, type, op, root, 0, 1);
+  for (int iter = 0; iter < warmup_iters; iter++) {
+    startColl(args, type, op, root, 0, iter);
+  }
+  completeColl(args);
 
   // Benchmark
   for (size_t size = args->minbytes; size<=args->maxbytes; size = ((args->stepfactor > 1) ? size*args->stepfactor : size+args->stepbytes)) {
@@ -718,8 +711,8 @@ void TimeTest(struct threadArgs_t* args, ncclDataType_t type, const char* typeNa
       else
         sprintf(rootName, "%6i", root);
       PRINT("%12li  %12li  %6s  %6s  %6s", max(args->sendBytes, args->expectedBytes), args->nbytes / wordSize(type), typeName, opName, rootName);
-      BenchTime(args, type, op, root, 0, 0);
-      BenchTime(args, type, op, root, 1, 0);
+      BenchTime(args, type, op, root, 0);
+      BenchTime(args, type, op, root, 1);
       PRINT("\n");
   }
 }
