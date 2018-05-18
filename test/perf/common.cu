@@ -949,24 +949,30 @@ int main(int argc, char* argv[]) {
   PRINT("#\n");
 
   PRINT("# Using devices\n");
-  for (int p=0; p<nProcs; p++) {
-    for (int i=0; i<nThreads*nGpus; i++) {
-      char line[1024];
-      if (p == proc) {
-        int cudaDev = localRank*nThreads*nGpus+i;
-        int rank = proc*nThreads*nGpus+i;
-        cudaDeviceProp prop;
-        CUDACHECK(cudaGetDeviceProperties(&prop, cudaDev));
-        sprintf(line, "#   Rank %2d Pid %6d on %10s device %2d [0x%02x] %s\n", rank, getpid(), hostname, cudaDev,
-            prop.pciBusID, prop.name);
-      }
-#ifdef MPI_SUPPORT
-      // Simple non-optimal way to always reach rank 0
-      MPI_Bcast(line, 1024, MPI_BYTE, p, MPI_COMM_WORLD);
-#endif
-      PRINT("%s", line);
-    }
+#define MAX_LINE 1024
+  char line[MAX_LINE];
+  int len = 0;
+  for (int i=0; i<nThreads*nGpus; i++) {
+    int cudaDev = localRank*nThreads*nGpus+i;
+    int rank = proc*nThreads*nGpus+i;
+    cudaDeviceProp prop;
+    CUDACHECK(cudaGetDeviceProperties(&prop, cudaDev));
+    len += snprintf(line+len, MAX_LINE-len, "#   Rank %2d Pid %6d on %10s device %2d [0x%02x] %s\n",
+                    rank, getpid(), hostname, cudaDev, prop.pciBusID, prop.name);
   }
+
+#if MPI_SUPPORT
+  char *lines = (proc == 0) ? (char *)malloc(nProcs*MAX_LINE) : NULL;
+  // Gather all output in rank order to root (0)
+  MPI_Gather(line, MAX_LINE, MPI_BYTE, lines, MAX_LINE, MPI_BYTE, 0, MPI_COMM_WORLD);
+  if (proc == 0) {
+    for (int p = 0; p < nProcs; p++)
+      PRINT("%s", lines+MAX_LINE*p);
+    free(lines);
+  }
+#else
+  PRINT("%s", line);
+#endif
 
   ncclUniqueId ncclId;
   if (proc == 0) {
