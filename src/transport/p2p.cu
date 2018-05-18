@@ -383,8 +383,10 @@ ncclResult_t p2pGetRings(int nranks, int* groups, int* subgroups, int* values, i
   }
   if (nvswitchLinks) {
     // NVSwitch : Connect existing rings
-    nrings = p2pComputeRingsSeqConnect(values, nranks, rings, nrings, prev, next, minScore, nthreads);
-    if (nrings == 0) {
+    int nringsConnected = p2pComputeRingsSeqConnect(values, nranks, rings, nrings, prev, next, minScore, nthreads);
+    if (nringsConnected > 0) {
+     nrings = nringsConnected;
+    } else {
       // Or create new ones
       nrings = p2pComputeRingsSeqNew(values, nranks, rings, nrings, prev, next, minScore, nthreads);
       // And duplicate them
