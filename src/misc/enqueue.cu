@@ -158,9 +158,11 @@ ncclResult_t ncclBarrierEnqueue(struct ncclComm* comm) {
   int isLast;
   NCCLCHECK(ncclCpuBarrierIn(comm, &isLast));
 
-  if (isLast && comm->launchMode == ncclComm::GROUP) {
-    // I'm the last. Launch all operations.
-    NCCLCHECK(ncclLaunchCooperativeKernelMultiDevice(comm->intraParams, comm->intraCudaDevs, comm->intraRanks, *comm->intraCGMode));
+  if (isLast) {
+    if (comm->launchMode == ncclComm::GROUP) {
+      // I'm the last. Launch all operations.
+      NCCLCHECK(ncclLaunchCooperativeKernelMultiDevice(comm->intraParams, comm->intraCudaDevs, comm->intraRanks, *comm->intraCGMode));
+    }
     NCCLCHECK(ncclCpuBarrierLast(comm));
   }
   return ncclSuccess;
