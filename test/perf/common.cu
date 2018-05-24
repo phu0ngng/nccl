@@ -1103,7 +1103,6 @@ int main(int argc, char* argv[]) {
   }
 
   if (procSharedBytes > 0) { 
-      procSharedHost = malloc(procSharedBytes);
       CUDACHECK(cudaHostAlloc(&procSharedHost, procSharedBytes, cudaHostAllocPortable | cudaHostAllocMapped));
       procShared = procSharedHost;
   }
