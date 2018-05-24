@@ -7,72 +7,8 @@
 #include "common.h"
 #include <pthread.h>
 #include <cstdio>
-#include <dlfcn.h>
 #include <getopt.h>
-#include <omp.h>
 #include "cuda.h"
-
-typedef struct nvmlDevice_st* nvmlDevice_t;
-class NvmlWrap {
-  public:
-  NvmlWrap();
-  ~NvmlWrap();
-  typedef enum {SUCCESS = 0} RetCode;
-  RetCode (*DeviceGetHandleByPciBusId)(const char* pciBusId, nvmlDevice_t* device);
-  RetCode (*DeviceSetCpuAffinity)(nvmlDevice_t device);
-  RetCode (*DeviceClearCpuAffinity)(nvmlDevice_t device);
-  const char* (*ErrorString)(RetCode r);
-
-  private:
-  void* dlHandle;
-  RetCode (*ptrInit)(void);
-  RetCode (*ptrShutdown)(void);
-};
-
-NvmlWrap* nvml;
-
-#define NVMLCHECK(cmd) {                           \
-  NvmlWrap::RetCode e = cmd;                       \
-  if( e != NvmlWrap::SUCCESS ) {                   \
-    printf("nvml failure %s:%d '%s'\n",            \
-        __FILE__,__LINE__,nvml->ErrorString(e));   \
-    exit(EXIT_FAILURE);                            \
-  }                                                \
-} while(0)
-
-NvmlWrap::NvmlWrap() : dlHandle(NULL) {
-  dlHandle = dlopen("libnvidia-ml.so.1", RTLD_NOW);
-  if (!dlHandle) {
-    dlHandle = dlopen("libnvidia-ml.so", RTLD_NOW);
-    if (!dlHandle) {
-      printf("Failed to open libnvidia-ml.so[.1]");
-      exit(EXIT_FAILURE);
-    }
-  }
-
-  #define LOAD_SYM(handle, symbol, funcptr) do {            \
-    void** cast = (void**)&funcptr;                         \
-    void* tmp = dlsym(handle, symbol);                      \
-    if (tmp == NULL) {                                      \
-      printf("dlsym failed on %s - %s", symbol, dlerror()); \
-      exit(EXIT_FAILURE);                                   \
-    }                                                       \
-    *cast = tmp;                                            \
-  } while (0)
-
-  LOAD_SYM(dlHandle, "nvmlInit", this->ptrInit);
-  LOAD_SYM(dlHandle, "nvmlShutdown", this->ptrShutdown);
-  LOAD_SYM(dlHandle, "nvmlDeviceGetHandleByPciBusId", this->DeviceGetHandleByPciBusId);
-  LOAD_SYM(dlHandle, "nvmlDeviceSetCpuAffinity", this->DeviceSetCpuAffinity);
-  LOAD_SYM(dlHandle, "nvmlDeviceClearCpuAffinity", this->DeviceClearCpuAffinity);
-  LOAD_SYM(dlHandle, "nvmlErrorString", this->ErrorString);
-  NVMLCHECK(this->ptrInit());
-}
-
-NvmlWrap::~NvmlWrap() {
-  NVMLCHECK(this->ptrShutdown());
-  dlclose(dlHandle);
-}
 
 #if NCCL_MAJOR >= 2
 ncclDataType_t test_types[ncclNumTypes] = {ncclInt8, ncclUint8, ncclInt32, ncclUint32, ncclInt64, ncclUint64, ncclHalf, ncclFloat, ncclDouble};
@@ -98,8 +34,6 @@ static int parallel_init = 0;
 static int blocking_coll = 0;
 static int streamnull = 0;
 static int side_comp = 0;
-static int cpu_warmup = 0;
-static int set_affinity = 0;
 
 double parsesize(char *value) {
     long long int units;
@@ -533,14 +467,6 @@ cudaError_t cudaStreamSyncYield(cudaStream_t stream) {
   }
 }
 
-void WarmUpCPU(unsigned long limit) {
-#pragma omp parallel
-  {
-    volatile unsigned long x=0, y=1;
-    while (x++ < limit || y++ < limit);
-  }
-}
-
 void startColl(struct threadArgs_t* args, ncclDataType_t type, ncclRedOp_t op, int root, int in_place, int thread_offset) {
   size_t count = args->nbytes / wordSize(type);
 
@@ -595,12 +521,6 @@ void completeColl(struct threadArgs_t* args) {
 void BenchTime(struct threadArgs_t* args, ncclDataType_t type, ncclRedOp_t op, int root, int in_place) {
   if (iters == 0) return;
   size_t count = args->nbytes / wordSize(type);
-
-  // Warm up cpu cores; launch by main thread
-  if (cpu_warmup == 1 && args->thread == 0 && args->localRank == 0) {
-    unsigned long limit = 3e9;
-    WarmUpCPU(limit);
-  }
 
   // Sync
   startColl(args, type, op, root, in_place, 0);
@@ -717,16 +637,6 @@ void TimeTest(struct threadArgs_t* args, ncclDataType_t type, const char* typeNa
   }
 }
 
-#define NVML_DEVICE_PCI_BUS_ID_BUFFER_SIZE 32
-
-void SetCpuAffinity(int cudaDev) {
-  nvmlDevice_t nvmlDevice;
-  char busId[NVML_DEVICE_PCI_BUS_ID_BUFFER_SIZE];
-  CUDACHECK(cudaDeviceGetPCIBusId(busId, NVML_DEVICE_PCI_BUS_ID_BUFFER_SIZE, cudaDev));
-  NVMLCHECK(nvml->DeviceGetHandleByPciBusId(busId, &nvmlDevice));
-  NVMLCHECK(nvml->DeviceSetCpuAffinity(nvmlDevice));
-}
-
 void* threadRunTests(void* args) {
   struct threadArgs_t* targs = (struct threadArgs_t*)args;
   // Set device to the first of our GPUs. If we don't do that, some operations
@@ -734,10 +644,6 @@ void* threadRunTests(void* args) {
   // exclusive mode those operations will fail.
   int gpuid = targs->localRank*targs->nThreads*targs->nGpus + targs->thread*targs->nGpus;
   CUDACHECK(cudaSetDevice(gpuid));
-
-  if (set_affinity == 1) {
-    SetCpuAffinity(gpuid);
-  }
 
   RunTest(targs, ncclroot, (ncclDataType_t)nccltype, test_typenames[nccltype], (ncclRedOp_t)ncclop, test_opnames[ncclop]);
 
@@ -881,7 +787,6 @@ int main(int argc, char* argv[]) {
  int localRank = 0;
  char hostname[1024];
  getHostName(hostname, 1024);
- nvml = new NvmlWrap();
  
  static struct option longopts[] = {
     {"nthreads", required_argument, 0, 't'}, 
@@ -902,14 +807,12 @@ int main(int argc, char* argv[]) {
     {"blocking", required_argument, 0, 'z'},
     {"stream_null", required_argument, 0, 'y'},
     {"side_comp", required_argument, 0, 'k'},
-    {"cpu_warmup", required_argument, 0, 'u'},
-    {"set_affinity", required_argument, 0, 'a'},
     {"help", no_argument, 0, 'h'}
  };
 
  while(1) {
       int c;
-      c = getopt_long(argc, argv, "t:g:b:e:i:f:n:m:w:s:p:c:o:d:r:z:y:k:u:a:h", longopts, &longindex);
+      c = getopt_long(argc, argv, "t:g:b:e:i:f:n:m:w:s:p:c:o:d:r:z:y:k:h", longopts, &longindex);
 
       if (c == -1)
          break;
@@ -973,12 +876,6 @@ int main(int argc, char* argv[]) {
          case 'k':
              side_comp = strtol(optarg, NULL, 0);
              break;
-         case 'u':
-             cpu_warmup = strtol(optarg, NULL, 0);
-             break;
-         case 'a':
-             set_affinity = strtol(optarg, NULL, 0);
-             break;
          case 'h':
 	         printf("USAGE: ./test \n\t" 
 	 	 "[-t,--nthreads <num threads>] \n\t"
@@ -999,8 +896,6 @@ int main(int argc, char* argv[]) {
 		 "[-z,--blocking <0/1>] \n\t"
 		 "[-y,--stream_null <0/1>] \n\t"
 		 "[-k,--side_comp <0/1>] \n\t"
-		 "[-u,--cpu_warmup <0/1>] \n\t"
-		 "[-a,--set_affinity <0/1>] \n\t"
 		 "[-h,--help]\n");
 	         return 0;
 	 default: 
@@ -1024,8 +919,6 @@ int main(int argc, char* argv[]) {
 		 "[-z,--blocking <0/1>] \n\t"
 		 "[-y,--stream_null <0/1>] \n\t"
 		 "[-k,--side_comp <0/1>] \n\t"
-		 "[-u,--cpu_warmup <0/1>] \n\t"
-		 "[-a,--set_affinity <0/1>] \n\t"
 		 "[-h,--help]\n");
 	         return 0;
       }
@@ -1228,7 +1121,6 @@ int main(int argc, char* argv[]) {
   PRINT("# Out of bounds values : %d %s\n", errors[0], errors[0] ? "FAILED" : "OK");
   PRINT("# Avg bus bandwidth    : %g %s\n", bw[0], check_avg_bw == -1 ? "" : (bw[0] < check_avg_bw*(0.9) ? "FAILED" : "OK"));
   PRINT("#\n");
-  delete nvml;
 #ifdef MPI_SUPPORT
   MPI_Finalize();
 #endif
