@@ -33,7 +33,6 @@ DebugLevel ncclDebugLevel;
 pthread_mutex_t ncclDebugOutputLock;
 FILE *ncclDebugFile = stdout;
 std::chrono::high_resolution_clock::time_point ncclEpoch;
-thread_local std::chrono::high_resolution_clock::time_point ncclDelta;
 
 extern "C" __attribute__ ((visibility("default")))
 ncclNet_t* ncclNet = NULL;
