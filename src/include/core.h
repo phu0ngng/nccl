@@ -334,6 +334,7 @@ int ncclCudaCompCap();
 #include <sys/mman.h>
 static ncclResult_t ncclCudaHostAlloc(void** ptr, void** devPtr, size_t size) {
   CUDACHECK(cudaHostAlloc(ptr, size, cudaHostAllocMapped));
+  memset(*ptr, 0, size);
   *devPtr = *ptr;
   return ncclSuccess;
 }
