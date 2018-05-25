@@ -69,11 +69,12 @@ if (ncclDebugLevel == TRACE) {                                   \
     pthread_mutex_unlock(&ncclDebugOutputLock);                  \
   }                                                              \
 } while(0)
+
+extern std::chrono::high_resolution_clock::time_point ncclEpoch;
+
 #else
 #define TRACE(...)
 #endif
-
-extern std::chrono::high_resolution_clock::time_point ncclEpoch;
 
 static void initDebug() {
   const char* nccl_debug = getenv("NCCL_DEBUG");
@@ -134,7 +135,9 @@ static void initDebug() {
   }
   pthread_mutex_init(&ncclDebugOutputLock, NULL);
 
+#ifdef ENABLE_TRACE
   ncclEpoch = std::chrono::high_resolution_clock::now();
+#endif
 }
 
 #endif
