@@ -949,7 +949,7 @@ int main(int argc, char* argv[]) {
   PRINT("#\n");
 
   PRINT("# Using devices\n");
-#define MAX_LINE 1024
+#define MAX_LINE 2048
   char line[MAX_LINE];
   int len = 0;
   for (int i=0; i<nThreads*nGpus; i++) {
