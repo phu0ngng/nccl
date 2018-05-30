@@ -181,12 +181,32 @@ int ncclIbDevices(int* ndev, int** scores) {
   return ncclSuccess;
 }
 
-int ncclIbGdrSupport() {
-  static int support = -1;
-  if (support == -1) {
-    support = (access("/sys/kernel/mm/memory_peers/nv_mem/version", F_OK) == -1) ? 0 : 1;
+// Detect whether GDR can work on a given NIC with the current CUDA device
+// Returns :
+// 0 : GDR works
+// 1 : no module
+// 2 : module loaded but not supported by GPU
+int ncclIbGdrSupport(int ibDev) {
+  static int moduleLoaded = -1;
+  if (moduleLoaded == -1) {
+    moduleLoaded = (access("/sys/kernel/mm/memory_peers/nv_mem/version", F_OK) == -1) ? 0 : 1;
   }
-  return support;
+  if (moduleLoaded == 0) return 1;
+  int ret = 2;
+  void* ptr;
+  if (cudaMalloc(&ptr, sizeof(int)) == cudaSuccess) {
+    struct ibv_mr* mr;
+    struct ibv_pd* pd;
+    if (wrap_ibv_alloc_pd(&pd, ncclIbDevs[ibDev].context) == ncclSuccess) {
+      if ((mr = wrap_direct_ibv_reg_mr(pd, ptr, sizeof(int), IBV_ACCESS_LOCAL_WRITE|IBV_ACCESS_REMOTE_WRITE|IBV_ACCESS_REMOTE_READ)) != NULL) {
+        ret = 0;
+        wrap_ibv_dereg_mr(mr);
+      }
+      wrap_ibv_dealloc_pd(pd);
+    }
+    cudaFree(ptr);
+  }
+  return ret;
 }
 
 NCCL_PARAM(IbGdrLevel, "IB_GDR_LEVEL", -2);
@@ -202,9 +222,12 @@ int ncclIbPtrSupport(int dev, int* supportedTypes) {
   int ibGdrLevel = PATH_PHB;
   if (ncclParamIbCudaSupport() != -2) ibGdrLevel = ncclParamIbCudaSupport() ? PATH_SOC + 1 : 0;
   if (ncclParamIbGdrLevel() != -2) ibGdrLevel = ncclParamIbGdrLevel();
-  if (ibGdrLevel > 0 && ncclIbGdrSupport() == 0) {
-    INFO("NET/IB : GPU Direct RDMA Disabled for GPU %d / HCA %s (no module)", cudaDev, ncclIbDevs[dev].devName);
-    ibGdrLevel = 0;
+  if (ibGdrLevel > 0) {
+    int gdrSupport = ncclIbGdrSupport(dev);
+    if (gdrSupport > 0) {
+      INFO("NET/IB : GPU Direct RDMA Disabled for GPU %d / HCA %s (%s)", cudaDev, ncclIbDevs[dev].devName, gdrSupport == 1 ? "no module" : "not supported by GPU");
+      ibGdrLevel = 0;
+    }
   }
 
   if (ibGdrLevel <= 0) return 0;
@@ -502,7 +525,7 @@ int ncclIbAccept(void* listenComm, void** recvComm) {
   rComm->remFifo.sge.lkey = rComm->remFifo.mr->lkey;
 
   // Allocate Flush dummy buffer for GPU Direct RDMA
-  rComm->gpuFlush.enabled = ncclIbGdrSupport() && ncclParamIbGdrFlushDisable() == 0 ? 1 : 0;
+  rComm->gpuFlush.enabled = (ncclIbGdrSupport(lComm->dev) == 0) && (ncclParamIbGdrFlushDisable() == 0) ? 1 : 0;
   if (rComm->gpuFlush.enabled) {
     NCCLCHECK(wrap_ibv_reg_mr(&rComm->gpuFlush.hostMr, rComm->verbs.pd, &rComm->gpuFlush.hostMem, sizeof(int), IBV_ACCESS_LOCAL_WRITE));
     rComm->gpuFlush.sge.addr = (uint64_t)&rComm->gpuFlush.hostMem;
