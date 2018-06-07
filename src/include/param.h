@@ -60,7 +60,6 @@ pthread_mutex_t ncclParamMutex##name = PTHREAD_MUTEX_INITIALIZER; \
 int64_t ncclParam##name() { \
   static_assert(default_value != -1LL, "default value cannot be -1"); \
   static int64_t value = -1LL; \
-  if (value != -1LL) return value; \
   pthread_mutex_lock(&ncclParamMutex##name); \
   if (value == -1LL) { \
     value = default_value; \
