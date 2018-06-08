@@ -4,6 +4,7 @@
  * See LICENSE.txt for license information
  ************************************************************************/
 
+#include "nccl.h"
 #include "core.h"
 #include "ring.h"
 #include "param.h"
