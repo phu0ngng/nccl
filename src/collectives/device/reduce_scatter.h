@@ -141,13 +141,13 @@ __device__ void ncclReduceScatterLLKernel(struct CollectiveArgs* args) {
   volatile int * sizesFifo = ring->send.conn.llFifo;
   uint64_t sendHead = sendHeadPtr[0];
 
-  typedef LLPrimitives<LL_NTHREADS, T, FUNC> LL;
+  typedef LLPrimitives<NCCL_LL_NTHREADS, T, FUNC> LL;
 
   const ssize_t size = args->N;
   //const int rank = comm->rank;
   const int nranks = comm->nRanks;
-  const int llBuffSize = LL_BUFF_SIZE / (2*sizeof(uint64_t));
-  const int llSliceSize = llBuffSize / NUM_LL_CHUNKS;
+  const int llBuffSize = NCCL_LL_BUFF_SIZE / (2*sizeof(uint64_t));
+  const int llSliceSize = llBuffSize / NCCL_LL_CHUNKS;
   const int sliceSize = llSliceSize * sizeof(uint64_t) / sizeof(T);
 
   uint64_t step = ring->send.conn.llStep;

@@ -31,11 +31,23 @@ struct cudaLaunchParams
 #define MAXRINGS 12
 #define MAXTHREADS 256
 #define DEFAULT_BUFFER_SIZE_BYTES (1LL << 22) /* 4MiB */
-#define NCCL_LL_THRESHOLD 16384
 
-#define DEFAULT_SINGLE_RING_THRESHOLD (1LL << 17) /* 128KiB - but 256KiB for Volta */
+// Rings / LL tuning
+#define NCCL_RING_THRESHOLD 8 // Per thread size before we start increasing nrings
+#define NCCL_LL_THRESHOLD 64  // Per thread size before we switch to non-LL
+#define NCCL_LL_NTHREADS 256
 
-#define LIMIT_NRINGS(SIZE, NRINGS, threshold) ((SIZE) <= threshold ? 1 : (NRINGS))
+#define DIVUP(x, y) \
+    (((x)+(y)-1)/(y))
+#define ROUNDUP(x, y) \
+    (DIVUP((x), (y))*(y))
+
+// In : comm, nbytes ; Out : nrings, ll
+#define NCCL_GET_RINGS(comm, nbytes, nrings, ll) do { \
+  size_t nr = nbytes / (comm->ringThreshold*NCCL_LL_NTHREADS*comm->nRanks); \
+  nrings = nr == 0 ? 1 : nr > comm->nRings ? comm->nRings : (int)nr; \
+  ll = nbytes > comm->nRanks*nrings*NCCL_LL_NTHREADS*comm->llThreshold ? 0 : 1; \
+} while (0)
 
 union ncclLLFifoLine {
   /* Flags have to be *after* data, because otherwise, an incomplete receive
@@ -84,11 +96,10 @@ struct ncclConnector {
 #define SIZES_FIFO_SIZE 32
 #define CUDA_IPC_MIN 2097152UL /* 2MiB - not currently used */
 
-#define LL_NTHREADS 64
-#define NUM_LL_CHUNKS 8
+#define NCCL_LL_CHUNKS 8
 #define NUM_LINES_PER_THREAD 2
-#define LL_BUFF_SIZE (NUM_LINES_PER_THREAD*LL_NTHREADS*NUM_LL_CHUNKS*sizeof(union ncclLLFifoLine)) // 16K
-#define LL_CLEAN_FREQ 0x10000000
+#define NCCL_LL_BUFF_SIZE (NUM_LINES_PER_THREAD*NCCL_LL_NTHREADS*NCCL_LL_CHUNKS*sizeof(union ncclLLFifoLine)) // 16K
+#define NCCL_LL_CLEAN_FREQ 0x10000000
 
 struct ncclSendMem {
   union {
@@ -115,7 +126,7 @@ struct ncclRecvMem {
     };
     char pad5[PAGE_SIZE];
   };
-  char llBuff[LL_BUFF_SIZE];
+  char llBuff[NCCL_LL_BUFF_SIZE];
   char buff[1]; // Actually larger than that
 };
 
@@ -205,8 +216,7 @@ struct ncclComm {
   
   // Low-latency algorithm threshold
   ssize_t llThreshold;
-  // Threshold after which we use multiple rings
-  ssize_t singleRingThreshold;
+  ssize_t ringThreshold;
 
   // Device copy of the communicator
   struct ncclComm *devComm;
@@ -226,11 +236,6 @@ struct ncclComm {
   struct ncclColl args;
   void* argsptr;
 };
-
-#define DIVUP(x, y) \
-    (((x)+(y)-1)/(y))
-#define ROUNDUP(x, y) \
-    (DIVUP((x), (y))*(y))
 
 // Check CUDA calls
 #define CUDACHECK(cmd) do {                                 \

@@ -211,6 +211,7 @@ __device__ void ncclAllReduceKernel(struct CollectiveArgs* args) {
 template<int UNUSED, class FUNC, typename T>
 __device__ void ncclAllReduceLLKernel(struct CollectiveArgs* args) {
   const int tid = threadIdx.x;
+  const int bid = args->bid;
   struct ncclComm* comm = args->comm;
   struct ncclRing* ring = comm->rings+blockIdx.x;
   volatile uint64_t * recvHeadPtr = ring->recv.conn.llHead;
@@ -218,13 +219,13 @@ __device__ void ncclAllReduceLLKernel(struct CollectiveArgs* args) {
   volatile int * sizesFifo = ring->send.conn.llFifo;
   uint64_t sendHead = sendHeadPtr[0];
 
-  typedef LLPrimitives<LL_NTHREADS, T, FUNC> LL;
+  typedef LLPrimitives<NCCL_LL_NTHREADS, T, FUNC> LL;
 
   const ssize_t size = args->N;
   //const int rank = comm->rank;
   const int nranks = comm->nRanks;
-  const int llBuffSize = LL_BUFF_SIZE / (2*sizeof(uint64_t));
-  const int llSliceSize = llBuffSize / NUM_LL_CHUNKS;
+  const int llBuffSize = NCCL_LL_BUFF_SIZE / (2*sizeof(uint64_t));
+  const int llSliceSize = llBuffSize / NCCL_LL_CHUNKS;
   const int sliceSize = llSliceSize * sizeof(uint64_t) / sizeof(T);
 
   uint64_t step = ring->send.conn.llStep;
@@ -237,9 +238,10 @@ __device__ void ncclAllReduceLLKernel(struct CollectiveArgs* args) {
   union ncclLLFifoLine * prevInput = (union ncclLLFifoLine *)ring->recv.conn.llBuff;
   union ncclLLFifoLine * nextOutput = (union ncclLLFifoLine *)ring->send.conn.llBuff;
 
-  for (ssize_t chunkOffset = 0; chunkOffset < size; chunkOffset += nranks*sliceSize) {
-    int chunkSize = min(sliceSize, DIVUP(size-chunkOffset,nranks));
-    ALIGN_SIZE(chunkSize, LL_NTHREADS*sizeof(uint64_t)/sizeof(T));
+  for (ssize_t gridOffset = 0; gridOffset < size; gridOffset += args->nRings*nranks*((ssize_t)sliceSize)) {
+    int chunkSize = min(sliceSize, DIVUP(size-gridOffset,nranks*args->nRings));
+    ALIGN_SIZE(chunkSize, NCCL_LL_NTHREADS*sizeof(uint64_t)/sizeof(T));
+    ssize_t chunkOffset = gridOffset + bid*nranks*chunkSize;
 
     /////////////// begin AllReduce steps ///////////////
     ssize_t offset;

@@ -161,11 +161,11 @@ __device__ void ncclBroadcastLLKernel(struct CollectiveArgs* args) {
   const int nextRank = ring->devUserRanks[1];
   const int root = args->root;
 
-  typedef LLPrimitives<LL_NTHREADS, T, FUNC> LL;
+  typedef LLPrimitives<NCCL_LL_NTHREADS, T, FUNC> LL;
 
   const ssize_t size = args->N;
-  const int llBuffSize = LL_BUFF_SIZE / (2*sizeof(uint64_t));
-  const int llSliceSize = llBuffSize / NUM_LL_CHUNKS;
+  const int llBuffSize = NCCL_LL_BUFF_SIZE / (2*sizeof(uint64_t));
+  const int llSliceSize = llBuffSize / NCCL_LL_CHUNKS;
   const int sliceSize = llSliceSize * sizeof(uint64_t) / sizeof(T);
 
   uint64_t step = ring->send.conn.llStep;
@@ -180,7 +180,7 @@ __device__ void ncclBroadcastLLKernel(struct CollectiveArgs* args) {
 
   for (ssize_t offset = 0; offset < size; offset += sliceSize) {
     int chunkSize = min(sliceSize, size-offset);
-    ALIGN_SIZE(chunkSize, LL_NTHREADS*sizeof(uint64_t)/sizeof(T));
+    ALIGN_SIZE(chunkSize, NCCL_LL_NTHREADS*sizeof(uint64_t)/sizeof(T));
     int maxOffset = min(chunkSize, size-offset);
     if (rank == root) {
       WAIT_NEXT;

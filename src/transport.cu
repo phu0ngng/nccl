@@ -99,12 +99,12 @@ static void SaveProxy(struct ncclConnector* connector, struct ncclProxyArgs* arg
 }
 
 ncclResult_t transportSaveProxies(int substeps, int subchunks, int nstepsPerRound, int nblocksPerRound, size_t nbytes, int pattern, struct ncclComm* comm) {
-  int llMode = nbytes <= comm->llThreshold ? 1 : 0;
+  int llMode, nrings;
+  NCCL_GET_RINGS(comm, nbytes, nrings, llMode);
   nbytes       = llMode ? nbytes * 2    : nbytes;
   substeps     = llMode ? 1             : substeps;
-  subchunks    = llMode ? NUM_LL_CHUNKS : subchunks;
-  int nrings   = llMode ? 1             : LIMIT_NRINGS(nbytes, comm->nRings, comm->singleRingThreshold);
-  int buffSize = llMode ? LL_BUFF_SIZE  : comm->rings[0].buffSize;
+  subchunks    = llMode ? NCCL_LL_CHUNKS : subchunks;
+  int buffSize = llMode ? NCCL_LL_BUFF_SIZE  : comm->rings[0].buffSize;
 
   int nrounds = (int)(DIVUP(nbytes, ((size_t)nrings * nblocksPerRound * (buffSize/subchunks)))); // Fixed 32-bit overflow
   int nsteps = nstepsPerRound * nrounds * substeps;
