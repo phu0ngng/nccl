@@ -44,8 +44,8 @@ struct cudaLaunchParams
 
 // In : comm, nbytes ; Out : nrings, ll
 #define NCCL_GET_RINGS(comm, nbytes, nrings, ll) do { \
-  size_t nr = nbytes / (comm->ringThreshold*NCCL_LL_NTHREADS*comm->nRanks); \
-  nrings = nr == 0 ? 1 : nr > comm->nRings ? comm->nRings : (int)nr; \
+  size_t nr = DIVUP(nbytes, (comm->ringThreshold*NCCL_LL_NTHREADS*comm->nRanks)); \
+  nrings = nr > comm->nRings ? comm->nRings : (int)nr; \
   ll = nbytes > comm->nRanks*nrings*NCCL_LL_NTHREADS*comm->llThreshold ? 0 : 1; \
 } while (0)
 
@@ -97,7 +97,7 @@ struct ncclConnector {
 #define CUDA_IPC_MIN 2097152UL /* 2MiB - not currently used */
 
 #define NCCL_LL_CHUNKS 4
-#define NUM_LINES_PER_THREAD 8
+#define NUM_LINES_PER_THREAD 4
 #define NCCL_LL_BUFF_SIZE (NUM_LINES_PER_THREAD*NCCL_LL_NTHREADS*NCCL_LL_CHUNKS*sizeof(union ncclLLFifoLine)) // 16K
 #define NCCL_LL_CLEAN_FREQ 0x10000000
 
