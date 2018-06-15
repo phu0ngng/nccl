@@ -66,7 +66,7 @@ void initNet() {
   }
 }
 
-NCCL_PARAM(LlThreshold, "LL_THRESHOLD", NCCL_LL_THRESHOLD);
+NCCL_PARAM(LlThreshold, "LL_THRESHOLD", -2);
 NCCL_PARAM(RingThreshold, "RING_THRESHOLD", NCCL_RING_THRESHOLD);
 
 pthread_mutex_t initLock = PTHREAD_MUTEX_INITIALIZER;
@@ -149,7 +149,11 @@ static ncclResult_t commAlloc(ncclComm_t* comret, int ndev, int rank) {
   comm->nRanks = ndev;
   cudaGetDevice(&comm->cudaDev);
   comm->doneEvent = doneEvent;
-  comm->llThreshold = ncclParamLlThreshold();
+  if (ncclParamLlThreshold() != -2) {
+    comm->llThreshold = ncclParamLlThreshold();
+  } else {
+    comm->llThreshold = ncclCudaCompCap() == 6 ? NCCL_LL_THRESHOLD >> 2 : NCCL_LL_THRESHOLD;
+  }
 
   comm->argsptr = &comm->args;
 
