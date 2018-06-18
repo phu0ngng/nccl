@@ -80,15 +80,15 @@ static void initDebug() {
   const char* nccl_debug = getenv("NCCL_DEBUG");
   if (nccl_debug == NULL) {
     ncclDebugLevel = NONE;
-  } else if (strcmp(nccl_debug, "VERSION") == 0) {
+  } else if (strcasecmp(nccl_debug, "VERSION") == 0) {
     ncclDebugLevel = VERSION;
-  } else if (strcmp(nccl_debug, "WARN") == 0) {
+  } else if (strcasecmp(nccl_debug, "WARN") == 0) {
     ncclDebugLevel = WARN;
-  } else if (strcmp(nccl_debug, "INFO") == 0) {
+  } else if (strcasecmp(nccl_debug, "INFO") == 0) {
     ncclDebugLevel = INFO;
-  } else if (strcmp(nccl_debug, "ABORT") == 0) {
+  } else if (strcasecmp(nccl_debug, "ABORT") == 0) {
     ncclDebugLevel = ABORT;
-  } else if (strcmp(nccl_debug, "TRACE") == 0) {
+  } else if (strcasecmp(nccl_debug, "TRACE") == 0) {
     ncclDebugLevel = TRACE;
   }
 
