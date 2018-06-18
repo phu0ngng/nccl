@@ -151,6 +151,7 @@ __device__ void ncclBroadcastKernel(struct CollectiveArgs* args) {
 template<int UNUSED, class FUNC, typename T>
 __device__ void ncclBroadcastLLKernel(struct CollectiveArgs* args) {
   const int tid = threadIdx.x;
+  const int bid = args->bid;
   struct ncclComm* comm = args->comm;
   struct ncclRing* ring = comm->rings+blockIdx.x;
   volatile uint64_t * recvHeadPtr = ring->recv.conn.llHead;
@@ -178,9 +179,11 @@ __device__ void ncclBroadcastLLKernel(struct CollectiveArgs* args) {
   union ncclLLFifoLine * prevInput = (union ncclLLFifoLine *)ring->recv.conn.llBuff;
   union ncclLLFifoLine * nextOutput = (union ncclLLFifoLine *)ring->send.conn.llBuff;
 
-  for (ssize_t offset = 0; offset < size; offset += sliceSize) {
-    int chunkSize = min(sliceSize, size-offset);
+  for (ssize_t gridOffset = 0; gridOffset < size; gridOffset += args->nRings*sliceSize) {
+    int chunkSize = min(sliceSize, DIVUP(size-gridOffset,args->nRings));
     ALIGN_SIZE(chunkSize, NCCL_LL_NTHREADS*sizeof(uint64_t)/sizeof(T));
+    ssize_t offset = gridOffset + bid*chunkSize;
+
     int maxOffset = min(chunkSize, size-offset);
     if (rank == root) {
       WAIT_NEXT;

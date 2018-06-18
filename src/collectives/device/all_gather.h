@@ -180,6 +180,7 @@ __device__ void ncclAllGatherKernel(struct CollectiveArgs* args) {
 template<int UNUSED, class FUNC, typename T>
 __device__ void ncclAllGatherLLKernel(struct CollectiveArgs* args) {
   const int tid = threadIdx.x;
+  const int bid = args->bid;
   struct ncclComm* comm = args->comm;
   struct ncclRing* ring = comm->rings+blockIdx.x;
   volatile uint64_t * recvHeadPtr = ring->recv.conn.llHead;
@@ -206,7 +207,11 @@ __device__ void ncclAllGatherLLKernel(struct CollectiveArgs* args) {
   union ncclLLFifoLine * prevInput = (union ncclLLFifoLine *)ring->recv.conn.llBuff;
   union ncclLLFifoLine * nextOutput = (union ncclLLFifoLine *)ring->send.conn.llBuff;
 
-  for (ssize_t chunkOffset = 0; chunkOffset < size; chunkOffset += sliceSize) {
+  for (ssize_t gridOffset = 0; gridOffset < size; gridOffset += args->nRings*sliceSize) {
+    int chunkSize = min(sliceSize, DIVUP(size-gridOffset,args->nRings));
+    ALIGN_SIZE(chunkSize, NCCL_LL_NTHREADS*sizeof(uint64_t)/sizeof(T));
+    ssize_t chunkOffset = gridOffset + bid*chunkSize;
+
     /////////////// begin AllGather steps ///////////////
     ssize_t offset;
     int maxOffset = min(sliceSize, size-chunkOffset);
