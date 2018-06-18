@@ -149,11 +149,6 @@ static ncclResult_t commAlloc(ncclComm_t* comret, int ndev, int rank) {
   comm->nRanks = ndev;
   cudaGetDevice(&comm->cudaDev);
   comm->doneEvent = doneEvent;
-  if (ncclParamLlThreshold() != -2) {
-    comm->llThreshold = ncclParamLlThreshold();
-  } else {
-    comm->llThreshold = ncclCudaCompCap() == 6 ? NCCL_LL_THRESHOLD >> 2 : NCCL_LL_THRESHOLD;
-  }
 
   comm->argsptr = &comm->args;
 
@@ -433,6 +428,13 @@ static ncclResult_t initTransportsRank(struct ncclComm* comm, ncclUniqueId* comm
     minCompCap = min(allData[i], minCompCap);
   if (rank == 0) INFO("Min Comp Cap %d", minCompCap);
 
+  // Determine LL threshold across all GPUs
+  if (ncclParamLlThreshold() != -2) {
+    comm->llThreshold = ncclParamLlThreshold();
+  } else {
+    comm->llThreshold = (minCompCap == 6) ? NCCL_LL_THRESHOLD >> 2 : NCCL_LL_THRESHOLD;
+  }
+
   comm->ringThreshold = ncclParamRingThreshold();
 
   // Find min nrings across ranks
@@ -611,10 +613,19 @@ static ncclResult_t initTransportsAll(struct ncclComm** comms, const int* devs, 
   free(prevFinal);
   free(nextFinal);
 
+  // Determine LL threshold across all GPUs
+  int llth;
+  if (ncclParamLlThreshold() != -2) {
+    llth = ncclParamLlThreshold();
+  } else {
+    llth = (minCompCap == 6) ? NCCL_LL_THRESHOLD >> 2 : NCCL_LL_THRESHOLD;
+  }
+
   for (int rank=0; rank<nranks; rank++) {
     comms[rank]->nRings = nrings;
     comms[rank]->nThreads = nthreads;
     comms[rank]->ringThreshold = ncclParamRingThreshold();
+    comms[rank]->llThreshold = llth;
   }
 
   for (int r=0; r<nrings; r++) {
