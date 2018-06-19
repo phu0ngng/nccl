@@ -657,6 +657,8 @@ ncclResult_t ncclCommInitAll(ncclComm_t* comms, int ndev, const int* devlist) {
   NCCLCHECK(wrapNvmlInit());
   showVersion();
 
+  TRACE("nranks %d", ndev);
+
   NCCLCHECK(PtrCheck(comms, "CommInitAll", "comms"));
   if (ndev < 1) {
     WARN("Invalid device count requested : %d", ndev);
@@ -753,8 +755,8 @@ const char* ncclGetErrorString(ncclResult_t code) {
   case ncclInternalError          : return "internal error";
   case ncclInvalidArgument        : return "invalid argument";
   case ncclInvalidUsage           : return "invalid usage";
+  default                         : return "unknown result code";
   }
-  return "unknown result code";
 }
 
 NCCL_API(ncclResult_t, ncclCommCount, const ncclComm_t comm, int* count);

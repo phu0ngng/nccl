@@ -369,7 +369,8 @@ ncclResult_t p2pGetRings(int nranks, int* groups, int* subgroups, int* values, i
   int nrings = *nringsRet;
 
   // NVswitch
-  int nvswitchLinks;
+  int nvswitchLinks = 0;
+  int directLinks = 0;
   for (int rank=0; rank<nranks; rank++) {
     for (int j=1; j<nranks; j++) {
       int i = (rank + j) % nranks;
@@ -396,7 +397,6 @@ ncclResult_t p2pGetRings(int nranks, int* groups, int* subgroups, int* values, i
   }
 
   // point-to-point NVLink
-  int directLinks;
   for (int rank=0; rank<nranks; rank++) {
     int links = 0;
     for (int i=0; i<nranks; i++) {
