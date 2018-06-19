@@ -25,6 +25,7 @@
 #include "ibvwrap.h"
 
 #define USE_RDMA_WRITE 1
+#define USE_RDMA_SEND_INLINE 0
 #define MAXNAMESIZE 64
 static char ncclIbIfName[MAX_IF_NAME_SIZE];
 static union socketAddress ncclIbIfAddr;
@@ -303,6 +304,8 @@ struct ncclIbListenComm {
 
 struct ncclIbSendFifo {
   uint64_t addr;
+  int      size;
+  uint32_t seq;
   uint32_t rkey;
   uint32_t ready;
 };
@@ -331,6 +334,7 @@ struct ncclIbRemFifo {
   uint64_t addr;
   uint32_t rkey;
   uint32_t tail;
+  uint32_t flags;
   struct ibv_mr* mr;
   struct ibv_sge sge;
 };
@@ -524,6 +528,14 @@ int ncclIbAccept(void* listenComm, void** recvComm) {
   rComm->remFifo.sge.length = sizeof(struct ncclIbSendFifo);
   rComm->remFifo.sge.lkey = rComm->remFifo.mr->lkey;
 
+#if USE_RDMA_SEND_INLINE
+  // Determine whether the remFifo element data can be sent INLINE
+  struct ibv_qp_attr attr;
+  struct ibv_qp_init_attr init_attr;
+  NCCLCHECK(wrap_ibv_query_qp(qp, &attr, IBV_QP_CAP, &init_attr));
+  if (init_attr.cap.max_inline_data >= rComm->remFifo.sge.length) rComm->remFifo.flags = IBV_SEND_INLINE;
+#endif
+
   // Allocate Flush dummy buffer for GPU Direct RDMA
   rComm->gpuFlush.enabled = (ncclIbGdrSupport(lComm->dev) == 0) && (ncclParamIbGdrFlushDisable() == 0) ? 1 : 0;
   if (rComm->gpuFlush.enabled) {
@@ -573,6 +585,7 @@ ncclResult_t ncclIbGetRequest(struct ncclIbRequest* reqs, struct ncclIbRequest**
     }
   }
   WARN("IB : unable to allocate requests\n");
+  *req = NULL;
   return ncclInternalError;
 }
 
@@ -645,6 +658,7 @@ ncclResult_t ncclIbGetMr(struct ncclIbVerbs* verbs, void* data, int size, struct
   NCCLCHECK(wrap_ibv_reg_mr(&verbs->mrPool[elem].mr, verbs->pd, (void*)regAddr, regSize, IBV_ACCESS_LOCAL_WRITE|IBV_ACCESS_REMOTE_WRITE|IBV_ACCESS_REMOTE_READ));
   *mrRet = verbs->mrPool+elem;
   verbs->mrPool[elem].refcnt++;
+  TRACE("elem %d regAddr %lx size %ld rkey %x", elem, regAddr, regSize, (verbs->mrPool+elem)->mr->rkey);
   return ncclSuccess;
 }
 
@@ -679,15 +693,26 @@ int ncclIbIsend(void* sendComm, void* data, int size, int type, void** request) 
   volatile struct ncclIbSendFifo* slot = comm->fifo + (comm->fifoHead%MAX_REQUESTS);
   volatile uint32_t * readyPtr = &slot->ready;
   while (*readyPtr == 0) sched_yield(); /*XXX:if commented, ibv_post_send in ncclIbPostFifo should also be commented*/
-#ifdef USE_RDMA_WRITE
-  __sync_synchronize();
+#if USE_RDMA_WRITE
+  __sync_synchronize(); // order the readyPtr load against rkey load below
+  // Sanity checks to catch user collective call count/size mismatches
+  // plus any potential programming errors
+  if (size > slot->size || slot->size <= 0 || slot->addr == 0 || slot->rkey == 0 || slot->seq != comm->fifoHead) {
+    WARN("collective mismatch error local size %d remote %d addr %lx rkey %x seq %x/%x",
+         size, slot->size, slot->addr, slot->rkey, slot->seq, comm->fifoHead);
+    return 1;
+  }
   wr.opcode = IBV_WR_RDMA_WRITE_WITH_IMM;
   wr.wr.rdma.remote_addr = slot->addr;
   wr.wr.rdma.rkey = slot->rkey;
-  wr.imm_data = size;
+  wr.imm_data = size; // Send the message size via imm_data
   __sync_synchronize();
 #endif
+  // We must clear slot->ready, but reset other fields to aid
+  // debugging and sanity checks
   slot->ready = 0;
+  slot->addr = 0ULL;
+  slot->rkey = slot->size = slot->seq = 0;
   comm->fifoHead++;
 
   struct ibv_send_wr* bad_wr;
@@ -696,7 +721,7 @@ int ncclIbIsend(void* sendComm, void* data, int size, int type, void** request) 
   return 0;
 }
 
-ncclResult_t ncclIbPostFifo(struct ncclIbRecvComm* comm, uint32_t rkey, uint64_t addr) {
+ncclResult_t ncclIbPostFifo(struct ncclIbRecvComm* comm, uint32_t rkey, uint64_t addr, int size) {
   struct ibv_send_wr wr;
   memset(&wr, 0, sizeof(wr));
   struct ncclIbRequest* req;
@@ -709,13 +734,15 @@ ncclResult_t ncclIbPostFifo(struct ncclIbRecvComm* comm, uint32_t rkey, uint64_t
   localElem->addr = addr;
   localElem->rkey = rkey;
   localElem->ready = 1;
+  localElem->size = size; // Sanity/Debugging
+  localElem->seq = comm->remFifo.tail; // Sanity/Debugging
   wr.wr.rdma.remote_addr = comm->remFifo.addr + (comm->remFifo.tail % MAX_REQUESTS) * sizeof(struct ncclIbSendFifo);
   wr.wr.rdma.rkey = comm->remFifo.rkey;
   comm->remFifo.sge.addr = (uint64_t)localElem;
   wr.sg_list = &comm->remFifo.sge;
   wr.num_sge = 1;
   wr.opcode = IBV_WR_RDMA_WRITE;
-  wr.send_flags = IBV_SEND_SIGNALED;
+  wr.send_flags = IBV_SEND_SIGNALED | comm->remFifo.flags; // IBV_SEND_INLINE
 
   struct ibv_send_wr* bad_wr;
   NCCLCHECK(wrap_ibv_post_send(comm->qp, &wr, &bad_wr));
@@ -755,7 +782,7 @@ int ncclIbIrecv(void* recvComm, void* data, int size, int type, void** request) 
   *request = req;
 
   // Post to FIFO to notify sender
-  NCCLCHECK(ncclIbPostFifo(comm, req->ibMr->mr->rkey, (uint64_t)data));
+  NCCLCHECK(ncclIbPostFifo(comm, req->ibMr->mr->rkey, (uint64_t)data, size));
   return ncclSuccess;
 }
 
@@ -807,7 +834,7 @@ int ncclIbTest(void* request, int* done, int* size) {
       if (doneReq) {
         if (wc.opcode == IBV_WC_RECV) {
           doneReq->size = wc.byte_len;
-#ifdef USE_RDMA_WRITE
+#if USE_RDMA_WRITE
         } else if (wc.opcode == IBV_WC_RECV_RDMA_WITH_IMM) {
           doneReq->size = wc.imm_data;
 #endif
