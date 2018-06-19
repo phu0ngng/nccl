@@ -126,7 +126,7 @@ static ncclResult_t saveKernel(int coll, const void* sendbuff, void* recvbuff, s
     ring->collFifoTail = opIndex;
     ring->collCount++;
   }
-  if (llMode == 0) comm->opCount++;
+  /*if (llMode == 0)*/ comm->opCount++;
   return ncclSuccess;
 }
 
