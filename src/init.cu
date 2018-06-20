@@ -432,7 +432,7 @@ static ncclResult_t initTransportsRank(struct ncclComm* comm, ncclUniqueId* comm
   if (ncclParamLlThreshold() != -2) {
     comm->llThreshold = ncclParamLlThreshold();
   } else {
-    comm->llThreshold = (minCompCap == 6) ? NCCL_LL_THRESHOLD >> 2 : NCCL_LL_THRESHOLD;
+    comm->llThreshold = (minCompCap == 6) ? NCCL_LL_THRESHOLD >> 1 : NCCL_LL_THRESHOLD;
   }
 
   comm->ringThreshold = ncclParamRingThreshold();
@@ -618,7 +618,7 @@ static ncclResult_t initTransportsAll(struct ncclComm** comms, const int* devs, 
   if (ncclParamLlThreshold() != -2) {
     llth = ncclParamLlThreshold();
   } else {
-    llth = (minCompCap == 6) ? NCCL_LL_THRESHOLD >> 2 : NCCL_LL_THRESHOLD;
+    llth = (minCompCap == 6) ? NCCL_LL_THRESHOLD >> 1 : NCCL_LL_THRESHOLD;
   }
 
   for (int rank=0; rank<nranks; rank++) {
