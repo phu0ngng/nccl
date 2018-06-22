@@ -45,7 +45,7 @@ struct cudaLaunchParams
 // In : comm, nbytes ; Out : nrings, ll
 #define NCCL_GET_RINGS(comm, nbytes, nrings, ll) do { \
   size_t nr = DIVUP(nbytes, (comm->ringThreshold*NCCL_LL_NTHREADS*comm->nRanks)); \
-  nrings = nr > comm->nRings ? comm->nRings : (int)nr; \
+  nrings = nr == 0 ? 1 : nr > comm->nRings ? comm->nRings : (int)nr; \
   ll = nbytes > comm->nRanks*nrings*NCCL_LL_NTHREADS*comm->llThreshold ? 0 : 1; \
 } while (0)
 
