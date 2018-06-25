@@ -479,6 +479,9 @@ static ncclResult_t initTransportsRank(struct ncclComm* comm, ncclUniqueId* comm
   char hostname[1024];
   NCCLCHECK(getHostName(hostname, 1024));
   rankInfos[rank].hostHash=getHostHash(hostname);
+  // Also include a hash of the cgroup info to distinguish multiple
+  // containers which may be running on the same host
+  if (getCGroup(hostname, 1024) == ncclSuccess) rankInfos[rank].hostHash ^= getHostHash(hostname);
   rankInfos[rank].comm = comm;
   NCCLCHECK(bootstrapAllGather(commState, rankInfos, sizeof(struct rankInfo)));
 
@@ -492,6 +495,10 @@ static ncclResult_t initTransportsRank(struct ncclComm* comm, ncclUniqueId* comm
       intraRanks++;
     }
   }
+  TRACE("hostHash %lx intraRank %d intraRanks %d intraRank0 %d", rankInfos[rank].hostHash, intraRank, intraRanks, intraRank0);
+  assert(intraRank != -1);
+  assert(intraRank0 != -1);
+  assert(rankInfos[intraRank0].comm != NULL);
   NCCLCHECK(ncclCommSetIntra(comm, intraRank, intraRanks, rankInfos[intraRank0].comm));
 
   // Barrier
