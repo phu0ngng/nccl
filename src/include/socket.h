@@ -72,7 +72,7 @@ static int findInterfaces(const char* prefixList, char* names, union socketAddre
     if (family != AF_INET && family != AF_INET6)
       continue;
 
-    TRACE("Found interface %s:%s", interface->ifa_name, socketToString(interface->ifa_addr, line));
+    TRACE(INIT|NET,"Found interface %s:%s", interface->ifa_name, socketToString(interface->ifa_addr, line));
 
     /* Allow the caller to force the socket family type */
     if (sock_family != -1 && family != sock_family)
@@ -102,7 +102,7 @@ static int findInterfaces(const char* prefixList, char* names, union socketAddre
       // Store the IP address
       int salen = (family == AF_INET) ? sizeof(sockaddr_in) : sizeof(sockaddr_in6);
       memcpy(addrs+found, interface->ifa_addr, salen);
-      INFO("NET : Using interface %s:%s", interface->ifa_name, socketToString(interface->ifa_addr, line));
+      INFO(INIT|NET,"NET : Using interface %s:%s", interface->ifa_name, socketToString(interface->ifa_addr, line));
       found++;
     }
   }
@@ -180,7 +180,7 @@ static int findInterfaceMatchSubnet(char* ifNames, union socketAddress* localAdd
     // Store the interface name
     strncpy(ifNames+found*ifNameMaxSize, interface->ifa_name, ifNameMaxSize);
 
-    INFO("NET : Found interface %s:%s in the same subnet as remote address %s", interface->ifa_name, socketToString(&(localAddrs[found].sa), line), socketToString(&(remoteAddr.sa), line_a));
+    INFO(INIT|NET,"NET : Found interface %s:%s in the same subnet as remote address %s", interface->ifa_name, socketToString(&(localAddrs[found].sa), line), socketToString(&(remoteAddr.sa), line_a));
     found++;
     if (found == maxIfs) break;
   }
@@ -324,7 +324,7 @@ static ncclResult_t createListenSocket(int *fd, union socketAddress *localAddr) 
 
 #ifdef ENABLE_TRACE
   char line[1024];
-  TRACE("Listening on socket %s", socketToString(&localAddr->sa, line));
+  TRACE(INIT|NET,"Listening on socket %s", socketToString(&localAddr->sa, line));
 #endif
 
   /* Put the socket in listen mode */
@@ -354,7 +354,7 @@ static ncclResult_t connectAddress(int* fd, union socketAddress* remoteAddr) {
 
 #ifdef ENABLE_TRACE
   char line[1024];
-  TRACE("Connecting to socket %s", socketToString(&remoteAddr->sa, line));
+  TRACE(INIT|NET,"Connecting to socket %s", socketToString(&remoteAddr->sa, line));
 #endif
 
   SYSCHECKNTIMES(connect(*fd, &remoteAddr->sa, salen), "connect", RETRY_TIMES, SLEEP_INT, ECONNREFUSED);
@@ -372,7 +372,7 @@ static ncclResult_t socketReceive(int fd, void* ptr, int size) {
       return ncclSystemError;
     }
     if (recvsize == -1) {
-      INFO("Recv : got retcode %d, retrying", errno);
+      INFO(NET,"Recv : got retcode %d, retrying", errno);
       continue;
     }
     data += recvsize;
@@ -388,7 +388,7 @@ static ncclResult_t socketSend(int fd, void* ptr, int size) {
     int sendsize;
     SYSCHECKVAL(write(fd, data, size-offset), "write", sendsize);
     if (sendsize == -1) {
-      INFO("Send : got retcode %d, retrying", errno);
+      INFO(NET,"Send : got retcode %d, retrying", errno);
       continue;
     }
     data += sendsize;

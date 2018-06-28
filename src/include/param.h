@@ -68,10 +68,10 @@ int64_t ncclParam##name() { \
       errno = 0; \
       int64_t v = strtoll(str, NULL, 0); \
       if (errno) { \
-        INFO("Invalid value %s for %s, using default %lu.", str, "NCCL_" env, value); \
+        INFO(ALL,"Invalid value %s for %s, using default %lu.", str, "NCCL_" env, value); \
       } else { \
         value = v; \
-        INFO("%s set by environment to %lu.", "NCCL_" env, value); \
+        INFO(ALL,"%s set by environment to %lu.", "NCCL_" env, value);  \
       } \
     } \
   } \

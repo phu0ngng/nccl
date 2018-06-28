@@ -108,6 +108,8 @@ ncclResult_t transportSaveProxies(int substeps, int subchunks, int nstepsPerRoun
 
   int nrounds = (int)(DIVUP(nbytes, ((size_t)nrings * nblocksPerRound * (buffSize/subchunks)))); // Fixed 32-bit overflow
   int nsteps = nstepsPerRound * nrounds * substeps;
+  TRACE(NET,"opCount %lx substeps %d subchunks %d nrounds %d nsteps %d comm %p", comm->opCount, subchunks, subchunks, nrounds, nsteps, comm);
+  TRACE(NET,"opCount %lx nbytes %zi nrings %d buffSize %d pattern %d comm %p", comm->opCount, nbytes, nrings, buffSize, pattern, comm);
   for (int r=0; r<nrings; r++) {
     struct ncclRing* ring = comm->rings+((comm->myParams->gridDim.x+r)%comm->nRings);
     struct ncclProxyArgs args = { ring, substeps*subchunks, nsteps, comm->opCount, llMode, 0 };
@@ -152,6 +154,7 @@ ncclResult_t transportCreateProxy(int type, struct ncclRing* ring, struct ncclCo
   struct ncclConnector* connector = (type == 0) ? &ring->recv : &ring->send;
   threadFunc_t proxyfunc = (threadFunc_t) ((type == 0) ? connector->transport->recv.proxy : connector->transport->send.proxy);
   if (proxyfunc) {
+    TRACE(NET,"type %d ring %p proxyfunc %p comm %p", type, ring, proxyfunc, comm);
     struct transportProxyInfo * info = connector->proxyInfo = (struct transportProxyInfo*)malloc(sizeof(struct transportProxyInfo));
     memset(info, 0, sizeof(struct transportProxyInfo));
     info->comm = comm;

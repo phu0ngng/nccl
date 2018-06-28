@@ -28,7 +28,7 @@ ncclResult_t initRing(struct ncclComm* comm, int ringid) {
   CUDACHECK(cudaMemset(recvMem, 0, recvSize));
   ring->devMemRecv = recvMem;
 
-  TRACE("sendMem %p size %d recvMem %p size %d", sendMem, sendSize, recvMem, recvSize);
+  TRACE(INIT,"sendMem %p size %d recvMem %p size %d", sendMem, sendSize, recvMem, recvSize);
 
   // Pre-configure send/recv pointers. Those are the default, they may change later.
   ring->recv.conn.buff = recvMem->buff;

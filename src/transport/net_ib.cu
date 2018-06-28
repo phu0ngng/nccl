@@ -95,7 +95,7 @@ static void initDevices() {
           WARN("NET/IB : No IP interface found.");
           return;
       }
-      INFO("NET/IB : Using interface %s for sideband communication", ncclIbIfName);
+      INFO(INIT|NET,"NET/IB : Using interface %s for sideband communication", ncclIbIfName);
 
       // Detect IB cards
       int nIbDevs;
@@ -136,7 +136,7 @@ static void initDevices() {
             if (! (matchIfList(devices[d]->name, port, userIfs, nUserIfs) ^ searchNot)) {
               continue;
             }
-            INFO("NET/IB: [%d] %s:%d/%s ", d, devices[d]->name, port,
+            INFO(INIT|NET,"NET/IB: [%d] %s:%d/%s ", d, devices[d]->name, port,
                 portAttr.link_layer == IBV_LINK_LAYER_INFINIBAND ? "IB" : "RoCE");
             ncclIbDevs[ncclNIbDevs].device = d;
             ncclIbDevs[ncclNIbDevs].port = port;
@@ -176,7 +176,7 @@ int ncclIbDevices(int* ndev, int** scores) {
     sc[d] = 1+PATH_SOC-distance;
     if (err2 == ncclSuccess) free(mlxPath);
   }
-  INFO("%s", line);
+  INFO(INIT|NET,"%s", line);
   if (err1 == ncclSuccess) free(cudaPath);
   *scores = sc;
   return ncclSuccess;
@@ -226,7 +226,7 @@ int ncclIbPtrSupport(int dev, int* supportedTypes) {
   if (ibGdrLevel > 0) {
     int gdrSupport = ncclIbGdrSupport(dev);
     if (gdrSupport > 0) {
-      INFO("NET/IB : GPU Direct RDMA Disabled for GPU %d / HCA %s (%s)", cudaDev, ncclIbDevs[dev].devName, gdrSupport == 1 ? "no module" : "not supported by GPU");
+      INFO(INIT|NET,"NET/IB : GPU Direct RDMA Disabled for GPU %d / HCA %s (%s)", cudaDev, ncclIbDevs[dev].devName, gdrSupport == 1 ? "no module" : "not supported by GPU");
       ibGdrLevel = 0;
     }
   }
@@ -242,7 +242,7 @@ int ncclIbPtrSupport(int dev, int* supportedTypes) {
   if (distance < ibGdrLevel) {
     *supportedTypes |= NCCL_PTR_CUDA;
   } else {
-    INFO("NET/IB : GPU Direct RDMA Disabled for GPU %d / HCA %s (distance %d >= %d)", cudaDev, ncclIbDevs[dev].devName, distance, ibGdrLevel);
+    INFO(INIT|NET,"NET/IB : GPU Direct RDMA Disabled for GPU %d / HCA %s (distance %d >= %d)", cudaDev, ncclIbDevs[dev].devName, distance, ibGdrLevel);
   }
   return 0;
 }
@@ -475,13 +475,13 @@ int ncclIbConnect(int dev, void* opaqueHandle, void** sendComm) {
   // RoCE support
   qpInfo.lid = portAttr.lid;
   if (qpInfo.lid) { // IB
-    INFO("NET/IB: Dev %d Port %d qpn %d mtu %d LID %d", dev, ib_port, qpInfo.qpn, qpInfo.mtu, qpInfo.lid);
+    INFO(INIT|NET,"NET/IB: Dev %d Port %d qpn %d mtu %d LID %d", dev, ib_port, qpInfo.qpn, qpInfo.mtu, qpInfo.lid);
   } else { // RoCE
     union ibv_gid gid;
     NCCLCHECK(wrap_ibv_query_gid(ctx, ib_port, ncclParamIbGidIndex(), &gid));
     qpInfo.spn = gid.global.subnet_prefix;
     qpInfo.iid = gid.global.interface_id;
-    INFO("NET/IB: Dev %d Port %d qpn %d mtu %d GID %ld (%lX/%lX)", dev, ib_port, qpInfo.qpn, qpInfo.mtu, ncclParamIbGidIndex(), qpInfo.spn, qpInfo.iid);
+    INFO(INIT|NET,"NET/IB: Dev %d Port %d qpn %d mtu %d GID %ld (%lX/%lX)", dev, ib_port, qpInfo.qpn, qpInfo.mtu, ncclParamIbGidIndex(), qpInfo.spn, qpInfo.iid);
   }
 
   NCCLCHECK(socketSend(comm->fd, &qpInfo, sizeof(qpInfo)));
@@ -658,7 +658,7 @@ ncclResult_t ncclIbGetMr(struct ncclIbVerbs* verbs, void* data, int size, struct
   NCCLCHECK(wrap_ibv_reg_mr(&verbs->mrPool[elem].mr, verbs->pd, (void*)regAddr, regSize, IBV_ACCESS_LOCAL_WRITE|IBV_ACCESS_REMOTE_WRITE|IBV_ACCESS_REMOTE_READ));
   *mrRet = verbs->mrPool+elem;
   verbs->mrPool[elem].refcnt++;
-  TRACE("elem %d regAddr %lx size %ld rkey %x", elem, regAddr, regSize, (verbs->mrPool+elem)->mr->rkey);
+  TRACE(INIT,"elem %d regAddr %lx size %ld rkey %x", elem, regAddr, regSize, (verbs->mrPool+elem)->mr->rkey);
   return ncclSuccess;
 }
 

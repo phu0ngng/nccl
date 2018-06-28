@@ -19,7 +19,7 @@ typedef enum { findSubnetIf   = -1,
 #define NETCHECK(cmd) do { \
   int err = cmd; \
   if (err != 0) { \
-    INFO("%s:%d -> %d [Net]", __FILE__, __LINE__, err); \
+    INFO(ALL, "%s:%d -> %d [Net]", __FILE__, __LINE__, err);   \
     return ncclSystemError; \
   } \
 } while (false)

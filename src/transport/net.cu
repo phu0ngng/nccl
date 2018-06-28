@@ -230,7 +230,7 @@ ncclResult_t netRecvSetup(ncclTinfo_t* myOpaqueInfo, ncclTinfo_t* peerOpaqueInfo
   NCCLCHECK(ncclCudaHostAlloc((void**)&resources->hostRecvMem, (void**)&resources->devHostRecvMem, recvSize));
 
   struct netInfo* peerInfo = (struct netInfo*)peerOpaqueInfo;
-  INFO("%d -> %d via NET/%s/%d%s%s", peerInfo->rank, myInfo->rank, ncclNetName(), resources->netDev,
+  INFO(INIT|NET,"%d -> %d via NET/%s/%d%s%s", peerInfo->rank, myInfo->rank, ncclNetName(), resources->netDev,
       resources->cudaSupport ? "/GDRDMA" : "", 
       (resources->hostDevMem != NULL) ? "/GDCopy" : "");
   struct netConnectInfo* info = (struct netConnectInfo*) connectInfo;
@@ -337,6 +337,9 @@ ncclResult_t netSendProxy(struct ncclProxyArgs* args) {
 
   if (!args->needProxy) goto nextColl;
 
+  TRACE(NET,"opCount %lx head %lx tail %lx end %lx nsteps %d llMode %d", args->opCount, head, tail, end, args->nsteps, llMode);
+  TRACE(NET,"opCount %lx buffSize %d sliceSize %d ptrType %d", args->opCount, buffSize, sliceSize, ptrType);
+
   // Update in case we skipped some collectives
   if (llMode == 0) resources->hostRecvMem->opCount = args->opCount;
 
@@ -425,6 +428,9 @@ ncclResult_t netRecvProxy(struct ncclProxyArgs* args) {
   void* requests[args->substeps];
 
   if (!args->needProxy) goto nextColl;
+
+  TRACE(NET,"opCount %lx head %lx tail %lx end %lx nsteps %d llMode %d", args->opCount, head, tail, end, args->nsteps, llMode);
+  TRACE(NET,"opCount %lx buffSize %d sliceSize %d ptrType %d", args->opCount, buffSize, sliceSize, ptrType);
 
   if (llMode == 0) {
     // Waiting for next opCount is only needed before writing nextTail.
