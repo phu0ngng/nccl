@@ -152,6 +152,7 @@ template<int UNUSED, class FUNC, typename T>
 __device__ void ncclBroadcastLLKernel(struct CollectiveArgs* args) {
   const int tid = threadIdx.x;
   const int bid = args->bid;
+  const int ll_nthreads = blockDim.x;
   struct ncclComm* comm = args->comm;
   struct ncclRing* ring = comm->rings+blockIdx.x;
   volatile uint64_t * recvHeadPtr = ring->recv.conn.llHead;
@@ -162,10 +163,10 @@ __device__ void ncclBroadcastLLKernel(struct CollectiveArgs* args) {
   const int nextRank = ring->devUserRanks[1];
   const int root = args->root;
 
-  typedef LLPrimitives<NCCL_LL_NTHREADS, T, FUNC> LL;
+  typedef LLPrimitives<T, FUNC> LL;
 
   const ssize_t size = args->N;
-  const int llBuffSize = NCCL_LL_BUFF_SIZE / (2*sizeof(uint64_t));
+  const int llBuffSize = NCCL_LL_BUFF_SIZE / (NCCL_LL_MAX_NTHREADS / ll_nthreads) / (2*sizeof(uint64_t));
   const int llSliceSize = llBuffSize / NCCL_LL_CHUNKS;
   const int sliceSize = llSliceSize * sizeof(uint64_t) / sizeof(T);
 
@@ -181,7 +182,7 @@ __device__ void ncclBroadcastLLKernel(struct CollectiveArgs* args) {
 
   for (ssize_t gridOffset = 0; gridOffset < size; gridOffset += args->nRings*sliceSize) {
     int chunkSize = min(sliceSize, DIVUP(size-gridOffset,args->nRings));
-    ALIGN_SIZE(chunkSize, NCCL_LL_NTHREADS*sizeof(uint64_t)/sizeof(T));
+    ALIGN_SIZE(chunkSize, ll_nthreads*sizeof(uint64_t)/sizeof(T));
     ssize_t offset = gridOffset + bid*chunkSize;
 
     int maxOffset = min(chunkSize, size-offset);
@@ -191,13 +192,13 @@ __device__ void ncclBroadcastLLKernel(struct CollectiveArgs* args) {
         LL::ReduceCopy(
             thisInput + offset,
             nextOutput + boffset,
-            maxOffset, flag);
+            maxOffset, flag, ll_nthreads);
       } else {
         LL::ReduceCopy(
             thisInput + offset,
             thisOutput + offset,
             nextOutput + boffset,
-            maxOffset, flag);
+            maxOffset, flag, ll_nthreads);
       }
       POST_SIZE;
       NEXT_STEP_LL;
@@ -205,7 +206,7 @@ __device__ void ncclBroadcastLLKernel(struct CollectiveArgs* args) {
       LL::ReduceCopy(
           prevInput + boffset,
           thisOutput + offset,
-          maxOffset, flag);
+          maxOffset, flag, ll_nthreads);
       NEXT_STEP_LL;
       ACK_PREV;
     } else {
@@ -214,7 +215,7 @@ __device__ void ncclBroadcastLLKernel(struct CollectiveArgs* args) {
           prevInput + boffset,
           thisOutput + offset,
           nextOutput + boffset,
-          maxOffset, flag, flag);
+          maxOffset, flag, flag, ll_nthreads);
       POST_SIZE;
       NEXT_STEP_LL;
       ACK_PREV;

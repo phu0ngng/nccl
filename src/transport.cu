@@ -99,18 +99,18 @@ static void SaveProxy(struct ncclConnector* connector, struct ncclProxyArgs* arg
 }
 
 ncclResult_t transportSaveProxies(int substeps, int subchunks, int nstepsPerRound, int nblocksPerRound, size_t nbytes, int pattern, struct ncclComm* comm) {
-  int llMode, nrings;
-  NCCL_GET_RINGS(comm, nbytes, nrings, llMode);
+  int llMode, nrings, nthreads;
+  NCCL_GET_RINGS(comm, nbytes, nrings, nthreads, llMode);
   nbytes       = llMode ? nbytes * 2    : nbytes;
   substeps     = llMode ? 1             : substeps;
   subchunks    = llMode ? NCCL_LL_CHUNKS : subchunks;
-  int buffSize = llMode ? NCCL_LL_BUFF_SIZE  : comm->rings[0].buffSize;
+  int buffSize = llMode ? NCCL_LL_BUFF_SIZE / (NCCL_LL_MAX_NTHREADS / nthreads) : comm->rings[0].buffSize;
 
   int nrounds = (int)(DIVUP(nbytes, ((size_t)nrings * nblocksPerRound * (buffSize/subchunks)))); // Fixed 32-bit overflow
   int nsteps = nstepsPerRound * nrounds * substeps;
   for (int r=0; r<nrings; r++) {
     struct ncclRing* ring = comm->rings+((comm->myParams->gridDim.x+r)%comm->nRings);
-    struct ncclProxyArgs args = { ring, substeps*subchunks, nsteps, comm->opCount, llMode, 0 };
+    struct ncclProxyArgs args = { ring, substeps*subchunks, nsteps, comm->opCount, llMode, 0, buffSize };
     SaveProxy(&ring->recv, &args, NeedProxy(RECV, pattern, ring, comm->nRanks));
     SaveProxy(&ring->send, &args, NeedProxy(SEND, pattern, ring, comm->nRanks));
   }

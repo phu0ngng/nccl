@@ -35,18 +35,35 @@ struct cudaLaunchParams
 // Rings / LL tuning
 #define NCCL_RING_THRESHOLD 8 // Per thread size before we start increasing nrings
 #define NCCL_LL_THRESHOLD 64  // Per thread size before we switch to non-LL
-#define NCCL_LL_NTHREADS 256
+#define NCCL_LL_MAX_NTHREADS 256
+#define NCCL_LL_MIN_NTHREADS 64
 
 #define DIVUP(x, y) \
     (((x)+(y)-1)/(y))
 #define ROUNDUP(x, y) \
     (DIVUP((x), (y))*(y))
 
-// In : comm, nbytes ; Out : nrings, ll
-#define NCCL_GET_RINGS(comm, nbytes, nrings, ll) do { \
-  size_t nr = DIVUP(nbytes, (comm->ringThreshold*NCCL_LL_NTHREADS*comm->nRanks)); \
+// In : comm, nbytes ; Out : nrings, nthreads, ll
+#define NCCL_GET_RINGS(comm, nbytes, nrings, nthreads, ll) do { \
+  nthreads = NCCL_LL_MIN_NTHREADS; \
+  ll = 0; \
+  size_t nr; \
+  while (nthreads < NCCL_LL_MAX_NTHREADS && ll == 0) { \
+    nr = DIVUP(nbytes, (comm->ringThreshold*nthreads*comm->nRanks)); \
+    if (nr <= comm->nRings) { \
+      nrings = nr == 0 ? 1 : (int)nr; \
+      ll = 1; \
+    } else { \
+      nthreads = nthreads << 1; \
+    } \
+  } \
+  if (ll == 1) { \
+    break; \
+  } \
+  nr = DIVUP(nbytes, (comm->ringThreshold*NCCL_LL_MAX_NTHREADS*comm->nRanks)); \
   nrings = nr == 0 ? 1 : nr > comm->nRings ? comm->nRings : (int)nr; \
-  ll = nbytes > comm->nRanks*nrings*NCCL_LL_NTHREADS*comm->llThreshold ? 0 : 1; \
+  ll = nbytes > comm->nRanks*nrings*NCCL_LL_MAX_NTHREADS*comm->llThreshold ? 0 : 1; \
+  nthreads = ll ? NCCL_LL_MAX_NTHREADS : comm->nThreads+1; \
 } while (0)
 
 union ncclLLFifoLine {
@@ -98,7 +115,7 @@ struct ncclConnector {
 
 #define NCCL_LL_CHUNKS 8
 #define NUM_LINES_PER_THREAD 2
-#define NCCL_LL_BUFF_SIZE (NUM_LINES_PER_THREAD*NCCL_LL_NTHREADS*NCCL_LL_CHUNKS*sizeof(union ncclLLFifoLine)) // 16K
+#define NCCL_LL_BUFF_SIZE (NUM_LINES_PER_THREAD*NCCL_LL_MAX_NTHREADS*NCCL_LL_CHUNKS*sizeof(union ncclLLFifoLine)) // 16K
 #define NCCL_LL_CLEAN_FREQ 0x10000000
 
 struct ncclSendMem {

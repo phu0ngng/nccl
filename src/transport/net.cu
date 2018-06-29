@@ -323,7 +323,7 @@ ncclResult_t netSendProxy(struct ncclProxyArgs* args) {
   char* localBuff = llMode ? resources->hostRecvMem->llBuff : localMem->buff;
   int ptrType = resources->cudaSupport ? NCCL_PTR_CUDA : NCCL_PTR_HOST;
   volatile int* sizesFifo = llMode ? resources->hostRecvMem->llSizesFifo : resources->hostRecvMem->sizesFifo;
-  int buffSize = llMode ? NCCL_LL_BUFF_SIZE : ring->buffSize;
+  int buffSize = llMode ? args->buffSize : ring->buffSize;
   int sliceSize = buffSize / args->substeps;
 
   assert(args->substeps <= SIZES_FIFO_SIZE);
@@ -414,7 +414,7 @@ ncclResult_t netRecvProxy(struct ncclProxyArgs* args) {
   int ptrType = resources->cudaSupport ? NCCL_PTR_CUDA : NCCL_PTR_HOST;
   uint64_t* nextTail = resources->hostDevMem ? &resources->hostDevMem->tail : &resources->hostRecvMem->tail;
 
-  int buffSize = llMode ? NCCL_LL_BUFF_SIZE : ring->buffSize;
+  int buffSize = llMode ? args->buffSize : ring->buffSize;
   int sliceSize = buffSize / args->substeps;
 
   uint64_t head = llMode ? resources->llStep : 0ULL;
