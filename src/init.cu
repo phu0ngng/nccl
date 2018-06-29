@@ -477,11 +477,12 @@ static ncclResult_t initTransportsRank(struct ncclComm* comm, ncclUniqueId* comm
   } rankInfos[nranks];
   rankInfos[rank].pid = getpid();
   char hostname[1024];
-  NCCLCHECK(getHostName(hostname, 1024));
+  NCCLCHECK(getHostName(hostname, sizeof(hostname)));
   rankInfos[rank].hostHash=getHostHash(hostname);
-  // Also include a hash of the cgroup info to distinguish multiple
-  // containers which may be running on the same host
-  if (getCGroup(hostname, 1024) == ncclSuccess) rankInfos[rank].hostHash ^= getHostHash(hostname);
+  // Also include a hash of the unique process namespace info to
+  // distinguish containers which may be running on the same host
+  // with the same pid
+  if (getUniqueName(hostname, sizeof(hostname)) == ncclSuccess) rankInfos[rank].hostHash ^= getHostHash(hostname);
   rankInfos[rank].comm = comm;
   NCCLCHECK(bootstrapAllGather(commState, rankInfos, sizeof(struct rankInfo)));
 

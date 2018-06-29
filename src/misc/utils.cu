@@ -20,33 +20,22 @@ ncclResult_t getHostName(char* hostname, int maxlen) {
   return ncclSuccess;
 }
 
-/*
- * Grab the first line of process 1's cgroup file
- * and return the basename of its cgroup hierarchy path
+/* Generate an identifying string for this process instance
+ * that will be unique for both bare-metal and container instances
+ * Equivalent of;
  *
- * Format is; hierarchy-ID:controller-list:cgroup-path
- * See http://man7.org/linux/man-pages/man7/cgroups.7.html
+ * $(readlink /proc/self/ns/uts)$(readlink /proc/self/ns/pid)
  */
-ncclResult_t getCGroup(char* cgroup, int maxlen) {
-  FILE * file = fopen("/proc/1/cgroup", "r");
-  if (file == NULL) return ncclSystemError;
+ncclResult_t getUniqueName(char* uname, int maxlen) {
+  ssize_t len = readlink("/proc/self/ns/uts", uname, maxlen-1);
+  if (len <= 0) return ncclSystemError;
+  ssize_t len2 = readlink("/proc/self/ns/pid", uname+len, maxlen-1-len);
+  if (len2 <= 0) return ncclSystemError;
 
-  char *line = NULL;
-  size_t n = 0;
-  ssize_t read;
-  if ((read = getline(&line, &n, file)) <= 0) goto error;
-  line[--read] = '\0';
-  while (read > 0 && line[read-1] != '/') read--; // Find basename of cgroup-path
-  if (line[read] == '\0') goto error;
-  strncpy(cgroup, &line[read], maxlen);
-  if (line) free(line);
-  fclose(file);
+  uname[len+len2]='\0';
+  TRACE("unique name '%s'", uname);
+
   return ncclSuccess;
-
-error:
-  if (line) free(line);
-  if (file) fclose(file);
-  return ncclSystemError;
 }
 
 uint64_t getHostHash(const char* string) {
