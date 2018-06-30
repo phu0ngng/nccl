@@ -50,7 +50,7 @@ struct cudaLaunchParams
   size_t nr; \
   while (nthreads < NCCL_LL_MAX_NTHREADS && ll == 0) { \
     nr = DIVUP(nbytes, (comm->ringThreshold*nthreads*comm->nRanks)); \
-    if (nr <= comm->nRings) { \
+    if (nr <= min(comm->nRings, NCCL_LL_MAX_NTHREADS / NCCL_LL_MIN_NTHREADS)) { /* avoid using few threads but many rings */ \
       nrings = nr == 0 ? 1 : (int)nr; \
       ll = 1; \
     } else { \
