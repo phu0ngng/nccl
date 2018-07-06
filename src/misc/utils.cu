@@ -33,7 +33,7 @@ int getUniqueName(char* uname, int maxlen) {
   if (len2 < 0) len2 = 0;
 
   uname[len+len2]='\0';
-  TRACE("unique name '%s'", uname);
+  TRACE(INIT,"unique name '%s'", uname);
 
   return len+len2;
 }
