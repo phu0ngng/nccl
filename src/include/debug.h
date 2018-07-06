@@ -25,7 +25,6 @@ extern uint64_t ncclDebugMask;
 extern pthread_mutex_t ncclDebugOutputLock;
 extern FILE *ncclDebugFile;
 extern ncclResult_t getHostName(char* hostname, int maxlen);
-extern ncclResult_t getCGroup(char* cgroup, int maxlen);
 
 #define WARN(...) do {                                           \
   if (ncclDebugLevel >= WARN) {                                  \

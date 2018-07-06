@@ -478,11 +478,15 @@ static ncclResult_t initTransportsRank(struct ncclComm* comm, ncclUniqueId* comm
   } rankInfos[nranks];
   rankInfos[rank].pid = getpid();
   char hostname[1024];
-  NCCLCHECK(getHostName(hostname, 1024));
+  NCCLCHECK(getHostName(hostname, sizeof(hostname)));
+  // Also include in the hash the unique process namespace info to
+  // distinguish containers which may be running on the same host
+  // with the same pid
+  // So below we compare UTS+UTSNS+PID+PIDNS when computing
+  // the job intra ranks
+  int hlen = strlen(hostname);
+  (void) getUniqueName(hostname+hlen, sizeof(hostname)-hlen);
   rankInfos[rank].hostHash=getHostHash(hostname);
-  // Also include a hash of the cgroup info to distinguish multiple
-  // containers which may be running on the same host
-  if (getCGroup(hostname, 1024) == ncclSuccess) rankInfos[rank].hostHash ^= getHostHash(hostname);
   rankInfos[rank].comm = comm;
   NCCLCHECK(bootstrapAllGather(commState, rankInfos, sizeof(struct rankInfo)));
 
@@ -496,10 +500,12 @@ static ncclResult_t initTransportsRank(struct ncclComm* comm, ncclUniqueId* comm
       intraRanks++;
     }
   }
-  TRACE(INIT,"hostHash %lx intraRank %d intraRanks %d intraRank0 %d", rankInfos[rank].hostHash, intraRank, intraRanks, intraRank0);
-  assert(intraRank != -1);
-  assert(intraRank0 != -1);
-  assert(rankInfos[intraRank0].comm != NULL);
+  TRACE("hostHash[%d] %lx intraRank %d intraRanks %d intraRank0 %d", rank, rankInfos[rank].hostHash, intraRank, intraRanks, intraRank0);
+  if (intraRank == -1 || intraRank0 == -1 || rankInfos[intraRank0].comm == NULL) {
+    WARN("Failed to determine intra ranks hostHash[%d] %lx intraRank %d intraRanks %d intraRank0 %d",
+         rank, rankInfos[rank].hostHash, intraRank, intraRanks, intraRank0);
+    return ncclInternalError;
+  }
   NCCLCHECK(ncclCommSetIntra(comm, intraRank, intraRanks, rankInfos[intraRank0].comm));
 
   // Barrier
