@@ -26,16 +26,16 @@ ncclResult_t getHostName(char* hostname, int maxlen) {
  *
  * $(readlink /proc/self/ns/uts)$(readlink /proc/self/ns/pid)
  */
-ncclResult_t getUniqueName(char* uname, int maxlen) {
-  ssize_t len = readlink("/proc/self/ns/uts", uname, maxlen-1);
-  if (len <= 0) return ncclSystemError;
-  ssize_t len2 = readlink("/proc/self/ns/pid", uname+len, maxlen-1-len);
-  if (len2 <= 0) return ncclSystemError;
+int getUniqueName(char* uname, int maxlen) {
+  int len = readlink("/proc/self/ns/uts", uname, maxlen-1);
+  if (len < 0) len = 0;
+  int len2 = readlink("/proc/self/ns/pid", uname+len, maxlen-1-len);
+  if (len2 < 0) len2 = 0;
 
   uname[len+len2]='\0';
   TRACE("unique name '%s'", uname);
 
-  return ncclSuccess;
+  return len+len2;
 }
 
 uint64_t getHostHash(const char* string) {
