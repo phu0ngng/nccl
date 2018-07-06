@@ -170,7 +170,7 @@ __device__ void ncclReduceScatterLLKernel(struct CollectiveArgs* args) {
 
     /////////////// begin ReduceScatter steps ///////////////
     ssize_t offset;
-    int maxOffset = min(sliceSize, size-chunkOffset);
+    int maxOffset = min(chunkSize, size-chunkOffset);
     int rankDest;
 
     // step 0: push data to next GPU
