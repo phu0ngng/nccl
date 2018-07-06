@@ -478,11 +478,14 @@ static ncclResult_t initTransportsRank(struct ncclComm* comm, ncclUniqueId* comm
   rankInfos[rank].pid = getpid();
   char hostname[1024];
   NCCLCHECK(getHostName(hostname, sizeof(hostname)));
-  rankInfos[rank].hostHash=getHostHash(hostname);
-  // Also include a hash of the unique process namespace info to
+  // Also include in the hash the unique process namespace info to
   // distinguish containers which may be running on the same host
   // with the same pid
-  if (getUniqueName(hostname, sizeof(hostname))) rankInfos[rank].hostHash ^= getHostHash(hostname);
+  // So below we compare UTS+UTSNS+PID+PIDNS when computing
+  // the job intra ranks
+  int hlen = strlen(hostname);
+  (void) getUniqueName(hostname+hlen, sizeof(hostname)-hlen);
+  rankInfos[rank].hostHash=getHostHash(hostname);
   rankInfos[rank].comm = comm;
   NCCLCHECK(bootstrapAllGather(commState, rankInfos, sizeof(struct rankInfo)));
 
