@@ -394,7 +394,7 @@ nextColl:
     *prevHead = resources->llStep;
     if (resources->llStep > resources->llLastCleaning + NCCL_LL_CLEAN_FREQ) {
       memset(localBuff, 0, NCCL_LL_BUFF_SIZE);
-      resources->llStep += args->subchunks;
+      resources->llStep += NCCL_LL_CHUNKS;
       *prevHead = resources->llStep;
       resources->llLastCleaning = resources->llStep;
     }
@@ -468,7 +468,7 @@ nextColl:
   if (llMode) {
     resources->llStep += args->nsteps;
     if (resources->llStep > resources->llLastCleaning + NCCL_LL_CLEAN_FREQ) {
-      resources->llStep += args->subchunks;
+      resources->llStep += NCCL_LL_CHUNKS;
       while (*nextHead < resources->llStep);
       resources->llLastCleaning = resources->llStep;
     }

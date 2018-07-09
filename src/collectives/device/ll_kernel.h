@@ -115,18 +115,18 @@ class LLPrimitives {
 // Common macros
 
 #define STEP_TO_SLOT(step) \
-  (step % llChunks)
+  (step % NCCL_LL_CHUNKS)
 
 #define WAIT_NEXT \
   if (tid == 0) { \
-    while (sendHead + llChunks <= step) { \
+    while (sendHead + NCCL_LL_CHUNKS <= step) { \
       sendHead = sendHeadPtr[0]; \
     } \
   } \
   asm volatile ("bar.sync 1, %0;" :: "r"(ll_nthreads));
 
 #define POST_SIZE \
-  if (tid == 0 && sizesFifo) sizesFifo[step % llChunks] = (maxOffset <= 0) ? -1 : (maxOffset*2*(int)sizeof(T));
+  if (tid == 0 && sizesFifo) sizesFifo[step % NCCL_LL_CHUNKS] = (maxOffset <= 0) ? -1 : (maxOffset*2*(int)sizeof(T));
 
 #define ACK_PREV \
   asm volatile ("bar.sync 1, %0;" :: "r"(ll_nthreads)); \
@@ -143,7 +143,7 @@ class LLPrimitives {
     } \
     __threadfence_system(); \
     /* Restart from the same slot, only make sure sender waits for data to be reset */ \
-    step += llChunks; \
+    step += NCCL_LL_CHUNKS; \
     ACK_PREV; \
     while (sendHeadPtr[0] < step); \
     if (tid == 0) ring->send.conn.llLastCleaning = step; \

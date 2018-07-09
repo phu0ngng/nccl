@@ -135,9 +135,8 @@ __device__ void ncclReduceLLKernel(struct CollectiveArgs* args) {
   typedef LLPrimitives<T, FUNC> LL;
 
   const ssize_t size = args->N;
-  const int llChunks = NCCL_LL_CHUNKS * (NCCL_LL_MAX_NTHREADS / ll_nthreads);
   const int llBuffSize = NCCL_LL_BUFF_SIZE / (2*sizeof(uint64_t));
-  const int llSliceSize = llBuffSize / llChunks;
+  const int llSliceSize = llBuffSize / NCCL_LL_CHUNKS;
   const int sliceSize = llSliceSize * sizeof(uint64_t) / sizeof(T);
 
   uint64_t step = ring->send.conn.llStep;
