@@ -49,19 +49,23 @@ struct cudaLaunchParams
   ll = 0; \
   size_t nr; \
   int factor = NCCL_LL_MAX_NTHREADS / NCCL_LL_MIN_NTHREADS; \
-  while (nthreads <= NCCL_LL_MAX_NTHREADS && ll == 0) { \
+  ssize_t threshold = min(comm->llThreshold, comm->ringThreshold); \
+  while (nthreads < NCCL_LL_MAX_NTHREADS && ll == 0) { \
     nr = DIVUP(nbytes, (comm->ringThreshold*nthreads*comm->nRanks)); \
-    if (nr <= factor || nthreads == NCCL_LL_MAX_NTHREADS) { /* avoid using few threads but many rings */ \
+    if (nr <= factor) { /* avoid using few threads but many rings */ \
       nrings = nr == 0 ? 1 : nr > comm->nRings ? comm->nRings : (int)nr; \
-      ll = nbytes > comm->nRanks*nrings*nthreads*comm->llThreshold ? 0 : 1; \
+      ll = nbytes > comm->nRanks*nrings*nthreads*threshold ? 0 : 1; \
     } \
     if (ll == 0) { \
       nthreads = nthreads << 1; \
     } \
   } \
-  if (ll == 0) { \
-    nthreads = comm->nThreads+1; \
-  } \
+  if (ll == 1) break; \
+  nr = DIVUP(nbytes, (comm->ringThreshold*NCCL_LL_MAX_NTHREADS*comm->nRanks)); \
+  nr = nr == 0 ? 1 : nr > comm->nRings ? comm->nRings : nr; \
+  ll = nbytes > comm->nRanks*nr*NCCL_LL_MAX_NTHREADS*comm->llThreshold ? 0 : 1; \
+  nthreads = ll ? NCCL_LL_MAX_NTHREADS : comm->nThreads+1; \
+  nrings = ll ? (int)nr : comm->nRings; \
 } while (0)
 
 union ncclLLFifoLine {
