@@ -472,20 +472,11 @@ static ncclResult_t initTransportsRank(struct ncclComm* comm, ncclUniqueId* comm
   // Intra-process barrier setup
   struct rankInfo {
     uint64_t hostHash;
-    int pid;
+    uint64_t pidHash;
     struct ncclComm* comm;
   } rankInfos[nranks];
-  rankInfos[rank].pid = getpid();
-  char hostname[1024];
-  NCCLCHECK(getHostName(hostname, sizeof(hostname)));
-  // Also include in the hash the unique process namespace info to
-  // distinguish containers which may be running on the same host
-  // with the same pid
-  // So below we compare UTS+UTSNS+PID+PIDNS when computing
-  // the job intra ranks
-  int hlen = strlen(hostname);
-  (void) getUniqueName(hostname+hlen, sizeof(hostname)-hlen);
-  rankInfos[rank].hostHash=getHostHash(hostname);
+  rankInfos[rank].hostHash = getHostHash();
+  rankInfos[rank].pidHash = getPidHash();
   rankInfos[rank].comm = comm;
   NCCLCHECK(bootstrapAllGather(commState, rankInfos, sizeof(struct rankInfo)));
 
@@ -493,7 +484,7 @@ static ncclResult_t initTransportsRank(struct ncclComm* comm, ncclUniqueId* comm
   int intraRank0 = -1, intraRank = -1, intraRanks = 0;
   for (int r=0; r<nranks; r++) {
     if ((rankInfos[r].hostHash == rankInfos[rank].hostHash) && 
-        (rankInfos[r].pid == rankInfos[rank].pid)) {
+        (rankInfos[r].pidHash == rankInfos[rank].pidHash)) {
       if (intraRanks == 0) intraRank0 = r;
       if (r == rank) intraRank = intraRanks;
       intraRanks++;
