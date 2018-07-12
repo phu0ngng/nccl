@@ -15,20 +15,19 @@
 struct shmInfo {
   int rank;
   int cudaDev;
-  int pid;
   uint64_t hostHash;
-  int hostNumber;
+  uint64_t pidHash;
 };
 
 struct shmSendConnectInfo {
-  int pid;
+  uint64_t pidHash;
   int id;
   int rank;
   int shmSize;
 };
 
 struct shmRecvConnectInfo {
-  int pid;
+  uint64_t pidHash;
   int id;
   int rank;
   int shmSize;
@@ -61,11 +60,8 @@ ncclResult_t shmFillInfo(ncclTinfo_t* opaqueInfo, int rank) {
   static_assert(sizeof(struct shmInfo) <= sizeof(ncclTinfo_t), "shm Info too large");
   info->rank = rank;
   CUDACHECK(cudaGetDevice(&info->cudaDev));
-  info->pid = getpid();
-  char hostname[1024];
-  NCCLCHECK(getHostName(hostname, 1024));
-  info->hostHash=getHostHash(hostname);
-  info->hostNumber=getHostNumber(hostname);
+  info->hostHash=getHostHash();
+  info->pidHash=getPidHash();
   return ncclSuccess;
 }
 
@@ -169,13 +165,13 @@ ncclResult_t shmSendSetup(ncclTinfo_t* myOpaqueInfo, ncclTinfo_t* peerOpaqueInfo
 
   struct shmRecvConnectInfo info;
   char shmName[1024];
-  sprintf(shmName, "nccl-shm-send-%d-%d-%d", myInfo->pid, ring->id, myInfo->rank);
+  sprintf(shmName, "nccl-shm-send-%lx-%d-%d", myInfo->pidHash, ring->id, myInfo->rank);
   info.shmSize = resources->shmSize = sizeof(struct ncclSendMem);
   TRACE(SHM,"Open shmName %s shmSize %d", shmName, info.shmSize);
   NCCLCHECK(shmOpen(shmName, resources->shmSize, (void**)&resources->hostMem, (void**)&resources->devHostMem, 1));
   
-  INFO(INIT|SHM,"%d[%d] -> %d[%d] via direct shared memory", myInfo->rank, myInfo->pid, peerInfo->rank, peerInfo->pid);
-  info.id = ring->id; info.rank = myInfo->rank; info.pid = myInfo->pid;
+  INFO(INIT|SHM,"%d -> %d via direct shared memory", myInfo->rank, peerInfo->rank);
+  info.id = ring->id; info.rank = myInfo->rank; info.pidHash = myInfo->pidHash;
   static_assert(sizeof(struct shmRecvConnectInfo) <= sizeof(struct ncclConnect), "shm Connect Recv Info is too big");
   memcpy(connectInfo, &info, sizeof(struct shmRecvConnectInfo));
   return ncclSuccess;
@@ -189,12 +185,12 @@ ncclResult_t shmRecvSetup(ncclTinfo_t* myOpaqueInfo, ncclTinfo_t* peerOpaqueInfo
   struct shmSendConnectInfo info;
 
   char shmName[1024];
-  sprintf(shmName, "nccl-shm-recv-%d-%d-%d", myInfo->pid, ring->id, myInfo->rank);
+  sprintf(shmName, "nccl-shm-recv-%lx-%d-%d", myInfo->pidHash, ring->id, myInfo->rank);
   info.shmSize = resources->shmSize = offsetof(struct ncclRecvMem, buff)+ring->buffSize;
   TRACE(SHM,"Open shmName %s shmSize %d", shmName, info.shmSize);
   NCCLCHECK(shmOpen(shmName, resources->shmSize, (void**)&resources->hostMem, (void**)&resources->devHostMem, 1));
   
-  info.id = ring->id; info.rank = myInfo->rank; info.pid = myInfo->pid;
+  info.id = ring->id; info.rank = myInfo->rank; info.pidHash = myInfo->pidHash;
   static_assert(sizeof(struct shmRecvConnectInfo) <= sizeof(struct ncclConnect), "shm Connect Send Info is too big");
   memcpy(connectInfo, &info, sizeof(struct shmSendConnectInfo));
   return ncclSuccess;
@@ -207,7 +203,7 @@ ncclResult_t shmSendConnect(struct ncclConnect* connectInfo, struct ncclConnecto
   struct shmSendResources* resources = (struct shmSendResources*)send->transportResources;
 
   char shmName[1024];
-  sprintf(shmName, "nccl-shm-recv-%d-%d-%d", info->pid, info->id, info->rank);
+  sprintf(shmName, "nccl-shm-recv-%lx-%d-%d", info->pidHash, info->id, info->rank);
   resources->remShmSize = info->shmSize;
   TRACE(SHM,"Open shmName %s shmSize %d", shmName, info->shmSize);
   NCCLCHECK(shmOpen(shmName, resources->remShmSize, (void**)&resources->remHostMem, (void**)&resources->devRemHostMem, 0));
@@ -231,7 +227,7 @@ ncclResult_t shmRecvConnect(struct ncclConnect* connectInfo, struct ncclConnecto
   struct shmRecvConnectInfo* info = (struct shmRecvConnectInfo*)connectInfo;
 
   char shmName[1024];
-  sprintf(shmName, "nccl-shm-send-%d-%d-%d", info->pid, info->id, info->rank);
+  sprintf(shmName, "nccl-shm-send-%lx-%d-%d", info->pidHash, info->id, info->rank);
   resources->remShmSize = info->shmSize;
   TRACE(SHM,"Open shmName %s shmSize %d", shmName, info->shmSize);
   NCCLCHECK(shmOpen(shmName, resources->remShmSize, (void**)&resources->remHostMem, (void**)&resources->devRemHostMem, 0));

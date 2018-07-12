@@ -18,9 +18,8 @@
 struct p2pInfo {
   int rank;
   int cudaDev;
-  int pid;
   uint64_t hostHash;
-  int hostNumber;
+  uint64_t pidHash;
   char busId[NVML_DEVICE_PCI_BUS_ID_BUFFER_SIZE];
 };
 
@@ -41,11 +40,8 @@ ncclResult_t p2pFillInfo(ncclTinfo_t* opaqueInfo, int rank) {
   static_assert(sizeof(struct p2pInfo) <= sizeof(ncclTinfo_t), "p2p Info too large");
   info->rank = rank;
   CUDACHECK(cudaGetDevice(&info->cudaDev));
-  info->pid = getpid();
-  char hostname[1024];
-  NCCLCHECK(getHostName(hostname, 1024));
-  info->hostHash=getHostHash(hostname);
-  info->hostNumber=getHostNumber(hostname);
+  info->hostHash=getHostHash();
+  info->pidHash=getPidHash();
 
   // Get PCI Bus Id. We need to get the bus ID through CUDA first, since the
   // cudaDev is a CUDA runtime dev number which could be different from the
@@ -445,7 +441,7 @@ ncclResult_t p2pSendSetup(ncclTinfo_t* myOpaqueInfo, ncclTinfo_t* peerOpaqueInfo
   struct p2pInfo* myInfo = (struct p2pInfo*)myOpaqueInfo;
   struct p2pInfo* peerInfo = (struct p2pInfo*)peerOpaqueInfo;
   struct p2pConnectInfo info;
-  if (myInfo->pid == peerInfo->pid) {
+  if (myInfo->pidHash == peerInfo->pidHash) {
     info.direct = 1;
     info.directPtr = ring->devMemSend;
     if (myInfo->cudaDev == peerInfo->cudaDev) {
@@ -486,7 +482,7 @@ ncclResult_t p2pRecvSetup(ncclTinfo_t* myOpaqueInfo, ncclTinfo_t* peerOpaqueInfo
   struct p2pInfo* myInfo = (struct p2pInfo*)myOpaqueInfo;
   struct p2pInfo* peerInfo = (struct p2pInfo*)peerOpaqueInfo;
   struct p2pConnectInfo info;
-  if (myInfo->pid == peerInfo->pid) {
+  if (myInfo->pidHash == peerInfo->pidHash) {
     info.direct = 1;
     info.directPtr = ring->devMemRecv;
     if (myInfo->cudaDev == peerInfo->cudaDev) {
