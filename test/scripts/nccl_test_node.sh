@@ -54,12 +54,7 @@ else
 fi
 
 # SLURM setting
-timeout=2
-if [ "$mode" == "all" ]; then
-  timeout=`expr $timeout \* 26`
-else
-  timeout=`expr $timeout \* 15`
-fi
+timeout=60
 if [ "$SLURM" == "1" ]; then
   srun_cmd="srun -p $gpumodel -t ${timeout} --exclusive "
   salloc_cmd="salloc -p $gpumodel -n $maxgpu -c 1 -t ${timeout} --exclusive "
