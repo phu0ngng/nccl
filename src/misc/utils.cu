@@ -44,7 +44,7 @@ uint64_t getHostHash(void) {
   if (len < 0) len = 0;
 
   uname[hlen+len]='\0';
-  TRACE("unique hostname '%s'", uname);
+  TRACE(INIT,"unique hostname '%s'", uname);
 
   return getHash(uname);
 }
@@ -64,7 +64,7 @@ uint64_t getPidHash(void) {
   if (len < 0) len = 0;
 
   pname[plen+len]='\0';
-  TRACE("unique PID '%s'", pname);
+  TRACE(INIT,"unique PID '%s'", pname);
 
   return getHash(pname);
 }
