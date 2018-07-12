@@ -34,7 +34,7 @@ struct cudaLaunchParams
 
 // Rings / LL tuning
 #define NCCL_RING_THRESHOLD 8 // Per thread size before we start increasing nrings
-#define NCCL_LL_THRESHOLD 64  // Per thread size before we switch to non-LL
+#define NCCL_LL_THRESHOLD 32  // Per thread size before we switch to non-LL
 #define NCCL_LL_MAX_NTHREADS 256
 #define NCCL_LL_MIN_NTHREADS 64
 
