@@ -48,9 +48,10 @@ struct cudaLaunchParams
   nthreads = NCCL_LL_MIN_NTHREADS; \
   ll = 0; \
   size_t nr; \
-  int factor = NCCL_LL_MAX_NTHREADS / NCCL_LL_MIN_NTHREADS; \
+  int ll_max_nthreads = min(NCCL_LL_MAX_NTHREADS, comm->nThreads); /* respect user's or platform's nthread setting */ \
+  int factor = ll_max_nthreads / NCCL_LL_MIN_NTHREADS; \
   ssize_t threshold = min(comm->llThreshold, comm->ringThreshold); \
-  while (nthreads < NCCL_LL_MAX_NTHREADS && ll == 0) { \
+  while (nthreads < ll_max_nthreads && ll == 0) { \
     nr = DIVUP(nbytes, (comm->ringThreshold*nthreads*comm->nRanks)); \
     if (nr <= factor) { /* avoid using few threads but many rings */ \
       nrings = nr == 0 ? 1 : nr > comm->nRings ? comm->nRings : (int)nr; \
@@ -61,10 +62,10 @@ struct cudaLaunchParams
     } \
   } \
   if (ll == 1) break; \
-  nr = DIVUP(nbytes, (comm->ringThreshold*NCCL_LL_MAX_NTHREADS*comm->nRanks)); \
+  nr = DIVUP(nbytes, (comm->ringThreshold*ll_max_nthreads*comm->nRanks)); \
   nr = nr == 0 ? 1 : nr > comm->nRings ? comm->nRings : nr; \
-  ll = nbytes > comm->nRanks*nr*NCCL_LL_MAX_NTHREADS*comm->llThreshold ? 0 : 1; \
-  nthreads = ll ? NCCL_LL_MAX_NTHREADS : comm->nThreads+1; \
+  ll = nbytes > comm->nRanks*nr*ll_max_nthreads*comm->llThreshold ? 0 : 1; \
+  nthreads = ll ? ll_max_nthreads : comm->nThreads+1; \
   nrings = ll ? (int)nr : comm->nRings; \
 } while (0)
 
