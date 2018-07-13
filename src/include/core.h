@@ -34,7 +34,7 @@ struct cudaLaunchParams
 
 // Rings / LL tuning
 #define NCCL_RING_THRESHOLD 8 // Per thread size before we start increasing nrings
-#define NCCL_LL_THRESHOLD 32  // Per thread size before we switch to non-LL
+#define NCCL_THREAD_THRESHOLD 32  // Per thread size before we switch to non-LL
 #define NCCL_LL_MAX_NTHREADS 256
 #define NCCL_LL_MIN_NTHREADS 64
 
@@ -45,14 +45,24 @@ struct cudaLaunchParams
 
 // In : comm, nbytes ; Out : nrings, nthreads, ll
 #define NCCL_GET_RINGS(comm, nbytes, nrings, nthreads, ll) do { \
-  nthreads = NCCL_LL_MIN_NTHREADS; \
   ll = 0; \
+  int llEnforced = 0; \
+  if (comm->llThreshold >= 0) { /* user sets total LL threshold */ \
+    if (nbytes > comm->llThreshold) { /* non-LL */ \
+      nthreads = comm->nThreads+1; \
+      nrings = comm->nRings; \
+      break; \
+    } else { \
+      llEnforced = 1; \
+    } \
+  } \
+  nthreads = NCCL_LL_MIN_NTHREADS; \
   size_t nr; \
   int ll_max_nthreads = min(NCCL_LL_MAX_NTHREADS, comm->nThreads); /* respect user's or platform's nthread setting */ \
   int factor = ll_max_nthreads / NCCL_LL_MIN_NTHREADS; \
-  ssize_t threshold = min(comm->llThreshold, comm->ringThreshold); \
+  ssize_t threshold = min(comm->threadThreshold, (ssize_t)NCCL_RING_THRESHOLD); \
   while (nthreads < ll_max_nthreads && ll == 0) { \
-    nr = DIVUP(nbytes, (comm->ringThreshold*nthreads*comm->nRanks)); \
+    nr = DIVUP(nbytes, (NCCL_RING_THRESHOLD*nthreads*comm->nRanks)); \
     if (nr <= factor) { /* avoid using few threads but many rings */ \
       nrings = nr == 0 ? 1 : nr > comm->nRings ? comm->nRings : (int)nr; \
       ll = nbytes > comm->nRanks*nrings*nthreads*threshold ? 0 : 1; \
@@ -62,9 +72,9 @@ struct cudaLaunchParams
     } \
   } \
   if (ll == 1) break; \
-  nr = DIVUP(nbytes, (comm->ringThreshold*ll_max_nthreads*comm->nRanks)); \
+  nr = DIVUP(nbytes, (NCCL_RING_THRESHOLD*ll_max_nthreads*comm->nRanks)); \
   nr = nr == 0 ? 1 : nr > comm->nRings ? comm->nRings : nr; \
-  ll = nbytes > comm->nRanks*nr*ll_max_nthreads*comm->llThreshold ? 0 : 1; \
+  ll = nbytes > comm->nRanks*nr*ll_max_nthreads*comm->threadThreshold ? llEnforced : 1; \
   nthreads = ll ? ll_max_nthreads : comm->nThreads+1; \
   nrings = ll ? (int)nr : comm->nRings; \
 } while (0)
@@ -236,7 +246,7 @@ struct ncclComm {
   
   // Low-latency algorithm threshold
   ssize_t llThreshold;
-  ssize_t ringThreshold;
+  ssize_t threadThreshold;
 
   // Device copy of the communicator
   struct ncclComm *devComm;
