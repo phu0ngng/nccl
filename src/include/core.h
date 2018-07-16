@@ -44,21 +44,29 @@ struct cudaLaunchParams
     (DIVUP((x), (y))*(y))
 
 // In : comm, nbytes ; Out : nrings, nthreads, ll
+// - We start with the minimum number of threads possible (64) and see if the size fits in LL;
+//   If not, we increase the number of threads by 2x, until we reach the max number of LL threads (256, or set by user via NCCL_NTHREADS, or platform non-LL default)
+// - We use "factor" to limit the max number of rings we can use before reaching the max number of LL threads
+//   This ensures we don't use a large number of rings with a small number of threads
+// - We use the NCCL_RING_THRESHOLD as the per-thread threshold before we reach the max number of threads
+//   we use NCCL_THREAD_THRESHOLD when we reach the max
+// - If by the max number of LL threads, the size still cannot fit in LL, then we use non-LL setting
+// - We honor the NCCL_LL_THRESHOLD (total threshold) set by user too
 #define NCCL_GET_RINGS(comm, nbytes, nrings, nthreads, ll) do { \
   ll = 0; \
-  int llEnforced = 0; \
+  int llEnforced = 0; /* see if the size falls in the NCCL_LL_THRESHOLD range set by user */ \
   if (comm->llThreshold >= 0) { /* user sets total LL threshold */ \
     if (nbytes > comm->llThreshold) { /* non-LL */ \
       nthreads = comm->nThreads+1; \
       nrings = comm->nRings; \
       break; \
     } else { \
-      llEnforced = 1; \
+      llEnforced = 1; /* user wants to use LL */ \
     } \
   } \
-  nthreads = NCCL_LL_MIN_NTHREADS; \
+  nthreads = NCCL_LL_MIN_NTHREADS; /* start with min number of LL threads */ \
   size_t nr; \
-  int ll_max_nthreads = min(NCCL_LL_MAX_NTHREADS, comm->nThreads); /* respect user's or platform's nthread setting */ \
+  int ll_max_nthreads = min(NCCL_LL_MAX_NTHREADS, comm->nThreads); /* respect user's setting or platform's default setting */ \
   int factor = ll_max_nthreads / NCCL_LL_MIN_NTHREADS; \
   ssize_t threshold = min(comm->threadThreshold, (ssize_t)NCCL_RING_THRESHOLD); \
   while (nthreads < ll_max_nthreads && ll == 0) { \
@@ -71,8 +79,8 @@ struct cudaLaunchParams
       nthreads = nthreads << 1; \
     } \
   } \
-  if (ll == 1) break; \
-  nr = DIVUP(nbytes, (NCCL_RING_THRESHOLD*ll_max_nthreads*comm->nRanks)); \
+  if (ll == 1) break; /* we can use smaller number of threads to make LL work, stop here */ \
+  nr = DIVUP(nbytes, (NCCL_RING_THRESHOLD*ll_max_nthreads*comm->nRanks)); /* else we try the max number of LL threads */ \
   nr = nr == 0 ? 1 : nr > comm->nRings ? comm->nRings : nr; \
   ll = nbytes > comm->nRanks*nr*ll_max_nthreads*comm->threadThreshold ? llEnforced : 1; \
   nthreads = ll ? ll_max_nthreads : comm->nThreads+1; \
