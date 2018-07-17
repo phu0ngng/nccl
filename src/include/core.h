@@ -208,6 +208,9 @@ struct ncclComm {
   // Threshold after which we use multiple rings
   ssize_t singleRingThreshold;
 
+  // Whether to use an internal CUDA stream for NCCL kernel CGMD launches
+  int groupCudaStream;
+
   // Device copy of the communicator
   struct ncclComm *devComm;
 

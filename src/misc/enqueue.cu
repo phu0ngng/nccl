@@ -144,7 +144,7 @@ ncclResult_t ncclBarrierEnqueue(struct ncclComm* comm) {
 
   NCCLCHECK(setupLaunch(comm, params));
 
-  if (comm->launchMode == ncclComm::GROUP) {
+  if (comm->launchMode == ncclComm::GROUP && comm->groupCudaStream) {
     // Enqueue stream dependency
     CUDACHECK(cudaEventRecord(comm->doneEvent, comm->userStream));
     CUDACHECK(cudaStreamWaitEvent(params->stream, comm->doneEvent, 0));
@@ -173,7 +173,10 @@ ncclResult_t ncclBarrierEnqueueWait(ncclComm_t comm) {
   // We can't print the CG mode before the first barrier happened.
   if (comm->rank == 0 && *comm->intraCGMode & 0x10) {
     *comm->intraCGMode ^= 0x10;
-    INFO(INIT,"Launch mode %s%s", comm->launchMode == ncclComm::GROUP ? "Group" : "Parallel", *comm->intraCGMode ? "/CGMD" : "" );
+    INFO(INIT,"Launch mode %s%s%s",
+         comm->launchMode == ncclComm::GROUP ? "Group" : "Parallel",
+         *comm->intraCGMode ? "/CGMD" : "",
+         comm->groupCudaStream ? "/Stream" : "");
   }
 
   NCCLCHECK(ncclCpuBarrierOut(comm));
@@ -198,7 +201,7 @@ ncclResult_t ncclBarrierEnqueueWait(ncclComm_t comm) {
 }
 
 ncclResult_t ncclEnqueueEvents(ncclComm_t comm) {
-  if (comm->launchMode == ncclComm::GROUP) {
+  if (comm->launchMode == ncclComm::GROUP && comm->groupCudaStream) {
     struct cudaLaunchParams *params = comm->myParams;
     CUDACHECK(cudaEventRecord(comm->doneEvent, params->stream));
     CUDACHECK(cudaStreamWaitEvent(comm->userStream, comm->doneEvent, 0));
