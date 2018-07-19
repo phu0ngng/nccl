@@ -84,7 +84,7 @@ static __inline__ int ncclTypeSize(ncclDataType_t type) {
 static ncclResult_t saveKernel(int coll, const void* sendbuff, void* recvbuff, size_t count,
     ncclDataType_t dtype, ncclRedOp_t op, int root, ncclComm_t comm, cudaStream_t stream, size_t nbytes) {
   int llMode, nBlocks, nThreads;
-  ncclGetMode(comm, nbytes, &nBlocks, &nThreads, &llMode);
+  ncclGetCollResource(comm, nbytes, &nBlocks, &nThreads, &llMode);
   comm->myParams->blockDim.x = max(comm->myParams->blockDim.x, nThreads);
   if (comm->userStreamSet == false) {
     comm->userStream = stream;

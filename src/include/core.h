@@ -240,7 +240,7 @@ struct ncclComm {
 //   we use NCCL_THREAD_THRESHOLD when we reach the max
 // - If by the max number of LL threads, the size still cannot fit in LL, then we use non-LL setting
 // - We honor the NCCL_LL_THRESHOLD (total threshold) set by user too
-static inline void ncclGetMode(ncclComm_t comm, size_t nbytes, int* nrings, int* nthreads, int* ll) {
+static inline void ncclGetCollResource(ncclComm_t comm, size_t nbytes, int* nrings, int* nthreads, int* ll) {
   *ll = 0;
   int llEnforced = 0; /* see if the size falls in the NCCL_LL_THRESHOLD range set by user */
   if (comm->llThreshold >= 0) { /* user sets total LL threshold */

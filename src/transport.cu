@@ -100,7 +100,7 @@ static void SaveProxy(struct ncclConnector* connector, struct ncclProxyArgs* arg
 
 ncclResult_t transportSaveProxies(int substeps, int subchunks, int nstepsPerRound, int nblocksPerRound, size_t nbytes, int pattern, struct ncclComm* comm) {
   int llMode, nrings, nthreads;
-  ncclGetMode(comm, nbytes, &nrings, &nthreads, &llMode);
+  ncclGetCollResource(comm, nbytes, &nrings, &nthreads, &llMode);
   nbytes       = llMode ? nbytes * 2    : nbytes;
   substeps     = llMode ? 1             : substeps;
   subchunks    = llMode ? NCCL_LL_CHUNKS : subchunks;
