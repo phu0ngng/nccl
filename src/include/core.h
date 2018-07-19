@@ -234,7 +234,7 @@ struct ncclComm {
 // In : comm, nbytes ; Out : nrings, nthreads, ll
 // - We start with the minimum number of threads possible (64) and see if the size fits in LL;
 //   If not, we increase the number of threads by 2x, until we reach the max number of LL threads (256, or set by user via NCCL_NTHREADS, or platform non-LL default)
-// - We use "factor" to limit the max number of rings we can use before reaching the max number of LL threads
+// - We use "maxRings" to limit the max number of rings we can use before reaching the max number of LL threads
 //   This ensures we don't use a large number of rings with a small number of threads
 // - We use the NCCL_RING_THRESHOLD as the per-thread threshold before we reach the max number of threads
 //   we use NCCL_THREAD_THRESHOLD when we reach the max
@@ -255,11 +255,11 @@ static inline void ncclGetMode(ncclComm_t comm, size_t nbytes, int* nrings, int*
   int nt = NCCL_LL_MIN_NTHREADS; /* start with min number of LL threads */
   size_t nr;
   int ll_max_nthreads = min(NCCL_LL_MAX_NTHREADS, comm->nThreads); /* respect user's setting or platform's default setting */
-  int factor = ll_max_nthreads / NCCL_LL_MIN_NTHREADS;
+  int maxRings = (comm->nRanks <= 4) ? 1 : ll_max_nthreads / NCCL_LL_MIN_NTHREADS;
   ssize_t threshold = min(comm->threadThreshold, (ssize_t)NCCL_RING_THRESHOLD);
   while (nt < ll_max_nthreads && *ll == 0) {
     nr = DIVUP(nbytes, (NCCL_RING_THRESHOLD*nt*comm->nRanks));
-    if (nr <= factor) { /* avoid using few threads but many rings */
+    if (nr <= maxRings) { /* avoid using few threads but many rings */
       nr = nr == 0 ? 1 : nr > comm->nRings ? comm->nRings : nr;
       *ll = nbytes > comm->nRanks*nr*nt*threshold ? 0 : 1;
     }
