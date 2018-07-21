@@ -162,9 +162,16 @@ __device__ void ncclReduceScatterLLKernel(struct CollectiveArgs* args) {
   union ncclLLFifoLine * prevInput = (union ncclLLFifoLine *)ring->recv.conn.llBuff;
   union ncclLLFifoLine * nextOutput = (union ncclLLFifoLine *)ring->send.conn.llBuff;
 
-  for (ssize_t gridOffset = 0; gridOffset < size; gridOffset += args->nRings*sliceSize) {
-    int chunkSize = min(sliceSize, DIVUP(size-gridOffset,args->nRings));
-    ALIGN_SIZE(chunkSize, ll_nthreads*sizeof(uint64_t)/sizeof(T));
+  const int align = ll_nthreads*sizeof(uint64_t)/sizeof(T);
+  int chunkSize = sliceSize;
+  const ssize_t loopSize = args->nRings*sliceSize;
+
+  for (ssize_t gridOffset = 0; gridOffset < size; gridOffset += loopSize) {
+    ssize_t res = size - gridOffset;
+    if (args->nRings > 1 && res < loopSize) {
+      chunkSize = min(sliceSize, DIVUP(res,args->nRings));
+      ALIGN_SIZE(chunkSize, align);
+    }
     ssize_t chunkOffset = gridOffset + bid*chunkSize;
 
     /////////////// begin ReduceScatter steps ///////////////
