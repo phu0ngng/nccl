@@ -46,7 +46,6 @@ fi
 
 # build tests
 cd $NCCLROOT
-make -j test.clean
 if [ "$INSTALL" == "1" ]; then
   make -j test.build MPI=1 2>&1 | tee make_test_mpi.log
 else

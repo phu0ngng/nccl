@@ -40,7 +40,8 @@ __device__ void ncclAllReduceKernel(struct CollectiveArgs* args) {
   //const int rank = comm->rank;
   const int nranks = comm->nRanks;
   const int buffSize = ring->buffSize / sizeof(T);
-  const int sliceSize = buffSize / ALLREDUCE_BUFCHUNKS;
+  const int sliceSize = args->sliceSize;
+  const ssize_t loopSize = args->nRings*nranks*(ssize_t)sliceSize;
 
   if (tid == 0) {
     // Update in case we skipped some collectives
@@ -70,8 +71,7 @@ __device__ void ncclAllReduceKernel(struct CollectiveArgs* args) {
   T * __restrict__ nextOutput = (T*)ring->send.conn.buff;
 
   for (ssize_t gridOffset = 0; gridOffset < size; gridOffset += args->nRings*nranks*((ssize_t)sliceSize)) {
-    int chunkSize = min(sliceSize, DIVUP(size-gridOffset,nranks*args->nRings));
-    ALIGN_SIZE(chunkSize, nthreads*sizeof(uint64_t)/sizeof(T));
+    int chunkSize = (size-gridOffset < loopSize) ? args->lastChunkSize : sliceSize;
     ssize_t chunkOffset = gridOffset + bid*nranks*chunkSize;
 
     /////////////// begin AllReduce steps ///////////////
@@ -225,9 +225,8 @@ __device__ void ncclAllReduceLLKernel(struct CollectiveArgs* args) {
   const ssize_t size = args->N;
   //const int rank = comm->rank;
   const int nranks = comm->nRanks;
-  const int llBuffSize = NCCL_LL_BUFF_SIZE / (2*sizeof(uint64_t));
-  const int llSliceSize = llBuffSize / NCCL_LL_CHUNKS;
-  const int sliceSize = llSliceSize * sizeof(uint64_t) / sizeof(T);
+  int chunkSize = args->sliceSize;
+  const ssize_t loopSize = args->nRings*nranks*(ssize_t)chunkSize;
 
   uint64_t step = ring->send.conn.llStep;
   uint32_t pflag, nflag = step + 1;
@@ -239,9 +238,10 @@ __device__ void ncclAllReduceLLKernel(struct CollectiveArgs* args) {
   union ncclLLFifoLine * prevInput = (union ncclLLFifoLine *)ring->recv.conn.llBuff;
   union ncclLLFifoLine * nextOutput = (union ncclLLFifoLine *)ring->send.conn.llBuff;
 
-  for (ssize_t gridOffset = 0; gridOffset < size; gridOffset += args->nRings*nranks*((ssize_t)sliceSize)) {
-    int chunkSize = min(sliceSize, DIVUP(size-gridOffset,nranks*args->nRings));
-    ALIGN_SIZE(chunkSize, ll_nthreads*sizeof(uint64_t)/sizeof(T));
+  for (ssize_t gridOffset = 0; gridOffset < size; gridOffset += loopSize) {
+    if (size-gridOffset < loopSize) {
+      chunkSize = args->lastChunkSize;
+    }
     ssize_t chunkOffset = gridOffset + bid*nranks*chunkSize;
 
     /////////////// begin AllReduce steps ///////////////

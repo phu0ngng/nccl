@@ -93,6 +93,8 @@ struct ncclConnector {
 #define NCCL_LL_CHUNKS 8
 #define NUM_LINES_PER_THREAD 2
 #define NCCL_LL_BUFF_SIZE (NUM_LINES_PER_THREAD*NCCL_LL_MAX_NTHREADS*NCCL_LL_CHUNKS*sizeof(union ncclLLFifoLine)) // 64K
+#define llBuffSize NCCL_LL_BUFF_SIZE / (2*sizeof(uint64_t))
+#define llSliceSize llBuffSize / NCCL_LL_CHUNKS
 #define NCCL_LL_CLEAN_FREQ 0x10000000
 
 struct ncclSendMem {
@@ -173,6 +175,9 @@ struct CollectiveArgs {
   uint32_t root;
   uint16_t bid;
   uint16_t nRings;
+
+  int sliceSize;
+  int lastChunkSize;
 };
 struct ncclColl {
   union {

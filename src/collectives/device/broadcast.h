@@ -37,7 +37,8 @@ __device__ void ncclBroadcastKernel(struct CollectiveArgs* args) {
 
   const ssize_t size = args->N;
   const int buffSize = ring->buffSize / sizeof(T);
-  const int sliceSize = buffSize / BROADCAST_BUFCHUNKS;
+  const int sliceSize = args->sliceSize;
+  const ssize_t loopSize = args->nRings*(ssize_t)sliceSize;
   const int rank = ring->devUserRanks[0];
   const int nextRank = ring->devUserRanks[1];
   const int root = args->root;
@@ -71,9 +72,8 @@ __device__ void ncclBroadcastKernel(struct CollectiveArgs* args) {
   T * __restrict__ prevInput = (T*)ring->recv.conn.buff;
   T * __restrict__ nextOutput = (T*)ring->send.conn.buff;
 
-  for (ssize_t gridOffset = 0; gridOffset < size; gridOffset += args->nRings*sliceSize) {
-    int chunkSize = min(sliceSize, DIVUP(size-gridOffset,args->nRings));
-    ALIGN_SIZE(chunkSize, nthreads*sizeof(uint64_t)/sizeof(T));
+  for (ssize_t gridOffset = 0; gridOffset < size; gridOffset += loopSize) {
+    int chunkSize = (size-gridOffset < loopSize) ? args->lastChunkSize : sliceSize;
     ssize_t offset = gridOffset + bid*chunkSize;
     int maxOffset = min(chunkSize, size-offset);
 
@@ -166,9 +166,8 @@ __device__ void ncclBroadcastLLKernel(struct CollectiveArgs* args) {
   typedef LLPrimitives<T, FUNC> LL;
 
   const ssize_t size = args->N;
-  const int llBuffSize = NCCL_LL_BUFF_SIZE / (2*sizeof(uint64_t));
-  const int llSliceSize = llBuffSize / NCCL_LL_CHUNKS;
-  const int sliceSize = llSliceSize * sizeof(uint64_t) / sizeof(T);
+  int chunkSize = args->sliceSize;
+  const ssize_t loopSize = args->nRings*(ssize_t)chunkSize;
 
   uint64_t step = ring->send.conn.llStep;
   uint32_t flag = step + 1;
@@ -180,9 +179,10 @@ __device__ void ncclBroadcastLLKernel(struct CollectiveArgs* args) {
   union ncclLLFifoLine * prevInput = (union ncclLLFifoLine *)ring->recv.conn.llBuff;
   union ncclLLFifoLine * nextOutput = (union ncclLLFifoLine *)ring->send.conn.llBuff;
 
-  for (ssize_t gridOffset = 0; gridOffset < size; gridOffset += args->nRings*sliceSize) {
-    int chunkSize = min(sliceSize, DIVUP(size-gridOffset,args->nRings));
-    ALIGN_SIZE(chunkSize, ll_nthreads*sizeof(uint64_t)/sizeof(T));
+  for (ssize_t gridOffset = 0; gridOffset < size; gridOffset += loopSize) {
+    if (size-gridOffset < loopSize) {
+      chunkSize = args->lastChunkSize;
+    }
     ssize_t offset = gridOffset + bid*chunkSize;
 
     int maxOffset = min(chunkSize, size-offset);
