@@ -15,9 +15,6 @@
   noffset += sliceSize; \
   if (noffset == buffSize) noffset = 0;
 
-#define ALIGN_SIZE(size, align) \
-  size = ((size + (align) - 1) / (align)) * (align);
-
 template<int UNROLL, class FUNC, typename T>
 __device__ void ncclAllReduceKernel(struct CollectiveArgs* args) {
   const int tid = threadIdx.x;
@@ -70,7 +67,7 @@ __device__ void ncclAllReduceKernel(struct CollectiveArgs* args) {
   T * __restrict__ prevInput = (T*)ring->recv.conn.buff;
   T * __restrict__ nextOutput = (T*)ring->send.conn.buff;
 
-  for (ssize_t gridOffset = 0; gridOffset < size; gridOffset += args->nRings*nranks*((ssize_t)sliceSize)) {
+  for (ssize_t gridOffset = 0; gridOffset < size; gridOffset += loopSize) {
     int chunkSize = (size-gridOffset < loopSize) ? args->lastChunkSize : sliceSize;
     ssize_t chunkOffset = gridOffset + bid*nranks*chunkSize;
 

@@ -15,9 +15,6 @@
   noffset += sliceSize; \
   if (noffset == buffSize) noffset = 0;
 
-#define ALIGN_SIZE(size, align) \
-  size = ((size + (align) - 1) / (align)) * (align);
-
 template<int UNROLL, class FUNC, typename T>
 __device__ void ncclReduceScatterKernel(struct CollectiveArgs* args) {
   const int tid = threadIdx.x;

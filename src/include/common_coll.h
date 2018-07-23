@@ -85,9 +85,6 @@ static __inline__ int ncclTypeSize(ncclDataType_t type) {
   }
 }
 
-#define ALIGN_SIZE(size, align) \
-  size = ((size + (align) - 1) / (align)) * (align);
-
 static ncclResult_t saveKernel(int coll, const void* sendbuff, void* recvbuff, size_t count,
     ncclDataType_t dtype, ncclRedOp_t op, int root, ncclComm_t comm, cudaStream_t stream, size_t nbytes, int nChunks, int loopFactor) {
   int llMode, nBlocks, nThreads;

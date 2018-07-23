@@ -43,6 +43,9 @@ struct cudaLaunchParams
 #define ROUNDUP(x, y) \
     (DIVUP((x), (y))*(y))
 
+#define ALIGN_SIZE(size, align) \
+  size = ((size + (align) - 1) / (align)) * (align);
+
 union ncclLLFifoLine {
   /* Flags have to be *after* data, because otherwise, an incomplete receive
      from the network may receive the flag but not the data.

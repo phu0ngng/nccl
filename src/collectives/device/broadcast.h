@@ -14,9 +14,6 @@
   boffset += sliceSize; \
   if (boffset == buffSize) boffset = 0;
 
-#define ALIGN_SIZE(size, align) \
-  size = ((size + (align) - 1) / (align)) * (align);
-
 template<int UNROLL, class FUNC, typename T>
 __device__ void ncclBroadcastKernel(struct CollectiveArgs* args) {
   const int tid = threadIdx.x;
