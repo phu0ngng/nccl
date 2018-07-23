@@ -4,6 +4,7 @@
  * See LICENSE.txt for license information
  ************************************************************************/
 
+#include "nccl.h"
 #include "core.h"
 #include "ring.h"
 #include "param.h"
@@ -30,6 +31,7 @@
 #include <assert.h>
 
 DebugLevel ncclDebugLevel;
+uint64_t ncclDebugMask = INIT; // Default debug sub-system mask is INIT
 pthread_mutex_t ncclDebugOutputLock;
 FILE *ncclDebugFile = stdout;
 #ifdef ENABLE_TRACE
@@ -59,10 +61,10 @@ int ncclCudaFullCompCap() {
 
 void initNet() {
   if (ncclNet != NULL) {
-    INFO("Using external Network %s", ncclNetName());
+    INFO(INIT,"Using external Network %s", ncclNetName());
   } else {
     ncclNet = ncclIbSupport() ? &ncclNetIb : &ncclNetSocket;
-    INFO("Using internal Network %s", ncclNetName());
+    INFO(INIT,"Using internal Network %s", ncclNetName());
   }
 }
 
@@ -144,7 +146,7 @@ static ncclResult_t commAlloc(ncclComm_t* comret, int ndev, int rank) {
   }
   memset(comm, 0, sizeof(struct ncclComm));
 
-  INFO("comm %p rank %d nranks %d", comm, rank, ndev);
+  INFO(INIT,"comm %p rank %d nranks %d", comm, rank, ndev);
   comm->rank = rank;
   comm->nRanks = ndev;
   cudaGetDevice(&comm->cudaDev);
@@ -179,7 +181,7 @@ static void showVersion() {
     printf("%s\n", VERSION_STRING);
     fflush(stdout);
     if (ncclDebugFile != stdout)
-      INFO("%s", VERSION_STRING); // Also log NCCL version in one of the files
+      INFO(ALL,"%s", VERSION_STRING); // Also log NCCL version in one of the files
     shown = 1;
   }
 }
@@ -260,12 +262,12 @@ void dumpMatrix(int* connectMatrix, int nranks) {
   line[STRLENGTH] = '\0';
   memset(line, ' ', STRLENGTH);
   for (int j=0; j<nranks && j<MAXWIDTH; j++) sprintf(4+line+4*j, " %3d", j);
-  INFO("%s", line);
+  INFO(INIT,"%s", line);
   for (int i=0; i<nranks; i++) {
     memset(line, ' ', STRLENGTH);
     sprintf(line, "%3d ", i);
     for (int j=0; j<nranks && j<MAXWIDTH; j++) sprintf(4+line+4*j, " %3d", connectMatrix[i*nranks+j]);
-    INFO("%s", line);
+    INFO(INIT,"%s", line);
   }
 }
 
@@ -276,7 +278,7 @@ void dumpLine(int* values, int nranks, const char* prefix) {
   memset(line, ' ', STRLENGTH);
   strncpy(line, prefix, PREFIXLEN);
   for (int i=0; i<nranks && i<MAXWIDTH; i++) sprintf(line+prefixlen+4*i, " %3d", values[i]);
-  INFO("%s", line);
+  INFO(INIT,"%s", line);
 }
 
 static ncclResult_t buildRings(int nrings, int* rings, int rank, int nranks, int* prev, int* next) {
@@ -418,7 +420,7 @@ static ncclResult_t initTransportsRank(struct ncclComm* comm, ncclUniqueId* comm
   NCCLCHECK(bootstrapAllGather(commState, allData, sizeof(int)));
   for (int i=0; i<nranks; i++)
     comm->nThreads = max(allData[i], comm->nThreads);
-  if (rank == 0) INFO("Using %d threads", comm->nThreads);
+  if (rank == 0) INFO(INIT,"Using %d threads", comm->nThreads);
 
   // Determine the minimum CUDA Compute capability of all GPUs
   int myCompCap = ncclCudaCompCap();
@@ -427,7 +429,7 @@ static ncclResult_t initTransportsRank(struct ncclComm* comm, ncclUniqueId* comm
   NCCLCHECK(bootstrapAllGather(commState, allData, sizeof(int)));
   for (int i=0; i<nranks; i++)
     minCompCap = min(allData[i], minCompCap);
-  if (rank == 0) INFO("Min Comp Cap %d", minCompCap);
+  if (rank == 0) INFO(INIT,"Min Comp Cap %d", minCompCap);
 
   comm->threadThreshold = ncclParamThreadThreshold();
 
@@ -463,13 +465,11 @@ static ncclResult_t initTransportsRank(struct ncclComm* comm, ncclUniqueId* comm
   // Intra-process barrier setup
   struct rankInfo {
     uint64_t hostHash;
-    int pid;
+    uint64_t pidHash;
     struct ncclComm* comm;
   } rankInfos[nranks];
-  rankInfos[rank].pid = getpid();
-  char hostname[1024];
-  NCCLCHECK(getHostName(hostname, 1024));
-  rankInfos[rank].hostHash=getHostHash(hostname);
+  rankInfos[rank].hostHash = getHostHash();
+  rankInfos[rank].pidHash = getPidHash();
   rankInfos[rank].comm = comm;
   NCCLCHECK(bootstrapAllGather(commState, rankInfos, sizeof(struct rankInfo)));
 
@@ -477,11 +477,17 @@ static ncclResult_t initTransportsRank(struct ncclComm* comm, ncclUniqueId* comm
   int intraRank0 = -1, intraRank = -1, intraRanks = 0;
   for (int r=0; r<nranks; r++) {
     if ((rankInfos[r].hostHash == rankInfos[rank].hostHash) && 
-        (rankInfos[r].pid == rankInfos[rank].pid)) {
+        (rankInfos[r].pidHash == rankInfos[rank].pidHash)) {
       if (intraRanks == 0) intraRank0 = r;
       if (r == rank) intraRank = intraRanks;
       intraRanks++;
     }
+  }
+  TRACE(INIT,"hostHash[%d] %lx intraRank %d intraRanks %d intraRank0 %d", rank, rankInfos[rank].hostHash, intraRank, intraRanks, intraRank0);
+  if (intraRank == -1 || intraRank0 == -1 || rankInfos[intraRank0].comm == NULL) {
+    WARN("Failed to determine intra ranks hostHash[%d] %lx intraRank %d intraRanks %d intraRank0 %d",
+         rank, rankInfos[rank].hostHash, intraRank, intraRanks, intraRank0);
+    return ncclInternalError;
   }
   NCCLCHECK(ncclCommSetIntra(comm, intraRank, intraRanks, rankInfos[intraRank0].comm));
 
@@ -538,7 +544,7 @@ ncclResult_t ncclCommInitRank(ncclComm_t* newcomm, int nranks, ncclUniqueId comm
   NCCLCHECK(ncclInit());
   if (myrank == 0) showVersion();
 
-  TRACE("rank %d nranks %d", myrank, nranks);
+  INFO(INIT,"rank %d nranks %d", myrank, nranks);
 
   // It seems we need to call this so that NVML doesn't crash later with error
   // 999.
@@ -599,8 +605,8 @@ static ncclResult_t initTransportsAll(struct ncclComm** comms, const int* devs, 
   free(prev);
   free(next);
 
-  INFO("Using %d threads", nthreads);
-  INFO("Min Comp Cap %d", minCompCap);
+  INFO(INIT,"Using %d threads", nthreads);
+  INFO(INIT,"Min Comp Cap %d", minCompCap);
 
   int rings[nranks*MAXRINGS];
   NCCLCHECK(buildRings(nrings, rings, 0, nranks, prevFinal, nextFinal));
@@ -647,6 +653,8 @@ ncclResult_t ncclCommInitAll(ncclComm_t* comms, int ndev, const int* devlist) {
   NCCLCHECK(wrapNvmlSymbols());
   NCCLCHECK(wrapNvmlInit());
   showVersion();
+
+  INFO(INIT,"nranks %d", ndev);
 
   NCCLCHECK(PtrCheck(comms, "CommInitAll", "comms"));
   if (ndev < 1) {
@@ -708,7 +716,7 @@ ncclResult_t ncclCommInitAll(ncclComm_t* comms, int ndev, const int* devlist) {
 
   final:
   if(wrapNvmlShutdown() != ncclSuccess)
-    INFO("NCCL did not shutdown nvml properly");
+    INFO(INIT,"NCCL did not shutdown nvml properly");
   cudaSetDevice(savedDevice);
   sched_setaffinity(0, sizeof(cpu_set_t), &affinitySave);
   return res;
@@ -744,8 +752,8 @@ const char* ncclGetErrorString(ncclResult_t code) {
   case ncclInternalError          : return "internal error";
   case ncclInvalidArgument        : return "invalid argument";
   case ncclInvalidUsage           : return "invalid usage";
+  default                         : return "unknown result code";
   }
-  return "unknown result code";
 }
 
 NCCL_API(ncclResult_t, ncclCommCount, const ncclComm_t comm, int* count);

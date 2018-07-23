@@ -61,7 +61,7 @@ ncclResult_t wrapNvmlSymbols(void) {
     cast = (void**)&funcptr;                             \
     tmp = dlsym(handle, symbol);                         \
     if (tmp == NULL) {                                   \
-      INFO("dlsym failed on %s, ignoring", symbol);      \
+      INFO(INIT,"dlsym failed on %s, ignoring", symbol); \
     }                                                    \
     *cast = tmp;                                         \
   } while (0)
@@ -208,7 +208,7 @@ ncclResult_t wrapNvmlDeviceGetNvLinkState(nvmlDevice_t device, unsigned int link
   }
   nvmlReturn_t ret = nvmlInternalDeviceGetNvLinkState(device, link, isActive);
   if (ret != NVML_SUCCESS) {
-    INFO("nvmlDeviceGetNvLinkState() failed: %s ",
+    INFO(INIT,"nvmlDeviceGetNvLinkState() failed: %s ",
       nvmlInternalErrorString(ret));
     return ncclSystemError;
   }
@@ -223,7 +223,7 @@ ncclResult_t wrapNvmlDeviceGetNvLinkRemotePciInfo(nvmlDevice_t device, unsigned 
   nvmlReturn_t ret = nvmlInternalDeviceGetNvLinkRemotePciInfo(device, link, pci);
   if (ret != NVML_SUCCESS) {
     if (ret != NVML_ERROR_NOT_SUPPORTED)
-      INFO("nvmlDeviceGetNvLinkRemotePciInfo() failed: %s ",
+      INFO(INIT,"nvmlDeviceGetNvLinkRemotePciInfo() failed: %s ",
         nvmlInternalErrorString(ret));
     return ncclSystemError;
   }
@@ -239,7 +239,7 @@ ncclResult_t wrapNvmlDeviceGetNvLinkCapability(nvmlDevice_t device, unsigned int
   nvmlReturn_t ret = nvmlInternalDeviceGetNvLinkCapability(device, link, capability, capResult);
   if (ret != NVML_SUCCESS) {
     if (ret != NVML_ERROR_NOT_SUPPORTED)
-      INFO("nvmlDeviceGetNvLinkCapability() failed: %s ",
+      INFO(INIT,"nvmlDeviceGetNvLinkCapability() failed: %s ",
         nvmlInternalErrorString(ret));
     return ncclSystemError;
   }

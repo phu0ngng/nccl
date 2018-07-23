@@ -11,8 +11,8 @@
 #include <stdint.h>
 
 ncclResult_t getHostName(char* hostname, int maxlen);
-uint64_t getHostHash(const char* string);
-int getHostNumber(const char* string);
+uint64_t getHostHash();
+uint64_t getPidHash();
 
 struct netIf {
   char prefix[64];

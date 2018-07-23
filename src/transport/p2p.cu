@@ -18,9 +18,8 @@
 struct p2pInfo {
   int rank;
   int cudaDev;
-  int pid;
   uint64_t hostHash;
-  int hostNumber;
+  uint64_t pidHash;
   char busId[NVML_DEVICE_PCI_BUS_ID_BUFFER_SIZE];
 };
 
@@ -41,11 +40,8 @@ ncclResult_t p2pFillInfo(ncclTinfo_t* opaqueInfo, int rank) {
   static_assert(sizeof(struct p2pInfo) <= sizeof(ncclTinfo_t), "p2p Info too large");
   info->rank = rank;
   CUDACHECK(cudaGetDevice(&info->cudaDev));
-  info->pid = getpid();
-  char hostname[1024];
-  NCCLCHECK(getHostName(hostname, 1024));
-  info->hostHash=getHostHash(hostname);
-  info->hostNumber=getHostNumber(hostname);
+  info->hostHash=getHostHash();
+  info->pidHash=getPidHash();
 
   // Get PCI Bus Id. We need to get the bus ID through CUDA first, since the
   // cudaDev is a CUDA runtime dev number which could be different from the
@@ -89,7 +85,7 @@ ncclResult_t p2pCanConnect(int* ret, ncclTinfo_t* myOpaqueInfo, ncclTinfo_t* pee
   // See if CUDA can do P2P
   int p2p;
   if (cudaDeviceCanAccessPeer(&p2p, myInfo->cudaDev, peerInfo->cudaDev) != cudaSuccess) {
-    INFO("peer query failed between dev %d and dev %d",
+    INFO(INIT|P2P,"peer query failed between dev %d and dev %d",
         myInfo->cudaDev, peerInfo->cudaDev);
     return ncclSuccess;
   }
@@ -176,6 +172,7 @@ static int computeRingsRec(int* matrix, int n, int *rings, int currentRing, int 
 }
 
 static inline int copyRings(int nranks, int* rings, int nrings, int newNrings) {
+  if (nrings == 0) return 0;
   // Copy rings by dup times
   if (newNrings > MAXRINGS) {
     newNrings = MAXRINGS;
@@ -369,7 +366,8 @@ ncclResult_t p2pGetRings(int nranks, int* groups, int* subgroups, int* values, i
   int nrings = *nringsRet;
 
   // NVswitch
-  int nvswitchLinks;
+  int nvswitchLinks = 0;
+  int directLinks = 0;
   for (int rank=0; rank<nranks; rank++) {
     for (int j=1; j<nranks; j++) {
       int i = (rank + j) % nranks;
@@ -396,7 +394,6 @@ ncclResult_t p2pGetRings(int nranks, int* groups, int* subgroups, int* values, i
   }
 
   // point-to-point NVLink
-  int directLinks;
   for (int rank=0; rank<nranks; rank++) {
     int links = 0;
     for (int i=0; i<nranks; i++) {
@@ -436,8 +433,8 @@ end:
 #define TRACE_DUMP_IPC(DEVIPC)                                                             \
   do {                                                                                     \
     unsigned long *devIpc = (unsigned long *) (DEVIPC);                                    \
-    TRACE("IPC: %016lx %016lx %016lx %016lx", devIpc[0], devIpc[1], devIpc[2], devIpc[3]); \
-    TRACE("IPC: %016lx %016lx %016lx %016lx", devIpc[4], devIpc[5], devIpc[6], devIpc[7]); \
+    TRACE(P2P,"IPC: %016lx %016lx %016lx %016lx", devIpc[0], devIpc[1], devIpc[2], devIpc[3]); \
+    TRACE(P2P,"IPC: %016lx %016lx %016lx %016lx", devIpc[4], devIpc[5], devIpc[6], devIpc[7]); \
   } while (0)
 
 /* Send: Create and return connect structures for this peer to connect to me */
@@ -445,11 +442,11 @@ ncclResult_t p2pSendSetup(ncclTinfo_t* myOpaqueInfo, ncclTinfo_t* peerOpaqueInfo
   struct p2pInfo* myInfo = (struct p2pInfo*)myOpaqueInfo;
   struct p2pInfo* peerInfo = (struct p2pInfo*)peerOpaqueInfo;
   struct p2pConnectInfo info;
-  if (myInfo->pid == peerInfo->pid) {
+  if (myInfo->pidHash == peerInfo->pidHash) {
     info.direct = 1;
     info.directPtr = ring->devMemSend;
     if (myInfo->cudaDev == peerInfo->cudaDev) {
-      INFO("Ring %02d : %d -> %d via P2P/common device", ring->id, myInfo->rank, peerInfo->rank);
+      INFO(INIT|P2P,"Ring %02d : %d -> %d via P2P/common device", ring->id, myInfo->rank, peerInfo->rank);
     } else {
       // Enable P2P access
       cudaError_t err = cudaDeviceEnablePeerAccess(peerInfo->cudaDev, 0);
@@ -460,7 +457,7 @@ ncclResult_t p2pSendSetup(ncclTinfo_t* myOpaqueInfo, ncclTinfo_t* peerOpaqueInfo
              peerInfo->cudaDev, err, cudaGetErrorString(err));
         return ncclInternalError;
       }
-      INFO("Ring %02d : %d[%d] -> %d[%d] via P2P/direct pointer",
+      INFO(INIT|P2P,"Ring %02d : %d[%d] -> %d[%d] via P2P/direct pointer",
            ring->id, myInfo->rank, myInfo->cudaDev, peerInfo->rank, peerInfo->cudaDev);
     }
   } else {
@@ -472,7 +469,7 @@ ncclResult_t p2pSendSetup(ncclTinfo_t* myOpaqueInfo, ncclTinfo_t* peerOpaqueInfo
            myInfo->rank, peerInfo->cudaDev, err, cudaGetErrorString(err));
       return ncclInternalError;
     }
-    INFO("Ring %02d : %d[%d] -> %d[%d] via P2P/IPC",
+    INFO(INIT|P2P,"Ring %02d : %d[%d] -> %d[%d] via P2P/IPC",
          ring->id, myInfo->rank, myInfo->cudaDev, peerInfo->rank, peerInfo->cudaDev);
 //    TRACE_DUMP_IPC(&info.devIpc);
   }
@@ -486,11 +483,11 @@ ncclResult_t p2pRecvSetup(ncclTinfo_t* myOpaqueInfo, ncclTinfo_t* peerOpaqueInfo
   struct p2pInfo* myInfo = (struct p2pInfo*)myOpaqueInfo;
   struct p2pInfo* peerInfo = (struct p2pInfo*)peerOpaqueInfo;
   struct p2pConnectInfo info;
-  if (myInfo->pid == peerInfo->pid) {
+  if (myInfo->pidHash == peerInfo->pidHash) {
     info.direct = 1;
     info.directPtr = ring->devMemRecv;
     if (myInfo->cudaDev == peerInfo->cudaDev) {
-//      INFO("%d <- %d via P2P/common device", myInfo->rank, peerInfo->rank);
+      TRACE(INIT|P2P,"%d <- %d via P2P/common device", myInfo->rank, peerInfo->rank);
     } else {
       // Enable P2P access
       cudaError_t err = cudaDeviceEnablePeerAccess(peerInfo->cudaDev, 0);
@@ -501,7 +498,7 @@ ncclResult_t p2pRecvSetup(ncclTinfo_t* myOpaqueInfo, ncclTinfo_t* peerOpaqueInfo
              peerInfo->cudaDev, err, cudaGetErrorString(err));
         return ncclInternalError;
       }
-//      INFO("Ring %02d : %d[%d] <- %d[%d] via P2P/direct pointer", ring->id, myInfo->rank, myInfo->cudaDev, peerInfo->rank, peerInfo->cudaDev);
+      TRACE(INIT|P2P,"Ring %02d : %d[%d] <- %d[%d] via P2P/direct pointer", ring->id, myInfo->rank, myInfo->cudaDev, peerInfo->rank, peerInfo->cudaDev);
     }
   } else {
     info.direct = 0;
@@ -512,7 +509,7 @@ ncclResult_t p2pRecvSetup(ncclTinfo_t* myOpaqueInfo, ncclTinfo_t* peerOpaqueInfo
            myInfo->rank, peerInfo->cudaDev, err, cudaGetErrorString(err));
       return ncclInternalError;
     }
-//    INFO("Ring %02d : %d[%d] <- %d[%d] via P2P/IPC", ring->id, myInfo->rank, myInfo->cudaDev, peerInfo->rank, peerInfo->cudaDev);
+    TRACE(INIT|P2P,"Ring %02d : %d[%d] <- %d[%d] via P2P/IPC", ring->id, myInfo->rank, myInfo->cudaDev, peerInfo->rank, peerInfo->cudaDev);
 //    TRACE_DUMP_IPC(&info.devIpc);
   }
   static_assert(sizeof(struct p2pConnectInfo) <= sizeof(struct ncclConnect), "p2p Connect Info is too big");

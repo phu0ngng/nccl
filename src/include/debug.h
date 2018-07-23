@@ -14,11 +14,14 @@
 #include <unistd.h>
 #include <sys/syscall.h>
 #include <limits.h>
+#include <string.h>
 #include "nccl.h"
 #define gettid() (pid_t) syscall(SYS_gettid)
 
 typedef enum {NONE=0, VERSION=1, WARN=2, INFO=3, ABORT=4, TRACE=5} DebugLevel;
+typedef enum {INIT=1, COLL=2, P2P=4, SHM=8, NET=16, ALL=~0} SubSys;
 extern DebugLevel ncclDebugLevel;
+extern uint64_t ncclDebugMask;
 extern pthread_mutex_t ncclDebugOutputLock;
 extern FILE *ncclDebugFile;
 extern ncclResult_t getHostName(char* hostname, int maxlen);
@@ -30,23 +33,23 @@ extern ncclResult_t getHostName(char* hostname, int maxlen);
     int cudaDev;                                                 \
     cudaGetDevice(&cudaDev);                                     \
     pthread_mutex_lock(&ncclDebugOutputLock);                    \
-    fprintf(ncclDebugFile,"\n%s:%d:%d [%d] %s:%d WARN ", hostname, getpid(), gettid(), cudaDev, __FILE__, __LINE__); \
+    fprintf(ncclDebugFile,"\n%s:%d:%d [%d] %s:%d NCCL WARN ", hostname, getpid(), gettid(), cudaDev, __FILE__, __LINE__); \
     fprintf(ncclDebugFile,__VA_ARGS__);                          \
     fprintf(ncclDebugFile,"\n");                                 \
     fflush(ncclDebugFile);                                       \
     pthread_mutex_unlock(&ncclDebugOutputLock);                  \
-    if (ncclDebugLevel == ABORT) abort();                        \
+    if (ncclDebugLevel == ABORT) { fprintf(stderr,"\n%s:%d:%d [%d] %s:%d NCCL ABORT\n", hostname, getpid(), gettid(), cudaDev, __FILE__, __LINE__); abort(); } \
   }                                                              \
 } while(0)
 
-#define INFO(...) do {                                           \
-  if (ncclDebugLevel >= INFO) {                                  \
+#define INFO(FLAGS, ...) do {                                    \
+  if (ncclDebugLevel >= INFO && ((FLAGS) & ncclDebugMask)) {     \
     char hostname[1024];                                         \
     getHostName(hostname, 1024);                                 \
     int cudaDev;                                                 \
     cudaGetDevice(&cudaDev);                                     \
     pthread_mutex_lock(&ncclDebugOutputLock);                    \
-    fprintf(ncclDebugFile,"%s:%d:%d [%d] INFO ", hostname, getpid(), gettid(), cudaDev); \
+    fprintf(ncclDebugFile,"%s:%d:%d [%d] NCCL INFO ", hostname, getpid(), gettid(), cudaDev); \
     fprintf(ncclDebugFile,__VA_ARGS__);fprintf(ncclDebugFile,"\n"); \
     fflush(ncclDebugFile);                                       \
     pthread_mutex_unlock(&ncclDebugOutputLock);                  \
@@ -54,8 +57,8 @@ extern ncclResult_t getHostName(char* hostname, int maxlen);
 } while(0)
 
 #ifdef ENABLE_TRACE
-#define TRACE(...) do {                                          \
-if (ncclDebugLevel == TRACE) {                                   \
+#define TRACE(FLAGS, ...) do {                                   \
+  if (ncclDebugLevel == TRACE && ((FLAGS) & ncclDebugMask)) {    \
     char hostname[1024];                                         \
     getHostName(hostname, 1024);                                 \
     int cudaDev;                                                 \
@@ -63,7 +66,7 @@ if (ncclDebugLevel == TRACE) {                                   \
     pthread_mutex_lock(&ncclDebugOutputLock);                    \
     auto delta = std::chrono::high_resolution_clock::now() - ncclEpoch; \
     double timestamp = std::chrono::duration_cast<std::chrono::duration<double>>(delta).count()*1000; \
-    fprintf(ncclDebugFile,"%s:%d:%d [%d] %f %s:%d TRACE ", hostname, getpid(), gettid(), cudaDev, timestamp, __func__, __LINE__); \
+    fprintf(ncclDebugFile,"%s:%d:%d [%d] %f %s:%d NCCL TRACE ", hostname, getpid(), gettid(), cudaDev, timestamp, __func__, __LINE__); \
     fprintf(ncclDebugFile,__VA_ARGS__);fprintf(ncclDebugFile,"\n"); \
     fflush(ncclDebugFile);                                       \
     pthread_mutex_unlock(&ncclDebugOutputLock);                  \
@@ -80,16 +83,47 @@ static void initDebug() {
   const char* nccl_debug = getenv("NCCL_DEBUG");
   if (nccl_debug == NULL) {
     ncclDebugLevel = NONE;
-  } else if (strcmp(nccl_debug, "VERSION") == 0) {
+  } else if (strcasecmp(nccl_debug, "VERSION") == 0) {
     ncclDebugLevel = VERSION;
-  } else if (strcmp(nccl_debug, "WARN") == 0) {
+  } else if (strcasecmp(nccl_debug, "WARN") == 0) {
     ncclDebugLevel = WARN;
-  } else if (strcmp(nccl_debug, "INFO") == 0) {
+  } else if (strcasecmp(nccl_debug, "INFO") == 0) {
     ncclDebugLevel = INFO;
-  } else if (strcmp(nccl_debug, "ABORT") == 0) {
+  } else if (strcasecmp(nccl_debug, "ABORT") == 0) {
     ncclDebugLevel = ABORT;
-  } else if (strcmp(nccl_debug, "TRACE") == 0) {
+  } else if (strcasecmp(nccl_debug, "TRACE") == 0) {
     ncclDebugLevel = TRACE;
+  }
+
+  /* Parse the NCCL_DEBUG_SUBSYS env var
+   * This can be a comma separated list such as INIT,COLL
+   * or ^INIT,COLL etc
+   */
+  char* nccl_debug_subsys = getenv("NCCL_DEBUG_SUBSYS");
+  if (nccl_debug_subsys != NULL) {
+    char *subsys = strtok(nccl_debug_subsys, ",");
+    while (subsys != NULL) {
+      int invert = 0;
+      uint64_t mask = 0;
+      if (subsys[0] == '^') { invert = 1; subsys++; }
+      if (strcasecmp(subsys, "INIT") == 0) {
+        mask = INIT;
+      } else if (strcasecmp(subsys, "COLL") == 0) {
+        mask = COLL;
+      } else if (strcasecmp(subsys, "P2P") == 0) {
+        mask = P2P;
+      } else if (strcasecmp(subsys, "SHM") == 0) {
+        mask = SHM;
+      } else if (strcasecmp(subsys, "NET") == 0) {
+        mask = NET;
+      } else if (strcasecmp(subsys, "ALL") == 0) {
+        mask = ALL;
+      }
+      if (mask) {
+        if (invert) ncclDebugMask &= ~mask; else ncclDebugMask |= mask;
+      }
+      subsys = strtok(NULL, ",");
+    }
   }
 
   /* Parse and expand the NCCL_DEBUG_FILE path and
@@ -128,7 +162,7 @@ static void initDebug() {
     if (debug_fn[0] != '\0') {
       FILE *file = fopen(debug_fn, "w");
       if (file != NULL) {
-        INFO("DEBUG file is '%s'", debug_fn);
+        INFO(ALL,"DEBUG file is '%s'", debug_fn);
         ncclDebugFile = file;
       }
     }

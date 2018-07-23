@@ -173,7 +173,7 @@ ncclResult_t ncclBarrierEnqueueWait(ncclComm_t comm) {
   // We can't print the CG mode before the first barrier happened.
   if (comm->rank == 0 && *comm->intraCGMode & 0x10) {
     *comm->intraCGMode ^= 0x10;
-    INFO("Launch mode %s%s", comm->launchMode == ncclComm::GROUP ? "Group" : "Parallel", *comm->intraCGMode ? "/CGMD" : "" );
+    INFO(INIT,"Launch mode %s%s", comm->launchMode == ncclComm::GROUP ? "Group" : "Parallel", *comm->intraCGMode ? "/CGMD" : "" );
   }
 
   NCCLCHECK(ncclCpuBarrierOut(comm));

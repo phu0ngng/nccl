@@ -18,7 +18,11 @@ static ncclResult_t PointerCheck(const void* pointer, struct ncclComm* comm, con
     WARN("%s : %s is not a valid pointer", opname, ptrname);
     return ncclInvalidArgument;
   }
+#if __CUDACC_VER_MAJOR__ >= 10
+  if (attr.type == cudaMemoryTypeDevice && attr.device != comm->cudaDev) {
+#else
   if (attr.memoryType == cudaMemoryTypeDevice && attr.device != comm->cudaDev) {
+#endif
     WARN("%s : %s allocated on device %d mismatchs with NCCL device %d", opname, ptrname, attr.device, comm->cudaDev);
     return ncclInvalidArgument;
   }
@@ -141,7 +145,7 @@ static ncclResult_t saveKernel(int coll, const void* sendbuff, void* recvbuff, s
     ring->collFifoTail = opIndex;
     ring->collCount++;
   }
-  if (llMode == 0) comm->opCount++;
+  /*if (llMode == 0)*/ comm->opCount++;
   return ncclSuccess;
 }
 

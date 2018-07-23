@@ -60,7 +60,6 @@ pthread_mutex_t ncclParamMutex##name = PTHREAD_MUTEX_INITIALIZER; \
 int64_t ncclParam##name() { \
   static_assert(default_value != -1LL, "default value cannot be -1"); \
   static int64_t value = -1LL; \
-  if (value != -1LL) return value; \
   pthread_mutex_lock(&ncclParamMutex##name); \
   if (value == -1LL) { \
     value = default_value; \
@@ -69,10 +68,10 @@ int64_t ncclParam##name() { \
       errno = 0; \
       int64_t v = strtoll(str, NULL, 0); \
       if (errno) { \
-        INFO("Invalid value %s for %s, using default %lu.", str, "NCCL_" env, value); \
+        INFO(ALL,"Invalid value %s for %s, using default %lu.", str, "NCCL_" env, value); \
       } else { \
         value = v; \
-        INFO("%s set by environment to %lu.", "NCCL_" env, value); \
+        INFO(ALL,"%s set by environment to %lu.", "NCCL_" env, value);  \
       } \
     } \
   } \

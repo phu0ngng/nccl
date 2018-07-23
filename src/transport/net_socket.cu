@@ -33,7 +33,7 @@ static void initDevices() {
     pthread_mutex_lock(&ncclSocketLock);
     if (ncclNetIfs == -1) {
       ncclNetIfs = findInterfaces(ncclNetIfNames, ncclNetIfAddrs, MAX_IF_NAME_SIZE, MAX_IFS);
-      INFO("NET/Socket : %d interfaces found", ncclNetIfs);
+      INFO(INIT|NET,"NET/Socket : %d interfaces found", ncclNetIfs);
     }
     pthread_mutex_unlock(&ncclSocketLock);
   }
