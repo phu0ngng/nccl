@@ -15,6 +15,9 @@
 #define NCCL_PATCH ${nccl:Patch}
 #define NCCL_SUFFIX "${nccl:Suffix}"
 
+#define NCCL_VERSION(X,Y,Z) (((X)<<16)+((Y)<< 8)+(Z))
+#define NCCL_VERSION_CODE NCCL_VERSION(NCCL_MAJOR, NCCL_MINOR, NCCL_PATCH)
+
 #ifdef __cplusplus
 extern "C" {
 #endif
@@ -33,6 +36,13 @@ typedef enum { ncclSuccess                 =  0,
                ncclInvalidArgument         =  4,
                ncclInvalidUsage            =  5,
                ncclNumResults              =  6 } ncclResult_t;
+
+/* Return the NCCL_VERSION_CODE of the NCCL library in the supplied integer.
+ * This integer is coded with the MAJOR, MINOR and PATCH level of the
+ * NCCL library
+ */
+ncclResult_t ncclGetVersion(int *version);
+ncclResult_t pncclGetVersion(int *version);
 
 /* Generates an Id to be used in ncclCommInitRank. ncclGetUniqueId should be
  * called once and the Id should be distributed to all ranks in the 

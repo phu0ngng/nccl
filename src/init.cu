@@ -103,6 +103,13 @@ static ncclResult_t ncclInit() {
   return ncclSuccess;
 }
 
+NCCL_API(ncclResult_t, ncclGetVersion, int* version);
+ncclResult_t ncclGetVersion(int* version) {
+  if (version == NULL) return ncclInvalidArgument;
+  *version = NCCL_VERSION_CODE;
+  return ncclSuccess;
+}
+
 NCCL_API(ncclResult_t, ncclGetUniqueId, ncclUniqueId* out);
 ncclResult_t ncclGetUniqueId(ncclUniqueId* out) {
   NCCLCHECK(ncclInit());
