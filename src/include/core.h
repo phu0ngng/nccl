@@ -173,8 +173,9 @@ struct CollectiveArgs {
   // general parameters
   size_t N;
   uint32_t root;
-  uint16_t bid;
-  uint16_t nRings;
+  uint8_t bid;
+  uint8_t nRings;
+  uint16_t nThreads;
 
   int sliceSize;
   int lastChunkSize;

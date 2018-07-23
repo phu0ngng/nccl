@@ -119,6 +119,7 @@ static ncclResult_t saveKernel(int coll, const void* sendbuff, void* recvbuff, s
     args->opCount = comm->opCount;
     args->bid = bid;
     args->nRings = nBlocks;
+    args->nThreads = nThreads;
     int sliceSize, nt;
     if (llMode == 1) {
       sliceSize = llSliceSize * sizeof(uint64_t) / ncclTypeSize(dtype);

@@ -135,7 +135,7 @@ template<int UNUSED, class FUNC, typename T>
 __device__ void ncclReduceScatterLLKernel(struct CollectiveArgs* args) {
   const int tid = threadIdx.x;
   const int bid = args->bid;
-  const int ll_nthreads = blockDim.x;
+  const int ll_nthreads = args->nThreads;
   struct ncclComm* comm = args->comm;
   struct ncclRing* ring = comm->rings+blockIdx.x;
   volatile uint64_t * recvHeadPtr = ring->recv.conn.llHead;
