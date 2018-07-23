@@ -172,6 +172,7 @@ static int computeRingsRec(int* matrix, int n, int *rings, int currentRing, int 
 }
 
 static inline int copyRings(int nranks, int* rings, int nrings, int newNrings) {
+  if (nrings == 0) return 0;
   // Copy rings by dup times
   if (newNrings > MAXRINGS) {
     newNrings = MAXRINGS;
