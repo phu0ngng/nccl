@@ -38,15 +38,6 @@ FILE *ncclDebugFile = stdout;
 std::chrono::high_resolution_clock::time_point ncclEpoch;
 #endif
 
-#if __CUDACC_VER_MAJOR__ >= 10 || (__CUDACC_VER_MAJOR__ >= 9 && __CUDACC_VER_MINOR__ >= 2)
-#define NCCL_GROUP_CUDA_STREAM 0 // CGMD: CUDA 9.2,10.X Don't need to use an internal CUDA stream
-#else
-#define NCCL_GROUP_CUDA_STREAM 1 // CGMD: CUDA 8.0,9.0,9.1 Need to use an internal CUDA stream
-#endif
-
-NCCL_PARAM(GroupCudaStream, "GROUP_CUDA_STREAM", NCCL_GROUP_CUDA_STREAM);
-
-
 extern "C" __attribute__ ((visibility("default")))
 ncclNet_t* ncclNet = NULL;
 
@@ -130,7 +121,7 @@ static ncclResult_t commFree(ncclComm_t comm) {
     CUDACHECK(cudaEventDestroy(comm->doneEvent));
 
   if (comm->launchMode == ncclComm::GROUP) {
-    if (comm->groupCudaStream) CUDACHECK(cudaStreamDestroy(comm->myParams->stream));
+    CUDACHECK(cudaStreamDestroy(comm->myParams->stream));
   }
 
   // Last rank frees shared resources between threads
@@ -176,7 +167,6 @@ static ncclResult_t commAlloc(ncclComm_t* comret, int ndev, int rank) {
   cudaGetDevice(&comm->cudaDev);
   comm->doneEvent = doneEvent;
   comm->llThreshold = ncclParamLlThreshold();
-  comm->groupCudaStream = ncclParamGroupCudaStream();
 
   comm->argsptr = &comm->args;
 
@@ -397,7 +387,7 @@ ncclResult_t ncclCommSetIntra(struct ncclComm* comm, int rank, int ranks, struct
     comm->launchMode = ncclComm::PARALLEL;
   }
   if (comm->launchMode == ncclComm::GROUP) {
-    if (comm->groupCudaStream) CUDACHECK(cudaStreamCreateWithFlags(&comm->myParams->stream, cudaStreamNonBlocking));
+    CUDACHECK(cudaStreamCreateWithFlags(&comm->myParams->stream, cudaStreamNonBlocking));
 #if __CUDACC_VER_MAJOR__ >= 9
     if (*comm->intraCC && (ncclCudaFullCompCap() == *comm->intraCC)) {
       // Check whether the GPU supports Cooperative Group Multi Device Launch
