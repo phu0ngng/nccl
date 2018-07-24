@@ -18,7 +18,7 @@ ncclResult_t ncclAllGatherFunc(const void* sendbuff, void* recvbuff, size_t coun
       CUDACHECK(cudaMemcpyAsync(recvbuff, sendbuff, nbytes, cudaMemcpyDeviceToDevice, stream));
   } else {
     NCCLCHECK(transportSaveProxies(ALLGATHER_SUBSTEPS, ALLGATHER_BUFCHUNKS, comm->nRanks-1, comm->nRanks, nbytes*comm->nRanks, proxyPatternRing, comm));
-    NCCLCHECK(saveKernel(ncclCollAllGather, sendbuff, recvbuff, nbytes, ncclInt8, op, root, comm, stream, nbytes*comm->nRanks, ALLGATHER_BUFCHUNKS, 1));
+    NCCLCHECK(saveKernel(ncclCollAllGather, sendbuff, recvbuff, nbytes, ncclInt8, op, root, comm, stream, nbytes*comm->nRanks, 1));
   }
   return ncclSuccess;
 }

@@ -145,7 +145,7 @@ __device__ void ncclReduceScatterLLKernel(struct CollectiveArgs* args) {
   const ssize_t size = args->N;
   //const int rank = comm->rank;
   const int nranks = comm->nRanks;
-  int chunkSize = args->sliceSize;
+  int chunkSize = llSliceSize * sizeof(uint64_t) / sizeof(T);
   const int lastChunkSize = args->lastChunkSize;
   const ssize_t loopSize = args->nRings*(ssize_t)chunkSize;
 

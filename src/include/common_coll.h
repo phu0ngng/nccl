@@ -86,7 +86,7 @@ static __inline__ int ncclTypeSize(ncclDataType_t type) {
 }
 
 static ncclResult_t saveKernel(int coll, const void* sendbuff, void* recvbuff, size_t count,
-    ncclDataType_t dtype, ncclRedOp_t op, int root, ncclComm_t comm, cudaStream_t stream, size_t nbytes, int nChunks, int loopFactor) {
+    ncclDataType_t dtype, ncclRedOp_t op, int root, ncclComm_t comm, cudaStream_t stream, size_t nbytes, int loopFactor) {
   int llMode, nBlocks, nThreads;
   ncclGetCollResource(comm, nbytes, &nBlocks, &nThreads, &llMode);
   comm->myParams->blockDim.x = max(comm->myParams->blockDim.x, nThreads);
@@ -121,18 +121,12 @@ static ncclResult_t saveKernel(int coll, const void* sendbuff, void* recvbuff, s
     args->bid = bid;
     args->nRings = nBlocks;
     args->nThreads = nThreads;
-    int sliceSize, nt;
     if (llMode == 1) {
-      sliceSize = llSliceSize * sizeof(uint64_t) / ncclTypeSize(dtype);
-      nt = nThreads;
-    } else {
-      sliceSize = comm->rings[0].buffSize / ncclTypeSize(dtype) / nChunks;
-      nt = nThreads-1;
+      int sliceSize = llSliceSize * sizeof(uint64_t) / ncclTypeSize(dtype);
+      const ssize_t loopSize = args->nRings*loopFactor*(ssize_t)sliceSize;
+      args->lastChunkSize = DIVUP((count-count/loopSize*loopSize), args->nRings*loopFactor);
+      ALIGN_SIZE(args->lastChunkSize, nThreads*sizeof(uint64_t)/ncclTypeSize(dtype));
     }
-    args->sliceSize = sliceSize;
-    const ssize_t loopSize = args->nRings*loopFactor*(ssize_t)sliceSize;
-    args->lastChunkSize = DIVUP((count-count/loopSize*loopSize), args->nRings*loopFactor);
-    ALIGN_SIZE(args->lastChunkSize, nt*sizeof(uint64_t)/ncclTypeSize(dtype));
 
     c->nThreads = nThreads;
     c->funcIndex = FUNC_INDEX(coll, op, dtype, llMode);

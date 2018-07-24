@@ -180,7 +180,6 @@ struct CollectiveArgs {
   uint8_t nRings;
   uint16_t nThreads;
 
-  int sliceSize;
   int lastChunkSize;
 };
 struct ncclColl {
