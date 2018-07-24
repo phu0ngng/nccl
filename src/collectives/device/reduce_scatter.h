@@ -34,6 +34,7 @@ __device__ void ncclReduceScatterKernel(struct CollectiveArgs* args) {
   const int nranks = comm->nRanks;
   const int buffSize = ring->buffSize / sizeof(T);
   const int sliceSize = args->sliceSize;
+  const int lastChunkSize = args->lastChunkSize;
   const ssize_t loopSize = args->nRings*(ssize_t)sliceSize;
 
   if (tid == 0) {
@@ -55,7 +56,7 @@ __device__ void ncclReduceScatterKernel(struct CollectiveArgs* args) {
   T * __restrict__ nextOutput = (T*)ring->send.conn.buff;
 
   for (ssize_t gridOffset = 0; gridOffset < size; gridOffset += loopSize) {
-    int chunkSize = (size-gridOffset < loopSize) ? args->lastChunkSize : sliceSize;
+    int chunkSize = (size-gridOffset < loopSize) ? lastChunkSize : sliceSize;
     ssize_t chunkOffset = gridOffset + bid*chunkSize;
 
     /////////////// begin ReduceScatter steps ///////////////
@@ -146,6 +147,7 @@ __device__ void ncclReduceScatterLLKernel(struct CollectiveArgs* args) {
   //const int rank = comm->rank;
   const int nranks = comm->nRanks;
   int chunkSize = args->sliceSize;
+  const int lastChunkSize = args->lastChunkSize;
   const ssize_t loopSize = args->nRings*(ssize_t)chunkSize;
 
   uint64_t step = ring->send.conn.llStep;
@@ -160,7 +162,7 @@ __device__ void ncclReduceScatterLLKernel(struct CollectiveArgs* args) {
 
   for (ssize_t gridOffset = 0; gridOffset < size; gridOffset += loopSize) {
     if (size-gridOffset < loopSize) {
-      chunkSize = args->lastChunkSize;
+      chunkSize = lastChunkSize;
     }
     ssize_t chunkOffset = gridOffset + bid*chunkSize;
 
