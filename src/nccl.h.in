@@ -15,8 +15,8 @@
 #define NCCL_PATCH ${nccl:Patch}
 #define NCCL_SUFFIX "${nccl:Suffix}"
 
-#define NCCL_VERSION(X,Y,Z) (((X)<<16)+((Y)<< 8)+(Z))
-#define NCCL_VERSION_CODE NCCL_VERSION(NCCL_MAJOR, NCCL_MINOR, NCCL_PATCH)
+#define NCCL_VERSION_CODE ${nccl:Version}
+#define NCCL_VERSION(X,Y,Z) ((X) * 1000 + (Y) * 100 + (Z))
 
 #ifdef __cplusplus
 extern "C" {
