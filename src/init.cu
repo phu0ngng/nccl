@@ -68,16 +68,8 @@ void initNet() {
   }
 }
 
-NCCL_PARAM(LlThreshold, "LL_THRESHOLD", NCCL_LL_THRESHOLD);
-NCCL_PARAM(SingleRingThreshold, "SINGLE_RING_THRESHOLD", -2);
-
-static ssize_t getSingleRingThreshold(int minCompCap) {
-  ssize_t threshold = ncclParamSingleRingThreshold();
-  if (threshold != -2) return threshold;
-
-  // Double the default threshold on Volta
-  return (minCompCap == 7) ? DEFAULT_SINGLE_RING_THRESHOLD << 1 : DEFAULT_SINGLE_RING_THRESHOLD;
-}
+NCCL_PARAM(LlThreshold, "LL_THRESHOLD", -2);
+NCCL_PARAM(ThreadThreshold, "THREAD_THRESHOLD", NCCL_THREAD_THRESHOLD);
 
 pthread_mutex_t initLock = PTHREAD_MUTEX_INITIALIZER;
 static bool initialized = false;
@@ -439,7 +431,7 @@ static ncclResult_t initTransportsRank(struct ncclComm* comm, ncclUniqueId* comm
     minCompCap = min(allData[i], minCompCap);
   if (rank == 0) INFO(INIT,"Min Comp Cap %d", minCompCap);
 
-  comm->singleRingThreshold = getSingleRingThreshold(minCompCap);
+  comm->threadThreshold = ncclParamThreadThreshold();
 
   // Find min nrings across ranks
   allData[rank] = nrings;
@@ -624,7 +616,7 @@ static ncclResult_t initTransportsAll(struct ncclComm** comms, const int* devs, 
   for (int rank=0; rank<nranks; rank++) {
     comms[rank]->nRings = nrings;
     comms[rank]->nThreads = nthreads;
-    comms[rank]->singleRingThreshold = getSingleRingThreshold(minCompCap);
+    comms[rank]->threadThreshold = ncclParamThreadThreshold();
   }
 
   for (int r=0; r<nrings; r++) {
