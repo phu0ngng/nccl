@@ -220,6 +220,10 @@ struct ncclComm {
   ssize_t llThreshold;
   ssize_t threadThreshold;
 
+  // An internal CUDA stream for NCCL kernel CGMD launches
+  int groupCudaStream;
+  cudaStream_t groupStream;
+
   // Device copy of the communicator
   struct ncclComm *devComm;
 

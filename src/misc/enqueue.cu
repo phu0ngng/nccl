@@ -144,12 +144,16 @@ ncclResult_t ncclBarrierEnqueue(struct ncclComm* comm) {
 
   NCCLCHECK(setupLaunch(comm, params));
 
-  if (comm->launchMode == ncclComm::GROUP) {
-    // Enqueue stream dependency
+  // Use internal NCCL stream for CGMD/GROUP launch if required or if the user stream is NULL
+  if (comm->launchMode == ncclComm::GROUP && (comm->groupCudaStream || comm->userStream == NULL)) {
+    // Enqueue event in user stream
     CUDACHECK(cudaEventRecord(comm->doneEvent, comm->userStream));
-    CUDACHECK(cudaStreamWaitEvent(params->stream, comm->doneEvent, 0));
+    // Create dependency between user stream and internal NCCL stream
+    CUDACHECK(cudaStreamWaitEvent(comm->groupStream, comm->doneEvent, 0));
+    params->stream = comm->groupStream;
   } else {
     if (comm->userStream != params->stream) {
+      // Stream changed from last call, create dependency against last NCCL kernel launch
       CUDACHECK(cudaStreamWaitEvent(comm->userStream, comm->doneEvent, 0));
     }
     params->stream = comm->userStream;
@@ -173,14 +177,17 @@ ncclResult_t ncclBarrierEnqueueWait(ncclComm_t comm) {
   // We can't print the CG mode before the first barrier happened.
   if (comm->rank == 0 && *comm->intraCGMode & 0x10) {
     *comm->intraCGMode ^= 0x10;
-    INFO(INIT,"Launch mode %s%s", comm->launchMode == ncclComm::GROUP ? "Group" : "Parallel", *comm->intraCGMode ? "/CGMD" : "" );
+    INFO(INIT,"Launch mode %s%s%s",
+         comm->launchMode == ncclComm::GROUP ? "Group" : "Parallel",
+         *comm->intraCGMode ? "/CGMD" : "",
+         (comm->launchMode == ncclComm::GROUP && comm->groupCudaStream) ? "/Stream" : "");
   }
 
   NCCLCHECK(ncclCpuBarrierOut(comm));
 
   struct cudaLaunchParams *params = comm->myParams;
   if (comm->launchMode == ncclComm::PARALLEL) {
-    CUDACHECK(cudaLaunchKernel(params->func, params->gridDim, params->blockDim, params->args, params->sharedMem, comm->userStream));
+    CUDACHECK(cudaLaunchKernel(params->func, params->gridDim, params->blockDim, params->args, params->sharedMem, params->stream));
   }
   // Start the network proxies as soon as the kernel has been launched. We can't
   // perform any CUDA call between the two or having a cudaFree between the CUDA
@@ -198,12 +205,13 @@ ncclResult_t ncclBarrierEnqueueWait(ncclComm_t comm) {
 }
 
 ncclResult_t ncclEnqueueEvents(ncclComm_t comm) {
-  if (comm->launchMode == ncclComm::GROUP) {
-    struct cudaLaunchParams *params = comm->myParams;
-    CUDACHECK(cudaEventRecord(comm->doneEvent, params->stream));
+  struct cudaLaunchParams *params = comm->myParams;
+  // Enqueue event after NCCL kernel
+  CUDACHECK(cudaEventRecord(comm->doneEvent, params->stream));
+  // Use internal NCCL stream for CGMD/GROUP launch if required or if the user stream is NULL
+  if (comm->launchMode == ncclComm::GROUP && (comm->groupCudaStream || comm->userStream == NULL)) {
+    // Create dependency between NCCL internal stream and user stream
     CUDACHECK(cudaStreamWaitEvent(comm->userStream, comm->doneEvent, 0));
-  } else {
-    CUDACHECK(cudaEventRecord(comm->doneEvent, comm->userStream));
   }
   comm->userStreamSet = false;
   return ncclSuccess;
