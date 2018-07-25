@@ -169,7 +169,7 @@ int ncclSocketIrecv(void* recvComm, void* data, int size, int type, void** reque
     return ncclInternalError;
   }
   NCCLCHECK(socketReceive(comm->fd, data, min(recvSize, size)));
-  struct ncclSocketRequest* recvReq;
+  struct ncclSocketRequest* recvReq = NULL;
   NCCLCHECK(ncclSocketGetRequest(&comm->reqs, &recvReq));
   recvReq->size = recvSize;
   *request = recvReq;

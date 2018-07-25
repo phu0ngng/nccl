@@ -159,7 +159,7 @@ ncclResult_t ncclBarrierEnqueue(struct ncclComm* comm) {
     params->stream = comm->userStream;
   }
 
-  int isLast;
+  int isLast = 0;
   NCCLCHECK(ncclCpuBarrierIn(comm, &isLast));
 
   if (isLast) {
