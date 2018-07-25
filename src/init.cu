@@ -453,7 +453,7 @@ static ncclResult_t initTransportsRank(struct ncclComm* comm, ncclUniqueId* comm
     NCCLCHECK(bootstrapAllGather(commState, prev+r*nranks, sizeof(int)));
     NCCLCHECK(bootstrapAllGather(commState, next+r*nranks, sizeof(int)));
   }
-  int rings[nranks*MAXRINGS];
+  int *rings = (int *)malloc(sizeof(int)*nranks*MAXRINGS);
   NCCLCHECK(buildRings(nrings, rings, rank, nranks, prev, next));
   free(prev);
   free(next);
@@ -468,6 +468,7 @@ static ncclResult_t initTransportsRank(struct ncclComm* comm, ncclUniqueId* comm
     NCCLCHECK(ring->send.transport->send.connect(connect+1, &ring->send));
     NCCLCHECK(ring->recv.transport->recv.connect(connect+0, &ring->recv));
   }
+  free(rings);
   free(allInfo);
 
   // Intra-process barrier setup
@@ -616,7 +617,7 @@ static ncclResult_t initTransportsAll(struct ncclComm** comms, const int* devs, 
   INFO(INIT,"Using %d threads", nthreads);
   INFO(INIT,"Min Comp Cap %d", minCompCap);
 
-  int rings[nranks*MAXRINGS];
+  int *rings = (int *)malloc(sizeof(int)*nranks*MAXRINGS);
   NCCLCHECK(buildRings(nrings, rings, 0, nranks, prevFinal, nextFinal));
   free(prevFinal);
   free(nextFinal);
@@ -650,6 +651,7 @@ static ncclResult_t initTransportsAll(struct ncclComm** comms, const int* devs, 
       NCCLCHECK(ring->recv.transport->recv.connect(connect+2*rank+0, &ring->recv));
     }
   }
+  free(rings);
   free(allInfo);
   return ncclSuccess;
 }

@@ -361,7 +361,7 @@ int p2pComputeRingsPci(int* values, int nranks, int* rings, int nrings, int* pre
 
 ncclResult_t p2pGetRings(int nranks, int* groups, int* subgroups, int* values, int* nringsRet, int* prev, int* next, int minScore, int* nthreads) {
   if (*nringsRet == 0) return ncclSuccess;
-  int rings[MAXRINGS*nranks];
+  int *rings = (int *)malloc(sizeof(int)*MAXRINGS*nranks);
   for (int i=0; i<MAXRINGS*nranks; i++) rings[i] = -1;
   int nrings = *nringsRet;
 
@@ -426,7 +426,8 @@ end:
       if (next[ring*nranks+curRank] == -1) next[ring*nranks+curRank] = nextRank;
     }
   }
-  
+
+  free(rings);
   return ncclSuccess;
 }
 
