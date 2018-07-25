@@ -38,6 +38,15 @@ FILE *ncclDebugFile = stdout;
 std::chrono::high_resolution_clock::time_point ncclEpoch;
 #endif
 
+#if __CUDACC_VER_MAJOR__ >= 10 || (__CUDACC_VER_MAJOR__ >= 9 && __CUDACC_VER_MINOR__ >= 2)
+#define NCCL_GROUP_CUDA_STREAM 0 // CGMD: CUDA 9.2,10.X Don't need to use an internal CUDA stream
+#else
+#define NCCL_GROUP_CUDA_STREAM 1 // CGMD: CUDA 9.0,9.1 Need to use an internal CUDA stream
+#endif
+
+NCCL_PARAM(GroupCudaStream, "GROUP_CUDA_STREAM", NCCL_GROUP_CUDA_STREAM);
+
+
 extern "C" __attribute__ ((visibility("default")))
 ncclNet_t* ncclNet = NULL;
 
@@ -68,16 +77,8 @@ void initNet() {
   }
 }
 
-NCCL_PARAM(LlThreshold, "LL_THRESHOLD", NCCL_LL_THRESHOLD);
-NCCL_PARAM(SingleRingThreshold, "SINGLE_RING_THRESHOLD", -2);
-
-static ssize_t getSingleRingThreshold(int minCompCap) {
-  ssize_t threshold = ncclParamSingleRingThreshold();
-  if (threshold != -2) return threshold;
-
-  // Double the default threshold on Volta
-  return (minCompCap == 7) ? DEFAULT_SINGLE_RING_THRESHOLD << 1 : DEFAULT_SINGLE_RING_THRESHOLD;
-}
+NCCL_PARAM(LlThreshold, "LL_THRESHOLD", -2);
+NCCL_PARAM(ThreadThreshold, "THREAD_THRESHOLD", NCCL_THREAD_THRESHOLD);
 
 pthread_mutex_t initLock = PTHREAD_MUTEX_INITIALIZER;
 static bool initialized = false;
@@ -91,6 +92,13 @@ static ncclResult_t ncclInit() {
     initialized = true;
   }
   pthread_mutex_unlock(&initLock);
+  return ncclSuccess;
+}
+
+NCCL_API(ncclResult_t, ncclGetVersion, int* version);
+ncclResult_t ncclGetVersion(int* version) {
+  if (version == NULL) return ncclInvalidArgument;
+  *version = NCCL_VERSION_CODE;
   return ncclSuccess;
 }
 
@@ -114,7 +122,7 @@ static ncclResult_t commFree(ncclComm_t comm) {
     CUDACHECK(cudaEventDestroy(comm->doneEvent));
 
   if (comm->launchMode == ncclComm::GROUP) {
-    CUDACHECK(cudaStreamDestroy(comm->myParams->stream));
+    CUDACHECK(cudaStreamDestroy(comm->groupStream));
   }
 
   // Last rank frees shared resources between threads
@@ -160,6 +168,10 @@ static ncclResult_t commAlloc(ncclComm_t* comret, int ndev, int rank) {
   cudaGetDevice(&comm->cudaDev);
   comm->doneEvent = doneEvent;
   comm->llThreshold = ncclParamLlThreshold();
+  // Don't allow the user to overload this setting in older CUDA builds
+#if __CUDACC_VER_MAJOR__ >= 10 || (__CUDACC_VER_MAJOR__ >= 9 && __CUDACC_VER_MINOR__ >= 2)
+  comm->groupCudaStream = ncclParamGroupCudaStream();
+#endif
 
   comm->argsptr = &comm->args;
 
@@ -335,6 +347,7 @@ void* waitForNonNullPtr(void* p) {
 ncclResult_t initParams(struct ncclComm* comm) {
   struct cudaLaunchParams* params = comm->myParams = comm->intraParams+comm->intraRank;
   params->args = &comm->argsptr;
+  params->stream = NULL;
   params->sharedMem = 0;
   params->blockDim.x = 0; params->blockDim.y = params->blockDim.z = 1;
   params->gridDim.x = 0; params->gridDim.y = params->gridDim.z = 1;
@@ -380,7 +393,7 @@ ncclResult_t ncclCommSetIntra(struct ncclComm* comm, int rank, int ranks, struct
     comm->launchMode = ncclComm::PARALLEL;
   }
   if (comm->launchMode == ncclComm::GROUP) {
-    CUDACHECK(cudaStreamCreateWithFlags(&comm->myParams->stream, cudaStreamNonBlocking));
+    CUDACHECK(cudaStreamCreateWithFlags(&comm->groupStream, cudaStreamNonBlocking));
 #if __CUDACC_VER_MAJOR__ >= 9
     if (*comm->intraCC && (ncclCudaFullCompCap() == *comm->intraCC)) {
       // Check whether the GPU supports Cooperative Group Multi Device Launch
@@ -439,7 +452,7 @@ static ncclResult_t initTransportsRank(struct ncclComm* comm, ncclUniqueId* comm
     minCompCap = min(allData[i], minCompCap);
   if (rank == 0) INFO(INIT,"Min Comp Cap %d", minCompCap);
 
-  comm->singleRingThreshold = getSingleRingThreshold(minCompCap);
+  comm->threadThreshold = ncclParamThreadThreshold();
 
   // Find min nrings across ranks
   allData[rank] = nrings;
@@ -625,7 +638,7 @@ static ncclResult_t initTransportsAll(struct ncclComm** comms, const int* devs, 
   for (int rank=0; rank<nranks; rank++) {
     comms[rank]->nRings = nrings;
     comms[rank]->nThreads = nthreads;
-    comms[rank]->singleRingThreshold = getSingleRingThreshold(minCompCap);
+    comms[rank]->threadThreshold = ncclParamThreadThreshold();
   }
 
   for (int r=0; r<nrings; r++) {

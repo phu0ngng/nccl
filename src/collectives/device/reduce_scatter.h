@@ -15,9 +15,6 @@
   noffset += sliceSize; \
   if (noffset == buffSize) noffset = 0;
 
-#define ALIGN_SIZE(size, align) \
-  size = ((size + (align) - 1) / (align)) * (align);
-
 template<int UNROLL, class FUNC, typename T>
 __device__ void ncclReduceScatterKernel(struct CollectiveArgs* args) {
   const int tid = threadIdx.x;
@@ -134,6 +131,8 @@ __device__ void ncclReduceScatterKernel(struct CollectiveArgs* args) {
 template<int UNUSED, class FUNC, typename T>
 __device__ void ncclReduceScatterLLKernel(struct CollectiveArgs* args) {
   const int tid = threadIdx.x;
+  const int bid = args->bid;
+  const int ll_nthreads = args->nThreads;
   struct ncclComm* comm = args->comm;
   struct ncclRing* ring = comm->rings+blockIdx.x;
   volatile uint64_t * recvHeadPtr = ring->recv.conn.llHead;
@@ -141,14 +140,14 @@ __device__ void ncclReduceScatterLLKernel(struct CollectiveArgs* args) {
   volatile int * sizesFifo = ring->send.conn.llFifo;
   uint64_t sendHead = sendHeadPtr[0];
 
-  typedef LLPrimitives<LL_NTHREADS, T, FUNC> LL;
+  typedef LLPrimitives<T, FUNC> LL;
 
   const ssize_t size = args->N;
   //const int rank = comm->rank;
   const int nranks = comm->nRanks;
-  const int llBuffSize = LL_BUFF_SIZE / (2*sizeof(uint64_t));
-  const int llSliceSize = llBuffSize / NUM_LL_CHUNKS;
-  const int sliceSize = llSliceSize * sizeof(uint64_t) / sizeof(T);
+  int chunkSize = llSliceSize * sizeof(uint64_t) / sizeof(T);
+  const int lastChunkSize = args->lastChunkSize;
+  const ssize_t loopSize = args->nRings*(ssize_t)chunkSize;
 
   uint64_t step = ring->send.conn.llStep;
   uint32_t pflag, nflag = step + 1;
@@ -160,10 +159,15 @@ __device__ void ncclReduceScatterLLKernel(struct CollectiveArgs* args) {
   union ncclLLFifoLine * prevInput = (union ncclLLFifoLine *)ring->recv.conn.llBuff;
   union ncclLLFifoLine * nextOutput = (union ncclLLFifoLine *)ring->send.conn.llBuff;
 
-  for (ssize_t chunkOffset = 0; chunkOffset < size; chunkOffset += sliceSize) {
+  for (ssize_t gridOffset = 0; gridOffset < size; gridOffset += loopSize) {
+    if (size-gridOffset < loopSize) {
+      chunkSize = lastChunkSize;
+    }
+    ssize_t chunkOffset = gridOffset + bid*chunkSize;
+
     /////////////// begin ReduceScatter steps ///////////////
     ssize_t offset;
-    int maxOffset = min(sliceSize, size-chunkOffset);
+    int maxOffset = min(chunkSize, size-chunkOffset);
     int rankDest;
 
     // step 0: push data to next GPU
@@ -174,7 +178,7 @@ __device__ void ncclReduceScatterLLKernel(struct CollectiveArgs* args) {
     LL::ReduceCopy(
         thisInput  + offset,
         nextOutput + noffset,
-        maxOffset, nflag);
+        maxOffset, nflag, ll_nthreads);
     POST_SIZE;
 
     NEXT_STEP_LL;
@@ -189,7 +193,7 @@ __device__ void ncclReduceScatterLLKernel(struct CollectiveArgs* args) {
           thisInput  + offset,
           prevInput  + poffset,
           nextOutput + noffset,
-          maxOffset, pflag, nflag);
+          maxOffset, pflag, nflag, ll_nthreads);
       POST_SIZE;
       ACK_PREV;
 
@@ -205,7 +209,7 @@ __device__ void ncclReduceScatterLLKernel(struct CollectiveArgs* args) {
         thisInput  + offset,
         prevInput  + poffset,
         thisOutput + chunkOffset,
-        maxOffset, pflag);
+        maxOffset, pflag, ll_nthreads);
     ACK_PREV;
   }
 

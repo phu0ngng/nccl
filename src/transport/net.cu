@@ -323,7 +323,7 @@ ncclResult_t netSendProxy(struct ncclProxyArgs* args) {
   char* localBuff = llMode ? resources->hostRecvMem->llBuff : localMem->buff;
   int ptrType = resources->cudaSupport ? NCCL_PTR_CUDA : NCCL_PTR_HOST;
   volatile int* sizesFifo = llMode ? resources->hostRecvMem->llSizesFifo : resources->hostRecvMem->sizesFifo;
-  int buffSize = llMode ? LL_BUFF_SIZE : ring->buffSize;
+  int buffSize = llMode ? NCCL_LL_BUFF_SIZE : ring->buffSize;
   int sliceSize = buffSize / args->substeps;
 
   assert(args->substeps <= SIZES_FIFO_SIZE);
@@ -395,9 +395,9 @@ nextColl:
     resources->llStep += args->nsteps;
     // Don't forget to ack otherwise the GPU won't be able to push data.
     *prevHead = resources->llStep;
-    if (resources->llStep > resources->llLastCleaning + LL_CLEAN_FREQ) {
-      memset(localBuff, 0, LL_BUFF_SIZE);
-      resources->llStep += NUM_LL_CHUNKS;
+    if (resources->llStep > resources->llLastCleaning + NCCL_LL_CLEAN_FREQ) {
+      memset(localBuff, 0, NCCL_LL_BUFF_SIZE);
+      resources->llStep += NCCL_LL_CHUNKS;
       *prevHead = resources->llStep;
       resources->llLastCleaning = resources->llStep;
     }
@@ -417,7 +417,7 @@ ncclResult_t netRecvProxy(struct ncclProxyArgs* args) {
   int ptrType = resources->cudaSupport ? NCCL_PTR_CUDA : NCCL_PTR_HOST;
   uint64_t* nextTail = resources->hostDevMem ? &resources->hostDevMem->tail : &resources->hostRecvMem->tail;
 
-  int buffSize = llMode ? LL_BUFF_SIZE : ring->buffSize;
+  int buffSize = llMode ? NCCL_LL_BUFF_SIZE : ring->buffSize;
   int sliceSize = buffSize / args->substeps;
 
   uint64_t head = llMode ? resources->llStep : 0ULL;
@@ -473,8 +473,8 @@ ncclResult_t netRecvProxy(struct ncclProxyArgs* args) {
 nextColl:
   if (llMode) {
     resources->llStep += args->nsteps;
-    if (resources->llStep > resources->llLastCleaning + LL_CLEAN_FREQ) {
-      resources->llStep += NUM_LL_CHUNKS;
+    if (resources->llStep > resources->llLastCleaning + NCCL_LL_CLEAN_FREQ) {
+      resources->llStep += NCCL_LL_CHUNKS;
       while (*nextHead < resources->llStep);
       resources->llLastCleaning = resources->llStep;
     }
