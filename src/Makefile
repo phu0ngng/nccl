@@ -41,11 +41,14 @@ devicelib: nccl.h
 $(LIBDIR)/$(LIBTARGET) $(LIBDIR)/$(STATICLIBTARGET) : $(LIBOBJ)
 
 nccl.h : nccl.h.in
-	@printf "Generating %-35s > %s\n" $< $@
+# NCCL_VERSION(X,Y,Z) ((X) * 1000 + (Y) * 100 + (Z))
+	@$(eval NCCL_VERSION := $(shell printf "%d%d%02d" $(NCCL_MAJOR) $(NCCL_MINOR) $(NCCL_PATCH)))
+	printf "Generating %-35s > %s\n" $< $@
 	sed -e "s/\$${nccl:Major}/$(NCCL_MAJOR)/g" \
 	    -e "s/\$${nccl:Minor}/$(NCCL_MINOR)/g" \
 	    -e "s/\$${nccl:Patch}/$(NCCL_PATCH)/g" \
 	    -e "s/\$${nccl:Suffix}/$(NCCL_SUFFIX)/g" \
+	    -e "s/\$${nccl:Version}/$(NCCL_VERSION)/g" \
 	    $< > $@
 
 $(LIBDIR)/$(LIBTARGET): $(LIBOBJ) devicelib
