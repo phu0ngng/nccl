@@ -164,7 +164,6 @@ __device__ void ncclBroadcastLLKernel(struct CollectiveArgs* args) {
 
   const ssize_t size = args->N;
   int chunkSize = llSliceSize * sizeof(uint64_t) / sizeof(T);
-  const int lastChunkSize = args->lastChunkSize;
   const ssize_t loopSize = args->nRings*(ssize_t)chunkSize;
 
   uint64_t step = ring->send.conn.llStep;
@@ -179,7 +178,7 @@ __device__ void ncclBroadcastLLKernel(struct CollectiveArgs* args) {
 
   for (ssize_t gridOffset = 0; gridOffset < size; gridOffset += loopSize) {
     if (size-gridOffset < loopSize) {
-      chunkSize = lastChunkSize;
+      chunkSize = args->lastChunkSize;
     }
     ssize_t offset = gridOffset + bid*chunkSize;
 
