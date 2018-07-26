@@ -168,9 +168,11 @@ static ncclResult_t commAlloc(ncclComm_t* comret, int ndev, int rank) {
   cudaGetDevice(&comm->cudaDev);
   comm->doneEvent = doneEvent;
   comm->llThreshold = ncclParamLlThreshold();
-  // Don't allow the user to overload this setting in older CUDA builds
 #if __CUDACC_VER_MAJOR__ >= 10 || (__CUDACC_VER_MAJOR__ >= 9 && __CUDACC_VER_MINOR__ >= 2)
   comm->groupCudaStream = ncclParamGroupCudaStream();
+#else
+  // Don't allow the user to overload the default setting in older CUDA builds
+  comm->groupCudaStream = NCCL_GROUP_CUDA_STREAM;
 #endif
 
   comm->argsptr = &comm->args;
