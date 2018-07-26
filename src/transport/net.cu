@@ -13,6 +13,12 @@
 #include <assert.h>
 
 #define NET_MAX_IFS 16
+
+// We encode 3 bits of distance per IFS into a long (64-bit)
+#define NET_BITS_PER_IFS 3
+#define NET_BITS_PER_IFS_MASK ((1<<NET_BITS_PER_IFS)-1)
+static_assert(sizeof(long)*8 >= NET_MAX_IFS*NET_BITS_PER_IFS, "NET_MAX_IFS*NET_BITS_PER_IFS must fit in a 64-bit long");
+
 struct netInfo {
   int rank;
   int ndev;
@@ -75,7 +81,7 @@ ncclResult_t netCanConnect(long* ret, ncclTinfo_t* myOpaqueInfo, ncclTinfo_t* pe
   struct netInfo* myInfo = (struct netInfo*)myOpaqueInfo;
   for (int d=0; d<myInfo->ndev; d++) {
     // Keep 3 bits of distance
-    ret[0] |= ((myInfo->scores[d]&0x7)<<(3*d));
+    ret[0] |= ((myInfo->scores[d] & NET_BITS_PER_IFS_MASK)<<(NET_BITS_PER_IFS*d));
   }
   return ncclSuccess;
 }
@@ -88,7 +94,7 @@ static inline int groupBestStart(int nranks, int* groups, int group, long* value
     for (int i=0; i<nranks; i++) {
       long netValue = values[rank*nranks+i];
       if (netValue != 0) {
-        long score = (netValue>>(3*card)) & 0x7;
+        long score = (netValue>>(NET_BITS_PER_IFS*card)) & NET_BITS_PER_IFS_MASK;
         if (score >= minScore && score > bestScore) {
           bestScore = score;
           bestRank = rank;
@@ -109,7 +115,7 @@ static inline int groupBestEnd(int nranks, int* groups, int group, int* subgroup
     for (int i=0; i<nranks; i++) {
       long netValue = values[rank*nranks+i];
       if (netValue != 0) {
-        long score = (netValue>>(3*card)) & 0x7;
+        long score = (netValue>>(NET_BITS_PER_IFS*card)) & NET_BITS_PER_IFS_MASK;
         if (score >= minScore) {
           return rank;
         }
