@@ -34,6 +34,7 @@ __device__ void ncclReduceScatterKernel(struct CollectiveArgs* args) {
   const int nranks = comm->nRanks;
   const int buffSize = ring->buffSize / sizeof(T);
   const int sliceSize = buffSize / REDUCESCATTER_BUFCHUNKS;
+  const ssize_t loopSize = args->nRings*(ssize_t)sliceSize;
 
   if (tid == 0) {
     // Update in case we skipped some collectives
@@ -53,7 +54,7 @@ __device__ void ncclReduceScatterKernel(struct CollectiveArgs* args) {
   T * __restrict__ prevInput = (T*)ring->recv.conn.buff;
   T * __restrict__ nextOutput = (T*)ring->send.conn.buff;
 
-  for (ssize_t gridOffset = 0; gridOffset < size; gridOffset += args->nRings*sliceSize) {
+  for (ssize_t gridOffset = 0; gridOffset < size; gridOffset += loopSize) {
     int chunkSize = min(sliceSize, DIVUP(size-gridOffset,args->nRings));
     ALIGN_SIZE(chunkSize, nthreads*sizeof(uint64_t)/sizeof(T));
     ssize_t chunkOffset = gridOffset + bid*chunkSize;
