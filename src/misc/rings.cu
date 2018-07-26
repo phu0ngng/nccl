@@ -178,7 +178,7 @@ ncclResult_t getEnvThreads(int* nthreads) {
 }
 
 /* Main ring creation function */
-ncclResult_t ncclGetRings(int* nrings, int* nthreads, int rank, int nranks, int* transports, int* values, int* prev, int* next) {
+ncclResult_t ncclGetRings(int* nrings, int* nthreads, int rank, int nranks, int* transports, long* values, int* prev, int* next) {
   *nrings = 0;
 
   if (nranks == 1) return ncclSuccess;
@@ -240,7 +240,7 @@ ncclResult_t ncclGetRings(int* nrings, int* nthreads, int rank, int nranks, int*
  
       int ngroups = groups[nidx-1] + 1; // Coords should be ordered
 
-      int* subvalues = (int*)malloc(sizeof(int)*nidx*nidx);
+      long* subvalues = (long*)malloc(sizeof(long)*nidx*nidx);
       int* subprev = (int*)malloc(sizeof(int)*nidx*nringsTmp);
       int* subnext = (int*)malloc(sizeof(int)*nidx*nringsTmp);
       if (ngroups > 1) {

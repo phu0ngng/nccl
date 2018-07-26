@@ -12,11 +12,11 @@
 #include <cuda_runtime.h>
 #include <assert.h>
 
-#define NET_MAX_IFS 8
+#define NET_MAX_IFS 16
 struct netInfo {
   int rank;
   int ndev;
-  int scores[NET_MAX_IFS];
+  short scores[NET_MAX_IFS];
 };
 
 struct netConnectInfo {
@@ -70,25 +70,25 @@ ncclResult_t netFillInfo(ncclTinfo_t* opaqueInfo, int rank) {
 }
 
 /* Determine if we can communicate with the peer */
-ncclResult_t netCanConnect(int* ret, ncclTinfo_t* myOpaqueInfo, ncclTinfo_t* peerOpaqueInfo) {
+ncclResult_t netCanConnect(long* ret, ncclTinfo_t* myOpaqueInfo, ncclTinfo_t* peerOpaqueInfo) {
   ret[0] = 0;
   struct netInfo* myInfo = (struct netInfo*)myOpaqueInfo;
   for (int d=0; d<myInfo->ndev; d++) {
-    // Keep 2 bits of distance
+    // Keep 3 bits of distance
     ret[0] |= ((myInfo->scores[d]&0x7)<<(3*d));
   }
   return ncclSuccess;
 }
 
-static inline int groupBestStart(int nranks, int* groups, int group, int* values, int card, int minScore) {
+static inline int groupBestStart(int nranks, int* groups, int group, long* values, int card, int minScore) {
   int bestRank = -1;
   int bestScore = 0;
   for (int rank=0; rank<nranks; rank++) {
     if (groups[rank] != group) continue;
     for (int i=0; i<nranks; i++) {
-      int netValue = values[rank*nranks+i];
+      long netValue = values[rank*nranks+i];
       if (netValue != 0) {
-        int score = (netValue>>(3*card)) & 0x7;
+        long score = (netValue>>(3*card)) & 0x7;
         if (score >= minScore && score > bestScore) {
           bestScore = score;
           bestRank = rank;
@@ -100,16 +100,16 @@ static inline int groupBestStart(int nranks, int* groups, int group, int* values
   }
   return bestRank;
 }
-static inline int groupBestEnd(int nranks, int* groups, int group, int* subgroups, int startSubGroup, int startRank, int* values, int card, int minScore) {
+static inline int groupBestEnd(int nranks, int* groups, int group, int* subgroups, int startSubGroup, int startRank, long* values, int card, int minScore) {
   // For the last rank, we don't need the absolute best score, just to be within minScore.
   for (int rank=nranks-1; rank>=0; rank--) {
     if (groups[rank] != group) continue;
     if (startSubGroup != -1 && startSubGroup == subgroups[rank]) continue;
     if (startRank == rank) continue;
     for (int i=0; i<nranks; i++) {
-      int netValue = values[rank*nranks+i];
+      long netValue = values[rank*nranks+i];
       if (netValue != 0) {
-        int score = (netValue>>(3*card)) & 0x7;
+        long score = (netValue>>(3*card)) & 0x7;
         if (score >= minScore) {
           return rank;
         }
@@ -122,7 +122,7 @@ static inline int groupBestEnd(int nranks, int* groups, int group, int* subgroup
 }
 
 
-ncclResult_t netGetRings(int nranks, int* groups, int* subgroups, int* values, int* nringsRet, int* prev, int* next, int minScore, int* nthreads) {
+ncclResult_t netGetRings(int nranks, int* groups, int* subgroups, long* values, int* nringsRet, int* prev, int* next, int minScore, int* nthreads) {
   int nGroups = groups[nranks-1] + 1;
   int cardUsed[NET_MAX_IFS*nGroups];
   for (int c=0; c<NET_MAX_IFS*nGroups; c++) cardUsed[c] = 0;
@@ -168,7 +168,7 @@ ncclResult_t netGetRings(int nranks, int* groups, int* subgroups, int* values, i
   return ncclSuccess;
 }
 
-int getDev(int ringId, int nDev, int* scores) {
+int getDev(int ringId, int nDev, short* scores) {
   int maxScore = 0;
   for (int d=0; d<nDev; d++) if (scores[d] > maxScore) maxScore = scores[d];
   int skip = ringId+1;

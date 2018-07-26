@@ -68,7 +68,7 @@ ncclResult_t shmFillInfo(ncclTinfo_t* opaqueInfo, int rank) {
 NCCL_PARAM(ShmDisable, "SHM_DISABLE", 0);
 
 /* Determine if we can communicate with the peer */
-ncclResult_t shmCanConnect(int* ret, ncclTinfo_t* myOpaqueInfo, ncclTinfo_t* peerOpaqueInfo) {
+ncclResult_t shmCanConnect(long* ret, ncclTinfo_t* myOpaqueInfo, ncclTinfo_t* peerOpaqueInfo) {
   struct shmInfo* myInfo = (struct shmInfo*)myOpaqueInfo;
   struct shmInfo* peerInfo = (struct shmInfo*)peerOpaqueInfo;
   *ret = ((ncclParamShmDisable() == 1) || (myInfo->hostHash != peerInfo->hostHash)) ? 0 : 1;
@@ -89,7 +89,7 @@ static inline int groupLast(int nranks, int* groups, int group, int rankToAvoid)
   return -1;
 }
 
-ncclResult_t shmGetRings(int nranks, int* groups, int* subgroups, int* values, int* nringsRet, int* prev, int* next, int minScore, int* nthreads) {
+ncclResult_t shmGetRings(int nranks, int* groups, int* subgroups, long* values, int* nringsRet, int* prev, int* next, int minScore, int* nthreads) {
   if (*nringsRet == MAXRINGS) *nringsRet = 1;
   int nGroups = groups[nranks-1] + 1;
   int starts[nGroups];
