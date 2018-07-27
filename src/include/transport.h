@@ -23,7 +23,7 @@ struct ncclInfo {
 };
 
 // Used to hold the transport connection values
-typedef uint64_t ncclTvalue_t;
+typedef int64_t ncclTvalue_t;
 
 #define CONNECT_SIZE 128
 struct ncclConnect {
