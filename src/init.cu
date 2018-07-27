@@ -220,7 +220,7 @@ static ncclResult_t selectTransport(struct ncclInfo* myInfo, struct ncclInfo* pe
   for (int t=0; t<NTRANSPORTS; t++) {
     struct ncclTransport *transport = ncclTransports+t;
     struct ncclTransportComm* transportComm = type == 1 ? &transport->send : &transport->recv;
-    long ret = 0;
+    ncclTvalue_t ret = 0;
     NCCLCHECK(transport->canConnect(&ret, myInfo->tinfo+t, peerInfo->tinfo+t));
     if (ret > 0) {
       NCCLCHECK(transportComm->setup(myInfo->tinfo+t, peerInfo->tinfo+t, connect, ring));
@@ -257,7 +257,7 @@ static ncclResult_t setupRing(struct ncclComm* comm, int ringid, int rank, int n
   return ncclSuccess;
 }
 
-static ncclResult_t fillConnect(struct ncclInfo* allInfo, int nranks, int rank, int* connectTransport, long* connectValue) {
+static ncclResult_t fillConnect(struct ncclInfo* allInfo, int nranks, int rank, int* connectTransport, ncclTvalue_t* connectValue) {
   for (int r=0; r<nranks; r++) {
     connectTransport[r] = -1;
     for (int t=0; t<NTRANSPORTS; t++) {
@@ -421,7 +421,7 @@ static ncclResult_t initTransportsRank(struct ncclComm* comm, ncclUniqueId* comm
   NCCLCHECK(fillInfo(allInfo+rank, rank));
   NCCLCHECK(bootstrapAllGather(commState, allInfo, sizeof(struct ncclInfo)));
   int* connectTransport = (int*)malloc(sizeof(int)*nranks*nranks);
-  long* connectValue = (long*)malloc(sizeof(long)*nranks*nranks);
+  ncclTvalue_t* connectValue = (ncclTvalue_t*)malloc(sizeof(ncclTvalue_t)*nranks*nranks);
   NCCLCHECK(fillConnect(allInfo, nranks, rank, connectTransport+nranks*rank, connectValue+nranks*rank));
   NCCLCHECK(bootstrapAllGather(commState, connectTransport, nranks*(sizeof(int))));
   NCCLCHECK(bootstrapAllGather(commState, connectValue, nranks*(sizeof(long))));
@@ -597,7 +597,7 @@ static ncclResult_t initTransportsAll(struct ncclComm** comms, const int* devs, 
   }
 
   int* connectTransport = (int*)malloc(sizeof(int)*nranks*nranks);
-  long* connectValue = (long*)malloc(sizeof(long)*nranks*nranks);
+  ncclTvalue_t* connectValue = (ncclTvalue_t*)malloc(sizeof(ncclTvalue_t)*nranks*nranks);
   for (int rank=0; rank<nranks; rank++)
     NCCLCHECK(fillConnect(allInfo, nranks, rank, connectTransport+nranks*rank, connectValue+nranks*rank));
   

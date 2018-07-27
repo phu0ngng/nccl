@@ -76,7 +76,7 @@ ncclResult_t netFillInfo(ncclTinfo_t* opaqueInfo, int rank) {
 }
 
 /* Determine if we can communicate with the peer */
-ncclResult_t netCanConnect(long* ret, ncclTinfo_t* myOpaqueInfo, ncclTinfo_t* peerOpaqueInfo) {
+ncclResult_t netCanConnect(ncclTvalue_t* ret, ncclTinfo_t* myOpaqueInfo, ncclTinfo_t* peerOpaqueInfo) {
   ret[0] = 0;
   struct netInfo* myInfo = (struct netInfo*)myOpaqueInfo;
   for (int d=0; d<myInfo->ndev; d++) {
@@ -86,15 +86,15 @@ ncclResult_t netCanConnect(long* ret, ncclTinfo_t* myOpaqueInfo, ncclTinfo_t* pe
   return ncclSuccess;
 }
 
-static inline int groupBestStart(int nranks, int* groups, int group, long* values, int card, int minScore) {
+static inline int groupBestStart(int nranks, int* groups, int group, ncclTvalue_t* values, int card, int minScore) {
   int bestRank = -1;
   int bestScore = 0;
   for (int rank=0; rank<nranks; rank++) {
     if (groups[rank] != group) continue;
     for (int i=0; i<nranks; i++) {
-      long netValue = values[rank*nranks+i];
+      ncclTvalue_t netValue = values[rank*nranks+i];
       if (netValue != 0) {
-        long score = (netValue>>(NET_BITS_PER_IFS*card)) & NET_BITS_PER_IFS_MASK;
+        ncclTvalue_t score = (netValue>>(NET_BITS_PER_IFS*card)) & NET_BITS_PER_IFS_MASK;
         if (score >= minScore && score > bestScore) {
           bestScore = score;
           bestRank = rank;
@@ -106,16 +106,16 @@ static inline int groupBestStart(int nranks, int* groups, int group, long* value
   }
   return bestRank;
 }
-static inline int groupBestEnd(int nranks, int* groups, int group, int* subgroups, int startSubGroup, int startRank, long* values, int card, int minScore) {
+static inline int groupBestEnd(int nranks, int* groups, int group, int* subgroups, int startSubGroup, int startRank, ncclTvalue_t* values, int card, int minScore) {
   // For the last rank, we don't need the absolute best score, just to be within minScore.
   for (int rank=nranks-1; rank>=0; rank--) {
     if (groups[rank] != group) continue;
     if (startSubGroup != -1 && startSubGroup == subgroups[rank]) continue;
     if (startRank == rank) continue;
     for (int i=0; i<nranks; i++) {
-      long netValue = values[rank*nranks+i];
+      ncclTvalue_t netValue = values[rank*nranks+i];
       if (netValue != 0) {
-        long score = (netValue>>(NET_BITS_PER_IFS*card)) & NET_BITS_PER_IFS_MASK;
+        ncclTvalue_t score = (netValue>>(NET_BITS_PER_IFS*card)) & NET_BITS_PER_IFS_MASK;
         if (score >= minScore) {
           return rank;
         }
@@ -128,7 +128,7 @@ static inline int groupBestEnd(int nranks, int* groups, int group, int* subgroup
 }
 
 
-ncclResult_t netGetRings(int nranks, int* groups, int* subgroups, long* values, int* nringsRet, int* prev, int* next, int minScore, int* nthreads) {
+ncclResult_t netGetRings(int nranks, int* groups, int* subgroups, ncclTvalue_t* values, int* nringsRet, int* prev, int* next, int minScore, int* nthreads) {
   int nGroups = groups[nranks-1] + 1;
   int cardUsed[NET_MAX_IFS*nGroups];
   for (int c=0; c<NET_MAX_IFS*nGroups; c++) cardUsed[c] = 0;
