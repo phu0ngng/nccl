@@ -14,10 +14,10 @@
 
 #define NET_MAX_IFS 16
 
-// We encode 3 bits of distance per IFS into a long (64-bit)
+// We encode 3 bits of distance per IFS into a ncclTvalue_t (64-bit)
 #define NET_BITS_PER_IFS 3
 #define NET_BITS_PER_IFS_MASK ((1<<NET_BITS_PER_IFS)-1)
-static_assert(sizeof(long)*8 >= NET_MAX_IFS*NET_BITS_PER_IFS, "NET_MAX_IFS*NET_BITS_PER_IFS must fit in a 64-bit long");
+static_assert(sizeof(ncclTvalue_t)*8 >= NET_MAX_IFS*NET_BITS_PER_IFS, "NET_MAX_IFS*NET_BITS_PER_IFS must fit in a ncclTvalue_t");
 
 struct netInfo {
   int rank;
