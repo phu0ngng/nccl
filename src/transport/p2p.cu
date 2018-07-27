@@ -60,7 +60,7 @@ NCCL_PARAM(P2pLevel, "P2P_LEVEL", -2);
 NCCL_PARAM(P2pDisable, "P2P_DISABLE", -2);
 
 /* Determine if we can communicate with the peer through p2p */
-ncclResult_t p2pCanConnect(int* ret, ncclTinfo_t* myOpaqueInfo, ncclTinfo_t* peerOpaqueInfo) {
+ncclResult_t p2pCanConnect(ncclTvalue_t* ret, ncclTinfo_t* myOpaqueInfo, ncclTinfo_t* peerOpaqueInfo) {
   // Do not use P2P across root complexes by default (provided CUDA permits it)
   int p2pLevel = PATH_SOC;
   if (ncclParamP2pDisable() == 1) p2pLevel = 0;
@@ -114,9 +114,9 @@ ncclResult_t p2pCanConnect(int* ret, ncclTinfo_t* myOpaqueInfo, ncclTinfo_t* pee
   return ncclSuccess;
 }
 
-static int computeRingsRec(int* matrix, int n, int *rings, int currentRing, int nRingsMax, int* inTheRing, int current, int remaining, int connect) {
+static int computeRingsRec(ncclTvalue_t* matrix, int n, int *rings, int currentRing, int nRingsMax, int* inTheRing, int current, int remaining, int connect) {
   int nrings = 0;
-  int* line = matrix+current*n;
+  ncclTvalue_t* line = matrix+current*n;
   inTheRing[current] = 1;
   int currentStep = (currentRing+1)*n-remaining;
   rings[currentStep-1] = current;
@@ -183,7 +183,7 @@ static inline int copyRings(int nranks, int* rings, int nrings, int newNrings) {
   return newNrings;
 }
 
-int p2pComputeRingsNvLink(int* matrix, int nranks, int *rings, int nringsMax, int connect) {
+int p2pComputeRingsNvLink(ncclTvalue_t* matrix, int nranks, int *rings, int nringsMax, int connect) {
   int* inTheRing = (int*)malloc(sizeof(int)*nranks);
   for (int i=0; i<nranks; i++) inTheRing[i] = 0;
   int nrings;
@@ -206,7 +206,7 @@ static inline int findConnect(int nranks, int* ranks) {
   return -1;
 }
 
-int p2pComputeRingsNvLink(int* values, int nranks, int* rings, int nrings, int* prev, int* next, int oversubscribe, int* nthreads) {
+int p2pComputeRingsNvLink(ncclTvalue_t* values, int nranks, int* rings, int nrings, int* prev, int* next, int oversubscribe, int* nthreads) {
   if (nrings == 0) return 0;
   if (nrings > MAXRINGS) {
     WARN("Max rings reached, limiting to %d", MAXRINGS);
@@ -225,17 +225,19 @@ int p2pComputeRingsNvLink(int* values, int nranks, int* rings, int nrings, int* 
   }
 
   // Compute rings
-  int matrix[nranks*nranks];
+  ncclTvalue_t* matrix = (ncclTvalue_t*)malloc(sizeof(ncclTvalue_t)*nranks*nranks);
   for (int i=0; i<nranks; i++) for (int j=0; j<nranks; j++)
     matrix[i*nranks+j] = oversubscribe ? values[i*nranks+j]/CONNECT_NVLINK*2 : values[i*nranks+j]/CONNECT_NVLINK ;
 
   int compNrings = p2pComputeRingsNvLink(matrix, nranks, rings, nrings, connect);
 
+  free(matrix);
+
   if (oversubscribe || connect) return compNrings;
 
   if (compNrings && compNrings < nrings && nranks <= 4) {
     // Try to oversubscribe to get a better result
-    int rings2[MAXRINGS*nranks];
+    int *rings2 = (int *)malloc(sizeof(int)*MAXRINGS*nranks);
     for (int i=0; i<MAXRINGS*nranks; i++) rings2[i] = -1;
     int nThreads = *nthreads;
     int compNrings2 = p2pComputeRingsNvLink(values, nranks, rings2, nrings, prev, next, 1, &nThreads);
@@ -244,6 +246,7 @@ int p2pComputeRingsNvLink(int* values, int nranks, int* rings, int nrings, int* 
       for (int i=0; i<compNrings2*nranks; i++) rings[i] = rings2[i];
       compNrings = compNrings2;
     }
+    free(rings2);
   }
 
   // Duplicate the rings for direct NVLink
@@ -253,7 +256,7 @@ int p2pComputeRingsNvLink(int* values, int nranks, int* rings, int nrings, int* 
   return compNrings;
 }
 
-int p2pComputeRingsSeqConnect(int* values, int nranks, int* rings, int nringsStart, int* prev, int* next, int minScore, int* nthreads) {
+int p2pComputeRingsSeqConnect(ncclTvalue_t* values, int nranks, int* rings, int nringsStart, int* prev, int* next, int minScore, int* nthreads) {
   int nrings = nringsStart;
   int connect = 0;
   for (int r=0; r<nrings; r++) {
@@ -285,7 +288,7 @@ int p2pComputeRingsSeqConnect(int* values, int nranks, int* rings, int nringsSta
   return nrings;
 }
 
-int p2pComputeRingsSeqNew(int* values, int nranks, int* rings, int nringsStart, int* prev, int* next, int minScore, int* nthreads) {
+int p2pComputeRingsSeqNew(ncclTvalue_t* values, int nranks, int* rings, int nringsStart, int* prev, int* next, int minScore, int* nthreads) {
   for (int r=0; r<nringsStart; r++) {
     for (int i=0; i<nranks; i++) {
       rings[r*nranks+i] = i;
@@ -294,7 +297,7 @@ int p2pComputeRingsSeqNew(int* values, int nranks, int* rings, int nringsStart, 
   return nringsStart;
 }
 
-static int findClosestPci(int* values, int* inRing, int rank, int end, int nranks, int minScore) {
+static int findClosestPci(ncclTvalue_t* values, int* inRing, int rank, int end, int nranks, int minScore) {
   for (int score = PATH_SOC+1; score >= minScore; score--) {
     int best = -1;
     int worst_end_score = PATH_SOC+2; // find the closest to rank, farthest from end
@@ -313,7 +316,7 @@ static int findClosestPci(int* values, int* inRing, int rank, int end, int nrank
   return -1;
 }
 
-int p2pComputeRingsPci(int* values, int nranks, int* rings, int nrings, int* prev, int* next, int minScore) {
+int p2pComputeRingsPci(ncclTvalue_t* values, int nranks, int* rings, int nrings, int* prev, int* next, int minScore) {
   // PCIe or QPI
   int connect = 0;
   for (int r=0; r<nrings; r++) {
@@ -359,9 +362,9 @@ int p2pComputeRingsPci(int* values, int nranks, int* rings, int nrings, int* pre
   return nrings;
 }
 
-ncclResult_t p2pGetRings(int nranks, int* groups, int* subgroups, int* values, int* nringsRet, int* prev, int* next, int minScore, int* nthreads) {
+ncclResult_t p2pGetRings(int nranks, int* groups, int* subgroups, ncclTvalue_t* values, int* nringsRet, int* prev, int* next, int minScore, int* nthreads) {
   if (*nringsRet == 0) return ncclSuccess;
-  int rings[MAXRINGS*nranks];
+  int *rings = (int *)malloc(sizeof(int)*MAXRINGS*nranks);
   for (int i=0; i<MAXRINGS*nranks; i++) rings[i] = -1;
   int nrings = *nringsRet;
 
@@ -371,7 +374,7 @@ ncclResult_t p2pGetRings(int nranks, int* groups, int* subgroups, int* values, i
   for (int rank=0; rank<nranks; rank++) {
     for (int j=1; j<nranks; j++) {
       int i = (rank + j) % nranks;
-      int links = values[rank*nranks+i]/CONNECT_NVSWITCH;
+      ncclTvalue_t links = values[rank*nranks+i]/CONNECT_NVSWITCH;
       if (j>1 && links != nvswitchLinks) {
         WARN("Internal error : NVswitch links mismatch");
         return ncclInternalError;
@@ -385,6 +388,7 @@ ncclResult_t p2pGetRings(int nranks, int* groups, int* subgroups, int* values, i
     if (nringsConnected > 0) {
      nrings = nringsConnected;
     } else {
+      nrings = min(nrings, nvswitchLinks); // NVSwitch: Limit rings to number of NVLinks
       // Or create new ones
       nrings = p2pComputeRingsSeqNew(values, nranks, rings, nrings, prev, next, minScore, nthreads);
       // And duplicate them
@@ -397,7 +401,7 @@ ncclResult_t p2pGetRings(int nranks, int* groups, int* subgroups, int* values, i
   for (int rank=0; rank<nranks; rank++) {
     int links = 0;
     for (int i=0; i<nranks; i++) {
-      int val = values[rank*nranks+i];
+      ncclTvalue_t val = values[rank*nranks+i];
       if (val >= CONNECT_NVSWITCH) continue;
       links += val/CONNECT_NVLINK;
     }
@@ -426,7 +430,8 @@ end:
       if (next[ring*nranks+curRank] == -1) next[ring*nranks+curRank] = nextRank;
     }
   }
-  
+
+  free(rings);
   return ncclSuccess;
 }
 

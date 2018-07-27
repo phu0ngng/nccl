@@ -28,7 +28,7 @@ struct cudaLaunchParams
 };
 #endif
 
-#define MAXRINGS 12
+#define MAXRINGS 16
 #define MAXTHREADS 256
 #define DEFAULT_BUFFER_SIZE_BYTES (1LL << 22) /* 4MiB */
 

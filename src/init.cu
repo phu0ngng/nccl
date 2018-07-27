@@ -220,7 +220,7 @@ static ncclResult_t selectTransport(struct ncclInfo* myInfo, struct ncclInfo* pe
   for (int t=0; t<NTRANSPORTS; t++) {
     struct ncclTransport *transport = ncclTransports+t;
     struct ncclTransportComm* transportComm = type == 1 ? &transport->send : &transport->recv;
-    int ret = 0;
+    ncclTvalue_t ret = 0;
     NCCLCHECK(transport->canConnect(&ret, myInfo->tinfo+t, peerInfo->tinfo+t));
     if (ret > 0) {
       NCCLCHECK(transportComm->setup(myInfo->tinfo+t, peerInfo->tinfo+t, connect, ring));
@@ -257,7 +257,7 @@ static ncclResult_t setupRing(struct ncclComm* comm, int ringid, int rank, int n
   return ncclSuccess;
 }
 
-static ncclResult_t fillConnect(struct ncclInfo* allInfo, int nranks, int rank, int* connectTransport, int* connectValue) {
+static ncclResult_t fillConnect(struct ncclInfo* allInfo, int nranks, int rank, int* connectTransport, ncclTvalue_t* connectValue) {
   for (int r=0; r<nranks; r++) {
     connectTransport[r] = -1;
     for (int t=0; t<NTRANSPORTS; t++) {
@@ -421,10 +421,10 @@ static ncclResult_t initTransportsRank(struct ncclComm* comm, ncclUniqueId* comm
   NCCLCHECK(fillInfo(allInfo+rank, rank));
   NCCLCHECK(bootstrapAllGather(commState, allInfo, sizeof(struct ncclInfo)));
   int* connectTransport = (int*)malloc(sizeof(int)*nranks*nranks);
-  int* connectValue = (int*)malloc(sizeof(int)*nranks*nranks);
+  ncclTvalue_t* connectValue = (ncclTvalue_t*)malloc(sizeof(ncclTvalue_t)*nranks*nranks);
   NCCLCHECK(fillConnect(allInfo, nranks, rank, connectTransport+nranks*rank, connectValue+nranks*rank));
   NCCLCHECK(bootstrapAllGather(commState, connectTransport, nranks*(sizeof(int))));
-  NCCLCHECK(bootstrapAllGather(commState, connectValue, nranks*(sizeof(int))));
+  NCCLCHECK(bootstrapAllGather(commState, connectValue, nranks*(sizeof(ncclTvalue_t))));
   //if (rank == 0) dumpMatrix(connectTransport, nranks);
   //if (rank == 0) dumpMatrix(connectValue, nranks);
 
@@ -468,7 +468,7 @@ static ncclResult_t initTransportsRank(struct ncclComm* comm, ncclUniqueId* comm
     NCCLCHECK(bootstrapAllGather(commState, prev+r*nranks, sizeof(int)));
     NCCLCHECK(bootstrapAllGather(commState, next+r*nranks, sizeof(int)));
   }
-  int rings[nranks*MAXRINGS];
+  int *rings = (int *)malloc(sizeof(int)*nranks*MAXRINGS);
   NCCLCHECK(buildRings(nrings, rings, rank, nranks, prev, next));
   free(prev);
   free(next);
@@ -483,6 +483,7 @@ static ncclResult_t initTransportsRank(struct ncclComm* comm, ncclUniqueId* comm
     NCCLCHECK(ring->send.transport->send.connect(connect+1, &ring->send));
     NCCLCHECK(ring->recv.transport->recv.connect(connect+0, &ring->recv));
   }
+  free(rings);
   free(allInfo);
 
   // Intra-process barrier setup
@@ -596,7 +597,7 @@ static ncclResult_t initTransportsAll(struct ncclComm** comms, const int* devs, 
   }
 
   int* connectTransport = (int*)malloc(sizeof(int)*nranks*nranks);
-  int* connectValue = (int*)malloc(sizeof(int)*nranks*nranks);
+  ncclTvalue_t* connectValue = (ncclTvalue_t*)malloc(sizeof(ncclTvalue_t)*nranks*nranks);
   for (int rank=0; rank<nranks; rank++)
     NCCLCHECK(fillConnect(allInfo, nranks, rank, connectTransport+nranks*rank, connectValue+nranks*rank));
   
@@ -631,7 +632,7 @@ static ncclResult_t initTransportsAll(struct ncclComm** comms, const int* devs, 
   INFO(INIT,"Using %d threads", nthreads);
   INFO(INIT,"Min Comp Cap %d", minCompCap);
 
-  int rings[nranks*MAXRINGS];
+  int *rings = (int *)malloc(sizeof(int)*nranks*MAXRINGS);
   NCCLCHECK(buildRings(nrings, rings, 0, nranks, prevFinal, nextFinal));
   free(prevFinal);
   free(nextFinal);
@@ -665,6 +666,7 @@ static ncclResult_t initTransportsAll(struct ncclComm** comms, const int* devs, 
       NCCLCHECK(ring->recv.transport->recv.connect(connect+2*rank+0, &ring->recv));
     }
   }
+  free(rings);
   free(allInfo);
   return ncclSuccess;
 }
