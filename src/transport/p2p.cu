@@ -237,7 +237,7 @@ int p2pComputeRingsNvLink(ncclTvalue_t* values, int nranks, int* rings, int nrin
 
   if (compNrings && compNrings < nrings && nranks <= 4) {
     // Try to oversubscribe to get a better result
-    int rings2[MAXRINGS*nranks];
+    int *rings2 = (int *)malloc(sizeof(int)*MAXRINGS*nranks);
     for (int i=0; i<MAXRINGS*nranks; i++) rings2[i] = -1;
     int nThreads = *nthreads;
     int compNrings2 = p2pComputeRingsNvLink(values, nranks, rings2, nrings, prev, next, 1, &nThreads);
@@ -246,6 +246,7 @@ int p2pComputeRingsNvLink(ncclTvalue_t* values, int nranks, int* rings, int nrin
       for (int i=0; i<compNrings2*nranks; i++) rings[i] = rings2[i];
       compNrings = compNrings2;
     }
+    free(rings2);
   }
 
   // Duplicate the rings for direct NVLink
