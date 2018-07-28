@@ -146,8 +146,8 @@ __device__ void ncclReduceScatterLLKernel(struct CollectiveArgs* args) {
   const ssize_t size = args->N;
   //const int rank = comm->rank;
   const int nranks = comm->nRanks;
-  int chunkSize = llSliceSize * sizeof(uint64_t) / sizeof(T);
-  const ssize_t loopSize = args->nRings*(ssize_t)chunkSize;
+  ssize_t chunkSize = llSliceSize * sizeof(uint64_t) / sizeof(T);
+  const ssize_t loopSize = args->nRings*chunkSize;
 
   uint64_t step = ring->send.conn.llStep;
   uint32_t pflag, nflag = step + 1;

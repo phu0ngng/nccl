@@ -132,8 +132,8 @@ __device__ void ncclReduceLLKernel(struct CollectiveArgs* args) {
   typedef LLPrimitives<T, FUNC> LL;
 
   const ssize_t size = args->N;
-  int chunkSize = llSliceSize * sizeof(uint64_t) / sizeof(T);
-  const ssize_t loopSize = args->nRings*(ssize_t)chunkSize;
+  ssize_t chunkSize = llSliceSize * sizeof(uint64_t) / sizeof(T);
+  const ssize_t loopSize = args->nRings*chunkSize;
 
   uint64_t step = ring->send.conn.llStep;
   uint32_t flag = step + 1;
