@@ -28,3 +28,6 @@ test.%:
 
 pkg.%:
 	${MAKE} -C pkg $* BUILDDIR=${ABSBUILDDIR}
+
+pkg.debian.prep: lic
+pkg.txz.prep: lic

@@ -33,7 +33,7 @@ static void initDevices() {
     pthread_mutex_lock(&ncclSocketLock);
     if (ncclNetIfs == -1) {
       ncclNetIfs = findInterfaces(ncclNetIfNames, ncclNetIfAddrs, MAX_IF_NAME_SIZE, MAX_IFS);
-      INFO("NET/Socket : %d interfaces found", ncclNetIfs);
+      INFO(INIT|NET,"NET/Socket : %d interfaces found", ncclNetIfs);
     }
     pthread_mutex_unlock(&ncclSocketLock);
   }
@@ -169,7 +169,7 @@ int ncclSocketIrecv(void* recvComm, void* data, int size, int type, void** reque
     return ncclInternalError;
   }
   NCCLCHECK(socketReceive(comm->fd, data, min(recvSize, size)));
-  struct ncclSocketRequest* recvReq;
+  struct ncclSocketRequest* recvReq = NULL;
   NCCLCHECK(ncclSocketGetRequest(&comm->reqs, &recvReq));
   recvReq->size = recvSize;
   *request = recvReq;

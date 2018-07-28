@@ -28,15 +28,23 @@ struct cudaLaunchParams
 };
 #endif
 
-#define MAXRINGS 12
+#define MAXRINGS 16
 #define MAXTHREADS 256
-#define DEFAULT_BUFFER_SIZE_BYTES (1UL << 22) /* 4MiB */
-#define NCCL_LL_THRESHOLD 16384
+#define DEFAULT_BUFFER_SIZE_BYTES (1LL << 22) /* 4MiB */
 
-#define DEFAULT_SINGLE_RING_THRESHOLD (1UL << 17) /* 128KiB - but 256KiB for Volta */
+// Rings / LL tuning
+#define NCCL_RING_THRESHOLD 8 // Per thread size before we start increasing nrings
+#define NCCL_THREAD_THRESHOLD 32  // Per thread size before we switch to non-LL
+#define NCCL_LL_MAX_NTHREADS 256
+#define NCCL_LL_MIN_NTHREADS 64
 
-extern size_t ncclSingleRingThreshold;
-#define LIMIT_NRINGS(SIZE, NRINGS) ((SIZE) <= ncclSingleRingThreshold ? 1 : (NRINGS))
+#define DIVUP(x, y) \
+    (((x)+(y)-1)/(y))
+#define ROUNDUP(x, y) \
+    (DIVUP((x), (y))*(y))
+
+#define ALIGN_SIZE(size, align) \
+  size = ((size + (align) - 1) / (align)) * (align);
 
 union ncclLLFifoLine {
   /* Flags have to be *after* data, because otherwise, an incomplete receive
@@ -85,11 +93,12 @@ struct ncclConnector {
 #define SIZES_FIFO_SIZE 32
 #define CUDA_IPC_MIN 2097152UL /* 2MiB - not currently used */
 
-#define LL_NTHREADS 64
-#define NUM_LL_CHUNKS 8
+#define NCCL_LL_CHUNKS 8
 #define NUM_LINES_PER_THREAD 2
-#define LL_BUFF_SIZE (NUM_LINES_PER_THREAD*LL_NTHREADS*NUM_LL_CHUNKS*sizeof(union ncclLLFifoLine)) // 16K
-#define LL_CLEAN_FREQ 0x10000000
+#define NCCL_LL_BUFF_SIZE (NUM_LINES_PER_THREAD*NCCL_LL_MAX_NTHREADS*NCCL_LL_CHUNKS*sizeof(union ncclLLFifoLine)) // 64K
+#define llBuffSize NCCL_LL_BUFF_SIZE / (2*sizeof(uint64_t))
+#define llSliceSize llBuffSize / NCCL_LL_CHUNKS
+#define NCCL_LL_CLEAN_FREQ 0x10000000
 
 struct ncclSendMem {
   union {
@@ -116,7 +125,7 @@ struct ncclRecvMem {
     };
     char pad5[PAGE_SIZE];
   };
-  char llBuff[LL_BUFF_SIZE];
+  char llBuff[NCCL_LL_BUFF_SIZE];
   char buff[1]; // Actually larger than that
 };
 
@@ -167,8 +176,11 @@ struct CollectiveArgs {
   // general parameters
   size_t N;
   uint32_t root;
-  uint16_t bid;
-  uint16_t nRings;
+  uint8_t bid;
+  uint8_t nRings;
+  uint16_t nThreads;
+
+  int lastChunkSize;
 };
 struct ncclColl {
   union {
@@ -205,7 +217,12 @@ struct ncclComm {
   int nThreads;
   
   // Low-latency algorithm threshold
-  size_t llThreshold;
+  ssize_t llThreshold;
+  ssize_t threadThreshold;
+
+  // An internal CUDA stream for NCCL kernel CGMD launches
+  int groupCudaStream;
+  cudaStream_t groupStream;
 
   // Device copy of the communicator
   struct ncclComm *devComm;
@@ -226,10 +243,53 @@ struct ncclComm {
   void* argsptr;
 };
 
-#define DIVUP(x, y) \
-    (((x)+(y)-1)/(y))
-#define ROUNDUP(x, y) \
-    (DIVUP((x), (y))*(y))
+// In : comm, nbytes ; Out : nrings, nthreads, ll
+// - We start with the minimum number of threads possible (64) and see if the size fits in LL;
+//   If not, we increase the number of threads by 2x, until we reach the max number of LL threads (256, or set by user via NCCL_NTHREADS, or platform non-LL default)
+// - We use "maxRings" to limit the max number of rings we can use before reaching the max number of LL threads
+//   This ensures we don't use a large number of rings with a small number of threads
+// - We use the NCCL_RING_THRESHOLD as the per-thread threshold before we reach the max number of threads
+//   we use NCCL_THREAD_THRESHOLD when we reach the max
+// - If by the max number of LL threads, the size still cannot fit in LL, then we use non-LL setting
+// - We honor the NCCL_LL_THRESHOLD (total threshold) set by user too
+static inline void ncclGetCollResource(ncclComm_t comm, size_t nbytes, int* nrings, int* nthreads, int* ll) {
+  *ll = 0;
+  int llEnforced = 0; /* see if the size falls in the NCCL_LL_THRESHOLD range set by user */
+  if (comm->llThreshold >= 0) { /* user sets total LL threshold */
+    if (nbytes > comm->llThreshold) { /* non-LL */
+      *nthreads = comm->nThreads+1;
+      *nrings = comm->nRings;
+      return;
+    } else {
+      llEnforced = 1; /* user wants to use LL */
+    }
+  }
+  int nt = NCCL_LL_MIN_NTHREADS; /* start with min number of LL threads */
+  size_t nr;
+  int ll_max_nthreads = min(NCCL_LL_MAX_NTHREADS, comm->nThreads); /* respect user's setting or platform's default setting */
+  int maxRings = (comm->nRanks <= 4) ? 1 : ll_max_nthreads / NCCL_LL_MIN_NTHREADS;
+  ssize_t threshold = min(comm->threadThreshold, (ssize_t)NCCL_RING_THRESHOLD);
+  while (nt < ll_max_nthreads && *ll == 0) {
+    nr = DIVUP(nbytes, (NCCL_RING_THRESHOLD*nt*comm->nRanks));
+    if (nr <= maxRings) { /* avoid using few threads but many rings */
+      nr = nr == 0 ? 1 : nr > comm->nRings ? comm->nRings : nr;
+      *ll = nbytes > comm->nRanks*nr*nt*threshold ? 0 : 1;
+    }
+    if (*ll == 0) {
+      nt = nt << 1;
+    }
+  }
+  if (*ll == 1) {
+    *nthreads = nt;
+    *nrings = (int)nr;
+    return; /* we can use smaller number of threads to make LL work, stop here */
+  }
+  nr = DIVUP(nbytes, (NCCL_RING_THRESHOLD*ll_max_nthreads*comm->nRanks)); /* else we try the max number of LL threads */
+  nr = nr == 0 ? 1 : nr > comm->nRings ? comm->nRings : nr;
+  *ll = nbytes > comm->nRanks*nr*ll_max_nthreads*comm->threadThreshold ? llEnforced : 1;
+  *nthreads = *ll ? ll_max_nthreads : comm->nThreads+1;
+  *nrings = *ll ? (int)nr : comm->nRings;
+}
 
 // Check CUDA calls
 #define CUDACHECK(cmd) do {                                 \
@@ -256,7 +316,7 @@ struct ncclComm {
   while (ret == -1) { \
     SYSCHECKVAL(call, name, ret); \
     if (ret == -1) { \
-      INFO("Got %s, retrying", strerror(errno)); \
+      INFO(ALL,"Got %s, retrying", strerror(errno));   \
     }\
   } \
 } while (0);
@@ -298,7 +358,7 @@ struct ncclComm {
   ncclResult_t res = call; \
   if (res != ncclSuccess) { \
     /* Print the back trace*/ \
-    INFO("%s:%d -> %d", __FILE__, __LINE__, res); \
+    INFO(ALL,"%s:%d -> %d", __FILE__, __LINE__, res);    \
     return res; \
   } \
 } while (0);
@@ -307,7 +367,7 @@ struct ncclComm {
   res = call; \
   if (res != ncclSuccess) { \
     /* Print the back trace*/ \
-    INFO("%s:%d -> %d", __FILE__, __LINE__, res); \
+    INFO(ALL,"%s:%d -> %d", __FILE__, __LINE__, res);    \
     goto label; \
   } \
 } while (0);

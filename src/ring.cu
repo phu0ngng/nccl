@@ -5,26 +5,16 @@
  ************************************************************************/
 
 #include "ring.h"
+#include "param.h"
+
+NCCL_PARAM(Buffsize, "BUFFSIZE", DEFAULT_BUFFER_SIZE_BYTES);
 
 ncclResult_t initRing(struct ncclComm* comm, int ringid) {
   struct ncclRing* ring = comm->rings+ringid;
   ring->id = ringid;
 
   // Setup intermediate buffering
-  const char* str = getenv("NCCL_BUFFSIZE");
-  int buffSize;
-  if (str != NULL) {
-    errno = 0;
-    buffSize = strtol(str, NULL, 10);
-    if (errno == ERANGE || buffSize == 0) {
-      INFO("invalid NCCL_BUFFSIZE: %s, using default %lu",
-          str, DEFAULT_BUFFER_SIZE_BYTES);
-      buffSize = DEFAULT_BUFFER_SIZE_BYTES;
-    }
-  } else {
-    buffSize = DEFAULT_BUFFER_SIZE_BYTES;
-  }
-  ring->buffSize = buffSize;
+  ring->buffSize = ncclParamBuffsize();
 
   const int sendSize = ring->devMemSendSize = sizeof(struct ncclSendMem);
   struct ncclSendMem* sendMem;
@@ -32,13 +22,13 @@ ncclResult_t initRing(struct ncclComm* comm, int ringid) {
   CUDACHECK(cudaMemset(sendMem, 0, sendSize));
   ring->devMemSend = sendMem;
 
-  const int recvSize = ring->devMemRecvSize = offsetof(struct ncclRecvMem, buff)+buffSize;
+  const int recvSize = ring->devMemRecvSize = offsetof(struct ncclRecvMem, buff)+ring->buffSize;
   struct ncclRecvMem* recvMem;
   CUDACHECK(cudaMalloc(&recvMem, recvSize));
   CUDACHECK(cudaMemset(recvMem, 0, recvSize));
   ring->devMemRecv = recvMem;
 
-  TRACE("sendMem %p size %d recvMem %p size %d", sendMem, sendSize, recvMem, recvSize);
+  TRACE(INIT,"sendMem %p size %d recvMem %p size %d", sendMem, sendSize, recvMem, recvSize);
 
   // Pre-configure send/recv pointers. Those are the default, they may change later.
   ring->recv.conn.buff = recvMem->buff;

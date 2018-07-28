@@ -15,7 +15,7 @@ PKG_ARCH       := $(shell uname -m)
 prep: $(TXZTARGETS)
 
 build: prep
-	make -C ../../src clean
+	$(MAKE) -C ../../src clean
 	@printf "Building source tar.xz package\n"
 	(cd $(BUILDDIR); bash srctxz/create_srctxz.sh)
 	mkdir -p $(PKGDIR)

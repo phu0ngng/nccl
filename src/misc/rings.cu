@@ -6,6 +6,7 @@
 
 #include "core.h"
 #include "net.h"
+#include "param.h"
 
 /* Parse user defined rings. Format is like :
  * "0 1|1 0|0 1 2 3|3 2 1 0|0 2 3 1|1 3 2 0|0 1 2 3 4 5 6 7|7 6 5 4 3 2 1 0"
@@ -98,70 +99,86 @@ end:
  * we get at least one ring.
  */
 
-static int recIsConnected(int rank1, int rank2, int nranks, int* matrix, int transport, int* done) {
-  if (matrix[rank1*nranks+rank2] == transport) return 1;
-  done[rank1] = 1;
+static void recIsConnected(int rank, int* connected, int nranks, int* matrix, int transport) {
+  connected[rank] = 1;
   for (int r=0; r<nranks; r++) {
-    if (done[r] == 1) continue;
-    if (matrix[rank1*nranks+r] == transport) {
-      if (recIsConnected(r, rank2, nranks, matrix, transport, done)) return 1;
+    if (connected[r] == 0 && matrix[rank*nranks+r] == transport) {
+      recIsConnected(r, connected, nranks, matrix, transport);
     }
   }
-  return 0;
 }
 
-static int isConnected(int rank1, int rank2, int nranks, int* matrix, int transport) {
-  int done[nranks];
-  for (int r=0; r<nranks; r++) done[r] = 0;
-  return recIsConnected(rank1, rank2, nranks, matrix, transport, done);
+static void isConnected(int rank, int* connected, int nranks, int* matrix, int transport) {
+  for (int r=0; r<nranks; r++) connected[r] = 0;
+  recIsConnected(rank, connected, nranks, matrix, transport);
 }
 
 #define NEW_IDX(rank) do { \
-  curRank = rank; \
-  rankToIdx[curRank] = idx; \
-  idxToRank[idx] = curRank; \
-  for (int t=0; t<NTRANSPORTS; t++) coords[curRank*NTRANSPORTS+t] = current[t]; \
-  transport = 0; \
+  rankToIdx[rank] = idx; \
+  idxToRank[idx] = rank; \
+  for (int t=0; t<NTRANSPORTS; t++) coords[rank*NTRANSPORTS+t] = current[t]; \
   idx++; \
 } while (0)
 
-static ncclResult_t fillCoords(int nranks, int* matrix, int* coords, int* rankToIdx, int* idxToRank) {
-  int current[NTRANSPORTS];
-  for (int i=0; i<NTRANSPORTS; i++) current[i] = 0;
-  int curRank, transport, idx = 0;
-  NEW_IDX(0);
-  while (transport < NTRANSPORTS) {
-    for (int rank=0; rank<nranks; rank++) {
-      if (coords[rank*NTRANSPORTS] != -1) continue;
-
-      if (isConnected(curRank, rank, nranks, matrix, transport)) {
-        current[transport]++;
-        NEW_IDX(rank);// Resets transport = 0
-        if (idx == nranks) return ncclSuccess;
-      }
-    }
-    current[transport] = 0;
-    transport++;
+int findConnected(int rank, int* matrix, int nranks, int transport, int* coords) {
+  for (int r=0; r<nranks; r++) {
+    if (coords[r*NTRANSPORTS] == -1 && matrix[rank*nranks+r] == transport) return r;
   }
-  return ncclInternalError;
+  return -1;
 }
 
-/* Users can force the number of threads with an environment variable */
-ncclResult_t getEnvThreads(int* nthreads) {
-  char* str = getenv("NCCL_NTHREADS");
-  if (str && strlen(str) > 0) {
-    int nt = atoi(str);
-    if (nt != 64 && nt != 128 && nt != 256) {
-      WARN("User-defined number of threads can only be 64, 128 or 256. Ignoring.");
-    } else {
-      *nthreads = nt;
+static ncclResult_t fillCoords(int nranks, int* matrix, int* coords, int* rankToIdx, int* idxToRank) {
+  int current[NTRANSPORTS];
+  int* p2pConnected = (int*)malloc(nranks*sizeof(int));
+  for (int i=0; i<NTRANSPORTS; i++) current[i] = 0;
+  int curRank = 0, idx = 0;
+  while (1) {
+    // P2P is handled separately as there is no level below it and we need to
+    // cover the case of being connected to another GPU indirectly.
+    // So we detect all GPUs in the same P2P domain once and add them all at
+    // once.
+    isConnected(curRank, p2pConnected, nranks, matrix, 0);
+    for (int r=0; r<nranks; r++) {
+      if (p2pConnected[r]) {
+        NEW_IDX(r);
+        curRank = r;
+        current[0]++;
+      }
     }
+    current[0] = 0;
+
+    if (idx == nranks) {
+      free(p2pConnected);
+      return ncclSuccess;
+    }
+
+    // Find next group, either connected through SHM or NET.
+    int rank;
+    int transport = 1;
+    while ((rank = findConnected(curRank, matrix, nranks, transport, coords)) == -1) {
+        current[transport] = 0;
+        transport++;
+        if (transport == NTRANSPORTS) return ncclInternalError;
+    }
+    curRank = rank;
+    current[transport]++;
   }
+}
+
+NCCL_PARAM(MinNrings, "MIN_NRINGS", 0);
+NCCL_PARAM(MaxNrings, "MAX_NRINGS", 0);
+
+/* Users can force the number of threads with an environment variable */
+NCCL_PARAM(Nthreads, "NTHREADS", -2);
+ncclResult_t getEnvThreads(int* nthreads) {
+  int64_t nt = ncclParamNthreads();
+  if (nt != -2)
+    *nthreads = nt;
   return ncclSuccess;
 }
 
 /* Main ring creation function */
-ncclResult_t ncclGetRings(int* nrings, int* nthreads, int rank, int nranks, int* transports, int* values, int* prev, int* next) {
+ncclResult_t ncclGetRings(int* nrings, int* nthreads, int rank, int nranks, int* transports, ncclTvalue_t* values, int* prev, int* next) {
   *nrings = 0;
 
   if (nranks == 1) return ncclSuccess;
@@ -170,11 +187,11 @@ ncclResult_t ncclGetRings(int* nrings, int* nthreads, int rank, int nranks, int*
   if (str && strlen(str)>0) {
     int ret = parseRings(str, nrings, nranks, prev, next);
     if (ret == ncclSuccess && *nrings > 0) {
-      if (rank == 0) INFO("%d ring(s) set by environment", *nrings);
+      if (rank == 0) INFO(INIT,"%d ring(s) set by environment", *nrings);
       NCCLCHECK(getEnvThreads(nthreads));
       return ncclSuccess;
     }
-    if (rank == 0) INFO("No valid ring found in environment, ignoring");
+    if (rank == 0) INFO(INIT,"No valid ring found in environment, ignoring");
     *nrings = 0;
   }
 
@@ -223,7 +240,7 @@ ncclResult_t ncclGetRings(int* nrings, int* nthreads, int rank, int nranks, int*
  
       int ngroups = groups[nidx-1] + 1; // Coords should be ordered
 
-      int* subvalues = (int*)malloc(sizeof(int)*nidx*nidx);
+      ncclTvalue_t* subvalues = (ncclTvalue_t*)malloc(sizeof(ncclTvalue_t)*nidx*nidx);
       int* subprev = (int*)malloc(sizeof(int)*nidx*nringsTmp);
       int* subnext = (int*)malloc(sizeof(int)*nidx*nringsTmp);
       if (ngroups > 1) {
@@ -269,6 +286,7 @@ ncclResult_t ncclGetRings(int* nrings, int* nthreads, int rank, int nranks, int*
       free(subvalues);
       free(subprev);
       free(subnext);
+      if (nringsTmp == 0) break;
     }
     minScore--;
     if (nringsTmp > *nrings) {
@@ -299,10 +317,8 @@ ncclResult_t ncclGetRings(int* nrings, int* nthreads, int rank, int nranks, int*
     next[rank] = (rank+1)%nranks;
   }
 
-  str = getenv("NCCL_MAX_NRINGS");
-  int maxNrings = str ? atoi(str) : 0;
-  str = getenv("NCCL_MIN_NRINGS");
-  int minNrings = str ? atoi(str) : 0;
+  int maxNrings = ncclParamMaxNrings();
+  int minNrings = ncclParamMinNrings();
   if (maxNrings > 0 && minNrings > maxNrings) {
     if (rank == 0) WARN("NCCL_MIN_NRINGS set to a value greater than NCCL_MAX_NRINGS, ignoring NCCL_MIN_NRINGS");
     minNrings = 0;
@@ -312,13 +328,13 @@ ncclResult_t ncclGetRings(int* nrings, int* nthreads, int rank, int nranks, int*
     minNrings = MAXRINGS;
   }
   if (maxNrings > 0 && maxNrings <= *nrings) {
-    if (rank == 0) INFO("Limiting to %d rings per user request.", maxNrings);
+    if (rank == 0) INFO(INIT,"Limiting to %d rings per user request.", maxNrings);
     *nrings = maxNrings;
   } else {
     int defaultMinNrings = ncclCudaCompCap() == 3 ? 2 : 1;
     if (minNrings < defaultMinNrings) minNrings = defaultMinNrings;
     if (minNrings > 0 && minNrings > *nrings) {
-      if (rank == 0 && minNrings > defaultMinNrings) INFO("Duplicating rings to %d per user request.", minNrings);
+      if (rank == 0 && minNrings > defaultMinNrings) INFO(INIT,"Duplicating rings to %d per user request.", minNrings);
       for (int r=*nrings; r<MAXRINGS && r <minNrings; r++) {
         for (int i=0; i<nranks; i++) {
           prev[r*nranks+i] = prev[(r-*nrings)*nranks+i];

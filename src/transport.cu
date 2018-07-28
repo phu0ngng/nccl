@@ -99,15 +99,17 @@ static void SaveProxy(struct ncclConnector* connector, struct ncclProxyArgs* arg
 }
 
 ncclResult_t transportSaveProxies(int substeps, int subchunks, int nstepsPerRound, int nblocksPerRound, size_t nbytes, int pattern, struct ncclComm* comm) {
-  int llMode = nbytes <= comm->llThreshold ? 1 : 0;
+  int llMode, nrings, nthreads;
+  ncclGetCollResource(comm, nbytes, &nrings, &nthreads, &llMode);
   nbytes       = llMode ? nbytes * 2    : nbytes;
   substeps     = llMode ? 1             : substeps;
-  subchunks    = llMode ? NUM_LL_CHUNKS : subchunks;
-  int nrings   = llMode ? 1             : LIMIT_NRINGS(nbytes, comm->nRings);
-  int buffSize = llMode ? LL_BUFF_SIZE  : comm->rings[0].buffSize;
+  subchunks    = llMode ? NCCL_LL_CHUNKS : subchunks;
+  int buffSize = llMode ? NCCL_LL_BUFF_SIZE : comm->rings[0].buffSize;
 
-  int nrounds = (int)(DIVUP(nbytes, nrings * nblocksPerRound * (buffSize/subchunks)));
+  int nrounds = (int)(DIVUP(nbytes, ((size_t)nrings * nblocksPerRound * (buffSize/subchunks)))); // Fixed 32-bit overflow
   int nsteps = nstepsPerRound * nrounds * substeps;
+  TRACE(NET,"opCount %lx substeps %d subchunks %d nrounds %d nsteps %d comm %p", comm->opCount, subchunks, subchunks, nrounds, nsteps, comm);
+  TRACE(NET,"opCount %lx nbytes %zi nrings %d buffSize %d pattern %d comm %p", comm->opCount, nbytes, nrings, buffSize, pattern, comm);
   for (int r=0; r<nrings; r++) {
     struct ncclRing* ring = comm->rings+((comm->myParams->gridDim.x+r)%comm->nRings);
     struct ncclProxyArgs args = { ring, substeps*subchunks, nsteps, comm->opCount, llMode, 0 };
@@ -143,8 +145,8 @@ void* persistentThread(void *opaqueInfo) {
     }
     ncclResult_t res = info->func(&args);
     if (res != ncclSuccess) {
-      INFO("%s:%d -> %d [Proxy thread]", __FILE__, __LINE__, res);
-    }    
+      WARN("%s:%d -> %d [Proxy thread error]", __FILE__, __LINE__, res);
+    }
   }
 }
 
@@ -152,6 +154,7 @@ ncclResult_t transportCreateProxy(int type, struct ncclRing* ring, struct ncclCo
   struct ncclConnector* connector = (type == 0) ? &ring->recv : &ring->send;
   threadFunc_t proxyfunc = (threadFunc_t) ((type == 0) ? connector->transport->recv.proxy : connector->transport->send.proxy);
   if (proxyfunc) {
+    TRACE(NET,"type %d ring %p proxyfunc %p comm %p", type, ring, proxyfunc, comm);
     struct transportProxyInfo * info = connector->proxyInfo = (struct transportProxyInfo*)malloc(sizeof(struct transportProxyInfo));
     memset(info, 0, sizeof(struct transportProxyInfo));
     info->comm = comm;

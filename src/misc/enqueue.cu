@@ -6,6 +6,7 @@
 
 #include "enqueue.h"
 #include "common_coll.h"
+#include "param.h"
 
 #include "collectives/collectives.h"
 
@@ -56,6 +57,8 @@ static void* const ncclKerns[ncclCollCount*ncclNumOps*ncclNumTypes*2] = {
     NCCL_FUNCS2A(ncclAllReduce)
 };
 
+NCCL_PARAM(CheckPointers, "CHECK_POINTERS", 0);
+
 ncclResult_t ncclLaunchCooperativeKernelMultiDevice(struct cudaLaunchParams *paramsList, int* cudaDevs, int numDevices, int cgMode) {
 #if __CUDACC_VER_MAJOR__ >= 9
   if (cgMode & 0x01) {
@@ -96,23 +99,7 @@ ncclResult_t setupLaunch(struct ncclComm* comm, struct cudaLaunchParams* params)
   return ncclSuccess;
 }
 
-ncclResult_t ncclCpuBarrierCheckin(struct ncclComm* comm) {
-  if (comm->nRanks == 1) return ncclSuccess;
-  struct cudaLaunchParams* params = comm->myParams;
-
-  NCCLCHECK(setupLaunch(comm, params));
-
-  if (comm->launchMode == ncclComm::GROUP) {
-    // Enqueue stream dependency
-    CUDACHECK(cudaEventRecord(comm->doneEvent, comm->userStream));
-    CUDACHECK(cudaStreamWaitEvent(params->stream, comm->doneEvent, 0));
-  } else {
-    if (comm->userStream != params->stream) {
-      CUDACHECK(cudaStreamWaitEvent(comm->userStream, comm->doneEvent, 0));
-    }
-    params->stream = comm->userStream;
-  }
-  // Notify I'm ready
+ncclResult_t ncclCpuBarrierIn(struct ncclComm* comm, int* isLast) {
   volatile int* ptr = (volatile int*)(comm->intraBarrier+comm->intraPhase);
   int val = *ptr;
   bool done = false;
@@ -122,32 +109,85 @@ ncclResult_t ncclCpuBarrierCheckin(struct ncclComm* comm) {
       return ncclInvalidUsage;
     }
     if (val+1 == comm->intraRanks) {
-      if (comm->launchMode == ncclComm::GROUP) {
-        // I'm the last. Launch all operations.
-        NCCLCHECK(ncclLaunchCooperativeKernelMultiDevice(comm->intraParams, comm->intraCudaDevs, comm->intraRanks, *comm->intraCGMode));
-      }
       // Reset the barrier.
       comm->intraBarrier[comm->intraPhase^1] = 0;
+      *isLast = 1;
+      return ncclSuccess;
     }
     done = __sync_bool_compare_and_swap(ptr, val, val+1);
     val++;
   }
+  *isLast = 0;
   return ncclSuccess;
 }
 
-ncclResult_t ncclCpuBarrierWait(ncclComm_t comm) {
+ncclResult_t ncclCpuBarrierLast(struct ncclComm* comm) {
+  volatile int* ptr = (volatile int*)(comm->intraBarrier+comm->intraPhase);
+  int val = *ptr;
+  if (__sync_bool_compare_and_swap(ptr, val, val+1) != true) {
+    WARN("Trying to launch too many collectives");
+    return ncclInternalError;
+  }
+  return ncclSuccess;
+}
+
+ncclResult_t ncclCpuBarrierOut(struct ncclComm* comm) {
+  volatile int* ptr = (volatile int*)(comm->intraBarrier+comm->intraPhase);
+  while (*ptr < comm->intraRanks) pthread_yield();
+  comm->intraPhase ^= 1;
+  return ncclSuccess;
+}
+
+ncclResult_t ncclBarrierEnqueue(struct ncclComm* comm) {
+  if (comm->nRanks == 1) return ncclSuccess;
+  struct cudaLaunchParams* params = comm->myParams;
+
+  NCCLCHECK(setupLaunch(comm, params));
+
+  // Use internal NCCL stream for CGMD/GROUP launch if required or if the user stream is NULL
+  if (comm->launchMode == ncclComm::GROUP && (comm->groupCudaStream || comm->userStream == NULL)) {
+    // Enqueue event in user stream
+    CUDACHECK(cudaEventRecord(comm->doneEvent, comm->userStream));
+    // Create dependency between user stream and internal NCCL stream
+    CUDACHECK(cudaStreamWaitEvent(comm->groupStream, comm->doneEvent, 0));
+    params->stream = comm->groupStream;
+  } else {
+    if (comm->userStream != params->stream) {
+      // Stream changed from last call, create dependency against last NCCL kernel launch
+      CUDACHECK(cudaStreamWaitEvent(comm->userStream, comm->doneEvent, 0));
+    }
+    params->stream = comm->userStream;
+  }
+
+  int isLast = 0;
+  NCCLCHECK(ncclCpuBarrierIn(comm, &isLast));
+
+  if (isLast) {
+    if (comm->launchMode == ncclComm::GROUP) {
+      // I'm the last. Launch all operations.
+      NCCLCHECK(ncclLaunchCooperativeKernelMultiDevice(comm->intraParams, comm->intraCudaDevs, comm->intraRanks, *comm->intraCGMode));
+    }
+    NCCLCHECK(ncclCpuBarrierLast(comm));
+  }
+  return ncclSuccess;
+}
+
+ncclResult_t ncclBarrierEnqueueWait(ncclComm_t comm) {
   if (comm->nRanks == 1) return ncclSuccess;
   // We can't print the CG mode before the first barrier happened.
   if (comm->rank == 0 && *comm->intraCGMode & 0x10) {
     *comm->intraCGMode ^= 0x10;
-    INFO("Launch mode %s%s", comm->launchMode == ncclComm::GROUP ? "Group" : "Parallel", *comm->intraCGMode ? "/CGMD" : "" );
+    INFO(INIT,"Launch mode %s%s%s",
+         comm->launchMode == ncclComm::GROUP ? "Group" : "Parallel",
+         *comm->intraCGMode ? "/CGMD" : "",
+         (comm->launchMode == ncclComm::GROUP && comm->groupCudaStream) ? "/Stream" : "");
   }
-  volatile int* ptr = (volatile int*)(comm->intraBarrier+comm->intraPhase);
-  while (*ptr < comm->intraRanks) pthread_yield();
-  comm->intraPhase ^= 1;
+
+  NCCLCHECK(ncclCpuBarrierOut(comm));
+
   struct cudaLaunchParams *params = comm->myParams;
   if (comm->launchMode == ncclComm::PARALLEL) {
-    CUDACHECK(cudaLaunchKernel(params->func, params->gridDim, params->blockDim, params->args, params->sharedMem, comm->userStream));
+    CUDACHECK(cudaLaunchKernel(params->func, params->gridDim, params->blockDim, params->args, params->sharedMem, params->stream));
   }
   // Start the network proxies as soon as the kernel has been launched. We can't
   // perform any CUDA call between the two or having a cudaFree between the CUDA
@@ -165,12 +205,13 @@ ncclResult_t ncclCpuBarrierWait(ncclComm_t comm) {
 }
 
 ncclResult_t ncclEnqueueEvents(ncclComm_t comm) {
-  if (comm->launchMode == ncclComm::GROUP) {
-    struct cudaLaunchParams *params = comm->myParams;
-    CUDACHECK(cudaEventRecord(comm->doneEvent, params->stream));
+  struct cudaLaunchParams *params = comm->myParams;
+  // Enqueue event after NCCL kernel
+  CUDACHECK(cudaEventRecord(comm->doneEvent, params->stream));
+  // Use internal NCCL stream for CGMD/GROUP launch if required or if the user stream is NULL
+  if (comm->launchMode == ncclComm::GROUP && (comm->groupCudaStream || comm->userStream == NULL)) {
+    // Create dependency between NCCL internal stream and user stream
     CUDACHECK(cudaStreamWaitEvent(comm->userStream, comm->doneEvent, 0));
-  } else {
-    CUDACHECK(cudaEventRecord(comm->doneEvent, comm->userStream));
   }
   comm->userStreamSet = false;
   return ncclSuccess;
@@ -184,7 +225,7 @@ ncclResult_t ncclEnqueueCheck(ncclFunc_t func, const char* primName, const void*
   if (ncclAsyncMode()) {
     ncclResult_t ret = ncclSuccess;
     int savedDev = -1;
-    if (ncclCheckPointers) {
+    if (ncclParamCheckPointers()) {
       CUDACHECKGOTO(cudaGetDevice(&savedDev), ret, end);
       CUDACHECKGOTO(cudaSetDevice(comm->cudaDev), ret, end);
     }
@@ -201,8 +242,8 @@ end:
   } else {
     NCCLCHECK(ArgsCheck(sendbuff, recvbuff, count, type, op, root, comm, primName));
     NCCLCHECK(func(sendbuff, recvbuff, count, type, op, root, comm, stream));
-    NCCLCHECK(ncclCpuBarrierCheckin(comm));
-    NCCLCHECK(ncclCpuBarrierWait(comm));
+    NCCLCHECK(ncclBarrierEnqueue(comm));
+    NCCLCHECK(ncclBarrierEnqueueWait(comm));
     NCCLCHECK(ncclEnqueueEvents(comm));
     return ncclSuccess;
   }

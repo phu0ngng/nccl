@@ -25,6 +25,7 @@ void (*ibv_internal_ack_async_event)(struct ibv_async_event *event);
 int (*ibv_internal_query_device)(struct ibv_context *context, struct ibv_device_attr *device_attr);
 int (*ibv_internal_query_port)(struct ibv_context *context, uint8_t port_num, struct ibv_port_attr *port_attr);
 int (*ibv_internal_query_gid)(struct ibv_context *context, uint8_t port_num, int index, union ibv_gid *gid);
+int (*ibv_internal_query_qp)(struct ibv_qp *qp, struct ibv_qp_attr *attr, int attr_mask, struct ibv_qp_init_attr *init_attr);
 struct ibv_pd * (*ibv_internal_alloc_pd)(struct ibv_context *context);
 int (*ibv_internal_dealloc_pd)(struct ibv_pd *pd);
 struct ibv_mr * (*ibv_internal_reg_mr)(struct ibv_pd *pd, void *addr, size_t length, int access);
@@ -84,6 +85,7 @@ ncclResult_t wrap_ibv_symbols(void) {
   LOAD_SYM(ibvhandle, "ibv_query_device", ibv_internal_query_device);
   LOAD_SYM(ibvhandle, "ibv_query_port", ibv_internal_query_port);
   LOAD_SYM(ibvhandle, "ibv_query_gid", ibv_internal_query_gid);
+  LOAD_SYM(ibvhandle, "ibv_query_qp", ibv_internal_query_qp);
   LOAD_SYM(ibvhandle, "ibv_alloc_pd", ibv_internal_alloc_pd);
   LOAD_SYM(ibvhandle, "ibv_dealloc_pd", ibv_internal_dealloc_pd);
   LOAD_SYM(ibvhandle, "ibv_reg_mr", ibv_internal_reg_mr);
@@ -111,6 +113,7 @@ ncclResult_t wrap_ibv_symbols(void) {
   ibv_internal_query_device = NULL;
   ibv_internal_query_port = NULL;
   ibv_internal_query_gid = NULL;
+  ibv_internal_query_qp = NULL;
   ibv_internal_alloc_pd = NULL;
   ibv_internal_dealloc_pd = NULL;
   ibv_internal_reg_mr = NULL;
@@ -235,6 +238,10 @@ ncclResult_t wrap_ibv_query_gid(struct ibv_context *context, uint8_t port_num, i
   IBV_INT_CHECK_RET_ERRNO(ibv_internal_query_gid, ibv_internal_query_gid(context, port_num, index, gid), 0, "ibv_query_gid");
 }
 
+ncclResult_t wrap_ibv_query_qp(struct ibv_qp *qp, struct ibv_qp_attr *attr, int attr_mask, struct ibv_qp_init_attr *init_attr) {
+  IBV_INT_CHECK_RET_ERRNO(ibv_internal_query_qp, ibv_internal_query_qp(qp, attr, attr_mask, init_attr), 0, "ibv_query_qp");
+}
+
 ncclResult_t wrap_ibv_alloc_pd(struct ibv_pd **ret, struct ibv_context *context) {
   IBV_PTR_CHECK(ibv_internal_alloc_pd, ibv_internal_alloc_pd(context), *ret, NULL, "ibv_alloc_pd");
 }
@@ -245,6 +252,14 @@ ncclResult_t wrap_ibv_dealloc_pd(struct ibv_pd *pd) { /*returns 0 on success, or
 
 ncclResult_t wrap_ibv_reg_mr(struct ibv_mr **ret, struct ibv_pd *pd, void *addr, size_t length, int access) {
   IBV_PTR_CHECK(ibv_internal_reg_mr, ibv_internal_reg_mr(pd, addr, length, access), *ret, NULL, "ibv_reg_mr");
+}
+
+struct ibv_mr * wrap_direct_ibv_reg_mr(struct ibv_pd *pd, void *addr, size_t length, int access) {
+  if (ibv_internal_reg_mr == NULL) {
+     WARN("lib wrapper not initialized.");
+     return NULL;
+  }
+  return ibv_internal_reg_mr(pd, addr, length, access);
 }
 
 ncclResult_t wrap_ibv_dereg_mr(struct ibv_mr *mr) { /*returns 0 on success, or the value of errno on failure (which indicates the failure reason)*/

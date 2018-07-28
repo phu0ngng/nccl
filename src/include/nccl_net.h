@@ -26,9 +26,11 @@ extern "C" {
 typedef struct {
   // Name of the network (mainly for logs)
   const char* name;
-  // Return the number of network devices with their scores relative to the 
-  // current CUDA device. This call should allocate the 'scores' array which
-  // will be freed by NCCL.
+  // Return the number of network devices along with their scores relative to the
+  // current CUDA device. The per device score should be a value from 1-7 with a
+  // higher score representing a better choice for performance.
+  // This call should allocate the 'scores' array using malloc(3), and it
+  // will then be freed automatically by NCCL.
   int (*devices)(int* ndev, int** scores);
   // Return whether this device supports host pointers and/or CUDA pointers
   // as data from the current GPU. Supported types should be composed with 

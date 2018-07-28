@@ -19,14 +19,14 @@ typedef enum { findSubnetIf   = -1,
 #define NETCHECK(cmd) do { \
   int err = cmd; \
   if (err != 0) { \
-    INFO("%s:%d -> %d [Net]", __FILE__, __LINE__, err); \
+    INFO(ALL, "%s:%d -> %d [Net]", __FILE__, __LINE__, err);   \
     return ncclSystemError; \
   } \
 } while (false)
 
 // Translation to external API
 static const char* ncclNetName() { return ncclNet->name; }
-static ncclResult_t ncclNetDevices(int* ndev, int** distances) { NETCHECK(ncclNet->devices(ndev, distances)); return ncclSuccess; }
+static ncclResult_t ncclNetDevices(int* ndev, int** scores) { NETCHECK(ncclNet->devices(ndev, scores)); return ncclSuccess; }
 static ncclResult_t ncclNetPtrSupport(int dev, int* supportedTypes) { NETCHECK(ncclNet->ptrSupport(dev, supportedTypes)); return ncclSuccess; }
 static ncclResult_t ncclNetListen(int dev, void* handle, void** listenComm) { NETCHECK(ncclNet->listen(dev, handle, listenComm)); return ncclSuccess; }
 static ncclResult_t ncclNetConnect(int dev, void* handle, void** sendComm) { NETCHECK(ncclNet->connect(dev, handle, sendComm)); return ncclSuccess; }

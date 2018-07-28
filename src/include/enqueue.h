@@ -10,14 +10,19 @@
 #include "core.h"
 #include "group.h"
 
+int64_t ncclParamCheckPointers();
+
 typedef ncclResult_t(*ncclFunc_t)(const void* sendbuff, void* recvbuff, size_t count,
     ncclDataType_t type, ncclRedOp_t op, int root, ncclComm_t comm, cudaStream_t stream);
 
 ncclResult_t ncclEnqueueCheck(ncclFunc_t func, const char* primName, const void* sendbuff, 
     void* recvbuff, size_t count, ncclDataType_t type, ncclRedOp_t op, int root,
     ncclComm_t comm, cudaStream_t stream);
-ncclResult_t ncclCpuBarrierCheckin(ncclComm_t comm);
-ncclResult_t ncclCpuBarrierWait(ncclComm_t comm);
+ncclResult_t ncclCpuBarrierIn(ncclComm_t comm, int* isLast);
+ncclResult_t ncclCpuBarrierLast(ncclComm_t comm);
+ncclResult_t ncclCpuBarrierOut(ncclComm_t comm);
+ncclResult_t ncclBarrierEnqueue(ncclComm_t comm);
+ncclResult_t ncclBarrierEnqueueWait(ncclComm_t comm);
 ncclResult_t ncclEnqueueEvents(ncclComm_t comm);
 
 #endif // End include guard

@@ -46,7 +46,6 @@ fi
 
 # build tests
 cd $NCCLROOT
-make -j test.clean
 if [ "$INSTALL" == "1" ]; then
   make -j test.build MPI=1 2>&1 | tee make_test_mpi.log
 else
@@ -54,12 +53,7 @@ else
 fi
 
 # SLURM setting
-timeout=2
-if [ "$mode" == "all" ]; then
-  timeout=`expr $timeout \* 26`
-else
-  timeout=`expr $timeout \* 15`
-fi
+timeout=60
 if [ "$SLURM" == "1" ]; then
   srun_cmd="srun -p $gpumodel -t ${timeout} --exclusive "
   salloc_cmd="salloc -p $gpumodel -n $maxgpu -c 1 -t ${timeout} --exclusive "

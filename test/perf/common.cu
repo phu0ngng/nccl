@@ -7,72 +7,8 @@
 #include "common.h"
 #include <pthread.h>
 #include <cstdio>
-#include <dlfcn.h>
 #include <getopt.h>
-#include <omp.h>
 #include "cuda.h"
-
-typedef struct nvmlDevice_st* nvmlDevice_t;
-class NvmlWrap {
-  public:
-  NvmlWrap();
-  ~NvmlWrap();
-  typedef enum {SUCCESS = 0} RetCode;
-  RetCode (*DeviceGetHandleByPciBusId)(const char* pciBusId, nvmlDevice_t* device);
-  RetCode (*DeviceSetCpuAffinity)(nvmlDevice_t device);
-  RetCode (*DeviceClearCpuAffinity)(nvmlDevice_t device);
-  const char* (*ErrorString)(RetCode r);
-
-  private:
-  void* dlHandle;
-  RetCode (*ptrInit)(void);
-  RetCode (*ptrShutdown)(void);
-};
-
-NvmlWrap* nvml;
-
-#define NVMLCHECK(cmd) {                           \
-  NvmlWrap::RetCode e = cmd;                       \
-  if( e != NvmlWrap::SUCCESS ) {                   \
-    printf("nvml failure %s:%d '%s'\n",            \
-        __FILE__,__LINE__,nvml->ErrorString(e));   \
-    exit(EXIT_FAILURE);                            \
-  }                                                \
-} while(0)
-
-NvmlWrap::NvmlWrap() : dlHandle(NULL) {
-  dlHandle = dlopen("libnvidia-ml.so.1", RTLD_NOW);
-  if (!dlHandle) {
-    dlHandle = dlopen("libnvidia-ml.so", RTLD_NOW);
-    if (!dlHandle) {
-      printf("Failed to open libnvidia-ml.so[.1]");
-      exit(EXIT_FAILURE);
-    }
-  }
-
-  #define LOAD_SYM(handle, symbol, funcptr) do {            \
-    void** cast = (void**)&funcptr;                         \
-    void* tmp = dlsym(handle, symbol);                      \
-    if (tmp == NULL) {                                      \
-      printf("dlsym failed on %s - %s", symbol, dlerror()); \
-      exit(EXIT_FAILURE);                                   \
-    }                                                       \
-    *cast = tmp;                                            \
-  } while (0)
-
-  LOAD_SYM(dlHandle, "nvmlInit", this->ptrInit);
-  LOAD_SYM(dlHandle, "nvmlShutdown", this->ptrShutdown);
-  LOAD_SYM(dlHandle, "nvmlDeviceGetHandleByPciBusId", this->DeviceGetHandleByPciBusId);
-  LOAD_SYM(dlHandle, "nvmlDeviceSetCpuAffinity", this->DeviceSetCpuAffinity);
-  LOAD_SYM(dlHandle, "nvmlDeviceClearCpuAffinity", this->DeviceClearCpuAffinity);
-  LOAD_SYM(dlHandle, "nvmlErrorString", this->ErrorString);
-  NVMLCHECK(this->ptrInit());
-}
-
-NvmlWrap::~NvmlWrap() {
-  NVMLCHECK(this->ptrShutdown());
-  dlclose(dlHandle);
-}
 
 #if NCCL_MAJOR >= 2
 ncclDataType_t test_types[ncclNumTypes] = {ncclInt8, ncclUint8, ncclInt32, ncclUint32, ncclInt64, ncclUint64, ncclHalf, ncclFloat, ncclDouble};
@@ -98,8 +34,6 @@ static int parallel_init = 0;
 static int blocking_coll = 0;
 static int streamnull = 0;
 static int side_comp = 0;
-static int cpu_warmup = 0;
-static int set_affinity = 0;
 
 double parsesize(char *value) {
     long long int units;
@@ -525,21 +459,11 @@ void InitSendRecv(struct threadArgs_t* args, ncclDataType_t type, ncclRedOp_t op
   rep++;
 }
 
-#define CHECK 1
-
 cudaError_t cudaStreamSyncYield(cudaStream_t stream) {
   while (1) {
     cudaError_t err = cudaStreamQuery(stream);
     if (err != cudaErrorNotReady) return err;
     pthread_yield();
-  }
-}
-
-void WarmUpCPU(unsigned long limit) {
-#pragma omp parallel
-  {
-    volatile unsigned long x=0, y=1;
-    while (x++ < limit || y++ < limit);
   }
 }
 
@@ -594,16 +518,9 @@ void completeColl(struct threadArgs_t* args) {
   }
 }
 
-void BenchTime(struct threadArgs_t* args, ncclDataType_t type, ncclRedOp_t op, int root, int in_place, int warmup) {
+void BenchTime(struct threadArgs_t* args, ncclDataType_t type, ncclRedOp_t op, int root, int in_place) {
+  if (iters == 0) return;
   size_t count = args->nbytes / wordSize(type);
-  int local_iters = warmup ? warmup_iters : iters;
-  int local_agg_iters = agg_iters;
-
-  // Warm up cpu cores; launch by main thread
-  if (cpu_warmup == 1 && warmup == 0 && args->thread == 0 && args->localRank == 0) {
-    unsigned long limit = 3e9;
-    WarmUpCPU(limit);
-  }
 
   // Sync
   startColl(args, type, op, root, in_place, 0);
@@ -613,58 +530,48 @@ void BenchTime(struct threadArgs_t* args, ncclDataType_t type, ncclRedOp_t op, i
 
   // Performance Benchmark
   auto start = std::chrono::high_resolution_clock::now();
-  for (int iter = 0; iter < local_iters; iter++) {
-    if (local_agg_iters>1) NCCLCHECK(ncclGroupStart());
-    for (int iter = 0; iter < local_agg_iters; iter++) {
+  for (int iter = 0; iter < iters; iter++) {
+    if (agg_iters>1) NCCLCHECK(ncclGroupStart());
+    for (int iter = 0; iter < agg_iters; iter++) {
       startColl(args, type, op, root, in_place, iter);
     }
-    if (local_agg_iters>1) NCCLCHECK(ncclGroupEnd());
+    if (agg_iters>1) NCCLCHECK(ncclGroupEnd());
   }
   completeColl(args);
 
   auto delta = std::chrono::high_resolution_clock::now() - start;
   double timeSec = std::chrono::duration_cast<std::chrono::duration<double>>(delta).count();
-  timeSec = timeSec/(local_iters*local_agg_iters);
+  timeSec = timeSec/(iters*agg_iters);
 
   double algBw, busBw;
   GetBw(count, wordSize(type), timeSec, &algBw, &busBw, args->nProcs*args->nThreads*args->nGpus);
 
   Barrier(args);
 
-  if (warmup) return;
-
+  double maxDelta = 0;
   if (datacheck) { 
       InitSendRecv(args, type, op, root, in_place, args->thread == 0 ? 1 : 0);
       InitRecvResult(args, type, op, root, in_place, args->thread == 0 ? 1 : 0);
       cudaDeviceSynchronize();
-  }
 
-  //test validation in single itertion, should ideally be included into the multi-iteration run
-  startColl(args, type, op, root, in_place, 0); 
-  completeColl(args);
+      //test validation in single itertion, should ideally be included into the multi-iteration run
+      startColl(args, type, op, root, in_place, 0);
+      completeColl(args);
 
-  double maxDelta = 0;
-#ifdef CHECK
-  if (datacheck) { 
-     maxDelta = CheckData(args, type, op, root, in_place);
-  } else { 
-     maxDelta = -1.0;
-  }
-#else
-     maxDelta = -1.0;
-#endif
+      maxDelta = CheckData(args, type, op, root, in_place);
 
-  //aggregate delta from all threads and procs
-  Barrier(args);
-  if (args->thread == 0) {
-      for (int i=1; i<args->nThreads; i++) { 
-          maxDelta += args->deltaThreads[i];
-      }
+      //aggregate delta from all threads and procs
+      Barrier(args);
+      if (args->thread == 0) {
+        for (int i=1; i<args->nThreads; i++) {
+            maxDelta += args->deltaThreads[i];
+        }
 #ifdef MPI_SUPPORT
-      MPI_Allreduce(MPI_IN_PLACE, &maxDelta, 1, MPI_DOUBLE, MPI_MAX, MPI_COMM_WORLD);
+        MPI_Allreduce(MPI_IN_PLACE, &maxDelta, 1, MPI_DOUBLE, MPI_MAX, MPI_COMM_WORLD);
 #endif
+      }
+      Barrier(args);
   }
-  Barrier(args);
 
   double timeUsec = timeSec*1.0E6;
   char timeStr[10];
@@ -703,11 +610,17 @@ void setupArgs(size_t size, ncclDataType_t type, struct threadArgs_t* args) {
 void TimeTest(struct threadArgs_t* args, ncclDataType_t type, const char* typeName, ncclRedOp_t op, const char* opName, int root) {
   // Warm-up for large size
   setupArgs(args->maxbytes, type, args);
-  BenchTime(args, type, op, root, 0, 1);
+  for (int iter = 0; iter < warmup_iters; iter++) {
+    startColl(args, type, op, root, 0, iter);
+  }
+  completeColl(args);
 
   // Warm-up for small size
   setupArgs(args->minbytes, type, args);
-  BenchTime(args, type, op, root, 0, 1);
+  for (int iter = 0; iter < warmup_iters; iter++) {
+    startColl(args, type, op, root, 0, iter);
+  }
+  completeColl(args);
 
   // Benchmark
   for (size_t size = args->minbytes; size<=args->maxbytes; size = ((args->stepfactor > 1) ? size*args->stepfactor : size+args->stepbytes)) {
@@ -718,20 +631,10 @@ void TimeTest(struct threadArgs_t* args, ncclDataType_t type, const char* typeNa
       else
         sprintf(rootName, "%6i", root);
       PRINT("%12li  %12li  %6s  %6s  %6s", max(args->sendBytes, args->expectedBytes), args->nbytes / wordSize(type), typeName, opName, rootName);
-      BenchTime(args, type, op, root, 0, 0);
-      BenchTime(args, type, op, root, 1, 0);
+      BenchTime(args, type, op, root, 0);
+      BenchTime(args, type, op, root, 1);
       PRINT("\n");
   }
-}
-
-#define NVML_DEVICE_PCI_BUS_ID_BUFFER_SIZE 32
-
-void SetCpuAffinity(int cudaDev) {
-  nvmlDevice_t nvmlDevice;
-  char busId[NVML_DEVICE_PCI_BUS_ID_BUFFER_SIZE];
-  CUDACHECK(cudaDeviceGetPCIBusId(busId, NVML_DEVICE_PCI_BUS_ID_BUFFER_SIZE, cudaDev));
-  NVMLCHECK(nvml->DeviceGetHandleByPciBusId(busId, &nvmlDevice));
-  NVMLCHECK(nvml->DeviceSetCpuAffinity(nvmlDevice));
 }
 
 void* threadRunTests(void* args) {
@@ -741,10 +644,6 @@ void* threadRunTests(void* args) {
   // exclusive mode those operations will fail.
   int gpuid = targs->localRank*targs->nThreads*targs->nGpus + targs->thread*targs->nGpus;
   CUDACHECK(cudaSetDevice(gpuid));
-
-  if (set_affinity == 1) {
-    SetCpuAffinity(gpuid);
-  }
 
   RunTest(targs, ncclroot, (ncclDataType_t)nccltype, test_typenames[nccltype], (ncclRedOp_t)ncclop, test_opnames[ncclop]);
 
@@ -811,6 +710,21 @@ void* compThread(void* args) {
     for (int i=0; i<targs->nGpus; i++) {
       CUDACHECK(cudaFree(ptrs[i]));
     }
+    fflush(stdout);
+    fflush(stderr);
+    pid_t pid = fork();
+    if (pid == 0) {
+      uint64_t* p = (uint64_t*)malloc(sizeof(uint64_t));
+      p[0] = 0xfedcba9284353;
+      usleep(40000);
+      free(p);
+      // Do not exit, as it would call the CUDA destructors which may break the parent.
+      // Replace with another process that does nothing instead. That also simulates
+      // The behavior of a popen() call.
+      execl("/bin/true", "");
+    } else {
+      usleep(40000);
+    }
   }
   for (int i=0; i<targs->nGpus; i++) {
     CUDACHECK(cudaStreamDestroy(streams[i]));
@@ -828,9 +742,8 @@ void AllocateBuffs(void **sendbuff, size_t sendBytes, void **recvbuff, size_t re
     CUDACHECK(cudaMalloc(recvbuff, (sendBytes > recvBytes) ? sendBytes : recvBytes));
 
     if (is_first || !sameExpected) {
-        *expectedHost = malloc(recvBytes);
-        CUDACHECK(cudaHostRegister(*expectedHost, recvBytes, cudaHostRegisterPortable | cudaHostRegisterMapped));
-        CUDACHECK(cudaHostGetDevicePointer(expected, *expectedHost, 0));
+        CUDACHECK(cudaHostAlloc(expectedHost, recvBytes, cudaHostAllocPortable | cudaHostAllocMapped));
+        *expected = *expectedHost;
         cached_ptr = *expected;
         cached_hostptr = *expectedHost;
         is_first = 0;
@@ -874,7 +787,6 @@ int main(int argc, char* argv[]) {
  int localRank = 0;
  char hostname[1024];
  getHostName(hostname, 1024);
- nvml = new NvmlWrap();
  
  static struct option longopts[] = {
     {"nthreads", required_argument, 0, 't'}, 
@@ -895,14 +807,12 @@ int main(int argc, char* argv[]) {
     {"blocking", required_argument, 0, 'z'},
     {"stream_null", required_argument, 0, 'y'},
     {"side_comp", required_argument, 0, 'k'},
-    {"cpu_warmup", required_argument, 0, 'u'},
-    {"set_affinity", required_argument, 0, 'a'},
     {"help", no_argument, 0, 'h'}
  };
 
  while(1) {
       int c;
-      c = getopt_long(argc, argv, "t:g:b:e:i:f:n:m:w:s:p:c:o:d:r:z:y:k:u:a:h", longopts, &longindex);
+      c = getopt_long(argc, argv, "t:g:b:e:i:f:n:m:w:s:p:c:o:d:r:z:y:k:h", longopts, &longindex);
 
       if (c == -1)
          break;
@@ -966,12 +876,6 @@ int main(int argc, char* argv[]) {
          case 'k':
              side_comp = strtol(optarg, NULL, 0);
              break;
-         case 'u':
-             cpu_warmup = strtol(optarg, NULL, 0);
-             break;
-         case 'a':
-             set_affinity = strtol(optarg, NULL, 0);
-             break;
          case 'h':
 	         printf("USAGE: ./test \n\t" 
 	 	 "[-t,--nthreads <num threads>] \n\t"
@@ -992,8 +896,6 @@ int main(int argc, char* argv[]) {
 		 "[-z,--blocking <0/1>] \n\t"
 		 "[-y,--stream_null <0/1>] \n\t"
 		 "[-k,--side_comp <0/1>] \n\t"
-		 "[-u,--cpu_warmup <0/1>] \n\t"
-		 "[-a,--set_affinity <0/1>] \n\t"
 		 "[-h,--help]\n");
 	         return 0;
 	 default: 
@@ -1017,8 +919,6 @@ int main(int argc, char* argv[]) {
 		 "[-z,--blocking <0/1>] \n\t"
 		 "[-y,--stream_null <0/1>] \n\t"
 		 "[-k,--side_comp <0/1>] \n\t"
-		 "[-u,--cpu_warmup <0/1>] \n\t"
-		 "[-a,--set_affinity <0/1>] \n\t"
 		 "[-h,--help]\n");
 	         return 0;
       }
@@ -1049,24 +949,30 @@ int main(int argc, char* argv[]) {
   PRINT("#\n");
 
   PRINT("# Using devices\n");
-  for (int p=0; p<nProcs; p++) {
-    for (int i=0; i<nThreads*nGpus; i++) {
-      char line[1024];
-      if (p == proc) {
-        int cudaDev = localRank*nThreads*nGpus+i;
-        int rank = proc*nThreads*nGpus+i;
-        cudaDeviceProp prop;
-        CUDACHECK(cudaGetDeviceProperties(&prop, cudaDev));
-        sprintf(line, "#   Rank %2d Pid %6d on %10s device %2d [0x%02x] %s\n", rank, getpid(), hostname, cudaDev,
-            prop.pciBusID, prop.name);
-      }
-#ifdef MPI_SUPPORT
-      // Simple non-optimal way to always reach rank 0
-      MPI_Bcast(line, 1024, MPI_BYTE, p, MPI_COMM_WORLD);
-#endif
-      PRINT("%s", line);
-    }
+#define MAX_LINE 2048
+  char line[MAX_LINE];
+  int len = 0;
+  for (int i=0; i<nThreads*nGpus; i++) {
+    int cudaDev = localRank*nThreads*nGpus+i;
+    int rank = proc*nThreads*nGpus+i;
+    cudaDeviceProp prop;
+    CUDACHECK(cudaGetDeviceProperties(&prop, cudaDev));
+    len += snprintf(line+len, MAX_LINE-len, "#   Rank %2d Pid %6d on %10s device %2d [0x%02x] %s\n",
+                    rank, getpid(), hostname, cudaDev, prop.pciBusID, prop.name);
   }
+
+#if MPI_SUPPORT
+  char *lines = (proc == 0) ? (char *)malloc(nProcs*MAX_LINE) : NULL;
+  // Gather all output in rank order to root (0)
+  MPI_Gather(line, MAX_LINE, MPI_BYTE, lines, MAX_LINE, MPI_BYTE, 0, MPI_COMM_WORLD);
+  if (proc == 0) {
+    for (int p = 0; p < nProcs; p++)
+      PRINT("%s", lines+MAX_LINE*p);
+    free(lines);
+  }
+#else
+  PRINT("%s", line);
+#endif
 
   ncclUniqueId ncclId;
   if (proc == 0) {
@@ -1096,9 +1002,8 @@ int main(int argc, char* argv[]) {
   }
 
   if (procSharedBytes > 0) { 
-      procSharedHost = malloc(procSharedBytes);
-      CUDACHECK(cudaHostRegister(procSharedHost, procSharedBytes, cudaHostRegisterPortable | cudaHostRegisterMapped));
-      CUDACHECK(cudaHostGetDevicePointer(&procShared, procSharedHost, 0));
+      CUDACHECK(cudaHostAlloc(&procSharedHost, procSharedBytes, cudaHostAllocPortable | cudaHostAllocMapped));
+      procShared = procSharedHost;
   }
 
   //if parallel init is not selected, use main thread to initialize NCCL
@@ -1120,7 +1025,8 @@ int main(int argc, char* argv[]) {
 
   int errors[nThreads];
   double bw[nThreads];
-  double delta[nThreads];
+  double* delta;
+  CUDACHECK(cudaHostAlloc(&delta, sizeof(double)*nThreads, cudaHostAllocPortable | cudaHostAllocMapped));
   int bw_count[nThreads];
   for (int t=0; t<nThreads; t++) {
     bw[t] = 0.0;
@@ -1171,8 +1077,7 @@ int main(int argc, char* argv[]) {
     args[t].sync_idx = 0;
     args[t].deltaThreads = delta;
     args[t].deltaHost = (delta + t);
-    CUDACHECK(cudaHostRegister(args[t].deltaHost, sizeof(double), cudaHostRegisterPortable|cudaHostRegisterMapped));
-    CUDACHECK(cudaHostGetDevicePointer(&args[t].delta, args[t].deltaHost, 0));
+    args[t].delta = delta;
     args[t].errors=errors+t;
     args[t].bw=bw+t;
     args[t].bw_count=bw_count+t;
@@ -1222,7 +1127,6 @@ int main(int argc, char* argv[]) {
   PRINT("# Out of bounds values : %d %s\n", errors[0], errors[0] ? "FAILED" : "OK");
   PRINT("# Avg bus bandwidth    : %g %s\n", bw[0], check_avg_bw == -1 ? "" : (bw[0] < check_avg_bw*(0.9) ? "FAILED" : "OK"));
   PRINT("#\n");
-  delete nvml;
 #ifdef MPI_SUPPORT
   MPI_Finalize();
 #endif

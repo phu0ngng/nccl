@@ -4,8 +4,8 @@
  * See LICENSE.txt for license information
  ************************************************************************/
 
-#ifndef NCCL_ENV_H_
-#define NCCL_ENV_H_
+#ifndef NCCL_PARAM_H_
+#define NCCL_PARAM_H_
 
 #include <stdlib.h>
 
@@ -52,6 +52,31 @@ static void initEnv() {
   }
   sprintf(confFilePath, "/etc/nccl.conf");
   setEnvFile(confFilePath);
+}
+
+
+#define NCCL_PARAM(name, env, default_value) \
+pthread_mutex_t ncclParamMutex##name = PTHREAD_MUTEX_INITIALIZER; \
+int64_t ncclParam##name() { \
+  static_assert(default_value != -1LL, "default value cannot be -1"); \
+  static int64_t value = -1LL; \
+  pthread_mutex_lock(&ncclParamMutex##name); \
+  if (value == -1LL) { \
+    value = default_value; \
+    char* str = getenv("NCCL_" env); \
+    if (str && strlen(str) > 0) { \
+      errno = 0; \
+      int64_t v = strtoll(str, NULL, 0); \
+      if (errno) { \
+        INFO(ALL,"Invalid value %s for %s, using default %lu.", str, "NCCL_" env, value); \
+      } else { \
+        value = v; \
+        INFO(ALL,"%s set by environment to %lu.", "NCCL_" env, value);  \
+      } \
+    } \
+  } \
+  pthread_mutex_unlock(&ncclParamMutex##name); \
+  return value; \
 }
 
 #endif
