@@ -63,15 +63,15 @@ ncclResult_t netFillInfo(ncclTinfo_t* opaqueInfo, int rank) {
   struct netInfo* info = (struct netInfo*)opaqueInfo;
   static_assert(sizeof(struct netInfo) <= sizeof(ncclTinfo_t), "NET Info too large");
   info->rank = rank;
-  int *distances;
-  NCCLCHECK(ncclNetDevices(&info->ndev, &distances));
+  int *scores;
+  NCCLCHECK(ncclNetDevices(&info->ndev, &scores));
   if (info->ndev == 0) {
     WARN("Error : Network returned 0 device");
     return ncclSystemError;
   }
   if (info->ndev > NET_MAX_IFS) info->ndev = NET_MAX_IFS;
-  for (int d=0; d<info->ndev; d++) info->scores[d] = distances[d];
-  free(distances);
+  for (int d=0; d<info->ndev; d++) info->scores[d] = scores[d];
+  free(scores);
   return ncclSuccess;
 }
 
@@ -80,7 +80,7 @@ ncclResult_t netCanConnect(ncclTvalue_t* ret, ncclTinfo_t* myOpaqueInfo, ncclTin
   ret[0] = 0;
   struct netInfo* myInfo = (struct netInfo*)myOpaqueInfo;
   for (int d=0; d<myInfo->ndev; d++) {
-    // Keep 3 bits of distance
+    // Keep 3 bits of score info per dev
     ret[0] |= ((myInfo->scores[d] & NET_BITS_PER_IFS_MASK)<<(NET_BITS_PER_IFS*d));
   }
   return ncclSuccess;
