@@ -13,7 +13,7 @@ DEP_FILES	:= $(OBJ_FILES:%.o=%.dep)
 NVCUFLAGS += -I${NCCLDIR}/include/ -include nccl.h ${CPPFLAGS} ${GTEST_CPPFLAGS}
 ### ld
 LIBDIR := ${NCCLDIR}/lib
-NVLDFLAGS   += -L${LIBDIR} ${GTEST_LIBS}
+NVLDFLAGS := -L${LIBDIR} ${NVLDFLAGS} ${GTEST_LIBS}
 ### rules
 .PHONY:
 
