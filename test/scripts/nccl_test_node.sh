@@ -70,7 +70,6 @@ if [ "$mode" == "dlfw" ] && [ "$gpumodel" == "P100" ]; then
   $SHDIR/mxnet.sh $gpumodel
   # warm-up run of pytorch
   $SHDIR/pytorch.sh $gpumodel
-  $SHDIR/pytorch.sh $gpumodel
 elif [[ "$mode" == *"mpi"* ]] || [[ "$mode" == *"multinode"* ]]; then
   # test (multi processes)
   if [[ "$mode" == *"mpi"* ]]; then
