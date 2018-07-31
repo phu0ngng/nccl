@@ -28,7 +28,7 @@ for OPT in "" "_mpi" "_reorder" "_latency" "_mpi_latency"; do
    else
      mode="bw"
    fi
-   ./generate_html.sh $mode $VER$GM$OPT $VER$PM$OPT 2.1.2$GM$OPT 2.1.2$PM$OPT
+   ./generate_html.sh $mode $VER$GM$OPT $VER$PM$OPT 2.2.12$GM$OPT 2.2.12$PM$OPT
    DIR=html$OPT
    echo $DIR
    rm -rf $DST/$DIR
@@ -52,7 +52,7 @@ for OPT in "_multinode" "_multinode_latency"; do
    else
      mode="bw"
    fi
-   ./multinode_generate_html.sh $mode $VER$GM$OPT $VER$PM$OPT 2.1.2$GM$OPT 2.1.2$PM$OPT
+   ./multinode_generate_html.sh $mode $VER$GM$OPT $VER$PM$OPT 2.2.12$GM$OPT 2.2.12$PM$OPT
    DIR=html$OPT
    echo $DIR
    rm -rf $DST/$DIR
@@ -66,9 +66,11 @@ done
 DIR=html_dlfw
 rm -rf $DST/$DIR
 mkdir -p $DST/$DIR
-./dlfw_generate_plots.sh P100 ${VER}${GM} ${VER}${PM} 2.1.2${GM} 2.1.2${PM} 2.0.5
+./dlfw_generate_plots.sh P100 ${VER}${GM} ${VER}${PM} 2.2.12${GM} 2.2.12${PM} 2.1.15${GM} 2.1.15${PM} 2.0.5
 mv comp/P100/*.png $DST/$DIR/
 rm -rf comp
+cp ${VER}${GM}_dlfw/results/P100/pytorch.L1_perftest.txt $DST/$DIR/pytorch.L1_perftest.${GM}.txt
+cp ${VER}${PM}_dlfw/results/P100/pytorch.L1_perftest.txt $DST/$DIR/pytorch.L1_perftest.${PM}.txt
 
 for lm in $GM $PM; do
   DIR=html_aggregation-$lm
@@ -98,3 +100,6 @@ rm -rf $DST/$DIR
 mkdir -p $DST/$DIR
 cp ${VER}${GM}_multinode_env/results/gpu-verb/* $DST/$DIR
 grep -r -i "fail" ${VER}${GM}_multinode_env/results >> $DST/$DIR/fail.txt
+
+# overall failures
+grep -ri 'fail' --exclude-dir=*-1 ${VER}* >> $DST/failures.txt | mailx -s $TAG kwen@nvidia.com
