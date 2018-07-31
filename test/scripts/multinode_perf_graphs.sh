@@ -55,24 +55,22 @@ maxthread=$4
 maxgpu=$5
 op=$6
 
-totgpus=$(expr $nnode \* $maxgpu)
-
 declare -i nproc=2
+declare -i nthread=1
+declare -i ngpus=1
 while [[ $nproc -le $maxproc ]] ; do
-  declare -i nthread=1
   while [[ $nthread -le $maxthread ]] ; do
-    declare -i ngpus=1
     while [[ $ngpus -le $maxgpu ]]; do
-      ngperproc=$(expr $nthread \* $ngpus)
-      if (( $( expr $nproc \* $ngperproc ) <= $totgpus )); then
-        echo "Running test/perf/${op}_perf on $nnode nodes, $nproc processes, each process having $nthread threads with $ngpus GPUs ..."
-        generate_perf $gpumodel $nnode $nproc $nthread $ngpus $op
-      fi
+      echo "Running test/perf/${op}_perf on $nnode nodes, $nproc processes, each process having $nthread threads with $ngpus GPUs ..."
+      generate_perf $gpumodel $nnode $nproc $nthread $ngpus $op
       ngpus+=$ngpus
     done
     nthread+=$nthread
+    ngpus=$maxgpu
   done
   nproc+=$nproc
+  nthread=$maxthread
+  ngpus=$maxgpu
 done
 }
 

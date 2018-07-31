@@ -37,36 +37,18 @@ done
 for op in all_reduce all_gather reduce_scatter reduce broadcast; do
   echo "<h2>$op</h2>" >> $html
   for gpu in $gpumodels; do
-     echo "<h3>$gpu</h3>" >> $html
-     echo "<table border=0><tr>" >> $html
-     declare -i nproc=2
-     while [[ $nproc -le $maxproc ]] ; do
-       declare -i nthread=1
-       while [[ $nthread -le $maxthread ]] ; do
-         echo "</tr><tr>" >> $html
-         declare -i ngpus=1
-         while [[ $ngpus -le $maxgpus ]]; do
-           ngperproc=$(expr $nthread \* $ngpus)
-           if (( $( expr $nproc \* $ngperproc ) <= $maxproc )); then
-              echo "<td> P$nproc x T$nthread x G$ngpus </td>" >> $html
-           fi
-           ngpus+=$ngpus
-         done
-         echo "</tr><tr>" >> $html
-         declare -i ngpus=1
-         while [[ $ngpus -le $maxgpus ]]; do
-           ngperproc=$(expr $nthread \* $ngpus)
-           if (( $( expr $nproc \* $ngperproc ) <= $maxproc )); then
-              echo "<td><a href=\"$gpu/$op-$nnode-$nproc-$nthread-$ngpus.png\"><img width=300 src=\"$gpu/$op-$nnode-$nproc-$nthread-$ngpus.png\"></a></td>" >> $html
-           fi
-           ngpus+=$ngpus
-         done
-         echo "</tr><tr>" >> $html
-         nthread+=$nthread
-       done
-       nproc+=$nproc
-     done
-     echo "</tr></table>" >> $html
+    echo "<h3>$gpu</h3>" >> $html
+    echo "<table border=0><tr>" >> $html
+    echo "<td> P2 x T1 x G1 </td>" >> $html
+    echo "<td> P2 x T1 x G2 </td>" >> $html
+    echo "<td> P2 x T2 x G2 </td>" >> $html
+    echo "<td> P4 x T2 x G2 </td>" >> $html
+    echo "</tr><tr>" >> $html
+    echo "<td><a href=\"$gpu/$op-$nnode-2-1-1.png\"><img width=300 src=\"$gpu/$op-$nnode-2-1-1.png\"></a></td>" >> $html
+    echo "<td><a href=\"$gpu/$op-$nnode-2-1-2.png\"><img width=300 src=\"$gpu/$op-$nnode-2-1-2.png\"></a></td>" >> $html
+    echo "<td><a href=\"$gpu/$op-$nnode-2-2-2.png\"><img width=300 src=\"$gpu/$op-$nnode-2-2-2.png\"></a></td>" >> $html
+    echo "<td><a href=\"$gpu/$op-$nnode-4-2-2.png\"><img width=300 src=\"$gpu/$op-$nnode-4-2-2.png\"></a></td>" >> $html
+    echo "</tr></table>" >> $html
   done
 done
 
