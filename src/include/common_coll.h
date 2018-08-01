@@ -53,7 +53,7 @@ static ncclResult_t ArgsCheck(const void* sendbuff, const void* recvbuff, size_t
     return ncclInvalidArgument;
   }
 
-  if (ncclParamCheckPointers()) {
+  if (comm->checkPointers) {
     // Check CUDA device pointers
     if (strcmp(opname, "Broadcast") != 0 || comm->rank == root) {
       NCCLCHECK(PointerCheck(sendbuff, comm, "sendbuff", opname));
@@ -97,6 +97,13 @@ static ncclResult_t saveKernel(int coll, const void* sendbuff, void* recvbuff, s
     WARN("Error : mixing different streams within a group call is not supported.");
     return ncclInvalidUsage;
   }
+  int lastChunkSize = 0;
+  if (llMode == 1) {
+    int sliceSize = llSliceSize * sizeof(uint64_t) / ncclTypeSize(dtype);
+    const ssize_t loopSize = nBlocks*loopFactor*(ssize_t)sliceSize;
+    lastChunkSize = DIVUP((count-count/loopSize*loopSize), nBlocks*loopFactor);
+    ALIGN_SIZE(lastChunkSize, nThreads*sizeof(uint64_t)/ncclTypeSize(dtype));
+  }
   for (int bid=0; bid<nBlocks; bid++) {
     struct ncclRing* ring = comm->rings+(comm->myParams->gridDim.x % comm->nRings);
     if (ring->collCount == NCCL_MAX_OPS) {
@@ -121,12 +128,7 @@ static ncclResult_t saveKernel(int coll, const void* sendbuff, void* recvbuff, s
     args->bid = bid;
     args->nRings = nBlocks;
     args->nThreads = nThreads;
-    if (llMode == 1) {
-      int sliceSize = llSliceSize * sizeof(uint64_t) / ncclTypeSize(dtype);
-      const ssize_t loopSize = args->nRings*loopFactor*(ssize_t)sliceSize;
-      args->lastChunkSize = DIVUP((count-count/loopSize*loopSize), args->nRings*loopFactor);
-      ALIGN_SIZE(args->lastChunkSize, nThreads*sizeof(uint64_t)/ncclTypeSize(dtype));
-    }
+    args->lastChunkSize = lastChunkSize;
 
     c->nThreads = nThreads;
     c->funcIndex = FUNC_INDEX(coll, op, dtype, llMode);

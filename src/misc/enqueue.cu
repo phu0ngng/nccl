@@ -57,8 +57,6 @@ static void* const ncclKerns[ncclCollCount*ncclNumOps*ncclNumTypes*2] = {
     NCCL_FUNCS2A(ncclAllReduce)
 };
 
-NCCL_PARAM(CheckPointers, "CHECK_POINTERS", 0);
-
 ncclResult_t ncclLaunchCooperativeKernelMultiDevice(struct cudaLaunchParams *paramsList, int* cudaDevs, int numDevices, int cgMode) {
 #if __CUDACC_VER_MAJOR__ >= 9
   if (cgMode & 0x01) {
@@ -225,7 +223,7 @@ ncclResult_t ncclEnqueueCheck(ncclFunc_t func, const char* primName, const void*
   if (ncclAsyncMode()) {
     ncclResult_t ret = ncclSuccess;
     int savedDev = -1;
-    if (ncclParamCheckPointers()) {
+    if (comm->checkPointers) {
       CUDACHECKGOTO(cudaGetDevice(&savedDev), ret, end);
       CUDACHECKGOTO(cudaSetDevice(comm->cudaDev), ret, end);
     }

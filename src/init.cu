@@ -46,6 +46,7 @@ std::chrono::high_resolution_clock::time_point ncclEpoch;
 
 NCCL_PARAM(GroupCudaStream, "GROUP_CUDA_STREAM", NCCL_GROUP_CUDA_STREAM);
 
+NCCL_PARAM(CheckPointers, "CHECK_POINTERS", 0);
 
 extern "C" __attribute__ ((visibility("default")))
 ncclNet_t* ncclNet = NULL;
@@ -168,6 +169,8 @@ static ncclResult_t commAlloc(ncclComm_t* comret, int ndev, int rank) {
   cudaGetDevice(&comm->cudaDev);
   comm->doneEvent = doneEvent;
   comm->llThreshold = ncclParamLlThreshold();
+  comm->threadThreshold = ncclParamThreadThreshold();
+  comm->checkPointers = ncclParamCheckPointers() == 1 ? true : false;
 #if __CUDACC_VER_MAJOR__ >= 10 || (__CUDACC_VER_MAJOR__ >= 9 && __CUDACC_VER_MINOR__ >= 2)
   comm->groupCudaStream = ncclParamGroupCudaStream();
 #else
@@ -454,8 +457,6 @@ static ncclResult_t initTransportsRank(struct ncclComm* comm, ncclUniqueId* comm
     minCompCap = min(allData[i], minCompCap);
   if (rank == 0) INFO(INIT,"Min Comp Cap %d", minCompCap);
 
-  comm->threadThreshold = ncclParamThreadThreshold();
-
   // Find min nrings across ranks
   allData[rank] = nrings;
   NCCLCHECK(bootstrapAllGather(commState, allData, sizeof(int)));
@@ -640,7 +641,6 @@ static ncclResult_t initTransportsAll(struct ncclComm** comms, const int* devs, 
   for (int rank=0; rank<nranks; rank++) {
     comms[rank]->nRings = nrings;
     comms[rank]->nThreads = nthreads;
-    comms[rank]->threadThreshold = ncclParamThreadThreshold();
   }
 
   for (int r=0; r<nrings; r++) {
