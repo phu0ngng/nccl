@@ -15,6 +15,7 @@ LIBOBJ     := $(patsubst %.cu,$(OBJDIR)/%_sum.o, $(LIBSRCFILES)) \
 LIBSRCFILES += functions.cu
 
 DEPFILES   := $(patsubst %.cu, $(OBJDIR)/%.d, $(LIBSRCFILES))
+DEPENDFILES := $(DEPFILES:%.d=%.dep)
 STATICLIB  := $(OBJDIR)/colldevice.a
 DEVOBJ     := $(OBJDIR)/devlink.o
 
@@ -22,6 +23,9 @@ NVCUFLAGS  += -I. -I.. -I../.. -I../../include --compiler-options "-fPIC -fvisib
 
 
 all: $(STATICLIB)
+
+# Dummy rule so that the extra dependency (%.dep) files are preserved by make
+all_deps: $(DEPENDFILES)
 
 -include $(DEPFILES)
 
@@ -73,4 +77,4 @@ $(DEVOBJ) : $(LIBOBJ)
 	$(NVCC) $(NVCUFLAGS) -dlink $^ -o $@
 
 clean:
-	rm -f $(LIBOBJ) $(STATICLIB) test
+	rm -f $(LIBOBJ) $(DEVOBJ) $(DEPFILES) $(DEPENDFILES) $(STATICLIB) test
