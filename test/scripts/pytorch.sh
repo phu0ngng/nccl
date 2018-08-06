@@ -15,9 +15,5 @@ BENCH_DIR=$INSTALL/pytorch/examples/imagenet
 # L1 perf test as in PyTorch container
 CUR_DIR=$(pwd)
 cd $INSTALL/pytorch/qa/L1_perftest
-NCCL_DISABLE_CHECKS=1 NCCL_DEBUG=INFO srun -p $gpumodel --exclusive ./test.sh | tee $CUR_DIR/$result.L1_perftest.txt
+NCCL_DISABLE_CHECKS=1 NCCL_DEBUG=INFO srun -p $gpumodel --exclusive ./test.sh | tee $CUR_DIR/$result.out
 cd $CUR_DIR
-
-NCCL_DISABLE_CHECKS=1 NCCL_DEBUG=WARN srun -p $gpumodel --exclusive \
-  python $BENCH_DIR/main.py -a resnet50 /data/imagenet -b 1024 --epochs 20 | \
-  tee $result.out

@@ -66,11 +66,9 @@ done
 DIR=html_dlfw
 rm -rf $DST/$DIR
 mkdir -p $DST/$DIR
-./dlfw_generate_plots.sh P100 ${VER}${GM} ${VER}${PM} 2.2.12${GM} 2.2.12${PM} 2.1.15${GM} 2.1.15${PM} 2.0.5
+./dlfw_generate_plots.sh P100 ${VER}${GM} ${VER}${PM} 2.1.15${GM} 2.1.15${PM} 2.0.5
 mv comp/P100/*.png $DST/$DIR/
 rm -rf comp
-cp ${VER}${GM}_dlfw/results/P100/pytorch.L1_perftest.txt $DST/$DIR/pytorch.L1_perftest.${GM}.txt
-cp ${VER}${PM}_dlfw/results/P100/pytorch.L1_perftest.txt $DST/$DIR/pytorch.L1_perftest.${PM}.txt
 
 for lm in $GM $PM; do
   DIR=html_aggregation-$lm
