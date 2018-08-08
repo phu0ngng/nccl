@@ -51,21 +51,21 @@ install -m 644 lib/libnccl_static.a $RPM_BUILD_ROOT/%{_libdir}
 rm -rf $RPM_BUILD_ROOT
 
 %files devel
-%license NCCL-SLA.txt
-%license COPYRIGHT.txt
+%doc NCCL-SLA.txt
+%doc COPYRIGHT.txt
 %defattr(-,root,root,-)
 %{_includedir}/nccl.h
 %{_libdir}/libnccl.so
 
 %files static
-%license NCCL-SLA.txt
-%license COPYRIGHT.txt
+%doc NCCL-SLA.txt
+%doc COPYRIGHT.txt
 %defattr(-,root,root,-)
 %{_libdir}/libnccl_static.a
 
 %files
-%license NCCL-SLA.txt
-%license COPYRIGHT.txt
+%doc NCCL-SLA.txt
+%doc COPYRIGHT.txt
 %defattr(-,root,root,-)
 %{_libdir}/libnccl.so.${nccl:Major}
 %{_libdir}/libnccl.so.${nccl:Major}.${nccl:Minor}.${nccl:Patch}
