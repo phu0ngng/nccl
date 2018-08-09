@@ -8,6 +8,7 @@
 #include "core.h"
 #include "socket.h"
 #include "net.h"
+#include "topo.h"
 
 #include <assert.h>
 #include <pthread.h>
@@ -42,8 +43,22 @@ static void initDevices() {
 int ncclSocketDevices(int* ndev, int** scores) {
   initDevices();
   *ndev = ncclNetIfs;
+  int cudaDev;
+  cudaGetDevice(&cudaDev);
+  char* cudaPath;
+  ncclResult_t err1 = getCudaPath(cudaDev, &cudaPath);
   int* sc = (int*)malloc(ncclNetIfs*sizeof(int));
-  for (int i=0; i<ncclNetIfs; i++) sc[i] = 1;
+  char line[1024];
+  sprintf(line, "CUDA Dev %d, IP Interfaces : ", cudaDev);
+  for (int i=0; i<ncclNetIfs; i++) {
+    char* sockPath;
+    ncclResult_t err2 = getSockPath(ncclNetIfNames+i*MAX_IF_NAME_SIZE, &sockPath);
+    int distance = (err1 != ncclSuccess || err2 != ncclSuccess || sockPath == NULL || cudaPath == NULL) ? PATH_SOC : pciDistance(sockPath, cudaPath);
+    sprintf(line+strlen(line), "%s(%s) ", ncclNetIfNames+i*MAX_IF_NAME_SIZE, pathDists[distance]);
+    sc[i] = 1+PATH_SOC-distance;
+  }
+  INFO(INIT|NET,"%s", line);
+  if (err1 == ncclSuccess) free(cudaPath);
   *scores = sc;
   return ncclSuccess;
 }

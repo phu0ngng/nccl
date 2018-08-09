@@ -33,7 +33,6 @@ struct ncclIbDev {
   int device;
   uint8_t port;
   ibv_context* context;
-  char devPath[MAXPATHSIZE];
   char devName[MAXNAMESIZE];
 };
 
@@ -140,7 +139,6 @@ static void initDevices() {
             ncclIbDevs[ncclNIbDevs].device = d;
             ncclIbDevs[ncclNIbDevs].port = port;
             ncclIbDevs[ncclNIbDevs].context = context;
-            strncpy(ncclIbDevs[ncclNIbDevs].devPath, devices[d]->ibdev_path, MAXPATHSIZE);
             strncpy(ncclIbDevs[ncclNIbDevs].devName, devices[d]->name, MAXNAMESIZE);
             ncclNIbDevs++;
             found++;
@@ -169,7 +167,7 @@ int ncclIbDevices(int* ndev, int** scores) {
   sprintf(line, "CUDA Dev %d, IB Ports : ", cudaDev);
   for (int d=0; d<ncclNIbDevs; d++) {
     char* mlxPath;
-    ncclResult_t err2 = getMlxPath(ncclIbDevs[d].devPath, &mlxPath);
+    ncclResult_t err2 = getMlxPath(ncclIbDevs[d].devName, &mlxPath);
     int distance = (err1 != ncclSuccess || err2 != ncclSuccess || mlxPath == NULL || cudaPath == NULL) ? PATH_SOC : pciDistance(mlxPath, cudaPath);
     sprintf(line+strlen(line), "%s/%d(%s) ", ncclIbDevs[d].devName, ncclIbDevs[d].port, pathDists[distance]);
     sc[d] = 1+PATH_SOC-distance;
@@ -235,7 +233,7 @@ int ncclIbPtrSupport(int dev, int* supportedTypes) {
   char* cudaPath;
   if (getCudaPath(cudaDev, &cudaPath) != ncclSuccess) return 0;
   char* mlxPath;
-  if (getMlxPath(ncclIbDevs[dev].devPath, &mlxPath) != ncclSuccess) { free(cudaPath); return 0; }
+  if (getMlxPath(ncclIbDevs[dev].devName, &mlxPath) != ncclSuccess) { free(cudaPath); return 0; }
   int distance = (mlxPath == NULL || cudaPath == NULL) ? PATH_SOC : pciDistance(mlxPath, cudaPath);
   free(mlxPath); free(cudaPath);
   if (distance < ibGdrLevel) {
