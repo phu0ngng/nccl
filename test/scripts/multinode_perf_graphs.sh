@@ -20,10 +20,10 @@ mkdir -p $resdir/$gpumodel/
 
 result=$resdir/$gpumodel/$op.$nproc.$nthread.$ngpus
 
-nperslot=$(expr $nthread \* $ngpus)
+nperproc=$(expr $nthread \* $ngpus)
 
 if [ "$SLURM" == "1" ]; then
-  salloc_cmd="salloc -p $gpumodel $req_hosts -N $nnode -n $nproc -c $nperslot -t ${timeout} --exclusive "
+  salloc_cmd="salloc -p $gpumodel $req_hosts -N $nnode -n $nproc -c $nperproc -t ${timeout} --exclusive "
 else
   mpi_hosts="-host $gpumodel -oversubscribe "
   if [ "$MPI_HOME" == "" ]; then
@@ -35,16 +35,16 @@ fi
 
 npn=$(expr $nproc / $nnode)
 
-$salloc_cmd mpirun $prefix $mpi_hosts -x NCCL_DEBUG -x NCCL_LAUNCH_MODE -np $nproc -npernode $npn test/perf/${op}_perf -t $nthread -g $ngpus -b 40000 -e 1960000 -i 40000 -w 5 -n 20 2>&1 | tee $result.out
-$salloc_cmd mpirun $prefix $mpi_hosts -x NCCL_DEBUG -x NCCL_LAUNCH_MODE -np $nproc -npernode $npn test/perf/${op}_perf -t $nthread -g $ngpus -b 2000000 -e 38000000 -i 2000000 -w 2 -n 5 2>&1 | tee -a $result.out
-$salloc_cmd mpirun $prefix $mpi_hosts -x NCCL_DEBUG -x NCCL_LAUNCH_MODE -np $nproc -npernode $npn test/perf/${op}_perf -t $nthread -g $ngpus -b 40000000 -e 400000000 -i 40000000 -c 0 -w 1 -n 2 2>&1 | tee -a $result.out
+$salloc_cmd mpirun $prefix $mpi_hosts -x NCCL_DEBUG -x NCCL_LAUNCH_MODE -np $nproc -npernode $npn --cpus-per-rank $nperproc test/perf/${op}_perf -t $nthread -g $ngpus -b 40000 -e 1960000 -i 40000 -w 5 -n 20 2>&1 | tee $result.out
+$salloc_cmd mpirun $prefix $mpi_hosts -x NCCL_DEBUG -x NCCL_LAUNCH_MODE -np $nproc -npernode $npn --cpus-per-rank $nperproc test/perf/${op}_perf -t $nthread -g $ngpus -b 2000000 -e 38000000 -i 2000000 -w 2 -n 5 2>&1 | tee -a $result.out
+$salloc_cmd mpirun $prefix $mpi_hosts -x NCCL_DEBUG -x NCCL_LAUNCH_MODE -np $nproc -npernode $npn --cpus-per-rank $nperproc test/perf/${op}_perf -t $nthread -g $ngpus -b 40000000 -e 400000000 -i 40000000 -c 0 -w 1 -n 2 2>&1 | tee -a $result.out
 
 # latency test
 resdir+="_latency"
 mkdir -p $resdir/$gpumodel/
 result=$resdir/$gpumodel/$op.$nproc.$nthread.$ngpus
 
-$salloc_cmd mpirun $prefix $mpi_hosts -x NCCL_DEBUG -x NCCL_LAUNCH_MODE -np $nproc -npernode $npn test/perf/${op}_perf -t $nthread -g $ngpus -b 64 -e 128K -f 2 -w 5 -n 20 2>&1 | tee $result.out
+$salloc_cmd mpirun $prefix $mpi_hosts -x NCCL_DEBUG -x NCCL_LAUNCH_MODE -np $nproc -npernode $npn --cpus-per-rank $nperproc test/perf/${op}_perf -t $nthread -g $ngpus -b 64 -e 128K -f 2 -w 5 -n 20 2>&1 | tee $result.out
 }
 
 perf_ptg_loop() {

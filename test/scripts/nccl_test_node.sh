@@ -62,32 +62,21 @@ if [ "$mode" == "dlfw" ] && [ "$gpumodel" == "P100" ]; then
   $SHDIR/cntk.sh $gpumodel
   $SHDIR/tensorflow.sh $gpumodel
   $SHDIR/mxnet.sh $gpumodel
-  # warm-up run of pytorch
   $SHDIR/pytorch.sh $gpumodel
-elif [[ "$mode" == *"mpi"* ]] || [[ "$mode" == *"multinode"* ]]; then
-  # test (multi processes)
-  if [[ "$mode" == *"mpi"* ]]; then
-    echo "Testing $mode..."
-    $salloc_cmd $SHDIR/run_perf_graphs.sh $gpumodel $maxgpu $mode
-  fi
+elif [[ "$mode" == *"multinode"* ]]; then
   # multinode test
-  if [[ "$mode" == *"multinode"* ]]; then
-    if [ "$gpumodel" == "dgx1" ] || [ "$gpumodel" == "dgx1v" ]; then
-      $SHDIR/multinode_perf_graphs.sh $gpumodel 2 4 2 2
-    elif [ "$gpumodel" == "P100" ]; then
-      $SHDIR/multinode_perf_graphs.sh gpu-verbs 2 4 2 2
-      $SHDIR/multinode_env_test.sh gpu-verbs 2 8
-    else
-      echo "No multi-node test on $gpumodel"
-    fi
-  fi
-else
-  # test (single process)
-  if [ "$mode" == "api" ]; then
-    api_path="results_api/$gpumodel"
-    mkdir -p $api_path
-    $srun_cmd $BLDDIR/test/apitest/apitest 2>&1 | tee $api_path/apitest.out
+  if [ "$gpumodel" == "dgx1" ] || [ "$gpumodel" == "dgx1v" ]; then
+    $SHDIR/multinode_perf_graphs.sh $gpumodel 2 4 2 2
+  elif [ "$gpumodel" == "P100" ]; then
+    $SHDIR/multinode_perf_graphs.sh gpu-verbs 2 4 2 2
+    $SHDIR/multinode_env_test.sh gpu-verbs 2 8
   else
-    $srun_cmd $SHDIR/run_perf_graphs.sh $gpumodel $maxgpu $mode
+    echo "No multi-node test on $gpumodel"
   fi
+elif [ "$mode" == "api" ]; then
+  api_path="results_api/$gpumodel"
+  mkdir -p $api_path
+  $srun_cmd $BLDDIR/test/apitest/apitest 2>&1 | tee $api_path/apitest.out
+else
+  $salloc_cmd $SHDIR/run_perf_graphs.sh $gpumodel $maxgpu $mode
 fi
