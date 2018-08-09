@@ -21,7 +21,6 @@
 #include <sys/types.h>
 #include <unistd.h>
 
-//#include "infiniband/verbs.h"
 #include "ibvwrap.h"
 
 #define USE_RDMA_WRITE 1
@@ -385,7 +384,7 @@ ncclResult_t ncclIbCreateQp(uint8_t ib_port, struct ncclIbVerbs* verbs, int acce
   qpAttr.qp_state = IBV_QPS_INIT;
   qpAttr.pkey_index = 0;
   qpAttr.port_num = ib_port;
-  qpAttr.qp_access_flags = access_flags; //IBV_ACCESS_REMOTE_WRITE | IBV_ACCESS_REMOTE_READ | IBV_ACCESS_LOCAL_WRITE;
+  qpAttr.qp_access_flags = access_flags;
   NCCLCHECK(wrap_ibv_modify_qp(*qp, &qpAttr, IBV_QP_STATE | IBV_QP_PKEY_INDEX | IBV_QP_PORT | IBV_QP_ACCESS_FLAGS));
   return ncclSuccess;
 }
@@ -398,8 +397,7 @@ ncclResult_t ncclIbRtrQp(ibv_qp* qp, struct ncclIbQpInfo* info) {
   qpAttr.dest_qp_num = info->qpn;
   qpAttr.rq_psn = 0;
   qpAttr.max_dest_rd_atomic = 1;
-  //qpAttr.min_rnr_timer = 12;
-  qpAttr.min_rnr_timer = 1;
+  qpAttr.min_rnr_timer = 12;
   if (info->lid == 0) {
     qpAttr.ah_attr.is_global = 1;
     qpAttr.ah_attr.grh.dgid.global.subnet_prefix = info->spn;
@@ -453,7 +451,7 @@ int ncclIbConnect(int dev, void* opaqueHandle, void** sendComm) {
   *sendComm = comm;
   
   // IB Setup
-  initDevices(); /*XXX: Need this for ncclNet unit test that bypasses nccl initialization*/
+  initDevices();
   ibv_context* ctx = ncclIbDevs[dev].context;
   NCCLCHECK(ncclIbInitVerbs(ctx, &comm->verbs));
   uint8_t ib_port = ncclIbDevs[dev].port;
@@ -692,7 +690,7 @@ int ncclIbIsend(void* sendComm, void* data, int size, int type, void** request) 
   // Wait for receiver to have posted the recv
   volatile struct ncclIbSendFifo* slot = comm->fifo + (comm->fifoHead%MAX_REQUESTS);
   volatile uint32_t * readyPtr = &slot->ready;
-  while (*readyPtr == 0) sched_yield(); /*XXX:if commented, ibv_post_send in ncclIbPostFifo should also be commented*/
+  while (*readyPtr == 0) sched_yield();
 #if USE_RDMA_WRITE
   __sync_synchronize(); // order the readyPtr load against rkey load below
   // Sanity checks to catch user collective call count/size mismatches
@@ -821,7 +819,6 @@ int ncclIbTest(void* request, int* done, int* size) {
   struct ncclIbRequest *r = (struct ncclIbRequest*)request;
   for (int wrDone = 1; wrDone;) {
     struct ibv_wc wc;
-    //SYSCHECKVAL(wrap_ibv_poll_cq(r->verbs->cq, 1, &wc), "ibv_poll_cq", wrDone);
     wrDone = wrap_ibv_poll_cq(r->verbs->cq, 1, &wc);
     if(wrDone < 0){ return ncclSystemError; }
     if (wrDone == 1) {
