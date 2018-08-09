@@ -13,7 +13,6 @@ if [ "$VERS" == "" ]; then
   VERS="master"
 fi
 
-INSTVER=2.1.2
 TESTDIR=$HOME/$DATE
 NCCLDEB=/opt/nccl/cuda9.0
 
@@ -48,8 +47,6 @@ for ver in $VERS ; do
         if [ $h -gt 7 ] && [ $a -lt 22 ]; then break; fi
         if [ -n "$version_checked" ]; then
            ./nccl_test_node.sh $gpumodel $maxgpu $OPT
-        elif [ "$ver" == "$INSTVER" ]; then
-           INSTALL=1 ./nccl_test_node.sh $gpumodel $maxgpu $OPT
         #elif [ "$ver" == "1.5.4" ]; then
         #   NCCL_TOPOLOGY=CUBEMESH DEBDIR=$NCCLDEB/$ver-1 ./nccl_test_node.sh $gpumodel $maxgpu $OPT
         else

@@ -34,23 +34,17 @@ fi
 export LD_LIBRARY_PATH=$MPI_HOME/lib:$LD_LIBRARY_PATH
 
 # build
-if [ "$DEBDIR" == "" ] && [ "$INSTALL" != "1" ]; then
+if [ "$DEBDIR" == "" ]; then
   make -j src.build 2>&1 | tee make_src.log
   DEBDIR=$BLDDIR
 fi
 
 # export library if not using the one installed on system
-if [ "$INSTALL" != "1" ]; then
-  export LD_LIBRARY_PATH=$DEBDIR/lib:$LD_LIBRARY_PATH
-fi
+export LD_LIBRARY_PATH=$DEBDIR/lib:$LD_LIBRARY_PATH
 
 # build tests
 cd $NCCLROOT
-if [ "$INSTALL" == "1" ]; then
-  make -j test.build MPI=1 2>&1 | tee make_test_mpi.log
-else
-  make -j test.build MPI=1 NCCLDIR=${DEBDIR} 2>&1 | tee make_test_mpi.log
-fi
+make -j test.build MPI=1 NCCLDIR=${DEBDIR} 2>&1 | tee make_test_mpi.log
 
 # SLURM setting
 timeout=60
@@ -97,5 +91,3 @@ else
     $srun_cmd $SHDIR/run_perf_graphs.sh $gpumodel $maxgpu $mode
   fi
 fi
-
-echo "NCCL_Complete" > state
