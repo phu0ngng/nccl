@@ -170,7 +170,7 @@ ncclResult_t shmSendSetup(ncclTinfo_t* myOpaqueInfo, ncclTinfo_t* peerOpaqueInfo
   TRACE(SHM,"Open shmName %s shmSize %d", shmName, info.shmSize);
   NCCLCHECK(shmOpen(shmName, resources->shmSize, (void**)&resources->hostMem, (void**)&resources->devHostMem, 1));
   
-  INFO(INIT|SHM,"%d -> %d via direct shared memory", myInfo->rank, peerInfo->rank);
+  INFO(INIT|SHM,"Ring %02d : %d[%d] -> %d[%d] via direct shared memory", ring->id, myInfo->rank, myInfo->cudaDev, peerInfo->rank, peerInfo->cudaDev);
   info.id = ring->id; info.rank = myInfo->rank; info.pidHash = myInfo->pidHash;
   static_assert(sizeof(struct shmRecvConnectInfo) <= sizeof(struct ncclConnect), "shm Connect Recv Info is too big");
   memcpy(connectInfo, &info, sizeof(struct shmRecvConnectInfo));

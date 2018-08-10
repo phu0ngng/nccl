@@ -73,7 +73,6 @@ enum {
   BOOTSTRAP_RINGEXCHANGE,
 };
 
-#include <sys/time.h>
 #include <sys/resource.h>
 
 static ncclResult_t setFilesLimit() {
@@ -230,7 +229,7 @@ ncclResult_t bootstrapInit(ncclUniqueId* commId, int rank, int nranks, void** co
   if (idFromEnv) {
     memcpy(&info.extHandle, &id->extHandle, sizeof(ncclNetHandle_t));
   }
-  // listen will return the local address via info (specify interface type 'findSubnetIf')
+  // listen will return the local address via info ('findSubnetIf' indicates that the net device is unknown)
   int dev = idFromEnv ? findSubnetIf : 0;
   NCCLCHECK(bootstrapListen(dev, &info.extHandle, &tmpListenComm));
   NCCLCHECK(bootstrapConnect(dev, id->extHandle, &state->extSendComm));

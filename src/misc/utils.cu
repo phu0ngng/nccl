@@ -5,7 +5,7 @@
  ************************************************************************/
 
 #include "utils.h"
-#include "core.h"
+#include "debug.h"
 #include <unistd.h>
 #include <string.h>
 
@@ -68,8 +68,6 @@ uint64_t getPidHash(void) {
 
   return getHash(pname);
 }
-
-#include <string.h>
 
 int parseStringList(const char* string, struct netIf* ifList, int maxList) {
   if (!string) return 0;

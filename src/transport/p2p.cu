@@ -476,7 +476,7 @@ ncclResult_t p2pSendSetup(ncclTinfo_t* myOpaqueInfo, ncclTinfo_t* peerOpaqueInfo
     }
     INFO(INIT|P2P,"Ring %02d : %d[%d] -> %d[%d] via P2P/IPC",
          ring->id, myInfo->rank, myInfo->cudaDev, peerInfo->rank, peerInfo->cudaDev);
-//    TRACE_DUMP_IPC(&info.devIpc);
+    //TRACE_DUMP_IPC(&info.devIpc);
   }
   static_assert(sizeof(struct p2pConnectInfo) <= sizeof(struct ncclConnect), "p2p Connect Info is too big");
   memcpy(connectInfo, &info, sizeof(struct p2pConnectInfo));
@@ -515,7 +515,7 @@ ncclResult_t p2pRecvSetup(ncclTinfo_t* myOpaqueInfo, ncclTinfo_t* peerOpaqueInfo
       return ncclInternalError;
     }
     TRACE(INIT|P2P,"Ring %02d : %d[%d] <- %d[%d] via P2P/IPC", ring->id, myInfo->rank, myInfo->cudaDev, peerInfo->rank, peerInfo->cudaDev);
-//    TRACE_DUMP_IPC(&info.devIpc);
+    //TRACE_DUMP_IPC(&info.devIpc);
   }
   static_assert(sizeof(struct p2pConnectInfo) <= sizeof(struct ncclConnect), "p2p Connect Info is too big");
   memcpy(connectInfo, &info, sizeof(struct p2pConnectInfo));
@@ -533,7 +533,7 @@ static ncclResult_t p2pSendConnect(struct ncclConnect* connectInfo, struct ncclC
     *resources = NULL;
   } else {
     void* remPtr = NULL;
-//    TRACE_DUMP_IPC(&info->devIpc);
+    //TRACE_DUMP_IPC(&info->devIpc);
     cudaError_t err = cudaIpcOpenMemHandle(&remPtr, info->devIpc, cudaIpcMemLazyEnablePeerAccess);
     void** ipcPtrSave = (void**) malloc(sizeof(void*));
     *resources = ipcPtrSave;
@@ -566,7 +566,7 @@ ncclResult_t p2pRecvConnect(struct ncclConnect* connectInfo, struct ncclConnecto
     *resources = NULL;
   } else {
     void* remPtr = NULL;
-//    TRACE_DUMP_IPC(&info->devIpc);
+    //TRACE_DUMP_IPC(&info->devIpc);
     cudaError_t err = cudaIpcOpenMemHandle(&remPtr, info->devIpc, cudaIpcMemLazyEnablePeerAccess);
     void** ipcPtrSave = (void**) malloc(sizeof(void*));
     *resources = ipcPtrSave;

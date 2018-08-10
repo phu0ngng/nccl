@@ -8,7 +8,6 @@
 #define NCCL_TRANSPORT_H_
 
 #include "nccl.h"
-#include "core.h"
 #include <stdint.h>
 
 #define NTRANSPORTS 3
