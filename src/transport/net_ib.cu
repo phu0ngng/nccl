@@ -63,7 +63,7 @@ static ncclResult_t ncclIbMalloc(void** ptr, size_t size) {
   void* p;
   int size_aligned = ROUNDUP(size, page_size);
   int ret = posix_memalign(&p, page_size, size_aligned);
-  if (p == NULL) return ncclSystemError;
+  if (ret != 0) return ncclSystemError;
   memset(p, 0, size);
   *ptr = p;
   return ncclSuccess;
@@ -509,7 +509,7 @@ int ncclIbAccept(void* listenComm, void** recvComm) {
   NCCLCHECK(ncclIbCreateQp(ib_port, &rComm->verbs, IBV_ACCESS_REMOTE_WRITE, &rComm->qp));
 
   // Adjust the MTU
-  remQpInfo.mtu = (enum ibv_mtu)min(remQpInfo.mtu, portAttr.active_mtu);
+  remQpInfo.mtu = (enum ibv_mtu)std::min(remQpInfo.mtu, portAttr.active_mtu);
 
   // Setup QP
   struct ibv_qp* qp = rComm->qp;

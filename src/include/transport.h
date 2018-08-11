@@ -106,6 +106,9 @@ inline void transportProxyIdle(int idle) {
   sched_yield();
 }
 
+#include <stdlib.h>
+#include <string.h>
+
 inline void* mallocZero(size_t size) {
   void* p = malloc(size);
   memset(p, 0, size);

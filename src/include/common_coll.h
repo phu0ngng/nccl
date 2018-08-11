@@ -89,7 +89,7 @@ static ncclResult_t saveKernel(int coll, const void* sendbuff, void* recvbuff, s
     ncclDataType_t dtype, ncclRedOp_t op, int root, ncclComm_t comm, cudaStream_t stream, size_t nbytes, int loopFactor) {
   int llMode, nBlocks, nThreads;
   ncclGetCollResource(comm, nbytes, &nBlocks, &nThreads, &llMode);
-  comm->myParams->blockDim.x = max(comm->myParams->blockDim.x, nThreads);
+  comm->myParams->blockDim.x = std::max((int)comm->myParams->blockDim.x, nThreads);
   if (comm->userStreamSet == false) {
     comm->userStream = stream;
     comm->userStreamSet = true;

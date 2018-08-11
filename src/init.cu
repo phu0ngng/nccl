@@ -445,7 +445,7 @@ static ncclResult_t initTransportsRank(struct ncclComm* comm, ncclUniqueId* comm
   allData[rank] = comm->nThreads;
   NCCLCHECK(bootstrapAllGather(commState, allData, sizeof(int)));
   for (int i=0; i<nranks; i++)
-    comm->nThreads = max(allData[i], comm->nThreads);
+    comm->nThreads = std::max(allData[i], comm->nThreads);
   if (rank == 0) INFO(INIT,"Using %d threads", comm->nThreads);
 
   // Determine the minimum CUDA Compute capability of all GPUs
@@ -454,14 +454,14 @@ static ncclResult_t initTransportsRank(struct ncclComm* comm, ncclUniqueId* comm
   allData[rank] = myCompCap;
   NCCLCHECK(bootstrapAllGather(commState, allData, sizeof(int)));
   for (int i=0; i<nranks; i++)
-    minCompCap = min(allData[i], minCompCap);
+    minCompCap = std::min(allData[i], minCompCap);
   if (rank == 0) INFO(INIT,"Min Comp Cap %d", minCompCap);
 
   // Find min nrings across ranks
   allData[rank] = nrings;
   NCCLCHECK(bootstrapAllGather(commState, allData, sizeof(int)));
   for (int i=0; i<nranks; i++)
-    nrings = min(allData[i], nrings);
+    nrings = std::min(allData[i], nrings);
 
   // Exchange data with others to build complete rings
   comm->nRings = nrings;
@@ -616,9 +616,9 @@ static ncclResult_t initTransportsAll(struct ncclComm** comms, const int* devs, 
     int nthreadsRank = getDefaultThreads();
     myCompCap = ncclCudaCompCap();
     NCCLCHECK(ncclGetRings(&nringsRank, &nthreadsRank, rank, nranks, connectTransport, connectValue, prev, next));
-    nrings = min(nrings, nringsRank);
-    nthreads = max(nthreads, nthreadsRank);
-    minCompCap = min(minCompCap, myCompCap);
+    nrings = std::min(nrings, nringsRank);
+    nthreads = std::max(nthreads, nthreadsRank);
+    minCompCap = std::min(minCompCap, myCompCap);
     for (int ring=0; ring<nrings; ring++) {
       int index = ring*nranks+rank;
       prevFinal[index] = prev[index];

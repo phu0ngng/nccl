@@ -79,6 +79,8 @@ extern std::chrono::high_resolution_clock::time_point ncclEpoch;
 #define TRACE(...)
 #endif
 
+#include <stdlib.h>
+
 static inline void initDebug() {
   const char* nccl_debug = getenv("NCCL_DEBUG");
   if (nccl_debug == NULL) {

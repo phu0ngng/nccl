@@ -168,7 +168,7 @@ int ncclSocketIrecv(void* recvComm, void* data, int size, int type, void** reque
     WARN("Message truncated : received %d bytes instead of %d", recvSize, size);
     return ncclInternalError;
   }
-  NCCLCHECK(socketReceive(comm->fd, data, min(recvSize, size)));
+  NCCLCHECK(socketReceive(comm->fd, data, std::min(recvSize, size)));
   struct ncclSocketRequest* recvReq = NULL;
   NCCLCHECK(ncclSocketGetRequest(&comm->reqs, &recvReq));
   recvReq->size = recvSize;
