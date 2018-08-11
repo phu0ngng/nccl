@@ -7,7 +7,6 @@
 #include "group.h"
 #include "debug.h"
 #include "enqueue.h"
-#include <assert.h>
 
 #define MAX_ASYNC_OPS 128
 thread_local pthread_t ncclGroupThreads[MAX_ASYNC_OPS];

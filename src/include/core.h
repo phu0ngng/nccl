@@ -392,14 +392,14 @@ static inline void ncclGetCollResource(ncclComm_t comm, size_t nbytes, int* nrin
 int ncclCudaCompCap();
 
 #include <sys/mman.h>
-static ncclResult_t ncclCudaHostAlloc(void** ptr, void** devPtr, size_t size) {
+static inline ncclResult_t ncclCudaHostAlloc(void** ptr, void** devPtr, size_t size) {
   CUDACHECK(cudaHostAlloc(ptr, size, cudaHostAllocMapped));
   memset(*ptr, 0, size);
   *devPtr = *ptr;
   return ncclSuccess;
 }
 
-static ncclResult_t ncclCudaHostFree(void* ptr) {
+static inline ncclResult_t ncclCudaHostFree(void* ptr) {
   CUDACHECK(cudaFreeHost(ptr));
   return ncclSuccess;
 }

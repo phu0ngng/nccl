@@ -508,7 +508,8 @@ static ncclResult_t initTransportsRank(struct ncclComm* comm, ncclUniqueId* comm
       intraRanks++;
     }
   }
-  TRACE(INIT,"hostHash[%d] %lx intraRank %d intraRanks %d intraRank0 %d", rank, rankInfos[rank].hostHash, intraRank, intraRanks, intraRank0);
+  TRACE(INIT,"hostHash[%d] %lx intraRank %d intraRanks %d intraRank0 %d",
+        rank, rankInfos[rank].hostHash, intraRank, intraRanks, intraRank0);
   if (intraRank == -1 || intraRank0 == -1 || rankInfos[intraRank0].comm == NULL) {
     WARN("Failed to determine intra ranks hostHash[%d] %lx intraRank %d intraRanks %d intraRank0 %d",
          rank, rankInfos[rank].hostHash, intraRank, intraRanks, intraRank0);
@@ -571,8 +572,7 @@ ncclResult_t ncclCommInitRank(ncclComm_t* newcomm, int nranks, ncclUniqueId comm
 
   INFO(INIT,"rank %d nranks %d", myrank, nranks);
 
-  // It seems we need to call this so that NVML doesn't crash later with error
-  // 999.
+  // It seems we need to call this so that NVML doesn't crash later with error 999.
   CUDACHECK(cudaFree(NULL));
 
   NCCLCHECK(PtrCheck(newcomm, "CommInitRank", "newcomm"));

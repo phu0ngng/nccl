@@ -84,10 +84,10 @@ enum proxyMode {
 };
 
 static int proxyPatternRing = proxyRing;
-static int proxyPatternFrom(int root) { return 1+root; }
-static int proxyPatternTo(int root) { return -1-root; }
-static enum proxyMode proxyPatternMode(int pattern) { return (pattern == 0) ? proxyRing : ((pattern > 0) ? proxyFrom : proxyTo); }
-static int proxyPatternRoot(int pattern) { return (pattern > 0) ? pattern-1 : -pattern-1; }
+static inline int proxyPatternFrom(int root) { return 1+root; }
+static inline int proxyPatternTo(int root) { return -1-root; }
+static inline enum proxyMode proxyPatternMode(int pattern) { return (pattern == 0) ? proxyRing : ((pattern > 0) ? proxyFrom : proxyTo); }
+static inline int proxyPatternRoot(int pattern) { return (pattern > 0) ? pattern-1 : -pattern-1; }
 
 ncclResult_t transportSaveProxies(int substeps, int subchunks, int nstepsPerRound, int nblocksPerRound, size_t size, int pattern, struct ncclComm* comm);
 ncclResult_t transportStartProxies(struct ncclComm* comm);

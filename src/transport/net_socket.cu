@@ -89,7 +89,6 @@ int ncclSocketCreateHandle(void* opaqueHandle, const char* str) {
 }
 
 int ncclSocketListen(int dev, void* opaqueHandle, void** listenComm) {
-  struct ncclSocketComm* comm = ncclSocketNewComm();
   struct ncclSocketHandle* handle = (struct ncclSocketHandle*) opaqueHandle;
   static_assert(sizeof(struct ncclSocketHandle) < NCCL_NET_HANDLE_MAXSIZE, "ncclSocketHandle size too large");
   // if dev >= 0, listen based on dev
@@ -107,6 +106,7 @@ int ncclSocketListen(int dev, void* opaqueHandle, void** listenComm) {
     // pass the local address back
     memcpy(&handle->connectAddr, &localAddr, sizeof(handle->connectAddr));
   } // Otherwise, handle stores a local address
+  struct ncclSocketComm* comm = ncclSocketNewComm();
   NCCLCHECK(createListenSocket(&comm->fd, &handle->connectAddr));
   *listenComm = comm;
   return 0;
@@ -146,7 +146,7 @@ ncclResult_t ncclSocketGetRequest(struct ncclSocketReqs* reqs, struct ncclSocket
       return ncclSuccess;
     }
   }
-  WARN("Socket : unable to allocate requests\n");
+  WARN("Socket : unable to allocate requests");
   return ncclInternalError;
 }
 
@@ -165,7 +165,7 @@ int ncclSocketIrecv(void* recvComm, void* data, int size, int type, void** reque
   int recvSize;
   NCCLCHECK(socketReceive(comm->fd, &recvSize, sizeof(int)));
   if (recvSize > size) {
-    WARN("Message truncated : received %d bytes instead of %d\n", recvSize, size);
+    WARN("Message truncated : received %d bytes instead of %d", recvSize, size);
     return ncclInternalError;
   }
   NCCLCHECK(socketReceive(comm->fd, data, min(recvSize, size)));
@@ -177,7 +177,7 @@ int ncclSocketIrecv(void* recvComm, void* data, int size, int type, void** reque
 }
 
 int ncclSocketFlush(void* recvComm, void* data, int size) {
-  // We don't support CUDA pointers, we don't need a flush.
+  // We don't support CUDA pointers, so we don't need a flush operation
   return 1;
 }
 

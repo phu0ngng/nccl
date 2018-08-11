@@ -158,7 +158,7 @@ static ncclResult_t fillCoords(int nranks, int* matrix, int* coords, int* rankTo
     while ((rank = findConnected(curRank, matrix, nranks, transport, coords)) == -1) {
         current[transport] = 0;
         transport++;
-        if (transport == NTRANSPORTS) return ncclInternalError;
+        if (transport == NTRANSPORTS) { free(p2pConnected); return ncclInternalError; }
     }
     curRank = rank;
     current[transport]++;

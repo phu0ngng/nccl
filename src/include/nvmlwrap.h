@@ -14,10 +14,10 @@
 #include "nvml.h"
 
 #define NVMLCHECK(cmd) do {                              \
-    nvmlReturn_t e = cmd;                                 \
+    nvmlReturn_t e = cmd;                                \
     if( e != NVML_SUCCESS ) {                            \
-        WARN("NVML failure '%s'\n", nvmlErrorString(e)); \
-        return ncclSystemError;                          \
+      WARN("NVML failure '%s'", nvmlErrorString(e));     \
+      return ncclSystemError;                            \
     }                                                    \
 } while(false)
 

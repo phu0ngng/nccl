@@ -186,7 +186,7 @@ static int findInterfaceMatchSubnet(char* ifNames, union socketAddress* localAdd
   }
 
   if (found == 0) {
-    WARN("NET : No interface found in the same subnet as remote address %s", socketToString(&(remoteAddr.sa), line_a));
+    WARN("Net : No interface found in the same subnet as remote address %s", socketToString(&(remoteAddr.sa), line_a));
   }
   freeifaddrs(interfaces);
   return found;
@@ -215,7 +215,7 @@ static ncclResult_t GetSocketAddrFromString(union socketAddress* ua, const char*
     hints.ai_socktype = SOCK_STREAM;
 
     if ( (rv = getaddrinfo(ni.prefix, NULL , &hints , &p)) != 0) {
-      WARN("Net : error encountered when getting address info : %s\n", gai_strerror(rv));
+      WARN("Net : error encountered when getting address info : %s", gai_strerror(rv));
       return ncclInvalidArgument;
     }
 
@@ -308,7 +308,7 @@ static ncclResult_t createListenSocket(int *fd, union socketAddress *localAddr) 
   /* Create socket and bind it to a port */
   int sockfd = socket(family, SOCK_STREAM, 0);
   if (sockfd == -1) {
-    WARN("Socket creation failed : %s", strerror(errno));
+    WARN("Net : Socket creation failed : %s", strerror(errno));
     return ncclSystemError;
   }
 
@@ -341,7 +341,7 @@ static ncclResult_t connectAddress(int* fd, union socketAddress* remoteAddr) {
   /* Connect to a hostname / port */
   *fd = socket(family, SOCK_STREAM, 0);
   if (*fd == -1) {
-    WARN("Socket creation failed : %s", strerror(errno));
+    WARN("Net : Socket creation failed : %s", strerror(errno));
     return ncclSystemError;
   }
 
@@ -368,7 +368,7 @@ static ncclResult_t socketReceive(int fd, void* ptr, int size) {
     int recvsize;
     SYSCHECKVAL(recv(fd, data, size-offset, 0), "recv", recvsize);
     if (recvsize == 0) {
-      WARN("Connection closed by remote peer");
+      WARN("Net : Connection closed by remote peer");
       return ncclSystemError;
     }
     if (recvsize == -1) {
