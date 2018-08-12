@@ -189,7 +189,7 @@ int getDev(int ringId, int nDev, short* scores) {
   return 0;
 }
 
-NCCL_PARAM(NetGdrRead, "NET_GDR_READ", 0);
+NCCL_PARAM(NetGdrRead, "NET_GDR_READ", -2);
 
 /* Determine if we will use this transport for this peer and return connect
  * information for this peer */
@@ -200,7 +200,9 @@ ncclResult_t netSendSetup(ncclTinfo_t* myOpaqueInfo, ncclTinfo_t* peerOpaqueInfo
   struct netInfo* myInfo = (struct netInfo*)myOpaqueInfo;
   resources->netDev = getDev(ring->id, myInfo->ndev, myInfo->scores);
   resources->cudaSupport = false;
-  if (ncclParamNetGdrRead() > 0) {
+  int gdrReadParam = ncclParamNetGdrRead();
+  bool enableGdrRead = (gdrReadParam > 0) || (ncclCudaCompCap() >= 6 && gdrReadParam != 0);
+  if (enableGdrRead) {
     int flags;
     NCCLCHECK(ncclNetPtrSupport(resources->netDev, &flags));
     if (flags & NCCL_PTR_CUDA)
