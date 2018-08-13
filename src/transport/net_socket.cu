@@ -34,6 +34,9 @@ static void initDevices() {
     if (ncclNetIfs == -1) {
       ncclNetIfs = findInterfaces(ncclNetIfNames, ncclNetIfAddrs, MAX_IF_NAME_SIZE, MAX_IFS);
       INFO(INIT|NET,"NET/Socket : %d interfaces found", ncclNetIfs);
+      if (ncclNetIfs <= 0) {
+        WARN("NET/Socket : no interface found");
+      }
     }
     pthread_mutex_unlock(&ncclSocketLock);
   }
@@ -50,7 +53,7 @@ int ncclSocketDevices(int* ndev, int** scores) {
 
 static ncclResult_t GetSocketAddr(int dev, union socketAddress* addr) {
   if (ncclNetIfs == -1) initDevices();
-  if (dev > ncclNetIfs) return ncclInternalError;
+  if (dev >= ncclNetIfs) return ncclInternalError;
   memcpy(addr, ncclNetIfAddrs+dev, sizeof(*addr));
   return ncclSuccess;
 }
