@@ -18,7 +18,7 @@ if [ "$(hostname)" == "dbcluster" ]; then
   source /etc/profile.d/modules.sh
   export PATH=/usr/local/bin:/usr/bin:$PATH
   source $HOME/cuda.sh
-  MPI_HOME="${MPI_HOME:-$HOME/install/openmpi}"
+  MPI_HOME="${MPI_HOME:-$HOME/install/ompi-master}"
 else
   source $SHDIR/cuda.sh
   MPI_HOME="${MPI_HOME:-/opt/mpi/openmpi}"
