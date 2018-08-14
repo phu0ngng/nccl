@@ -85,7 +85,7 @@ if [ "$maxgpu" == "" ]; then
   exit 1
 fi
 
-export NCCL_DEBUG=WARN
+export NCCL_DEBUG=INFO
 
 perf_ptg_loop $gpumodel $nnode $maxproc $maxthread $maxgpu reduce
 perf_ptg_loop $gpumodel $nnode $maxproc $maxthread $maxgpu all_reduce
