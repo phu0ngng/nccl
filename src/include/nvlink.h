@@ -113,4 +113,43 @@ static int getNvlinkGpu(const char* busId1, const char* busId2) {
   return nvswitch_links ? CONNECT_NVSWITCH*nvswitch_links : CONNECT_NVLINK*links;
 }
 
+static int getNumNvlinks(const char* busId) {
+  nvmlDevice_t nvmlDev;
+  ncclResult_t res = wrapNvmlDeviceGetHandleByPciBusId(busId, &nvmlDev);
+  if (res != ncclSuccess) return 0;
+
+  int nvlinks = 0, nvswitch_links = 0;
+  int maxNvLinks = ncclCudaCompCap() > 6 ? 6 : 4;
+  for(int l=0; l<maxNvLinks; ++l) {
+    unsigned canP2P;
+    nvmlEnableState_t isActive;
+    if (wrapNvmlDeviceGetNvLinkCapability(nvmlDev, l, NVML_NVLINK_CAP_P2P_SUPPORTED, &canP2P) == ncclSuccess && canP2P &&
+      wrapNvmlDeviceGetNvLinkState(nvmlDev, l, &isActive) == ncclSuccess && isActive == NVML_FEATURE_ENABLED) {
+      nvlinks++;
+    } else {
+      continue;
+    }
+
+    nvmlPciInfo_t remoteProc;
+    if (wrapNvmlDeviceGetNvLinkRemotePciInfo(nvmlDev, l, &remoteProc) != ncclSuccess) continue;
+
+    // Make a lower case copy of the bus ID for calling ncclDeviceType
+    // PCI system path is in lower case
+    char* p = remoteProc.busId;
+    char lowerId[NVML_DEVICE_PCI_BUS_ID_BUFFER_SIZE];
+    for (int c=0; c<NVML_DEVICE_PCI_BUS_ID_BUFFER_SIZE; c++) {
+      if (p[c] == 0) break;
+      lowerId[c] = tolower(p[c]);
+    }
+
+    // Determine if the remote side is NVswitch
+    enum ncclNvLinkDeviceType type;
+    if (ncclDeviceType(lowerId, &type) == ncclSuccess && type == ncclNvLinkDeviceSwitch) {
+      //TODO: we are making an assumption that all GPUs are connected to this switch
+      //This assumption may change for future architectures
+      nvswitch_links++;
+    }
+  }
+  return nvswitch_links ? CONNECT_NVSWITCH*nvswitch_links : CONNECT_NVLINK*nvlinks;
+}
 #endif

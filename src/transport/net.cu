@@ -9,6 +9,7 @@
 #include "nvmlwrap.h"
 #include "net.h"
 #include "param.h"
+#include "nvlink.h"
 #include <cuda_runtime.h>
 #include <assert.h>
 
@@ -200,14 +201,29 @@ ncclResult_t netSendSetup(ncclTinfo_t* myOpaqueInfo, ncclTinfo_t* peerOpaqueInfo
   struct netInfo* myInfo = (struct netInfo*)myOpaqueInfo;
   resources->netDev = getDev(ring->id, myInfo->ndev, myInfo->scores);
   resources->cudaSupport = false;
+
+  // Get user's GDR READ setting
   int gdrReadParam = ncclParamNetGdrRead();
-  bool enableGdrRead = (gdrReadParam > 0) || (ncclCudaCompCap() >= 6 && gdrReadParam != 0);
+
+  // Determine whether the GPU has NVLink
+  int cudaDev;
+  CUDACHECK(cudaGetDevice(&cudaDev));
+  char busId[NVML_DEVICE_PCI_BUS_ID_BUFFER_SIZE];
+  CUDACHECK(cudaDeviceGetPCIBusId(busId, NVML_DEVICE_PCI_BUS_ID_BUFFER_SIZE, cudaDev));
+  int nvlinks = getNumNvlinks(busId);
+
+  // Enable GDR read when:
+  // 1) user sets it, or
+  // 2) we are on a NVSwitch platform (i.e. no P2P traffic over PCI-E switch) AND the GPU is Volta
+  bool enableGdrRead = (gdrReadParam > 0) || (nvlinks >= CONNECT_NVSWITCH && ncclCudaCompCap() > 6 && gdrReadParam != 0);
   if (enableGdrRead) {
     int flags;
     NCCLCHECK(ncclNetPtrSupport(resources->netDev, &flags));
     if (flags & NCCL_PTR_CUDA)
       resources->cudaSupport = true;
   }
+  if (resources->cudaSupport)
+    INFO(INIT|NET, "Net: enabling net device %d to read from rank %d", resources->netDev, myInfo->rank);
 
   int size = offsetof(struct ncclRecvMem, buff)+ring->buffSize;
   if (resources->cudaSupport) {
