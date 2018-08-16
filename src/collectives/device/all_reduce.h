@@ -26,8 +26,8 @@ __device__ void ncclAllReduceKernel(struct CollectiveArgs* args) {
   int prevdirect = ring->recv.conn.direct;
   int nextdirect = ring->send.conn.direct;
 
-  WaitFlag waitDoneFromNext(ring->send.conn.head, NCCL_STEPS);
-  WaitFlag waitReadyFromPrev(ring->recv.conn.tail, ALLREDUCE_CHUNKSTEPS);
+  WaitFlag waitDoneFromNext(args->comm->abortFlag, ring->send.conn.head, NCCL_STEPS);
+  WaitFlag waitReadyFromPrev(args->comm->abortFlag, ring->recv.conn.tail, ALLREDUCE_CHUNKSTEPS);
   PostFlag postDoneToPrev(ring->recv.conn.head, ALLREDUCE_CHUNKSTEPS, NULL, 0);
   PostFlag postReadyToNext(ring->send.conn.tail, 0, ring->send.conn.fifo, NCCL_STEPS);
 
@@ -250,6 +250,7 @@ __device__ void ncclAllReduceLLKernel(struct CollectiveArgs* args) {
 
     WAIT_NEXT;
     LL::ReduceCopy(
+        args->comm->abortFlag,
         thisInput  + offset,
         nextOutput + noffset,
         maxOffset, nflag,
@@ -266,6 +267,7 @@ __device__ void ncclAllReduceLLKernel(struct CollectiveArgs* args) {
 
       WAIT_NEXT;
       LL::ReduceCopy(
+          args->comm->abortFlag,
           thisInput  + offset,
           prevInput  + poffset,
           nextOutput + noffset,
@@ -285,6 +287,7 @@ __device__ void ncclAllReduceLLKernel(struct CollectiveArgs* args) {
 
     WAIT_NEXT;
     LL::ReduceCopy(
+        args->comm->abortFlag,
         thisInput  + offset,
         prevInput  + poffset,
         thisOutput + offset,
@@ -304,6 +307,7 @@ __device__ void ncclAllReduceLLKernel(struct CollectiveArgs* args) {
 
       WAIT_NEXT;
       LL::ReduceCopy(
+          args->comm->abortFlag,
           prevInput + poffset,
           thisOutput + offset,
           nextOutput + noffset,
@@ -322,6 +326,7 @@ __device__ void ncclAllReduceLLKernel(struct CollectiveArgs* args) {
 
     // Here we need to copy from buffer to this output.
     LL::ReduceCopy(
+        args->comm->abortFlag,
         prevInput + poffset,
         thisOutput + offset,
         maxOffset, pflag,

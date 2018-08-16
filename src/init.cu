@@ -137,6 +137,7 @@ static ncclResult_t commFree(ncclComm_t comm) {
     free(comm->intraCGMode);
     free(comm->intraCC);
   }
+  CUDACHECK(cudaFreeHost((void *)comm->abortFlag));
 
   free(comm);
   return ncclSuccess;
@@ -175,6 +176,9 @@ static ncclResult_t commAlloc(ncclComm_t* comret, int ndev, int rank) {
   comm->groupCudaStream = NCCL_GROUP_CUDA_STREAM;
 #endif
 
+  CUDACHECK(cudaHostAlloc((void**) &comm->abortFlag, sizeof(uint32_t), cudaHostAllocMapped));
+  *comm->abortFlag = 0;
+
   comm->argsptr = &comm->args;
 
   *comret = comm;
@@ -190,6 +194,10 @@ static ncclResult_t devCommSetup(ncclComm_t comm) {
   for (int r=0; r<comm->nRings; r++) {
     NCCLCHECK(ncclCudaMemcpy(comm->rings[r].devUserRanks, comm->rings[r].userRanks, comm->nRanks));
   }
+  // Copy the device-accessible pointer to comm->abortFlag
+  void *devAbortFlag;
+  CUDACHECK(cudaHostGetDevicePointer(&devAbortFlag, (uint32_t *)comm->abortFlag, 0));
+  CUDACHECK(cudaMemcpy(&comm->devComm->abortFlag, &devAbortFlag, sizeof(int *), cudaMemcpyHostToDevice));
   return ncclSuccess;
 }
 
@@ -773,6 +781,10 @@ ncclResult_t ncclCommDestroy(ncclComm_t comm) {
   if (savedDevice != commDevice) {
     CUDACHECK(cudaSetDevice(commDevice));
   }
+
+  // Ask anything that might still be running on the device to quit
+  *comm->abortFlag = 1;
+  CUDACHECK(cudaStreamSynchronize(comm->groupStream));
 
   NCCLCHECK(commFree(comm));
 

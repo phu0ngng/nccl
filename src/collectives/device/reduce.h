@@ -22,8 +22,8 @@ __device__ void ncclReduceKernel(struct CollectiveArgs* args) {
   struct ncclComm* comm = args->comm;
   struct ncclRing* ring = comm->rings+blockIdx.x;
 
-  WaitFlag waitDoneFromNext(ring->send.conn.head, NCCL_STEPS-REDUCE_CHUNKSTEPS);
-  WaitFlag waitReadyFromPrev(ring->recv.conn.tail, 0);
+  WaitFlag waitDoneFromNext(args->comm->abortFlag, ring->send.conn.head, NCCL_STEPS-REDUCE_CHUNKSTEPS);
+  WaitFlag waitReadyFromPrev(args->comm->abortFlag, ring->recv.conn.tail, 0);
   PostFlag postDoneToPrev(ring->recv.conn.head, 0, NULL, 0);
   PostFlag postReadyToNext(ring->send.conn.tail, 0, ring->send.conn.fifo, NCCL_STEPS);
 
@@ -145,6 +145,7 @@ __device__ void ncclReduceLLKernel(struct CollectiveArgs* args) {
     if (prevRank == root) {
       WAIT_NEXT;
       LL::ReduceCopy(
+          args->comm->abortFlag,
           thisInput + offset,
           nextOutput + boffset,
           maxOffset, flag,
@@ -153,6 +154,7 @@ __device__ void ncclReduceLLKernel(struct CollectiveArgs* args) {
       NEXT_STEP_LL;
     } else if (rank == root) {
       LL::ReduceCopy(
+          args->comm->abortFlag,
           thisInput + offset,
           prevInput  + boffset,
           thisOutput + offset,
@@ -163,6 +165,7 @@ __device__ void ncclReduceLLKernel(struct CollectiveArgs* args) {
     } else {
       WAIT_NEXT;
       LL::ReduceCopy(
+          args->comm->abortFlag,
           thisInput + offset,
           prevInput + boffset,
           nextOutput + boffset,

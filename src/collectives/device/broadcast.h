@@ -22,8 +22,8 @@ __device__ void ncclBroadcastKernel(struct CollectiveArgs* args) {
   struct ncclComm* comm = args->comm;
   struct ncclRing* ring = comm->rings+blockIdx.x;
 
-  WaitFlag waitDoneFromNext(ring->send.conn.head, NCCL_STEPS-BROADCAST_CHUNKSTEPS);
-  WaitFlag waitReadyFromPrev(ring->recv.conn.tail, 0);
+  WaitFlag waitDoneFromNext(args->comm->abortFlag, ring->send.conn.head, NCCL_STEPS-BROADCAST_CHUNKSTEPS);
+  WaitFlag waitReadyFromPrev(args->comm->abortFlag, ring->recv.conn.tail, 0);
   PostFlag postDoneToPrev(ring->recv.conn.head, 0, NULL, 0);
   PostFlag postReadyToNext(ring->send.conn.tail, 0, ring->send.conn.fifo, NCCL_STEPS);
 
@@ -155,12 +155,14 @@ __device__ void ncclBroadcastLLKernel(struct CollectiveArgs* args) {
       WAIT_NEXT;
       if (thisInput == thisOutput) {
         LL::ReduceCopy(
+            args->comm->abortFlag,
             thisInput + offset,
             nextOutput + boffset,
             maxOffset, flag,
             tid, nthreads);
       } else {
         LL::ReduceCopy(
+            args->comm->abortFlag,
             thisInput + offset,
             thisOutput + offset,
             nextOutput + boffset,
@@ -171,6 +173,7 @@ __device__ void ncclBroadcastLLKernel(struct CollectiveArgs* args) {
       NEXT_STEP_LL;
     } else if (nextRank == root) {
       LL::ReduceCopy(
+          args->comm->abortFlag,
           prevInput + boffset,
           thisOutput + offset,
           maxOffset, flag,
@@ -180,6 +183,7 @@ __device__ void ncclBroadcastLLKernel(struct CollectiveArgs* args) {
     } else {
       WAIT_NEXT;
       LL::ReduceCopy(
+          args->comm->abortFlag,
           prevInput + boffset,
           thisOutput + offset,
           nextOutput + boffset,

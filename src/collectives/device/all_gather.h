@@ -26,8 +26,8 @@ __device__ void ncclAllGatherKernel(struct CollectiveArgs* args) {
   int prevdirect = ring->recv.conn.direct;
   int nextdirect = ring->send.conn.direct;
 
-  WaitFlag waitDoneFromNext(ring->send.conn.head, NCCL_STEPS);
-  WaitFlag waitReadyFromPrev(ring->recv.conn.tail, ALLGATHER_CHUNKSTEPS);
+  WaitFlag waitDoneFromNext(args->comm->abortFlag, ring->send.conn.head, NCCL_STEPS);
+  WaitFlag waitReadyFromPrev(args->comm->abortFlag, ring->recv.conn.tail, ALLGATHER_CHUNKSTEPS);
   PostFlag postDoneToPrev(ring->recv.conn.head, ALLGATHER_CHUNKSTEPS, NULL, 0);
   PostFlag postReadyToNext(ring->send.conn.tail, 0, ring->send.conn.fifo, NCCL_STEPS);
 
@@ -216,12 +216,14 @@ __device__ void ncclAllGatherLLKernel(struct CollectiveArgs* args) {
     WAIT_NEXT;
     if (thisInput + chunkOffset == thisOutput + offset) { // In place
       LL::ReduceCopy(
+          args->comm->abortFlag,
           thisInput  + chunkOffset,
           nextOutput + noffset,
           maxOffset, nflag,
           tid, nthreads);
     } else {
       LL::ReduceCopy(
+          args->comm->abortFlag,
           thisInput  + chunkOffset,
           thisOutput + offset,
           nextOutput + noffset,
@@ -239,6 +241,7 @@ __device__ void ncclAllGatherLLKernel(struct CollectiveArgs* args) {
 
       WAIT_NEXT;
       LL::ReduceCopy(
+          args->comm->abortFlag,
           prevInput  + poffset,
           thisOutput + offset,
           nextOutput + noffset,
@@ -255,6 +258,7 @@ __device__ void ncclAllGatherLLKernel(struct CollectiveArgs* args) {
     offset = chunkOffset + rankDest * size;
 
     LL::ReduceCopy(
+        args->comm->abortFlag,
         prevInput  + poffset,
         thisOutput + offset,
         maxOffset, pflag,

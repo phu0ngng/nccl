@@ -23,8 +23,8 @@ __device__ void ncclReduceScatterKernel(struct CollectiveArgs* args) {
   struct ncclComm* comm = args->comm;
   struct ncclRing* ring = comm->rings+blockIdx.x;
 
-  WaitFlag waitDoneFromNext(ring->send.conn.head, NCCL_STEPS);
-  WaitFlag waitReadyFromPrev(ring->recv.conn.tail, REDUCESCATTER_CHUNKSTEPS);
+  WaitFlag waitDoneFromNext(args->comm->abortFlag, ring->send.conn.head, NCCL_STEPS);
+  WaitFlag waitReadyFromPrev(args->comm->abortFlag, ring->recv.conn.tail, REDUCESCATTER_CHUNKSTEPS);
   PostFlag postDoneToPrev(ring->recv.conn.head, REDUCESCATTER_CHUNKSTEPS, NULL, 0);
   PostFlag postReadyToNext(ring->send.conn.tail, 0, ring->send.conn.fifo, NCCL_STEPS);
 
@@ -165,6 +165,7 @@ __device__ void ncclReduceScatterLLKernel(struct CollectiveArgs* args) {
 
     WAIT_NEXT;
     LL::ReduceCopy(
+        args->comm->abortFlag,
         thisInput  + offset,
         nextOutput + noffset,
         maxOffset, nflag,
@@ -180,6 +181,7 @@ __device__ void ncclReduceScatterLLKernel(struct CollectiveArgs* args) {
 
       WAIT_NEXT;
       LL::ReduceCopy(
+          args->comm->abortFlag,
           thisInput  + offset,
           prevInput  + poffset,
           nextOutput + noffset,
@@ -197,6 +199,7 @@ __device__ void ncclReduceScatterLLKernel(struct CollectiveArgs* args) {
     offset = chunkOffset + rankDest * size;
 
     LL::ReduceCopy(
+        args->comm->abortFlag,
         thisInput  + offset,
         prevInput  + poffset,
         thisOutput + chunkOffset,
