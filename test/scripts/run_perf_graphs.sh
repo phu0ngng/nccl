@@ -128,7 +128,9 @@ if [ "$mode" == "deadlock" ] || [ "$mode" == "combo" ]; then
   path=$resdir/$gpumodel
   mkdir -p $path
   result=$path/$op.$ngpus
-  mpirun -np 1 --cpus-per-rank $ngpus test/perf/${op}_perf -t $ngpus -b 64 -e 64 -k 1 2>&1 | tee $result.out
+  mpirun -np 1 --cpus-per-rank $ngpus -mca mpi_leave_pinned 0 -mca btl ^openib test/perf/${op}_perf -t $ngpus -k 1 -w 0 -n 1 2>&1 | tee $result.out
+  mpirun -np 1 --cpus-per-rank $ngpus -mca mpi_leave_pinned 0 -mca btl ^openib test/perf/${op}_perf -g $ngpus -k 1 -w 0 -n 1 2>&1 | tee -a $result.out
+  mpirun -np $ngpus --cpus-per-rank 1 -mca mpi_leave_pinned 0 -mca btl ^openib test/perf/${op}_perf -k 1 -w 0 -n 1 2>&1 | tee -a $result.out
   if [ "$mode" != "combo" ]; then
     return 0
   fi
