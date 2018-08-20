@@ -7,8 +7,6 @@
 #ifndef NCCL_COLLECTIVES_H_
 #define NCCL_COLLECTIVES_H_
 
-typedef enum { ncclCollBroadcast, ncclCollReduce, ncclCollAllGather, ncclCollReduceScatter, ncclCollAllReduce, ncclCollCount } ncclColl_t;
-
 #define FUNC_INDEX(coll, redop, dtype, ll) ((((coll*ncclNumOps + redop)*ncclNumTypes) + dtype)*2+ll)
 
 #define NCCL_COLL_NAME(coll, op, dtype) \

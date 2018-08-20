@@ -18,7 +18,7 @@ extern struct ncclTransport ncclTransports[];
 #define RANK_INFO_SIZE 64
 typedef char ncclTinfo_t[RANK_INFO_SIZE];
 
-struct ncclInfo {
+struct ncclPeerInfo {
   ncclTinfo_t tinfo[NTRANSPORTS];
 };
 
@@ -89,7 +89,7 @@ static int proxyPatternTo(int root) { return -1-root; }
 static enum proxyMode proxyPatternMode(int pattern) { return (pattern == 0) ? proxyRing : ((pattern > 0) ? proxyFrom : proxyTo); }
 static int proxyPatternRoot(int pattern) { return (pattern > 0) ? pattern-1 : -pattern-1; }
 
-ncclResult_t transportSaveProxies(int substeps, int subchunks, int nstepsPerRound, int nblocksPerRound, size_t size, int pattern, struct ncclComm* comm);
+ncclResult_t transportSaveProxies(struct ncclProxyArgs* args, int pattern, int nranks);
 ncclResult_t transportStartProxies(struct ncclComm* comm);
 
 #include <unistd.h>

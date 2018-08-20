@@ -33,7 +33,7 @@ struct cudaLaunchParams
 #define DEFAULT_BUFFER_SIZE_BYTES (1LL << 22) /* 4MiB */
 
 // Rings / LL tuning
-#define NCCL_RING_THRESHOLD 8 // Per thread size before we start increasing nrings
+#define NCCL_LL_RING_THRESHOLD 8 // Per thread size before we start increasing nrings
 #define NCCL_THREAD_THRESHOLD 32  // Per thread size before we switch to non-LL
 #define NCCL_LL_MAX_NTHREADS 256
 #define NCCL_LL_MIN_NTHREADS 64
@@ -59,6 +59,31 @@ union ncclLLFifoLine {
   };
   uint64_t v[2];
   int4 i4;
+};
+
+typedef enum { ncclCollBroadcast, ncclCollReduce, ncclCollAllGather, ncclCollReduceScatter, ncclCollAllReduce, ncclCollCount } ncclColl_t;
+
+// Used to pass NCCL call information between functions
+struct ncclInfo {
+  ncclColl_t coll;
+  const char* opName;
+  // NCCL Coll Args
+  const void* sendbuff;
+  void* recvbuff;
+  size_t count;
+  ncclDataType_t datatype;
+  ncclRedOp_t op;
+  int root;
+  ncclComm_t comm;
+  cudaStream_t stream;
+  // Algorithm details
+  int bufChunks;
+  int subSteps;
+  int pattern;
+  // Computed later
+  size_t nBytes;
+  int nstepsPerLoop;
+  int nchunksPerLoop;
 };
 
 struct ncclConnInfo {
@@ -96,8 +121,8 @@ struct ncclConnector {
 #define NCCL_LL_CHUNKS 8
 #define NUM_LINES_PER_THREAD 2
 #define NCCL_LL_BUFF_SIZE (NUM_LINES_PER_THREAD*NCCL_LL_MAX_NTHREADS*NCCL_LL_CHUNKS*sizeof(union ncclLLFifoLine)) // 64K
-#define llBuffSize NCCL_LL_BUFF_SIZE / (2*sizeof(uint64_t))
-#define llSliceSize llBuffSize / NCCL_LL_CHUNKS
+#define NCCL_LL_BUFF_LINES (NCCL_LL_BUFF_SIZE / (2*sizeof(uint64_t)))
+#define NCCL_LL_SLICE_LINES (NCCL_LL_BUFF_LINES / NCCL_LL_CHUNKS)
 #define NCCL_LL_CLEAN_FREQ 0x10000000
 
 struct ncclSendMem {
@@ -186,7 +211,6 @@ struct ncclColl {
   union {
     struct {
       struct CollectiveArgs args;
-      uint16_t nThreads;
       uint16_t funcIndex;
       uint16_t nextIndex;
       uint8_t  active;
@@ -243,54 +267,6 @@ struct ncclComm {
   struct ncclColl args;
   void* argsptr;
 };
-
-// In : comm, nbytes ; Out : nrings, nthreads, ll
-// - We start with the minimum number of threads possible (64) and see if the size fits in LL;
-//   If not, we increase the number of threads by 2x, until we reach the max number of LL threads (256, or set by user via NCCL_NTHREADS, or platform non-LL default)
-// - We use "maxRings" to limit the max number of rings we can use before reaching the max number of LL threads
-//   This ensures we don't use a large number of rings with a small number of threads
-// - We use the NCCL_RING_THRESHOLD as the per-thread threshold before we reach the max number of threads
-//   we use NCCL_THREAD_THRESHOLD when we reach the max
-// - If by the max number of LL threads, the size still cannot fit in LL, then we use non-LL setting
-// - We honor the NCCL_LL_THRESHOLD (total threshold) set by user too
-static inline void ncclGetCollResource(ncclComm_t comm, size_t nbytes, int* nrings, int* nthreads, int* ll) {
-  *ll = 0;
-  int llEnforced = 0; /* see if the size falls in the NCCL_LL_THRESHOLD range set by user */
-  if (comm->llThreshold >= 0) { /* user sets total LL threshold */
-    if (nbytes > comm->llThreshold) { /* non-LL */
-      *nthreads = comm->nThreads+1;
-      *nrings = comm->nRings;
-      return;
-    } else {
-      llEnforced = 1; /* user wants to use LL */
-    }
-  }
-  int nt = NCCL_LL_MIN_NTHREADS; /* start with min number of LL threads */
-  size_t nr;
-  int ll_max_nthreads = min(NCCL_LL_MAX_NTHREADS, comm->nThreads); /* respect user's setting or platform's default setting */
-  int maxRings = (comm->nRanks <= 4) ? 1 : ll_max_nthreads / NCCL_LL_MIN_NTHREADS;
-  ssize_t threshold = min(comm->threadThreshold, (ssize_t)NCCL_RING_THRESHOLD);
-  while (nt < ll_max_nthreads && *ll == 0) {
-    nr = DIVUP(nbytes, (NCCL_RING_THRESHOLD*nt*comm->nRanks));
-    if (nr <= maxRings) { /* avoid using few threads but many rings */
-      nr = nr == 0 ? 1 : nr > comm->nRings ? comm->nRings : nr;
-      *ll = nbytes > comm->nRanks*nr*nt*threshold ? 0 : 1;
-    }
-    if (*ll == 0) {
-      nt = nt << 1;
-    }
-  }
-  if (*ll == 1) {
-    *nthreads = nt;
-    *nrings = (int)nr;
-    return; /* we can use smaller number of threads to make LL work, stop here */
-  }
-  nr = DIVUP(nbytes, (NCCL_RING_THRESHOLD*ll_max_nthreads*comm->nRanks)); /* else we try the max number of LL threads */
-  nr = nr == 0 ? 1 : nr > comm->nRings ? comm->nRings : nr;
-  *ll = nbytes > comm->nRanks*nr*ll_max_nthreads*comm->threadThreshold ? llEnforced : 1;
-  *nthreads = *ll ? ll_max_nthreads : comm->nThreads+1;
-  *nrings = *ll ? (int)nr : comm->nRings;
-}
 
 // Check CUDA calls
 #define CUDACHECK(cmd) do {                                 \
@@ -402,6 +378,26 @@ static ncclResult_t ncclCudaHostAlloc(void** ptr, void** devPtr, size_t size) {
 static ncclResult_t ncclCudaHostFree(void* ptr) {
   CUDACHECK(cudaFreeHost(ptr));
   return ncclSuccess;
+}
+
+static __inline__ int ncclTypeSize(ncclDataType_t type) {
+  switch (type) {
+    case ncclInt8:
+    case ncclUint8:
+      return 1;
+    case ncclFloat16:
+      return 2;
+    case ncclInt32:
+    case ncclUint32:
+    case ncclFloat32:
+      return 4;
+    case ncclInt64:
+    case ncclUint64:
+    case ncclFloat64:
+      return 8;
+    default:
+      return -1;
+  }
 }
 
 #endif // end include guard

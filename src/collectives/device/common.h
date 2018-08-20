@@ -50,7 +50,7 @@ __global__ void NCCL_KERN_NAME(coll, op, dtype)(struct ncclColl firstColl) { \
     load_coll(c, ring->devCollectives+ring->collFifoHead, tid); \
   } \
   while (1) { \
-    if (tid < c->nThreads) { \
+    if (tid < c->args.nThreads) { \
       if (c->funcIndex == fIndex) { \
         coll##Kernel<UNROLL, ncclFunc<ctype>, ctype>(&c->args); \
       } else { \

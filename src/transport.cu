@@ -89,33 +89,17 @@ static bool NeedProxy(int type, int pattern, struct ncclRing* ring, int nranks) 
   return (root != rank);
 }
 
-static void SaveProxy(struct ncclConnector* connector, struct ncclProxyArgs* args, int needProxy) {
+static void SaveProxy(struct ncclConnector* connector, struct ncclProxyArgs* args) {
   struct transportProxyInfo* info = connector->proxyInfo;
   if (info == NULL) return;
   struct ncclProxyArgs* fifoArgs = FifoGetNextArgs(info);
-  args->needProxy = needProxy;
   memcpy(fifoArgs, args, sizeof(struct ncclProxyArgs));
   fifoArgs->active = 1;
 }
 
-ncclResult_t transportSaveProxies(int substeps, int subchunks, int nstepsPerRound, int nblocksPerRound, size_t nbytes, int pattern, struct ncclComm* comm) {
-  int llMode, nrings, nthreads;
-  ncclGetCollResource(comm, nbytes, &nrings, &nthreads, &llMode);
-  nbytes       = llMode ? nbytes * 2    : nbytes;
-  substeps     = llMode ? 1             : substeps;
-  subchunks    = llMode ? NCCL_LL_CHUNKS : subchunks;
-  int buffSize = llMode ? NCCL_LL_BUFF_SIZE : comm->rings[0].buffSize;
-
-  int nrounds = (int)(DIVUP(nbytes, ((size_t)nrings * nblocksPerRound * (buffSize/subchunks)))); // Fixed 32-bit overflow
-  int nsteps = nstepsPerRound * nrounds * substeps;
-  TRACE(NET,"opCount %lx substeps %d subchunks %d nrounds %d nsteps %d comm %p", comm->opCount, subchunks, subchunks, nrounds, nsteps, comm);
-  TRACE(NET,"opCount %lx nbytes %zi nrings %d buffSize %d pattern %d comm %p", comm->opCount, nbytes, nrings, buffSize, pattern, comm);
-  for (int r=0; r<nrings; r++) {
-    struct ncclRing* ring = comm->rings+((comm->myParams->gridDim.x+r)%comm->nRings);
-    struct ncclProxyArgs args = { ring, substeps*subchunks, nsteps, comm->opCount, llMode, 0 };
-    SaveProxy(&ring->recv, &args, NeedProxy(RECV, pattern, ring, comm->nRanks));
-    SaveProxy(&ring->send, &args, NeedProxy(SEND, pattern, ring, comm->nRanks));
-  }
+ncclResult_t transportSaveProxies(struct ncclProxyArgs* args, int pattern, int nranks) {
+  args->needProxy = NeedProxy(RECV, pattern, args->ring, nranks); SaveProxy(&args->ring->recv, args);
+  args->needProxy = NeedProxy(SEND, pattern, args->ring, nranks); SaveProxy(&args->ring->send, args);
   return ncclSuccess;
 }
 

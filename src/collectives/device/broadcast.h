@@ -140,8 +140,8 @@ __device__ void ncclBroadcastKernel(struct CollectiveArgs* args) {
 #include "ll_kernel.h"
 
 #define NEXT_STEP_LL \
-  boffset += llSliceSize; \
-  if (boffset == llBuffSize) boffset = 0; \
+  boffset += NCCL_LL_SLICE_LINES; \
+  if (boffset == NCCL_LL_BUFF_LINES) boffset = 0; \
   flag++; \
   step++;
 
@@ -163,12 +163,12 @@ __device__ void ncclBroadcastLLKernel(struct CollectiveArgs* args) {
   typedef LLPrimitives<T, FUNC> LL;
 
   const ssize_t size = args->N;
-  ssize_t chunkSize = llSliceSize * sizeof(uint64_t) / sizeof(T);
+  ssize_t chunkSize = NCCL_LL_SLICE_LINES * sizeof(uint64_t) / sizeof(T);
   const ssize_t loopSize = args->nRings*chunkSize;
 
   uint64_t step = ring->send.conn.llStep;
   uint32_t flag = step + 1;
-  int boffset = llSliceSize * STEP_TO_SLOT(step);
+  int boffset = NCCL_LL_SLICE_LINES * STEP_TO_SLOT(step);
 
   // Compute pointers
   const T * __restrict__ thisInput = (const T*)args->ThisInput;

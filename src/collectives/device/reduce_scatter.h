@@ -124,8 +124,8 @@ __device__ void ncclReduceScatterKernel(struct CollectiveArgs* args) {
 #define NEXT_STEP_LL \
   poffset = noffset; \
   pflag = nflag; \
-  noffset += llSliceSize; \
-  if (noffset == llBuffSize) { noffset = 0; } \
+  noffset += NCCL_LL_SLICE_LINES; \
+  if (noffset == NCCL_LL_BUFF_LINES) { noffset = 0; } \
   nflag++; \
   step++;
 
@@ -146,12 +146,12 @@ __device__ void ncclReduceScatterLLKernel(struct CollectiveArgs* args) {
   const ssize_t size = args->N;
   //const int rank = comm->rank;
   const int nranks = comm->nRanks;
-  ssize_t chunkSize = llSliceSize * sizeof(uint64_t) / sizeof(T);
+  ssize_t chunkSize = NCCL_LL_SLICE_LINES * sizeof(uint64_t) / sizeof(T);
   const ssize_t loopSize = args->nRings*chunkSize;
 
   uint64_t step = ring->send.conn.llStep;
   uint32_t pflag, nflag = step + 1;
-  int poffset, noffset = llSliceSize * STEP_TO_SLOT(step);
+  int poffset, noffset = NCCL_LL_SLICE_LINES * STEP_TO_SLOT(step);
 
   // Compute pointers
   const T * __restrict__ thisInput = (const T*)args->ThisInput;

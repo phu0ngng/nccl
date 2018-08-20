@@ -13,10 +13,11 @@
 #include "rings.h"
 #include "bootstrap.h"
 #include "transport.h"
-#include "common_coll.h"
 #include "group.h"
 #include "utils.h"
 #include "net.h"
+#include "checks.h"
+#include "enqueue.h"
 #include <stdio.h>
 #include <stdlib.h>
 #include <sys/mman.h>
@@ -211,7 +212,7 @@ static void showVersion() {
   }
 }
 
-static ncclResult_t fillInfo(struct ncclInfo* info, int rank) {
+static ncclResult_t fillInfo(struct ncclPeerInfo* info, int rank) {
   for (int t=0; t<NTRANSPORTS; t++) {
     NCCLCHECK(ncclTransports[t].fillInfo(info->tinfo+t, rank));
   }
@@ -219,7 +220,7 @@ static ncclResult_t fillInfo(struct ncclInfo* info, int rank) {
 }
 
 template <int type>
-static ncclResult_t selectTransport(struct ncclInfo* myInfo, struct ncclInfo* peerInfo, struct ncclConnect* connect, struct ncclTransport** transportRet, struct ncclRing* ring) {
+static ncclResult_t selectTransport(struct ncclPeerInfo* myInfo, struct ncclPeerInfo* peerInfo, struct ncclConnect* connect, struct ncclTransport** transportRet, struct ncclRing* ring) {
   for (int t=0; t<NTRANSPORTS; t++) {
     struct ncclTransport *transport = ncclTransports+t;
     struct ncclTransportComm* transportComm = type == 1 ? &transport->send : &transport->recv;
@@ -236,7 +237,7 @@ static ncclResult_t selectTransport(struct ncclInfo* myInfo, struct ncclInfo* pe
   return ncclInternalError;
 }
 
-static ncclResult_t setupRing(struct ncclComm* comm, int ringid, int rank, int nranks, int* ringRanks, struct ncclInfo* allInfo, struct ncclConnect* connect) {
+static ncclResult_t setupRing(struct ncclComm* comm, int ringid, int rank, int nranks, int* ringRanks, struct ncclPeerInfo* allInfo, struct ncclConnect* connect) {
   NCCLCHECK(initRing(comm, ringid));
 
   struct ncclRing* ring = comm->rings+ringid;
@@ -260,7 +261,7 @@ static ncclResult_t setupRing(struct ncclComm* comm, int ringid, int rank, int n
   return ncclSuccess;
 }
 
-static ncclResult_t fillConnect(struct ncclInfo* allInfo, int nranks, int rank, int* connectTransport, ncclTvalue_t* connectValue) {
+static ncclResult_t fillConnect(struct ncclPeerInfo* allInfo, int nranks, int rank, int* connectTransport, ncclTvalue_t* connectValue) {
   for (int r=0; r<nranks; r++) {
     connectTransport[r] = -1;
     for (int t=0; t<NTRANSPORTS; t++) {
@@ -420,9 +421,9 @@ static ncclResult_t initTransportsRank(struct ncclComm* comm, ncclUniqueId* comm
   void* commState;
   NCCLCHECK(bootstrapInit(commId, rank, nranks, &commState));
   
-  struct ncclInfo* allInfo = (struct ncclInfo*)malloc(sizeof(struct ncclInfo)*nranks);
+  struct ncclPeerInfo* allInfo = (struct ncclPeerInfo*)malloc(sizeof(struct ncclPeerInfo)*nranks);
   NCCLCHECK(fillInfo(allInfo+rank, rank));
-  NCCLCHECK(bootstrapAllGather(commState, allInfo, sizeof(struct ncclInfo)));
+  NCCLCHECK(bootstrapAllGather(commState, allInfo, sizeof(struct ncclPeerInfo)));
   int* connectTransport = (int*)malloc(sizeof(int)*nranks*nranks);
   ncclTvalue_t* connectValue = (ncclTvalue_t*)malloc(sizeof(ncclTvalue_t)*nranks*nranks);
   NCCLCHECK(fillConnect(allInfo, nranks, rank, connectTransport+nranks*rank, connectValue+nranks*rank));
@@ -591,7 +592,7 @@ ncclResult_t ncclCommInitRank(ncclComm_t* newcomm, int nranks, ncclUniqueId comm
 }
 
 static ncclResult_t initTransportsAll(struct ncclComm** comms, const int* devs, int nranks) {
-  struct ncclInfo* allInfo = (struct ncclInfo*)malloc(sizeof(struct ncclInfo)*nranks);
+  struct ncclPeerInfo* allInfo = (struct ncclPeerInfo*)malloc(sizeof(struct ncclPeerInfo)*nranks);
   for (int rank=0; rank<nranks; rank++) {
     CUDACHECK(cudaSetDevice(devs[rank]));
     NCCLCHECK(fillInfo(allInfo+rank, rank));

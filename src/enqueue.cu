@@ -5,7 +5,7 @@
  ************************************************************************/
 
 #include "enqueue.h"
-#include "common_coll.h"
+#include "checks.h"
 #include "param.h"
 
 #include "collectives/collectives.h"
@@ -215,34 +215,193 @@ ncclResult_t ncclEnqueueEvents(ncclComm_t comm) {
   return ncclSuccess;
 }
 
-ncclResult_t ncclEnqueueCheck(ncclFunc_t func, const char* primName, const void* sendbuff, 
-    void* recvbuff, size_t count, ncclDataType_t type, ncclRedOp_t op, int root,
-    ncclComm_t comm, cudaStream_t stream) {
-  if (comm == NULL) return ncclInvalidArgument;
+static ncclResult_t getLoopInfo(struct ncclInfo* info) {
+  switch (info->coll) {
+    case ncclCollBroadcast:
+    case ncclCollReduce:
+      info->nstepsPerLoop = info-> nchunksPerLoop = 1; break;
+    case ncclCollAllGather:
+    case ncclCollReduceScatter:
+      info->nstepsPerLoop = info->comm->nRanks-1; info->nchunksPerLoop = info->comm->nRanks; break;
+    case ncclCollAllReduce:
+      info->nstepsPerLoop = 2*(info->comm->nRanks-1); info->nchunksPerLoop = info->comm->nRanks; break;
+    default:
+      WARN("Unknown collective %d\n", info->coll);
+      return ncclInternalError;
+  }
+  return ncclSuccess;
+}
+
+static void getKernelInfo(struct ncclInfo* info, uint8_t* nRings, uint16_t* nThreads, int* llMode) {
+  // Start with minimum number of threads and LL.
+  int ll = 1, nt = NCCL_LL_MIN_NTHREADS, nr = 1;
+
+  // Compute thresholds and limits that users can override
+  int perThreadLLThreshold = min(info->comm->threadThreshold, (ssize_t)NCCL_LL_RING_THRESHOLD);
+  int maxLLNthreads = min(NCCL_LL_MAX_NTHREADS, info->comm->nThreads);
+
+  size_t sizePerThread;
+
+  // Check if we have a fixed LL threshold.
+  if (info->comm->llThreshold >= 0 && info->nBytes >= info->comm->llThreshold) goto nonLL;
+
+restart:
+  // Compute the amount of work per thread per chunk
+  sizePerThread = info->nBytes / (nr*nt*
+      //info->nchunksPerLoop);
+  // Until nonLL is correctly pipelined (no opCount sync), we need to hack
+  // the threshold a bit otherwise Bcast and Reduce see a dip.
+      info->comm->nRanks);
+
+  if (sizePerThread > perThreadLLThreshold) {
+    // We have too much work per LL thread. Try to do better.
+    if (nt*2 <= maxLLNthreads) { nt *= 2; goto restart; } // Try increasing nThreads
+    if (info->comm->nRanks > 4 && nr*2 <= info->comm->nRings) { nr *= 2; goto restart; } // Then nRings
+  }
+
+  // nrings and nthreads are already maxed out. Check if we need non-LL
+  // (unless LL has a fixed threshold and it is not an option).
+  if (info->comm->llThreshold < 0 && sizePerThread > info->comm->threadThreshold) ll = 0;
+
+  if (ll) {
+    *llMode = 1;
+    *nRings = nr;
+    *nThreads = nt;
+    return;
+  }
+nonLL:
+  *llMode = 0;
+  *nRings = info->comm->nRings;
+  *nThreads = info->comm->nThreads+1;
+}
+
+static ncclResult_t computeColl(struct ncclInfo* info /* input */, struct ncclColl* coll, struct ncclProxyArgs* proxyArgs /* output */) {
+  // Set nstepsPerLoop and nchunksPerLoop
+  NCCLCHECK(getLoopInfo(info));
+
+  coll->args.root = info->root;
+  coll->args.N = info->count;
+  coll->args.ThisInput = info->sendbuff;
+  coll->args.ThisOutput = info->recvbuff;
+  coll->args.comm = info->comm->devComm;
+  coll->args.opCount = info->comm->opCount;
+
+  if (info->coll == ncclCollAllGather || info->coll == ncclCollReduceScatter) info->nBytes *= info->comm->nRanks; // count is per rank
+
+  // Compute llMode, nRings, nThreads
+  int llMode;
+  getKernelInfo(info, &coll->args.nRings, &coll->args.nThreads, &llMode);
+
+  coll->funcIndex = FUNC_INDEX(info->coll, info->op, info->datatype, llMode);
+
+  // Compute lastChunkSize
+  if (llMode == 1) {
+    int sliceSize = NCCL_LL_SLICE_LINES * sizeof(uint64_t);
+    const ssize_t loopSize = coll->args.nRings*info->nchunksPerLoop*(ssize_t)sliceSize;
+    coll->args.lastChunkSize = DIVUP((info->nBytes-(info->nBytes/loopSize)*loopSize), coll->args.nRings*info->nchunksPerLoop);
+    ALIGN_SIZE(coll->args.lastChunkSize, coll->args.nThreads*sizeof(uint64_t));
+    coll->args.lastChunkSize /= ncclTypeSize(info->datatype);
+  }
+
+  // Compute nSteps for proxies
+  int nBytes    = llMode ? info->nBytes*2    : info->nBytes;
+  int subSteps  = llMode ? 1                 : info->subSteps;
+  int bufChunks = llMode ? NCCL_LL_CHUNKS    : info->bufChunks;
+  int buffSize  = llMode ? NCCL_LL_BUFF_SIZE : info->comm->rings[0].buffSize;
+
+  int nLoops = (int)(DIVUP(nBytes, (((size_t)(coll->args.nRings))*info->nchunksPerLoop*(buffSize/bufChunks)))); // Fixed 32-bit overflow
+  proxyArgs->nsteps = info->nstepsPerLoop * nLoops * subSteps;
+  proxyArgs->substeps = subSteps * bufChunks;
+  proxyArgs->llMode = llMode;
+  proxyArgs->opCount = info->comm->opCount;
+  TRACE(NET,"opCount %lx substeps %d bufchunks %d spl %d cpl %d nbytes %d -> llmode %d nrings %d nthreads %d, buffsize %d nloops %d nsteps %d comm %p",
+      coll->args.opCount, subSteps, bufChunks, info->nstepsPerLoop, info->nchunksPerLoop, nBytes, llMode, coll->args.nRings, coll->args.nThreads,
+      buffSize, nLoops, proxyArgs->nsteps, info->comm);
+  return ncclSuccess;
+}
+
+static ncclResult_t saveKernel(struct ncclInfo* info) {
+  if (info->comm->nRanks == 1) {
+    if (info->sendbuff != info->recvbuff)
+      CUDACHECK(cudaMemcpyAsync(info->recvbuff, info->sendbuff, info->nBytes, cudaMemcpyDeviceToDevice, info->stream));
+    return ncclSuccess;
+  }
+
+  struct ncclColl coll;
+  struct ncclProxyArgs proxyArgs;
+  computeColl(info, &coll, &proxyArgs);
+
+  info->comm->myParams->blockDim.x = max(info->comm->myParams->blockDim.x, coll.args.nThreads);
+  if (info->comm->userStreamSet == false) {
+    info->comm->userStream = info->stream;
+    info->comm->userStreamSet = true;
+  } else if (info->stream != info->comm->userStream) {
+    WARN("Error : mixing different streams within a group call is not supported.");
+    return ncclInvalidUsage;
+  }
+  for (int bid=0; bid<coll.args.nRings; bid++) {
+    struct ncclRing* ring = info->comm->rings+(info->comm->myParams->gridDim.x % info->comm->nRings);
+
+    if (ring->collCount == NCCL_MAX_OPS) {
+      WARN("Too many aggregated operations (%d max)", NCCL_MAX_OPS);
+      return ncclInvalidUsage;
+    }
+
+    // Proxy
+    proxyArgs.ring = ring;
+    NCCLCHECK(transportSaveProxies(&proxyArgs, info->pattern, info->comm->nRanks));
+
+    info->comm->myParams->gridDim.x++;
+
+    int opIndex = ring->collFifoTail;
+    struct ncclColl* c = ring->collectives+opIndex;
+    volatile uint8_t* activePtr = (volatile uint8_t*)&c->active;
+    while (activePtr[0] != 0) sched_yield();
+
+    memcpy(c, &coll, sizeof(struct ncclColl));
+
+    c->args.bid = bid;
+    c->active = 1;
+    opIndex = (opIndex+1)%NCCL_MAX_OPS;
+    c->nextIndex = opIndex;
+    ring->collFifoTail = opIndex;
+    ring->collCount++;
+  }
+  /*if (llMode == 0)*/ info->comm->opCount++;
+  return ncclSuccess;
+}
+
+
+ncclResult_t ncclEnqueueCheck(struct ncclInfo* info) {
+  INFO(COLL,"opCount %lx sendbuff %p recvbuff %p count %zi datatype %d op %d comm %p [nranks=%d] stream %p",
+       info->comm->opCount, info->sendbuff, info->recvbuff, info->count,
+       info->datatype, info->op, info->comm, info->comm->nRanks, info->stream);
+
+  if (info->comm == NULL) return ncclInvalidArgument;
   // Launch asynchronously if needed
   if (ncclAsyncMode()) {
     ncclResult_t ret = ncclSuccess;
     int savedDev = -1;
-    if (comm->checkPointers) {
+    if (info->comm->checkPointers) {
       CUDACHECKGOTO(cudaGetDevice(&savedDev), ret, end);
-      CUDACHECKGOTO(cudaSetDevice(comm->cudaDev), ret, end);
+      CUDACHECKGOTO(cudaSetDevice(info->comm->cudaDev), ret, end);
     }
     // Check arguments
-    NCCLCHECKGOTO(ArgsCheck(sendbuff, recvbuff, count, type, op, root, comm, primName), ret, end);
+    NCCLCHECKGOTO(ArgsCheck(info), ret, end);
     // Always register comm even in case of error to make sure ncclGroupEnd
     // cleans it up.
-    NCCLCHECK(ncclAsyncColl(comm));
-    NCCLCHECKGOTO(func(sendbuff, recvbuff, count, type, op, root, comm, stream), ret, end);
+    NCCLCHECKGOTO(ncclAsyncColl(info->comm), ret, end);
+    NCCLCHECKGOTO(saveKernel(info), ret, end);
 end:
     if (savedDev != -1) CUDACHECK(cudaSetDevice(savedDev));
     ncclAsyncErrCheck(ret);
     return ret;
   } else {
-    NCCLCHECK(ArgsCheck(sendbuff, recvbuff, count, type, op, root, comm, primName));
-    NCCLCHECK(func(sendbuff, recvbuff, count, type, op, root, comm, stream));
-    NCCLCHECK(ncclBarrierEnqueue(comm));
-    NCCLCHECK(ncclBarrierEnqueueWait(comm));
-    NCCLCHECK(ncclEnqueueEvents(comm));
+    NCCLCHECK(ArgsCheck(info));
+    NCCLCHECK(saveKernel(info));
+    NCCLCHECK(ncclBarrierEnqueue(info->comm));
+    NCCLCHECK(ncclBarrierEnqueueWait(info->comm));
+    NCCLCHECK(ncclEnqueueEvents(info->comm));
     return ncclSuccess;
   }
 }
