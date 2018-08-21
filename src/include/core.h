@@ -31,6 +31,7 @@ struct cudaLaunchParams
 #define MAXRINGS 16
 #define MAXTHREADS 256
 #define DEFAULT_BUFFER_SIZE_BYTES (1LL << 22) /* 4MiB */
+#define NCCL_STEPS 16
 
 // Rings / LL tuning
 #define NCCL_LL_RING_THRESHOLD 8 // Per thread size before we start increasing nrings
@@ -77,8 +78,8 @@ struct ncclInfo {
   ncclComm_t comm;
   cudaStream_t stream;
   // Algorithm details
-  int bufChunks;
-  int subSteps;
+  int chunkSteps;
+  int sliceSteps;
   int pattern;
   // Computed later
   size_t nBytes;
@@ -115,7 +116,6 @@ struct ncclConnector {
 
 #define CACHE_LINE_SIZE 128
 #define PAGE_SIZE 4096
-#define SIZES_FIFO_SIZE 32
 #define CUDA_IPC_MIN 2097152UL /* 2MiB - not currently used */
 
 #define NCCL_LL_CHUNKS 8
@@ -145,8 +145,8 @@ struct ncclRecvMem {
       char pad2[CACHE_LINE_SIZE-sizeof(uint64_t)];
       uint64_t opCount;
       char pad4[CACHE_LINE_SIZE-sizeof(uint64_t)];
-      int sizesFifo[SIZES_FIFO_SIZE];
-      int llSizesFifo[SIZES_FIFO_SIZE];
+      int sizesFifo[NCCL_STEPS];
+      int llSizesFifo[NCCL_STEPS];
     };
     char pad5[PAGE_SIZE];
   };

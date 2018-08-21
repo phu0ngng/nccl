@@ -13,6 +13,6 @@ ncclResult_t ncclReduce(const void* sendbuff, void* recvbuff, size_t count,
     ncclDataType_t datatype, ncclRedOp_t op, int root, ncclComm_t comm, cudaStream_t stream) {
   struct ncclInfo info = { ncclCollReduce, "Reduce",
     sendbuff, recvbuff, count, datatype, op, root, comm, stream, /* Args */
-    REDUCE_BUFCHUNKS, REDUCE_SUBSTEPS, proxyPatternTo(root) };
+    REDUCE_CHUNKSTEPS, REDUCE_SLICESTEPS, proxyPatternTo(root) };
   return ncclEnqueueCheck(&info);
 }

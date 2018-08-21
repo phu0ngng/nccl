@@ -126,7 +126,7 @@ nullptr_t ptradd(nullptr_t ptr, int i) {
 
 
 // Implementation of primitive types
-template <int UNROLL, int SUBSTEPS, typename T, typename REDOP=FuncSum<T> >
+template <int UNROLL, int SLICESPERCHUNK, int SLICESTEPS, typename T, typename REDOP=FuncSum<T> >
 class Primitives {
   private:
   template <typename SRC2_T, // either T* or nullptr_t
@@ -138,7 +138,7 @@ class Primitives {
             const SRC2_T src2,
                   T*     dst1,
                   DST2_T dst2,
-            int len, int maxoffset, uint64_t step, SYNC_Ts... flags) {
+            int chunkSize, int size, uint64_t step, SYNC_Ts... flags) {
 
     enum { noSrc2 = std::is_same<SRC2_T, nullptr_t>::value };
     enum { noDst2 = std::is_same<DST2_T, nullptr_t>::value };
@@ -149,16 +149,16 @@ class Primitives {
 
     using OpType = typename std::conditional<noSrc2, FuncSum<T>, REDOP>::type;
 
-    int sliceSize = len / SUBSTEPS;
-    int sliceOffset = 0;
+    int sliceSize = chunkSize / SLICESPERCHUNK;
+    int offset = 0;
 
     #pragma unroll 1
-    for (int sub=0; sub<SUBSTEPS; ++sub) {
-      int realSize = max(0, min(sliceSize, maxoffset-sliceOffset));
+    for (int slice=0; slice<SLICESPERCHUNK; ++slice) {
+      int realSize = max(0, min(sliceSize, size-offset));
       if (tid < nthreads) {
         if (AnyAre<WaitFlag>(flags...)) {
           if (tid == 0) {
-            WaitOnFlags(SUBSTEPS*step + sub + 1, flags...);
+            WaitOnFlags(step + (slice+1)*SLICESTEPS, flags...);
           }
           asm volatile ("bar.sync 1, %0;" :: "r"(nthreads));
         }
@@ -172,10 +172,10 @@ class Primitives {
             >
             (
              tid, nthreads,
-             ptradd(dst1, sliceOffset),
-             ptradd(dst2, sliceOffset),
-             ptradd(src1, sliceOffset),
-             ptradd(src2, sliceOffset),
+             ptradd(dst1, offset),
+             ptradd(dst2, offset),
+             ptradd(src1, offset),
+             ptradd(src2, offset),
              realSize
             );
         if (AnyAre<PostFlag>(flags...)) {
@@ -184,12 +184,12 @@ class Primitives {
       } else {
         if (AnyAre<PostFlag>(flags...)) {
           __syncthreads();
-          PostSizeToFlags(SUBSTEPS*step+sub, realSize*sizeof(T), flags...);
+          PostSizeToFlags(step + slice*SLICESTEPS, realSize*sizeof(T), flags...);
           __threadfence_system();
-          PostToFlags(SUBSTEPS*step + sub + 1, flags...);
+          PostToFlags(step + (slice+1)*SLICESTEPS, flags...);
         }
       }
-      sliceOffset += sliceSize;
+      offset += sliceSize;
     }
   }
 

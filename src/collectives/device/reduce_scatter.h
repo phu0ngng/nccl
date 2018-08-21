@@ -10,9 +10,9 @@
 
 // Increase Step and poffset/noffset for buffer sync
 #define NEXT_STEP \
-  step++; \
+  step += REDUCESCATTER_CHUNKSTEPS; \
   poffset = noffset; \
-  noffset += sliceSize; \
+  noffset += chunkSize; \
   if (noffset == buffSize) noffset = 0;
 
 template<int UNROLL, class FUNC, typename T>
@@ -23,18 +23,18 @@ __device__ void ncclReduceScatterKernel(struct CollectiveArgs* args) {
   struct ncclComm* comm = args->comm;
   struct ncclRing* ring = comm->rings+blockIdx.x;
 
-  WaitFlag waitDoneFromNext(ring->send.conn.head, REDUCESCATTER_BUFCHUNKS*REDUCESCATTER_SUBSTEPS);
-  WaitFlag waitReadyFromPrev(ring->recv.conn.tail, REDUCESCATTER_SUBSTEPS);
-  PostFlag postDoneToPrev(ring->recv.conn.head, REDUCESCATTER_SUBSTEPS, NULL, 0);
-  PostFlag postReadyToNext(ring->send.conn.tail, 0, ring->send.conn.fifo, REDUCESCATTER_BUFCHUNKS*REDUCESCATTER_SUBSTEPS);
+  WaitFlag waitDoneFromNext(ring->send.conn.head, NCCL_STEPS);
+  WaitFlag waitReadyFromPrev(ring->recv.conn.tail, REDUCESCATTER_CHUNKSTEPS);
+  PostFlag postDoneToPrev(ring->recv.conn.head, REDUCESCATTER_CHUNKSTEPS, NULL, 0);
+  PostFlag postReadyToNext(ring->send.conn.tail, 0, ring->send.conn.fifo, NCCL_STEPS);
 
-  typedef Primitives<UNROLL, REDUCESCATTER_SUBSTEPS, T, FUNC> Prims;
+  typedef Primitives<UNROLL, REDUCESCATTER_CHUNKSTEPS/REDUCESCATTER_SLICESTEPS, REDUCESCATTER_SLICESTEPS, T, FUNC> Prims;
 
   const ssize_t size = args->N;
   const int nranks = comm->nRanks;
   const int buffSize = ring->buffSize / sizeof(T);
-  const int sliceSize = buffSize / REDUCESCATTER_BUFCHUNKS;
-  const ssize_t loopSize = args->nRings*(ssize_t)sliceSize;
+  const int chunkSize = (buffSize / NCCL_STEPS) * REDUCESCATTER_CHUNKSTEPS;
+  const ssize_t loopSize = args->nRings*(ssize_t)chunkSize;
 
   if (tid == 0) {
     // Update in case we skipped some collectives
@@ -55,13 +55,13 @@ __device__ void ncclReduceScatterKernel(struct CollectiveArgs* args) {
   T * __restrict__ nextOutput = (T*)ring->send.conn.buff;
 
   for (ssize_t gridOffset = 0; gridOffset < size; gridOffset += loopSize) {
-    int chunkSize = min(sliceSize, DIVUP(size-gridOffset,args->nRings));
-    ALIGN_SIZE(chunkSize, nthreads*sizeof(uint64_t)/sizeof(T));
-    ssize_t chunkOffset = gridOffset + bid*chunkSize;
+    int realChunkSize = min(chunkSize, DIVUP(size-gridOffset,args->nRings));
+    ALIGN_SIZE(realChunkSize, nthreads*sizeof(uint64_t)/sizeof(T));
+    ssize_t chunkOffset = gridOffset + bid*realChunkSize;
 
     /////////////// begin ReduceScatter steps ///////////////
     ssize_t offset;
-    int maxOffset = min(chunkSize, size-chunkOffset);
+    int maxOffset = min(realChunkSize, size-chunkOffset);
     int rankDest;
 
     // step 0: push data to next GPU
@@ -71,7 +71,7 @@ __device__ void ncclReduceScatterKernel(struct CollectiveArgs* args) {
     Prims::Copy(tid, nthreads,
         thisInput  + offset,
         nextOutput + noffset,
-        sliceSize, maxOffset,
+        chunkSize, maxOffset,
         step,
         waitDoneFromNext,
         postReadyToNext);
@@ -87,7 +87,7 @@ __device__ void ncclReduceScatterKernel(struct CollectiveArgs* args) {
           prevInput  + poffset,
           thisInput  + offset,
           nextOutput + noffset,
-          sliceSize, maxOffset,
+          chunkSize, maxOffset,
           step,
           waitDoneFromNext, waitReadyFromPrev,
           postReadyToNext, postDoneToPrev);
@@ -104,14 +104,15 @@ __device__ void ncclReduceScatterKernel(struct CollectiveArgs* args) {
         prevInput  + poffset,
         thisInput  + offset,
         thisOutput + chunkOffset,
-        sliceSize, maxOffset,
+        chunkSize, maxOffset,
         step,
         waitReadyFromPrev,
         postDoneToPrev);
   }
 
   if (tid == 0) {
-    waitDoneFromNext.wait(REDUCESCATTER_SUBSTEPS*(step + REDUCESCATTER_BUFCHUNKS));
+    // Wait for next to have consumed all data before we reset the flag
+    waitDoneFromNext.wait(step + NCCL_STEPS);
     *ring->send.conn.head = 0ULL;
     *ring->recv.conn.tail = 0ULL;
     __threadfence_system();

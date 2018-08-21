@@ -10,9 +10,9 @@
 
 // Increase Step and poffset/noffset for buffer sync
 #define NEXT_STEP \
-  step++; \
+  step += ALLGATHER_CHUNKSTEPS; \
   poffset = noffset; \
-  noffset += sliceSize; \
+  noffset += chunkSize; \
   if (noffset == buffSize) noffset = 0;
 
 template<int UNROLL, class FUNC, typename T>
@@ -26,17 +26,18 @@ __device__ void ncclAllGatherKernel(struct CollectiveArgs* args) {
   int prevdirect = ring->recv.conn.direct;
   int nextdirect = ring->send.conn.direct;
 
-  WaitFlag waitDoneFromNext(ring->send.conn.head, ALLGATHER_BUFCHUNKS*ALLGATHER_SUBSTEPS);
-  WaitFlag waitReadyFromPrev(ring->recv.conn.tail, ALLGATHER_SUBSTEPS);
-  PostFlag postDoneToPrev(ring->recv.conn.head, ALLGATHER_SUBSTEPS, NULL, 0);
-  PostFlag postReadyToNext(ring->send.conn.tail, 0, ring->send.conn.fifo, ALLGATHER_BUFCHUNKS*ALLGATHER_SUBSTEPS);
+  WaitFlag waitDoneFromNext(ring->send.conn.head, NCCL_STEPS);
+  WaitFlag waitReadyFromPrev(ring->recv.conn.tail, ALLGATHER_CHUNKSTEPS);
+  PostFlag postDoneToPrev(ring->recv.conn.head, ALLGATHER_CHUNKSTEPS, NULL, 0);
+  PostFlag postReadyToNext(ring->send.conn.tail, 0, ring->send.conn.fifo, NCCL_STEPS);
 
-  typedef Primitives<UNROLL, ALLGATHER_SUBSTEPS, T> Prims;
+  typedef Primitives<UNROLL, ALLGATHER_CHUNKSTEPS/ALLGATHER_SLICESTEPS, ALLREDUCE_SLICESTEPS, T> Prims;
 
   const ssize_t size = args->N;
   const int nranks = comm->nRanks;
   const int buffSize = ring->buffSize / sizeof(T);
-  const int sliceSize = buffSize / ALLGATHER_BUFCHUNKS;
+  const int chunkSize = (buffSize / NCCL_STEPS) * ALLGATHER_CHUNKSTEPS;
+  const ssize_t loopSize = args->nRings*(ssize_t)chunkSize;
 
   if (tid == 0) {
     // Update in case we skipped some collectives
@@ -65,14 +66,14 @@ __device__ void ncclAllGatherKernel(struct CollectiveArgs* args) {
   T * __restrict__ prevInput = (T*)ring->recv.conn.buff;
   T * __restrict__ nextOutput = (T*)ring->send.conn.buff;
 
-  for (ssize_t gridOffset = 0; gridOffset < size; gridOffset += args->nRings*sliceSize) {
-    int chunkSize = min(sliceSize, DIVUP(size-gridOffset,args->nRings));
-    ALIGN_SIZE(chunkSize, nthreads*sizeof(uint64_t)/sizeof(T));
-    ssize_t chunkOffset = gridOffset + bid*chunkSize;
+  for (ssize_t gridOffset = 0; gridOffset < size; gridOffset += loopSize) {
+    int realChunkSize = min(chunkSize, DIVUP(size-gridOffset,args->nRings));
+    ALIGN_SIZE(realChunkSize, nthreads*sizeof(uint64_t)/sizeof(T));
+    ssize_t chunkOffset = gridOffset + bid*realChunkSize;
 
     /////////////// begin AllGather steps ///////////////
     ssize_t offset;
-    int maxOffset = min(chunkSize, size-chunkOffset);
+    int maxOffset = min(realChunkSize, size-chunkOffset);
     int rankDest;
 
     // step 0: push data to next GPU
@@ -83,7 +84,7 @@ __device__ void ncclAllGatherKernel(struct CollectiveArgs* args) {
       Prims::Copy(tid, nthreads,
           thisInput  + chunkOffset,
           nextdirect ? (sharedNextOutput + offset) : (nextOutput + noffset),
-          sliceSize, maxOffset,
+          chunkSize, maxOffset,
           step,
           waitDoneFromNext,
           postReadyToNext);
@@ -92,7 +93,7 @@ __device__ void ncclAllGatherKernel(struct CollectiveArgs* args) {
           thisInput  + chunkOffset,
           thisOutput + offset,
 	  nextdirect ? (sharedNextOutput + offset) : (nextOutput + noffset),
-          sliceSize, maxOffset,
+          chunkSize, maxOffset,
           step,
           waitDoneFromNext,
           postReadyToNext);
@@ -109,7 +110,7 @@ __device__ void ncclAllGatherKernel(struct CollectiveArgs* args) {
         Prims::Copy(tid, nthreads,
             thisOutput + offset,
 	    nextdirect ? (sharedNextOutput + offset) : (nextOutput + noffset),
-            sliceSize, maxOffset,
+            chunkSize, maxOffset,
             step,
             waitDoneFromNext, waitReadyFromPrev,
             postReadyToNext, postDoneToPrev);
@@ -132,7 +133,7 @@ __device__ void ncclAllGatherKernel(struct CollectiveArgs* args) {
             prevInput + poffset,
             thisOutput + offset,
 	    nextdirect ? (sharedNextOutput + offset) : (nextOutput + noffset),
-            sliceSize, maxOffset,
+            chunkSize, maxOffset,
             step,
             waitDoneFromNext, waitReadyFromPrev,
             postReadyToNext, postDoneToPrev);
@@ -148,7 +149,7 @@ __device__ void ncclAllGatherKernel(struct CollectiveArgs* args) {
       Prims::Copy(tid, nthreads,
           prevInput + poffset,
           thisOutput + offset,
-          sliceSize, maxOffset,
+          chunkSize, maxOffset,
           step,
           waitReadyFromPrev,
           postDoneToPrev);
@@ -156,7 +157,8 @@ __device__ void ncclAllGatherKernel(struct CollectiveArgs* args) {
   }
 
   if (tid == 0) {
-    waitDoneFromNext.wait(ALLGATHER_SUBSTEPS*(step + ALLGATHER_BUFCHUNKS));
+    // Wait for next to have consumed all data before we reset the flag
+    waitDoneFromNext.wait(step + NCCL_STEPS);
     *ring->send.conn.head = 0ULL;
     *ring->recv.conn.tail = 0ULL;
     __threadfence_system();

@@ -13,7 +13,7 @@ ncclResult_t ncclBroadcast(const void* sendbuff, void* recvbuff, size_t count, n
     ncclComm_t comm, cudaStream_t stream) {
   struct ncclInfo info = { ncclCollBroadcast, "Broadcast",
     sendbuff, recvbuff, count, datatype, ncclSum, root, comm, stream, /* Args */
-    BROADCAST_BUFCHUNKS, BROADCAST_SUBSTEPS, proxyPatternFrom(root) };
+    BROADCAST_CHUNKSTEPS, BROADCAST_SLICESTEPS, proxyPatternFrom(root) };
   return ncclEnqueueCheck(&info);
 }
 /* Deprecated original "in place" function, similar to MPI */

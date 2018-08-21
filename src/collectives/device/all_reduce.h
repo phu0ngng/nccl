@@ -10,9 +10,9 @@
 
 // Increase Step and poffset/noffset for buffer sync
 #define NEXT_STEP \
-  step++; \
+  step += ALLREDUCE_CHUNKSTEPS; \
   poffset = noffset; \
-  noffset += sliceSize; \
+  noffset += chunkSize; \
   if (noffset == buffSize) noffset = 0;
 
 template<int UNROLL, class FUNC, typename T>
@@ -26,23 +26,25 @@ __device__ void ncclAllReduceKernel(struct CollectiveArgs* args) {
   int prevdirect = ring->recv.conn.direct;
   int nextdirect = ring->send.conn.direct;
 
-  WaitFlag waitDoneFromNext(ring->send.conn.head, ALLREDUCE_BUFCHUNKS*ALLREDUCE_SUBSTEPS);
-  WaitFlag waitReadyFromPrev(ring->recv.conn.tail, ALLREDUCE_SUBSTEPS);
-  PostFlag postDoneToPrev(ring->recv.conn.head, ALLREDUCE_SUBSTEPS, NULL, 0);
-  PostFlag postReadyToNext(ring->send.conn.tail, 0, ring->send.conn.fifo, ALLREDUCE_BUFCHUNKS*ALLREDUCE_SUBSTEPS);
+  WaitFlag waitDoneFromNext(ring->send.conn.head, NCCL_STEPS);
+  WaitFlag waitReadyFromPrev(ring->recv.conn.tail, ALLREDUCE_CHUNKSTEPS);
+  PostFlag postDoneToPrev(ring->recv.conn.head, ALLREDUCE_CHUNKSTEPS, NULL, 0);
+  PostFlag postReadyToNext(ring->send.conn.tail, 0, ring->send.conn.fifo, NCCL_STEPS);
 
-  typedef Primitives<UNROLL, ALLREDUCE_SUBSTEPS, T, FUNC> Prims;
+  typedef Primitives<UNROLL, ALLREDUCE_CHUNKSTEPS/ALLREDUCE_SLICESTEPS, ALLREDUCE_SLICESTEPS, T, FUNC> Prims;
 
   const ssize_t size = args->N;
   //const int rank = comm->rank;
   const int nranks = comm->nRanks;
   const int buffSize = ring->buffSize / sizeof(T);
-  const int sliceSize = buffSize / ALLREDUCE_BUFCHUNKS;
+  const int chunkSize = (buffSize / NCCL_STEPS) * ALLREDUCE_CHUNKSTEPS;
+  const ssize_t loopSize = args->nRings*(ssize_t)chunkSize;
 
   if (tid == 0) {
     // Update in case we skipped some collectives
     *ring->recv.conn.opCount = args->opCount;
     // Wait for next to be ready
+//    printf("[%d] starting coll #%ld\n", comm->rank, args->opCount);
     WaitFlag waitOpCountNext(ring->send.conn.opCount, 0);
     waitOpCountNext.wait(args->opCount);
     if (prevdirect) {
@@ -66,10 +68,10 @@ __device__ void ncclAllReduceKernel(struct CollectiveArgs* args) {
   T * __restrict__ prevInput = (T*)ring->recv.conn.buff;
   T * __restrict__ nextOutput = (T*)ring->send.conn.buff;
 
-  for (ssize_t gridOffset = 0; gridOffset < size; gridOffset += args->nRings*nranks*((ssize_t)sliceSize)) {
-    int chunkSize = min(sliceSize, DIVUP(size-gridOffset,nranks*args->nRings));
-    ALIGN_SIZE(chunkSize, nthreads*sizeof(uint64_t)/sizeof(T));
-    ssize_t chunkOffset = gridOffset + bid*nranks*chunkSize;
+  for (ssize_t gridOffset = 0; gridOffset < size; gridOffset += nranks*loopSize) {
+    int realChunkSize = min(chunkSize, DIVUP(size-gridOffset,nranks*args->nRings));
+    ALIGN_SIZE(realChunkSize, nthreads*sizeof(uint64_t)/sizeof(T));
+    ssize_t chunkOffset = gridOffset + bid*nranks*realChunkSize;
 
     /////////////// begin AllReduce steps ///////////////
     ssize_t offset;
@@ -78,13 +80,13 @@ __device__ void ncclAllReduceKernel(struct CollectiveArgs* args) {
 
     // step 0: push data to next GPU
     slice = ring->devUserRanks[nranks-1];
-    offset = chunkOffset + slice * chunkSize;
-    maxOffset = min(chunkSize, size-offset);
+    offset = chunkOffset + slice * realChunkSize;
+    maxOffset = min(realChunkSize, size-offset);
 
     Prims::Copy(tid, nthreads,
         thisInput  + offset,
         nextOutput + noffset,
-        sliceSize, maxOffset,
+        chunkSize, maxOffset,
         step,
         waitDoneFromNext,
         postReadyToNext);
@@ -94,14 +96,14 @@ __device__ void ncclAllReduceKernel(struct CollectiveArgs* args) {
     // k-2 steps: reduce and copy to next GPU
     for (int j=2; j<nranks; ++j) {
       slice = ring->devUserRanks[nranks-j];
-      offset = chunkOffset + slice * chunkSize;
-      maxOffset = min(chunkSize, size-offset);
+      offset = chunkOffset + slice * realChunkSize;
+      maxOffset = min(realChunkSize, size-offset);
 
       Prims::Reduce(tid, nthreads,
           prevInput  + poffset,
           thisInput  + offset,
           nextOutput + noffset,
-          sliceSize, maxOffset,
+          chunkSize, maxOffset,
           step,
           waitDoneFromNext, waitReadyFromPrev,
           postReadyToNext, postDoneToPrev);
@@ -112,15 +114,15 @@ __device__ void ncclAllReduceKernel(struct CollectiveArgs* args) {
     // step k-1: reduce this buffer and data, which will produce the final
     // result that we store in this data and push to the next GPU
     slice = ring->devUserRanks[0];
-    offset = chunkOffset + slice * chunkSize;
-    maxOffset = min(chunkSize, size-offset);
+    offset = chunkOffset + slice * realChunkSize;
+    maxOffset = min(realChunkSize, size-offset);
 
     Prims::ReduceCopy(tid, nthreads,
         prevInput  + poffset,
         thisInput  + offset,
         nextdirect ? (sharedNextOutput + offset) : (nextOutput + noffset),
         thisOutput + offset,
-        sliceSize, maxOffset,
+        chunkSize, maxOffset,
         step,
         waitDoneFromNext, waitReadyFromPrev,
         postReadyToNext, postDoneToPrev);
@@ -131,13 +133,13 @@ __device__ void ncclAllReduceKernel(struct CollectiveArgs* args) {
     if (prevdirect) {
       for (int j=1; j<nranks-1; ++j) {
         slice = ring->devUserRanks[nranks - j];
-        offset = chunkOffset + slice * chunkSize;
-        maxOffset = min(chunkSize, size-offset);
+        offset = chunkOffset + slice * realChunkSize;
+        maxOffset = min(realChunkSize, size-offset);
 
         Prims::Copy(tid, nthreads,
             thisOutput + offset,
 	    nextdirect ? (sharedNextOutput + offset) : (nextOutput + noffset),
-            sliceSize, maxOffset,
+            chunkSize, maxOffset,
             step,
             waitDoneFromNext, waitReadyFromPrev,
             postReadyToNext, postDoneToPrev);
@@ -154,14 +156,14 @@ __device__ void ncclAllReduceKernel(struct CollectiveArgs* args) {
     } else {
       for (int j=1; j<nranks-1; ++j) {
         slice = ring->devUserRanks[nranks - j];
-        offset = chunkOffset + slice * chunkSize;
-        maxOffset = min(chunkSize, size-offset);
+        offset = chunkOffset + slice * realChunkSize;
+        maxOffset = min(realChunkSize, size-offset);
 
         Prims::DoubleCopy(tid, nthreads,
             prevInput + poffset,
             thisOutput + offset,
 	    nextdirect ? (sharedNextOutput + offset) : (nextOutput + noffset),
-            sliceSize, maxOffset,
+            chunkSize, maxOffset,
             step,
             waitDoneFromNext, waitReadyFromPrev,
             postReadyToNext, postDoneToPrev);
@@ -171,14 +173,14 @@ __device__ void ncclAllReduceKernel(struct CollectiveArgs* args) {
 
       // Make final copy from buffer to dest.
       slice = ring->devUserRanks[1];
-      offset = chunkOffset + slice * chunkSize;
-      maxOffset = min(chunkSize, size-offset);
+      offset = chunkOffset + slice * realChunkSize;
+      maxOffset = min(realChunkSize, size-offset);
 
       // Here we need to copy from buffer to this output.
       Prims::Copy(tid, nthreads,
           prevInput + poffset,
           thisOutput + offset,
-          sliceSize, maxOffset,
+          chunkSize, maxOffset,
           step,
           waitReadyFromPrev,
           postDoneToPrev);
@@ -187,7 +189,8 @@ __device__ void ncclAllReduceKernel(struct CollectiveArgs* args) {
 
   if (tid == 0) {
     // Wait for next to have consumed all data before we reset the flag
-    waitDoneFromNext.wait(ALLREDUCE_SUBSTEPS*(step + ALLREDUCE_BUFCHUNKS));
+    waitDoneFromNext.wait(step + NCCL_STEPS);
+//    printf("[%d] done with coll #%ld\n", comm->rank, args->opCount);
     *ring->send.conn.head = 0ULL;
     *ring->recv.conn.tail = 0ULL;
     __threadfence_system();

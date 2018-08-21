@@ -10,8 +10,8 @@
 
 // Increase Step and boffset for buffer sync
 #define NEXT_STEP \
-  step++; \
-  boffset += sliceSize; \
+  step += REDUCE_CHUNKSTEPS; \
+  boffset += chunkSize; \
   if (boffset == buffSize) boffset = 0;
 
 template<int UNROLL, class FUNC, typename T>
@@ -22,17 +22,18 @@ __device__ void ncclReduceKernel(struct CollectiveArgs* args) {
   struct ncclComm* comm = args->comm;
   struct ncclRing* ring = comm->rings+blockIdx.x;
 
-  WaitFlag waitDoneFromNext(ring->send.conn.head, (REDUCE_BUFCHUNKS-1)*REDUCE_SUBSTEPS);
+  WaitFlag waitDoneFromNext(ring->send.conn.head, NCCL_STEPS-REDUCE_CHUNKSTEPS);
   WaitFlag waitReadyFromPrev(ring->recv.conn.tail, 0);
   PostFlag postDoneToPrev(ring->recv.conn.head, 0, NULL, 0);
-  PostFlag postReadyToNext(ring->send.conn.tail, 0, ring->send.conn.fifo, REDUCE_BUFCHUNKS*REDUCE_SUBSTEPS);
+  PostFlag postReadyToNext(ring->send.conn.tail, 0, ring->send.conn.fifo, NCCL_STEPS);
 
-  typedef Primitives<UNROLL, REDUCE_SUBSTEPS, T, FUNC> Prims;
+  typedef Primitives<UNROLL, REDUCE_CHUNKSTEPS/REDUCE_SLICESTEPS, REDUCE_SLICESTEPS, T, FUNC> Prims;
 
   const ssize_t size = args->N;
   const int nranks = comm->nRanks;
   const int buffSize = ring->buffSize / sizeof(T);
-  const int sliceSize = buffSize / REDUCE_BUFCHUNKS;
+  const int chunkSize = (buffSize / NCCL_STEPS) * REDUCE_CHUNKSTEPS;
+  const ssize_t loopSize = args->nRings*(ssize_t)chunkSize;
   const int rank = ring->devUserRanks[0];
   const int prevRank = ring->devUserRanks[nranks-1];
   const int root = args->root;
@@ -58,16 +59,16 @@ __device__ void ncclReduceKernel(struct CollectiveArgs* args) {
   T * __restrict__ prevInput = (T*)ring->recv.conn.buff;
   T * __restrict__ nextOutput = (T*)ring->send.conn.buff;
 
-  for (ssize_t gridOffset = 0; gridOffset < size; gridOffset += args->nRings*sliceSize) {
-    int chunkSize = min(sliceSize, DIVUP(size-gridOffset,args->nRings));
-    ALIGN_SIZE(chunkSize, nthreads*sizeof(uint64_t)/sizeof(T));
-    ssize_t offset = gridOffset + bid*chunkSize;
-    int maxOffset = min(chunkSize, size-offset);
+  for (ssize_t gridOffset = 0; gridOffset < size; gridOffset += loopSize) {
+    int realChunkSize = min(chunkSize, DIVUP(size-gridOffset,args->nRings));
+    ALIGN_SIZE(realChunkSize, nthreads*sizeof(uint64_t)/sizeof(T));
+    ssize_t offset = gridOffset + bid*realChunkSize;
+    int maxOffset = min(realChunkSize, size-offset);
     if (prevRank == root) {
       Prims::Copy(tid, nthreads,
           thisInput + offset,
           nextOutput + boffset,
-          sliceSize, maxOffset,
+          chunkSize, maxOffset,
           step,
           waitDoneFromNext,
           postReadyToNext);
@@ -76,7 +77,7 @@ __device__ void ncclReduceKernel(struct CollectiveArgs* args) {
           prevInput  + boffset,
           thisInput + offset,
           thisOutput + offset,
-          sliceSize, maxOffset,
+          chunkSize, maxOffset,
           step,
           waitReadyFromPrev,
           postDoneToPrev);
@@ -85,7 +86,7 @@ __device__ void ncclReduceKernel(struct CollectiveArgs* args) {
           prevInput + boffset,
           thisInput + offset,
           nextOutput + boffset,
-          sliceSize, maxOffset,
+          chunkSize, maxOffset,
           step,
           waitDoneFromNext, waitReadyFromPrev,
           postReadyToNext, postDoneToPrev);
@@ -96,7 +97,7 @@ __device__ void ncclReduceKernel(struct CollectiveArgs* args) {
   if (tid == 0) {
     if (rank != root) { 
       // Wait for next to have consumed data before resetting the flag
-      waitDoneFromNext.wait(REDUCE_SUBSTEPS*(step + REDUCE_BUFCHUNKS - 1));
+      waitDoneFromNext.wait(step + NCCL_STEPS - REDUCE_CHUNKSTEPS);
       *ring->send.conn.head = 0ULL;
     }
     *ring->recv.conn.tail = 0ULL;

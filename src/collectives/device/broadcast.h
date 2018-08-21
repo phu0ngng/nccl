@@ -10,8 +10,8 @@
 
 // Increase Step and boffset for buffer sync
 #define NEXT_STEP \
-  step++; \
-  boffset += sliceSize; \
+  step += BROADCAST_CHUNKSTEPS; \
+  boffset += chunkSize; \
   if (boffset == buffSize) boffset = 0;
 
 template<int UNROLL, class FUNC, typename T>
@@ -25,16 +25,17 @@ __device__ void ncclBroadcastKernel(struct CollectiveArgs* args) {
   int prevdirect = ring->recv.conn.direct;
   int nextdirect = ring->send.conn.direct;
 
-  WaitFlag waitDoneFromNext(ring->send.conn.head, (BROADCAST_BUFCHUNKS-1)*BROADCAST_SUBSTEPS);
+  WaitFlag waitDoneFromNext(ring->send.conn.head, NCCL_STEPS-BROADCAST_CHUNKSTEPS);
   WaitFlag waitReadyFromPrev(ring->recv.conn.tail, 0);
   PostFlag postDoneToPrev(ring->recv.conn.head, 0, NULL, 0);
-  PostFlag postReadyToNext(ring->send.conn.tail, 0, ring->send.conn.fifo, BROADCAST_BUFCHUNKS*BROADCAST_SUBSTEPS);
+  PostFlag postReadyToNext(ring->send.conn.tail, 0, ring->send.conn.fifo, NCCL_STEPS);
 
-  typedef Primitives<UNROLL, BROADCAST_SUBSTEPS, T> Prims;
+  typedef Primitives<UNROLL, BROADCAST_CHUNKSTEPS/BROADCAST_SLICESTEPS, BROADCAST_SLICESTEPS, T> Prims;
 
   const ssize_t size = args->N;
   const int buffSize = ring->buffSize / sizeof(T);
-  const int sliceSize = buffSize / BROADCAST_BUFCHUNKS;
+  const int chunkSize = (buffSize / NCCL_STEPS) * BROADCAST_CHUNKSTEPS;
+  const ssize_t loopSize = args->nRings*(ssize_t)chunkSize;
   const int rank = ring->devUserRanks[0];
   const int nextRank = ring->devUserRanks[1];
   const int root = args->root;
@@ -68,18 +69,18 @@ __device__ void ncclBroadcastKernel(struct CollectiveArgs* args) {
   T * __restrict__ prevInput = (T*)ring->recv.conn.buff;
   T * __restrict__ nextOutput = (T*)ring->send.conn.buff;
 
-  for (ssize_t gridOffset = 0; gridOffset < size; gridOffset += args->nRings*sliceSize) {
-    int chunkSize = min(sliceSize, DIVUP(size-gridOffset,args->nRings));
-    ALIGN_SIZE(chunkSize, nthreads*sizeof(uint64_t)/sizeof(T));
-    ssize_t offset = gridOffset + bid*chunkSize;
-    int maxOffset = min(chunkSize, size-offset);
+  for (ssize_t gridOffset = 0; gridOffset < size; gridOffset += loopSize) {
+    int realChunkSize = min(chunkSize, DIVUP(size-gridOffset,args->nRings));
+    ALIGN_SIZE(realChunkSize, nthreads*sizeof(uint64_t)/sizeof(T));
+    ssize_t offset = gridOffset + bid*realChunkSize;
+    int maxOffset = min(realChunkSize, size-offset);
 
     if (rank == root) {
       if (thisInput == thisOutput) {
         Prims::Copy(tid, nthreads,
             thisInput  + offset,
             nextdirect ? (sharedNextOutput + offset) : (nextOutput + boffset),
-            sliceSize, maxOffset,
+            chunkSize, maxOffset,
             step,
             waitDoneFromNext,
             postReadyToNext);
@@ -88,7 +89,7 @@ __device__ void ncclBroadcastKernel(struct CollectiveArgs* args) {
             thisInput  + offset,
             thisOutput + offset,
             nextdirect ? (sharedNextOutput + offset) : (nextOutput + boffset),
-            sliceSize, maxOffset,
+            chunkSize, maxOffset,
             step,
             waitDoneFromNext,
             postReadyToNext);
@@ -98,7 +99,7 @@ __device__ void ncclBroadcastKernel(struct CollectiveArgs* args) {
       Prims::Copy(tid, nthreads,
           prevInput  + boffset,
           thisOutput + offset,
-          sliceSize, maxOffset,
+          chunkSize, maxOffset,
           step,
           waitReadyFromPrev,
           postDoneToPrev);
@@ -107,7 +108,7 @@ __device__ void ncclBroadcastKernel(struct CollectiveArgs* args) {
         Prims::Copy(tid, nthreads,
             thisOutput + offset,
             nextdirect ? (sharedNextOutput + offset) : (nextOutput + boffset),
-            sliceSize, maxOffset,
+            chunkSize, maxOffset,
             step,
             waitDoneFromNext, waitReadyFromPrev,
             postReadyToNext, postDoneToPrev);
@@ -116,7 +117,7 @@ __device__ void ncclBroadcastKernel(struct CollectiveArgs* args) {
             prevInput + boffset,
             thisOutput + offset,
 	    nextdirect ? (sharedNextOutput + offset) : (nextOutput + boffset),
-            sliceSize, maxOffset,
+            chunkSize, maxOffset,
             step,
             waitDoneFromNext, waitReadyFromPrev,
             postReadyToNext, postDoneToPrev);
@@ -128,7 +129,7 @@ __device__ void ncclBroadcastKernel(struct CollectiveArgs* args) {
   if (tid == 0) {
     if (nextRank != root) { 
       // Wait for next to have consumed data before resetting the flag
-      waitDoneFromNext.wait(BROADCAST_SUBSTEPS*(step + BROADCAST_BUFCHUNKS - 1));
+      waitDoneFromNext.wait(step + NCCL_STEPS - BROADCAST_CHUNKSTEPS);
       *ring->send.conn.head = 0ULL;
     }
     *ring->recv.conn.tail = 0ULL;

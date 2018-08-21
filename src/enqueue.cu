@@ -304,19 +304,18 @@ static ncclResult_t computeColl(struct ncclInfo* info /* input */, struct ncclCo
   }
 
   // Compute nSteps for proxies
-  int nBytes    = llMode ? info->nBytes*2    : info->nBytes;
-  int subSteps  = llMode ? 1                 : info->subSteps;
-  int bufChunks = llMode ? NCCL_LL_CHUNKS    : info->bufChunks;
-  int buffSize  = llMode ? NCCL_LL_BUFF_SIZE : info->comm->rings[0].buffSize;
+  size_t nBytes  = llMode ? info->nBytes*2 : info->nBytes;
+  int chunkSteps = llMode ? 1 : info->chunkSteps;
+  int stepSize   = llMode ? NCCL_LL_BUFF_SIZE / NCCL_LL_CHUNKS : info->comm->rings[0].buffSize / NCCL_STEPS;
 
-  int nLoops = (int)(DIVUP(nBytes, (((size_t)(coll->args.nRings))*info->nchunksPerLoop*(buffSize/bufChunks)))); // Fixed 32-bit overflow
-  proxyArgs->nsteps = info->nstepsPerLoop * nLoops * subSteps;
-  proxyArgs->substeps = subSteps * bufChunks;
+  int nLoops = (int)(DIVUP(nBytes, (((size_t)(coll->args.nRings))*info->nchunksPerLoop*stepSize*chunkSteps))); // Fixed 32-bit overflow
+  proxyArgs->nsteps = info->nstepsPerLoop * nLoops * chunkSteps;
+  proxyArgs->sliceSteps = llMode ? 1 : info->sliceSteps;
   proxyArgs->llMode = llMode;
   proxyArgs->opCount = info->comm->opCount;
-  TRACE(NET,"opCount %lx substeps %d bufchunks %d spl %d cpl %d nbytes %d -> llmode %d nrings %d nthreads %d, buffsize %d nloops %d nsteps %d comm %p",
-      coll->args.opCount, subSteps, bufChunks, info->nstepsPerLoop, info->nchunksPerLoop, nBytes, llMode, coll->args.nRings, coll->args.nThreads,
-      buffSize, nLoops, proxyArgs->nsteps, info->comm);
+  TRACE(NET,"opCount %lx slicesteps %d spl %d cpl %d nbytes %zi -> llmode %d nrings %d nthreads %d, nloops %d nsteps %d comm %p",
+      coll->args.opCount, sliceSteps, info->nstepsPerLoop, info->nchunksPerLoop, nBytes, llMode, coll->args.nRings, coll->args.nThreads,
+      nLoops, proxyArgs->nsteps, info->comm);
   return ncclSuccess;
 }
 
