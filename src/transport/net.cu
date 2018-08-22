@@ -142,7 +142,7 @@ ncclResult_t netGetRings(int nranks, int* groups, int* subgroups, ncclTvalue_t* 
       int nsubGroups = 0;
       for (int rank=0; rank<nranks; rank++) if (groups[rank] == group) {
         nranksInGroup++;
-        nsubGroups = max(subgroups[rank], nsubGroups);
+        nsubGroups = std::max(subgroups[rank], nsubGroups);
       }
       starts[group] = ends[group] = -1;
       // Receive on the rank closest to the NIC

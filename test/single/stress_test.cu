@@ -156,7 +156,7 @@ int testAllGather(int count, ncclDataType_t type, int op, int root, int nranks, 
     if (delta) {
       errors++;
       CUDACHECK(cudaMemcpy(results, recvbuff[i], recvnbytes, cudaMemcpyDeviceToHost));
-      printf("Allgather size %d, type %d : delta %g, new %g\n", sendcount, type, delta);
+      printf("Allgather size %d, type %d : delta %g\n", sendcount, type, delta);
       for (int c=1; c<count; c++) {
 	if (type == ncclFloat) {
           float res = *((float*)results+c), ref = *((float*)reference+c);

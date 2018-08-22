@@ -78,7 +78,7 @@ ncclResult_t ncclLaunchCooperativeKernelMultiDevice(struct cudaLaunchParams *par
 }
 
 ncclResult_t setupLaunch(struct ncclComm* comm, struct cudaLaunchParams* params) {
-  params->gridDim.x = min(params->gridDim.x, comm->nRings);
+  params->gridDim.x = std::min((int) params->gridDim.x, comm->nRings);
 
   // Set active = 2 for the last operation
   for (int r=0; r<params->gridDim.x; r++) {
@@ -237,8 +237,8 @@ static void getKernelInfo(struct ncclInfo* info, uint8_t* nRings, uint16_t* nThr
   int ll = 1, nt = NCCL_LL_MIN_NTHREADS, nr = 1;
 
   // Compute thresholds and limits that users can override
-  int perThreadLLThreshold = min(info->comm->threadThreshold, (ssize_t)NCCL_LL_RING_THRESHOLD);
-  int maxLLNthreads = min(NCCL_LL_MAX_NTHREADS, info->comm->nThreads);
+  int perThreadLLThreshold = std::min(info->comm->threadThreshold, (ssize_t)NCCL_LL_RING_THRESHOLD);
+  int maxLLNthreads = std::min(NCCL_LL_MAX_NTHREADS, info->comm->nThreads);
 
   size_t sizePerThread;
 

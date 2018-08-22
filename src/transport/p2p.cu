@@ -387,7 +387,7 @@ ncclResult_t p2pGetRings(int nranks, int* groups, int* subgroups, ncclTvalue_t* 
     if (nringsConnected > 0) {
      nrings = nringsConnected;
     } else {
-      nrings = min(nrings, nvswitchLinks); // NVSwitch: Limit rings to number of NVLinks
+      nrings = std::min(nrings, nvswitchLinks); // NVSwitch: Limit rings to number of NVLinks
       // Or create new ones
       nrings = p2pComputeRingsSeqNew(values, nranks, rings, nrings, prev, next, minScore, nthreads);
       // And duplicate them
@@ -405,7 +405,7 @@ ncclResult_t p2pGetRings(int nranks, int* groups, int* subgroups, ncclTvalue_t* 
       links += val/CONNECT_NVLINK;
     }
     if (rank == 0) directLinks = links;
-    else directLinks =  min(directLinks, links);
+    else directLinks =  std::min(directLinks, links);
   }
   if (directLinks > 0) {
     // NVLink : Connect rings or create new ones

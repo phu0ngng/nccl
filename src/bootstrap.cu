@@ -110,7 +110,7 @@ static void *bootstrapRoot(void* commId) {
       }
 
       if (nranks != info.nranks) { 
-	  WARN("Bootstrap Root : mismatch in rank count from procs %d : %d\n", nranks, info.nranks);
+          WARN("Bootstrap Root : mismatch in rank count from procs %d : %d", nranks, info.nranks);
 	  goto out;
       }
 
@@ -159,7 +159,7 @@ static void *bootstrapRoot(void* commId) {
               NCCLCHECKJUMP(bootstrapSend(extSendComm[r], data+offset, size), out);
           }
       } else {
-	  WARN("Bootstrap Root : invalid op type received %d\n", bop.op);
+          WARN("Bootstrap Root : invalid op type received %d", bop.op);
 	  break;
       }
   } while (1);

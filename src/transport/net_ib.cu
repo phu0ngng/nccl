@@ -61,7 +61,7 @@ static ncclResult_t ncclIbMalloc(void** ptr, size_t size) {
   void* p;
   int size_aligned = ROUNDUP(size, page_size);
   int ret = posix_memalign(&p, page_size, size_aligned);
-  if (p == NULL) return ncclSystemError;
+  if (ret != 0) return ncclSystemError;
   memset(p, 0, size);
   *ptr = p;
   return ncclSuccess;
@@ -76,7 +76,7 @@ static void* ncclIbAsyncThreadMain(void* args) {
     char *str;
     if (ncclSuccess != wrap_ibv_event_type_str(&str, event.event_type)) { break; }
     if (event.event_type != IBV_EVENT_COMM_EST)
-      WARN("IB Got async event : %s", str);
+      WARN("NET/IB : Got async event : %s", str);
     if (ncclSuccess != wrap_ibv_ack_async_event(&event)) { break; }
   }
   return NULL;
@@ -346,11 +346,6 @@ struct ncclIbRecvComm {
   struct ncclIbGpuFlush gpuFlush;
 };
 
-#define NULLCHECK(cmd) \
-  if ((cmd) == NULL) { \
-    WARN("IBV call return NULL\n"); \
-  }
-
 ncclResult_t ncclIbInitVerbs(ibv_context* ctx, struct ncclIbVerbs* verbs) {
   NCCLCHECK(wrap_ibv_alloc_pd(&verbs->pd, ctx));
   NCCLCHECK(wrap_ibv_create_comp_channel(&verbs->cc, ctx));
@@ -449,7 +444,7 @@ int ncclIbConnect(int dev, void* opaqueHandle, void** sendComm) {
   *sendComm = comm;
   
   // IB Setup
-  initDevices();
+  initDevices(); /*NOTE: We need to do this for ncclNet unit test that bypasses nccl initialization*/
   ibv_context* ctx = ncclIbDevs[dev].context;
   NCCLCHECK(ncclIbInitVerbs(ctx, &comm->verbs));
   uint8_t ib_port = ncclIbDevs[dev].port;
@@ -510,7 +505,7 @@ int ncclIbAccept(void* listenComm, void** recvComm) {
   NCCLCHECK(ncclIbCreateQp(ib_port, &rComm->verbs, IBV_ACCESS_REMOTE_WRITE, &rComm->qp));
 
   // Adjust the MTU
-  remQpInfo.mtu = (enum ibv_mtu)min(remQpInfo.mtu, portAttr.active_mtu);
+  remQpInfo.mtu = (enum ibv_mtu)std::min(remQpInfo.mtu, portAttr.active_mtu);
 
   // Setup QP
   struct ibv_qp* qp = rComm->qp;
@@ -580,7 +575,7 @@ ncclResult_t ncclIbGetRequest(struct ncclIbRequest* reqs, struct ncclIbRequest**
       return ncclSuccess;
     }
   }
-  WARN("IB : unable to allocate requests\n");
+  WARN("NET/IB : unable to allocate requests");
   *req = NULL;
   return ncclInternalError;
 }
@@ -638,7 +633,7 @@ ncclResult_t ncclIbGetMr(struct ncclIbVerbs* verbs, void* data, int size, struct
       if (verbs->mrPool[elem].refcnt > 0) elem++; else break;
     }
     if (verbs->mrPool[elem].refcnt > 0) {
-      WARN("IB memory register : no MR available");
+      WARN("NET/IB : memory register : no MR available");
       return ncclInternalError;
     }
   }
@@ -694,7 +689,7 @@ int ncclIbIsend(void* sendComm, void* data, int size, int type, void** request) 
   // Sanity checks to catch user collective call count/size mismatches
   // plus any potential programming errors
   if (size > slot->size || slot->size <= 0 || slot->addr == 0 || slot->rkey == 0 || slot->seq != comm->fifoHead) {
-    WARN("collective mismatch error local size %d remote %d addr %lx rkey %x seq %x/%x",
+    WARN("NET/IB : collective mismatch error local size %d remote %d addr %lx rkey %x seq %x/%x",
          size, slot->size, slot->addr, slot->rkey, slot->seq, comm->fifoHead);
     return 1;
   }
@@ -836,7 +831,7 @@ int ncclIbTest(void* request, int* done, int* size) {
         }
         if (doneReq->ibMr != NULL) {
           doneReq->ibMr->refcnt--;
-          if (doneReq->ibMr->refcnt < 0) WARN("doneReq %p MR %p refcount now %d", doneReq, doneReq->ibMr, doneReq->ibMr->refcnt);
+          if (doneReq->ibMr->refcnt < 0) WARN("NET/IB : doneReq %p MR %p refcount now %d", doneReq, doneReq->ibMr, doneReq->ibMr->refcnt);
         }
         doneReq->done = 1;
         if (doneReq->free == 1) {
@@ -864,7 +859,7 @@ int ncclIbCloseSend(void* sendComm) {
     if (comm->fifoMr != NULL) NCCLCHECK(wrap_ibv_dereg_mr(comm->fifoMr));
     for (int i=0; i<MAX_REQUESTS; i++) {
       if (comm->verbs.mrPool[i].mr != NULL) {
-        if (comm->verbs.mrPool[i].refcnt != 0) WARN("IB TX MR #%d has non-zero (%d) refcnt", i, comm->verbs.mrPool[i].refcnt);
+        if (comm->verbs.mrPool[i].refcnt != 0) WARN("NET/IB : TX MR #%d has non-zero (%d) refcnt", i, comm->verbs.mrPool[i].refcnt);
 	NCCLCHECK(wrap_ibv_dereg_mr(comm->verbs.mrPool[i].mr));
       }
     }
@@ -886,7 +881,7 @@ int ncclIbCloseRecv(void* recvComm) {
     if (comm->remFifo.mr != NULL) NCCLCHECK(wrap_ibv_dereg_mr(comm->remFifo.mr));
     for (int i=0; i<MAX_REQUESTS; i++) {
       if (comm->verbs.mrPool[i].mr != NULL) {
-        if (comm->verbs.mrPool[i].refcnt != 0) WARN("IB RX MR #%d has non-zero (%d) refcnt", i, comm->verbs.mrPool[i].refcnt);
+        if (comm->verbs.mrPool[i].refcnt != 0) WARN("NET/IB : RX MR #%d has non-zero (%d) refcnt", i, comm->verbs.mrPool[i].refcnt);
         NCCLCHECK(wrap_ibv_dereg_mr(comm->verbs.mrPool[i].mr));
       }
     }

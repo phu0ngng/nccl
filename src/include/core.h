@@ -13,7 +13,9 @@
 #include "transport.h"
 #include "debug.h"
 #include <cstdio>
+#include <algorithm> // std::min/std::max
 #include <unistd.h>
+#include <stdlib.h>
 #include <cuda_runtime.h>
 
 #if __CUDACC_VER_MAJOR__ < 9
@@ -369,14 +371,14 @@ struct ncclComm {
 int ncclCudaCompCap();
 
 #include <sys/mman.h>
-static ncclResult_t ncclCudaHostAlloc(void** ptr, void** devPtr, size_t size) {
+static inline ncclResult_t ncclCudaHostAlloc(void** ptr, void** devPtr, size_t size) {
   CUDACHECK(cudaHostAlloc(ptr, size, cudaHostAllocMapped));
   memset(*ptr, 0, size);
   *devPtr = *ptr;
   return ncclSuccess;
 }
 
-static ncclResult_t ncclCudaHostFree(void* ptr) {
+static inline ncclResult_t ncclCudaHostFree(void* ptr) {
   CUDACHECK(cudaFreeHost(ptr));
   return ncclSuccess;
 }
