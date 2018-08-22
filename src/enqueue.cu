@@ -304,7 +304,7 @@ static ncclResult_t computeColl(struct ncclInfo* info /* input */, struct ncclCo
   int chunkSteps = llMode ? 1 : info->chunkSteps;
   int stepSize   = llMode ? NCCL_LL_BUFF_SIZE / NCCL_LL_CHUNKS : info->comm->rings[0].buffSize / NCCL_STEPS;
 
-  int nLoops = (int)(DIVUP(nBytes, (((size_t)(coll->args.nRings))*info->nchunksPerLoop*stepSize*chunkSteps))); // Fixed 32-bit overflow
+  int nLoops = (int)(DIVUP(nBytes, (((size_t)(coll->args.nRings))*info->nchunksPerLoop*stepSize*chunkSteps)));
   proxyArgs->nsteps = info->nstepsPerLoop * nLoops * chunkSteps;
   proxyArgs->sliceSteps = llMode ? 1 : info->sliceSteps;
   proxyArgs->chunkSteps = chunkSteps;
