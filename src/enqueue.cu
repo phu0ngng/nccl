@@ -247,11 +247,7 @@ static void getKernelInfo(struct ncclInfo* info, uint8_t* nRings, uint16_t* nThr
 
 restart:
   // Compute the amount of work per thread per chunk
-  sizePerThread = info->nBytes / (nr*nt*
-      //info->nchunksPerLoop);
-  // Until nonLL is correctly pipelined (no opCount sync), we need to hack
-  // the threshold a bit otherwise Bcast and Reduce see a dip.
-      info->comm->nRanks);
+  sizePerThread = info->nBytes / (nr*nt*info->nchunksPerLoop);
 
   if (sizePerThread > perThreadLLThreshold) {
     // We have too much work per LL thread. Try to do better.
@@ -311,6 +307,7 @@ static ncclResult_t computeColl(struct ncclInfo* info /* input */, struct ncclCo
   int nLoops = (int)(DIVUP(nBytes, (((size_t)(coll->args.nRings))*info->nchunksPerLoop*stepSize*chunkSteps))); // Fixed 32-bit overflow
   proxyArgs->nsteps = info->nstepsPerLoop * nLoops * chunkSteps;
   proxyArgs->sliceSteps = llMode ? 1 : info->sliceSteps;
+  proxyArgs->chunkSteps = chunkSteps;
   proxyArgs->llMode = llMode;
   proxyArgs->opCount = info->comm->opCount;
   TRACE(NET,"opCount %lx slicesteps %d spl %d cpl %d nbytes %zi -> llmode %d nrings %d nthreads %d, nloops %d nsteps %d comm %p",

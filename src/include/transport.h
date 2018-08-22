@@ -33,6 +33,7 @@ struct ncclConnect {
 struct ncclProxyArgs {
   struct ncclRing* ring;
   int sliceSteps;
+  int chunkSteps;
   int nsteps;
   uint64_t opCount;
   int llMode;

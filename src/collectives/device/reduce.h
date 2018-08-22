@@ -32,26 +32,16 @@ __device__ void ncclReduceKernel(struct CollectiveArgs* args) {
   const ssize_t size = args->N;
   const int nranks = comm->nRanks;
   const int buffSize = ring->buffSize / sizeof(T);
-  const int chunkSize = (buffSize / NCCL_STEPS) * REDUCE_CHUNKSTEPS;
+  const int stepSize = buffSize / NCCL_STEPS;
+  const int chunkSize = stepSize * ALLREDUCE_CHUNKSTEPS;
   const ssize_t loopSize = args->nRings*(ssize_t)chunkSize;
   const int rank = ring->devUserRanks[0];
   const int prevRank = ring->devUserRanks[nranks-1];
   const int root = args->root;
 
-  if (tid == 0) {
-    // Update in case we skipped some collectives
-    *ring->recv.conn.opCount = args->opCount;
-
-    if (rank != root) {
-      // Wait for next to be ready
-      WaitFlag waitOpCountNext(ring->send.conn.opCount, 0);
-      waitOpCountNext.wait(args->opCount);
-    }
-  }
-  __syncthreads();
-
-  uint64_t step = 0ULL;
-  int boffset = 0;
+  uint64_t step = ring->send.conn.step;
+  step = ROUNDUP(step, REDUCE_CHUNKSTEPS);
+  int boffset = (step%NCCL_STEPS)*stepSize;
 
   // Compute pointers
   const T * __restrict__ thisInput = (const T*)args->ThisInput;
@@ -94,16 +84,15 @@ __device__ void ncclReduceKernel(struct CollectiveArgs* args) {
     NEXT_STEP; // Increases step, boffset
   }
 
+  // Save step counter for next op
   if (tid == 0) {
-    if (rank != root) { 
-      // Wait for next to have consumed data before resetting the flag
-      waitDoneFromNext.wait(step + NCCL_STEPS - REDUCE_CHUNKSTEPS);
-      *ring->send.conn.head = 0ULL;
-    }
-    *ring->recv.conn.tail = 0ULL;
-    __threadfence_system();
-    *ring->recv.conn.opCount = args->opCount+1;
+    ring->send.conn.step = step;
+    // Make sure last rank updates root's head otherwise it will be blocked
+    // on the next operation
+    if (prevRank == root)
+      *ring->recv.conn.head = step;
   }
+  __syncthreads();
 }
 
 #include "ll_kernel.h"

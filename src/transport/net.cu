@@ -39,6 +39,7 @@ struct netSendResources {
   int netDev;
   bool cudaSupport;
   struct ncclRecvMem* devNetMem;
+  uint64_t step;
   uint64_t llStep;
   uint64_t llLastCleaning;
 };
@@ -52,6 +53,7 @@ struct netRecvResources {
   struct ncclRecvMem* devHostRecvMem;
   int netDev;
   bool cudaSupport;
+  uint64_t step;
   uint64_t llStep;
   uint64_t llLastCleaning;
 };
@@ -341,12 +343,12 @@ ncclResult_t netSendProxy(struct ncclProxyArgs* args) {
   int stepSize = llMode ? NCCL_LL_BUFF_SIZE/NCCL_LL_CHUNKS : ring->buffSize/NCCL_STEPS;
   int buffSteps = llMode ? NCCL_LL_CHUNKS : NCCL_STEPS;
 
-  assert(args->sliceSteps <= NCCL_STEPS);
+  // Round to next multiple of sliceSteps
+  resources->step = ROUNDUP(resources->step, args->chunkSteps);
 
-  uint64_t head = llMode ? resources->llStep : 0ULL;
-  uint64_t tail = llMode ? resources->llStep : 0ULL;
+  uint64_t head = llMode ? resources->llStep : resources->step;
+  uint64_t tail = llMode ? resources->llStep : resources->step;
   uint64_t end = head + args->nsteps;
-//  printf("[S#%ld/%d] %ld / %ld -> %ld | %d / %d\n", args->opCount, ring->id, head, tail, end, buffSteps, args->sliceSteps);
 
   int idle = 0;
   void* requests[buffSteps];
@@ -356,13 +358,10 @@ ncclResult_t netSendProxy(struct ncclProxyArgs* args) {
   TRACE(NET,"opCount %lx head %lx tail %lx end %lx nsteps %d llMode %d", args->opCount, head, tail, end, args->nsteps, llMode);
   TRACE(NET,"opCount %lx stepSize %d stepSize %d ptrType %d", args->opCount, stepSize, stepSize, ptrType);
 
-  // Update in case we skipped some collectives
-  if (llMode == 0) resources->hostRecvMem->opCount = args->opCount;
-
   while (head < end) {
     idle++;
-    if (llMode) {
-      if (tail < end && tail < head + buffSteps) {
+    if (tail < end && tail < head + buffSteps) {
+      if (llMode) {
         int buffSlot = tail%buffSteps;
         int size = sizesFifo[buffSlot];
         if (size != 0) {
@@ -381,14 +380,13 @@ ncclResult_t netSendProxy(struct ncclProxyArgs* args) {
           tail += args->sliceSteps;
           idle = 0;
         }
+      } else if (tail < *prevTail) {
+        // Send through network
+        int buffSlot = tail%buffSteps;
+        NCCLCHECK(ncclNetIsend(resources->netSendComm, localBuff+buffSlot*stepSize, sizesFifo[buffSlot], ptrType, requests+buffSlot));
+        tail += args->sliceSteps;
+        idle = 0;
       }
-    } else while (tail < *prevTail) {
-      // Send through network
-      int buffSlot = tail%buffSteps;
-      NCCLCHECK(ncclNetIsend(resources->netSendComm, localBuff+buffSlot*stepSize, sizesFifo[buffSlot], ptrType, requests+buffSlot));
-//      printf("[S#%ld/%d] tail %ld -> %ld, +%d, %d\n", args->opCount, ring->id, tail, tail+args->sliceSteps, buffSlot*stepSize, sizesFifo[buffSlot]);
-      tail += args->sliceSteps;
-      idle = 0;
     }
     if (head < tail) {
       int done;
@@ -396,24 +394,18 @@ ncclResult_t netSendProxy(struct ncclProxyArgs* args) {
       NCCLCHECK(ncclNetTest(requests[buffSlot], &done, NULL));
       if (done) {
         if (llMode) sizesFifo[buffSlot] = 0;
-//        printf("[S#%ld/%d] head %ld -> %ld\n", args->opCount, ring->id, head, head+args->sliceSteps);
         head += args->sliceSteps;
         *prevHead = head;
         idle = 0;
       }
     }
     if (idle) transportProxyIdle(idle);
-//    if (idle == 10000000) printf("[S#%ld/%d]  tail %ld head %ld prevTail %ld\n", args->opCount, ring->id, tail, head, *prevTail);
   }
-
-  // Reset
-  if (llMode == 0) *prevTail = 0;
-//  printf("[S#%ld/%d] done %ld\n", args->opCount, ring->id, head);
 
 nextColl:
   if (llMode) {
     resources->llStep += args->nsteps;
-    // Don't forget to ack otherwise the GPU won't be able to push data.
+    // Update in case we didn't need a proxy and jumped directly here
     *prevHead = resources->llStep;
     if (resources->llStep > resources->llLastCleaning + NCCL_LL_CLEAN_FREQ) {
       memset(localBuff, 0, NCCL_LL_BUFF_SIZE);
@@ -421,6 +413,10 @@ nextColl:
       *prevHead = resources->llStep;
       resources->llLastCleaning = resources->llStep;
     }
+  } else {
+    resources->step += args->nsteps;
+    // Update in case we didn't need a proxy and jumped directly here
+    *prevHead = resources->step;
   }
   return ncclSuccess;
 }
@@ -440,10 +436,11 @@ ncclResult_t netRecvProxy(struct ncclProxyArgs* args) {
   int sliceSize = stepSize * args->sliceSteps;
   int buffSteps = llMode ? NCCL_LL_CHUNKS : NCCL_STEPS;
 
-  assert(args->sliceSteps <= NCCL_STEPS);
+  // Round to next multiple of sliceSteps
+  resources->step = ROUNDUP(resources->step, args->chunkSteps);
 
-  uint64_t head = llMode ? resources->llStep : 0ULL;
-  uint64_t tail = llMode ? resources->llStep : 0ULL;
+  uint64_t head = llMode ? resources->llStep : resources->step;
+  uint64_t tail = llMode ? resources->llStep : resources->step;
   uint64_t end = head + args->nsteps;
 //  printf("[R#%ld/%d] %ld / %ld -> %ld | %d / %d\n", args->opCount, ring->id, head, tail, end, buffSteps, args->sliceSteps);
 
@@ -455,18 +452,11 @@ ncclResult_t netRecvProxy(struct ncclProxyArgs* args) {
   TRACE(NET,"opCount %lx head %lx tail %lx end %lx nsteps %d llMode %d", args->opCount, head, tail, end, args->nsteps, llMode);
   TRACE(NET,"opCount %lx buffSize %d stepSize %d ptrType %d", args->opCount, buffSize, stepSize, ptrType);
 
-  if (llMode == 0) {
-    // Waiting for next opCount is only needed before writing nextTail.
-    uint64_t* nextOpCount = &resources->hostRecvMem->opCount;
-    transportProxyWait([=] { return *nextOpCount >= args->opCount; });
-  }
-
   while (head < end) {
     idle++;
     if ((tail < head + buffSteps) && (tail < (*nextHead) + buffSteps) && (tail < end)) {
       int buffSlot = tail%buffSteps;
       NCCLCHECK(ncclNetIrecv(resources->netRecvComm, localBuff+buffSlot*stepSize, sliceSize, ptrType, requests+buffSlot));
-//      printf("[R#%ld/%d] tail %ld -> %ld, +%d, %d\n", args->opCount, ring->id, tail, tail+args->sliceSteps, buffSlot*stepSize, sliceSize);
       tail += args->sliceSteps;
       idle = 0;
     }
@@ -476,7 +466,6 @@ ncclResult_t netRecvProxy(struct ncclProxyArgs* args) {
       int size;
       NCCLCHECK(ncclNetTest(requests[buffSlot], &done, &size));
       if (done) {
-//        printf("[R#%ld/%d] head %ld -> %ld, %d\n", args->opCount, ring->id, head, head+args->sliceSteps, size);
         head += args->sliceSteps;
         if (llMode == 0) {
           if (ptrType == NCCL_PTR_CUDA) ncclNetFlush(resources->netRecvComm, localBuff+buffSlot*stepSize, size);
@@ -486,15 +475,7 @@ ncclResult_t netRecvProxy(struct ncclProxyArgs* args) {
       }
     }
     if (idle) transportProxyIdle(idle);
-//    if (idle == 10000000) printf("[R#%ld/%d]  tail %ld head %ld nextHead %ld\n", args->opCount, ring->id, tail, head, *nextHead);
   }
-
-  // Wait for last ack and reset
-  if (llMode == 0) {
-    transportProxyWait([=] { return *nextHead == head; });
-    *nextHead = 0;
-  }
-//  printf("[R#%ld/%d] done %ld\n", args->opCount, ring->id, head);
 
 nextColl:
   if (llMode) {
@@ -504,6 +485,8 @@ nextColl:
       while (*nextHead < resources->llStep);
       resources->llLastCleaning = resources->llStep;
     }
+  } else {
+    resources->step += args->nsteps;
   }
   return ncclSuccess;
 }

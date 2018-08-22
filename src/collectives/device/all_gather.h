@@ -36,15 +36,11 @@ __device__ void ncclAllGatherKernel(struct CollectiveArgs* args) {
   const ssize_t size = args->N;
   const int nranks = comm->nRanks;
   const int buffSize = ring->buffSize / sizeof(T);
-  const int chunkSize = (buffSize / NCCL_STEPS) * ALLGATHER_CHUNKSTEPS;
+  const int stepSize = buffSize / NCCL_STEPS;
+  const int chunkSize = stepSize * ALLREDUCE_CHUNKSTEPS;
   const ssize_t loopSize = args->nRings*(ssize_t)chunkSize;
 
   if (tid == 0) {
-    // Update in case we skipped some collectives
-    *ring->recv.conn.opCount = args->opCount;
-    // Wait for next to be ready
-    WaitFlag waitOpCountNext(ring->send.conn.opCount, 0);
-    waitOpCountNext.wait(args->opCount);
     if (prevdirect) {
       *ring->recv.conn.ptrExchange = args->ThisOutput;
     }
@@ -57,8 +53,9 @@ __device__ void ncclAllGatherKernel(struct CollectiveArgs* args) {
   }
   __syncthreads();
 
-  uint64_t step = 0ULL;
-  int poffset, noffset = 0;
+  uint64_t step = ring->send.conn.step;
+  step = ROUNDUP(step, ALLGATHER_CHUNKSTEPS);
+  int poffset, noffset = (step%NCCL_STEPS)*stepSize;
 
   // Compute pointers
   const T * __restrict__ thisInput = (const T*)args->ThisInput;
@@ -156,14 +153,9 @@ __device__ void ncclAllGatherKernel(struct CollectiveArgs* args) {
     }
   }
 
-  if (tid == 0) {
-    // Wait for next to have consumed all data before we reset the flag
-    waitDoneFromNext.wait(step + NCCL_STEPS);
-    *ring->send.conn.head = 0ULL;
-    *ring->recv.conn.tail = 0ULL;
-    __threadfence_system();
-    *ring->recv.conn.opCount = args->opCount+1;
-  }
+  // Save step counter for next op
+  if (tid == 0) ring->send.conn.step = step;
+  __syncthreads();
 }
 
 #include "ll_kernel.h"
