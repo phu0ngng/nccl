@@ -15,10 +15,10 @@
 
 #define NET_MAX_IFS 16
 
-// We encode 3 bits of distance per IFS into a ncclTvalue_t (64-bit)
-#define NET_BITS_PER_IFS 3
-#define NET_BITS_PER_IFS_MASK ((1<<NET_BITS_PER_IFS)-1)
-static_assert(sizeof(ncclTvalue_t)*8 >= NET_MAX_IFS*NET_BITS_PER_IFS, "NET_MAX_IFS*NET_BITS_PER_IFS must fit in a ncclTvalue_t");
+// We encode 3 bits of distance per interface into a ncclTvalue_t (64-bit)
+#define NET_BITS_PER_IF 3
+#define NET_BITS_PER_IF_MASK ((1<<NET_BITS_PER_IF)-1)
+static_assert(sizeof(ncclTvalue_t)*8 >= NET_MAX_IFS*NET_BITS_PER_IF, "NET_MAX_IFS*NET_BITS_PER_IF must fit in a ncclTvalue_t");
 
 struct netInfo {
   int rank;
@@ -82,7 +82,7 @@ ncclResult_t netCanConnect(ncclTvalue_t* ret, ncclTinfo_t* myOpaqueInfo, ncclTin
   struct netInfo* myInfo = (struct netInfo*)myOpaqueInfo;
   for (int d=0; d<myInfo->ndev; d++) {
     // Keep 3 bits of score info per dev
-    ret[0] |= ((myInfo->scores[d] & NET_BITS_PER_IFS_MASK)<<(NET_BITS_PER_IFS*d));
+    ret[0] |= ((myInfo->scores[d] & NET_BITS_PER_IF_MASK)<<(NET_BITS_PER_IF*d));
   }
   return ncclSuccess;
 }
@@ -95,7 +95,7 @@ static inline int groupBestStart(int nranks, int* groups, int group, ncclTvalue_
     for (int i=0; i<nranks; i++) {
       ncclTvalue_t netValue = values[rank*nranks+i];
       if (netValue != 0) {
-        ncclTvalue_t score = (netValue>>(NET_BITS_PER_IFS*card)) & NET_BITS_PER_IFS_MASK;
+        ncclTvalue_t score = (netValue>>(NET_BITS_PER_IF*card)) & NET_BITS_PER_IF_MASK;
         if (score >= minScore && score > bestScore) {
           bestScore = score;
           bestRank = rank;
@@ -116,7 +116,7 @@ static inline int groupBestEnd(int nranks, int* groups, int group, int* subgroup
     for (int i=0; i<nranks; i++) {
       ncclTvalue_t netValue = values[rank*nranks+i];
       if (netValue != 0) {
-        ncclTvalue_t score = (netValue>>(NET_BITS_PER_IFS*card)) & NET_BITS_PER_IFS_MASK;
+        ncclTvalue_t score = (netValue>>(NET_BITS_PER_IF*card)) & NET_BITS_PER_IF_MASK;
         if (score >= minScore) {
           return rank;
         }

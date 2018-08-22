@@ -9,7 +9,6 @@
 #include "ring.h"
 #include "param.h"
 #include "nvmlwrap.h"
-//#include "ibvwrap.h"
 #include "rings.h"
 #include "bootstrap.h"
 #include "transport.h"
@@ -35,6 +34,7 @@ DebugLevel ncclDebugLevel;
 uint64_t ncclDebugMask = INIT; // Default debug sub-system mask is INIT
 pthread_mutex_t ncclDebugOutputLock;
 FILE *ncclDebugFile = stdout;
+
 #ifdef ENABLE_TRACE
 std::chrono::high_resolution_clock::time_point ncclEpoch;
 #endif
@@ -360,7 +360,7 @@ ncclResult_t initParams(struct ncclComm* comm) {
   return ncclSuccess;
 }
 
-// Allocate/Set Intra Structures and set CG options
+// Allocate/Set Intra Process Structures and set CG options
 ncclResult_t ncclCommSetIntra(struct ncclComm* comm, int rank, int ranks, struct ncclComm* comm0) {
   comm->intraRank = rank;
   comm->intraRanks = ranks;
@@ -572,8 +572,7 @@ ncclResult_t ncclCommInitRank(ncclComm_t* newcomm, int nranks, ncclUniqueId comm
 
   INFO(INIT,"rank %d nranks %d", myrank, nranks);
 
-  // It seems we need to call this so that NVML doesn't crash later with error
-  // 999.
+  // Make sure the CUDA runtime is initialized.
   CUDACHECK(cudaFree(NULL));
 
   NCCLCHECK(PtrCheck(newcomm, "CommInitRank", "newcomm"));
@@ -710,14 +709,12 @@ ncclResult_t ncclCommInitAll(ncclComm_t* comms, int ndev, const int* devlist) {
     cudaDev = ncclDevList[rank];
     CUDACHECKGOTO(cudaSetDevice(cudaDev), res, cleanup);
 
-    // Set CPU affinity
     SetCpuAffinity(cudaDev, &nvmlDevice);
 
     NCCLCHECKGOTO(commAlloc(&comm, ndev, rank), res, cleanup);
     comms[rank] = comm;
 
     NCCLCHECKGOTO(ncclCommSetIntra(comm, rank, ndev, comms[0]), res, cleanup);
-
   }
 
   sched_setaffinity(0, sizeof(cpu_set_t), &affinitySave);

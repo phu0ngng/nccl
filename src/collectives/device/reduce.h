@@ -128,7 +128,6 @@ __device__ void ncclReduceLLKernel(struct CollectiveArgs* args) {
   uint64_t step = ring->send.conn.llStep;
   uint32_t flag = step + 1;
   int boffset = NCCL_LL_SLICE_LINES * STEP_TO_SLOT(step);
-//  if (tid ==0) printf("Reduce LL sendbuff %p, recvbuff %p, size %d, root %d, comm %p\n", args->ThisInput, args->ThisOutput, args->N, args->root, args->comm);
 
   // Compute pointers
   const T * __restrict__ thisInput = (const T*)args->ThisInput;

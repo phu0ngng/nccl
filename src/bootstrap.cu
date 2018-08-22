@@ -21,7 +21,7 @@
   } \
 } while (0);
 
-// Always use pure sockets for bootstrap
+// Always use sockets for bootstrap
 ncclNet_t* ncclBootstrapNet = &ncclNetSocket;
 
 static ncclResult_t bootstrapListen(int dev, void* handle, void** listenComm) { NETCHECK(ncclBootstrapNet->listen(dev, handle, listenComm)); return ncclSuccess; }
