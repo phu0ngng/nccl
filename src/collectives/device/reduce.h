@@ -33,7 +33,7 @@ __device__ void ncclReduceKernel(struct CollectiveArgs* args) {
   const int nranks = comm->nRanks;
   const int buffSize = ring->buffSize / sizeof(T);
   const int stepSize = buffSize / NCCL_STEPS;
-  const int chunkSize = stepSize * ALLREDUCE_CHUNKSTEPS;
+  const int chunkSize = stepSize * REDUCE_CHUNKSTEPS;
   const ssize_t loopSize = args->nRings*(ssize_t)chunkSize;
   const int rank = ring->devUserRanks[0];
   const int prevRank = ring->devUserRanks[nranks-1];
