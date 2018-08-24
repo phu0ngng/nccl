@@ -402,7 +402,11 @@ ncclResult_t netSendProxy(struct ncclProxyArgs* args) {
       int slot = head%args->substeps;
       NCCLCHECK(ncclNetTest(requests[slot], &done, NULL));
       if (done) {
-        if (llMode) sizesFifo[slot] = 0;
+        if (llMode) {
+          sizesFifo[slot] = 0;
+          // Make sure size is reset to zero before we update the head.
+          __sync_synchronize();
+        }
         head++;
         *prevHead = head;
         idle = 0;
