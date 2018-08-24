@@ -393,7 +393,11 @@ ncclResult_t netSendProxy(struct ncclProxyArgs* args) {
       int buffSlot = head%buffSteps;
       NCCLCHECK(ncclNetTest(requests[buffSlot], &done, NULL));
       if (done) {
-        if (llMode) sizesFifo[buffSlot] = 0;
+        if (llMode) {
+          sizesFifo[slot] = 0;
+          // Make sure size is reset to zero before we update the head.
+          __sync_synchronize();
+        }
         head += args->sliceSteps;
         *prevHead = head;
         idle = 0;
