@@ -95,6 +95,7 @@ static void SaveProxy(struct ncclConnector* connector, struct ncclProxyArgs* arg
   struct ncclProxyArgs* fifoArgs = FifoGetNextArgs(info);
   args->needProxy = needProxy;
   memcpy(fifoArgs, args, sizeof(struct ncclProxyArgs));
+  __sync_synchronize();
   fifoArgs->active = 1;
 }
 
