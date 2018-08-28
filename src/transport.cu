@@ -22,6 +22,7 @@ static void FifoPullArgs(struct transportProxyInfo* info, struct ncclProxyArgs *
   while (fifoArgs->active == 0)
     pthread_cond_wait(&info->cond, &info->mutex);
   memcpy(args, fifoArgs, sizeof(struct ncclProxyArgs));
+  __sync_synchronize();
   fifoArgs->active = 0;
   pthread_cond_signal(&info->cond);
   pthread_mutex_unlock(&info->mutex);
