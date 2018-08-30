@@ -20,7 +20,7 @@
 
 int ncclSocketPtrSupport(int dev, int* supportedTypes) {
   *supportedTypes = NCCL_PTR_HOST;
-  return 0;
+  return ncclSuccess;
 }
 
 #define MAX_IFS 16
@@ -100,7 +100,7 @@ struct ncclSocketComm* ncclSocketNewComm() {
 int ncclSocketCreateHandle(void* opaqueHandle, const char* str) {
   struct ncclSocketHandle* handle = (struct ncclSocketHandle*) opaqueHandle;
   NCCLCHECK(GetSocketAddrFromString(&(handle->connectAddr), str));
-  return 0;
+  return ncclSuccess;
 }
 
 int ncclSocketListen(int dev, void* opaqueHandle, void** listenComm) {
@@ -117,14 +117,14 @@ int ncclSocketListen(int dev, void* opaqueHandle, void** listenComm) {
     char ifName[MAX_IF_NAME_SIZE];
     if (findInterfaceMatchSubnet(ifName, &localAddr, handle->connectAddr, MAX_IF_NAME_SIZE, 1) <= 0) {
       WARN("No usable listening interface found");
-      return ncclInternalError;
+      return ncclSystemError;
     }
     // pass the local address back
     memcpy(&handle->connectAddr, &localAddr, sizeof(handle->connectAddr));
   } // Otherwise, handle stores a local address
   NCCLCHECK(createListenSocket(&comm->fd, &handle->connectAddr));
   *listenComm = comm;
-  return 0;
+  return ncclSuccess;
 }
 
 int ncclSocketConnect(int dev, void* opaqueHandle, void** sendComm) {
@@ -132,7 +132,7 @@ int ncclSocketConnect(int dev, void* opaqueHandle, void** sendComm) {
   struct ncclSocketHandle* handle = (struct ncclSocketHandle*) opaqueHandle;
   NCCLCHECK(connectAddress(&comm->fd, &handle->connectAddr));
   *sendComm = comm;
-  return 0;
+  return ncclSuccess;
 }
 
 int ncclSocketAccept(void* listenComm, void** recvComm) {
@@ -142,7 +142,7 @@ int ncclSocketAccept(void* listenComm, void** recvComm) {
   socklen_t socklen = sizeof(struct sockaddr_in);
   SYSCHECKVAL(accept(lComm->fd, (struct sockaddr*)&sockaddr, &socklen), "accept", rComm->fd);
   *recvComm = rComm;
-  return 0;
+  return ncclSuccess;
 }
 
 #define MAX_REQUESTS 128
@@ -171,7 +171,7 @@ int ncclSocketIsend(void* sendComm, void* data, int size, int type, void** reque
   *request = NULL;
   NCCLCHECK(socketSend(comm->fd, &size, sizeof(int)));
   NCCLCHECK(socketSend(comm->fd, data, size));
-  return 0;
+  return ncclSuccess;
 }
 
 int ncclSocketIrecv(void* recvComm, void* data, int size, int type, void** request) {
@@ -188,12 +188,12 @@ int ncclSocketIrecv(void* recvComm, void* data, int size, int type, void** reque
   NCCLCHECK(ncclSocketGetRequest(&comm->reqs, &recvReq));
   recvReq->size = recvSize;
   *request = recvReq;
-  return 0;
+  return ncclSuccess;
 }
 
 int ncclSocketFlush(void* recvComm, void* data, int size) {
   // We don't support CUDA pointers, we don't need a flush.
-  return 1;
+  return ncclInternalError;
 }
 
 int ncclSocketTest(void* request, int* done, int* size) {
@@ -203,7 +203,7 @@ int ncclSocketTest(void* request, int* done, int* size) {
     if (size) *size = r->size;
     r->used = 0;
   }
-  return 0;
+  return ncclSuccess;
 }
 
 int ncclSocketClose(void* opaqueComm) {
@@ -213,7 +213,7 @@ int ncclSocketClose(void* opaqueComm) {
     close(comm->fd);
     free(comm);
   }
-  return 0;
+  return ncclSuccess;
 }
 
 ncclNet_t ncclNetSocket = {
