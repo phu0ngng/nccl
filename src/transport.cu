@@ -21,6 +21,7 @@ static void FifoPullArgs(struct transportProxyInfo* info, struct ncclProxyArgs *
   pthread_mutex_lock(&info->mutex);
   while (fifoArgs->active == 0)
     pthread_cond_wait(&info->cond, &info->mutex);
+  __sync_synchronize();
   memcpy(args, fifoArgs, sizeof(struct ncclProxyArgs));
   __sync_synchronize();
   fifoArgs->active = 0;
@@ -95,6 +96,7 @@ static void SaveProxy(struct ncclConnector* connector, struct ncclProxyArgs* arg
   if (info == NULL) return;
   struct ncclProxyArgs* fifoArgs = FifoGetNextArgs(info);
   args->needProxy = needProxy;
+  __sync_synchronize();
   memcpy(fifoArgs, args, sizeof(struct ncclProxyArgs));
   __sync_synchronize();
   fifoArgs->active = 1;
