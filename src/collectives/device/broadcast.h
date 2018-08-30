@@ -19,11 +19,8 @@ __device__ void ncclBroadcastKernel(struct CollectiveArgs* args) {
   const int tid = threadIdx.x;
   const int nthreads = blockDim.x - 1;
   const int bid = args->bid;
-  __shared__ T* sharedNextOutput;
   struct ncclComm* comm = args->comm;
   struct ncclRing* ring = comm->rings+blockIdx.x;
-  int prevdirect = ring->recv.conn.direct;
-  int nextdirect = ring->send.conn.direct;
 
   WaitFlag waitDoneFromNext(ring->send.conn.head, NCCL_STEPS-BROADCAST_CHUNKSTEPS);
   WaitFlag waitReadyFromPrev(ring->recv.conn.tail, 0);
@@ -40,19 +37,6 @@ __device__ void ncclBroadcastKernel(struct CollectiveArgs* args) {
   const int rank = ring->devUserRanks[0];
   const int nextRank = ring->devUserRanks[1];
   const int root = args->root;
-
-  if (tid == 0) {
-    if (rank != root && prevdirect) {
-      *ring->recv.conn.ptrExchange = args->ThisOutput;
-    }
-    if (nextRank != root && nextdirect) {
-      void* volatile* ptr = &(ring->devMemSend->ptrExchange);
-      while (*ptr == nullptr);
-      sharedNextOutput = (T*)*ptr;
-      *ptr = nullptr;
-    }
-  }
-  __syncthreads();
 
   uint64_t step = ring->send.conn.step;
   step = ROUNDUP(step, BROADCAST_CHUNKSTEPS);
@@ -74,7 +58,7 @@ __device__ void ncclBroadcastKernel(struct CollectiveArgs* args) {
       if (thisInput == thisOutput) {
         Prims::Copy(tid, nthreads,
             thisInput  + offset,
-            nextdirect ? (sharedNextOutput + offset) : (nextOutput + boffset),
+            nextOutput + boffset,
             chunkSize, maxOffset,
             step,
             waitDoneFromNext,
@@ -83,14 +67,13 @@ __device__ void ncclBroadcastKernel(struct CollectiveArgs* args) {
         Prims::DoubleCopy(tid, nthreads,
             thisInput  + offset,
             thisOutput + offset,
-            nextdirect ? (sharedNextOutput + offset) : (nextOutput + boffset),
+            nextOutput + boffset,
             chunkSize, maxOffset,
             step,
             waitDoneFromNext,
             postReadyToNext);
       }
     } else if (nextRank == root) {
-      if (prevdirect) maxOffset = 0; // Only wait for signals
       Prims::Copy(tid, nthreads,
           prevInput  + boffset,
           thisOutput + offset,
@@ -99,24 +82,14 @@ __device__ void ncclBroadcastKernel(struct CollectiveArgs* args) {
           waitReadyFromPrev,
           postDoneToPrev);
     } else {
-      if (prevdirect) {
-        Prims::Copy(tid, nthreads,
-            thisOutput + offset,
-            nextdirect ? (sharedNextOutput + offset) : (nextOutput + boffset),
-            chunkSize, maxOffset,
-            step,
-            waitDoneFromNext, waitReadyFromPrev,
-            postReadyToNext, postDoneToPrev);
-      } else {
-        Prims::DoubleCopy(tid, nthreads,
-            prevInput + boffset,
-            thisOutput + offset,
-	    nextdirect ? (sharedNextOutput + offset) : (nextOutput + boffset),
-            chunkSize, maxOffset,
-            step,
-            waitDoneFromNext, waitReadyFromPrev,
-            postReadyToNext, postDoneToPrev);
-      }
+      Prims::DoubleCopy(tid, nthreads,
+          prevInput + boffset,
+          thisOutput + offset,
+          nextOutput + boffset,
+          chunkSize, maxOffset,
+          step,
+          waitDoneFromNext, waitReadyFromPrev,
+          postReadyToNext, postDoneToPrev);
     }
     NEXT_STEP; // Increases step, boffset
   }
