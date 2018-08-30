@@ -41,6 +41,19 @@ __device__ void ncclBroadcastKernel(struct CollectiveArgs* args) {
   const int nextRank = ring->devUserRanks[1];
   const int root = args->root;
 
+  if (tid == 0) {
+    if (rank != root && prevdirect) {
+      *ring->recv.conn.ptrExchange = args->ThisOutput;
+    }
+    if (nextRank != root && nextdirect) {
+      void* volatile* ptr = &(ring->devMemSend->ptrExchange);
+      while (*ptr == nullptr);
+      sharedNextOutput = (T*)*ptr;
+      *ptr = nullptr;
+    }
+  }
+  __syncthreads();
+
   uint64_t step = ring->send.conn.step;
   step = ROUNDUP(step, BROADCAST_CHUNKSTEPS);
   int boffset = (step%NCCL_STEPS)*stepSize;
