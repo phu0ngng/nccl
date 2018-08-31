@@ -821,32 +821,35 @@ int ncclIbTest(void* request, int* done, int* size) {
     }
 
     int wrDone = 0;
-    struct ibv_wc wc;
-    NCCLCHECK(wrap_ibv_poll_cq(r->verbs->cq, 1, &wc, &wrDone));
+    struct ibv_wc wcs[4];
+    NCCLCHECK(wrap_ibv_poll_cq(r->verbs->cq, 4, wcs, &wrDone));
     if (wrDone == 0) return ncclSuccess;
 
-    if (wc.status != IBV_WC_SUCCESS) {
-      WARN("NET/IB : Got completion with error %d, opcode %d, len %d, vendor err %d", wc.status, wc.opcode, wc.byte_len, wc.vendor_err);
-      return ncclSystemError;
-    }
+    for (int w=0; w<wrDone; w++) {
+      struct ibv_wc *wc = wcs+w;
+      if (wc->status != IBV_WC_SUCCESS) {
+        WARN("NET/IB : Got completion with error %d, opcode %d, len %d, vendor err %d", wc->status, wc->opcode, wc->byte_len, wc->vendor_err);
+        return ncclSystemError;
+      }
 
-    struct ncclIbRequest* doneReq = (struct ncclIbRequest*)wc.wr_id;
-    if (doneReq) {
-      if (wc.opcode == IBV_WC_RECV) {
-        doneReq->size = wc.byte_len;
+      struct ncclIbRequest* doneReq = (struct ncclIbRequest*)wc->wr_id;
+      if (doneReq) {
+        if (wc->opcode == IBV_WC_RECV) {
+          doneReq->size = wc->byte_len;
 #if USE_RDMA_WRITE
-      } else if (wc.opcode == IBV_WC_RECV_RDMA_WITH_IMM) {
-        doneReq->size = wc.imm_data;
+        } else if (wc->opcode == IBV_WC_RECV_RDMA_WITH_IMM) {
+          doneReq->size = wc->imm_data;
 #endif
-      }
-      if (doneReq->ibMr != NULL) {
-        doneReq->ibMr->refcnt--;
-        if (doneReq->ibMr->refcnt < 0) WARN("NET/IB : doneReq %p MR %p refcount now %d", doneReq, doneReq->ibMr, doneReq->ibMr->refcnt);
-      }
-      doneReq->done = 1;
-      if (doneReq->free == 1) {
-        // This is an internal (FIFO post) req. Free it immediately.
-        doneReq->used = 0;
+        }
+        if (doneReq->ibMr != NULL) {
+          doneReq->ibMr->refcnt--;
+          if (doneReq->ibMr->refcnt < 0) WARN("NET/IB : doneReq %p MR %p refcount now %d", doneReq, doneReq->ibMr, doneReq->ibMr->refcnt);
+        }
+        doneReq->done = 1;
+        if (doneReq->free == 1) {
+          // This is an internal (FIFO post) req. Free it immediately.
+          doneReq->used = 0;
+        }
       }
     }
   }
