@@ -37,6 +37,7 @@ static ncclResult_t getMlxPath(char* ibName, char** path) {
   snprintf(devicepath, MAXPATHSIZE, "/sys/class/infiniband/%s/device", ibName);
   *path = realpath(devicepath, NULL);
   if (*path == NULL) {
+    WARN("Could not find real path of %s", devicepath);
     return ncclSystemError;
   }
   return ncclSuccess;
@@ -47,6 +48,7 @@ static ncclResult_t getSockPath(char* ifName, char** path) {
   snprintf(devicepath, MAXPATHSIZE, "/sys/class/net/%s/device", ifName);
   *path = realpath(devicepath, NULL);
   if (*path == NULL) {
+    WARN("Could not find real path of %s", devicepath);
     return ncclSystemError;
   }
   return ncclSuccess;
