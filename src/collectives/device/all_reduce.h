@@ -210,7 +210,7 @@ template<int UNUSED, class FUNC, typename T>
 __device__ void ncclAllReduceLLKernel(struct CollectiveArgs* args) {
   const int tid = threadIdx.x;
   const int bid = args->bid;
-  const int ll_nthreads = args->nThreads;
+  const int llNthreads = args->nThreads;
   struct ncclComm* comm = args->comm;
   struct ncclRing* ring = comm->rings+blockIdx.x;
   volatile uint64_t * recvHeadPtr = ring->recv.conn.llHead;
@@ -256,7 +256,7 @@ __device__ void ncclAllReduceLLKernel(struct CollectiveArgs* args) {
     LL::ReduceCopy(
         thisInput  + offset,
         nextOutput + noffset,
-        maxOffset, nflag, ll_nthreads);
+        maxOffset, nflag, llNthreads);
     POST_SIZE;
 
     NEXT_STEP_LL;
@@ -272,7 +272,7 @@ __device__ void ncclAllReduceLLKernel(struct CollectiveArgs* args) {
           thisInput  + offset,
           prevInput  + poffset,
           nextOutput + noffset,
-          maxOffset, pflag, nflag, ll_nthreads);
+          maxOffset, pflag, nflag, llNthreads);
       POST_SIZE;
       ACK_PREV;
 
@@ -291,7 +291,7 @@ __device__ void ncclAllReduceLLKernel(struct CollectiveArgs* args) {
         prevInput  + poffset,
         thisOutput + offset,
         nextOutput + noffset,
-        maxOffset, pflag, nflag, ll_nthreads);
+        maxOffset, pflag, nflag, llNthreads);
     POST_SIZE;
     ACK_PREV;
 
@@ -308,7 +308,7 @@ __device__ void ncclAllReduceLLKernel(struct CollectiveArgs* args) {
           prevInput + poffset,
           thisOutput + offset,
           nextOutput + noffset,
-          maxOffset, pflag, nflag, ll_nthreads);
+          maxOffset, pflag, nflag, llNthreads);
       POST_SIZE;
       ACK_PREV;
 
@@ -324,7 +324,7 @@ __device__ void ncclAllReduceLLKernel(struct CollectiveArgs* args) {
     LL::ReduceCopy(
         prevInput + poffset,
         thisOutput + offset,
-        maxOffset, pflag, ll_nthreads);
+        maxOffset, pflag, llNthreads);
     ACK_PREV;
   }
 
