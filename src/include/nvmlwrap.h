@@ -33,7 +33,7 @@ static ncclResult_t wrapNvmlDeviceGetIndex(nvmlDevice_t device, unsigned* index)
   return ncclSuccess;
 }
 static ncclResult_t wrapNvmlDeviceSetCpuAffinity(nvmlDevice_t device) {
-  NVMLCHECK(nvmlDeviceSetCpuAffinity(device)); 
+  NVMLCHECK(nvmlDeviceSetCpuAffinity(device));
   return ncclSuccess;
 }
 static ncclResult_t wrapNvmlDeviceClearCpuAffinity(nvmlDevice_t device) {

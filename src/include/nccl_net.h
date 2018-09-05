@@ -33,11 +33,11 @@ typedef struct {
   // will then be freed automatically by NCCL.
   int (*devices)(int* ndev, int** scores);
   // Return whether this device supports host pointers and/or CUDA pointers
-  // as data from the current GPU. Supported types should be composed with 
+  // as data from the current GPU. Supported types should be composed with
   // NCCL_PTR_HOST and NCCL_PTR_CUDA.
   int (*ptrSupport)(int dev, int* supportedTypes);
-  // Create a receiving object and provide a handle to connect to it. The 
-  // handle can be up to NCCL_NET_HANDLE_MAXSIZE bytes and will be exchanged 
+  // Create a receiving object and provide a handle to connect to it. The
+  // handle can be up to NCCL_NET_HANDLE_MAXSIZE bytes and will be exchanged
   // between ranks to create a connection.
   int (*listen)(int dev, void* handle, void** listenComm);
   // Connect to a handle and return a sending comm object for that peer.

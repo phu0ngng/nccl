@@ -30,7 +30,7 @@ NCCL_API(ncclResult_t, ncclBcast, void* buff, size_t count, ncclDataType_t datat
 ncclResult_t ncclBcast(void* buff, size_t count, ncclDataType_t datatype, int root,
     ncclComm_t comm, cudaStream_t stream) {
   return ncclEnqueueCheck(ncclBroadcastFunc, "Bcast", buff, buff, count, datatype,
-     ncclSum, root, comm, stream);
+          ncclSum, root, comm, stream);
 }
 
 NCCL_API(ncclResult_t, ncclBroadcast, const void* sendbuff, void* recvbuff, size_t count, ncclDataType_t datatype, int root,
@@ -38,5 +38,5 @@ NCCL_API(ncclResult_t, ncclBroadcast, const void* sendbuff, void* recvbuff, size
 ncclResult_t ncclBroadcast(const void* sendbuff, void* recvbuff, size_t count, ncclDataType_t datatype, int root,
     ncclComm_t comm, cudaStream_t stream) {
   return ncclEnqueueCheck(ncclBroadcastFunc, "Broadcast", sendbuff, recvbuff, count, datatype,
-     ncclSum, root, comm, stream);
+          ncclSum, root, comm, stream);
 }

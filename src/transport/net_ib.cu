@@ -90,15 +90,15 @@ static void initDevices() {
     if (ncclNIbDevs == -1) {
       ncclNIbDevs = 0;
       if (findInterfaces(ncclIbIfName, &ncclIbIfAddr, MAX_IF_NAME_SIZE, 1) != 1) {
-          WARN("NET/IB : No IP interface found.");
-          return;
+        WARN("NET/IB : No IP interface found.");
+        return;
       }
       INFO(INIT|NET,"NET/IB : Using interface %s for sideband communication", ncclIbIfName);
 
       // Detect IB cards
       int nIbDevs;
       struct ibv_device** devices;
-      
+
       // Check if user defined which IB device:port to use
       char* userIbEnv = getenv("NCCL_IB_HCA");
       struct netIf userIfs[MAX_IB_DEVS];
@@ -108,10 +108,10 @@ static void initDevices() {
       if (ncclSuccess != wrap_ibv_get_device_list(&devices, &nIbDevs)) return;
 
       for (int d=0; d<nIbDevs; d++) {
-        struct ibv_context * context; 
+        struct ibv_context * context;
         if (ncclSuccess != wrap_ibv_open_device(&context, devices[d])) {
-            WARN("NET/IB : Unable to open device %s", devices[d]->name);
-            continue;
+          WARN("NET/IB : Unable to open device %s", devices[d]->name);
+          continue;
         }
         int found = 0;
         if (context) {
@@ -143,7 +143,7 @@ static void initDevices() {
             ncclNIbDevs++;
             found++;
             pthread_create(&ncclIbAsyncThread, NULL, ncclIbAsyncThreadMain, context);
-          } 
+          }
 
           if (found == 0) { if (ncclSuccess != wrap_ibv_close_device(context)) { return; } }
         }
@@ -442,7 +442,7 @@ int ncclIbConnect(int dev, void* opaqueHandle, void** sendComm) {
   struct ncclIbHandle* handle = (struct ncclIbHandle*) opaqueHandle;
   NCCLCHECK(connectAddress(&comm->fd, &handle->connectAddr));
   *sendComm = comm;
-  
+
   // IB Setup
   initDevices(); /*NOTE: We need to do this for ncclNet unit test that bypasses nccl initialization*/
   ibv_context* ctx = ncclIbDevs[dev].context;
@@ -485,7 +485,7 @@ int ncclIbAccept(void* listenComm, void** recvComm) {
   struct ncclIbListenComm* lComm = (struct ncclIbListenComm*)listenComm;
   struct ncclIbRecvComm* rComm;
   NCCLCHECK(ncclIbMalloc((void**)&rComm, sizeof(struct ncclIbRecvComm)));
-  
+
   struct sockaddr_in sockaddr;
   socklen_t socklen = sizeof(struct sockaddr_in);
   SYSCHECKVAL(accept(lComm->fd, (struct sockaddr*)&sockaddr, &socklen), "accept", rComm->fd);
@@ -541,7 +541,8 @@ int ncclIbAccept(void* listenComm, void** recvComm) {
       .qpn=rComm->gpuFlush.qp->qp_num,
       .spn=gid.global.subnet_prefix,
       .iid=gid.global.interface_id,
-      .mtu=portAttr.active_mtu };
+      .mtu=portAttr.active_mtu
+    };
     NCCLCHECK(ncclIbRtrQp(rComm->gpuFlush.qp, &localQpInfo));
     NCCLCHECK(ncclIbRtsQp(rComm->gpuFlush.qp));
   }
@@ -553,7 +554,8 @@ int ncclIbAccept(void* listenComm, void** recvComm) {
     .qpn=qp->qp_num,
     .spn=gid.global.subnet_prefix,
     .iid=gid.global.interface_id,
-    .mtu=remQpInfo.mtu };
+    .mtu=remQpInfo.mtu
+  };
 
   NCCLCHECK(socketSend(rComm->fd, &qpInfo, sizeof(qpInfo)));
   *recvComm = rComm;
@@ -614,7 +616,7 @@ ncclResult_t ncclIbGetMr(struct ncclIbVerbs* verbs, void* data, int size, struct
   assert(size > 0);
 
   // Look for an already existing MR
-  for (int i=0; i<MAX_REQUESTS;i++) {
+  for (int i=0; i<MAX_REQUESTS; i++) {
     if (verbs->mrPool[i].mr == NULL) continue;
     uint64_t regAddr = (uint64_t)verbs->mrPool[i].mr->addr;
     uint64_t regSize = (uint64_t)verbs->mrPool[i].mr->length;
@@ -628,7 +630,7 @@ ncclResult_t ncclIbGetMr(struct ncclIbVerbs* verbs, void* data, int size, struct
   // Find an unused element
   if (elem == -1) {
     elem = (verbs->mrRotation++);
-    for (int i=0; i<MAX_REQUESTS;i++) {
+    for (int i=0; i<MAX_REQUESTS; i++) {
       elem %= MAX_REQUESTS;
       if (verbs->mrPool[elem].refcnt > 0) elem++; else break;
     }
@@ -690,7 +692,7 @@ int ncclIbIsend(void* sendComm, void* data, int size, int type, void** request) 
   // plus any potential programming errors
   if (size > slot->size || slot->size <= 0 || slot->addr == 0 || slot->rkey == 0 || slot->seq != comm->fifoHead) {
     WARN("NET/IB : collective mismatch error local size %d remote %d addr %lx rkey %x seq %x/%x",
-         size, slot->size, slot->addr, slot->rkey, slot->seq, comm->fifoHead);
+        size, slot->size, slot->addr, slot->rkey, slot->seq, comm->fifoHead);
     return ncclInternalError;
   }
   wr.opcode = IBV_WR_RDMA_WRITE_WITH_IMM;
@@ -861,7 +863,7 @@ int ncclIbCloseSend(void* sendComm) {
     for (int i=0; i<MAX_REQUESTS; i++) {
       if (comm->verbs.mrPool[i].mr != NULL) {
         if (comm->verbs.mrPool[i].refcnt != 0) WARN("NET/IB : TX MR #%d has non-zero (%d) refcnt", i, comm->verbs.mrPool[i].refcnt);
-	NCCLCHECK(wrap_ibv_dereg_mr(comm->verbs.mrPool[i].mr));
+        NCCLCHECK(wrap_ibv_dereg_mr(comm->verbs.mrPool[i].mr));
       }
     }
     NCCLCHECK(ncclIbDestroyVerbs(&comm->verbs));

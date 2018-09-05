@@ -19,8 +19,7 @@
 #include <cuda_runtime.h>
 
 #if __CUDACC_VER_MAJOR__ < 9
-struct cudaLaunchParams
-{
+struct cudaLaunchParams {
   void *func;
   dim3 gridDim;
   dim3 blockDim;
@@ -215,10 +214,10 @@ struct ncclComm {
   // where syncs are not symmetric).
   uint64_t opCount;
 
-  // Rings for collectives 
+  // Rings for collectives
   int nRings;
   int nThreads;
-  
+
   // Low-latency algorithm threshold
   ssize_t llThreshold;
   ssize_t threadThreshold;

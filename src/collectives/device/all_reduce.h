@@ -137,7 +137,7 @@ __device__ void ncclAllReduceKernel(struct CollectiveArgs* args) {
 
         Prims::Copy(tid, nthreads,
             thisOutput + offset,
-	    nextdirect ? (sharedNextOutput + offset) : (nextOutput + noffset),
+            nextdirect ? (sharedNextOutput + offset) : (nextOutput + noffset),
             sliceSize, maxOffset,
             step,
             waitDoneFromNext, waitReadyFromPrev,
@@ -161,7 +161,7 @@ __device__ void ncclAllReduceKernel(struct CollectiveArgs* args) {
         Prims::DoubleCopy(tid, nthreads,
             prevInput + poffset,
             thisOutput + offset,
-	    nextdirect ? (sharedNextOutput + offset) : (nextOutput + noffset),
+            nextdirect ? (sharedNextOutput + offset) : (nextOutput + noffset),
             sliceSize, maxOffset,
             step,
             waitDoneFromNext, waitReadyFromPrev,

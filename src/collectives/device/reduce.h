@@ -95,7 +95,7 @@ __device__ void ncclReduceKernel(struct CollectiveArgs* args) {
   }
 
   if (tid == 0) {
-    if (rank != root) { 
+    if (rank != root) {
       // Wait for next to have consumed data before resetting the flag
       waitDoneFromNext.wait(REDUCE_SUBSTEPS*(step + REDUCE_BUFCHUNKS - 1));
       *ring->send.conn.head = 0ULL;

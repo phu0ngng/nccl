@@ -23,7 +23,7 @@ ncclResult_t getHostName(char* hostname, int maxlen) {
 uint64_t getHash(const char* string) {
   // Based on DJB2, result = result * 33 + char
   uint64_t result = 5381;
-  for (int c = 0; string[c] != '\0'; c++){
+  for (int c = 0; string[c] != '\0'; c++) {
     result = ((result << 5) + result) + string[c];
   }
   return result;
@@ -120,7 +120,7 @@ bool matchIfList(const char* string, int port, struct netIf* ifList, int listSiz
   if (listSize == 0) return true;
 
   for (int i=0; i<listSize; i++) {
-    if (matchPrefix(string, ifList[i].prefix) 
+    if (matchPrefix(string, ifList[i].prefix)
         && matchPort(port, ifList[i].port)) {
       return true;
     }

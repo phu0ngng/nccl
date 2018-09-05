@@ -116,7 +116,7 @@ __device__ void ncclBroadcastKernel(struct CollectiveArgs* args) {
         Prims::DoubleCopy(tid, nthreads,
             prevInput + boffset,
             thisOutput + offset,
-	    nextdirect ? (sharedNextOutput + offset) : (nextOutput + boffset),
+            nextdirect ? (sharedNextOutput + offset) : (nextOutput + boffset),
             sliceSize, maxOffset,
             step,
             waitDoneFromNext, waitReadyFromPrev,
@@ -127,7 +127,7 @@ __device__ void ncclBroadcastKernel(struct CollectiveArgs* args) {
   }
 
   if (tid == 0) {
-    if (nextRank != root) { 
+    if (nextRank != root) {
       // Wait for next to have consumed data before resetting the flag
       waitDoneFromNext.wait(BROADCAST_SUBSTEPS*(step + BROADCAST_BUFCHUNKS - 1));
       *ring->send.conn.head = 0ULL;

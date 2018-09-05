@@ -46,7 +46,7 @@ static inline int envSocketFamily(void) {
   char* env = getenv("NCCL_SOCKET_FAMILY");
   if (env == NULL)
     return family;
-  
+
   if (strcmp(env, "AF_INET") == 0)
     family = AF_INET;  // IPv4
   else if (strcmp(env, "AF_INET6") == 0)
@@ -214,7 +214,7 @@ static ncclResult_t GetSocketAddrFromString(union socketAddress* ua, const char*
     hints.ai_family = AF_UNSPEC;
     hints.ai_socktype = SOCK_STREAM;
 
-    if ( (rv = getaddrinfo(ni.prefix, NULL , &hints , &p)) != 0) {
+    if ( (rv = getaddrinfo(ni.prefix, NULL, &hints, &p)) != 0) {
       WARN("Net : error encountered when getting address info : %s", gai_strerror(rv));
       return ncclInvalidArgument;
     }
@@ -251,7 +251,7 @@ static ncclResult_t GetSocketAddrFromString(union socketAddress* ua, const char*
       return ncclInvalidArgument;
     }
     bool global_scope = (j == -1 ? true : false);     // If no % found, global scope; otherwise, link scope
-    
+
     char ip_str[NI_MAXHOST], port_str[NI_MAXSERV], if_name[IFNAMSIZ];
     memset(ip_str, '\0', sizeof(ip_str));
     memset(port_str, '\0', sizeof(port_str));
@@ -260,7 +260,7 @@ static ncclResult_t GetSocketAddrFromString(union socketAddress* ua, const char*
     strncpy(port_str, ip_port_pair+i+2, len-i-1);
     int port = atoi(port_str);
     if (!global_scope) strncpy(if_name, ip_port_pair+j+1, i-j-1); // If not global scope, we need the intf name
-    
+
     struct sockaddr_in6& sin6 = ua->sin6;
     sin6.sin6_family = AF_INET6;                       // IPv6
     inet_pton(AF_INET6, ip_str, &(sin6.sin6_addr));    // IP address
@@ -348,9 +348,9 @@ static ncclResult_t connectAddress(int* fd, union socketAddress* remoteAddr) {
   const int one = 1;
   SYSCHECK(setsockopt(*fd, IPPROTO_TCP, TCP_NODELAY, (char*)&one, sizeof(int)), "setsockopt");
 
-/*  const int bufsize = 128*1024;
-  SYSCHECK(setsockopt(*fd, SOL_SOCKET, SO_SNDBUF, (char*)&bufsize, sizeof(int)), "setsockopt");
-  SYSCHECK(setsockopt(*fd, SOL_SOCKET, SO_RCVBUF, (char*)&bufsize, sizeof(int)), "setsockopt");*/
+  /*  const int bufsize = 128*1024;
+    SYSCHECK(setsockopt(*fd, SOL_SOCKET, SO_SNDBUF, (char*)&bufsize, sizeof(int)), "setsockopt");
+    SYSCHECK(setsockopt(*fd, SOL_SOCKET, SO_RCVBUF, (char*)&bufsize, sizeof(int)), "setsockopt");*/
 
 #ifdef ENABLE_TRACE
   char line[1024];

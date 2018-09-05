@@ -68,7 +68,7 @@ struct extInfo {
   ncclNetHandle_t extHandle;
 };
 
-enum { 
+enum {
   BOOTSTRAP_ALLGATHER = 1,
   BOOTSTRAP_RINGEXCHANGE,
 };
@@ -89,86 +89,86 @@ static void *bootstrapRoot(void* commId) {
   struct bootstrapOp bop;
   void **extSendComm = NULL;
   void **extRecvComm = NULL;
-  int size, alloc_size = 0; 
+  int size, alloc_size = 0;
   char* data = NULL;
   setFilesLimit();
 
   /* Receive addresses from all ranks */
   int nranks = 0, c = 0;
   do {
-      void* tmpRecvComm;
-      NCCLCHECKJUMP(bootstrapAccept(id->extListenComm, &tmpRecvComm), out);
-      NCCLCHECKJUMP(bootstrapRecv(tmpRecvComm, &info, sizeof(info)), out);
-      if (!c) { 
-          extSendComm = (void**)calloc(info.nranks, sizeof(void*));
-          extRecvComm = (void**)calloc(info.nranks, sizeof(void*));
-          if (extSendComm == NULL || extRecvComm == NULL) {
-            WARN("Bootstrap thread : failed to allocate memory");
-            goto out;
-          }
-          nranks = info.nranks;
+    void* tmpRecvComm;
+    NCCLCHECKJUMP(bootstrapAccept(id->extListenComm, &tmpRecvComm), out);
+    NCCLCHECKJUMP(bootstrapRecv(tmpRecvComm, &info, sizeof(info)), out);
+    if (!c) {
+      extSendComm = (void**)calloc(info.nranks, sizeof(void*));
+      extRecvComm = (void**)calloc(info.nranks, sizeof(void*));
+      if (extSendComm == NULL || extRecvComm == NULL) {
+        WARN("Bootstrap thread : failed to allocate memory");
+        goto out;
       }
+      nranks = info.nranks;
+    }
 
-      if (nranks != info.nranks) { 
-          WARN("Bootstrap Root : mismatch in rank count from procs %d : %d", nranks, info.nranks);
-	  goto out;
-      }
+    if (nranks != info.nranks) {
+      WARN("Bootstrap Root : mismatch in rank count from procs %d : %d", nranks, info.nranks);
+      goto out;
+    }
 
-      extRecvComm[info.rank] = tmpRecvComm;
-      NCCLCHECKJUMP(bootstrapConnect(0, info.extHandle, extSendComm+info.rank), out);
-      c++;
+    extRecvComm[info.rank] = tmpRecvComm;
+    NCCLCHECKJUMP(bootstrapConnect(0, info.extHandle, extSendComm+info.rank), out);
+    c++;
   } while (c < nranks);
 
   do {
-      NCCLCHECKJUMP(bootstrapRecv(extRecvComm[0], &bop, sizeof(struct bootstrapOp)), out);
-      if (bop.size == -1) { 
-          break;
-      } else { 
-	  size = bop.size;
-	  if (size*nranks*2 > alloc_size) { 
-	      if (data) free(data);
-	      data = (char *)malloc(size*nranks*2);
-              if (data == NULL) {
-                WARN("Bootstrap thread : failed to allocate memory");
-                goto out;
-              }
-	      alloc_size = size*nranks*2;
-	  }
+    NCCLCHECKJUMP(bootstrapRecv(extRecvComm[0], &bop, sizeof(struct bootstrapOp)), out);
+    if (bop.size == -1) {
+      break;
+    } else {
+      size = bop.size;
+      if (size*nranks*2 > alloc_size) {
+        if (data) free(data);
+        data = (char *)malloc(size*nranks*2);
+        if (data == NULL) {
+          WARN("Bootstrap thread : failed to allocate memory");
+          goto out;
+        }
+        alloc_size = size*nranks*2;
+      }
+    }
+
+    if (bop.op == BOOTSTRAP_ALLGATHER) {
+      for (int r=0; r<nranks; r++) {
+        NCCLCHECKJUMP(bootstrapRecv(extRecvComm[r], data+size*r, size), out);
       }
 
-      if (bop.op == BOOTSTRAP_ALLGATHER) {  
-          for (int r=0; r<nranks; r++) {
-              NCCLCHECKJUMP(bootstrapRecv(extRecvComm[r], data+size*r, size), out);
-          }
-
-          for (int r=0; r<nranks; r++) {
-              NCCLCHECKJUMP(bootstrapSend(extSendComm[r], data, size*nranks), out);
-          }
-      } else if (bop.op == BOOTSTRAP_RINGEXCHANGE) {
-	  // Receive from all and build total table
-          for (int r=0; r<nranks; r++) {
-              NCCLCHECKJUMP(bootstrapRecv(extRecvComm[r], data+r*2*size, 2*size), out);
-          }
-        
-          // Get prev/next request from everyone and answer.
-          for (int r=0; r<nranks; r++) {
-              int offset;
-              NCCLCHECKJUMP(bootstrapRecv(extRecvComm[r], &offset, sizeof(int)), out);
-              NCCLCHECKJUMP(bootstrapSend(extSendComm[r], data+offset, size), out);
-              NCCLCHECKJUMP(bootstrapRecv(extRecvComm[r], &offset, sizeof(int)), out);
-              NCCLCHECKJUMP(bootstrapSend(extSendComm[r], data+offset, size), out);
-          }
-      } else {
-          WARN("Bootstrap Root : invalid op type received %d", bop.op);
-	  break;
+      for (int r=0; r<nranks; r++) {
+        NCCLCHECKJUMP(bootstrapSend(extSendComm[r], data, size*nranks), out);
       }
+    } else if (bop.op == BOOTSTRAP_RINGEXCHANGE) {
+      // Receive from all and build total table
+      for (int r=0; r<nranks; r++) {
+        NCCLCHECKJUMP(bootstrapRecv(extRecvComm[r], data+r*2*size, 2*size), out);
+      }
+
+      // Get prev/next request from everyone and answer.
+      for (int r=0; r<nranks; r++) {
+        int offset;
+        NCCLCHECKJUMP(bootstrapRecv(extRecvComm[r], &offset, sizeof(int)), out);
+        NCCLCHECKJUMP(bootstrapSend(extSendComm[r], data+offset, size), out);
+        NCCLCHECKJUMP(bootstrapRecv(extRecvComm[r], &offset, sizeof(int)), out);
+        NCCLCHECKJUMP(bootstrapSend(extSendComm[r], data+offset, size), out);
+      }
+    } else {
+      WARN("Bootstrap Root : invalid op type received %d", bop.op);
+      break;
+    }
   } while (1);
 
 out:
   bootstrapCloseListen(id->extListenComm);
   for (int r=0; r<nranks; r++) {
-      if (extSendComm[r]) bootstrapCloseSend(extSendComm[r]);
-      if (extRecvComm[r]) bootstrapCloseRecv(extRecvComm[r]);
+    if (extSendComm[r]) bootstrapCloseSend(extSendComm[r]);
+    if (extRecvComm[r]) bootstrapCloseRecv(extRecvComm[r]);
   }
   free(commId);
   if (data) free(data);
@@ -248,9 +248,9 @@ ncclResult_t bootstrapAllGather(void* commState, void* allData, int size) {
   bop.op = BOOTSTRAP_ALLGATHER;
   bop.size = size;
 
-  if (!state->rank) { 
-      NCCLCHECK(bootstrapSend(state->extSendComm, &bop, sizeof(struct bootstrapOp)));
-  } 
+  if (!state->rank) {
+    NCCLCHECK(bootstrapSend(state->extSendComm, &bop, sizeof(struct bootstrapOp)));
+  }
 
   NCCLCHECK(bootstrapSend(state->extSendComm, data+state->rank*size, size));
   NCCLCHECK(bootstrapRecv(state->extRecvComm, data, size*state->nranks));
@@ -268,7 +268,7 @@ ncclResult_t bootstrapRingExchange(void* commState, void* prevNextData, int prev
   bop.size = size;
 
   if (!state->rank) {
-      NCCLCHECK(bootstrapSend(state->extSendComm, &bop, sizeof(struct bootstrapOp))); 
+    NCCLCHECK(bootstrapSend(state->extSendComm, &bop, sizeof(struct bootstrapOp)));
   }
 
   // Send data to root
@@ -289,9 +289,9 @@ ncclResult_t bootstrapClose(void* commState) {
   struct bootstrapOp bop;
   bop.size = -1;
 
-  if (!state->rank) { 
-      NCCLCHECK(bootstrapSend(state->extSendComm, &bop, sizeof(struct bootstrapOp)));
-  } 
+  if (!state->rank) {
+    NCCLCHECK(bootstrapSend(state->extSendComm, &bop, sizeof(struct bootstrapOp)));
+  }
 
   NCCLCHECK(bootstrapCloseSend(state->extSendComm));
   NCCLCHECK(bootstrapCloseRecv(state->extRecvComm));
