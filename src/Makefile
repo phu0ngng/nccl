@@ -1,3 +1,9 @@
+#
+# Copyright (c) 2015-2018, NVIDIA CORPORATION. All rights reserved.
+#
+# See LICENCE.txt for license information
+#
+
 include ../makefiles/common.mk
 include ../makefiles/version.mk
 include ../makefiles/formatting.mk
