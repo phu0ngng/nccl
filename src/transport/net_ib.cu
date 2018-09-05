@@ -277,7 +277,6 @@ struct ncclIbMr {
 
 struct ncclIbVerbs {
   struct ibv_pd* pd;
-  struct ibv_comp_channel* cc;
   struct ibv_cq* cq;
   struct ncclIbMr mrPool[MAX_REQUESTS];
   int mrRotation;
@@ -347,14 +346,12 @@ struct ncclIbRecvComm {
 
 ncclResult_t ncclIbInitVerbs(ibv_context* ctx, struct ncclIbVerbs* verbs) {
   NCCLCHECK(wrap_ibv_alloc_pd(&verbs->pd, ctx));
-  NCCLCHECK(wrap_ibv_create_comp_channel(&verbs->cc, ctx));
-  NCCLCHECK(wrap_ibv_create_cq(&verbs->cq, ctx, MAX_REQUESTS, NULL, verbs->cc, 0));
+  NCCLCHECK(wrap_ibv_create_cq(&verbs->cq, ctx, MAX_REQUESTS, NULL, NULL, 0));
   return ncclSuccess;
 }
 
 ncclResult_t ncclIbDestroyVerbs(struct ncclIbVerbs* verbs) {
   NCCLCHECK(wrap_ibv_destroy_cq(verbs->cq));
-  NCCLCHECK(wrap_ibv_destroy_comp_channel(verbs->cc));
   NCCLCHECK(wrap_ibv_dealloc_pd(verbs->pd));
   return ncclSuccess;
 }
