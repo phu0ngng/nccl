@@ -32,21 +32,23 @@ static ncclResult_t getCudaPath(int cudaDev, char** path) {
   return ncclSuccess;
 }
 
-static ncclResult_t getMlxPath(char* ibdevPath, char** path) {
-  char pathname[MAXPATHSIZE];
-  strcpy(pathname, "/sys/class/infiniband/");
-  int strLen = strlen(pathname);
-  int linkLen = readlink(ibdevPath, pathname+strLen, MAXPATHSIZE-strLen);
-  if (linkLen == 0) {
-    WARN("Could not find link %s", ibdevPath);
+static ncclResult_t getMlxPath(char* ibName, char** path) {
+  char devicepath[MAXPATHSIZE];
+  snprintf(devicepath, MAXPATHSIZE, "/sys/class/infiniband/%s/device", ibName);
+  *path = realpath(devicepath, NULL);
+  if (*path == NULL) {
+    WARN("Could not find real path of %s", devicepath);
     return ncclSystemError;
   }
-  // readlink does not append '\0'. We have to do it.
-  pathname[strLen+linkLen] = '\0';
-  strncpy(pathname+strlen(pathname), "/../..", MAXPATHSIZE-strlen(pathname));
-  *path = realpath(pathname, NULL); 
+  return ncclSuccess;
+}
+
+static ncclResult_t getSockPath(char* ifName, char** path) {
+  char devicepath[MAXPATHSIZE];
+  snprintf(devicepath, MAXPATHSIZE, "/sys/class/net/%s/device", ifName);
+  *path = realpath(devicepath, NULL);
   if (*path == NULL) {
-    WARN("Could not find real path of %s", pathname);
+    WARN("Could not find real path of %s", devicepath);
     return ncclSystemError;
   }
   return ncclSuccess;

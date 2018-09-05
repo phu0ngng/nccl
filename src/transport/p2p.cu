@@ -317,7 +317,6 @@ static int findClosestPci(ncclTvalue_t* values, int* inRing, int rank, int end, 
 }
 
 int p2pComputeRingsPci(ncclTvalue_t* values, int nranks, int* rings, int nrings, int* prev, int* next, int minScore) {
-  // PCIe or QPI
   int connect = 0;
   for (int r=0; r<nrings; r++) {
     int start = findConnect(nranks, prev+r*nranks);
