@@ -112,7 +112,7 @@ int ncclSocketListen(int dev, void* opaqueHandle, void** listenComm) {
   // if dev >= 0, listen based on dev
   if (dev >= 0) {
     NCCLCHECK(GetSocketAddr(dev, &(handle->connectAddr)));
-  } else if (dev == -1) {
+  } else if (dev == findSubnetIf) {
     // handle stores a remote address
     // need to find a local addr that is in the same network as the remote addr
     union socketAddress localAddr;
