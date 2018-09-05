@@ -123,13 +123,13 @@ class LLPrimitives {
       sendHead = sendHeadPtr[0]; \
     } \
   } \
-  asm volatile ("bar.sync 1, %0;" :: "r"(ll_nthreads));
+  asm volatile ("bar.sync 1, %0;" :: "r"(llNthreads));
 
 #define POST_SIZE \
   if (tid == 0 && sizesFifo) sizesFifo[step % NCCL_LL_CHUNKS] = (maxOffset <= 0) ? -1 : (maxOffset*2*(int)sizeof(T));
 
 #define ACK_PREV \
-  asm volatile ("bar.sync 1, %0;" :: "r"(ll_nthreads)); \
+  asm volatile ("bar.sync 1, %0;" :: "r"(llNthreads)); \
   if (tid == 0) recvHeadPtr[0] = step;
 
 #define FIFO_CLEANING_AND_SAVE_STEP(flag) do { \
@@ -138,8 +138,8 @@ class LLPrimitives {
     static_assert((NCCL_LL_BUFF_SIZE % NCCL_LL_MAX_NTHREADS) == 0, "NCCL_LL_BUFF_SIZE must be a multiple of THREADS"); \
     static_assert(NCCL_LL_BUFF_SIZE/(sizeof(union ncclLLFifoLine)*NCCL_LL_MAX_NTHREADS) > 0, "NCCL_LL_BUFF_SIZE is less than 16 bytes*THREADS"); \
     const union ncclLLFifoLine resetLine = { 0, flag, 0, flag }; \
-    for (int i=0; i<NCCL_LL_BUFF_SIZE/(sizeof(union ncclLLFifoLine)*ll_nthreads); i++) { \
-      prevInput[tid+i*ll_nthreads].i4 = resetLine.i4; \
+    for (int i=0; i<NCCL_LL_BUFF_SIZE/(sizeof(union ncclLLFifoLine)*llNthreads); i++) { \
+      prevInput[tid+i*llNthreads].i4 = resetLine.i4; \
     } \
     __threadfence_system(); \
     /* Restart from the same slot, only make sure sender waits for data to be reset */ \
