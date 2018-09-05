@@ -419,7 +419,7 @@ static ncclResult_t initTransportsRank(struct ncclComm* comm, ncclUniqueId* comm
   int nranks = comm->nRanks;
   void* commState;
   NCCLCHECK(bootstrapInit(commId, rank, nranks, &commState));
-  
+
   struct ncclInfo* allInfo = (struct ncclInfo*)malloc(sizeof(struct ncclInfo)*nranks);
   NCCLCHECK(fillInfo(allInfo+rank, rank));
   NCCLCHECK(bootstrapAllGather(commState, allInfo, sizeof(struct ncclInfo)));
@@ -501,7 +501,7 @@ static ncclResult_t initTransportsRank(struct ncclComm* comm, ncclUniqueId* comm
   // Compute intra ranks
   int intraRank0 = -1, intraRank = -1, intraRanks = 0;
   for (int r=0; r<nranks; r++) {
-    if ((rankInfos[r].hostHash == rankInfos[rank].hostHash) && 
+    if ((rankInfos[r].hostHash == rankInfos[rank].hostHash) &&
         (rankInfos[r].pidHash == rankInfos[rank].pidHash)) {
       if (intraRanks == 0) intraRank0 = r;
       if (r == rank) intraRank = intraRanks;
@@ -601,7 +601,7 @@ static ncclResult_t initTransportsAll(struct ncclComm** comms, const int* devs, 
   ncclTvalue_t* connectValue = (ncclTvalue_t*)malloc(sizeof(ncclTvalue_t)*nranks*nranks);
   for (int rank=0; rank<nranks; rank++)
     NCCLCHECK(fillConnect(allInfo, nranks, rank, connectTransport+nranks*rank, connectValue+nranks*rank));
-  
+
   int* prev = (int*)malloc(sizeof(int)*nranks*MAXRINGS);
   int* prevFinal = (int*)malloc(sizeof(int)*nranks*MAXRINGS);
   int* next = (int*)malloc(sizeof(int)*nranks*MAXRINGS);

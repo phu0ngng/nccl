@@ -215,7 +215,7 @@ ncclResult_t ncclEnqueueEvents(ncclComm_t comm) {
   return ncclSuccess;
 }
 
-ncclResult_t ncclEnqueueCheck(ncclFunc_t func, const char* primName, const void* sendbuff, 
+ncclResult_t ncclEnqueueCheck(ncclFunc_t func, const char* primName, const void* sendbuff,
     void* recvbuff, size_t count, ncclDataType_t type, ncclRedOp_t op, int root,
     ncclComm_t comm, cudaStream_t stream) {
   if (comm == NULL) return ncclInvalidArgument;

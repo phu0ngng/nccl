@@ -215,10 +215,10 @@ struct ncclComm {
   // where syncs are not symmetric).
   uint64_t opCount;
 
-  // Rings for collectives 
+  // Rings for collectives
   int nRings;
   int nThreads;
-  
+
   // Low-latency algorithm threshold
   ssize_t llThreshold;
   ssize_t threadThreshold;

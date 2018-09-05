@@ -119,9 +119,9 @@ ncclResult_t shmGetRings(int nranks, int* groups, int* subgroups, ncclTvalue_t* 
       if (nranksInGroup == 1) {
         start = end = groupFirst(nranks, groups, group, -1);
       } else {
-        if (start == -1) 
+        if (start == -1)
           start = groupFirst(nranks, groups, group, end);
-        if (end == -1) 
+        if (end == -1)
           end = groupLast(nranks, groups, group, start);
       }
       if (start == -1 || end == -1) {
@@ -169,7 +169,7 @@ ncclResult_t shmSendSetup(ncclTinfo_t* myOpaqueInfo, ncclTinfo_t* peerOpaqueInfo
   info.shmSize = resources->shmSize = sizeof(struct ncclSendMem);
   TRACE(SHM,"Open shmName %s shmSize %d", shmName, info.shmSize);
   NCCLCHECK(shmOpen(shmName, resources->shmSize, (void**)&resources->hostMem, (void**)&resources->devHostMem, 1));
-  
+
   INFO(INIT|SHM,"Ring %02d : %d[%d] -> %d[%d] via direct shared memory", ring->id, myInfo->rank, myInfo->cudaDev, peerInfo->rank, peerInfo->cudaDev);
   info.id = ring->id; info.rank = myInfo->rank; info.pidHash = myInfo->pidHash;
   static_assert(sizeof(struct shmRecvConnectInfo) <= sizeof(struct ncclConnect), "shm Connect Recv Info is too big");
@@ -189,7 +189,7 @@ ncclResult_t shmRecvSetup(ncclTinfo_t* myOpaqueInfo, ncclTinfo_t* peerOpaqueInfo
   info.shmSize = resources->shmSize = offsetof(struct ncclRecvMem, buff)+ring->buffSize;
   TRACE(SHM,"Open shmName %s shmSize %d", shmName, info.shmSize);
   NCCLCHECK(shmOpen(shmName, resources->shmSize, (void**)&resources->hostMem, (void**)&resources->devHostMem, 1));
-  
+
   info.id = ring->id; info.rank = myInfo->rank; info.pidHash = myInfo->pidHash;
   static_assert(sizeof(struct shmRecvConnectInfo) <= sizeof(struct ncclConnect), "shm Connect Send Info is too big");
   memcpy(connectInfo, &info, sizeof(struct shmSendConnectInfo));

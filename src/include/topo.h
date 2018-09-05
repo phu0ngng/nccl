@@ -17,14 +17,14 @@ static ncclResult_t getCudaPath(int cudaDev, char** path) {
   CUDACHECK(cudaDeviceGetPCIBusId(busId, 16, cudaDev));
   for (int i=0; i<16; i++) busId[i] = tolower(busId[i]);
   char busPath[] =  "/sys/class/pci_bus/0000:00/device";
-  memcpy(busPath+sizeof("/sys/class/pci_bus/")-1, busId, sizeof("0000:00")-1); 
-  char* cudaRpath = realpath(busPath, NULL); 
+  memcpy(busPath+sizeof("/sys/class/pci_bus/")-1, busId, sizeof("0000:00")-1);
+  char* cudaRpath = realpath(busPath, NULL);
   char pathname[MAXPATHSIZE];
   strncpy(pathname, cudaRpath, MAXPATHSIZE);
   strncpy(pathname+strlen(pathname), "/", MAXPATHSIZE-strlen(pathname));
   strncpy(pathname+strlen(pathname), busId, MAXPATHSIZE-strlen(pathname));
   free(cudaRpath);
-  *path = realpath(pathname, NULL); 
+  *path = realpath(pathname, NULL);
   if (*path == NULL) {
     WARN("Could not find real path of %s", pathname);
     return ncclSystemError;

@@ -120,7 +120,7 @@ bool matchIfList(const char* string, int port, struct netIf* ifList, int listSiz
   if (listSize == 0) return true;
 
   for (int i=0; i<listSize; i++) {
-    if (matchPrefix(string, ifList[i].prefix) 
+    if (matchPrefix(string, ifList[i].prefix)
         && matchPort(port, ifList[i].port)) {
       return true;
     }

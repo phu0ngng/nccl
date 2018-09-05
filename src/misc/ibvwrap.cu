@@ -15,7 +15,7 @@ static enum { ibvUninitialized, ibvInitializing, ibvInitialized, ibvError } ibvS
 
 /*Function Pointers*/
 int (*ibv_internal_fork_init)(void);
-struct ibv_device** (*ibv_internal_get_device_list)(int *num_devices); 
+struct ibv_device** (*ibv_internal_get_device_list)(int *num_devices);
 void (*ibv_internal_free_device_list)(struct ibv_device **list);
 const char * (*ibv_internal_get_device_name)(struct ibv_device *device);
 struct ibv_context* (*ibv_internal_open_device)(struct ibv_device* device);
@@ -44,7 +44,7 @@ ncclResult_t wrap_ibv_symbols(void) {
     return ncclSuccess;
   if (ibvState == ibvError)
     return ncclSystemError;
-  
+
   if (__sync_bool_compare_and_swap(&ibvState, ibvUninitialized, ibvInitializing) == false) {
     // Another thread raced in front of us. Wait for it to be done.
     while (ibvState == ibvInitializing) pthread_yield();

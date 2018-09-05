@@ -98,7 +98,7 @@ static void initDevices() {
       // Detect IB cards
       int nIbDevs;
       struct ibv_device** devices;
-      
+
       // Check if user defined which IB device:port to use
       char* userIbEnv = getenv("NCCL_IB_HCA");
       struct netIf userIfs[MAX_IB_DEVS];
@@ -108,7 +108,7 @@ static void initDevices() {
       if (ncclSuccess != wrap_ibv_get_device_list(&devices, &nIbDevs)) return;
 
       for (int d=0; d<nIbDevs; d++) {
-        struct ibv_context * context; 
+        struct ibv_context * context;
         if (ncclSuccess != wrap_ibv_open_device(&context, devices[d])) {
             WARN("NET/IB : Unable to open device %s", devices[d]->name);
             continue;
@@ -143,7 +143,7 @@ static void initDevices() {
             ncclNIbDevs++;
             found++;
             pthread_create(&ncclIbAsyncThread, NULL, ncclIbAsyncThreadMain, context);
-          } 
+          }
 
           if (found == 0) { if (ncclSuccess != wrap_ibv_close_device(context)) { return; } }
         }
@@ -442,7 +442,7 @@ int ncclIbConnect(int dev, void* opaqueHandle, void** sendComm) {
   struct ncclIbHandle* handle = (struct ncclIbHandle*) opaqueHandle;
   NCCLCHECK(connectAddress(&comm->fd, &handle->connectAddr));
   *sendComm = comm;
-  
+
   // IB Setup
   initDevices(); /*NOTE: We need to do this for ncclNet unit test that bypasses nccl initialization*/
   ibv_context* ctx = ncclIbDevs[dev].context;
@@ -485,7 +485,7 @@ int ncclIbAccept(void* listenComm, void** recvComm) {
   struct ncclIbListenComm* lComm = (struct ncclIbListenComm*)listenComm;
   struct ncclIbRecvComm* rComm;
   NCCLCHECK(ncclIbMalloc((void**)&rComm, sizeof(struct ncclIbRecvComm)));
-  
+
   struct sockaddr_in sockaddr;
   socklen_t socklen = sizeof(struct sockaddr_in);
   SYSCHECKVAL(accept(lComm->fd, (struct sockaddr*)&sockaddr, &socklen), "accept", rComm->fd);

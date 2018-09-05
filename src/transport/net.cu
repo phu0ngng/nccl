@@ -150,7 +150,7 @@ ncclResult_t netGetRings(int nranks, int* groups, int* subgroups, ncclTvalue_t* 
         if (cardUsed[group*NET_MAX_IFS+card] == 1) continue;
         int start = groupBestStart(nranks, groups, group, values, card, minScore);
         // Send from any rank, but best on a different subgroup and close to the NIC also.
-        int end = (nranksInGroup == 1) ? start 
+        int end = (nranksInGroup == 1) ? start
           : groupBestEnd(nranks, groups, group, subgroups, nsubGroups ? subgroups[start] : -1, start, values, card, minScore);
         //printf("Ring %d, Minscore %d, Card %d, group %d, start = %d, end = %d\n", ring, minScore, card, group, start, end);
         if (start != -1 && end != -1) {
@@ -255,7 +255,7 @@ ncclResult_t netRecvSetup(ncclTinfo_t* myOpaqueInfo, ncclTinfo_t* peerOpaqueInfo
 
   struct netInfo* peerInfo = (struct netInfo*)peerOpaqueInfo;
   INFO(INIT|NET,"Ring %02d : %d -> %d via NET/%s/%d%s%s", ring->id, peerInfo->rank, myInfo->rank, ncclNetName(), resources->netDev,
-      resources->cudaSupport ? "/GDRDMA" : "", 
+      resources->cudaSupport ? "/GDRDMA" : "",
       (resources->hostDevMem != NULL) ? "/GDCopy" : "");
   struct netConnectInfo* info = (struct netConnectInfo*) connectInfo;
   NCCLCHECK(ncclNetListen(resources->netDev, &info->netHandle, &resources->netListenComm));
