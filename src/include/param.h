@@ -8,7 +8,6 @@
 #define NCCL_PARAM_H_
 
 #include <stdlib.h>
-
 #include <unistd.h>
 #include <sys/types.h>
 #include <pwd.h>

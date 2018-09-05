@@ -76,9 +76,9 @@ static int getNvlinkGpu(const char* busId1, const char* busId2) {
 
     // nvmlDeviceGetNvLinkRemotePciInfo() will return NVML_ERROR_NOT_SUPPORTED
     // if the links don't exist, or are disabled. So checking for that return
-    // here would probably make the nvmlDeviceGetNvLinkState check above
+    // here would probably make the nvmlDeviceGetNvLinkCapability check above
     // redundant. Presumably, we still need to check the P2P capability above,
-    // since even non-GPUs would posses PCI info.
+    // since even non-GPUs would possess PCI info.
     nvmlPciInfo_t remoteProc;
     if (wrapNvmlDeviceGetNvLinkRemotePciInfo(nvmlDev, l, &remoteProc) != ncclSuccess) continue;
 

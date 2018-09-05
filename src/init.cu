@@ -51,7 +51,7 @@ NCCL_PARAM(CheckPointers, "CHECK_POINTERS", 0);
 extern "C" __attribute__ ((visibility("default")))
 ncclNet_t* ncclNet = NULL;
 
-// We define this as weak to let unit test redefine their own
+// We define this as weak to let tests redefine their own
 #pragma weak ncclCudaCompCap
 int ncclCudaCompCap() {
   int cudaDev;
@@ -130,11 +130,11 @@ static ncclResult_t commFree(ncclComm_t comm) {
   int isLast;
   NCCLCHECK(ncclCpuBarrierIn(comm, &isLast));
   if (isLast) {
-      free(comm->intraBarrier);
-      free(comm->intraParams);
-      free(comm->intraCudaDevs);
-      free(comm->intraCGMode);
-      free(comm->intraCC);
+    free(comm->intraBarrier);
+    free(comm->intraParams);
+    free(comm->intraCudaDevs);
+    free(comm->intraCGMode);
+    free(comm->intraCC);
   }
 
   free(comm);
