@@ -96,3 +96,5 @@ install : lib
 	cp -P -v $(BUILDDIR)/lib/* $(PREFIX)/lib/
 	cp -v $(BUILDDIR)/include/* $(PREFIX)/include/
 
+FILESTOFORMAT := $(shell find . \( -name "*.cu" -o -name "*.h" \) -print | grep -v -E 'ibvwrap.h|nvmlwrap.h')
+include ../makefiles/formatting.mk
