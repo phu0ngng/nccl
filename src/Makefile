@@ -1,12 +1,15 @@
 include ../makefiles/common.mk
 include ../makefiles/version.mk
 
+
 ##### src files
 INCEXPORTS  := nccl.h
 LIBSRCFILES := init.cu ring.cu bootstrap.cu transport.cu misc/group.cu \
 		misc/nvmlwrap.cu misc/ibvwrap.cu misc/rings.cu misc/utils.cu misc/enqueue.cu \
 		transport/p2p.cu transport/shm.cu transport/net.cu transport/net_socket.cu transport/net_ib.cu \
                 collectives/all_reduce.cu collectives/all_gather.cu collectives/broadcast.cu collectives/reduce.cu collectives/reduce_scatter.cu
+
+ASTYLE_FORMAT_CMD="astyle  $(LIBSRCFILES)"
 
 ##### lib files
 LIBNAME     := libnccl.so
@@ -26,6 +29,7 @@ DEPFILES   := $(LIBOBJ:%.o=%.d)
 LDFLAGS    += -L${CUDA_LIB} -lcudart_static -lrt
 
 DEVICELIB  := $(BUILDDIR)/obj/collectives/device/colldevice.a
+
 
 ##### rules
 build : lib staticlib
