@@ -34,15 +34,14 @@ template <typename T, class FUNC>
 class LLPrimitives {
   private:
   template <int HAS_SRC1, int HAS_SRC2, int HAS_DST1, int HAS_DST2>
-  static __device__ void ReduceCopyGeneric(const T* src1, union ncclLLFifoLine* src2, T* dst1, union ncclLLFifoLine* dst2, int size, uint32_t iflag, uint32_t oflag, int nthreads) {
+  static __device__ void ReduceCopyGeneric(const T* src1, union ncclLLFifoLine* src2, T* dst1, union ncclLLFifoLine* dst2, int size, uint32_t iflag, uint32_t oflag, int tid, int nthreads) {
     if (size <= 0) return;
     size_t size64 = size * sizeof(T) / sizeof(uint64_t);
     uint64_t* src1A = (uint64_t*)src1;
     uint64_t* dst1A = (uint64_t*)dst1;
-    int offset = threadIdx.x;
     // Do multiples of 64 bits
     #pragma unroll 1
-    for (; offset < size64; offset += nthreads) {
+    for (int offset = tid; offset < size64; offset += nthreads) {
       uint64_t val;
       if (HAS_SRC1) {
         val = readAL(src1A+offset);
@@ -53,10 +52,10 @@ class LLPrimitives {
       if (HAS_DST1) storeAL(dst1A+offset, val);
       if (HAS_DST2) storeLL(dst2+offset, val, oflag);
     }
-    // Finish last word
-    int sizeDone = size64*(sizeof(uint64_t)/sizeof(T));
+    // Finish last 64-bits word
+    int sizeDone = size64 * (sizeof(uint64_t)/sizeof(T));
     int sizeRem = size - sizeDone;
-    if (threadIdx.x == 0 && sizeRem) {
+    if (tid == 0 && sizeRem) {
       const T* src1B = src1 + sizeDone;
       T* dst1B = dst1 + sizeDone;
 
@@ -83,32 +82,32 @@ class LLPrimitives {
     }
   }
   public:
-  static __device__ void ReduceCopy(const T* src, union ncclLLFifoLine* dst, int size, uint32_t oflag, int nthreads) {
-    return ReduceCopyGeneric<1, 0, 0, 1>(src, NULL, NULL, dst, size, 0, oflag, nthreads);
+  static __device__ void ReduceCopy(const T* src, union ncclLLFifoLine* dst, int size, uint32_t oflag, int tid, int nthreads) {
+    return ReduceCopyGeneric<1, 0, 0, 1>(src, NULL, NULL, dst, size, 0, oflag, tid, nthreads);
   }
 
-  static __device__ void ReduceCopy(union ncclLLFifoLine* src, T* dst, int size, uint32_t iflag, int nthreads) {
-    return ReduceCopyGeneric<0, 1, 1, 0>(NULL, src, dst, NULL, size, iflag, 0, nthreads);
+  static __device__ void ReduceCopy(union ncclLLFifoLine* src, T* dst, int size, uint32_t iflag, int tid, int nthreads) {
+    return ReduceCopyGeneric<0, 1, 1, 0>(NULL, src, dst, NULL, size, iflag, 0, tid, nthreads);
   }
 
-  static __device__ void ReduceCopy(const T* src1, union ncclLLFifoLine* src2, union ncclLLFifoLine* dst, int size, uint32_t iflag, uint32_t oflag, int nthreads) {
-    return ReduceCopyGeneric<1, 1, 0, 1>(src1, src2, NULL, dst, size, iflag, oflag, nthreads);
+  static __device__ void ReduceCopy(const T* src1, union ncclLLFifoLine* src2, union ncclLLFifoLine* dst, int size, uint32_t iflag, uint32_t oflag, int tid, int nthreads) {
+    return ReduceCopyGeneric<1, 1, 0, 1>(src1, src2, NULL, dst, size, iflag, oflag, tid, nthreads);
   }
 
-  static __device__ void ReduceCopy(const T* src1, union ncclLLFifoLine* src2, T* dst, int size, uint32_t iflag, int nthreads) {
-    return ReduceCopyGeneric<1, 1, 1, 0>(src1, src2, dst, NULL, size, iflag, 0, nthreads);
+  static __device__ void ReduceCopy(const T* src1, union ncclLLFifoLine* src2, T* dst, int size, uint32_t iflag, int tid, int nthreads) {
+    return ReduceCopyGeneric<1, 1, 1, 0>(src1, src2, dst, NULL, size, iflag, 0, tid, nthreads);
   }
 
-  static __device__ void ReduceCopy(const T* src, T* dst1, union ncclLLFifoLine* dst2, int size, uint32_t oflag, int nthreads) {
-    return ReduceCopyGeneric<1, 0, 1, 1>(src, NULL, dst1, dst2, size, 0, oflag, nthreads);
+  static __device__ void ReduceCopy(const T* src, T* dst1, union ncclLLFifoLine* dst2, int size, uint32_t oflag, int tid, int nthreads) {
+    return ReduceCopyGeneric<1, 0, 1, 1>(src, NULL, dst1, dst2, size, 0, oflag, tid, nthreads);
   }
 
-  static __device__ void ReduceCopy(union ncclLLFifoLine* src, T* dst1, union ncclLLFifoLine* dst2, int size, uint32_t iflag, uint32_t oflag, int nthreads) {
-    return ReduceCopyGeneric<0, 1, 1, 1>(NULL, src, dst1, dst2, size, iflag, oflag, nthreads);
+  static __device__ void ReduceCopy(union ncclLLFifoLine* src, T* dst1, union ncclLLFifoLine* dst2, int size, uint32_t iflag, uint32_t oflag, int tid, int nthreads) {
+    return ReduceCopyGeneric<0, 1, 1, 1>(NULL, src, dst1, dst2, size, iflag, oflag, tid, nthreads);
   }
 
-  static __device__ void ReduceCopy(const T* src1, union ncclLLFifoLine* src2, T* dst1, union ncclLLFifoLine* dst2, int size, uint32_t iflag, uint32_t oflag, int nthreads) {
-    return ReduceCopyGeneric<1, 1, 1, 1>(src1, src2, dst1, dst2, size, iflag, oflag, nthreads);
+  static __device__ void ReduceCopy(const T* src1, union ncclLLFifoLine* src2, T* dst1, union ncclLLFifoLine* dst2, int size, uint32_t iflag, uint32_t oflag, int tid, int nthreads) {
+    return ReduceCopyGeneric<1, 1, 1, 1>(src1, src2, dst1, dst2, size, iflag, oflag, tid, nthreads);
   }
 };
 
@@ -123,14 +122,14 @@ class LLPrimitives {
       sendHead = sendHeadPtr[0]; \
     } \
   } \
-  asm volatile ("bar.sync 1, %0;" :: "r"(ll_nthreads));
+  asm volatile ("bar.sync 1, %0;" :: "r"(nthreads));
 
 #define POST_SIZE \
-  if (tid == 0 && sizesFifo) sizesFifo[step % NCCL_LL_CHUNKS] = (maxOffset <= 0) ? -1 : (maxOffset*2*(int)sizeof(T));
+  if (tid == 32 && sizesFifo) sizesFifo[step % NCCL_LL_CHUNKS] = (maxOffset <= 0) ? -1 : (maxOffset*2*(int)sizeof(T));
 
 #define ACK_PREV \
-  asm volatile ("bar.sync 1, %0;" :: "r"(ll_nthreads)); \
-  if (tid == 0) recvHeadPtr[0] = step;
+  asm volatile ("bar.sync 1, %0;" :: "r"(nthreads)); \
+  if (tid == 32) recvHeadPtr[0] = step;
 
 #define FIFO_CLEANING_AND_SAVE_STEP(flag) do { \
   if (step > ring->send.conn.llLastCleaning + NCCL_LL_CLEAN_FREQ) { \
@@ -138,8 +137,8 @@ class LLPrimitives {
     static_assert((NCCL_LL_BUFF_SIZE % NCCL_LL_MAX_NTHREADS) == 0, "NCCL_LL_BUFF_SIZE must be a multiple of THREADS"); \
     static_assert(NCCL_LL_BUFF_SIZE/(sizeof(union ncclLLFifoLine)*NCCL_LL_MAX_NTHREADS) > 0, "NCCL_LL_BUFF_SIZE is less than 16 bytes*THREADS"); \
     const union ncclLLFifoLine resetLine = { 0, flag, 0, flag }; \
-    for (int i=0; i<NCCL_LL_BUFF_SIZE/(sizeof(union ncclLLFifoLine)*ll_nthreads); i++) { \
-      prevInput[tid+i*ll_nthreads].i4 = resetLine.i4; \
+    for (int i=0; i<NCCL_LL_BUFF_SIZE/(sizeof(union ncclLLFifoLine)*nthreads); i++) { \
+      prevInput[tid+i*nthreads].i4 = resetLine.i4; \
     } \
     __threadfence_system(); \
     /* Restart from the same slot, only make sure sender waits for data to be reset */ \

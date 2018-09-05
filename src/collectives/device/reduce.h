@@ -107,7 +107,7 @@ template<int UNUSED, class FUNC, typename T>
 __device__ void ncclReduceLLKernel(struct CollectiveArgs* args) {
   const int tid = threadIdx.x;
   const int bid = args->bid;
-  const int ll_nthreads = args->nThreads;
+  const int nthreads = args->nThreads;
   struct ncclComm* comm = args->comm;
   struct ncclRing* ring = comm->rings+blockIdx.x;
   volatile uint64_t * recvHeadPtr = ring->recv.conn.llHead;
@@ -147,7 +147,8 @@ __device__ void ncclReduceLLKernel(struct CollectiveArgs* args) {
       LL::ReduceCopy(
           thisInput + offset,
           nextOutput + boffset,
-          maxOffset, flag, ll_nthreads);
+          maxOffset, flag,
+          tid, nthreads);
       POST_SIZE;
       NEXT_STEP_LL;
     } else if (rank == root) {
@@ -155,7 +156,8 @@ __device__ void ncclReduceLLKernel(struct CollectiveArgs* args) {
           thisInput + offset,
           prevInput  + boffset,
           thisOutput + offset,
-          maxOffset, flag, ll_nthreads);
+          maxOffset, flag,
+          tid, nthreads);
       NEXT_STEP_LL;
       ACK_PREV;
     } else {
@@ -164,7 +166,8 @@ __device__ void ncclReduceLLKernel(struct CollectiveArgs* args) {
           thisInput + offset,
           prevInput + boffset,
           nextOutput + boffset,
-          maxOffset, flag, flag, ll_nthreads);
+          maxOffset, flag, flag,
+          tid, nthreads);
       POST_SIZE;
       NEXT_STEP_LL;
       ACK_PREV;
