@@ -84,9 +84,9 @@ static bool NeedProxy(int type, int pattern, struct ncclRing* ring, int nranks) 
   // Which index in the reorganized rings should we compare root against */
   const int myrank = 0, nextrank = 1, prevrank = nranks-1;
   int index = mode == proxyFrom ?
-    /*                            no recv /  no send    if root = */
-    /* bcast  */ (type == RECV ?   myrank : nextrank ):
-    /* reduce */ (type == RECV ? prevrank :   myrank );
+      /*                            no recv /  no send    if root = */
+      /* bcast  */ (type == RECV ?   myrank : nextrank ):
+      /* reduce */ (type == RECV ? prevrank :   myrank );
   int rank = ring->userRanks[index];
   return (root != rank);
 }

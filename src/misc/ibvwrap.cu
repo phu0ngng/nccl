@@ -64,7 +64,7 @@ ncclResult_t wrap_ibv_symbols(void) {
     }
   }
 
-  #define LOAD_SYM(handle, symbol, funcptr) do {         \
+#define LOAD_SYM(handle, symbol, funcptr) do {         \
     cast = (void**)&funcptr;                             \
     tmp = dlsym(handle, symbol);                         \
     if (tmp == NULL) {                                   \
@@ -102,7 +102,7 @@ ncclResult_t wrap_ibv_symbols(void) {
   ibvState = ibvInitialized;
   return ncclSuccess;
 
-  teardown:
+teardown:
   ibv_internal_get_device_list = NULL;
   ibv_internal_free_device_list = NULL;
   ibv_internal_get_device_name = NULL;
@@ -204,8 +204,8 @@ ncclResult_t wrap_ibv_free_device_list(struct ibv_device **list) {
 
 const char *wrap_ibv_get_device_name(struct ibv_device *device) {
   if (ibv_internal_get_device_name == NULL) {
-     WARN("lib wrapper not initialized.");
-     exit(-1);
+    WARN("lib wrapper not initialized.");
+    exit(-1);
   }
   return ibv_internal_get_device_name(device);
 }
@@ -256,8 +256,8 @@ ncclResult_t wrap_ibv_reg_mr(struct ibv_mr **ret, struct ibv_pd *pd, void *addr,
 
 struct ibv_mr * wrap_direct_ibv_reg_mr(struct ibv_pd *pd, void *addr, size_t length, int access) {
   if (ibv_internal_reg_mr == NULL) {
-     WARN("lib wrapper not initialized.");
-     return NULL;
+    WARN("lib wrapper not initialized.");
+    return NULL;
   }
   return ibv_internal_reg_mr(pd, addr, length, access);
 }

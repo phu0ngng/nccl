@@ -29,5 +29,5 @@ NCCL_API(ncclResult_t, ncclReduce, const void* sendbuff, void* recvbuff, size_t 
 ncclResult_t ncclReduce(const void* sendbuff, void* recvbuff, size_t count,
     ncclDataType_t datatype, ncclRedOp_t op, int root, ncclComm_t comm, cudaStream_t stream) {
   return ncclEnqueueCheck(ncclReduceFunc, "Reduce", sendbuff, recvbuff, count, datatype,
-      op, root, comm, stream);
+          op, root, comm, stream);
 }

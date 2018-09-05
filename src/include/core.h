@@ -19,8 +19,7 @@
 #include <cuda_runtime.h>
 
 #if __CUDACC_VER_MAJOR__ < 9
-struct cudaLaunchParams
-{
+struct cudaLaunchParams {
   void *func;
   dim3 gridDim;
   dim3 blockDim;

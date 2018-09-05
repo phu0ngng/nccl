@@ -509,10 +509,10 @@ static ncclResult_t initTransportsRank(struct ncclComm* comm, ncclUniqueId* comm
     }
   }
   TRACE(INIT,"hostHash[%d] %lx intraRank %d intraRanks %d intraRank0 %d",
-        rank, rankInfos[rank].hostHash, intraRank, intraRanks, intraRank0);
+      rank, rankInfos[rank].hostHash, intraRank, intraRanks, intraRank0);
   if (intraRank == -1 || intraRank0 == -1 || rankInfos[intraRank0].comm == NULL) {
     WARN("Failed to determine intra ranks hostHash[%d] %lx intraRank %d intraRanks %d intraRank0 %d",
-         rank, rankInfos[rank].hostHash, intraRank, intraRanks, intraRank0);
+        rank, rankInfos[rank].hostHash, intraRank, intraRanks, intraRank0);
     return ncclInternalError;
   }
   NCCLCHECK(ncclCommSetIntra(comm, intraRank, intraRanks, rankInfos[intraRank0].comm));
@@ -730,14 +730,14 @@ ncclResult_t ncclCommInitAll(ncclComm_t* comms, int ndev, const int* devlist) {
   res = ncclSuccess;
   goto final;
 
-  cleanup:
+cleanup:
   for(rank=0; rank<ndev; ++rank) {
     if(comms[rank] != NULL) {
       commFree(comms[rank]);
     }
   }
 
-  final:
+final:
   if(wrapNvmlShutdown() != ncclSuccess)
     INFO(INIT,"NCCL did not shutdown nvml properly");
   cudaSetDevice(savedDevice);
@@ -769,13 +769,13 @@ ncclResult_t ncclCommDestroy(ncclComm_t comm) {
 NCCL_API(const char*, ncclGetErrorString, ncclResult_t code);
 const char* ncclGetErrorString(ncclResult_t code) {
   switch (code) {
-  case ncclSuccess                : return "no error";
-  case ncclUnhandledCudaError     : return "unhandled cuda error";
-  case ncclSystemError            : return "unhandled system error";
-  case ncclInternalError          : return "internal error";
-  case ncclInvalidArgument        : return "invalid argument";
-  case ncclInvalidUsage           : return "invalid usage";
-  default                         : return "unknown result code";
+    case ncclSuccess                : return "no error";
+    case ncclUnhandledCudaError     : return "unhandled cuda error";
+    case ncclSystemError            : return "unhandled system error";
+    case ncclInternalError          : return "internal error";
+    case ncclInvalidArgument        : return "invalid argument";
+    case ncclInvalidUsage           : return "invalid usage";
+    default                         : return "unknown result code";
   }
 }
 

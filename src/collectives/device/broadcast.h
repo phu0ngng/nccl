@@ -116,7 +116,7 @@ __device__ void ncclBroadcastKernel(struct CollectiveArgs* args) {
         Prims::DoubleCopy(tid, nthreads,
             prevInput + boffset,
             thisOutput + offset,
-	    nextdirect ? (sharedNextOutput + offset) : (nextOutput + boffset),
+            nextdirect ? (sharedNextOutput + offset) : (nextOutput + boffset),
             sliceSize, maxOffset,
             step,
             waitDoneFromNext, waitReadyFromPrev,

@@ -214,7 +214,7 @@ static ncclResult_t GetSocketAddrFromString(union socketAddress* ua, const char*
     hints.ai_family = AF_UNSPEC;
     hints.ai_socktype = SOCK_STREAM;
 
-    if ( (rv = getaddrinfo(ni.prefix, NULL , &hints , &p)) != 0) {
+    if ( (rv = getaddrinfo(ni.prefix, NULL, &hints, &p)) != 0) {
       WARN("Net : error encountered when getting address info : %s", gai_strerror(rv));
       return ncclInvalidArgument;
     }
@@ -348,9 +348,9 @@ static ncclResult_t connectAddress(int* fd, union socketAddress* remoteAddr) {
   const int one = 1;
   SYSCHECK(setsockopt(*fd, IPPROTO_TCP, TCP_NODELAY, (char*)&one, sizeof(int)), "setsockopt");
 
-/*  const int bufsize = 128*1024;
-  SYSCHECK(setsockopt(*fd, SOL_SOCKET, SO_SNDBUF, (char*)&bufsize, sizeof(int)), "setsockopt");
-  SYSCHECK(setsockopt(*fd, SOL_SOCKET, SO_RCVBUF, (char*)&bufsize, sizeof(int)), "setsockopt");*/
+  /*  const int bufsize = 128*1024;
+    SYSCHECK(setsockopt(*fd, SOL_SOCKET, SO_SNDBUF, (char*)&bufsize, sizeof(int)), "setsockopt");
+    SYSCHECK(setsockopt(*fd, SOL_SOCKET, SO_RCVBUF, (char*)&bufsize, sizeof(int)), "setsockopt");*/
 
 #ifdef ENABLE_TRACE
   char line[1024];

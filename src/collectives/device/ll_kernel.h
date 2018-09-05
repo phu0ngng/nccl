@@ -32,7 +32,7 @@ static __device__ void storeAL(uint64_t* dst, uint64_t val) {
 
 template <typename T, class FUNC>
 class LLPrimitives {
-  private:
+ private:
   template <int HAS_SRC1, int HAS_SRC2, int HAS_DST1, int HAS_DST2>
   static __device__ void ReduceCopyGeneric(const T* src1, union ncclLLFifoLine* src2, T* dst1, union ncclLLFifoLine* dst2, int size, uint32_t iflag, uint32_t oflag, int nthreads) {
     if (size <= 0) return;
@@ -41,7 +41,7 @@ class LLPrimitives {
     uint64_t* dst1A = (uint64_t*)dst1;
     int offset = threadIdx.x;
     // Do multiples of 64 bits
-    #pragma unroll 1
+#pragma unroll 1
     for (; offset < size64; offset += nthreads) {
       uint64_t val;
       if (HAS_SRC1) {
@@ -82,7 +82,7 @@ class LLPrimitives {
       }
     }
   }
-  public:
+ public:
   static __device__ void ReduceCopy(const T* src, union ncclLLFifoLine* dst, int size, uint32_t oflag, int nthreads) {
     return ReduceCopyGeneric<1, 0, 0, 1>(src, NULL, NULL, dst, size, 0, oflag, nthreads);
   }
