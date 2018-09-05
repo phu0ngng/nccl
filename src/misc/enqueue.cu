@@ -78,7 +78,7 @@ ncclResult_t ncclLaunchCooperativeKernelMultiDevice(struct cudaLaunchParams *par
 }
 
 ncclResult_t setupLaunch(struct ncclComm* comm, struct cudaLaunchParams* params) {
-  params->gridDim.x = min(params->gridDim.x, comm->nRings);
+  params->gridDim.x = std::min((int) params->gridDim.x, comm->nRings);
 
   // Set active = 2 for the last operation
   for (int r=0; r<params->gridDim.x; r++) {

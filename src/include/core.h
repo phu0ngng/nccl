@@ -13,7 +13,9 @@
 #include "transport.h"
 #include "debug.h"
 #include <cstdio>
+#include <algorithm> // std::min/std::max
 #include <unistd.h>
+#include <stdlib.h>
 #include <cuda_runtime.h>
 
 #if __CUDACC_VER_MAJOR__ < 9
@@ -267,9 +269,9 @@ static inline void ncclGetCollResource(ncclComm_t comm, size_t nbytes, int* nrin
   }
   int nt = NCCL_LL_MIN_NTHREADS; /* start with min number of LL threads */
   size_t nr;
-  int ll_max_nthreads = min(NCCL_LL_MAX_NTHREADS, comm->nThreads); /* respect user's setting or platform's default setting */
+  int ll_max_nthreads = std::min(NCCL_LL_MAX_NTHREADS, comm->nThreads); /* respect user's setting or platform's default setting */
   int maxRings = (comm->nRanks <= 4) ? 1 : ll_max_nthreads / NCCL_LL_MIN_NTHREADS;
-  ssize_t threshold = min(comm->threadThreshold, (ssize_t)NCCL_RING_THRESHOLD);
+  ssize_t threshold = std::min(comm->threadThreshold, (ssize_t)NCCL_RING_THRESHOLD);
   while (nt < ll_max_nthreads && *ll == 0) {
     nr = DIVUP(nbytes, (NCCL_RING_THRESHOLD*nt*comm->nRanks));
     if (nr <= maxRings) { /* avoid using few threads but many rings */
@@ -392,14 +394,14 @@ static inline void ncclGetCollResource(ncclComm_t comm, size_t nbytes, int* nrin
 int ncclCudaCompCap();
 
 #include <sys/mman.h>
-static ncclResult_t ncclCudaHostAlloc(void** ptr, void** devPtr, size_t size) {
+static inline ncclResult_t ncclCudaHostAlloc(void** ptr, void** devPtr, size_t size) {
   CUDACHECK(cudaHostAlloc(ptr, size, cudaHostAllocMapped));
   memset(*ptr, 0, size);
   *devPtr = *ptr;
   return ncclSuccess;
 }
 
-static ncclResult_t ncclCudaHostFree(void* ptr) {
+static inline ncclResult_t ncclCudaHostFree(void* ptr) {
   CUDACHECK(cudaFreeHost(ptr));
   return ncclSuccess;
 }

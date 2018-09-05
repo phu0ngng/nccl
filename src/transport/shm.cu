@@ -42,8 +42,6 @@ struct shmSendResources {
   struct ncclSendMem* devHostMem;
 };
 
-#define MAXSTEPS 8
-
 struct shmRecvResources {
   int remShmSize;
   struct ncclSendMem* remHostMem;
@@ -155,6 +153,8 @@ ncclResult_t shmGetRings(int nranks, int* groups, int* subgroups, ncclTvalue_t* 
   return ncclSuccess;
 }
 
+#define MAX_SHM_NAME_LEN 1024
+
 /* Create and return connect structures for this peer to connect to me */
 ncclResult_t shmSendSetup(ncclTinfo_t* myOpaqueInfo, ncclTinfo_t* peerOpaqueInfo, struct ncclConnect* connectInfo, struct ncclRing* ring) {
   struct shmInfo* myInfo = (struct shmInfo*)myOpaqueInfo;
@@ -164,7 +164,7 @@ ncclResult_t shmSendSetup(ncclTinfo_t* myOpaqueInfo, ncclTinfo_t* peerOpaqueInfo
   ring->send.transportResources = resources;
 
   struct shmRecvConnectInfo info;
-  char shmName[1024];
+  char shmName[MAX_SHM_NAME_LEN];
   sprintf(shmName, "nccl-shm-send-%lx-%d-%d", myInfo->pidHash, ring->id, myInfo->rank);
   info.shmSize = resources->shmSize = sizeof(struct ncclSendMem);
   TRACE(SHM,"Open shmName %s shmSize %d", shmName, info.shmSize);
@@ -184,7 +184,7 @@ ncclResult_t shmRecvSetup(ncclTinfo_t* myOpaqueInfo, ncclTinfo_t* peerOpaqueInfo
 
   struct shmSendConnectInfo info;
 
-  char shmName[1024];
+  char shmName[MAX_SHM_NAME_LEN];
   sprintf(shmName, "nccl-shm-recv-%lx-%d-%d", myInfo->pidHash, ring->id, myInfo->rank);
   info.shmSize = resources->shmSize = offsetof(struct ncclRecvMem, buff)+ring->buffSize;
   TRACE(SHM,"Open shmName %s shmSize %d", shmName, info.shmSize);
@@ -202,7 +202,7 @@ ncclResult_t shmSendConnect(struct ncclConnect* connectInfo, struct ncclConnecto
   struct shmSendConnectInfo* info = (struct shmSendConnectInfo*)connectInfo;
   struct shmSendResources* resources = (struct shmSendResources*)send->transportResources;
 
-  char shmName[1024];
+  char shmName[MAX_SHM_NAME_LEN];
   sprintf(shmName, "nccl-shm-recv-%lx-%d-%d", info->pidHash, info->id, info->rank);
   resources->remShmSize = info->shmSize;
   TRACE(SHM,"Open shmName %s shmSize %d", shmName, info->shmSize);
@@ -226,7 +226,7 @@ ncclResult_t shmRecvConnect(struct ncclConnect* connectInfo, struct ncclConnecto
   struct shmRecvResources* resources = (struct shmRecvResources*)recv->transportResources;
   struct shmRecvConnectInfo* info = (struct shmRecvConnectInfo*)connectInfo;
 
-  char shmName[1024];
+  char shmName[MAX_SHM_NAME_LEN];
   sprintf(shmName, "nccl-shm-send-%lx-%d-%d", info->pidHash, info->id, info->rank);
   resources->remShmSize = info->shmSize;
   TRACE(SHM,"Open shmName %s shmSize %d", shmName, info->shmSize);

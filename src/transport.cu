@@ -155,8 +155,8 @@ void* persistentThread(void *opaqueInfo) {
 }
 
 ncclResult_t transportCreateProxy(int type, struct ncclRing* ring, struct ncclComm* comm) {
-  struct ncclConnector* connector = (type == 0) ? &ring->recv : &ring->send;
-  threadFunc_t proxyfunc = (threadFunc_t) ((type == 0) ? connector->transport->recv.proxy : connector->transport->send.proxy);
+  struct ncclConnector* connector = (type == RECV) ? &ring->recv : &ring->send;
+  threadFunc_t proxyfunc = (threadFunc_t) ((type == RECV) ? connector->transport->recv.proxy : connector->transport->send.proxy);
   if (proxyfunc) {
     TRACE(NET,"type %d ring %p proxyfunc %p comm %p", type, ring, proxyfunc, comm);
     struct transportProxyInfo * info = connector->proxyInfo = (struct transportProxyInfo*)malloc(sizeof(struct transportProxyInfo));
