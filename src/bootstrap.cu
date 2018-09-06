@@ -12,15 +12,6 @@
 #include <unistd.h>
 #include <sys/types.h>
 
-#define NCCLCHECKJUMP(call, out) do { \
-  ncclResult_t res = call; \
-  if (res != ncclSuccess) { \
-    /* Print the back trace*/ \
-    INFO(INIT,"%s:%d -> %d [bthread]", __FILE__, __LINE__, res); \
-    goto out; \
-  } \
-} while (0);
-
 // Always use sockets for bootstrap
 ncclNet_t* ncclBootstrapNet = &ncclNetSocket;
 
@@ -91,14 +82,15 @@ static void *bootstrapRoot(void* commId) {
   void **extRecvComm = NULL;
   int size, alloc_size = 0;
   char* data = NULL;
+  ncclResult_t res;
   setFilesLimit();
 
   /* Receive addresses from all ranks */
   int nranks = 0, c = 0;
   do {
     void* tmpRecvComm;
-    NCCLCHECKJUMP(bootstrapAccept(id->extListenComm, &tmpRecvComm), out);
-    NCCLCHECKJUMP(bootstrapRecv(tmpRecvComm, &info, sizeof(info)), out);
+    NCCLCHECKGOTO(bootstrapAccept(id->extListenComm, &tmpRecvComm), res, out);
+    NCCLCHECKGOTO(bootstrapRecv(tmpRecvComm, &info, sizeof(info)), res, out);
     if (!c) {
       extSendComm = (void**)calloc(info.nranks, sizeof(void*));
       extRecvComm = (void**)calloc(info.nranks, sizeof(void*));
@@ -115,12 +107,12 @@ static void *bootstrapRoot(void* commId) {
     }
 
     extRecvComm[info.rank] = tmpRecvComm;
-    NCCLCHECKJUMP(bootstrapConnect(0, info.extHandle, extSendComm+info.rank), out);
+    NCCLCHECKGOTO(bootstrapConnect(0, info.extHandle, extSendComm+info.rank), res, out);
     c++;
   } while (c < nranks);
 
   do {
-    NCCLCHECKJUMP(bootstrapRecv(extRecvComm[0], &bop, sizeof(struct bootstrapOp)), out);
+    NCCLCHECKGOTO(bootstrapRecv(extRecvComm[0], &bop, sizeof(struct bootstrapOp)), res, out);
     if (bop.size == -1) {
       break;
     } else {
@@ -138,25 +130,25 @@ static void *bootstrapRoot(void* commId) {
 
     if (bop.op == BOOTSTRAP_ALLGATHER) {
       for (int r=0; r<nranks; r++) {
-        NCCLCHECKJUMP(bootstrapRecv(extRecvComm[r], data+size*r, size), out);
+        NCCLCHECKGOTO(bootstrapRecv(extRecvComm[r], data+size*r, size), res, out);
       }
 
       for (int r=0; r<nranks; r++) {
-        NCCLCHECKJUMP(bootstrapSend(extSendComm[r], data, size*nranks), out);
+        NCCLCHECKGOTO(bootstrapSend(extSendComm[r], data, size*nranks), res, out);
       }
     } else if (bop.op == BOOTSTRAP_RINGEXCHANGE) {
       // Receive from all and build total table
       for (int r=0; r<nranks; r++) {
-        NCCLCHECKJUMP(bootstrapRecv(extRecvComm[r], data+r*2*size, 2*size), out);
+        NCCLCHECKGOTO(bootstrapRecv(extRecvComm[r], data+r*2*size, 2*size), res, out);
       }
 
       // Get prev/next request from everyone and answer.
       for (int r=0; r<nranks; r++) {
         int offset;
-        NCCLCHECKJUMP(bootstrapRecv(extRecvComm[r], &offset, sizeof(int)), out);
-        NCCLCHECKJUMP(bootstrapSend(extSendComm[r], data+offset, size), out);
-        NCCLCHECKJUMP(bootstrapRecv(extRecvComm[r], &offset, sizeof(int)), out);
-        NCCLCHECKJUMP(bootstrapSend(extSendComm[r], data+offset, size), out);
+        NCCLCHECKGOTO(bootstrapRecv(extRecvComm[r], &offset, sizeof(int)), res, out);
+        NCCLCHECKGOTO(bootstrapSend(extSendComm[r], data+offset, size), res, out);
+        NCCLCHECKGOTO(bootstrapRecv(extRecvComm[r], &offset, sizeof(int)), res, out);
+        NCCLCHECKGOTO(bootstrapSend(extSendComm[r], data+offset, size), res, out);
       }
     } else {
       WARN("Bootstrap Root : invalid op type received %d", bop.op);
