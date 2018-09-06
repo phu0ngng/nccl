@@ -30,14 +30,15 @@ struct ibv_pd * (*ibv_internal_alloc_pd)(struct ibv_context *context);
 int (*ibv_internal_dealloc_pd)(struct ibv_pd *pd);
 struct ibv_mr * (*ibv_internal_reg_mr)(struct ibv_pd *pd, void *addr, size_t length, int access);
 int (*ibv_internal_dereg_mr)(struct ibv_mr *mr);
-struct ibv_comp_channel * (*ibv_internal_create_comp_channel)(struct ibv_context *context);
-int (*ibv_internal_destroy_comp_channel)(struct ibv_comp_channel *channel);
 struct ibv_cq * (*ibv_internal_create_cq)(struct ibv_context *context, int cqe, void *cq_context, struct ibv_comp_channel *channel, int comp_vector);
 int (*ibv_internal_destroy_cq)(struct ibv_cq *cq);
 struct ibv_qp * (*ibv_internal_create_qp)(struct ibv_pd *pd, struct ibv_qp_init_attr *qp_init_attr);
 int (*ibv_internal_modify_qp)(struct ibv_qp *qp, struct ibv_qp_attr *attr, int attr_mask);
 int (*ibv_internal_destroy_qp)(struct ibv_qp *qp);
 const char * (*ibv_internal_event_type_str)(enum ibv_event_type event);
+
+// IBVERBS Library versioning
+#define IBVERBS_VERSION "IBVERBS_1.1"
 
 ncclResult_t wrap_ibv_symbols(void) {
   if (ibvState == ibvInitialized)
@@ -66,15 +67,14 @@ ncclResult_t wrap_ibv_symbols(void) {
 
 #define LOAD_SYM(handle, symbol, funcptr) do {         \
     cast = (void**)&funcptr;                             \
-    tmp = dlsym(handle, symbol);                         \
+    tmp = dlvsym(handle, symbol, IBVERBS_VERSION);       \
     if (tmp == NULL) {                                   \
-      WARN("dlsym failed on %s - %s", symbol, dlerror());\
+      WARN("dlvsym failed on %s - %s version %s", symbol, dlerror(), IBVERBS_VERSION);  \
       goto teardown;                                     \
     }                                                    \
     *cast = tmp;                                         \
   } while (0)
 
-  LOAD_SYM(ibvhandle, "ibv_fork_init", ibv_internal_fork_init);
   LOAD_SYM(ibvhandle, "ibv_get_device_list", ibv_internal_get_device_list);
   LOAD_SYM(ibvhandle, "ibv_free_device_list", ibv_internal_free_device_list);
   LOAD_SYM(ibvhandle, "ibv_get_device_name", ibv_internal_get_device_name);
@@ -90,13 +90,12 @@ ncclResult_t wrap_ibv_symbols(void) {
   LOAD_SYM(ibvhandle, "ibv_dealloc_pd", ibv_internal_dealloc_pd);
   LOAD_SYM(ibvhandle, "ibv_reg_mr", ibv_internal_reg_mr);
   LOAD_SYM(ibvhandle, "ibv_dereg_mr", ibv_internal_dereg_mr);
-  LOAD_SYM(ibvhandle, "ibv_create_comp_channel", ibv_internal_create_comp_channel);
-  LOAD_SYM(ibvhandle, "ibv_destroy_comp_channel", ibv_internal_destroy_comp_channel);
   LOAD_SYM(ibvhandle, "ibv_create_cq", ibv_internal_create_cq);
   LOAD_SYM(ibvhandle, "ibv_destroy_cq", ibv_internal_destroy_cq);
   LOAD_SYM(ibvhandle, "ibv_create_qp", ibv_internal_create_qp);
   LOAD_SYM(ibvhandle, "ibv_modify_qp", ibv_internal_modify_qp);
   LOAD_SYM(ibvhandle, "ibv_destroy_qp", ibv_internal_destroy_qp);
+  LOAD_SYM(ibvhandle, "ibv_fork_init", ibv_internal_fork_init);
   LOAD_SYM(ibvhandle, "ibv_event_type_str", ibv_internal_event_type_str);
 
   ibvState = ibvInitialized;
@@ -118,13 +117,12 @@ teardown:
   ibv_internal_dealloc_pd = NULL;
   ibv_internal_reg_mr = NULL;
   ibv_internal_dereg_mr = NULL;
-  ibv_internal_create_comp_channel = NULL;
-  ibv_internal_destroy_comp_channel = NULL;
   ibv_internal_create_cq = NULL;
   ibv_internal_destroy_cq = NULL;
   ibv_internal_create_qp = NULL;
   ibv_internal_modify_qp = NULL;
   ibv_internal_destroy_qp = NULL;
+  ibv_internal_fork_init = NULL;
   ibv_internal_event_type_str = NULL;
 
   if (ibvhandle != NULL) dlclose(ibvhandle);
@@ -264,14 +262,6 @@ struct ibv_mr * wrap_direct_ibv_reg_mr(struct ibv_pd *pd, void *addr, size_t len
 
 ncclResult_t wrap_ibv_dereg_mr(struct ibv_mr *mr) { /*returns 0 on success, or the value of errno on failure (which indicates the failure reason)*/
   IBV_INT_CHECK_RET_ERRNO(ibv_internal_dereg_mr, ibv_internal_dereg_mr(mr), 0, "ibv_dereg_mr");
-}
-
-ncclResult_t wrap_ibv_create_comp_channel(struct ibv_comp_channel **ret, struct ibv_context *context) {
-  IBV_PTR_CHECK(ibv_internal_create_comp_channel, ibv_internal_create_comp_channel(context), *ret, NULL, "ibv_create_comp_channel");
-}
-
-ncclResult_t wrap_ibv_destroy_comp_channel(struct ibv_comp_channel *channel) {
-  IBV_INT_CHECK_RET_ERRNO(ibv_internal_destroy_comp_channel, ibv_internal_destroy_comp_channel(channel), 0, "ibv_destroy_comp_channel");
 }
 
 ncclResult_t wrap_ibv_create_cq(struct ibv_cq **ret, struct ibv_context *context, int cqe, void *cq_context, struct ibv_comp_channel *channel, int comp_vector) {
