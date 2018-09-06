@@ -14,6 +14,11 @@
 
 extern struct ncclTransport ncclTransports[];
 
+// Forward declarations
+struct ncclRing;
+struct ncclConnector;
+struct ncclComm;
+
 #define RANK_INFO_SIZE 64
 typedef char ncclTinfo_t[RANK_INFO_SIZE];
 
