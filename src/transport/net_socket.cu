@@ -100,11 +100,11 @@ struct ncclSocketComm* ncclSocketNewComm() {
   return comm;
 }
 
-/*ncclResult_t ncclSocketCreateHandle(void* opaqueHandle, const char* str) {
+ncclResult_t ncclSocketCreateHandle(void* opaqueHandle, const char* str) {
   struct ncclSocketHandle* handle = (struct ncclSocketHandle*) opaqueHandle;
   NCCLCHECK(GetSocketAddrFromString(&(handle->connectAddr), str));
   return ncclSuccess;
-}*/
+}
 
 ncclResult_t ncclSocketListen(int dev, void* opaqueHandle, void** listenComm) {
   struct ncclSocketHandle* handle = (struct ncclSocketHandle*) opaqueHandle;
