@@ -12,12 +12,6 @@
 #define NCCL_NET_MAJOR 1
 #define NCCL_NET_MINOR 0
 
-#ifdef __cplusplus
-extern "C" {
-#endif
-
-// Inter-node transport to replace the internal transports.
-// An example using MPI can be found in share/nccl_mpi.c.
 #define NCCL_NET_HANDLE_MAXSIZE 64
 
 #define NCCL_PTR_HOST 0x1
@@ -61,11 +55,11 @@ typedef struct {
   ncclResult_t (*closeListen)(void* listenComm);
 } ncclNet_t;
 
+extern
 #ifdef __cplusplus
-} // end extern "C"
+"C"
 #endif
-
-extern "C" ncclNet_t* ncclNet;
+ncclNet_t* ncclNet;
 
 #endif // end include guard
 
