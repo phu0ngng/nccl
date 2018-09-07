@@ -160,7 +160,8 @@ ncclResult_t shmSendSetup(ncclTinfo_t* myOpaqueInfo, ncclTinfo_t* peerOpaqueInfo
   struct shmInfo* myInfo = (struct shmInfo*)myOpaqueInfo;
   struct shmInfo* peerInfo = (struct shmInfo*)peerOpaqueInfo;
 
-  struct shmSendResources* resources = (struct shmSendResources*)malloc(sizeof(struct shmSendResources));
+  struct shmSendResources* resources;
+  NCCLCHECK(ncclMalloc(&resources, 1));
   ring->send.transportResources = resources;
 
   struct shmRecvConnectInfo info;
@@ -179,7 +180,8 @@ ncclResult_t shmSendSetup(ncclTinfo_t* myOpaqueInfo, ncclTinfo_t* peerOpaqueInfo
 
 ncclResult_t shmRecvSetup(ncclTinfo_t* myOpaqueInfo, ncclTinfo_t* peerOpaqueInfo, struct ncclConnect* connectInfo, struct ncclRing* ring) {
   struct shmInfo* myInfo = (struct shmInfo*)myOpaqueInfo;
-  struct shmRecvResources* resources = (struct shmRecvResources*) malloc(sizeof(struct shmRecvResources));
+  struct shmRecvResources* resources;
+  NCCLCHECK(ncclMalloc(&resources, 1));
   ring->recv.transportResources = resources;
 
   struct shmSendConnectInfo info;

@@ -160,8 +160,9 @@ ncclResult_t transportCreateProxy(int type, struct ncclRing* ring, struct ncclCo
   threadFunc_t proxyfunc = (threadFunc_t) ((type == RECV) ? connector->transport->recv.proxy : connector->transport->send.proxy);
   if (proxyfunc) {
     TRACE(NET,"type %d ring %p proxyfunc %p comm %p", type, ring, proxyfunc, comm);
-    struct transportProxyInfo * info = connector->proxyInfo = (struct transportProxyInfo*)malloc(sizeof(struct transportProxyInfo));
-    memset(info, 0, sizeof(struct transportProxyInfo));
+    struct transportProxyInfo* info;
+    NCCLCHECK(ncclMalloc(&info, 1));
+    connector->proxyInfo = info;
     info->comm = comm;
     info->cond = PTHREAD_COND_INITIALIZER;
     info->mutex = PTHREAD_MUTEX_INITIALIZER;

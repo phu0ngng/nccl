@@ -185,6 +185,7 @@ static inline int copyRings(int nranks, int* rings, int nrings, int newNrings) {
 
 int p2pComputeRingsNvLink(ncclTvalue_t* matrix, int nranks, int *rings, int nringsMax, int connect) {
   int* inTheRing = (int*)malloc(sizeof(int)*nranks);
+  if (inTheRing == NULL) { WARN("malloc of %ld bytes failed", sizeof(int)*nranks); return 0; }
   for (int i=0; i<nranks; i++) inTheRing[i] = 0;
   int nrings;
   if (connect) {
@@ -226,6 +227,7 @@ int p2pComputeRingsNvLink(ncclTvalue_t* values, int nranks, int* rings, int nrin
 
   // Compute rings
   ncclTvalue_t* matrix = (ncclTvalue_t*)malloc(sizeof(ncclTvalue_t)*nranks*nranks);
+  if (matrix == NULL) { WARN("malloc of %ld bytes failed", sizeof(ncclTvalue_t)*nranks*nranks); return 0; }
   for (int i=0; i<nranks; i++) for (int j=0; j<nranks; j++)
       matrix[i*nranks+j] = oversubscribe ? values[i*nranks+j]/CONNECT_NVLINK*2 : values[i*nranks+j]/CONNECT_NVLINK ;
 
@@ -238,6 +240,7 @@ int p2pComputeRingsNvLink(ncclTvalue_t* values, int nranks, int* rings, int nrin
   if (compNrings && compNrings < nrings && nranks <= 4) {
     // Try to oversubscribe to get a better result
     int *rings2 = (int *)malloc(sizeof(int)*MAXRINGS*nranks);
+    if (rings2 == NULL) { WARN("malloc of %ld bytes failed", sizeof(int)*MAXRINGS*nranks); return 0; }
     for (int i=0; i<MAXRINGS*nranks; i++) rings2[i] = -1;
     int nThreads = *nthreads;
     int compNrings2 = p2pComputeRingsNvLink(values, nranks, rings2, nrings, prev, next, 1, &nThreads);
@@ -363,7 +366,8 @@ int p2pComputeRingsPci(ncclTvalue_t* values, int nranks, int* rings, int nrings,
 
 ncclResult_t p2pGetRings(int nranks, int* groups, int* subgroups, ncclTvalue_t* values, int* nringsRet, int* prev, int* next, int minScore, int* nthreads) {
   if (*nringsRet == 0) return ncclSuccess;
-  int *rings = (int *)malloc(sizeof(int)*MAXRINGS*nranks);
+  int *rings;
+  NCCLCHECK(ncclMalloc(&rings, MAXRINGS*nranks));
   for (int i=0; i<MAXRINGS*nranks; i++) rings[i] = -1;
   int nrings = *nringsRet;
 
@@ -534,7 +538,8 @@ static ncclResult_t p2pSendConnect(struct ncclConnect* connectInfo, struct ncclC
     void* remPtr = NULL;
     //TRACE_DUMP_IPC(&info->devIpc);
     cudaError_t err = cudaIpcOpenMemHandle(&remPtr, info->devIpc, cudaIpcMemLazyEnablePeerAccess);
-    void** ipcPtrSave = (void**) malloc(sizeof(void*));
+    void** ipcPtrSave;
+    NCCLCHECK(ncclMalloc(&ipcPtrSave, 1));
     *resources = ipcPtrSave;
     *ipcPtrSave = remPtr;
     remDevMem = (struct ncclRecvMem*)remPtr;
@@ -567,7 +572,8 @@ ncclResult_t p2pRecvConnect(struct ncclConnect* connectInfo, struct ncclConnecto
     void* remPtr = NULL;
     //TRACE_DUMP_IPC(&info->devIpc);
     cudaError_t err = cudaIpcOpenMemHandle(&remPtr, info->devIpc, cudaIpcMemLazyEnablePeerAccess);
-    void** ipcPtrSave = (void**) malloc(sizeof(void*));
+    void** ipcPtrSave;
+    NCCLCHECK(ncclMalloc(&ipcPtrSave, 1));
     *resources = ipcPtrSave;
     *ipcPtrSave = remPtr;
     remDevMem = (struct ncclSendMem*)remPtr;

@@ -50,7 +50,8 @@ ncclResult_t ncclSocketDevices(int* ndev, int** scores) {
   cudaGetDevice(&cudaDev);
   char* cudaPath;
   ncclResult_t err1 = getCudaPath(cudaDev, &cudaPath);
-  int* sc = (int*)malloc(ncclNetIfs*sizeof(int));
+  int* sc;
+  NCCLCHECK(ncclMalloc(&sc, ncclNetIfs));
   char line[1024];
   sprintf(line, "CUDA Dev %d, IP Interfaces : ", cudaDev);
   for (int i=0; i<ncclNetIfs; i++) {
@@ -93,11 +94,10 @@ struct ncclSocketComm {
   struct ncclSocketReqs reqs;
 };
 
-struct ncclSocketComm* ncclSocketNewComm() {
-  struct ncclSocketComm* comm = (struct ncclSocketComm*)malloc(sizeof(struct ncclSocketComm));
-  comm->reqs.requests = NULL;
-  comm->fd = -1;
-  return comm;
+ncclResult_t ncclSocketNewComm(struct ncclSocketComm** comm) {
+  NCCLCHECK(ncclMalloc(comm, 1));
+  (*comm)->fd = -1;
+  return ncclSuccess;
 }
 
 ncclResult_t ncclSocketCreateHandle(void* opaqueHandle, const char* str) {
@@ -124,14 +124,16 @@ ncclResult_t ncclSocketListen(int dev, void* opaqueHandle, void** listenComm) {
     // pass the local address back
     memcpy(&handle->connectAddr, &localAddr, sizeof(handle->connectAddr));
   } // Otherwise, handle stores a local address
-  struct ncclSocketComm* comm = ncclSocketNewComm();
+  struct ncclSocketComm* comm;
+  NCCLCHECK(ncclSocketNewComm(&comm));
   NCCLCHECK(createListenSocket(&comm->fd, &handle->connectAddr));
   *listenComm = comm;
   return ncclSuccess;
 }
 
 ncclResult_t ncclSocketConnect(int dev, void* opaqueHandle, void** sendComm) {
-  struct ncclSocketComm* comm = ncclSocketNewComm();
+  struct ncclSocketComm* comm;
+  NCCLCHECK(ncclSocketNewComm(&comm));
   struct ncclSocketHandle* handle = (struct ncclSocketHandle*) opaqueHandle;
   NCCLCHECK(connectAddress(&comm->fd, &handle->connectAddr));
   *sendComm = comm;
@@ -140,7 +142,8 @@ ncclResult_t ncclSocketConnect(int dev, void* opaqueHandle, void** sendComm) {
 
 ncclResult_t ncclSocketAccept(void* listenComm, void** recvComm) {
   struct ncclSocketComm* lComm = (struct ncclSocketComm*)listenComm;
-  struct ncclSocketComm* rComm = ncclSocketNewComm();
+  struct ncclSocketComm* rComm;
+  NCCLCHECK(ncclSocketNewComm(&rComm));
   struct sockaddr_in sockaddr;
   socklen_t socklen = sizeof(struct sockaddr_in);
   SYSCHECKVAL(accept(lComm->fd, (struct sockaddr*)&sockaddr, &socklen), "accept", rComm->fd);
@@ -152,8 +155,7 @@ ncclResult_t ncclSocketAccept(void* listenComm, void** recvComm) {
 
 ncclResult_t ncclSocketGetRequest(struct ncclSocketReqs* reqs, struct ncclSocketRequest** req) {
   if (reqs->requests == NULL) {
-    reqs->requests = (struct ncclSocketRequest*)malloc(MAX_REQUESTS*sizeof(struct ncclSocketRequest));
-    memset(reqs->requests, 0, MAX_REQUESTS*sizeof(struct ncclSocketRequest));
+    NCCLCHECK(ncclMalloc(&reqs->requests, MAX_REQUESTS));
   }
   for (int i=0; i<MAX_REQUESTS; i++) {
     struct ncclSocketRequest* r = reqs->requests+i;
