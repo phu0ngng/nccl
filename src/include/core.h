@@ -34,7 +34,7 @@ struct cudaLaunchParams {
 #define DEFAULT_BUFFER_SIZE_BYTES (1LL << 22) /* 4MiB */
 
 // Rings / LL tuning
-#define NCCL_RING_THRESHOLD 8 // Per thread size before we start increasing nrings
+#define NCCL_LL_RING_THRESHOLD 8 // Per thread size before we start increasing nrings
 #define NCCL_THREAD_THRESHOLD 32  // Per thread size before we switch to non-LL
 #define NCCL_LL_MAX_NTHREADS 256
 #define NCCL_LL_MIN_NTHREADS 64
@@ -97,8 +97,8 @@ struct ncclConnector {
 #define NCCL_LL_CHUNKS 8
 #define NUM_LINES_PER_THREAD 2
 #define NCCL_LL_BUFF_SIZE (NUM_LINES_PER_THREAD*NCCL_LL_MAX_NTHREADS*NCCL_LL_CHUNKS*sizeof(union ncclLLFifoLine)) // 64K
-#define llBuffSize NCCL_LL_BUFF_SIZE / (2*sizeof(uint64_t))
-#define llSliceSize llBuffSize / NCCL_LL_CHUNKS
+#define NCCL_LL_BUFF_LINES (NCCL_LL_BUFF_SIZE / (2*sizeof(uint64_t)))
+#define NCCL_LL_SLICE_LINES (NCCL_LL_BUFF_LINES / NCCL_LL_CHUNKS)
 #define NCCL_LL_CLEAN_FREQ 0x10000000
 
 struct ncclSendMem {

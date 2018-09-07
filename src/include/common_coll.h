@@ -90,7 +90,7 @@ static __inline__ int ncclTypeSize(ncclDataType_t type) {
 //   If not, we increase the number of threads by 2x, until we reach the max number of LL threads (256, or set by user via NCCL_NTHREADS, or platform non-LL default)
 // - We use "maxRings" to limit the max number of rings we can use before reaching the max number of LL threads
 //   This ensures we don't use a large number of rings with a small number of threads
-// - We use the NCCL_RING_THRESHOLD as the per-thread threshold before we reach the max number of threads
+// - We use the NCCL_LL_RING_THRESHOLD as the per-thread threshold before we reach the max number of threads
 //   we use NCCL_THREAD_THRESHOLD when we reach the max
 // - If by the max number of LL threads, the size still cannot fit in LL, then we use non-LL setting
 // - We honor the NCCL_LL_THRESHOLD (total threshold) set by user too
@@ -110,9 +110,9 @@ static inline void ncclGetCollResource(ncclComm_t comm, size_t nbytes, int* nrin
   size_t nr;
   int ll_max_nthreads = std::min(NCCL_LL_MAX_NTHREADS, comm->nThreads); /* respect user's setting or platform's default setting */
   int maxRings = (comm->nRanks <= 4) ? 1 : ll_max_nthreads / NCCL_LL_MIN_NTHREADS;
-  ssize_t threshold = std::min(comm->threadThreshold, (ssize_t)NCCL_RING_THRESHOLD);
+  ssize_t threshold = std::min(comm->threadThreshold, (ssize_t)NCCL_LL_RING_THRESHOLD);
   while (nt < ll_max_nthreads && *ll == 0) {
-    nr = DIVUP(nbytes, (NCCL_RING_THRESHOLD*nt*comm->nRanks));
+    nr = DIVUP(nbytes, (NCCL_LL_RING_THRESHOLD*nt*comm->nRanks));
     if (nr <= maxRings) { /* avoid using few threads but many rings */
       nr = nr == 0 ? 1 : nr > comm->nRings ? comm->nRings : nr;
       *ll = nbytes > comm->nRanks*nr*nt*threshold ? 0 : 1;
@@ -126,7 +126,7 @@ static inline void ncclGetCollResource(ncclComm_t comm, size_t nbytes, int* nrin
     *nrings = (int)nr;
     return; /* we can use smaller number of threads to make LL work, stop here */
   }
-  nr = DIVUP(nbytes, (NCCL_RING_THRESHOLD*ll_max_nthreads*comm->nRanks)); /* else we try the max number of LL threads */
+  nr = DIVUP(nbytes, (NCCL_LL_RING_THRESHOLD*ll_max_nthreads*comm->nRanks)); /* else we try the max number of LL threads */
   nr = nr == 0 ? 1 : nr > comm->nRings ? comm->nRings : nr;
   *ll = nbytes > comm->nRanks*nr*ll_max_nthreads*comm->threadThreshold ? llEnforced : 1;
   *nthreads = *ll ? ll_max_nthreads : comm->nThreads+1;
@@ -147,7 +147,7 @@ static ncclResult_t saveKernel(int coll, const void* sendbuff, void* recvbuff, s
   }
   int lastChunkSize = 0;
   if (llMode == 1) {
-    int sliceSize = llSliceSize * sizeof(uint64_t) / ncclTypeSize(dtype);
+    int sliceSize = NCCL_LL_SLICE_LINES * sizeof(uint64_t) / ncclTypeSize(dtype);
     const ssize_t loopSize = nBlocks*loopFactor*(ssize_t)sliceSize;
     lastChunkSize = DIVUP((count-count/loopSize*loopSize), nBlocks*loopFactor);
     ALIGN_SIZE(lastChunkSize, nThreads*sizeof(uint64_t)/ncclTypeSize(dtype));
