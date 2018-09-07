@@ -90,7 +90,7 @@ struct ncclConnector {
 };
 
 #define CACHE_LINE_SIZE 128
-#define PAGE_SIZE 4096
+#define MEM_ALIGN 4096
 #define SIZES_FIFO_SIZE 32
 #define CUDA_IPC_MIN 2097152UL /* 2MiB - not currently used */
 
@@ -110,7 +110,7 @@ struct ncclSendMem {
       char pad2[CACHE_LINE_SIZE-sizeof(void*)];
       uint64_t llHead;
     };
-    char pad3[PAGE_SIZE];
+    char pad3[MEM_ALIGN];
   };
 };
 
@@ -124,7 +124,7 @@ struct ncclRecvMem {
       int sizesFifo[SIZES_FIFO_SIZE];
       int llSizesFifo[SIZES_FIFO_SIZE];
     };
-    char pad5[PAGE_SIZE];
+    char pad5[MEM_ALIGN];
   };
   char llBuff[NCCL_LL_BUFF_SIZE];
   char buff[1]; // Actually larger than that
