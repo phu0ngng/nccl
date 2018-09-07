@@ -376,9 +376,11 @@ ncclResult_t netSendProxy(struct ncclProxyArgs* args) {
             while (f1[0] != flag || f2[0] != flag);
           }
           NCCLCHECK(ncclNetIsend(resources->netSendComm, lines, size, ptrType, requests+buffSlot));
-          sizesFifo[buffSlot] = size;
+          sizesFifo[buffSlot] = 0;
           tail += args->sliceSteps;
           idle = 0;
+          // Make sure size is reset to zero before we update the head.
+          __sync_synchronize();
         }
       } else if (tail < *prevTail) {
         // Send through network
@@ -393,11 +395,6 @@ ncclResult_t netSendProxy(struct ncclProxyArgs* args) {
       int buffSlot = head%buffSteps;
       NCCLCHECK(ncclNetTest(requests[buffSlot], &done, NULL));
       if (done) {
-        if (llMode) {
-          sizesFifo[buffSlot] = 0;
-          // Make sure size is reset to zero before we update the head.
-          __sync_synchronize();
-        }
         head += args->sliceSteps;
         *prevHead = head;
         idle = 0;
