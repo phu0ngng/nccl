@@ -254,9 +254,8 @@ ncclResult_t netRecvSetup(ncclTinfo_t* myOpaqueInfo, ncclTinfo_t* peerOpaqueInfo
   NCCLCHECK(ncclCudaHostAlloc((void**)&resources->hostRecvMem, (void**)&resources->devHostRecvMem, recvSize));
 
   struct netInfo* peerInfo = (struct netInfo*)peerOpaqueInfo;
-  INFO(INIT|NET,"Ring %02d : %d -> %d via NET/%s/%d%s%s", ring->id, peerInfo->rank, myInfo->rank, ncclNetName(), resources->netDev,
-      resources->cudaSupport ? "/GDRDMA" : "",
-      (resources->hostDevMem != NULL) ? "/GDCopy" : "");
+  INFO(INIT|NET,"Ring %02d : %d -> %d via NET/%s/%d%s", ring->id, peerInfo->rank, myInfo->rank, ncclNetName(), resources->netDev,
+      resources->cudaSupport ? "/GDRDMA" : "");
   struct netConnectInfo* info = (struct netConnectInfo*) connectInfo;
   NCCLCHECK(ncclNetListen(resources->netDev, &info->netHandle, &resources->netListenComm));
   return ncclSuccess;
@@ -390,17 +389,7 @@ ncclResult_t netSendProxy(struct ncclProxyArgs* args) {
         tail += args->sliceSteps;
         idle = 0;
       }
-<<<<<<< HEAD
     }
-=======
-    } else while (tail < *prevTail) {
-        // Send through network
-        int slot = tail%args->substeps;
-        NCCLCHECK(ncclNetIsend(resources->netSendComm, localBuff+slot*sliceSize, sizesFifo[slot], ptrType, requests+slot));
-        tail++;
-        idle = 0;
-      }
->>>>>>> origin/master
     if (head < tail) {
       int done;
       int buffSlot = head%buffSteps;

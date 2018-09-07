@@ -5,7 +5,6 @@
  ************************************************************************/
 
 #include "core.h"
-#include "common_coll.h"
 
 extern struct ncclTransport p2pTransport;
 extern struct ncclTransport shmTransport;
