@@ -11,9 +11,9 @@ ABSBUILDDIR := $(abspath $(BUILDDIR))
 TARGETS := src test pkg
 clean: ${TARGETS:%=%.clean}
 test.build: src.build
-LICENSE_FILES := NCCL-SLA.txt COPYRIGHT.txt
-LICENSE_TARGETS := $(LICENSE_FILES:%=$(BUILDDIR)/%)
-lic: $(LICENSE_TARGETS)
+LICENCE_FILES := LICENCE.txt
+LICENCE_TARGETS := $(LICENCE_FILES:%=$(BUILDDIR)/%)
+lic: $(LICENCE_TARGETS)
 
 ${BUILDDIR}/%.txt: %.txt
 	@printf "Copying    %-35s > %s\n" $< $@
