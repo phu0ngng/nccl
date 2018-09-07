@@ -1,5 +1,5 @@
 /*************************************************************************
- * Copyright (c) 2015-2016, NVIDIA CORPORATION. All rights reserved.
+ * Copyright (c) 2015-2018, NVIDIA CORPORATION. All rights reserved.
  *
  * See LICENSE.txt for license information
  ************************************************************************/
@@ -502,7 +502,7 @@ static ncclResult_t initTransportsRank(struct ncclComm* comm, ncclUniqueId* comm
   // Compute intra ranks
   int intraRank0 = -1, intraRank = -1, intraRanks = 0;
   for (int r=0; r<nranks; r++) {
-    if ((rankInfos[r].hostHash == rankInfos[rank].hostHash) && 
+    if ((rankInfos[r].hostHash == rankInfos[rank].hostHash) &&
         (rankInfos[r].pidHash == rankInfos[rank].pidHash)) {
       if (intraRanks == 0) intraRank0 = r;
       if (r == rank) intraRank = intraRanks;
@@ -510,10 +510,10 @@ static ncclResult_t initTransportsRank(struct ncclComm* comm, ncclUniqueId* comm
     }
   }
   TRACE(INIT,"hostHash[%d] %lx intraRank %d intraRanks %d intraRank0 %d",
-        rank, rankInfos[rank].hostHash, intraRank, intraRanks, intraRank0);
+      rank, rankInfos[rank].hostHash, intraRank, intraRanks, intraRank0);
   if (intraRank == -1 || intraRank0 == -1 || rankInfos[intraRank0].comm == NULL) {
     WARN("Failed to determine intra ranks hostHash[%d] %lx intraRank %d intraRanks %d intraRank0 %d",
-         rank, rankInfos[rank].hostHash, intraRank, intraRanks, intraRank0);
+        rank, rankInfos[rank].hostHash, intraRank, intraRanks, intraRank0);
     return ncclInternalError;
   }
   NCCLCHECK(ncclCommSetIntra(comm, intraRank, intraRanks, rankInfos[intraRank0].comm));
@@ -602,7 +602,7 @@ static ncclResult_t initTransportsAll(struct ncclComm** comms, const int* devs, 
   ncclTvalue_t* connectValue = (ncclTvalue_t*)malloc(sizeof(ncclTvalue_t)*nranks*nranks);
   for (int rank=0; rank<nranks; rank++)
     NCCLCHECK(fillConnect(allInfo, nranks, rank, connectTransport+nranks*rank, connectValue+nranks*rank));
-  
+
   int* prev = (int*)malloc(sizeof(int)*nranks*MAXRINGS);
   int* prevFinal = (int*)malloc(sizeof(int)*nranks*MAXRINGS);
   int* next = (int*)malloc(sizeof(int)*nranks*MAXRINGS);
@@ -731,14 +731,14 @@ ncclResult_t ncclCommInitAll(ncclComm_t* comms, int ndev, const int* devlist) {
   res = ncclSuccess;
   goto final;
 
-  cleanup:
+cleanup:
   for(rank=0; rank<ndev; ++rank) {
     if(comms[rank] != NULL) {
       commFree(comms[rank]);
     }
   }
 
-  final:
+final:
   if(wrapNvmlShutdown() != ncclSuccess)
     INFO(INIT,"NCCL did not shutdown nvml properly");
   cudaSetDevice(savedDevice);
@@ -770,13 +770,13 @@ ncclResult_t ncclCommDestroy(ncclComm_t comm) {
 NCCL_API(const char*, ncclGetErrorString, ncclResult_t code);
 const char* ncclGetErrorString(ncclResult_t code) {
   switch (code) {
-  case ncclSuccess                : return "no error";
-  case ncclUnhandledCudaError     : return "unhandled cuda error";
-  case ncclSystemError            : return "unhandled system error";
-  case ncclInternalError          : return "internal error";
-  case ncclInvalidArgument        : return "invalid argument";
-  case ncclInvalidUsage           : return "invalid usage";
-  default                         : return "unknown result code";
+    case ncclSuccess                : return "no error";
+    case ncclUnhandledCudaError     : return "unhandled cuda error";
+    case ncclSystemError            : return "unhandled system error";
+    case ncclInternalError          : return "internal error";
+    case ncclInvalidArgument        : return "invalid argument";
+    case ncclInvalidUsage           : return "invalid usage";
+    default                         : return "unknown result code";
   }
 }
 

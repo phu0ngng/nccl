@@ -1,5 +1,5 @@
 /*************************************************************************
- * Copyright (c) 2015-2016, NVIDIA CORPORATION. All rights reserved.
+ * Copyright (c) 2015-2018, NVIDIA CORPORATION. All rights reserved.
  *
  * See LICENSE.txt for license information
  ************************************************************************/
@@ -286,12 +286,12 @@ __device__ inline void ReduceCopy128b( const int w, const int nw, const int t,
   dest0 += offset; if (TWO_OUTPUTS) dest1 += offset;
 
   while (src0 < src0_end) {
-    #pragma unroll
+#pragma unroll
     for (int u = 0; u < UNROLL; ++u) {
       Fetch128(t0[u], src0+u*WARP_SIZE);
       if (TWO_INPUTS) Fetch128(t1[u], src1+u*WARP_SIZE);
     }
-    #pragma unroll
+#pragma unroll
     for (int u = 0; u < UNROLL; ++u) {
       if (TWO_INPUTS) MULTI128<FUNC, T>()(t0[u], t1[u]);
       Store128(dest0+u*WARP_SIZE, t0[u]);
@@ -315,8 +315,8 @@ __device__ inline void ReduceOrCopy(const int tid, const int nthreads,
   // stage 0: check if we'll be able to use the fast, 128-bit aligned path.
   // If not, we'll just use the slow preamble path for the whole operation
   bool alignable = (((AlignUp(src0,  alignof(Pack128)) == src0  + Npreamble)) &&
-      (!HAS_DEST1 || (AlignUp(dest1, alignof(Pack128)) == dest1 + Npreamble)) &&
-      (!HAS_SRC1  || (AlignUp(src1,  alignof(Pack128)) == src1  + Npreamble)));
+          (!HAS_DEST1 || (AlignUp(dest1, alignof(Pack128)) == dest1 + Npreamble)) &&
+          (!HAS_SRC1  || (AlignUp(src1,  alignof(Pack128)) == src1  + Npreamble)));
 
   if (!alignable) {
     Npreamble = Nrem;

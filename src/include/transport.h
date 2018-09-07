@@ -1,5 +1,5 @@
 /*************************************************************************
- * Copyright (c) 2016, NVIDIA CORPORATION. All rights reserved.
+ * Copyright (c) 2016-2018, NVIDIA CORPORATION. All rights reserved.
  *
  * See LICENSE.txt for license information
  ************************************************************************/
@@ -13,6 +13,11 @@
 #define NTRANSPORTS 3
 
 extern struct ncclTransport ncclTransports[];
+
+// Forward declarations
+struct ncclRing;
+struct ncclConnector;
+struct ncclComm;
 
 #define RANK_INFO_SIZE 64
 typedef char ncclTinfo_t[RANK_INFO_SIZE];

@@ -1,5 +1,5 @@
 /*************************************************************************
- * Copyright (c) 2016, NVIDIA CORPORATION. All rights reserved.
+ * Copyright (c) 2016-2018, NVIDIA CORPORATION. All rights reserved.
  *
  * See LICENSE.txt for license information
  ************************************************************************/
@@ -18,7 +18,7 @@
 
 /* Init functions */
 
-int ncclSocketPtrSupport(int dev, int* supportedTypes) {
+ncclResult_t ncclSocketPtrSupport(int dev, int* supportedTypes) {
   *supportedTypes = NCCL_PTR_HOST;
   return ncclSuccess;
 }
@@ -43,7 +43,7 @@ static void initDevices() {
   }
 }
 
-int ncclSocketDevices(int* ndev, int** scores) {
+ncclResult_t ncclSocketDevices(int* ndev, int** scores) {
   initDevices();
   *ndev = ncclNetIfs;
   int cudaDev;
@@ -100,19 +100,19 @@ struct ncclSocketComm* ncclSocketNewComm() {
   return comm;
 }
 
-int ncclSocketCreateHandle(void* opaqueHandle, const char* str) {
+ncclResult_t ncclSocketCreateHandle(void* opaqueHandle, const char* str) {
   struct ncclSocketHandle* handle = (struct ncclSocketHandle*) opaqueHandle;
   NCCLCHECK(GetSocketAddrFromString(&(handle->connectAddr), str));
   return ncclSuccess;
 }
 
-int ncclSocketListen(int dev, void* opaqueHandle, void** listenComm) {
+ncclResult_t ncclSocketListen(int dev, void* opaqueHandle, void** listenComm) {
   struct ncclSocketHandle* handle = (struct ncclSocketHandle*) opaqueHandle;
   static_assert(sizeof(struct ncclSocketHandle) < NCCL_NET_HANDLE_MAXSIZE, "ncclSocketHandle size too large");
   // if dev >= 0, listen based on dev
   if (dev >= 0) {
     NCCLCHECK(GetSocketAddr(dev, &(handle->connectAddr)));
-  } else if (dev == -1) {
+  } else if (dev == findSubnetIf) {
     // handle stores a remote address
     // need to find a local addr that is in the same network as the remote addr
     union socketAddress localAddr;
@@ -130,7 +130,7 @@ int ncclSocketListen(int dev, void* opaqueHandle, void** listenComm) {
   return ncclSuccess;
 }
 
-int ncclSocketConnect(int dev, void* opaqueHandle, void** sendComm) {
+ncclResult_t ncclSocketConnect(int dev, void* opaqueHandle, void** sendComm) {
   struct ncclSocketComm* comm = ncclSocketNewComm();
   struct ncclSocketHandle* handle = (struct ncclSocketHandle*) opaqueHandle;
   NCCLCHECK(connectAddress(&comm->fd, &handle->connectAddr));
@@ -138,7 +138,7 @@ int ncclSocketConnect(int dev, void* opaqueHandle, void** sendComm) {
   return ncclSuccess;
 }
 
-int ncclSocketAccept(void* listenComm, void** recvComm) {
+ncclResult_t ncclSocketAccept(void* listenComm, void** recvComm) {
   struct ncclSocketComm* lComm = (struct ncclSocketComm*)listenComm;
   struct ncclSocketComm* rComm = ncclSocketNewComm();
   struct sockaddr_in sockaddr;
@@ -168,8 +168,8 @@ ncclResult_t ncclSocketGetRequest(struct ncclSocketReqs* reqs, struct ncclSocket
   return ncclInternalError;
 }
 
-int ncclSocketIsend(void* sendComm, void* data, int size, int type, void** request) {
-  if (type != NCCL_PTR_HOST) return 1;
+ncclResult_t ncclSocketIsend(void* sendComm, void* data, int size, int type, void** request) {
+  if (type != NCCL_PTR_HOST) return ncclInternalError;
   struct ncclSocketComm* comm = (struct ncclSocketComm*)sendComm;
   *request = NULL;
   NCCLCHECK(socketSend(comm->fd, &size, sizeof(int)));
@@ -177,8 +177,8 @@ int ncclSocketIsend(void* sendComm, void* data, int size, int type, void** reque
   return ncclSuccess;
 }
 
-int ncclSocketIrecv(void* recvComm, void* data, int size, int type, void** request) {
-  if (type != NCCL_PTR_HOST) return 1;
+ncclResult_t ncclSocketIrecv(void* recvComm, void* data, int size, int type, void** request) {
+  if (type != NCCL_PTR_HOST) return ncclInternalError;
   struct ncclSocketComm* comm = (struct ncclSocketComm*)recvComm;
   int recvSize;
   NCCLCHECK(socketReceive(comm->fd, &recvSize, sizeof(int)));
@@ -194,12 +194,12 @@ int ncclSocketIrecv(void* recvComm, void* data, int size, int type, void** reque
   return ncclSuccess;
 }
 
-int ncclSocketFlush(void* recvComm, void* data, int size) {
+ncclResult_t ncclSocketFlush(void* recvComm, void* data, int size) {
   // We don't support CUDA pointers, so we don't need a flush operation
   return ncclInternalError;
 }
 
-int ncclSocketTest(void* request, int* done, int* size) {
+ncclResult_t ncclSocketTest(void* request, int* done, int* size) {
   *done = 1;
   struct ncclSocketRequest *r = (struct ncclSocketRequest*)request;
   if (r) {
@@ -209,7 +209,7 @@ int ncclSocketTest(void* request, int* done, int* size) {
   return ncclSuccess;
 }
 
-int ncclSocketClose(void* opaqueComm) {
+ncclResult_t ncclSocketClose(void* opaqueComm) {
   struct ncclSocketComm* comm = (struct ncclSocketComm*)opaqueComm;
   if (comm) {
     free(comm->reqs.requests);

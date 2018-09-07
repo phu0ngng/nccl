@@ -1,5 +1,5 @@
 /*************************************************************************
- * Copyright (c) 2017, NVIDIA CORPORATION. All rights reserved.
+ * Copyright (c) 2017-2018, NVIDIA CORPORATION. All rights reserved.
  *
  * See LICENSE.txt for license information
  ************************************************************************/
@@ -50,19 +50,19 @@
 
 // Must be consistent with the ncclFuncSet enum
 static void* const ncclKerns[ncclCollCount*ncclNumOps*ncclNumTypes*2] = {
-    NCCL_FUNCS2B(ncclBroadcast),
-    NCCL_FUNCS2A(ncclReduce),
-    NCCL_FUNCS2B(ncclAllGather),
-    NCCL_FUNCS2A(ncclReduceScatter),
-    NCCL_FUNCS2A(ncclAllReduce)
+  NCCL_FUNCS2B(ncclBroadcast),
+  NCCL_FUNCS2A(ncclReduce),
+  NCCL_FUNCS2B(ncclAllGather),
+  NCCL_FUNCS2A(ncclReduceScatter),
+  NCCL_FUNCS2A(ncclAllReduce)
 };
 
 ncclResult_t ncclLaunchCooperativeKernelMultiDevice(struct cudaLaunchParams *paramsList, int* cudaDevs, int numDevices, int cgMode) {
 #if __CUDACC_VER_MAJOR__ >= 9
   if (cgMode & 0x01) {
     CUDACHECK(cudaLaunchCooperativeKernelMultiDevice(paramsList, numDevices,
-          // These flags are to reduce the latency of using this API
-          cudaCooperativeLaunchMultiDeviceNoPreSync|cudaCooperativeLaunchMultiDeviceNoPostSync));
+            // These flags are to reduce the latency of using this API
+            cudaCooperativeLaunchMultiDeviceNoPreSync|cudaCooperativeLaunchMultiDeviceNoPostSync));
     return ncclSuccess;
   }
 #endif
@@ -176,9 +176,9 @@ ncclResult_t ncclBarrierEnqueueWait(ncclComm_t comm) {
   if (comm->rank == 0 && *comm->intraCGMode & 0x10) {
     *comm->intraCGMode ^= 0x10;
     INFO(INIT,"Launch mode %s%s%s",
-         comm->launchMode == ncclComm::GROUP ? "Group" : "Parallel",
-         *comm->intraCGMode ? "/CGMD" : "",
-         (comm->launchMode == ncclComm::GROUP && comm->groupCudaStream) ? "/Stream" : "");
+        comm->launchMode == ncclComm::GROUP ? "Group" : "Parallel",
+        *comm->intraCGMode ? "/CGMD" : "",
+        (comm->launchMode == ncclComm::GROUP && comm->groupCudaStream) ? "/Stream" : "");
   }
 
   NCCLCHECK(ncclCpuBarrierOut(comm));

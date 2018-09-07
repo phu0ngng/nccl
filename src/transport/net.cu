@@ -1,5 +1,5 @@
 /*************************************************************************
- * Copyright (c) 2016, NVIDIA CORPORATION. All rights reserved.
+ * Copyright (c) 2016-2018, NVIDIA CORPORATION. All rights reserved.
  *
  * See LICENSE.txt for license information
  ************************************************************************/
@@ -141,17 +141,17 @@ ncclResult_t netGetRings(int nranks, int* groups, int* subgroups, ncclTvalue_t* 
       int nranksInGroup = 0;
       int nsubGroups = 0;
       for (int rank=0; rank<nranks; rank++) if (groups[rank] == group) {
-        nranksInGroup++;
-        nsubGroups = std::max(subgroups[rank], nsubGroups);
-      }
+          nranksInGroup++;
+          nsubGroups = std::max(subgroups[rank], nsubGroups);
+        }
       starts[group] = ends[group] = -1;
       // Receive on the rank closest to the NIC
       for (int card=0; card<NET_MAX_IFS; card++) {
         if (cardUsed[group*NET_MAX_IFS+card] == 1) continue;
         int start = groupBestStart(nranks, groups, group, values, card, minScore);
         // Send from any rank, but best on a different subgroup and close to the NIC also.
-        int end = (nranksInGroup == 1) ? start 
-          : groupBestEnd(nranks, groups, group, subgroups, nsubGroups ? subgroups[start] : -1, start, values, card, minScore);
+        int end = (nranksInGroup == 1) ? start
+            : groupBestEnd(nranks, groups, group, subgroups, nsubGroups ? subgroups[start] : -1, start, values, card, minScore);
         //printf("Ring %d, Minscore %d, Card %d, group %d, start = %d, end = %d\n", ring, minScore, card, group, start, end);
         if (start != -1 && end != -1) {
           cardUsed[group*NET_MAX_IFS+card] = 1;
@@ -254,8 +254,9 @@ ncclResult_t netRecvSetup(ncclTinfo_t* myOpaqueInfo, ncclTinfo_t* peerOpaqueInfo
   NCCLCHECK(ncclCudaHostAlloc((void**)&resources->hostRecvMem, (void**)&resources->devHostRecvMem, recvSize));
 
   struct netInfo* peerInfo = (struct netInfo*)peerOpaqueInfo;
-  INFO(INIT|NET,"Ring %02d : %d -> %d via NET/%s/%d%s", ring->id, peerInfo->rank, myInfo->rank, ncclNetName(), resources->netDev,
-      resources->cudaSupport ? "/GDRDMA" : "");
+  INFO(INIT|NET,"Ring %02d : %d -> %d via NET/%s/%d%s%s", ring->id, peerInfo->rank, myInfo->rank, ncclNetName(), resources->netDev,
+      resources->cudaSupport ? "/GDRDMA" : "",
+      (resources->hostDevMem != NULL) ? "/GDCopy" : "");
   struct netConnectInfo* info = (struct netConnectInfo*) connectInfo;
   NCCLCHECK(ncclNetListen(resources->netDev, &info->netHandle, &resources->netListenComm));
   return ncclSuccess;
@@ -389,7 +390,17 @@ ncclResult_t netSendProxy(struct ncclProxyArgs* args) {
         tail += args->sliceSteps;
         idle = 0;
       }
+<<<<<<< HEAD
     }
+=======
+    } else while (tail < *prevTail) {
+        // Send through network
+        int slot = tail%args->substeps;
+        NCCLCHECK(ncclNetIsend(resources->netSendComm, localBuff+slot*sliceSize, sizesFifo[slot], ptrType, requests+slot));
+        tail++;
+        idle = 0;
+      }
+>>>>>>> origin/master
     if (head < tail) {
       int done;
       int buffSlot = head%buffSteps;

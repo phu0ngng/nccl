@@ -1,5 +1,5 @@
 /*************************************************************************
- * Copyright (c) 2016, NVIDIA CORPORATION. All rights reserved.
+ * Copyright (c) 2016-2018, NVIDIA CORPORATION. All rights reserved.
  *
  * See LICENSE.txt for license information
  ************************************************************************/
@@ -78,8 +78,8 @@ ncclResult_t p2pCanConnect(ncclTvalue_t* ret, ncclTinfo_t* myOpaqueInfo, ncclTin
 
   // Do not detect topology if we're on the same GPU. Note this is not really supported.
   if (myInfo->cudaDev == peerInfo->cudaDev) {
-      *ret = 1 + PATH_SOC;
-      return ncclSuccess;
+    *ret = 1 + PATH_SOC;
+    return ncclSuccess;
   }
 
   // See if CUDA can do P2P
@@ -126,18 +126,18 @@ static int computeRingsRec(ncclTvalue_t* matrix, int n, int *rings, int currentR
       if (currentRing+1 == nRingsMax) {
         nrings = 1;
       } else {
-	line[looprank]--;
-	for (int i=0; i<n; i++) inTheRing[i] = 0;
+        line[looprank]--;
+        for (int i=0; i<n; i++) inTheRing[i] = 0;
         if (connect) {
           // First two slots are already set and we need to respect those constraints
           inTheRing[rings[currentStep]] = 1;
-	  nrings = 1 + computeRingsRec(matrix, n, rings, currentRing+1, nRingsMax, inTheRing, rings[currentStep+1], n-2, connect);
+          nrings = 1 + computeRingsRec(matrix, n, rings, currentRing+1, nRingsMax, inTheRing, rings[currentStep+1], n-2, connect);
         } else {
           rings[(currentRing+1)*n] = 0;
-	  nrings = 1 + computeRingsRec(matrix, n, rings, currentRing+1, nRingsMax, inTheRing, 0, n-1, connect);
+          nrings = 1 + computeRingsRec(matrix, n, rings, currentRing+1, nRingsMax, inTheRing, 0, n-1, connect);
         }
-	line[looprank]++;
-	for (int i=0; i<n; i++) inTheRing[i] = 1;
+        line[looprank]++;
+        for (int i=0; i<n; i++) inTheRing[i] = 1;
       }
     }
   } else {
@@ -227,7 +227,7 @@ int p2pComputeRingsNvLink(ncclTvalue_t* values, int nranks, int* rings, int nrin
   // Compute rings
   ncclTvalue_t* matrix = (ncclTvalue_t*)malloc(sizeof(ncclTvalue_t)*nranks*nranks);
   for (int i=0; i<nranks; i++) for (int j=0; j<nranks; j++)
-    matrix[i*nranks+j] = oversubscribe ? values[i*nranks+j]/CONNECT_NVLINK*2 : values[i*nranks+j]/CONNECT_NVLINK ;
+      matrix[i*nranks+j] = oversubscribe ? values[i*nranks+j]/CONNECT_NVLINK*2 : values[i*nranks+j]/CONNECT_NVLINK ;
 
   int compNrings = p2pComputeRingsNvLink(matrix, nranks, rings, nrings, connect);
 
@@ -385,7 +385,7 @@ ncclResult_t p2pGetRings(int nranks, int* groups, int* subgroups, ncclTvalue_t* 
     // NVSwitch : Connect existing rings
     int nringsConnected = p2pComputeRingsSeqConnect(values, nranks, rings, nrings, prev, next, minScore, nthreads);
     if (nringsConnected > 0) {
-     nrings = nringsConnected;
+      nrings = nringsConnected;
     } else {
       nrings = std::min(nrings, nvswitchLinks); // NVSwitch: Limit rings to number of NVLinks
       // Or create new ones
@@ -458,11 +458,11 @@ ncclResult_t p2pSendSetup(ncclTinfo_t* myOpaqueInfo, ncclTinfo_t* peerOpaqueInfo
         cudaGetLastError();
       } else if (err != cudaSuccess) {
         WARN("failed to peer with device %d: %d %s",
-             peerInfo->cudaDev, err, cudaGetErrorString(err));
+            peerInfo->cudaDev, err, cudaGetErrorString(err));
         return ncclInternalError;
       }
       INFO(INIT|P2P,"Ring %02d : %d[%d] -> %d[%d] via P2P/direct pointer",
-           ring->id, myInfo->rank, myInfo->cudaDev, peerInfo->rank, peerInfo->cudaDev);
+          ring->id, myInfo->rank, myInfo->cudaDev, peerInfo->rank, peerInfo->cudaDev);
     }
   } else {
     info.direct = 0;
@@ -470,11 +470,11 @@ ncclResult_t p2pSendSetup(ncclTinfo_t* myOpaqueInfo, ncclTinfo_t* peerOpaqueInfo
     cudaError_t err = cudaIpcGetMemHandle(&info.devIpc, (void*)ring->devMemSend);
     if (err != cudaSuccess) {
       WARN("rank %d failed to get CUDA IPC handle to device %d : %d %s",
-           myInfo->rank, peerInfo->cudaDev, err, cudaGetErrorString(err));
+          myInfo->rank, peerInfo->cudaDev, err, cudaGetErrorString(err));
       return ncclInternalError;
     }
     INFO(INIT|P2P,"Ring %02d : %d[%d] -> %d[%d] via P2P/IPC",
-         ring->id, myInfo->rank, myInfo->cudaDev, peerInfo->rank, peerInfo->cudaDev);
+        ring->id, myInfo->rank, myInfo->cudaDev, peerInfo->rank, peerInfo->cudaDev);
     //TRACE_DUMP_IPC(&info.devIpc);
   }
   static_assert(sizeof(struct p2pConnectInfo) <= sizeof(struct ncclConnect), "p2p Connect Info is too big");
@@ -499,7 +499,7 @@ ncclResult_t p2pRecvSetup(ncclTinfo_t* myOpaqueInfo, ncclTinfo_t* peerOpaqueInfo
         cudaGetLastError();
       } else if (err != cudaSuccess) {
         WARN("failed to peer with device %d: %d %s",
-             peerInfo->cudaDev, err, cudaGetErrorString(err));
+            peerInfo->cudaDev, err, cudaGetErrorString(err));
         return ncclInternalError;
       }
       TRACE(INIT|P2P,"Ring %02d : %d[%d] <- %d[%d] via P2P/direct pointer", ring->id, myInfo->rank, myInfo->cudaDev, peerInfo->rank, peerInfo->cudaDev);
@@ -510,7 +510,7 @@ ncclResult_t p2pRecvSetup(ncclTinfo_t* myOpaqueInfo, ncclTinfo_t* peerOpaqueInfo
     cudaError_t err = cudaIpcGetMemHandle(&info.devIpc, (void*)ring->devMemRecv);
     if (err != cudaSuccess) {
       WARN("rank %d failed to get CUDA IPC handle to device %d : %d %s",
-           myInfo->rank, peerInfo->cudaDev, err, cudaGetErrorString(err));
+          myInfo->rank, peerInfo->cudaDev, err, cudaGetErrorString(err));
       return ncclInternalError;
     }
     TRACE(INIT|P2P,"Ring %02d : %d[%d] <- %d[%d] via P2P/IPC", ring->id, myInfo->rank, myInfo->cudaDev, peerInfo->rank, peerInfo->cudaDev);
@@ -540,7 +540,7 @@ static ncclResult_t p2pSendConnect(struct ncclConnect* connectInfo, struct ncclC
     remDevMem = (struct ncclRecvMem*)remPtr;
     if (err != cudaSuccess) {
       WARN("failed to open CUDA IPC handle : %d %s",
-           err, cudaGetErrorString(err));
+          err, cudaGetErrorString(err));
       return ncclUnhandledCudaError;
     }
   }
@@ -573,7 +573,7 @@ ncclResult_t p2pRecvConnect(struct ncclConnect* connectInfo, struct ncclConnecto
     remDevMem = (struct ncclSendMem*)remPtr;
     if (err != cudaSuccess) {
       WARN("failed to open CUDA IPC handle : %d %s",
-           err, cudaGetErrorString(err));
+          err, cudaGetErrorString(err));
       return ncclUnhandledCudaError;
     }
   }

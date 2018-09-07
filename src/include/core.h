@@ -1,5 +1,5 @@
 /*************************************************************************
- * Copyright (c) 2015-2016, NVIDIA CORPORATION. All rights reserved.
+ * Copyright (c) 2015-2018, NVIDIA CORPORATION. All rights reserved.
  *
  * See LICENSE.txt for license information
  ************************************************************************/
@@ -19,8 +19,7 @@
 #include <cuda_runtime.h>
 
 #if __CUDACC_VER_MAJOR__ < 9
-struct cudaLaunchParams
-{
+struct cudaLaunchParams {
   void *func;
   dim3 gridDim;
   dim3 blockDim;
@@ -118,7 +117,7 @@ struct ncclConnector {
 };
 
 #define CACHE_LINE_SIZE 128
-#define PAGE_SIZE 4096
+#define MEM_ALIGN 4096
 #define CUDA_IPC_MIN 2097152UL /* 2MiB - not currently used */
 
 #define NCCL_LL_CHUNKS 8
@@ -137,7 +136,7 @@ struct ncclSendMem {
       char pad2[CACHE_LINE_SIZE-sizeof(void*)];
       uint64_t llHead;
     };
-    char pad3[PAGE_SIZE];
+    char pad3[MEM_ALIGN];
   };
 };
 
@@ -151,7 +150,7 @@ struct ncclRecvMem {
       int sizesFifo[NCCL_STEPS];
       int llSizesFifo[NCCL_STEPS];
     };
-    char pad5[PAGE_SIZE];
+    char pad5[MEM_ALIGN];
   };
   char llBuff[NCCL_LL_BUFF_SIZE];
   char buff[1]; // Actually larger than that
@@ -240,10 +239,10 @@ struct ncclComm {
   // where syncs are not symmetric).
   uint64_t opCount;
 
-  // Rings for collectives 
+  // Rings for collectives
   int nRings;
   int nThreads;
-  
+
   // Low-latency algorithm threshold
   ssize_t llThreshold;
   ssize_t threadThreshold;

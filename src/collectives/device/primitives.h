@@ -1,5 +1,5 @@
 /*************************************************************************
- * Copyright (c) 2016, NVIDIA CORPORATION. All rights reserved.
+ * Copyright (c) 2016-2018, NVIDIA CORPORATION. All rights reserved.
  *
  * See LICENSE.txt for license information
  ************************************************************************/
@@ -30,7 +30,7 @@
 class WaitFlag {
   volatile uint64_t * const flag;
   const int shift;
-  public:
+ public:
   __device__ __forceinline__
   WaitFlag(volatile uint64_t * const flag, const int shift) : flag(flag), shift(shift) { }
   __device__ __forceinline__
@@ -43,7 +43,7 @@ class PostFlag {
   const int shift;
   volatile int * const fifo;
   const int fifo_size;
-  public:
+ public:
   __device__ __forceinline__
   PostFlag(volatile uint64_t* const flag, const int shift, volatile int* const fifo, const int fifo_size) : flag(flag), shift(shift), fifo(fifo), fifo_size(fifo_size) { }
   __device__ __forceinline__
@@ -128,17 +128,17 @@ nullptr_t ptradd(nullptr_t ptr, int i) {
 // Implementation of primitive types
 template <int UNROLL, int SLICESPERCHUNK, int SLICESTEPS, typename T, typename REDOP=FuncSum<T> >
 class Primitives {
-  private:
+ private:
   template <typename SRC2_T, // either T* or nullptr_t
-            typename DST2_T, // either T* or nullptr_t
-            typename... SYNC_Ts> // either WaitFunc or PostFunc
+      typename DST2_T, // either T* or nullptr_t
+      typename... SYNC_Ts> // either WaitFunc or PostFunc
   static __device__ __forceinline__ void
   GenericOp(const int tid, const int nthreads,
-            const T*     src1,
-            const SRC2_T src2,
-                  T*     dst1,
-                  DST2_T dst2,
-            int chunkSize, int size, uint64_t step, SYNC_Ts... flags) {
+      const T*     src1,
+      const SRC2_T src2,
+            T*     dst1,
+            DST2_T dst2,
+      int chunkSize, int size, uint64_t step, SYNC_Ts... flags) {
 
     enum { noSrc2 = std::is_same<SRC2_T, nullptr_t>::value };
     enum { noDst2 = std::is_same<DST2_T, nullptr_t>::value };
@@ -193,7 +193,7 @@ class Primitives {
     }
   }
 
-  public:
+ public:
   template <typename... SYNC_Ts>
   static __device__ __forceinline__ void
   Copy(const int tid, const int nthreads, const T* src, T* dst,

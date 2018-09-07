@@ -1,5 +1,5 @@
 /*************************************************************************
- * Copyright (c) 2016, NVIDIA CORPORATION. All rights reserved.
+ * Copyright (c) 2016-2018, NVIDIA CORPORATION. All rights reserved.
  *
  * See LICENSE.txt for license information
  ************************************************************************/
@@ -90,15 +90,15 @@ static void initDevices() {
     if (ncclNIbDevs == -1) {
       ncclNIbDevs = 0;
       if (findInterfaces(ncclIbIfName, &ncclIbIfAddr, MAX_IF_NAME_SIZE, 1) != 1) {
-          WARN("NET/IB : No IP interface found.");
-          return;
+        WARN("NET/IB : No IP interface found.");
+        return;
       }
       INFO(INIT|NET,"NET/IB : Using interface %s for sideband communication", ncclIbIfName);
 
       // Detect IB cards
       int nIbDevs;
       struct ibv_device** devices;
-      
+
       // Check if user defined which IB device:port to use
       char* userIbEnv = getenv("NCCL_IB_HCA");
       struct netIf userIfs[MAX_IB_DEVS];
@@ -108,10 +108,10 @@ static void initDevices() {
       if (ncclSuccess != wrap_ibv_get_device_list(&devices, &nIbDevs)) return;
 
       for (int d=0; d<nIbDevs; d++) {
-        struct ibv_context * context; 
+        struct ibv_context * context;
         if (ncclSuccess != wrap_ibv_open_device(&context, devices[d])) {
-            WARN("NET/IB : Unable to open device %s", devices[d]->name);
-            continue;
+          WARN("NET/IB : Unable to open device %s", devices[d]->name);
+          continue;
         }
         int found = 0;
         if (context) {
@@ -143,7 +143,7 @@ static void initDevices() {
             ncclNIbDevs++;
             found++;
             pthread_create(&ncclIbAsyncThread, NULL, ncclIbAsyncThreadMain, context);
-          } 
+          }
 
           if (found == 0) { if (ncclSuccess != wrap_ibv_close_device(context)) { return; } }
         }
@@ -155,7 +155,7 @@ static void initDevices() {
   }
 }
 
-int ncclIbDevices(int* ndev, int** scores) {
+ncclResult_t ncclIbDevices(int* ndev, int** scores) {
   initDevices();
   *ndev = ncclNIbDevs;
   int cudaDev;
@@ -181,23 +181,22 @@ int ncclIbDevices(int* ndev, int** scores) {
 
 // Detect whether GDR can work on a given NIC with the current CUDA device
 // Returns :
-// 0 : GDR works
-// 1 : no module
-// 2 : module loaded but not supported by GPU
-int ncclIbGdrSupport(int ibDev) {
+// ncclSuccess : GDR works
+// ncclSystemError : no module or module loaded but not supported by GPU
+ncclResult_t ncclIbGdrSupport(int ibDev) {
   static int moduleLoaded = -1;
   if (moduleLoaded == -1) {
     moduleLoaded = (access("/sys/kernel/mm/memory_peers/nv_mem/version", F_OK) == -1) ? 0 : 1;
   }
-  if (moduleLoaded == 0) return 1;
-  int ret = 2;
+  if (moduleLoaded == 0) return ncclSystemError;
+  ncclResult_t ret = ncclSystemError;
   void* ptr;
   if (cudaMalloc(&ptr, sizeof(int)) == cudaSuccess) {
     struct ibv_mr* mr;
     struct ibv_pd* pd;
     if (wrap_ibv_alloc_pd(&pd, ncclIbDevs[ibDev].context) == ncclSuccess) {
       if ((mr = wrap_direct_ibv_reg_mr(pd, ptr, sizeof(int), IBV_ACCESS_LOCAL_WRITE|IBV_ACCESS_REMOTE_WRITE|IBV_ACCESS_REMOTE_READ)) != NULL) {
-        ret = 0;
+        ret = ncclSuccess;
         wrap_ibv_dereg_mr(mr);
       }
       wrap_ibv_dealloc_pd(pd);
@@ -210,12 +209,12 @@ int ncclIbGdrSupport(int ibDev) {
 NCCL_PARAM(IbGdrLevel, "IB_GDR_LEVEL", -2);
 NCCL_PARAM(IbCudaSupport, "IB_CUDA_SUPPORT", -2);
 
-int ncclIbPtrSupport(int dev, int* supportedTypes) {
+ncclResult_t ncclIbPtrSupport(int dev, int* supportedTypes) {
   initDevices();
   *supportedTypes = NCCL_PTR_HOST;
 
   int cudaDev;
-  if (cudaGetDevice(&cudaDev) != cudaSuccess) return 0;
+  if (cudaGetDevice(&cudaDev) != cudaSuccess) return ncclSuccess;
 
   int ibGdrLevel = PATH_PHB;
   if (ncclParamIbCudaSupport() != -2) ibGdrLevel = ncclParamIbCudaSupport() ? PATH_SOC + 1 : 0;
@@ -228,12 +227,12 @@ int ncclIbPtrSupport(int dev, int* supportedTypes) {
     }
   }
 
-  if (ibGdrLevel <= 0) return 0;
+  if (ibGdrLevel <= 0) return ncclSuccess;
 
   char* cudaPath;
-  if (getCudaPath(cudaDev, &cudaPath) != ncclSuccess) return 0;
+  if (getCudaPath(cudaDev, &cudaPath) != ncclSuccess) return ncclSuccess;
   char* mlxPath;
-  if (getMlxPath(ncclIbDevs[dev].devName, &mlxPath) != ncclSuccess) { free(cudaPath); return 0; }
+  if (getMlxPath(ncclIbDevs[dev].devName, &mlxPath) != ncclSuccess) { free(cudaPath); return ncclSuccess; }
   int distance = (mlxPath == NULL || cudaPath == NULL) ? PATH_SOC : pciDistance(mlxPath, cudaPath);
   free(mlxPath); free(cudaPath);
   if (distance < ibGdrLevel) {
@@ -241,7 +240,7 @@ int ncclIbPtrSupport(int dev, int* supportedTypes) {
   } else {
     INFO(INIT|NET,"NET/IB : GPU Direct RDMA Disabled for GPU %d / HCA %s (distance %d >= %d)", cudaDev, ncclIbDevs[dev].devName, distance, ibGdrLevel);
   }
-  return 0;
+  return ncclSuccess;
 }
 
 static ncclResult_t GetSocketAddr(union socketAddress* addr) {
@@ -278,7 +277,6 @@ struct ncclIbMr {
 
 struct ncclIbVerbs {
   struct ibv_pd* pd;
-  struct ibv_comp_channel* cc;
   struct ibv_cq* cq;
   struct ncclIbMr mrPool[MAX_REQUESTS];
   int mrRotation;
@@ -348,14 +346,12 @@ struct ncclIbRecvComm {
 
 ncclResult_t ncclIbInitVerbs(ibv_context* ctx, struct ncclIbVerbs* verbs) {
   NCCLCHECK(wrap_ibv_alloc_pd(&verbs->pd, ctx));
-  NCCLCHECK(wrap_ibv_create_comp_channel(&verbs->cc, ctx));
-  NCCLCHECK(wrap_ibv_create_cq(&verbs->cq, ctx, MAX_REQUESTS, NULL, verbs->cc, 0));
+  NCCLCHECK(wrap_ibv_create_cq(&verbs->cq, ctx, MAX_REQUESTS, NULL, NULL, 0));
   return ncclSuccess;
 }
 
 ncclResult_t ncclIbDestroyVerbs(struct ncclIbVerbs* verbs) {
   NCCLCHECK(wrap_ibv_destroy_cq(verbs->cq));
-  NCCLCHECK(wrap_ibv_destroy_comp_channel(verbs->cc));
   NCCLCHECK(wrap_ibv_dealloc_pd(verbs->pd));
   return ncclSuccess;
 }
@@ -424,7 +420,7 @@ ncclResult_t ncclIbRtsQp(ibv_qp* qp) {
 }
 
 
-int ncclIbListen(int dev, void* opaqueHandle, void** listenComm) {
+ncclResult_t ncclIbListen(int dev, void* opaqueHandle, void** listenComm) {
   struct ncclIbListenComm* comm = (struct ncclIbListenComm*)malloc(sizeof(struct ncclIbListenComm));
   struct ncclIbHandle* handle = (struct ncclIbHandle*) opaqueHandle;
   static_assert(sizeof(struct ncclIbHandle) < NCCL_NET_HANDLE_MAXSIZE, "ncclIbHandle size too large");
@@ -435,14 +431,14 @@ int ncclIbListen(int dev, void* opaqueHandle, void** listenComm) {
   return ncclSuccess;
 }
 
-int ncclIbConnect(int dev, void* opaqueHandle, void** sendComm) {
+ncclResult_t ncclIbConnect(int dev, void* opaqueHandle, void** sendComm) {
   struct ncclIbSendComm* comm;
   NCCLCHECK(ncclIbMalloc((void**)&comm, sizeof(struct ncclIbSendComm)));
 
   struct ncclIbHandle* handle = (struct ncclIbHandle*) opaqueHandle;
   NCCLCHECK(connectAddress(&comm->fd, &handle->connectAddr));
   *sendComm = comm;
-  
+
   // IB Setup
   initDevices(); /*NOTE: We need to do this for ncclNet unit test that bypasses nccl initialization*/
   ibv_context* ctx = ncclIbDevs[dev].context;
@@ -481,11 +477,11 @@ int ncclIbConnect(int dev, void* opaqueHandle, void** sendComm) {
 
 NCCL_PARAM(IbGdrFlushDisable, "GDR_FLUSH_DISABLE", 0);
 
-int ncclIbAccept(void* listenComm, void** recvComm) {
+ncclResult_t ncclIbAccept(void* listenComm, void** recvComm) {
   struct ncclIbListenComm* lComm = (struct ncclIbListenComm*)listenComm;
   struct ncclIbRecvComm* rComm;
   NCCLCHECK(ncclIbMalloc((void**)&rComm, sizeof(struct ncclIbRecvComm)));
-  
+
   struct sockaddr_in sockaddr;
   socklen_t socklen = sizeof(struct sockaddr_in);
   SYSCHECKVAL(accept(lComm->fd, (struct sockaddr*)&sockaddr, &socklen), "accept", rComm->fd);
@@ -541,7 +537,8 @@ int ncclIbAccept(void* listenComm, void** recvComm) {
       .qpn=rComm->gpuFlush.qp->qp_num,
       .spn=gid.global.subnet_prefix,
       .iid=gid.global.interface_id,
-      .mtu=portAttr.active_mtu };
+      .mtu=portAttr.active_mtu
+    };
     NCCLCHECK(ncclIbRtrQp(rComm->gpuFlush.qp, &localQpInfo));
     NCCLCHECK(ncclIbRtsQp(rComm->gpuFlush.qp));
   }
@@ -553,7 +550,8 @@ int ncclIbAccept(void* listenComm, void** recvComm) {
     .qpn=qp->qp_num,
     .spn=gid.global.subnet_prefix,
     .iid=gid.global.interface_id,
-    .mtu=remQpInfo.mtu };
+    .mtu=remQpInfo.mtu
+  };
 
   NCCLCHECK(socketSend(rComm->fd, &qpInfo, sizeof(qpInfo)));
   *recvComm = rComm;
@@ -603,7 +601,7 @@ ncclResult_t ncclRecvCheck(struct ncclIbRecvComm* comm) {
   return ncclSuccess;
 }
 
-int ncclIbTest(void* request, int* done, int* size);
+ncclResult_t ncclIbTest(void* request, int* done, int* size);
 
 #define REG_ALIGN (4096)
 
@@ -614,7 +612,7 @@ ncclResult_t ncclIbGetMr(struct ncclIbVerbs* verbs, void* data, int size, struct
   assert(size > 0);
 
   // Look for an already existing MR
-  for (int i=0; i<MAX_REQUESTS;i++) {
+  for (int i=0; i<MAX_REQUESTS; i++) {
     if (verbs->mrPool[i].mr == NULL) continue;
     uint64_t regAddr = (uint64_t)verbs->mrPool[i].mr->addr;
     uint64_t regSize = (uint64_t)verbs->mrPool[i].mr->length;
@@ -628,7 +626,7 @@ ncclResult_t ncclIbGetMr(struct ncclIbVerbs* verbs, void* data, int size, struct
   // Find an unused element
   if (elem == -1) {
     elem = (verbs->mrRotation++);
-    for (int i=0; i<MAX_REQUESTS;i++) {
+    for (int i=0; i<MAX_REQUESTS; i++) {
       elem %= MAX_REQUESTS;
       if (verbs->mrPool[elem].refcnt > 0) elem++; else break;
     }
@@ -653,7 +651,7 @@ ncclResult_t ncclIbGetMr(struct ncclIbVerbs* verbs, void* data, int size, struct
   return ncclSuccess;
 }
 
-int ncclIbIsend(void* sendComm, void* data, int size, int type, void** request) {
+ncclResult_t ncclIbIsend(void* sendComm, void* data, int size, int type, void** request) {
   struct ncclIbSendComm* comm = (struct ncclIbSendComm*)sendComm;
   NCCLCHECK(ncclSendCheck(comm));
 
@@ -690,7 +688,7 @@ int ncclIbIsend(void* sendComm, void* data, int size, int type, void** request) 
   // plus any potential programming errors
   if (size > slot->size || slot->size <= 0 || slot->addr == 0 || slot->rkey == 0 || slot->seq != comm->fifoHead) {
     WARN("NET/IB : collective mismatch error local size %d remote %d addr %lx rkey %x seq %x/%x",
-         size, slot->size, slot->addr, slot->rkey, slot->seq, comm->fifoHead);
+        size, slot->size, slot->addr, slot->rkey, slot->seq, comm->fifoHead);
     return ncclInternalError;
   }
   wr.opcode = IBV_WR_RDMA_WRITE_WITH_IMM;
@@ -742,7 +740,7 @@ ncclResult_t ncclIbPostFifo(struct ncclIbRecvComm* comm, uint32_t rkey, uint64_t
   return ncclSuccess;
 }
 
-int ncclIbIrecv(void* recvComm, void* data, int size, int type, void** request) {
+ncclResult_t ncclIbIrecv(void* recvComm, void* data, int size, int type, void** request) {
   struct ncclIbRecvComm* comm = (struct ncclIbRecvComm*)recvComm;
   NCCLCHECK(ncclRecvCheck(comm));
 
@@ -777,7 +775,7 @@ int ncclIbIrecv(void* recvComm, void* data, int size, int type, void** request) 
   return ncclSuccess;
 }
 
-int ncclIbFlush(void* recvComm, void* data, int size) {
+ncclResult_t ncclIbFlush(void* recvComm, void* data, int size) {
   struct ncclIbRecvComm* comm = (struct ncclIbRecvComm*)recvComm;
   if (comm->gpuFlush.enabled == 0 || size == 0) return ncclSuccess;
 
@@ -808,7 +806,7 @@ int ncclIbFlush(void* recvComm, void* data, int size) {
   return ncclSuccess;
 }
 
-int ncclIbTest(void* request, int* done, int* size) {
+ncclResult_t ncclIbTest(void* request, int* done, int* size) {
   struct ncclIbRequest *r = (struct ncclIbRequest*)request;
   *done = 0;
 
@@ -855,7 +853,7 @@ int ncclIbTest(void* request, int* done, int* size) {
   }
 }
 
-int ncclIbCloseSend(void* sendComm) {
+ncclResult_t ncclIbCloseSend(void* sendComm) {
   struct ncclIbSendComm* comm = (struct ncclIbSendComm*)sendComm;
   if (comm) {
     close(comm->fd);
@@ -864,7 +862,7 @@ int ncclIbCloseSend(void* sendComm) {
     for (int i=0; i<MAX_REQUESTS; i++) {
       if (comm->verbs.mrPool[i].mr != NULL) {
         if (comm->verbs.mrPool[i].refcnt != 0) WARN("NET/IB : TX MR #%d has non-zero (%d) refcnt", i, comm->verbs.mrPool[i].refcnt);
-	NCCLCHECK(wrap_ibv_dereg_mr(comm->verbs.mrPool[i].mr));
+        NCCLCHECK(wrap_ibv_dereg_mr(comm->verbs.mrPool[i].mr));
       }
     }
     NCCLCHECK(ncclIbDestroyVerbs(&comm->verbs));
@@ -873,7 +871,7 @@ int ncclIbCloseSend(void* sendComm) {
   return ncclSuccess;
 }
 
-int ncclIbCloseRecv(void* recvComm) {
+ncclResult_t ncclIbCloseRecv(void* recvComm) {
   struct ncclIbRecvComm* comm = (struct ncclIbRecvComm*)recvComm;
   if (comm) {
     close(comm->fd);
@@ -895,7 +893,7 @@ int ncclIbCloseRecv(void* recvComm) {
   return ncclSuccess;
 }
 
-int ncclIbCloseListen(void* listenComm) {
+ncclResult_t ncclIbCloseListen(void* listenComm) {
   struct ncclIbListenComm* comm = (struct ncclIbListenComm*)listenComm;
   if (comm) {
     close(comm->fd);

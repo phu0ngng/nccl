@@ -1,5 +1,5 @@
 /*************************************************************************
- * Copyright (c) 2016, NVIDIA CORPORATION. All rights reserved.
+ * Copyright (c) 2016-2018, NVIDIA CORPORATION. All rights reserved.
  *
  * See LICENSE.txt for license information
  ************************************************************************/
@@ -124,7 +124,7 @@ static int getNumNvlinks(const char* busId) {
     unsigned canP2P;
     nvmlEnableState_t isActive;
     if (wrapNvmlDeviceGetNvLinkCapability(nvmlDev, l, NVML_NVLINK_CAP_P2P_SUPPORTED, &canP2P) == ncclSuccess && canP2P &&
-      wrapNvmlDeviceGetNvLinkState(nvmlDev, l, &isActive) == ncclSuccess && isActive == NVML_FEATURE_ENABLED) {
+        wrapNvmlDeviceGetNvLinkState(nvmlDev, l, &isActive) == ncclSuccess && isActive == NVML_FEATURE_ENABLED) {
       nvlinks++;
     } else {
       continue;

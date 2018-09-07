@@ -1,5 +1,5 @@
 /*************************************************************************
- * Copyright (c) 2015-2016, NVIDIA CORPORATION. All rights reserved.
+ * Copyright (c) 2015-2018, NVIDIA CORPORATION. All rights reserved.
  *
  * See LICENSE.txt for license information
  ************************************************************************/
@@ -56,9 +56,9 @@
 
 // Must be consistent with the ncclFuncSet enum
 __device__ ncclKern_t ncclFuncs[ncclCollCount*ncclNumOps*ncclNumTypes*2] = {
-    NCCL_FUNCS2B(ncclBroadcast),
-    NCCL_FUNCS2A(ncclReduce),
-    NCCL_FUNCS2B(ncclAllGather),
-    NCCL_FUNCS2A(ncclReduceScatter),
-    NCCL_FUNCS2A(ncclAllReduce)
+  NCCL_FUNCS2B(ncclBroadcast),
+  NCCL_FUNCS2A(ncclReduce),
+  NCCL_FUNCS2B(ncclAllGather),
+  NCCL_FUNCS2A(ncclReduceScatter),
+  NCCL_FUNCS2A(ncclAllReduce)
 };

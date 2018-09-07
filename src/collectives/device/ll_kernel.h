@@ -1,5 +1,5 @@
 /*************************************************************************
- * Copyright (c) 2015-2016, NVIDIA CORPORATION. All rights reserved.
+ * Copyright (c) 2015-2018, NVIDIA CORPORATION. All rights reserved.
  *
  * See LICENSE.txt for license information
  ************************************************************************/
@@ -32,7 +32,7 @@ static __device__ void storeAL(uint64_t* dst, uint64_t val) {
 
 template <typename T, class FUNC>
 class LLPrimitives {
-  private:
+ private:
   template <int HAS_SRC1, int HAS_SRC2, int HAS_DST1, int HAS_DST2>
   static __device__ void ReduceCopyGeneric(const T* src1, union ncclLLFifoLine* src2, T* dst1, union ncclLLFifoLine* dst2, int size, uint32_t iflag, uint32_t oflag, int tid, int nthreads) {
     if (size <= 0) return;

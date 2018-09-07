@@ -1,5 +1,5 @@
 /*************************************************************************
- * Copyright (c) 2015-2016, NVIDIA CORPORATION. All rights reserved.
+ * Copyright (c) 2015-2018, NVIDIA CORPORATION. All rights reserved.
  *
  * See LICENSE.txt for license information
  ************************************************************************/
@@ -45,7 +45,7 @@ ncclResult_t initRing(struct ncclComm* comm, int ringid) {
   // Ring index to user rank table.
   CUDACHECK(cudaMalloc(&ring->devUserRanks, comm->nRanks*sizeof(int)));
   ring->userRanks = (int*)malloc(comm->nRanks*sizeof(int));
-  
+
   // Per-ring operation list.
   NCCLCHECK(ncclCudaHostAlloc((void**)&ring->collectives, (void**)&ring->devCollectives, sizeof(struct ncclColl)*NCCL_MAX_OPS));
   return ncclSuccess;

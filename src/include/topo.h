@@ -1,5 +1,5 @@
 /*************************************************************************
- * Copyright (c) 2016, NVIDIA CORPORATION. All rights reserved.
+ * Copyright (c) 2016-2018, NVIDIA CORPORATION. All rights reserved.
  *
  * See LICENSE.txt for license information
  ************************************************************************/
@@ -16,15 +16,15 @@ static ncclResult_t getCudaPath(int cudaDev, char** path) {
   char busId[16];
   CUDACHECK(cudaDeviceGetPCIBusId(busId, 16, cudaDev));
   for (int i=0; i<16; i++) busId[i] = tolower(busId[i]);
-  char busPath[] =  "/sys/class/pci_bus/0000:00/device";
-  memcpy(busPath+sizeof("/sys/class/pci_bus/")-1, busId, sizeof("0000:00")-1); 
-  char* cudaRpath = realpath(busPath, NULL); 
+  char busPath[] = "/sys/class/pci_bus/0000:00/device";
+  memcpy(busPath+sizeof("/sys/class/pci_bus/")-1, busId, sizeof("0000:00")-1);
+  char* cudaRpath = realpath(busPath, NULL);
   char pathname[MAXPATHSIZE];
   strncpy(pathname, cudaRpath, MAXPATHSIZE);
   strncpy(pathname+strlen(pathname), "/", MAXPATHSIZE-strlen(pathname));
   strncpy(pathname+strlen(pathname), busId, MAXPATHSIZE-strlen(pathname));
   free(cudaRpath);
-  *path = realpath(pathname, NULL); 
+  *path = realpath(pathname, NULL);
   if (*path == NULL) {
     WARN("Could not find real path of %s", pathname);
     return ncclSystemError;
@@ -76,7 +76,7 @@ static int pciDistance(char* path1, char* path2) {
   }
   if (score == 3) return PATH_SOC;
   if (score == 4) return PATH_PHB;
-  if (score == depth-1)     return PATH_PIX;
+  if (score == depth-1) return PATH_PIX;
   return PATH_PXB;
 }
 

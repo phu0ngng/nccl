@@ -1,3 +1,9 @@
+#
+# Copyright (c) 2015-2018, NVIDIA CORPORATION. All rights reserved.
+#
+# See LICENCE.txt for license information
+#
+
 include ../makefiles/common.mk
 include ../makefiles/version.mk
 
@@ -26,6 +32,7 @@ DEPFILES   := $(LIBOBJ:%.o=%.d)
 LDFLAGS    += -L${CUDA_LIB} -lcudart_static -lrt
 
 DEVICELIB  := $(BUILDDIR)/obj/collectives/device/colldevice.a
+
 
 ##### rules
 build : lib staticlib
@@ -92,3 +99,7 @@ install : lib
 	cp -P -v $(BUILDDIR)/lib/* $(PREFIX)/lib/
 	cp -v $(BUILDDIR)/include/* $(PREFIX)/include/
 
+FILESTOFORMAT := $(shell find . -name ".\#*" -prune -o \( -name "*.cu" -o -name "*.h" \) -print | grep -v -E 'ibvwrap.h|nvmlwrap.h|nccl.h')
+# Note that formatting.mk defines a new target so in order to not overwrite the default target,
+# it shouldn't be included at the top. Also, it uses the above definition of FILESTOFORMAT.
+include ../makefiles/formatting.mk

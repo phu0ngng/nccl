@@ -1,5 +1,5 @@
 /*************************************************************************
- * Copyright (c) 2016-2017, NVIDIA CORPORATION. All rights reserved.
+ * Copyright (c) 2016-2018, NVIDIA CORPORATION. All rights reserved.
  *
  * See LICENSE.txt for license information
  ************************************************************************/
@@ -65,8 +65,8 @@ end:
 
 /*
  * Ring creation algorithm
- * 
- * First, we establish hierarchical coordinates depending on the way ranks can 
+ *
+ * First, we establish hierarchical coordinates depending on the way ranks can
  * communicate. After fillCoords, we have for each rank a unique 3-int array
  * {   node, pci_domain,   rank } corresponding to the three transports :
  * { 2[NET],     1[SHM], 0[P2P] }.
@@ -74,9 +74,9 @@ end:
  *
  * Then, we ask transports to connect groups together. We start with net, then
  * shm, then p2p. We maintain two arrays, prev and next, where values are equal
- * to -1 when ranks are not yet connected, and a rank otherwise. We never 
- * connect ranks outside our group, meaning that on 4 nodes of 2 sockets of 4 
- * ranks, if we are rank 13, we should see something like (provided we have a 
+ * to -1 when ranks are not yet connected, and a rank otherwise. We never
+ * connect ranks outside our group, meaning that on 4 nodes of 2 sockets of 4
+ * ranks, if we are rank 13, we should see something like (provided we have a
  * single net interface, hence a single ring) :
  *
  * Connecting all nodes                                <13>
@@ -91,7 +91,7 @@ end:
  * 0[P2P] : prev 31 -1 -1 -1 -1 -1 -1 -1  7 -1 -1 -1 11 12 13 14 15 -1 -1 -1 -1 -1 -1 -1 23 -1 -1 -1 -1 -1 -1 -1
  *          next -1 -1 -1 -1 -1 -1 -1  8 -1 -1 -1 12 13 14 15 16 -1 -1 -1 -1 -1 -1 -1 24 -1 -1 -1 -1 -1 -1 -1  0
  *
- * Hence, when we ask a transport to connect groups, we provide it with a subview of the ranks (except for net 
+ * Hence, when we ask a transport to connect groups, we provide it with a subview of the ranks (except for net
  * which always sees the full world). That way, P2P can bruteforce all combinations inside the node without
  * risking to explode in terms of combinations, and we scale better.
  *
@@ -156,9 +156,9 @@ static ncclResult_t fillCoords(int nranks, int* matrix, int* coords, int* rankTo
     int rank;
     int transport = 1;
     while ((rank = findConnected(curRank, matrix, nranks, transport, coords)) == -1) {
-        current[transport] = 0;
-        transport++;
-        if (transport == NTRANSPORTS) { free(p2pConnected); return ncclInternalError; }
+      current[transport] = 0;
+      transport++;
+      if (transport == NTRANSPORTS) { free(p2pConnected); return ncclInternalError; }
     }
     curRank = rank;
     current[transport]++;
@@ -221,7 +221,7 @@ ncclResult_t ncclGetRings(int* nrings, int* nthreads, int rank, int nranks, int*
     // Loop over transports to connect groups
     for (int t=NTRANSPORTS-1; t>=0; t--) {
       for (int i=0; i<nranks; i++) idxToRank[i] = rankToIdx[i] = -1;
-      
+
       int nidx = 0;
       for (int i=0; i<nranks; i++) {
         // Extract only ranks in the same local area as rank
@@ -237,7 +237,7 @@ ncclResult_t ncclGetRings(int* nrings, int* nthreads, int rank, int nranks, int*
         idxToRank[nidx] = r;
         nidx++;
       }
- 
+
       int ngroups = groups[nidx-1] + 1; // Coords should be ordered
 
       ncclTvalue_t* subvalues = (ncclTvalue_t*)malloc(sizeof(ncclTvalue_t)*nidx*nidx);

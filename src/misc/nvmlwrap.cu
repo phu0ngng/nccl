@@ -1,5 +1,5 @@
 /*************************************************************************
- * Copyright (c) 2015-2016, NVIDIA CORPORATION. All rights reserved.
+ * Copyright (c) 2015-2018, NVIDIA CORPORATION. All rights reserved.
  *
  * See LICENSE.txt for license information
  ************************************************************************/
@@ -23,7 +23,7 @@ static nvmlReturn_t (*nvmlInternalDeviceGetNvLinkState)(nvmlDevice_t device, uns
 static nvmlReturn_t (*nvmlInternalDeviceGetPciInfo)(nvmlDevice_t device, nvmlPciInfo_t* pci);
 static nvmlReturn_t (*nvmlInternalDeviceGetNvLinkRemotePciInfo)(nvmlDevice_t device, unsigned int link, nvmlPciInfo_t *pci);
 static nvmlReturn_t (*nvmlInternalDeviceGetNvLinkCapability)(nvmlDevice_t device, unsigned int link,
-                                                   nvmlNvLinkCapability_t capability, unsigned int *capResult);
+    nvmlNvLinkCapability_t capability, unsigned int *capResult);
 
 ncclResult_t wrapNvmlSymbols(void) {
   if (nvmlState == nvmlInitialized)
@@ -47,7 +47,7 @@ ncclResult_t wrapNvmlSymbols(void) {
     goto teardown;
   }
 
-  #define LOAD_SYM(handle, symbol, funcptr) do {         \
+#define LOAD_SYM(handle, symbol, funcptr) do {         \
     cast = (void**)&funcptr;                             \
     tmp = dlsym(handle, symbol);                         \
     if (tmp == NULL) {                                   \
@@ -57,7 +57,7 @@ ncclResult_t wrapNvmlSymbols(void) {
     *cast = tmp;                                         \
   } while (0)
 
-  #define LOAD_SYM_OPTIONAL(handle, symbol, funcptr) do {\
+#define LOAD_SYM_OPTIONAL(handle, symbol, funcptr) do {\
     cast = (void**)&funcptr;                             \
     tmp = dlsym(handle, symbol);                         \
     if (tmp == NULL) {                                   \
@@ -81,7 +81,7 @@ ncclResult_t wrapNvmlSymbols(void) {
   nvmlState = nvmlInitialized;
   return ncclSuccess;
 
-  teardown:
+teardown:
   nvmlInternalInit = NULL;
   nvmlInternalShutdown = NULL;
   nvmlInternalDeviceGetHandleByPciBusId = NULL;
@@ -107,7 +107,7 @@ ncclResult_t wrapNvmlInit(void) {
   nvmlReturn_t ret = nvmlInternalInit();
   if (ret != NVML_SUCCESS) {
     WARN("nvmlInit() failed: %s",
-      nvmlInternalErrorString(ret));
+        nvmlInternalErrorString(ret));
     return ncclSystemError;
   }
   return ncclSuccess;
@@ -121,7 +121,7 @@ ncclResult_t wrapNvmlShutdown(void) {
   nvmlReturn_t ret = nvmlInternalShutdown();
   if (ret != NVML_SUCCESS) {
     WARN("nvmlShutdown() failed: %s ",
-      nvmlInternalErrorString(ret));
+        nvmlInternalErrorString(ret));
     return ncclSystemError;
   }
   return ncclSuccess;
@@ -135,7 +135,7 @@ ncclResult_t wrapNvmlDeviceGetHandleByPciBusId(const char* pciBusId, nvmlDevice_
   nvmlReturn_t ret = nvmlInternalDeviceGetHandleByPciBusId(pciBusId, device);
   if (ret != NVML_SUCCESS) {
     WARN("nvmlDeviceGetHandleByPciBusId() failed: %s ",
-      nvmlInternalErrorString(ret));
+        nvmlInternalErrorString(ret));
     return ncclSystemError;
   }
   return ncclSuccess;
@@ -149,7 +149,7 @@ ncclResult_t wrapNvmlDeviceGetIndex(nvmlDevice_t device, unsigned* index) {
   nvmlReturn_t ret = nvmlInternalDeviceGetIndex(device, index);
   if (ret != NVML_SUCCESS) {
     WARN("nvmlDeviceGetIndex() failed: %s ",
-      nvmlInternalErrorString(ret));
+        nvmlInternalErrorString(ret));
     return ncclSystemError;
   }
   return ncclSuccess;
@@ -167,7 +167,7 @@ ncclResult_t wrapNvmlDeviceSetCpuAffinity(nvmlDevice_t device) {
   pthread_mutex_unlock(&lock);
   if (ret != NVML_SUCCESS) {
     WARN("nvmlDeviceSetCpuAffinity() failed: %s ",
-      nvmlInternalErrorString(ret));
+        nvmlInternalErrorString(ret));
     return ncclSystemError;
   }
   return ncclSuccess;
@@ -181,7 +181,7 @@ ncclResult_t wrapNvmlDeviceClearCpuAffinity(nvmlDevice_t device) {
   nvmlReturn_t ret = nvmlInternalDeviceClearCpuAffinity(device);
   if (ret != NVML_SUCCESS) {
     WARN("nvmlDeviceClearCpuAffinity() failed: %s ",
-      nvmlInternalErrorString(ret));
+        nvmlInternalErrorString(ret));
     return ncclSystemError;
   }
   return ncclSuccess;
@@ -195,7 +195,7 @@ ncclResult_t wrapNvmlDeviceGetPciInfo(nvmlDevice_t device, nvmlPciInfo_t* pci) {
   nvmlReturn_t ret = nvmlInternalDeviceGetPciInfo(device, pci);
   if (ret != NVML_SUCCESS) {
     WARN("nvmlDeviceGetPciInfo() failed: %s ",
-      nvmlInternalErrorString(ret));
+        nvmlInternalErrorString(ret));
     return ncclSystemError;
   }
   return ncclSuccess;
@@ -209,7 +209,7 @@ ncclResult_t wrapNvmlDeviceGetNvLinkState(nvmlDevice_t device, unsigned int link
   nvmlReturn_t ret = nvmlInternalDeviceGetNvLinkState(device, link, isActive);
   if (ret != NVML_SUCCESS) {
     INFO(INIT,"nvmlDeviceGetNvLinkState() failed: %s ",
-      nvmlInternalErrorString(ret));
+        nvmlInternalErrorString(ret));
     return ncclSystemError;
   }
   return ncclSuccess;
@@ -224,14 +224,14 @@ ncclResult_t wrapNvmlDeviceGetNvLinkRemotePciInfo(nvmlDevice_t device, unsigned 
   if (ret != NVML_SUCCESS) {
     if (ret != NVML_ERROR_NOT_SUPPORTED)
       INFO(INIT,"nvmlDeviceGetNvLinkRemotePciInfo() failed: %s ",
-        nvmlInternalErrorString(ret));
+          nvmlInternalErrorString(ret));
     return ncclSystemError;
   }
   return ncclSuccess;
 }
 
 ncclResult_t wrapNvmlDeviceGetNvLinkCapability(nvmlDevice_t device, unsigned int link,
-		nvmlNvLinkCapability_t capability, unsigned int *capResult) {
+    nvmlNvLinkCapability_t capability, unsigned int *capResult) {
   if (nvmlInternalDeviceGetNvLinkCapability == NULL) {
     /* Do not warn, this symbol is optional. */
     return ncclInternalError;
@@ -240,7 +240,7 @@ ncclResult_t wrapNvmlDeviceGetNvLinkCapability(nvmlDevice_t device, unsigned int
   if (ret != NVML_SUCCESS) {
     if (ret != NVML_ERROR_NOT_SUPPORTED)
       INFO(INIT,"nvmlDeviceGetNvLinkCapability() failed: %s ",
-        nvmlInternalErrorString(ret));
+          nvmlInternalErrorString(ret));
     return ncclSystemError;
   }
   return ncclSuccess;

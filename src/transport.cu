@@ -1,10 +1,11 @@
 /*************************************************************************
- * Copyright (c) 2016, NVIDIA CORPORATION. All rights reserved.
+ * Copyright (c) 2016-2018, NVIDIA CORPORATION. All rights reserved.
  *
  * See LICENSE.txt for license information
  ************************************************************************/
 
 #include "core.h"
+#include "common_coll.h"
 
 extern struct ncclTransport p2pTransport;
 extern struct ncclTransport shmTransport;
@@ -21,7 +22,9 @@ static void FifoPullArgs(struct transportProxyInfo* info, struct ncclProxyArgs *
   pthread_mutex_lock(&info->mutex);
   while (fifoArgs->active == 0)
     pthread_cond_wait(&info->cond, &info->mutex);
+  __sync_synchronize();
   memcpy(args, fifoArgs, sizeof(struct ncclProxyArgs));
+  __sync_synchronize();
   fifoArgs->active = 0;
   pthread_cond_signal(&info->cond);
   pthread_mutex_unlock(&info->mutex);
@@ -81,10 +84,10 @@ static bool NeedProxy(int type, int pattern, struct ncclRing* ring, int nranks) 
   int root = proxyPatternRoot(pattern);
   // Which index in the reorganized rings should we compare root against */
   const int myrank = 0, nextrank = 1, prevrank = nranks-1;
-  int index = mode == proxyFrom ? 
-    /*                            no recv /  no send    if root = */
-    /* bcast  */ (type == RECV ?   myrank : nextrank ):
-    /* reduce */ (type == RECV ? prevrank :   myrank );
+  int index = mode == proxyFrom ?
+      /*                            no recv /  no send    if root = */
+      /* bcast  */ (type == RECV ?   myrank : nextrank ):
+      /* reduce */ (type == RECV ? prevrank :   myrank );
   int rank = ring->userRanks[index];
   return (root != rank);
 }
@@ -94,6 +97,7 @@ static void SaveProxy(struct ncclConnector* connector, struct ncclProxyArgs* arg
   if (info == NULL) return;
   struct ncclProxyArgs* fifoArgs = FifoGetNextArgs(info);
   memcpy(fifoArgs, args, sizeof(struct ncclProxyArgs));
+  __sync_synchronize();
   fifoArgs->active = 1;
 }
 

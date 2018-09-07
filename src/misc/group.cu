@@ -1,5 +1,5 @@
 /*************************************************************************
- * Copyright (c) 2015-2016, NVIDIA CORPORATION. All rights reserved.
+ * Copyright (c) 2015-2018, NVIDIA CORPORATION. All rights reserved.
  *
  * See LICENSE.txt for license information
  ************************************************************************/
@@ -29,7 +29,7 @@ struct ncclInitArgs {
   ncclComm_t* newcomm;
   int ndev;
   ncclUniqueId commId;
-  int myrank; 
+  int myrank;
 };
 struct ncclCollArgs {
   ncclComm_t comm;
@@ -93,7 +93,7 @@ ncclResult_t ncclAsyncColl(ncclComm_t comm) {
   struct ncclAsyncArgs* args = ncclGroupArgs;
   for (int i=0; i<ncclGroupIndex; i++) {
     if (args->coll.comm == comm) return ncclSuccess;
-    args++; 
+    args++;
   }
   if (ncclGroupIndex >= MAX_ASYNC_OPS) {
     WARN("Too many async operations in progress, max is %d", MAX_ASYNC_OPS);

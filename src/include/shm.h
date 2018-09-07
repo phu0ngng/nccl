@@ -1,5 +1,5 @@
 /*************************************************************************
- * Copyright (c) 2016, NVIDIA CORPORATION. All rights reserved.
+ * Copyright (c) 2016-2018, NVIDIA CORPORATION. All rights reserved.
  *
  * See LICENSE.txt for license information
  ************************************************************************/
@@ -47,7 +47,7 @@ static ncclResult_t shmOpen(const char* shmname, const int shmsize, void** shmPt
     if (create) shm_unlink(shmname);
     munmap(ptr, shmsize);
     return ncclUnhandledCudaError;
-  }   
+  }
 
   if ((e=cudaHostGetDevicePointer(devShmPtr, ptr, 0)) != cudaSuccess) {
     WARN("failed to get device pointer for local shmem %p : %s", ptr, cudaGetErrorString(e));
