@@ -101,5 +101,6 @@ install : lib
 
 FILESTOFORMAT := $(shell find . -name ".\#*" -prune -o \( -name "*.cu" -o -name "*.h" \) -print | grep -v -E 'ibvwrap.h|nvmlwrap.h|nccl.h')
 # Note that formatting.mk defines a new target so in order to not overwrite the default target,
-# it shouldn't be included at the top. Also, it uses the above definition of FILESTOFORMAT.
+# it shouldn't be included at the top. Also, it uses the above definition of FILESTOFORMAT as well
+# as the BUILDDIR variable.
 include ../makefiles/formatting.mk
