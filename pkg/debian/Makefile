@@ -12,7 +12,7 @@ PKGDIR  := $(BUILDDIR)/pkg/deb/
 
 DEBGEN_IN  := $(wildcard *.in)
 DEBGEN     := $(DEBGEN_IN:.in=)
-DEBFILES   := compat copyright libnccl-dev.install rules $(DEBGEN)
+DEBFILES   := compat copyright libnccl-dev.install libnccl-dev.docs libnccl2.docs rules $(DEBGEN)
 DEBTARGETS := $(patsubst %, $(DEBPREPDIR)/%, $(DEBFILES))
 
 PKG_TIMESTAMP  := $(shell date -R)
