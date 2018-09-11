@@ -249,7 +249,7 @@ using IP sockets.
 
 Values accepted
 ^^^^^^^^^^^^^^^
-Define and set to 1 to disable the use of Infiniband Verbs for communication (and force another method, e.g. IP sockets).
+Define and set to 1 to disable the use of InfiniBand Verbs for communication (and force another method, e.g. IP sockets).
 
 NCCL_IB_HCA
 -----------
