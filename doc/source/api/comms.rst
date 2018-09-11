@@ -4,6 +4,18 @@ Communicator Creation and Management Functions
 
 The following functions are public APIs exposed by NCCL to create and manage the collective communication operations.
 
+ncclGetVersion
+--------------
+
+.. c:function:: ncclResult_t  ncclGetVersion(int* version)
+
+The ncclGetVersion function returns the version number of the currently linked NCCL library.
+The NCCL version number is returned in *version* and encoded as an integer which includes the
+:c:macro:`NCCL_MAJOR`, :c:macro:`NCCL_MINOR` and :c:macro:`NCCL_PATCH` levels.
+The version number returned will be the same as the :c:macro:`NCCL_VERSION_CODE` defined in *nccl.h*.
+NCCL version numbers can be compared using the supplied macro; :c:macro:`NCCL_VERSION(MAJOR,MINOR,PATCH)`
+
+
 ncclGetUniqueId
 ---------------
 
@@ -49,7 +61,7 @@ ncclCommCount
 
 .. c:function:: ncclResult_t ncclCommCount(const ncclComm_t comm, int* count)
 
-Returns int *count* the number of ranks in the NCCL communicator *comm*.
+Returns in *count* the number of ranks in the NCCL communicator *comm*.
 
 ncclCommCuDevice
 ----------------
