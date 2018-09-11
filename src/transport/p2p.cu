@@ -367,7 +367,7 @@ int p2pComputeRingsPci(ncclTvalue_t* values, int nranks, int* rings, int nrings,
 ncclResult_t p2pGetRings(int nranks, int* groups, int* subgroups, ncclTvalue_t* values, int* nringsRet, int* prev, int* next, int minScore, int* nthreads) {
   if (*nringsRet == 0) return ncclSuccess;
   int *rings;
-  NCCLCHECK(ncclMalloc(&rings, MAXRINGS*nranks));
+  NCCLCHECK(ncclCalloc(&rings, MAXRINGS*nranks));
   for (int i=0; i<MAXRINGS*nranks; i++) rings[i] = -1;
   int nrings = *nringsRet;
 
@@ -539,7 +539,7 @@ static ncclResult_t p2pSendConnect(struct ncclConnect* connectInfo, struct ncclC
     //TRACE_DUMP_IPC(&info->devIpc);
     cudaError_t err = cudaIpcOpenMemHandle(&remPtr, info->devIpc, cudaIpcMemLazyEnablePeerAccess);
     void** ipcPtrSave;
-    NCCLCHECK(ncclMalloc(&ipcPtrSave, 1));
+    NCCLCHECK(ncclCalloc(&ipcPtrSave, 1));
     *resources = ipcPtrSave;
     *ipcPtrSave = remPtr;
     remDevMem = (struct ncclRecvMem*)remPtr;
@@ -573,7 +573,7 @@ ncclResult_t p2pRecvConnect(struct ncclConnect* connectInfo, struct ncclConnecto
     //TRACE_DUMP_IPC(&info->devIpc);
     cudaError_t err = cudaIpcOpenMemHandle(&remPtr, info->devIpc, cudaIpcMemLazyEnablePeerAccess);
     void** ipcPtrSave;
-    NCCLCHECK(ncclMalloc(&ipcPtrSave, 1));
+    NCCLCHECK(ncclCalloc(&ipcPtrSave, 1));
     *resources = ipcPtrSave;
     *ipcPtrSave = remPtr;
     remDevMem = (struct ncclSendMem*)remPtr;

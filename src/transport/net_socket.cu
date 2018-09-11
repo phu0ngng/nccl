@@ -51,7 +51,7 @@ ncclResult_t ncclSocketDevices(int* ndev, int** scores) {
   char* cudaPath;
   ncclResult_t err1 = getCudaPath(cudaDev, &cudaPath);
   int* sc;
-  NCCLCHECK(ncclMalloc(&sc, ncclNetIfs));
+  NCCLCHECK(ncclCalloc(&sc, ncclNetIfs));
   char line[1024];
   sprintf(line, "CUDA Dev %d, IP Interfaces : ", cudaDev);
   for (int i=0; i<ncclNetIfs; i++) {
@@ -95,7 +95,7 @@ struct ncclSocketComm {
 };
 
 ncclResult_t ncclSocketNewComm(struct ncclSocketComm** comm) {
-  NCCLCHECK(ncclMalloc(comm, 1));
+  NCCLCHECK(ncclCalloc(comm, 1));
   (*comm)->fd = -1;
   return ncclSuccess;
 }
@@ -155,7 +155,7 @@ ncclResult_t ncclSocketAccept(void* listenComm, void** recvComm) {
 
 ncclResult_t ncclSocketGetRequest(struct ncclSocketReqs* reqs, struct ncclSocketRequest** req) {
   if (reqs->requests == NULL) {
-    NCCLCHECK(ncclMalloc(&reqs->requests, MAX_REQUESTS));
+    NCCLCHECK(ncclCalloc(&reqs->requests, MAX_REQUESTS));
   }
   for (int i=0; i<MAX_REQUESTS; i++) {
     struct ncclSocketRequest* r = reqs->requests+i;

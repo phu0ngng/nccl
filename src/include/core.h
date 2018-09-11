@@ -358,7 +358,7 @@ static inline ncclResult_t ncclCudaHostFree(void* ptr) {
 }
 
 template <typename T>
-static ncclResult_t ncclMalloc(T** ptr, size_t nelem) {
+static ncclResult_t ncclCalloc(T** ptr, size_t nelem) {
   void* p = malloc(nelem*sizeof(T));
   if (p == NULL) {
     WARN("Failed to malloc %ld bytes", nelem*sizeof(T));
@@ -370,7 +370,7 @@ static ncclResult_t ncclMalloc(T** ptr, size_t nelem) {
 }
 
 template <typename T>
-static ncclResult_t ncclCudaMalloc(T** ptr, size_t nelem) {
+static ncclResult_t ncclCudaCalloc(T** ptr, size_t nelem) {
   void* p;
   CUDACHECK(cudaMalloc(&p, nelem*sizeof(T)));
   if (p == NULL) {

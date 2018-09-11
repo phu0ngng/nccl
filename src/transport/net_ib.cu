@@ -163,7 +163,7 @@ ncclResult_t ncclIbDevices(int* ndev, int** scores) {
   char* cudaPath;
   ncclResult_t err1 = getCudaPath(cudaDev, &cudaPath);
   int* sc;
-  NCCLCHECK(ncclMalloc(&sc, ncclNIbDevs));
+  NCCLCHECK(ncclCalloc(&sc, ncclNIbDevs));
   char line[1024];
   sprintf(line, "CUDA Dev %d, IB Ports : ", cudaDev);
   for (int d=0; d<ncclNIbDevs; d++) {
@@ -423,7 +423,7 @@ ncclResult_t ncclIbRtsQp(ibv_qp* qp) {
 
 ncclResult_t ncclIbListen(int dev, void* opaqueHandle, void** listenComm) {
   struct ncclIbListenComm* comm;
-  NCCLCHECK(ncclMalloc(&comm, 1));
+  NCCLCHECK(ncclCalloc(&comm, 1));
   struct ncclIbHandle* handle = (struct ncclIbHandle*) opaqueHandle;
   static_assert(sizeof(struct ncclIbHandle) < NCCL_NET_HANDLE_MAXSIZE, "ncclIbHandle size too large");
   comm->dev = dev;

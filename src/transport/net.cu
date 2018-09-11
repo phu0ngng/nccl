@@ -196,7 +196,7 @@ NCCL_PARAM(NetGdrRead, "NET_GDR_READ", -2);
  * information for this peer */
 ncclResult_t netSendSetup(ncclTinfo_t* myOpaqueInfo, ncclTinfo_t* peerOpaqueInfo, struct ncclConnect* connectInfo, struct ncclRing* ring) {
   struct netSendResources* resources;
-  NCCLCHECK(ncclMalloc(&resources, 1));
+  NCCLCHECK(ncclCalloc(&resources, 1));
   ring->send.transportResources = resources;
 
   struct netInfo* myInfo = (struct netInfo*)myOpaqueInfo;
@@ -240,7 +240,7 @@ ncclResult_t netSendSetup(ncclTinfo_t* myOpaqueInfo, ncclTinfo_t* peerOpaqueInfo
 
 ncclResult_t netRecvSetup(ncclTinfo_t* myOpaqueInfo, ncclTinfo_t* peerOpaqueInfo, struct ncclConnect* connectInfo, struct ncclRing* ring) {
   struct netRecvResources* resources;
-  NCCLCHECK(ncclMalloc(&resources, 1));
+  NCCLCHECK(ncclCalloc(&resources, 1));
   ring->recv.transportResources = resources;
 
   struct netInfo* myInfo = (struct netInfo*)myOpaqueInfo;

@@ -161,7 +161,7 @@ ncclResult_t transportCreateProxy(int type, struct ncclRing* ring, struct ncclCo
   if (proxyfunc) {
     TRACE(NET,"type %d ring %p proxyfunc %p comm %p", type, ring, proxyfunc, comm);
     struct transportProxyInfo* info;
-    NCCLCHECK(ncclMalloc(&info, 1));
+    NCCLCHECK(ncclCalloc(&info, 1));
     connector->proxyInfo = info;
     info->comm = comm;
     info->cond = PTHREAD_COND_INITIALIZER;

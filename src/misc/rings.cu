@@ -130,7 +130,7 @@ int findConnected(int rank, int* matrix, int nranks, int transport, int* coords)
 static ncclResult_t fillCoords(int nranks, int* matrix, int* coords, int* rankToIdx, int* idxToRank) {
   int current[NTRANSPORTS];
   int* p2pConnected;
-  NCCLCHECK(ncclMalloc(&p2pConnected, nranks));
+  NCCLCHECK(ncclCalloc(&p2pConnected, nranks));
   for (int i=0; i<NTRANSPORTS; i++) current[i] = 0;
   int curRank = 0, idx = 0;
   while (1) {
@@ -198,10 +198,10 @@ ncclResult_t ncclGetRings(int* nrings, int* nthreads, int rank, int nranks, int*
 
   // Compute hierarchical topology groups, indexes, and rank<->index tables
   int* coords, *globalIdxToRank, *globalRankToIdx;
-  NCCLCHECK(ncclMalloc(&coords, nranks*NTRANSPORTS));
+  NCCLCHECK(ncclCalloc(&coords, nranks*NTRANSPORTS));
   for (int i=0; i<nranks*NTRANSPORTS; i++) coords[i] = -1;
-  NCCLCHECK(ncclMalloc(&globalIdxToRank, nranks));
-  NCCLCHECK(ncclMalloc(&globalRankToIdx, nranks));
+  NCCLCHECK(ncclCalloc(&globalIdxToRank, nranks));
+  NCCLCHECK(ncclCalloc(&globalRankToIdx, nranks));
 
   NCCLCHECK(fillCoords(nranks, transports, coords, globalRankToIdx, globalIdxToRank));
 
@@ -209,12 +209,12 @@ ncclResult_t ncclGetRings(int* nrings, int* nthreads, int rank, int nranks, int*
   int minScore = NCCL_MAX_SCORE;
   int nringsTmp;
   int *prevTmp, *nextTmp, *idxToRank, *rankToIdx, *groups, *subgroups;
-  NCCLCHECK(ncclMalloc(&prevTmp, nranks*MAXRINGS));
-  NCCLCHECK(ncclMalloc(&nextTmp, nranks*MAXRINGS));
-  NCCLCHECK(ncclMalloc(&idxToRank, nranks));
-  NCCLCHECK(ncclMalloc(&rankToIdx, nranks));
-  NCCLCHECK(ncclMalloc(&groups, nranks));
-  NCCLCHECK(ncclMalloc(&subgroups, nranks));
+  NCCLCHECK(ncclCalloc(&prevTmp, nranks*MAXRINGS));
+  NCCLCHECK(ncclCalloc(&nextTmp, nranks*MAXRINGS));
+  NCCLCHECK(ncclCalloc(&idxToRank, nranks));
+  NCCLCHECK(ncclCalloc(&rankToIdx, nranks));
+  NCCLCHECK(ncclCalloc(&groups, nranks));
+  NCCLCHECK(ncclCalloc(&subgroups, nranks));
 
   int nThreads;
   do {
@@ -245,9 +245,9 @@ ncclResult_t ncclGetRings(int* nrings, int* nthreads, int rank, int nranks, int*
 
       ncclTvalue_t* subvalues;
       int *subprev, *subnext;
-      NCCLCHECK(ncclMalloc(&subvalues, nidx*nidx));
-      NCCLCHECK(ncclMalloc(&subprev, nidx*nringsTmp));
-      NCCLCHECK(ncclMalloc(&subnext, nidx*nringsTmp));
+      NCCLCHECK(ncclCalloc(&subvalues, nidx*nidx));
+      NCCLCHECK(ncclCalloc(&subprev, nidx*nringsTmp));
+      NCCLCHECK(ncclCalloc(&subnext, nidx*nringsTmp));
       if (ngroups > 1) {
         /* Extract subvalues */
         for (int i=0; i<nidx; i++) {

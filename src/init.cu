@@ -157,7 +157,7 @@ static ncclResult_t commAlloc(ncclComm_t* comret, int ndev, int rank) {
   CUDACHECK(cudaEventCreateWithFlags(&doneEvent, cudaEventDisableTiming));
 
   struct ncclComm* comm;
-  NCCLCHECK(ncclMalloc(&comm, 1));
+  NCCLCHECK(ncclCalloc(&comm, 1));
 
   INFO(INIT,"comm %p rank %d nranks %d", comm, rank, ndev);
   comm->rank = rank;
@@ -365,17 +365,17 @@ ncclResult_t ncclCommSetIntra(struct ncclComm* comm, int rank, int ranks, struct
   if (rank == 0) {
     assert(comm == comm0);
     int* bar;
-    NCCLCHECK(ncclMalloc(&bar, 2));
+    NCCLCHECK(ncclCalloc(&bar, 2));
     bar[0] = bar[1] = 0;
     comm->intraBarrier = bar;
-    NCCLCHECK(ncclMalloc(&comm->intraParams, comm->intraRanks));
-    NCCLCHECK(ncclMalloc(&comm->intraCudaDevs, comm->intraRanks));
+    NCCLCHECK(ncclCalloc(&comm->intraParams, comm->intraRanks));
+    NCCLCHECK(ncclCalloc(&comm->intraCudaDevs, comm->intraRanks));
     int* CGMode;
-    NCCLCHECK(ncclMalloc(&CGMode, 1));
+    NCCLCHECK(ncclCalloc(&CGMode, 1));
     *CGMode = 0x11;
     comm->intraCGMode = CGMode;
     int* CC;
-    NCCLCHECK(ncclMalloc(&CC, 1));
+    NCCLCHECK(ncclCalloc(&CC, 1));
     *CC = ncclCudaFullCompCap();
     comm->intraCC = CC;
   } else {
@@ -420,14 +420,14 @@ static ncclResult_t initTransportsRank(struct ncclComm* comm, ncclUniqueId* comm
   NCCLCHECK(bootstrapInit(commId, rank, nranks, &commState));
 
   struct ncclInfo* allInfo;
-  NCCLCHECK(ncclMalloc(&allInfo, nranks));
+  NCCLCHECK(ncclCalloc(&allInfo, nranks));
   NCCLCHECK(fillInfo(allInfo+rank, rank));
   NCCLCHECK(bootstrapAllGather(commState, allInfo, sizeof(struct ncclInfo)));
 
   int* connectTransport;
   ncclTvalue_t* connectValue;
-  NCCLCHECK(ncclMalloc(&connectTransport, nranks*nranks));
-  NCCLCHECK(ncclMalloc(&connectValue, nranks*nranks));
+  NCCLCHECK(ncclCalloc(&connectTransport, nranks*nranks));
+  NCCLCHECK(ncclCalloc(&connectValue, nranks*nranks));
 
   NCCLCHECK(fillConnect(allInfo, nranks, rank, connectTransport+nranks*rank, connectValue+nranks*rank));
   NCCLCHECK(bootstrapAllGather(commState, connectTransport, nranks*(sizeof(int))));
@@ -438,8 +438,8 @@ static ncclResult_t initTransportsRank(struct ncclComm* comm, ncclUniqueId* comm
   // Get my rings
   int nrings;
   int* prev, *next;
-  NCCLCHECK(ncclMalloc(&prev, nranks*MAXRINGS));
-  NCCLCHECK(ncclMalloc(&next, nranks*MAXRINGS));
+  NCCLCHECK(ncclCalloc(&prev, nranks*MAXRINGS));
+  NCCLCHECK(ncclCalloc(&next, nranks*MAXRINGS));
   comm->nThreads = getDefaultThreads();
   NCCLCHECK(ncclGetRings(&nrings, &comm->nThreads, rank, nranks, connectTransport, connectValue, prev, next));
   free(connectTransport);
@@ -475,7 +475,7 @@ static ncclResult_t initTransportsRank(struct ncclComm* comm, ncclUniqueId* comm
     NCCLCHECK(bootstrapAllGather(commState, next+r*nranks, sizeof(int)));
   }
   int *rings;
-  NCCLCHECK(ncclMalloc(&rings, nranks*MAXRINGS));
+  NCCLCHECK(ncclCalloc(&rings, nranks*MAXRINGS));
   NCCLCHECK(buildRings(nrings, rings, rank, nranks, prev, next));
   free(prev);
   free(next);
@@ -598,7 +598,7 @@ ncclResult_t ncclCommInitRank(ncclComm_t* newcomm, int nranks, ncclUniqueId comm
 
 static ncclResult_t initTransportsAll(struct ncclComm** comms, const int* devs, int nranks) {
   struct ncclInfo* allInfo;
-  NCCLCHECK(ncclMalloc(&allInfo, nranks));
+  NCCLCHECK(ncclCalloc(&allInfo, nranks));
   for (int rank=0; rank<nranks; rank++) {
     CUDACHECK(cudaSetDevice(devs[rank]));
     NCCLCHECK(fillInfo(allInfo+rank, rank));
@@ -606,16 +606,16 @@ static ncclResult_t initTransportsAll(struct ncclComm** comms, const int* devs, 
 
   int* connectTransport;
   ncclTvalue_t* connectValue;
-  NCCLCHECK(ncclMalloc(&connectTransport, nranks*nranks));
-  NCCLCHECK(ncclMalloc(&connectValue, nranks*nranks));
+  NCCLCHECK(ncclCalloc(&connectTransport, nranks*nranks));
+  NCCLCHECK(ncclCalloc(&connectValue, nranks*nranks));
   for (int rank=0; rank<nranks; rank++)
     NCCLCHECK(fillConnect(allInfo, nranks, rank, connectTransport+nranks*rank, connectValue+nranks*rank));
 
   int* prev, *prevFinal, *next, *nextFinal;
-  NCCLCHECK(ncclMalloc(&prev, nranks*MAXRINGS));
-  NCCLCHECK(ncclMalloc(&prevFinal, nranks*MAXRINGS));
-  NCCLCHECK(ncclMalloc(&next, nranks*MAXRINGS));
-  NCCLCHECK(ncclMalloc(&nextFinal, nranks*MAXRINGS));
+  NCCLCHECK(ncclCalloc(&prev, nranks*MAXRINGS));
+  NCCLCHECK(ncclCalloc(&prevFinal, nranks*MAXRINGS));
+  NCCLCHECK(ncclCalloc(&next, nranks*MAXRINGS));
+  NCCLCHECK(ncclCalloc(&nextFinal, nranks*MAXRINGS));
   int nrings = MAXRINGS;
   int nthreads=0;
   int myCompCap = ncclCudaCompCap();
@@ -644,7 +644,7 @@ static ncclResult_t initTransportsAll(struct ncclComm** comms, const int* devs, 
   INFO(INIT,"Min Comp Cap %d", minCompCap);
 
   int* rings;
-  NCCLCHECK(ncclMalloc(&rings, nranks*MAXRINGS));
+  NCCLCHECK(ncclCalloc(&rings, nranks*MAXRINGS));
   NCCLCHECK(buildRings(nrings, rings, 0, nranks, prevFinal, nextFinal));
   free(prevFinal);
   free(nextFinal);

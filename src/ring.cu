@@ -44,7 +44,7 @@ ncclResult_t initRing(struct ncclComm* comm, int ringid) {
 
   // Ring index to user rank table.
   CUDACHECK(cudaMalloc(&ring->devUserRanks, comm->nRanks*sizeof(int)));
-  NCCLCHECK(ncclMalloc(&ring->userRanks, comm->nRanks));
+  NCCLCHECK(ncclCalloc(&ring->userRanks, comm->nRanks));
 
   // Per-ring operation list.
   NCCLCHECK(ncclCudaHostAlloc((void**)&ring->collectives, (void**)&ring->devCollectives, sizeof(struct ncclColl)*NCCL_MAX_OPS));
