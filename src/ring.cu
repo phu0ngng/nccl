@@ -43,7 +43,7 @@ ncclResult_t initRing(struct ncclComm* comm, int ringid) {
   ring->send.conn.llLastCleaning = 0;
 
   // Ring index to user rank table.
-  CUDACHECK(cudaMalloc(&ring->devUserRanks, comm->nRanks*sizeof(int)));
+  NCCLCHECK(ncclCudaCalloc(&ring->devUserRanks, comm->nRanks));
   NCCLCHECK(ncclCalloc(&ring->userRanks, comm->nRanks));
 
   // Per-ring operation list.

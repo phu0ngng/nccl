@@ -182,12 +182,12 @@ static ncclResult_t commAlloc(ncclComm_t* comret, int ndev, int rank) {
 
 static ncclResult_t devCommSetup(ncclComm_t comm) {
   // Fully duplicate the comm on the device
-  CUDACHECK(cudaMalloc(&comm->devComm, sizeof(struct ncclComm)));
+  NCCLCHECK(ncclCudaCalloc(&comm->devComm, 1));
   // Copy the comm on the device
-  CUDACHECK(cudaMemcpy(comm->devComm, comm, sizeof(struct ncclComm), cudaMemcpyHostToDevice));
+  NCCLCHECK(ncclCudaMemcpy(comm->devComm, comm, 1));
   // Copy userRanks
   for (int r=0; r<comm->nRings; r++) {
-    CUDACHECK(cudaMemcpy(comm->rings[r].devUserRanks, comm->rings[r].userRanks, comm->nRanks*sizeof(int), cudaMemcpyHostToDevice));
+    NCCLCHECK(ncclCudaMemcpy(comm->rings[r].devUserRanks, comm->rings[r].userRanks, comm->nRanks));
   }
   return ncclSuccess;
 }
