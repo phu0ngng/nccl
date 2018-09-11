@@ -129,7 +129,8 @@ int findConnected(int rank, int* matrix, int nranks, int transport, int* coords)
 
 static ncclResult_t fillCoords(int nranks, int* matrix, int* coords, int* rankToIdx, int* idxToRank) {
   int current[NTRANSPORTS];
-  int* p2pConnected = (int*)malloc(nranks*sizeof(int));
+  int* p2pConnected;
+  NCCLCHECK(ncclMalloc(&p2pConnected, nranks));
   for (int i=0; i<NTRANSPORTS; i++) current[i] = 0;
   int curRank = 0, idx = 0;
   while (1) {
@@ -196,22 +197,24 @@ ncclResult_t ncclGetRings(int* nrings, int* nthreads, int rank, int nranks, int*
   }
 
   // Compute hierarchical topology groups, indexes, and rank<->index tables
-  int* coords = (int*)malloc(sizeof(int)*nranks*NTRANSPORTS);
-  int* globalIdxToRank = (int*)malloc(sizeof(int)*nranks);
-  int* globalRankToIdx = (int*)malloc(sizeof(int)*nranks);
+  int* coords, *globalIdxToRank, *globalRankToIdx;
+  NCCLCHECK(ncclMalloc(&coords, nranks*NTRANSPORTS));
   for (int i=0; i<nranks*NTRANSPORTS; i++) coords[i] = -1;
+  NCCLCHECK(ncclMalloc(&globalIdxToRank, nranks));
+  NCCLCHECK(ncclMalloc(&globalRankToIdx, nranks));
+
   NCCLCHECK(fillCoords(nranks, transports, coords, globalRankToIdx, globalIdxToRank));
 
   // Start with a high score, then decrease until we find rings
   int minScore = NCCL_MAX_SCORE;
   int nringsTmp;
-  int* prevTmp = (int*)malloc(sizeof(int)*nranks*MAXRINGS);
-  int* nextTmp = (int*)malloc(sizeof(int)*nranks*MAXRINGS);
-
-  int* idxToRank = (int*)malloc(sizeof(int)*nranks);
-  int* rankToIdx = (int*)malloc(sizeof(int)*nranks);
-  int* groups = (int*)malloc(sizeof(int)*nranks);
-  int* subgroups = (int*)malloc(sizeof(int)*nranks);
+  int *prevTmp, *nextTmp, *idxToRank, *rankToIdx, *groups, *subgroups;
+  NCCLCHECK(ncclMalloc(&prevTmp, nranks*MAXRINGS));
+  NCCLCHECK(ncclMalloc(&nextTmp, nranks*MAXRINGS));
+  NCCLCHECK(ncclMalloc(&idxToRank, nranks));
+  NCCLCHECK(ncclMalloc(&rankToIdx, nranks));
+  NCCLCHECK(ncclMalloc(&groups, nranks));
+  NCCLCHECK(ncclMalloc(&subgroups, nranks));
 
   int nThreads;
   do {
@@ -240,9 +243,11 @@ ncclResult_t ncclGetRings(int* nrings, int* nthreads, int rank, int nranks, int*
 
       int ngroups = groups[nidx-1] + 1; // Coords should be ordered
 
-      ncclTvalue_t* subvalues = (ncclTvalue_t*)malloc(sizeof(ncclTvalue_t)*nidx*nidx);
-      int* subprev = (int*)malloc(sizeof(int)*nidx*nringsTmp);
-      int* subnext = (int*)malloc(sizeof(int)*nidx*nringsTmp);
+      ncclTvalue_t* subvalues;
+      int *subprev, *subnext;
+      NCCLCHECK(ncclMalloc(&subvalues, nidx*nidx));
+      NCCLCHECK(ncclMalloc(&subprev, nidx*nringsTmp));
+      NCCLCHECK(ncclMalloc(&subnext, nidx*nringsTmp));
       if (ngroups > 1) {
         /* Extract subvalues */
         for (int i=0; i<nidx; i++) {
