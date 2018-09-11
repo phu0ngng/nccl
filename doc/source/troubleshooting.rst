@@ -411,8 +411,8 @@ NCCL_DEBUG_FILE
 ---------------
 (since 2.2.12)
 
-Direct the NCCL debug logging output to a file. The filename format can be set to filename.%h.%p where %h is the
-hostname and %p is the process PID.
+Direct the NCCL debug logging output to a file. The filename format can be set to *filename.%h.%p* where *%h* is replaced with the
+hostname and *%p* is replaced with the process PID.
 
 Values accepted
 ^^^^^^^^^^^^^^^
@@ -436,5 +436,5 @@ Values accepted
 The default value is INIT.
 
 Supported subsystem names are INIT (stands for initialization),COLL (stands for collectives), P2P (stands for
-peer-to-peer), SHM (stands for shared memory), NET (stands for network) and ,ALL (includes every subsystem).
+peer-to-peer), SHM (stands for shared memory), NET (stands for network) and ALL (includes every subsystem).
 
