@@ -61,6 +61,6 @@ Returns in *device* the CUDA device associated with the NCCL communicator *comm*
 ncclCommUserRank
 ----------------
 
-.. c:function:: ncclResult_t ncclCommUserRank(const ncclComm_t comm, int* rank);
+.. c:function:: ncclResult_t ncclCommUserRank(const ncclComm_t comm, int* rank)
 
 Returns in *rank* the rank of the NCCL communicator *comm*.
