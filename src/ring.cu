@@ -18,14 +18,12 @@ ncclResult_t initRing(struct ncclComm* comm, int ringid) {
 
   const int sendSize = ring->devMemSendSize = sizeof(struct ncclSendMem);
   struct ncclSendMem* sendMem;
-  CUDACHECK(cudaMalloc(&sendMem, sendSize));
-  CUDACHECK(cudaMemset(sendMem, 0, sendSize));
+  NCCLCHECK(ncclCudaCalloc((char**)&sendMem, sendSize));
   ring->devMemSend = sendMem;
 
   const int recvSize = ring->devMemRecvSize = offsetof(struct ncclRecvMem, buff)+ring->buffSize;
   struct ncclRecvMem* recvMem;
-  CUDACHECK(cudaMalloc(&recvMem, recvSize));
-  CUDACHECK(cudaMemset(recvMem, 0, recvSize));
+  NCCLCHECK(ncclCudaCalloc((char**)&recvMem, recvSize));
   ring->devMemRecv = recvMem;
 
   TRACE(INIT,"sendMem %p size %d recvMem %p size %d", sendMem, sendSize, recvMem, recvSize);

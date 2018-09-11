@@ -371,14 +371,8 @@ static ncclResult_t ncclCalloc(T** ptr, size_t nelem) {
 
 template <typename T>
 static ncclResult_t ncclCudaCalloc(T** ptr, size_t nelem) {
-  void* p;
-  CUDACHECK(cudaMalloc(&p, nelem*sizeof(T)));
-  if (p == NULL) {
-    WARN("Failed to cudaMalloc %ld bytes", nelem*sizeof(T));
-    return ncclUnhandledCudaError;
-  }
-  CUDACHECK(cudaMemset(p, 0, nelem*sizeof(T)));
-  *ptr = (T*)p;
+  CUDACHECK(cudaMalloc(ptr, nelem*sizeof(T)));
+  CUDACHECK(cudaMemset(*ptr, 0, nelem*sizeof(T)));
   return ncclSuccess;
 }
 

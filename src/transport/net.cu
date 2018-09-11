@@ -228,8 +228,7 @@ ncclResult_t netSendSetup(ncclTinfo_t* myOpaqueInfo, ncclTinfo_t* peerOpaqueInfo
 
   int size = offsetof(struct ncclRecvMem, buff)+ring->buffSize;
   if (resources->cudaSupport) {
-    CUDACHECK(cudaMalloc(&resources->devNetMem, size));
-    CUDACHECK(cudaMemset(resources->devNetMem, 0, size));
+    NCCLCHECK(ncclCudaCalloc((char**)(&resources->devNetMem), size));
   }
 
   NCCLCHECK(ncclCudaHostAlloc((void**)&resources->hostRecvMem, (void**)&resources->devHostRecvMem, size));
