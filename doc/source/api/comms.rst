@@ -34,7 +34,7 @@ Creates a new communicator (multi thread/process version).
 *rank* must be between 0 and *nranks*-1 and unique within a communicator clique.
 Each rank is associated to a CUDA device, which has to be set before calling
 ncclCommInitRank.
-ncclCommInitRank implicitly syncronizes with other ranks, hence it must be
+ncclCommInitRank implicitly synchronizes with other ranks, hence it must be
 called by different threads/processes or use ncclGroupStart/ncclGroupEnd.
 
 ncclCommInitAll
