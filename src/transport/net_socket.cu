@@ -60,6 +60,7 @@ ncclResult_t ncclSocketDevices(int* ndev, int** scores) {
     int distance = (err1 != ncclSuccess || err2 != ncclSuccess || sockPath == NULL || cudaPath == NULL) ? PATH_SOC : pciDistance(sockPath, cudaPath);
     sprintf(line+strlen(line), "%s(%s) ", ncclNetIfNames+i*MAX_IF_NAME_SIZE, pathDists[distance]);
     sc[i] = 1+PATH_SOC-distance;
+    if (err2 == ncclSuccess) free(sockPath);
   }
   INFO(INIT|NET,"%s", line);
   if (err1 == ncclSuccess) free(cudaPath);
