@@ -13,6 +13,7 @@ Contents:
  nccl1
  examples
  mpi
+ env
  troubleshooting
 
 Indices and tables
