@@ -311,7 +311,7 @@ static ncclResult_t computeColl(struct ncclInfo* info /* input */, struct ncclCo
   proxyArgs->llMode = llMode;
   proxyArgs->opCount = info->comm->opCount;
   TRACE(NET,"opCount %lx slicesteps %d spl %d cpl %d nbytes %zi -> llmode %d nrings %d nthreads %d, nloops %d nsteps %d comm %p",
-      coll->args.opCount, sliceSteps, info->nstepsPerLoop, info->nchunksPerLoop, nBytes, llMode, coll->args.nRings, coll->args.nThreads,
+      coll->args.opCount, proxyArgs->sliceSteps, info->nstepsPerLoop, info->nchunksPerLoop, nBytes, llMode, coll->args.nRings, coll->args.nThreads,
       nLoops, proxyArgs->nsteps, info->comm);
   return ncclSuccess;
 }
