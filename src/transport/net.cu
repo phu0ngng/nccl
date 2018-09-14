@@ -195,7 +195,8 @@ NCCL_PARAM(NetGdrRead, "NET_GDR_READ", -2);
 /* Determine if we will use this transport for this peer and return connect
  * information for this peer */
 ncclResult_t netSendSetup(ncclTinfo_t* myOpaqueInfo, ncclTinfo_t* peerOpaqueInfo, struct ncclConnect* connectInfo, struct ncclRing* ring) {
-  struct netSendResources* resources = (struct netSendResources*) mallocZero(sizeof(struct netSendResources));
+  struct netSendResources* resources;
+  NCCLCHECK(ncclCalloc(&resources, 1));
   ring->send.transportResources = resources;
 
   struct netInfo* myInfo = (struct netInfo*)myOpaqueInfo;
@@ -227,8 +228,7 @@ ncclResult_t netSendSetup(ncclTinfo_t* myOpaqueInfo, ncclTinfo_t* peerOpaqueInfo
 
   int size = offsetof(struct ncclRecvMem, buff)+ring->buffSize;
   if (resources->cudaSupport) {
-    CUDACHECK(cudaMalloc(&resources->devNetMem, size));
-    CUDACHECK(cudaMemset(resources->devNetMem, 0, size));
+    NCCLCHECK(ncclCudaCalloc((char**)(&resources->devNetMem), size));
   }
 
   NCCLCHECK(ncclCudaHostAlloc((void**)&resources->hostRecvMem, (void**)&resources->devHostRecvMem, size));
@@ -238,7 +238,8 @@ ncclResult_t netSendSetup(ncclTinfo_t* myOpaqueInfo, ncclTinfo_t* peerOpaqueInfo
 }
 
 ncclResult_t netRecvSetup(ncclTinfo_t* myOpaqueInfo, ncclTinfo_t* peerOpaqueInfo, struct ncclConnect* connectInfo, struct ncclRing* ring) {
-  struct netRecvResources* resources = (struct netRecvResources*) mallocZero(sizeof(struct netRecvResources));
+  struct netRecvResources* resources;
+  NCCLCHECK(ncclCalloc(&resources, 1));
   ring->recv.transportResources = resources;
 
   struct netInfo* myInfo = (struct netInfo*)myOpaqueInfo;
@@ -451,7 +452,7 @@ ncclResult_t netRecvProxy(struct ncclProxyArgs* args) {
   if (!args->needProxy) goto nextColl;
 
   TRACE(NET,"opCount %lx head %lx tail %lx end %lx nsteps %d llMode %d", args->opCount, head, tail, end, args->nsteps, llMode);
-  TRACE(NET,"opCount %lx buffSize %d stepSize %d ptrType %d", args->opCount, buffSize, stepSize, ptrType);
+  TRACE(NET,"opCount %lx buffSize %d stepSize %d ptrType %d", args->opCount, ring->buffSize, stepSize, ptrType);
 
   while (head < end) {
     idle++;

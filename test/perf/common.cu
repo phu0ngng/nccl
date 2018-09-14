@@ -8,6 +8,7 @@
 #include <pthread.h>
 #include <cstdio>
 #include <getopt.h>
+#include <signal.h>
 #include "cuda.h"
 
 #if NCCL_MAJOR >= 2
@@ -721,7 +722,7 @@ void* compThread(void* args) {
       // Do not exit, as it would call the CUDA destructors which may break the parent.
       // Replace with another process that does nothing instead. That also simulates
       // The behavior of a popen() call.
-      execl("/bin/true", "");
+      execl("/bin/true", "/bin/true", NULL);
     } else {
       usleep(40000);
     }
@@ -1047,6 +1048,11 @@ int main(int argc, char* argv[]) {
   pthread_t compThreads[nThreads];
   struct threadArgs_t args[nThreads];
   memset(args, 0, sizeof(struct threadArgs_t)*nThreads);
+
+  if (side_comp && signal(SIGCHLD, SIG_IGN) == SIG_ERR) {
+    printf("Failed to set up automatic cleanup of zombie processes\n");
+    exit(EXIT_FAILURE);
+  }
 
   for (int t=nThreads-1; t>=0; t--) {
     args[t].proc_args = (void *)args;

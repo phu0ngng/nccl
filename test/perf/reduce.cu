@@ -47,22 +47,18 @@ void InitRecvResult(struct threadArgs_t* args, ncclDataType_t type, ncclRedOp_t 
 #ifdef MPI_SUPPORT
     int root_proc = root/(args->nThreads*args->nGpus);
     if (args->expectedBytes) {
+      static void* remote = NULL;
+      if (remote == NULL)
+        CUDACHECK(cudaHostAlloc(&remote, args->maxbytes, cudaHostAllocPortable | cudaHostAllocMapped));
       // Last thread does the MPI reduction
       if (root_proc == args->proc) { 
-        void* temp, *tempHost = malloc(args->expectedBytes);
-        CUDACHECK(cudaHostRegister(tempHost, args->expectedBytes, 0));
-        CUDACHECK(cudaHostGetDevicePointer(&temp, tempHost, 0));
-
         for (int i=0; i<args->nProcs; i++) {
           if (i == args->proc) continue;
-          MPI_Recv(tempHost, args->expectedBytes, MPI_BYTE, i, 0, MPI_COMM_WORLD, MPI_STATUS_IGNORE);
+          MPI_Recv(remote, args->expectedBytes, MPI_BYTE, i, 0, MPI_COMM_WORLD, MPI_STATUS_IGNORE);
 
-          Accumulate(args->procShared, temp, count, type, op);
+          Accumulate(args->procShared, remote, count, type, op);
           CUDACHECK(cudaDeviceSynchronize());
         }
-
-        CUDACHECK(cudaHostUnregister(tempHost));
-        free(tempHost);
       } else {
         MPI_Send(args->procSharedHost, args->expectedBytes, MPI_BYTE, root_proc, 0, MPI_COMM_WORLD);
       }

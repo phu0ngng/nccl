@@ -65,7 +65,6 @@ static int findInterfaces(const char* prefixList, char* names, union socketAddre
   getifaddrs(&interfaces);
   for (interface = interfaces; interface && found < maxIfs; interface = interface->ifa_next) {
     if (interface->ifa_addr == NULL) continue;
-    if (strncmp("lo", interface->ifa_name, strlen("lo")) == 0) continue; // Do not use loopback interfaces
 
     /* We only support IPv4 & IPv6 */
     int family = interface->ifa_addr->sa_family;
@@ -161,7 +160,6 @@ static int findInterfaceMatchSubnet(char* ifNames, union socketAddress* localAdd
   getifaddrs(&interfaces);
   for (interface = interfaces; interface && !found; interface = interface->ifa_next) {
     if (interface->ifa_addr == NULL) continue;
-    //if (strncmp("lo", interface->ifa_name, strlen("lo")) == 0) continue; // Do not use loopback interfaces
 
     /* We only support IPv4 & IPv6 */
     int family = interface->ifa_addr->sa_family;
@@ -294,8 +292,11 @@ static int findInterfaces(char* ifNames, union socketAddress *ifAddrs, int ifNam
         nIfs = findInterfaceMatchSubnet(ifNames, ifAddrs, idAddr, ifNameMaxSize, maxIfs);
       }
     }
-    // Then look for anything else (but not loopback)
-    if (nIfs == 0) nIfs = findInterfaces("^lo", ifNames, ifAddrs, sock_family, ifNameMaxSize, maxIfs);
+    // Then look for anything else (but not docker or lo)
+    if (nIfs == 0) nIfs = findInterfaces("^docker,lo", ifNames, ifAddrs, sock_family, ifNameMaxSize, maxIfs);
+    // Finally look for docker, then lo.
+    if (nIfs == 0) nIfs = findInterfaces("docker", ifNames, ifAddrs, sock_family, ifNameMaxSize, maxIfs);
+    if (nIfs == 0) nIfs = findInterfaces("lo", ifNames, ifAddrs, sock_family, ifNameMaxSize, maxIfs);
   }
   return nIfs;
 }

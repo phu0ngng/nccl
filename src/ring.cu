@@ -18,14 +18,12 @@ ncclResult_t initRing(struct ncclComm* comm, int ringid) {
 
   const int sendSize = ring->devMemSendSize = sizeof(struct ncclSendMem);
   struct ncclSendMem* sendMem;
-  CUDACHECK(cudaMalloc(&sendMem, sendSize));
-  CUDACHECK(cudaMemset(sendMem, 0, sendSize));
+  NCCLCHECK(ncclCudaCalloc((char**)&sendMem, sendSize));
   ring->devMemSend = sendMem;
 
   const int recvSize = ring->devMemRecvSize = offsetof(struct ncclRecvMem, buff)+ring->buffSize;
   struct ncclRecvMem* recvMem;
-  CUDACHECK(cudaMalloc(&recvMem, recvSize));
-  CUDACHECK(cudaMemset(recvMem, 0, recvSize));
+  NCCLCHECK(ncclCudaCalloc((char**)&recvMem, recvSize));
   ring->devMemRecv = recvMem;
 
   TRACE(INIT,"sendMem %p size %d recvMem %p size %d", sendMem, sendSize, recvMem, recvSize);
@@ -43,8 +41,8 @@ ncclResult_t initRing(struct ncclComm* comm, int ringid) {
   ring->send.conn.llLastCleaning = 0;
 
   // Ring index to user rank table.
-  CUDACHECK(cudaMalloc(&ring->devUserRanks, comm->nRanks*sizeof(int)));
-  ring->userRanks = (int*)malloc(comm->nRanks*sizeof(int));
+  NCCLCHECK(ncclCudaCalloc(&ring->devUserRanks, comm->nRanks));
+  NCCLCHECK(ncclCalloc(&ring->userRanks, comm->nRanks));
 
   // Per-ring operation list.
   NCCLCHECK(ncclCudaHostAlloc((void**)&ring->collectives, (void**)&ring->devCollectives, sizeof(struct ncclColl)*NCCL_MAX_OPS));

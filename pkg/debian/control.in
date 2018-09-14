@@ -14,7 +14,7 @@ Description: NVIDIA Collectives Communication Library (NCCL) Runtime
  communication routines for GPUs, implementing all-reduce, all-gather, reduce,
  broadcast, and reduce-scatter.
  It has been optimized to achieve high bandwidth on any platform using PCIe,
- NVLink, NVswitch, as well as networking using Infiniband Verbs or TCP/IP
+ NVLink, NVswitch, as well as networking using InfiniBand Verbs or TCP/IP
  sockets.
 
 Package: libnccl-dev
@@ -26,5 +26,5 @@ Description: NVIDIA Collectives Communication Library (NCCL) Development Files
  communication routines for GPUs, implementing all-reduce, all-gather, reduce,
  broadcast, and reduce-scatter.
  It has been optimized to achieve high bandwidth on any platform using PCIe,
- NVLink, NVswitch, as well as networking using Infiniband Verbs or TCP/IP
+ NVLink, NVswitch, as well as networking using InfiniBand Verbs or TCP/IP
  sockets.

@@ -15,7 +15,7 @@ void getCollByteCount(size_t *sendcount, size_t *recvcount, size_t *paramcount, 
     *sendInplaceOffset = 0;
     *recvInplaceOffset = 0;
     *paramcount = *sendcount;
- }
+}
 
 void InitRecvResult(struct threadArgs_t* args, ncclDataType_t type, ncclRedOp_t op, int root, int in_place, int is_first) {
   size_t count = args->nbytes / wordSize(type);

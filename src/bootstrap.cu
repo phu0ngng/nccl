@@ -118,12 +118,8 @@ static void *bootstrapRoot(void* commId) {
     } else {
       size = bop.size;
       if (size*nranks*2 > alloc_size) {
-        if (data) free(data);
-        data = (char *)malloc(size*nranks*2);
-        if (data == NULL) {
-          WARN("Bootstrap thread : failed to allocate memory");
-          goto out;
-        }
+        if (data) free(data); data = NULL;
+        NCCLCHECKGOTO(ncclCalloc(&data, size*nranks*2), res, out);
         alloc_size = size*nranks*2;
       }
     }
@@ -173,7 +169,8 @@ ncclResult_t bootstrapCreateRoot(ncclUniqueId* commId, bool idFromEnv) {
   struct extId* id = (struct extId*)commId;
   id->hostHash = getHostHash();
   NCCLCHECK(bootstrapListen(idFromEnv ? dontCareIf : 0, &id->extHandle, &id->extListenComm));
-  ncclUniqueId* threadIdCopy = (ncclUniqueId*)malloc(sizeof(ncclUniqueId));
+  ncclUniqueId* threadIdCopy;
+  NCCLCHECK(ncclCalloc(&threadIdCopy, 1));
   memcpy(threadIdCopy, id, sizeof(ncclUniqueId));
   pthread_create(&id->boostrapThread, NULL, bootstrapRoot, (void *)threadIdCopy);
   return ncclSuccess;
@@ -208,7 +205,8 @@ struct extState {
 ncclResult_t bootstrapInit(ncclUniqueId* commId, int rank, int nranks, void** commState) {
   struct extId* id = (struct extId*)commId;
   bool idFromEnv = id->pid < 0;
-  struct extState* state = (struct extState*)malloc(sizeof(struct extState));
+  struct extState* state;
+  NCCLCHECK(ncclCalloc(&state, 1));
   state->rank = rank;
   state->nranks = nranks;
   *commState = state;
