@@ -20,7 +20,8 @@ __device__ void ncclBroadcastKernel(struct CollectiveArgs* args) {
   const int nthreads = blockDim.x - 1;
   const int bid = args->bid;
   struct ncclComm* comm = args->comm;
-  struct ncclRing* ring = comm->rings+blockIdx.x;
+  struct ncclChannel* channel = comm->channels+blockIdx.x;
+  struct ncclRing* ring = &channel->ring;
 
   WaitFlag waitDoneFromNext(ring->send.conn.head, NCCL_STEPS-BROADCAST_CHUNKSTEPS);
   WaitFlag waitReadyFromPrev(ring->recv.conn.tail, 0);
@@ -30,10 +31,10 @@ __device__ void ncclBroadcastKernel(struct CollectiveArgs* args) {
   typedef Primitives<UNROLL, BROADCAST_CHUNKSTEPS/BROADCAST_SLICESTEPS, BROADCAST_SLICESTEPS, T> Prims;
 
   const ssize_t size = args->N;
-  const int buffSize = ring->buffSize / sizeof(T);
+  const int buffSize = channel->buffSize / sizeof(T);
   const int stepSize = buffSize / NCCL_STEPS;
   const int chunkSize = stepSize * BROADCAST_CHUNKSTEPS;
-  const ssize_t loopSize = args->nRings*(ssize_t)chunkSize;
+  const ssize_t loopSize = args->nChannels*(ssize_t)chunkSize;
   const int rank = ring->devUserRanks[0];
   const int nextRank = ring->devUserRanks[1];
   const int root = args->root;
@@ -49,7 +50,7 @@ __device__ void ncclBroadcastKernel(struct CollectiveArgs* args) {
   T * __restrict__ nextOutput = (T*)ring->send.conn.buff;
 
   for (ssize_t gridOffset = 0; gridOffset < size; gridOffset += loopSize) {
-    int realChunkSize = min(chunkSize, DIVUP(size-gridOffset,args->nRings));
+    int realChunkSize = min(chunkSize, DIVUP(size-gridOffset,args->nChannels));
     ALIGN_SIZE(realChunkSize, nthreads*sizeof(uint64_t)/sizeof(T));
     ssize_t offset = gridOffset + bid*realChunkSize;
     int maxOffset = min(realChunkSize, size-offset);
@@ -119,7 +120,7 @@ __device__ void ncclBroadcastLLKernel(struct CollectiveArgs* args) {
   const int bid = args->bid;
   const int nthreads = args->nThreads;
   struct ncclComm* comm = args->comm;
-  struct ncclRing* ring = comm->rings+blockIdx.x;
+  struct ncclRing* ring = &comm->channels[blockIdx.x].ring;
   volatile uint64_t * recvHeadPtr = ring->recv.conn.llHead;
   volatile uint64_t * sendHeadPtr = ring->send.conn.llHead;
   volatile int * sizesFifo = ring->send.conn.llFifo;
@@ -132,7 +133,7 @@ __device__ void ncclBroadcastLLKernel(struct CollectiveArgs* args) {
 
   const ssize_t size = args->N;
   ssize_t chunkSize = NCCL_LL_SLICE_LINES * sizeof(uint64_t) / sizeof(T);
-  const ssize_t loopSize = args->nRings*chunkSize;
+  const ssize_t loopSize = args->nChannels*chunkSize;
 
   uint64_t step = ring->send.conn.llStep;
   uint32_t flag = step + 1;

@@ -101,15 +101,15 @@ static void SaveProxy(struct ncclConnector* connector, struct ncclProxyArgs* arg
 }
 
 ncclResult_t transportSaveProxies(struct ncclProxyArgs* args, int pattern, int nranks) {
-  args->needProxy = NeedProxy(RECV, pattern, args->ring, nranks); SaveProxy(&args->ring->recv, args);
-  args->needProxy = NeedProxy(SEND, pattern, args->ring, nranks); SaveProxy(&args->ring->send, args);
+  args->needProxy = NeedProxy(RECV, pattern, &args->channel->ring, nranks); SaveProxy(&args->channel->ring.recv, args);
+  args->needProxy = NeedProxy(SEND, pattern, &args->channel->ring, nranks); SaveProxy(&args->channel->ring.send, args);
   return ncclSuccess;
 }
 
 ncclResult_t transportStartProxies(ncclComm* comm) {
-  for (int r=0; r<comm->nRings; r++) {
-    FifoPushArgs(comm->rings[r].send.proxyInfo);
-    FifoPushArgs(comm->rings[r].recv.proxyInfo);
+  for (int r=0; r<comm->nChannels; r++) {
+    FifoPushArgs(comm->channels[r].ring.send.proxyInfo);
+    FifoPushArgs(comm->channels[r].ring.recv.proxyInfo);
   }
   pthread_yield(); // Let other threads run
   return ncclSuccess;

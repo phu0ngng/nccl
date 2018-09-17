@@ -31,6 +31,16 @@ struct p2pConnectInfo {
   };
 };
 
+struct p2pSendResources {
+  struct ncclSendMem* devMem;
+  void* ipcPtr;
+};
+
+struct p2pRecvResources {
+  struct ncclRecvMem* devMem;
+  void* ipcPtr;
+};
+
 #include <sys/types.h>
 
 /* Fill information necessary to exchange between ranks to choose whether or not
@@ -174,8 +184,8 @@ static int computeRingsRec(ncclTvalue_t* matrix, int n, int *rings, int currentR
 static inline int copyRings(int nranks, int* rings, int nrings, int newNrings) {
   if (nrings == 0) return 0;
   // Copy rings by dup times
-  if (newNrings > MAXRINGS) {
-    newNrings = MAXRINGS;
+  if (newNrings > MAXCHANNELS) {
+    newNrings = MAXCHANNELS;
   }
   for (int r=nrings; r<newNrings; r++) {
     for (int i=0; i<nranks; i++) rings[r*nranks+i] = rings[(r%nrings)*nranks+i];
@@ -209,9 +219,9 @@ static inline int findConnect(int nranks, int* ranks) {
 
 int p2pComputeRingsNvLink(ncclTvalue_t* values, int nranks, int* rings, int nrings, int* prev, int* next, int oversubscribe, int* nthreads) {
   if (nrings == 0) return 0;
-  if (nrings > MAXRINGS) {
-    WARN("Max rings reached, limiting to %d", MAXRINGS);
-    nrings = MAXRINGS;
+  if (nrings > MAXCHANNELS) {
+    WARN("Max rings reached, limiting to %d", MAXCHANNELS);
+    nrings = MAXCHANNELS;
   }
   // Find existing constraints / connections
   int connect = 0;
@@ -239,9 +249,9 @@ int p2pComputeRingsNvLink(ncclTvalue_t* values, int nranks, int* rings, int nrin
 
   if (compNrings && compNrings < nrings && nranks <= 4) {
     // Try to oversubscribe to get a better result
-    int *rings2 = (int *)malloc(sizeof(int)*MAXRINGS*nranks);
-    if (rings2 == NULL) { WARN("malloc of %ld bytes failed", sizeof(int)*MAXRINGS*nranks); return 0; }
-    for (int i=0; i<MAXRINGS*nranks; i++) rings2[i] = -1;
+    int *rings2 = (int *)malloc(sizeof(int)*MAXCHANNELS*nranks);
+    if (rings2 == NULL) { WARN("malloc of %ld bytes failed", sizeof(int)*MAXCHANNELS*nranks); return 0; }
+    for (int i=0; i<MAXCHANNELS*nranks; i++) rings2[i] = -1;
     int nThreads = *nthreads;
     int compNrings2 = p2pComputeRingsNvLink(values, nranks, rings2, nrings, prev, next, 1, &nThreads);
     if (compNrings2 > compNrings*2) {
@@ -367,8 +377,8 @@ int p2pComputeRingsPci(ncclTvalue_t* values, int nranks, int* rings, int nrings,
 ncclResult_t p2pGetRings(int nranks, int* groups, int* subgroups, ncclTvalue_t* values, int* nringsRet, int* prev, int* next, int minScore, int* nthreads) {
   if (*nringsRet == 0) return ncclSuccess;
   int *rings;
-  NCCLCHECK(ncclCalloc(&rings, MAXRINGS*nranks));
-  for (int i=0; i<MAXRINGS*nranks; i++) rings[i] = -1;
+  NCCLCHECK(ncclCalloc(&rings, MAXCHANNELS*nranks));
+  for (int i=0; i<MAXCHANNELS*nranks; i++) rings[i] = -1;
   int nrings = *nringsRet;
 
   // NVswitch
@@ -446,15 +456,23 @@ end:
   } while (0)
 
 /* Send: Create and return connect structures for this peer to connect to me */
-ncclResult_t p2pSendSetup(ncclTinfo_t* myOpaqueInfo, ncclTinfo_t* peerOpaqueInfo, struct ncclConnect* connectInfo, struct ncclRing* ring) {
+ncclResult_t p2pSendSetup(ncclTinfo_t* myOpaqueInfo, ncclTinfo_t* peerOpaqueInfo,
+    struct ncclConnect* connectInfo, struct ncclConnector* send, int buffSize, int channelId) {
   struct p2pInfo* myInfo = (struct p2pInfo*)myOpaqueInfo;
   struct p2pInfo* peerInfo = (struct p2pInfo*)peerOpaqueInfo;
+
+  struct p2pSendResources* resources;
+  NCCLCHECK(ncclCalloc(&resources, 1));
+  send->transportResources = resources;
+  const int sendSize = sizeof(struct ncclSendMem);
+  NCCLCHECK(ncclCudaCalloc((char**)&resources->devMem, sendSize));
+
   struct p2pConnectInfo info;
   if (myInfo->pidHash == peerInfo->pidHash) {
     info.direct = 1;
-    info.directPtr = ring->devMemSend;
+    info.directPtr = resources->devMem;
     if (myInfo->cudaDev == peerInfo->cudaDev) {
-      INFO(INIT|P2P,"Ring %02d : %d -> %d via P2P/common device", ring->id, myInfo->rank, peerInfo->rank);
+      INFO(INIT|P2P,"Ring %02d : %d -> %d via P2P/common device", channelId, myInfo->rank, peerInfo->rank);
     } else {
       // Enable P2P access
       cudaError_t err = cudaDeviceEnablePeerAccess(peerInfo->cudaDev, 0);
@@ -466,19 +484,19 @@ ncclResult_t p2pSendSetup(ncclTinfo_t* myOpaqueInfo, ncclTinfo_t* peerOpaqueInfo
         return ncclInternalError;
       }
       INFO(INIT|P2P,"Ring %02d : %d[%d] -> %d[%d] via P2P/direct pointer",
-          ring->id, myInfo->rank, myInfo->cudaDev, peerInfo->rank, peerInfo->cudaDev);
+          channelId, myInfo->rank, myInfo->cudaDev, peerInfo->rank, peerInfo->cudaDev);
     }
   } else {
     info.direct = 0;
     // Map IPC and enable P2P access
-    cudaError_t err = cudaIpcGetMemHandle(&info.devIpc, (void*)ring->devMemSend);
+    cudaError_t err = cudaIpcGetMemHandle(&info.devIpc, (void*)resources->devMem);
     if (err != cudaSuccess) {
       WARN("rank %d failed to get CUDA IPC handle to device %d : %d %s",
           myInfo->rank, peerInfo->cudaDev, err, cudaGetErrorString(err));
       return ncclInternalError;
     }
     INFO(INIT|P2P,"Ring %02d : %d[%d] -> %d[%d] via P2P/IPC",
-        ring->id, myInfo->rank, myInfo->cudaDev, peerInfo->rank, peerInfo->cudaDev);
+        channelId, myInfo->rank, myInfo->cudaDev, peerInfo->rank, peerInfo->cudaDev);
     //TRACE_DUMP_IPC(&info.devIpc);
   }
   static_assert(sizeof(struct p2pConnectInfo) <= sizeof(struct ncclConnect), "p2p Connect Info is too big");
@@ -487,13 +505,21 @@ ncclResult_t p2pSendSetup(ncclTinfo_t* myOpaqueInfo, ncclTinfo_t* peerOpaqueInfo
 }
 
 /* Create and return connect structures for this peer to connect to me */
-ncclResult_t p2pRecvSetup(ncclTinfo_t* myOpaqueInfo, ncclTinfo_t* peerOpaqueInfo, struct ncclConnect* connectInfo, struct ncclRing* ring) {
+ncclResult_t p2pRecvSetup(ncclTinfo_t* myOpaqueInfo, ncclTinfo_t* peerOpaqueInfo,
+    struct ncclConnect* connectInfo, struct ncclConnector * recv, int buffSize, int channelId) {
   struct p2pInfo* myInfo = (struct p2pInfo*)myOpaqueInfo;
   struct p2pInfo* peerInfo = (struct p2pInfo*)peerOpaqueInfo;
+
+  struct p2pRecvResources* resources;
+  NCCLCHECK(ncclCalloc(&resources, 1));
+  recv->transportResources = resources;
+  const int recvSize = offsetof(struct ncclRecvMem, buff)+buffSize;
+  NCCLCHECK(ncclCudaCalloc((char**)&resources->devMem, recvSize));
+
   struct p2pConnectInfo info;
   if (myInfo->pidHash == peerInfo->pidHash) {
     info.direct = 1;
-    info.directPtr = ring->devMemRecv;
+    info.directPtr = resources->devMem;
     if (myInfo->cudaDev == peerInfo->cudaDev) {
       TRACE(INIT|P2P,"%d <- %d via P2P/common device", myInfo->rank, peerInfo->rank);
     } else {
@@ -506,18 +532,18 @@ ncclResult_t p2pRecvSetup(ncclTinfo_t* myOpaqueInfo, ncclTinfo_t* peerOpaqueInfo
             peerInfo->cudaDev, err, cudaGetErrorString(err));
         return ncclInternalError;
       }
-      TRACE(INIT|P2P,"Ring %02d : %d[%d] <- %d[%d] via P2P/direct pointer", ring->id, myInfo->rank, myInfo->cudaDev, peerInfo->rank, peerInfo->cudaDev);
+      TRACE(INIT|P2P,"Ring %02d : %d[%d] <- %d[%d] via P2P/direct pointer", channelId, myInfo->rank, myInfo->cudaDev, peerInfo->rank, peerInfo->cudaDev);
     }
   } else {
     info.direct = 0;
     // Map IPC and enable P2P access
-    cudaError_t err = cudaIpcGetMemHandle(&info.devIpc, (void*)ring->devMemRecv);
+    cudaError_t err = cudaIpcGetMemHandle(&info.devIpc, (void*)resources->devMem);
     if (err != cudaSuccess) {
       WARN("rank %d failed to get CUDA IPC handle to device %d : %d %s",
           myInfo->rank, peerInfo->cudaDev, err, cudaGetErrorString(err));
       return ncclInternalError;
     }
-    TRACE(INIT|P2P,"Ring %02d : %d[%d] <- %d[%d] via P2P/IPC", ring->id, myInfo->rank, myInfo->cudaDev, peerInfo->rank, peerInfo->cudaDev);
+    TRACE(INIT|P2P,"Ring %02d : %d[%d] <- %d[%d] via P2P/IPC", channelId, myInfo->rank, myInfo->cudaDev, peerInfo->rank, peerInfo->cudaDev);
     //TRACE_DUMP_IPC(&info.devIpc);
   }
   static_assert(sizeof(struct p2pConnectInfo) <= sizeof(struct ncclConnect), "p2p Connect Info is too big");
@@ -527,22 +553,16 @@ ncclResult_t p2pRecvSetup(ncclTinfo_t* myOpaqueInfo, ncclTinfo_t* peerOpaqueInfo
 
 /* Connect/Send to this peer */
 static ncclResult_t p2pSendConnect(struct ncclConnect* connectInfo, struct ncclConnector* send) {
-  void** resources = &send->transportResources;
+  struct p2pSendResources* resources = (struct p2pSendResources*)send->transportResources;
   struct ncclRecvMem* remDevMem;
   struct p2pConnectInfo* info = (struct p2pConnectInfo*)connectInfo;
   if (info->direct) {
     remDevMem = (struct ncclRecvMem*)(info->directPtr);
     send->conn.direct = 1;
-    *resources = NULL;
   } else {
-    void* remPtr = NULL;
     //TRACE_DUMP_IPC(&info->devIpc);
-    cudaError_t err = cudaIpcOpenMemHandle(&remPtr, info->devIpc, cudaIpcMemLazyEnablePeerAccess);
-    void** ipcPtrSave;
-    NCCLCHECK(ncclCalloc(&ipcPtrSave, 1));
-    *resources = ipcPtrSave;
-    *ipcPtrSave = remPtr;
-    remDevMem = (struct ncclRecvMem*)remPtr;
+    cudaError_t err = cudaIpcOpenMemHandle(&resources->ipcPtr, info->devIpc, cudaIpcMemLazyEnablePeerAccess);
+    remDevMem = (struct ncclRecvMem*)resources->ipcPtr;
     if (err != cudaSuccess) {
       WARN("failed to open CUDA IPC handle : %d %s",
           err, cudaGetErrorString(err));
@@ -554,29 +574,24 @@ static ncclResult_t p2pSendConnect(struct ncclConnect* connectInfo, struct ncclC
   send->conn.llBuff = remDevMem->llBuff;
   send->conn.tail = &remDevMem->tail;
   send->conn.opCount = &remDevMem->opCount;
-  // send->conn->head should have been set to devMemSend already
+  send->conn.head = &resources->devMem->head;
+  send->conn.llHead = &resources->devMem->llHead;
   return ncclSuccess;
 }
 
 /* Connect/Recv from this peer */
 ncclResult_t p2pRecvConnect(struct ncclConnect* connectInfo, struct ncclConnector* recv) {
-  void** resources = &recv->transportResources;
+  struct p2pRecvResources* resources = (struct p2pRecvResources*)recv->transportResources;
   struct ncclSendMem* remDevMem;
   struct p2pConnectInfo* info = (struct p2pConnectInfo*)connectInfo;
   if (info->direct) {
     remDevMem = (struct ncclSendMem*)(info->directPtr);
     recv->conn.direct = 1;
     recv->conn.ptrExchange = &remDevMem->ptrExchange;
-    *resources = NULL;
   } else {
-    void* remPtr = NULL;
     //TRACE_DUMP_IPC(&info->devIpc);
-    cudaError_t err = cudaIpcOpenMemHandle(&remPtr, info->devIpc, cudaIpcMemLazyEnablePeerAccess);
-    void** ipcPtrSave;
-    NCCLCHECK(ncclCalloc(&ipcPtrSave, 1));
-    *resources = ipcPtrSave;
-    *ipcPtrSave = remPtr;
-    remDevMem = (struct ncclSendMem*)remPtr;
+    cudaError_t err = cudaIpcOpenMemHandle(&resources->ipcPtr, info->devIpc, cudaIpcMemLazyEnablePeerAccess);
+    remDevMem = (struct ncclSendMem*)resources->ipcPtr;
     if (err != cudaSuccess) {
       WARN("failed to open CUDA IPC handle : %d %s",
           err, cudaGetErrorString(err));
@@ -584,20 +599,28 @@ ncclResult_t p2pRecvConnect(struct ncclConnect* connectInfo, struct ncclConnecto
     }
   }
 
-  // recv->conn->buff should have been set to devMemRecv already
-  // recv->conn->tail should have been set to devMemRecv already
-  // recv->conn->opCount should have been set to devMemRecv already
+  recv->conn.buff = resources->devMem->buff;
+  recv->conn.llBuff = resources->devMem->llBuff;
+  recv->conn.tail = &resources->devMem->tail;
+  recv->conn.opCount = &resources->devMem->opCount;
   recv->conn.head = &remDevMem->head;
   recv->conn.llHead = &remDevMem->llHead;
   return ncclSuccess;
 }
 
-ncclResult_t p2pFree(void* resources) {
-  if (resources != NULL) {
-    void** ipcPtrSave = (void**) resources;
-    CUDACHECK(cudaIpcCloseMemHandle(*ipcPtrSave));
-    free(resources);
-  }
+ncclResult_t p2pSendFree(void* resources) {
+  struct p2pSendResources* sendRes = (struct p2pSendResources*)resources;
+  if (sendRes->ipcPtr)
+    CUDACHECK(cudaIpcCloseMemHandle(sendRes->ipcPtr));
+  CUDACHECK(cudaFree(sendRes->devMem));
+  return ncclSuccess;
+}
+
+ncclResult_t p2pRecvFree(void* resources) {
+  struct p2pRecvResources* recvRes = (struct p2pRecvResources*)resources;
+  if (recvRes->ipcPtr)
+    CUDACHECK(cudaIpcCloseMemHandle(recvRes->ipcPtr));
+  CUDACHECK(cudaFree(recvRes->devMem));
   return ncclSuccess;
 }
 
@@ -606,8 +629,8 @@ struct ncclTransport p2pTransport = {
   p2pFillInfo,
   p2pCanConnect,
   p2pGetRings,
-  { p2pSendSetup, p2pSendConnect, p2pFree, NULL },
-  { p2pRecvSetup, p2pRecvConnect, p2pFree, NULL }
+  { p2pSendSetup, p2pSendConnect, p2pSendFree, NULL },
+  { p2pRecvSetup, p2pRecvConnect, p2pRecvFree, NULL }
 };
 
 

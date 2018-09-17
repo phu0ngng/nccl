@@ -9,7 +9,7 @@ include ../makefiles/version.mk
 
 ##### src files
 INCEXPORTS  := nccl.h
-LIBSRCFILES := init.cu ring.cu bootstrap.cu transport.cu enqueue.cu \
+LIBSRCFILES := init.cu channel.cu bootstrap.cu transport.cu enqueue.cu \
                 misc/group.cu misc/nvmlwrap.cu misc/ibvwrap.cu misc/rings.cu misc/utils.cu misc/checks.cu \
 		transport/p2p.cu transport/shm.cu transport/net.cu transport/net_socket.cu transport/net_ib.cu \
                 collectives/all_reduce.cu collectives/all_gather.cu collectives/broadcast.cu collectives/reduce.cu collectives/reduce_scatter.cu

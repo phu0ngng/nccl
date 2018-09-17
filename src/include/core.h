@@ -29,13 +29,13 @@ struct cudaLaunchParams {
 };
 #endif
 
-#define MAXRINGS 16
+#define MAXCHANNELS 16
 #define MAXTHREADS 256
 #define DEFAULT_BUFFER_SIZE_BYTES (1LL << 22) /* 4MiB */
 #define NCCL_STEPS 16
 
-// Rings / LL tuning
-#define NCCL_LL_RING_THRESHOLD 8 // Per thread size before we start increasing nrings
+// Channels / LL tuning
+#define NCCL_LL_CHANNEL_THRESHOLD 8 // Per thread size before we start increasing nrings
 #define NCCL_THREAD_THRESHOLD 32  // Per thread size before we switch to non-LL
 #define NCCL_LL_MAX_NTHREADS 256
 #define NCCL_LL_MIN_NTHREADS 64
@@ -157,24 +157,25 @@ struct ncclRecvMem {
 };
 
 struct ncclRing {
+  struct ncclConnector send;
+  struct ncclConnector recv;
+
+  // Maps an internal nccl index to user-specified rank order. This is necessary
+  // since we need to know how the user expects data to be ordered across
+  // devices. Ordered from current device.
+  int* userRanks;
+  int* devUserRanks;
+};
+
+struct ncclChannel {
   union {
     struct {
+      // Ring structure
+      struct ncclRing ring;
+
       int id;
       int nthreads;
-      // Per ring resources
-      struct ncclSendMem* devMemSend;   // CUDA-size resources
-      struct ncclRecvMem* devMemRecv;   // CUDA-size resources
       int buffSize;
-      int devMemSendSize;    // Keep the size for IPCs
-      int devMemRecvSize;    // Keep the size for IPCs
-      struct ncclConnector send;
-      struct ncclConnector recv;
-
-      // Maps an internal nccl index to user-specified rank order. This is necessary
-      // since we need to know how the user expects data to be ordered across
-      // devices. Ordered from current device.
-      int* userRanks;
-      int* devUserRanks;
 
       // Operation list for aggregation
       struct ncclColl* collectives;
@@ -187,7 +188,7 @@ struct ncclRing {
     int data[0x80];
   };
 };
-static_assert(sizeof(struct ncclRing) == 0x80*sizeof(int), "ncclRing must have a pow2 size");
+static_assert(sizeof(struct ncclChannel) == 0x80*sizeof(int), "ncclChannel must have a pow2 size");
 
 /* CollectiveArgs + ncclColl are to be a power of two, currently 64 bytes, */
 /* to make sure reads to host from the CUDA kernel are aligned. */
@@ -204,7 +205,7 @@ struct CollectiveArgs {
   size_t N;
   uint32_t root;
   uint8_t bid;
-  uint8_t nRings;
+  uint8_t nChannels;
   uint16_t nThreads;
 
   int lastChunkSize;
@@ -223,7 +224,7 @@ struct ncclColl {
 static_assert(sizeof(struct ncclColl) == (0x10*sizeof(int)), "ncclColl must have a pow2 size");
 
 struct ncclComm {
-  struct ncclRing rings[MAXRINGS];
+  struct ncclChannel channels[MAXCHANNELS];
 
   int rank;    // my rank in the communicator
   int nRanks;  // number of GPUs in communicator
@@ -239,8 +240,8 @@ struct ncclComm {
   // where syncs are not symmetric).
   uint64_t opCount;
 
-  // Rings for collectives
-  int nRings;
+  // Channels for collectives
+  int nChannels;
   int nThreads;
 
   // Low-latency algorithm threshold

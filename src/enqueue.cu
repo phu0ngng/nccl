@@ -78,17 +78,17 @@ ncclResult_t ncclLaunchCooperativeKernelMultiDevice(struct cudaLaunchParams *par
 }
 
 ncclResult_t setupLaunch(struct ncclComm* comm, struct cudaLaunchParams* params) {
-  params->gridDim.x = std::min((int) params->gridDim.x, comm->nRings);
+  params->gridDim.x = std::min((int) params->gridDim.x, comm->nChannels);
 
   // Set active = 2 for the last operation
   for (int r=0; r<params->gridDim.x; r++) {
-    struct ncclRing* ring = comm->rings+r;
-    ring->collectives[(ring->collStart+ring->collCount-1)%NCCL_MAX_OPS].active = 2;
+    struct ncclChannel* channel = comm->channels+r;
+    channel->collectives[(channel->collStart+channel->collCount-1)%NCCL_MAX_OPS].active = 2;
   }
 
   // Find the first operation, choose the kernel accordingly and pass it
   // as the first argument.
-  struct ncclColl* coll = comm->rings[0].collectives+comm->rings[0].collStart;
+  struct ncclColl* coll = comm->channels[0].collectives+comm->channels[0].collStart;
   memcpy(&comm->args, coll, sizeof(struct ncclColl));
   // As we pass that coll directly, we can free it immediately.
   coll->active = 0;
@@ -193,9 +193,9 @@ ncclResult_t ncclBarrierEnqueueWait(ncclComm_t comm) {
   // Also, starting the proxies after the CUDA launch seems to be better for
   // performance (latency).
   for (int r=0; r<params->gridDim.x; r++) {
-    struct ncclRing* ring = comm->rings+r;
-    ring->collStart = ring->collFifoTail;
-    ring->collCount = 0;
+    struct ncclChannel* channel = comm->channels+r;
+    channel->collStart = channel->collFifoTail;
+    channel->collCount = 0;
   }
   params->gridDim.x = params->blockDim.x = 0;
   NCCLCHECK(transportStartProxies(comm));
@@ -232,12 +232,12 @@ static ncclResult_t getLoopInfo(struct ncclInfo* info) {
   return ncclSuccess;
 }
 
-static void getKernelInfo(struct ncclInfo* info, uint8_t* nRings, uint16_t* nThreads, int* llMode) {
+static void getKernelInfo(struct ncclInfo* info, uint8_t* nChannels, uint16_t* nThreads, int* llMode) {
   // Start with minimum number of threads and LL.
-  int ll = 1, nt = NCCL_LL_MIN_NTHREADS, nr = 1;
+  int ll = 1, nt = NCCL_LL_MIN_NTHREADS, nc = 1;
 
   // Compute thresholds and limits that users can override
-  int perThreadLLThreshold = std::min(info->comm->threadThreshold, (ssize_t)NCCL_LL_RING_THRESHOLD);
+  int perThreadLLThreshold = std::min(info->comm->threadThreshold, (ssize_t)NCCL_LL_CHANNEL_THRESHOLD);
   int maxLLNthreads = std::min(NCCL_LL_MAX_NTHREADS, info->comm->nThreads);
 
   size_t sizePerThread;
@@ -247,27 +247,27 @@ static void getKernelInfo(struct ncclInfo* info, uint8_t* nRings, uint16_t* nThr
 
 restart:
   // Compute the amount of work per thread per chunk
-  sizePerThread = info->nBytes / (nr*nt*info->nchunksPerLoop);
+  sizePerThread = info->nBytes / (nc*nt*info->nchunksPerLoop);
 
   if (sizePerThread > perThreadLLThreshold) {
     // We have too much work per LL thread. Try to do better.
     if (nt*2 <= maxLLNthreads) { nt *= 2; goto restart; } // Try increasing nThreads
-    if (info->comm->nRanks > 4 && nr*2 <= info->comm->nRings) { nr *= 2; goto restart; } // Then nRings
+    if (info->comm->nRanks > 4 && nc*2 <= info->comm->nChannels) { nc *= 2; goto restart; } // Then nChannels
   }
 
-  // nrings and nthreads are already maxed out. Check if we need non-LL
+  // nchannels and nthreads are already maxed out. Check if we need non-LL
   // (unless LL has a fixed threshold and it is not an option).
   if (info->comm->llThreshold < 0 && sizePerThread > info->comm->threadThreshold) ll = 0;
 
   if (ll) {
     *llMode = 1;
-    *nRings = nr;
+    *nChannels = nc;
     *nThreads = nt;
     return;
   }
 nonLL:
   *llMode = 0;
-  *nRings = info->comm->nRings;
+  *nChannels = info->comm->nChannels;
   *nThreads = info->comm->nThreads+1;
 }
 
@@ -284,17 +284,17 @@ static ncclResult_t computeColl(struct ncclInfo* info /* input */, struct ncclCo
 
   if (info->coll == ncclCollAllGather || info->coll == ncclCollReduceScatter) info->nBytes *= info->comm->nRanks; // count is per rank
 
-  // Compute llMode, nRings, nThreads
+  // Compute llMode, nChannels, nThreads
   int llMode;
-  getKernelInfo(info, &coll->args.nRings, &coll->args.nThreads, &llMode);
+  getKernelInfo(info, &coll->args.nChannels, &coll->args.nThreads, &llMode);
 
   coll->funcIndex = FUNC_INDEX(info->coll, info->op, info->datatype, llMode);
 
   // Compute lastChunkSize
   if (llMode == 1) {
     int sliceSize = NCCL_LL_SLICE_LINES * sizeof(uint64_t);
-    const ssize_t loopSize = coll->args.nRings*info->nchunksPerLoop*(ssize_t)sliceSize;
-    coll->args.lastChunkSize = DIVUP((info->nBytes-(info->nBytes/loopSize)*loopSize), coll->args.nRings*info->nchunksPerLoop);
+    const ssize_t loopSize = coll->args.nChannels*info->nchunksPerLoop*(ssize_t)sliceSize;
+    coll->args.lastChunkSize = DIVUP((info->nBytes-(info->nBytes/loopSize)*loopSize), coll->args.nChannels*info->nchunksPerLoop);
     ALIGN_SIZE(coll->args.lastChunkSize, coll->args.nThreads*sizeof(uint64_t));
     coll->args.lastChunkSize /= ncclTypeSize(info->datatype);
   }
@@ -302,16 +302,16 @@ static ncclResult_t computeColl(struct ncclInfo* info /* input */, struct ncclCo
   // Compute nSteps for proxies
   size_t nBytes  = llMode ? info->nBytes*2 : info->nBytes;
   int chunkSteps = llMode ? 1 : info->chunkSteps;
-  int stepSize   = llMode ? NCCL_LL_BUFF_SIZE / NCCL_LL_CHUNKS : info->comm->rings[0].buffSize / NCCL_STEPS;
+  int stepSize   = llMode ? NCCL_LL_BUFF_SIZE / NCCL_LL_CHUNKS : info->comm->channels[0].buffSize / NCCL_STEPS;
 
-  int nLoops = (int)(DIVUP(nBytes, (((size_t)(coll->args.nRings))*info->nchunksPerLoop*stepSize*chunkSteps)));
+  int nLoops = (int)(DIVUP(nBytes, (((size_t)(coll->args.nChannels))*info->nchunksPerLoop*stepSize*chunkSteps)));
   proxyArgs->nsteps = info->nstepsPerLoop * nLoops * chunkSteps;
   proxyArgs->sliceSteps = llMode ? 1 : info->sliceSteps;
   proxyArgs->chunkSteps = chunkSteps;
   proxyArgs->llMode = llMode;
   proxyArgs->opCount = info->comm->opCount;
-  TRACE(NET,"opCount %lx slicesteps %d spl %d cpl %d nbytes %zi -> llmode %d nrings %d nthreads %d, nloops %d nsteps %d comm %p",
-      coll->args.opCount, proxyArgs->sliceSteps, info->nstepsPerLoop, info->nchunksPerLoop, nBytes, llMode, coll->args.nRings, coll->args.nThreads,
+  TRACE(NET,"opCount %lx slicesteps %d spl %d cpl %d nbytes %zi -> llmode %d nchannels %d nthreads %d, nloops %d nsteps %d comm %p",
+      coll->args.opCount, proxyArgs->sliceSteps, info->nstepsPerLoop, info->nchunksPerLoop, nBytes, llMode, coll->args.nChannels, coll->args.nThreads,
       nLoops, proxyArgs->nsteps, info->comm);
   return ncclSuccess;
 }
@@ -335,22 +335,22 @@ static ncclResult_t saveKernel(struct ncclInfo* info) {
     WARN("Error : mixing different streams within a group call is not supported.");
     return ncclInvalidUsage;
   }
-  for (int bid=0; bid<coll.args.nRings; bid++) {
-    struct ncclRing* ring = info->comm->rings+(info->comm->myParams->gridDim.x % info->comm->nRings);
+  for (int bid=0; bid<coll.args.nChannels; bid++) {
+    struct ncclChannel* channel = info->comm->channels+(info->comm->myParams->gridDim.x % info->comm->nChannels);
 
-    if (ring->collCount == NCCL_MAX_OPS) {
+    if (channel->collCount == NCCL_MAX_OPS) {
       WARN("Too many aggregated operations (%d max)", NCCL_MAX_OPS);
       return ncclInvalidUsage;
     }
 
     // Proxy
-    proxyArgs.ring = ring;
+    proxyArgs.channel = channel;
     NCCLCHECK(transportSaveProxies(&proxyArgs, info->pattern, info->comm->nRanks));
 
     info->comm->myParams->gridDim.x++;
 
-    int opIndex = ring->collFifoTail;
-    struct ncclColl* c = ring->collectives+opIndex;
+    int opIndex = channel->collFifoTail;
+    struct ncclColl* c = channel->collectives+opIndex;
     volatile uint8_t* activePtr = (volatile uint8_t*)&c->active;
     while (activePtr[0] != 0) sched_yield();
 
@@ -360,8 +360,8 @@ static ncclResult_t saveKernel(struct ncclInfo* info) {
     c->active = 1;
     opIndex = (opIndex+1)%NCCL_MAX_OPS;
     c->nextIndex = opIndex;
-    ring->collFifoTail = opIndex;
-    ring->collCount++;
+    channel->collFifoTail = opIndex;
+    channel->collCount++;
   }
   /*if (llMode == 0)*/ info->comm->opCount++;
   return ncclSuccess;

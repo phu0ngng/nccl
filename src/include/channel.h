@@ -4,11 +4,11 @@
  * See LICENSE.txt for license information
  ************************************************************************/
 
-#ifndef NCCL_RING_H_
-#define NCCL_RING_H_
+#ifndef NCCL_CHANNEL_H_
+#define NCCL_CHANNEL_H_
 #include "core.h"
 
-ncclResult_t initRing(struct ncclComm* comm, int ringid);
-ncclResult_t freeRing(struct ncclRing* ring);
+ncclResult_t initChannel(struct ncclComm* comm, int channelid);
+ncclResult_t freeChannel(struct ncclChannel* channel);
 
 #endif

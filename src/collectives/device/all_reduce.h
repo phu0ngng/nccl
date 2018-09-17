@@ -22,7 +22,8 @@ __device__ void ncclAllReduceKernel(struct CollectiveArgs* args) {
   const int bid = args->bid;
   __shared__ T* sharedNextOutput;
   struct ncclComm* comm = args->comm;
-  struct ncclRing* ring = comm->rings+blockIdx.x;
+  struct ncclChannel* channel = comm->channels+blockIdx.x;
+  struct ncclRing* ring = &channel->ring;
   int prevdirect = ring->recv.conn.direct;
   int nextdirect = ring->send.conn.direct;
 
@@ -36,17 +37,17 @@ __device__ void ncclAllReduceKernel(struct CollectiveArgs* args) {
   const ssize_t size = args->N;
   //const int rank = comm->rank;
   const int nranks = comm->nRanks;
-  const int buffSize = ring->buffSize / sizeof(T);
+  const int buffSize = channel->buffSize / sizeof(T);
   const int stepSize = buffSize / NCCL_STEPS;
   const int chunkSize = stepSize * ALLREDUCE_CHUNKSTEPS;
-  const ssize_t loopSize = args->nRings*(ssize_t)chunkSize;
+  const ssize_t loopSize = args->nChannels*(ssize_t)chunkSize;
 
   if (tid == 0) {
     if (prevdirect) {
       *ring->recv.conn.ptrExchange = args->ThisOutput;
     }
     if (nextdirect) {
-      void* volatile* ptr = &(ring->devMemSend->ptrExchange);
+      void* volatile* ptr = ring->send.conn.ptrExchange;
       while (*ptr == nullptr);
       sharedNextOutput = (T*)*ptr;
       *ptr = nullptr;
@@ -65,7 +66,7 @@ __device__ void ncclAllReduceKernel(struct CollectiveArgs* args) {
   T * __restrict__ nextOutput = (T*)ring->send.conn.buff;
 
   for (ssize_t gridOffset = 0; gridOffset < size; gridOffset += nranks*loopSize) {
-    int realChunkSize = min(chunkSize, DIVUP(size-gridOffset,nranks*args->nRings));
+    int realChunkSize = min(chunkSize, DIVUP(size-gridOffset,nranks*args->nChannels));
     ALIGN_SIZE(realChunkSize, nthreads*sizeof(uint64_t)/sizeof(T));
     ssize_t chunkOffset = gridOffset + bid*nranks*realChunkSize;
 
@@ -204,7 +205,7 @@ __device__ void ncclAllReduceLLKernel(struct CollectiveArgs* args) {
   const int bid = args->bid;
   const int nthreads = args->nThreads;
   struct ncclComm* comm = args->comm;
-  struct ncclRing* ring = comm->rings+blockIdx.x;
+  struct ncclRing* ring = &comm->channels[blockIdx.x].ring;
   volatile uint64_t * recvHeadPtr = ring->recv.conn.llHead;
   volatile uint64_t * sendHeadPtr = ring->send.conn.llHead;
   volatile int * sizesFifo = ring->send.conn.llFifo;
@@ -215,7 +216,7 @@ __device__ void ncclAllReduceLLKernel(struct CollectiveArgs* args) {
   const ssize_t size = args->N;
   //const int rank = comm->rank;
   const int nranks = comm->nRanks;
-  const int nringsXnranks = args->nRings * nranks;
+  const int nringsXnranks = args->nChannels * nranks;
   ssize_t sliceSize = NCCL_LL_SLICE_LINES * sizeof(uint64_t) / sizeof(T);
   const ssize_t loopSize = nringsXnranks*sliceSize;
 

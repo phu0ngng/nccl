@@ -35,7 +35,7 @@ struct ncclConnect {
 };
 
 struct ncclProxyArgs {
-  struct ncclRing* ring;
+  struct ncclChannel* channel;
   int sliceSteps;
   int chunkSteps;
   int nsteps;
@@ -46,7 +46,7 @@ struct ncclProxyArgs {
 };
 
 struct ncclTransportComm {
-  ncclResult_t (*setup)(ncclTinfo_t*, ncclTinfo_t*, struct ncclConnect*, struct ncclRing*);
+  ncclResult_t (*setup)(ncclTinfo_t*, ncclTinfo_t*, struct ncclConnect*, struct ncclConnector*, int buffSize, int channelId);
   ncclResult_t (*connect)(struct ncclConnect*, struct ncclConnector*);
   ncclResult_t (*free)(void*);
   ncclResult_t (*proxy)(struct ncclProxyArgs*);

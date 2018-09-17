@@ -209,8 +209,8 @@ ncclResult_t ncclGetRings(int* nrings, int* nthreads, int rank, int nranks, int*
   int minScore = NCCL_MAX_SCORE;
   int nringsTmp;
   int *prevTmp, *nextTmp, *idxToRank, *rankToIdx, *groups, *subgroups;
-  NCCLCHECK(ncclCalloc(&prevTmp, nranks*MAXRINGS));
-  NCCLCHECK(ncclCalloc(&nextTmp, nranks*MAXRINGS));
+  NCCLCHECK(ncclCalloc(&prevTmp, nranks*MAXCHANNELS));
+  NCCLCHECK(ncclCalloc(&nextTmp, nranks*MAXCHANNELS));
   NCCLCHECK(ncclCalloc(&idxToRank, nranks));
   NCCLCHECK(ncclCalloc(&rankToIdx, nranks));
   NCCLCHECK(ncclCalloc(&groups, nranks));
@@ -219,8 +219,8 @@ ncclResult_t ncclGetRings(int* nrings, int* nthreads, int rank, int nranks, int*
   int nThreads;
   do {
     nThreads = *nthreads;
-    for (int i=0; i<nranks*MAXRINGS; i++) prevTmp[i] = nextTmp[i] = -1;
-    nringsTmp = MAXRINGS;
+    for (int i=0; i<nranks*MAXCHANNELS; i++) prevTmp[i] = nextTmp[i] = -1;
+    nringsTmp = MAXCHANNELS;
     // Loop over transports to connect groups
     for (int t=NTRANSPORTS-1; t>=0; t--) {
       for (int i=0; i<nranks; i++) idxToRank[i] = rankToIdx[i] = -1;
@@ -328,9 +328,9 @@ ncclResult_t ncclGetRings(int* nrings, int* nthreads, int rank, int nranks, int*
     if (rank == 0) WARN("NCCL_MIN_NRINGS set to a value greater than NCCL_MAX_NRINGS, ignoring NCCL_MIN_NRINGS");
     minNrings = 0;
   }
-  if (minNrings > MAXRINGS) {
-    if (rank == 0) WARN("NCCL_MIN_NRINGS set to a value greater than the maximum number of rings supported (%d), limiting it to %d", MAXRINGS, MAXRINGS);
-    minNrings = MAXRINGS;
+  if (minNrings > MAXCHANNELS) {
+    if (rank == 0) WARN("NCCL_MIN_NRINGS set to a value greater than the maximum number of rings supported (%d), limiting it to %d", MAXCHANNELS, MAXCHANNELS);
+    minNrings = MAXCHANNELS;
   }
   if (maxNrings > 0 && maxNrings <= *nrings) {
     if (rank == 0) INFO(INIT,"Limiting to %d rings per user request.", maxNrings);
@@ -340,7 +340,7 @@ ncclResult_t ncclGetRings(int* nrings, int* nthreads, int rank, int nranks, int*
     if (minNrings < defaultMinNrings) minNrings = defaultMinNrings;
     if (minNrings > 0 && minNrings > *nrings) {
       if (rank == 0 && minNrings > defaultMinNrings) INFO(INIT,"Duplicating rings to %d per user request.", minNrings);
-      for (int r=*nrings; r<MAXRINGS && r <minNrings; r++) {
+      for (int r=*nrings; r<MAXCHANNELS && r <minNrings; r++) {
         for (int i=0; i<nranks; i++) {
           prev[r*nranks+i] = prev[(r-*nrings)*nranks+i];
           next[r*nranks+i] = next[(r-*nrings)*nranks+i];

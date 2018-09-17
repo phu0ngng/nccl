@@ -40,14 +40,14 @@ __global__ void NCCL_KERN_NAME(coll, op, dtype)(struct ncclColl firstColl) { \
   __shared__ struct ncclColl localColl; \
  \
   struct ncclComm* comm = firstColl.args.comm; \
-  struct ncclRing* ring = comm->rings+bid; \
+  struct ncclChannel* channel = comm->channels+bid; \
   struct ncclColl* c; \
   if (bid == 0) { \
     /* To optimize for latency, (only) the first operation is passed as argument.*/ \
     c = &firstColl; \
   } else { \
     c = &localColl; \
-    load_coll(c, ring->devCollectives+ring->collFifoHead, tid); \
+    load_coll(c, channel->devCollectives+channel->collFifoHead, tid); \
   } \
   while (1) { \
     if (tid < c->args.nThreads) { \
@@ -58,7 +58,7 @@ __global__ void NCCL_KERN_NAME(coll, op, dtype)(struct ncclColl firstColl) { \
       } \
     } \
     int nextIndex = c->nextIndex; \
-    if (tid == 0) ring->collFifoHead = nextIndex; \
+    if (tid == 0) channel->collFifoHead = nextIndex; \
  \
     if (c->active == 2) { \
       return; \
@@ -66,7 +66,7 @@ __global__ void NCCL_KERN_NAME(coll, op, dtype)(struct ncclColl firstColl) { \
  \
     /* Load next collective operation*/ \
     c = &localColl; /* for bid 0 */ \
-    load_coll(c, ring->devCollectives+nextIndex, tid); \
+    load_coll(c, channel->devCollectives+nextIndex, tid); \
   } \
 }
 
