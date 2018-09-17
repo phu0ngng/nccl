@@ -482,15 +482,19 @@ static ncclResult_t initTransportsRank(struct ncclComm* comm, ncclUniqueId* comm
   free(next);
 
   // Connect with prev/next for each ring
+  struct ncclConnect *connectData;
+  NCCLCHECK(ncclCalloc(&connectData, 2*nranks));
   for (int r=0; r<nrings; r++) {
     int* ringRanks = rings+r*nranks;
     struct ncclRing *ring = comm->rings+r;
-    struct ncclConnect connect[2];
-    NCCLCHECK(setupRing(comm, r, rank, nranks, ringRanks, allInfo, connect));
-    NCCLCHECK(bootstrapRingExchange(commState, connect, ring->userRanks[nranks-1], ring->userRanks[1], sizeof(struct ncclConnect)));
-    NCCLCHECK(ring->send.transport->send.connect(connect+1, &ring->send));
-    NCCLCHECK(ring->recv.transport->recv.connect(connect+0, &ring->recv));
+    NCCLCHECK(setupRing(comm, r, rank, nranks, ringRanks, allInfo, connectData+2*rank));
+    int prev_offset = ring->userRanks[nranks-1]*2+1;
+    int next_offset = ring->userRanks[1]*2;
+    NCCLCHECK(bootstrapAllGather(commState, connectData, sizeof(struct ncclConnect)*2));
+    NCCLCHECK(ring->send.transport->send.connect(connectData+next_offset, &ring->send));
+    NCCLCHECK(ring->recv.transport->recv.connect(connectData+prev_offset, &ring->recv));
   }
+  free(connectData);
   free(rings);
   free(allInfo);
 
