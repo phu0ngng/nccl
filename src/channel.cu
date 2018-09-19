@@ -23,6 +23,10 @@ ncclResult_t initChannel(struct ncclComm* comm, int channelid) {
   // Communication structures with peers.
   NCCLCHECK(ncclCudaCalloc(&channel->devPeers, comm->nRanks));
   NCCLCHECK(ncclCalloc(&channel->peers, comm->nRanks));
+  for (size_t i=0; i<comm->nRanks; ++i) {
+    channel->peers[i].send.comm = comm;
+    channel->peers[i].recv.comm = comm;
+  }
 
   // Per-channel operation list.
   NCCLCHECK(ncclCudaHostAlloc((void**)&channel->collectives, (void**)&channel->devCollectives, sizeof(struct ncclColl)*NCCL_MAX_OPS));

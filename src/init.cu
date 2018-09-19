@@ -194,6 +194,7 @@ static ncclResult_t commAlloc(ncclComm_t* comret, int ndev, int rank) {
   // Don't allow the user to overload the default setting in older CUDA builds
   comm->groupCudaStream = NCCL_GROUP_CUDA_STREAM;
 #endif
+  comm->fatalError = ncclSuccess;
 
   CUDACHECK(cudaHostAlloc((void**) &comm->abortFlag, sizeof(uint32_t), cudaHostAllocMapped));
   *comm->abortFlag = 0;
@@ -982,6 +983,14 @@ const char* ncclGetErrorString(ncclResult_t code) {
     case ncclInvalidUsage           : return "invalid usage";
     default                         : return "unknown result code";
   }
+}
+
+NCCL_API(ncclResult_t, ncclCommGetAsyncError, ncclComm_t comm, ncclResult_t *asyncError);
+ncclResult_t ncclCommGetAsyncError(ncclComm_t comm, ncclResult_t *asyncError) {
+  NCCLCHECK(PtrCheck(comm, "ncclGetAsyncError", "comm"));
+  NCCLCHECK(PtrCheck(asyncError, "ncclGetAsyncError", "asyncError"));
+  *asyncError = comm->fatalError;
+  return ncclSuccess;
 }
 
 NCCL_API(ncclResult_t, ncclCommCount, const ncclComm_t comm, int* count);
