@@ -157,6 +157,10 @@ struct ncclRecvMem {
 };
 
 struct ncclRing {
+  // Shortcuts for userRanks[1] and userRanks[n-1]
+  int prev;
+  int next;
+
   // Maps an internal nccl index to user-specified rank order. This is necessary
   // since we need to know how the user expects data to be ordered across
   // devices. Ordered from current device.
@@ -181,6 +185,7 @@ struct ncclChannel {
 
       // Communication structures
       struct ncclPeer* peers;
+      struct ncclPeer* devPeers;
 
       // Operation list for aggregation
       struct ncclColl* collectives;

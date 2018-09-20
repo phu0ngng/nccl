@@ -132,7 +132,7 @@ class LLPrimitives {
   if (tid == 32) recvHeadPtr[0] = step;
 
 #define FIFO_CLEANING_AND_SAVE_STEP(flag) do { \
-  if (step > ring->send.conn.llLastCleaning + NCCL_LL_CLEAN_FREQ) { \
+  if (step > send->conn.llLastCleaning + NCCL_LL_CLEAN_FREQ) { \
     /* Reset all flags */ \
     static_assert((NCCL_LL_BUFF_SIZE % NCCL_LL_MAX_NTHREADS) == 0, "NCCL_LL_BUFF_SIZE must be a multiple of THREADS"); \
     static_assert(NCCL_LL_BUFF_SIZE/(sizeof(union ncclLLFifoLine)*NCCL_LL_MAX_NTHREADS) > 0, "NCCL_LL_BUFF_SIZE is less than 16 bytes*THREADS"); \
@@ -145,9 +145,9 @@ class LLPrimitives {
     step += NCCL_LL_CHUNKS; \
     ACK_PREV; \
     while (sendHeadPtr[0] < step); \
-    if (tid == 0) ring->send.conn.llLastCleaning = step; \
+    if (tid == 0) send->conn.llLastCleaning = step; \
   } \
-  ring->send.conn.llStep = step; \
+  send->conn.llStep = step; \
 } while (0);
 
 #endif

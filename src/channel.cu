@@ -16,41 +16,34 @@ ncclResult_t initChannel(struct ncclComm* comm, int channelid) {
   // Setup intermediate buffering
   channel->buffSize = ncclParamBuffsize();
 
-  // Pre-configure send/recv pointers. Those are the default, they may change later.
-  //channel->ring.recv.conn.buff = recvMem->buff;
-  //channel->ring.recv.conn.llBuff = recvMem->llBuff;
-  //channel->ring.recv.conn.tail = &recvMem->tail;
-  //channel->ring.recv.conn.opCount = &recvMem->opCount;
-  //channel->ring.send.conn.head = &sendMem->head;
-  //channel->ring.send.conn.llHead = &sendMem->llHead;
-  //channel->ring.recv.conn.direct = 0;
-  //channel->ring.send.conn.direct = 0;
-  //channel->ring.send.conn.llStep = 0;
-  //channel->ring.send.conn.llLastCleaning = 0;
-
   // Ring index to user rank table.
   NCCLCHECK(ncclCudaCalloc(&channel->ring.devUserRanks, comm->nRanks));
   NCCLCHECK(ncclCalloc(&channel->ring.userRanks, comm->nRanks));
+
+  // Communication structures with peers.
+  NCCLCHECK(ncclCudaCalloc(&channel->devPeers, comm->nRanks));
+  NCCLCHECK(ncclCalloc(&channel->peers, comm->nRanks));
 
   // Per-channel operation list.
   NCCLCHECK(ncclCudaHostAlloc((void**)&channel->collectives, (void**)&channel->devCollectives, sizeof(struct ncclColl)*NCCL_MAX_OPS));
   return ncclSuccess;
 }
 
-ncclResult_t freeChannel(struct ncclChannel* channel) {
+ncclResult_t freeChannel(struct ncclChannel* channel, int nRanks) {
   // Operation list
   NCCLCHECK(ncclCudaHostFree(channel->collectives));
 
-  // Free Ring
-  struct ncclRing* ring = &channel->ring;
-  // Index to rank table
-  free(ring->userRanks);
-  CUDACHECK(cudaFree(ring->devUserRanks));
+  // Free Ring index to rank tables
+  free(channel->ring.userRanks);
+  CUDACHECK(cudaFree(channel->ring.devUserRanks));
 
   // Free transport proxy resources
-  if (ring->send.transportResources) NCCLCHECK(ring->send.transportComm->free(ring->send.transportResources));
-  NCCLCHECK(transportDestroyProxy(&ring->send));
-  if (ring->recv.transportResources) NCCLCHECK(ring->recv.transportComm->free(ring->recv.transportResources));
-  NCCLCHECK(transportDestroyProxy(&ring->recv));
+  for (int r=0; r<nRanks; r++) {
+    struct ncclPeer* peer = channel->peers+r;
+    if (peer->send.transportResources) NCCLCHECK(peer->send.transportComm->free(peer->send.transportResources));
+    NCCLCHECK(transportDestroyProxy(&peer->send));
+    if (peer->recv.transportResources) NCCLCHECK(peer->recv.transportComm->free(peer->recv.transportResources));
+    NCCLCHECK(transportDestroyProxy(&peer->recv));
+  }
   return ncclSuccess;
 }

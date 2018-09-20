@@ -342,7 +342,7 @@ ncclResult_t netRecvFree(void* transportResources) {
 
 ncclResult_t netSendProxy(struct ncclProxyArgs* args) {
   struct ncclChannel* channel = args->channel;
-  struct netSendResources* resources = (struct netSendResources*) (channel->ring.send.transportResources);
+  struct netSendResources* resources = (struct netSendResources*) (channel->peers[channel->ring.next].send.transportResources);
   const int llMode = args->llMode;
 
   volatile uint64_t* prevTail = &resources->hostRecvMem->tail;
@@ -436,7 +436,7 @@ nextColl:
 
 ncclResult_t netRecvProxy(struct ncclProxyArgs* args) {
   struct ncclChannel* channel = args->channel;
-  struct netRecvResources* resources = (struct netRecvResources*) (channel->ring.recv.transportResources);
+  struct netRecvResources* resources = (struct netRecvResources*) (channel->peers[channel->ring.prev].recv.transportResources);
   int llMode = args->llMode;
 
   volatile uint64_t* nextHead = llMode ? &resources->hostSendMem->llHead : &resources->hostSendMem->head;

@@ -24,13 +24,15 @@ __device__ void ncclAllGatherKernel(struct CollectiveArgs* args) {
   struct ncclComm* comm = args->comm;
   struct ncclChannel* channel = comm->channels+blockIdx.x;
   struct ncclRing* ring = &channel->ring;
-  int prevdirect = ring->recv.conn.direct;
-  int nextdirect = ring->send.conn.direct;
+  struct ncclConnector* recv = &channel->devPeers[ring->prev].recv;
+  struct ncclConnector* send = &channel->devPeers[ring->next].send;
+  int prevdirect = recv->conn.direct;
+  int nextdirect = send->conn.direct;
 
-  WaitFlag waitDoneFromNext(ring->send.conn.head, NCCL_STEPS);
-  WaitFlag waitReadyFromPrev(ring->recv.conn.tail, ALLGATHER_CHUNKSTEPS);
-  PostFlag postDoneToPrev(ring->recv.conn.head, ALLGATHER_CHUNKSTEPS, NULL, 0);
-  PostFlag postReadyToNext(ring->send.conn.tail, 0, ring->send.conn.fifo, NCCL_STEPS);
+  WaitFlag waitDoneFromNext(send->conn.head, NCCL_STEPS);
+  WaitFlag waitReadyFromPrev(recv->conn.tail, ALLGATHER_CHUNKSTEPS);
+  PostFlag postDoneToPrev(recv->conn.head, ALLGATHER_CHUNKSTEPS, NULL, 0);
+  PostFlag postReadyToNext(send->conn.tail, 0, send->conn.fifo, NCCL_STEPS);
 
   typedef Primitives<UNROLL, ALLGATHER_CHUNKSTEPS/ALLGATHER_SLICESTEPS, ALLREDUCE_SLICESTEPS, T> Prims;
 
@@ -43,10 +45,10 @@ __device__ void ncclAllGatherKernel(struct CollectiveArgs* args) {
 
   if (tid == 0) {
     if (prevdirect) {
-      *ring->recv.conn.ptrExchange = args->ThisOutput;
+      *recv->conn.ptrExchange = args->ThisOutput;
     }
     if (nextdirect) {
-      void* volatile* ptr = ring->send.conn.ptrExchange;
+      void* volatile* ptr = send->conn.ptrExchange;
       while (*ptr == nullptr);
       sharedNextOutput = (T*)*ptr;
       *ptr = nullptr;
@@ -54,15 +56,15 @@ __device__ void ncclAllGatherKernel(struct CollectiveArgs* args) {
   }
   __syncthreads();
 
-  uint64_t step = ring->send.conn.step;
+  uint64_t step = send->conn.step;
   step = ROUNDUP(step, ALLGATHER_CHUNKSTEPS);
   int poffset, noffset = (step%NCCL_STEPS)*stepSize;
 
   // Compute pointers
   const T * __restrict__ thisInput = (const T*)args->ThisInput;
   T * __restrict__ thisOutput = (T*)args->ThisOutput;
-  T * __restrict__ prevInput = (T*)ring->recv.conn.buff;
-  T * __restrict__ nextOutput = (T*)ring->send.conn.buff;
+  T * __restrict__ prevInput = (T*)recv->conn.buff;
+  T * __restrict__ nextOutput = (T*)send->conn.buff;
 
   for (ssize_t gridOffset = 0; gridOffset < size; gridOffset += loopSize) {
     int realChunkSize = min(chunkSize, DIVUP(size-gridOffset,args->nChannels));
@@ -155,7 +157,7 @@ __device__ void ncclAllGatherKernel(struct CollectiveArgs* args) {
   }
 
   // Save step counter for next op
-  if (tid == 0) ring->send.conn.step = step;
+  if (tid == 0) send->conn.step = step;
   __syncthreads();
 }
 
@@ -175,10 +177,13 @@ __device__ void ncclAllGatherLLKernel(struct CollectiveArgs* args) {
   const int bid = args->bid;
   const int nthreads = args->nThreads;
   struct ncclComm* comm = args->comm;
-  struct ncclRing* ring = &comm->channels[blockIdx.x].ring;
-  volatile uint64_t * recvHeadPtr = ring->recv.conn.llHead;
-  volatile uint64_t * sendHeadPtr = ring->send.conn.llHead;
-  volatile int * sizesFifo = ring->send.conn.llFifo;
+  struct ncclChannel* channel = comm->channels+blockIdx.x;
+  struct ncclRing* ring = &channel->ring;
+  struct ncclConnector* recv = &channel->devPeers[ring->prev].recv;
+  struct ncclConnector* send = &channel->devPeers[ring->next].send;
+  volatile uint64_t * recvHeadPtr = recv->conn.llHead;
+  volatile uint64_t * sendHeadPtr = send->conn.llHead;
+  volatile int * sizesFifo = send->conn.llFifo;
   uint64_t sendHead = sendHeadPtr[0];
 
   typedef LLPrimitives<T, FUNC> LL;
@@ -189,15 +194,15 @@ __device__ void ncclAllGatherLLKernel(struct CollectiveArgs* args) {
   ssize_t chunkSize = NCCL_LL_SLICE_LINES * sizeof(uint64_t) / sizeof(T);
   const ssize_t loopSize = args->nChannels*chunkSize;
 
-  uint64_t step = ring->send.conn.llStep;
+  uint64_t step = send->conn.llStep;
   uint32_t pflag, nflag = step + 1;
   int poffset, noffset = NCCL_LL_SLICE_LINES * STEP_TO_SLOT(step);
 
   // Compute pointers
   const T * __restrict__ thisInput = (const T*)args->ThisInput;
   T * __restrict__ thisOutput = (T*)args->ThisOutput;
-  union ncclLLFifoLine * prevInput = (union ncclLLFifoLine *)ring->recv.conn.llBuff;
-  union ncclLLFifoLine * nextOutput = (union ncclLLFifoLine *)ring->send.conn.llBuff;
+  union ncclLLFifoLine * prevInput = (union ncclLLFifoLine *)recv->conn.llBuff;
+  union ncclLLFifoLine * nextOutput = (union ncclLLFifoLine *)send->conn.llBuff;
 
   for (ssize_t gridOffset = 0; gridOffset < size; gridOffset += loopSize) {
     if (size-gridOffset < loopSize) {
