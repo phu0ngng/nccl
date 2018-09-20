@@ -111,7 +111,7 @@ struct ncclConnInfo {
 
 struct ncclConnector {
   struct transportProxyInfo* proxyInfo;
-  struct ncclTransport* transport;
+  struct ncclTransportComm* transportComm;
   void* transportResources; // Host-side resources
   struct ncclConnInfo conn;
 };
@@ -157,14 +157,16 @@ struct ncclRecvMem {
 };
 
 struct ncclRing {
-  struct ncclConnector send;
-  struct ncclConnector recv;
-
   // Maps an internal nccl index to user-specified rank order. This is necessary
   // since we need to know how the user expects data to be ordered across
   // devices. Ordered from current device.
   int* userRanks;
   int* devUserRanks;
+};
+
+struct ncclPeer {
+  struct ncclConnector send;
+  struct ncclConnector recv;
 };
 
 struct ncclChannel {
@@ -176,6 +178,9 @@ struct ncclChannel {
       int id;
       int nthreads;
       int buffSize;
+
+      // Communication structures
+      struct ncclPeer* peers;
 
       // Operation list for aggregation
       struct ncclColl* collectives;

@@ -117,10 +117,6 @@ ncclResult_t transportStartProxies(ncclComm* comm) {
 
 void* persistentThread(void *opaqueInfo) {
   struct transportProxyInfo* info = (struct transportProxyInfo*)opaqueInfo;
-  // We need to initialize the context before launching any NCCL cuda kernel,
-  // otherwise we would create it during the first cudaMemcpyAsync inside the
-  // proxy function and that would cause a deadlock
-  cudaSetDevice(info->comm->cudaDev);
   // Signal the main thread the context is created and it can proceed.
   SetProxyReady(info);
   while (1) {
@@ -137,15 +133,12 @@ void* persistentThread(void *opaqueInfo) {
   }
 }
 
-ncclResult_t transportCreateProxy(int type, struct ncclRing* ring, struct ncclComm* comm) {
-  struct ncclConnector* connector = (type == RECV) ? &ring->recv : &ring->send;
-  threadFunc_t proxyfunc = (threadFunc_t) ((type == RECV) ? connector->transport->recv.proxy : connector->transport->send.proxy);
+ncclResult_t transportCreateProxy(struct ncclConnector* connector) {
+  threadFunc_t proxyfunc = (threadFunc_t) connector->transportComm->proxy;
   if (proxyfunc) {
-    TRACE(NET,"type %d ring %p proxyfunc %p comm %p", type, ring, proxyfunc, comm);
     struct transportProxyInfo* info;
     NCCLCHECK(ncclCalloc(&info, 1));
     connector->proxyInfo = info;
-    info->comm = comm;
     info->cond = PTHREAD_COND_INITIALIZER;
     info->mutex = PTHREAD_MUTEX_INITIALIZER;
     info->func = proxyfunc;

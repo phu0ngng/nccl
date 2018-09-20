@@ -68,7 +68,6 @@ typedef ncclResult_t (*threadFunc_t)(struct ncclProxyArgs*);
 #define TRANSPORT_PROXY_FIFO_SIZE NCCL_MAX_OPS
 
 struct transportProxyInfo {
-  struct ncclComm* comm;
   pthread_t thread;
   threadFunc_t func;
   volatile int proxyReady;
@@ -79,7 +78,7 @@ struct transportProxyInfo {
   pthread_mutex_t mutex;
 };
 
-ncclResult_t transportCreateProxy(int type, struct ncclRing* ring, struct ncclComm* comm);
+ncclResult_t transportCreateProxy(struct ncclConnector* connector);
 ncclResult_t transportDestroyProxy(struct ncclConnector* connector);
 
 enum proxyMode {

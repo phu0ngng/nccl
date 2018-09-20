@@ -48,9 +48,9 @@ ncclResult_t freeChannel(struct ncclChannel* channel) {
   CUDACHECK(cudaFree(ring->devUserRanks));
 
   // Free transport proxy resources
-  if (ring->send.transportResources) NCCLCHECK(ring->send.transport->send.free(ring->send.transportResources));
+  if (ring->send.transportResources) NCCLCHECK(ring->send.transportComm->free(ring->send.transportResources));
   NCCLCHECK(transportDestroyProxy(&ring->send));
-  if (ring->recv.transportResources) NCCLCHECK(ring->recv.transport->recv.free(ring->recv.transportResources));
+  if (ring->recv.transportResources) NCCLCHECK(ring->recv.transportComm->free(ring->recv.transportResources));
   NCCLCHECK(transportDestroyProxy(&ring->recv));
   return ncclSuccess;
 }

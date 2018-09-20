@@ -216,24 +216,24 @@ static ncclResult_t fillInfo(struct ncclPeerInfo* info, int rank) {
 }
 
 template <int type>
-static ncclResult_t selectTransport(struct ncclPeerInfo* myInfo, struct ncclPeerInfo* peerInfo, struct ncclConnect* connect, struct ncclTransport** transportRet, struct ncclConnector* connector, int buffSize, int channelId) {
+static ncclResult_t selectTransport(struct ncclPeerInfo* myInfo, struct ncclPeerInfo* peerInfo, struct ncclConnect* connect, struct ncclConnector* connector, int buffSize, int channelId) {
   for (int t=0; t<NTRANSPORTS; t++) {
     struct ncclTransport *transport = ncclTransports+t;
     struct ncclTransportComm* transportComm = type == 1 ? &transport->send : &transport->recv;
     ncclTvalue_t ret = 0;
     NCCLCHECK(transport->canConnect(&ret, myInfo->tinfo+t, peerInfo->tinfo+t));
     if (ret > 0) {
+      connector->transportComm = transportComm;
       NCCLCHECK(transportComm->setup(myInfo->tinfo+t, peerInfo->tinfo+t, connect, connector, buffSize, channelId));
-      *transportRet = transport;
+      NCCLCHECK(transportCreateProxy(connector));
       return ncclSuccess;
     }
   }
   WARN("No transport found !");
-  *transportRet = NULL;
   return ncclInternalError;
 }
 
-static ncclResult_t setupChannel(struct ncclComm* comm, int channelId, int rank, int nranks, int* ringRanks, struct ncclPeerInfo* allInfo, struct ncclConnect* connect) {
+static ncclResult_t setupChannel(struct ncclComm* comm, int channelId, int rank, int nranks, int* ringRanks) {
   NCCLCHECK(initChannel(comm, channelId));
 
   struct ncclChannel* channel = comm->channels+channelId;
@@ -249,13 +249,6 @@ static ncclResult_t setupChannel(struct ncclComm* comm, int channelId, int rank,
   for (int i=0; i<nranks; i++) {
     ring->userRanks[i] = ringRanks[(i+shift)%nranks];
   }
-  int prev = ring->userRanks[nranks-1];
-  int next = ring->userRanks[1];
-
-  NCCLCHECK(selectTransport<0>(allInfo+rank, allInfo+prev, connect+0, &ring->recv.transport, &ring->recv, channel->buffSize, channelId));
-  NCCLCHECK(selectTransport<1>(allInfo+rank, allInfo+next, connect+1, &ring->send.transport, &ring->send, channel->buffSize, channelId));
-  NCCLCHECK(transportCreateProxy(0, ring, comm));
-  NCCLCHECK(transportCreateProxy(1, ring, comm));
   return ncclSuccess;
 }
 
@@ -271,11 +264,6 @@ static ncclResult_t fillConnect(struct ncclPeerInfo* allInfo, int nranks, int ra
     }
   }
   return ncclSuccess;
-}
-
-static void swap(void* mem1, void* mem2, int size) {
-  char tmp[size];
-  memcpy(tmp, mem1, size); memcpy(mem1, mem2, size); memcpy(mem2, tmp, size);
 }
 
 #define MAXWIDTH 20
@@ -484,19 +472,23 @@ static ncclResult_t initTransportsRank(struct ncclComm* comm, ncclUniqueId* comm
   free(next);
 
   // Connect with prev/next for each ring
-  struct ncclConnect *connectData;
-  NCCLCHECK(ncclCalloc(&connectData, 2*nranks));
+  struct ncclConnect *connect;
+  NCCLCHECK(ncclCalloc(&connect, 2*nranks));
   for (int r=0; r<nrings; r++) {
     int* ringRanks = rings+r*nranks;
-    struct ncclRing *ring = &comm->channels[r].ring;
-    NCCLCHECK(setupChannel(comm, r, rank, nranks, ringRanks, allInfo, connectData+2*rank));
-    int prev_offset = ring->userRanks[nranks-1]*2+1;
-    int next_offset = ring->userRanks[1]*2;
-    NCCLCHECK(bootstrapAllGather(commState, connectData, sizeof(struct ncclConnect)*2));
-    NCCLCHECK(ring->send.transport->send.connect(connectData+next_offset, &ring->send));
-    NCCLCHECK(ring->recv.transport->recv.connect(connectData+prev_offset, &ring->recv));
+    struct ncclChannel* channel = comm->channels+r;
+    struct ncclRing *ring = &channel->ring;
+    NCCLCHECK(setupChannel(comm, r, rank, nranks, ringRanks));
+    int prev = ring->userRanks[nranks-1];
+    int next = ring->userRanks[1];
+
+    NCCLCHECK(selectTransport<0>(allInfo+rank, allInfo+prev, connect+rank*2+0, &ring->recv, channel->buffSize, channel->id));
+    NCCLCHECK(selectTransport<1>(allInfo+rank, allInfo+next, connect+rank*2+1, &ring->send, channel->buffSize, channel->id));
+    NCCLCHECK(bootstrapAllGather(commState, connect, sizeof(struct ncclConnect)*2));
+    NCCLCHECK(ring->recv.transportComm->connect(connect+prev*2+1, &ring->recv));
+    NCCLCHECK(ring->send.transportComm->connect(connect+next*2+0, &ring->send));
   }
-  free(connectData);
+  free(connect);
   free(rings);
   free(allInfo);
 
@@ -666,22 +658,21 @@ static ncclResult_t initTransportsAll(struct ncclComm** comms, const int* devs, 
     int* ringRanks = rings+r*nranks;
     for (int rank=0; rank<nranks; rank++) {
       CUDACHECK(cudaSetDevice(devs[rank]));
-      NCCLCHECK(setupChannel(comms[rank], r, rank, nranks, ringRanks, allInfo, connect+2*rank));
-    }
-    // RingExchange connect information
-    for (int rank=0; rank<nranks; rank++) {
-      // Swap rank->prev and prevRank->next
-      struct ncclRing *ring = &comms[rank]->channels[r].ring;
-      int prevRank = ring->userRanks[nranks-1];
-      struct ncclConnect* prevRankNextConnect = connect+2*prevRank+1;
-      struct ncclConnect* rankPrevConnect = connect+2*rank;
-      swap(prevRankNextConnect, rankPrevConnect, sizeof(struct ncclConnect));
+      struct ncclChannel* channel = comms[rank]->channels+r;
+      struct ncclRing *ring = &channel->ring;
+      NCCLCHECK(setupChannel(comms[rank], r, rank, nranks, ringRanks));
+      int prev = ring->userRanks[nranks-1];
+      int next = ring->userRanks[1];
+      NCCLCHECK(selectTransport<0>(allInfo+rank, allInfo+prev, connect+rank*2+0, &ring->recv, channel->buffSize, channel->id));
+      NCCLCHECK(selectTransport<1>(allInfo+rank, allInfo+next, connect+rank*2+1, &ring->send, channel->buffSize, channel->id));
     }
     for (int rank=0; rank<nranks; rank++) {
       CUDACHECK(cudaSetDevice(devs[rank]));
       struct ncclRing *ring = &comms[rank]->channels[r].ring;
-      NCCLCHECK(ring->send.transport->send.connect(connect+2*rank+1, &ring->send));
-      NCCLCHECK(ring->recv.transport->recv.connect(connect+2*rank+0, &ring->recv));
+      int prev = ring->userRanks[nranks-1];
+      int next = ring->userRanks[1];
+      NCCLCHECK(ring->recv.transportComm->connect(connect+prev*2+1, &ring->recv));
+      NCCLCHECK(ring->send.transportComm->connect(connect+next*2+0, &ring->send));
     }
   }
   free(rings);
