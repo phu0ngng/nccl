@@ -23,10 +23,6 @@ static_assert(sizeof(ncclTvalue_t)*8 >= NET_MAX_IFS*NET_BITS_PER_IF, "NET_MAX_IF
 static int ncclNetScores[NET_MAX_IFS];
 static int ncclNetNdev = -1;
 
-struct netInfo {
-  int rank;
-};
-
 struct netConnectInfo {
   ncclNetHandle_t netHandle;
 };
@@ -75,17 +71,8 @@ ncclResult_t ncclNetInit() {
   return ncclSuccess;
 }
 
-/* Fill information necessary to exchange between ranks to choose whether or not
- * to use this transport */
-ncclResult_t netFillInfo(ncclTinfo_t* opaqueInfo, int rank) {
-  struct netInfo* info = (struct netInfo*)opaqueInfo;
-  static_assert(sizeof(struct netInfo) <= sizeof(ncclTinfo_t), "NET Info too large");
-  info->rank = rank;
-  return ncclSuccess;
-}
-
 /* Determine if we can communicate with the peer */
-ncclResult_t netCanConnect(ncclTvalue_t* ret, ncclTinfo_t* myOpaqueInfo, ncclTinfo_t* peerOpaqueInfo) {
+ncclResult_t netCanConnect(ncclTvalue_t* ret, struct ncclPeerInfo* myInfo, struct ncclPeerInfo* peerInfo) {
   NCCLCHECK(ncclNetInit());
   ret[0] = 0;
   for (int d=0; d<ncclNetNdev; d++) {
@@ -223,13 +210,12 @@ ncclResult_t netUseGdrForReads(int* useGdr) {
 
 /* Determine if we will use this transport for this peer and return connect
  * information for this peer */
-ncclResult_t netSendSetup(ncclTinfo_t* myOpaqueInfo, ncclTinfo_t* peerOpaqueInfo, struct ncclConnect* connectInfo, struct ncclConnector* send, int buffSize, int channelId) {
+ncclResult_t netSendSetup(struct ncclPeerInfo* myInfo, struct ncclPeerInfo* peerInfo, struct ncclConnect* connectInfo, struct ncclConnector* send, int buffSize, int channelId) {
   struct netSendResources* resources;
   NCCLCHECK(ncclNetInit());
   NCCLCHECK(ncclCalloc(&resources, 1));
   send->transportResources = resources;
 
-  struct netInfo* myInfo = (struct netInfo*)myOpaqueInfo;
   resources->netDev = getDev(channelId, ncclNetNdev, ncclNetScores);
   int flags, usePtrForReads;
   NCCLCHECK(ncclNetPtrSupport(resources->netDev, &flags));
@@ -245,19 +231,17 @@ ncclResult_t netSendSetup(ncclTinfo_t* myOpaqueInfo, ncclTinfo_t* peerOpaqueInfo
   }
   NCCLCHECK(ncclCudaHostAlloc((void**)&resources->hostRecvMem, (void**)&resources->devHostRecvMem, recvSize));
 
-  struct netInfo* peerInfo = (struct netInfo*)peerOpaqueInfo;
   INFO(INIT|NET,"Ring %02d : %d -> %d [send] via NET/%s/%d%s", channelId, myInfo->rank, peerInfo->rank, ncclNetName(), resources->netDev,
       resources->cudaSupport ? "/GDRDMA" : "");
   return ncclSuccess;
 }
 
-ncclResult_t netRecvSetup(ncclTinfo_t* myOpaqueInfo, ncclTinfo_t* peerOpaqueInfo, struct ncclConnect* connectInfo, struct ncclConnector* recv, int buffSize, int channelId) {
+ncclResult_t netRecvSetup(struct ncclPeerInfo* myInfo, struct ncclPeerInfo* peerInfo, struct ncclConnect* connectInfo, struct ncclConnector* recv, int buffSize, int channelId) {
   struct netRecvResources* resources;
   NCCLCHECK(ncclNetInit());
   NCCLCHECK(ncclCalloc(&resources, 1));
   recv->transportResources = resources;
 
-  struct netInfo* myInfo = (struct netInfo*)myOpaqueInfo;
   resources->netDev = getDev(channelId, ncclNetNdev, ncclNetScores);
   int flags;
   NCCLCHECK(ncclNetPtrSupport(resources->netDev, &flags));
@@ -272,7 +256,6 @@ ncclResult_t netRecvSetup(ncclTinfo_t* myOpaqueInfo, ncclTinfo_t* peerOpaqueInfo
   }
   NCCLCHECK(ncclCudaHostAlloc((void**)&resources->hostRecvMem, (void**)&resources->devHostRecvMem, recvSize));
 
-  struct netInfo* peerInfo = (struct netInfo*)peerOpaqueInfo;
   INFO(INIT|NET,"Ring %02d : %d -> %d [receive] via NET/%s/%d%s", channelId, peerInfo->rank, myInfo->rank, ncclNetName(), resources->netDev,
       resources->cudaSupport ? "/GDRDMA" : "");
   struct netConnectInfo* info = (struct netConnectInfo*) connectInfo;
@@ -515,7 +498,6 @@ nextColl:
 
 struct ncclTransport netTransport = {
   "NET",
-  netFillInfo,
   netCanConnect,
   netGetRings,
   { netSendSetup, netSendConnect, netSendFree, netSendProxy },

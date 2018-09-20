@@ -115,6 +115,10 @@ static ncclResult_t commFree(ncclComm_t comm) {
   if (comm == NULL)
     return ncclSuccess;
 
+  free(comm->peerInfo);
+
+  NCCLCHECK(bootstrapClose(comm->bootstrap));
+
   CUDACHECK(cudaFree(comm->devComm));
 
   for (int channel=0; channel<comm->nChannels; channel++)
@@ -210,9 +214,21 @@ static void showVersion() {
 }
 
 static ncclResult_t fillInfo(struct ncclPeerInfo* info, int rank) {
-  for (int t=0; t<NTRANSPORTS; t++) {
-    NCCLCHECK(ncclTransports[t].fillInfo(info->tinfo+t, rank));
-  }
+  info->rank = rank;
+  CUDACHECK(cudaGetDevice(&info->cudaDev));
+  info->hostHash=getHostHash();
+  info->pidHash=getPidHash();
+
+  // Get PCI Bus Id. We need to get the bus ID through CUDA first, since the
+  // cudaDev is a CUDA runtime dev number which could be different from the
+  // NVML device number. Then we get the busID from NVML to be sure it is
+  // consistent with NVML remote PCI bus Ids.
+  CUDACHECK(cudaDeviceGetPCIBusId(info->busId, NVML_DEVICE_PCI_BUS_ID_BUFFER_SIZE, info->cudaDev));
+  nvmlDevice_t nvmlDevice;
+  NCCLCHECK(wrapNvmlDeviceGetHandleByPciBusId(info->busId, &nvmlDevice));
+  nvmlPciInfo_t pciInfo;
+  NCCLCHECK(wrapNvmlDeviceGetPciInfo(nvmlDevice, &pciInfo));
+  strncpy(info->busId, pciInfo.busId, NVML_DEVICE_PCI_BUS_ID_BUFFER_SIZE);
   return ncclSuccess;
 }
 
@@ -222,10 +238,10 @@ static ncclResult_t selectTransport(struct ncclPeerInfo* myInfo, struct ncclPeer
     struct ncclTransport *transport = ncclTransports+t;
     struct ncclTransportComm* transportComm = type == 1 ? &transport->send : &transport->recv;
     ncclTvalue_t ret = 0;
-    NCCLCHECK(transport->canConnect(&ret, myInfo->tinfo+t, peerInfo->tinfo+t));
+    NCCLCHECK(transport->canConnect(&ret, myInfo, peerInfo));
     if (ret > 0) {
       connector->transportComm = transportComm;
-      NCCLCHECK(transportComm->setup(myInfo->tinfo+t, peerInfo->tinfo+t, connect, connector, buffSize, channelId));
+      NCCLCHECK(transportComm->setup(myInfo, peerInfo, connect, connector, buffSize, channelId));
       NCCLCHECK(transportCreateProxy(connector));
       return ncclSuccess;
     }
@@ -253,11 +269,11 @@ static ncclResult_t setupChannel(struct ncclComm* comm, int channelId, int rank,
   return ncclSuccess;
 }
 
-static ncclResult_t fillConnect(struct ncclPeerInfo* allInfo, int nranks, int rank, int* connectTransport, ncclTvalue_t* connectValue) {
+static ncclResult_t fillConnect(struct ncclPeerInfo* peerInfo, int nranks, int rank, int* connectTransport, ncclTvalue_t* connectValue) {
   for (int r=0; r<nranks; r++) {
     connectTransport[r] = -1;
     for (int t=0; t<NTRANSPORTS; t++) {
-      NCCLCHECK(ncclTransports[t].canConnect(connectValue+r, allInfo[rank].tinfo+t, allInfo[r].tinfo+t));
+      NCCLCHECK(ncclTransports[t].canConnect(connectValue+r, peerInfo+rank, peerInfo+r));
       if (connectValue[r] > 0) {
         connectTransport[r] = t;
         break;
@@ -408,22 +424,20 @@ ncclResult_t ncclCommSetIntra(struct ncclComm* comm, int rank, int ranks, struct
 static ncclResult_t initTransportsRank(struct ncclComm* comm, ncclUniqueId* commId) {
   int rank = comm->rank;
   int nranks = comm->nRanks;
-  void* commState;
-  NCCLCHECK(bootstrapInit(commId, rank, nranks, &commState));
+  NCCLCHECK(bootstrapInit(commId, rank, nranks, &comm->bootstrap));
 
-  struct ncclPeerInfo* allInfo;
-  NCCLCHECK(ncclCalloc(&allInfo, nranks));
-  NCCLCHECK(fillInfo(allInfo+rank, rank));
-  NCCLCHECK(bootstrapAllGather(commState, allInfo, sizeof(struct ncclPeerInfo)));
+  NCCLCHECK(ncclCalloc(&comm->peerInfo, nranks));
+  NCCLCHECK(fillInfo(comm->peerInfo+rank, rank));
+  NCCLCHECK(bootstrapAllGather(comm->bootstrap, comm->peerInfo, sizeof(struct ncclPeerInfo)));
 
   int* connectTransport;
   ncclTvalue_t* connectValue;
   NCCLCHECK(ncclCalloc(&connectTransport, nranks*nranks));
   NCCLCHECK(ncclCalloc(&connectValue, nranks*nranks));
 
-  NCCLCHECK(fillConnect(allInfo, nranks, rank, connectTransport+nranks*rank, connectValue+nranks*rank));
-  NCCLCHECK(bootstrapAllGather(commState, connectTransport, nranks*(sizeof(int))));
-  NCCLCHECK(bootstrapAllGather(commState, connectValue, nranks*(sizeof(ncclTvalue_t))));
+  NCCLCHECK(fillConnect(comm->peerInfo, nranks, rank, connectTransport+nranks*rank, connectValue+nranks*rank));
+  NCCLCHECK(bootstrapAllGather(comm->bootstrap, connectTransport, nranks*(sizeof(int))));
+  NCCLCHECK(bootstrapAllGather(comm->bootstrap, connectValue, nranks*(sizeof(ncclTvalue_t))));
   //if (rank == 0) dumpMatrix(connectTransport, nranks);
   //if (rank == 0) dumpMatrix(connectValue, nranks);
 
@@ -440,7 +454,7 @@ static ncclResult_t initTransportsRank(struct ncclComm* comm, ncclUniqueId* comm
   // Find max nThreads
   int allData[nranks];
   allData[rank] = comm->nThreads;
-  NCCLCHECK(bootstrapAllGather(commState, allData, sizeof(int)));
+  NCCLCHECK(bootstrapAllGather(comm->bootstrap, allData, sizeof(int)));
   for (int i=0; i<nranks; i++)
     comm->nThreads = std::max(allData[i], comm->nThreads);
   if (rank == 0) INFO(INIT,"Using %d threads", comm->nThreads);
@@ -449,22 +463,22 @@ static ncclResult_t initTransportsRank(struct ncclComm* comm, ncclUniqueId* comm
   int myCompCap = ncclCudaCompCap();
   int minCompCap = myCompCap;
   allData[rank] = myCompCap;
-  NCCLCHECK(bootstrapAllGather(commState, allData, sizeof(int)));
+  NCCLCHECK(bootstrapAllGather(comm->bootstrap, allData, sizeof(int)));
   for (int i=0; i<nranks; i++)
     minCompCap = std::min(allData[i], minCompCap);
   if (rank == 0) INFO(INIT,"Min Comp Cap %d", minCompCap);
 
   // Find min nrings across ranks
   allData[rank] = nrings;
-  NCCLCHECK(bootstrapAllGather(commState, allData, sizeof(int)));
+  NCCLCHECK(bootstrapAllGather(comm->bootstrap, allData, sizeof(int)));
   for (int i=0; i<nranks; i++)
     nrings = std::min(allData[i], nrings);
 
   // Exchange data with others to build complete rings
   comm->nChannels = nrings;
   for (int r=0; r<nrings; r++) {
-    NCCLCHECK(bootstrapAllGather(commState, prev+r*nranks, sizeof(int)));
-    NCCLCHECK(bootstrapAllGather(commState, next+r*nranks, sizeof(int)));
+    NCCLCHECK(bootstrapAllGather(comm->bootstrap, prev+r*nranks, sizeof(int)));
+    NCCLCHECK(bootstrapAllGather(comm->bootstrap, next+r*nranks, sizeof(int)));
   }
   int *rings;
   NCCLCHECK(ncclCalloc(&rings, nranks*MAXCHANNELS));
@@ -485,15 +499,14 @@ static ncclResult_t initTransportsRank(struct ncclComm* comm, ncclUniqueId* comm
     struct ncclConnector* recv = &channel->peers[prev].recv;
     struct ncclConnector* send = &channel->peers[next].send;
 
-    NCCLCHECK(selectTransport<0>(allInfo+rank, allInfo+prev, connect+rank*2+0, recv, channel->buffSize, channel->id));
-    NCCLCHECK(selectTransport<1>(allInfo+rank, allInfo+next, connect+rank*2+1, send, channel->buffSize, channel->id));
-    NCCLCHECK(bootstrapAllGather(commState, connect, sizeof(struct ncclConnect)*2));
+    NCCLCHECK(selectTransport<0>(comm->peerInfo+rank, comm->peerInfo+prev, connect+rank*2+0, recv, channel->buffSize, channel->id));
+    NCCLCHECK(selectTransport<1>(comm->peerInfo+rank, comm->peerInfo+next, connect+rank*2+1, send, channel->buffSize, channel->id));
+    NCCLCHECK(bootstrapAllGather(comm->bootstrap, connect, sizeof(struct ncclConnect)*2));
     NCCLCHECK(recv->transportComm->connect(connect+prev*2+1, recv));
     NCCLCHECK(send->transportComm->connect(connect+next*2+0, send));
   }
   free(connect);
   free(rings);
-  free(allInfo);
 
   // Intra-process barrier setup
   struct rankInfo {
@@ -504,7 +517,7 @@ static ncclResult_t initTransportsRank(struct ncclComm* comm, ncclUniqueId* comm
   rankInfos[rank].hostHash = getHostHash();
   rankInfos[rank].pidHash = getPidHash();
   rankInfos[rank].comm = comm;
-  NCCLCHECK(bootstrapAllGather(commState, rankInfos, sizeof(struct rankInfo)));
+  NCCLCHECK(bootstrapAllGather(comm->bootstrap, rankInfos, sizeof(struct rankInfo)));
 
   // Compute intra ranks
   int intraRank0 = -1, intraRank = -1, intraRanks = 0;
@@ -525,8 +538,6 @@ static ncclResult_t initTransportsRank(struct ncclComm* comm, ncclUniqueId* comm
   }
   NCCLCHECK(ncclCommSetIntra(comm, intraRank, intraRanks, rankInfos[intraRank0].comm));
 
-  // Barrier
-  bootstrapClose(commState);
   return ncclSuccess;
 }
 
@@ -682,7 +693,6 @@ static ncclResult_t initTransportsAll(struct ncclComm** comms, const int* devs, 
     }
   }
   free(rings);
-  free(allInfo);
   return ncclSuccess;
 }
 

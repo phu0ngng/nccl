@@ -9,6 +9,7 @@
 
 #include "nccl.h"
 #include <stdint.h>
+#include "nvmlwrap.h"
 
 #define NTRANSPORTS 3
 
@@ -19,11 +20,12 @@ struct ncclRing;
 struct ncclConnector;
 struct ncclComm;
 
-#define RANK_INFO_SIZE 64
-typedef char ncclTinfo_t[RANK_INFO_SIZE];
-
 struct ncclPeerInfo {
-  ncclTinfo_t tinfo[NTRANSPORTS];
+  int rank;
+  int cudaDev;
+  uint64_t hostHash;
+  uint64_t pidHash;
+  char busId[NVML_DEVICE_PCI_BUS_ID_BUFFER_SIZE];
 };
 
 // Used to hold the transport connection values
@@ -46,7 +48,7 @@ struct ncclProxyArgs {
 };
 
 struct ncclTransportComm {
-  ncclResult_t (*setup)(ncclTinfo_t*, ncclTinfo_t*, struct ncclConnect*, struct ncclConnector*, int buffSize, int channelId);
+  ncclResult_t (*setup)(struct ncclPeerInfo*, struct ncclPeerInfo*, struct ncclConnect*, struct ncclConnector*, int buffSize, int channelId);
   ncclResult_t (*connect)(struct ncclConnect*, struct ncclConnector*);
   ncclResult_t (*free)(void*);
   ncclResult_t (*proxy)(struct ncclProxyArgs*);
@@ -54,8 +56,7 @@ struct ncclTransportComm {
 
 struct ncclTransport {
   const char name[4];
-  ncclResult_t (*fillInfo)(ncclTinfo_t*, int);
-  ncclResult_t (*canConnect)(ncclTvalue_t*, ncclTinfo_t*, ncclTinfo_t*);
+  ncclResult_t (*canConnect)(ncclTvalue_t*, struct ncclPeerInfo*, struct ncclPeerInfo*);
   ncclResult_t (*getRings)(int, int*, int*, ncclTvalue_t*, int*, int*, int*, int, int*);
   struct ncclTransportComm send;
   struct ncclTransportComm recv;

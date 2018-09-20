@@ -12,13 +12,6 @@
 #include <unistd.h>
 #include <cuda_runtime.h>
 
-struct shmInfo {
-  int rank;
-  int cudaDev;
-  uint64_t hostHash;
-  uint64_t pidHash;
-};
-
 struct shmSendConnectInfo {
   uint64_t pidHash;
   int id;
@@ -51,24 +44,10 @@ struct shmRecvResources {
   struct ncclRecvMem* devHostMem;
 };
 
-/* Fill information necessary to exchange between ranks to choose whether or not
- * to use this transport */
-ncclResult_t shmFillInfo(ncclTinfo_t* opaqueInfo, int rank) {
-  struct shmInfo* info = (struct shmInfo*)opaqueInfo;
-  static_assert(sizeof(struct shmInfo) <= sizeof(ncclTinfo_t), "shm Info too large");
-  info->rank = rank;
-  CUDACHECK(cudaGetDevice(&info->cudaDev));
-  info->hostHash=getHostHash();
-  info->pidHash=getPidHash();
-  return ncclSuccess;
-}
-
 NCCL_PARAM(ShmDisable, "SHM_DISABLE", 0);
 
 /* Determine if we can communicate with the peer */
-ncclResult_t shmCanConnect(ncclTvalue_t* ret, ncclTinfo_t* myOpaqueInfo, ncclTinfo_t* peerOpaqueInfo) {
-  struct shmInfo* myInfo = (struct shmInfo*)myOpaqueInfo;
-  struct shmInfo* peerInfo = (struct shmInfo*)peerOpaqueInfo;
+ncclResult_t shmCanConnect(ncclTvalue_t* ret, struct ncclPeerInfo* myInfo, struct ncclPeerInfo* peerInfo) {
   *ret = ((ncclParamShmDisable() == 1) || (myInfo->hostHash != peerInfo->hostHash)) ? 0 : 1;
   return ncclSuccess;
 }
@@ -156,9 +135,7 @@ ncclResult_t shmGetRings(int nranks, int* groups, int* subgroups, ncclTvalue_t* 
 #define MAX_SHM_NAME_LEN 1024
 
 /* Create and return connect structures for this peer to connect to me */
-ncclResult_t shmSendSetup(ncclTinfo_t* myOpaqueInfo, ncclTinfo_t* peerOpaqueInfo, struct ncclConnect* connectInfo, struct ncclConnector* send, int buffSize, int channelId) {
-  struct shmInfo* myInfo = (struct shmInfo*)myOpaqueInfo;
-  struct shmInfo* peerInfo = (struct shmInfo*)peerOpaqueInfo;
+ncclResult_t shmSendSetup(struct ncclPeerInfo* myInfo, struct ncclPeerInfo* peerInfo, struct ncclConnect* connectInfo, struct ncclConnector* send, int buffSize, int channelId) {
 
   struct shmSendResources* resources;
   NCCLCHECK(ncclCalloc(&resources, 1));
@@ -178,8 +155,7 @@ ncclResult_t shmSendSetup(ncclTinfo_t* myOpaqueInfo, ncclTinfo_t* peerOpaqueInfo
   return ncclSuccess;
 }
 
-ncclResult_t shmRecvSetup(ncclTinfo_t* myOpaqueInfo, ncclTinfo_t* peerOpaqueInfo, struct ncclConnect* connectInfo, struct ncclConnector* recv, int buffSize, int channelId) {
-  struct shmInfo* myInfo = (struct shmInfo*)myOpaqueInfo;
+ncclResult_t shmRecvSetup(struct ncclPeerInfo* myInfo, struct ncclPeerInfo* peerInfo, struct ncclConnect* connectInfo, struct ncclConnector* recv, int buffSize, int channelId) {
   struct shmRecvResources* resources;
   NCCLCHECK(ncclCalloc(&resources, 1));
   recv->transportResources = resources;
@@ -262,7 +238,6 @@ ncclResult_t shmRecvFree(void* transportResources) {
 
 struct ncclTransport shmTransport = {
   "SHM",
-  shmFillInfo,
   shmCanConnect,
   shmGetRings,
   { shmSendSetup, shmSendConnect, shmSendFree, NULL },

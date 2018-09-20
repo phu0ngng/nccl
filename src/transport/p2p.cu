@@ -11,17 +11,8 @@
 #include "param.h"
 #include <unistd.h>
 #include <cuda_runtime.h>
-#include "nvmlwrap.h"
 #include <ctype.h>
 #include "nvlink.h"
-
-struct p2pInfo {
-  int rank;
-  int cudaDev;
-  uint64_t hostHash;
-  uint64_t pidHash;
-  char busId[NVML_DEVICE_PCI_BUS_ID_BUFFER_SIZE];
-};
 
 struct p2pConnectInfo {
   int direct;
@@ -43,34 +34,11 @@ struct p2pRecvResources {
 
 #include <sys/types.h>
 
-/* Fill information necessary to exchange between ranks to choose whether or not
- * to use this transport */
-ncclResult_t p2pFillInfo(ncclTinfo_t* opaqueInfo, int rank) {
-  struct p2pInfo* info = (struct p2pInfo*)opaqueInfo;
-  static_assert(sizeof(struct p2pInfo) <= sizeof(ncclTinfo_t), "p2p Info too large");
-  info->rank = rank;
-  CUDACHECK(cudaGetDevice(&info->cudaDev));
-  info->hostHash=getHostHash();
-  info->pidHash=getPidHash();
-
-  // Get PCI Bus Id. We need to get the bus ID through CUDA first, since the
-  // cudaDev is a CUDA runtime dev number which could be different from the
-  // NVML device number. Then we get the busID from NVML to be sure it is
-  // consistent with NVML remote PCI bus Ids.
-  CUDACHECK(cudaDeviceGetPCIBusId(info->busId, NVML_DEVICE_PCI_BUS_ID_BUFFER_SIZE, info->cudaDev));
-  nvmlDevice_t nvmlDevice;
-  NCCLCHECK(wrapNvmlDeviceGetHandleByPciBusId(info->busId, &nvmlDevice));
-  nvmlPciInfo_t pciInfo;
-  NCCLCHECK(wrapNvmlDeviceGetPciInfo(nvmlDevice, &pciInfo));
-  strncpy(info->busId, pciInfo.busId, NVML_DEVICE_PCI_BUS_ID_BUFFER_SIZE);
-  return ncclSuccess;
-}
-
 NCCL_PARAM(P2pLevel, "P2P_LEVEL", -2);
 NCCL_PARAM(P2pDisable, "P2P_DISABLE", -2);
 
 /* Determine if we can communicate with the peer through p2p */
-ncclResult_t p2pCanConnect(ncclTvalue_t* ret, ncclTinfo_t* myOpaqueInfo, ncclTinfo_t* peerOpaqueInfo) {
+ncclResult_t p2pCanConnect(ncclTvalue_t* ret, struct ncclPeerInfo* myInfo, struct ncclPeerInfo* peerInfo) {
   // Do not use P2P across root complexes by default (provided CUDA permits it)
   int p2pLevel = PATH_SOC;
   if (ncclParamP2pDisable() == 1) p2pLevel = 0;
@@ -79,9 +47,6 @@ ncclResult_t p2pCanConnect(ncclTvalue_t* ret, ncclTinfo_t* myOpaqueInfo, ncclTin
   *ret = 0;
 
   if (p2pLevel == 0) return ncclSuccess;
-
-  struct p2pInfo* myInfo = (struct p2pInfo*)myOpaqueInfo;
-  struct p2pInfo* peerInfo = (struct p2pInfo*)peerOpaqueInfo;
 
   // Rule out different nodes
   if (myInfo->hostHash != peerInfo->hostHash) return ncclSuccess;
@@ -456,10 +421,8 @@ end:
   } while (0)
 
 /* Send: Create and return connect structures for this peer to connect to me */
-ncclResult_t p2pSendSetup(ncclTinfo_t* myOpaqueInfo, ncclTinfo_t* peerOpaqueInfo,
+ncclResult_t p2pSendSetup(struct ncclPeerInfo* myInfo, struct ncclPeerInfo* peerInfo,
     struct ncclConnect* connectInfo, struct ncclConnector* send, int buffSize, int channelId) {
-  struct p2pInfo* myInfo = (struct p2pInfo*)myOpaqueInfo;
-  struct p2pInfo* peerInfo = (struct p2pInfo*)peerOpaqueInfo;
 
   struct p2pSendResources* resources;
   NCCLCHECK(ncclCalloc(&resources, 1));
@@ -505,10 +468,8 @@ ncclResult_t p2pSendSetup(ncclTinfo_t* myOpaqueInfo, ncclTinfo_t* peerOpaqueInfo
 }
 
 /* Create and return connect structures for this peer to connect to me */
-ncclResult_t p2pRecvSetup(ncclTinfo_t* myOpaqueInfo, ncclTinfo_t* peerOpaqueInfo,
+ncclResult_t p2pRecvSetup(struct ncclPeerInfo* myInfo, struct ncclPeerInfo* peerInfo,
     struct ncclConnect* connectInfo, struct ncclConnector * recv, int buffSize, int channelId) {
-  struct p2pInfo* myInfo = (struct p2pInfo*)myOpaqueInfo;
-  struct p2pInfo* peerInfo = (struct p2pInfo*)peerOpaqueInfo;
 
   struct p2pRecvResources* resources;
   NCCLCHECK(ncclCalloc(&resources, 1));
@@ -627,7 +588,6 @@ ncclResult_t p2pRecvFree(void* resources) {
 
 struct ncclTransport p2pTransport = {
   "P2P",
-  p2pFillInfo,
   p2pCanConnect,
   p2pGetRings,
   { p2pSendSetup, p2pSendConnect, p2pSendFree, NULL },

@@ -236,6 +236,10 @@ static_assert(sizeof(struct ncclColl) == (0x10*sizeof(int)), "ncclColl must have
 struct ncclComm {
   struct ncclChannel channels[MAXCHANNELS];
 
+  struct ncclPeerInfo* peerInfo;
+
+  void* bootstrap;
+
   int rank;    // my rank in the communicator
   int nRanks;  // number of GPUs in communicator
   int cudaDev; // my cuda device index
