@@ -576,6 +576,7 @@ static ncclResult_t p2pSendConnect(struct ncclConnect* connectInfo, struct ncclC
   send->conn.opCount = &remDevMem->opCount;
   send->conn.head = &resources->devMem->head;
   send->conn.llHead = &resources->devMem->llHead;
+  send->conn.ptrExchange = &resources->devMem->ptrExchange;
   return ncclSuccess;
 }
 
