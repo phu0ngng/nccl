@@ -36,7 +36,7 @@ NCCL static library
 rm -rf $RPM_BUILD_ROOT
 install -m 755 -d $RPM_BUILD_ROOT
 install -m 755 -d $RPM_BUILD_ROOT/%{_libdir}
-install -m 644 lib/libnccl.so.${nccl:Major}.${nccl:Minor}.${nccl:Patch} $RPM_BUILD_ROOT/%{_libdir}
+install -m 755 lib/libnccl.so.${nccl:Major}.${nccl:Minor}.${nccl:Patch} $RPM_BUILD_ROOT/%{_libdir}
 ln -s libnccl.so.${nccl:Major}.${nccl:Minor}.${nccl:Patch} $RPM_BUILD_ROOT/%{_libdir}/libnccl.so.${nccl:Major}
 
 # devel
