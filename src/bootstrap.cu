@@ -51,8 +51,8 @@ struct extId {
 struct extInfo {
   int rank;
   int nranks;
-  ncclNetHandle_t extHandleListenFromRoot;
-  ncclNetHandle_t extHandleRing;
+  ncclNetHandle_t extHandleListenRoot;
+  ncclNetHandle_t extHandleListen;
 };
 
 #include <sys/resource.h>
@@ -68,8 +68,8 @@ static ncclResult_t setFilesLimit() {
 static void *bootstrapRoot(void* commId) {
   struct extInfo info;
   struct extId* id = (struct extId*)commId;
-  ncclNetHandle_t *extHandleBstrap = NULL; // for initial rank <-> root information exchange
-  ncclNetHandle_t *extHandleRing = NULL; // for bootstrap ring creation
+  ncclNetHandle_t *rankHandles = NULL;
+  ncclNetHandle_t *rankHandlesRoot = NULL; // for initial rank <-> root information exchange
   void* tmpComm;
   char* data = NULL;
   ncclResult_t res;
@@ -83,13 +83,9 @@ static void *bootstrapRoot(void* commId) {
     NCCLCHECKGOTO(bootstrapCloseRecv(tmpComm), res, out);
 
     if (c == 0) {
-      extHandleBstrap = (ncclNetHandle_t *)calloc(info.nranks, sizeof(ncclNetHandle_t));
-      extHandleRing = (ncclNetHandle_t *)calloc(info.nranks, sizeof(ncclNetHandle_t));
-      if (extHandleBstrap == NULL || extHandleRing == NULL) {
-        WARN("Bootstrap thread : failed to allocate memory");
-        goto out;
-      }
       nranks = info.nranks;
+      NCCLCHECKGOTO(ncclCalloc(&rankHandles, nranks), res, out);
+      NCCLCHECKGOTO(ncclCalloc(&rankHandlesRoot, nranks), res, out);
     }
 
     if (nranks != info.nranks) {
@@ -97,10 +93,9 @@ static void *bootstrapRoot(void* commId) {
       goto out;
     }
 
-    // Save the connection handle for connecting back to the ranks
-    memcpy(&extHandleBstrap[info.rank], info.extHandleListenFromRoot, sizeof(ncclNetHandle_t));
-    // Save the connection handle for the AllGather ring
-    memcpy(&extHandleRing[info.rank], info.extHandleRing, sizeof(ncclNetHandle_t));
+    // Save the connection handle for that rank
+    memcpy(rankHandlesRoot+info.rank, info.extHandleListenRoot, sizeof(ncclNetHandle_t));
+    memcpy(rankHandles+info.rank, info.extHandleListen, sizeof(ncclNetHandle_t));
 
     ++c;
   } while (c < nranks);
@@ -109,8 +104,8 @@ static void *bootstrapRoot(void* commId) {
   for (int r=0; r<nranks; ++r) {
     int next = (r+1) % nranks;
     void *tmpSendComm;
-    NCCLCHECKGOTO(bootstrapConnect(0, extHandleBstrap[r], &tmpSendComm), res, out);
-    NCCLCHECKGOTO(bootstrapSend(tmpSendComm, &extHandleRing[next], sizeof(ncclNetHandle_t)), res, out);
+    NCCLCHECKGOTO(bootstrapConnect(0, rankHandlesRoot[r], &tmpSendComm), res, out);
+    NCCLCHECKGOTO(bootstrapSend(tmpSendComm, rankHandles+next, sizeof(ncclNetHandle_t)), res, out);
     NCCLCHECKGOTO(bootstrapCloseSend(tmpSendComm), res, out);
   }
 
@@ -118,6 +113,8 @@ out:
   bootstrapCloseListen(id->extListenComm);
   free(commId);
   if (data) free(data);
+  if (rankHandles) free(rankHandles);
+  if (rankHandlesRoot) free(rankHandlesRoot);
   return NULL;
 }
 
@@ -152,9 +149,10 @@ ncclResult_t bootstrapGetUniqueId(ncclUniqueId* out) {
 }
 
 struct extState {
+  void* extBstrapListenComm;
   void* extBstrapRingRecvComm;
   void* extBstrapRingSendComm;
-  ncclNetHandle_t extBstrapRootHandle;
+  ncclNetHandle_t* peerBstrapHandles;
   int rank;
   int nranks;
   int dev;
@@ -168,39 +166,41 @@ ncclResult_t bootstrapInit(ncclUniqueId* commId, int rank, int nranks, void** co
   state->rank = rank;
   state->nranks = nranks;
   *commState = state;
-  void* extBstrapRootListenComm; // comm on which we accept root's connections
 
   struct extInfo info;
   info.rank = rank;
   info.nranks = nranks;
-  void *tmpSendComm, *extBstrapRingListenComm, *tmpRecvComm;
+  void *tmpSendComm, *tmpRecvComm;
   // Pass the remote address to listen via info
   if (idFromEnv) {
-    memcpy(&info.extHandleListenFromRoot, &id->extHandleRoot, sizeof(ncclNetHandle_t));
-    memcpy(&info.extHandleRing, &id->extHandleRoot, sizeof(ncclNetHandle_t));
+    memcpy(&info.extHandleListen, &id->extHandleRoot, sizeof(ncclNetHandle_t));
   }
   // listen will return the local address via info (specify interface type 'findSubnetIf')
   state->dev = idFromEnv ? findSubnetIf : 0;
-  NCCLCHECK(bootstrapListen(state->dev, &info.extHandleListenFromRoot, &extBstrapRootListenComm));
-  NCCLCHECK(bootstrapListen(state->dev, &info.extHandleRing, &extBstrapRingListenComm)); // AllGather Ring
+  void* extBstrapListenCommRoot;
+  NCCLCHECK(bootstrapListen(state->dev, &info.extHandleListen, &state->extBstrapListenComm));
+  NCCLCHECK(bootstrapListen(state->dev, &info.extHandleListenRoot, &extBstrapListenCommRoot));
 
-  memcpy(&state->extBstrapRootHandle, &id->extHandleRoot, sizeof(ncclNetHandle_t));
-  // send info on my listening sockets to root
+  // send info on my listening socket to root
   NCCLCHECK(bootstrapConnect(state->dev, id->extHandleRoot, &tmpSendComm));
   NCCLCHECK(bootstrapSend(tmpSendComm, &info, sizeof(info)));
   NCCLCHECK(bootstrapCloseSend(tmpSendComm));
 
   // get info on my "next" rank in the bootstrap ring from root
   ncclNetHandle_t extHandleNext;
-  NCCLCHECK(bootstrapAccept(extBstrapRootListenComm, &tmpRecvComm));
+  NCCLCHECK(bootstrapAccept(extBstrapListenCommRoot, &tmpRecvComm));
   NCCLCHECK(bootstrapRecv(tmpRecvComm, &extHandleNext, sizeof(extHandleNext)));
   NCCLCHECK(bootstrapCloseRecv(tmpRecvComm));
+  NCCLCHECK(bootstrapCloseListen(extBstrapListenCommRoot));
 
   NCCLCHECK(bootstrapConnect(state->dev, extHandleNext, &state->extBstrapRingSendComm));
   // Accept the connect request from the previous rank in the AllGather ring
-  NCCLCHECK(bootstrapAccept(extBstrapRingListenComm, &state->extBstrapRingRecvComm));
-  NCCLCHECK(bootstrapCloseListen(extBstrapRingListenComm));
-  NCCLCHECK(bootstrapCloseListen(extBstrapRootListenComm));
+  NCCLCHECK(bootstrapAccept(state->extBstrapListenComm, &state->extBstrapRingRecvComm));
+
+  // AllGather all listen handlers
+  NCCLCHECK(ncclCalloc(&state->peerBstrapHandles, nranks));
+  memcpy(state->peerBstrapHandles+rank, info.extHandleListen, sizeof(ncclNetHandle_t));
+  NCCLCHECK(bootstrapAllGather(state, state->peerBstrapHandles, sizeof(ncclNetHandle_t)));
 
   return ncclSuccess;
 }
@@ -231,9 +231,43 @@ ncclResult_t bootstrapAllGather(void* commState, void* allData, int size) {
   return ncclSuccess;
 }
 
+ncclResult_t bootstrapSendOnce(void* commState, int peer, void* data, int size) {
+  struct extState* state = (struct extState*)commState;
+  void* tmpSendComm;
+  NCCLCHECK(bootstrapConnect(state->dev, state->peerBstrapHandles[peer], &tmpSendComm));
+  NCCLCHECK(bootstrapSend(tmpSendComm, &state->rank, sizeof(int)));
+  NCCLCHECK(bootstrapSend(tmpSendComm, data, size));
+  NCCLCHECK(bootstrapCloseSend(tmpSendComm));
+  return ncclSuccess;
+}
+
+// We can't know who we'll receive from, so we need to receive everything at once
+ncclResult_t bootstrapRecvOnce(void* commState, int npeers, int* peers, void* data, int size) {
+  struct extState* state = (struct extState*)commState;
+  int done[state->nranks];
+  for (int i = 0; i < state->nranks; i++) done[i] = 0;
+
+  for (int i=0; i<npeers; i++) {
+    void* tmpRecvComm;
+    NCCLCHECK(bootstrapAccept(state->extBstrapListenComm, &tmpRecvComm));
+    int peer;
+    NCCLCHECK(bootstrapRecv(tmpRecvComm, &peer, sizeof(int)));
+    for (int p=0; p<npeers; p++) {
+      if (peers[p] == peer && done[p] == 0) {
+        NCCLCHECK(bootstrapRecv(tmpRecvComm, ((char*)data)+p*size, size));
+        NCCLCHECK(bootstrapCloseRecv(tmpRecvComm));
+        done[p] = 1;
+        break;
+      }
+    }
+  }
+  return ncclSuccess;
+}
+
 ncclResult_t bootstrapClose(void* commState) {
   struct extState* state = (struct extState*)commState;
 
+  NCCLCHECK(bootstrapCloseListen(state->extBstrapListenComm));
   NCCLCHECK(bootstrapCloseSend(state->extBstrapRingSendComm));
   NCCLCHECK(bootstrapCloseRecv(state->extBstrapRingRecvComm));
 

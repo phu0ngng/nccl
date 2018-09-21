@@ -488,7 +488,7 @@ static ncclResult_t initTransportsRank(struct ncclComm* comm, ncclUniqueId* comm
 
   // Connect with prev/next for each ring
   struct ncclConnect *connect;
-  NCCLCHECK(ncclCalloc(&connect, 2*nranks));
+  NCCLCHECK(ncclCalloc(&connect, 2));
   for (int r=0; r<nrings; r++) {
     int* ringRanks = rings+r*nranks;
     struct ncclChannel* channel = comm->channels+r;
@@ -499,11 +499,15 @@ static ncclResult_t initTransportsRank(struct ncclComm* comm, ncclUniqueId* comm
     struct ncclConnector* recv = &channel->peers[prev].recv;
     struct ncclConnector* send = &channel->peers[next].send;
 
-    NCCLCHECK(selectTransport<0>(comm->peerInfo+rank, comm->peerInfo+prev, connect+rank*2+0, recv, channel->buffSize, channel->id));
-    NCCLCHECK(selectTransport<1>(comm->peerInfo+rank, comm->peerInfo+next, connect+rank*2+1, send, channel->buffSize, channel->id));
-    NCCLCHECK(bootstrapAllGather(comm->bootstrap, connect, sizeof(struct ncclConnect)*2));
-    NCCLCHECK(recv->transportComm->connect(connect+prev*2+1, recv));
-    NCCLCHECK(send->transportComm->connect(connect+next*2+0, send));
+    NCCLCHECK(selectTransport<0>(comm->peerInfo+rank, comm->peerInfo+prev, connect+0, recv, channel->buffSize, channel->id));
+    NCCLCHECK(selectTransport<1>(comm->peerInfo+rank, comm->peerInfo+next, connect+1, send, channel->buffSize, channel->id));
+    NCCLCHECK(bootstrapSendOnce(comm->bootstrap, prev, connect+0, sizeof(struct ncclConnect)));
+    NCCLCHECK(bootstrapSendOnce(comm->bootstrap, next, connect+1, sizeof(struct ncclConnect)));
+    // We need to receive in the opposite order in case prev == next we need things to arrive in order
+    int peers[2] = { next, prev };
+    NCCLCHECK(bootstrapRecvOnce(comm->bootstrap, 2, peers, connect, sizeof(struct ncclConnect)));
+    NCCLCHECK(send->transportComm->connect(connect+0, send));
+    NCCLCHECK(recv->transportComm->connect(connect+1, recv));
   }
   free(connect);
   free(rings);
