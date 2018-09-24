@@ -22,7 +22,6 @@ int ncclSocketPtrSupport(int dev, int* supportedTypes) {
   return 0;
 }
 
-#define MAX_IF_NAME_SIZE 16
 #define MAX_IFS 16
 static char ncclNetIfNames[MAX_IF_NAME_SIZE*MAX_IFS];
 static union socketAddress ncclNetIfAddrs[MAX_IFS];
@@ -34,7 +33,10 @@ static void initDevices() {
     pthread_mutex_lock(&ncclSocketLock);
     if (ncclNetIfs == -1) {
       ncclNetIfs = findInterfaces(ncclNetIfNames, ncclNetIfAddrs, MAX_IF_NAME_SIZE, MAX_IFS);
-      INFO("NET/Socket : %d interfaces found", ncclNetIfs);
+      INFO(INIT|NET,"NET/Socket : %d interfaces found", ncclNetIfs);
+      if (ncclNetIfs <= 0) {
+        WARN("NET/Socket : no interface found");
+      }
     }
     pthread_mutex_unlock(&ncclSocketLock);
   }
@@ -51,7 +53,7 @@ int ncclSocketDevices(int* ndev, int** scores) {
 
 static ncclResult_t GetSocketAddr(int dev, union socketAddress* addr) {
   if (ncclNetIfs == -1) initDevices();
-  if (dev > ncclNetIfs) return ncclInternalError;
+  if (dev >= ncclNetIfs) return ncclInternalError;
   memcpy(addr, ncclNetIfAddrs+dev, sizeof(*addr));
   return ncclSuccess;
 }
@@ -83,22 +85,40 @@ struct ncclSocketComm* ncclSocketNewComm() {
   return comm;
 }
 
+int ncclSocketCreateHandle(void* opaqueHandle, const char* str) {
+  struct ncclSocketHandle* handle = (struct ncclSocketHandle*) opaqueHandle;
+  NCCLCHECK(GetSocketAddrFromString(&(handle->connectAddr), str));
+  return 0;
+}
+
 int ncclSocketListen(int dev, void* opaqueHandle, void** listenComm) {
   struct ncclSocketComm* comm = ncclSocketNewComm();
   struct ncclSocketHandle* handle = (struct ncclSocketHandle*) opaqueHandle;
   static_assert(sizeof(struct ncclSocketHandle) < NCCL_NET_HANDLE_MAXSIZE, "ncclSocketHandle size too large");
-  NCCLCHECK(GetSocketAddr(dev, &(handle->connectAddr)));
+  // if dev >= 0, listen based on dev
+  if (dev >= 0) {
+    NCCLCHECK(GetSocketAddr(dev, &(handle->connectAddr)));
+  } else if (dev == -1) {
+    // handle stores a remote address
+    // need to find a local addr that is in the same network as the remote addr
+    union socketAddress localAddr;
+    char ifName[MAX_IF_NAME_SIZE];
+    if (findInterfaceMatchSubnet(ifName, &localAddr, handle->connectAddr, MAX_IF_NAME_SIZE, 1) <= 0) {
+      WARN("No usable listening interface found");
+      return ncclInternalError;
+    }
+    // pass the local address back
+    memcpy(&handle->connectAddr, &localAddr, sizeof(handle->connectAddr));
+  } // Otherwise, handle stores a local address
   NCCLCHECK(createListenSocket(&comm->fd, &handle->connectAddr));
   *listenComm = comm;
   return 0;
 }
 
 int ncclSocketConnect(int dev, void* opaqueHandle, void** sendComm) {
-  if (ncclNetIfs == -1) initDevices();
-  if (dev > ncclNetIfs) return ncclInternalError;
   struct ncclSocketComm* comm = ncclSocketNewComm();
   struct ncclSocketHandle* handle = (struct ncclSocketHandle*) opaqueHandle;
-  NCCLCHECK(connectAddress(&handle->connectAddr, &ncclNetIfAddrs[dev], &comm->fd));
+  NCCLCHECK(connectAddress(&comm->fd, &handle->connectAddr));
   *sendComm = comm;
   return 0;
 }
@@ -152,7 +172,7 @@ int ncclSocketIrecv(void* recvComm, void* data, int size, int type, void** reque
     return ncclInternalError;
   }
   NCCLCHECK(socketReceive(comm->fd, data, min(recvSize, size)));
-  struct ncclSocketRequest* recvReq;
+  struct ncclSocketRequest* recvReq = NULL;
   NCCLCHECK(ncclSocketGetRequest(&comm->reqs, &recvReq));
   recvReq->size = recvSize;
   *request = recvReq;
@@ -199,3 +219,4 @@ ncclNet_t ncclNetSocket = {
   ncclSocketClose,
   ncclSocketClose
 };
+

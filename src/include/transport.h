@@ -8,6 +8,7 @@
 #define NCCL_TRANSPORT_H_
 
 #include "nccl.h"
+#include "core.h"
 #include <stdint.h>
 
 #define NTRANSPORTS 3
@@ -21,6 +22,9 @@ struct ncclInfo {
   ncclTinfo_t tinfo[NTRANSPORTS];
 };
 
+// Used to hold the transport connection values
+typedef int64_t ncclTvalue_t;
+
 #define CONNECT_SIZE 128
 struct ncclConnect {
   char data[CONNECT_SIZE];
@@ -33,6 +37,7 @@ struct ncclProxyArgs {
   uint64_t opCount;
   int llMode;
   bool needProxy;
+  int active;   // add component before this line -- it is left out during initialization
 };
 
 struct ncclTransportComm {
@@ -45,8 +50,8 @@ struct ncclTransportComm {
 struct ncclTransport {
   const char name[4];
   ncclResult_t (*fillInfo)(ncclTinfo_t*, int);
-  ncclResult_t (*canConnect)(int*, ncclTinfo_t*, ncclTinfo_t*);
-  ncclResult_t (*getRings)(int, int*, int*, int*, int*, int*, int*, int, int*);
+  ncclResult_t (*canConnect)(ncclTvalue_t*, ncclTinfo_t*, ncclTinfo_t*);
+  ncclResult_t (*getRings)(int, int*, int*, ncclTvalue_t*, int*, int*, int*, int, int*);
   struct ncclTransportComm send;
   struct ncclTransportComm recv;
 };
@@ -55,7 +60,7 @@ struct ncclTransport {
 
 typedef ncclResult_t (*threadFunc_t)(struct ncclProxyArgs*);
 
-#define TRANSPORT_PROXY_FIFO_SIZE 16
+#define TRANSPORT_PROXY_FIFO_SIZE NCCL_MAX_OPS
 
 struct transportProxyInfo {
   struct ncclComm* comm;
@@ -84,7 +89,7 @@ static int proxyPatternTo(int root) { return -1-root; }
 static enum proxyMode proxyPatternMode(int pattern) { return (pattern == 0) ? proxyRing : ((pattern > 0) ? proxyFrom : proxyTo); }
 static int proxyPatternRoot(int pattern) { return (pattern > 0) ? pattern-1 : -pattern-1; }
 
-ncclResult_t transportSaveProxies(int substeps, int subchunks, int nstepsPerRound, int nblocksPerRound, size_t size, int pattern, struct ncclComm* comm, int llMode);
+ncclResult_t transportSaveProxies(int substeps, int subchunks, int nstepsPerRound, int nblocksPerRound, size_t size, int pattern, struct ncclComm* comm);
 ncclResult_t transportStartProxies(struct ncclComm* comm);
 
 #include <unistd.h>

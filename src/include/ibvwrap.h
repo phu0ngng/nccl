@@ -1044,6 +1044,7 @@ typedef enum ibv_return_enum
 } ibv_return_t;
 
 ncclResult_t wrap_ibv_symbols(void);
+ncclResult_t wrap_ibv_fork_init(void);
 ncclResult_t wrap_ibv_get_device_list(struct ibv_device ***ret, int *num_devices);
 ncclResult_t wrap_ibv_free_device_list(struct ibv_device **list);
 const char *wrap_ibv_get_device_name(struct ibv_device *device);
@@ -1054,9 +1055,11 @@ ncclResult_t wrap_ibv_ack_async_event(struct ibv_async_event *event);
 ncclResult_t wrap_ibv_query_device(struct ibv_context *context, struct ibv_device_attr *device_attr);
 ncclResult_t wrap_ibv_query_port(struct ibv_context *context, uint8_t port_num, struct ibv_port_attr *port_attr);
 ncclResult_t wrap_ibv_query_gid(struct ibv_context *context, uint8_t port_num, int index, union ibv_gid *gid);
+ncclResult_t wrap_ibv_query_qp(struct ibv_qp *qp, struct ibv_qp_attr *attr, int attr_mask, struct ibv_qp_init_attr *init_attr);
 ncclResult_t wrap_ibv_alloc_pd(struct ibv_pd **ret, struct ibv_context *context);
 ncclResult_t wrap_ibv_dealloc_pd(struct ibv_pd *pd);
 ncclResult_t wrap_ibv_reg_mr(struct ibv_mr **ret, struct ibv_pd *pd, void *addr, size_t length, int access);
+struct ibv_mr * wrap_direct_ibv_reg_mr(struct ibv_pd *pd, void *addr, size_t length, int access);
 ncclResult_t wrap_ibv_dereg_mr(struct ibv_mr *mr);
 ncclResult_t wrap_ibv_create_comp_channel(struct ibv_comp_channel **ret, struct ibv_context *context);
 ncclResult_t wrap_ibv_destroy_comp_channel(struct ibv_comp_channel *channel);

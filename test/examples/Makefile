@@ -8,13 +8,17 @@ ifeq ($(MPI), 1)
 NVCUFLAGS += -DMPI_SUPPORT -I$(MPI_HOME)/include
 NVLDFLAGS += -L$(MPI_HOME)/lib -lmpi
 endif
+ifeq ($(MPI_IBM),1)
+NVCUFLAGS += -DMPI_SUPPORT
+NVLDFLAGS += -lmpi_ibm
+endif
 LIBRARIES += nccl
 NVLDFLAGS   += -L$(BUILDDIR)/lib $(LIBRARIES:%=-l%)
 
 DST_DIR := $(BUILDDIR)/test/examples
 BIN_FILES_LIST := singleproc_multigpu
 ifeq ($(MPI), 1)
-BIN_FILES_LIST += multiproc_multigpu multiproc_singlegpu
+BIN_FILES_LIST += multiproc_multigpu multiproc_singlegpu multiproc_env_id
 endif
 BIN_FILES := $(BIN_FILES_LIST:%=${DST_DIR}/%)
 SRC_FILES := $(BIN_FILES:%=%.cu)

@@ -5,7 +5,6 @@
  ************************************************************************/
 
 #include "core.h"
-#include "common_kernel.h"
 
 extern struct ncclTransport p2pTransport;
 extern struct ncclTransport shmTransport;
@@ -18,40 +17,37 @@ struct ncclTransport ncclTransports[NTRANSPORTS] = {
 };
 
 static void FifoPullArgs(struct transportProxyInfo* info, struct ncclProxyArgs *args) {
-  pthread_mutex_lock(&info->mutex);
-  while (info->argsFifoTail == info->argsFifoHead)
-    pthread_cond_wait(&info->cond, &info->mutex);
   struct ncclProxyArgs *fifoArgs = info->argsFifo + (info->argsFifoHead % TRANSPORT_PROXY_FIFO_SIZE);
+  pthread_mutex_lock(&info->mutex);
+  while (fifoArgs->active == 0)
+    pthread_cond_wait(&info->cond, &info->mutex);
+  __sync_synchronize();
   memcpy(args, fifoArgs, sizeof(struct ncclProxyArgs));
-  memset(fifoArgs, 0, sizeof(struct ncclProxyArgs));
-  info->argsFifoHead++;
+  __sync_synchronize();
+  fifoArgs->active = 0;
   pthread_cond_signal(&info->cond);
   pthread_mutex_unlock(&info->mutex);
+  info->argsFifoHead++;
 }
 
 static struct ncclProxyArgs* FifoGetNextArgs(struct transportProxyInfo* info) {
   if (info == NULL) return NULL;
+  struct ncclProxyArgs* fifoArgs = info->argsFifo + (info->argsFifoTail % TRANSPORT_PROXY_FIFO_SIZE);
   pthread_mutex_lock(&info->mutex);
-  while (info->argsFifoTail == info->argsFifoHead + TRANSPORT_PROXY_FIFO_SIZE)
+  while (fifoArgs->active == 1)
     pthread_cond_wait(&info->cond, &info->mutex);
   pthread_mutex_unlock(&info->mutex);
-  return info->argsFifo + (info->argsFifoTail % TRANSPORT_PROXY_FIFO_SIZE);
+  info->argsFifoTail++;
+  return fifoArgs;
 }
 
 static void FifoPushArgs(struct transportProxyInfo* info) {
   if (info == NULL) return;
 
-  // There is no space to enqueue any operation, so we didn't. Otherwise we
-  // wouldn't be there. And we don't want to look at the current operation
-  // because it is an old one (FIFO_SIZE elements ago).
-  if (info->argsFifoTail == info->argsFifoHead + TRANSPORT_PROXY_FIFO_SIZE) return;
-
-  // Only launch proxy if nsteps has been set
-  struct ncclProxyArgs *fifoArgs = info->argsFifo + (info->argsFifoTail % TRANSPORT_PROXY_FIFO_SIZE);
-  if (fifoArgs->nsteps == 0) return;
+  struct ncclProxyArgs* fifoArgs = info->argsFifo + ((info->argsFifoTail-1) % TRANSPORT_PROXY_FIFO_SIZE);
+  if (fifoArgs->active == 0) return;
 
   pthread_mutex_lock(&info->mutex);
-  info->argsFifoTail++;
   pthread_cond_signal(&info->cond);
   pthread_mutex_unlock(&info->mutex);
 }
@@ -71,12 +67,9 @@ static void SetProxyReady(struct transportProxyInfo* info) {
 }
 
 static void StopProxy(struct transportProxyInfo* info) {
-  pthread_mutex_lock(&info->mutex); 
-  info->proxyReady = -1;
-  // Unblock thread
-  info->argsFifoTail++;
-  pthread_cond_signal(&info->cond);
-  pthread_mutex_unlock(&info->mutex);
+  struct ncclProxyArgs* fifoArgs = FifoGetNextArgs(info);
+  fifoArgs->active = -1;
+  FifoPushArgs(info);
 }
 
 #define RECV 0
@@ -100,18 +93,29 @@ static bool NeedProxy(int type, int pattern, struct ncclRing* ring, int nranks) 
 
 static void SaveProxy(struct ncclConnector* connector, struct ncclProxyArgs* args, int needProxy) {
   struct transportProxyInfo* info = connector->proxyInfo;
+  if (info == NULL) return;
   struct ncclProxyArgs* fifoArgs = FifoGetNextArgs(info);
   args->needProxy = needProxy;
-  if (fifoArgs) memcpy(fifoArgs, args, sizeof(struct ncclProxyArgs));
+  __sync_synchronize();
+  memcpy(fifoArgs, args, sizeof(struct ncclProxyArgs));
+  __sync_synchronize();
+  fifoArgs->active = 1;
 }
 
-ncclResult_t transportSaveProxies(int substeps, int subchunks, int nstepsPerRound, int nblocksPerRound, size_t size, int pattern, struct ncclComm* comm, int llMode) {
-  int nrings = llMode ? 1 : LIMIT_NRINGS(size, comm->nRings);
-  int buffSize = llMode ? LL_BUFF_SIZE : comm->rings[0].buffSize;
-  int nrounds = (int)(DIVUP(size, nrings * nblocksPerRound * (buffSize/subchunks)));
+ncclResult_t transportSaveProxies(int substeps, int subchunks, int nstepsPerRound, int nblocksPerRound, size_t nbytes, int pattern, struct ncclComm* comm) {
+  int llMode, nrings, nthreads;
+  ncclGetCollResource(comm, nbytes, &nrings, &nthreads, &llMode);
+  nbytes       = llMode ? nbytes * 2    : nbytes;
+  substeps     = llMode ? 1             : substeps;
+  subchunks    = llMode ? NCCL_LL_CHUNKS : subchunks;
+  int buffSize = llMode ? NCCL_LL_BUFF_SIZE : comm->rings[0].buffSize;
+
+  int nrounds = (int)(DIVUP(nbytes, ((size_t)nrings * nblocksPerRound * (buffSize/subchunks)))); // Fixed 32-bit overflow
   int nsteps = nstepsPerRound * nrounds * substeps;
+  TRACE(NET,"opCount %lx substeps %d subchunks %d nrounds %d nsteps %d comm %p", comm->opCount, subchunks, subchunks, nrounds, nsteps, comm);
+  TRACE(NET,"opCount %lx nbytes %zi nrings %d buffSize %d pattern %d comm %p", comm->opCount, nbytes, nrings, buffSize, pattern, comm);
   for (int r=0; r<nrings; r++) {
-    struct ncclRing* ring = comm->rings+r;
+    struct ncclRing* ring = comm->rings+((comm->myParams->gridDim.x+r)%comm->nRings);
     struct ncclProxyArgs args = { ring, substeps*subchunks, nsteps, comm->opCount, llMode, 0 };
     SaveProxy(&ring->recv, &args, NeedProxy(RECV, pattern, ring, comm->nRanks));
     SaveProxy(&ring->send, &args, NeedProxy(SEND, pattern, ring, comm->nRanks));
@@ -124,6 +128,7 @@ ncclResult_t transportStartProxies(ncclComm* comm) {
     FifoPushArgs(comm->rings[r].send.proxyInfo);
     FifoPushArgs(comm->rings[r].recv.proxyInfo);
   }
+  pthread_yield(); // Let other threads run
   return ncclSuccess;
 }
 
@@ -138,14 +143,14 @@ void* persistentThread(void *opaqueInfo) {
   while (1) {
     struct ncclProxyArgs args;
     FifoPullArgs(info, &args);
-    if (info->proxyReady == -1) {
+    if (args.active == -1) {
       // Main thread asked to stop
       return NULL;
     }
     ncclResult_t res = info->func(&args);
     if (res != ncclSuccess) {
-      INFO("%s:%d -> %d [Proxy thread]", __FILE__, __LINE__, res);
-    }    
+      WARN("%s:%d -> %d [Proxy thread error]", __FILE__, __LINE__, res);
+    }
   }
 }
 
@@ -153,6 +158,7 @@ ncclResult_t transportCreateProxy(int type, struct ncclRing* ring, struct ncclCo
   struct ncclConnector* connector = (type == 0) ? &ring->recv : &ring->send;
   threadFunc_t proxyfunc = (threadFunc_t) ((type == 0) ? connector->transport->recv.proxy : connector->transport->send.proxy);
   if (proxyfunc) {
+    TRACE(NET,"type %d ring %p proxyfunc %p comm %p", type, ring, proxyfunc, comm);
     struct transportProxyInfo * info = connector->proxyInfo = (struct transportProxyInfo*)malloc(sizeof(struct transportProxyInfo));
     memset(info, 0, sizeof(struct transportProxyInfo));
     info->comm = comm;

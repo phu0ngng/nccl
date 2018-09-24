@@ -16,21 +16,10 @@ static ncclResult_t getCudaPath(int cudaDev, char** path) {
   char busId[16];
   CUDACHECK(cudaDeviceGetPCIBusId(busId, 16, cudaDev));
   for (int i=0; i<16; i++) busId[i] = tolower(busId[i]);
-  char busPath[] =  "/sys/class/pci_bus/0000:00";
+  char busPath[] =  "/sys/class/pci_bus/0000:00/device";
   memcpy(busPath+sizeof("/sys/class/pci_bus/")-1, busId, sizeof("0000:00")-1); 
-
+  char* cudaRpath = realpath(busPath, NULL); 
   char pathname[MAXPATHSIZE];
-  strcpy(pathname, "/sys/class/pci_bus/");
-  int strLen = strlen(pathname);
-  int linkLen = readlink(busPath, pathname+strLen, MAXPATHSIZE-strLen);
-  if (linkLen == 0) {
-    WARN("Could not find link %s", busPath);
-    return ncclSystemError;
-  }
-  // readlink does not append '\0'. We have to do it.
-  pathname[strLen+linkLen] = '\0';
-  strncpy(pathname+strlen(pathname), "/device", MAXPATHSIZE-strlen(pathname));
-  char* cudaRpath = realpath(pathname, NULL); 
   strncpy(pathname, cudaRpath, MAXPATHSIZE);
   strncpy(pathname+strlen(pathname), "/", MAXPATHSIZE-strlen(pathname));
   strncpy(pathname+strlen(pathname), busId, MAXPATHSIZE-strlen(pathname));

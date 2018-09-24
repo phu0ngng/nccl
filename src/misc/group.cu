@@ -12,11 +12,11 @@
 #define MAX_ASYNC_OPS 128
 thread_local pthread_t ncclGroupThreads[MAX_ASYNC_OPS];
 thread_local int ncclGroupIndex = 0;
-thread_local bool ncclGroupMode = false;
+thread_local int ncclGroupMode = 0;
 thread_local ncclResult_t ncclGroupError = ncclSuccess;
 
 bool ncclAsyncMode() {
-  return ncclGroupMode;
+  return ncclGroupMode > 0;
 }
 
 ncclResult_t ncclAsyncErrCheck(ncclResult_t ret) {
@@ -59,7 +59,7 @@ ncclResult_t ncclSetDevice(int cudaDev) {
 
 #define CHECK(a) do { \
   if ((args->ret = (a)) != ncclSuccess) { \
-    INFO("%s:%d -> %d [Async thread]", __FILE__, __LINE__, args->ret); \
+    INFO(INIT,"%s:%d -> %d [Async thread]", __FILE__, __LINE__, args->ret); \
     return args; \
   } \
 } while(0)
@@ -91,12 +91,16 @@ ncclResult_t ncclAsyncInit(ncclInitFunc_t func, int cudaDev, ncclComm_t* newcomm
 }
 
 ncclResult_t ncclAsyncColl(ncclComm_t comm) {
+  struct ncclAsyncArgs* args = ncclGroupArgs;
+  for (int i=0; i<ncclGroupIndex; i++) {
+    if (args->coll.comm == comm) return ncclSuccess;
+    args++; 
+  }
   if (ncclGroupIndex >= MAX_ASYNC_OPS) {
     WARN("Too many async operations in progress, max is %d", MAX_ASYNC_OPS);
     return ncclAsyncErrCheck(ncclInternalError);
   }
-  int index = ncclGroupIndex++;
-  struct ncclAsyncArgs* args = ncclGroupArgs+index;
+  ncclGroupIndex++;
   args->funcType = ASYNC_FUNC_COLL;
   args->coll.comm = comm;
   return ncclSuccess;
@@ -104,12 +108,14 @@ ncclResult_t ncclAsyncColl(ncclComm_t comm) {
 
 NCCL_API(ncclResult_t, ncclGroupStart);
 ncclResult_t ncclGroupStart() {
-  ncclGroupMode = true;
+  ncclGroupMode++;
   return ncclSuccess;
 }
 
 NCCL_API(ncclResult_t, ncclGroupEnd);
 ncclResult_t ncclGroupEnd() {
+  ncclGroupMode--;
+  if (ncclGroupMode > 0) return ncclSuccess;
   int savedDev;
   CUDACHECK(cudaGetDevice(&savedDev));
   int done = ncclGroupIndex;
@@ -117,7 +123,7 @@ ncclResult_t ncclGroupEnd() {
   for (int i=0; i<ncclGroupIndex; i++) doneArray[i] = 0;
 
   ncclResult_t ret = ncclGroupError;
-  if (ret != ncclSuccess) goto end;
+  if (ret != ncclSuccess) goto group_cleanup;
 
   /* Collectives are done in three steps :
    * 1. Barrier Check In. Only the last call may call cudaLaunchKernel[cooperative]
@@ -133,14 +139,14 @@ ncclResult_t ncclGroupEnd() {
     if (args->funcType == ASYNC_FUNC_COLL) {
       if (args->coll.comm->userStream == NULL)
         CUDACHECKGOTO(cudaSetDevice(args->coll.comm->cudaDev), ret, end);
-      NCCLCHECKGOTO(ncclCpuBarrierCheckin(args->coll.comm), ret, end);
+      NCCLCHECKGOTO(ncclBarrierEnqueue(args->coll.comm), ret, end);
     }
   }
   for (int i=0; i<ncclGroupIndex; i++) {
     struct ncclAsyncArgs* args = ncclGroupArgs+i;
     if (args->funcType == ASYNC_FUNC_COLL) {
       CUDACHECKGOTO(cudaSetDevice(args->coll.comm->cudaDev), ret, end);
-      NCCLCHECKGOTO(ncclCpuBarrierWait(args->coll.comm), ret, end);
+      NCCLCHECKGOTO(ncclBarrierEnqueueWait(args->coll.comm), ret, end);
     }
   }
   for (int i=0; i<ncclGroupIndex; i++) {
@@ -168,10 +174,26 @@ ncclResult_t ncclGroupEnd() {
       }
     }
   }
+  goto end;
+group_cleanup:
+  // At least one call in the group failed. Since we want to make that group
+  // an atomic operation, we need to cancel all operations.
+  for (int i=0; i<ncclGroupIndex; i++) {
+    struct ncclComm* comm = ncclGroupArgs[i].coll.comm;
+    for (int r=0; r<comm->nRings; r++) {
+      struct ncclRing* ring = comm->rings+r;
+      for (int i=0; i<ring->collCount; i++) {
+        ring->collectives[(ring->collStart + i)%NCCL_MAX_OPS].active = 0;
+      }
+      ring->collFifoTail = ring->collStart;
+      ring->collCount = 0;
+    }
+    comm->myParams->gridDim.x = comm->myParams->blockDim.x = 0;
+    comm->userStreamSet = false;
+  }
 end:
   ncclGroupError = ncclSuccess;
   ncclGroupIndex = 0;
-  ncclGroupMode = false;
   CUDACHECK(cudaSetDevice(savedDev)); // do other clean-ups first before calling cudaSetDevice, because this call can fail too
   return ret;
 }

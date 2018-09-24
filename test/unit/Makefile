@@ -2,17 +2,21 @@ include ../../makefiles/common.mk
 ##
 BUILDDIR ?= $(abspath ../../build)
 ### mpi lib
+ifeq ($(MPI),1)
 MPI_HOME ?= $(realpath $(dir $(or \
 	$(realpath /usr/include/mpi.h),\
 	$(realpath /usr/lib/openmpi/include/mpi.h)))..)
-ifeq ($(MPI),1)
 NVLDFLAGS += -L$(MPI_HOME)/lib -lmpi
 NVCUFLAGS += -I$(MPI_HOME)/include
+endif
+ifeq ($(MPI_IBM),1)
+NVLDFLAGS += -lmpi_ibm
 endif
 # We need private functions. Include and link with src
 NVCUFLAGS += -I$(BUILDDIR)/include/ -I../include -I../../src/include
 # Use static library since all the internal symbols are there
 LIBRARIES += nccl_static
+STATICLIB = ${BUILDDIR}/lib/libnccl_static.a
 NVLDFLAGS += -L$(BUILDDIR)/lib $(LIBRARIES:%=-l%)
 ##
 DST_DIR := $(abspath ${BUILDDIR}/test/unit)
@@ -47,7 +51,7 @@ ${DST_DIR}/%.o:%.cu
 #	@mkdir -p ${DST_DIR}
 #	mpicc -std=c99 $(CXXFLAGS) -I$(BUILDDIR)/include/ -o $@ -c $<
 #
-${DST_DIR}/rings_test: ${DST_DIR}/rings_test.o ${LIBOBJS}
+${DST_DIR}/rings_test: ${DST_DIR}/rings_test.o ${STATICLIB}
 	@printf "Linking  %-35s > %s\n" $< $@
 	@mkdir -p ${DST_DIR}
 	$(NVCC) -o $@ $(NVCUFLAGS) $^ ${NVLDFLAGS}
@@ -57,7 +61,7 @@ ${DST_DIR}/ncclNet_test: ${DST_DIR}/ncclNet_test.o ${LIBOBJS}
 	@mkdir -p ${DST_DIR}
 	$(NVCC) -o $@ $(NVCUFLAGS) ${NVLDFLAGS} $^
 #
-${DST_DIR}/ncclNet_read_write_stress_test: ${DST_DIR}/ncclNet_read_write_stress_test.o ${LIBOBJS}
+${DST_DIR}/ncclNet_read_write_stress_test: ${DST_DIR}/ncclNet_read_write_stress_test.o ${STATICLIB}
 	@printf "Linking  %-35s > %s\n" $< $@
 	@mkdir -p ${DST_DIR}
 	$(NVCC) -o $@ $(NVCUFLAGS) ${NVLDFLAGS} $^

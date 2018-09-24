@@ -4,18 +4,22 @@ include ../../makefiles/common.mk
 
 BUILDDIR := $(abspath ../../build)
 NCCLDIR := $(BUILDDIR)
-NVCUFLAGS += -I$(NCCLDIR)/include/ -I../include
+NVCUFLAGS += -I$(NCCLDIR)/include/ -I../include -Xcompiler -fopenmp
 ifeq ($(MPI), 1)
 NVCUFLAGS += -DMPI_SUPPORT -I$(MPI_HOME)/include
 NVLDFLAGS += -L$(MPI_HOME)/lib -lmpi
 endif
-LIBRARIES += curand nccl nvToolsExt
+ifeq ($(MPI_IBM),1)
+NVCUFLAGS += -DMPI_SUPPORT
+NVLDFLAGS += -lmpi_ibm
+endif
+LIBRARIES += curand nccl
 NVLDFLAGS   += -L$(NCCLDIR)/lib $(LIBRARIES:%=-l%)
 
 DST_DIR := $(BUILDDIR)/test/perf
 SRC_FILES := $(wildcard *.cu)
 OBJ_FILES := $(SRC_FILES:%.cu=${DST_DIR}/%.o)
-BIN_FILES_LIST := all_reduce all_gather broadcast reduce_scatter reduce
+BIN_FILES_LIST := all_reduce all_gather broadcast reduce_scatter reduce all_gatherv reduce_scatterv
 BIN_FILES := $(BIN_FILES_LIST:%=${DST_DIR}/%_perf)
 #ifeq ($(MPI), 1)
 #This is broken anyway -- disable it

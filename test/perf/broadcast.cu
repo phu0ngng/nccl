@@ -8,16 +8,6 @@
 #include "common.h"
 #include <assert.h>
 
-void print_header() {
-  PRINT("# %10s  %12s  %6s  %6s        out-of-place\n", "", "", "", "");
-  PRINT("# %10s  %12s  %6s  %6s  %7s  %5s  %5s  %7s\n", "bytes", "N", "type", "root", 
-      "time", "algbw", "busbw", "res");
-}
-
-void print_line_header (size_t size, size_t count, const char *typeName, const char *opName, int root) {
-  PRINT("%12li  %12li  %6s  %6i", size, count, typeName, root);
-}
-
 void getCollByteCount(size_t *sendcount, size_t *recvcount, size_t *paramcount, size_t *sendInplaceOffset, size_t *recvInplaceOffset, size_t *procSharedCount, int *sameExpected, size_t count, int nranks) {
     *sendcount = count;
     *recvcount = count;
@@ -37,8 +27,9 @@ void InitRecvResult(struct threadArgs_t* args, ncclDataType_t type, ncclRedOp_t 
 
   if (root_thread == args->thread) {
       if (root_proc == args->proc) {  
+         void* data = in_place ? args->recvbuffs[root_gpu] : args->sendbuffs[root_gpu];
          CUDACHECK(cudaMemcpy(args->procSharedHost,
-                    args->sendbuffs[root_gpu],
+                    data,
                     args->nbytes, cudaMemcpyDeviceToHost));
       }
 #ifdef MPI_SUPPORT 
@@ -55,18 +46,19 @@ void InitRecvResult(struct threadArgs_t* args, ncclDataType_t type, ncclRedOp_t 
      NCCLCHECK(ncclCommCuDevice(args->comms[i], &device)); 
      CUDACHECK(cudaSetDevice(device));
 
-     //set expected buf to zero at root, copy over source data at others
-     if ((root_proc == args->proc) 
+#if NCCL_MAJOR >= 2 && NCCL_MINOR >= 2
+     memcpy(args->expectedHost[i], args->procSharedHost, args->nbytes);
+#else
+     // ncclBcast does not support out-of-place so we just expect recvbuff to be untouched
+     if ((in_place == 0)
+         && (root_proc == args->proc) 
          && (root_thread == args->thread) 
          && (root_gpu == i)) { 
          memset(args->expectedHost[i], 0, args->nbytes); 
      } else { 
          memcpy(args->expectedHost[i], args->procSharedHost, args->nbytes);
      }
-
-     //reset recvbufs to zero
-     CUDACHECK(cudaMemset(args->recvbuffs[i], 0, args->nbytes));
-     CUDACHECK(cudaDeviceSynchronize());
+#endif
   }
 
   Barrier(args);
@@ -83,11 +75,15 @@ void GetBw(size_t count, int typesize, double sec, double* algBw, double* busBw,
 void RunColl(void* sendbuff, void* recvbuff, size_t count, ncclDataType_t type, ncclRedOp_t op, int root, ncclComm_t comm, cudaStream_t stream) {
   int rank; 
   NCCLCHECK(ncclCommUserRank(comm, &rank));
-  if (rank == root) { 
+#if NCCL_MAJOR >= 2 && NCCL_MINOR >= 2
+  NCCLCHECK(ncclBroadcast(sendbuff, recvbuff, count, type, root, comm, stream));
+#else
+  if (rank == root) {
       NCCLCHECK(ncclBcast(sendbuff, count, type, root, comm, stream));
-  } else { 
+  } else {
       NCCLCHECK(ncclBcast(recvbuff, count, type, root, comm, stream));
-  } 
+  }
+#endif
 }
 
 void RunTest(struct threadArgs_t* args, int root, ncclDataType_t type, const char* typeName, ncclRedOp_t op, const char* opName) {
@@ -115,7 +111,7 @@ void RunTest(struct threadArgs_t* args, int root, ncclDataType_t type, const cha
 
   for (int i=0; i<type_count; i++) { 
        for (int j=begin_root; j<=end_root; j++) {
-          TimeTest(args, run_types[i], run_typenames[i], (ncclRedOp_t)0, NULL, j, 0);
+          TimeTest(args, run_types[i], run_typenames[i], (ncclRedOp_t)0, "", j);
        }
   }   
 }

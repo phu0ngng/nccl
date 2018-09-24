@@ -5,19 +5,22 @@
  ************************************************************************/
 
 #include "utils.h"
+#include "core.h"
 #include <unistd.h>
+#include <string.h>
 
-void getHostName(char* hostname, int maxlen) {
-  gethostname(hostname, maxlen);
-  for (int i=0; i< maxlen; i++) {
-    if (hostname[i] == '.') {
-      hostname[i] = '\0';
-      return;
-    }
+ncclResult_t getHostName(char* hostname, int maxlen) {
+  if (gethostname(hostname, maxlen) != 0) {
+    strncpy(hostname, "unknown", maxlen);
+    return ncclSystemError;
   }
+  int i = 0;
+  while ((hostname[i] != '.') && (hostname[i] != '\0') && (i < maxlen-1)) i++;
+  hostname[i] = '\0';
+  return ncclSuccess;
 }
 
-uint64_t getHostHash(const char* string) {
+uint64_t getHash(const char* string) {
   // Based on DJB2, result = result * 33 + char
   uint64_t result = 5381;
   for (int c = 0; string[c] != '\0'; c++){
@@ -26,19 +29,47 @@ uint64_t getHostHash(const char* string) {
   return result;
 }
 
-#include <string.h>
+/* Generate a hash of the unique identifying string for this host
+ * that will be unique for both bare-metal and container instances
+ * Equivalent of a hash of;
+ *
+ * $(hostname) $(readlink /proc/self/ns/uts)
+ */
+uint64_t getHostHash(void) {
+  char uname[1024];
+  // Start off with the hostname
+  (void) getHostName(uname, sizeof(uname));
+  int hlen = strlen(uname);
+  int len = readlink("/proc/self/ns/uts", uname+hlen, sizeof(uname)-1-hlen);
+  if (len < 0) len = 0;
 
-int getHostNumber(const char* string) {
-  int result = 0;
-  int len = strlen(string);
-  for (int offset = len-1; offset >= 0; offset --) {
-   int res = atoi(string+offset);
-   if (res <= 0)
-     break;
-   result = res;
-  }
-  return result;
+  uname[hlen+len]='\0';
+  TRACE(INIT,"unique hostname '%s'", uname);
+
+  return getHash(uname);
 }
+
+/* Generate a hash of the unique identifying string for this process
+ * that will be unique for both bare-metal and container instances
+ * Equivalent of a hash of;
+ *
+ * $$ $(readlink /proc/self/ns/pid)
+ */
+uint64_t getPidHash(void) {
+  char pname[1024];
+  // Start off with our pid ($$)
+  sprintf(pname, "%ld", (long) getpid());
+  int plen = strlen(pname);
+  int len = readlink("/proc/self/ns/pid", pname+plen, sizeof(pname)-1-plen);
+  if (len < 0) len = 0;
+
+  pname[plen+len]='\0';
+  TRACE(INIT,"unique PID '%s'", pname);
+
+  return getHash(pname);
+}
+
+#include <string.h>
 
 int parseStringList(const char* string, struct netIf* ifList, int maxList) {
   if (!string) return 0;

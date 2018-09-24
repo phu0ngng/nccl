@@ -8,22 +8,22 @@ nthread=$4
 ngpus=$5
 op=$6
 
-resdir="results_multinode"
+if [ "$NCCL_IB_DISABLE" == "1" ]; then
+  resdir="results_socket"
+else
+  resdir="results_multinode"
+fi
 
-timeout=2
-extra="-c 0 "
+timeout=10
 
 mkdir -p $resdir/$gpumodel/
 
 result=$resdir/$gpumodel/$op.$nproc.$nthread.$ngpus
 
-nperslot=$(expr $nthread \* $ngpus)
+nperproc=$(expr $nthread \* $ngpus)
 
 if [ "$SLURM" == "1" ]; then
-  if [ "$gpumodel" == "dgx1" ]; then
-    req_hosts="-w dgx1-prd-02,dgx1-prd-03"
-  fi
-  salloc_cmd="salloc -p $gpumodel $req_hosts -N $nnode -n $nproc -c $nperslot -t ${timeout} --exclusive "
+  salloc_cmd="salloc -p $gpumodel $req_hosts -N $nnode -n $nproc -c $nperproc -t ${timeout} --exclusive "
 else
   mpi_hosts="-host $gpumodel -oversubscribe "
   if [ "$MPI_HOME" == "" ]; then
@@ -35,16 +35,16 @@ fi
 
 npn=$(expr $nproc / $nnode)
 
-$salloc_cmd mpirun $prefix $mpi_hosts -x NCCL_DEBUG -x NCCL_LAUNCH_MODE -np $nproc -npernode $npn test/perf/${op}_perf -t $nthread -g $ngpus -b 40000 -e 1960000 -i 40000 $extra -w 5 -n 20 2>&1 | tee $result.out
-$salloc_cmd mpirun $prefix $mpi_hosts -x NCCL_DEBUG -x NCCL_LAUNCH_MODE -np $nproc -npernode $npn test/perf/${op}_perf -t $nthread -g $ngpus -b 2000000 -e 38000000 -i 2000000 $extra -w 5 -n 5 2>&1 | tee -a $result.out
-$salloc_cmd mpirun $prefix $mpi_hosts -x NCCL_DEBUG -x NCCL_LAUNCH_MODE -np $nproc -npernode $npn test/perf/${op}_perf -t $nthread -g $ngpus -b 40000000 -e 400000000 -i 40000000 $extra -w 1 -n 2 2>&1 | tee -a $result.out
+$salloc_cmd mpirun $prefix $mpi_hosts -x NCCL_DEBUG -x NCCL_LAUNCH_MODE -np $nproc -npernode $npn test/perf/${op}_perf -t $nthread -g $ngpus -b 40000 -e 1960000 -i 40000 -w 5 -n 20 2>&1 | tee $result.out
+$salloc_cmd mpirun $prefix $mpi_hosts -x NCCL_DEBUG -x NCCL_LAUNCH_MODE -np $nproc -npernode $npn test/perf/${op}_perf -t $nthread -g $ngpus -b 2000000 -e 38000000 -i 2000000 -w 2 -n 5 2>&1 | tee -a $result.out
+$salloc_cmd mpirun $prefix $mpi_hosts -x NCCL_DEBUG -x NCCL_LAUNCH_MODE -np $nproc -npernode $npn test/perf/${op}_perf -t $nthread -g $ngpus -b 40000000 -e 400000000 -i 40000000 -c 0 -w 1 -n 2 2>&1 | tee -a $result.out
 
 # latency test
 resdir+="_latency"
 mkdir -p $resdir/$gpumodel/
 result=$resdir/$gpumodel/$op.$nproc.$nthread.$ngpus
 
-$salloc_cmd mpirun $prefix $mpi_hosts -x NCCL_DEBUG -x NCCL_LAUNCH_MODE -np $nproc -npernode $npn test/perf/${op}_perf -t $nthread -g $ngpus -b 64 -e 128K -f 2 $extra -w 5 -n 20 2>&1 | tee $result.out
+$salloc_cmd mpirun $prefix $mpi_hosts -x NCCL_DEBUG -x NCCL_LAUNCH_MODE -np $nproc -npernode $npn test/perf/${op}_perf -t $nthread -g $ngpus -b 64 -e 128K -f 2 -w 5 -n 20 2>&1 | tee $result.out
 }
 
 perf_ptg_loop() {
@@ -55,24 +55,22 @@ maxthread=$4
 maxgpu=$5
 op=$6
 
-totgpus=$(expr $nnode \* $maxgpu)
-
 declare -i nproc=2
+declare -i nthread=1
+declare -i ngpus=1
 while [[ $nproc -le $maxproc ]] ; do
-  declare -i nthread=1
   while [[ $nthread -le $maxthread ]] ; do
-    declare -i ngpus=1
     while [[ $ngpus -le $maxgpu ]]; do
-      ngperproc=$(expr $nthread \* $ngpus)
-      if (( $( expr $nproc \* $ngperproc ) <= $totgpus )); then
-        echo "Running test/perf/${op}_perf on $nnode nodes, $nproc processes, each process having $nthread threads with $ngpus GPUs ..."
-        generate_perf $gpumodel $nnode $nproc $nthread $ngpus $op
-      fi
+      echo "Running test/perf/${op}_perf on $nnode nodes, $nproc processes, each process having $nthread threads with $ngpus GPUs ..."
+      generate_perf $gpumodel $nnode $nproc $nthread $ngpus $op
       ngpus+=$ngpus
     done
     nthread+=$nthread
+    ngpus=$maxgpu
   done
   nproc+=$nproc
+  nthread=$maxthread
+  ngpus=$maxgpu
 done
 }
 
@@ -87,7 +85,7 @@ if [ "$maxgpu" == "" ]; then
   exit 1
 fi
 
-export NCCL_DEBUG=WARN
+export NCCL_DEBUG=INFO
 
 perf_ptg_loop $gpumodel $nnode $maxproc $maxthread $maxgpu reduce
 perf_ptg_loop $gpumodel $nnode $maxproc $maxthread $maxgpu all_reduce

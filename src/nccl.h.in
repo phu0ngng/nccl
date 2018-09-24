@@ -15,6 +15,9 @@
 #define NCCL_PATCH ${nccl:Patch}
 #define NCCL_SUFFIX "${nccl:Suffix}"
 
+#define NCCL_VERSION_CODE ${nccl:Version}
+#define NCCL_VERSION(X,Y,Z) ((X) * 1000 + (Y) * 100 + (Z))
+
 #ifdef __cplusplus
 extern "C" {
 #endif
@@ -33,6 +36,13 @@ typedef enum { ncclSuccess                 =  0,
                ncclInvalidArgument         =  4,
                ncclInvalidUsage            =  5,
                ncclNumResults              =  6 } ncclResult_t;
+
+/* Return the NCCL_VERSION_CODE of the NCCL library in the supplied integer.
+ * This integer is coded with the MAJOR, MINOR and PATCH level of the
+ * NCCL library
+ */
+ncclResult_t ncclGetVersion(int *version);
+ncclResult_t pncclGetVersion(int *version);
 
 /* Generates an Id to be used in ncclCommInitRank. ncclGetUniqueId should be
  * called once and the Id should be distributed to all ranks in the 
@@ -127,7 +137,7 @@ ncclResult_t pncclReduce(const void* sendbuff, void* recvbuff, size_t count, ncc
     ncclRedOp_t op, int root, ncclComm_t comm, cudaStream_t stream);
 
 /* 
- * Broadcast
+ * (deprecated) Broadcast (in-place)
  *
  * Copies count values from root to all other devices.
  * root is the rank (not the CUDA device) where data resides before the 
@@ -138,6 +148,20 @@ ncclResult_t pncclReduce(const void* sendbuff, void* recvbuff, size_t count, ncc
 ncclResult_t  ncclBcast(void* buff, size_t count, ncclDataType_t datatype, int root,
     ncclComm_t comm, cudaStream_t stream);
 ncclResult_t pncclBcast(void* buff, size_t count, ncclDataType_t datatype, int root,
+    ncclComm_t comm, cudaStream_t stream);
+
+/*
+ * Broadcast
+ *
+ * Copies count values from root to all other devices.
+ * root is the rank (not the CUDA device) where data resides before the
+ * operation is started.
+ *
+ * In-place operation will happen if sendbuff == recvbuff.
+ */
+ncclResult_t  ncclBroadcast(const void* sendbuff, void* recvbuff, size_t count, ncclDataType_t datatype, int root,
+    ncclComm_t comm, cudaStream_t stream);
+ncclResult_t pncclBroadcast(const void* sendbuff, void* recvbuff, size_t count, ncclDataType_t datatype, int root,
     ncclComm_t comm, cudaStream_t stream);
 
 /* 

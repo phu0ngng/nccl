@@ -23,9 +23,9 @@ if [ "$mode" == "reorder" ] || [ "$mode" == "combo" ] ; then
   GPU_REORDER=`echo $GPU_REORDER | cut -c 4-`
   result=$path/$op.$ngpus
   if [ "$mode" == "combo" ]; then
-    CUDA_VISIBLE_DEVICES=$GPU_REORDER test/perf/${op}_perf -g $ngpus -b 40000000 -e 80000000 -i 40000000 -w 1 -n 5 2>&1 | tee $result.out
+    mpirun -np 1 --cpus-per-rank $ngpus -x CUDA_VISIBLE_DEVICES=$GPU_REORDER test/perf/${op}_perf -g $ngpus -b 40000000 -e 80000000 -i 40000000 -w 1 -n 5 2>&1 | tee $result.out
   else
-    CUDA_VISIBLE_DEVICES=$GPU_REORDER test/perf/${op}_perf -g $ngpus -b 40000000 -e 400000000 -i 40000000 -w 1 -n 5 2>&1 | tee $result.out
+    mpirun -np 1 --cpus-per-rank $ngpus -x CUDA_VISIBLE_DEVICES=$GPU_REORDER test/perf/${op}_perf -g $ngpus -b 40000000 -e 400000000 -i 40000000 -w 1 -n 5 2>&1 | tee $result.out
     return 0
   fi
 fi
@@ -38,14 +38,14 @@ if [ "$mode" == "all" ] || [ "$mode" == "combo" ]; then
   for dtype in float double half int8 int32 int64 uint8 uint32 uint64 ; do
     echo "Running test/perf/${op}_perf on $ngpus GPUs [$dtype] ..."
     result=$op.$ngpus.$dtype.sum
-    test/perf/${op}_perf -t $ngpus -p 1 -d $dtype -o sum -b 64 -e 4194304 -f 256 -w 1 -n 5 2>&1 | tee $path/pow2/$result.out
-    test/perf/${op}_perf -t $ngpus -p 1 -d $dtype -o sum -b 63 -e 4357647 -f 263 -w 1 -n 5 2>&1 | tee $path/npow2/$result.out
+    mpirun -np 1 --cpus-per-rank $ngpus test/perf/${op}_perf -t $ngpus -p 1 -d $dtype -o sum -b 64 -e 4194304 -f 256 -w 1 -n 5 2>&1 | tee $path/pow2/$result.out
+    mpirun -np 1 --cpus-per-rank $ngpus test/perf/${op}_perf -t $ngpus -p 1 -d $dtype -o sum -b 63 -e 4357647 -f 263 -w 1 -n 5 2>&1 | tee $path/npow2/$result.out
   done
   for otype in sum max min prod ; do
     echo "Running test/perf/${op}_perf on $ngpus GPUs [$otype] ..."
     result=$op.$ngpus.float.$otype
-    test/perf/${op}_perf -t $ngpus -p 1 -d float -o $otype -b 64 -e 4194304 -f 256 -w 1 -n 5 2>&1 | tee $path/pow2/$result.out
-    test/perf/${op}_perf -t $ngpus -p 1 -d float -o $otype -b 63 -e 4357647 -f 263 -w 1 -n 5 2>&1 | tee $path/npow2/$result.out
+    mpirun -np 1 --cpus-per-rank $ngpus test/perf/${op}_perf -t $ngpus -p 1 -d float -o $otype -b 64 -e 4194304 -f 256 -w 1 -n 5 2>&1 | tee $path/pow2/$result.out
+    mpirun -np 1 --cpus-per-rank $ngpus test/perf/${op}_perf -t $ngpus -p 1 -d float -o $otype -b 63 -e 4357647 -f 263 -w 1 -n 5 2>&1 | tee $path/npow2/$result.out
   done
   if [ "$mode" != "combo" ]; then
     return 0
@@ -58,10 +58,10 @@ if [ "$mode" == "single" ] || [ "$mode" == "combo" ]; then
   path=$resdir/$gpumodel
   mkdir -p $path
   result=$path/$op.$ngpus
-  test/perf/${op}_perf -t $ngpus -b 40000 -e 1960000 -i 40000 $extra -w 20 -n 20 2>&1 | tee $result.out
+  mpirun -np 1 --cpus-per-rank $ngpus test/perf/${op}_perf -t $ngpus -b 40000 -e 1960000 -i 40000 $extra -w 20 -n 20 2>&1 | tee $result.out
   if [ "$mode" != "combo" ]; then
-    test/perf/${op}_perf -t $ngpus -p 1 -b 2000000 -e 38000000 -i 2000000 $extra -w 20 -n 5 2>&1 | tee -a $result.out
-    test/perf/${op}_perf -g $ngpus -b 40000000 -e 400000000 -i 40000000 $extra -w 5 -n 1 2>&1 | tee -a $result.out
+    mpirun -np 1 --cpus-per-rank $ngpus test/perf/${op}_perf -t $ngpus -p 1 -b 2000000 -e 38000000 -i 2000000 $extra -w 20 -n 5 2>&1 | tee -a $result.out
+    mpirun -np 1 --cpus-per-rank $ngpus test/perf/${op}_perf -g $ngpus -b 40000000 -e 400000000 -i 40000000 $extra -w 5 -n 1 2>&1 | tee -a $result.out
     return 0
   fi
 fi
@@ -72,8 +72,8 @@ if [ "$mode" == "latency" ] || [ "$mode" == "combo" ]; then
   path=$resdir/$gpumodel
   mkdir -p $path
   result=$path/$op.$ngpus
-  test/perf/${op}_perf -t $ngpus -b 32 -e 1K -f 2 -w 20 -n 1000 2>&1 | tee $result.out
-  test/perf/${op}_perf -g $ngpus -b 2K -e 64K -f 2 -w 20 -n 500 2>&1 | tee -a $result.out
+  mpirun -np 1 --cpus-per-rank $ngpus test/perf/${op}_perf -t $ngpus -b 32 -e 1K -f 2 -w 20 -n 1000 2>&1 | tee $result.out
+  mpirun -np 1 --cpus-per-rank $ngpus test/perf/${op}_perf -g $ngpus -b 2K -e 64K -f 2 -w 20 -n 500 2>&1 | tee -a $result.out
   if [ "$mode" != "combo" ]; then
     return 0
   fi
@@ -115,8 +115,22 @@ if [ "$mode" == "aggregation" ] || [ "$mode" == "combo" ]; then
     path=$resdir/$gpumodel
     mkdir -p $path
     result=$path/$op.$ngpus
-    test/perf/${op}_perf -t $ngpus -b 32 -e 512 -f 2 -w 20 -n $n -m $m 2>&1 | tee $result.out
+    mpirun -np 1 --cpus-per-rank $ngpus test/perf/${op}_perf -t $ngpus -b 32 -e 512 -f 2 -w 20 -n $n -m $m 2>&1 | tee $result.out
   done
+  if [ "$mode" != "combo" ]; then
+    return 0
+  fi
+fi
+
+if [ "$mode" == "deadlock" ] || [ "$mode" == "combo" ]; then
+  echo "Running test/perf/${op}_perf on $ngpus GPUs [Deadlock] ..."
+  resdir="results_deadlock"
+  path=$resdir/$gpumodel
+  mkdir -p $path
+  result=$path/$op.$ngpus
+  mpirun -np 1 --cpus-per-rank $ngpus -mca mpi_leave_pinned 0 -mca btl ^openib test/perf/${op}_perf -t $ngpus -k 1 -w 0 -n 1 2>&1 | tee $result.out
+  mpirun -np 1 --cpus-per-rank $ngpus -mca mpi_leave_pinned 0 -mca btl ^openib test/perf/${op}_perf -g $ngpus -k 1 -w 0 -n 1 2>&1 | tee -a $result.out
+  mpirun -np $ngpus --cpus-per-rank 1 -mca mpi_leave_pinned 0 -mca btl ^openib test/perf/${op}_perf -k 1 -w 0 -n 1 2>&1 | tee -a $result.out
   if [ "$mode" != "combo" ]; then
     return 0
   fi
@@ -128,7 +142,12 @@ gpumodel=$1
 maxgpu=$2
 mode=$3
 op=$4
-for ngpus in `seq 2 2 $maxgpu`; do
+if [ $maxgpu == 16 ]; then
+  gpuseq="2 4 8 16"
+else
+  gpuseq=$(seq 2 2 $maxgpu)
+fi
+for ngpus in $gpuseq; do
   generate_perf $gpumodel $ngpus $mode $op 
 done
 }
@@ -150,12 +169,12 @@ export NCCL_DEBUG=WARN
 
 if [ "$mode" == "reorder" ]; then
   perf_ngpu_loop $gpumodel $maxgpu $mode all_reduce
+elif [ "$mode" == "deadlock" ]; then
+  generate_perf $gpumodel $maxgpu $mode all_reduce
 else
   perf_ngpu_loop $gpumodel $maxgpu $mode reduce
   perf_ngpu_loop $gpumodel $maxgpu $mode broadcast
   perf_ngpu_loop $gpumodel $maxgpu $mode all_reduce
   perf_ngpu_loop $gpumodel $maxgpu $mode all_gather
   perf_ngpu_loop $gpumodel $maxgpu $mode reduce_scatter
-  perf_ngpu_loop $gpumodel $maxgpu $mode all_gatherv
-  perf_ngpu_loop $gpumodel $maxgpu $mode reduce_scatterv
 fi

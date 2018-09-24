@@ -17,7 +17,10 @@
 #define CUDACHECK(cmd) do {                         \
   cudaError_t e = cmd;                              \
   if( e != cudaSuccess ) {                          \
-    printf("Cuda failure %s:%d '%s'\n",             \
+    char hostname[1024];                            \
+    getHostName(hostname, 1024);                    \
+    printf("%s: Cuda failure %s:%d '%s'\n",         \
+         hostname,                                  \
         __FILE__,__LINE__,cudaGetErrorString(e));   \
     exit(EXIT_FAILURE);                             \
   }                                                 \
@@ -26,7 +29,10 @@
 #define NCCLCHECK(cmd) do {                         \
   ncclResult_t r = cmd;                             \
   if (r!= ncclSuccess) {                            \
-    printf("NCCL failure %s:%d '%s'\n",             \
+    char hostname[1024];                            \
+    getHostName(hostname, 1024);                    \
+    printf("%s: NCCL failure %s:%d '%s'\n",         \
+         hostname,                                  \
         __FILE__,__LINE__,ncclGetErrorString(r));   \
     exit(EXIT_FAILURE);                             \
   }                                                 \
@@ -80,7 +86,7 @@ struct threadArgs_t {
 
 // Provided by common.cu
 extern void Barrier(struct threadArgs_t* args);
-extern void TimeTest(struct threadArgs_t* args, ncclDataType_t type, const char* typeName, ncclRedOp_t op,  const char* opName, int root, int inPlace);
+extern void TimeTest(struct threadArgs_t* args, ncclDataType_t type, const char* typeName, ncclRedOp_t op,  const char* opName, int root);
 extern void Randomize(void* ptr, size_t count, ncclDataType_t type, int seed);
 extern void Accumulate(void* out, void* in, size_t n, ncclDataType_t type, ncclRedOp_t op);
 extern void CheckDelta(void* expected, void* results, size_t count, ncclDataType_t type, double* devmax);

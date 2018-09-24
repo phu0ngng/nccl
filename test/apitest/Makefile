@@ -1,6 +1,7 @@
 .DEFAULT_GOAL=all
 include ../../makefiles/common.mk
 BUILDDIR ?= $(abspath ../../build)
+NCCLDIR := $(BUILDDIR)
 GTEST_DIR ?= $(abspath ../googletest/googletest)
 include ../gtest.mk
 ### files
@@ -9,10 +10,10 @@ DST_DIR		:= $(BUILDDIR)/test/apitest
 OBJ_FILES	:= $(SRC_FILES:%.cu=${DST_DIR}/%.o)
 DEP_FILES	:= $(OBJ_FILES:%.o=%.dep)
 ### cc
-NVCUFLAGS += -I${BUILDDIR}/include/ -include nccl.h ${CPPFLAGS} ${GTEST_CPPFLAGS}
+NVCUFLAGS += -I${NCCLDIR}/include/ -include nccl.h ${CPPFLAGS} ${GTEST_CPPFLAGS}
 ### ld
-LIBDIR := ${BUILDDIR}/lib
-NVLDFLAGS   += -L${LIBDIR} ${GTEST_LIBS}
+LIBDIR := ${NCCLDIR}/lib
+NVLDFLAGS := -L${LIBDIR} ${NVLDFLAGS} ${GTEST_LIBS}
 ### rules
 .PHONY:
 

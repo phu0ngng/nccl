@@ -7,11 +7,12 @@
 #ifndef NCCL_UTILS_H_
 #define NCCL_UTILS_H_
 
+#include "nccl.h"
 #include <stdint.h>
 
-void getHostName(char* hostname, int maxlen);
-uint64_t getHostHash(const char* string);
-int getHostNumber(const char* string);
+ncclResult_t getHostName(char* hostname, int maxlen);
+uint64_t getHostHash();
+uint64_t getPidHash();
 
 struct netIf {
   char prefix[64];
