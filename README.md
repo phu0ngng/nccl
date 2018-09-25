@@ -10,7 +10,7 @@ For more information on NCCL usage, please refer to the [NCCL documentation](htt
 
 ## What's inside
 
-At present, the library implements the following collectives:
+At present, the library implements the following collectives operations:
 
 - all-reduce
 - all-gather
@@ -18,7 +18,7 @@ At present, the library implements the following collectives:
 - reduce
 - broadcast
 
-These collectives are implemented using ring algorithms and have been optimized for throughput and latency. For best performance, small collectives can be either batched into larger operations or aggregated through the API.
+These operations are implemented using ring algorithms and have been optimized for throughput and latency. For best performance, small operations can be either batched into larger operations or aggregated through the API.
 
 ## Requirements
 
