@@ -924,4 +924,3 @@ bool ncclIbSupport() {
   initDevices();
   return ncclNIbDevs > 0;
 }
-
