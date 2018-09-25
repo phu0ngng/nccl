@@ -62,4 +62,3 @@ extern
 ncclNet_t* ncclNet;
 
 #endif // end include guard
-

@@ -237,4 +237,3 @@ ncclNet_t ncclNetSocket = {
   ncclSocketClose,
   ncclSocketClose
 };
-

@@ -24,4 +24,3 @@ ncclResult_t ncclBarrierEnqueueWait(ncclComm_t comm);
 ncclResult_t ncclEnqueueEvents(ncclComm_t comm);
 
 #endif // End include guard
-

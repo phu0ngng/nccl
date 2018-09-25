@@ -30,4 +30,3 @@ ncclResult_t ncclAllReduce(const void* sendbuff, void* recvbuff, size_t count,
   return ncclEnqueueCheck(ncclAllReduceFunc, "AllReduce", sendbuff, recvbuff, count, datatype,
           op, 0, comm, stream);
 }
-
