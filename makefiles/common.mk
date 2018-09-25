@@ -1,7 +1,7 @@
 #
 # Copyright (c) 2015-2018, NVIDIA CORPORATION. All rights reserved.
 #
-# See LICENCE.txt for license information
+# See LICENSE.txt for license information
 #
 
 CUDA_HOME ?= /usr/local/cuda
