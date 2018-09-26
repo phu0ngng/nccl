@@ -8,12 +8,6 @@
 #include "primitives.h"
 #include "collectives.h"
 
-// Increase Step and boffset for buffer sync
-#define NEXT_STEP \
-  step += REDUCE_CHUNKSTEPS; \
-  boffset += chunkSize; \
-  if (boffset == buffSize) boffset = 0;
-
 template<int UNROLL, class FUNC, typename T>
 __device__ void ncclReduceKernel(struct CollectiveArgs* args) {
   const int tid = threadIdx.x;
@@ -21,13 +15,11 @@ __device__ void ncclReduceKernel(struct CollectiveArgs* args) {
   const int bid = args->bid;
   struct ncclComm* comm = args->comm;
   struct ncclRing* ring = comm->rings+blockIdx.x;
+  struct ncclConnInfo* send = &ring->send.conn;
+  struct ncclConnInfo* recv = &ring->recv.conn;
 
-  WaitFlag waitDoneFromNext(args->comm->abortFlag, ring->send.conn.head, NCCL_STEPS-REDUCE_CHUNKSTEPS);
-  WaitFlag waitReadyFromPrev(args->comm->abortFlag, ring->recv.conn.tail, 0);
-  PostFlag postDoneToPrev(ring->recv.conn.head, 0, NULL, 0);
-  PostFlag postReadyToNext(ring->send.conn.tail, 0, ring->send.conn.fifo, NCCL_STEPS);
-
-  typedef Primitives<UNROLL, REDUCE_CHUNKSTEPS/REDUCE_SLICESTEPS, REDUCE_SLICESTEPS, T, FUNC> Prims;
+  ncclPrimitives<UNROLL, REDUCE_CHUNKSTEPS/REDUCE_SLICESTEPS, REDUCE_SLICESTEPS, T, FUNC>
+    prims(tid, nthreads, recv, send, args->comm->abortFlag);
 
   const ssize_t size = args->N;
   const int nranks = comm->nRanks;
@@ -39,15 +31,16 @@ __device__ void ncclReduceKernel(struct CollectiveArgs* args) {
   const int prevRank = ring->devUserRanks[nranks-1];
   const int root = args->root;
 
-  uint64_t step = ring->send.conn.step;
-  step = ROUNDUP(step, REDUCE_CHUNKSTEPS);
-  int boffset = (step%NCCL_STEPS)*stepSize;
+  int noffset = (send->waitStep%NCCL_STEPS)*stepSize;
+  int poffset = (recv->waitStep%NCCL_STEPS)*stepSize;
+  // Need all threads to read this before thread 0 might increment it
+  __syncthreads();
 
   // Compute pointers
   const T * __restrict__ thisInput = (const T*)args->ThisInput;
   T * __restrict__ thisOutput = (T*)args->ThisOutput;
-  T * __restrict__ prevInput = (T*)ring->recv.conn.buff;
-  T * __restrict__ nextOutput = (T*)ring->send.conn.buff;
+  T * __restrict__ prevInput = (T*)recv->buff;
+  T * __restrict__ nextOutput = (T*)send->buff;
 
   for (ssize_t gridOffset = 0; gridOffset < size; gridOffset += loopSize) {
     int realChunkSize = min(chunkSize, DIVUP(size-gridOffset,args->nRings));
@@ -55,44 +48,15 @@ __device__ void ncclReduceKernel(struct CollectiveArgs* args) {
     ssize_t offset = gridOffset + bid*realChunkSize;
     int maxOffset = min(realChunkSize, size-offset);
     if (prevRank == root) {
-      Prims::Copy(tid, nthreads,
-          thisInput + offset,
-          nextOutput + boffset,
-          chunkSize, maxOffset,
-          step,
-          waitDoneFromNext,
-          postReadyToNext);
+      prims.send(thisInput+offset, nextOutput+noffset, chunkSize, maxOffset);
     } else if (rank == root) {
-      Prims::Reduce(tid, nthreads,
-          prevInput  + boffset,
-          thisInput + offset,
-          thisOutput + offset,
-          chunkSize, maxOffset,
-          step,
-          waitReadyFromPrev,
-          postDoneToPrev);
+      prims.recvReduce(prevInput+poffset, thisInput+offset, thisOutput+offset, chunkSize, maxOffset);
     } else {
-      Prims::Reduce(tid, nthreads,
-          prevInput + boffset,
-          thisInput + offset,
-          nextOutput + boffset,
-          chunkSize, maxOffset,
-          step,
-          waitDoneFromNext, waitReadyFromPrev,
-          postReadyToNext, postDoneToPrev);
+      prims.recvReduceSend(prevInput+poffset, thisInput+offset, nextOutput+noffset, chunkSize, maxOffset);
     }
-    NEXT_STEP; // Increases step, boffset
+    if ((poffset += chunkSize) == buffSize) poffset = 0;
+    if ((noffset += chunkSize) == buffSize) noffset = 0;
   }
-
-  // Save step counter for next op
-  if (tid == 0) {
-    ring->send.conn.step = step;
-    // Make sure last rank updates root's head otherwise it will be blocked
-    // on the next operation
-    if (prevRank == root)
-      *ring->recv.conn.head = step;
-  }
-  __syncthreads();
 }
 
 #include "ll_kernel.h"

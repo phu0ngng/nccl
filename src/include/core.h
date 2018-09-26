@@ -99,7 +99,9 @@ struct ncclConnInfo {
   void **ptrExchange; // Pointer exchange for direct communication
 
   int *fifo;          // Size fifo for proxy
-  uint64_t step;      // Keep where we are
+
+  uint64_t waitStep;  // Keep where we wait (thread 0)
+  uint64_t postStep;  // Keep where we post (thread n+1)
 
   // Low latency mechanism
   char *llBuff;       // Local for recv, remote for send

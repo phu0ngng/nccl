@@ -8,13 +8,6 @@
 #include "primitives.h"
 #include "collectives.h"
 
-// Increase Step and poffset/noffset for buffer sync
-#define NEXT_STEP \
-  step += ALLREDUCE_CHUNKSTEPS; \
-  poffset = noffset; \
-  noffset += chunkSize; \
-  if (noffset == buffSize) noffset = 0;
-
 template<int UNROLL, class FUNC, typename T>
 __device__ void ncclAllReduceKernel(struct CollectiveArgs* args) {
   const int tid = threadIdx.x;
@@ -23,23 +16,23 @@ __device__ void ncclAllReduceKernel(struct CollectiveArgs* args) {
   __shared__ T* sharedNextOutput;
   struct ncclComm* comm = args->comm;
   struct ncclRing* ring = comm->rings+blockIdx.x;
-  int prevdirect = ring->recv.conn.direct;
-  int nextdirect = ring->send.conn.direct;
+  struct ncclConnInfo* send = &ring->send.conn;
+  struct ncclConnInfo* recv = &ring->recv.conn;
+  int prevdirect = recv->direct;
+  int nextdirect = send->direct;
 
-  WaitFlag waitDoneFromNext(args->comm->abortFlag, ring->send.conn.head, NCCL_STEPS);
-  WaitFlag waitReadyFromPrev(args->comm->abortFlag, ring->recv.conn.tail, ALLREDUCE_CHUNKSTEPS);
-  PostFlag postDoneToPrev(ring->recv.conn.head, ALLREDUCE_CHUNKSTEPS, NULL, 0);
-  PostFlag postReadyToNext(ring->send.conn.tail, 0, ring->send.conn.fifo, NCCL_STEPS);
-
-  typedef Primitives<UNROLL, ALLREDUCE_CHUNKSTEPS/ALLREDUCE_SLICESTEPS, ALLREDUCE_SLICESTEPS, T, FUNC> Prims;
+  ncclPrimitives<UNROLL, ALLREDUCE_CHUNKSTEPS/ALLREDUCE_SLICESTEPS, ALLREDUCE_SLICESTEPS, T, FUNC>
+    prims(tid, nthreads, recv, send, args->comm->abortFlag);
 
   const ssize_t size = args->N;
-  //const int rank = comm->rank;
   const int nranks = comm->nRanks;
   const int buffSize = ring->buffSize / sizeof(T);
   const int stepSize = buffSize / NCCL_STEPS;
   const int chunkSize = stepSize * ALLREDUCE_CHUNKSTEPS;
   const ssize_t loopSize = args->nRings*(ssize_t)chunkSize;
+
+  int noffset = (send->waitStep%NCCL_STEPS)*stepSize;
+  int poffset = (recv->waitStep%NCCL_STEPS)*stepSize;
 
   if (tid == 0) {
     if (prevdirect) {
@@ -54,15 +47,11 @@ __device__ void ncclAllReduceKernel(struct CollectiveArgs* args) {
   }
   __syncthreads();
 
-  uint64_t step = ring->send.conn.step;
-  step = ROUNDUP(step, ALLREDUCE_CHUNKSTEPS);
-  int poffset, noffset = (step%NCCL_STEPS)*stepSize;
-
   // Compute pointers
   const T * __restrict__ thisInput = (const T*)args->ThisInput;
   T * __restrict__ thisOutput = (T*)args->ThisOutput;
-  T * __restrict__ prevInput = (T*)ring->recv.conn.buff;
-  T * __restrict__ nextOutput = (T*)ring->send.conn.buff;
+  T * __restrict__ prevInput = (T*)recv->buff;
+  T * __restrict__ nextOutput = (T*)send->buff;
 
   for (ssize_t gridOffset = 0; gridOffset < size; gridOffset += nranks*loopSize) {
     int realChunkSize = min(chunkSize, DIVUP(size-gridOffset,nranks*args->nRings));
@@ -79,15 +68,8 @@ __device__ void ncclAllReduceKernel(struct CollectiveArgs* args) {
     offset = chunkOffset + slice * realChunkSize;
     maxOffset = min(realChunkSize, size-offset);
 
-    Prims::Copy(tid, nthreads,
-        thisInput  + offset,
-        nextOutput + noffset,
-        chunkSize, maxOffset,
-        step,
-        waitDoneFromNext,
-        postReadyToNext);
-
-    NEXT_STEP; // Increases step, poffset, noffset
+    prims.send(thisInput+offset, nextOutput+noffset, chunkSize, maxOffset);
+    if ((noffset += chunkSize) == buffSize) noffset = 0;
 
     // k-2 steps: reduce and copy to next GPU
     for (int j=2; j<nranks; ++j) {
@@ -95,16 +77,9 @@ __device__ void ncclAllReduceKernel(struct CollectiveArgs* args) {
       offset = chunkOffset + slice * realChunkSize;
       maxOffset = min(realChunkSize, size-offset);
 
-      Prims::Reduce(tid, nthreads,
-          prevInput  + poffset,
-          thisInput  + offset,
-          nextOutput + noffset,
-          chunkSize, maxOffset,
-          step,
-          waitDoneFromNext, waitReadyFromPrev,
-          postReadyToNext, postDoneToPrev);
-
-      NEXT_STEP;
+      prims.recvReduceSend(prevInput+poffset, thisInput+offset, nextOutput+noffset, chunkSize, maxOffset);
+      if ((poffset += chunkSize) == buffSize) poffset = 0;
+      if ((noffset += chunkSize) == buffSize) noffset = 0;
     }
 
     // step k-1: reduce this buffer and data, which will produce the final
@@ -113,17 +88,10 @@ __device__ void ncclAllReduceKernel(struct CollectiveArgs* args) {
     offset = chunkOffset + slice * realChunkSize;
     maxOffset = min(realChunkSize, size-offset);
 
-    Prims::ReduceCopy(tid, nthreads,
-        prevInput  + poffset,
-        thisInput  + offset,
-        nextdirect ? (sharedNextOutput + offset) : (nextOutput + noffset),
-        thisOutput + offset,
-        chunkSize, maxOffset,
-        step,
-        waitDoneFromNext, waitReadyFromPrev,
-        postReadyToNext, postDoneToPrev);
-
-    NEXT_STEP;
+    T* output = nextdirect ? (sharedNextOutput + offset) : (nextOutput + noffset);
+    prims.recvReduceCopySend(prevInput+poffset, thisInput+offset, output, thisOutput+offset, chunkSize, maxOffset);
+    if ((poffset += chunkSize) == buffSize) poffset = 0;
+    if ((noffset += chunkSize) == buffSize) noffset = 0;
 
     // k-2 steps: copy to next GPU
     if (prevdirect) {
@@ -132,39 +100,23 @@ __device__ void ncclAllReduceKernel(struct CollectiveArgs* args) {
         offset = chunkOffset + slice * realChunkSize;
         maxOffset = min(realChunkSize, size-offset);
 
-        Prims::Copy(tid, nthreads,
-            thisOutput + offset,
-	    nextdirect ? (sharedNextOutput + offset) : (nextOutput + noffset),
-            chunkSize, maxOffset,
-            step,
-            waitDoneFromNext, waitReadyFromPrev,
-            postReadyToNext, postDoneToPrev);
-
-        NEXT_STEP;
+        T* output = nextdirect ? (sharedNextOutput + offset) : (nextOutput + noffset);
+        prims.recvSend(thisOutput+offset, output, chunkSize, maxOffset);
+        if ((poffset += chunkSize) == buffSize) poffset = 0;
+        if ((noffset += chunkSize) == buffSize) noffset = 0;
       }
-      Prims::Copy(tid, nthreads,
-          NULL,
-          NULL,
-          0, 0,
-          step,
-          waitReadyFromPrev,
-          postDoneToPrev);
+      prims.recv(NULL, NULL, 0, 0);
+      if ((poffset += chunkSize) == buffSize) poffset = 0;
     } else {
       for (int j=1; j<nranks-1; ++j) {
         slice = ring->devUserRanks[nranks - j];
         offset = chunkOffset + slice * realChunkSize;
         maxOffset = min(realChunkSize, size-offset);
 
-        Prims::DoubleCopy(tid, nthreads,
-            prevInput + poffset,
-            thisOutput + offset,
-	    nextdirect ? (sharedNextOutput + offset) : (nextOutput + noffset),
-            chunkSize, maxOffset,
-            step,
-            waitDoneFromNext, waitReadyFromPrev,
-            postReadyToNext, postDoneToPrev);
-
-        NEXT_STEP;
+        T* output = nextdirect ? (sharedNextOutput + offset) : (nextOutput + noffset);
+        prims.recvCopySend(prevInput+poffset, thisOutput+offset, output, chunkSize, maxOffset);
+        if ((poffset += chunkSize) == buffSize) poffset = 0;
+        if ((noffset += chunkSize) == buffSize) noffset = 0;
       }
 
       // Make final copy from buffer to dest.
@@ -173,19 +125,10 @@ __device__ void ncclAllReduceKernel(struct CollectiveArgs* args) {
       maxOffset = min(realChunkSize, size-offset);
 
       // Here we need to copy from buffer to this output.
-      Prims::Copy(tid, nthreads,
-          prevInput + poffset,
-          thisOutput + offset,
-          chunkSize, maxOffset,
-          step,
-          waitReadyFromPrev,
-          postDoneToPrev);
+      prims.recv(prevInput+poffset, thisOutput+offset, chunkSize, maxOffset);
+      if ((poffset += chunkSize) == buffSize) poffset = 0;
     }
   }
-
-  // Save step counter for next op
-  if (tid == 0) ring->send.conn.step = step;
-  __syncthreads();
 }
 
 #include "ll_kernel.h"

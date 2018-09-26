@@ -8,13 +8,6 @@
 #include "primitives.h"
 #include "collectives.h"
 
-// Increase Step and poffset/noffset for buffer sync
-#define NEXT_STEP \
-  step += REDUCESCATTER_CHUNKSTEPS; \
-  poffset = noffset; \
-  noffset += chunkSize; \
-  if (noffset == buffSize) noffset = 0;
-
 template<int UNROLL, class FUNC, typename T>
 __device__ void ncclReduceScatterKernel(struct CollectiveArgs* args) {
   const int tid = threadIdx.x;
@@ -22,13 +15,11 @@ __device__ void ncclReduceScatterKernel(struct CollectiveArgs* args) {
   const int bid = args->bid;
   struct ncclComm* comm = args->comm;
   struct ncclRing* ring = comm->rings+blockIdx.x;
+  struct ncclConnInfo* send = &ring->send.conn;
+  struct ncclConnInfo* recv = &ring->recv.conn;
 
-  WaitFlag waitDoneFromNext(args->comm->abortFlag, ring->send.conn.head, NCCL_STEPS);
-  WaitFlag waitReadyFromPrev(args->comm->abortFlag, ring->recv.conn.tail, REDUCESCATTER_CHUNKSTEPS);
-  PostFlag postDoneToPrev(ring->recv.conn.head, REDUCESCATTER_CHUNKSTEPS, NULL, 0);
-  PostFlag postReadyToNext(ring->send.conn.tail, 0, ring->send.conn.fifo, NCCL_STEPS);
-
-  typedef Primitives<UNROLL, REDUCESCATTER_CHUNKSTEPS/REDUCESCATTER_SLICESTEPS, REDUCESCATTER_SLICESTEPS, T, FUNC> Prims;
+  ncclPrimitives<UNROLL, REDUCESCATTER_CHUNKSTEPS/REDUCESCATTER_SLICESTEPS, REDUCESCATTER_SLICESTEPS, T, FUNC>
+    prims(tid, nthreads, recv, send, args->comm->abortFlag);
 
   const ssize_t size = args->N;
   const int nranks = comm->nRanks;
@@ -37,15 +28,16 @@ __device__ void ncclReduceScatterKernel(struct CollectiveArgs* args) {
   const int chunkSize = stepSize * ALLREDUCE_CHUNKSTEPS;
   const ssize_t loopSize = args->nRings*(ssize_t)chunkSize;
 
-  uint64_t step = ring->send.conn.step;
-  step = ROUNDUP(step, REDUCESCATTER_CHUNKSTEPS);
-  int poffset, noffset = (step%NCCL_STEPS)*stepSize;
+  int noffset = (send->waitStep%NCCL_STEPS)*stepSize;
+  int poffset = (recv->waitStep%NCCL_STEPS)*stepSize;
+  // Need all threads to read this before thread 0 might increment it
+  __syncthreads();
 
   // Compute pointers
   const T * __restrict__ thisInput = (const T*)args->ThisInput;
   T * __restrict__ thisOutput = (T*)args->ThisOutput;
-  T * __restrict__ prevInput = (T*)ring->recv.conn.buff;
-  T * __restrict__ nextOutput = (T*)ring->send.conn.buff;
+  T * __restrict__ prevInput = (T*)recv->buff;
+  T * __restrict__ nextOutput = (T*)send->buff;
 
   for (ssize_t gridOffset = 0; gridOffset < size; gridOffset += loopSize) {
     int realChunkSize = min(chunkSize, DIVUP(size-gridOffset,args->nRings));
@@ -61,31 +53,17 @@ __device__ void ncclReduceScatterKernel(struct CollectiveArgs* args) {
     rankDest = ring->devUserRanks[nranks-1];
     offset = chunkOffset + rankDest * size;
 
-    Prims::Copy(tid, nthreads,
-        thisInput  + offset,
-        nextOutput + noffset,
-        chunkSize, maxOffset,
-        step,
-        waitDoneFromNext,
-        postReadyToNext);
-
-    NEXT_STEP; // Increases step, poffset, noffset
+    prims.send(thisInput+offset, nextOutput+noffset, chunkSize, maxOffset);
+    if ((noffset += chunkSize) == buffSize) noffset = 0;
 
     // k-2 steps: reduce and copy to next GPU
     for (int j=2; j<nranks; ++j) {
       rankDest = ring->devUserRanks[nranks-j];
       offset = chunkOffset + rankDest * size;
 
-      Prims::Reduce(tid, nthreads,
-          prevInput  + poffset,
-          thisInput  + offset,
-          nextOutput + noffset,
-          chunkSize, maxOffset,
-          step,
-          waitDoneFromNext, waitReadyFromPrev,
-          postReadyToNext, postDoneToPrev);
-
-      NEXT_STEP;
+      prims.recvReduceSend(prevInput+poffset, thisInput+offset, nextOutput+noffset, chunkSize, maxOffset);
+      if ((poffset += chunkSize) == buffSize) poffset = 0;
+      if ((noffset += chunkSize) == buffSize) noffset = 0;
     }
 
     // step k-1: reduce this buffer and data, which will produce the final
@@ -93,19 +71,9 @@ __device__ void ncclReduceScatterKernel(struct CollectiveArgs* args) {
     rankDest = ring->devUserRanks[0];
     offset = chunkOffset + rankDest * size;
 
-    Prims::Reduce(tid, nthreads,
-        prevInput  + poffset,
-        thisInput  + offset,
-        thisOutput + chunkOffset,
-        chunkSize, maxOffset,
-        step,
-        waitReadyFromPrev,
-        postDoneToPrev);
+    prims.recvReduce(prevInput+poffset, thisInput+offset, thisOutput+chunkOffset, chunkSize, maxOffset);
+    if ((poffset += chunkSize) == buffSize) poffset = 0;
   }
-
-  // Save step counter for next op
-  if (tid == 0) ring->send.conn.step = step;
-  __syncthreads();
 }
 
 #include "ll_kernel.h"
