@@ -338,11 +338,11 @@ ncclResult_t netSendProxy(struct ncclProxyArgs* args) {
   struct ncclSendMem* prevMem = resources->hostSendMem;
   uint64_t* prevHead = llMode ? &prevMem->llHead : &prevMem->head;
   struct ncclRecvMem* localMem = resources->cudaSupport ? resources->devNetMem : resources->hostRecvMem;
-  char* localBuff = llMode ? resources->hostRecvMem->llBuff : localMem->buff;
+  union ncclLLFifoLine* llBuff = resources->hostRecvMem->llBuff;
   int ptrType = resources->cudaSupport ? NCCL_PTR_CUDA : NCCL_PTR_HOST;
   volatile int* sizesFifo = llMode ? resources->hostRecvMem->llSizesFifo : resources->hostRecvMem->sizesFifo;
-  int stepSize = llMode ? NCCL_LL_BUFF_SIZE/NCCL_LL_CHUNKS : ring->buffSize/NCCL_STEPS;
-  int buffSteps = llMode ? NCCL_LL_CHUNKS : NCCL_STEPS;
+  int stepSize = ring->buffSize/NCCL_STEPS;
+  int buffSteps = llMode ? NCCL_LL_STEPS : NCCL_STEPS;
 
   // Round to next multiple of sliceSteps
   resources->step = ROUNDUP(resources->step, args->chunkSteps);
@@ -370,7 +370,7 @@ ncclResult_t netSendProxy(struct ncclProxyArgs* args) {
           uint32_t flag = tail + 1;
           int nFifoLines = DIVUP(size, sizeof(union ncclLLFifoLine));
           size = nFifoLines * sizeof(union ncclLLFifoLine);
-          union ncclLLFifoLine* lines = (union ncclLLFifoLine*)(localBuff+buffSlot*stepSize);
+          union ncclLLFifoLine* lines = llBuff+buffSlot*NCCL_LL_SLICE_LINES;
           for (int i=0; i<nFifoLines; i++) {
             volatile uint32_t *f1 = &lines[i].flag1;
             volatile uint32_t *f2 = &lines[i].flag2;
@@ -386,7 +386,7 @@ ncclResult_t netSendProxy(struct ncclProxyArgs* args) {
       } else if (tail < *prevTail) {
         // Send through network
         int buffSlot = tail%buffSteps;
-        NCCLCHECK(ncclNetIsend(resources->netSendComm, localBuff+buffSlot*stepSize, sizesFifo[buffSlot], ptrType, requests+buffSlot));
+        NCCLCHECK(ncclNetIsend(resources->netSendComm, localMem->buff+buffSlot*stepSize, sizesFifo[buffSlot], ptrType, requests+buffSlot));
         tail += args->sliceSteps;
         idle = 0;
       }
@@ -410,8 +410,8 @@ nextColl:
     // Update in case we didn't need a proxy and jumped directly here
     *prevHead = resources->llStep;
     if (resources->llStep > resources->llLastCleaning + NCCL_LL_CLEAN_FREQ) {
-      memset(localBuff, 0, NCCL_LL_BUFF_SIZE);
-      resources->llStep += NCCL_LL_CHUNKS;
+      memset(llBuff, 0, NCCL_LL_BUFF_SIZE);
+      resources->llStep += NCCL_LL_STEPS;
       *prevHead = resources->llStep;
       resources->llLastCleaning = resources->llStep;
     }
@@ -430,13 +430,13 @@ ncclResult_t netRecvProxy(struct ncclProxyArgs* args) {
 
   volatile uint64_t* nextHead = llMode ? &resources->hostSendMem->llHead : &resources->hostSendMem->head;
   struct ncclRecvMem* localMem = resources->cudaSupport ? ring->devMemRecv : resources->hostRecvMem;
-  char* localBuff = llMode ? localMem->llBuff : localMem->buff;
+  char* localBuff = llMode ? (char*)localMem->llBuff : localMem->buff;
   int ptrType = resources->cudaSupport ? NCCL_PTR_CUDA : NCCL_PTR_HOST;
   uint64_t* nextTail = &resources->hostRecvMem->tail;
 
-  int stepSize = llMode ? NCCL_LL_BUFF_SIZE/NCCL_LL_CHUNKS : ring->buffSize/NCCL_STEPS;
+  int stepSize = llMode ? NCCL_LL_BUFF_SIZE/NCCL_LL_STEPS : ring->buffSize/NCCL_STEPS;
   int sliceSize = stepSize * args->sliceSteps;
-  int buffSteps = llMode ? NCCL_LL_CHUNKS : NCCL_STEPS;
+  int buffSteps = llMode ? NCCL_LL_STEPS : NCCL_STEPS;
 
   // Round to next multiple of sliceSteps
   resources->step = ROUNDUP(resources->step, args->chunkSteps);
@@ -483,7 +483,7 @@ nextColl:
   if (llMode) {
     resources->llStep += args->nsteps;
     if (resources->llStep > resources->llLastCleaning + NCCL_LL_CLEAN_FREQ) {
-      resources->llStep += NCCL_LL_CHUNKS;
+      resources->llStep += NCCL_LL_STEPS;
       while (*nextHead < resources->llStep);
       resources->llLastCleaning = resources->llStep;
     }

@@ -10,7 +10,6 @@
 
 template<int UNROLL, class FUNC, typename T>
 __device__ void ncclBroadcastKernel(struct CollectiveArgs* args) {
-  const int tid = threadIdx.x;
   const int nthreads = blockDim.x - 1;
   const int bid = args->bid;
   struct ncclComm* comm = args->comm;
@@ -19,7 +18,7 @@ __device__ void ncclBroadcastKernel(struct CollectiveArgs* args) {
   struct ncclConnInfo* recv = &ring->recv.conn;
 
   ncclPrimitives<UNROLL, BROADCAST_CHUNKSTEPS/BROADCAST_SLICESTEPS, BROADCAST_SLICESTEPS, T>
-    prims(tid, nthreads, recv, send, args->comm->abortFlag);
+    prims(threadIdx.x, nthreads, recv, send, args->comm->abortFlag);
 
   const ssize_t size = args->N;
   const int buffSize = ring->buffSize / sizeof(T);
@@ -65,42 +64,25 @@ __device__ void ncclBroadcastKernel(struct CollectiveArgs* args) {
 
 #include "ll_kernel.h"
 
-#define NEXT_STEP_LL \
-  boffset += NCCL_LL_SLICE_LINES; \
-  if (boffset == NCCL_LL_BUFF_LINES) boffset = 0; \
-  flag++; \
-  step++;
-
 template<int UNUSED, class FUNC, typename T>
 __device__ void ncclBroadcastLLKernel(struct CollectiveArgs* args) {
-  const int tid = threadIdx.x;
   const int bid = args->bid;
-  const int nthreads = args->nThreads;
   struct ncclComm* comm = args->comm;
   struct ncclRing* ring = comm->rings+blockIdx.x;
-  volatile uint64_t * recvHeadPtr = ring->recv.conn.llHead;
-  volatile uint64_t * sendHeadPtr = ring->send.conn.llHead;
-  volatile int * sizesFifo = ring->send.conn.llFifo;
-  uint64_t sendHead = sendHeadPtr[0];
+
+  ncclLLPrimitives<T, FUNC> LLprims(threadIdx.x, args->nThreads, &ring->recv.conn, &ring->send.conn, comm->abortFlag);
+
+  const ssize_t size = args->N;
   const int rank = comm->rank;
   const int nextRank = ring->devUserRanks[1];
   const int root = args->root;
 
-  typedef LLPrimitives<T, FUNC> LL;
-
-  const ssize_t size = args->N;
   ssize_t chunkSize = NCCL_LL_SLICE_LINES * sizeof(uint64_t) / sizeof(T);
   const ssize_t loopSize = args->nRings*chunkSize;
-
-  uint64_t step = ring->send.conn.llStep;
-  uint32_t flag = step + 1;
-  int boffset = NCCL_LL_SLICE_LINES * STEP_TO_SLOT(step);
 
   // Compute pointers
   const T * __restrict__ thisInput = (const T*)args->ThisInput;
   T * __restrict__ thisOutput = (T*)args->ThisOutput;
-  union ncclLLFifoLine * prevInput = (union ncclLLFifoLine *)ring->recv.conn.llBuff;
-  union ncclLLFifoLine * nextOutput = (union ncclLLFifoLine *)ring->send.conn.llBuff;
 
   for (ssize_t gridOffset = 0; gridOffset < size; gridOffset += loopSize) {
     if (size-gridOffset < loopSize) {
@@ -110,52 +92,15 @@ __device__ void ncclBroadcastLLKernel(struct CollectiveArgs* args) {
 
     int maxOffset = min(chunkSize, size-offset);
     if (rank == root) {
-      WAIT_NEXT;
       if (thisInput == thisOutput) {
-        LL::ReduceCopy(
-            args->comm->abortFlag,
-            thisInput + offset,
-            nextOutput + boffset,
-            maxOffset, flag,
-            tid, nthreads);
+        LLprims.send(thisInput+offset, maxOffset);
       } else {
-        LL::ReduceCopy(
-            args->comm->abortFlag,
-            thisInput + offset,
-            thisOutput + offset,
-            nextOutput + boffset,
-            maxOffset, flag,
-            tid, nthreads);
+        LLprims.copySend(thisInput + offset, thisOutput + offset, maxOffset);
       }
-      POST_SIZE;
-      NEXT_STEP_LL;
     } else if (nextRank == root) {
-      LL::ReduceCopy(
-          args->comm->abortFlag,
-          prevInput + boffset,
-          thisOutput + offset,
-          maxOffset, flag,
-          tid, nthreads);
-      NEXT_STEP_LL;
-      ACK_PREV;
+      LLprims.recv(thisOutput + offset, maxOffset);
     } else {
-      WAIT_NEXT;
-      LL::ReduceCopy(
-          args->comm->abortFlag,
-          prevInput + boffset,
-          thisOutput + offset,
-          nextOutput + boffset,
-          maxOffset, flag, flag,
-          tid, nthreads);
-      POST_SIZE;
-      NEXT_STEP_LL;
-      ACK_PREV;
+      LLprims.recvCopySend(thisOutput + offset, maxOffset);
     }
   }
-
-  // We need everyone to acknowledge data even if they didn't receive anything
-  // so that the next collective can start right away.
-  ACK_PREV;
-
-  FIFO_CLEANING_AND_SAVE_STEP(flag);
 }

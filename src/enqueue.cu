@@ -302,7 +302,7 @@ static ncclResult_t computeColl(struct ncclInfo* info /* input */, struct ncclCo
   // Compute nSteps for proxies
   size_t nBytes  = llMode ? info->nBytes*2 : info->nBytes;
   int chunkSteps = llMode ? 1 : info->chunkSteps;
-  int stepSize   = llMode ? NCCL_LL_BUFF_SIZE / NCCL_LL_CHUNKS : info->comm->rings[0].buffSize / NCCL_STEPS;
+  int stepSize   = llMode ? NCCL_LL_BUFF_SIZE / NCCL_LL_STEPS : info->comm->rings[0].buffSize / NCCL_STEPS;
 
   int nLoops = (int)(DIVUP(nBytes, (((size_t)(coll->args.nRings))*info->nchunksPerLoop*stepSize*chunkSteps)));
   proxyArgs->nsteps = info->nstepsPerLoop * nLoops * chunkSteps;

@@ -78,14 +78,6 @@ __device__ void ncclReduceScatterKernel(struct CollectiveArgs* args) {
 
 #include "ll_kernel.h"
 
-#define NEXT_STEP_LL \
-  poffset = noffset; \
-  pflag = nflag; \
-  noffset += NCCL_LL_SLICE_LINES; \
-  if (noffset == NCCL_LL_BUFF_LINES) { noffset = 0; } \
-  nflag++; \
-  step++;
-
 template<int UNUSED, class FUNC, typename T>
 __device__ void ncclReduceScatterLLKernel(struct CollectiveArgs* args) {
   const int tid = threadIdx.x;
@@ -93,12 +85,8 @@ __device__ void ncclReduceScatterLLKernel(struct CollectiveArgs* args) {
   const int nthreads = args->nThreads;
   struct ncclComm* comm = args->comm;
   struct ncclRing* ring = comm->rings+blockIdx.x;
-  volatile uint64_t * recvHeadPtr = ring->recv.conn.llHead;
-  volatile uint64_t * sendHeadPtr = ring->send.conn.llHead;
-  volatile int * sizesFifo = ring->send.conn.llFifo;
-  uint64_t sendHead = sendHeadPtr[0];
 
-  typedef LLPrimitives<T, FUNC> LL;
+  ncclLLPrimitives<T, FUNC> LLprims(tid, nthreads, &ring->recv.conn, &ring->send.conn, comm->abortFlag);
 
   const ssize_t size = args->N;
   //const int rank = comm->rank;
@@ -106,15 +94,10 @@ __device__ void ncclReduceScatterLLKernel(struct CollectiveArgs* args) {
   ssize_t chunkSize = NCCL_LL_SLICE_LINES * sizeof(uint64_t) / sizeof(T);
   const ssize_t loopSize = args->nRings*chunkSize;
 
-  uint64_t step = ring->send.conn.llStep;
-  uint32_t pflag, nflag = step + 1;
-  int poffset, noffset = NCCL_LL_SLICE_LINES * STEP_TO_SLOT(step);
 
   // Compute pointers
   const T * __restrict__ thisInput = (const T*)args->ThisInput;
   T * __restrict__ thisOutput = (T*)args->ThisOutput;
-  union ncclLLFifoLine * prevInput = (union ncclLLFifoLine *)ring->recv.conn.llBuff;
-  union ncclLLFifoLine * nextOutput = (union ncclLLFifoLine *)ring->send.conn.llBuff;
 
   for (ssize_t gridOffset = 0; gridOffset < size; gridOffset += loopSize) {
     if (size-gridOffset < loopSize) {
@@ -131,34 +114,14 @@ __device__ void ncclReduceScatterLLKernel(struct CollectiveArgs* args) {
     rankDest = ring->devUserRanks[nranks-1];
     offset = chunkOffset + rankDest * size;
 
-    WAIT_NEXT;
-    LL::ReduceCopy(
-        args->comm->abortFlag,
-        thisInput  + offset,
-        nextOutput + noffset,
-        maxOffset, nflag,
-        tid, nthreads);
-    POST_SIZE;
-
-    NEXT_STEP_LL;
+    LLprims.send(thisInput+offset, maxOffset);
 
     // k-2 steps: reduce and copy to next GPU
     for (int j=2; j<nranks; ++j) {
       rankDest = ring->devUserRanks[nranks-j];
       offset = chunkOffset + rankDest * size;
 
-      WAIT_NEXT;
-      LL::ReduceCopy(
-          args->comm->abortFlag,
-          thisInput  + offset,
-          prevInput  + poffset,
-          nextOutput + noffset,
-          maxOffset, pflag, nflag,
-          tid, nthreads);
-      POST_SIZE;
-      ACK_PREV;
-
-      NEXT_STEP_LL;
+      LLprims.recvReduceSend(thisInput+offset, maxOffset);
     }
 
     // step k-1: reduce this buffer and data, which will produce the final
@@ -166,15 +129,6 @@ __device__ void ncclReduceScatterLLKernel(struct CollectiveArgs* args) {
     rankDest = ring->devUserRanks[0];
     offset = chunkOffset + rankDest * size;
 
-    LL::ReduceCopy(
-        args->comm->abortFlag,
-        thisInput  + offset,
-        prevInput  + poffset,
-        thisOutput + chunkOffset,
-        maxOffset, pflag,
-        tid, nthreads);
-    ACK_PREV;
+    LLprims.recvReduce(thisInput+offset, thisOutput+chunkOffset, maxOffset);
   }
-
-  FIFO_CLEANING_AND_SAVE_STEP(nflag);
 }
