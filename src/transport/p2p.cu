@@ -588,7 +588,6 @@ ncclResult_t p2pRecvConnect(struct ncclConnect* connectInfo, struct ncclConnecto
   // recv->conn->tail should have been set to devMemRecv already
   // recv->conn->opCount should have been set to devMemRecv already
   recv->conn.head = &remDevMem->head;
-  recv->conn.llHead = &remDevMem->llHead;
   return ncclSuccess;
 }
 

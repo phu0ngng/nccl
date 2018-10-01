@@ -31,8 +31,8 @@ __device__ void ncclAllGatherKernel(struct CollectiveArgs* args) {
   const int chunkSize = stepSize * ALLREDUCE_CHUNKSTEPS;
   const ssize_t loopSize = args->nRings*(ssize_t)chunkSize;
 
-  int noffset = (send->waitStep%NCCL_STEPS)*stepSize;
-  int poffset = (recv->waitStep%NCCL_STEPS)*stepSize;
+  int noffset = (prims.getSendStep()%NCCL_STEPS)*stepSize;
+  int poffset = (prims.getRecvStep()%NCCL_STEPS)*stepSize;
 
   if (tid == 0) {
     if (prevdirect) {

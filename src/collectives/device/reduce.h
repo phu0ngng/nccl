@@ -31,8 +31,8 @@ __device__ void ncclReduceKernel(struct CollectiveArgs* args) {
   const int prevRank = ring->devUserRanks[nranks-1];
   const int root = args->root;
 
-  int noffset = (send->waitStep%NCCL_STEPS)*stepSize;
-  int poffset = (recv->waitStep%NCCL_STEPS)*stepSize;
+  int noffset = (prims.getSendStep()%NCCL_STEPS)*stepSize;
+  int poffset = (prims.getRecvStep()%NCCL_STEPS)*stepSize;
   // Need all threads to read this before thread 0 might increment it
   __syncthreads();
 

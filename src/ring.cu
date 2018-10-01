@@ -35,9 +35,7 @@ ncclResult_t initRing(struct ncclComm* comm, int ringid) {
   ring->recv.conn.opCount = &recvMem->opCount;
   ring->recv.conn.direct = 0;
   ring->send.conn.head = &sendMem->head;
-  ring->send.conn.llHead = &sendMem->llHead;
   ring->send.conn.direct = 0;
-  ring->send.conn.llStep = 0;
   ring->send.conn.llLastCleaning = 0;
 
   // Ring index to user rank table.
@@ -62,9 +60,9 @@ ncclResult_t freeRing(struct ncclRing* ring) {
   NCCLCHECK(ncclCudaHostFree(ring->collectives));
 
   // Free transport proxy resources
-  if (ring->send.transportResources) NCCLCHECK(ring->send.transport->send.free(ring->send.transportResources));
   NCCLCHECK(transportDestroyProxy(&ring->send));
-  if (ring->recv.transportResources) NCCLCHECK(ring->recv.transport->recv.free(ring->recv.transportResources));
+  if (ring->send.transportResources) NCCLCHECK(ring->send.transport->send.free(ring->send.transportResources));
   NCCLCHECK(transportDestroyProxy(&ring->recv));
+  if (ring->recv.transportResources) NCCLCHECK(ring->recv.transport->recv.free(ring->recv.transportResources));
   return ncclSuccess;
 }

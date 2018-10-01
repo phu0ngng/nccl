@@ -41,7 +41,6 @@ struct ncclProxyArgs {
   int nsteps;
   uint64_t opCount;
   int llMode;
-  bool needProxy;
   int active;   // add component before this line -- it is left out during initialization
 };
 

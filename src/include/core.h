@@ -100,14 +100,10 @@ struct ncclConnInfo {
 
   int *fifo;          // Size fifo for proxy
 
-  uint64_t waitStep;  // Keep where we wait (thread 0)
-  uint64_t postStep;  // Keep where we post (thread n+1)
+  uint64_t step;      // Keep where we are
 
   // Low latency mechanism
   union ncclLLFifoLine *llBuff; // Local for recv, remote for send
-  uint64_t *llHead;   // Local for send, remote for recv
-  int *llFifo;        // LL Size fifo for proxy
-  uint64_t llStep;    // Keep where we are
   uint64_t llLastCleaning;
 };
 
@@ -122,10 +118,9 @@ struct ncclConnector {
 #define MEM_ALIGN 4096
 #define CUDA_IPC_MIN 2097152UL /* 2MiB - not currently used */
 
-#define NCCL_LL_STEPS 8
 #define NUM_LINES_PER_THREAD 2
 #define NCCL_LL_SLICE_LINES (NUM_LINES_PER_THREAD*NCCL_LL_MAX_NTHREADS)
-#define NCCL_LL_BUFF_LINES (NCCL_LL_SLICE_LINES*NCCL_LL_STEPS)
+#define NCCL_LL_BUFF_LINES (NCCL_LL_SLICE_LINES*NCCL_STEPS)
 #define NCCL_LL_BUFF_SIZE (NCCL_LL_BUFF_LINES*sizeof(union ncclLLFifoLine))
 #define NCCL_LL_CLEAN_FREQ 0x10000000
 

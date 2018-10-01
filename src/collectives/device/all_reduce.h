@@ -31,8 +31,8 @@ __device__ void ncclAllReduceKernel(struct CollectiveArgs* args) {
   const int chunkSize = stepSize * ALLREDUCE_CHUNKSTEPS;
   const ssize_t loopSize = args->nRings*(ssize_t)chunkSize;
 
-  int noffset = (send->waitStep%NCCL_STEPS)*stepSize;
-  int poffset = (recv->waitStep%NCCL_STEPS)*stepSize;
+  int noffset = (prims.getSendStep()%NCCL_STEPS)*stepSize;
+  int poffset = (prims.getRecvStep()%NCCL_STEPS)*stepSize;
 
   if (tid == 0) {
     if (prevdirect) {
@@ -194,11 +194,11 @@ __device__ void ncclAllReduceLLKernel(struct CollectiveArgs* args) {
 
     // k-2 steps: copy to next GPU
     for (int j=1; j<nranks-1; ++j) {
-      slice = ring->devUserRanks[nranks - j];
+      slice = ring->devUserRanks[nranks-j];
       offset = chunkOffset + slice * chunkSize;
       maxOffset = min(chunkSize, size-offset);
 
-      LLprims.recvCopySend(thisOutput + offset, maxOffset);
+      LLprims.recvCopySend(thisOutput+offset, maxOffset);
     }
 
     // Make final copy from buffer to dest.

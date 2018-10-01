@@ -28,8 +28,8 @@ __device__ void ncclReduceScatterKernel(struct CollectiveArgs* args) {
   const int chunkSize = stepSize * ALLREDUCE_CHUNKSTEPS;
   const ssize_t loopSize = args->nRings*(ssize_t)chunkSize;
 
-  int noffset = (send->waitStep%NCCL_STEPS)*stepSize;
-  int poffset = (recv->waitStep%NCCL_STEPS)*stepSize;
+  int noffset = (prims.getSendStep()%NCCL_STEPS)*stepSize;
+  int poffset = (prims.getRecvStep()%NCCL_STEPS)*stepSize;
   // Need all threads to read this before thread 0 might increment it
   __syncthreads();
 

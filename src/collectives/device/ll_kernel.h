@@ -18,14 +18,16 @@ class ncclLLPrimitives {
   struct ncclConnInfo* sendConn;
   uint64_t recvStep;
   uint64_t sendStep;
-  uint64_t sendConnHead;
+  uint64_t sendConnHead = 0ULL;
 
   volatile uint32_t* abortFlagPtr = NULL;
   uint64_t spins = 0;
   uint32_t abort = 0;
 
-  inline __device__ int recvOffset() { return (recvStep%NCCL_LL_STEPS)*NCCL_LL_SLICE_LINES; }
-  inline __device__ int sendOffset() { return (sendStep%NCCL_LL_STEPS)*NCCL_LL_SLICE_LINES; }
+  inline __device__ int recvOffset() { return (recvStep%NCCL_STEPS)*NCCL_LL_SLICE_LINES; }
+  inline __device__ int sendOffset() { return (sendStep%NCCL_STEPS)*NCCL_LL_SLICE_LINES; }
+  inline __device__ union ncclLLFifoLine* recvPtr() { return recvConn->llBuff+recvOffset(); }
+  inline __device__ union ncclLLFifoLine* sendPtr() { return sendConn->llBuff+sendOffset(); }
   inline __device__ uint32_t recvFlag() { return recvStep+1; }
   inline __device__ uint32_t sendFlag() { return sendStep+1; }
 
@@ -45,16 +47,16 @@ class ncclLLPrimitives {
   inline __device__ int checkAbort() {
     spins++;
     if (spins == SPINS_BEFORE_CHECK_ABORT) {
-        abort = *abortFlagPtr;
-        spins = 0;
+      abort = *abortFlagPtr;
+      spins = 0;
     }
     return abort;
   }
 
   inline __device__ void waitSend() {
     spins = 0;
-    while (sendConnHead + NCCL_LL_STEPS < sendStep + 1) {
-      volatile uint64_t* ptr = sendConn->llHead;
+    while (sendConnHead + NCCL_STEPS < sendStep + 1) {
+      volatile uint64_t* ptr = sendConn->head;
       sendConnHead = *ptr;
       if (checkAbort()) break;
     }
@@ -63,13 +65,13 @@ class ncclLLPrimitives {
   inline __device__ void postRecv() {
     recvStep++;
     if (tid == 0) {
-      volatile uint64_t* ptr = recvConn->llHead;
+      volatile uint64_t* ptr = recvConn->head;
       *ptr = recvStep;
     }
   }
 
   inline __device__ void postSend(int size) {
-    if (tid == 0 && sendConn->llFifo) sendConn->llFifo[sendStep%NCCL_LL_STEPS] = size;
+    if (tid == 0 && sendConn->fifo) sendConn->fifo[sendStep%NCCL_STEPS] = size;
     sendStep++;
   }
 
@@ -100,7 +102,7 @@ class ncclLLPrimitives {
   }
 
   __device__ void LLGenericOp(const T* src, T* dst, int size, bool r, bool s) {
-    if (size <= 0) return;
+    if (size < 0)  size = 0;
     if (s) waitSend();
     size_t size64 = size * sizeof(T) / sizeof(uint64_t);
     uint64_t* srcA = (uint64_t*)src;
@@ -111,12 +113,12 @@ class ncclLLPrimitives {
       uint64_t val;
       if (src) {
         val = readAL(srcA+offset);
-        if (r) val = MULTI<FUNC, T>()(readLL(recvConn->llBuff+recvOffset()+offset, recvFlag()), val);
+        if (r) val = MULTI<FUNC, T>()(readLL(recvPtr()+offset, recvFlag()), val);
       } else if (r) {
-        val = readLL(recvConn->llBuff+recvOffset()+offset, recvFlag());
+        val = readLL(recvPtr()+offset, recvFlag());
       }
       if (dst) storeAL(dstA+offset, val);
-      if (s) storeLL(sendConn->llBuff+sendOffset()+offset, val, sendFlag());
+      if (s) storeLL(sendPtr()+offset, val, sendFlag());
     }
     // Finish last 64-bits word
     int sizeDone = size64 * (sizeof(uint64_t)/sizeof(T));
@@ -129,7 +131,7 @@ class ncclLLPrimitives {
       T* vals = (T*)&lastVal;
 
       if (r) {
-        uint64_t lastVal2 = readLL(recvConn->llBuff+recvOffset()+size64, recvFlag());
+        uint64_t lastVal2 = readLL(recvPtr()+size64, recvFlag());
         T* src2B = (T*)&lastVal2;
         for (int offset = 0; offset < sizeRem; offset++) {
           vals[offset] = src ? FUNC()(src2B[offset], src1B[offset]) : src2B[offset];
@@ -139,7 +141,7 @@ class ncclLLPrimitives {
           vals[offset] = src1B[offset];
         }
       }
-      if (s) storeLL(sendConn->llBuff+sendOffset()+size64, lastVal, sendFlag());
+      if (s) storeLL(sendPtr()+size64, lastVal, sendFlag());
       if (dst) {
         for (int offset = 0; offset < sizeRem; offset++) {
           dstB[offset] = vals[offset];
@@ -155,9 +157,11 @@ class ncclLLPrimitives {
   __device__ __forceinline__
   ncclLLPrimitives(const int tid, const int nthreads, struct ncclConnInfo* recv, struct ncclConnInfo* send, volatile uint32_t* abortFlagPtr)
     : abortFlagPtr(abortFlagPtr), tid(tid), nthreads(nthreads), recvConn(recv), sendConn(send) {
-    recvStep = recvConn->llStep;
-    sendStep = sendConn->llStep;
-    sendConnHead = *(sendConn->llHead);
+    // Make sure step is updated before we read it.
+    asm volatile ("bar.sync 1, %0;" :: "r"(nthreads));
+    recvStep = recvConn->step;
+    sendStep = sendConn->step;
+    sendConnHead = *(sendConn->head);
     // Make sure all threads start with the same steps before moving on
     asm volatile ("bar.sync 1, %0;" :: "r"(nthreads));
   }
@@ -195,27 +199,26 @@ class ncclLLPrimitives {
       /* Reset all flags */
       static_assert((NCCL_LL_BUFF_SIZE % NCCL_LL_MAX_NTHREADS) == 0, "NCCL_LL_BUFF_SIZE must be a multiple of THREADS");
       static_assert(NCCL_LL_BUFF_SIZE/(sizeof(union ncclLLFifoLine)*NCCL_LL_MAX_NTHREADS) > 0, "NCCL_LL_BUFF_SIZE is less than 16 bytes*THREADS");
-      for (int s=0; s<NCCL_LL_STEPS; s++) {
+      for (int s=0; s<NCCL_STEPS; s++) {
         waitSend();
         for (int o=tid; o<NCCL_LL_SLICE_LINES; o+=nthreads) {
           const union ncclLLFifoLine resetLine = { 0, sendFlag(), 0, sendFlag() };
-          sendConn->llBuff[sendOffset()+o].i4 = resetLine.i4;
+          sendPtr()[o].i4 = resetLine.i4;
         }
         postSend(0);
       }
       if (tid == 0) sendConn->llLastCleaning = sendStep;
     }
     if (recvStep > recvConn->llLastCleaning + NCCL_LL_CLEAN_FREQ) {
-      recvStep += NCCL_LL_STEPS;
+      recvStep += NCCL_STEPS;
       if (tid == 0) recvConn->llLastCleaning = recvStep;
     }
-    // Save llStep for the next operation
+    // Save steps for the next operation
     if (tid == 0) {
-      recvConn->llStep = recvStep;
-      sendConn->llStep = sendStep;
+      recvConn->step = recvStep;
+      sendConn->step = sendStep;
       __threadfence();
     }
-    asm volatile ("bar.sync 1, %0;" :: "r"(nthreads));
   }
 };
 

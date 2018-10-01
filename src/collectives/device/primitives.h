@@ -21,6 +21,9 @@ class ncclPrimitives {
   const int nthreads;
   struct ncclConnInfo* recvConn;
   struct ncclConnInfo* sendConn;
+  uint64_t recvStep;
+  uint64_t sendStep;
+  uint64_t sendConnHead = 0ULL;
 
   volatile uint32_t* abortFlagPtr = NULL;
   uint64_t spins = 0;
@@ -42,40 +45,43 @@ class ncclPrimitives {
   inline __device__ int checkAbort() {
     spins++;
     if (spins == SPINS_BEFORE_CHECK_ABORT) {
-        abort = *abortFlagPtr;
-        spins = 0;
+      abort = *abortFlagPtr;
+      spins = 0;
     }
     return abort;
   }
 
   inline __device__ void waitRecv() {
     spins = 0;
-    recvConn->waitStep += SLICESTEPS;
-    volatile uint64_t* ptr = recvConn->tail;
-    while (*(ptr) < recvConn->waitStep) {
-      if (checkAbort()) return;
+    recvStep += SLICESTEPS;
+    if (tid == 0) {
+      volatile uint64_t* ptr = recvConn->tail;
+      while (*(ptr) < recvStep) {
+        if (checkAbort()) return;
+      }
     }
   }
     
- inline __device__ void waitSend() {
+  inline __device__ void waitSend() {
     spins = 0;
-    sendConn->waitStep += SLICESTEPS;
-    volatile uint64_t* ptr = sendConn->head;
-    while (*(ptr) + NCCL_STEPS < sendConn->waitStep) {
+    sendStep += SLICESTEPS;
+    while (sendConnHead + NCCL_STEPS < sendStep) {
+      volatile uint64_t* ptr = sendConn->head;
+      sendConnHead = *ptr;
       if (checkAbort()) return;
     }
   }
 
   inline __device__ void postRecv() {
-    *(recvConn->head) = recvConn->postStep += SLICESTEPS;
+    *(recvConn->head) = recvStep += SLICESTEPS;
   }
     
   inline __device__ void postSend() {
-    *(sendConn->tail) = sendConn->postStep += SLICESTEPS;
+    *(sendConn->tail) = sendStep += SLICESTEPS;
   }
     
   inline __device__ void postSendSize(int size) {
-    if (sendConn->fifo) sendConn->fifo[sendConn->postStep%NCCL_STEPS] = size;
+    if (sendConn->fifo) sendConn->fifo[sendStep%NCCL_STEPS] = size;
   }
 
   inline __device__ void
@@ -87,8 +93,8 @@ class ncclPrimitives {
     for (int slice=0; slice<SLICESPERCHUNK; ++slice) {
       int realSize = max(0, min(sliceSize, size-offset));
       if (tid < nthreads) {
-        if (s && tid == 0) waitSend();
-        if (r && tid == 0) waitRecv();
+        if (s) waitSend();
+        if (r) waitRecv();
         if (r || s) asm volatile ("bar.sync 1, %0;" :: "r"(nthreads));
         if (src2) {
           if (dst2) {
@@ -120,16 +126,16 @@ class ncclPrimitives {
   ncclPrimitives(const int tid, const int nthreads, struct ncclConnInfo* recv, struct ncclConnInfo* send, volatile uint32_t* abortFlagPtr)
     : abortFlagPtr(abortFlagPtr), tid(tid), nthreads(nthreads), recvConn(recv), sendConn(send)
   {
+    // Make sure step is updated before we read it
+    __syncthreads();
     // Skip some slots if needed to make sure we can get aligned buffers chunks
-    if (tid == 0) {
-      sendConn->waitStep = ROUNDUP(sendConn->waitStep, SLICESPERCHUNK*SLICESTEPS);
-      recvConn->waitStep = ROUNDUP(recvConn->waitStep, SLICESPERCHUNK*SLICESTEPS);
-    }
-    if (tid == nthreads) {
-      sendConn->postStep = ROUNDUP(sendConn->postStep, SLICESPERCHUNK*SLICESTEPS);
-      recvConn->postStep = ROUNDUP(recvConn->postStep, SLICESPERCHUNK*SLICESTEPS);
-    }  
+    sendStep = ROUNDUP(sendConn->step, SLICESPERCHUNK*SLICESTEPS);
+    recvStep = ROUNDUP(recvConn->step, SLICESPERCHUNK*SLICESTEPS);
+    // No need to sync the other way as there will be a syncthreads later on after we set noffset / poffset
   }
+
+  __device__ __forceinline__ int getSendStep() { return sendStep; }
+  __device__ __forceinline__ int getRecvStep() { return recvStep; }
 
   __device__ __forceinline__ void
   send(const T* src, T* dst, int len, int maxOffset) {
@@ -147,8 +153,8 @@ class ncclPrimitives {
   }
 
   __device__ __forceinline__ void
-  recvSend(const T* src, T* dst1, int len, int maxOffset) {
-    GenericOp(src, NULL, dst1, NULL, len, maxOffset, true, true);
+  recvSend(const T* src, T* dst, int len, int maxOffset) {
+    GenericOp(src, NULL, dst, NULL, len, maxOffset, true, true);
   }
 
   __device__ __forceinline__ void
@@ -169,6 +175,16 @@ class ncclPrimitives {
   __device__ __forceinline__ void
   recvReduceCopySend(const T* src1, const T* src2, T* dst1, T* dst2, int len, int maxOffset) {
     GenericOp(src1, src2, dst1, dst2, len, maxOffset, true, true);
+  }
+
+  __device__ __forceinline__ ~ncclPrimitives() {
+    // Save steps for next collective. Have thread 0 do it to be compatible
+    // with the way LL works.
+    if (tid == 0) {
+      recvConn->step = recvStep;
+      sendConn->step = sendStep;
+      __threadfence();
+    }
   }
 };
 
