@@ -70,6 +70,7 @@ static void *bootstrapRoot(void* commId) {
   struct extId* id = (struct extId*)commId;
   ncclNetHandle_t *extHandleBstrap = NULL; // for initial rank <-> root information exchange
   ncclNetHandle_t *extHandleRing = NULL; // for bootstrap ring creation
+  ncclNetHandle_t zero = { 0 }; // for sanity checking
   void* tmpComm;
   char* data = NULL;
   ncclResult_t res;
@@ -94,6 +95,11 @@ static void *bootstrapRoot(void* commId) {
 
     if (nranks != info.nranks) {
       WARN("Bootstrap Root : mismatch in rank count from procs %d : %d", nranks, info.nranks);
+      goto out;
+    }
+
+    if (memcmp(&zero, &extHandleBstrap[info.rank], sizeof(ncclNetHandle_t)) != 0) {
+      WARN("Bootstrap Root : rank %d of %d ranks has already checked in", info.rank, nranks);
       goto out;
     }
 
