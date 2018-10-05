@@ -70,6 +70,7 @@ static void *bootstrapRoot(void* commId) {
   struct extId* id = (struct extId*)commId;
   ncclNetHandle_t *rankHandles = NULL;
   ncclNetHandle_t *rankHandlesRoot = NULL; // for initial rank <-> root information exchange
+  ncclNetHandle_t zero = { 0 }; // for sanity checking
   void* tmpComm;
   char* data = NULL;
   ncclResult_t res;
@@ -90,6 +91,11 @@ static void *bootstrapRoot(void* commId) {
 
     if (nranks != info.nranks) {
       WARN("Bootstrap Root : mismatch in rank count from procs %d : %d", nranks, info.nranks);
+      goto out;
+    }
+
+    if (memcmp(&zero, &rankHandlesRoot[info.rank], sizeof(ncclNetHandle_t)) != 0) {
+      WARN("Bootstrap Root : rank %d of %d ranks has already checked in", info.rank, nranks);
       goto out;
     }
 
@@ -264,7 +270,7 @@ ncclResult_t bootstrapRecv(void* commState, int npeers, int* peers, void* data, 
   return ncclSuccess;
 }
 
-ncclResult_t bootstrapNetClose(void* commState) {
+ncclResult_t bootstrapClose(void* commState) {
   struct extState* state = (struct extState*)commState;
 
   NCCLCHECK(bootstrapNetCloseListen(state->extBstrapListenComm));

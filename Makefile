@@ -1,7 +1,7 @@
 #
 # Copyright (c) 2015-2018, NVIDIA CORPORATION. All rights reserved.
 #
-# See LICENCE.txt for license information
+# See LICENSE.txt for license information
 #
 .PHONY : all clean
 
@@ -11,9 +11,9 @@ ABSBUILDDIR := $(abspath $(BUILDDIR))
 TARGETS := src test pkg
 clean: ${TARGETS:%=%.clean}
 test.build: src.build
-LICENCE_FILES := LICENCE.txt
-LICENCE_TARGETS := $(LICENCE_FILES:%=$(BUILDDIR)/%)
-lic: $(LICENCE_TARGETS)
+LICENSE_FILES := LICENSE.txt
+LICENSE_TARGETS := $(LICENSE_FILES:%=$(BUILDDIR)/%)
+lic: $(LICENSE_TARGETS)
 
 ${BUILDDIR}/%.txt: %.txt
 	@printf "Copying    %-35s > %s\n" $< $@

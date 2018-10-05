@@ -353,4 +353,3 @@ ncclResult_t ncclGetRings(int* nrings, int* nthreads, int rank, int nranks, int*
   NCCLCHECK(getEnvThreads(nthreads));
   return ncclSuccess;
 }
-

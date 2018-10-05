@@ -593,5 +593,3 @@ struct ncclTransport p2pTransport = {
   { p2pSendSetup, p2pSendConnect, p2pSendFree, NULL },
   { p2pRecvSetup, p2pRecvConnect, p2pRecvFree, NULL }
 };
-
-

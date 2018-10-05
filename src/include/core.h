@@ -443,4 +443,3 @@ static ncclResult_t ncclCudaMemcpy(T* dst, T* src, size_t nelem) {
 }
 
 #endif // end include guard
-

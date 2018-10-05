@@ -831,4 +831,3 @@ ncclResult_t ncclCommUserRank(const ncclComm_t comm, int* rank) {
   *rank = comm->rank;
   return ncclSuccess;
 }
-

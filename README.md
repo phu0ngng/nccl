@@ -10,14 +10,15 @@ For more information on NCCL usage, please refer to the [NCCL documentation](htt
 
 ## What's inside
 
-At present, the library implements the following collectives:
+At present, the library implements the following collectives operations:
+
 - all-reduce
 - all-gather
 - reduce-scatter
 - reduce
 - broadcast
 
-These collectives are implemented using ring algorithms and have been optimized for throughput and latency. For best performance, small collectives can be either batched into larger operations or aggregated through aggregated colletive API.
+These operations are implemented using ring algorithms and have been optimized for throughput and latency. For best performance, small operations can be either batched into larger operations or aggregated through the API.
 
 ## Requirements
 
@@ -31,13 +32,14 @@ To build the library :
 $ cd nccl
 $ make -j src.build
 ```
+
 If CUDA is not installed in the default /usr/local/cuda path, you can define the CUDA path with :
 
 ```shell
 $ make src.build CUDA_HOME=<path to cuda install>
 ```
 
-NCCL will be compiled and installed in `build/` by default.
+NCCL will be compiled and installed in `build/` unless `BUILDDIR` is set.
 
 By default, NCCL is compiled for all supported architectures. To accelerate the compilation and reduce the binary size, consider redefining `NVCC_GENCODE` (defined in `makefiles/common.mk`) to only include the architecture of the target platform :
 ```shell

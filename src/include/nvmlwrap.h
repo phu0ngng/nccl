@@ -147,4 +147,3 @@ ncclResult_t wrapNvmlDeviceGetNvLinkCapability(nvmlDevice_t device, unsigned int
 #endif // NVML_DIRECT
 
 #endif // End include guard
-

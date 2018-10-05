@@ -249,4 +249,3 @@ ncclResult_t ncclGroupEnd();
 #endif
 
 #endif // end include guard
-
