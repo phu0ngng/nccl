@@ -74,7 +74,7 @@ __device__ void ncclBroadcastLLKernel(struct CollectiveArgs* args) {
   struct ncclConnInfo* recv = &channel->devPeers[ring->prev].recv.conn;
   struct ncclConnInfo* send = &channel->devPeers[ring->next].send.conn;
 
-  ncclLLPrimitives<T, FUNC> LLprims(threadIdx.x, args->nThreads, recv, send, comm->abortFlag);
+  ncclLLPrimitives<T, FUNC, 1, 1> LLprims(threadIdx.x, args->nThreads, &recv, &send, comm->abortFlag);
 
   const ssize_t size = args->N;
   const int rank = comm->rank;

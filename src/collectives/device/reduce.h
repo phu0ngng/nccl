@@ -73,7 +73,7 @@ __device__ void ncclReduceLLKernel(struct CollectiveArgs* args) {
   struct ncclConnInfo* recv = &channel->devPeers[ring->prev].recv.conn;
   struct ncclConnInfo* send = &channel->devPeers[ring->next].send.conn;
 
-  ncclLLPrimitives<T, FUNC> LLprims(tid, nthreads, recv, send, comm->abortFlag);
+  ncclLLPrimitives<T, FUNC, 1, 1> LLprims(tid, nthreads, &recv, &send, comm->abortFlag);
 
   const ssize_t size = args->N;
   const int rank = comm->rank;
