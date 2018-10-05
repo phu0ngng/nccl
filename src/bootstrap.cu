@@ -154,11 +154,18 @@ ncclResult_t bootstrapGetUniqueId(ncclUniqueId* out) {
   return ncclSuccess;
 }
 
+struct unexConn {
+  int peer;
+  void* comm;
+  struct unexConn* next;
+};
+
 struct extState {
   void* extBstrapListenComm;
   void* extBstrapRingRecvComm;
   void* extBstrapRingSendComm;
   ncclNetHandle_t* peerBstrapHandles;
+  struct unexConn* unexpectedConnections;
   int rank;
   int nranks;
   int dev;
@@ -247,32 +254,78 @@ ncclResult_t bootstrapSend(void* commState, int peer, void* data, int size) {
   return ncclSuccess;
 }
 
-// We can't know who we'll receive from, so we need to receive everything at once
-ncclResult_t bootstrapRecv(void* commState, int npeers, int* peers, void* data, int size) {
-  struct extState* state = (struct extState*)commState;
-  int done[state->nranks];
-  for (int i = 0; i < state->nranks; i++) done[i] = 0;
+ncclResult_t unexpectedEnqueue(struct extState* state, int peer, void* comm) {
+  // New unex
+  struct unexConn* unex;
+  NCCLCHECK(ncclCalloc(&unex, 1));
+  unex->peer = peer;
+  unex->comm = comm;
 
-  for (int i=0; i<npeers; i++) {
-    void* tmpRecvComm;
-    NCCLCHECK(bootstrapNetAccept(state->extBstrapListenComm, &tmpRecvComm));
-    int peer;
-    NCCLCHECK(bootstrapNetRecv(tmpRecvComm, &peer, sizeof(int)));
-    for (int p=0; p<npeers; p++) {
-      if (peers[p] == peer && done[p] == 0) {
-        NCCLCHECK(bootstrapNetRecv(tmpRecvComm, ((char*)data)+p*size, size));
-        NCCLCHECK(bootstrapNetCloseRecv(tmpRecvComm));
-        done[p] = 1;
-        break;
-      }
-    }
+  // Enqueue
+  struct unexConn* list = state->unexpectedConnections;
+  if (list == NULL) {
+    state->unexpectedConnections = unex;
+    return ncclSuccess;
   }
+  while (list->next) list = list->next;
+  list->next = unex;
   return ncclSuccess;
+}
+
+void* unexpectedDequeue(struct extState* state, int peer) {
+  struct unexConn* elem = state->unexpectedConnections;
+  struct unexConn* prev = NULL;
+  while (elem) {
+    if (elem->peer == peer) {
+      if (prev == NULL) {
+        state->unexpectedConnections = elem->next;
+      } else {
+        prev->next = elem->next;
+      }
+      void* comm = elem->comm;
+      free(elem);
+      return comm;
+    }
+    prev = elem;
+    elem = elem->next;
+  }
+  return NULL;
+}
+
+// We can't know who we'll receive from, so we need to receive everything at once
+ncclResult_t bootstrapRecv(void* commState, int peer, void* data, int size) {
+  struct extState* state = (struct extState*)commState;
+
+  void* tmpRecvComm;
+
+  // Search unexpected connections first
+  if ((tmpRecvComm = unexpectedDequeue(state, peer)) != NULL) {
+    NCCLCHECK(bootstrapNetRecv(tmpRecvComm, ((char*)data), size));
+    NCCLCHECK(bootstrapNetCloseRecv(tmpRecvComm));
+    return ncclSuccess;
+  }
+
+  // Then look for new connections
+  while (1) {
+    NCCLCHECK(bootstrapNetAccept(state->extBstrapListenComm, &tmpRecvComm));
+    int newPeer;
+    NCCLCHECK(bootstrapNetRecv(tmpRecvComm, &newPeer, sizeof(int)));
+    if (newPeer == peer) {
+      NCCLCHECK(bootstrapNetRecv(tmpRecvComm, ((char*)data), size));
+      NCCLCHECK(bootstrapNetCloseRecv(tmpRecvComm));
+      return ncclSuccess;
+    }
+    // Unexpected connection. Save for later.
+    NCCLCHECK(unexpectedEnqueue(state, newPeer, tmpRecvComm));
+  }
 }
 
 ncclResult_t bootstrapClose(void* commState) {
   struct extState* state = (struct extState*)commState;
-
+  if (state->unexpectedConnections != NULL) {
+    WARN("Unexpected connections are not empty.\n");
+    return ncclInternalError;
+  }
   NCCLCHECK(bootstrapNetCloseListen(state->extBstrapListenComm));
   NCCLCHECK(bootstrapNetCloseSend(state->extBstrapRingSendComm));
   NCCLCHECK(bootstrapNetCloseRecv(state->extBstrapRingRecvComm));

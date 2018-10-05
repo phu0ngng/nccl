@@ -511,9 +511,8 @@ static ncclResult_t initTransportsRank(struct ncclComm* comm, ncclUniqueId* comm
     NCCLCHECK(selectTransport<1>(comm->peerInfo+rank, comm->peerInfo+next, connect+1, send, channel->buffSize, channel->id));
     NCCLCHECK(bootstrapSend(comm->bootstrap, prev, connect+0, sizeof(struct ncclConnect)));
     NCCLCHECK(bootstrapSend(comm->bootstrap, next, connect+1, sizeof(struct ncclConnect)));
-    // We need to receive in the opposite order in case prev == next we need things to arrive in order
-    int peers[2] = { next, prev };
-    NCCLCHECK(bootstrapRecv(comm->bootstrap, 2, peers, connect, sizeof(struct ncclConnect)));
+    NCCLCHECK(bootstrapRecv(comm->bootstrap, next, connect+0, sizeof(struct ncclConnect)));
+    NCCLCHECK(bootstrapRecv(comm->bootstrap, prev, connect+1, sizeof(struct ncclConnect)));
     NCCLCHECK(send->transportComm->connect(connect+0, send));
     NCCLCHECK(recv->transportComm->connect(connect+1, recv));
   }
