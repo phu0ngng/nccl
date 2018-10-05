@@ -8,29 +8,18 @@
 #include "primitives.h"
 #include "collectives.h"
 
-// Increase Step and boffset for buffer sync
-#define NEXT_STEP \
-  step += BROADCAST_CHUNKSTEPS; \
-  boffset += chunkSize; \
-  if (boffset == buffSize) boffset = 0;
-
 template<int UNROLL, class FUNC, typename T>
 __device__ void ncclBroadcastKernel(struct CollectiveArgs* args) {
-  const int tid = threadIdx.x;
   const int nthreads = blockDim.x - 1;
   const int bid = args->bid;
   struct ncclComm* comm = args->comm;
   struct ncclChannel* channel = comm->channels+blockIdx.x;
   struct ncclRing* ring = &channel->ring;
-  struct ncclConnector* recv = &channel->devPeers[ring->prev].recv;
-  struct ncclConnector* send = &channel->devPeers[ring->next].send;
+  struct ncclConnInfo* recv = &channel->devPeers[ring->prev].recv.conn;
+  struct ncclConnInfo* send = &channel->devPeers[ring->next].send.conn;
 
-  WaitFlag waitDoneFromNext(send->conn.head, NCCL_STEPS-BROADCAST_CHUNKSTEPS);
-  WaitFlag waitReadyFromPrev(recv->conn.tail, 0);
-  PostFlag postDoneToPrev(recv->conn.head, 0, NULL, 0);
-  PostFlag postReadyToNext(send->conn.tail, 0, send->conn.fifo, NCCL_STEPS);
-
-  typedef Primitives<UNROLL, BROADCAST_CHUNKSTEPS/BROADCAST_SLICESTEPS, BROADCAST_SLICESTEPS, T> Prims;
+  ncclPrimitives<UNROLL, BROADCAST_CHUNKSTEPS/BROADCAST_SLICESTEPS, BROADCAST_SLICESTEPS, T>
+    prims(threadIdx.x, nthreads, recv, send, args->comm->abortFlag);
 
   const ssize_t size = args->N;
   const int buffSize = channel->buffSize / sizeof(T);
@@ -41,15 +30,16 @@ __device__ void ncclBroadcastKernel(struct CollectiveArgs* args) {
   const int nextRank = ring->devUserRanks[1];
   const int root = args->root;
 
-  uint64_t step = send->conn.step;
-  step = ROUNDUP(step, BROADCAST_CHUNKSTEPS);
-  int boffset = (step%NCCL_STEPS)*stepSize;
+  int noffset = (prims.getSendStep()%NCCL_STEPS)*stepSize;
+  int poffset = (prims.getRecvStep()%NCCL_STEPS)*stepSize;
+  // Need all threads to read this before thread 0 might increment it
+  __syncthreads();
 
   // Compute pointers
   const T * __restrict__ thisInput = (const T*)args->ThisInput;
   T * __restrict__ thisOutput = (T*)args->ThisOutput;
-  T * __restrict__ prevInput = (T*)recv->conn.buff;
-  T * __restrict__ nextOutput = (T*)send->conn.buff;
+  T * __restrict__ prevInput = (T*)recv->buff;
+  T * __restrict__ nextOutput = (T*)send->buff;
 
   for (ssize_t gridOffset = 0; gridOffset < size; gridOffset += loopSize) {
     int realChunkSize = min(chunkSize, DIVUP(size-gridOffset,args->nChannels));
@@ -59,96 +49,44 @@ __device__ void ncclBroadcastKernel(struct CollectiveArgs* args) {
 
     if (rank == root) {
       if (thisInput == thisOutput) {
-        Prims::Copy(tid, nthreads,
-            thisInput  + offset,
-            nextOutput + boffset,
-            chunkSize, maxOffset,
-            step,
-            waitDoneFromNext,
-            postReadyToNext);
+        prims.send(thisInput+offset, nextOutput+noffset, chunkSize, maxOffset);
       } else {
-        Prims::DoubleCopy(tid, nthreads,
-            thisInput  + offset,
-            thisOutput + offset,
-            nextOutput + boffset,
-            chunkSize, maxOffset,
-            step,
-            waitDoneFromNext,
-            postReadyToNext);
+        prims.copySend(thisInput+offset, thisOutput+offset, nextOutput+noffset, chunkSize, maxOffset);
       }
     } else if (nextRank == root) {
-      Prims::Copy(tid, nthreads,
-          prevInput  + boffset,
-          thisOutput + offset,
-          chunkSize, maxOffset,
-          step,
-          waitReadyFromPrev,
-          postDoneToPrev);
+      prims.recv(prevInput+poffset, thisOutput+offset, chunkSize, maxOffset);
     } else {
-      Prims::DoubleCopy(tid, nthreads,
-          prevInput + boffset,
-          thisOutput + offset,
-          nextOutput + boffset,
-          chunkSize, maxOffset,
-          step,
-          waitDoneFromNext, waitReadyFromPrev,
-          postReadyToNext, postDoneToPrev);
+      prims.recvCopySend(prevInput+poffset, thisOutput+offset, nextOutput+noffset, chunkSize, maxOffset);
     }
-    NEXT_STEP; // Increases step, boffset
+    if ((poffset += chunkSize) == buffSize) poffset = 0;
+    if ((noffset += chunkSize) == buffSize) noffset = 0;
   }
-
-  // Save step counter for next op
-  if (tid == 0) {
-    send->conn.step = step;
-    // Make sure root update prev's head otherwise it will be blocked
-    // on the next operation
-    if (rank == root)
-      *recv->conn.head = step;
-  }
-  __syncthreads();
 }
 
 #include "ll_kernel.h"
 
-#define NEXT_STEP_LL \
-  boffset += NCCL_LL_SLICE_LINES; \
-  if (boffset == NCCL_LL_BUFF_LINES) boffset = 0; \
-  flag++; \
-  step++;
-
 template<int UNUSED, class FUNC, typename T>
 __device__ void ncclBroadcastLLKernel(struct CollectiveArgs* args) {
-  const int tid = threadIdx.x;
   const int bid = args->bid;
-  const int nthreads = args->nThreads;
   struct ncclComm* comm = args->comm;
   struct ncclChannel* channel = comm->channels+blockIdx.x;
   struct ncclRing* ring = &channel->ring;
-  struct ncclConnector* recv = &channel->devPeers[ring->prev].recv;
-  struct ncclConnector* send = &channel->devPeers[ring->next].send;
-  volatile uint64_t * recvHeadPtr = recv->conn.llHead;
-  volatile uint64_t * sendHeadPtr = send->conn.llHead;
-  volatile int * sizesFifo = send->conn.llFifo;
-  uint64_t sendHead = sendHeadPtr[0];
+  struct ncclConnInfo* recv = &channel->devPeers[ring->prev].recv.conn;
+  struct ncclConnInfo* send = &channel->devPeers[ring->next].send.conn;
+
+  ncclLLPrimitives<T, FUNC> LLprims(threadIdx.x, args->nThreads, recv, send, comm->abortFlag);
+
+  const ssize_t size = args->N;
   const int rank = comm->rank;
   const int nextRank = ring->devUserRanks[1];
   const int root = args->root;
 
-  typedef LLPrimitives<T, FUNC> LL;
-
-  const ssize_t size = args->N;
   ssize_t chunkSize = NCCL_LL_SLICE_LINES * sizeof(uint64_t) / sizeof(T);
   const ssize_t loopSize = args->nChannels*chunkSize;
-
-  uint64_t step = send->conn.llStep;
-  uint32_t flag = step + 1;
-  int boffset = NCCL_LL_SLICE_LINES * STEP_TO_SLOT(step);
 
   // Compute pointers
   const T * __restrict__ thisInput = (const T*)args->ThisInput;
   T * __restrict__ thisOutput = (T*)args->ThisOutput;
-  union ncclLLFifoLine * prevInput = (union ncclLLFifoLine *)recv->conn.llBuff;
-  union ncclLLFifoLine * nextOutput = (union ncclLLFifoLine *)send->conn.llBuff;
 
   for (ssize_t gridOffset = 0; gridOffset < size; gridOffset += loopSize) {
     if (size-gridOffset < loopSize) {
@@ -158,48 +96,15 @@ __device__ void ncclBroadcastLLKernel(struct CollectiveArgs* args) {
 
     int maxOffset = min(chunkSize, size-offset);
     if (rank == root) {
-      WAIT_NEXT;
       if (thisInput == thisOutput) {
-        LL::ReduceCopy(
-            thisInput + offset,
-            nextOutput + boffset,
-            maxOffset, flag,
-            tid, nthreads);
+        LLprims.send(thisInput+offset, maxOffset);
       } else {
-        LL::ReduceCopy(
-            thisInput + offset,
-            thisOutput + offset,
-            nextOutput + boffset,
-            maxOffset, flag,
-            tid, nthreads);
+        LLprims.copySend(thisInput + offset, thisOutput + offset, maxOffset);
       }
-      POST_SIZE;
-      NEXT_STEP_LL;
     } else if (nextRank == root) {
-      LL::ReduceCopy(
-          prevInput + boffset,
-          thisOutput + offset,
-          maxOffset, flag,
-          tid, nthreads);
-      NEXT_STEP_LL;
-      ACK_PREV;
+      LLprims.recv(thisOutput + offset, maxOffset);
     } else {
-      WAIT_NEXT;
-      LL::ReduceCopy(
-          prevInput + boffset,
-          thisOutput + offset,
-          nextOutput + boffset,
-          maxOffset, flag, flag,
-          tid, nthreads);
-      POST_SIZE;
-      NEXT_STEP_LL;
-      ACK_PREV;
+      LLprims.recvCopySend(thisOutput + offset, maxOffset);
     }
   }
-
-  // We need everyone to acknowledge data even if they didn't receive anything
-  // so that the next collective can start right away.
-  ACK_PREV;
-
-  FIFO_CLEANING_AND_SAVE_STEP(flag);
 }

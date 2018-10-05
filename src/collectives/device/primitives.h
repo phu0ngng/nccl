@@ -11,144 +11,81 @@
 #include "reduce_kernel.h" // for reduction funcs
 
 
-/* Defines primitive operations: Copy, Reduce, DoubleCopy, and ReduceCopy.
- *
- * In order to reduce the reptetion of template arguments, the operations
- * are bundled as static methods of the Primitives class.
- *
- * Each primitive operation copies/reduces a contiguous buffer and syncs
- * an optional set of flags against a sub-step counter. The sync value is
- * based on the step parameter. Sync flags must be of type WaitFlag or
- * PostFlag. The primitive routines wait for all WaitFlag args to attain
- * at least a value of SUBSTEPS*(step-1)+substep+1 (i.e. completion of
- * corresponding substep by previous step) before executing the transfer.
- * After each substep is transfered, all PostFlag arguments get updated to
- * the value SUBSTEPS*step+substep+1.
- */
-
-
-class WaitFlag {
-  volatile uint64_t * const flag;
-  const int shift;
- public:
-  __device__ __forceinline__
-  WaitFlag(volatile uint64_t * const flag, const int shift) : flag(flag), shift(shift) { }
-  __device__ __forceinline__
-  void wait(uint64_t val) { while ((*flag + shift) < val) /*SPIN*/; }
-};
-
-
-class PostFlag {
-  volatile uint64_t * const flag;
-  const int shift;
-  volatile int * const fifo;
-  const int fifo_size;
- public:
-  __device__ __forceinline__
-  PostFlag(volatile uint64_t* const flag, const int shift, volatile int* const fifo, const int fifo_size) : flag(flag), shift(shift), fifo(fifo), fifo_size(fifo_size) { }
-  __device__ __forceinline__
-  void post(uint64_t val) { *flag = (val - shift); }
-  __device__ __forceinline__
-  void postSize(uint64_t step, int size) { if (fifo != NULL) fifo[step%fifo_size] = size; };
-};
-
-
-// Helper to check if any argument is of type T.
-// e.g. AnyAre<WaitFlag>(Flag1, Flag2, ...)
-template<typename T> __device__ __forceinline__
-bool AnyAre() { return false; }
-
-template<typename T, typename FIRST_T, typename... TAIL_Ts>
-__device__ __forceinline__
-bool AnyAre(FIRST_T first, TAIL_Ts... tail) {
-  return std::is_same<T, FIRST_T>::value || AnyAre<T>(tail...);
-}
-
-
-// Wait on all WaitFlags, ignore PostFlags
-__device__ __forceinline__
-void WaitOnFlags(uint64_t val) { }
-
-template <typename... TAIL_Ts> __device__ __forceinline__
-void WaitOnFlags(uint64_t val, WaitFlag flag, TAIL_Ts... tail) {
-  flag.wait(val);
-  WaitOnFlags(val, tail...);
-}
-
-template <typename... TAIL_Ts> __device__ __forceinline__
-void WaitOnFlags(uint64_t val, PostFlag, TAIL_Ts... tail) {
-  WaitOnFlags(val, tail...);
-}
-
-
-// Post all PostFlags, ignore WaitFlags
-__device__ __forceinline__
-void PostToFlags(uint64_t val) { }
-
-template <typename... TAIL_Ts> __device__ __forceinline__
-void PostToFlags(uint64_t val, WaitFlag flag, TAIL_Ts... tail) {
-  PostToFlags(val, tail...);
-}
-
-template <typename... TAIL_Ts> __device__ __forceinline__
-void PostToFlags(uint64_t val, PostFlag flag, TAIL_Ts... tail) {
-  flag.post(val);
-  PostToFlags(val, tail...);
-}
-
-
-// Post sizes for PostFlags, ignore WaitFlags
-__device__ __forceinline__
-void PostSizeToFlags(uint64_t step, int size) { }
-
-template <typename... TAIL_Ts> __device__ __forceinline__
-void PostSizeToFlags(uint64_t step, int size, WaitFlag flag, TAIL_Ts... tail) {
-  PostSizeToFlags(step, size, tail...);
-}
-
-template <typename... TAIL_Ts> __device__ __forceinline__
-void PostSizeToFlags(uint64_t step, int size, PostFlag flag, TAIL_Ts... tail) {
-  flag.postSize(step, size);
-  PostSizeToFlags(step, size, tail...);
-}
-
-
-// Create pointer arithmetic syntax that doesn't break for nullptr_t
-template <typename Tptr> __device__ __forceinline__
-Tptr ptradd(Tptr ptr, int i) {
-  return ptr + i;
-}
-
-__device__ __forceinline__
-nullptr_t ptradd(nullptr_t ptr, int i) {
-  return nullptr;
-}
-
+#define SPINS_BEFORE_CHECK_ABORT 100000
 
 // Implementation of primitive types
 template <int UNROLL, int SLICESPERCHUNK, int SLICESTEPS, typename T, typename REDOP=FuncSum<T> >
-class Primitives {
+class ncclPrimitives {
  private:
-  template <typename SRC2_T, // either T* or nullptr_t
-      typename DST2_T, // either T* or nullptr_t
-      typename... SYNC_Ts> // either WaitFunc or PostFunc
-  static __device__ __forceinline__ void
-  GenericOp(const int tid, const int nthreads,
-      const T*     src1,
-      const SRC2_T src2,
-            T*     dst1,
-            DST2_T dst2,
-      int chunkSize, int size, uint64_t step, SYNC_Ts... flags) {
+  const int tid;
+  const int nthreads;
+  struct ncclConnInfo* recvConn;
+  struct ncclConnInfo* sendConn;
+  uint64_t recvStep;
+  uint64_t sendStep;
+  uint64_t sendConnHead = 0ULL;
 
-    enum { noSrc2 = std::is_same<SRC2_T, nullptr_t>::value };
-    enum { noDst2 = std::is_same<DST2_T, nullptr_t>::value };
-    static_assert(noSrc2 || std::is_same<SRC2_T, const T*>::value,
-        "src2 must be of type T* or nullptr_t");
-    static_assert(noDst2 || std::is_same<DST2_T, T*>::value,
-        "dst2 must be of type T* or nullptr_t");
+  volatile uint32_t* abortFlagPtr = NULL;
+  uint64_t spins = 0;
+  uint32_t abort = 0;
 
-    using OpType = typename std::conditional<noSrc2, FuncSum<T>, REDOP>::type;
+  // Each thread sets a predicate to true if val == 1
+  // all CTA's threads enter the barrier and do a popc on their predicates being True
+  // If any of the thread's predicate was True, all the threads call exit()
+  inline __device__ void exitIfAbortBarrier() {
+    uint32_t popc;
+    asm ("{");
+    asm volatile ("   .reg .pred barr_pred;");
+    asm volatile ("   setp.eq.u32 barr_pred,%0,1;" :: "r"(abort));
+    asm volatile ("   bar.red.popc.u32 %0, 14, barr_pred;" : "=r"(popc));
+    asm ("}");
+    if (popc) { asm volatile ("exit;"); }
+  }
 
+  inline __device__ int checkAbort() {
+    spins++;
+    if (spins == SPINS_BEFORE_CHECK_ABORT) {
+      abort = *abortFlagPtr;
+      spins = 0;
+    }
+    return abort;
+  }
+
+  inline __device__ void waitRecv() {
+    spins = 0;
+    recvStep += SLICESTEPS;
+    if (tid == 0) {
+      volatile uint64_t* ptr = recvConn->tail;
+      while (*(ptr) < recvStep) {
+        if (checkAbort()) return;
+      }
+    }
+  }
+    
+  inline __device__ void waitSend() {
+    spins = 0;
+    sendStep += SLICESTEPS;
+    while (sendConnHead + NCCL_STEPS < sendStep) {
+      volatile uint64_t* ptr = sendConn->head;
+      sendConnHead = *ptr;
+      if (checkAbort()) return;
+    }
+  }
+
+  inline __device__ void postRecv() {
+    *(recvConn->head) = recvStep += SLICESTEPS;
+  }
+    
+  inline __device__ void postSend() {
+    *(sendConn->tail) = sendStep += SLICESTEPS;
+  }
+    
+  inline __device__ void postSendSize(int size) {
+    if (sendConn->fifo) sendConn->fifo[sendStep%NCCL_STEPS] = size;
+  }
+
+  inline __device__ void
+  GenericOp( const T* src1, const T* src2, T* dst1, T* dst2, int chunkSize, int size, bool r, bool s) {
     int sliceSize = chunkSize / SLICESPERCHUNK;
     int offset = 0;
 
@@ -156,70 +93,98 @@ class Primitives {
     for (int slice=0; slice<SLICESPERCHUNK; ++slice) {
       int realSize = max(0, min(sliceSize, size-offset));
       if (tid < nthreads) {
-        if (AnyAre<WaitFlag>(flags...)) {
-          if (tid == 0) {
-            WaitOnFlags(step + (slice+1)*SLICESTEPS, flags...);
+        if (s) waitSend();
+        if (r) waitRecv();
+        if (r || s) asm volatile ("bar.sync 1, %0;" :: "r"(nthreads));
+        if (src2) {
+          if (dst2) {
+            ReduceOrCopy<UNROLL, REDOP, T, true,  true >(tid, nthreads, dst1+offset, dst2+offset, src1+offset, src2+offset, realSize);
+          } else {
+            ReduceOrCopy<UNROLL, REDOP, T, false, true >(tid, nthreads, dst1+offset, NULL,        src1+offset, src2+offset, realSize);
           }
-          asm volatile ("bar.sync 1, %0;" :: "r"(nthreads));
+        } else { 
+          if (dst2) {
+            ReduceOrCopy<UNROLL, REDOP, T, true,  false>(tid, nthreads, dst1+offset, dst2+offset, src1+offset, NULL,        realSize);
+          } else {
+            ReduceOrCopy<UNROLL, REDOP, T, false, false>(tid, nthreads, dst1+offset, NULL,        src1+offset, NULL,        realSize);
+          }
         }
-        ReduceOrCopy
-            <
-             UNROLL,
-             OpType,
-             T,
-             !std::is_same<DST2_T, nullptr_t>::value, // HAS_DEST1
-             !std::is_same<SRC2_T, nullptr_t>::value  // HAS_SRC1
-            >
-            (
-             tid, nthreads,
-             ptradd(dst1, offset),
-             ptradd(dst2, offset),
-             ptradd(src1, offset),
-             ptradd(src2, offset),
-             realSize
-            );
-        if (AnyAre<PostFlag>(flags...)) {
-          __syncthreads();
-        }
+        exitIfAbortBarrier();
       } else {
-        if (AnyAre<PostFlag>(flags...)) {
-          __syncthreads();
-          PostSizeToFlags(step + slice*SLICESTEPS, realSize*sizeof(T), flags...);
-          __threadfence_system();
-          PostToFlags(step + (slice+1)*SLICESTEPS, flags...);
-        }
+        exitIfAbortBarrier();
+        if (s) postSendSize(realSize*sizeof(T));
+        if (s || r) __threadfence_system();
+        if (s) postSend();
+        if (r) postRecv();
       }
       offset += sliceSize;
     }
   }
 
  public:
-  template <typename... SYNC_Ts>
-  static __device__ __forceinline__ void
-  Copy(const int tid, const int nthreads, const T* src, T* dst,
-      int len, int maxOffset, uint64_t step, SYNC_Ts... flags) {
-    GenericOp(tid, nthreads, src, nullptr, dst, nullptr, len, maxOffset, step, flags...);
+  __device__ __forceinline__
+  ncclPrimitives(const int tid, const int nthreads, struct ncclConnInfo* recv, struct ncclConnInfo* send, volatile uint32_t* abortFlagPtr)
+    : abortFlagPtr(abortFlagPtr), tid(tid), nthreads(nthreads), recvConn(recv), sendConn(send)
+  {
+    // Make sure step is updated before we read it
+    __syncthreads();
+    // Skip some slots if needed to make sure we can get aligned buffers chunks
+    sendStep = ROUNDUP(sendConn->step, SLICESPERCHUNK*SLICESTEPS);
+    recvStep = ROUNDUP(recvConn->step, SLICESPERCHUNK*SLICESTEPS);
+    // No need to sync the other way as there will be a syncthreads later on after we set noffset / poffset
   }
 
-  template <typename... SYNC_Ts>
-  static __device__ __forceinline__ void
-  DoubleCopy(const int tid, const int nthreads, const T* src, T* dst1, T* dst2,
-      int len, int maxOffset, uint64_t step, SYNC_Ts... flags) {
-    GenericOp(tid, nthreads, src, nullptr, dst1, dst2, len, maxOffset, step, flags...);
+  __device__ __forceinline__ int getSendStep() { return sendStep; }
+  __device__ __forceinline__ int getRecvStep() { return recvStep; }
+
+  __device__ __forceinline__ void
+  send(const T* src, T* dst, int len, int maxOffset) {
+    GenericOp(src, NULL, dst, NULL, len, maxOffset, false, true);
   }
 
-  template <typename... SYNC_Ts>
-  static __device__ __forceinline__ void
-  Reduce(const int tid, const int nthreads, const T* src1, const T* src2, T* dst,
-      int len, int maxOffset, uint64_t step, SYNC_Ts... flags) {
-    GenericOp(tid, nthreads, src1, src2, dst, nullptr, len, maxOffset, step, flags...);
+  __device__ __forceinline__ void
+  recv(const T* src, T* dst, int len, int maxOffset) {
+    GenericOp(src, NULL, dst, NULL, len, maxOffset, true, false);
   }
 
-  template <typename... SYNC_Ts>
-  static __device__ __forceinline__ void
-  ReduceCopy(const int tid, const int nthreads, const T* src1, const T* src2, T* dst1, T* dst2,
-      int len, int maxOffset, uint64_t step, SYNC_Ts... flags) {
-    GenericOp(tid, nthreads, src1, src2, dst1, dst2, len, maxOffset, step, flags...);
+  __device__ __forceinline__ void
+  copySend(const T* src, T* dst1, T* dst2, int len, int maxOffset) {
+    GenericOp(src, NULL, dst1, dst2, len, maxOffset, false, true);
+  }
+
+  __device__ __forceinline__ void
+  recvSend(const T* src, T* dst, int len, int maxOffset) {
+    GenericOp(src, NULL, dst, NULL, len, maxOffset, true, true);
+  }
+
+  __device__ __forceinline__ void
+  recvCopySend(const T* src, T* dst1, T* dst2, int len, int maxOffset) {
+    GenericOp(src, NULL, dst1, dst2, len, maxOffset, true, true);
+  }
+
+  __device__ __forceinline__ void
+  recvReduce(const T* src1, const T* src2, T* dst, int len, int maxOffset) {
+    GenericOp(src1, src2, dst, NULL, len, maxOffset, true, false);
+  }
+
+  __device__ __forceinline__ void
+  recvReduceSend(const T* src1, const T* src2, T* dst, int len, int maxOffset) {
+    GenericOp(src1, src2, dst, NULL, len, maxOffset, true, true);
+  }
+
+  __device__ __forceinline__ void
+  recvReduceCopySend(const T* src1, const T* src2, T* dst1, T* dst2, int len, int maxOffset) {
+    GenericOp(src1, src2, dst1, dst2, len, maxOffset, true, true);
+  }
+
+  __device__ __forceinline__ ~ncclPrimitives() {
+    // Save steps for next collective. Have thread 0 do it to be compatible
+    // with the way LL works.
+    if (tid == 0) {
+      recvConn->step = recvStep;
+      sendConn->step = sendStep;
+      __threadfence();
+    }
   }
 };
 

@@ -99,13 +99,11 @@ struct ncclConnInfo {
   void **ptrExchange; // Pointer exchange for direct communication
 
   int *fifo;          // Size fifo for proxy
+
   uint64_t step;      // Keep where we are
 
   // Low latency mechanism
-  char *llBuff;       // Local for recv, remote for send
-  uint64_t *llHead;   // Local for send, remote for recv
-  int *llFifo;        // LL Size fifo for proxy
-  uint64_t llStep;    // Keep where we are
+  union ncclLLFifoLine *llBuff; // Local for recv, remote for send
   uint64_t llLastCleaning;
 };
 
@@ -120,11 +118,10 @@ struct ncclConnector {
 #define MEM_ALIGN 4096
 #define CUDA_IPC_MIN 2097152UL /* 2MiB - not currently used */
 
-#define NCCL_LL_CHUNKS 8
 #define NUM_LINES_PER_THREAD 2
-#define NCCL_LL_BUFF_SIZE (NUM_LINES_PER_THREAD*NCCL_LL_MAX_NTHREADS*NCCL_LL_CHUNKS*sizeof(union ncclLLFifoLine)) // 64K
-#define NCCL_LL_BUFF_LINES (NCCL_LL_BUFF_SIZE / (2*sizeof(uint64_t)))
-#define NCCL_LL_SLICE_LINES (NCCL_LL_BUFF_LINES / NCCL_LL_CHUNKS)
+#define NCCL_LL_SLICE_LINES (NUM_LINES_PER_THREAD*NCCL_LL_MAX_NTHREADS)
+#define NCCL_LL_BUFF_LINES (NCCL_LL_SLICE_LINES*NCCL_STEPS)
+#define NCCL_LL_BUFF_SIZE (NCCL_LL_BUFF_LINES*sizeof(union ncclLLFifoLine))
 #define NCCL_LL_CLEAN_FREQ 0x10000000
 
 struct ncclSendMem {
@@ -152,7 +149,7 @@ struct ncclRecvMem {
     };
     char pad5[MEM_ALIGN];
   };
-  char llBuff[NCCL_LL_BUFF_SIZE];
+  ncclLLFifoLine llBuff[NCCL_LL_BUFF_LINES];
   char buff[1]; // Actually larger than that
 };
 
@@ -265,6 +262,11 @@ struct ncclComm {
   // An internal CUDA stream for NCCL kernel CGMD launches
   int groupCudaStream;
   cudaStream_t groupStream;
+
+  // Whether there has been a fatal error in this communicator.
+  // On host: this pointer has been obtained from cudaHostAlloc(cudaHostAllocMapped)
+  // On device:  this pointer has been obtained from cudaHostGetDevicePointer()
+  volatile uint32_t *abortFlag;
 
   // Device copy of the communicator
   struct ncclComm *devComm;

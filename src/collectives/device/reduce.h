@@ -8,12 +8,6 @@
 #include "primitives.h"
 #include "collectives.h"
 
-// Increase Step and boffset for buffer sync
-#define NEXT_STEP \
-  step += REDUCE_CHUNKSTEPS; \
-  boffset += chunkSize; \
-  if (boffset == buffSize) boffset = 0;
-
 template<int UNROLL, class FUNC, typename T>
 __device__ void ncclReduceKernel(struct CollectiveArgs* args) {
   const int tid = threadIdx.x;
@@ -22,15 +16,11 @@ __device__ void ncclReduceKernel(struct CollectiveArgs* args) {
   struct ncclComm* comm = args->comm;
   struct ncclChannel* channel = comm->channels+blockIdx.x;
   struct ncclRing* ring = &channel->ring;
-  struct ncclConnector* recv = &channel->devPeers[ring->prev].recv;
-  struct ncclConnector* send = &channel->devPeers[ring->next].send;
+  struct ncclConnInfo* recv = &channel->devPeers[ring->prev].recv.conn;
+  struct ncclConnInfo* send = &channel->devPeers[ring->next].send.conn;
 
-  WaitFlag waitDoneFromNext(send->conn.head, NCCL_STEPS-REDUCE_CHUNKSTEPS);
-  WaitFlag waitReadyFromPrev(recv->conn.tail, 0);
-  PostFlag postDoneToPrev(recv->conn.head, 0, NULL, 0);
-  PostFlag postReadyToNext(send->conn.tail, 0, send->conn.fifo, NCCL_STEPS);
-
-  typedef Primitives<UNROLL, REDUCE_CHUNKSTEPS/REDUCE_SLICESTEPS, REDUCE_SLICESTEPS, T, FUNC> Prims;
+  ncclPrimitives<UNROLL, REDUCE_CHUNKSTEPS/REDUCE_SLICESTEPS, REDUCE_SLICESTEPS, T, FUNC>
+    prims(tid, nthreads, recv, send, args->comm->abortFlag);
 
   const ssize_t size = args->N;
   const int nranks = comm->nRanks;
@@ -42,15 +32,16 @@ __device__ void ncclReduceKernel(struct CollectiveArgs* args) {
   const int prevRank = ring->devUserRanks[nranks-1];
   const int root = args->root;
 
-  uint64_t step = send->conn.step;
-  step = ROUNDUP(step, REDUCE_CHUNKSTEPS);
-  int boffset = (step%NCCL_STEPS)*stepSize;
+  int noffset = (prims.getSendStep()%NCCL_STEPS)*stepSize;
+  int poffset = (prims.getRecvStep()%NCCL_STEPS)*stepSize;
+  // Need all threads to read this before thread 0 might increment it
+  __syncthreads();
 
   // Compute pointers
   const T * __restrict__ thisInput = (const T*)args->ThisInput;
   T * __restrict__ thisOutput = (T*)args->ThisOutput;
-  T * __restrict__ prevInput = (T*)recv->conn.buff;
-  T * __restrict__ nextOutput = (T*)send->conn.buff;
+  T * __restrict__ prevInput = (T*)recv->buff;
+  T * __restrict__ nextOutput = (T*)send->buff;
 
   for (ssize_t gridOffset = 0; gridOffset < size; gridOffset += loopSize) {
     int realChunkSize = min(chunkSize, DIVUP(size-gridOffset,args->nChannels));
@@ -58,53 +49,18 @@ __device__ void ncclReduceKernel(struct CollectiveArgs* args) {
     ssize_t offset = gridOffset + bid*realChunkSize;
     int maxOffset = min(realChunkSize, size-offset);
     if (prevRank == root) {
-      Prims::Copy(tid, nthreads,
-          thisInput + offset,
-          nextOutput + boffset,
-          chunkSize, maxOffset,
-          step,
-          waitDoneFromNext,
-          postReadyToNext);
+      prims.send(thisInput+offset, nextOutput+noffset, chunkSize, maxOffset);
     } else if (rank == root) {
-      Prims::Reduce(tid, nthreads,
-          prevInput  + boffset,
-          thisInput + offset,
-          thisOutput + offset,
-          chunkSize, maxOffset,
-          step,
-          waitReadyFromPrev,
-          postDoneToPrev);
+      prims.recvReduce(prevInput+poffset, thisInput+offset, thisOutput+offset, chunkSize, maxOffset);
     } else {
-      Prims::Reduce(tid, nthreads,
-          prevInput + boffset,
-          thisInput + offset,
-          nextOutput + boffset,
-          chunkSize, maxOffset,
-          step,
-          waitDoneFromNext, waitReadyFromPrev,
-          postReadyToNext, postDoneToPrev);
+      prims.recvReduceSend(prevInput+poffset, thisInput+offset, nextOutput+noffset, chunkSize, maxOffset);
     }
-    NEXT_STEP; // Increases step, boffset
+    if ((poffset += chunkSize) == buffSize) poffset = 0;
+    if ((noffset += chunkSize) == buffSize) noffset = 0;
   }
-
-  // Save step counter for next op
-  if (tid == 0) {
-    send->conn.step = step;
-    // Make sure last rank updates root's head otherwise it will be blocked
-    // on the next operation
-    if (prevRank == root)
-      *recv->conn.head = step;
-  }
-  __syncthreads();
 }
 
 #include "ll_kernel.h"
-
-#define NEXT_STEP_LL \
-  boffset += NCCL_LL_SLICE_LINES; \
-  if (boffset == NCCL_LL_BUFF_LINES) boffset = 0; \
-  flag++; \
-  step++;
 
 template<int UNUSED, class FUNC, typename T>
 __device__ void ncclReduceLLKernel(struct CollectiveArgs* args) {
@@ -114,32 +70,23 @@ __device__ void ncclReduceLLKernel(struct CollectiveArgs* args) {
   struct ncclComm* comm = args->comm;
   struct ncclChannel* channel = comm->channels+blockIdx.x;
   struct ncclRing* ring = &channel->ring;
-  struct ncclConnector* recv = &channel->devPeers[ring->prev].recv;
-  struct ncclConnector* send = &channel->devPeers[ring->next].send;
-  volatile uint64_t * recvHeadPtr = recv->conn.llHead;
-  volatile uint64_t * sendHeadPtr = send->conn.llHead;
-  volatile int * sizesFifo = send->conn.llFifo;
-  uint64_t sendHead = sendHeadPtr[0];
-  const int nranks = comm->nRanks;
+  struct ncclConnInfo* recv = &channel->devPeers[ring->prev].recv.conn;
+  struct ncclConnInfo* send = &channel->devPeers[ring->next].send.conn;
+
+  ncclLLPrimitives<T, FUNC> LLprims(tid, nthreads, recv, send, comm->abortFlag);
+
+  const ssize_t size = args->N;
   const int rank = comm->rank;
+  const int nranks = comm->nRanks;
   const int prevRank = ring->devUserRanks[nranks-1];
   const int root = args->root;
 
-  typedef LLPrimitives<T, FUNC> LL;
-
-  const ssize_t size = args->N;
   ssize_t chunkSize = NCCL_LL_SLICE_LINES * sizeof(uint64_t) / sizeof(T);
   const ssize_t loopSize = args->nChannels*chunkSize;
-
-  uint64_t step = send->conn.llStep;
-  uint32_t flag = step + 1;
-  int boffset = NCCL_LL_SLICE_LINES * STEP_TO_SLOT(step);
 
   // Compute pointers
   const T * __restrict__ thisInput = (const T*)args->ThisInput;
   T * __restrict__ thisOutput = (T*)args->ThisOutput;
-  union ncclLLFifoLine * prevInput = (union ncclLLFifoLine *)recv->conn.llBuff;
-  union ncclLLFifoLine * nextOutput = (union ncclLLFifoLine *)send->conn.llBuff;
 
   for (ssize_t gridOffset = 0; gridOffset < size; gridOffset += loopSize) {
     if (size-gridOffset < loopSize) {
@@ -149,40 +96,11 @@ __device__ void ncclReduceLLKernel(struct CollectiveArgs* args) {
 
     int maxOffset = min(chunkSize, size-offset);
     if (prevRank == root) {
-      WAIT_NEXT;
-      LL::ReduceCopy(
-          thisInput + offset,
-          nextOutput + boffset,
-          maxOffset, flag,
-          tid, nthreads);
-      POST_SIZE;
-      NEXT_STEP_LL;
+      LLprims.send(thisInput+offset, maxOffset);
     } else if (rank == root) {
-      LL::ReduceCopy(
-          thisInput + offset,
-          prevInput  + boffset,
-          thisOutput + offset,
-          maxOffset, flag,
-          tid, nthreads);
-      NEXT_STEP_LL;
-      ACK_PREV;
+      LLprims.recvReduce(thisInput+offset, thisOutput+offset, maxOffset);
     } else {
-      WAIT_NEXT;
-      LL::ReduceCopy(
-          thisInput + offset,
-          prevInput + boffset,
-          nextOutput + boffset,
-          maxOffset, flag, flag,
-          tid, nthreads);
-      POST_SIZE;
-      NEXT_STEP_LL;
-      ACK_PREV;
+      LLprims.recvReduceSend(thisInput+offset, maxOffset);
     }
   }
-
-  // We need everyone to acknowledge data even if they didn't receive anything
-  // so that the next collective can start right away.
-  ACK_PREV;
-
-  FIFO_CLEANING_AND_SAVE_STEP(flag);
 }

@@ -8,13 +8,6 @@
 #include "primitives.h"
 #include "collectives.h"
 
-// Increase Step and poffset/noffset for buffer sync
-#define NEXT_STEP \
-  step += ALLGATHER_CHUNKSTEPS; \
-  poffset = noffset; \
-  noffset += chunkSize; \
-  if (noffset == buffSize) noffset = 0;
-
 template<int UNROLL, class FUNC, typename T>
 __device__ void ncclAllGatherKernel(struct CollectiveArgs* args) {
   const int tid = threadIdx.x;
@@ -24,17 +17,13 @@ __device__ void ncclAllGatherKernel(struct CollectiveArgs* args) {
   struct ncclComm* comm = args->comm;
   struct ncclChannel* channel = comm->channels+blockIdx.x;
   struct ncclRing* ring = &channel->ring;
-  struct ncclConnector* recv = &channel->devPeers[ring->prev].recv;
-  struct ncclConnector* send = &channel->devPeers[ring->next].send;
-  int prevdirect = recv->conn.direct;
-  int nextdirect = send->conn.direct;
+  struct ncclConnInfo* recv = &channel->devPeers[ring->prev].recv.conn;
+  struct ncclConnInfo* send = &channel->devPeers[ring->next].send.conn;
+  int prevdirect = recv->direct;
+  int nextdirect = send->direct;
 
-  WaitFlag waitDoneFromNext(send->conn.head, NCCL_STEPS);
-  WaitFlag waitReadyFromPrev(recv->conn.tail, ALLGATHER_CHUNKSTEPS);
-  PostFlag postDoneToPrev(recv->conn.head, ALLGATHER_CHUNKSTEPS, NULL, 0);
-  PostFlag postReadyToNext(send->conn.tail, 0, send->conn.fifo, NCCL_STEPS);
-
-  typedef Primitives<UNROLL, ALLGATHER_CHUNKSTEPS/ALLGATHER_SLICESTEPS, ALLREDUCE_SLICESTEPS, T> Prims;
+  ncclPrimitives<UNROLL, ALLGATHER_CHUNKSTEPS/ALLGATHER_SLICESTEPS, ALLREDUCE_SLICESTEPS, T>
+    prims(tid, nthreads, recv, send, args->comm->abortFlag);
 
   const ssize_t size = args->N;
   const int nranks = comm->nRanks;
@@ -43,12 +32,15 @@ __device__ void ncclAllGatherKernel(struct CollectiveArgs* args) {
   const int chunkSize = stepSize * ALLREDUCE_CHUNKSTEPS;
   const ssize_t loopSize = args->nChannels*(ssize_t)chunkSize;
 
+  int noffset = (prims.getSendStep()%NCCL_STEPS)*stepSize;
+  int poffset = (prims.getRecvStep()%NCCL_STEPS)*stepSize;
+
   if (tid == 0) {
     if (prevdirect) {
-      *recv->conn.ptrExchange = args->ThisOutput;
+      *recv->ptrExchange = args->ThisOutput;
     }
     if (nextdirect) {
-      void* volatile* ptr = send->conn.ptrExchange;
+      void* volatile* ptr = send->ptrExchange;
       while (*ptr == nullptr);
       sharedNextOutput = (T*)*ptr;
       *ptr = nullptr;
@@ -56,15 +48,11 @@ __device__ void ncclAllGatherKernel(struct CollectiveArgs* args) {
   }
   __syncthreads();
 
-  uint64_t step = send->conn.step;
-  step = ROUNDUP(step, ALLGATHER_CHUNKSTEPS);
-  int poffset, noffset = (step%NCCL_STEPS)*stepSize;
-
   // Compute pointers
   const T * __restrict__ thisInput = (const T*)args->ThisInput;
   T * __restrict__ thisOutput = (T*)args->ThisOutput;
-  T * __restrict__ prevInput = (T*)recv->conn.buff;
-  T * __restrict__ nextOutput = (T*)send->conn.buff;
+  T * __restrict__ prevInput = (T*)recv->buff;
+  T * __restrict__ nextOutput = (T*)send->buff;
 
   for (ssize_t gridOffset = 0; gridOffset < size; gridOffset += loopSize) {
     int realChunkSize = min(chunkSize, DIVUP(size-gridOffset,args->nChannels));
@@ -80,26 +68,13 @@ __device__ void ncclAllGatherKernel(struct CollectiveArgs* args) {
     rankDest = ring->devUserRanks[0];
     offset = chunkOffset + rankDest * size;
 
+    T* output = nextdirect ? (sharedNextOutput + offset) : (nextOutput + noffset);
     if (thisInput + chunkOffset == thisOutput + offset) { // In place
-      Prims::Copy(tid, nthreads,
-          thisInput  + chunkOffset,
-          nextdirect ? (sharedNextOutput + offset) : (nextOutput + noffset),
-          chunkSize, maxOffset,
-          step,
-          waitDoneFromNext,
-          postReadyToNext);
+      prims.send(thisInput+chunkOffset, output, chunkSize, maxOffset);
     } else {
-      Prims::DoubleCopy(tid, nthreads,
-          thisInput  + chunkOffset,
-          thisOutput + offset,
-	  nextdirect ? (sharedNextOutput + offset) : (nextOutput + noffset),
-          chunkSize, maxOffset,
-          step,
-          waitDoneFromNext,
-          postReadyToNext);
+      prims.copySend(thisInput+chunkOffset, thisOutput+offset, output, chunkSize, maxOffset);
     }
-
-    NEXT_STEP; // Increases step, poffset, noffset
+    if ((noffset += chunkSize) == buffSize) noffset = 0;
 
     // k-2 steps: copy to next GPU
     if (prevdirect) {
@@ -107,38 +82,21 @@ __device__ void ncclAllGatherKernel(struct CollectiveArgs* args) {
         rankDest = ring->devUserRanks[nranks-j];
         offset = chunkOffset + rankDest * size;
 
-        Prims::Copy(tid, nthreads,
-            thisOutput + offset,
-	    nextdirect ? (sharedNextOutput + offset) : (nextOutput + noffset),
-            chunkSize, maxOffset,
-            step,
-            waitDoneFromNext, waitReadyFromPrev,
-            postReadyToNext, postDoneToPrev);
-
-        NEXT_STEP;
+        T* output = nextdirect ? (sharedNextOutput + offset) : (nextOutput + noffset);
+        prims.recvSend(thisOutput+offset, output, chunkSize, maxOffset);
+        if ((poffset += chunkSize) == buffSize) poffset = 0;
+        if ((noffset += chunkSize) == buffSize) noffset = 0;
       }
-      Prims::Copy(tid, nthreads,
-          NULL,
-          NULL,
-          0, 0,
-          step,
-          waitReadyFromPrev,
-          postDoneToPrev);
+      prims.recv(NULL, NULL, 0, 0);
     } else {
       for (int j=1; j<nranks-1; ++j) {
         rankDest = ring->devUserRanks[nranks-j];
         offset = chunkOffset + rankDest * size;
 
-        Prims::DoubleCopy(tid, nthreads,
-            prevInput + poffset,
-            thisOutput + offset,
-	    nextdirect ? (sharedNextOutput + offset) : (nextOutput + noffset),
-            chunkSize, maxOffset,
-            step,
-            waitDoneFromNext, waitReadyFromPrev,
-            postReadyToNext, postDoneToPrev);
-
-        NEXT_STEP;
+        T* output = nextdirect ? (sharedNextOutput + offset) : (nextOutput + noffset);
+        prims.recvCopySend(prevInput+poffset, thisOutput+offset, output, chunkSize, maxOffset);
+        if ((poffset += chunkSize) == buffSize) poffset = 0;
+        if ((noffset += chunkSize) == buffSize) noffset = 0;
       }
 
       // Make final copy from buffer to dest.
@@ -146,30 +104,13 @@ __device__ void ncclAllGatherKernel(struct CollectiveArgs* args) {
       offset = chunkOffset + rankDest * size;
 
       // Here we need to copy from buffer to this output.
-      Prims::Copy(tid, nthreads,
-          prevInput + poffset,
-          thisOutput + offset,
-          chunkSize, maxOffset,
-          step,
-          waitReadyFromPrev,
-          postDoneToPrev);
+      prims.recv(prevInput+poffset, thisOutput+offset, chunkSize, maxOffset);
+      if ((poffset += chunkSize) == buffSize) poffset = 0;
     }
   }
-
-  // Save step counter for next op
-  if (tid == 0) send->conn.step = step;
-  __syncthreads();
 }
 
 #include "ll_kernel.h"
-
-#define NEXT_STEP_LL \
-  poffset = noffset; \
-  pflag = nflag; \
-  noffset += NCCL_LL_SLICE_LINES; \
-  if (noffset == NCCL_LL_BUFF_LINES) { noffset = 0; } \
-  nflag++; \
-  step++;
 
 template<int UNUSED, class FUNC, typename T>
 __device__ void ncclAllGatherLLKernel(struct CollectiveArgs* args) {
@@ -179,14 +120,10 @@ __device__ void ncclAllGatherLLKernel(struct CollectiveArgs* args) {
   struct ncclComm* comm = args->comm;
   struct ncclChannel* channel = comm->channels+blockIdx.x;
   struct ncclRing* ring = &channel->ring;
-  struct ncclConnector* recv = &channel->devPeers[ring->prev].recv;
-  struct ncclConnector* send = &channel->devPeers[ring->next].send;
-  volatile uint64_t * recvHeadPtr = recv->conn.llHead;
-  volatile uint64_t * sendHeadPtr = send->conn.llHead;
-  volatile int * sizesFifo = send->conn.llFifo;
-  uint64_t sendHead = sendHeadPtr[0];
+  struct ncclConnInfo* recv = &channel->devPeers[ring->prev].recv.conn;
+  struct ncclConnInfo* send = &channel->devPeers[ring->next].send.conn;
 
-  typedef LLPrimitives<T, FUNC> LL;
+  ncclLLPrimitives<T, FUNC> LLprims(tid, nthreads, recv, send, comm->abortFlag);
 
   const ssize_t size = args->N;
   //const int rank = comm->rank;
@@ -194,15 +131,9 @@ __device__ void ncclAllGatherLLKernel(struct CollectiveArgs* args) {
   ssize_t chunkSize = NCCL_LL_SLICE_LINES * sizeof(uint64_t) / sizeof(T);
   const ssize_t loopSize = args->nChannels*chunkSize;
 
-  uint64_t step = send->conn.llStep;
-  uint32_t pflag, nflag = step + 1;
-  int poffset, noffset = NCCL_LL_SLICE_LINES * STEP_TO_SLOT(step);
-
   // Compute pointers
   const T * __restrict__ thisInput = (const T*)args->ThisInput;
   T * __restrict__ thisOutput = (T*)args->ThisOutput;
-  union ncclLLFifoLine * prevInput = (union ncclLLFifoLine *)recv->conn.llBuff;
-  union ncclLLFifoLine * nextOutput = (union ncclLLFifoLine *)send->conn.llBuff;
 
   for (ssize_t gridOffset = 0; gridOffset < size; gridOffset += loopSize) {
     if (size-gridOffset < loopSize) {
@@ -219,54 +150,24 @@ __device__ void ncclAllGatherLLKernel(struct CollectiveArgs* args) {
     rankDest = ring->devUserRanks[0];
     offset = chunkOffset + rankDest * size;
 
-    WAIT_NEXT;
     if (thisInput + chunkOffset == thisOutput + offset) { // In place
-      LL::ReduceCopy(
-          thisInput  + chunkOffset,
-          nextOutput + noffset,
-          maxOffset, nflag,
-          tid, nthreads);
+      LLprims.send(thisInput+chunkOffset, maxOffset);
     } else {
-      LL::ReduceCopy(
-          thisInput  + chunkOffset,
-          thisOutput + offset,
-          nextOutput + noffset,
-          maxOffset, nflag,
-          tid, nthreads);
+      LLprims.copySend(thisInput+chunkOffset, thisOutput+offset, maxOffset);
     }
-    POST_SIZE;
-
-    NEXT_STEP_LL;
 
     // k-2 steps: copy to next GPU
     for (int j=1; j<nranks-1; ++j) {
       rankDest = ring->devUserRanks[nranks-j];
       offset = chunkOffset + rankDest * size;
 
-      WAIT_NEXT;
-      LL::ReduceCopy(
-          prevInput  + poffset,
-          thisOutput + offset,
-          nextOutput + noffset,
-          maxOffset, pflag, nflag,
-          tid, nthreads);
-      POST_SIZE;
-      ACK_PREV;
-
-      NEXT_STEP_LL;
+      LLprims.recvCopySend(thisOutput+offset, maxOffset);
     }
 
     // step k-1: final store
     rankDest = ring->devUserRanks[1];
     offset = chunkOffset + rankDest * size;
 
-    LL::ReduceCopy(
-        prevInput  + poffset,
-        thisOutput + offset,
-        maxOffset, pflag,
-        tid, nthreads);
-    ACK_PREV;
+    LLprims.recv(thisOutput+offset, maxOffset);
   }
-
-  FIFO_CLEANING_AND_SAVE_STEP(nflag);
 }

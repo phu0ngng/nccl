@@ -102,8 +102,8 @@ static void SaveProxy(struct ncclConnector* connector, struct ncclProxyArgs* arg
 
 ncclResult_t transportSaveProxies(struct ncclProxyArgs* args, int pattern, int nranks) {
   struct ncclRing* ring = &args->channel->ring;
-  args->needProxy = NeedProxy(RECV, pattern, &args->channel->ring, nranks); SaveProxy(&args->channel->peers[ring->prev].recv, args);
-  args->needProxy = NeedProxy(SEND, pattern, &args->channel->ring, nranks); SaveProxy(&args->channel->peers[ring->next].send, args);
+  if (NeedProxy(RECV, pattern, ring, nranks)) SaveProxy(&args->channel->peers[ring->prev].recv, args);
+  if (NeedProxy(SEND, pattern, ring, nranks)) SaveProxy(&args->channel->peers[ring->next].send, args);
   return ncclSuccess;
 }
 
