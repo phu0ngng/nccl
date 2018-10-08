@@ -67,14 +67,16 @@ __device__ void ncclBroadcastKernel(struct CollectiveArgs* args) {
 
 template<int UNUSED, class FUNC, typename T>
 __device__ void ncclBroadcastLLKernel(struct CollectiveArgs* args) {
+  const int tid = threadIdx.x;
   const int bid = args->bid;
+  const int nthreads = args->nThreads;
   struct ncclComm* comm = args->comm;
   struct ncclChannel* channel = comm->channels+blockIdx.x;
   struct ncclRing* ring = &channel->ring;
   struct ncclConnInfo* recv = &channel->devPeers[ring->prev].recv.conn;
   struct ncclConnInfo* send = &channel->devPeers[ring->next].send.conn;
 
-  ncclLLPrimitives<T, FUNC, 1, 1> LLprims(threadIdx.x, args->nThreads, &recv, &send, comm->abortFlag);
+  ncclLLPrimitives<T, FUNC, 1, 1> LLprims(tid, nthreads, 1, &recv, 1, &send, comm->abortFlag);
 
   const ssize_t size = args->N;
   const int rank = comm->rank;
