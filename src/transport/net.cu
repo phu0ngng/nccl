@@ -331,8 +331,7 @@ ncclResult_t netRecvFree(void* transportResources) {
 }
 
 ncclResult_t netSendProxy(struct ncclProxyArgs* args) {
-  struct ncclChannel* channel = args->channel;
-  struct netSendResources* resources = (struct netSendResources*) (channel->peers[channel->ring.next].send.transportResources);
+  struct netSendResources* resources = (struct netSendResources*) (args->connector->transportResources);
   const int llMode = args->llMode;
 
   volatile uint64_t* prevTail = &resources->hostRecvMem->tail;
@@ -342,7 +341,7 @@ ncclResult_t netSendProxy(struct ncclProxyArgs* args) {
   union ncclLLFifoLine* llBuff = resources->hostRecvMem->llBuff;
   int ptrType = resources->cudaSupport ? NCCL_PTR_CUDA : NCCL_PTR_HOST;
   volatile int* sizesFifo = resources->hostRecvMem->sizesFifo;
-  int stepSize = channel->buffSize/NCCL_STEPS;
+  int stepSize = args->channel->buffSize/NCCL_STEPS;
 
   // Round to next multiple of sliceSteps
   resources->step = ROUNDUP(resources->step, args->chunkSteps);
@@ -415,8 +414,7 @@ ncclResult_t netSendProxy(struct ncclProxyArgs* args) {
 }
 
 ncclResult_t netRecvProxy(struct ncclProxyArgs* args) {
-  struct ncclChannel* channel = args->channel;
-  struct netRecvResources* resources = (struct netRecvResources*) (channel->peers[channel->ring.prev].recv.transportResources);
+  struct netRecvResources* resources = (struct netRecvResources*) (args->connector->transportResources);
   int llMode = args->llMode;
 
   volatile uint64_t* nextHead = &resources->hostSendMem->head;
@@ -425,7 +423,7 @@ ncclResult_t netRecvProxy(struct ncclProxyArgs* args) {
   int ptrType = resources->cudaSupport ? NCCL_PTR_CUDA : NCCL_PTR_HOST;
   uint64_t* nextTail = &resources->hostRecvMem->tail;
 
-  int stepSize = ( llMode ? NCCL_LL_BUFF_SIZE : channel->buffSize ) / NCCL_STEPS;
+  int stepSize = ( llMode ? NCCL_LL_BUFF_SIZE : args->channel->buffSize ) / NCCL_STEPS;
   int sliceSize = stepSize * args->sliceSteps;
 
   // Round to next multiple of sliceSteps

@@ -38,6 +38,7 @@ struct ncclConnect {
 
 struct ncclProxyArgs {
   struct ncclChannel* channel;
+  struct ncclConnector* connector;
   int sliceSteps;
   int chunkSteps;
   int nsteps;
@@ -87,13 +88,7 @@ enum proxyMode {
   proxyTo = 2
 };
 
-static int proxyPatternRing = proxyRing;
-static inline int proxyPatternFrom(int root) { return 1+root; }
-static inline int proxyPatternTo(int root) { return -1-root; }
-static inline enum proxyMode proxyPatternMode(int pattern) { return (pattern == 0) ? proxyRing : ((pattern > 0) ? proxyFrom : proxyTo); }
-static inline int proxyPatternRoot(int pattern) { return (pattern > 0) ? pattern-1 : -pattern-1; }
-
-ncclResult_t transportSaveProxies(struct ncclProxyArgs* args, int pattern, int nranks);
+ncclResult_t transportSaveProxies(struct ncclProxyArgs* args, int pattern, int root, int nranks);
 ncclResult_t transportStartProxies(struct ncclComm* comm);
 
 #include <unistd.h>

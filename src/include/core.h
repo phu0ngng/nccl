@@ -65,6 +65,16 @@ union ncclLLFifoLine {
 
 typedef enum { ncclCollBroadcast, ncclCollReduce, ncclCollAllGather, ncclCollReduceScatter, ncclCollAllReduce, ncclCollCount } ncclColl_t;
 
+typedef enum {
+  ncclPatternRing,
+  ncclPatternRingTwice,
+  ncclPatternPipelineFrom,
+  ncclPatternPipelineTo,
+  ncclPatternTreeUp,
+  ncclPatternTreeDown,
+  ncclPatternTreeUpDown
+} ncclPattern_t;
+
 // Used to pass NCCL call information between functions
 struct ncclInfo {
   ncclColl_t coll;
@@ -81,8 +91,8 @@ struct ncclInfo {
   // Algorithm details
   int chunkSteps;
   int sliceSteps;
-  int pattern;
   // Computed later
+  ncclPattern_t pattern;
   size_t nBytes;
   int nstepsPerLoop;
   int nchunksPerLoop;
@@ -108,6 +118,7 @@ struct ncclConnInfo {
 };
 
 struct ncclConnector {
+  int connected;
   struct transportProxyInfo* proxyInfo;
   struct ncclTransportComm* transportComm;
   void* transportResources; // Host-side resources
@@ -165,6 +176,13 @@ struct ncclRing {
   int* devUserRanks;
 };
 
+struct ncclTree {
+  int nUp;
+  int up;
+  int nDown;
+  int down[3];
+};
+
 struct ncclPeer {
   struct ncclConnector send;
   struct ncclConnector recv;
@@ -173,8 +191,8 @@ struct ncclPeer {
 struct ncclChannel {
   union {
     struct {
-      // Ring structure
       struct ncclRing ring;
+      struct ncclTree tree;
 
       int id;
       int nthreads;

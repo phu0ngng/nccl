@@ -179,7 +179,7 @@ ncclResult_t getEnvThreads(int* nthreads) {
 }
 
 /* Main ring creation function */
-ncclResult_t ncclGetRings(int* nrings, int* nthreads, int rank, int nranks, int* transports, ncclTvalue_t* values, int* prev, int* next) {
+ncclResult_t ncclGetRings(int* nrings, int* nthreads, int rank, int nranks, int* transports, ncclTvalue_t* values, int* prev, int* next, int* treeMasters) {
   *nrings = 0;
 
   if (nranks == 1) return ncclSuccess;
@@ -281,6 +281,10 @@ ncclResult_t ncclGetRings(int* nrings, int* nthreads, int rank, int nranks, int*
           for (int i=0; i<nidx; i++) {
             if ((prevTmp[r*nranks+idxToRank[i]] == -1) && (subprev[r*nidx+i] != -1)) prevTmp[r*nranks+idxToRank[i]] = idxToRank[subprev[r*nidx+i]];
             if ((nextTmp[r*nranks+idxToRank[i]] == -1) && (subnext[r*nidx+i] != -1)) nextTmp[r*nranks+idxToRank[i]] = idxToRank[subnext[r*nidx+i]];
+            if (t == NTRANSPORTS-1) {
+              // Save node-level masters for trees
+              treeMasters[r*nranks+idxToRank[i]] = prevTmp[r*nranks+idxToRank[i]] == -1 ? 0 : 1;
+            }
           }
         }
         //for (int r=0; r<nringsTmp; r++) {

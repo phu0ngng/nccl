@@ -10,6 +10,7 @@
 #include "param.h"
 #include "nvmlwrap.h"
 #include "rings.h"
+#include "trees.h"
 #include "bootstrap.h"
 #include "transport.h"
 #include "group.h"
@@ -258,7 +259,7 @@ static ncclResult_t selectTransport(struct ncclPeerInfo* myInfo, struct ncclPeer
   return ncclInternalError;
 }
 
-static ncclResult_t setupChannel(struct ncclComm* comm, int channelId, int rank, int nranks, int* ringRanks) {
+static ncclResult_t setupChannel(struct ncclComm* comm, int channelId, int rank, int nranks, int* ringRanks, int* treeMasters) {
   NCCLCHECK(initChannel(comm, channelId));
 
   struct ncclChannel* channel = comm->channels+channelId;
@@ -274,6 +275,57 @@ static ncclResult_t setupChannel(struct ncclComm* comm, int channelId, int rank,
   for (int i=0; i<nranks; i++) {
     ring->userRanks[i] = ringRanks[(i+shift)%nranks];
   }
+  int prev = ring->prev = ring->userRanks[nranks-1];
+  int next = ring->next = ring->userRanks[1];
+
+  // Build trees
+  struct ncclTree* tree = &channel->tree;
+  tree->nUp = tree->nDown = 1;
+  tree->up = prev;
+  tree->down[0] = next;
+
+  int nMasters = 0;
+  for (int r=0; r<nranks; r++) nMasters += treeMasters[r];
+  if (nMasters == 0) {
+    nMasters = 1;
+    treeMasters[0] = 1;
+  }
+  // Find my master : go backwards in the ring to find my root
+  int master = 0;
+  for (int i = 0; i<nranks; i++) {
+    int r = ring->userRanks[(nranks-i)%nranks];
+    if (treeMasters[r]) {
+      master = r;
+      break;
+    }
+  }
+
+  if (treeMasters[next]) {
+    tree->nDown = 0;
+  }
+
+  int ranks[nMasters];
+  int i = 0, masterIndex = -1;
+  // Build binary tree
+  for (int r=0; r<nranks; r++) {
+    // Create index table
+    if (r == master) masterIndex = i;
+    if (treeMasters[r]) ranks[i++] = r;
+  }
+  int up, down0, down1;
+  NCCLCHECK(ncclGetBtree(nMasters, masterIndex, &up, &down0, &down1));
+
+  if (rank == master) {
+    tree->nUp = 0;
+    if (up != -1) {
+      tree->up = ranks[up];
+      tree->nUp++;
+    }
+    if (down0 != -1) tree->down[tree->nDown++] = ranks[down0];
+    if (down1 != -1) tree->down[tree->nDown++] = ranks[down1];
+  }
+  //printf("[%d] nUp %d (%d) nDown %d (%d %d %d)\n", rank, tree->nUp, tree->up, tree->nDown, tree->down[0], tree->down[1], tree->down[2]);
+
   return ncclSuccess;
 }
 
@@ -429,6 +481,47 @@ ncclResult_t ncclCommSetIntra(struct ncclComm* comm, int rank, int ranks, struct
   return ncclSuccess;
 }
 
+static ncclResult_t p2pSetup(struct ncclComm* comm, struct ncclChannel* channel, int nrecv, int* peerRecv, int nsend, int* peerSend) {
+  struct ncclConnect connect;
+  struct ncclConnector* conn;
+/*  printf("[%d] p2pSetup recv from", comm->rank);
+  for (int i=0; i<nrecv; i++) printf(" %d[%d]", peerRecv[i], channel->peers[peerRecv[i]].recv.connected);
+  printf(" ; send to");
+  for (int i=0; i<nsend; i++) printf(" %d[%d]", peerSend[i], channel->peers[peerSend[i]].send.connected);
+  printf("\n");*/
+  for (int i=0; i<nrecv; i++) {
+    int peer = peerRecv[i];
+    conn = &channel->peers[peer].recv;
+    if (conn->connected) continue;
+    NCCLCHECK(selectTransport<0>(comm->peerInfo+comm->rank, comm->peerInfo+peer, &connect, conn, channel->buffSize, channel->id));
+    NCCLCHECK(bootstrapSend(comm->bootstrap, peer, &connect, sizeof(struct ncclConnect)));
+  }
+  for (int i=0; i<nsend; i++) {
+    int peer = peerSend[i];
+    conn = &channel->peers[peer].send;
+    if (conn->connected) continue;
+    NCCLCHECK(selectTransport<1>(comm->peerInfo+comm->rank, comm->peerInfo+peer, &connect, conn, channel->buffSize, channel->id));
+    NCCLCHECK(bootstrapSend(comm->bootstrap, peer, &connect, sizeof(struct ncclConnect)));
+  }
+  for (int i=0; i<nsend; i++) {
+    int peer = peerSend[i];
+    conn = &channel->peers[peer].send;
+    if (conn->connected) continue;
+    NCCLCHECK(bootstrapRecv(comm->bootstrap, peer, &connect, sizeof(struct ncclConnect)));
+    NCCLCHECK(conn->transportComm->connect(&connect, conn));
+    conn->connected = 1;
+  }
+  for (int i=0; i<nrecv; i++) {
+    int peer = peerRecv[i];
+    conn = &channel->peers[peer].recv;
+    if (conn->connected) continue;
+    NCCLCHECK(bootstrapRecv(comm->bootstrap, peer, &connect, sizeof(struct ncclConnect)));
+    NCCLCHECK(conn->transportComm->connect(&connect, conn));
+    conn->connected = 1;
+  }
+  return ncclSuccess;
+}
+
 static ncclResult_t initTransportsRank(struct ncclComm* comm, ncclUniqueId* commId) {
   int rank = comm->rank;
   int nranks = comm->nRanks;
@@ -451,11 +544,12 @@ static ncclResult_t initTransportsRank(struct ncclComm* comm, ncclUniqueId* comm
 
   // Get my rings
   int nrings;
-  int* prev, *next;
+  int* prev, *next, *treeMasters;
   NCCLCHECK(ncclCalloc(&prev, nranks*MAXCHANNELS));
   NCCLCHECK(ncclCalloc(&next, nranks*MAXCHANNELS));
+  NCCLCHECK(ncclCalloc(&treeMasters, nranks*MAXCHANNELS));
   comm->nThreads = getDefaultThreads();
-  NCCLCHECK(ncclGetRings(&nrings, &comm->nThreads, rank, nranks, connectTransport, connectValue, prev, next));
+  NCCLCHECK(ncclGetRings(&nrings, &comm->nThreads, rank, nranks, connectTransport, connectValue, prev, next, treeMasters));
   free(connectTransport);
   free(connectValue);
 
@@ -500,21 +594,10 @@ static ncclResult_t initTransportsRank(struct ncclComm* comm, ncclUniqueId* comm
   for (int r=0; r<nrings; r++) {
     int* ringRanks = rings+r*nranks;
     struct ncclChannel* channel = comm->channels+r;
-    struct ncclRing *ring = &channel->ring;
-    NCCLCHECK(setupChannel(comm, r, rank, nranks, ringRanks));
-    int prev = channel->ring.prev = ring->userRanks[nranks-1];
-    int next = channel->ring.next = ring->userRanks[1];
-    struct ncclConnector* recv = &channel->peers[prev].recv;
-    struct ncclConnector* send = &channel->peers[next].send;
-
-    NCCLCHECK(selectTransport<0>(comm->peerInfo+rank, comm->peerInfo+prev, connect+0, recv, channel->buffSize, channel->id));
-    NCCLCHECK(selectTransport<1>(comm->peerInfo+rank, comm->peerInfo+next, connect+1, send, channel->buffSize, channel->id));
-    NCCLCHECK(bootstrapSend(comm->bootstrap, prev, connect+0, sizeof(struct ncclConnect)));
-    NCCLCHECK(bootstrapSend(comm->bootstrap, next, connect+1, sizeof(struct ncclConnect)));
-    NCCLCHECK(bootstrapRecv(comm->bootstrap, next, connect+0, sizeof(struct ncclConnect)));
-    NCCLCHECK(bootstrapRecv(comm->bootstrap, prev, connect+1, sizeof(struct ncclConnect)));
-    NCCLCHECK(send->transportComm->connect(connect+0, send));
-    NCCLCHECK(recv->transportComm->connect(connect+1, recv));
+    NCCLCHECK(setupChannel(comm, r, rank, nranks, ringRanks, treeMasters));
+    NCCLCHECK(p2pSetup(comm, channel, 1, &channel->ring.prev, 1, &channel->ring.next));
+    NCCLCHECK(p2pSetup(comm, channel, channel->tree.nDown, channel->tree.down, channel->tree.nUp, &channel->tree.up));
+    NCCLCHECK(p2pSetup(comm, channel, channel->tree.nUp, &channel->tree.up, channel->tree.nDown, channel->tree.down));
   }
   free(connect);
   free(rings);
@@ -635,11 +718,12 @@ static ncclResult_t initTransportsAll(struct ncclComm** comms, const int* devs, 
   for (int rank=0; rank<nranks; rank++)
     NCCLCHECK(fillConnect(allInfo, nranks, rank, connectTransport+nranks*rank, connectValue+nranks*rank));
 
-  int* prev, *prevFinal, *next, *nextFinal;
+  int* prev, *prevFinal, *next, *nextFinal, *treeMasters;
   NCCLCHECK(ncclCalloc(&prev, nranks*MAXCHANNELS));
   NCCLCHECK(ncclCalloc(&prevFinal, nranks*MAXCHANNELS));
   NCCLCHECK(ncclCalloc(&next, nranks*MAXCHANNELS));
   NCCLCHECK(ncclCalloc(&nextFinal, nranks*MAXCHANNELS));
+  NCCLCHECK(ncclCalloc(&treeMasters, nranks*MAXCHANNELS));
   int nrings = MAXCHANNELS;
   int nthreads=0;
   int myCompCap = ncclCudaCompCap();
@@ -649,7 +733,7 @@ static ncclResult_t initTransportsAll(struct ncclComm** comms, const int* devs, 
     int nringsRank;
     int nthreadsRank = getDefaultThreads();
     myCompCap = ncclCudaCompCap();
-    NCCLCHECK(ncclGetRings(&nringsRank, &nthreadsRank, rank, nranks, connectTransport, connectValue, prev, next));
+    NCCLCHECK(ncclGetRings(&nringsRank, &nthreadsRank, rank, nranks, connectTransport, connectValue, prev, next, treeMasters));
     nrings = std::min(nrings, nringsRank);
     nthreads = std::max(nthreads, nthreadsRank);
     minCompCap = std::min(minCompCap, myCompCap);
@@ -685,7 +769,7 @@ static ncclResult_t initTransportsAll(struct ncclComm** comms, const int* devs, 
       CUDACHECK(cudaSetDevice(devs[rank]));
       struct ncclChannel* channel = comms[rank]->channels+r;
       struct ncclRing *ring = &channel->ring;
-      NCCLCHECK(setupChannel(comms[rank], r, rank, nranks, ringRanks));
+      NCCLCHECK(setupChannel(comms[rank], r, rank, nranks, ringRanks, treeMasters));
       int prev = channel->ring.prev = ring->userRanks[nranks-1];
       int next = channel->ring.next = ring->userRanks[1];
       struct ncclConnector* recv = &channel->peers[prev].recv;

@@ -134,6 +134,7 @@ __device__ void ncclAllReduceKernel(struct CollectiveArgs* args) {
 
 #include "ll_kernel.h"
 
+#if 0
 template<int UNUSED, class FUNC, typename T>
 __device__ void ncclAllReduceLLKernel(struct CollectiveArgs* args) {
   const int tid = threadIdx.x;
@@ -214,3 +215,69 @@ __device__ void ncclAllReduceLLKernel(struct CollectiveArgs* args) {
     LLprims.recv(thisOutput+offset, maxOffset);
   }
 }
+#else
+template<int UNUSED, class FUNC, typename T>
+__device__ void ncclAllReduceLLKernel(struct CollectiveArgs* args) {
+  const int tid = threadIdx.x;
+  const int bid = args->bid;
+  const int nthreads = args->nThreads;
+  struct ncclComm* comm = args->comm;
+  struct ncclChannel* channel = comm->channels+blockIdx.x;
+  struct ncclTree* tree = &channel->tree;
+
+  // Reduce : max number of recv is 3, max number of send is 1 (binary tree + local)
+  // Broadcast : max number of recv is 1, max number of send is 3 (binary tree + local)
+  struct ncclConnInfo* upSend = tree->nUp ? &channel->devPeers[tree->up].send.conn : NULL;
+  struct ncclConnInfo* dnRecv = tree->nUp ? &channel->devPeers[tree->up].recv.conn : NULL;
+  struct ncclConnInfo* upRecvs[3];
+  struct ncclConnInfo* dnSends[3];
+  for (int i=0; i<tree->nDown; i++) {
+    upRecvs[i] = &channel->devPeers[tree->down[i]].recv.conn;
+    dnSends[i] = &channel->devPeers[tree->down[i]].send.conn;
+  }
+  //  if (tid == 0) printf("Up %d %d Down %d %d %d %d\n", tree->nUp, tree->up, tree->nDown, tree->down[0], tree->down[1], tree->down[2]);
+
+  const ssize_t size = args->N;
+
+  ssize_t chunkSize = NCCL_LL_SLICE_LINES * sizeof(uint64_t) / sizeof(T);
+  const ssize_t loopSize = args->nChannels*chunkSize;
+
+  // Compute pointers
+  const T * __restrict__ thisInput = (const T*)args->ThisInput;
+  T * __restrict__ thisOutput = (T*)args->ThisOutput;
+
+  do {
+    ncclLLPrimitives<T, FUNC, 3, 1> LLprims(tid, nthreads, tree->nDown, upRecvs, tree->nUp, &upSend, comm->abortFlag);
+    for (ssize_t gridOffset = 0; gridOffset < size; gridOffset += loopSize) {
+      // Up
+      ssize_t offset = gridOffset + bid*chunkSize;
+      int maxOffset = min(chunkSize, size-offset);
+      if (tree->nUp == 0) {
+        LLprims.recvReduce(thisInput+offset, thisOutput+offset, maxOffset);
+      } else if (tree->nDown) {
+        LLprims.recvReduceSend(thisInput+offset, maxOffset);
+      } else {
+        LLprims.send(thisInput + offset, maxOffset);
+      }
+    }
+  } while(0);
+
+  do {
+    ncclLLPrimitives<T, FUNC, 1, 3> LLprims(tid, nthreads, tree->nUp, &dnRecv, tree->nDown, dnSends, comm->abortFlag);
+    for (ssize_t gridOffset = 0; gridOffset < size; gridOffset += loopSize) {
+      // Down
+      ssize_t offset = gridOffset + bid*chunkSize;
+      int maxOffset = min(chunkSize, size-offset);
+      if (tree->nUp == 0) {
+        LLprims.send(thisOutput+offset, maxOffset);
+      } else if (tree->nDown) {
+        LLprims.recvCopySend(thisOutput + offset, maxOffset);
+      } else {
+        LLprims.recv(thisOutput + offset, maxOffset);
+      }
+    }
+  } while(0);
+
+  //  if (tid == 0) printf("[%d] done\n", comm->rank);
+}
+#endif

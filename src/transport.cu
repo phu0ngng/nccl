@@ -75,15 +75,13 @@ static void StopProxy(struct transportProxyInfo* info) {
 #define RECV 0
 #define SEND 1
 
-static bool NeedProxy(int type, int pattern, struct ncclRing* ring, int nranks) {
-  enum proxyMode mode = proxyPatternMode(pattern);
-  if (mode == proxyRing) return true;
+static bool NeedProxy(int type, int pattern, int root, struct ncclRing* ring, int nranks) {
+  if (pattern == ncclPatternRing || pattern == ncclPatternRingTwice) return true;
 
   /* In chains, one rank does not need a proxy. Let's figure out which one it is */
-  int root = proxyPatternRoot(pattern);
   // Which index in the reorganized rings should we compare root against */
   const int myrank = 0, nextrank = 1, prevrank = nranks-1;
-  int index = mode == proxyFrom ?
+  int index = pattern == ncclPatternPipelineFrom ?
       /*                            no recv /  no send    if root = */
       /* bcast  */ (type == RECV ?   myrank : nextrank ):
       /* reduce */ (type == RECV ? prevrank :   myrank );
@@ -91,19 +89,40 @@ static bool NeedProxy(int type, int pattern, struct ncclRing* ring, int nranks) 
   return (root != rank);
 }
 
-static void SaveProxy(struct ncclConnector* connector, struct ncclProxyArgs* args) {
+enum { proxyRecv=0, proxySend=1 };
+
+template <int type>
+static void SaveProxy(int peer, struct ncclProxyArgs* args) {
+  struct ncclPeer* peerComm = args->channel->peers+peer;
+  struct ncclConnector* connector = type == proxyRecv ? &peerComm->recv : &peerComm->send;
   struct transportProxyInfo* info = connector->proxyInfo;
   if (info == NULL) return;
+  TRACE("Saving %s proxy to peer %d\n", type == proxyRecv ? "recv" : "send", peer);
+  args->connector = connector;
   struct ncclProxyArgs* fifoArgs = FifoGetNextArgs(info);
   memcpy(fifoArgs, args, sizeof(struct ncclProxyArgs));
   __sync_synchronize();
   fifoArgs->active = 1;
 }
 
-ncclResult_t transportSaveProxies(struct ncclProxyArgs* args, int pattern, int nranks) {
-  struct ncclRing* ring = &args->channel->ring;
-  if (NeedProxy(RECV, pattern, ring, nranks)) SaveProxy(&args->channel->peers[ring->prev].recv, args);
-  if (NeedProxy(SEND, pattern, ring, nranks)) SaveProxy(&args->channel->peers[ring->next].send, args);
+ncclResult_t transportSaveProxies(struct ncclProxyArgs* args, int pattern, int root, int nranks) {
+  if (pattern == ncclPatternRing || pattern == ncclPatternRingTwice || pattern == ncclPatternPipelineFrom || pattern == ncclPatternPipelineTo) {
+    struct ncclRing* ring = &args->channel->ring;
+    if (NeedProxy(RECV, pattern, root, ring, nranks)) SaveProxy<proxyRecv>(ring->prev, args);
+    if (NeedProxy(SEND, pattern, root, ring, nranks)) SaveProxy<proxySend>(ring->next, args);
+  }
+  if (pattern == ncclPatternTreeUp || pattern == ncclPatternTreeUpDown) {
+    // Tree up
+    struct ncclTree* tree = &args->channel->tree;
+    for (int i=0; i<tree->nDown; i++) SaveProxy<proxyRecv>(tree->down[i], args);
+    if (tree->nUp) SaveProxy<proxySend>(tree->up, args);
+  }
+  if (pattern == ncclPatternTreeDown || pattern == ncclPatternTreeUpDown) {
+    // Tree down
+    struct ncclTree* tree = &args->channel->tree;
+    for (int i=0; i<tree->nDown; i++) SaveProxy<proxySend>(tree->down[i], args);
+    if (tree->nUp) SaveProxy<proxyRecv>(tree->up, args);
+  }
   return ncclSuccess;
 }
 
@@ -112,6 +131,12 @@ ncclResult_t transportStartProxies(ncclComm* comm) {
     struct ncclRing* ring = &comm->channels[r].ring;
     FifoPushArgs(comm->channels[r].peers[ring->prev].recv.proxyInfo);
     FifoPushArgs(comm->channels[r].peers[ring->next].send.proxyInfo);
+
+    struct ncclTree* tree = &comm->channels[r].tree;
+    for (int i=0; i<tree->nDown; i++) FifoPushArgs(comm->channels[r].peers[tree->down[i]].recv.proxyInfo);
+    if (tree->nUp) FifoPushArgs(comm->channels[r].peers[tree->up].recv.proxyInfo);
+    for (int i=0; i<tree->nDown; i++) FifoPushArgs(comm->channels[r].peers[tree->down[i]].send.proxyInfo);
+    if (tree->nUp) FifoPushArgs(comm->channels[r].peers[tree->up].send.proxyInfo);
   }
   pthread_yield(); // Let other threads run
   return ncclSuccess;

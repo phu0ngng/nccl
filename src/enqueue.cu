@@ -57,6 +57,10 @@ static void* const ncclKerns[ncclCollCount*ncclNumOps*ncclNumTypes*2] = {
   NCCL_FUNCS2A(ncclAllReduce)
 };
 
+/*****************************************************************************/
+/*       Launch system : synchronization and CUDA kernel launch              */
+/*****************************************************************************/
+
 ncclResult_t ncclLaunchCooperativeKernelMultiDevice(struct cudaLaunchParams *paramsList, int* cudaDevs, int numDevices, int cgMode) {
 #if __CUDACC_VER_MAJOR__ >= 9
   if (cgMode & 0x01) {
@@ -215,18 +219,39 @@ ncclResult_t ncclEnqueueEvents(ncclComm_t comm) {
   return ncclSuccess;
 }
 
+/*****************************************************************************/
+/* Enqueueing system : computation of kernel and proxy operations parameters */
+/*****************************************************************************/
+
+static ncclResult_t getPatternInfo(struct ncclInfo* info) {
+  if (info->coll == ncclCollBroadcast) info->pattern = ncclPatternPipelineFrom;
+  if (info->coll == ncclCollReduce) info->pattern = ncclPatternPipelineTo;
+  else if (info->coll == ncclCollAllGather || info->coll == ncclCollReduceScatter) info->pattern = ncclPatternRing;
+  else if (info->coll == ncclCollAllReduce) {
+    //info->pattern = ncclPatternRingTwice;
+    info->pattern = ncclPatternTreeUpDown;
+  }
+  else {
+    WARN("Unknown collective %d", info->coll);
+    return ncclInternalError;
+  }
+  return ncclSuccess;
+}
+
 static ncclResult_t getLoopInfo(struct ncclInfo* info) {
-  switch (info->coll) {
-    case ncclCollBroadcast:
-    case ncclCollReduce:
+  switch (info->pattern) {
+    case ncclPatternTreeUp:
+    case ncclPatternTreeDown:
+    case ncclPatternTreeUpDown:
+    case ncclPatternPipelineFrom:
+    case ncclPatternPipelineTo:
       info->nstepsPerLoop = info-> nchunksPerLoop = 1; break;
-    case ncclCollAllGather:
-    case ncclCollReduceScatter:
+    case ncclPatternRing:
       info->nstepsPerLoop = info->comm->nRanks-1; info->nchunksPerLoop = info->comm->nRanks; break;
-    case ncclCollAllReduce:
+    case ncclPatternRingTwice:
       info->nstepsPerLoop = 2*(info->comm->nRanks-1); info->nchunksPerLoop = info->comm->nRanks; break;
     default:
-      WARN("Unknown collective %d\n", info->coll);
+      WARN("Unknown pattern %d\n", info->pattern);
       return ncclInternalError;
   }
   return ncclSuccess;
@@ -273,6 +298,7 @@ nonLL:
 
 static ncclResult_t computeColl(struct ncclInfo* info /* input */, struct ncclColl* coll, struct ncclProxyArgs* proxyArgs /* output */) {
   // Set nstepsPerLoop and nchunksPerLoop
+  NCCLCHECK(getPatternInfo(info));
   NCCLCHECK(getLoopInfo(info));
 
   coll->args.root = info->root;
@@ -345,7 +371,7 @@ static ncclResult_t saveKernel(struct ncclInfo* info) {
 
     // Proxy
     proxyArgs.channel = channel;
-    NCCLCHECK(transportSaveProxies(&proxyArgs, info->pattern, info->comm->nRanks));
+    NCCLCHECK(transportSaveProxies(&proxyArgs, info->pattern, info->root, info->comm->nRanks));
 
     info->comm->myParams->gridDim.x++;
 
