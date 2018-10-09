@@ -27,12 +27,12 @@ static __device__ void load_coll(struct ncclColl* localColl, struct ncclColl* ho
 }
 
 /* Functions for aggregation case */
-#define IMPL_COLL4(coll, op, ncclFunc, dtype, ctype) \
+#define IMPL_COLL_FUNC(coll, op, ncclFunc, dtype, ctype) \
 __device__ void NCCL_COLL_NAME(coll, op, dtype)(struct CollectiveArgs* args) { \
   coll##Kernel<UNROLL, ncclFunc<ctype>, ctype>(args); \
 }
 /* Kernels with the first operation inlined */
-#define IMPL_COLL4K(coll, op, ncclFunc, dtype, ctype, fIndex) \
+#define IMPL_COLL_KERN(coll, op, ncclFunc, dtype, ctype, fIndex) \
 __launch_bounds__(MAXTHREADS+WARP_SIZE, 1) \
 __global__ void NCCL_KERN_NAME(coll, op, dtype)(struct ncclColl firstColl) { \
   int tid = threadIdx.x; \
@@ -70,11 +70,17 @@ __global__ void NCCL_KERN_NAME(coll, op, dtype)(struct ncclColl firstColl) { \
   } \
 }
 
+#define IMPL_COLL5(coll, op, ncclFunc, dtype, ctype, ncclColl, ncclOp, ncclType, ll, al) \
+  IMPL_COLL_FUNC(coll, op, ncclFunc, dtype, ctype) \
+  IMPL_COLL_KERN(coll, op, ncclFunc, dtype, ctype, FUNC_INDEX(ncclColl, ncclOp, ncclType, ll, al)) \
+
+#define IMPL_COLL4(coll, op, ncclFunc, dtype, ctype, ncclColl, ncclOp, ncclType, ll) \
+  IMPL_COLL5(coll##Ring, op, ncclFunc, dtype, ctype, ncclColl, ncclOp, ncclType, ll, 0) \
+  IMPL_COLL5(coll##Tree, op, ncclFunc, dtype, ctype, ncclColl, ncclOp, ncclType, ll, 1)
+
 #define IMPL_COLL3(coll, op, ncclFunc, dtype, ctype, ncclColl, ncclOp, ncclType) \
-  IMPL_COLL4(coll##LL, op, ncclFunc, dtype, ctype) \
-  IMPL_COLL4K(coll##LL, op, ncclFunc, dtype, ctype, FUNC_INDEX(ncclColl, ncclOp, ncclType, 1)) \
-  IMPL_COLL4(coll, op, ncclFunc, dtype, ctype) \
-  IMPL_COLL4K(coll, op, ncclFunc, dtype, ctype, FUNC_INDEX(ncclColl, ncclOp, ncclType, 0)) \
+  IMPL_COLL4(coll, op, ncclFunc, dtype, ctype, ncclColl, ncclOp, ncclType, 0) \
+  IMPL_COLL4(coll##LL, op, ncclFunc, dtype, ctype, ncclColl, ncclOp, ncclType, 1)
 
 #define IMPL_COLL2(coll, op, ncclFunc, ncclColl, ncclOp) \
   IMPL_COLL3(coll, op, ncclFunc, i8,  int8_t,   ncclColl, ncclOp, ncclInt8) \

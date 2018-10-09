@@ -9,7 +9,7 @@
 #include "collectives.h"
 
 template<int UNROLL, class FUNC, typename T>
-__device__ void ncclBroadcastKernel(struct CollectiveArgs* args) {
+__device__ void ncclBroadcastRingKernel(struct CollectiveArgs* args) {
   const int nthreads = blockDim.x - 1;
   const int bid = args->bid;
   struct ncclComm* comm = args->comm;
@@ -63,10 +63,13 @@ __device__ void ncclBroadcastKernel(struct CollectiveArgs* args) {
   }
 }
 
+template<int UNROLL, class FUNC, typename T>
+__device__ void ncclBroadcastTreeKernel(struct CollectiveArgs* args) { }
+
 #include "ll_kernel.h"
 
 template<int UNUSED, class FUNC, typename T>
-__device__ void ncclBroadcastLLKernel(struct CollectiveArgs* args) {
+__device__ void ncclBroadcastLLRingKernel(struct CollectiveArgs* args) {
   const int tid = threadIdx.x;
   const int bid = args->bid;
   const int nthreads = args->nThreads;
@@ -110,3 +113,6 @@ __device__ void ncclBroadcastLLKernel(struct CollectiveArgs* args) {
     }
   }
 }
+
+template<int UNUSED, class FUNC, typename T>
+__device__ void ncclBroadcastLLTreeKernel(struct CollectiveArgs* args) { }

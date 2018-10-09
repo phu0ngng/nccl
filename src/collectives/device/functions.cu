@@ -8,9 +8,13 @@
 #include "collectives.h"
 #include "common.h"
 
+#define NCCL_FUNC5(coll, op, dtype) \
+  NCCL_COLL_NAME(coll##Ring, op, dtype), \
+  NCCL_COLL_NAME(coll##Tree, op, dtype)
+
 #define NCCL_FUNC4(coll, op, dtype) \
-  NCCL_COLL_NAME(coll, op, dtype), \
-  NCCL_COLL_NAME(coll##LL, op, dtype)  \
+  NCCL_FUNC5(coll, op, dtype), \
+  NCCL_FUNC5(coll##LL, op, dtype)
 
 // Must be consistent with ncclDataType_t
 #define NCCL_FUNCS3A(coll, op) \
@@ -55,7 +59,7 @@
   NCCL_FUNCS2A(ncclAllReduce) }
 
 // Must be consistent with the ncclFuncSet enum
-__device__ ncclKern_t ncclFuncs[ncclCollCount*ncclNumOps*ncclNumTypes*2] = {
+__device__ ncclKern_t ncclFuncs[ncclCollCount*ncclNumOps*ncclNumTypes*2*2] = {
   NCCL_FUNCS2B(ncclBroadcast),
   NCCL_FUNCS2A(ncclReduce),
   NCCL_FUNCS2B(ncclAllGather),

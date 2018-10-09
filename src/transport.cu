@@ -97,7 +97,7 @@ static void SaveProxy(int peer, struct ncclProxyArgs* args) {
   struct ncclConnector* connector = type == proxyRecv ? &peerComm->recv : &peerComm->send;
   struct transportProxyInfo* info = connector->proxyInfo;
   if (info == NULL) return;
-  TRACE("Saving %s proxy to peer %d\n", type == proxyRecv ? "recv" : "send", peer);
+  TRACE(INIT, "Saving %s proxy to peer %d\n", type == proxyRecv ? "recv" : "send", peer);
   args->connector = connector;
   struct ncclProxyArgs* fifoArgs = FifoGetNextArgs(info);
   memcpy(fifoArgs, args, sizeof(struct ncclProxyArgs));

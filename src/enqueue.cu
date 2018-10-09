@@ -10,9 +10,13 @@
 
 #include "collectives/collectives.h"
 
+#define NCCL_FUNC5(coll, op, dtype) \
+  (void*)NCCL_KERN_NAME(coll##Ring, op, dtype), \
+  (void*)NCCL_KERN_NAME(coll##Tree, op, dtype)
+
 #define NCCL_FUNC4(coll, op, dtype) \
-  (void*)NCCL_KERN_NAME(coll, op, dtype), \
-  (void*)NCCL_KERN_NAME(coll##LL, op, dtype)
+  (void*)NCCL_FUNC5(coll, op, dtype), \
+  (void*)NCCL_FUNC5(coll##LL, op, dtype)
 
 // Must be consistent with ncclDataType_t
 #define NCCL_FUNCS3A(coll, op) \
@@ -49,7 +53,7 @@
   NCCL_FUNCS3B(coll, copy)
 
 // Must be consistent with the ncclFuncSet enum
-static void* const ncclKerns[ncclCollCount*ncclNumOps*ncclNumTypes*2] = {
+static void* const ncclKerns[ncclCollCount*ncclNumOps*ncclNumTypes*2*2] = {
   NCCL_FUNCS2B(ncclBroadcast),
   NCCL_FUNCS2A(ncclReduce),
   NCCL_FUNCS2B(ncclAllGather),
@@ -223,13 +227,17 @@ ncclResult_t ncclEnqueueEvents(ncclComm_t comm) {
 /* Enqueueing system : computation of kernel and proxy operations parameters */
 /*****************************************************************************/
 
+NCCL_PARAM(TreeThreshold, "TREE_THRESHOLD", 0);
+
 static ncclResult_t getPatternInfo(struct ncclInfo* info) {
   if (info->coll == ncclCollBroadcast) info->pattern = ncclPatternPipelineFrom;
-  if (info->coll == ncclCollReduce) info->pattern = ncclPatternPipelineTo;
+  else if (info->coll == ncclCollReduce) info->pattern = ncclPatternPipelineTo;
   else if (info->coll == ncclCollAllGather || info->coll == ncclCollReduceScatter) info->pattern = ncclPatternRing;
   else if (info->coll == ncclCollAllReduce) {
-    //info->pattern = ncclPatternRingTwice;
-    info->pattern = ncclPatternTreeUpDown;
+    if (info->nBytes < ncclParamTreeThreshold())
+      info->pattern = ncclPatternTreeUpDown;
+    else
+      info->pattern = ncclPatternRingTwice;
   }
   else {
     WARN("Unknown collective %d", info->coll);
@@ -308,13 +316,11 @@ static ncclResult_t computeColl(struct ncclInfo* info /* input */, struct ncclCo
   coll->args.comm = info->comm->devComm;
   coll->args.opCount = info->comm->opCount;
 
-  if (info->coll == ncclCollAllGather || info->coll == ncclCollReduceScatter) info->nBytes *= info->comm->nRanks; // count is per rank
-
   // Compute llMode, nChannels, nThreads
   int llMode;
   getKernelInfo(info, &coll->args.nChannels, &coll->args.nThreads, &llMode);
 
-  coll->funcIndex = FUNC_INDEX(info->coll, info->op, info->datatype, llMode);
+  coll->funcIndex = FUNC_INDEX(info->coll, info->op, info->datatype, llMode, (info->pattern >= ncclPatternTreeUp ? 1 : 0));
 
   // Compute lastChunkSize
   if (llMode == 1) {
@@ -351,7 +357,7 @@ static ncclResult_t saveKernel(struct ncclInfo* info) {
 
   struct ncclColl coll;
   struct ncclProxyArgs proxyArgs;
-  computeColl(info, &coll, &proxyArgs);
+  NCCLCHECK(computeColl(info, &coll, &proxyArgs));
 
   info->comm->myParams->blockDim.x = max(info->comm->myParams->blockDim.x, coll.args.nThreads);
   if (info->comm->userStreamSet == false) {

@@ -9,7 +9,7 @@
 #include "collectives.h"
 
 template<int UNROLL, class FUNC, typename T>
-__device__ void ncclReduceScatterKernel(struct CollectiveArgs* args) {
+__device__ void ncclReduceScatterRingKernel(struct CollectiveArgs* args) {
   const int tid = threadIdx.x;
   const int nthreads = blockDim.x - 1;
   const int bid = args->bid;
@@ -77,10 +77,13 @@ __device__ void ncclReduceScatterKernel(struct CollectiveArgs* args) {
   }
 }
 
+template<int UNROLL, class FUNC, typename T>
+__device__ void ncclReduceScatterTreeKernel(struct CollectiveArgs* args) { }
+
 #include "ll_kernel.h"
 
 template<int UNUSED, class FUNC, typename T>
-__device__ void ncclReduceScatterLLKernel(struct CollectiveArgs* args) {
+__device__ void ncclReduceScatterLLRingKernel(struct CollectiveArgs* args) {
   const int tid = threadIdx.x;
   const int bid = args->bid;
   const int nthreads = args->nThreads;
@@ -135,3 +138,6 @@ __device__ void ncclReduceScatterLLKernel(struct CollectiveArgs* args) {
     LLprims.recvReduce(thisInput+offset, thisOutput+chunkOffset, maxOffset);
   }
 }
+
+template<int UNUSED, class FUNC, typename T>
+__device__ void ncclReduceScatterLLTreeKernel(struct CollectiveArgs* args) { }

@@ -9,7 +9,7 @@
 #include "collectives.h"
 
 template<int UNROLL, class FUNC, typename T>
-__device__ void ncclAllReduceKernel(struct CollectiveArgs* args) {
+__device__ void ncclAllReduceRingKernel(struct CollectiveArgs* args) {
   const int tid = threadIdx.x;
   const int nthreads = blockDim.x - 1;
   const int bid = args->bid;
@@ -132,11 +132,14 @@ __device__ void ncclAllReduceKernel(struct CollectiveArgs* args) {
   }
 }
 
+template<int UNROLL, class FUNC, typename T>
+__device__ void ncclAllReduceTreeKernel(struct CollectiveArgs* args) {
+}
+
 #include "ll_kernel.h"
 
-#if 0
 template<int UNUSED, class FUNC, typename T>
-__device__ void ncclAllReduceLLKernel(struct CollectiveArgs* args) {
+__device__ void ncclAllReduceLLRingKernel(struct CollectiveArgs* args) {
   const int tid = threadIdx.x;
   const int bid = args->bid;
   const int nthreads = args->nThreads;
@@ -215,9 +218,9 @@ __device__ void ncclAllReduceLLKernel(struct CollectiveArgs* args) {
     LLprims.recv(thisOutput+offset, maxOffset);
   }
 }
-#else
+
 template<int UNUSED, class FUNC, typename T>
-__device__ void ncclAllReduceLLKernel(struct CollectiveArgs* args) {
+__device__ void ncclAllReduceLLTreeKernel(struct CollectiveArgs* args) {
   const int tid = threadIdx.x;
   const int bid = args->bid;
   const int nthreads = args->nThreads;
@@ -235,7 +238,6 @@ __device__ void ncclAllReduceLLKernel(struct CollectiveArgs* args) {
     upRecvs[i] = &channel->devPeers[tree->down[i]].recv.conn;
     dnSends[i] = &channel->devPeers[tree->down[i]].send.conn;
   }
-  //  if (tid == 0) printf("Up %d %d Down %d %d %d %d\n", tree->nUp, tree->up, tree->nDown, tree->down[0], tree->down[1], tree->down[2]);
 
   const ssize_t size = args->N;
 
@@ -277,7 +279,4 @@ __device__ void ncclAllReduceLLKernel(struct CollectiveArgs* args) {
       }
     }
   } while(0);
-
-  //  if (tid == 0) printf("[%d] done\n", comm->rank);
 }
-#endif

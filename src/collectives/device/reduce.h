@@ -9,7 +9,7 @@
 #include "collectives.h"
 
 template<int UNROLL, class FUNC, typename T>
-__device__ void ncclReduceKernel(struct CollectiveArgs* args) {
+__device__ void ncclReduceRingKernel(struct CollectiveArgs* args) {
   const int tid = threadIdx.x;
   const int nthreads = blockDim.x - 1;
   const int bid = args->bid;
@@ -60,10 +60,13 @@ __device__ void ncclReduceKernel(struct CollectiveArgs* args) {
   }
 }
 
+template<int UNROLL, class FUNC, typename T>
+__device__ void ncclReduceTreeKernel(struct CollectiveArgs* args) { }
+
 #include "ll_kernel.h"
 
 template<int UNUSED, class FUNC, typename T>
-__device__ void ncclReduceLLKernel(struct CollectiveArgs* args) {
+__device__ void ncclReduceLLRingKernel(struct CollectiveArgs* args) {
   const int tid = threadIdx.x;
   const int bid = args->bid;
   const int nthreads = args->nThreads;
@@ -104,3 +107,6 @@ __device__ void ncclReduceLLKernel(struct CollectiveArgs* args) {
     }
   }
 }
+
+template<int UNUSED, class FUNC, typename T>
+__device__ void ncclReduceLLTreeKernel(struct CollectiveArgs* args) { }

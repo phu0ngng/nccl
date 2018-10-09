@@ -324,6 +324,12 @@ static ncclResult_t setupChannel(struct ncclComm* comm, int channelId, int rank,
     if (down0 != -1) tree->down[tree->nDown++] = ranks[down0];
     if (down1 != -1) tree->down[tree->nDown++] = ranks[down1];
   }
+
+  INFO(INIT, "Channel %02d : %d -> %d, %d, %d", channelId,
+      tree->nUp ? tree->up : -1,
+      tree->nDown > 0 ? tree->down[0] : -1,
+      tree->nDown > 1 ? tree->down[1] : -1,
+      tree->nDown > 2 ? tree->down[2] : -1);
   //printf("[%d] nUp %d (%d) nDown %d (%d %d %d)\n", rank, tree->nUp, tree->up, tree->nDown, tree->down[0], tree->down[1], tree->down[2]);
 
   return ncclSuccess;
