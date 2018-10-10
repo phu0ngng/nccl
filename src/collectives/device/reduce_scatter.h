@@ -18,27 +18,22 @@ __device__ void ncclReduceScatterRingKernel(struct CollectiveArgs* args) {
   struct ncclRing* ring = &channel->ring;
   struct ncclConnInfo* recv = &channel->devPeers[ring->prev].recv.conn;
   struct ncclConnInfo* send = &channel->devPeers[ring->next].send.conn;
+  const int stepSize = channel->buffSize / (sizeof(T)*NCCL_STEPS);
 
   ncclPrimitives<UNROLL, REDUCESCATTER_CHUNKSTEPS/REDUCESCATTER_SLICESTEPS, REDUCESCATTER_SLICESTEPS, T, FUNC>
-    prims(tid, nthreads, recv, send, args->comm->abortFlag);
+    prims(tid, nthreads, stepSize, recv, send, args->comm->abortFlag);
 
   const ssize_t size = args->N;
   const int nranks = comm->nRanks;
-  const int buffSize = channel->buffSize / sizeof(T);
-  const int stepSize = buffSize / NCCL_STEPS;
   const int chunkSize = stepSize * ALLREDUCE_CHUNKSTEPS;
   const ssize_t loopSize = args->nChannels*(ssize_t)chunkSize;
 
-  int noffset = (prims.getSendStep()%NCCL_STEPS)*stepSize;
-  int poffset = (prims.getRecvStep()%NCCL_STEPS)*stepSize;
   // Need all threads to read this before thread 0 might increment it
   __syncthreads();
 
   // Compute pointers
   const T * __restrict__ thisInput = (const T*)args->ThisInput;
   T * __restrict__ thisOutput = (T*)args->ThisOutput;
-  T * __restrict__ prevInput = (T*)recv->buff;
-  T * __restrict__ nextOutput = (T*)send->buff;
 
   for (ssize_t gridOffset = 0; gridOffset < size; gridOffset += loopSize) {
     int realChunkSize = min(chunkSize, DIVUP(size-gridOffset,args->nChannels));
@@ -47,33 +42,28 @@ __device__ void ncclReduceScatterRingKernel(struct CollectiveArgs* args) {
 
     /////////////// begin ReduceScatter steps ///////////////
     ssize_t offset;
-    int maxOffset = min(realChunkSize, size-chunkOffset);
+    int nelem = min(realChunkSize, size-chunkOffset);
     int rankDest;
 
     // step 0: push data to next GPU
     rankDest = ring->devUserRanks[nranks-1];
     offset = chunkOffset + rankDest * size;
 
-    prims.send(thisInput+offset, nextOutput+noffset, chunkSize, maxOffset);
-    if ((noffset += chunkSize) == buffSize) noffset = 0;
+    prims.send(thisInput+offset, nelem);
 
     // k-2 steps: reduce and copy to next GPU
     for (int j=2; j<nranks; ++j) {
       rankDest = ring->devUserRanks[nranks-j];
       offset = chunkOffset + rankDest * size;
 
-      prims.recvReduceSend(prevInput+poffset, thisInput+offset, nextOutput+noffset, chunkSize, maxOffset);
-      if ((poffset += chunkSize) == buffSize) poffset = 0;
-      if ((noffset += chunkSize) == buffSize) noffset = 0;
+      prims.recvReduceSend(thisInput+offset, nelem);
     }
 
-    // step k-1: reduce this buffer and data, which will produce the final
-    // result that we store in this data and push to the next GPU
+    // step k-1: reduce this buffer and data, which will produce the final result
     rankDest = ring->devUserRanks[0];
     offset = chunkOffset + rankDest * size;
 
-    prims.recvReduce(prevInput+poffset, thisInput+offset, thisOutput+chunkOffset, chunkSize, maxOffset);
-    if ((poffset += chunkSize) == buffSize) poffset = 0;
+    prims.recvReduceCopy(thisInput+offset, thisOutput+chunkOffset, nelem);
   }
 }
 
@@ -113,21 +103,21 @@ __device__ void ncclReduceScatterLLRingKernel(struct CollectiveArgs* args) {
 
     /////////////// begin ReduceScatter steps ///////////////
     ssize_t offset;
-    int maxOffset = min(chunkSize, size-chunkOffset);
+    int nelem = min(chunkSize, size-chunkOffset);
     int rankDest;
 
     // step 0: push data to next GPU
     rankDest = ring->devUserRanks[nranks-1];
     offset = chunkOffset + rankDest * size;
 
-    LLprims.send(thisInput+offset, maxOffset);
+    LLprims.send(thisInput+offset, nelem);
 
     // k-2 steps: reduce and copy to next GPU
     for (int j=2; j<nranks; ++j) {
       rankDest = ring->devUserRanks[nranks-j];
       offset = chunkOffset + rankDest * size;
 
-      LLprims.recvReduceSend(thisInput+offset, maxOffset);
+      LLprims.recvReduceSend(thisInput+offset, nelem);
     }
 
     // step k-1: reduce this buffer and data, which will produce the final
@@ -135,7 +125,7 @@ __device__ void ncclReduceScatterLLRingKernel(struct CollectiveArgs* args) {
     rankDest = ring->devUserRanks[0];
     offset = chunkOffset + rankDest * size;
 
-    LLprims.recvReduce(thisInput+offset, thisOutput+chunkOffset, maxOffset);
+    LLprims.recvReduce(thisInput+offset, thisOutput+chunkOffset, nelem);
   }
 }
 

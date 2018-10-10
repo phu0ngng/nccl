@@ -118,7 +118,8 @@ static ncclResult_t commFree(ncclComm_t comm) {
 
   free(comm->peerInfo);
 
-  NCCLCHECK(bootstrapClose(comm->bootstrap));
+  if (comm->bootstrap)
+    NCCLCHECK(bootstrapClose(comm->bootstrap));
 
   CUDACHECK(cudaFree(comm->devComm));
 

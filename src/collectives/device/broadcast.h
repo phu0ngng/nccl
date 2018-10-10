@@ -10,6 +10,7 @@
 
 template<int UNROLL, class FUNC, typename T>
 __device__ void ncclBroadcastRingKernel(struct CollectiveArgs* args) {
+  const int tid = threadIdx.x;
   const int nthreads = blockDim.x - 1;
   const int bid = args->bid;
   struct ncclComm* comm = args->comm;
@@ -17,29 +18,24 @@ __device__ void ncclBroadcastRingKernel(struct CollectiveArgs* args) {
   struct ncclRing* ring = &channel->ring;
   struct ncclConnInfo* recv = &channel->devPeers[ring->prev].recv.conn;
   struct ncclConnInfo* send = &channel->devPeers[ring->next].send.conn;
+  const int stepSize = channel->buffSize / (sizeof(T)*NCCL_STEPS);
 
   ncclPrimitives<UNROLL, BROADCAST_CHUNKSTEPS/BROADCAST_SLICESTEPS, BROADCAST_SLICESTEPS, T>
-    prims(threadIdx.x, nthreads, recv, send, args->comm->abortFlag);
+    prims(tid, nthreads, stepSize, recv, send, args->comm->abortFlag);
 
   const ssize_t size = args->N;
-  const int buffSize = channel->buffSize / sizeof(T);
-  const int stepSize = buffSize / NCCL_STEPS;
   const int chunkSize = stepSize * BROADCAST_CHUNKSTEPS;
   const ssize_t loopSize = args->nChannels*(ssize_t)chunkSize;
   const int rank = ring->devUserRanks[0];
   const int nextRank = ring->devUserRanks[1];
   const int root = args->root;
 
-  int noffset = (prims.getSendStep()%NCCL_STEPS)*stepSize;
-  int poffset = (prims.getRecvStep()%NCCL_STEPS)*stepSize;
   // Need all threads to read this before thread 0 might increment it
   __syncthreads();
 
   // Compute pointers
   const T * __restrict__ thisInput = (const T*)args->ThisInput;
   T * __restrict__ thisOutput = (T*)args->ThisOutput;
-  T * __restrict__ prevInput = (T*)recv->buff;
-  T * __restrict__ nextOutput = (T*)send->buff;
 
   for (ssize_t gridOffset = 0; gridOffset < size; gridOffset += loopSize) {
     int realChunkSize = min(chunkSize, DIVUP(size-gridOffset,args->nChannels));
@@ -49,17 +45,15 @@ __device__ void ncclBroadcastRingKernel(struct CollectiveArgs* args) {
 
     if (rank == root) {
       if (thisInput == thisOutput) {
-        prims.send(thisInput+offset, nextOutput+noffset, chunkSize, maxOffset);
+        prims.send(thisInput+offset, maxOffset);
       } else {
-        prims.copySend(thisInput+offset, thisOutput+offset, nextOutput+noffset, chunkSize, maxOffset);
+        prims.copySend(thisInput+offset, thisOutput+offset, maxOffset);
       }
     } else if (nextRank == root) {
-      prims.recv(prevInput+poffset, thisOutput+offset, chunkSize, maxOffset);
+      prims.recv(thisOutput+offset, maxOffset);
     } else {
-      prims.recvCopySend(prevInput+poffset, thisOutput+offset, nextOutput+noffset, chunkSize, maxOffset);
+      prims.recvCopySend(thisOutput+offset, maxOffset);
     }
-    if ((poffset += chunkSize) == buffSize) poffset = 0;
-    if ((noffset += chunkSize) == buffSize) noffset = 0;
   }
 }
 
@@ -82,7 +76,7 @@ __device__ void ncclBroadcastLLRingKernel(struct CollectiveArgs* args) {
   ncclLLPrimitives<T, FUNC, 1, 1> LLprims(tid, nthreads, 1, &recv, 1, &send, comm->abortFlag);
 
   const ssize_t size = args->N;
-  const int rank = comm->rank;
+  const int rank = ring->devUserRanks[0];
   const int nextRank = ring->devUserRanks[1];
   const int root = args->root;
 

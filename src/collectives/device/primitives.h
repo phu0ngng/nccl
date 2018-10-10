@@ -19,15 +19,21 @@ class ncclPrimitives {
  private:
   const int tid;
   const int nthreads;
+  const int stepSize;
   struct ncclConnInfo* recvConn;
   struct ncclConnInfo* sendConn;
   uint64_t recvStep;
   uint64_t sendStep;
-  uint64_t sendConnHead = 0ULL;
+  uint64_t sendConnHead;
 
   volatile uint32_t* abortFlagPtr = NULL;
   uint64_t spins = 0;
   uint32_t abort = 0;
+
+  inline __device__ int recvOffset() { return (recvStep%NCCL_STEPS)*stepSize; }
+  inline __device__ int sendOffset() { return (sendStep%NCCL_STEPS)*stepSize; }
+  inline __device__ const T* recvPtr() { return ((const T*)recvConn->buff)+recvOffset(); }
+  inline __device__ T* sendPtr() { return ((T*)sendConn->buff)+sendOffset(); }
 
   // Each thread sets a predicate to true if val == 1
   // all CTA's threads enter the barrier and do a popc on their predicates being True
@@ -54,14 +60,12 @@ class ncclPrimitives {
   inline __device__ void waitRecv() {
     spins = 0;
     recvStep += SLICESTEPS;
-    if (tid == 0) {
-      volatile uint64_t* ptr = recvConn->tail;
-      while (*(ptr) < recvStep) {
-        if (checkAbort()) return;
-      }
+    volatile uint64_t* ptr = recvConn->tail;
+    while (*(ptr) < recvStep) {
+      if (checkAbort()) return;
     }
   }
-    
+
   inline __device__ void waitSend() {
     spins = 0;
     sendStep += SLICESTEPS;
@@ -75,27 +79,27 @@ class ncclPrimitives {
   inline __device__ void postRecv() {
     *(recvConn->head) = recvStep += SLICESTEPS;
   }
-    
+
   inline __device__ void postSend() {
     *(sendConn->tail) = sendStep += SLICESTEPS;
   }
-    
+
   inline __device__ void postSendSize(int size) {
     if (sendConn->fifo) sendConn->fifo[sendStep%NCCL_STEPS] = size;
   }
 
   inline __device__ void
-  GenericOp( const T* src1, const T* src2, T* dst1, T* dst2, int chunkSize, int size, bool r, bool s) {
-    int sliceSize = chunkSize / SLICESPERCHUNK;
+  GenericOp( const T* src1, const T* src2, T* dst1, T* dst2, int nelem, bool r, bool s) {
     int offset = 0;
+    int sliceSize = stepSize * SLICESTEPS;
 
     #pragma unroll 1
     for (int slice=0; slice<SLICESPERCHUNK; ++slice) {
-      int realSize = max(0, min(sliceSize, size-offset));
+      int realSize = max(0, min(sliceSize, nelem-offset));
       if (tid < nthreads) {
         if (s) waitSend();
         if (r) waitRecv();
-        if (r || s) asm volatile ("bar.sync 1, %0;" :: "r"(nthreads));
+  //      if (r || s) asm volatile ("bar.sync 1, %0;" :: "r"(nthreads));
         if (src2) {
           if (dst2) {
             ReduceOrCopy<UNROLL, REDOP, T, true,  true >(tid, nthreads, dst1+offset, dst2+offset, src1+offset, src2+offset, realSize);
@@ -123,58 +127,81 @@ class ncclPrimitives {
 
  public:
   __device__ __forceinline__
-  ncclPrimitives(const int tid, const int nthreads, struct ncclConnInfo* recv, struct ncclConnInfo* send, volatile uint32_t* abortFlagPtr)
-    : abortFlagPtr(abortFlagPtr), tid(tid), nthreads(nthreads), recvConn(recv), sendConn(send)
+  ncclPrimitives(const int tid, const int nthreads, int stepSize, struct ncclConnInfo* recv, struct ncclConnInfo* send, volatile uint32_t* abortFlagPtr)
+    : abortFlagPtr(abortFlagPtr), tid(tid), nthreads(nthreads), stepSize(stepSize), recvConn(recv), sendConn(send)
   {
     // Make sure step is updated before we read it
     __syncthreads();
     // Skip some slots if needed to make sure we can get aligned buffers chunks
     sendStep = ROUNDUP(sendConn->step, SLICESPERCHUNK*SLICESTEPS);
     recvStep = ROUNDUP(recvConn->step, SLICESPERCHUNK*SLICESTEPS);
-    // No need to sync the other way as there will be a syncthreads later on after we set noffset / poffset
-  }
-
-  __device__ __forceinline__ int getSendStep() { return sendStep; }
-  __device__ __forceinline__ int getRecvStep() { return recvStep; }
-
-  __device__ __forceinline__ void
-  send(const T* src, T* dst, int len, int maxOffset) {
-    GenericOp(src, NULL, dst, NULL, len, maxOffset, false, true);
+    sendConnHead = *(sendConn->head);
+    // No need to sync the other way as there will be a syncthreads later on
   }
 
   __device__ __forceinline__ void
-  recv(const T* src, T* dst, int len, int maxOffset) {
-    GenericOp(src, NULL, dst, NULL, len, maxOffset, true, false);
+  send(const T* src, int nelem) {
+    GenericOp(src, NULL, sendPtr(), NULL, nelem, false, true);
+  }
+  __device__ __forceinline__ void
+  sendDirect(const T* src, T* dst, int nelem) {
+    GenericOp(src, NULL, dst, NULL, nelem, false, true);
   }
 
   __device__ __forceinline__ void
-  copySend(const T* src, T* dst1, T* dst2, int len, int maxOffset) {
-    GenericOp(src, NULL, dst1, dst2, len, maxOffset, false, true);
+  recv(T* dst, int nelem) {
+    GenericOp(recvPtr(), NULL, dst, NULL, nelem, true, false);
+  }
+  __device__ __forceinline__ void
+  recvDirect(const T* src, int nelem) {
+    // We just need to check data has been written but no copy is necessary
+    GenericOp(src, NULL, NULL, NULL, 0, true, false);
   }
 
   __device__ __forceinline__ void
-  recvSend(const T* src, T* dst, int len, int maxOffset) {
-    GenericOp(src, NULL, dst, NULL, len, maxOffset, true, true);
+  copySend(const T* src, T* dst1, int nelem) {
+    GenericOp(src, NULL, dst1, sendPtr(), nelem, false, true);
+  }
+  __device__ __forceinline__ void
+  copySendDirect(const T* src, T* dst1, T* dst2, int nelem) {
+    GenericOp(src, NULL, dst1, dst2, nelem, false, true);
   }
 
   __device__ __forceinline__ void
-  recvCopySend(const T* src, T* dst1, T* dst2, int len, int maxOffset) {
-    GenericOp(src, NULL, dst1, dst2, len, maxOffset, true, true);
+  recvDirectSend(const T* src, int nelem) {
+    GenericOp(src, NULL, sendPtr(), NULL, nelem, true, true);
+  }
+  __device__ __forceinline__ void
+  recvDirectSendDirect(const T* src, T* dst, int nelem) {
+    GenericOp(src, NULL, dst, NULL, nelem, true, true);
   }
 
   __device__ __forceinline__ void
-  recvReduce(const T* src1, const T* src2, T* dst, int len, int maxOffset) {
-    GenericOp(src1, src2, dst, NULL, len, maxOffset, true, false);
+  recvCopySend(T* dst, int nelem) {
+    GenericOp(recvPtr(), NULL, dst, sendPtr(), nelem, true, true);
+  }
+  __device__ __forceinline__ void
+  recvCopySendDirect(T* dst1, T* dst2, int nelem) {
+    GenericOp(recvPtr(), NULL, dst1, dst2, nelem, true, true);
   }
 
   __device__ __forceinline__ void
-  recvReduceSend(const T* src1, const T* src2, T* dst, int len, int maxOffset) {
-    GenericOp(src1, src2, dst, NULL, len, maxOffset, true, true);
+  recvReduceCopy(const T* src, T* dst, int nelem) {
+    GenericOp(recvPtr(), src, dst, NULL, nelem, true, false);
   }
 
   __device__ __forceinline__ void
-  recvReduceCopySend(const T* src1, const T* src2, T* dst1, T* dst2, int len, int maxOffset) {
-    GenericOp(src1, src2, dst1, dst2, len, maxOffset, true, true);
+  recvReduceSend(const T* src, int nelem) {
+    GenericOp(recvPtr(), src, sendPtr(), NULL, nelem, true, true);
+  }
+
+  __device__ __forceinline__ void
+  recvReduceCopySend(const T* src, T* dst, int nelem) {
+    GenericOp(recvPtr(), src, dst, sendPtr(), nelem, true, true);
+  }
+  __device__ __forceinline__ void
+  recvReduceCopySendDirect(const T* src, T* dst1, T* dst2, int nelem) {
+    GenericOp(recvPtr(), src, dst1, dst2, nelem, true, true);
   }
 
   __device__ __forceinline__ ~ncclPrimitives() {

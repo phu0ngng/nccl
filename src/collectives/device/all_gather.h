@@ -21,19 +21,15 @@ __device__ void ncclAllGatherRingKernel(struct CollectiveArgs* args) {
   struct ncclConnInfo* send = &channel->devPeers[ring->next].send.conn;
   int prevdirect = recv->direct;
   int nextdirect = send->direct;
+  const int stepSize = channel->buffSize / (sizeof(T)*NCCL_STEPS);
 
   ncclPrimitives<UNROLL, ALLGATHER_CHUNKSTEPS/ALLGATHER_SLICESTEPS, ALLREDUCE_SLICESTEPS, T>
-    prims(tid, nthreads, recv, send, args->comm->abortFlag);
+    prims(tid, nthreads, stepSize, recv, send, args->comm->abortFlag);
 
   const ssize_t size = args->N;
   const int nranks = comm->nRanks;
-  const int buffSize = channel->buffSize / sizeof(T);
-  const int stepSize = buffSize / NCCL_STEPS;
   const int chunkSize = stepSize * ALLREDUCE_CHUNKSTEPS;
   const ssize_t loopSize = args->nChannels*(ssize_t)chunkSize;
-
-  int noffset = (prims.getSendStep()%NCCL_STEPS)*stepSize;
-  int poffset = (prims.getRecvStep()%NCCL_STEPS)*stepSize;
 
   if (tid == 0) {
     if (prevdirect) {
@@ -51,8 +47,6 @@ __device__ void ncclAllGatherRingKernel(struct CollectiveArgs* args) {
   // Compute pointers
   const T * __restrict__ thisInput = (const T*)args->ThisInput;
   T * __restrict__ thisOutput = (T*)args->ThisOutput;
-  T * __restrict__ prevInput = (T*)recv->buff;
-  T * __restrict__ nextOutput = (T*)send->buff;
 
   for (ssize_t gridOffset = 0; gridOffset < size; gridOffset += loopSize) {
     int realChunkSize = min(chunkSize, DIVUP(size-gridOffset,args->nChannels));
@@ -61,51 +55,56 @@ __device__ void ncclAllGatherRingKernel(struct CollectiveArgs* args) {
 
     /////////////// begin AllGather steps ///////////////
     ssize_t offset;
-    int maxOffset = min(realChunkSize, size-chunkOffset);
+    int nelem = min(realChunkSize, size-chunkOffset);
     int rankDest;
 
     // step 0: push data to next GPU
     rankDest = ring->devUserRanks[0];
     offset = chunkOffset + rankDest * size;
 
-    T* output = nextdirect ? (sharedNextOutput + offset) : (nextOutput + noffset);
-    if (thisInput + chunkOffset == thisOutput + offset) { // In place
-      prims.send(thisInput+chunkOffset, output, chunkSize, maxOffset);
+    if (nextdirect) {
+      if (thisInput + chunkOffset == thisOutput + offset) { // In place
+        prims.sendDirect(thisInput+chunkOffset, sharedNextOutput+offset, nelem);
+      } else {
+        prims.copySendDirect(thisInput+chunkOffset, thisOutput+offset, sharedNextOutput+offset, nelem);
+      }
     } else {
-      prims.copySend(thisInput+chunkOffset, thisOutput+offset, output, chunkSize, maxOffset);
+      if (thisInput + chunkOffset == thisOutput + offset) { // In place
+        prims.send(thisInput+chunkOffset, nelem);
+      } else {
+        prims.copySend(thisInput+chunkOffset, thisOutput+offset, nelem);
+      }
     }
-    if ((noffset += chunkSize) == buffSize) noffset = 0;
 
     // k-2 steps: copy to next GPU
-    if (prevdirect) {
-      for (int j=1; j<nranks-1; ++j) {
-        rankDest = ring->devUserRanks[nranks-j];
-        offset = chunkOffset + rankDest * size;
-
-        T* output = nextdirect ? (sharedNextOutput + offset) : (nextOutput + noffset);
-        prims.recvSend(thisOutput+offset, output, chunkSize, maxOffset);
-        if ((poffset += chunkSize) == buffSize) poffset = 0;
-        if ((noffset += chunkSize) == buffSize) noffset = 0;
-      }
-      prims.recv(NULL, NULL, 0, 0);
-    } else {
-      for (int j=1; j<nranks-1; ++j) {
-        rankDest = ring->devUserRanks[nranks-j];
-        offset = chunkOffset + rankDest * size;
-
-        T* output = nextdirect ? (sharedNextOutput + offset) : (nextOutput + noffset);
-        prims.recvCopySend(prevInput+poffset, thisOutput+offset, output, chunkSize, maxOffset);
-        if ((poffset += chunkSize) == buffSize) poffset = 0;
-        if ((noffset += chunkSize) == buffSize) noffset = 0;
-      }
-
-      // Make final copy from buffer to dest.
-      rankDest = ring->devUserRanks[1];
+    for (int j=1; j<nranks-1; ++j) {
+      rankDest = ring->devUserRanks[nranks-j];
       offset = chunkOffset + rankDest * size;
 
-      // Here we need to copy from buffer to this output.
-      prims.recv(prevInput+poffset, thisOutput+offset, chunkSize, maxOffset);
-      if ((poffset += chunkSize) == buffSize) poffset = 0;
+      if (prevdirect) {
+        if (nextdirect) {
+          prims.recvDirectSendDirect(thisOutput+offset, sharedNextOutput+offset, nelem);
+        } else {
+          prims.recvDirectSend(thisOutput+offset, nelem);
+        }
+      } else {
+        if (nextdirect) {
+          prims.recvCopySendDirect(thisOutput+offset, sharedNextOutput+offset, nelem);
+        } else {
+          prims.recvCopySend(thisOutput+offset, nelem);
+        }
+      }
+    }
+
+    // Make final copy from buffer to dest.
+    rankDest = ring->devUserRanks[1];
+    offset = chunkOffset + rankDest * size;
+
+    // Final wait/copy.
+    if (prevdirect) {
+      prims.recvDirect(thisOutput+offset, nelem);
+    } else {
+      prims.recv(thisOutput+offset, nelem);
     }
   }
 }
@@ -146,7 +145,7 @@ __device__ void ncclAllGatherLLRingKernel(struct CollectiveArgs* args) {
 
     /////////////// begin AllGather steps ///////////////
     ssize_t offset;
-    int maxOffset = min(chunkSize, size-chunkOffset);
+    int nelem = min(chunkSize, size-chunkOffset);
     int rankDest;
 
     // step 0: push data to next GPU
@@ -154,9 +153,9 @@ __device__ void ncclAllGatherLLRingKernel(struct CollectiveArgs* args) {
     offset = chunkOffset + rankDest * size;
 
     if (thisInput + chunkOffset == thisOutput + offset) { // In place
-      LLprims.send(thisInput+chunkOffset, maxOffset);
+      LLprims.send(thisInput+chunkOffset, nelem);
     } else {
-      LLprims.copySend(thisInput+chunkOffset, thisOutput+offset, maxOffset);
+      LLprims.copySend(thisInput+chunkOffset, thisOutput+offset, nelem);
     }
 
     // k-2 steps: copy to next GPU
@@ -164,14 +163,14 @@ __device__ void ncclAllGatherLLRingKernel(struct CollectiveArgs* args) {
       rankDest = ring->devUserRanks[nranks-j];
       offset = chunkOffset + rankDest * size;
 
-      LLprims.recvCopySend(thisOutput+offset, maxOffset);
+      LLprims.recvCopySend(thisOutput+offset, nelem);
     }
 
     // step k-1: final store
     rankDest = ring->devUserRanks[1];
     offset = chunkOffset + rankDest * size;
 
-    LLprims.recv(thisOutput+offset, maxOffset);
+    LLprims.recv(thisOutput+offset, nelem);
   }
 }
 
