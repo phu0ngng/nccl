@@ -25,6 +25,8 @@ class ncclPrimitives {
   uint64_t recvStep;
   uint64_t sendStep;
   uint64_t sendConnHead;
+  T* recvDirectBuff = NULL;
+  T* sendDirectBuff = NULL;
 
   volatile uint32_t* abortFlagPtr = NULL;
   uint64_t spins = 0;
@@ -88,38 +90,44 @@ class ncclPrimitives {
     if (sendConn->fifo) sendConn->fifo[sendStep%NCCL_STEPS] = size;
   }
 
+  template <bool directrecv, bool directsend, bool recv, bool send, bool src, bool dst>
   inline __device__ void
-  GenericOp( const T* src1, const T* src2, T* dst1, T* dst2, int nelem, bool r, bool s) {
+  GenericOp(const T* srcPtr, T* dstPtr, int nelem, int directOffset) {
     int offset = 0;
     int sliceSize = stepSize * SLICESTEPS;
+    T* dst1 = send ?
+      (directsend && sendDirectBuff ? sendDirectBuff+directOffset : sendPtr())
+      : dstPtr;
+    const T* src1 = recv ?
+      (directrecv && recvDirectBuff ? recvDirectBuff+directOffset : recvPtr())
+      : srcPtr;
 
     #pragma unroll 1
     for (int slice=0; slice<SLICESPERCHUNK; ++slice) {
       int realSize = max(0, min(sliceSize, nelem-offset));
       if (tid < nthreads) {
-        if (s) waitSend();
-        if (r) waitRecv();
-  //      if (r || s) asm volatile ("bar.sync 1, %0;" :: "r"(nthreads));
-        if (src2) {
-          if (dst2) {
-            ReduceOrCopy<UNROLL, REDOP, T, true,  true >(tid, nthreads, dst1+offset, dst2+offset, src1+offset, src2+offset, realSize);
+        if (send) waitSend();
+        if (recv) waitRecv();
+
+        if (realSize > 0) {
+          if (directrecv && recvDirectBuff) {
+            // Since src1 == dstPtr+offset, skip one copy
+            if (send) {
+              ReduceOrCopy<UNROLL, REDOP, T, false, false>(tid, nthreads, dst1+offset, NULL, src1+offset, NULL, realSize);
+            }
           } else {
-            ReduceOrCopy<UNROLL, REDOP, T, false, true >(tid, nthreads, dst1+offset, NULL,        src1+offset, src2+offset, realSize);
-          }
-        } else { 
-          if (dst2) {
-            ReduceOrCopy<UNROLL, REDOP, T, true,  false>(tid, nthreads, dst1+offset, dst2+offset, src1+offset, NULL,        realSize);
-          } else {
-            ReduceOrCopy<UNROLL, REDOP, T, false, false>(tid, nthreads, dst1+offset, NULL,        src1+offset, NULL,        realSize);
+            if (tid < realSize)
+            ReduceOrCopy<UNROLL, REDOP, T, dst&&send, src&&recv>(tid, nthreads, dst1+offset, dstPtr+offset, src1+offset, srcPtr+offset, realSize);
           }
         }
+
         exitIfAbortBarrier();
       } else {
         exitIfAbortBarrier();
-        if (s) postSendSize(realSize*sizeof(T));
-        if (s || r) __threadfence_system();
-        if (s) postSend();
-        if (r) postRecv();
+        if (send) postSendSize(realSize*sizeof(T));
+        if (send || recv) __threadfence_system();
+        if (send) postSend();
+        if (recv) postRecv();
       }
       offset += sliceSize;
     }
@@ -127,7 +135,7 @@ class ncclPrimitives {
 
  public:
   __device__ __forceinline__
-  ncclPrimitives(const int tid, const int nthreads, int stepSize, struct ncclConnInfo* recv, struct ncclConnInfo* send, volatile uint32_t* abortFlagPtr)
+  ncclPrimitives(const int tid, const int nthreads, int stepSize, struct ncclConnInfo* recv, struct ncclConnInfo* send, T* directBuff, volatile uint32_t* abortFlagPtr)
     : abortFlagPtr(abortFlagPtr), tid(tid), nthreads(nthreads), stepSize(stepSize), recvConn(recv), sendConn(send)
   {
     // Make sure step is updated before we read it
@@ -136,72 +144,79 @@ class ncclPrimitives {
     sendStep = ROUNDUP(sendConn->step, SLICESPERCHUNK*SLICESTEPS);
     recvStep = ROUNDUP(recvConn->step, SLICESPERCHUNK*SLICESTEPS);
     sendConnHead = *(sendConn->head);
-    // No need to sync the other way as there will be a syncthreads later on
+
+    if (directBuff) {
+      if (recvConn->direct) {
+        recvDirectBuff = directBuff;
+        if (tid == 0) *recvConn->ptrExchange = directBuff;
+      }
+      if (sendConn->direct) {
+        void* volatile* ptr = sendConn->ptrExchange;
+        while ((sendDirectBuff = (T*)(*ptr)) == NULL);
+      }
+    }
+    __syncthreads();
+    if (directBuff && sendConn->direct && tid == 0) {
+      *sendConn->ptrExchange = NULL;
+      // We should issue a threadfence_system here, but there will be communication
+      // after that which will ensure it is reset.
+    }
   }
 
   __device__ __forceinline__ void
   send(const T* src, int nelem) {
-    GenericOp(src, NULL, sendPtr(), NULL, nelem, false, true);
+    GenericOp<false, false, false, true, true, false>(src, NULL, nelem, 0);
   }
   __device__ __forceinline__ void
-  sendDirect(const T* src, T* dst, int nelem) {
-    GenericOp(src, NULL, dst, NULL, nelem, false, true);
+  directSend(const T* src, int directOffset, int nelem) {
+    GenericOp<false, true, false, true, true, false>(src, NULL, nelem, directOffset);
   }
 
   __device__ __forceinline__ void
   recv(T* dst, int nelem) {
-    GenericOp(recvPtr(), NULL, dst, NULL, nelem, true, false);
+    GenericOp<false, false, true, false, false, true>(NULL, dst, nelem, 0);
   }
   __device__ __forceinline__ void
-  recvDirect(const T* src, int nelem) {
-    // We just need to check data has been written but no copy is necessary
-    GenericOp(src, NULL, NULL, NULL, 0, true, false);
-  }
-
-  __device__ __forceinline__ void
-  copySend(const T* src, T* dst1, int nelem) {
-    GenericOp(src, NULL, dst1, sendPtr(), nelem, false, true);
-  }
-  __device__ __forceinline__ void
-  copySendDirect(const T* src, T* dst1, T* dst2, int nelem) {
-    GenericOp(src, NULL, dst1, dst2, nelem, false, true);
+  directRecv(T* dst, int directOffset, int nelem) {
+    GenericOp<true, false, true, false, false, true>(NULL, dst, nelem, directOffset);
   }
 
   __device__ __forceinline__ void
-  recvDirectSend(const T* src, int nelem) {
-    GenericOp(src, NULL, sendPtr(), NULL, nelem, true, true);
+  copySend(const T* src, T* dst, int nelem) {
+    GenericOp<false, false, false, true, true, true>(src, dst, nelem, 0);
   }
   __device__ __forceinline__ void
-  recvDirectSendDirect(const T* src, T* dst, int nelem) {
-    GenericOp(src, NULL, dst, NULL, nelem, true, true);
+  directCopySend(const T* src, T* dst, int directOffset, int nelem) {
+    GenericOp<false, true, false, true, true, true>(src, dst, nelem, directOffset);
   }
 
   __device__ __forceinline__ void
   recvCopySend(T* dst, int nelem) {
-    GenericOp(recvPtr(), NULL, dst, sendPtr(), nelem, true, true);
+    GenericOp<false, false, true, true, false, true>(NULL, dst, nelem, 0);
   }
   __device__ __forceinline__ void
-  recvCopySendDirect(T* dst1, T* dst2, int nelem) {
-    GenericOp(recvPtr(), NULL, dst1, dst2, nelem, true, true);
+  directRecvCopySend(T* dst, int directOffset, int nelem) {
+    GenericOp<true, true, true, true, false, true>(NULL, dst, nelem, directOffset);
   }
 
   __device__ __forceinline__ void
   recvReduceCopy(const T* src, T* dst, int nelem) {
-    GenericOp(recvPtr(), src, dst, NULL, nelem, true, false);
+    GenericOp<false, false, true, false, true, true>(src, dst, nelem, 0);
   }
 
   __device__ __forceinline__ void
   recvReduceSend(const T* src, int nelem) {
-    GenericOp(recvPtr(), src, sendPtr(), NULL, nelem, true, true);
+    GenericOp<false, false, true, true, true, false>(src, NULL, nelem, 0);
   }
 
   __device__ __forceinline__ void
   recvReduceCopySend(const T* src, T* dst, int nelem) {
-    GenericOp(recvPtr(), src, dst, sendPtr(), nelem, true, true);
+    GenericOp<false, false, true, true, true, true>(src, dst, nelem, 0);
   }
   __device__ __forceinline__ void
-  recvReduceCopySendDirect(const T* src, T* dst1, T* dst2, int nelem) {
-    GenericOp(recvPtr(), src, dst1, dst2, nelem, true, true);
+  directRecvReduceCopySend(const T* src, T* dst, int directOffset, int nelem) {
+    // Direct is only for the send part
+    GenericOp<false, true, true, true, true, true>(src, dst, nelem, directOffset);
   }
 
   __device__ __forceinline__ ~ncclPrimitives() {

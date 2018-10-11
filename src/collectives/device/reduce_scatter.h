@@ -18,22 +18,18 @@ __device__ void ncclReduceScatterRingKernel(struct CollectiveArgs* args) {
   struct ncclRing* ring = &channel->ring;
   struct ncclConnInfo* recv = &channel->devPeers[ring->prev].recv.conn;
   struct ncclConnInfo* send = &channel->devPeers[ring->next].send.conn;
-  const int stepSize = channel->buffSize / (sizeof(T)*NCCL_STEPS);
-
-  ncclPrimitives<UNROLL, REDUCESCATTER_CHUNKSTEPS/REDUCESCATTER_SLICESTEPS, REDUCESCATTER_SLICESTEPS, T, FUNC>
-    prims(tid, nthreads, stepSize, recv, send, args->comm->abortFlag);
-
   const ssize_t size = args->N;
   const int nranks = comm->nRanks;
+  const int stepSize = channel->buffSize / (sizeof(T)*NCCL_STEPS);
   const int chunkSize = stepSize * ALLREDUCE_CHUNKSTEPS;
   const ssize_t loopSize = args->nChannels*(ssize_t)chunkSize;
-
-  // Need all threads to read this before thread 0 might increment it
-  __syncthreads();
 
   // Compute pointers
   const T * __restrict__ thisInput = (const T*)args->ThisInput;
   T * __restrict__ thisOutput = (T*)args->ThisOutput;
+
+  ncclPrimitives<UNROLL, REDUCESCATTER_CHUNKSTEPS/REDUCESCATTER_SLICESTEPS, REDUCESCATTER_SLICESTEPS, T, FUNC>
+    prims(tid, nthreads, stepSize, recv, send, NULL, args->comm->abortFlag);
 
   for (ssize_t gridOffset = 0; gridOffset < size; gridOffset += loopSize) {
     int realChunkSize = min(chunkSize, DIVUP(size-gridOffset,args->nChannels));

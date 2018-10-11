@@ -18,41 +18,37 @@ __device__ void ncclBroadcastRingKernel(struct CollectiveArgs* args) {
   struct ncclRing* ring = &channel->ring;
   struct ncclConnInfo* recv = &channel->devPeers[ring->prev].recv.conn;
   struct ncclConnInfo* send = &channel->devPeers[ring->next].send.conn;
-  const int stepSize = channel->buffSize / (sizeof(T)*NCCL_STEPS);
-
-  ncclPrimitives<UNROLL, BROADCAST_CHUNKSTEPS/BROADCAST_SLICESTEPS, BROADCAST_SLICESTEPS, T>
-    prims(tid, nthreads, stepSize, recv, send, args->comm->abortFlag);
-
   const ssize_t size = args->N;
+  const int stepSize = channel->buffSize / (sizeof(T)*NCCL_STEPS);
   const int chunkSize = stepSize * BROADCAST_CHUNKSTEPS;
   const ssize_t loopSize = args->nChannels*(ssize_t)chunkSize;
   const int rank = ring->devUserRanks[0];
   const int nextRank = ring->devUserRanks[1];
   const int root = args->root;
 
-  // Need all threads to read this before thread 0 might increment it
-  __syncthreads();
-
   // Compute pointers
   const T * __restrict__ thisInput = (const T*)args->ThisInput;
   T * __restrict__ thisOutput = (T*)args->ThisOutput;
+
+  ncclPrimitives<UNROLL, BROADCAST_CHUNKSTEPS/BROADCAST_SLICESTEPS, BROADCAST_SLICESTEPS, T>
+    prims(tid, nthreads, stepSize, recv, send, NULL, args->comm->abortFlag);
 
   for (ssize_t gridOffset = 0; gridOffset < size; gridOffset += loopSize) {
     int realChunkSize = min(chunkSize, DIVUP(size-gridOffset,args->nChannels));
     ALIGN_SIZE(realChunkSize, nthreads*sizeof(uint64_t)/sizeof(T));
     ssize_t offset = gridOffset + bid*realChunkSize;
-    int maxOffset = min(realChunkSize, size-offset);
+    int nelem = min(realChunkSize, size-offset);
 
     if (rank == root) {
       if (thisInput == thisOutput) {
-        prims.send(thisInput+offset, maxOffset);
+        prims.send(thisInput+offset, nelem);
       } else {
-        prims.copySend(thisInput+offset, thisOutput+offset, maxOffset);
+        prims.copySend(thisInput+offset, thisOutput+offset, nelem);
       }
     } else if (nextRank == root) {
-      prims.recv(thisOutput+offset, maxOffset);
+      prims.recv(thisOutput+offset, nelem);
     } else {
-      prims.recvCopySend(thisOutput+offset, maxOffset);
+      prims.recvCopySend(thisOutput+offset, nelem);
     }
   }
 }
@@ -93,17 +89,17 @@ __device__ void ncclBroadcastLLRingKernel(struct CollectiveArgs* args) {
     }
     ssize_t offset = gridOffset + bid*chunkSize;
 
-    int maxOffset = min(chunkSize, size-offset);
+    int nelem = min(chunkSize, size-offset);
     if (rank == root) {
       if (thisInput == thisOutput) {
-        LLprims.send(thisInput+offset, maxOffset);
+        LLprims.send(thisInput+offset, nelem);
       } else {
-        LLprims.copySend(thisInput + offset, thisOutput + offset, maxOffset);
+        LLprims.copySend(thisInput + offset, thisOutput + offset, nelem);
       }
     } else if (nextRank == root) {
-      LLprims.recv(thisOutput + offset, maxOffset);
+      LLprims.recv(thisOutput + offset, nelem);
     } else {
-      LLprims.recvCopySend(thisOutput + offset, maxOffset);
+      LLprims.recvCopySend(thisOutput + offset, nelem);
     }
   }
 }

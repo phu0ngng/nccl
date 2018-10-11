@@ -13,40 +13,23 @@ __device__ void ncclAllReduceRingKernel(struct CollectiveArgs* args) {
   const int tid = threadIdx.x;
   const int nthreads = blockDim.x - 1;
   const int bid = args->bid;
-  __shared__ T* sharedNextOutput;
   struct ncclComm* comm = args->comm;
   struct ncclChannel* channel = comm->channels+blockIdx.x;
   struct ncclRing* ring = &channel->ring;
   struct ncclConnInfo* recv = &channel->devPeers[ring->prev].recv.conn;
   struct ncclConnInfo* send = &channel->devPeers[ring->next].send.conn;
-  int prevdirect = recv->direct;
-  int nextdirect = send->direct;
-  const int stepSize = channel->buffSize / (sizeof(T)*NCCL_STEPS);
-
-  ncclPrimitives<UNROLL, ALLREDUCE_CHUNKSTEPS/ALLREDUCE_SLICESTEPS, ALLREDUCE_SLICESTEPS, T, FUNC>
-    prims(tid, nthreads, stepSize, recv, send, args->comm->abortFlag);
-
   const ssize_t size = args->N;
   const int nranks = comm->nRanks;
+  const int stepSize = channel->buffSize / (sizeof(T)*NCCL_STEPS);
   const int chunkSize = stepSize * ALLREDUCE_CHUNKSTEPS;
   const ssize_t loopSize = args->nChannels*(ssize_t)chunkSize;
-
-  if (tid == 0) {
-    if (prevdirect) {
-      *recv->ptrExchange = args->ThisOutput;
-    }
-    if (nextdirect) {
-      void* volatile* ptr = send->ptrExchange;
-      while (*ptr == nullptr);
-      sharedNextOutput = (T*)*ptr;
-      *ptr = nullptr;
-    }
-  }
-  __syncthreads();
 
   // Compute pointers
   const T * __restrict__ thisInput = (const T*)args->ThisInput;
   T * __restrict__ thisOutput = (T*)args->ThisOutput;
+
+  ncclPrimitives<UNROLL, ALLREDUCE_CHUNKSTEPS/ALLREDUCE_SLICESTEPS, ALLREDUCE_SLICESTEPS, T, FUNC>
+    prims(tid, nthreads, stepSize, recv, send, thisOutput, args->comm->abortFlag);
 
   for (ssize_t gridOffset = 0; gridOffset < size; gridOffset += nranks*loopSize) {
     int realChunkSize = min(chunkSize, DIVUP(size-gridOffset,nranks*args->nChannels));
@@ -80,11 +63,7 @@ __device__ void ncclAllReduceRingKernel(struct CollectiveArgs* args) {
     offset = chunkOffset + slice * realChunkSize;
     nelem = min(realChunkSize, size-offset);
 
-    if (nextdirect) {
-      prims.recvReduceCopySendDirect(thisInput+offset, thisOutput+offset, sharedNextOutput+offset, nelem);
-    } else {
-      prims.recvReduceCopySend(thisInput+offset, thisOutput+offset, nelem);
-    }
+    prims.directRecvReduceCopySend(thisInput+offset, thisOutput+offset, offset, nelem);
 
     // k-2 steps: copy to next GPU
     for (int j=1; j<nranks-1; ++j) {
@@ -92,19 +71,7 @@ __device__ void ncclAllReduceRingKernel(struct CollectiveArgs* args) {
       offset = chunkOffset + slice * realChunkSize;
       nelem = min(realChunkSize, size-offset);
 
-      if (prevdirect) {
-        if (nextdirect) {
-          prims.recvDirectSendDirect(thisOutput+offset, sharedNextOutput+offset, nelem);
-        } else {
-          prims.recvDirectSend(thisOutput+offset, nelem);
-        }
-      } else {
-        if (nextdirect) {
-          prims.recvCopySendDirect(thisOutput+offset, sharedNextOutput+offset, nelem);
-        } else {
-          prims.recvCopySend(thisOutput+offset, nelem);
-        }
-      }
+      prims.directRecvCopySend(thisOutput+offset, offset, nelem);
     }
 
     // Make final copy from buffer to dest.
@@ -113,11 +80,7 @@ __device__ void ncclAllReduceRingKernel(struct CollectiveArgs* args) {
     nelem = min(realChunkSize, size-offset);
 
     // Final wait/copy.
-    if (prevdirect) {
-      prims.recvDirect(thisOutput+offset, nelem);
-    } else {
-      prims.recv(thisOutput+offset, nelem);
-    }
+    prims.directRecv(thisOutput+offset, offset, nelem);
   }
 }
 
