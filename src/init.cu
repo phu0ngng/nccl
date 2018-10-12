@@ -314,7 +314,13 @@ static ncclResult_t setupChannel(struct ncclComm* comm, int channelId, int rank,
     if (treeMasters[r]) ranks[i++] = r;
   }
   int up, down0, down1;
-  NCCLCHECK(ncclGetBtree(nMasters, masterIndex, &up, &down0, &down1));
+  int u0, d0_0, d0_1, u1, d1_0, d1_1;
+  NCCLCHECK(ncclGetDtree(nMasters, masterIndex, &u0, &d0_0, &d0_1, &u1, &d1_0, &d1_1));
+  if (channelId < comm->nChannels / 2) {
+    up = u0; down0 = d0_0; down1 = d0_1;
+  } else {
+    up = u1; down0 = d1_0; down1 = d1_1;
+  }
 
   if (rank == master) {
     tree->nUp = 0;
@@ -491,7 +497,7 @@ ncclResult_t ncclCommSetIntra(struct ncclComm* comm, int rank, int ranks, struct
 static ncclResult_t p2pSetup(struct ncclComm* comm, struct ncclChannel* channel, int nrecv, int* peerRecv, int nsend, int* peerSend) {
   struct ncclConnect connect;
   struct ncclConnector* conn;
-/*  printf("[%d] p2pSetup recv from", comm->rank);
+  /*printf("[%d] p2pSetup recv from", comm->rank);
   for (int i=0; i<nrecv; i++) printf(" %d[%d]", peerRecv[i], channel->peers[peerRecv[i]].recv.connected);
   printf(" ; send to");
   for (int i=0; i<nsend; i++) printf(" %d[%d]", peerSend[i], channel->peers[peerSend[i]].send.connected);

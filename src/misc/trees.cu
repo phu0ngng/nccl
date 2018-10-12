@@ -90,27 +90,19 @@ ncclResult_t ncclGetDtree(int nranks, int rank, int* s0, int* d0_0, int* d0_1, i
   // Second tree ... mirror or shift
   if (nranks % 2 == 0) {
     // shift
-    if (rank == 0) { *s1 = -1; *d1_0 = *d0_0+1; *d1_1 = -1; }
-    else {
-      int shiftrank = rank-1;
-      if (shiftrank == 0) shiftrank = nranks-1;
-      int u, d0, d1;
-      ncclGetBtree(nranks, shiftrank, &u, &d0, &d1);
-      *s1 = u <= 0 ? u : u+1 < nranks ? u+1 : 1;
-      *d1_0 = d0 <= 0 ? d0 : d0+1 < nranks ? d0+1 : 1;
-      *d1_1 = d1 <= 0 ? d1 : d1+1 < nranks ? d1+1 : 1;
-    }
+    int shiftrank = (rank-1+nranks) % nranks;
+    int u, d0, d1;
+    ncclGetBtree(nranks, shiftrank, &u, &d0, &d1);
+    *s1 = u == -1 ? -1 : (u+1) % nranks;
+    *d1_0 = d0 == -1 ? -1 : (d0+1) % nranks;
+    *d1_1 = d1 == -1 ? -1 : (d1+1) % nranks;
   } else {
     // mirror
-    if (rank == 0) { *s1 = -1; *d1_0 = nranks-*d0_0; *d1_1 = -1; }
-    else {
-      int u, d0, d1;
-      ncclGetBtree(nranks, nranks-rank, &u, &d0, &d1);
-      *s1 = u <= 0 ? u : nranks-u;
-      *d1_0 = d0 <= 0 ? d0 : nranks-d0;
-      *d1_1 = d1 <= 0 ? d1 : nranks-d1;
-    }
+    int u, d0, d1;
+    ncclGetBtree(nranks, nranks-rank, &u, &d0, &d1);
+    *s1 = u == -1 ? -1 : nranks-u;
+    *d1_0 = d0 == -1 ? -1 : nranks-d0;
+    *d1_1 = d1 == -1 ? -1 : nranks-d1;
   }
-
   return ncclSuccess;
 }
