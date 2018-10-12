@@ -16,8 +16,6 @@ __device__ void ncclReduceRingKernel(struct CollectiveArgs* args) {
   struct ncclComm* comm = args->comm;
   struct ncclChannel* channel = comm->channels+blockIdx.x;
   struct ncclRing* ring = &channel->ring;
-  struct ncclConnInfo* recv = &channel->devPeers[ring->prev].recv.conn;
-  struct ncclConnInfo* send = &channel->devPeers[ring->next].send.conn;
   const ssize_t size = args->N;
   const int nranks = comm->nRanks;
   const int stepSize = channel->buffSize / (sizeof(T)*NCCL_STEPS);
@@ -31,8 +29,8 @@ __device__ void ncclReduceRingKernel(struct CollectiveArgs* args) {
   const T * __restrict__ thisInput = (const T*)args->ThisInput;
   T * __restrict__ thisOutput = (T*)args->ThisOutput;
 
-  ncclPrimitives<UNROLL, REDUCE_CHUNKSTEPS/REDUCE_SLICESTEPS, REDUCE_SLICESTEPS, T, FUNC>
-    prims(tid, nthreads, stepSize, recv, send, NULL, args->comm->abortFlag);
+  ncclPrimitives<UNROLL, REDUCE_CHUNKSTEPS/REDUCE_SLICESTEPS, REDUCE_SLICESTEPS, T, 1, 1, FUNC>
+    prims(tid, nthreads, 1, &ring->prev, 1, &ring->next, NULL, stepSize, channel, args->comm->abortFlag);
 
   for (ssize_t gridOffset = 0; gridOffset < size; gridOffset += loopSize) {
     int realChunkSize = min(chunkSize, DIVUP(size-gridOffset,args->nChannels));
@@ -62,10 +60,8 @@ __device__ void ncclReduceLLRingKernel(struct CollectiveArgs* args) {
   struct ncclComm* comm = args->comm;
   struct ncclChannel* channel = comm->channels+blockIdx.x;
   struct ncclRing* ring = &channel->ring;
-  struct ncclConnInfo* recv = &channel->devPeers[ring->prev].recv.conn;
-  struct ncclConnInfo* send = &channel->devPeers[ring->next].send.conn;
 
-  ncclLLPrimitives<T, FUNC, 1, 1> LLprims(tid, nthreads, 1, &recv, 1, &send, comm->abortFlag);
+  ncclLLPrimitives<T, FUNC, 1, 1> LLprims(tid, nthreads, 1, &ring->prev, 1, &ring->next, channel, comm->abortFlag);
 
   const ssize_t size = args->N;
   const int rank = comm->rank;
@@ -90,7 +86,7 @@ __device__ void ncclReduceLLRingKernel(struct CollectiveArgs* args) {
     if (prevRank == root) {
       LLprims.send(thisInput+offset, nelem);
     } else if (rank == root) {
-      LLprims.recvReduce(thisInput+offset, thisOutput+offset, nelem);
+      LLprims.recvReduceCopy(thisInput+offset, thisOutput+offset, nelem);
     } else {
       LLprims.recvReduceSend(thisInput+offset, nelem);
     }

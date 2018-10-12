@@ -16,8 +16,6 @@ __device__ void ncclBroadcastRingKernel(struct CollectiveArgs* args) {
   struct ncclComm* comm = args->comm;
   struct ncclChannel* channel = comm->channels+blockIdx.x;
   struct ncclRing* ring = &channel->ring;
-  struct ncclConnInfo* recv = &channel->devPeers[ring->prev].recv.conn;
-  struct ncclConnInfo* send = &channel->devPeers[ring->next].send.conn;
   const ssize_t size = args->N;
   const int stepSize = channel->buffSize / (sizeof(T)*NCCL_STEPS);
   const int chunkSize = stepSize * BROADCAST_CHUNKSTEPS;
@@ -30,8 +28,8 @@ __device__ void ncclBroadcastRingKernel(struct CollectiveArgs* args) {
   const T * __restrict__ thisInput = (const T*)args->ThisInput;
   T * __restrict__ thisOutput = (T*)args->ThisOutput;
 
-  ncclPrimitives<UNROLL, BROADCAST_CHUNKSTEPS/BROADCAST_SLICESTEPS, BROADCAST_SLICESTEPS, T>
-    prims(tid, nthreads, stepSize, recv, send, NULL, args->comm->abortFlag);
+  ncclPrimitives<UNROLL, BROADCAST_CHUNKSTEPS/BROADCAST_SLICESTEPS, BROADCAST_SLICESTEPS, T, 1, 1>
+    prims(tid, nthreads, 1, &ring->prev, 1, &ring->next, NULL, stepSize, channel, args->comm->abortFlag);
 
   for (ssize_t gridOffset = 0; gridOffset < size; gridOffset += loopSize) {
     int realChunkSize = min(chunkSize, DIVUP(size-gridOffset,args->nChannels));
@@ -66,10 +64,8 @@ __device__ void ncclBroadcastLLRingKernel(struct CollectiveArgs* args) {
   struct ncclComm* comm = args->comm;
   struct ncclChannel* channel = comm->channels+blockIdx.x;
   struct ncclRing* ring = &channel->ring;
-  struct ncclConnInfo* recv = &channel->devPeers[ring->prev].recv.conn;
-  struct ncclConnInfo* send = &channel->devPeers[ring->next].send.conn;
 
-  ncclLLPrimitives<T, FUNC, 1, 1> LLprims(tid, nthreads, 1, &recv, 1, &send, comm->abortFlag);
+  ncclLLPrimitives<T, FUNC, 1, 1> LLprims(tid, nthreads, 1, &ring->prev, 1, &ring->next, channel, comm->abortFlag);
 
   const ssize_t size = args->N;
   const int rank = ring->devUserRanks[0];
