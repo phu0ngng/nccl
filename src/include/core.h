@@ -176,11 +176,12 @@ struct ncclRing {
   int* devUserRanks;
 };
 
+#define NCCL_MAX_TREE_ARITY 3
 struct ncclTree {
   int nUp;
   int up;
   int nDown;
-  int down[3];
+  int down[NCCL_MAX_TREE_ARITY];
 };
 
 struct ncclPeer {

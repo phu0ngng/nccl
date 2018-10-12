@@ -101,7 +101,7 @@ __device__ void ncclAllReduceTreeKernel(struct CollectiveArgs* args) {
 
   do {
     // Reduce : max number of recv is 3, max number of send is 1 (binary tree + local)
-    ncclPrimitives<UNROLL, ALLREDUCE_CHUNKSTEPS/ALLREDUCE_SLICESTEPS, ALLREDUCE_SLICESTEPS, T, 3, 1, FUNC> prims(tid, nthreads, tree->nDown, tree->down, tree->nUp, &tree->up, NULL, stepSize, channel, comm->abortFlag);
+    ncclPrimitives<UNROLL, ALLREDUCE_CHUNKSTEPS/ALLREDUCE_SLICESTEPS, ALLREDUCE_SLICESTEPS, T, NCCL_MAX_TREE_ARITY, 1, FUNC> prims(tid, nthreads, tree->nDown, tree->down, tree->nUp, &tree->up, NULL, stepSize, channel, comm->abortFlag);
     for (ssize_t gridOffset = 0; gridOffset < size; gridOffset += loopSize) {
       // Up
       ssize_t offset = gridOffset + bid*chunkSize;
@@ -118,7 +118,7 @@ __device__ void ncclAllReduceTreeKernel(struct CollectiveArgs* args) {
 
   do {
     // Broadcast : max number of recv is 1, max number of send is 3 (binary tree + local)
-    ncclPrimitives<UNROLL, ALLREDUCE_CHUNKSTEPS/ALLREDUCE_SLICESTEPS, ALLREDUCE_SLICESTEPS, T, 1, 3, FUNC> prims(tid, nthreads, tree->nUp, &tree->up, tree->nDown, tree->down, NULL, stepSize, channel, comm->abortFlag);
+    ncclPrimitives<UNROLL, ALLREDUCE_CHUNKSTEPS/ALLREDUCE_SLICESTEPS, ALLREDUCE_SLICESTEPS, T, 1, NCCL_MAX_TREE_ARITY, FUNC> prims(tid, nthreads, tree->nUp, &tree->up, tree->nDown, tree->down, NULL, stepSize, channel, comm->abortFlag);
     for (ssize_t gridOffset = 0; gridOffset < size; gridOffset += loopSize) {
       // Down
       ssize_t offset = gridOffset + bid*chunkSize;
@@ -233,7 +233,7 @@ __device__ void ncclAllReduceLLTreeKernel(struct CollectiveArgs* args) {
 
   do {
     // Reduce : max number of recv is 3, max number of send is 1 (binary tree + local)
-    ncclLLPrimitives<T, FUNC, 3, 1> LLprims(tid, nthreads, tree->nDown, tree->down, tree->nUp, &tree->up, channel, comm->abortFlag);
+    ncclLLPrimitives<T, FUNC, NCCL_MAX_TREE_ARITY, 1> LLprims(tid, nthreads, tree->nDown, tree->down, tree->nUp, &tree->up, channel, comm->abortFlag);
     for (ssize_t gridOffset = 0; gridOffset < size; gridOffset += loopSize) {
       // Up
       ssize_t offset = gridOffset + bid*chunkSize;
@@ -250,7 +250,7 @@ __device__ void ncclAllReduceLLTreeKernel(struct CollectiveArgs* args) {
 
   do {
     // Broadcast : max number of recv is 1, max number of send is 3 (binary tree + local)
-    ncclLLPrimitives<T, FUNC, 1, 3> LLprims(tid, nthreads, tree->nUp, &tree->up, tree->nDown, tree->down, channel, comm->abortFlag);
+    ncclLLPrimitives<T, FUNC, 1, NCCL_MAX_TREE_ARITY> LLprims(tid, nthreads, tree->nUp, &tree->up, tree->nDown, tree->down, channel, comm->abortFlag);
     for (ssize_t gridOffset = 0; gridOffset < size; gridOffset += loopSize) {
       // Down
       ssize_t offset = gridOffset + bid*chunkSize;
