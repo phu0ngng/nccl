@@ -348,6 +348,7 @@ ncclResult_t ncclGetRings(int* nrings, int* nthreads, int rank, int nranks, int*
         for (int i=0; i<nranks; i++) {
           prev[r*nranks+i] = prev[(r-*nrings)*nranks+i];
           next[r*nranks+i] = next[(r-*nrings)*nranks+i];
+          treeMasters[r*nranks+i] = treeMasters[(r-*nrings)*nranks+i];
         }
       }
       *nrings = minNrings;
