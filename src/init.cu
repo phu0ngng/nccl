@@ -605,9 +605,8 @@ static ncclResult_t initTransportsRank(struct ncclComm* comm, ncclUniqueId* comm
   struct ncclConnect *connect;
   NCCLCHECK(ncclCalloc(&connect, 2));
   for (int r=0; r<nrings; r++) {
-    int* ringRanks = rings+r*nranks;
     struct ncclChannel* channel = comm->channels+r;
-    NCCLCHECK(setupChannel(comm, r, rank, nranks, ringRanks, treeMasters));
+    NCCLCHECK(setupChannel(comm, r, rank, nranks, rings+r*nranks, treeMasters+r*nranks));
     NCCLCHECK(p2pSetup(comm, channel, 1, &channel->ring.prev, 1, &channel->ring.next));
     NCCLCHECK(p2pSetup(comm, channel, channel->tree.nDown, channel->tree.down, channel->tree.nUp, &channel->tree.up));
     NCCLCHECK(p2pSetup(comm, channel, channel->tree.nUp, &channel->tree.up, channel->tree.nDown, channel->tree.down));
