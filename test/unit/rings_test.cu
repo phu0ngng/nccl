@@ -824,7 +824,8 @@ static ncclResult_t getRings(int compCap, int nranks, int* transports, ncclTvalu
   int prev[MAXCHANNELS*nranks];
   int next[MAXCHANNELS*nranks];
   int next_final[MAXCHANNELS*nranks];
-  int treeMasters[MAXCHANNELS*nranks];
+  int treeIn[MAXCHANNELS*nranks];
+  int treeOut[MAXCHANNELS*nranks];
   char* errormsg = NULL;
   char errortext[120];
 
@@ -835,7 +836,7 @@ static ncclResult_t getRings(int compCap, int nranks, int* transports, ncclTvalu
   for (int rank=0; rank<nranks; rank++) {
     int nrings = MAXCHANNELS;
     int nthreads = getDefaultThreads();
-    ncclResult_t ret = ncclGetRings(&nrings, &nthreads, rank, nranks, transports, values, prev, next, treeMasters);
+    ncclResult_t ret = ncclGetRings(&nrings, &nthreads, rank, nranks, transports, values, prev, next, treeIn, treeOut);
     if (ret != ncclSuccess) {
       sprintf(errortext, "Error : getRings returned %s", ncclGetErrorString(ret));
       errormsg = errortext;
