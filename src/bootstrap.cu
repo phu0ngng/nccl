@@ -187,6 +187,7 @@ ncclResult_t bootstrapInit(ncclUniqueId* commId, int rank, int nranks, void** co
   // Pass the remote address to listen via info
   if (idFromEnv) {
     memcpy(&info.extHandleListen, &id->extHandleRoot, sizeof(ncclNetHandle_t));
+    memcpy(&info.extHandleListenRoot, &id->extHandleRoot, sizeof(ncclNetHandle_t));
   }
   // listen will return the local address via info (specify interface type 'findSubnetIf')
   state->dev = idFromEnv ? findSubnetIf : 0;
