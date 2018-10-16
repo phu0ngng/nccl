@@ -397,19 +397,28 @@ __device__ inline void ReduceCopy128bMulti( const int w, const int nw, const int
   for (int offset = startOffset + w * UNROLL * WARP_SIZE + t;
       offset < startOffset + N;
       offset += nw * UNROLL * WARP_SIZE) {
-#pragma unroll
-    for (int u = 0; u < UNROLL; ++u) {
-      Fetch128(vals[u], srcs[0]+offset+u*WARP_SIZE);
-      for (int i=1; i<NSRCS && i<nsrcs; i++) {
+    // Load and reduce
+    #pragma unroll
+    for (int u = 0; u < UNROLL; ++u) Fetch128(vals[u], srcs[0]+offset+u*WARP_SIZE);
+
+    #pragma unroll 1
+    for (int i=1; i<NSRCS && i<nsrcs; i++) {
+      #pragma unroll
+      for (int u = 0; u < UNROLL; ++u) {
         Pack128 v;
         Fetch128(v, srcs[i]+offset+u*WARP_SIZE);
         MULTI128<FUNC, T>()(vals[u], v);
       }
     }
-#pragma unroll
-    for (int u = 0; u < UNROLL; ++u) {
-      Store128(dsts[0]+offset+u*WARP_SIZE, vals[u]);
-      for (int i=1; i<NDSTS && i<ndsts; i++) Store128(dsts[i]+offset+u*WARP_SIZE, vals[u]);
+
+    // Store
+    #pragma unroll
+    for (int u = 0; u < UNROLL; ++u) Store128(dsts[0]+offset+u*WARP_SIZE, vals[u]);
+
+    #pragma unroll 1
+    for (int i=1; i<NDSTS && i<ndsts; i++) {
+      #pragma unroll
+      for (int u = 0; u < UNROLL; ++u) Store128(dsts[i]+offset+u*WARP_SIZE, vals[u]);
     }
   }
 }
