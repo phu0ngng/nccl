@@ -217,10 +217,10 @@ ncclResult_t netSendSetup(struct ncclPeerInfo* myInfo, struct ncclPeerInfo* peer
   send->transportResources = resources;
 
   resources->netDev = getDev(channelId, ncclNetNdev, ncclNetScores);
-  int flags, usePtrForReads;
+  int flags, useGdrForReads;
   NCCLCHECK(ncclNetPtrSupport(resources->netDev, &flags));
-  NCCLCHECK(netUseGdrForReads(&usePtrForReads));
-  resources->cudaSupport = (flags & NCCL_PTR_CUDA) && usePtrForReads ? true : false;
+  NCCLCHECK(netUseGdrForReads(&useGdrForReads));
+  resources->cudaSupport = (flags & NCCL_PTR_CUDA) && useGdrForReads ? true : false;
 
   int sendSize = sizeof(struct ncclSendMem);
   NCCLCHECK(ncclCudaHostAlloc((void**)&resources->hostSendMem, (void**)&resources->devHostSendMem, sendSize));
