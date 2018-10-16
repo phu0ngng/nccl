@@ -79,7 +79,19 @@ void initNet() {
 }
 
 NCCL_PARAM(LlThreshold, "LL_THRESHOLD", -2);
-NCCL_PARAM(ThreadThreshold, "THREAD_THRESHOLD", NCCL_THREAD_THRESHOLD);
+NCCL_PARAM(ThreadThreshold, "THREAD_THRESHOLD", -2);
+
+int ncclThreadThreshold(int minCompCap, int multiNode) {
+  int threshold = ncclParamThreadThreshold();
+  if (threshold == -2) { // user has not set this env variable
+    threshold = (minCompCap <= 6) ? NCCL_THREAD_THRESHOLD_PREVOLTA : NCCL_THREAD_THRESHOLD;
+    // multiply by 2 if running on multiple nodes
+    if (multiNode) {
+      threshold *= 2;
+    }
+  }
+  return threshold;
+}
 
 pthread_mutex_t initLock = PTHREAD_MUTEX_INITIALIZER;
 static bool initialized = false;
@@ -165,7 +177,6 @@ static ncclResult_t commAlloc(ncclComm_t* comret, int ndev, int rank) {
   cudaGetDevice(&comm->cudaDev);
   comm->doneEvent = doneEvent;
   comm->llThreshold = ncclParamLlThreshold();
-  comm->threadThreshold = ncclParamThreadThreshold();
   comm->checkPointers = ncclParamCheckPointers() == 1 ? true : false;
 #if __CUDACC_VER_MAJOR__ >= 10 || (__CUDACC_VER_MAJOR__ >= 9 && __CUDACC_VER_MINOR__ >= 2)
   comm->groupCudaStream = ncclParamGroupCudaStream();
@@ -510,12 +521,15 @@ static ncclResult_t initTransportsRank(struct ncclComm* comm, ncclUniqueId* comm
 
   // Compute intra ranks
   int intraRank0 = -1, intraRank = -1, intraRanks = 0;
+  int multiNode = 0;
   for (int r=0; r<nranks; r++) {
     if ((rankInfos[r].hostHash == rankInfos[rank].hostHash) &&
         (rankInfos[r].pidHash == rankInfos[rank].pidHash)) {
       if (intraRanks == 0) intraRank0 = r;
       if (r == rank) intraRank = intraRanks;
       intraRanks++;
+    } else if (rankInfos[r].hostHash != rankInfos[rank].hostHash) {
+      multiNode = 1;
     }
   }
   TRACE(INIT,"hostHash[%d] %lx intraRank %d intraRanks %d intraRank0 %d",
@@ -526,6 +540,9 @@ static ncclResult_t initTransportsRank(struct ncclComm* comm, ncclUniqueId* comm
     return ncclInternalError;
   }
   NCCLCHECK(ncclCommSetIntra(comm, intraRank, intraRanks, rankInfos[intraRank0].comm));
+
+  // Determine thread threshold across all GPUs
+  comm->threadThreshold = ncclThreadThreshold(minCompCap, multiNode);
 
   // Barrier
   bootstrapClose(commState);
@@ -653,9 +670,13 @@ static ncclResult_t initTransportsAll(struct ncclComm** comms, const int* devs, 
   free(prevFinal);
   free(nextFinal);
 
+  // Determine thread threshold across all GPUs
+  int threadThreshold = ncclThreadThreshold(minCompCap, 0);
+
   for (int rank=0; rank<nranks; rank++) {
     comms[rank]->nRings = nrings;
     comms[rank]->nThreads = nthreads;
+    comms[rank]->threadThreshold = threadThreshold;
   }
 
   for (int r=0; r<nrings; r++) {
