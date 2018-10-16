@@ -63,19 +63,23 @@ class ncclPrimitives {
   inline __device__ void waitRecv(int i) {
     spins = 0;
     recvStep[i] += SLICESTEPS;
-    volatile uint64_t* ptr = recvConn[i]->tail;
-    while (*(ptr) < recvStep[i]) {
-      if (checkAbort()) break;
+    if (tid == 0) {
+      volatile uint64_t* ptr = recvConn[i]->tail;
+      while (*(ptr) < recvStep[i]) {
+        if (checkAbort()) break;
+      }
     }
   }
 
   inline __device__ void waitSend(int i) {
     spins = 0;
     sendStep[i] += SLICESTEPS;
-    while (sendConnHead[i] + NCCL_STEPS < sendStep[i]) {
-      volatile uint64_t* ptr = sendConn[i]->head;
-      sendConnHead[i] = *ptr;
-      if (checkAbort()) break;
+    if (tid == 0) {
+      while (sendConnHead[i] + NCCL_STEPS < sendStep[i]) {
+        volatile uint64_t* ptr = sendConn[i]->head;
+        sendConnHead[i] = *ptr;
+        if (checkAbort()) break;
+      }
     }
   }
 
@@ -121,6 +125,7 @@ class ncclPrimitives {
       if (tid < nthreads) {
         if (SEND) for (int i=0; i<NSEND && i<nsend; i++) waitSend(i);
         if (RECV) for (int i=0; i<NRECV && i<nrecv; i++) waitRecv(i);
+        if (SEND || RECV) asm volatile ("bar.sync 1, %0;" :: "r"(nthreads));
 
         if (realSize > 0) {
           if (DIRECTRECV && recvDirectBuff[0]) {
