@@ -316,7 +316,7 @@ static ncclResult_t setupChannel(struct ncclComm* comm, int channelId, int rank,
   int up, down0, down1;
   int u0, d0_0, d0_1, u1, d1_0, d1_1;
   NCCLCHECK(ncclGetDtree(nMasters, masterIndex, &u0, &d0_0, &d0_1, &u1, &d1_0, &d1_1));
-  if (channelId < comm->nChannels / 2) {
+  if (channelId < DIVUP(comm->nChannels, 2)) {
     up = u0; down0 = d0_0; down1 = d0_1;
   } else {
     up = u1; down0 = d1_0; down1 = d1_1;
@@ -337,7 +337,7 @@ static ncclResult_t setupChannel(struct ncclComm* comm, int channelId, int rank,
       tree->nDown > 0 ? tree->down[0] : -1,
       tree->nDown > 1 ? tree->down[1] : -1,
       tree->nDown > 2 ? tree->down[2] : -1);
-  //printf("[%d] nUp %d (%d) nDown %d (%d %d %d)\n", rank, tree->nUp, tree->up, tree->nDown, tree->down[0], tree->down[1], tree->down[2]);
+  printf("[%d/%d] nUp %d (%d) nDown %d (%d %d %d)\n", channelId, rank, tree->nUp, tree->up, tree->nDown, tree->down[0], tree->down[1], tree->down[2]);
 
   return ncclSuccess;
 }
@@ -557,12 +557,13 @@ static ncclResult_t initTransportsRank(struct ncclComm* comm, ncclUniqueId* comm
 
   // Get my rings
   int nrings;
-  int* prev, *next, *treeMasters;
+  int* prev, *next, *treeIn, *treeOut;
   NCCLCHECK(ncclCalloc(&prev, nranks*MAXCHANNELS));
   NCCLCHECK(ncclCalloc(&next, nranks*MAXCHANNELS));
-  NCCLCHECK(ncclCalloc(&treeMasters, nranks*MAXCHANNELS));
+  NCCLCHECK(ncclCalloc(&treeIn, nranks*MAXCHANNELS));
+  NCCLCHECK(ncclCalloc(&treeOut, nranks*MAXCHANNELS));
   comm->nThreads = getDefaultThreads();
-  NCCLCHECK(ncclGetRings(&nrings, &comm->nThreads, rank, nranks, connectTransport, connectValue, prev, next, treeMasters));
+  NCCLCHECK(ncclGetRings(&nrings, &comm->nThreads, rank, nranks, connectTransport, connectValue, prev, next, treeIn, treeOut));
   free(connectTransport);
   free(connectValue);
 
@@ -606,13 +607,15 @@ static ncclResult_t initTransportsRank(struct ncclComm* comm, ncclUniqueId* comm
   NCCLCHECK(ncclCalloc(&connect, 2));
   for (int r=0; r<nrings; r++) {
     struct ncclChannel* channel = comm->channels+r;
-    NCCLCHECK(setupChannel(comm, r, rank, nranks, rings+r*nranks, treeMasters+r*nranks));
+    NCCLCHECK(setupChannel(comm, r, rank, nranks, rings+r*nranks, treeIn+r*nranks));
     NCCLCHECK(p2pSetup(comm, channel, 1, &channel->ring.prev, 1, &channel->ring.next));
     NCCLCHECK(p2pSetup(comm, channel, channel->tree.nDown, channel->tree.down, channel->tree.nUp, &channel->tree.up));
     NCCLCHECK(p2pSetup(comm, channel, channel->tree.nUp, &channel->tree.up, channel->tree.nDown, channel->tree.down));
   }
   free(connect);
   free(rings);
+  free(treeIn);
+  free(treeOut);
 
   // Intra-process barrier setup
   struct rankInfo {
@@ -730,12 +733,13 @@ static ncclResult_t initTransportsAll(struct ncclComm** comms, const int* devs, 
   for (int rank=0; rank<nranks; rank++)
     NCCLCHECK(fillConnect(allInfo, nranks, rank, connectTransport+nranks*rank, connectValue+nranks*rank));
 
-  int* prev, *prevFinal, *next, *nextFinal, *treeMasters;
+  int* prev, *prevFinal, *next, *nextFinal, *treeIn, *treeOut;
   NCCLCHECK(ncclCalloc(&prev, nranks*MAXCHANNELS));
   NCCLCHECK(ncclCalloc(&prevFinal, nranks*MAXCHANNELS));
   NCCLCHECK(ncclCalloc(&next, nranks*MAXCHANNELS));
   NCCLCHECK(ncclCalloc(&nextFinal, nranks*MAXCHANNELS));
-  NCCLCHECK(ncclCalloc(&treeMasters, nranks*MAXCHANNELS));
+  NCCLCHECK(ncclCalloc(&treeIn, nranks*MAXCHANNELS));
+  NCCLCHECK(ncclCalloc(&treeOut, nranks*MAXCHANNELS));
   int nrings = MAXCHANNELS;
   int nthreads=0;
   int myCompCap = ncclCudaCompCap();
@@ -745,7 +749,7 @@ static ncclResult_t initTransportsAll(struct ncclComm** comms, const int* devs, 
     int nringsRank;
     int nthreadsRank = getDefaultThreads();
     myCompCap = ncclCudaCompCap();
-    NCCLCHECK(ncclGetRings(&nringsRank, &nthreadsRank, rank, nranks, connectTransport, connectValue, prev, next, treeMasters));
+    NCCLCHECK(ncclGetRings(&nringsRank, &nthreadsRank, rank, nranks, connectTransport, connectValue, prev, next, treeIn, treeOut));
     nrings = std::min(nrings, nringsRank);
     nthreads = std::max(nthreads, nthreadsRank);
     minCompCap = std::min(minCompCap, myCompCap);
@@ -759,6 +763,8 @@ static ncclResult_t initTransportsAll(struct ncclComm** comms, const int* devs, 
   free(connectValue);
   free(prev);
   free(next);
+  free(treeIn);
+  free(treeOut);
 
   INFO(INIT,"Using %d threads", nthreads);
   INFO(INIT,"Min Comp Cap %d", minCompCap);
@@ -781,7 +787,7 @@ static ncclResult_t initTransportsAll(struct ncclComm** comms, const int* devs, 
       CUDACHECK(cudaSetDevice(devs[rank]));
       struct ncclChannel* channel = comms[rank]->channels+r;
       struct ncclRing *ring = &channel->ring;
-      NCCLCHECK(setupChannel(comms[rank], r, rank, nranks, ringRanks, treeMasters));
+      NCCLCHECK(setupChannel(comms[rank], r, rank, nranks, ringRanks, treeIn));
       int prev = channel->ring.prev = ring->userRanks[nranks-1];
       int next = channel->ring.next = ring->userRanks[1];
       struct ncclConnector* recv = &channel->peers[prev].recv;
