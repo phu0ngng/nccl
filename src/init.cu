@@ -763,8 +763,6 @@ static ncclResult_t initTransportsAll(struct ncclComm** comms, const int* devs, 
   free(connectValue);
   free(prev);
   free(next);
-  free(treeIn);
-  free(treeOut);
 
   INFO(INIT,"Using %d threads", nthreads);
   INFO(INIT,"Min Comp Cap %d", minCompCap);
@@ -806,6 +804,8 @@ static ncclResult_t initTransportsAll(struct ncclComm** comms, const int* devs, 
     }
   }
   free(rings);
+  free(treeIn);
+  free(treeOut);
   return ncclSuccess;
 }
 
