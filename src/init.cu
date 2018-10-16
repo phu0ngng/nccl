@@ -277,7 +277,7 @@ static void swap(void* mem1, void* mem2, int size) {
 
 #define MAXWIDTH 20
 #define PREFIXLEN 15
-#define STRLENGTH (PREFIXLEN+4*MAXWIDTH)
+#define STRLENGTH (PREFIXLEN+5*MAXWIDTH)
 void dumpMatrix(int* connectMatrix, int nranks) {
   char line[STRLENGTH+1];
   line[STRLENGTH] = '\0';
@@ -291,6 +291,21 @@ void dumpMatrix(int* connectMatrix, int nranks) {
     INFO(INIT,"%s", line);
   }
 }
+
+void dumpMatrixTvalue(ncclTvalue_t* connectMatrix, int nranks) {
+  char line[STRLENGTH+1];
+  line[STRLENGTH] = '\0';
+  memset(line, ' ', STRLENGTH);
+  for (int j=0; j<nranks && j<MAXWIDTH; j++) sprintf(4+line+5*j, " %4d", j);
+  INFO(INIT,"%s", line);
+  for (int i=0; i<nranks; i++) {
+    memset(line, ' ', STRLENGTH);
+    sprintf(line, "%3d ", i);
+    for (int j=0; j<nranks && j<MAXWIDTH; j++) sprintf(4+line+5*j, " %4o", (int)connectMatrix[i*nranks+j]);
+    INFO(INIT,"%s", line);
+  }
+}
+
 
 void dumpLine(int* values, int nranks, const char* prefix) {
   int prefixlen = strlen(prefix);
@@ -433,7 +448,7 @@ static ncclResult_t initTransportsRank(struct ncclComm* comm, ncclUniqueId* comm
   NCCLCHECK(bootstrapAllGather(commState, connectTransport, nranks*(sizeof(int))));
   NCCLCHECK(bootstrapAllGather(commState, connectValue, nranks*(sizeof(ncclTvalue_t))));
   //if (rank == 0) dumpMatrix(connectTransport, nranks);
-  //if (rank == 0) dumpMatrix(connectValue, nranks);
+  //if (rank == 0) dumpMatrixTvalue(connectValue, nranks);
 
   // Get my rings
   int nrings;
