@@ -821,20 +821,21 @@ static void dumpRings(int nrings, int *rings, int nranks, const char* toponame, 
 static ncclResult_t getRings(int compCap, int nranks, int* transports, ncclTvalue_t* values, const char* toponame, int expectedNrings, int expectedNthreads) {
   int nrings_final = -1;
   int nthreads_final = -1;
-  int prev[MAXRINGS*nranks];
-  int next[MAXRINGS*nranks];
-  int next_final[MAXRINGS*nranks];
+  int prev[MAXCHANNELS*nranks];
+  int next[MAXCHANNELS*nranks];
+  int next_final[MAXCHANNELS*nranks];
+  int treeMasters[MAXCHANNELS*nranks];
   char* errormsg = NULL;
   char errortext[120];
 
-  int rings[MAXRINGS*nranks];
+  int rings[MAXCHANNELS*nranks];
 
   testCudaCompCap = compCap;
 
   for (int rank=0; rank<nranks; rank++) {
-    int nrings = MAXRINGS;
+    int nrings = MAXCHANNELS;
     int nthreads = getDefaultThreads();
-    ncclResult_t ret = ncclGetRings(&nrings, &nthreads, rank, nranks, transports, values, prev, next);
+    ncclResult_t ret = ncclGetRings(&nrings, &nthreads, rank, nranks, transports, values, prev, next, treeMasters);
     if (ret != ncclSuccess) {
       sprintf(errortext, "Error : getRings returned %s", ncclGetErrorString(ret));
       errormsg = errortext;
