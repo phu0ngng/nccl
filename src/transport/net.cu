@@ -20,9 +20,6 @@
 #define NET_BITS_PER_IF_MASK ((1<<NET_BITS_PER_IF)-1)
 static_assert(sizeof(ncclTvalue_t)*8 >= NET_MAX_IFS*NET_BITS_PER_IF, "NET_MAX_IFS*NET_BITS_PER_IF must fit in a ncclTvalue_t");
 
-static int ncclNetScores[NET_MAX_IFS];
-static int ncclNetNdev = -1;
-
 struct netConnectInfo {
   ncclNetHandle_t netHandle;
 };
@@ -56,29 +53,27 @@ struct netRecvResources {
   uint64_t llLastCleaning;
 };
 
-ncclResult_t ncclNetInit() {
-  if (ncclNetNdev == -1) {
-    int *scores;
-    NCCLCHECK(ncclNetDevices(&ncclNetNdev, &scores));
-    if (ncclNetNdev == 0) {
-      WARN("Error : Network returned 0 device");
-      return ncclSystemError;
-    }
-    if (ncclNetNdev > NET_MAX_IFS) ncclNetNdev = NET_MAX_IFS;
-    for (int d=0; d<ncclNetNdev; d++) ncclNetScores[d] = scores[d];
-    free(scores);
+static ncclResult_t netDevices(int* ndev, int** scores) {
+  NCCLCHECK(ncclNetDevices(ndev, scores));
+  if (*ndev == 0) {
+    WARN("Error : Network returned 0 device");
+    return ncclSystemError;
   }
+  if (*ndev > NET_MAX_IFS) *ndev = NET_MAX_IFS;
   return ncclSuccess;
 }
 
 /* Determine if we can communicate with the peer */
 ncclResult_t netCanConnect(ncclTvalue_t* ret, struct ncclPeerInfo* myInfo, struct ncclPeerInfo* peerInfo) {
-  NCCLCHECK(ncclNetInit());
+  int nDev;
+  int* scores;
+  NCCLCHECK(netDevices(&nDev, &scores));
   ret[0] = 0;
-  for (int d=0; d<ncclNetNdev; d++) {
+  for (int d=0; d<nDev; d++) {
     // Keep 3 bits of score info per dev
-    ret[0] |= ((ncclNetScores[d] & NET_BITS_PER_IF_MASK)<<(NET_BITS_PER_IF*d));
+    ret[0] |= ((scores[d] & NET_BITS_PER_IF_MASK)<<(NET_BITS_PER_IF*d));
   }
+  free(scores);
   return ncclSuccess;
 }
 
@@ -170,7 +165,12 @@ ncclResult_t netGetRings(int nranks, int* groups, int* subgroups, ncclTvalue_t* 
   return ncclSuccess;
 }
 
-int getDev(int ringId, int nDev, int* scores) {
+int getDev(int ringId) {
+  int nDev;
+  int* scores;
+  NCCLCHECK(netDevices(&nDev, &scores));
+
+  int dev = 0;
   int maxScore = 0;
   for (int d=0; d<nDev; d++) if (scores[d] > maxScore) maxScore = scores[d];
   int skip = ringId+1;
@@ -178,11 +178,13 @@ int getDev(int ringId, int nDev, int* scores) {
     for (int d=0; d<nDev; d++) {
       if (scores[d] == maxScore) {
         skip--;
-        if (skip == 0) return d;
+        if (skip == 0) { dev = d; goto end; }
       }
     }
   }
-  return 0;
+end:
+  free(scores);
+  return dev;
 }
 
 NCCL_PARAM(NetGdrRead, "NET_GDR_READ", -2);
@@ -212,11 +214,11 @@ ncclResult_t netUseGdrForReads(int* useGdr) {
  * information for this peer */
 ncclResult_t netSendSetup(struct ncclPeerInfo* myInfo, struct ncclPeerInfo* peerInfo, struct ncclConnect* connectInfo, struct ncclConnector* send, int buffSize, int channelId) {
   struct netSendResources* resources;
-  NCCLCHECK(ncclNetInit());
   NCCLCHECK(ncclCalloc(&resources, 1));
   send->transportResources = resources;
 
-  resources->netDev = getDev(channelId, ncclNetNdev, ncclNetScores);
+  resources->netDev = getDev(channelId);
+
   int flags, useGdrForReads;
   NCCLCHECK(ncclNetPtrSupport(resources->netDev, &flags));
   NCCLCHECK(netUseGdrForReads(&useGdrForReads));
@@ -238,11 +240,11 @@ ncclResult_t netSendSetup(struct ncclPeerInfo* myInfo, struct ncclPeerInfo* peer
 
 ncclResult_t netRecvSetup(struct ncclPeerInfo* myInfo, struct ncclPeerInfo* peerInfo, struct ncclConnect* connectInfo, struct ncclConnector* recv, int buffSize, int channelId) {
   struct netRecvResources* resources;
-  NCCLCHECK(ncclNetInit());
   NCCLCHECK(ncclCalloc(&resources, 1));
   recv->transportResources = resources;
 
-  resources->netDev = getDev(channelId, ncclNetNdev, ncclNetScores);
+  resources->netDev = getDev(channelId);
+
   int flags;
   NCCLCHECK(ncclNetPtrSupport(resources->netDev, &flags));
   resources->cudaSupport = (flags & NCCL_PTR_CUDA) ? true : false;
