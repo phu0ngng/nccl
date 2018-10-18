@@ -313,8 +313,8 @@ static ncclResult_t createListenSocket(int *fd, union socketAddress *localAddr) 
     return ncclSystemError;
   }
 
-  int opt = 1;
-  SYSCHECK(setsockopt(sockfd, SOL_SOCKET, SO_REUSEADDR | SO_REUSEPORT, &opt, sizeof(opt)), "setsockopt");
+  //int opt = 1;
+  //SYSCHECK(setsockopt(sockfd, SOL_SOCKET, SO_REUSEADDR | SO_REUSEPORT, &opt, sizeof(opt)), "setsockopt");
 
   // localAddr port should be 0 (Any port)
   SYSCHECK(bind(sockfd, &localAddr->sa, salen), "bind");
