@@ -17,10 +17,12 @@ if [ "$mode" == "reorder" ] || [ "$mode" == "combo" ] ; then
   path=$resdir/$gpumodel
   mkdir -p $path
   GPU_REORDER=""
-  for gpu in `seq $ngpus -1 0`; do
-    GPU_REORDER+=",$gpu"
+  first=`expr $ngpus - 1`
+  for gpu in `seq $first -1 1`; do
+    GPU_REORDER+="$gpu,"
   done
-  GPU_REORDER=`echo $GPU_REORDER | cut -c 4-`
+  GPU_REORDER="${GPU_REORDER}0"
+  echo $GPU_REORDER
   result=$path/$op.$ngpus
   if [ "$mode" == "combo" ]; then
     mpirun -np 1 --cpus-per-rank $ngpus -x CUDA_VISIBLE_DEVICES=$GPU_REORDER test/perf/${op}_perf -g $ngpus -b 40000000 -e 80000000 -i 40000000 -w 1 -n 5 2>&1 | tee $result.out

@@ -180,7 +180,7 @@ ncclResult_t bootstrapInit(ncclUniqueId* commId, int rank, int nranks, void** co
   state->nranks = nranks;
   *commState = state;
 
-  struct extInfo info;
+  struct extInfo info = { 0 };
   info.rank = rank;
   info.nranks = nranks;
   void *tmpSendComm, *tmpRecvComm;
@@ -331,6 +331,7 @@ ncclResult_t bootstrapClose(void* commState) {
   NCCLCHECK(bootstrapNetCloseSend(state->extBstrapRingSendComm));
   NCCLCHECK(bootstrapNetCloseRecv(state->extBstrapRingRecvComm));
 
+  free(state->peerBstrapHandles);
   free(state);
 
   return ncclSuccess;
