@@ -439,7 +439,7 @@ ncclResult_t netRecvProxy(struct ncclProxyArgs* args) {
   void* requests[NCCL_STEPS];
 
   TRACE(NET,"opCount %lx head %lx tail %lx end %lx nsteps %d llMode %d", args->opCount, head, tail, end, args->nsteps, llMode);
-  TRACE(NET,"opCount %lx buffSize %d stepSize %d ptrType %d", args->opCount, channel->buffSize, stepSize, ptrType);
+  TRACE(NET,"opCount %lx buffSize %d stepSize %d ptrType %d", args->opCount, args->channel->buffSize, stepSize, ptrType);
 
   while (head < end) {
     idle++;

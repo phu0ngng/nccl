@@ -36,7 +36,7 @@ struct cudaLaunchParams {
 
 // Channels / LL tuning
 #define NCCL_LL_CHANNEL_THRESHOLD 8 // Per thread size before we start increasing nrings
-#define NCCL_THREAD_THRESHOLD 32  // Per thread size before we switch to non-LL
+#define NCCL_THREAD_THRESHOLD 64  // Per thread size before we switch to non-LL
 #define NCCL_LL_MAX_NTHREADS 256
 #define NCCL_LL_MIN_NTHREADS 64
 
@@ -129,7 +129,7 @@ struct ncclConnector {
 #define MEM_ALIGN 4096
 #define CUDA_IPC_MIN 2097152UL /* 2MiB - not currently used */
 
-#define NUM_LINES_PER_THREAD 2
+#define NUM_LINES_PER_THREAD 8
 #define NCCL_LL_SLICE_LINES (NUM_LINES_PER_THREAD*NCCL_LL_MAX_NTHREADS)
 #define NCCL_LL_BUFF_LINES (NCCL_LL_SLICE_LINES*NCCL_STEPS)
 #define NCCL_LL_BUFF_SIZE (NCCL_LL_BUFF_LINES*sizeof(union ncclLLFifoLine))

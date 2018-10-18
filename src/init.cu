@@ -803,6 +803,7 @@ static ncclResult_t initTransportsAll(struct ncclComm** comms, const int* devs, 
       NCCLCHECK(send->transportComm->connect(connect+ring->next*2+0, send));
     }
   }
+  free(allInfo);
   free(rings);
   free(treeIn);
   free(treeOut);
