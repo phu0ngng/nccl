@@ -331,6 +331,7 @@ ncclResult_t bootstrapClose(void* commState) {
   NCCLCHECK(bootstrapNetCloseSend(state->extBstrapRingSendComm));
   NCCLCHECK(bootstrapNetCloseRecv(state->extBstrapRingRecvComm));
 
+  free(state->peerBstrapHandles);
   free(state);
 
   return ncclSuccess;
