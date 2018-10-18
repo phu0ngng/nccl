@@ -44,7 +44,7 @@ __device__ void ncclAllGatherRingKernel(struct CollectiveArgs* args) {
     offset = chunkOffset + rankDest * size;
 
     if (thisInput + chunkOffset == thisOutput + offset) { // In place
-      prims.send(thisInput+chunkOffset, nelem);
+      prims.directSend(thisInput+chunkOffset, offset, nelem);
     } else {
       prims.directCopySend(thisInput+chunkOffset, thisOutput+offset, offset, nelem);
     }
