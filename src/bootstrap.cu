@@ -176,7 +176,7 @@ ncclResult_t bootstrapInit(ncclUniqueId* commId, int rank, int nranks, void** co
   *commState = state;
   void* extBstrapRootListenComm; // comm on which we accept root's connections
 
-  struct extInfo info;
+  struct extInfo info = { 0 };
   info.rank = rank;
   info.nranks = nranks;
   void *tmpSendComm, *extBstrapRingListenComm, *tmpRecvComm;
