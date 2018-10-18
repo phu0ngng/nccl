@@ -285,7 +285,7 @@ restart:
   if (sizePerThread > perThreadLLThreshold) {
     // We have too much work per LL thread. Try to do better.
     if (nt*2 <= maxLLNthreads) { nt *= 2; goto restart; } // Try increasing nThreads
-    if (info->comm->nRanks > 4 && nc*2 <= info->comm->nChannels) { nc *= 2; goto restart; } // Then nChannels
+    if (nc*2 <= info->comm->nChannels) { nc *= 2; goto restart; } // Then nChannels
   }
 
   // nchannels and nthreads are already maxed out. Check if we need non-LL
