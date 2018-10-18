@@ -40,6 +40,10 @@ static inline const char *socketToString(struct sockaddr *saddr, char *buf) {
   return buf;
 }
 
+static inline short socketToPort(struct sockaddr *saddr) {
+  return ntohs(saddr->sa_family == AF_INET ? ((struct sockaddr_in*)saddr)->sin_port : ((struct sockaddr_in6*)saddr)->sin6_port);
+}
+
 /* Allow the user to force the IPv4/IPv6 interface selection */
 static inline int envSocketFamily(void) {
   int family = -1; // Family selection is not forced, will use first one found
@@ -313,8 +317,11 @@ static ncclResult_t createListenSocket(int *fd, union socketAddress *localAddr) 
     return ncclSystemError;
   }
 
-  int opt = 1;
-  SYSCHECK(setsockopt(sockfd, SOL_SOCKET, SO_REUSEADDR | SO_REUSEPORT, &opt, sizeof(opt)), "setsockopt");
+  if (socketToPort(&localAddr->sa)) {
+    // Port is forced by env. Make sure we get the port.
+    int opt = 1;
+    SYSCHECK(setsockopt(sockfd, SOL_SOCKET, SO_REUSEADDR | SO_REUSEPORT, &opt, sizeof(opt)), "setsockopt");
+  }
 
   // localAddr port should be 0 (Any port)
   SYSCHECK(bind(sockfd, &localAddr->sa, salen), "bind");
