@@ -144,7 +144,7 @@ class ncclPrimitives {
       } else {
         exitIfAbortBarrier();
         if (SEND) for (int i=0; i<NSEND && i<nsend; i++) postSendSize(i, realSize*sizeof(T));
-        if (SEND || RECV) __threadfence_system();
+        if (SEND) __threadfence_system();
         if (SEND) for (int i=0; i<NSEND && i<nsend; i++) postSend(i);
         if (RECV) for (int i=0; i<NRECV && i<nrecv; i++) postRecv(i);
       }
