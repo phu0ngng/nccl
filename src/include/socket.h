@@ -16,6 +16,7 @@
 #include <net/if.h>
 #include "utils.h"
 
+#define MAX_IFS 16
 #define MAX_IF_NAME_SIZE 16
 #define SLEEP_INT     1000  // sleep interval in usec
 #define RETRY_TIMES   2e4   // retry times before reporting a timeout (20 sec)
@@ -60,9 +61,9 @@ static inline int envSocketFamily(void) {
 
 static int findInterfaces(const char* prefixList, char* names, union socketAddress *addrs, int sock_family, int maxIfNameSize, int maxIfs) {
   char line[1024];
-  struct netIf userIfs[maxIfs];
+  struct netIf userIfs[MAX_IFS];
   bool searchNot = prefixList && prefixList[0] == '^';
-  int nUserIfs = parseStringList(prefixList, userIfs, maxIfs);
+  int nUserIfs = parseStringList(prefixList, userIfs, MAX_IFS);
 
   int found = 0;
   struct ifaddrs *interfaces, *interface;
