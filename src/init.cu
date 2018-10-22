@@ -676,6 +676,9 @@ static ncclResult_t initTransportsRank(struct ncclComm* comm, ncclUniqueId* comm
   }
   NCCLCHECK(ncclCommSetIntra(comm, intraRank, intraRanks, rankInfos[intraRank0].comm));
 
+  // Determine thread threshold across all GPUs
+  comm->threadThreshold = ncclThreadThreshold(minCompCap, multiNode);
+
   return ncclSuccess;
 }
 
