@@ -164,6 +164,7 @@ class ncclPrimitives {
     for (int i=0; i<NRECV && i<nrecv; i++) {
       recvConn[i] = &channel->devPeers[recvPeers[i]].recv.conn;
       recvStep[i] = ROUNDUP(recvConn[i]->step, SLICESPERCHUNK*SLICESTEPS);
+      if (tid == nthreads) *(recvConn[i]->head) = recvStep[i];
       recvDirectBuff[i] = NULL;
       if (directBuff && recvConn[i]->direct) {
         recvDirectBuff[i] = directBuff;
