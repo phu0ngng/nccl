@@ -7,16 +7,16 @@ path=comp/$gpumodel
 i=0
 for version in $@; do
   dpath=${version}_dlfw/results/$gpumodel
-  echo -n "$i $version " >> $path/mxnet.values
-  cat $dpath/mxnet.out | awk '/Speed/ {if (lines++) sum += $5} END {print sum/(lines-1)}' | tee -a $path/mxnet.values
-  echo -n "$i $version " >> $path/caffe2.values
-  cat $dpath/caffe2.out | awk -F'=' '/Epoch/ {if (lines++) sum += $NF} END {print sum/(lines-1)}' | tee -a $path/caffe2.values
-  echo -n "$i $version " >> $path/cntk.values
-  cat $dpath/cntk.out | awk '/^ Epoch/ {if (lines++ > 10) sum += $NF} END {print sum/(lines-11)}' | tee -a $path/cntk.values
-  echo -n "$i $version " >> $path/pytorch.values
-  cat $dpath/pytorch.out | awk '/512 \|/ {print $7}' | tee -a $path/pytorch.values
-  echo -n "$i $version " >> $path/tensorflow.values
-  cat $dpath/tensorflow.out | awk '/total images/ {print $NF}' | tee -a $path/tensorflow.values
+  value=$(cat $dpath/mxnet.out | awk '/Speed/ {if (lines++) sum += $5} END {print sum/(lines-1)}')
+  echo "$i $version $value" >> $path/mxnet.values
+  value=$(cat $dpath/caffe2.out | awk -F'=' '/Epoch/ {if (lines++) sum += $NF} END {print sum/(lines-1)}')
+  echo "$i $version $value" >> $path/caffe2.values
+  value=$(cat $dpath/cntk.out | awk '/^ Epoch/ {if (lines++ > 10) sum += $NF} END {print sum/(lines-11)}')
+  echo "$i $version $value" >> $path/cntk.values
+  value=$(cat $dpath/pytorch.out | awk '/512 \|/ {print $7}')
+  echo "$i $version $value" >> $path/pytorch.values
+  value=$(cat $dpath/tensorflow.out | awk '/total images/ {print $NF}')
+  echo "$i $version $value" >> $path/tensorflow.values
   i=$((i+1))
 done
 }
