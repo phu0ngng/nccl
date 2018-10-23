@@ -402,8 +402,8 @@ static ncclResult_t saveKernel(struct ncclInfo* info) {
 
 
 ncclResult_t ncclEnqueueCheck(struct ncclInfo* info) {
-  INFO(COLL,"opCount %lx sendbuff %p recvbuff %p count %zi datatype %d op %d comm %p [nranks=%d] stream %p",
-       info->comm->opCount, info->sendbuff, info->recvbuff, info->count,
+  INFO(COLL,"%s: opCount %lx sendbuff %p recvbuff %p count %zi datatype %d op %d comm %p [nranks=%d] stream %p",
+       info->opName, info->comm->opCount, info->sendbuff, info->recvbuff, info->count,
        info->datatype, info->op, info->comm, info->comm->nRanks, info->stream);
 
   if (info->comm == NULL) return ncclInvalidArgument;
