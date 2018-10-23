@@ -7,7 +7,7 @@
 #ifndef NCCL_LL_KERNEL_H_
 #define NCCL_LL_KERNEL_H_
 
-#define SPINS_BEFORE_CHECK_ABORT 100000
+#define SPINS_BEFORE_CHECK_ABORT 1000000
 
 template <typename T, class FUNC, int NRECV, int NSEND>
 class ncclLLPrimitives {

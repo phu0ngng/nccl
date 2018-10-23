@@ -7,7 +7,7 @@
 #ifndef NCCL_PRIMITIVES_H_
 #define NCCL_PRIMITIVES_H_
 
-#define SPINS_BEFORE_CHECK_ABORT 100000
+#define SPINS_BEFORE_CHECK_ABORT 1000000
 
 #include <type_traits>
 #include "reduce_kernel.h" // for reduction funcs
