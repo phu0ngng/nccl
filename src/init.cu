@@ -272,6 +272,7 @@ static ncclResult_t selectTransport(struct ncclPeerInfo* myInfo, struct ncclPeer
 }
 
 static ncclResult_t setupChannel(struct ncclComm* comm, int channelId, int rank, int nranks, int* ringRanks, int* treeMasters) {
+  TRACE(INIT, "rank %d nranks %d", rank, nranks);
   NCCLCHECK(initChannel(comm, channelId));
 
   struct ncclChannel* channel = comm->channels+channelId;
@@ -350,6 +351,7 @@ static ncclResult_t setupChannel(struct ncclComm* comm, int channelId, int rank,
       tree->nDown > 2 ? tree->down[2] : -1);
   //printf("[%d/%d] nUp %d (%d) nDown %d (%d %d %d)\n", channelId, rank, tree->nUp, tree->up, tree->nDown, tree->down[0], tree->down[1], tree->down[2]);
 
+  TRACE(INIT, "rank %d nranks %d - DONE", rank, nranks);
   return ncclSuccess;
 }
 
@@ -521,6 +523,8 @@ ncclResult_t ncclCommSetIntra(struct ncclComm* comm, int rank, int ranks, struct
 }
 
 static ncclResult_t p2pSetup(struct ncclComm* comm, struct ncclChannel* channel, int nrecv, int* peerRecv, int nsend, int* peerSend) {
+  TRACE(INIT, "nsend %d nrecv %d", nsend, nrecv);
+  uint32_t nSkippedSend = 0, nSkippedRecv = 0; /* for tracing */
   struct ncclConnect connect;
   struct ncclConnector* conn;
   /*printf("[%d] p2pSetup recv from", comm->rank);
@@ -531,21 +535,21 @@ static ncclResult_t p2pSetup(struct ncclComm* comm, struct ncclChannel* channel,
   for (int i=0; i<nrecv; i++) {
     int peer = peerRecv[i];
     conn = &channel->peers[peer].recv;
-    if (conn->connected) continue;
+    if (conn->connected) { ++nSkippedRecv; continue; }
     NCCLCHECK(selectTransport<0>(comm->peerInfo+comm->rank, comm->peerInfo+peer, &connect, conn, channel->buffSize, channel->id));
     NCCLCHECK(bootstrapSend(comm->bootstrap, peer, &connect, sizeof(struct ncclConnect)));
   }
   for (int i=0; i<nsend; i++) {
     int peer = peerSend[i];
     conn = &channel->peers[peer].send;
-    if (conn->connected) continue;
+    if (conn->connected) { ++nSkippedSend; continue; }
     NCCLCHECK(selectTransport<1>(comm->peerInfo+comm->rank, comm->peerInfo+peer, &connect, conn, channel->buffSize, channel->id));
     NCCLCHECK(bootstrapSend(comm->bootstrap, peer, &connect, sizeof(struct ncclConnect)));
   }
   for (int i=0; i<nsend; i++) {
     int peer = peerSend[i];
     conn = &channel->peers[peer].send;
-    if (conn->connected) continue;
+    if (conn->connected) {++nSkippedSend; continue; }
     NCCLCHECK(bootstrapRecv(comm->bootstrap, peer, &connect, sizeof(struct ncclConnect)));
     NCCLCHECK(conn->transportComm->connect(&connect, conn));
     conn->connected = 1;
@@ -553,17 +557,19 @@ static ncclResult_t p2pSetup(struct ncclComm* comm, struct ncclChannel* channel,
   for (int i=0; i<nrecv; i++) {
     int peer = peerRecv[i];
     conn = &channel->peers[peer].recv;
-    if (conn->connected) continue;
+    if (conn->connected) {++nSkippedRecv; continue; }
     NCCLCHECK(bootstrapRecv(comm->bootstrap, peer, &connect, sizeof(struct ncclConnect)));
     NCCLCHECK(conn->transportComm->connect(&connect, conn));
     conn->connected = 1;
   }
+  TRACE(INIT, "nsend %d nrecv %d nSkippedSend %u nSkippedRecv %u - DONE", nsend, nrecv, nSkippedSend, nSkippedRecv);
   return ncclSuccess;
 }
 
 static ncclResult_t initTransportsRank(struct ncclComm* comm, ncclUniqueId* commId) {
   int rank = comm->rank;
   int nranks = comm->nRanks;
+  TRACE(INIT, "rank %d nranks %d - BEGIN", rank, nranks);
   NCCLCHECK(bootstrapInit(commId, rank, nranks, &comm->bootstrap));
 
   NCCLCHECK(ncclCalloc(&comm->peerInfo, nranks));
@@ -627,6 +633,7 @@ static ncclResult_t initTransportsRank(struct ncclComm* comm, ncclUniqueId* comm
   NCCLCHECK(buildRings(nrings, rings, rank, nranks, prev, next));
   free(prev);
   free(next);
+  TRACE(INIT, "rank %d nranks %d - BUILT RINGS", rank, nranks);
 
   // Connect with prev/next for each ring
   struct ncclConnect *connect;
@@ -638,6 +645,7 @@ static ncclResult_t initTransportsRank(struct ncclComm* comm, ncclUniqueId* comm
     NCCLCHECK(p2pSetup(comm, channel, channel->tree.nDown, channel->tree.down, channel->tree.nUp, &channel->tree.up));
     NCCLCHECK(p2pSetup(comm, channel, channel->tree.nUp, &channel->tree.up, channel->tree.nDown, channel->tree.down));
   }
+  TRACE(INIT, "rank %d nranks %d - CONNECTED RINGS AND TREES", rank, nranks);
   free(connect);
   free(rings);
   free(treeIn);
@@ -679,6 +687,7 @@ static ncclResult_t initTransportsRank(struct ncclComm* comm, ncclUniqueId* comm
   // Determine thread threshold across all GPUs
   comm->threadThreshold = ncclThreadThreshold(minCompCap, multiNode);
 
+  TRACE(INIT, "rank %d nranks %d - DONE", rank, nranks);
   return ncclSuccess;
 }
 

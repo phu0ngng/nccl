@@ -76,6 +76,7 @@ static void *bootstrapRoot(void* commId) {
   ncclResult_t res;
   setFilesLimit();
 
+  TRACE(INIT, "BEGIN");
   /* Receive addresses from all ranks */
   int nranks = 0, c = 0;
   do {
@@ -105,6 +106,7 @@ static void *bootstrapRoot(void* commId) {
 
     ++c;
   } while (c < nranks);
+  TRACE(INIT, "COLLECTED HANDLES");
 
   // Send the connect handle for the next rank in the AllGather ring
   for (int r=0; r<nranks; ++r) {
@@ -114,6 +116,7 @@ static void *bootstrapRoot(void* commId) {
     NCCLCHECKGOTO(bootstrapNetSend(tmpSendComm, rankHandles+next, sizeof(ncclNetHandle_t)), res, out);
     NCCLCHECKGOTO(bootstrapNetCloseSend(tmpSendComm), res, out);
   }
+  TRACE(INIT, "SENT OUT HANDLES");
 
 out:
   bootstrapNetCloseListen(id->extListenComm);
@@ -121,6 +124,8 @@ out:
   if (data) free(data);
   if (rankHandles) free(rankHandles);
   if (rankHandlesRoot) free(rankHandlesRoot);
+
+  TRACE(INIT, "DONE");
   return NULL;
 }
 
