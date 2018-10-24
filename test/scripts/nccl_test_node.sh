@@ -50,7 +50,7 @@ make -j test.build MPI=1 NCCLDIR=${DEBDIR} 2>&1 | tee make_test_mpi.log
 timeout=60
 if [ "$SLURM" == "1" ]; then
   srun_cmd="srun -p $gpumodel -t ${timeout} --exclusive "
-  salloc_cmd="salloc -p $gpumodel -n $maxgpu -c 1 -t ${timeout} --exclusive "
+  salloc_cmd="salloc -p $gpumodel -t ${timeout} --exclusive "
 else
   srun_cmd="timeout ${timeout}m "
   salloc_cmd="timeout ${timeout}m "

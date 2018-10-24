@@ -13,7 +13,7 @@ This is because every NCCL call may have to block, waiting for other threads/ran
 .. code:: C
 
  for (int i=0; i<nLocalDevs; i++) {
-   ncclAllReduce(..., comm[i], stream[i];
+   ncclAllReduce(..., comm[i], stream[i]);
  }
 
 To define that these calls are part of the same collective operation, ncclGroupStart and ncclGroupEnd should be used: 
@@ -22,7 +22,7 @@ To define that these calls are part of the same collective operation, ncclGroupS
 
   ncclGroupStart();
   for (int i=0; i<nLocalDevs; i++) {
-    ncclAllReduce(..., comm[i], stream[i];
+    ncclAllReduce(..., comm[i], stream[i]);
   }
   ncclGroupEnd();
 

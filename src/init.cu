@@ -288,7 +288,7 @@ static void swap(void* mem1, void* mem2, int size) {
 
 #define MAXWIDTH 20
 #define PREFIXLEN 15
-#define STRLENGTH (PREFIXLEN+4*MAXWIDTH)
+#define STRLENGTH (PREFIXLEN+5*MAXWIDTH)
 void dumpMatrix(int* connectMatrix, int nranks) {
   char line[STRLENGTH+1];
   line[STRLENGTH] = '\0';
@@ -302,6 +302,21 @@ void dumpMatrix(int* connectMatrix, int nranks) {
     INFO(INIT,"%s", line);
   }
 }
+
+void dumpMatrixTvalue(ncclTvalue_t* connectMatrix, int nranks) {
+  char line[STRLENGTH+1];
+  line[STRLENGTH] = '\0';
+  memset(line, ' ', STRLENGTH);
+  for (int j=0; j<nranks && j<MAXWIDTH; j++) sprintf(4+line+5*j, " %4d", j);
+  INFO(INIT,"%s", line);
+  for (int i=0; i<nranks; i++) {
+    memset(line, ' ', STRLENGTH);
+    sprintf(line, "%3d ", i);
+    for (int j=0; j<nranks && j<MAXWIDTH; j++) sprintf(4+line+5*j, " %4o", (int)connectMatrix[i*nranks+j]);
+    INFO(INIT,"%s", line);
+  }
+}
+
 
 void dumpLine(int* values, int nranks, const char* prefix) {
   int prefixlen = strlen(prefix);
@@ -444,7 +459,7 @@ static ncclResult_t initTransportsRank(struct ncclComm* comm, ncclUniqueId* comm
   NCCLCHECK(bootstrapAllGather(commState, connectTransport, nranks*(sizeof(int))));
   NCCLCHECK(bootstrapAllGather(commState, connectValue, nranks*(sizeof(ncclTvalue_t))));
   //if (rank == 0) dumpMatrix(connectTransport, nranks);
-  //if (rank == 0) dumpMatrix(connectValue, nranks);
+  //if (rank == 0) dumpMatrixTvalue(connectValue, nranks);
 
   // Get my rings
   int nrings;
@@ -492,15 +507,19 @@ static ncclResult_t initTransportsRank(struct ncclComm* comm, ncclUniqueId* comm
   free(next);
 
   // Connect with prev/next for each ring
+  struct ncclConnect *connectData;
+  NCCLCHECK(ncclCalloc(&connectData, 2*nranks));
   for (int r=0; r<nrings; r++) {
     int* ringRanks = rings+r*nranks;
     struct ncclRing *ring = comm->rings+r;
-    struct ncclConnect connect[2];
-    NCCLCHECK(setupRing(comm, r, rank, nranks, ringRanks, allInfo, connect));
-    NCCLCHECK(bootstrapRingExchange(commState, connect, ring->userRanks[nranks-1], ring->userRanks[1], sizeof(struct ncclConnect)));
-    NCCLCHECK(ring->send.transport->send.connect(connect+1, &ring->send));
-    NCCLCHECK(ring->recv.transport->recv.connect(connect+0, &ring->recv));
+    NCCLCHECK(setupRing(comm, r, rank, nranks, ringRanks, allInfo, connectData+2*rank));
+    int prev_offset = ring->userRanks[nranks-1]*2+1;
+    int next_offset = ring->userRanks[1]*2;
+    NCCLCHECK(bootstrapAllGather(commState, connectData, sizeof(struct ncclConnect)*2));
+    NCCLCHECK(ring->send.transport->send.connect(connectData+next_offset, &ring->send));
+    NCCLCHECK(ring->recv.transport->recv.connect(connectData+prev_offset, &ring->recv));
   }
+  free(connectData);
   free(rings);
   free(allInfo);
 
@@ -556,7 +575,7 @@ bool SetCpuAffinity(int cudaDev, nvmlDevice_t* nvmlDevice) {
   return true;
 }
 
-ncclResult_t ncclCommInitRankSync(ncclComm_t* newcomm, int ndev, ncclUniqueId commId, int myrank) {
+ncclResult_t ncclCommInitRankSync(ncclComm_t* newcomm, int nranks, ncclUniqueId commId, int myrank) {
   cpu_set_t affinitySave;
   sched_getaffinity(0, sizeof(cpu_set_t), &affinitySave);
 
@@ -570,12 +589,15 @@ ncclResult_t ncclCommInitRankSync(ncclComm_t* newcomm, int ndev, ncclUniqueId co
   SetCpuAffinity(cudaDev, &nvmlDevice);
   ncclResult_t res;
 
-  NCCLCHECKGOTO(commAlloc(newcomm, ndev, myrank), res, cleanup);
+  NCCLCHECKGOTO(commAlloc(newcomm, nranks, myrank), res, cleanup);
   NCCLCHECKGOTO(initTransportsRank(*newcomm, &commId), res, cleanup);
   NCCLCHECKGOTO(devCommSetup(*newcomm), res, cleanup);
 
   sched_setaffinity(0, sizeof(cpu_set_t), &affinitySave);
   NCCLCHECKGOTO(wrapNvmlShutdown(), res, cleanup);
+
+  INFO(INIT,"comm %p rank %d nranks %d - COMPLETE", *newcomm, myrank, nranks);
+
   return ncclSuccess;
 cleanup:
   *newcomm = NULL;
@@ -583,7 +605,7 @@ cleanup:
   return res;
 }
 
-NCCL_API(ncclResult_t, ncclCommInitRank, ncclComm_t* newcomm, int ndev, ncclUniqueId commId, int myrank);
+NCCL_API(ncclResult_t, ncclCommInitRank, ncclComm_t* newcomm, int nranks, ncclUniqueId commId, int myrank);
 ncclResult_t ncclCommInitRank(ncclComm_t* newcomm, int nranks, ncclUniqueId commId, int myrank) {
   char* env = getenv("NCCL_COMM_ID");
   if (env && myrank == 0) {
