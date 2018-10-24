@@ -75,6 +75,9 @@ extern ncclResult_t getHostName(char* hostname, int maxlen);
 
 extern std::chrono::high_resolution_clock::time_point ncclEpoch;
 
+//#undef INFO
+//#define INFO TRACE
+
 #else
 #define TRACE(...)
 #endif

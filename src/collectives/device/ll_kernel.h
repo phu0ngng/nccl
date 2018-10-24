@@ -18,18 +18,23 @@ class ncclLLPrimitives {
   const int nsend;
   struct ncclConnInfo* recvConn[NRECV];
   struct ncclConnInfo* sendConn[NSEND];
+  volatile uint64_t* waitPtr;
+  volatile uint64_t* postPtr;
+  volatile int* fifoPtr;
   uint64_t recvStep[NRECV];
   uint64_t sendStep[NSEND];
-  uint64_t sendConnHead[NSEND];
+  uint64_t sendConnHead;
+  union ncclLLFifoLine* recvBuff[NRECV];
+  union ncclLLFifoLine* sendBuff[NSEND];
 
   volatile uint32_t* abortFlagPtr = NULL;
-  uint64_t spins = 0;
+  uint32_t spins = 0;
   uint32_t abort = 0;
 
   inline __device__ int recvOffset(int i) { return (recvStep[i]%NCCL_STEPS)*NCCL_LL_SLICE_LINES; }
   inline __device__ int sendOffset(int i) { return (sendStep[i]%NCCL_STEPS)*NCCL_LL_SLICE_LINES; }
-  inline __device__ union ncclLLFifoLine* recvPtr(int i) { return recvConn[i]->llBuff+recvOffset(i); }
-  inline __device__ union ncclLLFifoLine* sendPtr(int i) { return sendConn[i]->llBuff+sendOffset(i); }
+  inline __device__ union ncclLLFifoLine* recvPtr(int i) { return recvBuff[i]+recvOffset(i); }
+  inline __device__ union ncclLLFifoLine* sendPtr(int i) { return sendBuff[i]+sendOffset(i); }
   inline __device__ uint32_t recvFlag(int i) { return recvStep[i]+1; }
   inline __device__ uint32_t sendFlag(int i) { return sendStep[i]+1; }
 
@@ -46,6 +51,10 @@ class ncclLLPrimitives {
     if (popc) { asm volatile ("exit;"); }
   }
 
+  inline __device__ void barrier() {
+    asm volatile ("bar.sync 1, %0;" :: "r"(nthreads));
+  }
+
   inline __device__ int checkAbort() {
     spins++;
     if (spins == SPINS_BEFORE_CHECK_ABORT) {
@@ -57,23 +66,21 @@ class ncclLLPrimitives {
 
   inline __device__ void waitSend(int i) {
     spins = 0;
-    while (sendConnHead[i] + NCCL_STEPS < sendStep[i] + 1) {
-      volatile uint64_t* ptr = sendConn[i]->head;
-      sendConnHead[i] = *ptr;
-      if (checkAbort()) break;
+    if (tid == WARP_SIZE+i) {
+      while (sendConnHead + NCCL_STEPS < sendStep[i] + 1) {
+        sendConnHead = *waitPtr;
+        if (checkAbort()) break;
+      }
     }
   }
 
   inline __device__ void postRecv(int i) {
     recvStep[i]++;
-    if (tid == 0) {
-      volatile uint64_t* ptr = recvConn[i]->head;
-      *ptr = recvStep[i];
-    }
+    if (tid == i) *postPtr = recvStep[i];
   }
 
   inline __device__ void postSend(int i, int nbytes) {
-    if (tid == 0 && sendConn[i]->fifo) sendConn[i]->fifo[sendStep[i]%NCCL_STEPS] = nbytes;
+    if (tid == WARP_SIZE+i && fifoPtr) fifoPtr[sendStep[i]%NCCL_STEPS] = nbytes;
     sendStep[i]++;
   }
 
@@ -106,22 +113,23 @@ class ncclLLPrimitives {
   template <int RECV, int SEND, int SRC, int DST>
   __device__ void LLGenericOp(const T* srcPtr, T* dstPtr, int nelem) {
     uint32_t nbytes = nelem < 0 ? 0 : nelem*sizeof(T);
-    if (SEND) for(int i=0; i<NSEND && i<nsend; i++) waitSend(i);
+    if (SEND) { waitSend(0); for(int i=1; i<NSEND && i<nsend; i++) waitSend(i); barrier(); }
     uint32_t npack = DIVUP(nbytes, sizeof(uint64_t));
     uint64_t* srcPack = (uint64_t*)srcPtr;
     uint64_t* dstPack = (uint64_t*)dstPtr;
     // Do multiples of 64 bits
-    #pragma unroll 1
-    for (uint32_t offset = tid; offset < npack; offset += nthreads) {
+    #pragma unroll 2
+    for (int line=0, offset=tid; line<NUM_LINES_PER_THREAD && offset<npack; line++, offset+=nthreads) {
       uint64_t val = SRC ? readAL(srcPack+offset) : readLL(recvPtr(0)+offset, recvFlag(0));
       if (RECV) {
-        for (int i= 1-SRC; i<NRECV && i<nrecv; i++) {
+        if (SRC) val = MULTI<FUNC, T>()(readLL(recvPtr(0)+offset, recvFlag(0)), val);
+        for (int i= 1; i<NRECV && i<nrecv; i++) {
           val = MULTI<FUNC, T>()(readLL(recvPtr(i)+offset, recvFlag(i)), val);
         }
       }
       if (SEND) {
-        #pragma UNROLL
-        for (int i=0; i<NSEND && i<nsend; i++) storeLL(sendPtr(i)+offset, val, sendFlag(i));
+        storeLL(sendPtr(0)+offset, val, sendFlag(0));
+        for (int i=1; i<NSEND && i<nsend; i++) storeLL(sendPtr(i)+offset, val, sendFlag(i));
       }
       if (DST) {
         if (((offset*sizeof(uint64_t)) ^ nbytes) < sizeof(uint64_t)) {
@@ -132,9 +140,67 @@ class ncclLLPrimitives {
         }
       }
     }
-    if (SEND) for(int i=0; i<NSEND && i<nsend; i++) postSend(i, nbytes*2);
+    if (SEND) { postSend(0, nbytes*2); for(int i=1; i<NSEND && i<nsend; i++) postSend(i, nbytes*2); }
     exitIfAbortBarrier();
-    if (RECV) for(int i=0; i<NRECV && i<nrecv; i++) postRecv(i);
+    if (RECV) { postRecv(0); for(int i=1; i<NRECV && i<nrecv; i++) postRecv(i); }
+  }
+
+  __device__ __forceinline__ void loadRecvConn(struct ncclConnInfo* conn, int i) {
+    recvConn[i] = conn;
+    recvBuff[i] = recvConn[i]->llBuff;
+    recvStep[i] = recvConn[i]->step;
+    if (tid == i) {
+      postPtr = recvConn[i]->head;
+    }
+  }
+
+  __device__ __forceinline__ void loadSendConn(struct ncclConnInfo* conn, int i) {
+    sendConn[i] = conn;
+    sendBuff[i] = sendConn[i]->llBuff;
+    sendStep[i] = sendConn[i]->step;
+    if (tid == WARP_SIZE+i) {
+      waitPtr = sendConn[i]->head;
+      fifoPtr = sendConn[i]->fifo;
+      sendConnHead = *waitPtr;
+    }
+  }
+
+  __device__ __forceinline__ void saveRecvConn(int i) {
+    if (tid == i) {
+      recvConn[i]->step = recvStep[i];
+      __threadfence_block();
+    }
+  }
+
+  __device__ __forceinline__ void saveSendConn(int i) {
+    if (tid == WARP_SIZE+i) {
+      sendConn[i]->step = sendStep[i];
+      __threadfence_block();
+    }
+  }
+
+  __device__ __forceinline__ void llSendCleaning(int i) {
+    if (sendStep[i] > sendConn[i]->llLastCleaning + NCCL_LL_CLEAN_FREQ) {
+      /* Reset all flags */
+      static_assert((NCCL_LL_BUFF_SIZE % NCCL_LL_MAX_NTHREADS) == 0, "NCCL_LL_BUFF_SIZE must be a multiple of THREADS");
+      static_assert(NCCL_LL_BUFF_SIZE/(sizeof(union ncclLLFifoLine)*NCCL_LL_MAX_NTHREADS) > 0, "NCCL_LL_BUFF_SIZE is less than 16 bytes*THREADS");
+      for (int s=0; s<NCCL_STEPS; s++) {
+        waitSend(i);
+        for (int o=tid; o<NCCL_LL_SLICE_LINES; o+=nthreads) {
+          const union ncclLLFifoLine resetLine = { 0, sendFlag(i), 0, sendFlag(i) };
+          sendPtr(i)[o].i4 = resetLine.i4;
+        }
+        postSend(i, 0);
+      }
+      if (tid == 0) sendConn[i]->llLastCleaning = sendStep[i];
+    }
+  }
+
+  __device__ __forceinline__ void llRecvCleaning(int i) {
+    if (recvStep[i] > recvConn[i]->llLastCleaning + NCCL_LL_CLEAN_FREQ) {
+      recvStep[i] += NCCL_STEPS;
+      if (tid == 0) recvConn[i]->llLastCleaning = recvStep[i];
+    }
   }
 
  public:
@@ -142,18 +208,12 @@ class ncclLLPrimitives {
   ncclLLPrimitives(const int tid, const int nthreads, const int nrecv, int* recvPeers, const int nsend, int* sendPeers, struct ncclChannel* channel, volatile uint32_t* abortFlagPtr)
     : abortFlagPtr(abortFlagPtr), tid(tid), nthreads(nthreads), nrecv(nrecv), nsend(nsend) {
     // Make sure step is updated before we read it.
-    asm volatile ("bar.sync 1, %0;" :: "r"(nthreads));
-    for (int i=0; i<NRECV && i<nrecv; i++) {
-      recvConn[i] = &channel->devPeers[recvPeers[i]].recv.conn;
-      recvStep[i] = recvConn[i]->step;
-    }
-    for (int i=0; i<NSEND && i<nsend; i++) {
-      sendConn[i] = &channel->devPeers[sendPeers[i]].send.conn;
-      sendStep[i] = sendConn[i]->step;
-      sendConnHead[i] = *(sendConn[i]->head);
-    }
-    // Make sure all threads start with the same steps before moving on
-    asm volatile ("bar.sync 1, %0;" :: "r"(nthreads));
+    barrier();
+
+    loadRecvConn(&channel->devPeers[recvPeers[0]].recv.conn, 0);
+    for (int i=1; i<NRECV && i<nrecv; i++) loadRecvConn(&channel->devPeers[recvPeers[i]].recv.conn, i);
+    loadSendConn(&channel->devPeers[sendPeers[0]].send.conn, 0);
+    for (int i=1; i<NSEND && i<nsend; i++) loadSendConn(&channel->devPeers[sendPeers[i]].send.conn, i);
   }
 
   __device__ void send(const T* src, int nelem) {
@@ -185,34 +245,15 @@ class ncclLLPrimitives {
   }
 
   __device__ __forceinline__ ~ncclLLPrimitives() {
-    for (int i=0; i<NSEND && i<nsend; i++) {
-      if (sendStep[i] > sendConn[i]->llLastCleaning + NCCL_LL_CLEAN_FREQ) {
-        /* Reset all flags */
-        static_assert((NCCL_LL_BUFF_SIZE % NCCL_LL_MAX_NTHREADS) == 0, "NCCL_LL_BUFF_SIZE must be a multiple of THREADS");
-        static_assert(NCCL_LL_BUFF_SIZE/(sizeof(union ncclLLFifoLine)*NCCL_LL_MAX_NTHREADS) > 0, "NCCL_LL_BUFF_SIZE is less than 16 bytes*THREADS");
-        for (int s=0; s<NCCL_STEPS; s++) {
-          waitSend(i);
-          for (int o=tid; o<NCCL_LL_SLICE_LINES; o+=nthreads) {
-            const union ncclLLFifoLine resetLine = { 0, sendFlag(i), 0, sendFlag(i) };
-            sendPtr(i)[o].i4 = resetLine.i4;
-          }
-          postSend(i, 0);
-        }
-        if (tid == 0) sendConn[i]->llLastCleaning = sendStep[i];
-      }
-    }
-    for (int i=0; i<NRECV && i<nrecv; i++) {
-      if (recvStep[i] > recvConn[i]->llLastCleaning + NCCL_LL_CLEAN_FREQ) {
-        recvStep[i] += NCCL_STEPS;
-        if (tid == 0) recvConn[i]->llLastCleaning = recvStep[i];
-      }
-    }
+    llSendCleaning(0);
+    for (int i=1; i<NSEND && i<nsend; i++) llSendCleaning(i);
+    llRecvCleaning(0);
+    for (int i=1; i<NRECV && i<nrecv; i++) llRecvCleaning(i);
     // Save steps for the next operation
-    if (tid == 0) {
-      for (int i=0; i<NRECV && i<nrecv; i++) recvConn[i]->step = recvStep[i];
-      for (int i=0; i<NSEND && i<nsend; i++) sendConn[i]->step = sendStep[i];
-      __threadfence();
-    }
+    saveRecvConn(0);
+    for (int i=1; i<NRECV && i<nrecv; i++) saveRecvConn(i);
+    saveSendConn(0);
+    for (int i=1; i<NSEND && i<nsend; i++) saveSendConn(i);
   }
 };
 

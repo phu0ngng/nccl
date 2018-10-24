@@ -32,7 +32,7 @@ struct cudaLaunchParams {
 #define MAXCHANNELS 16
 #define MAXTHREADS 256
 #define DEFAULT_BUFFER_SIZE_BYTES (1LL << 22) /* 4MiB */
-#define NCCL_STEPS 16
+#define NCCL_STEPS 8
 
 // Channels / LL tuning
 #define NCCL_LL_CHANNEL_THRESHOLD 8 // Per thread size before we start increasing nrings

@@ -407,7 +407,7 @@ ncclResult_t netSendProxy(struct ncclProxyArgs* args) {
   resources->step = end;
 
   if (llMode && resources->step > resources->llLastCleaning + NCCL_LL_CLEAN_FREQ) {
-    memset(llBuff, 0, NCCL_LL_BUFF_SIZE);
+    for (int i=0; i< NCCL_LL_BUFF_LINES; i++) llBuff[i].flag1 = llBuff[i].flag2 = resources->step;
     resources->step += NCCL_STEPS;
     *prevHead = resources->step;
     resources->llLastCleaning = resources->step;

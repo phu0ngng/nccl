@@ -180,6 +180,8 @@ ncclResult_t bootstrapInit(ncclUniqueId* commId, int rank, int nranks, void** co
   state->nranks = nranks;
   *commState = state;
 
+  TRACE(INIT, "rank %d nranks %d", rank, nranks);
+
   struct extInfo info = { 0 };
   info.rank = rank;
   info.nranks = nranks;
@@ -215,6 +217,8 @@ ncclResult_t bootstrapInit(ncclUniqueId* commId, int rank, int nranks, void** co
   NCCLCHECK(ncclCalloc(&state->peerBstrapHandles, nranks));
   memcpy(state->peerBstrapHandles+rank, info.extHandleListen, sizeof(ncclNetHandle_t));
   NCCLCHECK(bootstrapAllGather(state, state->peerBstrapHandles, sizeof(ncclNetHandle_t)));
+
+  TRACE(INIT, "rank %d nranks %d - DONE", rank, nranks);
 
   return ncclSuccess;
 }
