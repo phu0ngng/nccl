@@ -210,10 +210,8 @@ class ncclLLPrimitives {
     // Make sure step is updated before we read it.
     barrier();
 
-    loadRecvConn(&channel->devPeers[recvPeers[0]].recv.conn, 0);
-    for (int i=1; i<NRECV && i<nrecv; i++) loadRecvConn(&channel->devPeers[recvPeers[i]].recv.conn, i);
-    loadSendConn(&channel->devPeers[sendPeers[0]].send.conn, 0);
-    for (int i=1; i<NSEND && i<nsend; i++) loadSendConn(&channel->devPeers[sendPeers[i]].send.conn, i);
+    for (int i=0; i<NRECV && i<nrecv; i++) loadRecvConn(&channel->devPeers[recvPeers[i]].recv.conn, i);
+    for (int i=0; i<NSEND && i<nsend; i++) loadSendConn(&channel->devPeers[sendPeers[i]].send.conn, i);
   }
 
   __device__ void send(const T* src, int nelem) {
@@ -245,15 +243,11 @@ class ncclLLPrimitives {
   }
 
   __device__ __forceinline__ ~ncclLLPrimitives() {
-    llSendCleaning(0);
-    for (int i=1; i<NSEND && i<nsend; i++) llSendCleaning(i);
-    llRecvCleaning(0);
-    for (int i=1; i<NRECV && i<nrecv; i++) llRecvCleaning(i);
+    for (int i=0; i<NSEND && i<nsend; i++) llSendCleaning(i);
+    for (int i=0; i<NRECV && i<nrecv; i++) llRecvCleaning(i);
     // Save steps for the next operation
-    saveRecvConn(0);
-    for (int i=1; i<NRECV && i<nrecv; i++) saveRecvConn(i);
-    saveSendConn(0);
-    for (int i=1; i<NSEND && i<nsend; i++) saveSendConn(i);
+    for (int i=0; i<NRECV && i<nrecv; i++) saveRecvConn(i);
+    for (int i=0; i<NSEND && i<nsend; i++) saveSendConn(i);
   }
 };
 
