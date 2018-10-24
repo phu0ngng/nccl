@@ -346,7 +346,7 @@ int ncclTest(ncclComm_t ** comms) {
   int root = rand() % nranks;
   if (type == 2) return 0; // ncclHalf not supported
   if (ncclPrims[nccl_prim]) {
-    //printf("Prim %d size %d type %d op %d nranks %d root %d\n", nccl_prim, size, type, op, commidx+1, root);
+    printf("Prim %d size %d type %d op %d nranks %d root %d\n", nccl_prim, size, type, op, commidx+1, root);
     errors += ncclPrims[nccl_prim](size, type, op, root, nranks, comms[commidx]);
   }
   return errors;
@@ -359,6 +359,7 @@ void usage() {
 }
 
 int main(int argc, char* argv[]) {
+  setlinebuf(stdout);
   int nVis = 0;
   CUDACHECK(cudaGetDeviceCount(&nVis));
 

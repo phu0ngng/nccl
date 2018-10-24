@@ -180,12 +180,12 @@ ncclResult_t testReduceCopy(T ** srcs, T ** dsts, int nsrcs, int ndsts) {
     printf(" %10d %10d ", size, sizeT);
 
     double time = getTimeUsec();
-    for (int i=0; i<NREPS; i++) 
+    for (int i=0; i<NREPS; i++)
       ReduceCopyRef<T, NREPS><<<64, 256>>>(srcs, dsts, nsrcs, ndsts, sizeT);
     CUDACHECK(cudaDeviceSynchronize());
     time = getTimeUsec() - time;
     printf("%11g %11g |", time, (((size_t)size)*NREPS*NREPS)/time);
-    
+
     InitKernel<<<32, 256>>>(srcs, dsts, nsrcs, ndsts, sizeT, maxSizeT);
     CUDACHECK(cudaDeviceSynchronize());
 
@@ -236,7 +236,7 @@ ncclResult_t testCopyCopySimple(T ** srcs, T ** dsts, int nptrs) {
       CUDACHECK(cudaDeviceSynchronize());
 
       double time = getTimeUsec();
-      for (int i=0; i<NREPS; i++) 
+      for (int i=0; i<NREPS; i++)
         CopyCopyKernel<<<1, 256>>>(srcs, dsts, nptrs, offsetT, sizeT);
       CUDACHECK(cudaDeviceSynchronize());
       time = getTimeUsec() - time;
@@ -249,7 +249,7 @@ ncclResult_t testCopyCopySimple(T ** srcs, T ** dsts, int nptrs) {
       CUDACHECK(cudaDeviceSynchronize());
 
       time = getTimeUsec();
-      for (int i=0; i<NREPS; i++) 
+      for (int i=0; i<NREPS; i++)
         CopyCopyKernel2<<<1, 256>>>(srcs, dsts, nptrs, offsetT, sizeT);
       CUDACHECK(cudaDeviceSynchronize());
       time = getTimeUsec() - time;
@@ -259,13 +259,13 @@ ncclResult_t testCopyCopySimple(T ** srcs, T ** dsts, int nptrs) {
       CUDACHECK(cudaDeviceSynchronize());
 
       time = getTimeUsec();
-      for (int i=0; i<NREPS; i++) 
+      for (int i=0; i<NREPS; i++)
         CopyCopyRef<<<1, 256>>>(srcs, dsts, nptrs, offsetT, sizeT);
       CUDACHECK(cudaDeviceSynchronize());
       time = getTimeUsec() - time;
       printf("%9g  ", (((size_t)size)*NREPS*nptrs)/time);
 
-    } 
+    }
     printf("\n");
   }
   return ncclSuccess;
@@ -311,4 +311,4 @@ int main() {
   ret = testReduceCopy<int32_t, 3, 1, 1, 128>((int32_t**)devSrcs, (int32_t**)devDsts, 3, 1); NCCLCHECK(ret);
   ret = testReduceCopy<int32_t, 4, 1, 1, 128>((int32_t**)devSrcs, (int32_t**)devDsts, 4, 1); NCCLCHECK(ret);
   return 0;
-}  
+}

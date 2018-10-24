@@ -81,7 +81,19 @@ void initNet() {
 }
 
 NCCL_PARAM(LlThreshold, "LL_THRESHOLD", -2);
-NCCL_PARAM(ThreadThreshold, "THREAD_THRESHOLD", NCCL_THREAD_THRESHOLD);
+NCCL_PARAM(ThreadThreshold, "THREAD_THRESHOLD", -2);
+
+int ncclThreadThreshold(int minCompCap, int multiNode) {
+  int threshold = ncclParamThreadThreshold();
+  if (threshold == -2) { // user has not set this env variable
+    threshold = (minCompCap <= 6) ? NCCL_THREAD_THRESHOLD_PREVOLTA : NCCL_THREAD_THRESHOLD;
+    // multiply by 2 if running on multiple nodes
+    if (multiNode) {
+      threshold *= 2;
+    }
+  }
+  return threshold;
+}
 
 pthread_mutex_t initLock = PTHREAD_MUTEX_INITIALIZER;
 static bool initialized = false;
@@ -173,7 +185,6 @@ static ncclResult_t commAlloc(ncclComm_t* comret, int ndev, int rank) {
   cudaGetDevice(&comm->cudaDev);
   comm->doneEvent = doneEvent;
   comm->llThreshold = ncclParamLlThreshold();
-  comm->threadThreshold = ncclParamThreadThreshold();
   comm->checkPointers = ncclParamCheckPointers() == 1 ? true : false;
 #if __CUDACC_VER_MAJOR__ >= 10 || (__CUDACC_VER_MAJOR__ >= 9 && __CUDACC_VER_MINOR__ >= 2)
   comm->groupCudaStream = ncclParamGroupCudaStream();
@@ -358,7 +369,7 @@ static ncclResult_t fillConnect(struct ncclPeerInfo* peerInfo, int nranks, int r
 
 #define MAXWIDTH 20
 #define PREFIXLEN 15
-#define STRLENGTH (PREFIXLEN+4*MAXWIDTH)
+#define STRLENGTH (PREFIXLEN+5*MAXWIDTH)
 void dumpMatrix(int* connectMatrix, int nranks) {
   char line[STRLENGTH+1];
   line[STRLENGTH] = '\0';
@@ -372,6 +383,21 @@ void dumpMatrix(int* connectMatrix, int nranks) {
     INFO(INIT,"%s", line);
   }
 }
+
+void dumpMatrixTvalue(ncclTvalue_t* connectMatrix, int nranks) {
+  char line[STRLENGTH+1];
+  line[STRLENGTH] = '\0';
+  memset(line, ' ', STRLENGTH);
+  for (int j=0; j<nranks && j<MAXWIDTH; j++) sprintf(4+line+5*j, " %4d", j);
+  INFO(INIT,"%s", line);
+  for (int i=0; i<nranks; i++) {
+    memset(line, ' ', STRLENGTH);
+    sprintf(line, "%3d ", i);
+    for (int j=0; j<nranks && j<MAXWIDTH; j++) sprintf(4+line+5*j, " %4o", (int)connectMatrix[i*nranks+j]);
+    INFO(INIT,"%s", line);
+  }
+}
+
 
 void dumpLine(int* values, int nranks, const char* prefix) {
   int prefixlen = strlen(prefix);
@@ -553,7 +579,7 @@ static ncclResult_t initTransportsRank(struct ncclComm* comm, ncclUniqueId* comm
   NCCLCHECK(bootstrapAllGather(comm->bootstrap, connectTransport, nranks*(sizeof(int))));
   NCCLCHECK(bootstrapAllGather(comm->bootstrap, connectValue, nranks*(sizeof(ncclTvalue_t))));
   //if (rank == 0) dumpMatrix(connectTransport, nranks);
-  //if (rank == 0) dumpMatrix(connectValue, nranks);
+  //if (rank == 0) dumpMatrixTvalue(connectValue, nranks);
 
   // Get my rings
   int nrings;
@@ -630,12 +656,15 @@ static ncclResult_t initTransportsRank(struct ncclComm* comm, ncclUniqueId* comm
 
   // Compute intra ranks
   int intraRank0 = -1, intraRank = -1, intraRanks = 0;
+  int multiNode = 0;
   for (int r=0; r<nranks; r++) {
     if ((rankInfos[r].hostHash == rankInfos[rank].hostHash) &&
         (rankInfos[r].pidHash == rankInfos[rank].pidHash)) {
       if (intraRanks == 0) intraRank0 = r;
       if (r == rank) intraRank = intraRanks;
       intraRanks++;
+    } else if (rankInfos[r].hostHash != rankInfos[rank].hostHash) {
+      multiNode = 1;
     }
   }
   TRACE(INIT,"hostHash[%d] %lx intraRank %d intraRanks %d intraRank0 %d",
@@ -646,6 +675,9 @@ static ncclResult_t initTransportsRank(struct ncclComm* comm, ncclUniqueId* comm
     return ncclInternalError;
   }
   NCCLCHECK(ncclCommSetIntra(comm, intraRank, intraRanks, rankInfos[intraRank0].comm));
+
+  // Determine thread threshold across all GPUs
+  comm->threadThreshold = ncclThreadThreshold(minCompCap, multiNode);
 
   return ncclSuccess;
 }
@@ -661,7 +693,7 @@ bool SetCpuAffinity(int cudaDev, nvmlDevice_t* nvmlDevice) {
   return true;
 }
 
-ncclResult_t ncclCommInitRankSync(ncclComm_t* newcomm, int ndev, ncclUniqueId commId, int myrank) {
+ncclResult_t ncclCommInitRankSync(ncclComm_t* newcomm, int nranks, ncclUniqueId commId, int myrank) {
   cpu_set_t affinitySave;
   sched_getaffinity(0, sizeof(cpu_set_t), &affinitySave);
 
@@ -675,12 +707,15 @@ ncclResult_t ncclCommInitRankSync(ncclComm_t* newcomm, int ndev, ncclUniqueId co
   SetCpuAffinity(cudaDev, &nvmlDevice);
   ncclResult_t res;
 
-  NCCLCHECKGOTO(commAlloc(newcomm, ndev, myrank), res, cleanup);
+  NCCLCHECKGOTO(commAlloc(newcomm, nranks, myrank), res, cleanup);
   NCCLCHECKGOTO(initTransportsRank(*newcomm, &commId), res, cleanup);
   NCCLCHECKGOTO(devCommSetup(*newcomm), res, cleanup);
 
   sched_setaffinity(0, sizeof(cpu_set_t), &affinitySave);
   NCCLCHECKGOTO(wrapNvmlShutdown(), res, cleanup);
+
+  INFO(INIT,"comm %p rank %d nranks %d - COMPLETE", *newcomm, myrank, nranks);
+
   return ncclSuccess;
 cleanup:
   *newcomm = NULL;
@@ -688,7 +723,7 @@ cleanup:
   return res;
 }
 
-NCCL_API(ncclResult_t, ncclCommInitRank, ncclComm_t* newcomm, int ndev, ncclUniqueId commId, int myrank);
+NCCL_API(ncclResult_t, ncclCommInitRank, ncclComm_t* newcomm, int nranks, ncclUniqueId commId, int myrank);
 ncclResult_t ncclCommInitRank(ncclComm_t* newcomm, int nranks, ncclUniqueId commId, int myrank) {
   char* env = getenv("NCCL_COMM_ID");
   if (env && myrank == 0) {
@@ -773,9 +808,13 @@ static ncclResult_t initTransportsAll(struct ncclComm** comms, const int* devs, 
   free(prevFinal);
   free(nextFinal);
 
+  // Determine thread threshold across all GPUs
+  int threadThreshold = ncclThreadThreshold(minCompCap, 0);
+
   for (int rank=0; rank<nranks; rank++) {
     comms[rank]->nChannels = nrings;
     comms[rank]->nThreads = nthreads;
+    comms[rank]->threadThreshold = threadThreshold;
   }
 
   for (int r=0; r<nrings; r++) {
