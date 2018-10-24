@@ -209,10 +209,8 @@ class ncclPrimitives {
     // Make sure step is updated before we read it
     __syncthreads();
 
-    loadRecvConn(&channel->devPeers[recvPeers[0]].recv.conn, 0, directBuff);
-    for (int i=1; i<NRECV && i<nrecv; i++) loadRecvConn(&channel->devPeers[recvPeers[i]].recv.conn, i, directBuff);
-    loadSendConn(&channel->devPeers[sendPeers[0]].send.conn, 0, directBuff);
-    for (int i=1; i<NSEND && i<nsend; i++) loadSendConn(&channel->devPeers[sendPeers[i]].send.conn, i, directBuff);
+    for (int i=0; i<NRECV && i<nrecv; i++) loadRecvConn(&channel->devPeers[recvPeers[i]].recv.conn, i, directBuff);
+    for (int i=0; i<NSEND && i<nsend; i++) loadSendConn(&channel->devPeers[sendPeers[i]].send.conn, i, directBuff);
   }
 
   __device__ __forceinline__ void
@@ -274,10 +272,8 @@ class ncclPrimitives {
   __device__ __forceinline__ ~ncclPrimitives() {
     // Save steps for next collective. Have thread 0 do it to be compatible
     // with the way LL works.
-    saveRecvConn(0);
-    for (int i=1; i<NRECV && i<nrecv; i++) saveRecvConn(i);
-    saveSendConn(0);
-    for (int i=1; i<NSEND && i<nsend; i++) saveSendConn(i);
+    for (int i=0; i<NRECV && i<nrecv; i++) saveRecvConn(i);
+    for (int i=0; i<NSEND && i<nsend; i++) saveSendConn(i);
   }
 };
 
