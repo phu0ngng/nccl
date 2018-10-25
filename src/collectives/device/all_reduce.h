@@ -150,20 +150,16 @@ __device__ void ncclAllReduceLLRingKernel(struct CollectiveArgs* args) {
   const ssize_t size = args->N;
   //const int rank = comm->rank;
   const int nranks = comm->nRanks;
-  const int nringsXnranks = args->nChannels * nranks;
-  ssize_t sliceSize = NCCL_LL_SLICE_LINES * sizeof(uint64_t) / sizeof(T);
-  const ssize_t loopSize = nringsXnranks*sliceSize;
+  ssize_t chunkSize = NCCL_LL_SLICE_LINES * sizeof(uint64_t) / sizeof(T);
+  const ssize_t loopSize = args->nChannels*nranks*chunkSize;
 
   // Compute pointers
   const T * __restrict__ thisInput = (const T*)args->ThisInput;
   T * __restrict__ thisOutput = (T*)args->ThisOutput;
 
-  int chunkSize = sliceSize;
   for (ssize_t gridOffset = 0; gridOffset < size; gridOffset += loopSize) {
-    ssize_t rest = size - gridOffset;
-    if (rest < loopSize) {
-      chunkSize = min(sliceSize, DIVUP(rest, nringsXnranks));
-      ALIGN_SIZE(chunkSize, nthreads*sizeof(uint64_t)/sizeof(T));
+    if (size-gridOffset < loopSize) {
+      chunkSize = args->lastChunkSize;
     }
     ssize_t chunkOffset = gridOffset + bid*nranks*chunkSize;
 
