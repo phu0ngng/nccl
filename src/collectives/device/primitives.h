@@ -209,11 +209,17 @@ class ncclPrimitives {
   }
 
   __device__ __forceinline__ void saveRecvConn(int i) {
-    if (tid == i) recvConn[i]->step = recvStep[i];
+    if (tid == i) {
+      recvConn[i]->step = recvStep[i];
+      __threadfence_block();
+    }
   }
 
   __device__ __forceinline__ void saveSendConn(int i) {
-    if (tid == WARP_SIZE+i) sendConn[i]->step = sendStep[i];
+    if (tid == WARP_SIZE+i) {
+      sendConn[i]->step = sendStep[i];
+      __threadfence_block();
+    }
   }
 
  public:
@@ -397,6 +403,7 @@ class ncclLLPrimitives {
   __device__ void LLGenericOp(const T* srcPtr, T* dstPtr, int nelem) {
     uint32_t nbytes = nelem < 0 ? 0 : nelem*sizeof(T);
     FOR_SEND(waitSend);
+    barrier();
     uint32_t npack = DIVUP(nbytes, sizeof(uint64_t));
     uint64_t* srcPack = (uint64_t*)srcPtr;
     uint64_t* dstPack = (uint64_t*)dstPtr;
