@@ -134,8 +134,6 @@ __device__ void ncclAllReduceTreeKernel(struct CollectiveArgs* args) {
   } while(0);
 }
 
-#include "ll_kernel.h"
-
 template<int UNUSED, class FUNC, typename T>
 __device__ void ncclAllReduceLLRingKernel(struct CollectiveArgs* args) {
   const int tid = threadIdx.x;

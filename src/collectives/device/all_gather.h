@@ -69,8 +69,6 @@ __device__ void ncclAllGatherRingKernel(struct CollectiveArgs* args) {
 template<int UNROLL, class FUNC, typename T>
 __device__ void ncclAllGatherTreeKernel(struct CollectiveArgs* args) { }
 
-#include "ll_kernel.h"
-
 template<int UNUSED, class FUNC, typename T>
 __device__ void ncclAllGatherLLRingKernel(struct CollectiveArgs* args) {
   const int tid = threadIdx.x;

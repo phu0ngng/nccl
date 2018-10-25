@@ -50,8 +50,6 @@ __device__ void ncclReduceRingKernel(struct CollectiveArgs* args) {
 template<int UNROLL, class FUNC, typename T>
 __device__ void ncclReduceTreeKernel(struct CollectiveArgs* args) { }
 
-#include "ll_kernel.h"
-
 template<int UNUSED, class FUNC, typename T>
 __device__ void ncclReduceLLRingKernel(struct CollectiveArgs* args) {
   const int tid = threadIdx.x;
