@@ -266,43 +266,33 @@ static ncclResult_t getLoopInfo(struct ncclInfo* info) {
 }
 
 static void getKernelInfo(struct ncclInfo* info, uint8_t* nChannels, uint16_t* nThreads, int* llMode) {
-  // Start with minimum number of threads and LL.
-  int ll = 1, nt = NCCL_LL_MIN_NTHREADS, nc, maxChannels;
-
   // Compute thresholds and limits that users can override
   int perThreadLLThreshold = std::min(info->comm->threadThreshold, (ssize_t)NCCL_LL_CHANNEL_THRESHOLD);
   int maxLLNthreads = std::min(NCCL_LL_MAX_NTHREADS, info->comm->nThreads);
 
-  // Check if we have a fixed LL threshold.
-  if (info->comm->llThreshold >= 0 && info->nBytes > info->comm->llThreshold) goto nonLL;
+  // First compute nThreads
+  int nt = NCCL_LL_MIN_NTHREADS;
+  while (DIVUP(info->nBytes, nt*info->nchunksPerLoop) > perThreadLLThreshold && nt*2 <= maxLLNthreads) nt *= 2;
 
-restart:
-  // Compute max number of channels
-  maxChannels = (nt == maxLLNthreads) ? info->comm->nChannels : 1;
-  // Compute the amount of work per thread per chunk
-  nc = std::max(1, (int)DIVUP(info->nBytes, nt*info->nchunksPerLoop*perThreadLLThreshold));
+  // Then compute nChannels
+  int nc = DIVUP(info->nBytes, nt*info->nchunksPerLoop*perThreadLLThreshold);
+  if (nc == 0) nc = 1;
+  if (nc > info->comm->nChannels) nc = info->comm->nChannels;
 
-  if (nc > maxChannels && nt*2 <= maxLLNthreads) {
-    // We have too much work per LL thread. Try to do better.
-    nt *= 2; goto restart; // Try increasing nThreads
-  }
+  // Check if we have a fixed LL threshold, otherwise compute it.
+  ssize_t llThreshold = info->comm->llThreshold >= 0 ?
+    info->comm->llThreshold :
+    nc*nt*info->nchunksPerLoop*info->comm->threadThreshold;
 
-  // nchannels and nthreads are already maxed out. Check if we need non-LL
-  if (nc > maxChannels) {
-    nc = maxChannels;
-    if (info->nBytes > nc*nt*info->nchunksPerLoop*info->comm->threadThreshold) ll = 0;
-  }
-
-  if (ll) {
+  if (info->nBytes <= llThreshold) {
     *llMode = 1;
     *nChannels = nc;
     *nThreads = nt;
-    return;
+  } else {
+    *llMode = 0;
+    *nChannels = info->comm->nChannels;
+    *nThreads = info->comm->nThreads+1;
   }
-nonLL:
-  *llMode = 0;
-  *nChannels = info->comm->nChannels;
-  *nThreads = info->comm->nThreads+1;
 }
 
 static ncclResult_t computeColl(struct ncclInfo* info /* input */, struct ncclColl* coll, struct ncclProxyArgs* proxyArgs /* output */) {
