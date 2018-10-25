@@ -143,7 +143,6 @@ struct ncclSendMem {
       char pad1[CACHE_LINE_SIZE-sizeof(uint64_t)];
       void* ptrExchange;
       char pad2[CACHE_LINE_SIZE-sizeof(void*)];
-      uint64_t llHead;
     };
     char pad3[MEM_ALIGN];
   };
@@ -153,13 +152,12 @@ struct ncclRecvMem {
   union {
     struct {
       uint64_t tail;
-      char pad2[CACHE_LINE_SIZE-sizeof(uint64_t)];
+      char pad1[CACHE_LINE_SIZE-sizeof(uint64_t)];
       uint64_t opCount;
-      char pad4[CACHE_LINE_SIZE-sizeof(uint64_t)];
+      char pad2[CACHE_LINE_SIZE-sizeof(uint64_t)];
       int sizesFifo[NCCL_STEPS];
-      int llSizesFifo[NCCL_STEPS];
     };
-    char pad5[MEM_ALIGN];
+    char pad4[MEM_ALIGN];
   };
   ncclLLFifoLine llBuff[NCCL_LL_BUFF_LINES];
   char buff[1]; // Actually larger than that
