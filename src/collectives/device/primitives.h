@@ -159,11 +159,9 @@ class ncclPrimitives {
           if (DIRECTRECV && recvDirectBuff[0]) {
             // We can only have one direct receive. Since srcs[0] == dstPtr+offset, skip one copy
             if (SEND) {
-              //ReduceOrCopy<UNROLL, FUNC, T, false, false>(tid, nthreads, dsts[1], NULL, srcs[0], NULL, realSize);
               ReduceOrCopyMulti<UNROLL, FUNC, T, 1, 1, 1, NSEND>(tid, nthreads, 1, srcs, nsend, dsts+1, realSize);
             }
           } else {
-            //ReduceOrCopy<UNROLL, FUNC, T, SEND*NSEND+DST == 2, RECV*NRECV+SRC == 2>(tid, nthreads, dsts[0], dsts[1], srcs[0], srcs[1], realSize);
             ReduceOrCopyMulti<UNROLL, FUNC, T, RECV+SRC, RECV*NRECV+SRC, SEND+DST, SEND*NSEND+DST>(tid, nthreads, RECV*nrecv+SRC, srcs, SEND*nsend+DST, dsts, realSize);
           }
         }

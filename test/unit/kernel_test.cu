@@ -139,15 +139,6 @@ __global__ void CheckReduceKernel(T** srcs, T** dsts, int nsrcs, int ndsts, int 
 }
 
 template<typename T, int NSRCS, int NDSTS, int NREPS>
-__global__ void ReduceCopyKernel(const T** srcs, T** dsts, int nsrcs, int ndsts, const int nelem) {
-  int bid = blockIdx.x;
-  int nblocks = gridDim.x;
-  int n = nelem/nblocks;
-  for (int i=0; i<NREPS; i++)
-    ReduceOrCopy<UNROLL, FuncSum<T>, T, NDSTS == 2, NSRCS == 2>(threadIdx.x, blockDim.x, dsts[0]+bid*n, dsts[1]+bid*n, srcs[0]+bid*n, srcs[1]+bid*n, n);
-}
-
-template<typename T, int NSRCS, int NDSTS, int NREPS>
 __global__ void ReduceCopyMultiKernel(const T** srcs, T** dsts, int nsrcs, int ndsts, const int nelem) {
   int bid = blockIdx.x;
   int nblocks = gridDim.x;
@@ -173,8 +164,8 @@ template<typename T, int NSRCS, int NDSTS, int NBLOCKS, int NTHREADS>
 ncclResult_t testReduceCopy(T ** srcs, T ** dsts, int nsrcs, int ndsts) {
   const int maxSizeT = MAXSIZE/sizeof(T);
 
-  printf("===================== ReduceCopy %d -> %d / %dx%d =====================\n", nsrcs, ndsts, NBLOCKS, NTHREADS);
-  printf("     Nbytes      Nelem Basic(us) Basic(MB/s)   Multi(us)  Multi(MB/s)      Old(us)     Old(MB/s)\n");
+  printf("============== ReduceCopy %d -> %d / %dx%d ==============\n", nsrcs, ndsts, NBLOCKS, NTHREADS);
+  printf("     Nbytes      Nelem Basic(us) Basic(MB/s)   Multi(us)  Multi(MB/s)\n");
   for (int size = 2; size < MAXSIZE; size <<= 1) {
     int sizeT = size/sizeof(T);
     printf(" %10d %10d ", size, sizeT);
@@ -200,21 +191,6 @@ ncclResult_t testReduceCopy(T ** srcs, T ** dsts, int nsrcs, int ndsts) {
     CheckReduceKernel<<<64, 256>>>(srcs, dsts, nsrcs, ndsts, sizeT, maxSizeT);
     CUDACHECK(cudaDeviceSynchronize());
 
-    if (NSRCS <= 2 && NDSTS <= 2) {
-      InitKernel<<<64, 256>>>(srcs, dsts, nsrcs, ndsts, sizeT, maxSizeT);
-      CUDACHECK(cudaDeviceSynchronize());
-
-      time = getTimeUsec();
-      for (int i=0; i<NREPS; i++) {
-        ReduceCopyKernel<T, NSRCS, NDSTS, NREPS><<<NBLOCKS, NTHREADS>>>((const T**)srcs, dsts, nsrcs, ndsts, sizeT);
-      }
-      CUDACHECK(cudaDeviceSynchronize());
-      time = getTimeUsec() - time;
-      printf("%11g %11g |", time, (((size_t)size)*NREPS*NREPS)/time);
-
-      CheckReduceKernel<<<64, 256>>>(srcs, dsts, nsrcs, ndsts, sizeT, maxSizeT);
-      CUDACHECK(cudaDeviceSynchronize());
-    }
     printf("\n");
   }
   return ncclSuccess;
