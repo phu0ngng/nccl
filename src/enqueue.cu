@@ -227,14 +227,12 @@ ncclResult_t ncclEnqueueEvents(ncclComm_t comm) {
 /* Enqueueing system : computation of kernel and proxy operations parameters */
 /*****************************************************************************/
 
-NCCL_PARAM(TreeThreshold, "TREE_THRESHOLD", 0);
-
 static ncclResult_t getPatternInfo(struct ncclInfo* info) {
   if (info->coll == ncclCollBroadcast) info->pattern = ncclPatternPipelineFrom;
   else if (info->coll == ncclCollReduce) info->pattern = ncclPatternPipelineTo;
   else if (info->coll == ncclCollAllGather || info->coll == ncclCollReduceScatter) info->pattern = ncclPatternRing;
   else if (info->coll == ncclCollAllReduce) {
-    if (info->nBytes < ncclParamTreeThreshold())
+    if (info->nBytes < ncclTreeThreshold())
       info->pattern = ncclPatternTreeUpDown;
     else
       info->pattern = ncclPatternRingTwice;

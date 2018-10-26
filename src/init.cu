@@ -82,6 +82,8 @@ void initNet() {
 
 NCCL_PARAM(LlThreshold, "LL_THRESHOLD", -2);
 NCCL_PARAM(ThreadThreshold, "THREAD_THRESHOLD", -2);
+NCCL_PARAM(TreeThreshold, "TREE_THRESHOLD", 0);
+int ncclTreeThreshold() { return ncclParamTreeThreshold(); }
 
 int ncclThreadThreshold(int minCompCap, int multiNode) {
   int threshold = ncclParamThreadThreshold();
@@ -297,69 +299,71 @@ static ncclResult_t setupChannel(struct ncclComm* comm, int channelId, int rank,
   int prev = ring->prev = ring->userRanks[nranks-1];
   int next = ring->next = ring->userRanks[1];
 
-  // Build trees
-  struct ncclTree* tree = &channel->tree;
-  tree->nUp = tree->nDown = 1;
-  tree->up = prev;
-  tree->down[0] = next;
+  if (ncclTreeThreshold() > 0) {
+    // Build trees
+    struct ncclTree* tree = &channel->tree;
+    tree->nUp = tree->nDown = 1;
+    tree->up = prev;
+    tree->down[0] = next;
 
-  int nMasters = 0;
-  for (int r=0; r<nranks; r++) nMasters += treeMasters[r];
-  if (nMasters == 0) {
-    nMasters = 1;
-    treeMasters[0] = 1;
-  }
-  // Not an exact value but a good approximation in most cases and consistent
-  // across nodes
-  tree->depth = nranks/nMasters + log2(nMasters);
-
-  // Find my master : go backwards in the ring to find my root
-  int master = 0;
-  for (int i = 0; i<nranks; i++) {
-    int r = ring->userRanks[(nranks-i)%nranks];
-    if (treeMasters[r]) {
-      master = r;
-      break;
+    int nMasters = 0;
+    for (int r=0; r<nranks; r++) nMasters += treeMasters[r];
+    if (nMasters == 0) {
+      nMasters = 1;
+      treeMasters[0] = 1;
     }
-  }
+    // Not an exact value but a good approximation in most cases and consistent
+    // across nodes
+    tree->depth = nranks/nMasters + log2(nMasters);
 
-  if (treeMasters[next]) {
-    tree->nDown = 0;
-  }
-
-  int ranks[nMasters];
-  int i = 0, masterIndex = -1;
-  // Build binary tree
-  for (int r=0; r<nranks; r++) {
-    // Create index table
-    if (r == master) masterIndex = i;
-    if (treeMasters[r]) ranks[i++] = r;
-  }
-  int up, down0, down1;
-  int u0, d0_0, d0_1, u1, d1_0, d1_1;
-  NCCLCHECK(ncclGetDtree(nMasters, masterIndex, &u0, &d0_0, &d0_1, &u1, &d1_0, &d1_1));
-  if (channelId < DIVUP(comm->nChannels, 2)) {
-    up = u0; down0 = d0_0; down1 = d0_1;
-  } else {
-    up = u1; down0 = d1_0; down1 = d1_1;
-  }
-
-  if (rank == master) {
-    tree->nUp = 0;
-    if (up != -1) {
-      tree->up = ranks[up];
-      tree->nUp++;
+    // Find my master : go backwards in the ring to find my root
+    int master = 0;
+    for (int i = 0; i<nranks; i++) {
+      int r = ring->userRanks[(nranks-i)%nranks];
+      if (treeMasters[r]) {
+        master = r;
+        break;
+      }
     }
-    if (down0 != -1) tree->down[tree->nDown++] = ranks[down0];
-    if (down1 != -1) tree->down[tree->nDown++] = ranks[down1];
-  }
 
-  INFO(INIT, "Channel %02d : %d -> %d, %d, %d", channelId,
-      tree->nUp ? tree->up : -1,
-      tree->nDown > 0 ? tree->down[0] : -1,
-      tree->nDown > 1 ? tree->down[1] : -1,
-      tree->nDown > 2 ? tree->down[2] : -1);
-  //printf("[%d/%d] nUp %d (%d) nDown %d (%d %d %d)\n", channelId, rank, tree->nUp, tree->up, tree->nDown, tree->down[0], tree->down[1], tree->down[2]);
+    if (treeMasters[next]) {
+      tree->nDown = 0;
+    }
+
+    int ranks[nMasters];
+    int i = 0, masterIndex = -1;
+    // Build binary tree
+    for (int r=0; r<nranks; r++) {
+      // Create index table
+      if (r == master) masterIndex = i;
+      if (treeMasters[r]) ranks[i++] = r;
+    }
+    int up, down0, down1;
+    int u0, d0_0, d0_1, u1, d1_0, d1_1;
+    NCCLCHECK(ncclGetDtree(nMasters, masterIndex, &u0, &d0_0, &d0_1, &u1, &d1_0, &d1_1));
+    if (channelId < DIVUP(comm->nChannels, 2)) {
+      up = u0; down0 = d0_0; down1 = d0_1;
+    } else {
+      up = u1; down0 = d1_0; down1 = d1_1;
+    }
+
+    if (rank == master) {
+      tree->nUp = 0;
+      if (up != -1) {
+        tree->up = ranks[up];
+        tree->nUp++;
+      }
+      if (down0 != -1) tree->down[tree->nDown++] = ranks[down0];
+      if (down1 != -1) tree->down[tree->nDown++] = ranks[down1];
+    }
+
+    INFO(INIT, "Channel %02d : %d -> %d, %d, %d", channelId,
+        tree->nUp ? tree->up : -1,
+        tree->nDown > 0 ? tree->down[0] : -1,
+        tree->nDown > 1 ? tree->down[1] : -1,
+        tree->nDown > 2 ? tree->down[2] : -1);
+    //printf("[%d/%d] nUp %d (%d) nDown %d (%d %d %d)\n", channelId, rank, tree->nUp, tree->up, tree->nDown, tree->down[0], tree->down[1], tree->down[2]);
+  }
 
   TRACE(INIT, "rank %d nranks %d - DONE", rank, nranks);
   return ncclSuccess;
