@@ -271,6 +271,12 @@ static ncclResult_t selectTransport(struct ncclPeerInfo* myInfo, struct ncclPeer
   return ncclInternalError;
 }
 
+static int log2(int n) {
+ int l = 0;
+ while (n>>=2) l++;
+ return l;
+}
+
 static ncclResult_t setupChannel(struct ncclComm* comm, int channelId, int rank, int nranks, int* ringRanks, int* treeMasters) {
   TRACE(INIT, "rank %d nranks %d", rank, nranks);
   NCCLCHECK(initChannel(comm, channelId));
@@ -303,6 +309,10 @@ static ncclResult_t setupChannel(struct ncclComm* comm, int channelId, int rank,
     nMasters = 1;
     treeMasters[0] = 1;
   }
+  // Not an exact value but a good approximation in most cases and consistent
+  // across nodes
+  tree->depth = nranks/nMasters + log2(nMasters);
+
   // Find my master : go backwards in the ring to find my root
   int master = 0;
   for (int i = 0; i<nranks; i++) {

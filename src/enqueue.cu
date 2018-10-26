@@ -311,10 +311,25 @@ static ncclResult_t computeColl(struct ncclInfo* info /* input */, struct ncclCo
   int llMode;
   getKernelInfo(info, &coll->args.nChannels, &coll->args.nThreads, &llMode);
 
-  coll->funcIndex = FUNC_INDEX(info->coll, info->op, info->datatype, llMode, (info->pattern >= ncclPatternTreeUp ? 1 : 0));
+  int treeMode = info->pattern >= ncclPatternTreeUp ? 1 : 0;
+  coll->funcIndex = FUNC_INDEX(info->coll, info->op, info->datatype, llMode, treeMode);
+
+  int stepSize   = ( llMode ? NCCL_LL_BUFF_SIZE : info->comm->channels[0].buffSize ) / NCCL_STEPS;
+  int chunkSteps = (llMode|treeMode) ? 1 : info->chunkSteps;
+  int sliceSteps = (llMode|treeMode) ? 1 : info->sliceSteps;
+  int chunkSize  = stepSize*chunkSteps;
 
   // Compute lastChunkSize
-  if (llMode == 1) {
+  if (treeMode == 1 && llMode == 0) {
+    if (info->pattern == ncclPatternTreeUpDown) {
+      // Optimize chunkSize / nSteps
+      while (info->nBytes / (coll->args.nChannels*chunkSize) < info->comm->channels[0].tree.depth*8 && chunkSize > 131072) chunkSize /= 2;
+      while (info->nBytes / (coll->args.nChannels*chunkSize) < info->comm->channels[0].tree.depth*4 && chunkSize > 65536) chunkSize /= 2;
+      while (info->nBytes / (coll->args.nChannels*chunkSize) < info->comm->channels[0].tree.depth && chunkSize > 32768) chunkSize /= 2;
+    }
+    // Use lastChunkSize as chunkSize
+    coll->args.lastChunkSize = chunkSize / ncclTypeSize(info->datatype);
+  } else if (llMode == 1) {
     int sliceSize = NCCL_LL_SLICE_LINES * sizeof(uint64_t);
     const ssize_t loopSize = coll->args.nChannels*info->nchunksPerLoop*(ssize_t)sliceSize;
     coll->args.lastChunkSize = DIVUP((info->nBytes-(info->nBytes/loopSize)*loopSize), coll->args.nChannels*info->nchunksPerLoop);
@@ -324,12 +339,10 @@ static ncclResult_t computeColl(struct ncclInfo* info /* input */, struct ncclCo
 
   // Compute nSteps for proxies
   size_t nBytes  = llMode ? info->nBytes*2 : info->nBytes;
-  int chunkSteps = llMode ? 1 : info->chunkSteps;
-  int stepSize   = ( llMode ? NCCL_LL_BUFF_SIZE : info->comm->channels[0].buffSize ) / NCCL_STEPS;
 
-  int nLoops = (int)(DIVUP(nBytes, (((size_t)(coll->args.nChannels))*info->nchunksPerLoop*stepSize*chunkSteps)));
+  int nLoops = (int)(DIVUP(nBytes, (((size_t)(coll->args.nChannels))*info->nchunksPerLoop*chunkSize)));
   proxyArgs->nsteps = info->nstepsPerLoop * nLoops * chunkSteps;
-  proxyArgs->sliceSteps = llMode ? 1 : info->sliceSteps;
+  proxyArgs->sliceSteps = sliceSteps;
   proxyArgs->chunkSteps = chunkSteps;
   proxyArgs->llMode = llMode;
   proxyArgs->opCount = info->comm->opCount;
