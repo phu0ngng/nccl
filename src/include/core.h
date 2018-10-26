@@ -404,7 +404,7 @@ struct ncclComm {
 #endif // end PROFAPI
 
 int ncclCudaCompCap();
-int ncclTreeThreshold();
+int64_t ncclTreeThreshold();
 
 static __inline__ int ncclTypeSize(ncclDataType_t type) {
   switch (type) {

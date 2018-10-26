@@ -83,7 +83,7 @@ void initNet() {
 NCCL_PARAM(LlThreshold, "LL_THRESHOLD", -2);
 NCCL_PARAM(ThreadThreshold, "THREAD_THRESHOLD", -2);
 NCCL_PARAM(TreeThreshold, "TREE_THRESHOLD", 0);
-int ncclTreeThreshold() { return ncclParamTreeThreshold(); }
+int64_t ncclTreeThreshold() { return ncclParamTreeThreshold(); }
 
 int ncclThreadThreshold(int minCompCap, int multiNode) {
   int threshold = ncclParamThreadThreshold();
