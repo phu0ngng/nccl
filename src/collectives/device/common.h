@@ -31,6 +31,8 @@ static __device__ void load_coll(struct ncclColl* localColl, struct ncclColl* ho
 __device__ void NCCL_COLL_NAME(coll, op, dtype)(struct CollectiveArgs* args) { \
   coll##Kernel<UNROLL, ncclFunc<ctype>, ctype>(args); \
 }
+
+#if NCCL_OP == 0
 /* Kernels with the first operation inlined */
 #define IMPL_COLL_KERN(coll, op, ncclFunc, dtype, ctype, fIndex) \
 __launch_bounds__(MAXTHREADS+WARP_SIZE, 1) \
@@ -69,6 +71,9 @@ __global__ void NCCL_KERN_NAME(coll, op, dtype)(struct ncclColl firstColl) { \
     load_coll(c, channel->devCollectives+nextIndex, tid); \
   } \
 }
+#else
+#define IMPL_COLL_KERN(coll, op, ncclFunc, dtype, ctype, fIndex)
+#endif
 
 #define IMPL_COLL5(coll, op, ncclFunc, dtype, ctype, ncclColl, ncclOp, ncclType, ll, al) \
   IMPL_COLL_FUNC(coll, op, ncclFunc, dtype, ctype) \

@@ -40,12 +40,12 @@
   (void*)NCCL_FUNC4(coll, op,  i8), \
   (void*)NCCL_FUNC4(coll, op,  i8)
 
-// Must be consistent with ncclRedOp_t
+// Must be consistent with ncclRedOp_t -- but we only generate kernel for sums.
 #define NCCL_FUNCS2A(coll) \
-  NCCL_FUNCS3A(coll, sum ), \
-  NCCL_FUNCS3A(coll, prod), \
-  NCCL_FUNCS3A(coll, max ), \
-  NCCL_FUNCS3A(coll, min )
+  NCCL_FUNCS3A(coll, sum), \
+  NCCL_FUNCS3A(coll, sum), \
+  NCCL_FUNCS3A(coll, sum), \
+  NCCL_FUNCS3A(coll, sum)
 #define NCCL_FUNCS2B(coll) \
   NCCL_FUNCS3B(coll, copy), \
   NCCL_FUNCS3B(coll, copy), \
