@@ -10,13 +10,14 @@
 
 #include "collectives/collectives.h"
 
+// Only generate inline kernels for LL
 #define NCCL_FUNC5(coll, op, dtype) \
-  (void*)NCCL_KERN_NAME(coll##Ring, op, dtype), \
-  (void*)NCCL_KERN_NAME(coll##Tree, op, dtype)
+  (void*)NCCL_KERN_NAME(coll##LL, op, dtype), \
+  (void*)NCCL_KERN_NAME(coll##LL, op, dtype)
 
 #define NCCL_FUNC4(coll, op, dtype) \
-  (void*)NCCL_FUNC5(coll, op, dtype), \
-  (void*)NCCL_FUNC5(coll##LL, op, dtype)
+  (void*)NCCL_FUNC5(coll##Ring, op, dtype), \
+  (void*)NCCL_FUNC5(coll##Tree, op, dtype)
 
 // Must be consistent with ncclDataType_t
 #define NCCL_FUNCS3A(coll, op) \

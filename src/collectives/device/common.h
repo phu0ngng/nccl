@@ -75,17 +75,15 @@ __global__ void NCCL_KERN_NAME(coll, op, dtype)(struct ncclColl firstColl) { \
 #define IMPL_COLL_KERN(coll, op, ncclFunc, dtype, ctype, fIndex)
 #endif
 
-#define IMPL_COLL5(coll, op, ncclFunc, dtype, ctype, ncclColl, ncclOp, ncclType, ll, al) \
+// Only generate inline kernels for LL
+#define IMPL_COLL4(coll, op, ncclFunc, dtype, ctype, ncclColl, ncclOp, ncclType, al) \
   IMPL_COLL_FUNC(coll, op, ncclFunc, dtype, ctype) \
-  IMPL_COLL_KERN(coll, op, ncclFunc, dtype, ctype, FUNC_INDEX(ncclColl, ncclOp, ncclType, ll, al)) \
-
-#define IMPL_COLL4(coll, op, ncclFunc, dtype, ctype, ncclColl, ncclOp, ncclType, ll) \
-  IMPL_COLL5(coll##Ring, op, ncclFunc, dtype, ctype, ncclColl, ncclOp, ncclType, ll, 0) \
-  IMPL_COLL5(coll##Tree, op, ncclFunc, dtype, ctype, ncclColl, ncclOp, ncclType, ll, 1)
+  IMPL_COLL_FUNC(coll##LL, op, ncclFunc, dtype, ctype) \
+  IMPL_COLL_KERN(coll##LL, op, ncclFunc, dtype, ctype, FUNC_INDEX(ncclColl, ncclOp, ncclType, 1, al)) \
 
 #define IMPL_COLL3(coll, op, ncclFunc, dtype, ctype, ncclColl, ncclOp, ncclType) \
-  IMPL_COLL4(coll, op, ncclFunc, dtype, ctype, ncclColl, ncclOp, ncclType, 0) \
-  IMPL_COLL4(coll##LL, op, ncclFunc, dtype, ctype, ncclColl, ncclOp, ncclType, 1)
+  IMPL_COLL4(coll##Ring, op, ncclFunc, dtype, ctype, ncclColl, ncclOp, ncclType, 0) \
+  IMPL_COLL4(coll##Tree, op, ncclFunc, dtype, ctype, ncclColl, ncclOp, ncclType, 1)
 
 #if NCCL_TYPE == 0
 #define IMPL_COLL2(coll, op, ncclFunc, ncclColl, ncclOp) \

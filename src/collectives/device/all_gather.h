@@ -70,7 +70,7 @@ template<int UNROLL, class FUNC, typename T>
 __device__ void ncclAllGatherTreeKernel(struct CollectiveArgs* args) { }
 
 template<int UNUSED, class FUNC, typename T>
-__device__ void ncclAllGatherLLRingKernel(struct CollectiveArgs* args) {
+__device__ void ncclAllGatherRingLLKernel(struct CollectiveArgs* args) {
   const int tid = threadIdx.x;
   const int bid = args->bid;
   const int nthreads = args->nThreads;
@@ -128,4 +128,4 @@ __device__ void ncclAllGatherLLRingKernel(struct CollectiveArgs* args) {
 }
 
 template<int UNUSED, class FUNC, typename T>
-__device__ void ncclAllGatherLLTreeKernel(struct CollectiveArgs* args) { }
+__device__ void ncclAllGatherTreeLLKernel(struct CollectiveArgs* args) { }
