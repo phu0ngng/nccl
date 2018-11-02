@@ -28,7 +28,6 @@
   } \
 } while (0)
 
-
 // Implementation of primitive types
 template <int UNROLL, int SLICESPERCHUNK, int SLICESTEPS, typename T, int NRECV, int NSEND, class FUNC>
 class ncclPrimitives {
