@@ -77,6 +77,7 @@ struct transportProxyInfo {
   volatile uint64_t argsFifoTail;
   pthread_cond_t cond;
   pthread_mutex_t mutex;
+  struct ncclComm *comm;
 };
 
 ncclResult_t transportCreateProxy(struct ncclConnector* connector);
