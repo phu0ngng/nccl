@@ -46,7 +46,7 @@ By default, NCCL is compiled for all supported architectures. To accelerate the 
 $ make -j src.build NVCC_GENCODE="-gencode=arch=compute_70,code=sm_70"
 ```
 
-Note: the official builds of NCCL can be downloaded from: https://developer.nvidia.com/nccl
+Note: the official and tested builds of NCCL can be downloaded from: https://developer.nvidia.com/nccl
 
 ## Install
 
