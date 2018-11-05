@@ -3,6 +3,8 @@
  *
  * See LICENSE.txt for license information
  ************************************************************************/
+#ifndef __COMMON_H__
+#define __COMMON_H__
 
 #include "nccl.h"
 #include <stdio.h>
@@ -13,6 +15,7 @@
 #endif
 #include <pthread.h>
 #include "nccl1_compat.h"
+#include "nccl_coll.h"
 
 #define CUDACHECK(cmd) do {                         \
   cudaError_t e = cmd;                              \
@@ -80,6 +83,9 @@ struct threadArgs_t {
   int* bw_count;
 
   int compThreadStop;
+
+  ncclColl_t* coll;
+  char* replayFile;
 };
 
 #include <chrono>
@@ -91,18 +97,12 @@ extern void Randomize(void* ptr, size_t count, ncclDataType_t type, int seed);
 extern void Accumulate(void* out, void* in, size_t n, ncclDataType_t type, ncclRedOp_t op);
 extern void CheckDelta(void* expected, void* results, size_t count, ncclDataType_t type, double* devmax);
 extern double DeltaMaxValue(ncclDataType_t type);
-
-// Provided by each coll
-void RunTest(struct threadArgs_t* args, int root, ncclDataType_t type, const char* typeName, ncclRedOp_t op, const char* opName);
-extern void GetBw(size_t count, int typeSize, double sec, double* algBw, double* busBw, int nranks);
-extern void RunColl(void* sendbuf, void* recvbuff, size_t count, ncclDataType_t type, ncclRedOp_t op,  int root, ncclComm_t comm, cudaStream_t stream);
-extern void InitData(struct threadArgs_t* args, ncclDataType_t type, ncclRedOp_t op,  int in_place, int is_first);
 extern double CheckData(struct threadArgs_t* args, ncclDataType_t type, ncclRedOp_t op);
 extern void AllocateBuffs(void **sendbuff, void **recvbuff, void **expected, void **expectedHost, size_t nbytes, int nranks);
-extern void InitRecvResult(struct threadArgs_t* args, ncclDataType_t type, ncclRedOp_t op,  int root, int in_place, int is_first);
-extern void getCollByteCount(size_t *sendbytes, size_t *recvbytes, size_t *parambytes, size_t *sendInlineOffset, size_t *recvInlineOffset, size_t *procSharedBytes, int *sameexpected, size_t nbytes, int nranks);
-extern void print_line_header (size_t size, size_t count, const char *typeName, const char *opName, int root);
-extern void print_header();
+
+// Provided by each coll
+extern void RunTest(struct threadArgs_t* args, int root, ncclDataType_t type, const char* typeName, ncclRedOp_t op, const char* opName);
+extern void GetBuffSize(size_t *sendbytes, size_t *recvbytes, size_t *procSharedBytes, int *sameexpected, size_t nbytes, int nranks);
 
 #include <unistd.h>
 
@@ -160,7 +160,33 @@ extern const char *test_typenames[ncclNumTypes];
 extern ncclRedOp_t test_ops[ncclNumOps];
 extern const char *test_opnames[ncclNumOps];
 
+static int ncclstringtotype(char *str) {
+    for (int t=0; t<ncclNumTypes; t++) {
+      if (strcmp(str, test_typenames[t]) == 0) {
+        return t;
+      }
+    }
+    if (strcmp(str, "all") == 0) {
+      return -1;
+    }
+    printf("invalid type %s, defaulting to %s .. \n", str, test_typenames[ncclFloat]);
+    return ncclFloat;
+}
+
+static int ncclstringtoop (char *str) {
+    for (int o=0; o<ncclNumOps; o++) {
+      if (strcmp(str, test_opnames[o]) == 0) {
+        return o;
+      }
+    }
+    if (strcmp(str, "all") == 0) {
+      return -1;
+    }
+    printf("invalid op %s, defaulting to %s .. \n", str, test_opnames[ncclSum]);
+    return ncclSum;
+}
+
 extern thread_local int is_main_thread;
 #define PRINT if (is_main_thread) printf
 
-
+#endif

@@ -1,0 +1,5 @@
+AllReduce       64        float   sum   0
+ReduceScatter   32768     int8    prod  0
+AllGather       512       uint32  sum   0
+Reduce          1000000   half    max   1
+Broadcast       1         double  sum   1

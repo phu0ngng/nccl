@@ -35,6 +35,9 @@ static int parallel_init = 0;
 static int blocking_coll = 0;
 static int streamnull = 0;
 static int side_comp = 0;
+static char* replay_file = NULL;
+static void **expected = NULL;
+static void **expectedHost = NULL;
 
 double parsesize(char *value) {
     long long int units;
@@ -482,7 +485,7 @@ void startColl(struct threadArgs_t* args, ncclDataType_t type, ncclRedOp_t op, i
 
   if (args->nGpus == 1) {
     int rank = args->proc*args->nThreads + args->thread;
-    RunColl((void*)(in_place ? ((void *)((uintptr_t)args->recvbuffs[0] + args->sendInplaceOffset*rank)) : args->sendbuffs[0]),
+    args->coll->RunColl((void*)(in_place ? ((void *)((uintptr_t)args->recvbuffs[0] + args->sendInplaceOffset*rank)) : args->sendbuffs[0]),
         (void*)(in_place ? (void*)((uintptr_t)args->recvbuffs[0] + args->recvInplaceOffset*rank) : args->recvbuffs[0]),
         count, type, op, root, args->comms[0], args->streams[0]);
   } else {
@@ -494,7 +497,7 @@ void startColl(struct threadArgs_t* args, ncclDataType_t type, ncclRedOp_t op, i
       CUDACHECK(cudaSetDevice(cudaDev));
 #endif
       int rank = ((args->proc*args->nThreads + args->thread)*args->nGpus + i);
-      RunColl((void*)(in_place ? ((void *)((uintptr_t)args->recvbuffs[i] + args->sendInplaceOffset*rank)) : args->sendbuffs[i]),
+      args->coll->RunColl((void*)(in_place ? ((void *)((uintptr_t)args->recvbuffs[i] + args->sendInplaceOffset*rank)) : args->sendbuffs[i]),
           (void*)(in_place ? (void*)((uintptr_t)args->recvbuffs[i] + args->recvInplaceOffset*rank) : args->recvbuffs[i]),
           count, type, op, root, args->comms[i], args->streams[i]);
     }
@@ -524,7 +527,7 @@ void BenchTime(struct threadArgs_t* args, ncclDataType_t type, ncclRedOp_t op, i
   size_t count = args->nbytes / wordSize(type);
 
   // Sync
-  startColl(args, type, op, root, in_place, 0);
+  //startColl(args, type, op, root, in_place, 0);
   completeColl(args);
 
   Barrier(args);
@@ -545,14 +548,14 @@ void BenchTime(struct threadArgs_t* args, ncclDataType_t type, ncclRedOp_t op, i
   timeSec = timeSec/(iters*agg_iters);
 
   double algBw, busBw;
-  GetBw(count, wordSize(type), timeSec, &algBw, &busBw, args->nProcs*args->nThreads*args->nGpus);
+  args->coll->GetBw(count, wordSize(type), timeSec, &algBw, &busBw, args->nProcs*args->nThreads*args->nGpus);
 
   Barrier(args);
 
   double maxDelta = 0;
   if (datacheck) { 
       InitSendRecv(args, type, op, root, in_place, args->thread == 0 ? 1 : 0);
-      InitRecvResult(args, type, op, root, in_place, args->thread == 0 ? 1 : 0);
+      args->coll->InitRecvResult(args, type, op, root, in_place, args->thread == 0 ? 1 : 0);
       cudaDeviceSynchronize();
 
       //test validation in single itertion, should ideally be included into the multi-iteration run
@@ -599,13 +602,23 @@ void setupArgs(size_t size, ncclDataType_t type, struct threadArgs_t* args) {
   int sameExpected;
   
   count = size / wordSize(type);
-  getCollByteCount(&sendCount, &recvCount, &paramCount, &sendInplaceOffset, &recvInplaceOffset, &procSharedCount, &sameExpected, (size_t)count, (size_t)nranks);
+  args->coll->getCollByteCount(&sendCount, &recvCount, &paramCount, &sendInplaceOffset, &recvInplaceOffset, &procSharedCount, &sameExpected, (size_t)count, (size_t)nranks);
 
   args->nbytes = paramCount * wordSize(type);
   args->sendBytes = sendCount * wordSize(type);
   args->expectedBytes = recvCount * wordSize(type);
   args->sendInplaceOffset = sendInplaceOffset * wordSize(type);
   args->recvInplaceOffset = recvInplaceOffset * wordSize(type);
+
+  for (int i = 0; i < args->nGpus; i++) {
+    if (sameExpected) {
+      args->expectedHost[i] = expectedHost[0];
+      args->expected[i] = expected[0];
+    } else {
+      args->expectedHost[i] = expectedHost[args->thread*args->nGpus + i];
+      args->expected[i] = expected[args->thread*args->nGpus + i];
+    }
+  }
 }
 
 void TimeTest(struct threadArgs_t* args, ncclDataType_t type, const char* typeName, ncclRedOp_t op, const char* opName, int root) {
@@ -632,9 +645,13 @@ void TimeTest(struct threadArgs_t* args, ncclDataType_t type, const char* typeNa
       else
         sprintf(rootName, "%6i", root);
       PRINT("%12li  %12li  %6s  %6s  %6s", max(args->sendBytes, args->expectedBytes), args->nbytes / wordSize(type), typeName, opName, rootName);
-      BenchTime(args, type, op, root, 0);
+      if (args->replayFile != NULL) {
+        PRINT("                                ");  // only do in-place for trace replay
+      } else {
+        BenchTime(args, type, op, root, 0);
+      }
       BenchTime(args, type, op, root, 1);
-      PRINT("\n");
+      PRINT("    %s\n", args->replayFile == NULL ? "" : args->coll->name);
   }
 }
 
@@ -754,32 +771,6 @@ void AllocateBuffs(void **sendbuff, size_t sendBytes, void **recvbuff, size_t re
     }
 }
  
-int ncclstringtotype(char *str) { 
-    for (int t=0; t<ncclNumTypes; t++) {
-      if (strcmp(str, test_typenames[t]) == 0) {
-        return t;
-      }
-    }
-    if (strcmp(str, "all") == 0) {
-      return -1;
-    }
-    printf("invalid type %s, defaulting to %s .. \n", str, test_typenames[nccltype]);
-    return nccltype;
-}
-
-int ncclstringtoop (char *str) { 
-    for (int o=0; o<ncclNumOps; o++) {
-      if (strcmp(str, test_opnames[o]) == 0) {
-        return o;
-      }
-    }
-    if (strcmp(str, "all") == 0) {
-      return -1;
-    }
-    printf("invalid op %s, defaulting to %s .. \n", str, test_opnames[ncclop]);
-    return ncclop;
-}
-
 int main(int argc, char* argv[]) {
  int nThreads = 1, nGpus = 1;
  size_t minBytes = 32*1024*1024, maxBytes = 32*1024*1024, stepBytes = 1*1024*1024, stepFactor = 1;
@@ -808,12 +799,13 @@ int main(int argc, char* argv[]) {
     {"blocking", required_argument, 0, 'z'},
     {"stream_null", required_argument, 0, 'y'},
     {"side_comp", required_argument, 0, 'k'},
+    {"replay", required_argument, 0, 'l'},
     {"help", no_argument, 0, 'h'}
  };
 
  while(1) {
       int c;
-      c = getopt_long(argc, argv, "t:g:b:e:i:f:n:m:w:s:p:c:o:d:r:z:y:k:h", longopts, &longindex);
+      c = getopt_long(argc, argv, "t:g:b:e:i:f:n:m:w:s:p:c:o:d:r:z:y:k:h:l:", longopts, &longindex);
 
       if (c == -1)
          break;
@@ -877,6 +869,10 @@ int main(int argc, char* argv[]) {
          case 'k':
              side_comp = strtol(optarg, NULL, 0);
              break;
+         case 'l':
+             replay_file = optarg;
+             warmup_iters = 0;    // by default, no warm-up in case of trace replay
+             break;
          case 'h':
 	         printf("USAGE: ./test \n\t" 
 	 	 "[-t,--nthreads <num threads>] \n\t"
@@ -897,6 +893,7 @@ int main(int argc, char* argv[]) {
 		 "[-z,--blocking <0/1>] \n\t"
 		 "[-y,--stream_null <0/1>] \n\t"
 		 "[-k,--side_comp <0/1>] \n\t"
+		 "[-l,--replay <path to replay file>] \n\t"
 		 "[-h,--help]\n");
 	         return 0;
 	 default: 
@@ -920,6 +917,7 @@ int main(int argc, char* argv[]) {
 		 "[-z,--blocking <0/1>] \n\t"
 		 "[-y,--stream_null <0/1>] \n\t"
 		 "[-k,--side_comp <0/1>] \n\t"
+		 "[-l,--replay <path to replay file>] \n\t"
 		 "[-h,--help]\n");
 	         return 0;
       }
@@ -985,13 +983,13 @@ int main(int argc, char* argv[]) {
   cudaStream_t streams[nGpus*nThreads];
   void* sendbuffs[nGpus*nThreads];
   void* recvbuffs[nGpus*nThreads];
-  void* expected[nGpus*nThreads];
-  void* expectedHost[nGpus*nThreads];
+  expected = (void**)malloc(sizeof(void*)*nGpus*nThreads);
+  expectedHost = (void**)malloc(sizeof(void*)*nGpus*nThreads);
   void *procSharedHost, *procShared;
-  size_t sendBytes, recvBytes, paramBytes, procSharedBytes, sendInplaceOffset, recvInplaceOffset; 
+  size_t sendBytes, recvBytes, procSharedBytes;
   int sameExpected;
 
-  getCollByteCount(&sendBytes, &recvBytes, &paramBytes, &sendInplaceOffset, &recvInplaceOffset, &procSharedBytes, &sameExpected, (size_t)maxBytes, (size_t)nProcs*nGpus*nThreads);
+  GetBuffSize(&sendBytes, &recvBytes, &procSharedBytes, &sameExpected, (size_t)maxBytes, (size_t)nProcs*nGpus*nThreads);
 
   for (int i=0; i<nGpus*nThreads; i++) {
     CUDACHECK(cudaSetDevice(localRank*nThreads*nGpus+i));
@@ -1073,8 +1071,8 @@ int main(int argc, char* argv[]) {
     args[t].comms=comms+t*nGpus;
     args[t].streams=streams+t*nGpus;
 
-    args[t].expectedHost = expectedHost + t*nGpus;
-    args[t].expected = expected + t*nGpus;
+    args[t].expectedHost = (void**)malloc(nGpus*sizeof(void*));
+    args[t].expected = (void**)malloc(nGpus*sizeof(void*));
     args[t].procSharedHost = procSharedHost; 
     args[t].procShared = procShared; 
     args[t].barrier = (volatile int*)barrier;
@@ -1087,6 +1085,8 @@ int main(int argc, char* argv[]) {
     args[t].errors=errors+t;
     args[t].bw=bw+t;
     args[t].bw_count=bw_count+t;
+
+    args[t].replayFile = replay_file;
 
     if (side_comp) {
       pthread_create(compThreads+t, NULL, compThread, args+t);
