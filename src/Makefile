@@ -29,7 +29,7 @@ LIBTARGET  := $(LIBNAME:%=%.$(NCCL_MAJOR).$(NCCL_MINOR).$(NCCL_PATCH))
 STATICLIBTARGET := $(STATICLIBNAME)
 LIBOBJ     := $(LIBSRCFILES:%.cu=$(OBJDIR)/%.o)
 DEPFILES   := $(LIBOBJ:%.o=%.d)
-LDFLAGS    += -L${CUDA_LIB} -lcudart_static -lrt
+LDFLAGS    += -L${CUDA_LIB} -lcudart_static -lpthread -lrt
 
 DEVICELIB  := $(BUILDDIR)/obj/collectives/device/colldevice.a
 
