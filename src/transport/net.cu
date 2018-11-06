@@ -211,7 +211,7 @@ ncclResult_t netSendSetup(ncclTinfo_t* myOpaqueInfo, ncclTinfo_t* peerOpaqueInfo
   CUDACHECK(cudaGetDevice(&cudaDev));
   char busId[NVML_DEVICE_PCI_BUS_ID_BUFFER_SIZE];
   CUDACHECK(cudaDeviceGetPCIBusId(busId, NVML_DEVICE_PCI_BUS_ID_BUFFER_SIZE, cudaDev));
-  int nvlinks = getNumNvlinks(busId);
+  int nvlinks = getNvlinkGpu(busId, NULL);
 
   // Enable GDR read when:
   // 1) user sets it, or
