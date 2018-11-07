@@ -15,7 +15,7 @@ They can also be set statically in /etc/nccl.conf (for an administrator to set s
 NCCL_P2P_DISABLE     
 ----------------
 
-The NCCL_P2P_DISABLE variable disables the P2P transport, which uses CUDA direct access between GPUs, using NVLink or PCI.
+The ``NCCL_P2P_DISABLE`` variable disables the P2P transport, which uses CUDA direct access between GPUs, using NVLink or PCI.
 
 Values accepted
 ^^^^^^^^^^^^^^^
@@ -41,7 +41,7 @@ Values accepted
 
 NCCL_SHM_DISABLE
 ----------------
-The NCCL_SHM_DISABLE variable disables the Shared Memory (SHM) transports. SHM is used between devices when peer-to-peer cannot happen, therefore, host memory is used.  NCCL uses network (IB or IP sockets) to communicate between the CPU sockets when SHM is disabled.
+The ``NCCL_SHM_DISABLE`` variable disables the Shared Memory (SHM) transports. SHM is used between devices when peer-to-peer cannot happen, therefore, host memory is used.  NCCL uses network (IB or IP sockets) to communicate between the CPU sockets when SHM is disabled.
 
 Values accepted
 ^^^^^^^^^^^^^^^
@@ -50,7 +50,7 @@ Define and set to 1 to disable communication through shared memory.
 NCCL_SOCKET_IFNAME   
 ------------------
 		      
-The NCCL_SOCKET_IFNAME variable specifies which IP interface to use for communication.                         
+The ``NCCL_SOCKET_IFNAME`` variable specifies which IP interface to use for communication.
 
 Values accepted
 ^^^^^^^^^^^^^^^
@@ -58,14 +58,14 @@ Define to a list of prefixes to filter interfaces to be used by NCCL. For exampl
 starting with eth or ib. Using the ^ symbol, NCCL will exclude interfaces starting with any prefix in that list. For
 example, ^eth,ib would select interfaces not starting with eth or ib.
 
-Note:  The loopback interface (lo) and docker interfaces (docker*) are disabled by default and will only be enabled if explicitly selected.
+Note:  By default, the loopback interface (lo) and docker interfaces (docker*) would not be selected unless there are no other interfaces avaible. If you prefer to use lo or docker* over other interfaces, you would need to explicitly select them using ``NCCL_SOCKET_IFNAME``.
 
 .. _NCCL_DEBUG:
 
 NCCL_DEBUG
 ----------
 
-The NCCL_DEBUG variable controls the debug information that is displayed from NCCL. This variable is commonly used for debugging.
+The ``NCCL_DEBUG`` variable controls the debug information that is displayed from NCCL. This variable is commonly used for debugging.
 
 Values accepted
 ^^^^^^^^^^^^^^^
@@ -77,7 +77,7 @@ INFO - Prints debug information
 
 NCCL_BUFFSIZE
 -------------
-The NCCL_BUFFSIZE variable controls the amount of buffer to share data between 2 GPUs. 
+The ``NCCL_BUFFSIZE`` variable controls the amount of buffer to share data between 2 GPUs.
 
 Use this variable if you encounter memory constraint issues when using NCCL or you think that a different buffer size would improve performance.
 
@@ -90,7 +90,7 @@ Values are integers, in bytes. The recommendation is to use powers of 2. For exa
 
 NCCL_NTHREADS
 -------------
-The NCCL_NTHREADS variable sets the number of CUDA threads per CUDA block. NCCL will launch  one block per communication ring.
+The ``NCCL_NTHREADS`` variable sets the number of CUDA threads per CUDA block. NCCL will launch  one block per communication ring.
 
 Use this variable if you think your GPU clocks are low and you want to increase the number of threads.
 
@@ -104,7 +104,7 @@ The values allowed are 64, 128 and 256.
 
 NCCL_RINGS
 ----------
-The NCCL_RINGS variable overrides the rings that NCCL forms by default. Rings are sequences of ranks. They can be any permutations of ranks.
+The ``NCCL_RINGS`` variable overrides the rings that NCCL forms by default. Rings are sequences of ranks. They can be any permutations of ranks.
 
 NCCL filters out any rings that do not contain the number of ranks in the NCCL communicator. In general, the ring
 formation is dependent on the hardware topology connecting the GPUs in your system.
@@ -124,7 +124,7 @@ NCCL_MAX_NRINGS
 ---------------
 (since 2.0.5)
 
-The NCCL_MAX_NRINGS variable limits the number of rings NCCL can use. Reducing the number of rings also reduces the
+The ``NCCL_MAX_NRINGS`` variable limits the number of rings NCCL can use. Reducing the number of rings also reduces the
 number of CUDA blocks used for communication, hence the impact on GPU computing resources.
 
 Values accepted
@@ -184,7 +184,7 @@ manages multiple GPUs.
 NCCL_IB_DISABLE
 ---------------
 
-The NCCL_IB_DISABLE variable disables the IB/RoCE transport that is to be used by NCCL. Instead, NCCL will fallback to
+The ``NCCL_IB_DISABLE`` variable disables the IB/RoCE transport that is to be used by NCCL. Instead, NCCL will fallback to
 using IP sockets.
 
 Values accepted
@@ -193,7 +193,7 @@ Define and set to 1 to disable the use of InfiniBand Verbs for communication (an
 
 NCCL_IB_HCA
 -----------
-The NCCL_IB_HCA variable specifies which RDMA interface to use for communication.
+The ``NCCL_IB_HCA`` variable specifies which RDMA interface to use for communication.
 
 Values accepted
 ^^^^^^^^^^^^^^^
@@ -211,7 +211,7 @@ mlx5_0:1,mlx5_1:1 : Use ports 1 of cards mlx5_0 and mlx5_1.
 
 NCCL_IB_TIMEOUT
 ---------------
-The NCCL_IB_TIMEOUT variable controls the InfiniBand Verbs Timeout.
+The ``NCCL_IB_TIMEOUT`` variable controls the InfiniBand Verbs Timeout.
 
 The timeout is computed as 4.096 µs * 2 ^ timeout, and the right value is dependent on the size of the network.
 Increasing that value can help on very large networks, for example, if NCCL is failing on a call to ibv_poll_cq with
@@ -280,7 +280,7 @@ The default value is 0.
 
 NCCL_IB_CUDA_SUPPORT
 --------------------
-The NCCL_IB_CUDA_SUPPORT variable is used to force or disable the usage of GPU Direct RDMA.  
+The ``NCCL_IB_CUDA_SUPPORT`` variable is used to force or disable the usage of GPU Direct RDMA.
 By default, NCCL enables GPU Direct RDMA, if the topology permits it. This variable can disable this behavior or force
 the usage of GPU Direct RDMA in all cases.
 
@@ -311,7 +311,7 @@ Values accepted
 
 NCCL_NET_GDR_READ
 -----------------
-The NCCL_NET_GDR_READ variable enables GPU Direct RDMA when sending data. By default, NCCL uses GPU Direct RDMA to
+The ``NCCL_NET_GDR_READ`` variable enables GPU Direct RDMA when sending data. By default, NCCL uses GPU Direct RDMA to
 receive data directly in GPU memory. However, when sending data, the data is first stored in CPU memory, then goes to
 the InfiniBand card.
 
@@ -358,7 +358,7 @@ Values accepted
 ^^^^^^^^^^^^^^^
 The default output file is stdout unless this env variable is set.
 
-Setting NCCL_DEBUG_FILE will cause NCCL to create and overwrite any previous files of that name.
+Setting ``NCCL_DEBUG_FILE`` will cause NCCL to create and overwrite any previous files of that name.
 
 Note: If the filename is not unique across all the job processes, then the output may be lost or corrupted.
 
@@ -366,7 +366,7 @@ NCCL_DEBUG_SUBSYS
 -----------------
 (since 2.3.4)
 
-Filter the NCCL_DEBUG=INFO output based on subsystem. A comma separated list of the subsystems to include in the NCCL
+Filter the ``NCCL_DEBUG=INFO`` output based on subsystem. A comma separated list of the subsystems to include in the NCCL
 debug log traces.
 
 Prefixing the subsystem name with ‘^’ will disable the logging for that subsystem.
