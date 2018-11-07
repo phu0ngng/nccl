@@ -4,7 +4,7 @@ Using NCCL
 
 Using NCCL is similar to using any other library in your code:
 
-1. Install the NCCL library on your system (see :ref:`install-label`)
+1. Install the NCCL library on your system
 
 2. Modify your application to link to that library
 
