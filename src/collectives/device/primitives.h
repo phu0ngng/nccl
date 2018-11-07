@@ -29,25 +29,6 @@
 } while (0)
 
 
-#define CHECK_ABORT(mismatch, remoteOpCount, i) do { \
-  spins++; \
-  if (spins == SPINS_BEFORE_CHECK_ABORT) { \
-    if (mismatch) { \
-      abort = 1; \
-      printf("Error[%d]: %s line %d, size mismatch detected, myOpCount %ld, remoteOpCount %ld\n", rank, __func__, __LINE__, opCount, *remoteOpCount); \
-    } \
-    if (abort == 0) { \
-      abort = *abortFlagPtr; \
-      checkTimes++; \
-      if (checkTimes == 10) printf("Hang[%d]: %s line %d, recvStep %ld, sendStep %ld, waiting for %ld, myOpCount %ld, remoteOpCount %ld\n", rank, __func__, __LINE__, recvStep[i], sendStep[i], *waitPtr, opCount, *remoteOpCount); \
-    } \
-    spins = 0; \
-    if (remoteOpCount && *remoteOpCount > opCount) { \
-      mismatch = 1; \
-    } \
-  } \
-} while(0);
-
 // Implementation of primitive types
 template <int UNROLL, int SLICESPERCHUNK, int SLICESTEPS, typename T, int NRECV, int NSEND, class FUNC>
 class ncclPrimitives {
@@ -98,14 +79,30 @@ class ncclPrimitives {
     asm volatile ("bar.sync 1, %0;" :: "r"(nthreads));
   }
 
+  inline __device__ int checkAbort(int* mismatch, volatile uint64_t* remoteOpCount) {
+    spins++;
+    if (spins == SPINS_BEFORE_CHECK_ABORT) {
+      abort = *abortFlagPtr;
+      if (abort == 0 && *mismatch) {
+        // In non-LL, we use _threadfence_system before incrementing opCount, so this must be a size mismatch
+        abort = 1;
+        printf("NCCL kernel error: size mismatch detected around rank %d at opCount %ld. Please check collective calls at and around this rank\n", rank, opCount);
+      }
+      if (remoteOpCount && *remoteOpCount > opCount) {
+        *mismatch += 1;
+      }
+      spins = 0;
+    }
+    return abort;
+  }
+
   inline __device__ void waitRecv(int i) {
     spins = 0;
     int mismatch = 0;
     recvStep[i] += SLICESTEPS;
     if (tid == i) {
       while (*(waitPtr) < recvStep[i]) {
-        CHECK_ABORT(mismatch, recvConn[i]->opCountRem, i);
-        if (abort) break;
+        if (checkAbort(&mismatch, recvConn[i]->opCountRem)) break;
       }
     }
   }
@@ -117,8 +114,7 @@ class ncclPrimitives {
     if (tid == WARP_SIZE+i) {
       while (sendConnHead[i] + NCCL_STEPS < sendStep[i]) {
         sendConnHead[i] = *waitPtr;
-        CHECK_ABORT(mismatch, sendConn[i]->opCountRem, i);
-        if (abort) break;
+        if (checkAbort(&mismatch, sendConn[i]->opCountRem)) break;
       }
     }
   }
@@ -372,10 +368,18 @@ class ncclLLPrimitives {
     asm volatile ("bar.sync 1, %0;" :: "r"(nthreads));
   }
 
-  inline __device__ int checkAbort() {
+  inline __device__ int checkAbort(int* mismatch, volatile uint64_t* remoteOpCount) {
     spins++;
     if (spins == SPINS_BEFORE_CHECK_ABORT) {
       abort = *abortFlagPtr;
+      if (abort == 0 && *mismatch > 10) {
+        // We have seen the peer advanced opcount so many times yet we are still waiting for credit of current opcount, it is most likely a mismatch
+        // Note that we are not aborting here as we are not using _threadfence_system in LL to ensure memory write order
+        printf("NCCL kernel warning: your program may be hanging, this may be caused by a collective mismatch around rank %d at opCount %ld. Please check collective calls at and around this rank\n", rank, opCount);
+      }
+      if (remoteOpCount && *remoteOpCount > opCount) {
+        *mismatch += 1;
+      }
       spins = 0;
     }
     return abort;
@@ -387,8 +391,7 @@ class ncclLLPrimitives {
     if (tid == WARP_SIZE+i) {
       while (sendConnHead + NCCL_STEPS < sendStep[i] + 1) {
         sendConnHead = *waitPtr;
-        CHECK_ABORT(mismatch, sendConn[i]->opCountRem, i);
-        if (abort) break;
+        if (checkAbort(&mismatch, sendConn[i]->opCountRem)) break;
       }
     }
   }
@@ -411,8 +414,7 @@ class ncclLLPrimitives {
     int mismatch = 0;
     do {
       asm volatile("ld.volatile.global.v4.u32 {%0,%1,%2,%3}, [%4];" : "=r"(data1), "=r"(flag1), "=r"(data2), "=r"(flag2) : "l"(&src->i4));
-      if (tid == i) CHECK_ABORT(mismatch, recvConn[i]->opCountRem, i);
-      if (abort) break;
+      if (checkAbort(&mismatch, recvConn[i]->opCountRem)) break;
     } while ((flag1 != flag) || (flag2 != flag));
     uint64_t val64 = data1 + (((uint64_t)data2) << 32);
     return val64;
