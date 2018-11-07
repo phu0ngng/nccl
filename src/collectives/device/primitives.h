@@ -577,7 +577,6 @@ class ncclLLPrimitives {
     // Save steps for the next operation
     for (int i=0; i<NRECV && i<nrecv; i++) saveRecvConn(i);
     for (int i=0; i<NSEND && i<nsend; i++) saveSendConn(i);
-    if (tid == 0) printf("Rank %d done\n", rank);
   }
 };
 #endif
