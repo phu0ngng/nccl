@@ -29,6 +29,25 @@
 } while (0)
 
 
+#define CHECK_ABORT(mismatch, remoteOpCount, i) do { \
+  spins++; \
+  if (spins == SPINS_BEFORE_CHECK_ABORT) { \
+    if (mismatch) { \
+      abort = 1; \
+      printf("Error[%d]: %s line %d, size mismatch detected, myOpCount %ld, remoteOpCount %ld\n", rank, __func__, __LINE__, opCount, *remoteOpCount); \
+    } \
+    if (abort == 0) { \
+      abort = *abortFlagPtr; \
+      checkTimes++; \
+      if (checkTimes == 10) printf("Hang[%d]: %s line %d, recvStep %ld, sendStep %ld, waiting for %ld, myOpCount %ld, remoteOpCount %ld\n", rank, __func__, __LINE__, recvStep[i], sendStep[i], *waitPtr, opCount, *remoteOpCount); \
+    } \
+    spins = 0; \
+    if (remoteOpCount && *remoteOpCount > opCount) { \
+      mismatch = 1; \
+    } \
+  } \
+} while(0);
+
 // Implementation of primitive types
 template <int UNROLL, int SLICESPERCHUNK, int SLICESTEPS, typename T, int NRECV, int NSEND, class FUNC>
 class ncclPrimitives {
@@ -50,8 +69,11 @@ class ncclPrimitives {
   T* sendBuff[NSEND];
 
   volatile uint32_t* abortFlagPtr = NULL;
+  const uint64_t opCount;
   uint32_t spins = 0;
   uint32_t abort = 0;
+  uint32_t checkTimes = 0;
+  const int rank;
 
   inline __device__ int recvOffset(int i) { return (recvStep[i]%NCCL_STEPS)*stepSize; }
   inline __device__ int sendOffset(int i) { return (sendStep[i]%NCCL_STEPS)*stepSize; }
@@ -76,32 +98,27 @@ class ncclPrimitives {
     asm volatile ("bar.sync 1, %0;" :: "r"(nthreads));
   }
 
-  inline __device__ int checkAbort() {
-    spins++;
-    if (spins == SPINS_BEFORE_CHECK_ABORT) {
-      abort = *abortFlagPtr;
-      spins = 0;
-    }
-    return abort;
-  }
-
   inline __device__ void waitRecv(int i) {
     spins = 0;
+    int mismatch = 0;
     recvStep[i] += SLICESTEPS;
     if (tid == i) {
       while (*(waitPtr) < recvStep[i]) {
-        if (checkAbort()) break;
+        CHECK_ABORT(mismatch, recvConn[i]->opCountRem, i);
+        if (abort) break;
       }
     }
   }
 
   inline __device__ void waitSend(int i) {
     spins = 0;
+    int mismatch = 0;
     sendStep[i] += SLICESTEPS;
     if (tid == WARP_SIZE+i) {
       while (sendConnHead[i] + NCCL_STEPS < sendStep[i]) {
         sendConnHead[i] = *waitPtr;
-        if (checkAbort()) break;
+        CHECK_ABORT(mismatch, sendConn[i]->opCountRem, i);
+        if (abort) break;
       }
     }
   }
@@ -186,7 +203,10 @@ class ncclPrimitives {
     recvStep[i] = ROUNDUP(recvStep[i], SLICESPERCHUNK*SLICESTEPS);
     // Return credits in case we rounded up.
     if (tid == nthreads) *recvConn[i]->head = recvStep[i];
-    if (tid == i) waitPtr = recvConn[i]->tail;
+    if (tid == i) {
+      waitPtr = recvConn[i]->tail;
+      *(recvConn[i]->opCountLoc) = opCount;
+    }
     recvDirectBuff[i] = NULL;
     if (directBuff && recvConn[i]->direct) {
       recvDirectBuff[i] = directBuff;
@@ -199,8 +219,11 @@ class ncclPrimitives {
     sendBuff[i] = (T*)sendConn[i]->buff;
     sendStep[i] = sendConn[i]->step;
     sendStep[i] = ROUNDUP(sendStep[i], SLICESPERCHUNK*SLICESTEPS);
-    if (tid == WARP_SIZE+i) waitPtr = sendConn[i]->head;
-    if (tid == WARP_SIZE+i) sendConnHead[i] = *waitPtr;
+    if (tid == WARP_SIZE+i) {
+      waitPtr = sendConn[i]->head;
+      sendConnHead[i] = *waitPtr;
+      *(sendConn[i]->opCountLoc) = opCount;
+    }
     sendDirectBuff[i] = NULL;
     if (directBuff && sendConn[i]->direct) {
       void* volatile* ptr = sendConn[i]->ptrExchange;
@@ -211,21 +234,23 @@ class ncclPrimitives {
   __device__ __forceinline__ void saveRecvConn(int i) {
     if (tid == i) {
       recvConn[i]->step = recvStep[i];
-      __threadfence_block();
+      *(recvConn[i]->opCountLoc) += 1;
+      __threadfence_system();
     }
   }
 
   __device__ __forceinline__ void saveSendConn(int i) {
     if (tid == WARP_SIZE+i) {
       sendConn[i]->step = sendStep[i];
-      __threadfence_block();
+      *(sendConn[i]->opCountLoc) += 1;
+      __threadfence_system();
     }
   }
 
  public:
   __device__ __forceinline__
-  ncclPrimitives(const int tid, const int nthreads, const int nrecv, int* recvPeers, const int nsend, int* sendPeers, T* directBuff, int stepSize, struct ncclChannel* channel, volatile uint32_t* abortFlagPtr)
-    : abortFlagPtr(abortFlagPtr), tid(tid), nthreads(nthreads), nsend(nsend), nrecv(nrecv), stepSize(stepSize) {
+  ncclPrimitives(const int tid, const int nthreads, const int nrecv, int* recvPeers, const int nsend, int* sendPeers, T* directBuff, int stepSize, struct ncclChannel* channel, volatile uint32_t* abortFlagPtr, const uint64_t opCount, const int rank)
+    : abortFlagPtr(abortFlagPtr), tid(tid), nthreads(nthreads), nsend(nsend), nrecv(nrecv), stepSize(stepSize), opCount(opCount), rank(rank) {
     // Make sure step is updated before we read it
     __syncthreads();
 
@@ -316,8 +341,11 @@ class ncclLLPrimitives {
   union ncclLLFifoLine* sendBuff[NSEND];
 
   volatile uint32_t* abortFlagPtr = NULL;
+  const uint64_t opCount;
   uint32_t spins = 0;
   uint32_t abort = 0;
+  uint32_t checkTimes = 0;
+  const int rank;
 
   inline __device__ int recvOffset(int i) { return (recvStep[i]%NCCL_STEPS)*NCCL_LL_SLICE_LINES; }
   inline __device__ int sendOffset(int i) { return (sendStep[i]%NCCL_STEPS)*NCCL_LL_SLICE_LINES; }
@@ -355,10 +383,12 @@ class ncclLLPrimitives {
 
   inline __device__ void waitSend(int i) {
     spins = 0;
+    int mismatch = 0;
     if (tid == WARP_SIZE+i) {
       while (sendConnHead + NCCL_STEPS < sendStep[i] + 1) {
         sendConnHead = *waitPtr;
-        if (checkAbort()) break;
+        CHECK_ABORT(mismatch, sendConn[i]->opCountRem, i);
+        if (abort) break;
       }
     }
   }
@@ -373,12 +403,16 @@ class ncclLLPrimitives {
     sendStep[i]++;
   }
 
-  __device__ uint64_t readLL(union ncclLLFifoLine* src, uint32_t flag) {
+  __device__ uint64_t readLL(int i, int offset) {
+    union ncclLLFifoLine* src = recvPtr(i) + offset;
+    uint32_t flag = recvFlag(i);
     uint32_t data1, flag1, data2, flag2;
     spins = 0;
+    int mismatch = 0;
     do {
       asm volatile("ld.volatile.global.v4.u32 {%0,%1,%2,%3}, [%4];" : "=r"(data1), "=r"(flag1), "=r"(data2), "=r"(flag2) : "l"(&src->i4));
-      if (checkAbort()) break;
+      if (tid == i) CHECK_ABORT(mismatch, recvConn[i]->opCountRem, i);
+      if (abort) break;
     } while ((flag1 != flag) || (flag2 != flag));
     uint64_t val64 = data1 + (((uint64_t)data2) << 32);
     return val64;
@@ -410,11 +444,11 @@ class ncclLLPrimitives {
     // Do multiples of 64 bits
     #pragma unroll 2
     for (int line=0, offset=tid; line<NUM_LINES_PER_THREAD && offset<npack; line++, offset+=nthreads) {
-      uint64_t val = SRC ? readAL(srcPack+offset) : readLL(recvPtr(0)+offset, recvFlag(0));
+      uint64_t val = SRC ? readAL(srcPack+offset) : readLL(0, offset);
       if (RECV) {
-        if (SRC) val = MULTI<FUNC, T>()(readLL(recvPtr(0)+offset, recvFlag(0)), val);
+        if (SRC) val = MULTI<FUNC, T>()(readLL(0, offset), val);
         for (int i= 1; i<NRECV && i<nrecv; i++) {
-          val = MULTI<FUNC, T>()(readLL(recvPtr(i)+offset, recvFlag(i)), val);
+          val = MULTI<FUNC, T>()(readLL(i, offset), val);
         }
       }
       if (SEND) {
@@ -441,6 +475,8 @@ class ncclLLPrimitives {
     recvStep[i] = recvConn[i]->step;
     if (tid == i) {
       postPtr = recvConn[i]->head;
+      waitPtr = recvConn[i]->tail;
+      *(recvConn[i]->opCountLoc) = opCount;
     }
   }
 
@@ -452,12 +488,14 @@ class ncclLLPrimitives {
       waitPtr = sendConn[i]->head;
       fifoPtr = sendConn[i]->fifo;
       sendConnHead = *waitPtr;
+      *(sendConn[i]->opCountLoc) = opCount;
     }
   }
 
   __device__ __forceinline__ void saveRecvConn(int i) {
     if (tid == i) {
       recvConn[i]->step = recvStep[i];
+      *(recvConn[i]->opCountLoc) += 1;
       __threadfence_block();
     }
   }
@@ -465,6 +503,7 @@ class ncclLLPrimitives {
   __device__ __forceinline__ void saveSendConn(int i) {
     if (tid == WARP_SIZE+i) {
       sendConn[i]->step = sendStep[i];
+      *(sendConn[i]->opCountLoc) += 1;
       __threadfence_block();
     }
   }
@@ -495,8 +534,8 @@ class ncclLLPrimitives {
 
  public:
   __device__ __forceinline__
-  ncclLLPrimitives(const int tid, const int nthreads, const int nrecv, int* recvPeers, const int nsend, int* sendPeers, struct ncclChannel* channel, volatile uint32_t* abortFlagPtr)
-    : abortFlagPtr(abortFlagPtr), tid(tid), nthreads(nthreads), nrecv(nrecv), nsend(nsend) {
+  ncclLLPrimitives(const int tid, const int nthreads, const int nrecv, int* recvPeers, const int nsend, int* sendPeers, struct ncclChannel* channel, volatile uint32_t* abortFlagPtr, const uint64_t opCount, const int rank)
+    : abortFlagPtr(abortFlagPtr), tid(tid), nthreads(nthreads), nrecv(nrecv), nsend(nsend), opCount(opCount), rank(rank) {
     // Make sure step is updated before we read it.
     barrier();
 
@@ -538,6 +577,7 @@ class ncclLLPrimitives {
     // Save steps for the next operation
     for (int i=0; i<NRECV && i<nrecv; i++) saveRecvConn(i);
     for (int i=0; i<NSEND && i<nsend; i++) saveSendConn(i);
+    if (tid == 0) printf("Rank %d done\n", rank);
   }
 };
 #endif
