@@ -311,9 +311,8 @@ __device__ __forceinline__ void ReduceCopy128bMulti( const int w, const int nw, 
 template <typename T>
 __device__ int ptrAlign128(T* ptr) { return (uint64_t)ptr % alignof(Pack128); }
 
-#define MAXREG 8
 // Use UNROLL 8 when we have a single source and a single destination
-#define AUTOUNROLL (MAXREG / ((MINDSTS+MINSRCS)/2))
+#define AUTOUNROLL (UNROLL*2 / ((MINDSTS+MINSRCS)/2))
 
 template<int UNROLL, class FUNC, typename T, int MINSRCS, int MAXSRCS, int MINDSTS, int MAXDSTS>
 __device__ __forceinline__ void ReduceOrCopyMulti(const int tid, const int nthreads,

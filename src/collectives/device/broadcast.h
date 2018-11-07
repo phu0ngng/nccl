@@ -55,7 +55,7 @@ template<int UNROLL, class FUNC, typename T>
 __device__ void ncclBroadcastTreeKernel(struct CollectiveArgs* args) { }
 
 template<int UNUSED, class FUNC, typename T>
-__device__ void ncclBroadcastLLRingKernel(struct CollectiveArgs* args) {
+__device__ void ncclBroadcastRingLLKernel(struct CollectiveArgs* args) {
   const int tid = threadIdx.x;
   const int bid = args->bid;
   const int nthreads = args->nThreads;
@@ -99,4 +99,4 @@ __device__ void ncclBroadcastLLRingKernel(struct CollectiveArgs* args) {
 }
 
 template<int UNUSED, class FUNC, typename T>
-__device__ void ncclBroadcastLLTreeKernel(struct CollectiveArgs* args) { }
+__device__ void ncclBroadcastTreeLLKernel(struct CollectiveArgs* args) { }

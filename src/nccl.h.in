@@ -77,6 +77,10 @@ ncclResult_t pncclCommDestroy(ncclComm_t comm);
 const char*  ncclGetErrorString(ncclResult_t result);
 const char* pncclGetErrorString(ncclResult_t result);
 
+/* Checks whether the comm has encountered any asynchronous errors */
+ncclResult_t  ncclCommGetAsyncError(ncclComm_t comm, ncclResult_t *asyncError);
+ncclResult_t pncclCommGetAsyncError(ncclComm_t comm, ncclResult_t *asyncError);
+
 /* Gets the number of ranks in the communicator clique. */
 ncclResult_t  ncclCommCount(const ncclComm_t comm, int* count);
 ncclResult_t pncclCommCount(const ncclComm_t comm, int* count);

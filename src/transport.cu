@@ -155,6 +155,7 @@ void* persistentThread(void *opaqueInfo) {
     }
     ncclResult_t res = info->func(&args);
     if (res != ncclSuccess) {
+      info->comm->fatalError = res;
       WARN("%s:%d -> %d [Proxy thread error]", __FILE__, __LINE__, res);
     }
   }
@@ -171,6 +172,7 @@ ncclResult_t transportCreateProxy(struct ncclConnector* connector) {
     info->func = proxyfunc;
     info->argsFifoHead = info->argsFifoTail = 0;
     info->proxyReady = 0;
+    info->comm = connector->comm;
     pthread_create(&connector->proxyInfo->thread, NULL, persistentThread, info);
     // Wait for thread to initialize its CUDA context.
     WaitProxyReady(info);

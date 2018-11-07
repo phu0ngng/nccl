@@ -9,12 +9,12 @@
 #include "common.h"
 
 #define NCCL_FUNC5(coll, op, dtype) \
-  NCCL_COLL_NAME(coll##Ring, op, dtype), \
-  NCCL_COLL_NAME(coll##Tree, op, dtype)
+  NCCL_COLL_NAME(coll, op, dtype), \
+  NCCL_COLL_NAME(coll##LL, op, dtype)
 
 #define NCCL_FUNC4(coll, op, dtype) \
-  NCCL_FUNC5(coll, op, dtype), \
-  NCCL_FUNC5(coll##LL, op, dtype)
+  NCCL_FUNC5(coll##Ring, op, dtype), \
+  NCCL_FUNC5(coll##Tree, op, dtype)
 
 // Must be consistent with ncclDataType_t
 #define NCCL_FUNCS3A(coll, op) \

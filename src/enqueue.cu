@@ -10,13 +10,14 @@
 
 #include "collectives/collectives.h"
 
+// Only generate inline kernels for LL
 #define NCCL_FUNC5(coll, op, dtype) \
-  (void*)NCCL_KERN_NAME(coll##Ring, op, dtype), \
-  (void*)NCCL_KERN_NAME(coll##Tree, op, dtype)
+  (void*)NCCL_KERN_NAME(coll##LL, op, dtype), \
+  (void*)NCCL_KERN_NAME(coll##LL, op, dtype)
 
 #define NCCL_FUNC4(coll, op, dtype) \
-  (void*)NCCL_FUNC5(coll, op, dtype), \
-  (void*)NCCL_FUNC5(coll##LL, op, dtype)
+  (void*)NCCL_FUNC5(coll##Ring, op, dtype), \
+  (void*)NCCL_FUNC5(coll##Tree, op, dtype)
 
 // Must be consistent with ncclDataType_t
 #define NCCL_FUNCS3A(coll, op) \
@@ -40,12 +41,12 @@
   (void*)NCCL_FUNC4(coll, op,  i8), \
   (void*)NCCL_FUNC4(coll, op,  i8)
 
-// Must be consistent with ncclRedOp_t
+// Must be consistent with ncclRedOp_t -- but we only generate kernel for sums.
 #define NCCL_FUNCS2A(coll) \
-  NCCL_FUNCS3A(coll, sum ), \
-  NCCL_FUNCS3A(coll, prod), \
-  NCCL_FUNCS3A(coll, max ), \
-  NCCL_FUNCS3A(coll, min )
+  NCCL_FUNCS3A(coll, sum), \
+  NCCL_FUNCS3A(coll, sum), \
+  NCCL_FUNCS3A(coll, sum), \
+  NCCL_FUNCS3A(coll, sum)
 #define NCCL_FUNCS2B(coll) \
   NCCL_FUNCS3B(coll, copy), \
   NCCL_FUNCS3B(coll, copy), \

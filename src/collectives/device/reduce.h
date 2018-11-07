@@ -51,7 +51,7 @@ template<int UNROLL, class FUNC, typename T>
 __device__ void ncclReduceTreeKernel(struct CollectiveArgs* args) { }
 
 template<int UNUSED, class FUNC, typename T>
-__device__ void ncclReduceLLRingKernel(struct CollectiveArgs* args) {
+__device__ void ncclReduceRingLLKernel(struct CollectiveArgs* args) {
   const int tid = threadIdx.x;
   const int bid = args->bid;
   const int nthreads = args->nThreads;
@@ -92,4 +92,4 @@ __device__ void ncclReduceLLRingKernel(struct CollectiveArgs* args) {
 }
 
 template<int UNUSED, class FUNC, typename T>
-__device__ void ncclReduceLLTreeKernel(struct CollectiveArgs* args) { }
+__device__ void ncclReduceTreeLLKernel(struct CollectiveArgs* args) { }
