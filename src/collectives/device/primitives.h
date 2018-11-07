@@ -234,16 +234,16 @@ class ncclPrimitives {
   __device__ __forceinline__ void saveRecvConn(int i) {
     if (tid == i) {
       recvConn[i]->step = recvStep[i];
-      *(recvConn[i]->opCountLoc) += 1;
       __threadfence_system();
+      *(recvConn[i]->opCountLoc) += 1;
     }
   }
 
   __device__ __forceinline__ void saveSendConn(int i) {
     if (tid == WARP_SIZE+i) {
       sendConn[i]->step = sendStep[i];
-      *(sendConn[i]->opCountLoc) += 1;
       __threadfence_system();
+      *(sendConn[i]->opCountLoc) += 1;
     }
   }
 
