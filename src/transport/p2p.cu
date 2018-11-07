@@ -534,9 +534,10 @@ static ncclResult_t p2pSendConnect(struct ncclConnect* connectInfo, struct ncclC
   send->conn.buff = remDevMem->buff;
   send->conn.llBuff = remDevMem->llBuff;
   send->conn.tail = &remDevMem->tail;
-  send->conn.opCount = &remDevMem->opCount;
+  send->conn.opCountRem = &remDevMem->opCount;
   send->conn.head = &resources->devMem->head;
   send->conn.ptrExchange = &resources->devMem->ptrExchange;
+  send->conn.opCountLoc = &resources->devMem->opCount;
   return ncclSuccess;
 }
 
@@ -563,8 +564,9 @@ ncclResult_t p2pRecvConnect(struct ncclConnect* connectInfo, struct ncclConnecto
   recv->conn.buff = resources->devMem->buff;
   recv->conn.llBuff = resources->devMem->llBuff;
   recv->conn.tail = &resources->devMem->tail;
-  recv->conn.opCount = &resources->devMem->opCount;
+  recv->conn.opCountLoc = &resources->devMem->opCount;
   recv->conn.head = &remDevMem->head;
+  recv->conn.opCountRem = &remDevMem->opCount;
   return ncclSuccess;
 }
 

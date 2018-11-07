@@ -104,7 +104,8 @@ struct ncclConnInfo {
   char *buff;         // Local for recv, remote for send
   uint64_t *tail;     // Local for recv, remote for send
   uint64_t *head;     // Local for send, remote for recv
-  uint64_t *opCount;  // Local for recv, remote for send
+  uint64_t *opCountLoc; // opCount of local rank
+  uint64_t *opCountRem; // opCount of remote rank
 
   int direct;         // Direct communication
   void **ptrExchange; // Pointer exchange for direct communication
@@ -143,6 +144,7 @@ struct ncclSendMem {
       char pad1[CACHE_LINE_SIZE-sizeof(uint64_t)];
       void* ptrExchange;
       char pad2[CACHE_LINE_SIZE-sizeof(void*)];
+      uint64_t opCount;
     };
     char pad3[MEM_ALIGN];
   };
