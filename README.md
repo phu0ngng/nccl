@@ -26,6 +26,8 @@ NCCL requires at least CUDA 7.0 and Kepler or newer GPUs. For PCIe based platfor
 
 ## Build
 
+Note: the official and tested builds of NCCL can be downloaded from: https://developer.nvidia.com/nccl. You can skip the following build steps if you choose to use the official builds.
+
 To build the library :
 
 ```shell
@@ -45,8 +47,6 @@ By default, NCCL is compiled for all supported architectures. To accelerate the 
 ```shell
 $ make -j src.build NVCC_GENCODE="-gencode=arch=compute_70,code=sm_70"
 ```
-
-Note: the official and tested builds of NCCL can be downloaded from: https://developer.nvidia.com/nccl
 
 ## Install
 
