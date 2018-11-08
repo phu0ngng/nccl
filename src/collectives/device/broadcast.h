@@ -29,7 +29,7 @@ __device__ void ncclBroadcastRingKernel(struct CollectiveArgs* args) {
   T * __restrict__ thisOutput = (T*)args->ThisOutput;
 
   ncclPrimitives<UNROLL, BROADCAST_CHUNKSTEPS/BROADCAST_SLICESTEPS, BROADCAST_SLICESTEPS, T, 1, 1, FUNC>
-    prims(tid, nthreads, 1, &ring->prev, 1, &ring->next, NULL, stepSize, channel, args->comm->abortFlag, args->opCount, comm->rank);
+    prims(tid, nthreads, 1, &ring->prev, 1, &ring->next, NULL, stepSize, channel, args->comm->abortFlag, args->opCount, comm->rank, args->comm->fatalError);
 
   for (ssize_t gridOffset = 0; gridOffset < size; gridOffset += loopSize) {
     int realChunkSize = min(chunkSize, DIVUP(size-gridOffset,args->nChannels));

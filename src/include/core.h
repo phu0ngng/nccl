@@ -285,7 +285,7 @@ struct ncclComm {
   int groupCudaStream;
   cudaStream_t groupStream;
 
-  ncclResult_t fatalError;
+  volatile ncclResult_t* fatalError;
   // Whether there has been a fatal error in this communicator.
   // On host: this pointer has been obtained from cudaHostAlloc(cudaHostAllocMapped)
   // On device:  this pointer has been obtained from cudaHostGetDevicePointer()

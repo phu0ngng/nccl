@@ -49,6 +49,7 @@ class ncclPrimitives {
   T* sendBuff[NSEND];
 
   volatile uint32_t* abortFlagPtr = NULL;
+  volatile ncclResult_t* fatalErrorPtr = NULL;
   const uint64_t opCount;
   uint32_t spins = 0;
   uint32_t abort = 0;
@@ -84,8 +85,8 @@ class ncclPrimitives {
       abort = *abortFlagPtr;
       if (abort == 0 && *mismatch) {
         // In non-LL, we use _threadfence_system before incrementing opCount, so this must be a size mismatch
-        abort = 1;
         printf("NCCL kernel error: size mismatch detected around rank %d at opCount %ld. Please check collective calls at and around this rank\n", rank, opCount);
+        if (*fatalErrorPtr == ncclSuccess) *fatalErrorPtr = ncclInvalidUsage;
       }
       if (remoteOpCount && *remoteOpCount > opCount) {
         *mismatch += 1;
@@ -244,8 +245,8 @@ class ncclPrimitives {
 
  public:
   __device__ __forceinline__
-  ncclPrimitives(const int tid, const int nthreads, const int nrecv, int* recvPeers, const int nsend, int* sendPeers, T* directBuff, int stepSize, struct ncclChannel* channel, volatile uint32_t* abortFlagPtr, const uint64_t opCount, const int rank)
-    : abortFlagPtr(abortFlagPtr), tid(tid), nthreads(nthreads), nsend(nsend), nrecv(nrecv), stepSize(stepSize), opCount(opCount), rank(rank) {
+  ncclPrimitives(const int tid, const int nthreads, const int nrecv, int* recvPeers, const int nsend, int* sendPeers, T* directBuff, int stepSize, struct ncclChannel* channel, volatile uint32_t* abortFlagPtr, const uint64_t opCount, const int rank, volatile ncclResult_t* fatalErrorPtr)
+    : abortFlagPtr(abortFlagPtr), tid(tid), nthreads(nthreads), nsend(nsend), nrecv(nrecv), stepSize(stepSize), opCount(opCount), rank(rank), fatalErrorPtr(fatalErrorPtr) {
     // Make sure step is updated before we read it
     __syncthreads();
 

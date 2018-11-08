@@ -158,6 +158,7 @@ static ncclResult_t commFree(ncclComm_t comm) {
     free(comm->intraCC);
   }
   CUDACHECK(cudaFreeHost((void *)comm->abortFlag));
+  CUDACHECK(cudaFreeHost((void *)comm->fatalError));
 
   free(comm);
   return ncclSuccess;
@@ -194,7 +195,9 @@ static ncclResult_t commAlloc(ncclComm_t* comret, int ndev, int rank) {
   // Don't allow the user to overload the default setting in older CUDA builds
   comm->groupCudaStream = NCCL_GROUP_CUDA_STREAM;
 #endif
-  comm->fatalError = ncclSuccess;
+
+  CUDACHECK(cudaHostAlloc((void**) &comm->fatalError, sizeof(ncclResult_t), cudaHostAllocMapped));
+  *comm->fatalError = ncclSuccess;
 
   CUDACHECK(cudaHostAlloc((void**) &comm->abortFlag, sizeof(uint32_t), cudaHostAllocMapped));
   *comm->abortFlag = 0;
@@ -219,6 +222,10 @@ static ncclResult_t devCommSetup(ncclComm_t comm) {
   void *devAbortFlag;
   CUDACHECK(cudaHostGetDevicePointer(&devAbortFlag, (uint32_t *)comm->abortFlag, 0));
   CUDACHECK(cudaMemcpy(&comm->devComm->abortFlag, &devAbortFlag, sizeof(int *), cudaMemcpyHostToDevice));
+  // Copy the device-accessible pointer to comm->fatalError
+  void *devFatalError;
+  CUDACHECK(cudaHostGetDevicePointer(&devFatalError, (ncclResult_t *)comm->fatalError, 0));
+  CUDACHECK(cudaMemcpy(&comm->devComm->fatalError, &devFatalError, sizeof(ncclResult_t *), cudaMemcpyHostToDevice));
   return ncclSuccess;
 }
 
@@ -989,7 +996,7 @@ NCCL_API(ncclResult_t, ncclCommGetAsyncError, ncclComm_t comm, ncclResult_t *asy
 ncclResult_t ncclCommGetAsyncError(ncclComm_t comm, ncclResult_t *asyncError) {
   NCCLCHECK(PtrCheck(comm, "ncclGetAsyncError", "comm"));
   NCCLCHECK(PtrCheck(asyncError, "ncclGetAsyncError", "asyncError"));
-  *asyncError = comm->fatalError;
+  *asyncError = *comm->fatalError;
   return ncclSuccess;
 }
 

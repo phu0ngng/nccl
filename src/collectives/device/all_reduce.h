@@ -27,7 +27,7 @@ __device__ void ncclAllReduceRingKernel(struct CollectiveArgs* args) {
   T * __restrict__ thisOutput = (T*)args->ThisOutput;
 
   ncclPrimitives<UNROLL, ALLREDUCE_CHUNKSTEPS/ALLREDUCE_SLICESTEPS, ALLREDUCE_SLICESTEPS, T, 1, 1, FUNC>
-    prims(tid, nthreads, 1, &ring->prev, 1, &ring->next, thisOutput, stepSize, channel, args->comm->abortFlag, args->opCount, comm->rank);
+    prims(tid, nthreads, 1, &ring->prev, 1, &ring->next, thisOutput, stepSize, channel, args->comm->abortFlag, args->opCount, comm->rank, args->comm->fatalError);
 
   for (ssize_t gridOffset = 0; gridOffset < size; gridOffset += nranks*loopSize) {
     int realChunkSize = min(chunkSize, DIVUP(size-gridOffset,nranks*args->nChannels));
@@ -101,7 +101,7 @@ __device__ void ncclAllReduceTreeKernel(struct CollectiveArgs* args) {
 
   do {
     // Reduce : max number of recv is 3, max number of send is 1 (binary tree + local)
-    ncclPrimitives<UNROLL, 1, 1, T, NCCL_MAX_TREE_ARITY, 1, FUNC> prims(tid, nthreads, tree->nDown, tree->down, tree->nUp, &tree->up, NULL, stepSize, channel, comm->abortFlag, args->opCount, comm->rank);
+    ncclPrimitives<UNROLL, 1, 1, T, NCCL_MAX_TREE_ARITY, 1, FUNC> prims(tid, nthreads, tree->nDown, tree->down, tree->nUp, &tree->up, NULL, stepSize, channel, comm->abortFlag, args->opCount, comm->rank, args->comm->fatalError);
     for (ssize_t gridOffset = 0; gridOffset < size; gridOffset += loopSize) {
       // Up
       ssize_t offset = gridOffset + bid*chunkSize;
@@ -118,7 +118,7 @@ __device__ void ncclAllReduceTreeKernel(struct CollectiveArgs* args) {
 
   do {
     // Broadcast : max number of recv is 1, max number of send is 3 (binary tree + local)
-    ncclPrimitives<UNROLL, 1, 1, T, 1, NCCL_MAX_TREE_ARITY, FUNC> prims(tid, nthreads, tree->nUp, &tree->up, tree->nDown, tree->down, NULL, stepSize, channel, comm->abortFlag, args->opCount, comm->rank);
+    ncclPrimitives<UNROLL, 1, 1, T, 1, NCCL_MAX_TREE_ARITY, FUNC> prims(tid, nthreads, tree->nUp, &tree->up, tree->nDown, tree->down, NULL, stepSize, channel, comm->abortFlag, args->opCount, comm->rank, args->comm->fatalError);
     for (ssize_t gridOffset = 0; gridOffset < size; gridOffset += loopSize) {
       // Down
       ssize_t offset = gridOffset + bid*chunkSize;
