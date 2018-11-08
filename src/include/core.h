@@ -76,6 +76,12 @@ typedef enum {
   ncclPatternTreeUpDown
 } ncclPattern_t;
 
+typedef enum {
+  ncclDevSuccess,
+  ncclDevAssertedMismatch,
+  ncclDevSuspectedMismatch
+} ncclDevError_t;
+
 // Used to pass NCCL call information between functions
 struct ncclInfo {
   ncclColl_t coll;
@@ -285,8 +291,12 @@ struct ncclComm {
   int groupCudaStream;
   cudaStream_t groupStream;
 
-  volatile ncclResult_t* fatalError;
   // Whether there has been a fatal error in this communicator.
+  ncclResult_t fatalError;
+
+  // Error reported by GPU
+  volatile ncclDevError_t* fatalDevError;
+
   // On host: this pointer has been obtained from cudaHostAlloc(cudaHostAllocMapped)
   // On device:  this pointer has been obtained from cudaHostGetDevicePointer()
   volatile uint32_t *abortFlag;
