@@ -108,7 +108,7 @@ static int getNvlinkGpu(const char* busId1, const char* busId2) {
           //TODO: we are making an assumption that all GPUs are connected to this switch
           //This assumption may change for future architectures
           nvswitch_links++;
-        } else if (type == ncclNvLinkDeviceGpu) {
+        } else if (type == ncclNvLinkDeviceGpu && busId2 == NULL) {
           links++;
         }
       }
