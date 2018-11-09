@@ -9,6 +9,23 @@
 #include <unistd.h>
 #include <string.h>
 
+#include "nvmlwrap.h"
+
+// Convert a logical cudaDev index to the NVML device minor number
+ncclResult_t getNvmlDevice(int cudaDev, int *nvmlDev) {
+  char busId[NVML_DEVICE_PCI_BUS_ID_BUFFER_SIZE];
+  nvmlDevice_t nvmlDevice;
+  unsigned int dev;
+  *nvmlDev = -1;
+  CUDACHECK(cudaDeviceGetPCIBusId(busId, NVML_DEVICE_PCI_BUS_ID_BUFFER_SIZE, cudaDev));
+  NCCLCHECK(wrapNvmlDeviceGetHandleByPciBusId(busId, &nvmlDevice));
+  NCCLCHECK(wrapNvmlDeviceGetMinorNumber(nvmlDevice, &dev));
+
+  *nvmlDev = dev;
+
+  return ncclSuccess;
+}
+
 ncclResult_t getHostName(char* hostname, int maxlen) {
   if (gethostname(hostname, maxlen) != 0) {
     strncpy(hostname, "unknown", maxlen);
