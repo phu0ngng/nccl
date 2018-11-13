@@ -21,9 +21,9 @@ NVLDFLAGS += -L$(BUILDDIR)/lib $(LIBRARIES:%=-l%)
 ##
 DST_DIR := $(abspath ${BUILDDIR}/test/unit)
 CU_FILES := rings_test.cu
-ifeq ($(MPI),1)
-CU_FILES += ncclNet_test.cu ncclNet_read_write_stress_test.cu
-endif
+#ifeq ($(MPI),1)
+#CU_FILES += ncclNet_test.cu ncclNet_read_write_stress_test.cu
+#endif
 OBJ_FILES:= $(CU_FILES:%.cu=${DST_DIR}/%.o)
 EXE_FILES:= $(CU_FILES:%.cu=${DST_DIR}/%)
 DEP_FILES:= $(CU_FILES:%.cu=${DST_DIR}/%.dep)

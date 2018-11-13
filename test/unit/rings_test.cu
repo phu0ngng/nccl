@@ -906,7 +906,7 @@ int main() {
   setlinebuf(stdout);
   int err = 0;
   writeHeader();
-  ncclDebugLevel = WARN;
+  ncclDebugLevel = NCCL_LOG_WARN;
   CHECK(getRings(3, 2, PCI2_tr, PCI2_vl, "PCI  2", 2, 128));
   CHECK(getRings(3, 4, PCI4_tr, PCI4_vl, "PCI  4", 2, 128));
   CHECK(getRings(3, 8, PCI8_tr, PCI8_vl, "PCI  8", 2, 128));
