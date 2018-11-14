@@ -537,6 +537,8 @@ ncclResult_t ncclCommSetIntra(struct ncclComm* comm, int rank, int ranks, struct
   return ncclSuccess;
 }
 
+extern struct ncclTransport collNetTransport;
+
 static ncclResult_t p2pSetup(struct ncclComm* comm, struct ncclChannel* channel, int nrecv, int* peerRecv, int nsend, int* peerSend) {
   TRACE(INIT, "nsend %d nrecv %d", nsend, nrecv);
   uint32_t nSkippedSend = 0, nSkippedRecv = 0; /* for tracing */
@@ -659,6 +661,36 @@ static ncclResult_t initTransportsRank(struct ncclComm* comm, ncclUniqueId* comm
     NCCLCHECK(p2pSetup(comm, channel, 1, &channel->ring.prev, 1, &channel->ring.next));
     NCCLCHECK(p2pSetup(comm, channel, channel->tree.nDown, channel->tree.down, channel->tree.nUp, &channel->tree.up));
     NCCLCHECK(p2pSetup(comm, channel, channel->tree.nUp, &channel->tree.up, channel->tree.nDown, channel->tree.down));
+
+    //////////////////////SHARP//////////////////////////
+    // connect current rank to an extra rank using sharp
+    bool sharpEnabled = true;
+    if (sharpEnabled) {
+      // use canConnect to detect sharp + init
+      struct ncclPeerInfo *myInfo, *peerInfo;
+      ncclTvalue_t ret;
+      NCCLCHECK(collNetTransport.canConnect(&ret, myInfo, peerInfo));
+
+      // select
+      struct ncclConnector* recv = &channel->peers[nranks].recv;
+      struct ncclConnector* send = &channel->peers[nranks].send;
+      recv->transportComm = &(collNetTransport.recv);
+      send->transportComm = &(collNetTransport.send);
+
+      // setup
+      struct ncclConnect *recvConnect, *sendConnect;
+      NCCLCHECK(collNetTransport.recv.setup(myInfo, peerInfo, recvConnect, recv, channel->buffSize, channel->id));
+      NCCLCHECK(collNetTransport.send.setup(myInfo, peerInfo, sendConnect, send, channel->buffSize, channel->id));
+
+      // create proxy
+      NCCLCHECK(transportCreateProxy(recv));
+      NCCLCHECK(transportCreateProxy(send));
+
+      // connect
+      NCCLCHECK(collNetTransport.recv.connect(recvConnect, recv));
+      NCCLCHECK(collNetTransport.send.connect(sendConnect, send));
+    }
+    /////////////////////////////////////////////////////
   }
   TRACE(INIT, "rank %d nranks %d - CONNECTED RINGS AND TREES", rank, nranks);
   free(connect);
