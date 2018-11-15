@@ -53,6 +53,8 @@ struct collNetRecvResources {
   uint64_t llLastCleaning;
 };
 
+static int commInited = 0;
+
 static ncclResult_t netDevices(int* ndev, int** scores) {
   NCCLCHECK(ncclNetDevices(ndev, scores));
   if (*ndev == 0) {
@@ -65,15 +67,7 @@ static ncclResult_t netDevices(int* ndev, int** scores) {
 
 /* Determine if we can communicate with the peer */
 ncclResult_t collNetCanConnect(ncclTvalue_t* ret, struct ncclPeerInfo* myInfo, struct ncclPeerInfo* peerInfo) {
-  int nDev;
-  int* scores;
-  NCCLCHECK(netDevices(&nDev, &scores));
-  ret[0] = 0;
-  for (int d=0; d<nDev; d++) {
-    // Keep 3 bits of score info per dev
-    ret[0] |= ((scores[d] & NET_BITS_PER_IF_MASK)<<(NET_BITS_PER_IF*d));
-  }
-  free(scores);
+  ret[0] = commInited;
   return ncclSuccess;
 }
 
