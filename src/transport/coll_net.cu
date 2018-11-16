@@ -7,21 +7,18 @@
 #include "core.h"
 #include "transport.h"
 #include "nvmlwrap.h"
-#include "net.h"
+#include "coll_net.h"
 #include "param.h"
 #include "nvlink.h"
 #include <cuda_runtime.h>
 #include <assert.h>
 
 #define COLL_NET_MAX_IFS 16
-#define COLL_NET_HANDLE_MAXSIZE 64
 
 // We encode 3 bits of distance per interface into a ncclTvalue_t (64-bit)
 #define NET_BITS_PER_IF 3
 #define NET_BITS_PER_IF_MASK ((1<<NET_BITS_PER_IF)-1)
 static_assert(sizeof(ncclTvalue_t)*8 >= COLL_NET_MAX_IFS*NET_BITS_PER_IF, "COLL_NET_MAX_IFS*NET_BITS_PER_IF must fit in a ncclTvalue_t");
-
-typedef char collNetHandle_t[COLL_NET_HANDLE_MAXSIZE];
 
 struct collNetConnectInfo {
   collNetHandle_t collNetHandle;
@@ -59,7 +56,7 @@ struct collNetRecvResources {
 static int commInited = 0;
 
 static ncclResult_t netDevices(int* ndev, int** scores) {
-  NCCLCHECK(ncclNetDevices(ndev, scores));
+  NCCLCHECK(collNetDevices(ndev, scores));
   if (*ndev == 0) {
     WARN("Error : Network returned 0 device");
     return ncclSystemError;
@@ -217,7 +214,7 @@ ncclResult_t collNetSendSetup(struct ncclPeerInfo* myInfo, struct ncclPeerInfo* 
   resources->netDev = getCollDev(channelId);
 
   int flags, useGdrForReads;
-  NCCLCHECK(ncclNetPtrSupport(resources->netDev, &flags));
+  NCCLCHECK(collNetPtrSupport(resources->netDev, &flags));
   NCCLCHECK(collNetUseGdrForReads(&useGdrForReads));
   resources->cudaSupport = (flags & NCCL_PTR_CUDA) && useGdrForReads ? true : false;
 
@@ -230,7 +227,7 @@ ncclResult_t collNetSendSetup(struct ncclPeerInfo* myInfo, struct ncclPeerInfo* 
   }
   NCCLCHECK(ncclCudaHostAlloc((void**)&resources->hostRecvMem, (void**)&resources->devHostRecvMem, recvSize));
 
-  INFO(INIT|NET,"Ring %02d : %d -> %d [send] via NET/%s/%d%s", channelId, myInfo->rank, peerInfo->rank, ncclNetName(), resources->netDev,
+  INFO(INIT|NET,"Ring %02d : %d -> %d [send] via NET/%s/%d%s", channelId, myInfo->rank, peerInfo->rank, collNetName(), resources->netDev,
       resources->cudaSupport ? "/GDRDMA" : "");
   return ncclSuccess;
 }
@@ -243,7 +240,7 @@ ncclResult_t collNetRecvSetup(struct ncclPeerInfo* myInfo, struct ncclPeerInfo* 
   resources->netDev = getCollDev(channelId);
 
   int flags;
-  NCCLCHECK(ncclNetPtrSupport(resources->netDev, &flags));
+  NCCLCHECK(collNetPtrSupport(resources->netDev, &flags));
   resources->cudaSupport = (flags & NCCL_PTR_CUDA) ? true : false;
 
   int sendSize = sizeof(struct ncclSendMem);
@@ -255,11 +252,11 @@ ncclResult_t collNetRecvSetup(struct ncclPeerInfo* myInfo, struct ncclPeerInfo* 
   }
   NCCLCHECK(ncclCudaHostAlloc((void**)&resources->hostRecvMem, (void**)&resources->devHostRecvMem, recvSize));
 
-  INFO(INIT|NET,"Ring %02d : %d -> %d [receive] via NET/%s/%d%s", channelId, peerInfo->rank, myInfo->rank, ncclNetName(), resources->netDev,
+  INFO(INIT|NET,"Ring %02d : %d -> %d [receive] via NET/%s/%d%s", channelId, peerInfo->rank, myInfo->rank, collNetName(), resources->netDev,
       resources->cudaSupport ? "/GDRDMA" : "");
 
   struct collNetConnectInfo* info = (struct collNetConnectInfo*) connectInfo;
-  //NCCLCHECK(ncclNetListen(resources->netDev, &info->netHandle, &resources->netListenComm));
+  //NCCLCHECK(collNetListen(resources->netDev, &info->netHandle, &resources->netListenComm));
   // TODO: replace net listen with coll comm id creation
   return ncclSuccess;
 }
@@ -282,7 +279,7 @@ ncclResult_t collNetSendConnect(struct ncclConnect* connectInfo, struct ncclConn
 
   // Connect to remote peer
   struct collNetConnectInfo* info = (struct collNetConnectInfo*)connectInfo;
-  //NCCLCHECK(ncclNetConnect(resources->netDev, info->netHandle, &resources->collNetSendComm));
+  //NCCLCHECK(collNetConnect(resources->netDev, info->netHandle, &resources->collNetSendComm));
   // TODO: replace net connect with collective comm init
 
   return ncclSuccess;
@@ -304,8 +301,8 @@ ncclResult_t collNetRecvConnect(struct ncclConnect* connectInfo, struct ncclConn
   recv->conn.head = &resources->devHostSendMem->head;
 
   // Finish connection establishment from remote peer
-  //NCCLCHECK(ncclNetAccept(resources->netListenComm, &resources->collNetRecvComm));
-  //NCCLCHECK(ncclNetCloseListen(resources->netListenComm));
+  //NCCLCHECK(collNetAccept(resources->netListenComm, &resources->collNetRecvComm));
+  //NCCLCHECK(collNetCloseListen(resources->netListenComm));
   // Nothing to do here for now
 
   return ncclSuccess;
@@ -317,7 +314,7 @@ ncclResult_t collNetSendFree(void* transportResources) {
   NCCLCHECK(ncclCudaHostFree(resources->hostRecvMem));
   if (resources->cudaSupport)
     CUDACHECK(cudaFree(resources->devRecvMem));
-  NCCLCHECK(ncclNetCloseSend(resources->collNetSendComm));
+  NCCLCHECK(collNetCloseSend(resources->collNetSendComm));
   free(resources);
   return ncclSuccess;
 }
@@ -328,7 +325,7 @@ ncclResult_t collNetRecvFree(void* transportResources) {
   NCCLCHECK(ncclCudaHostFree(resources->hostRecvMem));
   if (resources->cudaSupport)
     CUDACHECK(cudaFree(resources->devRecvMem));
-  NCCLCHECK(ncclNetCloseRecv(resources->collNetRecvComm));
+  NCCLCHECK(collNetCloseRecv(resources->collNetRecvComm));
   free(resources);
   return ncclSuccess;
 }
