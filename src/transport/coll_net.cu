@@ -13,15 +13,18 @@
 #include <cuda_runtime.h>
 #include <assert.h>
 
-#define NET_MAX_IFS 16
+#define COLL_NET_MAX_IFS 16
+#define COLL_NET_HANDLE_MAXSIZE 64
 
 // We encode 3 bits of distance per interface into a ncclTvalue_t (64-bit)
 #define NET_BITS_PER_IF 3
 #define NET_BITS_PER_IF_MASK ((1<<NET_BITS_PER_IF)-1)
-static_assert(sizeof(ncclTvalue_t)*8 >= NET_MAX_IFS*NET_BITS_PER_IF, "NET_MAX_IFS*NET_BITS_PER_IF must fit in a ncclTvalue_t");
+static_assert(sizeof(ncclTvalue_t)*8 >= COLL_NET_MAX_IFS*NET_BITS_PER_IF, "COLL_NET_MAX_IFS*NET_BITS_PER_IF must fit in a ncclTvalue_t");
 
-struct netConnectInfo {
-  ncclNetHandle_t netHandle;
+typedef char collNetHandle_t[COLL_NET_HANDLE_MAXSIZE];
+
+struct collNetConnectInfo {
+  collNetHandle_t collNetHandle;
 };
 
 struct collNetSendResources {
@@ -61,7 +64,7 @@ static ncclResult_t netDevices(int* ndev, int** scores) {
     WARN("Error : Network returned 0 device");
     return ncclSystemError;
   }
-  if (*ndev > NET_MAX_IFS) *ndev = NET_MAX_IFS;
+  if (*ndev > COLL_NET_MAX_IFS) *ndev = COLL_NET_MAX_IFS;
   return ncclSuccess;
 }
 
@@ -115,8 +118,8 @@ static inline int groupBestEnd(int nranks, int* groups, int group, int* subgroup
 
 ncclResult_t collNetGetRings(int nranks, int* groups, int* subgroups, ncclTvalue_t* values, int* nringsRet, int* prev, int* next, int minScore, int* nthreads) {
   int nGroups = groups[nranks-1] + 1;
-  int cardUsed[NET_MAX_IFS*nGroups];
-  for (int c=0; c<NET_MAX_IFS*nGroups; c++) cardUsed[c] = 0;
+  int cardUsed[COLL_NET_MAX_IFS*nGroups];
+  for (int c=0; c<COLL_NET_MAX_IFS*nGroups; c++) cardUsed[c] = 0;
 
   for (int ring = 0; ring<*nringsRet; ring++) {
     int starts[nGroups];
@@ -130,15 +133,15 @@ ncclResult_t collNetGetRings(int nranks, int* groups, int* subgroups, ncclTvalue
         }
       starts[group] = ends[group] = -1;
       // Receive on the rank closest to the NIC
-      for (int card=0; card<NET_MAX_IFS; card++) {
-        if (cardUsed[group*NET_MAX_IFS+card] == 1) continue;
+      for (int card=0; card<COLL_NET_MAX_IFS; card++) {
+        if (cardUsed[group*COLL_NET_MAX_IFS+card] == 1) continue;
         int start = groupBestStart(nranks, groups, group, values, card, minScore);
         // Send from any rank, but best on a different subgroup and close to the NIC also.
         int end = (nranksInGroup == 1) ? start
             : groupBestEnd(nranks, groups, group, subgroups, nsubGroups ? subgroups[start] : -1, start, values, card, minScore);
         //printf("Ring %d, Minscore %d, Card %d, group %d, start = %d, end = %d\n", ring, minScore, card, group, start, end);
         if (start != -1 && end != -1) {
-          cardUsed[group*NET_MAX_IFS+card] = 1;
+          cardUsed[group*COLL_NET_MAX_IFS+card] = 1;
           starts[group] = start;
           ends[group] = end;
           break;
@@ -254,8 +257,10 @@ ncclResult_t collNetRecvSetup(struct ncclPeerInfo* myInfo, struct ncclPeerInfo* 
 
   INFO(INIT|NET,"Ring %02d : %d -> %d [receive] via NET/%s/%d%s", channelId, peerInfo->rank, myInfo->rank, ncclNetName(), resources->netDev,
       resources->cudaSupport ? "/GDRDMA" : "");
-  struct netConnectInfo* info = (struct netConnectInfo*) connectInfo;
-  NCCLCHECK(ncclNetListen(resources->netDev, &info->netHandle, &resources->netListenComm));
+
+  struct collNetConnectInfo* info = (struct collNetConnectInfo*) connectInfo;
+  //NCCLCHECK(ncclNetListen(resources->netDev, &info->netHandle, &resources->netListenComm));
+  // TODO: replace net listen with coll comm id creation
   return ncclSuccess;
 }
 
@@ -276,8 +281,9 @@ ncclResult_t collNetSendConnect(struct ncclConnect* connectInfo, struct ncclConn
   for (int i=0; i<NCCL_STEPS; i++) send->conn.fifo[i] = -1;
 
   // Connect to remote peer
-  struct netConnectInfo* info = (struct netConnectInfo*)connectInfo;
-  NCCLCHECK(ncclNetConnect(resources->netDev, info->netHandle, &resources->collNetSendComm));
+  struct collNetConnectInfo* info = (struct collNetConnectInfo*)connectInfo;
+  //NCCLCHECK(ncclNetConnect(resources->netDev, info->netHandle, &resources->collNetSendComm));
+  // TODO: replace net connect with collective comm init
 
   return ncclSuccess;
 }
@@ -298,8 +304,9 @@ ncclResult_t collNetRecvConnect(struct ncclConnect* connectInfo, struct ncclConn
   recv->conn.head = &resources->devHostSendMem->head;
 
   // Finish connection establishment from remote peer
-  NCCLCHECK(ncclNetAccept(resources->netListenComm, &resources->collNetRecvComm));
-  NCCLCHECK(ncclNetCloseListen(resources->netListenComm));
+  //NCCLCHECK(ncclNetAccept(resources->netListenComm, &resources->collNetRecvComm));
+  //NCCLCHECK(ncclNetCloseListen(resources->netListenComm));
+  // Nothing to do here for now
 
   return ncclSuccess;
 }
@@ -368,7 +375,8 @@ ncclResult_t collNetSendProxy(struct ncclProxyArgs* args) {
             volatile uint32_t *f2 = &lines[i].flag2;
             while (f1[0] != flag || f2[0] != flag);
           }
-          NCCLCHECK(ncclNetIsend(resources->collNetSendComm, lines, size, ptrType, requests+buffSlot));
+          // Some reduce / all-reduce call here
+          NCCLCHECK(collNetIsend(resources->collNetSendComm, lines, size, ptrType, requests+buffSlot));
           sizesFifo[buffSlot] = -1;
           tail += args->sliceSteps;
           idle = 0;
@@ -378,7 +386,8 @@ ncclResult_t collNetSendProxy(struct ncclProxyArgs* args) {
       } else if (tail < *prevTail) {
         // Send through network
         int buffSlot = tail%NCCL_STEPS;
-        NCCLCHECK(ncclNetIsend(resources->collNetSendComm, localMem->buff+buffSlot*stepSize, sizesFifo[buffSlot], ptrType, requests+buffSlot));
+        // Some reduce / all-reduce call here
+        NCCLCHECK(collNetIsend(resources->collNetSendComm, localMem->buff+buffSlot*stepSize, sizesFifo[buffSlot], ptrType, requests+buffSlot));
         sizesFifo[buffSlot] = -1;
         // Make sure size is reset to zero before we update the head.
         __sync_synchronize();
@@ -389,7 +398,7 @@ ncclResult_t collNetSendProxy(struct ncclProxyArgs* args) {
     if (head < tail) {
       int done;
       int buffSlot = head%NCCL_STEPS;
-      NCCLCHECK(ncclNetTest(requests[buffSlot], &done, NULL));
+      NCCLCHECK(collNetTest(requests[buffSlot], &done, NULL));
       if (done) {
         head += args->sliceSteps;
         *prevHead = head;
@@ -439,7 +448,8 @@ ncclResult_t collNetRecvProxy(struct ncclProxyArgs* args) {
     idle++;
     if ((tail < head + NCCL_STEPS) && (tail < (*nextHead) + NCCL_STEPS) && (tail < end)) {
       int buffSlot = tail%NCCL_STEPS;
-      NCCLCHECK(ncclNetIrecv(resources->collNetRecvComm, localBuff+buffSlot*stepSize, sliceSize, ptrType, requests+buffSlot));
+      // broadcast or wait for all-reduce to complete
+      NCCLCHECK(collNetIrecv(resources->collNetRecvComm, localBuff+buffSlot*stepSize, sliceSize, ptrType, requests+buffSlot));
       tail += args->sliceSteps;
       idle = 0;
     }
@@ -447,11 +457,11 @@ ncclResult_t collNetRecvProxy(struct ncclProxyArgs* args) {
       int done;
       int buffSlot = head%NCCL_STEPS;
       int size;
-      NCCLCHECK(ncclNetTest(requests[buffSlot], &done, &size));
+      NCCLCHECK(collNetTest(requests[buffSlot], &done, &size));
       if (done) {
         head += args->sliceSteps;
         if (llMode == 0) {
-          if (ptrType == NCCL_PTR_CUDA) ncclNetFlush(resources->collNetRecvComm, localBuff+buffSlot*stepSize, size);
+          if (ptrType == NCCL_PTR_CUDA) collNetFlush(resources->collNetRecvComm, localBuff+buffSlot*stepSize, size);
           *nextTail = head;
         }
         idle = 0;
