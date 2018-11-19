@@ -256,8 +256,7 @@ ncclResult_t collNetRecvSetup(struct ncclPeerInfo* myInfo, struct ncclPeerInfo* 
       resources->cudaSupport ? "/GDRDMA" : "");
 
   struct collNetConnectInfo* info = (struct collNetConnectInfo*) connectInfo;
-  //NCCLCHECK(collNetListen(resources->netDev, &info->netHandle, &resources->netListenComm));
-  // TODO: replace net listen with coll comm id creation
+  NCCLCHECK(collNetListen(resources->netDev, &info->collNetHandle, &resources->netListenComm));
   return ncclSuccess;
 }
 
@@ -279,8 +278,7 @@ ncclResult_t collNetSendConnect(struct ncclConnect* connectInfo, struct ncclConn
 
   // Connect to remote peer
   struct collNetConnectInfo* info = (struct collNetConnectInfo*)connectInfo;
-  //NCCLCHECK(collNetConnect(resources->netDev, info->netHandle, &resources->collNetSendComm));
-  // TODO: replace net connect with collective comm init
+  NCCLCHECK(collNetConnect(resources->netDev, info->collNetHandle, &resources->collNetSendComm));
 
   return ncclSuccess;
 }
@@ -301,8 +299,8 @@ ncclResult_t collNetRecvConnect(struct ncclConnect* connectInfo, struct ncclConn
   recv->conn.head = &resources->devHostSendMem->head;
 
   // Finish connection establishment from remote peer
-  //NCCLCHECK(collNetAccept(resources->netListenComm, &resources->collNetRecvComm));
-  //NCCLCHECK(collNetCloseListen(resources->netListenComm));
+  NCCLCHECK(collNetAccept(resources->netListenComm, &resources->collNetRecvComm));
+  NCCLCHECK(collNetCloseListen(resources->netListenComm));
   // Nothing to do here for now
 
   return ncclSuccess;

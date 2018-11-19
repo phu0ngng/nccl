@@ -16,6 +16,7 @@
 #include "group.h"
 #include "utils.h"
 #include "net.h"
+#include "coll_net.h"
 #include "checks.h"
 #include "enqueue.h"
 #include <stdio.h>
@@ -52,6 +53,8 @@ NCCL_PARAM(CheckPointers, "CHECK_POINTERS", 0);
 
 extern "C" __attribute__ ((visibility("default")))
 ncclNet_t* ncclNet = NULL;
+extern "C" __attribute__ ((visibility("default")))
+ncclCollNet_t* collNet = NULL;
 
 // We define this as weak to let tests redefine their own
 #pragma weak ncclCudaCompCap
@@ -664,8 +667,7 @@ static ncclResult_t initTransportsRank(struct ncclComm* comm, ncclUniqueId* comm
 
     //////////////////////SHARP//////////////////////////
     // connect current rank to an extra rank using sharp
-    bool sharpEnabled = true;
-    if (sharpEnabled) {
+    if (collNet != NULL) {
       // use canConnect to detect sharp + init
       struct ncclPeerInfo *myInfo, *peerInfo;
       ncclTvalue_t ret = 0;

@@ -27,7 +27,4 @@ static ncclResult_t collNetCloseSend(void* sendComm) { NCCLCHECK(collNet->closeS
 static ncclResult_t collNetCloseRecv(void* recvComm) { NCCLCHECK(collNet->closeRecv(recvComm)); return ncclSuccess; }
 static ncclResult_t collNetCloseListen(void* listenComm) { NCCLCHECK(collNet->closeListen(listenComm)); return ncclSuccess; }
 
-//extern ncclCollNet_t collNetMpi;
-//extern ncclCollNet_t collNetSharp;
-
 #endif
