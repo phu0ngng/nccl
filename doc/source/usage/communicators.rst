@@ -1,3 +1,5 @@
+.. _communicator-label:
+
 ***********************
 Creating a Communicator
 ***********************

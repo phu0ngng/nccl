@@ -171,10 +171,10 @@ static ncclResult_t commAlloc(ncclComm_t* comret, int ndev, int rank) {
   struct ncclComm* comm;
   NCCLCHECK(ncclCalloc(&comm, 1));
 
-  INFO(INIT,"comm %p rank %d nranks %d", comm, rank, ndev);
   comm->rank = rank;
   comm->nRanks = ndev;
   cudaGetDevice(&comm->cudaDev);
+  getNvmlDevice(comm->cudaDev, &comm->nvmlDev);
   comm->doneEvent = doneEvent;
   comm->llThreshold = ncclParamLlThreshold();
   comm->checkPointers = ncclParamCheckPointers() == 1 ? true : false;
@@ -186,6 +186,8 @@ static ncclResult_t commAlloc(ncclComm_t* comret, int ndev, int rank) {
 #endif
 
   comm->argsptr = &comm->args;
+
+  INFO(INIT,"comm %p rank %d nranks %d cudaDev %d nvmlDev %d", comm, rank, ndev, comm->cudaDev, comm->nvmlDev);
 
   *comret = comm;
   return ncclSuccess;
@@ -596,7 +598,7 @@ ncclResult_t ncclCommInitRankSync(ncclComm_t* newcomm, int nranks, ncclUniqueId 
   sched_setaffinity(0, sizeof(cpu_set_t), &affinitySave);
   NCCLCHECKGOTO(wrapNvmlShutdown(), res, cleanup);
 
-  INFO(INIT,"comm %p rank %d nranks %d - COMPLETE", *newcomm, myrank, nranks);
+  INFO(INIT,"comm %p rank %d nranks %d cudaDev %d nvmlDev %d - Init COMPLETE", *newcomm, myrank, nranks, (*newcomm)->cudaDev, (*newcomm)->nvmlDev);
 
   return ncclSuccess;
 cleanup:
