@@ -30,7 +30,7 @@ version_long = u'2.3.4'
 
 version_short = u'2.3'
 
-version = str(version_short)
+version = "<a href=\"https://docs.nvidia.com/deeplearning/sdk/nccl-archived/index.html\">"+str(version_short)+"</a>"
 release = str(version_long)
 
 # -- General configuration ---------------------------------------------------
@@ -115,7 +115,7 @@ html_static_path = ['_static']
 # -- Options for HTMLHelp output ---------------------------------------------
 
 # Output file base name for HTML help builder.
-htmlhelp_basename = 'NVIDIADALIdoc'
+htmlhelp_basename = 'NVIDIANCCLdoc'
 
 
 # -- Options for LaTeX output ------------------------------------------------
