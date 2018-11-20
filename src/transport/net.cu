@@ -205,7 +205,7 @@ ncclResult_t netUseGdrForReads(int* useGdr) {
   CUDACHECK(cudaGetDevice(&cudaDev));
   char busId[NVML_DEVICE_PCI_BUS_ID_BUFFER_SIZE];
   CUDACHECK(cudaDeviceGetPCIBusId(busId, NVML_DEVICE_PCI_BUS_ID_BUFFER_SIZE, cudaDev));
-  int nvlinks = getNumNvlinks(busId);
+  int nvlinks = getNvlinkGpu(busId, NULL);
   *useGdr = nvlinks >= CONNECT_NVSWITCH && ncclCudaCompCap() > 6 ? 1 : 0;
   return ncclSuccess;
 }
