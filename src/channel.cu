@@ -21,8 +21,8 @@ ncclResult_t initChannel(struct ncclComm* comm, int channelid) {
   NCCLCHECK(ncclCalloc(&channel->ring.userRanks, comm->nRanks));
 
   // Communication structures with peers.
-  NCCLCHECK(ncclCudaCalloc(&channel->devPeers, comm->nRanks));
-  NCCLCHECK(ncclCalloc(&channel->peers, comm->nRanks));
+  NCCLCHECK(ncclCudaCalloc(&channel->devPeers, comm->nRanks+1)); //TODO: see if there is a cleaner solution than +1
+  NCCLCHECK(ncclCalloc(&channel->peers, comm->nRanks+1)); //TODO: see if there is a cleaner solution than +1
   for (size_t i=0; i<comm->nRanks; ++i) {
     channel->peers[i].send.comm = comm;
     channel->peers[i].recv.comm = comm;

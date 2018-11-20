@@ -216,7 +216,7 @@ static ncclResult_t devCommSetup(ncclComm_t comm) {
   // Copy userRanks
   for (int r=0; r<comm->nChannels; r++) {
     NCCLCHECK(ncclCudaMemcpy(comm->channels[r].ring.devUserRanks, comm->channels[r].ring.userRanks, comm->nRanks));
-    NCCLCHECK(ncclCudaMemcpy(comm->channels[r].devPeers, comm->channels[r].peers, comm->nRanks));
+    NCCLCHECK(ncclCudaMemcpy(comm->channels[r].devPeers, comm->channels[r].peers, comm->nRanks+1)); //TODO: see if there is a cleaner solution than +1
   }
   // Copy the device-accessible pointer to comm->abortFlag
   void *devAbortFlag;
