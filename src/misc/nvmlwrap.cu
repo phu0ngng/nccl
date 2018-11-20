@@ -24,6 +24,8 @@ static nvmlReturn_t (*nvmlInternalDeviceGetPciInfo)(nvmlDevice_t device, nvmlPci
 static nvmlReturn_t (*nvmlInternalDeviceGetNvLinkRemotePciInfo)(nvmlDevice_t device, unsigned int link, nvmlPciInfo_t *pci);
 static nvmlReturn_t (*nvmlInternalDeviceGetNvLinkCapability)(nvmlDevice_t device, unsigned int link,
     nvmlNvLinkCapability_t capability, unsigned int *capResult);
+static nvmlReturn_t (*nvmlInternalDeviceGetMinorNumber)(nvmlDevice_t device, unsigned int* minorNumber);
+
 
 ncclResult_t wrapNvmlSymbols(void) {
   if (nvmlState == nvmlInitialized)
@@ -74,6 +76,7 @@ ncclResult_t wrapNvmlSymbols(void) {
   LOAD_SYM(nvmlhandle, "nvmlDeviceClearCpuAffinity", nvmlInternalDeviceClearCpuAffinity);
   LOAD_SYM(nvmlhandle, "nvmlErrorString", nvmlInternalErrorString);
   LOAD_SYM(nvmlhandle, "nvmlDeviceGetPciInfo", nvmlInternalDeviceGetPciInfo);
+  LOAD_SYM(nvmlhandle, "nvmlDeviceGetMinorNumber", nvmlInternalDeviceGetMinorNumber);
   LOAD_SYM_OPTIONAL(nvmlhandle, "nvmlDeviceGetNvLinkState", nvmlInternalDeviceGetNvLinkState);
   LOAD_SYM_OPTIONAL(nvmlhandle, "nvmlDeviceGetNvLinkRemotePciInfo", nvmlInternalDeviceGetNvLinkRemotePciInfo);
   LOAD_SYM_OPTIONAL(nvmlhandle, "nvmlDeviceGetNvLinkCapability", nvmlInternalDeviceGetNvLinkCapability);
@@ -89,6 +92,7 @@ teardown:
   nvmlInternalDeviceSetCpuAffinity = NULL;
   nvmlInternalDeviceClearCpuAffinity = NULL;
   nvmlInternalDeviceGetPciInfo = NULL;
+  nvmlInternalDeviceGetMinorNumber = NULL;
   nvmlInternalDeviceGetNvLinkState = NULL;
   nvmlInternalDeviceGetNvLinkRemotePciInfo = NULL;
   nvmlInternalDeviceGetNvLinkCapability = NULL;
@@ -195,6 +199,20 @@ ncclResult_t wrapNvmlDeviceGetPciInfo(nvmlDevice_t device, nvmlPciInfo_t* pci) {
   nvmlReturn_t ret = nvmlInternalDeviceGetPciInfo(device, pci);
   if (ret != NVML_SUCCESS) {
     WARN("nvmlDeviceGetPciInfo() failed: %s ",
+        nvmlInternalErrorString(ret));
+    return ncclSystemError;
+  }
+  return ncclSuccess;
+}
+
+ncclResult_t wrapNvmlDeviceGetMinorNumber(nvmlDevice_t device, unsigned int* minorNumber) {
+  if (nvmlInternalDeviceGetMinorNumber == NULL) {
+    WARN("lib wrapper not initialized.");
+    return ncclInternalError;
+  }
+  nvmlReturn_t ret = nvmlInternalDeviceGetMinorNumber(device, minorNumber);
+  if (ret != NVML_SUCCESS) {
+    WARN("nvmlDeviceGetMinorNumber() failed: %s ",
         nvmlInternalErrorString(ret));
     return ncclSystemError;
   }

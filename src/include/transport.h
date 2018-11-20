@@ -23,6 +23,7 @@ struct ncclComm;
 struct ncclPeerInfo {
   int rank;
   int cudaDev;
+  int nvmlDev;
   uint64_t hostHash;
   uint64_t pidHash;
   char busId[NVML_DEVICE_PCI_BUS_ID_BUFFER_SIZE];

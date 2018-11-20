@@ -61,6 +61,10 @@ static ncclResult_t wrapNvmlDeviceGetNvLinkCapability(nvmlDevice_t device, unsig
   NVMLCHECK(nvmlDeviceGetNvLinkCapability(device, link, capability, capResult));
   return ncclSuccess;
 }
+static ncclResult_t wrapNvmlDeviceGetMinorNumber(nvmlDevice_t device, unsigned int* minorNumber) {
+  NVMLCHECK(nvmlDeviceGetMinorNumber(device, minorNumber));
+  return ncclSuccess;
+}
 #else
 // Dynamically handle dependencies on NVML
 
@@ -144,6 +148,8 @@ ncclResult_t wrapNvmlDeviceGetNvLinkState(nvmlDevice_t device, unsigned int link
 ncclResult_t wrapNvmlDeviceGetNvLinkRemotePciInfo(nvmlDevice_t device, unsigned int link, nvmlPciInfo_t *pci);
 ncclResult_t wrapNvmlDeviceGetNvLinkCapability(nvmlDevice_t device, unsigned int link,
                                                    nvmlNvLinkCapability_t capability, unsigned int *capResult);
+ncclResult_t wrapNvmlDeviceGetMinorNumber(nvmlDevice_t device, unsigned int* minorNumber);
+
 #endif // NVML_DIRECT
 
 #endif // End include guard
