@@ -53,8 +53,6 @@ struct collNetRecvResources {
   uint64_t llLastCleaning;
 };
 
-static int commInited = 0;
-
 static ncclResult_t netDevices(int* ndev, int** scores) {
   NCCLCHECK(collNetDevices(ndev, scores));
   if (*ndev == 0) {
@@ -67,7 +65,11 @@ static ncclResult_t netDevices(int* ndev, int** scores) {
 
 /* Determine if we can communicate with the peer */
 ncclResult_t collNetCanConnect(ncclTvalue_t* ret, struct ncclPeerInfo* myInfo, struct ncclPeerInfo* peerInfo) {
-  ret[0] = commInited;
+  int nDev;
+  int* scores;
+  NCCLCHECK(netDevices(&nDev, &scores));
+  ret[0] = (nDev > 0) ? 1 : 0; //TODO: figure correct value
+  free(scores);
   return ncclSuccess;
 }
 
@@ -227,7 +229,7 @@ ncclResult_t collNetSendSetup(struct ncclPeerInfo* myInfo, struct ncclPeerInfo* 
   }
   NCCLCHECK(ncclCudaHostAlloc((void**)&resources->hostRecvMem, (void**)&resources->devHostRecvMem, recvSize));
 
-  INFO(INIT|NET,"Ring %02d : %d -> %d [send] via NET/%s/%d%s", channelId, myInfo->rank, peerInfo->rank, collNetName(), resources->netDev,
+  INFO(INIT|NET,"Ring %02d : %d -> %d [send] via COLLNET/%s/%d%s", channelId, myInfo->rank, peerInfo->rank, collNetName(), resources->netDev,
       resources->cudaSupport ? "/GDRDMA" : "");
   return ncclSuccess;
 }
@@ -252,7 +254,7 @@ ncclResult_t collNetRecvSetup(struct ncclPeerInfo* myInfo, struct ncclPeerInfo* 
   }
   NCCLCHECK(ncclCudaHostAlloc((void**)&resources->hostRecvMem, (void**)&resources->devHostRecvMem, recvSize));
 
-  INFO(INIT|NET,"Ring %02d : %d -> %d [receive] via NET/%s/%d%s", channelId, peerInfo->rank, myInfo->rank, collNetName(), resources->netDev,
+  INFO(INIT|NET,"Ring %02d : %d -> %d [receive] via COLLNET/%s/%d%s", channelId, peerInfo->rank, myInfo->rank, collNetName(), resources->netDev,
       resources->cudaSupport ? "/GDRDMA" : "");
 
   struct collNetConnectInfo* info = (struct collNetConnectInfo*) connectInfo;

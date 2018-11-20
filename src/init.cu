@@ -665,13 +665,17 @@ static ncclResult_t initTransportsRank(struct ncclComm* comm, ncclUniqueId* comm
     NCCLCHECK(p2pSetup(comm, channel, channel->tree.nDown, channel->tree.down, channel->tree.nUp, &channel->tree.up));
     NCCLCHECK(p2pSetup(comm, channel, channel->tree.nUp, &channel->tree.up, channel->tree.nDown, channel->tree.down));
 
-    //////////////////////SHARP//////////////////////////
-    // connect current rank to an extra rank using sharp
+    //////////////////////COLLNET////////////////////////
+    // connect current rank to an extra rank using collnet
     if (collNet != NULL) {
-      // use canConnect to detect sharp + init
-      struct ncclPeerInfo *myInfo, *peerInfo;
+      INFO(INIT|NET, "Using collective network %s", collNetName());
+      struct ncclPeerInfo *myInfo = comm->peerInfo+comm->rank, *peerInfo = comm->peerInfo+nranks;
+      // fill in info of extra rank
+      peerInfo->rank = nranks;
+      // TODO: more info needed?
       ncclTvalue_t ret = 0;
       NCCLCHECK(collNetTransport.canConnect(&ret, myInfo, peerInfo));
+      INFO(INIT|NET, "collNet canConnect = %d", ret);
 
       if (ret > 0) {
         // select
@@ -696,8 +700,9 @@ static ncclResult_t initTransportsRank(struct ncclComm* comm, ncclUniqueId* comm
         NCCLCHECK(bootstrapAllGather(comm->bootstrap, allSends, sizeof(struct ncclConnect)));
         // connect
         int root = 0;
-        NCCLCHECK(recv->transportComm->connect(allSends+root, recv));
         NCCLCHECK(send->transportComm->connect(allRecvs+root, send));
+        NCCLCHECK(recv->transportComm->connect(allSends+root, recv));
+        INFO(INIT|NET, "rank %d collNet init COMPLETE", comm->rank);
       }
     }
     /////////////////////////////////////////////////////
