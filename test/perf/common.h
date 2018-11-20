@@ -15,17 +15,16 @@
 #endif
 #include <pthread.h>
 #include "nccl1_compat.h"
-#include "nccl_coll.h"
 
 #define CUDACHECK(cmd) do {                         \
   cudaError_t e = cmd;                              \
   if( e != cudaSuccess ) {                          \
     char hostname[1024];                            \
     getHostName(hostname, 1024);                    \
-    printf("%s: Cuda failure %s:%d '%s'\n",         \
+    printf("%s: Test CUDA failure %s:%d '%s'\n",    \
          hostname,                                  \
         __FILE__,__LINE__,cudaGetErrorString(e));   \
-    exit(EXIT_FAILURE);                             \
+    return testCudaError;                           \
   }                                                 \
 } while(0)
 
@@ -34,14 +33,61 @@
   if (r!= ncclSuccess) {                            \
     char hostname[1024];                            \
     getHostName(hostname, 1024);                    \
-    printf("%s: NCCL failure %s:%d '%s'\n",         \
+    printf("%s: Test NCCL failure %s:%d '%s'\n",    \
          hostname,                                  \
         __FILE__,__LINE__,ncclGetErrorString(r));   \
-    exit(EXIT_FAILURE);                             \
+    return testNcclError;                           \
   }                                                 \
 } while(0)
 
-struct threadArgs_t {
+typedef enum {
+  testSuccess = 0,
+  testInternalError = 1,
+  testCudaError = 2,
+  testNcclError = 3,
+  testCuRandError = 4
+} testResult_t;
+
+// Relay errors up and trace
+#define TESTCHECK(cmd) do {                         \
+  testResult_t r = cmd;                             \
+  if (r!= testSuccess) {                            \
+    char hostname[1024];                            \
+    getHostName(hostname, 1024);                    \
+    printf(" .. %s: Test failure %s:%d\n",          \
+         hostname,                                  \
+        __FILE__,__LINE__);                         \
+    return r;                                       \
+  }                                                 \
+} while(0)
+
+struct testColl {
+  const char name[20];
+  void (*getCollByteCount)(
+      size_t *sendcount, size_t *recvcount, size_t *paramcount,
+      size_t *sendInplaceOffset, size_t *recvInplaceOffset,
+      size_t *procSharedCount, int *sameExpected, size_t count, int nranks);
+  testResult_t (*initRecvResult)(struct threadArgs* args, ncclDataType_t type,
+      ncclRedOp_t op, int root, int in_place, int is_first);
+  void (*getBw)(size_t count, int typesize, double sec, double* algBw, double* busBw, int nranks);
+  testResult_t (*runColl)(void* sendbuff, void* recvbuff, size_t count, ncclDataType_t type,
+      ncclRedOp_t op, int root, ncclComm_t comm, cudaStream_t stream);
+};
+extern struct testColl allReduceTest;
+extern struct testColl allGatherTest;
+extern struct testColl reduceScatterTest;
+extern struct testColl broadcastTest;
+extern struct testColl reduceTest;
+
+struct testEngine {
+  void (*getBuffSize)(size_t *sendcount, size_t *recvcount, size_t *procSharedCount, int *sameExpected, size_t count, int nranks);
+  testResult_t (*runTest)(struct threadArgs* args, int root, ncclDataType_t type,
+      const char* typeName, ncclRedOp_t op, const char* opName);
+};
+
+extern struct testEngine ncclTestEngine;
+
+struct threadArgs {
   void *proc_args;
   size_t nbytes;
   size_t minbytes;
@@ -84,25 +130,24 @@ struct threadArgs_t {
 
   int compThreadStop;
 
-  ncclColl_t* coll;
+  struct testColl* collTest;
   char* replayFile;
+};
+
+typedef testResult_t (*threadFunc_t)(struct threadArgs* args);
+struct threadLaunchArgs {
+  threadFunc_t func;
+  struct threadArgs* args;
 };
 
 #include <chrono>
 
 // Provided by common.cu
-extern void Barrier(struct threadArgs_t* args);
-extern void TimeTest(struct threadArgs_t* args, ncclDataType_t type, const char* typeName, ncclRedOp_t op,  const char* opName, int root);
-extern void Randomize(void* ptr, size_t count, ncclDataType_t type, int seed);
-extern void Accumulate(void* out, void* in, size_t n, ncclDataType_t type, ncclRedOp_t op);
-extern void CheckDelta(void* expected, void* results, size_t count, ncclDataType_t type, double* devmax);
-extern double DeltaMaxValue(ncclDataType_t type);
-extern double CheckData(struct threadArgs_t* args, ncclDataType_t type, ncclRedOp_t op);
+extern void Barrier(struct threadArgs* args);
+extern testResult_t TimeTest(struct threadArgs* args, ncclDataType_t type, const char* typeName, ncclRedOp_t op,  const char* opName, int root);
+extern testResult_t Randomize(void* ptr, size_t count, ncclDataType_t type, int seed);
+extern testResult_t Accumulate(void* out, void* in, size_t n, ncclDataType_t type, ncclRedOp_t op);
 extern void AllocateBuffs(void **sendbuff, void **recvbuff, void **expected, void **expectedHost, size_t nbytes, int nranks);
-
-// Provided by each coll
-extern void RunTest(struct threadArgs_t* args, int root, ncclDataType_t type, const char* typeName, ncclRedOp_t op, const char* opName);
-extern void GetBuffSize(size_t *sendbytes, size_t *recvbytes, size_t *procSharedBytes, int *sameexpected, size_t nbytes, int nranks);
 
 #include <unistd.h>
 
