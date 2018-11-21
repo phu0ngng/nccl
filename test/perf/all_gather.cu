@@ -17,46 +17,23 @@ void AllGatherGetCollByteCount(size_t *sendcount, size_t *recvcount, size_t *par
   *paramcount = *sendcount;
 }
 
-testResult_t AllGatherInitRecvResult(struct threadArgs* args, ncclDataType_t type, ncclRedOp_t op, int root, int in_place, int is_first) {
-  size_t nBytes = args->nbytes;
-  size_t count = nBytes / wordSize(type);
-  int proc = args->proc;
-  int nThreads = args->nThreads;
-  int t = args->thread;
-  int nGpus = args->nGpus;
+testResult_t AllGatherInitData(struct threadArgs* args, ncclDataType_t type, ncclRedOp_t op, int root, int rep, int in_place) {
+  size_t sendcount = args->sendBytes / wordSize(type);
+  size_t recvcount = args->expectedBytes / wordSize(type);
+  int nranks = args->nProcs*args->nThreads*args->nGpus;
 
-  while (args->sync[args->sync_idx] != t) pthread_yield();
-
-  for (int i=0; i<nGpus; i++) {
-    int device;
+  for (int i=0; i<args->nGpus; i++) {
+    int gpuid = args->localRank*args->nThreads*args->nGpus + args->thread*args->nGpus + i;
+    CUDACHECK(cudaSetDevice(gpuid));
     int rank = ((args->proc*args->nThreads + args->thread)*args->nGpus + i);
-    NCCLCHECK(ncclCommCuDevice(args->comms[i], &device));
-    CUDACHECK(cudaSetDevice(device));
-
-    void* data = in_place ? (void *)((uintptr_t)args->recvbuffs[i] + args->sendInplaceOffset*rank) : args->sendbuffs[i];
-
-    CUDACHECK(cudaMemcpy((void *)((uintptr_t)args->expectedHost[0] + ((proc*nThreads + t)*nGpus + i)*nBytes),
-                data,
-                nBytes, cudaMemcpyDeviceToHost));
-
+    CUDACHECK(cudaMemset(args->recvbuffs[i], 0, args->expectedBytes));
+    void* data = in_place ? ((char*)args->recvbuffs[i])+rank*args->sendBytes : args->sendbuffs[i];
+    TESTCHECK(InitData(data, sendcount, type, rep, rank));
+    for (int j=0; j<nranks; j++) {
+      TESTCHECK(InitData(((char*)args->expected[i])+args->sendBytes*j, sendcount, type, rep, j));
+    }
     CUDACHECK(cudaDeviceSynchronize());
   }
-
-  args->sync[args->sync_idx] = t + 1;
-
-  if (t+1 == nThreads) {
-#ifdef MPI_SUPPORT
-    // Last thread does the MPI allgather
-    MPI_Allgather(MPI_IN_PLACE, nBytes*nThreads*nGpus, MPI_BYTE,
-        args->expectedHost[0],
-        nBytes*nThreads*nGpus, MPI_BYTE, MPI_COMM_WORLD);
-#endif
-    args->sync[args->sync_idx] = 0;
-  } else {
-    while (args->sync[args->sync_idx]) pthread_yield();
-  }
-
-  args->sync_idx = !args->sync_idx;
   return testSuccess;
 }
 
@@ -76,7 +53,7 @@ testResult_t AllGatherRunColl(void* sendbuff, void* recvbuff, size_t count, nccl
 struct testColl allGatherTest = {
   "AllGather",
   AllGatherGetCollByteCount,
-  AllGatherInitRecvResult,
+  AllGatherInitData,
   AllGatherGetBw,
   AllGatherRunColl
 };

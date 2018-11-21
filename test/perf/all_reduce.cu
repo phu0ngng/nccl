@@ -17,55 +17,21 @@ void AllReduceGetCollByteCount(size_t *sendcount, size_t *recvcount, size_t *par
   *paramcount = *sendcount;
 }
 
-testResult_t AllReduceInitRecvResult(struct threadArgs* args, ncclDataType_t type, ncclRedOp_t op, int root, int in_place, int is_first) {
-  size_t count = args->nbytes / wordSize(type);
-
-  while (args->sync[args->sync_idx] != args->thread) pthread_yield();
+testResult_t AllReduceInitData(struct threadArgs* args, ncclDataType_t type, ncclRedOp_t op, int root, int rep, int in_place) {
+  size_t sendcount = args->sendBytes / wordSize(type);
+  size_t recvcount = args->expectedBytes / wordSize(type);
+  int nranks = args->nProcs*args->nThreads*args->nGpus;
 
   for (int i=0; i<args->nGpus; i++) {
-    int device;
-    NCCLCHECK(ncclCommCuDevice(args->comms[i], &device));
-    CUDACHECK(cudaSetDevice(device));
+    int gpuid = args->localRank*args->nThreads*args->nGpus + args->thread*args->nGpus + i;
+    CUDACHECK(cudaSetDevice(gpuid));
+    int rank = ((args->proc*args->nThreads + args->thread)*args->nGpus + i);
+    CUDACHECK(cudaMemset(args->recvbuffs[i], 0, args->expectedBytes));
     void* data = in_place ? args->recvbuffs[i] : args->sendbuffs[i];
-
-    if (is_first && i == 0) {
-      CUDACHECK(cudaMemcpy(args->expected[0], data, count*wordSize(type), cudaMemcpyDeviceToHost));
-    } else {
-      TESTCHECK(Accumulate(args->expected[0], data, count, type, op));
-    }
-
+    TESTCHECK(InitData(data, sendcount, type, rep, rank));
+    TESTCHECK(InitDataReduce(args->expected[i], recvcount, 0, type, op, rep, nranks));
     CUDACHECK(cudaDeviceSynchronize());
   }
-
-  args->sync[args->sync_idx] = args->thread + 1;
-
-  if (args->thread+1 == args->nThreads) {
-#ifdef MPI_SUPPORT
-    // Last thread does the MPI reduction
-    if (args->nbytes > 0) {
-      static void* remote = NULL;
-      if (remote == NULL)
-        CUDACHECK(cudaHostAlloc(&remote, args->maxbytes, cudaHostAllocPortable | cudaHostAllocMapped));
-      void* myInitialData = malloc(args->nbytes);
-      memcpy(myInitialData, args->expectedHost[0], args->nbytes);
-      for (int i=0; i<args->nProcs; i++) {
-        if (i == args->proc) {
-          MPI_Bcast(myInitialData, args->nbytes, MPI_BYTE, i, MPI_COMM_WORLD);
-          free(myInitialData);
-        } else {
-          MPI_Bcast(remote, args->nbytes, MPI_BYTE, i, MPI_COMM_WORLD);
-          TESTCHECK(Accumulate(args->expected[0], remote, count, type, op));
-          CUDACHECK(cudaDeviceSynchronize());
-        }
-      }
-    }
-#endif
-    args->sync[args->sync_idx] = 0;
-  } else {
-    while (args->sync[args->sync_idx]) pthread_yield();
-  }
-
-  args->sync_idx = !args->sync_idx;
   return testSuccess;
 }
 
@@ -85,9 +51,9 @@ testResult_t AllReduceRunColl(void* sendbuff, void* recvbuff, size_t count, nccl
 struct testColl allReduceTest = {
   "AllReduce",
   AllReduceGetCollByteCount,
-  AllReduceInitRecvResult,
+  AllReduceInitData,
   AllReduceGetBw,
-  AllReduceRunColl,
+  AllReduceRunColl
 };
 
 void AllReduceGetBuffSize(size_t *sendcount, size_t *recvcount, size_t *procSharedCount, int *sameExpected, size_t count, int nranks) {

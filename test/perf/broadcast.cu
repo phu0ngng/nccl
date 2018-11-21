@@ -6,7 +6,6 @@
 
 #include "cuda_runtime.h"
 #include "common.h"
-#include <assert.h>
 
 void BroadcastGetCollByteCount(size_t *sendcount, size_t *recvcount, size_t *paramcount, size_t *sendInplaceOffset, size_t *recvInplaceOffset, size_t *procSharedCount, int *sameExpected, size_t count, int nranks) {
   *sendcount = count;
@@ -18,50 +17,20 @@ void BroadcastGetCollByteCount(size_t *sendcount, size_t *recvcount, size_t *par
   *paramcount = *sendcount;
 }
 
-testResult_t BroadcastInitRecvResult(struct threadArgs* args, ncclDataType_t type, ncclRedOp_t op, int root, int in_place, int is_first) {
-  int root_proc = root/(args->nThreads*args->nGpus);
-  int root_thread = (root/args->nGpus)%(args->nThreads);
-  int root_gpu = root%args->nGpus;
-
-  assert(args->expectedBytes == args->nbytes);
-
-  if (root_thread == args->thread) {
-      if (root_proc == args->proc) {
-         void* data = in_place ? args->recvbuffs[root_gpu] : args->sendbuffs[root_gpu];
-         CUDACHECK(cudaMemcpy(args->procSharedHost,
-                    data,
-                    args->nbytes, cudaMemcpyDeviceToHost));
-      }
-#ifdef MPI_SUPPORT
-      MPI_Bcast(args->procSharedHost, args->nbytes, MPI_BYTE, root_proc, MPI_COMM_WORLD);
-#endif
-
-      args->sync[0] = 0;
-  }
-
-  Barrier(args);
+testResult_t BroadcastInitData(struct threadArgs* args, ncclDataType_t type, ncclRedOp_t op, int root, int rep, int in_place) {
+  size_t sendcount = args->sendBytes / wordSize(type);
+  size_t recvcount = args->expectedBytes / wordSize(type);
 
   for (int i=0; i<args->nGpus; i++) {
-     int device;
-     NCCLCHECK(ncclCommCuDevice(args->comms[i], &device));
-     CUDACHECK(cudaSetDevice(device));
-
-#if NCCL_MAJOR >= 2 && NCCL_MINOR >= 2
-     memcpy(args->expectedHost[i], args->procSharedHost, args->nbytes);
-#else
-     // ncclBcast does not support out-of-place so we just expect recvbuff to be untouched
-     if ((in_place == 0)
-         && (root_proc == args->proc)
-         && (root_thread == args->thread)
-         && (root_gpu == i)) {
-         memset(args->expectedHost[i], 0, args->nbytes);
-     } else {
-         memcpy(args->expectedHost[i], args->procSharedHost, args->nbytes);
-     }
-#endif
+    int gpuid = args->localRank*args->nThreads*args->nGpus + args->thread*args->nGpus + i;
+    CUDACHECK(cudaSetDevice(gpuid));
+    int rank = ((args->proc*args->nThreads + args->thread)*args->nGpus + i);
+    CUDACHECK(cudaMemset(args->recvbuffs[i], 0, args->expectedBytes));
+    void* data = in_place ? args->recvbuffs[i] : args->sendbuffs[i];
+    if (rank == root) TESTCHECK(InitData(data, sendcount, type, rep, rank));
+    TESTCHECK(InitData(args->expected[i], recvcount, type, rep, root));
+    CUDACHECK(cudaDeviceSynchronize());
   }
-
-  Barrier(args);
   return testSuccess;
 }
 
@@ -91,7 +60,7 @@ testResult_t BroadcastRunColl(void* sendbuff, void* recvbuff, size_t count, nccl
 struct testColl broadcastTest = {
   "Broadcast",
   BroadcastGetCollByteCount,
-  BroadcastInitRecvResult,
+  BroadcastInitData,
   BroadcastGetBw,
   BroadcastRunColl
 };

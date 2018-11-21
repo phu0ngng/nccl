@@ -67,8 +67,8 @@ struct testColl {
       size_t *sendcount, size_t *recvcount, size_t *paramcount,
       size_t *sendInplaceOffset, size_t *recvInplaceOffset,
       size_t *procSharedCount, int *sameExpected, size_t count, int nranks);
-  testResult_t (*initRecvResult)(struct threadArgs* args, ncclDataType_t type,
-      ncclRedOp_t op, int root, int in_place, int is_first);
+  testResult_t (*initData)(struct threadArgs* args, ncclDataType_t type,
+      ncclRedOp_t op, int root, int rep, int in_place);
   void (*getBw)(size_t count, int typesize, double sec, double* algBw, double* busBw, int nranks);
   testResult_t (*runColl)(void* sendbuff, void* recvbuff, size_t count, ncclDataType_t type,
       ncclRedOp_t op, int root, ncclComm_t comm, cudaStream_t stream);
@@ -143,11 +143,11 @@ struct threadLaunchArgs {
 #include <chrono>
 
 // Provided by common.cu
-extern void Barrier(struct threadArgs* args);
-extern testResult_t TimeTest(struct threadArgs* args, ncclDataType_t type, const char* typeName, ncclRedOp_t op,  const char* opName, int root);
-extern testResult_t Randomize(void* ptr, size_t count, ncclDataType_t type, int seed);
-extern testResult_t Accumulate(void* out, void* in, size_t n, ncclDataType_t type, ncclRedOp_t op);
-extern void AllocateBuffs(void **sendbuff, void **recvbuff, void **expected, void **expectedHost, size_t nbytes, int nranks);
+void Barrier(struct threadArgs* args);
+testResult_t TimeTest(struct threadArgs* args, ncclDataType_t type, const char* typeName, ncclRedOp_t op,  const char* opName, int root);
+testResult_t InitDataReduce(void* data, const size_t count, const size_t offset, ncclDataType_t type, ncclRedOp_t op, const int rep, const int nranks);
+testResult_t InitData(void* data, const size_t count, ncclDataType_t type, const int rep, const int rank);
+void AllocateBuffs(void **sendbuff, void **recvbuff, void **expected, void **expectedHost, size_t nbytes, int nranks);
 
 #include <unistd.h>
 

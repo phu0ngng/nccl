@@ -103,7 +103,6 @@ float toFloat(half a) {
   return __half2float(a);
 }
 
-
 template<typename T, int BSIZE> __global__
 void deltaKern(void* A_, void* B_, size_t count, double* max) {
   const T* A = (const T*)A_;
@@ -117,7 +116,7 @@ void deltaKern(void* A_, void* B_, size_t count, double* max) {
     if( delta > locmax ) {
       locmax = delta;
 #ifdef DEBUG_PRINT
-      if (delta > .1) printf("Error at %d/%d : %f != %f\n", i, count, toFloat(A[i]), toFloat(B[i]));
+      if (delta > .1) printf("Error at %d/%ld : %f != %f\n", i, count, toFloat(A[i]), toFloat(B[i]));
 #endif
     }
   }
@@ -161,229 +160,99 @@ testResult_t CheckDelta(void* expected, void* results, size_t count, ncclDataTyp
   return testSuccess;
 }
 
-#define CURAND_CHK(cmd)                                                         \
-    do {                                                                        \
-      curandStatus_t error = (cmd);                                             \
-      if (error != CURAND_STATUS_SUCCESS) {                                     \
-        printf("CuRAND error %i at %s:%i\n", error, __FILE__ , __LINE__);       \
-        return testCuRandError;                                                     \
-      }                                                                         \
-    } while (false)
-
-
+// For integer values, we use values between 0 and 255
 template<typename T>
-testResult_t GenerateRandom(curandGenerator_t generator, T * const dest,
-    const size_t N);
-
-template<>
-testResult_t GenerateRandom<int8_t>(curandGenerator_t generator, int8_t * const dest,
-    const size_t N) {
-  size_t align = (4 - (((size_t)dest) & 3)) % 4;
-  CURAND_CHK(curandGenerate(generator, (unsigned int*)(dest+align),
-      N * sizeof(int8_t) / sizeof(int)));
-  CUDACHECK(cudaMemcpy(dest, dest+4, align, cudaMemcpyDeviceToDevice));
-  return testSuccess;
-}
-template<>
-testResult_t GenerateRandom<uint8_t>(curandGenerator_t generator, uint8_t * const dest,
-    const size_t N) {
-  size_t align = (4 - (((size_t)dest) & 3)) % 4;
-  CURAND_CHK(curandGenerate(generator, (unsigned int*)(dest+align),
-      N * sizeof(uint8_t) / sizeof(int)));
-  CUDACHECK(cudaMemcpy(dest, dest+4, align, cudaMemcpyDeviceToDevice));
-  return testSuccess;
+__device__ T testValue(const size_t offset, const int rep, const int rank) {
+  uint8_t v = (rep+rank+offset) % 256;
+  return (T)v;
 }
 
+// For floating point datatype, we use values between 0 and 1 otherwise the
+// Product operation will produce NaNs.
 template<>
-testResult_t GenerateRandom<int32_t>(curandGenerator_t generator, int32_t * const dest,
-    const size_t N) {
-  CURAND_CHK(curandGenerate(generator, (unsigned int*)dest, N));
-  return testSuccess;
+__device__ double testValue<double>(const size_t offset, const int rep, const int rank) {
+  return 1.0/(1.0+(double)testValue<int>(offset, rep, rank));
+}
+template<>
+__device__ float testValue<float>(const size_t offset, const int rep, const int rank) {
+  return 1.0/(1.0+(float)testValue<int>(offset, rep, rank));
+}
+template<>
+__device__ half testValue<half>(const size_t offset, const int rep, const int rank) {
+  return __float2half(testValue<float>(offset, rep, rank));
 }
 
-template<>
-testResult_t GenerateRandom<uint32_t>(curandGenerator_t generator, uint32_t * const dest,
-    const size_t N) {
-  CURAND_CHK(curandGenerate(generator, (unsigned int*)dest, N));
-  return testSuccess;
-}
+// Definitions for half
+__device__ half min(half a, half b) { return a<b ? a : b; }
+__device__ half max(half a, half b) { return a>b ? a : b; }
+__device__ half prod(half a, half b) { return __float2half(__half2float(a)*__half2float(b)); }
 
-template<>
-testResult_t GenerateRandom<float>(curandGenerator_t generator, float * const dest,
-    const size_t N) {
-  CURAND_CHK(curandGenerateUniform(generator, dest, N));
-  return testSuccess;
-}
-
-template<>
-testResult_t GenerateRandom<double>(curandGenerator_t generator, double * const dest,
-    const size_t N) {
-  CURAND_CHK(curandGenerateUniformDouble(generator, dest, N));
-  return testSuccess;
-}
-
-template<>
-testResult_t GenerateRandom<uint64_t>(curandGenerator_t generator, uint64_t * const dest,
-    const size_t N) {
-  CURAND_CHK(curandGenerate(generator, (unsigned int *)dest, N*2));
-  return testSuccess;
-}
-
-template<>
-testResult_t GenerateRandom<int64_t>(curandGenerator_t generator, int64_t * const dest,
-    const size_t N) {
-  CURAND_CHK(curandGenerate(generator, (unsigned int *)dest, N*2));
-  return testSuccess;
-}
-
+// Operations
 template<typename T>
-testResult_t RandomizeType(void* dest, const size_t N, const int randomSeed) {
-  T* ptr = (T*)dest;
-  curandGenerator_t gen;
-  CURAND_CHK(curandCreateGenerator(&gen, CURAND_RNG_PSEUDO_MTGP32));
-  CURAND_CHK(curandSetPseudoRandomGeneratorSeed(gen, randomSeed));
-  TESTCHECK(GenerateRandom<T>(gen, ptr, N));
-  CURAND_CHK(curandDestroyGenerator(gen));
-  CUDACHECK(cudaDeviceSynchronize());
-  return testSuccess;
-}
+__device__ T ncclOpSum(T a, T b) { return a+b; }
+template<typename T>
+__device__ T ncclOpProd(T a, T b) { return a*b; }
+template<typename T>
+__device__ T ncclOpMax(T a, T b) { return max(a,b); }
+template<typename T>
+__device__ T ncclOpMin(T a, T b) { return min(a,b); }
 
-__global__ void halve(const float * src, half* dest, size_t N) {
-  for(int tid = threadIdx.x + blockIdx.x*blockDim.x;
-      tid < N; tid += blockDim.x * gridDim.x)
-    dest[tid] = __float2half(src[tid]);
-}
-
-testResult_t RandomizeHalf(void* dest, const size_t N, const int randomSeed) {
-  half* ptr = (half*)dest;
-  curandGenerator_t gen;
-  CURAND_CHK(curandCreateGenerator(&gen, CURAND_RNG_PSEUDO_MTGP32));
-  CURAND_CHK(curandSetPseudoRandomGeneratorSeed(gen, randomSeed));
-
-  float* temp;
-  CUDACHECK(cudaMalloc(&temp, N*sizeof(float)));
-  TESTCHECK(GenerateRandom<float>(gen, temp, N));
-  halve<<<128, 512>>>(temp, ptr, N);
-  CURAND_CHK(curandDestroyGenerator(gen));
-  CUDACHECK(cudaFree(temp));
-  CUDACHECK(cudaDeviceSynchronize());
-  return testSuccess;
-}
-
-testResult_t Randomize(void* ptr, const size_t count, ncclDataType_t type, const int seed) {
-  switch (type) {
-    case ncclChar:   TESTCHECK(RandomizeType<int8_t>  (ptr, count, seed)); break;
-#if NCCL_MAJOR >= 2
-    case ncclUint8:  TESTCHECK(RandomizeType<uint8_t> (ptr, count, seed)); break;
-#endif
-    case ncclInt:    TESTCHECK(RandomizeType<int32_t> (ptr, count, seed)); break;
-#if NCCL_MAJOR >= 2
-    case ncclUint32: TESTCHECK(RandomizeType<uint32_t>(ptr, count, seed)); break;
-#endif
-    case ncclInt64:  TESTCHECK(RandomizeType<int64_t> (ptr, count, seed)); break;
-    case ncclUint64: TESTCHECK(RandomizeType<uint64_t>(ptr, count, seed)); break;
-    case ncclHalf:   TESTCHECK(RandomizeHalf          (ptr, count, seed)); break;
-    case ncclFloat:  TESTCHECK(RandomizeType<float>   (ptr, count, seed)); break;
-    case ncclDouble: TESTCHECK(RandomizeType<double>  (ptr, count, seed)); break;
-  }
-  return testSuccess;
-}
-
-template<typename T, int OP> __global__ static
-void accumKern(T* acum, const T* contrib, size_t N) {
-  int tid = threadIdx.x + blockIdx.x*blockDim.x;
-  int offset = blockDim.x*gridDim.x;
-  for(int i=tid; i<N; i+=offset) {
-    T c = contrib[i];
-    T a = acum[i];
-    if(OP == ncclSum) {
-      acum[i] = a+c;
-    } else if(OP == ncclProd) {
-      acum[i] = a*c;
-    } else if(OP == ncclMax) {
-      acum[i] = (a > c) ? a : c;
-    } else if(OP == ncclMin) {
-      acum[i] = (a < c) ? a : c;
+template<typename T, T (*Op)(T, T)>
+__global__ void InitDataReduceKernel(T* data, const size_t N, const size_t offset, const int rep, const int nranks) {
+  for (size_t o=blockIdx.x*blockDim.x+threadIdx.x; o<N; o+=gridDim.x*blockDim.x) {
+    T val = testValue<T>(o+offset, rep, 0);
+    for (int i=1; i<nranks; i++) {
+      val = Op(val, testValue<T>(o+offset, rep, i));
     }
+    data[o] = val;
   }
 }
 
-template<> __global__
-void accumKern<half, ncclSum>(half* acum, const half* contrib, size_t N) {
-  int tid = threadIdx.x + blockIdx.x*blockDim.x;
-  int offset = blockDim.x*gridDim.x;
-  for(int i=tid; i<N; i+=offset) {
-    float c = __half2float(contrib[i]);
-    float a = __half2float(acum[i]);
-    acum[i] = __float2half( a + c );
-  }
-}
+#define KERN(type, op) (void*)InitDataReduceKernel<type, op<type>>
+#define OPS(type) KERN(type, ncclOpSum), KERN(type, ncclOpProd), KERN(type, ncclOpMax), KERN(type, ncclOpMin) 
 
-template<> __global__
-void accumKern<half, ncclProd>(half* acum, const half* contrib, size_t N) {
-  int tid = threadIdx.x + blockIdx.x*blockDim.x;
-  int offset = blockDim.x*gridDim.x;
-  for(int i=tid; i<N; i+=offset) {
-    float c = __half2float(contrib[i]);
-    float a = __half2float(acum[i]);
-    acum[i] = __float2half( a * c );
-  }
-}
+static void* const redInitDataKerns[ncclNumOps*ncclNumTypes] = {
+  OPS(int8_t), OPS(uint8_t), OPS(int32_t), OPS(uint32_t), OPS(int64_t), OPS(uint64_t), OPS(half), OPS(float), OPS(double)
+};
 
-template<> __global__
-void accumKern<half, ncclMax>(half* acum, const half* contrib, size_t N) {
-  int tid = threadIdx.x + blockIdx.x*blockDim.x;
-  int offset = blockDim.x*gridDim.x;
-  for(int i=tid; i<N; i+=offset) {
-    float c = __half2float(contrib[i]);
-    float a = __half2float(acum[i]);
-    acum[i] = __float2half( (a>c) ? a : c );
-  }
-}
-
-template<> __global__
-void accumKern<half, ncclMin>(half* acum, const half* contrib, size_t N) {
-  int tid = threadIdx.x + blockIdx.x*blockDim.x;
-  int offset = blockDim.x*gridDim.x;
-  for(int i=tid; i<N; i+=offset) {
-    float c = __half2float(contrib[i]);
-    float a = __half2float(acum[i]);
-    acum[i] = __float2half( (a<c) ? a : c );
-  }
+testResult_t InitDataReduce(void* data, const size_t count, const size_t offset, ncclDataType_t type, ncclRedOp_t op, const int rep, const int nranks) {
+  dim3 grid = { 32, 1, 1 };
+  dim3 block = { 256, 1, 1 };
+  void* args[5] = { (void*)&data, (void*)&count, (void*)&offset, (void*)&rep, (void*)&nranks };
+  CUDACHECK(cudaLaunchKernel(redInitDataKerns[type*ncclNumOps+op], grid, block, args, 0, cudaStreamDefault));
+  return testSuccess;
 }
 
 template<typename T>
-void accVecType(void* out, void* in, size_t n, ncclRedOp_t op) {
-  switch(op) {
-    case ncclSum:  accumKern<T, ncclSum> <<<256,256>>>((T*)out, (T*)in, n); break;
-    case ncclProd: accumKern<T, ncclProd><<<256,256>>>((T*)out, (T*)in, n); break;
-    case ncclMax:  accumKern<T, ncclMax> <<<256,256>>>((T*)out, (T*)in, n); break;
-    case ncclMin:  accumKern<T, ncclMin> <<<256,256>>>((T*)out, (T*)in, n); break;
-    default:
-      printf("Unknown reduction operation.\n");
-      exit(EXIT_FAILURE);
-  }
+__global__ void InitDataKernel(T* data, const size_t N, const int rep, const int rank) {
+  for (size_t o=blockIdx.x*blockDim.x+threadIdx.x; o<N; o+=gridDim.x*blockDim.x)
+    data[o] = testValue<T>(o, rep, rank);
 }
 
-testResult_t Accumulate(void* out, void* in, size_t n, ncclDataType_t type, ncclRedOp_t op) {
-  switch (type) {
-    case ncclChar:   accVecType<int8_t>   (out, in, n, op); break;
-#if NCCL_MAJOR >= 2
-    case ncclUint8:  accVecType<uint8_t>  (out, in, n, op); break;
-#endif
-    case ncclInt:  accVecType<int32_t>  (out, in, n, op); break;
-#if NCCL_MAJOR >= 2
-    case ncclUint32: accVecType<uint32_t> (out, in, n, op); break;
-#endif
-    case ncclInt64:  accVecType<int64_t>  (out, in, n, op); break;
-    case ncclUint64: accVecType<uint64_t> (out, in, n, op); break;
-    case ncclHalf:   accVecType<half>     (out, in, n, op); break;
-    case ncclFloat:  accVecType<float>    (out, in, n, op); break;
-    case ncclDouble: accVecType<double>   (out, in, n, op); break;
-    default:
-      printf("Unknown reduction type.\n");
-      return testInternalError;
-  }
+static void* const initDataKerns[ncclNumTypes] = {
+  (void*)InitDataKernel<  int8_t>,
+  (void*)InitDataKernel< uint8_t>,
+  (void*)InitDataKernel< int32_t>,
+  (void*)InitDataKernel<uint32_t>,
+  (void*)InitDataKernel< int64_t>,
+  (void*)InitDataKernel<uint64_t>,
+  (void*)InitDataKernel<    half>,
+  (void*)InitDataKernel<   float>,
+  (void*)InitDataKernel<  double>
+};
+
+template<typename T>
+testResult_t InitDataType(void* dest, const size_t N, const int rep, const int rank) {
+  T* ptr = (T*)dest;
+  InitDataKernel<<<16, 512>>>(ptr, N, rep, rank);
+  return testSuccess;
+}
+
+testResult_t InitData(void* data, const size_t count, ncclDataType_t type, const int rep, const int rank) {
+  dim3 grid = { 32, 1, 1 };
+  dim3 block = { 256, 1, 1 };
+  void* args[4] = { (void*)&data, (void*)&count, (void*)&rep, (void*)&rank };
+  CUDACHECK(cudaLaunchKernel(initDataKerns[type], grid, block, args, 0, cudaStreamDefault));
   return testSuccess;
 }
 
@@ -403,16 +272,6 @@ void Barrier(struct threadArgs* args)
   }
 
   args->barrier_idx=!args->barrier_idx;
-}
-
-testResult_t RandomizeAccumulate(void* data, void* accum, size_t count, ncclDataType_t type, ncclRedOp_t op, int seed, int rank) {
-  Randomize(data, count, type, seed);
-  if (rank == 0) {
-    CUDACHECK(cudaMemcpy(accum, data, count*wordSize(type), cudaMemcpyDeviceToHost));
-  } else {
-    TESTCHECK(Accumulate(accum, data, count, type, op));
-  }
-  return testSuccess;
 }
 
 testResult_t CheckData(struct threadArgs* args, ncclDataType_t type, ncclRedOp_t op, int root, int in_place, double *delta) {
@@ -450,40 +309,6 @@ testResult_t CheckData(struct threadArgs* args, ncclDataType_t type, ncclRedOp_t
   double nranks = args->nProcs*args->nThreads*args->nGpus;
   if (maxDelta > DeltaMaxValue(type)*(nranks - 1)) args->errors[0]++;
   *delta = maxDelta;
-  return testSuccess;
-}
-
-testResult_t InitSendRecv(struct threadArgs* args, ncclDataType_t type, ncclRedOp_t op, int root, int in_place, int is_first) {
-  size_t count = args->sendBytes / wordSize(type);
-  static int rep = 1;
-  for (int i=0; i<args->nGpus; i++) {
-    int device;
-    int rank = ((args->proc*args->nThreads + args->thread)*args->nGpus + i);
-    NCCLCHECK(ncclCommCuDevice(args->comms[i], &device));
-    CUDACHECK(cudaSetDevice(device));
-    // Always zero recvbuff
-    CUDACHECK(cudaMemset(args->recvbuffs[i], 0, args->expectedBytes));
-    // Then init send or recv buff depending on in_place
-    void* data = in_place ? (void *)((uintptr_t)args->recvbuffs[i] + args->sendInplaceOffset*rank) : args->sendbuffs[i];
-    int seed = rank+count+rep+in_place;
-    TESTCHECK(Randomize(data, count, type, seed));
-
-#ifdef DEBUG_PRINT
-    if (rank == 2) { 
-       int *temp = (int *)malloc(args->sendBytes);
-       cudaMemcpy(temp, data, args->sendBytes, cudaMemcpyDeviceToHost);
-       printf("\n Send Data at rank %d:", rank);
-       for (int i=0; i<args->sendBytes/sizeof(int); i++) { 
-       	printf("%d:%d ", i, *((int *)temp + i));
-       }
-       printf("\n");
-       free(temp);
-    }
-#endif
-
-    CUDACHECK(cudaDeviceSynchronize());
-  }
-  rep++;
   return testSuccess;
 }
 
@@ -549,12 +374,9 @@ testResult_t completeColl(struct threadArgs* args) {
 }
 
 testResult_t BenchTime(struct threadArgs* args, ncclDataType_t type, ncclRedOp_t op, int root, int in_place) {
-  if (iters == 0) return testSuccess;
   size_t count = args->nbytes / wordSize(type);
 
   // Sync
-  //startColl(args, type, op, root, in_place, 0);
-  TESTCHECK(completeColl(args));
 
   Barrier(args);
 
@@ -579,10 +401,11 @@ testResult_t BenchTime(struct threadArgs* args, ncclDataType_t type, ncclRedOp_t
   Barrier(args);
 
   double maxDelta = 0;
+  static __thread int rep = 0;
+  rep++;
   if (datacheck) { 
-      TESTCHECK(InitSendRecv(args, type, op, root, in_place, args->thread == 0 ? 1 : 0));
-      TESTCHECK(args->collTest->initRecvResult(args, type, op, root, in_place, args->thread == 0 ? 1 : 0));
-      CUDACHECK(cudaDeviceSynchronize());
+      // Initialize sendbuffs, recvbuffs and expected
+      TESTCHECK(args->collTest->initData(args, type, op, root, rep, in_place));
 
       //test validation in single itertion, should ideally be included into the multi-iteration run
       TESTCHECK(startColl(args, type, op, root, in_place, 0));

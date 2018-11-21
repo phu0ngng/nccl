@@ -20,63 +20,23 @@ void ReduceScattervGetCollByteCount(size_t *sendcount, size_t *recvcount, size_t
     *paramcount = *recvcount;
 }
 
-testResult_t ReduceScattervInitRecvResult(struct threadArgs* args, ncclDataType_t type, ncclRedOp_t op, int root, int in_place, int is_first) {
-  size_t recvbytes = args->expectedBytes;
-  size_t recvcount = args->expectedBytes / wordSize(type);
-  size_t sendbytes = args->sendBytes;
+testResult_t ReduceScattervInitData(struct threadArgs* args, ncclDataType_t type, ncclRedOp_t op, int root, int rep, int in_place) {
   size_t sendcount = args->sendBytes / wordSize(type);
-
-  while (args->sync[args->sync_idx] != args->thread) pthread_yield();
+  size_t recvcount = args->expectedBytes / wordSize(type);
+  int nranks = args->nProcs*args->nThreads*args->nGpus;
 
   for (int i=0; i<args->nGpus; i++) {
-    int device;
-    NCCLCHECK(ncclCommCuDevice(args->comms[i], &device));
-    CUDACHECK(cudaSetDevice(device));
+    int gpuid = args->localRank*args->nThreads*args->nGpus + args->thread*args->nGpus + i;
+    CUDACHECK(cudaSetDevice(gpuid));
+    int rank = ((args->proc*args->nThreads + args->thread)*args->nGpus + i);
+    CUDACHECK(cudaMemset(args->recvbuffs[i], 0, args->expectedBytes));
     void* data = in_place ? args->recvbuffs[i] : args->sendbuffs[i];
-
-    if (is_first && i == 0) {
-      CUDACHECK(cudaMemcpy(args->procSharedHost, data, sendbytes, cudaMemcpyDeviceToHost));
-    } else {
-      TESTCHECK(Accumulate(args->procShared, data, sendcount, type, op));
-    }
-
+    TESTCHECK(InitData(data, sendcount, type, rep, rank));
+    CUDACHECK(cudaMemcpy(args->expected[i], args->recvbuffs[i], args->expectedBytes, cudaMemcpyDefault));
+    size_t offset = ((args->proc*args->nThreads + args->thread)*args->nGpus + i)*recvcount;
+    TESTCHECK(InitDataReduce(args->expected[i], recvcount, offset, type, op, rep, nranks));
     CUDACHECK(cudaDeviceSynchronize());
   }
-
-  args->sync[args->sync_idx] = args->thread + 1;
-
-  if (args->thread+1 == args->nThreads) {
-#ifdef MPI_SUPPORT
-    if (sendbytes > 0) {
-      // Last thread does the MPI reduction
-      static void* remote = NULL;
-      if (remote == NULL)
-        CUDACHECK(cudaHostAlloc(&remote, args->maxbytes, cudaHostAllocPortable | cudaHostAllocMapped));
-      void* myInitialData = malloc(sendbytes);
-      memcpy(myInitialData, args->procSharedHost, sendbytes);
-      for (int i=0; i<args->nProcs; i++) {
-        if (i == args->proc) {
-          MPI_Bcast(myInitialData, sendbytes, MPI_BYTE, i, MPI_COMM_WORLD);
-          free(myInitialData);
-        } else {
-          MPI_Bcast(remote, sendbytes, MPI_BYTE, i, MPI_COMM_WORLD);
-          TESTCHECK(Accumulate(args->procShared, remote, sendcount, type, op));
-          CUDACHECK(cudaDeviceSynchronize());
-        }
-      }
-    }
-#endif
-    args->sync[args->sync_idx] = 0;
-  } else {
-    while (args->sync[args->sync_idx]) pthread_yield();
-  }
-
-  for (int i=0; i<args->nGpus; i++) {
-    int offset = ((args->proc*args->nThreads + args->thread)*args->nGpus + i)*recvbytes;
-    memcpy(args->expectedHost[i], (void *)((uintptr_t)args->procSharedHost + offset), recvbytes);
-  }
-
-  args->sync_idx = !args->sync_idx;
   return testSuccess;
 }
 
@@ -119,7 +79,7 @@ testResult_t ReduceScattervRunColl(void* sendbuff, void* recvbuff, size_t count,
 struct testColl reduceScattervTest = {
   "ReduceScatterv",
   ReduceScattervGetCollByteCount,
-  ReduceScattervInitRecvResult,
+  ReduceScattervInitData,
   ReduceScattervGetBw,
   ReduceScattervRunColl
 };

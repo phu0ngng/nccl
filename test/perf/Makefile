@@ -13,7 +13,7 @@ ifeq ($(MPI_IBM),1)
 NVCUFLAGS += -DMPI_SUPPORT
 NVLDFLAGS += -lmpi_ibm
 endif
-LIBRARIES += curand nccl
+LIBRARIES += nccl
 NVLDFLAGS   += -L$(NCCLDIR)/lib $(LIBRARIES:%=-l%)
 
 DST_DIR := $(BUILDDIR)/test/perf
