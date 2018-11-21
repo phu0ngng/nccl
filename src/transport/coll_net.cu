@@ -234,6 +234,10 @@ ncclResult_t collNetSendSetup(struct ncclPeerInfo* myInfo, struct ncclPeerInfo* 
   return ncclSuccess;
 }
 
+// TODO: try other solutions than global var
+struct ncclRecvMem* devIntmRecvMem;
+struct ncclRecvMem* hostIntmRecvMem;
+
 ncclResult_t collNetRecvSetup(struct ncclPeerInfo* myInfo, struct ncclPeerInfo* peerInfo, struct ncclConnect* connectInfo, struct ncclConnector* recv, int buffSize, int channelId) {
   struct collNetRecvResources* resources;
   NCCLCHECK(ncclCalloc(&resources, 1));
@@ -253,6 +257,9 @@ ncclResult_t collNetRecvSetup(struct ncclPeerInfo* myInfo, struct ncclPeerInfo* 
     NCCLCHECK(ncclCudaCalloc((char**)(&resources->devRecvMem), recvSize));
   }
   NCCLCHECK(ncclCudaHostAlloc((void**)&resources->hostRecvMem, (void**)&resources->devHostRecvMem, recvSize));
+  // TODO
+  devIntmRecvMem = resources->devRecvMem;
+  hostIntmRecvMem = resources->hostRecvMem;
 
   INFO(INIT|NET,"Ring %02d : %d -> %d [receive] via COLLNET/%s/%d%s", channelId, peerInfo->rank, myInfo->rank, collNetName(), resources->netDev,
       resources->cudaSupport ? "/GDRDMA" : "");
@@ -342,6 +349,10 @@ ncclResult_t collNetSendProxy(struct ncclProxyArgs* args) {
   int ptrType = resources->cudaSupport ? NCCL_PTR_CUDA : NCCL_PTR_HOST;
   volatile int* sizesFifo = resources->hostRecvMem->sizesFifo;
   int stepSize = args->channel->buffSize/NCCL_STEPS;
+
+  // TODO: Intermediate recv mem
+  struct ncclRecvMem* intmMem = resources->cudaSupport ? devIntmRecvMem : hostIntmRecvMem;
+  char* intmBuff = llMode ? (char*)intmMem->llBuff : intmMem->buff;
 
   // Round to next multiple of sliceSteps
   resources->step = ROUNDUP(resources->step, args->chunkSteps);

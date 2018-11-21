@@ -172,27 +172,26 @@ void ncclCollNetMpiFreeRequest(MPI_Request* request) {
 struct ncclCollNetMpiHandle {
   int rank;
   int nranks;
-  int tag;
+  int root;
   int commId;
 };
 
 struct ncclCollNetMpiListenComm {
   /* no rank, we listen to ANY_SOURCE */
-  int tag;
   int rank;
   int nranks;
 };
 
 struct ncclCollNetMpiRecvComm {
-  int remRank;
-  int tag;
+  int root;
   int nranks;
+  char* intmBuff;
 };
 
 struct ncclCollNetMpiSendComm {
-  int remRank;
-  int tag;
+  int root;
   int nranks;
+  char* intmBuff;
 };
 
 // Generate a "unique" tag
@@ -232,35 +231,42 @@ int ncclCollNetMpiListen(int dev, void* opaqueHandle, void** listenComm) {
   struct ncclCollNetMpiListenComm* comm = (struct ncclCollNetMpiListenComm*)malloc(sizeof(struct ncclCollNetMpiListenComm));
   struct ncclCollNetMpiHandle* handle = (struct ncclCollNetMpiHandle*) opaqueHandle;
   assert(sizeof(struct ncclCollNetMpiHandle) < NCCL_COLL_NET_HANDLE_MAXSIZE);
-  int tag;
-  getTag(&tag);
-  comm->tag = handle->tag = tag;
-  handle->commId = 0xdeadbeef;
+  //int tag;
+  //getTag(&tag);
+  //comm->tag = handle->tag = tag;
   int ret;
   MPI_PROTECT(ret, MPI_Comm_rank(ncclCollNetMpiComm, &handle->rank));
   MPI_PROTECT(ret, MPI_Comm_size(ncclCollNetMpiComm, &handle->nranks));
   comm->rank = handle->rank;
   comm->nranks = handle->nranks;
-  printf("Create listen tag %d\n", tag);
+  handle->root = handle->rank; //assume I am the root
+  handle->commId = 0xdeadbeef + handle->rank;
+  printf("Create listen rank %d\n", handle->rank);
   *listenComm = comm;
   return ret;
 }
 
 // rank of root
 static int root = 0;
+static char* intmBuff;
+static int intmBuffSize = 1024*1024*1024;
 
 int ncclCollNetMpiConnect(int dev, void* opaqueHandle, void** sendComm) {
   struct ncclCollNetMpiSendComm* comm = (struct ncclCollNetMpiSendComm*)malloc(sizeof(struct ncclCollNetMpiSendComm));
   struct ncclCollNetMpiHandle* handle = (struct ncclCollNetMpiHandle*) opaqueHandle;
   int err;
-  int myTmpTag;
-  getTag(&myTmpTag);
+  //int myTmpTag;
+  //getTag(&myTmpTag);
   MPI_Request request;
-  printf("Connect to rank %d tag %d\n", handle->rank, handle->tag);
-  MPI_PROTECT(err, MPI_Isend(&myTmpTag, sizeof(myTmpTag), MPI_BYTE, handle->rank, handle->tag, ncclCollNetMpiComm, &request));
+  printf("Connect to root %d commId %x\n", handle->root, handle->commId);
+  MPI_PROTECT(err, MPI_Isend(&handle->commId, sizeof(handle->commId), MPI_BYTE, handle->root, 0, ncclCollNetMpiComm, &request));
   int done = 0;
   while (done == 0) MPI_PROTECT(err, MPI_Test(&request, &done, MPI_STATUSES_IGNORE));
-  comm->remRank = root = handle->rank;
+  comm->root = root = handle->root;
+  comm->nranks = handle->nranks;
+  // allocate intermediate buffer
+  intmBuff = (char*)malloc(intmBuffSize);
+  comm->intmBuff = intmBuff; // use intermediate buffer as tmp recv buffer TODO
   *sendComm = comm;
   return err;
 }
@@ -268,24 +274,24 @@ int ncclCollNetMpiConnect(int dev, void* opaqueHandle, void** sendComm) {
 int ncclCollNetMpiAccept(void *listenComm, void** recvComm) {
   struct ncclCollNetMpiListenComm* lComm = (struct ncclCollNetMpiListenComm*)listenComm;
   struct ncclCollNetMpiRecvComm* rComm = (struct ncclCollNetMpiRecvComm*)malloc(sizeof(struct ncclCollNetMpiRecvComm));
-  int remTmpTag;
+  int recvId;
   MPI_Status status;
   int err = 0;
   MPI_Request request;
   int c = 0;
   if (lComm->rank == root) {
-    printf("Waiting for any rank tag %d\n", lComm->tag);
     while (c < lComm->nranks) {
-      MPI_PROTECT(err, MPI_Irecv(&remTmpTag, sizeof(remTmpTag), MPI_BYTE, MPI_ANY_SOURCE, lComm->tag, ncclCollNetMpiComm, &request));
+      MPI_PROTECT(err, MPI_Irecv(&recvId, sizeof(recvId), MPI_BYTE, MPI_ANY_SOURCE, 0, ncclCollNetMpiComm, &request));
       int done = 0;
       while (done == 0) MPI_PROTECT(err, MPI_Test(&request, &done, &status));
       int remRank = status.MPI_SOURCE;
-      printf("Got connection from %d next tag %d\n", remRank, remTmpTag);
+      printf("Got connection from %d commId %x\n", remRank, recvId);
       c++;
     }
   }
 
-  rComm->remRank = root;
+  rComm->root = root;
+  rComm->intmBuff = intmBuff; // use intermediate buffer as tmp send buffer TODO
   rComm->nranks = lComm->nranks;
   *recvComm = rComm;
   return err;
@@ -308,7 +314,7 @@ int ncclCollNetMpiIsend(void* sendComm, void* data, int size, int type, void** r
   MPI_Request* mpiRequest = ncclCollNetMpiGetRequest();
   *request = mpiRequest;
   //printf("Send : %p %d %d %d %p\n", data, size, comm->rank, comm->tag, mpiRequest);
-  MPI_PROTECT(ret, MPI_Isend(data, size, MPI_BYTE, comm->remRank, comm->tag, ncclCollNetMpiComm, mpiRequest));
+  MPI_PROTECT(ret, MPI_Ireduce(data, comm->intmBuff, size, MPI_BYTE, MPI_SUM/*TODO*/, comm->root, ncclCollNetMpiComm, mpiRequest));
   return ret;
 }
 
@@ -320,8 +326,11 @@ int ncclCollNetMpiIrecv(void* recvComm, void* data, int size, int type, void** r
   MPI_Request* mpiRequest = ncclCollNetMpiGetRequest();
   *request = mpiRequest;
   //printf("Recv : %p %d %p %p\n", data, size, comm, mpiRequest);
-  //MPI_PROTECT(ret, MPI_Irecv(data, size, MPI_BYTE, 1/*MPI_ANY_SOURCE*/, 1/*comm->tag*/, ncclCollNetMpiComm, mpiRequest));
-  MPI_PROTECT(ret, MPI_Irecv(data, size, MPI_BYTE, comm->remRank, comm->tag, ncclCollNetMpiComm, mpiRequest));
+  MPI_PROTECT(ret, MPI_Ibcast(comm->intmBuff, size, MPI_BYTE, comm->root, ncclCollNetMpiComm, mpiRequest));
+  int done = 0;
+  while (done == 0) MPI_PROTECT(ret, MPI_Test(&request, &done, MPI_STATUSES_IGNORE));
+  // copy to real recv buffer
+  memcpy(data, (void*)comm->intmBuff, size);
   return ret;
 }
 
