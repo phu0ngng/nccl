@@ -352,6 +352,10 @@ static ncclResult_t setupChannel(struct ncclComm* comm, int channelId, int rank,
     }
 
     if (rank == master) {
+#if 1
+      tree->nUp = 1;
+      tree->up = nranks;
+#else
       tree->nUp = 0;
       if (up != -1) {
         tree->up = ranks[up];
@@ -359,6 +363,7 @@ static ncclResult_t setupChannel(struct ncclComm* comm, int channelId, int rank,
       }
       if (down0 != -1) tree->down[tree->nDown++] = ranks[down0];
       if (down1 != -1) tree->down[tree->nDown++] = ranks[down1];
+#endif
     }
 
     INFO(INIT, "Channel %02d : %d -> %d, %d, %d", channelId,
@@ -662,8 +667,9 @@ static ncclResult_t initTransportsRank(struct ncclComm* comm, ncclUniqueId* comm
     struct ncclChannel* channel = comm->channels+r;
     NCCLCHECK(setupChannel(comm, r, rank, nranks, rings+r*nranks, treeIn+r*nranks));
     NCCLCHECK(p2pSetup(comm, channel, 1, &channel->ring.prev, 1, &channel->ring.next));
-    NCCLCHECK(p2pSetup(comm, channel, channel->tree.nDown, channel->tree.down, channel->tree.nUp, &channel->tree.up));
-    NCCLCHECK(p2pSetup(comm, channel, channel->tree.nUp, &channel->tree.up, channel->tree.nDown, channel->tree.down));
+    //TODO: restore
+    //NCCLCHECK(p2pSetup(comm, channel, channel->tree.nDown, channel->tree.down, channel->tree.nUp, &channel->tree.up));
+    //NCCLCHECK(p2pSetup(comm, channel, channel->tree.nUp, &channel->tree.up, channel->tree.nDown, channel->tree.down));
 
     //////////////////////COLLNET////////////////////////
     // connect current rank to an extra rank using collnet
