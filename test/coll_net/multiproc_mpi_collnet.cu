@@ -190,11 +190,11 @@ int main(int argc, char *argv[]) {
   int *hdata = (int*) malloc(MAXSIZE*sizeof(int));
 
   int failed = 0;
-  failed += benchCollective(0, rank, nranks, ddata, hdata, comm, stream);
-  failed += benchCollective(1, rank, nranks, ddata, hdata, comm, stream);
+  //failed += benchCollective(0, rank, nranks, ddata, hdata, comm, stream);
+  //failed += benchCollective(1, rank, nranks, ddata, hdata, comm, stream);
   failed += benchCollective(2, rank, nranks, ddata, hdata, comm, stream);
-  failed += benchCollective(3, rank, nranks, ddata, hdata, comm, stream);
-  failed += benchCollective(4, rank, nranks, ddata, hdata, comm, stream);
+  //failed += benchCollective(3, rank, nranks, ddata, hdata, comm, stream);
+  //failed += benchCollective(4, rank, nranks, ddata, hdata, comm, stream);
 
   CUDACHECK(cudaFree(ddata));
   free(hdata);

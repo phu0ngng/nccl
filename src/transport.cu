@@ -116,12 +116,14 @@ ncclResult_t transportSaveProxies(struct ncclProxyArgs* args, int pattern, int r
     struct ncclTree* tree = &args->channel->tree;
     for (int i=0; i<tree->nDown; i++) SaveProxy<proxyRecv>(tree->down[i], args);
     if (tree->nUp) SaveProxy<proxySend>(tree->up, args);
+    if (tree->nUp) INFO(INIT, "Saved send proxy to %d", tree->up);
   }
   if (pattern == ncclPatternTreeDown || pattern == ncclPatternTreeUpDown) {
     // Tree down
     struct ncclTree* tree = &args->channel->tree;
     for (int i=0; i<tree->nDown; i++) SaveProxy<proxySend>(tree->down[i], args);
     if (tree->nUp) SaveProxy<proxyRecv>(tree->up, args);
+    if (tree->nUp) INFO(INIT, "Saved recv proxy from %d", tree->up);
   }
   return ncclSuccess;
 }
@@ -146,6 +148,7 @@ void* persistentThread(void *opaqueInfo) {
   struct transportProxyInfo* info = (struct transportProxyInfo*)opaqueInfo;
   // Signal the main thread the context is created and it can proceed.
   SetProxyReady(info);
+  INFO(INIT, "Proxy ready");
   while (1) {
     struct ncclProxyArgs args;
     FifoPullArgs(info, &args);

@@ -8,6 +8,8 @@
 #include "primitives.h"
 #include "collectives.h"
 
+#define PRINT if (tid == 0) printf
+
 template<int UNROLL, class FUNC, typename T>
 __device__ void ncclAllReduceRingKernel(struct CollectiveArgs* args) {
   const int tid = threadIdx.x;
@@ -98,6 +100,8 @@ __device__ void ncclAllReduceTreeKernel(struct CollectiveArgs* args) {
   // Compute pointers
   const T * __restrict__ thisInput = (const T*)args->ThisInput;
   T * __restrict__ thisOutput = (T*)args->ThisOutput;
+
+  PRINT("nUp %d up %d nDown %d down %d\n", tree->nUp, tree->up, tree->nDown, tree->down);
 
   do {
     // Reduce : max number of recv is 3, max number of send is 1 (binary tree + local)

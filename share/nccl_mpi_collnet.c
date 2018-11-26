@@ -130,6 +130,8 @@ static void ncclCollNetMpiGetLockMode() {
 static int numRequests = 0;
 MPI_Request* ncclCollNetMpiRequests = NULL;
 int* ncclCollNetMpiRequestUsed = NULL;
+#define OFFSET_FIFO_SIZE (1<<10)
+size_t offsetFifo[OFFSET_FIFO_SIZE];
 pthread_mutex_t ncclCollNetMpiRequestsLock = PTHREAD_MUTEX_INITIALIZER;
 
 MPI_Request* ncclCollNetMpiGetRequest() {
@@ -184,6 +186,7 @@ struct ncclCollNetMpiListenComm {
 
 struct ncclCollNetMpiRecvComm {
   int root;
+  int rank;
   int nranks;
   char* intmBuff;
 };
@@ -266,6 +269,11 @@ int ncclCollNetMpiConnect(int dev, void* opaqueHandle, void** sendComm) {
   comm->nranks = handle->nranks;
   // allocate intermediate buffer
   intmBuff = (char*)malloc(intmBuffSize);
+  // init offset fifo
+  offsetFifo[0] = 0;
+  for (int i = 1; i < OFFSET_FIFO_SIZE; i++) {
+    offsetFifo[i] = -1;
+  }
   comm->intmBuff = intmBuff; // use intermediate buffer as tmp recv buffer TODO
   *sendComm = comm;
   return err;
@@ -293,6 +301,7 @@ int ncclCollNetMpiAccept(void *listenComm, void** recvComm) {
   rComm->root = root;
   rComm->intmBuff = intmBuff; // use intermediate buffer as tmp send buffer TODO
   rComm->nranks = lComm->nranks;
+  rComm->rank = lComm->rank;
   *recvComm = rComm;
   return err;
 }
@@ -306,6 +315,9 @@ int ncclCollNetMpiAccept(void *listenComm, void** recvComm) {
   }                                   \
 } while(0)
 
+static unsigned long sendCount = 0;
+static unsigned long recvCount = 0;
+
 int ncclCollNetMpiIsend(void* sendComm, void* data, int size, int type, void** request) {
   //printf("ncclCollNetMpiIsend\n");
   int ret;
@@ -314,23 +326,34 @@ int ncclCollNetMpiIsend(void* sendComm, void* data, int size, int type, void** r
   MPI_Request* mpiRequest = ncclCollNetMpiGetRequest();
   *request = mpiRequest;
   //printf("Send : %p %d %d %d %p\n", data, size, comm->rank, comm->tag, mpiRequest);
-  MPI_PROTECT(ret, MPI_Ireduce(data, comm->intmBuff, size, MPI_BYTE, MPI_SUM/*TODO*/, comm->root, ncclCollNetMpiComm, mpiRequest));
+  MPI_PROTECT(ret, MPI_Ireduce(data, comm->intmBuff+offsetFifo[sendCount%OFFSET_FIFO_SIZE], size, MPI_BYTE, MPI_SUM/*TODO*/, comm->root, ncclCollNetMpiComm, mpiRequest));
+  {
+    sendCount++;
+    offsetFifo[sendCount%OFFSET_FIFO_SIZE] = offsetFifo[(sendCount-1)%OFFSET_FIFO_SIZE] + size;
+  } // TODO: not thread safe
   return ret;
 }
+
+#define BLOCK
 
 int ncclCollNetMpiIrecv(void* recvComm, void* data, int size, int type, void** request) {
   //printf("ncclCollNetMpiIrecv\n");
   int ret;
   //CHECK_PTR(type);
   struct ncclCollNetMpiRecvComm* comm = (struct ncclCollNetMpiRecvComm*)recvComm;
+  if (comm->rank == comm->root) {
+    memcpy(data, comm->intmBuff+offsetFifo[recvCount%OFFSET_FIFO_SIZE], size);
+  }
+#ifdef BLOCK
+  MPI_PROTECT(ret, MPI_Bcast(data, size, MPI_BYTE, comm->root, ncclCollNetMpiComm));
+  *request = 0xdeadbeef;
+#else
   MPI_Request* mpiRequest = ncclCollNetMpiGetRequest();
   *request = mpiRequest;
-  //printf("Recv : %p %d %p %p\n", data, size, comm, mpiRequest);
-  MPI_PROTECT(ret, MPI_Ibcast(comm->intmBuff, size, MPI_BYTE, comm->root, ncclCollNetMpiComm, mpiRequest));
-  int done = 0;
-  while (done == 0) MPI_PROTECT(ret, MPI_Test(&request, &done, MPI_STATUSES_IGNORE));
-  // copy to real recv buffer
-  memcpy(data, (void*)comm->intmBuff, size);
+  MPI_PROTECT(ret, MPI_Ibcast(data, size, MPI_BYTE, comm->root, ncclCollNetMpiComm, mpiRequest));
+#endif
+  recvCount++; //TODO: not thread safe
+  printf("MPI bcast : %p %d %p %p\n", data, size, comm, *request);
   return ret;
 }
 
@@ -341,6 +364,12 @@ int ncclCollNetMpiFlush(void* recvComm, void* data, int size) {
 
 int ncclCollNetMpiTest(void* request, int* done, int* size) {
   //printf("ncclCollNetMpiTest\n");
+#ifdef BLOCK
+  if (request == 0xdeadbeef) {
+    *done = 1;
+    return 0;
+  }
+#endif
   MPI_Request* mpiRequest = (MPI_Request*)request;
   MPI_Status status;
   int err;
