@@ -27,7 +27,7 @@ __device__ void ncclAllReduceRingKernel(struct CollectiveArgs* args) {
   T * __restrict__ thisOutput = (T*)args->ThisOutput;
 
   ncclPrimitives<UNROLL, ALLREDUCE_CHUNKSTEPS/ALLREDUCE_SLICESTEPS, ALLREDUCE_SLICESTEPS, T, 1, 1, FUNC>
-    prims(tid, nthreads, 1, &ring->prev, 1, &ring->next, thisOutput, stepSize, channel, args->comm->abortFlag);
+    prims(tid, nthreads, 1, &ring->prev, 1, &ring->next, thisOutput, stepSize, channel, comm->abortFlag);
 
   for (ssize_t gridOffset = 0; gridOffset < size; gridOffset += nranks*loopSize) {
     int realChunkSize = min(chunkSize, DIVUP(size-gridOffset,nranks*args->nChannels));
