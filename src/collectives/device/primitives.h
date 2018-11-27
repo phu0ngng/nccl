@@ -48,12 +48,6 @@ class ncclPrimitives {
   const T* recvBuff[NRECV];
   T* sendBuff[NSEND];
 
-  volatile uint32_t* abortFlagPtr = NULL;
-  volatile ncclDevError_t* fatalDevError = NULL;
-  const uint64_t opCount;
-  uint32_t spins = 0;
-  uint32_t abort = 0;
-
   inline __device__ int recvOffset(int i) { return (recvStep[i]%NCCL_STEPS)*stepSize; }
   inline __device__ int sendOffset(int i) { return (sendStep[i]%NCCL_STEPS)*stepSize; }
   inline __device__ const T* recvPtr(int i) { return ((const T*)recvBuff[i])+recvOffset(i); }
@@ -78,6 +72,9 @@ class ncclPrimitives {
   }
 
   uint32_t mismatch = 0;
+  volatile ncclDevError_t* fatalDevError = NULL;
+  const uint64_t opCount;
+
   inline __device__ void checkMismatch(volatile uint64_t* remoteOpCount) {
     if (mismatch) {
       // In non-LL, we use _threadfence_system before incrementing opCount, yet we are still waiting for credits here, so there must be a size mismatch
@@ -86,6 +83,10 @@ class ncclPrimitives {
       mismatch += 1;
     }
   }
+
+  volatile uint32_t* abortFlagPtr = NULL;
+  uint32_t spins = 0;
+  uint32_t abort = 0;
 
   inline __device__ int checkAbort(volatile uint64_t* remoteOpCount) {
     spins++;
@@ -337,12 +338,6 @@ class ncclLLPrimitives {
   union ncclLLFifoLine* recvBuff[NRECV];
   union ncclLLFifoLine* sendBuff[NSEND];
 
-  volatile uint32_t* abortFlagPtr = NULL;
-  volatile ncclDevError_t* fatalDevError = NULL;
-  const uint64_t opCount;
-  uint32_t spins = 0;
-  uint32_t abort = 0;
-
   inline __device__ int recvOffset(int i) { return (recvStep[i]%NCCL_STEPS)*NCCL_LL_SLICE_LINES; }
   inline __device__ int sendOffset(int i) { return (sendStep[i]%NCCL_STEPS)*NCCL_LL_SLICE_LINES; }
   inline __device__ union ncclLLFifoLine* recvPtr(int i) { return recvBuff[i]+recvOffset(i); }
@@ -369,6 +364,9 @@ class ncclLLPrimitives {
   }
 
   uint32_t mismatch = 0;
+  volatile ncclDevError_t* fatalDevError = NULL;
+  const uint64_t opCount;
+
   inline __device__ void checkMismatch(volatile uint64_t* remoteOpCount) {
     if (mismatch > 20) {
       // We have seen that the peer advanced opcount so many times yet we are still waiting for credit of current op, so it is _most likely_ a mismatch
@@ -378,6 +376,10 @@ class ncclLLPrimitives {
       mismatch += 1;
     }
   }
+
+  volatile uint32_t* abortFlagPtr = NULL;
+  uint32_t spins = 0;
+  uint32_t abort = 0;
 
   inline __device__ int checkAbort(volatile uint64_t* remoteOpCount) {
     spins++;
