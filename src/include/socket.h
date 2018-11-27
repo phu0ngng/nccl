@@ -76,7 +76,7 @@ static int findInterfaces(const char* prefixList, char* names, union socketAddre
     if (family != AF_INET && family != AF_INET6)
       continue;
 
-    TRACE(INIT|NET,"Found interface %s:%s", interface->ifa_name, socketToString(interface->ifa_addr, line));
+    TRACE(NCCL_INIT|NCCL_NET,"Found interface %s:%s", interface->ifa_name, socketToString(interface->ifa_addr, line));
 
     /* Allow the caller to force the socket family type */
     if (sock_family != -1 && family != sock_family)
@@ -106,7 +106,7 @@ static int findInterfaces(const char* prefixList, char* names, union socketAddre
       // Store the IP address
       int salen = (family == AF_INET) ? sizeof(sockaddr_in) : sizeof(sockaddr_in6);
       memcpy(addrs+found, interface->ifa_addr, salen);
-      INFO(INIT|NET,"NET : Using interface %s:%s", interface->ifa_name, socketToString(interface->ifa_addr, line));
+      INFO(NCCL_INIT|NCCL_NET,"NET : Using interface %s:%s", interface->ifa_name, socketToString(interface->ifa_addr, line));
       found++;
     }
   }
@@ -183,7 +183,7 @@ static int findInterfaceMatchSubnet(char* ifNames, union socketAddress* localAdd
     // Store the interface name
     strncpy(ifNames+found*ifNameMaxSize, interface->ifa_name, ifNameMaxSize);
 
-    INFO(INIT|NET,"NET : Found interface %s:%s in the same subnet as remote address %s", interface->ifa_name, socketToString(&(localAddrs[found].sa), line), socketToString(&(remoteAddr.sa), line_a));
+    INFO(NCCL_INIT|NCCL_NET,"NET : Found interface %s:%s in the same subnet as remote address %s", interface->ifa_name, socketToString(&(localAddrs[found].sa), line), socketToString(&(remoteAddr.sa), line_a));
     found++;
     if (found == maxIfs) break;
   }
@@ -333,7 +333,7 @@ static ncclResult_t createListenSocket(int *fd, union socketAddress *localAddr) 
 
 #ifdef ENABLE_TRACE
   char line[1024];
-  TRACE(INIT|NET,"Listening on socket %s", socketToString(&localAddr->sa, line));
+  TRACE(NCCL_INIT|NCCL_NET,"Listening on socket %s", socketToString(&localAddr->sa, line));
 #endif
 
   /* Put the socket in listen mode */
@@ -363,46 +363,53 @@ static ncclResult_t connectAddress(int* fd, union socketAddress* remoteAddr) {
 
 #ifdef ENABLE_TRACE
   char line[1024];
-  TRACE(INIT|NET,"Connecting to socket %s", socketToString(&remoteAddr->sa, line));
+  TRACE(NCCL_INIT|NCCL_NET,"Connecting to socket %s", socketToString(&remoteAddr->sa, line));
 #endif
 
   SYSCHECKNTIMES(connect(*fd, &remoteAddr->sa, salen), "connect", RETRY_TIMES, SLEEP_INT, ECONNREFUSED);
   return ncclSuccess;
 }
 
-static ncclResult_t socketReceive(int fd, void* ptr, int size) {
+#define NCCL_SOCKET_SEND 0
+#define NCCL_SOCKET_RECV 1
+static ncclResult_t socketProgress(int op, int fd, void* ptr, int size, int* offset) {
+  int bytes = 0;
   char* data = (char*)ptr;
-  int offset = 0;
-  while (offset < size) {
-    int recvsize;
-    SYSCHECKVAL(recv(fd, data, size-offset, 0), "recv", recvsize);
-    if (recvsize == 0) {
+  do {
+    if (op == NCCL_SOCKET_RECV) bytes = recv(fd, data+(*offset), size-(*offset), MSG_DONTWAIT);
+    if (op == NCCL_SOCKET_SEND) bytes = send(fd, data+(*offset), size-(*offset), MSG_DONTWAIT);
+    if (op == NCCL_SOCKET_RECV && bytes == 0) {
       WARN("Net : Connection closed by remote peer");
       return ncclSystemError;
     }
-    if (recvsize == -1) {
-      INFO(NET,"Recv : got retcode %d, retrying", errno);
-      continue;
+    if (bytes == -1) {
+      if (errno != EINTR && errno != EWOULDBLOCK && errno != EAGAIN) {
+        WARN("Call to recv failed : %s", strerror(errno));
+        return ncclSystemError;
+      } else {
+        bytes = 0;
+      }
     }
-    data += recvsize;
-    offset += recvsize;
-  }
+    (*offset) += bytes;
+  } while (bytes > 0 && (*offset) < size);
+  return ncclSuccess;
+}
+
+static ncclResult_t socketWait(int op, int fd, void* ptr, int size, int* offset) {
+  while (*offset < size)
+    NCCLCHECK(socketProgress(op, fd, ptr, size, offset));
   return ncclSuccess;
 }
 
 static ncclResult_t socketSend(int fd, void* ptr, int size) {
-  char* data = (char*)ptr;
   int offset = 0;
-  while (offset < size) {
-    int sendsize;
-    SYSCHECKVAL(write(fd, data, size-offset), "write", sendsize);
-    if (sendsize == -1) {
-      INFO(NET,"Send : got retcode %d, retrying", errno);
-      continue;
-    }
-    data += sendsize;
-    offset += sendsize;
-  }
+  NCCLCHECK(socketWait(NCCL_SOCKET_SEND, fd, ptr, size, &offset));
+  return ncclSuccess;
+}
+
+static ncclResult_t socketReceive(int fd, void* ptr, int size) {
+  int offset = 0;
+  NCCLCHECK(socketWait(NCCL_SOCKET_RECV, fd, ptr, size, &offset));
   return ncclSuccess;
 }
 

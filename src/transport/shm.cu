@@ -145,10 +145,10 @@ ncclResult_t shmSendSetup(struct ncclPeerInfo* myInfo, struct ncclPeerInfo* peer
   char shmName[MAX_SHM_NAME_LEN];
   sprintf(shmName, "nccl-shm-send-%lx-%d-%d", myInfo->pidHash, channelId, myInfo->rank);
   info.shmSize = resources->shmSize = sizeof(struct ncclSendMem);
-  TRACE(SHM,"Open shmName %s shmSize %d", shmName, info.shmSize);
+  TRACE(NCCL_SHM,"Open shmName %s shmSize %d", shmName, info.shmSize);
   NCCLCHECK(shmOpen(shmName, resources->shmSize, (void**)&resources->hostMem, (void**)&resources->devHostMem, 1));
 
-  INFO(INIT|SHM,"Ring %02d : %d[%d] -> %d[%d] via direct shared memory", channelId, myInfo->rank, myInfo->cudaDev, peerInfo->rank, peerInfo->cudaDev);
+  INFO(NCCL_INIT|NCCL_SHM,"Ring %02d : %d[%d] -> %d[%d] via direct shared memory", channelId, myInfo->rank, myInfo->cudaDev, peerInfo->rank, peerInfo->cudaDev);
   info.id = channelId; info.rank = myInfo->rank; info.pidHash = myInfo->pidHash;
   static_assert(sizeof(struct shmRecvConnectInfo) <= sizeof(struct ncclConnect), "shm Connect Recv Info is too big");
   memcpy(connectInfo, &info, sizeof(struct shmRecvConnectInfo));
@@ -165,7 +165,7 @@ ncclResult_t shmRecvSetup(struct ncclPeerInfo* myInfo, struct ncclPeerInfo* peer
   char shmName[MAX_SHM_NAME_LEN];
   sprintf(shmName, "nccl-shm-recv-%lx-%d-%d", myInfo->pidHash, channelId, myInfo->rank);
   info.shmSize = resources->shmSize = offsetof(struct ncclRecvMem, buff)+buffSize;
-  TRACE(SHM,"Open shmName %s shmSize %d", shmName, info.shmSize);
+  TRACE(NCCL_SHM,"Open shmName %s shmSize %d", shmName, info.shmSize);
   NCCLCHECK(shmOpen(shmName, resources->shmSize, (void**)&resources->hostMem, (void**)&resources->devHostMem, 1));
 
   info.id = channelId; info.rank = myInfo->rank; info.pidHash = myInfo->pidHash;
@@ -183,7 +183,7 @@ ncclResult_t shmSendConnect(struct ncclConnect* connectInfo, struct ncclConnecto
   char shmName[MAX_SHM_NAME_LEN];
   sprintf(shmName, "nccl-shm-recv-%lx-%d-%d", info->pidHash, info->id, info->rank);
   resources->remShmSize = info->shmSize;
-  TRACE(SHM,"Open shmName %s shmSize %d", shmName, info->shmSize);
+  TRACE(NCCL_SHM,"Open shmName %s shmSize %d", shmName, info->shmSize);
   NCCLCHECK(shmOpen(shmName, resources->remShmSize, (void**)&resources->remHostMem, (void**)&resources->devRemHostMem, 0));
   // Remove the file to ensure proper clean-up
   NCCLCHECK(shmUnlink(shmName));
@@ -206,7 +206,7 @@ ncclResult_t shmRecvConnect(struct ncclConnect* connectInfo, struct ncclConnecto
   char shmName[MAX_SHM_NAME_LEN];
   sprintf(shmName, "nccl-shm-send-%lx-%d-%d", info->pidHash, info->id, info->rank);
   resources->remShmSize = info->shmSize;
-  TRACE(SHM,"Open shmName %s shmSize %d", shmName, info->shmSize);
+  TRACE(NCCL_SHM,"Open shmName %s shmSize %d", shmName, info->shmSize);
   NCCLCHECK(shmOpen(shmName, resources->remShmSize, (void**)&resources->remHostMem, (void**)&resources->devRemHostMem, 0));
   NCCLCHECK(shmUnlink(shmName));
   recv->conn.head = &resources->devRemHostMem->head;
