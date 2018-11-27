@@ -372,7 +372,9 @@ class ncclLLPrimitives {
     sendStep[i]++;
   }
 
-  __device__ uint64_t readLL(union ncclLLFifoLine* src, uint32_t flag) {
+  __device__ uint64_t readLL(int i, int offset) {
+    union ncclLLFifoLine* src = recvPtr(i) + offset;
+    uint32_t flag = recvFlag(i);
     uint32_t data1, flag1, data2, flag2;
     spins = 0;
     do {
@@ -409,11 +411,11 @@ class ncclLLPrimitives {
     // Do multiples of 64 bits
     #pragma unroll 2
     for (int line=0, offset=tid; line<NUM_LINES_PER_THREAD && offset<npack; line++, offset+=nthreads) {
-      uint64_t val = SRC ? readAL(srcPack+offset) : readLL(recvPtr(0)+offset, recvFlag(0));
+      uint64_t val = SRC ? readAL(srcPack+offset) : readLL(0, offset);
       if (RECV) {
-        if (SRC) val = MULTI<FUNC, T>()(readLL(recvPtr(0)+offset, recvFlag(0)), val);
+        if (SRC) val = MULTI<FUNC, T>()(readLL(0, offset), val);
         for (int i= 1; i<NRECV && i<nrecv; i++) {
-          val = MULTI<FUNC, T>()(readLL(recvPtr(i)+offset, recvFlag(i)), val);
+          val = MULTI<FUNC, T>()(readLL(i, offset), val);
         }
       }
       if (SEND) {
