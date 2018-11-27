@@ -47,6 +47,7 @@ class ncclPrimitives {
   T* sendDirectBuff[NSEND];
   const T* recvBuff[NRECV];
   T* sendBuff[NSEND];
+  struct ncclComm* comm;
 
   inline __device__ int recvOffset(int i) { return (recvStep[i]%NCCL_STEPS)*stepSize; }
   inline __device__ int sendOffset(int i) { return (sendStep[i]%NCCL_STEPS)*stepSize; }
@@ -72,26 +73,24 @@ class ncclPrimitives {
   }
 
   uint32_t mismatch = 0;
-  volatile ncclDevError_t* fatalDevError = NULL;
   const uint64_t opCount;
 
   inline __device__ void checkMismatch(volatile uint64_t* remoteOpCount) {
     if (mismatch) {
       // In non-LL, we use _threadfence_system before incrementing opCount, yet we are still waiting for credits here, so there must be a size mismatch
-      *fatalDevError = ncclDevAssertedMismatch;
+      *(comm->fatalDevError) = ncclDevAssertedMismatch;
     } else if (remoteOpCount && *remoteOpCount > opCount) {
       mismatch += 1;
     }
   }
 
-  volatile uint32_t* abortFlagPtr = NULL;
   uint32_t spins = 0;
   uint32_t abort = 0;
 
   inline __device__ int checkAbort(volatile uint64_t* remoteOpCount) {
     spins++;
     if (spins == SPINS_BEFORE_CHECK_ABORT) {
-      abort = *abortFlagPtr;
+      abort = *(comm->abortFlag);
       checkMismatch(remoteOpCount);
       spins = 0;
     }
@@ -247,8 +246,8 @@ class ncclPrimitives {
 
  public:
   __device__ __forceinline__
-  ncclPrimitives(const int tid, const int nthreads, const int nrecv, int* recvPeers, const int nsend, int* sendPeers, T* directBuff, int stepSize, struct ncclChannel* channel, volatile uint32_t* abortFlagPtr, const uint64_t opCount, volatile ncclDevError_t* fatalDevError)
-    : abortFlagPtr(abortFlagPtr), tid(tid), nthreads(nthreads), nsend(nsend), nrecv(nrecv), stepSize(stepSize), opCount(opCount), fatalDevError(fatalDevError) {
+  ncclPrimitives(const int tid, const int nthreads, const int nrecv, int* recvPeers, const int nsend, int* sendPeers, T* directBuff, int stepSize, struct ncclChannel* channel, struct ncclComm* comm, const uint64_t opCount)
+    : comm(comm), tid(tid), nthreads(nthreads), nsend(nsend), nrecv(nrecv), stepSize(stepSize), opCount(opCount) {
     // Make sure step is updated before we read it
     __syncthreads();
 
@@ -337,6 +336,7 @@ class ncclLLPrimitives {
   uint64_t sendConnHead;
   union ncclLLFifoLine* recvBuff[NRECV];
   union ncclLLFifoLine* sendBuff[NSEND];
+  struct ncclComm* comm;
 
   inline __device__ int recvOffset(int i) { return (recvStep[i]%NCCL_STEPS)*NCCL_LL_SLICE_LINES; }
   inline __device__ int sendOffset(int i) { return (sendStep[i]%NCCL_STEPS)*NCCL_LL_SLICE_LINES; }
@@ -364,27 +364,25 @@ class ncclLLPrimitives {
   }
 
   uint32_t mismatch = 0;
-  volatile ncclDevError_t* fatalDevError = NULL;
   const uint64_t opCount;
 
   inline __device__ void checkMismatch(volatile uint64_t* remoteOpCount) {
     if (mismatch > 20) {
       // We have seen that the peer advanced opcount so many times yet we are still waiting for credit of current op, so it is _most likely_ a mismatch
       // Note that we are not using _threadfence_system in LL so the error cannot be asserted
-      *fatalDevError = ncclDevSuspectedMismatch;
+      *(comm->fatalDevError) = ncclDevSuspectedMismatch;
     } else if (remoteOpCount && *remoteOpCount > opCount) {
       mismatch += 1;
     }
   }
 
-  volatile uint32_t* abortFlagPtr = NULL;
   uint32_t spins = 0;
   uint32_t abort = 0;
 
   inline __device__ int checkAbort(volatile uint64_t* remoteOpCount) {
     spins++;
     if (spins == SPINS_BEFORE_CHECK_ABORT) {
-      abort = *abortFlagPtr;
+      abort = *(comm->abortFlag);
       checkMismatch(remoteOpCount);
       spins = 0;
     }
@@ -541,8 +539,8 @@ class ncclLLPrimitives {
 
  public:
   __device__ __forceinline__
-  ncclLLPrimitives(const int tid, const int nthreads, const int nrecv, int* recvPeers, const int nsend, int* sendPeers, struct ncclChannel* channel, volatile uint32_t* abortFlagPtr, const uint64_t opCount, volatile ncclDevError_t* fatalDevError)
-    : abortFlagPtr(abortFlagPtr), tid(tid), nthreads(nthreads), nrecv(nrecv), nsend(nsend), opCount(opCount), fatalDevError(fatalDevError) {
+  ncclLLPrimitives(const int tid, const int nthreads, const int nrecv, int* recvPeers, const int nsend, int* sendPeers, struct ncclChannel* channel, struct ncclComm* comm, const uint64_t opCount)
+    : comm(comm), tid(tid), nthreads(nthreads), nrecv(nrecv), nsend(nsend), opCount(opCount) {
     // Make sure step is updated before we read it.
     barrier();
 
