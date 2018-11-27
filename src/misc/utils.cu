@@ -9,6 +9,24 @@
 #include <unistd.h>
 #include <string.h>
 
+#include "nvmlwrap.h"
+#include "core.h"
+
+// Convert a logical cudaDev index to the NVML device minor number
+ncclResult_t getNvmlDevice(int cudaDev, int *nvmlDev) {
+  char busId[NVML_DEVICE_PCI_BUS_ID_BUFFER_SIZE];
+  nvmlDevice_t nvmlDevice;
+  unsigned int dev;
+  *nvmlDev = -1;
+  CUDACHECK(cudaDeviceGetPCIBusId(busId, NVML_DEVICE_PCI_BUS_ID_BUFFER_SIZE, cudaDev));
+  NCCLCHECK(wrapNvmlDeviceGetHandleByPciBusId(busId, &nvmlDevice));
+  NCCLCHECK(wrapNvmlDeviceGetMinorNumber(nvmlDevice, &dev));
+
+  *nvmlDev = dev;
+
+  return ncclSuccess;
+}
+
 ncclResult_t getHostName(char* hostname, int maxlen) {
   if (gethostname(hostname, maxlen) != 0) {
     strncpy(hostname, "unknown", maxlen);
@@ -33,17 +51,24 @@ uint64_t getHash(const char* string) {
  * that will be unique for both bare-metal and container instances
  * Equivalent of a hash of;
  *
- * $(hostname) $(readlink /proc/self/ns/uts)
+ * $(hostname) $(readlink /proc/self/ns/uts) $(readlink /proc/self/ns/mnt)
  */
 uint64_t getHostHash(void) {
   char uname[1024];
   // Start off with the hostname
   (void) getHostName(uname, sizeof(uname));
-  int hlen = strlen(uname);
-  int len = readlink("/proc/self/ns/uts", uname+hlen, sizeof(uname)-1-hlen);
+  int offset = strlen(uname);
+  int len;
+  // $(readlink /proc/self/ns/uts)
+  len = readlink("/proc/self/ns/uts", uname+offset, sizeof(uname)-1-offset);
   if (len < 0) len = 0;
-
-  uname[hlen+len]='\0';
+  offset += len;
+  // $(readlink /proc/self/ns/mnt)
+  len = readlink("/proc/self/ns/mnt", uname+offset, sizeof(uname)-1-offset);
+  if (len < 0) len = 0;
+  offset += len;
+  // Trailing '\0'
+  uname[offset]='\0';
   TRACE(INIT,"unique hostname '%s'", uname);
 
   return getHash(uname);

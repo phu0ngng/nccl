@@ -26,6 +26,8 @@ NCCL requires at least CUDA 7.0 and Kepler or newer GPUs. For PCIe based platfor
 
 ## Build
 
+Note: the official and tested builds of NCCL can be downloaded from: https://developer.nvidia.com/nccl. You can skip the following build steps if you choose to use the official builds.
+
 To build the library :
 
 ```shell
@@ -52,12 +54,18 @@ To install NCCL on the system, create a package then install it as root.
 
 Debian/Ubuntu :
 ```shell
+$ # Install tools to create debian packages
+$ sudo apt install build-essential devscripts debhelper
+$ # Build NCCL deb package
 $ make pkg.debian.build
 $ ls build/pkg/deb/
 ```
 
 RedHat/CentOS :
 ```shell
+$ # Install tools to create rpm packages
+$ sudo yum install rpm-build rpmdevtools
+$ # Build NCCL rpm package
 $ make pkg.redhat.build
 $ ls build/pkg/rpm/
 ```
@@ -76,7 +84,7 @@ Tests for NCCL are maintained separately at https://github.com/nvidia/nccl-tests
 $ git clone https://github.com/NVIDIA/nccl-tests.git
 $ cd nccl-tests
 $ make
-$ ./build/allreduce_perf -b 8 -e 256M -f 2 -g <ngpus>
+$ ./build/all_reduce_perf -b 8 -e 256M -f 2 -g <ngpus>
 ```
 
 ## Copyright

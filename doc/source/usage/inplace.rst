@@ -11,6 +11,7 @@ storing final results at the same place as initial data was read from.
 
 For ncclReduceScatter and ncclAllGather, in place operations are done when the per-rank pointer is located at the rank offset of the global buffer.
 More precisely, these calls are considered in place : ::
- ncclReduceScatter(data, data+rank*recvcount, recvcount, datatype, op, comm, stream);
- ncclAllGather(data+rank*sendcount, data, sendcount, datatype, op, comm, stream);
+
+  ncclReduceScatter(data, data+rank*recvcount, recvcount, datatype, op, comm, stream);
+  ncclAllGather(data+rank*sendcount, data, sendcount, datatype, op, comm, stream);
 
