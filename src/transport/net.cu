@@ -310,9 +310,10 @@ ncclResult_t netSendConnect(struct ncclConnect* connectInfo, struct ncclConnecto
 
   // Head/Tail/Opcount/Fifos are always on host
   send->conn.tail = &resources->devHostRecvMem->tail;
-  send->conn.opCount = &resources->devHostRecvMem->opCount;
+  send->conn.opCountRem = &resources->devHostRecvMem->opCount;
   send->conn.fifo = resources->devHostRecvMem->sizesFifo;
   send->conn.head = &resources->devHostSendMem->head;
+  send->conn.opCountLoc = &resources->devHostSendMem->opCount;
   for (int i=0; i<NCCL_STEPS; i++) send->conn.fifo[i] = -1;
 
   // Connect to remote peer
@@ -334,8 +335,9 @@ ncclResult_t netRecvConnect(struct ncclConnect* connectInfo, struct ncclConnecto
 
   // Head/Tail/Opcount are always on host
   recv->conn.tail = &resources->devHostRecvMem->tail;
-  recv->conn.opCount = &resources->devHostRecvMem->opCount;
+  recv->conn.opCountLoc = &resources->devHostRecvMem->opCount;
   recv->conn.head = &resources->devHostSendMem->head;
+  recv->conn.opCountRem = &resources->devHostSendMem->opCount;
 
   // Finish connection establishment from remote peer
   NCCLCHECK(ncclNetAccept(resources->netListenComm, &resources->netRecvComm));
@@ -378,6 +380,9 @@ ncclResult_t netSendProxy(struct ncclProxyArgs* args) {
   int ptrType = resources->useGdr ? NCCL_PTR_CUDA : NCCL_PTR_HOST;
   volatile int* sizesFifo = resources->hostRecvMem->sizesFifo;
   int stepSize = args->channel->buffSize/NCCL_STEPS;
+
+  // Update opCount
+  resources->hostRecvMem->opCount = args->opCount;
 
   // Round to next multiple of sliceSteps
   resources->step = ROUNDUP(resources->step, args->chunkSteps);
@@ -462,6 +467,9 @@ ncclResult_t netRecvProxy(struct ncclProxyArgs* args) {
   char* localBuff = llMode ? (char*)localMem->llBuff : localMem->buff;
   int ptrType = resources->useGdr ? NCCL_PTR_CUDA : NCCL_PTR_HOST;
   uint64_t* nextTail = &resources->hostRecvMem->tail;
+
+  // Update opCount
+  resources->hostSendMem->opCount = args->opCount;
 
   int stepSize = ( llMode ? NCCL_LL_BUFF_SIZE : args->channel->buffSize ) / NCCL_STEPS;
   int sliceSize = stepSize * args->sliceSteps;

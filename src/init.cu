@@ -201,6 +201,7 @@ static ncclResult_t commFree(ncclComm_t comm) {
     free(comm->intraCC);
   }
   CUDACHECK(cudaFreeHost((void *)comm->abortFlag));
+  CUDACHECK(cudaFreeHost((void *)comm->fatalDevError));
 
   free(comm);
   return ncclSuccess;
@@ -239,6 +240,9 @@ static ncclResult_t commAlloc(ncclComm_t* comret, int ndev, int rank) {
 #endif
   comm->fatalError = ncclSuccess;
 
+  CUDACHECK(cudaHostAlloc((void**) &comm->fatalDevError, sizeof(ncclDevError_t), cudaHostAllocMapped));
+  *comm->fatalDevError = ncclDevSuccess;
+
   CUDACHECK(cudaHostAlloc((void**) &comm->abortFlag, sizeof(uint32_t), cudaHostAllocMapped));
   *comm->abortFlag = 0;
 
@@ -264,6 +268,10 @@ static ncclResult_t devCommSetup(ncclComm_t comm) {
   void *devAbortFlag;
   CUDACHECK(cudaHostGetDevicePointer(&devAbortFlag, (uint32_t *)comm->abortFlag, 0));
   CUDACHECK(cudaMemcpy(&comm->devComm->abortFlag, &devAbortFlag, sizeof(int *), cudaMemcpyHostToDevice));
+  // Copy the device-accessible pointer to comm->fatalDevError
+  void *devFatalError;
+  CUDACHECK(cudaHostGetDevicePointer(&devFatalError, (ncclDevError_t *)comm->fatalDevError, 0));
+  CUDACHECK(cudaMemcpy(&comm->devComm->fatalDevError, &devFatalError, sizeof(ncclDevError_t *), cudaMemcpyHostToDevice));
   return ncclSuccess;
 }
 
@@ -1033,6 +1041,31 @@ NCCL_API(ncclResult_t, ncclCommGetAsyncError, ncclComm_t comm, ncclResult_t *asy
 ncclResult_t ncclCommGetAsyncError(ncclComm_t comm, ncclResult_t *asyncError) {
   NCCLCHECK(PtrCheck(comm, "ncclGetAsyncError", "comm"));
   NCCLCHECK(PtrCheck(asyncError, "ncclGetAsyncError", "asyncError"));
+
+  // Check device reported error
+  static ncclDevError_t printedDevErr = ncclDevSuccess;
+  switch(*comm->fatalDevError) {
+    case ncclDevSuccess :
+      break;
+    case ncclDevAssertedMismatch :
+      if (printedDevErr != ncclDevAssertedMismatch) {
+        WARN("Mismatched collective detected, please check your collective calls at and around rank %d. You can use NCCL_DEBUG=INFO and NCCL_DEBUG_SUBSYS=COLL to see the collective logs", comm->rank);
+        printedDevErr = ncclDevAssertedMismatch;
+      }
+      if (comm->fatalError == ncclSuccess) {
+        comm->fatalError = ncclInvalidUsage;
+      }
+      break;
+    case ncclDevSuspectedMismatch :
+      if (printedDevErr != ncclDevSuspectedMismatch) {
+        WARN("Your program may be hanging, this may be caused by a collective mismatch around rank %d. Please check your collective calls at and around this rank. You can use NCCL_DEBUG=INFO and NCCL_DEBUG_SUBSYS=COLL to see the collective logs", comm->rank);
+        printedDevErr = ncclDevSuspectedMismatch;
+      }
+      break;
+    default:
+      WARN("Unknown device error %d", *comm->fatalDevError);
+      return ncclInternalError;
+  }
   *asyncError = comm->fatalError;
   return ncclSuccess;
 }
