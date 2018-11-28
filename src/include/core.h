@@ -346,7 +346,7 @@ struct ncclComm {
   while (ret == -1) { \
     SYSCHECKVAL(call, name, ret); \
     if (ret == -1) { \
-      INFO(ALL,"Got %s, retrying", strerror(errno));   \
+      INFO(NCCL_ALL,"Got %s, retrying", strerror(errno));   \
     }\
   } \
 } while (0);
@@ -388,7 +388,7 @@ struct ncclComm {
   ncclResult_t res = call; \
   if (res != ncclSuccess) { \
     /* Print the back trace*/ \
-    INFO(ALL,"%s:%d -> %d", __FILE__, __LINE__, res);    \
+    INFO(NCCL_ALL,"%s:%d -> %d", __FILE__, __LINE__, res);    \
     return res; \
   } \
 } while (0);
@@ -397,7 +397,7 @@ struct ncclComm {
   res = call; \
   if (res != ncclSuccess) { \
     /* Print the back trace*/ \
-    INFO(ALL,"%s:%d -> %d", __FILE__, __LINE__, res);    \
+    INFO(NCCL_ALL,"%s:%d -> %d", __FILE__, __LINE__, res);    \
     goto label; \
   } \
 } while (0);

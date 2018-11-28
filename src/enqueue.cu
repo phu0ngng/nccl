@@ -184,7 +184,7 @@ ncclResult_t ncclBarrierEnqueueWait(ncclComm_t comm) {
   // We can't print the CG mode before the first barrier happened.
   if (comm->rank == 0 && *comm->intraCGMode & 0x10) {
     *comm->intraCGMode ^= 0x10;
-    INFO(INIT,"Launch mode %s%s%s",
+    INFO(NCCL_INIT,"Launch mode %s%s%s",
         comm->launchMode == ncclComm::GROUP ? "Group" : "Parallel",
         *comm->intraCGMode ? "/CGMD" : "",
         (comm->launchMode == ncclComm::GROUP && comm->groupCudaStream) ? "/Stream" : "");
@@ -345,7 +345,7 @@ static ncclResult_t computeColl(struct ncclInfo* info /* input */, struct ncclCo
   proxyArgs->chunkSteps = chunkSteps;
   proxyArgs->llMode = llMode;
   proxyArgs->opCount = info->comm->opCount;
-  TRACE(NET,"opCount %lx slicesteps %d spl %d cpl %d nbytes %zi -> llmode %d nchannels %d nthreads %d, nloops %d nsteps %d comm %p",
+  TRACE(NCCL_NET,"opCount %lx slicesteps %d spl %d cpl %d nbytes %zi -> llmode %d nchannels %d nthreads %d, nloops %d nsteps %d comm %p",
       coll->args.opCount, proxyArgs->sliceSteps, info->nstepsPerLoop, info->nchunksPerLoop, nBytes, llMode, coll->args.nChannels, coll->args.nThreads,
       nLoops, proxyArgs->nsteps, info->comm);
   return ncclSuccess;
@@ -406,7 +406,7 @@ static ncclResult_t saveKernel(struct ncclInfo* info) {
 ncclResult_t ncclEnqueueCheck(struct ncclInfo* info) {
   if (info->comm == NULL) return ncclInvalidArgument;
 
-  INFO(COLL,"%s: opCount %lx sendbuff %p recvbuff %p count %zi datatype %d op %d root %d comm %p [nranks=%d] stream %p",
+  INFO(NCCL_COLL,"%s: opCount %lx sendbuff %p recvbuff %p count %zi datatype %d op %d root %d comm %p [nranks=%d] stream %p",
        info->opName, info->comm->opCount, info->sendbuff, info->recvbuff, info->count,
        info->datatype, info->op, info->root, info->comm, info->comm->nRanks, info->stream);
 
