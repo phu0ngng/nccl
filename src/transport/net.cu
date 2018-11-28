@@ -80,6 +80,8 @@ static ncclResult_t netDevices(int* ndev, short** distances) {
   if (*ndev > NET_MAX_IFS) *ndev = NET_MAX_IFS;
 
   *distances = (short*)malloc(*ndev*sizeof(short));
+  if (*distances == NULL) return ncclSystemError;
+
   // Find distance with current GPU
   int cudaDev;
   cudaGetDevice(&cudaDev);
@@ -87,7 +89,7 @@ static ncclResult_t netDevices(int* ndev, short** distances) {
   sprintf(line, "CUDA Dev %d, %s NIC distance : ", cudaDev, ncclNetName());
   for (int d=0; d<*ndev; d++) {
     NCCLCHECK(netDistance(cudaDev, d, *distances+d));
-    sprintf(line+strlen(line), " %s", pathDists[*distances[d]]);
+    sprintf(line+strlen(line), " %s", pathDists[(*distances)[d]]);
   }
   INFO(NCCL_INIT|NCCL_NET, "%s", line);
   return ncclSuccess;
