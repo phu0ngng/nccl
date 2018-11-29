@@ -182,20 +182,25 @@ __device__ half testValue<half>(const size_t offset, const int rep, const int ra
   return __float2half(testValue<float>(offset, rep, rank));
 }
 
-// Definitions for half
-__device__ half min(half a, half b) { return a<b ? a : b; }
-__device__ half max(half a, half b) { return a>b ? a : b; }
-__device__ half prod(half a, half b) { return __float2half(__half2float(a)*__half2float(b)); }
-
 // Operations
 template<typename T>
 __device__ T ncclOpSum(T a, T b) { return a+b; }
 template<typename T>
 __device__ T ncclOpProd(T a, T b) { return a*b; }
 template<typename T>
-__device__ T ncclOpMax(T a, T b) { return max(a,b); }
+__device__ T ncclOpMax(T a, T b) { return a>b ? a : b; }
 template<typename T>
-__device__ T ncclOpMin(T a, T b) { return min(a,b); }
+__device__ T ncclOpMin(T a, T b) { return a<b ? a : b; }
+
+// Definitions for half
+template<>
+__device__ half ncclOpSum(half a, half b) { return __float2half(__half2float(a)+__half2float(b)); }
+template<>
+__device__ half ncclOpProd(half a, half b) { return __float2half(__half2float(a)*__half2float(b)); }
+template<>
+__device__ half ncclOpMax(half a, half b) { return __half2float(a)>__half2float(b) ? a : b; }
+template<>
+__device__ half ncclOpMin(half a, half b) { return __half2float(a)<__half2float(b) ? a : b; }
 
 template<typename T, T (*Op)(T, T)>
 __global__ void InitDataReduceKernel(T* data, const size_t N, const size_t offset, const int rep, const int nranks) {
