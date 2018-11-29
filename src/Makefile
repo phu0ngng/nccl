@@ -29,10 +29,9 @@ LIBTARGET  := $(LIBNAME:%=%.$(NCCL_MAJOR).$(NCCL_MINOR).$(NCCL_PATCH))
 STATICLIBTARGET := $(STATICLIBNAME)
 LIBOBJ     := $(LIBSRCFILES:%.cu=$(OBJDIR)/%.o)
 DEPFILES   := $(LIBOBJ:%.o=%.d)
-LDFLAGS    += -L${CUDA_LIB} -lcudart_static -lpthread -lrt
+LDFLAGS    += -L${CUDA_LIB} -lcudart_static -lpthread -lrt -ldl
 
 DEVICELIB  := $(BUILDDIR)/obj/collectives/device/colldevice.a
-
 
 ##### rules
 build : lib staticlib
@@ -41,8 +40,11 @@ lib : $(INCTARGETS) $(LIBDIR)/$(LIBTARGET)
 
 staticlib : $(LIBDIR)/$(STATICLIBTARGET)
 
-devicelib: $(INCDIR)/nccl.h
+$(DEVICELIB): ALWAYS_REBUILD
 	$(MAKE) -C collectives/device
+
+# Empty target to force rebuild
+ALWAYS_REBUILD:
 
 -include $(DEPFILES)
 $(LIBDIR)/$(LIBTARGET) $(LIBDIR)/$(STATICLIBTARGET) : $(LIBOBJ)
@@ -59,14 +61,14 @@ $(INCDIR)/nccl.h : nccl.h.in
 	    -e "s/\$${nccl:Version}/$(NCCL_VERSION)/g" \
 	    $< > $@
 
-$(LIBDIR)/$(LIBTARGET): $(LIBOBJ) devicelib
+$(LIBDIR)/$(LIBTARGET): $(LIBOBJ) $(DEVICELIB)
 	@printf "Linking    %-35s > %s\n" $(LIBTARGET) $@
 	mkdir -p $(LIBDIR)
 	$(CXX) $(CXXFLAGS) -shared -Wl,--no-as-needed -Wl,-soname,$(LIBSONAME) -o $@ $(LIBOBJ) $(DEVICELIB) $(LDFLAGS)
 	ln -sf $(LIBSONAME) $(LIBDIR)/$(LIBNAME)
 	ln -sf $(LIBTARGET) $(LIBDIR)/$(LIBSONAME)
 
-$(LIBDIR)/$(STATICLIBTARGET): $(LIBOBJ) devicelib
+$(LIBDIR)/$(STATICLIBTARGET): $(LIBOBJ) $(DEVICELIB)
 	@printf "Archiving  %-35s > %s\n" $(STATICLIBTARGET) $@
 	mkdir -p $(LIBDIR)
 	$(eval TMP := $(shell mktemp -d))
