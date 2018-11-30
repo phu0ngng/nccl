@@ -341,12 +341,11 @@ ncclResult_t collNetRecvFree(void* transportResources) {
 #define SHARED_REQ_Q
 
 #ifdef SHARED_REQ_Q
-#define SHARED_Q_SIZE (1<<22)
 struct reqState {
   volatile void* intmBuff;
   volatile short sendReady;
 };
-static struct reqState reqFifo[SHARED_Q_SIZE];
+static struct reqState reqFifo[NCCL_STEPS];
 #endif
 
 ncclResult_t collNetSendProxy(struct ncclProxyArgs* args) {
@@ -384,7 +383,7 @@ ncclResult_t collNetSendProxy(struct ncclProxyArgs* args) {
       if (llMode) {
         int buffSlot = tail%NCCL_STEPS;
 #ifdef SHARED_REQ_Q
-        int readySlot = tail%SHARED_Q_SIZE;
+        int readySlot = tail%NCCL_STEPS;
 #endif
         int size = sizesFifo[buffSlot];
         if (size != -1) {
@@ -409,7 +408,7 @@ ncclResult_t collNetSendProxy(struct ncclProxyArgs* args) {
         // Send through network
         int buffSlot = tail%NCCL_STEPS;
 #ifdef SHARED_REQ_Q
-        int readySlot = tail%SHARED_Q_SIZE;
+        int readySlot = tail%NCCL_STEPS;
         // TODO: currently we just wait until the recv is done
         while(reqFifo[readySlot].sendReady != 0 || reqFifo[readySlot].intmBuff == NULL);
 #endif
@@ -429,7 +428,7 @@ ncclResult_t collNetSendProxy(struct ncclProxyArgs* args) {
       NCCLCHECK(collNetTest(requests[buffSlot], &done, NULL));
       if (done) {
 #ifdef SHARED_REQ_Q
-        int readySlot = head%SHARED_Q_SIZE;
+        int readySlot = head%NCCL_STEPS;
         reqFifo[readySlot].sendReady = 1;
 #endif
         head += args->sliceSteps;
@@ -486,7 +485,7 @@ ncclResult_t collNetRecvProxy(struct ncclProxyArgs* args) {
     // enqueue an intermediate buff address
     if (reqFifoTail < *reqFifoHead + NCCL_STEPS && reqFifoTail < end) {
       int buffSlot = reqFifoTail%NCCL_STEPS;
-      int readyTail = reqFifoTail%SHARED_Q_SIZE;
+      int readyTail = reqFifoTail%NCCL_STEPS;
       reqFifo[readyTail].intmBuff = localBuff+buffSlot*stepSize;
       reqFifoTail += args->sliceSteps;
     }
@@ -494,7 +493,7 @@ ncclResult_t collNetRecvProxy(struct ncclProxyArgs* args) {
     if ((tail < head + NCCL_STEPS) && (tail < (*nextHead) + NCCL_STEPS) && (tail < end)) {
       int buffSlot = tail%NCCL_STEPS;
 #ifdef SHARED_REQ_Q
-      int readyHead = *reqFifoHead%SHARED_Q_SIZE;
+      int readyHead = *reqFifoHead%NCCL_STEPS;
       // test if send request is complete
       while(reqFifo[readyHead].sendReady == 0);
       INFO(INIT,"Recv proxy : send request %lx ==> Ready", buffSlot);
