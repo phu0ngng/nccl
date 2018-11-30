@@ -470,6 +470,8 @@ ncclResult_t collNetRecvProxy(struct ncclProxyArgs* args) {
 
   uint64_t head = resources->step;
   uint64_t tail = resources->step;
+  uint64_t* reqFifoHead = &tail;
+  uint64_t reqFifoTail = resources->step;
   uint64_t end = head + args->nsteps;
 
   int idle = 0;
@@ -480,19 +482,31 @@ ncclResult_t collNetRecvProxy(struct ncclProxyArgs* args) {
 
   while (head < end) {
     idle++;
+#ifdef SHARED_REQ_Q
+    // enqueue an intermediate buff address
+    if (reqFifoTail < *reqFifoHead + NCCL_STEPS && reqFifoTail < end) {
+      int buffSlot = reqFifoTail%NCCL_STEPS;
+      int readyTail = reqFifoTail%SHARED_Q_SIZE;
+      reqFifo[readyTail].intmBuff = localBuff+buffSlot*stepSize;
+      reqFifoTail += args->sliceSteps;
+    }
+#endif
     if ((tail < head + NCCL_STEPS) && (tail < (*nextHead) + NCCL_STEPS) && (tail < end)) {
       int buffSlot = tail%NCCL_STEPS;
 #ifdef SHARED_REQ_Q
-      int readySlot = tail%SHARED_Q_SIZE;
-      // enqueue an intermediate buff address
-      reqFifo[readySlot].intmBuff = localBuff+buffSlot*stepSize;
+      int readyHead = *reqFifoHead%SHARED_Q_SIZE;
       // test if send request is complete
-      while(reqFifo[readySlot].sendReady == 0);
+      while(reqFifo[readyHead].sendReady == 0);
       INFO(INIT,"Recv proxy : send request %lx ==> Ready", buffSlot);
 #endif
       // broadcast or wait for all-reduce to complete
-      NCCLCHECK(collNetIrecv(resources->collNetRecvComm, localBuff+buffSlot*stepSize, sliceSize, ptrType, requests+buffSlot));
+      NCCLCHECK(collNetIrecv(resources->collNetRecvComm, /*localBuff+buffSlot*stepSize*/ (void*)(reqFifo[readyHead].intmBuff), sliceSize, ptrType, requests+buffSlot));
       INFO(INIT,"Recv proxy : opCount %lx head %lx tail %lx nextTail %p nextTail %lx end %lx nsteps %d llMode %d ==> Posted", args->opCount, head, tail, nextTail, *nextTail, end, args->nsteps, llMode);
+      // cleaning
+#ifdef SHARED_REQ_Q
+      reqFifo[readyHead].sendReady = 0;
+      reqFifo[readyHead].intmBuff = NULL;
+#endif
       tail += args->sliceSteps;
       idle = 0;
     }
@@ -502,11 +516,6 @@ ncclResult_t collNetRecvProxy(struct ncclProxyArgs* args) {
       int size;
       NCCLCHECK(collNetTest(requests[buffSlot], &done, &size));
       if (done) {
-#ifdef SHARED_REQ_Q
-        int readySlot = head%SHARED_Q_SIZE;
-        reqFifo[readySlot].sendReady = 0;  //cleaning
-        reqFifo[readySlot].intmBuff = NULL;  //cleaning
-#endif
         INFO(INIT,"Recv proxy : opCount %lx head %lx tail %lx nextTail %p nextTail %lx end %lx nsteps %d llMode %d ==> Done", args->opCount, head, tail, nextTail, *nextTail, end, args->nsteps, llMode);
         head += args->sliceSteps;
         if (llMode == 0) {
