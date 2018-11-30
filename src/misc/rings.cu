@@ -332,7 +332,7 @@ ncclResult_t ncclGetRings(int* nrings, int* nthreads, int rank, int nranks, int*
   }
 
   // Double nrings to use double trees
-  if (ncclTreeThreshold() > 0) {
+  if (ncclTreeThreshold() > 0 && *nrings <= MAXCHANNELS/2) {
     for (int r=*nrings; r<MAXCHANNELS && r <(*nrings)*2; r++) {
       for (int i=0; i<nranks; i++) {
         prev[r*nranks+i] = next[(r-*nrings)*nranks+i];
