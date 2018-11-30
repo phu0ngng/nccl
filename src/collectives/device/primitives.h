@@ -34,8 +34,8 @@ class ncclPrimitives {
  private:
   const int tid;
   const int nthreads;
-  const int nrecv;
-  const int nsend;
+  int nrecv = 0;
+  int nsend = 0;
   const int stepSize;
   struct ncclConnInfo* recvConn[NRECV];
   struct ncclConnInfo* sendConn[NSEND];
@@ -209,6 +209,7 @@ class ncclPrimitives {
       recvDirectBuff[i] = directBuff;
       if (tid == 0) *recvConn[i]->ptrExchange = directBuff;
     }
+    nrecv++;
   }
 
   __device__ __forceinline__ void loadSendConn(struct ncclConnInfo* conn, int i, T* directBuff) {
@@ -226,6 +227,7 @@ class ncclPrimitives {
       void* volatile* ptr = sendConn[i]->ptrExchange;
       while ((sendDirectBuff[i] = (T*)(*ptr)) == NULL);
     }
+    nsend++;
   }
 
   __device__ __forceinline__ void saveRecvConn(int i) {
@@ -246,13 +248,13 @@ class ncclPrimitives {
 
  public:
   __device__ __forceinline__
-  ncclPrimitives(const int tid, const int nthreads, const int nrecv, int* recvPeers, const int nsend, int* sendPeers, T* directBuff, int stepSize, struct ncclChannel* channel, struct ncclComm* comm, const uint64_t opCount)
-    : comm(comm), tid(tid), nthreads(nthreads), nsend(nsend), nrecv(nrecv), stepSize(stepSize), opCount(opCount) {
+  ncclPrimitives(const int tid, const int nthreads, int* recvPeers, int* sendPeers, T* directBuff, int stepSize, struct ncclChannel* channel, struct ncclComm* comm, const uint64_t opCount)
+    : comm(comm), tid(tid), nthreads(nthreads), stepSize(stepSize), opCount(opCount) {
     // Make sure step is updated before we read it
     __syncthreads();
 
-    for (int i=0; i<NRECV && i<nrecv; i++) loadRecvConn(&channel->devPeers[recvPeers[i]].recv.conn, i, directBuff);
-    for (int i=0; i<NSEND && i<nsend; i++) loadSendConn(&channel->devPeers[sendPeers[i]].send.conn, i, directBuff);
+    for (int i=0; i<NRECV && recvPeers[i] >= 0; i++) loadRecvConn(&channel->devPeers[recvPeers[i]].recv.conn, i, directBuff);
+    for (int i=0; i<NSEND && sendPeers[i] >= 0; i++) loadSendConn(&channel->devPeers[sendPeers[i]].send.conn, i, directBuff);
   }
 
   __device__ __forceinline__ void
@@ -324,8 +326,8 @@ class ncclLLPrimitives {
  private:
   const int tid;
   const int nthreads;
-  const int nrecv;
-  const int nsend;
+  int nrecv = 0;
+  int nsend = 0;
   struct ncclConnInfo* recvConn[NRECV];
   struct ncclConnInfo* sendConn[NSEND];
   volatile uint64_t* waitPtr;
@@ -483,6 +485,7 @@ class ncclLLPrimitives {
       postPtr = recvConn[i]->head;
       *(recvConn[i]->opCountLoc) = opCount;
     }
+    nrecv++;
   }
 
   __device__ __forceinline__ void loadSendConn(struct ncclConnInfo* conn, int i) {
@@ -495,6 +498,7 @@ class ncclLLPrimitives {
       sendConnHead = *waitPtr;
       *(sendConn[i]->opCountLoc) = opCount;
     }
+    nsend++;
   }
 
   __device__ __forceinline__ void saveRecvConn(int i) {
@@ -539,13 +543,13 @@ class ncclLLPrimitives {
 
  public:
   __device__ __forceinline__
-  ncclLLPrimitives(const int tid, const int nthreads, const int nrecv, int* recvPeers, const int nsend, int* sendPeers, struct ncclChannel* channel, struct ncclComm* comm, const uint64_t opCount)
-    : comm(comm), tid(tid), nthreads(nthreads), nrecv(nrecv), nsend(nsend), opCount(opCount) {
+  ncclLLPrimitives(const int tid, const int nthreads, int* recvPeers, int* sendPeers, struct ncclChannel* channel, struct ncclComm* comm, const uint64_t opCount)
+    : comm(comm), tid(tid), nthreads(nthreads), opCount(opCount) {
     // Make sure step is updated before we read it.
     barrier();
 
-    for (int i=0; i<NRECV && i<nrecv; i++) loadRecvConn(&channel->devPeers[recvPeers[i]].recv.conn, i);
-    for (int i=0; i<NSEND && i<nsend; i++) loadSendConn(&channel->devPeers[sendPeers[i]].send.conn, i);
+    for (int i=0; i<NRECV && recvPeers[i] >= 0; i++) loadRecvConn(&channel->devPeers[recvPeers[i]].recv.conn, i);
+    for (int i=0; i<NSEND && sendPeers[i] >= 0; i++) loadSendConn(&channel->devPeers[sendPeers[i]].send.conn, i);
   }
 
   __device__ void send(const T* src, int nelem) {

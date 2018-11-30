@@ -354,12 +354,15 @@ static ncclResult_t setupChannel(struct ncclComm* comm, int channelId, int rank,
   int prev = ring->prev = ring->userRanks[nranks-1];
   int next = ring->next = ring->userRanks[1];
 
+  struct ncclTree* tree = &channel->tree;
+  tree->up = -1;
+  tree->down[0] = tree->down[1] = tree->down[2] = -1;
+
   if (ncclTreeThreshold() > 0) {
-    // Build trees
-    struct ncclTree* tree = &channel->tree;
-    tree->nUp = tree->nDown = 1;
-    tree->up = prev;
-    tree->down[0] = next;
+
+    //
+    // Find per-node masters and connect them via a binary tree
+    //
 
     int nMasters = 0;
     for (int r=0; r<nranks; r++) nMasters += treeMasters[r];
@@ -381,10 +384,6 @@ static ncclResult_t setupChannel(struct ncclComm* comm, int channelId, int rank,
       }
     }
 
-    if (treeMasters[next]) {
-      tree->nDown = 0;
-    }
-
     int ranks[nMasters];
     int i = 0, masterIndex = -1;
     // Build binary tree
@@ -393,31 +392,33 @@ static ncclResult_t setupChannel(struct ncclComm* comm, int channelId, int rank,
       if (r == master) masterIndex = i;
       if (treeMasters[r]) ranks[i++] = r;
     }
-    int up, down0, down1;
+    int btreeUp, btreeDown0, btreeDown1;
     int u0, d0_0, d0_1, u1, d1_0, d1_1;
     NCCLCHECK(ncclGetDtree(nMasters, masterIndex, &u0, &d0_0, &d0_1, &u1, &d1_0, &d1_1));
     if (channelId < DIVUP(comm->nChannels, 2)) {
-      up = u0; down0 = d0_0; down1 = d0_1;
+      btreeUp = u0; btreeDown0 = d0_0; btreeDown1 = d0_1;
     } else {
-      up = u1; down0 = d1_0; down1 = d1_1;
+      btreeUp = u1; btreeDown0 = d1_0; btreeDown1 = d1_1;
     }
 
+    //
+    // Now build the full tree, combining the intra-node ring and the
+    // inter-node binary tree.
+    //
+
     if (rank == master) {
-      tree->nUp = 0;
-      if (up != -1) {
-        tree->up = ranks[up];
-        tree->nUp++;
-      }
-      if (down0 != -1) tree->down[tree->nDown++] = ranks[down0];
-      if (down1 != -1) tree->down[tree->nDown++] = ranks[down1];
+      int nDown = 0;
+      if (btreeUp != -1) tree->up = ranks[btreeUp];
+      if (treeMasters[next] == 0) tree->down[nDown++] = next;
+      if (btreeDown0 != -1) tree->down[nDown++] = ranks[btreeDown0];
+      if (btreeDown1 != -1) tree->down[nDown++] = ranks[btreeDown1];
+    } else {
+      tree->up = prev;
+      if (treeMasters[next] == 0) tree->down[0] = next;
     }
 
     INFO(NCCL_INIT, "Channel %02d : %d -> %d, %d, %d", channelId,
-        tree->nUp ? tree->up : -1,
-        tree->nDown > 0 ? tree->down[0] : -1,
-        tree->nDown > 1 ? tree->down[1] : -1,
-        tree->nDown > 2 ? tree->down[2] : -1);
-    //printf("[%d/%d] nUp %d (%d) nDown %d (%d %d %d)\n", channelId, rank, tree->nUp, tree->up, tree->nDown, tree->down[0], tree->down[1], tree->down[2]);
+        tree->up, tree->down[0], tree->down[1], tree->down[2]);
   }
 
   TRACE(NCCL_INIT, "rank %d nranks %d - DONE", rank, nranks);
@@ -596,13 +597,9 @@ static ncclResult_t p2pSetup(struct ncclComm* comm, struct ncclChannel* channel,
   uint32_t nSkippedSend = 0, nSkippedRecv = 0; /* for tracing */
   struct ncclConnect connect;
   struct ncclConnector* conn;
-  /*printf("[%d] p2pSetup recv from", comm->rank);
-  for (int i=0; i<nrecv; i++) printf(" %d[%d]", peerRecv[i], channel->peers[peerRecv[i]].recv.connected);
-  printf(" ; send to");
-  for (int i=0; i<nsend; i++) printf(" %d[%d]", peerSend[i], channel->peers[peerSend[i]].send.connected);
-  printf("\n");*/
   for (int i=0; i<nrecv; i++) {
     int peer = peerRecv[i];
+    if (peer == -1) continue;
     conn = &channel->peers[peer].recv;
     if (conn->connected) { ++nSkippedRecv; continue; }
     NCCLCHECK(selectTransport<0>(comm->peerInfo+comm->rank, comm->peerInfo+peer, &connect, conn, channel->buffSize, channel->id));
@@ -610,6 +607,7 @@ static ncclResult_t p2pSetup(struct ncclComm* comm, struct ncclChannel* channel,
   }
   for (int i=0; i<nsend; i++) {
     int peer = peerSend[i];
+    if (peer == -1) continue;
     conn = &channel->peers[peer].send;
     if (conn->connected) { ++nSkippedSend; continue; }
     NCCLCHECK(selectTransport<1>(comm->peerInfo+comm->rank, comm->peerInfo+peer, &connect, conn, channel->buffSize, channel->id));
@@ -617,6 +615,7 @@ static ncclResult_t p2pSetup(struct ncclComm* comm, struct ncclChannel* channel,
   }
   for (int i=0; i<nsend; i++) {
     int peer = peerSend[i];
+    if (peer == -1) continue;
     conn = &channel->peers[peer].send;
     if (conn->connected) {++nSkippedSend; continue; }
     NCCLCHECK(bootstrapRecv(comm->bootstrap, peer, &connect, sizeof(struct ncclConnect)));
@@ -625,6 +624,7 @@ static ncclResult_t p2pSetup(struct ncclComm* comm, struct ncclChannel* channel,
   }
   for (int i=0; i<nrecv; i++) {
     int peer = peerRecv[i];
+    if (peer == -1) continue;
     conn = &channel->peers[peer].recv;
     if (conn->connected) {++nSkippedRecv; continue; }
     NCCLCHECK(bootstrapRecv(comm->bootstrap, peer, &connect, sizeof(struct ncclConnect)));
@@ -713,8 +713,8 @@ static ncclResult_t initTransportsRank(struct ncclComm* comm, ncclUniqueId* comm
     struct ncclChannel* channel = comm->channels+r;
     NCCLCHECK(setupChannel(comm, r, rank, nranks, rings+r*nranks, treeIn+r*nranks));
     NCCLCHECK(p2pSetup(comm, channel, 1, &channel->ring.prev, 1, &channel->ring.next));
-    NCCLCHECK(p2pSetup(comm, channel, channel->tree.nDown, channel->tree.down, channel->tree.nUp, &channel->tree.up));
-    NCCLCHECK(p2pSetup(comm, channel, channel->tree.nUp, &channel->tree.up, channel->tree.nDown, channel->tree.down));
+    NCCLCHECK(p2pSetup(comm, channel, NCCL_MAX_TREE_ARITY, channel->tree.down, 1, &channel->tree.up));
+    NCCLCHECK(p2pSetup(comm, channel, 1, &channel->tree.up, NCCL_MAX_TREE_ARITY, channel->tree.down));
   }
   TRACE(NCCL_INIT, "rank %d nranks %d - CONNECTED %d RINGS AND TREES", rank, nranks, nrings);
   free(connect);
