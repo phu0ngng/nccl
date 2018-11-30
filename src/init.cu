@@ -663,6 +663,8 @@ static ncclResult_t initTransportsRank(struct ncclComm* comm, ncclUniqueId* comm
   NCCLCHECK(ncclCalloc(&treeOut, nranks*MAXCHANNELS));
   comm->nThreads = getDefaultThreads();
   NCCLCHECK(ncclGetRings(&nrings, &comm->nThreads, rank, nranks, connectTransport, connectValue, prev, next, treeIn, treeOut));
+  TRACE(NCCL_INIT, "rank %d nranks %d - BUILD %d RINGS", rank, nranks, nrings);
+  assert(nrings <= MAXCHANNELS);
   free(connectTransport);
   free(connectValue);
 
@@ -700,7 +702,7 @@ static ncclResult_t initTransportsRank(struct ncclComm* comm, ncclUniqueId* comm
   NCCLCHECK(buildRings(nrings, rings, rank, nranks, prev, next));
   free(prev);
   free(next);
-  TRACE(NCCL_INIT, "rank %d nranks %d - BUILT RINGS", rank, nranks);
+  TRACE(NCCL_INIT, "rank %d nranks %d - BUILT %d RINGS", rank, nranks, nrings);
 
   // Connect with prev/next for each ring
   struct ncclConnect *connect;
@@ -712,7 +714,7 @@ static ncclResult_t initTransportsRank(struct ncclComm* comm, ncclUniqueId* comm
     NCCLCHECK(p2pSetup(comm, channel, channel->tree.nDown, channel->tree.down, channel->tree.nUp, &channel->tree.up));
     NCCLCHECK(p2pSetup(comm, channel, channel->tree.nUp, &channel->tree.up, channel->tree.nDown, channel->tree.down));
   }
-  TRACE(NCCL_INIT, "rank %d nranks %d - CONNECTED RINGS AND TREES", rank, nranks);
+  TRACE(NCCL_INIT, "rank %d nranks %d - CONNECTED %d RINGS AND TREES", rank, nranks, nrings);
   free(connect);
   free(rings);
   free(treeIn);
