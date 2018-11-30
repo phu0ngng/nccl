@@ -18,6 +18,8 @@
 #include "net.h"
 #include "checks.h"
 #include "enqueue.h"
+#include "topo.h"
+#include "cpuset.h"
 #include <stdio.h>
 #include <stdlib.h>
 #include <sys/mman.h>
@@ -758,15 +760,44 @@ static ncclResult_t initTransportsRank(struct ncclComm* comm, ncclUniqueId* comm
   return ncclSuccess;
 }
 
-bool SetCpuAffinity(int cudaDev, nvmlDevice_t* nvmlDevice) {
-  char busId[NVML_DEVICE_PCI_BUS_ID_BUFFER_SIZE];
-  if (cudaDeviceGetPCIBusId(busId, NVML_DEVICE_PCI_BUS_ID_BUFFER_SIZE, cudaDev) != cudaSuccess) return false;
-  if (wrapNvmlDeviceGetHandleByPciBusId(busId, nvmlDevice) != ncclSuccess) return false;
-  if (wrapNvmlDeviceSetCpuAffinity(*nvmlDevice) != ncclSuccess) {
-    WARN("Failed to set CPU affinity");
-    return false;
+static ncclResult_t getCpuGpuAffinity(int cudaDev, cpu_set_t* mask) {
+  CPU_ZERO_S(sizeof(cpu_set_t), mask);
+  char* cudaPath;
+  NCCLCHECK(getCudaPath(cudaDev, &cudaPath));
+  char path[PATH_MAX];
+  strncpy(path, cudaPath, PATH_MAX-1);
+  snprintf(path+strlen(path), PATH_MAX-1-strlen(path), "/local_cpus");
+  path[PATH_MAX-1] = '\0';
+  int fd;
+  SYSCHECKVAL(open(path, O_RDONLY), "open", fd);
+  char affinityStr[sizeof(cpu_set_t)*2];
+  int r = read(fd, affinityStr, sizeof(cpu_set_t)*2);
+  if (r > 0)
+    NCCLCHECK(ncclStrToCpuset(affinityStr, mask));
+  close(fd);
+  free(cudaPath);
+  return ncclSuccess;
+}
+
+static ncclResult_t setCpuAffinity(int cudaDev) {
+  // Work within the enveloppe we were provided
+  cpu_set_t mask;
+  SYSCHECK(sched_getaffinity(0, sizeof(cpu_set_t), &mask), "sched_getaffinity");
+
+  // Find the subpart that is local to our GPU
+  cpu_set_t gpuMask;
+  NCCLCHECK(getCpuGpuAffinity(cudaDev, &gpuMask));
+  cpu_set_t finalMask;
+  CPU_AND(&finalMask, &mask, &gpuMask);
+
+  // If those are not disjoint, try to stay local
+  if (CPU_COUNT(&finalMask)) {
+    char affinityStr[sizeof(cpu_set_t)*2];
+    NCCLCHECK(ncclCpusetToStr(&finalMask, affinityStr));
+    INFO(NCCL_INIT, "Setting affinity for GPU %d to %s", cudaDev, affinityStr);
+    SYSCHECK(sched_setaffinity(0, sizeof(cpu_set_t), &finalMask), "sched_setaffinity");
   }
-  return true;
+  return ncclSuccess;
 }
 
 ncclResult_t ncclCommInitRankSync(ncclComm_t* newcomm, int nranks, ncclUniqueId commId, int myrank) {
@@ -778,9 +809,8 @@ ncclResult_t ncclCommInitRankSync(ncclComm_t* newcomm, int nranks, ncclUniqueId 
 
   // Make sure all host memory allocation are close to the GPU
   int cudaDev;
-  nvmlDevice_t nvmlDevice;
   CUDACHECK(cudaGetDevice(&cudaDev));
-  SetCpuAffinity(cudaDev, &nvmlDevice);
+  NCCLCHECK(setCpuAffinity(cudaDev));
   ncclResult_t res;
 
   NCCLCHECKGOTO(commAlloc(newcomm, nranks, myrank), res, cleanup);
@@ -945,7 +975,6 @@ ncclResult_t ncclCommInitAll(ncclComm_t* comms, int ndev, const int* devlist) {
   int savedDevice;
   int rank, cudaDev;
   ncclComm_t comm = NULL;
-  nvmlDevice_t nvmlDevice;
   int ncclDevList[ndev];
   for (int i=0; i<ndev; i++) {
     ncclDevList[i] = devlist ? devlist[i] : i;
@@ -963,7 +992,7 @@ ncclResult_t ncclCommInitAll(ncclComm_t* comms, int ndev, const int* devlist) {
     cudaDev = ncclDevList[rank];
     CUDACHECKGOTO(cudaSetDevice(cudaDev), res, cleanup);
 
-    SetCpuAffinity(cudaDev, &nvmlDevice);
+    NCCLCHECK(setCpuAffinity(cudaDev));
 
     NCCLCHECKGOTO(commAlloc(&comm, ndev, rank), res, cleanup);
     comms[rank] = comm;

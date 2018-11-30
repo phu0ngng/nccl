@@ -32,14 +32,6 @@ static ncclResult_t wrapNvmlDeviceGetIndex(nvmlDevice_t device, unsigned* index)
   NVMLCHECK(nvmlDeviceGetIndex(device, index));
   return ncclSuccess;
 }
-static ncclResult_t wrapNvmlDeviceSetCpuAffinity(nvmlDevice_t device) {
-  NVMLCHECK(nvmlDeviceSetCpuAffinity(device));
-  return ncclSuccess;
-}
-static ncclResult_t wrapNvmlDeviceClearCpuAffinity(nvmlDevice_t device) {
-  NVMLCHECK(nvmlDeviceClearCpuAffinity(device));
-  return ncclSuccess;
-}
 static ncclResult_t wrapNvmlDeviceGetHandleByIndex(unsigned int index, nvmlDevice_t *device) {
   NVMLCHECK(nvmlDeviceGetHandleByIndex(index,device));
   return ncclSuccess;
@@ -140,8 +132,6 @@ ncclResult_t wrapNvmlInit(void);
 ncclResult_t wrapNvmlShutdown(void);
 ncclResult_t wrapNvmlDeviceGetHandleByPciBusId(const char* pciBusId, nvmlDevice_t* device);
 ncclResult_t wrapNvmlDeviceGetIndex(nvmlDevice_t device, unsigned* index);
-ncclResult_t wrapNvmlDeviceSetCpuAffinity(nvmlDevice_t device);
-ncclResult_t wrapNvmlDeviceClearCpuAffinity(nvmlDevice_t device);
 ncclResult_t wrapNvmlDeviceGetHandleByIndex(unsigned int index, nvmlDevice_t *device);
 ncclResult_t wrapNvmlDeviceGetPciInfo(nvmlDevice_t device, nvmlPciInfo_t* pci);
 ncclResult_t wrapNvmlDeviceGetNvLinkState(nvmlDevice_t device, unsigned int link, nvmlEnableState_t *isActive);
