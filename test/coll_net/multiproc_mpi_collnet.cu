@@ -13,7 +13,7 @@
 #include "test_utilities.h"
 
 #define MAXSIZE (1<<26)
-#define NITERS 100
+#define NITERS 1
 
 ncclResult_t ncclOp(int collective, int rank, int nranks, int *buff, int size, ncclComm_t comm, cudaStream_t stream) {
   switch (collective) {
@@ -99,8 +99,8 @@ int benchCollective(int collective, int rank, int nranks, int* ddata, int* hdata
   CUDACHECK(cudaMemcpy(ddata+MAXSIZE, hdata, MAXSIZE*sizeof(int), cudaMemcpyHostToDevice));
 
   // Warm-up
-  NCCLCHECK(ncclOp(collective, rank, nranks, ddata, MAXSIZE, comm, stream));
-  CUDACHECK(cudaStreamSynchronize(stream));
+  //NCCLCHECK(ncclOp(collective, rank, nranks, ddata, MAXSIZE, comm, stream));
+  //CUDACHECK(cudaStreamSynchronize(stream));
 
   int failed = 0;
   if (rank == 0) {

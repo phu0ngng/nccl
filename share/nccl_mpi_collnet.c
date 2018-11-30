@@ -61,7 +61,7 @@ int ncclCollNetMpiPtrSupport(int dev, int* supportedTypes);
 int ncclCollNetMpiListen(int dev, void* handle, void** listenComm);
 int ncclCollNetMpiConnect(int dev, void* handle, void** sendComm);
 int ncclCollNetMpiAccept(void *listenComm, void** recvComm);
-int ncclCollNetMpiIsend(void* sendComm, void* data, int size, int type, void** request);
+int ncclCollNetMpiIsend(void* sendComm, void* data, void* dst, int size, int type, void** request);
 int ncclCollNetMpiIrecv(void* recvComm, void* data, int size, int type, void** request);
 int ncclCollNetMpiFlush(void* recvComm, void* data, int size);
 int ncclCollNetMpiTest(void* request, int* done, int* size);
@@ -317,7 +317,7 @@ int ncclCollNetMpiAccept(void *listenComm, void** recvComm) {
 static unsigned long sendCount = 0;
 static unsigned long recvCount = 0;
 
-int ncclCollNetMpiIsend(void* sendComm, void* data, int size, int type, void** request) {
+int ncclCollNetMpiIsend(void* sendComm, void* data, void* dst, int size, int type, void** request) {
   //printf("ncclCollNetMpiIsend\n");
   int ret;
   //CHECK_PTR(type);
@@ -325,11 +325,15 @@ int ncclCollNetMpiIsend(void* sendComm, void* data, int size, int type, void** r
   MPI_Request* mpiRequest = ncclCollNetMpiGetRequest();
   *request = mpiRequest;
   //printf("Send : %p %d %d %d %p\n", data, size, comm->rank, comm->tag, mpiRequest);
+#ifdef INTM_BUFF
   MPI_PROTECT(ret, MPI_Ireduce(data, comm->intmBuff+offsetFifo[sendCount%OFFSET_FIFO_SIZE], size, MPI_BYTE, MPI_SUM/*TODO*/, comm->root, ncclCollNetMpiComm, mpiRequest));
   {
     sendCount++;
     offsetFifo[sendCount%OFFSET_FIFO_SIZE] = (offsetFifo[(sendCount-1)%OFFSET_FIFO_SIZE] + size) % INTM_BUFF_SIZE;
   } // TODO: not thread safe
+#else
+  MPI_PROTECT(ret, MPI_Ireduce(data, dst, size, MPI_BYTE, MPI_SUM/*TODO*/, comm->root, ncclCollNetMpiComm, mpiRequest));
+#endif
   return ret;
 }
 
@@ -340,9 +344,11 @@ int ncclCollNetMpiIrecv(void* recvComm, void* data, int size, int type, void** r
   int ret;
   //CHECK_PTR(type);
   struct ncclCollNetMpiRecvComm* comm = (struct ncclCollNetMpiRecvComm*)recvComm;
+#ifdef INTM_BUFF
   if (comm->rank == comm->root) {
     memcpy(data, comm->intmBuff+offsetFifo[recvCount%OFFSET_FIFO_SIZE], size);
   }
+#endif
 #ifdef BLOCK
   MPI_PROTECT(ret, MPI_Bcast(data, size, MPI_BYTE, comm->root, ncclCollNetMpiComm));
   *request = 0xdeadbeef;
