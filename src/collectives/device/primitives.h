@@ -449,7 +449,7 @@ class ncclLLPrimitives {
     uint64_t* dstPack = (uint64_t*)dstPtr;
     // Do multiples of 64 bits
     #pragma unroll 2
-    for (int line=0, offset=tid; line<NUM_LINES_PER_THREAD && offset<npack; line++, offset+=nthreads) {
+    for (int offset=tid; offset<npack; offset+=nthreads) {
       uint64_t val = SRC ? readAL(srcPack+offset) : readLL(0, offset);
       if (RECV) {
         if (SRC) val = MULTI<FUNC, T>()(readLL(0, offset), val);
