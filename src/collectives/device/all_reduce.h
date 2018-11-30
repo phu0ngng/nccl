@@ -102,40 +102,32 @@ __device__ void ncclAllReduceTreeKernel(struct CollectiveArgs* args) {
   T * __restrict__ thisOutput = (T*)args->ThisOutput;
 
   PRINT("nUp %d up %d nDown %d down %d\n", tree->nUp, tree->up, tree->nDown, tree->down);
+  ncclPrimitives<UNROLL, 1, 1, T, NCCL_MAX_TREE_ARITY, 1, FUNC> primsUp(tid, nthreads, tree->nDown, tree->down, tree->nUp, &tree->up, NULL, stepSize, channel, comm->abortFlag);
+  ncclPrimitives<UNROLL, 1, 1, T, 1, NCCL_MAX_TREE_ARITY, FUNC> primsDown(tid, nthreads, tree->nUp, &tree->up, tree->nDown, tree->down, NULL, stepSize, channel, comm->abortFlag);
 
-  do {
+  for (ssize_t gridOffset = 0; gridOffset < size; gridOffset += loopSize) {
     // Reduce : max number of recv is 3, max number of send is 1 (binary tree + local)
-    ncclPrimitives<UNROLL, 1, 1, T, NCCL_MAX_TREE_ARITY, 1, FUNC> prims(tid, nthreads, tree->nDown, tree->down, tree->nUp, &tree->up, NULL, stepSize, channel, comm->abortFlag);
-    for (ssize_t gridOffset = 0; gridOffset < size; gridOffset += loopSize) {
-      // Up
-      ssize_t offset = gridOffset + bid*chunkSize;
-      int nelem = min(chunkSize, size-offset);
-      if (tree->nUp == 0) {
-        prims.recvReduceCopy(thisInput+offset, thisOutput+offset, nelem);
-      } else if (tree->nDown) {
-        prims.recvReduceSend(thisInput+offset, nelem);
-      } else {
-        prims.send(thisInput+offset, nelem);
-      }
+    // Up
+    ssize_t offset = gridOffset + bid*chunkSize;
+    int nelem = min(chunkSize, size-offset);
+    if (tree->nUp == 0) {
+      primsUp.recvReduceCopy(thisInput+offset, thisOutput+offset, nelem);
+    } else if (tree->nDown) {
+      primsUp.recvReduceSend(thisInput+offset, nelem);
+    } else {
+      primsUp.send(thisInput+offset, nelem);
     }
-  } while(0);
 
-  do {
     // Broadcast : max number of recv is 1, max number of send is 3 (binary tree + local)
-    ncclPrimitives<UNROLL, 1, 1, T, 1, NCCL_MAX_TREE_ARITY, FUNC> prims(tid, nthreads, tree->nUp, &tree->up, tree->nDown, tree->down, NULL, stepSize, channel, comm->abortFlag);
-    for (ssize_t gridOffset = 0; gridOffset < size; gridOffset += loopSize) {
-      // Down
-      ssize_t offset = gridOffset + bid*chunkSize;
-      int nelem = min(chunkSize, size-offset);
-      if (tree->nUp == 0) {
-        prims.send(thisOutput+offset, nelem);
-      } else if (tree->nDown) {
-        prims.recvCopySend(thisOutput+offset, nelem);
-      } else {
-        prims.recv(thisOutput+offset, nelem);
-      }
+    // Down
+    if (tree->nUp == 0) {
+      primsDown.send(thisOutput+offset, nelem);
+    } else if (tree->nDown) {
+      primsDown.recvCopySend(thisOutput+offset, nelem);
+    } else {
+      primsDown.recv(thisOutput+offset, nelem);
     }
-  } while(0);
+  }
 }
 
 template<int UNUSED, class FUNC, typename T>
