@@ -251,8 +251,9 @@ int ncclCollNetMpiListen(int dev, void* opaqueHandle, void** listenComm) {
 
 // rank of root
 static int root = 0;
-static char* intmBuff;
-static int intmBuffSize = 1024*1024*1024;
+
+#define INTM_BUFF_SIZE (1024*1024*1024)
+static char intmBuff[INTM_BUFF_SIZE];
 
 int ncclCollNetMpiConnect(int dev, void* opaqueHandle, void** sendComm) {
   struct ncclCollNetMpiSendComm* comm = (struct ncclCollNetMpiSendComm*)malloc(sizeof(struct ncclCollNetMpiSendComm));
@@ -267,8 +268,6 @@ int ncclCollNetMpiConnect(int dev, void* opaqueHandle, void** sendComm) {
   while (done == 0) MPI_PROTECT(err, MPI_Test(&request, &done, MPI_STATUSES_IGNORE));
   comm->root = root = handle->root;
   comm->nranks = handle->nranks;
-  // allocate intermediate buffer
-  intmBuff = (char*)malloc(intmBuffSize);
   // init offset fifo
   offsetFifo[0] = 0;
   for (int i = 1; i < OFFSET_FIFO_SIZE; i++) {
@@ -329,7 +328,7 @@ int ncclCollNetMpiIsend(void* sendComm, void* data, int size, int type, void** r
   MPI_PROTECT(ret, MPI_Ireduce(data, comm->intmBuff+offsetFifo[sendCount%OFFSET_FIFO_SIZE], size, MPI_BYTE, MPI_SUM/*TODO*/, comm->root, ncclCollNetMpiComm, mpiRequest));
   {
     sendCount++;
-    offsetFifo[sendCount%OFFSET_FIFO_SIZE] = offsetFifo[(sendCount-1)%OFFSET_FIFO_SIZE] + size;
+    offsetFifo[sendCount%OFFSET_FIFO_SIZE] = (offsetFifo[(sendCount-1)%OFFSET_FIFO_SIZE] + size) % INTM_BUFF_SIZE;
   } // TODO: not thread safe
   return ret;
 }
