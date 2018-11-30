@@ -341,7 +341,8 @@ ncclResult_t collNetRecvFree(void* transportResources) {
 #define SHARED_REQ_Q
 
 #ifdef SHARED_REQ_Q
-static volatile int sendReady[NCCL_STEPS];
+#define READY_Q_SIZE (1<<22)
+static volatile short sendReady[READY_Q_SIZE];
 #endif
 
 ncclResult_t collNetSendProxy(struct ncclProxyArgs* args) {
@@ -401,8 +402,9 @@ ncclResult_t collNetSendProxy(struct ncclProxyArgs* args) {
         // Send through network
         int buffSlot = tail%NCCL_STEPS;
 #ifdef SHARED_REQ_Q
+        int readySlot = tail%READY_Q_SIZE;
         // TODO: currently we just wait until the recv is done
-        while(sendReady[buffSlot] != 0);
+        while(sendReady[readySlot] != 0);
 #endif
         // Some reduce / all-reduce call here
         NCCLCHECK(collNetIsend(resources->collNetSendComm, localMem->buff+buffSlot*stepSize, sizesFifo[buffSlot], ptrType, requests+buffSlot));
@@ -420,7 +422,8 @@ ncclResult_t collNetSendProxy(struct ncclProxyArgs* args) {
       NCCLCHECK(collNetTest(requests[buffSlot], &done, NULL));
       if (done) {
 #ifdef SHARED_REQ_Q
-        sendReady[buffSlot] = 1;
+        int readySlot = head%READY_Q_SIZE;
+        sendReady[readySlot] = 1;
 #endif
         head += args->sliceSteps;
         *prevHead = head;
@@ -474,7 +477,8 @@ ncclResult_t collNetRecvProxy(struct ncclProxyArgs* args) {
       int buffSlot = tail%NCCL_STEPS;
       // test if send request is complete
 #ifdef SHARED_REQ_Q
-      while(sendReady[buffSlot] == 0);
+      int readySlot = tail%READY_Q_SIZE;
+      while(sendReady[readySlot] == 0);
       INFO(INIT,"Recv proxy : send request %lx ==> Ready", buffSlot);
 #endif
       // broadcast or wait for all-reduce to complete
@@ -490,7 +494,8 @@ ncclResult_t collNetRecvProxy(struct ncclProxyArgs* args) {
       NCCLCHECK(collNetTest(requests[buffSlot], &done, &size));
       if (done) {
 #ifdef SHARED_REQ_Q
-        sendReady[buffSlot] = 0;  //cleaning
+        int readySlot = head%READY_Q_SIZE;
+        sendReady[readySlot] = 0;  //cleaning
 #endif
         INFO(INIT,"Recv proxy : opCount %lx head %lx tail %lx nextTail %p nextTail %lx end %lx nsteps %d llMode %d ==> Done", args->opCount, head, tail, nextTail, *nextTail, end, args->nsteps, llMode);
         head += args->sliceSteps;
