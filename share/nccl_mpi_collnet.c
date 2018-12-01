@@ -307,9 +307,6 @@ int ncclCollNetMpiAccept(void *listenComm, void** recvComm) {
   }                                   \
 } while(0)
 
-static unsigned long sendCount = 0;
-static unsigned long recvCount = 0;
-
 #define ALL_REDUCE
 
 int ncclCollNetMpiIsend(void* sendComm, void* data, void* dst, int size, int type, void** request) {
@@ -345,7 +342,6 @@ int ncclCollNetMpiIrecv(void* recvComm, void* data, int size, int type, void** r
   *request = mpiRequest;
   MPI_PROTECT(ret, MPI_Ibcast(data, size, MPI_BYTE, comm->root, ncclCollNetMpiComm, mpiRequest));
 #endif
-  recvCount++; //TODO: not thread safe
   printf("MPI bcast : %p %d %p %p\n", data, size, comm, *request);
   return ret;
 }
