@@ -24,6 +24,20 @@ struct collNetConnectInfo {
   collNetHandle_t collNetHandle;
 };
 
+// TODO: find correct way to share things between two proxies
+#define SHARED_REQ_Q
+
+#ifdef SHARED_REQ_Q
+struct reqState {
+  volatile void* intmBuff;
+  volatile short sendReady;
+};
+
+struct collNetSendRecvConnectInfo {
+  struct reqState* reqFifo;
+};
+#endif
+
 struct collNetSendResources {
   void* collNetSendComm;
   struct ncclSendMem* hostSendMem;
@@ -36,6 +50,9 @@ struct collNetSendResources {
   uint64_t step;
   uint64_t llStep;
   uint64_t llLastCleaning;
+#ifdef SHARED_REQ_Q
+  struct reqState* reqFifo;
+#endif
 };
 
 struct collNetRecvResources {
@@ -51,6 +68,9 @@ struct collNetRecvResources {
   uint64_t step;
   uint64_t llStep;
   uint64_t llLastCleaning;
+#ifdef SHARED_REQ_Q
+  struct reqState* reqFifo;
+#endif
 };
 
 static ncclResult_t netDevices(int* ndev, int** scores) {
@@ -231,6 +251,14 @@ ncclResult_t collNetSendSetup(struct ncclPeerInfo* myInfo, struct ncclPeerInfo* 
 
   INFO(INIT|NET,"Ring %02d : %d -> %d [send] via COLLNET/%s/%d%s", channelId, myInfo->rank, peerInfo->rank, collNetName(), resources->netDev,
       resources->cudaSupport ? "/GDRDMA" : "");
+
+#ifdef SHARED_REQ_Q
+  // create shared info between send and recv proxies
+  NCCLCHECK(ncclCalloc(&(resources->reqFifo), NCCL_STEPS));
+  struct collNetSendRecvConnectInfo* info = (struct collNetSendRecvConnectInfo*) connectInfo;
+  info->reqFifo = resources->reqFifo;
+#endif
+
   return ncclSuccess;
 }
 
@@ -303,7 +331,12 @@ ncclResult_t collNetRecvConnect(struct ncclConnect* connectInfo, struct ncclConn
   // Finish connection establishment from remote peer
   NCCLCHECK(collNetAccept(resources->netListenComm, &resources->collNetRecvComm));
   NCCLCHECK(collNetCloseListen(resources->netListenComm));
-  // Nothing to do here for now
+
+#ifdef SHARED_REQ_Q
+  // Connect with internal send proxy
+  struct collNetSendRecvConnectInfo* info = (struct collNetSendRecvConnectInfo*) connectInfo;
+  resources->reqFifo = info->reqFifo;
+#endif
 
   return ncclSuccess;
 }
@@ -315,6 +348,7 @@ ncclResult_t collNetSendFree(void* transportResources) {
   if (resources->cudaSupport)
     CUDACHECK(cudaFree(resources->devRecvMem));
   NCCLCHECK(collNetCloseSend(resources->collNetSendComm));
+  free(resources->reqFifo);
   free(resources);
   return ncclSuccess;
 }
@@ -330,17 +364,6 @@ ncclResult_t collNetRecvFree(void* transportResources) {
   return ncclSuccess;
 }
 
-// TODO: find correct way to share things between two proxies
-#define SHARED_REQ_Q
-
-#ifdef SHARED_REQ_Q
-struct reqState {
-  volatile void* intmBuff;
-  volatile short sendReady;
-};
-static struct reqState reqFifo[NCCL_STEPS];
-#endif
-
 ncclResult_t collNetSendProxy(struct ncclProxyArgs* args) {
   struct collNetSendResources* resources = (struct collNetSendResources*) (args->connector->transportResources);
   const int llMode = args->llMode;
@@ -353,6 +376,9 @@ ncclResult_t collNetSendProxy(struct ncclProxyArgs* args) {
   int ptrType = resources->cudaSupport ? NCCL_PTR_CUDA : NCCL_PTR_HOST;
   volatile int* sizesFifo = resources->hostRecvMem->sizesFifo;
   int stepSize = args->channel->buffSize/NCCL_STEPS;
+#ifdef SHARED_REQ_Q
+  struct reqState* reqFifo = resources->reqFifo;
+#endif
 
   // Round to next multiple of sliceSteps
   resources->step = ROUNDUP(resources->step, args->chunkSteps);
@@ -452,6 +478,10 @@ ncclResult_t collNetRecvProxy(struct ncclProxyArgs* args) {
 
   int stepSize = ( llMode ? NCCL_LL_BUFF_SIZE : args->channel->buffSize ) / NCCL_STEPS;
   int sliceSize = stepSize * args->sliceSteps;
+
+#ifdef SHARED_REQ_Q
+  struct reqState* reqFifo = resources->reqFifo;
+#endif
 
   // Round to next multiple of sliceSteps
   resources->step = ROUNDUP(resources->step, args->chunkSteps);

@@ -707,7 +707,7 @@ static ncclResult_t initTransportsRank(struct ncclComm* comm, ncclUniqueId* comm
         // connect
         int root = 0;
         NCCLCHECK(send->transportComm->connect(allRecvs+root, send));
-        NCCLCHECK(recv->transportComm->connect(allSends+root, recv));
+        NCCLCHECK(recv->transportComm->connect(allSends+rank, recv));
         INFO(INIT|NET, "rank %d collNet init COMPLETE", comm->rank);
       }
     }
