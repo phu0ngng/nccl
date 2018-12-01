@@ -325,7 +325,7 @@ int ncclCollNetMpiIsend(void* sendComm, void* data, void* dst, int size, int typ
   return ret;
 }
 
-#define BLOCK
+#define BLOCK_RECV
 
 int ncclCollNetMpiIrecv(void* recvComm, void* data, int size, int type, void** request) {
   //printf("ncclCollNetMpiIrecv\n");
@@ -334,7 +334,7 @@ int ncclCollNetMpiIrecv(void* recvComm, void* data, int size, int type, void** r
   struct ncclCollNetMpiRecvComm* comm = (struct ncclCollNetMpiRecvComm*)recvComm;
 #if defined(ALL_REDUCE)
   *request = 0xdeadbeef;
-#elif defined(BLOCK)
+#elif defined(BLOCK_RECV)
   MPI_PROTECT(ret, MPI_Bcast(data, size, MPI_BYTE, comm->root, ncclCollNetMpiComm));
   *request = 0xdeadbeef;
 #else
@@ -353,12 +353,10 @@ int ncclCollNetMpiFlush(void* recvComm, void* data, int size) {
 
 int ncclCollNetMpiTest(void* request, int* done, int* size) {
   //printf("ncclCollNetMpiTest\n");
-#ifdef BLOCK
   if (request == 0xdeadbeef) {
     *done = 1;
     return 0;
   }
-#endif
   MPI_Request* mpiRequest = (MPI_Request*)request;
   MPI_Status status;
   int err;
