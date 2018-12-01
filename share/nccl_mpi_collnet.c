@@ -310,6 +310,8 @@ int ncclCollNetMpiAccept(void *listenComm, void** recvComm) {
 static unsigned long sendCount = 0;
 static unsigned long recvCount = 0;
 
+#define ALL_REDUCE
+
 int ncclCollNetMpiIsend(void* sendComm, void* data, void* dst, int size, int type, void** request) {
   //printf("ncclCollNetMpiIsend\n");
   int ret;
@@ -318,7 +320,11 @@ int ncclCollNetMpiIsend(void* sendComm, void* data, void* dst, int size, int typ
   MPI_Request* mpiRequest = ncclCollNetMpiGetRequest();
   *request = mpiRequest;
   //printf("Send : %p %d %d %d %p\n", data, size, comm->rank, comm->tag, mpiRequest);
+#ifdef ALL_REDUCE
+  MPI_PROTECT(ret, MPI_Iallreduce(data, dst, size, MPI_BYTE, MPI_SUM/*TODO*/, ncclCollNetMpiComm, mpiRequest));
+#else
   MPI_PROTECT(ret, MPI_Ireduce(data, dst, size, MPI_BYTE, MPI_SUM/*TODO*/, comm->root, ncclCollNetMpiComm, mpiRequest));
+#endif
   return ret;
 }
 
@@ -326,10 +332,12 @@ int ncclCollNetMpiIsend(void* sendComm, void* data, void* dst, int size, int typ
 
 int ncclCollNetMpiIrecv(void* recvComm, void* data, int size, int type, void** request) {
   //printf("ncclCollNetMpiIrecv\n");
-  int ret;
+  int ret = 0;
   //CHECK_PTR(type);
   struct ncclCollNetMpiRecvComm* comm = (struct ncclCollNetMpiRecvComm*)recvComm;
-#ifdef BLOCK
+#if defined(ALL_REDUCE)
+  *request = 0xdeadbeef;
+#elif defined(BLOCK)
   MPI_PROTECT(ret, MPI_Bcast(data, size, MPI_BYTE, comm->root, ncclCollNetMpiComm));
   *request = 0xdeadbeef;
 #else
