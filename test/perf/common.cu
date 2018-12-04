@@ -37,7 +37,6 @@ static int agg_iters = 1;
 static int ncclop = ncclSum;
 static int nccltype = ncclFloat;
 static int ncclroot = 0;
-static int swap_args = 0;
 static int parallel_init = 0;
 static int blocking_coll = 0;
 static int streamnull = 0;
@@ -328,20 +327,11 @@ cudaError_t cudaStreamSyncYield(cudaStream_t stream) {
 testResult_t startColl(struct threadArgs* args, ncclDataType_t type, ncclRedOp_t op, int root, int in_place, int thread_offset) {
   size_t count = args->nbytes / wordSize(type);
 
-  if (swap_args) {
-      args = (struct threadArgs*)args->proc_args + (args->thread + thread_offset)%args->nThreads;
-      if (args->nGpus == 1) {
-        int cudaDev;
-        NCCLCHECK(ncclCommCuDevice(args->comms[0], &cudaDev));
-        CUDACHECK(cudaSetDevice(cudaDev));
-      }
-  }
-
   if (args->nGpus == 1) {
     int rank = args->proc*args->nThreads + args->thread;
-    args->collTest->runColl((void*)(in_place ? ((void *)((uintptr_t)args->recvbuffs[0] + args->sendInplaceOffset*rank)) : args->sendbuffs[0]),
+    TESTCHECK(args->collTest->runColl((void*)(in_place ? ((void *)((uintptr_t)args->recvbuffs[0] + args->sendInplaceOffset*rank)) : args->sendbuffs[0]),
         (void*)(in_place ? (void*)((uintptr_t)args->recvbuffs[0] + args->recvInplaceOffset*rank) : args->recvbuffs[0]),
-        count, type, op, root, args->comms[0], args->streams[0]);
+        count, type, op, root, args->comms[0], args->streams[0]));
   } else {
     NCCLCHECK(ncclGroupStart());
     for (int i = 0; i < args->nGpus; i++) {
@@ -351,14 +341,14 @@ testResult_t startColl(struct threadArgs* args, ncclDataType_t type, ncclRedOp_t
       CUDACHECK(cudaSetDevice(cudaDev));
 #endif
       int rank = ((args->proc*args->nThreads + args->thread)*args->nGpus + i);
-      args->collTest->runColl((void*)(in_place ? ((void *)((uintptr_t)args->recvbuffs[i] + args->sendInplaceOffset*rank)) : args->sendbuffs[i]),
+      TESTCHECK(args->collTest->runColl((void*)(in_place ? ((void *)((uintptr_t)args->recvbuffs[i] + args->sendInplaceOffset*rank)) : args->sendbuffs[i]),
           (void*)(in_place ? (void*)((uintptr_t)args->recvbuffs[i] + args->recvInplaceOffset*rank) : args->recvbuffs[i]),
-          count, type, op, root, args->comms[i], args->streams[i]);
+          count, type, op, root, args->comms[i], args->streams[i]));
     }
     NCCLCHECK(ncclGroupEnd());
   }
 
-  if (swap_args || blocking_coll) {
+  if (blocking_coll) {
     //if args have been swapped, complete op before returning
     for (int i = 0; i < args->nGpus; ++i) {
       CUDACHECK(cudaStreamSyncYield(args->streams[i]));
@@ -369,8 +359,7 @@ testResult_t startColl(struct threadArgs* args, ncclDataType_t type, ncclRedOp_t
 }
 
 testResult_t completeColl(struct threadArgs* args) {
-  //it swap_args was enabled, op would have been completed immediately
-  if (swap_args || blocking_coll) return testSuccess;
+  if (blocking_coll) return testSuccess;
 
   for (int i = 0; i < args->nGpus; ++i) {
     CUDACHECK(cudaStreamSyncYield(args->streams[i]));
@@ -600,14 +589,13 @@ testResult_t compThread(struct threadArgs* args) {
   return testSuccess;
 }
 
-void* threadLauncher(void* tla_) {
-  struct threadLaunchArgs* tla = (struct threadLaunchArgs*)tla_;
-  tla->func(tla->args);
+void* threadLauncher(void* thread_) {
+  struct testThread* thread = (struct testThread*)thread_;
+  thread->ret = thread->func(&thread->args);
   return NULL;
 }
-testResult_t threadLaunch(pthread_t* thread, threadFunc_t func, struct threadArgs* args) {
-  struct threadLaunchArgs tla = { func, args };
-  pthread_create(thread, NULL, threadLauncher, &tla);
+testResult_t threadLaunch(struct testThread* thread) {
+  pthread_create(&thread->thread, NULL, threadLauncher, thread);
   return testSuccess;
 }
 
@@ -703,9 +691,6 @@ int main(int argc, char* argv[]) {
       case 'w':
         warmup_iters = (int)strtol(optarg, NULL, 0);
         break;
-      case 's':
-        swap_args = (int)strtol(optarg, NULL, 0);
-        break;
       case 'c':
         datacheck = (int)strtol(optarg, NULL, 0);
         break;
@@ -745,7 +730,6 @@ int main(int argc, char* argv[]) {
             "[-n,--iters <iteration count>] \n\t"
             "[-m,--agg-iters <aggregated iteration count>] \n\t"
             "[-w,--warmup_iters <warmup iteration count>] \n\t"
-            "[-s,--swap_args <0/1>] \n\t"
             "[-p,--parallel_init <0/1>] \n\t"
             "[-c,--check <0/1>] \n\t"
             "[-o,--op <sum/prod/min/max/all>] \n\t"
@@ -769,7 +753,6 @@ int main(int argc, char* argv[]) {
             "[-n,--iters <iteration count>] \n\t"
             "[-m,--agg-iters <aggregated iteration count>] \n\t"
             "[-w,--warmup_iters <warmup iteration count>] \n\t"
-            "[-s,--swap_args <0/1>] \n\t"
             "[-p,--parallel_init <0/1>] \n\t"
             "[-c,--check <0/1>] \n\t"
             "[-o,--op <sum/prod/min/max/all>] \n\t"
@@ -810,7 +793,6 @@ testResult_t run() {
 
   PRINT("# nThread %d nGpus %d minBytes %ld maxBytes %ld step: %ld(%s) warmup iters: %d iters: %d validation: %d \n", nThreads, nGpus, minBytes, maxBytes,
       (stepFactor > 1)?stepFactor:stepBytes, (stepFactor > 1)?"factor":"bytes", warmup_iters, iters, datacheck);
-  if (swap_args) PRINT("# Swap Comms Enabled: swapping communicators among threads for each iteration \n");
   if (blocking_coll) PRINT("# Blocking Enabled: wait for completion and barrier after each collective \n");
   if (parallel_init) PRINT("# Parallel Init Enabled: threads call into NcclInitRank concurrently \n");
   PRINT("#\n");
@@ -910,10 +892,9 @@ testResult_t run() {
   int* sync = (int*)calloc(2, sizeof(int));
   int* barrier = (int*)calloc(2, sizeof(int));
 
-  pthread_t threads[nThreads];
-  pthread_t compThreads[nThreads];
-  struct threadArgs args[nThreads];
-  memset(args, 0, sizeof(struct threadArgs)*nThreads);
+  struct testThread threads[nThreads];
+  struct testThread compThreads[nThreads];
+  memset(threads, 0, sizeof(struct testThread)*nThreads);
 
   if (side_comp && signal(SIGCHLD, SIG_IGN) == SIG_ERR) {
     printf("Failed to set up automatic cleanup of zombie processes\n");
@@ -921,66 +902,64 @@ testResult_t run() {
   }
 
   for (int t=nThreads-1; t>=0; t--) {
-    args[t].proc_args = (void *)args;
-    args[t].minbytes=minBytes;
-    args[t].maxbytes=maxBytes;
-    args[t].stepbytes=stepBytes;
-    args[t].stepfactor=stepFactor;
-    args[t].localRank = localRank;
+    threads[t].args.minbytes=minBytes;
+    threads[t].args.maxbytes=maxBytes;
+    threads[t].args.stepbytes=stepBytes;
+    threads[t].args.stepfactor=stepFactor;
+    threads[t].args.localRank = localRank;
 
-    args[t].nProcs=nProcs;
-    args[t].proc=proc;
-    args[t].nThreads=nThreads;
-    args[t].thread=t;
-    args[t].nGpus=nGpus;
-    args[t].sendbuffs = sendbuffs+t*nGpus;
-    args[t].recvbuffs = recvbuffs+t*nGpus;
-    args[t].ncclId = ncclId;
-    args[t].comms=comms+t*nGpus;
-    args[t].streams=streams+t*nGpus;
+    threads[t].args.nProcs=nProcs;
+    threads[t].args.proc=proc;
+    threads[t].args.nThreads=nThreads;
+    threads[t].args.thread=t;
+    threads[t].args.nGpus=nGpus;
+    threads[t].args.sendbuffs = sendbuffs+t*nGpus;
+    threads[t].args.recvbuffs = recvbuffs+t*nGpus;
+    threads[t].args.ncclId = ncclId;
+    threads[t].args.comms=comms+t*nGpus;
+    threads[t].args.streams=streams+t*nGpus;
 
-    args[t].expectedHost = (void**)malloc(nGpus*sizeof(void*));
-    args[t].expected = (void**)malloc(nGpus*sizeof(void*));
-    args[t].procSharedHost = procSharedHost; 
-    args[t].procShared = procShared; 
-    args[t].barrier = (volatile int*)barrier;
-    args[t].barrier_idx = 0;
-    args[t].sync = (volatile int*)sync;
-    args[t].sync_idx = 0;
-    args[t].deltaThreads = delta;
-    args[t].deltaHost = (delta + t);
-    args[t].delta = delta;
-    args[t].errors=errors+t;
-    args[t].bw=bw+t;
-    args[t].bw_count=bw_count+t;
+    threads[t].args.expectedHost = (void**)malloc(nGpus*sizeof(void*));
+    threads[t].args.expected = (void**)malloc(nGpus*sizeof(void*));
+    threads[t].args.procSharedHost = procSharedHost;
+    threads[t].args.procShared = procShared;
+    threads[t].args.barrier = (volatile int*)barrier;
+    threads[t].args.barrier_idx = 0;
+    threads[t].args.sync = (volatile int*)sync;
+    threads[t].args.sync_idx = 0;
+    threads[t].args.deltaThreads = delta;
+    threads[t].args.deltaHost = (delta + t);
+    threads[t].args.delta = delta;
+    threads[t].args.errors=errors+t;
+    threads[t].args.bw=bw+t;
+    threads[t].args.bw_count=bw_count+t;
 
-    args[t].replayFile = replay_file;
+    threads[t].args.replayFile = replay_file;
 
     if (side_comp) {
-      TESTCHECK(threadLaunch(compThreads+t, compThread, args+t));
+      memset(compThreads+t, 0, sizeof(struct testThread));
+      memcpy(&compThreads[t].args, &threads[t].args, sizeof(struct threadArgs));
+      compThreads[t].func = compThread;
+      TESTCHECK(threadLaunch(compThreads+t));
     }
-    if (!parallel_init) { 
-       if (t) 
-         TESTCHECK(threadLaunch(threads+t, threadRunTests, args+t));
-       else
-         TESTCHECK(threadRunTests(args));
-    } else {
-        if (t || (parallel_init && (proc == 0))) 
-         TESTCHECK(threadLaunch(threads+t, threadInit, args+t));
-       else  
-         TESTCHECK(threadInit(args));
-    }
+    threads[t].func = parallel_init ? threadInit : threadRunTests;
+    if (t)
+      TESTCHECK(threadLaunch(threads+t));
+    else
+      TESTCHECK(threads[t].func(&threads[t].args));
   }
 
   // Wait for other threads
   for (int t=nThreads-1; t>=0; t--) {
-    if (t || (parallel_init && (proc == 0))) pthread_join(threads[t], NULL);
+    if (t) pthread_join(threads[t].thread, NULL);
+    TESTCHECK(threads[t].ret);
     errors[0] += errors[t];
     bw[0] += bw[t];
     bw_count[0] += bw_count[t];
     if (side_comp) {
-       args[t].compThreadStop = 1;
-       pthread_join(compThreads[t], NULL);
+       compThreads[t].args.compThreadStop = 1;
+       pthread_join(compThreads[t].thread, NULL);
+       TESTCHECK(compThreads[t].ret);
     }
   }
 
