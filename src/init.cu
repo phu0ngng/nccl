@@ -410,13 +410,13 @@ static ncclResult_t setupChannel(struct ncclComm* comm, int channelId, int rank,
     //
 
     if (rank == master) {
+      int nDown = 0;
+      if (treeMasters[next] == 0) tree->down[nDown++] = next;
 #if 1
       //tree->nUp = 1;
       tree->up = nranks;
 #else
-      int nDown = 0;
       if (btreeUp != -1) tree->up = ranks[btreeUp];
-      if (treeMasters[next] == 0) tree->down[nDown++] = next;
       if (btreeDown0 != -1) tree->down[nDown++] = ranks[btreeDown0];
       if (btreeDown1 != -1) tree->down[nDown++] = ranks[btreeDown1];
 #endif

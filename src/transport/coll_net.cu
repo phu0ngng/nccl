@@ -392,6 +392,7 @@ ncclResult_t collNetSendProxy(struct ncclProxyArgs* args) {
   int idle = 0;
   void* requests[NCCL_STEPS];
 
+  INFO(NCCL_INIT,"Send proxy : opCount %lx head %lx tail %lx end %lx nsteps %d llMode %d ==> Start", args->opCount, head, tail, end, args->nsteps, llMode);
   TRACE(NET,"opCount %lx stepSize %d stepSize %d ptrType %d", args->opCount, stepSize, stepSize, ptrType);
 
   while (head < end) {
@@ -415,11 +416,13 @@ ncclResult_t collNetSendProxy(struct ncclProxyArgs* args) {
           }
           // Some reduce / all-reduce call here
           NCCLCHECK(collNetIsend(resources->collNetSendComm, lines, (void*)(reqFifo[readySlot].intmBuff), size, ptrType, requests+buffSlot));
-          sizesFifo[buffSlot] = -1;
-          tail += args->sliceSteps;
-          idle = 0;
-          // Make sure size is reset to zero before we update the head.
-          __sync_synchronize();
+          if (requests[buffSlot] != NULL) {
+            sizesFifo[buffSlot] = -1;
+            // Make sure size is reset to zero before we update the head.
+            __sync_synchronize();
+            tail += args->sliceSteps;
+            idle = 0;
+          }
         }
       } else if (tail < *prevTail) {
         // Send through network
@@ -432,11 +435,13 @@ ncclResult_t collNetSendProxy(struct ncclProxyArgs* args) {
         // Some reduce / all-reduce call here
         NCCLCHECK(collNetIsend(resources->collNetSendComm, localMem->buff+buffSlot*stepSize, (void*)(reqFifo[readySlot].intmBuff), sizesFifo[buffSlot], ptrType, requests+buffSlot));
         INFO(NCCL_INIT,"Send proxy : opCount %lx head %lx tail %lx prevTail %p prevTail %lx end %lx nsteps %d llMode %d ==> Posted", args->opCount, head, tail, prevTail, *prevTail, end, args->nsteps, llMode);
-        sizesFifo[buffSlot] = -1;
-        // Make sure size is reset to zero before we update the head.
-        __sync_synchronize();
-        tail += args->sliceSteps;
-        idle = 0;
+        if (requests[buffSlot] != NULL) {
+          sizesFifo[buffSlot] = -1;
+          // Make sure size is reset to zero before we update the head.
+          __sync_synchronize();
+          tail += args->sliceSteps;
+          idle = 0;
+        }
       }
     }
     if (head < tail) {
@@ -527,8 +532,10 @@ ncclResult_t collNetRecvProxy(struct ncclProxyArgs* args) {
       reqFifo[readyHead].sendReady = 0;
       reqFifo[readyHead].intmBuff = NULL;
 #endif
-      tail += args->sliceSteps;
-      idle = 0;
+      if (requests[buffSlot] != NULL) {
+        tail += args->sliceSteps;
+        idle = 0;
+      }
     }
     if (tail > head) {
       int done;
