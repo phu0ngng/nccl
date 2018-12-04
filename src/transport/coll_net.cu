@@ -221,7 +221,7 @@ ncclResult_t collNetUseGdrForReads(int* useGdr) {
   CUDACHECK(cudaGetDevice(&cudaDev));
   char busId[NVML_DEVICE_PCI_BUS_ID_BUFFER_SIZE];
   CUDACHECK(cudaDeviceGetPCIBusId(busId, NVML_DEVICE_PCI_BUS_ID_BUFFER_SIZE, cudaDev));
-  int nvlinks = getNumNvlinks(busId);
+  int nvlinks = getNvlinkGpu(busId, NULL);
   *useGdr = nvlinks >= CONNECT_NVSWITCH && ncclCudaCompCap() > 6 ? 1 : 0;
   return ncclSuccess;
 }
@@ -249,7 +249,7 @@ ncclResult_t collNetSendSetup(struct ncclPeerInfo* myInfo, struct ncclPeerInfo* 
   }
   NCCLCHECK(ncclCudaHostAlloc((void**)&resources->hostRecvMem, (void**)&resources->devHostRecvMem, recvSize));
 
-  INFO(INIT|NET,"Ring %02d : %d -> %d [send] via COLLNET/%s/%d%s", channelId, myInfo->rank, peerInfo->rank, collNetName(), resources->netDev,
+  INFO(NCCL_INIT|NCCL_NET,"Ring %02d : %d -> %d [send] via COLLNET/%s/%d%s", channelId, myInfo->rank, peerInfo->rank, collNetName(), resources->netDev,
       resources->cudaSupport ? "/GDRDMA" : "");
 
 #ifdef SHARED_REQ_Q
@@ -282,7 +282,7 @@ ncclResult_t collNetRecvSetup(struct ncclPeerInfo* myInfo, struct ncclPeerInfo* 
   }
   NCCLCHECK(ncclCudaHostAlloc((void**)&resources->hostRecvMem, (void**)&resources->devHostRecvMem, recvSize));
 
-  INFO(INIT|NET,"Ring %02d : %d -> %d [receive] via COLLNET/%s/%d%s", channelId, peerInfo->rank, myInfo->rank, collNetName(), resources->netDev,
+  INFO(NCCL_INIT|NCCL_NET,"Ring %02d : %d -> %d [receive] via COLLNET/%s/%d%s", channelId, peerInfo->rank, myInfo->rank, collNetName(), resources->netDev,
       resources->cudaSupport ? "/GDRDMA" : "");
 
   struct collNetConnectInfo* info = (struct collNetConnectInfo*) connectInfo;
@@ -301,9 +301,10 @@ ncclResult_t collNetSendConnect(struct ncclConnect* connectInfo, struct ncclConn
 
   // Head/Tail/Opcount/Fifos are always on host
   send->conn.tail = &resources->devHostRecvMem->tail;
-  send->conn.opCount = &resources->devHostRecvMem->opCount;
+  send->conn.opCountRem = &resources->devHostRecvMem->opCount;
   send->conn.fifo = resources->devHostRecvMem->sizesFifo;
   send->conn.head = &resources->devHostSendMem->head;
+  send->conn.opCountLoc = &resources->devHostSendMem->opCount;
   for (int i=0; i<NCCL_STEPS; i++) send->conn.fifo[i] = -1;
 
   // Connect to remote peer
@@ -325,8 +326,9 @@ ncclResult_t collNetRecvConnect(struct ncclConnect* connectInfo, struct ncclConn
 
   // Head/Tail/Opcount are always on host
   recv->conn.tail = &resources->devHostRecvMem->tail;
-  recv->conn.opCount = &resources->devHostRecvMem->opCount;
+  recv->conn.opCountLoc = &resources->devHostRecvMem->opCount;
   recv->conn.head = &resources->devHostSendMem->head;
+  recv->conn.opCountRem = &resources->devHostSendMem->opCount;
 
   // Finish connection establishment from remote peer
   NCCLCHECK(collNetAccept(resources->netListenComm, &resources->collNetRecvComm));
@@ -429,7 +431,7 @@ ncclResult_t collNetSendProxy(struct ncclProxyArgs* args) {
 #endif
         // Some reduce / all-reduce call here
         NCCLCHECK(collNetIsend(resources->collNetSendComm, localMem->buff+buffSlot*stepSize, (void*)(reqFifo[readySlot].intmBuff), sizesFifo[buffSlot], ptrType, requests+buffSlot));
-        INFO(INIT,"Send proxy : opCount %lx head %lx tail %lx prevTail %p prevTail %lx end %lx nsteps %d llMode %d ==> Posted", args->opCount, head, tail, prevTail, *prevTail, end, args->nsteps, llMode);
+        INFO(NCCL_INIT,"Send proxy : opCount %lx head %lx tail %lx prevTail %p prevTail %lx end %lx nsteps %d llMode %d ==> Posted", args->opCount, head, tail, prevTail, *prevTail, end, args->nsteps, llMode);
         sizesFifo[buffSlot] = -1;
         // Make sure size is reset to zero before we update the head.
         __sync_synchronize();
@@ -449,14 +451,14 @@ ncclResult_t collNetSendProxy(struct ncclProxyArgs* args) {
         head += args->sliceSteps;
         *prevHead = head;
         idle = 0;
-        INFO(INIT,"Send proxy : opCount %lx head %lx tail %lx prevTail %p prevTail %lx end %lx nsteps %d llMode %d ==> Done", args->opCount, head, tail, prevTail, *prevTail, end, args->nsteps, llMode);
+        INFO(NCCL_INIT,"Send proxy : opCount %lx head %lx tail %lx prevTail %p prevTail %lx end %lx nsteps %d llMode %d ==> Done", args->opCount, head, tail, prevTail, *prevTail, end, args->nsteps, llMode);
       }
     }
     if (idle) transportProxyIdle(idle);
   }
   resources->step = end;
 
-  INFO(INIT,"Send proxy : opCount %lx head %lx tail %lx prevTail %p prevTail %lx end %lx nsteps %d llMode %d ==> Cleaning", args->opCount, head, tail, prevTail, *prevTail, end, args->nsteps, llMode);
+  INFO(NCCL_INIT,"Send proxy : opCount %lx head %lx tail %lx prevTail %p prevTail %lx end %lx nsteps %d llMode %d ==> Cleaning", args->opCount, head, tail, prevTail, *prevTail, end, args->nsteps, llMode);
   if (llMode && resources->step > resources->llLastCleaning + NCCL_LL_CLEAN_FREQ) {
     for (int i=0; i< NCCL_LL_BUFF_LINES; i++) llBuff[i].flag1 = llBuff[i].flag2 = resources->step;
     resources->step += NCCL_STEPS;
@@ -495,7 +497,7 @@ ncclResult_t collNetRecvProxy(struct ncclProxyArgs* args) {
   int idle = 0;
   void* requests[NCCL_STEPS];
 
-  INFO(INIT,"Recv proxy : opCount %lx head %lx tail %lx end %lx nsteps %d llMode %d ==> Start", args->opCount, head, tail, end, args->nsteps, llMode);
+  INFO(NCCL_INIT,"Recv proxy : opCount %lx head %lx tail %lx end %lx nsteps %d llMode %d ==> Start", args->opCount, head, tail, end, args->nsteps, llMode);
   TRACE(NET,"opCount %lx buffSize %d stepSize %d ptrType %d", args->opCount, args->channel->buffSize, stepSize, ptrType);
 
   while (head < end) {
@@ -515,11 +517,11 @@ ncclResult_t collNetRecvProxy(struct ncclProxyArgs* args) {
       int readyHead = *reqFifoHead%NCCL_STEPS;
       // test if send request is complete
       while(reqFifo[readyHead].sendReady == 0);
-      INFO(INIT,"Recv proxy : send request %lx ==> Ready", buffSlot);
+      INFO(NCCL_INIT,"Recv proxy : send request %lx ==> Ready", buffSlot);
 #endif
       // broadcast or wait for all-reduce to complete
       NCCLCHECK(collNetIrecv(resources->collNetRecvComm, /*localBuff+buffSlot*stepSize*/ (void*)(reqFifo[readyHead].intmBuff), sliceSize, ptrType, requests+buffSlot));
-      INFO(INIT,"Recv proxy : opCount %lx head %lx tail %lx nextTail %p nextTail %lx end %lx nsteps %d llMode %d ==> Posted", args->opCount, head, tail, nextTail, *nextTail, end, args->nsteps, llMode);
+      INFO(NCCL_INIT,"Recv proxy : opCount %lx head %lx tail %lx nextTail %p nextTail %lx end %lx nsteps %d llMode %d ==> Posted", args->opCount, head, tail, nextTail, *nextTail, end, args->nsteps, llMode);
       // cleaning
 #ifdef SHARED_REQ_Q
       reqFifo[readyHead].sendReady = 0;
@@ -534,7 +536,7 @@ ncclResult_t collNetRecvProxy(struct ncclProxyArgs* args) {
       int size;
       NCCLCHECK(collNetTest(requests[buffSlot], &done, &size));
       if (done) {
-        INFO(INIT,"Recv proxy : opCount %lx head %lx tail %lx nextTail %p nextTail %lx end %lx nsteps %d llMode %d ==> Done", args->opCount, head, tail, nextTail, *nextTail, end, args->nsteps, llMode);
+        INFO(NCCL_INIT,"Recv proxy : opCount %lx head %lx tail %lx nextTail %p nextTail %lx end %lx nsteps %d llMode %d ==> Done", args->opCount, head, tail, nextTail, *nextTail, end, args->nsteps, llMode);
         head += args->sliceSteps;
         if (llMode == 0) {
           if (ptrType == NCCL_PTR_CUDA) collNetFlush(resources->collNetRecvComm, localBuff+buffSlot*stepSize, size);
@@ -547,7 +549,7 @@ ncclResult_t collNetRecvProxy(struct ncclProxyArgs* args) {
   }
   resources->step = end;
 
-  INFO(INIT,"Recv proxy : opCount %lx head %lx tail %lx nextTail %p nextTail %lx end %lx nsteps %d llMode %d ==> Cleaning", args->opCount, head, tail, nextTail, *nextTail, end, args->nsteps, llMode);
+  INFO(NCCL_INIT,"Recv proxy : opCount %lx head %lx tail %lx nextTail %p nextTail %lx end %lx nsteps %d llMode %d ==> Cleaning", args->opCount, head, tail, nextTail, *nextTail, end, args->nsteps, llMode);
   if (llMode && resources->step > resources->llLastCleaning + NCCL_LL_CLEAN_FREQ) {
     resources->step += NCCL_STEPS;
     while (*nextHead < resources->step);

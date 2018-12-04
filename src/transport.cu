@@ -147,7 +147,6 @@ void* persistentThread(void *opaqueInfo) {
   struct transportProxyInfo* info = (struct transportProxyInfo*)opaqueInfo;
   // Signal the main thread the context is created and it can proceed.
   SetProxyReady(info);
-  INFO(INIT, "Proxy ready");
   while (1) {
     struct ncclProxyArgs args;
     FifoPullArgs(info, &args);
