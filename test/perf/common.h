@@ -88,7 +88,6 @@ struct testEngine {
 extern struct testEngine ncclTestEngine;
 
 struct threadArgs {
-  void *proc_args;
   size_t nbytes;
   size_t minbytes;
   size_t maxbytes;
@@ -135,9 +134,11 @@ struct threadArgs {
 };
 
 typedef testResult_t (*threadFunc_t)(struct threadArgs* args);
-struct threadLaunchArgs {
+struct testThread {
+  pthread_t thread;
   threadFunc_t func;
-  struct threadArgs* args;
+  struct threadArgs args;
+  testResult_t ret;
 };
 
 #include <chrono>

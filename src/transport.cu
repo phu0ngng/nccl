@@ -134,9 +134,9 @@ ncclResult_t transportStartProxies(ncclComm* comm) {
     FifoPushArgs(comm->channels[r].peers[ring->next].send.proxyInfo);
 
     struct ncclTree* tree = &comm->channels[r].tree;
-    for (int i=0; tree->down[i] >= 0; i++) FifoPushArgs(comm->channels[r].peers[tree->down[i]].recv.proxyInfo);
+    for (int i=0; i<NCCL_MAX_TREE_ARITY && tree->down[i] >= 0; i++) FifoPushArgs(comm->channels[r].peers[tree->down[i]].recv.proxyInfo);
     if (tree->up >= 0) FifoPushArgs(comm->channels[r].peers[tree->up].recv.proxyInfo);
-    for (int i=0; tree->down[i] >= 0; i++) FifoPushArgs(comm->channels[r].peers[tree->down[i]].send.proxyInfo);
+    for (int i=0; i<NCCL_MAX_TREE_ARITY && tree->down[i] >= 0; i++) FifoPushArgs(comm->channels[r].peers[tree->down[i]].send.proxyInfo);
     if (tree->up >= 0) FifoPushArgs(comm->channels[r].peers[tree->up].send.proxyInfo);
   }
   pthread_yield(); // Let other threads run

@@ -79,12 +79,13 @@ int ncclCudaFullCompCap() {
   return ccMajor*10+ccMinor;
 }
 
+// Returns ncclInternalError if anything fails, causing that network to be ignored.
 ncclResult_t initNet(ncclNet_t* net) {
   int ndev;
-  NCCLCHECK(net->init(ncclDebugLog));
-  NCCLCHECK(net->devices(&ndev));
+  if (net->init(ncclDebugLog) != ncclSuccess) return ncclInternalError;
+  if (net->devices(&ndev) != ncclSuccess) return ncclInternalError;
   if (ndev <= 0) {
-    INFO(NCCL_INIT, "Net/%s: call to devices() returned 0 devices.", net->name);
+    INFO(NCCL_INIT|NCCL_NET, "Net/%s: call to devices() returned 0 devices.", net->name);
     return ncclSystemError;
   }
   return ncclSuccess;
@@ -93,12 +94,19 @@ ncclResult_t initNet(ncclNet_t* net) {
 ncclResult_t initNetPlugin(ncclNet_t** net) {
   void* netPluginLib = dlopen("libnccl-net.so", RTLD_NOW | RTLD_LOCAL);
   if (netPluginLib == NULL) {
-    INFO(NCCL_INIT, "Unable to load libnccl-net.so : %s", dlerror());
+    // dlopen does not guarantee to set errno, but dlerror only gives us a
+    // string, so checking errno doesn't hurt to try to provide a better
+    // error message
+    if (errno == ENOENT) {
+      INFO(NCCL_INIT|NCCL_NET, "No network plugin found.");
+    } else {
+      INFO(NCCL_INIT|NCCL_NET, "Unable to load libnccl-net.so : %s", dlerror());
+    }
     return ncclSuccess;
   }
   ncclNet_t* extNet = (ncclNet_t*) dlsym(netPluginLib, STR(NCCL_PLUGIN_SYMBOL));
   if (extNet == NULL) {
-    INFO(NCCL_INIT, "NetPlugin: could not find " STR(NCCL_PLUGIN_SYMBOL) " symbol");
+    INFO(NCCL_INIT|NCCL_NET, "NetPlugin: could not find " STR(NCCL_PLUGIN_SYMBOL) " symbol");
     goto cleanup;
   }
   if (initNet(extNet) == ncclSuccess) {
@@ -116,7 +124,7 @@ ncclResult_t initNet() {
 
   NCCLCHECK(initNetPlugin(&ncclNet));
   if (ncclNet != NULL) {
-    INFO(NCCL_INIT, "Using external Network %s", ncclNetName());
+    INFO(NCCL_INIT|NCCL_NET, "Using network plugin %s", ncclNetName());
     return ncclSuccess;
   }
   if (initNet(&ncclNetIb) == ncclSuccess) {
@@ -124,7 +132,7 @@ ncclResult_t initNet() {
   } else {
     ncclNet = &ncclNetSocket;
   }
-  INFO(NCCL_INIT,"Using internal Network %s", ncclNetName());
+  INFO(NCCL_INIT|NCCL_NET,"Using network %s", ncclNetName());
   return ncclSuccess;
 }
 
