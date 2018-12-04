@@ -13,14 +13,16 @@ ifeq ($(MPI_IBM),1)
 NVCUFLAGS += -DMPI_SUPPORT
 NVLDFLAGS += -lmpi_ibm
 endif
-LIBRARIES += curand nccl
+LIBRARIES += nccl
 NVLDFLAGS   += -L$(NCCLDIR)/lib $(LIBRARIES:%=-l%)
 
 DST_DIR := $(BUILDDIR)/test/perf
 SRC_FILES := $(wildcard *.cu)
 OBJ_FILES := $(SRC_FILES:%.cu=${DST_DIR}/%.o)
-BIN_FILES_LIST := all_reduce all_gather broadcast reduce_scatter reduce all_gatherv reduce_scatterv
-BIN_FILES := $(BIN_FILES_LIST:%=${DST_DIR}/%_perf)
+COLLS := all_reduce all_gather broadcast reduce_scatter reduce
+EXTRA_COLLS := all_gatherv reduce_scatterv
+COLL_OBJS := $(COLLS:%=${DST_DIR}/%.o)
+BIN_FILES := $(COLLS:%=${DST_DIR}/%_perf) $(EXTRA_COLLS:%=${DST_DIR}/%_perf) ${DST_DIR}/replay
 #ifeq ($(MPI), 1)
 #This is broken anyway -- disable it
 #BIN_FILES += $(BIN_FILES_LIST:%=${DST_DIR}/%_perf_mpi_transport)
@@ -57,6 +59,11 @@ ${DST_DIR}/nccl_mpi.o: ../../share/nccl_mpi.c
 	mpicc -std=c99 $(CXXFLAGS) -I$(NCCLDIR)/include/ -o $@ -c $<
 
 ${DST_DIR}/%_perf:${DST_DIR}/%.o ${DST_DIR}/common.o
+	@printf "Linking  %-35s > %s\n" $< $@
+	@mkdir -p ${DST_DIR}
+	$(NVCC) -o $@ $(NVCUFLAGS) $^ ${NVLDFLAGS}
+
+${DST_DIR}/replay: ${DST_DIR}/replay.o ${COLL_OBJS} ${DST_DIR}/common.o
 	@printf "Linking  %-35s > %s\n" $< $@
 	@mkdir -p ${DST_DIR}
 	$(NVCC) -o $@ $(NVCUFLAGS) $^ ${NVLDFLAGS}

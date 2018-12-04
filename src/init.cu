@@ -19,6 +19,8 @@
 #include "coll_net.h"
 #include "checks.h"
 #include "enqueue.h"
+#include "topo.h"
+#include "cpuset.h"
 #include <stdio.h>
 #include <stdlib.h>
 #include <sys/mman.h>
@@ -31,9 +33,13 @@
 #include <string.h>
 #include <errno.h>
 #include <assert.h>
+#include <dlfcn.h>
 
-DebugLevel ncclDebugLevel;
-uint64_t ncclDebugMask = INIT; // Default debug sub-system mask is INIT
+#define STR2(v) #v
+#define STR(v) STR2(v)
+
+int ncclDebugLevel;
+uint64_t ncclDebugMask = NCCL_INIT; // Default debug sub-system mask is INIT
 pthread_mutex_t ncclDebugOutputLock;
 FILE *ncclDebugFile = stdout;
 
@@ -51,7 +57,6 @@ NCCL_PARAM(GroupCudaStream, "GROUP_CUDA_STREAM", NCCL_GROUP_CUDA_STREAM);
 
 NCCL_PARAM(CheckPointers, "CHECK_POINTERS", 0);
 
-extern "C" __attribute__ ((visibility("default")))
 ncclNet_t* ncclNet = NULL;
 extern "C" __attribute__ ((visibility("default")))
 ncclCollNet_t* collNet = NULL;
@@ -74,13 +79,53 @@ int ncclCudaFullCompCap() {
   return ccMajor*10+ccMinor;
 }
 
-void initNet() {
-  if (ncclNet != NULL) {
-    INFO(INIT,"Using external Network %s", ncclNetName());
-  } else {
-    ncclNet = ncclIbSupport() ? &ncclNetIb : &ncclNetSocket;
-    INFO(INIT,"Using internal Network %s", ncclNetName());
+ncclResult_t initNet(ncclNet_t* net) {
+  int ndev;
+  NCCLCHECK(net->init(ncclDebugLog));
+  NCCLCHECK(net->devices(&ndev));
+  if (ndev <= 0) {
+    INFO(NCCL_INIT, "Net/%s: call to devices() returned 0 devices.", net->name);
+    return ncclSystemError;
   }
+  return ncclSuccess;
+}
+
+ncclResult_t initNetPlugin(ncclNet_t** net) {
+  void* netPluginLib = dlopen("libnccl-net.so", RTLD_NOW | RTLD_LOCAL);
+  if (netPluginLib == NULL) {
+    INFO(NCCL_INIT, "Unable to load libnccl-net.so : %s", dlerror());
+    return ncclSuccess;
+  }
+  ncclNet_t* extNet = (ncclNet_t*) dlsym(netPluginLib, STR(NCCL_PLUGIN_SYMBOL));
+  if (extNet == NULL) {
+    INFO(NCCL_INIT, "NetPlugin: could not find " STR(NCCL_PLUGIN_SYMBOL) " symbol");
+    goto cleanup;
+  }
+  if (initNet(extNet) == ncclSuccess) {
+    *net = extNet;
+    return ncclSuccess;
+  }
+cleanup:
+  if (netPluginLib != NULL) dlclose(netPluginLib);
+  return ncclSuccess;
+}
+
+ncclResult_t initNet() {
+  // Always initialize sockets as we use it for bootstrap
+  NCCLCHECK(initNet(&ncclNetSocket));
+
+  NCCLCHECK(initNetPlugin(&ncclNet));
+  if (ncclNet != NULL) {
+    INFO(NCCL_INIT, "Using external Network %s", ncclNetName());
+    return ncclSuccess;
+  }
+  if (initNet(&ncclNetIb) == ncclSuccess) {
+    ncclNet = &ncclNetIb;
+  } else {
+    ncclNet = &ncclNetSocket;
+  }
+  INFO(NCCL_INIT,"Using internal Network %s", ncclNetName());
+  return ncclSuccess;
 }
 
 NCCL_PARAM(LlThreshold, "LL_THRESHOLD", -2);
@@ -161,6 +206,7 @@ static ncclResult_t commFree(ncclComm_t comm) {
     free(comm->intraCC);
   }
   CUDACHECK(cudaFreeHost((void *)comm->abortFlag));
+  CUDACHECK(cudaFreeHost((void *)comm->fatalDevError));
 
   free(comm);
   return ncclSuccess;
@@ -184,10 +230,10 @@ static ncclResult_t commAlloc(ncclComm_t* comret, int ndev, int rank) {
   struct ncclComm* comm;
   NCCLCHECK(ncclCalloc(&comm, 1));
 
-  INFO(INIT,"comm %p rank %d nranks %d", comm, rank, ndev);
   comm->rank = rank;
   comm->nRanks = ndev;
   cudaGetDevice(&comm->cudaDev);
+  getNvmlDevice(comm->cudaDev, &comm->nvmlDev);
   comm->doneEvent = doneEvent;
   comm->llThreshold = ncclParamLlThreshold();
   comm->checkPointers = ncclParamCheckPointers() == 1 ? true : false;
@@ -199,10 +245,15 @@ static ncclResult_t commAlloc(ncclComm_t* comret, int ndev, int rank) {
 #endif
   comm->fatalError = ncclSuccess;
 
+  CUDACHECK(cudaHostAlloc((void**) &comm->fatalDevError, sizeof(ncclDevError_t), cudaHostAllocMapped));
+  *comm->fatalDevError = ncclDevSuccess;
+
   CUDACHECK(cudaHostAlloc((void**) &comm->abortFlag, sizeof(uint32_t), cudaHostAllocMapped));
   *comm->abortFlag = 0;
 
   comm->argsptr = &comm->args;
+
+  INFO(NCCL_INIT,"comm %p rank %d nranks %d cudaDev %d nvmlDev %d", comm, rank, ndev, comm->cudaDev, comm->nvmlDev);
 
   *comret = comm;
   return ncclSuccess;
@@ -222,20 +273,22 @@ static ncclResult_t devCommSetup(ncclComm_t comm) {
   void *devAbortFlag;
   CUDACHECK(cudaHostGetDevicePointer(&devAbortFlag, (uint32_t *)comm->abortFlag, 0));
   CUDACHECK(cudaMemcpy(&comm->devComm->abortFlag, &devAbortFlag, sizeof(int *), cudaMemcpyHostToDevice));
+  // Copy the device-accessible pointer to comm->fatalDevError
+  void *devFatalError;
+  CUDACHECK(cudaHostGetDevicePointer(&devFatalError, (ncclDevError_t *)comm->fatalDevError, 0));
+  CUDACHECK(cudaMemcpy(&comm->devComm->fatalDevError, &devFatalError, sizeof(ncclDevError_t *), cudaMemcpyHostToDevice));
   return ncclSuccess;
 }
 
 // Pre-process the string so that running "strings" on the lib can quickly reveal the version.
-#define STR2(v) #v
-#define STR(v) STR2(v)
 #define VERSION_STRING "NCCL version " STR(NCCL_MAJOR) "." STR(NCCL_MINOR) "." STR(NCCL_PATCH) NCCL_SUFFIX "+cuda" STR(CUDA_MAJOR) "." STR(CUDA_MINOR)
 static void showVersion() {
   static int shown = 0;
-  if (shown == 0 && ncclDebugLevel >= VERSION) {
+  if (shown == 0 && ncclDebugLevel >= NCCL_LOG_VERSION) {
     printf("%s\n", VERSION_STRING);
     fflush(stdout);
     if (ncclDebugFile != stdout)
-      INFO(ALL,"%s", VERSION_STRING); // Also log NCCL version in one of the files
+      INFO(NCCL_ALL,"%s", VERSION_STRING); // Also log NCCL version in one of the files
     shown = 1;
   }
 }
@@ -243,6 +296,7 @@ static void showVersion() {
 static ncclResult_t fillInfo(struct ncclPeerInfo* info, int rank) {
   info->rank = rank;
   CUDACHECK(cudaGetDevice(&info->cudaDev));
+  NCCLCHECK(getNvmlDevice(info->cudaDev, &info->nvmlDev))
   info->hostHash=getHostHash();
   info->pidHash=getPidHash();
 
@@ -284,7 +338,7 @@ static int log2(int n) {
 }
 
 static ncclResult_t setupChannel(struct ncclComm* comm, int channelId, int rank, int nranks, int* ringRanks, int* treeMasters) {
-  TRACE(INIT, "rank %d nranks %d", rank, nranks);
+  TRACE(NCCL_INIT, "rank %d nranks %d", rank, nranks);
   NCCLCHECK(initChannel(comm, channelId));
 
   struct ncclChannel* channel = comm->channels+channelId;
@@ -303,12 +357,15 @@ static ncclResult_t setupChannel(struct ncclComm* comm, int channelId, int rank,
   int prev = ring->prev = ring->userRanks[nranks-1];
   int next = ring->next = ring->userRanks[1];
 
+  struct ncclTree* tree = &channel->tree;
+  tree->up = -1;
+  tree->down[0] = tree->down[1] = tree->down[2] = -1;
+
   if (ncclTreeThreshold() > 0) {
-    // Build trees
-    struct ncclTree* tree = &channel->tree;
-    tree->nUp = tree->nDown = 1;
-    tree->up = prev;
-    tree->down[0] = next;
+
+    //
+    // Find per-node masters and connect them via a binary tree
+    //
 
     int nMasters = 0;
     for (int r=0; r<nranks; r++) nMasters += treeMasters[r];
@@ -330,10 +387,6 @@ static ncclResult_t setupChannel(struct ncclComm* comm, int channelId, int rank,
       }
     }
 
-    if (treeMasters[next]) {
-      tree->nDown = 0;
-    }
-
     int ranks[nMasters];
     int i = 0, masterIndex = -1;
     // Build binary tree
@@ -342,39 +395,41 @@ static ncclResult_t setupChannel(struct ncclComm* comm, int channelId, int rank,
       if (r == master) masterIndex = i;
       if (treeMasters[r]) ranks[i++] = r;
     }
-    int up, down0, down1;
+    int btreeUp, btreeDown0, btreeDown1;
     int u0, d0_0, d0_1, u1, d1_0, d1_1;
     NCCLCHECK(ncclGetDtree(nMasters, masterIndex, &u0, &d0_0, &d0_1, &u1, &d1_0, &d1_1));
     if (channelId < DIVUP(comm->nChannels, 2)) {
-      up = u0; down0 = d0_0; down1 = d0_1;
+      btreeUp = u0; btreeDown0 = d0_0; btreeDown1 = d0_1;
     } else {
-      up = u1; down0 = d1_0; down1 = d1_1;
+      btreeUp = u1; btreeDown0 = d1_0; btreeDown1 = d1_1;
     }
+
+    //
+    // Now build the full tree, combining the intra-node ring and the
+    // inter-node binary tree.
+    //
 
     if (rank == master) {
 #if 1
-      tree->nUp = 1;
+      //tree->nUp = 1;
       tree->up = nranks;
 #else
-      tree->nUp = 0;
-      if (up != -1) {
-        tree->up = ranks[up];
-        tree->nUp++;
-      }
-      if (down0 != -1) tree->down[tree->nDown++] = ranks[down0];
-      if (down1 != -1) tree->down[tree->nDown++] = ranks[down1];
+      int nDown = 0;
+      if (btreeUp != -1) tree->up = ranks[btreeUp];
+      if (treeMasters[next] == 0) tree->down[nDown++] = next;
+      if (btreeDown0 != -1) tree->down[nDown++] = ranks[btreeDown0];
+      if (btreeDown1 != -1) tree->down[nDown++] = ranks[btreeDown1];
 #endif
+    } else {
+      tree->up = prev;
+      if (treeMasters[next] == 0) tree->down[0] = next;
     }
 
-    INFO(INIT, "Channel %02d : %d -> %d, %d, %d", channelId,
-        tree->nUp ? tree->up : -1,
-        tree->nDown > 0 ? tree->down[0] : -1,
-        tree->nDown > 1 ? tree->down[1] : -1,
-        tree->nDown > 2 ? tree->down[2] : -1);
-    //printf("[%d/%d] nUp %d (%d) nDown %d (%d %d %d)\n", channelId, rank, tree->nUp, tree->up, tree->nDown, tree->down[0], tree->down[1], tree->down[2]);
+    INFO(NCCL_INIT, "Channel %02d : %d -> %d, %d, %d", channelId,
+        tree->up, tree->down[0], tree->down[1], tree->down[2]);
   }
 
-  TRACE(INIT, "rank %d nranks %d - DONE", rank, nranks);
+  TRACE(NCCL_INIT, "rank %d nranks %d - DONE", rank, nranks);
   return ncclSuccess;
 }
 
@@ -400,12 +455,12 @@ void dumpMatrix(int* connectMatrix, int nranks) {
   line[STRLENGTH] = '\0';
   memset(line, ' ', STRLENGTH);
   for (int j=0; j<nranks && j<MAXWIDTH; j++) sprintf(4+line+4*j, " %3d", j);
-  INFO(INIT,"%s", line);
+  INFO(NCCL_INIT,"%s", line);
   for (int i=0; i<nranks; i++) {
     memset(line, ' ', STRLENGTH);
     sprintf(line, "%3d ", i);
     for (int j=0; j<nranks && j<MAXWIDTH; j++) sprintf(4+line+4*j, " %3d", connectMatrix[i*nranks+j]);
-    INFO(INIT,"%s", line);
+    INFO(NCCL_INIT,"%s", line);
   }
 }
 
@@ -414,12 +469,12 @@ void dumpMatrixTvalue(ncclTvalue_t* connectMatrix, int nranks) {
   line[STRLENGTH] = '\0';
   memset(line, ' ', STRLENGTH);
   for (int j=0; j<nranks && j<MAXWIDTH; j++) sprintf(4+line+5*j, " %4d", j);
-  INFO(INIT,"%s", line);
+  INFO(NCCL_INIT,"%s", line);
   for (int i=0; i<nranks; i++) {
     memset(line, ' ', STRLENGTH);
     sprintf(line, "%3d ", i);
     for (int j=0; j<nranks && j<MAXWIDTH; j++) sprintf(4+line+5*j, " %4o", (int)connectMatrix[i*nranks+j]);
-    INFO(INIT,"%s", line);
+    INFO(NCCL_INIT,"%s", line);
   }
 }
 
@@ -431,7 +486,7 @@ void dumpLine(int* values, int nranks, const char* prefix) {
   memset(line, ' ', STRLENGTH);
   strncpy(line, prefix, PREFIXLEN);
   for (int i=0; i<nranks && i<MAXWIDTH; i++) sprintf(line+prefixlen+4*i, " %3d", values[i]);
-  INFO(INIT,"%s", line);
+  INFO(NCCL_INIT,"%s", line);
 }
 
 static ncclResult_t buildRings(int nrings, int* rings, int rank, int nranks, int* prev, int* next) {
@@ -548,17 +603,13 @@ ncclResult_t ncclCommSetIntra(struct ncclComm* comm, int rank, int ranks, struct
 extern struct ncclTransport collNetTransport;
 
 static ncclResult_t p2pSetup(struct ncclComm* comm, struct ncclChannel* channel, int nrecv, int* peerRecv, int nsend, int* peerSend) {
-  TRACE(INIT, "nsend %d nrecv %d", nsend, nrecv);
+  TRACE(NCCL_INIT, "nsend %d nrecv %d", nsend, nrecv);
   uint32_t nSkippedSend = 0, nSkippedRecv = 0; /* for tracing */
   struct ncclConnect connect;
   struct ncclConnector* conn;
-  /*printf("[%d] p2pSetup recv from", comm->rank);
-  for (int i=0; i<nrecv; i++) printf(" %d[%d]", peerRecv[i], channel->peers[peerRecv[i]].recv.connected);
-  printf(" ; send to");
-  for (int i=0; i<nsend; i++) printf(" %d[%d]", peerSend[i], channel->peers[peerSend[i]].send.connected);
-  printf("\n");*/
   for (int i=0; i<nrecv; i++) {
     int peer = peerRecv[i];
+    if (peer == -1) continue;
     conn = &channel->peers[peer].recv;
     if (conn->connected) { ++nSkippedRecv; continue; }
     NCCLCHECK(selectTransport<0>(comm->peerInfo+comm->rank, comm->peerInfo+peer, &connect, conn, channel->buffSize, channel->id));
@@ -566,6 +617,7 @@ static ncclResult_t p2pSetup(struct ncclComm* comm, struct ncclChannel* channel,
   }
   for (int i=0; i<nsend; i++) {
     int peer = peerSend[i];
+    if (peer == -1) continue;
     conn = &channel->peers[peer].send;
     if (conn->connected) { ++nSkippedSend; continue; }
     NCCLCHECK(selectTransport<1>(comm->peerInfo+comm->rank, comm->peerInfo+peer, &connect, conn, channel->buffSize, channel->id));
@@ -573,6 +625,7 @@ static ncclResult_t p2pSetup(struct ncclComm* comm, struct ncclChannel* channel,
   }
   for (int i=0; i<nsend; i++) {
     int peer = peerSend[i];
+    if (peer == -1) continue;
     conn = &channel->peers[peer].send;
     if (conn->connected) {++nSkippedSend; continue; }
     NCCLCHECK(bootstrapRecv(comm->bootstrap, peer, &connect, sizeof(struct ncclConnect)));
@@ -581,20 +634,21 @@ static ncclResult_t p2pSetup(struct ncclComm* comm, struct ncclChannel* channel,
   }
   for (int i=0; i<nrecv; i++) {
     int peer = peerRecv[i];
+    if (peer == -1) continue;
     conn = &channel->peers[peer].recv;
     if (conn->connected) {++nSkippedRecv; continue; }
     NCCLCHECK(bootstrapRecv(comm->bootstrap, peer, &connect, sizeof(struct ncclConnect)));
     NCCLCHECK(conn->transportComm->connect(&connect, conn));
     conn->connected = 1;
   }
-  TRACE(INIT, "nsend %d nrecv %d nSkippedSend %u nSkippedRecv %u - DONE", nsend, nrecv, nSkippedSend, nSkippedRecv);
+  TRACE(NCCL_INIT, "nsend %d nrecv %d nSkippedSend %u nSkippedRecv %u - DONE", nsend, nrecv, nSkippedSend, nSkippedRecv);
   return ncclSuccess;
 }
 
 static ncclResult_t initTransportsRank(struct ncclComm* comm, ncclUniqueId* commId) {
   int rank = comm->rank;
   int nranks = comm->nRanks;
-  TRACE(INIT, "rank %d nranks %d - BEGIN", rank, nranks);
+  TRACE(NCCL_INIT, "rank %d nranks %d - BEGIN", rank, nranks);
   NCCLCHECK(bootstrapInit(commId, rank, nranks, &comm->bootstrap));
 
   NCCLCHECK(ncclCalloc(&comm->peerInfo, nranks));
@@ -621,6 +675,8 @@ static ncclResult_t initTransportsRank(struct ncclComm* comm, ncclUniqueId* comm
   NCCLCHECK(ncclCalloc(&treeOut, nranks*MAXCHANNELS));
   comm->nThreads = getDefaultThreads();
   NCCLCHECK(ncclGetRings(&nrings, &comm->nThreads, rank, nranks, connectTransport, connectValue, prev, next, treeIn, treeOut));
+  TRACE(NCCL_INIT, "rank %d nranks %d - BUILD %d RINGS", rank, nranks, nrings);
+  assert(nrings <= MAXCHANNELS);
   free(connectTransport);
   free(connectValue);
 
@@ -630,7 +686,7 @@ static ncclResult_t initTransportsRank(struct ncclComm* comm, ncclUniqueId* comm
   NCCLCHECK(bootstrapAllGather(comm->bootstrap, allData, sizeof(int)));
   for (int i=0; i<nranks; i++)
     comm->nThreads = std::max(allData[i], comm->nThreads);
-  if (rank == 0) INFO(INIT,"Using %d threads", comm->nThreads);
+  if (rank == 0) INFO(NCCL_INIT,"Using %d threads", comm->nThreads);
 
   // Determine the minimum CUDA Compute capability of all GPUs
   int myCompCap = ncclCudaCompCap();
@@ -639,7 +695,7 @@ static ncclResult_t initTransportsRank(struct ncclComm* comm, ncclUniqueId* comm
   NCCLCHECK(bootstrapAllGather(comm->bootstrap, allData, sizeof(int)));
   for (int i=0; i<nranks; i++)
     minCompCap = std::min(allData[i], minCompCap);
-  if (rank == 0) INFO(INIT,"Min Comp Cap %d", minCompCap);
+  if (rank == 0) INFO(NCCL_INIT,"Min Comp Cap %d", minCompCap);
 
   // Find min nrings across ranks
   allData[rank] = nrings;
@@ -658,7 +714,7 @@ static ncclResult_t initTransportsRank(struct ncclComm* comm, ncclUniqueId* comm
   NCCLCHECK(buildRings(nrings, rings, rank, nranks, prev, next));
   free(prev);
   free(next);
-  TRACE(INIT, "rank %d nranks %d - BUILT RINGS", rank, nranks);
+  TRACE(NCCL_INIT, "rank %d nranks %d - BUILT %d RINGS", rank, nranks, nrings);
 
   // Connect with prev/next for each ring
   struct ncclConnect *connect;
@@ -667,9 +723,8 @@ static ncclResult_t initTransportsRank(struct ncclComm* comm, ncclUniqueId* comm
     struct ncclChannel* channel = comm->channels+r;
     NCCLCHECK(setupChannel(comm, r, rank, nranks, rings+r*nranks, treeIn+r*nranks));
     NCCLCHECK(p2pSetup(comm, channel, 1, &channel->ring.prev, 1, &channel->ring.next));
-    //TODO: restore
-    //NCCLCHECK(p2pSetup(comm, channel, channel->tree.nDown, channel->tree.down, channel->tree.nUp, &channel->tree.up));
-    //NCCLCHECK(p2pSetup(comm, channel, channel->tree.nUp, &channel->tree.up, channel->tree.nDown, channel->tree.down));
+    NCCLCHECK(p2pSetup(comm, channel, NCCL_MAX_TREE_ARITY, channel->tree.down, 1, &channel->tree.up));
+    NCCLCHECK(p2pSetup(comm, channel, 1, &channel->tree.up, NCCL_MAX_TREE_ARITY, channel->tree.down));
 
     //////////////////////COLLNET////////////////////////
     // connect current rank to an extra rank using collnet
@@ -713,7 +768,7 @@ static ncclResult_t initTransportsRank(struct ncclComm* comm, ncclUniqueId* comm
     }
     /////////////////////////////////////////////////////
   }
-  TRACE(INIT, "rank %d nranks %d - CONNECTED RINGS AND TREES", rank, nranks);
+  TRACE(NCCL_INIT, "rank %d nranks %d - CONNECTED %d RINGS AND TREES", rank, nranks, nrings);
   free(connect);
   free(rings);
   free(treeIn);
@@ -743,7 +798,7 @@ static ncclResult_t initTransportsRank(struct ncclComm* comm, ncclUniqueId* comm
       multiNode = 1;
     }
   }
-  TRACE(INIT,"hostHash[%d] %lx intraRank %d intraRanks %d intraRank0 %d",
+  TRACE(NCCL_INIT,"hostHash[%d] %lx intraRank %d intraRanks %d intraRank0 %d",
       rank, rankInfos[rank].hostHash, intraRank, intraRanks, intraRank0);
   if (intraRank == -1 || intraRank0 == -1 || rankInfos[intraRank0].comm == NULL) {
     WARN("Failed to determine intra ranks hostHash[%d] %lx intraRank %d intraRanks %d intraRank0 %d",
@@ -755,19 +810,48 @@ static ncclResult_t initTransportsRank(struct ncclComm* comm, ncclUniqueId* comm
   // Determine thread threshold across all GPUs
   comm->threadThreshold = ncclThreadThreshold(minCompCap, multiNode);
 
-  TRACE(INIT, "rank %d nranks %d - DONE", rank, nranks);
+  TRACE(NCCL_INIT, "rank %d nranks %d - DONE", rank, nranks);
   return ncclSuccess;
 }
 
-bool SetCpuAffinity(int cudaDev, nvmlDevice_t* nvmlDevice) {
-  char busId[NVML_DEVICE_PCI_BUS_ID_BUFFER_SIZE];
-  if (cudaDeviceGetPCIBusId(busId, NVML_DEVICE_PCI_BUS_ID_BUFFER_SIZE, cudaDev) != cudaSuccess) return false;
-  if (wrapNvmlDeviceGetHandleByPciBusId(busId, nvmlDevice) != ncclSuccess) return false;
-  if (wrapNvmlDeviceSetCpuAffinity(*nvmlDevice) != ncclSuccess) {
-    WARN("Failed to set CPU affinity");
-    return false;
+static ncclResult_t getCpuGpuAffinity(int cudaDev, cpu_set_t* mask) {
+  CPU_ZERO_S(sizeof(cpu_set_t), mask);
+  char* cudaPath;
+  NCCLCHECK(getCudaPath(cudaDev, &cudaPath));
+  char path[PATH_MAX];
+  strncpy(path, cudaPath, PATH_MAX-1);
+  snprintf(path+strlen(path), PATH_MAX-1-strlen(path), "/local_cpus");
+  path[PATH_MAX-1] = '\0';
+  int fd;
+  SYSCHECKVAL(open(path, O_RDONLY), "open", fd);
+  char affinityStr[sizeof(cpu_set_t)*2];
+  int r = read(fd, affinityStr, sizeof(cpu_set_t)*2);
+  if (r > 0)
+    NCCLCHECK(ncclStrToCpuset(affinityStr, mask));
+  close(fd);
+  free(cudaPath);
+  return ncclSuccess;
+}
+
+static ncclResult_t setCpuAffinity(int cudaDev) {
+  // Work within the enveloppe we were provided
+  cpu_set_t mask;
+  SYSCHECK(sched_getaffinity(0, sizeof(cpu_set_t), &mask), "sched_getaffinity");
+
+  // Find the subpart that is local to our GPU
+  cpu_set_t gpuMask;
+  NCCLCHECK(getCpuGpuAffinity(cudaDev, &gpuMask));
+  cpu_set_t finalMask;
+  CPU_AND(&finalMask, &mask, &gpuMask);
+
+  // If those are not disjoint, try to stay local
+  if (CPU_COUNT(&finalMask)) {
+    char affinityStr[sizeof(cpu_set_t)*2];
+    NCCLCHECK(ncclCpusetToStr(&finalMask, affinityStr));
+    INFO(NCCL_INIT, "Setting affinity for GPU %d to %s", cudaDev, affinityStr);
+    SYSCHECK(sched_setaffinity(0, sizeof(cpu_set_t), &finalMask), "sched_setaffinity");
   }
-  return true;
+  return ncclSuccess;
 }
 
 ncclResult_t ncclCommInitRankSync(ncclComm_t* newcomm, int nranks, ncclUniqueId commId, int myrank) {
@@ -779,9 +863,8 @@ ncclResult_t ncclCommInitRankSync(ncclComm_t* newcomm, int nranks, ncclUniqueId 
 
   // Make sure all host memory allocation are close to the GPU
   int cudaDev;
-  nvmlDevice_t nvmlDevice;
   CUDACHECK(cudaGetDevice(&cudaDev));
-  SetCpuAffinity(cudaDev, &nvmlDevice);
+  NCCLCHECK(setCpuAffinity(cudaDev));
   ncclResult_t res;
 
   NCCLCHECKGOTO(commAlloc(newcomm, nranks, myrank), res, cleanup);
@@ -791,7 +874,7 @@ ncclResult_t ncclCommInitRankSync(ncclComm_t* newcomm, int nranks, ncclUniqueId 
   sched_setaffinity(0, sizeof(cpu_set_t), &affinitySave);
   NCCLCHECKGOTO(wrapNvmlShutdown(), res, cleanup);
 
-  INFO(INIT,"comm %p rank %d nranks %d - COMPLETE", *newcomm, myrank, nranks);
+  INFO(NCCL_INIT,"comm %p rank %d nranks %d cudaDev %d nvmlDev %d - Init COMPLETE", *newcomm, myrank, nranks, (*newcomm)->cudaDev, (*newcomm)->nvmlDev);
 
   return ncclSuccess;
 cleanup:
@@ -810,7 +893,7 @@ ncclResult_t ncclCommInitRank(ncclComm_t* newcomm, int nranks, ncclUniqueId comm
   NCCLCHECK(ncclInit());
   if (myrank == 0) showVersion();
 
-  INFO(INIT,"rank %d nranks %d", myrank, nranks);
+  INFO(NCCL_INIT,"rank %d nranks %d", myrank, nranks);
 
   // Make sure the CUDA runtime is initialized.
   CUDACHECK(cudaFree(NULL));
@@ -876,8 +959,8 @@ static ncclResult_t initTransportsAll(struct ncclComm** comms, const int* devs, 
   free(prev);
   free(next);
 
-  INFO(INIT,"Using %d threads", nthreads);
-  INFO(INIT,"Min Comp Cap %d", minCompCap);
+  INFO(NCCL_INIT,"Using %d threads", nthreads);
+  INFO(NCCL_INIT,"Min Comp Cap %d", minCompCap);
 
   int* rings;
   NCCLCHECK(ncclCalloc(&rings, nranks*MAXCHANNELS));
@@ -934,7 +1017,7 @@ ncclResult_t ncclCommInitAll(ncclComm_t* comms, int ndev, const int* devlist) {
   NCCLCHECK(wrapNvmlInit());
   showVersion();
 
-  INFO(INIT,"nranks %d", ndev);
+  INFO(NCCL_INIT,"nranks %d", ndev);
 
   NCCLCHECK(PtrCheck(comms, "CommInitAll", "comms"));
   if (ndev < 1) {
@@ -946,7 +1029,6 @@ ncclResult_t ncclCommInitAll(ncclComm_t* comms, int ndev, const int* devlist) {
   int savedDevice;
   int rank, cudaDev;
   ncclComm_t comm = NULL;
-  nvmlDevice_t nvmlDevice;
   int ncclDevList[ndev];
   for (int i=0; i<ndev; i++) {
     ncclDevList[i] = devlist ? devlist[i] : i;
@@ -964,7 +1046,7 @@ ncclResult_t ncclCommInitAll(ncclComm_t* comms, int ndev, const int* devlist) {
     cudaDev = ncclDevList[rank];
     CUDACHECKGOTO(cudaSetDevice(cudaDev), res, cleanup);
 
-    SetCpuAffinity(cudaDev, &nvmlDevice);
+    NCCLCHECK(setCpuAffinity(cudaDev));
 
     NCCLCHECKGOTO(commAlloc(&comm, ndev, rank), res, cleanup);
     comms[rank] = comm;
@@ -994,7 +1076,7 @@ cleanup:
 
 final:
   if(wrapNvmlShutdown() != ncclSuccess)
-    INFO(INIT,"NCCL did not shutdown nvml properly");
+    INFO(NCCL_INIT,"NCCL did not shutdown nvml properly");
   cudaSetDevice(savedDevice);
   sched_setaffinity(0, sizeof(cpu_set_t), &affinitySave);
   return res;
@@ -1042,6 +1124,31 @@ NCCL_API(ncclResult_t, ncclCommGetAsyncError, ncclComm_t comm, ncclResult_t *asy
 ncclResult_t ncclCommGetAsyncError(ncclComm_t comm, ncclResult_t *asyncError) {
   NCCLCHECK(PtrCheck(comm, "ncclGetAsyncError", "comm"));
   NCCLCHECK(PtrCheck(asyncError, "ncclGetAsyncError", "asyncError"));
+
+  // Check device reported error
+  static ncclDevError_t printedDevErr = ncclDevSuccess;
+  switch(*comm->fatalDevError) {
+    case ncclDevSuccess :
+      break;
+    case ncclDevAssertedMismatch :
+      if (printedDevErr != ncclDevAssertedMismatch) {
+        WARN("Mismatched collective detected, please check your collective calls at and around rank %d. You can use NCCL_DEBUG=INFO and NCCL_DEBUG_SUBSYS=COLL to see the collective logs", comm->rank);
+        printedDevErr = ncclDevAssertedMismatch;
+      }
+      if (comm->fatalError == ncclSuccess) {
+        comm->fatalError = ncclInvalidUsage;
+      }
+      break;
+    case ncclDevSuspectedMismatch :
+      if (printedDevErr != ncclDevSuspectedMismatch) {
+        WARN("Your program may be hanging, this may be caused by a collective mismatch around rank %d. Please check your collective calls at and around this rank. You can use NCCL_DEBUG=INFO and NCCL_DEBUG_SUBSYS=COLL to see the collective logs", comm->rank);
+        printedDevErr = ncclDevSuspectedMismatch;
+      }
+      break;
+    default:
+      WARN("Unknown device error %d", *comm->fatalDevError);
+      return ncclInternalError;
+  }
   *asyncError = comm->fatalError;
   return ncclSuccess;
 }

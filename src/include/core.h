@@ -38,7 +38,7 @@ struct cudaLaunchParams {
 #define NCCL_LL_CHANNEL_THRESHOLD 8 // Per thread size before we start increasing nrings
 #define NCCL_THREAD_THRESHOLD 64  // Per thread size before we switch to non-LL
 #define NCCL_THREAD_THRESHOLD_PREVOLTA 32 // Per thread size before we switch to non-LL for pre-Volta archs
-#define NCCL_LL_MAX_NTHREADS 256
+#define NCCL_LL_MAX_NTHREADS MAXTHREADS
 #define NCCL_LL_MIN_NTHREADS 64
 
 #define DIVUP(x, y) \
@@ -76,6 +76,12 @@ typedef enum {
   ncclPatternTreeUpDown
 } ncclPattern_t;
 
+typedef enum {
+  ncclDevSuccess,
+  ncclDevAssertedMismatch,
+  ncclDevSuspectedMismatch
+} ncclDevError_t;
+
 // Used to pass NCCL call information between functions
 struct ncclInfo {
   ncclColl_t coll;
@@ -104,7 +110,8 @@ struct ncclConnInfo {
   char *buff;         // Local for recv, remote for send
   uint64_t *tail;     // Local for recv, remote for send
   uint64_t *head;     // Local for send, remote for recv
-  uint64_t *opCount;  // Local for recv, remote for send
+  uint64_t *opCountLoc; // opCount of local rank
+  uint64_t *opCountRem; // opCount of remote rank
 
   int direct;         // Direct communication
   void **ptrExchange; // Pointer exchange for direct communication
@@ -144,6 +151,7 @@ struct ncclSendMem {
       char pad1[CACHE_LINE_SIZE-sizeof(uint64_t)];
       void* ptrExchange;
       char pad2[CACHE_LINE_SIZE-sizeof(void*)];
+      uint64_t opCount;
     };
     char pad3[MEM_ALIGN];
   };
@@ -179,9 +187,7 @@ struct ncclRing {
 #define NCCL_MAX_TREE_ARITY 3
 struct ncclTree {
   int depth;
-  int nUp;
   int up;
-  int nDown;
   int down[NCCL_MAX_TREE_ARITY];
 };
 
@@ -260,6 +266,7 @@ struct ncclComm {
   int rank;    // my rank in the communicator
   int nRanks;  // number of GPUs in communicator
   int cudaDev; // my cuda device index
+  int nvmlDev; // my NVML device number
 
   enum { GROUP, PARALLEL } launchMode;
   cudaStream_t userStream;
@@ -283,8 +290,12 @@ struct ncclComm {
   int groupCudaStream;
   cudaStream_t groupStream;
 
-  ncclResult_t fatalError;
   // Whether there has been a fatal error in this communicator.
+  ncclResult_t fatalError;
+
+  // Error reported by GPU
+  volatile ncclDevError_t* fatalDevError;
+
   // On host: this pointer has been obtained from cudaHostAlloc(cudaHostAllocMapped)
   // On device:  this pointer has been obtained from cudaHostGetDevicePointer()
   volatile uint32_t *abortFlag;
@@ -329,53 +340,33 @@ struct ncclComm {
 #include <errno.h>
 // Check system calls
 #define SYSCHECK(call, name) do { \
-  int ret = -1; \
-  while (ret == -1) { \
-    SYSCHECKVAL(call, name, ret); \
-    if (ret == -1) { \
-      INFO(ALL,"Got %s, retrying", strerror(errno));   \
-    }\
-  } \
-} while (0);
+  int retval; \
+  SYSCHECKVAL(call, name, retval); \
+} while (false)
 
 #define SYSCHECKVAL(call, name, retval) do { \
-  retval = call; \
-  if (retval == -1 && errno != EINTR && errno != EWOULDBLOCK && errno != EAGAIN) { \
+  SYSCHECKSYNC(call, name, retval); \
+  if (retval == -1) { \
     WARN("Call to " name " failed : %s", strerror(errno)); \
     return ncclSystemError; \
   } \
-} while (0);
+} while (false)
 
-#define SYSCHECKNTIMES(call, name, times, usec, exptype) do { \
-  int ret = -1; \
-  int count = 0; \
-  while (ret == -1 && count < times) { \
-    SYSCHECKVALEXP(call, name, ret, exptype); \
-    count++; \
-    if (ret == -1) { \
-      usleep(usec); \
-    }\
-  } \
-  if (ret == -1) { \
-    WARN("Call to " name " timeout : %s", strerror(errno)); \
-    return ncclSystemError; \
-  } \
-} while (0);
-
-#define SYSCHECKVALEXP(call, name, retval, exptype) do { \
+#define SYSCHECKSYNC(call, name, retval) do { \
   retval = call; \
-  if (retval == -1 && errno != EINTR && errno != EWOULDBLOCK && errno != EAGAIN && errno != exptype) { \
-    WARN("Call to " name " failed : %s", strerror(errno)); \
-    return ncclSystemError; \
+  if (retval == -1 && (errno == EINTR || errno == EWOULDBLOCK || errno == EAGAIN)) { \
+    INFO(NCCL_ALL,"Call to " name " returned %s, retrying", strerror(errno)); \
+  } else { \
+    break; \
   } \
-} while (0);
+} while(true)
 
 // Propagate errors up
 #define NCCLCHECK(call) do { \
   ncclResult_t res = call; \
   if (res != ncclSuccess) { \
     /* Print the back trace*/ \
-    INFO(ALL,"%s:%d -> %d", __FILE__, __LINE__, res);    \
+    INFO(NCCL_ALL,"%s:%d -> %d", __FILE__, __LINE__, res);    \
     return res; \
   } \
 } while (0);
@@ -384,7 +375,7 @@ struct ncclComm {
   res = call; \
   if (res != ncclSuccess) { \
     /* Print the back trace*/ \
-    INFO(ALL,"%s:%d -> %d", __FILE__, __LINE__, res);    \
+    INFO(NCCL_ALL,"%s:%d -> %d", __FILE__, __LINE__, res);    \
     goto label; \
   } \
 } while (0);

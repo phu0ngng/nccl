@@ -8,7 +8,7 @@ include ../makefiles/common.mk
 include ../makefiles/version.mk
 
 ##### src files
-INCEXPORTS  := nccl.h
+INCEXPORTS  := nccl.h nccl_net.h
 LIBSRCFILES := init.cu channel.cu bootstrap.cu transport.cu enqueue.cu \
                 misc/group.cu misc/nvmlwrap.cu misc/ibvwrap.cu misc/rings.cu misc/utils.cu misc/checks.cu misc/trees.cu \
 		transport/p2p.cu transport/shm.cu transport/net.cu transport/net_socket.cu transport/net_ib.cu transport/coll_net.cu \
@@ -29,10 +29,9 @@ LIBTARGET  := $(LIBNAME:%=%.$(NCCL_MAJOR).$(NCCL_MINOR).$(NCCL_PATCH))
 STATICLIBTARGET := $(STATICLIBNAME)
 LIBOBJ     := $(LIBSRCFILES:%.cu=$(OBJDIR)/%.o)
 DEPFILES   := $(LIBOBJ:%.o=%.d)
-LDFLAGS    += -L${CUDA_LIB} -lcudart_static -lpthread -lrt
+LDFLAGS    += -L${CUDA_LIB} -lcudart_static -lpthread -lrt -ldl
 
 DEVICELIB  := $(BUILDDIR)/obj/collectives/device/colldevice.a
-
 
 ##### rules
 build : lib staticlib
@@ -41,15 +40,19 @@ lib : $(INCTARGETS) $(LIBDIR)/$(LIBTARGET)
 
 staticlib : $(LIBDIR)/$(STATICLIBTARGET)
 
-devicelib: nccl.h
+$(DEVICELIB): ALWAYS_REBUILD
 	$(MAKE) -C collectives/device
+
+# Empty target to force rebuild
+ALWAYS_REBUILD:
 
 -include $(DEPFILES)
 $(LIBDIR)/$(LIBTARGET) $(LIBDIR)/$(STATICLIBTARGET) : $(LIBOBJ)
 
-nccl.h : nccl.h.in
+$(INCDIR)/nccl.h : nccl.h.in
 # NCCL_VERSION(X,Y,Z) ((X) * 1000 + (Y) * 100 + (Z))
 	@$(eval NCCL_VERSION := $(shell printf "%d%d%02d" $(NCCL_MAJOR) $(NCCL_MINOR) $(NCCL_PATCH)))
+	mkdir -p $(INCDIR)
 	printf "Generating %-35s > %s\n" $< $@
 	sed -e "s/\$${nccl:Major}/$(NCCL_MAJOR)/g" \
 	    -e "s/\$${nccl:Minor}/$(NCCL_MINOR)/g" \
@@ -58,14 +61,14 @@ nccl.h : nccl.h.in
 	    -e "s/\$${nccl:Version}/$(NCCL_VERSION)/g" \
 	    $< > $@
 
-$(LIBDIR)/$(LIBTARGET): $(LIBOBJ) devicelib
+$(LIBDIR)/$(LIBTARGET): $(LIBOBJ) $(DEVICELIB)
 	@printf "Linking    %-35s > %s\n" $(LIBTARGET) $@
 	mkdir -p $(LIBDIR)
 	$(CXX) $(CXXFLAGS) -shared -Wl,--no-as-needed -Wl,-soname,$(LIBSONAME) -o $@ $(LIBOBJ) $(DEVICELIB) $(LDFLAGS)
 	ln -sf $(LIBSONAME) $(LIBDIR)/$(LIBNAME)
 	ln -sf $(LIBTARGET) $(LIBDIR)/$(LIBSONAME)
 
-$(LIBDIR)/$(STATICLIBTARGET): $(LIBOBJ) devicelib
+$(LIBDIR)/$(STATICLIBTARGET): $(LIBOBJ) $(DEVICELIB)
 	@printf "Archiving  %-35s > %s\n" $(STATICLIBTARGET) $@
 	mkdir -p $(LIBDIR)
 	$(eval TMP := $(shell mktemp -d))
@@ -79,18 +82,23 @@ $(INCDIR)/%.h : %.h
 	mkdir -p $(INCDIR)
 	cp -f $< $@
 
+$(INCDIR)/nccl_%.h : include/nccl_%.h
+	@printf "Grabbing   %-35s > %s\n" $< $@
+	mkdir -p $(INCDIR)
+	cp -f $< $@
+
 $(OBJDIR)/%.o : %.cu
 	@printf "Compiling  %-35s > %s\n" $< $@
 	mkdir -p `dirname $@`
-	$(NVCC) -I. -Iinclude -c $(NVCUFLAGS) --compiler-options "$(CXXFLAGS)" $< -o $@
-	@$(NVCC) -I. -Iinclude -M $(NVCUFLAGS) --compiler-options "$(CXXFLAGS)" $< > $(@:%.o=%.d.tmp)
+	$(NVCC) -I. -I$(INCDIR) -Iinclude -c $(NVCUFLAGS) --compiler-options "$(CXXFLAGS)" $< -o $@
+	@$(NVCC) -I. -I$(INCDIR) -Iinclude -M $(NVCUFLAGS) --compiler-options "$(CXXFLAGS)" $< > $(@:%.o=%.d.tmp)
 	@sed "0,/^.*:/s//$(subst /,\/,$@):/" $(@:%.o=%.d.tmp) > $(@:%.o=%.d)
 	@sed -e 's/.*://' -e 's/\\$$//' < $(@:%.o=%.d.tmp) | fmt -1 | \
                 sed -e 's/^ *//' -e 's/$$/:/' >> $(@:%.o=%.d)
 	@rm -f $(@:%.o=%.d.tmp)
 
 clean :
-	rm -rf ${INCDIR} ${LIBDIR} ${OBJDIR} nccl.h
+	rm -rf ${INCDIR} ${LIBDIR} ${OBJDIR}
 	$(MAKE) -C collectives/device clean
 
 install : lib

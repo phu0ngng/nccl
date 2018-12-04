@@ -166,6 +166,7 @@ Finally, we create the communicator:
  ncclCommInitRank(&comm, nRanks, id, myRank);
 
 We can now call the NCCL collective operations using the communicator.
+
 .. code:: C
 
  ncclAllReduce( ... , comm);

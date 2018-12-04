@@ -93,6 +93,7 @@ enum { proxyRecv=0, proxySend=1 };
 
 template <int type>
 static void SaveProxy(int peer, struct ncclProxyArgs* args) {
+  if (peer < 0) return;
   struct ncclPeer* peerComm = args->channel->peers+peer;
   struct ncclConnector* connector = type == proxyRecv ? &peerComm->recv : &peerComm->send;
   struct transportProxyInfo* info = connector->proxyInfo;
@@ -114,16 +115,14 @@ ncclResult_t transportSaveProxies(struct ncclProxyArgs* args, int pattern, int r
   if (pattern == ncclPatternTreeUp || pattern == ncclPatternTreeUpDown) {
     // Tree up
     struct ncclTree* tree = &args->channel->tree;
-    for (int i=0; i<tree->nDown; i++) SaveProxy<proxyRecv>(tree->down[i], args);
-    if (tree->nUp) SaveProxy<proxySend>(tree->up, args);
-    if (tree->nUp) INFO(INIT, "Saved send proxy to %d", tree->up);
+    for (int i=0; i<NCCL_MAX_TREE_ARITY; i++) SaveProxy<proxyRecv>(tree->down[i], args);
+    SaveProxy<proxySend>(tree->up, args);
   }
   if (pattern == ncclPatternTreeDown || pattern == ncclPatternTreeUpDown) {
     // Tree down
     struct ncclTree* tree = &args->channel->tree;
-    for (int i=0; i<tree->nDown; i++) SaveProxy<proxySend>(tree->down[i], args);
-    if (tree->nUp) SaveProxy<proxyRecv>(tree->up, args);
-    if (tree->nUp) INFO(INIT, "Saved recv proxy from %d", tree->up);
+    for (int i=0; i< NCCL_MAX_TREE_ARITY; i++) SaveProxy<proxySend>(tree->down[i], args);
+    SaveProxy<proxyRecv>(tree->up, args);
   }
   return ncclSuccess;
 }
@@ -135,10 +134,10 @@ ncclResult_t transportStartProxies(ncclComm* comm) {
     FifoPushArgs(comm->channels[r].peers[ring->next].send.proxyInfo);
 
     struct ncclTree* tree = &comm->channels[r].tree;
-    for (int i=0; i<tree->nDown; i++) FifoPushArgs(comm->channels[r].peers[tree->down[i]].recv.proxyInfo);
-    if (tree->nUp) FifoPushArgs(comm->channels[r].peers[tree->up].recv.proxyInfo);
-    for (int i=0; i<tree->nDown; i++) FifoPushArgs(comm->channels[r].peers[tree->down[i]].send.proxyInfo);
-    if (tree->nUp) FifoPushArgs(comm->channels[r].peers[tree->up].send.proxyInfo);
+    for (int i=0; tree->down[i] >= 0; i++) FifoPushArgs(comm->channels[r].peers[tree->down[i]].recv.proxyInfo);
+    if (tree->up >= 0) FifoPushArgs(comm->channels[r].peers[tree->up].recv.proxyInfo);
+    for (int i=0; tree->down[i] >= 0; i++) FifoPushArgs(comm->channels[r].peers[tree->down[i]].send.proxyInfo);
+    if (tree->up >= 0) FifoPushArgs(comm->channels[r].peers[tree->up].send.proxyInfo);
   }
   pthread_yield(); // Let other threads run
   return ncclSuccess;
