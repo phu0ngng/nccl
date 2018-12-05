@@ -49,5 +49,6 @@ ncclResult_t freeChannel(struct ncclChannel* channel, int nRanks) {
     if (peer->recv.transportResources) NCCLCHECK(peer->recv.transportComm->free(peer->recv.transportResources));
     NCCLCHECK(transportDestroyProxy(&peer->recv));
   }
+  // TODO: free collnet
   return ncclSuccess;
 }

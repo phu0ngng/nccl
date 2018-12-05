@@ -331,7 +331,7 @@ static ncclResult_t selectTransport(struct ncclPeerInfo* myInfo, struct ncclPeer
     if (ret > 0) {
       connector->transportComm = transportComm;
       NCCLCHECK(transportComm->setup(myInfo, peerInfo, connect, connector, buffSize, channelId));
-      NCCLCHECK(transportCreateProxy(connector));
+      NCCLCHECK(transportCreateProxy(connector, connector->transportComm->proxy));
       return ncclSuccess;
     }
   }
@@ -608,7 +608,7 @@ ncclResult_t ncclCommSetIntra(struct ncclComm* comm, int rank, int ranks, struct
   return ncclSuccess;
 }
 
-extern struct ncclTransport collNetTransport;
+extern struct ncclCollTransport collNetTransport;
 
 static ncclResult_t p2pSetup(struct ncclComm* comm, struct ncclChannel* channel, int nrecv, int* peerRecv, int nsend, int* peerSend) {
   TRACE(NCCL_INIT, "nsend %d nrecv %d", nsend, nrecv);
@@ -748,30 +748,23 @@ static ncclResult_t initTransportsRank(struct ncclComm* comm, ncclUniqueId* comm
       INFO(NCCL_INIT|NCCL_NET, "collNet canConnect = %d", ret);
 
       if (ret > 0) {
+        struct ncclCollTransportComm* allreduce = &(collNetTransport.allreduce);
         // select
         struct ncclConnector* recv = &channel->peers[nranks].recv;
         struct ncclConnector* send = &channel->peers[nranks].send;
-        recv->transportComm = &(collNetTransport.recv);
-        send->transportComm = &(collNetTransport.send);
         // setup
-        struct ncclConnect recvConnect, sendConnect;
-        NCCLCHECK(recv->transportComm->setup(myInfo, peerInfo, &recvConnect, recv, channel->buffSize, channel->id));
-        NCCLCHECK(send->transportComm->setup(myInfo, peerInfo, &sendConnect, send, channel->buffSize, channel->id));
+        struct ncclConnect myConnect;
+        NCCLCHECK(allreduce->setup(myInfo, &myConnect, send, recv, channel->buffSize, channel->id));
         // create proxy
-        NCCLCHECK(transportCreateProxy(recv));
-        NCCLCHECK(transportCreateProxy(send));
+        NCCLCHECK(transportCreateProxy(recv, allreduce->recvProxy));
+        NCCLCHECK(transportCreateProxy(send, allreduce->sendProxy));
         // send connect handle to everyone else
         // all-gather style
-        ncclConnect allRecvs[nranks];
-        memcpy(allRecvs+rank, &recvConnect, sizeof(struct ncclConnect));
-        NCCLCHECK(bootstrapAllGather(comm->bootstrap, allRecvs, sizeof(struct ncclConnect)));
-        ncclConnect allSends[nranks];
-        memcpy(allSends+rank, &sendConnect, sizeof(struct ncclConnect));
-        NCCLCHECK(bootstrapAllGather(comm->bootstrap, allSends, sizeof(struct ncclConnect)));
+        ncclConnect allConnects[nranks];
+        memcpy(allConnects+rank, &myConnect, sizeof(struct ncclConnect));
+        NCCLCHECK(bootstrapAllGather(comm->bootstrap, allConnects, sizeof(struct ncclConnect)));
         // connect
-        int root = 0;
-        NCCLCHECK(send->transportComm->connect(allRecvs+root, send));
-        NCCLCHECK(recv->transportComm->connect(allSends+rank, recv));
+        NCCLCHECK(allreduce->connect(allConnects, nranks, send, recv));
         INFO(NCCL_INIT|NCCL_NET, "rank %d collNet init COMPLETE", comm->rank);
       }
     }

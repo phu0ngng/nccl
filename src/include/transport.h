@@ -63,6 +63,20 @@ struct ncclTransport {
   struct ncclTransportComm recv;
 };
 
+struct ncclCollTransportComm {
+  ncclResult_t (*setup)(struct ncclPeerInfo*, struct ncclConnect*, struct ncclConnector*, struct ncclConnector*, int buffSize, int channelId);
+  ncclResult_t (*connect)(struct ncclConnect*, int nranks, struct ncclConnector*, struct ncclConnector*);
+  ncclResult_t (*free)(void*, void*);
+  ncclResult_t (*sendProxy)(struct ncclProxyArgs*);
+  ncclResult_t (*recvProxy)(struct ncclProxyArgs*);
+};
+
+struct ncclCollTransport {
+  const char name[4];
+  ncclResult_t (*canConnect)(ncclTvalue_t*, struct ncclPeerInfo*, struct ncclPeerInfo*);
+  struct ncclCollTransportComm allreduce;
+};
+
 #include <pthread.h>
 
 typedef ncclResult_t (*threadFunc_t)(struct ncclProxyArgs*);
@@ -81,7 +95,7 @@ struct transportProxyInfo {
   struct ncclComm *comm;
 };
 
-ncclResult_t transportCreateProxy(struct ncclConnector* connector);
+ncclResult_t transportCreateProxy(struct ncclConnector* connector, threadFunc_t proxyFunc);
 ncclResult_t transportDestroyProxy(struct ncclConnector* connector);
 
 enum proxyMode {

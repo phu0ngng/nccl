@@ -162,8 +162,7 @@ void* persistentThread(void *opaqueInfo) {
   }
 }
 
-ncclResult_t transportCreateProxy(struct ncclConnector* connector) {
-  threadFunc_t proxyfunc = (threadFunc_t) connector->transportComm->proxy;
+ncclResult_t transportCreateProxy(struct ncclConnector* connector, threadFunc_t proxyfunc) {
   if (proxyfunc) {
     struct transportProxyInfo* info;
     NCCLCHECK(ncclCalloc(&info, 1));
