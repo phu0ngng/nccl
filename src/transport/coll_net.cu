@@ -70,7 +70,7 @@ struct collNetRecvResources {
 };
 
 static ncclResult_t netDevices(int* ndev, int** scores) {
-  NCCLCHECK(collNetDevices(ndev, scores));
+  NCCLCHECK(collNetDevices(ndev));
   if (*ndev == 0) {
     WARN("Error : Network returned 0 device");
     return ncclSystemError;
@@ -336,7 +336,7 @@ ncclResult_t collNetFree(void* sendTransportResources, void* recvTransportResour
   NCCLCHECK(ncclCudaHostFree(sendResources->hostRecvMem));
   if (sendResources->cudaSupport)
     CUDACHECK(cudaFree(sendResources->devRecvMem));
-  NCCLCHECK(collNetCloseSend(sendResources->collNetSendComm));
+  NCCLCHECK(collNetCloseColl(sendResources->collNetSendComm));
   free(sendResources->reqFifo);
   free(sendResources);
 
@@ -346,7 +346,6 @@ ncclResult_t collNetFree(void* sendTransportResources, void* recvTransportResour
   NCCLCHECK(ncclCudaHostFree(recvResources->hostRecvMem));
   if (recvResources->cudaSupport)
     CUDACHECK(cudaFree(recvResources->devRecvMem));
-  NCCLCHECK(collNetCloseRecv(recvResources->collNetRecvComm));
   free(recvResources);
   return ncclSuccess;
 }
