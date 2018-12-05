@@ -59,7 +59,7 @@ void ncclCollNetMpiUnlock();
 int ncclCollNetMpiDevices(int* ndev, int** scores);
 int ncclCollNetMpiPtrSupport(int dev, int* supportedTypes);
 int ncclCollNetMpiListen(int dev, void* handle, void** listenComm);
-int ncclCollNetMpiConnect(int dev, void* handle, void** sendComm);
+int ncclCollNetMpiConnect(int dev, void* handles[], int nranks, void* listenComm, void** collComm);
 int ncclCollNetMpiAccept(void *listenComm, void** recvComm);
 int ncclCollNetMpiIsend(void* sendComm, void* data, void* dst, int size, int type, void** request);
 int ncclCollNetMpiIrecv(void* recvComm, void* data, int size, int type, void** request);
@@ -250,9 +250,9 @@ int ncclCollNetMpiListen(int dev, void* opaqueHandle, void** listenComm) {
 // rank of root
 static int root = 0;
 
-int ncclCollNetMpiConnect(int dev, void* opaqueHandle, void** sendComm) {
+int ncclCollNetMpiConnect(int dev, void* opaqueHandles[], int nranks, void* listenComm, void** collComm) {
   struct ncclCollNetMpiSendComm* comm = (struct ncclCollNetMpiSendComm*)malloc(sizeof(struct ncclCollNetMpiSendComm));
-  struct ncclCollNetMpiHandle* handle = (struct ncclCollNetMpiHandle*) opaqueHandle;
+  struct ncclCollNetMpiHandle* handle = (struct ncclCollNetMpiHandle*)(opaqueHandles[0]); // take 0 as root
   int err;
   //int myTmpTag;
   //getTag(&myTmpTag);
@@ -268,7 +268,7 @@ int ncclCollNetMpiConnect(int dev, void* opaqueHandle, void** sendComm) {
   for (int i = 1; i < OFFSET_FIFO_SIZE; i++) {
     offsetFifo[i] = -1;
   }
-  *sendComm = comm;
+  *collComm = comm;
   return err;
 }
 

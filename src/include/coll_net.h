@@ -17,7 +17,7 @@ static const char* collNetName() { return collNet->name; }
 static ncclResult_t collNetDevices(int* ndev, int** scores) { NCCLCHECK(collNet->devices(ndev, scores)); return ncclSuccess; }
 static ncclResult_t collNetPtrSupport(int dev, int* supportedTypes) { NCCLCHECK(collNet->ptrSupport(dev, supportedTypes)); return ncclSuccess; }
 static ncclResult_t collNetListen(int dev, void* handle, void** listenComm) { NCCLCHECK(collNet->listen(dev, handle, listenComm)); return ncclSuccess; }
-static ncclResult_t collNetConnect(int dev, void* handle, void** sendComm) { NCCLCHECK(collNet->connect(dev, handle, sendComm)); return ncclSuccess; }
+static ncclResult_t collNetConnect(int dev, void* handles[], int nranks, void* listenComm, void** collComm) { NCCLCHECK(collNet->connect(dev, handles, nranks, listenComm, collComm)); return ncclSuccess; }
 static ncclResult_t collNetAccept(void* listenComm, void** recvComm) { NCCLCHECK(collNet->accept(listenComm, recvComm)); return ncclSuccess; }
 static ncclResult_t collNetIsend(void* sendComm, void* src, void* dst, int size, int type, void** request) { NCCLCHECK(collNet->isend(sendComm, src, dst, size, type, request)); return ncclSuccess; }
 static ncclResult_t collNetIrecv(void* recvComm, void* data, int size, int type, void** request) { NCCLCHECK(collNet->irecv(recvComm, data, size, type, request)); return ncclSuccess; }

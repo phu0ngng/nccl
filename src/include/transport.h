@@ -68,7 +68,7 @@ struct ncclCollTransportComm {
   ncclResult_t (*connect)(struct ncclConnect*, int nranks, struct ncclConnector*, struct ncclConnector*);
   ncclResult_t (*free)(void*, void*);
   ncclResult_t (*sendProxy)(struct ncclProxyArgs*);
-  ncclResult_t (*recvProxy)(struct ncclProxyArgs*);
+  ncclResult_t (*recvProxy)(struct ncclProxyArgs*);//TODO: merge
 };
 
 struct ncclCollTransport {

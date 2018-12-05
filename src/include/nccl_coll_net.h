@@ -37,7 +37,7 @@ typedef struct {
   // between ranks to create a connection.
   ncclResult_t (*listen)(int dev, void* handle, void** listenComm);
   // Connect to a handle and return a sending comm object for that peer.
-  ncclResult_t (*connect)(int dev, void* handle, void** sendComm);
+  ncclResult_t (*connect)(int dev, void* handles[], int nranks, void* listenComm, void** collComm);
   // Finalize connection establishment after remote peer has called connectHandle
   ncclResult_t (*accept)(void* listenComm, void** recvComm);
   // Asynchronous send to a peer. Type is either NCCL_PTR_HOST or NCCL_PTR_CUDA.
