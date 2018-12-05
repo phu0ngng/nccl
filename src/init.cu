@@ -379,17 +379,11 @@ static ncclResult_t setupChannel(struct ncclComm* comm, int channelId, int rank,
     treeMasters[0] = 1;
   }
 
-  if (comm->treeThreshold == -2) {
-    if (nMasters >= ncclParamTreeNodesThreshold()) {
-      // Switch to rings when we have 256K per rank
-      comm->treeThreshold = 256*1024*comm->nRanks;
-    } else {
-      comm->treeThreshold = 0;
-    }
+  if (comm->treeThreshold == -2 && nMasters < ncclParamTreeNodesThreshold()) {
+    comm->treeThreshold = 0;
   }
-  INFO(NCCL_INIT, "Using trees for sizes below %ld", comm->treeThreshold);
 
-  if (comm->treeThreshold > 0) {
+  if (comm->treeThreshold != 0) {
     // Not an exact value but a good approximation in most cases and consistent
     // across nodes
     tree->depth = nranks/nMasters + log2(nMasters);
