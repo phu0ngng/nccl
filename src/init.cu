@@ -135,8 +135,7 @@ ncclResult_t initNet() {
 
 NCCL_PARAM(LlThreshold, "LL_THRESHOLD", -2);
 NCCL_PARAM(ThreadThreshold, "THREAD_THRESHOLD", -2);
-NCCL_PARAM(TreeThreshold, "TREE_THRESHOLD", 0);
-int64_t ncclTreeThreshold() { return ncclParamTreeThreshold(); }
+NCCL_PARAM(TreeThreshold, "TREE_THRESHOLD", -2);
 
 int ncclThreadThreshold(int minCompCap, int multiNode) {
   int threshold = ncclParamThreadThreshold();
@@ -241,6 +240,7 @@ static ncclResult_t commAlloc(ncclComm_t* comret, int ndev, int rank) {
   getNvmlDevice(comm->cudaDev, &comm->nvmlDev);
   comm->doneEvent = doneEvent;
   comm->llThreshold = ncclParamLlThreshold();
+  comm->treeThreshold = ncclParamTreeThreshold();
   comm->checkPointers = ncclParamCheckPointers() == 1 ? true : false;
 #if __CUDACC_VER_MAJOR__ >= 10 || (__CUDACC_VER_MAJOR__ >= 9 && __CUDACC_VER_MINOR__ >= 2)
   comm->groupCudaStream = ncclParamGroupCudaStream();
@@ -342,6 +342,8 @@ static int log2(int n) {
  return l;
 }
 
+NCCL_PARAM(TreeNodesThreshold, "TREE_NODES_THRESHOLD", 4);
+
 static ncclResult_t setupChannel(struct ncclComm* comm, int channelId, int rank, int nranks, int* ringRanks, int* treeMasters) {
   TRACE(NCCL_INIT, "rank %d nranks %d", rank, nranks);
   NCCLCHECK(initChannel(comm, channelId));
@@ -366,18 +368,28 @@ static ncclResult_t setupChannel(struct ncclComm* comm, int channelId, int rank,
   tree->up = -1;
   tree->down[0] = tree->down[1] = tree->down[2] = -1;
 
-  if (ncclTreeThreshold() > 0) {
+  //
+  // Find per-node masters and connect them via a binary tree
+  //
 
-    //
-    // Find per-node masters and connect them via a binary tree
-    //
+  int nMasters = 0;
+  for (int r=0; r<nranks; r++) nMasters += treeMasters[r];
+  if (nMasters == 0) {
+    nMasters = 1;
+    treeMasters[0] = 1;
+  }
 
-    int nMasters = 0;
-    for (int r=0; r<nranks; r++) nMasters += treeMasters[r];
-    if (nMasters == 0) {
-      nMasters = 1;
-      treeMasters[0] = 1;
+  if (comm->treeThreshold == -2) {
+    if (nMasters >= ncclParamTreeNodesThreshold()) {
+      // Switch to rings when we have 256K per rank
+      comm->treeThreshold = 256*1024*comm->nRanks;
+    } else {
+      comm->treeThreshold = 0;
     }
+  }
+  INFO(NCCL_INIT, "Using trees for sizes below %ld", comm->treeThreshold);
+
+  if (comm->treeThreshold > 0) {
     // Not an exact value but a good approximation in most cases and consistent
     // across nodes
     tree->depth = nranks/nMasters + log2(nMasters);

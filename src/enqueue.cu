@@ -233,7 +233,7 @@ static ncclResult_t getPatternInfo(struct ncclInfo* info) {
   else if (info->coll == ncclCollReduce) info->pattern = ncclPatternPipelineTo;
   else if (info->coll == ncclCollAllGather || info->coll == ncclCollReduceScatter) info->pattern = ncclPatternRing;
   else if (info->coll == ncclCollAllReduce) {
-    if (info->nBytes < ncclTreeThreshold())
+    if (info->nBytes < info->comm->treeThreshold)
       info->pattern = ncclPatternTreeUpDown;
     else
       info->pattern = ncclPatternRingTwice;

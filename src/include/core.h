@@ -286,6 +286,9 @@ struct ncclComm {
   ssize_t llThreshold;
   ssize_t threadThreshold;
 
+  // Tree algorithm threshold
+  ssize_t treeThreshold;
+
   // An internal CUDA stream for NCCL kernel CGMD launches
   int groupCudaStream;
   cudaStream_t groupStream;
