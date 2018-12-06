@@ -56,11 +56,13 @@ void ncclCollNetMpiUnlock();
 /* NCCL MPI Plugin */
 
 // Functions prototypes
-int ncclCollNetMpiDevices(int* ndev, int** scores);
+int ncclCollNetMpiInit(/*ncclDebugLogger_t logFunction*/);  //TODO
+int ncclCollNetMpiDevices(int* ndev);
+int ncclCollNetMpiPciPath(int dev, char** path);
 int ncclCollNetMpiPtrSupport(int dev, int* supportedTypes);
 int ncclCollNetMpiListen(int dev, void* handle, void** listenComm);
 int ncclCollNetMpiConnect(int dev, void* handles[], int nranks, void* listenComm, void** collComm);
-int ncclCollNetMpiAccept(void *listenComm, void** recvComm);
+int ncclCollNetMpiReduceSupport(int* support);
 int ncclCollNetMpiIsend(void* sendComm, void* data, void* dst, int size, int type, void** request);
 int ncclCollNetMpiIrecv(void* recvComm, void* data, int size, int type, void** request);
 int ncclCollNetMpiFlush(void* recvComm, void* data, int size);
@@ -70,16 +72,17 @@ int ncclCollNetMpiClose(void* comm);
 // MPI Net Module
 ncclCollNet_t ncclCollNetMpi = {
   "MPI",
+  ncclCollNetMpiInit,
   ncclCollNetMpiDevices,
+  ncclCollNetMpiPciPath,
   ncclCollNetMpiPtrSupport,
   ncclCollNetMpiListen,
   ncclCollNetMpiConnect,
-  ncclCollNetMpiAccept,
+  ncclCollNetMpiReduceSupport,
   ncclCollNetMpiIsend,
   ncclCollNetMpiIrecv,
   ncclCollNetMpiFlush,
   ncclCollNetMpiTest,
-  ncclCollNetMpiClose,
   ncclCollNetMpiClose,
   ncclCollNetMpiClose
 };
@@ -214,17 +217,29 @@ static int getCudaSupport() {
   return cudaSupport;
 }
 
-int ncclCollNetMpiDevices(int* ndev, int** scores) {
+int ncclCollNetMpiInit(/*ncclDebugLogger_t logFunction*/) {
+  printf("ncclCollNetMpiInit not implemented\n");
+  return 0;
+}
+
+int ncclCollNetMpiDevices(int* ndev) {
   *ndev = 1;
-  int* sc = (int*)malloc(sizeof(int));
-  sc[0] = NCCL_MAX_SCORE;
-  *scores = sc;
+  return 0;
+}
+
+int ncclCollNetMpiPciPath(int dev, char** path) {
+  printf("ncclCollNetMpiPciPath not implemented\n");
   return 0;
 }
 
 int ncclCollNetMpiPtrSupport(int dev, int* supportedTypes) {
   *supportedTypes = NCCL_PTR_HOST;
   if (getCudaSupport()) *supportedTypes |= NCCL_PTR_CUDA;
+  return 0;
+}
+
+int ncclCollNetMpiReduceSupport(int* support) {
+  printf("ncclCollNetMpiReduceSupport not implemented\n");
   return 0;
 }
 
@@ -269,32 +284,6 @@ int ncclCollNetMpiConnect(int dev, void* opaqueHandles[], int nranks, void* list
     offsetFifo[i] = -1;
   }
   *collComm = comm;
-  return err;
-}
-
-int ncclCollNetMpiAccept(void *listenComm, void** recvComm) {
-  struct ncclCollNetMpiListenComm* lComm = (struct ncclCollNetMpiListenComm*)listenComm;
-  struct ncclCollNetMpiRecvComm* rComm = (struct ncclCollNetMpiRecvComm*)malloc(sizeof(struct ncclCollNetMpiRecvComm));
-  int recvId;
-  MPI_Status status;
-  int err = 0;
-  MPI_Request request;
-  int c = 0;
-  if (lComm->rank == root) {
-    while (c < lComm->nranks) {
-      MPI_PROTECT(err, MPI_Irecv(&recvId, sizeof(recvId), MPI_BYTE, MPI_ANY_SOURCE, 0, ncclCollNetMpiComm, &request));
-      int done = 0;
-      while (done == 0) MPI_PROTECT(err, MPI_Test(&request, &done, &status));
-      int remRank = status.MPI_SOURCE;
-      printf("Got connection from %d commId %x\n", remRank, recvId);
-      c++;
-    }
-  }
-
-  rComm->root = root;
-  rComm->nranks = lComm->nranks;
-  rComm->rank = lComm->rank;
-  *recvComm = rComm;
   return err;
 }
 

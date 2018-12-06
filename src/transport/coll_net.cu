@@ -69,133 +69,76 @@ struct collNetRecvResources {
 #endif
 };
 
-static ncclResult_t netDevices(int* ndev, int** scores) {
+static ncclResult_t collNetDistance(int cudaDev, int dev, short* distance) {
+  char* cudaPath = NULL;
+  char* nicPath = NULL;
+  NCCLCHECK(getCudaPath(cudaDev, &cudaPath));
+  NCCLCHECK(collNetPciPath(dev, &nicPath));
+  *distance = (nicPath == NULL || cudaPath == NULL) ? PATH_SOC : pciDistance(nicPath, cudaPath);
+  if (nicPath) free(nicPath);
+  if (cudaPath) free(cudaPath);
+  return ncclSuccess;
+}
+
+static ncclResult_t collNetDevices(int* ndev, short** distances) {
   NCCLCHECK(collNetDevices(ndev));
   if (*ndev == 0) {
     WARN("Error : Network returned 0 device");
     return ncclSystemError;
   }
   if (*ndev > COLL_NET_MAX_IFS) *ndev = COLL_NET_MAX_IFS;
+
+  *distances = (short*)malloc(*ndev*sizeof(short));
+  if (*distances == NULL) return ncclSystemError;
+
+  // Find distance with current GPU
+  int cudaDev;
+  cudaGetDevice(&cudaDev);
+  char line[1024];
+  sprintf(line, "CUDA Dev %d, %s NIC distance : ", cudaDev, collNetName());
+  for (int d=0; d<*ndev; d++) {
+    NCCLCHECK(collNetDistance(cudaDev, d, *distances+d));
+    sprintf(line+strlen(line), " %s", pathDists[(*distances)[d]]);
+  }
+  INFO(NCCL_INIT|NCCL_NET, "%s", line);
   return ncclSuccess;
 }
+
+extern ncclTvalue_t getTvalue(short* distances, int ndev);
 
 /* Determine if we can communicate with the peer */
 ncclResult_t collNetCanConnect(ncclTvalue_t* ret, struct ncclPeerInfo* myInfo, struct ncclPeerInfo* peerInfo) {
+#if 1
+  ret[0] = 1;
+#else
   int nDev;
-  int* scores;
-  NCCLCHECK(netDevices(&nDev, &scores));
-  ret[0] = (nDev > 0) ? 1 : 0; //TODO: figure correct value
-  free(scores);
+  short* distances;
+  NCCLCHECK(collNetDevices(&nDev, &distances));
+  ret[0] = getTvalue(distances, nDev);
+  free(distances);
+#endif
   return ncclSuccess;
 }
 
-static inline int groupBestStart(int nranks, int* groups, int group, ncclTvalue_t* values, int card, int minScore) {
-  int bestRank = -1;
-  int bestScore = 0;
-  for (int rank=0; rank<nranks; rank++) {
-    if (groups[rank] != group) continue;
-    for (int i=0; i<nranks; i++) {
-      ncclTvalue_t netValue = values[rank*nranks+i];
-      if (netValue != 0) {
-        ncclTvalue_t score = (netValue>>(NET_BITS_PER_IF*card)) & NET_BITS_PER_IF_MASK;
-        if (score >= minScore && score > bestScore) {
-          bestScore = score;
-          bestRank = rank;
-        }
-        // All other values should be the same, stop here for this rank
-        break;
-      }
-    }
-  }
-  return bestRank;
-}
-static inline int groupBestEnd(int nranks, int* groups, int group, int* subgroups, int startSubGroup, int startRank, ncclTvalue_t* values, int card, int minScore) {
-  // For the last rank, we don't need the absolute best score, just to be within minScore.
-  for (int rank=nranks-1; rank>=0; rank--) {
-    if (groups[rank] != group) continue;
-    if (startSubGroup != -1 && startSubGroup == subgroups[rank]) continue;
-    if (startRank == rank) continue;
-    for (int i=0; i<nranks; i++) {
-      ncclTvalue_t netValue = values[rank*nranks+i];
-      if (netValue != 0) {
-        ncclTvalue_t score = (netValue>>(NET_BITS_PER_IF*card)) & NET_BITS_PER_IF_MASK;
-        if (score >= minScore) {
-          return rank;
-        }
-        // All other values should be the same, stop here for this rank
-        break;
-      }
-    }
-  }
-  return -1;
-}
-
-
-ncclResult_t collNetGetRings(int nranks, int* groups, int* subgroups, ncclTvalue_t* values, int* nringsRet, int* prev, int* next, int minScore, int* nthreads) {
-  int nGroups = groups[nranks-1] + 1;
-  int cardUsed[COLL_NET_MAX_IFS*nGroups];
-  for (int c=0; c<COLL_NET_MAX_IFS*nGroups; c++) cardUsed[c] = 0;
-
-  for (int ring = 0; ring<*nringsRet; ring++) {
-    int starts[nGroups];
-    int ends[nGroups];
-    for (int group = 0; group<nGroups; group++) {
-      int nranksInGroup = 0;
-      int nsubGroups = 0;
-      for (int rank=0; rank<nranks; rank++) if (groups[rank] == group) {
-          nranksInGroup++;
-          nsubGroups = std::max(subgroups[rank], nsubGroups);
-        }
-      starts[group] = ends[group] = -1;
-      // Receive on the rank closest to the NIC
-      for (int card=0; card<COLL_NET_MAX_IFS; card++) {
-        if (cardUsed[group*COLL_NET_MAX_IFS+card] == 1) continue;
-        int start = groupBestStart(nranks, groups, group, values, card, minScore);
-        // Send from any rank, but best on a different subgroup and close to the NIC also.
-        int end = (nranksInGroup == 1) ? start
-            : groupBestEnd(nranks, groups, group, subgroups, nsubGroups ? subgroups[start] : -1, start, values, card, minScore);
-        //printf("Ring %d, Minscore %d, Card %d, group %d, start = %d, end = %d\n", ring, minScore, card, group, start, end);
-        if (start != -1 && end != -1) {
-          cardUsed[group*COLL_NET_MAX_IFS+card] = 1;
-          starts[group] = start;
-          ends[group] = end;
-          break;
-        }
-      }
-      if (starts[group] == -1 || ends[group] == -1) {
-        *nringsRet = ring;
-        return ncclSuccess;
-      }
-    }
-    // Link groups together
-    for (int group = 0; group<nGroups; group++) {
-      int nextGroup = (group+1)%nGroups;
-      next[ring*nranks+ends[group]] = starts[nextGroup];
-      prev[ring*nranks+starts[nextGroup]] = ends[group];
-    }
-  }
-  return ncclSuccess;
-}
-
-int getCollDev(int ringId) {
+int getCollNetDev(int ringId) {
   int nDev;
-  int* scores;
-  NCCLCHECK(netDevices(&nDev, &scores));
+  short* distances;
+  NCCLCHECK(collNetDevices(&nDev, &distances));
 
   int dev = 0;
-  int maxScore = 0;
-  for (int d=0; d<nDev; d++) if (scores[d] > maxScore) maxScore = scores[d];
+  int minDistance = PATH_SOC;
+  for (int d=0; d<nDev; d++) if (distances[d] < minDistance) minDistance = distances[d];
   int skip = ringId+1;
   while (skip) {
     for (int d=0; d<nDev; d++) {
-      if (scores[d] == maxScore) {
+      if (distances[d] == minDistance) {
         skip--;
         if (skip == 0) { dev = d; goto end; }
       }
     }
   }
 end:
-  free(scores);
+  free(distances);
   return dev;
 }
 
@@ -226,13 +169,14 @@ ncclResult_t collNetUseGdrForReads(int* useGdr) {
 ncclResult_t collNetSetup(struct ncclPeerInfo* myInfo, struct ncclConnect* connectInfo, struct ncclConnector* send, struct ncclConnector* recv, int buffSize, int channelId) {
   int sendSize = sizeof(struct ncclSendMem);
   int recvSize = offsetof(struct ncclRecvMem, buff)+buffSize;
+  int netDev = getCollNetDev(channelId);
 
   // send side
   struct collNetSendResources* sendResources;
   NCCLCHECK(ncclCalloc(&sendResources, 1));
   send->transportResources = sendResources;
 
-  sendResources->netDev = getCollDev(channelId);
+  sendResources->netDev = netDev;
 
   int sendFlags, useGdrForReads;
   NCCLCHECK(collNetPtrSupport(sendResources->netDev, &sendFlags));
@@ -254,7 +198,7 @@ ncclResult_t collNetSetup(struct ncclPeerInfo* myInfo, struct ncclConnect* conne
   NCCLCHECK(ncclCalloc(&recvResources, 1));
   recv->transportResources = recvResources;
 
-  recvResources->netDev = getCollDev(channelId);
+  recvResources->netDev = netDev;
 
   int recvFlags;
   NCCLCHECK(collNetPtrSupport(recvResources->netDev, &recvFlags));
@@ -322,6 +266,7 @@ ncclResult_t collNetConnect(struct ncclConnect* connectInfos, int nranks, struct
     handlePtrs[i] = &(infos[i].collNetHandle);
   }
   NCCLCHECK(collNetConnect(sendResources->netDev, (void**)handlePtrs, nranks, recvResources->netListenComm, &sendResources->collNetSendComm));
+  recvResources->collNetRecvComm = sendResources->collNetSendComm;
 
   // Close listen comm
   NCCLCHECK(collNetCloseListen(recvResources->netListenComm));

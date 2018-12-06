@@ -9,9 +9,6 @@
 
 #include "nccl.h"
 
-#define NCCL_COLL_NET_MAJOR 1
-#define NCCL_COLL_NET_MINOR 0
-
 #define NCCL_COLL_NET_HANDLE_MAXSIZE 64
 
 #define NCCL_PTR_HOST 0x1
@@ -21,7 +18,7 @@ typedef struct {
   // Name of the network (mainly for logs)
   const char* name;
   // Initialize the network.
-  ncclResult_t (*init)(ncclDebugLogger_t logFunction);
+  ncclResult_t (*init)(/*ncclDebugLogger_t logFunction*/);  //TODO
   // Return the number of adapters.
   ncclResult_t (*devices)(int* ndev);
   // Return the device path in /sys. NCCL will call free on this path.
