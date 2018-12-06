@@ -20,8 +20,8 @@ static ncclResult_t collNetPtrSupport(int dev, int* supportedTypes) { NCCLCHECK(
 static ncclResult_t collNetListen(int dev, void* handle, void** listenComm) { NCCLCHECK(collNet->listen(dev, handle, listenComm)); return ncclSuccess; }
 static ncclResult_t collNetConnect(int dev, void* handles[], int nranks, void* listenComm, void** collComm) { NCCLCHECK(collNet->connect(dev, handles, nranks, listenComm, collComm)); return ncclSuccess; }
 static ncclResult_t collNetReduceSupport(int* support) { NCCLCHECK(collNet->reduceSupport(support)); return ncclSuccess; }
-static ncclResult_t collNetIsend(void* sendComm, void* src, void* dst, int size, int type, void** request) { NCCLCHECK(collNet->isend(sendComm, src, dst, size, type, request)); return ncclSuccess; }
-static ncclResult_t collNetIrecv(void* recvComm, void* data, int size, int type, void** request) { NCCLCHECK(collNet->irecv(recvComm, data, size, type, request)); return ncclSuccess; }
+static ncclResult_t collNetIallreduce(void* collComm, void* sendData, void* recvData, int size, ncclDataType_t dtype, ncclRedOp_t redOp, int type, void** request) {
+  NCCLCHECK(collNet->iallreduce(collComm, sendData, recvData, size, dtype, redOp, type, request)); return ncclSuccess; }
 static ncclResult_t collNetFlush(void* recvComm, void* data, int size) { NCCLCHECK(collNet->flush(recvComm, data, size)); return ncclSuccess; }
 static ncclResult_t collNetTest(void* request, int* done, int* size) { NCCLCHECK(collNet->test(request, done, size)); return ncclSuccess; }
 static ncclResult_t collNetCloseColl(void* collComm) { NCCLCHECK(collNet->closeColl(collComm)); return ncclSuccess; }

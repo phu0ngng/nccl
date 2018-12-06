@@ -344,7 +344,7 @@ ncclResult_t collNetSendProxy(struct ncclProxyArgs* args) {
             while (f1[0] != flag || f2[0] != flag);
           }
           // Some reduce / all-reduce call here
-          NCCLCHECK(collNetIsend(resources->collNetSendComm, lines, (void*)(reqFifo[readySlot].intmBuff), size, ptrType, requests+buffSlot));
+          NCCLCHECK(collNetIallreduce(resources->collNetSendComm, lines, (void*)(reqFifo[readySlot].intmBuff), size, args->dtype, args->redOp, ptrType, requests+buffSlot));
           if (requests[buffSlot] != NULL) {
             sizesFifo[buffSlot] = -1;
             // Make sure size is reset to zero before we update the head.
@@ -362,7 +362,7 @@ ncclResult_t collNetSendProxy(struct ncclProxyArgs* args) {
         while(reqFifo[readySlot].sendReady != 0 || reqFifo[readySlot].intmBuff == NULL);
 #endif
         // Some reduce / all-reduce call here
-        NCCLCHECK(collNetIsend(resources->collNetSendComm, localMem->buff+buffSlot*stepSize, (void*)(reqFifo[readySlot].intmBuff), sizesFifo[buffSlot], ptrType, requests+buffSlot));
+        NCCLCHECK(collNetIallreduce(resources->collNetSendComm, localMem->buff+buffSlot*stepSize, (void*)(reqFifo[readySlot].intmBuff), sizesFifo[buffSlot], args->dtype, args->redOp, ptrType, requests+buffSlot));
         INFO(NCCL_INIT,"Send proxy : opCount %lx head %lx tail %lx prevTail %p prevTail %lx end %lx nsteps %d llMode %d ==> Posted", args->opCount, head, tail, prevTail, *prevTail, end, args->nsteps, llMode);
         if (requests[buffSlot] != NULL) {
           sizesFifo[buffSlot] = -1;
@@ -453,8 +453,7 @@ ncclResult_t collNetRecvProxy(struct ncclProxyArgs* args) {
       while(reqFifo[readyHead].sendReady == 0);
       INFO(NCCL_INIT,"Recv proxy : send request %lx ==> Ready", buffSlot);
 #endif
-      // broadcast or wait for all-reduce to complete
-      NCCLCHECK(collNetIrecv(resources->collNetRecvComm, /*localBuff+buffSlot*stepSize*/ (void*)(reqFifo[readyHead].intmBuff), sliceSize, ptrType, requests+buffSlot));
+      *(requests+buffSlot) = (void*)0xdeadbeef;  //TODO
       INFO(NCCL_INIT,"Recv proxy : opCount %lx head %lx tail %lx nextTail %p nextTail %lx end %lx nsteps %d llMode %d ==> Posted", args->opCount, head, tail, nextTail, *nextTail, end, args->nsteps, llMode);
       // cleaning
 #ifdef SHARED_REQ_Q
