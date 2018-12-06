@@ -34,8 +34,9 @@ typedef struct {
   // Create a group for collective operations. handles have been created
   // using listen() above.
   ncclResult_t (*connect)(int dev, void* handles[], int nranks, void* listenComm, void** collComm);
-  // Returns reduction operations supported by the collective operations.
-  // The support array must be of size ncclNumOps*ncclNumTypes.
+  // Returns combinations of reduction operations and data types supported by the collective operations.
+  // The support array (of type int) must be of size ncclNumOps*ncclNumTypes.
+  // The index for an (operation, type) combination is ncclRedOp*ncclNumTypes+ncclDataType.
   ncclResult_t (*reduceSupport)(int* support);
   // Asynchronous send to a peer. Type is either NCCL_PTR_HOST or NCCL_PTR_CUDA.
   // May return request == NULL if the call cannot be performed (or would block)
