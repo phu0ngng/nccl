@@ -372,155 +372,156 @@ ncclResult_t netRecvFree(void* transportResources) {
 
 ncclResult_t netSendProxy(struct ncclProxyArgs* args) {
   struct netSendResources* resources = (struct netSendResources*) (args->connector->transportResources);
-  const int llMode = args->llMode;
+  if (args->state == ncclProxyOpReady) {
+    // Update opCount
+    resources->hostRecvMem->opCount = args->opCount;
 
-  volatile uint64_t* prevTail = &resources->hostRecvMem->tail;
-  struct ncclSendMem* prevMem = resources->hostSendMem;
-  uint64_t* prevHead = &prevMem->head;
-  struct ncclRecvMem* localMem = resources->useGdr ? resources->devRecvMem : resources->hostRecvMem;
-  union ncclLLFifoLine* llBuff = resources->hostRecvMem->llBuff;
-  int ptrType = resources->useGdr ? NCCL_PTR_CUDA : NCCL_PTR_HOST;
-  volatile int* sizesFifo = resources->hostRecvMem->sizesFifo;
-  int stepSize = args->channel->buffSize/NCCL_STEPS;
+    // Round to next multiple of sliceSteps
+    resources->step = ROUNDUP(resources->step, args->chunkSteps);
+    args->head = resources->step;
+    args->tail = resources->step;
+    args->end = args->head + args->nsteps;
+    args->state = ncclProxyOpProgress;
+  }
+  if (args->state == ncclProxyOpProgress) {
+    volatile uint64_t* prevTail = &resources->hostRecvMem->tail;
+    struct ncclSendMem* prevMem = resources->hostSendMem;
+    uint64_t* prevHead = &prevMem->head;
+    struct ncclRecvMem* localMem = resources->useGdr ? resources->devRecvMem : resources->hostRecvMem;
+    union ncclLLFifoLine* llBuff = resources->hostRecvMem->llBuff;
+    int ptrType = resources->useGdr ? NCCL_PTR_CUDA : NCCL_PTR_HOST;
+    volatile int* sizesFifo = resources->hostRecvMem->sizesFifo;
 
-  // Update opCount
-  resources->hostRecvMem->opCount = args->opCount;
+    int stepSize = args->channel->buffSize/NCCL_STEPS;
 
-  // Round to next multiple of sliceSteps
-  resources->step = ROUNDUP(resources->step, args->chunkSteps);
-
-  uint64_t head = resources->step;
-  uint64_t tail = resources->step;
-  uint64_t end = head + args->nsteps;
-
-  int idle = 0;
-  void* requests[NCCL_STEPS];
-
-  TRACE(NCCL_NET,"opCount %lx head %lx tail %lx end %lx nsteps %d llMode %d", args->opCount, head, tail, end, args->nsteps, llMode);
-  TRACE(NCCL_NET,"opCount %lx stepSize %d stepSize %d ptrType %d", args->opCount, stepSize, stepSize, ptrType);
-
-  while (head < end) {
-    idle++;
-    if (tail < end && tail < head + NCCL_STEPS) {
-      if (llMode) {
-        int buffSlot = tail%NCCL_STEPS;
-        int size = sizesFifo[buffSlot];
-        if (size != -1) {
-          uint32_t flag = tail + 1;
-          int nFifoLines = DIVUP(size, sizeof(union ncclLLFifoLine));
-          size = nFifoLines * sizeof(union ncclLLFifoLine);
-          union ncclLLFifoLine* lines = llBuff+buffSlot*NCCL_LL_SLICE_LINES;
-          for (int i=0; i<nFifoLines; i++) {
-            volatile uint32_t *f1 = &lines[i].flag1;
-            volatile uint32_t *f2 = &lines[i].flag2;
-            while (f1[0] != flag || f2[0] != flag);
+    if (args->head < args->end) {
+      if (args->tail < args->end && args->tail < args->head + NCCL_STEPS) {
+        if (args->llMode) {
+          int buffSlot = args->tail%NCCL_STEPS;
+          int size = sizesFifo[buffSlot];
+          if (size != -1) {
+            uint32_t flag = args->tail + 1;
+            int nFifoLines = DIVUP(size, sizeof(union ncclLLFifoLine));
+            size = nFifoLines * sizeof(union ncclLLFifoLine);
+            union ncclLLFifoLine* lines = llBuff+buffSlot*NCCL_LL_SLICE_LINES;
+            for (int i=0; i<nFifoLines; i++) {
+              volatile uint32_t *f1 = &lines[i].flag1;
+              volatile uint32_t *f2 = &lines[i].flag2;
+              while (f1[0] != flag || f2[0] != flag);
+            }
+            NCCLCHECK(ncclNetIsend(resources->netSendComm, lines, size, ptrType, args->requests+buffSlot));
+            if (args->requests[buffSlot] != NULL) {
+              sizesFifo[buffSlot] = -1;
+              // Make sure size is reset to zero before we update the head.
+              __sync_synchronize();
+              args->tail += args->sliceSteps;
+              args->idle = 0;
+            }
           }
-          NCCLCHECK(ncclNetIsend(resources->netSendComm, lines, size, ptrType, requests+buffSlot));
-          if (requests[buffSlot] != NULL) {
+        } else if (args->tail < *prevTail) {
+          // Send through network
+          int buffSlot = args->tail%NCCL_STEPS;
+          NCCLCHECK(ncclNetIsend(resources->netSendComm, localMem->buff+buffSlot*stepSize, sizesFifo[buffSlot], ptrType, args->requests+buffSlot));
+          if (args->requests[buffSlot] != NULL) {
             sizesFifo[buffSlot] = -1;
             // Make sure size is reset to zero before we update the head.
             __sync_synchronize();
-            tail += args->sliceSteps;
-            idle = 0;
+            args->tail += args->sliceSteps;
+            args->idle = 0;
           }
         }
-      } else if (tail < *prevTail) {
-        // Send through network
-        int buffSlot = tail%NCCL_STEPS;
-        NCCLCHECK(ncclNetIsend(resources->netSendComm, localMem->buff+buffSlot*stepSize, sizesFifo[buffSlot], ptrType, requests+buffSlot));
-        if (requests[buffSlot] != NULL) {
-          sizesFifo[buffSlot] = -1;
-          // Make sure size is reset to zero before we update the head.
-          __sync_synchronize();
-          tail += args->sliceSteps;
-          idle = 0;
+      }
+      if (args->head < args->tail) {
+        int done;
+        int buffSlot = args->head%NCCL_STEPS;
+        NCCLCHECK(ncclNetTest(args->requests[buffSlot], &done, NULL));
+        if (done) {
+          args->head += args->sliceSteps;
+          *prevHead = args->head;
+          args->idle = 0;
         }
       }
     }
-    if (head < tail) {
-      int done;
-      int buffSlot = head%NCCL_STEPS;
-      NCCLCHECK(ncclNetTest(requests[buffSlot], &done, NULL));
-      if (done) {
-        head += args->sliceSteps;
-        *prevHead = head;
-        idle = 0;
-      }
+    if (args->head == args->end) {
+      resources->step = args->end;
+      args->state = ncclProxyOpDone;
     }
-    if (idle) transportProxyIdle(idle);
   }
-  resources->step = end;
-
-  if (llMode && resources->step > resources->llLastCleaning + NCCL_LL_CLEAN_FREQ) {
-    for (int i=0; i< NCCL_LL_BUFF_LINES; i++) llBuff[i].flag1 = llBuff[i].flag2 = resources->step;
-    resources->step += NCCL_STEPS;
-    *prevHead = resources->step;
-    resources->llLastCleaning = resources->step;
+  if (args->state == ncclProxyOpDone) {
+    union ncclLLFifoLine* llBuff = resources->hostRecvMem->llBuff;
+    struct ncclSendMem* prevMem = resources->hostSendMem;
+    uint64_t* prevHead = &prevMem->head;
+    if (args->llMode && resources->step > resources->llLastCleaning + NCCL_LL_CLEAN_FREQ) {
+      for (int i=0; i< NCCL_LL_BUFF_LINES; i++) llBuff[i].flag1 = llBuff[i].flag2 = resources->step;
+      resources->step += NCCL_STEPS;
+      *prevHead = resources->step;
+      resources->llLastCleaning = resources->step;
+    }
+    args->state = ncclProxyOpNone;
   }
   return ncclSuccess;
 }
 
 ncclResult_t netRecvProxy(struct ncclProxyArgs* args) {
   struct netRecvResources* resources = (struct netRecvResources*) (args->connector->transportResources);
-  int llMode = args->llMode;
+  if (args->state == ncclProxyOpReady) {
+    // Update opCount
+    resources->hostSendMem->opCount = args->opCount;
 
-  volatile uint64_t* nextHead = &resources->hostSendMem->head;
-  struct ncclRecvMem* localMem = resources->useGdr ? resources->devRecvMem : resources->hostRecvMem;
-  char* localBuff = llMode ? (char*)localMem->llBuff : localMem->buff;
-  int ptrType = resources->useGdr ? NCCL_PTR_CUDA : NCCL_PTR_HOST;
-  uint64_t* nextTail = &resources->hostRecvMem->tail;
-
-  // Update opCount
-  resources->hostSendMem->opCount = args->opCount;
-
-  int stepSize = ( llMode ? NCCL_LL_BUFF_SIZE : args->channel->buffSize ) / NCCL_STEPS;
-  int sliceSize = stepSize * args->sliceSteps;
-
-  // Round to next multiple of sliceSteps
-  resources->step = ROUNDUP(resources->step, args->chunkSteps);
-
-  uint64_t head = resources->step;
-  uint64_t tail = resources->step;
-  uint64_t end = head + args->nsteps;
-
-  int idle = 0;
-  void* requests[NCCL_STEPS];
-
-  TRACE(NCCL_NET,"opCount %lx head %lx tail %lx end %lx nsteps %d llMode %d", args->opCount, head, tail, end, args->nsteps, llMode);
-  TRACE(NCCL_NET,"opCount %lx buffSize %d stepSize %d ptrType %d", args->opCount, args->channel->buffSize, stepSize, ptrType);
-
-  while (head < end) {
-    idle++;
-    if ((tail < head + NCCL_STEPS) && (tail < (*nextHead) + NCCL_STEPS) && (tail < end)) {
-      int buffSlot = tail%NCCL_STEPS;
-      NCCLCHECK(ncclNetIrecv(resources->netRecvComm, localBuff+buffSlot*stepSize, sliceSize, ptrType, requests+buffSlot));
-      if (requests[buffSlot] != NULL) {
-        tail += args->sliceSteps;
-        idle = 0;
-      }
-    }
-    if (tail > head) {
-      int done;
-      int buffSlot = head%NCCL_STEPS;
-      int size;
-      NCCLCHECK(ncclNetTest(requests[buffSlot], &done, &size));
-      if (done) {
-        head += args->sliceSteps;
-        if (llMode == 0) {
-          if (ptrType == NCCL_PTR_CUDA) ncclNetFlush(resources->netRecvComm, localBuff+buffSlot*stepSize, size);
-          *nextTail = head;
-        }
-        idle = 0;
-      }
-    }
-    if (idle) transportProxyIdle(idle);
+    // Round to next multiple of sliceSteps
+    resources->step = ROUNDUP(resources->step, args->chunkSteps);
+    args->head = resources->step;
+    args->tail = resources->step;
+    args->end = args->head + args->nsteps;
+    args->state = ncclProxyOpProgress;
   }
-  resources->step = end;
+  if (args->state == ncclProxyOpProgress) {
+    volatile uint64_t* nextHead = &resources->hostSendMem->head;
+    struct ncclRecvMem* localMem = resources->useGdr ? resources->devRecvMem : resources->hostRecvMem;
+    char* localBuff = args->llMode ? (char*)localMem->llBuff : localMem->buff;
+    int ptrType = resources->useGdr ? NCCL_PTR_CUDA : NCCL_PTR_HOST;
+    uint64_t* nextTail = &resources->hostRecvMem->tail;
 
-  if (llMode && resources->step > resources->llLastCleaning + NCCL_LL_CLEAN_FREQ) {
-    resources->step += NCCL_STEPS;
-    while (*nextHead < resources->step);
-    resources->llLastCleaning = resources->step;
+    int stepSize = ( args->llMode ? NCCL_LL_BUFF_SIZE : args->channel->buffSize ) / NCCL_STEPS;
+    int sliceSize = stepSize * args->sliceSteps;
+
+    if (args->head < args->end) {
+      if ((args->tail < args->head + NCCL_STEPS) && (args->tail < (*nextHead) + NCCL_STEPS) && (args->tail < args->end)) {
+        int buffSlot = args->tail%NCCL_STEPS;
+        NCCLCHECK(ncclNetIrecv(resources->netRecvComm, localBuff+buffSlot*stepSize, sliceSize, ptrType, args->requests+buffSlot));
+        if (args->requests[buffSlot] != NULL) {
+          args->tail += args->sliceSteps;
+          args->idle = 0;
+        }
+      }
+      if (args->tail > args->head) {
+        int done;
+        int buffSlot = args->head%NCCL_STEPS;
+        int size;
+        NCCLCHECK(ncclNetTest(args->requests[buffSlot], &done, &size));
+        if (done) {
+          args->head += args->sliceSteps;
+          if (args->llMode == 0) {
+            if (ptrType == NCCL_PTR_CUDA) ncclNetFlush(resources->netRecvComm, localBuff+buffSlot*stepSize, size);
+            *nextTail = args->head;
+          }
+          args->idle = 0;
+        }
+      }
+    }
+    if (args->head == args->end) {
+      resources->step = args->end;
+      args->state = ncclProxyOpDone;
+    }
+  }
+  if (args->state == ncclProxyOpDone) {
+    volatile uint64_t* nextHead = &resources->hostSendMem->head;
+    if (args->llMode && resources->step > resources->llLastCleaning + NCCL_LL_CLEAN_FREQ) {
+      resources->step += NCCL_STEPS;
+      while (*nextHead < resources->step);
+      resources->llLastCleaning = resources->step;
+    }
+    args->state = ncclProxyOpNone;
   }
   return ncclSuccess;
 }

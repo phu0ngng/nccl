@@ -8,6 +8,7 @@
 #define NCCL_CORE_H_
 
 #define NCCL_MAX_OPS 2048
+#define NCCL_STEPS 8
 
 #include "nccl.h"
 #include "transport.h"
@@ -32,7 +33,6 @@ struct cudaLaunchParams {
 #define MAXCHANNELS 16
 #define MAXTHREADS 256
 #define DEFAULT_BUFFER_SIZE_BYTES (1LL << 22) /* 4MiB */
-#define NCCL_STEPS 8
 
 // Channels / LL tuning
 #define NCCL_LL_CHANNEL_THRESHOLD 8 // Per thread size before we start increasing nrings
@@ -127,7 +127,7 @@ struct ncclConnInfo {
 
 struct ncclConnector {
   int connected;
-  struct transportProxyInfo* proxyInfo;
+  struct ncclProxyArgs *proxyAppend;
   struct ncclTransportComm* transportComm;
   void* transportResources; // Host-side resources
   struct ncclConnInfo conn;
@@ -320,6 +320,10 @@ struct ncclComm {
   int* intraCC; // Only to check all have the same ComputeCap and disable CGMode if not
   struct ncclColl args;
   void* argsptr;
+
+  // Global proxy thread
+  pthread_t proxyThread;
+  struct ncclProxyState proxyState;
 };
 
 // Check CUDA calls

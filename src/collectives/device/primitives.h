@@ -472,8 +472,8 @@ class ncclLLPrimitives {
         }
       }
     }
-    FOR_SEND(postSend, nbytes*2);
     exitIfAbortBarrier();
+    FOR_SEND(postSend, nbytes*2);
     FOR_RECV(postRecv);
   }
 

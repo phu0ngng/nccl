@@ -37,7 +37,13 @@ struct ncclConnect {
   char data[CONNECT_SIZE];
 };
 
+enum ncclProxyOpState { ncclProxyOpNone, ncclProxyOpReady, ncclProxyOpProgress, ncclProxyOpDone };
+
+struct ncclProxyArgs;
+typedef ncclResult_t (*proxyProgressFunc_t)(struct ncclProxyArgs*);
+
 struct ncclProxyArgs {
+  proxyProgressFunc_t progress;
   struct ncclChannel* channel;
   struct ncclConnector* connector;
   int sliceSteps;
@@ -45,7 +51,26 @@ struct ncclProxyArgs {
   int nsteps;
   uint64_t opCount;
   int llMode;
-  int active;   // add component before this line -- it is left out during initialization
+  int state;   // add component before this line -- it is left out during initialization
+
+  // Internal state
+  uint64_t head;
+  uint64_t tail;
+  uint64_t end;
+  void* requests[NCCL_STEPS];
+  int idle;
+
+  // Element linking
+  pthread_mutex_t mutex;
+  struct ncclProxyArgs* next;
+  struct ncclProxyArgs* nextPeer;
+};
+
+struct ncclProxyState {
+  pthread_cond_t cond;
+  pthread_mutex_t mutex;
+  struct ncclProxyArgs* ops;
+  struct ncclProxyArgs* pool;
 };
 
 struct ncclTransportComm {
@@ -67,31 +92,17 @@ struct ncclTransport {
 
 typedef ncclResult_t (*threadFunc_t)(struct ncclProxyArgs*);
 
-#define TRANSPORT_PROXY_FIFO_SIZE NCCL_MAX_OPS
-
-struct transportProxyInfo {
-  pthread_t thread;
-  threadFunc_t func;
-  volatile int proxyReady;
-  struct ncclProxyArgs argsFifo[TRANSPORT_PROXY_FIFO_SIZE];
-  volatile uint64_t argsFifoHead;
-  volatile uint64_t argsFifoTail;
-  pthread_cond_t cond;
-  pthread_mutex_t mutex;
-  struct ncclComm *comm;
-};
-
-ncclResult_t transportCreateProxy(struct ncclConnector* connector);
-ncclResult_t transportDestroyProxy(struct ncclConnector* connector);
-
 enum proxyMode {
   proxyRing = 0,
   proxyFrom = 1,
   proxyTo = 2
 };
 
+ncclResult_t transportAllocateProxyArgs(struct ncclComm* comm, struct ncclProxyArgs** argsptr);
 ncclResult_t transportSaveProxies(struct ncclProxyArgs* args, int pattern, int root, int nranks);
-ncclResult_t transportStartProxies(struct ncclComm* comm);
+ncclResult_t transportStartProxy(struct ncclComm* comm);
+ncclResult_t transportCreateProxy(struct ncclComm* comm);
+ncclResult_t transportWaitProxy(struct ncclComm* comm);
 
 #include <unistd.h>
 

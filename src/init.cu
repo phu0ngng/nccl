@@ -328,7 +328,6 @@ static ncclResult_t selectTransport(struct ncclPeerInfo* myInfo, struct ncclPeer
     if (ret > 0) {
       connector->transportComm = transportComm;
       NCCLCHECK(transportComm->setup(myInfo, peerInfo, connect, connector, buffSize, channelId));
-      NCCLCHECK(transportCreateProxy(connector));
       return ncclSuccess;
     }
   }
@@ -772,6 +771,8 @@ static ncclResult_t initTransportsRank(struct ncclComm* comm, ncclUniqueId* comm
   // Determine thread threshold across all GPUs
   comm->threadThreshold = ncclThreadThreshold(minCompCap, multiNode);
 
+  // TODO : only create it if we're on multiple nodes
+  NCCLCHECK(transportCreateProxy(comm));
   TRACE(NCCL_INIT, "rank %d nranks %d - DONE", rank, nranks);
   return ncclSuccess;
 }
@@ -1060,7 +1061,7 @@ ncclResult_t ncclCommDestroy(ncclComm_t comm) {
   // Ask anything that might still be running on the device to quit
   *comm->abortFlag = 1;
   CUDACHECK(cudaStreamSynchronize(comm->groupStream));
-
+  NCCLCHECK(transportWaitProxy(comm));
   NCCLCHECK(commFree(comm));
 
   if (savedDevice != commDevice)

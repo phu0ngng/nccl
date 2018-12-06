@@ -198,7 +198,7 @@ ncclResult_t ncclBarrierEnqueueWait(ncclComm_t comm) {
   }
   // Start the network proxies as soon as the kernel has been launched. We can't
   // perform any CUDA call between the two or having a cudaFree between the CUDA
-  // launch and the transportStartProxies call could cause a deadlock.
+  // launch and the transportStartProxy call could cause a deadlock.
   // Also, starting the proxies after the CUDA launch seems to be better for
   // performance (latency).
   for (int r=0; r<params->gridDim.x; r++) {
@@ -207,7 +207,7 @@ ncclResult_t ncclBarrierEnqueueWait(ncclComm_t comm) {
     channel->collCount = 0;
   }
   params->gridDim.x = params->blockDim.x = 0;
-  NCCLCHECK(transportStartProxies(comm));
+  NCCLCHECK(transportStartProxy(comm));
   return ncclSuccess;
 }
 
@@ -363,6 +363,7 @@ static ncclResult_t saveKernel(struct ncclInfo* info) {
 
   struct ncclColl coll;
   struct ncclProxyArgs proxyArgs;
+  memset(&proxyArgs, 0, sizeof(struct ncclProxyArgs));
   NCCLCHECK(computeColl(info, &coll, &proxyArgs));
 
   info->comm->myParams->blockDim.x = max(info->comm->myParams->blockDim.x, coll.args.nThreads);

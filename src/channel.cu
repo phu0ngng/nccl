@@ -45,9 +45,7 @@ ncclResult_t freeChannel(struct ncclChannel* channel, int nRanks) {
   for (int r=0; r<nRanks; r++) {
     struct ncclPeer* peer = channel->peers+r;
     if (peer->send.transportResources) NCCLCHECK(peer->send.transportComm->free(peer->send.transportResources));
-    NCCLCHECK(transportDestroyProxy(&peer->send));
     if (peer->recv.transportResources) NCCLCHECK(peer->recv.transportComm->free(peer->recv.transportResources));
-    NCCLCHECK(transportDestroyProxy(&peer->recv));
   }
   return ncclSuccess;
 }
