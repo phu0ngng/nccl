@@ -189,7 +189,6 @@ int p2pComputeRingsNvLink(ncclTvalue_t* matrix, int nranks, int *rings, int nrin
   if (connect) {
     inTheRing[rings[0]] = 1;
     nrings = computeRingsRec(matrix, nranks, rings, 0, nringsMax, inTheRing, rings[1], nranks-2, connect);
-    nrings = copyRings(nranks, rings, nrings, nringsMax);
   } else {
     rings[0] = 0;
     nrings = computeRingsRec(matrix, nranks, rings, 0, nringsMax, inTheRing, 0, nranks-1, connect);
