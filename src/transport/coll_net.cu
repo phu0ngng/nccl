@@ -348,8 +348,8 @@ ncclResult_t collNetSendProxy(struct ncclProxyArgs* args) {
             volatile uint32_t *f2 = &lines[i].flag2;
             while (f1[0] != flag || f2[0] != flag);
           }
-          // Some reduce / all-reduce call here
-          NCCLCHECK(collNetIallreduce(resources->collNetSendComm, lines, (void*)(reqFifo[readySlot].intmBuff), size, dtype, redOp, ptrType, requests+buffSlot));
+          int count = size / ncclTypeSize(dtype);
+          NCCLCHECK(collNetIallreduce(resources->collNetSendComm, lines, (void*)(reqFifo[readySlot].intmBuff), count, dtype, redOp, ptrType, requests+buffSlot));
           if (requests[buffSlot] != NULL) {
             sizesFifo[buffSlot] = -1;
             // Make sure size is reset to zero before we update the head.
@@ -366,8 +366,8 @@ ncclResult_t collNetSendProxy(struct ncclProxyArgs* args) {
         // TODO: currently we just wait until the recv is done
         while(reqFifo[readySlot].sendReady != 0 || reqFifo[readySlot].intmBuff == NULL);
 #endif
-        // Some reduce / all-reduce call here
-        NCCLCHECK(collNetIallreduce(resources->collNetSendComm, localMem->buff+buffSlot*stepSize, (void*)(reqFifo[readySlot].intmBuff), sizesFifo[buffSlot], dtype, redOp, ptrType, requests+buffSlot));
+        int count = sizesFifo[buffSlot]/ncclTypeSize(dtype);
+        NCCLCHECK(collNetIallreduce(resources->collNetSendComm, localMem->buff+buffSlot*stepSize, (void*)(reqFifo[readySlot].intmBuff), count, dtype, redOp, ptrType, requests+buffSlot));
         INFO(NCCL_INIT,"Send proxy : opCount %lx head %lx tail %lx prevTail %p prevTail %lx end %lx nsteps %d llMode %d ==> Posted", args->opCount, head, tail, prevTail, *prevTail, end, args->nsteps, llMode);
         if (requests[buffSlot] != NULL) {
           sizesFifo[buffSlot] = -1;

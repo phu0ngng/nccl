@@ -63,7 +63,7 @@ int ncclCollNetMpiPtrSupport(int dev, int* supportedTypes);
 int ncclCollNetMpiListen(int dev, void* handle, void** listenComm);
 int ncclCollNetMpiConnect(void* handles[], int nranks, void* listenComm, void** collComm);
 int ncclCollNetMpiReduceSupport(ncclDataType_t dtype, ncclRedOp_t redOp, int* supported);
-int ncclCollNetMpiIallreduce(void* collComm, void* sendData, void* recvData, int size, ncclDataType_t dtype, ncclRedOp_t redOp, int type, void** request);
+int ncclCollNetMpiIallreduce(void* collComm, void* sendData, void* recvData, int count, ncclDataType_t dtype, ncclRedOp_t redOp, int type, void** request);
 int ncclCollNetMpiFlush(void* recvComm, void* data, int size);
 int ncclCollNetMpiTest(void* request, int* done, int* size);
 int ncclCollNetMpiClose(void* comm);
@@ -293,14 +293,14 @@ int ncclCollNetMpiConnect(void* opaqueHandles[], int nranks, void* listenComm, v
   }                                   \
 } while(0)
 
-int ncclCollNetMpiIallreduce(void* collComm, void* sendData, void* recvData, int size, ncclDataType_t dtype, ncclRedOp_t redOp, int type, void** request) {
+int ncclCollNetMpiIallreduce(void* collComm, void* sendData, void* recvData, int count, ncclDataType_t dtype, ncclRedOp_t redOp, int type, void** request) {
   //printf("ncclCollNetMpiIallreduce\n");
   int ret;
   //CHECK_PTR(type);
   struct ncclCollNetMpiSendComm* comm = (struct ncclCollNetMpiSendComm*)collComm;
   MPI_Request* mpiRequest = ncclCollNetMpiGetRequest();
   *request = mpiRequest;
-  MPI_PROTECT(ret, MPI_Iallreduce(sendData, recvData, size, MPI_BYTE, MPI_SUM/*TODO*/, ncclCollNetMpiComm, mpiRequest));
+  MPI_PROTECT(ret, MPI_Iallreduce(sendData, recvData, count, MPI_BYTE, MPI_SUM/*TODO*/, ncclCollNetMpiComm, mpiRequest));
   return ret;
 }
 
