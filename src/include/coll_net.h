@@ -11,7 +11,7 @@
 #include "nccl_net.h"
 
 extern ncclCollNet_t* collNet;
-typedef char collNetHandle_t[NCCL_COLLNET_HANDLE_MAXSIZE];
+typedef char collNetHandle_t[NCCL_NET_HANDLE_MAXSIZE];
 
 // Translation to external API
 static const char* collNetName() { return collNet->name; }
@@ -19,7 +19,7 @@ static ncclResult_t collNetDevices(int* ndev) { NCCLCHECK(collNet->devices(ndev)
 static ncclResult_t collNetPciPath(int dev, char** path) { NCCLCHECK(collNet->pciPath(dev, path)); return ncclSuccess; }
 static ncclResult_t collNetPtrSupport(int dev, int* supportedTypes) { NCCLCHECK(collNet->ptrSupport(dev, supportedTypes)); return ncclSuccess; }
 static ncclResult_t collNetListen(int dev, void* handle, void** listenComm) { NCCLCHECK(collNet->listen(dev, handle, listenComm)); return ncclSuccess; }
-static ncclResult_t collNetConnect(int dev, void* handles[], int nranks, void* listenComm, void** collComm) { NCCLCHECK(collNet->connect(dev, handles, nranks, listenComm, collComm)); return ncclSuccess; }
+static ncclResult_t collNetConnect(void* handles[], int nranks, void* listenComm, void** collComm) { NCCLCHECK(collNet->connect(handles, nranks, listenComm, collComm)); return ncclSuccess; }
 static ncclResult_t collNetReduceSupport(ncclDataType_t dtype, ncclRedOp_t redOp, int* supported) { NCCLCHECK(collNet->reduceSupport(dtype, redOp, supported)); return ncclSuccess; }
 static ncclResult_t collNetIallreduce(void* collComm, void* sendData, void* recvData, int size, ncclDataType_t dtype, ncclRedOp_t redOp, int type, void** request) {
   NCCLCHECK(collNet->iallreduce(collComm, sendData, recvData, size, dtype, redOp, type, request)); return ncclSuccess; }

@@ -61,7 +61,7 @@ int ncclCollNetMpiDevices(int* ndev);
 int ncclCollNetMpiPciPath(int dev, char** path);
 int ncclCollNetMpiPtrSupport(int dev, int* supportedTypes);
 int ncclCollNetMpiListen(int dev, void* handle, void** listenComm);
-int ncclCollNetMpiConnect(int dev, void* handles[], int nranks, void* listenComm, void** collComm);
+int ncclCollNetMpiConnect(void* handles[], int nranks, void* listenComm, void** collComm);
 int ncclCollNetMpiReduceSupport(ncclDataType_t dtype, ncclRedOp_t redOp, int* supported);
 int ncclCollNetMpiIallreduce(void* collComm, void* sendData, void* recvData, int size, ncclDataType_t dtype, ncclRedOp_t redOp, int type, void** request);
 int ncclCollNetMpiFlush(void* recvComm, void* data, int size);
@@ -243,7 +243,7 @@ int ncclCollNetMpiReduceSupport(ncclDataType_t dtype, ncclRedOp_t redOp, int* su
 int ncclCollNetMpiListen(int dev, void* opaqueHandle, void** listenComm) {
   struct ncclCollNetMpiListenComm* comm = (struct ncclCollNetMpiListenComm*)malloc(sizeof(struct ncclCollNetMpiListenComm));
   struct ncclCollNetMpiHandle* handle = (struct ncclCollNetMpiHandle*) opaqueHandle;
-  assert(sizeof(struct ncclCollNetMpiHandle) < NCCL_COLLNET_HANDLE_MAXSIZE);
+  assert(sizeof(struct ncclCollNetMpiHandle) < NCCL_NET_HANDLE_MAXSIZE);
   //int tag;
   //getTag(&tag);
   //comm->tag = handle->tag = tag;
@@ -262,7 +262,7 @@ int ncclCollNetMpiListen(int dev, void* opaqueHandle, void** listenComm) {
 // rank of root
 static int root = 0;
 
-int ncclCollNetMpiConnect(int dev, void* opaqueHandles[], int nranks, void* listenComm, void** collComm) {
+int ncclCollNetMpiConnect(void* opaqueHandles[], int nranks, void* listenComm, void** collComm) {
   struct ncclCollNetMpiSendComm* comm = (struct ncclCollNetMpiSendComm*)malloc(sizeof(struct ncclCollNetMpiSendComm));
   struct ncclCollNetMpiHandle* handle = (struct ncclCollNetMpiHandle*)(opaqueHandles[0]); // take 0 as root
   int err;

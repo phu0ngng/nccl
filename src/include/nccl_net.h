@@ -10,7 +10,6 @@
 #include "nccl.h"
 
 #define NCCL_NET_HANDLE_MAXSIZE 64
-#define NCCL_COLLNET_HANDLE_MAXSIZE 64
 
 #define NCCL_PTR_HOST 0x1
 #define NCCL_PTR_CUDA 0x2
@@ -77,12 +76,12 @@ typedef struct {
   // NCCL_PTR_HOST and NCCL_PTR_CUDA.
   ncclResult_t (*ptrSupport)(int dev, int* supportedTypes);
   // Create a receiving object and provide a handle to connect to it. The
-  // handle can be up to NCCL_COLLNET_HANDLE_MAXSIZE bytes and will be exchanged
+  // handle can be up to NCCL_NET_HANDLE_MAXSIZE bytes and will be exchanged
   // between ranks to create connections.
   ncclResult_t (*listen)(int dev, void* handle, void** listenComm);
   // Create a group for collective operations. handles have been created
   // using listen() above.
-  ncclResult_t (*connect)(int dev, void* handles[], int nranks, void* listenComm, void** collComm);
+  ncclResult_t (*connect)(void* handles[], int nranks, void* listenComm, void** collComm);
   // Returns whether a reduction operation on a data type is supported.
   // 1 for supported, 0 otherwise.
   ncclResult_t (*reduceSupport)(ncclDataType_t dtype, ncclRedOp_t redOp, int* supported);

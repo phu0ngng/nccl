@@ -265,7 +265,7 @@ ncclResult_t collNetConnect(struct ncclConnect* connectInfos, int nranks, struct
   for (int i = 0; i < nranks; i++) {
     handlePtrs[i] = &(infos[i].collNetHandle);
   }
-  NCCLCHECK(collNetConnect(sendResources->netDev, (void**)handlePtrs, nranks, recvResources->netListenComm, &sendResources->collNetSendComm));
+  NCCLCHECK(collNetConnect((void**)handlePtrs, nranks, recvResources->netListenComm, &sendResources->collNetSendComm));
   recvResources->collNetRecvComm = sendResources->collNetSendComm;
 
   // Close listen comm
