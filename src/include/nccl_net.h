@@ -85,11 +85,11 @@ typedef struct {
   ncclResult_t (*connect)(void* handles[], int nranks, void* listenComm, void** collComm);
   // Returns whether a reduction operation on a data type is supported.
   // 1 for supported, 0 otherwise.
-  ncclResult_t (*reduceSupport)(ncclDataType_t dtype, ncclRedOp_t redOp, int* supported);
+  ncclResult_t (*reduceSupport)(ncclDataType_t dataType, ncclRedOp_t redOp, int* supported);
   // Performs an asynchronous allreduce operation on the collective group.
   // May return request == NULL if the call cannot be performed (or would block).
   ncclResult_t (*iallreduce)(void* collComm, void* sendData, void* recvData, int count,
-      ncclDataType_t dtype, ncclRedOp_t redOp, int type, void** request);
+      ncclDataType_t dataType, ncclRedOp_t redOp, int type, void** request);
   // Perform a flush/fence to make sure all data received with NCCL_PTR_CUDA is
   // visible to the GPU
   ncclResult_t (*flush)(void* collComm, void* data, int size);

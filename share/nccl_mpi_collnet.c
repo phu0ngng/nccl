@@ -62,8 +62,8 @@ int ncclCollNetMpiPciPath(int dev, char** path);
 int ncclCollNetMpiPtrSupport(int dev, int* supportedTypes);
 int ncclCollNetMpiListen(int dev, void* handle, void** listenComm);
 int ncclCollNetMpiConnect(void* handles[], int nranks, void* listenComm, void** collComm);
-int ncclCollNetMpiReduceSupport(ncclDataType_t dtype, ncclRedOp_t redOp, int* supported);
-int ncclCollNetMpiIallreduce(void* collComm, void* sendData, void* recvData, int count, ncclDataType_t dtype, ncclRedOp_t redOp, int type, void** request);
+int ncclCollNetMpiReduceSupport(ncclDataType_t dataType, ncclRedOp_t redOp, int* supported);
+int ncclCollNetMpiIallreduce(void* collComm, void* sendData, void* recvData, int count, ncclDataType_t dataType, ncclRedOp_t redOp, int type, void** request);
 int ncclCollNetMpiFlush(void* recvComm, void* data, int size);
 int ncclCollNetMpiTest(void* request, int* done, int* size);
 int ncclCollNetMpiClose(void* comm);
@@ -235,7 +235,7 @@ int ncclCollNetMpiPtrSupport(int dev, int* supportedTypes) {
   return 0;
 }
 
-int ncclCollNetMpiReduceSupport(ncclDataType_t dtype, ncclRedOp_t redOp, int* supported) {
+int ncclCollNetMpiReduceSupport(ncclDataType_t dataType, ncclRedOp_t redOp, int* supported) {
   *supported = 1;
   return 0;
 }
@@ -293,7 +293,7 @@ int ncclCollNetMpiConnect(void* opaqueHandles[], int nranks, void* listenComm, v
   }                                   \
 } while(0)
 
-int ncclCollNetMpiIallreduce(void* collComm, void* sendData, void* recvData, int count, ncclDataType_t dtype, ncclRedOp_t redOp, int type, void** request) {
+int ncclCollNetMpiIallreduce(void* collComm, void* sendData, void* recvData, int count, ncclDataType_t dataType, ncclRedOp_t redOp, int type, void** request) {
   //printf("ncclCollNetMpiIallreduce\n");
   int ret;
   //CHECK_PTR(type);
