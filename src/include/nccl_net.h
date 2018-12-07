@@ -65,9 +65,10 @@ typedef ncclNet_v1_t ncclNet_t;
 typedef struct {
   // Name of the collective network (mainly for logs)
   const char* name;
-  // Initialize the network.
+  // Initialize the collective network.
   ncclResult_t (*init)(ncclDebugLogger_t logFunction);
-  // Return the number of adapters.
+  // Return the number of adapters capable of doing collective operations.
+  // If ndev returns 0, all other functions might be set to NULL.
   ncclResult_t (*devices)(int* ndev);
   // Return the device path in /sys. NCCL will call free on this path.
   ncclResult_t (*pciPath)(int dev, char** path);
@@ -87,7 +88,6 @@ typedef struct {
   ncclResult_t (*reduceSupport)(ncclDataType_t dtype, ncclRedOp_t redOp, int* supported);
   // Performs an asynchronous allreduce operation on the collective group.
   // May return request == NULL if the call cannot be performed (or would block).
-  // Type is either NCCL_PTR_HOST or NCCL_PTR_CUDA.
   ncclResult_t (*iallreduce)(void* collComm, void* sendData, void* recvData, int size,
       ncclDataType_t dtype, ncclRedOp_t redOp, int type, void** request);
   // Perform a flush/fence to make sure all data received with NCCL_PTR_CUDA is
