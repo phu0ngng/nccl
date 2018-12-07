@@ -205,21 +205,24 @@ ncclResult_t ncclSocketTest(void* request, int* done, int* size) {
   return ncclSuccess;
 }
 
-ncclResult_t ncclSocketIsend(void* sendComm, void* data, int size, int type, void** request) {
-  if (type != NCCL_PTR_HOST) return ncclInternalError;
+ncclResult_t ncclSocketReg(void* comm, void* data, int size, int type, void** mhandle) {
+  return (type != NCCL_PTR_HOST) ? ncclInternalError : ncclSuccess;
+}
+ncclResult_t ncclSocketDeReg(void* comm, void* mhandle) { return ncclSuccess; }
+
+ncclResult_t ncclSocketIsend(void* sendComm, void* data, int size, void* mhandle, void** request) {
   struct ncclSocketComm* comm = (struct ncclSocketComm*)sendComm;
   NCCLCHECK(ncclSocketGetRequest(&comm->reqs, NCCL_SOCKET_SEND, data, size, comm->fd, (struct ncclSocketRequest**)request));
   return ncclSuccess;
 }
 
-ncclResult_t ncclSocketIrecv(void* recvComm, void* data, int size, int type, void** request) {
-  if (type != NCCL_PTR_HOST) return ncclInternalError;
+ncclResult_t ncclSocketIrecv(void* recvComm, void* data, int size, void* mhandle, void** request) {
   struct ncclSocketComm* comm = (struct ncclSocketComm*)recvComm;
   NCCLCHECK(ncclSocketGetRequest(&comm->reqs, NCCL_SOCKET_RECV, data, size, comm->fd, (struct ncclSocketRequest**)request));
   return ncclSuccess;
 }
 
-ncclResult_t ncclSocketFlush(void* recvComm, void* data, int size) {
+ncclResult_t ncclSocketFlush(void* recvComm, void* data, int size, void* mhandle) {
   // We don't support CUDA pointers, so we don't need a flush operation
   return ncclInternalError;
 }
@@ -243,6 +246,10 @@ ncclNet_t ncclNetSocket = {
   ncclSocketListen,
   ncclSocketConnect,
   ncclSocketAccept,
+  ncclSocketReg,
+  ncclSocketReg,
+  ncclSocketDeReg,
+  ncclSocketDeReg,
   ncclSocketIsend,
   ncclSocketIrecv,
   ncclSocketFlush,

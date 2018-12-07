@@ -25,15 +25,19 @@ static ncclResult_t bootstrapNetCloseListen(void* listenComm) { NCCLCHECK(ncclBo
 
 // Additional sync functions based on async + test for bootstrap, using host ptrs.
 static ncclResult_t bootstrapNetSend(void* sendComm, void* data, int size) {
-  void* request;
-  NCCLCHECK(ncclBootstrapNet->isend(sendComm, data, size, NCCL_PTR_HOST, &request));
+  void* request, *mhandle;
+  NCCLCHECK(ncclBootstrapNet->sendreg(sendComm, data, size, NCCL_PTR_HOST, &mhandle));
+  NCCLCHECK(ncclBootstrapNet->isend(sendComm, data, size, mhandle, &request));
+  NCCLCHECK(ncclBootstrapNet->senddereg(sendComm, mhandle));
   int done = 0;
   while (!done) NCCLCHECK(bootstrapNetTest(request, &done, NULL));
   return ncclSuccess;
 }
 static ncclResult_t bootstrapNetRecv(void* recvComm, void* data, int size) {
-  void* request;
-  NCCLCHECK(ncclBootstrapNet->irecv(recvComm, data, size, NCCL_PTR_HOST, &request));
+  void* request, *mhandle;
+  NCCLCHECK(ncclBootstrapNet->recvreg(recvComm, data, size, NCCL_PTR_HOST, &mhandle));
+  NCCLCHECK(ncclBootstrapNet->irecv(recvComm, data, size, mhandle, &request));
+  NCCLCHECK(ncclBootstrapNet->recvdereg(recvComm, mhandle));
   int done = 0;
   while (!done) NCCLCHECK(bootstrapNetTest(request, &done, NULL));
   return ncclSuccess;

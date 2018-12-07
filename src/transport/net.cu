@@ -41,6 +41,9 @@ struct netSendResources {
   struct ncclRecvMem* devHostRecvMem;
   int netDev;
   int useGdr;
+  int buffSize;
+  void* mhandle;
+  void* llMhandle;
   struct ncclRecvMem* devRecvMem;
   uint64_t step;
   uint64_t llLastCleaning;
@@ -55,6 +58,9 @@ struct netRecvResources {
   struct ncclRecvMem* devHostRecvMem;
   int netDev;
   int useGdr;
+  int buffSize;
+  void* mhandle;
+  void* llMhandle;
   struct ncclRecvMem* devRecvMem;
   uint64_t step;
   uint64_t llLastCleaning;
@@ -270,6 +276,7 @@ ncclResult_t netSendSetup(struct ncclPeerInfo* myInfo, struct ncclPeerInfo* peer
     NCCLCHECK(ncclCudaCalloc((char**)(&resources->devRecvMem), recvSize));
   }
   NCCLCHECK(ncclCudaHostAlloc((void**)&resources->hostRecvMem, (void**)&resources->devHostRecvMem, recvSize));
+  resources->buffSize = buffSize;
 
   INFO(NCCL_INIT|NCCL_NET,"Ring %02d : %d -> %d [send] via NET/%s/%d%s", channelId, myInfo->rank, peerInfo->rank, ncclNetName(), resources->netDev,
       resources->useGdr ? "/GDRDMA" : "");
@@ -292,6 +299,7 @@ ncclResult_t netRecvSetup(struct ncclPeerInfo* myInfo, struct ncclPeerInfo* peer
     NCCLCHECK(ncclCudaCalloc((char**)(&resources->devRecvMem), recvSize));
   }
   NCCLCHECK(ncclCudaHostAlloc((void**)&resources->hostRecvMem, (void**)&resources->devHostRecvMem, recvSize));
+  resources->buffSize = buffSize;
 
   INFO(NCCL_INIT|NCCL_NET,"Ring %02d : %d -> %d [receive] via NET/%s/%d%s", channelId, peerInfo->rank, myInfo->rank, ncclNetName(), resources->netDev,
       resources->useGdr ? "/GDRDMA" : "");
@@ -321,6 +329,11 @@ ncclResult_t netSendConnect(struct ncclConnect* connectInfo, struct ncclConnecto
   struct netConnectInfo* info = (struct netConnectInfo*)connectInfo;
   NCCLCHECK(ncclNetConnect(resources->netDev, info->netHandle, &resources->netSendComm));
 
+  NCCLCHECK(ncclNetSendReg(resources->netSendComm, recvMem->buff, resources->buffSize,
+        resources->useGdr ? NCCL_PTR_CUDA : NCCL_PTR_HOST, &resources->mhandle));
+  NCCLCHECK(ncclNetSendReg(resources->netSendComm, resources->devHostRecvMem->llBuff,
+        NCCL_LL_BUFF_SIZE, NCCL_PTR_HOST, &resources->llMhandle));
+
   return ncclSuccess;
 }
 
@@ -344,12 +357,19 @@ ncclResult_t netRecvConnect(struct ncclConnect* connectInfo, struct ncclConnecto
   NCCLCHECK(ncclNetAccept(resources->netListenComm, &resources->netRecvComm));
   NCCLCHECK(ncclNetCloseListen(resources->netListenComm));
 
+  NCCLCHECK(ncclNetRecvReg(resources->netRecvComm, recvMem->buff, resources->buffSize,
+        resources->useGdr ? NCCL_PTR_CUDA : NCCL_PTR_HOST, &resources->mhandle));
+  NCCLCHECK(ncclNetRecvReg(resources->netRecvComm, recvMem->llBuff, NCCL_LL_BUFF_SIZE,
+        resources->useGdr ? NCCL_PTR_CUDA : NCCL_PTR_HOST, &resources->llMhandle));
+
   return ncclSuccess;
 }
 
 ncclResult_t netSendFree(void* transportResources) {
   struct netSendResources* resources = (struct netSendResources*)transportResources;
   NCCLCHECK(ncclCudaHostFree(resources->hostSendMem));
+  NCCLCHECK(ncclNetSendDeReg(resources->netSendComm, resources->mhandle));
+  NCCLCHECK(ncclNetSendDeReg(resources->netSendComm, resources->llMhandle));
   NCCLCHECK(ncclCudaHostFree(resources->hostRecvMem));
   if (resources->useGdr)
     CUDACHECK(cudaFree(resources->devRecvMem));
@@ -361,6 +381,8 @@ ncclResult_t netSendFree(void* transportResources) {
 ncclResult_t netRecvFree(void* transportResources) {
   struct netRecvResources* resources = (struct netRecvResources*)transportResources;
   NCCLCHECK(ncclCudaHostFree(resources->hostSendMem));
+  NCCLCHECK(ncclNetRecvDeReg(resources->netRecvComm, resources->mhandle));
+  NCCLCHECK(ncclNetRecvDeReg(resources->netRecvComm, resources->llMhandle));
   NCCLCHECK(ncclCudaHostFree(resources->hostRecvMem));
   if (resources->useGdr)
     CUDACHECK(cudaFree(resources->devRecvMem));
@@ -388,7 +410,6 @@ ncclResult_t netSendProxy(struct ncclProxyArgs* args) {
     uint64_t* prevHead = &prevMem->head;
     struct ncclRecvMem* localMem = resources->useGdr ? resources->devRecvMem : resources->hostRecvMem;
     union ncclLLFifoLine* llBuff = resources->hostRecvMem->llBuff;
-    int ptrType = resources->useGdr ? NCCL_PTR_CUDA : NCCL_PTR_HOST;
     volatile int* sizesFifo = resources->hostRecvMem->sizesFifo;
 
     int stepSize = args->channel->buffSize/NCCL_STEPS;
@@ -408,7 +429,7 @@ ncclResult_t netSendProxy(struct ncclProxyArgs* args) {
               volatile uint32_t *f2 = &lines[i].flag2;
               while (f1[0] != flag || f2[0] != flag);
             }
-            NCCLCHECK(ncclNetIsend(resources->netSendComm, lines, size, ptrType, args->requests+buffSlot));
+            NCCLCHECK(ncclNetIsend(resources->netSendComm, lines, size, resources->llMhandle, args->requests+buffSlot));
             if (args->requests[buffSlot] != NULL) {
               sizesFifo[buffSlot] = -1;
               // Make sure size is reset to zero before we update the head.
@@ -420,7 +441,7 @@ ncclResult_t netSendProxy(struct ncclProxyArgs* args) {
         } else if (args->tail < *prevTail) {
           // Send through network
           int buffSlot = args->tail%NCCL_STEPS;
-          NCCLCHECK(ncclNetIsend(resources->netSendComm, localMem->buff+buffSlot*stepSize, sizesFifo[buffSlot], ptrType, args->requests+buffSlot));
+          NCCLCHECK(ncclNetIsend(resources->netSendComm, localMem->buff+buffSlot*stepSize, sizesFifo[buffSlot], resources->mhandle, args->requests+buffSlot));
           if (args->requests[buffSlot] != NULL) {
             sizesFifo[buffSlot] = -1;
             // Make sure size is reset to zero before we update the head.
@@ -478,7 +499,7 @@ ncclResult_t netRecvProxy(struct ncclProxyArgs* args) {
     volatile uint64_t* nextHead = &resources->hostSendMem->head;
     struct ncclRecvMem* localMem = resources->useGdr ? resources->devRecvMem : resources->hostRecvMem;
     char* localBuff = args->llMode ? (char*)localMem->llBuff : localMem->buff;
-    int ptrType = resources->useGdr ? NCCL_PTR_CUDA : NCCL_PTR_HOST;
+    void* mhandle = args->llMode ? resources->llMhandle : resources->mhandle;
     uint64_t* nextTail = &resources->hostRecvMem->tail;
 
     int stepSize = ( args->llMode ? NCCL_LL_BUFF_SIZE : args->channel->buffSize ) / NCCL_STEPS;
@@ -487,7 +508,7 @@ ncclResult_t netRecvProxy(struct ncclProxyArgs* args) {
     if (args->head < args->end) {
       if ((args->tail < args->head + NCCL_STEPS) && (args->tail < (*nextHead) + NCCL_STEPS) && (args->tail < args->end)) {
         int buffSlot = args->tail%NCCL_STEPS;
-        NCCLCHECK(ncclNetIrecv(resources->netRecvComm, localBuff+buffSlot*stepSize, sliceSize, ptrType, args->requests+buffSlot));
+        NCCLCHECK(ncclNetIrecv(resources->netRecvComm, localBuff+buffSlot*stepSize, sliceSize, mhandle, args->requests+buffSlot));
         if (args->requests[buffSlot] != NULL) {
           args->tail += args->sliceSteps;
           args->idle = 0;
@@ -501,7 +522,7 @@ ncclResult_t netRecvProxy(struct ncclProxyArgs* args) {
         if (done) {
           args->head += args->sliceSteps;
           if (args->llMode == 0) {
-            if (ptrType == NCCL_PTR_CUDA) ncclNetFlush(resources->netRecvComm, localBuff+buffSlot*stepSize, size);
+            if (resources->useGdr) ncclNetFlush(resources->netRecvComm, localBuff+buffSlot*stepSize, size, mhandle);
             *nextTail = args->head;
           }
           args->idle = 0;
