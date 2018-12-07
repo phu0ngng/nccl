@@ -9,7 +9,7 @@
 #include "nvmlwrap.h"
 #include "net.h"
 #include "param.h"
-#include "nvlink.h"
+#include "topo.h"
 #include <cuda_runtime.h>
 #include <assert.h>
 
@@ -227,11 +227,10 @@ static ncclResult_t netGetGdrSupport(int dev, int read, int* useGdr) {
   if (read) { // For reads (sends) only enable under certain conditions
     int gdrReadParam = ncclParamNetGdrRead();
     if (gdrReadParam == 0) return ncclSuccess;
-    else if (gdrReadParam < 0) { // default : enable only on DGX2
-      char busId[NVML_DEVICE_PCI_BUS_ID_BUFFER_SIZE];
-      CUDACHECK(cudaDeviceGetPCIBusId(busId, NVML_DEVICE_PCI_BUS_ID_BUFFER_SIZE, cudaDev));
-      int nvlinks = getNvlinkGpu(busId, NULL);
-      if (nvlinks < CONNECT_NVSWITCH || ncclCudaCompCap() < 7) return ncclSuccess;
+    if (gdrReadParam < 0) {
+       int nvlink;
+       NCCLCHECK(ncclNvlinkGpu(&nvlink));
+       if (!nvlink) return ncclSuccess;
     }
   }
 

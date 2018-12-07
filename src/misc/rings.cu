@@ -182,6 +182,18 @@ ncclResult_t getEnvThreads(int* nthreads) {
   return ncclSuccess;
 }
 
+static inline int copyRings(int nrings, int newNrings, int nranks, int* a, int* b, int* c, int* d) {
+  if (newNrings > MAXCHANNELS) newNrings = MAXCHANNELS;
+  for (int r=nrings; r<newNrings; r++) {
+    for (int i=0; i<nranks; i++) {
+      a[r*nranks+i] = a[(r-nrings)*nranks+i];
+      b[r*nranks+i] = b[(r-nrings)*nranks+i];
+      c[r*nranks+i] = c[(r-nrings)*nranks+i];
+      d[r*nranks+i] = d[(r-nrings)*nranks+i];
+    }
+  }
+  return newNrings;
+}
 /* Main ring creation function */
 ncclResult_t ncclGetRings(int* nrings, int* nthreads, int rank, int nranks, int* transports, ncclTvalue_t* values, int* prev, int* next, int* treeIn, int* treeOut) {
   *nrings = 0;
@@ -324,6 +336,15 @@ ncclResult_t ncclGetRings(int* nrings, int* nthreads, int rank, int nranks, int*
 
   *nthreads = nThreads;
 
+  /* Duplicate the rings in case of multinode+NVLink */
+  int nnodes = 0;
+  for (int r=0; r<nranks; r++) nnodes += treeIn[r];
+  int nvlink;
+  NCCLCHECK(ncclNvlinkGpu(&nvlink));
+  if (nnodes > 1 && nvlink) {
+    *nrings = copyRings(*nrings, *nrings*2, nranks, prev, next, treeIn, treeOut);
+  }
+
   if (*nrings == 0) {
     WARN("Could not create rings, falling back on simple ring");
     *nrings = 1;
@@ -349,15 +370,7 @@ ncclResult_t ncclGetRings(int* nrings, int* nthreads, int rank, int nranks, int*
     if (minNrings < defaultMinNrings) minNrings = defaultMinNrings;
     if (minNrings > 0 && minNrings > *nrings) {
       if (rank == 0 && minNrings > defaultMinNrings) INFO(NCCL_INIT,"Duplicating rings to %d per user request.", minNrings);
-      for (int r=*nrings; r<MAXCHANNELS && r <minNrings; r++) {
-        for (int i=0; i<nranks; i++) {
-          prev[r*nranks+i] = next[(r-*nrings)*nranks+i];
-          next[r*nranks+i] = prev[(r-*nrings)*nranks+i];
-          treeIn[r*nranks+i] = treeOut[(r-*nrings)*nranks+i];
-          treeOut[r*nranks+i] = treeIn[(r-*nrings)*nranks+i];
-        }
-      }
-      *nrings = minNrings;
+      *nrings = copyRings(*nrings, minNrings, nranks, prev, next, treeIn, treeOut);
     }
   }
 

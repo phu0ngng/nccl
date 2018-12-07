@@ -19,6 +19,7 @@
 #include "checks.h"
 #include "enqueue.h"
 #include "topo.h"
+#include "nvlink.h"
 #include "cpuset.h"
 #include <stdio.h>
 #include <stdlib.h>
@@ -58,6 +59,16 @@ NCCL_PARAM(CheckPointers, "CHECK_POINTERS", 0);
 
 ncclNet_t* ncclNet = NULL;
 
+// We define this as weak to let tests redefine their own
+#pragma weak ncclNvlinkGpu
+ncclResult_t ncclNvlinkGpu(int* nvlink) {
+  int cudaDev;
+  CUDACHECK(cudaGetDevice(&cudaDev));
+  char busId[NVML_DEVICE_PCI_BUS_ID_BUFFER_SIZE];
+  CUDACHECK(cudaDeviceGetPCIBusId(busId, NVML_DEVICE_PCI_BUS_ID_BUFFER_SIZE, cudaDev));
+  *nvlink = getNvlinkGpu(busId, NULL);
+  return ncclSuccess;
+}
 // We define this as weak to let tests redefine their own
 #pragma weak ncclCudaCompCap
 int ncclCudaCompCap() {
@@ -341,7 +352,8 @@ static int log2(int n) {
  return l;
 }
 
-NCCL_PARAM(TreeNodesThreshold, "TREE_NODES_THRESHOLD", 4);
+NCCL_PARAM(TreeMinNodesThreshold, "TREE_MIN_NODES_THRESHOLD", 2);
+NCCL_PARAM(TreeMaxNodesThreshold, "TREE_MAX_NODES_THRESHOLD", 4);
 
 static ncclResult_t setupChannel(struct ncclComm* comm, int channelId, int rank, int nranks, int* ringRanks, int* treeMasters) {
   TRACE(NCCL_INIT, "rank %d nranks %d", rank, nranks);
@@ -378,13 +390,31 @@ static ncclResult_t setupChannel(struct ncclComm* comm, int channelId, int rank,
     treeMasters[0] = 1;
   }
 
-  if (comm->treeThreshold == -2 && nMasters < ncclParamTreeNodesThreshold()) {
-    comm->treeThreshold = 0;
+  if (comm->treeThreshold == -2) {
+    if (nMasters < ncclParamTreeMinNodesThreshold()) {
+      comm->treeThreshold = 0;
+    } else {
+      int nvlink;
+      NCCLCHECK(ncclNvlinkGpu(&nvlink));
+      comm->treeThreshold =
+        // NVLink : use trees for all sizes
+        (nvlink && (nMasters < ncclParamTreeMaxNodesThreshold())) ? 0x7fffffffffffffff :
+        // PCI : switch to rings only when non-LL would start.
+        comm->nThreads*comm->nChannels*comm->threadThreshold*comm->nRanks;
+    }
   }
 
-  if (comm->treeThreshold != 0) {
-    // Not an exact value but a good approximation in most cases and consistent
-    // across nodes
+  if (comm->treeThreshold == 0) {
+    INFO(NCCL_INIT, "Trees disabled");
+  } else {
+    if (comm->treeThreshold == 0x7fffffffffffffff) {
+      INFO(NCCL_INIT, "Trees enabled for all sizes");
+    } else {
+      INFO(NCCL_INIT, "Trees enabled up to size %ld", comm->treeThreshold);
+    }
+
+    // Compute tree depth. Not an exact value but a good approximation in most
+    // cases and consistent across nodes
     tree->depth = nranks/nMasters + log2(nMasters);
 
     // Find my master : go backwards in the ring to find my root
@@ -700,6 +730,11 @@ static ncclResult_t initTransportsRank(struct ncclComm* comm, ncclUniqueId* comm
     minCompCap = std::min(allData[i], minCompCap);
   if (rank == 0) INFO(NCCL_INIT,"Min Comp Cap %d", minCompCap);
 
+  // Determine thread threshold across all GPUs
+  int nnodes = 0;
+  for (int r=0; r<nranks; r++) nnodes += treeIn[r];
+  comm->threadThreshold = ncclThreadThreshold(minCompCap, nnodes);
+
   // Find min nrings across ranks
   allData[rank] = nrings;
   NCCLCHECK(bootstrapAllGather(comm->bootstrap, allData, sizeof(int)));
@@ -748,15 +783,12 @@ static ncclResult_t initTransportsRank(struct ncclComm* comm, ncclUniqueId* comm
 
   // Compute intra ranks
   int intraRank0 = -1, intraRank = -1, intraRanks = 0;
-  int multiNode = 0;
   for (int r=0; r<nranks; r++) {
     if ((rankInfos[r].hostHash == rankInfos[rank].hostHash) &&
         (rankInfos[r].pidHash == rankInfos[rank].pidHash)) {
       if (intraRanks == 0) intraRank0 = r;
       if (r == rank) intraRank = intraRanks;
       intraRanks++;
-    } else if (rankInfos[r].hostHash != rankInfos[rank].hostHash) {
-      multiNode = 1;
     }
   }
   TRACE(NCCL_INIT,"hostHash[%d] %lx intraRank %d intraRanks %d intraRank0 %d",
@@ -768,11 +800,8 @@ static ncclResult_t initTransportsRank(struct ncclComm* comm, ncclUniqueId* comm
   }
   NCCLCHECK(ncclCommSetIntra(comm, intraRank, intraRanks, rankInfos[intraRank0].comm));
 
-  // Determine thread threshold across all GPUs
-  comm->threadThreshold = ncclThreadThreshold(minCompCap, multiNode);
+  if (nnodes) NCCLCHECK(transportCreateProxy(comm));
 
-  // TODO : only create it if we're on multiple nodes
-  NCCLCHECK(transportCreateProxy(comm));
   TRACE(NCCL_INIT, "rank %d nranks %d - DONE", rank, nranks);
   return ncclSuccess;
 }

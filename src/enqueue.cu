@@ -233,10 +233,7 @@ static ncclResult_t getPatternInfo(struct ncclInfo* info) {
   else if (info->coll == ncclCollReduce) info->pattern = ncclPatternPipelineTo;
   else if (info->coll == ncclCollAllGather || info->coll == ncclCollReduceScatter) info->pattern = ncclPatternRing;
   else if (info->coll == ncclCollAllReduce) {
-    // Switch to rings only when non-LL would start.
-    ssize_t treeThreshold = info->comm->treeThreshold >= 0 ? info->comm->treeThreshold :
-      info->comm->nThreads*info->comm->nChannels*info->comm->threadThreshold*info->comm->nRanks;
-    if (info->nBytes <= treeThreshold)
+    if (info->nBytes <= info->comm->treeThreshold)
       info->pattern = ncclPatternTreeUpDown;
     else
       info->pattern = ncclPatternRingTwice;
