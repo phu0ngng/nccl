@@ -34,10 +34,9 @@ typedef struct {
   // Create a group for collective operations. handles have been created
   // using listen() above.
   ncclResult_t (*connect)(int dev, void* handles[], int nranks, void* listenComm, void** collComm);
-  // Returns combinations of reduction operations and data types supported by the collective operations.
-  // The support array (of type int) must be of size ncclNumOps*ncclNumTypes.
-  // The index for an (operation, type) combination is ncclRedOp*ncclNumTypes+ncclDataType.
-  ncclResult_t (*reduceSupport)(int* support);
+  // Returns whether a reduction operation on a data type is supported.
+  // 1 for supported, 0 otherwise.
+  ncclResult_t (*reduceSupport)(ncclDataType_t dtype, ncclRedOp_t redOp, int* supported);
   // Performs an asynchronous allreduce operation on the collective group.
   // May return request == NULL if the call cannot be performed (or would block).
   // Type is either NCCL_PTR_HOST or NCCL_PTR_CUDA.

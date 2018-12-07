@@ -298,6 +298,11 @@ ncclResult_t collNetFree(void* sendTransportResources, void* recvTransportResour
 ncclResult_t collNetSendProxy(struct ncclProxyArgs* args) {
   struct collNetSendResources* resources = (struct collNetSendResources*) (args->connector->transportResources);
   const int llMode = args->llMode;
+  ncclDataType_t dtype = args->dtype;
+  ncclRedOp_t redOp = args->redOp;
+  int supported;
+  NCCLCHECK(collNetReduceSupport(dtype, redOp, &supported));
+  if (supported != 1) return ncclInternalError;
 
   volatile uint64_t* prevTail = &resources->hostRecvMem->tail;
   struct ncclSendMem* prevMem = resources->hostSendMem;
@@ -344,7 +349,7 @@ ncclResult_t collNetSendProxy(struct ncclProxyArgs* args) {
             while (f1[0] != flag || f2[0] != flag);
           }
           // Some reduce / all-reduce call here
-          NCCLCHECK(collNetIallreduce(resources->collNetSendComm, lines, (void*)(reqFifo[readySlot].intmBuff), size, args->dtype, args->redOp, ptrType, requests+buffSlot));
+          NCCLCHECK(collNetIallreduce(resources->collNetSendComm, lines, (void*)(reqFifo[readySlot].intmBuff), size, dtype, redOp, ptrType, requests+buffSlot));
           if (requests[buffSlot] != NULL) {
             sizesFifo[buffSlot] = -1;
             // Make sure size is reset to zero before we update the head.
@@ -362,7 +367,7 @@ ncclResult_t collNetSendProxy(struct ncclProxyArgs* args) {
         while(reqFifo[readySlot].sendReady != 0 || reqFifo[readySlot].intmBuff == NULL);
 #endif
         // Some reduce / all-reduce call here
-        NCCLCHECK(collNetIallreduce(resources->collNetSendComm, localMem->buff+buffSlot*stepSize, (void*)(reqFifo[readySlot].intmBuff), sizesFifo[buffSlot], args->dtype, args->redOp, ptrType, requests+buffSlot));
+        NCCLCHECK(collNetIallreduce(resources->collNetSendComm, localMem->buff+buffSlot*stepSize, (void*)(reqFifo[readySlot].intmBuff), sizesFifo[buffSlot], dtype, redOp, ptrType, requests+buffSlot));
         INFO(NCCL_INIT,"Send proxy : opCount %lx head %lx tail %lx prevTail %p prevTail %lx end %lx nsteps %d llMode %d ==> Posted", args->opCount, head, tail, prevTail, *prevTail, end, args->nsteps, llMode);
         if (requests[buffSlot] != NULL) {
           sizesFifo[buffSlot] = -1;
@@ -405,6 +410,11 @@ ncclResult_t collNetSendProxy(struct ncclProxyArgs* args) {
 ncclResult_t collNetRecvProxy(struct ncclProxyArgs* args) {
   struct collNetRecvResources* resources = (struct collNetRecvResources*) (args->connector->transportResources);
   int llMode = args->llMode;
+  ncclDataType_t dtype = args->dtype;
+  ncclRedOp_t redOp = args->redOp;
+  int supported;
+  NCCLCHECK(collNetReduceSupport(dtype, redOp, &supported));
+  if (supported != 1) return ncclInternalError;
 
   volatile uint64_t* nextHead = &resources->hostSendMem->head;
   struct ncclRecvMem* localMem = resources->cudaSupport ? resources->devRecvMem : resources->hostRecvMem;
