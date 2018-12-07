@@ -8,9 +8,10 @@
 #define COLL_NET_H_
 
 #include "nccl.h"
-#include "nccl_coll_net.h"
+#include "nccl_net.h"
 
-typedef char collNetHandle_t[NCCL_COLL_NET_HANDLE_MAXSIZE];
+extern ncclCollNet_t* collNet;
+typedef char collNetHandle_t[NCCL_COLLNET_HANDLE_MAXSIZE];
 
 // Translation to external API
 static const char* collNetName() { return collNet->name; }
@@ -22,7 +23,7 @@ static ncclResult_t collNetConnect(int dev, void* handles[], int nranks, void* l
 static ncclResult_t collNetReduceSupport(ncclDataType_t dtype, ncclRedOp_t redOp, int* supported) { NCCLCHECK(collNet->reduceSupport(dtype, redOp, supported)); return ncclSuccess; }
 static ncclResult_t collNetIallreduce(void* collComm, void* sendData, void* recvData, int size, ncclDataType_t dtype, ncclRedOp_t redOp, int type, void** request) {
   NCCLCHECK(collNet->iallreduce(collComm, sendData, recvData, size, dtype, redOp, type, request)); return ncclSuccess; }
-static ncclResult_t collNetFlush(void* recvComm, void* data, int size) { NCCLCHECK(collNet->flush(recvComm, data, size)); return ncclSuccess; }
+static ncclResult_t collNetFlush(void* collComm, void* data, int size) { NCCLCHECK(collNet->flush(collComm, data, size)); return ncclSuccess; }
 static ncclResult_t collNetTest(void* request, int* done, int* size) { NCCLCHECK(collNet->test(request, done, size)); return ncclSuccess; }
 static ncclResult_t collNetCloseColl(void* collComm) { NCCLCHECK(collNet->closeColl(collComm)); return ncclSuccess; }
 static ncclResult_t collNetCloseListen(void* listenComm) { NCCLCHECK(collNet->closeListen(listenComm)); return ncclSuccess; }

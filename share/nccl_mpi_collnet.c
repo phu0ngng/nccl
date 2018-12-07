@@ -28,7 +28,7 @@
  ************************************************************************/
 
 #include "mpi.h"
-#include "nccl_coll_net.h"
+#include "nccl_net.h"
 
 /************************************************************************
  * This is an example using the NCCL network API to use MPI for
@@ -56,7 +56,7 @@ void ncclCollNetMpiUnlock();
 /* NCCL MPI Plugin */
 
 // Functions prototypes
-int ncclCollNetMpiInit(/*ncclDebugLogger_t logFunction*/);  //TODO
+int ncclCollNetMpiInit(ncclDebugLogger_t logFunction);
 int ncclCollNetMpiDevices(int* ndev);
 int ncclCollNetMpiPciPath(int dev, char** path);
 int ncclCollNetMpiPtrSupport(int dev, int* supportedTypes);
@@ -69,7 +69,7 @@ int ncclCollNetMpiTest(void* request, int* done, int* size);
 int ncclCollNetMpiClose(void* comm);
 
 // MPI Net Module
-ncclCollNet_t ncclCollNetMpi = {
+ncclCollNet_t NCCL_COLLNET_PLUGIN_SYMBOL = {
   "MPI",
   ncclCollNetMpiInit,
   ncclCollNetMpiDevices,
@@ -89,7 +89,6 @@ static MPI_Comm ncclCollNetMpiComm;
 
 void ncclCollNetMpiHook(MPI_Comm comm) {
   ncclCollNetMpiComm = comm;
-  collNet = &ncclCollNetMpi;
 }
 
 #include <assert.h>
@@ -215,7 +214,7 @@ static int getCudaSupport() {
   return cudaSupport;
 }
 
-int ncclCollNetMpiInit(/*ncclDebugLogger_t logFunction*/) {
+int ncclCollNetMpiInit(ncclDebugLogger_t logFunction) {
   printf("ncclCollNetMpiInit not implemented\n");
   return 0;
 }
@@ -244,7 +243,7 @@ int ncclCollNetMpiReduceSupport(ncclDataType_t dtype, ncclRedOp_t redOp, int* su
 int ncclCollNetMpiListen(int dev, void* opaqueHandle, void** listenComm) {
   struct ncclCollNetMpiListenComm* comm = (struct ncclCollNetMpiListenComm*)malloc(sizeof(struct ncclCollNetMpiListenComm));
   struct ncclCollNetMpiHandle* handle = (struct ncclCollNetMpiHandle*) opaqueHandle;
-  assert(sizeof(struct ncclCollNetMpiHandle) < NCCL_COLL_NET_HANDLE_MAXSIZE);
+  assert(sizeof(struct ncclCollNetMpiHandle) < NCCL_COLLNET_HANDLE_MAXSIZE);
   //int tag;
   //getTag(&tag);
   //comm->tag = handle->tag = tag;
