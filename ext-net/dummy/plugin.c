@@ -41,3 +41,32 @@ ncclNet_t NCCL_PLUGIN_SYMBOL = {
   pluginCloseRecv,
   pluginCloseListen
 };
+
+__hidden ncclResult_t pluginCollNetInit(ncclDebugLogger_t logFunction) { return ncclSuccess; }
+__hidden ncclResult_t pluginCollNetDevices(int* ndev) { *ndev = 0; return ncclSuccess; }
+__hidden ncclResult_t pluginCollNetPciPath(int dev, char** path) { return ncclInternalError; }
+__hidden ncclResult_t pluginCollNetPtrSupport(int dev, int* supportedTypes) { return ncclInternalError; }
+__hidden ncclResult_t pluginCollNetListen(int dev, void* handle, void** listenComm) { return ncclInternalError; }
+__hidden ncclResult_t pluginCollNetConnect(void* handles[], int nranks, void* listenComm, void** collComm) { return ncclInternalError; }
+__hidden ncclResult_t pluginCollNetReduceSupport(ncclDataType_t dataType, ncclRedOp_t redOp, int* supported) { return ncclInternalError; }
+__hidden ncclResult_t pluginCollNetIallreduce(void* collComm, void* sendData, void* recvData, int count, ncclDataType_t dataType, ncclRedOp_t redOp, int type, void** request) { return ncclInternalError; }
+__hidden ncclResult_t pluginCollNetFlush(void* collComm, void* data, int size) { return ncclInternalError; }
+__hidden ncclResult_t pluginCollNetTest(void* request, int* done, int* size) { return ncclInternalError; }
+__hidden ncclResult_t pluginCollNetCloseColl(void* collComm) { return ncclInternalError; }
+__hidden ncclResult_t pluginCollNetCloseListen(void* listenComm) { return ncclInternalError; }
+
+ncclCollNet_t NCCL_COLLNET_PLUGIN_SYMBOL = {
+  "Dummy",
+  pluginCollNetInit,
+  pluginCollNetDevices,
+  pluginCollNetPciPath,
+  pluginCollNetPtrSupport,
+  pluginCollNetListen,
+  pluginCollNetConnect,
+  pluginCollNetReduceSupport,
+  pluginCollNetIallreduce,
+  pluginCollNetFlush,
+  pluginCollNetTest,
+  pluginCollNetCloseColl,
+  pluginCollNetCloseListen
+};
