@@ -82,13 +82,14 @@ ncclResult_t netFillInfo(ncclTinfo_t* opaqueInfo, int rank) {
   if (info->ndev > NET_MAX_IFS) info->ndev = NET_MAX_IFS;
 
   // Find distance with current GPU
-  int cudaDev;
-  cudaGetDevice(&cudaDev);
+  int cudaDev, nvmlDev;
+  CUDACHECK(cudaGetDevice(&cudaDev));
+  NCCLCHECK(getNvmlDevice(cudaDev, &nvmlDev))
   char* cudaPath;
   NCCLCHECK(getCudaPath(cudaDev, &cudaPath));
 
   char line[1024];
-  sprintf(line, "CUDA Dev %d, %s NIC distance : ", cudaDev, ncclNetName());
+  sprintf(line, "CUDA Dev %d[%d], %s NIC distance : ", cudaDev, nvmlDev, ncclNetName());
   for (int d=0; d<info->ndev; d++) {
     char* nicPath;
     ncclResult_t err = ncclNetPciPath(d, &nicPath);
@@ -217,8 +218,9 @@ NCCL_PARAM(NetGdrLevel, "NET_GDR_LEVEL", PATH_PHB);
 static ncclResult_t netGetGdrSupport(int dev, int distance, int read, int* useGdr) {
   *useGdr = 0;
 
-  int cudaDev;
+  int cudaDev, nvmlDev;
   CUDACHECK(cudaGetDevice(&cudaDev));
+  NCCLCHECK(getNvmlDevice(cudaDev, &nvmlDev))
 
   if (read) { // For reads (sends) only enable under certain conditions
     int gdrReadParam = ncclParamNetGdrRead();
@@ -234,7 +236,7 @@ static ncclResult_t netGetGdrSupport(int dev, int distance, int read, int* useGd
   // Check if we are close enough that it makes sense to enable GDR
   int netGdrLevel = ncclParamNetGdrLevel();
   if (distance >= netGdrLevel) {
-    INFO(NCCL_INIT|NCCL_NET,"NET/%s : GPU Direct RDMA Disabled for GPU %d / HCA %d (distance %d >= %d)", ncclNetName(), cudaDev, dev, distance, netGdrLevel);
+    INFO(NCCL_INIT|NCCL_NET,"NET/%s : GPU Direct RDMA Disabled for GPU %d[%d] / HCA %d (distance %d >= %d)", ncclNetName(), cudaDev, nvmlDev, dev, distance, netGdrLevel);
     return ncclSuccess;
   }
 
@@ -243,7 +245,7 @@ static ncclResult_t netGetGdrSupport(int dev, int distance, int read, int* useGd
   NCCLCHECK(ncclNetPtrSupport(dev, &flags));
   if ((flags & NCCL_PTR_CUDA) == 0) return ncclSuccess;
   *useGdr = 1;
-  INFO(NCCL_INIT|NCCL_NET,"NET/%s : GPU Direct RDMA Enabled for GPU %d / HCA %d (distance %d < %d), read %d", ncclNetName(), cudaDev, dev, distance, netGdrLevel, read);
+  INFO(NCCL_INIT|NCCL_NET,"NET/%s : GPU Direct RDMA Enabled for GPU %d[%d] / HCA %d (distance %d < %d), read %d", ncclNetName(), cudaDev, nvmlDev, dev, distance, netGdrLevel, read);
   return ncclSuccess;
 }
 
