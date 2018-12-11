@@ -140,6 +140,7 @@ void* persistentThread(void *comm_) {
     } while (op == NULL);
     if (op->state != ncclProxyOpNone) ret = op->progress(op);
     if (ret != ncclSuccess) {
+      comm->fatalError = ret;
       INFO(NCCL_ALL,"%s:%d -> %d [Proxy Thread]", __FILE__, __LINE__, ret);
       return NULL;
     }
