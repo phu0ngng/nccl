@@ -205,11 +205,12 @@ ncclResult_t ncclIbGdrSupport(int ibDev) {
 ncclResult_t ncclIbPtrSupport(int dev, int* supportedTypes) {
   *supportedTypes = NCCL_PTR_HOST;
 
-  int cudaDev;
+  int cudaDev, nvmlDev;
   CUDACHECK(cudaGetDevice(&cudaDev));
+  NCCLCHECK(getNvmlDevice(cudaDev, &nvmlDev))
 
   if (ncclIbGdrSupport(dev) != ncclSuccess) {
-    INFO(NCCL_INIT|NCCL_NET,"NET/IB : GPU Direct RDMA Disabled for GPU %d / HCA %s (no module or not supported by GPU)", cudaDev, ncclIbDevs[dev].devName);
+    INFO(NCCL_INIT|NCCL_NET,"NET/IB : GPU Direct RDMA Disabled for GPU %d[%d] / HCA %d '%s' (no module or not supported by GPU)", cudaDev, nvmlDev, dev, ncclIbDevs[dev].devName);
     return ncclSuccess;
   }
   *supportedTypes |= NCCL_PTR_CUDA;
