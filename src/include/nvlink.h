@@ -67,18 +67,15 @@ static int getNvlinkGpu(const char* busId1, const char* busId2) {
   if (res != ncclSuccess) return 0;
 
   for(int l=0; l<maxNvLinks; ++l) {
-    // nvmlDeviceGetNvLinkCapability(NVML_NVLINK_CAP_P2P_SUPPORTED) would seem to
-    // report whether the NVLink connects to a peer GPU (versus a POWER CPU?). I
-    // don't know whether nvmlDeviceGetNvLinkRemotePciInfo() would succeed in
-    // the POWER CPU case, so it seems best to check this as well.
+    // Check whether we can use this NVLink for P2P
     unsigned canP2P;
     if ((wrapNvmlDeviceGetNvLinkCapability(nvmlDev, l, NVML_NVLINK_CAP_P2P_SUPPORTED, &canP2P) != ncclSuccess) || !canP2P) continue;
 
-    // nvmlDeviceGetNvLinkRemotePciInfo() will return NVML_ERROR_NOT_SUPPORTED
-    // if the links don't exist, or are disabled. So checking for that return
-    // here would probably make the nvmlDeviceGetNvLinkCapability check above
-    // redundant. Presumably, we still need to check the P2P capability above,
-    // since even non-GPUs would possess PCI info.
+    // Make sure the Nvlink is up. The previous call should have trained the link.
+    nvmlEnableState_t isActive;
+    if ((wrapNvmlDeviceGetNvLinkState(nvmlDev, l, &isActive) != ncclSuccess) || (isActive != NVML_FEATURE_ENABLED)) continue;
+
+    // Try to figure out what's on the other side of the NVLink
     nvmlPciInfo_t remoteProc;
     if (wrapNvmlDeviceGetNvLinkRemotePciInfo(nvmlDev, l, &remoteProc) != ncclSuccess) continue;
 
@@ -103,7 +100,8 @@ static int getNvlinkGpu(const char* busId1, const char* busId2) {
 
       // Determine if the remote side is NVswitch or a GPU
       enum ncclNvLinkDeviceType type;
-      if (ncclDeviceType(lowerId, &type) == ncclSuccess) {
+      ncclResult_t ret = ncclDeviceType(lowerId, &type);
+      if (ret == ncclSuccess) {
         if (type == ncclNvLinkDeviceSwitch) {
           //TODO: we are making an assumption that all GPUs are connected to this switch
           //This assumption may change for future architectures
@@ -111,6 +109,11 @@ static int getNvlinkGpu(const char* busId1, const char* busId2) {
         } else if (type == ncclNvLinkDeviceGpu && busId2 == NULL) {
           links++;
         }
+      } else {
+        // The NVLink is up but we couldn't find the PCI device on the other
+        // side. Assume it's an NVswitch outside a VM.
+        if (l==0) INFO(NCCL_INIT, "Assuming NVLink is connected to NVswitch");
+        nvswitch_links++;
       }
     }
   }
