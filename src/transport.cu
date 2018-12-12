@@ -36,19 +36,29 @@ static bool NeedProxy(int type, int pattern, int root, struct ncclRing* ring, in
 enum { proxyRecv=0, proxySend=1 };
 
 #define PROXYARGS_ALLOCATE_SIZE 32
+struct ncclProxyPool {
+  struct ncclProxyPool *next;
+  struct ncclProxyArgs elems[PROXYARGS_ALLOCATE_SIZE];
+};
+
 ncclResult_t transportAllocateProxyArgs(struct ncclComm* comm, struct ncclProxyArgs** argsptr) {
   struct ncclProxyState* state = &comm->proxyState;
   struct ncclProxyArgs* elem;
   pthread_mutex_lock(&state->mutex);
   if (state->pool == NULL) {
-    struct ncclProxyArgs* newElems;
-    NCCLCHECK(ncclCalloc(&newElems, PROXYARGS_ALLOCATE_SIZE));
+    // Allocate a new pool of elements
+    struct ncclProxyPool* newPool;
+    NCCLCHECK(ncclCalloc(&newPool, 1));
+    struct ncclProxyArgs* newElems = newPool->elems;
     // Chain newly allocated elements
     for (int i=0; i<PROXYARGS_ALLOCATE_SIZE; i++) {
       if (i+1 < PROXYARGS_ALLOCATE_SIZE) newElems[i].next = newElems+i+1;
     }
-    // Add them to the pool
+    // Add them all to the pool list
     state->pool = newElems;
+    // Save the pool memory block for later resource release
+    newPool->next = state->pools;
+    state->pools = newPool;
   }
   elem = state->pool;
   state->pool = state->pool->next;
@@ -192,11 +202,24 @@ ncclResult_t transportCreateProxy(struct ncclComm* comm) {
   }
   return ncclSuccess;
 }
-ncclResult_t transportWaitProxy(struct ncclComm* comm) {
+
+ncclResult_t transportDestroyProxy(struct ncclComm* comm) {
   struct ncclProxyState* state = &comm->proxyState;
   pthread_mutex_lock(&state->mutex);
+  // Wake the proxy thread - the comm->abortFlag has already been set
   pthread_cond_signal(&state->cond);
   pthread_mutex_unlock(&state->mutex);
   if (comm->proxyThread) pthread_join(comm->proxyThread, NULL);
+
+  // Free off any memory allocated for the proxy arg pools
+  pthread_mutex_lock(&state->mutex);
+  struct ncclProxyState* proxyState = &comm->proxyState;
+  while (proxyState->pools != NULL) {
+    struct ncclProxyPool *next = proxyState->pools->next;
+    free(proxyState->pools);
+    proxyState->pools = next;
+  }
+  pthread_mutex_unlock(&state->mutex);
+
   return ncclSuccess;
 }

@@ -1086,11 +1086,10 @@ ncclResult_t ncclCommDestroy(ncclComm_t comm) {
   if (savedDevice != commDevice) {
     CUDACHECK(cudaSetDevice(commDevice));
   }
-
   // Ask anything that might still be running on the device to quit
   *comm->abortFlag = 1;
   CUDACHECK(cudaStreamSynchronize(comm->groupStream));
-  NCCLCHECK(transportWaitProxy(comm));
+  NCCLCHECK(transportDestroyProxy(comm));
   NCCLCHECK(commFree(comm));
 
   if (savedDevice != commDevice)

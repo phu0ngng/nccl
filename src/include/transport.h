@@ -66,11 +66,13 @@ struct ncclProxyArgs {
   struct ncclProxyArgs* nextPeer;
 };
 
+struct ncclProxyPool;
 struct ncclProxyState {
   pthread_cond_t cond;
   pthread_mutex_t mutex;
   struct ncclProxyArgs* ops;
   struct ncclProxyArgs* pool;
+  struct ncclProxyPool* pools;
 };
 
 struct ncclTransportComm {
@@ -102,7 +104,7 @@ ncclResult_t transportAllocateProxyArgs(struct ncclComm* comm, struct ncclProxyA
 ncclResult_t transportSaveProxies(struct ncclProxyArgs* args, int pattern, int root, int nranks);
 ncclResult_t transportStartProxy(struct ncclComm* comm);
 ncclResult_t transportCreateProxy(struct ncclComm* comm);
-ncclResult_t transportWaitProxy(struct ncclComm* comm);
+ncclResult_t transportDestroyProxy(struct ncclComm* comm);
 
 #include <unistd.h>
 
