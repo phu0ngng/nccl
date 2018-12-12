@@ -205,10 +205,10 @@ ncclResult_t ncclSocketTest(void* request, int* done, int* size) {
   return ncclSuccess;
 }
 
-ncclResult_t ncclSocketReg(void* comm, void* data, int size, int type, void** mhandle) {
+ncclResult_t ncclSocketRegMr(void* comm, void* data, int size, int type, void** mhandle) {
   return (type != NCCL_PTR_HOST) ? ncclInternalError : ncclSuccess;
 }
-ncclResult_t ncclSocketDeReg(void* comm, void* mhandle) { return ncclSuccess; }
+ncclResult_t ncclSocketDeregMr(void* comm, void* mhandle) { return ncclSuccess; }
 
 ncclResult_t ncclSocketIsend(void* sendComm, void* data, int size, void* mhandle, void** request) {
   struct ncclSocketComm* comm = (struct ncclSocketComm*)sendComm;
@@ -246,10 +246,8 @@ ncclNet_t ncclNetSocket = {
   ncclSocketListen,
   ncclSocketConnect,
   ncclSocketAccept,
-  ncclSocketReg,
-  ncclSocketReg,
-  ncclSocketDeReg,
-  ncclSocketDeReg,
+  ncclSocketRegMr,
+  ncclSocketDeregMr,
   ncclSocketIsend,
   ncclSocketIrecv,
   ncclSocketFlush,

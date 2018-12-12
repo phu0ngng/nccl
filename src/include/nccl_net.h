@@ -79,11 +79,9 @@ typedef struct {
   ncclResult_t (*connect)(int dev, void* handle, void** sendComm);
   // Finalize connection establishment after remote peer has called connectHandle
   ncclResult_t (*accept)(void* listenComm, void** recvComm);
-  // Register memory for send/recv
-  ncclResult_t (*sendreg)(void* sendComm, void* data, int size, int type, void** mhandle);
-  ncclResult_t (*recvreg)(void* recvComm, void* data, int size, int type, void** mhandle);
-  ncclResult_t (*senddereg)(void* sendComm, void* mhandle);
-  ncclResult_t (*recvdereg)(void* recvComm, void* mhandle);
+  // Register/Deregister memory. Comm can be either a sendComm or a recvComm.
+  ncclResult_t (*regMr)(void* comm, void* data, int size, int type, void** mhandle);
+  ncclResult_t (*deregMr)(void* comm, void* mhandle);
   // Asynchronous send to a peer. Type is either NCCL_PTR_HOST or NCCL_PTR_CUDA.
   // May return request == NULL if the call cannot be performed (or would block)
   ncclResult_t (*isend)(void* sendComm, void* data, int size, void* mhandle, void** request);

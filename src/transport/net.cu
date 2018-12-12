@@ -331,9 +331,9 @@ ncclResult_t netSendConnect(struct ncclConnect* connectInfo, struct ncclConnecto
   struct netConnectInfo* info = (struct netConnectInfo*)connectInfo;
   NCCLCHECK(ncclNetConnect(resources->netDev, info->netHandle, &resources->netSendComm));
 
-  NCCLCHECK(ncclNetSendReg(resources->netSendComm, recvMem->buff, resources->buffSize,
+  NCCLCHECK(ncclNetRegMr(resources->netSendComm, recvMem->buff, resources->buffSize,
         resources->useGdr ? NCCL_PTR_CUDA : NCCL_PTR_HOST, &resources->mhandle));
-  NCCLCHECK(ncclNetSendReg(resources->netSendComm, resources->devHostRecvMem->llBuff,
+  NCCLCHECK(ncclNetRegMr(resources->netSendComm, resources->devHostRecvMem->llBuff,
         NCCL_LL_BUFF_SIZE, NCCL_PTR_HOST, &resources->llMhandle));
 
   return ncclSuccess;
@@ -359,9 +359,9 @@ ncclResult_t netRecvConnect(struct ncclConnect* connectInfo, struct ncclConnecto
   NCCLCHECK(ncclNetAccept(resources->netListenComm, &resources->netRecvComm));
   NCCLCHECK(ncclNetCloseListen(resources->netListenComm));
 
-  NCCLCHECK(ncclNetRecvReg(resources->netRecvComm, recvMem->buff, resources->buffSize,
+  NCCLCHECK(ncclNetRegMr(resources->netRecvComm, recvMem->buff, resources->buffSize,
         resources->useGdr ? NCCL_PTR_CUDA : NCCL_PTR_HOST, &resources->mhandle));
-  NCCLCHECK(ncclNetRecvReg(resources->netRecvComm, recvMem->llBuff, NCCL_LL_BUFF_SIZE,
+  NCCLCHECK(ncclNetRegMr(resources->netRecvComm, recvMem->llBuff, NCCL_LL_BUFF_SIZE,
         resources->useGdr ? NCCL_PTR_CUDA : NCCL_PTR_HOST, &resources->llMhandle));
 
   return ncclSuccess;
@@ -370,8 +370,8 @@ ncclResult_t netRecvConnect(struct ncclConnect* connectInfo, struct ncclConnecto
 ncclResult_t netSendFree(void* transportResources) {
   struct netSendResources* resources = (struct netSendResources*)transportResources;
   NCCLCHECK(ncclCudaHostFree(resources->hostSendMem));
-  NCCLCHECK(ncclNetSendDeReg(resources->netSendComm, resources->mhandle));
-  NCCLCHECK(ncclNetSendDeReg(resources->netSendComm, resources->llMhandle));
+  NCCLCHECK(ncclNetDeregMr(resources->netSendComm, resources->mhandle));
+  NCCLCHECK(ncclNetDeregMr(resources->netSendComm, resources->llMhandle));
   NCCLCHECK(ncclCudaHostFree(resources->hostRecvMem));
   if (resources->useGdr)
     CUDACHECK(cudaFree(resources->devRecvMem));
@@ -383,8 +383,8 @@ ncclResult_t netSendFree(void* transportResources) {
 ncclResult_t netRecvFree(void* transportResources) {
   struct netRecvResources* resources = (struct netRecvResources*)transportResources;
   NCCLCHECK(ncclCudaHostFree(resources->hostSendMem));
-  NCCLCHECK(ncclNetRecvDeReg(resources->netRecvComm, resources->mhandle));
-  NCCLCHECK(ncclNetRecvDeReg(resources->netRecvComm, resources->llMhandle));
+  NCCLCHECK(ncclNetDeregMr(resources->netRecvComm, resources->mhandle));
+  NCCLCHECK(ncclNetDeregMr(resources->netRecvComm, resources->llMhandle));
   NCCLCHECK(ncclCudaHostFree(resources->hostRecvMem));
   if (resources->useGdr)
     CUDACHECK(cudaFree(resources->devRecvMem));

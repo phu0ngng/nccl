@@ -272,12 +272,12 @@ struct ncclIbSendFifo {
 };
 
 struct ncclIbSendComm {
+  struct ncclIbVerbs verbs;
   struct ncclIbSendFifo fifo[MAX_REQUESTS];
   struct ncclIbRequest reqs[MAX_REQUESTS];
   uint32_t fifoHead;
   int fd;
   int ready;
-  struct ncclIbVerbs verbs;
   struct ibv_qp* qp;
   struct ibv_mr* fifoMr;
 };
@@ -301,11 +301,11 @@ struct ncclIbRemFifo {
 };
 
 struct ncclIbRecvComm {
+  struct ncclIbVerbs verbs;
   struct ncclIbRemFifo remFifo;
   struct ncclIbRequest reqs[MAX_REQUESTS];
   int fd;
   int ready;
-  struct ncclIbVerbs verbs;
   struct ibv_qp* qp;
   struct ncclIbGpuFlush gpuFlush;
 };
@@ -576,7 +576,8 @@ ncclResult_t ncclIbTest(void* request, int* done, int* size);
 
 #define REG_ALIGN (4096)
 
-ncclResult_t ncclIbRegMr(struct ncclIbVerbs* verbs, void* data, int size, int type, void** mhandle) {
+ncclResult_t ncclIbRegMr(void* comm, void* data, int size, int type, void** mhandle) {
+  struct ncclIbVerbs* verbs = (struct ncclIbVerbs*)comm;
   uint64_t addr = (uint64_t)data;
   assert(size > 0);
 
@@ -591,19 +592,7 @@ ncclResult_t ncclIbRegMr(struct ncclIbVerbs* verbs, void* data, int size, int ty
   return ncclSuccess;
 }
 
-ncclResult_t ncclIbSendReg(void* sendComm, void* data, int size, int type, void** mhandle) {
-  struct ncclIbSendComm* comm = (struct ncclIbSendComm*)sendComm;
-  NCCLCHECK(ncclIbRegMr(&comm->verbs, data, size, type, mhandle));
-  return ncclSuccess;
-}
-
-ncclResult_t ncclIbRecvReg(void* recvComm, void* data, int size, int type, void** mhandle) {
-  struct ncclIbRecvComm* comm = (struct ncclIbRecvComm*)recvComm;
-  NCCLCHECK(ncclIbRegMr(&comm->verbs, data, size, type, mhandle));
-  return ncclSuccess;
-}
-
-ncclResult_t ncclIbDeReg(void* comm, void* mhandle) {
+ncclResult_t ncclIbDeregMr(void* comm, void* mhandle) {
   NCCLCHECK(wrap_ibv_dereg_mr((struct ibv_mr*)mhandle));
   return ncclSuccess;
 }
@@ -854,10 +843,8 @@ ncclNet_t ncclNetIb = {
   ncclIbListen,
   ncclIbConnect,
   ncclIbAccept,
-  ncclIbSendReg,
-  ncclIbRecvReg,
-  ncclIbDeReg,
-  ncclIbDeReg,
+  ncclIbRegMr,
+  ncclIbDeregMr,
   ncclIbIsend,
   ncclIbIrecv,
   ncclIbFlush,
