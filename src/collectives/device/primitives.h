@@ -16,13 +16,15 @@
 // least 1 if SEND/RECV is set.
 #define FOR_SEND(func, ...) do { \
   if (SEND) { \
-    func(0, ##__VA_ARGS__); \
+    /* Send to far first, then close */ \
     for (int i=1; i<NSEND && i<nsend; i++) func(i, ##__VA_ARGS__); \
+    func(0, ##__VA_ARGS__); \
   } \
 } while (0)
 
 #define FOR_RECV(func, ...) do { \
   if (RECV) { \
+    /* Recv from close first, then far */ \
     func(0, ##__VA_ARGS__); \
     for (int i=1; i<NRECV && i<nrecv; i++) func(i, ##__VA_ARGS__); \
   } \
@@ -452,16 +454,19 @@ class ncclLLPrimitives {
     // Do multiples of 64 bits
     #pragma unroll 2
     for (int offset=tid; offset<npack; offset+=nthreads) {
+      // Recv : local, then intra-node, then inter-node
       uint64_t val = SRC ? readAL(srcPack+offset) : readLL(0, offset);
       if (RECV) {
         if (SRC) val = MULTI<FUNC, T>()(readLL(0, offset), val);
-        for (int i= 1; i<NRECV && i<nrecv; i++) {
+        for (int i=1; i<NRECV && i<nrecv; i++) {
           val = MULTI<FUNC, T>()(readLL(i, offset), val);
         }
       }
+
+      // Send : inter-node, then intra-node, then local
       if (SEND) {
-        storeLL(sendPtr(0)+offset, val, sendFlag(0));
         for (int i=1; i<NSEND && i<nsend; i++) storeLL(sendPtr(i)+offset, val, sendFlag(i));
+        storeLL(sendPtr(0)+offset, val, sendFlag(0));
       }
       if (DST) {
         if (((offset*sizeof(uint64_t)) ^ nbytes) < sizeof(uint64_t)) {
