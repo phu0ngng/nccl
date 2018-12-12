@@ -397,10 +397,10 @@ static ncclResult_t setupChannel(struct ncclComm* comm, int channelId, int rank,
       int nvlink;
       NCCLCHECK(ncclNvlinkGpu(&nvlink));
       comm->treeThreshold =
-        // NVLink : use trees for all sizes
+        // NVLink : use trees for all sizes up to 4 nodes
         (nvlink && (nMasters < ncclParamTreeMaxNodesThreshold())) ? 0x7fffffffffffffff :
-        // PCI : switch to rings only when non-LL would start.
-        comm->nThreads*comm->nChannels*comm->threadThreshold*comm->nRanks;
+        // switch to rings for large sizes
+        comm->nThreads*comm->nChannels*4*comm->threadThreshold*comm->nRanks;
     }
   }
 
