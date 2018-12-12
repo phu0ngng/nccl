@@ -371,6 +371,8 @@ testResult_t BenchTime(struct threadArgs* args, ncclDataType_t type, ncclRedOp_t
   size_t count = args->nbytes / wordSize(type);
 
   // Sync
+  TESTCHECK(startColl(args, type, op, root, in_place, 0));
+  TESTCHECK(completeColl(args));
 
   Barrier(args);
 
@@ -379,7 +381,7 @@ testResult_t BenchTime(struct threadArgs* args, ncclDataType_t type, ncclRedOp_t
   for (int iter = 0; iter < iters; iter++) {
     if (agg_iters>1) NCCLCHECK(ncclGroupStart());
     for (int iter = 0; iter < agg_iters; iter++) {
-      startColl(args, type, op, root, in_place, iter);
+      TESTCHECK(startColl(args, type, op, root, in_place, iter));
     }
     if (agg_iters>1) NCCLCHECK(ncclGroupEnd());
   }
