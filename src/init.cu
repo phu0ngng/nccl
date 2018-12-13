@@ -391,7 +391,7 @@ static ncclResult_t setupChannel(struct ncclComm* comm, int channelId, int rank,
   }
 
   if (comm->treeThreshold == -2) {
-    if (nMasters < ncclParamTreeMinNodesThreshold()) {
+    if (nMasters < ncclParamTreeMinNodesThreshold() || comm->nRanks <= 8) {
       comm->treeThreshold = 0;
     } else {
       int nvlink;
