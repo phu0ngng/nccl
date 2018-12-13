@@ -246,7 +246,6 @@ struct ncclIbHandle {
 struct ncclIbVerbs {
   struct ibv_pd* pd;
   struct ibv_cq* cq;
-  int mrRotation;
 };
 
 struct ncclIbRequest {
