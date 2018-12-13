@@ -9,6 +9,7 @@
 
 #include <type_traits>
 #include "reduce_kernel.h" // for reduction funcs
+#include "common.h"
 
 #define SPINS_BEFORE_CHECK_ABORT 1000000
 
@@ -55,20 +56,6 @@ class ncclPrimitives {
   inline __device__ int sendOffset(int i) { return (sendStep[i]%NCCL_STEPS)*stepSize; }
   inline __device__ const T* recvPtr(int i) { return ((const T*)recvBuff[i])+recvOffset(i); }
   inline __device__ T* sendPtr(int i) { return ((T*)sendBuff[i])+sendOffset(i); }
-
-  // Exit If Abort Barrier : make sure all threads exit consistently
-  // Each thread sets a predicate to true if val == 1
-  // all CTA's threads enter the barrier and do a popc on their predicates being True
-  // If any of the thread's predicate was True, all the threads call exit()
-  inline __device__ void exitIfAbortBarrier() {
-    uint32_t popc;
-    asm ("{");
-    asm volatile ("   .reg .pred barr_pred;");
-    asm volatile ("   setp.eq.u32 barr_pred,%0,1;" :: "r"(abort));
-    asm volatile ("   bar.red.popc.u32 %0, 14, barr_pred;" : "=r"(popc));
-    asm ("}");
-    if (popc) { asm volatile ("exit;"); }
-  }
 
   inline __device__ void barrier() {
     asm volatile ("bar.sync 1, %0;" :: "r"(nthreads));
@@ -181,9 +168,9 @@ class ncclPrimitives {
             ReduceOrCopyMulti<UNROLL, FUNC, T, RECV+SRC, RECV*NRECV+SRC, SEND+DST, SEND*NSEND+DST>(tid, nthreads, RECV*nrecv+SRC, srcs, SEND*nsend+DST, dsts, realSize);
           }
         }
-        exitIfAbortBarrier();
+        exitIfAbortBarrier(abort);
       } else {
-        exitIfAbortBarrier();
+        exitIfAbortBarrier(abort);
         FOR_SEND(postSendSize, realSize*sizeof(T));
         if (SEND) __threadfence_system();
         FOR_SEND(postSend);
@@ -353,14 +340,17 @@ class ncclLLPrimitives {
   // Each thread sets a predicate to true if val == 1
   // all CTA's threads enter the barrier and do a popc on their predicates being True
   // If any of the thread's predicate was True, all the threads call exit()
-  inline __device__ void exitIfAbortBarrier() {
+  inline __device__ void exitIfAbortLocalBarrier() {
     uint32_t popc;
     asm ("{");
     asm volatile ("   .reg .pred barr_pred;");
     asm volatile ("   setp.eq.u32 barr_pred,%0,1;" :: "r"(abort));
     asm volatile ("   bar.red.popc.u32 %0, 14, %1, barr_pred;" : "=r"(popc) : "r"(nthreads));
     asm ("}");
-    if (popc) { asm volatile ("exit;"); }
+    if (popc) {
+      // Make sure threads not participating in the operation get the abort and all threads exit
+      exitIfAbortBarrier(1);
+    }
   }
 
   inline __device__ void barrier() {
@@ -477,7 +467,7 @@ class ncclLLPrimitives {
         }
       }
     }
-    exitIfAbortBarrier();
+    exitIfAbortLocalBarrier();
     FOR_RECV(postRecv);
     FOR_SEND(postSend);
   }
