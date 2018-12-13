@@ -393,7 +393,7 @@ class ncclLLPrimitives {
     return abort;
   }
 
-  inline __device__ void waitSend(int i) {
+  inline __device__ void waitSend(int i, int nbytes) {
     spins = 0;
     mismatch = 0;
     if (tid == WARP_SIZE+i) {
@@ -401,6 +401,7 @@ class ncclLLPrimitives {
         sendConnHead = *waitPtr;
         if (checkAbort(sendConn[i]->opCountRem)) break;
       }
+      if (fifoPtr) fifoPtr[sendStep[i]%NCCL_STEPS] = nbytes;
     }
   }
 
@@ -409,8 +410,7 @@ class ncclLLPrimitives {
     if (tid == i) *postPtr = recvStep[i];
   }
 
-  inline __device__ void postSend(int i, int nbytes) {
-    if (tid == WARP_SIZE+i && fifoPtr) fifoPtr[sendStep[i]%NCCL_STEPS] = nbytes;
+  inline __device__ void postSend(int i) {
     sendStep[i]++;
   }
 
@@ -446,7 +446,7 @@ class ncclLLPrimitives {
   template <int RECV, int SEND, int SRC, int DST>
   __device__ void LLGenericOp(const T* srcPtr, T* dstPtr, int nelem) {
     uint32_t nbytes = nelem < 0 ? 0 : nelem*sizeof(T);
-    FOR_SEND(waitSend);
+    FOR_SEND(waitSend, nbytes*2);
     barrier();
     uint32_t npack = DIVUP(nbytes, sizeof(uint64_t));
     uint64_t* srcPack = (uint64_t*)srcPtr;
@@ -478,8 +478,8 @@ class ncclLLPrimitives {
       }
     }
     exitIfAbortBarrier();
-    FOR_SEND(postSend, nbytes*2);
     FOR_RECV(postRecv);
+    FOR_SEND(postSend);
   }
 
   __device__ __forceinline__ void loadRecvConn(struct ncclConnInfo* conn, int i) {
@@ -528,12 +528,11 @@ class ncclLLPrimitives {
       static_assert((NCCL_LL_BUFF_SIZE % NCCL_LL_MAX_NTHREADS) == 0, "NCCL_LL_BUFF_SIZE must be a multiple of THREADS");
       static_assert(NCCL_LL_BUFF_SIZE/(sizeof(union ncclLLFifoLine)*NCCL_LL_MAX_NTHREADS) > 0, "NCCL_LL_BUFF_SIZE is less than 16 bytes*THREADS");
       for (int s=0; s<NCCL_STEPS; s++) {
-        waitSend(i);
+        waitSend(i, 0);
         for (int o=tid; o<NCCL_LL_SLICE_LINES; o+=nthreads) {
           const union ncclLLFifoLine resetLine = { 0, sendFlag(i), 0, sendFlag(i) };
           sendPtr(i)[o].i4 = resetLine.i4;
         }
-        postSend(i, 0);
       }
       if (tid == 0) sendConn[i]->llLastCleaning = sendStep[i];
     }

@@ -418,18 +418,21 @@ ncclResult_t netSendProxy(struct ncclProxyArgs* args) {
             int nFifoLines = DIVUP(size, sizeof(union ncclLLFifoLine));
             size = nFifoLines * sizeof(union ncclLLFifoLine);
             union ncclLLFifoLine* lines = resources->hostRecvMem->llBuff+buffSlot*NCCL_LL_SLICE_LINES;
+            int ready = 1;
             for (int i=0; i<nFifoLines; i++) {
               volatile uint32_t *f1 = &lines[i].flag1;
               volatile uint32_t *f2 = &lines[i].flag2;
-              while (f1[0] != flag || f2[0] != flag);
+              if (f1[0] != flag || f2[0] != flag) { ready = 0; break; }
             }
-            NCCLCHECK(ncclNetIsend(resources->netSendComm, lines, size, resources->llMhandle, args->requests+buffSlot));
-            if (args->requests[buffSlot] != NULL) {
-              sizesFifo[buffSlot] = -1;
-              // Make sure size is reset to zero before we update the head.
-              __sync_synchronize();
-              args->tail += args->sliceSteps;
-              args->idle = 0;
+            if (ready) {
+              NCCLCHECK(ncclNetIsend(resources->netSendComm, lines, size, resources->llMhandle, args->requests+buffSlot));
+              if (args->requests[buffSlot] != NULL) {
+                sizesFifo[buffSlot] = -1;
+                // Make sure size is reset to zero before we update the head.
+                __sync_synchronize();
+                args->tail += args->sliceSteps;
+                args->idle = 0;
+              }
             }
           }
         } else if (args->tail < resources->hostRecvMem->tail) {
