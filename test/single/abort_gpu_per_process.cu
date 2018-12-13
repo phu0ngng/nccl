@@ -40,6 +40,7 @@ void usage() {
   printf("*     - 0: LL disabled                                                   *\n");
   printf("*     - 1: LL forced                                                     *\n");
   printf("*     - 2: a big non-LL collective followed by a small LL collective     *\n");
+  printf("*     - 3: a small LL collective followed by a big non-LL collective     *\n");
   printf("**************************************************************************\n");
 }
 
@@ -50,7 +51,7 @@ int main(int argc, char* argv[]) {
   int mode = 0;
   if (argc > 1) {
     mode = atoi(argv[1]);
-    if (mode != 1 && mode != 2) mode = 0;
+    if (!(mode >=0 && mode <= 3)) mode = 0;
   }
   if (mode == 0) {
     printf("NOTE: NOT using LL\n");
@@ -60,9 +61,12 @@ int main(int argc, char* argv[]) {
     char thresh_str[100];
     snprintf(thresh_str, 100, "%lu", firstN+1);
     setenv("NCCL_LL_THRESHOLD", thresh_str, 1);
-  } else {
-    printf("NOTE: mixed non-LL/LL mode\n");
+  } else if (mode == 2) {
+    printf("NOTE: non-LL followed by LL\n");
     secondN = 10;
+  } else {
+    printf("NOTE: LL followed by non-LL\n");
+    firstN = 10;
   }
   bool parent, child;
   int fd[2];
