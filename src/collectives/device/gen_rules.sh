@@ -1,3 +1,5 @@
+#!/bin/bash
+
 dir=$1
 
 targets="GENOBJS := \\\\\n"
@@ -18,5 +20,5 @@ for base in all_reduce all_gather broadcast reduce reduce_scatter; do
     opn=$(($opn + 1))
   done
 done
-echo "$targets"
+echo -e "$targets"
 
