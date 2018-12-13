@@ -460,8 +460,8 @@ static ncclResult_t setupChannel(struct ncclComm* comm, int channelId, int rank,
       if (treeMasters[next] == 0) tree->down[0] = next;
     }
 
-    INFO(NCCL_INIT, "Channel %02d : %d -> %d, %d, %d", channelId,
-        tree->up, tree->down[0], tree->down[1], tree->down[2]);
+    INFO(NCCL_INIT, "Channel %02d : rank %d: up %d down %d, %d, %d", channelId,
+         rank, tree->up, tree->down[0], tree->down[1], tree->down[2]);
   }
 
   TRACE(NCCL_INIT, "rank %d nranks %d - DONE", rank, nranks);
