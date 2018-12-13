@@ -356,7 +356,7 @@ class ncclLLPrimitives {
     asm ("{");
     asm volatile ("   .reg .pred barr_pred;");
     asm volatile ("   setp.eq.u32 barr_pred,%0,1;" :: "r"(abort));
-    asm volatile ("   bar.red.popc.u32 %0, 14, barr_pred;" : "=r"(popc) : "r"(nthreads));
+    asm volatile ("   bar.red.popc.u32 %0, 14, %1, barr_pred;" : "=r"(popc) : "r"(nthreads));
     asm ("}");
     if (popc) { asm volatile ("exit;"); }
   }
