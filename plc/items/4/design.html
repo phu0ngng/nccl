@@ -65,9 +65,6 @@ intra-node data flow (using NVLink) is independent from the inter-node flow
 same structure both for reductions (going up the tree) and broadcasts (going
 down the tree). That means we connect ranks in both directions and the same
 GPU communicates with the network card in both directions.
-<p>This causes a performance limitation, since GPU Direct RDMA can achieve
-11.8 GB/s unidirectionally, but only 10.8 GB/s bidirectionally.
-
 <h4>The special case of 2 nodes</h4>
 <p>In the special case of two nodes with NVLink, using trees can actually
 outperform rings by a factor two.
@@ -89,6 +86,22 @@ should be able to achieve 80 GB/s).
 since PCI would be the bottleneck, on top of being used both for intra-
 and inter- node communication. It could be useful however for slow network,
 although only interesting with 2 nodes.
+
+<h4>Bandwidth limitation</h4>
+
+<p>Because we send and receive from the same GPU, GPU Direct RDMA can only
+achieve 10.8 GB/s in both directions (compared to 11.8 GB/s when
+sending/receiving from different GPUs). Therefore, trees are slightly
+slower than rings for large enough sizes. On a DGX-1, we see a maximum speed
+of 42 GB/s for trees versus 47 GB/s for rings.
+<p>Additionally, as we scale to larger number of nodes and use top-of-rack
+Infiniband switches, performance drops further with trees. This is likely
+because trees feature more flows between leaf switches (up to 6 flows
+instead of 2 per NIC) which can cause static routing aliasing on Infiniband,
+i.e. having two of those 4x6 flows being routed on the same link.
+<p>Finally, our work on trees has revealed that we could achieve 47GB/s on
+rings, compared to 42GB/s on previous versions.
+<p>For all these reasons, we switch back to rings for large enough sizes.
 
 <h3>Kernel code</h3>
 
