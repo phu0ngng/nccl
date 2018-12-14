@@ -17,7 +17,8 @@ trees have half bandwidth, meaning they can only achieve half of the peak
 bandwidth.
 <p>On PCI architectures, trees cannot achieve full bandwidth since the PCI bus
 is used both for receiving data from the internal ring and for receiving data
-from the network.
+from the network. Because of that limitation, trees are only use to improve
+latency, using a single binary tree.
 <p>On NVLink architectures, since internal communication uses NVLink, we can
  get full bandwidth. We therefore use double binary trees in that case.
 <p>Double binary trees are a technique combining two binary trees, where the
