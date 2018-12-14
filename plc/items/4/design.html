@@ -21,8 +21,9 @@ from the network.
 <p>On NVLink architectures, since internal communication uses NVLink, we can
  get full bandwidth. We therefore use double binary trees in that case.
 <p>Double binary trees are a technique combining two binary trees, where the
-leaves of one tree is the nodes of the other and vice-versa. Here is an
-illustatrion with 12/13 ranks, from the source code.
+leaves of one tree is the nodes of the other and vice-versa.
+<p>Below is an
+illustration with 12/13 ranks, from the source code.
 <pre>
  Build a double binary tree. Take the previous tree for the first tree.
  For the second tree, we use a mirror tree (if nranks is odd)
@@ -49,8 +50,7 @@ illustatrion with 12/13 ranks, from the source code.
 <h4>Tree creation</h4>
 <p>We reuse the ring creation system to benefit from the topology detection.
 During the network ring creation phase, we store the GPUs where data enters
-and exit the node. Those GPUs (at least the GPU where data enters the node)
-are supposed to be close to NICs.
+the node. Those GPUs are supposed to be close to NICs.
 <p>We designate those GPUs as performing the tree inter-node reduction.
 <p>Other GPUs still form a chain inside the node, to continue to use NVLinks
 and get full bandwidth inside the node. The intra-node chain is following the
@@ -67,6 +67,27 @@ down the tree). That means we connect ranks in both directions and the same
 GPU communicates with the network card in both directions.
 <p>This causes a performance limitation, since GPU Direct RDMA can achieve
 11.8 GB/s unidirectionally, but only 10.8 GB/s bidirectionally.
+
+<h4>The special case of 2 nodes</h4>
+<p>In the special case of two nodes with NVLink, using trees can actually
+outperform rings by a factor two.
+<p>An allreduce operations on G GPUs consists in 2×(G-1) operations, which
+also means 2×(G-1) transfers between GPUs. Rings balance those operations
+evenly on the links, so that 1/G of the data will not be transfered between
+GPU A and GPU (A+1)%G. Therefore, all links see (G-1)/G of the total data.
+<p>With a tree featuring 2 nodes, and because we build them along then node
+topology, it happens that all intra-node links see the whole data, while
+data transfered between the nodes is only 1/2. We therefore increase
+the load on intra-node links (by a G/(G-1) factor) which decreased the load
+on inter-node by a half.
+<p>On NVLink systems where intra-node speed is faster than inter-node speed,
+we can easily absorb the extra 1/G of data. We currently see 60 GB/s instead
+of 40 GB/s on two DGX1, which we assume is due to some other bottleneck (we
+should be able to achieve 80 GB/s).
+<p>On PCI systems, the same technique would decrease the bandwidth by 1/G
+since PCI would be the bottleneck, on top of being used both for intra-
+and inter- node communication. It could be useful however for slow network,
+although only interesting with 2 nodes.
 
 <h3>Kernel code</h3>
 
@@ -87,15 +108,25 @@ simplifies greatly the collective code.
 be established at any time and the communicator has a full array of peer
 connections, although most of them are not established unless needed.
 
+<h3>Network proxy threads</h3>
+<p>Binary trees need to receive from two sources and send to two destinations.
+The former design caused a significant increase in CPU usage since it meant
+multiplying the number of proxies. All network proxies have therefore been
+merged and a single proxy thread performs all network communication for a
+given rank/communicator.
+<p>Because of that, network calls have to be non-blocking to permit fluid
+progression of all communication with different peers. It also improves
+overall performance since there is no noise due to thread scheduling.
+
 <h2>Interface Architecture</h2>
 No new API.
 
 <h2>System KPIs & Metrics</h2>
-<p>Latency is clearly now increasing as a log of the number of nodes.
-<img src="images/2.4.0-latency.png">
+<p>Latency is now increasing as a log of the number of nodes.
+<img width=400 src="images/2.4.0-latency.png">
 <p>Bandwidth is much higher for small-medium sizes, especially for large
 number of GPUs.
-<img src="images/2.4.0-bandwidth.png">
+<img width=400 src="images/2.4.0-bandwidth.png">
 <h2>Data Architecture</h2>
 N/A
 <h2>Security Design</h2>
