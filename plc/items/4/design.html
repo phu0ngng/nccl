@@ -71,8 +71,8 @@ GPU communicates with the network card in both directions.
 <h4>The special case of 2 nodes</h4>
 <p>In the special case of two nodes with NVLink, using trees can actually
 outperform rings by a factor two.
-<p>An allreduce operations on G GPUs consists in 2×(G-1) operations, which
-also means 2×(G-1) transfers between GPUs. Rings balance those operations
+<p>An allreduce operations on G GPUs consists in 2&times;(G-1) operations, which
+also means 2&times;(G-1) transfers between GPUs. Rings balance those operations
 evenly on the links, so that 1/G of the data will not be transfered between
 GPU A and GPU (A+1)%G. Therefore, all links see (G-1)/G of the total data.
 <p>With a tree featuring 2 nodes, and because we build them along then node
@@ -123,10 +123,10 @@ No new API.
 
 <h2>System KPIs & Metrics</h2>
 <p>Latency is now increasing as a log of the number of nodes.
-<img width=400 src="images/2.4.0-latency.png">
+<p><img width=400 src="images/2.4.0-latency.png">
 <p>Bandwidth is much higher for small-medium sizes, especially for large
 number of GPUs.
-<img width=400 src="images/2.4.0-bandwidth.png">
+<p><img width=400 src="images/2.4.0-bandwidth.png">
 <h2>Data Architecture</h2>
 N/A
 <h2>Security Design</h2>
