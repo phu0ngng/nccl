@@ -71,15 +71,16 @@ GPU communicates with the network card in both directions.
 <h4>The special case of 2 nodes</h4>
 <p>In the special case of two nodes with NVLink, using trees can actually
 outperform rings by a factor two.
-<p>An allreduce operations on G GPUs consists in 2&times;(G-1) operations, which
-also means 2&times;(G-1) transfers between GPUs. Rings balance those operations
-evenly on the links, so that 1/G of the data will not be transfered between
-GPU A and GPU (A+1)%G. Therefore, all links see (G-1)/G of the total data.
+<p>An allreduce operations on G GPUs consists in 2&times;(G-1) operations,
+which also means 2&times;(G-1) transfers between GPUs. Rings balance those
+operations evenly on the links, so that 2&times;1/G of the data will not be
+transfered between GPU A and GPU (A+1)%G. Therefore, all links see
+2&times;(G-1)/G of the total data.
 <p>With a tree featuring 2 nodes, and because we build them along then node
-topology, it happens that all intra-node links see the whole data, while
-data transfered between the nodes is only 1/2. We therefore increase
-the load on intra-node links (by a G/(G-1) factor) which decreased the load
-on inter-node by a half.
+topology, data is balanced unevenly, using intra-node more and inter-node
+less. All intra-node links see 2 time the total data instead of
+2&times;(G-1)/G, while data transfered between the nodes is only 1 (in one
+direction) and 1 (in the other direction).
 <p>On NVLink systems where intra-node speed is faster than inter-node speed,
 we can easily absorb the extra 1/G of data. We currently see 60 GB/s instead
 of 40 GB/s on two DGX1, which we assume is due to some other bottleneck (we
