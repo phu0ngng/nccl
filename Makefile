@@ -32,5 +32,3 @@ pkg.%:
 
 pkg.debian.prep: lic
 pkg.txz.prep: lic
-
-install: src.install
