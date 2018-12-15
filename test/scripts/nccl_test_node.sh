@@ -47,7 +47,7 @@ cd $NCCLROOT
 make -j test.build MPI=1 NCCLDIR=${DEBDIR} 2>&1 | tee make_test_mpi.log
 
 # SLURM setting
-timeout=60
+timeout=$((10 * $maxgpu))
 if [ "$SLURM" == "1" ]; then
   srun_cmd="srun -p $gpumodel -t ${timeout} --exclusive "
   salloc_cmd="salloc -p $gpumodel -t ${timeout} --exclusive "
