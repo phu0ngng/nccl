@@ -206,6 +206,12 @@ ncclResult_t ncclGetRings(int* nrings, int* nthreads, int rank, int nranks, int*
     if (ret == ncclSuccess && *nrings > 0) {
       if (rank == 0) INFO(NCCL_INIT,"%d ring(s) set by environment", *nrings);
       NCCLCHECK(getEnvThreads(nthreads));
+      for (int r = 0; r<*nrings; r++) {
+        for (int i = 0; i<nranks; i++) {
+          if (transports[i*nranks+prev[i]] == 2) treeIn[i] = 1;
+          if (transports[i*nranks+next[i]] == 2) treeOut[i] = 1;
+        }
+      }
       return ncclSuccess;
     }
     if (rank == 0) INFO(NCCL_INIT,"No valid ring found in environment, ignoring");
