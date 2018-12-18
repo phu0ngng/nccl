@@ -679,12 +679,10 @@ static ncclResult_t p2pSetup(struct ncclComm* comm, struct ncclChannel* channel,
 }
 
 static ncclResult_t initTransportsRank(struct ncclComm* comm, ncclUniqueId* commId) {
-  // We need 4 AllGathers
+  // We use 3 AllGathers
   // 1. { peerInfo, comm }
   // 2. ConnectTransport[nranks], ConnectValue[nranks]
-  // 3. { nThreads, nrings, compCap }
-  // 4. (prev,next)*nrings
-  // AllGathers no 2 and 4 use dynamic datastructures
+  // 3. { nThreads, nrings, compCap, prev[MAXCHANNELS], next[MAXCHANNELS] }
 
   int rank = comm->rank;
   int nranks = comm->nRanks;
@@ -752,12 +750,18 @@ static ncclResult_t initTransportsRank(struct ncclComm* comm, ncclUniqueId* comm
     int nThreads;
     int nrings;
     int cudaCompCap;
+    int prev[MAXCHANNELS];
+    int next[MAXCHANNELS];
   } *allGather3Data;
 
   NCCLCHECK(ncclCalloc(&allGather3Data, nranks));
   allGather3Data[rank].nThreads = comm->nThreads;
   allGather3Data[rank].nrings = nrings;
   allGather3Data[rank].cudaCompCap = ncclCudaCompCap();
+  for (int r=0; r<nrings; r++) {
+    allGather3Data[rank].prev[r] = *(prev+r*nranks+rank);
+    allGather3Data[rank].next[r] = *(next+r*nranks+rank);
+  }
   NCCLCHECK(bootstrapAllGather(comm->bootstrap, allGather3Data, sizeof(*allGather3Data)));
 
   // Find max nThreads
@@ -781,28 +785,16 @@ static ncclResult_t initTransportsRank(struct ncclComm* comm, ncclUniqueId* comm
   for (int i=0; i<nranks; i++)
     nrings = std::min(allGather3Data[i].nrings, nrings);
   comm->nChannels = nrings;
-  free(allGather3Data);
-  // AllGather3 - end
 
-  // AllGather4 - begin
-  // Exchange data with others to build complete rings
-  int *allGather4Data;
-  NCCLCHECK(ncclCalloc(&allGather4Data, nrings*2*nranks));
-  int *myRow = allGather4Data + nrings*2*rank;
-  // at each iteration, AllGather a full row
-  for (size_t ring = 0; ring < nrings; ++ring) {
-    myRow[ring] = *(prev+ring*nranks+rank);
-    myRow[ring+nrings] = *(next+ring*nranks+rank);
-  }
-  NCCLCHECK(bootstrapAllGather(comm->bootstrap, allGather4Data, sizeof(int)*nrings*2));
-  for (int r = 0; r < nrings; r++) {
-    for (int i = 0; i < nranks; i++) {
-      prev[r*nranks+i] = *(allGather4Data + nrings*2*i + r);
-      next[r*nranks+i] = *(allGather4Data + nrings*2*i + r + nrings);
+  // Unpack the per ring prev/next arrays
+  for (int i = 0; i < nranks; i++) {
+    for (int r = 0; r < nrings; r++) {
+      prev[r*nranks+i] = allGather3Data[i].prev[r];
+      next[r*nranks+i] = allGather3Data[i].next[r];
     }
   }
-  free(allGather4Data);
-  // AllGather4 - end
+  free(allGather3Data);
+  // AllGather3 - end
 
   int *rings;
   NCCLCHECK(ncclCalloc(&rings, nranks*MAXCHANNELS));
