@@ -680,11 +680,11 @@ static ncclResult_t p2pSetup(struct ncclComm* comm, struct ncclChannel* channel,
 
 static ncclResult_t initTransportsRank(struct ncclComm* comm, ncclUniqueId* commId) {
   // We need 4 AllGathers
-  // 1. AllInfo, CompCap, rankInfo
-  // 2. ConnectTransport*nranks, ConnectValue*nranks
-  // 3. nThreads, nrings
+  // 1. { peerInfo, comm }
+  // 2. ConnectTransport[nranks], ConnectValue[nranks]
+  // 3. { nThreads, nrings, compCap }
   // 4. (prev,next)*nrings
-  // AllGathers no 2 and 4 use dynamic datastructures (the size depends on the number of ranks & rings)
+  // AllGathers no 2 and 4 use dynamic datastructures
 
   int rank = comm->rank;
   int nranks = comm->nRanks;
@@ -694,16 +694,10 @@ static ncclResult_t initTransportsRank(struct ncclComm* comm, ncclUniqueId* comm
   // AllGather1 - begin
   struct {
     struct ncclPeerInfo peerInfo;
-    int cudaCompCap;
-    uint64_t hostHash;
-    uint64_t pidHash;
     struct ncclComm* comm;
   } *allGather1Data;
 
   NCCLCHECK(ncclCalloc(&allGather1Data, nranks));
-  allGather1Data[rank].cudaCompCap = ncclCudaCompCap();
-  allGather1Data[rank].hostHash = getHostHash();
-  allGather1Data[rank].pidHash = getPidHash();
   allGather1Data[rank].comm = comm;
   NCCLCHECK(fillInfo(&allGather1Data[rank].peerInfo, rank));
   NCCLCHECK(bootstrapAllGather(comm->bootstrap, allGather1Data, sizeof(*allGather1Data)));
@@ -712,34 +706,7 @@ static ncclResult_t initTransportsRank(struct ncclComm* comm, ncclUniqueId* comm
   for (int i = 0; i < nranks; i++) {
     memcpy(comm->peerInfo+i, &allGather1Data[i].peerInfo, sizeof(struct ncclPeerInfo));
   }
-
-  // Determine the minimum CUDA Compute capability of all GPUs
-  int myCompCap = allGather1Data[rank].cudaCompCap;
-  int minCompCap = myCompCap;
-  for (int i = 0; i < nranks; i++)
-    minCompCap = std::min(allGather1Data[i].cudaCompCap, minCompCap);
-  if (rank == 0) INFO(NCCL_INIT,"Min Comp Cap %d", minCompCap);
-
-  // Compute intra ranks
-  int intraRank0 = -1, intraRank = -1, intraRanks = 0;
-  for (int i = 0; i < nranks; i++) {
-    if ((allGather1Data[i].hostHash == allGather1Data[rank].hostHash) &&
-        (allGather1Data[i].pidHash == allGather1Data[rank].pidHash)) {
-      if (intraRanks == 0) intraRank0 = i;
-      if (i == rank) intraRank = intraRanks;
-      intraRanks++;
-    }
-  }
-  TRACE(NCCL_INIT,"hostHash[%d] %lx intraRank %d intraRanks %d intraRank0 %d",
-        rank, allGather1Data[rank].hostHash, intraRank, intraRanks, intraRank0);
-  if (intraRank == -1 || intraRank0 == -1 || allGather1Data[intraRank0].comm == NULL) {
-    WARN("Failed to determine intra ranks hostHash[%d] %lx intraRank %d intraRanks %d intraRank0 %d",
-         rank, allGather1Data[rank].hostHash, intraRank, intraRanks, intraRank0);
-    return ncclInternalError;
-  }
-  NCCLCHECK(ncclCommSetIntra(comm, intraRank, intraRanks, allGather1Data[intraRank0].comm));
-
-  free(allGather1Data);
+  // AllGather1 data is used again below
   // AllGather1 - end
 
   // AllGather2 - begin
@@ -760,7 +727,6 @@ static ncclResult_t initTransportsRank(struct ncclComm* comm, ncclUniqueId* comm
     memcpy(connectTransport + i*nranks, (char *)allGather2Data + i*allGather2DataRowSize, sizeof(int)*nranks);
     memcpy(connectValue + i*nranks, (char *)allGather2Data + i*allGather2DataRowSize + nranks*sizeof(int), sizeof(ncclTvalue_t)*nranks);
   }
-
   free(allGather2Data);
   // AllGather2 - end
 
@@ -785,17 +751,26 @@ static ncclResult_t initTransportsRank(struct ncclComm* comm, ncclUniqueId* comm
   struct {
     int nThreads;
     int nrings;
+    int cudaCompCap;
   } *allGather3Data;
 
   NCCLCHECK(ncclCalloc(&allGather3Data, nranks));
   allGather3Data[rank].nThreads = comm->nThreads;
   allGather3Data[rank].nrings = nrings;
+  allGather3Data[rank].cudaCompCap = ncclCudaCompCap();
   NCCLCHECK(bootstrapAllGather(comm->bootstrap, allGather3Data, sizeof(*allGather3Data)));
 
   // Find max nThreads
   for (int i=0; i<nranks; i++)
     comm->nThreads = std::max(allGather3Data[i].nThreads, comm->nThreads);
   if (rank == 0) INFO(NCCL_INIT,"Using %d threads", comm->nThreads);
+
+  // Determine the minimum CUDA Compute capability of all GPUs
+  int myCompCap = allGather3Data[rank].cudaCompCap;
+  int minCompCap = myCompCap;
+  for (int i = 0; i < nranks; i++)
+    minCompCap = std::min(allGather3Data[i].cudaCompCap, minCompCap);
+  if (rank == 0) INFO(NCCL_INIT,"Min Comp Cap %d", minCompCap);
 
   // Determine thread threshold across all GPUs
   int nnodes = 0;
@@ -806,7 +781,6 @@ static ncclResult_t initTransportsRank(struct ncclComm* comm, ncclUniqueId* comm
   for (int i=0; i<nranks; i++)
     nrings = std::min(allGather3Data[i].nrings, nrings);
   comm->nChannels = nrings;
-
   free(allGather3Data);
   // AllGather3 - end
 
@@ -852,6 +826,28 @@ static ncclResult_t initTransportsRank(struct ncclComm* comm, ncclUniqueId* comm
   free(rings);
   free(treeIn);
   free(treeOut);
+
+  // Compute intra ranks (using AllGather1 data)
+  int intraRank0 = -1, intraRank = -1, intraRanks = 0;
+  for (int i = 0; i < nranks; i++) {
+    if ((allGather1Data[i].peerInfo.hostHash == allGather1Data[rank].peerInfo.hostHash) &&
+        (allGather1Data[i].peerInfo.pidHash == allGather1Data[rank].peerInfo.pidHash)) {
+      if (intraRanks == 0) intraRank0 = i;
+      if (i == rank) intraRank = intraRanks;
+      intraRanks++;
+    }
+  }
+  TRACE(NCCL_INIT,"hostHash[%d] %lx intraRank %d intraRanks %d intraRank0 %d",
+        rank, allGather1Data[rank].peerInfo.hostHash, intraRank, intraRanks, intraRank0);
+  if (intraRank == -1 || intraRank0 == -1 || allGather1Data[intraRank0].comm == NULL) {
+    WARN("Failed to determine intra ranks hostHash[%d] %lx intraRank %d intraRanks %d intraRank0 %d",
+         rank, allGather1Data[rank].peerInfo.hostHash, intraRank, intraRanks, intraRank0);
+    return ncclInternalError;
+  }
+  NCCLCHECK(ncclCommSetIntra(comm, intraRank, intraRanks, allGather1Data[intraRank0].comm));
+
+  // Done with AllGather1 data
+  free(allGather1Data);
 
   if (nnodes) NCCLCHECK(transportCreateProxy(comm));
 
