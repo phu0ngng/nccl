@@ -27,10 +27,19 @@ ncclResult_t ncclSocketInit(ncclDebugLogger_t logFunction) {
     pthread_mutex_lock(&ncclSocketLock);
     if (ncclNetIfs == -1) {
       ncclNetIfs = findInterfaces(ncclNetIfNames, ncclNetIfAddrs, MAX_IF_NAME_SIZE, MAX_IFS);
-      INFO(NCCL_INIT|NCCL_NET,"NET/Socket : %d interfaces found", ncclNetIfs);
       if (ncclNetIfs <= 0) {
         WARN("NET/Socket : no interface found");
         return ncclInternalError;
+      } else {
+        char line[1024];
+        char addrline[1024];
+        line[0] = '\0';
+        for (int i=0; i<ncclNetIfs; i++) { 
+          snprintf(line+strlen(line), 1023-strlen(line), " [%d]%s:%s", i, ncclNetIfNames+i*MAX_IF_NAME_SIZE,
+              socketToString(&ncclNetIfAddrs[i].sa, addrline));
+        }
+        line[1023] = '\0';
+        INFO(NCCL_INIT|NCCL_NET,"NET/Socket : Using%s", line);
       }
     }
     pthread_mutex_unlock(&ncclSocketLock);
@@ -113,7 +122,7 @@ ncclResult_t ncclSocketListen(int dev, void* opaqueHandle, void** listenComm) {
     union socketAddress localAddr;
     char ifName[MAX_IF_NAME_SIZE];
     if (findInterfaceMatchSubnet(ifName, &localAddr, handle->connectAddr, MAX_IF_NAME_SIZE, 1) <= 0) {
-      WARN("No usable listening interface found");
+      WARN("NET/Socket : No usable listening interface found");
       return ncclSystemError;
     }
     // pass the local address back

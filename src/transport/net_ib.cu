@@ -32,6 +32,7 @@ static int ncclNIbDevs = -1;
 struct ncclIbDev {
   int device;
   uint8_t port;
+  uint8_t link;
   ibv_context* context;
   char devName[MAXNAMESIZE];
 };
@@ -97,7 +98,6 @@ ncclResult_t ncclIbInit(ncclDebugLogger_t logFunction) {
         WARN("NET/IB : No IP interface found.");
         return ncclInternalError;
       }
-      INFO(NCCL_INIT|NCCL_NET,"NET/IB : Using interface %s for sideband communication", ncclIbIfName);
 
       // Detect IB cards
       int nIbDevs;
@@ -113,46 +113,58 @@ ncclResult_t ncclIbInit(ncclDebugLogger_t logFunction) {
 
       for (int d=0; d<nIbDevs; d++) {
         struct ibv_context * context;
-        if (ncclSuccess != wrap_ibv_open_device(&context, devices[d])) {
+        if (ncclSuccess != wrap_ibv_open_device(&context, devices[d]) || context == NULL) {
           WARN("NET/IB : Unable to open device %s", devices[d]->name);
           continue;
         }
         int found = 0;
-        if (context) {
-          struct ibv_device_attr devAttr;
-          if (ncclSuccess != wrap_ibv_query_device(context, &devAttr)) {
-            WARN("NET/IB : Unable to query device %s", devices[d]->name);
+        struct ibv_device_attr devAttr;
+        if (ncclSuccess != wrap_ibv_query_device(context, &devAttr)) {
+          WARN("NET/IB : Unable to query device %s", devices[d]->name);
+          if (ncclSuccess != wrap_ibv_close_device(context)) { return ncclInternalError; }
+          continue;
+        }
+        for (int port = 1; port <= devAttr.phys_port_cnt; port++) {
+          struct ibv_port_attr portAttr;
+          if (ncclSuccess != wrap_ibv_query_port(context, port, &portAttr)) {
+            WARN("NET/IB : Unable to query port %d", port);
             continue;
           }
-          for (int port = 1; port <= devAttr.phys_port_cnt; port++) {
-            struct ibv_port_attr portAttr;
-            if (ncclSuccess != wrap_ibv_query_port(context, port, &portAttr)) {
-              WARN("NET/IB : Unable to query port %d", port);
-              continue;
-            }
-            if (portAttr.state != IBV_PORT_ACTIVE) continue;
-            if (portAttr.link_layer != IBV_LINK_LAYER_INFINIBAND
-                && portAttr.link_layer != IBV_LINK_LAYER_ETHERNET) continue;
+          if (portAttr.state != IBV_PORT_ACTIVE) continue;
+          if (portAttr.link_layer != IBV_LINK_LAYER_INFINIBAND
+              && portAttr.link_layer != IBV_LINK_LAYER_ETHERNET) continue;
 
-            // check against user specified HCAs/ports
-            if (! (matchIfList(devices[d]->name, port, userIfs, nUserIfs) ^ searchNot)) {
-              continue;
-            }
-            INFO(NCCL_INIT|NCCL_NET,"NET/IB: [%d] %s:%d/%s ", d, devices[d]->name, port,
-                portAttr.link_layer == IBV_LINK_LAYER_INFINIBAND ? "IB" : "RoCE");
-            ncclIbDevs[ncclNIbDevs].device = d;
-            ncclIbDevs[ncclNIbDevs].port = port;
-            ncclIbDevs[ncclNIbDevs].context = context;
-            strncpy(ncclIbDevs[ncclNIbDevs].devName, devices[d]->name, MAXNAMESIZE);
-            ncclNIbDevs++;
-            found++;
-            pthread_create(&ncclIbAsyncThread, NULL, ncclIbAsyncThreadMain, context);
+          // check against user specified HCAs/ports
+          if (! (matchIfList(devices[d]->name, port, userIfs, nUserIfs) ^ searchNot)) {
+            continue;
           }
-
-          if (found == 0) { if (ncclSuccess != wrap_ibv_close_device(context)) { return ncclInternalError; } }
+          TRACE(NCCL_INIT|NCCL_NET,"NET/IB: [%d] %s:%d/%s ", d, devices[d]->name, port,
+              portAttr.link_layer == IBV_LINK_LAYER_INFINIBAND ? "IB" : "RoCE");
+          ncclIbDevs[ncclNIbDevs].device = d;
+          ncclIbDevs[ncclNIbDevs].port = port;
+          ncclIbDevs[ncclNIbDevs].link = portAttr.link_layer;
+          ncclIbDevs[ncclNIbDevs].context = context;
+          strncpy(ncclIbDevs[ncclNIbDevs].devName, devices[d]->name, MAXNAMESIZE);
+          ncclNIbDevs++;
+          found++;
+          pthread_create(&ncclIbAsyncThread, NULL, ncclIbAsyncThreadMain, context);
         }
+        if (found == 0 && ncclSuccess != wrap_ibv_close_device(context)) { return ncclInternalError; }
       }
       if (nIbDevs && (ncclSuccess != wrap_ibv_free_device_list(devices))) { return ncclInternalError; };
+    }
+    if (ncclNIbDevs == 0) {
+      INFO(NCCL_INIT|NCCL_NET, "NET/IB : No device found.");
+    } else {
+      char line[1024];
+      line[0] = '\0';
+      for (int d=0; d<ncclNIbDevs; d++) {
+        snprintf(line+strlen(line), 1023-strlen(line), " [%d]%s:%d/%s", d, ncclIbDevs[d].devName,
+            ncclIbDevs[d].port, ncclIbDevs[d].link == IBV_LINK_LAYER_INFINIBAND ? "IB" : "RoCE");
+      }
+      line[1023] = '\0';
+      char addrline[1024];
+      INFO(NCCL_INIT|NCCL_NET, "NET/IB : Using%s ; OOB %s:%s", line, ncclIbIfName, socketToString(&ncclIbIfAddr.sa, addrline));
     }
     pthread_mutex_unlock(&ncclIbLock);
   }
@@ -210,7 +222,7 @@ ncclResult_t ncclIbPtrSupport(int dev, int* supportedTypes) {
   NCCLCHECK(getNvmlDevice(cudaDev, &nvmlDev))
 
   if (ncclIbGdrSupport(dev) != ncclSuccess) {
-    INFO(NCCL_INIT|NCCL_NET,"NET/IB : GPU Direct RDMA Disabled for GPU %d[%d] / HCA %d '%s' (no module or not supported by GPU)", cudaDev, nvmlDev, dev, ncclIbDevs[dev].devName);
+    INFO(NCCL_NET,"NET/IB : GPU Direct RDMA Disabled for GPU %d[%d] / HCA %d '%s' (no module or not supported by GPU)", cudaDev, nvmlDev, dev, ncclIbDevs[dev].devName);
     return ncclSuccess;
   }
   *supportedTypes |= NCCL_PTR_CUDA;
@@ -427,13 +439,13 @@ ncclResult_t ncclIbConnect(int dev, void* opaqueHandle, void** sendComm) {
   // RoCE support
   qpInfo.lid = portAttr.lid;
   if (qpInfo.lid) { // IB
-    INFO(NCCL_INIT|NCCL_NET,"NET/IB: Dev %d Port %d qpn %d mtu %d LID %d", dev, ib_port, qpInfo.qpn, qpInfo.mtu, qpInfo.lid);
+    INFO(NCCL_NET,"NET/IB: Dev %d Port %d qpn %d mtu %d LID %d", dev, ib_port, qpInfo.qpn, qpInfo.mtu, qpInfo.lid);
   } else { // RoCE
     union ibv_gid gid;
     NCCLCHECK(wrap_ibv_query_gid(ctx, ib_port, ncclParamIbGidIndex(), &gid));
     qpInfo.spn = gid.global.subnet_prefix;
     qpInfo.iid = gid.global.interface_id;
-    INFO(NCCL_INIT|NCCL_NET,"NET/IB: Dev %d Port %d qpn %d mtu %d GID %ld (%lX/%lX)", dev, ib_port, qpInfo.qpn, qpInfo.mtu, ncclParamIbGidIndex(), qpInfo.spn, qpInfo.iid);
+    INFO(NCCL_NET,"NET/IB: Dev %d Port %d qpn %d mtu %d GID %ld (%lX/%lX)", dev, ib_port, qpInfo.qpn, qpInfo.mtu, ncclParamIbGidIndex(), qpInfo.spn, qpInfo.iid);
   }
 
   NCCLCHECK(socketSend(comm->fd, &qpInfo, sizeof(qpInfo)));

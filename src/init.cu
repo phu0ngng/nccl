@@ -92,10 +92,7 @@ ncclResult_t initNet(ncclNet_t* net) {
   int ndev;
   if (net->init(ncclDebugLog) != ncclSuccess) return ncclInternalError;
   if (net->devices(&ndev) != ncclSuccess) return ncclInternalError;
-  if (ndev <= 0) {
-    INFO(NCCL_INIT|NCCL_NET, "Net/%s: call to devices() returned 0 devices.", net->name);
-    return ncclSystemError;
-  }
+  if (ndev <= 0) return ncclSystemError;
   return ncclSuccess;
 }
 
@@ -106,15 +103,15 @@ ncclResult_t initNetPlugin(ncclNet_t** net) {
     // string, so checking errno doesn't hurt to try to provide a better
     // error message
     if (errno == ENOENT) {
-      INFO(NCCL_INIT|NCCL_NET, "No network plugin found.");
+      INFO(NCCL_INIT|NCCL_NET, "NET/Plugin : No plugin found (libnccl-net.so).");
     } else {
-      INFO(NCCL_INIT|NCCL_NET, "Unable to load libnccl-net.so : %s", dlerror());
+      INFO(NCCL_INIT|NCCL_NET, "NET/Plugin : Plugin load returned %d : %s.", errno, dlerror());
     }
     return ncclSuccess;
   }
   ncclNet_t* extNet = (ncclNet_t*) dlsym(netPluginLib, STR(NCCL_PLUGIN_SYMBOL));
   if (extNet == NULL) {
-    INFO(NCCL_INIT|NCCL_NET, "NetPlugin: could not find " STR(NCCL_PLUGIN_SYMBOL) " symbol");
+    INFO(NCCL_INIT|NCCL_NET, "NET/Plugin: Failed to find " STR(NCCL_PLUGIN_SYMBOL) " symbol.");
     goto cleanup;
   }
   if (initNet(extNet) == ncclSuccess) {
@@ -131,16 +128,12 @@ ncclResult_t initNet() {
   NCCLCHECK(initNet(&ncclNetSocket));
 
   NCCLCHECK(initNetPlugin(&ncclNet));
-  if (ncclNet != NULL) {
-    INFO(NCCL_INIT|NCCL_NET, "Using network plugin %s", ncclNetName());
-    return ncclSuccess;
-  }
+  if (ncclNet != NULL) return ncclSuccess;
   if (initNet(&ncclNetIb) == ncclSuccess) {
     ncclNet = &ncclNetIb;
   } else {
     ncclNet = &ncclNetSocket;
   }
-  INFO(NCCL_INIT|NCCL_NET,"Using network %s", ncclNetName());
   return ncclSuccess;
 }
 
@@ -249,6 +242,8 @@ static ncclResult_t commAlloc(ncclComm_t* comret, int ndev, int rank) {
   comm->nRanks = ndev;
   cudaGetDevice(&comm->cudaDev);
   getNvmlDevice(comm->cudaDev, &comm->nvmlDev);
+  INFO(NCCL_INIT,"comm %p rank %d nranks %d cudaDev %d nvmlDev %d", comm, rank, ndev, comm->cudaDev, comm->nvmlDev);
+
   comm->doneEvent = doneEvent;
   comm->llThreshold = ncclParamLlThreshold();
   comm->treeThreshold = ncclParamTreeThreshold();
@@ -268,8 +263,6 @@ static ncclResult_t commAlloc(ncclComm_t* comret, int ndev, int rank) {
   *comm->abortFlag = 0;
 
   comm->argsptr = &comm->args;
-
-  INFO(NCCL_INIT,"comm %p rank %d nranks %d cudaDev %d nvmlDev %d", comm, rank, ndev, comm->cudaDev, comm->nvmlDev);
 
   *comret = comm;
   return ncclSuccess;
@@ -404,15 +397,7 @@ static ncclResult_t setupChannel(struct ncclComm* comm, int channelId, int rank,
     }
   }
 
-  if (comm->treeThreshold == 0) {
-    INFO(NCCL_INIT, "Trees disabled");
-  } else {
-    if (comm->treeThreshold == 0x7fffffffffffffff) {
-      INFO(NCCL_INIT, "Trees enabled for all sizes");
-    } else {
-      INFO(NCCL_INIT, "Trees enabled up to size %ld", comm->treeThreshold);
-    }
-
+  if (comm->treeThreshold > 0) {
     // Compute tree depth. Not an exact value but a good approximation in most
     // cases and consistent across nodes
     tree->depth = nranks/nMasters + log2(nMasters);
@@ -459,9 +444,6 @@ static ncclResult_t setupChannel(struct ncclComm* comm, int channelId, int rank,
       tree->up = prev;
       if (treeMasters[next] == 0) tree->down[0] = next;
     }
-
-    INFO(NCCL_INIT, "Channel %02d : rank %d: up %d down %d, %d, %d", channelId,
-         rank, tree->up, tree->down[0], tree->down[1], tree->down[2]);
   }
 
   TRACE(NCCL_INIT, "rank %d nranks %d - DONE", rank, nranks);
@@ -719,7 +701,6 @@ static ncclResult_t initTransportsRank(struct ncclComm* comm, ncclUniqueId* comm
   NCCLCHECK(bootstrapAllGather(comm->bootstrap, allData, sizeof(int)));
   for (int i=0; i<nranks; i++)
     comm->nThreads = std::max(allData[i], comm->nThreads);
-  if (rank == 0) INFO(NCCL_INIT,"Using %d threads", comm->nThreads);
 
   // Determine the minimum CUDA Compute capability of all GPUs
   int myCompCap = ncclCudaCompCap();
@@ -728,7 +709,6 @@ static ncclResult_t initTransportsRank(struct ncclComm* comm, ncclUniqueId* comm
   NCCLCHECK(bootstrapAllGather(comm->bootstrap, allData, sizeof(int)));
   for (int i=0; i<nranks; i++)
     minCompCap = std::min(allData[i], minCompCap);
-  if (rank == 0) INFO(NCCL_INIT,"Min Comp Cap %d", minCompCap);
 
   // Determine thread threshold across all GPUs
   int nnodes = 0;
@@ -764,6 +744,24 @@ static ncclResult_t initTransportsRank(struct ncclComm* comm, ncclUniqueId* comm
     NCCLCHECK(p2pSetup(comm, channel, NCCL_MAX_TREE_ARITY, channel->tree.down, 1, &channel->tree.up));
     NCCLCHECK(p2pSetup(comm, channel, 1, &channel->tree.up, NCCL_MAX_TREE_ARITY, channel->tree.down));
   }
+  char line[1024];
+  line[0]='\0';
+  for (int c=0; c<nrings; c++) {
+    struct ncclTree* tree = &comm->channels[c].tree;
+    snprintf(line+strlen(line), 1023-strlen(line), " [%d] %d->%d->%d/%d/%d", c, tree->up, rank, tree->down[0], tree->down[1], tree->down[2]);
+  }
+  line[1023] = '\0';
+  INFO(NCCL_INIT, "Trees%s", line);
+
+  if (rank == 0) {
+    char treeline[64];
+    snprintf(treeline, 64, "enabled up to size %ld", comm->treeThreshold);
+    INFO(NCCL_INIT,"Using %d threads, Min Comp Cap %d, Trees %s", comm->nThreads, minCompCap, 
+       comm->treeThreshold == 0 ? "disabled" :
+       comm->treeThreshold == 0x7fffffffffffffff ? "enabled for all sizes" :
+       treeline);
+  }
+
   TRACE(NCCL_INIT, "rank %d nranks %d - CONNECTED %d RINGS AND TREES", rank, nranks, nrings);
   free(connect);
   free(rings);
@@ -884,8 +882,6 @@ ncclResult_t ncclCommInitRank(ncclComm_t* newcomm, int nranks, ncclUniqueId comm
 
   NCCLCHECK(ncclInit());
   if (myrank == 0) showVersion();
-
-  INFO(NCCL_INIT,"rank %d nranks %d", myrank, nranks);
 
   // Make sure the CUDA runtime is initialized.
   CUDACHECK(cudaFree(NULL));
