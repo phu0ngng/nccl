@@ -793,15 +793,17 @@ static ncclResult_t initTransportsRank(struct ncclComm* comm, ncclUniqueId* comm
     NCCLCHECK(p2pSetup(comm, channel, NCCL_MAX_TREE_ARITY, channel->tree.down, 1, &channel->tree.up));
     NCCLCHECK(p2pSetup(comm, channel, 1, &channel->tree.up, NCCL_MAX_TREE_ARITY, channel->tree.down));
   }
-  char line[1024];
-  line[0]='\0';
-  for (int c=0; c<nrings; c++) {
-    struct ncclTree* tree = &comm->channels[c].tree;
-    snprintf(line+strlen(line), 1023-strlen(line), " [%d] %d->%d->%d/%d/%d", c, tree->up, rank, tree->down[0], tree->down[1], tree->down[2]);
+  if (comm->treeThreshold > 0) {
+    char line[1024];
+    line[0]='\0';
+    for (int c=0; c<nrings; c++) {
+      struct ncclTree* tree = &comm->channels[c].tree;
+      snprintf(line+strlen(line), 1023-strlen(line), " [%d] %d->%d->%d/%d/%d",
+          c, tree->up, rank, tree->down[0], tree->down[1], tree->down[2]);
+    }
+    line[1023] = '\0';
+    INFO(NCCL_INIT, "Trees%s", line);
   }
-  line[1023] = '\0';
-  INFO(NCCL_INIT, "Trees%s", line);
-
   if (rank == 0) {
     char treeline[64];
     snprintf(treeline, 64, "enabled up to size %ld", comm->treeThreshold);
