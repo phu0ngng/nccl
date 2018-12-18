@@ -34,7 +34,7 @@ ncclResult_t ncclSocketInit(ncclDebugLogger_t logFunction) {
         char line[1024];
         char addrline[1024];
         line[0] = '\0';
-        for (int i=0; i<ncclNetIfs; i++) { 
+        for (int i=0; i<ncclNetIfs; i++) {
           snprintf(line+strlen(line), 1023-strlen(line), " [%d]%s:%s", i, ncclNetIfNames+i*MAX_IF_NAME_SIZE,
               socketToString(&ncclNetIfAddrs[i].sa, addrline));
         }

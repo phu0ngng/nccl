@@ -661,23 +661,55 @@ static ncclResult_t p2pSetup(struct ncclComm* comm, struct ncclChannel* channel,
 }
 
 static ncclResult_t initTransportsRank(struct ncclComm* comm, ncclUniqueId* commId) {
+  // We use 3 AllGathers
+  // 1. { peerInfo, comm }
+  // 2. ConnectTransport[nranks], ConnectValue[nranks]
+  // 3. { nThreads, nrings, compCap, prev[MAXCHANNELS], next[MAXCHANNELS] }
+
   int rank = comm->rank;
   int nranks = comm->nRanks;
   TRACE(NCCL_INIT, "rank %d nranks %d - BEGIN", rank, nranks);
   NCCLCHECK(bootstrapInit(commId, rank, nranks, &comm->bootstrap));
 
+  // AllGather1 - begin
+  struct {
+    struct ncclPeerInfo peerInfo;
+    struct ncclComm* comm;
+  } *allGather1Data;
+
+  NCCLCHECK(ncclCalloc(&allGather1Data, nranks));
+  allGather1Data[rank].comm = comm;
+  NCCLCHECK(fillInfo(&allGather1Data[rank].peerInfo, rank));
+  NCCLCHECK(bootstrapAllGather(comm->bootstrap, allGather1Data, sizeof(*allGather1Data)));
+
   NCCLCHECK(ncclCalloc(&comm->peerInfo, nranks));
-  NCCLCHECK(fillInfo(comm->peerInfo+rank, rank));
-  NCCLCHECK(bootstrapAllGather(comm->bootstrap, comm->peerInfo, sizeof(struct ncclPeerInfo)));
+  for (int i = 0; i < nranks; i++) {
+    memcpy(comm->peerInfo+i, &allGather1Data[i].peerInfo, sizeof(struct ncclPeerInfo));
+  }
+  // AllGather1 data is used again below
+  // AllGather1 - end
+
+  // AllGather2 - begin
+  size_t allGather2DataRowSize = sizeof(int)*nranks + sizeof(ncclTvalue_t)*nranks;
+  void *allGather2Data;
+  NCCLCHECK(ncclCalloc((char **)&allGather2Data, allGather2DataRowSize*nranks));
+  int *myTransportRow = (int *)((char *)allGather2Data + allGather2DataRowSize*rank);
+  ncclTvalue_t *myValueRow = (ncclTvalue_t *)(myTransportRow + nranks);
+
+  NCCLCHECK(fillConnect(comm->peerInfo, nranks, rank, myTransportRow, myValueRow));
+  NCCLCHECK(bootstrapAllGather(comm->bootstrap, allGather2Data, allGather2DataRowSize));
 
   int* connectTransport;
   ncclTvalue_t* connectValue;
   NCCLCHECK(ncclCalloc(&connectTransport, nranks*nranks));
   NCCLCHECK(ncclCalloc(&connectValue, nranks*nranks));
+  for (int i = 0; i < nranks; i++) {
+    memcpy(connectTransport + i*nranks, (char *)allGather2Data + i*allGather2DataRowSize, sizeof(int)*nranks);
+    memcpy(connectValue + i*nranks, (char *)allGather2Data + i*allGather2DataRowSize + nranks*sizeof(int), sizeof(ncclTvalue_t)*nranks);
+  }
+  free(allGather2Data);
+  // AllGather2 - end
 
-  NCCLCHECK(fillConnect(comm->peerInfo, nranks, rank, connectTransport+nranks*rank, connectValue+nranks*rank));
-  NCCLCHECK(bootstrapAllGather(comm->bootstrap, connectTransport, nranks*(sizeof(int))));
-  NCCLCHECK(bootstrapAllGather(comm->bootstrap, connectValue, nranks*(sizeof(ncclTvalue_t))));
   //if (rank == 0) dumpMatrix(connectTransport, nranks);
   //if (rank == 0) dumpMatrixTvalue(connectValue, nranks);
 
@@ -695,20 +727,34 @@ static ncclResult_t initTransportsRank(struct ncclComm* comm, ncclUniqueId* comm
   free(connectTransport);
   free(connectValue);
 
+  // AllGather3 - begin
+  struct {
+    int nThreads;
+    int nrings;
+    int cudaCompCap;
+    int prev[MAXCHANNELS];
+    int next[MAXCHANNELS];
+  } *allGather3Data;
+
+  NCCLCHECK(ncclCalloc(&allGather3Data, nranks));
+  allGather3Data[rank].nThreads = comm->nThreads;
+  allGather3Data[rank].nrings = nrings;
+  allGather3Data[rank].cudaCompCap = ncclCudaCompCap();
+  for (int r=0; r<nrings; r++) {
+    allGather3Data[rank].prev[r] = *(prev+r*nranks+rank);
+    allGather3Data[rank].next[r] = *(next+r*nranks+rank);
+  }
+  NCCLCHECK(bootstrapAllGather(comm->bootstrap, allGather3Data, sizeof(*allGather3Data)));
+
   // Find max nThreads
-  int allData[nranks];
-  allData[rank] = comm->nThreads;
-  NCCLCHECK(bootstrapAllGather(comm->bootstrap, allData, sizeof(int)));
   for (int i=0; i<nranks; i++)
-    comm->nThreads = std::max(allData[i], comm->nThreads);
+    comm->nThreads = std::max(allGather3Data[i].nThreads, comm->nThreads);
 
   // Determine the minimum CUDA Compute capability of all GPUs
-  int myCompCap = ncclCudaCompCap();
+  int myCompCap = allGather3Data[rank].cudaCompCap;
   int minCompCap = myCompCap;
-  allData[rank] = myCompCap;
-  NCCLCHECK(bootstrapAllGather(comm->bootstrap, allData, sizeof(int)));
-  for (int i=0; i<nranks; i++)
-    minCompCap = std::min(allData[i], minCompCap);
+  for (int i = 0; i < nranks; i++)
+    minCompCap = std::min(allGather3Data[i].cudaCompCap, minCompCap);
 
   // Determine thread threshold across all GPUs
   int nnodes = 0;
@@ -716,17 +762,20 @@ static ncclResult_t initTransportsRank(struct ncclComm* comm, ncclUniqueId* comm
   comm->threadThreshold = ncclThreadThreshold(minCompCap, nnodes);
 
   // Find min nrings across ranks
-  allData[rank] = nrings;
-  NCCLCHECK(bootstrapAllGather(comm->bootstrap, allData, sizeof(int)));
   for (int i=0; i<nranks; i++)
-    nrings = std::min(allData[i], nrings);
-
-  // Exchange data with others to build complete rings
+    nrings = std::min(allGather3Data[i].nrings, nrings);
   comm->nChannels = nrings;
-  for (int r=0; r<nrings; r++) {
-    NCCLCHECK(bootstrapAllGather(comm->bootstrap, prev+r*nranks, sizeof(int)));
-    NCCLCHECK(bootstrapAllGather(comm->bootstrap, next+r*nranks, sizeof(int)));
+
+  // Unpack the per ring prev/next arrays
+  for (int i = 0; i < nranks; i++) {
+    for (int r = 0; r < nrings; r++) {
+      prev[r*nranks+i] = allGather3Data[i].prev[r];
+      next[r*nranks+i] = allGather3Data[i].next[r];
+    }
   }
+  free(allGather3Data);
+  // AllGather3 - end
+
   int *rings;
   NCCLCHECK(ncclCalloc(&rings, nranks*MAXCHANNELS));
   NCCLCHECK(buildRings(nrings, rings, rank, nranks, prev, next));
@@ -756,7 +805,7 @@ static ncclResult_t initTransportsRank(struct ncclComm* comm, ncclUniqueId* comm
   if (rank == 0) {
     char treeline[64];
     snprintf(treeline, 64, "enabled up to size %ld", comm->treeThreshold);
-    INFO(NCCL_INIT,"Using %d threads, Min Comp Cap %d, Trees %s", comm->nThreads, minCompCap, 
+    INFO(NCCL_INIT,"Using %d threads, Min Comp Cap %d, Trees %s", comm->nThreads, minCompCap,
        comm->treeThreshold == 0 ? "disabled" :
        comm->treeThreshold == 0x7fffffffffffffff ? "enabled for all sizes" :
        treeline);
@@ -768,35 +817,27 @@ static ncclResult_t initTransportsRank(struct ncclComm* comm, ncclUniqueId* comm
   free(treeIn);
   free(treeOut);
 
-  // Intra-process barrier setup
-  struct rankInfo {
-    uint64_t hostHash;
-    uint64_t pidHash;
-    struct ncclComm* comm;
-  } rankInfos[nranks];
-  rankInfos[rank].hostHash = getHostHash();
-  rankInfos[rank].pidHash = getPidHash();
-  rankInfos[rank].comm = comm;
-  NCCLCHECK(bootstrapAllGather(comm->bootstrap, rankInfos, sizeof(struct rankInfo)));
-
-  // Compute intra ranks
+  // Compute intra ranks (using AllGather1 data)
   int intraRank0 = -1, intraRank = -1, intraRanks = 0;
-  for (int r=0; r<nranks; r++) {
-    if ((rankInfos[r].hostHash == rankInfos[rank].hostHash) &&
-        (rankInfos[r].pidHash == rankInfos[rank].pidHash)) {
-      if (intraRanks == 0) intraRank0 = r;
-      if (r == rank) intraRank = intraRanks;
+  for (int i = 0; i < nranks; i++) {
+    if ((allGather1Data[i].peerInfo.hostHash == allGather1Data[rank].peerInfo.hostHash) &&
+        (allGather1Data[i].peerInfo.pidHash == allGather1Data[rank].peerInfo.pidHash)) {
+      if (intraRanks == 0) intraRank0 = i;
+      if (i == rank) intraRank = intraRanks;
       intraRanks++;
     }
   }
   TRACE(NCCL_INIT,"hostHash[%d] %lx intraRank %d intraRanks %d intraRank0 %d",
-      rank, rankInfos[rank].hostHash, intraRank, intraRanks, intraRank0);
-  if (intraRank == -1 || intraRank0 == -1 || rankInfos[intraRank0].comm == NULL) {
+        rank, allGather1Data[rank].peerInfo.hostHash, intraRank, intraRanks, intraRank0);
+  if (intraRank == -1 || intraRank0 == -1 || allGather1Data[intraRank0].comm == NULL) {
     WARN("Failed to determine intra ranks hostHash[%d] %lx intraRank %d intraRanks %d intraRank0 %d",
-        rank, rankInfos[rank].hostHash, intraRank, intraRanks, intraRank0);
+         rank, allGather1Data[rank].peerInfo.hostHash, intraRank, intraRanks, intraRank0);
     return ncclInternalError;
   }
-  NCCLCHECK(ncclCommSetIntra(comm, intraRank, intraRanks, rankInfos[intraRank0].comm));
+  NCCLCHECK(ncclCommSetIntra(comm, intraRank, intraRanks, allGather1Data[intraRank0].comm));
+
+  // Done with AllGather1 data
+  free(allGather1Data);
 
   if (nnodes) NCCLCHECK(transportCreateProxy(comm));
 
