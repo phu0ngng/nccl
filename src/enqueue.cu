@@ -279,9 +279,11 @@ static void getKernelInfo(struct ncclInfo* info, uint8_t* nChannels, uint16_t* n
   if (nc > info->comm->nChannels) nc = info->comm->nChannels;
 
   // Check if we have a fixed LL threshold, otherwise compute it.
+  int perThreadThreshold = info->comm->threadThreshold;
+  if (info->pattern >= ncclPatternTreeUp) perThreadThreshold *= 4;
   ssize_t llThreshold = info->comm->llThreshold >= 0 ?
     info->comm->llThreshold :
-    nc*nt*info->nchunksPerLoop*info->comm->threadThreshold;
+    nc*nt*info->nchunksPerLoop*perThreadThreshold;
 
   if (info->nBytes <= llThreshold) {
     *llMode = 1;
