@@ -337,8 +337,10 @@ static ncclResult_t createListenSocket(int *fd, union socketAddress *localAddr) 
   TRACE(NCCL_INIT|NCCL_NET,"Listening on socket %s", socketToString(&localAddr->sa, line));
 #endif
 
-  /* Put the socket in listen mode */
-  SYSCHECK(listen(sockfd, 128), "listen");
+  /* Put the socket in listen mode
+   * NB: The backlog will be silently truncated to the value in /proc/sys/net/core/somaxconn
+   */
+  SYSCHECK(listen(sockfd, 16384), "listen");
   *fd = sockfd;
   return ncclSuccess;
 }
