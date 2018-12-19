@@ -341,12 +341,34 @@ static ncclResult_t selectTransport(struct ncclPeerInfo* myInfo, struct ncclPeer
 
 static int log2(int n) {
  int l = 0;
- while (n>>=2) l++;
+ while (n>>=1) l++;
  return l;
 }
 
-NCCL_PARAM(TreeMinNodesThreshold, "TREE_MIN_NODES_THRESHOLD", 2);
-NCCL_PARAM(TreeMaxNodesThreshold, "TREE_MAX_NODES_THRESHOLD", 4);
+static ncclResult_t ncclTreeThreshold(int nnodes, int nranks, int nChannels, ssize_t *treeThreshold) {
+  int nvlink;
+  NCCLCHECK(ncclNvlinkGpu(&nvlink));
+  int ringbw = nvlink ? 5000*nChannels : 5000; // approx, in MB/s or B/us
+  float ringlatinter = 6;
+  float treelatintra = 4;
+  int treelatinter = 15;
+  int treebw;
+  if (!nvlink) {
+    treebw = ringbw * 2 / 3;
+  } else {
+    treebw = ringbw * 3 / 4;
+    if (nnodes == 2) treebw *= 2;
+  }
+  int ringlat = ringlatinter*(nranks-1);
+  int treelat = treelatinter*log2(nnodes)+treelatintra*(nranks/nnodes-1);
+  if (ringlat <= treelat)
+    *treeThreshold = 0;
+  else if (treebw > ringbw)
+    *treeThreshold = 0x7fffffffffffffff;
+  else
+    *treeThreshold = (ssize_t)(((ringbw*treebw/(ringbw-treebw)))*(ringlat-treelat));
+  return ncclSuccess;
+}
 
 static ncclResult_t setupChannel(struct ncclComm* comm, int channelId, int rank, int nranks, int* ringRanks, int* treeMasters) {
   TRACE(NCCL_INIT, "rank %d nranks %d", rank, nranks);
@@ -383,19 +405,8 @@ static ncclResult_t setupChannel(struct ncclComm* comm, int channelId, int rank,
     treeMasters[0] = 1;
   }
 
-  if (comm->treeThreshold == -2) {
-    if (nMasters < ncclParamTreeMinNodesThreshold() || comm->nRanks <= 8) {
-      comm->treeThreshold = 0;
-    } else {
-      int nvlink;
-      NCCLCHECK(ncclNvlinkGpu(&nvlink));
-      comm->treeThreshold =
-        // NVLink : use trees for all sizes up to 4 nodes
-        (nvlink && (nMasters < ncclParamTreeMaxNodesThreshold())) ? 0x7fffffffffffffff :
-        // switch to rings for large sizes
-        comm->nThreads*comm->nChannels*4*comm->threadThreshold*comm->nRanks;
-    }
-  }
+  if (comm->treeThreshold == -2)
+    NCCLCHECK(ncclTreeThreshold(nMasters, comm->nRanks, comm->nChannels, &comm->treeThreshold));
 
   if (comm->treeThreshold > 0) {
     // Compute tree depth. Not an exact value but a good approximation in most
