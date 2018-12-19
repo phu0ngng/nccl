@@ -361,7 +361,7 @@ static ncclResult_t ncclTreeThreshold(int nnodes, int nranks, int nChannels, ssi
   }
   int ringlat = ringlatinter*(nranks-1);
   int treelat = treelatinter*log2(nnodes)+treelatintra*(nranks/nnodes-1);
-  if (ringlat <= treelat)
+  if (nnodes < 2 || ringlat <= treelat)
     *treeThreshold = 0;
   else if (treebw > ringbw)
     *treeThreshold = 0x7fffffffffffffff;
@@ -1001,8 +1001,7 @@ static ncclResult_t initTransportsAll(struct ncclComm** comms, const int* devs, 
   free(prev);
   free(next);
 
-  INFO(NCCL_INIT,"Using %d threads", nthreads);
-  INFO(NCCL_INIT,"Min Comp Cap %d", minCompCap);
+  INFO(NCCL_INIT,"Using %d threads, Min Comp Cap %d, Trees disabled", nthreads, minCompCap);
 
   int* rings;
   NCCLCHECK(ncclCalloc(&rings, nranks*MAXCHANNELS));
@@ -1027,6 +1026,8 @@ static ncclResult_t initTransportsAll(struct ncclComm** comms, const int* devs, 
       struct ncclChannel* channel = comms[rank]->channels+r;
       struct ncclRing *ring = &channel->ring;
       NCCLCHECK(setupChannel(comms[rank], r, rank, nranks, ringRanks, treeIn));
+      // Make sure we don't use trees, we cannot use them with initAll
+      comms[rank]->treeThreshold = 0;
       int prev = channel->ring.prev = ring->userRanks[nranks-1];
       int next = channel->ring.next = ring->userRanks[1];
       struct ncclConnector* recv = &channel->peers[prev].recv;
