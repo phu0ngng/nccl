@@ -137,6 +137,7 @@ void* persistentThread(void *comm_) {
   struct ncclProxyState* state = &comm->proxyState;
   struct ncclProxyArgs* op = NULL;
   ncclResult_t ret;
+  int idle = 1;
   while (1) {
     do {
       if (*comm->abortFlag) return NULL;
@@ -148,12 +149,14 @@ void* persistentThread(void *comm_) {
         pthread_mutex_unlock(&state->mutex);
       }
     } while (op == NULL);
+    op->idle = 0;
     if (op->state != ncclProxyOpNone) ret = op->progress(op);
     if (ret != ncclSuccess) {
       comm->fatalError = ret;
       INFO(NCCL_ALL,"%s:%d -> %d [Proxy Thread]", __FILE__, __LINE__, ret);
       return NULL;
     }
+    idle &= op->idle;
     pthread_mutex_lock(&state->mutex);
     struct ncclProxyArgs *next = op->next;
     if (next->state == ncclProxyOpNone) {
@@ -182,6 +185,12 @@ void* persistentThread(void *comm_) {
       state->pool = freeOp;
     }
     op = next;
+    if (op == state->ops) {
+      if (idle == 1) {
+        sched_yield();
+      }
+      idle = 1;
+    }
     pthread_mutex_unlock(&state->mutex);
   }
 }

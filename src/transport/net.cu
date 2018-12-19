@@ -427,6 +427,7 @@ ncclResult_t netSendProxy(struct ncclProxyArgs* args) {
     args->state = ncclProxyOpProgress;
   }
   if (args->state == ncclProxyOpProgress) {
+    args->idle = 1;
     if (args->head < args->end) {
       if (args->tail < args->end && args->tail < args->head + NCCL_STEPS) {
         volatile int* sizesFifo = resources->hostRecvMem->sizesFifo;
@@ -483,6 +484,7 @@ ncclResult_t netSendProxy(struct ncclProxyArgs* args) {
     }
     if (args->head == args->end) {
       resources->step = args->end;
+      args->idle = 0;
       args->state = ncclProxyOpDone;
     }
   }
@@ -513,6 +515,7 @@ ncclResult_t netRecvProxy(struct ncclProxyArgs* args) {
     args->state = ncclProxyOpProgress;
   }
   if (args->state == ncclProxyOpProgress) {
+    args->idle = 1;
     int stepSize = ( args->llMode ? NCCL_LL_BUFF_SIZE : args->channel->buffSize ) / NCCL_STEPS;
     if (args->head < args->end) {
       struct ncclRecvMem* localMem = resources->useGdr ? resources->devRecvMem : resources->hostRecvMem;
@@ -543,6 +546,7 @@ ncclResult_t netRecvProxy(struct ncclProxyArgs* args) {
     }
     if (args->head == args->end) {
       resources->step = args->end;
+      args->idle = 0;
       args->state = ncclProxyOpDone;
     }
   }
