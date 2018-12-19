@@ -206,6 +206,16 @@ ncclResult_t bootstrapInit(ncclUniqueId* commId, int rank, int nranks, void** co
   NCCLCHECK(bootstrapNetListen(state->dev, &info.extHandleListen, &state->extBstrapListenComm));
   NCCLCHECK(bootstrapNetListen(state->dev, &info.extHandleListenRoot, &extBstrapListenCommRoot));
 
+  // stagger connection times to avoid an overload of the root at very high rank counts
+  long msec = (rank >> 8) * 10;
+  if (msec) {
+    struct timespec tv;
+    tv.tv_sec = 0;
+    tv.tv_nsec = 1000000 * msec;
+    TRACE(NCCL_INIT, "rank %d delaying connection to root by %ld msec", rank, msec);
+    (void) nanosleep(&tv, NULL);
+  }
+
   // send info on my listening socket to root
   NCCLCHECK(bootstrapNetConnect(state->dev, id->extHandleRoot, &tmpSendComm));
   NCCLCHECK(bootstrapNetSend(tmpSendComm, &info, sizeof(info)));
