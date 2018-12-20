@@ -188,8 +188,9 @@ ncclResult_t wrapNvmlDeviceGetNvLinkState(nvmlDevice_t device, unsigned int link
   }
   nvmlReturn_t ret = nvmlInternalDeviceGetNvLinkState(device, link, isActive);
   if (ret != NVML_SUCCESS) {
-    INFO(NCCL_INIT,"nvmlDeviceGetNvLinkState() failed: %s ",
-        nvmlInternalErrorString(ret));
+    if (ret != NVML_ERROR_NOT_SUPPORTED)
+      INFO(NCCL_INIT,"nvmlDeviceGetNvLinkState() failed: %s ",
+          nvmlInternalErrorString(ret));
     return ncclSystemError;
   }
   return ncclSuccess;
