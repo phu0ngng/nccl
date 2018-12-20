@@ -311,10 +311,6 @@ __device__ __forceinline__ void ReduceCopy128bMulti( const int w, const int nw, 
 template <typename T>
 __device__ int ptrAlign128(T* ptr) { return (uint64_t)ptr % alignof(Pack128); }
 
-// Try to limit consecutive load/stores to 8.
-// Use UNROLL 8 when we have a single source and a single destination, 4 otherwise
-#define AUTOUNROLL (UNROLL*(4/(MINDSTS+MINSRCS)))
-
 template<int UNROLL, class FUNC, typename T, int MINSRCS, int MAXSRCS, int MINDSTS, int MAXDSTS>
 __device__ __forceinline__ void ReduceOrCopyMulti(const int tid, const int nthreads,
     int nsrcs, const T* srcs[MAXSRCS], int ndsts, T* dsts[MAXDSTS],
@@ -353,11 +349,11 @@ __device__ __forceinline__ void ReduceOrCopyMulti(const int tid, const int nthre
   const int packFactor = sizeof(Pack128) / sizeof(T);
 
   // stage 2a: main loop
-  int Npack2a = (Nrem / (packFactor * AUTOUNROLL * WARP_SIZE))
-      * (AUTOUNROLL * WARP_SIZE); // round down
+  int Npack2a = (Nrem / (packFactor * UNROLL * WARP_SIZE))
+      * (UNROLL * WARP_SIZE); // round down
   int Nelem2a = Npack2a * packFactor;
 
-  ReduceCopy128bMulti<FUNC, T, AUTOUNROLL, MINSRCS, MAXSRCS, MINDSTS, MAXDSTS>(w, nw, t, nsrcs, srcs, ndsts, dsts, offset, Npack2a);
+  ReduceCopy128bMulti<FUNC, T, UNROLL, MINSRCS, MAXSRCS, MINDSTS, MAXDSTS>(w, nw, t, nsrcs, srcs, ndsts, dsts, offset, Npack2a);
 
   Nrem -= Nelem2a;
   if (Nrem == 0) return;
