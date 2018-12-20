@@ -207,7 +207,7 @@ ncclResult_t bootstrapInit(ncclUniqueId* commId, int rank, int nranks, void** co
   NCCLCHECK(bootstrapNetListen(state->dev, &info.extHandleListenRoot, &extBstrapListenCommRoot));
 
   // stagger connection times to avoid an overload of the root at very high rank counts
-  long msec = (rank >> 8) * 10;
+  long msec = (rank >> 7) * 100;
   if (msec) {
     struct timespec tv;
     tv.tv_sec = 0;
