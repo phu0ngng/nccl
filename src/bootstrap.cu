@@ -207,11 +207,11 @@ ncclResult_t bootstrapInit(ncclUniqueId* commId, int rank, int nranks, void** co
   NCCLCHECK(bootstrapNetListen(state->dev, &info.extHandleListenRoot, &extBstrapListenCommRoot));
 
   // stagger connection times to avoid an overload of the root at very high rank counts
-  long msec = (rank >> 8) * 1000;
-  if (msec) {
+  if (nranks > 128) {
+    long msec = rank;
     struct timespec tv;
-    tv.tv_sec = 0;
-    tv.tv_nsec = 1000000 * msec;
+    tv.tv_sec = msec / 1000;
+    tv.tv_nsec = 1000000 * (msec % 1000);
     TRACE(NCCL_INIT, "rank %d delaying connection to root by %ld msec", rank, msec);
     (void) nanosleep(&tv, NULL);
   }
@@ -255,8 +255,8 @@ ncclResult_t bootstrapAllGather(void* commState, void* allData, int size) {
    * and send previous step's data from (rank-i) to right
    */
   for (int i=0; i<nranks-1; i++) {
-    int rslice = (rank - i - 1 + nranks) % nranks;
-    int sslice = (rank - i + nranks) % nranks;
+    size_t rslice = (rank - i - 1 + nranks) % nranks;
+    size_t sslice = (rank - i + nranks) % nranks;
 
     // Send slice to the right
     NCCLCHECK(bootstrapNetSend(state->extBstrapRingSendComm, data+sslice*size, size));
