@@ -348,19 +348,19 @@ static int log2(int n) {
 static ncclResult_t ncclTreeThreshold(int nnodes, int nranks, int nChannels, ssize_t *treeThreshold) {
   int nvlink;
   NCCLCHECK(ncclNvlinkGpu(&nvlink));
-  int ringbw = nvlink ? 5000*nChannels : 5000; // approx, in MB/s or B/us
+  float ringbw = nvlink ? 5000*nChannels : 5000; // approx, in MB/s or B/us
   float ringlatinter = 6;
   float treelatintra = 4;
-  int treelatinter = 15;
-  int treebw;
+  float treelatinter = 15;
+  float treebw;
   if (!nvlink) {
     treebw = ringbw * 2 / 3;
   } else {
     treebw = ringbw * 3 / 4;
     if (nnodes == 2) treebw *= 2;
   }
-  int ringlat = ringlatinter*(nranks-1);
-  int treelat = treelatinter*log2(nnodes)+treelatintra*(nranks/nnodes-1);
+  float ringlat = ringlatinter*(nranks-1);
+  float treelat = treelatinter*log2(nnodes)+treelatintra*(nranks/nnodes-1);
   if (nnodes < 2 || ringlat <= treelat)
     *treeThreshold = 0;
   else if (treebw > ringbw)
