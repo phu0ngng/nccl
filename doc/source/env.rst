@@ -280,6 +280,8 @@ The default value is 0.
 
 NCCL_IB_CUDA_SUPPORT
 --------------------
+(removed in 2.4.0, see NCCL_NET_GDR_LEVEL)
+
 The ``NCCL_IB_CUDA_SUPPORT`` variable is used to force or disable the usage of GPU Direct RDMA.
 By default, NCCL enables GPU Direct RDMA, if the topology permits it. This variable can disable this behavior or force
 the usage of GPU Direct RDMA in all cases.
@@ -290,11 +292,11 @@ Define and set to 0 to disable GPU Direct RDMA.
 
 Define and set to 1 to force the usage of GPU Direct RDMA.
 
-NCCL_IB_GDR_LEVEL
------------------
-(since 2.3.4)
+NCCL_NET_GDR_LEVEL (formerly NCCL_IB_GDR_LEVEL)
+-----------------------------------------------
+(since 2.3.4. In 2.4.0, NCCL_IB_GDR_LEVEL is renamed NCCL_NET_GDR_LEVEL)
 
-Finely control when to use GPU Direct RDMA between an IB NIC and a GPU. The level describes the maximum distance between
+Finely control when to use GPU Direct RDMA between a NIC and a GPU. The level describes the maximum distance between
 the NIC and the GPU.
 
 Values accepted
@@ -344,6 +346,18 @@ Set the size limit under which NCCL uses low-latency algorithms.
 Values accepted
 ^^^^^^^^^^^^^^^
 Default is 16384 (up to 2.2) or is dependent on the number of ranks (2.3 and later).
+
+Values are integers, in bytes.
+
+NCCL_TREE_THRESHOLD
+-------------------
+(since 2.4.0)
+
+Set the size limit under which NCCL uses tree algorithms instead of rings.
+
+Values accepted
+^^^^^^^^^^^^^^^
+Default is dependent on the number of ranks.
 
 Values are integers, in bytes.
 
