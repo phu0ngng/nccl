@@ -971,7 +971,7 @@ testResult_t run() {
 
   if (!parallel_init) {
     for(int i=0; i<nGpus*nThreads; ++i)
-      ncclCommDestroy(comms[i]);
+      NCCLCHECK(ncclCommDestroy(comms[i]));
     free(comms);
   }
 
