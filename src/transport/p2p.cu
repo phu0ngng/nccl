@@ -252,7 +252,6 @@ int p2pComputeRingsNvLink(ncclTvalue_t* values, int nranks, int* rings, int nrin
   // Duplicate the rings for direct NVLink
   compNrings = copyRings(nranks, rings, compNrings, compNrings*2);
 
-  if (ncclCudaCompCap() == 6) *nthreads /= 2;
   return compNrings;
 }
 
