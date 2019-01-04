@@ -7,7 +7,7 @@
 /* This test simulates a hang in the transmission due to e.g. mismatch in
  * collective parameters across launches. The client waits some amount of
  * time for the operations to complete and aborts the operations (by calling
- * ncclCommDestroy) after the timeout is reached. It then checks that the
+ * ncclCommAbort) after the timeout is reached. It then checks that the
  * streams actually get freed up by NCCL kernels.
  *
  * This test differs from the abort test in test/single/ in that it uses
@@ -186,11 +186,11 @@ int main(int argc, char* argv[]) {
   } else {
     printf("[child] About to destroy the communicator.\n");
   }
-  ncclResult_t nccl_res = ncclCommDestroy(comm);
+  ncclResult_t nccl_res = ncclCommAbort(comm);
   if (parent) {
-    printf("[parent] Destroying communicator returned %s.\n", ncclGetErrorString(nccl_res));
+    printf("[parent] Aborting communicator returned %s.\n", ncclGetErrorString(nccl_res));
   } else {
-    printf("[child] Destroying communicator returned %s.\n", ncclGetErrorString(nccl_res));
+    printf("[child] Aborting communicator returned %s.\n", ncclGetErrorString(nccl_res));
   }
   fflush(stdout);
   CUDACHECK(cudaStreamQuery(s));

@@ -1125,20 +1125,19 @@ final:
   return res;
 }
 
-NCCL_API(ncclResult_t, ncclCommDestroy, ncclComm_t comm);
-ncclResult_t ncclCommDestroy(ncclComm_t comm) {
 
-  if (comm == NULL)
-    return ncclSuccess;
+static ncclResult_t commDestroy(ncclComm_t comm) {
   int savedDevice;
   CUDACHECK(cudaGetDevice(&savedDevice));
   int commDevice = comm->cudaDev;
+  int rank = comm->rank;
 
   if (savedDevice != commDevice) {
     CUDACHECK(cudaSetDevice(commDevice));
   }
-  // Ask anything that might still be running on the device to quit
-  *comm->abortFlag = 1;
+
+  TRACE(NCCL_INIT, "Destroying comm %p rank %d abortFlag %d fatalError %d", comm, rank, *comm->abortFlag, comm->fatalError);
+
   CUDACHECK(cudaStreamSynchronize(comm->groupStream));
   NCCLCHECK(transportDestroyProxy(comm));
   NCCLCHECK(commFree(comm));
@@ -1146,7 +1145,28 @@ ncclResult_t ncclCommDestroy(ncclComm_t comm) {
   if (savedDevice != commDevice)
     CUDACHECK(cudaSetDevice(savedDevice));
 
+  INFO(NCCL_INIT, "Destroyed comm %p rank %d", comm, rank);
+
   return ncclSuccess;
+}
+
+NCCL_API(ncclResult_t, ncclCommDestroy, ncclComm_t comm);
+ncclResult_t ncclCommDestroy(ncclComm_t comm) {
+  if (comm == NULL)
+    return ncclSuccess;
+
+  return commDestroy(comm);
+}
+
+NCCL_API(ncclResult_t, ncclCommAbort, ncclComm_t comm);
+ncclResult_t ncclCommAbort(ncclComm_t comm) {
+  if (comm == NULL)
+    return ncclSuccess;
+
+  // Ask anything that might still be running on the device to quit
+  *comm->abortFlag = 1;
+
+  return commDestroy(comm);
 }
 
 NCCL_API(const char*, ncclGetErrorString, ncclResult_t code);

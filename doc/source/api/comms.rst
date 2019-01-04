@@ -54,7 +54,16 @@ ncclCommDestroy
 
 .. c:function:: ncclResult_t ncclCommDestroy(ncclComm_t comm)
 
-Frees resources that are allocated to a communicator object *comm*.
+Frees resources that are allocated to a communicator object *comm*. Waits for any uncompleted
+operations before destroying the communicator.
+
+ncclCommAbort
+---------------
+
+.. c:function:: ncclResult_t ncclCommAbort(ncclComm_t comm)
+
+Frees resources that are allocated to a communicator object *comm*. Will abort any uncompleted
+operations before destroying the communicator.
 
 ncclCommGetAsyncError
 ---------------------

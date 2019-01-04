@@ -136,7 +136,7 @@ void* persistentThread(void *comm_) {
   struct ncclComm* comm = (struct ncclComm*)comm_;
   struct ncclProxyState* state = &comm->proxyState;
   struct ncclProxyArgs* op = NULL;
-  ncclResult_t ret;
+  ncclResult_t ret = ncclSuccess;
   int idle = 1;
   while (1) {
     do {
@@ -144,8 +144,14 @@ void* persistentThread(void *comm_) {
       if (op == NULL) {
         pthread_mutex_lock(&state->mutex);
         op = state->ops;
-        if (op == NULL)
+        if (op == NULL) {
+          if (state->stop) {
+            // No more commands to process and proxy has been requested to stop
+            pthread_mutex_unlock(&state->mutex);
+            return NULL;
+          }
           pthread_cond_wait(&state->cond, &state->mutex);
+        }
         pthread_mutex_unlock(&state->mutex);
       }
     } while (op == NULL);
@@ -214,8 +220,10 @@ ncclResult_t transportCreateProxy(struct ncclComm* comm) {
 
 ncclResult_t transportDestroyProxy(struct ncclComm* comm) {
   struct ncclProxyState* state = &comm->proxyState;
+
+  // Request the proxy to stop and then wake it
   pthread_mutex_lock(&state->mutex);
-  // Wake the proxy thread - the comm->abortFlag has already been set
+  state->stop = true;
   pthread_cond_signal(&state->cond);
   pthread_mutex_unlock(&state->mutex);
   if (comm->proxyThread) pthread_join(comm->proxyThread, NULL);

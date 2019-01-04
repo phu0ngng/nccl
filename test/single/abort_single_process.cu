@@ -7,7 +7,7 @@
 /* This test simulates a hang in the transmission due to e.g. mismatch in
  * collective parameters across launches. The client waits some amount of
  * time for the operations to complete and aborts the operations (by calling
- * ncclCommDestroy) after the timeout is reached. It then checks that the
+ * ncclCommAbort) after the timeout is reached. It then checks that the
  * streams actually get freed up by NCCL kernels.
  */
 
@@ -100,9 +100,9 @@ int RunTest(T** buff, const size_t N, const ncclDataType_t type, const int root,
   // HANGS on cudaFree() unless we reverse the order of destruction
   //for (int i = 0; i < nDev; ++i) {
   for (int i = nDev-1; i >= 0; --i) {
-    printf("Destroying communicator %i\n", i);
-    ncclResult_t nccl_res = ncclCommDestroy(comms[i]);
-    printf("Destroying communicator %d returned %s.\n", i, ncclGetErrorString(nccl_res));
+    printf("Aborting communicator %i\n", i);
+    ncclResult_t nccl_res = ncclCommAbort(comms[i]);
+    printf("Aborting communicator %d returned %s.\n", i, ncclGetErrorString(nccl_res));
   }
 
   for (int i = 0; i < nDev; ++i) {

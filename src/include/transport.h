@@ -70,6 +70,7 @@ struct ncclProxyPool;
 struct ncclProxyState {
   pthread_cond_t cond;
   pthread_mutex_t mutex;
+  bool stop;
   struct ncclProxyArgs* ops;
   struct ncclProxyArgs* pool;
   struct ncclProxyPool* pools;
