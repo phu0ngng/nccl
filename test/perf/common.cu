@@ -316,12 +316,44 @@ testResult_t CheckData(struct threadArgs* args, ncclDataType_t type, ncclRedOp_t
   return testSuccess;
 }
 
-cudaError_t cudaStreamSyncYield(cudaStream_t stream) {
-  while (1) {
-    cudaError_t err = cudaStreamQuery(stream);
-    if (err != cudaErrorNotReady) return err;
-    pthread_yield();
+testResult_t testStreamSynchronize(int ngpus, cudaStream_t* streams, ncclComm_t* comms) {
+  cudaError_t cudaErr;
+  ncclResult_t ncclAsyncErr;
+  int remaining = ngpus;
+  int* done = (int*)malloc(sizeof(int)*ngpus);
+  memset(done, 0, sizeof(int)*ngpus);
+  while (remaining) {
+   int idle = 1;
+   for (int i=0; i<ngpus; i++) {
+     if (done[i]) continue;
+
+     cudaErr = cudaStreamQuery(streams[i]);
+     if (cudaErr == cudaSuccess) {
+       done[i] = 1;
+       remaining--;
+       idle = 0;
+       continue;
+     }
+
+     if (cudaErr != cudaErrorNotReady) CUDACHECK(cudaErr);
+
+     if (comms) {
+       NCCLCHECK(ncclCommGetAsyncError(comms[i], &ncclAsyncErr));
+       if (ncclAsyncErr != ncclSuccess) {
+         // An asynchronous error happened. Stop the operation and destroy
+         // the communicator
+         for (int i=0; i<ngpus; i++)
+           NCCLCHECK(ncclCommAbort(comms[i]));
+         // Abort the perf test
+         NCCLCHECK(ncclAsyncErr);
+       }
+     }
+   }
+
+   // We might want to let other threads (including NCCL threads) use the CPU.
+   if (idle) pthread_yield();
   }
+  return testSuccess;
 }
 
 testResult_t startColl(struct threadArgs* args, ncclDataType_t type, ncclRedOp_t op, int root, int in_place, int thread_offset) {
@@ -350,9 +382,7 @@ testResult_t startColl(struct threadArgs* args, ncclDataType_t type, ncclRedOp_t
 
   if (blocking_coll) {
     //if args have been swapped, complete op before returning
-    for (int i = 0; i < args->nGpus; ++i) {
-      CUDACHECK(cudaStreamSyncYield(args->streams[i]));
-    }
+    TESTCHECK(testStreamSynchronize(args->nGpus, args->streams, args->comms));
   }
   if (blocking_coll) Barrier(args);
   return testSuccess;
@@ -361,9 +391,7 @@ testResult_t startColl(struct threadArgs* args, ncclDataType_t type, ncclRedOp_t
 testResult_t completeColl(struct threadArgs* args) {
   if (blocking_coll) return testSuccess;
 
-  for (int i = 0; i < args->nGpus; ++i) {
-    CUDACHECK(cudaStreamSyncYield(args->streams[i]));
-  }
+  TESTCHECK(testStreamSynchronize(args->nGpus, args->streams, args->comms));
   return testSuccess;
 }
 
@@ -563,9 +591,7 @@ testResult_t compThread(struct threadArgs* args) {
       CUDACHECK(cudaSetDevice(gpuids[i]));
       compute<<<1, 256, 0, streams[i]>>>(ptrs[i], COMP_SIZE);
     }
-    for (int i=0; i<args->nGpus; i++) {
-      CUDACHECK(cudaStreamSyncYield(streams[i]));
-    }
+    TESTCHECK(testStreamSynchronize(args->nGpus, streams, NULL));
     for (int i=0; i<args->nGpus; i++) {
       CUDACHECK(cudaFree(ptrs[i]));
     }
