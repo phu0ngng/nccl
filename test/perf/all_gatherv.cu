@@ -65,12 +65,17 @@ testResult_t ncclAllGatherv(void* sendbuff, void* recvbuff, size_t count, ncclDa
     size_t rankCount = count;
 #endif
     void* recvbuffOffset = ((char*)recvbuff)+i*count*wordSize(type);
+
+#if NCCL_MAJOR >= 2 && NCCL_MINOR >= 2
+    NCCLCHECK(ncclBroadcast(sendbuff, recvbuffOffset, rankCount, type, i, comm, stream));
+#else
     if (i == rank) {
       if (sendbuff != recvbuffOffset) CUDACHECK(cudaMemcpyAsync(recvbuffOffset, sendbuff, rankCount*wordSize(type), cudaMemcpyDeviceToDevice, stream));
       NCCLCHECK(ncclBcast(sendbuff, rankCount, type, i, comm, stream));
     } else {
       NCCLCHECK(ncclBcast(recvbuffOffset, rankCount, type, i, comm, stream));
     }
+#endif
   }
   NCCLCHECK(ncclGroupEnd());
   return testSuccess;
