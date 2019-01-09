@@ -89,6 +89,7 @@ static MPI_Comm ncclCollNetMpiComm;
 
 void ncclCollNetMpiHook(MPI_Comm comm) {
   ncclCollNetMpiComm = comm;
+  collNet = &NCCL_COLLNET_PLUGIN_SYMBOL;
 }
 
 #include <assert.h>

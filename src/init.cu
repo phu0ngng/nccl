@@ -58,6 +58,7 @@ NCCL_PARAM(GroupCudaStream, "GROUP_CUDA_STREAM", NCCL_GROUP_CUDA_STREAM);
 NCCL_PARAM(CheckPointers, "CHECK_POINTERS", 0);
 
 ncclNet_t* ncclNet = NULL;
+extern "C" __attribute__ ((visibility("default")))
 ncclCollNet_t* collNet = NULL;
 
 // We define this as weak to let tests redefine their own

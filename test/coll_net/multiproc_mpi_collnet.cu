@@ -107,7 +107,7 @@ int benchCollective(int collective, int rank, int nranks, int* ddata, int* hdata
     printBanner(collective);
     printf("        Size (B)       Time (us)   Alg BW (MB/s)   Bus BW (MB/s)          Errors\n");
   }
-  for (int size = 1; size <= MAXSIZE; size<<=1) {
+  for (int size = MAXSIZE; size <= MAXSIZE; size<<=1) {
     int realSize = size;
     if (collective > 2) {
       if (size > (MAXSIZE/nranks)) continue;
