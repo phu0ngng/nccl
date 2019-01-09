@@ -737,7 +737,7 @@ static ncclResult_t initTransportsRank(struct ncclComm* comm, ncclUniqueId* comm
 
     //////////////////////COLLNET////////////////////////
     // connect current rank to an extra rank using collnet
-    if (collNet != NULL) {
+    if (collNet != NULL && treeIn[r*nranks+rank] == 1) {
       INFO(NCCL_INIT|NCCL_NET, "Using collective network %s", collNetName());
       struct ncclPeerInfo *myInfo = comm->peerInfo+comm->rank, *peerInfo = comm->peerInfo+nranks;
       // fill in info of extra rank
