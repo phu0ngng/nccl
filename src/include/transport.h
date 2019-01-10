@@ -47,6 +47,7 @@ struct ncclProxyArgs {
   int llMode;
   ncclDataType_t dtype;
   ncclRedOp_t redOp;
+  int useCollTree;
   int active;   // add component before this line -- it is left out during initialization
 };
 

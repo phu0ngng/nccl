@@ -91,7 +91,7 @@ __device__ void ncclAllReduceTreeKernel(struct CollectiveArgs* args) {
   const int bid = args->bid;
   struct ncclComm* comm = args->comm;
   struct ncclChannel* channel = comm->channels+blockIdx.x;
-  struct ncclTree* tree = &channel->tree;
+  struct ncclTree* tree = args->useCollTree ? &channel->collTree : &channel->tree;
   const ssize_t size = args->N;
   const int stepSize = channel->buffSize / (sizeof(T)*NCCL_STEPS);
   const int chunkSize = args->lastChunkSize;
@@ -212,7 +212,7 @@ __device__ void ncclAllReduceTreeLLKernel(struct CollectiveArgs* args) {
   const int bid = args->bid;
   struct ncclComm* comm = args->comm;
   struct ncclChannel* channel = comm->channels+blockIdx.x;
-  struct ncclTree* tree = &channel->tree;
+  struct ncclTree* tree = args->useCollTree ? &channel->collTree : &channel->tree;
   const ssize_t size = args->N;
   ssize_t chunkSize = NCCL_LL_SLICE_LINES * sizeof(uint64_t) / sizeof(T);
   const ssize_t loopSize = args->nChannels*chunkSize;

@@ -7,6 +7,7 @@
 #include "enqueue.h"
 #include "checks.h"
 #include "param.h"
+#include "coll_net.h"
 
 #include "collectives/collectives.h"
 
@@ -312,6 +313,13 @@ static ncclResult_t computeColl(struct ncclInfo* info /* input */, struct ncclCo
 
   int treeMode = info->pattern >= ncclPatternTreeUp ? 1 : 0;
   coll->funcIndex = FUNC_INDEX(info->coll, info->op, info->datatype, llMode, treeMode);
+
+  // Compute collNet support
+  int useCollTree = 0;
+  if (treeMode == 1 && info->comm->collNetSupport == 1) {
+    NCCLCHECK(collNetReduceSupport(info->datatype, info->op, &useCollTree));
+  }
+  proxyArgs->useCollTree = coll->args.useCollTree = useCollTree;
 
   int stepSize   = ( llMode ? NCCL_LL_BUFF_SIZE : info->comm->channels[0].buffSize ) / NCCL_STEPS;
   int chunkSteps = (llMode|treeMode) ? 1 : info->chunkSteps;

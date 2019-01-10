@@ -369,6 +369,10 @@ static ncclResult_t setupChannel(struct ncclComm* comm, int channelId, int rank,
   tree->up = -1;
   tree->down[0] = tree->down[1] = tree->down[2] = -1;
 
+  struct ncclTree* collTree = &channel->collTree;
+  collTree->up = -1;
+  collTree->down[0] = collTree->down[1] = collTree->down[2] = -1;
+
   if (ncclTreeThreshold() > 0) {
 
     //
@@ -384,6 +388,7 @@ static ncclResult_t setupChannel(struct ncclComm* comm, int channelId, int rank,
     // Not an exact value but a good approximation in most cases and consistent
     // across nodes
     tree->depth = nranks/nMasters + log2(nMasters);
+    collTree->depth = nranks/nMasters + 1;
 
     // Find my master : go backwards in the ring to find my root
     int master = 0;
@@ -419,18 +424,14 @@ static ncclResult_t setupChannel(struct ncclComm* comm, int channelId, int rank,
 
     if (rank == master) {
       int nDown = 0;
-      if (treeMasters[next] == 0) tree->down[nDown++] = next;
-#if 1
-      //tree->nUp = 1;
-      tree->up = nranks;
-#else
+      if (treeMasters[next] == 0) collTree->down[0] = tree->down[nDown++] = next;
+      collTree->up = nranks;
       if (btreeUp != -1) tree->up = ranks[btreeUp];
       if (btreeDown0 != -1) tree->down[nDown++] = ranks[btreeDown0];
       if (btreeDown1 != -1) tree->down[nDown++] = ranks[btreeDown1];
-#endif
     } else {
-      tree->up = prev;
-      if (treeMasters[next] == 0) tree->down[0] = next;
+      collTree->up = tree->up = prev;
+      if (treeMasters[next] == 0) collTree->down[0] = tree->down[0] = next;
     }
 
     INFO(NCCL_INIT, "Channel %02d : %d -> %d, %d, %d", channelId,
@@ -727,13 +728,13 @@ static ncclResult_t initTransportsRank(struct ncclComm* comm, ncclUniqueId* comm
   // Connect with prev/next for each ring
   struct ncclConnect *connect;
   NCCLCHECK(ncclCalloc(&connect, 2));
+  comm->collNetSupport = 1;
   for (int r=0; r<nrings; r++) {
     struct ncclChannel* channel = comm->channels+r;
     NCCLCHECK(setupChannel(comm, r, rank, nranks, rings+r*nranks, treeIn+r*nranks));
     NCCLCHECK(p2pSetup(comm, channel, 1, &channel->ring.prev, 1, &channel->ring.next));
-    //TODO: restore
-    //NCCLCHECK(p2pSetup(comm, channel, NCCL_MAX_TREE_ARITY, channel->tree.down, 1, &channel->tree.up));
-    //NCCLCHECK(p2pSetup(comm, channel, 1, &channel->tree.up, NCCL_MAX_TREE_ARITY, channel->tree.down));
+    NCCLCHECK(p2pSetup(comm, channel, NCCL_MAX_TREE_ARITY, channel->tree.down, 1, &channel->tree.up));
+    NCCLCHECK(p2pSetup(comm, channel, 1, &channel->tree.up, NCCL_MAX_TREE_ARITY, channel->tree.down));
 
     //////////////////////COLLNET////////////////////////
     // connect current rank to an extra rank using collnet
@@ -746,8 +747,8 @@ static ncclResult_t initTransportsRank(struct ncclComm* comm, ncclUniqueId* comm
       ncclTvalue_t ret = 0;
       NCCLCHECK(collNetTransport.canConnect(&ret, myInfo, peerInfo));
       INFO(NCCL_INIT|NCCL_NET, "collNet canConnect = %d", ret);
-
-      if (ret > 0) {
+      if (ret <= 0) comm->collNetSupport = 0; // a comm supports collNet only when all channels supports it
+      else {
         struct ncclCollTransportComm* allreduce = &(collNetTransport.allreduce);
         // select
         struct ncclConnector* recv = &channel->peers[nranks].recv;

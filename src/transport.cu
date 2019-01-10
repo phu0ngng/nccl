@@ -114,13 +114,13 @@ ncclResult_t transportSaveProxies(struct ncclProxyArgs* args, int pattern, int r
   }
   if (pattern == ncclPatternTreeUp || pattern == ncclPatternTreeUpDown) {
     // Tree up
-    struct ncclTree* tree = &args->channel->tree;
+    struct ncclTree* tree = args->useCollTree ? &args->channel->collTree : &args->channel->tree;
     for (int i=0; i<NCCL_MAX_TREE_ARITY; i++) SaveProxy<proxyRecv>(tree->down[i], args);
     SaveProxy<proxySend>(tree->up, args);
   }
   if (pattern == ncclPatternTreeDown || pattern == ncclPatternTreeUpDown) {
     // Tree down
-    struct ncclTree* tree = &args->channel->tree;
+    struct ncclTree* tree = args->useCollTree ? &args->channel->collTree : &args->channel->tree;
     for (int i=0; i< NCCL_MAX_TREE_ARITY; i++) SaveProxy<proxySend>(tree->down[i], args);
     SaveProxy<proxyRecv>(tree->up, args);
   }
@@ -138,6 +138,12 @@ ncclResult_t transportStartProxies(ncclComm* comm) {
     if (tree->up >= 0) FifoPushArgs(comm->channels[r].peers[tree->up].recv.proxyInfo);
     for (int i=0; i<NCCL_MAX_TREE_ARITY && tree->down[i] >= 0; i++) FifoPushArgs(comm->channels[r].peers[tree->down[i]].send.proxyInfo);
     if (tree->up >= 0) FifoPushArgs(comm->channels[r].peers[tree->up].send.proxyInfo);
+
+    struct ncclTree* ctree = &comm->channels[r].collTree;
+    for (int i=0; i<NCCL_MAX_TREE_ARITY && ctree->down[i] >= 0; i++) FifoPushArgs(comm->channels[r].peers[ctree->down[i]].recv.proxyInfo);
+    if (ctree->up >= 0) FifoPushArgs(comm->channels[r].peers[ctree->up].recv.proxyInfo);
+    for (int i=0; i<NCCL_MAX_TREE_ARITY && ctree->down[i] >= 0; i++) FifoPushArgs(comm->channels[r].peers[ctree->down[i]].send.proxyInfo);
+    if (ctree->up >= 0) FifoPushArgs(comm->channels[r].peers[ctree->up].send.proxyInfo);
   }
   pthread_yield(); // Let other threads run
   return ncclSuccess;
