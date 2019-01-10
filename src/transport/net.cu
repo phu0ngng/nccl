@@ -78,9 +78,10 @@ struct netRecvResources {
 static ncclResult_t netDistance(int cudaDev, int dev, short* distance) {
   char* cudaPath = NULL;
   char* nicPath = NULL;
+  ncclResult_t err;
   NCCLCHECK(getCudaPath(cudaDev, &cudaPath));
-  NCCLCHECK(ncclNetPciPath(dev, &nicPath));
-  *distance = (nicPath == NULL || cudaPath == NULL) ? PATH_SOC : pciDistance(nicPath, cudaPath);
+  err = ncclNetPciPath(dev, &nicPath);
+  *distance = (err != ncclSuccess || nicPath == NULL || cudaPath == NULL) ? PATH_SOC : pciDistance(nicPath, cudaPath);
   if (nicPath) free(nicPath);
   if (cudaPath) free(cudaPath);
   return ncclSuccess;
