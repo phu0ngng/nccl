@@ -138,6 +138,7 @@ void* persistentThread(void *comm_) {
   struct ncclProxyArgs* op = NULL;
   ncclResult_t ret = ncclSuccess;
   int idle = 1;
+  int idleSpin = 0;
   while (1) {
     do {
       if (*comm->abortFlag) return NULL;
@@ -164,6 +165,7 @@ void* persistentThread(void *comm_) {
     }
     idle &= op->idle;
     pthread_mutex_lock(&state->mutex);
+    if (!idle) idleSpin = 0;
     struct ncclProxyArgs *next = op->next;
     if (next->state == ncclProxyOpNone) {
       struct ncclProxyArgs *freeOp = next;
@@ -193,7 +195,10 @@ void* persistentThread(void *comm_) {
     op = next;
     if (op == state->ops) {
       if (idle == 1) {
-        sched_yield();
+        if (++idleSpin == 10) {
+          sched_yield();
+          idleSpin = 0;
+        }
       }
       idle = 1;
     }
@@ -203,7 +208,8 @@ void* persistentThread(void *comm_) {
 
 ncclResult_t transportStartProxy(struct ncclComm* comm) {
   pthread_mutex_lock(&comm->proxyState.mutex);
-  pthread_cond_signal(&comm->proxyState.cond);
+  if (comm->proxyState.ops != NULL)
+    pthread_cond_signal(&comm->proxyState.cond);
   pthread_mutex_unlock(&comm->proxyState.mutex);
   return ncclSuccess;
 }

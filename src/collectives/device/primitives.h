@@ -215,6 +215,8 @@ class ncclPrimitives {
     if (directBuff && sendConn[i]->direct) {
       void* volatile* ptr = sendConn[i]->ptrExchange;
       while ((sendDirectBuff[i] = (T*)(*ptr)) == NULL);
+      __syncthreads();
+      if (tid == 0) *ptr = NULL;
     }
     nsend++;
   }

@@ -217,8 +217,8 @@ The timeout is computed as 4.096 µs * 2 ^ timeout, and the right value is depen
 Increasing that value can help on very large networks, for example, if NCCL is failing on a call to ibv_poll_cq with
 error 12.
  
-For more information, see section 12.7.34 of the InfiniBand specification
-(http://www.infinibandta.org/content/pages.php?pg=technology_public_specification) (Local Ack Timeout).
+For more information, see section 12.7.34 of the InfiniBand specification Volume 1
+(https://www.infinibandta.org/ibta-specifications-download) (Local Ack Timeout).
 
 Values accepted
 ^^^^^^^^^^^^^^^
@@ -232,8 +232,8 @@ NCCL_IB_RETRY_CNT
 
 Controls the InfiniBand retry count. 
 
-For more information, see section 12.7.38 of the InfiniBand specification
-(http://www.infinibandta.org/content/pages.php?pg=technology_public_specification).
+For more information, see section 12.7.38 of the InfiniBand specification Volume 1
+(https://www.infinibandta.org/ibta-specifications-download).
 
 Values accepted
 ^^^^^^^^^^^^^^^
@@ -245,8 +245,8 @@ NCCL_IB_GID_INDEX
 
 Defines the Global ID index used in RoCE mode. See the show_gids command to set this value.  
 
-For more information, see the InfiniBand specification
-(http://www.infinibandta.org/content/pages.php?pg=technology_public_specification) or vendor documentation.
+For more information, see the InfiniBand specification Volume 1
+(https://www.infinibandta.org/ibta-specifications-download) or vendor documentation.
 
 Values accepted
 ^^^^^^^^^^^^^^^
@@ -258,8 +258,8 @@ NCCL_IB_SL
 
 Defines the InfiniBand Service Level. 
 
-For more information, see the InfiniBand specification
-(http://www.infinibandta.org/content/pages.php?pg=technology_public_specification ) or vendor documentation.
+For more information, see the InfiniBand specification Volume 1
+(https://www.infinibandta.org/ibta-specifications-download) or vendor documentation.
 
 Values accepted
 ^^^^^^^^^^^^^^^
@@ -271,8 +271,8 @@ NCCL_IB_TC
 
 Defines the InfiniBand traffic class field. 
 
-For more information, see the InfiniBand specification
-(http://www.infinibandta.org/content/pages.php?pg=technology_public_specification ) or vendor documentation.
+For more information, see the InfiniBand specification Volume 1
+(https://www.infinibandta.org/ibta-specifications-download) or vendor documentation.
 
 Values accepted
 ^^^^^^^^^^^^^^^
