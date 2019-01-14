@@ -654,6 +654,39 @@ static ncclResult_t p2pSetup(struct ncclComm* comm, struct ncclChannel* channel,
   return ncclSuccess;
 }
 
+static ncclResult_t collNetSetup(struct ncclComm* comm, struct ncclChannel* channel, int rank, int nranks) {
+  struct ncclPeerInfo *myInfo = comm->peerInfo+rank, *peerInfo = comm->peerInfo+nranks;
+  // fill in info of extra rank
+  peerInfo->rank = nranks;
+  // TODO: more info needed?
+  ncclTvalue_t ret = 0;
+  NCCLCHECK(collNetTransport.canConnect(&ret, myInfo, peerInfo));
+  INFO(NCCL_INIT|NCCL_NET, "collNet canConnect = %d", ret);
+  if (ret <= 0)
+    comm->collNetSupport = 0; // a comm supports collNet only when all channels supports it
+  else {
+    struct ncclCollTransportComm* allreduce = &(collNetTransport.allreduce);
+    // select
+    struct ncclConnector* recv = &channel->peers[nranks].recv;
+    struct ncclConnector* send = &channel->peers[nranks].send;
+    // setup
+    struct ncclConnect myConnect;
+    NCCLCHECK(allreduce->setup(myInfo, &myConnect, send, recv, channel->buffSize, channel->id));
+    // create proxy
+    NCCLCHECK(transportCreateProxy(recv, allreduce->recvProxy));
+    NCCLCHECK(transportCreateProxy(send, allreduce->sendProxy));
+    // send connect handle to everyone else
+    // all-gather style
+    ncclConnect allConnects[nranks];
+    memcpy(allConnects+rank, &myConnect, sizeof(struct ncclConnect));
+    NCCLCHECK(bootstrapAllGather(comm->bootstrap, allConnects, sizeof(struct ncclConnect)));
+    // connect
+    NCCLCHECK(allreduce->connect(allConnects, nranks, send, recv));
+    INFO(NCCL_INIT|NCCL_NET, "rank %d collNet init COMPLETE", rank);
+  }
+  return ncclSuccess;
+}
+
 static ncclResult_t initTransportsRank(struct ncclComm* comm, ncclUniqueId* commId) {
   int rank = comm->rank;
   int nranks = comm->nRanks;
@@ -735,42 +768,12 @@ static ncclResult_t initTransportsRank(struct ncclComm* comm, ncclUniqueId* comm
     NCCLCHECK(p2pSetup(comm, channel, 1, &channel->ring.prev, 1, &channel->ring.next));
     NCCLCHECK(p2pSetup(comm, channel, NCCL_MAX_TREE_ARITY, channel->tree.down, 1, &channel->tree.up));
     NCCLCHECK(p2pSetup(comm, channel, 1, &channel->tree.up, NCCL_MAX_TREE_ARITY, channel->tree.down));
-
-    //////////////////////COLLNET////////////////////////
-    // connect current rank to an extra rank using collnet
+    // connect master ranks to the nranks-th rank using collnet
     if (collNet != NULL && treeIn[r*nranks+rank] == 1) {
-      INFO(NCCL_INIT|NCCL_NET, "Using collective network %s", collNetName());
-      struct ncclPeerInfo *myInfo = comm->peerInfo+comm->rank, *peerInfo = comm->peerInfo+nranks;
-      // fill in info of extra rank
-      peerInfo->rank = nranks;
-      // TODO: more info needed?
-      ncclTvalue_t ret = 0;
-      NCCLCHECK(collNetTransport.canConnect(&ret, myInfo, peerInfo));
-      INFO(NCCL_INIT|NCCL_NET, "collNet canConnect = %d", ret);
-      if (ret <= 0) comm->collNetSupport = 0; // a comm supports collNet only when all channels supports it
-      else {
-        struct ncclCollTransportComm* allreduce = &(collNetTransport.allreduce);
-        // select
-        struct ncclConnector* recv = &channel->peers[nranks].recv;
-        struct ncclConnector* send = &channel->peers[nranks].send;
-        // setup
-        struct ncclConnect myConnect;
-        NCCLCHECK(allreduce->setup(myInfo, &myConnect, send, recv, channel->buffSize, channel->id));
-        // create proxy
-        NCCLCHECK(transportCreateProxy(recv, allreduce->recvProxy));
-        NCCLCHECK(transportCreateProxy(send, allreduce->sendProxy));
-        // send connect handle to everyone else
-        // all-gather style
-        ncclConnect allConnects[nranks];
-        memcpy(allConnects+rank, &myConnect, sizeof(struct ncclConnect));
-        NCCLCHECK(bootstrapAllGather(comm->bootstrap, allConnects, sizeof(struct ncclConnect)));
-        // connect
-        NCCLCHECK(allreduce->connect(allConnects, nranks, send, recv));
-        INFO(NCCL_INIT|NCCL_NET, "rank %d collNet init COMPLETE", comm->rank);
-      }
+      NCCLCHECK(collNetSetup(comm, channel, rank, nranks));
     }
-    /////////////////////////////////////////////////////
   }
+  if (comm->collNetSupport) INFO(NCCL_INIT|NCCL_NET, "Using collective network %s", collNetName());
   TRACE(NCCL_INIT, "rank %d nranks %d - CONNECTED %d RINGS AND TREES", rank, nranks, nrings);
   free(connect);
   free(rings);
