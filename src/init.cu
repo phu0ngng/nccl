@@ -877,18 +877,42 @@ static ncclResult_t getCpuGpuAffinity(int cudaDev, cpu_set_t* mask) {
   return ncclSuccess;
 }
 
+NCCL_PARAM(IgnoreCpuAffinity, "IGNORE_CPU_AFFINITY", 0);
+
 static ncclResult_t setCpuAffinity(int cudaDev) {
-  // Work within the enveloppe we were provided
+  // Query the CPU affinity set we were provided
   cpu_set_t mask;
   SYSCHECK(sched_getaffinity(0, sizeof(cpu_set_t), &mask), "sched_getaffinity");
 
-  // Find the subpart that is local to our GPU
+#ifdef ENABLE_TRACE
+  {
+    char affinityStr[sizeof(cpu_set_t)*2];
+    NCCLCHECK(ncclCpusetToStr(&mask, affinityStr));
+    TRACE(NCCL_INIT, "Current affinity for GPU %d is %s", cudaDev, affinityStr);
+  }
+#endif
+
+  // Find the CPUs that are local to the supplied GPU
   cpu_set_t gpuMask;
   NCCLCHECK(getCpuGpuAffinity(cudaDev, &gpuMask));
-  cpu_set_t finalMask;
-  CPU_AND(&finalMask, &mask, &gpuMask);
 
-  // If those are not disjoint, try to stay local
+#ifdef ENABLE_TRACE
+  {
+    char affinityStr[sizeof(cpu_set_t)*2];
+    NCCLCHECK(ncclCpusetToStr(&gpuMask, affinityStr));
+    TRACE(NCCL_INIT, "CPU GPU affinity for GPU %d is %s", cudaDev, affinityStr);
+  }
+#endif
+
+  cpu_set_t finalMask;
+  if (ncclParamIgnoreCpuAffinity())
+    // Ignore the CPU affinity set and use the GPU one instead
+    finalMask = gpuMask;
+  else
+    // Use a subset of the GPU affinity set
+    CPU_AND(&finalMask, &mask, &gpuMask);
+
+  // If there is a non empty set, use it to set affinity
   if (CPU_COUNT(&finalMask)) {
     char affinityStr[sizeof(cpu_set_t)*2];
     NCCLCHECK(ncclCpusetToStr(&finalMask, affinityStr));
