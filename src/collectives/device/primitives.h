@@ -102,11 +102,9 @@ class ncclPrimitives {
     mismatch = 0;
     recvStep[i] += SLICESTEPS;
     if (tid == i) {
-      printf("Kernel : Entering waitRecv recvConnTail %p %lx, waiting for %lx\n", waitPtr, *waitPtr, recvStep[i]);
       while (*(waitPtr) < recvStep[i]) {
         if (checkAbort(recvConn[i]->opCountRem)) break;
       }
-      printf("Kernel : Leaving waitRecv recvConnTail %p %lx\n", waitPtr, *waitPtr);
     }
   }
 
@@ -115,12 +113,10 @@ class ncclPrimitives {
     mismatch = 0;
     sendStep[i] += SLICESTEPS;
     if (tid == WARP_SIZE+i) {
-      printf("Kernel : Entering waitSend sendConnHead %p %lx\n", waitPtr, *waitPtr);
       while (sendConnHead[i] + NCCL_STEPS < sendStep[i]) {
         sendConnHead[i] = *waitPtr;
         if (checkAbort(sendConn[i]->opCountRem)) break;
       }
-      printf("Kernel : Leaving waitSend sendConnHead %p %lx\n", waitPtr, *waitPtr);
     }
   }
 
@@ -130,7 +126,6 @@ class ncclPrimitives {
 
   inline __device__ void postSend(int i) {
     *(sendConn[i]->tail) = sendStep[i] += SLICESTEPS;
-    printf("Kernel : Posting send tail %p value %lx\n", sendConn[i]->tail, *(sendConn[i]->tail));
   }
 
   inline __device__ void postSendSize(int i, int size) {
