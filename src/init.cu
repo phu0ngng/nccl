@@ -654,7 +654,8 @@ static ncclResult_t p2pSetup(struct ncclComm* comm, struct ncclChannel* channel,
   return ncclSuccess;
 }
 
-static ncclResult_t collNetSetup(struct ncclComm* comm, struct ncclChannel* channel, int rank, int nranks) {
+static ncclResult_t collNetSetup(struct ncclComm* comm, struct ncclChannel* channel, int rank, int nranks, int* supported) {
+  *supported = 0;
   struct ncclPeerInfo *myInfo = comm->peerInfo+rank, *peerInfo = comm->peerInfo+nranks;
   // fill in info of extra rank
   peerInfo->rank = nranks;
@@ -662,9 +663,7 @@ static ncclResult_t collNetSetup(struct ncclComm* comm, struct ncclChannel* chan
   ncclTvalue_t ret = 0;
   NCCLCHECK(collNetTransport.canConnect(&ret, myInfo, peerInfo));
   INFO(NCCL_INIT|NCCL_NET, "collNet canConnect = %d", ret);
-  if (ret <= 0)
-    comm->collNetSupport = 0; // a comm supports collNet only when all channels supports it
-  else {
+  if (ret > 0) {
     struct ncclCollTransportComm* allreduce = &(collNetTransport.allreduce);
     // select
     struct ncclConnector* recv = &channel->peers[nranks].recv;
@@ -682,6 +681,7 @@ static ncclResult_t collNetSetup(struct ncclComm* comm, struct ncclChannel* chan
     NCCLCHECK(bootstrapAllGather(comm->bootstrap, allConnects, sizeof(struct ncclConnect)));
     // connect
     NCCLCHECK(allreduce->connect(allConnects, nranks, send, recv));
+    *supported = 1;
     INFO(NCCL_INIT|NCCL_NET, "rank %d collNet init COMPLETE", rank);
   }
   return ncclSuccess;
@@ -761,7 +761,7 @@ static ncclResult_t initTransportsRank(struct ncclComm* comm, ncclUniqueId* comm
   // Connect with prev/next for each ring
   struct ncclConnect *connect;
   NCCLCHECK(ncclCalloc(&connect, 2));
-  comm->collNetSupport = 1;
+  comm->collNetSupport = (collNet != NULL) ? 1 : 0;
   for (int r=0; r<nrings; r++) {
     struct ncclChannel* channel = comm->channels+r;
     NCCLCHECK(setupChannel(comm, r, rank, nranks, rings+r*nranks, treeIn+r*nranks));
@@ -770,7 +770,9 @@ static ncclResult_t initTransportsRank(struct ncclComm* comm, ncclUniqueId* comm
     NCCLCHECK(p2pSetup(comm, channel, 1, &channel->tree.up, NCCL_MAX_TREE_ARITY, channel->tree.down));
     // connect master ranks to the nranks-th rank using collnet
     if (collNet != NULL && treeIn[r*nranks+rank] == 1) {
-      NCCLCHECK(collNetSetup(comm, channel, rank, nranks));
+      int supported;
+      NCCLCHECK(collNetSetup(comm, channel, rank, nranks, &supported));
+      comm->collNetSupport &= supported;
     }
   }
   if (comm->collNetSupport) INFO(NCCL_INIT|NCCL_NET, "Using collective network %s", collNetName());
