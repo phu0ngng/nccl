@@ -217,8 +217,8 @@ The timeout is computed as 4.096 µs * 2 ^ timeout, and the right value is depen
 Increasing that value can help on very large networks, for example, if NCCL is failing on a call to ibv_poll_cq with
 error 12.
  
-For more information, see section 12.7.34 of the InfiniBand specification
-(http://www.infinibandta.org/content/pages.php?pg=technology_public_specification) (Local Ack Timeout).
+For more information, see section 12.7.34 of the InfiniBand specification Volume 1
+(https://www.infinibandta.org/ibta-specifications-download) (Local Ack Timeout).
 
 Values accepted
 ^^^^^^^^^^^^^^^
@@ -232,8 +232,8 @@ NCCL_IB_RETRY_CNT
 
 Controls the InfiniBand retry count. 
 
-For more information, see section 12.7.38 of the InfiniBand specification
-(http://www.infinibandta.org/content/pages.php?pg=technology_public_specification).
+For more information, see section 12.7.38 of the InfiniBand specification Volume 1
+(https://www.infinibandta.org/ibta-specifications-download).
 
 Values accepted
 ^^^^^^^^^^^^^^^
@@ -245,8 +245,8 @@ NCCL_IB_GID_INDEX
 
 Defines the Global ID index used in RoCE mode. See the show_gids command to set this value.  
 
-For more information, see the InfiniBand specification
-(http://www.infinibandta.org/content/pages.php?pg=technology_public_specification) or vendor documentation.
+For more information, see the InfiniBand specification Volume 1
+(https://www.infinibandta.org/ibta-specifications-download) or vendor documentation.
 
 Values accepted
 ^^^^^^^^^^^^^^^
@@ -258,8 +258,8 @@ NCCL_IB_SL
 
 Defines the InfiniBand Service Level. 
 
-For more information, see the InfiniBand specification
-(http://www.infinibandta.org/content/pages.php?pg=technology_public_specification ) or vendor documentation.
+For more information, see the InfiniBand specification Volume 1
+(https://www.infinibandta.org/ibta-specifications-download) or vendor documentation.
 
 Values accepted
 ^^^^^^^^^^^^^^^
@@ -271,8 +271,8 @@ NCCL_IB_TC
 
 Defines the InfiniBand traffic class field. 
 
-For more information, see the InfiniBand specification
-(http://www.infinibandta.org/content/pages.php?pg=technology_public_specification ) or vendor documentation.
+For more information, see the InfiniBand specification Volume 1
+(https://www.infinibandta.org/ibta-specifications-download) or vendor documentation.
 
 Values accepted
 ^^^^^^^^^^^^^^^
@@ -280,6 +280,8 @@ The default value is 0.
 
 NCCL_IB_CUDA_SUPPORT
 --------------------
+(removed in 2.4.0, see NCCL_NET_GDR_LEVEL)
+
 The ``NCCL_IB_CUDA_SUPPORT`` variable is used to force or disable the usage of GPU Direct RDMA.
 By default, NCCL enables GPU Direct RDMA, if the topology permits it. This variable can disable this behavior or force
 the usage of GPU Direct RDMA in all cases.
@@ -290,11 +292,11 @@ Define and set to 0 to disable GPU Direct RDMA.
 
 Define and set to 1 to force the usage of GPU Direct RDMA.
 
-NCCL_IB_GDR_LEVEL
------------------
-(since 2.3.4)
+NCCL_NET_GDR_LEVEL (formerly NCCL_IB_GDR_LEVEL)
+-----------------------------------------------
+(since 2.3.4. In 2.4.0, NCCL_IB_GDR_LEVEL is renamed NCCL_NET_GDR_LEVEL)
 
-Finely control when to use GPU Direct RDMA between an IB NIC and a GPU. The level describes the maximum distance between
+Finely control when to use GPU Direct RDMA between a NIC and a GPU. The level describes the maximum distance between
 the NIC and the GPU.
 
 Values accepted
@@ -344,6 +346,18 @@ Set the size limit under which NCCL uses low-latency algorithms.
 Values accepted
 ^^^^^^^^^^^^^^^
 Default is 16384 (up to 2.2) or is dependent on the number of ranks (2.3 and later).
+
+Values are integers, in bytes.
+
+NCCL_TREE_THRESHOLD
+-------------------
+(since 2.4.0)
+
+Set the size limit under which NCCL uses tree algorithms instead of rings.
+
+Values accepted
+^^^^^^^^^^^^^^^
+Default is dependent on the number of ranks.
 
 Values are integers, in bytes.
 

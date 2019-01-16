@@ -9,6 +9,7 @@
 
 #include <type_traits>
 #include "reduce_kernel.h" // for reduction funcs
+#include "common.h"
 
 #define SPINS_BEFORE_CHECK_ABORT 1000000
 
@@ -16,13 +17,15 @@
 // least 1 if SEND/RECV is set.
 #define FOR_SEND(func, ...) do { \
   if (SEND) { \
-    func(0, ##__VA_ARGS__); \
+    /* Send to far first, then close */ \
     for (int i=1; i<NSEND && i<nsend; i++) func(i, ##__VA_ARGS__); \
+    func(0, ##__VA_ARGS__); \
   } \
 } while (0)
 
 #define FOR_RECV(func, ...) do { \
   if (RECV) { \
+    /* Recv from close first, then far */ \
     func(0, ##__VA_ARGS__); \
     for (int i=1; i<NRECV && i<nrecv; i++) func(i, ##__VA_ARGS__); \
   } \
@@ -53,20 +56,6 @@ class ncclPrimitives {
   inline __device__ int sendOffset(int i) { return (sendStep[i]%NCCL_STEPS)*stepSize; }
   inline __device__ const T* recvPtr(int i) { return ((const T*)recvBuff[i])+recvOffset(i); }
   inline __device__ T* sendPtr(int i) { return ((T*)sendBuff[i])+sendOffset(i); }
-
-  // Exit If Abort Barrier : make sure all threads exit consistently
-  // Each thread sets a predicate to true if val == 1
-  // all CTA's threads enter the barrier and do a popc on their predicates being True
-  // If any of the thread's predicate was True, all the threads call exit()
-  inline __device__ void exitIfAbortBarrier() {
-    uint32_t popc;
-    asm ("{");
-    asm volatile ("   .reg .pred barr_pred;");
-    asm volatile ("   setp.eq.u32 barr_pred,%0,1;" :: "r"(abort));
-    asm volatile ("   bar.red.popc.u32 %0, 14, barr_pred;" : "=r"(popc));
-    asm ("}");
-    if (popc) { asm volatile ("exit;"); }
-  }
 
   inline __device__ void barrier() {
     asm volatile ("bar.sync 1, %0;" :: "r"(nthreads));
@@ -179,9 +168,9 @@ class ncclPrimitives {
             ReduceOrCopyMulti<UNROLL, FUNC, T, RECV+SRC, RECV*NRECV+SRC, SEND+DST, SEND*NSEND+DST>(tid, nthreads, RECV*nrecv+SRC, srcs, SEND*nsend+DST, dsts, realSize);
           }
         }
-        exitIfAbortBarrier();
+        exitIfAbortBarrier(abort);
       } else {
-        exitIfAbortBarrier();
+        exitIfAbortBarrier(abort);
         FOR_SEND(postSendSize, realSize*sizeof(T));
         if (SEND) __threadfence_system();
         FOR_SEND(postSend);
@@ -226,6 +215,8 @@ class ncclPrimitives {
     if (directBuff && sendConn[i]->direct) {
       void* volatile* ptr = sendConn[i]->ptrExchange;
       while ((sendDirectBuff[i] = (T*)(*ptr)) == NULL);
+      __syncthreads();
+      if (tid == 0) *ptr = NULL;
     }
     nsend++;
   }
@@ -351,14 +342,17 @@ class ncclLLPrimitives {
   // Each thread sets a predicate to true if val == 1
   // all CTA's threads enter the barrier and do a popc on their predicates being True
   // If any of the thread's predicate was True, all the threads call exit()
-  inline __device__ void exitIfAbortBarrier() {
+  inline __device__ void exitIfAbortLocalBarrier() {
     uint32_t popc;
     asm ("{");
     asm volatile ("   .reg .pred barr_pred;");
     asm volatile ("   setp.eq.u32 barr_pred,%0,1;" :: "r"(abort));
-    asm volatile ("   bar.red.popc.u32 %0, 14, barr_pred;" : "=r"(popc) : "r"(nthreads));
+    asm volatile ("   bar.red.popc.u32 %0, 14, %1, barr_pred;" : "=r"(popc) : "r"(nthreads));
     asm ("}");
-    if (popc) { asm volatile ("exit;"); }
+    if (popc) {
+      // Make sure threads not participating in the operation get the abort and all threads exit
+      exitIfAbortBarrier(1);
+    }
   }
 
   inline __device__ void barrier() {
@@ -391,7 +385,7 @@ class ncclLLPrimitives {
     return abort;
   }
 
-  inline __device__ void waitSend(int i) {
+  inline __device__ void waitSend(int i, int nbytes) {
     spins = 0;
     mismatch = 0;
     if (tid == WARP_SIZE+i) {
@@ -399,6 +393,7 @@ class ncclLLPrimitives {
         sendConnHead = *waitPtr;
         if (checkAbort(sendConn[i]->opCountRem)) break;
       }
+      if (fifoPtr) fifoPtr[sendStep[i]%NCCL_STEPS] = nbytes;
     }
   }
 
@@ -407,8 +402,7 @@ class ncclLLPrimitives {
     if (tid == i) *postPtr = recvStep[i];
   }
 
-  inline __device__ void postSend(int i, int nbytes) {
-    if (tid == WARP_SIZE+i && fifoPtr) fifoPtr[sendStep[i]%NCCL_STEPS] = nbytes;
+  inline __device__ void postSend(int i) {
     sendStep[i]++;
   }
 
@@ -444,7 +438,7 @@ class ncclLLPrimitives {
   template <int RECV, int SEND, int SRC, int DST>
   __device__ void LLGenericOp(const T* srcPtr, T* dstPtr, int nelem) {
     uint32_t nbytes = nelem < 0 ? 0 : nelem*sizeof(T);
-    FOR_SEND(waitSend);
+    FOR_SEND(waitSend, nbytes*2);
     barrier();
     uint32_t npack = DIVUP(nbytes, sizeof(uint64_t));
     uint64_t* srcPack = (uint64_t*)srcPtr;
@@ -452,16 +446,19 @@ class ncclLLPrimitives {
     // Do multiples of 64 bits
     #pragma unroll 2
     for (int offset=tid; offset<npack; offset+=nthreads) {
+      // Recv : local, then intra-node, then inter-node
       uint64_t val = SRC ? readAL(srcPack+offset) : readLL(0, offset);
       if (RECV) {
         if (SRC) val = MULTI<FUNC, T>()(readLL(0, offset), val);
-        for (int i= 1; i<NRECV && i<nrecv; i++) {
+        for (int i=1; i<NRECV && i<nrecv; i++) {
           val = MULTI<FUNC, T>()(readLL(i, offset), val);
         }
       }
+
+      // Send : inter-node, then intra-node, then local
       if (SEND) {
-        storeLL(sendPtr(0)+offset, val, sendFlag(0));
         for (int i=1; i<NSEND && i<nsend; i++) storeLL(sendPtr(i)+offset, val, sendFlag(i));
+        storeLL(sendPtr(0)+offset, val, sendFlag(0));
       }
       if (DST) {
         if (((offset*sizeof(uint64_t)) ^ nbytes) < sizeof(uint64_t)) {
@@ -472,9 +469,9 @@ class ncclLLPrimitives {
         }
       }
     }
-    FOR_SEND(postSend, nbytes*2);
-    exitIfAbortBarrier();
+    exitIfAbortLocalBarrier();
     FOR_RECV(postRecv);
+    FOR_SEND(postSend);
   }
 
   __device__ __forceinline__ void loadRecvConn(struct ncclConnInfo* conn, int i) {
@@ -523,12 +520,11 @@ class ncclLLPrimitives {
       static_assert((NCCL_LL_BUFF_SIZE % NCCL_LL_MAX_NTHREADS) == 0, "NCCL_LL_BUFF_SIZE must be a multiple of THREADS");
       static_assert(NCCL_LL_BUFF_SIZE/(sizeof(union ncclLLFifoLine)*NCCL_LL_MAX_NTHREADS) > 0, "NCCL_LL_BUFF_SIZE is less than 16 bytes*THREADS");
       for (int s=0; s<NCCL_STEPS; s++) {
-        waitSend(i);
+        waitSend(i, 0);
         for (int o=tid; o<NCCL_LL_SLICE_LINES; o+=nthreads) {
           const union ncclLLFifoLine resetLine = { 0, sendFlag(i), 0, sendFlag(i) };
           sendPtr(i)[o].i4 = resetLine.i4;
         }
-        postSend(i, 0);
       }
       if (tid == 0) sendConn[i]->llLastCleaning = sendStep[i];
     }

@@ -16,62 +16,6 @@ struct ncclTransport ncclTransports[NTRANSPORTS] = {
   netTransport,
 };
 
-static void FifoPullArgs(struct transportProxyInfo* info, struct ncclProxyArgs *args) {
-  struct ncclProxyArgs *fifoArgs = info->argsFifo + (info->argsFifoHead % TRANSPORT_PROXY_FIFO_SIZE);
-  pthread_mutex_lock(&info->mutex);
-  while (fifoArgs->active == 0)
-    pthread_cond_wait(&info->cond, &info->mutex);
-  __sync_synchronize();
-  memcpy(args, fifoArgs, sizeof(struct ncclProxyArgs));
-  __sync_synchronize();
-  fifoArgs->active = 0;
-  pthread_cond_signal(&info->cond);
-  pthread_mutex_unlock(&info->mutex);
-  info->argsFifoHead++;
-}
-
-static struct ncclProxyArgs* FifoGetNextArgs(struct transportProxyInfo* info) {
-  if (info == NULL) return NULL;
-  struct ncclProxyArgs* fifoArgs = info->argsFifo + (info->argsFifoTail % TRANSPORT_PROXY_FIFO_SIZE);
-  pthread_mutex_lock(&info->mutex);
-  while (fifoArgs->active == 1)
-    pthread_cond_wait(&info->cond, &info->mutex);
-  pthread_mutex_unlock(&info->mutex);
-  info->argsFifoTail++;
-  return fifoArgs;
-}
-
-static void FifoPushArgs(struct transportProxyInfo* info) {
-  if (info == NULL) return;
-
-  struct ncclProxyArgs* fifoArgs = info->argsFifo + ((info->argsFifoTail-1) % TRANSPORT_PROXY_FIFO_SIZE);
-  if (fifoArgs->active == 0) return;
-
-  pthread_mutex_lock(&info->mutex);
-  pthread_cond_signal(&info->cond);
-  pthread_mutex_unlock(&info->mutex);
-}
-
-static void WaitProxyReady(struct transportProxyInfo* info) {
-  pthread_mutex_lock(&info->mutex);
-  while (info->proxyReady == 0)
-    pthread_cond_wait(&info->cond, &info->mutex);
-  pthread_mutex_unlock(&info->mutex);
-}
-
-static void SetProxyReady(struct transportProxyInfo* info) {
-  pthread_mutex_lock(&info->mutex);
-  info->proxyReady = 1;
-  pthread_cond_signal(&info->cond);
-  pthread_mutex_unlock(&info->mutex);
-}
-
-static void StopProxy(struct transportProxyInfo* info) {
-  struct ncclProxyArgs* fifoArgs = FifoGetNextArgs(info);
-  fifoArgs->active = -1;
-  FifoPushArgs(info);
-}
-
 #define RECV 0
 #define SEND 1
 
@@ -91,109 +35,214 @@ static bool NeedProxy(int type, int pattern, int root, struct ncclRing* ring, in
 
 enum { proxyRecv=0, proxySend=1 };
 
+#define PROXYARGS_ALLOCATE_SIZE 32
+struct ncclProxyPool {
+  struct ncclProxyPool *next;
+  struct ncclProxyArgs elems[PROXYARGS_ALLOCATE_SIZE];
+};
+
+ncclResult_t transportAllocateProxyArgs(struct ncclComm* comm, struct ncclProxyArgs** argsptr) {
+  struct ncclProxyState* state = &comm->proxyState;
+  struct ncclProxyArgs* elem;
+  pthread_mutex_lock(&state->mutex);
+  if (state->pool == NULL) {
+    // Allocate a new pool of elements
+    struct ncclProxyPool* newPool;
+    NCCLCHECK(ncclCalloc(&newPool, 1));
+    struct ncclProxyArgs* newElems = newPool->elems;
+    // Chain newly allocated elements
+    for (int i=0; i<PROXYARGS_ALLOCATE_SIZE; i++) {
+      if (i+1 < PROXYARGS_ALLOCATE_SIZE) newElems[i].next = newElems+i+1;
+    }
+    // Add them all to the pool list
+    state->pool = newElems;
+    // Save the pool memory block for later resource release
+    newPool->next = state->pools;
+    state->pools = newPool;
+  }
+  elem = state->pool;
+  state->pool = state->pool->next;
+  pthread_mutex_unlock(&state->mutex);
+  elem->next = elem->nextPeer = NULL;
+  *argsptr = elem;
+  return ncclSuccess;
+}
+
+static void ProxyAppend(struct ncclConnector* connector, struct ncclProxyArgs* args) {
+  struct ncclComm* comm = connector->comm;
+  struct ncclProxyState* state = &comm->proxyState;
+  pthread_mutex_lock(&state->mutex);
+  if (connector->proxyAppend == NULL) {
+    // Nothing running for that peer. Add to the circular list
+    if (state->ops == NULL) {
+      // Create the list
+      args->next = args;
+      state->ops = args;
+    } else {
+      // Insert element in the list
+      args->next = state->ops->next;
+      state->ops->next = args;
+    }
+    connector->proxyAppend = args;
+  } else {
+    // There is an active operation already for that peer.
+    // Add it to the per-peer list
+    connector->proxyAppend->nextPeer = args;
+    connector->proxyAppend = args;
+  }
+  pthread_mutex_unlock(&state->mutex);
+}
+
 template <int type>
-static void SaveProxy(int peer, struct ncclProxyArgs* args) {
-  if (peer < 0) return;
+static ncclResult_t SaveProxy(int peer, struct ncclProxyArgs* args) {
+  if (peer < 0) return ncclSuccess;
+
   struct ncclPeer* peerComm = args->channel->peers+peer;
   struct ncclConnector* connector = type == proxyRecv ? &peerComm->recv : &peerComm->send;
-  struct transportProxyInfo* info = connector->proxyInfo;
-  if (info == NULL) return;
-//  TRACE(NET, "Saving %s proxy to peer %d\n", type == proxyRecv ? "recv" : "send", peer);
-  args->connector = connector;
-  struct ncclProxyArgs* fifoArgs = FifoGetNextArgs(info);
-  memcpy(fifoArgs, args, sizeof(struct ncclProxyArgs));
-  __sync_synchronize();
-  fifoArgs->active = 1;
+  if (connector->transportComm->proxy == NULL) return ncclSuccess;
+
+  struct ncclProxyArgs* op;
+  NCCLCHECK(transportAllocateProxyArgs(connector->comm, &op));
+  memcpy(op, args, sizeof(struct ncclProxyArgs));
+  op->connector = connector;
+  op->progress = connector->transportComm->proxy;
+  op->state = ncclProxyOpReady;
+  ProxyAppend(connector, op);
+  return ncclSuccess;
 }
 
 ncclResult_t transportSaveProxies(struct ncclProxyArgs* args, int pattern, int root, int nranks) {
   if (pattern == ncclPatternRing || pattern == ncclPatternRingTwice || pattern == ncclPatternPipelineFrom || pattern == ncclPatternPipelineTo) {
     struct ncclRing* ring = &args->channel->ring;
-    if (NeedProxy(RECV, pattern, root, ring, nranks)) SaveProxy<proxyRecv>(ring->prev, args);
-    if (NeedProxy(SEND, pattern, root, ring, nranks)) SaveProxy<proxySend>(ring->next, args);
+    if (NeedProxy(RECV, pattern, root, ring, nranks)) NCCLCHECK(SaveProxy<proxyRecv>(ring->prev, args));
+    if (NeedProxy(SEND, pattern, root, ring, nranks)) NCCLCHECK(SaveProxy<proxySend>(ring->next, args));
   }
   if (pattern == ncclPatternTreeUp || pattern == ncclPatternTreeUpDown) {
     // Tree up
     struct ncclTree* tree = args->useCollTree ? &args->channel->collTree : &args->channel->tree;
-    for (int i=0; i<NCCL_MAX_TREE_ARITY; i++) SaveProxy<proxyRecv>(tree->down[i], args);
-    SaveProxy<proxySend>(tree->up, args);
+    for (int i=0; i<NCCL_MAX_TREE_ARITY; i++) NCCLCHECK(SaveProxy<proxyRecv>(tree->down[i], args));
+    NCCLCHECK(SaveProxy<proxySend>(tree->up, args));
   }
   if (pattern == ncclPatternTreeDown || pattern == ncclPatternTreeUpDown) {
     // Tree down
     struct ncclTree* tree = args->useCollTree ? &args->channel->collTree : &args->channel->tree;
-    for (int i=0; i< NCCL_MAX_TREE_ARITY; i++) SaveProxy<proxySend>(tree->down[i], args);
-    SaveProxy<proxyRecv>(tree->up, args);
+    for (int i=0; i< NCCL_MAX_TREE_ARITY; i++) NCCLCHECK(SaveProxy<proxySend>(tree->down[i], args));
+    NCCLCHECK(SaveProxy<proxyRecv>(tree->up, args));
   }
   return ncclSuccess;
 }
 
-ncclResult_t transportStartProxies(ncclComm* comm) {
-  for (int r=0; r<comm->nChannels; r++) {
-    struct ncclRing* ring = &comm->channels[r].ring;
-    FifoPushArgs(comm->channels[r].peers[ring->prev].recv.proxyInfo);
-    FifoPushArgs(comm->channels[r].peers[ring->next].send.proxyInfo);
-
-    struct ncclTree* tree = &comm->channels[r].tree;
-    for (int i=0; i<NCCL_MAX_TREE_ARITY && tree->down[i] >= 0; i++) FifoPushArgs(comm->channels[r].peers[tree->down[i]].recv.proxyInfo);
-    if (tree->up >= 0) FifoPushArgs(comm->channels[r].peers[tree->up].recv.proxyInfo);
-    for (int i=0; i<NCCL_MAX_TREE_ARITY && tree->down[i] >= 0; i++) FifoPushArgs(comm->channels[r].peers[tree->down[i]].send.proxyInfo);
-    if (tree->up >= 0) FifoPushArgs(comm->channels[r].peers[tree->up].send.proxyInfo);
-
-    if (comm->collNetSupport) {
-      struct ncclTree* ctree = &comm->channels[r].collTree;
-      for (int i=0; i<NCCL_MAX_TREE_ARITY && ctree->down[i] >= 0; i++) FifoPushArgs(comm->channels[r].peers[ctree->down[i]].recv.proxyInfo);
-      if (ctree->up >= 0) FifoPushArgs(comm->channels[r].peers[ctree->up].recv.proxyInfo);
-      for (int i=0; i<NCCL_MAX_TREE_ARITY && ctree->down[i] >= 0; i++) FifoPushArgs(comm->channels[r].peers[ctree->down[i]].send.proxyInfo);
-      if (ctree->up >= 0) FifoPushArgs(comm->channels[r].peers[ctree->up].send.proxyInfo);
-    }
-  }
-  pthread_yield(); // Let other threads run
-  return ncclSuccess;
-}
-
-void* persistentThread(void *opaqueInfo) {
-  struct transportProxyInfo* info = (struct transportProxyInfo*)opaqueInfo;
-  // Signal the main thread the context is created and it can proceed.
-  SetProxyReady(info);
+void* persistentThread(void *comm_) {
+  struct ncclComm* comm = (struct ncclComm*)comm_;
+  struct ncclProxyState* state = &comm->proxyState;
+  struct ncclProxyArgs* op = NULL;
+  ncclResult_t ret = ncclSuccess;
+  int idle = 1;
+  int idleSpin = 0;
   while (1) {
-    struct ncclProxyArgs args;
-    FifoPullArgs(info, &args);
-    if (args.active == -1) {
-      // Main thread asked to stop
+    do {
+      if (*comm->abortFlag) return NULL;
+      if (op == NULL) {
+        pthread_mutex_lock(&state->mutex);
+        op = state->ops;
+        if (op == NULL) {
+          if (state->stop) {
+            // No more commands to process and proxy has been requested to stop
+            pthread_mutex_unlock(&state->mutex);
+            return NULL;
+          }
+          pthread_cond_wait(&state->cond, &state->mutex);
+        }
+        pthread_mutex_unlock(&state->mutex);
+      }
+    } while (op == NULL);
+    op->idle = 0;
+    if (op->state != ncclProxyOpNone) ret = op->progress(op);
+    if (ret != ncclSuccess) {
+      comm->fatalError = ret;
+      INFO(NCCL_ALL,"%s:%d -> %d [Proxy Thread]", __FILE__, __LINE__, ret);
       return NULL;
     }
-    ncclResult_t res = info->func(&args);
-    if (res != ncclSuccess) {
-      info->comm->fatalError = res;
-      WARN("%s:%d -> %d [Proxy thread error]", __FILE__, __LINE__, res);
+    idle &= op->idle;
+    pthread_mutex_lock(&state->mutex);
+    if (!idle) idleSpin = 0;
+    struct ncclProxyArgs *next = op->next;
+    if (next->state == ncclProxyOpNone) {
+      struct ncclProxyArgs *freeOp = next;
+      if (next->nextPeer) {
+        // Replace next by its next per-peer element.
+        next = next->nextPeer;
+        if (op != freeOp) {
+          next->next = freeOp->next;
+          op->next = next;
+        } else {
+          next->next = next;
+        }
+      } else {
+        // Remove next from circular list
+        next->connector->proxyAppend = NULL;
+        if (op != freeOp) {
+          next = next->next;
+          op->next = next;
+        } else {
+          next = NULL;
+        }
+      }
+      if (freeOp == state->ops) state->ops = next;
+      freeOp->next = state->pool;
+      state->pool = freeOp;
     }
+    op = next;
+    if (op == state->ops) {
+      if (idle == 1) {
+        if (++idleSpin == 10) {
+          sched_yield();
+          idleSpin = 0;
+        }
+      }
+      idle = 1;
+    }
+    pthread_mutex_unlock(&state->mutex);
   }
 }
 
-ncclResult_t transportCreateProxy(struct ncclConnector* connector, threadFunc_t proxyfunc) {
-  if (proxyfunc) {
-    struct transportProxyInfo* info;
-    NCCLCHECK(ncclCalloc(&info, 1));
-    connector->proxyInfo = info;
-    info->cond = PTHREAD_COND_INITIALIZER;
-    info->mutex = PTHREAD_MUTEX_INITIALIZER;
-    info->func = proxyfunc;
-    info->argsFifoHead = info->argsFifoTail = 0;
-    info->proxyReady = 0;
-    info->comm = connector->comm;
-    pthread_create(&connector->proxyInfo->thread, NULL, persistentThread, info);
-    // Wait for thread to initialize its CUDA context.
-    WaitProxyReady(info);
+ncclResult_t transportStartProxy(struct ncclComm* comm) {
+  pthread_mutex_lock(&comm->proxyState.mutex);
+  if (comm->proxyState.ops != NULL)
+    pthread_cond_signal(&comm->proxyState.cond);
+  pthread_mutex_unlock(&comm->proxyState.mutex);
+  return ncclSuccess;
+}
+
+ncclResult_t transportCreateProxy(struct ncclComm* comm) {
+  if (!comm->proxyThread) {
+    comm->proxyState.cond = PTHREAD_COND_INITIALIZER;
+    comm->proxyState.mutex = PTHREAD_MUTEX_INITIALIZER;
+    comm->proxyState.ops = NULL;
+    pthread_create(&comm->proxyThread, NULL, persistentThread, comm);
   }
   return ncclSuccess;
 }
 
-ncclResult_t transportDestroyProxy(struct ncclConnector* connector) {
-  if (connector->proxyInfo) {
-    StopProxy(connector->proxyInfo);
-    pthread_join(connector->proxyInfo->thread, NULL);
-    free(connector->proxyInfo);
-    connector->proxyInfo = NULL;
+ncclResult_t transportDestroyProxy(struct ncclComm* comm) {
+  struct ncclProxyState* state = &comm->proxyState;
+
+  // Request the proxy to stop and then wake it
+  pthread_mutex_lock(&state->mutex);
+  state->stop = true;
+  pthread_cond_signal(&state->cond);
+  pthread_mutex_unlock(&state->mutex);
+  if (comm->proxyThread) pthread_join(comm->proxyThread, NULL);
+
+  // Free off any memory allocated for the proxy arg pools
+  pthread_mutex_lock(&state->mutex);
+  struct ncclProxyState* proxyState = &comm->proxyState;
+  while (proxyState->pools != NULL) {
+    struct ncclProxyPool *next = proxyState->pools->next;
+    free(proxyState->pools);
+    proxyState->pools = next;
   }
+  pthread_mutex_unlock(&state->mutex);
+
   return ncclSuccess;
 }

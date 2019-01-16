@@ -68,7 +68,7 @@ static void* const ncclKerns[ncclCollCount*ncclNumOps*ncclNumTypes*2*2] = {
 /*****************************************************************************/
 
 ncclResult_t ncclLaunchCooperativeKernelMultiDevice(struct cudaLaunchParams *paramsList, int* cudaDevs, int numDevices, int cgMode) {
-#if __CUDACC_VER_MAJOR__ >= 9
+#if CUDART_VERSION >= 9000
   if (cgMode & 0x01) {
     CUDACHECK(cudaLaunchCooperativeKernelMultiDevice(paramsList, numDevices,
             // These flags are to reduce the latency of using this API
@@ -199,7 +199,7 @@ ncclResult_t ncclBarrierEnqueueWait(ncclComm_t comm) {
   }
   // Start the network proxies as soon as the kernel has been launched. We can't
   // perform any CUDA call between the two or having a cudaFree between the CUDA
-  // launch and the transportStartProxies call could cause a deadlock.
+  // launch and the transportStartProxy call could cause a deadlock.
   // Also, starting the proxies after the CUDA launch seems to be better for
   // performance (latency).
   for (int r=0; r<params->gridDim.x; r++) {
@@ -208,7 +208,7 @@ ncclResult_t ncclBarrierEnqueueWait(ncclComm_t comm) {
     channel->collCount = 0;
   }
   params->gridDim.x = params->blockDim.x = 0;
-  NCCLCHECK(transportStartProxies(comm));
+  NCCLCHECK(transportStartProxy(comm));
   return ncclSuccess;
 }
 
@@ -234,7 +234,7 @@ static ncclResult_t getPatternInfo(struct ncclInfo* info) {
   else if (info->coll == ncclCollReduce) info->pattern = ncclPatternPipelineTo;
   else if (info->coll == ncclCollAllGather || info->coll == ncclCollReduceScatter) info->pattern = ncclPatternRing;
   else if (info->coll == ncclCollAllReduce) {
-    if (info->nBytes < ncclTreeThreshold())
+    if (info->nBytes <= info->comm->treeThreshold)
       info->pattern = ncclPatternTreeUpDown;
     else
       info->pattern = ncclPatternRingTwice;
@@ -280,9 +280,11 @@ static void getKernelInfo(struct ncclInfo* info, uint8_t* nChannels, uint16_t* n
   if (nc > info->comm->nChannels) nc = info->comm->nChannels;
 
   // Check if we have a fixed LL threshold, otherwise compute it.
+  int perThreadThreshold = info->comm->threadThreshold;
+  if (info->pattern >= ncclPatternTreeUp) perThreadThreshold *= 4;
   ssize_t llThreshold = info->comm->llThreshold >= 0 ?
     info->comm->llThreshold :
-    nc*nt*info->nchunksPerLoop*info->comm->threadThreshold;
+    nc*nt*info->nchunksPerLoop*perThreadThreshold;
 
   if (info->nBytes <= llThreshold) {
     *llMode = 1;
@@ -370,6 +372,7 @@ static ncclResult_t saveKernel(struct ncclInfo* info) {
 
   struct ncclColl coll;
   struct ncclProxyArgs proxyArgs;
+  memset(&proxyArgs, 0, sizeof(struct ncclProxyArgs));
   NCCLCHECK(computeColl(info, &coll, &proxyArgs));
 
   info->comm->myParams->blockDim.x = max(info->comm->myParams->blockDim.x, coll.args.nThreads);

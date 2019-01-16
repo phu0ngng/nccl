@@ -11,13 +11,29 @@
 #include "core.h"
 #include "nccl.h"
 
+// Exit If Abort Barrier across CTA: make sure all threads exit consistently
+// Each thread sets a predicate to true if abort == 1
+// all CTA's threads enter the barrier and do a popc on their predicates being True
+// If any of the thread's predicate was True, all the threads call exit()
+static inline __device__ void exitIfAbortBarrier(int abort) {
+  uint32_t popc;
+  asm ("{");
+  asm volatile ("   .reg .pred barr_pred;");
+  asm volatile ("   setp.eq.u32 barr_pred,%0,1;" :: "r"(abort));
+  asm volatile ("   bar.red.popc.u32 %0, 13, barr_pred;" : "=r"(popc));
+  asm ("}");
+  if (popc) { asm volatile ("exit;"); }
+}
+
 typedef void(*ncclKern_t)(struct CollectiveArgs* args);
 extern __device__ ncclKern_t ncclFuncs[];
 
 static __device__ void load_parallel(void* dst, void* src, size_t size, int tid) {
   int* d = (int*)dst;
   int* s = (int*)src;
-  __syncthreads();
+  // When aggregation is effective, if some threads have aborted inside the LL kernel,
+  // make sure the rest of the threads abort as well
+  exitIfAbortBarrier(0);
   for (int o = tid; o < (size/sizeof(int)); o += blockDim.x) d[o] = s[o];
   __syncthreads();
 }
@@ -29,7 +45,7 @@ static __device__ void load_coll(struct ncclColl* localColl, struct ncclColl* ho
 /* Functions for aggregation case */
 #define IMPL_COLL_FUNC(coll, op, ncclFunc, dtype, ctype) \
 __device__ void NCCL_COLL_NAME(coll, op, dtype)(struct CollectiveArgs* args) { \
-  coll##Kernel<UNROLL, ncclFunc<ctype>, ctype>(args); \
+  coll##Kernel<COLL_UNROLL, ncclFunc<ctype>, ctype>(args); \
 }
 
 #if NCCL_OP == 0
@@ -54,7 +70,7 @@ __global__ void NCCL_KERN_NAME(coll, op, dtype)(struct ncclColl firstColl) { \
   while (1) { \
     if (tid < c->args.nThreads) { \
       if (c->funcIndex == fIndex) { \
-        coll##Kernel<UNROLL, ncclFunc<ctype>, ctype>(&c->args); \
+        coll##Kernel<COLL_UNROLL, ncclFunc<ctype>, ctype>(&c->args); \
       } else { \
         ncclFuncs[c->funcIndex](&c->args); \
       } \
@@ -137,6 +153,6 @@ __global__ void NCCL_KERN_NAME(coll, op, dtype)(struct ncclColl firstColl) { \
 #define IMPL_COLL_C(collf, colln)
 #endif
 
-#define UNROLL 4
+#define COLL_UNROLL 4
 
 #endif

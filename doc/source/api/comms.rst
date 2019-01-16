@@ -54,15 +54,24 @@ ncclCommDestroy
 
 .. c:function:: ncclResult_t ncclCommDestroy(ncclComm_t comm)
 
-Frees resources that are allocated to a communicator object *comm*.
+Frees resources that are allocated to a communicator object *comm*. Waits for any uncompleted
+operations before destroying the communicator.
+
+ncclCommAbort
+---------------
+
+.. c:function:: ncclResult_t ncclCommAbort(ncclComm_t comm)
+
+Frees resources that are allocated to a communicator object *comm*. Will abort any uncompleted
+operations before destroying the communicator.
 
 ncclCommGetAsyncError
----------------
+---------------------
 
 .. c:function:: ncclResult_t ncclCommGetAsyncError(ncclComm_t comm, ncclResult_t* asyncError)
 
 Queries whether the communicator has encountered any asynchronous errors. If there
-has been an error on the communicator, user should destroy the communicator with :c:function:`ncclCommDestroy`.
+has been an error on the communicator, user should destroy the communicator with :c:func:`ncclCommAbort`.
 If an error occurs on the communicator, nothing can be assumed about the completion or correctness
 of operations enqueued on that communicator.
 

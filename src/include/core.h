@@ -8,6 +8,7 @@
 #define NCCL_CORE_H_
 
 #define NCCL_MAX_OPS 2048
+#define NCCL_STEPS 8
 
 #include "nccl.h"
 #include "transport.h"
@@ -18,7 +19,7 @@
 #include <stdlib.h>
 #include <cuda_runtime.h>
 
-#if __CUDACC_VER_MAJOR__ < 9
+#if CUDART_VERSION < 9000
 struct cudaLaunchParams {
   void *func;
   dim3 gridDim;
@@ -32,7 +33,6 @@ struct cudaLaunchParams {
 #define MAXCHANNELS 16
 #define MAXTHREADS 256
 #define DEFAULT_BUFFER_SIZE_BYTES (1LL << 22) /* 4MiB */
-#define NCCL_STEPS 8
 
 // Channels / LL tuning
 #define NCCL_LL_CHANNEL_THRESHOLD 8 // Per thread size before we start increasing nrings
@@ -127,7 +127,7 @@ struct ncclConnInfo {
 
 struct ncclConnector {
   int connected;
-  struct transportProxyInfo* proxyInfo;
+  struct ncclProxyArgs *proxyAppend;
   struct ncclTransportComm* transportComm;
   void* transportResources; // Host-side resources
   struct ncclConnInfo conn;
@@ -289,6 +289,9 @@ struct ncclComm {
   ssize_t llThreshold;
   ssize_t threadThreshold;
 
+  // Tree algorithm threshold
+  ssize_t treeThreshold;
+
   // An internal CUDA stream for NCCL kernel CGMD launches
   int groupCudaStream;
   cudaStream_t groupStream;
@@ -320,6 +323,10 @@ struct ncclComm {
   int* intraCC; // Only to check all have the same ComputeCap and disable CGMode if not
   struct ncclColl args;
   void* argsptr;
+
+  // Global proxy thread
+  pthread_t proxyThread;
+  struct ncclProxyState proxyState;
 };
 
 // Check CUDA calls
@@ -400,6 +407,7 @@ struct ncclComm {
 #endif // end PROFAPI
 
 int ncclCudaCompCap();
+ncclResult_t ncclNvlinkGpu(int* nvlink);
 int64_t ncclTreeThreshold();
 
 static __inline__ int ncclTypeSize(ncclDataType_t type) {

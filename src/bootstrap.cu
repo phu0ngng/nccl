@@ -25,15 +25,19 @@ static ncclResult_t bootstrapNetCloseListen(void* listenComm) { NCCLCHECK(ncclBo
 
 // Additional sync functions based on async + test for bootstrap, using host ptrs.
 static ncclResult_t bootstrapNetSend(void* sendComm, void* data, int size) {
-  void* request;
-  NCCLCHECK(ncclBootstrapNet->isend(sendComm, data, size, NCCL_PTR_HOST, &request));
+  void* request, *mhandle;
+  NCCLCHECK(ncclBootstrapNet->regMr(sendComm, data, size, NCCL_PTR_HOST, &mhandle));
+  NCCLCHECK(ncclBootstrapNet->isend(sendComm, data, size, mhandle, &request));
+  NCCLCHECK(ncclBootstrapNet->deregMr(sendComm, mhandle));
   int done = 0;
   while (!done) NCCLCHECK(bootstrapNetTest(request, &done, NULL));
   return ncclSuccess;
 }
 static ncclResult_t bootstrapNetRecv(void* recvComm, void* data, int size) {
-  void* request;
-  NCCLCHECK(ncclBootstrapNet->irecv(recvComm, data, size, NCCL_PTR_HOST, &request));
+  void* request, *mhandle;
+  NCCLCHECK(ncclBootstrapNet->regMr(recvComm, data, size, NCCL_PTR_HOST, &mhandle));
+  NCCLCHECK(ncclBootstrapNet->irecv(recvComm, data, size, mhandle, &request));
+  NCCLCHECK(ncclBootstrapNet->deregMr(recvComm, mhandle));
   int done = 0;
   while (!done) NCCLCHECK(bootstrapNetTest(request, &done, NULL));
   return ncclSuccess;
@@ -202,6 +206,16 @@ ncclResult_t bootstrapInit(ncclUniqueId* commId, int rank, int nranks, void** co
   NCCLCHECK(bootstrapNetListen(state->dev, &info.extHandleListen, &state->extBstrapListenComm));
   NCCLCHECK(bootstrapNetListen(state->dev, &info.extHandleListenRoot, &extBstrapListenCommRoot));
 
+  // stagger connection times to avoid an overload of the root at very high rank counts
+  if (nranks > 128) {
+    long msec = rank;
+    struct timespec tv;
+    tv.tv_sec = msec / 1000;
+    tv.tv_nsec = 1000000 * (msec % 1000);
+    TRACE(NCCL_INIT, "rank %d delaying connection to root by %ld msec", rank, msec);
+    (void) nanosleep(&tv, NULL);
+  }
+
   // send info on my listening socket to root
   NCCLCHECK(bootstrapNetConnect(state->dev, id->extHandleRoot, &tmpSendComm));
   NCCLCHECK(bootstrapNetSend(tmpSendComm, &info, sizeof(info)));
@@ -241,8 +255,8 @@ ncclResult_t bootstrapAllGather(void* commState, void* allData, int size) {
    * and send previous step's data from (rank-i) to right
    */
   for (int i=0; i<nranks-1; i++) {
-    int rslice = (rank - i - 1 + nranks) % nranks;
-    int sslice = (rank - i + nranks) % nranks;
+    size_t rslice = (rank - i - 1 + nranks) % nranks;
+    size_t sslice = (rank - i + nranks) % nranks;
 
     // Send slice to the right
     NCCLCHECK(bootstrapNetSend(state->extBstrapRingSendComm, data+sslice*size, size));

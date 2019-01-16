@@ -16,7 +16,7 @@ export TMP_PKG_DIR=$INSTALL/tmp_tensorflow_pkg
 
 BENCH_DIR=$INSTALL/tf_benchmarks/scripts/tf_cnn_benchmarks
 
-NCCL_DISABLE_CHECKS=1 NCCL_DEBUG=WARN srun -p $gpumodel --exclusive \
+NCCL_DISABLE_CHECKS=1 NCCL_DEBUG=INFO srun -p $gpumodel -t 40 --exclusive \
 python $BENCH_DIR/tf_cnn_benchmarks.py --local_parameter_device=gpu --num_gpus=8 --batch_size=128 --model=resnet50 --variable_update=replicated --use_nccl=True | \
 #awk '/total images/ {print $NF}' | \
 tee $result.out

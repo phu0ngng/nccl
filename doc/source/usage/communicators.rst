@@ -44,3 +44,69 @@ Related links:
  * :c:func:`ncclCommInitAll`
  * :c:func:`ncclGetUniqueId`
  * :c:func:`ncclCommInitRank`
+
+*******************************************
+Error handling and communicator destruction
+*******************************************
+
+Normal termination
+------------------
+
+Resources associated to a communicator can be destroyed with ncclCommDestroy. This operation will wait for operations
+to complete but will not synchronize with other ranks. There is therefore no need to use group semantics with
+ncclCommDestroy.
+
+Related link: :c:func:`ncclCommDestroy`
+
+Asynchronous errors and error handling
+--------------------------------------
+
+Some communication errors, and in particular network errors, are reported through the ncclCommGetAsyncError function.
+Operations experiencing an asynchronous error will usually not progress and never complete. When an asynchronous error
+happens, the operation should be aborted and the communicator destroyed using ncclCommAbort.
+When waiting for NCCL operations to complete, applications should call ncclCommGetAsyncError and destroy the
+communicator when an error happens.
+
+The following code shows how to wait on NCCL operations and poll for asynchronous errors, instead of using
+cudaStreamSynchronize.
+
+.. code:: C
+
+ int ncclStreamSynchronize(cudaStream_t stream, ncclComm_t comm) {
+   cudaError_t cudaErr;
+   ncclResult_t ncclErr, ncclAsyncErr;
+   while (1) {
+    cudaErr = cudaStreamQuery(stream);
+    if (cudaErr == cudaSuccess)
+      return 0;
+
+    if (cudaErr != cudaErrorNotReady) {
+      printf("CUDA Error : cudaStreamQuery returned %d\n", cudaErr);
+      return 1;
+    }
+
+    ncclErr = ncclCommGetAsyncError(comm, &ncclAsyncErr);
+    if (ncclErr != ncclSuccess) {
+      printf("NCCL Error : ncclCommGetAsyncError returned %d\n", ncclErr);
+      return 1;
+    }
+
+    if (ncclAsyncErr != ncclSuccess) {
+      // An asynchronous error happened. Stop the operation and destroy
+      // the communicator
+      ncclErr = ncclCommAbort(comm);
+      if (ncclErr != ncclSuccess)
+        printf("NCCL Error : ncclCommDestroy returned %d\n", ncclErr);
+      // Caller may abort or try to re-create a new communicator.
+      return 2;
+    }
+
+    // We might want to let other threads (including NCCL threads) use the CPU.
+    pthread_yield();
+   }
+ }
+
+Related links:
+
+ * :c:func:`ncclCommGetAsyncError`
+ * :c:func:`ncclCommAbort`

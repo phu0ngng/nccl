@@ -316,43 +316,73 @@ testResult_t CheckData(struct threadArgs* args, ncclDataType_t type, ncclRedOp_t
   return testSuccess;
 }
 
-cudaError_t cudaStreamSyncYield(cudaStream_t stream) {
-  while (1) {
-    cudaError_t err = cudaStreamQuery(stream);
-    if (err != cudaErrorNotReady) return err;
-    pthread_yield();
+testResult_t testStreamSynchronize(int ngpus, cudaStream_t* streams, ncclComm_t* comms) {
+  cudaError_t cudaErr;
+  ncclResult_t ncclAsyncErr;
+  int remaining = ngpus;
+  int* done = (int*)malloc(sizeof(int)*ngpus);
+  memset(done, 0, sizeof(int)*ngpus);
+  while (remaining) {
+   int idle = 1;
+   for (int i=0; i<ngpus; i++) {
+     if (done[i]) continue;
+
+     cudaErr = cudaStreamQuery(streams[i]);
+     if (cudaErr == cudaSuccess) {
+       done[i] = 1;
+       remaining--;
+       idle = 0;
+       continue;
+     }
+
+     if (cudaErr != cudaErrorNotReady) CUDACHECK(cudaErr);
+
+     if (comms) {
+       NCCLCHECK(ncclCommGetAsyncError(comms[i], &ncclAsyncErr));
+       if (ncclAsyncErr != ncclSuccess) {
+         // An asynchronous error happened. Stop the operation and destroy
+         // the communicator
+         for (int i=0; i<ngpus; i++)
+           NCCLCHECK(ncclCommAbort(comms[i]));
+         // Abort the perf test
+         NCCLCHECK(ncclAsyncErr);
+       }
+     }
+   }
+
+   // We might want to let other threads (including NCCL threads) use the CPU.
+   if (idle) pthread_yield();
   }
+  return testSuccess;
 }
 
-testResult_t startColl(struct threadArgs* args, ncclDataType_t type, ncclRedOp_t op, int root, int in_place, int thread_offset) {
+testResult_t startColl(struct threadArgs* args, ncclDataType_t type, ncclRedOp_t op, int root, int in_place, int iter) {
   size_t count = args->nbytes / wordSize(type);
 
-  if (args->nGpus == 1) {
-    int rank = args->proc*args->nThreads + args->thread;
-    TESTCHECK(args->collTest->runColl((void*)(in_place ? ((void *)((uintptr_t)args->recvbuffs[0] + args->sendInplaceOffset*rank)) : args->sendbuffs[0]),
-        (void*)(in_place ? (void*)((uintptr_t)args->recvbuffs[0] + args->recvInplaceOffset*rank) : args->recvbuffs[0]),
-        count, type, op, root, args->comms[0], args->streams[0]));
-  } else {
-    NCCLCHECK(ncclGroupStart());
-    for (int i = 0; i < args->nGpus; i++) {
+  // Try to change offset for each iteration so that we avoid cache effects and catch race conditions in ptrExchange
+  size_t shift = (args->nbytes * iter) % args->maxbytes;
+  if (shift + args->nbytes > args->maxbytes) shift = 0;
+
+  if (args->nGpus > 1) NCCLCHECK(ncclGroupStart());
+  for (int i = 0; i < args->nGpus; i++) {
 #ifndef NCCL_MAJOR
-      int cudaDev;
-      NCCLCHECK(ncclCommCuDevice(args->comms[i], &cudaDev));
-      CUDACHECK(cudaSetDevice(cudaDev));
+    int cudaDev;
+    NCCLCHECK(ncclCommCuDevice(args->comms[i], &cudaDev));
+    CUDACHECK(cudaSetDevice(cudaDev));
 #endif
-      int rank = ((args->proc*args->nThreads + args->thread)*args->nGpus + i);
-      TESTCHECK(args->collTest->runColl((void*)(in_place ? ((void *)((uintptr_t)args->recvbuffs[i] + args->sendInplaceOffset*rank)) : args->sendbuffs[i]),
-          (void*)(in_place ? (void*)((uintptr_t)args->recvbuffs[i] + args->recvInplaceOffset*rank) : args->recvbuffs[i]),
-          count, type, op, root, args->comms[i], args->streams[i]));
-    }
-    NCCLCHECK(ncclGroupEnd());
+    int rank = ((args->proc*args->nThreads + args->thread)*args->nGpus + i);
+    char* recvBuff = ((char*)args->recvbuffs[i]) + shift;
+    char* sendBuff = ((char*)args->sendbuffs[i]) + shift;
+    TESTCHECK(args->collTest->runColl(
+          (void*)(in_place ? recvBuff + args->sendInplaceOffset*rank : sendBuff),
+          (void*)(in_place ? recvBuff + args->recvInplaceOffset*rank : recvBuff),
+        count, type, op, root, args->comms[i], args->streams[i]));
   }
+  if (args->nGpus > 1) NCCLCHECK(ncclGroupEnd());
 
   if (blocking_coll) {
     //if args have been swapped, complete op before returning
-    for (int i = 0; i < args->nGpus; ++i) {
-      CUDACHECK(cudaStreamSyncYield(args->streams[i]));
-    }
+    TESTCHECK(testStreamSynchronize(args->nGpus, args->streams, args->comms));
   }
   if (blocking_coll) Barrier(args);
   return testSuccess;
@@ -361,9 +391,7 @@ testResult_t startColl(struct threadArgs* args, ncclDataType_t type, ncclRedOp_t
 testResult_t completeColl(struct threadArgs* args) {
   if (blocking_coll) return testSuccess;
 
-  for (int i = 0; i < args->nGpus; ++i) {
-    CUDACHECK(cudaStreamSyncYield(args->streams[i]));
-  }
+  TESTCHECK(testStreamSynchronize(args->nGpus, args->streams, args->comms));
   return testSuccess;
 }
 
@@ -371,6 +399,8 @@ testResult_t BenchTime(struct threadArgs* args, ncclDataType_t type, ncclRedOp_t
   size_t count = args->nbytes / wordSize(type);
 
   // Sync
+  TESTCHECK(startColl(args, type, op, root, in_place, 0));
+  TESTCHECK(completeColl(args));
 
   Barrier(args);
 
@@ -378,8 +408,8 @@ testResult_t BenchTime(struct threadArgs* args, ncclDataType_t type, ncclRedOp_t
   auto start = std::chrono::high_resolution_clock::now();
   for (int iter = 0; iter < iters; iter++) {
     if (agg_iters>1) NCCLCHECK(ncclGroupStart());
-    for (int iter = 0; iter < agg_iters; iter++) {
-      startColl(args, type, op, root, in_place, iter);
+    for (int aiter = 0; aiter < agg_iters; aiter++) {
+      TESTCHECK(startColl(args, type, op, root, in_place, iter*agg_iters+aiter));
     }
     if (agg_iters>1) NCCLCHECK(ncclGroupEnd());
   }
@@ -561,9 +591,7 @@ testResult_t compThread(struct threadArgs* args) {
       CUDACHECK(cudaSetDevice(gpuids[i]));
       compute<<<1, 256, 0, streams[i]>>>(ptrs[i], COMP_SIZE);
     }
-    for (int i=0; i<args->nGpus; i++) {
-      CUDACHECK(cudaStreamSyncYield(streams[i]));
-    }
+    TESTCHECK(testStreamSynchronize(args->nGpus, streams, NULL));
     for (int i=0; i<args->nGpus; i++) {
       CUDACHECK(cudaFree(ptrs[i]));
     }
@@ -604,9 +632,8 @@ testResult_t AllocateBuffs(void **sendbuff, size_t sendBytes, void **recvbuff, s
     static void *cached_ptr = NULL;
     static void *cached_hostptr = NULL;
 
-    CUDACHECK(cudaMalloc(sendbuff, sendBytes));
-    //work around for inline reduce scatter where recv count is smaller that send count
-    CUDACHECK(cudaMalloc(recvbuff, (sendBytes > recvBytes) ? sendBytes : recvBytes));
+    CUDACHECK(cudaMalloc(sendbuff, nbytes));
+    CUDACHECK(cudaMalloc(recvbuff, nbytes));
 
     if (is_first || !sameExpected) {
         CUDACHECK(cudaHostAlloc(expectedHost, recvBytes, cudaHostAllocPortable | cudaHostAllocMapped));
@@ -969,7 +996,7 @@ testResult_t run() {
 
   if (!parallel_init) {
     for(int i=0; i<nGpus*nThreads; ++i)
-      ncclCommDestroy(comms[i]);
+      NCCLCHECK(ncclCommDestroy(comms[i]));
     free(comms);
   }
 
