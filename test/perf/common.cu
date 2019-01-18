@@ -473,10 +473,10 @@ testResult_t BenchTime(struct threadArgs* args, ncclDataType_t type, ncclRedOp_t
 
 void setupArgs(size_t size, ncclDataType_t type, struct threadArgs* args) {
   int nranks = args->nProcs*args->nGpus*args->nThreads;
-  size_t count, sendCount, recvCount, paramCount, sendInplaceOffset, recvInplaceOffset, procSharedCount;
+  size_t count, sendCount, recvCount, paramCount, sendInplaceOffset, recvInplaceOffset;
   
   count = size / wordSize(type);
-  args->collTest->getCollByteCount(&sendCount, &recvCount, &paramCount, &sendInplaceOffset, &recvInplaceOffset, &procSharedCount, (size_t)count, (size_t)nranks);
+  args->collTest->getCollByteCount(&sendCount, &recvCount, &paramCount, &sendInplaceOffset, &recvInplaceOffset, (size_t)count, (size_t)nranks);
 
   args->nbytes = paramCount * wordSize(type);
   args->sendBytes = sendCount * wordSize(type);
@@ -837,10 +837,9 @@ testResult_t run() {
   void* sendbuffs[nGpus*nThreads];
   void* recvbuffs[nGpus*nThreads];
   void* expected[nGpus*nThreads];
-  void *procSharedHost, *procShared;
-  size_t sendBytes, recvBytes, procSharedBytes;
+  size_t sendBytes, recvBytes;
 
-  ncclTestEngine.getBuffSize(&sendBytes, &recvBytes, &procSharedBytes, (size_t)maxBytes, (size_t)nProcs*nGpus*nThreads); 
+  ncclTestEngine.getBuffSize(&sendBytes, &recvBytes, (size_t)maxBytes, (size_t)nProcs*nGpus*nThreads); 
 
   for (int i=0; i<nGpus*nThreads; i++) {
     CUDACHECK(cudaSetDevice(localRank*nThreads*nGpus+i));
@@ -849,11 +848,6 @@ testResult_t run() {
       streams[i] = NULL;
     else
       CUDACHECK(cudaStreamCreateWithFlags(streams+i, cudaStreamNonBlocking));
-  }
-
-  if (procSharedBytes > 0) { 
-      CUDACHECK(cudaHostAlloc(&procSharedHost, procSharedBytes, cudaHostAllocPortable | cudaHostAllocMapped));
-      procShared = procSharedHost;
   }
 
   //if parallel init is not selected, use main thread to initialize NCCL
@@ -921,8 +915,6 @@ testResult_t run() {
     threads[t].args.comms=comms+t*nGpus;
     threads[t].args.streams=streams+t*nGpus;
 
-    threads[t].args.procSharedHost = procSharedHost;
-    threads[t].args.procShared = procShared;
     threads[t].args.barrier = (volatile int*)barrier;
     threads[t].args.barrier_idx = 0;
     threads[t].args.sync = (volatile int*)sync;

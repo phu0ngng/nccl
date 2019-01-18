@@ -7,10 +7,9 @@
 #include "cuda_runtime.h"
 #include "common.h"
 
-void AllReduceGetCollByteCount(size_t *sendcount, size_t *recvcount, size_t *paramcount, size_t *sendInplaceOffset, size_t *recvInplaceOffset, size_t *procSharedCount, size_t count, int nranks) {
+void AllReduceGetCollByteCount(size_t *sendcount, size_t *recvcount, size_t *paramcount, size_t *sendInplaceOffset, size_t *recvInplaceOffset, size_t count, int nranks) {
   *sendcount = count;
   *recvcount = count;
-  *procSharedCount = 0;
   *sendInplaceOffset = 0;
   *recvInplaceOffset = 0;
   *paramcount = *sendcount;
@@ -55,9 +54,9 @@ struct testColl allReduceTest = {
   AllReduceRunColl
 };
 
-void AllReduceGetBuffSize(size_t *sendcount, size_t *recvcount, size_t *procSharedCount, size_t count, int nranks) {
+void AllReduceGetBuffSize(size_t *sendcount, size_t *recvcount, size_t count, int nranks) {
   size_t paramcount, sendInplaceOffset, recvInplaceOffset;
-  AllReduceGetCollByteCount(sendcount, recvcount, &paramcount, &sendInplaceOffset, &recvInplaceOffset, procSharedCount, count, nranks);
+  AllReduceGetCollByteCount(sendcount, recvcount, &paramcount, &sendInplaceOffset, &recvInplaceOffset, count, nranks);
 }
 
 testResult_t AllReduceRunTest(struct threadArgs* args, int root, ncclDataType_t type, const char* typeName, ncclRedOp_t op, const char* opName) {

@@ -10,10 +10,9 @@
 //InitRecvResult is not ready yet for that, so the test will report FAILED if checks are enabled.
 //#define TRIANGULAR
 
-void ReduceScattervGetCollByteCount(size_t *sendcount, size_t *recvcount, size_t *paramcount, size_t *sendInplaceOffset, size_t *recvInplaceOffset, size_t *procSharedCount, size_t count, int nranks) {
+void ReduceScattervGetCollByteCount(size_t *sendcount, size_t *recvcount, size_t *paramcount, size_t *sendInplaceOffset, size_t *recvInplaceOffset, size_t count, int nranks) {
     *sendcount = (count/nranks)*nranks;
     *recvcount = count/nranks;
-    *procSharedCount = *sendcount;
     *sendInplaceOffset = 0;
     *recvInplaceOffset = count/nranks;
     *paramcount = *recvcount;
@@ -83,9 +82,9 @@ struct testColl reduceScattervTest = {
   ReduceScattervRunColl
 };
 
-void ReduceScattervGetBuffSize(size_t *sendcount, size_t *recvcount, size_t *procSharedCount, size_t count, int nranks) {
+void ReduceScattervGetBuffSize(size_t *sendcount, size_t *recvcount, size_t count, int nranks) {
   size_t paramcount, sendInplaceOffset, recvInplaceOffset;
-  ReduceScattervGetCollByteCount(sendcount, recvcount, &paramcount, &sendInplaceOffset, &recvInplaceOffset, procSharedCount, count, nranks);
+  ReduceScattervGetCollByteCount(sendcount, recvcount, &paramcount, &sendInplaceOffset, &recvInplaceOffset, count, nranks);
 }
 
 testResult_t ReduceScattervRunTest(struct threadArgs* args, int root, ncclDataType_t type, const char* typeName, ncclRedOp_t op, const char* opName) {
