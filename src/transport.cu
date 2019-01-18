@@ -93,19 +93,29 @@ static void ProxyAppend(struct ncclConnector* connector, struct ncclProxyArgs* a
   pthread_mutex_unlock(&state->mutex);
 }
 
+extern struct ncclCollTransport collNetTransport;
+
 template <int type>
 static ncclResult_t SaveProxy(int peer, struct ncclProxyArgs* args) {
   if (peer < 0) return ncclSuccess;
 
   struct ncclPeer* peerComm = args->channel->peers+peer;
   struct ncclConnector* connector = type == proxyRecv ? &peerComm->recv : &peerComm->send;
-  if (connector->transportComm->proxy == NULL) return ncclSuccess;
+  // Currently select proxy func differently due to different API
+  // TODO: possible to merge API?
+  proxyProgressFunc_t ppFunc = NULL;
+  if (args->useCollTree) {
+    ppFunc = type == proxyRecv ? collNetTransport.allreduce.recvProxy : collNetTransport.allreduce.sendProxy;
+  } else {
+    ppFunc = connector->transportComm->proxy;
+  }
+  if (ppFunc == NULL) return ncclSuccess;
 
   struct ncclProxyArgs* op;
   NCCLCHECK(transportAllocateProxyArgs(connector->comm, &op));
   memcpy(op, args, sizeof(struct ncclProxyArgs));
   op->connector = connector;
-  op->progress = connector->transportComm->proxy;
+  op->progress = ppFunc;
   op->state = ncclProxyOpReady;
   ProxyAppend(connector, op);
   return ncclSuccess;
