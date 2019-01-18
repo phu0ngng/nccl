@@ -25,9 +25,8 @@ int ncclstringtocoll(char *str) {
   return 0;
 }
 
-void ReplayGetBuffSize(size_t *sendcount, size_t *recvcount, size_t *procSharedCount, int *sameExpected, size_t count, int nranks) {
+void ReplayGetBuffSize(size_t *sendcount, size_t *recvcount, size_t *procSharedCount, size_t count, int nranks) {
   *sendcount = *recvcount = *procSharedCount = 1024*1024*1024;
-  *sameExpected = 0;
 }
 
 testResult_t ReplayRunTest(struct threadArgs* args, int root, ncclDataType_t type, const char* typeName, ncclRedOp_t op, const char* opName) {
