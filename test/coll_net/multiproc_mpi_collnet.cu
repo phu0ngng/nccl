@@ -163,6 +163,17 @@ int main(int argc, char *argv[]) {
     if (rank == 0)
       printf("Usage : %s <GPU list per rank>\n", argv[0]);
     exit(1);
+  } else if (argc == nranks+1) {
+    int debugMode = atoi(argv[nranks]);
+    if (debugMode) {
+      // Wait for GDB to attach
+      volatile int i = 0;
+      char hostname[256];
+      gethostname(hostname, sizeof(hostname));
+      printf("PID %d on %s ready for attach\n", getpid(), hostname);
+      fflush(stdout);
+      while (i == 0) sleep(5);
+    }
   }
 
   int gpu = atoi(argv[rank+1]);

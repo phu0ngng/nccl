@@ -206,6 +206,26 @@ static void getTag(int *tag) {
   *tag = val;
 }
 
+static __inline__ int ncclTypeSize(ncclDataType_t type) {
+  switch (type) {
+    case ncclInt8:
+    case ncclUint8:
+      return 1;
+    case ncclFloat16:
+      return 2;
+    case ncclInt32:
+    case ncclUint32:
+    case ncclFloat32:
+      return 4;
+    case ncclInt64:
+    case ncclUint64:
+    case ncclFloat64:
+      return 8;
+    default:
+      return -1;
+  }
+}
+
 static int getCudaSupport() {
   static int cudaSupport = -1;
   if (cudaSupport == -1) {
@@ -301,7 +321,7 @@ int ncclCollNetMpiIallreduce(void* collComm, void* sendData, void* recvData, int
   struct ncclCollNetMpiSendComm* comm = (struct ncclCollNetMpiSendComm*)collComm;
   MPI_Request* mpiRequest = ncclCollNetMpiGetRequest();
   *request = mpiRequest;
-  MPI_PROTECT(ret, MPI_Iallreduce(sendData, recvData, count, MPI_BYTE, MPI_SUM/*TODO*/, ncclCollNetMpiComm, mpiRequest));
+  MPI_PROTECT(ret, MPI_Iallreduce(sendData, recvData, count*ncclTypeSize(dataType), MPI_BYTE, MPI_SUM/*TODO*/, ncclCollNetMpiComm, mpiRequest));
   return ret;
 }
 
@@ -345,6 +365,7 @@ int ncclCollNetMpiTest(void* request, int* done, int* size) {
   //printf("ncclCollNetMpiTest\n");
   if (request == 0xdeadbeef) {
     *done = 1;
+    *size = -1;
     return 0;
   }
   MPI_Request* mpiRequest = (MPI_Request*)request;
