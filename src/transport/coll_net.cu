@@ -24,13 +24,19 @@ struct collNetConnectInfo {
   collNetHandle_t collNetHandle;
 };
 
+/* State type */
+typedef enum { collReqNone        =  0,
+               collReqPosted      =  1,
+               collReqDone        =  2,
+               collReqNumStates   =  3 } collReqState_t;
+
 // TODO: find correct way to share things between two proxies
 #define SHARED_REQ_Q
 
 #ifdef SHARED_REQ_Q
 struct reqState {
   volatile void* intmBuff;
-  volatile short sendReady;
+  volatile collReqState_t state;
 };
 #endif
 
@@ -364,7 +370,7 @@ ncclResult_t collNetSendProxy(struct ncclProxyArgs* args) {
           int count = sizesFifo[buffSlot]/ncclTypeSize(args->dtype);
 #ifdef SHARED_REQ_Q
           int readySlot = args->tail%NCCL_STEPS;
-          if (reqFifo[readySlot].sendReady != 0 || reqFifo[readySlot].intmBuff == NULL) {
+          if (reqFifo[readySlot].state != collReqNone || reqFifo[readySlot].intmBuff == NULL) {
             goto end;
           }
 #endif
@@ -372,6 +378,9 @@ ncclResult_t collNetSendProxy(struct ncclProxyArgs* args) {
           INFO(NCCL_INIT,"Send proxy : opCount %lx head %lx tail %lx prevTail %p prevTail %lx end %lx nsteps %d llMode %d count %d request %p ==> Posted", args->opCount, args->head, args->tail, prevTail, *prevTail, args->end, args->nsteps, args->llMode, count, args->requests[buffSlot]);
           if (args->requests[buffSlot] != NULL) {
             sizesFifo[buffSlot] = -1;
+#ifdef SHARED_REQ_Q
+            reqFifo[readySlot].state = collReqPosted;
+#endif
             // Make sure size is reset to zero before we update the head.
             __sync_synchronize();
             args->tail += args->sliceSteps;
@@ -388,7 +397,7 @@ end:
           INFO(NCCL_INIT,"Send proxy : opCount %lx head %lx tail %lx prevTail %p prevTail %lx end %lx nsteps %d llMode %d size %d request %p ==> Done", args->opCount, args->head, args->tail, prevTail, *prevTail, args->end, args->nsteps, args->llMode, size, args->requests[buffSlot]);
 #ifdef SHARED_REQ_Q
           int readySlot = args->head%NCCL_STEPS;
-          reqFifo[readySlot].sendReady = 1;
+          reqFifo[readySlot].state = collReqDone;
 #endif
           args->head += args->sliceSteps;
           *prevHead = args->head;
@@ -470,33 +479,27 @@ ncclResult_t collNetRecvProxy(struct ncclProxyArgs* args) {
         int buffSlot = args->tail%NCCL_STEPS;
 #ifdef SHARED_REQ_Q
         int readyHead = *reqFifoHead%NCCL_STEPS;
-        // test if send request is complete
-        if (reqFifo[readyHead].sendReady == 0) {
+        // test if send request is posted
+        if (reqFifo[readyHead].state == collReqNone) {
           goto quit;
         }
-        INFO(NCCL_INIT,"Recv proxy : send request %lx ==> Ready", buffSlot);
 #endif
-        *(args->requests+buffSlot) = (void*)0xdeadbeef;  //TODO
         INFO(NCCL_INIT,"Recv proxy : opCount %lx head %lx tail %lx nextTail %p nextTail %lx end %lx nsteps %d llMode %d ==> Posted", args->opCount, args->head, args->tail, nextTail, *nextTail, args->end, args->nsteps, args->llMode);
-        // cleaning
-#ifdef SHARED_REQ_Q
-        reqFifo[readyHead].sendReady = 0;
-        reqFifo[readyHead].intmBuff = NULL;
-#endif
-        if (args->requests[buffSlot] != NULL) {
-          args->tail += args->sliceSteps;
-          args->idle = 0;
-        }
+        args->tail += args->sliceSteps;
+        args->idle = 0;
 quit:
       }
       if (args->tail > args->head) {
-        int done;
         int buffSlot = args->head%NCCL_STEPS;
-        int size;
-        NCCLCHECK(collNetTest(args->requests[buffSlot], &done, &size));
-        if (done) {
+        int size = 0;
+        int readyHead = args->head%NCCL_STEPS;
+        if (reqFifo[readyHead].state == collReqDone) {
           INFO(NCCL_INIT,"Recv proxy : opCount %lx head %lx tail %lx nextTail %p nextTail %lx end %lx nsteps %d llMode %d ==> Done", args->opCount, args->head, args->tail, nextTail, *nextTail, args->end, args->nsteps, args->llMode);
-          *(args->requests+buffSlot) = NULL;  //TODO
+        // cleaning
+#ifdef SHARED_REQ_Q
+          reqFifo[readyHead].state = collReqNone;
+          reqFifo[readyHead].intmBuff = NULL;
+#endif
           args->head += args->sliceSteps;
           if (args->llMode == 0) {
             if (ptrType == NCCL_PTR_CUDA) collNetFlush(resources->collNetRecvComm, localBuff+buffSlot*stepSize, size);
