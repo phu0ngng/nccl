@@ -37,6 +37,7 @@ typedef enum { collReqNone        =  0,
 struct reqState {
   volatile void* intmBuff;
   volatile collReqState_t state;
+  volatile void* request;
 };
 #endif
 
@@ -380,6 +381,7 @@ ncclResult_t collNetSendProxy(struct ncclProxyArgs* args) {
             sizesFifo[buffSlot] = -1;
 #ifdef SHARED_REQ_Q
             reqFifo[readySlot].state = collReqPosted;
+            reqFifo[readySlot].request = args->requests[buffSlot];
 #endif
             // Make sure size is reset to zero before we update the head.
             __sync_synchronize();
@@ -390,14 +392,12 @@ end:
         }
       }
       if (args->head < args->tail) {
-        int done, size;
         int buffSlot = args->head%NCCL_STEPS;
-        NCCLCHECK(collNetTest(args->requests[buffSlot], &done, &size));
-        if (done) {
-          INFO(NCCL_INIT,"Send proxy : opCount %lx head %lx tail %lx prevTail %p prevTail %lx end %lx nsteps %d llMode %d size %d request %p ==> Done", args->opCount, args->head, args->tail, prevTail, *prevTail, args->end, args->nsteps, args->llMode, size, args->requests[buffSlot]);
+        if (reqFifo[buffSlot].state == collReqDone) {
+          INFO(NCCL_INIT,"Send proxy : opCount %lx head %lx tail %lx prevTail %p prevTail %lx end %lx nsteps %d llMode %d request %p ==> Done", args->opCount, args->head, args->tail, prevTail, *prevTail, args->end, args->nsteps, args->llMode, reqFifo[buffSlot].request);
 #ifdef SHARED_REQ_Q
-          int readySlot = args->head%NCCL_STEPS;
-          reqFifo[readySlot].state = collReqDone;
+          reqFifo[buffSlot].state = collReqNone;
+          reqFifo[buffSlot].intmBuff = NULL;
 #endif
           args->head += args->sliceSteps;
           *prevHead = args->head;
@@ -490,15 +490,14 @@ ncclResult_t collNetRecvProxy(struct ncclProxyArgs* args) {
 quit:
       }
       if (args->tail > args->head) {
+        int done, size;
         int buffSlot = args->head%NCCL_STEPS;
-        int size = 0;
-        int readyHead = args->head%NCCL_STEPS;
-        if (reqFifo[readyHead].state == collReqDone) {
-          INFO(NCCL_INIT,"Recv proxy : opCount %lx head %lx tail %lx nextTail %p nextTail %lx end %lx nsteps %d llMode %d ==> Done", args->opCount, args->head, args->tail, nextTail, *nextTail, args->end, args->nsteps, args->llMode);
+        if (reqFifo[buffSlot].request != NULL) NCCLCHECK(collNetTest((void*)(reqFifo[buffSlot].request), &done, &size));
+        if (done) {
+          INFO(NCCL_INIT,"Recv proxy : opCount %lx head %lx tail %lx nextTail %p nextTail %lx end %lx nsteps %d llMode %d size %d => Done", args->opCount, args->head, args->tail, nextTail, *nextTail, args->end, args->nsteps, args->llMode, size);
         // cleaning
 #ifdef SHARED_REQ_Q
-          reqFifo[readyHead].state = collReqNone;
-          reqFifo[readyHead].intmBuff = NULL;
+          reqFifo[buffSlot].state = collReqDone;
 #endif
           args->head += args->sliceSteps;
           if (args->llMode == 0) {
