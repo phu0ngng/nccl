@@ -363,11 +363,6 @@ int ncclCollNetMpiFlush(void* recvComm, void* data, int size) {
 
 int ncclCollNetMpiTest(void* request, int* done, int* size) {
   //printf("ncclCollNetMpiTest\n");
-  if (request == 0xdeadbeef) {
-    *done = 1;
-    *size = -1;
-    return 0;
-  }
   MPI_Request* mpiRequest = (MPI_Request*)request;
   MPI_Status status;
   int err;
