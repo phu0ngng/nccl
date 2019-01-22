@@ -10,24 +10,12 @@
 #include "coll_net.h"
 #include "param.h"
 #include "nvlink.h"
+#include "net_common.h"
 #include <cuda_runtime.h>
 #include <assert.h>
 
-#define COLL_NET_MAX_IFS 16
-#define COLL_NET_MAX_GPUS 32
-
-// Cache GPU-NIC distances to avoid re-computing them
-#define NET_TVALUE_UNKNOWN 0ULL
-static ncclTvalue_t collNetTvalues[COLL_NET_MAX_GPUS] = { NET_TVALUE_UNKNOWN };
+static ncclTvalue_t collNetTvalues[NET_MAX_GPUS] = { NET_TVALUE_UNKNOWN };
 static int collNetNDev;
-
-// We encode 3 bits of distance per interface into a ncclTvalue_t (64-bit)
-#define NET_BITS_PER_IF 3
-#define NET_BITS_PER_IF_MASK ((1<<NET_BITS_PER_IF)-1)
-static_assert(sizeof(ncclTvalue_t)*8 >= COLL_NET_MAX_IFS*NET_BITS_PER_IF, "COLL_NET_MAX_IFS*NET_BITS_PER_IF must fit in a ncclTvalue_t");
-
-extern ncclTvalue_t getTvalue(short* distances, int ndev);
-extern int getScore(ncclTvalue_t tvalue, int dev);
 
 struct collNetConnectInfo {
   collNetHandle_t collNetHandle;
@@ -57,7 +45,7 @@ struct collNetSendResources {
   struct ncclSendMem* devHostSendMem;
   struct ncclRecvMem* devHostRecvMem;
   int netDev;
-  bool cudaSupport;
+  int useGdr;
   struct ncclRecvMem* devRecvMem;
   uint64_t step;
   uint64_t llStep;
@@ -75,7 +63,7 @@ struct collNetRecvResources {
   struct ncclSendMem* devHostSendMem;
   struct ncclRecvMem* devHostRecvMem;
   int netDev;
-  bool cudaSupport;
+  int useGdr;
   struct ncclRecvMem* devRecvMem;
   uint64_t step;
   uint64_t llStep;
@@ -86,102 +74,30 @@ struct collNetRecvResources {
   uint64_t reqFifoTail;
 };
 
-static ncclResult_t collNetDistance(int cudaDev, int dev, short* distance) {
-  char* cudaPath = NULL;
-  char* nicPath = NULL;
-  ncclResult_t err;
-  NCCLCHECK(getCudaPath(cudaDev, &cudaPath));
-  err = collNetPciPath(dev, &nicPath);
-  *distance = (err != ncclSuccess || nicPath == NULL || cudaPath == NULL) ? PATH_SOC : pciDistance(nicPath, cudaPath);
-  if (nicPath) free(nicPath);
-  if (cudaPath) free(cudaPath);
-  return ncclSuccess;
-}
-
-static ncclResult_t collNetDevices(int* ndev, short** distances) {
-  NCCLCHECK(collNetDevices(ndev));
-  if (*ndev == 0) {
-    WARN("Error : Network returned 0 device");
-    return ncclSystemError;
-  }
-  if (*ndev > COLL_NET_MAX_IFS) *ndev = COLL_NET_MAX_IFS;
-
-  *distances = (short*)malloc(*ndev*sizeof(short));
-  if (*distances == NULL) return ncclSystemError;
-
-  // Find distance with current GPU
-  int cudaDev, nvmlDev;
-  cudaGetDevice(&cudaDev);
-  NCCLCHECK(getNvmlDevice(cudaDev, &nvmlDev))
-  char line[1024];
-  sprintf(line, "CUDA Dev %d[%d], %s NIC distance : ", cudaDev, nvmlDev, collNetName());
-  for (int d=0; d<*ndev; d++) {
-    NCCLCHECK(collNetDistance(cudaDev, d, *distances+d));
-    sprintf(line+strlen(line), " %s", pathDists[(*distances)[d]]);
-  }
-  INFO(NCCL_INIT|NCCL_NET, "%s", line);
-  return ncclSuccess;
-}
-
+struct netInfoFuncs collNetInfoFuncs = {
+  &collNetName,
+  &collNetDevices,
+  &collNetPciPath,
+  &collNetPtrSupport
+};
+  
 /* Determine if we can communicate with the peer */
 ncclResult_t collNetCanConnect(ncclTvalue_t* ret, struct ncclPeerInfo* myInfo, struct ncclPeerInfo* peerInfo) {
   int cudaDev;
   CUDACHECK(cudaGetDevice(&cudaDev));
   ret[0] = collNetTvalues[cudaDev];
   if (ret[0] == NET_TVALUE_UNKNOWN) {
-    if (cudaDev >= COLL_NET_MAX_GPUS) {
-      WARN("CUDA device %d >= MAX %d\n", cudaDev, COLL_NET_MAX_GPUS);
+    if (cudaDev >= NET_MAX_GPUS) {
+      WARN("CUDA device %d >= MAX %d\n", cudaDev, NET_MAX_GPUS);
       return ncclInternalError;
     }
     int nDev;
     short* distances;
-    NCCLCHECK(collNetDevices(&nDev, &distances));
+    NCCLCHECK(netDevices(&nDev, &distances, &collNetInfoFuncs));
     collNetTvalues[cudaDev] = ret[0] = getTvalue(distances, nDev);
     collNetNDev = nDev;
     free(distances);
   }
-  return ncclSuccess;
-}
-
-int getCollNetDev(int cudaDev, int ringId) {
-  ncclTvalue_t tvalues = collNetTvalues[cudaDev];
-
-  int dev = 0;
-  int maxScore = 0;
-  for (int d=0; d<collNetNDev; d++) if (getScore(tvalues,d) > maxScore) maxScore = getScore(tvalues,d);
-  int skip = ringId+1;
-  while (skip) {
-    for (int d=0; d<collNetNDev; d++) {
-      if (getScore(tvalues, d) == maxScore) {
-        skip--;
-        if (skip == 0) { dev = d; goto end; }
-      }
-    }
-  }
-end:
-  return dev;
-}
-
-extern int64_t ncclParamNetGdrRead();
-
-// Enable GDR read by default when:
-// 1) user sets it, or
-// 2) we are on a NVSwitch platform (i.e. no P2P traffic over PCI-E switch) AND the GPU is Volta
-ncclResult_t collNetUseGdrForReads(int* useGdr) {
-  // Get user's GDR READ setting
-  int gdrReadParam = ncclParamNetGdrRead();
-  if (gdrReadParam >= 0) {
-    *useGdr = gdrReadParam;
-    return ncclSuccess;
-  }
-
-  // Determine whether the GPU has NVLink
-  int cudaDev;
-  CUDACHECK(cudaGetDevice(&cudaDev));
-  char busId[NVML_DEVICE_PCI_BUS_ID_BUFFER_SIZE];
-  CUDACHECK(cudaDeviceGetPCIBusId(busId, NVML_DEVICE_PCI_BUS_ID_BUFFER_SIZE, cudaDev));
-  int nvlinks = getNvlinkGpu(busId, NULL);
-  *useGdr = nvlinks >= CONNECT_NVSWITCH && ncclCudaCompCap() > 6 ? 1 : 0;
   return ncclSuccess;
 }
 
@@ -191,7 +107,7 @@ ncclResult_t collNetSetup(struct ncclPeerInfo* myInfo, struct ncclConnect* conne
   int recvSize = offsetof(struct ncclRecvMem, buff)+buffSize;
   int cudaDev;
   CUDACHECK(cudaGetDevice(&cudaDev));
-  int netDev = getCollNetDev(cudaDev, channelId);
+  int netDev = getDev(channelId, collNetTvalues[cudaDev], collNetNDev);
 
   // send side
   struct collNetSendResources* sendResources;
@@ -199,21 +115,17 @@ ncclResult_t collNetSetup(struct ncclPeerInfo* myInfo, struct ncclConnect* conne
   send->transportResources = sendResources;
 
   sendResources->netDev = netDev;
-
-  int sendFlags, useGdrForReads;
-  NCCLCHECK(collNetPtrSupport(sendResources->netDev, &sendFlags));
-  NCCLCHECK(collNetUseGdrForReads(&useGdrForReads));
-  sendResources->cudaSupport = (sendFlags & NCCL_PTR_CUDA) && useGdrForReads ? true : false;
+  NCCLCHECK(netGetGdrSupport(sendResources->netDev, 1, &sendResources->useGdr, &collNetInfoFuncs));
 
   NCCLCHECK(ncclCudaHostAlloc((void**)&sendResources->hostSendMem, (void**)&sendResources->devHostSendMem, sendSize));
 
-  if (sendResources->cudaSupport) {
+  if (sendResources->useGdr) {
     NCCLCHECK(ncclCudaCalloc((char**)(&sendResources->devRecvMem), recvSize));
   }
   NCCLCHECK(ncclCudaHostAlloc((void**)&sendResources->hostRecvMem, (void**)&sendResources->devHostRecvMem, recvSize));
 
   INFO(NCCL_INIT|NCCL_NET,"Coll %02d : %d [send] via COLLNET/%s/%d%s", channelId, myInfo->rank, collNetName(), sendResources->netDev,
-      sendResources->cudaSupport ? "/GDRDMA" : "");
+      sendResources->useGdr ? "/GDRDMA" : "");
 
   // recv side
   struct collNetRecvResources* recvResources;
@@ -221,20 +133,17 @@ ncclResult_t collNetSetup(struct ncclPeerInfo* myInfo, struct ncclConnect* conne
   recv->transportResources = recvResources;
 
   recvResources->netDev = netDev;
-
-  int recvFlags;
-  NCCLCHECK(collNetPtrSupport(recvResources->netDev, &recvFlags));
-  recvResources->cudaSupport = (recvFlags & NCCL_PTR_CUDA) ? true : false;
+  NCCLCHECK(netGetGdrSupport(recvResources->netDev, 0, &recvResources->useGdr, &collNetInfoFuncs));
 
   NCCLCHECK(ncclCudaHostAlloc((void**)&recvResources->hostSendMem, (void**)&recvResources->devHostSendMem, sendSize));
 
-  if (recvResources->cudaSupport) {
+  if (recvResources->useGdr) {
     NCCLCHECK(ncclCudaCalloc((char**)(&recvResources->devRecvMem), recvSize));
   }
   NCCLCHECK(ncclCudaHostAlloc((void**)&recvResources->hostRecvMem, (void**)&recvResources->devHostRecvMem, recvSize));
 
   INFO(NCCL_INIT|NCCL_NET,"Coll %02d : %d [receive] via COLLNET/%s/%d%s", channelId, myInfo->rank, collNetName(), recvResources->netDev,
-      recvResources->cudaSupport ? "/GDRDMA" : "");
+      recvResources->useGdr ? "/GDRDMA" : "");
 
   struct collNetConnectInfo* info = (struct collNetConnectInfo*) connectInfo;
   NCCLCHECK(collNetListen(recvResources->netDev, &info->collNetHandle, &recvResources->netListenComm));
@@ -254,7 +163,7 @@ ncclResult_t collNetConnect(struct ncclConnect* connectInfos, int nranks, struct
   struct collNetSendResources* sendResources = (struct collNetSendResources*)send->transportResources;
 
   // Intermediate buffering on GPU for GPU Direct RDMA, but LL buffer is always on host
-  struct ncclRecvMem* sRecvMem = sendResources->cudaSupport ? sendResources->devRecvMem : sendResources->devHostRecvMem;
+  struct ncclRecvMem* sRecvMem = sendResources->useGdr ? sendResources->devRecvMem : sendResources->devHostRecvMem;
   send->conn.buff = sRecvMem->buff;
   send->conn.llBuff = sendResources->devHostRecvMem->llBuff;
 
@@ -271,7 +180,7 @@ ncclResult_t collNetConnect(struct ncclConnect* connectInfos, int nranks, struct
   struct collNetRecvResources* recvResources = (struct collNetRecvResources*)recv->transportResources;
 
   // Intermediate buffering on GPU for GPU Direct RDMA
-  struct ncclRecvMem* rRecvMem = recvResources->cudaSupport ? recvResources->devRecvMem : recvResources->devHostRecvMem;
+  struct ncclRecvMem* rRecvMem = recvResources->useGdr ? recvResources->devRecvMem : recvResources->devHostRecvMem;
   recv->conn.buff = rRecvMem->buff;
   recv->conn.llBuff = rRecvMem->llBuff;
 
@@ -301,7 +210,7 @@ ncclResult_t collNetFree(void* sendTransportResources, void* recvTransportResour
   struct collNetSendResources* sendResources = (struct collNetSendResources*)sendTransportResources;
   NCCLCHECK(ncclCudaHostFree(sendResources->hostSendMem));
   NCCLCHECK(ncclCudaHostFree(sendResources->hostRecvMem));
-  if (sendResources->cudaSupport)
+  if (sendResources->useGdr)
     CUDACHECK(cudaFree(sendResources->devRecvMem));
   NCCLCHECK(collNetCloseColl(sendResources->collNetSendComm));
   free(sendResources->reqFifo);
@@ -311,7 +220,7 @@ ncclResult_t collNetFree(void* sendTransportResources, void* recvTransportResour
   struct collNetRecvResources* recvResources = (struct collNetRecvResources*)recvTransportResources;
   NCCLCHECK(ncclCudaHostFree(recvResources->hostSendMem));
   NCCLCHECK(ncclCudaHostFree(recvResources->hostRecvMem));
-  if (recvResources->cudaSupport)
+  if (recvResources->useGdr)
     CUDACHECK(cudaFree(recvResources->devRecvMem));
   free(recvResources);
   return ncclSuccess;
@@ -339,9 +248,9 @@ ncclResult_t collNetSendProxy(struct ncclProxyArgs* args) {
     volatile uint64_t* prevTail = &resources->hostRecvMem->tail;
     struct ncclSendMem* prevMem = resources->hostSendMem;
     uint64_t* prevHead = &prevMem->head;
-    struct ncclRecvMem* localMem = resources->cudaSupport ? resources->devRecvMem : resources->hostRecvMem;
+    struct ncclRecvMem* localMem = resources->useGdr ? resources->devRecvMem : resources->hostRecvMem;
     union ncclLLFifoLine* llBuff = resources->hostRecvMem->llBuff;
-    int ptrType = resources->cudaSupport ? NCCL_PTR_CUDA : NCCL_PTR_HOST;
+    int ptrType = resources->useGdr ? NCCL_PTR_CUDA : NCCL_PTR_HOST;
     volatile int* sizesFifo = resources->hostRecvMem->sizesFifo;
     int stepSize = args->channel->buffSize/NCCL_STEPS;
 #ifdef SHARED_REQ_Q
@@ -457,9 +366,9 @@ ncclResult_t collNetRecvProxy(struct ncclProxyArgs* args) {
   }
   if (args->state == ncclProxyOpProgress) {
     volatile uint64_t* nextHead = &resources->hostSendMem->head;
-    struct ncclRecvMem* localMem = resources->cudaSupport ? resources->devRecvMem : resources->hostRecvMem;
+    struct ncclRecvMem* localMem = resources->useGdr ? resources->devRecvMem : resources->hostRecvMem;
     char* localBuff = args->llMode ? (char*)localMem->llBuff : localMem->buff;
-    int ptrType = resources->cudaSupport ? NCCL_PTR_CUDA : NCCL_PTR_HOST;
+    int ptrType = resources->useGdr ? NCCL_PTR_CUDA : NCCL_PTR_HOST;
     uint64_t* nextTail = &resources->hostRecvMem->tail;
 
     int stepSize = ( args->llMode ? NCCL_LL_BUFF_SIZE : args->channel->buffSize ) / NCCL_STEPS;
