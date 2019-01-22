@@ -23,10 +23,9 @@ COLLS := all_reduce all_gather broadcast reduce_scatter reduce
 EXTRA_COLLS := all_gatherv reduce_scatterv
 COLL_OBJS := $(COLLS:%=${DST_DIR}/%.o)
 BIN_FILES := $(COLLS:%=${DST_DIR}/%_perf) $(EXTRA_COLLS:%=${DST_DIR}/%_perf) ${DST_DIR}/replay
-#ifeq ($(MPI), 1)
-#This is broken anyway -- disable it
-#BIN_FILES += $(BIN_FILES_LIST:%=${DST_DIR}/%_perf_mpi_transport)
-#endif
+ifeq ($(MPI_COLLNET), 1)
+BIN_FILES += $(COLLS:%=${DST_DIR}/%_perf_mpi_collnet)
+endif
 DEP_FILES := $(OBJ_FILES:%.o=%.dep)
 
 all: ${BIN_FILES}
@@ -48,12 +47,17 @@ ${DST_DIR}/%.o: %.cu
 	@mkdir -p ${DST_DIR}
 	$(NVCC) -o $@ $(NVCUFLAGS) -c $<
 
-#${DST_DIR}/common_mpi.o:common.cu
-#	@printf "Compiling  %-35s > %s\n" $< $@
-#	@mkdir -p ${DST_DIR}
-#	$(NVCC) -DMPI_TRANSPORT -o $@ $(NVCUFLAGS) -c $<
+${DST_DIR}/common_mpi_collnet.o:common.cu
+	@printf "Compiling  %-35s > %s\n" $< $@
+	@mkdir -p ${DST_DIR}
+	$(NVCC) -DMPI_COLLNET_SUPPORT -o $@ $(NVCUFLAGS) -c $<
 
 ${DST_DIR}/nccl_mpi.o: ../../share/nccl_mpi.c
+	@printf "Compiling   %-35s > %s\n" $< $@
+	@mkdir -p ${DST_DIR}
+	mpicc -std=c99 $(CXXFLAGS) -I$(NCCLDIR)/include/ -o $@ -c $<
+
+${DST_DIR}/nccl_mpi_collnet.o: ../../share/nccl_mpi_collnet.c
 	@printf "Compiling   %-35s > %s\n" $< $@
 	@mkdir -p ${DST_DIR}
 	mpicc -std=c99 $(CXXFLAGS) -I$(NCCLDIR)/include/ -o $@ -c $<
@@ -68,8 +72,8 @@ ${DST_DIR}/replay: ${DST_DIR}/replay.o ${COLL_OBJS} ${DST_DIR}/common.o
 	@mkdir -p ${DST_DIR}
 	$(NVCC) -o $@ $(NVCUFLAGS) $^ ${NVLDFLAGS}
 
-#${DST_DIR}/%_perf_mpi_transport: ${DST_DIR}/%.o ${DST_DIR}/common_mpi.o ${DST_DIR}/nccl_mpi.o
-#	@printf "Linking  %-35s > %s\n" $< $@
-#	@mkdir -p ${DST_DIR}
-#	$(NVCC) -o $@ $(NVCUFLAGS) $^ ${NVLDFLAGS}
+${DST_DIR}/%_perf_mpi_collnet: ${DST_DIR}/%.o ${DST_DIR}/common_mpi_collnet.o ${DST_DIR}/nccl_mpi_collnet.o
+	@printf "Linking  %-35s > %s\n" $< $@
+	@mkdir -p ${DST_DIR}
+	$(NVCC) -o $@ $(NVCUFLAGS) $^ ${NVLDFLAGS}
 

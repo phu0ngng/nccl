@@ -799,6 +799,11 @@ int main(int argc, char* argv[]) {
   return run();
 }
 
+#ifdef MPI_COLLNET_SUPPORT
+extern "C"
+void ncclCollNetMpiHook(MPI_Comm comm);
+#endif
+
 testResult_t run() {
   int nProcs = 1, proc = 0;
   int localRank = 0;
@@ -808,6 +813,9 @@ testResult_t run() {
 #ifdef MPI_SUPPORT
   MPI_Comm_size(MPI_COMM_WORLD, &nProcs);
   MPI_Comm_rank(MPI_COMM_WORLD, &proc);
+#ifdef MPI_COLLNET_SUPPORT
+  ncclCollNetMpiHook(MPI_COMM_WORLD);
+#endif
   uint64_t hostHashs[nProcs];
   hostHashs[proc] = getHostHash(hostname);
   MPI_Allgather(MPI_IN_PLACE, 0, MPI_DATATYPE_NULL, hostHashs, sizeof(uint64_t), MPI_BYTE, MPI_COMM_WORLD);
