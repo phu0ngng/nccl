@@ -478,7 +478,7 @@ ncclResult_t ncclIbAccept(void* listenComm, void** recvComm) {
   NCCLCHECK(ncclIbCreateQp(ib_port, &rComm->verbs, IBV_ACCESS_REMOTE_WRITE, &rComm->qp));
 
   // Adjust the MTU
-  remQpInfo.mtu = (enum ibv_mtu)std::min(remQpInfo.mtu, portAttr.active_mtu);
+  remQpInfo.mtu = (enum ibv_mtu)MIN(remQpInfo.mtu, portAttr.active_mtu);
 
   // Setup QP
   struct ibv_qp* qp = rComm->qp;

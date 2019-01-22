@@ -31,12 +31,11 @@ static void setEnvFile(const char* fileName) {
     int s=0; // Env Var Size
     while (line[s] != '\0' && line[s] != '=') s++;
     if (line[s] == '\0') continue;
-    strncpy(envVar, line, std::min(1024,s));
+    strncpy(envVar, line, MIN(1024,s));
     envVar[s] = '\0';
     s++;
     strncpy(envValue, line+s, 1024);
     setenv(envVar, envValue, 0);
-    char *str = getenv(envVar);
   }
   if (line) free(line);
   fclose(file);

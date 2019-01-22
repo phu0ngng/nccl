@@ -10,14 +10,14 @@
 #define NCCL_MAX_OPS 2048
 #define NCCL_STEPS 8
 
+#include <cuda_runtime.h>
+#include <pthread.h>
 #include "nccl.h"
 #include "transport.h"
 #include "debug.h"
 #include <cstdio>
-#include <algorithm> // std::min/std::max
 #include <unistd.h>
 #include <stdlib.h>
-#include <cuda_runtime.h>
 
 #if CUDART_VERSION < 9000
 struct cudaLaunchParams {
@@ -45,6 +45,9 @@ struct cudaLaunchParams {
     (((x)+(y)-1)/(y))
 #define ROUNDUP(x, y) \
     (DIVUP((x), (y))*(y))
+
+#define MAX(a,b) ((a>b)?a:b)
+#define MIN(a,b) ((a<b)?a:b)
 
 #define ALIGN_SIZE(size, align) \
   size = ((size + (align) - 1) / (align)) * (align);
