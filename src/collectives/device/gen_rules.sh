@@ -1,4 +1,9 @@
 #!/bin/bash
+#
+# Copyright (c) 2018, NVIDIA CORPORATION. All rights reserved.
+#
+# See LICENSE.txt for license information
+#
 
 dir=$1
 
@@ -21,4 +26,3 @@ for base in all_reduce all_gather broadcast reduce reduce_scatter; do
   done
 done
 echo -e "$targets"
-
