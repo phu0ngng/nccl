@@ -76,7 +76,6 @@ static void *bootstrapRoot(void* commId) {
   ncclNetHandle_t *rankHandlesRoot = NULL; // for initial rank <-> root information exchange
   ncclNetHandle_t zero = { 0 }; // for sanity checking
   void* tmpComm;
-  char* data = NULL;
   ncclResult_t res;
   setFilesLimit();
 
@@ -125,7 +124,6 @@ static void *bootstrapRoot(void* commId) {
 out:
   bootstrapNetCloseListen(id->extListenComm);
   free(commId);
-  if (data) free(data);
   if (rankHandles) free(rankHandles);
   if (rankHandlesRoot) free(rankHandlesRoot);
 
