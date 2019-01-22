@@ -67,4 +67,3 @@ ncclResult_t ArgsCheck(struct ncclInfo* info) {
   }
   return ncclSuccess;
 }
-
