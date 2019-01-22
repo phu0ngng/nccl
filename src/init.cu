@@ -682,33 +682,53 @@ static ncclResult_t p2pSetup(struct ncclComm* comm, struct ncclChannel* channel,
   return ncclSuccess;
 }
 
-static ncclResult_t collNetSetup(struct ncclComm* comm, struct ncclChannel* channel, int rank, int nranks, int* supported) {
-  *supported = 0;
+// All ranks must participate in collNetSetup call
+static ncclResult_t collNetSetup(struct ncclComm* comm, struct ncclChannel* channel, int rank, int nranks, int* treeMasters, int* supported) {
+  int nMasters = 0, rankInCollNet;
+  for (int r=0; r<nranks; r++) {
+    if (r == rank) rankInCollNet = nMasters;
+    nMasters += treeMasters[r];
+  }
+
   struct ncclPeerInfo *myInfo = comm->peerInfo+rank, *peerInfo = comm->peerInfo+nranks;
   // fill in info of extra rank
   peerInfo->rank = nranks;
   // TODO: more info needed?
   ncclTvalue_t ret = 0;
-  NCCLCHECK(collNetTransport.canConnect(&ret, myInfo, peerInfo));
-  INFO(NCCL_INIT|NCCL_NET, "collNet canConnect = %d", ret);
-  if (ret > 0) {
-    struct ncclCollTransportComm* allreduce = &(collNetTransport.allreduce);
-    // select
-    struct ncclConnector* recv = &channel->peers[nranks].recv;
-    struct ncclConnector* send = &channel->peers[nranks].send;
-    // setup
-    struct ncclConnect myConnect;
-    NCCLCHECK(allreduce->setup(myInfo, &myConnect, send, recv, channel->buffSize, channel->id));
-    // send connect handle to everyone else
-    // all-gather style
-    ncclConnect allConnects[nranks];
-    memcpy(allConnects+rank, &myConnect, sizeof(struct ncclConnect));
-    NCCLCHECK(bootstrapAllGather(comm->bootstrap, allConnects, sizeof(struct ncclConnect)));
-    // connect
-    NCCLCHECK(allreduce->connect(allConnects, nranks, send, recv));
-    *supported = 1;
-    INFO(NCCL_INIT|NCCL_NET, "rank %d collNet init COMPLETE", rank);
+  if (treeMasters[rank]) {
+    NCCLCHECK(collNetTransport.canConnect(&ret, myInfo, peerInfo));
+    INFO(NCCL_INIT|NCCL_NET, "rank %d collNetRank %d canConnect = %d", rank, rankInCollNet, ret);
   }
+
+  struct ncclCollTransportComm* allreduce = &(collNetTransport.allreduce);
+  // select
+  struct ncclConnector* recv = &channel->peers[nranks].recv;
+  struct ncclConnector* send = &channel->peers[nranks].send;
+  // setup
+  struct ncclConnect myConnect;
+  if (treeMasters[rank]) {
+    NCCLCHECK(allreduce->setup(myInfo, &myConnect, send, recv, channel->buffSize, channel->id));
+  }
+  // send connect handle to everyone else
+  // all ranks must participate in the AllGather call
+  ncclConnect allConnects[nranks];
+  memcpy(allConnects+rank, &myConnect, sizeof(struct ncclConnect));
+  NCCLCHECK(bootstrapAllGather(comm->bootstrap, allConnects, sizeof(struct ncclConnect)));
+  // consolidate
+  ncclConnect masterConnects[nMasters];
+  int c = 0;
+  for (int r = 0; r < nranks; r++) {
+    if (treeMasters[r]) {
+      memcpy(masterConnects+c, allConnects+r, sizeof(struct ncclConnect));
+      c++;
+    }
+  }
+  // connect
+  if (treeMasters[rank]) {
+    NCCLCHECK(allreduce->connect(masterConnects, nMasters, send, recv));
+    INFO(NCCL_INIT|NCCL_NET, "rank %d collNetRank %d collNetNranks %d init COMPLETE", rank, rankInCollNet, nMasters);
+  }
+  *supported = (ret > 0) ? 1 : 0;
   return ncclSuccess;
 }
 
@@ -846,10 +866,10 @@ static ncclResult_t initTransportsRank(struct ncclComm* comm, ncclUniqueId* comm
     NCCLCHECK(p2pSetup(comm, channel, NCCL_MAX_TREE_ARITY, channel->tree.down, 1, &channel->tree.up));
     NCCLCHECK(p2pSetup(comm, channel, 1, &channel->tree.up, NCCL_MAX_TREE_ARITY, channel->tree.down));
     // connect master ranks to the nranks-th rank using collnet
-    if (collNet != NULL && treeIn[r*nranks+rank] == 1) {
+    if (collNet != NULL) {
       int supported;
-      NCCLCHECK(collNetSetup(comm, channel, rank, nranks, &supported));
-      comm->collNetSupport &= supported;
+      NCCLCHECK(collNetSetup(comm, channel, rank, nranks, treeIn+r*nranks, &supported));
+      if (treeIn[r*nranks+rank] == 1) comm->collNetSupport &= supported;
     }
   }
   if (comm->collNetSupport) INFO(NCCL_INIT|NCCL_NET, "Using collective network %s", collNetName());
