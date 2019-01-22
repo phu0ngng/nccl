@@ -80,7 +80,7 @@ struct netInfoFuncs collNetInfoFuncs = {
   &collNetPciPath,
   &collNetPtrSupport
 };
-  
+
 /* Determine if we can communicate with the peer */
 ncclResult_t collNetCanConnect(ncclTvalue_t* ret, struct ncclPeerInfo* myInfo, struct ncclPeerInfo* peerInfo) {
   int cudaDev;

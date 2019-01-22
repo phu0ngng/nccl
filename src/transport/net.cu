@@ -60,7 +60,7 @@ struct netInfoFuncs ncclNetInfoFuncs = {
   &ncclNetPciPath,
   &ncclNetPtrSupport
 };
-  
+
 /* Determine if we can communicate with the peer */
 ncclResult_t netCanConnect(ncclTvalue_t* ret, struct ncclPeerInfo* myInfo, struct ncclPeerInfo* peerInfo) {
   int cudaDev;
