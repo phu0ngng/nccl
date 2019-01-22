@@ -8,8 +8,6 @@
 #include "primitives.h"
 #include "collectives.h"
 
-#define PRINT if (tid == 0) printf
-
 template<int UNROLL, class FUNC, typename T>
 __device__ void ncclAllReduceRingKernel(struct CollectiveArgs* args) {
   const int tid = threadIdx.x;
@@ -101,7 +99,6 @@ __device__ void ncclAllReduceTreeKernel(struct CollectiveArgs* args) {
   const T * __restrict__ thisInput = (const T*)args->ThisInput;
   T * __restrict__ thisOutput = (T*)args->ThisOutput;
 
-  PRINT("up %d down %d\n", tree->up, tree->down[0]);
   ncclPrimitives<UNROLL, 1, 1, T, NCCL_MAX_TREE_ARITY, 1, FUNC> primsUp(tid, nthreads, tree->down, &tree->up, NULL, stepSize, channel, comm, args->opCount);
   ncclPrimitives<UNROLL, 1, 1, T, 1, NCCL_MAX_TREE_ARITY, FUNC> primsDown(tid, nthreads, &tree->up, tree->down, NULL, stepSize, channel, comm, args->opCount);
 
