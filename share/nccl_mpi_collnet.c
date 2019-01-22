@@ -206,22 +206,30 @@ static void getTag(int *tag) {
   *tag = val;
 }
 
-static __inline__ int ncclTypeSize(ncclDataType_t type) {
+static __inline__ MPI_Datatype typeConvert(ncclDataType_t type) {
   switch (type) {
-    case ncclInt8:
-    case ncclUint8:
-      return 1;
-    case ncclFloat16:
-      return 2;
-    case ncclInt32:
-    case ncclUint32:
-    case ncclFloat32:
-      return 4;
-    case ncclInt64:
-    case ncclUint64:
-    case ncclFloat64:
-      return 8;
+    case ncclInt8: return MPI_INT8_T;
+    case ncclUint8: return MPI_UINT8_T;
+    case ncclInt32: return MPI_INT32_T;
+    case ncclUint32: return MPI_UINT32_T;
+    case ncclFloat32: return MPI_FLOAT;
+    case ncclInt64: return MPI_INT64_T;
+    case ncclUint64: return MPI_UINT64_T;
+    case ncclFloat64: return MPI_DOUBLE;
     default:
+      printf("MPI: unsupported data type\n");
+      return -1;
+  }
+}
+
+static __inline__ MPI_Op opConvert(ncclRedOp_t op) {
+  switch (op) {
+    case ncclSum: return MPI_SUM;
+    case ncclProd: return MPI_PROD;
+    case ncclMax: return MPI_MAX;
+    case ncclMin: return MPI_MIN;
+    default:
+      printf("MPI: unsupported reduce operation\n");
       return -1;
   }
 }
@@ -321,11 +329,11 @@ int ncclCollNetMpiIallreduce(void* collComm, void* sendData, void* recvData, int
   struct ncclCollNetMpiSendComm* comm = (struct ncclCollNetMpiSendComm*)collComm;
   MPI_Request* mpiRequest = ncclCollNetMpiGetRequest();
   *request = mpiRequest;
-  MPI_PROTECT(ret, MPI_Iallreduce(sendData, recvData, count*ncclTypeSize(dataType), MPI_BYTE, MPI_SUM/*TODO*/, ncclCollNetMpiComm, mpiRequest));
+  MPI_PROTECT(ret, MPI_Iallreduce(sendData, recvData, count, typeConvert(dataType), opConvert(redOp), ncclCollNetMpiComm, mpiRequest));
   return ret;
 }
 
-int ncclCollNetMpiIsend(void* sendComm, void* data, void* dst, int size, int type, void** request) {
+int ncclCollNetMpiIsend(void* sendComm, void* data, void* dst, int count, ncclDataType_t dataType, ncclRedOp_t redOp, int type, void** request) {
   //printf("ncclCollNetMpiIsend\n");
   int ret;
   //CHECK_PTR(type);
@@ -333,24 +341,24 @@ int ncclCollNetMpiIsend(void* sendComm, void* data, void* dst, int size, int typ
   MPI_Request* mpiRequest = ncclCollNetMpiGetRequest();
   *request = mpiRequest;
   //printf("Send : %p %d %d %d %p\n", data, size, comm->rank, comm->tag, mpiRequest);
-  MPI_PROTECT(ret, MPI_Ireduce(data, dst, size, MPI_BYTE, MPI_SUM/*TODO*/, comm->root, ncclCollNetMpiComm, mpiRequest));
+  MPI_PROTECT(ret, MPI_Ireduce(data, dst, count, typeConvert(type), opConvert(redOp), comm->root, ncclCollNetMpiComm, mpiRequest));
   return ret;
 }
 
 #define BLOCK_RECV
 
-int ncclCollNetMpiIrecv(void* recvComm, void* data, int size, int type, void** request) {
+int ncclCollNetMpiIrecv(void* recvComm, void* data, int count, ncclDataType_t dataType, int type, void** request) {
   //printf("ncclCollNetMpiIrecv\n");
   int ret = 0;
   //CHECK_PTR(type);
   struct ncclCollNetMpiRecvComm* comm = (struct ncclCollNetMpiRecvComm*)recvComm;
 #if defined(BLOCK_RECV)
-  MPI_PROTECT(ret, MPI_Bcast(data, size, MPI_BYTE, comm->root, ncclCollNetMpiComm));
+  MPI_PROTECT(ret, MPI_Bcast(data, count, typeConvert(dataType), comm->root, ncclCollNetMpiComm));
   *request = 0xdeadbeef;
 #else
   MPI_Request* mpiRequest = ncclCollNetMpiGetRequest();
   *request = mpiRequest;
-  MPI_PROTECT(ret, MPI_Ibcast(data, size, MPI_BYTE, comm->root, ncclCollNetMpiComm, mpiRequest));
+  MPI_PROTECT(ret, MPI_Ibcast(data, count, typeConvert(dataType), comm->root, ncclCollNetMpiComm, mpiRequest));
 #endif
   //printf("MPI bcast : %p %d %p %p\n", data, size, comm, *request);
   return ret;
