@@ -130,14 +130,22 @@ ncclResult_t transportSaveProxies(struct ncclProxyArgs* args, int pattern, int r
   if (pattern == ncclPatternTreeUp || pattern == ncclPatternTreeUpDown) {
     // Tree up
     struct ncclTree* tree = args->useCollTree ? &args->channel->collTree : &args->channel->tree;
-    for (int i=0; i<NCCL_MAX_TREE_ARITY; i++) NCCLCHECK(SaveProxy<proxyRecv>(tree->down[i], args));
-    NCCLCHECK(SaveProxy<proxySend>(tree->up, args));
+    for (int i=0; i<NCCL_MAX_TREE_ARITY; i++) {
+      if (!(args->useCollTree == 1 ^ tree->down[i] == nranks))
+        NCCLCHECK(SaveProxy<proxyRecv>(tree->down[i], args));
+    }
+    if (!(args->useCollTree == 1 ^ tree->up == nranks))
+      NCCLCHECK(SaveProxy<proxySend>(tree->up, args));
   }
   if (pattern == ncclPatternTreeDown || pattern == ncclPatternTreeUpDown) {
     // Tree down
     struct ncclTree* tree = args->useCollTree ? &args->channel->collTree : &args->channel->tree;
-    for (int i=0; i< NCCL_MAX_TREE_ARITY; i++) NCCLCHECK(SaveProxy<proxySend>(tree->down[i], args));
-    NCCLCHECK(SaveProxy<proxyRecv>(tree->up, args));
+    for (int i=0; i< NCCL_MAX_TREE_ARITY; i++) {
+      if (!(args->useCollTree == 1 ^ tree->down[i] == nranks))
+        NCCLCHECK(SaveProxy<proxySend>(tree->down[i], args));
+    }
+    if (!(args->useCollTree == 1 ^ tree->up == nranks))
+      NCCLCHECK(SaveProxy<proxyRecv>(tree->up, args));
   }
   return ncclSuccess;
 }
