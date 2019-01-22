@@ -25,7 +25,7 @@ static int ncclNetNDev;
 #define NET_BITS_PER_IF 3
 #define NET_BITS_PER_IF_MASK ((1<<NET_BITS_PER_IF)-1)
 static_assert(sizeof(ncclTvalue_t)*8 >= NET_MAX_IFS*NET_BITS_PER_IF, "NET_MAX_IFS*NET_BITS_PER_IF must fit in a ncclTvalue_t");
-static ncclTvalue_t getTvalue(short* distances, int ndev) {
+ncclTvalue_t getTvalue(short* distances, int ndev) {
   ncclTvalue_t tvalue = 0;
   for (int d=0; d<ndev; d++) {
     int score = 1 + PATH_SOC - distances[d];
@@ -34,7 +34,7 @@ static ncclTvalue_t getTvalue(short* distances, int ndev) {
   }
   return tvalue;
 }
-static int getScore(ncclTvalue_t tvalue, int dev) {
+int getScore(ncclTvalue_t tvalue, int dev) {
   return (tvalue >> (dev*NET_BITS_PER_IF)) & NET_BITS_PER_IF_MASK;
 }
 

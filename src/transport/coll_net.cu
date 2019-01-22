@@ -14,11 +14,20 @@
 #include <assert.h>
 
 #define COLL_NET_MAX_IFS 16
+#define COLL_NET_MAX_GPUS 32
+
+// Cache GPU-NIC distances to avoid re-computing them
+#define NET_TVALUE_UNKNOWN 0ULL
+static ncclTvalue_t collNetTvalues[COLL_NET_MAX_GPUS] = { NET_TVALUE_UNKNOWN };
+static int collNetNDev;
 
 // We encode 3 bits of distance per interface into a ncclTvalue_t (64-bit)
 #define NET_BITS_PER_IF 3
 #define NET_BITS_PER_IF_MASK ((1<<NET_BITS_PER_IF)-1)
 static_assert(sizeof(ncclTvalue_t)*8 >= COLL_NET_MAX_IFS*NET_BITS_PER_IF, "COLL_NET_MAX_IFS*NET_BITS_PER_IF must fit in a ncclTvalue_t");
+
+extern ncclTvalue_t getTvalue(short* distances, int ndev);
+extern int getScore(ncclTvalue_t tvalue, int dev);
 
 struct collNetConnectInfo {
   collNetHandle_t collNetHandle;
@@ -80,9 +89,10 @@ struct collNetRecvResources {
 static ncclResult_t collNetDistance(int cudaDev, int dev, short* distance) {
   char* cudaPath = NULL;
   char* nicPath = NULL;
+  ncclResult_t err;
   NCCLCHECK(getCudaPath(cudaDev, &cudaPath));
-  NCCLCHECK(collNetPciPath(dev, &nicPath));
-  *distance = (nicPath == NULL || cudaPath == NULL) ? PATH_SOC : pciDistance(nicPath, cudaPath);
+  err = collNetPciPath(dev, &nicPath);
+  *distance = (err != ncclSuccess || nicPath == NULL || cudaPath == NULL) ? PATH_SOC : pciDistance(nicPath, cudaPath);
   if (nicPath) free(nicPath);
   if (cudaPath) free(cudaPath);
   return ncclSuccess;
@@ -100,10 +110,11 @@ static ncclResult_t collNetDevices(int* ndev, short** distances) {
   if (*distances == NULL) return ncclSystemError;
 
   // Find distance with current GPU
-  int cudaDev;
+  int cudaDev, nvmlDev;
   cudaGetDevice(&cudaDev);
+  NCCLCHECK(getNvmlDevice(cudaDev, &nvmlDev))
   char line[1024];
-  sprintf(line, "CUDA Dev %d, %s NIC distance : ", cudaDev, collNetName());
+  sprintf(line, "CUDA Dev %d[%d], %s NIC distance : ", cudaDev, nvmlDev, collNetName());
   for (int d=0; d<*ndev; d++) {
     NCCLCHECK(collNetDistance(cudaDev, d, *distances+d));
     sprintf(line+strlen(line), " %s", pathDists[(*distances)[d]]);
@@ -112,41 +123,42 @@ static ncclResult_t collNetDevices(int* ndev, short** distances) {
   return ncclSuccess;
 }
 
-extern ncclTvalue_t getTvalue(short* distances, int ndev);
-
 /* Determine if we can communicate with the peer */
 ncclResult_t collNetCanConnect(ncclTvalue_t* ret, struct ncclPeerInfo* myInfo, struct ncclPeerInfo* peerInfo) {
-#if 1
-  ret[0] = 1;
-#else
-  int nDev;
-  short* distances;
-  NCCLCHECK(collNetDevices(&nDev, &distances));
-  ret[0] = getTvalue(distances, nDev);
-  free(distances);
-#endif
+  int cudaDev;
+  CUDACHECK(cudaGetDevice(&cudaDev));
+  ret[0] = collNetTvalues[cudaDev];
+  if (ret[0] == NET_TVALUE_UNKNOWN) {
+    if (cudaDev >= COLL_NET_MAX_GPUS) {
+      WARN("CUDA device %d >= MAX %d\n", cudaDev, COLL_NET_MAX_GPUS);
+      return ncclInternalError;
+    }
+    int nDev;
+    short* distances;
+    NCCLCHECK(collNetDevices(&nDev, &distances));
+    collNetTvalues[cudaDev] = ret[0] = getTvalue(distances, nDev);
+    collNetNDev = nDev;
+    free(distances);
+  }
   return ncclSuccess;
 }
 
-int getCollNetDev(int ringId) {
-  int nDev;
-  short* distances;
-  NCCLCHECK(collNetDevices(&nDev, &distances));
+int getCollNetDev(int cudaDev, int ringId) {
+  ncclTvalue_t tvalues = collNetTvalues[cudaDev];
 
   int dev = 0;
-  int minDistance = PATH_SOC;
-  for (int d=0; d<nDev; d++) if (distances[d] < minDistance) minDistance = distances[d];
+  int maxScore = 0;
+  for (int d=0; d<collNetNDev; d++) if (getScore(tvalues,d) > maxScore) maxScore = getScore(tvalues,d);
   int skip = ringId+1;
   while (skip) {
-    for (int d=0; d<nDev; d++) {
-      if (distances[d] == minDistance) {
+    for (int d=0; d<collNetNDev; d++) {
+      if (getScore(tvalues, d) == maxScore) {
         skip--;
         if (skip == 0) { dev = d; goto end; }
       }
     }
   }
 end:
-  free(distances);
   return dev;
 }
 
@@ -177,7 +189,9 @@ ncclResult_t collNetUseGdrForReads(int* useGdr) {
 ncclResult_t collNetSetup(struct ncclPeerInfo* myInfo, struct ncclConnect* connectInfo, struct ncclConnector* send, struct ncclConnector* recv, int buffSize, int channelId) {
   int sendSize = sizeof(struct ncclSendMem);
   int recvSize = offsetof(struct ncclRecvMem, buff)+buffSize;
-  int netDev = getCollNetDev(channelId);
+  int cudaDev;
+  CUDACHECK(cudaGetDevice(&cudaDev));
+  int netDev = getCollNetDev(cudaDev, channelId);
 
   // send side
   struct collNetSendResources* sendResources;
