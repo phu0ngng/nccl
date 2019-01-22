@@ -318,7 +318,6 @@ testResult_t CheckData(struct threadArgs* args, ncclDataType_t type, ncclRedOp_t
 
 testResult_t testStreamSynchronize(int ngpus, cudaStream_t* streams, ncclComm_t* comms) {
   cudaError_t cudaErr;
-  ncclResult_t ncclAsyncErr;
   int remaining = ngpus;
   int* done = (int*)malloc(sizeof(int)*ngpus);
   memset(done, 0, sizeof(int)*ngpus);
@@ -337,7 +336,9 @@ testResult_t testStreamSynchronize(int ngpus, cudaStream_t* streams, ncclComm_t*
 
      if (cudaErr != cudaErrorNotReady) CUDACHECK(cudaErr);
 
+#if NCCL_VERSION_CODE >= NCCL_VERSION(2,4,0)
      if (comms) {
+       ncclResult_t ncclAsyncErr;
        NCCLCHECK(ncclCommGetAsyncError(comms[i], &ncclAsyncErr));
        if (ncclAsyncErr != ncclSuccess) {
          // An asynchronous error happened. Stop the operation and destroy
@@ -348,6 +349,7 @@ testResult_t testStreamSynchronize(int ngpus, cudaStream_t* streams, ncclComm_t*
          NCCLCHECK(ncclAsyncErr);
        }
      }
+#endif
    }
 
    // We might want to let other threads (including NCCL threads) use the CPU.
