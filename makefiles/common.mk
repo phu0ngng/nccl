@@ -44,7 +44,7 @@ endif
 #$(info NVCC_GENCODE is ${NVCC_GENCODE})
 
 CXXFLAGS   := -DCUDA_MAJOR=$(CUDA_MAJOR) -DCUDA_MINOR=$(CUDA_MINOR) -fPIC -fvisibility=hidden
-CXXFLAGS   += -Wall -Wno-unused-function -Wno-sign-compare -std=c++11
+CXXFLAGS   += -Wall -Wno-unused-function -Wno-sign-compare -std=c++11 -Werror=vla
 CXXFLAGS   += -I $(CUDA_INC)
 NVCUFLAGS  := -ccbin $(CXX) $(NVCC_GENCODE) -lineinfo -std=c++11 -Xptxas -maxrregcount=96 -Xfatbin -compress-all
 # Use addprefix so that we can specify more than one path

@@ -173,15 +173,16 @@ static inline int groupBestEnd(int nranks, int* groups, int group, int* subgroup
   return -1;
 }
 
+#define MAXGROUPS 16
 
 ncclResult_t netGetRings(int nranks, int* groups, int* subgroups, ncclTvalue_t* values, int* nringsRet, int* prev, int* next, int minScore, int* nthreads) {
   int nGroups = groups[nranks-1] + 1;
-  int cardUsed[NET_MAX_IFS*nGroups];
+  int cardUsed[NET_MAX_IFS*MAXGROUPS];
   for (int c=0; c<NET_MAX_IFS*nGroups; c++) cardUsed[c] = 0;
 
+  int starts[MAXGROUPS];
+  int ends[MAXGROUPS];
   for (int ring = 0; ring<*nringsRet; ring++) {
-    int starts[nGroups];
-    int ends[nGroups];
     for (int group = 0; group<nGroups; group++) {
       int nranksInGroup = 0;
       int nsubGroups = 0;

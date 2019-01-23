@@ -118,7 +118,7 @@ ncclResult_t ncclGroupEnd() {
   int savedDev;
   CUDACHECK(cudaGetDevice(&savedDev));
   int done = ncclGroupIndex;
-  int doneArray[ncclGroupIndex];
+  int doneArray[MAX_ASYNC_OPS];
   for (int i=0; i<ncclGroupIndex; i++) doneArray[i] = 0;
 
   ncclResult_t ret = ncclGroupError;

@@ -112,6 +112,9 @@ ncclResult_t p2pCanConnect(ncclTvalue_t* ret, struct ncclPeerInfo* myInfo, struc
   return ncclSuccess;
 }
 
+#define MAXGPUS_NVLINKP2P 8 // 16 would take an almost infinite time anyway
+#define MAXGPUS_PCI 64
+
 static int computeRingsRec(ncclTvalue_t* matrix, int n, int *rings, int currentRing, int nRingsMax, int* inTheRing, int current, int remaining, int connect) {
   int nrings = 0;
   ncclTvalue_t* line = matrix+current*n;
@@ -139,7 +142,7 @@ static int computeRingsRec(ncclTvalue_t* matrix, int n, int *rings, int currentR
       }
     }
   } else {
-    int ringsSave[nRingsMax*n];
+    int ringsSave[MAXCHANNELS*MAXGPUS_NVLINKP2P];
     int maxStep = 0;
     for (int i=0; i<n; i++) {
       if (inTheRing[i] == 0 && line[i] > 0) {
@@ -321,7 +324,7 @@ int p2pComputeRingsPci(ncclTvalue_t* values, int nranks, int* rings, int nrings,
     int start = findConnect(nranks, prev+r*nranks);
     int end = findConnect(nranks, next+r*nranks);
 
-    int inRing[nranks];
+    int inRing[MAXGPUS_PCI];
     for (int i=0; i<nranks; i++) inRing[i] = 0;
 
     if (start == -1 && end == -1) {
@@ -409,6 +412,10 @@ ncclResult_t p2pGetRings(int nranks, int* groups, int* subgroups, ncclTvalue_t* 
   }
   if (directLinks > 0) {
     // NVLink : Connect rings or create new ones
+    if (nranks > MAXGPUS_NVLINKP2P) {
+      WARN("Recursive P2P computation cannot work for >8 GPUs");
+      return ncclInternalError;
+    }
     nrings = p2pComputeRingsNvLink(values, nranks, rings, nrings, prev, next, 0, nthreads);
     goto end;
   }

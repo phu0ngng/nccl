@@ -66,11 +66,13 @@ static inline int groupLast(int nranks, int* groups, int group, int rankToAvoid)
   return -1;
 }
 
+#define MAXGROUPS 16
+
 ncclResult_t shmGetRings(int nranks, int* groups, int* subgroups, ncclTvalue_t* values, int* nringsRet, int* prev, int* next, int minScore, int* nthreads) {
   if (*nringsRet == MAXCHANNELS) *nringsRet = 1;
   int nGroups = groups[nranks-1] + 1;
-  int starts[nGroups];
-  int ends[nGroups];
+  int starts[MAXGROUPS];
+  int ends[MAXGROUPS];
   for (int ring = 0; ring<*nringsRet; ring++) {
     int startGroup = -1, endGroup = -1;
     for (int group = 0; group<nGroups; group++) {

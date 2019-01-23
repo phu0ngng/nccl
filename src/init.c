@@ -423,7 +423,8 @@ static ncclResult_t setupChannel(struct ncclComm* comm, int channelId, int rank,
       }
     }
 
-    int ranks[nMasters];
+    int* ranks;
+    NCCLCHECK(ncclCalloc(&ranks, nMasters));
     int i = 0, masterIndex = -1;
     // Build binary tree
     for (int r=0; r<nranks; r++) {
@@ -455,6 +456,7 @@ static ncclResult_t setupChannel(struct ncclComm* comm, int channelId, int rank,
       tree->up = prev;
       if (treeMasters[next] == 0) tree->down[0] = next;
     }
+    free(ranks);
   }
 
   TRACE(NCCL_INIT, "rank %d nranks %d - DONE", rank, nranks);
@@ -1042,8 +1044,9 @@ static ncclResult_t initTransportsAll(struct ncclComm** comms, const int* devs, 
     comms[rank]->threadThreshold = threadThreshold;
   }
 
+  struct ncclConnect* connect;
+  NCCLCHECK(ncclCalloc(&connect, 2*nranks));
   for (int r=0; r<nrings; r++) {
-    struct ncclConnect connect[2*nranks];
     int* ringRanks = rings+r*nranks;
     for (int rank=0; rank<nranks; rank++) {
       CUDACHECK(cudaSetDevice(devs[rank]));
@@ -1069,6 +1072,7 @@ static ncclResult_t initTransportsAll(struct ncclComm** comms, const int* devs, 
       NCCLCHECK(send->transportComm->connect(connect+ring->next*2+0, send));
     }
   }
+  free(connect);
   free(allInfo);
   free(rings);
   free(treeIn);
@@ -1096,12 +1100,13 @@ ncclResult_t ncclCommInitAll(ncclComm_t* comms, int ndev, const int* devlist) {
   int savedDevice;
   int rank, cudaDev;
   ncclComm_t comm = NULL;
-  int ncclDevList[ndev];
+  int* ncclDevList = NULL;
+  NCCLCHECK(ncclCalloc(&ncclDevList, ndev));
   for (int i=0; i<ndev; i++) {
     ncclDevList[i] = devlist ? devlist[i] : i;
   }
 
-  cudaGetDevice(&savedDevice);
+  CUDACHECKGOTO(cudaGetDevice(&savedDevice), res, cleanup);
 
   for(rank=0; rank<ndev; ++rank)
     comms[rank] = NULL;
@@ -1135,6 +1140,7 @@ ncclResult_t ncclCommInitAll(ncclComm_t* comms, int ndev, const int* devlist) {
   goto final;
 
 cleanup:
+  free(ncclDevList);
   for(rank=0; rank<ndev; ++rank) {
     if(comms[rank] != NULL) {
       commFree(comms[rank]);
