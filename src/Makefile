@@ -9,10 +9,10 @@ include ../makefiles/version.mk
 
 ##### src files
 INCEXPORTS  := nccl.h nccl_net.h
-LIBSRCFILES := init.cu channel.cu bootstrap.cu transport.cu enqueue.cu \
-                misc/group.cu misc/nvmlwrap.cu misc/ibvwrap.cu misc/rings.cu misc/utils.cu misc/checks.cu misc/trees.cu \
-               transport/p2p.cu transport/shm.cu transport/net.cu transport/net_socket.cu transport/net_ib.cu \
-                collectives/all_reduce.cu collectives/all_gather.cu collectives/broadcast.cu collectives/reduce.cu collectives/reduce_scatter.cu
+LIBSRCFILES := init.c channel.c bootstrap.c transport.c enqueue.c \
+                misc/group.c misc/nvmlwrap.c misc/ibvwrap.c misc/rings.c misc/utils.c misc/checks.c misc/trees.c misc/topo.c \
+		transport/p2p.c transport/shm.c transport/net.c transport/net_socket.c transport/net_ib.c \
+                collectives/all_reduce.c collectives/all_gather.c collectives/broadcast.c collectives/reduce.c collectives/reduce_scatter.c
 
 ##### lib files
 LIBNAME     := libnccl.so
@@ -27,7 +27,7 @@ INCTARGETS := $(INCEXPORTS:%=$(INCDIR)/%)
 LIBSONAME  := $(LIBNAME:%=%.$(NCCL_MAJOR))
 LIBTARGET  := $(LIBNAME:%=%.$(NCCL_MAJOR).$(NCCL_MINOR).$(NCCL_PATCH))
 STATICLIBTARGET := $(STATICLIBNAME)
-LIBOBJ     := $(LIBSRCFILES:%.cu=$(OBJDIR)/%.o)
+LIBOBJ     := $(LIBSRCFILES:%.c=$(OBJDIR)/%.o)
 DEPFILES   := $(LIBOBJ:%.o=%.d)
 LDFLAGS    += -L${CUDA_LIB} -lcudart_static -lpthread -lrt -ldl
 
@@ -87,11 +87,11 @@ $(INCDIR)/nccl_%.h : include/nccl_%.h
 	mkdir -p $(INCDIR)
 	cp -f $< $@
 
-$(OBJDIR)/%.o : %.cu
+$(OBJDIR)/%.o : %.c
 	@printf "Compiling  %-35s > %s\n" $< $@
 	mkdir -p `dirname $@`
-	$(NVCC) -I. -I$(INCDIR) -Iinclude -c $(NVCUFLAGS) --compiler-options "$(CXXFLAGS)" $< -o $@
-	@$(NVCC) -I. -I$(INCDIR) -Iinclude -M $(NVCUFLAGS) --compiler-options "$(CXXFLAGS)" $< > $(@:%.o=%.d.tmp)
+	$(CXX) -I. -I$(INCDIR) $(CXXFLAGS) -Iinclude -c $< -o $@
+	@$(CXX) -I. -I$(INCDIR) $(CXXFLAGS) -Iinclude -M $< > $(@:%.o=%.d.tmp)
 	@sed "0,/^.*:/s//$(subst /,\/,$@):/" $(@:%.o=%.d.tmp) > $(@:%.o=%.d)
 	@sed -e 's/.*://' -e 's/\\$$//' < $(@:%.o=%.d.tmp) | fmt -1 | \
                 sed -e 's/^ *//' -e 's/$$/:/' >> $(@:%.o=%.d)
@@ -107,7 +107,7 @@ install : lib
 	cp -P -v $(BUILDDIR)/lib/* $(PREFIX)/lib/
 	cp -v $(BUILDDIR)/include/* $(PREFIX)/include/
 
-FILESTOFORMAT := $(shell find . -name ".\#*" -prune -o \( -name "*.cu" -o -name "*.h" \) -print | grep -v -E 'ibvwrap.h|nvmlwrap.h|nccl.h')
+FILESTOFORMAT := $(shell find . -name ".\#*" -prune -o \( -name "*.c" -o -name "*.h" \) -print | grep -v -E 'ibvwrap.h|nvmlwrap.h|nccl.h')
 # Note that formatting.mk defines a new target so in order to not overwrite the default target,
 # it shouldn't be included at the top. Also, it uses the above definition of FILESTOFORMAT as well
 # as the BUILDDIR variable.
