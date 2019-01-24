@@ -10,7 +10,7 @@ include ../makefiles/version.mk
 ##### src files
 INCEXPORTS  := nccl.h nccl_net.h
 LIBSRCFILES := init.c channel.c bootstrap.c transport.c enqueue.c \
-                misc/group.c misc/nvmlwrap.c misc/ibvwrap.c misc/rings.c misc/utils.c misc/checks.c misc/trees.c misc/topo.c \
+                misc/group.c misc/nvmlwrap.c misc/ibvwrap.c misc/rings.c misc/utils.c misc/argcheck.c misc/trees.c misc/topo.c \
 		transport/p2p.c transport/shm.c transport/net.c transport/net_socket.c transport/net_ib.c \
                 collectives/all_reduce.c collectives/all_gather.c collectives/broadcast.c collectives/reduce.c collectives/reduce_scatter.c
 

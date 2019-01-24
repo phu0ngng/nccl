@@ -8,6 +8,7 @@
 #define NCCL_TRANSPORT_H_
 
 #include "nccl.h"
+#include "devcomm.h"
 #include <stdint.h>
 #include "nvmlwrap.h"
 

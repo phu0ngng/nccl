@@ -256,10 +256,10 @@ static ncclResult_t commAlloc(ncclComm_t* comret, int ndev, int rank) {
 #endif
   comm->fatalError = ncclSuccess;
 
-  CUDACHECK(cudaHostAlloc((void**) &comm->fatalDevError, sizeof(ncclDevError_t), cudaHostAllocMapped));
+  NCCLCHECK(ncclCudaHostAlloc((void**) &comm->fatalDevError, (void**) &comm->hostDevComm.fatalDevError, sizeof(ncclDevError_t)));
   *comm->fatalDevError = ncclDevSuccess;
 
-  CUDACHECK(cudaHostAlloc((void**) &comm->abortFlag, sizeof(uint32_t), cudaHostAllocMapped));
+  NCCLCHECK(ncclCudaHostAlloc((void**) &comm->abortFlag, (void**) &comm->hostDevComm.abortFlag, sizeof(uint32_t)));
   *comm->abortFlag = 0;
 
   comm->argsptr = &comm->args;
@@ -269,23 +269,19 @@ static ncclResult_t commAlloc(ncclComm_t* comret, int ndev, int rank) {
 }
 
 static ncclResult_t devCommSetup(ncclComm_t comm) {
-  // Fully duplicate the comm on the device
-  NCCLCHECK(ncclCudaCalloc(&comm->devComm, 1));
-  // Copy the comm on the device
-  NCCLCHECK(ncclCudaMemcpy(comm->devComm, comm, 1));
-  // Copy userRanks
+  // Duplicate the channels on the device
+  NCCLCHECK(ncclCudaCalloc(&comm->hostDevComm.channels, comm->nChannels));
+  NCCLCHECK(ncclCudaMemcpy(comm->hostDevComm.channels, comm->channels, comm->nChannels));
+
+  // Copy userRanks and peers
   for (int r=0; r<comm->nChannels; r++) {
     NCCLCHECK(ncclCudaMemcpy(comm->channels[r].ring.devUserRanks, comm->channels[r].ring.userRanks, comm->nRanks));
     NCCLCHECK(ncclCudaMemcpy(comm->channels[r].devPeers, comm->channels[r].peers, comm->nRanks));
   }
-  // Copy the device-accessible pointer to comm->abortFlag
-  void *devAbortFlag;
-  CUDACHECK(cudaHostGetDevicePointer(&devAbortFlag, (uint32_t *)comm->abortFlag, 0));
-  CUDACHECK(cudaMemcpy(&comm->devComm->abortFlag, &devAbortFlag, sizeof(int *), cudaMemcpyHostToDevice));
-  // Copy the device-accessible pointer to comm->fatalDevError
-  void *devFatalError;
-  CUDACHECK(cudaHostGetDevicePointer(&devFatalError, (ncclDevError_t *)comm->fatalDevError, 0));
-  CUDACHECK(cudaMemcpy(&comm->devComm->fatalDevError, &devFatalError, sizeof(ncclDevError_t *), cudaMemcpyHostToDevice));
+
+  // Duplicate the dev comm on the device
+  NCCLCHECK(ncclCudaCalloc(&comm->devComm, 1));
+  NCCLCHECK(ncclCudaMemcpy(comm->devComm, &comm->hostDevComm, 1));
   return ncclSuccess;
 }
 
