@@ -18,6 +18,7 @@
 enum ncclNvLinkDeviceType {
   ncclNvLinkDeviceGpu,
   ncclNvLinkDeviceSwitch,
+  ncclNvLinkDeviceBridge, // IBM/Power NVLink bridge (Device 04ea)
 };
 
 static ncclResult_t ncclDeviceType(const char* busId, enum ncclNvLinkDeviceType* type) {
@@ -41,6 +42,9 @@ static ncclResult_t ncclDeviceType(const char* busId, enum ncclNvLinkDeviceType*
   if (strcmp(pciClass, "0x068000") == 0) {
     // PCI device is of type "Bridge / Other Bridge Device" (NVswitch)
     *type = ncclNvLinkDeviceSwitch;
+  } else if (strcmp(pciClass, "0x068001") == 0) {
+    // PCI device is of type "Bridge: IBM Device 04ea"
+    *type = ncclNvLinkDeviceBridge;
   } else if (strcmp(pciClass, "0x030200") == 0 // "3D Controller" (Tesla)
       || strcmp(pciClass, "0x030000") == 0) {  // "VGA Controller" (GeForce)
     *type = ncclNvLinkDeviceGpu;
