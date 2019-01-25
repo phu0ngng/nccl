@@ -30,7 +30,7 @@ static ncclResult_t ncclDeviceType(const char* busId, enum ncclNvLinkDeviceType*
     // Could not find device. It might be because we're in a VM and
     // we don't see the whole machine. This is handled silently so
     // we don't want to print an INFO error.
-    TRACE("Open of %s failed : %s\n", rPath, strerror(errno));
+    TRACE(NCCL_INIT, "Open of %s failed : %s\n", rPath, strerror(errno));
     return ncclSystemError;
   }
   free(rPath);
