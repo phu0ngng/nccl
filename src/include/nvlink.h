@@ -25,7 +25,13 @@ static ncclResult_t ncclDeviceType(const char* busId, enum ncclNvLinkDeviceType*
   memcpy(classPath+sizeof("/sys/bus/pci/devices/")-1, busId, sizeof("0000:00:00.0")-1);
   char* rPath = realpath(classPath, NULL);
   int fd;
-  SYSCHECKVAL(open(rPath, O_RDONLY), "open", fd);
+  if ((fd = open(rPath, O_RDONLY)) == -1) {
+    // Could not find device. It might be because we're in a VM and
+    // we don't see the whole machine. This is handled silently so
+    // we don't want to print an INFO error.
+    TRACE("Open of %s failed : %s\n", rPath, strerror(errno));
+    return ncclSystemError;
+  }
   free(rPath);
   char pciClass[9];
   strncpy(pciClass, "0x000000", 9);
