@@ -202,6 +202,7 @@ struct ncclChannel {
       struct ncclRing ring;
       struct ncclTree tree;
       struct ncclTree collTree;
+      int collNetSupport;
 
       int id;
       int nthreads;
@@ -283,7 +284,6 @@ struct ncclComm {
   // Channels for collectives
   int nChannels;
   int nThreads;
-  int collNetSupport;
 
   // Low-latency algorithm threshold
   ssize_t llThreshold;

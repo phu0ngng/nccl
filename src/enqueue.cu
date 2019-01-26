@@ -316,13 +316,6 @@ static ncclResult_t computeColl(struct ncclInfo* info /* input */, struct ncclCo
   int treeMode = info->pattern >= ncclPatternTreeUp ? 1 : 0;
   coll->funcIndex = FUNC_INDEX(info->coll, info->op, info->datatype, llMode, treeMode);
 
-  // Compute collNet support
-  int useCollTree = 0;
-  if (treeMode == 1 && info->comm->collNetSupport == 1) {
-    NCCLCHECK(collNetReduceSupport(info->datatype, info->op, &useCollTree));
-  }
-  proxyArgs->useCollTree = coll->args.useCollTree = useCollTree;
-
   int stepSize   = ( llMode ? NCCL_LL_BUFF_SIZE : info->comm->channels[0].buffSize ) / NCCL_STEPS;
   int chunkSteps = (llMode|treeMode) ? 1 : info->chunkSteps;
   int sliceSteps = (llMode|treeMode) ? 1 : info->sliceSteps;
@@ -375,6 +368,12 @@ static ncclResult_t saveKernel(struct ncclInfo* info) {
   memset(&proxyArgs, 0, sizeof(struct ncclProxyArgs));
   NCCLCHECK(computeColl(info, &coll, &proxyArgs));
 
+  // Compute collNet support
+  int redSupport = 0;
+  if (collNetSupport()) {
+    NCCLCHECK(collNetReduceSupport(info->datatype, info->op, &redSupport));
+  }
+
   info->comm->myParams->blockDim.x = max(info->comm->myParams->blockDim.x, coll.args.nThreads);
   if (info->comm->userStreamSet == false) {
     info->comm->userStream = info->stream;
@@ -393,6 +392,7 @@ static ncclResult_t saveKernel(struct ncclInfo* info) {
 
     // Proxy
     proxyArgs.channel = channel;
+    proxyArgs.useCollTree = redSupport && channel->collNetSupport;
     NCCLCHECK(transportSaveProxies(&proxyArgs, info->pattern, info->root, info->comm->nRanks));
 
     info->comm->myParams->gridDim.x++;
@@ -405,6 +405,7 @@ static ncclResult_t saveKernel(struct ncclInfo* info) {
     memcpy(c, &coll, sizeof(struct ncclColl));
 
     c->args.bid = bid;
+    c->args.useCollTree = redSupport && channel->collNetSupport;
     c->active = 1;
     opIndex = (opIndex+1)%NCCL_MAX_OPS;
     c->nextIndex = opIndex;

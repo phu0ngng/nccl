@@ -862,7 +862,6 @@ static ncclResult_t initTransportsRank(struct ncclComm* comm, ncclUniqueId* comm
   // Connect with prev/next for each ring
   struct ncclConnect *connect;
   NCCLCHECK(ncclCalloc(&connect, 2));
-  comm->collNetSupport = (collNet != NULL) ? 1 : 0;
   for (int r=0; r<nrings; r++) {
     struct ncclChannel* channel = comm->channels+r;
     NCCLCHECK(setupChannel(comm, r, rank, nranks, rings+r*nranks, treeIn+r*nranks));
@@ -870,13 +869,10 @@ static ncclResult_t initTransportsRank(struct ncclComm* comm, ncclUniqueId* comm
     NCCLCHECK(p2pSetup(comm, channel, NCCL_MAX_TREE_ARITY, channel->tree.down, 1, &channel->tree.up));
     NCCLCHECK(p2pSetup(comm, channel, 1, &channel->tree.up, NCCL_MAX_TREE_ARITY, channel->tree.down));
     // connect master ranks to the nranks-th rank using collnet
-    if (collNet != NULL) {
-      int supported;
-      NCCLCHECK(collNetSetup(comm, channel, rank, nranks, treeIn+r*nranks, &supported));
-      if (treeIn[r*nranks+rank] == 1) comm->collNetSupport &= supported;
+    if (collNetSupport()) {
+      NCCLCHECK(collNetSetup(comm, channel, rank, nranks, treeIn+r*nranks, &channel->collNetSupport));
     }
   }
-  if (comm->collNetSupport) INFO(NCCL_INIT|NCCL_NET, "Using collective network %s", collNetName());
   if (comm->treeThreshold > 0) {
     char line[1024];
     line[0]='\0';

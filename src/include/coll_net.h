@@ -30,4 +30,6 @@ static ncclResult_t collNetTest(void* request, int* done, int* size) { NCCLCHECK
 static ncclResult_t collNetCloseColl(void* collComm) { NCCLCHECK(collNet->closeColl(collComm)); return ncclSuccess; }
 static ncclResult_t collNetCloseListen(void* listenComm) { NCCLCHECK(collNet->closeListen(listenComm)); return ncclSuccess; }
 
+static int collNetSupport() { return collNet != NULL ? 1 : 0; }
+
 #endif
