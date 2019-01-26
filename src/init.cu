@@ -637,8 +637,6 @@ ncclResult_t ncclCommSetIntra(struct ncclComm* comm, int rank, int ranks, struct
   return ncclSuccess;
 }
 
-extern struct ncclCollTransport collNetTransport;
-
 static ncclResult_t p2pSetup(struct ncclComm* comm, struct ncclChannel* channel, int nrecv, int* peerRecv, int nsend, int* peerSend) {
   TRACE(NCCL_INIT, "nsend %d nrecv %d", nsend, nrecv);
   uint32_t nSkippedSend = 0, nSkippedRecv = 0; /* for tracing */
@@ -682,12 +680,18 @@ static ncclResult_t p2pSetup(struct ncclComm* comm, struct ncclChannel* channel,
   return ncclSuccess;
 }
 
+extern struct ncclCollTransport collNetTransport;
+
 // All ranks must participate in collNetSetup call
 static ncclResult_t collNetSetup(struct ncclComm* comm, struct ncclChannel* channel, int rank, int nranks, int* treeMasters, int* supported) {
-  int nMasters = 0, rankInCollNet;
+  int nMasters = 0, rankInCollNet = -1;
   for (int r=0; r<nranks; r++) {
     if (r == rank) rankInCollNet = nMasters;
     nMasters += treeMasters[r];
+  }
+  if (nMasters == 0) { // TODO: confirm treeIn is the same from all ranks' view
+    *supported = 0;
+    return ncclSuccess;
   }
 
   struct ncclPeerInfo *myInfo = comm->peerInfo+rank, *peerInfo = comm->peerInfo+nranks;

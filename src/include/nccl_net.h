@@ -80,12 +80,13 @@ typedef struct {
   // Finalize connection establishment after remote peer has called connectHandle
   ncclResult_t (*accept)(void* listenComm, void** recvComm);
   // Register/Deregister memory. Comm can be either a sendComm or a recvComm.
+  // Type is either NCCL_PTR_HOST or NCCL_PTR_CUDA.
   ncclResult_t (*regMr)(void* comm, void* data, int size, int type, void** mhandle);
   ncclResult_t (*deregMr)(void* comm, void* mhandle);
-  // Asynchronous send to a peer. Type is either NCCL_PTR_HOST or NCCL_PTR_CUDA.
+  // Asynchronous send to a peer.
   // May return request == NULL if the call cannot be performed (or would block)
   ncclResult_t (*isend)(void* sendComm, void* data, int size, void* mhandle, void** request);
-  // Asynchronous recv from a peer. Type is either NCCL_PTR_HOST or NCCL_PTR_CUDA.
+  // Asynchronous recv from a peer.
   // May return request == NULL if the call cannot be performed (or would block)
   ncclResult_t (*irecv)(void* recvComm, void* data, int size, void* mhandle, void** request);
   // Perform a flush/fence to make sure all data received with NCCL_PTR_CUDA is
@@ -128,13 +129,16 @@ typedef struct {
   // Returns whether a reduction operation on a data type is supported.
   // 1 for supported, 0 otherwise.
   ncclResult_t (*reduceSupport)(ncclDataType_t dataType, ncclRedOp_t redOp, int* supported);
+  // Register/Deregister memory. Type is either NCCL_PTR_HOST or NCCL_PTR_CUDA.
+  ncclResult_t (*regMr)(void* collComm, void* data, int size, int type, void** mhandle);
+  ncclResult_t (*deregMr)(void* collComm, void* mhandle);
   // Performs an asynchronous allreduce operation on the collective group.
   // May return request == NULL if the call cannot be performed (or would block).
   ncclResult_t (*iallreduce)(void* collComm, void* sendData, void* recvData, int count,
-      ncclDataType_t dataType, ncclRedOp_t redOp, int type, void** request);
+      ncclDataType_t dataType, ncclRedOp_t redOp, void* sendMhandle, void* recvMhandle, void** request);
   // Perform a flush/fence to make sure all data received with NCCL_PTR_CUDA is
   // visible to the GPU
-  ncclResult_t (*flush)(void* collComm, void* data, int size);
+  ncclResult_t (*flush)(void* collComm, void* data, int size, void* mhandle);
   // Test whether a request is complete. If size is not NULL, it returns the
   // number of bytes sent/received.
   ncclResult_t (*test)(void* request, int* done, int* size);
@@ -148,5 +152,9 @@ typedef ncclCollNet_v1_t ncclCollNet_t;
 #define NCCL_COLLNET_PLUGIN_SYMBOL ncclCollNetPlugin_v1
 
 extern
+#ifdef __cplusplus
+"C"
+#endif
 ncclCollNet_t* collNet;
+
 #endif // end include guard

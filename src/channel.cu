@@ -33,6 +33,8 @@ ncclResult_t initChannel(struct ncclComm* comm, int channelid) {
   return ncclSuccess;
 }
 
+extern struct ncclCollTransport collNetTransport;
+
 ncclResult_t freeChannel(struct ncclChannel* channel, int nRanks) {
   // Operation list
   NCCLCHECK(ncclCudaHostFree(channel->collectives));
@@ -47,6 +49,10 @@ ncclResult_t freeChannel(struct ncclChannel* channel, int nRanks) {
     if (peer->send.transportResources) NCCLCHECK(peer->send.transportComm->free(peer->send.transportResources));
     if (peer->recv.transportResources) NCCLCHECK(peer->recv.transportComm->free(peer->recv.transportResources));
   }
-  // TODO: free collnet
+  // Free collnet resources
+  struct ncclPeer* peer = channel->peers+nRanks;
+  if (peer->send.transportResources && peer->recv.transportResources)
+    NCCLCHECK(collNetTransport.allreduce.free(peer->send.transportResources, peer->recv.transportResources));
+
   return ncclSuccess;
 }

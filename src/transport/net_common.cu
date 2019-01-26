@@ -84,7 +84,7 @@ ncclResult_t netGetGdrSupport(int dev, int read, int* useGdr, netInfoFuncs* netI
 
   int cudaDev, nvmlDev;
   CUDACHECK(cudaGetDevice(&cudaDev));
-  NCCLCHECK(getNvmlDevice(cudaDev, &nvmlDev))
+  NCCLCHECK(getNvmlDevice(cudaDev, &nvmlDev));
 
   if (read) { // For reads (sends) only enable under certain conditions
     int gdrReadParam = ncclParamNetGdrRead();

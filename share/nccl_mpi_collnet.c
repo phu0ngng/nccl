@@ -63,8 +63,10 @@ int ncclCollNetMpiPtrSupport(int dev, int* supportedTypes);
 int ncclCollNetMpiListen(int dev, void* handle, void** listenComm);
 int ncclCollNetMpiConnect(void* handles[], int nranks, void* listenComm, void** collComm);
 int ncclCollNetMpiReduceSupport(ncclDataType_t dataType, ncclRedOp_t redOp, int* supported);
-int ncclCollNetMpiIallreduce(void* collComm, void* sendData, void* recvData, int count, ncclDataType_t dataType, ncclRedOp_t redOp, int type, void** request);
-int ncclCollNetMpiFlush(void* recvComm, void* data, int size);
+int ncclCollNetMpiRegMr(void* collComm, void* data, int size, int type, void** mhandle);
+int ncclCollNetMpiDeregMr(void* collComm, void* mhandle);
+int ncclCollNetMpiIallreduce(void* collComm, void* sendData, void* recvData, int count, ncclDataType_t dataType, ncclRedOp_t redOp, void* sendMhandle, void* recvMhandle, void** request);
+int ncclCollNetMpiFlush(void* recvComm, void* data, int size, void* mhandle);
 int ncclCollNetMpiTest(void* request, int* done, int* size);
 int ncclCollNetMpiClose(void* comm);
 
@@ -78,6 +80,8 @@ ncclCollNet_t NCCL_COLLNET_PLUGIN_SYMBOL = {
   ncclCollNetMpiListen,
   ncclCollNetMpiConnect,
   ncclCollNetMpiReduceSupport,
+  ncclCollNetMpiRegMr,
+  ncclCollNetMpiDeregMr,
   ncclCollNetMpiIallreduce,
   ncclCollNetMpiFlush,
   ncclCollNetMpiTest,
@@ -313,6 +317,18 @@ int ncclCollNetMpiConnect(void* opaqueHandles[], int nranks, void* listenComm, v
   return err;
 }
 
+// Register/Deregister memory. Type is either NCCL_PTR_HOST or NCCL_PTR_CUDA.
+int ncclCollNetMpiRegMr(void* collComm, void* data, int size, int type, void** mhandle) {
+  printf("ncclCollNetMpiRegMr not implemented\n");
+  *mhandle = 0xdeadbeef;
+  return 0;
+}
+
+int ncclCollNetMpiDeregMr(void* collComm, void* mhandle) {
+  printf("ncclCollNetMpiDeregMr not implemented\n");
+  return (mhandle == 0xdeadbeef) ? 0 : -1;
+}
+
 #define CHECK_PTR(type) do {          \
   if (type == NCCL_PTR_CUDA) {        \
     if (getCudaSupport() == 0)        \
@@ -322,7 +338,7 @@ int ncclCollNetMpiConnect(void* opaqueHandles[], int nranks, void* listenComm, v
   }                                   \
 } while(0)
 
-int ncclCollNetMpiIallreduce(void* collComm, void* sendData, void* recvData, int count, ncclDataType_t dataType, ncclRedOp_t redOp, int type, void** request) {
+int ncclCollNetMpiIallreduce(void* collComm, void* sendData, void* recvData, int count, ncclDataType_t dataType, ncclRedOp_t redOp, void* sendMhandle, void* recvMhandle, void** request) {
   //printf("ncclCollNetMpiIallreduce\n");
   int ret;
   //CHECK_PTR(type);
@@ -364,7 +380,7 @@ int ncclCollNetMpiIrecv(void* recvComm, void* data, int count, ncclDataType_t da
   return ret;
 }
 
-int ncclCollNetMpiFlush(void* recvComm, void* data, int size) {
+int ncclCollNetMpiFlush(void* recvComm, void* data, int size, void* mhandle) {
   // not implemented
   return -1;
 }

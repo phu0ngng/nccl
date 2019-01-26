@@ -46,6 +46,11 @@ struct collNetSendResources {
   struct ncclRecvMem* devHostRecvMem;
   int netDev;
   int useGdr;
+  int buffSize;
+  void* sendMhandle;
+  void* llSendMhandle;
+  void* recvMhandle;
+  void* llRecvMhandle;
   struct ncclRecvMem* devRecvMem;
   uint64_t step;
   uint64_t llStep;
@@ -64,6 +69,9 @@ struct collNetRecvResources {
   struct ncclRecvMem* devHostRecvMem;
   int netDev;
   int useGdr;
+  int buffSize;
+  void* mhandle;
+  void* llMhandle;
   struct ncclRecvMem* devRecvMem;
   uint64_t step;
   uint64_t llStep;
@@ -123,6 +131,7 @@ ncclResult_t collNetSetup(struct ncclPeerInfo* myInfo, struct ncclConnect* conne
     NCCLCHECK(ncclCudaCalloc((char**)(&sendResources->devRecvMem), recvSize));
   }
   NCCLCHECK(ncclCudaHostAlloc((void**)&sendResources->hostRecvMem, (void**)&sendResources->devHostRecvMem, recvSize));
+  sendResources->buffSize = buffSize;
 
   INFO(NCCL_INIT|NCCL_NET,"Coll %02d : %d [send] via COLLNET/%s/%d%s", channelId, myInfo->rank, collNetName(), sendResources->netDev,
       sendResources->useGdr ? "/GDRDMA" : "");
@@ -141,6 +150,7 @@ ncclResult_t collNetSetup(struct ncclPeerInfo* myInfo, struct ncclConnect* conne
     NCCLCHECK(ncclCudaCalloc((char**)(&recvResources->devRecvMem), recvSize));
   }
   NCCLCHECK(ncclCudaHostAlloc((void**)&recvResources->hostRecvMem, (void**)&recvResources->devHostRecvMem, recvSize));
+  recvResources->buffSize = buffSize;
 
   INFO(NCCL_INIT|NCCL_NET,"Coll %02d : %d [receive] via COLLNET/%s/%d%s", channelId, myInfo->rank, collNetName(), recvResources->netDev,
       recvResources->useGdr ? "/GDRDMA" : "");
@@ -199,6 +209,21 @@ ncclResult_t collNetConnect(struct ncclConnect* connectInfos, int nranks, struct
   NCCLCHECK(collNetConnect((void**)handlePtrs, nranks, recvResources->netListenComm, &sendResources->collNetSendComm));
   recvResources->collNetRecvComm = sendResources->collNetSendComm;
 
+  // Register buffer
+  // send side
+  NCCLCHECK(collNetRegMr(sendResources->collNetSendComm, sRecvMem->buff, sendResources->buffSize,
+        sendResources->useGdr ? NCCL_PTR_CUDA : NCCL_PTR_HOST, &sendResources->sendMhandle));
+  NCCLCHECK(collNetRegMr(sendResources->collNetSendComm, sendResources->devHostRecvMem->llBuff,
+        NCCL_LL_BUFF_SIZE, NCCL_PTR_HOST, &sendResources->llSendMhandle));
+  // recv side
+  NCCLCHECK(collNetRegMr(recvResources->collNetRecvComm, rRecvMem->buff, recvResources->buffSize,
+        recvResources->useGdr ? NCCL_PTR_CUDA : NCCL_PTR_HOST, &recvResources->mhandle));
+  NCCLCHECK(collNetRegMr(recvResources->collNetRecvComm, rRecvMem->llBuff, NCCL_LL_BUFF_SIZE,
+        recvResources->useGdr ? NCCL_PTR_CUDA : NCCL_PTR_HOST, &recvResources->llMhandle));
+  // Share with send side as well (since iallreduce will need it)
+  sendResources->recvMhandle = recvResources->mhandle;
+  sendResources->llRecvMhandle = recvResources->llMhandle;
+
   // Close listen comm
   NCCLCHECK(collNetCloseListen(recvResources->netListenComm));
 
@@ -210,6 +235,8 @@ ncclResult_t collNetFree(void* sendTransportResources, void* recvTransportResour
   struct collNetSendResources* sendResources = (struct collNetSendResources*)sendTransportResources;
   NCCLCHECK(ncclCudaHostFree(sendResources->hostSendMem));
   NCCLCHECK(ncclCudaHostFree(sendResources->hostRecvMem));
+  NCCLCHECK(collNetDeregMr(sendResources->collNetSendComm, sendResources->sendMhandle));
+  NCCLCHECK(collNetDeregMr(sendResources->collNetSendComm, sendResources->llSendMhandle));
   if (sendResources->useGdr)
     CUDACHECK(cudaFree(sendResources->devRecvMem));
   NCCLCHECK(collNetCloseColl(sendResources->collNetSendComm));
@@ -219,6 +246,8 @@ ncclResult_t collNetFree(void* sendTransportResources, void* recvTransportResour
   // recv side
   struct collNetRecvResources* recvResources = (struct collNetRecvResources*)recvTransportResources;
   NCCLCHECK(ncclCudaHostFree(recvResources->hostSendMem));
+  NCCLCHECK(collNetDeregMr(recvResources->collNetRecvComm, recvResources->mhandle));
+  NCCLCHECK(collNetDeregMr(recvResources->collNetRecvComm, recvResources->llMhandle));
   NCCLCHECK(ncclCudaHostFree(recvResources->hostRecvMem));
   if (recvResources->useGdr)
     CUDACHECK(cudaFree(recvResources->devRecvMem));
@@ -250,14 +279,11 @@ ncclResult_t collNetSendProxy(struct ncclProxyArgs* args) {
     uint64_t* prevHead = &prevMem->head;
     struct ncclRecvMem* localMem = resources->useGdr ? resources->devRecvMem : resources->hostRecvMem;
     union ncclLLFifoLine* llBuff = resources->hostRecvMem->llBuff;
-    int ptrType = resources->useGdr ? NCCL_PTR_CUDA : NCCL_PTR_HOST;
     volatile int* sizesFifo = resources->hostRecvMem->sizesFifo;
     int stepSize = args->channel->buffSize/NCCL_STEPS;
 #ifdef SHARED_REQ_Q
     struct reqState* reqFifo = resources->reqFifo;
 #endif
-
-    TRACE(NET,"opCount %lx stepSize %d stepSize %d ptrType %d", args->opCount, stepSize, stepSize, ptrType);
 
     if (args->head < args->end) {
       if (args->tail < args->end && args->tail < args->head + NCCL_STEPS) {
@@ -275,7 +301,7 @@ ncclResult_t collNetSendProxy(struct ncclProxyArgs* args) {
               while (f1[0] != flag || f2[0] != flag);
             }
             int count = size / ncclTypeSize(args->dtype);
-            NCCLCHECK(collNetIallreduce(resources->collNetSendComm, lines, (void*)(reqFifo[buffSlot].intmBuff), count, args->dtype, args->redOp, ptrType, args->requests+buffSlot));
+            NCCLCHECK(collNetIallreduce(resources->collNetSendComm, lines, (void*)(reqFifo[buffSlot].intmBuff), count, args->dtype, args->redOp, resources->llSendMhandle, resources->llRecvMhandle, args->requests+buffSlot));
             if (args->requests[buffSlot] != NULL) {
               sizesFifo[buffSlot] = -1;
               // Make sure size is reset to zero before we update the head.
@@ -293,7 +319,7 @@ ncclResult_t collNetSendProxy(struct ncclProxyArgs* args) {
             goto end;
           }
 #endif
-          NCCLCHECK(collNetIallreduce(resources->collNetSendComm, localMem->buff+buffSlot*stepSize, (void*)(reqFifo[buffSlot].intmBuff), count, args->dtype, args->redOp, ptrType, args->requests+buffSlot));
+          NCCLCHECK(collNetIallreduce(resources->collNetSendComm, localMem->buff+buffSlot*stepSize, (void*)(reqFifo[buffSlot].intmBuff), count, args->dtype, args->redOp, resources->sendMhandle, resources->recvMhandle, args->requests+buffSlot));
           INFO(NCCL_NET,"Send proxy : opCount %lx head %lx tail %lx prevTail %p prevTail %lx end %lx nsteps %d llMode %d count %d request %p ==> Posted", args->opCount, args->head, args->tail, prevTail, *prevTail, args->end, args->nsteps, args->llMode, count, args->requests[buffSlot]);
           if (args->requests[buffSlot] != NULL) {
             sizesFifo[buffSlot] = -1;
@@ -367,7 +393,7 @@ ncclResult_t collNetRecvProxy(struct ncclProxyArgs* args) {
     volatile uint64_t* nextHead = &resources->hostSendMem->head;
     struct ncclRecvMem* localMem = resources->useGdr ? resources->devRecvMem : resources->hostRecvMem;
     char* localBuff = args->llMode ? (char*)localMem->llBuff : localMem->buff;
-    int ptrType = resources->useGdr ? NCCL_PTR_CUDA : NCCL_PTR_HOST;
+    void* mhandle = args->llMode ? resources->llMhandle : resources->mhandle;
     uint64_t* nextTail = &resources->hostRecvMem->tail;
 
     int stepSize = ( args->llMode ? NCCL_LL_BUFF_SIZE : args->channel->buffSize ) / NCCL_STEPS;
@@ -376,8 +402,6 @@ ncclResult_t collNetRecvProxy(struct ncclProxyArgs* args) {
     struct reqState* reqFifo = resources->reqFifo;
 #endif
     uint64_t* reqFifoTail = &resources->reqFifoTail;
-
-    TRACE(NET,"opCount %lx buffSize %d stepSize %d ptrType %d", args->opCount, args->channel->buffSize, stepSize, ptrType);
 
     if (args->head < args->end) {
 #ifdef SHARED_REQ_Q
@@ -415,7 +439,7 @@ quit:
 #endif
           args->head += args->sliceSteps;
           if (args->llMode == 0) {
-            if (ptrType == NCCL_PTR_CUDA) collNetFlush(resources->collNetRecvComm, localBuff+buffSlot*stepSize, size);
+            if (resources->useGdr) collNetFlush(resources->collNetRecvComm, localBuff+buffSlot*stepSize, size, mhandle);
             *nextTail = args->head;
           }
           args->idle = 0;
