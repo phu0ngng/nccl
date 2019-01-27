@@ -813,9 +813,6 @@ testResult_t run() {
 #ifdef MPI_SUPPORT
   MPI_Comm_size(MPI_COMM_WORLD, &nProcs);
   MPI_Comm_rank(MPI_COMM_WORLD, &proc);
-#ifdef MPI_COLLNET_SUPPORT
-  ncclCollNetMpiHook(MPI_COMM_WORLD);
-#endif
   uint64_t hostHashs[nProcs];
   hostHashs[proc] = getHostHash(hostname);
   MPI_Allgather(MPI_IN_PLACE, 0, MPI_DATATYPE_NULL, hostHashs, sizeof(uint64_t), MPI_BYTE, MPI_COMM_WORLD);
@@ -823,6 +820,12 @@ testResult_t run() {
     if (p == proc) break;
     if (hostHashs[p] == hostHashs[proc]) localRank++;
   }
+#ifdef MPI_COLLNET_SUPPORT
+  MPI_Comm master_comm;
+  int color = localRank;
+  MPI_Comm_split(MPI_COMM_WORLD, color, proc, &master_comm);
+  ncclCollNetMpiHook(master_comm);
+#endif
 #endif
   is_main_thread = (proc == 0) ? 1 : 0;
 
