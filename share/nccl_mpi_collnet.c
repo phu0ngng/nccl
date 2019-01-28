@@ -56,19 +56,19 @@ void ncclCollNetMpiUnlock();
 /* NCCL MPI Plugin */
 
 // Functions prototypes
-int ncclCollNetMpiInit(ncclDebugLogger_t logFunction);
-int ncclCollNetMpiDevices(int* ndev);
-int ncclCollNetMpiPciPath(int dev, char** path);
-int ncclCollNetMpiPtrSupport(int dev, int* supportedTypes);
-int ncclCollNetMpiListen(int dev, void* handle, void** listenComm);
-int ncclCollNetMpiConnect(void* handles[], int nranks, void* listenComm, void** collComm);
-int ncclCollNetMpiReduceSupport(ncclDataType_t dataType, ncclRedOp_t redOp, int* supported);
-int ncclCollNetMpiRegMr(void* collComm, void* data, int size, int type, void** mhandle);
-int ncclCollNetMpiDeregMr(void* collComm, void* mhandle);
-int ncclCollNetMpiIallreduce(void* collComm, void* sendData, void* recvData, int count, ncclDataType_t dataType, ncclRedOp_t redOp, void* sendMhandle, void* recvMhandle, void** request);
-int ncclCollNetMpiFlush(void* recvComm, void* data, int size, void* mhandle);
-int ncclCollNetMpiTest(void* request, int* done, int* size);
-int ncclCollNetMpiClose(void* comm);
+ncclResult_t ncclCollNetMpiInit(ncclDebugLogger_t logFunction);
+ncclResult_t ncclCollNetMpiDevices(int* ndev);
+ncclResult_t ncclCollNetMpiPciPath(int dev, char** path);
+ncclResult_t ncclCollNetMpiPtrSupport(int dev, int* supportedTypes);
+ncclResult_t ncclCollNetMpiListen(int dev, void* handle, void** listenComm);
+ncclResult_t ncclCollNetMpiConnect(void* handles[], int nranks, void* listenComm, void** collComm);
+ncclResult_t ncclCollNetMpiReduceSupport(ncclDataType_t dataType, ncclRedOp_t redOp, int* supported);
+ncclResult_t ncclCollNetMpiRegMr(void* collComm, void* data, int size, int type, void** mhandle);
+ncclResult_t ncclCollNetMpiDeregMr(void* collComm, void* mhandle);
+ncclResult_t ncclCollNetMpiIallreduce(void* collComm, void* sendData, void* recvData, int count, ncclDataType_t dataType, ncclRedOp_t redOp, void* sendMhandle, void* recvMhandle, void** request);
+ncclResult_t ncclCollNetMpiFlush(void* recvComm, void* data, int size, void* mhandle);
+ncclResult_t ncclCollNetMpiTest(void* request, int* done, int* size);
+ncclResult_t ncclCollNetMpiClose(void* comm);
 
 // MPI Net Module
 ncclCollNet_t NCCL_COLLNET_PLUGIN_SYMBOL = {
@@ -222,7 +222,7 @@ static __inline__ MPI_Datatype typeConvert(ncclDataType_t type) {
     case ncclFloat64: return MPI_DOUBLE;
     default:
       printf("MPI: unsupported data type\n");
-      return -1;
+      return MPI_DATATYPE_NULL;
   }
 }
 
@@ -234,7 +234,7 @@ static __inline__ MPI_Op opConvert(ncclRedOp_t op) {
     case ncclMin: return MPI_MIN;
     default:
       printf("MPI: unsupported reduce operation\n");
-      return -1;
+      return MPI_OP_NULL;
   }
 }
 
@@ -247,33 +247,33 @@ static int getCudaSupport() {
   return cudaSupport;
 }
 
-int ncclCollNetMpiInit(ncclDebugLogger_t logFunction) {
+ncclResult_t ncclCollNetMpiInit(ncclDebugLogger_t logFunction) {
   printf("ncclCollNetMpiInit not implemented\n");
   return 0;
 }
 
-int ncclCollNetMpiDevices(int* ndev) {
+ncclResult_t ncclCollNetMpiDevices(int* ndev) {
   *ndev = 1;
   return 0;
 }
 
-int ncclCollNetMpiPciPath(int dev, char** path) {
+ncclResult_t ncclCollNetMpiPciPath(int dev, char** path) {
   printf("ncclCollNetMpiPciPath not implemented\n");
   return 0;
 }
 
-int ncclCollNetMpiPtrSupport(int dev, int* supportedTypes) {
+ncclResult_t ncclCollNetMpiPtrSupport(int dev, int* supportedTypes) {
   *supportedTypes = NCCL_PTR_HOST;
   if (getCudaSupport()) *supportedTypes |= NCCL_PTR_CUDA;
   return 0;
 }
 
-int ncclCollNetMpiReduceSupport(ncclDataType_t dataType, ncclRedOp_t redOp, int* supported) {
+ncclResult_t ncclCollNetMpiReduceSupport(ncclDataType_t dataType, ncclRedOp_t redOp, int* supported) {
   *supported = 1;
   return 0;
 }
 
-int ncclCollNetMpiListen(int dev, void* opaqueHandle, void** listenComm) {
+ncclResult_t ncclCollNetMpiListen(int dev, void* opaqueHandle, void** listenComm) {
   struct ncclCollNetMpiListenComm* comm = (struct ncclCollNetMpiListenComm*)malloc(sizeof(struct ncclCollNetMpiListenComm));
   struct ncclCollNetMpiHandle* handle = (struct ncclCollNetMpiHandle*) opaqueHandle;
   assert(sizeof(struct ncclCollNetMpiHandle) < NCCL_NET_HANDLE_MAXSIZE);
@@ -295,7 +295,7 @@ int ncclCollNetMpiListen(int dev, void* opaqueHandle, void** listenComm) {
 // rank of root
 static int root = 0;
 
-int ncclCollNetMpiConnect(void* opaqueHandles[], int nranks, void* listenComm, void** collComm) {
+ncclResult_t ncclCollNetMpiConnect(void* opaqueHandles[], int nranks, void* listenComm, void** collComm) {
   struct ncclCollNetMpiSendComm* comm = (struct ncclCollNetMpiSendComm*)malloc(sizeof(struct ncclCollNetMpiSendComm));
   struct ncclCollNetMpiHandle* handle = (struct ncclCollNetMpiHandle*)(opaqueHandles[0]); // take 0 as root
   int err;
@@ -318,15 +318,15 @@ int ncclCollNetMpiConnect(void* opaqueHandles[], int nranks, void* listenComm, v
 }
 
 // Register/Deregister memory. Type is either NCCL_PTR_HOST or NCCL_PTR_CUDA.
-int ncclCollNetMpiRegMr(void* collComm, void* data, int size, int type, void** mhandle) {
+ncclResult_t ncclCollNetMpiRegMr(void* collComm, void* data, int size, int type, void** mhandle) {
   printf("ncclCollNetMpiRegMr not implemented\n");
-  *mhandle = 0xdeadbeef;
+  *mhandle = (void*)0xdeadbeef;
   return 0;
 }
 
-int ncclCollNetMpiDeregMr(void* collComm, void* mhandle) {
+ncclResult_t ncclCollNetMpiDeregMr(void* collComm, void* mhandle) {
   printf("ncclCollNetMpiDeregMr not implemented\n");
-  return (mhandle == 0xdeadbeef) ? 0 : -1;
+  return (mhandle == (void*)0xdeadbeef) ? 0 : -1;
 }
 
 #define CHECK_PTR(type) do {          \
@@ -338,18 +338,18 @@ int ncclCollNetMpiDeregMr(void* collComm, void* mhandle) {
   }                                   \
 } while(0)
 
-int ncclCollNetMpiIallreduce(void* collComm, void* sendData, void* recvData, int count, ncclDataType_t dataType, ncclRedOp_t redOp, void* sendMhandle, void* recvMhandle, void** request) {
+ncclResult_t ncclCollNetMpiIallreduce(void* collComm, void* sendData, void* recvData, int count, ncclDataType_t dataType, ncclRedOp_t redOp, void* sendMhandle, void* recvMhandle, void** request) {
   //printf("ncclCollNetMpiIallreduce\n");
   int ret;
   //CHECK_PTR(type);
-  struct ncclCollNetMpiSendComm* comm = (struct ncclCollNetMpiSendComm*)collComm;
+  //struct ncclCollNetMpiSendComm* comm = (struct ncclCollNetMpiSendComm*)collComm;
   MPI_Request* mpiRequest = ncclCollNetMpiGetRequest();
   *request = mpiRequest;
   MPI_PROTECT(ret, MPI_Iallreduce(sendData, recvData, count, typeConvert(dataType), opConvert(redOp), ncclCollNetMpiComm, mpiRequest));
   return ret;
 }
 
-int ncclCollNetMpiIsend(void* sendComm, void* data, void* dst, int count, ncclDataType_t dataType, ncclRedOp_t redOp, int type, void** request) {
+ncclResult_t ncclCollNetMpiIsend(void* sendComm, void* data, void* dst, int count, ncclDataType_t dataType, ncclRedOp_t redOp, int type, void** request) {
   //printf("ncclCollNetMpiIsend\n");
   int ret;
   //CHECK_PTR(type);
@@ -363,14 +363,14 @@ int ncclCollNetMpiIsend(void* sendComm, void* data, void* dst, int count, ncclDa
 
 #define BLOCK_RECV
 
-int ncclCollNetMpiIrecv(void* recvComm, void* data, int count, ncclDataType_t dataType, int type, void** request) {
+ncclResult_t ncclCollNetMpiIrecv(void* recvComm, void* data, int count, ncclDataType_t dataType, int type, void** request) {
   //printf("ncclCollNetMpiIrecv\n");
   int ret = 0;
   //CHECK_PTR(type);
   struct ncclCollNetMpiRecvComm* comm = (struct ncclCollNetMpiRecvComm*)recvComm;
 #if defined(BLOCK_RECV)
   MPI_PROTECT(ret, MPI_Bcast(data, count, typeConvert(dataType), comm->root, ncclCollNetMpiComm));
-  *request = 0xdeadbeef;
+  *request = (void*)0xdeadbeef;
 #else
   MPI_Request* mpiRequest = ncclCollNetMpiGetRequest();
   *request = mpiRequest;
@@ -380,12 +380,12 @@ int ncclCollNetMpiIrecv(void* recvComm, void* data, int count, ncclDataType_t da
   return ret;
 }
 
-int ncclCollNetMpiFlush(void* recvComm, void* data, int size, void* mhandle) {
+ncclResult_t ncclCollNetMpiFlush(void* recvComm, void* data, int size, void* mhandle) {
   // not implemented
   return -1;
 }
 
-int ncclCollNetMpiTest(void* request, int* done, int* size) {
+ncclResult_t ncclCollNetMpiTest(void* request, int* done, int* size) {
   //printf("ncclCollNetMpiTest\n");
   MPI_Request* mpiRequest = (MPI_Request*)request;
   MPI_Status status;
@@ -399,7 +399,7 @@ int ncclCollNetMpiTest(void* request, int* done, int* size) {
 }
 
 // No need to close connections in MPI
-int ncclCollNetMpiClose(void* comm) {
+ncclResult_t ncclCollNetMpiClose(void* comm) {
   if (comm) {
     free(comm);
   }
