@@ -201,10 +201,10 @@ ncclResult_t collNetConnect(struct ncclConnect* connectInfos, int nranks, struct
   recv->conn.opCountRem = &recvResources->devHostSendMem->opCount;
 
   // Connect to coll comm
-  struct collNetConnectInfo* infos = (struct collNetConnectInfo*)connectInfos;
   collNetHandle_t* handlePtrs[nranks];
   for (int i = 0; i < nranks; i++) {
-    handlePtrs[i] = &(infos[i].collNetHandle);
+    struct collNetConnectInfo* info = (struct collNetConnectInfo*)(connectInfos+i);
+    handlePtrs[i] = &(info->collNetHandle);
   }
   NCCLCHECK(collNetConnect((void**)handlePtrs, nranks, recvResources->netListenComm, &sendResources->collNetSendComm));
   recvResources->collNetRecvComm = sendResources->collNetSendComm;

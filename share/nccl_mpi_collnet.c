@@ -297,6 +297,10 @@ static int root = 0;
 
 ncclResult_t ncclCollNetMpiConnect(void* opaqueHandles[], int nranks, void* listenComm, void** collComm) {
   struct ncclCollNetMpiSendComm* comm = (struct ncclCollNetMpiSendComm*)malloc(sizeof(struct ncclCollNetMpiSendComm));
+  //for (int i = 0; i < nranks; i++) {
+  //  struct ncclCollNetMpiHandle* hd = (struct ncclCollNetMpiHandle*)(opaqueHandles[i]);
+  //  printf("Peer %d : rank %d\n", i, hd->rank);
+  //}
   struct ncclCollNetMpiHandle* handle = (struct ncclCollNetMpiHandle*)(opaqueHandles[0]); // take 0 as root
   int err;
   //int myTmpTag;
