@@ -239,9 +239,6 @@ ncclResult_t collNetFree(void* sendTransportResources, void* recvTransportResour
   NCCLCHECK(collNetDeregMr(sendResources->collNetSendComm, sendResources->llSendMhandle));
   if (sendResources->useGdr)
     CUDACHECK(cudaFree(sendResources->devRecvMem));
-  NCCLCHECK(collNetCloseColl(sendResources->collNetSendComm));
-  free(sendResources->reqFifo);
-  free(sendResources);
 
   // recv side
   struct collNetRecvResources* recvResources = (struct collNetRecvResources*)recvTransportResources;
@@ -251,6 +248,10 @@ ncclResult_t collNetFree(void* sendTransportResources, void* recvTransportResour
   NCCLCHECK(ncclCudaHostFree(recvResources->hostRecvMem));
   if (recvResources->useGdr)
     CUDACHECK(cudaFree(recvResources->devRecvMem));
+
+  NCCLCHECK(collNetCloseColl(sendResources->collNetSendComm));
+  free(sendResources->reqFifo);
+  free(sendResources);
   free(recvResources);
   return ncclSuccess;
 }
