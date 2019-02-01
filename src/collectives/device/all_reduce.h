@@ -218,37 +218,30 @@ __device__ void ncclAllReduceTreeLLKernel(struct CollectiveArgs* args) {
   const T * __restrict__ thisInput = (const T*)args->ThisInput;
   T * __restrict__ thisOutput = (T*)args->ThisOutput;
 
-  do {
-    // Reduce : max number of recv is 3, max number of send is 1 (binary tree + local)
-    ncclLLPrimitives<T, FUNC, NCCL_MAX_TREE_ARITY, 1> LLprims(tid, nthreads, tree->down, &tree->up, channel, comm, args->opCount);
-    for (ssize_t gridOffset = 0; gridOffset < size; gridOffset += loopSize) {
-      // Up
-      ssize_t offset = gridOffset + bid*chunkSize;
-      int nelem = min(chunkSize, size-offset);
-      if (tree->up == -1) {
-        LLprims.recvReduceCopy(thisInput+offset, thisOutput+offset, nelem);
-      } else if (tree->down[0] == -1) {
-        LLprims.send(thisInput+offset, nelem);
-      } else {
-        LLprims.recvReduceSend(thisInput+offset, nelem);
-      }
-    }
-  } while(0);
+  ncclLLPrimitives<T, FUNC, NCCL_MAX_TREE_ARITY, 1> LLprimsUp(tid, nthreads, tree->down, &tree->up, channel, comm, args->opCount);
+  ncclLLPrimitives<T, FUNC, 1, NCCL_MAX_TREE_ARITY> LLprimsDown(tid, nthreads, &tree->up, tree->down, channel, comm, args->opCount);
 
-  do {
-    // Broadcast : max number of recv is 1, max number of send is 3 (binary tree + local)
-    ncclLLPrimitives<T, FUNC, 1, NCCL_MAX_TREE_ARITY> LLprims(tid, nthreads, &tree->up, tree->down, channel, comm, args->opCount);
-    for (ssize_t gridOffset = 0; gridOffset < size; gridOffset += loopSize) {
-      // Down
-      ssize_t offset = gridOffset + bid*chunkSize;
-      int nelem = min(chunkSize, size-offset);
-      if (tree->up == -1) {
-        LLprims.send(thisOutput+offset, nelem);
-      } else if (tree->down[0] == -1) {
-        LLprims.recv(thisOutput+offset, nelem);
-      } else {
-        LLprims.recvCopySend(thisOutput+offset, nelem);
-      }
+  for (ssize_t gridOffset = 0; gridOffset < size; gridOffset += loopSize) {
+    // Reduce : max number of recv is 3, max number of send is 1 (binary tree + local)
+    // Up
+    ssize_t offset = gridOffset + bid*chunkSize;
+    int nelem = min(chunkSize, size-offset);
+    if (tree->up == -1) {
+      LLprimsUp.recvReduceCopy(thisInput+offset, thisOutput+offset, nelem);
+    } else if (tree->down[0] == -1) {
+      LLprimsUp.send(thisInput+offset, nelem);
+    } else {
+      LLprimsUp.recvReduceSend(thisInput+offset, nelem);
     }
-  } while(0);
+
+    // Broadcast : max number of recv is 1, max number of send is 3 (binary tree + local)
+    // Down
+    if (tree->up == -1) {
+      LLprimsDown.send(thisOutput+offset, nelem);
+    } else if (tree->down[0] == -1) {
+      LLprimsDown.recv(thisOutput+offset, nelem);
+    } else {
+      LLprimsDown.recvCopySend(thisOutput+offset, nelem);
+    }
+  }
 }
