@@ -794,7 +794,13 @@ int main(int argc, char* argv[]) {
     }
   }
 #ifdef MPI_SUPPORT
+#ifdef MPI_COLLNET_SUPPORT
+  int threadProvided;
+  MPI_Init_thread(&argc, &argv, MPI_THREAD_MULTIPLE, &threadProvided);
+  printf("Thread provided = %d\n", threadProvided);
+#else
   MPI_Init(&argc, &argv);
+#endif
 #endif
   return run();
 }
