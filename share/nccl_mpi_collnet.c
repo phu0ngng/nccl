@@ -148,6 +148,7 @@ collNetReq* ncclCollNetMpiGetRequest() {
   for (int i=0; i<numRequests; i++) {
     if (ncclCollNetMpiRequestUsed[i] == 0) {
       ncclCollNetMpiRequestUsed[i] = 1; 
+      ncclCollNetMpiRequests[i].size = -1;
       pthread_mutex_unlock(&ncclCollNetMpiRequestsLock);
       return ncclCollNetMpiRequests + i;
     }
@@ -354,7 +355,6 @@ ncclResult_t ncclCollNetMpiIallreduce(void* collComm, void* sendData, void* recv
   //CHECK_PTR(type);
   //struct ncclCollNetMpiSendComm* comm = (struct ncclCollNetMpiSendComm*)collComm;
   collNetReq* req = ncclCollNetMpiGetRequest();
-  *request = req;
 #ifdef BLOCK
   MPI_PROTECT(ret, MPI_Allreduce(sendData, recvData, count, typeConvert(dataType), opConvert(redOp), ncclCollNetMpiComm));
   int typeSize;
@@ -363,6 +363,7 @@ ncclResult_t ncclCollNetMpiIallreduce(void* collComm, void* sendData, void* recv
 #else
   MPI_PROTECT(ret, MPI_Iallreduce(sendData, recvData, count, typeConvert(dataType), opConvert(redOp), ncclCollNetMpiComm, &req->mpiRequest));
 #endif
+  *request = req;
   return ret;
 }
 
@@ -384,7 +385,6 @@ ncclResult_t ncclCollNetMpiIrecv(void* recvComm, void* data, int count, ncclData
   //CHECK_PTR(type);
   struct ncclCollNetMpiRecvComm* comm = (struct ncclCollNetMpiRecvComm*)recvComm;
   collNetReq* req = ncclCollNetMpiGetRequest();
-  *request = req;
 #if defined(BLOCK)
   MPI_PROTECT(ret, MPI_Bcast(data, count, typeConvert(dataType), comm->root, ncclCollNetMpiComm));
   int typeSize;
@@ -393,6 +393,7 @@ ncclResult_t ncclCollNetMpiIrecv(void* recvComm, void* data, int count, ncclData
 #else
   MPI_PROTECT(ret, MPI_Ibcast(data, count, typeConvert(dataType), comm->root, ncclCollNetMpiComm, &req->mpiRequest));
 #endif
+  *request = req;
   //printf("MPI bcast : %p %d %p %p\n", data, size, comm, *request);
   return ret;
 }
@@ -406,12 +407,14 @@ ncclResult_t ncclCollNetMpiTest(void* request, int* done, int* size) {
   //printf("ncclCollNetMpiTest\n");
   collNetReq* req = (collNetReq*)request;
 #ifdef BLOCK
-  if (req->size != 0) {
+  if (req->size != -1) {
     *done = 1;
     *size = req->size;
     ncclCollNetMpiFreeRequest(request);
-    return 0;
+  } else {
+    *done = 0;
   }
+  return 0;
 #endif
   MPI_Status status;
   int err;
