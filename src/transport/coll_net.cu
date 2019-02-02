@@ -192,7 +192,7 @@ ncclResult_t collNetConnect(struct ncclConnect* connectInfos, int nranks, struct
   // Intermediate buffering on GPU for GPU Direct RDMA
   struct ncclRecvMem* rRecvMem = recvResources->useGdr ? recvResources->devRecvMem : recvResources->devHostRecvMem;
   recv->conn.buff = rRecvMem->buff;
-  recv->conn.llBuff = rRecvMem->llBuff;
+  recv->conn.llBuff = recvResources->devHostRecvMem->llBuff;  // recv LL buff always on host
 
   // Head/Tail/Opcount are always on host
   recv->conn.tail = &recvResources->devHostRecvMem->tail;
@@ -218,8 +218,8 @@ ncclResult_t collNetConnect(struct ncclConnect* connectInfos, int nranks, struct
   // recv side
   NCCLCHECK(collNetRegMr(recvResources->collNetRecvComm, rRecvMem->buff, recvResources->buffSize,
         recvResources->useGdr ? NCCL_PTR_CUDA : NCCL_PTR_HOST, &recvResources->mhandle));
-  NCCLCHECK(collNetRegMr(recvResources->collNetRecvComm, rRecvMem->llBuff, NCCL_LL_BUFF_SIZE,
-        recvResources->useGdr ? NCCL_PTR_CUDA : NCCL_PTR_HOST, &recvResources->llMhandle));
+  NCCLCHECK(collNetRegMr(recvResources->collNetRecvComm, recvResources->devHostRecvMem->llBuff,
+        NCCL_LL_BUFF_SIZE, NCCL_PTR_HOST, &recvResources->llMhandle));
   // Share with send side as well (since iallreduce will need it)
   sendResources->recvMhandle = recvResources->mhandle;
   sendResources->llRecvMhandle = recvResources->llMhandle;
@@ -415,7 +415,7 @@ ncclResult_t collNetRecvProxy(struct ncclProxyArgs* args) {
     args->idle = 1;
     volatile uint64_t* nextHead = &resources->hostSendMem->head;
     struct ncclRecvMem* localMem = resources->useGdr ? resources->devRecvMem : resources->hostRecvMem;
-    char* localBuff = args->llMode ? (char*)localMem->llBuff : localMem->buff;
+    char* localBuff = args->llMode ? (char*)resources->hostRecvMem->llBuff : localMem->buff;  // LL always on host mem
     void* mhandle = args->llMode ? resources->llMhandle : resources->mhandle;
     uint64_t* nextTail = &resources->hostRecvMem->tail;
 
@@ -461,7 +461,7 @@ done: if (args->tail > args->head) {
             *nextTail = args->head;
           } else { // ll
             // re-attach flag
-            uint32_t flag = args->head; //0xdeadbeef;
+            uint32_t flag = args->head;
             union ncclLLFifoLine* lines = (union ncclLLFifoLine*)(localBuff)+buffSlot*NCCL_LL_SLICE_LINES;
             uint32_t* tmp = (uint32_t*)malloc(size);
             memcpy(tmp, lines, size);
