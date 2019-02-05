@@ -317,8 +317,10 @@ ncclResult_t collNetSendProxy(struct ncclProxyArgs* args) {
                 llData[2*i] = d1[0]; //lines[i].data1;
                 llData[2*i+1] = d2[0]; //lines[i].data2;
               }
-              int count = 2*nFifoLines*sizeof(uint32_t) / ncclTypeSize(args->dtype);
-              NCCLCHECK(collNetIallreduce(resources->collNetSendComm, (void*)llData, (void*)(reqFifo[buffSlot].intmBuff), count, args->dtype, args->redOp, resources->llSendMhandle, resources->llRecvMhandle, args->requests+buffSlot));
+              int realSize = 2*nFifoLines*sizeof(uint32_t);
+              memcpy(lines, llData, realSize);
+              int count = realSize / ncclTypeSize(args->dtype);
+              NCCLCHECK(collNetIallreduce(resources->collNetSendComm, (void*)lines, (void*)(reqFifo[buffSlot].intmBuff), count, args->dtype, args->redOp, resources->llSendMhandle, resources->llRecvMhandle, args->requests+buffSlot));
               INFO(NCCL_NET,"Send proxy : opCount %lx head %lx tail %lx end %lx nsteps %d llMode %d count %d size %d request %p dstBuff %p ==> Posted", args->opCount, args->head, args->tail, args->end, args->nsteps, args->llMode, count, size, args->requests[buffSlot], reqFifo[buffSlot].intmBuff);
               if (args->requests[buffSlot] != NULL) {
                 sizesFifo[buffSlot] = -1;
