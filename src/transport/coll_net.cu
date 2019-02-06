@@ -67,6 +67,7 @@ struct collNetRecvResources {
   struct ncclRecvMem* hostRecvMem;
   struct ncclSendMem* devHostSendMem;
   struct ncclRecvMem* devHostRecvMem;
+  uint32_t* llData;
   int netDev;
   int useGdr;
   int buffSize;
@@ -150,6 +151,7 @@ ncclResult_t collNetSetup(struct ncclPeerInfo* myInfo, struct ncclConnect* conne
     NCCLCHECK(ncclCudaCalloc((char**)(&recvResources->devRecvMem), recvSize));
   }
   NCCLCHECK(ncclCudaHostAlloc((void**)&recvResources->hostRecvMem, (void**)&recvResources->devHostRecvMem, recvSize));
+  NCCLCHECK(ncclCalloc(&(recvResources->llData), NCCL_LL_BUFF_LINES*2));
   recvResources->buffSize = buffSize;
 
   INFO(NCCL_INIT|NCCL_NET,"Coll %02d : %d [receive] via COLLNET/%s/%d%s", channelId, myInfo->rank, collNetName(), recvResources->netDev,
@@ -218,8 +220,8 @@ ncclResult_t collNetConnect(struct ncclConnect* connectInfos, int nranks, struct
   // recv side
   NCCLCHECK(collNetRegMr(recvResources->collNetRecvComm, rRecvMem->buff, recvResources->buffSize,
         recvResources->useGdr ? NCCL_PTR_CUDA : NCCL_PTR_HOST, &recvResources->mhandle));
-  NCCLCHECK(collNetRegMr(recvResources->collNetRecvComm, recvResources->devHostRecvMem->llBuff,
-        NCCL_LL_BUFF_SIZE, NCCL_PTR_HOST, &recvResources->llMhandle));
+  NCCLCHECK(collNetRegMr(recvResources->collNetRecvComm, recvResources->llData,
+        NCCL_LL_BUFF_LINES*sizeof(uint32_t)*2, NCCL_PTR_HOST, &recvResources->llMhandle));
   // Share with send side as well (since iallreduce will need it)
   sendResources->recvMhandle = recvResources->mhandle;
   sendResources->llRecvMhandle = recvResources->llMhandle;
@@ -417,11 +419,11 @@ ncclResult_t collNetRecvProxy(struct ncclProxyArgs* args) {
     args->idle = 1;
     volatile uint64_t* nextHead = &resources->hostSendMem->head;
     struct ncclRecvMem* localMem = resources->useGdr ? resources->devRecvMem : resources->hostRecvMem;
-    char* localBuff = args->llMode ? (char*)resources->hostRecvMem->llBuff : localMem->buff;  // LL always on host mem
+    char* localBuff = args->llMode ? (char*)resources->llData : localMem->buff;  // LL always on host mem
     void* mhandle = args->llMode ? resources->llMhandle : resources->mhandle;
     uint64_t* nextTail = &resources->hostRecvMem->tail;
 
-    int stepSize = ( args->llMode ? NCCL_LL_BUFF_SIZE : args->channel->buffSize ) / NCCL_STEPS;
+    int stepSize = ( args->llMode ? NCCL_LL_BUFF_LINES*2*sizeof(uint32_t) : args->channel->buffSize ) / NCCL_STEPS;
 
 #ifdef SHARED_REQ_Q
     struct reqState* reqFifo = resources->reqFifo;
@@ -464,15 +466,14 @@ done: if (args->tail > args->head) {
           } else { // ll
             // re-attach flag
             uint32_t flag = args->head;
-            union ncclLLFifoLine* lines = (union ncclLLFifoLine*)(localBuff)+buffSlot*NCCL_LL_SLICE_LINES;
-            uint32_t* tmp = (uint32_t*)malloc(size);
-            memcpy(tmp, lines, size);
+            union ncclLLFifoLine* lines = (union ncclLLFifoLine*)(resources->hostRecvMem->llBuff)+buffSlot*NCCL_LL_SLICE_LINES;
+            uint32_t* recvData = resources->llData+buffSlot*NCCL_LL_SLICE_LINES*2;
             int nFifoLines = DIVUP(size, 2*sizeof(uint32_t));
             for (int i=0; i<nFifoLines; i++) {
               uint64_t val;
-              val = ((uint64_t)flag << 32) + tmp[2*i];
+              val = ((uint64_t)flag << 32) + recvData[2*i];
               lines[i].v[0] = val;
-              val = ((uint64_t)flag << 32) + tmp[2*i+1];
+              val = ((uint64_t)flag << 32) + recvData[2*i+1];
               lines[i].v[1] = val;
             }
           }
