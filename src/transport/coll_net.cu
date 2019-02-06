@@ -50,6 +50,7 @@ struct collNetSendResources {
   struct ncclRecvMem* hostRecvMem;
   struct ncclSendMem* devHostSendMem;
   struct ncclRecvMem* devHostRecvMem;
+  struct ncclLLDataLine* llData;
   int netDev;
   int useGdr;
   int buffSize;
@@ -138,6 +139,7 @@ ncclResult_t collNetSetup(struct ncclPeerInfo* myInfo, struct ncclConnect* conne
     NCCLCHECK(ncclCudaCalloc((char**)(&sendResources->devRecvMem), recvSize));
   }
   NCCLCHECK(ncclCudaHostAlloc((void**)&sendResources->hostRecvMem, (void**)&sendResources->devHostRecvMem, recvSize));
+  NCCLCHECK(ncclCalloc(&(sendResources->llData), NCCL_LL_BUFF_LINES));
   sendResources->buffSize = buffSize;
 
   INFO(NCCL_INIT|NCCL_NET,"Coll %02d : %d [send] via COLLNET/%s/%d%s", channelId, myInfo->rank, collNetName(), sendResources->netDev,
@@ -221,8 +223,8 @@ ncclResult_t collNetConnect(struct ncclConnect* connectInfos, int nranks, struct
   // send side
   NCCLCHECK(collNetRegMr(sendResources->collNetSendComm, sRecvMem->buff, sendResources->buffSize,
         sendResources->useGdr ? NCCL_PTR_CUDA : NCCL_PTR_HOST, &sendResources->sendMhandle));
-  NCCLCHECK(collNetRegMr(sendResources->collNetSendComm, sendResources->devHostRecvMem->llBuff,
-        NCCL_LL_BUFF_SIZE, NCCL_PTR_HOST, &sendResources->llSendMhandle));
+  NCCLCHECK(collNetRegMr(sendResources->collNetSendComm, sendResources->llData,
+        NCCL_LL_BUFF_LINES*sizeof(struct ncclLLDataLine), NCCL_PTR_HOST, &sendResources->llSendMhandle));
   // recv side
   NCCLCHECK(collNetRegMr(recvResources->collNetRecvComm, rRecvMem->buff, recvResources->buffSize,
         recvResources->useGdr ? NCCL_PTR_CUDA : NCCL_PTR_HOST, &recvResources->mhandle));
@@ -247,6 +249,7 @@ ncclResult_t collNetFree(void* sendTransportResources, void* recvTransportResour
   NCCLCHECK(collNetDeregMr(sendResources->collNetSendComm, sendResources->llSendMhandle));
   if (sendResources->useGdr)
     CUDACHECK(cudaFree(sendResources->devRecvMem));
+  free(sendResources->llData);
 
   // recv side
   struct collNetRecvResources* recvResources = (struct collNetRecvResources*)recvTransportResources;
@@ -256,6 +259,7 @@ ncclResult_t collNetFree(void* sendTransportResources, void* recvTransportResour
   NCCLCHECK(ncclCudaHostFree(recvResources->hostRecvMem));
   if (recvResources->useGdr)
     CUDACHECK(cudaFree(recvResources->devRecvMem));
+  free(recvResources->llData);
 
   NCCLCHECK(collNetCloseColl(sendResources->collNetSendComm));
   free(sendResources->reqFifo);
@@ -318,17 +322,15 @@ ncclResult_t collNetSendProxy(struct ncclProxyArgs* args) {
             }
             if (ready) {
               //separate data from flag
-              struct ncclLLDataLine llData[nFifoLines];
+              struct ncclLLDataLine* sendData = resources->llData+buffSlot*NCCL_LL_SLICE_LINES;
               for (int i=0; i<nFifoLines; i++) {
                 volatile uint32_t *d1 = &lines[i].data1;
                 volatile uint32_t *d2 = &lines[i].data2;
-                llData[i].data1 = d1[0]; //lines[i].data1;
-                llData[i].data2 = d2[0]; //lines[i].data2;
+                sendData[i].data1 = d1[0];
+                sendData[i].data2 = d2[0];
               }
-              int realSize = nFifoLines*sizeof(struct ncclLLDataLine);
-              memcpy(lines, llData, realSize);
-              int count = realSize / ncclTypeSize(args->dtype);
-              NCCLCHECK(collNetIallreduce(resources->collNetSendComm, (void*)lines, (void*)(reqFifo[buffSlot].intmBuff), count, args->dtype, args->redOp, resources->llSendMhandle, resources->llRecvMhandle, args->requests+buffSlot));
+              int count = nFifoLines*sizeof(struct ncclLLDataLine) / ncclTypeSize(args->dtype);
+              NCCLCHECK(collNetIallreduce(resources->collNetSendComm, (void*)sendData, (void*)(reqFifo[buffSlot].intmBuff), count, args->dtype, args->redOp, resources->llSendMhandle, resources->llRecvMhandle, args->requests+buffSlot));
               INFO(NCCL_NET,"Send proxy : opCount %lx head %lx tail %lx end %lx nsteps %d llMode %d count %d size %d request %p dstBuff %p ==> Posted", args->opCount, args->head, args->tail, args->end, args->nsteps, args->llMode, count, size, args->requests[buffSlot], reqFifo[buffSlot].intmBuff);
               if (args->requests[buffSlot] != NULL) {
                 sizesFifo[buffSlot] = -1;
