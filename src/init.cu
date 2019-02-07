@@ -99,7 +99,15 @@ ncclResult_t initNet(ncclNet_t* net) {
   return ncclSuccess;
 }
 
-ncclResult_t initNetPlugin(ncclNet_t** net) {
+ncclResult_t initCollNet(ncclCollNet_t* collnet) {
+  int ndev;
+  if (collnet->init(ncclDebugLog) != ncclSuccess) return ncclInternalError;
+  if (collnet->devices(&ndev) != ncclSuccess) return ncclInternalError;
+  if (ndev <= 0) return ncclSystemError;
+  return ncclSuccess;
+}
+
+ncclResult_t initNetPlugin(ncclNet_t** net, ncclCollNet_t** collnet) {
   void* netPluginLib = dlopen("libnccl-net.so", RTLD_NOW | RTLD_LOCAL);
   if (netPluginLib == NULL) {
     // dlopen does not guarantee to set errno, but dlerror only gives us a
@@ -112,15 +120,23 @@ ncclResult_t initNetPlugin(ncclNet_t** net) {
     }
     return ncclSuccess;
   }
+  int flag = 0;
   ncclNet_t* extNet = (ncclNet_t*) dlsym(netPluginLib, STR(NCCL_PLUGIN_SYMBOL));
   if (extNet == NULL) {
     INFO(NCCL_INIT|NCCL_NET, "NET/Plugin: Failed to find " STR(NCCL_PLUGIN_SYMBOL) " symbol.");
-    goto cleanup;
-  }
-  if (initNet(extNet) == ncclSuccess) {
+    //goto cleanup; //TODO: decide if we require the plugin to implement both APIs
+  } else if (initNet(extNet) == ncclSuccess) {
     *net = extNet;
-    return ncclSuccess;
+    flag |= 0x01;
   }
+  ncclCollNet_t* extCollNet = (ncclCollNet_t*) dlsym(netPluginLib, STR(NCCL_COLLNET_PLUGIN_SYMBOL));
+  if (extCollNet == NULL) {
+    INFO(NCCL_INIT|NCCL_NET, "NET/Plugin: Failed to find " STR(NCCL_COLLNET_PLUGIN_SYMBOL) " symbol.");
+  } else if (initCollNet(extCollNet) == ncclSuccess) {
+    *collnet = extCollNet;
+    flag |= 0x10;
+  }
+  if (flag != 0) return ncclSuccess;
 cleanup:
   if (netPluginLib != NULL) dlclose(netPluginLib);
   return ncclSuccess;
@@ -130,13 +146,14 @@ ncclResult_t initNet() {
   // Always initialize sockets as we use it for bootstrap
   NCCLCHECK(initNet(&ncclNetSocket));
 
-  NCCLCHECK(initNetPlugin(&ncclNet));
+  NCCLCHECK(initNetPlugin(&ncclNet, &collNet));
   if (ncclNet != NULL) return ncclSuccess;
   if (initNet(&ncclNetIb) == ncclSuccess) {
     ncclNet = &ncclNetIb;
   } else {
     ncclNet = &ncclNetSocket;
   }
+  if (collNet != NULL) initCollNet(collNet);  //TODO: remove if no longer using MPI to test
   return ncclSuccess;
 }
 
