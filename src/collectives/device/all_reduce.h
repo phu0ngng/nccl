@@ -119,17 +119,19 @@ __device__ void ncclAllReduceTreeKernel(struct CollectiveArgs* args) {
     }
   }
 
-  // Broadcast : max number of recv is 1, max number of send is 3 (binary tree + local)
-  for (ssize_t gridOffset = 0; gridOffset < size; gridOffset += loopSize) {
-    // Down
-    ssize_t offset = gridOffset + bid*chunkSize;
-    int nelem = min(chunkSize, size-offset);
-    if (tree->up == comm->nRanks) {
-      primsDown.send(thisOutput+offset, nelem);
-    } else if (tree->down[0] == -1) {
-      primsDown.recv(thisOutput+offset, nelem);
-    } else {
-      primsDown.recvCopySend(thisOutput+offset, nelem);
+  if (!(tree->up == comm->nRanks && tree->down[0] == -1)) { // No need to broadcast in 1 rank per node case
+    // Broadcast : max number of recv is 1, max number of send is 3 (binary tree + local)
+    for (ssize_t gridOffset = 0; gridOffset < size; gridOffset += loopSize) {
+      // Down
+      ssize_t offset = gridOffset + bid*chunkSize;
+      int nelem = min(chunkSize, size-offset);
+      if (tree->up == comm->nRanks) {
+        primsDown.send(thisOutput+offset, nelem);
+      } else if (tree->down[0] == -1) {
+        primsDown.recv(thisOutput+offset, nelem);
+      } else {
+        primsDown.recvCopySend(thisOutput+offset, nelem);
+      }
     }
   }
 }
@@ -245,17 +247,19 @@ __device__ void ncclAllReduceTreeLLKernel(struct CollectiveArgs* args) {
     }
   }
 
-  // Broadcast : max number of recv is 1, max number of send is 3 (binary tree + local)
-  for (ssize_t gridOffset = 0; gridOffset < size; gridOffset += loopSize) {
-    // Down
-    ssize_t offset = gridOffset + bid*chunkSize;
-    int nelem = min(chunkSize, size-offset);
-    if (tree->up == comm->nRanks) {
-      LLprimsDown.send(thisOutput+offset, nelem);
-    } else if (tree->down[0] == -1) {
-      LLprimsDown.recv(thisOutput+offset, nelem);
-    } else {
-      LLprimsDown.recvCopySend(thisOutput+offset, nelem);
+  if (!(tree->up == comm->nRanks && tree->down[0] == -1)) { // No need to broadcast in 1 rank per node case
+    // Broadcast : max number of recv is 1, max number of send is 3 (binary tree + local)
+    for (ssize_t gridOffset = 0; gridOffset < size; gridOffset += loopSize) {
+      // Down
+      ssize_t offset = gridOffset + bid*chunkSize;
+      int nelem = min(chunkSize, size-offset);
+      if (tree->up == comm->nRanks) {
+        LLprimsDown.send(thisOutput+offset, nelem);
+      } else if (tree->down[0] == -1) {
+        LLprimsDown.recv(thisOutput+offset, nelem);
+      } else {
+        LLprimsDown.recvCopySend(thisOutput+offset, nelem);
+      }
     }
   }
 }
