@@ -114,7 +114,9 @@ __device__ void ncclAllReduceTreeKernel(struct CollectiveArgs* args) {
     } else {
       primsUp.recvReduceSend(thisInput+offset, nelem);
     }
-    if (tree->up == comm->nRanks) {
+    if (tree->up == -1) {
+      primsDown.send(thisOutput+offset, nelem);
+    } else if (tree->up == comm->nRanks) {
       primsDown.recv(thisOutput+offset, nelem);
     }
   }
@@ -241,7 +243,9 @@ __device__ void ncclAllReduceTreeLLKernel(struct CollectiveArgs* args) {
     } else {
       LLprimsUp.recvReduceSend(thisInput+offset, nelem);
     }
-    if (tree->up == comm->nRanks) {
+    if (tree->up == -1) {
+      LLprimsDown.send(thisOutput+offset, nelem);
+    } else if (tree->up == comm->nRanks) {
       LLprimsDown.recv(thisOutput+offset, nelem);
     }
   }
