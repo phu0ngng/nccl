@@ -1,0 +1,36 @@
+#
+# Copyright (c) 2015-2018, NVIDIA CORPORATION. All rights reserved.
+#
+# See LICENSE.txt for license information
+#
+.PHONY : test build
+default: build
+
+NCCL_HOME:=../../build/
+BUILDDIR=build
+CUDA_HOME:=/usr/local/cuda
+INC:= -I$(NCCL_HOME)/include -I$(CUDA_HOME)/include
+CFLAGS:=-fPIC $(INC) -I.
+PLUGIN_SO:=$(BUILDDIR)/lib/libnccl-net.so
+FILES:=plugin.c ibvwrap.c utils.c
+OBJS:=$(FILES:%.c=$(BUILDDIR)/obj/%.o)
+TEST:=$(BUILDDIR)/bin/test
+
+$(BUILDDIR)/obj/%.o: %.c
+	mkdir -p $(BUILDDIR)/obj
+	$(CC) $(CFLAGS) -c $< -o $@
+
+$(PLUGIN_SO): $(OBJS)
+	mkdir -p $(BUILDDIR)/lib
+	$(CC) -shared -o $@ -Wl,-soname,$(PLUGIN_SO) $(OBJS) -libverbs -L$(CUDA_HOME)/lib64 -lcudart
+
+build: $(PLUGIN_SO)
+test:  $(TEST)
+
+$(TEST): test.c $(PLUGIN_SO)
+	mkdir -p $(BUILDDIR)/bin
+	$(CC) $(CFLAGS) test.c -o $@ -L$(BUILDDIR)/lib -lnccl-net
+	$(TEST)
+
+clean:
+	rm -f $(PLUGIN_SO) $(OBJS) $(TEST)
