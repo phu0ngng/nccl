@@ -99,7 +99,8 @@ __global__ void NCCL_KERN_NAME(coll, op, dtype)(struct ncclColl firstColl) { \
 
 #define IMPL_COLL3(coll, op, ncclFunc, dtype, ctype, ncclColl, ncclOp, ncclType) \
   IMPL_COLL4(coll##Ring, op, ncclFunc, dtype, ctype, ncclColl, ncclOp, ncclType, 0) \
-  IMPL_COLL4(coll##Tree, op, ncclFunc, dtype, ctype, ncclColl, ncclOp, ncclType, 1)
+  IMPL_COLL4(coll##Tree, op, ncclFunc, dtype, ctype, ncclColl, ncclOp, ncclType, 1) \
+  IMPL_COLL4(coll##Accl, op, ncclFunc, dtype, ctype, ncclColl, ncclOp, ncclType, 2)
 
 #if NCCL_TYPE == 0
 #define IMPL_COLL2(coll, op, ncclFunc, ncclColl, ncclOp) \

@@ -18,7 +18,8 @@
 
 #define NCCL_FUNC4(coll, op, dtype) \
   (void*)NCCL_FUNC5(coll##Ring, op, dtype), \
-  (void*)NCCL_FUNC5(coll##Tree, op, dtype)
+  (void*)NCCL_FUNC5(coll##Tree, op, dtype), \
+  (void*)NCCL_FUNC5(coll##Accl, op, dtype)
 
 // Must be consistent with ncclDataType_t
 #define NCCL_FUNCS3A(coll, op) \
@@ -55,7 +56,7 @@
   NCCL_FUNCS3B(coll, copy)
 
 // Must be consistent with the ncclFuncSet enum
-static void* const ncclKerns[ncclCollCount*ncclNumOps*ncclNumTypes*2*2] = {
+static void* const ncclKerns[ncclCollCount*ncclNumOps*ncclNumTypes*3*2] = {
   NCCL_FUNCS2B(ncclBroadcast),
   NCCL_FUNCS2A(ncclReduce),
   NCCL_FUNCS2B(ncclAllGather),
@@ -314,7 +315,14 @@ static ncclResult_t computeColl(struct ncclInfo* info /* input */, struct ncclCo
   getKernelInfo(info, &coll->args.nChannels, &coll->args.nThreads, &llMode);
 
   int treeMode = info->pattern >= ncclPatternTreeUp ? 1 : 0;
-  coll->funcIndex = FUNC_INDEX(info->coll, info->op, info->datatype, llMode, treeMode);
+  int redSupport = 0;
+  if (treeMode && collNetSupport()) {
+    NCCLCHECK(collNetReduceSupport(info->datatype, info->op, &redSupport));
+  }
+
+  // Algorithm index: 2 = Accl (CollNet), 1 = Tree, 0 = Ring
+  coll->funcIndex = FUNC_INDEX(info->coll, info->op, info->datatype, llMode, redSupport == 1 ? 2 : treeMode);
+  coll->args.useCollTree = redSupport;
 
   int stepSize   = ( llMode ? NCCL_LL_BUFF_SIZE : info->comm->channels[0].buffSize ) / NCCL_STEPS;
   int chunkSteps = (llMode|treeMode) ? 1 : info->chunkSteps;
@@ -368,12 +376,6 @@ static ncclResult_t saveKernel(struct ncclInfo* info) {
   memset(&proxyArgs, 0, sizeof(struct ncclProxyArgs));
   NCCLCHECK(computeColl(info, &coll, &proxyArgs));
 
-  // Compute collNet support
-  int redSupport = 0;
-  if (collNetSupport()) {
-    NCCLCHECK(collNetReduceSupport(info->datatype, info->op, &redSupport));
-  }
-
   info->comm->myParams->blockDim.x = max(info->comm->myParams->blockDim.x, coll.args.nThreads);
   if (info->comm->userStreamSet == false) {
     info->comm->userStream = info->stream;
@@ -392,7 +394,7 @@ static ncclResult_t saveKernel(struct ncclInfo* info) {
 
     // Proxy
     proxyArgs.channel = channel;
-    proxyArgs.useCollTree = redSupport && channel->collNetSupport;
+    proxyArgs.useCollTree = coll.args.useCollTree && channel->collNetSupport;
     NCCLCHECK(transportSaveProxies(&proxyArgs, info->pattern, info->root, info->comm->nRanks));
 
     info->comm->myParams->gridDim.x++;
@@ -405,7 +407,7 @@ static ncclResult_t saveKernel(struct ncclInfo* info) {
     memcpy(c, &coll, sizeof(struct ncclColl));
 
     c->args.bid = bid;
-    c->args.useCollTree = redSupport && channel->collNetSupport;
+    c->args.useCollTree = coll.args.useCollTree && channel->collNetSupport;
     c->active = 1;
     opIndex = (opIndex+1)%NCCL_MAX_OPS;
     c->nextIndex = opIndex;

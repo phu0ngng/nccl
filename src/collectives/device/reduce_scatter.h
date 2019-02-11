@@ -64,6 +64,9 @@ __device__ void ncclReduceScatterRingKernel(struct CollectiveArgs* args) {
 template<int UNROLL, class FUNC, typename T>
 __device__ void ncclReduceScatterTreeKernel(struct CollectiveArgs* args) { }
 
+template<int UNROLL, class FUNC, typename T>
+__device__ void ncclReduceScatterAcclKernel(struct CollectiveArgs* args) { }
+
 template<int UNUSED, class FUNC, typename T>
 __device__ void ncclReduceScatterRingLLKernel(struct CollectiveArgs* args) {
   const int tid = threadIdx.x;
@@ -121,3 +124,6 @@ __device__ void ncclReduceScatterRingLLKernel(struct CollectiveArgs* args) {
 
 template<int UNUSED, class FUNC, typename T>
 __device__ void ncclReduceScatterTreeLLKernel(struct CollectiveArgs* args) { }
+
+template<int UNUSED, class FUNC, typename T>
+__device__ void ncclReduceScatterAcclLLKernel(struct CollectiveArgs* args) { }

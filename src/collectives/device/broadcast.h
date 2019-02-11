@@ -54,6 +54,9 @@ __device__ void ncclBroadcastRingKernel(struct CollectiveArgs* args) {
 template<int UNROLL, class FUNC, typename T>
 __device__ void ncclBroadcastTreeKernel(struct CollectiveArgs* args) { }
 
+template<int UNROLL, class FUNC, typename T>
+__device__ void ncclBroadcastAcclKernel(struct CollectiveArgs* args) { }
+
 template<int UNUSED, class FUNC, typename T>
 __device__ void ncclBroadcastRingLLKernel(struct CollectiveArgs* args) {
   const int tid = threadIdx.x;
@@ -100,3 +103,6 @@ __device__ void ncclBroadcastRingLLKernel(struct CollectiveArgs* args) {
 
 template<int UNUSED, class FUNC, typename T>
 __device__ void ncclBroadcastTreeLLKernel(struct CollectiveArgs* args) { }
+
+template<int UNUSED, class FUNC, typename T>
+__device__ void ncclBroadcastAcclLLKernel(struct CollectiveArgs* args) { }
