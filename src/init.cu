@@ -182,6 +182,7 @@ static ncclResult_t ncclInit() {
     initEnv();
     initDebug();
     initNet();
+    INFO(NCCL_INIT, "Using network %s", ncclNetName());
     initialized = true;
   }
   pthread_mutex_unlock(&initLock);
