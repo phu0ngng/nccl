@@ -223,7 +223,7 @@ ncclResult_t netRecvSetup(struct ncclPeerInfo* myInfo, struct ncclPeerInfo* peer
   return ncclSuccess;
 }
 
-ncclResult_t netSendConnect(struct ncclConnect* connectInfo, struct ncclConnector* send) {
+ncclResult_t netSendConnect(struct ncclConnect* connectInfo, int nranks, struct ncclConnector* send) {
   // Setup device pointers
   struct netSendResources* resources = (struct netSendResources*)send->transportResources;
 
@@ -253,7 +253,7 @@ ncclResult_t netSendConnect(struct ncclConnect* connectInfo, struct ncclConnecto
 }
 
 /* Connect to this peer */
-ncclResult_t netRecvConnect(struct ncclConnect* connectInfo, struct ncclConnector* recv) {
+ncclResult_t netRecvConnect(struct ncclConnect* connectInfo, int nranks, struct ncclConnector* recv) {
   // Setup device pointers
   struct netRecvResources* resources = (struct netRecvResources*)recv->transportResources;
 

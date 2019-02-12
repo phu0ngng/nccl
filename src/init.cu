@@ -682,7 +682,7 @@ static ncclResult_t p2pSetup(struct ncclComm* comm, struct ncclChannel* channel,
     conn = &channel->peers[peer].send;
     if (conn->connected) {++nSkippedSend; continue; }
     NCCLCHECK(bootstrapRecv(comm->bootstrap, peer, &connect, sizeof(struct ncclConnect)));
-    NCCLCHECK(conn->transportComm->connect(&connect, conn));
+    NCCLCHECK(conn->transportComm->connect(&connect, 1, conn));
     conn->connected = 1;
   }
   for (int i=0; i<nrecv; i++) {
@@ -691,7 +691,7 @@ static ncclResult_t p2pSetup(struct ncclComm* comm, struct ncclChannel* channel,
     conn = &channel->peers[peer].recv;
     if (conn->connected) {++nSkippedRecv; continue; }
     NCCLCHECK(bootstrapRecv(comm->bootstrap, peer, &connect, sizeof(struct ncclConnect)));
-    NCCLCHECK(conn->transportComm->connect(&connect, conn));
+    NCCLCHECK(conn->transportComm->connect(&connect, 1, conn));
     conn->connected = 1;
   }
   TRACE(NCCL_INIT, "nsend %d nrecv %d nSkippedSend %u nSkippedRecv %u - DONE", nsend, nrecv, nSkippedSend, nSkippedRecv);
@@ -701,7 +701,7 @@ static ncclResult_t p2pSetup(struct ncclComm* comm, struct ncclChannel* channel,
 extern struct ncclCollTransport collNetTransport;
 
 // All ranks must participate in collNetSetup call
-static ncclResult_t collNetSetup(struct ncclComm* comm, struct ncclChannel* channel, int rank, int nranks, int* treeMasters, int* supported) {
+static ncclResult_t collNetSetup(struct ncclComm* comm, struct ncclChannel* channel, int nChannels, int rank, int nranks,  int* treeMasters, int type, int* supported) {
   int nMasters = 0, rankInCollNet = -1;
   for (int r=0; r<nranks; r++) {
     if (r == rank) rankInCollNet = nMasters;
@@ -722,34 +722,45 @@ static ncclResult_t collNetSetup(struct ncclComm* comm, struct ncclChannel* chan
     INFO(NCCL_INIT|NCCL_NET, "rank %d collNetRank %d canConnect = %d", rank, rankInCollNet, ret);
   }
 
-  struct ncclCollTransportComm* allreduce = &(collNetTransport.allreduce);
   // select
-  struct ncclConnector* recv = &channel->peers[nranks].recv;
-  struct ncclConnector* send = &channel->peers[nranks].send;
+  struct ncclPeer* root = channel->peers+nranks;
+  struct ncclConnector* conn = (type == 0) ? &root->recv : &root->send;
+  struct ncclTransportComm* transportComm = (type == 0) ? &(collNetTransport.recv) : &(collNetTransport.send);
+  conn->transportComm = transportComm;
   // setup
   struct ncclConnect myConnect;
   if (treeMasters[rank]) {
-    NCCLCHECK(allreduce->setup(myInfo, &myConnect, send, recv, channel->buffSize, channel->id));
+    NCCLCHECK(transportComm->setup(myInfo, peerInfo, &myConnect, conn, channel->buffSize, channel->id));
   }
   // send connect handle to everyone else
   // all ranks must participate in the AllGather call
-  ncclConnect allConnects[nranks];
-  memcpy(allConnects+rank, &myConnect, sizeof(struct ncclConnect));
-  NCCLCHECK(bootstrapAllGather(comm->bootstrap, allConnects, sizeof(struct ncclConnect)));
-  // consolidate
-  ncclConnect masterConnects[nMasters];
-  int c = 0;
-  for (int r = 0; r < nranks; r++) {
-    if (treeMasters[r]) {
-      memcpy(masterConnects+c, allConnects+r, sizeof(struct ncclConnect));
-      c++;
+  ncclConnect* masterConnects;
+  if (type == 0) {  // only on recv side
+    ncclConnect allConnects[nranks];
+    memcpy(allConnects+rank, &myConnect, sizeof(struct ncclConnect));
+    NCCLCHECK(bootstrapAllGather(comm->bootstrap, allConnects, sizeof(struct ncclConnect)));
+    // consolidate
+    NCCLCHECK(ncclCalloc(&masterConnects, nMasters));
+    int c = 0;
+    for (int r = 0; r < nranks; r++) {
+      if (treeMasters[r]) {
+        memcpy(masterConnects+c, allConnects+r, sizeof(struct ncclConnect));
+        c++;
+      }
     }
   }
   // connect
   if (treeMasters[rank]) {
-    NCCLCHECK(allreduce->connect(masterConnects, nMasters, send, recv));
+    NCCLCHECK(transportComm->connect(masterConnects, nMasters, conn));
     INFO(NCCL_INIT|NCCL_NET, "rank %d collNetRank %d collNetNranks %d init COMPLETE", rank, rankInCollNet, nMasters);
   }
+  // connect send and recv
+  if (treeMasters[rank] && type == 0) {
+    struct ncclChannel* sendChannel = channel - nChannels/2;
+    ncclConnector* send = &sendChannel->peers[nranks].send;
+    NCCLCHECK(collNetTransport.connectSendRecv(send, conn));
+  }
+
   *supported = (ret > 0) ? 1 : 0;
   return ncclSuccess;
 }
@@ -888,7 +899,8 @@ static ncclResult_t initTransportsRank(struct ncclComm* comm, ncclUniqueId* comm
     NCCLCHECK(p2pSetup(comm, channel, 1, &channel->tree.up, NCCL_MAX_TREE_ARITY, channel->tree.down));
     // connect master ranks to the nranks-th rank using collnet
     if (collNetSupport()) {
-      NCCLCHECK(collNetSetup(comm, channel, rank, nranks, treeIn+r*nranks, &channel->collNetSupport));
+      int sendrecv = (r < nrings/2) ? 1 : 0;
+      NCCLCHECK(collNetSetup(comm, channel, nrings, rank, nranks, treeIn+r*nranks, sendrecv, &channel->collNetSupport));
     }
   }
   if (comm->treeThreshold > 0) {
@@ -1128,8 +1140,8 @@ static ncclResult_t initTransportsAll(struct ncclComm** comms, const int* devs, 
       struct ncclRing *ring = &channel->ring;
       struct ncclConnector* recv = &channel->peers[ring->prev].recv;
       struct ncclConnector* send = &channel->peers[ring->next].send;
-      NCCLCHECK(recv->transportComm->connect(connect+ring->prev*2+1, recv));
-      NCCLCHECK(send->transportComm->connect(connect+ring->next*2+0, send));
+      NCCLCHECK(recv->transportComm->connect(connect+ring->prev*2+1, 1, recv));
+      NCCLCHECK(send->transportComm->connect(connect+ring->next*2+0, 1, send));
     }
   }
   free(allInfo);

@@ -117,8 +117,8 @@ ncclResult_t collNetCanConnect(ncclTvalue_t* ret, struct ncclPeerInfo* myInfo, s
   return ncclSuccess;
 }
 
-/* Setup send connector and recv connector, and return connect information for others in the coll communicator to connect to me */
-ncclResult_t collNetSetup(struct ncclPeerInfo* myInfo, struct ncclConnect* connectInfo, struct ncclConnector* send, struct ncclConnector* recv, int buffSize, int channelId) {
+/* Setup send connector, and return connect information for others in the coll communicator to connect to me */
+ncclResult_t collNetSendSetup(struct ncclPeerInfo* myInfo, struct ncclPeerInfo* peerInfo, struct ncclConnect* connectInfo, struct ncclConnector* send, int buffSize, int channelId) {
   int sendSize = sizeof(struct ncclSendMem);
   int recvSize = offsetof(struct ncclRecvMem, buff)+buffSize;
   int cudaDev;
@@ -145,6 +145,22 @@ ncclResult_t collNetSetup(struct ncclPeerInfo* myInfo, struct ncclConnect* conne
   INFO(NCCL_INIT|NCCL_NET,"Coll %02d : %d [send] via COLLNET/%s/%d%s", channelId, myInfo->rank, collNetName(), sendResources->netDev,
       sendResources->useGdr ? "/GDRDMA" : "");
 
+#ifdef SHARED_REQ_Q
+  // create shared info between send and recv proxies
+  NCCLCHECK(ncclCalloc(&(sendResources->reqFifo), NCCL_STEPS));
+#endif
+
+  return ncclSuccess;
+}
+
+/* Setup recv connector */
+ncclResult_t collNetRecvSetup(struct ncclPeerInfo* myInfo, struct ncclPeerInfo* peerInfo, struct ncclConnect* connectInfo, struct ncclConnector* recv, int buffSize, int channelId) {
+  int sendSize = sizeof(struct ncclSendMem);
+  int recvSize = offsetof(struct ncclRecvMem, buff)+buffSize;
+  int cudaDev;
+  CUDACHECK(cudaGetDevice(&cudaDev));
+  int netDev = getDev(channelId, collNetTvalues[cudaDev], collNetNDev);
+
   // recv side
   struct collNetRecvResources* recvResources;
   NCCLCHECK(ncclCalloc(&recvResources, 1));
@@ -168,16 +184,10 @@ ncclResult_t collNetSetup(struct ncclPeerInfo* myInfo, struct ncclConnect* conne
   struct collNetConnectInfo* info = (struct collNetConnectInfo*) connectInfo;
   NCCLCHECK(collNetListen(recvResources->netDev, &info->collNetHandle, &recvResources->netListenComm));
 
-#ifdef SHARED_REQ_Q
-  // create shared info between send and recv proxies
-  NCCLCHECK(ncclCalloc(&(sendResources->reqFifo), NCCL_STEPS));
-  recvResources->reqFifo = sendResources->reqFifo;
-#endif
-
   return ncclSuccess;
 }
 
-ncclResult_t collNetConnect(struct ncclConnect* connectInfos, int nranks, struct ncclConnector* send, struct ncclConnector* recv) {
+ncclResult_t collNetSendConnect(struct ncclConnect* connectInfos, int nranks, struct ncclConnector* send) {
   // send side
   // Setup device pointers
   struct collNetSendResources* sendResources = (struct collNetSendResources*)send->transportResources;
@@ -195,6 +205,10 @@ ncclResult_t collNetConnect(struct ncclConnect* connectInfos, int nranks, struct
   send->conn.opCountLoc = &sendResources->devHostSendMem->opCount;
   for (int i=0; i<NCCL_STEPS; i++) send->conn.fifo[i] = -1;
 
+  return ncclSuccess;
+}
+
+ncclResult_t collNetRecvConnect(struct ncclConnect* connectInfos, int nranks, struct ncclConnector* recv) {
   // recv side
   // Setup device pointers
   struct collNetRecvResources* recvResources = (struct collNetRecvResources*)recv->transportResources;
@@ -216,16 +230,30 @@ ncclResult_t collNetConnect(struct ncclConnect* connectInfos, int nranks, struct
     struct collNetConnectInfo* info = (struct collNetConnectInfo*)(connectInfos+i);
     handlePtrs[i] = &(info->collNetHandle);
   }
-  NCCLCHECK(collNetConnect((void**)handlePtrs, nranks, recvResources->netListenComm, &sendResources->collNetSendComm));
-  recvResources->collNetRecvComm = sendResources->collNetSendComm;
+  NCCLCHECK(collNetConnect((void**)handlePtrs, nranks, recvResources->netListenComm, &recvResources->collNetRecvComm));
 
+  // Close listen comm
+  NCCLCHECK(collNetCloseListen(recvResources->netListenComm));
+
+  return ncclSuccess;
+}
+
+ncclResult_t collNetConnectSendRecv(ncclConnector* send, ncclConnector* recv) {
+  struct collNetSendResources* sendResources = (struct collNetSendResources*)send->transportResources;
+  struct collNetRecvResources* recvResources = (struct collNetRecvResources*)recv->transportResources;
+#ifdef SHARED_REQ_Q
+  recvResources->reqFifo = sendResources->reqFifo;
+#endif
+  sendResources->collNetSendComm = recvResources->collNetRecvComm;
   // Register buffer
   // send side
+  struct ncclRecvMem* sRecvMem = sendResources->useGdr ? sendResources->devRecvMem : sendResources->devHostRecvMem;
   NCCLCHECK(collNetRegMr(sendResources->collNetSendComm, sRecvMem->buff, sendResources->buffSize,
         sendResources->useGdr ? NCCL_PTR_CUDA : NCCL_PTR_HOST, &sendResources->sendMhandle));
   NCCLCHECK(collNetRegMr(sendResources->collNetSendComm, sendResources->llData,
         NCCL_LL_BUFF_LINES*sizeof(struct ncclLLDataLine), NCCL_PTR_HOST, &sendResources->llSendMhandle));
   // recv side
+  struct ncclRecvMem* rRecvMem = recvResources->useGdr ? recvResources->devRecvMem : recvResources->devHostRecvMem;
   NCCLCHECK(collNetRegMr(recvResources->collNetRecvComm, rRecvMem->buff, recvResources->buffSize,
         recvResources->useGdr ? NCCL_PTR_CUDA : NCCL_PTR_HOST, &recvResources->mhandle));
   NCCLCHECK(collNetRegMr(recvResources->collNetRecvComm, recvResources->llData,
@@ -234,13 +262,10 @@ ncclResult_t collNetConnect(struct ncclConnect* connectInfos, int nranks, struct
   sendResources->recvMhandle = recvResources->mhandle;
   sendResources->llRecvMhandle = recvResources->llMhandle;
 
-  // Close listen comm
-  NCCLCHECK(collNetCloseListen(recvResources->netListenComm));
-
   return ncclSuccess;
 }
 
-ncclResult_t collNetFree(void* sendTransportResources, void* recvTransportResources) {
+ncclResult_t collNetSendFree(void* sendTransportResources) {
   // send side
   struct collNetSendResources* sendResources = (struct collNetSendResources*)sendTransportResources;
   NCCLCHECK(ncclCudaHostFree(sendResources->hostSendMem));
@@ -251,6 +276,14 @@ ncclResult_t collNetFree(void* sendTransportResources, void* recvTransportResour
     CUDACHECK(cudaFree(sendResources->devRecvMem));
   free(sendResources->llData);
 
+  // Make sure RecvFree is called before SendFree
+  NCCLCHECK(collNetCloseColl(sendResources->collNetSendComm));
+  free(sendResources->reqFifo);
+  free(sendResources);
+  return ncclSuccess;
+}
+
+ncclResult_t collNetRecvFree(void* recvTransportResources) {
   // recv side
   struct collNetRecvResources* recvResources = (struct collNetRecvResources*)recvTransportResources;
   NCCLCHECK(ncclCudaHostFree(recvResources->hostSendMem));
@@ -260,10 +293,6 @@ ncclResult_t collNetFree(void* sendTransportResources, void* recvTransportResour
   if (recvResources->useGdr)
     CUDACHECK(cudaFree(recvResources->devRecvMem));
   free(recvResources->llData);
-
-  NCCLCHECK(collNetCloseColl(sendResources->collNetSendComm));
-  free(sendResources->reqFifo);
-  free(sendResources);
   free(recvResources);
   return ncclSuccess;
 }
@@ -512,5 +541,7 @@ done: if (args->tail > args->head) {
 struct ncclCollTransport collNetTransport = {
   "COL",
   collNetCanConnect,
-  { collNetSetup, collNetConnect, collNetFree, collNetSendProxy, collNetRecvProxy }
+  collNetConnectSendRecv,
+  { collNetSendSetup, collNetSendConnect, collNetSendFree, collNetSendProxy },
+  { collNetRecvSetup, collNetRecvConnect, collNetRecvFree, collNetRecvProxy }
 };

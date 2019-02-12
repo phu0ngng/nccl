@@ -81,7 +81,7 @@ struct ncclProxyState {
 
 struct ncclTransportComm {
   ncclResult_t (*setup)(struct ncclPeerInfo*, struct ncclPeerInfo*, struct ncclConnect*, struct ncclConnector*, int buffSize, int channelId);
-  ncclResult_t (*connect)(struct ncclConnect*, struct ncclConnector*);
+  ncclResult_t (*connect)(struct ncclConnect*, int nranks, struct ncclConnector*);
   ncclResult_t (*free)(void*);
   ncclResult_t (*proxy)(struct ncclProxyArgs*);
 };
@@ -94,18 +94,12 @@ struct ncclTransport {
   struct ncclTransportComm recv;
 };
 
-struct ncclCollTransportComm {
-  ncclResult_t (*setup)(struct ncclPeerInfo*, struct ncclConnect*, struct ncclConnector*, struct ncclConnector*, int buffSize, int channelId);
-  ncclResult_t (*connect)(struct ncclConnect*, int nranks, struct ncclConnector*, struct ncclConnector*);
-  ncclResult_t (*free)(void*, void*);
-  ncclResult_t (*sendProxy)(struct ncclProxyArgs*);
-  ncclResult_t (*recvProxy)(struct ncclProxyArgs*);//TODO: merge
-};
-
 struct ncclCollTransport {
   const char name[4];
   ncclResult_t (*canConnect)(ncclTvalue_t*, struct ncclPeerInfo*, struct ncclPeerInfo*);
-  struct ncclCollTransportComm allreduce;
+  ncclResult_t (*connectSendRecv)(ncclConnector* send, ncclConnector* recv);
+  struct ncclTransportComm send;
+  struct ncclTransportComm recv;
 };
 
 #include <pthread.h>

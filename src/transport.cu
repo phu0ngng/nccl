@@ -101,14 +101,8 @@ static ncclResult_t SaveProxy(int peer, struct ncclProxyArgs* args) {
 
   struct ncclPeer* peerComm = args->channel->peers+peer;
   struct ncclConnector* connector = type == proxyRecv ? &peerComm->recv : &peerComm->send;
-  // Currently select proxy func differently due to different API
-  // TODO: possible to merge API?
   proxyProgressFunc_t ppFunc = NULL;
-  if (args->useCollTree) {
-    ppFunc = type == proxyRecv ? collNetTransport.allreduce.recvProxy : collNetTransport.allreduce.sendProxy;
-  } else {
-    ppFunc = connector->transportComm->proxy;
-  }
+  ppFunc = connector->transportComm->proxy;
   if (ppFunc == NULL) return ncclSuccess;
 
   struct ncclProxyArgs* op;
