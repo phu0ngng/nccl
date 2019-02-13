@@ -390,7 +390,8 @@ static ncclResult_t saveKernel(struct ncclInfo* info) {
     return ncclInvalidUsage;
   }
   for (int bid=0; bid<coll.args.nChannels; bid++) {
-    struct ncclChannel* channel = info->comm->channels+(info->comm->myParams->gridDim.x % info->comm->nChannels);
+    int channelOffset = info->comm->myParams->gridDim.x % info->comm->nChannels;
+    struct ncclChannel* channel = info->comm->channels+channelOffset;
 
     if (channel->collCount == NCCL_MAX_OPS) {
       WARN("Too many aggregated operations (%d max)", NCCL_MAX_OPS);
@@ -400,7 +401,7 @@ static ncclResult_t saveKernel(struct ncclInfo* info) {
     // Proxy
     proxyArgs.channel = channel;
     int realPattern = (proxyArgs.useCollTree == 1) ?
-      (bid < coll.args.nChannels / 2) ? ncclPatternTreeUp : ncclPatternTreeDown :
+      (channelOffset % 2 == 0) ? ncclPatternTreeUp : ncclPatternTreeDown :
       info->pattern;
     NCCLCHECK(transportSaveProxies(&proxyArgs, realPattern, info->root, info->comm->nRanks));
 

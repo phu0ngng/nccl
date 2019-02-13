@@ -152,7 +152,7 @@ __device__ void ncclAllReduceAcclKernel(struct CollectiveArgs* args) {
   T * __restrict__ thisOutput = (T*)args->ThisOutput;
 
 
-  if (blockIdx.x < args->nChannels/2) {//TODO: consider case where nChannels = 1
+  if (blockIdx.x % 2 == 0) {//TODO: consider case where nChannels = 1
     // Reduce : max number of recv is 3, max number of send is 1 (binary tree + local)
     ncclPrimitives<UNROLL, 1, 1, T, NCCL_MAX_TREE_ARITY, 1, FUNC> prims(tid, nthreads, tree->down, &tree->up, NULL, stepSize, channel, comm, args->opCount);
     for (ssize_t gridOffset = 0; gridOffset < size; gridOffset += loopSize) {
@@ -169,7 +169,7 @@ __device__ void ncclAllReduceAcclKernel(struct CollectiveArgs* args) {
     }
   }
 
-  if (blockIdx.x >= args->nChannels/2) {//TODO: consider case where nChannels = 1
+  if (blockIdx.x % 2 == 1) {//TODO: consider case where nChannels = 1
     // Broadcast : max number of recv is 1, max number of send is 3 (binary tree + local)
     ncclPrimitives<UNROLL, 1, 1, T, 1, NCCL_MAX_TREE_ARITY, FUNC> prims(tid, nthreads, &tree->up, tree->down, NULL, stepSize, channel, comm, args->opCount);
     for (ssize_t gridOffset = 0; gridOffset < size; gridOffset += loopSize) {
@@ -329,7 +329,7 @@ __device__ void ncclAllReduceAcclLLKernel(struct CollectiveArgs* args) {
   const T * __restrict__ thisInput = (const T*)args->ThisInput;
   T * __restrict__ thisOutput = (T*)args->ThisOutput;
 
-  if (blockIdx.x < args->nChannels/2) {//TODO: consider case where nChannels = 1
+  if (blockIdx.x % 2 == 0) {//TODO: consider case where nChannels = 1
     // Reduce : max number of recv is 3, max number of send is 1 (binary tree + local)
     ncclLLPrimitives<T, FUNC, NCCL_MAX_TREE_ARITY, 1> LLprims(tid, nthreads, tree->down, &tree->up, channel, comm, args->opCount);
     for (ssize_t gridOffset = 0; gridOffset < size; gridOffset += loopSize) {
@@ -346,7 +346,7 @@ __device__ void ncclAllReduceAcclLLKernel(struct CollectiveArgs* args) {
     }
   }
 
-  if (blockIdx.x >= args->nChannels/2) {//TODO: consider case where nChannels = 1
+  if (blockIdx.x % 2 == 1) {//TODO: consider case where nChannels = 1
     // Broadcast : max number of recv is 1, max number of send is 3 (binary tree + local)
     ncclLLPrimitives<T, FUNC, 1, NCCL_MAX_TREE_ARITY> LLprims(tid, nthreads, &tree->up, tree->down, channel, comm, args->opCount);
     for (ssize_t gridOffset = 0; gridOffset < size; gridOffset += loopSize) {
