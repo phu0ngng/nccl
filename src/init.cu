@@ -59,8 +59,7 @@ NCCL_PARAM(GroupCudaStream, "GROUP_CUDA_STREAM", NCCL_GROUP_CUDA_STREAM);
 NCCL_PARAM(CheckPointers, "CHECK_POINTERS", 0);
 
 ncclNet_t* ncclNet = NULL;
-extern "C" __attribute__ ((visibility("default")))
-ncclCollNet_t* collNet = NULL;
+ncclCollNet_t* ncclCollNet = NULL;
 
 // We define this as weak to let tests redefine their own
 #pragma weak ncclNvlinkGpu
@@ -120,24 +119,21 @@ ncclResult_t initNetPlugin(ncclNet_t** net, ncclCollNet_t** collnet) {
     }
     return ncclSuccess;
   }
-  int flag = 0;
   ncclNet_t* extNet = (ncclNet_t*) dlsym(netPluginLib, STR(NCCL_PLUGIN_SYMBOL));
   if (extNet == NULL) {
     INFO(NCCL_INIT|NCCL_NET, "NET/Plugin: Failed to find " STR(NCCL_PLUGIN_SYMBOL) " symbol.");
-    //goto cleanup; //TODO: decide if we require the plugin to implement both APIs
   } else if (initNet(extNet) == ncclSuccess) {
     *net = extNet;
-    flag |= 0x01;
+
+    // Check for Collectives
+    ncclCollNet_t* extCollNet = (ncclCollNet_t*) dlsym(netPluginLib, STR(NCCL_COLLNET_PLUGIN_SYMBOL));
+    if (extCollNet == NULL) {
+      INFO(NCCL_INIT|NCCL_NET, "NET/Plugin: Failed to find " STR(NCCL_COLLNET_PLUGIN_SYMBOL) " symbol.");
+    } else if (initCollNet(extCollNet) == ncclSuccess) {
+      *collnet = extCollNet;
+    }
+    return ncclSuccess;
   }
-  ncclCollNet_t* extCollNet = (ncclCollNet_t*) dlsym(netPluginLib, STR(NCCL_COLLNET_PLUGIN_SYMBOL));
-  if (extCollNet == NULL) {
-    INFO(NCCL_INIT|NCCL_NET, "NET/Plugin: Failed to find " STR(NCCL_COLLNET_PLUGIN_SYMBOL) " symbol.");
-  } else if (initCollNet(extCollNet) == ncclSuccess) {
-    *collnet = extCollNet;
-    flag |= 0x10;
-  }
-  if (flag != 0) return ncclSuccess;
-cleanup:
   if (netPluginLib != NULL) dlclose(netPluginLib);
   return ncclSuccess;
 }
@@ -146,14 +142,13 @@ ncclResult_t initNet() {
   // Always initialize sockets as we use it for bootstrap
   NCCLCHECK(initNet(&ncclNetSocket));
 
-  NCCLCHECK(initNetPlugin(&ncclNet, &collNet));
+  NCCLCHECK(initNetPlugin(&ncclNet, &ncclCollNet));
   if (ncclNet != NULL) return ncclSuccess;
   if (initNet(&ncclNetIb) == ncclSuccess) {
     ncclNet = &ncclNetIb;
   } else {
     ncclNet = &ncclNetSocket;
   }
-  if (collNet != NULL) initCollNet(collNet);  //TODO: remove if no longer using MPI to test
   return ncclSuccess;
 }
 
