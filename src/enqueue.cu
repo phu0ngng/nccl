@@ -314,15 +314,20 @@ static ncclResult_t computeColl(struct ncclInfo* info /* input */, struct ncclCo
   int llMode;
   getKernelInfo(info, &coll->args.nChannels, &coll->args.nThreads, &llMode);
 
+  // Compute algorithm
   int treeMode = info->pattern >= ncclPatternTreeUp ? 1 : 0;
   int redSupport = 0;
   if (treeMode && collNetSupport()) {
     NCCLCHECK(collNetReduceSupport(info->datatype, info->op, &redSupport));
   }
-
   // Algorithm index: 2 = Accl (CollNet), 1 = Tree, 0 = Ring
   coll->funcIndex = FUNC_INDEX(info->coll, info->op, info->datatype, llMode, redSupport == 1 ? 2 : treeMode);
   coll->args.useCollTree = redSupport;
+  proxyArgs->useCollTree = redSupport;
+  // We need to change the number of channels to an even number in some cases (LL, odd number of channels)
+  if (redSupport && coll->args.nChannels % 2 == 1) {
+    coll->args.nChannels = (coll->args.nChannels+1)/2*2;
+  }
 
   int stepSize   = ( llMode ? NCCL_LL_BUFF_SIZE : info->comm->channels[0].buffSize ) / NCCL_STEPS;
   int chunkSteps = (llMode|treeMode) ? 1 : info->chunkSteps;
@@ -394,8 +399,10 @@ static ncclResult_t saveKernel(struct ncclInfo* info) {
 
     // Proxy
     proxyArgs.channel = channel;
-    proxyArgs.useCollTree = coll.args.useCollTree && channel->collNetSupport;
-    NCCLCHECK(transportSaveProxies(&proxyArgs, info->pattern, info->root, info->comm->nRanks));
+    int realPattern = (proxyArgs.useCollTree == 1) ?
+      (bid < coll.args.nChannels / 2) ? ncclPatternTreeUp : ncclPatternTreeDown :
+      info->pattern;
+    NCCLCHECK(transportSaveProxies(&proxyArgs, realPattern, info->root, info->comm->nRanks));
 
     info->comm->myParams->gridDim.x++;
 
@@ -407,7 +414,6 @@ static ncclResult_t saveKernel(struct ncclInfo* info) {
     memcpy(c, &coll, sizeof(struct ncclColl));
 
     c->args.bid = bid;
-    c->args.useCollTree = coll.args.useCollTree && channel->collNetSupport;
     c->active = 1;
     opIndex = (opIndex+1)%NCCL_MAX_OPS;
     c->nextIndex = opIndex;
