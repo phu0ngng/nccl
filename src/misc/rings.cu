@@ -6,6 +6,7 @@
 
 #include "core.h"
 #include "param.h"
+#include "coll_net.h"
 
 #define NCCL_MAX_SCORE 7
 
@@ -347,7 +348,7 @@ ncclResult_t ncclGetRings(int* nrings, int* nthreads, int rank, int nranks, int*
   for (int r=0; r<nranks; r++) nnodes += treeIn[r];
   int nvlink;
   NCCLCHECK(ncclNvlinkGpu(&nvlink));
-  if (nnodes > 1 /*&& nvlink*/) { //TODO: restore
+  if (nnodes > 1 && (nvlink || collNetSupport())) {
     *nrings = copyRings(*nrings, *nrings*2, nranks, prev, next, treeIn, treeOut);
   }
 
