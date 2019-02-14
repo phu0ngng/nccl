@@ -930,8 +930,11 @@ struct ncclSharpInfo {
 };
 
 int ncclSharpOobBarrier(void *ctx) {
-  int dummy = 0;
+  struct ncclSharpCollComm* cComm = (struct ncclSharpCollComm*)ctx;
+  int* dummy;
+  NCCLCHECK(ncclIbMalloc((void**)&dummy, cComm->nranks*sizeof(int)));
   NCCLCHECK(ncclSharpAllGather(ctx, &dummy, sizeof(int)));
+  free(dummy);
   return 0;
 }
 
@@ -1063,6 +1066,9 @@ ncclResult_t ncclSharpConnect(void* handles[], int nranks, void* listenComm, voi
   init_spec.config.ib_dev_list = devName;
 
   int ret = sharp_coll_init(&init_spec, &cComm->sharpCollContext);
+
+  INFO(NCCL_INIT, "Sharp rank %d/%d initialized on %s", cComm->rank, nranks, devName);
+
   if (ret < 0) {
     WARN("NET/IB :SHARP coll init error: %s(%d)\n", sharp_coll_strerror(ret), ret);
     return ncclInternalError;
@@ -1101,6 +1107,7 @@ ncclResult_t ncclSharpRegMr(void* collComm, void* data, int size, int type, void
     WARN("SHARP regmr failed\n");
     return ncclSystemError;
   }
+  //printf("RegMr %p size %d (type %s) -> %p\n", data, size, type==NCCL_PTR_CUDA ? "CUDA" : "HOST", mh->mr);
   *mhandle = mh;
   return ncclSuccess;
 }
@@ -1152,12 +1159,14 @@ ncclResult_t ncclSharpIallreduce(void* collComm, void* sendData, void* recvData,
   reduce_spec.sbuf_desc.buffer.mem_handle = mr_sbuf->mr;
   reduce_spec.sbuf_desc.type = SHARP_DATA_BUFFER;
   reduce_spec.sbuf_desc.mem_type = (mr_sbuf->type == NCCL_PTR_CUDA ? SHARP_MEM_TYPE_CUDA:SHARP_MEM_TYPE_HOST);
+  //printf("Send %p size %d mr %p type %s\n", reduce_spec.sbuf_desc.buffer.ptr, dt_size, reduce_spec.sbuf_desc.buffer.mem_handle, reduce_spec.sbuf_desc.mem_type == SHARP_MEM_TYPE_CUDA ? "CUDA" : "HOST");
 
   reduce_spec.rbuf_desc.buffer.ptr = recvData;
   reduce_spec.rbuf_desc.buffer.length = count * dt_size;
   reduce_spec.rbuf_desc.buffer.mem_handle = mr_rbuf->mr;
   reduce_spec.rbuf_desc.type = SHARP_DATA_BUFFER;
   reduce_spec.rbuf_desc.mem_type = (mr_rbuf->type == NCCL_PTR_CUDA ? SHARP_MEM_TYPE_CUDA:SHARP_MEM_TYPE_HOST);
+  //printf("Recv %p size %d mr %p type %s\n", reduce_spec.rbuf_desc.buffer.ptr, dt_size, reduce_spec.rbuf_desc.buffer.mem_handle, reduce_spec.rbuf_desc.mem_type == SHARP_MEM_TYPE_CUDA ? "CUDA" : "HOST");
 
   reduce_spec.length = count;
   reduce_spec.dtype = sharp_type;
