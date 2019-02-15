@@ -394,6 +394,10 @@ static ncclResult_t saveKernel(struct ncclInfo* info) {
     // Sub channel loop
     for (int sub=0; sub < (proxyArgs.useCollTree ? 2 : 1); sub++) {
       int channelOffset = info->comm->myParams->gridDim.x % info->comm->nChannels;
+      if (proxyArgs.useCollTree && sub == 0 && channelOffset % 2 != 0) {
+        info->comm->myParams->gridDim.x++;
+        channelOffset = info->comm->myParams->gridDim.x % info->comm->nChannels;
+      }
       struct ncclChannel* channel = info->comm->channels+channelOffset;
 
       if (channel->collCount == NCCL_MAX_OPS) {
