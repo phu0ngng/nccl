@@ -151,10 +151,4 @@ typedef ncclCollNet_v1_t ncclCollNet_t;
 
 #define NCCL_COLLNET_PLUGIN_SYMBOL ncclCollNetPlugin_v1
 
-extern
-#ifdef __cplusplus
-"C"
-#endif
-ncclCollNet_t* collNet;
-
 #endif // end include guard

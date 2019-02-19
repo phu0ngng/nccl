@@ -9,8 +9,9 @@ default: build
 NCCL_HOME:=../../build/
 BUILDDIR=build
 CUDA_HOME:=/usr/local/cuda
-INC:= -I$(NCCL_HOME)/include -I$(CUDA_HOME)/include
-CFLAGS:=-fPIC $(INC) -I.
+SHARP_HOME:=/opt/hpcx/v2.4.0_update/sharp
+INC:= -I$(NCCL_HOME)/include -I$(CUDA_HOME)/include -I$(SHARP_HOME)/include
+CFLAGS:=-fPIC $(INC) -I. -g -O0
 PLUGIN_SO:=$(BUILDDIR)/lib/libnccl-net.so
 FILES:=plugin.c ibvwrap.c utils.c
 OBJS:=$(FILES:%.c=$(BUILDDIR)/obj/%.o)
@@ -22,15 +23,15 @@ $(BUILDDIR)/obj/%.o: %.c
 
 $(PLUGIN_SO): $(OBJS)
 	mkdir -p $(BUILDDIR)/lib
-	$(CC) -shared -o $@ -Wl,-soname,$(PLUGIN_SO) $(OBJS) -libverbs -L$(CUDA_HOME)/lib64 -lcudart
+	$(CC) -shared -o $@ -Wl,-soname,$(PLUGIN_SO) $(OBJS) -libverbs -L$(CUDA_HOME)/lib64 -lcudart -L$(SHARP_HOME)/lib -lsharp_coll
 
 build: $(PLUGIN_SO)
 test:  $(TEST)
 
 $(TEST): test.c $(PLUGIN_SO)
 	mkdir -p $(BUILDDIR)/bin
-	$(CC) $(CFLAGS) test.c -o $@ -L$(BUILDDIR)/lib -lnccl-net
-	$(TEST)
+	LD_LIBRARY_PATH=$(SHARP_HOME)/lib:$LD_LIBRARY_PATH $(CC) $(CFLAGS) test.c -o $@ -L$(BUILDDIR)/lib -lnccl-net
+	LD_LIBRARY_PATH=$(SHARP_HOME)/lib:$LD_LIBRARY_PATH $(TEST)
 
 clean:
 	rm -f $(PLUGIN_SO) $(OBJS) $(TEST)

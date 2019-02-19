@@ -6,6 +6,7 @@
 
 #include "core.h"
 #include "param.h"
+#include "coll_net.h"
 
 #define NCCL_MAX_SCORE 7
 
@@ -194,6 +195,30 @@ static inline int copyRings(int nrings, int newNrings, int nranks, int* a, int* 
   }
   return newNrings;
 }
+
+static int interleaveDuplicateRings(int nrings, int nranks, int* a, int* b, int* c, int* d) {
+  int realNrings = (nrings*2 > MAXCHANNELS) ? MAXCHANNELS/2 : nrings;
+  // Move r-th to 2r-th ring
+  for (int r=realNrings-1; r>0; r--) {
+    for (int i=0; i<nranks; i++) {
+      a[2*r*nranks+i] = a[r*nranks+i];
+      b[2*r*nranks+i] = b[r*nranks+i];
+      c[2*r*nranks+i] = c[r*nranks+i];
+      d[2*r*nranks+i] = d[r*nranks+i];
+    }
+  }
+  // Duplicate
+  for (int r=1; r<realNrings*2; r+=2) {
+    for (int i=0; i<nranks; i++) {
+      a[r*nranks+i] = a[(r-1)*nranks+i];
+      b[r*nranks+i] = b[(r-1)*nranks+i];
+      c[r*nranks+i] = c[(r-1)*nranks+i];
+      d[r*nranks+i] = d[(r-1)*nranks+i];
+    }
+  }
+  return realNrings*2;
+}
+
 /* Main ring creation function */
 ncclResult_t ncclGetRings(int* nrings, int* nthreads, int rank, int nranks, int* transports, ncclTvalue_t* values, int* prev, int* next, int* treeIn, int* treeOut) {
   *nrings = 0;
@@ -347,8 +372,8 @@ ncclResult_t ncclGetRings(int* nrings, int* nthreads, int rank, int nranks, int*
   for (int r=0; r<nranks; r++) nnodes += treeIn[r];
   int nvlink;
   NCCLCHECK(ncclNvlinkGpu(&nvlink));
-  if (nnodes > 1 /*&& nvlink*/) { //TODO: restore
-    *nrings = copyRings(*nrings, *nrings*2, nranks, prev, next, treeIn, treeOut);
+  if (nnodes > 1 && (nvlink || collNetSupport())) {
+    *nrings = interleaveDuplicateRings(*nrings, nranks, prev, next, treeIn, treeOut);
   }
 
   if (*nrings == 0) {

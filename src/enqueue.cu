@@ -266,7 +266,10 @@ static ncclResult_t getLoopInfo(struct ncclInfo* info) {
   return ncclSuccess;
 }
 
-static void getKernelInfo(struct ncclInfo* info, uint8_t* nChannels, uint16_t* nThreads, int* llMode) {
+static void getKernelInfo(struct ncclInfo* info, int useCollTree, uint8_t* nChannels, uint16_t* nThreads, int* llMode) {
+  // Cut logical channels by half in case of CollNet
+  int maxNchannels = useCollTree ? info->comm->nChannels/2 : info->comm->nChannels;
+
   // Compute thresholds and limits that users can override
   int perThreadLLThreshold = std::min(info->comm->threadThreshold, (ssize_t)NCCL_LL_CHANNEL_THRESHOLD);
   int maxLLNthreads = std::min(NCCL_LL_MAX_NTHREADS, info->comm->nThreads);
@@ -278,7 +281,7 @@ static void getKernelInfo(struct ncclInfo* info, uint8_t* nChannels, uint16_t* n
   // Then compute nChannels
   int nc = DIVUP(info->nBytes, nt*info->nchunksPerLoop*perThreadLLThreshold);
   if (nc == 0) nc = 1;
-  if (nc > info->comm->nChannels) nc = info->comm->nChannels;
+  if (nc > maxNchannels) nc = maxNchannels;
 
   // Check if we have a fixed LL threshold, otherwise compute it.
   int perThreadThreshold = info->comm->threadThreshold;
@@ -293,7 +296,7 @@ static void getKernelInfo(struct ncclInfo* info, uint8_t* nChannels, uint16_t* n
     *nThreads = nt;
   } else {
     *llMode = 0;
-    *nChannels = info->comm->nChannels;
+    *nChannels = maxNchannels;
     *nThreads = info->comm->nThreads+1;
   }
 }
@@ -310,24 +313,21 @@ static ncclResult_t computeColl(struct ncclInfo* info /* input */, struct ncclCo
   coll->args.comm = info->comm->devComm;
   coll->args.opCount = info->comm->opCount;
 
-  // Compute llMode, nChannels, nThreads
-  int llMode;
-  getKernelInfo(info, &coll->args.nChannels, &coll->args.nThreads, &llMode);
-
   // Compute algorithm
   int treeMode = info->pattern >= ncclPatternTreeUp ? 1 : 0;
   int redSupport = 0;
   if (treeMode && collNetSupport()) {
     NCCLCHECK(collNetReduceSupport(info->datatype, info->op, &redSupport));
   }
-  // Algorithm index: 2 = Accl (CollNet), 1 = Tree, 0 = Ring
-  coll->funcIndex = FUNC_INDEX(info->coll, info->op, info->datatype, llMode, redSupport == 1 ? 2 : treeMode);
   coll->args.useCollTree = redSupport;
   proxyArgs->useCollTree = redSupport;
-  // We need to change the number of channels to an even number in some cases (LL, odd number of channels)
-  if (redSupport && coll->args.nChannels % 2 == 1) {
-    coll->args.nChannels = (coll->args.nChannels+1)/2*2;
-  }
+
+  // Compute llMode, nChannels, nThreads
+  int llMode;
+  getKernelInfo(info, redSupport, &coll->args.nChannels, &coll->args.nThreads, &llMode);
+
+  // Algorithm index: 2 = Accl (CollNet), 1 = Tree, 0 = Ring
+  coll->funcIndex = FUNC_INDEX(info->coll, info->op, info->datatype, llMode, redSupport == 1 ? 2 : treeMode);
 
   int stepSize   = ( llMode ? NCCL_LL_BUFF_SIZE : info->comm->channels[0].buffSize ) / NCCL_STEPS;
   int chunkSteps = (llMode|treeMode) ? 1 : info->chunkSteps;
@@ -389,37 +389,45 @@ static ncclResult_t saveKernel(struct ncclInfo* info) {
     WARN("Error : mixing different streams within a group call is not supported.");
     return ncclInvalidUsage;
   }
+  // Logical channel loop
   for (int bid=0; bid<coll.args.nChannels; bid++) {
-    int channelOffset = info->comm->myParams->gridDim.x % info->comm->nChannels;
-    struct ncclChannel* channel = info->comm->channels+channelOffset;
+    // Sub channel loop
+    for (int sub=0; sub < (proxyArgs.useCollTree ? 2 : 1); sub++) {
+      int channelOffset = info->comm->myParams->gridDim.x % info->comm->nChannels;
+      if (proxyArgs.useCollTree && sub == 0 && channelOffset % 2 != 0) {
+        info->comm->myParams->gridDim.x++;
+        channelOffset = info->comm->myParams->gridDim.x % info->comm->nChannels;
+      }
+      struct ncclChannel* channel = info->comm->channels+channelOffset;
 
-    if (channel->collCount == NCCL_MAX_OPS) {
-      WARN("Too many aggregated operations (%d max)", NCCL_MAX_OPS);
-      return ncclInvalidUsage;
+      if (channel->collCount == NCCL_MAX_OPS) {
+        WARN("Too many aggregated operations (%d max)", NCCL_MAX_OPS);
+        return ncclInvalidUsage;
+      }
+
+      // Proxy
+      proxyArgs.channel = channel;
+      int realPattern = (proxyArgs.useCollTree == 1) ?
+        (channelOffset % 2 == 0) ? ncclPatternTreeUp : ncclPatternTreeDown :
+        info->pattern;
+      NCCLCHECK(transportSaveProxies(&proxyArgs, realPattern, info->root, info->comm->nRanks));
+
+      info->comm->myParams->gridDim.x++;
+
+      int opIndex = channel->collFifoTail;
+      struct ncclColl* c = channel->collectives+opIndex;
+      volatile uint8_t* activePtr = (volatile uint8_t*)&c->active;
+      while (activePtr[0] != 0) sched_yield();
+
+      memcpy(c, &coll, sizeof(struct ncclColl));
+
+      c->args.bid = bid;
+      c->active = 1;
+      opIndex = (opIndex+1)%NCCL_MAX_OPS;
+      c->nextIndex = opIndex;
+      channel->collFifoTail = opIndex;
+      channel->collCount++;
     }
-
-    // Proxy
-    proxyArgs.channel = channel;
-    int realPattern = (proxyArgs.useCollTree == 1) ?
-      (channelOffset % 2 == 0) ? ncclPatternTreeUp : ncclPatternTreeDown :
-      info->pattern;
-    NCCLCHECK(transportSaveProxies(&proxyArgs, realPattern, info->root, info->comm->nRanks));
-
-    info->comm->myParams->gridDim.x++;
-
-    int opIndex = channel->collFifoTail;
-    struct ncclColl* c = channel->collectives+opIndex;
-    volatile uint8_t* activePtr = (volatile uint8_t*)&c->active;
-    while (activePtr[0] != 0) sched_yield();
-
-    memcpy(c, &coll, sizeof(struct ncclColl));
-
-    c->args.bid = bid;
-    c->active = 1;
-    opIndex = (opIndex+1)%NCCL_MAX_OPS;
-    c->nextIndex = opIndex;
-    channel->collFifoTail = opIndex;
-    channel->collCount++;
   }
   /*if (llMode == 0)*/ info->comm->opCount++;
   return ncclSuccess;

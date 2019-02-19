@@ -276,8 +276,6 @@ ncclResult_t collNetSendFree(void* sendTransportResources) {
     CUDACHECK(cudaFree(sendResources->devRecvMem));
   free(sendResources->llData);
 
-  // Make sure RecvFree is called before SendFree
-  NCCLCHECK(collNetCloseColl(sendResources->collNetSendComm));
   free(sendResources->reqFifo);
   free(sendResources);
   return ncclSuccess;
@@ -293,6 +291,9 @@ ncclResult_t collNetRecvFree(void* recvTransportResources) {
   if (recvResources->useGdr)
     CUDACHECK(cudaFree(recvResources->devRecvMem));
   free(recvResources->llData);
+
+  // Make sure SendFree is called before RecvFree
+  NCCLCHECK(collNetCloseColl(recvResources->collNetRecvComm));
   free(recvResources);
   return ncclSuccess;
 }
