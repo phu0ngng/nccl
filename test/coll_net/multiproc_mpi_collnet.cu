@@ -159,12 +159,12 @@ int main(int argc, char *argv[]) {
   MPI_Comm_rank(MPI_COMM_WORLD, &rank);
   ncclCollNetMpiHook(MPI_COMM_WORLD);
 
-  if (argc < nranks) {
+  if (argc < nranks+1) {
     if (rank == 0)
       printf("Usage : %s <GPU list per rank>\n", argv[0]);
     exit(1);
-  } else if (argc == nranks+1) {
-    int debugMode = atoi(argv[nranks]);
+  } else if (argc == nranks+2) {
+    int debugMode = atoi(argv[nranks+1]);
     if (debugMode) {
       // Wait for GDB to attach
       volatile int i = 0;
