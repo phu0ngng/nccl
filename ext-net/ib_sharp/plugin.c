@@ -1190,6 +1190,11 @@ ncclResult_t ncclSharpIallreduce(void* collComm, void* sendData, void* recvData,
   return ncclSuccess;
 }
 
+ncclResult_t ncclSharpFlush(void* collComm, void* data, int size, void* mhandle) {
+  //TODO: implement flush
+  return ncclSuccess;
+}
+
 ncclResult_t ncclSharpTest(void* request, int* done, int* size) {
   struct ncclSharpRequest* req = (struct ncclSharpRequest*)request;
 
@@ -1238,7 +1243,7 @@ ncclCollNet_t NCCL_COLLNET_PLUGIN_SYMBOL = {
   ncclSharpRegMr,
   ncclSharpDeregMr,
   ncclSharpIallreduce,
-  ncclIbFlush,
+  ncclSharpFlush,
   ncclSharpTest,
   ncclSharpCloseColl,
   ncclIbCloseListen
