@@ -933,7 +933,7 @@ int ncclSharpOobBarrier(void *ctx) {
   struct ncclSharpCollComm* cComm = (struct ncclSharpCollComm*)ctx;
   int* dummy;
   NCCLCHECK(ncclIbMalloc((void**)&dummy, cComm->nranks*sizeof(int)));
-  NCCLCHECK(ncclSharpAllGather(ctx, &dummy, sizeof(int)));
+  NCCLCHECK(ncclSharpAllGather(ctx, dummy, sizeof(int)));
   free(dummy);
   return 0;
 }
@@ -1028,9 +1028,10 @@ ncclResult_t ncclSharpConnect(void* handles[], int nranks, void* listenComm, voi
   NCCLCHECK(ncclIbAccept(listenComm, &cComm->recvComm)); // From prev
 
   struct ncclSharpInfo* allInfo;
+  uint pid = getpid();
   NCCLCHECK(ncclIbMalloc((void**)&allInfo, sizeof(struct ncclSharpInfo)*nranks));
   allInfo[cComm->rank].hostId = gethostid();
-  allInfo[cComm->rank].jobId = (((uint64_t)allInfo[cComm->rank].hostId << 32) | (rand()));
+  allInfo[cComm->rank].jobId = (((uint64_t)allInfo[cComm->rank].hostId << 32) | pid);
   NCCLCHECK(ncclSharpAllGather(cComm, allInfo, sizeof(struct ncclSharpInfo)));
 
   // Find my local rank;
@@ -1049,7 +1050,7 @@ ncclResult_t ncclSharpConnect(void* handles[], int nranks, void* listenComm, voi
   init_spec.hostlist = NULL;
   init_spec.world_rank = cComm->rank;
   init_spec.world_size = nranks;
-  init_spec.world_local_rank = localRank;
+  init_spec.world_local_rank = 0;
   init_spec.enable_thread_support = 1;
   init_spec.group_channel_idx = 0;
 
