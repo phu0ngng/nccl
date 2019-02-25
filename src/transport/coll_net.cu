@@ -123,7 +123,7 @@ ncclResult_t collNetSendSetup(struct ncclPeerInfo* myInfo, struct ncclPeerInfo* 
   int recvSize = offsetof(struct ncclRecvMem, buff)+buffSize;
   int cudaDev;
   CUDACHECK(cudaGetDevice(&cudaDev));
-  int netDev = getDev(channelId, collNetTvalues[cudaDev], collNetNDev);
+  int netDev = getDev(channelId/2, collNetTvalues[cudaDev], collNetNDev);
 
   // send side
   struct collNetSendResources* sendResources;
@@ -159,7 +159,7 @@ ncclResult_t collNetRecvSetup(struct ncclPeerInfo* myInfo, struct ncclPeerInfo* 
   int recvSize = offsetof(struct ncclRecvMem, buff)+buffSize;
   int cudaDev;
   CUDACHECK(cudaGetDevice(&cudaDev));
-  int netDev = getDev(channelId, collNetTvalues[cudaDev], collNetNDev);
+  int netDev = getDev(channelId/2, collNetTvalues[cudaDev], collNetNDev);
 
   // recv side
   struct collNetRecvResources* recvResources;
