@@ -1154,13 +1154,12 @@ static ncclResult_t commDestroy(ncclComm_t comm) {
   int savedDevice;
   CUDACHECK(cudaGetDevice(&savedDevice));
   int commDevice = comm->cudaDev;
-  int rank = comm->rank;
 
   if (savedDevice != commDevice) {
     CUDACHECK(cudaSetDevice(commDevice));
   }
 
-  TRACE(NCCL_INIT, "Destroying comm %p rank %d abortFlag %d fatalError %d", comm, rank, *comm->abortFlag, comm->fatalError);
+  TRACE(NCCL_INIT, "Destroying comm %p rank %d abortFlag %d fatalError %d", comm, comm->rank, *comm->abortFlag, comm->fatalError);
 
   CUDACHECK(cudaStreamSynchronize(comm->groupStream));
   NCCLCHECK(transportDestroyProxy(comm));
