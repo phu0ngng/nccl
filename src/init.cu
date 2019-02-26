@@ -894,7 +894,7 @@ static ncclResult_t initTransportsRank(struct ncclComm* comm, ncclUniqueId* comm
     NCCLCHECK(p2pSetup(comm, channel, NCCL_MAX_TREE_ARITY, channel->tree.down, 1, &channel->tree.up));
     NCCLCHECK(p2pSetup(comm, channel, 1, &channel->tree.up, NCCL_MAX_TREE_ARITY, channel->tree.down));
     // connect master ranks to the nranks-th rank using collnet
-    if (collNetSupport()) {
+    if (comm->treeThreshold > 0 && collNetSupport()) {
       int sendrecv = r%2; // 0 for send, 1 for recv
       NCCLCHECK(collNetSetup(comm, channel, nrings, rank, nranks, treeIn+r*nranks, sendrecv, &channel->collNetSupport));
     }
