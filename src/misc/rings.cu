@@ -233,8 +233,8 @@ ncclResult_t ncclGetRings(int* nrings, int* nthreads, int rank, int nranks, int*
       NCCLCHECK(getEnvThreads(nthreads));
       for (int r = 0; r<*nrings; r++) {
         for (int i = 0; i<nranks; i++) {
-          if (transports[i*nranks+prev[i]] == 2) treeIn[i] = 1;
-          if (transports[i*nranks+next[i]] == 2) treeOut[i] = 1;
+          if (transports[i*nranks+prev[i]] == 2) treeIn[r*nranks+i] = 1;
+          if (transports[i*nranks+next[i]] == 2) treeOut[r*nranks+i] = 1;
         }
       }
       return ncclSuccess;
