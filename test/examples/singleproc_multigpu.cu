@@ -77,6 +77,9 @@ int main(int argc, char* argv[])
   for(int i = 0; i < nDev; ++i)
       ncclCommDestroy(comms[i]);
 
+  //Needed for cuda-memcheck --leak-check full
+  cudaDeviceReset();
+
   printf("Success \n");
   return 0;
 }

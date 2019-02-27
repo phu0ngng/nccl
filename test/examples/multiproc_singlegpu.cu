@@ -114,6 +114,9 @@ int main(int argc, char* argv[])
   //finalizing MPI
   MPICHECK(MPI_Finalize());
 
+  //Needed for cuda-memcheck --leak-check full
+  cudaDeviceReset();
+
   printf("[MPI Rank %d] Success \n", myRank);
   return 0;
 }
