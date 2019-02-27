@@ -67,7 +67,7 @@ CXXFLAGS  += -O0 -g -ggdb3
 endif
 
 ifneq ($(VERBOSE), 0)
-NVCUFLAGS += -Xptxas -v -Xcompiler -Wall,-Wextra
+NVCUFLAGS += -Xptxas -v -Xcompiler -Wall,-Wextra,-Wno-unused-parameter
 CXXFLAGS  += -Wall -Wextra
 else
 .SILENT:

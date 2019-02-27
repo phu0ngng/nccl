@@ -117,8 +117,4 @@ inline void transportProxyWait(const FUNC& func) {
   }
 }
 
-inline void transportProxyIdle(int idle) {
-  sched_yield();
-}
-
 #endif
