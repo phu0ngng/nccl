@@ -1168,7 +1168,7 @@ static ncclResult_t commDestroy(ncclComm_t comm) {
   if (savedDevice != commDevice)
     CUDACHECK(cudaSetDevice(savedDevice));
 
-  TRACE(NCCL_INIT, "Destroyed comm %p rank %d", comm, rank);
+  TRACE(NCCL_INIT, "Destroyed comm %p rank %d", comm, comm->rank);
 
   return ncclSuccess;
 }
