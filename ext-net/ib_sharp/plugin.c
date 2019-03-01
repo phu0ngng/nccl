@@ -893,6 +893,7 @@ struct ncclSharpCollComm {
 
 struct ncclSharpMemHandle{
   void *mr;
+  void *ncclIbMr;
   int type;
 };
 
@@ -1108,7 +1109,10 @@ ncclResult_t ncclSharpRegMr(void* collComm, void* data, int size, int type, void
     WARN("SHARP regmr failed\n");
     return ncclSystemError;
   }
-  //printf("RegMr %p size %d (type %s) -> %p\n", data, size, type==NCCL_PTR_CUDA ? "CUDA" : "HOST", mh->mr);
+  TRACE(NCCL_INIT,"sharpRegAddr %lx size %ld handle %x", data, size, mh->mr);
+
+  NCCLCHECK(ncclIbRegMr(cComm->recvComm, data, size, type, &mh->ncclIbMr));
+
   *mhandle = mh;
   return ncclSuccess;
 }
@@ -1120,6 +1124,9 @@ ncclResult_t ncclSharpDeregMr(void* collComm, void* mhandle) {
   if (SHARP_COLL_SUCCESS != sharp_coll_dereg_mr(cComm->sharpCollContext, mh->mr)) {
     WARN("SHARP deregmr failed\n");
   }
+
+  NCCLCHECK(ncclIbDeregMr(cComm->recvComm, mh->ncclIbMr));
+
   free(mh);
   return ncclSuccess;
 }
@@ -1192,8 +1199,10 @@ ncclResult_t ncclSharpIallreduce(void* collComm, void* sendData, void* recvData,
 }
 
 ncclResult_t ncclSharpFlush(void* collComm, void* data, int size, void* mhandle) {
-  //TODO: implement flush
-  return ncclSuccess;
+  struct ncclSharpCollComm *cComm = (struct ncclSharpCollComm*)collComm;
+  struct ncclSharpMemHandle *mh = (struct ncclSharpMemHandle *)mhandle;
+
+  return ncclIbFlush(cComm->recvComm, data, size, mh->ncclIbMr);
 }
 
 ncclResult_t ncclSharpTest(void* request, int* done, int* size) {
