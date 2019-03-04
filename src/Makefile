@@ -9,10 +9,10 @@ include ../makefiles/version.mk
 
 ##### src files
 INCEXPORTS  := nccl.h nccl_net.h
-LIBSRCFILES := init.c channel.c bootstrap.c transport.c enqueue.c \
-                misc/group.c misc/nvmlwrap.c misc/ibvwrap.c misc/rings.c misc/utils.c misc/argcheck.c misc/trees.c misc/topo.c \
-		transport/p2p.c transport/shm.c transport/net.c transport/net_socket.c transport/net_ib.c \
-                collectives/all_reduce.c collectives/all_gather.c collectives/broadcast.c collectives/reduce.c collectives/reduce_scatter.c
+LIBSRCFILES := init.cc channel.cc bootstrap.cc transport.cc enqueue.cc \
+                misc/group.cc misc/nvmlwrap.cc misc/ibvwrap.cc misc/rings.cc misc/utils.cc misc/argcheck.cc misc/trees.cc misc/topo.cc \
+		transport/p2p.cc transport/shm.cc transport/net.cc transport/net_socket.cc transport/net_ib.cc \
+                collectives/all_reduce.cc collectives/all_gather.cc collectives/broadcast.cc collectives/reduce.cc collectives/reduce_scatter.cc
 
 ##### lib files
 LIBNAME     := libnccl.so
@@ -27,7 +27,7 @@ INCTARGETS := $(INCEXPORTS:%=$(INCDIR)/%)
 LIBSONAME  := $(LIBNAME:%=%.$(NCCL_MAJOR))
 LIBTARGET  := $(LIBNAME:%=%.$(NCCL_MAJOR).$(NCCL_MINOR).$(NCCL_PATCH))
 STATICLIBTARGET := $(STATICLIBNAME)
-LIBOBJ     := $(LIBSRCFILES:%.c=$(OBJDIR)/%.o)
+LIBOBJ     := $(LIBSRCFILES:%.cc=$(OBJDIR)/%.o)
 DEPFILES   := $(LIBOBJ:%.o=%.d)
 LDFLAGS    += -L${CUDA_LIB} -lcudart_static -lpthread -lrt -ldl
 
@@ -87,7 +87,7 @@ $(INCDIR)/nccl_%.h : include/nccl_%.h
 	mkdir -p $(INCDIR)
 	cp -f $< $@
 
-$(OBJDIR)/%.o : %.c
+$(OBJDIR)/%.o : %.cc
 	@printf "Compiling  %-35s > %s\n" $< $@
 	mkdir -p `dirname $@`
 	$(CXX) -I. -I$(INCDIR) $(CXXFLAGS) -Iinclude -c $< -o $@
@@ -107,7 +107,7 @@ install : lib
 	cp -P -v $(BUILDDIR)/lib/* $(PREFIX)/lib/
 	cp -v $(BUILDDIR)/include/* $(PREFIX)/include/
 
-FILESTOFORMAT := $(shell find . -name ".\#*" -prune -o \( -name "*.c" -o -name "*.h" \) -print | grep -v -E 'ibvwrap.h|nvmlwrap.h|nccl.h')
+FILESTOFORMAT := $(shell find . -name ".\#*" -prune -o \( -name "*.cc" -o -name "*.h" \) -print | grep -v -E 'ibvwrap.h|nvmlwrap.h|nccl.h')
 # Note that formatting.mk defines a new target so in order to not overwrite the default target,
 # it shouldn't be included at the top. Also, it uses the above definition of FILESTOFORMAT as well
 # as the BUILDDIR variable.
