@@ -73,7 +73,7 @@ testResult_t BroadcastRunTest(struct threadArgs* args, int root, ncclDataType_t 
   ncclDataType_t *run_types;
   const char **run_typenames;
   int type_count;
-  int begin_root, end_root; 
+  int begin_root, end_root;
 
   if ((int)type != -1) {
     type_count = 1;

@@ -70,7 +70,20 @@ ncclResult_t p2pCanConnect(ncclTvalue_t* ret, struct ncclPeerInfo* myInfo, struc
 
   // Convert the peer's busId into a local cudaDev index (cf. CUDA_VISIBLE_DEVICES)
   int peerCudaDev = busIdToCudaDev(peerInfo->busId);
-  if (peerCudaDev == -1) return ncclSuccess; // Peer's CUDA device is not visible in this process
+  if (peerCudaDev == -1) {
+    // Peer's CUDA device is not visible in this process
+#if CUDART_VERSION >= 10010
+    // But in CUDA 10.1 we can still communicate with 'invisible' devices
+    TRACE(NCCL_INIT|NCCL_P2P, "Checking P2P connection between %d(%s) and %d(%s)", myInfo->nvmlDev, myInfo->busId, peerInfo->nvmlDev, peerInfo->busId);
+    // Check for NVLink/NVswitch including P2P access
+    int nvlinkp2p = getNvlinkGpu(myInfo->busId, peerInfo->busId);
+    if (nvlinkp2p > 0) {
+      *ret = nvlinkp2p;
+      return ncclSuccess;
+    }
+#endif
+    return ncclSuccess;
+  }
 
   TRACE(NCCL_INIT|NCCL_P2P, "Checking P2P connection between [%d=%d] and [%d=%d]", myInfo->cudaDev, myInfo->nvmlDev, peerCudaDev, peerInfo->nvmlDev);
 
