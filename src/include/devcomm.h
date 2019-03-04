@@ -20,9 +20,6 @@ typedef enum { ncclCollBroadcast, ncclCollReduce, ncclCollAllGather, ncclCollRed
 #define ROUNDUP(x, y) \
     (DIVUP((x), (y))*(y))
 
-#define MAX(a,b) ((a>b)?a:b)
-#define MIN(a,b) ((a<b)?a:b)
-
 #define ALIGN_SIZE(size, align) \
   size = ((size + (align) - 1) / (align)) * (align);
 

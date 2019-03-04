@@ -8,6 +8,7 @@
 #define NCCL_CORE_H_
 
 #include <pthread.h>
+#include <algorithm>
 #include "nccl.h"
 #include "debug.h"
 #include "checks.h"
