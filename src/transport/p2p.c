@@ -1,5 +1,5 @@
 /*************************************************************************
- * Copyright (c) 2016-2018, NVIDIA CORPORATION. All rights reserved.
+ * Copyright (c) 2016-2019, NVIDIA CORPORATION. All rights reserved.
  *
  * See LICENSE.txt for license information
  ************************************************************************/
@@ -57,7 +57,7 @@ static int busIdToCudaDev(const char* busId) {
 /* Determine if we can communicate with the peer through p2p */
 ncclResult_t p2pCanConnect(ncclTvalue_t* ret, struct ncclPeerInfo* myInfo, struct ncclPeerInfo* peerInfo) {
   // Do not use P2P across root complexes by default (provided CUDA permits it)
-  int p2pLevel = PATH_SOC;
+  int p2pLevel = PATH_NODE;
   if (ncclParamP2pDisable() == 1) p2pLevel = 0;
   if (ncclParamP2pLevel() != -2) p2pLevel = ncclParamP2pLevel();
 
@@ -76,7 +76,7 @@ ncclResult_t p2pCanConnect(ncclTvalue_t* ret, struct ncclPeerInfo* myInfo, struc
 
   // Do not detect topology if we're on the same GPU. Note this is not really supported.
   if (myInfo->cudaDev == peerCudaDev) {
-    *ret = 1 + PATH_SOC;
+    *ret = 1 + PATH_SYS;
     return ncclSuccess;
   }
 
@@ -104,7 +104,7 @@ ncclResult_t p2pCanConnect(ncclTvalue_t* ret, struct ncclPeerInfo* myInfo, struc
   if (err1 == ncclSuccess && err2 == ncclSuccess) {
     int distance = pciDistance(myPath, peerPath);
     if (distance < p2pLevel) {
-      *ret = 1 + PATH_SOC - distance;
+      *ret = 1 + PATH_SYS - distance;
     }
   }
   if (err1 == ncclSuccess) free(myPath);
@@ -300,9 +300,9 @@ int p2pComputeRingsSeqNew(ncclTvalue_t* values, int nranks, int* rings, int nrin
 }
 
 static int findClosestPci(ncclTvalue_t* values, int* inRing, int rank, int end, int nranks, int minScore) {
-  for (int score = PATH_SOC+1; score >= minScore; score--) {
+  for (int score = PATH_SYS+1; score >= minScore; score--) {
     int best = -1;
-    int worst_end_score = PATH_SOC+2; // find the closest to rank, farthest from end
+    int worst_end_score = PATH_SYS+2; // find the closest to rank, farthest from end
     for (int n = 0; n < nranks; n++) {
       if (inRing[n]) continue;
       if (values[rank*nranks+n] == score) {
@@ -607,6 +607,7 @@ ncclResult_t p2pSendFree(void* resources) {
   if (sendRes->ipcPtr)
     CUDACHECK(cudaIpcCloseMemHandle(sendRes->ipcPtr));
   CUDACHECK(cudaFree(sendRes->devMem));
+  free(sendRes);
   return ncclSuccess;
 }
 
@@ -615,6 +616,7 @@ ncclResult_t p2pRecvFree(void* resources) {
   if (recvRes->ipcPtr)
     CUDACHECK(cudaIpcCloseMemHandle(recvRes->ipcPtr));
   CUDACHECK(cudaFree(recvRes->devMem));
+  free(recvRes);
   return ncclSuccess;
 }
 

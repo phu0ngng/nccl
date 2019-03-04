@@ -23,7 +23,7 @@ import os
 # -- Project information -----------------------------------------------------
 
 project = u'NCCL'
-copyright = u'2018, NVIDIA Corporation'
+copyright = u'2019, NVIDIA Corporation'
 author = u'NVIDIA Corporation'
 
 version_long = u'2.4.1'

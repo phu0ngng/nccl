@@ -8,9 +8,7 @@ Ensure you are familiar with the following known issues and useful debugging str
 Errors
 ******
 
-NCCL calls may return a variety of return codes. Make sure you check the return codes are always equal to ncclSuccess. If any call fails and returns a value different from ncclSuccess, setting NCCL_DEBUG to “WARN” will make NCCL print an explicit warning message before returning the error.
-
-NCCL calls may return a variety of return codes. Ensure that the return codes are always equal to ncclSuccess. If any call fails, and returns a value different from ncclSuccess, setting NCCL_DEBUG to WARN will make NCCL print an explicit warning message before returning the error. 
+NCCL calls may return a variety of return codes. Ensure that the return codes are always equal to ncclSuccess. If any call fails and returns a value different from ncclSuccess, setting NCCL_DEBUG to “WARN” will make NCCL print an explicit warning message before returning the error.
 
 Errors are grouped into different categories.
 * ncclUnhandledCudaError and ncclSystemError indicate that a call to an external library failed.
