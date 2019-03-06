@@ -322,10 +322,10 @@ ncclResult_t netSendProxy(struct ncclProxyArgs* args) {
   if (args->state == ncclProxyOpProgress) {
     args->idle = 1;
     if (args->head < args->end) {
+      int buffSlot = args->tail%NCCL_STEPS;
       if (args->tail < args->end && args->tail < args->head + NCCL_STEPS) {
         volatile int* sizesFifo = resources->hostRecvMem->sizesFifo;
         if (args->llMode) {
-          int buffSlot = args->tail%NCCL_STEPS;
           int size = sizesFifo[buffSlot];
           if (size != -1) {
             uint32_t flag = args->tail + 1;
@@ -353,7 +353,6 @@ ncclResult_t netSendProxy(struct ncclProxyArgs* args) {
           struct ncclRecvMem* localMem = resources->useGdr ? resources->devRecvMem : resources->hostRecvMem;
           int stepSize = args->channel->buffSize/NCCL_STEPS;
           // Send through network
-          int buffSlot = args->tail%NCCL_STEPS;
           NCCLCHECK(ncclNetIsend(resources->netSendComm, localMem->buff+buffSlot*stepSize, sizesFifo[buffSlot], resources->mhandle, args->requests+buffSlot));
           if (args->requests[buffSlot] != NULL) {
             sizesFifo[buffSlot] = -1;
