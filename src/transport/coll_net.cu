@@ -318,19 +318,15 @@ ncclResult_t collNetSendProxy(struct ncclProxyArgs* args) {
   }
   if (args->state == ncclProxyOpProgress) {
     args->idle = 1;
-    volatile uint64_t* prevTail = &resources->hostRecvMem->tail;
-    struct ncclSendMem* prevMem = resources->hostSendMem;
-    uint64_t* prevHead = &prevMem->head;
-    struct ncclRecvMem* localMem = resources->useGdr ? resources->devRecvMem : resources->hostRecvMem;
     union ncclLLFifoLine* llBuff = resources->hostRecvMem->llBuff;
-    volatile int* sizesFifo = resources->hostRecvMem->sizesFifo;
-    int stepSize = args->channel->buffSize/NCCL_STEPS;
+    volatile uint64_t* prevTail = &resources->hostRecvMem->tail;
 #ifdef SHARED_REQ_Q
     struct reqState* reqFifo = resources->reqFifo;
 #endif
 
     if (args->head < args->end) {
       if (args->tail < args->end && args->tail < args->head + NCCL_STEPS) {
+        volatile int* sizesFifo = resources->hostRecvMem->sizesFifo;
         if (args->llMode) {
           int buffSlot = args->tail%NCCL_STEPS;
           int size = sizesFifo[buffSlot];
@@ -365,8 +361,8 @@ ncclResult_t collNetSendProxy(struct ncclProxyArgs* args) {
               if (args->requests[buffSlot] != NULL) {
                 sizesFifo[buffSlot] = -1;
 #ifdef SHARED_REQ_Q
-              reqFifo[buffSlot].state = collReqPosted;
-              reqFifo[buffSlot].request = args->requests[buffSlot];
+                reqFifo[buffSlot].state = collReqPosted;
+                reqFifo[buffSlot].request = args->requests[buffSlot];
 #endif
                 // Make sure size is reset to zero before we update the head.
                 __sync_synchronize();
@@ -375,7 +371,9 @@ ncclResult_t collNetSendProxy(struct ncclProxyArgs* args) {
               }
             }
           }
-        } else if (args->tail < *prevTail) {
+        } else if (args->tail < resources->hostRecvMem->tail) {
+          struct ncclRecvMem* localMem = resources->useGdr ? resources->devRecvMem : resources->hostRecvMem;
+          int stepSize = args->channel->buffSize/NCCL_STEPS;
           // Send through network
           int buffSlot = args->tail%NCCL_STEPS;
           int count = sizesFifo[buffSlot]/ncclTypeSize(args->dtype);
@@ -408,25 +406,24 @@ done: if (args->head < args->tail) {
           reqFifo[buffSlot].intmBuff = NULL;
 #endif
           args->head += args->sliceSteps;
-          *prevHead = args->head;
+          resources->hostSendMem->head = args->head;
           args->idle = 0;
         }
       }
-      if (args->head == args->end) {
-        resources->step = args->end;
-        args->state = ncclProxyOpDone;
-      }
+    }
+    if (args->head == args->end) {
+      resources->step = args->end;
+      args->idle = 0;
+      args->state = ncclProxyOpDone;
     }
   }
   if (args->state == ncclProxyOpDone) {
     union ncclLLFifoLine* llBuff = resources->hostRecvMem->llBuff;
-    struct ncclSendMem* prevMem = resources->hostSendMem;
-    uint64_t* prevHead = &prevMem->head;
     INFO(NCCL_NET,"Send proxy : opCount %lx head %lx tail %lx end %lx nsteps %d llMode %d ==> Cleaning", args->opCount, args->head, args->tail, args->end, args->nsteps, args->llMode);
     if (args->llMode && resources->step > resources->llLastCleaning + NCCL_LL_CLEAN_FREQ) {
       for (int i=0; i< NCCL_LL_BUFF_LINES; i++) llBuff[i].flag1 = llBuff[i].flag2 = resources->step;
       resources->step += NCCL_STEPS;
-      *prevHead = resources->step;
+      resources->hostSendMem->head = resources->step;
       resources->llLastCleaning = resources->step;
     }
     args->state = ncclProxyOpNone;
@@ -455,13 +452,8 @@ ncclResult_t collNetRecvProxy(struct ncclProxyArgs* args) {
   }
   if (args->state == ncclProxyOpProgress) {
     args->idle = 1;
-    volatile uint64_t* nextHead = &resources->hostSendMem->head;
-    struct ncclRecvMem* localMem = resources->useGdr ? resources->devRecvMem : resources->hostRecvMem;
-    char* localBuff = args->llMode ? (char*)resources->llData : localMem->buff;  // LL always on host mem
-    void* mhandle = args->llMode ? resources->llMhandle : resources->mhandle;
+    int stepSize = ( args->llMode ? NCCL_LL_BUFF_SIZE : args->channel->buffSize ) / NCCL_STEPS;
     uint64_t* nextTail = &resources->hostRecvMem->tail;
-
-    int stepSize = ( args->llMode ? NCCL_LL_BUFF_LINES*sizeof(struct ncclLLDataLine) : args->channel->buffSize ) / NCCL_STEPS;
 
 #ifdef SHARED_REQ_Q
     struct reqState* reqFifo = resources->reqFifo;
@@ -469,6 +461,9 @@ ncclResult_t collNetRecvProxy(struct ncclProxyArgs* args) {
     uint64_t* reqFifoTail = &resources->reqFifoTail;
 
     if (args->head < args->end) {
+      struct ncclRecvMem* localMem = resources->useGdr ? resources->devRecvMem : resources->hostRecvMem;
+      char* localBuff = args->llMode ? (char*)resources->llData : localMem->buff;  // LL always on host mem
+      void* mhandle = args->llMode ? resources->llMhandle : resources->mhandle;
 #ifdef SHARED_REQ_Q
       // enqueue an intermediate buff address
       if (*reqFifoTail < args->tail + NCCL_STEPS && *reqFifoTail < args->end) {
@@ -479,6 +474,7 @@ ncclResult_t collNetRecvProxy(struct ncclProxyArgs* args) {
         }
       }
 #endif
+    volatile uint64_t* nextHead = &resources->hostSendMem->head;
       if ((args->tail < args->head + NCCL_STEPS) && (args->tail < (*nextHead) + NCCL_STEPS) && (args->tail < args->end)) {
         int buffSlot = args->tail%NCCL_STEPS;
 #ifdef SHARED_REQ_Q
@@ -492,15 +488,15 @@ ncclResult_t collNetRecvProxy(struct ncclProxyArgs* args) {
         args->idle = 0;
       }
 done: if (args->tail > args->head) {
-        int done, size;
         int buffSlot = args->head%NCCL_STEPS;
+        int done, size;
         if (reqFifo[buffSlot].request != NULL) NCCLCHECK(collNetTest((void*)(reqFifo[buffSlot].request), &done, &size));
         if (done) {
           INFO(NCCL_NET,"Recv proxy : opCount %lx head %lx tail %lx nextTail %p nextTail %lx end %lx nsteps %d llMode %d size %d request %p => Done", args->opCount, args->head, args->tail, nextTail, *nextTail, args->end, args->nsteps, args->llMode, size, reqFifo[buffSlot].request);
           args->head += args->sliceSteps;
           if (args->llMode == 0) {
             if (resources->useGdr) collNetFlush(resources->collNetRecvComm, localBuff+buffSlot*stepSize, size, mhandle);
-            *nextTail = args->head;
+            resources->hostRecvMem->tail = args->head;
           } else { // ll
             // re-attach flag
             uint32_t flag = args->head;
@@ -519,19 +515,18 @@ done: if (args->tail > args->head) {
           args->idle = 0;
         }
       }
-      if (args->head == args->end) {
-        resources->step = args->end;
-        args->state = ncclProxyOpDone;
-      }
+    }
+    if (args->head == args->end) {
+      resources->step = args->end;
+      args->idle = 0;
+      args->state = ncclProxyOpDone;
     }
   }
-
   if (args->state == ncclProxyOpDone) {
-    volatile uint64_t* nextHead = &resources->hostSendMem->head;
     INFO(NCCL_NET,"Recv proxy : opCount %lx head %lx tail %lx end %lx nsteps %d llMode %d ==> Cleaning", args->opCount, args->head, args->tail, args->end, args->nsteps, args->llMode);
     if (args->llMode && resources->step > resources->llLastCleaning + NCCL_LL_CLEAN_FREQ) {
       resources->step += NCCL_STEPS;
-      while (*nextHead < resources->step);
+      while (resources->hostSendMem->head < resources->step);
       resources->llLastCleaning = resources->step;
     }
     args->state = ncclProxyOpNone;
