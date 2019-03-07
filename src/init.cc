@@ -182,6 +182,11 @@ ncclResult_t ncclGetUniqueId(ncclUniqueId* out) {
   return bootstrapGetUniqueId(out);
 }
 
+// Prevent compiler from optimizing out these operations
+void __attribute__((optimize("O0"))) commPoison(ncclComm_t comm) {
+  comm->rank = comm->cudaDev = comm->nvmlDev = comm->nRanks = -1;
+}
+
 static ncclResult_t commFree(ncclComm_t comm) {
   if (comm == NULL)
     return ncclSuccess;
@@ -216,6 +221,9 @@ static ncclResult_t commFree(ncclComm_t comm) {
   }
   CUDACHECK(cudaFreeHost((void *)comm->abortFlag));
   CUDACHECK(cudaFreeHost((void *)comm->fatalDevError));
+
+  // Poison comm to try and catch a double free
+  commPoison(comm);
 
   free(comm);
   return ncclSuccess;
@@ -1159,6 +1167,9 @@ final:
 
 static ncclResult_t commDestroy(ncclComm_t comm) {
   int savedDevice;
+#ifdef ENABLE_TRACE
+  int rank = comm->rank;
+#endif
   CUDACHECK(cudaGetDevice(&savedDevice));
   int commDevice = comm->cudaDev;
 
@@ -1166,7 +1177,7 @@ static ncclResult_t commDestroy(ncclComm_t comm) {
     CUDACHECK(cudaSetDevice(commDevice));
   }
 
-  TRACE(NCCL_INIT, "Destroying comm %p rank %d abortFlag %d fatalError %d", comm, comm->rank, *comm->abortFlag, comm->fatalError);
+  TRACE(NCCL_INIT, "Destroying comm %p rank %d abortFlag %d fatalError %d", comm, rank, *comm->abortFlag, comm->fatalError);
 
   CUDACHECK(cudaStreamSynchronize(comm->groupStream));
   NCCLCHECK(transportDestroyProxy(comm));
@@ -1175,7 +1186,7 @@ static ncclResult_t commDestroy(ncclComm_t comm) {
   if (savedDevice != commDevice)
     CUDACHECK(cudaSetDevice(savedDevice));
 
-  TRACE(NCCL_INIT, "Destroyed comm %p rank %d", comm, comm->rank);
+  TRACE(NCCL_INIT, "Destroyed comm %p rank %d", comm, rank);
 
   return ncclSuccess;
 }
@@ -1184,6 +1195,14 @@ NCCL_API(ncclResult_t, ncclCommDestroy, ncclComm_t comm);
 ncclResult_t ncclCommDestroy(ncclComm_t comm) {
   if (comm == NULL)
     return ncclSuccess;
+
+  TRACE(NCCL_INIT, "comm %p rank %d nRanks %d cudaDev %d nvmlDev %d", comm, comm->rank, comm->nRanks, comm->cudaDev, comm->nvmlDev);
+
+  // Try and prevent a double free of the comm struct (user error)
+  if (comm->rank == -1 || comm->nRanks <= 0 || comm->cudaDev == -1 || comm->nvmlDev == -1) {
+    WARN("comm %p has already been destroyed", comm);
+    return ncclInvalidArgument;
+  }
 
   return commDestroy(comm);
 }
