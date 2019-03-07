@@ -433,6 +433,7 @@ ncclResult_t netSendProxy(struct ncclProxyArgs* args) {
     if (args->head < args->end) {
       if (args->tail < args->end && args->tail < args->head + NCCL_STEPS) {
         volatile int* sizesFifo = resources->hostRecvMem->sizesFifo;
+        volatile uint64_t* recvTail = &resources->hostRecvMem->tail;
         if (args->llMode) {
           int buffSlot = args->tail%NCCL_STEPS;
           int size = sizesFifo[buffSlot];
@@ -458,7 +459,7 @@ ncclResult_t netSendProxy(struct ncclProxyArgs* args) {
               }
             }
           }
-        } else if (args->tail < resources->hostRecvMem->tail) {
+        } else if (args->tail < *recvTail) {
           struct ncclRecvMem* localMem = resources->useGdr ? resources->devRecvMem : resources->hostRecvMem;
           int stepSize = args->channel->buffSize/NCCL_STEPS;
           // Send through network
@@ -491,12 +492,24 @@ ncclResult_t netSendProxy(struct ncclProxyArgs* args) {
     }
   }
   if (args->state == ncclProxyOpDone) {
-    union ncclLLFifoLine* llBuff = resources->hostRecvMem->llBuff;
     if (args->llMode && resources->step > resources->llLastCleaning + NCCL_LL_CLEAN_FREQ) {
-      for (int i=0; i< NCCL_LL_BUFF_LINES; i++) llBuff[i].flag1 = llBuff[i].flag2 = resources->step;
-      resources->step += NCCL_STEPS;
-      resources->hostSendMem->head = resources->step;
+      args->end = resources->step + NCCL_STEPS;
       resources->llLastCleaning = resources->step;
+    }
+    args->state = ncclProxyOpLLCleaning;
+  }
+  if (args->state == ncclProxyOpLLCleaning) {
+    while (resources->step < args->end) {
+      volatile int* sizesFifo = resources->hostRecvMem->sizesFifo;
+      int buffSlot = resources->step%NCCL_STEPS;
+      if (sizesFifo[buffSlot] == -1) return ncclSuccess;
+      if (sizesFifo[buffSlot] != 0) {
+        WARN("Error : size for cleaning should be zero, got %d", sizesFifo[buffSlot]);
+        return ncclInternalError;
+      }
+      sizesFifo[buffSlot] = -1;
+      resources->step++;
+      resources->hostSendMem->head = resources->step;
     }
     args->state = ncclProxyOpNone;
   }
@@ -523,7 +536,8 @@ ncclResult_t netRecvProxy(struct ncclProxyArgs* args) {
       struct ncclRecvMem* localMem = resources->useGdr ? resources->devRecvMem : resources->hostRecvMem;
       char* localBuff = args->llMode ? (char*)localMem->llBuff : localMem->buff;
       void* mhandle = args->llMode ? resources->llMhandle : resources->mhandle;
-      if ((args->tail < args->head + NCCL_STEPS) && (args->tail < (resources->hostSendMem->head) + NCCL_STEPS) && (args->tail < args->end)) {
+      volatile uint64_t* sendHead = &resources->hostSendMem->head;
+      if ((args->tail < args->head + NCCL_STEPS) && (args->tail < *sendHead + NCCL_STEPS) && (args->tail < args->end)) {
         int buffSlot = args->tail%NCCL_STEPS;
         int sliceSize = stepSize * args->sliceSteps;
         NCCLCHECK(ncclNetIrecv(resources->netRecvComm, localBuff+buffSlot*stepSize, sliceSize, mhandle, args->requests+buffSlot));
@@ -554,9 +568,19 @@ ncclResult_t netRecvProxy(struct ncclProxyArgs* args) {
   }
   if (args->state == ncclProxyOpDone) {
     if (args->llMode && resources->step > resources->llLastCleaning + NCCL_LL_CLEAN_FREQ) {
-      resources->step += NCCL_STEPS;
-      while (resources->hostSendMem->head < resources->step);
+      args->end = resources->step + NCCL_STEPS;
       resources->llLastCleaning = resources->step;
+    }
+    args->state = ncclProxyOpLLCleaning;
+  }
+  if (args->state == ncclProxyOpLLCleaning) {
+    while (resources->step < args->end) {
+      union ncclLLFifoLine* llBuff = resources->hostRecvMem->llBuff;
+      volatile uint64_t* sendHead = &resources->hostSendMem->head;
+      if (resources->step >= *sendHead + NCCL_STEPS) return ncclSuccess;
+      int buffSlot = resources->step%NCCL_STEPS;
+      for (int i=0; i< NCCL_LL_SLICE_LINES; i++) llBuff[buffSlot*NCCL_LL_SLICE_LINES+i].flag1 = llBuff[buffSlot*NCCL_LL_SLICE_LINES+i].flag2 = resources->step;
+      resources->step++;
     }
     args->state = ncclProxyOpNone;
   }

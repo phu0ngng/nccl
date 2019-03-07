@@ -38,7 +38,7 @@ struct ncclConnect {
   char data[CONNECT_SIZE];
 };
 
-enum ncclProxyOpState { ncclProxyOpNone, ncclProxyOpReady, ncclProxyOpProgress, ncclProxyOpDone };
+enum ncclProxyOpState { ncclProxyOpNone, ncclProxyOpReady, ncclProxyOpProgress, ncclProxyOpDone, ncclProxyOpLLCleaning };
 
 struct ncclProxyArgs;
 typedef ncclResult_t (*proxyProgressFunc_t)(struct ncclProxyArgs*);

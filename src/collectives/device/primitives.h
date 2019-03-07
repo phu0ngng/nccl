@@ -516,6 +516,7 @@ class ncclLLPrimitives {
 
   __device__ __forceinline__ void llSendCleaning(int i) {
     if (sendStep[i] > sendConn[i]->llLastCleaning + NCCL_LL_CLEAN_FREQ) {
+      if (tid == 0) sendConn[i]->llLastCleaning = sendStep[i];
       /* Reset all flags */
       static_assert((NCCL_LL_BUFF_SIZE % NCCL_LL_MAX_NTHREADS) == 0, "NCCL_LL_BUFF_SIZE must be a multiple of THREADS");
       static_assert(NCCL_LL_BUFF_SIZE/(sizeof(union ncclLLFifoLine)*NCCL_LL_MAX_NTHREADS) > 0, "NCCL_LL_BUFF_SIZE is less than 16 bytes*THREADS");
@@ -528,15 +529,14 @@ class ncclLLPrimitives {
         }
         postSend(i);
       }
-      if (tid == 0) sendConn[i]->llLastCleaning = sendStep[i];
     }
   }
 
   __device__ __forceinline__ void llRecvCleaning(int i) {
     if (recvStep[i] > recvConn[i]->llLastCleaning + NCCL_LL_CLEAN_FREQ) {
+      if (tid == 0) recvConn[i]->llLastCleaning = recvStep[i];
       for (int s=0; s<NCCL_STEPS; s++)
         postRecv(i);
-      if (tid == 0) recvConn[i]->llLastCleaning = recvStep[i];
     }
   }
 
