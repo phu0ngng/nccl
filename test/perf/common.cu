@@ -769,7 +769,7 @@ int main(int argc, char* argv[]) {
             "[-k,--side_comp <0/1>] \n\t"
             "[-l,--replay <path to replay file>] \n\t"
 	    "[-h,--help]\n",
-               basename(argv[0]));
+            basename(argv[0]));
         return 0;
     }
   }
@@ -945,8 +945,8 @@ testResult_t run() {
       TESTCHECK(threads[t].func(&threads[t].args));
   }
 
-  // Wait for other threads
-  for (int t=nThreads-1; t>=0; t--) {
+  // Wait for other threads and accumulate stats and errors
+  for (int t=nThreads-1; t>0; t--) {
     if (t) pthread_join(threads[t].thread, NULL);
     TESTCHECK(threads[t].ret);
     errors[0] += errors[t];
