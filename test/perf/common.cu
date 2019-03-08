@@ -946,12 +946,14 @@ testResult_t run() {
   }
 
   // Wait for other threads and accumulate stats and errors
-  for (int t=nThreads-1; t>0; t--) {
+  for (int t=nThreads-1; t>=0; t--) {
     if (t) pthread_join(threads[t].thread, NULL);
     TESTCHECK(threads[t].ret);
-    errors[0] += errors[t];
-    bw[0] += bw[t];
-    bw_count[0] += bw_count[t];
+    if (t) {
+      errors[0] += errors[t];
+      bw[0] += bw[t];
+      bw_count[0] += bw_count[t];
+    }
     if (side_comp) {
        compThreads[t].args.compThreadStop = 1;
        pthread_join(compThreads[t].thread, NULL);
