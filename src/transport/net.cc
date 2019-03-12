@@ -438,7 +438,7 @@ ncclResult_t netSendProxy(struct ncclProxyArgs* args) {
           int buffSlot = args->tail%NCCL_STEPS;
           int size = sizesFifo[buffSlot];
           if (size != -1) {
-            uint32_t flag = args->tail + 1;
+            uint32_t flag = NCCL_LL_FLAG(args->tail + 1);
             int nFifoLines = DIVUP(size, sizeof(union ncclLLFifoLine));
             size = nFifoLines * sizeof(union ncclLLFifoLine);
             union ncclLLFifoLine* lines = resources->hostRecvMem->llBuff+buffSlot*NCCL_LL_SLICE_LINES;
@@ -488,30 +488,8 @@ ncclResult_t netSendProxy(struct ncclProxyArgs* args) {
     if (args->head == args->end) {
       resources->step = args->end;
       args->idle = 0;
-      args->state = ncclProxyOpDone;
+      args->state = ncclProxyOpNone;
     }
-  }
-  if (args->state == ncclProxyOpDone) {
-    if (args->llMode && resources->step > resources->llLastCleaning + NCCL_LL_CLEAN_FREQ) {
-      args->end = resources->step + NCCL_STEPS;
-      resources->llLastCleaning = resources->step;
-    }
-    args->state = ncclProxyOpLLCleaning;
-  }
-  if (args->state == ncclProxyOpLLCleaning) {
-    while (resources->step < args->end) {
-      volatile int* sizesFifo = resources->hostRecvMem->sizesFifo;
-      int buffSlot = resources->step%NCCL_STEPS;
-      if (sizesFifo[buffSlot] == -1) return ncclSuccess;
-      if (sizesFifo[buffSlot] != 0) {
-        WARN("Error : size for cleaning should be zero, got %d", sizesFifo[buffSlot]);
-        return ncclInternalError;
-      }
-      sizesFifo[buffSlot] = -1;
-      resources->step++;
-      resources->hostSendMem->head = resources->step;
-    }
-    args->state = ncclProxyOpNone;
   }
   return ncclSuccess;
 }
@@ -563,26 +541,8 @@ ncclResult_t netRecvProxy(struct ncclProxyArgs* args) {
     if (args->head == args->end) {
       resources->step = args->end;
       args->idle = 0;
-      args->state = ncclProxyOpDone;
+      args->state = ncclProxyOpNone;
     }
-  }
-  if (args->state == ncclProxyOpDone) {
-    if (args->llMode && resources->step > resources->llLastCleaning + NCCL_LL_CLEAN_FREQ) {
-      args->end = resources->step + NCCL_STEPS;
-      resources->llLastCleaning = resources->step;
-    }
-    args->state = ncclProxyOpLLCleaning;
-  }
-  if (args->state == ncclProxyOpLLCleaning) {
-    while (resources->step < args->end) {
-      union ncclLLFifoLine* llBuff = resources->hostRecvMem->llBuff;
-      volatile uint64_t* sendHead = &resources->hostSendMem->head;
-      if (resources->step >= *sendHead + NCCL_STEPS) return ncclSuccess;
-      int buffSlot = resources->step%NCCL_STEPS;
-      for (int i=0; i< NCCL_LL_SLICE_LINES; i++) llBuff[buffSlot*NCCL_LL_SLICE_LINES+i].flag1 = llBuff[buffSlot*NCCL_LL_SLICE_LINES+i].flag2 = resources->step;
-      resources->step++;
-    }
-    args->state = ncclProxyOpNone;
   }
   return ncclSuccess;
 }

@@ -335,8 +335,8 @@ class ncclLLPrimitives {
   inline __device__ int sendOffset(int i) { return (sendStep[i]%NCCL_STEPS)*NCCL_LL_SLICE_LINES; }
   inline __device__ union ncclLLFifoLine* recvPtr(int i) { return recvBuff[i]+recvOffset(i); }
   inline __device__ union ncclLLFifoLine* sendPtr(int i) { return sendBuff[i]+sendOffset(i); }
-  inline __device__ uint32_t recvFlag(int i) { return recvStep[i]+1; }
-  inline __device__ uint32_t sendFlag(int i) { return sendStep[i]+1; }
+  inline __device__ uint32_t recvFlag(int i) { return NCCL_LL_FLAG(recvStep[i]+1); }
+  inline __device__ uint32_t sendFlag(int i) { return NCCL_LL_FLAG(sendStep[i]+1); }
 
   // Exit If Abort Barrier : make sure all threads exit consistently
   // Each thread sets a predicate to true if val == 1
@@ -393,7 +393,10 @@ class ncclLLPrimitives {
         sendConnHead = *waitPtr;
         if (checkAbort(sendConn[i]->opCountRem)) break;
       }
-      if (fifoPtr) fifoPtr[sendStep[i]%NCCL_STEPS] = nbytes;
+      if (fifoPtr) {
+        int size = ((sendStep[i] & NCCL_LL_CLEAN_MASK) == NCCL_LL_CLEAN_MASK) ? NCCL_LL_SLICE_LINES*sizeof(union ncclLLFifoLine) : nbytes;
+        fifoPtr[sendStep[i]%NCCL_STEPS] = size;
+      }
     }
   }
 
@@ -402,7 +405,12 @@ class ncclLLPrimitives {
     if (tid == i) *postPtr = recvStep[i];
   }
 
-  inline __device__ void postSend(int i) {
+  inline __device__ void postSend(int i, int offset) {
+    // LL Cleanup : write all flags in the slice to make sure we don't have
+    // data corruption when flag loops over.
+    if ((sendStep[i] & NCCL_LL_CLEAN_MASK) == NCCL_LL_CLEAN_MASK) {
+      for (int o = offset; o<NCCL_LL_SLICE_LINES; o+=nthreads) storeLL(sendPtr(i)+o, 0, sendFlag(i));
+    }
     sendStep[i]++;
   }
 
@@ -443,9 +451,10 @@ class ncclLLPrimitives {
     uint32_t npack = DIVUP(nbytes, sizeof(uint64_t));
     uint64_t* srcPack = (uint64_t*)srcPtr;
     uint64_t* dstPack = (uint64_t*)dstPtr;
+    int offset = tid;
     // Do multiples of 64 bits
     #pragma unroll 2
-    for (int offset=tid; offset<npack; offset+=nthreads) {
+    for (; offset<npack; offset+=nthreads) {
       // Recv : local, then intra-node, then inter-node
       uint64_t val = SRC ? readAL(srcPack+offset) : readLL(0, offset);
       if (RECV) {
@@ -471,7 +480,7 @@ class ncclLLPrimitives {
     }
     exitIfAbortLocalBarrier();
     FOR_RECV(postRecv);
-    FOR_SEND(postSend);
+    FOR_SEND(postSend, offset);
   }
 
   __device__ __forceinline__ void loadRecvConn(struct ncclConnInfo* conn, int i) {
@@ -511,32 +520,6 @@ class ncclLLPrimitives {
       sendConn[i]->step = sendStep[i];
       *(sendConn[i]->opCountLoc) += 1;
       __threadfence_block();
-    }
-  }
-
-  __device__ __forceinline__ void llSendCleaning(int i) {
-    if (sendStep[i] > sendConn[i]->llLastCleaning + NCCL_LL_CLEAN_FREQ) {
-      if (tid == 0) sendConn[i]->llLastCleaning = sendStep[i];
-      /* Reset all flags */
-      static_assert((NCCL_LL_BUFF_SIZE % NCCL_LL_MAX_NTHREADS) == 0, "NCCL_LL_BUFF_SIZE must be a multiple of THREADS");
-      static_assert(NCCL_LL_BUFF_SIZE/(sizeof(union ncclLLFifoLine)*NCCL_LL_MAX_NTHREADS) > 0, "NCCL_LL_BUFF_SIZE is less than 16 bytes*THREADS");
-      for (int s=0; s<NCCL_STEPS; s++) {
-        waitSend(i, 0);
-        barrier();
-        for (int o=tid; o<NCCL_LL_SLICE_LINES; o+=nthreads) {
-          const union ncclLLFifoLine resetLine = { 0, sendFlag(i), 0, sendFlag(i) };
-          sendPtr(i)[o].i4 = resetLine.i4;
-        }
-        postSend(i);
-      }
-    }
-  }
-
-  __device__ __forceinline__ void llRecvCleaning(int i) {
-    if (recvStep[i] > recvConn[i]->llLastCleaning + NCCL_LL_CLEAN_FREQ) {
-      if (tid == 0) recvConn[i]->llLastCleaning = recvStep[i];
-      for (int s=0; s<NCCL_STEPS; s++)
-        postRecv(i);
     }
   }
 
@@ -580,8 +563,6 @@ class ncclLLPrimitives {
   }
 
   __device__ __forceinline__ ~ncclLLPrimitives() {
-    for (int i=0; i<NSEND && i<nsend; i++) llSendCleaning(i);
-    for (int i=0; i<NRECV && i<nrecv; i++) llRecvCleaning(i);
     // Save steps for the next operation
     for (int i=0; i<NRECV && i<nrecv; i++) saveRecvConn(i);
     for (int i=0; i<NSEND && i<nsend; i++) saveSendConn(i);
