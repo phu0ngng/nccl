@@ -53,7 +53,7 @@ union ncclLLFifoLine {
 #define NCCL_LL_FLAG(a) ((uint32_t)(a))
 #endif
 // Make sure the clean mask will last for at least NCCL_NSTEPS
-static_assert(NCCL_LL_CLEAN_MASK % NCCL_STEPS == 0);
+static_assert(NCCL_LL_CLEAN_MASK % NCCL_STEPS == 0, "Invalid NCCL_LL_CLEAN_MASK value");
 
 struct ncclConnInfo {
   // Regular comm mechanism
