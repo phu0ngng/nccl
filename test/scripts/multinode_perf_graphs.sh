@@ -22,6 +22,10 @@ result=$resdir/$gpumodel/$op.$nproc.$nthread.$ngpus
 
 nperproc=$(expr $nthread \* $ngpus)
 
+if [ "$gpumodel" == "all" ]; then
+  req_hosts="-w gc0[1-2]"
+fi
+
 if [ "$SLURM" == "1" ]; then
   salloc_cmd="salloc -p $gpumodel $req_hosts -N $nnode -n $nproc -c $nperproc -t ${timeout} --exclusive "
 else

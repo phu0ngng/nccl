@@ -68,8 +68,8 @@ elif [[ "$mode" == *"multinode"* ]]; then
   if [ "$gpumodel" == "dgx1" ] || [ "$gpumodel" == "dgx1v" ]; then
     $SHDIR/multinode_perf_graphs.sh $gpumodel 2 4 2 2
   elif [ "$gpumodel" == "P100" ]; then
-    $SHDIR/multinode_perf_graphs.sh gpu-verbs 2 4 2 2
-    $SHDIR/multinode_env_test.sh gpu-verbs 2 8
+    $SHDIR/multinode_perf_graphs.sh all 2 4 2 2
+    $SHDIR/multinode_env_test.sh all 2 8
   else
     echo "No multi-node test on $gpumodel"
   fi
