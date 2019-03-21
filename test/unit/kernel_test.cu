@@ -1,9 +1,19 @@
 #include "stdio.h"
 #include "nccl.h"
-#include "utils.h"
 
 #include "reduce_kernel.h"
 #include "common_kernel.h"
+
+#include <unistd.h>
+static void getHostName(char* hostname, int maxlen) {
+  gethostname(hostname, maxlen);
+  for (int i=0; i< maxlen; i++) {
+    if (hostname[i] == '.') {
+        hostname[i] = '\0';
+	return;
+    }
+  }
+}
 
 #undef CUDACHECK
 #define CUDACHECK(cmd) do {                         \
