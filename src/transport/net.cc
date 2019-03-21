@@ -173,20 +173,19 @@ static inline int groupBestEnd(int nranks, int* groups, int group, int* subgroup
   return -1;
 }
 
-#define MAXGROUPS 16
-
 ncclResult_t netGetRings(int nranks, int* groups, int* subgroups, ncclTvalue_t* values, int* nringsRet, int* prev, int* next, int minScore, int* nthreads) {
   int nGroups = groups[nranks-1] + 1;
-  int cardUsed[NET_MAX_IFS*MAXGROUPS];
-  for (int c=0; c<NET_MAX_IFS*nGroups; c++) cardUsed[c] = 0;
+  int *cardUsed, *starts, *ends;
+  NCCLCHECK(ncclCalloc(&cardUsed, NET_MAX_IFS*nGroups));
+  NCCLCHECK(ncclCalloc(&starts, nGroups));
+  NCCLCHECK(ncclCalloc(&ends, nGroups));
 
-  int starts[MAXGROUPS];
-  int ends[MAXGROUPS];
   for (int ring = 0; ring<*nringsRet; ring++) {
     for (int group = 0; group<nGroups; group++) {
       int nranksInGroup = 0;
       int nsubGroups = 0;
-      for (int rank=0; rank<nranks; rank++) if (groups[rank] == group) {
+      for (int rank=0; rank<nranks; rank++)
+        if (groups[rank] == group) {
           nranksInGroup++;
           nsubGroups = std::max(subgroups[rank], nsubGroups);
         }
@@ -208,7 +207,7 @@ ncclResult_t netGetRings(int nranks, int* groups, int* subgroups, ncclTvalue_t* 
       }
       if (starts[group] == -1 || ends[group] == -1) {
         *nringsRet = ring;
-        return ncclSuccess;
+        goto done;
       }
     }
     // Link groups together
@@ -218,6 +217,10 @@ ncclResult_t netGetRings(int nranks, int* groups, int* subgroups, ncclTvalue_t* 
       prev[ring*nranks+starts[nextGroup]] = ends[group];
     }
   }
+done:
+  free(cardUsed);
+  free(starts);
+  free(ends);
   return ncclSuccess;
 }
 
