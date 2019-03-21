@@ -371,15 +371,15 @@ static ncclResult_t connectAddress(int* fd, union socketAddress* remoteAddr) {
 #endif
 
   int ret;
-  int retries = 0;
+  int timedout_retries = 0;
+  int refused_retries = 0;
 retry:
   SYSCHECKSYNC(connect(*fd, &remoteAddr->sa, salen), "connect", ret);
   if (ret == 0) return ncclSuccess;
   if ((errno == ECONNREFUSED || errno == ETIMEDOUT)) {
-    retries++;
-    if ((errno == ECONNREFUSED && retries < RETRY_REFUSED_TIMES) ||
-        (errno == ETIMEDOUT && retries < RETRY_TIMEDOUT_TIMES)) {
-      INFO(NCCL_ALL,"Call to connect returned %s, retry %d", strerror(errno), retries);
+    if ((errno == ECONNREFUSED && ++refused_retries < RETRY_REFUSED_TIMES) ||
+        (errno == ETIMEDOUT && ++timedout_retries < RETRY_TIMEDOUT_TIMES)) {
+      INFO(NCCL_ALL,"Call to connect returned %s, retrying", strerror(errno));
       usleep(SLEEP_INT);
       goto retry;
     }
