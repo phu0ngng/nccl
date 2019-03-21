@@ -18,8 +18,9 @@
 
 #define MAX_IFS 16
 #define MAX_IF_NAME_SIZE 16
-#define SLEEP_INT     1000  // sleep interval in usec
-#define RETRY_TIMES   2e4   // retry times before reporting a timeout (20 sec)
+#define SLEEP_INT            1000 // connection retry sleep interval in usec
+#define RETRY_REFUSED_TIMES   2e4 // connection refused retry times before reporting a timeout (20 sec)
+#define RETRY_TIMEDOUT_TIMES    3 // connection timed out retry times (each one can take 20s)
 
 /* Common socket address storage structure for IPv4/IPv6 */
 union socketAddress {
@@ -374,10 +375,14 @@ static ncclResult_t connectAddress(int* fd, union socketAddress* remoteAddr) {
 retry:
   SYSCHECKSYNC(connect(*fd, &remoteAddr->sa, salen), "connect", ret);
   if (ret == 0) return ncclSuccess;
-  if (errno == ECONNREFUSED && ++retries < RETRY_TIMES) {
-    INFO(NCCL_ALL,"Call to connect returned %s, retrying", strerror(errno)); \
-    usleep(SLEEP_INT);
-    goto retry;
+  if ((errno == ECONNREFUSED || errno == ETIMEDOUT)) {
+    retries++;
+    if ((errno == ECONNREFUSED && retries < RETRY_REFUSED_TIMES) ||
+        (errno == ETIMEDOUT && retries < RETRY_TIMEDOUT_TIMES)) {
+      INFO(NCCL_ALL,"Call to connect returned %s, retry %d", strerror(errno), retries);
+      usleep(SLEEP_INT);
+      goto retry;
+    }
   }
   WARN("Connect to %s failed : %s", socketToString(&remoteAddr->sa, line), strerror(errno));
   return ncclSystemError;
