@@ -10,7 +10,7 @@
 #include "nccl.h"
 #include <stdint.h>
 
-ncclResult_t getHostName(char* hostname, int maxlen);
+ncclResult_t getHostName(char* hostname, int maxlen, const char delim);
 uint64_t getHostHash();
 uint64_t getPidHash();
 
