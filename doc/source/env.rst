@@ -366,7 +366,7 @@ Default is dependent on the number of ranks.
 Values are integers, in bytes.
 
 NCCL_IGNORE_CPU_AFFINITY
--------------------
+------------------------
 (since 2.4.6)
 
 Flag to cause NCCL to ignore the job's supplied CPU affinity and use the GPU affinity only.
