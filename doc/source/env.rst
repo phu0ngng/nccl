@@ -2,7 +2,7 @@
 Environment Variables
 #####################
 
-NCCL has an extensive set of environment variables to tune for specific usage. 
+NCCL has an extensive set of environment variables to tune for specific usage.
 
 They can also be set statically in /etc/nccl.conf (for an administrator to set system-wide values) or in ~/.nccl.conf (for users). For example, those files could contain :
 
@@ -12,7 +12,7 @@ They can also be set statically in /etc/nccl.conf (for an administrator to set s
  NCCL_DEBUG=WARN
  NCCL_RINGS=0 1 2 3|3 2 1 0
 
-NCCL_P2P_DISABLE     
+NCCL_P2P_DISABLE
 ----------------
 
 The ``NCCL_P2P_DISABLE`` variable disables the P2P transport, which uses CUDA direct access between GPUs, using NVLink or PCI.
@@ -29,15 +29,17 @@ Finely control when to use the P2P transport between GPUs. The level describes t
 
 Values accepted
 ^^^^^^^^^^^^^^^
-0 : Never use P2P (always disabled)
+0 : Never use P2P. (always disabled)
 
-1 : Use P2P when GPUs are on the same PCI switch
+1 : Use P2P when GPUs are on the same PCI switch.
 
-2 : Use P2P when GPUs are connected through PCI switches (potentially multiple hops)
+2 : Use P2P when GPUs are connected through PCI switches (potentially multiple hops).
 
 3 : Use P2P when GPUs are on the same PCI root complex, potentially going through the CPU.
 
-4 : Use P2P even across PCI root complexes (always enabled).
+4 : Use P2P even across PCI root complexes including traversing the interconnect within a NUMA node.
+
+5 : Use P2P even across the SMP interconnect between NUMA nodes (e.g., QPI/UPI). (always enabled)
 
 NCCL_SHM_DISABLE
 ----------------
@@ -47,9 +49,9 @@ Values accepted
 ^^^^^^^^^^^^^^^
 Define and set to 1 to disable communication through shared memory.
 
-NCCL_SOCKET_IFNAME   
+NCCL_SOCKET_IFNAME
 ------------------
-		      
+
 The ``NCCL_SOCKET_IFNAME`` variable specifies which IP interface to use for communication.
 
 Values accepted
@@ -83,7 +85,7 @@ Use this variable if you encounter memory constraint issues when using NCCL or y
 
 Values accepted
 ^^^^^^^^^^^^^^^
-Default is 4194304 (4 MB). 
+Default is 4194304 (4 MB).
 
 Values are integers, in bytes. The recommendation is to use powers of 2. For example,  1024 will give a 1K buffer.
 
@@ -95,7 +97,7 @@ The ``NCCL_NTHREADS`` variable sets the number of CUDA threads per CUDA block. N
 Use this variable if you think your GPU clocks are low and you want to increase the number of threads.
 
 You can also use this variable to reduce the number of threads to decrease the GPU workload.
-	
+
 Values accepted
 ^^^^^^^^^^^^^^^
 Default is 256.
@@ -138,7 +140,7 @@ NCCL_MIN_NRINGS
 Controls the minimum number of rings you want NCCL to use. Increasing the number of rings also increases the number of
 CUDA blocks NCCL uses, which may be useful to improve performance; however, it uses more CUDA compute resources.
 
-This is especially useful when using aggregated collectives on platforms where NCCL would usually only create one ring.  
+This is especially useful when using aggregated collectives on platforms where NCCL would usually only create one ring.
 
 Values accepted
 ^^^^^^^^^^^^^^^
@@ -216,7 +218,7 @@ The ``NCCL_IB_TIMEOUT`` variable controls the InfiniBand Verbs Timeout.
 The timeout is computed as 4.096 µs * 2 ^ timeout, and the right value is dependent on the size of the network.
 Increasing that value can help on very large networks, for example, if NCCL is failing on a call to ibv_poll_cq with
 error 12.
- 
+
 For more information, see section 12.7.34 of the InfiniBand specification Volume 1
 (https://www.infinibandta.org/ibta-specifications-download) (Local Ack Timeout).
 
@@ -230,7 +232,7 @@ NCCL_IB_RETRY_CNT
 -----------------
 (since 2.1.15)
 
-Controls the InfiniBand retry count. 
+Controls the InfiniBand retry count.
 
 For more information, see section 12.7.38 of the InfiniBand specification Volume 1
 (https://www.infinibandta.org/ibta-specifications-download).
@@ -243,7 +245,7 @@ NCCL_IB_GID_INDEX
 -----------------
 (since 2.1.4)
 
-Defines the Global ID index used in RoCE mode. See the show_gids command to set this value.  
+Defines the Global ID index used in RoCE mode. See the show_gids command to set this value.
 
 For more information, see the InfiniBand specification Volume 1
 (https://www.infinibandta.org/ibta-specifications-download) or vendor documentation.
@@ -256,7 +258,7 @@ NCCL_IB_SL
 ----------
 (since 2.1.4)
 
-Defines the InfiniBand Service Level. 
+Defines the InfiniBand Service Level.
 
 For more information, see the InfiniBand specification Volume 1
 (https://www.infinibandta.org/ibta-specifications-download) or vendor documentation.
@@ -269,7 +271,7 @@ NCCL_IB_TC
 ----------
 (since 2.1.15)
 
-Defines the InfiniBand traffic class field. 
+Defines the InfiniBand traffic class field.
 
 For more information, see the InfiniBand specification Volume 1
 (https://www.infinibandta.org/ibta-specifications-download) or vendor documentation.
@@ -301,15 +303,17 @@ the NIC and the GPU.
 
 Values accepted
 ^^^^^^^^^^^^^^^
-0 : Never use GPU Direct RDMA (always disabled)
+0 : Never use GPU Direct RDMA. (always disabled)
 
-1 : Use GPU Direct RDMA when GPU and NIC are on the same PCI switch
+1 : Use GPU Direct RDMA when GPU and NIC are on the same PCI switch.
 
-2 : Use GPU Direct RDMA when GPU and NIC are connected through PCI switches (potentially multiple hops)
+2 : Use GPU Direct RDMA when GPU and NIC are connected through PCI switches (potentially multiple hops).
 
 3 : Use GPU Direct RDMA when GPU and NIC are on the same PCI root complex, potentially going through the CPU.
 
-4 : Use GPU Direct RDMA even across PCI root complexes (always enabled).
+4 : Use GPU Direct RDMA even across PCI root complexes including traversing the interconnect within a NUMA node.
+
+5 : Use GPU Direct RDMA even across the SMP interconnect between NUMA nodes (e.g., QPI/UPI). (always enabled)
 
 NCCL_NET_GDR_READ
 -----------------
@@ -318,12 +322,12 @@ receive data directly in GPU memory. However, when sending data, the data is fir
 the InfiniBand card.
 
 Note: Reading directly GPU memory when sending data is known to be slightly slower than reading from CPU memory.
-	
+
 Values accepted
 ^^^^^^^^^^^^^^^
 Default value is 0.
 
-Define and set to 1 to use GPU Direct RDMA to send data to the NIC directly (bypassing CPU). 
+Define and set to 1 to use GPU Direct RDMA to send data to the NIC directly (bypassing CPU).
 
 NCCL_SINGLE_RING_THRESHOLD
 --------------------------
@@ -360,6 +364,17 @@ Values accepted
 Default is dependent on the number of ranks.
 
 Values are integers, in bytes.
+
+NCCL_IGNORE_CPU_AFFINITY
+-------------------
+(since 2.4.6)
+
+Flag to cause NCCL to ignore the job's supplied CPU affinity and use the GPU affinity only.
+
+Values accepted
+^^^^^^^^^^^^^^^
+Default is 0, set to 1 to cause NCCL to ignore the job's supplied CPU affinity.
+
 
 NCCL_DEBUG_FILE
 ---------------
