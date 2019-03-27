@@ -587,4 +587,277 @@ class ncclLLPrimitives {
     for (int i=0; i<NSEND && i<nsend; i++) saveSendConn(i);
   }
 };
+
+
+#define LL128_ROTATION (NCCL_LL128_LINESIZE/NCCL_LL128_FLAGSIZE)
+template <typename T, class FUNC, int NRECV, int NSEND>
+class ncclLL128Primitives {
+ private:
+  const int tid;
+  const int wid;
+  const int nthreads;
+  int nrecv = 0;
+  int nsend = 0;
+  struct ncclConnInfo* recvConn[NRECV];
+  struct ncclConnInfo* sendConn[NSEND];
+  volatile uint64_t* waitPtr;
+  volatile uint64_t* postPtr;
+  volatile int* fifoPtr;
+  uint64_t recvStep[NRECV];
+  uint64_t sendStep[NSEND];
+  uint64_t sendConnHead;
+  uint64_t* recvBuff[NRECV];
+  uint64_t* sendBuff[NSEND];
+  struct ncclDevComm* comm;
+
+  inline __device__ int recvOffset(int i) { return (recvStep[i]%NCCL_STEPS)*NCCL_LL128_SLICE_ELEMS; }
+  inline __device__ int sendOffset(int i) { return (sendStep[i]%NCCL_STEPS)*NCCL_LL128_SLICE_ELEMS; }
+  inline __device__ uint64_t* recvPtr(int i) { return recvBuff[i]+recvOffset(i); }
+  inline __device__ uint64_t* sendPtr(int i) { return sendBuff[i]+sendOffset(i); }
+  inline __device__ uint64_t recvFlag(int i) { return recvStep[i]+1; }
+  inline __device__ uint64_t sendFlag(int i) { return sendStep[i]+1; }
+
+  // Exit If Abort Barrier : make sure all threads exit consistently
+  // Each thread sets a predicate to true if val == 1
+  // all CTA's threads enter the barrier and do a popc on their predicates being True
+  // If any of the thread's predicate was True, all the threads call exit()
+  inline __device__ void exitIfAbortLocalBarrier() {
+    uint32_t popc;
+    asm ("{");
+    asm volatile ("   .reg .pred barr_pred;");
+    asm volatile ("   setp.eq.u32 barr_pred,%0,1;" :: "r"(abort));
+    asm volatile ("   bar.red.popc.u32 %0, 14, %1, barr_pred;" : "=r"(popc) : "r"(nthreads));
+    asm ("}");
+    if (popc) {
+      // Make sure threads not participating in the operation get the abort and all threads exit
+      exitIfAbortBarrier(1);
+    }
+  }
+
+  inline __device__ void barrier() {
+    asm volatile ("bar.sync 1, %0;" :: "r"(nthreads));
+  }
+
+  uint32_t mismatch = 0;
+  const uint64_t opCount;
+
+  inline __device__ void checkMismatch(volatile uint64_t* remoteOpCount) {
+    if (mismatch > 20) {
+      // We have seen that the peer advanced opcount so many times yet we are still waiting for credit of current op, so it is _most likely_ a mismatch
+      // Note that we are not using _threadfence_system in LL so the error cannot be asserted
+      *(comm->fatalDevError) = ncclDevSuspectedMismatch;
+    } else if (remoteOpCount && *remoteOpCount > opCount) {
+      mismatch += 1;
+    }
+  }
+
+  uint32_t spins = 0;
+  uint32_t abort = 0;
+
+  inline __device__ int checkAbort(volatile uint64_t* remoteOpCount) {
+    spins++;
+    if (spins == SPINS_BEFORE_CHECK_ABORT) {
+      abort = *(comm->abortFlag);
+      checkMismatch(remoteOpCount);
+      spins = 0;
+    }
+    return abort;
+  }
+
+  inline __device__ void waitSend(int i, int nbytes) {
+    spins = 0;
+    mismatch = 0;
+    if (tid == WARP_SIZE+i) {
+      while (sendConnHead + NCCL_STEPS < sendStep[i] + 1) {
+        sendConnHead = *waitPtr;
+        if (checkAbort(sendConn[i]->opCountRem)) break;
+      }
+      if (fifoPtr) fifoPtr[sendStep[i]%NCCL_STEPS] = nbytes;
+    }
+  }
+
+#define TID_DEBUG -1
+#define WARP_MASK 0xffffffff
+
+  inline __device__ uint64_t readLL128(int i, int offset, int rotOffset) {
+    volatile uint64_t* ptr = recvPtr(i) + offset + rotOffset;
+    uint64_t flag = recvFlag(i);
+    uint64_t v;
+    bool flagThread = (rotOffset == LL128_ROTATION-1);
+    do v = *ptr; while (__any_sync(WARP_MASK, flagThread && (v != flag)));
+    __syncwarp();
+    v = *ptr;
+    //if (tid < TID_DEBUG) printf("[%d/%d:%d] Received step %ld from %p+%d+%d, %ld\n", tid, nthreads, wid, recvFlag(i), recvPtr(i), offset, rotOffset, v);
+    return v;
+  }
+
+  inline __device__ void storeLL128(int i, int offset, int rotOffset, uint64_t val) {
+    volatile uint64_t* ptr = sendPtr(i) + offset + rotOffset;
+    bool flagThread = (rotOffset == LL128_ROTATION-1);
+    uint64_t v = flagThread ? sendFlag(i) : val;
+    //if (tid < TID_DEBUG) printf("[%d/%d:%d] Sending step %ld to %p+%d+%d, %ld\n", tid, nthreads, wid, sendFlag(i), sendPtr(i), offset, rotOffset, v);
+    *ptr = v;
+  }
+
+  inline __device__ void postRecv(int i) {
+    recvStep[i]++;
+    if (tid == i) *postPtr = recvStep[i];
+  }
+
+  inline __device__ void postSend(int i) {
+    sendStep[i]++;
+  }
+
+  template <int RECV, int SEND, int SRC, int DST>
+  __device__ void GenericOp(const T* srcPtr, T* dstPtr, int nelem) {
+    uint32_t nbytes = nelem < 0 ? 0 : nelem*sizeof(T);
+
+    volatile uint64_t* src64Ptr = (volatile uint64_t*)srcPtr;
+    volatile uint64_t* dst64Ptr = (volatile uint64_t*)dstPtr;
+    // TODO : properly handle small datatypes stopping on in the middle of a uint64
+    int nelem64 = DIVUP(nbytes,sizeof(uint64_t));
+
+    int ll128nbytes = DIVUP(nbytes,NCCL_LL128_DATASIZE)*NCCL_LL128_LINESIZE;
+    int ll128elems = DIVUP(ll128nbytes, sizeof(uint64_t));
+    FOR_SEND(waitSend, ll128nbytes);
+    barrier();
+    uint64_t data[NCCL_LL128_ELEMS_PER_THREAD]; // We'll only use 15 out of 16, skipping the rot where we manage flags
+    int rot = 0;
+    int ll128Offset, srcOffset, dstOffset;
+    ll128Offset = srcOffset = dstOffset = tid-wid;
+
+    if (tid == TID_DEBUG) printf("[%d/%d:%d] starting, %d elems %d ll128elems (%d bytes)\n", tid, nthreads, wid, nelem64, ll128elems, nbytes);
+    while (ll128Offset < ll128elems) {
+      int rotOffset = (wid+rot)%LL128_ROTATION;
+
+      if (SRC) {
+        if (ll128Offset+wid < nelem64 && rot != LL128_ROTATION-1) {
+          uint64_t v = src64Ptr[srcOffset+wid];
+          if (tid == TID_DEBUG) printf("[%d/%d] Rot %d, reading at %p+%d, storing in data %d : %ld\n", tid, wid, rot, src64Ptr, srcOffset+wid, rot+(rot+wid+1)/LL128_ROTATION, v);
+          data[rot+(rot+wid+1)/LL128_ROTATION] = v;
+          srcOffset += nthreads;
+        }
+      } else {
+        uint64_t v = readLL128(0, ll128Offset, rotOffset);
+        if (tid == TID_DEBUG) printf("[%d/%d] Rot %d, receiving from 0 at offset %d/%d : %ld\n", tid, wid, rot, ll128Offset, rotOffset, v);
+        data[rot] = v;
+      }
+      if (RECV) {
+        for (int r=SRC ? 0: 1; r<NRECV; r++) {
+          data[rot] = MULTI<FUNC, T>()(readLL128(r, ll128Offset, rotOffset), data[rot]);
+        }
+        if (tid == TID_DEBUG) printf("[%d/%d] Rot %d, received from all at offset %d/%d : %ld\n", tid, wid, rot, ll128Offset, rotOffset, data[rot]);
+      }
+
+      if (DST) {
+        if (dstOffset+wid < nelem64 && rot != 0) {
+          uint64_t v = data[rot-1+(rot+wid+1)/LL128_ROTATION];
+          if (tid == TID_DEBUG) printf("[%d/%d] Rot %d, writing data %d at %p+%d : %ld\n", tid, wid, rot, rot-1+(rot+wid+1)/LL128_ROTATION, dst64Ptr, dstOffset+wid, v);
+          dst64Ptr[dstOffset+wid] = v;
+          dstOffset += nthreads;
+        }
+      }
+      if (SEND && tid == TID_DEBUG) printf("[%d/%d] Rot %d, sending to all at offset %d/%d : %ld\n", tid, wid, rot, ll128Offset, rotOffset, data[rot]);
+      FOR_SEND(storeLL128, ll128Offset, rotOffset, data[rot]);
+
+      ll128Offset += nthreads;
+      rot = (rot + 1)%LL128_ROTATION;
+    }
+    if (DST && (wid+rot < LL128_ROTATION && dstOffset+wid < nelem64)) {
+      uint64_t v = data[rot-1+(rot+wid+1)/LL128_ROTATION];
+      if (tid == TID_DEBUG) printf("[%d/%d] Rot %d, writing final data %d at %p+%d : %ld\n", tid, wid, rot, rot-1+(rot+wid+1)/LL128_ROTATION, dst64Ptr, dstOffset+wid, v);
+      dst64Ptr[dstOffset+wid] = v;
+    }
+    if (tid == TID_DEBUG) printf("[%d/%d:%d] end\n", tid, nthreads, wid);
+
+    exitIfAbortLocalBarrier();
+    FOR_RECV(postRecv);
+    FOR_SEND(postSend);
+  }
+
+  __device__ __forceinline__ void loadRecvConn(struct ncclConnInfo* conn, int i) {
+    recvConn[i] = conn;
+    recvBuff[i] = recvConn[i]->ll128Buff;
+    recvStep[i] = recvConn[i]->step;
+    if (tid == i) {
+      postPtr = recvConn[i]->head;
+      *(recvConn[i]->opCountLoc) = opCount;
+    }
+    nrecv++;
+  }
+
+  __device__ __forceinline__ void loadSendConn(struct ncclConnInfo* conn, int i) {
+    sendConn[i] = conn;
+    sendBuff[i] = sendConn[i]->ll128Buff;
+    sendStep[i] = sendConn[i]->step;
+    if (tid == WARP_SIZE+i) {
+      waitPtr = sendConn[i]->head;
+      fifoPtr = sendConn[i]->fifo;
+      sendConnHead = *waitPtr;
+      *(sendConn[i]->opCountLoc) = opCount;
+    }
+    nsend++;
+  }
+
+  __device__ __forceinline__ void saveRecvConn(int i) {
+    if (tid == i) {
+      recvConn[i]->step = recvStep[i];
+      *(recvConn[i]->opCountLoc) += 1;
+      __threadfence_block();
+    }
+  }
+
+  __device__ __forceinline__ void saveSendConn(int i) {
+    if (tid == WARP_SIZE+i) {
+      sendConn[i]->step = sendStep[i];
+      *(sendConn[i]->opCountLoc) += 1;
+      __threadfence_block();
+    }
+  }
+
+ public:
+  __device__ __forceinline__
+  ncclLL128Primitives(const int tid, const int nthreads, int* recvPeers, int* sendPeers, struct ncclChannel* channel, struct ncclDevComm* comm, const uint64_t opCount)
+    : comm(comm), tid(tid), wid(tid%LL128_ROTATION), nthreads(nthreads), opCount(opCount) {
+    // Make sure step is updated before we read it.
+    barrier();
+
+    for (int i=0; i<NRECV && recvPeers[i] >= 0; i++) loadRecvConn(&channel->devPeers[recvPeers[i]].recv.conn, i);
+    for (int i=0; i<NSEND && sendPeers[i] >= 0; i++) loadSendConn(&channel->devPeers[sendPeers[i]].send.conn, i);
+  }
+
+  __device__ void send(const T* src, int nelem) {
+    return GenericOp<0, 1, 1, 0>(src, NULL, nelem);
+  }
+
+  __device__ void recv(T* dst, int nelem) {
+    return GenericOp<1, 0, 0, 1>(NULL, dst, nelem);
+  }
+
+  __device__ void recvReduceSend(const T* src, int nelem) {
+    return GenericOp<1, 1, 1, 0>(src, NULL, nelem);
+  }
+
+  __device__ void recvReduceCopy(const T* src, T* dst, int nelem) {
+    return GenericOp<1, 0, 1, 1>(src, dst, nelem);
+  }
+
+  __device__ void copySend(const T* src, T* dst, int nelem) {
+    return GenericOp<0, 1, 1, 1>(src, dst, nelem);
+  }
+
+  __device__ void recvCopySend(T* dst, int nelem) {
+    return GenericOp<1, 1, 0, 1>(NULL, dst, nelem);
+  }
+
+  __device__ void recvReduceCopySend(const T* src, T* dst, int nelem) {
+    return GenericOp<1, 1, 1, 1>(src, dst, nelem);
+  }
+
+  __device__ __forceinline__ ~ncclLL128Primitives() {
+    // Save steps for the next operation
+    for (int i=0; i<NRECV && i<nrecv; i++) saveRecvConn(i);
+    for (int i=0; i<NSEND && i<nsend; i++) saveSendConn(i);
+  }
+};
 #endif

@@ -40,11 +40,22 @@ union ncclLLFifoLine {
 
 #define MAXTHREADS 256
 #define NCCL_LL_MAX_NTHREADS MAXTHREADS
-#define NUM_LINES_PER_THREAD 8
-#define NCCL_LL_SLICE_LINES (NUM_LINES_PER_THREAD*NCCL_LL_MAX_NTHREADS)
+#define NCCL_LL_LINES_PER_THREAD 8
+#define NCCL_LL_SLICE_LINES (NCCL_LL_LINES_PER_THREAD*NCCL_LL_MAX_NTHREADS)
 #define NCCL_LL_BUFF_LINES (NCCL_LL_SLICE_LINES*NCCL_STEPS)
 #define NCCL_LL_BUFF_SIZE (NCCL_LL_BUFF_LINES*sizeof(union ncclLLFifoLine))
 #define NCCL_LL_CLEAN_FREQ 0x10000000
+
+#define NCCL_MEMLINE_SIZE 128
+
+#define NCCL_LL128_MAX_NTHREADS MAXTHREADS
+#define NCCL_LL128_FLAGSIZE 8
+#define NCCL_LL128_LINESIZE 128
+#define NCCL_LL128_DATASIZE (NCCL_LL128_LINESIZE-NCCL_LL128_FLAGSIZE)
+#define NCCL_LL128_ELEMS_PER_THREAD 16
+#define NCCL_LL128_SLICE_ELEMS (NCCL_LL128_ELEMS_PER_THREAD*NCCL_LL128_MAX_NTHREADS)
+#define NCCL_LL128_BUFF_ELEMS (NCCL_LL128_SLICE_ELEMS*NCCL_STEPS)
+#define NCCL_LL128_BUFF_SIZE (NCCL_LL128_FLAGSIZE*NCCL_LL128_BUFF_ELEMS)
 
 struct ncclConnInfo {
   // Regular comm mechanism
@@ -64,6 +75,9 @@ struct ncclConnInfo {
   // Low latency mechanism
   union ncclLLFifoLine *llBuff; // Local for recv, remote for send
   uint64_t llLastCleaning;
+
+  // High bandwidth, low latency protocol
+  uint64_t* ll128Buff; // Local for recv, remote for send
 };
 
 struct ncclConnector {
