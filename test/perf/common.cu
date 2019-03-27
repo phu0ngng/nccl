@@ -113,9 +113,9 @@ void deltaKern(void* A_, void* B_, size_t count, double* max) {
     double delta = absDiff(A[i], B[i]);
     if( delta > locmax ) {
       locmax = delta;
-//#ifdef DEBUG_PRINT
+#ifdef DEBUG_PRINT
       if (delta > .1) printf("Error at %d/%ld : %f != %f\n", i, count, toFloat(A[i]), toFloat(B[i]));
-//#endif
+#endif
     }
   }
 
