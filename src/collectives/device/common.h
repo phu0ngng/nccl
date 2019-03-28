@@ -51,7 +51,7 @@ __device__ void NCCL_COLL_NAME(coll, op, dtype)(struct CollectiveArgs* args) { \
 #if NCCL_OP == 0
 /* Kernels with the first operation inlined */
 #define IMPL_COLL_KERN(coll, op, ncclFunc, dtype, ctype, fIndex) \
-__launch_bounds__(MAXTHREADS+WARP_SIZE, 1) \
+/*__launch_bounds__(MAXTHREADS+WARP_SIZE, 1)*/ \
 __global__ void NCCL_KERN_NAME(coll, op, dtype)(struct ncclColl firstColl) { \
   int tid = threadIdx.x; \
   int bid = blockIdx.x; \

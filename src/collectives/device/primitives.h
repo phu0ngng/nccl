@@ -588,16 +588,14 @@ class ncclLLPrimitives {
   }
 };
 
-#define LL128_LINEELEMS (NCCL_LL128_LINESIZE/NCCL_LL128_FLAGSIZE)
-#define LL128_DATAELEMS (LL128_LINEELEMS-1)
-#define LL128_FLAGTHREAD (LL128_LINEELEMS-1)
-//#define LL128_ROTATION (NCCL_LL128_LINESIZE/NCCL_LL128_FLAGSIZE)
+#define NCCL_LL128_FLAGTHREAD (NCCL_LL128_LINEELEMS-1)
 
 template <typename T, class FUNC, int NRECV, int NSEND>
 class ncclLL128Primitives {
  private:
   const int tid;
   const int wid;
+  const int wnb;
   const int nthreads;
   int nrecv = 0;
   int nsend = 0;
@@ -679,46 +677,6 @@ class ncclLL128Primitives {
     }
   }
 
-#define WARP_MASK 0xffffffff
-#define TID_DEBUG 15
-#ifdef LL128_ROTATION
-
-  inline __device__ uint64_t readLL128(int i, int offset, int rotOffset) {
-    volatile uint64_t* ptr = recvPtr(i) + offset + rotOffset;
-    uint64_t flag = recvFlag(i);
-    uint64_t v;
-    bool flagThread = (rotOffset == LL128_ROTATION-1);
-    do v = *ptr; while (__any_sync(WARP_MASK, flagThread && (v != flag)));
-    __syncwarp();
-    v = *ptr;
-    //if (tid < TID_DEBUG) printf("[%d/%d:%d] Received step %ld from %p+%d+%d, %ld\n", tid, nthreads, wid, recvFlag(i), recvPtr(i), offset, rotOffset, v);
-    return v;
-  }
-
-  inline __device__ void storeLL128(int i, int offset, int rotOffset, uint64_t val) {
-    volatile uint64_t* ptr = sendPtr(i) + offset + rotOffset;
-    bool flagThread = (rotOffset == LL128_ROTATION-1);
-    uint64_t v = flagThread ? sendFlag(i) : val;
-    //if (tid < TID_DEBUG) printf("[%d/%d:%d] Sending step %ld to %p+%d+%d, %ld\n", tid, nthreads, wid, sendFlag(i), sendPtr(i), offset, rotOffset, v);
-    *ptr = v;
-  }
-#else
-  inline __device__ uint64_t readLL128(int i, int offset) {
-    volatile uint64_t* ptr = recvPtr(i) + offset;
-    uint64_t flag = recvFlag(i);
-    uint64_t v;
-    do v = *ptr; while (__any_sync(WARP_MASK, (wid == LL128_FLAGTHREAD) && (v != flag)));
-    __syncwarp();
-    v = *ptr;
-    return v;
-  }
-  inline __device__ void storeLL128(int i, int offset, uint64_t val) {
-    volatile uint64_t* ptr = sendPtr(i) + offset;
-    uint64_t v = wid == LL128_FLAGTHREAD ? sendFlag(i) : val;
-    *ptr = v;
-  }
-#endif
-
   inline __device__ void postRecv(int i) {
     recvStep[i]++;
     if (tid == i) *postPtr = recvStep[i];
@@ -728,102 +686,93 @@ class ncclLL128Primitives {
     sendStep[i]++;
   }
 
+  #define WARP_MASK 0xffffffff
+  template <int UNROLL, int RECV, int SEND, int SRC, int DST>
+  __device__ void SendRecvReduce(volatile uint64_t* src, volatile uint64_t* dst, int& offset, int&ll128offset, int nelems) {
+    uint64_t v[UNROLL];
+    
+    if (SRC && wid != NCCL_LL128_FLAGTHREAD && (UNROLL > 1 || offset < nelems)) {
+      #pragma unroll
+      for (int u=0; u<UNROLL; u++) v[u] = src[offset+u*NCCL_LL128_DATAELEMS];
+    }
+
+    if (RECV) {
+      volatile uint64_t* ptr = recvPtr(0)+ll128offset;
+      uint64_t flag = recvFlag(0);
+      #pragma unroll
+      for (int u=0; u<UNROLL; u++) {
+        uint64_t val;
+        do val = ptr[u*NCCL_LL128_LINEELEMS]; while (__any_sync(WARP_MASK, (wid == NCCL_LL128_FLAGTHREAD) && (val != flag)));
+        val = ptr[u*NCCL_LL128_LINEELEMS];
+        v[u] = SRC ? MULTI<FUNC, T>()(val, v[u]) : val;
+      }
+
+      for (int i=1; i<NRECV && i<nrecv; i++) {
+        volatile uint64_t* ptr = recvPtr(i)+ll128offset;
+        uint64_t flag = recvFlag(i);
+        #pragma unroll
+        for (int u=0; u<UNROLL; u++) {
+          uint64_t val;
+          do val = ptr[u*NCCL_LL128_LINEELEMS]; while (__any_sync(WARP_MASK, (wid == NCCL_LL128_FLAGTHREAD) && (val != flag)));
+          val = ptr[u*NCCL_LL128_LINEELEMS];
+          v[u] = MULTI<FUNC, T>()(val, v[u]);
+        }
+      }
+    }
+
+    if (SEND) {
+      for (int i=1; i<NSEND && i<nsend; i++) {
+        volatile uint64_t* ptr = sendPtr(i) + ll128offset;
+        int flag = sendFlag(i);
+        #pragma unroll
+        for (int u=0; u<UNROLL; u++) {
+          ptr[u*NCCL_LL128_LINEELEMS] = wid == NCCL_LL128_FLAGTHREAD ? flag : v[u];
+        }
+      }
+      volatile uint64_t* ptr = sendPtr(0) + ll128offset;
+      int flag = sendFlag(0);
+      #pragma unroll
+      for (int u=0; u<UNROLL; u++) {
+        ptr[u*NCCL_LL128_LINEELEMS] = wid == NCCL_LL128_FLAGTHREAD ? flag : v[u];
+      }
+    }
+
+    if (DST && wid != NCCL_LL128_FLAGTHREAD && (UNROLL > 1 || offset < nelems)) {
+      #pragma unroll
+      for (int u=0; u<UNROLL; u++) dst[offset+u*NCCL_LL128_DATAELEMS] = v[u];
+    }
+
+    offset += NCCL_LL128_DATAELEMS*UNROLL;
+    ll128offset += NCCL_LL128_LINEELEMS*UNROLL;
+  }
+
   template <int RECV, int SEND, int SRC, int DST>
   __device__ void GenericOp(const T* srcPtr, T* dstPtr, int nelem) {
     uint32_t nbytes = nelem < 0 ? 0 : nelem*sizeof(T);
-
     volatile uint64_t* src64Ptr = (volatile uint64_t*)srcPtr;
     volatile uint64_t* dst64Ptr = (volatile uint64_t*)dstPtr;
     // TODO : properly handle small datatypes stopping on in the middle of a uint64
     int nelem64 = DIVUP(nbytes,sizeof(uint64_t));
 
-#ifdef LL128_ROTATION
-    int npack = DIVUP(nbytes,sizeof(uint64_t));
-    int nFullLines = DIVUP(npack, WARP_SIZE);
-    int nWarps = nthreads / WARP_SIZE;
-    int nFullLinesPerWarp = DIVUP(nFullLines, nWarps);
-    int ll128LinesPerWarp = DIVUP(nFullLinesPerWarp*lineSize,LL128_ROTATION-1);
-    if (tid == TID_DEBUG) printf("[%d/%d:%d] starting, %d elems %d lines %d lines per warp %d ll128 lines per warp (%d bytes)\n", tid, nthreads, wid, npack, nFullLines, nFullLinesPerWarp, ll128LinesPerWarp, nbytes);
-    
+    int elemsPerIter = (nthreads/NCCL_LL128_LINEELEMS)*NCCL_LL128_DATAELEMS;
+    int iters = DIVUP(nelem64,elemsPerIter);
 
-    /* TODO : last step for thread 15 !! */
-    int ll128nbytes = DIVUP(nbytes,(WARP_SIZE-2)*NCCL_LL128_FLAGSIZE)*(WARP_SIZE*NCCL_LL128_FLAGSIZE);
-    int ll128elems = DIVUP(ll128nbytes, sizeof(uint64_t));
-    FOR_SEND(waitSend, ll128nbytes);
+    FOR_SEND(waitSend, iters*nthreads*sizeof(uint64_t));
     barrier();
-    uint64_t data[NCCL_LL128_ELEMS_PER_THREAD]; // We'll only use 15 out of 16, skipping the rot where we manage flags
-    int rot = 0;
-    int ll128Offset, srcOffset, dstOffset;
-    ll128Offset = srcOffset = dstOffset = tid-wid;
 
-    while (ll128Offset < ll128elems) {
-      int rotOffset = (wid+rot)%LL128_ROTATION;
-
-      if (SRC) {
-        if (ll128Offset+wid < nelem64 && rot != LL128_ROTATION-1) {
-          uint64_t v = src64Ptr[srcOffset+wid];
-          if (tid == TID_DEBUG) printf("[%d/%d] Rot %d, reading at %p+%d, storing in data %d : %ld\n", tid, wid, rot, src64Ptr, srcOffset+wid, rot+(rot+wid+1)/LL128_ROTATION, v);
-          data[rot+(rot+wid+1)/LL128_ROTATION] = v;
-          srcOffset += nthreads;
-        }
-      } else {
-        uint64_t v = readLL128(0, ll128Offset, rotOffset);
-        if (tid == TID_DEBUG) printf("[%d/%d] Rot %d, receiving from 0 at offset %d/%d : %ld\n", tid, wid, rot, ll128Offset, rotOffset, v);
-        data[rot] = v;
-      }
-      if (RECV) {
-        for (int r=SRC ? 0: 1; r<NRECV; r++) {
-          data[rot] = MULTI<FUNC, T>()(readLL128(r, ll128Offset, rotOffset), data[rot]);
-        }
-        if (tid == TID_DEBUG) printf("[%d/%d] Rot %d, received from all at offset %d/%d : %ld\n", tid, wid, rot, ll128Offset, rotOffset, data[rot]);
-      }
-
-      if (DST) {
-        if (dstOffset+wid < nelem64 && rot != 0) {
-          uint64_t v = data[rot-1+(rot+wid)/LL128_ROTATION];
-          if (tid == TID_DEBUG) printf("[%d/%d] Rot %d, writing data %d at %p+%d : %ld\n", tid, wid, rot, rot-1+(rot+wid)/LL128_ROTATION, dst64Ptr, dstOffset+wid, v);
-          dst64Ptr[dstOffset+wid] = v;
-          dstOffset += nthreads;
-        }
-      }
-      if (SEND && tid == TID_DEBUG) printf("[%d/%d] Rot %d, sending to all at offset %d/%d : %ld\n", tid, wid, rot, ll128Offset, rotOffset, data[rot]);
-      FOR_SEND(storeLL128, ll128Offset, rotOffset, data[rot]);
-
-      ll128Offset += nthreads;
-      rot = (rot + 1)%LL128_ROTATION;
+    int offset = wnb*iters*NCCL_LL128_DATAELEMS + wid;
+    int ll128offset = wnb*iters*NCCL_LL128_LINEELEMS + wid;
+    int i = 0;
+    #pragma unroll 1
+    while (i< iters-7) {
+      SendRecvReduce<8, RECV, SEND, SRC, DST>(src64Ptr, dst64Ptr, offset, ll128offset, nelem64);
+      i+=8;
     }
-    if (DST && (wid+rot < LL128_ROTATION) && (dstOffset+wid < nelem64)) {
-      uint64_t v = data[rot-1+(rot+wid)/LL128_ROTATION];
-      if (tid == TID_DEBUG) printf("[%d/%d] Rot %d, writing final data %d at %p+%d : %ld\n", tid, wid, rot, rot-1+(rot+wid)/LL128_ROTATION, dst64Ptr, dstOffset+wid, v);
-      dst64Ptr[dstOffset+wid] = v;
+    #pragma unroll 1
+    while (i< iters) {
+      SendRecvReduce<1, RECV, SEND, SRC, DST>(src64Ptr, dst64Ptr, offset, ll128offset, nelem64);
+      i++;
     }
-    if (tid == TID_DEBUG) printf("[%d/%d:%d] end\n", tid, nthreads, wid);
-#else
-    int offset = (tid/LL128_LINEELEMS)*LL128_DATAELEMS + (tid%LL128_LINEELEMS);
-    int ll128offset = tid;
-    int iters = DIVUP(nelem64,((nthreads/LL128_LINEELEMS)*LL128_DATAELEMS));
-    for (int a=0; a<iters; a++) {
-      uint64_t v;
-      if (SRC) {
-        if (wid != LL128_FLAGTHREAD && offset < nelem64) {
-          v = src64Ptr[offset];
-        }
-      } else {
-        v = readLL128(0, ll128offset);
-      }
-
-      if (RECV) for (int i=SRC?0:1; i<NRECV; i++) {
-        v = MULTI<FUNC, T>()(readLL128(i, ll128offset), v);
-      }
-
-      FOR_SEND(storeLL128, ll128offset, v);
-      if (DST && wid!=LL128_FLAGTHREAD && offset < nelem64) {
-        dst64Ptr[offset] = v;
-      }
-      offset += (nthreads/LL128_LINEELEMS)*LL128_DATAELEMS;
-      ll128offset += nthreads;
-    }
-#endif
 
     exitIfAbortLocalBarrier();
     FOR_RECV(postRecv);
@@ -873,7 +822,7 @@ class ncclLL128Primitives {
  public:
   __device__ __forceinline__
   ncclLL128Primitives(const int tid, const int nthreads, int* recvPeers, int* sendPeers, struct ncclChannel* channel, struct ncclDevComm* comm, const uint64_t opCount)
-    : comm(comm), tid(tid), wid(tid%LL128_LINEELEMS), nthreads(nthreads), opCount(opCount) {
+    : comm(comm), tid(tid), wid(tid%NCCL_LL128_LINEELEMS), wnb(tid/NCCL_LL128_LINEELEMS), nthreads(nthreads), opCount(opCount) {
     // Make sure step is updated before we read it.
     barrier();
 
