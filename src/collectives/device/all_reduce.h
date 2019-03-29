@@ -262,6 +262,7 @@ __device__ void ncclAllReduceTreeLLKernel(struct CollectiveArgs* args) {
   } while(0);
 }
 #else
+#include "prims_ll128.h"
 template<int UNUSED, class FUNC, typename T>
 __device__ void ncclAllReduceRingLLKernel(struct CollectiveArgs* args) {
   const int tid = threadIdx.x;
@@ -346,7 +347,7 @@ __device__ void ncclAllReduceTreeLLKernel(struct CollectiveArgs* args) {
   struct ncclChannel* channel = comm->channels+blockIdx.x;
   struct ncclTree* tree = &channel->tree;
   const ssize_t size = args->N;
-  ssize_t chunkSize = NCCL_LL_SLICE_LINES * sizeof(uint64_t) / sizeof(T);
+  ssize_t chunkSize = (NCCL_LL128_SLICE_ELEMS / NCCL_LL128_LINEELEMS) * NCCL_LL128_DATAELEMS * sizeof(uint64_t) / sizeof(T);
   const ssize_t loopSize = args->nChannels*chunkSize;
 
   // Compute pointers

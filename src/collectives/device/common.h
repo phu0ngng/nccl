@@ -42,6 +42,8 @@ static __device__ void load_coll(struct ncclColl* localColl, struct ncclColl* ho
   if (tid == 0) hostColl->active = 0;
 }
 
+extern __device__ char* ncclShmem;
+
 /* Functions for aggregation case */
 #define IMPL_COLL_FUNC(coll, op, ncclFunc, dtype, ctype) \
 __device__ void NCCL_COLL_NAME(coll, op, dtype)(struct CollectiveArgs* args) { \
@@ -51,10 +53,11 @@ __device__ void NCCL_COLL_NAME(coll, op, dtype)(struct CollectiveArgs* args) { \
 #if NCCL_OP == 0
 /* Kernels with the first operation inlined */
 #define IMPL_COLL_KERN(coll, op, ncclFunc, dtype, ctype, fIndex) \
-/*__launch_bounds__(MAXTHREADS+WARP_SIZE, 1)*/ \
 __global__ void NCCL_KERN_NAME(coll, op, dtype)(struct ncclColl firstColl) { \
   int tid = threadIdx.x; \
   int bid = blockIdx.x; \
+  __shared__ char shmem[NCCL_MAX_NTHREADS*16]; \
+  ncclShmem = shmem; \
   __shared__ struct ncclColl localColl; \
  \
   struct ncclDevComm* comm = firstColl.args.comm; \

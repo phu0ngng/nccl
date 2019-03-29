@@ -8,6 +8,8 @@
 #include "collectives.h"
 #include "common.h"
 
+__device__ char* ncclShmem;
+
 #define NCCL_FUNC5(coll, op, dtype) \
   NCCL_COLL_NAME(coll, op, dtype), \
   NCCL_COLL_NAME(coll##LL, op, dtype)
