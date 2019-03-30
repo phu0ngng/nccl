@@ -59,7 +59,7 @@ maxthread=$4
 maxgpu=$5
 op=$6
 
-declare -i nproc=2
+declare -i nproc=$maxproc
 declare -i nthread=1
 declare -i ngpus=1
 while [[ $nproc -le $maxproc ]] ; do
