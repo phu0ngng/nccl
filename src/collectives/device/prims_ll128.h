@@ -290,8 +290,8 @@ class ncclLL128Primitives {
     int offset = wnb*iters*NCCL_LL128_DATAELEMS + wid;
     int ll128offset = wnb*iters*NCCL_LL128_LINEELEMS + wid;
     int i = 0;
-    // Unroll is ptrs are aligned enough
-    if ((((uint64_t)src64Ptr | (uint64_t)dst64Ptr) & 0xf) == 0) {
+    // Unroll if ptrs are aligned enough
+    if (((((uint64_t)(src64Ptr) | (uint64_t)(dst64Ptr)) & 0xf) == 0) && ((iters & 0x1) == 0)) {
       #pragma unroll 1
       while (i< iters-7) {
         SendRecvReduceUnroll<8, RECV, SEND, SRC, DST>(src64Ptr, dst64Ptr, offset, ll128offset, nelem64);

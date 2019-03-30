@@ -263,6 +263,7 @@ __device__ void ncclAllReduceTreeLLKernel(struct CollectiveArgs* args) {
 }
 #else
 #include "prims_ll128.h"
+
 template<int UNUSED, class FUNC, typename T>
 __device__ void ncclAllReduceRingLLKernel(struct CollectiveArgs* args) {
   const int tid = threadIdx.x;
@@ -286,8 +287,6 @@ __device__ void ncclAllReduceRingLLKernel(struct CollectiveArgs* args) {
   T * __restrict__ thisOutput = (T*)args->ThisOutput;
 
   for (ssize_t gridOffset = 0; gridOffset < size; gridOffset += loopSize) {
-    const int alignSize = NCCL_LL128_MAX_NTHREADS/NCCL_LL128_LINEELEMS*NCCL_LL128_DATAELEMS*sizeof(uint64_t)/sizeof(T);
-    chunkSize = min(chunkSize, DIVUP((size-gridOffset), alignSize*nranks*args->nChannels)*alignSize);
     ssize_t chunkOffset = gridOffset + bid*nranks*chunkSize;
 
     /////////////// begin AllReduce steps ///////////////
