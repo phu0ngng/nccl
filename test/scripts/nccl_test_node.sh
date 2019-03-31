@@ -13,22 +13,11 @@ NCCLROOT=$PWD
 BLDDIR=$NCCLROOT/build
 rm $BLDDIR/state
 
-# DGX specific setting
 HOST=$(hostname)
-if [ "$HOST" == "dbcluster" ] || [ "$HOST" == "prometheus" ]; then
-  export CUDA_HOME="${CUDA_HOME:-$HOME/nightly-$HOST/cuda}"
-  export MPI_HOME="${MPI_HOME:-$HOME/nightly-$HOST/openmpi}"
-else
-  source $SHDIR/cuda.sh
-  export MPI_HOME="${MPI_HOME:-/opt/mpi/openmpi}"
-fi
-
-# MPI Env
+export CUDA_HOME="${CUDA_HOME:-$HOME/nightly-$HOST/cuda}"
+export MPI_HOME="${MPI_HOME:-$HOME/nightly-$HOST/openmpi}"
+export OPAL_PREFIX=$MPI_HOME
 export PATH=$MPI_HOME/bin:$CUDA_HOME/bin:$PATH
-if [ "$( which mpirun )" == "" ]; then
-  echo "Cannot find MPI, please specify path using MPI_HOME=/path/to/MPI"
-  exit 1
-fi
 export LD_LIBRARY_PATH=$MPI_HOME/lib:$CUDA_HOME/lib64:$LD_LIBRARY_PATH
 
 # build

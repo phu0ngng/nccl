@@ -27,7 +27,7 @@ if [ "$gpumodel" == "all" ]; then
 fi
 
 if [ "$SLURM" == "1" ]; then
-  salloc_cmd="salloc -p $gpumodel $req_hosts -N $nnode -n $nproc -c $nperproc -t ${timeout} --exclusive "
+  salloc_cmd="salloc -p $gpumodel $req_hosts -N $nnode -t ${timeout} --exclusive "
 else
   mpi_hosts="-host $gpumodel -oversubscribe "
   if [ "$MPI_HOME" == "" ]; then
