@@ -202,7 +202,6 @@ struct ncclChannel {
       struct ncclRing ring;
       struct ncclTree tree;
       struct ncclTree collTree;
-      int collNetSupport;
 
       int id;
       int nthreads;

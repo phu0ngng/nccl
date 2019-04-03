@@ -319,15 +319,15 @@ static ncclResult_t computeColl(struct ncclInfo* info /* input */, struct ncclCo
   if (treeMode && collNetSupport()) {
     NCCLCHECK(collNetReduceSupport(info->datatype, info->op, &redSupport));
   }
-  coll->args.useCollTree = redSupport;
-  proxyArgs->useCollTree = redSupport;
+  coll->args.useCollTree = proxyArgs->useCollTree = redSupport;
 
   // Compute llMode, nChannels, nThreads
   int llMode;
   getKernelInfo(info, redSupport, &coll->args.nChannels, &coll->args.nThreads, &llMode);
 
   // Algorithm index: 2 = Accl (CollNet), 1 = Tree, 0 = Ring
-  coll->funcIndex = FUNC_INDEX(info->coll, info->op, info->datatype, llMode, redSupport == 1 ? 2 : treeMode);
+  int alg = redSupport == 1 ? 2 : treeMode;
+  coll->funcIndex = FUNC_INDEX(info->coll, info->op, info->datatype, llMode, alg);
 
   int stepSize   = ( llMode ? NCCL_LL_BUFF_SIZE : info->comm->channels[0].buffSize ) / NCCL_STEPS;
   int chunkSteps = (llMode|treeMode) ? 1 : info->chunkSteps;
@@ -389,12 +389,16 @@ static ncclResult_t saveKernel(struct ncclInfo* info) {
     WARN("Error : mixing different streams within a group call is not supported.");
     return ncclInvalidUsage;
   }
+
+  int useCollTree = proxyArgs.useCollTree;
+  int nSubChannels = useCollTree ? 2 : 1;
   // Logical channel loop
   for (int bid=0; bid<coll.args.nChannels; bid++) {
     // Sub channel loop
-    for (int sub=0; sub < (proxyArgs.useCollTree ? 2 : 1); sub++) {
+    for (int sub=0; sub < nSubChannels; sub++) {
       int channelOffset = info->comm->myParams->gridDim.x % info->comm->nChannels;
-      if (proxyArgs.useCollTree && sub == 0 && channelOffset % 2 != 0) {
+      // Skip a channel if we are not aligned with send/recv (happens in case of LL+aggregation)
+      if (useCollTree && sub == 0 && channelOffset % 2 != 0) {
         info->comm->myParams->gridDim.x++;
         channelOffset = info->comm->myParams->gridDim.x % info->comm->nChannels;
       }
@@ -407,8 +411,9 @@ static ncclResult_t saveKernel(struct ncclInfo* info) {
 
       // Proxy
       proxyArgs.channel = channel;
-      int realPattern = (proxyArgs.useCollTree == 1) ?
-        (channelOffset % 2 == 0) ? ncclPatternTreeUp : ncclPatternTreeDown :
+      // Adjust pattern based on channel index : 0 - send, 1 - recv
+      int realPattern = (useCollTree == 1) ?
+        ((channelOffset % 2 == 0) ? ncclPatternTreeUp : ncclPatternTreeDown) :
         info->pattern;
       NCCLCHECK(transportSaveProxies(&proxyArgs, realPattern, info->root, info->comm->nRanks));
 

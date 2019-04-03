@@ -101,15 +101,13 @@ static ncclResult_t SaveProxy(int peer, struct ncclProxyArgs* args) {
 
   struct ncclPeer* peerComm = args->channel->peers+peer;
   struct ncclConnector* connector = type == proxyRecv ? &peerComm->recv : &peerComm->send;
-  proxyProgressFunc_t ppFunc = NULL;
-  ppFunc = connector->transportComm->proxy;
-  if (ppFunc == NULL) return ncclSuccess;
+  if (connector->transportComm->proxy == NULL) return ncclSuccess;
 
   struct ncclProxyArgs* op;
   NCCLCHECK(transportAllocateProxyArgs(connector->comm, &op));
   memcpy(op, args, sizeof(struct ncclProxyArgs));
   op->connector = connector;
-  op->progress = ppFunc;
+  op->progress = connector->transportComm->proxy;
   op->state = ncclProxyOpReady;
   ProxyAppend(connector, op);
   return ncclSuccess;
@@ -124,17 +122,13 @@ ncclResult_t transportSaveProxies(struct ncclProxyArgs* args, int pattern, int r
   if (pattern == ncclPatternTreeUp || pattern == ncclPatternTreeUpDown) {
     // Tree up
     struct ncclTree* tree = args->useCollTree ? &args->channel->collTree : &args->channel->tree;
-    for (int i=0; i<NCCL_MAX_TREE_ARITY; i++) {
-      NCCLCHECK(SaveProxy<proxyRecv>(tree->down[i], args));
-    }
+    for (int i=0; i<NCCL_MAX_TREE_ARITY; i++) NCCLCHECK(SaveProxy<proxyRecv>(tree->down[i], args));
     NCCLCHECK(SaveProxy<proxySend>(tree->up, args));
   }
   if (pattern == ncclPatternTreeDown || pattern == ncclPatternTreeUpDown) {
     // Tree down
     struct ncclTree* tree = args->useCollTree ? &args->channel->collTree : &args->channel->tree;
-    for (int i=0; i< NCCL_MAX_TREE_ARITY; i++) {
-      NCCLCHECK(SaveProxy<proxySend>(tree->down[i], args));
-    }
+    for (int i=0; i< NCCL_MAX_TREE_ARITY; i++) NCCLCHECK(SaveProxy<proxySend>(tree->down[i], args));
     NCCLCHECK(SaveProxy<proxyRecv>(tree->up, args));
   }
   return ncclSuccess;
