@@ -198,7 +198,7 @@ static inline int copyRings(int nrings, int newNrings, int nranks, int* a, int* 
 
 static int interleaveDuplicateRings(int nrings, int nranks, int* a, int* b, int* c, int* d) {
   int realNrings = (nrings*2 > MAXCHANNELS) ? MAXCHANNELS/2 : nrings;
-  // Move r-th to 2r-th ring
+  // Move r-th ring to 2r-th ring
   for (int r=realNrings-1; r>0; r--) {
     for (int i=0; i<nranks; i++) {
       a[2*r*nranks+i] = a[r*nranks+i];
@@ -372,8 +372,12 @@ ncclResult_t ncclGetRings(int* nrings, int* nthreads, int rank, int nranks, int*
   for (int r=0; r<nranks; r++) nnodes += treeIn[r];
   int nvlink;
   NCCLCHECK(ncclNvlinkGpu(&nvlink));
-  if (nnodes > 1 && (nvlink || collNetSupport())) {
-    *nrings = interleaveDuplicateRings(*nrings, nranks, prev, next, treeIn, treeOut);
+  if (nnodes > 1) {
+    if (collNetSupport()) { // CollNet has higher priority than NVLink
+      *nrings = interleaveDuplicateRings(*nrings, nranks, prev, next, treeIn, treeOut);
+    } else if (nvlink) {
+      *nrings = copyRings(*nrings, *nrings*2, nranks, prev, next, treeIn, treeOut);
+    }
   }
 
   if (*nrings == 0) {
