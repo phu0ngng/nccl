@@ -51,7 +51,7 @@ __hidden ncclResult_t pluginCollNetDevices(int* ndev) { *ndev = 0; return ncclSu
 __hidden ncclResult_t pluginCollNetPciPath(int dev, char** path) { return ncclInternalError; }
 __hidden ncclResult_t pluginCollNetPtrSupport(int dev, int* supportedTypes) { return ncclInternalError; }
 __hidden ncclResult_t pluginCollNetListen(int dev, void* handle, void** listenComm) { return ncclInternalError; }
-__hidden ncclResult_t pluginCollNetConnect(void* handles[], int nranks, void* listenComm, void** collComm) { return ncclInternalError; }
+__hidden ncclResult_t pluginCollNetConnect(void* handles[], int nranks, int rank, void* listenComm, void** collComm) { return ncclInternalError; }
 __hidden ncclResult_t pluginCollNetReduceSupport(ncclDataType_t dataType, ncclRedOp_t redOp, int* supported) { return ncclInternalError; }
 __hidden ncclResult_t pluginCollNetRegMr(void* collComm, void* data, int size, int type, void** mhandle) { return ncclInternalError; }
 __hidden ncclResult_t pluginCollNetDeregMr(void* collComm, void* mhandle) { return ncclInternalError;}

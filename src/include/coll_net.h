@@ -19,7 +19,7 @@ static ncclResult_t collNetDevices(int* ndev) { NCCLCHECK(ncclCollNet->devices(n
 static ncclResult_t collNetPciPath(int dev, char** path) { NCCLCHECK(ncclCollNet->pciPath(dev, path)); return ncclSuccess; }
 static ncclResult_t collNetPtrSupport(int dev, int* supportedTypes) { NCCLCHECK(ncclCollNet->ptrSupport(dev, supportedTypes)); return ncclSuccess; }
 static ncclResult_t collNetListen(int dev, void* handle, void** listenComm) { NCCLCHECK(ncclCollNet->listen(dev, handle, listenComm)); return ncclSuccess; }
-static ncclResult_t collNetConnect(void* handles[], int nranks, void* listenComm, void** collComm) { NCCLCHECK(ncclCollNet->connect(handles, nranks, listenComm, collComm)); return ncclSuccess; }
+static ncclResult_t collNetConnect(void* handles[], int nranks, int rank, void* listenComm, void** collComm) { NCCLCHECK(ncclCollNet->connect(handles, nranks, rank, listenComm, collComm)); return ncclSuccess; }
 static ncclResult_t collNetReduceSupport(ncclDataType_t dataType, ncclRedOp_t redOp, int* supported) { NCCLCHECK(ncclCollNet->reduceSupport(dataType, redOp, supported)); return ncclSuccess; }
 static ncclResult_t collNetRegMr(void* comm, void* data, int size, int type, void** mhandle) { NCCLCHECK(ncclCollNet->regMr(comm, data, size, type, mhandle)); return ncclSuccess; }
 static ncclResult_t collNetDeregMr(void* comm, void* mhandle) { NCCLCHECK(ncclCollNet->deregMr(comm, mhandle)); return ncclSuccess; }

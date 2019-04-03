@@ -124,8 +124,8 @@ typedef struct {
   // between ranks to create connections.
   ncclResult_t (*listen)(int dev, void* handle, void** listenComm);
   // Create a group for collective operations. handles have been created
-  // using listen() above.
-  ncclResult_t (*connect)(void* handles[], int nranks, void* listenComm, void** collComm);
+  // using listen() above. rank indicates caller's rank in the collective network.
+  ncclResult_t (*connect)(void* handles[], int nranks, int rank, void* listenComm, void** collComm);
   // Returns whether a reduction operation on a data type is supported.
   // 1 for supported, 0 otherwise.
   ncclResult_t (*reduceSupport)(ncclDataType_t dataType, ncclRedOp_t redOp, int* supported);

@@ -168,7 +168,7 @@ ncclResult_t collNetRecvSetup(struct ncclPeerInfo* myInfo, struct ncclPeerInfo* 
   return ncclSuccess;
 }
 
-ncclResult_t collNetSendConnect(struct ncclConnect* connectInfos, int nranks, struct ncclConnector* send) {
+ncclResult_t collNetSendConnect(struct ncclConnect* connectInfos, int nranks, int rank, struct ncclConnector* send) {
   // Setup device pointers
   struct collNetSendResources* sendResources = (struct collNetSendResources*)send->transportResources;
 
@@ -188,7 +188,7 @@ ncclResult_t collNetSendConnect(struct ncclConnect* connectInfos, int nranks, st
   return ncclSuccess;
 }
 
-ncclResult_t collNetRecvConnect(struct ncclConnect* connectInfos, int nranks, struct ncclConnector* recv) {
+ncclResult_t collNetRecvConnect(struct ncclConnect* connectInfos, int nranks, int rank, struct ncclConnector* recv) {
   // Setup device pointers
   struct collNetRecvResources* recvResources = (struct collNetRecvResources*)recv->transportResources;
 
@@ -211,7 +211,7 @@ ncclResult_t collNetRecvConnect(struct ncclConnect* connectInfos, int nranks, st
     handlePtrs[i] = &(info->collNetHandle);
   }
   ncclResult_t res;
-  NCCLCHECKGOTO(collNetConnect((void**)handlePtrs, nranks, recvResources->netListenComm, &recvResources->collNetRecvComm), res, cleanup);
+  NCCLCHECKGOTO(collNetConnect((void**)handlePtrs, nranks, rank, recvResources->netListenComm, &recvResources->collNetRecvComm), res, cleanup);
 
 cleanup:
   if (handlePtrs != NULL) free(handlePtrs);

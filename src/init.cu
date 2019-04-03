@@ -676,7 +676,7 @@ static ncclResult_t p2pSetup(struct ncclComm* comm, struct ncclChannel* channel,
     conn = &channel->peers[peer].send;
     if (conn->connected) {++nSkippedSend; continue; }
     NCCLCHECK(bootstrapRecv(comm->bootstrap, peer, &connect, sizeof(struct ncclConnect)));
-    NCCLCHECK(conn->transportComm->connect(&connect, 1, conn));
+    NCCLCHECK(conn->transportComm->connect(&connect, 1, comm->rank, conn));
     conn->connected = 1;
   }
   for (int i=0; i<nrecv; i++) {
@@ -685,7 +685,7 @@ static ncclResult_t p2pSetup(struct ncclComm* comm, struct ncclChannel* channel,
     conn = &channel->peers[peer].recv;
     if (conn->connected) {++nSkippedRecv; continue; }
     NCCLCHECK(bootstrapRecv(comm->bootstrap, peer, &connect, sizeof(struct ncclConnect)));
-    NCCLCHECK(conn->transportComm->connect(&connect, 1, conn));
+    NCCLCHECK(conn->transportComm->connect(&connect, 1, comm->rank, conn));
     conn->connected = 1;
   }
   TRACE(NCCL_INIT, "nsend %d nrecv %d nSkippedSend %u nSkippedRecv %u - DONE", nsend, nrecv, nSkippedSend, nSkippedRecv);
@@ -744,7 +744,7 @@ static ncclResult_t collNetSetup(struct ncclComm* comm, struct ncclChannel* chan
   }
   // connect
   if (treeMasters[rank]) {
-    NCCLCHECKGOTO(transportComm->connect(masterConnects, nMasters, conn), res, cleanup);
+    NCCLCHECKGOTO(transportComm->connect(masterConnects, nMasters, rankInCollNet, conn), res, cleanup);
     TRACE(NCCL_INIT, "rank %d collNetRank %d collNetNranks %d init COMPLETE", rank, rankInCollNet, nMasters);
   }
   // connect send and recv (perform only once)
@@ -1133,8 +1133,8 @@ static ncclResult_t initTransportsAll(struct ncclComm** comms, const int* devs, 
       struct ncclRing *ring = &channel->ring;
       struct ncclConnector* recv = &channel->peers[ring->prev].recv;
       struct ncclConnector* send = &channel->peers[ring->next].send;
-      NCCLCHECK(recv->transportComm->connect(connect+ring->prev*2+1, 1, recv));
-      NCCLCHECK(send->transportComm->connect(connect+ring->next*2+0, 1, send));
+      NCCLCHECK(recv->transportComm->connect(connect+ring->prev*2+1, 1, rank, recv));
+      NCCLCHECK(send->transportComm->connect(connect+ring->next*2+0, 1, rank, send));
     }
   }
   free(allInfo);

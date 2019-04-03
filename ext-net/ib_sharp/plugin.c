@@ -1006,20 +1006,14 @@ static __inline__ enum sharp_reduce_op opConvert(ncclRedOp_t op) {
   }
 }
 
-ncclResult_t ncclSharpConnect(void* handles[], int nranks, void* listenComm, void** collComm) {
+ncclResult_t ncclSharpConnect(void* handles[], int nranks, int rank, void* listenComm, void** collComm) {
   struct ncclIbListenComm* lComm = (struct ncclIbListenComm*)listenComm;
   struct ncclSharpCollComm* cComm;
   NCCLCHECK(ncclIbMalloc((void**)&cComm, sizeof(struct ncclSharpCollComm)));
   NCCLCHECK(ncclIbMalloc((void**)&cComm->reqs, sizeof(struct ncclSharpRequest)*MAX_REQUESTS));
 
   cComm->nranks = nranks;
-  cComm->rank = -1;
-  for (int r=0; r<nranks; r++) {
-    if (memcmp(handles[r], &lComm->handle, sizeof(struct ncclIbHandle)) == 0) {
-      cComm->rank = r;
-      break;
-    }
-  }
+  cComm->rank = rank;
   if (cComm->rank == -1) {
     WARN("Could not determine my rank\n");
     return ncclInternalError;

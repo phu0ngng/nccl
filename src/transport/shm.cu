@@ -175,7 +175,7 @@ ncclResult_t shmRecvSetup(struct ncclPeerInfo* myInfo, struct ncclPeerInfo* peer
 }
 
 /* Connect to this peer */
-ncclResult_t shmSendConnect(struct ncclConnect* connectInfo, int nranks, struct ncclConnector* send) {
+ncclResult_t shmSendConnect(struct ncclConnect* connectInfo, int nranks, int rank, struct ncclConnector* send) {
   // Setup device pointers
   struct shmSendConnectInfo* info = (struct shmSendConnectInfo*)connectInfo;
   struct shmSendResources* resources = (struct shmSendResources*)send->transportResources;
@@ -199,7 +199,7 @@ ncclResult_t shmSendConnect(struct ncclConnect* connectInfo, int nranks, struct 
   return ncclSuccess;
 }
 
-ncclResult_t shmRecvConnect(struct ncclConnect* connectInfo, int nranks, struct ncclConnector* recv) {
+ncclResult_t shmRecvConnect(struct ncclConnect* connectInfo, int nranks, int rank, struct ncclConnector* recv) {
   // Setup device pointers
   struct shmRecvResources* resources = (struct shmRecvResources*)recv->transportResources;
   struct shmRecvConnectInfo* info = (struct shmRecvConnectInfo*)connectInfo;
