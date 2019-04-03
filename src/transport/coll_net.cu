@@ -169,7 +169,6 @@ ncclResult_t collNetRecvSetup(struct ncclPeerInfo* myInfo, struct ncclPeerInfo* 
 }
 
 ncclResult_t collNetSendConnect(struct ncclConnect* connectInfos, int nranks, struct ncclConnector* send) {
-  // send side
   // Setup device pointers
   struct collNetSendResources* sendResources = (struct collNetSendResources*)send->transportResources;
 
@@ -190,7 +189,6 @@ ncclResult_t collNetSendConnect(struct ncclConnect* connectInfos, int nranks, st
 }
 
 ncclResult_t collNetRecvConnect(struct ncclConnect* connectInfos, int nranks, struct ncclConnector* recv) {
-  // recv side
   // Setup device pointers
   struct collNetRecvResources* recvResources = (struct collNetRecvResources*)recv->transportResources;
 
@@ -206,17 +204,21 @@ ncclResult_t collNetRecvConnect(struct ncclConnect* connectInfos, int nranks, st
   recv->conn.opCountRem = &recvResources->devHostSendMem->opCount;
 
   // Connect to coll comm
-  collNetHandle_t* handlePtrs[nranks];
+  collNetHandle_t** handlePtrs = NULL;
+  NCCLCHECK(ncclCalloc(&handlePtrs, nranks));
   for (int i = 0; i < nranks; i++) {
     struct collNetConnectInfo* info = (struct collNetConnectInfo*)(connectInfos+i);
     handlePtrs[i] = &(info->collNetHandle);
   }
-  NCCLCHECK(collNetConnect((void**)handlePtrs, nranks, recvResources->netListenComm, &recvResources->collNetRecvComm));
+  ncclResult_t res;
+  NCCLCHECKGOTO(collNetConnect((void**)handlePtrs, nranks, recvResources->netListenComm, &recvResources->collNetRecvComm), res, cleanup);
 
+cleanup:
+  if (handlePtrs != NULL) free(handlePtrs);
   // Close listen comm
   NCCLCHECK(collNetCloseListen(recvResources->netListenComm));
 
-  return ncclSuccess;
+  return res;
 }
 
 ncclResult_t collNetConnectSendRecv(ncclConnector* send, ncclConnector* recv) {
@@ -245,7 +247,6 @@ ncclResult_t collNetConnectSendRecv(ncclConnector* send, ncclConnector* recv) {
 }
 
 ncclResult_t collNetSendFree(void* sendTransportResources) {
-  // send side
   struct collNetSendResources* sendResources = (struct collNetSendResources*)sendTransportResources;
   NCCLCHECK(ncclCudaHostFree(sendResources->hostSendMem));
   NCCLCHECK(ncclCudaHostFree(sendResources->hostRecvMem));
@@ -254,14 +255,12 @@ ncclResult_t collNetSendFree(void* sendTransportResources) {
   if (sendResources->useGdr)
     CUDACHECK(cudaFree(sendResources->devRecvMem));
   free(sendResources->llData);
-
   free(sendResources->reqFifo);
   free(sendResources);
   return ncclSuccess;
 }
 
 ncclResult_t collNetRecvFree(void* recvTransportResources) {
-  // recv side
   struct collNetRecvResources* recvResources = (struct collNetRecvResources*)recvTransportResources;
   NCCLCHECK(ncclCudaHostFree(recvResources->hostSendMem));
   NCCLCHECK(collNetDeregMr(recvResources->collNetRecvComm, recvResources->mhandle));
@@ -279,11 +278,6 @@ ncclResult_t collNetRecvFree(void* recvTransportResources) {
 
 ncclResult_t collNetSendProxy(struct ncclProxyArgs* args) {
   struct collNetSendResources* resources = (struct collNetSendResources*) (args->connector->transportResources);
-  int supported;
-  NCCLCHECK(collNetReduceSupport(args->dtype, args->redOp, &supported));
-  if (supported != 1) return ncclInternalError;
-
-  ///////////////////// start //////////////////
   if (args->state == ncclProxyOpReady) {
     // Update opCount
     resources->hostRecvMem->opCount = args->opCount;
@@ -308,7 +302,6 @@ ncclResult_t collNetSendProxy(struct ncclProxyArgs* args) {
           if (size != -1) {
             uint32_t flag = args->tail + 1;
             int nFifoLines = DIVUP(size, sizeof(union ncclLLFifoLine));
-            size = nFifoLines * sizeof(union ncclLLFifoLine);
             union ncclLLFifoLine* lines = resources->hostRecvMem->llBuff+buffSlot*NCCL_LL_SLICE_LINES;
             int ready = 1;
             for (int i=0; i<nFifoLines; i++) {
@@ -328,7 +321,7 @@ ncclResult_t collNetSendProxy(struct ncclProxyArgs* args) {
               int count = nFifoLines*sizeof(struct ncclLLDataLine) / ncclTypeSize(args->dtype);
               NCCLCHECK(collNetIallreduce(resources->collNetSendComm, (void*)sendBuff, (void*)(reqFifo[buffSlot].recvBuff), count, args->dtype, args->redOp, resources->llSendMhandle, resources->llRecvMhandle, args->requests+buffSlot));
               if (args->requests[buffSlot] != NULL) {
-                INFO(NCCL_NET, "sendProxy [%d/%d] Iallreduce (LL) posted, req %p", args->head, buffSlot, args->requests[buffSlot]);
+                TRACE(NCCL_NET, "sendProxy [%d/%d] Iallreduce (LL) posted, req %p", args->head, buffSlot, args->requests[buffSlot]);
                 sizesFifo[buffSlot] = -1;
                 // Make sure size is reset to zero before we update the head.
                 __sync_synchronize();
@@ -344,7 +337,7 @@ ncclResult_t collNetSendProxy(struct ncclProxyArgs* args) {
           int count = sizesFifo[buffSlot]/ncclTypeSize(args->dtype);
           NCCLCHECK(collNetIallreduce(resources->collNetSendComm, localMem->buff+buffSlot*stepSize, (void*)(reqFifo[buffSlot].recvBuff), count, args->dtype, args->redOp, resources->sendMhandle, resources->recvMhandle, args->requests+buffSlot));
           if (args->requests[buffSlot] != NULL) {
-            INFO(NCCL_NET, "sendProxy [%d/%d] Iallreduce posted, req %p", args->head, buffSlot, args->requests[buffSlot]);
+            TRACE(NCCL_NET, "sendProxy [%d/%d] Iallreduce posted, req %p", args->head, buffSlot, args->requests[buffSlot]);
             sizesFifo[buffSlot] = -1;
             // Make sure size is reset to zero before we update the head.
             __sync_synchronize();
@@ -358,8 +351,11 @@ ncclResult_t collNetSendProxy(struct ncclProxyArgs* args) {
         int buffSlot = args->head%NCCL_STEPS;
         NCCLCHECK(collNetTest((void*)(args->requests[buffSlot]), &done, &size));
         if (done) {
-          INFO(NCCL_NET, "sendProxy [%d/%d] request %p done, size %d", args->head, buffSlot, args->requests[buffSlot], size);
+          TRACE(NCCL_NET, "sendProxy [%d/%d] request %p done, size %d", args->head, buffSlot, args->requests[buffSlot], size);
           reqFifo[buffSlot].size = size;
+          // Make sure size is updated before we set recvBuff to NULL (from the view of recv proxy, concerning the flush)
+          // (reordered store after store is possible on POWER, though not on x86)
+          __sync_synchronize();
           reqFifo[buffSlot].recvBuff = NULL; // Notify recvProxy
           args->head += args->sliceSteps;
           resources->hostSendMem->head = args->head;
@@ -388,11 +384,6 @@ ncclResult_t collNetSendProxy(struct ncclProxyArgs* args) {
 
 ncclResult_t collNetRecvProxy(struct ncclProxyArgs* args) {
   struct collNetRecvResources* resources = (struct collNetRecvResources*) (args->connector->transportResources);
-  int supported;
-  NCCLCHECK(collNetReduceSupport(args->dtype, args->redOp, &supported));
-  if (supported != 1) return ncclInternalError;
-
-  ///////// START /////////
   if (args->state == ncclProxyOpReady) {
     // Update opCount
     resources->hostSendMem->opCount = args->opCount;
@@ -415,14 +406,14 @@ ncclResult_t collNetRecvProxy(struct ncclProxyArgs* args) {
       if ((args->tail < args->head + NCCL_STEPS) && (args->tail < (resources->hostSendMem->head) + NCCL_STEPS) && (args->tail < args->end)) {
         int buffSlot = args->tail%NCCL_STEPS;
         reqFifo[buffSlot].recvBuff = localBuff+buffSlot*stepSize;
-        INFO(NCCL_NET, "recvProxy [%d/%d] posted buffer %p", args->tail, buffSlot, localBuff+buffSlot*stepSize);
+        TRACE(NCCL_NET, "recvProxy [%d/%d] posted buffer %p", args->tail, buffSlot, localBuff+buffSlot*stepSize);
         args->tail += args->sliceSteps;
         args->idle = 0;
       }
       if (args->tail > args->head) {
         int buffSlot = args->head%NCCL_STEPS;
         if (reqFifo[buffSlot].recvBuff == NULL) { // Buffer is cleared : coll is complete
-          INFO(NCCL_NET, "recvProxy [%d/%d] done, size %d", args->head, buffSlot, reqFifo[buffSlot].size);
+          TRACE(NCCL_NET, "recvProxy [%d/%d] done, size %d", args->head, buffSlot, reqFifo[buffSlot].size);
           args->head += args->sliceSteps;
           if (args->llMode == 0) {
             if (resources->useGdr) collNetFlush(resources->collNetRecvComm, localBuff+buffSlot*stepSize, reqFifo[buffSlot].size, mhandle);
