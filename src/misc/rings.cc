@@ -179,6 +179,7 @@ ncclResult_t getEnvThreads(int* nthreads) {
   int64_t nt = ncclParamNthreads();
   if (nt != -2)
     *nthreads = nt;
+  if (*nthreads > NCCL_MAX_NTHREADS) *nthreads = NCCL_MAX_NTHREADS;
   return ncclSuccess;
 }
 

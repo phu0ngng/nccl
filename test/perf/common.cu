@@ -114,7 +114,7 @@ void deltaKern(void* A_, void* B_, size_t count, double* max) {
     if( delta > locmax ) {
       locmax = delta;
 #ifdef DEBUG_PRINT
-      if (delta > .1) printf("Error at %d/%ld : %f != %f\n", i, count, toFloat(A[i]), toFloat(B[i]));
+      if (delta > .1) printf("Error at %d/%ld(%p) : %f != %f\n", i, count, B+i, toFloat(A[i]), toFloat(B[i]));
 #endif
     }
   }

@@ -361,7 +361,7 @@ ncclResult_t netSendConnect(struct ncclConnect* connectInfo, struct ncclConnecto
   NCCLCHECK(ncclNetRegMr(resources->netSendComm, resources->devHostRecvMem->llBuff,
         NCCL_LL_BUFF_SIZE, NCCL_PTR_HOST, &resources->llMhandle));
   NCCLCHECK(ncclNetRegMr(resources->netSendComm, resources->devHostRecvMem->ll128Buff,
-        NCCL_LL_BUFF_SIZE, NCCL_PTR_HOST, &resources->ll128Mhandle));
+        NCCL_LL128_BUFF_SIZE, NCCL_PTR_HOST, &resources->ll128Mhandle));
 
   return ncclSuccess;
 }
@@ -391,7 +391,7 @@ ncclResult_t netRecvConnect(struct ncclConnect* connectInfo, struct ncclConnecto
         resources->useGdr ? NCCL_PTR_CUDA : NCCL_PTR_HOST, &resources->mhandle));
   NCCLCHECK(ncclNetRegMr(resources->netRecvComm, recvMem->llBuff, NCCL_LL_BUFF_SIZE,
         resources->useGdr ? NCCL_PTR_CUDA : NCCL_PTR_HOST, &resources->llMhandle));
-  NCCLCHECK(ncclNetRegMr(resources->netRecvComm, recvMem->ll128Buff, NCCL_LL_BUFF_SIZE,
+  NCCLCHECK(ncclNetRegMr(resources->netRecvComm, recvMem->ll128Buff, NCCL_LL128_BUFF_SIZE,
         resources->useGdr ? NCCL_PTR_CUDA : NCCL_PTR_HOST, &resources->ll128Mhandle));
 
   return ncclSuccess;
@@ -442,22 +442,24 @@ ncclResult_t netSendProxy(struct ncclProxyArgs* args) {
     args->idle = 1;
     if (args->head < args->end) {
       if (args->tail < args->end && args->tail < args->head + NCCL_STEPS) {
-        int stepSize = ( args->llMode == 1 ? NCCL_LL_BUFF_SIZE : args->llMode == 2 ? NCCL_LL128_BUFF_SIZE : args->channel->buffSize ) / NCCL_STEPS;
         volatile int* sizesFifo = resources->hostRecvMem->sizesFifo;
         if (args->llMode == 2) {
-          int buffSlot = args->tail%NCCL_STEPS;
-          int size = sizesFifo[buffSlot];
-          if (size != -1) {
-            struct ncclRecvMem* localMem = resources->useGdr ? resources->devRecvMem : resources->hostRecvMem;
-            // Send through network
+          int stepSize = NCCL_LL128_BUFF_SIZE/NCCL_STEPS;
+          if (args->tail < resources->hostRecvMem->tail) {
             int buffSlot = args->tail%NCCL_STEPS;
-            NCCLCHECK(ncclNetIsend(resources->netSendComm, localMem->ll128Buff+buffSlot*stepSize, sizesFifo[buffSlot], resources->ll128Mhandle, args->requests+buffSlot));
-            if (args->requests[buffSlot] != NULL) {
-              sizesFifo[buffSlot] = -1;
-              // Make sure size is reset to zero before we update the head.
-              __sync_synchronize();
-              args->tail += args->sliceSteps;
-              args->idle = 0;
+            if (sizesFifo[buffSlot] != -1) {
+              struct ncclRecvMem* localMem = resources->useGdr ? resources->devRecvMem : resources->hostRecvMem;
+              char* localBuff = (char*)localMem->ll128Buff;
+              // Send through network
+              //printf("Send %d bytes\n", sizesFifo[buffSlot]);
+              NCCLCHECK(ncclNetIsend(resources->netSendComm, localBuff+buffSlot*stepSize, sizesFifo[buffSlot], resources->ll128Mhandle, args->requests+buffSlot));
+              if (args->requests[buffSlot] != NULL) {
+                sizesFifo[buffSlot] = -1;
+                // Make sure size is reset to zero before we update the head.
+                __sync_synchronize();
+                args->tail += args->sliceSteps;
+                args->idle = 0;
+              }
             }
           }
         } else if (args->llMode == 1) {
@@ -486,6 +488,7 @@ ncclResult_t netSendProxy(struct ncclProxyArgs* args) {
             }
           }
         } else if (args->tail < resources->hostRecvMem->tail) {
+          int stepSize = args->channel->buffSize/NCCL_STEPS;
           struct ncclRecvMem* localMem = resources->useGdr ? resources->devRecvMem : resources->hostRecvMem;
           // Send through network
           int buffSlot = args->tail%NCCL_STEPS;
@@ -548,7 +551,7 @@ ncclResult_t netRecvProxy(struct ncclProxyArgs* args) {
     if (args->head < args->end) {
       struct ncclRecvMem* localMem = resources->useGdr ? resources->devRecvMem : resources->hostRecvMem;
       char* localBuff = args->llMode == 1 ? (char*)localMem->llBuff : args->llMode == 2 ? (char*)localMem->ll128Buff : localMem->buff;
-      void* mhandle = args->llMode == 2 ? resources->llMhandle : args->llMode == 2 ? resources->ll128Mhandle : resources->mhandle;
+      void* mhandle = args->llMode == 1 ? resources->llMhandle : args->llMode == 2 ? resources->ll128Mhandle : resources->mhandle;
       if ((args->tail < args->head + NCCL_STEPS) && (args->tail < (resources->hostSendMem->head) + NCCL_STEPS) && (args->tail < args->end)) {
         int buffSlot = args->tail%NCCL_STEPS;
         int sliceSize = stepSize * args->sliceSteps;

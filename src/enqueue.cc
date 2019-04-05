@@ -315,7 +315,9 @@ static ncclResult_t computeColl(struct ncclInfo* info /* input */, struct ncclCo
   int treeMode = info->pattern >= ncclPatternTreeUp ? 1 : 0;
   coll->funcIndex = FUNC_INDEX(info->coll, info->op, info->datatype, llMode, treeMode);
 
-  int stepSize   = ( llMode ? NCCL_LL_BUFF_SIZE : info->comm->channels[0].buffSize ) / NCCL_STEPS;
+  if (info->coll == ncclCollAllReduce) llMode *= 2;
+
+  int stepSize   = ( llMode == 1 ? NCCL_LL_BUFF_SIZE : llMode == 2 ? NCCL_LL128_BUFF_SIZE : info->comm->channels[0].buffSize ) / NCCL_STEPS;
   int chunkSteps = (llMode|treeMode) ? 1 : info->chunkSteps;
   int sliceSteps = (llMode|treeMode) ? 1 : info->sliceSteps;
   int chunkSize  = stepSize*chunkSteps;
@@ -339,9 +341,10 @@ static ncclResult_t computeColl(struct ncclInfo* info /* input */, struct ncclCo
   }
 
   // Compute nSteps for proxies
-  size_t nBytes  = llMode ? info->nBytes*2 : info->nBytes;
-
-  int nLoops = (int)(DIVUP(nBytes, (((size_t)(coll->args.nChannels))*info->nchunksPerLoop*chunkSize)));
+  int chunkEffectiveSize = chunkSize;
+  if (llMode == 1) chunkEffectiveSize /= 2;
+  if (llMode == 2) chunkEffectiveSize = (chunkSize / NCCL_LL128_LINEELEMS) * NCCL_LL128_DATAELEMS;
+  int nLoops = (int)(DIVUP(info->nBytes, (((size_t)(coll->args.nChannels))*info->nchunksPerLoop*chunkEffectiveSize)));
   proxyArgs->nsteps = info->nstepsPerLoop * nLoops * chunkSteps;
   proxyArgs->sliceSteps = sliceSteps;
   proxyArgs->chunkSteps = chunkSteps;
