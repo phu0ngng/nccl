@@ -254,6 +254,8 @@ static ncclResult_t getLoopInfo(struct ncclInfo* info) {
     case ncclPatternTreeUpDown:
     case ncclPatternPipelineFrom:
     case ncclPatternPipelineTo:
+    case ncclPatternCollTreeUp:
+    case ncclPatternCollTreeDown:
       info->nstepsPerLoop = info-> nchunksPerLoop = 1; break;
     case ncclPatternRing:
       info->nstepsPerLoop = info->comm->nRanks-1; info->nchunksPerLoop = info->comm->nRanks; break;
@@ -319,7 +321,7 @@ static ncclResult_t computeColl(struct ncclInfo* info /* input */, struct ncclCo
   if (treeMode && collNetSupport()) {
     NCCLCHECK(collNetReduceSupport(info->datatype, info->op, &redSupport));
   }
-  coll->args.useCollTree = proxyArgs->useCollTree = redSupport;
+  coll->args.useCollTree = redSupport;
 
   // Compute llMode, nChannels, nThreads
   int llMode;
@@ -390,7 +392,7 @@ static ncclResult_t saveKernel(struct ncclInfo* info) {
     return ncclInvalidUsage;
   }
 
-  int useCollTree = proxyArgs.useCollTree;
+  int useCollTree = coll.args.useCollTree;
   int nSubChannels = useCollTree ? 2 : 1;
   // Logical channel loop
   for (int bid=0; bid<coll.args.nChannels; bid++) {
@@ -411,11 +413,11 @@ static ncclResult_t saveKernel(struct ncclInfo* info) {
 
       // Proxy
       proxyArgs.channel = channel;
-      // Adjust pattern based on channel index : 0 - send, 1 - recv
-      int realPattern = (useCollTree == 1) ?
-        ((channelOffset % 2 == 0) ? ncclPatternTreeUp : ncclPatternTreeDown) :
-        info->pattern;
-      NCCLCHECK(transportSaveProxies(&proxyArgs, realPattern, info->root, info->comm->nRanks));
+      // Adjust pattern for CollNet based on channel index: 0 - send, 1 - recv
+      if (useCollTree == 1) {
+        info->pattern = (channelOffset % 2 == 0) ? ncclPatternCollTreeUp : ncclPatternCollTreeDown;
+      }
+      NCCLCHECK(transportSaveProxies(&proxyArgs, info->pattern, info->root, info->comm->nRanks));
 
       info->comm->myParams->gridDim.x++;
 

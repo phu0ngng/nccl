@@ -73,7 +73,9 @@ typedef enum {
   ncclPatternPipelineTo,
   ncclPatternTreeUp,
   ncclPatternTreeDown,
-  ncclPatternTreeUpDown
+  ncclPatternTreeUpDown,
+  ncclPatternCollTreeUp,
+  ncclPatternCollTreeDown
 } ncclPattern_t;
 
 typedef enum {
