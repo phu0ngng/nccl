@@ -146,7 +146,6 @@ class ncclLL128Primitives {
             if (u*WARP_SIZE >= maxOffset) break;
             uint64_t v0, v1;
             asm volatile("ld.volatile.global.v2.u64 {%0,%1}, [%2];" : "=l"(v0), "=l"(v1) : "l"(src64Ptr+u*WARP_SIZE));
-//            asm volatile("st.volatile.global.v2.u64 [%0], {%1,%2};" :: "l"(shmem64Ptr+u*WARP_SIZE), "l"(v0), "l"(v1));
             shmem64Ptr[u*WARP_SIZE] = v0;
             shmem64Ptr[u*WARP_SIZE+1] = v1;
           }
@@ -196,7 +195,7 @@ class ncclLL128Primitives {
             asm volatile("ld.volatile.global.v2.u64 {%0,%1}, [%2];" : "=l"(v0), "=l"(v1) : "l"(ptr+u*WARP_SIZE));
             needReload |= flagThread && (v1 != flag);
           }
-        } while (needReload);
+        } while (__any_sync(WARP_MASK, needReload));
         #pragma unroll
         for (int u=0; u<NCCL_LL128_SHMEM_ELEMS_PER_THREAD; u+=2) {
           asm volatile("ld.volatile.global.v2.u64 {%0,%1}, [%2];" : "=l"(v0), "=l"(v1) : "l"(ptr+u*WARP_SIZE));
@@ -215,7 +214,7 @@ class ncclLL128Primitives {
               asm volatile("ld.volatile.global.v2.u64 {%0,%1}, [%2];" : "=l"(v0), "=l"(v1) : "l"(ptr+u*WARP_SIZE));
               needReload |= flagThread && (v1 != flag);
             }
-          } while (needReload);
+          } while (__any_sync(WARP_MASK, needReload));
           #pragma unroll
           for (int u=0; u<NCCL_LL128_SHMEM_ELEMS_PER_THREAD; u+=2) {
             asm volatile("ld.volatile.global.v2.u64 {%0,%1}, [%2];" : "=l"(v0), "=l"(v1) : "l"(ptr+u*WARP_SIZE));
@@ -282,7 +281,6 @@ class ncclLL128Primitives {
             uint64_t v0, v1;
             v0 = shmem64Ptr[u*WARP_SIZE];
             v1 = shmem64Ptr[u*WARP_SIZE+1];
-            //asm volatile("ld.shared.v2.u64 {%0,%1}, [%2];" : "=l"(v0), "=l"(v1) : "l"(shmem64Ptr+u*WARP_SIZE));
             asm volatile("st.volatile.global.v2.u64 [%0], {%1,%2};" :: "l"(dst64Ptr+u*WARP_SIZE), "l"(v0), "l"(v1));
           }
           dstPtr += nelem64*sizeof(uint64_t)/sizeof(T);
