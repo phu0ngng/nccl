@@ -41,11 +41,11 @@ class ncclLL128Primitives {
   // If any of the thread's predicate was True, all the threads call exit()
   inline __device__ void exitIfAbortLocalBarrier() {
     uint32_t popc;
-    asm ("{");
-    asm volatile ("   .reg .pred barr_pred;");
-    asm volatile ("   setp.eq.u32 barr_pred,%0,1;" :: "r"(abort));
-    asm volatile ("   bar.red.popc.u32 %0, 14, %1, barr_pred;" : "=r"(popc) : "r"(nthreads));
-    asm ("}");
+    asm volatile ("{"
+                  "   .reg .pred barr_pred;"
+                  "   setp.eq.u32 barr_pred,%1,1;"
+                  "   bar.red.popc.u32 %0, 14, %2, barr_pred;"
+                  "}" : "=r"(popc) : "r"(abort), "r"(nthreads));
     if (popc) {
       // Make sure threads not participating in the operation get the abort and all threads exit
       exitIfAbortBarrier(1);
@@ -106,6 +106,8 @@ class ncclLL128Primitives {
 
   #define WARP_MASK 0xffffffff
 
+//  #define SHMEM128
+
   template <int RECV, int SEND, int SRC, int DST>
   __device__ void GenericOp(const T* srcPtr_, T* dstPtr_, int nelem) {
     if (nelem <= 0) {
@@ -141,13 +143,28 @@ class ncclLL128Primitives {
           const uint64_t* src64Ptr = ((uint64_t*)srcPtr) + warpOffset;
           volatile uint64_t* shmem64Ptr = shmem + warpOffset;
           const int maxOffset = nelem64 - warpOffset;
+#ifdef SHMEM128
+          uint64_t* shmemAsmPtr;
+          asm volatile("cvta.to.shared.u64 %0, %1;" : "=l"(shmemAsmPtr) : "l"(shmem64Ptr));
+#endif
           #pragma unroll
           for (int u=0; u<NCCL_LL128_SHMEM_ELEMS_PER_THREAD; u+=2) {
             if (u*WARP_SIZE >= maxOffset) break;
+#ifdef SHMEM128
+            asm volatile("{"
+                         "  .reg .u64 u0;"
+                         "  .reg .u64 u1;"
+                         "  ld.volatile.global.v2.u64 {u0,u1}, [%0];"
+                         "  st.volatile.shared.v2.u64 [%1], {u0,u1};"
+                         "}"
+                         :: "l"(src64Ptr+u*WARP_SIZE), "l"(shmemAsmPtr+u*WARP_SIZE));
+            
+#else
             uint64_t v0, v1;
             asm volatile("ld.volatile.global.v2.u64 {%0,%1}, [%2];" : "=l"(v0), "=l"(v1) : "l"(src64Ptr+u*WARP_SIZE));
             shmem64Ptr[u*WARP_SIZE] = v0;
             shmem64Ptr[u*WARP_SIZE+1] = v1;
+#endif
           }
           srcPtr += nelem64*sizeof(uint64_t)/sizeof(T);
           shmemPtr += nelem64*sizeof(uint64_t)/sizeof(T);
@@ -173,11 +190,33 @@ class ncclLL128Primitives {
 
       /************* Data Loading : SHMEM -> REG **************/
       if (SRC) {
-        volatile uint64_t* shmemPtr = shmem + warpOffset - warpOffset/NCCL_LL128_LINEELEMS;
-        #pragma unroll
-        for (int u=0; u<NCCL_LL128_SHMEM_ELEMS_PER_THREAD; u+=2) {
-          v[u] = shmemPtr[u*(WARP_SIZE-2)];
-          if (!flagThread) v[u+1] = shmemPtr[u*(WARP_SIZE-2)+1];
+        // Reverse access pattern for odd groups to keep things 16B aligned
+        const int odd = (wid>>3)&0x1;
+        volatile uint64_t* shmem64Ptr = shmem + warpOffset - warpOffset/NCCL_LL128_LINEELEMS;
+        shmem64Ptr+=odd*(13-4*(wid&7));
+        if (flagThread) {
+          shmem64Ptr+=odd;
+          #pragma unroll
+          for (int u=0; u<NCCL_LL128_SHMEM_ELEMS_PER_THREAD; u+=2) {
+            v[u] = shmem64Ptr[u*(WARP_SIZE-2)];
+          }
+        } else {
+#ifdef SHMEM128
+          uint64_t* shmemAsmPtr;
+          asm volatile("cvta.to.shared.u64 %0, %1;" : "=l"(shmemAsmPtr) : "l"(shmem64Ptr));
+#endif
+          #pragma unroll
+          for (int u=0; u<NCCL_LL128_SHMEM_ELEMS_PER_THREAD; u+=2) {
+#ifdef SHMEM128
+            uint64_t v0, v1;
+            asm volatile("  ld.volatile.shared.v2.u64 {%0,%1}, [%2];"
+                         : "=l"(v0), "=l"(v1) : "l"(shmemAsmPtr+u*(WARP_SIZE-2)));
+            v[u] = v0; v[u+1] = v1;
+#else
+            v[u] = shmem64Ptr[u*(WARP_SIZE-2)];
+            v[u+1] = shmem64Ptr[u*(WARP_SIZE-2)+1];
+#endif
+          }
         }
       }
       /*********** End Data Loading : SHMEM -> REG ************/
@@ -252,11 +291,32 @@ class ncclLL128Primitives {
 
       /************* Data Storing : REG -> SHMEM **************/
       if (DST) {
-        volatile uint64_t* shmemPtr = shmem + warpOffset - warpOffset/NCCL_LL128_LINEELEMS;
-        #pragma unroll
-        for (int u=0; u<NCCL_LL128_SHMEM_ELEMS_PER_THREAD; u+=2) {
-          shmemPtr[u*(WARP_SIZE-2)] = v[u];
-          if (!flagThread) shmemPtr[u*(WARP_SIZE-2)+1] = v[u+1];
+        // Reverse access pattern for odd groups to keep things 16B aligned
+        const int odd = (wid>>3)&0x1;
+        volatile uint64_t* shmem64Ptr = shmem + warpOffset - warpOffset/NCCL_LL128_LINEELEMS;
+        shmem64Ptr+=odd*(13-4*(wid&7));
+        if (flagThread) {
+          shmem64Ptr+=odd;
+          #pragma unroll
+          for (int u=0; u<NCCL_LL128_SHMEM_ELEMS_PER_THREAD; u+=2) {
+            shmem64Ptr[u*(WARP_SIZE-2)] = v[u];
+          }
+        } else {
+#ifdef SHMEM128
+          uint64_t* shmemAsmPtr;
+          asm volatile("cvta.to.shared.u64 %0, %1;" : "=l"(shmemAsmPtr) : "l"(shmem64Ptr));
+#endif
+          #pragma unroll
+          for (int u=0; u<NCCL_LL128_SHMEM_ELEMS_PER_THREAD; u+=2) {
+#ifdef SHMEM128
+            uint64_t v0 = v[u], v1 = v[u+1];
+            asm volatile("  st.volatile.shared.v2.u64 [%2], {%0,%1};"
+                         :: "l"(v0), "l"(v1), "l"(shmemAsmPtr+u*(WARP_SIZE-2)));
+#else
+            shmem64Ptr[u*(WARP_SIZE-2)] = v[u];
+            shmem64Ptr[u*(WARP_SIZE-2)+1] = v[u+1];
+#endif
+          }
         }
       }
       /*********** End data Storing : REG -> SHMEM ************/
@@ -275,13 +335,28 @@ class ncclLL128Primitives {
           uint64_t* dst64Ptr = ((uint64_t*)dstPtr) + warpOffset;
           volatile uint64_t* shmem64Ptr = shmem + warpOffset;
           const int maxOffset = nelem64 - warpOffset;
+#ifdef SHMEM128
+          uint64_t* shmemAsmPtr;
+          asm volatile("cvta.to.shared.u64 %0, %1;" : "=l"(shmemAsmPtr) : "l"(shmem64Ptr));
+#endif
           #pragma unroll
           for (int u=0; u<NCCL_LL128_SHMEM_ELEMS_PER_THREAD; u+=2) {
             if (u*WARP_SIZE >= maxOffset) break;
+#ifdef SHMEM128
+            asm volatile("{"
+                         "  .reg .u64 u0;"
+                         "  .reg .u64 u1;"
+                         "  ld.volatile.shared.v2.u64 {u0,u1}, [%0];"
+                         "  st.volatile.global.v2.u64 [%1], {u0,u1};"
+                         "}"
+                         :: "l"(shmemAsmPtr+u*WARP_SIZE), "l"(dst64Ptr+u*WARP_SIZE));
+            
+#else
             uint64_t v0, v1;
             v0 = shmem64Ptr[u*WARP_SIZE];
             v1 = shmem64Ptr[u*WARP_SIZE+1];
             asm volatile("st.volatile.global.v2.u64 [%0], {%1,%2};" :: "l"(dst64Ptr+u*WARP_SIZE), "l"(v0), "l"(v1));
+#endif
           }
           dstPtr += nelem64*sizeof(uint64_t)/sizeof(T);
           shmemPtr += nelem64*sizeof(uint64_t)/sizeof(T);

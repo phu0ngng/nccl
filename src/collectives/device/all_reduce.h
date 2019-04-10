@@ -279,6 +279,7 @@ __device__ void ncclAllReduceRingLLKernel(struct CollectiveArgs* args) {
   //const int rank = comm->rank;
   const int nranks = comm->nRanks;
   ssize_t chunkSize = (NCCL_LL128_ELEMS_PER_THREAD*nthreads*NCCL_LL128_DATAELEMS*sizeof(uint64_t))/(NCCL_LL128_LINEELEMS*sizeof(T));
+  const ssize_t minChunkSize = (NCCL_LL128_SHMEM_ELEMS_PER_THREAD*nthreads*NCCL_LL128_DATAELEMS*sizeof(uint64_t))/(NCCL_LL128_LINEELEMS*sizeof(T));
 
   const ssize_t loopSize = args->nChannels*nranks*chunkSize;
 
@@ -287,6 +288,7 @@ __device__ void ncclAllReduceRingLLKernel(struct CollectiveArgs* args) {
   T * __restrict__ thisOutput = (T*)args->ThisOutput;
 
   for (ssize_t gridOffset = 0; gridOffset < size; gridOffset += loopSize) {
+    chunkSize = min(DIVUP(size-gridOffset, args->nChannels*nranks*minChunkSize)*minChunkSize, chunkSize);
     ssize_t chunkOffset = gridOffset + bid*nranks*chunkSize;
 
     /////////////// begin AllReduce steps ///////////////
