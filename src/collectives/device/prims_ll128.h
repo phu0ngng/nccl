@@ -181,10 +181,6 @@ class ncclLL128Primitives {
       shmemPtr += nthreads;
       dstPtr += nthreads;
     }
-    // We need this barrier to prevent next loop from writing shmem already
-    // in particular when next loop is not aligned and uses per-element loading
-    // while this store part used 16B storing -- or vice-versa.
-    barrier();
   }
 
   template <int ELEMS_PER_THREAD, int RECV, int SEND, int SRC, int DST>
@@ -294,9 +290,7 @@ class ncclLL128Primitives {
     while (elemOffset < nelem) {
       const int chunkElems = min(nelem-elemOffset, elemInc);
 
-      /************* Data Loading : SRC -> SHMEM **************/
       if (SRC) loadSrcToShmem<NCCL_LL128_SHMEM_ELEMS_PER_THREAD>(chunkElems, srcPtr+elemOffset);
-      /*********** End Data Loading : SRC -> SHMEM ************/
 
       if (elemOffset == 0) { // First chunk
         const int nLoops = DIVUP(nelem,elemInc);
@@ -312,9 +306,12 @@ class ncclLL128Primitives {
         FOR_SEND(postSend);
       }
 
-      /************* Data Storing : SHMEM -> MEM **************/
       if (DST) storeShmemToDst<NCCL_LL128_SHMEM_ELEMS_PER_THREAD>(chunkElems, dstPtr+elemOffset);
-      /*********** End data Storing : SHMEM -> MEM ************/
+
+      // We need this barrier to prevent next loop from writing shmem already
+      // in particular when next loop is not aligned and uses per-element loading
+      // while this store part used 16B storing -- or vice-versa.
+      barrier();
 
       ll128Offset += ll128Inc;
       elemOffset += elemInc;
