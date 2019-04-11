@@ -450,15 +450,28 @@ ncclResult_t netSendProxy(struct ncclProxyArgs* args) {
             if (sizesFifo[buffSlot] != -1) {
               struct ncclRecvMem* localMem = resources->useGdr ? resources->devRecvMem : resources->hostRecvMem;
               char* localBuff = (char*)localMem->ll128Buff;
-              // Send through network
-              //printf("Send %d bytes\n", sizesFifo[buffSlot]);
-              NCCLCHECK(ncclNetIsend(resources->netSendComm, localBuff+buffSlot*stepSize, sizesFifo[buffSlot], resources->ll128Mhandle, args->requests+buffSlot));
-              if (args->requests[buffSlot] != NULL) {
-                sizesFifo[buffSlot] = -1;
-                // Make sure size is reset to zero before we update the head.
-                __sync_synchronize();
-                args->tail += args->sliceSteps;
-                args->idle = 0;
+              int ready = resources->useGdr;
+              if (!ready) {
+                // When data is in sysmem, we need to wait until all flags are correct since the GPU only
+                // called threafence()
+                uint64_t flag = args->tail + 1;
+                int nFifoLines = DIVUP(sizesFifo[buffSlot], sizeof(uint64_t)*NCCL_LL128_LINEELEMS);
+                volatile uint64_t* lines = (volatile uint64_t*)(localBuff+buffSlot*stepSize);
+                ready = 1;
+                for (int i=0; i<nFifoLines; i++) {
+                  if (lines[i*NCCL_LL128_LINEELEMS+NCCL_LL128_DATAELEMS] != flag) { ready = 0; break; printf("Line %d not OK, flag = %ld != %ld", i, lines[i*NCCL_LL128_LINEELEMS+NCCL_LL128_DATAELEMS], flag); }
+                }
+              }
+              if (ready) {
+                // Send through network
+                NCCLCHECK(ncclNetIsend(resources->netSendComm, localBuff+buffSlot*stepSize, sizesFifo[buffSlot], resources->ll128Mhandle, args->requests+buffSlot));
+                if (args->requests[buffSlot] != NULL) {
+                  sizesFifo[buffSlot] = -1;
+                  // Make sure size is reset to zero before we update the head.
+                  __sync_synchronize();
+                  args->tail += args->sliceSteps;
+                  args->idle = 0;
+                }
               }
             }
           }
