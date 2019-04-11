@@ -338,7 +338,9 @@ testResult_t testStreamSynchronize(int ngpus, cudaStream_t* streams, ncclComm_t*
      if (cudaErr != cudaErrorNotReady) CUDACHECK(cudaErr);
 
 #if NCCL_VERSION_CODE >= NCCL_VERSION(2,4,0)
-     if (comms) {
+     int version;
+     NCCLCHECK(ncclGetVersion(&version));
+     if (version >= NCCL_VERSION(2,4,0) && comms) {
        ncclResult_t ncclAsyncErr;
        NCCLCHECK(ncclCommGetAsyncError(comms[i], &ncclAsyncErr));
        if (ncclAsyncErr != ncclSuccess) {
