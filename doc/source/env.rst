@@ -37,7 +37,7 @@ Values accepted
 
 3 : Use P2P when GPUs are on the same PCI root complex, potentially going through the CPU.
 
-4 : Use P2P even across PCI root complexes including traversing the interconnect within a NUMA node.
+4 : (Since 2.4.7) Use P2P even across PCI root complexes, as long as the GPUs are within the same NUMA node. (Before 2.4.7) Use P2P even across PCI root complexes, regardless of whether the GPUs are within the same NUMA node (always enabled).
 
 5 : Use P2P even across the SMP interconnect between NUMA nodes (e.g., QPI/UPI). (always enabled)
 
@@ -313,7 +313,7 @@ Values accepted
 
 3 : Use GPU Direct RDMA when GPU and NIC are on the same PCI root complex, potentially going through the CPU.
 
-4 : Use GPU Direct RDMA even across PCI root complexes including traversing the interconnect within a NUMA node.
+4 : (Since 2.4.7) Use GPU Direct RDMA even across PCI root complexes, as long as GPU and NIC are within the same NUMA node. (Before 2.4.7) Use GPU Direct RDMA even across PCI root complexes, regardless of whether GPU and NIC are within the same NUMA node (always enabled).
 
 5 : Use GPU Direct RDMA even across the SMP interconnect between NUMA nodes (e.g., QPI/UPI). (always enabled)
 
@@ -321,17 +321,15 @@ The default value is 2.
 
 NCCL_NET_GDR_READ
 -----------------
-The ``NCCL_NET_GDR_READ`` variable enables GPU Direct RDMA when sending data. By default, NCCL uses GPU Direct RDMA to
-receive data directly in GPU memory. However, when sending data, the data is first stored in CPU memory, then goes to
-the InfiniBand card.
+The ``NCCL_NET_GDR_READ`` variable enables GPU Direct RDMA when sending data as long as the GPU-NIC distance are within the distance specified by ``NCCL_NET_GDR_LEVEL``. Before 2.4.2, GDR read is disabled by default, i.e. when sending data, the data is first stored in CPU memory, then goes to the InfiniBand card. Since 2.4.2, GDR read is enabled by default for NVLink-based platforms.
 
-Note: Reading directly GPU memory when sending data is known to be slightly slower than reading from CPU memory.
+Note: Reading directly GPU memory when sending data is known to be slightly slower than reading from CPU memory on some platforms, such as PCI-E.
 
 Values accepted
 ^^^^^^^^^^^^^^^
-Default value is 0.
+0 or 1. Define and set to 1 to use GPU Direct RDMA to send data to the NIC directly (bypassing CPU).
 
-Define and set to 1 to use GPU Direct RDMA to send data to the NIC directly (bypassing CPU).
+Before 2.4.2, the default value is 0 for all platforms. Since 2.4.2, the default value is 1 for NVLink-based platforms and 0 otherwise.
 
 NCCL_SINGLE_RING_THRESHOLD
 --------------------------
