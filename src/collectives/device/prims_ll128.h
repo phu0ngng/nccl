@@ -328,7 +328,6 @@ class ncclLL128Primitives {
     recvBuff[i] = recvConn[i]->ll128Buff;
     recvStep[i] = recvConn[i]->step;
     if (tid == i) {
-//      printf("%d ->\n", recvStep[i]);
       recvConnHeadPtr = recvConn[i]->head;
       *(recvConn[i]->opCountLoc) = opCount;
     }
@@ -352,7 +351,6 @@ class ncclLL128Primitives {
   __device__ __forceinline__ void saveRecvConn(int i) {
     if (tid == i) {
       recvConn[i]->step = recvStep[i];
-//      printf("-> %d\n", recvStep[i]);
       *(recvConn[i]->opCountLoc) += 1;
       __threadfence_block();
     }
