@@ -196,29 +196,11 @@ class ncclLL128Primitives {
 
     /************* Data Loading : SHMEM -> REG **************/
     if (SRC) {
-      // Reverse access pattern for odd groups to keep things 16B aligned
-      const int odd = (wid>>3)&0x1;
       volatile uint64_t* shmem64Ptr = shmem + warpOffset - warpOffset/NCCL_LL128_LINEELEMS;
-      shmem64Ptr+=odd*(13-4*(wid&7));
-      if (flagThread) {
-        shmem64Ptr+=odd;
-        #pragma unroll
-        for (int u=0; u<ELEMS_PER_THREAD; u+=2) {
-          v[u] = shmem64Ptr[u*(WARP_SIZE-2)];
-        }
-      } else {
-#ifdef SHMEM128
-        uint64_t* shmemAsmPtr = shmemCvtPtr(shmem64Ptr);
-#endif
-        #pragma unroll
-        for (int u=0; u<ELEMS_PER_THREAD; u+=2) {
-#ifdef SHMEM128
-          loadShmem128(shmemAsmPtr+u*(WARP_SIZE-2), v[u], v[u+1]);
-#else
-          v[u] = shmem64Ptr[u*(WARP_SIZE-2)];
-          v[u+1] = shmem64Ptr[u*(WARP_SIZE-2)+1];
-#endif
-        }
+      #pragma unroll
+      for (int u=0; u<ELEMS_PER_THREAD; u+=2) {
+        v[u] = shmem64Ptr[u*(WARP_SIZE-2)];
+        if (!flagThread) v[u+1] = shmem64Ptr[u*(WARP_SIZE-2)+1];
       }
     }
     /*********** End Data Loading : SHMEM -> REG ************/
@@ -287,29 +269,11 @@ class ncclLL128Primitives {
 
     /************* Data Storing : REG -> SHMEM **************/
     if (DST) {
-      // Reverse access pattern for odd groups to keep things 16B aligned
-      const int odd = (wid>>3)&0x1;
       volatile uint64_t* shmem64Ptr = shmem + warpOffset - warpOffset/NCCL_LL128_LINEELEMS;
-      shmem64Ptr+=odd*(13-4*(wid&7));
-      if (flagThread) {
-        shmem64Ptr+=odd;
-        #pragma unroll
-        for (int u=0; u<ELEMS_PER_THREAD; u+=2) {
-          shmem64Ptr[u*(WARP_SIZE-2)] = v[u];
-        }
-      } else {
-#ifdef SHMEM128
-        uint64_t* shmemAsmPtr = shmemCvtPtr(shmem64Ptr);
-#endif
-        #pragma unroll
-        for (int u=0; u<ELEMS_PER_THREAD; u+=2) {
-#ifdef SHMEM128
-          storeShmem128(shmemAsmPtr+u*(WARP_SIZE-2), v[u], v[u+1]);
-#else
-          shmem64Ptr[u*(WARP_SIZE-2)] = v[u];
-          shmem64Ptr[u*(WARP_SIZE-2)+1] = v[u+1];
-#endif
-        }
+      #pragma unroll
+      for (int u=0; u<ELEMS_PER_THREAD; u+=2) {
+        shmem64Ptr[u*(WARP_SIZE-2)] = v[u];
+        if (!flagThread) shmem64Ptr[u*(WARP_SIZE-2)+1] = v[u+1];
       }
     }
     /*********** End data Storing : REG -> SHMEM ************/
