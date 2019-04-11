@@ -117,6 +117,7 @@ class ncclLL128Primitives {
 
 //#define SHMEM128
 
+  template <int ELEMS_PER_THREAD>
   inline __device__ void loadSrcToShmem(int nelems, const T* srcPtr) {
     const T* srcEnd = srcPtr + nelems;
     const int nelem64 = ((nelems*sizeof(T))/(2*sizeof(uint64_t)))*2;
@@ -126,20 +127,16 @@ class ncclLL128Primitives {
       const uint64_t* src64Ptr = ((uint64_t*)srcPtr) + warpOffset;
       volatile uint64_t* shmem64Ptr = shmem + warpOffset;
       const int maxOffset = nelem64 - warpOffset;
-#ifdef SHMEM128
-      uint64_t* shmemAsmPtr = shmemCvtPtr(shmem64Ptr);
-#endif
+      uint64_t v[ELEMS_PER_THREAD];
       #pragma unroll
-      for (int u=0; u<NCCL_LL128_SHMEM_ELEMS_PER_THREAD; u+=2) {
+      for (int u=0; u<ELEMS_PER_THREAD; u+=2) {
         if (u*WARP_SIZE >= maxOffset) break;
-#ifdef SHMEM128
-        copyToShmem128(src64Ptr+u*WARP_SIZE, shmemAsmPtr+u*WARP_SIZE);
-#else
-        uint64_t v0, v1;
-        load128(src64Ptr+u*WARP_SIZE, v0, v1);
-        shmem64Ptr[u*WARP_SIZE] = v0;
-        shmem64Ptr[u*WARP_SIZE+1] = v1;
-#endif
+        load128(src64Ptr+u*WARP_SIZE, v[u], v[u+1]);
+      }
+      uint64_t* shmemAsmPtr = shmemCvtPtr(shmem64Ptr);
+      #pragma unroll
+      for (int u=0; u<ELEMS_PER_THREAD; u+=2) {
+        storeShmem128(shmemAsmPtr+u*WARP_SIZE, v[u], v[u+1]);
       }
       srcPtr += nelem64*sizeof(uint64_t)/sizeof(T);
       shmemPtr += nelem64*sizeof(uint64_t)/sizeof(T);
@@ -154,6 +151,7 @@ class ncclLL128Primitives {
     }
   }
 
+  template <int ELEMS_PER_THREAD>
   inline __device__ void storeShmemToDst(int nelems, T* dstPtr) {
     T* dstEnd = dstPtr + nelems;
     const int nelem64 = ((nelems*sizeof(T))/(2*sizeof(uint64_t)))*2;
@@ -163,17 +161,16 @@ class ncclLL128Primitives {
       uint64_t* dst64Ptr = ((uint64_t*)dstPtr) + warpOffset;
       volatile uint64_t* shmem64Ptr = shmem + warpOffset;
       const int maxOffset = nelem64 - warpOffset;
-#ifdef SHMEM128
+      uint64_t v[ELEMS_PER_THREAD];
       uint64_t* shmemAsmPtr = shmemCvtPtr(shmem64Ptr);
-#endif
       #pragma unroll
-      for (int u=0; u<NCCL_LL128_SHMEM_ELEMS_PER_THREAD; u+=2) {
+      for (int u=0; u<ELEMS_PER_THREAD; u+=2) {
+        loadShmem128(shmemAsmPtr+u*WARP_SIZE, v[u], v[u+1]);
+      }
+      #pragma unroll
+      for (int u=0; u<ELEMS_PER_THREAD; u+=2) {
         if (u*WARP_SIZE >= maxOffset) break;
-#ifdef SHMEM128
-        copyFromShmem128(shmemAsmPtr+u*WARP_SIZE, dst64Ptr+u*WARP_SIZE);
-#else
-        store128(dst64Ptr+u*WARP_SIZE, shmem64Ptr[u*WARP_SIZE], shmem64Ptr[u*WARP_SIZE+1]);
-#endif
+        store128(dst64Ptr+u*WARP_SIZE, v[u], v[u+1]);
       }
       dstPtr += nelem64*sizeof(uint64_t)/sizeof(T);
       shmemPtr += nelem64*sizeof(uint64_t)/sizeof(T);
@@ -190,6 +187,132 @@ class ncclLL128Primitives {
     // in particular when next loop is not aligned and uses per-element loading
     // while this store part used 16B storing -- or vice-versa.
     barrier();
+  }
+
+  template <int ELEMS_PER_THREAD, int RECV, int SEND, int SRC, int DST>
+  __device__ __forceinline__ void recvReduceSendCopy(int ll128Offset) {
+    const int warpOffset = warp*ELEMS_PER_THREAD*WARP_SIZE+2*wid;
+    uint64_t v[ELEMS_PER_THREAD];
+
+    /************* Data Loading : SHMEM -> REG **************/
+    if (SRC) {
+      // Reverse access pattern for odd groups to keep things 16B aligned
+      const int odd = (wid>>3)&0x1;
+      volatile uint64_t* shmem64Ptr = shmem + warpOffset - warpOffset/NCCL_LL128_LINEELEMS;
+      shmem64Ptr+=odd*(13-4*(wid&7));
+      if (flagThread) {
+        shmem64Ptr+=odd;
+        #pragma unroll
+        for (int u=0; u<ELEMS_PER_THREAD; u+=2) {
+          v[u] = shmem64Ptr[u*(WARP_SIZE-2)];
+        }
+      } else {
+#ifdef SHMEM128
+        uint64_t* shmemAsmPtr = shmemCvtPtr(shmem64Ptr);
+#endif
+        #pragma unroll
+        for (int u=0; u<ELEMS_PER_THREAD; u+=2) {
+#ifdef SHMEM128
+          loadShmem128(shmemAsmPtr+u*(WARP_SIZE-2), v[u], v[u+1]);
+#else
+          v[u] = shmem64Ptr[u*(WARP_SIZE-2)];
+          v[u+1] = shmem64Ptr[u*(WARP_SIZE-2)+1];
+#endif
+        }
+      }
+    }
+    /*********** End Data Loading : SHMEM -> REG ************/
+
+    /************************ Recv **************************/
+    if (RECV) {
+      uint64_t flag = recvFlag(0);
+      uint64_t* ptr = recvPtr(0)+ll128Offset+warpOffset;
+      bool needReload;
+      uint64_t v0, v1;
+      do {
+        needReload = false;
+        #pragma unroll
+        for (int u=0; u<ELEMS_PER_THREAD; u+=2) {
+          load128(ptr+u*WARP_SIZE, v0, v1);
+          needReload |= flagThread && (v1 != flag);
+        }
+      } while (__any_sync(WARP_MASK, needReload));
+      #pragma unroll
+      for (int u=0; u<ELEMS_PER_THREAD; u+=2) {
+        load128(ptr+u*WARP_SIZE, v0, v1);
+        v[u] = SRC ? MULTI<FUNC, T>()(v0, v[u]) : v0;
+        v[u+1] = SRC ? MULTI<FUNC, T>()(v1, v[u+1]) : v1;
+      }
+
+      for (int i=1; i<NRECV && i<nrecv; i++) {
+        uint64_t flag = recvFlag(i);
+        uint64_t* ptr = recvPtr(i)+ll128Offset+warpOffset;
+        uint64_t v0, v1;
+        do {
+          needReload = false;
+          #pragma unroll
+          for (int u=0; u<ELEMS_PER_THREAD; u+=2) {
+            load128(ptr+u*WARP_SIZE, v0, v1);
+            needReload |= flagThread && (v1 != flag);
+          }
+        } while (__any_sync(WARP_MASK, needReload));
+        #pragma unroll
+        for (int u=0; u<ELEMS_PER_THREAD; u+=2) {
+          load128(ptr+u*WARP_SIZE, v0, v1);
+          v[u] = MULTI<FUNC, T>()(v0, v[u]);
+          v[u+1] = MULTI<FUNC, T>()(v1, v[u+1]);
+        }
+      }
+    }
+    /********************** End Recv ************************/
+
+    /************************ Send **************************/
+    if (SEND) {
+      for (int i=1; i<NSEND && i<nsend; i++) {
+        int flag = sendFlag(i);
+        uint64_t* ptr = sendPtr(i)+ll128Offset+warpOffset;
+        #pragma unroll
+        for (int u=0; u<ELEMS_PER_THREAD; u+=2) {
+          store128(ptr+u*WARP_SIZE, v[u], flagThread ? flag : v[u+1]);
+        }
+      }
+      int flag = sendFlag(0);
+      uint64_t* ptr = sendPtr(0)+ll128Offset+warpOffset;
+      #pragma unroll
+      for (int u=0; u<ELEMS_PER_THREAD; u+=2) {
+        store128(ptr+u*WARP_SIZE, v[u], flagThread ? flag : v[u+1]);
+      }
+    }
+    /********************** End Send ************************/
+
+    /************* Data Storing : REG -> SHMEM **************/
+    if (DST) {
+      // Reverse access pattern for odd groups to keep things 16B aligned
+      const int odd = (wid>>3)&0x1;
+      volatile uint64_t* shmem64Ptr = shmem + warpOffset - warpOffset/NCCL_LL128_LINEELEMS;
+      shmem64Ptr+=odd*(13-4*(wid&7));
+      if (flagThread) {
+        shmem64Ptr+=odd;
+        #pragma unroll
+        for (int u=0; u<ELEMS_PER_THREAD; u+=2) {
+          shmem64Ptr[u*(WARP_SIZE-2)] = v[u];
+        }
+      } else {
+#ifdef SHMEM128
+        uint64_t* shmemAsmPtr = shmemCvtPtr(shmem64Ptr);
+#endif
+        #pragma unroll
+        for (int u=0; u<ELEMS_PER_THREAD; u+=2) {
+#ifdef SHMEM128
+          storeShmem128(shmemAsmPtr+u*(WARP_SIZE-2), v[u], v[u+1]);
+#else
+          shmem64Ptr[u*(WARP_SIZE-2)] = v[u];
+          shmem64Ptr[u*(WARP_SIZE-2)+1] = v[u+1];
+#endif
+        }
+      }
+    }
+    /*********** End data Storing : REG -> SHMEM ************/
   }
 
   template <int RECV, int SEND, int SRC, int DST>
@@ -210,7 +333,7 @@ class ncclLL128Primitives {
       const int chunkElems = min(nelem-elemOffset, elemInc);
 
       /************* Data Loading : SRC -> SHMEM **************/
-      if (SRC) loadSrcToShmem(chunkElems, srcPtr+elemOffset);
+      if (SRC) loadSrcToShmem<NCCL_LL128_SHMEM_ELEMS_PER_THREAD>(chunkElems, srcPtr+elemOffset);
       /*********** End Data Loading : SRC -> SHMEM ************/
 
       if (elemOffset == 0) { // First chunk
@@ -219,127 +342,7 @@ class ncclLL128Primitives {
       }
       barrier(); // Syncs both for waitSend and shmem data
 
-      uint64_t v[NCCL_LL128_SHMEM_ELEMS_PER_THREAD];
-
-      /************* Data Loading : SHMEM -> REG **************/
-      if (SRC) {
-        // Reverse access pattern for odd groups to keep things 16B aligned
-        const int odd = (wid>>3)&0x1;
-        volatile uint64_t* shmem64Ptr = shmem + warpOffset - warpOffset/NCCL_LL128_LINEELEMS;
-        shmem64Ptr+=odd*(13-4*(wid&7));
-        if (flagThread) {
-          shmem64Ptr+=odd;
-          #pragma unroll
-          for (int u=0; u<NCCL_LL128_SHMEM_ELEMS_PER_THREAD; u+=2) {
-            v[u] = shmem64Ptr[u*(WARP_SIZE-2)];
-          }
-        } else {
-#ifdef SHMEM128
-          uint64_t* shmemAsmPtr = shmemCvtPtr(shmem64Ptr);
-#endif
-          #pragma unroll
-          for (int u=0; u<NCCL_LL128_SHMEM_ELEMS_PER_THREAD; u+=2) {
-#ifdef SHMEM128
-            loadShmem128(shmemAsmPtr+u*(WARP_SIZE-2), v[u], v[u+1]);
-#else
-            v[u] = shmem64Ptr[u*(WARP_SIZE-2)];
-            v[u+1] = shmem64Ptr[u*(WARP_SIZE-2)+1];
-#endif
-          }
-        }
-      }
-      /*********** End Data Loading : SHMEM -> REG ************/
-
-      /************************ Recv **************************/
-      if (RECV) {
-        uint64_t flag = recvFlag(0);
-        uint64_t* ptr = recvPtr(0)+ll128Offset+warpOffset;
-        bool needReload;
-        uint64_t v0, v1;
-        do {
-          needReload = false;
-          #pragma unroll
-          for (int u=0; u<NCCL_LL128_SHMEM_ELEMS_PER_THREAD; u+=2) {
-            load128(ptr+u*WARP_SIZE, v0, v1);
-            needReload |= flagThread && (v1 != flag);
-          }
-        } while (__any_sync(WARP_MASK, needReload));
-        #pragma unroll
-        for (int u=0; u<NCCL_LL128_SHMEM_ELEMS_PER_THREAD; u+=2) {
-          load128(ptr+u*WARP_SIZE, v0, v1);
-          v[u] = SRC ? MULTI<FUNC, T>()(v0, v[u]) : v0;
-          v[u+1] = SRC ? MULTI<FUNC, T>()(v1, v[u+1]) : v1;
-        }
-
-        for (int i=1; i<NRECV && i<nrecv; i++) {
-          uint64_t flag = recvFlag(i);
-          uint64_t* ptr = recvPtr(i)+ll128Offset+warpOffset;
-          uint64_t v0, v1;
-          do {
-            needReload = false;
-            #pragma unroll
-            for (int u=0; u<NCCL_LL128_SHMEM_ELEMS_PER_THREAD; u+=2) {
-              load128(ptr+u*WARP_SIZE, v0, v1);
-              needReload |= flagThread && (v1 != flag);
-            }
-          } while (__any_sync(WARP_MASK, needReload));
-          #pragma unroll
-          for (int u=0; u<NCCL_LL128_SHMEM_ELEMS_PER_THREAD; u+=2) {
-            load128(ptr+u*WARP_SIZE, v0, v1);
-            v[u] = MULTI<FUNC, T>()(v0, v[u]);
-            v[u+1] = MULTI<FUNC, T>()(v1, v[u+1]);
-          }
-        }
-      }
-      /********************** End Recv ************************/
-
-      /************************ Send **************************/
-      if (SEND) {
-        for (int i=1; i<NSEND && i<nsend; i++) {
-          int flag = sendFlag(i);
-          uint64_t* ptr = sendPtr(i)+ll128Offset+warpOffset;
-          #pragma unroll
-          for (int u=0; u<NCCL_LL128_SHMEM_ELEMS_PER_THREAD; u+=2) {
-            store128(ptr+u*WARP_SIZE, v[u], flagThread ? flag : v[u+1]);
-          }
-        }
-        int flag = sendFlag(0);
-        uint64_t* ptr = sendPtr(0)+ll128Offset+warpOffset;
-        #pragma unroll
-        for (int u=0; u<NCCL_LL128_SHMEM_ELEMS_PER_THREAD; u+=2) {
-          store128(ptr+u*WARP_SIZE, v[u], flagThread ? flag : v[u+1]);
-        }
-      }
-      /********************** End Send ************************/
-
-      /************* Data Storing : REG -> SHMEM **************/
-      if (DST) {
-        // Reverse access pattern for odd groups to keep things 16B aligned
-        const int odd = (wid>>3)&0x1;
-        volatile uint64_t* shmem64Ptr = shmem + warpOffset - warpOffset/NCCL_LL128_LINEELEMS;
-        shmem64Ptr+=odd*(13-4*(wid&7));
-        if (flagThread) {
-          shmem64Ptr+=odd;
-          #pragma unroll
-          for (int u=0; u<NCCL_LL128_SHMEM_ELEMS_PER_THREAD; u+=2) {
-            shmem64Ptr[u*(WARP_SIZE-2)] = v[u];
-          }
-        } else {
-#ifdef SHMEM128
-          uint64_t* shmemAsmPtr = shmemCvtPtr(shmem64Ptr);
-#endif
-          #pragma unroll
-          for (int u=0; u<NCCL_LL128_SHMEM_ELEMS_PER_THREAD; u+=2) {
-#ifdef SHMEM128
-            storeShmem128(shmemAsmPtr+u*(WARP_SIZE-2), v[u], v[u+1]);
-#else
-            shmem64Ptr[u*(WARP_SIZE-2)] = v[u];
-            shmem64Ptr[u*(WARP_SIZE-2)+1] = v[u+1];
-#endif
-          }
-        }
-      }
-      /*********** End data Storing : REG -> SHMEM ************/
+      recvReduceSendCopy<NCCL_LL128_SHMEM_ELEMS_PER_THREAD, RECV, SEND, SRC, DST>(ll128Offset);
 
       exitIfAbortLocalBarrier(); // Syncs both for postSend/postRecv and shmem data
       if (elemOffset + chunkElems == nelem) { // Last chunk
@@ -348,7 +351,7 @@ class ncclLL128Primitives {
       }
 
       /************* Data Storing : SHMEM -> MEM **************/
-      if (DST) storeShmemToDst(chunkElems, dstPtr+elemOffset);
+      if (DST) storeShmemToDst<NCCL_LL128_SHMEM_ELEMS_PER_THREAD>(chunkElems, dstPtr+elemOffset);
       /*********** End data Storing : SHMEM -> MEM ************/
 
       ll128Offset += ll128Inc;

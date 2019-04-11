@@ -33,24 +33,4 @@ inline __device__ void storeShmem128(uint64_t* shmemAsmPtr, uint64_t v0, uint64_
       :: "l"(v0), "l"(v1), "l"(shmemAsmPtr));
 }
 
-inline __device__ void copyToShmem128(const uint64_t* srcPtr, uint64_t* shmemAsmPtr) {
-  asm volatile(
-      "{"
-      "  .reg .u64 u0;"
-      "  .reg .u64 u1;"
-      "  ld.volatile.global.v2.u64 {u0,u1}, [%0];"
-      "  st.volatile.shared.v2.u64 [%1], {u0,u1};"
-      "}"
-      :: "l"(srcPtr), "l"(shmemAsmPtr));
-}
-
-inline __device__ void copyFromShmem128(uint64_t* shmemAsmPtr, uint64_t* dstPtr) {
-  asm volatile("{"
-      "  .reg .u64 u0;"
-      "  .reg .u64 u1;"
-      "  ld.volatile.shared.v2.u64 {u0,u1}, [%0];"
-      "  st.volatile.global.v2.u64 [%1], {u0,u1};"
-      "}"
-      :: "l"(shmemAsmPtr), "l"(dstPtr));
-}
 #endif
