@@ -41,6 +41,8 @@ Values accepted
 
 5 : Use P2P even across the SMP interconnect between NUMA nodes (e.g., QPI/UPI). (always enabled)
 
+The default value is 3.
+
 NCCL_SHM_DISABLE
 ----------------
 The ``NCCL_SHM_DISABLE`` variable disables the Shared Memory (SHM) transports. SHM is used between devices when peer-to-peer cannot happen, therefore, host memory is used.  NCCL uses network (IB or IP sockets) to communicate between the CPU sockets when SHM is disabled.
@@ -314,6 +316,8 @@ Values accepted
 4 : Use GPU Direct RDMA even across PCI root complexes including traversing the interconnect within a NUMA node.
 
 5 : Use GPU Direct RDMA even across the SMP interconnect between NUMA nodes (e.g., QPI/UPI). (always enabled)
+
+The default value is 2.
 
 NCCL_NET_GDR_READ
 -----------------
