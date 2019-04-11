@@ -115,8 +115,6 @@ class ncclLL128Primitives {
 
   #define WARP_MASK 0xffffffff
 
-//#define SHMEM128
-
   template <int ELEMS_PER_THREAD>
   inline __device__ void loadSrcToShmem(int nelems, const T* srcPtr) {
     const T* srcEnd = srcPtr + nelems;
