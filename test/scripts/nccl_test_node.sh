@@ -55,7 +55,9 @@ elif [[ "$mode" == *"multinode"* ]]; then
   if [ "$gpumodel" == "dgx1" ] || [ "$gpumodel" == "dgx1v" ]; then
     $SHDIR/multinode_perf_graphs.sh $gpumodel 2 4 2 2
   elif [ "$gpumodel" == "mlperf" ]; then
+    $SHDIR/multinode_perf_graphs.sh $gpumodel 8 64 1 1
     $SHDIR/multinode_perf_graphs.sh $gpumodel 16 128 1 1
+    $SHDIR/multinode_perf_graphs.sh $gpumodel 32 256 1 1
   elif [ "$gpumodel" == "P100" ]; then
     $SHDIR/multinode_perf_graphs.sh all 2 4 2 2
     $SHDIR/multinode_env_test.sh all 2 8
