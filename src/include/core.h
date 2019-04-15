@@ -245,7 +245,6 @@ struct CollectiveArgs {
   uint16_t nThreads;
 
   int lastChunkSize;
-  int useCollTree;
 };
 struct ncclColl {
   union {

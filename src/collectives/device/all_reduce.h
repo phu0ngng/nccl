@@ -141,7 +141,7 @@ __device__ void ncclAllReduceAcclKernel(struct CollectiveArgs* args) {
   const int bid = args->bid;
   struct ncclComm* comm = args->comm;
   struct ncclChannel* channel = comm->channels+blockIdx.x;
-  struct ncclTree* tree = args->useCollTree ? &channel->collTree : &channel->tree;
+  struct ncclTree* tree = &channel->collTree;
   const ssize_t size = args->N;
   const int stepSize = channel->buffSize / (sizeof(T)*NCCL_STEPS);
   const int chunkSize = args->lastChunkSize;
@@ -150,7 +150,6 @@ __device__ void ncclAllReduceAcclKernel(struct CollectiveArgs* args) {
   // Compute pointers
   const T * __restrict__ thisInput = (const T*)args->ThisInput;
   T * __restrict__ thisOutput = (T*)args->ThisOutput;
-
 
   if (blockIdx.x % 2 == 0) {
     ncclPrimitives<UNROLL, 1, 1, T, 1, 1, FUNC> prims(tid, nthreads, tree->down, &tree->up, NULL, stepSize, channel, comm, args->opCount);
@@ -318,7 +317,7 @@ __device__ void ncclAllReduceAcclLLKernel(struct CollectiveArgs* args) {
   const int bid = args->bid;
   struct ncclComm* comm = args->comm;
   struct ncclChannel* channel = comm->channels+blockIdx.x;
-  struct ncclTree* tree = args->useCollTree ? &channel->collTree : &channel->tree;
+  struct ncclTree* tree = &channel->collTree;
   const ssize_t size = args->N;
   ssize_t chunkSize = NCCL_LL_SLICE_LINES * sizeof(uint64_t) / sizeof(T);
   const ssize_t loopSize = args->nChannels*chunkSize;

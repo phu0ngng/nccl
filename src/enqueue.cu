@@ -268,9 +268,9 @@ static ncclResult_t getLoopInfo(struct ncclInfo* info) {
   return ncclSuccess;
 }
 
-static void getKernelInfo(struct ncclInfo* info, int useCollTree, uint8_t* nChannels, uint16_t* nThreads, int* llMode) {
+static void getKernelInfo(struct ncclInfo* info, uint8_t* nChannels, uint16_t* nThreads, int* llMode) {
   // Cut logical channels by half in case of CollNet
-  int maxNchannels = useCollTree ? info->comm->nChannels/2 : info->comm->nChannels;
+  int maxNchannels = (info->pattern == ncclPatternCollTreeUp || info->pattern == ncclPatternCollTreeDown) ? info->comm->nChannels/2 : info->comm->nChannels;
 
   // Compute thresholds and limits that users can override
   int perThreadLLThreshold = std::min(info->comm->threadThreshold, (ssize_t)NCCL_LL_CHANNEL_THRESHOLD);
@@ -321,11 +321,11 @@ static ncclResult_t computeColl(struct ncclInfo* info /* input */, struct ncclCo
   if (treeMode && collNetSupport()) {
     NCCLCHECK(collNetReduceSupport(info->datatype, info->op, &redSupport));
   }
-  coll->args.useCollTree = redSupport;
+  if (redSupport) info->pattern = ncclPatternCollTreeUp; // up/down will be adjusted based on channel index later
 
   // Compute llMode, nChannels, nThreads
   int llMode;
-  getKernelInfo(info, redSupport, &coll->args.nChannels, &coll->args.nThreads, &llMode);
+  getKernelInfo(info, &coll->args.nChannels, &coll->args.nThreads, &llMode);
 
   // Algorithm index: 2 = Accl (CollNet), 1 = Tree, 0 = Ring
   int alg = redSupport == 1 ? 2 : treeMode;
@@ -392,7 +392,7 @@ static ncclResult_t saveKernel(struct ncclInfo* info) {
     return ncclInvalidUsage;
   }
 
-  int useCollTree = coll.args.useCollTree;
+  int useCollTree = (info->pattern == ncclPatternCollTreeUp || info->pattern == ncclPatternCollTreeDown) ? 1 : 0;
   int nSubChannels = useCollTree ? 2 : 1;
   // Logical channel loop
   for (int bid=0; bid<coll.args.nChannels; bid++) {
