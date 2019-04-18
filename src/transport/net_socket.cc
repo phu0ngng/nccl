@@ -104,47 +104,28 @@ struct ncclSocketComm {
   enum threadState state;
 };
 
-ncclResult_t ncclSocketProgress(ncclSocketRequest* r) {
-  if (r == NULL) {
-    WARN("NET/Socket : progress called with NULL request");
-    return ncclInternalError;
-  }
-  if (r->offset >= 0 && r->offset < r->size) {
-    NCCLCHECK(socketProgress(r->op, r->fd, r->data, r->size, &r->offset));
-  }
-  return ncclSuccess;
-}
-
 void* persistentSocketThread(void *comm_) {
   struct ncclSocketComm* comm = (struct ncclSocketComm*)comm_;
   volatile enum threadState* state = &comm->state;
   while (1) {
-    if (comm->reqs.requests == NULL) {
-      sched_yield();
-    } else {
-      int idle = 1;
-      for (int i=0; i<MAX_REQUESTS; i++) {
-        struct ncclSocketRequest* r = (struct ncclSocketRequest*) comm->reqs.requests+i;
-        if (r != NULL && r->used == 1) {
-          ncclSocketProgress(r);
-          idle = 0;
+    int idle = 1;
+    for (int i=0; i<MAX_REQUESTS; i++) {
+      struct ncclSocketRequest* r = (struct ncclSocketRequest*) comm->reqs.requests+i;
+      if (r != NULL && r->used == 1 && r->offset >= 0 && r->offset < r->size) {
+        if (socketProgress(r->op, r->fd, r->data, r->size, &r->offset) != ncclSuccess) {
+          WARN("NET/Socket : socket progress error");
         }
+        idle = 0;
       }
-      if (idle) sched_yield();
     }
-    if (*state == stop) {
-      return NULL;
-    }
+    if (*state == stop) return NULL;
+    if (idle) sched_yield();
   }
 }
 
-ncclResult_t ncclSocketNewComm(struct ncclSocketComm** comm, int needThread) {
+ncclResult_t ncclSocketNewComm(struct ncclSocketComm** comm) {
   NCCLCHECK(ncclCalloc(comm, 1));
   (*comm)->fd = -1;
-  if (needThread) {
-    pthread_create(&((*comm)->proxyThread), NULL, persistentSocketThread, *comm);
-    (*comm)->state = start;
-  }
   return ncclSuccess;
 }
 
@@ -173,7 +154,7 @@ ncclResult_t ncclSocketListen(int dev, void* opaqueHandle, void** listenComm) {
     memcpy(&handle->connectAddr, &localAddr, sizeof(handle->connectAddr));
   } // Otherwise, handle stores a local address
   struct ncclSocketComm* comm;
-  NCCLCHECK(ncclSocketNewComm(&comm, 0));
+  NCCLCHECK(ncclSocketNewComm(&comm));
   NCCLCHECK(createListenSocket(&comm->fd, &handle->connectAddr));
   *listenComm = comm;
   return ncclSuccess;
@@ -181,7 +162,7 @@ ncclResult_t ncclSocketListen(int dev, void* opaqueHandle, void** listenComm) {
 
 ncclResult_t ncclSocketConnect(int dev, void* opaqueHandle, void** sendComm) {
   struct ncclSocketComm* comm;
-  NCCLCHECK(ncclSocketNewComm(&comm, 1));
+  NCCLCHECK(ncclSocketNewComm(&comm));
   struct ncclSocketHandle* handle = (struct ncclSocketHandle*) opaqueHandle;
   NCCLCHECK(connectAddress(&comm->fd, &handle->connectAddr));
   *sendComm = comm;
@@ -191,7 +172,7 @@ ncclResult_t ncclSocketConnect(int dev, void* opaqueHandle, void** sendComm) {
 ncclResult_t ncclSocketAccept(void* listenComm, void** recvComm) {
   struct ncclSocketComm* lComm = (struct ncclSocketComm*)listenComm;
   struct ncclSocketComm* rComm;
-  NCCLCHECK(ncclSocketNewComm(&rComm, 1));
+  NCCLCHECK(ncclSocketNewComm(&rComm));
   struct sockaddr_in sockaddr;
   socklen_t socklen = sizeof(struct sockaddr_in);
   SYSCHECKVAL(accept(lComm->fd, (struct sockaddr*)&sockaddr, &socklen), "accept", rComm->fd);
@@ -199,9 +180,12 @@ ncclResult_t ncclSocketAccept(void* listenComm, void** recvComm) {
   return ncclSuccess;
 }
 
-ncclResult_t ncclSocketGetRequest(struct ncclSocketReqs* reqs, int op, void* data, int size, int fd, struct ncclSocketRequest** req) {
+ncclResult_t ncclSocketGetRequest(struct ncclSocketComm* comm, int op, void* data, int size, int fd, struct ncclSocketRequest** req) {
+  struct ncclSocketReqs* reqs = &comm->reqs;
   if (reqs->requests == NULL) {
     NCCLCHECK(ncclCalloc(&reqs->requests, MAX_REQUESTS));
+    pthread_create(&(comm->proxyThread), NULL, persistentSocketThread, comm);
+    comm->state = start;
   }
   for (int i=0; i<MAX_REQUESTS; i++) {
     struct ncclSocketRequest* r = reqs->requests+i;
@@ -260,13 +244,13 @@ ncclResult_t ncclSocketDeregMr(void* comm, void* mhandle) { return ncclSuccess; 
 
 ncclResult_t ncclSocketIsend(void* sendComm, void* data, int size, void* mhandle, void** request) {
   struct ncclSocketComm* comm = (struct ncclSocketComm*)sendComm;
-  NCCLCHECK(ncclSocketGetRequest(&comm->reqs, NCCL_SOCKET_SEND, data, size, comm->fd, (struct ncclSocketRequest**)request));
+  NCCLCHECK(ncclSocketGetRequest(comm, NCCL_SOCKET_SEND, data, size, comm->fd, (struct ncclSocketRequest**)request));
   return ncclSuccess;
 }
 
 ncclResult_t ncclSocketIrecv(void* recvComm, void* data, int size, void* mhandle, void** request) {
   struct ncclSocketComm* comm = (struct ncclSocketComm*)recvComm;
-  NCCLCHECK(ncclSocketGetRequest(&comm->reqs, NCCL_SOCKET_RECV, data, size, comm->fd, (struct ncclSocketRequest**)request));
+  NCCLCHECK(ncclSocketGetRequest(comm, NCCL_SOCKET_RECV, data, size, comm->fd, (struct ncclSocketRequest**)request));
   return ncclSuccess;
 }
 
