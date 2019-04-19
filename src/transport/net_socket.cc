@@ -190,9 +190,9 @@ ncclResult_t ncclSocketAccept(void* listenComm, void** recvComm) {
   struct ncclSocketComm* lComm = (struct ncclSocketComm*)listenComm;
   struct ncclSocketComm* rComm;
   NCCLCHECK(ncclSocketNewComm(&rComm));
-  struct sockaddr_in sockaddr;
-  socklen_t socklen = sizeof(struct sockaddr_in);
   for (int i=0; i<MAX_SOCKETS; i++) {
+    struct sockaddr_in sockaddr;
+    socklen_t socklen = sizeof(struct sockaddr_in);
     SYSCHECKVAL(accept(lComm->fd[i], (struct sockaddr*)&sockaddr, &socklen), "accept", rComm->fd[i]);
   }
   *recvComm = rComm;
