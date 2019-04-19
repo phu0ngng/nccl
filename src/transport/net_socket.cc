@@ -87,6 +87,7 @@ struct ncclSocketRequest {
   int fd;
   int offset;
   int used;
+  ncclResult_t result;
 };
 
 #define MAX_REQUESTS 128
@@ -112,8 +113,10 @@ void* persistentSocketThread(void *comm_) {
     for (int i=0; i<MAX_REQUESTS; i++) {
       struct ncclSocketRequest* r = (struct ncclSocketRequest*) comm->reqs.requests+i;
       if (r != NULL && r->used == 1 && r->offset >= 0 && r->offset < r->size) {
-        if (socketProgress(r->op, r->fd, r->data, r->size, &r->offset) != ncclSuccess) {
+        r->result = socketProgress(r->op, r->fd, r->data, r->size, &r->offset);
+        if (r->result != ncclSuccess) {
           WARN("NET/Socket : socket progress error");
+          return NULL;
         }
         idle = 0;
       }
@@ -196,6 +199,7 @@ ncclResult_t ncclSocketGetRequest(struct ncclSocketComm* comm, int op, void* dat
       r->fd = fd;
       r->offset = -1;
       r->used = 1;
+      r->result = ncclSuccess;
       *req = r;
       return ncclSuccess;
     }
@@ -211,6 +215,7 @@ ncclResult_t ncclSocketTest(void* request, int* done, int* size) {
     WARN("NET/Socket : test called with NULL request");
     return ncclInternalError;
   }
+  if (r->result != ncclSuccess) return r->result;
   if (r->offset == -1) { /* try to send/recv size */
     int data = r->size;
     int offset = 0;
