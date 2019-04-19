@@ -137,7 +137,12 @@ ncclResult_t ncclSocketNewComm(struct ncclSocketComm** comm) {
   for (int i=0; i < MAX_SOCKETS; i++) {
     (*comm)->fd[i] = -1;
   }
-  (*comm)->nSocks = ncclParamSocketNsocks();
+  int nSocks = ncclParamSocketNsocks();
+  if (nSocks > MAX_SOCKETS) {
+    WARN("NET/Socket : The number of sockets set is greater than the maximum allowed, setting to the maximum (%d)", MAX_SOCKETS);
+    nSocks = MAX_SOCKETS;
+  }
+  (*comm)->nSocks = nSocks;
   (*comm)->nextFd = 0;
   return ncclSuccess;
 }
