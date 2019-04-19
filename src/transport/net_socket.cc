@@ -8,6 +8,7 @@
 #include "core.h"
 #include "socket.h"
 #include "net.h"
+#include "param.h"
 
 #include <assert.h>
 #include <pthread.h>
@@ -77,6 +78,7 @@ static ncclResult_t GetSocketAddr(int dev, union socketAddress* addr) {
 /* Communication functions */
 
 #define MAX_SOCKETS 2
+NCCL_PARAM(SocketNsocks, "NSOCKETS", 1);
 
 struct ncclSocketHandle {
   union socketAddress connectAddr[MAX_SOCKETS];
@@ -102,6 +104,7 @@ enum threadState {start, stop};
 
 struct ncclSocketComm {
   int fd[MAX_SOCKETS];
+  int nSocks;
   int nextFd;
   struct ncclSocketReqs reqs;
   pthread_t proxyThread;
@@ -134,6 +137,7 @@ ncclResult_t ncclSocketNewComm(struct ncclSocketComm** comm) {
   for (int i=0; i < MAX_SOCKETS; i++) {
     (*comm)->fd[i] = -1;
   }
+  (*comm)->nSocks = ncclParamSocketNsocks();
   (*comm)->nextFd = 0;
   return ncclSuccess;
 }
@@ -147,15 +151,17 @@ ncclResult_t ncclSocketCreateHandle(void* opaqueHandle, const char* str) {
 ncclResult_t ncclSocketListen(int dev, void* opaqueHandle, void** listenComm) {
   struct ncclSocketHandle* handle = (struct ncclSocketHandle*) opaqueHandle;
   static_assert(sizeof(struct ncclSocketHandle) < NCCL_NET_HANDLE_MAXSIZE, "ncclSocketHandle size too large");
+  struct ncclSocketComm* comm;
+  NCCLCHECK(ncclSocketNewComm(&comm));
   // if dev >= 0, listen based on dev
   if (dev >= 0) {
-    for (int i=0; i<MAX_SOCKETS; i++) {
+    for (int i=0; i<comm->nSocks; i++) {
       NCCLCHECK(GetSocketAddr(dev, handle->connectAddr+i));
     }
   } else if (dev == findSubnetIf) {
     // handle stores a remote address
     // need to find a local addr that is in the same network as the remote addr
-    for (int i=0; i<MAX_SOCKETS; i++) {
+    for (int i=0; i<comm->nSocks; i++) {
       union socketAddress localAddr;
       char ifName[MAX_IF_NAME_SIZE];
       if (findInterfaceMatchSubnet(ifName, &localAddr, handle->connectAddr[i], MAX_IF_NAME_SIZE, 1) <= 0) {
@@ -166,9 +172,7 @@ ncclResult_t ncclSocketListen(int dev, void* opaqueHandle, void** listenComm) {
       memcpy(handle->connectAddr+i, &localAddr, sizeof(union socketAddress));
     }
   } // Otherwise, handle stores a local address
-  struct ncclSocketComm* comm;
-  NCCLCHECK(ncclSocketNewComm(&comm));
-  for (int i=0; i<MAX_SOCKETS; i++) {
+  for (int i=0; i<comm->nSocks; i++) {
     NCCLCHECK(createListenSocket(comm->fd+i, handle->connectAddr+i));
   }
   *listenComm = comm;
@@ -179,7 +183,7 @@ ncclResult_t ncclSocketConnect(int dev, void* opaqueHandle, void** sendComm) {
   struct ncclSocketComm* comm;
   NCCLCHECK(ncclSocketNewComm(&comm));
   struct ncclSocketHandle* handle = (struct ncclSocketHandle*) opaqueHandle;
-  for (int i=0; i<MAX_SOCKETS; i++) {
+  for (int i=0; i<comm->nSocks; i++) {
     NCCLCHECK(connectAddress(&comm->fd[i], handle->connectAddr+i));
   }
   *sendComm = comm;
@@ -190,7 +194,8 @@ ncclResult_t ncclSocketAccept(void* listenComm, void** recvComm) {
   struct ncclSocketComm* lComm = (struct ncclSocketComm*)listenComm;
   struct ncclSocketComm* rComm;
   NCCLCHECK(ncclSocketNewComm(&rComm));
-  for (int i=0; i<MAX_SOCKETS; i++) {
+  if (rComm->nSocks != lComm->nSocks) rComm->nSocks = lComm->nSocks;
+  for (int i=0; i<lComm->nSocks; i++) {
     struct sockaddr_in sockaddr;
     socklen_t socklen = sizeof(struct sockaddr_in);
     SYSCHECKVAL(accept(lComm->fd[i], (struct sockaddr*)&sockaddr, &socklen), "accept", rComm->fd[i]);
@@ -266,14 +271,14 @@ ncclResult_t ncclSocketDeregMr(void* comm, void* mhandle) { return ncclSuccess; 
 ncclResult_t ncclSocketIsend(void* sendComm, void* data, int size, void* mhandle, void** request) {
   struct ncclSocketComm* comm = (struct ncclSocketComm*)sendComm;
   NCCLCHECK(ncclSocketGetRequest(comm, NCCL_SOCKET_SEND, data, size, comm->fd[comm->nextFd], (struct ncclSocketRequest**)request));
-  comm->nextFd = (comm->nextFd + 1) % MAX_SOCKETS;
+  comm->nextFd = (comm->nextFd + 1) % comm->nSocks;
   return ncclSuccess;
 }
 
 ncclResult_t ncclSocketIrecv(void* recvComm, void* data, int size, void* mhandle, void** request) {
   struct ncclSocketComm* comm = (struct ncclSocketComm*)recvComm;
   NCCLCHECK(ncclSocketGetRequest(comm, NCCL_SOCKET_RECV, data, size, comm->fd[comm->nextFd], (struct ncclSocketRequest**)request));
-  comm->nextFd = (comm->nextFd + 1) % MAX_SOCKETS;
+  comm->nextFd = (comm->nextFd + 1) % comm->nSocks;
   return ncclSuccess;
 }
 
@@ -290,7 +295,7 @@ ncclResult_t ncclSocketClose(void* opaqueComm) {
       pthread_join(comm->proxyThread, NULL);
     }
     free(comm->reqs.requests);
-    for (int i=0; i<MAX_SOCKETS; i++) {
+    for (int i=0; i<comm->nSocks; i++) {
       close(comm->fd[i]);
     }
     free(comm);
