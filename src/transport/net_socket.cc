@@ -81,7 +81,7 @@ static ncclResult_t GetSocketAddr(int dev, union socketAddress* addr) {
 NCCL_PARAM(SocketNsocks, "NSOCKETS", 1);
 
 struct ncclSocketHandle {
-  union socketAddress connectAddr[MAX_SOCKETS];
+  union socketAddress connectAddr;
 };
 
 struct ncclSocketRequest {
@@ -149,7 +149,7 @@ ncclResult_t ncclSocketNewComm(struct ncclSocketComm** comm) {
 
 ncclResult_t ncclSocketCreateHandle(void* opaqueHandle, const char* str) {
   struct ncclSocketHandle* handle = (struct ncclSocketHandle*) opaqueHandle;
-  NCCLCHECK(GetSocketAddrFromString(handle->connectAddr, str));
+  NCCLCHECK(GetSocketAddrFromString(&handle->connectAddr, str));
   return ncclSuccess;
 }
 
@@ -160,26 +160,20 @@ ncclResult_t ncclSocketListen(int dev, void* opaqueHandle, void** listenComm) {
   NCCLCHECK(ncclSocketNewComm(&comm));
   // if dev >= 0, listen based on dev
   if (dev >= 0) {
-    for (int i=0; i<comm->nSocks; i++) {
-      NCCLCHECK(GetSocketAddr(dev, handle->connectAddr+i));
-    }
+    NCCLCHECK(GetSocketAddr(dev, &handle->connectAddr));
   } else if (dev == findSubnetIf) {
     // handle stores a remote address
     // need to find a local addr that is in the same network as the remote addr
-    for (int i=0; i<comm->nSocks; i++) {
-      union socketAddress localAddr;
-      char ifName[MAX_IF_NAME_SIZE];
-      if (findInterfaceMatchSubnet(ifName, &localAddr, handle->connectAddr[i], MAX_IF_NAME_SIZE, 1) <= 0) {
-        WARN("NET/Socket : No usable listening interface found");
-        return ncclSystemError;
-      }
-      // pass the local address back
-      memcpy(handle->connectAddr+i, &localAddr, sizeof(union socketAddress));
+    union socketAddress localAddr;
+    char ifName[MAX_IF_NAME_SIZE];
+    if (findInterfaceMatchSubnet(ifName, &localAddr, handle->connectAddr, MAX_IF_NAME_SIZE, 1) <= 0) {
+      WARN("NET/Socket : No usable listening interface found");
+      return ncclSystemError;
     }
+    // pass the local address back
+    memcpy(&handle->connectAddr, &localAddr, sizeof(union socketAddress));
   } // Otherwise, handle stores a local address
-  for (int i=0; i<comm->nSocks; i++) {
-    NCCLCHECK(createListenSocket(comm->fd+i, handle->connectAddr+i));
-  }
+  NCCLCHECK(createListenSocket(comm->fd, &handle->connectAddr));
   *listenComm = comm;
   return ncclSuccess;
 }
@@ -189,7 +183,7 @@ ncclResult_t ncclSocketConnect(int dev, void* opaqueHandle, void** sendComm) {
   NCCLCHECK(ncclSocketNewComm(&comm));
   struct ncclSocketHandle* handle = (struct ncclSocketHandle*) opaqueHandle;
   for (int i=0; i<comm->nSocks; i++) {
-    NCCLCHECK(connectAddress(&comm->fd[i], handle->connectAddr+i));
+    NCCLCHECK(connectAddress(&comm->fd[i], &handle->connectAddr));
   }
   *sendComm = comm;
   return ncclSuccess;
@@ -199,11 +193,10 @@ ncclResult_t ncclSocketAccept(void* listenComm, void** recvComm) {
   struct ncclSocketComm* lComm = (struct ncclSocketComm*)listenComm;
   struct ncclSocketComm* rComm;
   NCCLCHECK(ncclSocketNewComm(&rComm));
-  if (rComm->nSocks != lComm->nSocks) rComm->nSocks = lComm->nSocks;
-  for (int i=0; i<lComm->nSocks; i++) {
+  for (int i=0; i<rComm->nSocks; i++) {
     struct sockaddr_in sockaddr;
     socklen_t socklen = sizeof(struct sockaddr_in);
-    SYSCHECKVAL(accept(lComm->fd[i], (struct sockaddr*)&sockaddr, &socklen), "accept", rComm->fd[i]);
+    SYSCHECKVAL(accept(lComm->fd[0], (struct sockaddr*)&sockaddr, &socklen), "accept", rComm->fd[i]);
   }
   *recvComm = rComm;
   return ncclSuccess;
@@ -301,7 +294,7 @@ ncclResult_t ncclSocketClose(void* opaqueComm) {
     }
     free(comm->reqs.requests);
     for (int i=0; i<comm->nSocks; i++) {
-      close(comm->fd[i]);
+      if (comm->fd[i] != -1) close(comm->fd[i]);
     }
     free(comm);
   }
