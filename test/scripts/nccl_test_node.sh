@@ -43,6 +43,8 @@ else
   salloc_cmd="timeout ${timeout}m "
 fi
 
+export NCCL_DEBUG=INFO
+
 cd $BLDDIR
 if [ "$mode" == "dlfw" ] && [ "$gpumodel" == "P100" ]; then
   $SHDIR/caffe2.sh $gpumodel
