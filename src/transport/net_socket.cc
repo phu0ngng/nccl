@@ -82,6 +82,7 @@ NCCL_PARAM(SocketNsocks, "NSOCKETS", 1);
 
 struct ncclSocketHandle {
   union socketAddress connectAddr;
+  uint16_t port[MAX_SOCKETS];
 };
 
 struct ncclSocketRequest {
@@ -176,7 +177,13 @@ ncclResult_t ncclSocketListen(int dev, void* opaqueHandle, void** listenComm) {
     // pass the local address back
     memcpy(&handle->connectAddr, &localAddr, sizeof(union socketAddress));
   } // Otherwise, handle stores a local address
+  union socketAddress copy = handle->connectAddr;
   NCCLCHECK(createListenSocket(&comm->ctrlFd, &handle->connectAddr));
+  for (int i=0; i<comm->nSocks; i++) {
+    union socketAddress addr = copy;
+    NCCLCHECK(createListenSocket(comm->fd+i, &addr));
+    handle->port[i] = socketToPort(&addr.sa);
+  }
   *listenComm = comm;
   return ncclSuccess;
 }
@@ -187,7 +194,9 @@ ncclResult_t ncclSocketConnect(int dev, void* opaqueHandle, void** sendComm) {
   struct ncclSocketHandle* handle = (struct ncclSocketHandle*) opaqueHandle;
   NCCLCHECK(connectAddress(&comm->ctrlFd, &handle->connectAddr));
   for (int i=0; i<comm->nSocks; i++) {
-    NCCLCHECK(connectAddress(comm->fd+i, &handle->connectAddr));
+    union socketAddress addr = handle->connectAddr;
+    setSocketPort(&addr.sa, handle->port[i]);
+    NCCLCHECK(connectAddress(comm->fd+i, &addr));
   }
   *sendComm = comm;
   return ncclSuccess;
@@ -203,7 +212,7 @@ ncclResult_t ncclSocketAccept(void* listenComm, void** recvComm) {
   for (int i=0; i<rComm->nSocks; i++) {
     struct sockaddr_in sockaddr;
     socklen_t socklen = sizeof(struct sockaddr_in);
-    SYSCHECKVAL(accept(lComm->ctrlFd, (struct sockaddr*)&sockaddr, &socklen), "accept", rComm->fd[i]);
+    SYSCHECKVAL(accept(lComm->fd[i], (struct sockaddr*)&sockaddr, &socklen), "accept", rComm->fd[i]);
   }
   *recvComm = rComm;
   return ncclSuccess;
