@@ -113,12 +113,11 @@ class ncclLL128Primitives {
   }
 
   template <int ELEMS_PER_THREAD>
-  inline __device__ void loadSrcToShmem(int maxOffset, const uint64_t* src64Ptr) {
+  inline __device__ void loadSrcToShmem128(int maxOffset, const uint64_t* src64Ptr) {
     uint64_t v[ELEMS_PER_THREAD];
     #pragma unroll
     for (int u=0; u<ELEMS_PER_THREAD; u+=2) {
       if (u*WARP_SIZE < maxOffset) load128(src64Ptr+u*WARP_SIZE, v[u], v[u+1]);
-      //if (tid == 31 || tid == 32) if (u == 0 || u == 6) printf("%d/%d : %p(%d/%d)\n", tid, u, src64Ptr+u*WARP_SIZE, u*WARP_SIZE, maxOffset); }
     }
     uint64_t* shmemAsmPtr = shmemCvtPtr(shmem);
     #pragma unroll
@@ -127,8 +126,15 @@ class ncclLL128Primitives {
     }
   }
 
+  inline __device__ void loadSrcToShmem(int start, int end, const T* srcPtr) {
+    T* shmemPtr = (T*)(shmem-2*wid);
+    for (int offset = start+tid; offset < end; offset += WARP_SIZE) {
+      shmemPtr[offset] = srcPtr[offset];
+    }
+  }
+
   template <int ELEMS_PER_THREAD>
-  inline __device__ void storeShmemToDst(int maxOffset, uint64_t* dst64Ptr) {
+  inline __device__ void storeShmemToDst128(int maxOffset, uint64_t* dst64Ptr) {
     uint64_t v[ELEMS_PER_THREAD];
     uint64_t* shmemAsmPtr = shmemCvtPtr(shmem);
     #pragma unroll
@@ -138,6 +144,13 @@ class ncclLL128Primitives {
     #pragma unroll
     for (int u=0; u<ELEMS_PER_THREAD; u+=2) {
       if (u*WARP_SIZE < maxOffset) store128(dst64Ptr+u*WARP_SIZE, v[u], v[u+1]);
+    }
+  }
+
+  inline __device__ void storeShmemToDst(int start, int end, T* dstPtr) {
+    T* shmemPtr = (T*)(shmem-2*wid);
+    for (int offset = start+tid; offset < end; offset += WARP_SIZE) {
+      dstPtr[offset] = shmemPtr[offset];
     }
   }
 
@@ -253,16 +266,31 @@ class ncclLL128Primitives {
     uint64_t* dst64Ptr = ((uint64_t*)dstPtr);
 
     int ll128Offset = LL128INC*warp+2*wid;
-    int elemOffset = ELEMINC*warp+2*wid;
+    int elemOffset = ELEMINC*warp;
     const int nwarps = nthreads/WARP_SIZE;
 
-    while (elemOffset < nelem64) {
-      const int maxOffset = min(nelem64-elemOffset, (int)ELEMINC-(2*wid));
-      if (SRC) loadSrcToShmem<NCCL_LL128_SHMEM_ELEMS_PER_THREAD>(maxOffset, src64Ptr+elemOffset);
+    while (elemOffset*(sizeof(uint64_t)/sizeof(T)) < nelem) {
+      const int maxOffset128 = min(nelem64-elemOffset, (int)ELEMINC);
+      const int maxOffset = min(nelem-(elemOffset*((int)(sizeof(uint64_t)/sizeof(T)))), (int)(ELEMINC*(sizeof(uint64_t)/sizeof(T))));
+      if (SRC) {
+        int done = 0;
+        if ((((uint64_t)srcPtr)&0xf) == 0) {
+          loadSrcToShmem128<NCCL_LL128_SHMEM_ELEMS_PER_THREAD>(maxOffset128-2*wid, src64Ptr+elemOffset+2*wid);
+          done = maxOffset128*(sizeof(uint64_t)/sizeof(T));
+        }
+        loadSrcToShmem(done, maxOffset, (T*)(src64Ptr+elemOffset));
+      }
       __syncwarp();
       recvReduceSendCopy<NCCL_LL128_SHMEM_ELEMS_PER_THREAD, RECV, SEND, SRC, DST>(ll128Offset);
       __syncwarp();
-      if (DST) storeShmemToDst<NCCL_LL128_SHMEM_ELEMS_PER_THREAD>(maxOffset, dst64Ptr+elemOffset);
+      if (DST) {
+        int done = 0;
+        if ((((uint64_t)dstPtr)&0xf) == 0) {
+          storeShmemToDst128<NCCL_LL128_SHMEM_ELEMS_PER_THREAD>(maxOffset128-2*wid, dst64Ptr+elemOffset+2*wid);
+          done = maxOffset128*(sizeof(uint64_t)/sizeof(T));
+        }
+        storeShmemToDst(done, maxOffset, (T*)(dst64Ptr+elemOffset));
+      }
       __syncwarp();
       ll128Offset += LL128INC*nwarps;
       elemOffset += ELEMINC*nwarps;
