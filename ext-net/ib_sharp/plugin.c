@@ -1023,10 +1023,11 @@ ncclResult_t ncclSharpConnect(void* handles[], int nranks, int rank, void* liste
   NCCLCHECK(ncclIbAccept(listenComm, &cComm->recvComm)); // From prev
 
   struct ncclSharpInfo* allInfo;
-  uint pid = getpid();
+  pid_t pid = getpid();
+  pthread_t tid = pthread_self();
   NCCLCHECK(ncclIbMalloc((void**)&allInfo, sizeof(struct ncclSharpInfo)*nranks));
   allInfo[cComm->rank].hostId = gethostid();
-  allInfo[cComm->rank].jobId = (((uint64_t)allInfo[cComm->rank].hostId << 32) | pid);
+  allInfo[cComm->rank].jobId = (((uint64_t)allInfo[cComm->rank].hostId << 32) | (pid ^ tid));
   NCCLCHECK(ncclSharpAllGather(cComm, allInfo, sizeof(struct ncclSharpInfo)));
 
   // Find my local rank;
