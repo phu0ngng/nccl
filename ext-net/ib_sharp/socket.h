@@ -9,6 +9,7 @@
 
 #include <sys/socket.h>
 #include <stdio.h>
+#include <string.h>
 #include <arpa/inet.h>
 #include <netinet/tcp.h>
 #include <netinet/in.h>

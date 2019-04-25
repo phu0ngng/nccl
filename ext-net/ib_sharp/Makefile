@@ -6,12 +6,12 @@
 .PHONY : test build
 default: build
 
-NCCL_HOME:=../../build/
 BUILDDIR=build
-CUDA_HOME:=/usr/local/cuda
-SHARP_HOME:=/opt/hpcx/v2.4.0_update/sharp
+NCCL_HOME ?= ../../build/
+CUDA_HOME ?= /usr/local/cuda
+SHARP_HOME ?= /opt/hpcx/v2.4.0_update/sharp
 INC:= -I$(NCCL_HOME)/include -I$(CUDA_HOME)/include -I$(SHARP_HOME)/include
-CFLAGS:=-fPIC $(INC) -I. -g -O0
+CFLAGS:=-fPIC $(INC) -std=c99  -D_GNU_SOURCE -I. -g -O0
 PLUGIN_SO:=$(BUILDDIR)/lib/libnccl-net.so
 FILES:=plugin.c ibvwrap.c utils.c
 OBJS:=$(FILES:%.c=$(BUILDDIR)/obj/%.o)
