@@ -1042,7 +1042,6 @@ ncclResult_t ncclSharpConnect(void* handles[], int nranks, int rank, void* liste
   struct sharp_coll_init_spec init_spec = {0};
   init_spec.progress_func  = NULL;
   init_spec.job_id = jobId;
-  init_spec.hostlist = NULL;
   init_spec.world_rank = cComm->rank;
   init_spec.world_size = nranks;
   init_spec.world_local_rank = 0;
@@ -1073,7 +1072,6 @@ ncclResult_t ncclSharpConnect(void* handles[], int nranks, int rank, void* liste
   struct sharp_coll_comm_init_spec comm_spec;
   comm_spec.rank = cComm->rank;
   comm_spec.size = nranks;
-  comm_spec.is_comm_world = 1;
   comm_spec.oob_ctx = cComm;
   comm_spec.group_world_ranks = NULL;
 
