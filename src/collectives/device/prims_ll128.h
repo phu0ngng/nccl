@@ -15,7 +15,6 @@ class ncclLL128Primitives {
   const int nthreads;
   const int warp;
   const int wid;
-  const int warpOffset;
   const bool flagThread;
   int nrecv = 0;
   int nsend = 0;
@@ -113,84 +112,44 @@ class ncclLL128Primitives {
     if (tid == i && sendConnTailPtr) { __threadfence(); *sendConnTailPtr = sendStep[i]; }
   }
 
+  template <int ELEMS_PER_THREAD>
+  inline __device__ void loadSrcToShmem(int maxOffset, const uint64_t* src64Ptr) {
+    uint64_t v[ELEMS_PER_THREAD];
+    #pragma unroll
+    for (int u=0; u<ELEMS_PER_THREAD; u+=2) {
+      if (u*WARP_SIZE < maxOffset) load128(src64Ptr+u*WARP_SIZE, v[u], v[u+1]);
+      //if (tid == 31 || tid == 32) if (u == 0 || u == 6) printf("%d/%d : %p(%d/%d)\n", tid, u, src64Ptr+u*WARP_SIZE, u*WARP_SIZE, maxOffset); }
+    }
+    uint64_t* shmemAsmPtr = shmemCvtPtr(shmem);
+    #pragma unroll
+    for (int u=0; u<ELEMS_PER_THREAD; u+=2) {
+      storeShmem128(shmemAsmPtr+u*WARP_SIZE, v[u], v[u+1]);
+    }
+  }
+
+  template <int ELEMS_PER_THREAD>
+  inline __device__ void storeShmemToDst(int maxOffset, uint64_t* dst64Ptr) {
+    uint64_t v[ELEMS_PER_THREAD];
+    uint64_t* shmemAsmPtr = shmemCvtPtr(shmem);
+    #pragma unroll
+    for (int u=0; u<ELEMS_PER_THREAD; u+=2) {
+      loadShmem128(shmemAsmPtr+u*WARP_SIZE, v[u], v[u+1]);
+    }
+    #pragma unroll
+    for (int u=0; u<ELEMS_PER_THREAD; u+=2) {
+      if (u*WARP_SIZE < maxOffset) store128(dst64Ptr+u*WARP_SIZE, v[u], v[u+1]);
+    }
+  }
+
   #define WARP_MASK 0xffffffff
-
-  template <int ELEMS_PER_THREAD>
-  inline __device__ void loadSrcToShmem(int nelems, const T* srcPtr) {
-    const T* srcEnd = srcPtr + nelems;
-    const int nelem64 = ((nelems*sizeof(T))/(2*sizeof(uint64_t)))*2;
-    volatile T* shmemPtr = (volatile T*)shmem;
-    // Use 16B loads if aligned enough
-    if ((((uint64_t)(srcPtr) & 0xf) == 0)) {
-      const uint64_t* src64Ptr = ((uint64_t*)srcPtr) + warpOffset;
-      volatile uint64_t* shmem64Ptr = shmem + warpOffset;
-      const int maxOffset = nelem64 - warpOffset;
-      uint64_t v[ELEMS_PER_THREAD];
-      #pragma unroll
-      for (int u=0; u<ELEMS_PER_THREAD; u+=2) {
-        if (u*WARP_SIZE >= maxOffset) break;
-        load128(src64Ptr+u*WARP_SIZE, v[u], v[u+1]);
-      }
-      uint64_t* shmemAsmPtr = shmemCvtPtr(shmem64Ptr);
-      #pragma unroll
-      for (int u=0; u<ELEMS_PER_THREAD; u+=2) {
-        storeShmem128(shmemAsmPtr+u*WARP_SIZE, v[u], v[u+1]);
-      }
-      srcPtr += nelem64*sizeof(uint64_t)/sizeof(T);
-      shmemPtr += nelem64*sizeof(uint64_t)/sizeof(T);
-    }
-    // Do the rest with simple element load
-    srcPtr += tid;
-    shmemPtr += tid;
-    while (srcPtr < srcEnd) {
-      *shmemPtr = *srcPtr;
-      shmemPtr += nthreads;
-      srcPtr += nthreads;
-    }
-  }
-
-  template <int ELEMS_PER_THREAD>
-  inline __device__ void storeShmemToDst(int nelems, T* dstPtr) {
-    T* dstEnd = dstPtr + nelems;
-    const int nelem64 = ((nelems*sizeof(T))/(2*sizeof(uint64_t)))*2;
-    volatile T* shmemPtr = (volatile T*)shmem;
-    // Use 16B stores if aligned enough
-    if ((((uint64_t)(dstPtr) & 0xf) == 0)) {
-      uint64_t* dst64Ptr = ((uint64_t*)dstPtr) + warpOffset;
-      volatile uint64_t* shmem64Ptr = shmem + warpOffset;
-      const int maxOffset = nelem64 - warpOffset;
-      uint64_t v[ELEMS_PER_THREAD];
-      uint64_t* shmemAsmPtr = shmemCvtPtr(shmem64Ptr);
-      #pragma unroll
-      for (int u=0; u<ELEMS_PER_THREAD; u+=2) {
-        loadShmem128(shmemAsmPtr+u*WARP_SIZE, v[u], v[u+1]);
-      }
-      #pragma unroll
-      for (int u=0; u<ELEMS_PER_THREAD; u+=2) {
-        if (u*WARP_SIZE >= maxOffset) break;
-        store128(dst64Ptr+u*WARP_SIZE, v[u], v[u+1]);
-      }
-      dstPtr += nelem64*sizeof(uint64_t)/sizeof(T);
-      shmemPtr += nelem64*sizeof(uint64_t)/sizeof(T);
-    }
-    // Do the rest with simple element store
-    dstPtr += tid;
-    shmemPtr += tid;
-    while (dstPtr < dstEnd) {
-      *dstPtr = *shmemPtr;
-      shmemPtr += nthreads;
-      dstPtr += nthreads;
-    }
-  }
 
   template <int ELEMS_PER_THREAD, int RECV, int SEND, int SRC, int DST>
   __device__ __forceinline__ void recvReduceSendCopy(int ll128Offset) {
-    const int warpOffset = warp*ELEMS_PER_THREAD*WARP_SIZE+2*wid;
     uint64_t v[ELEMS_PER_THREAD];
 
     /************* Data Loading : SHMEM -> REG **************/
     if (SRC) {
-      volatile uint64_t* shmem64Ptr = shmem + warpOffset - warpOffset/NCCL_LL128_LINEELEMS;
+      volatile uint64_t* shmem64Ptr = shmem - (2*wid)/NCCL_LL128_LINEELEMS;
       #pragma unroll
       for (int u=0; u<ELEMS_PER_THREAD; u+=2) {
         v[u] = shmem64Ptr[u*(WARP_SIZE-2)];
@@ -202,7 +161,7 @@ class ncclLL128Primitives {
     /************************ Recv **************************/
     if (RECV) {
       uint64_t flag = recvFlag(0);
-      uint64_t* ptr = recvPtr(0)+ll128Offset+warpOffset;
+      uint64_t* ptr = recvPtr(0)+ll128Offset;
       bool needReload;
       uint64_t v0, v1;
       do {
@@ -222,7 +181,7 @@ class ncclLL128Primitives {
 
       for (int i=1; i<NRECV && i<nrecv; i++) {
         uint64_t flag = recvFlag(i);
-        uint64_t* ptr = recvPtr(i)+ll128Offset+warpOffset;
+        uint64_t* ptr = recvPtr(i)+ll128Offset;
         uint64_t v0, v1;
         do {
           needReload = false;
@@ -246,14 +205,14 @@ class ncclLL128Primitives {
     if (SEND) {
       for (int i=1; i<NSEND && i<nsend; i++) {
         int flag = sendFlag(i);
-        uint64_t* ptr = sendPtr(i)+ll128Offset+warpOffset;
+        uint64_t* ptr = sendPtr(i)+ll128Offset;
         #pragma unroll
         for (int u=0; u<ELEMS_PER_THREAD; u+=2) {
           store128(ptr+u*WARP_SIZE, v[u], flagThread ? flag : v[u+1]);
         }
       }
       int flag = sendFlag(0);
-      uint64_t* ptr = sendPtr(0)+ll128Offset+warpOffset;
+      uint64_t* ptr = sendPtr(0)+ll128Offset;
       #pragma unroll
       for (int u=0; u<ELEMS_PER_THREAD; u+=2) {
         store128(ptr+u*WARP_SIZE, v[u], flagThread ? flag : v[u+1]);
@@ -263,7 +222,7 @@ class ncclLL128Primitives {
 
     /************* Data Storing : REG -> SHMEM **************/
     if (DST) {
-      volatile uint64_t* shmem64Ptr = shmem + warpOffset - warpOffset/NCCL_LL128_LINEELEMS;
+      volatile uint64_t* shmem64Ptr = shmem - (2*wid)/NCCL_LL128_LINEELEMS;
       #pragma unroll
       for (int u=0; u<ELEMS_PER_THREAD; u+=2) {
         shmem64Ptr[u*(WARP_SIZE-2)] = v[u];
@@ -272,6 +231,9 @@ class ncclLL128Primitives {
     }
     /*********** End data Storing : REG -> SHMEM ************/
   }
+
+  #define LL128INC (WARP_SIZE*NCCL_LL128_SHMEM_ELEMS_PER_THREAD)
+  #define ELEMINC (LL128INC-(LL128INC/NCCL_LL128_LINEELEMS))
 
   template <int RECV, int SEND, int SRC, int DST>
   __device__ void GenericOp(const T* srcPtr, T* dstPtr, int nelem) {
@@ -282,40 +244,33 @@ class ncclLL128Primitives {
       FOR_SEND(postSend);
       return;
     }
-    int elemOffset = 0;
-    int ll128Offset = 0;
-    const int ll128Inc = NCCL_LL128_SHMEM_ELEMS_PER_THREAD*nthreads;
-    const int elemInc = (ll128Inc/NCCL_LL128_LINEELEMS)*NCCL_LL128_DATAELEMS*sizeof(uint64_t)/sizeof(T);
+    /* TODO : adjust size to something smaller for small nelems */
+    FOR_SEND(waitSend, NCCL_LL128_SLICE_ELEMS*sizeof(uint64_t));
+    barrier();
 
-    while (elemOffset < nelem) {
-      const int chunkElems = min(nelem-elemOffset, elemInc);
+    const int nelem64 = ((nelem*sizeof(T))/(2*sizeof(uint64_t)))*2;
+    const uint64_t* src64Ptr = ((uint64_t*)srcPtr);
+    uint64_t* dst64Ptr = ((uint64_t*)dstPtr);
 
-      if (SRC) loadSrcToShmem<NCCL_LL128_SHMEM_ELEMS_PER_THREAD>(chunkElems, srcPtr+elemOffset);
+    int ll128Offset = LL128INC*warp+2*wid;
+    int elemOffset = ELEMINC*warp+2*wid;
+    const int nwarps = nthreads/WARP_SIZE;
 
-      if (elemOffset == 0) { // First chunk
-        const int nLoops = DIVUP(nelem,elemInc);
-        FOR_SEND(waitSend, nLoops*NCCL_LL128_SHMEM_ELEMS_PER_THREAD*nthreads*sizeof(uint64_t));
-      }
-      barrier(); // Syncs both for waitSend and shmem data
-
+    while (elemOffset < nelem64) {
+      const int maxOffset = min(nelem64-elemOffset, (int)ELEMINC-(2*wid));
+      if (SRC) loadSrcToShmem<NCCL_LL128_SHMEM_ELEMS_PER_THREAD>(maxOffset, src64Ptr+elemOffset);
+      __syncwarp();
       recvReduceSendCopy<NCCL_LL128_SHMEM_ELEMS_PER_THREAD, RECV, SEND, SRC, DST>(ll128Offset);
-
-      exitIfAbortLocalBarrier(); // Syncs both for postSend/postRecv and shmem data
-      if (elemOffset + chunkElems == nelem) { // Last chunk
-        FOR_RECV(postRecv);
-        FOR_SEND(postSend);
-      }
-
-      if (DST) storeShmemToDst<NCCL_LL128_SHMEM_ELEMS_PER_THREAD>(chunkElems, dstPtr+elemOffset);
-
-      // We need this barrier to prevent next loop from writing shmem already
-      // in particular when next loop is not aligned and uses per-element loading
-      // while this store part used 16B storing -- or vice-versa.
-      barrier();
-
-      ll128Offset += ll128Inc;
-      elemOffset += elemInc;
+      __syncwarp();
+      if (DST) storeShmemToDst<NCCL_LL128_SHMEM_ELEMS_PER_THREAD>(maxOffset, dst64Ptr+elemOffset);
+      __syncwarp();
+      ll128Offset += LL128INC*nwarps;
+      elemOffset += ELEMINC*nwarps;
     }
+
+    exitIfAbortLocalBarrier();
+    FOR_RECV(postRecv);
+    FOR_SEND(postSend);
   }
 
   __device__ __forceinline__ void loadRecvConn(struct ncclConnInfo* conn, int i) {
@@ -362,7 +317,7 @@ class ncclLL128Primitives {
  public:
   __device__ __forceinline__
   ncclLL128Primitives(const int tid, const int nthreads, int* recvPeers, int* sendPeers, struct ncclChannel* channel, struct ncclDevComm* comm, const uint64_t opCount)
-    : comm(comm), tid(tid), nthreads(nthreads), warp(tid/WARP_SIZE), wid(tid%WARP_SIZE), flagThread((tid%8)==7), warpOffset(warp*NCCL_LL128_SHMEM_ELEMS_PER_THREAD*WARP_SIZE+2*wid), opCount(opCount), shmem(ncclShmem) {
+    : comm(comm), tid(tid), nthreads(nthreads), warp(tid/WARP_SIZE), wid(tid%WARP_SIZE), flagThread((tid%8)==7), opCount(opCount), shmem(ncclShmem+warp*NCCL_LL128_SHMEM_ELEMS_PER_THREAD*WARP_SIZE+2*wid) {
     // Make sure step is updated before we read it.
     barrier();
 
