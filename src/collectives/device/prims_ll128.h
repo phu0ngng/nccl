@@ -257,10 +257,6 @@ class ncclLL128Primitives {
       FOR_SEND(postSend);
       return;
     }
-    /* TODO : adjust size to something smaller for small nelems */
-    FOR_SEND(waitSend, NCCL_LL128_SLICE_ELEMS*sizeof(uint64_t));
-    barrier();
-
     const int nelem64 = ((nelem*sizeof(T))/(2*sizeof(uint64_t)))*2;
     const uint64_t* src64Ptr = ((uint64_t*)srcPtr);
     uint64_t* dst64Ptr = ((uint64_t*)dstPtr);
@@ -268,6 +264,9 @@ class ncclLL128Primitives {
     int ll128Offset = LL128INC*warp+2*wid;
     int elemOffset = ELEMINC*warp;
     const int nwarps = nthreads/WARP_SIZE;
+
+    FOR_SEND(waitSend, DIVUP(nelem*sizeof(T), ELEMINC*sizeof(uint64_t))*LL128INC*sizeof(uint64_t));
+    barrier();
 
     while (elemOffset*(sizeof(uint64_t)/sizeof(T)) < nelem) {
       const int maxOffset128 = min(nelem64-elemOffset, (int)ELEMINC);

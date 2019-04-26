@@ -360,8 +360,8 @@ ncclResult_t netSendConnect(struct ncclConnect* connectInfo, struct ncclConnecto
         resources->useGdr ? NCCL_PTR_CUDA : NCCL_PTR_HOST, &resources->mhandle));
   NCCLCHECK(ncclNetRegMr(resources->netSendComm, resources->devHostRecvMem->llBuff,
         NCCL_LL_BUFF_SIZE, NCCL_PTR_HOST, &resources->llMhandle));
-  NCCLCHECK(ncclNetRegMr(resources->netSendComm, resources->devHostRecvMem->ll128Buff,
-        NCCL_LL128_BUFF_SIZE, NCCL_PTR_HOST, &resources->ll128Mhandle));
+  NCCLCHECK(ncclNetRegMr(resources->netSendComm, recvMem->ll128Buff, NCCL_LL128_BUFF_SIZE,
+        resources->useGdr ? NCCL_PTR_CUDA : NCCL_PTR_HOST, &resources->ll128Mhandle));
 
   return ncclSuccess;
 }
@@ -459,7 +459,7 @@ ncclResult_t netSendProxy(struct ncclProxyArgs* args) {
                 volatile uint64_t* lines = (volatile uint64_t*)(localBuff+buffSlot*stepSize);
                 ready = 1;
                 for (int i=0; i<nFifoLines; i++) {
-                  if (lines[i*NCCL_LL128_LINEELEMS+NCCL_LL128_DATAELEMS] != flag) { ready = 0; break; printf("Line %d not OK, flag = %ld != %ld", i, lines[i*NCCL_LL128_LINEELEMS+NCCL_LL128_DATAELEMS], flag); }
+                  if (lines[i*NCCL_LL128_LINEELEMS+NCCL_LL128_DATAELEMS] != flag) { ready = 0; break; }
                 }
               }
               if (ready) {
