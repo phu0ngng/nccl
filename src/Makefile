@@ -93,17 +93,17 @@ $(PKGDIR)/nccl.pc : nccl.pc.in
 $(INCDIR)/%.h : %.h
 	@printf "Grabbing   %-35s > %s\n" $< $@
 	mkdir -p $(INCDIR)
-	cp -f $< $@
+	install -m 644 $< $@
 
 $(INCDIR)/nccl_%.h : include/nccl_%.h
 	@printf "Grabbing   %-35s > %s\n" $< $@
 	mkdir -p $(INCDIR)
-	cp -f $< $@
+	install -m 644 $< $@
 
 $(PKGDIR)/%.pc : %.pc
 	@printf "Grabbing   %-35s > %s\n" $< $@
 	mkdir -p $(PKGDIR)
-	cp -f $< $@
+	install -m 644 $< $@
 
 $(OBJDIR)/%.o : %.cc
 	@printf "Compiling  %-35s > %s\n" $< $@
