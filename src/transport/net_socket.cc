@@ -77,7 +77,7 @@ static ncclResult_t GetSocketAddr(int dev, union socketAddress* addr) {
 
 /* Communication functions */
 
-#define MAX_SOCKETS 32
+#define MAX_SOCKETS 16
 NCCL_PARAM(SocketNsocks, "NSOCKETS", 1);
 
 struct ncclSocketHandle {
