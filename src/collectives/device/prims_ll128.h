@@ -128,7 +128,7 @@ class ncclLL128Primitives {
 
   inline __device__ void loadSrcToShmem(int start, int end, const T* srcPtr) {
     T* shmemPtr = (T*)(shmem-2*wid);
-    for (int offset = start+tid; offset < end; offset += WARP_SIZE) {
+    for (int offset = start+wid; offset < end; offset += WARP_SIZE) {
       shmemPtr[offset] = srcPtr[offset];
     }
   }
@@ -149,7 +149,7 @@ class ncclLL128Primitives {
 
   inline __device__ void storeShmemToDst(int start, int end, T* dstPtr) {
     T* shmemPtr = (T*)(shmem-2*wid);
-    for (int offset = start+tid; offset < end; offset += WARP_SIZE) {
+    for (int offset = start+wid; offset < end; offset += WARP_SIZE) {
       dstPtr[offset] = shmemPtr[offset];
     }
   }
