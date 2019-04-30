@@ -345,8 +345,8 @@ static ncclResult_t computeColl(struct ncclInfo* info /* input */, struct ncclCo
     } else if (info->pattern == ncclPatternTreeUpDown) {
       // Optimize chunkSize / nSteps
       for (int steps=64; steps; steps >>= 1) {
-        while ((info->nBytes / (coll->args.nChannels*chunkSize) < steps) &&
-            (chunkSize > (steps*coll->args.nThreads*sizeof(uint64_t)))) {
+        while ((info->nBytes / (coll->args.nChannels*chunkSize) < steps*2) &&
+            (chunkSize > (steps*(coll->args.nThreads/2)*sizeof(uint64_t)))) {
           chunkSize /= 2;
         }
       }
