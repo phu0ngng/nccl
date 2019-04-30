@@ -338,12 +338,28 @@ static ncclResult_t computeColl(struct ncclInfo* info /* input */, struct ncclCo
     coll->args.lastChunkSize = DIVUP((info->nBytes-(info->nBytes/loopSize)*loopSize), coll->args.nChannels*info->nchunksPerLoop);
     ALIGN_SIZE(coll->args.lastChunkSize, coll->args.nThreads*sizeof(uint64_t));
     coll->args.lastChunkSize /= ncclTypeSize(info->datatype);
+  } else if (treeMode == 1 && llMode == 2) {
+    char* str = getenv("NCCL_CHUNKSIZE");
+    if (str && atoi(str)) {
+      chunkSize = atoi(str);
+    } else if (info->pattern == ncclPatternTreeUpDown) {
+      // Optimize chunkSize / nSteps
+      for (int steps=64; steps; steps >>= 1) {
+        while ((info->nBytes / (coll->args.nChannels*chunkSize) < steps) &&
+            (chunkSize > (steps*coll->args.nThreads*sizeof(uint64_t)))) {
+          chunkSize /= 2;
+        }
+      }
+    }
+    // Use lastChunkSize as chunkSize
+    coll->args.lastChunkSize = chunkSize*NCCL_LL128_DATAELEMS/(NCCL_LL128_LINEELEMS*ncclTypeSize(info->datatype));
   }
 
   // Compute nSteps for proxies
   int chunkEffectiveSize = chunkSize;
   if (llMode == 1) chunkEffectiveSize /= 2;
   if (llMode == 2) chunkEffectiveSize = (chunkSize / NCCL_LL128_LINEELEMS) * NCCL_LL128_DATAELEMS;
+//  if (info->comm->rank == 0) printf("Size %ld -> %dx%d, chunkSize %d\n", info->nBytes, coll->args.nChannels, coll->args.nThreads, chunkSize);
   int nLoops = (int)(DIVUP(info->nBytes, (((size_t)(coll->args.nChannels))*info->nchunksPerLoop*chunkEffectiveSize)));
   proxyArgs->nsteps = info->nstepsPerLoop * nLoops * chunkSteps;
   proxyArgs->sliceSteps = sliceSteps;
