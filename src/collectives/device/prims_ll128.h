@@ -49,11 +49,19 @@ class ncclLL128Primitives {
   // If any of the thread's predicate was True, all the threads call exit()
   inline __device__ void exitIfAbortLocalBarrier() {
     uint32_t popc;
-    asm volatile ("{"
-                  "   .reg .pred barr_pred;"
-                  "   setp.eq.u32 barr_pred,%1,1;"
-                  "   bar.red.popc.u32 %0, 14, %2, barr_pred;"
-                  "}" : "=r"(popc) : "r"(abort), "r"(nthreads));
+    if (NSEND>NRECV) {
+      asm volatile ("{"
+          "   .reg .pred barr_pred;"
+          "   setp.eq.u32 barr_pred, %1, 1;"
+          "   bar.red.popc.u32 %0, 1, %2, barr_pred;"
+          "}" : "=r"(popc) : "r"(abort), "r"(nthreads));
+    } else {
+      asm volatile ("{"
+          "   .reg .pred barr_pred;"
+          "   setp.eq.u32 barr_pred, %1, 1;"
+          "   bar.red.popc.u32 %0, 2, %2, barr_pred;"
+          "}" : "=r"(popc) : "r"(abort), "r"(nthreads));
+    }
     if (popc) {
       // Make sure threads not participating in the operation get the abort and all threads exit
       exitIfAbortBarrier(1);
@@ -61,7 +69,11 @@ class ncclLL128Primitives {
   }
 
   inline __device__ void barrier() {
-    asm volatile ("bar.sync 1, %0;" :: "r"(nthreads));
+    if (NSEND>NRECV) {
+      asm volatile ("bar.sync 1, %0;" :: "r"(nthreads));
+    } else {
+      asm volatile ("bar.sync 2, %0;" :: "r"(nthreads));
+    }
   }
 
   uint32_t mismatch = 0;
@@ -344,7 +356,7 @@ class ncclLL128Primitives {
  public:
   __device__ __forceinline__
   ncclLL128Primitives(const int tid, const int nthreads, int* recvPeers, int* sendPeers, struct ncclChannel* channel, struct ncclDevComm* comm, const uint64_t opCount)
-    : comm(comm), tid(tid), nthreads(nthreads), warp(tid/WARP_SIZE), wid(tid%WARP_SIZE), flagThread((tid%8)==7), opCount(opCount), shmem(ncclShmem+warp*NCCL_LL128_SHMEM_ELEMS_PER_THREAD*WARP_SIZE+2*wid) {
+    : comm(comm), tid(tid), nthreads(nthreads), warp(tid/WARP_SIZE), wid(tid%WARP_SIZE), flagThread((tid%8)==7), opCount(opCount), shmem(ncclShmem+(threadIdx.x/WARP_SIZE)*NCCL_LL128_SHMEM_ELEMS_PER_THREAD*WARP_SIZE+2*wid) {
     // Make sure step is updated before we read it.
     barrier();
 

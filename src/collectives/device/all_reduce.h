@@ -355,38 +355,42 @@ __device__ void ncclAllReduceTreeLLKernel(struct CollectiveArgs* args) {
   const T * __restrict__ thisInput = (const T*)args->ThisInput;
   T * __restrict__ thisOutput = (T*)args->ThisOutput;
 
-  do {
-    // Reduce : max number of recv is 3, max number of send is 1 (binary tree + local)
-    ncclLL128Primitives<T, FUNC, NCCL_MAX_TREE_ARITY, 1> LLprims(tid, nthreads, tree->down, &tree->up, channel, comm, args->opCount);
+  if (tree->up == -1) {
+    // ReduceAndBroadcast : max number of recv is 3, max number of send is 3
+    ncclLL128Primitives<T, FUNC, NCCL_MAX_TREE_ARITY, NCCL_MAX_TREE_ARITY> LLprims(tid, nthreads, tree->down, tree->down, channel, comm, args->opCount);
     for (ssize_t gridOffset = 0; gridOffset < size; gridOffset += loopSize) {
-      // Up
       ssize_t offset = gridOffset + bid*chunkSize;
       int nelem = min(chunkSize, size-offset);
-      if (tree->up == -1) {
-        LLprims.recvReduceCopy(thisInput+offset, thisOutput+offset, nelem);
-      } else if (tree->down[0] == -1) {
-        LLprims.send(thisInput+offset, nelem);
-      } else {
-        LLprims.recvReduceSend(thisInput+offset, nelem);
+      LLprims.recvReduceCopySend(thisInput+offset, thisOutput+offset, nelem);
+    }
+  } else {
+    if (tid < nthreads/2) {
+      // Reduce : max number of recv is 3, max number of send is 1 (binary tree + local)
+      ncclLL128Primitives<T, FUNC, NCCL_MAX_TREE_ARITY, 1> LLprims(tid, nthreads/2, tree->down, &tree->up, channel, comm, args->opCount);
+      for (ssize_t gridOffset = 0; gridOffset < size; gridOffset += loopSize) {
+        // Up
+        ssize_t offset = gridOffset + bid*chunkSize;
+        int nelem = min(chunkSize, size-offset);
+        if (tree->down[0] == -1) {
+          LLprims.send(thisInput+offset, nelem);
+        } else {
+          LLprims.recvReduceSend(thisInput+offset, nelem);
+        }
+      }
+    } else {
+      // Broadcast : max number of recv is 1, max number of send is 3 (binary tree + local)
+      ncclLL128Primitives<T, FUNC, 1, NCCL_MAX_TREE_ARITY> LLprims(tid-nthreads/2, nthreads/2, &tree->up, tree->down, channel, comm, args->opCount);
+      for (ssize_t gridOffset = 0; gridOffset < size; gridOffset += loopSize) {
+        // Down
+        ssize_t offset = gridOffset + bid*chunkSize;
+        int nelem = min(chunkSize, size-offset);
+        if (tree->down[0] == -1) {
+          LLprims.recv(thisOutput+offset, nelem);
+        } else {
+          LLprims.recvCopySend(thisOutput+offset, nelem);
+        }
       }
     }
-  } while(0);
-
-  do {
-    // Broadcast : max number of recv is 1, max number of send is 3 (binary tree + local)
-    ncclLL128Primitives<T, FUNC, 1, NCCL_MAX_TREE_ARITY> LLprims(tid, nthreads, &tree->up, tree->down, channel, comm, args->opCount);
-    for (ssize_t gridOffset = 0; gridOffset < size; gridOffset += loopSize) {
-      // Down
-      ssize_t offset = gridOffset + bid*chunkSize;
-      int nelem = min(chunkSize, size-offset);
-      if (tree->up == -1) {
-        LLprims.send(thisOutput+offset, nelem);
-      } else if (tree->down[0] == -1) {
-        LLprims.recv(thisOutput+offset, nelem);
-      } else {
-        LLprims.recvCopySend(thisOutput+offset, nelem);
-      }
-    }
-  } while(0);
+  }
 }
 #endif
