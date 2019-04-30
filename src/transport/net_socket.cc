@@ -99,6 +99,7 @@ struct ncclSocketRequest {
 #define MAX_REQUESTS 128
 
 struct ncclSocketReqs {
+  int next;
   struct ncclSocketRequest* requests;
 };
 
@@ -222,23 +223,23 @@ ncclResult_t ncclSocketGetRequest(struct ncclSocketComm* comm, int op, void* dat
   struct ncclSocketReqs* reqs = &comm->reqs;
   if (reqs->requests == NULL) {
     NCCLCHECK(ncclCalloc(&reqs->requests, MAX_REQUESTS));
+    reqs->next = 0;
     pthread_create(&(comm->proxyThread), NULL, persistentSocketThread, comm);
     comm->state = start;
   }
-  for (int i=0; i<MAX_REQUESTS; i++) {
-    struct ncclSocketRequest* r = reqs->requests+i;
-    if (r->used == 0) {
-      r->op = op;
-      r->data = data;
-      r->size = size;
-      r->fd = fd;
-      r->ctrlFd = comm->ctrlFd;
-      r->offset = -1;
-      r->used = 1;
-      r->result = ncclSuccess;
-      *req = r;
-      return ncclSuccess;
-    }
+  struct ncclSocketRequest* r = reqs->requests+reqs->next;
+  if (r->used == 0) {
+    r->op = op;
+    r->data = data;
+    r->size = size;
+    r->fd = fd;
+    r->ctrlFd = comm->ctrlFd;
+    r->offset = -1;
+    r->used = 1;
+    r->result = ncclSuccess;
+    reqs->next = (reqs->next+1)%MAX_REQUESTS;
+    *req = r;
+    return ncclSuccess;
   }
   WARN("Socket : unable to allocate requests");
   return ncclInternalError;
