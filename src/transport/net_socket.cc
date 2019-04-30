@@ -69,7 +69,7 @@ ncclResult_t ncclSocketPciPath(int dev, char** path) {
   return ncclSuccess;
 }
 
-static ncclResult_t GetSocketAddr(int dev, union socketAddress* addr) {
+ncclResult_t GetSocketAddr(int dev, union socketAddress* addr) {
   if (dev >= ncclNetIfs) return ncclInternalError;
   memcpy(addr, ncclNetIfAddrs+dev, sizeof(*addr));
   return ncclSuccess;
@@ -152,12 +152,6 @@ ncclResult_t ncclSocketNewComm(struct ncclSocketComm** comm) {
   return ncclSuccess;
 }
 
-ncclResult_t ncclSocketCreateHandle(void* opaqueHandle, const char* str) {
-  struct ncclSocketHandle* handle = (struct ncclSocketHandle*) opaqueHandle;
-  NCCLCHECK(GetSocketAddrFromString(&handle->connectAddr, str));
-  return ncclSuccess;
-}
-
 ncclResult_t ncclSocketListen(int dev, void* opaqueHandle, void** listenComm) {
   struct ncclSocketHandle* handle = (struct ncclSocketHandle*) opaqueHandle;
   static_assert(sizeof(struct ncclSocketHandle) < NCCL_NET_HANDLE_MAXSIZE, "ncclSocketHandle size too large");
@@ -166,7 +160,7 @@ ncclResult_t ncclSocketListen(int dev, void* opaqueHandle, void** listenComm) {
   // if dev >= 0, listen based on dev
   if (dev >= 0) {
     NCCLCHECK(GetSocketAddr(dev, &handle->connectAddr));
-  } else if (dev == findSubnetIf) {
+  } else if (dev == -1) {
     // handle stores a remote address
     // need to find a local addr that is in the same network as the remote addr
     union socketAddress localAddr;
