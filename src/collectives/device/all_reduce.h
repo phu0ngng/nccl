@@ -348,7 +348,7 @@ __device__ void ncclAllReduceTreeLLKernel(struct CollectiveArgs* args) {
   struct ncclChannel* channel = comm->channels+blockIdx.x;
   struct ncclTree* tree = &channel->tree;
   const ssize_t size = args->N;
-  ssize_t chunkSize = (NCCL_LL128_ELEMS_PER_THREAD*nthreads*NCCL_LL128_DATAELEMS*sizeof(uint64_t))/(NCCL_LL128_LINEELEMS*sizeof(T));
+  ssize_t chunkSize = args->lastChunkSize;
   const ssize_t loopSize = args->nChannels*chunkSize;
 
   // Compute pointers
