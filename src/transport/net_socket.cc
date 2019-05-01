@@ -207,8 +207,8 @@ ncclResult_t ncclSocketGetRequest(struct ncclSocketComm* comm, int op, void* dat
   if (reqs->requests == NULL) {
     NCCLCHECK(ncclCalloc(&reqs->requests, MAX_REQUESTS));
     reqs->next = 0;
-    pthread_create(&(comm->proxyThread), NULL, persistentSocketThread, comm);
     comm->state = start;
+    pthread_create(&(comm->proxyThread), NULL, persistentSocketThread, comm);
   }
   struct ncclSocketRequest* r = reqs->requests+reqs->next;
   if (r->used == 0) {
