@@ -202,7 +202,7 @@ ncclResult_t ncclSocketAccept(void* listenComm, void** recvComm) {
   return ncclSuccess;
 }
 
-ncclResult_t ncclSocketGetRequest(struct ncclSocketComm* comm, int op, void* data, int size, int fd, struct ncclSocketRequest** req) {
+ncclResult_t ncclSocketGetRequest(struct ncclSocketComm* comm, int op, void* data, int size, struct ncclSocketRequest** req) {
   struct ncclSocketReqs* reqs = &comm->reqs;
   if (reqs->requests == NULL) {
     NCCLCHECK(ncclCalloc(&reqs->requests, MAX_REQUESTS));
@@ -215,11 +215,12 @@ ncclResult_t ncclSocketGetRequest(struct ncclSocketComm* comm, int op, void* dat
     r->op = op;
     r->data = data;
     r->size = size;
-    r->fd = fd;
+    r->fd = comm->fd[comm->nextFd];
     r->ctrlFd = comm->ctrlFd;
     r->offset = -1;
     r->used = 1;
     r->result = ncclSuccess;
+    comm->nextFd = (comm->nextFd + 1) % comm->nSocks;
     reqs->next = (reqs->next+1)%MAX_REQUESTS;
     *req = r;
     return ncclSuccess;
@@ -269,15 +270,13 @@ ncclResult_t ncclSocketDeregMr(void* comm, void* mhandle) { return ncclSuccess; 
 
 ncclResult_t ncclSocketIsend(void* sendComm, void* data, int size, void* mhandle, void** request) {
   struct ncclSocketComm* comm = (struct ncclSocketComm*)sendComm;
-  NCCLCHECK(ncclSocketGetRequest(comm, NCCL_SOCKET_SEND, data, size, comm->fd[comm->nextFd], (struct ncclSocketRequest**)request));
-  comm->nextFd = (comm->nextFd + 1) % comm->nSocks;
+  NCCLCHECK(ncclSocketGetRequest(comm, NCCL_SOCKET_SEND, data, size, (struct ncclSocketRequest**)request));
   return ncclSuccess;
 }
 
 ncclResult_t ncclSocketIrecv(void* recvComm, void* data, int size, void* mhandle, void** request) {
   struct ncclSocketComm* comm = (struct ncclSocketComm*)recvComm;
-  NCCLCHECK(ncclSocketGetRequest(comm, NCCL_SOCKET_RECV, data, size, comm->fd[comm->nextFd], (struct ncclSocketRequest**)request));
-  comm->nextFd = (comm->nextFd + 1) % comm->nSocks;
+  NCCLCHECK(ncclSocketGetRequest(comm, NCCL_SOCKET_RECV, data, size, (struct ncclSocketRequest**)request));
   return ncclSuccess;
 }
 
