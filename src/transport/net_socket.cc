@@ -155,12 +155,16 @@ ncclResult_t ncclSocketNewComm(struct ncclSocketComm** comm) {
   int nSocks = ncclParamSocketNsocks();
   int nThreads = ncclParamSocketNthreads();
   if (nSocks > MAX_SOCKETS) {
-    WARN("NET/Socket : The number of sockets set is greater than the maximum allowed, setting to the maximum (%d)", MAX_SOCKETS);
+    WARN("NET/Socket : NCCL_NSOCKETS is greater than the maximum allowed, setting to the maximum (%d)", MAX_SOCKETS);
     nSocks = MAX_SOCKETS;
   }
   if (nThreads > MAX_THREADS) {
-    WARN("NET/Socket : The number of threads set is greater than the maximum allowed, setting to the maximum (%d)", MAX_THREADS);
+    WARN("NET/Socket : NCCL_SOCKET_NTHREADS is greater than the maximum allowed (%d)", MAX_THREADS);
     nThreads = MAX_THREADS;
+  }
+  while (nSocks % nThreads != 0) nThreads--;
+  if (nThreads != ncclParamSocketNthreads()) {
+    WARN("NET/Socket : NCCL_SOCKET_NTHREADS must be a multiple of NCCL_NSOCKETS, setting NCCL_SOCKET_NTHREADS to %d", nThreads);
   }
   (*comm)->nSocks = nSocks;
   (*comm)->nThreads = nThreads;
