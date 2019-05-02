@@ -464,6 +464,8 @@ static ncclResult_t setupChannel(struct ncclComm* comm, int channelId, int rank,
       if (btreeUp != -1) tree->up = outRanks[btreeUp];
       if (rank != outRank) {
         tree->down[nDown++] = outRank;
+      } else if (prev != inRank) {
+        tree->down[nDown++] = prev;
       }
     } else {
       if (rank == outRank) {
