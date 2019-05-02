@@ -78,7 +78,9 @@ ncclResult_t GetSocketAddr(int dev, union socketAddress* addr) {
 /* Communication functions */
 
 #define MAX_SOCKETS 16
+#define MAX_THREADS 16
 NCCL_PARAM(SocketNsocks, "NSOCKETS", 1);
+NCCL_PARAM(SocketNthreads, "SOCKET_NTHREADS", 1);
 
 struct ncclSocketHandle {
   union socketAddress connectAddr;
@@ -105,22 +107,30 @@ struct ncclSocketReqs {
 
 enum threadState {start, stop};
 
+struct ncclSocketThreadArgs {
+  struct ncclSocketComm* comm;
+  int threadId;
+};
+
 struct ncclSocketComm {
   int ctrlFd;
   int fd[MAX_SOCKETS];
   int nSocks;
+  int nThreads;
   int nextFd;
   struct ncclSocketReqs reqs;
-  pthread_t proxyThread;
+  pthread_t proxyThread[MAX_THREADS];
+  struct ncclSocketThreadArgs args[MAX_THREADS];
   enum threadState state;
 };
 
-void* persistentSocketThread(void *comm_) {
-  struct ncclSocketComm* comm = (struct ncclSocketComm*)comm_;
+void* persistentSocketThread(void *args_) {
+  struct ncclSocketThreadArgs* args = (struct ncclSocketThreadArgs*)args_;
+  struct ncclSocketComm* comm = args->comm;
   volatile enum threadState* state = &comm->state;
   while (1) {
     int idle = 1;
-    for (int i=0; i<MAX_REQUESTS; i++) {
+    for (int i=args->threadId; i<MAX_REQUESTS; i+=comm->nThreads) {
       struct ncclSocketRequest* r = (struct ncclSocketRequest*) comm->reqs.requests+i;
       if (r != NULL && r->used == 1 && r->offset >= 0 && r->offset < r->size) {
         r->result = socketProgress(r->op, r->fd, r->data, r->size, &r->offset);
@@ -143,11 +153,17 @@ ncclResult_t ncclSocketNewComm(struct ncclSocketComm** comm) {
     (*comm)->fd[i] = -1;
   }
   int nSocks = ncclParamSocketNsocks();
+  int nThreads = ncclParamSocketNthreads();
   if (nSocks > MAX_SOCKETS) {
     WARN("NET/Socket : The number of sockets set is greater than the maximum allowed, setting to the maximum (%d)", MAX_SOCKETS);
     nSocks = MAX_SOCKETS;
   }
+  if (nThreads > MAX_THREADS) {
+    WARN("NET/Socket : The number of threads set is greater than the maximum allowed, setting to the maximum (%d)", MAX_THREADS);
+    nThreads = MAX_THREADS;
+  }
   (*comm)->nSocks = nSocks;
+  (*comm)->nThreads = nThreads;
   (*comm)->nextFd = 0;
   return ncclSuccess;
 }
@@ -208,7 +224,11 @@ ncclResult_t ncclSocketGetRequest(struct ncclSocketComm* comm, int op, void* dat
     NCCLCHECK(ncclCalloc(&reqs->requests, MAX_REQUESTS));
     reqs->next = 0;
     comm->state = start;
-    pthread_create(&(comm->proxyThread), NULL, persistentSocketThread, comm);
+    for (int i=0; i<comm->nThreads; i++) {
+      comm->args[i].comm = comm;
+      comm->args[i].threadId = i;
+      pthread_create(comm->proxyThread+i, NULL, persistentSocketThread, comm->args+i);
+    }
   }
   struct ncclSocketRequest* r = reqs->requests+reqs->next;
   if (r->used == 0) {
@@ -289,8 +309,10 @@ ncclResult_t ncclSocketClose(void* opaqueComm) {
   struct ncclSocketComm* comm = (struct ncclSocketComm*)opaqueComm;
   if (comm) {
     comm->state = stop;
-    if (comm->proxyThread) {
-      pthread_join(comm->proxyThread, NULL);
+    for (int i=0; i<comm->nThreads; i++) {
+      if (comm->proxyThread[i]) {
+        pthread_join(comm->proxyThread[i], NULL);
+      }
     }
     free(comm->reqs.requests);
     if (comm->ctrlFd != -1) close(comm->ctrlFd);
