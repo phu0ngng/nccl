@@ -350,6 +350,9 @@ __device__ void ncclAllReduceTreeLLKernel(struct CollectiveArgs* args) {
   const ssize_t size = args->N;
   ssize_t chunkSize = args->lastChunkSize;
   const ssize_t loopSize = args->nChannels*chunkSize;
+  // Receiving from up to 3 sources is much more compute intensive than sending
+  // to 3 dests. Use 5/8 for reduce and 3/8 for bcast.
+  int nthreadsSplit = (nthreads*5/(8*32))*32;
 
   // Compute pointers
   const T * __restrict__ thisInput = (const T*)args->ThisInput;
@@ -364,9 +367,9 @@ __device__ void ncclAllReduceTreeLLKernel(struct CollectiveArgs* args) {
       LLprims.recvReduceCopySend(thisInput+offset, thisOutput+offset, nelem);
     }
   } else {
-    if (tid < nthreads/2) {
+    if (tid < nthreadsSplit) {
       // Reduce : max number of recv is 3, max number of send is 1 (binary tree + local)
-      ncclLL128Primitives<T, FUNC, NCCL_MAX_TREE_ARITY, 1> LLprims(tid, nthreads/2, tree->down, &tree->up, channel, comm, args->opCount);
+      ncclLL128Primitives<T, FUNC, NCCL_MAX_TREE_ARITY, 1> LLprims(tid, nthreadsSplit, tree->down, &tree->up, channel, comm, args->opCount);
       for (ssize_t gridOffset = 0; gridOffset < size; gridOffset += loopSize) {
         // Up
         ssize_t offset = gridOffset + bid*chunkSize;
@@ -379,7 +382,7 @@ __device__ void ncclAllReduceTreeLLKernel(struct CollectiveArgs* args) {
       }
     } else {
       // Broadcast : max number of recv is 1, max number of send is 3 (binary tree + local)
-      ncclLL128Primitives<T, FUNC, 1, NCCL_MAX_TREE_ARITY> LLprims(tid-nthreads/2, nthreads/2, &tree->up, tree->down, channel, comm, args->opCount);
+      ncclLL128Primitives<T, FUNC, 1, NCCL_MAX_TREE_ARITY> LLprims(tid-nthreadsSplit, nthreads-nthreadsSplit, &tree->up, tree->down, channel, comm, args->opCount);
       for (ssize_t gridOffset = 0; gridOffset < size; gridOffset += loopSize) {
         // Down
         ssize_t offset = gridOffset + bid*chunkSize;
