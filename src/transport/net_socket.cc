@@ -79,7 +79,7 @@ ncclResult_t GetSocketAddr(int dev, union socketAddress* addr) {
 
 #define MAX_SOCKETS 16
 #define MAX_THREADS 16
-NCCL_PARAM(SocketNsocks, "NSOCKETS", 1);
+NCCL_PARAM(SocketNsocksPerThread, "NSOCKS_PERTHREAD", 1);
 NCCL_PARAM(SocketNthreads, "SOCKET_NTHREADS", 1);
 
 struct ncclSocketHandle {
@@ -152,19 +152,17 @@ ncclResult_t ncclSocketNewComm(struct ncclSocketComm** comm) {
   for (int i=0; i < MAX_SOCKETS; i++) {
     (*comm)->fd[i] = -1;
   }
-  int nSocks = ncclParamSocketNsocks();
+  int nSocksPerThread = ncclParamSocketNsocksPerThread();
   int nThreads = ncclParamSocketNthreads();
-  if (nSocks > MAX_SOCKETS) {
-    WARN("NET/Socket : NCCL_NSOCKETS is greater than the maximum allowed, setting to the maximum (%d)", MAX_SOCKETS);
-    nSocks = MAX_SOCKETS;
-  }
   if (nThreads > MAX_THREADS) {
-    WARN("NET/Socket : NCCL_SOCKET_NTHREADS is greater than the maximum allowed (%d)", MAX_THREADS);
+    WARN("NET/Socket : NCCL_SOCKET_NTHREADS is greater than the maximum allowed, setting to %d", MAX_THREADS);
     nThreads = MAX_THREADS;
   }
-  while (nSocks % nThreads != 0) nThreads--;
-  if (nThreads != ncclParamSocketNthreads()) {
-    WARN("NET/Socket : NCCL_SOCKET_NTHREADS must be a multiple of NCCL_NSOCKETS, setting NCCL_SOCKET_NTHREADS to %d", nThreads);
+  int nSocks = nSocksPerThread * nThreads;
+  if (nSocks > MAX_SOCKETS) {
+    nSocksPerThread = MAX_SOCKETS/nThreads;
+    WARN("NET/Socket : the total number of sockets is greater than the maximum allowed, setting NCCL_NSOCKS_PERTHREAD to %d", nSocksPerThread);
+    nSocks = nSocksPerThread * nThreads;
   }
   (*comm)->nSocks = nSocks;
   (*comm)->nThreads = nThreads;
