@@ -139,7 +139,9 @@ ncclResult_t initNet() {
 
 NCCL_PARAM(LlThreshold, "LL_THRESHOLD", -2);
 NCCL_PARAM(ThreadThreshold, "THREAD_THRESHOLD", -2);
-NCCL_PARAM(TreeThreshold, "TREE_THRESHOLD", -2);
+/* FIXME forcing Tree/LL128 all the way */
+NCCL_PARAM(Ll128Threshold, "LL128_THRESHOLD", 0x7fffffffffffffff);
+NCCL_PARAM(TreeThreshold, "TREE_THRESHOLD", 0x7fffffffffffffff);
 
 int ncclThreadThreshold(int minCompCap, int multiNode) {
   int threshold = ncclParamThreadThreshold();
@@ -246,6 +248,7 @@ static ncclResult_t commAlloc(ncclComm_t* comret, int ndev, int rank) {
 
   comm->doneEvent = doneEvent;
   comm->llThreshold = ncclParamLlThreshold();
+  comm->ll128Threshold = ncclParamLl128Threshold();
   comm->treeThreshold = ncclParamTreeThreshold();
   comm->checkPointers = ncclParamCheckPointers() == 1 ? true : false;
 #if CUDART_VERSION >= 9020

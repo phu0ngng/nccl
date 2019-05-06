@@ -80,11 +80,10 @@ struct ncclComm {
   int nChannels;
   int nThreads;
 
-  // Low-latency algorithm threshold
+  // Algorithm thresholds
   ssize_t llThreshold;
+  ssize_t ll128Threshold;
   ssize_t threadThreshold;
-
-  // Tree algorithm threshold
   ssize_t treeThreshold;
 
   // An internal CUDA stream for NCCL kernel CGMD launches
