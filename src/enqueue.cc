@@ -281,7 +281,7 @@ static void getKernelInfo(struct ncclInfo* info, uint8_t* nChannels, uint16_t* n
   // Check if we have a fixed LL threshold, otherwise compute it.
   int perThreadThreshold = info->comm->threadThreshold;
   if (info->pattern >= ncclPatternTreeUp) perThreadThreshold *= 4;
-  ssize_t llUserThreshold = info->coll == ncclCollAllReduce ? info->comm->llThreshold : info->comm->ll128Threshold;
+  ssize_t llUserThreshold = info->coll == ncclCollAllReduce ? info->comm->ll128Threshold : info->comm->llThreshold;
   ssize_t llThreshold = llUserThreshold >= 0 ? llUserThreshold :
     nc*nt*info->nchunksPerLoop*perThreadThreshold;
 
