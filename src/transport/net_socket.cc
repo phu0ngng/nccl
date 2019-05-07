@@ -118,7 +118,7 @@ struct ncclSocketReqs {
   struct ncclSocketRequest* requests;
 };
 
-struct ncclSocketTasks {
+struct ncclSocketTaskQueue {
   int next;
   struct ncclSocketTask* requests;
 };
@@ -137,8 +137,8 @@ struct ncclSocketComm {
   int nThreads;
   int nextFd;
   struct ncclSocketReqs reqs;
-  struct ncclSocketTasks taskQueue;
   pthread_t proxyThread[MAX_THREADS];
+  struct ncclSocketTaskQueue threadTaskQueue[MAX_THREADS];
   struct ncclSocketThreadArgs args[MAX_THREADS];
   enum threadState state;
 };
@@ -147,13 +147,12 @@ void* persistentSocketThread(void *args_) {
   struct ncclSocketThreadArgs* args = (struct ncclSocketThreadArgs*)args_;
   struct ncclSocketComm* comm = args->comm;
   volatile enum threadState* state = &comm->state;
+  struct ncclSocketTaskQueue* myQueue = comm->threadTaskQueue+args->threadId;;
   while (1) {
     int idle = 1;
-    //for (int i=args->threadId; i<MAX_SUB_REQUESTS; i+=comm->nThreads) {
     for (int i=0; i<MAX_SUB_REQUESTS; i++) {
-      struct ncclSocketTask* r = (struct ncclSocketTask*) comm->taskQueue.requests+i;
+      struct ncclSocketTask* r = myQueue->requests+i;
       if (r != NULL && r->used == 1 &&
-          r->fdIndex%comm->nThreads == args->threadId &&
           r->offset >= 0 && r->offset < r->size) {
         do {
           r->result = socketProgress(r->op, r->fd, r->data, r->size, &r->offset);
@@ -252,6 +251,17 @@ ncclResult_t ncclSocketGetRequest(struct ncclSocketComm* comm, int op, void* dat
   if (reqs->requests == NULL) {
     NCCLCHECK(ncclCalloc(&reqs->requests, MAX_REQUESTS));
     reqs->next = 0;
+    // create helper threads and prepare per-thread task queue
+    for (int i=0; i<comm->nThreads; i++) {
+      struct ncclSocketTaskQueue* reqs = comm->threadTaskQueue+i;
+      if (reqs->requests == NULL) {
+        NCCLCHECK(ncclCalloc(&reqs->requests, MAX_SUB_REQUESTS));
+        reqs->next = 0;
+        comm->args[i].comm = comm;
+        comm->args[i].threadId = i;
+        pthread_create(comm->proxyThread+i, NULL, persistentSocketThread, comm->args+i);
+      }
+    }
   }
   struct ncclSocketRequest* r = reqs->requests+reqs->next;
   if (r->used == 0) {
@@ -270,17 +280,8 @@ ncclResult_t ncclSocketGetRequest(struct ncclSocketComm* comm, int op, void* dat
 }
 
 ncclResult_t ncclSocketGetTask(struct ncclSocketComm* comm, int op, void* data, int size, struct ncclSocketTask** req) {
-  struct ncclSocketTasks* reqs = &comm->taskQueue;
-  if (reqs->requests == NULL) {
-    NCCLCHECK(ncclCalloc(&reqs->requests, MAX_SUB_REQUESTS));
-    reqs->next = 0;
-    comm->state = start;
-    for (int i=0; i<comm->nThreads; i++) {
-      comm->args[i].comm = comm;
-      comm->args[i].threadId = i;
-      pthread_create(comm->proxyThread+i, NULL, persistentSocketThread, comm->args+i);
-    }
-  }
+  int tid = comm->nextFd % comm->nThreads;
+  struct ncclSocketTaskQueue* reqs = comm->threadTaskQueue+tid;
   struct ncclSocketTask* r = reqs->requests+reqs->next;
   if (r->used == 0) {
     r->op = op;
@@ -294,6 +295,7 @@ ncclResult_t ncclSocketGetTask(struct ncclSocketComm* comm, int op, void* data, 
     reqs->next = (reqs->next+1)%MAX_SUB_REQUESTS;
     r->used = 1;
     *req = r;
+    comm->state = start;
     return ncclSuccess;
   }
   WARN("Socket : unable to allocate sub requests");
@@ -333,7 +335,7 @@ ncclResult_t ncclSocketTest(void* request, int* done, int* size) {
       chunkOffset += chunkSize;
     }
   }
-  if (r->used == 2) {
+  if (r->used == 2) { // already exchanged size
     int nCompleted = 0;
     for (int i=0; i<r->nSubs; i++) {
       struct ncclSocketTask* sub = r->tasks[i];
@@ -383,9 +385,9 @@ ncclResult_t ncclSocketClose(void* opaqueComm) {
       if (comm->proxyThread[i]) {
         pthread_join(comm->proxyThread[i], NULL);
       }
+      free(comm->threadTaskQueue[i].requests);
     }
     free(comm->reqs.requests);
-    free(comm->taskQueue.requests);
     if (comm->ctrlFd != -1) close(comm->ctrlFd);
     for (int i=0; i<comm->nSocks; i++) {
       if (comm->fd[i] != -1) close(comm->fd[i]);
