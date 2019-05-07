@@ -79,6 +79,10 @@ ncclResult_t GetSocketAddr(int dev, union socketAddress* addr) {
 
 #define MAX_SOCKETS 16
 #define MAX_THREADS 16
+#define MAX_REQUESTS 128
+#define MAX_SUB_REQUESTS (MAX_SOCKETS*MAX_REQUESTS)
+#define SOCKET_CHUNKSIZE (64*1024)
+
 NCCL_PARAM(SocketNsocksPerThread, "NSOCKS_PERTHREAD", 1);
 NCCL_PARAM(SocketNthreads, "SOCKET_NTHREADS", 1);
 
@@ -87,22 +91,36 @@ struct ncclSocketHandle {
   uint16_t port[MAX_SOCKETS];
 };
 
-struct ncclSocketRequest {
+struct ncclSocketTask {
   int op;
   void* data;
   int size;
   int fd;
-  int ctrlFd;
+  int fdIndex;
   int offset;
   int used;
   ncclResult_t result;
 };
 
-#define MAX_REQUESTS 128
+struct ncclSocketRequest {
+  int op;
+  void* data;
+  int size;
+  int ctrlFd;
+  int used;
+  struct ncclSocketComm* comm;
+  struct ncclSocketTask* tasks[32];
+  int nSubs;
+};
 
 struct ncclSocketReqs {
   int next;
   struct ncclSocketRequest* requests;
+};
+
+struct ncclSocketTasks {
+  int next;
+  struct ncclSocketTask* requests;
 };
 
 enum threadState {start, stop};
@@ -119,6 +137,7 @@ struct ncclSocketComm {
   int nThreads;
   int nextFd;
   struct ncclSocketReqs reqs;
+  struct ncclSocketTasks taskQueue;
   pthread_t proxyThread[MAX_THREADS];
   struct ncclSocketThreadArgs args[MAX_THREADS];
   enum threadState state;
@@ -130,14 +149,22 @@ void* persistentSocketThread(void *args_) {
   volatile enum threadState* state = &comm->state;
   while (1) {
     int idle = 1;
-    for (int i=args->threadId; i<MAX_REQUESTS; i+=comm->nThreads) {
-      struct ncclSocketRequest* r = (struct ncclSocketRequest*) comm->reqs.requests+i;
-      if (r != NULL && r->used == 1 && r->offset >= 0 && r->offset < r->size) {
-        r->result = socketProgress(r->op, r->fd, r->data, r->size, &r->offset);
-        if (r->result != ncclSuccess) {
-          WARN("NET/Socket : socket progress error");
-          return NULL;
-        }
+    //for (int i=args->threadId; i<MAX_SUB_REQUESTS; i+=comm->nThreads) {
+    for (int i=0; i<MAX_SUB_REQUESTS; i++) {
+      struct ncclSocketTask* r = (struct ncclSocketTask*) comm->taskQueue.requests+i;
+      if (r != NULL && r->used == 1 &&
+          r->fdIndex%comm->nThreads == args->threadId &&
+          r->offset >= 0 && r->offset < r->size) {
+        do {
+          r->result = socketProgress(r->op, r->fd, r->data, r->size, &r->offset);
+          if (r->result != ncclSuccess) {
+            WARN("NET/Socket : socket progress error fd=%d", r->fd);
+            for (int i=0; i<comm->nSocks; i++) {
+              INFO(NCCL_INIT, "fd[%d] = %d", i, comm->fd[i]);
+            }
+            return NULL;
+          }
+        } while (r->offset < r->size);
         idle = 0;
       }
     }
@@ -225,6 +252,28 @@ ncclResult_t ncclSocketGetRequest(struct ncclSocketComm* comm, int op, void* dat
   if (reqs->requests == NULL) {
     NCCLCHECK(ncclCalloc(&reqs->requests, MAX_REQUESTS));
     reqs->next = 0;
+  }
+  struct ncclSocketRequest* r = reqs->requests+reqs->next;
+  if (r->used == 0) {
+    r->op = op;
+    r->data = data;
+    r->size = size;
+    r->ctrlFd = comm->ctrlFd;
+    r->used = 1;
+    r->comm = comm;
+    reqs->next = (reqs->next+1)%MAX_REQUESTS;
+    *req = r;
+    return ncclSuccess;
+  }
+  WARN("Socket : unable to allocate requests");
+  return ncclInternalError;
+}
+
+ncclResult_t ncclSocketGetTask(struct ncclSocketComm* comm, int op, void* data, int size, struct ncclSocketTask** req) {
+  struct ncclSocketTasks* reqs = &comm->taskQueue;
+  if (reqs->requests == NULL) {
+    NCCLCHECK(ncclCalloc(&reqs->requests, MAX_SUB_REQUESTS));
+    reqs->next = 0;
     comm->state = start;
     for (int i=0; i<comm->nThreads; i++) {
       comm->args[i].comm = comm;
@@ -232,22 +281,22 @@ ncclResult_t ncclSocketGetRequest(struct ncclSocketComm* comm, int op, void* dat
       pthread_create(comm->proxyThread+i, NULL, persistentSocketThread, comm->args+i);
     }
   }
-  struct ncclSocketRequest* r = reqs->requests+reqs->next;
+  struct ncclSocketTask* r = reqs->requests+reqs->next;
   if (r->used == 0) {
     r->op = op;
     r->data = data;
     r->size = size;
     r->fd = comm->fd[comm->nextFd];
-    r->ctrlFd = comm->ctrlFd;
-    r->offset = -1;
-    r->used = 1;
+    r->fdIndex = comm->nextFd;
+    r->offset = 0;
     r->result = ncclSuccess;
     comm->nextFd = (comm->nextFd + 1) % comm->nSocks;
-    reqs->next = (reqs->next+1)%MAX_REQUESTS;
+    reqs->next = (reqs->next+1)%MAX_SUB_REQUESTS;
+    r->used = 1;
     *req = r;
     return ncclSuccess;
   }
-  WARN("Socket : unable to allocate requests");
+  WARN("Socket : unable to allocate sub requests");
   return ncclInternalError;
 }
 
@@ -258,8 +307,7 @@ ncclResult_t ncclSocketTest(void* request, int* done, int* size) {
     WARN("NET/Socket : test called with NULL request");
     return ncclInternalError;
   }
-  if (r->result != ncclSuccess) return r->result;
-  if (r->offset == -1) { /* try to send/recv size */
+  if (r->used == 1) { /* try to send/recv size */
     int data = r->size;
     int offset = 0;
     NCCLCHECK(socketProgress(r->op, r->ctrlFd, &data, sizeof(int), &offset));
@@ -275,12 +323,32 @@ ncclResult_t ncclSocketTest(void* request, int* done, int* size) {
       return ncclInternalError;
     }
     r->size = data;
-    r->offset = 0;
+    r->used = 2; // done exchanging size
+    // divide into sub requests
+    r->nSubs = DIVUP(r->size, SOCKET_CHUNKSIZE);
+    int chunkOffset = 0;
+    for (int i=0; i<r->nSubs; i++) {
+      int chunkSize = std::min(SOCKET_CHUNKSIZE, r->size-chunkOffset);
+      NCCLCHECK(ncclSocketGetTask(r->comm, r->op, (char*)(r->data)+chunkOffset, chunkSize, r->tasks+i));
+      chunkOffset += chunkSize;
+    }
   }
-  if (r->offset == r->size) {
-    if (size) *size = r->size;
-    *done = 1;
-    r->used = 0;
+  if (r->used == 2) {
+    int nCompleted = 0;
+    for (int i=0; i<r->nSubs; i++) {
+      struct ncclSocketTask* sub = r->tasks[i];
+      if (sub->result != ncclSuccess) return sub->result;
+      if (sub->offset == sub->size) nCompleted++;
+    }
+    if (nCompleted == r->nSubs) {
+      if (size) *size = r->size;
+      *done = 1;
+      r->used = 0;
+      for (int i=0; i<r->nSubs; i++) {
+        struct ncclSocketTask* sub = r->tasks[i];
+        sub->used = 0;
+      }
+    }
   }
   return ncclSuccess;
 }
@@ -317,6 +385,7 @@ ncclResult_t ncclSocketClose(void* opaqueComm) {
       }
     }
     free(comm->reqs.requests);
+    free(comm->taskQueue.requests);
     if (comm->ctrlFd != -1) close(comm->ctrlFd);
     for (int i=0; i<comm->nSocks; i++) {
       if (comm->fd[i] != -1) close(comm->fd[i]);
