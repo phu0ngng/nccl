@@ -274,6 +274,7 @@ ncclResult_t ncclSocketGetRequest(struct ncclSocketComm* comm, int op, void* dat
     r->ctrlFd = comm->ctrlFd;
     r->used = 1;
     r->comm = comm;
+    r->nSubs = 0;
     reqs->next = (reqs->next+1)%MAX_REQUESTS;
     *req = r;
     return ncclSuccess;
@@ -330,13 +331,14 @@ ncclResult_t ncclSocketTest(void* request, int* done, int* size) {
     r->size = data;
     r->used = 2; // done exchanging size
     // divide into sub requests
-    r->nSubs = DIVUP(r->size, SOCKET_CHUNKSIZE);
-    int chunkOffset = 0;
-    for (int i=0; i<r->nSubs; i++) {
-      int chunkSize = std::min(SOCKET_CHUNKSIZE, r->size-chunkOffset);
-      NCCLCHECK(ncclSocketGetTask(r->comm, r->op, (char*)(r->data)+chunkOffset, chunkSize, r->tasks+i));
+    int taskSize = std::max(SOCKET_CHUNKSIZE, DIVUP(r->size, r->comm->nSocks));
+    int chunkOffset = 0, i = 0;
+    while (chunkOffset < r->size) {
+      int chunkSize = std::min(taskSize, r->size-chunkOffset);
+      NCCLCHECK(ncclSocketGetTask(r->comm, r->op, (char*)(r->data)+chunkOffset, chunkSize, r->tasks+i++));
       chunkOffset += chunkSize;
     }
+    r->nSubs = i;
   }
   if (r->used == 2) { // already exchanged size
     int nCompleted = 0;
