@@ -1,5 +1,5 @@
 #
-# Copyright (c) 2015-2018, NVIDIA CORPORATION. All rights reserved.
+# Copyright (c) 2015-2019, NVIDIA CORPORATION. All rights reserved.
 #
 # See LICENSE.txt for license information
 #
@@ -19,7 +19,7 @@ lic: $(LICENSE_TARGETS)
 ${BUILDDIR}/%.txt: %.txt
 	@printf "Copying    %-35s > %s\n" $< $@
 	mkdir -p ${BUILDDIR}
-	cp $< $@
+	install -m 644 $< $@
 
 src.%:
 	${MAKE} -C src $* BUILDDIR=${ABSBUILDDIR}

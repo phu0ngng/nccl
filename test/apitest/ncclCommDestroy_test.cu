@@ -11,3 +11,14 @@ TEST(ncclCommDestroy, null) {
     ASSERT_EQ(ncclSuccess, ncclCommDestroy(NULL));
     SUCCEED();
 }
+TEST(ncclCommDestroy, double_free) {
+    int ndev = 1;
+    ncclComm_t* comms = (ncclComm_t*)calloc(ndev, sizeof(ncclComm_t));
+    ASSERT_EQ(ncclSuccess, ncclCommInitAll(comms, ndev, NULL));
+    for (int i = 0; i < ndev; ++i)
+        ASSERT_EQ(ncclSuccess, ncclCommDestroy(comms[i]));
+    for (int i = 0; i < ndev; ++i)
+        ASSERT_EQ(ncclInvalidArgument, ncclCommDestroy(comms[i]));
+    free(comms);
+    SUCCEED();
+}

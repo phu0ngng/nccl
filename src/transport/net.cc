@@ -175,20 +175,19 @@ static inline int groupBestEnd(int nranks, int* groups, int group, int* subgroup
   return -1;
 }
 
-#define MAXGROUPS 16
-
 ncclResult_t netGetRings(int nranks, int* groups, int* subgroups, ncclTvalue_t* values, int* nringsRet, int* prev, int* next, int minScore, int* nthreads) {
   int nGroups = groups[nranks-1] + 1;
-  int cardUsed[NET_MAX_IFS*MAXGROUPS];
-  for (int c=0; c<NET_MAX_IFS*nGroups; c++) cardUsed[c] = 0;
+  int *cardUsed, *starts, *ends;
+  NCCLCHECK(ncclCalloc(&cardUsed, NET_MAX_IFS*nGroups));
+  NCCLCHECK(ncclCalloc(&starts, nGroups));
+  NCCLCHECK(ncclCalloc(&ends, nGroups));
 
-  int starts[MAXGROUPS];
-  int ends[MAXGROUPS];
   for (int ring = 0; ring<*nringsRet; ring++) {
     for (int group = 0; group<nGroups; group++) {
       int nranksInGroup = 0;
       int nsubGroups = 0;
-      for (int rank=0; rank<nranks; rank++) if (groups[rank] == group) {
+      for (int rank=0; rank<nranks; rank++)
+        if (groups[rank] == group) {
           nranksInGroup++;
           nsubGroups = std::max(subgroups[rank], nsubGroups);
         }
@@ -210,7 +209,7 @@ ncclResult_t netGetRings(int nranks, int* groups, int* subgroups, ncclTvalue_t* 
       }
       if (starts[group] == -1 || ends[group] == -1) {
         *nringsRet = ring;
-        return ncclSuccess;
+        goto done;
       }
     }
     // Link groups together
@@ -220,6 +219,10 @@ ncclResult_t netGetRings(int nranks, int* groups, int* subgroups, ncclTvalue_t* 
       prev[ring*nranks+starts[nextGroup]] = ends[group];
     }
   }
+done:
+  free(cardUsed);
+  free(starts);
+  free(ends);
   return ncclSuccess;
 }
 
@@ -443,6 +446,7 @@ ncclResult_t netSendProxy(struct ncclProxyArgs* args) {
     if (args->head < args->end) {
       if (args->tail < args->end && args->tail < args->head + NCCL_STEPS) {
         volatile int* sizesFifo = resources->hostRecvMem->sizesFifo;
+        volatile uint64_t* recvTail = &resources->hostRecvMem->tail;
         if (args->llMode == 2) {
           int stepSize = NCCL_LL128_BUFF_SIZE/NCCL_STEPS;
           if (args->tail < resources->hostRecvMem->tail) {
@@ -479,7 +483,7 @@ ncclResult_t netSendProxy(struct ncclProxyArgs* args) {
           int buffSlot = args->tail%NCCL_STEPS;
           int size = sizesFifo[buffSlot];
           if (size != -1) {
-            uint32_t flag = args->tail + 1;
+            uint32_t flag = NCCL_LL_FLAG(args->tail + 1);
             int nFifoLines = DIVUP(size, sizeof(union ncclLLFifoLine));
             size = nFifoLines * sizeof(union ncclLLFifoLine);
             union ncclLLFifoLine* lines = resources->hostRecvMem->llBuff+buffSlot*NCCL_LL_SLICE_LINES;
@@ -500,7 +504,7 @@ ncclResult_t netSendProxy(struct ncclProxyArgs* args) {
               }
             }
           }
-        } else if (args->tail < resources->hostRecvMem->tail) {
+        } else if (args->tail < *recvTail) {
           int stepSize = args->channel->buffSize/NCCL_STEPS;
           struct ncclRecvMem* localMem = resources->useGdr ? resources->devRecvMem : resources->hostRecvMem;
           // Send through network
@@ -529,18 +533,8 @@ ncclResult_t netSendProxy(struct ncclProxyArgs* args) {
     if (args->head == args->end) {
       resources->step = args->end;
       args->idle = 0;
-      args->state = ncclProxyOpDone;
+      args->state = ncclProxyOpNone;
     }
-  }
-  if (args->state == ncclProxyOpDone) {
-    union ncclLLFifoLine* llBuff = resources->hostRecvMem->llBuff;
-    if (args->llMode && resources->step > resources->llLastCleaning + NCCL_LL_CLEAN_FREQ) {
-      for (int i=0; i< NCCL_LL_BUFF_LINES; i++) llBuff[i].flag1 = llBuff[i].flag2 = resources->step;
-      resources->step += NCCL_STEPS;
-      resources->hostSendMem->head = resources->step;
-      resources->llLastCleaning = resources->step;
-    }
-    args->state = ncclProxyOpNone;
   }
   return ncclSuccess;
 }
@@ -565,7 +559,8 @@ ncclResult_t netRecvProxy(struct ncclProxyArgs* args) {
       struct ncclRecvMem* localMem = resources->useGdr ? resources->devRecvMem : resources->hostRecvMem;
       char* localBuff = args->llMode == 1 ? (char*)localMem->llBuff : args->llMode == 2 ? (char*)localMem->ll128Buff : localMem->buff;
       void* mhandle = args->llMode == 1 ? resources->llMhandle : args->llMode == 2 ? resources->ll128Mhandle : resources->mhandle;
-      if ((args->tail < args->head + NCCL_STEPS) && (args->tail < (resources->hostSendMem->head) + NCCL_STEPS) && (args->tail < args->end)) {
+      volatile uint64_t* sendHead = &resources->hostSendMem->head;
+      if ((args->tail < args->head + NCCL_STEPS) && (args->tail < *sendHead + NCCL_STEPS) && (args->tail < args->end)) {
         int buffSlot = args->tail%NCCL_STEPS;
         int sliceSize = stepSize * args->sliceSteps;
         NCCLCHECK(ncclNetIrecv(resources->netRecvComm, localBuff+buffSlot*stepSize, sliceSize, mhandle, args->requests+buffSlot));
@@ -591,16 +586,8 @@ ncclResult_t netRecvProxy(struct ncclProxyArgs* args) {
     if (args->head == args->end) {
       resources->step = args->end;
       args->idle = 0;
-      args->state = ncclProxyOpDone;
+      args->state = ncclProxyOpNone;
     }
-  }
-  if (args->state == ncclProxyOpDone) {
-    if (args->llMode == 1 && resources->step > resources->llLastCleaning + NCCL_LL_CLEAN_FREQ) {
-      resources->step += NCCL_STEPS;
-      while (resources->hostSendMem->head < resources->step);
-      resources->llLastCleaning = resources->step;
-    }
-    args->state = ncclProxyOpNone;
   }
   return ncclSuccess;
 }

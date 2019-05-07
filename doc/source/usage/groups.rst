@@ -90,6 +90,9 @@ Note: The NCCL operation will only be started as a whole during the last call to
 ncclGroupEnd calls within the for loop are not necessary and do nothing. Also, a given communicator comms[g] is always
 used with the same stream streams[g].
 
+Also note, that there is a maximum of 2048 NCCL operations that can be inserted between the ncclGroupStart and ncclGroupEnd calls.
+If this limit is exceeded, then a warning message will be emitted and the NCCL operation will return a failure code.
+
 Related links:
 
 * :c:func:`ncclGroupStart`

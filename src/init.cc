@@ -184,6 +184,11 @@ ncclResult_t ncclGetUniqueId(ncclUniqueId* out) {
   return bootstrapGetUniqueId(out);
 }
 
+// Prevent compiler from optimizing out these operations
+void __attribute__((optimize("O0"))) commPoison(ncclComm_t comm) {
+  comm->rank = comm->cudaDev = comm->nvmlDev = comm->nRanks = -1;
+}
+
 static ncclResult_t commFree(ncclComm_t comm) {
   if (comm == NULL)
     return ncclSuccess;
@@ -193,6 +198,7 @@ static ncclResult_t commFree(ncclComm_t comm) {
   if (comm->bootstrap)
     NCCLCHECK(bootstrapClose(comm->bootstrap));
 
+  CUDACHECK(cudaFree(comm->hostDevComm.channels));
   CUDACHECK(cudaFree(comm->devComm));
 
   for (int channel=0; channel<comm->nChannels; channel++)
@@ -217,6 +223,9 @@ static ncclResult_t commFree(ncclComm_t comm) {
   }
   CUDACHECK(cudaFreeHost((void *)comm->abortFlag));
   CUDACHECK(cudaFreeHost((void *)comm->fatalDevError));
+
+  // Poison comm to try and catch a double free
+  commPoison(comm);
 
   free(comm);
   return ncclSuccess;
@@ -244,7 +253,7 @@ static ncclResult_t commAlloc(ncclComm_t* comret, int ndev, int rank) {
   comm->nRanks = comm->hostDevComm.nRanks = ndev;
   cudaGetDevice(&comm->cudaDev);
   getNvmlDevice(comm->cudaDev, &comm->nvmlDev);
-  INFO(NCCL_INIT,"comm %p rank %d nranks %d cudaDev %d nvmlDev %d", comm, rank, ndev, comm->cudaDev, comm->nvmlDev);
+  TRACE(NCCL_INIT,"comm %p rank %d nranks %d cudaDev %d nvmlDev %d", comm, rank, ndev, comm->cudaDev, comm->nvmlDev);
 
   comm->doneEvent = doneEvent;
   comm->llThreshold = ncclParamLlThreshold();
@@ -666,6 +675,7 @@ static ncclResult_t p2pSetup(struct ncclComm* comm, struct ncclChannel* channel,
     if (peer == -1) continue;
     conn = &channel->peers[peer].recv;
     if (conn->connected) { ++nSkippedRecv; continue; }
+    memset(&connect, 0, sizeof(connect));
     NCCLCHECK(selectTransport<0>(comm->peerInfo+comm->rank, comm->peerInfo+peer, &connect, conn, channel->buffSize, channel->id));
     NCCLCHECK(bootstrapSend(comm->bootstrap, peer, &connect, sizeof(struct ncclConnect)));
   }
@@ -674,6 +684,7 @@ static ncclResult_t p2pSetup(struct ncclComm* comm, struct ncclChannel* channel,
     if (peer == -1) continue;
     conn = &channel->peers[peer].send;
     if (conn->connected) { ++nSkippedSend; continue; }
+    memset(&connect, 0, sizeof(connect));
     NCCLCHECK(selectTransport<1>(comm->peerInfo+comm->rank, comm->peerInfo+peer, &connect, conn, channel->buffSize, channel->id));
     NCCLCHECK(bootstrapSend(comm->bootstrap, peer, &connect, sizeof(struct ncclConnect)));
   }
@@ -682,6 +693,7 @@ static ncclResult_t p2pSetup(struct ncclComm* comm, struct ncclChannel* channel,
     if (peer == -1) continue;
     conn = &channel->peers[peer].send;
     if (conn->connected) {++nSkippedSend; continue; }
+    memset(&connect, 0, sizeof(connect));
     NCCLCHECK(bootstrapRecv(comm->bootstrap, peer, &connect, sizeof(struct ncclConnect)));
     NCCLCHECK(conn->transportComm->connect(&connect, conn));
     conn->connected = 1;
@@ -691,6 +703,7 @@ static ncclResult_t p2pSetup(struct ncclComm* comm, struct ncclChannel* channel,
     if (peer == -1) continue;
     conn = &channel->peers[peer].recv;
     if (conn->connected) {++nSkippedRecv; continue; }
+    memset(&connect, 0, sizeof(connect));
     NCCLCHECK(bootstrapRecv(comm->bootstrap, peer, &connect, sizeof(struct ncclConnect)));
     NCCLCHECK(conn->transportComm->connect(&connect, conn));
     conn->connected = 1;
@@ -970,7 +983,7 @@ ncclResult_t ncclCommInitRankSync(ncclComm_t* newcomm, int nranks, ncclUniqueId 
   sched_setaffinity(0, sizeof(cpu_set_t), &affinitySave);
   NCCLCHECKGOTO(wrapNvmlShutdown(), res, cleanup);
 
-  TRACE(NCCL_INIT,"comm %p rank %d nranks %d cudaDev %d nvmlDev %d - Init COMPLETE", *newcomm, myrank, nranks, (*newcomm)->cudaDev, (*newcomm)->nvmlDev);
+  INFO(NCCL_INIT,"comm %p rank %d nranks %d cudaDev %d nvmlDev %d - Init COMPLETE", *newcomm, myrank, nranks, (*newcomm)->cudaDev, (*newcomm)->nvmlDev);
 
   return ncclSuccess;
 cleanup:
@@ -1166,7 +1179,6 @@ ncclResult_t ncclCommInitAll(ncclComm_t* comms, int ndev, const int* devlist) {
   goto final;
 
 cleanup:
-  free(ncclDevList);
   for(rank=0; rank<ndev; ++rank) {
     if(comms[rank] != NULL) {
       commFree(comms[rank]);
@@ -1174,6 +1186,7 @@ cleanup:
   }
 
 final:
+  free(ncclDevList);
   if(wrapNvmlShutdown() != ncclSuccess)
     INFO(NCCL_INIT,"NCCL did not shutdown nvml properly");
   cudaSetDevice(savedDevice);
@@ -1184,6 +1197,9 @@ final:
 
 static ncclResult_t commDestroy(ncclComm_t comm) {
   int savedDevice;
+#ifdef ENABLE_TRACE
+  int rank = comm->rank;
+#endif
   CUDACHECK(cudaGetDevice(&savedDevice));
   int commDevice = comm->cudaDev;
 
@@ -1191,7 +1207,7 @@ static ncclResult_t commDestroy(ncclComm_t comm) {
     CUDACHECK(cudaSetDevice(commDevice));
   }
 
-  TRACE(NCCL_INIT, "Destroying comm %p rank %d abortFlag %d fatalError %d", comm, comm->rank, *comm->abortFlag, comm->fatalError);
+  TRACE(NCCL_INIT, "Destroying comm %p rank %d abortFlag %d fatalError %d", comm, rank, *comm->abortFlag, comm->fatalError);
 
   CUDACHECK(cudaStreamSynchronize(comm->groupStream));
   NCCLCHECK(transportDestroyProxy(comm));
@@ -1200,7 +1216,7 @@ static ncclResult_t commDestroy(ncclComm_t comm) {
   if (savedDevice != commDevice)
     CUDACHECK(cudaSetDevice(savedDevice));
 
-  TRACE(NCCL_INIT, "Destroyed comm %p rank %d", comm, comm->rank);
+  TRACE(NCCL_INIT, "Destroyed comm %p rank %d", comm, rank);
 
   return ncclSuccess;
 }
@@ -1209,6 +1225,14 @@ NCCL_API(ncclResult_t, ncclCommDestroy, ncclComm_t comm);
 ncclResult_t ncclCommDestroy(ncclComm_t comm) {
   if (comm == NULL)
     return ncclSuccess;
+
+  TRACE(NCCL_INIT, "comm %p rank %d nRanks %d cudaDev %d nvmlDev %d", comm, comm->rank, comm->nRanks, comm->cudaDev, comm->nvmlDev);
+
+  // Try and prevent a double free of the comm struct (user error)
+  if (comm->rank == -1 || comm->nRanks <= 0 || comm->cudaDev == -1 || comm->nvmlDev == -1) {
+    WARN("comm %p has already been destroyed", comm);
+    return ncclInvalidArgument;
+  }
 
   return commDestroy(comm);
 }

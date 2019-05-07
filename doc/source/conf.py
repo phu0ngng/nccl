@@ -26,7 +26,7 @@ project = u'NCCL'
 copyright = u'2019, NVIDIA Corporation'
 author = u'NVIDIA Corporation'
 
-version_long = u'2.4.1'
+version_long = u'2.4.6'
 
 version_short = u'2.4'
 
