@@ -147,25 +147,28 @@ void* persistentSocketThread(void *args_) {
   struct ncclSocketThreadArgs* args = (struct ncclSocketThreadArgs*)args_;
   struct ncclSocketComm* comm = args->comm;
   volatile enum threadState* state = &comm->state;
-  struct ncclSocketTaskQueue* myQueue = comm->threadTaskQueue+args->threadId;;
+  struct ncclSocketTaskQueue* myQueue = comm->threadTaskQueue+args->threadId;
+  int nSocksPerThread = comm->nSocks / comm->nThreads;
   while (1) {
     int idle = 1;
-    for (int i=0; i<MAX_SUB_REQUESTS; i++) {
-      struct ncclSocketTask* r = myQueue->requests+i;
-      if (r != NULL && r->used == 1 &&
-          r->offset >= 0 && r->offset < r->size) {
-        do {
-          r->result = socketProgress(r->op, r->fd, r->data, r->size, &r->offset);
-          if (r->result != ncclSuccess) {
-            WARN("NET/Socket : socket progress error fd=%d", r->fd);
-            for (int i=0; i<comm->nSocks; i++) {
-              INFO(NCCL_INIT, "fd[%d] = %d", i, comm->fd[i]);
+    for (int i=0; i<MAX_SUB_REQUESTS; i+=nSocksPerThread) {
+      int repeat;
+      do {
+        repeat = 0;
+        for (int j=0; j<nSocksPerThread; j++) {
+          struct ncclSocketTask* r = myQueue->requests+i+j;
+          if (r != NULL && r->used == 1 &&
+            r->offset >= 0 && r->offset < r->size) {
+            r->result = socketProgress(r->op, r->fd, r->data, r->size, &r->offset);
+            if (r->result != ncclSuccess) {
+              WARN("NET/Socket : socket progress error");
+              return NULL;
             }
-            return NULL;
+            idle = 0;
+            if (r->offset < r->size) repeat = 1;
           }
-        } while (r->offset < r->size);
-        idle = 0;
-      }
+        }
+      } while (repeat);
     }
     if (*state == stop) return NULL;
     if (idle) sched_yield();
