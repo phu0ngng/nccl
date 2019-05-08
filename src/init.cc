@@ -400,7 +400,7 @@ static ncclResult_t setupChannel(struct ncclComm* comm, int channelId, int rank,
 
   struct ncclTree* tree = &channel->tree;
   tree->up = -1;
-  tree->down[0] = tree->down[1] = tree->down[2] = -1;
+  for (int i=0; i<NCCL_MAX_TREE_ARITY; i++) tree->down[i] = -1;
 
   //
   // Find per-node masters and connect them via a binary tree
