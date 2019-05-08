@@ -252,17 +252,6 @@ ncclResult_t ncclSocketGetRequest(struct ncclSocketComm* comm, int op, void* dat
   if (reqs->requests == NULL) {
     NCCLCHECK(ncclCalloc(&reqs->requests, MAX_REQUESTS));
     reqs->next = 0;
-    // create helper threads and prepare per-thread task queue
-    for (int i=0; i<comm->nThreads; i++) {
-      struct ncclSocketTaskQueue* queue = comm->threadTaskQueue+i;
-      if (queue->tasks == NULL) {
-        NCCLCHECK(ncclCalloc(&queue->tasks, MAX_QUEUE_LEN));
-        queue->next = 0;
-        comm->args[i].comm = comm;
-        comm->args[i].threadId = i;
-        pthread_create(comm->helperThread+i, NULL, persistentSocketThread, comm->args+i);
-      }
-    }
   }
   struct ncclSocketRequest* r = reqs->requests+reqs->next;
   if (r->used == 0) {
@@ -284,6 +273,14 @@ ncclResult_t ncclSocketGetRequest(struct ncclSocketComm* comm, int op, void* dat
 ncclResult_t ncclSocketGetTask(struct ncclSocketComm* comm, int op, void* data, int size, struct ncclSocketTask** req) {
   int tid = comm->nextFd % comm->nThreads;
   struct ncclSocketTaskQueue* queue = comm->threadTaskQueue+tid;
+  // create helper threads and prepare per-thread task queue
+  if (queue->tasks == NULL) {
+    NCCLCHECK(ncclCalloc(&queue->tasks, MAX_QUEUE_LEN));
+    queue->next = 0;
+    comm->args[tid].comm = comm;
+    comm->args[tid].threadId = tid;
+    pthread_create(comm->helperThread+tid, NULL, persistentSocketThread, comm->args+tid);
+  }
   struct ncclSocketTask* r = queue->tasks+queue->next;
   if (r->used == 0) {
     r->op = op;
