@@ -80,8 +80,8 @@ ncclResult_t GetSocketAddr(int dev, union socketAddress* addr) {
 #define MAX_SOCKETS 16
 #define MAX_THREADS 16
 #define MAX_REQUESTS 128
-#define MAX_SUB_REQUESTS (MAX_SOCKETS*MAX_REQUESTS)
-#define SOCKET_CHUNKSIZE (64*1024)
+#define MAX_QUEUE_LEN MAX_REQUESTS
+#define MIN_CHUNKSIZE (64*1024)
 
 NCCL_PARAM(SocketNsocksPerThread, "NSOCKS_PERTHREAD", 1);
 NCCL_PARAM(SocketNthreads, "SOCKET_NTHREADS", 1);
@@ -96,7 +96,6 @@ struct ncclSocketTask {
   void* data;
   int size;
   int fd;
-  int fdIndex;
   int offset;
   int used;
   ncclResult_t result;
@@ -109,7 +108,7 @@ struct ncclSocketRequest {
   int ctrlFd;
   int used;
   struct ncclSocketComm* comm;
-  struct ncclSocketTask* tasks[32];
+  struct ncclSocketTask* tasks[MAX_SOCKETS];
   int nSubs;
 };
 
@@ -120,7 +119,7 @@ struct ncclSocketReqs {
 
 struct ncclSocketTaskQueue {
   int next;
-  struct ncclSocketTask* requests;
+  struct ncclSocketTask* tasks;
 };
 
 enum threadState {start, stop};
@@ -137,7 +136,7 @@ struct ncclSocketComm {
   int nThreads;
   int nextFd;
   struct ncclSocketReqs reqs;
-  pthread_t proxyThread[MAX_THREADS];
+  pthread_t helperThread[MAX_THREADS];
   struct ncclSocketTaskQueue threadTaskQueue[MAX_THREADS];
   struct ncclSocketThreadArgs args[MAX_THREADS];
   enum threadState state;
@@ -151,14 +150,13 @@ void* persistentSocketThread(void *args_) {
   int nSocksPerThread = comm->nSocks / comm->nThreads;
   while (1) {
     int idle = 1;
-    for (int i=0; i<MAX_SUB_REQUESTS; i+=nSocksPerThread) {
+    for (int i=0; i<MAX_QUEUE_LEN; i+=nSocksPerThread) {
       int repeat;
       do {
         repeat = 0;
         for (int j=0; j<nSocksPerThread; j++) {
-          struct ncclSocketTask* r = myQueue->requests+i+j;
-          if (r != NULL && r->used == 1 &&
-            r->offset >= 0 && r->offset < r->size) {
+          struct ncclSocketTask* r = myQueue->tasks+i+j;
+          if (r != NULL && r->used == 1 && r->offset < r->size) {
             r->result = socketProgress(r->op, r->fd, r->data, r->size, &r->offset);
             if (r->result != ncclSuccess) {
               WARN("NET/Socket : socket progress error");
@@ -256,13 +254,13 @@ ncclResult_t ncclSocketGetRequest(struct ncclSocketComm* comm, int op, void* dat
     reqs->next = 0;
     // create helper threads and prepare per-thread task queue
     for (int i=0; i<comm->nThreads; i++) {
-      struct ncclSocketTaskQueue* reqs = comm->threadTaskQueue+i;
-      if (reqs->requests == NULL) {
-        NCCLCHECK(ncclCalloc(&reqs->requests, MAX_SUB_REQUESTS));
-        reqs->next = 0;
+      struct ncclSocketTaskQueue* queue = comm->threadTaskQueue+i;
+      if (queue->tasks == NULL) {
+        NCCLCHECK(ncclCalloc(&queue->tasks, MAX_QUEUE_LEN));
+        queue->next = 0;
         comm->args[i].comm = comm;
         comm->args[i].threadId = i;
-        pthread_create(comm->proxyThread+i, NULL, persistentSocketThread, comm->args+i);
+        pthread_create(comm->helperThread+i, NULL, persistentSocketThread, comm->args+i);
       }
     }
   }
@@ -285,24 +283,23 @@ ncclResult_t ncclSocketGetRequest(struct ncclSocketComm* comm, int op, void* dat
 
 ncclResult_t ncclSocketGetTask(struct ncclSocketComm* comm, int op, void* data, int size, struct ncclSocketTask** req) {
   int tid = comm->nextFd % comm->nThreads;
-  struct ncclSocketTaskQueue* reqs = comm->threadTaskQueue+tid;
-  struct ncclSocketTask* r = reqs->requests+reqs->next;
+  struct ncclSocketTaskQueue* queue = comm->threadTaskQueue+tid;
+  struct ncclSocketTask* r = queue->tasks+queue->next;
   if (r->used == 0) {
     r->op = op;
     r->data = data;
     r->size = size;
     r->fd = comm->fd[comm->nextFd];
-    r->fdIndex = comm->nextFd;
     r->offset = 0;
     r->result = ncclSuccess;
     comm->nextFd = (comm->nextFd + 1) % comm->nSocks;
-    reqs->next = (reqs->next+1)%MAX_SUB_REQUESTS;
+    queue->next = (queue->next+1)%MAX_QUEUE_LEN;
     r->used = 1;
     *req = r;
     comm->state = start;
     return ncclSuccess;
   }
-  WARN("Socket : unable to allocate sub requests");
+  WARN("Socket : unable to allocate subtasks");
   return ncclInternalError;
 }
 
@@ -330,8 +327,8 @@ ncclResult_t ncclSocketTest(void* request, int* done, int* size) {
     }
     r->size = data;
     r->used = 2; // done exchanging size
-    // divide into sub requests
-    int taskSize = std::max(SOCKET_CHUNKSIZE, DIVUP(r->size, r->comm->nSocks));
+    // divide into subtasks
+    int taskSize = std::max(MIN_CHUNKSIZE, DIVUP(r->size, r->comm->nSocks));
     int chunkOffset = 0, i = 0;
     while (chunkOffset < r->size) {
       int chunkSize = std::min(taskSize, r->size-chunkOffset);
@@ -387,10 +384,10 @@ ncclResult_t ncclSocketClose(void* opaqueComm) {
   if (comm) {
     comm->state = stop;
     for (int i=0; i<comm->nThreads; i++) {
-      if (comm->proxyThread[i]) {
-        pthread_join(comm->proxyThread[i], NULL);
+      if (comm->helperThread[i]) {
+        pthread_join(comm->helperThread[i], NULL);
       }
-      free(comm->threadTaskQueue[i].requests);
+      free(comm->threadTaskQueue[i].tasks);
     }
     free(comm->reqs.requests);
     if (comm->ctrlFd != -1) close(comm->ctrlFd);
