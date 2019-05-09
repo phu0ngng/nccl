@@ -129,3 +129,9 @@ __device__ void ncclAllGatherRingLLKernel(struct CollectiveArgs* args) {
 
 template<int UNUSED, class FUNC, typename T>
 __device__ void ncclAllGatherTreeLLKernel(struct CollectiveArgs* args) { }
+
+template<int UNUSED, class FUNC, typename T>
+__device__ void ncclAllGatherRingLL128Kernel(struct CollectiveArgs* args) { }
+
+template<int UNUSED, class FUNC, typename T>
+__device__ void ncclAllGatherTreeLL128Kernel(struct CollectiveArgs* args) { }

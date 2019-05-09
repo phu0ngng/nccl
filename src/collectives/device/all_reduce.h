@@ -134,8 +134,6 @@ __device__ void ncclAllReduceTreeKernel(struct CollectiveArgs* args) {
   } while(0);
 }
 
-#define LL128
-#ifndef LL128
 template<int UNUSED, class FUNC, typename T>
 __device__ void ncclAllReduceRingLLKernel(struct CollectiveArgs* args) {
   const int tid = threadIdx.x;
@@ -261,11 +259,18 @@ __device__ void ncclAllReduceTreeLLKernel(struct CollectiveArgs* args) {
     }
   } while(0);
 }
+
+#if (__CUDA_ARCH__ != 700)
+template<int UNUSED, class FUNC, typename T>
+__device__ void ncclAllReduceRingLL128Kernel(struct CollectiveArgs* args) {
+}
+template<int UNUSED, class FUNC, typename T>
+__device__ void ncclAllReduceTreeLL128Kernel(struct CollectiveArgs* args) {
+}
 #else
 #include "prims_ll128.h"
-
 template<int UNUSED, class FUNC, typename T>
-__device__ void ncclAllReduceRingLLKernel(struct CollectiveArgs* args) {
+__device__ void ncclAllReduceRingLL128Kernel(struct CollectiveArgs* args) {
   const int tid = threadIdx.x;
   const int bid = args->bid;
   const int nthreads = args->nThreads;
@@ -340,7 +345,7 @@ __device__ void ncclAllReduceRingLLKernel(struct CollectiveArgs* args) {
 }
 
 template<int UNUSED, class FUNC, typename T>
-__device__ void ncclAllReduceTreeLLKernel(struct CollectiveArgs* args) {
+__device__ void ncclAllReduceTreeLL128Kernel(struct CollectiveArgs* args) {
   const int tid = threadIdx.x;
   const int nthreads = args->nThreads;
   const int bid = args->bid;

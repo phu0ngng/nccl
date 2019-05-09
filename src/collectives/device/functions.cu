@@ -12,7 +12,8 @@ __device__ volatile uint64_t* ncclShmem;
 
 #define NCCL_FUNC5(coll, op, dtype) \
   NCCL_COLL_NAME(coll, op, dtype), \
-  NCCL_COLL_NAME(coll##LL, op, dtype)
+  NCCL_COLL_NAME(coll##LL, op, dtype), \
+  NCCL_COLL_NAME(coll##LL128, op, dtype)
 
 #define NCCL_FUNC4(coll, op, dtype) \
   NCCL_FUNC5(coll##Ring, op, dtype), \
@@ -61,7 +62,7 @@ __device__ volatile uint64_t* ncclShmem;
   NCCL_FUNCS2A(ncclAllReduce) }
 
 // Must be consistent with the ncclFuncSet enum
-__device__ ncclKern_t ncclFuncs[ncclCollCount*ncclNumOps*ncclNumTypes*2*2] = {
+__device__ ncclKern_t ncclFuncs[ncclCollCount*ncclNumOps*ncclNumTypes*NCCL_NUM_ALGORITHMS*NCCL_NUM_MODES] = {
 // Don't try to initialize the host shadow copy of this device-side global
 // variable. There is no host pointer to a device-side function, which
 // confuses clang. This will be fixed in the next clang release.

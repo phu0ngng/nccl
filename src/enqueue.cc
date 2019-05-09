@@ -13,6 +13,7 @@
 // Only generate inline kernels for LL
 #define NCCL_FUNC5(coll, op, dtype) \
   (void*)NCCL_KERN_NAME(coll##LL, op, dtype), \
+  (void*)NCCL_KERN_NAME(coll##LL, op, dtype), \
   (void*)NCCL_KERN_NAME(coll##LL, op, dtype)
 
 #define NCCL_FUNC4(coll, op, dtype) \
@@ -54,7 +55,7 @@
   NCCL_FUNCS3B(coll, copy)
 
 // Must be consistent with the ncclFuncSet enum
-static void* const ncclKerns[ncclCollCount*ncclNumOps*ncclNumTypes*2*2] = {
+static void* const ncclKerns[ncclCollCount*ncclNumOps*ncclNumTypes*NCCL_NUM_ALGORITHMS*NCCL_NUM_MODES] = {
   NCCL_FUNCS2B(ncclBroadcast),
   NCCL_FUNCS2A(ncclReduce),
   NCCL_FUNCS2B(ncclAllGather),
@@ -281,12 +282,17 @@ static void getKernelInfo(struct ncclInfo* info, uint8_t* nChannels, uint16_t* n
   // Check if we have a fixed LL threshold, otherwise compute it.
   int perThreadThreshold = info->comm->threadThreshold;
   if (info->pattern >= ncclPatternTreeUp) perThreadThreshold *= 4;
-  ssize_t llUserThreshold = info->coll == ncclCollAllReduce ? info->comm->ll128Threshold : info->comm->llThreshold;
-  ssize_t llThreshold = llUserThreshold >= 0 ? llUserThreshold :
+  ssize_t llThreshold = info->comm->llThreshold >= 0 ? info->comm->llThreshold :
+    nc*nt*info->nchunksPerLoop*perThreadThreshold;
+  ssize_t ll128Threshold = info->comm->ll128Threshold >= 0 ? info->comm->ll128Threshold :
     nc*nt*info->nchunksPerLoop*perThreadThreshold;
 
   if (info->nBytes <= llThreshold) {
     *llMode = 1;
+    *nChannels = nc;
+    *nThreads = nt;
+  } else if (info->coll == ncclCollAllReduce && info->nBytes <= ll128Threshold) {
+    *llMode = 2;
     *nChannels = nc;
     *nThreads = nt;
   } else {
@@ -314,8 +320,6 @@ static ncclResult_t computeColl(struct ncclInfo* info /* input */, struct ncclCo
 
   int treeMode = info->pattern >= ncclPatternTreeUp ? 1 : 0;
   coll->funcIndex = FUNC_INDEX(info->coll, info->op, info->datatype, llMode, treeMode);
-
-  if (info->coll == ncclCollAllReduce) llMode *= 2;
 
   int stepSize   = ( llMode == 1 ? NCCL_LL_BUFF_SIZE : llMode == 2 ? NCCL_LL128_BUFF_SIZE : info->comm->channels[0].buffSize ) / NCCL_STEPS;
   int chunkSteps = (llMode|treeMode) ? 1 : info->chunkSteps;

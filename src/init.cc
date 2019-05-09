@@ -139,9 +139,8 @@ ncclResult_t initNet() {
 
 NCCL_PARAM(LlThreshold, "LL_THRESHOLD", -2);
 NCCL_PARAM(ThreadThreshold, "THREAD_THRESHOLD", -2);
-/* FIXME forcing Tree/LL128 all the way */
-NCCL_PARAM(Ll128Threshold, "LL128_THRESHOLD", 0x7fffffffffffffff);
-NCCL_PARAM(TreeThreshold, "TREE_THRESHOLD", 0x7fffffffffffffff);
+NCCL_PARAM(Ll128Threshold, "LL128_THRESHOLD", 0);
+NCCL_PARAM(TreeThreshold, "TREE_THRESHOLD", -2);
 
 int ncclThreadThreshold(int minCompCap, int multiNode) {
   int threshold = ncclParamThreadThreshold();
@@ -784,6 +783,8 @@ static ncclResult_t initTransportsRank(struct ncclComm* comm, ncclUniqueId* comm
     int nThreads;
     int nrings;
     int cudaCompCap;
+    int fullCudaCompCap;
+    int nvlink;
     int prev[MAXCHANNELS];
     int next[MAXCHANNELS];
   } *allGather3Data;
@@ -792,6 +793,8 @@ static ncclResult_t initTransportsRank(struct ncclComm* comm, ncclUniqueId* comm
   allGather3Data[rank].nThreads = comm->nThreads;
   allGather3Data[rank].nrings = nrings;
   allGather3Data[rank].cudaCompCap = ncclCudaCompCap();
+  allGather3Data[rank].fullCudaCompCap = ncclCudaFullCompCap();
+  NCCLCHECK(ncclNvlinkGpu(&allGather3Data[rank].nvlink));
   for (int r=0; r<nrings; r++) {
     allGather3Data[rank].prev[r] = *(prev+r*nranks+rank);
     allGather3Data[rank].next[r] = *(next+r*nranks+rank);
@@ -807,6 +810,17 @@ static ncclResult_t initTransportsRank(struct ncclComm* comm, ncclUniqueId* comm
   int minCompCap = myCompCap;
   for (int i = 0; i < nranks; i++)
     minCompCap = std::min(allGather3Data[i].cudaCompCap, minCompCap);
+
+  // LL128 is only supported on V100/NVlink for now
+  if (comm->ll128Threshold > 0) {
+    for (int i = 0; i < nranks; i++) {
+      if (allGather3Data[i].fullCudaCompCap != 70 || allGather3Data[i].nvlink == 0) {
+        INFO(NCCL_INIT, "Not using V100/NVLink, disabling LL128");
+        comm->ll128Threshold = 0;
+        break;
+      }
+    }
+  }
 
   // Determine thread threshold across all GPUs
   int nnodes = 0;

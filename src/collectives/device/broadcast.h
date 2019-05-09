@@ -100,3 +100,9 @@ __device__ void ncclBroadcastRingLLKernel(struct CollectiveArgs* args) {
 
 template<int UNUSED, class FUNC, typename T>
 __device__ void ncclBroadcastTreeLLKernel(struct CollectiveArgs* args) { }
+
+template<int UNUSED, class FUNC, typename T>
+__device__ void ncclBroadcastRingLL128Kernel(struct CollectiveArgs* args) { }
+
+template<int UNUSED, class FUNC, typename T>
+__device__ void ncclBroadcastTreeLL128Kernel(struct CollectiveArgs* args) { }

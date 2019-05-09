@@ -98,6 +98,7 @@ __global__ void NCCL_KERN_NAME(coll, op, dtype)(struct ncclColl firstColl) { \
 #define IMPL_COLL4(coll, op, ncclFunc, dtype, ctype, ncclColl, ncclOp, ncclType, al) \
   IMPL_COLL_FUNC(coll, op, ncclFunc, dtype, ctype) \
   IMPL_COLL_FUNC(coll##LL, op, ncclFunc, dtype, ctype) \
+  IMPL_COLL_FUNC(coll##LL128, op, ncclFunc, dtype, ctype) \
   IMPL_COLL_KERN(coll##LL, op, ncclFunc, dtype, ctype, FUNC_INDEX(ncclColl, ncclOp, ncclType, 1, al)) \
 
 #define IMPL_COLL3(coll, op, ncclFunc, dtype, ctype, ncclColl, ncclOp, ncclType) \
