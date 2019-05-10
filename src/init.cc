@@ -139,8 +139,10 @@ ncclResult_t initNet() {
 
 NCCL_PARAM(LlThreshold, "LL_THRESHOLD", -2);
 NCCL_PARAM(ThreadThreshold, "THREAD_THRESHOLD", -2);
-NCCL_PARAM(Ll128Threshold, "LL128_THRESHOLD", 0);
 NCCL_PARAM(TreeThreshold, "TREE_THRESHOLD", -2);
+
+// Use Tree/LL128 all the way on V100+NVLink
+NCCL_PARAM(Ll128Enable, "LL128_ENABLE", 0);
 
 int ncclThreadThreshold(int minCompCap, int multiNode) {
   int threshold = ncclParamThreadThreshold();
@@ -256,7 +258,6 @@ static ncclResult_t commAlloc(ncclComm_t* comret, int ndev, int rank) {
 
   comm->doneEvent = doneEvent;
   comm->llThreshold = ncclParamLlThreshold();
-  comm->ll128Threshold = ncclParamLl128Threshold();
   comm->treeThreshold = ncclParamTreeThreshold();
   comm->checkPointers = ncclParamCheckPointers() == 1 ? true : false;
 #if CUDART_VERSION >= 9020
@@ -812,13 +813,18 @@ static ncclResult_t initTransportsRank(struct ncclComm* comm, ncclUniqueId* comm
     minCompCap = std::min(allGather3Data[i].cudaCompCap, minCompCap);
 
   // LL128 is only supported on V100/NVlink for now
-  if (comm->ll128Threshold > 0) {
+  if (ncclParamLl128Enable()) {
+    int enable = 1;
     for (int i = 0; i < nranks; i++) {
       if (allGather3Data[i].fullCudaCompCap != 70 || allGather3Data[i].nvlink == 0) {
         INFO(NCCL_INIT, "Not using V100/NVLink, disabling LL128");
-        comm->ll128Threshold = 0;
-        break;
+        enable = 0;
       }
+    }
+    if (enable) {
+      comm->llThreshold = 0;
+      comm->ll128Threshold = 0x7fffffffffffffff;
+      comm->treeThreshold = 0x7fffffffffffffff;
     }
   }
 
