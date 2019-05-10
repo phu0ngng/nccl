@@ -46,16 +46,6 @@ static inline uint16_t socketToPort(struct sockaddr *saddr) {
   return ntohs(saddr->sa_family == AF_INET ? ((struct sockaddr_in*)saddr)->sin_port : ((struct sockaddr_in6*)saddr)->sin6_port);
 }
 
-static inline void setSocketPort(struct sockaddr *saddr, uint16_t port) {
-  if (saddr->sa_family == AF_INET) {
-    struct sockaddr_in* sa4 = (struct sockaddr_in*)saddr;
-    sa4->sin_port = htons(port);
-  } else {
-    struct sockaddr_in6* sa6 = (struct sockaddr_in6*)saddr;
-    sa6->sin6_port = htons(port);
-  }
-}
-
 /* Allow the user to force the IPv4/IPv6 interface selection */
 static inline int envSocketFamily(void) {
   int family = -1; // Family selection is not forced, will use first one found
