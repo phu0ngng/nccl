@@ -216,7 +216,7 @@ end:
   }
   *ns = nSocks;
   *nt = nThreads;
-  INFO(NCCL_NET, "NET/Socket: Using %d threads and %d sockets per thread", nThreads, nSocksPerThread);
+  INFO(NCCL_INIT, "NET/Socket: Using %d threads and %d sockets per thread", nThreads, nSocksPerThread);
   return ncclSuccess;
 }
 
