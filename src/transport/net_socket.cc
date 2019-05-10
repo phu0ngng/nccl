@@ -88,6 +88,7 @@ NCCL_PARAM(SocketNthreads, "SOCKET_NTHREADS", 1);
 
 struct ncclSocketHandle {
   union socketAddress connectAddr;
+  int nSocks;
 };
 
 struct ncclSocketTask {
@@ -206,6 +207,7 @@ ncclResult_t ncclSocketListen(int dev, void* opaqueHandle, void** listenComm) {
   }
   NCCLCHECK(GetSocketAddr(dev, &handle->connectAddr));
   NCCLCHECK(createListenSocket(&comm->ctrlFd, &handle->connectAddr));
+  handle->nSocks = comm->nSocks;
   *listenComm = comm;
   return ncclSuccess;
 }
@@ -214,6 +216,13 @@ ncclResult_t ncclSocketConnect(int dev, void* opaqueHandle, void** sendComm) {
   struct ncclSocketComm* comm;
   NCCLCHECK(ncclSocketNewComm(&comm));
   struct ncclSocketHandle* handle = (struct ncclSocketHandle*) opaqueHandle;
+  // adjust nSocks and nThreads based on those at the listener
+  if (comm->nSocks != handle->nSocks) {
+    WARN("NET/Socket : send side and recv side have different number of sockets: %d vs %d, making send side equal to recv side",
+        comm->nSocks, handle->nSocks);
+    while (handle->nSocks % comm->nThreads != 0) comm->nThreads--;
+    comm->nSocks = handle->nSocks;
+  }
   for (int i=0; i<comm->nSocks+1; i++) {
     int tmpFd, offset=0;
     NCCLCHECK(connectAddress(&tmpFd, &handle->connectAddr));
@@ -261,7 +270,7 @@ ncclResult_t ncclSocketGetRequest(struct ncclSocketComm* comm, int op, void* dat
     *req = r;
     return ncclSuccess;
   }
-  WARN("Socket : unable to allocate requests");
+  WARN("NET/Socket : unable to allocate requests");
   return ncclInternalError;
 }
 
@@ -291,7 +300,7 @@ ncclResult_t ncclSocketGetTask(struct ncclSocketComm* comm, int op, void* data, 
     comm->state = start;
     return ncclSuccess;
   }
-  WARN("Socket : unable to allocate subtasks");
+  WARN("NET/Socket : unable to allocate subtasks");
   return ncclInternalError;
 }
 
