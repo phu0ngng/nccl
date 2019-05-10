@@ -181,8 +181,9 @@ ncclResult_t ncclSocketGetNsockNthread(int dev, int* ns, int* nt) {
     WARN("NET/Socket : NCCL_SOCKET_NTHREADS is greater than the maximum allowed, setting to %d", MAX_THREADS);
     nThreads = MAX_THREADS;
   }
-  if (nThreads == -2 && nSocksPerThread == -2) {
+  if (nThreads == -2 || nSocksPerThread == -2) {
     // Auto-detection
+    int autoNt=1, autoNs=1;
     char vendorPath[PATH_MAX];
     snprintf(vendorPath, PATH_MAX, "/sys/class/net/%s/device/vendor", ncclNetIfNames+dev*MAX_IF_NAME_SIZE);
     char* rPath = realpath(vendorPath, NULL);
@@ -192,8 +193,6 @@ ncclResult_t ncclSocketGetNsockNthread(int dev, int* ns, int* nt) {
       // Could not find device vendor. This is handled silently so
       // we don't want to print an INFO error.
       TRACE(NCCL_NET, "Open of %s failed : %s\n", vendorPath, strerror(errno));
-      nThreads = 1;
-      nSocksPerThread = 1;
       goto end;
     }
     char vendor[7];
@@ -201,17 +200,14 @@ ncclResult_t ncclSocketGetNsockNthread(int dev, int* ns, int* nt) {
     int len;
     SYSCHECKVAL(read(fd, vendor, 6), "read", len);
     SYSCHECK(close(fd), "close");
-    if (strcmp(vendor, "0x1d0f") == 0) {
-      // AWS
-      nThreads = 2;
-      nSocksPerThread = 8;
-    } else {
-      nThreads = 1;
-      nSocksPerThread = 1;
+    if (strcmp(vendor, "0x1d0f") == 0) { // AWS
+      autoNt = 2;
+      autoNs = 8;
     }
-  } else if (nThreads == -2) nThreads = 1;
-  else if (nSocksPerThread == -2) nSocksPerThread = 1;
 end:
+    if (nThreads == -2) nThreads = autoNt;
+    if (nSocksPerThread == -2) nSocksPerThread = autoNs;
+  }
   int nSocks = nSocksPerThread * nThreads;
   if (nSocks > MAX_SOCKETS) {
     nSocksPerThread = MAX_SOCKETS/nThreads;
