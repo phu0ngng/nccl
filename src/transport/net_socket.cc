@@ -174,12 +174,7 @@ void* persistentSocketThread(void *args_) {
   }
 }
 
-ncclResult_t ncclSocketNewComm(struct ncclSocketComm** comm, int dev) {
-  NCCLCHECK(ncclCalloc(comm, 1));
-  (*comm)->ctrlFd = -1;
-  for (int i=0; i < MAX_SOCKETS; i++) {
-    (*comm)->fd[i] = -1;
-  }
+ncclResult_t ncclSocketGetNsockNthread(int dev, int* ns, int* nt) {
   int nSocksPerThread = ncclParamSocketNsocksPerThread();
   int nThreads = ncclParamSocketNthreads();
   if (nThreads > MAX_THREADS) {
@@ -191,13 +186,16 @@ ncclResult_t ncclSocketNewComm(struct ncclSocketComm** comm, int dev) {
     char vendorPath[PATH_MAX];
     snprintf(vendorPath, PATH_MAX, "/sys/class/net/%s/device/vendor", ncclNetIfNames+dev*MAX_IF_NAME_SIZE);
     char* rPath = realpath(vendorPath, NULL);
-    int fd;
-    if ((fd = open(rPath, O_RDONLY)) == -1) {
+    int fd = open(rPath, O_RDONLY);
+    free(rPath);
+    if (fd == -1) {
       // Could not find device vendor. This is handled silently so
       // we don't want to print an INFO error.
-      TRACE(NCCL_NET, "Open of %s failed : %s\n", rPath, strerror(errno));
+      TRACE(NCCL_NET, "Open of %s failed : %s\n", vendorPath, strerror(errno));
+      nThreads = 1;
+      nSocksPerThread = 1;
+      goto end;
     }
-    free(rPath);
     char vendor[7];
     strncpy(vendor, "0x0000", 7);
     int len;
@@ -213,16 +211,27 @@ ncclResult_t ncclSocketNewComm(struct ncclSocketComm** comm, int dev) {
     }
   } else if (nThreads == -2) nThreads = 1;
   else if (nSocksPerThread == -2) nSocksPerThread = 1;
+end:
   int nSocks = nSocksPerThread * nThreads;
   if (nSocks > MAX_SOCKETS) {
     nSocksPerThread = MAX_SOCKETS/nThreads;
     WARN("NET/Socket : the total number of sockets is greater than the maximum allowed, setting NCCL_NSOCKS_PERTHREAD to %d", nSocksPerThread);
     nSocks = nSocksPerThread * nThreads;
   }
-  (*comm)->nSocks = nSocks;
-  (*comm)->nThreads = nThreads;
-  (*comm)->nextFd = 0;
+  *ns = nSocks;
+  *nt = nThreads;
   INFO(NCCL_NET, "NET/Socket: Using %d threads and %d sockets per thread", nThreads, nSocksPerThread);
+  return ncclSuccess;
+}
+
+ncclResult_t ncclSocketNewComm(struct ncclSocketComm** comm, int dev) {
+  NCCLCHECK(ncclCalloc(comm, 1));
+  (*comm)->ctrlFd = -1;
+  for (int i=0; i < MAX_SOCKETS; i++) {
+    (*comm)->fd[i] = -1;
+  }
+  (*comm)->nextFd = 0;
+  NCCLCHECK(ncclSocketGetNsockNthread(dev, &((*comm)->nSocks), &((*comm)->nThreads)));
   return ncclSuccess;
 }
 
