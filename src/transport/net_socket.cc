@@ -16,6 +16,7 @@
 #include <stdlib.h>
 #include <poll.h>
 #include <limits.h>
+#include <fcntl.h>
 
 /* Init functions */
 static char ncclNetIfNames[MAX_IF_NAME_SIZE*MAX_IFS];
@@ -83,8 +84,8 @@ ncclResult_t GetSocketAddr(int dev, union socketAddress* addr) {
 #define MAX_QUEUE_LEN MAX_REQUESTS
 #define MIN_CHUNKSIZE (64*1024)
 
-NCCL_PARAM(SocketNsocksPerThread, "NSOCKS_PERTHREAD", 1);
-NCCL_PARAM(SocketNthreads, "SOCKET_NTHREADS", 1);
+NCCL_PARAM(SocketNsocksPerThread, "NSOCKS_PERTHREAD", -2);
+NCCL_PARAM(SocketNthreads, "SOCKET_NTHREADS", -2);
 
 struct ncclSocketHandle {
   union socketAddress connectAddr;
@@ -173,7 +174,7 @@ void* persistentSocketThread(void *args_) {
   }
 }
 
-ncclResult_t ncclSocketNewComm(struct ncclSocketComm** comm) {
+ncclResult_t ncclSocketNewComm(struct ncclSocketComm** comm, int dev) {
   NCCLCHECK(ncclCalloc(comm, 1));
   (*comm)->ctrlFd = -1;
   for (int i=0; i < MAX_SOCKETS; i++) {
@@ -185,6 +186,33 @@ ncclResult_t ncclSocketNewComm(struct ncclSocketComm** comm) {
     WARN("NET/Socket : NCCL_SOCKET_NTHREADS is greater than the maximum allowed, setting to %d", MAX_THREADS);
     nThreads = MAX_THREADS;
   }
+  if (nThreads == -2 && nSocksPerThread == -2) {
+    // Auto-detection
+    char vendorPath[PATH_MAX];
+    snprintf(vendorPath, PATH_MAX, "/sys/class/net/%s/device/vendor", ncclNetIfNames+dev*MAX_IF_NAME_SIZE);
+    char* rPath = realpath(vendorPath, NULL);
+    int fd;
+    if ((fd = open(rPath, O_RDONLY)) == -1) {
+      // Could not find device vendor. This is handled silently so
+      // we don't want to print an INFO error.
+      TRACE(NCCL_NET, "Open of %s failed : %s\n", rPath, strerror(errno));
+    }
+    free(rPath);
+    char vendor[7];
+    strncpy(vendor, "0x0000", 7);
+    int len;
+    SYSCHECKVAL(read(fd, vendor, 6), "read", len);
+    SYSCHECK(close(fd), "close");
+    if (strcmp(vendor, "0x1d0f") == 0) {
+      // AWS
+      nThreads = 2;
+      nSocksPerThread = 8;
+    } else {
+      nThreads = 1;
+      nSocksPerThread = 1;
+    }
+  } else if (nThreads == -2) nThreads = 1;
+  else if (nSocksPerThread == -2) nSocksPerThread = 1;
   int nSocks = nSocksPerThread * nThreads;
   if (nSocks > MAX_SOCKETS) {
     nSocksPerThread = MAX_SOCKETS/nThreads;
@@ -194,17 +222,29 @@ ncclResult_t ncclSocketNewComm(struct ncclSocketComm** comm) {
   (*comm)->nSocks = nSocks;
   (*comm)->nThreads = nThreads;
   (*comm)->nextFd = 0;
+  INFO(NCCL_NET, "NET/Socket: Using %d threads and %d sockets per thread", nThreads, nSocksPerThread);
   return ncclSuccess;
 }
 
+ncclResult_t ncclSocketNewComm(struct ncclSocketComm** comm, struct ncclSocketComm* lComm) {
+  NCCLCHECK(ncclCalloc(comm, 1));
+  (*comm)->ctrlFd = -1;
+  for (int i=0; i < MAX_SOCKETS; i++) {
+    (*comm)->fd[i] = -1;
+  }
+  (*comm)->nSocks = lComm->nSocks;
+  (*comm)->nThreads = lComm->nThreads;
+  (*comm)->nextFd = 0;
+  return ncclSuccess;
+}
 ncclResult_t ncclSocketListen(int dev, void* opaqueHandle, void** listenComm) {
-  struct ncclSocketHandle* handle = (struct ncclSocketHandle*) opaqueHandle;
-  static_assert(sizeof(struct ncclSocketHandle) < NCCL_NET_HANDLE_MAXSIZE, "ncclSocketHandle size too large");
-  struct ncclSocketComm* comm;
-  NCCLCHECK(ncclSocketNewComm(&comm));
   if (dev < 0) { // data transfer socket is based on specified dev
     return ncclInternalError;
   }
+  struct ncclSocketHandle* handle = (struct ncclSocketHandle*) opaqueHandle;
+  static_assert(sizeof(struct ncclSocketHandle) < NCCL_NET_HANDLE_MAXSIZE, "ncclSocketHandle size too large");
+  struct ncclSocketComm* comm;
+  NCCLCHECK(ncclSocketNewComm(&comm, dev));
   NCCLCHECK(GetSocketAddr(dev, &handle->connectAddr));
   NCCLCHECK(createListenSocket(&comm->ctrlFd, &handle->connectAddr));
   handle->nSocks = comm->nSocks;
@@ -213,8 +253,11 @@ ncclResult_t ncclSocketListen(int dev, void* opaqueHandle, void** listenComm) {
 }
 
 ncclResult_t ncclSocketConnect(int dev, void* opaqueHandle, void** sendComm) {
+  if (dev < 0) { // data transfer socket is based on specified dev
+    return ncclInternalError;
+  }
   struct ncclSocketComm* comm;
-  NCCLCHECK(ncclSocketNewComm(&comm));
+  NCCLCHECK(ncclSocketNewComm(&comm, dev));
   struct ncclSocketHandle* handle = (struct ncclSocketHandle*) opaqueHandle;
   // adjust nSocks and nThreads based on those at the listener
   if (comm->nSocks != handle->nSocks) {
@@ -237,7 +280,7 @@ ncclResult_t ncclSocketConnect(int dev, void* opaqueHandle, void** sendComm) {
 ncclResult_t ncclSocketAccept(void* listenComm, void** recvComm) {
   struct ncclSocketComm* lComm = (struct ncclSocketComm*)listenComm;
   struct ncclSocketComm* rComm;
-  NCCLCHECK(ncclSocketNewComm(&rComm));
+  NCCLCHECK(ncclSocketNewComm(&rComm, lComm));
   for (int i=0; i<rComm->nSocks+1; i++) {
     int tmpFd, sendSockIdx, offset=0;
     struct sockaddr_in sockaddr;
