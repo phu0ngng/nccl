@@ -242,6 +242,7 @@ ncclResult_t ncclSocketNewComm(struct ncclSocketComm** comm, struct ncclSocketCo
   (*comm)->nextFd = 0;
   return ncclSuccess;
 }
+
 ncclResult_t ncclSocketListen(int dev, void* opaqueHandle, void** listenComm) {
   if (dev < 0) { // data transfer socket is based on specified dev
     return ncclInternalError;
