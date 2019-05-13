@@ -108,8 +108,9 @@ static void *bootstrapRoot(void* commId) {
     memcpy(rankHandles+info.rank, info.extHandleListen, sizeof(ncclNetHandle_t));
 
     ++c;
+    TRACE(NCCL_INIT, "Received connect from rank %d total %d/%d",  info.rank, c, nranks);
   } while (c < nranks);
-  TRACE(NCCL_INIT, "COLLECTED HANDLES");
+  TRACE(NCCL_INIT, "COLLECTED ALL %d HANDLES", nranks);
 
   // Send the connect handle for the next rank in the AllGather ring
   for (int r=0; r<nranks; ++r) {
@@ -119,7 +120,7 @@ static void *bootstrapRoot(void* commId) {
     NCCLCHECKGOTO(bootstrapNetSend(tmpSendComm, rankHandles+next, sizeof(ncclNetHandle_t)), res, out);
     NCCLCHECKGOTO(bootstrapNetCloseSend(tmpSendComm), res, out);
   }
-  TRACE(NCCL_INIT, "SENT OUT HANDLES");
+  TRACE(NCCL_INIT, "SENT OUT ALL %d HANDLES", nranks);
 
 out:
   bootstrapNetCloseListen(id->extListenComm);

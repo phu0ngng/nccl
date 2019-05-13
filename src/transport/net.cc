@@ -449,7 +449,7 @@ ncclResult_t netSendProxy(struct ncclProxyArgs* args) {
         volatile uint64_t* recvTail = &resources->hostRecvMem->tail;
         if (args->llMode == 2) {
           int stepSize = NCCL_LL128_BUFF_SIZE/NCCL_STEPS;
-          if (args->tail < resources->hostRecvMem->tail) {
+          if (args->tail < *recvTail) {
             int buffSlot = args->tail%NCCL_STEPS;
             if (sizesFifo[buffSlot] != -1) {
               struct ncclRecvMem* localMem = resources->useGdr ? resources->devRecvMem : resources->hostRecvMem;
@@ -457,7 +457,7 @@ ncclResult_t netSendProxy(struct ncclProxyArgs* args) {
               int ready = resources->useGdr;
               if (!ready) {
                 // When data is in sysmem, we need to wait until all flags are correct since the GPU only
-                // called threafence()
+                // called threadfence()
                 uint64_t flag = args->tail + 1;
                 int nFifoLines = DIVUP(sizesFifo[buffSlot], sizeof(uint64_t)*NCCL_LL128_LINEELEMS);
                 volatile uint64_t* lines = (volatile uint64_t*)(localBuff+buffSlot*stepSize);
