@@ -5,7 +5,7 @@
  ************************************************************************/
 
 #ifndef OP128_H_
-#define OP128_H_ 
+#define OP128_H_
 
 inline __device__ void load128(const uint64_t* ptr, uint64_t &v0, uint64_t &v1) {
   asm volatile("ld.volatile.global.v2.u64 {%0,%1}, [%2];"
