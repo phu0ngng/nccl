@@ -140,17 +140,21 @@ struct ncclSocketComm {
   pthread_t helperThread[MAX_THREADS];
   struct ncclSocketTaskQueue threadTaskQueue[MAX_THREADS];
   struct ncclSocketThreadArgs args[MAX_THREADS];
-  enum threadState state;
+  enum threadState state[MAX_THREADS];
+  pthread_mutex_t threadLock[MAX_THREADS];
+  pthread_cond_t  threadCond[MAX_THREADS];
 };
 
 void* persistentSocketThread(void *args_) {
   struct ncclSocketThreadArgs* args = (struct ncclSocketThreadArgs*)args_;
+  int tid = args->threadId;
   struct ncclSocketComm* comm = args->comm;
-  volatile enum threadState* state = &comm->state;
-  struct ncclSocketTaskQueue* myQueue = comm->threadTaskQueue+args->threadId;
+  volatile enum threadState* state = comm->state+tid;
+  struct ncclSocketTaskQueue* myQueue = comm->threadTaskQueue + tid;
   int nSocksPerThread = comm->nSocks / comm->nThreads;
   while (1) {
     int idle = 1;
+    int mark = myQueue->next; // mark newest task seen
     for (int i=0; i<MAX_QUEUE_LEN; i+=nSocksPerThread) {
       int repeat;
       do {
@@ -169,8 +173,14 @@ void* persistentSocketThread(void *args_) {
         }
       } while (repeat);
     }
+    if (idle) {
+      pthread_mutex_lock(comm->threadLock+tid);
+      while (mark == myQueue->next && *state != stop) { // no new tasks, wait
+        pthread_cond_wait(comm->threadCond+tid, comm->threadLock+tid);
+      }
+      pthread_mutex_unlock(comm->threadLock+tid);
+    }
     if (*state == stop) return NULL;
-    if (idle) sched_yield();
   }
 }
 
@@ -332,6 +342,8 @@ ncclResult_t ncclSocketGetTask(struct ncclSocketComm* comm, int op, void* data, 
     queue->next = 0;
     comm->args[tid].comm = comm;
     comm->args[tid].threadId = tid;
+    pthread_mutex_init(comm->threadLock+tid, NULL);
+    pthread_cond_init(comm->threadCond+tid, NULL);
     pthread_create(comm->helperThread+tid, NULL, persistentSocketThread, comm->args+tid);
   }
   struct ncclSocketTask* r = queue->tasks+queue->next;
@@ -343,10 +355,13 @@ ncclResult_t ncclSocketGetTask(struct ncclSocketComm* comm, int op, void* data, 
     r->offset = 0;
     r->result = ncclSuccess;
     comm->nextFd = (comm->nextFd + 1) % comm->nSocks;
-    queue->next = (queue->next+1)%MAX_QUEUE_LEN;
     r->used = 1;
     *req = r;
-    comm->state = start;
+    pthread_mutex_lock(comm->threadLock+tid);
+    queue->next = (queue->next+1)%MAX_QUEUE_LEN;
+    comm->state[tid] = start;
+    pthread_cond_signal(comm->threadCond+tid);
+    pthread_mutex_unlock(comm->threadLock+tid);
     return ncclSuccess;
   }
   WARN("NET/Socket : unable to allocate subtasks");
@@ -432,9 +447,12 @@ ncclResult_t ncclSocketFlush(void* recvComm, void* data, int size, void* mhandle
 ncclResult_t ncclSocketClose(void* opaqueComm) {
   struct ncclSocketComm* comm = (struct ncclSocketComm*)opaqueComm;
   if (comm) {
-    comm->state = stop;
     for (int i=0; i<comm->nThreads; i++) {
       if (comm->helperThread[i]) {
+        pthread_mutex_lock(comm->threadLock+i);
+        comm->state[i] = stop;
+        pthread_cond_signal(comm->threadCond+i);
+        pthread_mutex_unlock(comm->threadLock+i);
         pthread_join(comm->helperThread[i], NULL);
       }
       free(comm->threadTaskQueue[i].tasks);
