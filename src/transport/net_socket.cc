@@ -125,9 +125,12 @@ struct ncclSocketTaskQueue {
 
 enum threadState {start, stop};
 
-struct ncclSocketThreadArgs {
+struct ncclSocketThreadResources {
+  struct ncclSocketTaskQueue threadTaskQueue;
+  enum threadState state;
   struct ncclSocketComm* comm;
-  int threadId;
+  pthread_mutex_t threadLock;
+  pthread_cond_t  threadCond;
 };
 
 struct ncclSocketComm {
@@ -138,19 +141,14 @@ struct ncclSocketComm {
   int nextFd;
   struct ncclSocketReqs reqs;
   pthread_t helperThread[MAX_THREADS];
-  struct ncclSocketTaskQueue threadTaskQueue[MAX_THREADS];
-  struct ncclSocketThreadArgs args[MAX_THREADS];
-  enum threadState state[MAX_THREADS];
-  pthread_mutex_t threadLock[MAX_THREADS];
-  pthread_cond_t  threadCond[MAX_THREADS];
+  struct ncclSocketThreadResources threadResources[MAX_THREADS];
 };
 
 void* persistentSocketThread(void *args_) {
-  struct ncclSocketThreadArgs* args = (struct ncclSocketThreadArgs*)args_;
-  int tid = args->threadId;
-  struct ncclSocketComm* comm = args->comm;
-  volatile enum threadState* state = comm->state+tid;
-  struct ncclSocketTaskQueue* myQueue = comm->threadTaskQueue + tid;
+  struct ncclSocketThreadResources* resource = (struct ncclSocketThreadResources*)args_;
+  struct ncclSocketComm* comm = resource->comm;
+  volatile enum threadState* state = &resource->state;
+  struct ncclSocketTaskQueue* myQueue = &resource->threadTaskQueue;
   int nSocksPerThread = comm->nSocks / comm->nThreads;
   while (1) {
     int idle = 1;
@@ -174,11 +172,11 @@ void* persistentSocketThread(void *args_) {
       } while (repeat);
     }
     if (idle) {
-      pthread_mutex_lock(comm->threadLock+tid);
+      pthread_mutex_lock(&resource->threadLock);
       while (mark == myQueue->next && *state != stop) { // no new tasks, wait
-        pthread_cond_wait(comm->threadCond+tid, comm->threadLock+tid);
+        pthread_cond_wait(&resource->threadCond, &resource->threadLock);
       }
-      pthread_mutex_unlock(comm->threadLock+tid);
+      pthread_mutex_unlock(&resource->threadLock);
     }
     if (*state == stop) return NULL;
   }
@@ -335,16 +333,16 @@ ncclResult_t ncclSocketGetRequest(struct ncclSocketComm* comm, int op, void* dat
 
 ncclResult_t ncclSocketGetTask(struct ncclSocketComm* comm, int op, void* data, int size, struct ncclSocketTask** req) {
   int tid = comm->nextFd % comm->nThreads;
-  struct ncclSocketTaskQueue* queue = comm->threadTaskQueue+tid;
+  struct ncclSocketThreadResources* res = comm->threadResources+tid;
+  struct ncclSocketTaskQueue* queue = &res->threadTaskQueue;
   // create helper threads and prepare per-thread task queue
   if (queue->tasks == NULL) {
     NCCLCHECK(ncclCalloc(&queue->tasks, MAX_QUEUE_LEN));
     queue->next = 0;
-    comm->args[tid].comm = comm;
-    comm->args[tid].threadId = tid;
-    pthread_mutex_init(comm->threadLock+tid, NULL);
-    pthread_cond_init(comm->threadCond+tid, NULL);
-    pthread_create(comm->helperThread+tid, NULL, persistentSocketThread, comm->args+tid);
+    res->comm = comm;
+    pthread_mutex_init(&res->threadLock, NULL);
+    pthread_cond_init(&res->threadCond, NULL);
+    pthread_create(comm->helperThread+tid, NULL, persistentSocketThread, res);
   }
   struct ncclSocketTask* r = queue->tasks+queue->next;
   if (r->used == 0) {
@@ -357,11 +355,11 @@ ncclResult_t ncclSocketGetTask(struct ncclSocketComm* comm, int op, void* data, 
     comm->nextFd = (comm->nextFd + 1) % comm->nSocks;
     r->used = 1;
     *req = r;
-    pthread_mutex_lock(comm->threadLock+tid);
+    pthread_mutex_lock(&res->threadLock);
     queue->next = (queue->next+1)%MAX_QUEUE_LEN;
-    comm->state[tid] = start;
-    pthread_cond_signal(comm->threadCond+tid);
-    pthread_mutex_unlock(comm->threadLock+tid);
+    res->state = start;
+    pthread_cond_signal(&res->threadCond);
+    pthread_mutex_unlock(&res->threadLock);
     return ncclSuccess;
   }
   WARN("NET/Socket : unable to allocate subtasks");
@@ -448,14 +446,15 @@ ncclResult_t ncclSocketClose(void* opaqueComm) {
   struct ncclSocketComm* comm = (struct ncclSocketComm*)opaqueComm;
   if (comm) {
     for (int i=0; i<comm->nThreads; i++) {
+      struct ncclSocketThreadResources* res = comm->threadResources+i;
       if (comm->helperThread[i]) {
-        pthread_mutex_lock(comm->threadLock+i);
-        comm->state[i] = stop;
-        pthread_cond_signal(comm->threadCond+i);
-        pthread_mutex_unlock(comm->threadLock+i);
+        pthread_mutex_lock(&res->threadLock);
+        res->state = stop;
+        pthread_cond_signal(&res->threadCond);
+        pthread_mutex_unlock(&res->threadLock);
         pthread_join(comm->helperThread[i], NULL);
       }
-      free(comm->threadTaskQueue[i].tasks);
+      free(res->threadTaskQueue.tasks);
     }
     free(comm->reqs.requests);
     if (comm->ctrlFd != -1) close(comm->ctrlFd);
