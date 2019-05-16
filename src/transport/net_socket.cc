@@ -114,7 +114,6 @@ struct ncclSocketRequest {
 };
 
 struct ncclSocketReqs {
-  int next;
   struct ncclSocketRequest* requests;
 };
 
@@ -312,20 +311,20 @@ ncclResult_t ncclSocketGetRequest(struct ncclSocketComm* comm, int op, void* dat
   struct ncclSocketReqs* reqs = &comm->reqs;
   if (reqs->requests == NULL) {
     NCCLCHECK(ncclCalloc(&reqs->requests, MAX_REQUESTS));
-    reqs->next = 0;
   }
-  struct ncclSocketRequest* r = reqs->requests+reqs->next;
-  if (r->used == 0) {
-    r->op = op;
-    r->data = data;
-    r->size = size;
-    r->ctrlFd = comm->ctrlFd;
-    r->used = 1;
-    r->comm = comm;
-    r->nSubs = 0;
-    reqs->next = (reqs->next+1)%MAX_REQUESTS;
-    *req = r;
-    return ncclSuccess;
+  for (int i=0; i<MAX_REQUESTS; i++) {
+    struct ncclSocketRequest* r = reqs->requests+i;
+    if (r->used == 0) {
+      r->op = op;
+      r->data = data;
+      r->size = size;
+      r->ctrlFd = comm->ctrlFd;
+      r->used = 1;
+      r->comm = comm;
+      r->nSubs = 0;
+      *req = r;
+      return ncclSuccess;
+    }
   }
   WARN("NET/Socket : unable to allocate requests");
   return ncclInternalError;
