@@ -378,7 +378,7 @@ static ncclResult_t ncclTreeThreshold(int nnodes, int nranks, int nChannels, ssi
   return ncclSuccess;
 }
 
-static ncclResult_t setupChannel(struct ncclComm* comm, int channelId, int rank, int nranks, int* ringRanks, int* treeIn, int* treeOut) {
+static ncclResult_t setupChannel(struct ncclComm* comm, int channelId, int rank, int nranks, int* ringRanks, int* treeMasters) {
   TRACE(NCCL_INIT, "rank %d nranks %d", rank, nranks);
   NCCLCHECK(initChannel(comm, channelId));
 
@@ -400,62 +400,49 @@ static ncclResult_t setupChannel(struct ncclComm* comm, int channelId, int rank,
 
   struct ncclTree* tree = &channel->tree;
   tree->up = -1;
-  for (int i=0; i<NCCL_MAX_TREE_ARITY; i++) tree->down[i] = -1;
+  tree->down[0] = tree->down[1] = tree->down[2] = -1;
 
   //
   // Find per-node masters and connect them via a binary tree
   //
 
-  int nnodes = 0;
-  for (int r=0; r<nranks; r++) nnodes += treeIn[r];
-  if (nnodes == 0) {
-    nnodes = 1;
-    treeIn[0] = 1;
-    treeOut[0] = 1;
+  int nMasters = 0;
+  for (int r=0; r<nranks; r++) nMasters += treeMasters[r];
+  if (nMasters == 0) {
+    nMasters = 1;
+    treeMasters[0] = 1;
   }
 
   if (comm->treeThreshold == -2)
-    NCCLCHECK(ncclTreeThreshold(nnodes, comm->nRanks, comm->nChannels, &comm->treeThreshold));
+    NCCLCHECK(ncclTreeThreshold(nMasters, comm->nRanks, comm->nChannels, &comm->treeThreshold));
 
   if (comm->treeThreshold > 0) {
     // Compute tree depth. Not an exact value but a good approximation in most
     // cases and consistent across nodes
-    tree->depth = nranks/nnodes + log2(nnodes);
+    tree->depth = nranks/nMasters + log2(nMasters);
 
-    // Find my node's in/out ranks : go backwards in the ring to find the "in" rank, and forward to find the "out" rank.
-    int inRank = -1, outRank = -1;
-    for (int i=0; i<nranks; i++) {
-      int r = ringRanks[(nranks-i)%nranks];
-      if (treeIn[r]) { inRank = r; break; }
-    }
-    for (int i=0; i<nranks; i++) {
-      int r = ringRanks[i];
-      if (treeOut[r]) { outRank = r; break; }
-    }
-    if (inRank == -1 || outRank == -1) {
-      WARN("In/Out rank not found [%d->%d->%d]", inRank, rank, outRank);
-      return ncclInternalError;
+    // Find my master : go backwards in the ring to find my root
+    int master = 0;
+    for (int i = 0; i<nranks; i++) {
+      int r = ring->userRanks[(nranks-i)%nranks];
+      if (treeMasters[r]) {
+        master = r;
+        break;
+      }
     }
 
-    int* inRanks, *outRanks;
-    NCCLCHECK(ncclCalloc(&inRanks, nnodes));
-    NCCLCHECK(ncclCalloc(&outRanks, nnodes));
-    int inR=0, outR=0, inNodeIndex = -1, outNodeIndex = -1;
+    int* ranks;
+    NCCLCHECK(ncclCalloc(&ranks, nMasters));
+    int i = 0, masterIndex = -1;
     // Build binary tree
     for (int r=0; r<nranks; r++) {
-      // Create index tables
-      if (r == inRank) inNodeIndex = inR;
-      if (r == outRank) outNodeIndex = outR;
-      if (treeIn[r]) inRanks[inR++] = r;
-      if (treeOut[r]) outRanks[outR++] = r;
-    }
-    if (inNodeIndex == -1 || outNodeIndex == -1 || inNodeIndex != outNodeIndex) {
-      WARN("In/Out node index computation failed [%d->%d->%d, %d/%d/%d]", inRank, rank, outRank, inNodeIndex, outNodeIndex, nnodes);
-      return ncclInternalError;
+      // Create index table
+      if (r == master) masterIndex = i;
+      if (treeMasters[r]) ranks[i++] = r;
     }
     int btreeUp, btreeDown0, btreeDown1;
     int u0, d0_0, d0_1, u1, d1_0, d1_1;
-    NCCLCHECK(ncclGetDtree(nnodes, inNodeIndex, &u0, &d0_0, &d0_1, &u1, &d1_0, &d1_1));
+    NCCLCHECK(ncclGetDtree(nMasters, masterIndex, &u0, &d0_0, &d0_1, &u1, &d1_0, &d1_1));
     if (channelId < DIVUP(comm->nChannels, 2)) {
       btreeUp = u0; btreeDown0 = d0_0; btreeDown1 = d0_1;
     } else {
@@ -467,32 +454,18 @@ static ncclResult_t setupChannel(struct ncclComm* comm, int channelId, int rank,
     // inter-node binary tree.
     //
 
-    int nDown = 0;
-    if (rank == outRank) {
-      if (btreeDown0 != -1) tree->down[nDown++] = inRanks[btreeDown0];
-      if (btreeDown1 != -1) tree->down[nDown++] = inRanks[btreeDown1];
-    }
-    if (rank == inRank) {
-      if (btreeUp != -1) tree->up = outRanks[btreeUp];
-      if (rank != outRank) {
-        tree->down[nDown++] = outRank;
-      } else if (prev != inRank && treeOut[prev] == 0) {
-        tree->down[nDown++] = prev;
-      }
+    if (rank == master) {
+      int nDown = 0;
+      if (btreeUp != -1) tree->up = ranks[btreeUp];
+      if (treeMasters[next] == 0) tree->down[nDown++] = next;
+      if (btreeDown0 != -1) tree->down[nDown++] = ranks[btreeDown0];
+      if (btreeDown1 != -1) tree->down[nDown++] = ranks[btreeDown1];
     } else {
-      if (rank == outRank) {
-        tree->up = inRank;
-      } else {
-        tree->up = next;
-      }
-      if (prev != inRank) {
-        tree->down[nDown++] = prev;
-      }
+      tree->up = prev;
+      if (treeMasters[next] == 0) tree->down[0] = next;
     }
-    free(inRanks);
-    free(outRanks);
+    free(ranks);
   }
-  //printf("[%d] %d,%d,%d -> %d -> %d\n", channelId, tree->down[0], tree->down[1], tree->down[2], rank, tree->up);
 
   TRACE(NCCL_INIT, "rank %d nranks %d - DONE", rank, nranks);
   return ncclSuccess;
@@ -860,7 +833,7 @@ static ncclResult_t initTransportsRank(struct ncclComm* comm, ncclUniqueId* comm
   NCCLCHECK(ncclCalloc(&connect, 2));
   for (int r=0; r<nrings; r++) {
     struct ncclChannel* channel = comm->channels+r;
-    NCCLCHECK(setupChannel(comm, r, rank, nranks, rings+r*nranks, treeIn+r*nranks, treeOut+r*nranks));
+    NCCLCHECK(setupChannel(comm, r, rank, nranks, rings+r*nranks, treeIn+r*nranks));
     NCCLCHECK(p2pSetup(comm, channel, 1, &channel->ring.prev, 1, &channel->ring.next));
     NCCLCHECK(p2pSetup(comm, channel, NCCL_MAX_TREE_ARITY, channel->tree.down, 1, &channel->tree.up));
     NCCLCHECK(p2pSetup(comm, channel, 1, &channel->tree.up, NCCL_MAX_TREE_ARITY, channel->tree.down));
@@ -1111,7 +1084,7 @@ static ncclResult_t initTransportsAll(struct ncclComm** comms, const int* devs, 
       CUDACHECK(cudaSetDevice(devs[rank]));
       struct ncclChannel* channel = comms[rank]->channels+r;
       struct ncclRing *ring = &channel->ring;
-      NCCLCHECK(setupChannel(comms[rank], r, rank, nranks, ringRanks, treeIn, treeOut));
+      NCCLCHECK(setupChannel(comms[rank], r, rank, nranks, ringRanks, treeIn));
       // Make sure we don't use trees, we cannot use them with initAll
       comms[rank]->treeThreshold = 0;
       int prev = channel->ring.prev = ring->userRanks[nranks-1];
