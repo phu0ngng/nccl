@@ -42,4 +42,6 @@ extern const char* pathDists[PATH_ARRAY_SIZE];
 
 int pciDistance(char* path1, char* path2);
 
+ncclResult_t ncclTopoCompute(int nranks, int* nvmlIndexes, int* rankIndexes);
+
 #endif

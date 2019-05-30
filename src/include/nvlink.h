@@ -16,6 +16,7 @@
 #define CONNECT_NVSWITCH 0x100
 
 enum ncclNvLinkDeviceType {
+  ncclNvLinkDeviceUnknown,
   ncclNvLinkDeviceGpu,
   ncclNvLinkDeviceSwitch,
   ncclNvLinkDeviceBridge, // IBM/Power NVLink bridge (Device 04ea)
@@ -49,8 +50,7 @@ static ncclResult_t ncclDeviceType(const char* busId, enum ncclNvLinkDeviceType*
       || strcmp(pciClass, "0x030000") == 0) {  // "VGA Controller" (GeForce)
     *type = ncclNvLinkDeviceGpu;
   } else {
-    // Ignore if we don't know what's on the other side.
-    return ncclSystemError;
+    *type = ncclNvLinkDeviceUnknown;
   }
   return ncclSuccess;
 }
@@ -118,12 +118,12 @@ static int getNvlinkGpu(const char* busId1, const char* busId2) {
           nvswitch_links++;
         } else if (type == ncclNvLinkDeviceGpu && busId2 == NULL) {
           links++;
+        } else {
+          // The NVLink is up but we couldn't find the PCI device on the other
+          // side. Assume it's an NVswitch outside a VM.
+          if (l==0) INFO(NCCL_INIT, "Assuming NVLink is connected to NVswitch");
+          nvswitch_links++;
         }
-      } else {
-        // The NVLink is up but we couldn't find the PCI device on the other
-        // side. Assume it's an NVswitch outside a VM.
-        if (l==0) INFO(NCCL_INIT, "Assuming NVLink is connected to NVswitch");
-        nvswitch_links++;
       }
     }
   }

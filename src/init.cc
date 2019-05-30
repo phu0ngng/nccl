@@ -738,6 +738,22 @@ static ncclResult_t initTransportsRank(struct ncclComm* comm, ncclUniqueId* comm
   //if (rank == 0) dumpMatrix(connectTransport, nranks);
   //if (rank == 0) dumpMatrixTvalue(connectValue, nranks);
 
+  // New topo creation
+  int localGpus = 0;
+  int* nvmlIndexes, *rankIndexes;
+  NCCLCHECK(ncclCalloc(&nvmlIndexes, nranks));
+  NCCLCHECK(ncclCalloc(&rankIndexes, nranks));
+  for (int r=0; r<nranks; r++) {
+    if (comm->peerInfo[r].hostHash == comm->peerInfo[rank].hostHash) {
+      nvmlIndexes[localGpus] = comm->peerInfo[r].nvmlDev;
+      rankIndexes[localGpus] = r;
+      localGpus++;
+    }
+  }
+  NCCLCHECK(ncclTopoCompute(localGpus, nvmlIndexes, rankIndexes));
+  free(nvmlIndexes);
+  free(rankIndexes);
+
   // Get my rings
   int nrings;
   int* prev, *next, *treeIn, *treeOut;
