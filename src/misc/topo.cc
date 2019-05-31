@@ -77,16 +77,23 @@ struct ncclTopoNode {
   struct ncclTopoLink* links[NCCL_TOPO_MAX_ARITY];
 };
 
+#define PASCAL_NVLINK_SPEED 17
+#define VOLTA_NVLINK_SPEED 22
+#define PCI_SPEED 12
+#define QPI_SPEED 12
+
 struct ncclTopoLink {
   enum ncclTopoLinkType type;
-  struct ncclTopoNode* nodes[2];
+  int speed;
+  struct ncclTopoNode* remNode;
 };
 
-#define NCCL_MAX_GPU_NODES  2048
-#define NCCL_MAX_PCI_NODES  2048
-#define NCCL_MAX_NUMA_NODES 2048
-#define NCCL_MAX_NET_NODES 2048
+#define NCCL_MAX_GPU_NODES  256
+#define NCCL_MAX_PCI_NODES  256
+#define NCCL_MAX_NUMA_NODES 256
+#define NCCL_MAX_NET_NODES 256
 #define NCCL_MAX_NVS_NODES 1
+#define NCCL_MAX_LINKS 2048
 
 struct ncclTopoSystem {
   struct ncclTopoNode* gpuNodes[NCCL_MAX_GPU_NODES];
@@ -99,6 +106,8 @@ struct ncclTopoSystem {
   int nvsNodeCount;
   struct ncclTopoNode* netNodes[NCCL_MAX_NET_NODES];
   int netNodeCount;
+  struct ncclTopoLink* links[NCCL_MAX_LINKS];
+  int linkCount;
 };
 
 ncclResult_t findFreeLink(struct ncclTopoNode* node, int* link) {
@@ -109,17 +118,27 @@ ncclResult_t findFreeLink(struct ncclTopoNode* node, int* link) {
   return ncclInternalError;
 }
 
-ncclResult_t ncclTopoConnectNodes(struct ncclTopoNode* node1, struct ncclTopoNode* node2, enum ncclTopoLinkType type) {
+ncclResult_t ncclTopoConnectNodes(struct ncclTopoNode* node, struct ncclTopoNode* remNode, enum ncclTopoLinkType type, int speed, struct ncclTopoSystem* system) {
+  // Aggregate links into higher speed for NVLink
+  for (int l=0; l<NCCL_TOPO_MAX_ARITY; l++) {
+    struct ncclTopoLink* link = node->links[l];
+    if (link == NULL) continue;
+    if (link->remNode == remNode) {
+      if (link->type == type) {
+        link->speed += speed;
+        return ncclSuccess;
+      }
+    }
+  }
   struct ncclTopoLink* link;
   NCCLCHECK(ncclCalloc(&link, 1));
+  system->links[system->linkCount++] = link;
   link->type = type;
-  link->nodes[0] = node1;
-  link->nodes[1] = node2;
+  link->speed = speed;
+  link->remNode = remNode;
   int l;
-  NCCLCHECK(findFreeLink(node1, &l));
-  node1->links[l] = link;
-  NCCLCHECK(findFreeLink(node2, &l));
-  node2->links[l] = link;
+  NCCLCHECK(findFreeLink(node, &l));
+  node->links[l] = link;
   return ncclSuccess;
 }
 
@@ -167,7 +186,8 @@ ncclResult_t ncclTopoConnectNVLink(nvmlDevice_t* nvmlDevs, struct ncclTopoSystem
           nvmlPciInfo_t pci;
           NCCLCHECK(wrapNvmlDeviceGetPciInfo(nvmlDevs[peer], &pci));
           if (strncmp(pci.busId, remoteProc.busId, NVML_DEVICE_PCI_BUS_ID_BUFFER_SIZE) == 0) {
-            NCCLCHECK(ncclTopoConnectNodes(system->gpuNodes[r], system->gpuNodes[peer], ncclTopoLinkNVL));
+            NCCLCHECK(ncclTopoConnectNodes(system->gpuNodes[r], system->gpuNodes[peer], ncclTopoLinkNVL, cudaMajor == 6 ? PASCAL_NVLINK_SPEED : VOLTA_NVLINK_SPEED, system));
+            break;
           }
         }
       } else if (type == ncclNvLinkDeviceBridge) {
@@ -180,8 +200,10 @@ ncclResult_t ncclTopoConnectNVLink(nvmlDevice_t* nvmlDevs, struct ncclTopoSystem
         }
         if (nvsNode == NULL) { // Create nvswitch
           NCCLCHECK(ncclTopoCreateNode(&nvsNode, ncclTopoNodeNVS, 0));
+          system->nvsNodes[system->nvsNodeCount++] = nvsNode;
         }
-        NCCLCHECK(ncclTopoConnectNodes(system->gpuNodes[r], nvsNode, ncclTopoLinkNVL));
+        NCCLCHECK(ncclTopoConnectNodes(system->gpuNodes[r], nvsNode, ncclTopoLinkNVL, VOLTA_NVLINK_SPEED, system));
+        NCCLCHECK(ncclTopoConnectNodes(nvsNode, system->gpuNodes[r], ncclTopoLinkNVL, VOLTA_NVLINK_SPEED, system));
       }
     }
   }
@@ -235,14 +257,16 @@ ncclResult_t ncclTopoCreatePciPath(struct ncclTopoSystem* system, struct ncclTop
           if (system->pciNodes[p]->id == pciId) {
             // Found our PCI switch. Attach and stop since the rest should already
             // be connected
-            NCCLCHECK(ncclTopoConnectNodes(lastNode, system->pciNodes[p], ncclTopoLinkPCI));
+            NCCLCHECK(ncclTopoConnectNodes(system->pciNodes[p], lastNode, ncclTopoLinkPCI, PCI_SPEED, system));
+            NCCLCHECK(ncclTopoConnectNodes(lastNode, system->pciNodes[p], ncclTopoLinkPCI, PCI_SPEED, system));
             return ncclSuccess;
           }
         }
         struct ncclTopoNode* pciNode;
         NCCLCHECK(ncclTopoCreateNode(&pciNode, ncclTopoNodePCI, pciId));
         system->pciNodes[system->pciNodeCount++] = pciNode;
-        NCCLCHECK(ncclTopoConnectNodes(lastNode, pciNode, ncclTopoLinkPCI));
+        NCCLCHECK(ncclTopoConnectNodes(pciNode, lastNode, ncclTopoLinkPCI, PCI_SPEED, system));
+        NCCLCHECK(ncclTopoConnectNodes(lastNode, pciNode, ncclTopoLinkPCI, PCI_SPEED, system));
         lastNode = pciNode;
       }
     }
@@ -251,14 +275,16 @@ ncclResult_t ncclTopoCreatePciPath(struct ncclTopoSystem* system, struct ncclTop
   int numaId = getNumaId(path);
   for (int n=0; n<system->numaNodeCount; n++) {
     if (system->numaNodes[n]->id == numaId) {
-      NCCLCHECK(ncclTopoConnectNodes(lastNode, system->numaNodes[n], ncclTopoLinkPCI));
+      NCCLCHECK(ncclTopoConnectNodes(system->numaNodes[n], lastNode, ncclTopoLinkPCI, PCI_SPEED, system));
+      NCCLCHECK(ncclTopoConnectNodes(lastNode, system->numaNodes[n], ncclTopoLinkPCI, PCI_SPEED, system));
       return ncclSuccess;
     }
   }
   struct ncclTopoNode* numaNode;
   NCCLCHECK(ncclTopoCreateNode(&numaNode, ncclTopoNodeNUMA, numaId));
   system->numaNodes[system->numaNodeCount++] = numaNode;
-  NCCLCHECK(ncclTopoConnectNodes(lastNode, numaNode, ncclTopoLinkPCI));
+  NCCLCHECK(ncclTopoConnectNodes(numaNode, lastNode, ncclTopoLinkPCI, PCI_SPEED, system));
+  NCCLCHECK(ncclTopoConnectNodes(lastNode, numaNode, ncclTopoLinkPCI, PCI_SPEED, system));
   return ncclSuccess;
 }
 
@@ -295,12 +321,14 @@ ncclResult_t ncclTopoConnectPCI(nvmlDevice_t* nvmlDevs, struct ncclTopoSystem* s
     NCCLCHECK(ncclNetPciPath(n, &path));
     NCCLCHECK(ncclTopoCreatePciPath(system, netNode, path));
     free(path);
+    system->netNodes[system->netNodeCount++] = netNode;
   }
 
   // And connect all NUMA nodes together
   for (int n=0; n<system->numaNodeCount; n++) {
-    for (int N=0; N<n; N++) {
-      NCCLCHECK(ncclTopoConnectNodes(system->numaNodes[N], system->numaNodes[n], ncclTopoLinkQPI));
+    for (int p=0; p<system->numaNodeCount; p++) {
+      if (n == p) continue;
+      NCCLCHECK(ncclTopoConnectNodes(system->numaNodes[n], system->numaNodes[p], ncclTopoLinkQPI, QPI_SPEED, system));
     }
   }
   return ncclSuccess;
@@ -325,43 +353,61 @@ ncclResult_t ncclTopoGetSystem(int nranks, int* nvmlIndexes, int* rankIndexes, s
   return ncclSuccess;
 }
 
-ncclResult_t ncclTopoFreeNode(struct ncclTopoNode* node) {
-  // Disconnect/free link
-  for (int l=0; l<NCCL_TOPO_MAX_ARITY; l++) {
-    struct ncclTopoLink* link = node->links[l];
-    if (link == NULL) continue;
-    struct ncclTopoNode** nodes = node->links[l]->nodes;
-    // Disconnect from link
-    if (nodes[0] == node) nodes[0] = NULL;
-    if (nodes[1] == node) nodes[1] = NULL;
-    // If link is no longer connected, free it
-    if (nodes[0] == nodes[1]) free(link);
-  }
-  // Free node
-  free(node);
-  return ncclSuccess;
-}
-
 ncclResult_t ncclTopoFreeSystem(struct ncclTopoSystem* system) {
   for (int g=0; g<system->gpuNodeCount; g++) {
-    NCCLCHECK(ncclTopoFreeNode(system->gpuNodes[g]));
+    free(system->gpuNodes[g]);
   }
   for (int p=0; p<system->pciNodeCount; p++) {
-    NCCLCHECK(ncclTopoFreeNode(system->pciNodes[p]));
+    free(system->pciNodes[p]);
   }
   for (int n=0; n<system->numaNodeCount; n++) {
-    NCCLCHECK(ncclTopoFreeNode(system->numaNodes[n]));
+    free(system->numaNodes[n]);
   }
   for (int n=0; n<system->nvsNodeCount; n++) {
-    NCCLCHECK(ncclTopoFreeNode(system->nvsNodes[n]));
+    free(system->nvsNodes[n]);
   }
   for (int n=0; n<system->netNodeCount; n++) {
-    NCCLCHECK(ncclTopoFreeNode(system->netNodes[n]));
+    free(system->netNodes[n]);
+  }
+  for (int l=0; l<system->linkCount; l++) {
+    free(system->links[l]);
   }
   return ncclSuccess;
 }
 
-ncclResult_t ncclTopoPrint(struct ncclTopoNode* node, int offset, struct ncclTopoLink* prevLink) {
+ncclResult_t ncclTopoSort(struct ncclTopoNode* node, struct ncclTopoNode* upNode) {
+  // Shift all links to have upLink as last link
+  if (upNode) {
+    int l=0;
+    while (node->links[l]->remNode != upNode) l++;
+    struct ncclTopoLink* upLink = node->links[l];
+    while (node->links[l+1]) {
+      node->links[l] = node->links[l+1];
+      l++;
+    }
+    node->links[l] = upLink;
+  }
+
+  // Recursively sort the PCI tree
+  for (int l=0; l<NCCL_TOPO_MAX_ARITY; l++) {
+    struct ncclTopoLink* link = node->links[l];
+    if (link == NULL || link->type != ncclTopoLinkPCI || link->remNode == upNode) break;
+    NCCLCHECK(ncclTopoSort(link->remNode, node));
+  }
+  return ncclSuccess;
+}
+
+// We want the graph to be organized to ease/accelerate traversal :
+// 1. NVLinks (already the case)
+// 2. PCI down
+// 3. PCI up
+// 4. QPI (already the case)
+ncclResult_t ncclTopoSortSystem(struct ncclTopoSystem* system) {
+  for (int n=0; n<system->numaNodeCount; n++) NCCLCHECK(ncclTopoSort(system->numaNodes[n], NULL));
+  return ncclSuccess;
+}
+
+ncclResult_t ncclTopoPrint(struct ncclTopoNode* node, int offset, struct ncclTopoNode* prevNode) {
   if (node->type == ncclTopoNodeGPU) {
     printf("%s/%X (%d)\n", topoNodeTypeStr[node->type], node->id, node->rank);
   } else {
@@ -369,17 +415,51 @@ ncclResult_t ncclTopoPrint(struct ncclTopoNode* node, int offset, struct ncclTop
   }
   for (int l=0; l<NCCL_TOPO_MAX_ARITY; l++) {
     struct ncclTopoLink* link = node->links[l];
-    if (link && link != prevLink) {
-      struct ncclTopoNode* remNode = link->nodes[0] == node ? link->nodes[1] : link->nodes[0];
+    if (link && link->remNode != prevNode) {
       for (int i=0; i<offset; i++) printf(" ");
-      printf("+ %s - ", topoLinkTypeStr[link->type]);
+      printf("+ %s[%2d] - ", topoLinkTypeStr[link->type], link->speed);
       if (link->type == ncclTopoLinkPCI) {
-        NCCLCHECK(ncclTopoPrint(remNode, offset + 8, link));
+        NCCLCHECK(ncclTopoPrint(link->remNode, offset + 11, node));
       } else {
-        printf("%s/%X\n", topoNodeTypeStr[remNode->type], remNode->id);
+        printf("%s/%X\n", topoNodeTypeStr[link->remNode->type], link->remNode->id);
       }
     }
-  } 
+  }
+  return ncclSuccess;
+}
+
+ncclResult_t ncclTopoFindPciGPUs(struct ncclTopoNode* node, int distance, int* minDistance, struct ncclTopoNode** inGpus, struct ncclTopoNode** outGpus, struct ncclTopoNode* prevNode) {
+  if (distance > *minDistance) return ncclSuccess;
+
+  if (prevNode && (node->type == ncclTopoNodeGPU)) {
+    // Check this GPU is in the input list
+    for (int i=0; i<NCCL_MAX_GPU_NODES && inGpus[i] != node; i++) {
+      if (inGpus[i] == NULL) return ncclSuccess;
+    }
+    if (distance == *minDistance) {
+      for (int i=0; i<NCCL_MAX_GPU_NODES; i++) {
+        if (outGpus[i] == NULL) {
+          outGpus[i] = node;
+          return ncclSuccess;
+        }
+      }
+    } else if (distance < *minDistance) {
+      outGpus[0] = node;
+      for (int i=1; i<NCCL_MAX_GPU_NODES && outGpus[i]; i++) outGpus[i] = NULL;
+      *minDistance = distance;
+    }
+    return ncclSuccess;
+  }
+
+  for (int l=0; l<NCCL_TOPO_MAX_ARITY; l++) {
+    struct ncclTopoLink* link = node->links[l];
+    if (link && link->remNode != prevNode) {
+      // Do not follow QPI mutiple times to avoid loops
+      if (link->type == ncclTopoLinkPCI || (link->type == ncclTopoLinkQPI && prevNode->type != ncclTopoNodeNUMA)) {
+        NCCLCHECK(ncclTopoFindPciGPUs(link->remNode, distance+1, minDistance, inGpus, outGpus, node));
+      }
+    }
+  }
   return ncclSuccess;
 }
 
@@ -387,10 +467,33 @@ ncclResult_t ncclTopoCompute(int nranks, int* nvmlIndexes, int* rankIndexes) {
   struct ncclTopoSystem* system;
   NCCLCHECK(ncclCalloc(&system, 1));
   NCCLCHECK(ncclTopoGetSystem(nranks, nvmlIndexes, rankIndexes, system));
+  NCCLCHECK(ncclTopoSortSystem(system));
   for (int n=0; n<system->numaNodeCount; n++) NCCLCHECK(ncclTopoPrint(system->numaNodes[n], 0, NULL));
 
-  /* TODO : Compute trees and rings ! */
+  /* TODO : Compute tree and ring intra-node graphs */
+  for (int n=0; n<system->netNodeCount; n++) {
+    int minDistance = 9999;
+    struct ncclTopoNode** outGpus;
+    NCCLCHECK(ncclCalloc(&outGpus, system->gpuNodeCount));
+    NCCLCHECK(ncclTopoFindPciGPUs(system->netNodes[n], 0, &minDistance, system->gpuNodes, outGpus, NULL));
+    printf("NET/%d (%d) : ", system->netNodes[n]->id, minDistance);
+    for (int i=0; i<system->gpuNodeCount && outGpus[i]; i++) printf("GPU/%d ", outGpus[i]->id);
+    printf("\n");
 
+    minDistance = 9999;
+    struct ncclTopoNode** inGpus;
+    NCCLCHECK(ncclCalloc(&inGpus, system->gpuNodeCount));
+    for (int i=0; i<system->gpuNodeCount; i++) outGpus[i] = NULL;
+    for (int i=1; i<system->gpuNodeCount; i++) inGpus[i-1]=system->gpuNodes[i];
+    NCCLCHECK(ncclTopoFindPciGPUs(system->gpuNodes[0], 0, &minDistance, inGpus, outGpus, NULL));
+    printf("GPU/0 (%d) : ", minDistance);
+    for (int i=0; i<system->gpuNodeCount && outGpus[i]; i++) printf("GPU/%d ", outGpus[i]->id);
+    printf("\n");
+    free(inGpus);
+
+    free(outGpus);
+  }
+  
   NCCLCHECK(ncclTopoFreeSystem(system));
   free(system);
   return ncclSuccess;
