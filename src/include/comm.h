@@ -58,6 +58,7 @@ struct ncclComm {
   struct ncclChannel channels[MAXCHANNELS];
 
   struct ncclPeerInfo* peerInfo;
+  struct ncclTopoSystem* topo;
 
   void* bootstrap;
 

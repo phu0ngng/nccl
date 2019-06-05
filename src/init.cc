@@ -750,9 +750,15 @@ static ncclResult_t initTransportsRank(struct ncclComm* comm, ncclUniqueId* comm
       localGpus++;
     }
   }
-  NCCLCHECK(ncclTopoCompute(localGpus, nvmlIndexes, rankIndexes));
+  NCCLCHECK(ncclTopoGetSystem(localGpus, nvmlIndexes, rankIndexes, &comm->topo, localGpus==nranks ? 0 : 1));
   free(nvmlIndexes);
   free(rankIndexes);
+
+  // Get trees
+  struct ncclTopoGraph* graph;
+  NCCLCHECK(ncclCalloc(&graph, 1));
+  NCCLCHECK(ncclTopoCompute(comm->topo, graph));
+  free(graph);
 
   // Get my rings
   int nrings;

@@ -42,6 +42,16 @@ extern const char* pathDists[PATH_ARRAY_SIZE];
 
 int pciDistance(char* path1, char* path2);
 
-ncclResult_t ncclTopoCompute(int nranks, int* nvmlIndexes, int* rankIndexes);
+struct ncclTopoSystem;
+ncclResult_t ncclTopoGetSystem(int nranks, int* nvmlIndexes, int* rankIndexes, struct ncclTopoSystem** system, int inter);
+
+#define NCCL_TOPO_MAX_NODES 256
+struct ncclTopoGraph {
+  int intra[MAXCHANNELS*NCCL_TOPO_MAX_NODES];
+  int inter[MAXCHANNELS*2];
+  int speed;
+  int nChannels;
+};
+ncclResult_t ncclTopoCompute(struct ncclTopoSystem* system, struct ncclTopoGraph* graph);
 
 #endif
