@@ -70,7 +70,8 @@ static ncclResult_t getMaxNvlinks(int* maxLinks) {
 static int getNvlinkGpu(const char* busId1, const char* busId2) {
   // Determine if that connection is through NVLink
   int links = 0;
-  int nvswitch_links = 0;
+  int nvswitchLinks = 0;
+  int nvbridgeLinks = 0;
   int maxNvLinks = ncclCudaCompCap() > 6 ? 6 : 4;
   nvmlDevice_t nvmlDev;
   ncclResult_t res = wrapNvmlDeviceGetHandleByPciBusId(busId1, &nvmlDev);
@@ -115,19 +116,21 @@ static int getNvlinkGpu(const char* busId1, const char* busId2) {
         if (type == ncclNvLinkDeviceSwitch) {
           //TODO: we are making an assumption that all GPUs are connected to this switch
           //This assumption may change for future architectures
-          nvswitch_links++;
+          nvswitchLinks++;
         } else if (type == ncclNvLinkDeviceGpu && busId2 == NULL) {
           links++;
+        } else if (type == ncclNvLinkDeviceBridge) {
+          nvbridgeLinks++;
         }
       } else {
         // The NVLink is up but we couldn't find the PCI device on the other
         // side. Assume it's an NVswitch outside a VM.
         if (l==0) INFO(NCCL_INIT, "Assuming NVLink is connected to NVswitch");
-        nvswitch_links++;
+        nvswitchLinks++;
       }
     }
   }
-  return nvswitch_links ? CONNECT_NVSWITCH*nvswitch_links : CONNECT_NVLINK*links;
+  return nvswitchLinks ? CONNECT_NVSWITCH*nvswitchLinks : nvbridgeLinks ? CONNECT_NVSWITCH : CONNECT_NVLINK*links;
 }
 
 #endif
