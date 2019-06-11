@@ -968,6 +968,7 @@ int ncclSharpOobBcast(void *ctx, void *buf, int size, int root) {
 
 static __inline__ enum sharp_datatype typeConvert(ncclDataType_t type) {
   switch (type) {
+    case ncclFloat16: return SHARP_DTYPE_FLOAT_SHORT;
     case ncclInt32: return SHARP_DTYPE_INT;
     case ncclUint32: return SHARP_DTYPE_UNSIGNED;
     case ncclFloat32: return SHARP_DTYPE_FLOAT;
@@ -982,6 +983,7 @@ static __inline__ enum sharp_datatype typeConvert(ncclDataType_t type) {
 
 static __inline__ int typeSize(ncclDataType_t type) {
   switch (type) {
+    case ncclFloat16: return 2;
     case ncclInt32: return 4;
     case ncclUint32: return 4;
     case ncclFloat32: return 4;
