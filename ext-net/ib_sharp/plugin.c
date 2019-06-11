@@ -18,6 +18,7 @@
 #include <string.h>
 #include <poll.h>
 #include <sys/types.h>
+#include <sys/time.h>
 #include <unistd.h>
 
 #include "ibvwrap.h"
@@ -87,6 +88,10 @@ NCCL_PARAM(IbDisable, "IBEXT_DISABLE", 0);
 ncclDebugLogger_t pluginLogFunction;
 
 ncclResult_t ncclIbInit(ncclDebugLogger_t logFunction) {
+  struct timeval tval;
+  gettimeofday(&tval, NULL);
+  srand((int) tval.tv_usec);
+
   pluginLogFunction = logFunction;
 
   if (ncclParamIbDisable()) return ncclInternalError;
@@ -1029,7 +1034,7 @@ ncclResult_t ncclSharpConnect(void* handles[], int nranks, int rank, void* liste
   pthread_t tid = pthread_self();
   NCCLCHECK(ncclIbMalloc((void**)&allInfo, sizeof(struct ncclSharpInfo)*nranks));
   allInfo[cComm->rank].hostId = gethostid();
-  allInfo[cComm->rank].jobId = (((uint64_t)allInfo[cComm->rank].hostId << 32) | (pid ^ tid));
+  allInfo[cComm->rank].jobId = (((uint64_t)allInfo[cComm->rank].hostId << 32) | (pid ^ tid) ^ rand());
   NCCLCHECK(ncclSharpAllGather(cComm, allInfo, sizeof(struct ncclSharpInfo)));
 
   // Find my local rank;
