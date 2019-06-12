@@ -754,12 +754,27 @@ static ncclResult_t initTransportsRank(struct ncclComm* comm, ncclUniqueId* comm
   free(nvmlIndexes);
   free(rankIndexes);
 
-  // Get trees
-  struct ncclTopoGraph* graph;
-  NCCLCHECK(ncclCalloc(&graph, 1));
-  graph->pattern = NCCL_TOPO_PATTERN_SPLIT_TREE_LOOP;
-  NCCLCHECK(ncclTopoCompute(comm->topo, graph));
-  free(graph);
+  // Get rings and trees
+  struct ncclTopoGraph treeGraph;
+  treeGraph.pattern = NCCL_TOPO_PATTERN_SPLIT_TREE_LOOP;
+  NCCLCHECK(ncclTopoCompute(comm->topo, &treeGraph));
+  for (int c=0; c<treeGraph.nChannels; c++) {
+    printf("Tree %d :", c);
+    for (int i=0; i<2; i++) printf(" %d", treeGraph.inter[2*c+i]);
+    printf(" |");
+    for (int i=0; i<localGpus; i++) printf(" %d", treeGraph.intra[localGpus*c+i]);
+    printf("\n");
+  }
+  struct ncclTopoGraph ringGraph;
+  ringGraph.pattern = NCCL_TOPO_PATTERN_RING;
+  NCCLCHECK(ncclTopoCompute(comm->topo, &ringGraph));
+  for (int c=0; c<ringGraph.nChannels; c++) {
+    printf("Ring %d :", c);
+    for (int i=0; i<2; i++) printf(" %d", ringGraph.inter[2*c+i]);
+    printf(" |");
+    for (int i=0; i<localGpus; i++) printf(" %d", ringGraph.intra[localGpus*c+i]);
+    printf("\n");
+  }
 
   // Get my rings
   int nrings;

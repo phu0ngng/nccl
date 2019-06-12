@@ -532,7 +532,6 @@ ncclResult_t ncclTopoSearchRec(struct ncclTopoSearch* search) {
   struct ncclTopoSearchReq* req = search->reqs+search->req;
 
   if (nodeList->count == 0) {
-    //printf("Req %d/%d\n", search->req, search->nReqs);
     if (search->req >= search->nPaths) { // Save new solution
       int copy = 1;
       if (search->req == search->nPaths) {
@@ -546,21 +545,15 @@ ncclResult_t ncclTopoSearchRec(struct ncclTopoSearch* search) {
         for (int r=0; r<search->req; r++) {
           NCCLCHECK(ncclTopoCopyPath(search->save+r, search->paths+r));
         }
-        //printf("Saved %d paths\n", search->req);
         search->nPaths = search->req;
       }
     }
     if (search->req < search->nReqs) { // Start a new req
-      //printf("New req, %d hops\n", req->nhops);
       for (int i=0; i<req->start->count; i++) {
         if (req->start->state[i] == 0) {
           struct ncclTopoNode* node = req->start->list[i];
-          // Remove from inter list
-          int found = nodeInReqList(req->inter, node);
-          if (found != -1) req->inter->state[found] = 1;
           FOLLOW_NODE(nodeList, node, req->start, i,
               NCCLCHECK(ncclTopoSearchRec(search)));
-          if (found != -1) req->inter->state[found] = 0;
         }
       }
     }
@@ -600,14 +593,11 @@ ncclResult_t ncclTopoCompute(struct ncclTopoSystem* system, struct ncclTopoGraph
     maxChannels = system->nodes[NET].count;
     if (graph->pattern == NCCL_TOPO_PATTERN_SPLIT_TREE ||
         graph->pattern == NCCL_TOPO_PATTERN_SPLIT_TREE_LOOP) {
-      // NIC -> GPU -> GPU -> NIC start/end/inter lists are common
-      // to try to use different GPUs.
+      // NIC start/end lists are common to use each NIC once
       struct ncclTopoNodeReqList startList;
       NCCLCHECK(ncclTopoNodeReqListInitFromSystem(&startList, system, NET));
       struct ncclTopoNodeReqList endList;
       NCCLCHECK(ncclTopoNodeReqListInitFromSystem(&endList, system, NET));
-      struct ncclTopoNodeReqList interList;
-      NCCLCHECK(ncclTopoNodeReqListInitFromSystem(&interList, system, GPU));
 
       // GPU -> .. -> GPU lists are duplicated
       struct ncclTopoNodeReqList startLoops[NCCL_TOPO_SEARCH_MAX_REQS];
@@ -616,35 +606,36 @@ ncclResult_t ncclTopoCompute(struct ncclTopoSystem* system, struct ncclTopoGraph
 
       for (int n=0; n<system->nodes[NET].count; n++) {
         // NIC -> 1st GPU -> 2nd GPU -> NIC
+        NCCLCHECK(ncclTopoNodeReqListInitFromSystem(interLoops+n, system, GPU));
         search.reqs[2*n].start = &startList;
         search.reqs[2*n].end = &endList;
-        search.reqs[2*n].inter = &interList;
+        search.reqs[2*n].inter = interLoops+n;
         search.reqs[2*n].nhops = 3;
-
         // 2nd GPU -> ... -> 1st GPU loop (linked with previous req solution)
         NCCLCHECK(ncclTopoNodeReqListInitSingle(startLoops+n, search.paths[2*n].nodes.list+2));
         NCCLCHECK(ncclTopoNodeReqListInitSingle(endLoops+n, search.paths[2*n].nodes.list+1));
-        NCCLCHECK(ncclTopoNodeReqListInitFromSystem(interLoops+n, system, GPU));
         search.reqs[2*n+1].start = startLoops+n;
         search.reqs[2*n+1].end = graph->pattern == NCCL_TOPO_PATTERN_SPLIT_TREE_LOOP ? endLoops+n : interLoops+n;
         search.reqs[2*n+1].inter = interLoops+n;
-        search.reqs[2*n+1].nhops = system->nodes[GPU].count-2;
+        search.reqs[2*n+1].nhops = ngpus-2;
         if (graph->pattern == NCCL_TOPO_PATTERN_SPLIT_TREE_LOOP) search.reqs[2*n+1].nhops++;
       }
       search.nReqs = system->nodes[NET].count*2;
       NCCLCHECK(ncclTopoSearchRec(&search));
       free(startList.list);
       free(endList.list);
-      free(interList.list);
       for (int n=0; n<system->nodes[NET].count; n++) free(interLoops[n].list);
 
       // Save result into graph -> inter/intra
       graph->nChannels = search.nPaths/2;
       for (int c=0; c<graph->nChannels; c++) {
-        graph->inter[2*c] = search.save[2*c].nodes.list[2]->rank;
-        graph->inter[2*c+1] = search.save[2*c].nodes.list[1]->rank;
-        for (int i=0; i<system->nodes[GPU].count; i++) {
-          graph->intra[ngpus*c+i] = search.save[2*c+1].nodes.list[i]->rank;
+        graph->inter[2*c] = search.save[2*c].nodes.list[1]->rank;
+        graph->inter[2*c+1] = search.save[2*c].nodes.list[2]->rank;
+
+        graph->intra[ngpus*c] = graph->inter[2*c];
+        graph->intra[ngpus*c+1] = graph->inter[2*c+1];
+        for (int i=2; i<ngpus; i++) {
+          graph->intra[ngpus*c+i] = search.save[2*c+1].nodes.list[i-1]->rank;
         }
       }
     } else if (graph->pattern == NCCL_TOPO_PATTERN_RING ||
@@ -664,7 +655,7 @@ ncclResult_t ncclTopoCompute(struct ncclTopoSystem* system, struct ncclTopoGraph
         search.reqs[n].start = &startList;
         search.reqs[n].end = graph->pattern == NCCL_TOPO_PATTERN_TREE ? interLoops+n : &endList;
         search.reqs[n].inter = interLoops+n;
-        search.reqs[n].nhops = system->nodes[GPU].count;
+        search.reqs[n].nhops = ngpus;
         if (graph->pattern == NCCL_TOPO_PATTERN_RING) search.reqs[n].nhops++;
       }
       search.nReqs = system->nodes[NET].count;
@@ -680,8 +671,8 @@ ncclResult_t ncclTopoCompute(struct ncclTopoSystem* system, struct ncclTopoGraph
         int outIndex = graph->pattern == NCCL_TOPO_PATTERN_RING ? ngpus : 1;
         graph->inter[2*c+1] = search.save[c].nodes.list[outIndex]->rank;
 
-        for (int i=0; i<system->nodes[GPU].count; i++) {
-          graph->intra[ngpus*c+i] = search.save[c].nodes.list[i]->rank;
+        for (int i=0; i<ngpus; i++) {
+          graph->intra[ngpus*c+i] = search.save[c].nodes.list[i+1]->rank;
         }
       }
     }
@@ -702,7 +693,7 @@ ncclResult_t ncclTopoCompute(struct ncclTopoSystem* system, struct ncclTopoGraph
         search.reqs[c].start = startList+c;
         search.reqs[c].end = graph->pattern == NCCL_TOPO_PATTERN_RING ? endList+c : interList+c;
         search.reqs[c].inter = interList+c;
-        search.reqs[c].nhops = system->nodes[GPU].count;
+        search.reqs[c].nhops = ngpus;
       }
       search.nReqs = MAXCHANNELS;
       NCCLCHECK(ncclTopoSearchRec(&search));
@@ -715,7 +706,7 @@ ncclResult_t ncclTopoCompute(struct ncclTopoSystem* system, struct ncclTopoGraph
         int outIndex = graph->pattern == NCCL_TOPO_PATTERN_RING ? ngpus-1 : 0;
         graph->inter[2*c+1] = search.save[c].nodes.list[outIndex]->rank;
 
-        for (int i=0; i<system->nodes[GPU].count; i++) {
+        for (int i=0; i<ngpus; i++) {
           graph->intra[ngpus*c+i] = search.save[c].nodes.list[i]->rank;
         }
       }
