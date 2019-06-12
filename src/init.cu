@@ -713,13 +713,10 @@ static int collNetSetup(struct ncclComm* comm, struct ncclChannel* channel, int 
   // check if we can connect to collnet, whose root is the nranks-th rank
   struct ncclPeerInfo *myInfo = comm->peerInfo+rank, *peerInfo = comm->peerInfo+nranks;
   peerInfo->rank = nranks;
-  ncclTvalue_t ret = 0;
+  ncclTvalue_t ret = 1;
   if (treeMasters[rank]) {
     NCCLCHECK(collNetTransport.canConnect(&ret, myInfo, peerInfo));
   }
-  /*if (ret == 0) {
-    return 0;
-  }*/
 
   // select
   struct ncclPeer* root = channel->peers+nranks;
@@ -728,7 +725,7 @@ static int collNetSetup(struct ncclComm* comm, struct ncclChannel* channel, int 
   conn->transportComm = transportComm;
   // setup
   struct ncclConnect myConnect;
-  if (treeMasters[rank]) {
+  if (treeMasters[rank] && ret > 0) {
     NCCLCHECK(transportComm->setup(myInfo, peerInfo, &myConnect, conn, channel->buffSize, channel->id));
   }
   // exchange connect handles
@@ -750,17 +747,19 @@ static int collNetSetup(struct ncclComm* comm, struct ncclChannel* channel, int 
     }
   }
   // connect
-  if (treeMasters[rank]) {
+  if (treeMasters[rank] && ret > 0) {
     NCCLCHECKGOTO(transportComm->connect(masterConnects, nMasters, rankInCollNet, conn), res, cleanup);
     TRACE(NCCL_INIT, "rank %d collNetRank %d collNetNranks %d init COMPLETE", rank, rankInCollNet, nMasters);
   }
   // connect send and recv (perform only once)
-  if (treeMasters[rank] && type == 1) {
+  if (treeMasters[rank] && ret > 0 && type == 1) {
     struct ncclChannel* sendChannel = channel - 1;
     ncclConnector* send = &sendChannel->peers[nranks].send;
     NCCLCHECKGOTO(collNetTransport.connectSendRecv(send, conn), res, cleanup);
   }
-  supported = 1;
+  if (ret > 0) {
+    supported = 1;
+  }
 cleanup:
   if (allConnects != NULL) free(allConnects);
   if (masterConnects != NULL) free(masterConnects);
