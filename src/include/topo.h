@@ -1,5 +1,5 @@
 /*************************************************************************
- * Copyright (c) 2016, NVIDIA CORPORATION. All rights reserved.
+ * Copyright (c) 2016-2019, NVIDIA CORPORATION. All rights reserved.
  *
  * See LICENSE.txt for license information
  ************************************************************************/
@@ -8,74 +8,38 @@
 #define NCCL_TOPO_H_
 
 #include "nccl.h"
+#include <limits.h>
+#include <stdlib.h>
 #include <ctype.h>
+#include <stdio.h>
 
-#define MAXPATHSIZE 1024
+ncclResult_t getCudaPath(int cudaDev, char** path);
 
-static ncclResult_t getCudaPath(int cudaDev, char** path) {
-  char busId[16];
-  CUDACHECK(cudaDeviceGetPCIBusId(busId, 16, cudaDev));
-  for (int i=0; i<16; i++) busId[i] = tolower(busId[i]);
-  char busPath[] =  "/sys/class/pci_bus/0000:00/device";
-  memcpy(busPath+sizeof("/sys/class/pci_bus/")-1, busId, sizeof("0000:00")-1); 
-  char* cudaRpath = realpath(busPath, NULL); 
-  char pathname[MAXPATHSIZE];
-  strncpy(pathname, cudaRpath, MAXPATHSIZE);
-  strncpy(pathname+strlen(pathname), "/", MAXPATHSIZE-strlen(pathname));
-  strncpy(pathname+strlen(pathname), busId, MAXPATHSIZE-strlen(pathname));
-  free(cudaRpath);
-  *path = realpath(pathname, NULL); 
-  if (*path == NULL) {
-    WARN("Could not find real path of %s", pathname);
-    return ncclSystemError;
-  }
-  return ncclSuccess;
+static int getNumaId(char *path) {
+  char npath[PATH_MAX];
+  snprintf(npath, PATH_MAX, "%s/numa_node", path);
+  npath[PATH_MAX-1] = '\0';
+
+  int numaId = -1;
+  FILE *file = fopen(npath, "r");
+  if (file == NULL) return -1;
+  if (fscanf(file, "%d", &numaId) == EOF) { fclose(file); return -1; }
+  fclose(file);
+
+  return numaId;
 }
 
-static ncclResult_t getMlxPath(char* ibdevPath, char** path) {
-  char pathname[MAXPATHSIZE];
-  strcpy(pathname, "/sys/class/infiniband/");
-  int strLen = strlen(pathname);
-  int linkLen = readlink(ibdevPath, pathname+strLen, MAXPATHSIZE-strLen);
-  if (linkLen == 0) {
-    WARN("Could not find link %s", ibdevPath);
-    return ncclSystemError;
-  }
-  // readlink does not append '\0'. We have to do it.
-  pathname[strLen+linkLen] = '\0';
-  strncpy(pathname+strlen(pathname), "/../..", MAXPATHSIZE-strlen(pathname));
-  *path = realpath(pathname, NULL); 
-  if (*path == NULL) {
-    WARN("Could not find real path of %s", pathname);
-    return ncclSystemError;
-  }
-  return ncclSuccess;
-}
-
-enum ncclIbPathDist {
-  PATH_PIX = 0,
-  PATH_PXB = 1,
-  PATH_PHB = 2,
-  PATH_SOC = 3
+enum ncclPathDist {
+  PATH_PIX  = 0,
+  PATH_PXB  = 1,
+  PATH_PHB  = 2,
+  PATH_NODE = 3,
+  PATH_SYS  = 4,
+  PATH_ARRAY_SIZE = 5
 };
 
-static const char* pathDists[] = { "PIX", "PXB", "PHB", "SOC" };
+extern const char* pathDists[PATH_ARRAY_SIZE];
 
-static int pciDistance(char* path1, char* path2) {
-  int score = 0;
-  int depth = 0;
-  int same = 1;
-  for (int i=0; i<strlen(path1); i++) {
-    if (path1[i] != path2[i]) same = 0;
-    if (path1[i] == '/') {
-      depth++;
-      if (same == 1) score++;
-    }
-  }
-  if (score == 3) return PATH_SOC;
-  if (score == 4) return PATH_PHB;
-  if (score == depth-1)     return PATH_PIX;
-  return PATH_PXB;
-}
+int pciDistance(char* path1, char* path2);
 
 #endif

@@ -1,5 +1,10 @@
 /*************************************************************************
- * Copyright (c) 2015-2017, NVIDIA CORPORATION. All rights reserved.
+ * Copyright (c) 2004, 2005 Topspin Communications.  All rights reserved.
+ * Copyright (c) 2004, 2011-2012 Intel Corporation.  All rights reserved.
+ * Copyright (c) 2005, 2006, 2007 Cisco Systems, Inc.  All rights reserved.
+ * Copyright (c) 2005 PathScale, Inc.  All rights reserved.
+ *
+ * Copyright (c) 2015-2019, NVIDIA CORPORATION. All rights reserved.
  *
  * See LICENSE.txt for license information
  ************************************************************************/
@@ -1065,12 +1070,14 @@ ncclResult_t wrap_ibv_create_comp_channel(struct ibv_comp_channel **ret, struct 
 ncclResult_t wrap_ibv_destroy_comp_channel(struct ibv_comp_channel *channel);
 ncclResult_t wrap_ibv_create_cq(struct ibv_cq **ret, struct ibv_context *context, int cqe, void *cq_context, struct ibv_comp_channel *channel, int comp_vector);
 ncclResult_t wrap_ibv_destroy_cq(struct ibv_cq *cq);
-static inline int wrap_ibv_poll_cq(struct ibv_cq *cq, int num_entries, struct ibv_wc *wc) { /*returns 0 on success, and -1 on error*/
-  int count = cq->context->ops.poll_cq(cq, num_entries, wc);//nccl_ibv_poll_cq(cq, num_entries, wc);
-  if (count < IBV_SUCCESS) {
-    WARN("ibv_poll_cq() failed");
+static inline ncclResult_t wrap_ibv_poll_cq(struct ibv_cq *cq, int num_entries, struct ibv_wc *wc, int* num_done) {
+  int done = cq->context->ops.poll_cq(cq, num_entries, wc); /*returns the number of wcs or 0 on success, a negative number otherwise*/
+  if (done < 0) {
+    WARN("Call to ibv_poll_cq() returned %d", done);
+    return ncclSystemError;
   }
-  return count;
+  *num_done = done;
+  return ncclSuccess;
 }
 ncclResult_t wrap_ibv_create_qp(struct ibv_qp **ret, struct ibv_pd *pd, struct ibv_qp_init_attr *qp_init_attr);
 ncclResult_t wrap_ibv_modify_qp(struct ibv_qp *qp, struct ibv_qp_attr *attr, int attr_mask);
@@ -1079,20 +1086,20 @@ static inline int ibv_post_send(struct ibv_qp *qp, struct ibv_send_wr *wr, struc
   return qp->context->ops.post_send(qp, wr, bad_wr);
 }
 
-static inline ncclResult_t wrap_ibv_post_send(struct ibv_qp *qp, struct ibv_send_wr *wr, struct ibv_send_wr **bad_wr) { /*returns 0 on success, or the value of errno on failure (which indicates the failure reason)*/
-  int ret = qp->context->ops.post_send(qp, wr, bad_wr);
+static inline ncclResult_t wrap_ibv_post_send(struct ibv_qp *qp, struct ibv_send_wr *wr, struct ibv_send_wr **bad_wr) {
+  int ret = qp->context->ops.post_send(qp, wr, bad_wr); /*returns 0 on success, or the value of errno on failure (which indicates the failure reason)*/
   if (ret != IBV_SUCCESS) {
     WARN("ibv_post_send() failed with error %s", strerror(ret));
-    return ncclSystemError; 
+    return ncclSystemError;
   }
   return ncclSuccess;
 }
 
-static inline ncclResult_t wrap_ibv_post_recv(struct ibv_qp *qp, struct ibv_recv_wr *wr, struct ibv_recv_wr **bad_wr) { /*returns 0 on success, or the value of errno on failure (which indicates the failure reason)*/
-  int ret = qp->context->ops.post_recv(qp, wr, bad_wr);
+static inline ncclResult_t wrap_ibv_post_recv(struct ibv_qp *qp, struct ibv_recv_wr *wr, struct ibv_recv_wr **bad_wr) {
+  int ret = qp->context->ops.post_recv(qp, wr, bad_wr); /*returns 0 on success, or the value of errno on failure (which indicates the failure reason)*/
   if (ret != IBV_SUCCESS) {
     WARN("ibv_post_recv() failed with error %s", strerror(ret));
-    return ncclSystemError; 
+    return ncclSystemError;
   }
   return ncclSuccess;
 }

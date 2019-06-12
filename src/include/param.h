@@ -1,5 +1,5 @@
 /*************************************************************************
- * Copyright (c) 2017, NVIDIA CORPORATION. All rights reserved.
+ * Copyright (c) 2017-2019, NVIDIA CORPORATION. All rights reserved.
  *
  * See LICENSE.txt for license information
  ************************************************************************/
@@ -8,7 +8,6 @@
 #define NCCL_PARAM_H_
 
 #include <stdlib.h>
-
 #include <unistd.h>
 #include <sys/types.h>
 #include <pwd.h>
@@ -32,12 +31,11 @@ static void setEnvFile(const char* fileName) {
     int s=0; // Env Var Size
     while (line[s] != '\0' && line[s] != '=') s++;
     if (line[s] == '\0') continue;
-    strncpy(envVar, line, min(1024,s));
+    strncpy(envVar, line, std::min(1024,s));
     envVar[s] = '\0';
     s++;
     strncpy(envValue, line+s, 1024);
     setenv(envVar, envValue, 0);
-    char *str = getenv(envVar);
   }
   if (line) free(line);
   fclose(file);
@@ -68,10 +66,10 @@ int64_t ncclParam##name() { \
       errno = 0; \
       int64_t v = strtoll(str, NULL, 0); \
       if (errno) { \
-        INFO(ALL,"Invalid value %s for %s, using default %lu.", str, "NCCL_" env, value); \
+        INFO(NCCL_ALL,"Invalid value %s for %s, using default %lu.", str, "NCCL_" env, value); \
       } else { \
         value = v; \
-        INFO(ALL,"%s set by environment to %lu.", "NCCL_" env, value);  \
+        INFO(NCCL_ALL,"%s set by environment to %lu.", "NCCL_" env, value);  \
       } \
     } \
   } \

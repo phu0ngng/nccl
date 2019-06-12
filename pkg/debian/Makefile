@@ -1,4 +1,9 @@
-#### PACKAGING ####
+#
+# Copyright (c) 2015-2019, NVIDIA CORPORATION. All rights reserved.
+#
+# See LICENSE.txt for license information
+#
+
 include ../../makefiles/common.mk
 include ../../makefiles/version.mk
 BUILDDIR ?= $(abspath ../../build)
@@ -7,7 +12,7 @@ PKGDIR  := $(BUILDDIR)/pkg/deb/
 
 DEBGEN_IN  := $(wildcard *.in)
 DEBGEN     := $(DEBGEN_IN:.in=)
-DEBFILES   := compat copyright libnccl-dev.install libnccl-dev.docs libnccl2.docs rules $(DEBGEN)
+DEBFILES   := compat copyright libnccl-dev.install rules $(DEBGEN)
 DEBTARGETS := $(patsubst %, $(DEBPREPDIR)/%, $(DEBFILES))
 
 PKG_TIMESTAMP  := $(shell date -R)

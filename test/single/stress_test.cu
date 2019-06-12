@@ -156,7 +156,7 @@ int testAllGather(int count, ncclDataType_t type, int op, int root, int nranks, 
     if (delta) {
       errors++;
       CUDACHECK(cudaMemcpy(results, recvbuff[i], recvnbytes, cudaMemcpyDeviceToHost));
-      printf("Allgather size %d, type %d : delta %g, new %g\n", sendcount, type, delta);
+      printf("Allgather size %d, type %d : delta %g\n", sendcount, type, delta);
       for (int c=1; c<count; c++) {
 	if (type == ncclFloat) {
           float res = *((float*)results+c), ref = *((float*)reference+c);
@@ -346,7 +346,7 @@ int ncclTest(ncclComm_t ** comms) {
   int root = rand() % nranks;
   if (type == 2) return 0; // ncclHalf not supported
   if (ncclPrims[nccl_prim]) {
-    //printf("Prim %d size %d type %d op %d nranks %d root %d\n", nccl_prim, size, type, op, commidx+1, root);
+    printf("Prim %d size %d type %d op %d nranks %d root %d\n", nccl_prim, size, type, op, commidx+1, root);
     errors += ncclPrims[nccl_prim](size, type, op, root, nranks, comms[commidx]);
   }
   return errors;
@@ -359,6 +359,7 @@ void usage() {
 }
 
 int main(int argc, char* argv[]) {
+  setlinebuf(stdout);
   int nVis = 0;
   CUDACHECK(cudaGetDeviceCount(&nVis));
 

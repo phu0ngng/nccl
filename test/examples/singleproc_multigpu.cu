@@ -1,7 +1,7 @@
 /*************************************************************************
  * Copyright (c) 2015-2016, NVIDIA CORPORATION. All rights reserved.
  *
- * See LICENCE.txt for license information
+ * See LICENSE.txt for license information
  ************************************************************************/
 
 #include <stdio.h>
@@ -76,6 +76,9 @@ int main(int argc, char* argv[])
   //destroy NCCL communicator
   for(int i = 0; i < nDev; ++i)
       ncclCommDestroy(comms[i]);
+
+  //Needed for cuda-memcheck --leak-check full
+  cudaDeviceReset();
 
   printf("Success \n");
   return 0;

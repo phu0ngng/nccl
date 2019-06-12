@@ -1,7 +1,7 @@
 /*************************************************************************
  * Copyright (c) 2015-2016, NVIDIA CORPORATION. All rights reserved.
  *
- * See LICENCE.txt for license information
+ * See LICENSE.txt for license information
  ************************************************************************/
 
 #include <stdio.h>
@@ -113,6 +113,9 @@ int main(int argc, char* argv[])
 
   //finalizing MPI
   MPICHECK(MPI_Finalize());
+
+  //Needed for cuda-memcheck --leak-check full
+  cudaDeviceReset();
 
   printf("[MPI Rank %d] Success \n", myRank);
   return 0;

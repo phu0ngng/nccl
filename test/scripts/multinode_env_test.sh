@@ -30,7 +30,7 @@ mkdir -p path
 for val in $vals ; do
   echo "Running test/perf/${op}_perf with [$env=$val] ..."
   result=$path/$env=$val
-  $salloc_cmd mpirun $prefix $mpi_hosts -x NCCL_DEBUG -x $env=$val -np $nproc test/perf/${op}_perf -g $ngpus -b 64 -e 128M -f 8 -w 1 -n 5 2>&1 | tee $result
+  $salloc_cmd mpirun $prefix $mpi_hosts --bind-to none -x NCCL_DEBUG -x $env=$val -np $nproc test/perf/${op}_perf -g $ngpus -b 64 -e 128M -f 8 -w 1 -n 5 2>&1 | tee $result
 done
 }
 

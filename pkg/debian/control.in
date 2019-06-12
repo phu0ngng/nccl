@@ -11,10 +11,11 @@ Architecture: ${pkg:Arch}
 Depends: ${misc:Depends}, ${shlibs:Depends}
 Description: NVIDIA Collectives Communication Library (NCCL) Runtime
  NCCL (pronounced "Nickel") is a stand-alone library of standard collective
- communication routines for GPUs, such as all-gather, reduce, broadcast, etc.,
- that have been optimized to achieve high bandwidth over PCIe. NCCL supports up
- to eight GPUs and can be used in either single- or multi-process (e.g., MPI)
- applications.
+ communication routines for GPUs, implementing all-reduce, all-gather, reduce,
+ broadcast, and reduce-scatter.
+ It has been optimized to achieve high bandwidth on any platform using PCIe,
+ NVLink, NVswitch, as well as networking using InfiniBand Verbs or TCP/IP
+ sockets.
 
 Package: libnccl-dev
 Section: libdevel
@@ -22,7 +23,8 @@ Architecture: ${pkg:Arch}
 Depends: ${misc:Depends}, ${shlibs:Depends}, libnccl${nccl:Major} (= ${binary:Version})
 Description: NVIDIA Collectives Communication Library (NCCL) Development Files
  NCCL (pronounced "Nickel") is a stand-alone library of standard collective
- communication routines for GPUs, such as all-gather, reduce, broadcast, etc.,
- that have been optimized to achieve high bandwidth over PCIe. NCCL supports up
- to eight GPUs and can be used in either single- or multi-process (e.g., MPI)
- applications.
+ communication routines for GPUs, implementing all-reduce, all-gather, reduce,
+ broadcast, and reduce-scatter.
+ It has been optimized to achieve high bandwidth on any platform using PCIe,
+ NVLink, NVswitch, as well as networking using InfiniBand Verbs or TCP/IP
+ sockets.

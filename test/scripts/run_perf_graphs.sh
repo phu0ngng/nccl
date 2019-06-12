@@ -11,26 +11,23 @@ if [ "$SLURM" != "1" ]; then
   mpi_hosts="-host $gpumodel "
 fi
 
-if [ "$mode" == "reorder" ] || [ "$mode" == "combo" ] ; then
+if [ "$mode" == "reorder" ]; then
   echo "Running test/perf/${op}_perf on $ngpus GPUs [Reorder] ..."
   resdir="results_reorder"
   path=$resdir/$gpumodel
   mkdir -p $path
   GPU_REORDER=""
-  for gpu in `seq $ngpus -1 0`; do
-    GPU_REORDER+=",$gpu"
+  first=`expr $ngpus - 1`
+  for gpu in `seq $first -1 1`; do
+    GPU_REORDER+="$gpu,"
   done
-  GPU_REORDER=`echo $GPU_REORDER | cut -c 4-`
+  GPU_REORDER="${GPU_REORDER}0"
+  echo $GPU_REORDER
   result=$path/$op.$ngpus
-  if [ "$mode" == "combo" ]; then
-    mpirun -np 1 --cpus-per-rank $ngpus -x CUDA_VISIBLE_DEVICES=$GPU_REORDER test/perf/${op}_perf -g $ngpus -b 40000000 -e 80000000 -i 40000000 -w 1 -n 5 2>&1 | tee $result.out
-  else
-    mpirun -np 1 --cpus-per-rank $ngpus -x CUDA_VISIBLE_DEVICES=$GPU_REORDER test/perf/${op}_perf -g $ngpus -b 40000000 -e 400000000 -i 40000000 -w 1 -n 5 2>&1 | tee $result.out
-    return 0
-  fi
+  mpirun -np 1 --cpus-per-rank $ngpus -x CUDA_VISIBLE_DEVICES=$GPU_REORDER test/perf/${op}_perf -g $ngpus -b 40000000 -e 400000000 -i 40000000 -w 1 -n 5 2>&1 | tee $result.out
 fi
 
-if [ "$mode" == "all" ] || [ "$mode" == "combo" ]; then
+if [ "$mode" == "all" ]; then
   resdir="results_all"
   path=$resdir/$gpumodel
   mkdir -p $path/pow2
@@ -47,26 +44,20 @@ if [ "$mode" == "all" ] || [ "$mode" == "combo" ]; then
     mpirun -np 1 --cpus-per-rank $ngpus test/perf/${op}_perf -t $ngpus -p 1 -d float -o $otype -b 64 -e 4194304 -f 256 -w 1 -n 5 2>&1 | tee $path/pow2/$result.out
     mpirun -np 1 --cpus-per-rank $ngpus test/perf/${op}_perf -t $ngpus -p 1 -d float -o $otype -b 63 -e 4357647 -f 263 -w 1 -n 5 2>&1 | tee $path/npow2/$result.out
   done
-  if [ "$mode" != "combo" ]; then
-    return 0
-  fi
 fi
 
-if [ "$mode" == "single" ] || [ "$mode" == "combo" ]; then
+if [ "$mode" == "single" ]; then
   echo "Running test/perf/${op}_perf on $ngpus GPUs ..."
   resdir="results"
   path=$resdir/$gpumodel
   mkdir -p $path
   result=$path/$op.$ngpus
   mpirun -np 1 --cpus-per-rank $ngpus test/perf/${op}_perf -t $ngpus -b 40000 -e 1960000 -i 40000 $extra -w 20 -n 20 2>&1 | tee $result.out
-  if [ "$mode" != "combo" ]; then
-    mpirun -np 1 --cpus-per-rank $ngpus test/perf/${op}_perf -t $ngpus -p 1 -b 2000000 -e 38000000 -i 2000000 $extra -w 20 -n 5 2>&1 | tee -a $result.out
-    mpirun -np 1 --cpus-per-rank $ngpus test/perf/${op}_perf -g $ngpus -b 40000000 -e 400000000 -i 40000000 $extra -w 5 -n 1 2>&1 | tee -a $result.out
-    return 0
-  fi
+  mpirun -np 1 --cpus-per-rank $ngpus test/perf/${op}_perf -t $ngpus -p 1 -b 2000000 -e 38000000 -i 2000000 $extra -w 20 -n 20 2>&1 | tee -a $result.out
+  mpirun -np 1 --cpus-per-rank $ngpus test/perf/${op}_perf -g $ngpus -b 40000000 -e 400000000 -i 40000000 $extra -w 5 -n 1 2>&1 | tee -a $result.out
 fi
 
-if [ "$mode" == "latency" ] || [ "$mode" == "combo" ]; then
+if [ "$mode" == "latency" ]; then
   echo "Running test/perf/${op}_perf on $ngpus GPUs [Latency] ..."
   resdir="results_latency"
   path=$resdir/$gpumodel
@@ -74,26 +65,20 @@ if [ "$mode" == "latency" ] || [ "$mode" == "combo" ]; then
   result=$path/$op.$ngpus
   mpirun -np 1 --cpus-per-rank $ngpus test/perf/${op}_perf -t $ngpus -b 32 -e 1K -f 2 -w 20 -n 1000 2>&1 | tee $result.out
   mpirun -np 1 --cpus-per-rank $ngpus test/perf/${op}_perf -g $ngpus -b 2K -e 64K -f 2 -w 20 -n 500 2>&1 | tee -a $result.out
-  if [ "$mode" != "combo" ]; then
-    return 0
-  fi
 fi
 
-if [ "$mode" == "mpi" ] || [ "$mode" == "combo" ]; then
+if [ "$mode" == "mpi" ]; then
   echo "Running test/perf/${op}_perf on $ngpus GPUs [MPI] ..."
   resdir="results_mpi"
   path=$resdir/$gpumodel
   mkdir -p $path
   result=$path/$op.$ngpus
   mpirun $mpi_hosts -x NCCL_DEBUG -x NCCL_LAUNCH_MODE -np $ngpus test/perf/${op}_perf -b 40000 -e 1960000 -i 40000 -w 20 -n 20 2>&1 | tee $result.out
-  if [ "$mode" != "combo" ]; then
-    mpirun $mpi_hosts -x NCCL_DEBUG -x NCCL_LAUNCH_MODE -np $ngpus test/perf/${op}_perf -b 2000000 -e 38000000 -i 2000000  -w 20 -n 5 2>&1 | tee -a $result.out
-    mpirun $mpi_hosts -x NCCL_DEBUG -x NCCL_LAUNCH_MODE -np $ngpus test/perf/${op}_perf -b 40000000 -e 400000000 -i 40000000 -w 5 -n 1 2>&1 | tee -a $result.out
-    return 0
-  fi
+  mpirun $mpi_hosts -x NCCL_DEBUG -x NCCL_LAUNCH_MODE -np $ngpus test/perf/${op}_perf -b 2000000 -e 38000000 -i 2000000  -w 20 -n 5 2>&1 | tee -a $result.out
+  mpirun $mpi_hosts -x NCCL_DEBUG -x NCCL_LAUNCH_MODE -np $ngpus test/perf/${op}_perf -b 40000000 -e 400000000 -i 40000000 -w 5 -n 1 2>&1 | tee -a $result.out
 fi
 
-if [ "$mode" == "mpi_latency" ] || [ "$mode" == "combo" ]; then
+if [ "$mode" == "mpi_latency" ]; then
   echo "Running test/perf/${op}_perf on $ngpus GPUs [MPI] ..."
   resdir="results_mpi_latency"
   path=$resdir/$gpumodel
@@ -101,12 +86,9 @@ if [ "$mode" == "mpi_latency" ] || [ "$mode" == "combo" ]; then
   result=$path/$op.$ngpus
   mpirun $mpi_hosts -x NCCL_DEBUG -x NCCL_LAUNCH_MODE -np $ngpus test/perf/${op}_perf -b 32 -e 1K -f 2 -w 20 -n 1000 2>&1 | tee $result.out
   mpirun $mpi_hosts -x NCCL_DEBUG -x NCCL_LAUNCH_MODE -np $ngpus test/perf/${op}_perf -b 2K -e 64K -f 2 -w 20 -n 500 2>&1 | tee -a $result.out
-  if [ "$mode" != "combo" ]; then
-    return 0
-  fi
 fi
 
-if [ "$mode" == "aggregation" ] || [ "$mode" == "combo" ]; then
+if [ "$mode" == "aggregation" ]; then
   echo "Running test/perf/${op}_perf on $ngpus GPUs [Aggregation] ..."
   # m is the aggregation factor
   for m in 1 4 16; do
@@ -117,12 +99,9 @@ if [ "$mode" == "aggregation" ] || [ "$mode" == "combo" ]; then
     result=$path/$op.$ngpus
     mpirun -np 1 --cpus-per-rank $ngpus test/perf/${op}_perf -t $ngpus -b 32 -e 512 -f 2 -w 20 -n $n -m $m 2>&1 | tee $result.out
   done
-  if [ "$mode" != "combo" ]; then
-    return 0
-  fi
 fi
 
-if [ "$mode" == "deadlock" ] || [ "$mode" == "combo" ]; then
+if [ "$mode" == "deadlock" ]; then
   echo "Running test/perf/${op}_perf on $ngpus GPUs [Deadlock] ..."
   resdir="results_deadlock"
   path=$resdir/$gpumodel
@@ -131,9 +110,6 @@ if [ "$mode" == "deadlock" ] || [ "$mode" == "combo" ]; then
   mpirun -np 1 --cpus-per-rank $ngpus -mca mpi_leave_pinned 0 -mca btl ^openib test/perf/${op}_perf -t $ngpus -k 1 -w 0 -n 1 2>&1 | tee $result.out
   mpirun -np 1 --cpus-per-rank $ngpus -mca mpi_leave_pinned 0 -mca btl ^openib test/perf/${op}_perf -g $ngpus -k 1 -w 0 -n 1 2>&1 | tee -a $result.out
   mpirun -np $ngpus --cpus-per-rank 1 -mca mpi_leave_pinned 0 -mca btl ^openib test/perf/${op}_perf -k 1 -w 0 -n 1 2>&1 | tee -a $result.out
-  if [ "$mode" != "combo" ]; then
-    return 0
-  fi
 fi
 }
 
@@ -164,8 +140,6 @@ mode=$3
 if [ "$mode" == "" ]; then
   mode="single"
 fi
-
-export NCCL_DEBUG=WARN
 
 if [ "$mode" == "reorder" ]; then
   perf_ngpu_loop $gpumodel $maxgpu $mode all_reduce
