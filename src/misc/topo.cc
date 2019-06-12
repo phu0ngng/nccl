@@ -61,23 +61,26 @@ int pciDistance(char* path1, char* path2) {
 #include "nvlink.h"
 #include "net.h"
 
-#define PASCAL_NVLINK_WIDTH 2
-#define VOLTA_NVLINK_WIDTH 2
+#define PASCAL_NVLINK_WIDTH 2 // 17 GB/s
+#define VOLTA_NVLINK_WIDTH 2  // 22 GB/s
 #define PCI_WIDTH 1
-#define QPI_WIDTH 1
+#define QPI_WIDTH 1           // PCI Gen3 x16, 12GB/s
+#define NET_WIDTH 1           // 100Gbit, 12GB/s
 
-#define NCCL_TOPO_NODE_TYPES 5
+#define NCCL_TOPO_NODE_TYPES 6
 #define GPU 0
 #define PCI 1
 #define NVS 2
 #define NUMA 3
-#define NET 4
-static const char* topoNodeTypeStr[] = { "GPU", "PCI", "NVS", "NUMA", "NET" };
+#define NIC 4
+#define NET 5
+static const char* topoNodeTypeStr[] = { "GPU", "PCI", "NVS", "NUMA", "NIC", "NET" };
 
 #define LINK_NVL 0
 #define LINK_PCI 1
 #define LINK_QPI 2
-static const char* topoLinkTypeStr[] = { "NVL", "PCI", "QPI" };
+#define LINK_NET 3
+static const char* topoLinkTypeStr[] = { "NVL", "PCI", "QPI", "NET" };
 
 struct ncclTopoNode;
 struct ncclTopoLink {
@@ -86,14 +89,13 @@ struct ncclTopoLink {
   struct ncclTopoNode* remNode;
 };
 #define NCCL_TOPO_MAX_LINKS 32
+#define NCCL_TOPO_MAX_HOPS (NCCL_TOPO_MAX_NODES*NCCL_TOPO_NODE_TYPES)
 #define SELECT_PATH 1
 #define SELECT_LAST 2
 struct ncclTopoNode {
   int type;
   int id;
   int rank;
-  int present; // Used by compute algorithms
-  int select;  // Used by compute algorithms
   struct ncclTopoLink links[NCCL_TOPO_MAX_LINKS];
 };
 
@@ -104,12 +106,6 @@ struct ncclTopoNodeSet {
 
 struct ncclTopoSystem {
   struct ncclTopoNodeSet nodes[NCCL_TOPO_NODE_TYPES];
-};
-
-struct ncclTopoPath {
-  int hops;
-  int width;
-  struct ncclTopoLink* links[NCCL_TOPO_MAX_NODES*NCCL_TOPO_NODE_TYPES];
 };
 
 /******************************************************************/
@@ -144,7 +140,6 @@ ncclResult_t ncclTopoCreateNode(struct ncclTopoSystem* system, struct ncclTopoNo
   system->nodes[type].count++;
   (*node)->type = type;
   (*node)->id = id;
-  (*node)->present = 1;
   return ncclSuccess;
 }
 
@@ -217,8 +212,8 @@ ncclResult_t pciHexToInt(char* path, int offset, int minOffset, int* id) {
 
   char* hexStr;
   NCCLCHECK(ncclCalloc(&hexStr, offset-minOffset+2));
-  int hexOffset = offset-minOffset+1;
-  for (; offset > minOffset; offset--) {
+  int hexOffset = offset-minOffset;
+  for (; offset >= minOffset; offset--) {
     if (path[offset] == '.' || path[offset] == ':') continue;
     if (path[offset] == '/') {
       *id = strtol(hexStr+hexOffset+1, NULL, 16);
@@ -316,7 +311,26 @@ ncclResult_t ncclTopoConnectPCI(nvmlDevice_t* nvmlDevs, struct ncclTopoSystem* s
       NCCLCHECK(ncclTopoCreateNode(system, &netNode, NET, n));
       char* path;
       NCCLCHECK(ncclNetPciPath(n, &path));
-      NCCLCHECK(ncclTopoCreatePciPath(system, netNode, path));
+
+      // Create NIC
+      int pciId;
+      // Use "strlen(path)-1" to remove trailing subdevice and merge multi-port cards into one
+      NCCLCHECK(pciHexToInt(path, strlen(path)-2, 0, &pciId));
+      for (int n=0; n<system->nodes[NIC].count; n++) {
+        if (system->nodes[NIC].nodes[n].id == pciId) {
+          // Found our NIC. Attach and stop since the rest should already be connected
+          NCCLCHECK(ncclTopoConnectNodes(system->nodes[NIC].nodes+n, netNode, LINK_NET, NET_WIDTH, system));
+          NCCLCHECK(ncclTopoConnectNodes(netNode, system->nodes[NIC].nodes+n, LINK_NET, NET_WIDTH, system));
+          return ncclSuccess;
+        }
+      }
+      struct ncclTopoNode* nicNode;
+      NCCLCHECK(ncclTopoCreateNode(system, &nicNode, NIC, pciId));
+      NCCLCHECK(ncclTopoConnectNodes(nicNode, netNode, LINK_NET, NET_WIDTH, system));
+      NCCLCHECK(ncclTopoConnectNodes(netNode, nicNode, LINK_NET, NET_WIDTH, system));
+
+      // Create the PCI path
+      NCCLCHECK(ncclTopoCreatePciPath(system, nicNode, path));
       free(path);
     }
   }
@@ -344,6 +358,7 @@ ncclResult_t ncclTopoGetSystem(int nranks, int* nvmlIndexes, int* rankIndexes, s
   NCCLCHECK(ncclTopoConnectNVLink(nvmlDevs, system));
   NCCLCHECK(ncclTopoConnectPCI(nvmlDevs, system, inter));
 
+  free(nvmlDevs);
   return ncclSuccess;
 }
 
@@ -367,13 +382,6 @@ ncclResult_t ncclTopoSort(struct ncclTopoNode* node, struct ncclTopoNode* upNode
     if (link->remNode == NULL) break;
     if (link->type == LINK_PCI && link->remNode != upNode) NCCLCHECK(ncclTopoSort(link->remNode, node));
   }
-  return ncclSuccess;
-}
-
-ncclResult_t ncclTopoSystemSelectReset(struct ncclTopoSystem* system) {
-  for (int t=0; t<NCCL_TOPO_NODE_TYPES; t++)
-    for (int i=0; i<system->nodes[t].count; i++)
-      system->nodes[t].nodes[i].select = 0;
   return ncclSuccess;
 }
 
@@ -415,6 +423,7 @@ ncclResult_t ncclTopoGetSystem(int nranks, int* nvmlIndexes, int* rankIndexes, s
   NCCLCHECK(ncclTopoSortSystem(s));
   printf("================ Topology ================\n");
   for (int n=0; n<s->nodes[NUMA].count; n++) NCCLCHECK(ncclTopoPrint(s->nodes[NUMA].nodes+n, 0, NULL));
+  for (int n=0; n<s->nodes[NUMA].count; n++) NCCLCHECK(ncclTopoPrint(s->nodes[NET].nodes+n, 0, NULL));
   printf("==========================================\n");
   *system = s;
   return ncclSuccess;
@@ -423,252 +432,323 @@ ncclResult_t ncclTopoGetSystem(int nranks, int* nvmlIndexes, int* rankIndexes, s
 /******************************************************************/
 /******************** Graph Search Functions **********************/
 /******************************************************************/
-ncclResult_t ncclTopoSystemResetPresent(struct ncclTopoSystem* system) {
-  for (int t=0; t<NCCL_TOPO_NODE_TYPES; t++)
-    for (int n=0; n<system->nodes[t].count; n++)
-      system->nodes[t].nodes[n].present = 1;
-  return ncclSuccess;
-}
+#define NCCL_TOPO_SEARCH_MAX_REQS 32
 
-struct ncclTopoMulti {
-  int channel;
-  int nChannels;
-  struct ncclTopoNode** interList;
-  struct ncclTopoPath* paths;
+struct ncclTopoNodeReqList {
+  // We do not use an array here, so that :
+  //  - we can pass a higher-level array
+  //  - we can link requests together
+  // Downside is, we need to malloc/free those lists.
+  struct ncclTopoNode** list;
+  //  Used to keep track of which nodes have been used already
+  int state[NCCL_TOPO_MAX_NODES];
+  int count;
 };
 
-ncclResult_t ncclTopoFindPathMulti(struct ncclTopoSystem* system, struct ncclTopoMulti* multi);
+static inline ncclResult_t ncclTopoNodeReqListInitFromSystem(struct ncclTopoNodeReqList* list, struct ncclTopoSystem* system, int type) {
+  list->count = system->nodes[type].count;
+  NCCLCHECK(ncclCalloc(&list->list, list->count));
+  for (int i=0; i<list->count; i++) {
+    struct ncclTopoNode* node = type != NET ? system->nodes[type].nodes+i :
+      system->nodes[type].nodes[i].links[0].remNode; // Follow NET to find NIC
+    list->list[i] = node;
+    list->state[i] = 0;
+  }
+  return ncclSuccess;
+}
 
-//#define GRAPH_TRACE
-ncclResult_t ncclTopoFindPath(struct ncclTopoSystem* system, struct ncclTopoNode* node, struct ncclTopoPath* path, int nselect, struct ncclTopoMulti* multi) {
-#ifdef GRAPH_TRACE
-  if (multi) printf("[%d] ", multi->channel);
-  for (int i=0; i<16-nselect; i++) printf(" ");
-  printf("%p : %s/%X [%d/%d] rem %d\n", node, topoNodeTypeStr[node->type], node->id, node->present, node->select, nselect);
-#endif
-  int maxWidth = 0;
-  int minHops = 9999;
-  struct ncclTopoPath tmpPath;
-  for (int l=0; l<NCCL_TOPO_MAX_LINKS && node->links[l].remNode; l++) {
-    struct ncclTopoLink* link = node->links+l;
-    struct ncclTopoNode* remNode = link->remNode;
-#ifdef GRAPH_TRACE
-    printf("+ %s[%2d] - ", topoLinkTypeStr[link->type], link->width);
-    printf("%s/%X [%d/%d]\n", topoNodeTypeStr[remNode->type], remNode->id, remNode->present, remNode->select);
-#endif
-    if (link->width == 0) continue;
-    if (remNode->present == 0) continue;
-    if (remNode->select & SELECT_LAST) {
-      if (nselect > 1) continue;
-      else {
-        path->links[path->hops] = link;
-        minHops = 1;
-        maxWidth = link->width;
-#ifdef GRAPH_TRACE
-        printf("Path complete\n");
-#endif
-        if (multi) {
-          multi->channel++;
-          NCCLCHECK(ncclTopoFindPathMulti(system, multi));
-          multi->channel--;
+static inline ncclResult_t ncclTopoNodeReqListInitSingle(struct ncclTopoNodeReqList* list, struct ncclTopoNode** node) {
+  list->list = node;
+  list->count = 1;
+  list->state[0] = 0;
+  return ncclSuccess;
+}
+
+struct ncclTopoNodeList {
+  struct ncclTopoNode* list[NCCL_TOPO_MAX_NODES];
+  int count;
+};
+
+struct ncclTopoLinkList {
+  struct ncclTopoLink* list[NCCL_TOPO_MAX_HOPS];
+  int count;
+};
+
+struct ncclTopoSearchReq {
+  struct ncclTopoNodeReqList *start;
+  struct ncclTopoNodeReqList *end;
+  struct ncclTopoNodeReqList *inter;
+  int nhops;
+};
+
+struct ncclTopoSearchPath {
+  struct ncclTopoNodeList nodes;
+  struct ncclTopoLinkList links;
+};
+
+struct ncclTopoSearch {
+  int nReqs;
+  int req;
+  struct ncclTopoSearchReq reqs[NCCL_TOPO_SEARCH_MAX_REQS];
+  struct ncclTopoSearchPath paths[NCCL_TOPO_SEARCH_MAX_REQS];
+  int nPaths;
+  struct ncclTopoSearchPath save[NCCL_TOPO_SEARCH_MAX_REQS];
+};
+
+static inline int nodeInReqList(struct ncclTopoNodeReqList* l, struct ncclTopoNode* node) {
+  for (int i=0; i<l->count; i++) if (node == l->list[i] && l->state[i] == 0) return i;
+  return -1;
+}
+
+ncclResult_t ncclTopoCopyPath(struct ncclTopoSearchPath* dst, struct ncclTopoSearchPath* src) {
+  for (int i=0; i<src->nodes.count; i++) dst->nodes.list[i] = src->nodes.list[i];
+  dst->nodes.count = src->nodes.count;
+  for (int i=0; i<src->links.count; i++) dst->links.list[i] = src->links.list[i];
+  dst->links.count = src->links.count;
+  return ncclSuccess;
+}
+#define FOLLOW_LINK(linkList, l, cmd) do { \
+  l->width--; \
+   linkList->list[linkList->count++] = l; \
+    cmd; \
+   linkList->count--; \
+  l->width++; \
+} while (0)
+
+#define FOLLOW_NODE(nodeList, n, reqList, index, cmd) do { \
+  reqList->state[index] = 1; \
+   nodeList->list[nodeList->count++] = n; \
+    if (nodeList->count == req->nhops+1) search->req++; \
+     cmd; \
+    if (nodeList->count == req->nhops+1) search->req--; \
+   nodeList->count--; \
+  reqList->state[index] = 0; \
+} while (0)
+
+ncclResult_t ncclTopoSearchRec(struct ncclTopoSearch* search) {
+  struct ncclTopoSearchPath* path  = search->paths+search->req;
+  struct ncclTopoNodeList* nodeList = &path->nodes;
+  struct ncclTopoLinkList* linkList = &path->links;
+  struct ncclTopoSearchReq* req = search->reqs+search->req;
+
+  if (nodeList->count == 0) {
+    //printf("Req %d/%d\n", search->req, search->nReqs);
+    if (search->req >= search->nPaths) { // Save new solution
+      int copy = 1;
+      if (search->req == search->nPaths) {
+        int saveHops = 0;
+        for (int r=0; r<search->req; r++) saveHops += search->save[r].links.count;
+        int pathHops = 0;
+        for (int r=0; r<search->req; r++) pathHops += search->paths[r].links.count;
+        if (pathHops >= saveHops) copy = 0;
+      }
+      if (copy) {
+        for (int r=0; r<search->req; r++) {
+          NCCLCHECK(ncclTopoCopyPath(search->save+r, search->paths+r));
+        }
+        //printf("Saved %d paths\n", search->req);
+        search->nPaths = search->req;
+      }
+    }
+    if (search->req < search->nReqs) { // Start a new req
+      //printf("New req, %d hops\n", req->nhops);
+      for (int i=0; i<req->start->count; i++) {
+        if (req->start->state[i] == 0) {
+          struct ncclTopoNode* node = req->start->list[i];
+          // Remove from inter list
+          int found = nodeInReqList(req->inter, node);
+          if (found != -1) req->inter->state[found] = 1;
+          FOLLOW_NODE(nodeList, node, req->start, i,
+              NCCLCHECK(ncclTopoSearchRec(search)));
+          if (found != -1) req->inter->state[found] = 0;
         }
       }
-    } else {
-      tmpPath.width = link->width;
-      link->width--;
-      tmpPath.hops = 1;
-      tmpPath.links[0] = link;
-      int inPath = remNode->select & SELECT_PATH;
-      remNode->present-=inPath;
-      NCCLCHECK(ncclTopoFindPath(system, link->remNode, &tmpPath, nselect-inPath, multi));
-      remNode->present+=inPath;
-      if (tmpPath.width > maxWidth || (tmpPath.width == maxWidth && tmpPath.hops < minHops)) {
-        maxWidth = tmpPath.width;
-        minHops = tmpPath.hops;
-        // Save current best solution in path
-        for (int i=0; i<tmpPath.hops; i++) path->links[path->hops+i] = tmpPath.links[i];
+    }
+  } else {
+    struct ncclTopoNode* node = linkList->count == 0 ? nodeList->list[0] // First node
+      : linkList->list[linkList->count-1]->remNode; // Intermediate node
+
+    for (int l=0; l<NCCL_TOPO_MAX_LINKS && node->links[l].remNode; l++) {
+      struct ncclTopoLink* link = node->links+l;
+      if (link == NULL || link->width == 0) continue;
+      struct ncclTopoNode* remNode = link->remNode;
+      int bridge = (remNode->type == NUMA || remNode->type == PCI || remNode->type == NVS) ? 1 : 0;
+      struct ncclTopoNodeReqList* reqList = req->nhops == nodeList->count ? req->end : req->inter;
+      int found = nodeInReqList(reqList, remNode);
+      if (found != -1) { // Found a node in our path
+        FOLLOW_NODE(nodeList, remNode, reqList, found,
+            FOLLOW_LINK(linkList, link,
+              NCCLCHECK(ncclTopoSearchRec(search))));
+      } else if (bridge) { // We can follow this as well
+        FOLLOW_LINK(linkList, link,
+            NCCLCHECK(ncclTopoSearchRec(search)));
       }
-      link->width++;
     }
   }
-  path->hops += minHops;
-  path->width = std::min(path->width, maxWidth);
-  return ncclSuccess;
-}
-
-ncclResult_t ncclTopoFindPathMulti(struct ncclTopoSystem* system, struct ncclTopoMulti* multi) {
-  if (multi->channel == multi->nChannels) return ncclSuccess;
-  NCCLCHECK(ncclTopoSystemSelectReset(system));
-  for (int n=0; n<system->nodes[GPU].count; n++) system->nodes[GPU].nodes[n].select = SELECT_PATH;
-  if (multi->interList) {
-    multi->interList[2*multi->channel+1]->select = 0; // Start on second GPU
-    multi->interList[2*multi->channel]->select = SELECT_LAST; // End on first GPU
-    multi->paths[multi->channel].width = 99;
-    NCCLCHECK(ncclTopoFindPath(system, multi->interList[2*multi->channel+1], multi->paths+multi->channel, system->nodes[GPU].count-1, multi));
-  } else {
-    struct ncclTopoNode* gpu0 = system->nodes[GPU].nodes+0;
-    gpu0->select = SELECT_LAST;
-    multi->paths[multi->channel].width = 99;
-    NCCLCHECK(ncclTopoFindPath(system, gpu0, multi->paths+multi->channel, system->nodes[GPU].count, multi));
-  }
-  return ncclSuccess;
-}
-
-ncclResult_t ncclTopoSelectPath(struct ncclTopoPath* path) {
-  for (int i=0; i<path->hops; i++) path->links[i]->width -= path->width;
-  return ncclSuccess;
-}
-ncclResult_t ncclTopoUnSelectPath(struct ncclTopoPath* path) {
-  for (int i=0; i<path->hops; i++) path->links[i]->width += path->width;
   return ncclSuccess;
 }
 
 ncclResult_t ncclTopoCompute(struct ncclTopoSystem* system, struct ncclTopoGraph* graph) {
-  struct ncclTopoPath* paths;
-  NCCLCHECK(ncclCalloc(&paths, MAXCHANNELS));
-  struct ncclTopoNode** interNodes = NULL;
+  int ngpus = system->nodes[GPU].count;
+  struct ncclTopoSearch search;
+  search.req = 0;
+  search.nPaths = 0;
+  search.nReqs = 0;
+  int maxChannels = 0;
 
   if (system->nodes[NET].count) {
-    int nChannels = 0;
-    NCCLCHECK(ncclCalloc(&interNodes, MAXCHANNELS*2));
-    struct ncclTopoPath* netPaths;
-    NCCLCHECK(ncclCalloc(&netPaths, system->nodes[NET].count));
-    
-    // Figure out how many NICs are local to two GPUs.
-    int minHops = 9999;
-    for (int net=0; net<system->nodes[NET].count; net++) {
-      struct ncclTopoNode* netNode = system->nodes[NET].nodes+net;
-      struct ncclTopoPath path;
-      memset(&path, 0, sizeof(path));
-      path.width = 99;
-      NCCLCHECK(ncclTopoSystemSelectReset(system));
-      for (int n=0; n<system->nodes[GPU].count; n++) system->nodes[GPU].nodes[n].select = SELECT_PATH;
-      netNode->select = SELECT_LAST;
-      NCCLCHECK(ncclTopoFindPath(system, netNode, &path, 3, NULL));
-      if (path.width && path.hops < minHops) { minHops=path.hops; nChannels = 0; }
-      if (path.width && path.hops == minHops) nChannels++;
-    }
-    
-    if (nChannels) {
-      // Try to mark the NIC->GPU->GPU->NIC path as used for each NIC.
-      // If two NICs are using the same path only the first will be used.
-      int offset = 0;
-      for (int net=0; net<system->nodes[NET].count; net++) {
-        struct ncclTopoNode* netNode = system->nodes[NET].nodes+net;
-        struct ncclTopoPath *path = netPaths+net;
-        path->hops = 0;
-        path->width = 99;
-        NCCLCHECK(ncclTopoSystemSelectReset(system));
-        for (int n=0; n<system->nodes[GPU].count; n++) system->nodes[GPU].nodes[n].select = SELECT_PATH;
-        netNode->select = SELECT_LAST;
-        NCCLCHECK(ncclTopoFindPath(system, netNode, path, 3, NULL));
-        if (path->width && path->hops == minHops) {
-          NCCLCHECK(ncclTopoSelectPath(path));
-          for (int i=0; i<path->hops; i++) {
-            if (path->links[i]->remNode->type == GPU) interNodes[offset++] = path->links[i]->remNode;
-          }
+    maxChannels = system->nodes[NET].count;
+    if (graph->pattern == NCCL_TOPO_PATTERN_SPLIT_TREE ||
+        graph->pattern == NCCL_TOPO_PATTERN_SPLIT_TREE_LOOP) {
+      // NIC -> GPU -> GPU -> NIC start/end/inter lists are common
+      // to try to use different GPUs.
+      struct ncclTopoNodeReqList startList;
+      NCCLCHECK(ncclTopoNodeReqListInitFromSystem(&startList, system, NET));
+      struct ncclTopoNodeReqList endList;
+      NCCLCHECK(ncclTopoNodeReqListInitFromSystem(&endList, system, NET));
+      struct ncclTopoNodeReqList interList;
+      NCCLCHECK(ncclTopoNodeReqListInitFromSystem(&interList, system, GPU));
+
+      // GPU -> .. -> GPU lists are duplicated
+      struct ncclTopoNodeReqList startLoops[NCCL_TOPO_SEARCH_MAX_REQS];
+      struct ncclTopoNodeReqList endLoops[NCCL_TOPO_SEARCH_MAX_REQS];
+      struct ncclTopoNodeReqList interLoops[NCCL_TOPO_SEARCH_MAX_REQS];
+
+      for (int n=0; n<system->nodes[NET].count; n++) {
+        // NIC -> 1st GPU -> 2nd GPU -> NIC
+        search.reqs[2*n].start = &startList;
+        search.reqs[2*n].end = &endList;
+        search.reqs[2*n].inter = &interList;
+        search.reqs[2*n].nhops = 3;
+
+        // 2nd GPU -> ... -> 1st GPU loop (linked with previous req solution)
+        NCCLCHECK(ncclTopoNodeReqListInitSingle(startLoops+n, search.paths[2*n].nodes.list+2));
+        NCCLCHECK(ncclTopoNodeReqListInitSingle(endLoops+n, search.paths[2*n].nodes.list+1));
+        NCCLCHECK(ncclTopoNodeReqListInitFromSystem(interLoops+n, system, GPU));
+        search.reqs[2*n+1].start = startLoops+n;
+        search.reqs[2*n+1].end = graph->pattern == NCCL_TOPO_PATTERN_SPLIT_TREE_LOOP ? endLoops+n : interLoops+n;
+        search.reqs[2*n+1].inter = interLoops+n;
+        search.reqs[2*n+1].nhops = system->nodes[GPU].count-2;
+        if (graph->pattern == NCCL_TOPO_PATTERN_SPLIT_TREE_LOOP) search.reqs[2*n+1].nhops++;
+      }
+      search.nReqs = system->nodes[NET].count*2;
+      NCCLCHECK(ncclTopoSearchRec(&search));
+      free(startList.list);
+      free(endList.list);
+      free(interList.list);
+      for (int n=0; n<system->nodes[NET].count; n++) free(interLoops[n].list);
+
+      // Save result into graph -> inter/intra
+      graph->nChannels = search.nPaths/2;
+      for (int c=0; c<graph->nChannels; c++) {
+        graph->inter[2*c] = search.save[2*c].nodes.list[2]->rank;
+        graph->inter[2*c+1] = search.save[2*c].nodes.list[1]->rank;
+        for (int i=0; i<system->nodes[GPU].count; i++) {
+          graph->intra[ngpus*c+i] = search.save[2*c+1].nodes.list[i]->rank;
         }
       }
-      // Then close the rings
-      struct ncclTopoMulti multi = { 0, nChannels, interNodes, paths };
-      NCCLCHECK(ncclTopoFindPathMulti(system, &multi));
+    } else if (graph->pattern == NCCL_TOPO_PATTERN_RING ||
+               graph->pattern == NCCL_TOPO_PATTERN_TREE) {
+      // NIC list is common : we use each NIC only once
+      struct ncclTopoNodeReqList startList;
+      struct ncclTopoNodeReqList endList;
+      NCCLCHECK(ncclTopoNodeReqListInitFromSystem(&startList, system, NET));
+      NCCLCHECK(ncclTopoNodeReqListInitFromSystem(&endList, system, NET));
 
-      // Unselect netPaths
-      for (int net=0; net<system->nodes[NET].count; net++) {
-        struct ncclTopoPath *path = netPaths+net;
-        if (path->width && path->hops == minHops) {
-          NCCLCHECK(ncclTopoUnSelectPath(path));
+      // GPU lists are duplicated : we go through each GPUs for each chain
+      struct ncclTopoNodeReqList interLoops[NCCL_TOPO_SEARCH_MAX_REQS];
+
+      for (int n=0; n<system->nodes[NET].count; n++) {
+        // NIC - > all GPUs
+        NCCLCHECK(ncclTopoNodeReqListInitFromSystem(interLoops+n, system, GPU));
+        search.reqs[n].start = &startList;
+        search.reqs[n].end = graph->pattern == NCCL_TOPO_PATTERN_TREE ? interLoops+n : &endList;
+        search.reqs[n].inter = interLoops+n;
+        search.reqs[n].nhops = system->nodes[GPU].count;
+        if (graph->pattern == NCCL_TOPO_PATTERN_RING) search.reqs[n].nhops++;
+      }
+      search.nReqs = system->nodes[NET].count;
+      NCCLCHECK(ncclTopoSearchRec(&search));
+      free(startList.list);
+      free(endList.list);
+      for (int n=0; n<system->nodes[NET].count; n++) free(interLoops[n].list);
+
+      // Save result into graph -> inter/intra
+      graph->nChannels = search.nPaths;
+      for (int c=0; c<graph->nChannels; c++) {
+        graph->inter[2*c] = search.save[c].nodes.list[1]->rank;
+        int outIndex = graph->pattern == NCCL_TOPO_PATTERN_RING ? ngpus : 1;
+        graph->inter[2*c+1] = search.save[c].nodes.list[outIndex]->rank;
+
+        for (int i=0; i<system->nodes[GPU].count; i++) {
+          graph->intra[ngpus*c+i] = search.save[c].nodes.list[i]->rank;
         }
       }
-
-      // Set nChannels in case we need the fallback
-      if (paths[0].width == 0) nChannels = 0;
     }
-    if (nChannels == 0) {
-      printf("Fall back to one GPU\n");
-      // Figure out which NICs are local to at least one GPU.
-      int minHops = 9999;
-      for (int net=0; net<system->nodes[NET].count; net++) {
-        struct ncclTopoNode* netNode = system->nodes[NET].nodes+net;
-        struct ncclTopoPath path;
-        memset(&path, 0, sizeof(path));
-        path.width = 99;
-        NCCLCHECK(ncclTopoSystemSelectReset(system));
-        for (int n=0; n<system->nodes[GPU].count; n++) system->nodes[GPU].nodes[n].select = SELECT_LAST;
-        NCCLCHECK(ncclTopoFindPath(system, netNode, &path, 1, NULL));
-        if (path.width && path.hops < minHops) { minHops=path.hops; nChannels = 0; }
-        if (path.width && path.hops == minHops) nChannels++;
-      }
-      if (nChannels == 0) {
-        WARN("Could not find path from NIC to GPU\n");
-        return ncclInternalError;
-      }
-      printf("Found %d channels\n", nChannels);
-      nChannels = 0;
-
-      // Try to mark the NIC->GPU path as used for each NIC.
-      int offset = 0;
-      for (int net=0; net<system->nodes[NET].count; net++) {
-        struct ncclTopoNode* netNode = system->nodes[NET].nodes+net;
-        struct ncclTopoPath *path = netPaths+net;
-        path->hops = 0;
-        path->width = 99;
-        NCCLCHECK(ncclTopoSystemSelectReset(system));
-        // go to the first GPU
-        for (int n=0; n<system->nodes[GPU].count; n++) system->nodes[GPU].nodes[n].select = SELECT_LAST;
-        NCCLCHECK(ncclTopoFindPath(system, netNode, path, 1, NULL));
-        if (path->width == 0 || path->hops > minHops) continue;
-
-        NCCLCHECK(ncclTopoSelectPath(path));
-        // then go through all GPUs and come back to NIC
-        for (int n=0; n<system->nodes[GPU].count; n++) system->nodes[GPU].nodes[n].select = SELECT_PATH;
-        struct ncclTopoNode* firstGpuNode = path->links[path->hops-1]->remNode;
-        firstGpuNode->present = 0;
-        netNode->select = SELECT_LAST;
-        printf("Closing ring %d from %d/%d\n", net, firstGpuNode->id, firstGpuNode->rank);
-        NCCLCHECK(ncclTopoFindPath(system, firstGpuNode, path, system->nodes[GPU].count, NULL));
-        firstGpuNode->present = 1;
-        if (path->width == 0) continue;
-        NCCLCHECK(ncclTopoSelectPath(path));
-        for (int i=0; i<path->hops; i++) {
-          if (path->links[i]->remNode->type == GPU) interNodes[offset++] = path->links[i]->remNode;
-        }
-        memcpy(paths+nChannels++, path, sizeof(struct ncclTopoPath));
-      }
-    }
-    free(netPaths);
   } else {
-    // Intra-node only
-    struct ncclTopoMulti multi = { 0, MAXCHANNELS, NULL, paths };
-    NCCLCHECK(ncclTopoFindPathMulti(system, &multi));
-  }
-
-  int offset = 0;
-  printf("Channels :\n");
-  for (int c=0; c<MAXCHANNELS; c++) {
-    if (paths[c].width) {
-      if (interNodes) {
-        graph->inter[c*2] = interNodes[c*2]->rank;
-        graph->inter[c*2+1] = interNodes[c*2+1]->rank;
-        printf("%d %d | ", graph->inter[c*2], graph->inter[c*2+1]);
-        graph->intra[offset++] = interNodes[c*2+1]->rank;
-        printf("%d ", interNodes[c*2+1]->rank);
+    // FIXME : detect max channels depending on PCI/NVLink
+    maxChannels = MAXCHANNELS;
+    // Intra-node
+    if (graph->pattern == NCCL_TOPO_PATTERN_RING ||
+        graph->pattern == NCCL_TOPO_PATTERN_TREE) {
+      struct ncclTopoNodeReqList startList[MAXCHANNELS];
+      struct ncclTopoNodeReqList endList[MAXCHANNELS];
+      struct ncclTopoNodeReqList interList[MAXCHANNELS];
+      struct ncclTopoNode* gpu0 = system->nodes[GPU].nodes;
+      for (int c=0; c<MAXCHANNELS; c++) {
+        NCCLCHECK(ncclTopoNodeReqListInitSingle(startList+c, &gpu0));
+        NCCLCHECK(ncclTopoNodeReqListInitSingle(endList+c, &gpu0));
+        NCCLCHECK(ncclTopoNodeReqListInitFromSystem(interList, system, GPU));
+        search.reqs[c].start = startList+c;
+        search.reqs[c].end = graph->pattern == NCCL_TOPO_PATTERN_RING ? endList+c : interList+c;
+        search.reqs[c].inter = interList+c;
+        search.reqs[c].nhops = system->nodes[GPU].count;
       }
-      for (int l=0; l<paths[c].hops; l++) {
-        struct ncclTopoLink* link = paths[c].links[l];
-        if (link->remNode->type == GPU) {
-          graph->intra[offset++] = link->remNode->rank;
-          printf("%d ", link->remNode->rank);
+      search.nReqs = MAXCHANNELS;
+      NCCLCHECK(ncclTopoSearchRec(&search));
+      for (int c=0; c<MAXCHANNELS; c++) free(interList[c].list);
+
+      // Save result into graph -> inter/intra
+      graph->nChannels = search.nPaths;
+      for (int c=0; c<graph->nChannels; c++) {
+        graph->inter[2*c] = search.save[c].nodes.list[0]->rank;
+        int outIndex = graph->pattern == NCCL_TOPO_PATTERN_RING ? ngpus-1 : 0;
+        graph->inter[2*c+1] = search.save[c].nodes.list[outIndex]->rank;
+
+        for (int i=0; i<system->nodes[GPU].count; i++) {
+          graph->intra[ngpus*c+i] = search.save[c].nodes.list[i]->rank;
         }
       }
-      printf("\n");
-    } else {
-      graph->nChannels = c;
-      break;
     }
   }
-  printf("End of channels.\n");
-  free(interNodes);
-  free(paths);
+
+  printf("Pattern %d : %d paths\n", graph->pattern, search.nPaths);
+  for (int p=0; p<search.nPaths; p++) {
+    printf("Path %d :", p);
+    struct ncclTopoNodeList* list = &search.save[p].nodes;
+    for (int i=0; i<list->count; i++) {
+      struct ncclTopoNode* node = list->list[i];
+      printf(" %s/%X (%d)", topoNodeTypeStr[node->type], node->id, node->rank);
+    }
+    printf("\n");
+  }
+
+  if (graph->nChannels < maxChannels) {
+    // We might be suboptimal, see if another pattern would give more channels.
+    int pattern = graph->pattern;
+    int newPattern =
+      pattern == NCCL_TOPO_PATTERN_SPLIT_TREE_LOOP ? NCCL_TOPO_PATTERN_SPLIT_TREE :
+      pattern == NCCL_TOPO_PATTERN_SPLIT_TREE ? NCCL_TOPO_PATTERN_TREE : 0;
+    if (newPattern) {
+      struct ncclTopoGraph newGraph;
+      newGraph.pattern = newPattern;
+      NCCLCHECK(ncclTopoCompute(system, &newGraph));
+      if (newGraph.nChannels > graph->nChannels) {
+        printf("Pattern %d better than %d (%d channels vs %d)\n", newPattern, pattern, newGraph.nChannels, graph->nChannels);
+        memcpy(graph, &newGraph, sizeof(newGraph));
+      }
+    }
+  }
+
   return ncclSuccess;
 }

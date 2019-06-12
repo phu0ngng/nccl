@@ -738,7 +738,7 @@ static ncclResult_t initTransportsRank(struct ncclComm* comm, ncclUniqueId* comm
   //if (rank == 0) dumpMatrix(connectTransport, nranks);
   //if (rank == 0) dumpMatrixTvalue(connectValue, nranks);
 
-  // New topo creation
+  // Topo detection / System graph creation
   int localGpus = 0;
   int* nvmlIndexes, *rankIndexes;
   NCCLCHECK(ncclCalloc(&nvmlIndexes, nranks));
@@ -757,6 +757,7 @@ static ncclResult_t initTransportsRank(struct ncclComm* comm, ncclUniqueId* comm
   // Get trees
   struct ncclTopoGraph* graph;
   NCCLCHECK(ncclCalloc(&graph, 1));
+  graph->pattern = NCCL_TOPO_PATTERN_SPLIT_TREE_LOOP;
   NCCLCHECK(ncclTopoCompute(comm->topo, graph));
   free(graph);
 
