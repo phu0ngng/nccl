@@ -235,7 +235,13 @@ static ncclResult_t getPatternInfo(struct ncclInfo* info) {
   else if (info->coll == ncclCollReduce) info->pattern = ncclPatternPipelineTo;
   else if (info->coll == ncclCollAllGather || info->coll == ncclCollReduceScatter) info->pattern = ncclPatternRing;
   else if (info->coll == ncclCollAllReduce) {
-    if (info->nBytes <= info->comm->treeThreshold)
+    int collNetTypeSupport = 0;
+    if (info->comm->collNetSupport) {
+      NCCLCHECK(collNetReduceSupport(info->datatype, info->op, &collNetTypeSupport));
+    }
+    if (collNetTypeSupport)
+      info->pattern = ncclPatternCollTreeUp; // up/down will be adjusted based on channel index later
+    else if (info->nBytes <= info->comm->treeThreshold)
       info->pattern = ncclPatternTreeUpDown;
     else
       info->pattern = ncclPatternRingTwice;
@@ -317,18 +323,14 @@ static ncclResult_t computeColl(struct ncclInfo* info /* input */, struct ncclCo
 
   // Compute algorithm
   int treeMode = info->pattern >= ncclPatternTreeUp ? 1 : 0;
-  int redSupport = 0;
-  if (treeMode && collNetSupport()) {
-    NCCLCHECK(collNetReduceSupport(info->datatype, info->op, &redSupport));
-  }
-  if (redSupport) info->pattern = ncclPatternCollTreeUp; // up/down will be adjusted based on channel index later
+  int collTreeMode = info->pattern >= ncclPatternCollTreeUp ? 1 : 0;
 
   // Compute llMode, nChannels, nThreads
   int llMode;
   getKernelInfo(info, &coll->args.nChannels, &coll->args.nThreads, &llMode);
 
   // Algorithm index: 2 = Accl (CollNet), 1 = Tree, 0 = Ring
-  int alg = redSupport == 1 ? 2 : treeMode;
+  int alg = collTreeMode == 1 ? 2 : treeMode;
   coll->funcIndex = FUNC_INDEX(info->coll, info->op, info->datatype, llMode, alg);
 
   int stepSize   = ( llMode ? NCCL_LL_BUFF_SIZE : info->comm->channels[0].buffSize ) / NCCL_STEPS;

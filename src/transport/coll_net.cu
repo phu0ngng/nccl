@@ -250,8 +250,10 @@ ncclResult_t collNetSendFree(void* sendTransportResources) {
   struct collNetSendResources* sendResources = (struct collNetSendResources*)sendTransportResources;
   NCCLCHECK(ncclCudaHostFree(sendResources->hostSendMem));
   NCCLCHECK(ncclCudaHostFree(sendResources->hostRecvMem));
-  NCCLCHECK(collNetDeregMr(sendResources->collNetSendComm, sendResources->sendMhandle));
-  NCCLCHECK(collNetDeregMr(sendResources->collNetSendComm, sendResources->llSendMhandle));
+  if (sendResources->collNetSendComm) {
+    NCCLCHECK(collNetDeregMr(sendResources->collNetSendComm, sendResources->sendMhandle));
+    NCCLCHECK(collNetDeregMr(sendResources->collNetSendComm, sendResources->llSendMhandle));
+  }
   if (sendResources->useGdr)
     CUDACHECK(cudaFree(sendResources->devRecvMem));
   free(sendResources->llData);
@@ -263,15 +265,19 @@ ncclResult_t collNetSendFree(void* sendTransportResources) {
 ncclResult_t collNetRecvFree(void* recvTransportResources) {
   struct collNetRecvResources* recvResources = (struct collNetRecvResources*)recvTransportResources;
   NCCLCHECK(ncclCudaHostFree(recvResources->hostSendMem));
-  NCCLCHECK(collNetDeregMr(recvResources->collNetRecvComm, recvResources->mhandle));
-  NCCLCHECK(collNetDeregMr(recvResources->collNetRecvComm, recvResources->llMhandle));
+  if (recvResources->collNetRecvComm) {
+    NCCLCHECK(collNetDeregMr(recvResources->collNetRecvComm, recvResources->mhandle));
+    NCCLCHECK(collNetDeregMr(recvResources->collNetRecvComm, recvResources->llMhandle));
+  }
   NCCLCHECK(ncclCudaHostFree(recvResources->hostRecvMem));
   if (recvResources->useGdr)
     CUDACHECK(cudaFree(recvResources->devRecvMem));
   free(recvResources->llData);
 
   // Make sure SendFree is called before RecvFree
-  NCCLCHECK(collNetCloseColl(recvResources->collNetRecvComm));
+  if (recvResources->collNetRecvComm) {
+    NCCLCHECK(collNetCloseColl(recvResources->collNetRecvComm));
+  }
   free(recvResources);
   return ncclSuccess;
 }

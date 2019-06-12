@@ -278,6 +278,7 @@ static ncclResult_t commAlloc(ncclComm_t* comret, int ndev, int rank) {
   *comm->abortFlag = 0;
 
   comm->argsptr = &comm->args;
+  comm->collNetSupport = 0;
 
   *comret = comm;
   return ncclSuccess;
@@ -361,6 +362,10 @@ static int log2(int n) {
 }
 
 static ncclResult_t ncclTreeThreshold(int nnodes, int nranks, int nChannels, ssize_t *treeThreshold) {
+  if (nnodes < 2) {
+    *treeThreshold = 0;
+    return ncclSuccess;
+  }
   int nvlink;
   NCCLCHECK(ncclNvlinkGpu(&nvlink));
   float ringbw = nvlink ? 5000*nChannels : 5000; // approx, in MB/s or B/us
@@ -376,7 +381,7 @@ static ncclResult_t ncclTreeThreshold(int nnodes, int nranks, int nChannels, ssi
   }
   float ringlat = ringlatinter*(nranks-1);
   float treelat = treelatinter*log2(nnodes)+treelatintra*(nranks/nnodes-1);
-  if (nnodes < 2 || ringlat <= treelat)
+  if (ringlat <= treelat)
     *treeThreshold = 0;
   else if (treebw > ringbw)
     *treeThreshold = 0x7fffffffffffffff;
@@ -423,9 +428,6 @@ static ncclResult_t setupChannel(struct ncclComm* comm, int channelId, int rank,
     nMasters = 1;
     treeMasters[0] = 1;
   }
-
-  if (comm->treeThreshold == -2)
-    NCCLCHECK(ncclTreeThreshold(nMasters, comm->nRanks, comm->nChannels, &comm->treeThreshold));
 
   if (comm->treeThreshold > 0) {
     // Compute tree depth. Not an exact value but a good approximation in most
@@ -696,8 +698,9 @@ extern struct ncclCollTransport collNetTransport;
 
 // All ranks must participate in collNetSetup call
 // type: 0 for send, 1 for recv
-static ncclResult_t collNetSetup(struct ncclComm* comm, struct ncclChannel* channel, int nChannels, int rank, int nranks,  int* treeMasters, int type) {
+static ncclResult_t collNetSetup(struct ncclComm* comm, struct ncclChannel* channel, int nChannels, int rank, int nranks,  int* treeMasters, int type, int* supported) {
   int nMasters = 0, rankInCollNet = -1;
+  *supported = 0;
   for (int r=0; r<nranks; r++) {
     if (r == rank) rankInCollNet = nMasters;
     nMasters += treeMasters[r];
@@ -713,6 +716,9 @@ static ncclResult_t collNetSetup(struct ncclComm* comm, struct ncclChannel* chan
   if (treeMasters[rank]) {
     NCCLCHECK(collNetTransport.canConnect(&ret, myInfo, peerInfo));
   }
+  /*if (ret == 0) {
+    return ncclSuccess;
+  }*/
 
   // select
   struct ncclPeer* root = channel->peers+nranks;
@@ -753,10 +759,43 @@ static ncclResult_t collNetSetup(struct ncclComm* comm, struct ncclChannel* chan
     ncclConnector* send = &sendChannel->peers[nranks].send;
     NCCLCHECKGOTO(collNetTransport.connectSendRecv(send, conn), res, cleanup);
   }
+  *supported = 1;
 cleanup:
   if (allConnects != NULL) free(allConnects);
   if (masterConnects != NULL) free(masterConnects);
   return res;
+}
+
+static ncclResult_t checkCollNetSetup(struct ncclComm* comm, int rank, int nrings, int collNetSetupFail) {
+  int nranks = comm->nRanks;
+  // AllGather collNet setup results
+  int* allGatherFailures;
+  NCCLCHECK(ncclCalloc(&allGatherFailures, nranks));
+  allGatherFailures[rank] = collNetSetupFail;
+  NCCLCHECK(bootstrapAllGather(comm->bootstrap, allGatherFailures, sizeof(int)));
+  for (int i=0; i<nranks; i++) {
+    if (allGatherFailures[i] != 0) {
+      collNetSetupFail = 1;
+      break;
+    }
+  }
+  if (collNetSetupFail) {
+    if (rank == 0) WARN("Cannot initialize CollNet, using %s instead", ncclNetName());
+    // Free collNet resources
+    for (int r=0; r<nrings; r++) {
+      struct ncclChannel* channel = comm->channels+r;
+      struct ncclPeer* peer = channel->peers+nranks;
+      if (peer->send.transportResources && peer->send.transportComm) NCCLCHECK(peer->send.transportComm->free(peer->send.transportResources));
+      if (peer->recv.transportResources && peer->recv.transportComm) NCCLCHECK(peer->recv.transportComm->free(peer->recv.transportResources));
+      peer->send.transportResources = NULL; // avoid double free
+      peer->recv.transportResources = NULL; // avoid double free
+    }
+    // Set support to 0
+    comm->collNetSupport = 0;
+  } else {
+    comm->collNetSupport = 1;
+  }
+  return ncclSuccess;
 }
 
 static ncclResult_t initTransportsRank(struct ncclComm* comm, ncclUniqueId* commId) {
@@ -882,19 +921,29 @@ static ncclResult_t initTransportsRank(struct ncclComm* comm, ncclUniqueId* comm
   free(next);
   TRACE(NCCL_INIT, "rank %d nranks %d - BUILT %d RINGS", rank, nranks, nrings);
 
+  // Determine tree threshold
+  if (comm->treeThreshold == -2)
+    NCCLCHECK(ncclTreeThreshold(nnodes, comm->nRanks, comm->nChannels, &comm->treeThreshold));
+
   // Connect with prev/next for each ring
   struct ncclConnect *connect;
   NCCLCHECK(ncclCalloc(&connect, 2));
+  int collNetSetupCond = (nnodes > 1 && comm->treeThreshold > 0 && collNetSupport()) ? 1 : 0;
+  int collNetSetupFail = 0;
   for (int r=0; r<nrings; r++) {
     struct ncclChannel* channel = comm->channels+r;
     NCCLCHECK(setupChannel(comm, r, rank, nranks, rings+r*nranks, treeIn+r*nranks));
     NCCLCHECK(p2pSetup(comm, channel, 1, &channel->ring.prev, 1, &channel->ring.next));
     NCCLCHECK(p2pSetup(comm, channel, NCCL_MAX_TREE_ARITY, channel->tree.down, 1, &channel->tree.up));
     NCCLCHECK(p2pSetup(comm, channel, 1, &channel->tree.up, NCCL_MAX_TREE_ARITY, channel->tree.down));
-    if (comm->treeThreshold > 0 && collNetSupport()) {
-      int sendrecv = r%2; // 0 for send, 1 for recv
-      NCCLCHECK(collNetSetup(comm, channel, nrings, rank, nranks, treeIn+r*nranks, sendrecv));
+    if (collNetSetupCond) {
+      int supported = 1, sendrecv = r%2; // 0 for send, 1 for recv
+      collNetSetup(comm, channel, nrings, rank, nranks, treeIn+r*nranks, sendrecv, &supported);
+      if (supported == 0) collNetSetupFail = 1;
     }
+  }
+  if (collNetSetupCond) {
+    checkCollNetSetup(comm, rank, nrings, collNetSetupFail);
   }
   if (comm->treeThreshold > 0) {
     char line[1024];
