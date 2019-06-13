@@ -685,6 +685,8 @@ static ncclResult_t p2pSetup(struct ncclComm* comm, struct ncclChannel* channel,
   return ncclSuccess;
 }
 
+NCCL_PARAM(CrossNic, "CROSS_NIC", 2);
+
 static ncclResult_t initTransportsRank(struct ncclComm* comm, ncclUniqueId* commId) {
   // We use 3 AllGathers
   // 1. { peerInfo, comm }
@@ -757,6 +759,7 @@ static ncclResult_t initTransportsRank(struct ncclComm* comm, ncclUniqueId* comm
   // Get rings and trees
   struct ncclTopoGraph treeGraph;
   treeGraph.pattern = NCCL_TOPO_PATTERN_SPLIT_TREE_LOOP;
+  treeGraph.crossNic = ncclParamCrossNic();
   NCCLCHECK(ncclTopoCompute(comm->topo, &treeGraph));
   for (int c=0; c<treeGraph.nChannels; c++) {
     printf("Tree %d :", c);
@@ -767,6 +770,7 @@ static ncclResult_t initTransportsRank(struct ncclComm* comm, ncclUniqueId* comm
   }
   struct ncclTopoGraph ringGraph;
   ringGraph.pattern = NCCL_TOPO_PATTERN_RING;
+  treeGraph.crossNic = ncclParamCrossNic();
   NCCLCHECK(ncclTopoCompute(comm->topo, &ringGraph));
   for (int c=0; c<ringGraph.nChannels; c++) {
     printf("Ring %d :", c);

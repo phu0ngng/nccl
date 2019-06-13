@@ -53,6 +53,7 @@ ncclResult_t ncclTopoGetSystem(int nranks, int* nvmlIndexes, int* rankIndexes, s
 #define NCCL_TOPO_PATTERN_RING 4            // Ring
 struct ncclTopoGraph {
   int pattern;
+  int crossNic;
   int intra[MAXCHANNELS*NCCL_TOPO_MAX_NODES];
   int inter[MAXCHANNELS*2];
   int nChannels;
