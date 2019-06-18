@@ -947,7 +947,7 @@ int ncclSharpOobBarrier(void *ctx) {
 int ncclSharpOobGather(void *ctx, int root, void *sbuf, void *rbuf, int size) {
   struct ncclSharpCollComm* cComm = (struct ncclSharpCollComm*)ctx;
   int nranks = cComm->nranks;
-  void *tmp = malloc(nranks*size);
+  void *tmp = ncclIbMalloc(nranks*size);
   memcpy((void*)((ptrdiff_t)tmp + size*cComm->rank), sbuf, size);
   NCCLCHECK(ncclSharpAllGather(cComm, tmp, size));
   if (cComm->rank == root) {
@@ -959,7 +959,7 @@ int ncclSharpOobGather(void *ctx, int root, void *sbuf, void *rbuf, int size) {
 
 int ncclSharpOobBcast(void *ctx, void *buf, int size, int root) {
   struct ncclSharpCollComm* cComm = (struct ncclSharpCollComm*)ctx;
-  void *tmp = malloc(size*cComm->nranks);
+  void *tmp = ncclIbMalloc(size*cComm->nranks);
   if (cComm->rank == root) {
     memcpy((void*)((ptrdiff_t)tmp+size*cComm->rank), buf, size);
   }
