@@ -19,7 +19,7 @@
 #define MAX_IFS 16
 #define MAX_IF_NAME_SIZE 16
 #define SLEEP_INT            1000 // connection retry sleep interval in usec
-#define RETRY_REFUSED_TIMES   2e4 // connection refused retry times before reporting a timeout (20 sec)
+#define RETRY_REFUSED_TIMES   1//2e4 // connection refused retry times before reporting a timeout (20 sec)
 #define RETRY_TIMEDOUT_TIMES    3 // connection timed out retry times (each one can take 20s)
 
 /* Common socket address storage structure for IPv4/IPv6 */

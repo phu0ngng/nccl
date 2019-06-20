@@ -55,7 +55,6 @@ struct ncclTopoGraph {
   int pattern;
   int crossNic;
   int intra[MAXCHANNELS*NCCL_TOPO_MAX_NODES];
-  int inter[MAXCHANNELS*2];
   int nChannels;
 };
 ncclResult_t ncclTopoCompute(struct ncclTopoSystem* system, struct ncclTopoGraph* graph);

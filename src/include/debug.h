@@ -78,6 +78,8 @@ static inline void initDebug() {
         mask = NCCL_SHM;
       } else if (strcasecmp(subsys, "NET") == 0) {
         mask = NCCL_NET;
+      } else if (strcasecmp(subsys, "GRAPH") == 0) {
+        mask = NCCL_GRAPH;
       } else if (strcasecmp(subsys, "ALL") == 0) {
         mask = NCCL_ALL;
       }

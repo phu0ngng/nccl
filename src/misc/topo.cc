@@ -71,10 +71,10 @@ int pciDistance(char* path1, char* path2) {
 #define GPU 0
 #define PCI 1
 #define NVS 2
-#define NUMA 3
+#define CPU 3 // Actually NUMA domains
 #define NIC 4
 #define NET 5
-static const char* topoNodeTypeStr[] = { "GPU", "PCI", "NVS", "NUMA", "NIC", "NET" };
+static const char* topoNodeTypeStr[] = { "GPU", "PCI", "NVS", "CPU", "NIC", "NET" };
 
 #define LINK_NVL 0
 #define LINK_PCI 1
@@ -263,17 +263,17 @@ ncclResult_t ncclTopoCreatePciPath(struct ncclTopoSystem* system, struct ncclTop
       }
     }
   }
-  // Then attach to a NUMA node
+  // Then attach to a CPU node
   int numaId = getNumaId(path);
-  for (int n=0; n<system->nodes[NUMA].count; n++) {
-    if (system->nodes[NUMA].nodes[n].id == numaId) {
-      NCCLCHECK(ncclTopoConnectNodes(system->nodes[NUMA].nodes+n, lastNode, LINK_PCI, PCI_WIDTH, system));
-      NCCLCHECK(ncclTopoConnectNodes(lastNode, system->nodes[NUMA].nodes+n, LINK_PCI, PCI_WIDTH, system));
+  for (int n=0; n<system->nodes[CPU].count; n++) {
+    if (system->nodes[CPU].nodes[n].id == numaId) {
+      NCCLCHECK(ncclTopoConnectNodes(system->nodes[CPU].nodes+n, lastNode, LINK_PCI, PCI_WIDTH, system));
+      NCCLCHECK(ncclTopoConnectNodes(lastNode, system->nodes[CPU].nodes+n, LINK_PCI, PCI_WIDTH, system));
       return ncclSuccess;
     }
   }
   struct ncclTopoNode* numaNode;
-  NCCLCHECK(ncclTopoCreateNode(system, &numaNode, NUMA, numaId));
+  NCCLCHECK(ncclTopoCreateNode(system, &numaNode, CPU, numaId));
   NCCLCHECK(ncclTopoConnectNodes(numaNode, lastNode, LINK_PCI, PCI_WIDTH, system));
   NCCLCHECK(ncclTopoConnectNodes(lastNode, numaNode, LINK_PCI, PCI_WIDTH, system));
   return ncclSuccess;
@@ -335,11 +335,11 @@ ncclResult_t ncclTopoConnectPCI(nvmlDevice_t* nvmlDevs, struct ncclTopoSystem* s
     }
   }
 
-  // And connect all NUMA nodes together
-  for (int n=0; n<system->nodes[NUMA].count; n++) {
-    for (int p=0; p<system->nodes[NUMA].count; p++) {
+  // And connect all CPU nodes together
+  for (int n=0; n<system->nodes[CPU].count; n++) {
+    for (int p=0; p<system->nodes[CPU].count; p++) {
       if (n == p) continue;
-      NCCLCHECK(ncclTopoConnectNodes(system->nodes[NUMA].nodes+n, system->nodes[NUMA].nodes+p, LINK_QPI, QPI_WIDTH, system));
+      NCCLCHECK(ncclTopoConnectNodes(system->nodes[CPU].nodes+n, system->nodes[CPU].nodes+p, LINK_QPI, QPI_WIDTH, system));
     }
   }
   return ncclSuccess;
@@ -391,25 +391,30 @@ ncclResult_t ncclTopoSort(struct ncclTopoNode* node, struct ncclTopoNode* upNode
 // 3. PCI up
 // 4. QPI (already the case)
 ncclResult_t ncclTopoSortSystem(struct ncclTopoSystem* system) {
-  for (int n=0; n<system->nodes[NUMA].count; n++) NCCLCHECK(ncclTopoSort(system->nodes[NUMA].nodes+n, NULL));
+  for (int n=0; n<system->nodes[CPU].count; n++) NCCLCHECK(ncclTopoSort(system->nodes[CPU].nodes+n, NULL));
   return ncclSuccess;
 }
 
-ncclResult_t ncclTopoPrint(struct ncclTopoNode* node, int offset, struct ncclTopoNode* prevNode) {
+ncclResult_t ncclTopoPrint(struct ncclTopoNode* node, struct ncclTopoNode* prevNode, char* line, int offset) {
   if (node->type == GPU) {
-    printf("%s/%X (%d)\n", topoNodeTypeStr[node->type], node->id, node->rank);
+    sprintf(line+offset, "%s/%X (%d)", topoNodeTypeStr[node->type], node->id, node->rank);
+    INFO(NCCL_GRAPH, "%s", line);
   } else {
-    printf("%s/%X\n", topoNodeTypeStr[node->type], node->id);
+    sprintf(line+offset, "%s/%X", topoNodeTypeStr[node->type], node->id);
+    INFO(NCCL_GRAPH, "%s", line);
   }
+  for (int i=0; i<offset; i++) line[i] = ' ';
+
   for (int l=0; l<NCCL_TOPO_MAX_LINKS; l++) {
     struct ncclTopoLink* link = node->links+l;
     if (link->remNode && link->remNode != prevNode) {
-      for (int i=0; i<offset; i++) printf(" ");
-      printf("+ %s[%2d] - ", topoLinkTypeStr[link->type], link->width);
+      sprintf(line+offset, "+ %s[%2d] - ", topoLinkTypeStr[link->type], link->width);
+      int nextOffset = strlen(line);
       if (link->type == LINK_PCI) {
-        NCCLCHECK(ncclTopoPrint(link->remNode, offset + 11, node));
+        NCCLCHECK(ncclTopoPrint(link->remNode, node, line, nextOffset));
       } else {
-        printf("%s/%X\n", topoNodeTypeStr[link->remNode->type], link->remNode->id);
+        sprintf(line+nextOffset, "%s/%X", topoNodeTypeStr[link->remNode->type], link->remNode->id);
+        INFO(NCCL_GRAPH, "%s", line);
       }
     }
   }
@@ -421,10 +426,10 @@ ncclResult_t ncclTopoGetSystem(int nranks, int* nvmlIndexes, int* rankIndexes, s
   NCCLCHECK(ncclCalloc(&s, 1));
   NCCLCHECK(ncclTopoGetSystem(nranks, nvmlIndexes, rankIndexes, s, inter));
   NCCLCHECK(ncclTopoSortSystem(s));
-  printf("================ Topology ================\n");
-  for (int n=0; n<s->nodes[NUMA].count; n++) NCCLCHECK(ncclTopoPrint(s->nodes[NUMA].nodes+n, 0, NULL));
-  for (int n=0; n<s->nodes[NUMA].count; n++) NCCLCHECK(ncclTopoPrint(s->nodes[NET].nodes+n, 0, NULL));
-  printf("==========================================\n");
+  INFO(NCCL_GRAPH, "================ Topology ================");
+  char line[1024];
+  for (int n=0; n<s->nodes[CPU].count; n++) NCCLCHECK(ncclTopoPrint(s->nodes[CPU].nodes+n, NULL, line, 0));
+  INFO(NCCL_GRAPH, "==========================================");
   *system = s;
   return ncclSuccess;
 }
@@ -565,7 +570,7 @@ ncclResult_t ncclTopoSearchRec(struct ncclTopoSearch* search) {
       struct ncclTopoLink* link = node->links+l;
       if (link == NULL || link->width == 0) continue;
       struct ncclTopoNode* remNode = link->remNode;
-      int bridge = (remNode->type == NUMA || remNode->type == PCI || remNode->type == NVS) ? 1 : 0;
+      int bridge = (remNode->type == CPU || remNode->type == PCI || remNode->type == NVS) ? 1 : 0;
       struct ncclTopoNodeReqList* reqList = req->nhops == nodeList->count ? req->end : req->inter;
       int found = nodeInReqList(reqList, remNode);
       if (found != -1) { // Found a node in our path
@@ -633,11 +638,8 @@ ncclResult_t ncclTopoCompute(struct ncclTopoSystem* system, struct ncclTopoGraph
       // Save result into graph -> inter/intra
       graph->nChannels = search.nPaths/2;
       for (int c=0; c<graph->nChannels; c++) {
-        graph->inter[2*c] = search.save[2*c].nodes.list[1]->rank;
-        graph->inter[2*c+1] = search.save[2*c].nodes.list[2]->rank;
-
-        graph->intra[ngpus*c] = graph->inter[2*c];
-        graph->intra[ngpus*c+1] = graph->inter[2*c+1];
+        graph->intra[ngpus*c] = search.save[2*c].nodes.list[1]->rank;
+        graph->intra[ngpus*c+1] = search.save[2*c].nodes.list[2]->rank;
         for (int i=2; i<ngpus; i++) {
           graph->intra[ngpus*c+i] = search.save[2*c+1].nodes.list[i-1]->rank;
         }
@@ -679,10 +681,6 @@ ncclResult_t ncclTopoCompute(struct ncclTopoSystem* system, struct ncclTopoGraph
       // Save result into graph -> inter/intra
       graph->nChannels = search.nPaths;
       for (int c=0; c<graph->nChannels; c++) {
-        graph->inter[2*c] = search.save[c].nodes.list[1]->rank;
-        int outIndex = graph->pattern == NCCL_TOPO_PATTERN_RING ? ngpus : 1;
-        graph->inter[2*c+1] = search.save[c].nodes.list[outIndex]->rank;
-
         for (int i=0; i<ngpus; i++) {
           graph->intra[ngpus*c+i] = search.save[c].nodes.list[i+1]->rank;
         }
@@ -714,10 +712,6 @@ ncclResult_t ncclTopoCompute(struct ncclTopoSystem* system, struct ncclTopoGraph
       // Save result into graph -> inter/intra
       graph->nChannels = search.nPaths;
       for (int c=0; c<graph->nChannels; c++) {
-        graph->inter[2*c] = search.save[c].nodes.list[0]->rank;
-        int outIndex = graph->pattern == NCCL_TOPO_PATTERN_RING ? ngpus-1 : 0;
-        graph->inter[2*c+1] = search.save[c].nodes.list[outIndex]->rank;
-
         for (int i=0; i<ngpus; i++) {
           graph->intra[ngpus*c+i] = search.save[c].nodes.list[i]->rank;
         }
@@ -725,16 +719,23 @@ ncclResult_t ncclTopoCompute(struct ncclTopoSystem* system, struct ncclTopoGraph
     }
   }
 
-  printf("Pattern %d : %d paths\n", graph->pattern, search.nPaths);
+  INFO(NCCL_GRAPH, "TopoCompute : pattern %d xNic %d : %d paths", graph->pattern, graph->crossNic, search.nPaths);
+  char line[1024];
   for (int p=0; p<search.nPaths; p++) {
-    printf("Path %d :", p);
+    sprintf(line, "Path %d :", p);
+    int offset = strlen(line);
     struct ncclTopoNodeList* list = &search.save[p].nodes;
     for (int i=0; i<list->count; i++) {
       struct ncclTopoNode* node = list->list[i];
-      printf(" %s/%X (%d)", topoNodeTypeStr[node->type], node->id, node->rank);
+      sprintf(line+offset, " %s/%X", topoNodeTypeStr[node->type], node->id);
+      offset = strlen(line);
+      if (node->type == GPU) {
+        sprintf(line+offset, "(%d)", node->rank);
+        offset = strlen(line);
+      }
     }
-    printf("\n");
   }
+  INFO(NCCL_GRAPH, "%s", line);
 
   if (graph->nChannels < maxChannels) {
     // We might be suboptimal, see if another pattern would give more channels.
@@ -747,7 +748,7 @@ ncclResult_t ncclTopoCompute(struct ncclTopoSystem* system, struct ncclTopoGraph
 
     NCCLCHECK(ncclTopoCompute(system, &newGraph));
     if (newGraph.nChannels > graph->nChannels) {
-      printf("Pattern %d better than %d (%d channels vs %d)\n", newGraph.pattern, graph->pattern, newGraph.nChannels, graph->nChannels);
+      INFO(NCCL_GRAPH, "TopoCompute : Pattern/XNic %d/%d better than %d/%d (%d channels vs %d)", newGraph.pattern, newGraph.crossNic, graph->pattern, graph->crossNic, newGraph.nChannels, graph->nChannels);
       memcpy(graph, &newGraph, sizeof(newGraph));
     }
   }
