@@ -278,7 +278,6 @@ struct ncclIbRequest {
 struct ncclIbListenComm {
   int dev;
   int fd;
-  struct ncclIbHandle handle;
 };
 
 struct ncclIbSendFifo {
@@ -413,8 +412,6 @@ ncclResult_t ncclIbListen(int dev, void* opaqueHandle, void** listenComm) {
   comm->dev = dev;
   NCCLCHECK(GetSocketAddr(&(handle->connectAddr)));
   NCCLCHECK(createListenSocket(&comm->fd, &handle->connectAddr));
-  // Remember the handle for potential future usage (SHARP)
-  memcpy(&comm->handle, handle, sizeof(struct ncclIbHandle));
   *listenComm = comm;
   return ncclSuccess;
 }
