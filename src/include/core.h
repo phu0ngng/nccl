@@ -471,4 +471,18 @@ static ncclResult_t ncclCudaMemcpy(T* dst, T* src, size_t nelem) {
   return ncclSuccess;
 }
 
+// Allocate memory to be potentially ibv_reg_mr'd. This needs to be
+// allocated on separate pages as those pages will be marked DONTFORK
+// and if they are shared, that could cause a crash in a child process
+static ncclResult_t ncclIbMalloc(void** ptr, size_t size) {
+  size_t page_size = sysconf(_SC_PAGESIZE);
+  void* p;
+  int size_aligned = ROUNDUP(size, page_size);
+  int ret = posix_memalign(&p, page_size, size_aligned);
+  if (ret != 0) return ncclSystemError;
+  memset(p, 0, size);
+  *ptr = p;
+  return ncclSuccess;
+}
+
 #endif // end include guard
