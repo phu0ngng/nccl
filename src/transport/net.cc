@@ -134,98 +134,6 @@ ncclResult_t netCanConnect(ncclTvalue_t* ret, struct ncclPeerInfo* myInfo, struc
   return ncclSuccess;
 }
 
-static inline int groupBestStart(int nranks, int* groups, int group, ncclTvalue_t* values, int card, int minScore) {
-  int bestRank = -1;
-  int bestScore = 0;
-  for (int rank=0; rank<nranks; rank++) {
-    if (groups[rank] != group) continue;
-    for (int i=0; i<nranks; i++) {
-      ncclTvalue_t netValue = values[rank*nranks+i];
-      if (netValue != 0) {
-        ncclTvalue_t score = (netValue>>(NET_BITS_PER_IF*card)) & NET_BITS_PER_IF_MASK;
-        if (score >= minScore && score > bestScore) {
-          bestScore = score;
-          bestRank = rank;
-        }
-        // All other values should be the same, stop here for this rank
-        break;
-      }
-    }
-  }
-  return bestRank;
-}
-static inline int groupBestEnd(int nranks, int* groups, int group, int* subgroups, int startSubGroup, int startRank, ncclTvalue_t* values, int card, int minScore) {
-  // For the last rank, we don't need the absolute best score, just to be within minScore.
-  for (int rank=nranks-1; rank>=0; rank--) {
-    if (groups[rank] != group) continue;
-    if (startSubGroup != -1 && startSubGroup == subgroups[rank]) continue;
-    if (startRank == rank) continue;
-    for (int i=0; i<nranks; i++) {
-      ncclTvalue_t netValue = values[rank*nranks+i];
-      if (netValue != 0) {
-        ncclTvalue_t score = (netValue>>(NET_BITS_PER_IF*card)) & NET_BITS_PER_IF_MASK;
-        if (score >= minScore) {
-          return rank;
-        }
-        // All other values should be the same, stop here for this rank
-        break;
-      }
-    }
-  }
-  return -1;
-}
-
-ncclResult_t netGetRings(int nranks, int* groups, int* subgroups, ncclTvalue_t* values, int* nringsRet, int* prev, int* next, int minScore, int* nthreads) {
-  int nGroups = groups[nranks-1] + 1;
-  int *cardUsed, *starts, *ends;
-  NCCLCHECK(ncclCalloc(&cardUsed, NET_MAX_IFS*nGroups));
-  NCCLCHECK(ncclCalloc(&starts, nGroups));
-  NCCLCHECK(ncclCalloc(&ends, nGroups));
-
-  for (int ring = 0; ring<*nringsRet; ring++) {
-    for (int group = 0; group<nGroups; group++) {
-      int nranksInGroup = 0;
-      int nsubGroups = 0;
-      for (int rank=0; rank<nranks; rank++)
-        if (groups[rank] == group) {
-          nranksInGroup++;
-          nsubGroups = std::max(subgroups[rank], nsubGroups);
-        }
-      starts[group] = ends[group] = -1;
-      // Receive on the rank closest to the NIC
-      for (int card=0; card<NET_MAX_IFS; card++) {
-        if (cardUsed[group*NET_MAX_IFS+card] == 1) continue;
-        int start = groupBestStart(nranks, groups, group, values, card, minScore);
-        // Send from any rank, but best on a different subgroup and close to the NIC also.
-        int end = (nranksInGroup == 1) ? start
-            : groupBestEnd(nranks, groups, group, subgroups, nsubGroups ? subgroups[start] : -1, start, values, card, minScore);
-        //printf("Ring %d, Minscore %d, Card %d, group %d, start = %d, end = %d\n", ring, minScore, card, group, start, end);
-        if (start != -1 && end != -1) {
-          cardUsed[group*NET_MAX_IFS+card] = 1;
-          starts[group] = start;
-          ends[group] = end;
-          break;
-        }
-      }
-      if (starts[group] == -1 || ends[group] == -1) {
-        *nringsRet = ring;
-        goto done;
-      }
-    }
-    // Link groups together
-    for (int group = 0; group<nGroups; group++) {
-      int nextGroup = (group+1)%nGroups;
-      next[ring*nranks+ends[group]] = starts[nextGroup];
-      prev[ring*nranks+starts[nextGroup]] = ends[group];
-    }
-  }
-done:
-  free(cardUsed);
-  free(starts);
-  free(ends);
-  return ncclSuccess;
-}
-
 int getDev(int cudaDev, int ringId) {
   ncclTvalue_t tvalues = ncclNetTvalues[cudaDev];
 
@@ -595,7 +503,6 @@ ncclResult_t netRecvProxy(struct ncclProxyArgs* args) {
 struct ncclTransport netTransport = {
   "NET",
   netCanConnect,
-  netGetRings,
   { netSendSetup, netSendConnect, netSendFree, netSendProxy },
   { netRecvSetup, netRecvConnect, netRecvFree, netRecvProxy }
 };

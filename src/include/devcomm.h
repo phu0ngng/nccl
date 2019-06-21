@@ -165,8 +165,6 @@ struct ncclChannel {
   union {
     struct {
       struct ncclRing ring;
-      struct ncclRing ring_;
-      struct ncclTree tree;
       struct ncclTree treeUp;
       struct ncclTree treeDn;
 

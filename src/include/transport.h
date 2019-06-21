@@ -87,7 +87,6 @@ struct ncclTransportComm {
 struct ncclTransport {
   const char name[4];
   ncclResult_t (*canConnect)(ncclTvalue_t*, struct ncclPeerInfo*, struct ncclPeerInfo*);
-  ncclResult_t (*getRings)(int, int*, int*, ncclTvalue_t*, int*, int*, int*, int, int*);
   struct ncclTransportComm send;
   struct ncclTransportComm recv;
 };
