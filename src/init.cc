@@ -10,7 +10,6 @@
 #include "param.h"
 #include "nvmlwrap.h"
 #include "rings.h"
-#include "trees.h"
 #include "bootstrap.h"
 #include "transport.h"
 #include "group.h"
@@ -18,7 +17,7 @@
 #include "net.h"
 #include "checks.h"
 #include "enqueue.h"
-#include "topo.h"
+#include "graph.h"
 #include "nvlink.h"
 #include "cpuset.h"
 #include <stdio.h>
@@ -335,9 +334,9 @@ static ncclResult_t selectTransport(struct ncclPeerInfo* myInfo, struct ncclPeer
   for (int t=0; t<NTRANSPORTS; t++) {
     struct ncclTransport *transport = ncclTransports+t;
     struct ncclTransportComm* transportComm = type == 1 ? &transport->send : &transport->recv;
-    ncclTvalue_t ret = 0;
+    int ret = 0;
     NCCLCHECK(transport->canConnect(&ret, myInfo, peerInfo));
-    if (ret > 0) {
+    if (ret) {
       connector->transportComm = transportComm;
       NCCLCHECK(transportComm->setup(myInfo, peerInfo, connect, connector, buffSize, channelId));
       return ncclSuccess;
@@ -345,12 +344,6 @@ static ncclResult_t selectTransport(struct ncclPeerInfo* myInfo, struct ncclPeer
   }
   WARN("No transport found !");
   return ncclInternalError;
-}
-
-static int log2(int n) {
- int l = 0;
- while (n>>=1) l++;
- return l;
 }
 
 static ncclResult_t ncclTreeThreshold(int nnodes, int nranks, int nChannels, ssize_t *treeThreshold) {
@@ -395,188 +388,6 @@ static ncclResult_t setupChannel(struct ncclComm* comm, int channelId, int rank,
   for (int i=0; i<nranks; i++) {
     ring->userRanks[i] = ringRanks[(i+shift)%nranks];
   }
-  return ncclSuccess;
-}
-
-static ncclResult_t fillConnect(struct ncclPeerInfo* peerInfo, int nranks, int rank, int* connectTransport, ncclTvalue_t* connectValue) {
-  for (int r=0; r<nranks; r++) {
-    connectTransport[r] = -1;
-    for (int t=0; t<NTRANSPORTS; t++) {
-      NCCLCHECK(ncclTransports[t].canConnect(connectValue+r, peerInfo+rank, peerInfo+r));
-      if (connectValue[r] > 0) {
-        connectTransport[r] = t;
-        break;
-      }
-    }
-  }
-  return ncclSuccess;
-}
-
-#define MAXWIDTH 20
-#define PREFIXLEN 15
-#define STRLENGTH (PREFIXLEN+5*MAXWIDTH)
-void dumpMatrix(int* connectMatrix, int nranks) {
-  char line[STRLENGTH+1];
-  line[STRLENGTH] = '\0';
-  memset(line, ' ', STRLENGTH);
-  for (int j=0; j<nranks && j<MAXWIDTH; j++) sprintf(4+line+4*j, " %3d", j);
-  INFO(NCCL_INIT,"%s", line);
-  for (int i=0; i<nranks; i++) {
-    memset(line, ' ', STRLENGTH);
-    sprintf(line, "%3d ", i);
-    for (int j=0; j<nranks && j<MAXWIDTH; j++) sprintf(4+line+4*j, " %3d", connectMatrix[i*nranks+j]);
-    INFO(NCCL_INIT,"%s", line);
-  }
-}
-
-void dumpMatrixTvalue(ncclTvalue_t* connectMatrix, int nranks) {
-  char line[STRLENGTH+1];
-  line[STRLENGTH] = '\0';
-  memset(line, ' ', STRLENGTH);
-  for (int j=0; j<nranks && j<MAXWIDTH; j++) sprintf(4+line+5*j, " %4d", j);
-  INFO(NCCL_INIT,"%s", line);
-  for (int i=0; i<nranks; i++) {
-    memset(line, ' ', STRLENGTH);
-    sprintf(line, "%3d ", i);
-    for (int j=0; j<nranks && j<MAXWIDTH; j++) sprintf(4+line+5*j, " %4o", (int)connectMatrix[i*nranks+j]);
-    INFO(NCCL_INIT,"%s", line);
-  }
-}
-
-
-void dumpLine(int* values, int nranks, const char* prefix) {
-  int prefixlen = strlen(prefix);
-  char line[STRLENGTH+1];
-  line[STRLENGTH] = '\0';
-  memset(line, ' ', STRLENGTH);
-  strncpy(line, prefix, PREFIXLEN);
-  for (int i=0; i<nranks && i<MAXWIDTH; i++) sprintf(line+prefixlen+4*i, " %3d", values[i]);
-  INFO(NCCL_INIT,"%s", line);
-}
-
-static ncclResult_t buildRings(int nrings, int* rings, int rank, int nranks, int* prev, int* next) {
-  for (int r=0; r<nrings; r++) {
-    char prefix[30];
-    /*sprintf(prefix, "[%d] Channel %d Prev : ", rank, r);
-    dumpLine(prev+r*nranks, nranks, prefix);
-    sprintf(prefix, "[%d] Channel %d Next : ", rank, r);
-    dumpLine(next+r*nranks, nranks, prefix);*/
-
-    int current = rank;
-    for (int i=0; i<nranks; i++) {
-      rings[r*nranks+i] = current;
-      current = next[r*nranks+current];
-    }
-    sprintf(prefix, "Channel %02d : ", r);
-    if (rank == 0) dumpLine(rings+r*nranks, nranks, prefix);
-    if (current != rank) {
-      WARN("Error : ring %d does not loop back to start (%d != %d)", r, current, rank);
-      return ncclInternalError;
-    }
-    // Check that all ranks are there
-    for (int i=0; i<nranks; i++) {
-      int found = 0;
-      for (int j=0; j<nranks; j++) {
-        if (rings[r*nranks+j] == i) {
-          found = 1;
-          break;
-        }
-      }
-      if (found == 0) {
-        WARN("Error : ring %d does not contain rank %d", r, i);
-        return ncclInternalError;
-      }
-    }
-  }
-  return ncclSuccess;
-}
-
-static ncclResult_t connectRings(int nChannels, struct ncclComm* comm, int* ringRecv, int* ringSend, int* ringPrev, int* ringNext, int nNodes, int* nodesFirstRank) {
-  for (int c=0; c<nChannels; c++) {
-    int* recv = ringRecv+c*comm->nRanks;
-    int* send = ringSend+c*comm->nRanks;
-    int* prev = ringPrev+c*comm->nRanks;
-    int* next = ringNext+c*comm->nRanks;
-    struct ncclChannel* channel0 = comm->channels+c;
-    struct ncclChannel* channel1 = channel0+nChannels;
-    for (int n=0; n<nNodes; n++) {
-      int recvRank = recv[nodesFirstRank[n]];
-      int prevSendRank = send[nodesFirstRank[(n-1+nNodes)%nNodes]];
-      prev[c*comm->nRanks+recvRank] = prevSendRank;
-      if (comm->rank == recvRank) {
-        channel0->ring.prev = prevSendRank;
-        channel1->ring.prev = prevSendRank;
-      }
-      int sendRank = send[nodesFirstRank[n]];
-      int nextRecvRank = recv[nodesFirstRank[(n+1)%nNodes]];
-      next[c*comm->nRanks+sendRank] = nextRecvRank;
-      if (comm->rank == sendRank) {
-        channel0->ring.next = nextRecvRank;
-        channel1->ring.next = nextRecvRank;
-      }
-    }
-    TRACE(NCCL_GRAPH, "Ring %d : %d -> %d -> %d", c, channel0->ring.prev, comm->rank, channel0->ring.next);
-    TRACE(NCCL_GRAPH, "Ring %d : %d -> %d -> %d", c+nChannels, channel1->ring.prev, comm->rank, channel1->ring.next);
-  }
-  return ncclSuccess;
-}
-
-static ncclResult_t getIndexes(int* ranks, int* indexes, int nNodes, int* firstRanks) {
- for (int n=0; n<nNodes; n++) indexes[n] = ranks[firstRanks[n]];
- return ncclSuccess;
-}
-
-static ncclResult_t setTreeUp(struct ncclTree* tree0, struct ncclTree* tree1, int* indexes, int u0, int u1) {
-  if (u0 != -1) tree0->up = indexes[u0];
-  if (u1 != -1) tree1->up = indexes[u1];
-  return ncclSuccess;
-}
-
-static ncclResult_t addRanksDown(int* down, int* indexes, int r0, int r1) {
-  int x = 0;
-  if (down[x] >= 0) x++;
-  if (down[x] >= 0) {
-    WARN("Internal error : tree already has more than one child (%d %d %d)\n", down[0], down[1], down[2]);
-    return ncclInternalError;
-  }
-  if (r0 != -1) down[x++] = indexes[r0];
-  if (r1 != -1) down[x++] = indexes[r1];
-  return ncclSuccess;
-}
-
-static ncclResult_t setTreeDown(struct ncclTree* tree0, struct ncclTree* tree1, int* indexes, int d0_0, int d0_1, int d1_0, int d1_1) {
-  NCCLCHECK(addRanksDown(tree0->down, indexes, d0_0, d0_1));
-  NCCLCHECK(addRanksDown(tree1->down, indexes, d1_0, d1_1));
-  return ncclSuccess;
-}
-
-static ncclResult_t connectTrees(int nChannels, struct ncclComm* comm, int* treeUpRecv, int* treeUpSend, int* treeDnRecv, int* treeDnSend, int nNodes, int node, int* firstRanks) {
-  int* indexes;
-  NCCLCHECK(ncclCalloc(&indexes, nNodes));
-
-  // Compute tree depth. Not an exact value but a good approximation in most
-  int depth = comm->nRanks/nNodes + log2(nNodes);
-
-  int u0, d0_0, d0_1, u1, d1_0, d1_1;
-  NCCLCHECK(ncclGetDtree(nNodes, node, &u0, &d0_0, &d0_1, &u1, &d1_0, &d1_1));
-  for (int c=0; c<nChannels; c++) {
-     struct ncclChannel* channel0 = comm->channels+c;
-     struct ncclChannel* channel1 = channel0+nChannels;
-     NCCLCHECK(getIndexes(treeUpSend+c*comm->nRanks, indexes, nNodes, firstRanks));
-     if (indexes[node] == comm->rank) NCCLCHECK(setTreeUp(&channel0->treeUp, &channel1->treeUp, indexes, u0, u1));
-     NCCLCHECK(getIndexes(treeUpRecv+c*comm->nRanks, indexes, nNodes, firstRanks));
-     if (indexes[node] == comm->rank) NCCLCHECK(setTreeDown(&channel0->treeUp, &channel1->treeUp, indexes, d0_0, d0_1, d1_0, d1_1));
-     NCCLCHECK(getIndexes(treeDnRecv+c*comm->nRanks, indexes, nNodes, firstRanks));
-     if (indexes[node] == comm->rank) NCCLCHECK(setTreeUp(&channel0->treeDn, &channel1->treeDn, indexes, u0, u1));
-     NCCLCHECK(getIndexes(treeDnSend+c*comm->nRanks, indexes, nNodes, firstRanks));
-     if (indexes[node] == comm->rank) NCCLCHECK(setTreeDown(&channel0->treeDn, &channel1->treeDn, indexes, d0_0, d0_1, d1_0, d1_1));
-     TRACE(NCCL_GRAPH, "TreeUp %d : %d -> %d/%d/%d", c,           channel0->treeUp.up, channel0->treeUp.down[0], channel0->treeUp.down[1], channel0->treeUp.down[2]);
-     TRACE(NCCL_GRAPH, "TreeUp %d : %d -> %d/%d/%d", c+nChannels, channel1->treeUp.up, channel1->treeUp.down[0], channel1->treeUp.down[1], channel1->treeUp.down[2]);
-     TRACE(NCCL_GRAPH, "TreeDn %d : %d -> %d/%d/%d", c,           channel0->treeDn.up, channel0->treeDn.down[0], channel0->treeDn.down[1], channel0->treeDn.down[2]);
-     TRACE(NCCL_GRAPH, "TreeDn %d : %d -> %d/%d/%d", c+nChannels, channel1->treeDn.up, channel1->treeDn.down[0], channel1->treeDn.down[1], channel1->treeDn.down[2]);
-     channel0->treeUp.depth = channel1->treeUp.depth = depth;
-  }
-  free(indexes);
   return ncclSuccess;
 }
 
@@ -703,16 +514,46 @@ static ncclResult_t p2pSetup(struct ncclComm* comm, struct ncclChannel* channel,
 
 NCCL_PARAM(CrossNic, "CROSS_NIC", 2);
 
-static ncclResult_t printGraph(struct ncclTopoGraph* graph, int localGpus) {
+static ncclResult_t printGraph(struct ncclTopoGraph* graph, int localRanks) {
   INFO(NCCL_GRAPH, "Pattern %d, crossNic %d, nChannels %d", graph->pattern, graph->crossNic, graph->nChannels);
 
   char line[1024];
   for (int c=0; c<graph->nChannels; c++) {
     sprintf(line, "%2d :", c);
     int offset = strlen(line);
-    for (int i=0; i<localGpus; i++) { sprintf(line+offset, " %4d", graph->intra[localGpus*c+i]); offset += sizeof(" 0000")-1; }
+    for (int i=0; i<localRanks; i++) { sprintf(line+offset, " %4d", graph->intra[localRanks*c+i]); offset += sizeof(" 0000")-1; }
   }
   INFO(NCCL_GRAPH, "%s", line);
+  return ncclSuccess;
+}
+
+static ncclResult_t getNodesInfo(struct ncclComm* comm,
+    int* rankIndexes, int* nvmlIndexes, int* firstRanks) {
+  int nNodes = 0;
+  int localRanks = 0;
+  uint64_t* nodesHashes;
+  NCCLCHECK(ncclCalloc(&nodesHashes, comm->nRanks));
+  for (int r=0; r<comm->nRanks; r++) {
+    uint64_t hostHash = comm->peerInfo[r].hostHash;
+    int nodeIndex = 0;
+    while (nodeIndex < nNodes) {
+      if (nodesHashes[nodeIndex] == hostHash) break;
+      nodeIndex++;
+    }
+    if (nodeIndex == nNodes) { // new node
+      nodesHashes[nNodes] = hostHash;
+      firstRanks[nNodes++] = r;
+    }
+    if (r == comm->rank) comm->node = nodeIndex;
+    if (hostHash == comm->peerInfo[comm->rank].hostHash) {
+      nvmlIndexes[localRanks] = comm->peerInfo[r].nvmlDev;
+      rankIndexes[localRanks] = r;
+      localRanks++;
+    }
+  }
+  free(nodesHashes);
+  comm->nNodes = nNodes;
+  comm->localRanks = localRanks;
   return ncclSuccess;
 }
 
@@ -746,34 +587,12 @@ static ncclResult_t initTransportsRank(struct ncclComm* comm, ncclUniqueId* comm
   // AllGather1 - end
 
   // Topo detection / System graph creation
-  int localGpus = 0;
-  int* nvmlIndexes, *rankIndexes;
+  int* nvmlIndexes, *rankIndexes, *nodesFirstRank;
   NCCLCHECK(ncclCalloc(&nvmlIndexes, nranks));
   NCCLCHECK(ncclCalloc(&rankIndexes, nranks));
-  uint64_t* nodesHashes;
-  int *nodesFirstRank;
-  int nNodes = 0, node = -1;
-  NCCLCHECK(ncclCalloc(&nodesHashes, nranks));
   NCCLCHECK(ncclCalloc(&nodesFirstRank, nranks));
-  for (int r=0; r<nranks; r++) {
-    uint64_t hostHash = comm->peerInfo[r].hostHash;
-    int nodeIndex = 0;
-    while (nodeIndex < nNodes) {
-      if (nodesHashes[nodeIndex] == hostHash) break;
-      nodeIndex++;
-    }
-    if (nodeIndex == nNodes) { // new node
-      nodesHashes[nNodes] = hostHash;
-      nodesFirstRank[nNodes++] = r;
-    }
-    if (r == rank) node = nodeIndex;
-    if (hostHash == comm->peerInfo[rank].hostHash) {
-      nvmlIndexes[localGpus] = comm->peerInfo[r].nvmlDev;
-      rankIndexes[localGpus] = r;
-      localGpus++;
-    }
-  }
-  NCCLCHECK(ncclTopoGetSystem(localGpus, nvmlIndexes, rankIndexes, &comm->topo, localGpus==nranks ? 0 : 1));
+  NCCLCHECK(getNodesInfo(comm, rankIndexes, nvmlIndexes, nodesFirstRank));
+  NCCLCHECK(ncclTopoGetSystem(comm->localRanks, nvmlIndexes, rankIndexes, &comm->topo, comm->localRanks == nranks ? 0 : 1));
   free(nvmlIndexes);
   free(rankIndexes);
 
@@ -782,12 +601,12 @@ static ncclResult_t initTransportsRank(struct ncclComm* comm, ncclUniqueId* comm
   treeGraph.pattern = NCCL_TOPO_PATTERN_SPLIT_TREE_LOOP;
   treeGraph.crossNic = ncclParamCrossNic();
   NCCLCHECK(ncclTopoCompute(comm->topo, &treeGraph));
-  NCCLCHECK(printGraph(&treeGraph, localGpus));
+  NCCLCHECK(printGraph(&treeGraph, comm->localRanks));
   struct ncclTopoGraph ringGraph;
   ringGraph.pattern = NCCL_TOPO_PATTERN_RING;
   ringGraph.crossNic = ncclParamCrossNic();
   NCCLCHECK(ncclTopoCompute(comm->topo, &ringGraph));
-  NCCLCHECK(printGraph(&ringGraph, localGpus));
+  NCCLCHECK(printGraph(&ringGraph, comm->localRanks));
   int nChannels = std::min(treeGraph.nChannels, ringGraph.nChannels);
 
   comm->nThreads = getDefaultThreads();
@@ -800,14 +619,7 @@ static ncclResult_t initTransportsRank(struct ncclComm* comm, ncclUniqueId* comm
     int fullCudaCompCap;
     int nvlink;
     int nChannels;
-    int ringRecv[MAXCHANNELS];
-    int ringSend[MAXCHANNELS];
-    int ringPrev[MAXCHANNELS];
-    int ringNext[MAXCHANNELS];
-    int treeUpRecv[MAXCHANNELS];
-    int treeUpSend[MAXCHANNELS];
-    int treeDnRecv[MAXCHANNELS];
-    int treeDnSend[MAXCHANNELS];
+    struct ncclTopoRanks topoRanks;
   } *allGather3Data;
 
   NCCLCHECK(ncclCalloc(&allGather3Data, nranks));
@@ -815,53 +627,9 @@ static ncclResult_t initTransportsRank(struct ncclComm* comm, ncclUniqueId* comm
   allGather3Data[rank].cudaCompCap = ncclCudaCompCap();
   allGather3Data[rank].fullCudaCompCap = ncclCudaFullCompCap();
   NCCLCHECK(ncclNvlinkGpu(&allGather3Data[rank].nvlink));
-  allGather3Data[rank].nChannels = nChannels;
+  allGather3Data[rank].nChannels = comm->nChannels = nChannels;
 
-  for (int c=0; c<nChannels; c++) {
-    struct ncclChannel* channel = comm->channels+c;
-    channel->ring.prev = channel->ring.next = -1;
-    channel->treeUp.up = -1;
-    for (int i=0; i<NCCL_MAX_TREE_ARITY; i++) channel->treeUp.down[i] = -1;
-    channel->treeDn.up = -1;
-    for (int i=0; i<NCCL_MAX_TREE_ARITY; i++) channel->treeDn.down[i] = -1;
-
-    for (int i=0; i<localGpus; i++) {
-      if (ringGraph.intra[i] == rank) {
-        allGather3Data[rank].ringRecv[c] = ringGraph.intra[0];
-        allGather3Data[rank].ringSend[c] = ringGraph.intra[localGpus-1];
-        channel->ring.prev = (i == 0) ? -1 : ringGraph.intra[i-1];
-        channel->ring.next = (i == localGpus-1) ? -1 : ringGraph.intra[i+1];
-      }
-      if (treeGraph.intra[i] == rank) {
-        int recvIndex = 0, sendIndex = treeGraph.pattern == NCCL_TOPO_PATTERN_TREE ? 0 : 1;
-        allGather3Data[rank].treeDnRecv[c] = treeGraph.intra[recvIndex];
-        allGather3Data[rank].treeDnSend[c] = treeGraph.intra[sendIndex];
-        channel->treeDn.up = (i == recvIndex) ? -1 : treeGraph.intra[i-1];
-        channel->treeDn.down[0] = (i == localGpus-1) ? -1 : treeGraph.intra[i+1];
-        if (treeGraph.pattern == NCCL_TOPO_PATTERN_SPLIT_TREE_LOOP) {
-          // Tree loop always flows in the same direction
-          allGather3Data[rank].treeUpRecv[c] = treeGraph.intra[recvIndex];
-          allGather3Data[rank].treeUpSend[c] = treeGraph.intra[sendIndex];
-          channel->treeUp.up = (i == sendIndex) ? -1 : treeGraph.intra[(i+nranks+1)%nranks];
-          channel->treeUp.down[0] = (i == sendIndex+1) ? -1 : treeGraph.intra[(i+nranks-1)%nranks];
-        } else {
-          // Other trees are symmetric and flow in opposite directions for up/down
-          allGather3Data[rank].treeUpRecv[c] = allGather3Data[rank].treeDnSend[c]; 
-          allGather3Data[rank].treeUpSend[c] = allGather3Data[rank].treeDnRecv[c];
-          channel->treeUp.up = channel->treeDn.up;
-          channel->treeUp.down[0] = channel->treeDn.down[0];
-        }
-      }
-    }
-    allGather3Data[rank].ringPrev[c] = channel->ring.prev;
-    allGather3Data[rank].ringNext[c] = channel->ring.next;
-  }
-  // Duplicate channels rings/trees
-  for (int c=0; c<nChannels; c++) {
-    struct ncclChannel* channel0 = comm->channels+c;
-    struct ncclChannel* channel1 = channel0+nChannels;
-    memcpy(channel1, channel0, sizeof(struct ncclChannel));
-  }
+  NCCLCHECK(ncclTopoPreset(comm, nodesFirstRank, &treeGraph, &ringGraph, &allGather3Data[rank].topoRanks));
 
   NCCLCHECK(bootstrapAllGather(comm->bootstrap, allGather3Data, sizeof(*allGather3Data)));
 
@@ -892,66 +660,37 @@ static ncclResult_t initTransportsRank(struct ncclComm* comm, ncclUniqueId* comm
   }
 
   // Determine thread threshold across all GPUs
-  comm->threadThreshold = ncclThreadThreshold(minCompCap, nNodes);
+  comm->threadThreshold = ncclThreadThreshold(minCompCap, comm->nNodes);
 
-  // Gather data from all ranks
-  int *ringRecv, *ringSend, *ringPrev, *ringNext, *treeUpRecv, *treeUpSend, *treeDnRecv,*treeDnSend;
-  NCCLCHECK(ncclCalloc(&ringRecv, nranks*MAXCHANNELS));
-  NCCLCHECK(ncclCalloc(&ringSend, nranks*MAXCHANNELS));
-  NCCLCHECK(ncclCalloc(&ringPrev, nranks*MAXCHANNELS));
-  NCCLCHECK(ncclCalloc(&ringNext, nranks*MAXCHANNELS));
-  NCCLCHECK(ncclCalloc(&treeUpRecv, nranks*MAXCHANNELS));
-  NCCLCHECK(ncclCalloc(&treeUpSend, nranks*MAXCHANNELS));
-  NCCLCHECK(ncclCalloc(&treeDnRecv, nranks*MAXCHANNELS));
-  NCCLCHECK(ncclCalloc(&treeDnSend, nranks*MAXCHANNELS));
+  struct ncclTopoRanks** allTopoRanks;
+  NCCLCHECK(ncclCalloc(&allTopoRanks, comm->nRanks));
   for (int i=0; i<nranks; i++) {
+    allTopoRanks[i] = &allGather3Data[i].topoRanks;
     nChannels = std::min(allGather3Data[i].nChannels, nChannels);
-    for (int c=0; c<nChannels;c++) {
-      ringRecv[c*nranks+i] = allGather3Data[i].ringRecv[c];
-      ringSend[c*nranks+i] = allGather3Data[i].ringSend[c];
-      ringPrev[c*nranks+i] = allGather3Data[i].ringPrev[c];
-      ringNext[c*nranks+i] = allGather3Data[i].ringNext[c];
-      treeUpRecv[c*nranks+i] = allGather3Data[i].treeUpRecv[c];
-      treeUpSend[c*nranks+i] = allGather3Data[i].treeUpSend[c];
-      treeDnRecv[c*nranks+i] = allGather3Data[i].treeDnRecv[c];
-      treeDnSend[c*nranks+i] = allGather3Data[i].treeDnSend[c];
-    }
   }
   comm->nChannels = nChannels;
 
-  free(allGather3Data);
-  // AllGather3 - end
-
-
-  NCCLCHECK(connectRings(nChannels, comm, ringRecv, ringSend, ringPrev, ringNext, nNodes, nodesFirstRank));
-  NCCLCHECK(connectTrees(nChannels, comm, treeUpRecv, treeUpSend, treeDnRecv, treeDnSend, nNodes, node, nodesFirstRank));
-
-  free(ringRecv);
-  free(ringSend);
-  free(treeUpRecv);
-  free(treeUpSend);
-  free(treeDnRecv);
-  free(treeDnSend);
-
   int *rings;
   NCCLCHECK(ncclCalloc(&rings, nranks*MAXCHANNELS));
-  NCCLCHECK(buildRings(nChannels, rings, rank, nranks, ringPrev, ringNext));
-  free(ringPrev);
-  free(ringNext);
+
+  NCCLCHECK(ncclTopoPostset(comm, nodesFirstRank, allTopoRanks, rings));
+  free(allTopoRanks);
+  free(nodesFirstRank);
+  free(allGather3Data);
+
+  // AllGather3 - end
 
   TRACE(NCCL_INIT, "rank %d nranks %d - BUILT %d TREES/RINGS", rank, nranks, nChannels);
 
   if (comm->treeThreshold == -2)
-    NCCLCHECK(ncclTreeThreshold(nNodes, comm->nRanks, nChannels, &comm->treeThreshold));
+    NCCLCHECK(ncclTreeThreshold(comm->nNodes, comm->nRanks, nChannels, &comm->treeThreshold));
 
   // Connect with prev/next for each ring
   struct ncclConnect *connect;
   NCCLCHECK(ncclCalloc(&connect, 2));
   for (int c=0; c<nChannels; c++) {
     struct ncclChannel* channel = comm->channels+c;
-    printf("Setup channel %d\n", c);
     NCCLCHECK(setupChannel(comm, c, rank, nranks, rings+c*nranks));
-    printf("Setup done\n");
     NCCLCHECK(p2pSetup(comm, channel, 1, &channel->ring.prev, 1, &channel->ring.next));
     NCCLCHECK(p2pSetup(comm, channel, NCCL_MAX_TREE_ARITY, channel->treeUp.down, 1, &channel->treeUp.up));
     NCCLCHECK(p2pSetup(comm, channel, 1, &channel->treeDn.up, NCCL_MAX_TREE_ARITY, channel->treeDn.down));
@@ -1004,7 +743,7 @@ static ncclResult_t initTransportsRank(struct ncclComm* comm, ncclUniqueId* comm
   // Done with AllGather1 data
   free(allGather1Data);
 
-  if (nNodes) NCCLCHECK(transportCreateProxy(comm));
+  if (comm->nNodes) NCCLCHECK(transportCreateProxy(comm));
 
   TRACE(NCCL_INIT, "rank %d nranks %d - DONE", rank, nranks);
   return ncclSuccess;
@@ -1131,177 +870,18 @@ ncclResult_t ncclCommInitRank(ncclComm_t* newcomm, int nranks, ncclUniqueId comm
   }
 }
 
-static ncclResult_t initTransportsAll(struct ncclComm** comms, const int* devs, int nranks) {
-  struct ncclPeerInfo* allInfo;
-  NCCLCHECK(ncclCalloc(&allInfo, nranks));
-  for (int rank=0; rank<nranks; rank++) {
-    CUDACHECK(cudaSetDevice(devs[rank]));
-    NCCLCHECK(fillInfo(allInfo+rank, rank));
-  }
-
-  int* connectTransport;
-  ncclTvalue_t* connectValue;
-  NCCLCHECK(ncclCalloc(&connectTransport, nranks*nranks));
-  NCCLCHECK(ncclCalloc(&connectValue, nranks*nranks));
-  for (int rank=0; rank<nranks; rank++)
-    NCCLCHECK(fillConnect(allInfo, nranks, rank, connectTransport+nranks*rank, connectValue+nranks*rank));
-
-  int* prev, *prevFinal, *next, *nextFinal, *treeIn, *treeOut;
-  NCCLCHECK(ncclCalloc(&prev, nranks*MAXCHANNELS));
-  NCCLCHECK(ncclCalloc(&prevFinal, nranks*MAXCHANNELS));
-  NCCLCHECK(ncclCalloc(&next, nranks*MAXCHANNELS));
-  NCCLCHECK(ncclCalloc(&nextFinal, nranks*MAXCHANNELS));
-  NCCLCHECK(ncclCalloc(&treeIn, nranks*MAXCHANNELS));
-  NCCLCHECK(ncclCalloc(&treeOut, nranks*MAXCHANNELS));
-  int nrings = MAXCHANNELS;
-  int nthreads=0;
-  int myCompCap = ncclCudaCompCap();
-  int minCompCap = myCompCap;
-  for (int rank=0; rank<nranks; rank++) {
-    CUDACHECK(cudaSetDevice(devs[rank]));
-    int nringsRank;
-    int nthreadsRank = getDefaultThreads();
-    myCompCap = ncclCudaCompCap();
-    nrings = std::min(nrings, nringsRank);
-    nthreads = std::max(nthreads, nthreadsRank);
-    minCompCap = std::min(minCompCap, myCompCap);
-    for (int ring=0; ring<nrings; ring++) {
-      int index = ring*nranks+rank;
-      prevFinal[index] = prev[index];
-      nextFinal[index] = next[index];
-    }
-  }
-  free(connectTransport);
-  free(connectValue);
-  free(prev);
-  free(next);
-
-  INFO(NCCL_INIT,"Using %d threads, Min Comp Cap %d, Trees disabled", nthreads, minCompCap);
-
-  int* rings;
-  NCCLCHECK(ncclCalloc(&rings, nranks*MAXCHANNELS));
-  NCCLCHECK(buildRings(nrings, rings, 0, nranks, prevFinal, nextFinal));
-  free(prevFinal);
-  free(nextFinal);
-
-  // Determine thread threshold across all GPUs
-  int threadThreshold = ncclThreadThreshold(minCompCap, 0);
-
-  for (int rank=0; rank<nranks; rank++) {
-    comms[rank]->nChannels = nrings;
-    comms[rank]->nThreads = nthreads;
-    comms[rank]->threadThreshold = threadThreshold;
-  }
-
-  struct ncclConnect* connect;
-  NCCLCHECK(ncclCalloc(&connect, 2*nranks));
-  for (int r=0; r<nrings; r++) {
-    int* ringRanks = rings+r*nranks;
-    for (int rank=0; rank<nranks; rank++) {
-      CUDACHECK(cudaSetDevice(devs[rank]));
-      struct ncclChannel* channel = comms[rank]->channels+r;
-      struct ncclRing *ring = &channel->ring;
-      NCCLCHECK(setupChannel(comms[rank], r, rank, nranks, ringRanks));
-      // Make sure we don't use trees, we cannot use them with initAll
-      comms[rank]->treeThreshold = 0;
-      int prev = channel->ring.prev = ring->userRanks[nranks-1];
-      int next = channel->ring.next = ring->userRanks[1];
-      struct ncclConnector* recv = &channel->peers[prev].recv;
-      struct ncclConnector* send = &channel->peers[next].send;
-      NCCLCHECK(selectTransport<0>(allInfo+rank, allInfo+prev, connect+rank*2+0, recv, channel->buffSize, channel->id));
-      NCCLCHECK(selectTransport<1>(allInfo+rank, allInfo+next, connect+rank*2+1, send, channel->buffSize, channel->id));
-    }
-    for (int rank=0; rank<nranks; rank++) {
-      CUDACHECK(cudaSetDevice(devs[rank]));
-      struct ncclChannel* channel = comms[rank]->channels+r;
-      struct ncclRing *ring = &channel->ring;
-      struct ncclConnector* recv = &channel->peers[ring->prev].recv;
-      struct ncclConnector* send = &channel->peers[ring->next].send;
-      NCCLCHECK(recv->transportComm->connect(connect+ring->prev*2+1, recv));
-      NCCLCHECK(send->transportComm->connect(connect+ring->next*2+0, send));
-    }
-  }
-  free(connect);
-  free(allInfo);
-  free(rings);
-  return ncclSuccess;
-}
-
-
 NCCL_API(ncclResult_t, ncclCommInitAll, ncclComm_t* comms, int ndev, const int* devlist);
 ncclResult_t ncclCommInitAll(ncclComm_t* comms, int ndev, const int* devlist) {
-  NCCLCHECK(ncclInit());
-  NCCLCHECK(wrapNvmlSymbols());
-  NCCLCHECK(wrapNvmlInit());
-  showVersion();
-
-  INFO(NCCL_INIT,"nranks %d", ndev);
-
-  NCCLCHECK(PtrCheck(comms, "CommInitAll", "comms"));
-  if (ndev < 1) {
-    WARN("Invalid device count requested : %d", ndev);
-    return ncclInvalidArgument;
-  }
-
-  ncclResult_t res;
-  int savedDevice;
-  int rank, cudaDev;
-  ncclComm_t comm = NULL;
-  int* ncclDevList = NULL;
-  NCCLCHECK(ncclCalloc(&ncclDevList, ndev));
+  ncclUniqueId uniqueId;
+  NCCLCHECK(ncclGetUniqueId(&uniqueId));
+  NCCLCHECK(ncclGroupStart());
   for (int i=0; i<ndev; i++) {
-    ncclDevList[i] = devlist ? devlist[i] : i;
+    CUDACHECK(cudaSetDevice(devlist ? devlist[i] : i));
+    NCCLCHECK(ncclCommInitRank(comms+i, ndev, uniqueId, i));
   }
-
-  CUDACHECKGOTO(cudaGetDevice(&savedDevice), res, cleanup);
-
-  for(rank=0; rank<ndev; ++rank)
-    comms[rank] = NULL;
-
-  cpu_set_t affinitySave;
-  sched_getaffinity(0, sizeof(cpu_set_t), &affinitySave);
-
-  for (rank=0; rank<ndev; ++rank) {
-    cudaDev = ncclDevList[rank];
-    CUDACHECKGOTO(cudaSetDevice(cudaDev), res, cleanup);
-
-    NCCLCHECK(setCpuAffinity(cudaDev));
-
-    NCCLCHECKGOTO(commAlloc(&comm, ndev, rank), res, cleanup);
-    comms[rank] = comm;
-
-    NCCLCHECKGOTO(ncclCommSetIntra(comm, rank, ndev, comms[0]), res, cleanup);
-  }
-
-  sched_setaffinity(0, sizeof(cpu_set_t), &affinitySave);
-
-  NCCLCHECKGOTO(initTransportsAll(comms, ncclDevList, ndev), res, cleanup);
-
-  for(rank=0; rank<ndev; ++rank) {
-    cudaDev = ncclDevList[rank];
-    CUDACHECKGOTO(cudaSetDevice(cudaDev), res, cleanup);
-    NCCLCHECKGOTO(devCommSetup(comms[rank]), res, cleanup);
-  }
-
-  res = ncclSuccess;
-  goto final;
-
-cleanup:
-  for(rank=0; rank<ndev; ++rank) {
-    if(comms[rank] != NULL) {
-      commFree(comms[rank]);
-    }
-  }
-
-final:
-  free(ncclDevList);
-  if(wrapNvmlShutdown() != ncclSuccess)
-    INFO(NCCL_INIT,"NCCL did not shutdown nvml properly");
-  cudaSetDevice(savedDevice);
-  sched_setaffinity(0, sizeof(cpu_set_t), &affinitySave);
-  return res;
+  NCCLCHECK(ncclGroupEnd());
+  return ncclSuccess;
 }
-
 
 static ncclResult_t commDestroy(ncclComm_t comm) {
   int savedDevice;

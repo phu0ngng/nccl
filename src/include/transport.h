@@ -30,9 +30,6 @@ struct ncclPeerInfo {
   char busId[NVML_DEVICE_PCI_BUS_ID_BUFFER_SIZE];
 };
 
-// Used to hold the transport connection values
-typedef int64_t ncclTvalue_t;
-
 #define CONNECT_SIZE 128
 struct ncclConnect {
   char data[CONNECT_SIZE];
@@ -86,7 +83,7 @@ struct ncclTransportComm {
 
 struct ncclTransport {
   const char name[4];
-  ncclResult_t (*canConnect)(ncclTvalue_t*, struct ncclPeerInfo*, struct ncclPeerInfo*);
+  ncclResult_t (*canConnect)(int*, struct ncclPeerInfo*, struct ncclPeerInfo*);
   struct ncclTransportComm send;
   struct ncclTransportComm recv;
 };

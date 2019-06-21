@@ -6,7 +6,7 @@
 
 #include "core.h"
 #include "utils.h"
-#include "topo.h"
+#include "graph.h"
 #include "transport.h"
 #include "param.h"
 #include <unistd.h>
@@ -55,7 +55,7 @@ static int busIdToCudaDev(const char* busId) {
 }
 
 /* Determine if we can communicate with the peer through p2p */
-ncclResult_t p2pCanConnect(ncclTvalue_t* ret, struct ncclPeerInfo* myInfo, struct ncclPeerInfo* peerInfo) {
+ncclResult_t p2pCanConnect(int* ret, struct ncclPeerInfo* myInfo, struct ncclPeerInfo* peerInfo) {
   // Do not use P2P across root complexes by default (provided CUDA permits it)
   int p2pLevel = PATH_NODE;
   if (ncclParamP2pDisable() == 1) p2pLevel = 0;
@@ -78,7 +78,7 @@ ncclResult_t p2pCanConnect(ncclTvalue_t* ret, struct ncclPeerInfo* myInfo, struc
     // Check for NVLink/NVswitch including P2P access
     int nvlinkp2p = getNvlinkGpu(myInfo->busId, peerInfo->busId);
     if (nvlinkp2p > 0) {
-      *ret = nvlinkp2p;
+      *ret = 1;
       return ncclSuccess;
     }
 #endif
@@ -89,7 +89,7 @@ ncclResult_t p2pCanConnect(ncclTvalue_t* ret, struct ncclPeerInfo* myInfo, struc
 
   // Do not detect topology if we're on the same GPU. Note this is not really supported.
   if (myInfo->cudaDev == peerCudaDev) {
-    *ret = 1 + PATH_SYS;
+    *ret = 1;
     return ncclSuccess;
   }
 
@@ -105,7 +105,7 @@ ncclResult_t p2pCanConnect(ncclTvalue_t* ret, struct ncclPeerInfo* myInfo, struc
   // Check for NVLink/NVswitch
   int nvlinkp2p = getNvlinkGpu(myInfo->busId, peerInfo->busId);
   if (nvlinkp2p > 0) {
-    *ret = nvlinkp2p;
+    *ret = 1;
     return ncclSuccess;
   }
 
@@ -117,7 +117,7 @@ ncclResult_t p2pCanConnect(ncclTvalue_t* ret, struct ncclPeerInfo* myInfo, struc
   if (err1 == ncclSuccess && err2 == ncclSuccess) {
     int distance = pciDistance(myPath, peerPath);
     if (distance < p2pLevel) {
-      *ret = 1 + PATH_SYS - distance;
+      *ret = 1;
     }
   }
   if (err1 == ncclSuccess) free(myPath);

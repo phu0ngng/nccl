@@ -10,7 +10,6 @@
 #include <sys/stat.h>
 #include <fcntl.h>
 #include "nvmlwrap.h"
-#include "topo.h"
 
 #define CONNECT_NVLINK 0x10
 #define CONNECT_NVSWITCH 0x100

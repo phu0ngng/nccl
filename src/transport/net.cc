@@ -9,7 +9,7 @@
 #include "nvmlwrap.h"
 #include "net.h"
 #include "param.h"
-#include "topo.h"
+#include "graph.h"
 #include <cuda_runtime.h>
 #include <assert.h>
 
@@ -17,25 +17,25 @@
 #define NET_MAX_GPUS 32
 
 // Cache GPU-NIC distances to avoid re-computing them
-#define NET_TVALUE_UNKNOWN 0ULL
-static ncclTvalue_t ncclNetTvalues[NET_MAX_GPUS] = { NET_TVALUE_UNKNOWN };
+#define NET_SCORES_UNSET 0ULL
+static uint64_t ncclNetScores[NET_MAX_GPUS] = { NET_SCORES_UNSET };
 static int ncclNetNDev;
 
 // We encode 3 bits of distance per interface into a ncclTvalue_t (64-bit)
 #define NET_BITS_PER_IF 3
 #define NET_BITS_PER_IF_MASK ((1<<NET_BITS_PER_IF)-1)
-static_assert(sizeof(ncclTvalue_t)*8 >= NET_MAX_IFS*NET_BITS_PER_IF, "NET_MAX_IFS*NET_BITS_PER_IF must fit in a ncclTvalue_t");
-static ncclTvalue_t getTvalue(short* distances, int ndev) {
-  ncclTvalue_t tvalue = 0;
+static_assert(sizeof(uint64_t)*8 >= NET_MAX_IFS*NET_BITS_PER_IF, "NET_MAX_IFS*NET_BITS_PER_IF must fit in 64 bits");
+static uint64_t getScores(short* distances, int ndev) {
+  uint64_t scores = 0;
   for (int d=0; d<ndev; d++) {
     int score = 1 + PATH_SYS - distances[d];
     // Keep 3 bits of score info per dev
-    tvalue |= ((score & NET_BITS_PER_IF_MASK)<<(NET_BITS_PER_IF*d));
+    scores |= ((score & NET_BITS_PER_IF_MASK)<<(NET_BITS_PER_IF*d));
   }
-  return tvalue;
+  return scores;
 }
-static int getScore(ncclTvalue_t tvalue, int dev) {
-  return (tvalue >> (dev*NET_BITS_PER_IF)) & NET_BITS_PER_IF_MASK;
+static int getScore(uint64_t scores, int dev) {
+  return (scores >> (dev*NET_BITS_PER_IF)) & NET_BITS_PER_IF_MASK;
 }
 
 struct netConnectInfo {
@@ -115,11 +115,14 @@ static ncclResult_t netDevices(int* ndev, short** distances) {
 }
 
 /* Determine if we can communicate with the peer */
-ncclResult_t netCanConnect(ncclTvalue_t* ret, struct ncclPeerInfo* myInfo, struct ncclPeerInfo* peerInfo) {
-  int cudaDev;
-  CUDACHECK(cudaGetDevice(&cudaDev));
-  ret[0] = ncclNetTvalues[cudaDev];
-  if (ret[0] == NET_TVALUE_UNKNOWN) {
+ncclResult_t netCanConnect(int* ret, struct ncclPeerInfo* myInfo, struct ncclPeerInfo* peerInfo) {
+  *ret = 1;
+  return ncclSuccess;
+}
+
+int getDev(int cudaDev, int ringId) {
+  uint64_t scores = ncclNetScores[cudaDev];
+  if (scores == NET_SCORES_UNSET) {
     if (cudaDev >= NET_MAX_GPUS) {
       WARN("CUDA device %d >= MAX %d\n", cudaDev, NET_MAX_GPUS);
       return ncclInternalError;
@@ -127,23 +130,18 @@ ncclResult_t netCanConnect(ncclTvalue_t* ret, struct ncclPeerInfo* myInfo, struc
     int nDev;
     short* distances;
     NCCLCHECK(netDevices(&nDev, &distances));
-    ncclNetTvalues[cudaDev] = ret[0] = getTvalue(distances, nDev);
+    ncclNetScores[cudaDev] = scores = getScores(distances, nDev);
     ncclNetNDev = nDev;
     free(distances);
   }
-  return ncclSuccess;
-}
-
-int getDev(int cudaDev, int ringId) {
-  ncclTvalue_t tvalues = ncclNetTvalues[cudaDev];
 
   int dev = 0;
   int maxScore = 0;
-  for (int d=0; d<ncclNetNDev; d++) if (getScore(tvalues,d) > maxScore) maxScore = getScore(tvalues,d);
+  for (int d=0; d<ncclNetNDev; d++) if (getScore(scores, d) > maxScore) maxScore = getScore(scores, d);
   int skip = ringId+1;
   while (skip) {
     for (int d=0; d<ncclNetNDev; d++) {
-      if (getScore(tvalues, d) == maxScore) {
+      if (getScore(scores, d) == maxScore) {
         skip--;
         if (skip == 0) { dev = d; goto end; }
       }

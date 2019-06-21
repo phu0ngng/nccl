@@ -4,8 +4,8 @@
  * See LICENSE.txt for license information
  ************************************************************************/
 
-#ifndef NCCL_TOPO_H_
-#define NCCL_TOPO_H_
+#ifndef NCCL_GRAPH_H_
+#define NCCL_GRAPH_H_
 
 #include "nccl.h"
 #include <limits.h>
@@ -58,5 +58,23 @@ struct ncclTopoGraph {
   int nChannels;
 };
 ncclResult_t ncclTopoCompute(struct ncclTopoSystem* system, struct ncclTopoGraph* graph);
+
+struct ncclTopoRanks {
+  int ringRecv[MAXCHANNELS];
+  int ringSend[MAXCHANNELS];
+  int ringPrev[MAXCHANNELS];
+  int ringNext[MAXCHANNELS];
+  int treeUpRecv[MAXCHANNELS];
+  int treeUpSend[MAXCHANNELS];
+  int treeDnRecv[MAXCHANNELS];
+  int treeDnSend[MAXCHANNELS];
+};
+
+ncclResult_t ncclTopoPreset(struct ncclComm* comm, int* firstRanks,
+    struct ncclTopoGraph* treeGraph, struct ncclTopoGraph* ringGraph,
+    struct ncclTopoRanks* topoRanks);
+
+ncclResult_t ncclTopoPostset(struct ncclComm* comm, int* firstRanks,
+    struct ncclTopoRanks** allTopoRanks, int* rings);
 
 #endif

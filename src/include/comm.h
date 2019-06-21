@@ -67,6 +67,11 @@ struct ncclComm {
   int cudaDev; // my cuda device index
   int nvmlDev; // my NVML device number
 
+  int node;
+  int nNodes;
+  int localRank;
+  int localRanks;
+
   enum { GROUP, PARALLEL } launchMode;
   cudaStream_t userStream;
   bool userStreamSet;

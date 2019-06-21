@@ -22,4 +22,11 @@ struct netIf {
 int parseStringList(const char* string, struct netIf* ifList, int maxList);
 bool matchIfList(const char* string, int port, struct netIf* ifList, int listSize);
 
+static int log2(int n) {
+ int l = 0;
+ while (n>>=1) l++;
+ return l;
+}
+
+
 #endif
