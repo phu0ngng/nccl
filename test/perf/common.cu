@@ -338,7 +338,9 @@ testResult_t testStreamSynchronize(int ngpus, cudaStream_t* streams, ncclComm_t*
      if (cudaErr != cudaErrorNotReady) CUDACHECK(cudaErr);
 
 #if NCCL_VERSION_CODE >= NCCL_VERSION(2,4,0)
-     if (comms) {
+     int version;
+     NCCLCHECK(ncclGetVersion(&version));
+     if (version >= NCCL_VERSION(2,4,0) && comms) {
        ncclResult_t ncclAsyncErr;
        NCCLCHECK(ncclCommGetAsyncError(comms[i], &ncclAsyncErr));
        if (ncclAsyncErr != ncclSuccess) {
@@ -643,7 +645,7 @@ int main(int argc, char* argv[]) {
     {"stepbytes", required_argument, 0, 'i'},
     {"stepfactor", required_argument, 0, 'f'},
     {"iters", required_argument, 0, 'n'},
-    {"agg-iters", required_argument, 0, 'm'},
+    {"agg_iters", required_argument, 0, 'm'},
     {"warmup_iters", required_argument, 0, 'w'},
     {"parallel_init", required_argument, 0, 'p'},
     {"check", required_argument, 0, 'c'},
@@ -733,7 +735,7 @@ int main(int argc, char* argv[]) {
             "[-i,--stepbytes <increment size>] \n\t"
             "[-f,--stepfactor <increment factor>] \n\t"
             "[-n,--iters <iteration count>] \n\t"
-            "[-m,--agg-iters <aggregated iteration count>] \n\t"
+            "[-m,--agg_iters <aggregated iteration count>] \n\t"
             "[-w,--warmup_iters <warmup iteration count>] \n\t"
             "[-p,--parallel_init <0/1>] \n\t"
             "[-c,--check <0/1>] \n\t"
@@ -757,7 +759,7 @@ int main(int argc, char* argv[]) {
             "[-i,--stepbytes <increment size>] \n\t"
             "[-f,--stepfactor <increment factor>] \n\t"
             "[-n,--iters <iteration count>] \n\t"
-            "[-m,--agg-iters <aggregated iteration count>] \n\t"
+            "[-m,--agg_iters <aggregated iteration count>] \n\t"
             "[-w,--warmup_iters <warmup iteration count>] \n\t"
             "[-p,--parallel_init <0/1>] \n\t"
             "[-c,--check <0/1>] \n\t"
@@ -798,8 +800,10 @@ testResult_t run() {
 #endif
   is_main_thread = (proc == 0) ? 1 : 0;
 
-  PRINT("# nThread %d nGpus %d minBytes %ld maxBytes %ld step: %ld(%s) warmup iters: %d iters: %d validation: %d \n", nThreads, nGpus, minBytes, maxBytes,
-      (stepFactor > 1)?stepFactor:stepBytes, (stepFactor > 1)?"factor":"bytes", warmup_iters, iters, datacheck);
+  PRINT("# nThread %d nGpus %d minBytes %ld maxBytes %ld step: %ld(%s) warmup iters: %d iters: %d agg iters: %d validation: %d \n",
+        nThreads, nGpus, minBytes, maxBytes,
+        (stepFactor > 1)?stepFactor:stepBytes, (stepFactor > 1)?"factor":"bytes",
+        warmup_iters, iters, agg_iters, datacheck);
   if (blocking_coll) PRINT("# Blocking Enabled: wait for completion and barrier after each collective \n");
   if (parallel_init) PRINT("# Parallel Init Enabled: threads call into NcclInitRank concurrently \n");
   PRINT("#\n");

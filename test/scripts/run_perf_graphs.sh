@@ -141,8 +141,6 @@ if [ "$mode" == "" ]; then
   mode="single"
 fi
 
-export NCCL_DEBUG=WARN
-
 if [ "$mode" == "reorder" ]; then
   perf_ngpu_loop $gpumodel $maxgpu $mode all_reduce
 elif [ "$mode" == "deadlock" ]; then
