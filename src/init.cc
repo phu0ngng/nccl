@@ -685,6 +685,19 @@ static ncclResult_t initTransportsRank(struct ncclComm* comm, ncclUniqueId* comm
   if (comm->treeThreshold == -2)
     NCCLCHECK(ncclTreeThreshold(comm->nNodes, comm->nRanks, nChannels, &comm->treeThreshold));
 
+  if (comm->treeThreshold > 0) {
+    char line[1024];
+    line[0]='\0';
+    for (int c=0; c<nChannels; c++) {
+      struct ncclTree* treeUp = &comm->channels[c].treeUp;
+      struct ncclTree* treeDn = &comm->channels[c].treeDn;
+      snprintf(line+strlen(line), 1023-strlen(line), " [%d] %d/%d/%d->%d->%d|%d->%d->%d/%d/%d",
+          c, treeUp->down[0], treeUp->down[1], treeUp->down[2], rank, treeUp->up,
+          treeDn->up, rank, treeDn->down[0], treeDn->down[1], treeDn->down[2]);
+    }
+    line[1023] = '\0';
+    INFO(NCCL_INIT, "Trees%s", line);
+  }
   // Connect with prev/next for each ring
   struct ncclConnect *connect;
   NCCLCHECK(ncclCalloc(&connect, 2));
@@ -694,19 +707,6 @@ static ncclResult_t initTransportsRank(struct ncclComm* comm, ncclUniqueId* comm
     NCCLCHECK(p2pSetup(comm, channel, 1, &channel->ring.prev, 1, &channel->ring.next));
     NCCLCHECK(p2pSetup(comm, channel, NCCL_MAX_TREE_ARITY, channel->treeUp.down, 1, &channel->treeUp.up));
     NCCLCHECK(p2pSetup(comm, channel, 1, &channel->treeDn.up, NCCL_MAX_TREE_ARITY, channel->treeDn.down));
-  }
-  if (comm->treeThreshold > 0) {
-    char line[1024];
-    line[0]='\0';
-    for (int c=0; c<nChannels; c++) {
-      struct ncclTree* treeUp = &comm->channels[c].treeUp;
-      struct ncclTree* treeDn = &comm->channels[c].treeDn;
-      snprintf(line+strlen(line), 1023-strlen(line), " [%d] %d->%d->%d/%d/%d|%d->%d->%d/%d/%d",
-          c, treeUp->up, rank, treeUp->down[0], treeUp->down[1], treeUp->down[2],
-          treeDn->up, rank, treeDn->down[0], treeDn->down[1], treeDn->down[2]);
-    }
-    line[1023] = '\0';
-    INFO(NCCL_INIT, "Trees%s", line);
   }
   if (rank == 0) {
     char treeline[64];
