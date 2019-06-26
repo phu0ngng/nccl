@@ -132,10 +132,12 @@ static ncclResult_t setTreeDown(struct ncclTree* tree0, struct ncclTree* tree1, 
 
 static ncclResult_t connectTrees(struct ncclComm* comm, int* treeUpRecv, int* treeUpSend, int* treeDnRecv, int* treeDnSend, int* firstRanks) {
   const int nChannels = comm->nChannels, nNodes = comm->nNodes, node = comm->node;
-  int* indexes;
-  NCCLCHECK(ncclCalloc(&indexes, nNodes));
+  int* indexesSend, *indexesRecv;
+  NCCLCHECK(ncclCalloc(&indexesSend, nNodes));
+  NCCLCHECK(ncclCalloc(&indexesRecv, nNodes));
 
   // Compute tree depth. Not an exact value but a good approximation in most
+  // cases
   int depth = comm->nRanks/nNodes + log2(nNodes);
 
   int u0, d0_0, d0_1, u1, d1_0, d1_1;
@@ -143,21 +145,22 @@ static ncclResult_t connectTrees(struct ncclComm* comm, int* treeUpRecv, int* tr
   for (int c=0; c<nChannels; c++) {
      struct ncclChannel* channel0 = comm->channels+c;
      struct ncclChannel* channel1 = channel0+nChannels;
-     NCCLCHECK(getIndexes(treeUpSend+c*comm->nRanks, indexes, nNodes, firstRanks));
-     if (indexes[node] == comm->rank) NCCLCHECK(setTreeUp(&channel0->treeUp, &channel1->treeUp, indexes, u0, u1));
-     NCCLCHECK(getIndexes(treeUpRecv+c*comm->nRanks, indexes, nNodes, firstRanks));
-     if (indexes[node] == comm->rank) NCCLCHECK(setTreeDown(&channel0->treeUp, &channel1->treeUp, indexes, d0_0, d0_1, d1_0, d1_1));
-     NCCLCHECK(getIndexes(treeDnRecv+c*comm->nRanks, indexes, nNodes, firstRanks));
-     if (indexes[node] == comm->rank) NCCLCHECK(setTreeUp(&channel0->treeDn, &channel1->treeDn, indexes, u0, u1));
-     NCCLCHECK(getIndexes(treeDnSend+c*comm->nRanks, indexes, nNodes, firstRanks));
-     if (indexes[node] == comm->rank) NCCLCHECK(setTreeDown(&channel0->treeDn, &channel1->treeDn, indexes, d0_0, d0_1, d1_0, d1_1));
+     NCCLCHECK(getIndexes(treeUpSend+c*comm->nRanks, indexesSend, nNodes, firstRanks));
+     NCCLCHECK(getIndexes(treeUpRecv+c*comm->nRanks, indexesRecv, nNodes, firstRanks));
+     if (indexesSend[node] == comm->rank) NCCLCHECK(setTreeUp(&channel0->treeUp, &channel1->treeUp, indexesRecv, u0, u1));
+     if (indexesRecv[node] == comm->rank) NCCLCHECK(setTreeDown(&channel0->treeUp, &channel1->treeUp, indexesSend, d0_0, d0_1, d1_0, d1_1));
+     NCCLCHECK(getIndexes(treeDnSend+c*comm->nRanks, indexesSend, nNodes, firstRanks));
+     NCCLCHECK(getIndexes(treeDnRecv+c*comm->nRanks, indexesRecv, nNodes, firstRanks));
+     if (indexesSend[node] == comm->rank) NCCLCHECK(setTreeDown(&channel0->treeDn, &channel1->treeDn, indexesRecv, d0_0, d0_1, d1_0, d1_1));
+     if (indexesRecv[node] == comm->rank) NCCLCHECK(setTreeUp(&channel0->treeDn, &channel1->treeDn, indexesSend, u0, u1));
      TRACE(NCCL_GRAPH, "TreeUp %d : %d -> %d/%d/%d", c,           channel0->treeUp.up, channel0->treeUp.down[0], channel0->treeUp.down[1], channel0->treeUp.down[2]);
      TRACE(NCCL_GRAPH, "TreeUp %d : %d -> %d/%d/%d", c+nChannels, channel1->treeUp.up, channel1->treeUp.down[0], channel1->treeUp.down[1], channel1->treeUp.down[2]);
      TRACE(NCCL_GRAPH, "TreeDn %d : %d -> %d/%d/%d", c,           channel0->treeDn.up, channel0->treeDn.down[0], channel0->treeDn.down[1], channel0->treeDn.down[2]);
      TRACE(NCCL_GRAPH, "TreeDn %d : %d -> %d/%d/%d", c+nChannels, channel1->treeDn.up, channel1->treeDn.down[0], channel1->treeDn.down[1], channel1->treeDn.down[2]);
      channel0->treeUp.depth = channel1->treeUp.depth = depth;
   }
-  free(indexes);
+  free(indexesSend);
+  free(indexesRecv);
   return ncclSuccess;
 }
 
