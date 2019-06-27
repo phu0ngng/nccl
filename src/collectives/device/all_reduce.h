@@ -139,7 +139,7 @@ __device__ void ncclAllReduceAcclKernel(struct CollectiveArgs* args) {
   const int tid = threadIdx.x;
   const int nthreads = blockDim.x - 1;
   const int bid = args->bid;
-  struct ncclComm* comm = args->comm;
+  struct ncclDevComm* comm = args->comm;
   struct ncclChannel* channel = comm->channels+blockIdx.x;
   struct ncclTree* tree = &channel->collTree;
   const ssize_t size = args->N;
@@ -315,7 +315,7 @@ __device__ void ncclAllReduceAcclLLKernel(struct CollectiveArgs* args) {
   const int tid = threadIdx.x;
   const int nthreads = args->nThreads;
   const int bid = args->bid;
-  struct ncclComm* comm = args->comm;
+  struct ncclDevComm* comm = args->comm;
   struct ncclChannel* channel = comm->channels+blockIdx.x;
   struct ncclTree* tree = &channel->collTree;
   const ssize_t size = args->N;
