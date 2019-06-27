@@ -820,7 +820,7 @@ static ncclResult_t initTransportsRank(struct ncclComm* comm, ncclUniqueId* comm
   NCCLCHECK(fillInfo(&allGather1Data[rank].peerInfo, rank));
   NCCLCHECK(bootstrapAllGather(comm->bootstrap, allGather1Data, sizeof(*allGather1Data)));
 
-  NCCLCHECK(ncclCalloc(&comm->peerInfo, nranks));
+  NCCLCHECK(ncclCalloc(&comm->peerInfo, nranks+1)); // Extra rank to represent CollNet root
   for (int i = 0; i < nranks; i++) {
     memcpy(comm->peerInfo+i, &allGather1Data[i].peerInfo, sizeof(struct ncclPeerInfo));
   }
