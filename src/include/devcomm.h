@@ -188,8 +188,6 @@ struct ncclChannel {
 };
 static_assert(sizeof(struct ncclChannel) == 0x80*sizeof(int), "ncclChannel must have a pow2 size");
 
-#define MAXCHANNELS 16
-
 typedef enum {
   ncclDevSuccess,
   ncclDevAssertedMismatch,
