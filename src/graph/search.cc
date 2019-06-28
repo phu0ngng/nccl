@@ -91,6 +91,7 @@ ncclResult_t ncclTopoCopyPath(struct ncclTopoSearchPath* dst, struct ncclTopoSea
   dst->links.count = src->links.count;
   return ncclSuccess;
 }
+
 #define FOLLOW_LINK(linkList, l, curWidth, cmd) do { \
   l->width -= curWidth; \
    linkList->list[linkList->count++] = l; \
@@ -181,12 +182,13 @@ ncclResult_t ncclTopoCompute(struct ncclTopoSystem* system, struct ncclTopoGraph
   struct ncclTopoSearch search;
   search.req = 0;
   search.nPaths = 0;
-  search.nReqs = 0;
-  int maxChannels = system->maxChannels;
-  int maxWidth = system->maxWidth;
+  search.width = 0;
+  search.curWidth = system->maxWidth;
+  int maxChannels = search.nReqs = system->maxChannels;
 
   if (system->nodes[NET].count) {
-    maxChannels = system->nodes[NET].count;
+    maxChannels = search.nReqs = system->nodes[NET].count;
+    search.curWidth = PCI_WIDTH;
     if (graph->pattern == NCCL_TOPO_PATTERN_SPLIT_TREE ||
         graph->pattern == NCCL_TOPO_PATTERN_SPLIT_TREE_LOOP) {
       // NIC start/end lists are common to use each NIC once
@@ -203,7 +205,7 @@ ncclResult_t ncclTopoCompute(struct ncclTopoSystem* system, struct ncclTopoGraph
       struct ncclTopoNodeReqList gpuEnd[NCCL_TOPO_SEARCH_MAX_REQS];
       struct ncclTopoNodeReqList gpuInter[NCCL_TOPO_SEARCH_MAX_REQS];
 
-      for (int n=0; n<system->nodes[NET].count; n++) {
+      for (int n=0; n<maxChannels; n++) {
         // NIC -> 1st GPU -> 2nd GPU -> NIC
         NCCLCHECK(ncclTopoNodeReqListInitFromSystem(gpuInter+n, system, GPU));
         NCCLCHECK(ncclTopoNodeReqListInitSingle(nicEnds+n, search.paths[2*n].nodes.list+0));
@@ -220,8 +222,7 @@ ncclResult_t ncclTopoCompute(struct ncclTopoSystem* system, struct ncclTopoGraph
         search.reqs[2*n+1].nhops = ngpus-2;
         if (graph->pattern == NCCL_TOPO_PATTERN_SPLIT_TREE_LOOP) search.reqs[2*n+1].nhops++;
       }
-      search.nReqs = system->nodes[NET].count*2;
-      search.curWidth = PCI_WIDTH; search.width = 0;
+      search.nReqs = maxChannels*2;
       NCCLCHECK(ncclTopoSearchRec(&search));
       free(nicStart.list);
       free(nicEnd.list);
@@ -250,7 +251,7 @@ ncclResult_t ncclTopoCompute(struct ncclTopoSystem* system, struct ncclTopoGraph
       // GPU lists are duplicated : we go through each GPUs for each chain
       struct ncclTopoNodeReqList gpuInter[NCCL_TOPO_SEARCH_MAX_REQS];
 
-      for (int n=0; n<system->nodes[NET].count; n++) {
+      for (int n=0; n<maxChannels; n++) {
         // NIC - > all GPUs
         NCCLCHECK(ncclTopoNodeReqListInitFromSystem(gpuInter+n, system, GPU));
         NCCLCHECK(ncclTopoNodeReqListInitSingle(nicEnds+n, search.paths[n].nodes.list+0));
@@ -264,8 +265,6 @@ ncclResult_t ncclTopoCompute(struct ncclTopoSystem* system, struct ncclTopoGraph
         search.reqs[n].nhops = ngpus;
         if (graph->pattern == NCCL_TOPO_PATTERN_RING) search.reqs[n].nhops++;
       }
-      search.nReqs = system->nodes[NET].count;
-      search.curWidth = PCI_WIDTH; search.width = 0;
       NCCLCHECK(ncclTopoSearchRec(&search));
       free(nicStart.list);
       free(nicEnd.list);
@@ -297,8 +296,6 @@ ncclResult_t ncclTopoCompute(struct ncclTopoSystem* system, struct ncclTopoGraph
         search.reqs[c].inter = gpuInter+c;
         search.reqs[c].nhops = graph->pattern == NCCL_TOPO_PATTERN_RING ? ngpus : ngpus-1;
       }
-      search.nReqs = maxChannels;
-      search.curWidth = maxWidth; search.width = 0;
       NCCLCHECK(ncclTopoSearchRec(&search));
       for (int c=0; c<maxChannels; c++) free(gpuInter[c].list);
 
