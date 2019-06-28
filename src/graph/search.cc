@@ -280,8 +280,6 @@ ncclResult_t ncclTopoCompute(struct ncclTopoSystem* system, struct ncclTopoGraph
       }
     }
   } else {
-    // FIXME : detect max channels depending on PCI/NVLink
-    maxChannels = MAXCHANNELS;
     // Intra-node
     if (graph->pattern == NCCL_TOPO_PATTERN_RING ||
         graph->pattern == NCCL_TOPO_PATTERN_TREE) {
