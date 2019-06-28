@@ -72,11 +72,14 @@ struct ncclTopoSearch {
   /* Current search */
   int req;
   int curWidth;
+  int interGpu;
+  int nvlinkOnly;
   struct ncclTopoSearchPath paths[NCCL_TOPO_SEARCH_MAX_REQS];
   /* Best solution */
   int nPaths;
   int width;
   struct ncclTopoSearchPath save[NCCL_TOPO_SEARCH_MAX_REQS];
+  int stop;
 };
 
 static inline int nodeInReqList(struct ncclTopoNodeReqList* l, struct ncclTopoNode* node) {
@@ -104,7 +107,9 @@ ncclResult_t ncclTopoCopyPath(struct ncclTopoSearchPath* dst, struct ncclTopoSea
   reqList->state[index] = 1; \
    nodeList->list[nodeList->count++] = n; \
     if (nodeList->count == req->nhops+1) search->req++; \
-     cmd; \
+     if (n->type == GPU) search->interGpu++; \
+       cmd; \
+     if (n->type == GPU) search->interGpu--; \
     if (nodeList->count == req->nhops+1) search->req--; \
    nodeList->count--; \
   reqList->state[index] = 0; \
@@ -140,8 +145,13 @@ ncclResult_t ncclTopoSearchRec(struct ncclTopoSearch* search) {
         search->width = search->curWidth;
       }
     }
-    if (search->req < search->nReqs && pathHops <= saveHops) {
+    // FIXME : we stop since we're optimal on NVLink, but we're not optimal on the NIC->GPU and GPU->NIC parts.
+    if (search->req == search->nReqs && search->nvlinkOnly) search->stop = 1;
+    // Don't follow non nvlink-only paths too far.
+    if (search->req < search->nReqs && pathHops <= saveHops && (search->req < 2 || search->nvlinkOnly)) {
       // Start a new path
+      int interGpu = search->interGpu;
+      search->interGpu = 0;
       for (int i=0; i<req->start->count; i++) {
         if (req->start->state[i] == 0) {
           struct ncclTopoNode* node = req->start->list[i];
@@ -149,11 +159,13 @@ ncclResult_t ncclTopoSearchRec(struct ncclTopoSearch* search) {
               NCCLCHECK(ncclTopoSearchRec(search)));
         }
       }
+      search->interGpu = interGpu;
     }
   } else {
     struct ncclTopoNode* node = linkList->count == 0 ? nodeList->list[0] // First node
       : linkList->list[linkList->count-1]->remNode; // Intermediate node
     int curWidth = search->curWidth;
+    int nvlinkOnly = search->nvlinkOnly;
 
     for (int l=0; l<NCCL_TOPO_MAX_LINKS && node->links[l].remNode; l++) {
       struct ncclTopoLink* link = node->links+l;
@@ -162,6 +174,9 @@ ncclResult_t ncclTopoSearchRec(struct ncclTopoSearch* search) {
       struct ncclTopoNode* remNode = link->remNode;
       int bridge = (remNode->type == CPU || remNode->type == PCI || remNode->type == NVS) ? 1 : 0;
       struct ncclTopoNodeReqList* reqList = req->nhops == nodeList->count ? req->end : req->inter;
+
+      if (search->interGpu && reqList->list[0]->type == GPU && link->type != LINK_NVL) search->nvlinkOnly = 0;
+
       int found = nodeInReqList(reqList, remNode);
       if (found != -1) { // Found a node in our path
         FOLLOW_NODE(nodeList, remNode, reqList, found,
@@ -171,7 +186,9 @@ ncclResult_t ncclTopoSearchRec(struct ncclTopoSearch* search) {
         FOLLOW_LINK(linkList, link, search->curWidth,
             NCCLCHECK(ncclTopoSearchRec(search)));
       }
+      search->nvlinkOnly = nvlinkOnly;
       search->curWidth = curWidth;
+      if (search->stop) break;
     }
   }
   return ncclSuccess;
@@ -184,6 +201,9 @@ ncclResult_t ncclTopoCompute(struct ncclTopoSystem* system, struct ncclTopoGraph
   search.nPaths = 0;
   search.width = 0;
   search.curWidth = system->maxWidth;
+  search.interGpu = 0;
+  search.nvlinkOnly = 1;
+  search.stop = 0;
   int maxChannels = search.nReqs = system->maxChannels;
 
   if (system->nodes[NET].count) {
