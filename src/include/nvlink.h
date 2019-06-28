@@ -103,8 +103,8 @@ static int getNvlinkGpu(const char* busId1, const char* busId2) {
       char* p = remoteProc.busId;
       char lowerId[NVML_DEVICE_PCI_BUS_ID_BUFFER_SIZE];
       for (int c=0; c<NVML_DEVICE_PCI_BUS_ID_BUFFER_SIZE; c++) {
-        if (p[c] == 0) break;
         lowerId[c] = tolower(p[c]);
+        if (p[c] == 0) break;
       }
 
       // Determine if the remote side is NVswitch or a GPU
@@ -115,8 +115,8 @@ static int getNvlinkGpu(const char* busId1, const char* busId2) {
           //TODO: we are making an assumption that all GPUs are connected to this switch
           //This assumption may change for future architectures
           nvswitch_links++;
-        } else if (type == ncclNvLinkDeviceGpu && busId2 == NULL) {
-          links++;
+        } else if (type == ncclNvLinkDeviceGpu) {
+          if (busId2 == NULL) links++;
         } else {
           // The NVLink is up but we couldn't find the PCI device on the other
           // side. Assume it's an NVswitch outside a VM.

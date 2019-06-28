@@ -130,8 +130,8 @@ ncclResult_t ncclTopoConnectNVLink(nvmlDevice_t* nvmlDevs, struct ncclTopoSystem
       char* p = remoteProc.busId;
       char lowerId[NVML_DEVICE_PCI_BUS_ID_BUFFER_SIZE];
       for (int c=0; c<NVML_DEVICE_PCI_BUS_ID_BUFFER_SIZE; c++) {
-        if (p[c] == 0) break;
         lowerId[c] = tolower(p[c]);
+        if (p[c] == 0) break;
       }
 
       enum ncclNvLinkDeviceType type;
@@ -151,7 +151,7 @@ ncclResult_t ncclTopoConnectNVLink(nvmlDevice_t* nvmlDevs, struct ncclTopoSystem
         if (type == ncclNvLinkDeviceUnknown) {
           // The NVLink is up but we couldn't find the PCI device on the other
           // side. Assume it's an NVswitch outside a VM.
-          INFO(NCCL_INIT, "Assuming NVLink is connected to NVswitch");
+          if (l == 0) INFO(NCCL_INIT, "%d/%d -> %s : Assuming NVLink is connected to NVswitch", r, l, lowerId);
         }
         if (nvsNode == NULL) { // Create nvswitch
           NCCLCHECK(ncclTopoCreateNode(system, &nvsNode, NVS, 0));
