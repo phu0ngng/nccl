@@ -95,11 +95,23 @@ ncclResult_t ncclTopoCreateNode(struct ncclTopoSystem* system, struct ncclTopoNo
 ncclResult_t ncclTopoConnectNVLink(nvmlDevice_t* nvmlDevs, struct ncclTopoSystem* system) {
   struct ncclTopoNode* nvsNode = NULL;
 
+  int minNvlinks = 6, minWidth = VOLTA_NVLINK_WIDTH;
   for (int r=0; r<system->nodes[GPU].count; r++) {
     int cudaMajor, cudaMinor;
     NCCLCHECK(wrapNvmlDeviceGetCudaComputeCapability(nvmlDevs[r], &cudaMajor, &cudaMinor));
-    int maxNvLinks = cudaMajor > 6 ? 6 : 4;
+    int maxNvLinks, width;
+    if (cudaMajor < 6) {
+      maxNvLinks = 0;
+      width = PCI_WIDTH;
+    } else if (cudaMajor == 6) {
+      maxNvLinks = 4;
+      width = PASCAL_NVLINK_WIDTH;
+    } else {
+      maxNvLinks = 6;
+      width = VOLTA_NVLINK_WIDTH;
+    }
 
+    int nvlinks = 0;
     for (int l=0; l<maxNvLinks; ++l) {
       // Check whether we can use this NVLink for P2P
       unsigned canP2P;
@@ -147,8 +159,13 @@ ncclResult_t ncclTopoConnectNVLink(nvmlDevice_t* nvmlDevs, struct ncclTopoSystem
         NCCLCHECK(ncclTopoConnectNodes(system->nodes[GPU].nodes+r, nvsNode, LINK_NVL, VOLTA_NVLINK_WIDTH, system));
         NCCLCHECK(ncclTopoConnectNodes(nvsNode, system->nodes[GPU].nodes+r, LINK_NVL, VOLTA_NVLINK_WIDTH, system));
       }
+      nvlinks++;
     }
+    minNvlinks = std::min(minNvlinks, nvlinks);
+    minWidth = std::min(minWidth, nvlinks ? width : PCI_WIDTH);
   }
+  system->maxChannels = minNvlinks ? minNvlinks : 1;
+  system->maxWidth = minWidth;
   return ncclSuccess;
 }
 
@@ -216,8 +233,8 @@ ncclResult_t ncclTopoCreatePciPath(struct ncclTopoSystem* system, struct ncclTop
   int numaId = getNumaId(path);
   for (int n=0; n<system->nodes[CPU].count; n++) {
     if (system->nodes[CPU].nodes[n].id == numaId) {
-      NCCLCHECK(ncclTopoConnectNodes(system->nodes[CPU].nodes+n, lastNode, LINK_PCI, PCI_WIDTH, system));
-      NCCLCHECK(ncclTopoConnectNodes(lastNode, system->nodes[CPU].nodes+n, LINK_PCI, PCI_WIDTH, system));
+      NCCLCHECK(ncclTopoConnectNodes(system->nodes[CPU].nodes+n, lastNode, LINK_PCI, PCI_CPU_WIDTH, system));
+      NCCLCHECK(ncclTopoConnectNodes(lastNode, system->nodes[CPU].nodes+n, LINK_PCI, PCI_CPU_WIDTH, system));
       return ncclSuccess;
     }
   }
@@ -375,7 +392,7 @@ ncclResult_t ncclTopoGetSystem(int nranks, int* nvmlIndexes, int* rankIndexes, s
   NCCLCHECK(ncclCalloc(&s, 1));
   NCCLCHECK(ncclTopoGetSystem(nranks, nvmlIndexes, rankIndexes, s, inter));
   NCCLCHECK(ncclTopoSortSystem(s));
-  INFO(NCCL_GRAPH, "================ Topology ================");
+  INFO(NCCL_GRAPH, "=== System : maxChannels %1d maxWidth %2d ===", s->maxChannels, s->maxWidth);
   char line[1024];
   for (int n=0; n<s->nodes[CPU].count; n++) NCCLCHECK(ncclTopoPrint(s->nodes[CPU].nodes+n, NULL, line, 0));
   INFO(NCCL_GRAPH, "==========================================");

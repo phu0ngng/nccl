@@ -11,11 +11,12 @@
 #include "nvlink.h"
 #include "net.h"
 
-#define PASCAL_NVLINK_WIDTH 2 // 17 GB/s
-#define VOLTA_NVLINK_WIDTH 2  // 22 GB/s
-#define PCI_WIDTH 1           // PCI Gen3 x16, 12GB/s
-#define QPI_WIDTH 1
-#define NET_WIDTH 1           // 100Gbit, 12GB/s
+#define PASCAL_NVLINK_WIDTH 17
+#define VOLTA_NVLINK_WIDTH 22
+#define PCI_WIDTH 12           // PCI Gen3 x16
+#define PCI_CPU_WIDTH 9
+#define QPI_WIDTH 6
+#define NET_WIDTH 12           // 100Gbit
 
 #define NCCL_TOPO_NODE_TYPES 6
 #define GPU 0
@@ -56,6 +57,8 @@ struct ncclTopoNodeSet {
 
 struct ncclTopoSystem {
   struct ncclTopoNodeSet nodes[NCCL_TOPO_NODE_TYPES];
+  int maxChannels;
+  int maxWidth;
 };
 
 #endif

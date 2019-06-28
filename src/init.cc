@@ -522,8 +522,8 @@ static ncclResult_t printGraph(struct ncclTopoGraph* graph, int localRanks) {
     sprintf(line, "%2d :", c);
     int offset = strlen(line);
     for (int i=0; i<localRanks; i++) { sprintf(line+offset, " %4d", graph->intra[localRanks*c+i]); offset += sizeof(" 0000")-1; }
+    INFO(NCCL_GRAPH, "%s", line);
   }
-  INFO(NCCL_GRAPH, "%s", line);
   return ncclSuccess;
 }
 
