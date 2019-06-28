@@ -81,14 +81,14 @@ static ncclResult_t connectRings(struct ncclComm* comm, int* ringRecv, int* ring
     for (int n=0; n<nNodes; n++) {
       int recvRank = recv[firstRanks[n]];
       int prevSendRank = send[firstRanks[(n-1+nNodes)%nNodes]];
-      prev[c*comm->nRanks+recvRank] = prevSendRank;
+      prev[recvRank] = prevSendRank;
       if (comm->rank == recvRank) {
         channel0->ring.prev = prevSendRank;
         channel1->ring.prev = prevSendRank;
       }
       int sendRank = send[firstRanks[n]];
       int nextRecvRank = recv[firstRanks[(n+1)%nNodes]];
-      next[c*comm->nRanks+sendRank] = nextRecvRank;
+      next[sendRank] = nextRecvRank;
       if (comm->rank == sendRank) {
         channel0->ring.next = nextRecvRank;
         channel1->ring.next = nextRecvRank;
