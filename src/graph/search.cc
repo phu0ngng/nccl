@@ -115,6 +115,8 @@ ncclResult_t ncclTopoSearchRec(struct ncclTopoSearch* search) {
   struct ncclTopoLinkList* linkList = &path->links;
   struct ncclTopoSearchReq* req = search->reqs+search->req;
 
+  if (search->req < search->nPaths && search->paths[search->req].links.count > search->save[search->req].links.count) return ncclSuccess;
+
   if (nodeList->count == 0) {
     int saveHops = 0, pathHops = 0;
     if (search->req) {
