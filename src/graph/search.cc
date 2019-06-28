@@ -116,16 +116,19 @@ ncclResult_t ncclTopoSearchRec(struct ncclTopoSearch* search) {
   struct ncclTopoSearchReq* req = search->reqs+search->req;
 
   if (nodeList->count == 0) {
-    if (search->req && search->req >= search->nPaths) { // Save new solution
-      int copy = 1;
-      if (search->curWidth == search->width && search->req == search->nPaths) {
-        // Copy if more paths, higher width, or less hops
-        int saveHops = 0;
-        for (int r=0; r<search->req; r++) saveHops += search->save[r].links.count;
-        int pathHops = 0;
-        for (int r=0; r<search->req; r++) pathHops += search->paths[r].links.count;
-        if (pathHops >= saveHops) copy = 0;
-      }
+    int saveHops = 0, pathHops = 0;
+    if (search->req) {
+      int copy = 0;
+
+      // If we found a shorter path, overwrite unconditionally.
+      for (int r=0; r<search->req; r++) saveHops += search->save[r].links.count;
+      for (int r=0; r<search->req; r++) pathHops += search->paths[r].links.count;
+      if (pathHops < saveHops) copy = 1;
+
+      // Also overwrite if we found more paths or a wider width.
+      if (search->req > search->nPaths) copy = 1;
+      else if (search->curWidth > search->width) copy = 1;
+
       if (copy) {
         for (int r=0; r<search->req; r++) {
           NCCLCHECK(ncclTopoCopyPath(search->save+r, search->paths+r));
@@ -134,7 +137,8 @@ ncclResult_t ncclTopoSearchRec(struct ncclTopoSearch* search) {
         search->width = search->curWidth;
       }
     }
-    if (search->req < search->nReqs) { // Start a new req
+    if (search->req < search->nReqs && pathHops <= saveHops) {
+      // Start a new path
       for (int i=0; i<req->start->count; i++) {
         if (req->start->state[i] == 0) {
           struct ncclTopoNode* node = req->start->list[i];
