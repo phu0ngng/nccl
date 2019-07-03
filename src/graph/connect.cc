@@ -29,14 +29,17 @@ ncclResult_t ncclTopoPreset(struct ncclComm* comm, int* firstRanks,
     channel->treeDn.up = -1;
     for (int i=0; i<NCCL_MAX_TREE_ARITY; i++) channel->treeDn.down[i] = -1;
 
+    int* ringIntra = ringGraph->intra+c*localRanks;
+    int* treeIntra = treeGraph->intra+c*localRanks;
+
     for (int i=0; i<localRanks; i++) {
-      if (ringGraph->intra[i] == rank) {
-        topoRanks->ringRecv[c] = ringGraph->intra[0];
-        topoRanks->ringSend[c] = ringGraph->intra[localRanks-1];
-        channel->ring.prev = (i == 0) ? -1 : ringGraph->intra[i-1];
-        channel->ring.next = (i == localRanks-1) ? -1 : ringGraph->intra[i+1];
+      if (ringIntra[i] == rank) {
+        topoRanks->ringRecv[c] = ringIntra[0];
+        topoRanks->ringSend[c] = ringIntra[localRanks-1];
+        channel->ring.prev = (i == 0) ? -1 : ringIntra[i-1];
+        channel->ring.next = (i == localRanks-1) ? -1 : ringIntra[i+1];
       }
-      if (treeGraph->intra[i] == rank) {
+      if (treeIntra[i] == rank) {
         int recvIndex = 0, sendIndex = treeGraph->pattern == NCCL_TOPO_PATTERN_TREE ? 0 : 1;
         int prev = (i-1+localRanks)%localRanks, next = (i+1)%localRanks;
 
@@ -45,10 +48,10 @@ ncclResult_t ncclTopoPreset(struct ncclComm* comm, int* firstRanks,
         int sym = treeGraph->pattern == NCCL_TOPO_PATTERN_SPLIT_TREE_LOOP ? 0 : 1;
 
         // Down tree is common
-        topoRanks->treeDnRecv[c] = treeGraph->intra[recvIndex];
-        topoRanks->treeDnSend[c] = treeGraph->intra[sendIndex];
-        channel->treeDn.up       = treeGraph->intra[prev];
-        channel->treeDn.down[0]  = treeGraph->intra[next];
+        topoRanks->treeDnRecv[c] = treeIntra[recvIndex];
+        topoRanks->treeDnSend[c] = treeIntra[sendIndex];
+        channel->treeDn.up       = treeIntra[prev];
+        channel->treeDn.down[0]  = treeIntra[next];
         // Up tree depends on the pattern
         topoRanks->treeUpRecv[c] = sym ? topoRanks->treeDnSend[c] : topoRanks->treeDnRecv[c];
         topoRanks->treeUpSend[c] = sym ? topoRanks->treeDnRecv[c] : topoRanks->treeDnSend[c];
