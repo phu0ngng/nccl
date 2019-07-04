@@ -9,6 +9,7 @@
 
 #include "nccl.h"
 #include "checks.h"
+#include "devcomm.h"
 #include <sys/mman.h>
 
 static inline ncclResult_t ncclCudaHostAlloc(void** ptr, void** devPtr, size_t size) {
