@@ -8,20 +8,13 @@
 #define NCCL_DEVICE_H_
 
 #include "nccl.h"
+#include "align.h"
 #include <stdint.h>
 
 #define NCCL_MAX_OPS 2048
 #define NCCL_STEPS 8
 
 typedef enum { ncclCollBroadcast, ncclCollReduce, ncclCollAllGather, ncclCollReduceScatter, ncclCollAllReduce, ncclCollCount } ncclColl_t;
-
-#define DIVUP(x, y) \
-    (((x)+(y)-1)/(y))
-#define ROUNDUP(x, y) \
-    (DIVUP((x), (y))*(y))
-
-#define ALIGN_SIZE(size, align) \
-  size = ((size + (align) - 1) / (align)) * (align);
 
 union ncclLLFifoLine {
   /* Flags have to be *after* data, because otherwise, an incomplete receive
