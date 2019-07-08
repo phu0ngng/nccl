@@ -674,6 +674,10 @@ static ncclResult_t initTransportsRank(struct ncclComm* comm, ncclUniqueId* comm
   NCCLCHECK(ncclCalloc(&rings, nranks*MAXCHANNELS));
 
   NCCLCHECK(ncclTopoPostset(comm, nodesFirstRank, allTopoRanks, rings));
+
+  // Might have been modified (i.e. channels being duplicated) -- reload.
+  nChannels = comm->nChannels;
+
   free(allTopoRanks);
   free(nodesFirstRank);
   free(allGather3Data);

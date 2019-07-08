@@ -63,11 +63,9 @@ ncclResult_t ncclTopoPreset(struct ncclComm* comm, int* firstRanks,
     topoRanks->ringNext[c] = channel->ring.next;
   }
   // Duplicate channels rings/trees
-  for (int c=0; c<nChannels; c++) {
-    struct ncclChannel* channel0 = comm->channels+c;
-    struct ncclChannel* channel1 = channel0+nChannels;
-    memcpy(channel1, channel0, sizeof(struct ncclChannel));
-  }
+  struct ncclChannel* channel0 = comm->channels;
+  struct ncclChannel* channel1 = channel0+nChannels;
+  memcpy(channel1, channel0, nChannels*sizeof(struct ncclChannel));
   return ncclSuccess;
 }
 
@@ -203,9 +201,18 @@ ncclResult_t ncclTopoPostset(struct ncclComm* comm, int* firstRanks, struct nccl
     }
   }
 
+  // Connect rings and trees. This should also duplicate the channels.
   NCCLCHECK(connectRings(comm, ringRecv, ringSend, ringPrev, ringNext, firstRanks));
   NCCLCHECK(connectTrees(comm, treeUpRecv, treeUpSend, treeDnRecv, treeDnSend, firstRanks));
 
+  // Duplicate ringPrev/ringNext for ncclBuildRing
+  memcpy(ringPrev+nChannels*nranks, ringPrev, nChannels*nranks*sizeof(int));
+  memcpy(ringNext+nChannels*nranks, ringNext, nChannels*nranks*sizeof(int));
+
+  // Duplication should be complete now
+  comm->nChannels *= 2;
+
+  // Create rings array and check all is fine
   NCCLCHECK(ncclBuildRings(comm->nChannels, rings, comm->rank, comm->nRanks, ringPrev, ringNext));
 
   free(ringRecv);
