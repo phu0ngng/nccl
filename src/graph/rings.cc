@@ -75,15 +75,6 @@ void dumpLine(int* values, int nranks, const char* prefix) {
   INFO(NCCL_INIT,"%s", line);
 }
 
-#ifdef __PPC__
-// Make the default NCCL_MIN_NRINGS=4 for IBM/Power nodes
-#define DEFAULT_MIN_NRINGS 4
-#else
-#define DEFAULT_MIN_NRINGS 0
-#endif
-NCCL_PARAM(MinNrings, "MIN_NRINGS", DEFAULT_MIN_NRINGS);
-NCCL_PARAM(MaxNrings, "MAX_NRINGS", 0);
-
 /* Users can force the number of threads with an environment variable */
 NCCL_PARAM(Nthreads, "NTHREADS", -2);
 ncclResult_t getEnvThreads(int* nthreads) {

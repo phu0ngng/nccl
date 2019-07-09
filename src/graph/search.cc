@@ -279,7 +279,7 @@ ncclResult_t ncclTopoCompute(struct ncclTopoSystem* system, struct ncclTopoGraph
         search.maxWidth = search.curWidth = PCI_WIDTH;
 	search.stop = 0;
         NCCLCHECK(ncclTopoSearchRec(&search));
-        printf("Trying to find loops for %d paths ...\n", search.nReqs);
+        printf("Trying to find loops for %d paths speed %d  ...\n", search.nReqs, search.maxWidth);
         NCCLCHECK(ncclFollowPaths(nicPaths, search.nReqs, -width));
         printf("Found %d paths.\n", search.nPaths);
 

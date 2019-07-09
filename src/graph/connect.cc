@@ -9,6 +9,7 @@
 #include "utils.h"
 #include "trees.h"
 #include "rings.h"
+#include "param.h"
 
 /******************************************************************/
 /********************* Internode connection ***********************/
@@ -175,6 +176,36 @@ static ncclResult_t connectTrees(struct ncclComm* comm, int* treeUpRecv, int* tr
   return ncclSuccess;
 }
 
+// Legacy naming
+NCCL_PARAM(MinNrings, "MIN_NRINGS", -2);
+NCCL_PARAM(MaxNrings, "MAX_NRINGS", -2);
+// New naming
+NCCL_PARAM(MinNchannels, "MIN_NCHANNELS", -2);
+NCCL_PARAM(MaxNchannels, "MAX_NCHANNELS", -2);
+
+int ncclMinNchannels() {
+  int minNchannels = 0;
+  if (ncclParamMinNrings() != -2) minNchannels = ncclParamMinNrings();
+  if (ncclParamMinNchannels() != -2) minNchannels = ncclParamMinNchannels();
+  if (minNchannels > MAXCHANNELS) {
+    WARN("User asked for a minimum of %d channels, limiting to %d\n", minNchannels, MAXCHANNELS);
+    minNchannels = MAXCHANNELS;
+  }
+  if (minNchannels < 0) minNchannels = 0;
+  return minNchannels;
+}
+int ncclMaxNchannels() {
+  int maxNchannels = MAXCHANNELS;
+  if (ncclParamMaxNrings() != -2) maxNchannels = ncclParamMaxNrings();
+  if (ncclParamMaxNchannels() != -2) maxNchannels = ncclParamMaxNchannels();
+  if (maxNchannels > MAXCHANNELS) maxNchannels = MAXCHANNELS;
+  if (maxNchannels < 1) {
+    WARN("User asked for a maximum of %d channels, setting it to 1\n", maxNchannels);
+    maxNchannels = 1;
+  }
+  return maxNchannels;
+}
+
 ncclResult_t ncclTopoPostset(struct ncclComm* comm, int* firstRanks, struct ncclTopoRanks** allTopoRanks, int* rings) {
   // Gather data from all ranks
   int *ringRecv, *ringSend, *ringPrev, *ringNext, *treeUpRecv, *treeUpSend, *treeDnRecv,*treeDnSend;
@@ -210,10 +241,21 @@ ncclResult_t ncclTopoPostset(struct ncclComm* comm, int* firstRanks, struct nccl
   memcpy(ringNext+nChannels*nranks, ringNext, nChannels*nranks*sizeof(int));
 
   // Duplication should be complete now
-  comm->nChannels *= 2;
+  nChannels = comm->nChannels = std::min(MAXCHANNELS,nChannels*2);
+
+  // Honor NCCL_MIN_NRINGS/NCCL_MAX_NRINGS.
+  // We permit combining max, then min, to only use the first channels, then duplicate them.
+  nChannels = comm->nChannels = std::min((int)ncclMaxNchannels(), nChannels);
+  int c;
+  for (c=nChannels; c<ncclMinNchannels(); c++) {
+    memcpy(ringPrev+c*nranks, ringPrev+(c-nChannels)*nranks, nranks*sizeof(int));
+    memcpy(ringNext+c*nranks, ringNext+(c-nChannels)*nranks, nranks*sizeof(int));
+    memcpy(comm->channels+c, comm->channels+c-nChannels, sizeof(struct ncclChannel));
+  }
+  nChannels = comm->nChannels = c;
 
   // Create rings array and check all is fine
-  NCCLCHECK(ncclBuildRings(comm->nChannels, rings, comm->rank, comm->nRanks, ringPrev, ringNext));
+  NCCLCHECK(ncclBuildRings(nChannels, rings, comm->rank, comm->nRanks, ringPrev, ringNext));
 
   free(ringRecv);
   free(ringSend);
