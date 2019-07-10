@@ -87,6 +87,27 @@ static inline int nodeInReqList(struct ncclTopoNodeReqList* l, struct ncclTopoNo
   return -1;
 }
 
+// Check that we can use the link to connect the previous node to the next node.
+// In particular we don't want to go through PCI if there is NVLink connectivity
+// between 2 GPUs.
+static int linkCheck(struct ncclTopoNode* prevNode, struct ncclTopoLink* link) {
+  struct ncclTopoNode* nextNode = link->remNode;
+  if (prevNode->type != GPU || nextNode->type != GPU) return 1;
+  if (link->type == LINK_NVL) return 1;
+  for (int l=0; l<NCCL_TOPO_MAX_LINKS && prevNode->links[l].remNode; l++) {
+    struct ncclTopoLink* link = prevNode->links+l;
+    if (link->type != LINK_NVL) continue;
+    struct ncclTopoNode* remNode = link->remNode;
+    if (remNode == nextNode) return 0;
+    if (remNode->type == NVS) {
+      for (int l=0; l<NCCL_TOPO_MAX_LINKS && nextNode->links[l].remNode; l++) {
+        if (nextNode->links[l].remNode == remNode) return 0;
+      }
+    }
+  }
+  return 1;
+}
+
 #define FOLLOW_LINK(linkList, l, curWidth, cmd) do { \
   l->width -= curWidth; \
    linkList->list[linkList->count++] = l; \
@@ -166,9 +187,11 @@ ncclResult_t ncclTopoSearchRec(struct ncclTopoSearch* search) {
 
       int found = nodeInReqList(reqList, remNode);
       if (found != -1) { // Found a node in our path
-        FOLLOW_NODE(nodeList, remNode, reqList, found,
+        if (linkCheck(nodeList->list[nodeList->count-1], link)) {
+          FOLLOW_NODE(nodeList, remNode, reqList, found,
             FOLLOW_LINK(linkList, link, search->curWidth,
               NCCLCHECK(ncclTopoSearchRec(search))));
+        }
       } else if (bridge) { // We can follow this as well
         FOLLOW_LINK(linkList, link, search->curWidth,
             NCCLCHECK(ncclTopoSearchRec(search)));
