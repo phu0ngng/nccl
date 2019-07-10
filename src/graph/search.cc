@@ -292,8 +292,7 @@ ncclResult_t ncclTopoCompute(struct ncclTopoSystem* system, struct ncclTopoGraph
         NCCLCHECK(ncclTopoNodeReqListInitSingle(gpuStart+n, nicPaths[n].nodes.list+2));
         NCCLCHECK(ncclTopoNodeReqListInitSingle(gpuEnd+n, nicPaths[n].nodes.list+1));
         gpuInter[n].state[nicPaths[n].nodes.list[2]->id] = 1;
-        if (graph->pattern == NCCL_TOPO_PATTERN_SPLIT_TREE_LOOP)
-          gpuInter[n].state[nicPaths[n].nodes.list[1]->id] = 1;
+        gpuInter[n].state[nicPaths[n].nodes.list[1]->id] = 1;
         search.reqs[n].start = gpuStart+n;
         search.reqs[n].end = graph->pattern == NCCL_TOPO_PATTERN_SPLIT_TREE_LOOP ? gpuEnd+n : gpuInter+n;
         search.reqs[n].inter = gpuInter+n;
