@@ -73,6 +73,7 @@ struct ncclTopoSearch {
   int req;
   int curWidth;
   int maxWidth;
+  int minWidth;
   struct ncclTopoSearchPath paths[NCCL_TOPO_SEARCH_MAX_REQS];
   /* Best solution */
   int nPaths;
@@ -134,7 +135,7 @@ ncclResult_t ncclTopoSearchRec(struct ncclTopoSearch* search) {
       }
     }
     if ((search->req == search->nReqs) && (search->width == search->maxWidth) && (pathHops == optimalHops)) search->stop = 1;
-    if (search->req < search->nReqs && pathHops <= saveHops) {
+    if (search->req < search->nReqs && pathHops <= saveHops && (search->req < 2 || search->curWidth >= search->minWidth)) {
       // Start a new path
       for (int i=0; i<req->start->count; i++) {
         if (req->start->state[i] == 0) {
@@ -202,15 +203,28 @@ ncclResult_t ncclFollowPaths(struct ncclTopoSearchPath* paths, int nPaths, int w
   return ncclSuccess;
 }
 
-ncclResult_t ncclTopoCompute(struct ncclTopoSystem* system, struct ncclTopoGraph* graph) {
+ncclResult_t ncclTopoCompute(struct ncclTopoSystem* system, struct ncclTopoGraph* graph, struct ncclTopoGraph* baseGraph) {
   int ngpus = system->nodes[GPU].count;
   struct ncclTopoSearch search;
   search.req = 0;
   search.nPaths = 0;
   search.width = 0;
   search.maxWidth = search.curWidth = system->maxWidth;
+  search.minWidth = 0;
   search.stop = 0;
   int maxChannels = search.nReqs = system->maxChannels;
+
+  if (baseGraph && baseGraph->pattern == NCCL_TOPO_PATTERN_SPLIT_TREE_LOOP && graph->pattern == NCCL_TOPO_PATTERN_RING) {
+    // Do not recompute rings, just convert the SPLIT_TREE_LOOP into a RING, shifting ranks by one.
+    INFO(NCCL_GRAPH, "Converting %d channels from split tree loop to ring\n", baseGraph->nChannels);
+    graph->nChannels = baseGraph->nChannels;
+    for (int c=0; c<graph->nChannels; c++) {
+      for (int i=0; i<ngpus; i++) {
+        graph->intra[ngpus*c+i] = baseGraph->intra[ngpus*c+((ngpus-i)%ngpus)];
+      }
+    }
+    return ncclSuccess;
+  }
 
   if (system->nodes[NET].count) {
     maxChannels = search.nReqs = system->nodes[NET].count;
@@ -276,7 +290,10 @@ ncclResult_t ncclTopoCompute(struct ncclTopoSystem* system, struct ncclTopoGraph
         search.req = 0;
         search.nPaths = 0;
         search.width = 0;
-        search.maxWidth = search.curWidth = PCI_WIDTH;
+        // Only use NVLink to close the loop
+        search.maxWidth = search.curWidth = PCI_WIDTH+1;
+	// Only explore 2+ rings with NVLink
+	search.minWidth = PCI_WIDTH+1;
 	search.stop = 0;
         NCCLCHECK(ncclTopoSearchRec(&search));
         printf("Trying to find loops for %d paths speed %d  ...\n", search.nReqs, search.maxWidth);
@@ -357,6 +374,8 @@ ncclResult_t ncclTopoCompute(struct ncclTopoSystem* system, struct ncclTopoGraph
         search.reqs[c].inter = gpuInter+c;
         search.reqs[c].nhops = graph->pattern == NCCL_TOPO_PATTERN_RING ? ngpus : ngpus-1;
       }
+      // Only explore 2+ rings with NVLink
+      search.minWidth = system->maxWidth;
       NCCLCHECK(ncclTopoSearchRec(&search));
       for (int c=0; c<maxChannels; c++) free(gpuInter[c].list);
 
@@ -397,7 +416,7 @@ ncclResult_t ncclTopoCompute(struct ncclTopoSystem* system, struct ncclTopoGraph
     else if (graph->crossNic == 2) newGraph.crossNic = 1;
     else return ncclSuccess;
 
-    NCCLCHECK(ncclTopoCompute(system, &newGraph));
+    NCCLCHECK(ncclTopoCompute(system, &newGraph, baseGraph));
     if (newGraph.nChannels > graph->nChannels) {
       INFO(NCCL_GRAPH, "TopoCompute : Pattern/XNic %d/%d better than %d/%d (%d channels vs %d)", newGraph.pattern, newGraph.crossNic, graph->pattern, graph->crossNic, newGraph.nChannels, graph->nChannels);
       memcpy(graph, &newGraph, sizeof(newGraph));

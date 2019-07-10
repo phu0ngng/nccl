@@ -57,7 +57,7 @@ struct ncclTopoGraph {
   int intra[MAXCHANNELS*NCCL_TOPO_MAX_NODES];
   int nChannels;
 };
-ncclResult_t ncclTopoCompute(struct ncclTopoSystem* system, struct ncclTopoGraph* graph);
+ncclResult_t ncclTopoCompute(struct ncclTopoSystem* system, struct ncclTopoGraph* graph, struct ncclTopoGraph* baseGraph);
 
 struct ncclTopoRanks {
   int ringRecv[MAXCHANNELS];

@@ -600,12 +600,12 @@ static ncclResult_t initTransportsRank(struct ncclComm* comm, ncclUniqueId* comm
   struct ncclTopoGraph treeGraph;
   treeGraph.pattern = NCCL_TOPO_PATTERN_SPLIT_TREE_LOOP;
   treeGraph.crossNic = ncclParamCrossNic();
-  NCCLCHECK(ncclTopoCompute(comm->topo, &treeGraph));
+  NCCLCHECK(ncclTopoCompute(comm->topo, &treeGraph, NULL));
   NCCLCHECK(printGraph(&treeGraph, comm->localRanks));
   struct ncclTopoGraph ringGraph;
   ringGraph.pattern = NCCL_TOPO_PATTERN_RING;
   ringGraph.crossNic = ncclParamCrossNic();
-  NCCLCHECK(ncclTopoCompute(comm->topo, &ringGraph));
+  NCCLCHECK(ncclTopoCompute(comm->topo, &ringGraph, &treeGraph));
   NCCLCHECK(printGraph(&ringGraph, comm->localRanks));
   int nChannels = std::min(treeGraph.nChannels, ringGraph.nChannels);
 
