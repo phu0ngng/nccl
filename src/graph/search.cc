@@ -94,13 +94,13 @@ static int linkCheck(struct ncclTopoNode* prevNode, struct ncclTopoLink* link) {
   struct ncclTopoNode* nextNode = link->remNode;
   if (prevNode->type != GPU || nextNode->type != GPU) return 1;
   if (link->type == LINK_NVL) return 1;
-  for (int l=0; l<NCCL_TOPO_MAX_LINKS && prevNode->links[l].remNode; l++) {
+  for (int l=0; l<prevNode->nlinks; l++) {
     struct ncclTopoLink* link = prevNode->links+l;
     if (link->type != LINK_NVL) continue;
     struct ncclTopoNode* remNode = link->remNode;
     if (remNode == nextNode) return 0;
     if (remNode->type == NVS) {
-      for (int l=0; l<NCCL_TOPO_MAX_LINKS && nextNode->links[l].remNode; l++) {
+      for (int l=0; l<nextNode->nlinks; l++) {
         if (nextNode->links[l].remNode == remNode) return 0;
       }
     }
@@ -171,9 +171,9 @@ ncclResult_t ncclTopoSearchRec(struct ncclTopoSearch* search) {
       : linkList->list[linkList->count-1]->remNode; // Intermediate node
     int curWidth = search->curWidth;
 
-    for (int l=0; l<NCCL_TOPO_MAX_LINKS && node->links[l].remNode; l++) {
+    for (int l=0; l<node->nlinks; l++) {
       struct ncclTopoLink* link = node->links+l;
-      if (link == NULL || link->width == 0 || link->width < search->width) continue;
+      if (link->width == 0 || link->width < search->width) continue;
       // Do not go through the same link twice in the same direction.
       int oldLink = 0;
       for (int ol=0; ol<linkList->count; ol++) {

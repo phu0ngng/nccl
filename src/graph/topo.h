@@ -47,6 +47,7 @@ struct ncclTopoNode {
   int type;
   int id;
   int rank;
+  int nlinks;
   struct ncclTopoLink links[NCCL_TOPO_MAX_LINKS];
 };
 

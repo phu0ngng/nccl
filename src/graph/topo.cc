@@ -64,19 +64,13 @@ ncclResult_t getCudaPath(int cudaDev, char** path) {
 ncclResult_t ncclTopoConnectNodes(struct ncclTopoNode* node, struct ncclTopoNode* remNode, int type, int width, struct ncclTopoSystem* system) {
   // Aggregate links into higher width for NVLink
   struct ncclTopoLink* link;
-  for (int l=0; l<NCCL_TOPO_MAX_LINKS; l++) {
-    link = node->links+l;
-    if (link->remNode == NULL) break;
-    if (link->remNode == remNode) {
-      if (link->type == type) {
-        link->width += width;
-        return ncclSuccess;
-      }
-    }
+  for (link = node->links; link->remNode; link++) {
+    if (link->remNode == remNode && link->type == type) break;
   }
+  if (link->remNode == NULL) node->nlinks++;
   link->type = type;
-  link->width = width;
   link->remNode = remNode;
+  link->width += width;
   return ncclSuccess;
 }
 
@@ -343,9 +337,8 @@ ncclResult_t ncclTopoSort(struct ncclTopoNode* node, struct ncclTopoNode* upNode
   }
 
   // Recursively sort the PCI tree
-  for (int l=0; l<NCCL_TOPO_MAX_LINKS; l++) {
+  for (int l=0; l<node->nlinks; l++) {
     struct ncclTopoLink* link = node->links+l;
-    if (link->remNode == NULL) break;
     if (link->type == LINK_PCI && link->remNode != upNode) NCCLCHECK(ncclTopoSort(link->remNode, node));
   }
   return ncclSuccess;
@@ -371,9 +364,9 @@ ncclResult_t ncclTopoPrint(struct ncclTopoNode* node, struct ncclTopoNode* prevN
   }
   for (int i=0; i<offset; i++) line[i] = ' ';
 
-  for (int l=0; l<NCCL_TOPO_MAX_LINKS; l++) {
+  for (int l=0; l<node->nlinks; l++) {
     struct ncclTopoLink* link = node->links+l;
-    if (link->remNode && link->remNode != prevNode) {
+    if (link->remNode != prevNode) {
       sprintf(line+offset, "+ %s[%2d] - ", topoLinkTypeStr[link->type], link->width);
       int nextOffset = strlen(line);
       if (link->type == LINK_PCI) {
