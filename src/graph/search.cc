@@ -254,7 +254,6 @@ ncclResult_t ncclTopoCompute(struct ncclTopoSystem* system, struct ncclTopoGraph
         search.reqs[n].inter = gpuInter+n;
         search.reqs[n].nhops = 3;
       }
-      printf("Looking for nic paths ...\n");
       NCCLCHECK(ncclTopoSearchRec(&search));
       free(nicStart.list);
       free(nicEnd.list);
@@ -263,7 +262,6 @@ ncclResult_t ncclTopoCompute(struct ncclTopoSystem* system, struct ncclTopoGraph
       int width = search.width;
       struct ncclTopoSearchPath nicPaths[NCCL_TOPO_SEARCH_MAX_REQS];
       memcpy(nicPaths, search.save, nPaths*sizeof(struct ncclTopoSearchPath));
-      printf("Done. Found %d paths speed %d\n", nPaths, width);
 
       // Then find GPU loops that go with those paths.
       for (int n=0; n<nPaths; n++) {
@@ -273,10 +271,6 @@ ncclResult_t ncclTopoCompute(struct ncclTopoSystem* system, struct ncclTopoGraph
         gpuInter[n].state[nicPaths[n].nodes.list[2]->id] = 1;
         if (graph->pattern == NCCL_TOPO_PATTERN_SPLIT_TREE_LOOP)
           gpuInter[n].state[nicPaths[n].nodes.list[1]->id] = 1;
-        for (int i=0; i<ngpus; i++) {
-          printf(" %d(%d)", gpuInter[n].list[i]->id, gpuInter[n].state[i]);
-        }
-        printf("\n");
         search.reqs[n].start = gpuStart+n;
         search.reqs[n].end = graph->pattern == NCCL_TOPO_PATTERN_SPLIT_TREE_LOOP ? gpuEnd+n : gpuInter+n;
         search.reqs[n].inter = gpuInter+n;
@@ -296,9 +290,7 @@ ncclResult_t ncclTopoCompute(struct ncclTopoSystem* system, struct ncclTopoGraph
 	search.minWidth = PCI_WIDTH+1;
 	search.stop = 0;
         NCCLCHECK(ncclTopoSearchRec(&search));
-        printf("Trying to find loops for %d paths speed %d  ...\n", search.nReqs, search.maxWidth);
         NCCLCHECK(ncclFollowPaths(nicPaths, search.nReqs, -width));
-        printf("Found %d paths.\n", search.nPaths);
 
         if (search.nPaths < search.nReqs) search.nReqs--;
         else break;
