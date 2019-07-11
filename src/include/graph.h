@@ -54,6 +54,7 @@ ncclResult_t ncclTopoGetSystem(int nranks, int* nvmlIndexes, int* rankIndexes, s
 struct ncclTopoGraph {
   int pattern;
   int crossNic;
+  int speed;
   int intra[MAXCHANNELS*NCCL_TOPO_MAX_NODES];
   int nChannels;
 };

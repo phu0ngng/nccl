@@ -241,6 +241,7 @@ ncclResult_t ncclTopoCompute(struct ncclTopoSystem* system, struct ncclTopoGraph
     // Do not recompute rings, just convert the SPLIT_TREE_LOOP into a RING, shifting ranks by one.
     INFO(NCCL_GRAPH, "Converting %d channels from split tree loop to ring\n", baseGraph->nChannels);
     graph->nChannels = baseGraph->nChannels;
+    graph->speed = baseGraph->speed;
     for (int c=0; c<graph->nChannels; c++) {
       for (int i=0; i<ngpus; i++) {
         graph->intra[ngpus*c+i] = baseGraph->intra[ngpus*c+((ngpus-i)%ngpus)];
@@ -322,6 +323,7 @@ ncclResult_t ncclTopoCompute(struct ncclTopoSystem* system, struct ncclTopoGraph
 
       // Save result into graph -> inter/intra
       graph->nChannels = search.nPaths;
+      graph->speed = search.width;
       for (int c=0; c<graph->nChannels; c++) {
         graph->intra[ngpus*c] = nicPaths[c].nodes.list[1]->rank;
         graph->intra[ngpus*c+1] = nicPaths[c].nodes.list[2]->rank;
@@ -364,6 +366,7 @@ ncclResult_t ncclTopoCompute(struct ncclTopoSystem* system, struct ncclTopoGraph
 
       // Save result into graph -> inter/intra
       graph->nChannels = search.nPaths;
+      graph->speed = search.width;
       for (int c=0; c<graph->nChannels; c++) {
         for (int i=0; i<ngpus; i++) {
           graph->intra[ngpus*c+i] = search.save[c].nodes.list[i+1]->rank;
@@ -395,6 +398,7 @@ ncclResult_t ncclTopoCompute(struct ncclTopoSystem* system, struct ncclTopoGraph
 
       // Save result into graph -> inter/intra
       graph->nChannels = search.nPaths;
+      graph->speed = search.width;
       for (int c=0; c<graph->nChannels; c++) {
         for (int i=0; i<ngpus; i++) {
           graph->intra[ngpus*c+i] = search.save[c].nodes.list[i]->rank;
@@ -431,8 +435,8 @@ ncclResult_t ncclTopoCompute(struct ncclTopoSystem* system, struct ncclTopoGraph
     else return ncclSuccess;
 
     NCCLCHECK(ncclTopoCompute(system, &newGraph, baseGraph));
-    if (newGraph.nChannels > graph->nChannels) {
-      INFO(NCCL_GRAPH, "TopoCompute : Pattern/XNic %d/%d better than %d/%d (%d channels vs %d)", newGraph.pattern, newGraph.crossNic, graph->pattern, graph->crossNic, newGraph.nChannels, graph->nChannels);
+    if (newGraph.nChannels > graph->nChannels || (newGraph.nChannels == graph->nChannels && newGraph.speed > graph->speed)) {
+      INFO(NCCL_GRAPH, "TopoCompute : Pattern/XNic %d/%d better than %d/%d (%d/%d channels vs %d/%d)", newGraph.pattern, newGraph.crossNic, graph->pattern, graph->crossNic, newGraph.nChannels, newGraph.speed, graph->nChannels, graph->speed);
       memcpy(graph, &newGraph, sizeof(newGraph));
     }
   }
