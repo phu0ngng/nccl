@@ -276,21 +276,25 @@ ncclResult_t ncclTopoConnectPCI(nvmlDevice_t* nvmlDevs, struct ncclTopoSystem* s
       int pciId;
       // Use "strlen(path)-1" to remove trailing subdevice and merge multi-port cards into one
       NCCLCHECK(pciHexToInt(path, strlen(path)-2, 0, &pciId));
+      int found = 0;
       for (int n=0; n<system->nodes[NIC].count; n++) {
         if (system->nodes[NIC].nodes[n].id == pciId) {
-          // Found our NIC. Attach and stop since the rest should already be connected
+          // Found our NIC. Attach to it.
           NCCLCHECK(ncclTopoConnectNodes(system->nodes[NIC].nodes+n, netNode, LINK_NET, NET_WIDTH, system));
           NCCLCHECK(ncclTopoConnectNodes(netNode, system->nodes[NIC].nodes+n, LINK_NET, NET_WIDTH, system));
-          return ncclSuccess;
+         found = 1;
+         break;
         }
       }
-      struct ncclTopoNode* nicNode;
-      NCCLCHECK(ncclTopoCreateNode(system, &nicNode, NIC, pciId));
-      NCCLCHECK(ncclTopoConnectNodes(nicNode, netNode, LINK_NET, NET_WIDTH, system));
-      NCCLCHECK(ncclTopoConnectNodes(netNode, nicNode, LINK_NET, NET_WIDTH, system));
+      if (!found) {
+        struct ncclTopoNode* nicNode;
+        NCCLCHECK(ncclTopoCreateNode(system, &nicNode, NIC, pciId));
+        NCCLCHECK(ncclTopoConnectNodes(nicNode, netNode, LINK_NET, NET_WIDTH, system));
+        NCCLCHECK(ncclTopoConnectNodes(netNode, nicNode, LINK_NET, NET_WIDTH, system));
 
-      // Create the PCI path
-      NCCLCHECK(ncclTopoCreatePciPath(system, nicNode, path));
+        // Create the PCI path
+        NCCLCHECK(ncclTopoCreatePciPath(system, nicNode, path));
+      }
       free(path);
     }
   }
