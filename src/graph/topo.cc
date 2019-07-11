@@ -296,6 +296,7 @@ ncclResult_t ncclTopoConnectPCI(nvmlDevice_t* nvmlDevs, struct ncclTopoSystem* s
         NCCLCHECK(ncclTopoCreatePciPath(system, nicNode, path));
       }
       free(path);
+      system->maxChannels = std::max(system->maxChannels, netDevCount);
     }
   }
 
