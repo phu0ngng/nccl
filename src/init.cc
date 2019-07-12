@@ -154,6 +154,7 @@ ncclResult_t initNet() {
 NCCL_PARAM(LlThreshold, "LL_THRESHOLD", -2);
 NCCL_PARAM(ThreadThreshold, "THREAD_THRESHOLD", -2);
 NCCL_PARAM(TreeThreshold, "TREE_THRESHOLD", -2);
+NCCL_PARAM(CollNetDisable, "COLLNET_DISABLE", 0);
 
 int ncclThreadThreshold(int minCompCap, int multiNode) {
   int threshold = ncclParamThreadThreshold();
@@ -936,10 +937,12 @@ static ncclResult_t initTransportsRank(struct ncclComm* comm, ncclUniqueId* comm
   if (comm->treeThreshold == -2)
     NCCLCHECK(ncclTreeThreshold(nnodes, comm->nRanks, comm->nChannels, &comm->treeThreshold));
 
+  int collNetDisable = ncclParamCollNetDisable();
+
   // Connect with prev/next for each ring
   struct ncclConnect *connect;
   NCCLCHECK(ncclCalloc(&connect, 2));
-  int collNetSetupCond = (nnodes > 1 && comm->treeThreshold > 0 && collNetSupport()) ? 1 : 0;
+  int collNetSetupCond = (nnodes > 1 && comm->treeThreshold > 0 && collNetDisable != 1 && collNetSupport()) ? 1 : 0;
   int collNetSetupFail = 0;
   for (int r=0; r<nrings; r++) {
     struct ncclChannel* channel = comm->channels+r;
