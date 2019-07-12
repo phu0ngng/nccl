@@ -26,9 +26,9 @@ static int ncclNetNDev;
 #define NET_BITS_PER_IF_MASK ((1<<NET_BITS_PER_IF)-1)
 static_assert(sizeof(uint64_t)*8 >= NET_MAX_IFS*NET_BITS_PER_IF, "NET_MAX_IFS*NET_BITS_PER_IF must fit in 64 bits");
 static uint64_t getScores(short* distances, int ndev) {
-  uint64_t scores = 0;
+  uint64_t scores = 0ULL;
   for (int d=0; d<ndev; d++) {
-    int score = 1 + PATH_SYS - distances[d];
+    uint64_t score = 1 + PATH_SYS - distances[d];
     // Keep 3 bits of score info per dev
     scores |= ((score & NET_BITS_PER_IF_MASK)<<(NET_BITS_PER_IF*d));
   }
