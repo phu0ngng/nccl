@@ -616,7 +616,10 @@ static ncclResult_t initTransportsRank(struct ncclComm* comm, ncclUniqueId* comm
 
   // Get rings and trees
   struct ncclTopoGraph treeGraph;
-  treeGraph.pattern = NCCL_TOPO_PATTERN_SPLIT_TREE_LOOP;
+  // FIXME : The tree loop cannot be used currently for LL128 because we have
+  // a single FIFO for both treeUp and treeDn and both are used concurrently.
+  //treeGraph.pattern = NCCL_TOPO_PATTERN_SPLIT_TREE_LOOP;
+  treeGraph.pattern = NCCL_TOPO_PATTERN_SPLIT_TREE;
   treeGraph.crossNic = ncclParamCrossNic();
   NCCLCHECK(ncclTopoCompute(comm->topo, &treeGraph, NULL));
   NCCLCHECK(printGraph(&treeGraph, comm->localRanks));
@@ -672,7 +675,7 @@ static ncclResult_t initTransportsRank(struct ncclComm* comm, ncclUniqueId* comm
     if (enable) {
       comm->llThreshold = 0;
       comm->ll128Threshold = 0x7fffffffffffffff;
-      comm->treeThreshold = 0x7fffffffffffffff;
+      if (comm->nNodes > 1 && comm->treeThreshold == -2) comm->treeThreshold = 0x7fffffffffffffff;
     }
   }
 
