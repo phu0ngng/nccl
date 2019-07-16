@@ -38,6 +38,7 @@ union ncclLLFifoLine {
   int4 i4;
 };
 
+#define WARP_SIZE 32
 #define NCCL_MAX_NTHREADS 512
 #define NCCL_LL_MAX_NTHREADS NCCL_MAX_NTHREADS
 #define NCCL_LL_LINES_PER_THREAD 8

@@ -9,7 +9,6 @@
 #include "channel.h"
 #include "param.h"
 #include "nvmlwrap.h"
-#include "rings.h"
 #include "bootstrap.h"
 #include "transport.h"
 #include "group.h"
@@ -136,6 +135,7 @@ ncclResult_t initNet() {
   return ncclSuccess;
 }
 
+NCCL_PARAM(Nthreads, "NTHREADS", -2);
 NCCL_PARAM(LlThreshold, "LL_THRESHOLD", -2);
 NCCL_PARAM(ThreadThreshold, "THREAD_THRESHOLD", -2);
 NCCL_PARAM(TreeThreshold, "TREE_THRESHOLD", -2);
@@ -153,6 +153,24 @@ int ncclThreadThreshold(int minCompCap, int multiNode) {
     }
   }
   return threshold;
+}
+
+static int getNThreads() {
+  int envNthreads = ncclParamNthreads();
+  if (envNthreads > 0) {
+     if (envNthreads % WARP_SIZE != 0) {
+       WARN("Invalid NCCL_NTHREADS %d (must be a multiple of %d)", envNthreads, WARP_SIZE);
+     } else {
+       if (envNthreads > NCCL_MAX_NTHREADS) {
+         WARN("Invalid NCCL_NTHREADS %d (maximum %d).", envNthreads, NCCL_MAX_NTHREADS);
+         envNthreads = NCCL_MAX_NTHREADS;
+       }
+       return envNthreads;
+     }
+  }
+  if (ncclParamLl128Enable() > 0) return 512;
+  // On Kepler, rings are doubled later.
+  return ncclCudaCompCap() == 3 ? 128 : 256;
 }
 
 pthread_mutex_t initLock = PTHREAD_MUTEX_INITIALIZER;
@@ -609,12 +627,11 @@ static ncclResult_t initTransportsRank(struct ncclComm* comm, ncclUniqueId* comm
   NCCLCHECK(printGraph(&ringGraph, comm->localRanks));
   int nChannels = std::min(treeGraph.nChannels, ringGraph.nChannels);
 
-  comm->nThreads = getDefaultThreads();
+  comm->nThreads = getNThreads();
 
   // AllGather3 - begin
   struct {
     int nThreads;
-    int nrings;
     int cudaCompCap;
     int fullCudaCompCap;
     int nvlink;

@@ -226,8 +226,74 @@ ncclResult_t ncclFollowPaths(struct ncclTopoSearchPath* paths, int nPaths, int w
   return ncclSuccess;
 }
 
+/* Parse user defined rings. Format is like :
+ * "0 1|1 0|0 1 2 3|3 2 1 0|0 2 3 1|1 3 2 0|0 1 2 3 4 5 6 7|7 6 5 4 3 2 1 0"
+ * Rings with a non-matching number of ranks are ignored so we can provide
+ * rings for multiple cases.
+ */
+#define MAX_ENV_RANKS 512
+static ncclResult_t parseGraph(const char* str, int* nChannelsRet, int ngpus, int* channels) {
+  int ranks[MAX_ENV_RANKS];
+  int nChannels = 0;
+  int rank = 0;
+  int offset = 0;
+  int status = 0; // 0 : between numbers, 1 : inside number
+  do {
+    int digit = str[offset] - '0';
+    if (digit >= 0 && digit <= 9) {
+      if (status == 0) {
+        ranks[rank] = digit;
+        status = 1;
+      } else {
+        ranks[rank] = ranks[rank]*10+digit;
+      }
+    } else {
+      if (status == 1) {
+        rank++;
+        if (rank == MAX_ENV_RANKS) goto end;
+      }
+      status = 0;
+      if (str[offset] == '|' || str[offset] == '\0') {
+        // Ignore if ngpus doesn't match
+        if (rank != ngpus) goto newchannel;
+
+        for (int r=0; r<ngpus; r++) {
+          int rank = ranks[r];
+          // Ignore if ranks are out of bounds
+          if (rank < 0 || rank >= ngpus) goto newchannel;
+          // Ignore if ranks are duplicate
+          for (int i=0; i<r; i++)
+            if (ranks[i] == rank) goto newchannel;
+
+          channels[nChannels*ngpus+r] = rank;
+        }
+        nChannels++;
+newchannel:
+        rank = 0;
+      }
+    }
+  } while (str[offset++] != 0);
+end:
+  *nChannelsRet = nChannels;
+  return ncclSuccess;
+}
+
 ncclResult_t ncclTopoCompute(struct ncclTopoSystem* system, struct ncclTopoGraph* graph, struct ncclTopoGraph* baseGraph) {
   int ngpus = system->nodes[GPU].count;
+
+  char* str = getenv("NCCL_GRAPH");
+  if (str) {
+    if (graph->pattern == NCCL_TOPO_PATTERN_SPLIT_TREE_LOOP) {
+      NCCLCHECK(parseGraph(str, &graph->nChannels, ngpus, graph->intra));
+      for (int i=0; i<graph->nChannels*ngpus; i++) {
+        // Translate gpu numbers into ranks
+        graph->intra[i] = system->nodes[GPU].nodes[graph->intra[i]].rank;
+      }
+      graph->speed = PCI_WIDTH+2;
+      return ncclSuccess;
+    }
+  }
+
   struct ncclTopoSearch search;
   search.req = 0;
   search.nPaths = 0;
@@ -239,7 +305,7 @@ ncclResult_t ncclTopoCompute(struct ncclTopoSystem* system, struct ncclTopoGraph
 
   if (baseGraph && baseGraph->pattern == NCCL_TOPO_PATTERN_SPLIT_TREE_LOOP && graph->pattern == NCCL_TOPO_PATTERN_RING) {
     // Do not recompute rings, just convert the SPLIT_TREE_LOOP into a RING, shifting ranks by one.
-    INFO(NCCL_GRAPH, "Converting %d channels from split tree loop to ring\n", baseGraph->nChannels);
+    INFO(NCCL_GRAPH, "Converting %d channels from split tree loop to ring", baseGraph->nChannels);
     graph->nChannels = baseGraph->nChannels;
     graph->speed = baseGraph->speed;
     for (int c=0; c<graph->nChannels; c++) {
