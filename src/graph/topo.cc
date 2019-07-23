@@ -71,6 +71,16 @@ ncclResult_t ncclTopoConnectNodes(struct ncclTopoNode* node, struct ncclTopoNode
   link->type = type;
   link->remNode = remNode;
   link->width += width;
+
+  // Sort links in BW descending order
+  struct ncclTopoLink linkSave;
+  memcpy(&linkSave, link, sizeof(struct ncclTopoLink));
+  while (link != node->links) {
+    if ((link-1)->width >= linkSave.width) break;
+    memcpy(link, link-1, sizeof(struct ncclTopoLink));
+    link--;
+  }
+  memcpy(link, &linkSave, sizeof(struct ncclTopoLink));
   return ncclSuccess;
 }
 
@@ -282,8 +292,8 @@ ncclResult_t ncclTopoConnectPCI(nvmlDevice_t* nvmlDevs, struct ncclTopoSystem* s
           // Found our NIC. Attach to it.
           NCCLCHECK(ncclTopoConnectNodes(system->nodes[NIC].nodes+n, netNode, LINK_NET, NET_WIDTH, system));
           NCCLCHECK(ncclTopoConnectNodes(netNode, system->nodes[NIC].nodes+n, LINK_NET, NET_WIDTH, system));
-         found = 1;
-         break;
+          found = 1;
+          break;
         }
       }
       if (!found) {
@@ -296,8 +306,9 @@ ncclResult_t ncclTopoConnectPCI(nvmlDevice_t* nvmlDevs, struct ncclTopoSystem* s
         NCCLCHECK(ncclTopoCreatePciPath(system, nicNode, path));
       }
       free(path);
-      system->maxChannels = std::max(system->maxChannels, netDevCount);
     }
+    system->maxChannels = std::max(system->maxChannels, netDevCount);
+    system->maxWidth = PCI_WIDTH;
   }
 
   // And connect all CPU nodes together
