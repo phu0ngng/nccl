@@ -8,6 +8,7 @@
 #define NCCL_GRAPH_H_
 
 #include "nccl.h"
+#include "devcomm.h"
 #include <limits.h>
 #include <stdlib.h>
 #include <ctype.h>

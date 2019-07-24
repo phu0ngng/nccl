@@ -7,9 +7,8 @@
 #ifndef NCCL_TOPO_H_
 #define NCCL_TOPO_H_
 
-#include "nvmlwrap.h"
-#include "nvlink.h"
-#include "net.h"
+#include "graph.h"
+#include "core.h"
 
 #define PASCAL_NVLINK_WIDTH 17
 #define VOLTA_NVLINK_WIDTH 22
@@ -61,5 +60,81 @@ struct ncclTopoSystem {
   int maxChannels;
   int maxWidth;
 };
+
+static ncclResult_t ncclTopoCreateNode(struct ncclTopoSystem* system, struct ncclTopoNode** node, int type, int id) {
+  for (int i=0; i<system->nodes[type].count; i++) {
+    if (system->nodes[type].nodes[i].id == id) {
+      *node = system->nodes[type].nodes+i;
+      return ncclSuccess;
+    }
+  }
+  if (system->nodes[type].count == NCCL_TOPO_MAX_NODES) {
+    WARN("Error : tried to create too many nodes of type %d\n", type);
+    return ncclInternalError;
+  }
+  *node = system->nodes[type].nodes+system->nodes[type].count;
+  system->nodes[type].count++;
+  (*node)->type = type;
+  (*node)->id = id;
+  return ncclSuccess;
+}
+
+static ncclResult_t ncclTopoConnectNodes(struct ncclTopoNode* node, struct ncclTopoNode* remNode, int type, int width) {
+  // Aggregate links into higher width for NVLink
+  struct ncclTopoLink* link;
+  for (link = node->links; link->remNode; link++) {
+    if (link->remNode == remNode && link->type == type) break;
+  }
+  if (link->remNode == NULL) node->nlinks++;
+  link->type = type;
+  link->remNode = remNode;
+  link->width += width;
+
+  // Sort links in BW descending order
+  struct ncclTopoLink linkSave;
+  memcpy(&linkSave, link, sizeof(struct ncclTopoLink));
+  while (link != node->links) {
+    if ((link-1)->width >= linkSave.width) break;
+    memcpy(link, link-1, sizeof(struct ncclTopoLink));
+    link--;
+  }
+  memcpy(link, &linkSave, sizeof(struct ncclTopoLink));
+  return ncclSuccess;
+}
+
+static ncclResult_t ncclTopoPrintRec(struct ncclTopoNode* node, struct ncclTopoNode* prevNode, char* line, int offset) {
+  if (node->type == GPU) {
+    sprintf(line+offset, "%s/%X (%d)", topoNodeTypeStr[node->type], node->id, node->rank);
+    INFO(NCCL_GRAPH, "%s", line);
+  } else {
+    sprintf(line+offset, "%s/%X", topoNodeTypeStr[node->type], node->id);
+    INFO(NCCL_GRAPH, "%s", line);
+  }
+  for (int i=0; i<offset; i++) line[i] = ' ';
+
+  for (int l=0; l<node->nlinks; l++) {
+    struct ncclTopoLink* link = node->links+l;
+    if (link->remNode != prevNode) {
+      sprintf(line+offset, "+ %s[%2d] - ", topoLinkTypeStr[link->type], link->width);
+      int nextOffset = strlen(line);
+      if (link->type == LINK_PCI) {
+        NCCLCHECK(ncclTopoPrintRec(link->remNode, node, line, nextOffset));
+      } else {
+        sprintf(line+nextOffset, "%s/%X", topoNodeTypeStr[link->remNode->type], link->remNode->id);
+        INFO(NCCL_GRAPH, "%s", line);
+      }
+    }
+  }
+  return ncclSuccess;
+}
+
+static ncclResult_t ncclTopoPrint(struct ncclTopoSystem* s) {
+  INFO(NCCL_GRAPH, "=== System : maxChannels %1d maxWidth %2d ===", s->maxChannels, s->maxWidth);
+  char line[1024];
+  for (int n=0; n<s->nodes[CPU].count; n++) NCCLCHECK(ncclTopoPrintRec(s->nodes[CPU].nodes+n, NULL, line, 0));
+  INFO(NCCL_GRAPH, "==========================================");
+  return ncclSuccess;
+}
+
 
 #endif
