@@ -73,7 +73,7 @@ The ``NCCL_SOCKET_NTHREADS`` variable specifies the number of CPU helper threads
 
 Values accepted
 ^^^^^^^^^^^^^^^
-1 to 16.
+1 to 16. On AWS, the default value is 2; in other cases, the default value is 1.
 
 NCCL_NSOCKS_PERTHREAD
 ---------------------
@@ -83,7 +83,7 @@ The ``NCCL_NSOCKS_PERTHREAD`` variable specifies the number of sockets opened by
 
 Values accepted
 ^^^^^^^^^^^^^^^
-Default is 1. A product of ``NCCL_SOCKET_NTHREADS`` and ``NCCL_NSOCKS_PERTHREAD`` cannot be greater than 64.
+On AWS, the default value is 8; in other cases, the default value is 1. A product of ``NCCL_SOCKET_NTHREADS`` and ``NCCL_NSOCKS_PERTHREAD`` cannot be greater than 64.
 
 .. _NCCL_DEBUG:
 
