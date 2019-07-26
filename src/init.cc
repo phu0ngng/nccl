@@ -375,7 +375,7 @@ static ncclResult_t ncclTreeThreshold(int nnodes, int nranks, int nChannels, ssi
   if (!nvlink) {
     treebw = ringbw * 2 / 3;
   } else {
-    treebw = ringbw * 3 / 4;
+    treebw = ringbw * 9 / 10;
     if (nnodes == 2) treebw *= 2;
   }
   float ringlat = ringlatinter*(nranks-1);
