@@ -1,5 +1,5 @@
 /*************************************************************************
- * Copyright (c) 2015-2016, NVIDIA CORPORATION. All rights reserved.
+ * Copyright (c) 2016-2019, NVIDIA CORPORATION. All rights reserved.
  *
  * See LICENSE.txt for license information
  ************************************************************************/
@@ -66,7 +66,7 @@ struct testColl {
   void (*getCollByteCount)(
       size_t *sendcount, size_t *recvcount, size_t *paramcount,
       size_t *sendInplaceOffset, size_t *recvInplaceOffset,
-      size_t *procSharedCount, int *sameExpected, size_t count, int nranks);
+      size_t count, int nranks);
   testResult_t (*initData)(struct threadArgs* args, ncclDataType_t type,
       ncclRedOp_t op, int root, int rep, int in_place);
   void (*getBw)(size_t count, int typesize, double sec, double* algBw, double* busBw, int nranks);
@@ -80,7 +80,7 @@ extern struct testColl broadcastTest;
 extern struct testColl reduceTest;
 
 struct testEngine {
-  void (*getBuffSize)(size_t *sendcount, size_t *recvcount, size_t *procSharedCount, int *sameExpected, size_t count, int nranks);
+  void (*getBuffSize)(size_t *sendcount, size_t *recvcount, size_t count, int nranks);
   testResult_t (*runTest)(struct threadArgs* args, int root, ncclDataType_t type,
       const char* typeName, ncclRedOp_t op, const char* opName);
 };
@@ -109,11 +109,8 @@ struct threadArgs {
   ncclComm_t* comms;
   cudaStream_t* streams;
 
-  void** expectedHost;
   void** expected;
   size_t expectedBytes;
-  void* procSharedHost;
-  void* procShared;
   volatile int* sync;
   int sync_idx;
   volatile int* barrier;
@@ -128,9 +125,9 @@ struct threadArgs {
   int* bw_count;
 
   int compThreadStop;
+  char* replayFile;
 
   struct testColl* collTest;
-  char* replayFile;
 };
 
 typedef testResult_t (*threadFunc_t)(struct threadArgs* args);
@@ -144,11 +141,11 @@ struct testThread {
 #include <chrono>
 
 // Provided by common.cu
-void Barrier(struct threadArgs* args);
-testResult_t TimeTest(struct threadArgs* args, ncclDataType_t type, const char* typeName, ncclRedOp_t op,  const char* opName, int root);
-testResult_t InitDataReduce(void* data, const size_t count, const size_t offset, ncclDataType_t type, ncclRedOp_t op, const int rep, const int nranks);
-testResult_t InitData(void* data, const size_t count, ncclDataType_t type, const int rep, const int rank);
-void AllocateBuffs(void **sendbuff, void **recvbuff, void **expected, void **expectedHost, size_t nbytes, int nranks);
+extern void Barrier(struct threadArgs* args);
+extern testResult_t TimeTest(struct threadArgs* args, ncclDataType_t type, const char* typeName, ncclRedOp_t op,  const char* opName, int root);
+extern testResult_t InitDataReduce(void* data, const size_t count, const size_t offset, ncclDataType_t type, ncclRedOp_t op, const int rep, const int nranks);
+extern testResult_t InitData(void* data, const size_t count, ncclDataType_t type, const int rep, const int rank);
+extern void AllocateBuffs(void **sendbuff, void **recvbuff, void **expected, void **expectedHost, size_t nbytes, int nranks);
 
 #include <unistd.h>
 

@@ -1,5 +1,5 @@
 /*************************************************************************
- * Copyright (c) 2015-2016, NVIDIA CORPORATION. All rights reserved.
+ * Copyright (c) 2016-2019, NVIDIA CORPORATION. All rights reserved.
  *
  * See LICENSE.txt for license information
  ************************************************************************/
@@ -9,6 +9,7 @@
 #include <cstdio>
 #include <getopt.h>
 #include <signal.h>
+#include <libgen.h>
 #include "cuda.h"
 
 #if NCCL_MAJOR >= 2
@@ -23,13 +24,13 @@ const char *test_opnames[ncclNumOps] = {"sum", "prod", "max", "min"};
 
 thread_local int is_main_thread = 0;
 
-// General parameters
-int nThreads = 1;
-int nGpus = 1;
-size_t minBytes = 32*1024*1024;
-size_t maxBytes = 32*1024*1024;
-size_t stepBytes = 1*1024*1024;
-size_t stepFactor = 1;
+// Command line parameter defaults
+static int nThreads = 1;
+static int nGpus = 1;
+static size_t minBytes = 32*1024*1024;
+static size_t maxBytes = 32*1024*1024;
+static size_t stepBytes = 1*1024*1024;
+static size_t stepFactor = 1;
 static int datacheck = 1;
 static int warmup_iters = 20;
 static int iters = 20;
@@ -43,8 +44,6 @@ static int streamnull = 0;
 static int side_comp = 0;
 
 static char* replay_file = NULL;
-static void **expected = NULL;
-static void **expectedHost = NULL;
 
 double parsesize(char *value) {
     long long int units;
@@ -97,7 +96,7 @@ template<typename T> __device__
 float toFloat(T a) {
   return (float)a;
 }
-template<> __device__ 
+template<> __device__
 float toFloat(half a) {
   return __half2float(a);
 }
@@ -213,7 +212,7 @@ __global__ void InitDataReduceKernel(T* data, const size_t N, const size_t offse
 }
 
 #define KERN(type, op) (void*)InitDataReduceKernel<type, op<type>>
-#define OPS(type) KERN(type, ncclOpSum), KERN(type, ncclOpProd), KERN(type, ncclOpMax), KERN(type, ncclOpMin) 
+#define OPS(type) KERN(type, ncclOpSum), KERN(type, ncclOpProd), KERN(type, ncclOpMax), KERN(type, ncclOpMin)
 
 static void* const redInitDataKerns[ncclNumOps*ncclNumTypes] = {
   OPS(int8_t), OPS(uint8_t), OPS(int32_t), OPS(uint32_t), OPS(int64_t), OPS(uint64_t), OPS(half), OPS(float), OPS(double)
@@ -291,19 +290,21 @@ testResult_t CheckData(struct threadArgs* args, ncclDataType_t type, ncclRedOp_t
     maxDelta = std::max(*(args->deltaHost), maxDelta);
 
 #ifdef DEBUG_PRINT
-    if (rank == 0) { 
-       int *temp = (int *)malloc(args->expectedBytes);
+    if (rank == 0) {
+       int *expectedHost = (int *)malloc(args->expectedBytes);
+       int *dataHost = (int *)malloc(args->expectedBytes);
 
+       cudaMemcpy(expectedHost, args->expected[0], args->expectedBytes, cudaMemcpyDeviceToHost);
        printf("\n Expected: ");
-       for(int j=0; j<args->expectedBytes/sizeof(int); j++) { 
-       	printf("%d:%d ", j, *((int *)args->expectedHost[0] + j));
+       for(int j=0; j<args->expectedBytes/sizeof(int); j++) {
+         printf("%d:%d ", j, expectedHost[j]);
        }
        printf("\n");
 
-       cudaMemcpy(temp, data, args->expectedBytes, cudaMemcpyDeviceToHost);
+       cudaMemcpy(dataHost, data, args->expectedBytes, cudaMemcpyDeviceToHost);
        printf("\n Actual: ");
-       for (int j=0; j<args->expectedBytes/sizeof(int); j++) { 
-       	printf("%d:%d ", j, *((int *)temp + j));
+       for (int j=0; j<args->expectedBytes/sizeof(int); j++) {
+         printf("%d:%d ", j, dataHost[j]);
        }
        printf("\n");
        free(temp);
@@ -318,7 +319,6 @@ testResult_t CheckData(struct threadArgs* args, ncclDataType_t type, ncclRedOp_t
 
 testResult_t testStreamSynchronize(int ngpus, cudaStream_t* streams, ncclComm_t* comms) {
   cudaError_t cudaErr;
-  ncclResult_t ncclAsyncErr;
   int remaining = ngpus;
   int* done = (int*)malloc(sizeof(int)*ngpus);
   memset(done, 0, sizeof(int)*ngpus);
@@ -337,7 +337,9 @@ testResult_t testStreamSynchronize(int ngpus, cudaStream_t* streams, ncclComm_t*
 
      if (cudaErr != cudaErrorNotReady) CUDACHECK(cudaErr);
 
+#if NCCL_VERSION_CODE >= NCCL_VERSION(2,4,0)
      if (comms) {
+       ncclResult_t ncclAsyncErr;
        NCCLCHECK(ncclCommGetAsyncError(comms[i], &ncclAsyncErr));
        if (ncclAsyncErr != ncclSuccess) {
          // An asynchronous error happened. Stop the operation and destroy
@@ -348,6 +350,7 @@ testResult_t testStreamSynchronize(int ngpus, cudaStream_t* streams, ncclComm_t*
          NCCLCHECK(ncclAsyncErr);
        }
      }
+#endif
    }
 
    // We might want to let other threads (including NCCL threads) use the CPU.
@@ -360,8 +363,9 @@ testResult_t startColl(struct threadArgs* args, ncclDataType_t type, ncclRedOp_t
   size_t count = args->nbytes / wordSize(type);
 
   // Try to change offset for each iteration so that we avoid cache effects and catch race conditions in ptrExchange
-  size_t shift = (args->nbytes * iter) % args->maxbytes;
-  if (shift + args->nbytes > args->maxbytes) shift = 0;
+  size_t totalnbytes = max(args->sendBytes, args->expectedBytes);
+  size_t shift = (totalnbytes * iter) % args->maxbytes;
+  if (shift + totalnbytes > args->maxbytes) shift = 0;
 
   if (args->nGpus > 1) NCCLCHECK(ncclGroupStart());
   for (int i = 0; i < args->nGpus; i++) {
@@ -381,7 +385,7 @@ testResult_t startColl(struct threadArgs* args, ncclDataType_t type, ncclRedOp_t
   if (args->nGpus > 1) NCCLCHECK(ncclGroupEnd());
 
   if (blocking_coll) {
-    //if args have been swapped, complete op before returning
+    // Complete op before returning
     TESTCHECK(testStreamSynchronize(args->nGpus, args->streams, args->comms));
   }
   if (blocking_coll) Barrier(args);
@@ -416,18 +420,18 @@ testResult_t BenchTime(struct threadArgs* args, ncclDataType_t type, ncclRedOp_t
   TESTCHECK(completeColl(args));
 
   auto delta = std::chrono::high_resolution_clock::now() - start;
-  double timeSec = std::chrono::duration_cast<std::chrono::duration<double>>(delta).count();
-  timeSec = timeSec/(iters*agg_iters);
+  double deltaSec = std::chrono::duration_cast<std::chrono::duration<double>>(delta).count();
+  deltaSec = deltaSec/(iters*agg_iters);
 
   double algBw, busBw;
-  args->collTest->getBw(count, wordSize(type), timeSec, &algBw, &busBw, args->nProcs*args->nThreads*args->nGpus);
+  args->collTest->getBw(count, wordSize(type), deltaSec, &algBw, &busBw, args->nProcs*args->nThreads*args->nGpus);
 
   Barrier(args);
 
   double maxDelta = 0;
   static __thread int rep = 0;
   rep++;
-  if (datacheck) { 
+  if (datacheck) {
       // Initialize sendbuffs, recvbuffs and expected
       TESTCHECK(args->collTest->initData(args, type, op, root, rep, in_place));
 
@@ -441,7 +445,7 @@ testResult_t BenchTime(struct threadArgs* args, ncclDataType_t type, ncclRedOp_t
       Barrier(args);
       if (args->thread == 0) {
         for (int i=1; i<args->nThreads; i++) {
-            maxDelta += args->deltaThreads[i];
+          maxDelta += args->deltaThreads[i];
         }
 #ifdef MPI_SUPPORT
         MPI_Allreduce(MPI_IN_PLACE, &maxDelta, 1, MPI_DOUBLE, MPI_MAX, MPI_COMM_WORLD);
@@ -450,7 +454,7 @@ testResult_t BenchTime(struct threadArgs* args, ncclDataType_t type, ncclRedOp_t
       Barrier(args);
   }
 
-  double timeUsec = timeSec*1.0E6;
+  double timeUsec = deltaSec*1.0E6;
   char timeStr[10];
   if (timeUsec > 10000.0) {
     sprintf(timeStr, "%7.0f", timeUsec);
@@ -459,7 +463,7 @@ testResult_t BenchTime(struct threadArgs* args, ncclDataType_t type, ncclRedOp_t
   } else {
     sprintf(timeStr, "%7.2f", timeUsec);
   }
-  if (datacheck) { 
+  if (datacheck) {
      PRINT("  %7s  %6.2f  %6.2f  %5.0le", timeStr, algBw, busBw, maxDelta);
   } else {
      PRINT("  %7s  %6.2f  %6.2f  %5s", timeStr, algBw, busBw, "N/A");
@@ -472,27 +476,16 @@ testResult_t BenchTime(struct threadArgs* args, ncclDataType_t type, ncclRedOp_t
 
 void setupArgs(size_t size, ncclDataType_t type, struct threadArgs* args) {
   int nranks = args->nProcs*args->nGpus*args->nThreads;
-  size_t count, sendCount, recvCount, paramCount, sendInplaceOffset, recvInplaceOffset, procSharedCount;
-  int sameExpected;
-  
+  size_t count, sendCount, recvCount, paramCount, sendInplaceOffset, recvInplaceOffset;
+
   count = size / wordSize(type);
-  args->collTest->getCollByteCount(&sendCount, &recvCount, &paramCount, &sendInplaceOffset, &recvInplaceOffset, &procSharedCount, &sameExpected, (size_t)count, (size_t)nranks);
+  args->collTest->getCollByteCount(&sendCount, &recvCount, &paramCount, &sendInplaceOffset, &recvInplaceOffset, (size_t)count, (size_t)nranks);
 
   args->nbytes = paramCount * wordSize(type);
   args->sendBytes = sendCount * wordSize(type);
   args->expectedBytes = recvCount * wordSize(type);
   args->sendInplaceOffset = sendInplaceOffset * wordSize(type);
   args->recvInplaceOffset = recvInplaceOffset * wordSize(type);
-
-  for (int i = 0; i < args->nGpus; i++) {
-    if (sameExpected) {
-      args->expectedHost[i] = expectedHost[0];
-      args->expected[i] = expected[0];
-    } else {
-      args->expectedHost[i] = expectedHost[args->thread*args->nGpus + i];
-      args->expected[i] = expected[args->thread*args->nGpus + i];
-    }
-  }
 }
 
 testResult_t TimeTest(struct threadArgs* args, ncclDataType_t type, const char* typeName, ncclRedOp_t op, const char* opName, int root) {
@@ -627,27 +620,13 @@ testResult_t threadLaunch(struct testThread* thread) {
   return testSuccess;
 }
 
-testResult_t AllocateBuffs(void **sendbuff, size_t sendBytes, void **recvbuff, size_t recvBytes, void **expected, void **expectedHost, size_t nbytes, int nranks, int sameExpected) {
-    static int is_first = 1;
-    static void *cached_ptr = NULL;
-    static void *cached_hostptr = NULL;
-
+testResult_t AllocateBuffs(void **sendbuff, size_t sendBytes, void **recvbuff, size_t recvBytes, void **expected, size_t nbytes, int nranks) {
     CUDACHECK(cudaMalloc(sendbuff, nbytes));
     CUDACHECK(cudaMalloc(recvbuff, nbytes));
-
-    if (is_first || !sameExpected) {
-        CUDACHECK(cudaHostAlloc(expectedHost, recvBytes, cudaHostAllocPortable | cudaHostAllocMapped));
-        *expected = *expectedHost;
-        cached_ptr = *expected;
-        cached_hostptr = *expectedHost;
-        is_first = 0;
-    } else {
-        *expected = cached_ptr;
-        *expectedHost = cached_hostptr;
-    }
+    CUDACHECK(cudaMalloc(expected, recvBytes));
     return testSuccess;
 }
- 
+
 testResult_t run(); // Main function
 
 int main(int argc, char* argv[]) {
@@ -657,16 +636,15 @@ int main(int argc, char* argv[]) {
   // Parse args
   int longindex;
   static struct option longopts[] = {
-    {"nthreads", required_argument, 0, 't'}, 
-    {"ngpus", required_argument, 0, 'g'}, 
-    {"minbytes", required_argument, 0, 'b'}, 
-    {"maxbytes", required_argument, 0, 'e'}, 
+    {"nthreads", required_argument, 0, 't'},
+    {"ngpus", required_argument, 0, 'g'},
+    {"minbytes", required_argument, 0, 'b'},
+    {"maxbytes", required_argument, 0, 'e'},
     {"stepbytes", required_argument, 0, 'i'},
     {"stepfactor", required_argument, 0, 'f'},
     {"iters", required_argument, 0, 'n'},
     {"agg-iters", required_argument, 0, 'm'},
     {"warmup_iters", required_argument, 0, 'w'},
-    {"swap_comms", required_argument, 0, 's'},
     {"parallel_init", required_argument, 0, 'p'},
     {"check", required_argument, 0, 'c'},
     {"op", required_argument, 0, 'o'},
@@ -747,7 +725,7 @@ int main(int argc, char* argv[]) {
         warmup_iters = 0;    // by default, no warm-up in case of trace replay
         break;
       case 'h':
-        printf("USAGE: ./test \n\t"
+        printf("USAGE: %s \n\t"
             "[-t,--nthreads <num threads>] \n\t"
             "[-g,--ngpus <gpus per thread>] \n\t"
             "[-b,--minbytes <min size in bytes>] \n\t"
@@ -766,11 +744,12 @@ int main(int argc, char* argv[]) {
             "[-y,--stream_null <0/1>] \n\t"
             "[-k,--side_comp <0/1>] \n\t"
             "[-l,--replay <path to replay file>] \n\t"
-            "[-h,--help]\n");
+	    "[-h,--help]\n",
+            basename(argv[0]));
         return 0;
       default:
         printf("invalid option \n");
-        printf("USAGE: ./test \n\t"
+        printf("USAGE: %s \n\t"
             "[-t,--nthreads <num threads>] \n\t"
             "[-g,--ngpus <gpus per thread>] \n\t"
             "[-b,--minbytes <min size in bytes>] \n\t"
@@ -789,7 +768,8 @@ int main(int argc, char* argv[]) {
             "[-y,--stream_null <0/1>] \n\t"
             "[-k,--side_comp <0/1>] \n\t"
             "[-l,--replay <path to replay file>] \n\t"
-            "[-h,--help]\n");
+	    "[-h,--help]\n",
+            basename(argv[0]));
         return 0;
     }
   }
@@ -877,26 +857,18 @@ testResult_t run() {
   cudaStream_t streams[nGpus*nThreads];
   void* sendbuffs[nGpus*nThreads];
   void* recvbuffs[nGpus*nThreads];
-  expected = (void**)malloc(sizeof(void*)*nGpus*nThreads);
-  expectedHost = (void**)malloc(sizeof(void*)*nGpus*nThreads);
-  void *procSharedHost, *procShared;
-  size_t sendBytes, recvBytes, procSharedBytes;
-  int sameExpected;
+  void* expected[nGpus*nThreads];
+  size_t sendBytes, recvBytes;
 
-  ncclTestEngine.getBuffSize(&sendBytes, &recvBytes, &procSharedBytes, &sameExpected, (size_t)maxBytes, (size_t)nProcs*nGpus*nThreads); 
+  ncclTestEngine.getBuffSize(&sendBytes, &recvBytes, (size_t)maxBytes, (size_t)nProcs*nGpus*nThreads);
 
   for (int i=0; i<nGpus*nThreads; i++) {
     CUDACHECK(cudaSetDevice(localRank*nThreads*nGpus+i));
-    AllocateBuffs(sendbuffs+i, sendBytes, recvbuffs+i, recvBytes, expected+i, expectedHost+i, (size_t)maxBytes, nProcs*nThreads*nGpus, sameExpected);
+    AllocateBuffs(sendbuffs+i, sendBytes, recvbuffs+i, recvBytes, expected+i, (size_t)maxBytes, nProcs*nThreads*nGpus);
     if (streamnull)
       streams[i] = NULL;
     else
       CUDACHECK(cudaStreamCreateWithFlags(streams+i, cudaStreamNonBlocking));
-  }
-
-  if (procSharedBytes > 0) { 
-      CUDACHECK(cudaHostAlloc(&procSharedHost, procSharedBytes, cudaHostAllocPortable | cudaHostAllocMapped));
-      procShared = procSharedHost;
   }
 
   //if parallel init is not selected, use main thread to initialize NCCL
@@ -910,7 +882,7 @@ testResult_t run() {
        NCCLCHECK(ncclGroupStart());
        for (int i=0; i<nGpus*nThreads; i++) {
          CUDACHECK(cudaSetDevice(localRank*nThreads*nGpus+i));
-         NCCLCHECK(ncclCommInitRank(comms+i, nProcs*nThreads*nGpus, ncclId, proc*nThreads*nGpus+i)); 
+         NCCLCHECK(ncclCommInitRank(comms+i, nProcs*nThreads*nGpus, ncclId, proc*nThreads*nGpus+i));
        }
        NCCLCHECK(ncclGroupEnd());
      }
@@ -959,14 +931,11 @@ testResult_t run() {
     threads[t].args.nGpus=nGpus;
     threads[t].args.sendbuffs = sendbuffs+t*nGpus;
     threads[t].args.recvbuffs = recvbuffs+t*nGpus;
+    threads[t].args.expected = expected+t*nGpus;
     threads[t].args.ncclId = ncclId;
     threads[t].args.comms=comms+t*nGpus;
     threads[t].args.streams=streams+t*nGpus;
 
-    threads[t].args.expectedHost = (void**)malloc(nGpus*sizeof(void*));
-    threads[t].args.expected = (void**)malloc(nGpus*sizeof(void*));
-    threads[t].args.procSharedHost = procSharedHost;
-    threads[t].args.procShared = procShared;
     threads[t].args.barrier = (volatile int*)barrier;
     threads[t].args.barrier_idx = 0;
     threads[t].args.sync = (volatile int*)sync;
@@ -993,13 +962,15 @@ testResult_t run() {
       TESTCHECK(threads[t].func(&threads[t].args));
   }
 
-  // Wait for other threads
+  // Wait for other threads and accumulate stats and errors
   for (int t=nThreads-1; t>=0; t--) {
     if (t) pthread_join(threads[t].thread, NULL);
     TESTCHECK(threads[t].ret);
-    errors[0] += errors[t];
-    bw[0] += bw[t];
-    bw_count[0] += bw_count[t];
+    if (t) {
+      errors[0] += errors[t];
+      bw[0] += bw[t];
+      bw_count[0] += bw_count[t];
+    }
     if (side_comp) {
        compThreads[t].args.compThreadStop = 1;
        pthread_join(compThreads[t].thread, NULL);
@@ -1008,7 +979,7 @@ testResult_t run() {
   }
 
 #ifdef MPI_SUPPORT
-    MPI_Allreduce(MPI_IN_PLACE, &errors[0], 1, MPI_INT, MPI_SUM, MPI_COMM_WORLD);
+  MPI_Allreduce(MPI_IN_PLACE, &errors[0], 1, MPI_INT, MPI_SUM, MPI_COMM_WORLD);
 #endif
 
   if (!parallel_init) {
@@ -1016,6 +987,14 @@ testResult_t run() {
       NCCLCHECK(ncclCommDestroy(comms[i]));
     free(comms);
   }
+
+  // Free off CUDA allocated memory
+  for (int i=0; i<nGpus*nThreads; i++) {
+    CUDACHECK(cudaFree(sendbuffs[i]));
+    CUDACHECK(cudaFree(recvbuffs[i]));
+    CUDACHECK(cudaFree(expected[i]));
+  }
+  CUDACHECK(cudaFreeHost(delta));
 
   char* str = getenv("NCCL_TESTS_MIN_BW");
   double check_avg_bw = str ? atof(str) : -1;
@@ -1027,8 +1006,12 @@ testResult_t run() {
 #ifdef MPI_SUPPORT
   MPI_Finalize();
 #endif
+
+  // 'cuda-memcheck --leak-check full' requires this
+  cudaDeviceReset();
+
   if (errors[0] || bw[0] < check_avg_bw*(0.9))
     exit(EXIT_FAILURE);
-  else 
+  else
     exit(EXIT_SUCCESS);
 }

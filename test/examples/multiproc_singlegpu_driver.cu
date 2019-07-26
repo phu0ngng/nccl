@@ -6,6 +6,8 @@
 
 #include <stdio.h>
 #include "cuda_runtime.h"
+#include <cuda.h>
+#include <cuda_device_runtime_api.h>
 #include "nccl.h"
 #include "mpi.h"
 #include <unistd.h>
@@ -21,10 +23,10 @@
 } while(0)
 
 #define CUDACHECK(cmd) do {                         \
-  cudaError_t e = cmd;                              \
-  if( e != cudaSuccess ) {                          \
-    printf("Failed: Cuda error %s:%d '%s'\n",             \
-        __FILE__,__LINE__,cudaGetErrorString(e));   \
+  CUresult e = cmd;                                \
+  if( e != CUDA_SUCCESS ) {                          \
+    printf("Failed: Cuda error %s:%d %d\n",          \
+           __FILE__,__LINE__, e);                   \
     exit(EXIT_FAILURE);                             \
   }                                                 \
 } while(0)
@@ -81,18 +83,26 @@ int main(int argc, char* argv[])
 
   ncclUniqueId id;
   ncclComm_t comm;
-  float *sendbuff, *recvbuff;
-  cudaStream_t s;
+  CUdeviceptr sendbuff, recvbuff;
+  CUstream s;
 
   //get NCCL unique ID at rank 0 and broadcast it to all others
   if (myRank == 0) ncclGetUniqueId(&id);
   MPICHECK(MPI_Bcast((void *)&id, sizeof(id), MPI_BYTE, 0, MPI_COMM_WORLD));
 
   //picking a GPU based on localRank, allocate device buffers
-  CUDACHECK(cudaSetDevice(localRank));
-  CUDACHECK(cudaMalloc(&sendbuff, size * sizeof(float)));
-  CUDACHECK(cudaMalloc(&recvbuff, size * sizeof(float)));
-  CUDACHECK(cudaStreamCreate(&s));
+  CUresult err = cuInit(0);
+
+  CUdevice device;
+  CUcontext context;
+  CUDACHECK(cuDeviceGet(&device, localRank));
+  CUDACHECK(cuCtxCreate(&context, 0, device));
+  CUDACHECK(cuCtxSetCurrent(context));
+  CUDACHECK(cuMemAlloc(&sendbuff, size * sizeof(float)));
+  CUDACHECK(cuMemAlloc(&recvbuff, size * sizeof(float)));
+  CUDACHECK(cuMemsetD8(sendbuff, 1, size * sizeof(float)));
+  CUDACHECK(cuMemsetD8(recvbuff, 0, size * sizeof(float)));
+  CUDACHECK(cuStreamCreate(&s, CU_STREAM_NON_BLOCKING));
 
   //initializing NCCL 
   NCCLCHECK(ncclCommInitRank(&comm, nRanks, id, myRank));
@@ -102,20 +112,17 @@ int main(int argc, char* argv[])
         comm, s));
 
   //completing NCCL operation by synchronizing on the CUDA stream
-  CUDACHECK(cudaStreamSynchronize(s));
+  CUDACHECK(cuStreamSynchronize(s));
 
   //free device buffers
-  CUDACHECK(cudaFree(sendbuff));
-  CUDACHECK(cudaFree(recvbuff));
+  CUDACHECK(cuMemFree(sendbuff));
+  CUDACHECK(cuMemFree(recvbuff));
 
   //finalizing NCCL
   ncclCommDestroy(comm);
 
   //finalizing MPI
   MPICHECK(MPI_Finalize());
-
-  //Needed for cuda-memcheck --leak-check full
-  cudaDeviceReset();
 
   printf("[MPI Rank %d] Success \n", myRank);
   return 0;

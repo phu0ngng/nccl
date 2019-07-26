@@ -22,8 +22,12 @@ result=$resdir/$gpumodel/$op.$nproc.$nthread.$ngpus
 
 nperproc=$(expr $nthread \* $ngpus)
 
+if [ "$gpumodel" == "all" ]; then
+  req_hosts="-w gc0[1-2]"
+fi
+
 if [ "$SLURM" == "1" ]; then
-  salloc_cmd="salloc -p $gpumodel $req_hosts -N $nnode -n $nproc -c $nperproc -t ${timeout} --exclusive "
+  salloc_cmd="salloc -p $gpumodel $req_hosts -N $nnode -t ${timeout} --exclusive "
 else
   mpi_hosts="-host $gpumodel -oversubscribe "
   if [ "$MPI_HOME" == "" ]; then
@@ -55,7 +59,7 @@ maxthread=$4
 maxgpu=$5
 op=$6
 
-declare -i nproc=2
+declare -i nproc=$maxproc
 declare -i nthread=1
 declare -i ngpus=1
 while [[ $nproc -le $maxproc ]] ; do

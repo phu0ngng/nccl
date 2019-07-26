@@ -11,7 +11,7 @@
 ncclTvalue_t getTvalue(short* distances, int ndev) {
   ncclTvalue_t tvalue = 0;
   for (int d=0; d<ndev; d++) {
-    int score = 1 + PATH_SOC - distances[d];
+    int score = 1 + PATH_SYS - distances[d];
     // Keep 3 bits of score info per dev
     tvalue |= ((score & NET_BITS_PER_IF_MASK)<<(NET_BITS_PER_IF*d));
   }
@@ -28,7 +28,7 @@ ncclResult_t netDistance(int cudaDev, int dev, short* distance, netInfoFuncs* ne
   ncclResult_t err;
   NCCLCHECK(getCudaPath(cudaDev, &cudaPath));
   err = netInfo->pciPath(dev, &nicPath);
-  *distance = (err != ncclSuccess || nicPath == NULL || cudaPath == NULL) ? PATH_SOC : pciDistance(nicPath, cudaPath);
+  *distance = (err != ncclSuccess || nicPath == NULL || cudaPath == NULL) ? PATH_SYS : pciDistance(nicPath, cudaPath);
   if (nicPath) free(nicPath);
   if (cudaPath) free(cudaPath);
   return ncclSuccess;

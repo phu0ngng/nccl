@@ -13,25 +13,12 @@ NCCLROOT=$PWD
 BLDDIR=$NCCLROOT/build
 rm $BLDDIR/state
 
-# DGX specific setting
-if [ "$(hostname)" == "dbcluster" ]; then
-  source /etc/profile.d/modules.sh
-  export PATH=/usr/local/bin:/usr/bin:$PATH
-  source $HOME/cuda.sh
-  MPI_HOME="${MPI_HOME:-$HOME/install/openmpi}"
-else
-  source $SHDIR/cuda.sh
-  MPI_HOME="${MPI_HOME:-/opt/mpi/openmpi}"
-fi
-
-# MPI Env
-export MPI_HOME
-export PATH=$MPI_HOME/bin:$PATH
-if [ "$( which mpirun )" == "" ]; then
-  echo "Cannot find MPI, please specify path using MPI_HOME=/path/to/MPI"
-  exit 1
-fi
-export LD_LIBRARY_PATH=$MPI_HOME/lib:$LD_LIBRARY_PATH
+HOST=$(hostname)
+export CUDA_HOME="${CUDA_HOME:-$HOME/nightly-$HOST/cuda}"
+export MPI_HOME="${MPI_HOME:-$HOME/nightly-$HOST/openmpi}"
+export OPAL_PREFIX=$MPI_HOME
+export PATH=$MPI_HOME/bin:$CUDA_HOME/bin:$PATH
+export LD_LIBRARY_PATH=$MPI_HOME/lib:$CUDA_HOME/lib64:$LD_LIBRARY_PATH
 
 # build
 if [ "$DEBDIR" == "" ]; then
@@ -67,9 +54,11 @@ elif [[ "$mode" == *"multinode"* ]]; then
   # multinode test
   if [ "$gpumodel" == "dgx1" ] || [ "$gpumodel" == "dgx1v" ]; then
     $SHDIR/multinode_perf_graphs.sh $gpumodel 2 4 2 2
+  elif [ "$gpumodel" == "mlperf" ]; then
+    $SHDIR/multinode_perf_graphs.sh $gpumodel 16 128 1 1
   elif [ "$gpumodel" == "P100" ]; then
-    $SHDIR/multinode_perf_graphs.sh gpu-verbs 2 4 2 2
-    $SHDIR/multinode_env_test.sh gpu-verbs 2 8
+    $SHDIR/multinode_perf_graphs.sh all 2 4 2 2
+    $SHDIR/multinode_env_test.sh all 2 8
   else
     echo "No multi-node test on $gpumodel"
   fi
