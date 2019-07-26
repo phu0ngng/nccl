@@ -79,11 +79,11 @@ NCCL_NSOCKS_PERTHREAD
 ---------------------
 (since 2.4.8)
 
-The ``NCCL_NSOCKS_PERTHREAD`` variable specifies the number of sockets opened by each helper thread of the socket transport. In environments where per-socket speed is artifitially limited, setting this variable larger than 1 may improve the network performance.
+The ``NCCL_NSOCKS_PERTHREAD`` variable specifies the number of sockets opened by each helper thread of the socket transport. In environments where per-socket speed is limited, setting this variable larger than 1 may improve the network performance.
 
 Values accepted
 ^^^^^^^^^^^^^^^
-On AWS, the default value is 8; in other cases, the default value is 1. A product of ``NCCL_SOCKET_NTHREADS`` and ``NCCL_NSOCKS_PERTHREAD`` cannot be greater than 64.
+On AWS, the default value is 8; in other cases, the default value is 1. The product of ``NCCL_SOCKET_NTHREADS`` and ``NCCL_NSOCKS_PERTHREAD`` cannot be greater than 64.
 
 .. _NCCL_DEBUG:
 
