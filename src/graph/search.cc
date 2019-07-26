@@ -437,9 +437,9 @@ ncclResult_t ncclTopoCompute(struct ncclTopoSystem* system, struct ncclTopoGraph
         search.req = 0;
         search.nPaths = 0;
         search.width = 0;
-        search.maxWidth = search.curWidth = PCI_WIDTH;
-	search.minHops = 0;
-	search.stop = 0;
+        search.maxWidth = search.curWidth = width;
+        search.minHops = 0;
+        search.stop = 0;
         NCCLCHECK(ncclTopoSearchProgressive(&search));
         NCCLCHECK(ncclFollowPaths(nicPaths, search.nReqs, -width));
 

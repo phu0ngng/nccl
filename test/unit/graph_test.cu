@@ -122,6 +122,35 @@ const char* dgx2v_topo[] = {
   "CPU/0-CPU/1"
 };
 
+const char* dgx2a_topo[] = {
+  "CPU/0-PCI/10-GPU/0",
+  "      PCI/10-NIC/0-NET/0",
+  "CPU/0-PCI/20-GPU/1",
+  "      PCI/20-NIC/1-NET/1",
+  "CPU/1-PCI/11-GPU/2",
+  "      PCI/11-NIC/2-NET/2",
+  "CPU/1-PCI/21-GPU/3",
+  "      PCI/21-NIC/3-NET/3",
+  "CPU/2-PCI/12-GPU/4",
+  "      PCI/12-NIC/4-NET/4",
+  "CPU/2-PCI/22-GPU/5",
+  "      PCI/22-NIC/5-NET/5",
+  "CPU/3-PCI/13-GPU/6",
+  "      PCI/13-NIC/6-NET/6",
+  "CPU/3-PCI/23-GPU/7",
+  "      PCI/23-NIC/7-NET/7",
+  "NVS/0-GPU/0" , "NVS/0-GPU/0" , "NVS/0-GPU/0" , "NVS/0-GPU/0" , "NVS/0-GPU/0" , "NVS/0-GPU/0" ,
+  "NVS/0-GPU/1" , "NVS/0-GPU/1" , "NVS/0-GPU/1" , "NVS/0-GPU/1" , "NVS/0-GPU/1" , "NVS/0-GPU/1" ,
+  "NVS/0-GPU/2" , "NVS/0-GPU/2" , "NVS/0-GPU/2" , "NVS/0-GPU/2" , "NVS/0-GPU/2" , "NVS/0-GPU/2" ,
+  "NVS/0-GPU/3" , "NVS/0-GPU/3" , "NVS/0-GPU/3" , "NVS/0-GPU/3" , "NVS/0-GPU/3" , "NVS/0-GPU/3" ,
+  "NVS/0-GPU/4" , "NVS/0-GPU/4" , "NVS/0-GPU/4" , "NVS/0-GPU/4" , "NVS/0-GPU/4" , "NVS/0-GPU/4" ,
+  "NVS/0-GPU/5" , "NVS/0-GPU/5" , "NVS/0-GPU/5" , "NVS/0-GPU/5" , "NVS/0-GPU/5" , "NVS/0-GPU/5" ,
+  "NVS/0-GPU/6" , "NVS/0-GPU/6" , "NVS/0-GPU/6" , "NVS/0-GPU/6" , "NVS/0-GPU/6" , "NVS/0-GPU/6" ,
+  "NVS/0-GPU/7" , "NVS/0-GPU/7" , "NVS/0-GPU/7" , "NVS/0-GPU/7" , "NVS/0-GPU/7" , "NVS/0-GPU/7" ,
+  "CPU/0-CPU/1-CPU/2-CPU/3-CPU/0", "CPU/1-CPU/3", "CPU/0-CPU/2"
+};
+
+
 const char* gcpnv_topo[] = {
   "CPU/0-PCI/10-NIC/0-NET/0",
   "CPU/0-PCI/20-GPU/0",
@@ -148,6 +177,27 @@ const char* fbbug_topo[] = {
   "      PCI/21-NIC/3-NET/3",
   "GPU/0-GPU/4-GPU/6-GPU/7-GPU/4",
   "CPU/0-CPU/1"
+};
+
+const char* p9_6v_topo[] = {
+  "CPU/0-PCI/10-GPU/0",
+  "CPU/0-PCI/20-GPU/1",
+  "CPU/0-PCI/30-GPU/2",
+  "CPU/0-PCI/40-NIC/0-NET/0",
+  "             NIC/0-NET/1",
+  "CPU/1-PCI/11-GPU/3",
+  "CPU/1-PCI/21-GPU/4",
+  "CPU/1-PCI/31-GPU/5",
+  "CPU/1-PCI/41-NIC/1-NET/2",
+  "             NIC/1-NET/3",
+  // GPU-GPU NVLinks
+  "GPU/0-GPU/1-GPU/2-GPU/0", "GPU/3-GPU/4-GPU/5-GPU/3",
+  "GPU/0-GPU/1-GPU/2-GPU/0", "GPU/3-GPU/4-GPU/5-GPU/3",
+  // GPU-P9 NVLinks
+  "GPU/0-CPU/0", "GPU/1-CPU/0", "GPU/2-CPU/0", "GPU/3-CPU/1", "GPU/4-CPU/1", "GPU/5-CPU/1",
+  "GPU/0-CPU/0", "GPU/1-CPU/0", "GPU/2-CPU/0", "GPU/3-CPU/1", "GPU/4-CPU/1", "GPU/5-CPU/1",
+  // Model P9-P9 connection to permit at least 2 NVLinks flows = 44 GB/s
+  "CPU/0-CPU/1", "CPU/0-CPU/1", "CPU/0-CPU/1", "CPU/0-CPU/1", "CPU/0-CPU/1", "CPU/0-CPU/1", "CPU/0-CPU/1", "CPU/0-CPU/1"
 };
 
 
@@ -203,19 +253,24 @@ void createSystem(struct ncclTopoSystem* system, const char* desc[], int descSiz
       if (lastNode) {
         int width;
         int type;
-        if (node->type == GPU && lastNode->type == GPU) {
+        int type1 = std::min(node->type, lastNode->type);
+        int type2 = std::max(node->type, lastNode->type);
+        if (type1 == GPU && type2 == GPU) {
           width = nvlinkWidth;
           type = LINK_NVL;
-        } else if (node->type == NVS || lastNode->type == NVS) {
+        } else if (type1 == GPU && type2 == NVS) {
           width = nvlinkWidth;
           type = LINK_NVL;
-        } else if (node->type == CPU && lastNode->type == CPU) {
+        } else if (type1 == GPU && type2 == CPU) {
+          width = nvlinkWidth;
+          type = LINK_NVL;
+        } else if (type1 == CPU && type2 == CPU) {
           width = QPI_WIDTH;
           type = LINK_QPI;
-        } else if (node->type == CPU || lastNode->type == CPU) {
+        } else if (type1 == PCI && type2 == CPU) {
           width = PCI_CPU_WIDTH;
           type = LINK_PCI;
-        } else if (node->type == NET || lastNode->type == NET) {
+        } else if (type1 == NIC && type2 == NET) {
           width = NET_WIDTH;
           type = LINK_NET;
         } else {
@@ -310,10 +365,14 @@ int main() {
   errors += checkTopo("DGX-1V", dgx1v_topo, sizeof(dgx1v_topo)/sizeof(const char*), VOLTA_NVLINK_WIDTH,  1, 4, NET_WIDTH, NCCL_TOPO_PATTERN_SPLIT_TREE_LOOP, 2);
   errors += checkTopo("DGX-2V", dgx2v_topo, sizeof(dgx2v_topo)/sizeof(const char*), VOLTA_NVLINK_WIDTH,  0, 6, VOLTA_NVLINK_WIDTH, NCCL_TOPO_PATTERN_SPLIT_TREE_LOOP, 2);
   errors += checkTopo("DGX-2V", dgx2v_topo, sizeof(dgx2v_topo)/sizeof(const char*), VOLTA_NVLINK_WIDTH,  1, 8, NET_WIDTH, NCCL_TOPO_PATTERN_SPLIT_TREE_LOOP, 2);
+  errors += checkTopo("DGX-2A", dgx2a_topo, sizeof(dgx2a_topo)/sizeof(const char*), VOLTA_NVLINK_WIDTH,  0, 6, VOLTA_NVLINK_WIDTH, NCCL_TOPO_PATTERN_SPLIT_TREE_LOOP, 2);
+//  errors += checkTopo("DGX-2A", dgx2a_topo, sizeof(dgx2a_topo)/sizeof(const char*), VOLTA_NVLINK_WIDTH,  1, 8, NET_WIDTH, NCCL_TOPO_PATTERN_TREE, 1);
   errors += checkTopo("GCP-NV", gcpnv_topo, sizeof(gcpnv_topo)/sizeof(const char*), VOLTA_NVLINK_WIDTH,  0, 6, VOLTA_NVLINK_WIDTH, NCCL_TOPO_PATTERN_SPLIT_TREE_LOOP, 2);
-  errors += checkTopo("GCP-NV", gcpnv_topo, sizeof(gcpnv_topo)/sizeof(const char*), VOLTA_NVLINK_WIDTH,  1, 1, NET_WIDTH, NCCL_TOPO_PATTERN_SPLIT_TREE_LOOP, 2);
+  errors += checkTopo("GCP-NV", gcpnv_topo, sizeof(gcpnv_topo)/sizeof(const char*), VOLTA_NVLINK_WIDTH,  1, 1, PCI_CPU_WIDTH, NCCL_TOPO_PATTERN_SPLIT_TREE_LOOP, 2);
   errors += checkTopo("FB-BUG", fbbug_topo, sizeof(fbbug_topo)/sizeof(const char*), VOLTA_NVLINK_WIDTH,  0, 1, QPI_WIDTH, NCCL_TOPO_PATTERN_SPLIT_TREE, 2);
   errors += checkTopo("FB-BUG", fbbug_topo, sizeof(fbbug_topo)/sizeof(const char*), VOLTA_NVLINK_WIDTH,  1, 2, NET_WIDTH, NCCL_TOPO_PATTERN_TREE, 1);
+//  errors += checkTopo("P9-6V ", p9_6v_topo, sizeof(p9_6v_topo)/sizeof(const char*), VOLTA_NVLINK_WIDTH,  0, 2, VOLTA_NVLINK_WIDTH, NCCL_TOPO_PATTERN_SPLIT_TREE, 2);
+  errors += checkTopo("P9-6V ", p9_6v_topo, sizeof(p9_6v_topo)/sizeof(const char*), VOLTA_NVLINK_WIDTH,  1, 2, PCI_CPU_WIDTH, NCCL_TOPO_PATTERN_SPLIT_TREE_LOOP, 2);
   printf("%d errors (%s)\n", errors, errors ? "FAILED" : "PASSED");
   return errors;
 }

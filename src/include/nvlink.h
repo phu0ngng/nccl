@@ -54,18 +54,6 @@ static ncclResult_t ncclDeviceType(const char* busId, enum ncclNvLinkDeviceType*
   return ncclSuccess;
 }
 
-/* Get the maximum number of NVLinks based on the GPU generation */
-static ncclResult_t getMaxNvlinks(int* maxLinks) {
-  int cudaDev;
-  CUDACHECK(cudaGetDevice(&cudaDev));
-  int ccMajor;
-  CUDACHECK(cudaDeviceGetAttribute(&ccMajor, cudaDevAttrComputeCapabilityMajor, cudaDev));
-  // 6 for Volta, 4 for Pascal
-  *maxLinks = (ccMajor > 6) ? 6 : 4;
-  // INFO("Device %d detected %d NVLinks", cudaDev, *maxLinks);
-  return ncclSuccess;
-}
-
 static int getNvlinkGpu(const char* busId1, const char* busId2) {
   // Determine if that connection is through NVLink
   int links = 0;
