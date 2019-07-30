@@ -136,5 +136,37 @@ static ncclResult_t ncclTopoPrint(struct ncclTopoSystem* s) {
   return ncclSuccess;
 }
 
+static ncclResult_t ncclTopoSort(struct ncclTopoNode* node, struct ncclTopoNode* upNode) {
+  // Shift all links to have upLink as last link
+  if (upNode) {
+    int l=0;
+    while (node->links[l].remNode != upNode) l++;
+    struct ncclTopoLink upLink;
+    memcpy(&upLink, node->links+l, sizeof(struct ncclTopoLink));
+    while (node->links[l+1].remNode) {
+      memcpy(node->links+l, node->links+l+1, sizeof(struct ncclTopoLink));
+      l++;
+    }
+    memcpy(node->links+l, &upLink, sizeof(struct ncclTopoLink));
+  }
+
+  // Recursively sort the PCI tree
+  for (int l=0; l<node->nlinks; l++) {
+    struct ncclTopoLink* link = node->links+l;
+    if (link->type == LINK_PCI && link->remNode != upNode) NCCLCHECK(ncclTopoSort(link->remNode, node));
+  }
+  return ncclSuccess;
+}
+
+// We want the graph to be organized to ease/accelerate traversal :
+// 1. NVLinks (already the case)
+// 2. PCI down
+// 3. PCI up
+// 4. QPI (already the case)
+static ncclResult_t ncclTopoSortSystem(struct ncclTopoSystem* system) {
+  for (int n=0; n<system->nodes[CPU].count; n++) NCCLCHECK(ncclTopoSort(system->nodes[CPU].nodes+n, NULL));
+  return ncclSuccess;
+}
+
 
 #endif

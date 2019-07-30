@@ -65,6 +65,8 @@ struct ncclTopoSearchPath {
   struct ncclTopoLinkList links;
 };
 
+#define SEARCH_TIMEOUT (1ULL<<22) // This should get contain all search within a second or so.
+
 struct ncclTopoSearch {
   /* Search Request */
   int nReqs;
@@ -79,6 +81,7 @@ struct ncclTopoSearch {
   int nPaths;
   int width;
   struct ncclTopoSearchPath paths[NCCL_TOPO_SEARCH_MAX_REQS];
+  uint64_t time;
   int stop;
 };
 
@@ -127,12 +130,24 @@ static int linkCheck(struct ncclTopoNode* prevNode, struct ncclTopoLink* link) {
 } while (0)
 
 ncclResult_t ncclTopoSearchRec(struct ncclTopoSearch* search) {
-  struct ncclTopoSearchPath* path  = search->curPaths+search->req;
+  struct ncclTopoSearchPath* path = search->curPaths+search->req;
   struct ncclTopoNodeList* nodeList = &path->nodes;
   struct ncclTopoLinkList* linkList = &path->links;
   struct ncclTopoSearchReq* req = search->reqs+search->req;
 
-  if (search->req < search->nPaths && search->curPaths[search->req].links.count > search->paths[search->req].links.count) return ncclSuccess;
+  if (search->time++ == SEARCH_TIMEOUT) search->stop = 1;
+  if (search->stop == 1) return ncclSuccess;
+
+  // Don't pursue paths that have longer nhops than the reference at that same point
+  if (search->req < search->nPaths && nodeList->count > 1) {
+    struct ncclTopoSearchPath *refPath = search->paths+search->req;
+    struct ncclTopoNodeList* refNodeList = &refPath->nodes;
+    struct ncclTopoLinkList* refLinkList = &refPath->links;
+    struct ncclTopoNode* refNode = refNodeList->list[nodeList->count];
+    int l=1;
+    while (refLinkList->list[l]->remNode != refNode) l++;
+    if (l < linkList->count) return ncclSuccess;
+  }
 
   if (nodeList->count == 0) {
     int pathHops = 0, curPathHops = 0, optimalHops = 0;
@@ -156,7 +171,7 @@ ncclResult_t ncclTopoSearchRec(struct ncclTopoSearch* search) {
       }
     }
     if ((search->req*search->width == search->nReqs*search->maxWidth) && (curPathHops == optimalHops)) search->stop = 1;
-    if (search->req < search->nReqs && curPathHops <= pathHops) {
+    if (search->stop == 0 && search->req < search->nReqs && curPathHops <= pathHops) {
       // Start a new path
       for (int i=0; i<req->start->count; i++) {
         if (req->start->state[i] == 0) {
@@ -230,24 +245,6 @@ ncclResult_t ncclTopoSearchRec(struct ncclTopoSearch* search) {
   return ncclSuccess;
 }
 
-ncclResult_t ncclTopoSearchProgressive(struct ncclTopoSearch* search) {
-  int maxReqs = search->nReqs;
-  search->nReqs = 0;
-  // Find one path after the other. It avoid going deep with unoptimal paths
-  // on previous levels.
-  while (search->nReqs < maxReqs) {
-    search->nReqs++;
-    search->stop = 0;
-    search->curWidth = search->maxWidth;
-    NCCLCHECK(ncclTopoSearchRec(search));
-    if (search->nPaths < search->nReqs) break;
-    search->maxWidth = search->width;
-    search->minHops = search->paths[0].links.count;
-  }
-  search->nReqs = maxReqs;
-  return ncclSuccess;
-}
-
 ncclResult_t printPaths(struct ncclTopoSearch* search) {
   char line[1024];
   for (int p=0; p<search->nPaths; p++) {
@@ -265,6 +262,25 @@ ncclResult_t printPaths(struct ncclTopoSearch* search) {
     }
     INFO(NCCL_GRAPH, "%s", line);
   }
+  return ncclSuccess;
+}
+
+ncclResult_t ncclTopoSearchProgressive(struct ncclTopoSearch* search) {
+  int maxReqs = search->nReqs;
+  search->nReqs = 0;
+  // Find one path after the other. It avoid going deep with unoptimal paths
+  // on previous levels.
+  while (search->nReqs < maxReqs) {
+    search->nReqs++;
+    search->stop = 0;
+    search->curWidth = search->maxWidth;
+    search->time = 0;
+    NCCLCHECK(ncclTopoSearchRec(search));
+    if (search->nPaths < search->nReqs) break;
+    search->maxWidth = search->width;
+    search->minHops = search->paths[0].links.count;
+  }
+  search->nReqs = maxReqs;
   return ncclSuccess;
 }
 
@@ -365,6 +381,7 @@ ncclResult_t ncclTopoCompute(struct ncclTopoSystem* system, struct ncclTopoGraph
   search.width = 0;
   search.maxWidth = search.curWidth = system->maxWidth;
   search.minHops = 0;
+  search.time = 0;
   search.stop = 0;
   int maxChannels = search.nReqs = system->maxChannels;
 

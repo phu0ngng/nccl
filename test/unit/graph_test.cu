@@ -150,7 +150,6 @@ const char* dgx2a_topo[] = {
   "CPU/0-CPU/1-CPU/2-CPU/3-CPU/0", "CPU/1-CPU/3", "CPU/0-CPU/2"
 };
 
-
 const char* gcpnv_topo[] = {
   "CPU/0-PCI/10-NIC/0-NET/0",
   "CPU/0-PCI/20-GPU/0",
@@ -303,6 +302,9 @@ void createSystem(struct ncclTopoSystem* system, const char* desc[], int descSiz
     system->maxChannels = std::max(system->maxChannels, system->nodes[NET].count);
     system->maxWidth = NET_WIDTH;
   }
+
+  // Sort system to accelerate search
+  CHECK(ncclTopoSortSystem(system));
 }
 
 const char* treeMode[] = { "unknown", "split tree loop", "split tree", "tree" };
@@ -351,6 +353,7 @@ int checkTopo(const char* name, const char** topo, int topoSize, int nvlinkWidth
 }
 
 int main() {
+  setlinebuf(stdout);
   initDebug();
   int errors = 0;
   errors += checkTopo("PCI-1R", pci1R_topo, sizeof(pci1R_topo)/sizeof(const char*), 0, 0, 1, PCI_CPU_WIDTH, NCCL_TOPO_PATTERN_SPLIT_TREE_LOOP, 2);
@@ -366,12 +369,12 @@ int main() {
   errors += checkTopo("DGX-2V", dgx2v_topo, sizeof(dgx2v_topo)/sizeof(const char*), VOLTA_NVLINK_WIDTH,  0, 6, VOLTA_NVLINK_WIDTH, NCCL_TOPO_PATTERN_SPLIT_TREE_LOOP, 2);
   errors += checkTopo("DGX-2V", dgx2v_topo, sizeof(dgx2v_topo)/sizeof(const char*), VOLTA_NVLINK_WIDTH,  1, 8, NET_WIDTH, NCCL_TOPO_PATTERN_SPLIT_TREE_LOOP, 2);
   errors += checkTopo("DGX-2A", dgx2a_topo, sizeof(dgx2a_topo)/sizeof(const char*), VOLTA_NVLINK_WIDTH,  0, 6, VOLTA_NVLINK_WIDTH, NCCL_TOPO_PATTERN_SPLIT_TREE_LOOP, 2);
-//  errors += checkTopo("DGX-2A", dgx2a_topo, sizeof(dgx2a_topo)/sizeof(const char*), VOLTA_NVLINK_WIDTH,  1, 8, NET_WIDTH, NCCL_TOPO_PATTERN_TREE, 1);
+  errors += checkTopo("DGX-2A", dgx2a_topo, sizeof(dgx2a_topo)/sizeof(const char*), VOLTA_NVLINK_WIDTH,  1, 8, NET_WIDTH, NCCL_TOPO_PATTERN_TREE, 1);
   errors += checkTopo("GCP-NV", gcpnv_topo, sizeof(gcpnv_topo)/sizeof(const char*), VOLTA_NVLINK_WIDTH,  0, 6, VOLTA_NVLINK_WIDTH, NCCL_TOPO_PATTERN_SPLIT_TREE_LOOP, 2);
   errors += checkTopo("GCP-NV", gcpnv_topo, sizeof(gcpnv_topo)/sizeof(const char*), VOLTA_NVLINK_WIDTH,  1, 1, PCI_CPU_WIDTH, NCCL_TOPO_PATTERN_SPLIT_TREE_LOOP, 2);
   errors += checkTopo("FB-BUG", fbbug_topo, sizeof(fbbug_topo)/sizeof(const char*), VOLTA_NVLINK_WIDTH,  0, 1, QPI_WIDTH, NCCL_TOPO_PATTERN_SPLIT_TREE, 2);
   errors += checkTopo("FB-BUG", fbbug_topo, sizeof(fbbug_topo)/sizeof(const char*), VOLTA_NVLINK_WIDTH,  1, 2, NET_WIDTH, NCCL_TOPO_PATTERN_TREE, 1);
-//  errors += checkTopo("P9-6V ", p9_6v_topo, sizeof(p9_6v_topo)/sizeof(const char*), VOLTA_NVLINK_WIDTH,  0, 2, VOLTA_NVLINK_WIDTH, NCCL_TOPO_PATTERN_SPLIT_TREE, 2);
+  errors += checkTopo("P9-6V ", p9_6v_topo, sizeof(p9_6v_topo)/sizeof(const char*), VOLTA_NVLINK_WIDTH,  0, 2, VOLTA_NVLINK_WIDTH, NCCL_TOPO_PATTERN_SPLIT_TREE, 2);
   errors += checkTopo("P9-6V ", p9_6v_topo, sizeof(p9_6v_topo)/sizeof(const char*), VOLTA_NVLINK_WIDTH,  1, 2, PCI_CPU_WIDTH, NCCL_TOPO_PATTERN_SPLIT_TREE_LOOP, 2);
   printf("%d errors (%s)\n", errors, errors ? "FAILED" : "PASSED");
   return errors;
