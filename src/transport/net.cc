@@ -164,11 +164,6 @@ static ncclResult_t netGetGdrSupport(int dev, int read, int* useGdr) {
   if (read) { // For reads (sends) only enable under certain conditions
     int gdrReadParam = ncclParamNetGdrRead();
     if (gdrReadParam == 0) return ncclSuccess;
-    if (gdrReadParam < 0) {
-       int nvlink;
-       NCCLCHECK(ncclNvlinkGpu(&nvlink));
-       if (!nvlink) return ncclSuccess;
-    }
   }
 
   // Check if we are close enough that it makes sense to enable GDR

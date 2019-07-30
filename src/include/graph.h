@@ -42,6 +42,7 @@ struct ncclTopoGraph {
   int pattern;
   int crossNic;
   int speed;
+  int nvlink;
   int intra[MAXCHANNELS*NCCL_TOPO_MAX_NODES];
   int nChannels;
 };

@@ -39,7 +39,6 @@
 #endif // end PROFAPI
 
 int ncclCudaCompCap();
-ncclResult_t ncclNvlinkGpu(int* nvlink);
 int64_t ncclTreeThreshold();
 
 static __inline__ int ncclTypeSize(ncclDataType_t type) {

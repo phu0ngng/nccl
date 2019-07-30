@@ -371,6 +371,7 @@ ncclResult_t ncclTopoCompute(struct ncclTopoSystem* system, struct ncclTopoGraph
         graph->intra[i] = system->nodes[GPU].nodes[graph->intra[i]].rank;
       }
       graph->speed = PCI_WIDTH+2;
+      graph->nvlink = 1;
       return ncclSuccess;
     }
   }
@@ -390,6 +391,7 @@ ncclResult_t ncclTopoCompute(struct ncclTopoSystem* system, struct ncclTopoGraph
     INFO(NCCL_GRAPH, "Converting %d channels from split tree loop to ring", baseGraph->nChannels);
     graph->nChannels = baseGraph->nChannels;
     graph->speed = baseGraph->speed;
+    graph->nvlink = baseGraph->nvlink;
     for (int c=0; c<graph->nChannels; c++) {
       for (int i=0; i<ngpus; i++) {
         graph->intra[ngpus*c+i] = baseGraph->intra[ngpus*c+((ngpus-i)%ngpus)];
@@ -547,6 +549,25 @@ ncclResult_t ncclTopoCompute(struct ncclTopoSystem* system, struct ncclTopoGraph
       }
     }
   }
+
+  graph->nvlink = 1;
+  for (int p=0; p<search.nPaths; p++) {
+    struct ncclTopoSearchPath* path = search.paths+p;
+    int l = 0;
+    // Go to the first GPU
+    if (path->nodes.list[0]->type != GPU) while (l<path->links.count && path->links.list[l]->remNode->type != GPU) l++;
+    // Skip the NVLink path
+    while (l<path->links.count && path->links.list[l]->type == LINK_NVL) l++;
+    // Make sure we're just going back to the NIC
+    while (l<path->links.count) {
+      if (path->links.list[l]->remNode->type == GPU) {
+        graph->nvlink = 0;
+        goto nvlinkDone;
+      }
+      l++;
+    }
+  }
+nvlinkDone:
 
   INFO(NCCL_GRAPH, "TopoCompute : pattern %d xNic %d : %d paths speed %d", graph->pattern, graph->crossNic, search.nPaths, search.width);
   NCCLCHECK(printPaths(&search));

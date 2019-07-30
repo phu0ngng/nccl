@@ -17,7 +17,6 @@
 #include "checks.h"
 #include "enqueue.h"
 #include "graph.h"
-#include "nvlink.h"
 #include "cpuset.h"
 #include <stdio.h>
 #include <stdlib.h>
@@ -57,16 +56,6 @@ NCCL_PARAM(CheckPointers, "CHECK_POINTERS", 0);
 
 ncclNet_t* ncclNet = NULL;
 
-// We define this as weak to let tests redefine their own
-#pragma weak ncclNvlinkGpu
-ncclResult_t ncclNvlinkGpu(int* nvlink) {
-  int cudaDev;
-  CUDACHECK(cudaGetDevice(&cudaDev));
-  char busId[NVML_DEVICE_PCI_BUS_ID_BUFFER_SIZE];
-  CUDACHECK(cudaDeviceGetPCIBusId(busId, NVML_DEVICE_PCI_BUS_ID_BUFFER_SIZE, cudaDev));
-  *nvlink = getNvlinkGpu(busId, NULL);
-  return ncclSuccess;
-}
 // We define this as weak to let tests redefine their own
 #pragma weak ncclCudaCompCap
 int ncclCudaCompCap() {
@@ -364,9 +353,7 @@ static ncclResult_t selectTransport(struct ncclPeerInfo* myInfo, struct ncclPeer
   return ncclInternalError;
 }
 
-static ncclResult_t ncclTreeThreshold(int nnodes, int nranks, int nChannels, ssize_t *treeThreshold) {
-  int nvlink;
-  NCCLCHECK(ncclNvlinkGpu(&nvlink));
+static ncclResult_t ncclTreeThreshold(int nnodes, int nranks, int nChannels, int nvlink, ssize_t *treeThreshold) {
   float ringbw = nvlink ? 5000*nChannels : 5000; // approx, in MB/s or B/us
   float ringlatinter = 6;
   float treelatintra = 4;
@@ -375,7 +362,7 @@ static ncclResult_t ncclTreeThreshold(int nnodes, int nranks, int nChannels, ssi
   if (!nvlink) {
     treebw = ringbw * 2 / 3;
   } else {
-    treebw = ringbw * 9 / 10;
+    treebw = ringbw * 4 / 5;
     if (nnodes == 2) treebw *= 2;
   }
   float ringlat = ringlatinter*(nranks-1);
@@ -393,9 +380,7 @@ static ncclResult_t setupChannel(struct ncclComm* comm, int channelId, int rank,
   TRACE(NCCL_INIT, "rank %d nranks %d", rank, nranks);
   NCCLCHECK(initChannel(comm, channelId));
 
-  struct ncclChannel* channel = comm->channels+channelId;
-  struct ncclRing* ring = &channel->ring;
-
+  struct ncclRing* ring = &comm->channels[channelId].ring;
   // Reorganize ranks to start with rank.
   int shift;
   for (shift = 0; shift<nranks; shift++) {
@@ -615,19 +600,24 @@ static ncclResult_t initTransportsRank(struct ncclComm* comm, ncclUniqueId* comm
   free(rankIndexes);
 
   // Get rings and trees
+  struct ncclTopoGraph treeLoopGraph;
   struct ncclTopoGraph treeGraph;
   // FIXME : The tree loop cannot be used currently for LL128 because we have
   // a single FIFO for both treeUp and treeDn and both are used concurrently.
-  //treeGraph.pattern = NCCL_TOPO_PATTERN_SPLIT_TREE_LOOP;
+  treeGraph.pattern = NCCL_TOPO_PATTERN_SPLIT_TREE_LOOP;
+  treeGraph.crossNic = ncclParamCrossNic();
+  NCCLCHECK(ncclTopoCompute(comm->topo, &treeLoopGraph, NULL));
+  NCCLCHECK(printGraph(&treeGraph, comm->localRanks));
   treeGraph.pattern = NCCL_TOPO_PATTERN_SPLIT_TREE;
   treeGraph.crossNic = ncclParamCrossNic();
-  NCCLCHECK(ncclTopoCompute(comm->topo, &treeGraph, NULL));
+  NCCLCHECK(ncclTopoCompute(comm->topo, &treeGraph, &treeLoopGraph));
   NCCLCHECK(printGraph(&treeGraph, comm->localRanks));
   struct ncclTopoGraph ringGraph;
   ringGraph.pattern = NCCL_TOPO_PATTERN_RING;
   ringGraph.crossNic = ncclParamCrossNic();
-  NCCLCHECK(ncclTopoCompute(comm->topo, &ringGraph, &treeGraph));
+  NCCLCHECK(ncclTopoCompute(comm->topo, &ringGraph, &treeLoopGraph));
   NCCLCHECK(printGraph(&ringGraph, comm->localRanks));
+
   int nChannels = std::min(treeGraph.nChannels, ringGraph.nChannels);
 
   comm->nThreads = getNThreads();
@@ -646,7 +636,7 @@ static ncclResult_t initTransportsRank(struct ncclComm* comm, ncclUniqueId* comm
   allGather3Data[rank].nThreads = comm->nThreads;
   allGather3Data[rank].cudaCompCap = ncclCudaCompCap();
   allGather3Data[rank].fullCudaCompCap = ncclCudaFullCompCap();
-  NCCLCHECK(ncclNvlinkGpu(&allGather3Data[rank].nvlink));
+  allGather3Data[rank].nvlink = treeGraph.nvlink;
   allGather3Data[rank].nChannels = comm->nChannels = nChannels;
 
   NCCLCHECK(ncclTopoPreset(comm, nodesFirstRank, &treeGraph, &ringGraph, &allGather3Data[rank].topoRanks));
@@ -663,11 +653,14 @@ static ncclResult_t initTransportsRank(struct ncclComm* comm, ncclUniqueId* comm
   for (int i = 0; i < nranks; i++)
     minCompCap = std::min(allGather3Data[i].cudaCompCap, minCompCap);
 
+  int nvlink = 1;
+  for (int i = 0; i < nranks; i++) nvlink &= allGather3Data[i].nvlink;
+
   // LL128 is only supported on V100/NVlink for now
   if (ncclParamLl128Enable()) {
     int enable = 1;
     for (int i = 0; i < nranks; i++) {
-      if (allGather3Data[i].fullCudaCompCap != 70 || allGather3Data[i].nvlink == 0) {
+      if (allGather3Data[i].fullCudaCompCap != 70 || nvlink == 0) {
         INFO(NCCL_INIT, "Not using V100/NVLink, disabling LL128");
         enable = 0;
       }
@@ -707,7 +700,7 @@ static ncclResult_t initTransportsRank(struct ncclComm* comm, ncclUniqueId* comm
   TRACE(NCCL_INIT, "rank %d nranks %d - BUILT %d TREES/RINGS", rank, nranks, nChannels);
 
   if (comm->treeThreshold == -2)
-    NCCLCHECK(ncclTreeThreshold(comm->nNodes, comm->nRanks, nChannels, &comm->treeThreshold));
+    NCCLCHECK(ncclTreeThreshold(comm->nNodes, comm->nRanks, nChannels, nvlink, &comm->treeThreshold));
 
   if (comm->treeThreshold > 0) {
     char line[1024];
@@ -729,8 +722,10 @@ static ncclResult_t initTransportsRank(struct ncclComm* comm, ncclUniqueId* comm
     struct ncclChannel* channel = comm->channels+c;
     NCCLCHECK(setupChannel(comm, c, rank, nranks, rings+c*nranks));
     NCCLCHECK(p2pSetup(comm, channel, 1, &channel->ring.prev, 1, &channel->ring.next));
-    NCCLCHECK(p2pSetup(comm, channel, NCCL_MAX_TREE_ARITY, channel->treeUp.down, 1, &channel->treeUp.up));
-    NCCLCHECK(p2pSetup(comm, channel, 1, &channel->treeDn.up, NCCL_MAX_TREE_ARITY, channel->treeDn.down));
+    if (comm->treeThreshold > 0) {
+      NCCLCHECK(p2pSetup(comm, channel, NCCL_MAX_TREE_ARITY, channel->treeUp.down, 1, &channel->treeUp.up));
+      NCCLCHECK(p2pSetup(comm, channel, 1, &channel->treeDn.up, NCCL_MAX_TREE_ARITY, channel->treeDn.down));
+    }
   }
   if (rank == 0) {
     char treeline[64];
