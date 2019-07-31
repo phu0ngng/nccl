@@ -78,7 +78,7 @@ ncclResult_t netSendSetup(struct ncclPeerInfo* myInfo, struct ncclPeerInfo* peer
 
   int cudaDev;
   CUDACHECK(cudaGetDevice(&cudaDev));
-  resources->netDev = getDev(channelId, ncclNetTvalues[cudaDev], ncclNetNDev);
+  resources->netDev = getDev(channelId, ncclNetScores[cudaDev], ncclNetNDev);
   NCCLCHECK(netGetGdrSupport(resources->netDev, 1, &resources->useGdr, &ncclNetInfoFuncs));
 
   int sendSize = sizeof(struct ncclSendMem);
@@ -103,7 +103,7 @@ ncclResult_t netRecvSetup(struct ncclPeerInfo* myInfo, struct ncclPeerInfo* peer
 
   int cudaDev;
   CUDACHECK(cudaGetDevice(&cudaDev));
-  resources->netDev = getDev(channelId, ncclNetTvalues[cudaDev], ncclNetNDev);
+  resources->netDev = getDev(channelId, ncclNetScores[cudaDev], ncclNetNDev);
   NCCLCHECK(netGetGdrSupport(resources->netDev, 0, &resources->useGdr, &ncclNetInfoFuncs));
 
   int sendSize = sizeof(struct ncclSendMem);

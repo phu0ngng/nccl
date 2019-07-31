@@ -14,7 +14,7 @@
 #include <cuda_runtime.h>
 #include <assert.h>
 
-static ncclTvalue_t collNetTvalues[NET_MAX_GPUS] = { NET_TVALUE_UNKNOWN };
+static uint64_t collNetScores[NET_MAX_GPUS] = { NET_SCORES_UNSET };
 static int collNetNDev;
 
 struct collNetConnectInfo {
@@ -81,11 +81,11 @@ struct netInfoFuncs collNetInfoFuncs = {
 };
 
 /* Determine if we can communicate with the peer */
-ncclResult_t collNetCanConnect(ncclTvalue_t* ret, struct ncclPeerInfo* myInfo, struct ncclPeerInfo* peerInfo) {
+ncclResult_t collNetCanConnect(int* ret, struct ncclPeerInfo* myInfo, struct ncclPeerInfo* peerInfo) {
   int cudaDev;
   CUDACHECK(cudaGetDevice(&cudaDev));
-  ret[0] = collNetTvalues[cudaDev];
-  if (ret[0] == NET_TVALUE_UNKNOWN) {
+  ret[0] = collNetScores[cudaDev];
+  if (ret[0] == NET_SCORES_UNSET) {
     if (cudaDev >= NET_MAX_GPUS) {
       WARN("CUDA device %d >= MAX %d\n", cudaDev, NET_MAX_GPUS);
       return ncclInternalError;
@@ -93,7 +93,7 @@ ncclResult_t collNetCanConnect(ncclTvalue_t* ret, struct ncclPeerInfo* myInfo, s
     int nDev;
     short* distances;
     NCCLCHECK(netDevices(&nDev, &distances, &collNetInfoFuncs));
-    collNetTvalues[cudaDev] = ret[0] = getTvalue(distances, nDev);
+    collNetScores[cudaDev] = ret[0] = getTvalue(distances, nDev);
     collNetNDev = nDev;
     free(distances);
   }
@@ -106,7 +106,7 @@ ncclResult_t collNetSendSetup(struct ncclPeerInfo* myInfo, struct ncclPeerInfo* 
   int recvSize = offsetof(struct ncclRecvMem, buff)+buffSize;
   int cudaDev;
   CUDACHECK(cudaGetDevice(&cudaDev));
-  int netDev = getDev(channelId/2, collNetTvalues[cudaDev], collNetNDev);
+  int netDev = getDev(channelId/2, collNetScores[cudaDev], collNetNDev);
 
   // send side
   struct collNetSendResources* sendResources;
@@ -140,7 +140,7 @@ ncclResult_t collNetRecvSetup(struct ncclPeerInfo* myInfo, struct ncclPeerInfo* 
   int recvSize = offsetof(struct ncclRecvMem, buff)+buffSize;
   int cudaDev;
   CUDACHECK(cudaGetDevice(&cudaDev));
-  int netDev = getDev(channelId/2, collNetTvalues[cudaDev], collNetNDev);
+  int netDev = getDev(channelId/2, collNetScores[cudaDev], collNetNDev);
 
   // recv side
   struct collNetRecvResources* recvResources;

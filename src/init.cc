@@ -570,7 +570,7 @@ static int collNetSetup(struct ncclComm* comm, struct ncclChannel* channel, int 
   // check if we can connect to collnet, whose root is the nranks-th rank
   struct ncclPeerInfo *myInfo = comm->peerInfo+rank, *peerInfo = comm->peerInfo+nranks;
   peerInfo->rank = nranks;
-  ncclTvalue_t ret = 1;
+  int ret = 1;
   if (treeMasters[rank]) {
     NCCLCHECK(collNetTransport.canConnect(&ret, myInfo, peerInfo));
   }

@@ -92,7 +92,7 @@ struct ncclTransport {
 
 struct ncclCollTransport {
   const char name[4];
-  ncclResult_t (*canConnect)(ncclTvalue_t*, struct ncclPeerInfo*, struct ncclPeerInfo*);
+  ncclResult_t (*canConnect)(int*, struct ncclPeerInfo*, struct ncclPeerInfo*);
   ncclResult_t (*connectSendRecv)(ncclConnector* send, ncclConnector* recv);
   struct ncclTransportComm send;
   struct ncclTransportComm recv;
