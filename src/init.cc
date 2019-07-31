@@ -850,7 +850,7 @@ static ncclResult_t initTransportsRank(struct ncclComm* comm, ncclUniqueId* comm
 
   // Check if we can setup CollNet
   int collNetDisable = ncclParamCollNetDisable();
-  int collNetSetupCond = (nnodes > 1 && comm->treeThreshold > 0 && collNetDisable != 1 && collNetSupport()) ? 1 : 0;
+  int collNetSetupCond = (comm->nNodes > 1 && comm->treeThreshold > 0 && collNetDisable != 1 && collNetSupport()) ? 1 : 0;
   int collNetSetupFail = 0;
 
   // Connect with prev/next for each ring
