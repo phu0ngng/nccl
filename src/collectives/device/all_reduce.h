@@ -312,7 +312,6 @@ __device__ void ncclAllReduceTreeLLKernel(struct CollectiveArgs* args) {
   } while(0);
 }
 
-<<<<<<< HEAD
 template<int UNUSED, class FUNC, typename T>
 __device__ void ncclAllReduceAcclLLKernel(struct CollectiveArgs* args) {
   const int tid = threadIdx.x;
@@ -368,6 +367,9 @@ __device__ void ncclAllReduceRingLL128Kernel(struct CollectiveArgs* args) {
 }
 template<int UNUSED, class FUNC, typename T>
 __device__ void ncclAllReduceTreeLL128Kernel(struct CollectiveArgs* args) {
+}
+template<int UNUSED, class FUNC, typename T>
+__device__ void ncclAllReduceAcclLL128Kernel(struct CollectiveArgs* args) {
 }
 #else
 #include "prims_ll128.h"
@@ -503,5 +505,10 @@ __device__ void ncclAllReduceTreeLL128Kernel(struct CollectiveArgs* args) {
       }
     }
   }
+}
+
+template<int UNUSED, class FUNC, typename T>
+__device__ void ncclAllReduceAcclLL128Kernel(struct CollectiveArgs* args) {
+  //FIXME: implement
 }
 #endif
