@@ -82,21 +82,7 @@ struct netInfoFuncs collNetInfoFuncs = {
 
 /* Determine if we can communicate with the peer */
 ncclResult_t collNetCanConnect(int* ret, struct ncclPeerInfo* myInfo, struct ncclPeerInfo* peerInfo) {
-  int cudaDev;
-  CUDACHECK(cudaGetDevice(&cudaDev));
-  ret[0] = collNetScores[cudaDev];
-  if (ret[0] == NET_SCORES_UNSET) {
-    if (cudaDev >= NET_MAX_GPUS) {
-      WARN("CUDA device %d >= MAX %d\n", cudaDev, NET_MAX_GPUS);
-      return ncclInternalError;
-    }
-    int nDev;
-    short* distances;
-    NCCLCHECK(netDevices(&nDev, &distances, &collNetInfoFuncs));
-    collNetScores[cudaDev] = ret[0] = getTvalue(distances, nDev);
-    collNetNDev = nDev;
-    free(distances);
-  }
+  *ret = 1;
   return ncclSuccess;
 }
 
