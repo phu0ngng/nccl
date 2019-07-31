@@ -346,7 +346,7 @@ static ncclResult_t computeColl(struct ncclInfo* info /* input */, struct ncclCo
 
   // Compute lastChunkSize
   if (treeMode == 1 && llMode == 0) {
-    if (info->pattern == ncclPatternTreeUpDown) {
+    if (info->pattern == ncclPatternTreeUpDown || info->pattern == ncclPatternCollTreeUp || info->pattern == ncclPatternCollTreeDown) {
       // Optimize chunkSize / nSteps
       while (info->nBytes / (coll->args.nChannels*chunkSize) < info->comm->channels[0].treeUp.depth*8 && chunkSize > 131072) chunkSize /= 2;
       while (info->nBytes / (coll->args.nChannels*chunkSize) < info->comm->channels[0].treeUp.depth*4 && chunkSize > 65536) chunkSize /= 2;
