@@ -9,6 +9,7 @@
 
 #include <sys/stat.h>
 #include <fcntl.h>
+#include <ctype.h>
 #include "nvmlwrap.h"
 
 #define CONNECT_NVLINK 0x10
