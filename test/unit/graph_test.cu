@@ -150,6 +150,46 @@ const char* dgx2a_topo[] = {
   "CPU/0-CPU/1-CPU/2-CPU/3-CPU/0", "CPU/1-CPU/3", "CPU/0-CPU/2"
 };
 
+const char* xman3_topo[] = {
+  "CPU/0-PCI/10-NIC/0-NET/0",
+  "      PCI/10-PCI/110-NIC/1-NET/1",
+  "             PCI/110-GPU/0",
+  "             PCI/110-GPU/1",
+  "             PCI/110-GPU/2",
+  "             PCI/110-GPU/3",
+  "CPU/1-PCI/11-NIC/2-NET/2",
+  "      PCI/11-PCI/111-PCI/1111-NIC/3-NET/3",
+  "             PCI/111-GPU/4",
+  "             PCI/111-GPU/5",
+  "             PCI/111-GPU/6",
+  "             PCI/111-GPU/7",
+  "CPU/2-PCI/12-NIC/4-NET/4",
+  "      PCI/12-PCI/112-NIC/5-NET/5",
+  "             PCI/112-GPU/8",
+  "             PCI/112-GPU/9",
+  "             PCI/112-GPU/10",
+  "             PCI/112-GPU/11",
+  "CPU/3-PCI/13-NIC/6-NET/6",
+  "      PCI/13-PCI/113-PCI/1113-NIC/7-NET/7",
+  "             PCI/113-GPU/12",
+  "             PCI/113-GPU/13",
+  "             PCI/113-GPU/14",
+  "             PCI/113-GPU/15",
+  "NVS/0-GPU/0" , "NVS/0-GPU/1" , "NVS/0-GPU/2" , "NVS/0-GPU/3" , "NVS/0-GPU/4" , "NVS/0-GPU/5" , "NVS/0-GPU/6" , "NVS/0-GPU/7" ,
+  "NVS/0-GPU/0" , "NVS/0-GPU/1" , "NVS/0-GPU/2" , "NVS/0-GPU/3" , "NVS/0-GPU/4" , "NVS/0-GPU/5" , "NVS/0-GPU/6" , "NVS/0-GPU/7" ,
+  "NVS/0-GPU/0" , "NVS/0-GPU/1" , "NVS/0-GPU/2" , "NVS/0-GPU/3" , "NVS/0-GPU/4" , "NVS/0-GPU/5" , "NVS/0-GPU/6" , "NVS/0-GPU/7" ,
+  "NVS/0-GPU/0" , "NVS/0-GPU/1" , "NVS/0-GPU/2" , "NVS/0-GPU/3" , "NVS/0-GPU/4" , "NVS/0-GPU/5" , "NVS/0-GPU/6" , "NVS/0-GPU/7" ,
+  "NVS/0-GPU/0" , "NVS/0-GPU/1" , "NVS/0-GPU/2" , "NVS/0-GPU/3" , "NVS/0-GPU/4" , "NVS/0-GPU/5" , "NVS/0-GPU/6" , "NVS/0-GPU/7" ,
+  "NVS/0-GPU/0" , "NVS/0-GPU/1" , "NVS/0-GPU/2" , "NVS/0-GPU/3" , "NVS/0-GPU/4" , "NVS/0-GPU/5" , "NVS/0-GPU/6" , "NVS/0-GPU/7" ,
+  "NVS/0-GPU/8" , "NVS/0-GPU/9" , "NVS/0-GPU/10", "NVS/0-GPU/11", "NVS/0-GPU/12", "NVS/0-GPU/13", "NVS/0-GPU/14", "NVS/0-GPU/15",
+  "NVS/0-GPU/8" , "NVS/0-GPU/9" , "NVS/0-GPU/10", "NVS/0-GPU/11", "NVS/0-GPU/12", "NVS/0-GPU/13", "NVS/0-GPU/14", "NVS/0-GPU/15",
+  "NVS/0-GPU/8" , "NVS/0-GPU/9" , "NVS/0-GPU/10", "NVS/0-GPU/11", "NVS/0-GPU/12", "NVS/0-GPU/13", "NVS/0-GPU/14", "NVS/0-GPU/15",
+  "NVS/0-GPU/8" , "NVS/0-GPU/9" , "NVS/0-GPU/10", "NVS/0-GPU/11", "NVS/0-GPU/12", "NVS/0-GPU/13", "NVS/0-GPU/14", "NVS/0-GPU/15",
+  "NVS/0-GPU/8" , "NVS/0-GPU/9" , "NVS/0-GPU/10", "NVS/0-GPU/11", "NVS/0-GPU/12", "NVS/0-GPU/13", "NVS/0-GPU/14", "NVS/0-GPU/15",
+  "NVS/0-GPU/8" , "NVS/0-GPU/9" , "NVS/0-GPU/10", "NVS/0-GPU/11", "NVS/0-GPU/12", "NVS/0-GPU/13", "NVS/0-GPU/14", "NVS/0-GPU/15",
+  "CPU/0-CPU/1-CPU/2-CPU/3-CPU/0", "CPU/1-CPU/3", "CPU/0-CPU/2"
+};
+
 const char* gcpnv_topo[] = {
   "CPU/0-PCI/10-NIC/0-NET/0",
   "CPU/0-PCI/20-GPU/0",
@@ -370,6 +410,8 @@ int main() {
   errors += checkTopo("DGX-2V", dgx2v_topo, sizeof(dgx2v_topo)/sizeof(const char*), VOLTA_NVLINK_WIDTH,  1, 8, NET_WIDTH, NCCL_TOPO_PATTERN_SPLIT_TREE_LOOP, 2);
   errors += checkTopo("DGX-2A", dgx2a_topo, sizeof(dgx2a_topo)/sizeof(const char*), VOLTA_NVLINK_WIDTH,  0, 6, VOLTA_NVLINK_WIDTH, NCCL_TOPO_PATTERN_SPLIT_TREE_LOOP, 2);
   errors += checkTopo("DGX-2A", dgx2a_topo, sizeof(dgx2a_topo)/sizeof(const char*), VOLTA_NVLINK_WIDTH,  1, 8, NET_WIDTH, NCCL_TOPO_PATTERN_TREE, 1);
+  errors += checkTopo("XMAN-3", xman3_topo, sizeof(xman3_topo)/sizeof(const char*), VOLTA_NVLINK_WIDTH,  0, 6, VOLTA_NVLINK_WIDTH, NCCL_TOPO_PATTERN_SPLIT_TREE_LOOP, 2);
+  errors += checkTopo("XMAN-3", xman3_topo, sizeof(xman3_topo)/sizeof(const char*), VOLTA_NVLINK_WIDTH,  1, 8, NET_WIDTH, NCCL_TOPO_PATTERN_SPLIT_TREE_LOOP, 2);
   errors += checkTopo("GCP-NV", gcpnv_topo, sizeof(gcpnv_topo)/sizeof(const char*), VOLTA_NVLINK_WIDTH,  0, 6, VOLTA_NVLINK_WIDTH, NCCL_TOPO_PATTERN_SPLIT_TREE_LOOP, 2);
   errors += checkTopo("GCP-NV", gcpnv_topo, sizeof(gcpnv_topo)/sizeof(const char*), VOLTA_NVLINK_WIDTH,  1, 1, PCI_CPU_WIDTH, NCCL_TOPO_PATTERN_SPLIT_TREE_LOOP, 2);
   errors += checkTopo("FB-BUG", fbbug_topo, sizeof(fbbug_topo)/sizeof(const char*), VOLTA_NVLINK_WIDTH,  0, 1, QPI_WIDTH, NCCL_TOPO_PATTERN_SPLIT_TREE, 2);
