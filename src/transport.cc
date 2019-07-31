@@ -121,13 +121,13 @@ ncclResult_t transportSaveProxies(struct ncclProxyArgs* args, int pattern, int r
   }
   if (pattern == ncclPatternTreeUp || pattern == ncclPatternTreeUpDown) {
     // Tree up
-    struct ncclTree* tree = &args->channel->tree;
+    struct ncclTree* tree = &args->channel->treeUp;
     for (int i=0; i<NCCL_MAX_TREE_ARITY; i++) NCCLCHECK(SaveProxy<proxyRecv>(tree->down[i], args));
     NCCLCHECK(SaveProxy<proxySend>(tree->up, args));
   }
   if (pattern == ncclPatternTreeDown || pattern == ncclPatternTreeUpDown) {
     // Tree down
-    struct ncclTree* tree = &args->channel->tree;
+    struct ncclTree* tree = &args->channel->treeDn;
     for (int i=0; i< NCCL_MAX_TREE_ARITY; i++) NCCLCHECK(SaveProxy<proxySend>(tree->down[i], args));
     NCCLCHECK(SaveProxy<proxyRecv>(tree->up, args));
   }

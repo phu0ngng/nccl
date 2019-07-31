@@ -19,23 +19,22 @@ struct netInfoFuncs {
   ncclResult_t (*ptrSupport)(int dev, int* supportedTypes);
 };
 
-// Cache GPU-NIC distances to avoid re-computing them
-#define NET_TVALUE_UNKNOWN 0ULL
+#define NET_SCORES_UNSET 0ULL
 
-// We encode 3 bits of distance per interface into a ncclTvalue_t (64-bit)
+// We encode 3 bits of distance per interface into a 64-bit uint
 #define NET_BITS_PER_IF 3
 #define NET_BITS_PER_IF_MASK ((1<<NET_BITS_PER_IF)-1)
-static_assert(sizeof(ncclTvalue_t)*8 >= NET_MAX_IFS*NET_BITS_PER_IF, "NET_MAX_IFS*NET_BITS_PER_IF must fit in a ncclTvalue_t");
+static_assert(sizeof(uint64_t)*8 >= NET_MAX_IFS*NET_BITS_PER_IF, "NET_MAX_IFS*NET_BITS_PER_IF must fit in 64 bits");
 
-ncclTvalue_t getTvalue(short* distances, int ndev);
+uint64_t getScores(short* distances, int ndev);
 
-int getScore(ncclTvalue_t tvalue, int dev);
+int getScore(uint64_t scores, int dev);
 
 ncclResult_t netDistance(int cudaDev, int dev, short* distance, netInfoFuncs* netInfo);
 
 ncclResult_t netDevices(int* ndev, short** distances, netInfoFuncs* netInfo);
 
-int getDev(int ringId, ncclTvalue_t tvalue, int ndev);
+int getDev(int cudaDev, int ringId, uint64_t* netScores, int* netNDev, netInfoFuncs* netInfo);
 
 ncclResult_t netGetGdrSupport(int dev, int read, int* useGdr, netInfoFuncs* netInfo);
 

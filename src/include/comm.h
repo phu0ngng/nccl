@@ -50,6 +50,7 @@ struct ncclRecvMem {
     char pad4[MEM_ALIGN];
   };
   ncclLLFifoLine llBuff[NCCL_LL_BUFF_LINES];
+  uint64_t ll128Buff[NCCL_LL128_BUFF_ELEMS];
   char buff[1]; // Actually larger than that
 };
 
@@ -57,6 +58,7 @@ struct ncclComm {
   struct ncclChannel channels[MAXCHANNELS];
 
   struct ncclPeerInfo* peerInfo;
+  struct ncclTopoSystem* topo;
 
   void* bootstrap;
 
@@ -64,6 +66,11 @@ struct ncclComm {
   int nRanks;  // number of GPUs in communicator
   int cudaDev; // my cuda device index
   int nvmlDev; // my NVML device number
+
+  int node;
+  int nNodes;
+  int localRank;
+  int localRanks;
 
   enum { GROUP, PARALLEL } launchMode;
   cudaStream_t userStream;
@@ -79,11 +86,10 @@ struct ncclComm {
   int nChannels;
   int nThreads;
 
-  // Low-latency algorithm threshold
+  // Algorithm thresholds
   ssize_t llThreshold;
+  ssize_t ll128Threshold;
   ssize_t threadThreshold;
-
-  // Tree algorithm threshold
   ssize_t treeThreshold;
 
   // An internal CUDA stream for NCCL kernel CGMD launches

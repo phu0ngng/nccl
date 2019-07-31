@@ -57,6 +57,10 @@ static ncclResult_t wrapNvmlDeviceGetMinorNumber(nvmlDevice_t device, unsigned i
   NVMLCHECK(nvmlDeviceGetMinorNumber(device, minorNumber));
   return ncclSuccess;
 }
+static ncclResult_t wrapNvmlDeviceGetCudaComputeCapability(nvmlDevice_t device, int* major, int* minor) {
+  NVMLCHECK(nvmlDeviceGetCudaComputeCapability(device, major, minor));
+  return ncclSuccess;
+}
 #else
 // Dynamically handle dependencies on NVML
 
@@ -139,6 +143,7 @@ ncclResult_t wrapNvmlDeviceGetNvLinkRemotePciInfo(nvmlDevice_t device, unsigned 
 ncclResult_t wrapNvmlDeviceGetNvLinkCapability(nvmlDevice_t device, unsigned int link,
                                                    nvmlNvLinkCapability_t capability, unsigned int *capResult);
 ncclResult_t wrapNvmlDeviceGetMinorNumber(nvmlDevice_t device, unsigned int* minorNumber);
+ncclResult_t wrapNvmlDeviceGetCudaComputeCapability(nvmlDevice_t device, int* major, int* minor);
 
 #endif // NVML_DIRECT
 

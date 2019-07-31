@@ -41,90 +41,8 @@ struct shmRecvResources {
 NCCL_PARAM(ShmDisable, "SHM_DISABLE", 0);
 
 /* Determine if we can communicate with the peer */
-ncclResult_t shmCanConnect(ncclTvalue_t* ret, struct ncclPeerInfo* myInfo, struct ncclPeerInfo* peerInfo) {
+ncclResult_t shmCanConnect(int* ret, struct ncclPeerInfo* myInfo, struct ncclPeerInfo* peerInfo) {
   *ret = ((ncclParamShmDisable() == 1) || (myInfo->hostHash != peerInfo->hostHash)) ? 0 : 1;
-  return ncclSuccess;
-}
-
-static inline int groupFirst(int nranks, int* groups, int group, int rankToAvoid) {
-  for (int rank = 0; rank<nranks; rank++) {
-    if ((groups[rank] == group) && (rank != rankToAvoid)) return rank;
-  }
-  return -1;
-}
-
-static inline int groupLast(int nranks, int* groups, int group, int rankToAvoid) {
-  for (int rank = nranks-1; rank>=0; rank--) {
-    if ((groups[rank] == group) && (rank != rankToAvoid)) return rank;
-  }
-  return -1;
-}
-
-#define MAXGROUPS 16
-
-ncclResult_t shmGetRings(int nranks, int* groups, int* subgroups, ncclTvalue_t* values, int* nringsRet, int* prev, int* next, int minScore, int* nthreads) {
-  if (*nringsRet == MAXCHANNELS) *nringsRet = 1;
-  int nGroups = groups[nranks-1] + 1;
-  int starts[MAXGROUPS];
-  int ends[MAXGROUPS];
-  for (int ring = 0; ring<*nringsRet; ring++) {
-    int startGroup = -1, endGroup = -1;
-    for (int group = 0; group<nGroups; group++) {
-      int start = -1;
-      int end = -1;
-      int nranksInGroup = 0;
-      for (int rank=0; rank<nranks; rank++) {
-        if (groups[rank] != group) continue;
-        nranksInGroup++;
-        if (prev[ring*nranks+rank] != -1) {
-          if (start != -1) {
-            WARN("Multiple starts found in group");
-          }
-          start = rank;
-          startGroup = group;
-        }
-        if (next[ring*nranks+rank] != -1) {
-          if (end != -1) {
-            WARN("Multiple ends found in group");
-          }
-          end = rank;
-          endGroup = group;
-        }
-      }
-      if (nranksInGroup == 1) {
-        start = end = groupFirst(nranks, groups, group, -1);
-      } else {
-        if (start == -1)
-          start = groupFirst(nranks, groups, group, end);
-        if (end == -1)
-          end = groupLast(nranks, groups, group, start);
-      }
-      if (start == -1 || end == -1) {
-        *nringsRet = ring;
-        return ncclSuccess;
-      }
-      starts[group] = start;
-      ends[group] = end;
-    }
-    if (endGroup == -1 || startGroup == -1) {
-      startGroup = 0;
-      endGroup = nGroups-1;
-      // Close the loop
-      next[ring*nranks+ends[endGroup]] = starts[startGroup];
-      prev[ring*nranks+starts[startGroup]] = ends[endGroup];
-    }
-    int group = startGroup;
-    for (int i=0; i<nGroups-2; i++) {
-      int nextGroup = (group+1)%nGroups;
-      if (nextGroup == endGroup) nextGroup = (nextGroup+1)%nGroups;
-      next[ring*nranks+ends[group]] = starts[nextGroup];
-      prev[ring*nranks+starts[nextGroup]] = ends[group];
-      group = nextGroup;
-    }
-    // Connect with the last
-    next[ring*nranks+ends[group]] = starts[endGroup];
-    prev[ring*nranks+starts[endGroup]] = ends[group];
-  }
   return ncclSuccess;
 }
 
@@ -194,6 +112,7 @@ ncclResult_t shmSendConnect(struct ncclConnect* connectInfo, int nranks, int ran
   send->transportResources = resources;
   send->conn.buff = resources->devRemHostMem->buff;
   send->conn.llBuff = resources->devRemHostMem->llBuff;
+  send->conn.ll128Buff = resources->devRemHostMem->ll128Buff;
   send->conn.tail = &resources->devRemHostMem->tail;
   send->conn.opCountRem = &resources->devRemHostMem->opCount;
 
@@ -218,6 +137,7 @@ ncclResult_t shmRecvConnect(struct ncclConnect* connectInfo, int nranks, int ran
 
   recv->conn.buff = resources->devHostMem->buff;
   recv->conn.llBuff = resources->devHostMem->llBuff;
+  recv->conn.ll128Buff = resources->devHostMem->ll128Buff;
   recv->conn.tail = &resources->devHostMem->tail;
   recv->conn.opCountLoc = &resources->devHostMem->opCount;
   return ncclSuccess;
@@ -242,7 +162,6 @@ ncclResult_t shmRecvFree(void* transportResources) {
 struct ncclTransport shmTransport = {
   "SHM",
   shmCanConnect,
-  shmGetRings,
   { shmSendSetup, shmSendConnect, shmSendFree, NULL },
   { shmRecvSetup, shmRecvConnect, shmRecvFree, NULL }
 };

@@ -22,7 +22,7 @@ ncclGetUniqueId
 .. c:function:: ncclResult_t ncclGetUniqueId(ncclUniqueId* uniqueId)
 
 Generates an Id to be used in ncclCommInitRank. ncclGetUniqueId should be
-called once and the Id should be distributed to all ranks in the
+called once when creating a communicator and the Id should be distributed to all ranks in the
 communicator before calling ncclCommInitRank. *uniqueId* should point to a ncclUniqueId object allocated by the user.
 
 ncclCommInitRank

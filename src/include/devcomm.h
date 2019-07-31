@@ -31,10 +31,11 @@ union ncclLLFifoLine {
   int4 i4;
 };
 
-#define MAXTHREADS 256
-#define NCCL_LL_MAX_NTHREADS MAXTHREADS
-#define NUM_LINES_PER_THREAD 8
-#define NCCL_LL_SLICE_LINES (NUM_LINES_PER_THREAD*NCCL_LL_MAX_NTHREADS)
+#define WARP_SIZE 32
+#define NCCL_MAX_NTHREADS 512
+#define NCCL_LL_MAX_NTHREADS NCCL_MAX_NTHREADS
+#define NCCL_LL_LINES_PER_THREAD 8
+#define NCCL_LL_SLICE_LINES (NCCL_LL_LINES_PER_THREAD*NCCL_LL_MAX_NTHREADS)
 #define NCCL_LL_BUFF_LINES (NCCL_LL_SLICE_LINES*NCCL_STEPS)
 #define NCCL_LL_BUFF_SIZE (NCCL_LL_BUFF_LINES*sizeof(union ncclLLFifoLine))
 #ifdef DEBUG_LL
@@ -47,6 +48,20 @@ union ncclLLFifoLine {
 #endif
 // Make sure the clean mask will last for at least NCCL_NSTEPS
 static_assert(NCCL_LL_CLEAN_MASK % NCCL_STEPS == 0, "Invalid NCCL_LL_CLEAN_MASK value");
+
+#define NCCL_LL128_LINESIZE 128
+#define NCCL_LL128_LINEELEMS (NCCL_LL128_LINESIZE/sizeof(uint64_t))
+#define NCCL_LL128_DATAELEMS (NCCL_LL128_LINEELEMS-1)
+
+#define NCCL_LL128_MAX_NTHREADS NCCL_MAX_NTHREADS
+#define NCCL_LL128_ELEMS_PER_THREAD 120
+
+#define NCCL_LL128_SLICE_ELEMS (NCCL_LL128_ELEMS_PER_THREAD*NCCL_LL128_MAX_NTHREADS)
+#define NCCL_LL128_BUFF_ELEMS (NCCL_LL128_SLICE_ELEMS*NCCL_STEPS)
+#define NCCL_LL128_BUFF_SIZE (NCCL_LL128_BUFF_ELEMS*sizeof(uint64_t))
+
+#define NCCL_LL128_SHMEM_ELEMS_PER_THREAD 8
+#define NCCL_LL128_SHMEM_SIZE (NCCL_LL128_SHMEM_ELEMS_PER_THREAD*NCCL_MAX_NTHREADS)
 
 struct ncclConnInfo {
   // Regular comm mechanism
@@ -66,6 +81,9 @@ struct ncclConnInfo {
   // Low latency mechanism
   union ncclLLFifoLine *llBuff; // Local for recv, remote for send
   uint64_t llLastCleaning;
+
+  // High bandwidth, low latency protocol
+  uint64_t* ll128Buff; // Local for recv, remote for send
 };
 
 struct ncclConnector {
@@ -141,7 +159,8 @@ struct ncclChannel {
   union {
     struct {
       struct ncclRing ring;
-      struct ncclTree tree;
+      struct ncclTree treeUp;
+      struct ncclTree treeDn;
       struct ncclTree collTree;
 
       int id;

@@ -6,20 +6,20 @@
 
 #include "net_common.h"
 #include "param.h"
-#include "topo.h"
+#include "graph.h"
 
-ncclTvalue_t getTvalue(short* distances, int ndev) {
-  ncclTvalue_t tvalue = 0;
+uint64_t getScores(short* distances, int ndev) {
+  uint64_t scores = 0ULL;
   for (int d=0; d<ndev; d++) {
-    int score = 1 + PATH_SYS - distances[d];
+    uint64_t score = 1 + PATH_SYS - distances[d];
     // Keep 3 bits of score info per dev
-    tvalue |= ((score & NET_BITS_PER_IF_MASK)<<(NET_BITS_PER_IF*d));
+    scores |= ((score & NET_BITS_PER_IF_MASK)<<(NET_BITS_PER_IF*d));
   }
-  return tvalue;
+  return scores;
 }
 
-int getScore(ncclTvalue_t tvalue, int dev) {
-  return (tvalue >> (dev*NET_BITS_PER_IF)) & NET_BITS_PER_IF_MASK;
+int getScore(uint64_t scores, int dev) {
+  return (scores >> (dev*NET_BITS_PER_IF)) & NET_BITS_PER_IF_MASK;
 }
 
 ncclResult_t netDistance(int cudaDev, int dev, short* distance, netInfoFuncs* netInfo) {
@@ -59,14 +59,30 @@ ncclResult_t netDevices(int* ndev, short** distances, netInfoFuncs* netInfo) {
   return ncclSuccess;
 }
 
-int getDev(int ringId, ncclTvalue_t tvalue, int ndev) {
+// In: cudaDev, ringId, netInfo
+// In/out: netScores, netNDev
+int getDev(int cudaDev, int ringId, uint64_t* netScores, int* netNDev, netInfoFuncs* netInfo) {
+  uint64_t scores = netScores[cudaDev];
+  if (scores == NET_SCORES_UNSET) {
+    if (cudaDev >= NET_MAX_GPUS) {
+      WARN("CUDA device %d >= MAX %d\n", cudaDev, NET_MAX_GPUS);
+      return ncclInternalError;
+    }
+    int nDev;
+    short* distances;
+    NCCLCHECK(netDevices(&nDev, &distances, netInfo));
+    netScores[cudaDev] = scores = getScores(distances, nDev);
+    *netNDev = nDev;
+    free(distances);
+  }
+
   int dev = 0;
   int maxScore = 0;
-  for (int d=0; d<ndev; d++) if (getScore(tvalue,d) > maxScore) maxScore = getScore(tvalue,d);
+  for (int d=0; d<*netNDev; d++) if (getScore(scores, d) > maxScore) maxScore = getScore(scores, d);
   int skip = ringId+1;
   while (skip) {
-    for (int d=0; d<ndev; d++) {
-      if (getScore(tvalue, d) == maxScore) {
+    for (int d=0; d<*netNDev; d++) {
+      if (getScore(scores, d) == maxScore) {
         skip--;
         if (skip == 0) { dev = d; goto end; }
       }

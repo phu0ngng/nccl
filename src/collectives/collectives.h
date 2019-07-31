@@ -7,7 +7,9 @@
 #ifndef NCCL_COLLECTIVES_H_
 #define NCCL_COLLECTIVES_H_
 
-#define FUNC_INDEX(coll, redop, dtype, ll, al) ((((((coll)*ncclNumOps + (redop))*ncclNumTypes) + (dtype))*3+(al))*2+(ll))
+#define NCCL_NUM_ALGORITHMS 3 // Tree/Ring/Accl
+#define NCCL_NUM_MODES 3 // Normal/LL/LL128
+#define FUNC_INDEX(coll, redop, dtype, ll, al) ((((((coll)*ncclNumOps + (redop))*ncclNumTypes) + (dtype))*NCCL_NUM_ALGORITHMS+(al))*NCCL_NUM_MODES+(ll))
 
 #define NCCL_COLL_NAME(coll, op, dtype) \
   coll##_##op##_##dtype
@@ -22,7 +24,8 @@
 
 #define DECL_COLL4(coll, op, dtype) \
   DECL_COLL5(coll, op, dtype) \
-  DECL_COLL5(coll##LL, op, dtype)
+  DECL_COLL5(coll##LL, op, dtype) \
+  DECL_COLL5(coll##LL128, op, dtype)
 
 #define DECL_COLL3(coll, op, dtype) \
   DECL_COLL4(coll##Ring, op, dtype) \

@@ -14,6 +14,7 @@
 // Only generate inline kernels for LL
 #define NCCL_FUNC5(coll, op, dtype) \
   (void*)NCCL_KERN_NAME(coll##LL, op, dtype), \
+  (void*)NCCL_KERN_NAME(coll##LL, op, dtype), \
   (void*)NCCL_KERN_NAME(coll##LL, op, dtype)
 
 #define NCCL_FUNC4(coll, op, dtype) \
@@ -56,7 +57,7 @@
   NCCL_FUNCS3B(coll, copy)
 
 // Must be consistent with the ncclFuncSet enum
-static void* const ncclKerns[ncclCollCount*ncclNumOps*ncclNumTypes*3*2] = {
+static void* const ncclKerns[ncclCollCount*ncclNumOps*ncclNumTypes*NCCL_NUM_ALGORITHMS*NCCL_NUM_MODES] = {
   NCCL_FUNCS2B(ncclBroadcast),
   NCCL_FUNCS2A(ncclReduce),
   NCCL_FUNCS2B(ncclAllGather),
@@ -294,14 +295,19 @@ static void getKernelInfo(struct ncclInfo* info, uint8_t* nChannels, uint16_t* n
   // Check if we have a fixed LL threshold, otherwise compute it.
   int perThreadThreshold = info->comm->threadThreshold;
   if (info->pattern >= ncclPatternTreeUp) perThreadThreshold *= 4;
-  ssize_t llThreshold = info->comm->llThreshold >= 0 ?
-    info->comm->llThreshold :
+  ssize_t llThreshold = info->comm->llThreshold >= 0 ? info->comm->llThreshold :
+    nc*nt*info->nchunksPerLoop*perThreadThreshold;
+  ssize_t ll128Threshold = info->comm->ll128Threshold >= 0 ? info->comm->ll128Threshold :
     nc*nt*info->nchunksPerLoop*perThreadThreshold;
 
   if (info->nBytes <= llThreshold) {
     *llMode = 1;
     *nChannels = nc;
     *nThreads = nt;
+  } else if (info->coll == ncclCollAllReduce && info->nBytes <= ll128Threshold) {
+    *llMode = 2;
+    *nChannels = nc;
+    *nThreads = NCCL_MAX_NTHREADS;
   } else {
     *llMode = 0;
     *nChannels = maxNchannels;
@@ -333,7 +339,7 @@ static ncclResult_t computeColl(struct ncclInfo* info /* input */, struct ncclCo
   int alg = collTreeMode == 1 ? 2 : treeMode;
   coll->funcIndex = FUNC_INDEX(info->coll, info->op, info->datatype, llMode, alg);
 
-  int stepSize   = ( llMode ? NCCL_LL_BUFF_SIZE : info->comm->channels[0].buffSize ) / NCCL_STEPS;
+  int stepSize   = ( llMode == 1 ? NCCL_LL_BUFF_SIZE : llMode == 2 ? NCCL_LL128_BUFF_SIZE : info->comm->channels[0].buffSize ) / NCCL_STEPS;
   int chunkSteps = (llMode|treeMode) ? 1 : info->chunkSteps;
   int sliceSteps = (llMode|treeMode) ? 1 : info->sliceSteps;
   int chunkSize  = stepSize*chunkSteps;
@@ -342,9 +348,9 @@ static ncclResult_t computeColl(struct ncclInfo* info /* input */, struct ncclCo
   if (treeMode == 1 && llMode == 0) {
     if (info->pattern == ncclPatternTreeUpDown) {
       // Optimize chunkSize / nSteps
-      while (info->nBytes / (coll->args.nChannels*chunkSize) < info->comm->channels[0].tree.depth*8 && chunkSize > 131072) chunkSize /= 2;
-      while (info->nBytes / (coll->args.nChannels*chunkSize) < info->comm->channels[0].tree.depth*4 && chunkSize > 65536) chunkSize /= 2;
-      while (info->nBytes / (coll->args.nChannels*chunkSize) < info->comm->channels[0].tree.depth && chunkSize > 32768) chunkSize /= 2;
+      while (info->nBytes / (coll->args.nChannels*chunkSize) < info->comm->channels[0].treeUp.depth*8 && chunkSize > 131072) chunkSize /= 2;
+      while (info->nBytes / (coll->args.nChannels*chunkSize) < info->comm->channels[0].treeUp.depth*4 && chunkSize > 65536) chunkSize /= 2;
+      while (info->nBytes / (coll->args.nChannels*chunkSize) < info->comm->channels[0].treeUp.depth && chunkSize > 32768) chunkSize /= 2;
     }
     // Use lastChunkSize as chunkSize
     coll->args.lastChunkSize = chunkSize / ncclTypeSize(info->datatype);
@@ -354,12 +360,29 @@ static ncclResult_t computeColl(struct ncclInfo* info /* input */, struct ncclCo
     coll->args.lastChunkSize = DIVUP((info->nBytes-(info->nBytes/loopSize)*loopSize), coll->args.nChannels*info->nchunksPerLoop);
     ALIGN_SIZE(coll->args.lastChunkSize, coll->args.nThreads*sizeof(uint64_t));
     coll->args.lastChunkSize /= ncclTypeSize(info->datatype);
+  } else if (treeMode == 1 && llMode == 2) {
+    char* str = getenv("NCCL_CHUNKSIZE");
+    if (str && atoi(str)) {
+      chunkSize = atoi(str);
+    } else if (info->pattern == ncclPatternTreeUpDown) {
+      // Optimize chunkSize / nSteps
+      for (int steps=16; steps; steps >>= 1) {
+        while ((info->nBytes / (coll->args.nChannels*chunkSize) < steps*2) &&
+            (chunkSize > (steps*(coll->args.nThreads/2)*sizeof(uint64_t)))) {
+          chunkSize /= 2;
+        }
+      }
+    }
+    // Use lastChunkSize as chunkSize
+    coll->args.lastChunkSize = chunkSize*NCCL_LL128_DATAELEMS/(NCCL_LL128_LINEELEMS*ncclTypeSize(info->datatype));
   }
 
   // Compute nSteps for proxies
-  size_t nBytes  = llMode ? info->nBytes*2 : info->nBytes;
-
-  int nLoops = (int)(DIVUP(nBytes, (((size_t)(coll->args.nChannels))*info->nchunksPerLoop*chunkSize)));
+  int chunkEffectiveSize = chunkSize;
+  if (llMode == 1) chunkEffectiveSize /= 2;
+  if (llMode == 2) chunkEffectiveSize = (chunkSize / NCCL_LL128_LINEELEMS) * NCCL_LL128_DATAELEMS;
+//  if (info->comm->rank == 0) printf("Size %ld -> %dx%d, chunkSize %d\n", info->nBytes, coll->args.nChannels, coll->args.nThreads, chunkSize);
+  int nLoops = (int)(DIVUP(info->nBytes, (((size_t)(coll->args.nChannels))*info->nchunksPerLoop*chunkEffectiveSize)));
   proxyArgs->nsteps = info->nstepsPerLoop * nLoops * chunkSteps;
   proxyArgs->sliceSteps = sliceSteps;
   proxyArgs->chunkSteps = chunkSteps;
@@ -368,7 +391,7 @@ static ncclResult_t computeColl(struct ncclInfo* info /* input */, struct ncclCo
   proxyArgs->dtype = info->datatype;
   proxyArgs->redOp = info->op;
   TRACE(NCCL_NET,"opCount %lx slicesteps %d spl %d cpl %d nbytes %zi -> llmode %d nchannels %d nthreads %d, nloops %d nsteps %d comm %p",
-      coll->args.opCount, proxyArgs->sliceSteps, info->nstepsPerLoop, info->nchunksPerLoop, nBytes, llMode, coll->args.nChannels, coll->args.nThreads,
+      coll->args.opCount, proxyArgs->sliceSteps, info->nstepsPerLoop, info->nchunksPerLoop, info->nBytes, llMode, coll->args.nChannels, coll->args.nThreads,
       nLoops, proxyArgs->nsteps, info->comm);
   return ncclSuccess;
 }

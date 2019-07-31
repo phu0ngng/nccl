@@ -127,3 +127,12 @@ __device__ void ncclReduceScatterTreeLLKernel(struct CollectiveArgs* args) { }
 
 template<int UNUSED, class FUNC, typename T>
 __device__ void ncclReduceScatterAcclLLKernel(struct CollectiveArgs* args) { }
+
+template<int UNUSED, class FUNC, typename T>
+__device__ void ncclReduceScatterRingLL128Kernel(struct CollectiveArgs* args) { }
+
+template<int UNUSED, class FUNC, typename T>
+__device__ void ncclReduceScatterTreeLL128Kernel(struct CollectiveArgs* args) { }
+
+template<int UNUSED, class FUNC, typename T>
+__device__ void ncclReduceScatterAcclLL128Kernel(struct CollectiveArgs* args) { }

@@ -99,3 +99,12 @@ __device__ void ncclReduceTreeLLKernel(struct CollectiveArgs* args) { }
 
 template<int UNUSED, class FUNC, typename T>
 __device__ void ncclReduceAcclLLKernel(struct CollectiveArgs* args) { }
+
+template<int UNUSED, class FUNC, typename T>
+__device__ void ncclReduceRingLL128Kernel(struct CollectiveArgs* args) { }
+
+template<int UNUSED, class FUNC, typename T>
+__device__ void ncclReduceTreeLL128Kernel(struct CollectiveArgs* args) { }
+
+template<int UNUSED, class FUNC, typename T>
+__device__ void ncclReduceAcclLL128Kernel(struct CollectiveArgs* args) { }

@@ -19,7 +19,7 @@ lic: $(LICENSE_TARGETS)
 ${BUILDDIR}/%.txt: %.txt
 	@printf "Copying    %-35s > %s\n" $< $@
 	mkdir -p ${BUILDDIR}
-	cp $< $@
+	install -m 644 $< $@
 
 src.%:
 	${MAKE} -C src $* BUILDDIR=${ABSBUILDDIR}
