@@ -10,8 +10,8 @@
 #include "graph.h"
 #include "core.h"
 
-#define PASCAL_NVLINK_WIDTH 17
-#define VOLTA_NVLINK_WIDTH 22
+#define PASCAL_NVLINK_WIDTH 18
+#define VOLTA_NVLINK_WIDTH 21
 #define PCI_WIDTH 12           // PCI Gen3 x16
 #define PCI_CPU_WIDTH 9
 #define QPI_WIDTH 6
@@ -42,12 +42,22 @@ struct ncclTopoLink {
 #define NCCL_TOPO_MAX_HOPS (NCCL_TOPO_MAX_NODES*NCCL_TOPO_NODE_TYPES)
 #define SELECT_PATH 1
 #define SELECT_LAST 2
+
+struct ncclTopoLinkList {
+  struct ncclTopoLink* list[NCCL_TOPO_MAX_HOPS];
+  int count;
+  int width;
+  int nvlink;
+};
+
 struct ncclTopoNode {
   int type;
   int id;
   int rank;
   int nlinks;
   struct ncclTopoLink links[NCCL_TOPO_MAX_LINKS];
+  struct ncclTopoLinkList* paths[NCCL_TOPO_NODE_TYPES];
+  uint64_t used;
 };
 
 struct ncclTopoNodeSet {
@@ -57,8 +67,10 @@ struct ncclTopoNodeSet {
 
 struct ncclTopoSystem {
   struct ncclTopoNodeSet nodes[NCCL_TOPO_NODE_TYPES];
+  int maxSpeed;
   int maxChannels;
   int maxWidth;
+  int searchInitDone;
 };
 
 static ncclResult_t ncclTopoCreateNode(struct ncclTopoSystem* system, struct ncclTopoNode** node, int type, int id) {

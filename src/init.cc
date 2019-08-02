@@ -518,7 +518,7 @@ static ncclResult_t p2pSetup(struct ncclComm* comm, struct ncclChannel* channel,
 NCCL_PARAM(CrossNic, "CROSS_NIC", 2);
 
 static ncclResult_t printGraph(struct ncclTopoGraph* graph, int localRanks) {
-  INFO(NCCL_GRAPH, "Pattern %d, crossNic %d, nChannels %d", graph->pattern, graph->crossNic, graph->nChannels);
+  INFO(NCCL_GRAPH, "Pattern %d, crossNic %d, nChannels %d, speed %d, nvlink %d", graph->pattern, graph->crossNic, graph->nChannels, graph->speed, graph->nvlink);
 
   char line[1024];
   for (int c=0; c<graph->nChannels; c++) {

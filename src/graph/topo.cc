@@ -150,6 +150,7 @@ ncclResult_t ncclTopoConnectNVLink(nvmlDevice_t* nvmlDevs, struct ncclTopoSystem
     minNvlinks = std::min(minNvlinks, nvlinks);
     minWidth = std::min(minWidth, nvlinks ? width : PCI_WIDTH);
   }
+  system->maxSpeed = minNvlinks ? minNvlinks*minWidth : PCI_WIDTH;
   system->maxChannels = minNvlinks ? minNvlinks : 1;
   system->maxWidth = minWidth;
   return ncclSuccess;
@@ -289,6 +290,7 @@ ncclResult_t ncclTopoConnectPCI(nvmlDevice_t* nvmlDevs, struct ncclTopoSystem* s
       }
       free(path);
     }
+    system->maxSpeed = std::min(system->maxSpeed, netDevCount*NET_WIDTH);
     system->maxChannels = std::max(system->maxChannels, netDevCount);
     system->maxWidth = NET_WIDTH;
   }
