@@ -7,10 +7,9 @@
 default: build
 
 BUILDDIR=build
-NCCL_HOME ?= ../../build/
 CUDA_HOME ?= /usr/local/cuda
 SHARP_HOME ?= /opt/hpcx/v2.4.0_update/sharp
-INC:= -I$(NCCL_HOME)/include -I$(CUDA_HOME)/include -I$(SHARP_HOME)/include
+INC:= -I$(CUDA_HOME)/include -I$(SHARP_HOME)/include
 CFLAGS:=-fPIC $(INC) -std=c99  -D_GNU_SOURCE -I. -g -O0
 PLUGIN_SO:=$(BUILDDIR)/lib/libnccl-net.so
 FILES:=plugin.c ibvwrap.c utils.c
