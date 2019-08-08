@@ -130,6 +130,7 @@ class ncclLL128Primitives {
 
   template <int ELEMS_PER_THREAD>
   inline __device__ void loadSrcToShmem128(int maxOffset, const uint64_t* src64Ptr) {
+#if 0
     uint64_t v[ELEMS_PER_THREAD];
     #pragma unroll
     for (int u=0; u<ELEMS_PER_THREAD; u+=2) {
@@ -140,6 +141,17 @@ class ncclLL128Primitives {
     for (int u=0; u<ELEMS_PER_THREAD; u+=2) {
       storeShmem128(shmemAsmPtr+u*WARP_SIZE, v[u], v[u+1]);
     }
+#else
+    uint64_t* shmemAsmPtr = shmemCvtPtr(shmem);
+    #pragma unroll
+    for (int u=0; u<ELEMS_PER_THREAD; u+=2) {
+      if (u*WARP_SIZE < maxOffset) {
+        uint64_t v0, v1;
+        load128(src64Ptr+u*WARP_SIZE, v0, v1);
+        storeShmem128(shmemAsmPtr+u*WARP_SIZE, v0, v1);
+      }
+    }
+#endif
   }
 
   inline __device__ void loadSrcToShmem(int start, int end, const T* srcPtr) {

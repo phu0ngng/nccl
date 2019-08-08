@@ -294,7 +294,7 @@ static void getKernelInfo(struct ncclInfo* info, uint8_t* nChannels, uint16_t* n
   } else if (info->coll == ncclCollAllReduce && info->nBytes <= ll128Threshold) {
     *llMode = 2;
     *nChannels = nc;
-    *nThreads = NCCL_MAX_NTHREADS;
+    *nThreads = NCCL_LL128_MAX_NTHREADS;
   } else {
     *llMode = 0;
     *nChannels = info->comm->nChannels;
@@ -347,6 +347,7 @@ static ncclResult_t computeColl(struct ncclInfo* info /* input */, struct ncclCo
     if (str && atoi(str)) {
       chunkSize = atoi(str);
     } else if (info->pattern == ncclPatternTreeUpDown) {
+      chunkSize = (chunkSize*7/(10*32))*32;
       // Optimize chunkSize / nSteps
       for (int steps=16; steps; steps >>= 1) {
         while ((info->nBytes / (coll->args.nChannels*chunkSize) < steps*2) &&
