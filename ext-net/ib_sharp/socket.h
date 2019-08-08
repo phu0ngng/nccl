@@ -63,7 +63,6 @@ static inline int envSocketFamily(void) {
 }
 
 static int filterInterfaces(const char* prefixList, char* names, union socketAddress *addrs, int sock_family, int maxIfNameSize, int maxIfs) {
-  char line[1024];
   struct netIf userIfs[MAX_IFS];
   int searchNot = prefixList && prefixList[0] == '^';
   int nUserIfs = parseStringList(prefixList, userIfs, MAX_IFS);
@@ -117,6 +116,7 @@ static int filterInterfaces(const char* prefixList, char* names, union socketAdd
   return found;
 }
 
+static ncclResult_t GetSocketAddrFromString(union socketAddress* ua, const char* ip_port_pair)  __attribute__((unused));
 static ncclResult_t GetSocketAddrFromString(union socketAddress* ua, const char* ip_port_pair) {
   if (!(ip_port_pair && strlen(ip_port_pair) > 1)) {
     WARN("Net : string is null");
