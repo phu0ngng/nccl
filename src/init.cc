@@ -604,10 +604,10 @@ static ncclResult_t initTransportsRank(struct ncclComm* comm, ncclUniqueId* comm
   struct ncclTopoGraph treeGraph;
   // FIXME : The tree loop cannot be used currently for LL128 because we have
   // a single FIFO for both treeUp and treeDn and both are used concurrently.
-  treeGraph.pattern = NCCL_TOPO_PATTERN_SPLIT_TREE_LOOP;
-  treeGraph.crossNic = ncclParamCrossNic();
+  treeLoopGraph.pattern = NCCL_TOPO_PATTERN_SPLIT_TREE_LOOP;
+  treeLoopGraph.crossNic = ncclParamCrossNic();
   NCCLCHECK(ncclTopoCompute(comm->topo, &treeLoopGraph, NULL));
-  NCCLCHECK(printGraph(&treeGraph, comm->localRanks));
+  NCCLCHECK(printGraph(&treeLoopGraph, comm->localRanks));
   treeGraph.pattern = NCCL_TOPO_PATTERN_SPLIT_TREE;
   treeGraph.crossNic = ncclParamCrossNic();
   NCCLCHECK(ncclTopoCompute(comm->topo, &treeGraph, &treeLoopGraph));

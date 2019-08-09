@@ -332,7 +332,7 @@ ncclResult_t ncclTopoSearchRecGpu(struct ncclTopoSystem* system, struct ncclTopo
       NCCLCHECK(ncclTopoFollowPath(paths+g, &nextGpu, graph->speed));
       if (nextGpu) {
         int nvlink = graph->nvlink;
-        paths[g].nvlink = graph->nvlink;
+        graph->nvlink = paths[g].nvlink;
         //printf("GPU/%d -> GPU/%d (%d/%d)\n", gpu->id, nextGpu->id, i, g);
         nextGpu->used ^= flag;
         NCCLCHECK(ncclTopoSearchRecGpu(system, graph, saveGraph, nextGpu, step+1, backToNet, backToFirstRank, time));
@@ -446,7 +446,6 @@ ncclResult_t ncclTopoSearchParams(struct ncclTopoSystem* system, int pattern, in
 
 ncclResult_t ncclTopoSearchRec(struct ncclTopoSystem* system, struct ncclTopoGraph* graph, struct ncclTopoGraph* saveGraph, int* time) {
   int backToNet, backToFirstRank;
-  graph->nvlink = 1;
   NCCLCHECK(ncclTopoSearchParams(system, graph->pattern, &backToNet, &backToFirstRank));
   if (system->nodes[NET].count) {
     // Start from NET
@@ -515,18 +514,38 @@ end:
 
 ncclResult_t ncclTopoCompute(struct ncclTopoSystem* system, struct ncclTopoGraph* graph, struct ncclTopoGraph* baseGraph) {
   int ngpus = system->nodes[GPU].count;
+  graph->speed = 0;
+  graph->nvlink = 0;
+  graph->nChannels = 0;
+
   char* str = getenv("NCCL_GRAPH");
   if (str) {
-    if (graph->pattern == NCCL_TOPO_PATTERN_SPLIT_TREE_LOOP) {
-      NCCLCHECK(parseGraph(str, &graph->nChannels, ngpus, graph->intra));
-      for (int i=0; i<graph->nChannels*ngpus; i++) {
-        // Translate gpu numbers into ranks
-        graph->intra[i] = system->nodes[GPU].nodes[graph->intra[i]].rank;
-      }
-      graph->speed = PCI_WIDTH+2;
-      graph->nvlink = 1;
-      return ncclSuccess;
+    NCCLCHECK(parseGraph(str, &graph->nChannels, ngpus, graph->intra));
+    for (int i=0; i<graph->nChannels*ngpus; i++) {
+      // Translate gpu numbers into ranks
+      graph->intra[i] = system->nodes[GPU].nodes[graph->intra[i]].rank;
     }
+    graph->speed = PCI_WIDTH+2;
+    graph->nvlink = 0;
+    if (graph->pattern == NCCL_TOPO_PATTERN_RING) {
+      // Reverse the loop
+      for (int c=0; c<graph->nChannels; c++) {
+        for (int i=0; i<=ngpus/2; i++) {
+          int tmp = graph->intra[ngpus*c+i];
+          graph->intra[ngpus*c+i] = graph->intra[ngpus*c+(ngpus-i)%ngpus];
+          graph->intra[ngpus*c+ngpus-i] = tmp;
+        }
+      }
+    }
+    if (graph->nChannels) return ncclSuccess;
+  }
+  if (ngpus == 1) {
+    graph->speed = PCI_WIDTH;
+    graph->nvlink = 1;
+    graph->nChannels = 1;
+    graph->intra[0] = system->nodes[GPU].nodes[0].rank;
+    if (graph->pattern != NCCL_TOPO_PATTERN_RING) graph->pattern = NCCL_TOPO_PATTERN_TREE;
+    return ncclSuccess;
   }
 
   NCCLCHECK(ncclTopoSearchInit(system));
@@ -539,6 +558,8 @@ ncclResult_t ncclTopoCompute(struct ncclTopoSystem* system, struct ncclTopoGraph
       tmpGraph.pattern = graph->pattern;
       while (1) {
         int time = NCCL_SEARCH_TIMEOUT;
+        tmpGraph.nvlink = 1;
+        tmpGraph.nChannels = 0;
         NCCLCHECK(ncclTopoSearchRec(system, &tmpGraph, graph, &time));
 #if 0
         printf("Pattern %d, crossNic %d, Speed %d, nChannels %d %s\n", tmpGraph.pattern, tmpGraph.crossNic, tmpGraph.speed, graph->nChannels, time == 0 ? "TIMEOUT" : "");
@@ -560,6 +581,10 @@ ncclResult_t ncclTopoCompute(struct ncclTopoSystem* system, struct ncclTopoGraph
       }
     }
     if (tmpGraph.speed <= bestSpeed/2) break;
+  }
+  if (graph->nChannels == 0) {
+    WARN("Could not find a path for pattern %d\n", graph->pattern);
+    return ncclInternalError;
   }
   return ncclSuccess;
 }
