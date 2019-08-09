@@ -29,6 +29,10 @@ ncclResult_t ncclTopoPreset(struct ncclComm* comm, int* firstRanks,
     for (int i=0; i<NCCL_MAX_TREE_ARITY; i++) channel->treeUp.down[i] = -1;
     channel->treeDn.up = -1;
     for (int i=0; i<NCCL_MAX_TREE_ARITY; i++) channel->treeDn.down[i] = -1;
+    channel->collTreeUp.up = -1;
+    for (int i=0; i<NCCL_MAX_TREE_ARITY; i++) channel->collTreeUp.down[i] = -1;
+    channel->collTreeDn.up = -1;
+    for (int i=0; i<NCCL_MAX_TREE_ARITY; i++) channel->collTreeDn.down[i] = -1;
 
     int* ringIntra = ringGraph->intra+c*localRanks;
     int* treeIntra = treeGraph->intra+c*localRanks;
@@ -53,11 +57,15 @@ ncclResult_t ncclTopoPreset(struct ncclComm* comm, int* firstRanks,
         topoRanks->treeDnSend[c] = treeIntra[sendIndex];
         channel->treeDn.up       = treeIntra[prev];
         channel->treeDn.down[0]  = treeIntra[next];
+        channel->collTreeDn.up   = treeIntra[prev];
+        channel->collTreeDn.down[0] = treeIntra[next];
         // Up tree depends on the pattern
         topoRanks->treeUpRecv[c] = sym ? topoRanks->treeDnSend[c] : topoRanks->treeDnRecv[c];
         topoRanks->treeUpSend[c] = sym ? topoRanks->treeDnRecv[c] : topoRanks->treeDnSend[c];
         channel->treeUp.down[0]  = sym ? channel->treeDn.down[0]  : channel->treeDn.up ;
         channel->treeUp.up       = sym ? channel->treeDn.up       : channel->treeDn.down[0];
+        channel->collTreeUp.down[0]  = sym ? channel->treeDn.down[0]  : channel->treeDn.up ;
+        channel->collTreeUp.up       = sym ? channel->treeDn.up       : channel->treeDn.down[0];
       }
     }
     topoRanks->ringPrev[c] = channel->ring.prev;
@@ -156,6 +164,8 @@ static ncclResult_t connectTrees(struct ncclComm* comm, int* treeUpRecv, int* tr
      NCCLCHECK(getIndexes(treeUpRecv+c*comm->nRanks, indexesRecv, nNodes, firstRanks));
      NCCLCHECK(openRing(&channel0->treeUp, comm->rank, indexesSend[node]));
      NCCLCHECK(openRing(&channel1->treeUp, comm->rank, indexesSend[node]));
+     NCCLCHECK(openRing(&channel0->collTreeUp, comm->rank, indexesSend[node]));
+     NCCLCHECK(openRing(&channel1->collTreeUp, comm->rank, indexesSend[node]));
      int root = indexesSend[node];
      if (indexesSend[node] == comm->rank) NCCLCHECK(setTreeUp(&channel0->treeUp, &channel1->treeUp, indexesRecv, u0, u1));
      if (indexesRecv[node] == comm->rank) NCCLCHECK(setTreeDown(&channel0->treeUp, &channel1->treeUp, indexesSend, d0_0, d0_1, d1_0, d1_1));
@@ -163,6 +173,8 @@ static ncclResult_t connectTrees(struct ncclComm* comm, int* treeUpRecv, int* tr
      NCCLCHECK(getIndexes(treeDnRecv+c*comm->nRanks, indexesRecv, nNodes, firstRanks));
      NCCLCHECK(openRing(&channel0->treeDn, comm->rank, u0 == -1 ? root : indexesRecv[node]));
      NCCLCHECK(openRing(&channel1->treeDn, comm->rank, u1 == -1 ? root : indexesRecv[node]));
+     NCCLCHECK(openRing(&channel0->collTreeDn, comm->rank, u0 == -1 ? root : indexesRecv[node]));
+     NCCLCHECK(openRing(&channel1->collTreeDn, comm->rank, u1 == -1 ? root : indexesRecv[node]));
      if (indexesSend[node] == comm->rank) NCCLCHECK(setTreeDown(&channel0->treeDn, &channel1->treeDn, indexesRecv, d0_0, d0_1, d1_0, d1_1));
      if (indexesRecv[node] == comm->rank) NCCLCHECK(setTreeUp(&channel0->treeDn, &channel1->treeDn, indexesSend, u0, u1));
      TRACE(NCCL_GRAPH, "TreeUp %d : %d -> %d/%d/%d", c,           channel0->treeUp.up, channel0->treeUp.down[0], channel0->treeUp.down[1], channel0->treeUp.down[2]);

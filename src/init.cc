@@ -556,22 +556,25 @@ extern struct ncclCollTransport collNetTransport;
 // All ranks must participate in collNetSetup call
 // type: 0 for send, 1 for recv
 // return: 0 - unsupported, 1 - supported
-static int collNetSetup(struct ncclComm* comm, struct ncclChannel* channel, int nChannels, int rank, int nranks,  int* treeMasters, int type) {
-  int nMasters = 0, rankInCollNet = -1;
+static int collNetSetup(struct ncclComm* comm, struct ncclChannel* channel, int rank, int nranks,  int* intraRanks, int* nodesFirstRank, int nMasters, int type) {
+  int rankInCollNet = -1;
   int supported = 0;
-  for (int r=0; r<nranks; r++) {
-    if (r == rank) rankInCollNet = nMasters;
-    nMasters += treeMasters[r];
+  int isMaster = (rank == intraRanks[0]) ? 1 : 0;
+  for (int n=0; n<nMasters; n++) {
+    if (rank >= nodesFirstRank[n] && (n+1 == nMasters || rank < nodesFirstRank[n+1])) {
+      rankInCollNet = n;
+      break;
+    }
   }
-  if (nMasters == 0) {
-    return 0;
+  if (isMaster) {
+    INFO(NCCL_INIT, "Node %d rank %d intraRank[0] %d is master [%s]", rankInCollNet, rank, intraRanks[0], type == 0 ? "send" : "recv");
   }
 
   // check if we can connect to collnet, whose root is the nranks-th rank
   struct ncclPeerInfo *myInfo = comm->peerInfo+rank, *peerInfo = comm->peerInfo+nranks;
   peerInfo->rank = nranks;
   int ret = 1;
-  if (treeMasters[rank]) {
+  if (isMaster) {
     NCCLCHECK(collNetTransport.canConnect(&ret, myInfo, peerInfo));
   }
 
@@ -582,34 +585,39 @@ static int collNetSetup(struct ncclComm* comm, struct ncclChannel* channel, int 
   conn->transportComm = transportComm;
   // setup
   struct ncclConnect myConnect;
-  if (treeMasters[rank] && ret > 0) {
+  if (isMaster && ret > 0) {
     NCCLCHECK(transportComm->setup(myInfo, peerInfo, &myConnect, conn, channel->buffSize, channel->id));
   }
   // exchange connect handles
   // all ranks must participate in the AllGather call
   ncclResult_t res;
-  ncclConnect *masterConnects = NULL, *allConnects = NULL;
+  struct {
+    int isMaster;
+    ncclConnect connect;
+  } *allConnects = NULL;
+  ncclConnect *masterConnects = NULL;
   if (type == 1) {  // perform AllGather only once
     NCCLCHECK(ncclCalloc(&allConnects, nranks));
     NCCLCHECK(ncclCalloc(&masterConnects, nMasters));
-    memcpy(allConnects+rank, &myConnect, sizeof(struct ncclConnect));
-    NCCLCHECKGOTO(bootstrapAllGather(comm->bootstrap, allConnects, sizeof(struct ncclConnect)), res, cleanup);
+    allConnects[rank].isMaster = isMaster;
+    memcpy(&(allConnects[rank].connect), &myConnect, sizeof(struct ncclConnect));
+    NCCLCHECKGOTO(bootstrapAllGather(comm->bootstrap, allConnects, sizeof(*allConnects)), res, cleanup);
     // consolidate
     int c = 0;
     for (int r = 0; r < nranks; r++) {
-      if (treeMasters[r]) {
-        memcpy(masterConnects+c, allConnects+r, sizeof(struct ncclConnect));
+      if (allConnects[r].isMaster) {
+        memcpy(masterConnects+c, &(allConnects[r].connect), sizeof(struct ncclConnect));
         c++;
       }
     }
   }
   // connect
-  if (treeMasters[rank] && ret > 0) {
+  if (isMaster && ret > 0) {
     NCCLCHECKGOTO(transportComm->connect(masterConnects, nMasters, rankInCollNet, conn), res, cleanup);
-    TRACE(NCCL_INIT, "rank %d collNetRank %d collNetNranks %d init COMPLETE", rank, rankInCollNet, nMasters);
+    INFO(NCCL_INIT, "rank %d collNetRank %d collNetNranks %d init COMPLETE", rank, rankInCollNet, nMasters);
   }
   // connect send and recv (perform only once)
-  if (treeMasters[rank] && ret > 0 && type == 1) {
+  if (isMaster && ret > 0 && type == 1) {
     struct ncclChannel* sendChannel = channel - 1;
     ncclConnector* send = &sendChannel->peers[nranks].send;
     NCCLCHECKGOTO(collNetTransport.connectSendRecv(send, conn), res, cleanup);
@@ -744,15 +752,28 @@ static ncclResult_t initTransportsRank(struct ncclComm* comm, ncclUniqueId* comm
   // FIXME : The tree loop cannot be used currently for LL128 because we have
   // a single FIFO for both treeUp and treeDn and both are used concurrently.
   //treeGraph.pattern = NCCL_TOPO_PATTERN_SPLIT_TREE_LOOP;
-  treeGraph.pattern = NCCL_TOPO_PATTERN_SPLIT_TREE;
+  treeGraph.pattern = NCCL_TOPO_PATTERN_TREE;
   treeGraph.crossNic = ncclParamCrossNic();
   NCCLCHECK(ncclTopoCompute(comm->topo, &treeGraph, NULL));
-  NCCLCHECK(printGraph(&treeGraph, comm->localRanks));
+  if (rank==8) NCCLCHECK(printGraph(&treeGraph, comm->localRanks));
+
   struct ncclTopoGraph ringGraph;
   ringGraph.pattern = NCCL_TOPO_PATTERN_RING;
   ringGraph.crossNic = ncclParamCrossNic();
   NCCLCHECK(ncclTopoCompute(comm->topo, &ringGraph, &treeGraph));
-  NCCLCHECK(printGraph(&ringGraph, comm->localRanks));
+  //NCCLCHECK(printGraph(&ringGraph, comm->localRanks));
+
+#if 0
+  struct ncclTopoGraph collNetGraph;
+  collNetGraph.pattern = NCCL_TOPO_PATTERN_TREE;
+  collNetGraph.crossNic = ncclParamCrossNic();
+  NCCLCHECK(ncclTopoCompute(comm->topo, &collNetGraph, NULL));
+  NCCLCHECK(printGraph(&collNetGraph, comm->localRanks));
+#else
+  struct ncclTopoGraph collNetGraph;
+  memcpy(&collNetGraph, &treeGraph, sizeof(struct ncclTopoGraph));
+#endif
+
   int nChannels = std::min(treeGraph.nChannels, ringGraph.nChannels);
 
   comm->nThreads = getNThreads();
@@ -823,8 +844,23 @@ static ncclResult_t initTransportsRank(struct ncclComm* comm, ncclUniqueId* comm
   // Might have been modified (i.e. channels being duplicated) -- reload.
   nChannels = comm->nChannels;
 
+  // Re-arrange collTree
+  for (int c=nChannels/2-1; c>=0; c--) {
+    struct ncclChannel* channel = comm->channels+c;
+    struct ncclChannel* channel0 = comm->channels+c*2;  // interleave
+    struct ncclChannel* channel1 = channel0+1;
+    memcpy(&channel0->collTreeUp, &channel->collTreeUp, sizeof(struct ncclTree));
+    memcpy(&channel0->collTreeDn, &channel->collTreeDn, sizeof(struct ncclTree));
+    memcpy(&channel1->collTreeUp, &channel->collTreeUp, sizeof(struct ncclTree));
+    memcpy(&channel1->collTreeDn, &channel->collTreeDn, sizeof(struct ncclTree));
+    if (rank == collNetGraph.intra[0+c*comm->localRanks]) { // is master
+      channel0->collTreeUp.up = channel0->collTreeDn.up = nranks;
+      channel1->collTreeUp.up = channel1->collTreeDn.up = nranks;
+    }
+    INFO(NCCL_INIT, "Channel %d rank %d up %d down %d", c, rank, channel0->collTreeUp.up, channel1->collTreeUp.down[0]);
+  }
+
   free(allTopoRanks);
-  free(nodesFirstRank);
   free(allGather3Data);
 
   // AllGather3 - end
@@ -864,8 +900,7 @@ static ncclResult_t initTransportsRank(struct ncclComm* comm, ncclUniqueId* comm
     NCCLCHECK(p2pSetup(comm, channel, 1, &channel->treeDn.up, NCCL_MAX_TREE_ARITY, channel->treeDn.down));
     if (collNetSetupCond) {
       int sendrecv = c%2; // 0 for send, 1 for recv
-      //FIXME: prepare treeIn or use alternative
-      if (collNetSetup(comm, channel, nChannels, rank, nranks, treeIn+c*nranks, sendrecv) != 1)
+      if (collNetSetup(comm, channel, rank, nranks, collNetGraph.intra+c/2*comm->localRanks, nodesFirstRank, comm->nNodes, sendrecv) != 1)
         collNetSetupFail = 1;
     }
   }
@@ -883,6 +918,7 @@ static ncclResult_t initTransportsRank(struct ncclComm* comm, ncclUniqueId* comm
   }
 
   TRACE(NCCL_INIT, "rank %d nranks %d - CONNECTED %d RINGS AND TREES", rank, nranks, nChannels);
+  free(nodesFirstRank);
   free(connect);
   free(rings);
 

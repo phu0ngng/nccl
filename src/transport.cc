@@ -93,14 +93,13 @@ static void ProxyAppend(struct ncclConnector* connector, struct ncclProxyArgs* a
   pthread_mutex_unlock(&state->mutex);
 }
 
-extern struct ncclCollTransport collNetTransport;
-
 template <int type>
 static ncclResult_t SaveProxy(int peer, struct ncclProxyArgs* args) {
   if (peer < 0) return ncclSuccess;
 
   struct ncclPeer* peerComm = args->channel->peers+peer;
   struct ncclConnector* connector = type == proxyRecv ? &peerComm->recv : &peerComm->send;
+  if (connector->transportComm == NULL) return ncclInternalError;
   if (connector->transportComm->proxy == NULL) return ncclSuccess;
 
   struct ncclProxyArgs* op;
@@ -133,13 +132,13 @@ ncclResult_t transportSaveProxies(struct ncclProxyArgs* args, int pattern, int r
   }
   if (pattern == ncclPatternCollTreeUp) {
     // CollTree up
-    struct ncclTree* tree = &args->channel->collTree;
+    struct ncclTree* tree = &args->channel->collTreeUp;
     NCCLCHECK(SaveProxy<proxyRecv>(tree->down[0], args));
     NCCLCHECK(SaveProxy<proxySend>(tree->up, args));
   }
   if (pattern == ncclPatternCollTreeDown) {
     // CollTree down
-    struct ncclTree* tree = &args->channel->collTree;
+    struct ncclTree* tree = &args->channel->collTreeDn;
     NCCLCHECK(SaveProxy<proxySend>(tree->down[0], args));
     NCCLCHECK(SaveProxy<proxyRecv>(tree->up, args));
   }
