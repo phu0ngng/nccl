@@ -291,7 +291,8 @@ static void getKernelInfo(struct ncclInfo* info, uint8_t* nChannels, uint16_t* n
     *llMode = 1;
     *nChannels = nc;
     *nThreads = nt;
-  } else if (info->coll == ncclCollAllReduce && info->nBytes <= ll128Threshold) {
+  } else if ((info->coll == ncclCollAllReduce || info->coll == ncclCollBroadcast || info->coll == ncclCollReduce)
+             && info->nBytes <= ll128Threshold) {
     *llMode = 2;
     *nChannels = nc;
     *nThreads = NCCL_LL128_MAX_NTHREADS;
