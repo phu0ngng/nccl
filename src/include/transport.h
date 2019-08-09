@@ -11,6 +11,9 @@
 #include "devcomm.h"
 #include <stdint.h>
 #include "nvmlwrap.h"
+#include <sys/types.h>
+#include <sys/stat.h>
+#include <unistd.h>
 
 #define NTRANSPORTS 3
 
@@ -27,6 +30,7 @@ struct ncclPeerInfo {
   int nvmlDev;
   uint64_t hostHash;
   uint64_t pidHash;
+  dev_t shmDev;
   char busId[NVML_DEVICE_PCI_BUS_ID_BUFFER_SIZE];
 };
 

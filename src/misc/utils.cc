@@ -10,6 +10,8 @@
 #include <unistd.h>
 #include <string.h>
 #include <stdarg.h>
+#include <stdlib.h>
+#include <string.h>
 
 #include "nvmlwrap.h"
 #include "core.h"
@@ -98,29 +100,44 @@ uint64_t getHash(const char* string) {
 
 /* Generate a hash of the unique identifying string for this host
  * that will be unique for both bare-metal and container instances
- * Equivalent of a hash of;
+ * Default is the equivalent of a hash of;
  *
- * $(hostname) $(readlink /proc/self/ns/uts) $(readlink /proc/self/ns/mnt)
+ * $(hostname) $(readlink /proc/self/ns/uts)
  */
+#define NS_PATH "/proc/self/ns/"
+#define DEFAULT_HOSTHASH "uts"
 uint64_t getHostHash(void) {
-  char uname[1024];
+  char hostHash[1024];
   // Start off with the full hostname
-  (void) getHostName(uname, sizeof(uname), '\0');
-  int offset = strlen(uname);
-  int len;
-  // $(readlink /proc/self/ns/uts)
-  len = readlink("/proc/self/ns/uts", uname+offset, sizeof(uname)-1-offset);
-  if (len < 0) len = 0;
-  offset += len;
-  // $(readlink /proc/self/ns/mnt)
-  len = readlink("/proc/self/ns/mnt", uname+offset, sizeof(uname)-1-offset);
-  if (len < 0) len = 0;
-  offset += len;
-  // Trailing '\0'
-  uname[offset]='\0';
-  TRACE(NCCL_INIT,"unique hostname '%s'", uname);
+  (void) getHostName(hostHash, sizeof(hostHash), '\0');
+  int offset = strlen(hostHash);
 
-  return getHash(uname);
+  /* Parse the NCCL_HOSTHASH env var adding in the
+   * readlink info from under /proc/self/ns as requested
+   * Full list: [cgroup,ipc,mnt,net,pid,pid_for_children,user,uts]
+   *
+   * For example "uts,mnt" would result in each container on a node
+   * having a unique hostHash and hence disable P2P/IPC between them
+   */
+  char* hostHashEnv = getenv("NCCL_HOSTHASH");
+  char *hostHashNs = (hostHashEnv == NULL) ? strdup(DEFAULT_HOSTHASH) : strdup(hostHashEnv);
+  char *ns = strtok(hostHashNs, ",");
+  while (ns != NULL) {
+    char nsPath[1024];
+    (void) snprintf(nsPath, sizeof(nsPath), "%s%s", NS_PATH, basename(ns));
+    // $(readlink /proc/self/ns/<ns>)
+    int len = readlink(nsPath, hostHash+offset, sizeof(hostHash)-1-offset);
+    if (len < 0) len = 0;
+    offset += len;
+    // Add a trailing '\0'
+    hostHash[offset]='\0';
+    ns = strtok(NULL, ",");
+  }
+  free(hostHashNs);
+
+  TRACE(NCCL_INIT,"unique hostname '%s'", hostHash);
+
+  return getHash(hostHash);
 }
 
 /* Generate a hash of the unique identifying string for this process
