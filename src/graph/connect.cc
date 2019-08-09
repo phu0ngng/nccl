@@ -29,6 +29,9 @@ ncclResult_t ncclTopoPreset(struct ncclComm* comm, int* firstRanks,
     for (int i=0; i<NCCL_MAX_TREE_ARITY; i++) channel->treeUp.down[i] = -1;
     channel->treeDn.up = -1;
     for (int i=0; i<NCCL_MAX_TREE_ARITY; i++) channel->treeDn.down[i] = -1;
+    /* FIXME: we may be able to move colltree out of this function and just copy tree
+     * But this is only legit after PreSet, not PostSet
+     */
     channel->collTreeUp.up = -1;
     for (int i=0; i<NCCL_MAX_TREE_ARITY; i++) channel->collTreeUp.down[i] = -1;
     channel->collTreeDn.up = -1;
@@ -164,6 +167,9 @@ static ncclResult_t connectTrees(struct ncclComm* comm, int* treeUpRecv, int* tr
      NCCLCHECK(getIndexes(treeUpRecv+c*comm->nRanks, indexesRecv, nNodes, firstRanks));
      NCCLCHECK(openRing(&channel0->treeUp, comm->rank, indexesSend[node]));
      NCCLCHECK(openRing(&channel1->treeUp, comm->rank, indexesSend[node]));
+     /* FIXME: added openRing calls here for collTree
+      * Otherwise collTree will have intra-node loop
+      */
      NCCLCHECK(openRing(&channel0->collTreeUp, comm->rank, indexesSend[node]));
      NCCLCHECK(openRing(&channel1->collTreeUp, comm->rank, indexesSend[node]));
      int root = indexesSend[node];

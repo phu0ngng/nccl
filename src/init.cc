@@ -752,10 +752,11 @@ static ncclResult_t initTransportsRank(struct ncclComm* comm, ncclUniqueId* comm
   // FIXME : The tree loop cannot be used currently for LL128 because we have
   // a single FIFO for both treeUp and treeDn and both are used concurrently.
   //treeGraph.pattern = NCCL_TOPO_PATTERN_SPLIT_TREE_LOOP;
+  // FIXME: changed pattern to tree instead of tree loop
   treeGraph.pattern = NCCL_TOPO_PATTERN_TREE;
   treeGraph.crossNic = ncclParamCrossNic();
   NCCLCHECK(ncclTopoCompute(comm->topo, &treeGraph, NULL));
-  if (rank==8) NCCLCHECK(printGraph(&treeGraph, comm->localRanks));
+  NCCLCHECK(printGraph(&treeGraph, comm->localRanks));
 
   struct ncclTopoGraph ringGraph;
   ringGraph.pattern = NCCL_TOPO_PATTERN_RING;
@@ -763,6 +764,9 @@ static ncclResult_t initTransportsRank(struct ncclComm* comm, ncclUniqueId* comm
   NCCLCHECK(ncclTopoCompute(comm->topo, &ringGraph, &treeGraph));
   //NCCLCHECK(printGraph(&ringGraph, comm->localRanks));
 
+  /* FIXME: directly create collNetGraph instead of copying from treeGraph
+   * Currently relying on treeGraph to do the rest of the computation (and collnet piggyback)
+   */
 #if 0
   struct ncclTopoGraph collNetGraph;
   collNetGraph.pattern = NCCL_TOPO_PATTERN_TREE;
@@ -844,7 +848,10 @@ static ncclResult_t initTransportsRank(struct ncclComm* comm, ncclUniqueId* comm
   // Might have been modified (i.e. channels being duplicated) -- reload.
   nChannels = comm->nChannels;
 
-  // Re-arrange collTree
+  /* FIXME: we may need to eventually make collTree ordering the bulky style (as with ring, tree)
+   * because that is how things are done in graph/connect.cc
+   */
+  // Re-arrange collTree ordering to interleaving style
   for (int c=nChannels/2-1; c>=0; c--) {
     struct ncclChannel* channel = comm->channels+c;
     struct ncclChannel* channel0 = comm->channels+c*2;  // interleave
@@ -896,6 +903,9 @@ static ncclResult_t initTransportsRank(struct ncclComm* comm, ncclUniqueId* comm
     struct ncclChannel* channel = comm->channels+c;
     NCCLCHECK(setupChannel(comm, c, rank, nranks, rings+c*nranks));
     NCCLCHECK(p2pSetup(comm, channel, 1, &channel->ring.prev, 1, &channel->ring.next));
+    /* FIXME: change tree to colltree here because we need the P2P connectors
+     * This would NOT be an issue if collTree uses bulky ordering (same as tree) instead of interleave ordering
+     */
     NCCLCHECK(p2pSetup(comm, channel, NCCL_MAX_TREE_ARITY, channel->collTreeUp.down, 1, &channel->collTreeUp.up));
     NCCLCHECK(p2pSetup(comm, channel, 1, &channel->collTreeDn.up, NCCL_MAX_TREE_ARITY, channel->collTreeDn.down));
     if (collNetSetupCond) {
