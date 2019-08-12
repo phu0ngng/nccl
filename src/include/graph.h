@@ -27,10 +27,17 @@ enum ncclPathDist {
 
 extern const char* pathDists[PATH_ARRAY_SIZE];
 
-int pciDistance(char* path1, char* path2);
-
 struct ncclTopoSystem;
+// Build the topology
 ncclResult_t ncclTopoGetSystem(int nranks, int* nvmlIndexes, int* rankIndexes, struct ncclTopoSystem** system, int inter);
+
+// Query topology
+ncclResult_t ncclTopoGetNvlink(struct ncclTopoSystem* system, int nvmlDev1, int nvmlDev2, int* nvlink);
+ncclResult_t ncclTopoHasNvlink(struct ncclTopoSystem* system, int nvmlDev, int* nvlink);
+ncclResult_t ncclTopoGpuDistance(struct ncclTopoSystem* system, int nvmlDev1, int nvmlDev2, int* distance);
+ncclResult_t ncclTopoGetNet(struct ncclTopoSystem* system, int nvmlDev, int id, int* net);
+ncclResult_t ncclTopoNetDistance(struct ncclTopoSystem* system, int nvmlDev, int netDev, int* distance);
+ncclResult_t ncclTopoCpuCount(struct ncclTopoSystem* system, int* count);
 
 #define NCCL_TOPO_MAX_NODES 256
 

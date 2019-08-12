@@ -16,28 +16,6 @@
 #define NET_MAX_IFS 16
 #define NET_MAX_GPUS 32
 
-// Cache GPU-NIC distances to avoid re-computing them
-#define NET_SCORES_UNSET 0ULL
-static uint64_t ncclNetScores[NET_MAX_GPUS] = { NET_SCORES_UNSET };
-static int ncclNetNDev;
-
-// We encode 3 bits of distance per interface into a ncclTvalue_t (64-bit)
-#define NET_BITS_PER_IF 3
-#define NET_BITS_PER_IF_MASK ((1<<NET_BITS_PER_IF)-1)
-static_assert(sizeof(uint64_t)*8 >= NET_MAX_IFS*NET_BITS_PER_IF, "NET_MAX_IFS*NET_BITS_PER_IF must fit in 64 bits");
-static uint64_t getScores(short* distances, int ndev) {
-  uint64_t scores = 0ULL;
-  for (int d=0; d<ndev; d++) {
-    uint64_t score = 1 + PATH_SYS - distances[d];
-    // Keep 3 bits of score info per dev
-    scores |= ((score & NET_BITS_PER_IF_MASK)<<(NET_BITS_PER_IF*d));
-  }
-  return scores;
-}
-static int getScore(uint64_t scores, int dev) {
-  return (scores >> (dev*NET_BITS_PER_IF)) & NET_BITS_PER_IF_MASK;
-}
-
 struct netConnectInfo {
   ncclNetHandle_t netHandle;
 };
@@ -77,124 +55,55 @@ struct netRecvResources {
   uint64_t llLastCleaning;
 };
 
-static ncclResult_t netDistance(int cudaDev, int dev, short* distance) {
-  char* cudaPath = NULL;
-  char* nicPath = NULL;
-  ncclResult_t err;
-  NCCLCHECK(getCudaPath(cudaDev, &cudaPath));
-  err = ncclNetPciPath(dev, &nicPath);
-  *distance = (err != ncclSuccess || nicPath == NULL || cudaPath == NULL) ? PATH_SYS : pciDistance(nicPath, cudaPath);
-  if (nicPath) free(nicPath);
-  if (cudaPath) free(cudaPath);
-  return ncclSuccess;
-}
-
-static ncclResult_t netDevices(int* ndev, short** distances) {
-  NCCLCHECK(ncclNetDevices(ndev));
-  if (*ndev == 0) {
-    WARN("Error : Network returned 0 device");
-    return ncclSystemError;
-  }
-  if (*ndev > NET_MAX_IFS) *ndev = NET_MAX_IFS;
-
-  *distances = (short*)malloc(*ndev*sizeof(short));
-  if (*distances == NULL) return ncclSystemError;
-
-  // Find distance with current GPU
-  int cudaDev, nvmlDev;
-  CUDACHECK(cudaGetDevice(&cudaDev));
-  NCCLCHECK(getNvmlDevice(cudaDev, &nvmlDev))
-  char line[1024];
-  sprintf(line, "CUDA Dev %d[%d], %s NIC distance : ", cudaDev, nvmlDev, ncclNetName());
-  for (int d=0; d<*ndev; d++) {
-    NCCLCHECK(netDistance(cudaDev, d, *distances+d));
-    sprintf(line+strlen(line), " %s", pathDists[(*distances)[d]]);
-  }
-  INFO(NCCL_INIT|NCCL_NET, "%s", line);
-  return ncclSuccess;
-}
-
 /* Determine if we can communicate with the peer */
-ncclResult_t netCanConnect(int* ret, struct ncclPeerInfo* myInfo, struct ncclPeerInfo* peerInfo) {
+ncclResult_t netCanConnect(int* ret, struct ncclTopoSystem* topo, struct ncclPeerInfo* myInfo, struct ncclPeerInfo* peerInfo) {
   *ret = 1;
   return ncclSuccess;
-}
-
-int getDev(int cudaDev, int ringId) {
-  uint64_t scores = ncclNetScores[cudaDev];
-  if (scores == NET_SCORES_UNSET) {
-    if (cudaDev >= NET_MAX_GPUS) {
-      WARN("CUDA device %d >= MAX %d\n", cudaDev, NET_MAX_GPUS);
-      return ncclInternalError;
-    }
-    int nDev;
-    short* distances;
-    NCCLCHECK(netDevices(&nDev, &distances));
-    ncclNetScores[cudaDev] = scores = getScores(distances, nDev);
-    ncclNetNDev = nDev;
-    free(distances);
-  }
-
-  int dev = 0;
-  int maxScore = 0;
-  for (int d=0; d<ncclNetNDev; d++) if (getScore(scores, d) > maxScore) maxScore = getScore(scores, d);
-  int skip = ringId+1;
-  while (skip) {
-    for (int d=0; d<ncclNetNDev; d++) {
-      if (getScore(scores, d) == maxScore) {
-        skip--;
-        if (skip == 0) { dev = d; goto end; }
-      }
-    }
-  }
-end:
-  return dev;
 }
 
 NCCL_PARAM(NetGdrRead, "NET_GDR_READ", -2);
 NCCL_PARAM(NetGdrLevel, "NET_GDR_LEVEL", PATH_PHB);
 
-static ncclResult_t netGetGdrSupport(int dev, int read, int* useGdr) {
+static ncclResult_t netGetGdrSupport(struct ncclTopoSystem* topo, int nvmlDev, int netDev, int read, int* useGdr) {
   *useGdr = 0;
-
-  int cudaDev, nvmlDev;
-  CUDACHECK(cudaGetDevice(&cudaDev));
-  NCCLCHECK(getNvmlDevice(cudaDev, &nvmlDev))
 
   if (read) { // For reads (sends) only enable under certain conditions
     int gdrReadParam = ncclParamNetGdrRead();
     if (gdrReadParam == 0) return ncclSuccess;
+    if (gdrReadParam < 0) {
+       int nvlink;
+       NCCLCHECK(ncclTopoHasNvlink(topo, nvmlDev, &nvlink));
+       if (!nvlink) return ncclSuccess;
+    }
   }
 
   // Check if we are close enough that it makes sense to enable GDR
   int netGdrLevel = ncclParamNetGdrLevel();
-  short distance;
-  NCCLCHECK(netDistance(cudaDev, dev, &distance));
+  int distance;
+  NCCLCHECK(ncclTopoNetDistance(topo, nvmlDev, netDev, &distance));
   if (distance >= netGdrLevel) {
-    INFO(NCCL_NET,"NET/%s : GPU Direct RDMA Disabled for GPU %d[%d] / HCA %d (distance %d >= %d)", ncclNetName(), cudaDev, nvmlDev, dev, distance, netGdrLevel);
+    INFO(NCCL_NET,"NET/%s : GPU Direct RDMA Disabled for GPU %d / HCA %d (distance %d >= %d)", ncclNetName(), nvmlDev, netDev, distance, netGdrLevel);
     return ncclSuccess;
   }
 
   // Finally, check if the NIC supports it
   int flags;
-  NCCLCHECK(ncclNetPtrSupport(dev, &flags));
+  NCCLCHECK(ncclNetPtrSupport(netDev, &flags));
   if ((flags & NCCL_PTR_CUDA) == 0) return ncclSuccess;
   *useGdr = 1;
-  INFO(NCCL_NET,"NET/%s : GPU Direct RDMA Enabled for GPU %d[%d] / HCA %d (distance %d < %d), read %d", ncclNetName(), cudaDev, nvmlDev, dev, distance, netGdrLevel, read);
+  INFO(NCCL_NET,"NET/%s : GPU Direct RDMA Enabled for GPU %d / HCA %d (distance %d < %d), read %d", ncclNetName(), nvmlDev, netDev, distance, netGdrLevel, read);
   return ncclSuccess;
 }
 
 /* Determine if we will use this transport for this peer and return connect
  * information for this peer */
-ncclResult_t netSendSetup(struct ncclPeerInfo* myInfo, struct ncclPeerInfo* peerInfo, struct ncclConnect* connectInfo, struct ncclConnector* send, int buffSize, int channelId) {
+ncclResult_t netSendSetup(struct ncclTopoSystem* topo, struct ncclPeerInfo* myInfo, struct ncclPeerInfo* peerInfo, struct ncclConnect* connectInfo, struct ncclConnector* send, int buffSize, int channelId) {
   struct netSendResources* resources;
   NCCLCHECK(ncclCalloc(&resources, 1));
   send->transportResources = resources;
 
-  int cudaDev;
-  CUDACHECK(cudaGetDevice(&cudaDev));
-  resources->netDev = getDev(cudaDev, channelId);
-  NCCLCHECK(netGetGdrSupport(resources->netDev, 1, &resources->useGdr));
+  NCCLCHECK(ncclTopoGetNet(topo, myInfo->nvmlDev, channelId, &resources->netDev));
+  NCCLCHECK(netGetGdrSupport(topo, myInfo->nvmlDev, resources->netDev, 1, &resources->useGdr));
 
   int sendSize = sizeof(struct ncclSendMem);
   NCCLCHECK(ncclCudaHostAlloc((void**)&resources->hostSendMem, (void**)&resources->devHostSendMem, sendSize));
@@ -211,15 +120,13 @@ ncclResult_t netSendSetup(struct ncclPeerInfo* myInfo, struct ncclPeerInfo* peer
   return ncclSuccess;
 }
 
-ncclResult_t netRecvSetup(struct ncclPeerInfo* myInfo, struct ncclPeerInfo* peerInfo, struct ncclConnect* connectInfo, struct ncclConnector* recv, int buffSize, int channelId) {
+ncclResult_t netRecvSetup(struct ncclTopoSystem* topo, struct ncclPeerInfo* myInfo, struct ncclPeerInfo* peerInfo, struct ncclConnect* connectInfo, struct ncclConnector* recv, int buffSize, int channelId) {
   struct netRecvResources* resources;
   NCCLCHECK(ncclCalloc(&resources, 1));
   recv->transportResources = resources;
 
-  int cudaDev;
-  CUDACHECK(cudaGetDevice(&cudaDev));
-  resources->netDev = getDev(cudaDev, channelId);
-  NCCLCHECK(netGetGdrSupport(resources->netDev, 0, &resources->useGdr));
+  NCCLCHECK(ncclTopoGetNet(topo, myInfo->nvmlDev, channelId, &resources->netDev));
+  NCCLCHECK(netGetGdrSupport(topo, myInfo->nvmlDev, resources->netDev, 0, &resources->useGdr));
 
   int sendSize = sizeof(struct ncclSendMem);
   NCCLCHECK(ncclCudaHostAlloc((void**)&resources->hostSendMem, (void**)&resources->devHostSendMem, sendSize));

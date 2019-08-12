@@ -8,14 +8,19 @@
 #include "graph.h"
 #include "topo.h"
 #include "nvmlwrap.h"
-#include "nvlink.h"
 #include "net.h"
+#include <sys/stat.h>
+#include <fcntl.h>
+
 
 #define BUSID_SIZE (sizeof("0000:00:00.0"))
 #define BUSID_REDUCED_SIZE (sizeof("0000:00"))
 
 const char* pathDists[] = { "PIX", "PXB", "PHB", "NODE", "SYS" };
 
+/******************************************************************/
+/******************* Graph Creation Functions *********************/
+/******************************************************************/
 static int getNumaId(char *path) {
   char npath[PATH_MAX];
   snprintf(npath, PATH_MAX, "%s/numa_node", path);
@@ -30,38 +35,46 @@ static int getNumaId(char *path) {
   return numaId;
 }
 
-int pciDistance(char* path1, char* path2) {
-  int score = 0;
-  int depth = 0;
-  int same = 1;
-  for (int i=0; i<strlen(path1); i++) {
-    if (path1[i] != path2[i]) same = 0;
-    if (path1[i] == '/') {
-      depth++;
-      if (same == 1) score++;
-    }
+enum ncclNvLinkDeviceType {
+  ncclNvLinkDeviceUnknown,
+  ncclNvLinkDeviceGpu,
+  ncclNvLinkDeviceSwitch,
+  ncclNvLinkDeviceBridge, // IBM/Power NVLink bridge (Device 04ea)
+};
+
+static ncclResult_t ncclDeviceType(const char* busId, enum ncclNvLinkDeviceType* type) {
+  char classPath[] =  "/sys/bus/pci/devices/0000:00:00.0/class";
+  memcpy(classPath+sizeof("/sys/bus/pci/devices/")-1, busId, sizeof("0000:00:00.0")-1);
+  char* rPath = realpath(classPath, NULL);
+  int fd;
+  if ((fd = open(rPath, O_RDONLY)) == -1) {
+    // Could not find device. It might be because we're in a VM and
+    // we don't see the whole machine. This is handled silently so
+    // we don't want to print an INFO error.
+    TRACE(NCCL_INIT, "Open of %s failed : %s\n", rPath, strerror(errno));
+    return ncclSystemError;
   }
-  if (score <= 3) {
-#ifdef __PPC__
-    // NUMA distance detection and PATH_SYS not supported on IBM/Power nodes
-    // nodes currently
-    return PATH_NODE;
-#else
-    /* Split the former PATH_SOC distance into PATH_NODE and PATH_SYS based on numaId */
-    int numaId1 = getNumaId(path1);
-    int numaId2 = getNumaId(path2);
-    TRACE(NCCL_INIT, "depth %d score %d path1 %s numaId %d path2 %s numaId %d", depth, score, path1, numaId1, path2, numaId2);
-    return ((numaId1 == numaId2) ? PATH_NODE : PATH_SYS);
-#endif
+  free(rPath);
+  char pciClass[9];
+  strncpy(pciClass, "0x000000", 9);
+  int len;
+  SYSCHECKVAL(read(fd, pciClass, 8), "read", len);
+  SYSCHECK(close(fd), "close");
+  if (strcmp(pciClass, "0x068000") == 0) {
+    // PCI device is of type "Bridge / Other Bridge Device" (NVswitch)
+    *type = ncclNvLinkDeviceSwitch;
+  } else if (strcmp(pciClass, "0x068001") == 0) {
+    // PCI device is of type "Bridge: IBM Device 04ea"
+    *type = ncclNvLinkDeviceBridge;
+  } else if (strcmp(pciClass, "0x030200") == 0 // "3D Controller" (Tesla)
+      || strcmp(pciClass, "0x030000") == 0) {  // "VGA Controller" (GeForce)
+    *type = ncclNvLinkDeviceGpu;
+  } else {
+    *type = ncclNvLinkDeviceUnknown;
   }
-  if (score == 4) return PATH_PHB;
-  if (score == depth-1) return PATH_PIX;
-  return PATH_PXB;
+  return ncclSuccess;
 }
 
-/******************************************************************/
-/******************* Graph Creation Functions *********************/
-/******************************************************************/
 
 ncclResult_t getCudaPath(int cudaDev, char** path) {
   char busId[BUSID_SIZE];
@@ -305,29 +318,272 @@ ncclResult_t ncclTopoConnectPCI(nvmlDevice_t* nvmlDevs, struct ncclTopoSystem* s
   return ncclSuccess;
 }
 
-ncclResult_t ncclTopoGetSystem(int nranks, int* nvmlIndexes, int* rankIndexes, struct ncclTopoSystem* system, int inter) {
-  nvmlDevice_t* nvmlDevs;
-  NCCLCHECK(ncclCalloc(&nvmlDevs, nranks));
-  for (int r=0; r<nranks; r++) {
-    struct ncclTopoNode* gpuNode;
-    NCCLCHECK(ncclTopoCreateNode(system, &gpuNode, GPU, nvmlIndexes[r]));
-    gpuNode->rank = rankIndexes[r];
-    NCCLCHECK(wrapNvmlDeviceGetHandleByIndex(nvmlIndexes[r], nvmlDevs+r));
+struct ncclTopoNodeList {
+  struct ncclTopoNode* list[NCCL_TOPO_MAX_NODES];
+  int count;
+};
+
+// Pre-compute GPU->NIC, GPU->GPU and NIC->GPU paths
+
+static ncclResult_t getPath(struct ncclTopoSystem* system, struct ncclTopoNode* node, int t, int id, struct ncclTopoLinkList** path) {
+  for (int i=0; i<system->nodes[t].count; i++) {
+    if (system->nodes[t].nodes[i].id == id) {
+      *path = node->paths[t]+i;
+      return ncclSuccess;
+    }
   }
+  WARN("Could not find node of type %d id %d\n", t, id);
+  return ncclInternalError;
+}
 
-  NCCLCHECK(ncclTopoConnectNVLink(nvmlDevs, system));
-  NCCLCHECK(ncclTopoConnectPCI(nvmlDevs, system, inter));
+static ncclResult_t ncclTopoSetPaths(struct ncclTopoNode* baseNode, struct ncclTopoSystem* system) {
+  // breadth-first search to set all paths to that node in the system
+  struct ncclTopoNodeList nodeList;
+  struct ncclTopoNodeList nextNodeList;
+  nodeList.count = 1; nodeList.list[0] = baseNode;
+  nextNodeList.count = 0;
+  if (baseNode->paths[baseNode->type] == NULL) {
+    NCCLCHECK(ncclCalloc(baseNode->paths+baseNode->type, system->nodes[baseNode->type].count));
+  }
+  struct ncclTopoLinkList* basePath;
+  NCCLCHECK(getPath(system, baseNode, baseNode->type, baseNode->id, &basePath));
+  basePath->count = 0;
+  basePath->width = 0xfffffff;
+  basePath->nvlink = 1;
 
-  free(nvmlDevs);
+  while (nodeList.count) {
+    nextNodeList.count = 0;
+    for (int n=0; n<nodeList.count; n++) {
+      struct ncclTopoNode* node = nodeList.list[n];
+      struct ncclTopoLinkList* path;
+      NCCLCHECK(getPath(system, node, baseNode->type, baseNode->id, &path));
+      for (int l=0; l<node->nlinks; l++) {
+        struct ncclTopoLink* link = node->links+l;
+        struct ncclTopoNode* remNode = link->remNode;
+        if (remNode->paths[baseNode->type] == NULL) {
+          NCCLCHECK(ncclCalloc(remNode->paths+baseNode->type, system->nodes[baseNode->type].count));
+        }
+        struct ncclTopoLinkList* remPath;
+        NCCLCHECK(getPath(system, remNode, baseNode->type, baseNode->id, &remPath));
+        int width = std::min(path->width, link->width);
+        if (remPath->width < width) {
+          // Find reverse link
+          for (int l=0; l<remNode->nlinks; l++) {
+            if (remNode->links[l].remNode == node) {
+              remPath->list[0] = remNode->links+l;
+              break;
+            }
+          }
+          // Copy the rest of the path
+          for (int i=0; i<path->count; i++) remPath->list[i+1] = path->list[i];
+          remPath->count = path->count + 1;
+          remPath->width = width;
+          remPath->nvlink = path->nvlink & ((link->type == LINK_NVL) ? 1 : 0);
+
+          // Add to the list for the next iteration if not already in the list
+          // Disallow GPUs as intermediate steps for now
+          if (remNode->type != GPU) {
+            int i;
+            for (i=0; i<nextNodeList.count; i++) if (nextNodeList.list[i] == remNode) break;
+            if (i == nextNodeList.count) nextNodeList.list[nextNodeList.count++] = remNode;
+          }
+        }
+      }
+    }
+    memcpy(&nodeList, &nextNodeList, sizeof(nodeList));
+  }
+  return ncclSuccess;
+}
+
+static void printNodePaths(struct ncclTopoSystem* system, struct ncclTopoNode* node) {
+  char line[1024];
+#ifdef ENABLE_TRACE
+  INFO(NCCL_GRAPH, "Paths from %s/%X :", topoNodeTypeStr[node->type], node->id);
+#else
+  sprintf(line, "%s/%X :", topoNodeTypeStr[node->type], node->id);
+  int offset = strlen(line);
+#endif
+  for (int t=0; t<NCCL_TOPO_NODE_TYPES; t++) {
+    if (node->paths[t] == NULL) continue;
+    for (int n = 0; n<system->nodes[t].count; n++) {
+#ifdef ENABLE_TRACE
+      line[0] = 0;
+      int offset = 0;
+      for (int i=0; i<node->paths[t][n].count; i++) {
+        struct ncclTopoLink* link = node->paths[t][n].list[i];
+        struct ncclTopoNode* remNode = link->remNode;
+        sprintf(line+offset, "--%s->%s/%X", topoLinkTypeStr[link->type], topoNodeTypeStr[remNode->type], remNode->id);
+        offset = strlen(line);
+      }
+      INFO(NCCL_GRAPH, "%s (%d)", line, node->paths[t][n].width);
+#else
+      sprintf(line+offset, "%s/%X (%d/%d%s) ", topoNodeTypeStr[t], n, node->paths[t][n].count, node->paths[t][n].width, node->paths[t][n].nvlink ? "/N" : "");
+      offset = strlen(line);
+#endif
+    }
+  }
+#ifndef ENABLE_TRACE
+  INFO(NCCL_GRAPH, "%s", line);
+#endif
+}
+
+static ncclResult_t getGpuSpeed(struct ncclTopoNode* node, int* speed) {
+  int nvlSpeed = 0;
+  int nvlPeers = 0;
+  for (int l=0; l<node->nlinks; l++) {
+    if (node->links[l].type == LINK_NVL) nvlSpeed += node->links[l].width;
+    if (node->links[l].remNode->type == GPU) nvlPeers++; else nvlPeers = 2;
+  }
+  *speed = std::min(*speed, std::max(nvlSpeed, PCI_WIDTH));
+  return ncclSuccess;
+}
+
+static ncclResult_t ncclTopoSearchInit(struct ncclTopoSystem* system) {
+  if (system->searchInitDone) return ncclSuccess;
+  system->maxSpeed = 0xfffffff;
+  for (int g=0; g<system->nodes[GPU].count; g++) {
+    NCCLCHECK(ncclTopoSetPaths(system->nodes[GPU].nodes+g, system));
+    NCCLCHECK(getGpuSpeed(system->nodes[GPU].nodes+g, &system->maxSpeed));
+  }
+  if (system->nodes[NET].count) {
+    for (int n=0; n<system->nodes[NET].count; n++) {
+      NCCLCHECK(ncclTopoSetPaths(system->nodes[NET].nodes+n, system));
+    }
+    // Try to assign one NIC per GPU
+    int netMaxSpeed = 0;
+    int netMaxSpeedCount = 0;
+    for (int n=0; n<system->nodes[NET].count; n++) {
+      int maxSpeed = 0;
+      struct ncclTopoNode* net = system->nodes[NET].nodes+n;
+      for (int g=0; g<system->nodes[GPU].count; g++) {
+        maxSpeed = std::max(maxSpeed, net->paths[GPU][g].width);
+      }
+      if (maxSpeed > netMaxSpeed) {
+        netMaxSpeed = maxSpeed;
+        netMaxSpeedCount = 1;
+      } else if (maxSpeed == netMaxSpeed) {
+        netMaxSpeedCount++;
+      }
+    }
+    system->maxSpeed = std::min(system->maxSpeed, netMaxSpeedCount*NET_WIDTH);
+  }
+  system->searchInitDone = 1;
+  for (int i=0; i<system->nodes[GPU].count; i++) {
+    printNodePaths(system, system->nodes[GPU].nodes+i);
+  }
   return ncclSuccess;
 }
 
 ncclResult_t ncclTopoGetSystem(int nranks, int* nvmlIndexes, int* rankIndexes, struct ncclTopoSystem** system, int inter) {
   struct ncclTopoSystem* s;
   NCCLCHECK(ncclCalloc(&s, 1));
-  NCCLCHECK(ncclTopoGetSystem(nranks, nvmlIndexes, rankIndexes, s, inter));
+  nvmlDevice_t* nvmlDevs;
+  NCCLCHECK(ncclCalloc(&nvmlDevs, nranks));
+  for (int r=0; r<nranks; r++) {
+    struct ncclTopoNode* gpuNode;
+    NCCLCHECK(ncclTopoCreateNode(s, &gpuNode, GPU, nvmlIndexes[r]));
+    gpuNode->rank = rankIndexes[r];
+    NCCLCHECK(wrapNvmlDeviceGetHandleByIndex(nvmlIndexes[r], nvmlDevs+r));
+  }
+
+  NCCLCHECK(ncclTopoConnectNVLink(nvmlDevs, s));
+  NCCLCHECK(ncclTopoConnectPCI(nvmlDevs, s, inter));
+
+  free(nvmlDevs);
   NCCLCHECK(ncclTopoSortSystem(s));
   NCCLCHECK(ncclTopoPrint(s));
+  NCCLCHECK(ncclTopoSearchInit(s));
   *system = s;
+  return ncclSuccess;
+}
+
+static ncclResult_t nvmlToIndex(struct ncclTopoSystem* system, int nvmlDev, int* index) {
+  for (int i=0; i<system->nodes[GPU].count; i++) {
+    if (system->nodes[GPU].nodes[i].id == nvmlDev) {
+      *index = i;
+      return ncclSuccess;
+    }
+  }
+  WARN("nvmlToIndex : error finding NVML device %d", nvmlDev);
+  return ncclInternalError;
+}
+
+ncclResult_t ncclTopoGetNvlink(struct ncclTopoSystem* system, int nvmlDev1, int nvmlDev2, int* nvlink) {
+  int id1, id2;
+  NCCLCHECK(nvmlToIndex(system, nvmlDev1, &id1));
+  NCCLCHECK(nvmlToIndex(system, nvmlDev2, &id2));
+  *nvlink = system->nodes[GPU].nodes[id1].paths[GPU][id2].nvlink;
+  return ncclSuccess;
+}
+
+ncclResult_t ncclTopoHasNvlink(struct ncclTopoSystem* system, int nvmlDev, int* nvlink) {
+  int id;
+  NCCLCHECK(nvmlToIndex(system, nvmlDev, &id));
+  for (int i=0; i<system->nodes[GPU].count; i++) {
+    if (i == id) continue;
+    if (system->nodes[GPU].nodes[id].paths[GPU][i].nvlink) {
+      *nvlink = 1;
+      return ncclSuccess;
+    }
+  }
+  *nvlink = 0;
+  return ncclSuccess;
+}
+
+// Return one of the closest nets and its distance ; round robin based on "rrid"
+ncclResult_t ncclTopoGetNet(struct ncclTopoSystem* system, int nvmlDev, int rrid, int* net) {
+  int id;
+  NCCLCHECK(nvmlToIndex(system, nvmlDev, &id));
+  int maxWidth = 0;
+  for (int n=0; n<system->nodes[NET].count; n++) {
+    struct ncclTopoLinkList* links = system->nodes[GPU].nodes[id].paths[NET]+n;
+    if (links->width > maxWidth) maxWidth = links->width;
+  }
+  if (maxWidth == 0) {
+    WARN("Error : could not find network");
+    return ncclInternalError;
+  }
+  int i = 0;
+  while (1) {
+    for (int n=0; n<system->nodes[NET].count; n++) {
+      struct ncclTopoLinkList* links = system->nodes[GPU].nodes[id].paths[NET]+n;
+      if (links->width == maxWidth) {
+        if (i == rrid) {
+          *net = n;
+          return ncclSuccess;
+        }
+        i++;
+      }
+    }
+  }
+}
+
+static int pathDistance(struct ncclTopoLinkList* links) {
+  int distance = PATH_PIX;
+  if (links->count > 2) distance = PATH_PXB;
+  for (int l=0; l<links->count; l++) {
+    if (links->list[l]->remNode->type == CPU) distance = PATH_PHB;
+    if (links->list[l]->type == LINK_QPI) distance = PATH_SYS;
+  }
+  return distance;
+}
+
+ncclResult_t ncclTopoGpuDistance(struct ncclTopoSystem* system, int nvmlDev1, int nvmlDev2, int* distance) {
+  int id1, id2;
+  NCCLCHECK(nvmlToIndex(system, nvmlDev1, &id1));
+  NCCLCHECK(nvmlToIndex(system, nvmlDev2, &id2));
+  *distance = pathDistance(system->nodes[GPU].nodes[id1].paths[GPU]+id2);
+  return ncclSuccess;
+}
+
+ncclResult_t ncclTopoNetDistance(struct ncclTopoSystem* system, int nvmlDev, int netDev, int* distance) {
+  int id;
+  NCCLCHECK(nvmlToIndex(system, nvmlDev, &id));
+  *distance = pathDistance(system->nodes[GPU].nodes[id].paths[NET]+netDev);
+  return ncclSuccess;
+}
+
+ncclResult_t ncclTopoCpuCount(struct ncclTopoSystem* system, int* count) {
+  *count = system->nodes[CPU].count;
   return ncclSuccess;
 }

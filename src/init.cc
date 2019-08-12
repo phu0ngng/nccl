@@ -337,15 +337,15 @@ static ncclResult_t fillInfo(struct ncclPeerInfo* info, int rank) {
 }
 
 template <int type>
-static ncclResult_t selectTransport(struct ncclPeerInfo* myInfo, struct ncclPeerInfo* peerInfo, struct ncclConnect* connect, struct ncclConnector* connector, int buffSize, int channelId) {
+static ncclResult_t selectTransport(struct ncclTopoSystem* topo, struct ncclPeerInfo* myInfo, struct ncclPeerInfo* peerInfo, struct ncclConnect* connect, struct ncclConnector* connector, int buffSize, int channelId) {
   for (int t=0; t<NTRANSPORTS; t++) {
     struct ncclTransport *transport = ncclTransports+t;
     struct ncclTransportComm* transportComm = type == 1 ? &transport->send : &transport->recv;
     int ret = 0;
-    NCCLCHECK(transport->canConnect(&ret, myInfo, peerInfo));
+    NCCLCHECK(transport->canConnect(&ret, topo, myInfo, peerInfo));
     if (ret) {
       connector->transportComm = transportComm;
-      NCCLCHECK(transportComm->setup(myInfo, peerInfo, connect, connector, buffSize, channelId));
+      NCCLCHECK(transportComm->setup(topo, myInfo, peerInfo, connect, connector, buffSize, channelId));
       return ncclSuccess;
     }
   }
@@ -479,7 +479,7 @@ static ncclResult_t p2pSetup(struct ncclComm* comm, struct ncclChannel* channel,
     conn = &channel->peers[peer].recv;
     if (conn->connected) { ++nSkippedRecv; continue; }
     memset(&connect, 0, sizeof(connect));
-    NCCLCHECK(selectTransport<0>(comm->peerInfo+comm->rank, comm->peerInfo+peer, &connect, conn, channel->buffSize, channel->id));
+    NCCLCHECK(selectTransport<0>(comm->topo, comm->peerInfo+comm->rank, comm->peerInfo+peer, &connect, conn, channel->buffSize, channel->id));
     NCCLCHECK(bootstrapSend(comm->bootstrap, peer, &connect, sizeof(struct ncclConnect)));
   }
   for (int i=0; i<nsend; i++) {
@@ -488,7 +488,7 @@ static ncclResult_t p2pSetup(struct ncclComm* comm, struct ncclChannel* channel,
     conn = &channel->peers[peer].send;
     if (conn->connected) { ++nSkippedSend; continue; }
     memset(&connect, 0, sizeof(connect));
-    NCCLCHECK(selectTransport<1>(comm->peerInfo+comm->rank, comm->peerInfo+peer, &connect, conn, channel->buffSize, channel->id));
+    NCCLCHECK(selectTransport<1>(comm->topo, comm->peerInfo+comm->rank, comm->peerInfo+peer, &connect, conn, channel->buffSize, channel->id));
     NCCLCHECK(bootstrapSend(comm->bootstrap, peer, &connect, sizeof(struct ncclConnect)));
   }
   for (int i=0; i<nsend; i++) {
@@ -599,6 +599,9 @@ static ncclResult_t initTransportsRank(struct ncclComm* comm, ncclUniqueId* comm
   free(nvmlIndexes);
   free(rankIndexes);
 
+  int nvlink = 1;
+  NCCLCHECK(ncclTopoHasNvlink(comm->topo, allGather1Data[rank].peerInfo.nvmlDev, &nvlink));
+
   // Get rings and trees
   struct ncclTopoGraph treeLoopGraph;
   struct ncclTopoGraph treeGraph;
@@ -636,7 +639,7 @@ static ncclResult_t initTransportsRank(struct ncclComm* comm, ncclUniqueId* comm
   allGather3Data[rank].nThreads = comm->nThreads;
   allGather3Data[rank].cudaCompCap = ncclCudaCompCap();
   allGather3Data[rank].fullCudaCompCap = ncclCudaFullCompCap();
-  allGather3Data[rank].nvlink = treeGraph.nvlink;
+  allGather3Data[rank].nvlink = nvlink;
   allGather3Data[rank].nChannels = comm->nChannels = nChannels;
 
   NCCLCHECK(ncclTopoPreset(comm, nodesFirstRank, &treeGraph, &ringGraph, &allGather3Data[rank].topoRanks));
@@ -653,7 +656,6 @@ static ncclResult_t initTransportsRank(struct ncclComm* comm, ncclUniqueId* comm
   for (int i = 0; i < nranks; i++)
     minCompCap = std::min(allGather3Data[i].cudaCompCap, minCompCap);
 
-  int nvlink = 1;
   for (int i = 0; i < nranks; i++) nvlink &= allGather3Data[i].nvlink;
 
   // LL128 is only supported on V100/NVlink for now

@@ -9,6 +9,7 @@
 
 #include "nccl.h"
 #include "devcomm.h"
+#include "graph.h"
 #include <stdint.h>
 #include "nvmlwrap.h"
 
@@ -75,7 +76,7 @@ struct ncclProxyState {
 };
 
 struct ncclTransportComm {
-  ncclResult_t (*setup)(struct ncclPeerInfo*, struct ncclPeerInfo*, struct ncclConnect*, struct ncclConnector*, int buffSize, int channelId);
+  ncclResult_t (*setup)(struct ncclTopoSystem* topo, struct ncclPeerInfo*, struct ncclPeerInfo*, struct ncclConnect*, struct ncclConnector*, int buffSize, int channelId);
   ncclResult_t (*connect)(struct ncclConnect*, struct ncclConnector*);
   ncclResult_t (*free)(void*);
   ncclResult_t (*proxy)(struct ncclProxyArgs*);
@@ -83,7 +84,7 @@ struct ncclTransportComm {
 
 struct ncclTransport {
   const char name[4];
-  ncclResult_t (*canConnect)(int*, struct ncclPeerInfo*, struct ncclPeerInfo*);
+  ncclResult_t (*canConnect)(int*, struct ncclTopoSystem* topo, struct ncclPeerInfo*, struct ncclPeerInfo*);
   struct ncclTransportComm send;
   struct ncclTransportComm recv;
 };
