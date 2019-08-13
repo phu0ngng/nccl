@@ -158,8 +158,7 @@ static int getNThreads() {
      }
   }
   if (ncclParamLl128Enable() > 0) return NCCL_MAX_NTHREADS;
-  // On Kepler, rings are doubled later.
-  return ncclCudaCompCap() == 3 ? 128 : NCCL_MAX_NTHREADS;
+  return NCCL_MAX_NTHREADS;
 }
 
 pthread_mutex_t initLock = PTHREAD_MUTEX_INITIALIZER;
