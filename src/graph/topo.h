@@ -13,8 +13,10 @@
 #define PASCAL_NVLINK_WIDTH 18
 #define VOLTA_NVLINK_WIDTH 21
 #define PCI_WIDTH 12           // PCI Gen3 x16
-#define PCI_CPU_WIDTH 9
+#define INTEL_PCI_WIDTH 9
 #define QPI_WIDTH 6
+#define SKL_QPI_WIDTH 9
+#define P9_WIDTH 30
 #define NET_WIDTH 12           // 100Gbit
 
 #define NCCL_TOPO_NODE_TYPES 6

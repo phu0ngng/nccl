@@ -325,7 +325,7 @@ void createSystem(struct ncclTopoSystem* system, const char* desc[], int descSiz
           width = QPI_WIDTH;
           type = LINK_QPI;
         } else if (type1 == PCI && type2 == CPU) {
-          width = PCI_CPU_WIDTH;
+          width = INTEL_PCI_WIDTH;
           type = LINK_PCI;
         } else if (type1 == NIC && type2 == NET) {
           width = NET_WIDTH;
@@ -415,12 +415,12 @@ int main() {
   setlinebuf(stdout);
   initDebug();
   int errors = 0;
-  errors += checkTopo("PCI-1R", pci1R_topo, sizeof(pci1R_topo)/sizeof(const char*), 0, 0, 1, PCI_CPU_WIDTH, NCCL_TOPO_PATTERN_SPLIT_TREE_LOOP, 0);
+  errors += checkTopo("PCI-1R", pci1R_topo, sizeof(pci1R_topo)/sizeof(const char*), 0, 0, 1, INTEL_PCI_WIDTH, NCCL_TOPO_PATTERN_SPLIT_TREE_LOOP, 0);
   errors += checkTopo("PCI-1R", pci1R_topo, sizeof(pci1R_topo)/sizeof(const char*), 0, 1, 1, PCI_WIDTH/2, NCCL_TOPO_PATTERN_SPLIT_TREE_LOOP, 0);
   errors += checkTopo("PCI-2R", pci2R_topo, sizeof(pci2R_topo)/sizeof(const char*), 0, 0, 1, QPI_WIDTH, NCCL_TOPO_PATTERN_SPLIT_TREE_LOOP, 0);
   errors += checkTopo("PCI-2R", pci2R_topo, sizeof(pci2R_topo)/sizeof(const char*), 0, 1, 1, QPI_WIDTH, NCCL_TOPO_PATTERN_SPLIT_TREE_LOOP, 0);
-  errors += checkTopo("PCI-NV", pciNV_topo, sizeof(pciNV_topo)/sizeof(const char*), PASCAL_NVLINK_WIDTH, 0, 1, PCI_CPU_WIDTH, NCCL_TOPO_PATTERN_SPLIT_TREE_LOOP, 0);
-  errors += checkTopo("PCI-NV", pciNV_topo, sizeof(pciNV_topo)/sizeof(const char*), PASCAL_NVLINK_WIDTH, 1, 1, PCI_CPU_WIDTH, NCCL_TOPO_PATTERN_SPLIT_TREE, 0);
+  errors += checkTopo("PCI-NV", pciNV_topo, sizeof(pciNV_topo)/sizeof(const char*), PASCAL_NVLINK_WIDTH, 0, 1, INTEL_PCI_WIDTH, NCCL_TOPO_PATTERN_SPLIT_TREE_LOOP, 0);
+  errors += checkTopo("PCI-NV", pciNV_topo, sizeof(pciNV_topo)/sizeof(const char*), PASCAL_NVLINK_WIDTH, 1, 1, INTEL_PCI_WIDTH, NCCL_TOPO_PATTERN_SPLIT_TREE, 0);
   errors += checkTopo("DGX-1P", dgx1p_topo, sizeof(dgx1p_topo)/sizeof(const char*), PASCAL_NVLINK_WIDTH, 0, 4, PASCAL_NVLINK_WIDTH, NCCL_TOPO_PATTERN_SPLIT_TREE_LOOP, 0);
   errors += checkTopo("DGX-1P", dgx1p_topo, sizeof(dgx1p_topo)/sizeof(const char*), PASCAL_NVLINK_WIDTH, 1, 4, NET_WIDTH, NCCL_TOPO_PATTERN_SPLIT_TREE_LOOP, 0);
   errors += checkTopo("DGX-1H", dgx1h_topo, sizeof(dgx1h_topo)/sizeof(const char*), PASCAL_NVLINK_WIDTH, 0, 6, PASCAL_NVLINK_WIDTH/2, NCCL_TOPO_PATTERN_SPLIT_TREE_LOOP, 0);
@@ -434,11 +434,11 @@ int main() {
   errors += checkTopo("XMAN-3", xman3_topo, sizeof(xman3_topo)/sizeof(const char*), VOLTA_NVLINK_WIDTH,  0, 6, VOLTA_NVLINK_WIDTH, NCCL_TOPO_PATTERN_SPLIT_TREE_LOOP, 0);
   errors += checkTopo("XMAN-3", xman3_topo, sizeof(xman3_topo)/sizeof(const char*), VOLTA_NVLINK_WIDTH,  1, 8, NET_WIDTH, NCCL_TOPO_PATTERN_SPLIT_TREE_LOOP, 0);
   errors += checkTopo("GCP-NV", gcpnv_topo, sizeof(gcpnv_topo)/sizeof(const char*), VOLTA_NVLINK_WIDTH,  0, 6, VOLTA_NVLINK_WIDTH, NCCL_TOPO_PATTERN_SPLIT_TREE_LOOP, 0);
-  errors += checkTopo("GCP-NV", gcpnv_topo, sizeof(gcpnv_topo)/sizeof(const char*), VOLTA_NVLINK_WIDTH,  1, 1, PCI_CPU_WIDTH, NCCL_TOPO_PATTERN_SPLIT_TREE_LOOP, 0);
+  errors += checkTopo("GCP-NV", gcpnv_topo, sizeof(gcpnv_topo)/sizeof(const char*), VOLTA_NVLINK_WIDTH,  1, 1, INTEL_PCI_WIDTH, NCCL_TOPO_PATTERN_SPLIT_TREE_LOOP, 0);
   errors += checkTopo("FB-BUG", fbbug_topo, sizeof(fbbug_topo)/sizeof(const char*), VOLTA_NVLINK_WIDTH,  0, 1, QPI_WIDTH, NCCL_TOPO_PATTERN_SPLIT_TREE, 0);
   errors += checkTopo("FB-BUG", fbbug_topo, sizeof(fbbug_topo)/sizeof(const char*), VOLTA_NVLINK_WIDTH,  1, 2, NET_WIDTH, NCCL_TOPO_PATTERN_TREE, 1);
   errors += checkTopo("P9-6V ", p9_6v_topo, sizeof(p9_6v_topo)/sizeof(const char*), VOLTA_NVLINK_WIDTH,  0, 2, QPI_WIDTH*5/2, NCCL_TOPO_PATTERN_SPLIT_TREE_LOOP, 0);
-  errors += checkTopo("P9-6V ", p9_6v_topo, sizeof(p9_6v_topo)/sizeof(const char*), VOLTA_NVLINK_WIDTH,  1, 2, PCI_CPU_WIDTH, NCCL_TOPO_PATTERN_SPLIT_TREE_LOOP, 0);
+  errors += checkTopo("P9-6V ", p9_6v_topo, sizeof(p9_6v_topo)/sizeof(const char*), VOLTA_NVLINK_WIDTH,  1, 2, INTEL_PCI_WIDTH, NCCL_TOPO_PATTERN_SPLIT_TREE_LOOP, 0);
   printf("%d errors (%s)\n", errors, errors ? "FAILED" : "PASSED");
   return errors;
 }
