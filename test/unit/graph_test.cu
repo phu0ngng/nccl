@@ -363,6 +363,7 @@ void createSystem(struct ncclTopoSystem* system, const char* desc[], int descSiz
 
   // Sort system to accelerate search
   CHECK(ncclTopoSortSystem(system));
+  CHECK(ncclTopoSearchInit(system));
 }
 
 const char* treeMode[] = { "unknown", "split tree loop", "split tree", "tree" };

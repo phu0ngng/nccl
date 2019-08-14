@@ -31,6 +31,11 @@ struct ncclTopoSystem;
 // Build the topology
 ncclResult_t ncclTopoGetSystem(int nranks, int* nvmlIndexes, int* rankIndexes, struct ncclTopoSystem** system, int inter);
 
+// For unit tests
+ncclResult_t ncclTopoSortSystem(struct ncclTopoSystem* system);
+ncclResult_t ncclTopoPrint(struct ncclTopoSystem* system);
+ncclResult_t ncclTopoSearchInit(struct ncclTopoSystem* system);
+
 // Query topology
 ncclResult_t ncclTopoGetNvlink(struct ncclTopoSystem* system, int nvmlDev1, int nvmlDev2, int* nvlink);
 ncclResult_t ncclTopoHasNvlink(struct ncclTopoSystem* system, int nvmlDev, int* nvlink);

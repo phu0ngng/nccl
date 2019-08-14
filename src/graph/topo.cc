@@ -438,7 +438,7 @@ static ncclResult_t getGpuSpeed(struct ncclTopoNode* node, int* speed) {
   return ncclSuccess;
 }
 
-static ncclResult_t ncclTopoSearchInit(struct ncclTopoSystem* system) {
+ncclResult_t ncclTopoSearchInit(struct ncclTopoSystem* system) {
   if (system->searchInitDone) return ncclSuccess;
   system->maxSpeed = 0xfffffff;
   for (int g=0; g<system->nodes[GPU].count; g++) {
@@ -471,6 +471,72 @@ static ncclResult_t ncclTopoSearchInit(struct ncclTopoSystem* system) {
   for (int i=0; i<system->nodes[GPU].count; i++) {
     printNodePaths(system, system->nodes[GPU].nodes+i);
   }
+  return ncclSuccess;
+}
+
+static ncclResult_t ncclTopoPrintRec(struct ncclTopoNode* node, struct ncclTopoNode* prevNode, char* line, int offset) {
+  if (node->type == GPU) {
+    sprintf(line+offset, "%s/%X (%d)", topoNodeTypeStr[node->type], node->id, node->rank);
+    INFO(NCCL_GRAPH, "%s", line);
+  } else {
+    sprintf(line+offset, "%s/%X", topoNodeTypeStr[node->type], node->id);
+    INFO(NCCL_GRAPH, "%s", line);
+  }
+  for (int i=0; i<offset; i++) line[i] = ' ';
+
+  for (int l=0; l<node->nlinks; l++) {
+    struct ncclTopoLink* link = node->links+l;
+    if (link->remNode != prevNode) {
+      sprintf(line+offset, "+ %s[%2d] - ", topoLinkTypeStr[link->type], link->width);
+      int nextOffset = strlen(line);
+      if (link->type == LINK_PCI) {
+        NCCLCHECK(ncclTopoPrintRec(link->remNode, node, line, nextOffset));
+      } else {
+        sprintf(line+nextOffset, "%s/%X", topoNodeTypeStr[link->remNode->type], link->remNode->id);
+        INFO(NCCL_GRAPH, "%s", line);
+      }
+    }
+  }
+  return ncclSuccess;
+}
+
+ncclResult_t ncclTopoPrint(struct ncclTopoSystem* s) {
+  INFO(NCCL_GRAPH, "=== System : maxChannels %1d maxWidth %2d ===", s->maxChannels, s->maxWidth);
+  char line[1024];
+  for (int n=0; n<s->nodes[CPU].count; n++) NCCLCHECK(ncclTopoPrintRec(s->nodes[CPU].nodes+n, NULL, line, 0));
+  INFO(NCCL_GRAPH, "==========================================");
+  return ncclSuccess;
+}
+
+static ncclResult_t ncclTopoSort(struct ncclTopoNode* node, struct ncclTopoNode* upNode) {
+  // Shift all links to have upLink as last link
+  if (upNode) {
+    int l=0;
+    while (node->links[l].remNode != upNode) l++;
+    struct ncclTopoLink upLink;
+    memcpy(&upLink, node->links+l, sizeof(struct ncclTopoLink));
+    while (node->links[l+1].remNode) {
+      memcpy(node->links+l, node->links+l+1, sizeof(struct ncclTopoLink));
+      l++;
+    }
+    memcpy(node->links+l, &upLink, sizeof(struct ncclTopoLink));
+  }
+
+  // Recursively sort the PCI tree
+  for (int l=0; l<node->nlinks; l++) {
+    struct ncclTopoLink* link = node->links+l;
+    if (link->type == LINK_PCI && link->remNode != upNode) NCCLCHECK(ncclTopoSort(link->remNode, node));
+  }
+  return ncclSuccess;
+}
+
+// We want the graph to be organized to ease/accelerate traversal :
+// 1. NVLinks (already the case)
+// 2. PCI down
+// 3. PCI up
+// 4. QPI (already the case)
+ncclResult_t ncclTopoSortSystem(struct ncclTopoSystem* system) {
+  for (int n=0; n<system->nodes[CPU].count; n++) NCCLCHECK(ncclTopoSort(system->nodes[CPU].nodes+n, NULL));
   return ncclSuccess;
 }
 
