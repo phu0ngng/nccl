@@ -89,18 +89,9 @@ void ncclDebugLog(ncclDebugLogLevel level, unsigned long flags, const char *file
   }
 }
 
-uint64_t getHash(const char* string) {
+uint64_t getHash(const char* string, int n) {
   // Based on DJB2, result = result * 33 + char
   uint64_t result = 5381;
-  for (int c = 0; string[c] != '\0'; c++) {
-    result = ((result << 5) + result) + string[c];
-  }
-  return result;
-}
-
-uint64_t getnHash(const char* string, int n) {
-  // Based on DJB2, result = result * 33 + char
-  uint64_t result = 9527;
   for (int c = 0; c < n; c++) {
     result = ((result << 5) + result) + string[c];
   }
@@ -146,7 +137,7 @@ uint64_t getHostHash(void) {
 
   TRACE(NCCL_INIT,"unique hostname '%s'", hostHash);
 
-  return getHash(hostHash);
+  return getHash(hostHash, strlen(hostHash));
 }
 
 /* Generate a hash of the unique identifying string for this process
@@ -166,7 +157,7 @@ uint64_t getPidHash(void) {
   pname[plen+len]='\0';
   TRACE(NCCL_INIT,"unique PID '%s'", pname);
 
-  return getHash(pname);
+  return getHash(pname, strlen(pname));
 }
 
 int parseStringList(const char* string, struct netIf* ifList, int maxList) {
