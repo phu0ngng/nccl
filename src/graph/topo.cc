@@ -705,9 +705,15 @@ ncclResult_t ncclTopoGetNet(struct ncclTopoSystem* system, int nvmlDev, int rrid
   int id;
   NCCLCHECK(nvmlToIndex(system, nvmlDev, &id));
   int maxWidth = 0;
+  int minCount = 0xfffffff;
   for (int n=0; n<system->nodes[NET].count; n++) {
     struct ncclTopoLinkList* links = system->nodes[GPU].nodes[id].paths[NET]+n;
-    if (links->width > maxWidth) maxWidth = links->width;
+    if (links->width > maxWidth) {
+      maxWidth = links->width;
+      minCount = links->count;
+    } else if (links->width == maxWidth && links->count < minCount) {
+      minCount = links->count;
+    }
   }
   if (maxWidth == 0) {
     WARN("Error : could not find network");
@@ -717,7 +723,7 @@ ncclResult_t ncclTopoGetNet(struct ncclTopoSystem* system, int nvmlDev, int rrid
   while (1) {
     for (int n=0; n<system->nodes[NET].count; n++) {
       struct ncclTopoLinkList* links = system->nodes[GPU].nodes[id].paths[NET]+n;
-      if (links->width == maxWidth) {
+      if (links->width == maxWidth && links->count == minCount) {
         if (i == rrid) {
           *net = n;
           return ncclSuccess;
