@@ -176,7 +176,7 @@ ncclResult_t ncclTopoSearchRecGpu(struct ncclTopoSystem* system, struct ncclTopo
       NCCLCHECK(ncclTopoFollowPath(paths+g, &nextGpu, graph->speed));
       if (nextGpu) {
         int nvlink = graph->nvlink;
-        graph->nvlink = paths[g].nvlink;
+        graph->nvlink &= paths[g].nvlink;
         //printf("GPU/%d -> GPU/%d (%d/%d)\n", gpu->id, nextGpu->id, i, g);
         nextGpu->used ^= flag;
         NCCLCHECK(ncclTopoSearchRecGpu(system, graph, saveGraph, nextGpu, step+1, backToNet, backToFirstRank, time));

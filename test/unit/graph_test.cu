@@ -250,9 +250,7 @@ const char* p9_6v_topo[] = {
   // GPU-CPU NVLinks
   "GPU/0-CPU/0", "GPU/1-CPU/0", "GPU/2-CPU/0", "GPU/3-CPU/1", "GPU/4-CPU/1", "GPU/5-CPU/1",
   "GPU/0-CPU/0", "GPU/1-CPU/0", "GPU/2-CPU/0", "GPU/3-CPU/1", "GPU/4-CPU/1", "GPU/5-CPU/1",
-/*  // Model P9 as a NVSWITCH
-  "GPU/0-NVS/0", "GPU/1-NVS/0", "GPU/2-NVS/0", "GPU/3-NVS/0", "GPU/4-NVS/0", "GPU/5-NVS/0",
-  "GPU/0-NVS/0", "GPU/1-NVS/0", "GPU/2-NVS/0", "GPU/3-NVS/0", "GPU/4-NVS/0", "GPU/5-NVS/0",*/
+  // Inter-CPU
   "CPU/0-CPU/1", "CPU/0-CPU/1", "CPU/0-CPU/1", "CPU/0-CPU/1", "CPU/0-CPU/1"
 };
 
@@ -400,7 +398,7 @@ int checkTopo(const char* name, const char** topo, int topoSize, int nvlinkWidth
   printf("%s (%s) : ", name, inter ? "inter" : "intra");
   int nChannels = std::min(ringGraph.nChannels, treeGraph.nChannels);
   int speed = std::min(ringGraph.speed, treeGraph.speed);
-  printf("%2d x %2d    %15s    %9s   ", nChannels, speed, treeMode[treeGraph.pattern], ringGraph.crossNic == 1 ? "xNic ring" : "ring");
+  printf("%2d x %2d    %15s    %9s   %s", nChannels, speed, treeMode[treeGraph.pattern], ringGraph.crossNic == 1 ? "xNic ring" : "ring", ringGraph.nvlink ? "(N)" : "   ");
   if ((nChannels != expectedChannels) || (speed != expectedSpeed) || (treeGraph.pattern != expectedTreePattern) || (ringGraph.crossNic != expectedCrossnic)) {
     printf(" FAILED Expected %d x %d (%s/%s)\n", expectedChannels, expectedSpeed, treeMode[expectedTreePattern], expectedCrossnic == 1 ? "xNic ring" : "ring");
     errors++;
