@@ -35,7 +35,7 @@ static int getNumaId(char *path) {
   return numaId;
 }
 
-ncclResult_t getPciPath(char* busId, char** path) {
+static ncclResult_t getPciPath(char* busId, char** path) {
   for (int i=0; i<BUSID_SIZE; i++) busId[i] = tolower(busId[i]);
   char busPath[] = "/sys/class/pci_bus/0000:00/../../0000:00:00.0";
   memcpy(busPath+sizeof("/sys/class/pci_bus/")-1, busId, BUSID_REDUCED_SIZE-1);
@@ -48,7 +48,7 @@ ncclResult_t getPciPath(char* busId, char** path) {
   return ncclSuccess;
 }
 
-ncclResult_t getNvmlPath(int nvmlDev, char** path) {
+static ncclResult_t getNvmlPath(nvmlDevice_t nvmlDev, char** path) {
   nvmlPciInfo_t pci;
   NCCLCHECK(wrapNvmlDeviceGetPciInfo(nvmlDev, &pci));
   NCCLCHECK(getPciPath(pci.busId, path));
