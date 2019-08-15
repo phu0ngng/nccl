@@ -14,8 +14,6 @@
 #include <ctype.h>
 #include <stdio.h>
 
-ncclResult_t getCudaPath(int cudaDev, char** path);
-
 enum ncclPathDist {
   PATH_PIX  = 0,
   PATH_PXB  = 1,
@@ -26,6 +24,8 @@ enum ncclPathDist {
 };
 
 extern const char* pathDists[PATH_ARRAY_SIZE];
+
+ncclResult_t ncclTopoCudaPath(int cudaDev, char** path);
 
 struct ncclTopoSystem;
 // Build the topology

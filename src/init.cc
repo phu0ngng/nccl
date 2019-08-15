@@ -772,7 +772,7 @@ static ncclResult_t initTransportsRank(struct ncclComm* comm, ncclUniqueId* comm
 static ncclResult_t getCpuGpuAffinity(int cudaDev, cpu_set_t* mask) {
   CPU_ZERO_S(sizeof(cpu_set_t), mask);
   char* cudaPath;
-  NCCLCHECK(getCudaPath(cudaDev, &cudaPath));
+  NCCLCHECK(ncclTopoCudaPath(cudaDev, &cudaPath));
   char path[PATH_MAX];
   strncpy(path, cudaPath, PATH_MAX-1);
   snprintf(path+strlen(path), PATH_MAX-1-strlen(path), "/local_cpus");

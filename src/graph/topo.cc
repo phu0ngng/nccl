@@ -48,12 +48,20 @@ ncclResult_t getPciPath(char* busId, char** path) {
   return ncclSuccess;
 }
 
-ncclResult_t getCudaPath(int cudaDev, char** path) {
+ncclResult_t getNvmlPath(int nvmlDev, char** path) {
+  nvmlPciInfo_t pci;
+  NCCLCHECK(wrapNvmlDeviceGetPciInfo(nvmlDev, &pci));
+  NCCLCHECK(getPciPath(pci.busId, path));
+  return ncclSuccess;
+}
+
+ncclResult_t ncclTopoCudaPath(int cudaDev, char** path) {
   char busId[BUSID_SIZE];
   CUDACHECK(cudaDeviceGetPCIBusId(busId, BUSID_SIZE, cudaDev));
   NCCLCHECK(getPciPath(busId, path));
   return ncclSuccess;
 }
+
 
 int interCpuWidth = 0;
 int cpuPciWidth = 0;
@@ -228,16 +236,22 @@ ncclResult_t ncclTopoConnectNVLink(nvmlDevice_t* nvmlDevs, struct ncclTopoSystem
           }
         }
       } else if (type == ncclNvLinkDeviceBridge) {
+        // Nvlink between GPU and CPU (PPC)
+        // Since the remote bridge does not have a valid numa_node, assume we
+        // are connected to the closest CPU.
         char* path;
-        NCCLCHECK(getPciPath(remoteProc.busId, &path));
+        NCCLCHECK(getNvmlPath(nvmlDevs[g], &path));
         int numaId = getNumaId(path);
         free(path);
+        struct ncclTopoNode* cpuNode = NULL;
         for (int c=0; c<system->nodes[CPU].count; c++) {
-          if (system->nodes[CPU].nodes[c].id == numaId) {
-            NCCLCHECK(ncclTopoConnectNodes(system->nodes[GPU].nodes+g, system->nodes[CPU].nodes+c, LINK_NVL, width));
-            NCCLCHECK(ncclTopoConnectNodes(system->nodes[CPU].nodes+c, system->nodes[GPU].nodes+g, LINK_NVL, width));
-          }
+          if (system->nodes[CPU].nodes[c].id == numaId) cpuNode = system->nodes[CPU].nodes+c;
         }
+        if (cpuNode == NULL) { // Create CPU
+          NCCLCHECK(ncclTopoCreateNode(system, &cpuNode, CPU, numaId));
+        }
+        NCCLCHECK(ncclTopoConnectNodes(system->nodes[GPU].nodes+g, cpuNode, LINK_NVL, width));
+        NCCLCHECK(ncclTopoConnectNodes(cpuNode, system->nodes[GPU].nodes+g, LINK_NVL, width));
       } else { // Nvswitch
         if (type == ncclNvLinkDeviceUnknown) {
           // The NVLink is up but we couldn't find the PCI device on the other
@@ -343,25 +357,10 @@ ncclResult_t ncclTopoCreatePciPath(struct ncclTopoSystem* system, struct ncclTop
   return ncclSuccess;
 }
 
-ncclResult_t ncclTopoCudaPath(char* busId, char** path) {
-  for (int i=0; i<BUSID_SIZE; i++) busId[i] = tolower(busId[i]);
-  char busPath[] = "/sys/class/pci_bus/0000:00/../../0000:00:00.0";
-  memcpy(busPath+sizeof("/sys/class/pci_bus/")-1, busId, BUSID_REDUCED_SIZE-1);
-  memcpy(busPath+sizeof("/sys/class/pci_bus/0000:00/../../")-1, busId, BUSID_SIZE-1);
-  *path = realpath(busPath, NULL);
-  if (*path == NULL) {
-    WARN("Could not find real path of %s", busPath);
-    return ncclSystemError;
-  }
-  return ncclSuccess;
-}
-
 ncclResult_t ncclTopoConnectPCI(nvmlDevice_t* nvmlDevs, struct ncclTopoSystem* system, int inter) {
   for (int g=0; g<system->nodes[GPU].count; g++) {
     char* path;
-    nvmlPciInfo_t pci;
-    NCCLCHECK(wrapNvmlDeviceGetPciInfo(nvmlDevs[g], &pci));
-    NCCLCHECK(ncclTopoCudaPath(pci.busId, &path));
+    NCCLCHECK(getNvmlPath(nvmlDevs[g], &path));
     NCCLCHECK(ncclTopoCreatePciPath(system, system->nodes[GPU].nodes+g, path));
     free(path);
   }
