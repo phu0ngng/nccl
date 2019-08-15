@@ -75,7 +75,7 @@ static ncclResult_t getCpuWidths() {
   sprintf(cpu, "Generic");
   cpuPciWidth = interCpuWidth = PCI_WIDTH;
 
-#ifdef __ppc64__
+#ifdef __PPC__
   sprintf(cpu, "ppc64");
   interCpuWidth = P9_WIDTH;
 #endif
