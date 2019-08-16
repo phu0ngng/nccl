@@ -100,40 +100,40 @@ uint64_t getHash(const char* string, int n) {
 
 /* Generate a hash of the unique identifying string for this host
  * that will be unique for both bare-metal and container instances
- * Default is the equivalent of a hash of;
  *
- * $(hostname) $(readlink /proc/self/ns/uts)
+ * Reads a host ID string from /proc/sys/kernel/random/boot_id
+ *
+ * This string can be overridden by using the NCCL_HOSTID env var.
+ * Code falls back to the full hostname if there is an error
  */
-#define NS_PATH "/proc/self/ns/"
-#define DEFAULT_HOSTHASH "uts"
+#define HOSTID_FILE "/proc/sys/kernel/random/boot_id"
 uint64_t getHostHash(void) {
   char hostHash[1024];
-  // Start off with the full hostname
-  (void) getHostName(hostHash, sizeof(hostHash), '\0');
-  int offset = strlen(hostHash);
+  char *hostId;
 
-  /* Parse the NCCL_HOSTHASH env var adding in the
-   * readlink info from under /proc/self/ns as requested
-   * Full list: [cgroup,ipc,mnt,net,pid,pid_for_children,user,uts]
-   *
-   * For example "uts,mnt" would result in each container on a node
-   * having a unique hostHash and hence disable P2P/IPC between them
-   */
-  char* hostHashEnv = getenv("NCCL_HOSTHASH");
-  char *hostHashNs = (hostHashEnv == NULL) ? strdup(DEFAULT_HOSTHASH) : strdup(hostHashEnv);
-  char *ns = strtok(hostHashNs, ",");
-  while (ns != NULL) {
-    char nsPath[1024];
-    (void) snprintf(nsPath, sizeof(nsPath), "%s%s", NS_PATH, basename(ns));
-    // $(readlink /proc/self/ns/<ns>)
-    int len = readlink(nsPath, hostHash+offset, sizeof(hostHash)-1-offset);
-    if (len < 0) len = 0;
-    offset += len;
-    // Add a trailing '\0'
-    hostHash[offset]='\0';
-    ns = strtok(NULL, ",");
+  hostHash[0] = '\0';
+
+  if ((hostId = getenv("NCCL_HOSTID")) != NULL) {
+    strncpy(hostHash, hostId, sizeof(hostHash));
+  } else {
+    FILE *file = fopen(HOSTID_FILE, "r");
+    if (file != NULL) {
+      char *p;
+      if (fscanf(file, "%ms", &p) == 1) {
+        strncpy(hostHash, p, sizeof(hostHash)-1);
+        free(p);
+      }
+    }
+    fclose(file);
   }
-  free(hostHashNs);
+
+  // Make sure the string is terminated
+  hostHash[sizeof(hostHash)-1]='\0';
+
+  // Fall back is the full hostname if something failed
+  if (strlen(hostHash) == 0) {
+    (void) getHostName(hostHash, sizeof(hostHash), '\0');
+  }
 
   TRACE(NCCL_INIT,"unique hostname '%s'", hostHash);
 
