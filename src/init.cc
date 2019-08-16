@@ -638,7 +638,7 @@ static ncclResult_t initTransportsRank(struct ncclComm* comm, ncclUniqueId* comm
   allGather3Data[rank].nThreads = comm->nThreads;
   allGather3Data[rank].cudaCompCap = ncclCudaCompCap();
   allGather3Data[rank].fullCudaCompCap = ncclCudaFullCompCap();
-  allGather3Data[rank].nvlink = nvlink;
+  allGather3Data[rank].nvlink = treeGraph.nvlink;
   allGather3Data[rank].nChannels = comm->nChannels = nChannels;
 
   NCCLCHECK(ncclTopoPreset(comm, nodesFirstRank, &treeGraph, &ringGraph, &allGather3Data[rank].topoRanks));
@@ -661,7 +661,7 @@ static ncclResult_t initTransportsRank(struct ncclComm* comm, ncclUniqueId* comm
   if (ncclParamLl128Enable()) {
     int enable = 1;
     for (int i = 0; i < nranks; i++) {
-      if (allGather3Data[i].fullCudaCompCap != 70 || nvlink == 0) {
+      if (allGather3Data[i].fullCudaCompCap != 70 || allGather3Data[rank].nvlink == 0) {
         INFO(NCCL_INIT, "Not using V100/NVLink, disabling LL128");
         enable = 0;
       }
