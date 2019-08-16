@@ -516,19 +516,6 @@ static ncclResult_t p2pSetup(struct ncclComm* comm, struct ncclChannel* channel,
 
 NCCL_PARAM(CrossNic, "CROSS_NIC", 2);
 
-static ncclResult_t printGraph(struct ncclTopoGraph* graph, int localRanks) {
-  INFO(NCCL_GRAPH, "Pattern %d, crossNic %d, nChannels %d, speed %d, nvlink %d", graph->pattern, graph->crossNic, graph->nChannels, graph->speed, graph->nvlink);
-
-  char line[1024];
-  for (int c=0; c<graph->nChannels; c++) {
-    sprintf(line, "%2d :", c);
-    int offset = strlen(line);
-    for (int i=0; i<localRanks; i++) { sprintf(line+offset, " %4d", graph->intra[localRanks*c+i]); offset += sizeof(" 0000")-1; }
-    INFO(NCCL_GRAPH, "%s", line);
-  }
-  return ncclSuccess;
-}
-
 static ncclResult_t getNodesInfo(struct ncclComm* comm,
     int* rankIndexes, int* nvmlIndexes, int* firstRanks) {
   int nNodes = 0;
@@ -609,16 +596,16 @@ static ncclResult_t initTransportsRank(struct ncclComm* comm, ncclUniqueId* comm
   treeLoopGraph.pattern = NCCL_TOPO_PATTERN_SPLIT_TREE_LOOP;
   treeLoopGraph.crossNic = ncclParamCrossNic();
   NCCLCHECK(ncclTopoCompute(comm->topo, &treeLoopGraph, NULL));
-  NCCLCHECK(printGraph(&treeLoopGraph, comm->localRanks));
+  NCCLCHECK(ncclTopoPrintGraph(&treeLoopGraph, comm->localRanks));
   treeGraph.pattern = NCCL_TOPO_PATTERN_SPLIT_TREE;
   treeGraph.crossNic = ncclParamCrossNic();
   NCCLCHECK(ncclTopoCompute(comm->topo, &treeGraph, &treeLoopGraph));
-  NCCLCHECK(printGraph(&treeGraph, comm->localRanks));
+  NCCLCHECK(ncclTopoPrintGraph(&treeGraph, comm->localRanks));
   struct ncclTopoGraph ringGraph;
   ringGraph.pattern = NCCL_TOPO_PATTERN_RING;
   ringGraph.crossNic = ncclParamCrossNic();
   NCCLCHECK(ncclTopoCompute(comm->topo, &ringGraph, &treeLoopGraph));
-  NCCLCHECK(printGraph(&ringGraph, comm->localRanks));
+  NCCLCHECK(ncclTopoPrintGraph(&ringGraph, comm->localRanks));
 
   int nChannels = std::min(treeGraph.nChannels, ringGraph.nChannels);
 

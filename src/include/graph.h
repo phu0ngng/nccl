@@ -60,6 +60,8 @@ struct ncclTopoGraph {
 };
 ncclResult_t ncclTopoCompute(struct ncclTopoSystem* system, struct ncclTopoGraph* graph, struct ncclTopoGraph* baseGraph);
 
+ncclResult_t ncclTopoPrintGraph(struct ncclTopoGraph* graph, int localRanks);
+
 struct ncclTopoRanks {
   int ringRecv[MAXCHANNELS];
   int ringSend[MAXCHANNELS];

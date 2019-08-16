@@ -126,6 +126,7 @@ ncclResult_t ncclTopoSearchRec(struct ncclTopoSystem* system, struct ncclTopoGra
 #define FORCED_ORDER_REPLAY 2
 
 ncclResult_t ncclTopoReplayGetGpu(struct ncclTopoSystem* system, struct ncclTopoGraph* graph, int step, int* g) {
+  *g = -1;
   if (graph->nChannels == 0) return ncclInternalError;
   int ngpus = system->nodes[GPU].count;
   int nextRank = graph->intra[(graph->nChannels-1)*ngpus+step+1];
@@ -133,6 +134,7 @@ ncclResult_t ncclTopoReplayGetGpu(struct ncclTopoSystem* system, struct ncclTopo
     *g = i;
     return ncclSuccess;
   }
+  if (*g == -1) return ncclInternalError;
   return ncclSuccess;
 }
 
@@ -461,6 +463,19 @@ ncclResult_t ncclTopoCompute(struct ncclTopoSystem* system, struct ncclTopoGraph
   if (graph->nChannels == 0) {
     WARN("Could not find a path for pattern %d\n", graph->pattern);
     return ncclInternalError;
+  }
+  return ncclSuccess;
+}
+
+ncclResult_t ncclTopoPrintGraph(struct ncclTopoGraph* graph, int localRanks) {
+  INFO(NCCL_GRAPH, "Pattern %d, crossNic %d, nChannels %d, speed %d, nvlink %d", graph->pattern, graph->crossNic, graph->nChannels, graph->speed, graph->nvlink);
+
+  char line[1024];
+  for (int c=0; c<graph->nChannels; c++) {
+    sprintf(line, "%2d :", c);
+    int offset = strlen(line);
+    for (int i=0; i<localRanks; i++) { sprintf(line+offset, " %4d", graph->intra[localRanks*c+i]); offset += sizeof(" 0000")-1; }
+    INFO(NCCL_GRAPH, "%s", line);
   }
   return ncclSuccess;
 }
