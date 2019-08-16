@@ -122,7 +122,7 @@ ncclResult_t ncclTopoSearchRec(struct ncclTopoSystem* system, struct ncclTopoGra
 
 #define NCCL_SEARCH_TIMEOUT (1ULL<<20) // This should get contain all search within a second or so.
 
-ncclResult_t ncclTopoSearchRecGpu(struct ncclTopoSystem* system, struct ncclTopoGraph* graph, struct ncclTopoGraph* saveGraph, struct ncclTopoNode* gpu, int step, int backToNet, int backToFirstRank, int *time) {
+ncclResult_t ncclTopoSearchRecGpu(struct ncclTopoSystem* system, struct ncclTopoGraph* graph, struct ncclTopoGraph* saveGraph, struct ncclTopoNode* gpu, int step, int backToNet, int backToFirstRank, int followPciOrder, int *time) {
   if ((*time) <= 0) return ncclSuccess;
   (*time)--;
 
@@ -158,7 +158,7 @@ ncclResult_t ncclTopoSearchRecGpu(struct ncclTopoSystem* system, struct ncclTopo
           NCCLCHECK(ncclTopoFollowPath(paths+n, &net, graph->speed));
           if (net) {
             //printf("GPU/%d -> NET/%d\n", gpu->id, n);
-            NCCLCHECK(ncclTopoSearchRecGpu(system, graph, saveGraph, gpu, step, -1, backToFirstRank, time));
+            NCCLCHECK(ncclTopoSearchRecGpu(system, graph, saveGraph, gpu, step, -1, backToFirstRank, followPciOrder, time));
             NCCLCHECK(ncclTopoFollowPath(paths+n, &net, -graph->speed));
           }
         }
@@ -169,7 +169,12 @@ ncclResult_t ncclTopoSearchRecGpu(struct ncclTopoSystem* system, struct ncclTopo
     struct ncclTopoLinkList* paths = gpu->paths[GPU];
     int next[NCCL_TOPO_MAX_NODES];
     int count;
-    NCCLCHECK(ncclTopoSearchNextGpuSort(system, graph, gpu, next, &count, backToNet == -1 ? 0 : backToNet == step+1 ? 1 : -1 ));
+    if (followPciOrder) {
+      next[0] = gpu-system->nodes[GPU].nodes + 1;
+      count = 1;
+    } else {
+      NCCLCHECK(ncclTopoSearchNextGpuSort(system, graph, gpu, next, &count, backToNet == -1 ? 0 : backToNet == step+1 ? 1 : -1 ));
+    }
     for (int i=0; i<count; i++) {
       int g = next[i];
       struct ncclTopoNode* nextGpu;
@@ -179,7 +184,7 @@ ncclResult_t ncclTopoSearchRecGpu(struct ncclTopoSystem* system, struct ncclTopo
         graph->nvlink &= paths[g].nvlink;
         //printf("GPU/%d -> GPU/%d (%d/%d)\n", gpu->id, nextGpu->id, i, g);
         nextGpu->used ^= flag;
-        NCCLCHECK(ncclTopoSearchRecGpu(system, graph, saveGraph, nextGpu, step+1, backToNet, backToFirstRank, time));
+        NCCLCHECK(ncclTopoSearchRecGpu(system, graph, saveGraph, nextGpu, step+1, backToNet, backToFirstRank, followPciOrder, time));
         nextGpu->used ^= flag;
         NCCLCHECK(ncclTopoFollowPath(paths+g, &nextGpu, -graph->speed));
         graph->nvlink = nvlink;
@@ -201,12 +206,12 @@ ncclResult_t ncclTopoSearchRecGpu(struct ncclTopoSystem* system, struct ncclTopo
     NCCLCHECK(ncclTopoFollowPath(paths+g, &firstGpu, graph->speed));
     if (firstGpu) {
       //printf("GPU/%d -> GPU/%d (%d)\n", gpu->id, g, step+1);
-      NCCLCHECK(ncclTopoSearchRecGpu(system, graph, saveGraph, firstGpu, step+1, backToNet, -1, time));
+      NCCLCHECK(ncclTopoSearchRecGpu(system, graph, saveGraph, firstGpu, step+1, backToNet, -1, followPciOrder, time));
       NCCLCHECK(ncclTopoFollowPath(paths+g, &firstGpu, -graph->speed));
     }
   } else {
     // Next path
-    NCCLCHECK(ncclTopoSearchRecGpu(system, graph, saveGraph, gpu, ngpus, -1, -1, time));
+    NCCLCHECK(ncclTopoSearchRecGpu(system, graph, saveGraph, gpu, ngpus, -1, -1, followPciOrder, time));
   }
   return ncclSuccess;
 }
@@ -215,9 +220,20 @@ ncclResult_t ncclTopoSearchRecNet(struct ncclTopoSystem* system, struct ncclTopo
   const uint64_t flag = 1ULL<<(graph->nChannels);
   for (int n=0; n<system->nodes[NET].count; n++) {
     struct ncclTopoNode* net = system->nodes[NET].nodes+n;
+    struct ncclTopoNode* gpu;
     if (net->used == 0) {
       net->used ^= flag;
       struct ncclTopoLinkList* paths = net->paths[GPU];
+      // First try the PCI order to set a reference
+      NCCLCHECK(ncclTopoFollowPath(paths+0, &gpu, graph->speed));
+      if (gpu) {
+        gpu->used ^= flag;
+        NCCLCHECK(ncclTopoSearchRecGpu(system, graph, saveGraph, gpu, 0, backToNet, backToFirstRank, 1, time));
+        gpu->used ^= flag;
+        NCCLCHECK(ncclTopoFollowPath(paths+0, &gpu, -graph->speed));
+      }
+
+      // Then try the most local GPUs
       int maxWidth = 0, minHops = 0xfffffff;
       for (int g=0; g<system->nodes[GPU].count; g++) {
         if (paths[g].width > maxWidth) {
@@ -234,14 +250,14 @@ ncclResult_t ncclTopoSearchRecNet(struct ncclTopoSystem* system, struct ncclTopo
         for (int tryGpuBidir=0; tryGpuBidir<2; tryGpuBidir++) {
           for (int g=0; g<system->nodes[GPU].count; g++) {
             if (paths[g].width == maxWidth && paths[g].count == minHops) {
-              struct ncclTopoNode* gpu = system->nodes[GPU].nodes+g;
+              gpu = system->nodes[GPU].nodes+g;
               int gpuUsed = gpuPciWidth(gpu) > 0 ? 0 : 1;
               if (tryGpuBidir == gpuUsed) {
                 NCCLCHECK(ncclTopoFollowPath(paths+g, &gpu, graph->speed));
                 if (gpu) {
                   //printf("NET/%d -> GPU/%d (%d/%d)\n", n, g, maxWidth, minHops);
                   gpu->used ^= flag;
-                  NCCLCHECK(ncclTopoSearchRecGpu(system, graph, saveGraph, gpu, 0, backToNet, backToFirstRank, time));
+                  NCCLCHECK(ncclTopoSearchRecGpu(system, graph, saveGraph, gpu, 0, backToNet, backToFirstRank, 0, time));
                   gpu->used ^= flag;
                   NCCLCHECK(ncclTopoFollowPath(paths+g, &gpu, -graph->speed));
                 }
@@ -298,7 +314,8 @@ ncclResult_t ncclTopoSearchRec(struct ncclTopoSystem* system, struct ncclTopoGra
     // Start from GPU 0
     struct ncclTopoNode* gpu = system->nodes[GPU].nodes+0;
     gpu->used ^= 1ULL<<graph->nChannels;
-    ncclTopoSearchRecGpu(system, graph, saveGraph, gpu, 0, backToNet, backToFirstRank, time);
+    ncclTopoSearchRecGpu(system, graph, saveGraph, gpu, 0, backToNet, backToFirstRank, 1, time);
+    ncclTopoSearchRecGpu(system, graph, saveGraph, gpu, 0, backToNet, backToFirstRank, 0, time);
     gpu->used ^= 1ULL<<graph->nChannels;
   }
   return ncclSuccess;
