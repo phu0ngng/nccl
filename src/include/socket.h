@@ -66,7 +66,9 @@ static int findInterfaces(const char* prefixList, char* names, union socketAddre
 #endif
   struct netIf userIfs[MAX_IFS];
   bool searchNot = prefixList && prefixList[0] == '^';
+  if (searchNot) prefixList++;
   bool searchExact = prefixList && prefixList[0] == '=';
+  if (searchExact) prefixList++;
   int nUserIfs = parseStringList(prefixList, userIfs, MAX_IFS);
 
   int found = 0;

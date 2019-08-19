@@ -164,8 +164,6 @@ int parseStringList(const char* string, struct netIf* ifList, int maxList) {
   if (!string) return 0;
 
   const char* ptr = string;
-  // Ignore "^" or "=" prefix, will be detected outside of this function
-  if (ptr[0] == '^' || ptr[0] == '=') ptr++;
 
   int ifNum = 0;
   int ifC = 0;

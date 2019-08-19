@@ -107,7 +107,9 @@ ncclResult_t ncclIbInit(ncclDebugLogger_t logFunction) {
       char* userIbEnv = getenv("NCCL_IB_HCA");
       struct netIf userIfs[MAX_IB_DEVS];
       bool searchNot = userIbEnv && userIbEnv[0] == '^';
+      if (searchNot) userIbEnv++;
       bool searchExact = userIbEnv && userIbEnv[0] == '=';
+      if (searchExact) userIbEnv++;
       int nUserIfs = parseStringList(userIbEnv, userIfs, MAX_IB_DEVS);
 
       if (ncclSuccess != wrap_ibv_get_device_list(&devices, &nIbDevs)) return ncclInternalError;
