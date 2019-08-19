@@ -4,13 +4,8 @@
  * See LICENSE.txt for license information
  ************************************************************************/
 
-#include "core.h"
-#include "utils.h"
-#include "transport.h"
-#include "param.h"
+#include "comm.h"
 #include "shm.h"
-#include <unistd.h>
-#include <cuda_runtime.h>
 
 struct shmConnectInfo {
   uint64_t pidHash;

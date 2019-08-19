@@ -4,7 +4,8 @@
  * See LICENSE.txt for license information
  ************************************************************************/
 
-#include "core.h"
+#include "comm.h"
+#include "info.h"
 
 extern struct ncclTransport p2pTransport;
 extern struct ncclTransport shmTransport;

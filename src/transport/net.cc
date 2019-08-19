@@ -4,14 +4,10 @@
  * See LICENSE.txt for license information
  ************************************************************************/
 
-#include "core.h"
-#include "transport.h"
+#include "comm.h"
 #include "nvmlwrap.h"
 #include "net.h"
-#include "param.h"
 #include "graph.h"
-#include <cuda_runtime.h>
-#include <assert.h>
 
 #define NET_MAX_IFS 16
 #define NET_MAX_GPUS 32
@@ -255,7 +251,7 @@ ncclResult_t netSendProxy(struct ncclProxyArgs* args) {
       if (args->tail < args->end && args->tail < args->head + NCCL_STEPS) {
         volatile int* sizesFifo = resources->hostRecvMem->sizesFifo;
         volatile uint64_t* recvTail = &resources->hostRecvMem->tail;
-        if (args->llMode == 2) {
+        if (args->protocol == NCCL_PROTO_LL128) {
           int stepSize = NCCL_LL128_BUFF_SIZE/NCCL_STEPS;
           if (args->tail < *recvTail) {
             int buffSlot = args->tail%NCCL_STEPS;
@@ -287,7 +283,7 @@ ncclResult_t netSendProxy(struct ncclProxyArgs* args) {
               }
             }
           }
-        } else if (args->llMode == 1) {
+        } else if (args->protocol == NCCL_PROTO_LL) {
           int buffSlot = args->tail%NCCL_STEPS;
           int size = sizesFifo[buffSlot];
           if (size != -1) {
@@ -362,11 +358,11 @@ ncclResult_t netRecvProxy(struct ncclProxyArgs* args) {
   }
   if (args->state == ncclProxyOpProgress) {
     args->idle = 1;
-    int stepSize = ( args->llMode == 1 ? NCCL_LL_BUFF_SIZE : args->llMode == 2 ? NCCL_LL128_BUFF_SIZE : args->channel->buffSize ) / NCCL_STEPS;
+    int stepSize = ( args->protocol == NCCL_PROTO_LL ? NCCL_LL_BUFF_SIZE : args->protocol == NCCL_PROTO_LL128 ? NCCL_LL128_BUFF_SIZE : args->channel->buffSize ) / NCCL_STEPS;
     if (args->head < args->end) {
       struct ncclRecvMem* localMem = resources->useGdr ? resources->devRecvMem : resources->hostRecvMem;
-      char* localBuff = args->llMode == 1 ? (char*)localMem->llBuff : args->llMode == 2 ? (char*)localMem->ll128Buff : localMem->buff;
-      void* mhandle = args->llMode == 1 ? resources->llMhandle : args->llMode == 2 ? resources->ll128Mhandle : resources->mhandle;
+      char* localBuff = args->protocol == NCCL_PROTO_LL ? (char*)localMem->llBuff : args->protocol == NCCL_PROTO_LL128 ? (char*)localMem->ll128Buff : localMem->buff;
+      void* mhandle = args->protocol == NCCL_PROTO_LL ? resources->llMhandle : args->protocol == NCCL_PROTO_LL128 ? resources->ll128Mhandle : resources->mhandle;
       volatile uint64_t* sendHead = &resources->hostSendMem->head;
       if ((args->tail < args->head + NCCL_STEPS) && (args->tail < *sendHead + NCCL_STEPS) && (args->tail < args->end)) {
         int buffSlot = args->tail%NCCL_STEPS;
@@ -383,7 +379,7 @@ ncclResult_t netRecvProxy(struct ncclProxyArgs* args) {
         NCCLCHECK(ncclNetTest(args->requests[buffSlot], &done, &size));
         if (done) {
           args->head += args->sliceSteps;
-          if (args->llMode == 0) {
+          if (args->protocol == NCCL_PROTO_SIMPLE) {
             if (resources->useGdr) ncclNetFlush(resources->netRecvComm, localBuff+buffSlot*stepSize, size, mhandle);
             resources->hostRecvMem->tail = args->head;
           }

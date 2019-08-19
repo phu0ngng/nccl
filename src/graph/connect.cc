@@ -4,12 +4,10 @@
  * See LICENSE.txt for license information
  ************************************************************************/
 
-#include "core.h"
+#include "comm.h"
 #include "graph.h"
-#include "utils.h"
 #include "trees.h"
 #include "rings.h"
-#include "param.h"
 
 /******************************************************************/
 /********************* Internode connection ***********************/

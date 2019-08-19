@@ -5,7 +5,6 @@
  ************************************************************************/
 
 #include "core.h"
-#include "param.h"
 
 #define MAXWIDTH 20
 #define PREFIXLEN 15

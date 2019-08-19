@@ -8,7 +8,7 @@
 #define NCCL_GROUP_H_
 
 #include "nccl.h"
-#include "core.h"
+#include "comm.h"
 
 bool ncclAsyncMode();
 ncclResult_t ncclAsyncErrCheck(ncclResult_t ret);

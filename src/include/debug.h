@@ -7,15 +7,14 @@
 #ifndef NCCL_DEBUG_H_
 #define NCCL_DEBUG_H_
 
-#include <pthread.h>
+#include "core.h"
+
 #include <stdio.h>
 #include <chrono>
 
-#include <unistd.h>
 #include <sys/syscall.h>
 #include <limits.h>
 #include <string.h>
-#include "nccl.h"
 #include "nccl_net.h"
 
 #define gettid() (pid_t) syscall(SYS_gettid)

@@ -5,28 +5,18 @@
  ************************************************************************/
 
 #include "nccl.h"
-#include "core.h"
 #include "channel.h"
-#include "param.h"
 #include "nvmlwrap.h"
 #include "bootstrap.h"
 #include "transport.h"
 #include "group.h"
-#include "utils.h"
 #include "net.h"
-#include "checks.h"
 #include "enqueue.h"
 #include "graph.h"
+#include "argcheck.h"
 #include "cpuset.h"
-#include <stdio.h>
-#include <stdlib.h>
-#include <sys/mman.h>
-#include <sys/stat.h>
-#include <sys/types.h>
 #include <sched.h>
 #include <fcntl.h>
-#include <unistd.h>
-#include <cuda_runtime.h>
 #include <string.h>
 #include <errno.h>
 #include <assert.h>
@@ -55,24 +45,6 @@ NCCL_PARAM(GroupCudaStream, "GROUP_CUDA_STREAM", NCCL_GROUP_CUDA_STREAM);
 NCCL_PARAM(CheckPointers, "CHECK_POINTERS", 0);
 
 ncclNet_t* ncclNet = NULL;
-
-// We define this as weak to let tests redefine their own
-#pragma weak ncclCudaCompCap
-int ncclCudaCompCap() {
-  int cudaDev;
-  if (cudaGetDevice(&cudaDev) != cudaSuccess) return 0;
-  int ccMajor;
-  if (cudaDeviceGetAttribute(&ccMajor, cudaDevAttrComputeCapabilityMajor, cudaDev) != cudaSuccess) return 0;
-  return ccMajor;
-}
-int ncclCudaFullCompCap() {
-  int cudaDev;
-  if (cudaGetDevice(&cudaDev) != cudaSuccess) return 0;
-  int ccMajor, ccMinor;
-  if (cudaDeviceGetAttribute(&ccMajor, cudaDevAttrComputeCapabilityMajor, cudaDev) != cudaSuccess) return 0;
-  if (cudaDeviceGetAttribute(&ccMinor, cudaDevAttrComputeCapabilityMinor, cudaDev) != cudaSuccess) return 0;
-  return ccMajor*10+ccMinor;
-}
 
 // Returns ncclInternalError if anything fails, causing that network to be ignored.
 ncclResult_t initNet(ncclNet_t* net) {
@@ -125,40 +97,120 @@ ncclResult_t initNet() {
 }
 
 NCCL_PARAM(Nthreads, "NTHREADS", -2);
-NCCL_PARAM(LlThreshold, "LL_THRESHOLD", -2);
-NCCL_PARAM(ThreadThreshold, "THREAD_THRESHOLD", -2);
-NCCL_PARAM(TreeThreshold, "TREE_THRESHOLD", -2);
+NCCL_PARAM(Ll128Nthreads, "LL128_NTHREADS", -2);
 
-// Use Tree/LL128 all the way on V100+NVLink
-NCCL_PARAM(Ll128Enable, "LL128_ENABLE", 0);
+NCCL_PARAM(LlThreadThreshold, "LL_THREAD_THRESHOLD", NCCL_LL_THREAD_THRESHOLD);
+NCCL_PARAM(Ll128ThreadThreshold, "LL128_THREAD_THRESHOLD", NCCL_LL128_THREAD_THRESHOLD);
+NCCL_PARAM(SimpleThreadThreshold, "SIMPLE_THREAD_THRESHOLD", NCCL_SIMPLE_THREAD_THRESHOLD);
 
-int ncclThreadThreshold(int minCompCap, int multiNode) {
-  int threshold = ncclParamThreadThreshold();
-  if (threshold == -2) { // user has not set this env variable
-    threshold = (minCompCap <= 6) ? NCCL_THREAD_THRESHOLD_PREVOLTA : NCCL_THREAD_THRESHOLD;
-    // multiply by 2 if running on multiple nodes
-    if (multiNode) {
-      threshold *= 2;
-    }
+NCCL_PARAM(Ll128Enable, "LL128_ENABLE", -2);
+
+static int getNthreads(const char* name, int env, int min, int max) {
+  int nt = env;
+  if (nt > 0) {
+    if (nt % WARP_SIZE != 0) {
+      WARN("Invalid %s %d (must be a multiple of %d)", name, nt, WARP_SIZE);
+      nt = max;
+    } else if (nt > max) {
+      WARN("Invalid %s %d (maximum %d).", name, nt, max);
+      nt = max;
+    } else if (nt < 2*WARP_SIZE) {
+      WARN("Invalid %s %d (minimum %d).", name, nt, min);
+      nt = min;
+     }
+  } else {
+    nt = max;
   }
-  return threshold;
+  return nt;
 }
 
-static int getNThreads() {
-  int envNthreads = ncclParamNthreads();
-  if (envNthreads > 0) {
-     if (envNthreads % WARP_SIZE != 0) {
-       WARN("Invalid NCCL_NTHREADS %d (must be a multiple of %d)", envNthreads, WARP_SIZE);
-     } else {
-       if (envNthreads > NCCL_MAX_NTHREADS) {
-         WARN("Invalid NCCL_NTHREADS %d (maximum %d).", envNthreads, NCCL_MAX_NTHREADS);
-         envNthreads = NCCL_MAX_NTHREADS;
-       }
-       return envNthreads;
-     }
+static ncclResult_t ncclSetThresholds(struct ncclComm* comm, int minCompCap, int maxCompCap) {
+  // Default algorithm (normal/LL)
+  comm->maxThreads[NCCL_PROTO_SIMPLE] = comm->maxThreads[NCCL_PROTO_LL]
+    = getNthreads("NCCL_NTHREADS", ncclParamNthreads(), 2*WARP_SIZE, NCCL_MAX_NTHREADS);
+
+  // LL128
+  comm->maxThreads[NCCL_PROTO_LL128]
+    = getNthreads("NCCL_LL128_NTHREADS", ncclParamLl128Nthreads(), NCCL_LL128_MAX_NTHREADS/4, NCCL_LL128_MAX_NTHREADS);
+
+  INFO(NCCL_INIT, "Threads per block : %d/%d/%d", comm->maxThreads[NCCL_PROTO_LL], comm->maxThreads[NCCL_PROTO_LL128], comm->maxThreads[NCCL_PROTO_SIMPLE]);
+
+  // Set per-thread amount of work to switch between protocols
+  for (int a=0; a<NCCL_NUM_ALGORITHMS; a++) {
+    comm->threadThresholds[a][NCCL_PROTO_LL] = ncclParamLlThreadThreshold();
+    comm->threadThresholds[a][NCCL_PROTO_LL128] = ncclParamLl128ThreadThreshold();
+    comm->threadThresholds[a][NCCL_PROTO_SIMPLE] = ncclParamSimpleThreadThreshold();
   }
-  if (ncclParamLl128Enable() > 0) return NCCL_MAX_NTHREADS;
-  return NCCL_MAX_NTHREADS;
+
+  // To get good performance with rings, we need to keep all GPUs busy.
+  // LL/LL128 can pipeline chunks within the node, so we just need to give work
+  // to each node, not each rank.
+  comm->threadThresholds[NCCL_ALGO_RING][NCCL_PROTO_LL] *= comm->nNodes;
+  comm->threadThresholds[NCCL_ALGO_RING][NCCL_PROTO_LL128] *= comm->nNodes;
+  comm->threadThresholds[NCCL_ALGO_RING][NCCL_PROTO_SIMPLE] *= comm->nRanks;
+
+  // Trees don't spread data evenly on GPUs at start, so we don't need to apply
+  // a factor. However, the Simple algorithm has a different number of apparent
+  // steps than LL/LL128, so we want to apply that factor.
+  comm->threadThresholds[NCCL_ALGO_TREE][NCCL_PROTO_SIMPLE] *=
+	  /* Number of steps for Simple algorithm */
+	  (2*log2(comm->nNodes)+(comm->nRanks/comm->nNodes))
+	  /* Number of steps for LL/LL128 */
+	  /(1+log2(comm->nNodes));
+
+  // Compute absolute thresholds
+  for (int a=0; a<NCCL_NUM_ALGORITHMS; a++) {
+    for (int p=0; p<NCCL_NUM_PROTOCOLS; p++) {
+      comm->thresholds[a][p] = comm->threadThresholds[a][p] * comm->maxThreads[p] * comm->nChannels;
+    }
+  }
+
+  // Enable LL128 by default only on Volta+NVLink. Other cases are not tested and may cause silent data corruption.
+  int ll128Enable = ncclParamLl128Enable();
+  if (ll128Enable == -2) ll128Enable = (minCompCap == 70 && maxCompCap == 70 && comm->nvlink) ? 1 : 0;
+  if (ll128Enable == 0) {
+    comm->thresholds[NCCL_ALGO_TREE][NCCL_PROTO_LL128] = comm->thresholds[NCCL_ALGO_TREE][NCCL_PROTO_SIMPLE];
+    comm->thresholds[NCCL_ALGO_RING][NCCL_PROTO_LL128] = comm->thresholds[NCCL_ALGO_RING][NCCL_PROTO_SIMPLE];
+  }
+
+  // Override defaults with user env
+  char* str = getenv("NCCL_THRESHOLDS");
+  if (str) {
+    ssize_t t[NCCL_NUM_ALGORITHMS][NCCL_NUM_PROTOCOLS] = { -2 };
+    for (int a=0; a<NCCL_NUM_ALGORITHMS; a++) for (int p=0; p<NCCL_NUM_PROTOCOLS; p++) t[a][p] = -2;
+    sscanf(str, "%ld %ld %ld %ld %ld %ld", t[0], t[0]+1, t[0]+2, t[1], t[1]+1, t[1]+2);
+    for (int a=0; a<NCCL_NUM_ALGORITHMS; a++) {
+      for (int p=0; p<NCCL_NUM_PROTOCOLS; p++) {
+        if (t[a][p] >= 0) comm->thresholds[a][p] = t[a][p];
+      }
+    }
+  }
+
+  str = getenv("NCCL_THREAD_THRESHOLDS");
+  if (str) {
+    ssize_t t[NCCL_NUM_ALGORITHMS][NCCL_NUM_PROTOCOLS] = { -2 };
+    sscanf(str, "%ld %ld %ld %ld %ld %ld", t[0], t[0]+1, t[0]+2, t[1], t[1]+1, t[1]+2);
+    for (int a=0; a<NCCL_NUM_ALGORITHMS; a++) {
+      for (int p=0; p<NCCL_NUM_PROTOCOLS; p++) {
+        if (t[a][p] >= 0) comm->threadThresholds[a][p] = t[a][p];
+      }
+    }
+  }
+
+  INFO(NCCL_INIT, "Thresholds %ld/%ld/%ld | %ld/%ld/%ld ; threadThresholds %ld/%ld/%ld | %ld/%ld/%ld",
+      comm->thresholds[NCCL_ALGO_TREE][NCCL_PROTO_LL],
+      comm->thresholds[NCCL_ALGO_TREE][NCCL_PROTO_LL128],
+      comm->thresholds[NCCL_ALGO_TREE][NCCL_PROTO_SIMPLE],
+      comm->thresholds[NCCL_ALGO_RING][NCCL_PROTO_LL],
+      comm->thresholds[NCCL_ALGO_RING][NCCL_PROTO_LL128],
+      comm->thresholds[NCCL_ALGO_RING][NCCL_PROTO_SIMPLE],
+      comm->threadThresholds[NCCL_ALGO_TREE][NCCL_PROTO_LL],
+      comm->threadThresholds[NCCL_ALGO_TREE][NCCL_PROTO_LL128],
+      comm->threadThresholds[NCCL_ALGO_TREE][NCCL_PROTO_SIMPLE],
+      comm->threadThresholds[NCCL_ALGO_RING][NCCL_PROTO_LL],
+      comm->threadThresholds[NCCL_ALGO_RING][NCCL_PROTO_LL128],
+      comm->threadThresholds[NCCL_ALGO_RING][NCCL_PROTO_SIMPLE]);
+  return ncclSuccess;
 }
 
 pthread_mutex_t initLock = PTHREAD_MUTEX_INITIALIZER;
@@ -262,8 +314,6 @@ static ncclResult_t commAlloc(ncclComm_t* comret, int ndev, int rank) {
   TRACE(NCCL_INIT,"comm %p rank %d nranks %d cudaDev %d nvmlDev %d", comm, rank, ndev, comm->cudaDev, comm->nvmlDev);
 
   comm->doneEvent = doneEvent;
-  comm->llThreshold = ncclParamLlThreshold();
-  comm->treeThreshold = ncclParamTreeThreshold();
   comm->checkPointers = ncclParamCheckPointers() == 1 ? true : false;
 #if CUDART_VERSION >= 9020
   comm->groupCudaStream = ncclParamGroupCudaStream();
@@ -352,29 +402,6 @@ static ncclResult_t selectTransport(struct ncclTopoSystem* topo, struct ncclPeer
   return ncclInternalError;
 }
 
-static ncclResult_t ncclTreeThreshold(int nnodes, int nranks, int nChannels, int nvlink, ssize_t *treeThreshold) {
-  float ringbw = nvlink ? 5000*nChannels : 5000; // approx, in MB/s or B/us
-  float ringlatinter = 6;
-  float treelatintra = 4;
-  float treelatinter = 15;
-  float treebw;
-  if (!nvlink) {
-    treebw = ringbw * 2 / 3;
-  } else {
-    treebw = ringbw * 4 / 5;
-    if (nnodes == 2) treebw *= 2;
-  }
-  float ringlat = ringlatinter*(nranks-1);
-  float treelat = treelatinter*log2(nnodes)+treelatintra*(nranks/nnodes-1);
-  if (nnodes < 2 || ringlat <= treelat)
-    *treeThreshold = 0;
-  else if (treebw > ringbw)
-    *treeThreshold = 0x7fffffffffffffff;
-  else
-    *treeThreshold = (ssize_t)(((ringbw*treebw/(ringbw-treebw)))*(ringlat-treelat));
-  return ncclSuccess;
-}
-
 static ncclResult_t setupChannel(struct ncclComm* comm, int channelId, int rank, int nranks, int* ringRanks) {
   TRACE(NCCL_INIT, "rank %d nranks %d", rank, nranks);
   NCCLCHECK(initChannel(comm, channelId));
@@ -430,7 +457,7 @@ ncclResult_t ncclCommSetIntra(struct ncclComm* comm, int rank, int ranks, struct
     comm->intraCGMode = CGMode;
     int* CC;
     NCCLCHECK(ncclCalloc(&CC, 1));
-    *CC = ncclCudaFullCompCap();
+    *CC = ncclCudaCompCap();
     comm->intraCC = CC;
   } else {
     comm->intraBarrier = (int*)waitForNonNullPtr(&comm0->intraBarrier);
@@ -453,7 +480,7 @@ ncclResult_t ncclCommSetIntra(struct ncclComm* comm, int rank, int ranks, struct
   if (comm->launchMode == ncclComm::GROUP) {
     CUDACHECK(cudaStreamCreateWithFlags(&comm->groupStream, cudaStreamNonBlocking));
 #if CUDART_VERSION >= 9000
-    if (*comm->intraCC && (ncclCudaFullCompCap() == *comm->intraCC)) {
+    if (*comm->intraCC && (ncclCudaCompCap() == *comm->intraCC)) {
       // Check whether the GPU supports Cooperative Group Multi Device Launch
       (void) cudaDeviceGetAttribute(&cgMdLaunch, cudaDevAttrCooperativeMultiDeviceLaunch, comm->cudaDev);
     }
@@ -614,11 +641,8 @@ static ncclResult_t initTransportsRank(struct ncclComm* comm, ncclUniqueId* comm
 
   int nChannels = std::min(treeGraph.nChannels, ringGraph.nChannels);
 
-  comm->nThreads = getNThreads();
-
   // AllGather3 - begin
   struct {
-    int nThreads;
     int cudaCompCap;
     int fullCudaCompCap;
     int nvlink;
@@ -627,9 +651,7 @@ static ncclResult_t initTransportsRank(struct ncclComm* comm, ncclUniqueId* comm
   } *allGather3Data;
 
   NCCLCHECK(ncclCalloc(&allGather3Data, nranks));
-  allGather3Data[rank].nThreads = comm->nThreads;
   allGather3Data[rank].cudaCompCap = ncclCudaCompCap();
-  allGather3Data[rank].fullCudaCompCap = ncclCudaFullCompCap();
   allGather3Data[rank].nvlink = treeGraph.nvlink;
   allGather3Data[rank].nChannels = comm->nChannels = nChannels;
 
@@ -637,36 +659,15 @@ static ncclResult_t initTransportsRank(struct ncclComm* comm, ncclUniqueId* comm
 
   NCCLCHECK(bootstrapAllGather(comm->bootstrap, allGather3Data, sizeof(*allGather3Data)));
 
-  // Find max nThreads
-  for (int i=0; i<nranks; i++)
-    comm->nThreads = std::max(allGather3Data[i].nThreads, comm->nThreads);
-
   // Determine the minimum CUDA Compute capability of all GPUs
   int myCompCap = allGather3Data[rank].cudaCompCap;
-  int minCompCap = myCompCap;
-  for (int i = 0; i < nranks; i++)
+  int minCompCap = myCompCap, maxCompCap = myCompCap;
+  for (int i = 0; i < nranks; i++) {
     minCompCap = std::min(allGather3Data[i].cudaCompCap, minCompCap);
-
-  for (int i = 0; i < nranks; i++) nvlink &= allGather3Data[i].nvlink;
-
-  // LL128 is only supported on V100/NVlink for now
-  if (ncclParamLl128Enable()) {
-    int enable = 1;
-    for (int i = 0; i < nranks; i++) {
-      if (allGather3Data[i].fullCudaCompCap != 70 || allGather3Data[rank].nvlink == 0) {
-        INFO(NCCL_INIT, "Not using V100/NVLink, disabling LL128");
-        enable = 0;
-      }
-    }
-    if (enable) {
-      comm->llThreshold = 0;
-      comm->ll128Threshold = 0x7fffffffffffffff;
-      if (comm->nNodes > 1 && comm->treeThreshold == -2) comm->treeThreshold = 0x7fffffffffffffff;
-    }
+    maxCompCap = std::max(allGather3Data[i].cudaCompCap, maxCompCap);
   }
 
-  // Determine thread threshold across all GPUs
-  comm->threadThreshold = ncclThreadThreshold(minCompCap, comm->nNodes);
+  for (int i = 0; i < nranks; i++) nvlink &= allGather3Data[i].nvlink;
 
   struct ncclTopoRanks** allTopoRanks;
   NCCLCHECK(ncclCalloc(&allTopoRanks, comm->nRanks));
@@ -692,22 +693,20 @@ static ncclResult_t initTransportsRank(struct ncclComm* comm, ncclUniqueId* comm
 
   TRACE(NCCL_INIT, "rank %d nranks %d - BUILT %d TREES/RINGS", rank, nranks, nChannels);
 
-  if (comm->treeThreshold == -2)
-    NCCLCHECK(ncclTreeThreshold(comm->nNodes, comm->nRanks, nChannels, nvlink, &comm->treeThreshold));
+  NCCLCHECK(ncclSetThresholds(comm, minCompCap, maxCompCap));
 
-  if (comm->treeThreshold > 0) {
-    char line[1024];
-    line[0]='\0';
-    for (int c=0; c<nChannels; c++) {
-      struct ncclTree* treeUp = &comm->channels[c].treeUp;
-      struct ncclTree* treeDn = &comm->channels[c].treeDn;
-      snprintf(line+strlen(line), 1023-strlen(line), " [%d] %d/%d/%d->%d->%d|%d->%d->%d/%d/%d",
-          c, treeUp->down[0], treeUp->down[1], treeUp->down[2], rank, treeUp->up,
-          treeDn->up, rank, treeDn->down[0], treeDn->down[1], treeDn->down[2]);
-    }
-    line[1023] = '\0';
-    INFO(NCCL_INIT, "Trees%s", line);
+  char line[1024];
+  line[0]='\0';
+  for (int c=0; c<nChannels; c++) {
+    struct ncclTree* treeUp = &comm->channels[c].treeUp;
+    struct ncclTree* treeDn = &comm->channels[c].treeDn;
+    snprintf(line+strlen(line), 1023-strlen(line), " [%d] %d/%d/%d->%d->%d|%d->%d->%d/%d/%d",
+        c, treeUp->down[0], treeUp->down[1], treeUp->down[2], rank, treeUp->up,
+        treeDn->up, rank, treeDn->down[0], treeDn->down[1], treeDn->down[2]);
   }
+  line[1023] = '\0';
+  INFO(NCCL_INIT, "Trees%s", line);
+
   // Connect with prev/next for each ring
   struct ncclConnect *connect;
   NCCLCHECK(ncclCalloc(&connect, 2));
@@ -715,20 +714,9 @@ static ncclResult_t initTransportsRank(struct ncclComm* comm, ncclUniqueId* comm
     struct ncclChannel* channel = comm->channels+c;
     NCCLCHECK(setupChannel(comm, c, rank, nranks, rings+c*nranks));
     NCCLCHECK(p2pSetup(comm, channel, 1, &channel->ring.prev, 1, &channel->ring.next));
-    if (comm->treeThreshold > 0) {
-      NCCLCHECK(p2pSetup(comm, channel, NCCL_MAX_TREE_ARITY, channel->treeUp.down, 1, &channel->treeUp.up));
-      NCCLCHECK(p2pSetup(comm, channel, 1, &channel->treeDn.up, NCCL_MAX_TREE_ARITY, channel->treeDn.down));
-    }
+    NCCLCHECK(p2pSetup(comm, channel, NCCL_MAX_TREE_ARITY, channel->treeUp.down, 1, &channel->treeUp.up));
+    NCCLCHECK(p2pSetup(comm, channel, 1, &channel->treeDn.up, NCCL_MAX_TREE_ARITY, channel->treeDn.down));
   }
-  if (rank == 0) {
-    char treeline[64];
-    snprintf(treeline, 64, "enabled up to size %ld", comm->treeThreshold);
-    INFO(NCCL_INIT,"Using %d threads, Min Comp Cap %d, Trees %s", comm->nThreads, minCompCap,
-       comm->treeThreshold == 0 ? "disabled" :
-       comm->treeThreshold == 0x7fffffffffffffff ? "enabled for all sizes" :
-       treeline);
-  }
-
   TRACE(NCCL_INIT, "rank %d nranks %d - CONNECTED %d RINGS AND TREES", rank, nranks, nChannels);
   free(connect);
   free(rings);

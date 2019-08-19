@@ -7,6 +7,8 @@
 #ifndef NCCL_COMM_H_
 #define NCCL_COMM_H_
 
+#include "transport.h"
+
 #if CUDART_VERSION < 9000
 struct cudaLaunchParams {
   void *func;
@@ -18,12 +20,16 @@ struct cudaLaunchParams {
 };
 #endif
 
-#define MAXCHANNELS 16
 #define DEFAULT_BUFFER_SIZE_BYTES (1LL << 22) /* 4MiB */
 
 #define CACHE_LINE_SIZE 128
 #define MEM_ALIGN 4096
 #define CUDA_IPC_MIN 2097152UL /* 2MiB - not currently used */
+
+// Channels / LL tuning
+#define NCCL_LL_THREAD_THRESHOLD 8
+#define NCCL_LL128_THREAD_THRESHOLD (NCCL_LL128_DATAELEMS*sizeof(uint64_t))
+#define NCCL_SIMPLE_THREAD_THRESHOLD 512
 
 struct ncclSendMem {
   union {
@@ -84,13 +90,14 @@ struct ncclComm {
 
   // Channels for collectives
   int nChannels;
-  int nThreads;
 
-  // Algorithm thresholds
-  ssize_t llThreshold;
-  ssize_t ll128Threshold;
-  ssize_t threadThreshold;
-  ssize_t treeThreshold;
+  // Only nvlink is used for inter-GPU communication
+  int nvlink;
+
+  // Algorithm/Protocols thresholds
+  ssize_t threadThresholds[NCCL_NUM_ALGORITHMS][NCCL_NUM_PROTOCOLS];
+  ssize_t thresholds[NCCL_NUM_ALGORITHMS][NCCL_NUM_PROTOCOLS];
+  int maxThreads[NCCL_NUM_PROTOCOLS];
 
   // An internal CUDA stream for NCCL kernel CGMD launches
   int groupCudaStream;

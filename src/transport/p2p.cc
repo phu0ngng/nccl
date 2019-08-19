@@ -4,14 +4,8 @@
  * See LICENSE.txt for license information
  ************************************************************************/
 
-#include "core.h"
-#include "utils.h"
+#include "comm.h"
 #include "graph.h"
-#include "transport.h"
-#include "param.h"
-#include <unistd.h>
-#include <cuda_runtime.h>
-#include <ctype.h>
 
 struct p2pConnectInfo {
   int direct;

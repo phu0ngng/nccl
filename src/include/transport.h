@@ -7,11 +7,10 @@
 #ifndef NCCL_TRANSPORT_H_
 #define NCCL_TRANSPORT_H_
 
-#include "nccl.h"
 #include "devcomm.h"
 #include "graph.h"
-#include <stdint.h>
 #include "nvmlwrap.h"
+#include "core.h"
 
 #define NTRANSPORTS 3
 
@@ -49,7 +48,7 @@ struct ncclProxyArgs {
   int chunkSteps;
   int nsteps;
   uint64_t opCount;
-  int llMode;
+  int protocol;
   int state;   // add component before this line -- it is left out during initialization
 
   // Internal state

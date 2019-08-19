@@ -5,14 +5,21 @@
  ************************************************************************/
 
 #include "utils.h"
-#include "debug.h"
+#include "core.h"
 #include "nccl_net.h"
-#include <unistd.h>
 #include <string.h>
 #include <stdarg.h>
-
 #include "nvmlwrap.h"
-#include "core.h"
+
+// Get current Compute Capability
+int ncclCudaCompCap() {
+  int cudaDev;
+  if (cudaGetDevice(&cudaDev) != cudaSuccess) return 0;
+  int ccMajor, ccMinor;
+  if (cudaDeviceGetAttribute(&ccMajor, cudaDevAttrComputeCapabilityMajor, cudaDev) != cudaSuccess) return 0;
+  if (cudaDeviceGetAttribute(&ccMinor, cudaDevAttrComputeCapabilityMinor, cudaDev) != cudaSuccess) return 0;
+  return ccMajor*10+ccMinor;
+}
 
 // Convert a logical cudaDev index to the NVML device minor number
 ncclResult_t getNvmlDevice(int cudaDev, int *nvmlDev) {

@@ -13,8 +13,6 @@
 #define NCCL_MAX_OPS 2048
 #define NCCL_STEPS 8
 
-typedef enum { ncclCollBroadcast, ncclCollReduce, ncclCollAllGather, ncclCollReduceScatter, ncclCollAllReduce, ncclCollCount } ncclColl_t;
-
 #define DIVUP(x, y) \
     (((x)+(y)-1)/(y))
 #define ROUNDUP(x, y) \
@@ -39,6 +37,7 @@ union ncclLLFifoLine {
 };
 
 #define WARP_SIZE 32
+#define MAXCHANNELS 32
 #define NCCL_MAX_NTHREADS 512
 #define NCCL_LL_MAX_NTHREADS NCCL_MAX_NTHREADS
 #define NCCL_LL_LINES_PER_THREAD 8
@@ -189,8 +188,6 @@ struct ncclChannel {
   };
 };
 static_assert(sizeof(struct ncclChannel) == 0x80*sizeof(int), "ncclChannel must have a pow2 size");
-
-#define MAXCHANNELS 16
 
 typedef enum {
   ncclDevSuccess,

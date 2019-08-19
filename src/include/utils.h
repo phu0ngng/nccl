@@ -10,6 +10,8 @@
 #include "nccl.h"
 #include <stdint.h>
 
+int ncclCudaCompCap();
+
 ncclResult_t getHostName(char* hostname, int maxlen, const char delim);
 uint64_t getHostHash();
 uint64_t getPidHash();
