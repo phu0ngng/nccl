@@ -565,12 +565,17 @@ static ncclResult_t initTransportsRank(struct ncclComm* comm, ncclUniqueId* comm
 
   NCCLCHECK(ncclCalloc(&allGather1Data, nranks));
   allGather1Data[rank].comm = comm;
-  NCCLCHECK(fillInfo(&allGather1Data[rank].peerInfo, rank));
+  struct ncclPeerInfo* myInfo = &allGather1Data[rank].peerInfo;
+  NCCLCHECK(fillInfo(myInfo, rank));
   NCCLCHECK(bootstrapAllGather(comm->bootstrap, allGather1Data, sizeof(*allGather1Data)));
 
   NCCLCHECK(ncclCalloc(&comm->peerInfo, nranks));
   for (int i = 0; i < nranks; i++) {
     memcpy(comm->peerInfo+i, &allGather1Data[i].peerInfo, sizeof(struct ncclPeerInfo));
+    if ((i != rank) && (comm->peerInfo[i].hostHash == myInfo->hostHash) && (comm->peerInfo[i].nvmlDev == myInfo->nvmlDev)) {
+      WARN("Duplicate GPU detected : rank %d and rank %d both on CUDA device %d", rank, i, myInfo->nvmlDev);
+      return ncclInvalidUsage;
+    }
   }
   // AllGather1 data is used again below
   // AllGather1 - end
@@ -879,6 +884,12 @@ ncclResult_t ncclCommInitRank(ncclComm_t* newcomm, int nranks, ncclUniqueId comm
 
 NCCL_API(ncclResult_t, ncclCommInitAll, ncclComm_t* comms, int ndev, const int* devlist);
 ncclResult_t ncclCommInitAll(ncclComm_t* comms, int ndev, const int* devlist) {
+  NCCLCHECK(PtrCheck(comms, "CommInitAll", "comms"));
+  if (ndev < 0) {
+    WARN("Invalid device count requested : %d", ndev);
+    return ncclInvalidArgument;
+  }
+
   ncclUniqueId uniqueId;
   NCCLCHECK(ncclGetUniqueId(&uniqueId));
   NCCLCHECK(ncclGroupStart());

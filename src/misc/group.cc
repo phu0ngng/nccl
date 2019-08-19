@@ -166,8 +166,8 @@ ncclResult_t ncclGroupEnd() {
       if (args->funcType == ASYNC_FUNC_INIT && doneArray[i] == 0) {
         int err = pthread_tryjoin_np(ncclGroupThreads[i], NULL);
         if (err == EBUSY) continue;
-        if (err != 0) { ret = ncclSystemError; goto end; }
-        if (args->ret != ncclSuccess) { ret = args->ret; goto end; }
+        if (err != 0) ret = ncclSystemError;
+        if (args->ret != ncclSuccess) ret = args->ret;
         doneArray[i] = 1;
         done--;
       }
@@ -175,20 +175,28 @@ ncclResult_t ncclGroupEnd() {
   }
   goto end;
 group_cleanup:
-  // At least one call in the group failed. Since we want to make that group
-  // an atomic operation, we need to cancel all operations.
-  for (int i=0; i<ncclGroupIndex; i++) {
-    struct ncclComm* comm = ncclGroupArgs[i].coll.comm;
-    for (int c=0; c<comm->nChannels; c++) {
-      struct ncclChannel* channel = comm->channels+c;
-      for (int i=0; i<channel->collCount; i++) {
-        channel->collectives[(channel->collStart + i)%NCCL_MAX_OPS].active = 0;
+  if (ret != ncclSuccess) {
+    // At least one call in the group failed. Since we want to make that group
+    // an atomic operation, we need to cancel all operations.
+    for (int i=0; i<ncclGroupIndex; i++) {
+      struct ncclAsyncArgs* args = ncclGroupArgs+i;
+      if (args->funcType == ASYNC_FUNC_INIT && doneArray[i] == 0) {
+        if (args->init.newcomm) NCCLCHECK(ncclCommDestroy(*args->init.newcomm));
+        *args->init.newcomm = NULL;
+      } else {
+        struct ncclComm* comm = args->coll.comm;
+        for (int c=0; c<comm->nChannels; c++) {
+          struct ncclChannel* channel = comm->channels+c;
+          for (int i=0; i<channel->collCount; i++) {
+            channel->collectives[(channel->collStart + i)%NCCL_MAX_OPS].active = 0;
+          }
+          channel->collFifoTail = channel->collStart;
+          channel->collCount = 0;
+        }
+        comm->myParams->gridDim.x = comm->myParams->blockDim.x = 0;
+        comm->userStreamSet = false;
       }
-      channel->collFifoTail = channel->collStart;
-      channel->collCount = 0;
     }
-    comm->myParams->gridDim.x = comm->myParams->blockDim.x = 0;
-    comm->userStreamSet = false;
   }
 end:
   ncclGroupError = ncclSuccess;

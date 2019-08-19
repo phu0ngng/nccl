@@ -41,7 +41,7 @@ TEST_F(ncclCommInitAll_test, ndev_toomany_and_devList_allZero) {
     nVis = 64;
     comms = (ncclComm_t*)calloc(nVis, sizeof(ncclComm_t));
     devList = (int*)calloc(nVis, sizeof(int));
-    ASSERT_EQ(ncclSuccess,
+    ASSERT_EQ(ncclInvalidUsage,
               ncclCommInitAll(comms, nVis, devList));
 };
 // 3.
