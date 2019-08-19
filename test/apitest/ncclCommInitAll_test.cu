@@ -34,9 +34,6 @@ TEST_F(ncclCommInitAll_test, comms_null) {
     ASSERT_EQ(ncclInvalidArgument, ncclCommInitAll(NULL, nVis, devList));
 };
 // 2.
-TEST_F(ncclCommInitAll_test, ndev_0) {
-    ASSERT_EQ(ncclInvalidArgument, ncclCommInitAll(comms, 0, devList));
-};
 TEST_F(ncclCommInitAll_test, ndev_negative) {
     ASSERT_EQ(ncclInvalidArgument, ncclCommInitAll(comms, -1, devList));
 };
