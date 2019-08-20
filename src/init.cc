@@ -124,7 +124,7 @@ static int getNthreads(const char* name, int env, int min, int max) {
   return nt;
 }
 
-static ncclResult_t ncclSetThresholds(struct ncclComm* comm, int minCompCap, int maxCompCap) {
+static ncclResult_t ncclSetThresholds(struct ncclComm* comm, int minCompCap, int maxCompCap, struct ncclTopoGraph* treeGraph, struct ncclTopoGraph* ringGraph) {
   // Default algorithm (normal/LL)
   comm->maxThreads[NCCL_PROTO_SIMPLE] = comm->maxThreads[NCCL_PROTO_LL]
     = getNthreads("NCCL_NTHREADS", ncclParamNthreads(), 2*WARP_SIZE, NCCL_MAX_NTHREADS);
@@ -625,15 +625,19 @@ static ncclResult_t initTransportsRank(struct ncclComm* comm, ncclUniqueId* comm
   // a single FIFO for both treeUp and treeDn and both are used concurrently.
   treeLoopGraph.pattern = NCCL_TOPO_PATTERN_SPLIT_TREE_LOOP;
   treeLoopGraph.crossNic = ncclParamCrossNic();
+  // We communicate only half the data between node with trees on 2 nodes.
+  treeLoopGraph.netFactor = comm->nNodes == 2 ? 2 : 1;
   NCCLCHECK(ncclTopoCompute(comm->topo, &treeLoopGraph, NULL));
   NCCLCHECK(ncclTopoPrintGraph(&treeLoopGraph, comm->localRanks));
   treeGraph.pattern = NCCL_TOPO_PATTERN_SPLIT_TREE;
   treeGraph.crossNic = ncclParamCrossNic();
+  treeGraph.netFactor = comm->nNodes == 2 ? 2 : 1;
   NCCLCHECK(ncclTopoCompute(comm->topo, &treeGraph, &treeLoopGraph));
   NCCLCHECK(ncclTopoPrintGraph(&treeGraph, comm->localRanks));
   struct ncclTopoGraph ringGraph;
   ringGraph.pattern = NCCL_TOPO_PATTERN_RING;
   ringGraph.crossNic = ncclParamCrossNic();
+  ringGraph.netFactor = 1;
   NCCLCHECK(ncclTopoCompute(comm->topo, &ringGraph, &treeLoopGraph));
   NCCLCHECK(ncclTopoPrintGraph(&ringGraph, comm->localRanks));
 
@@ -692,7 +696,7 @@ static ncclResult_t initTransportsRank(struct ncclComm* comm, ncclUniqueId* comm
 
   TRACE(NCCL_INIT, "rank %d nranks %d - BUILT %d TREES/RINGS", rank, nranks, nChannels);
 
-  NCCLCHECK(ncclSetThresholds(comm, minCompCap, maxCompCap));
+  NCCLCHECK(ncclSetThresholds(comm, minCompCap, maxCompCap, &treeGraph, &ringGraph));
 
   char line[1024];
   line[0]='\0';

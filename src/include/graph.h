@@ -51,8 +51,11 @@ ncclResult_t ncclTopoCpuCount(struct ncclTopoSystem* system, int* count);
 #define NCCL_TOPO_PATTERN_TREE 3            // Simple tree (send/recv from same rank) flowing in both directions
 #define NCCL_TOPO_PATTERN_RING 4            // Ring
 struct ncclTopoGraph {
+  // Input
   int pattern;
   int crossNic;
+  int netFactor;
+  // Output
   int speed;
   int nvlink;
   int intra[MAXCHANNELS*NCCL_TOPO_MAX_NODES];
