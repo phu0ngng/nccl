@@ -358,9 +358,7 @@ __device__ void ncclAllReduceTreeLL128Kernel(struct CollectiveArgs* args) {
   const ssize_t size = args->N;
   ssize_t chunkSize = args->lastChunkSize;
   const ssize_t loopSize = args->nChannels*chunkSize;
-  // Receiving from up to 3 sources is more compute intensive than sending
-  // to 3 dests. Use 70% for reduce and 30% for bcast.
-  int nthreadsSplit = (nthreads*7/(10*32))*32;
+  int nthreadsSplit = NCCL_LL128_SPLIT(nthreads);
 
   // Compute pointers
   const T * __restrict__ thisInput = (const T*)args->ThisInput;

@@ -329,7 +329,6 @@ static ncclResult_t computeColl(struct ncclInfo* info /* input */, struct ncclCo
     coll->args.lastChunkSize /= ncclTypeSize(info->datatype);
   } else if (info->algorithm == NCCL_ALGO_TREE && info->protocol == NCCL_PROTO_LL128) {
     if (info->pattern == ncclPatternTreeUpDown) {
-      chunkSize = (chunkSize*7/(10*32))*32;
       // Optimize chunkSize / nSteps
       for (int steps=16; steps; steps >>= 1) {
         while ((info->nBytes / (info->nChannels*chunkSize) < steps*2) &&

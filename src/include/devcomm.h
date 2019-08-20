@@ -62,6 +62,10 @@ static_assert(NCCL_LL_CLEAN_MASK % NCCL_STEPS == 0, "Invalid NCCL_LL_CLEAN_MASK 
 #define NCCL_LL128_MAX_NTHREADS 640
 #define NCCL_LL128_ELEMS_PER_THREAD 120
 
+// Receiving from up to 3 sources is more compute intensive than sending
+// to 3 dests. Use 70% for reduce and 30% for bcast.
+#define NCCL_LL128_SPLIT(nt) ((nt*7/(10*32))*32)
+
 #define NCCL_LL128_SLICE_ELEMS (NCCL_LL128_ELEMS_PER_THREAD*NCCL_LL128_MAX_NTHREADS)
 #define NCCL_LL128_BUFF_ELEMS (NCCL_LL128_SLICE_ELEMS*NCCL_STEPS)
 #define NCCL_LL128_BUFF_SIZE (NCCL_LL128_BUFF_ELEMS*sizeof(uint64_t))

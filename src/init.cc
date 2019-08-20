@@ -124,6 +124,8 @@ static int getNthreads(const char* name, int env, int min, int max) {
   return nt;
 }
 
+#define NCCL_THRESHOLD_DISABLED 0x7fffffffffffffff
+
 static ncclResult_t ncclSetThresholds(struct ncclComm* comm, int minCompCap, int maxCompCap, struct ncclTopoGraph* treeGraph, struct ncclTopoGraph* ringGraph) {
   // Default algorithm (normal/LL)
   comm->maxThreads[NCCL_PROTO_SIMPLE] = comm->maxThreads[NCCL_PROTO_LL]
@@ -135,7 +137,15 @@ static ncclResult_t ncclSetThresholds(struct ncclComm* comm, int minCompCap, int
 
   INFO(NCCL_INIT, "Threads per block : %d/%d/%d", comm->maxThreads[NCCL_PROTO_LL], comm->maxThreads[NCCL_PROTO_LL128], comm->maxThreads[NCCL_PROTO_SIMPLE]);
 
-  // Set per-thread amount of work to switch between protocols
+  // Basic thresholds
+  comm->thresholds[NCCL_ALGO_TREE][NCCL_PROTO_LL] = 0;
+  comm->thresholds[NCCL_ALGO_TREE][NCCL_PROTO_LL128] = 2048*comm->nChannels;
+  comm->thresholds[NCCL_ALGO_TREE][NCCL_PROTO_SIMPLE] = comm->nNodes == 2 ? 512*1024*comm->nChannels*(comm->nRanks/comm->nNodes) : NCCL_THRESHOLD_DISABLED;
+  comm->thresholds[NCCL_ALGO_RING][NCCL_PROTO_LL] = NCCL_THRESHOLD_DISABLED;
+  comm->thresholds[NCCL_ALGO_RING][NCCL_PROTO_LL128] = 32768*comm->nChannels*comm->nRanks;
+  comm->thresholds[NCCL_ALGO_RING][NCCL_PROTO_SIMPLE] = 256*1024*comm->nChannels*comm->nRanks;
+
+  // Set per-thread amount of work before we increase nThreads and nChannels
   for (int a=0; a<NCCL_NUM_ALGORITHMS; a++) {
     comm->threadThresholds[a][NCCL_PROTO_LL] = ncclParamLlThreadThreshold();
     comm->threadThresholds[a][NCCL_PROTO_LL128] = ncclParamLl128ThreadThreshold();
@@ -145,32 +155,22 @@ static ncclResult_t ncclSetThresholds(struct ncclComm* comm, int minCompCap, int
   // To get good performance with rings, we need to keep all GPUs busy.
   // LL/LL128 can pipeline chunks within the node, so we just need to give work
   // to each node, not each rank.
-  comm->threadThresholds[NCCL_ALGO_RING][NCCL_PROTO_LL] *= comm->nNodes;
-  comm->threadThresholds[NCCL_ALGO_RING][NCCL_PROTO_LL128] *= comm->nNodes;
+  comm->threadThresholds[NCCL_ALGO_RING][NCCL_PROTO_LL] *= comm->nRanks;
+  comm->threadThresholds[NCCL_ALGO_RING][NCCL_PROTO_LL128] *= comm->nRanks;
   comm->threadThresholds[NCCL_ALGO_RING][NCCL_PROTO_SIMPLE] *= comm->nRanks;
-
-  // Trees don't spread data evenly on GPUs at start, so we don't need to apply
-  // a factor. However, the Simple algorithm has a different number of apparent
-  // steps than LL/LL128, so we want to apply that factor.
-  comm->threadThresholds[NCCL_ALGO_TREE][NCCL_PROTO_SIMPLE] *=
-	  /* Number of steps for Simple algorithm */
-	  (2*log2(comm->nNodes)+(comm->nRanks/comm->nNodes))
-	  /* Number of steps for LL/LL128 */
-	  /(1+log2(comm->nNodes));
-
-  // Compute absolute thresholds
-  for (int a=0; a<NCCL_NUM_ALGORITHMS; a++) {
-    for (int p=0; p<NCCL_NUM_PROTOCOLS; p++) {
-      comm->thresholds[a][p] = comm->threadThresholds[a][p] * comm->maxThreads[p] * comm->nChannels;
-    }
-  }
 
   // Enable LL128 by default only on Volta+NVLink. Other cases are not tested and may cause silent data corruption.
   int ll128Enable = ncclParamLl128Enable();
   if (ll128Enable == -2) ll128Enable = (minCompCap == 70 && maxCompCap == 70 && comm->nvlink) ? 1 : 0;
   if (ll128Enable == 0) {
-    comm->thresholds[NCCL_ALGO_TREE][NCCL_PROTO_LL128] = comm->thresholds[NCCL_ALGO_TREE][NCCL_PROTO_SIMPLE];
+    comm->thresholds[NCCL_ALGO_TREE][NCCL_PROTO_LL128] = comm->thresholds[NCCL_ALGO_TREE][NCCL_PROTO_SIMPLE] = 256*1024*comm->nChannels;
     comm->thresholds[NCCL_ALGO_RING][NCCL_PROTO_LL128] = comm->thresholds[NCCL_ALGO_RING][NCCL_PROTO_SIMPLE];
+  }
+
+  // Disable rings when trees are faster (2-nodes case)
+  if (treeGraph->speed > ringGraph->speed) {
+    comm->thresholds[NCCL_ALGO_RING][NCCL_PROTO_LL] = comm->thresholds[NCCL_ALGO_RING][NCCL_PROTO_LL128] =
+      comm->thresholds[NCCL_ALGO_RING][NCCL_PROTO_SIMPLE] = NCCL_THRESHOLD_DISABLED;
   }
 
   // Override defaults with user env
