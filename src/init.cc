@@ -140,7 +140,7 @@ static ncclResult_t ncclSetThresholds(struct ncclComm* comm, int minCompCap, int
   // Basic thresholds
   comm->thresholds[NCCL_ALGO_TREE][NCCL_PROTO_LL] = 0;
   comm->thresholds[NCCL_ALGO_TREE][NCCL_PROTO_LL128] = 2048*comm->nChannels;
-  comm->thresholds[NCCL_ALGO_TREE][NCCL_PROTO_SIMPLE] = comm->nNodes == 2 ? 512*1024*comm->nChannels*(comm->nRanks/comm->nNodes) : NCCL_THRESHOLD_DISABLED;
+  comm->thresholds[NCCL_ALGO_TREE][NCCL_PROTO_SIMPLE] = NCCL_THRESHOLD_DISABLED;
   comm->thresholds[NCCL_ALGO_RING][NCCL_PROTO_LL] = NCCL_THRESHOLD_DISABLED;
   comm->thresholds[NCCL_ALGO_RING][NCCL_PROTO_LL128] = 32768*comm->nChannels*comm->nRanks;
   comm->thresholds[NCCL_ALGO_RING][NCCL_PROTO_SIMPLE] = 256*1024*comm->nChannels*comm->nRanks;
@@ -151,10 +151,7 @@ static ncclResult_t ncclSetThresholds(struct ncclComm* comm, int minCompCap, int
     comm->threadThresholds[a][NCCL_PROTO_LL128] = ncclParamLl128ThreadThreshold();
     comm->threadThresholds[a][NCCL_PROTO_SIMPLE] = ncclParamSimpleThreadThreshold();
   }
-
-  // To get good performance with rings, we need to keep all GPUs busy.
-  // LL/LL128 can pipeline chunks within the node, so we just need to give work
-  // to each node, not each rank.
+  // Rings spread data evenly on each GPU, multiply thresholds by nranks
   comm->threadThresholds[NCCL_ALGO_RING][NCCL_PROTO_LL] *= comm->nRanks;
   comm->threadThresholds[NCCL_ALGO_RING][NCCL_PROTO_LL128] *= comm->nRanks;
   comm->threadThresholds[NCCL_ALGO_RING][NCCL_PROTO_SIMPLE] *= comm->nRanks;
@@ -163,14 +160,15 @@ static ncclResult_t ncclSetThresholds(struct ncclComm* comm, int minCompCap, int
   int ll128Enable = ncclParamLl128Enable();
   if (ll128Enable == -2) ll128Enable = (minCompCap == 70 && maxCompCap == 70 && comm->nvlink) ? 1 : 0;
   if (ll128Enable == 0) {
-    comm->thresholds[NCCL_ALGO_TREE][NCCL_PROTO_LL128] = comm->thresholds[NCCL_ALGO_TREE][NCCL_PROTO_SIMPLE] = 256*1024*comm->nChannels;
-    comm->thresholds[NCCL_ALGO_RING][NCCL_PROTO_LL128] = comm->thresholds[NCCL_ALGO_RING][NCCL_PROTO_SIMPLE];
+    comm->thresholds[NCCL_ALGO_TREE][NCCL_PROTO_LL128] = NCCL_THRESHOLD_DISABLED;
+    comm->thresholds[NCCL_ALGO_TREE][NCCL_PROTO_SIMPLE] = 256*1024*comm->nChannels;
+    comm->thresholds[NCCL_ALGO_RING][NCCL_PROTO_LL128] = NCCL_THRESHOLD_DISABLED;
   }
 
-  // Disable rings when trees are faster (2-nodes case)
+  // Eventually switch to trees if they are fundamentally faster
   if (treeGraph->speed > ringGraph->speed) {
-    comm->thresholds[NCCL_ALGO_RING][NCCL_PROTO_LL] = comm->thresholds[NCCL_ALGO_RING][NCCL_PROTO_LL128] =
-      comm->thresholds[NCCL_ALGO_RING][NCCL_PROTO_SIMPLE] = NCCL_THRESHOLD_DISABLED;
+    comm->thresholds[NCCL_ALGO_RING][NCCL_PROTO_SIMPLE] = NCCL_THRESHOLD_DISABLED;
+    comm->thresholds[NCCL_ALGO_TREE][NCCL_PROTO_SIMPLE] = 512*1024*comm->nChannels*(comm->nRanks/comm->nNodes);
   }
 
   // Override defaults with user env
