@@ -197,7 +197,8 @@ static ncclResult_t ncclSetThresholds(struct ncclComm* comm, int minCompCap, int
     }
   }
 
-  INFO(NCCL_INIT, "Thresholds %ld/%ld/%ld | %ld/%ld/%ld ; threadThresholds %ld/%ld/%ld | %ld/%ld/%ld",
+  INFO(NCCL_INIT, "LL128 %s, thresholds %ld/%ld/%ld | %ld/%ld/%ld ; threadThresholds %ld/%ld/%ld | %ld/%ld/%ld",
+      ll128Enable ? "Enabled" : "Disabled",
       comm->thresholds[NCCL_ALGO_TREE][NCCL_PROTO_LL],
       comm->thresholds[NCCL_ALGO_TREE][NCCL_PROTO_LL128],
       comm->thresholds[NCCL_ALGO_TREE][NCCL_PROTO_SIMPLE],
@@ -617,9 +618,6 @@ static ncclResult_t initTransportsRank(struct ncclComm* comm, ncclUniqueId* comm
   free(nvmlIndexes);
   free(rankIndexes);
 
-  int nvlink = 1;
-  NCCLCHECK(ncclTopoHasNvlink(comm->topo, allGather1Data[rank].peerInfo.nvmlDev, &nvlink));
-
   // Get rings and trees
   struct ncclTopoGraph treeLoopGraph;
   struct ncclTopoGraph treeGraph;
@@ -667,7 +665,8 @@ static ncclResult_t initTransportsRank(struct ncclComm* comm, ncclUniqueId* comm
     maxCompCap = std::max(allGather3Data[i].cudaCompCap, maxCompCap);
   }
 
-  for (int i = 0; i < nranks; i++) nvlink &= allGather3Data[i].nvlink;
+  comm->nvlink = 1;
+  for (int i = 0; i < nranks; i++) comm->nvlink &= allGather3Data[i].nvlink;
 
   struct ncclTopoRanks** allTopoRanks;
   NCCLCHECK(ncclCalloc(&allTopoRanks, comm->nRanks));
