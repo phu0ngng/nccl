@@ -48,7 +48,7 @@ static int busIdToCudaDev(const char* busId) {
 }
 
 /* Determine if we can communicate with the peer through p2p */
-ncclResult_t p2pCanConnect(int* ret, struct ncclTopoSystem* topo, struct ncclPeerInfo* myInfo, struct ncclPeerInfo* peerInfo) {
+ncclResult_t p2pCanConnect(int* ret, struct ncclTopoSystem* topo, struct ncclTopoGraph* graph, struct ncclPeerInfo* myInfo, struct ncclPeerInfo* peerInfo) {
   int cpuCount;
   NCCLCHECK(ncclTopoCpuCount(topo, &cpuCount));
   // Do not use P2P across sockets by default (provided CUDA permits it).
@@ -125,7 +125,7 @@ ncclResult_t p2pCanConnect(int* ret, struct ncclTopoSystem* topo, struct ncclPee
   } while (0)
 
 /* Send: Create and return connect structures for this peer to connect to me */
-ncclResult_t p2pSendSetup(struct ncclTopoSystem* topo, struct ncclPeerInfo* myInfo, struct ncclPeerInfo* peerInfo,
+ncclResult_t p2pSendSetup(struct ncclTopoSystem* topo, struct ncclTopoGraph* graph, struct ncclPeerInfo* myInfo, struct ncclPeerInfo* peerInfo,
     struct ncclConnect* connectInfo, struct ncclConnector* send, int buffSize, int channelId) {
 
   struct p2pSendResources* resources;
@@ -174,7 +174,7 @@ ncclResult_t p2pSendSetup(struct ncclTopoSystem* topo, struct ncclPeerInfo* myIn
 }
 
 /* Create and return connect structures for this peer to connect to me */
-ncclResult_t p2pRecvSetup(struct ncclTopoSystem* topo, struct ncclPeerInfo* myInfo, struct ncclPeerInfo* peerInfo,
+ncclResult_t p2pRecvSetup(struct ncclTopoSystem* topo, struct ncclTopoGraph* graph, struct ncclPeerInfo* myInfo, struct ncclPeerInfo* peerInfo,
     struct ncclConnect* connectInfo, struct ncclConnector * recv, int buffSize, int channelId) {
 
   struct p2pRecvResources* resources;

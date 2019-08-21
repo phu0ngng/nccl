@@ -36,7 +36,7 @@ struct shmRecvResources {
 NCCL_PARAM(ShmDisable, "SHM_DISABLE", 0);
 
 /* Determine if we can communicate with the peer */
-ncclResult_t shmCanConnect(int* ret, struct ncclTopoSystem* topo, struct ncclPeerInfo* myInfo, struct ncclPeerInfo* peerInfo) {
+ncclResult_t shmCanConnect(int* ret, struct ncclTopoSystem* topo, struct ncclTopoGraph* graph, struct ncclPeerInfo* myInfo, struct ncclPeerInfo* peerInfo) {
   *ret = ((ncclParamShmDisable() == 1) || (myInfo->hostHash != peerInfo->hostHash)) ? 0 : 1;
   return ncclSuccess;
 }
@@ -44,7 +44,7 @@ ncclResult_t shmCanConnect(int* ret, struct ncclTopoSystem* topo, struct ncclPee
 #define MAX_SHM_NAME_LEN 1024
 
 /* Create and return connect structures for this peer to connect to me */
-ncclResult_t shmSendSetup(struct ncclTopoSystem* topo, struct ncclPeerInfo* myInfo, struct ncclPeerInfo* peerInfo, struct ncclConnect* connectInfo, struct ncclConnector* send, int buffSize, int channelId) {
+ncclResult_t shmSendSetup(struct ncclTopoSystem* topo, struct ncclTopoGraph* graph, struct ncclPeerInfo* myInfo, struct ncclPeerInfo* peerInfo, struct ncclConnect* connectInfo, struct ncclConnector* send, int buffSize, int channelId) {
 
   struct shmSendResources* resources;
   NCCLCHECK(ncclCalloc(&resources, 1));
@@ -68,7 +68,7 @@ ncclResult_t shmSendSetup(struct ncclTopoSystem* topo, struct ncclPeerInfo* myIn
   return ncclSuccess;
 }
 
-ncclResult_t shmRecvSetup(struct ncclTopoSystem* topo, struct ncclPeerInfo* myInfo, struct ncclPeerInfo* peerInfo, struct ncclConnect* connectInfo, struct ncclConnector* recv, int buffSize, int channelId) {
+ncclResult_t shmRecvSetup(struct ncclTopoSystem* topo, struct ncclTopoGraph* graph, struct ncclPeerInfo* myInfo, struct ncclPeerInfo* peerInfo, struct ncclConnect* connectInfo, struct ncclConnector* recv, int buffSize, int channelId) {
   struct shmRecvResources* resources;
   NCCLCHECK(ncclCalloc(&resources, 1));
   recv->transportResources = resources;

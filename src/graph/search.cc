@@ -189,6 +189,7 @@ ncclResult_t ncclTopoSearchRecGpu(struct ncclTopoSystem* system, struct ncclTopo
           struct ncclTopoNode* net;
           NCCLCHECK(ncclTopoFollowPath(paths+n, &net, speed));
           if (net) {
+            graph->inter[graph->nChannels*2+1] = net->id;
             //printf("GPU/%d -> NET/%d\n", gpu->id, n);
             NCCLCHECK(ncclTopoSearchRecGpu(system, graph, saveGraph, gpu, step, -1, backToFirstRank, forcedOrder, time));
             NCCLCHECK(ncclTopoFollowPath(paths+n, &net, -speed));
@@ -250,6 +251,7 @@ ncclResult_t ncclTopoSearchRecNet(struct ncclTopoSystem* system, struct ncclTopo
     struct ncclTopoNode* net = system->nodes[NET].nodes+n;
     struct ncclTopoNode* gpu;
     if (net->used == 0) {
+      graph->inter[graph->nChannels*2] = net->id;
       net->used ^= flag;
       struct ncclTopoLinkList* paths = net->paths[GPU];
 
@@ -393,7 +395,7 @@ end:
   return ncclSuccess;
 }
 
-ncclResult_t ncclTopoCompute(struct ncclTopoSystem* system, struct ncclTopoGraph* graph, struct ncclTopoGraph* baseGraph) {
+ncclResult_t ncclTopoCompute(ncclTopoSystem* system, struct ncclTopoGraph* graph, struct ncclTopoGraph* baseGraph) {
   int ngpus = system->nodes[GPU].count;
   graph->speed = 0;
   graph->nvlink = 0;
@@ -469,15 +471,32 @@ ncclResult_t ncclTopoCompute(struct ncclTopoSystem* system, struct ncclTopoGraph
   return ncclSuccess;
 }
 
-ncclResult_t ncclTopoPrintGraph(struct ncclTopoGraph* graph, int localRanks) {
+ncclResult_t ncclTopoPrintGraph(struct ncclTopoSystem* system, struct ncclTopoGraph* graph) {
   INFO(NCCL_GRAPH, "Pattern %d, crossNic %d, nChannels %d, speed %d, nvlink %d", graph->pattern, graph->crossNic, graph->nChannels, graph->speed, graph->nvlink);
+  int ngpus = system->nodes[GPU].count;
 
   char line[1024];
   for (int c=0; c<graph->nChannels; c++) {
     sprintf(line, "%2d :", c);
     int offset = strlen(line);
-    for (int i=0; i<localRanks; i++) { sprintf(line+offset, " %4d", graph->intra[localRanks*c+i]); offset += sizeof(" 0000")-1; }
+    if (system->nodes[NET].count > 0) {
+      sprintf(line+offset, " %s/%d", topoNodeTypeStr[NET], graph->inter[2*c]);
+      offset = strlen(line);
+    }
+    for (int i=0; i<ngpus; i++) {
+      sprintf(line+offset, " %s/%d", topoNodeTypeStr[GPU], graph->intra[ngpus*c+i]);
+      offset = strlen(line);
+    }
+    if (system->nodes[NET].count > 0) {
+      sprintf(line+offset, " %s/%d", topoNodeTypeStr[NET], graph->inter[2*c+1]);
+      offset = strlen(line);
+    }
     INFO(NCCL_GRAPH, "%s", line);
   }
+  return ncclSuccess;
+}
+
+ncclResult_t ncclTopoGetNetDev(struct ncclTopoGraph* graph, int dir, int channelId, int* dev) {
+  *dev = graph->inter[(channelId%graph->nChannels)*2+dir];
   return ncclSuccess;
 }

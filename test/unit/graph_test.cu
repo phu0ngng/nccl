@@ -397,8 +397,8 @@ int checkTopo(const char* name, const char** topo, int topoSize, int nvlinkWidth
   CHECK(ncclTopoCompute(&system, &ringGraph, &treeGraph));
   computeTime = getTime() - computeTime;
 
-  CHECK(ncclTopoPrintGraph(&treeGraph, system.nodes[GPU].count));
-  CHECK(ncclTopoPrintGraph(&ringGraph, system.nodes[GPU].count));
+  CHECK(ncclTopoPrintGraph(&system, &treeGraph));
+  CHECK(ncclTopoPrintGraph(&system, &ringGraph));
 
   printf("%s (%s) : ", name, inter ? "inter" : "intra");
   int nChannels = std::min(ringGraph.nChannels, treeGraph.nChannels);

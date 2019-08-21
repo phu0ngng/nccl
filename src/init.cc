@@ -385,15 +385,15 @@ static ncclResult_t fillInfo(struct ncclPeerInfo* info, int rank) {
 }
 
 template <int type>
-static ncclResult_t selectTransport(struct ncclTopoSystem* topo, struct ncclPeerInfo* myInfo, struct ncclPeerInfo* peerInfo, struct ncclConnect* connect, struct ncclConnector* connector, int buffSize, int channelId) {
+static ncclResult_t selectTransport(struct ncclTopoSystem* topo, struct ncclTopoGraph* graph, struct ncclPeerInfo* myInfo, struct ncclPeerInfo* peerInfo, struct ncclConnect* connect, struct ncclConnector* connector, int buffSize, int channelId) {
   for (int t=0; t<NTRANSPORTS; t++) {
     struct ncclTransport *transport = ncclTransports+t;
     struct ncclTransportComm* transportComm = type == 1 ? &transport->send : &transport->recv;
     int ret = 0;
-    NCCLCHECK(transport->canConnect(&ret, topo, myInfo, peerInfo));
+    NCCLCHECK(transport->canConnect(&ret, topo, graph, myInfo, peerInfo));
     if (ret) {
       connector->transportComm = transportComm;
-      NCCLCHECK(transportComm->setup(topo, myInfo, peerInfo, connect, connector, buffSize, channelId));
+      NCCLCHECK(transportComm->setup(topo, graph, myInfo, peerInfo, connect, connector, buffSize, channelId));
       return ncclSuccess;
     }
   }
@@ -493,7 +493,7 @@ ncclResult_t ncclCommSetIntra(struct ncclComm* comm, int rank, int ranks, struct
   return ncclSuccess;
 }
 
-static ncclResult_t p2pSetup(struct ncclComm* comm, struct ncclChannel* channel, int nrecv, int* peerRecv, int nsend, int* peerSend) {
+static ncclResult_t p2pSetup(struct ncclComm* comm, struct ncclTopoGraph* graph, struct ncclChannel* channel, int nrecv, int* peerRecv, int nsend, int* peerSend) {
   TRACE(NCCL_INIT, "nsend %d nrecv %d", nsend, nrecv);
   uint32_t nSkippedSend = 0, nSkippedRecv = 0; /* for tracing */
   struct ncclConnect connect;
@@ -504,7 +504,7 @@ static ncclResult_t p2pSetup(struct ncclComm* comm, struct ncclChannel* channel,
     conn = &channel->peers[peer].recv;
     if (conn->connected) { ++nSkippedRecv; continue; }
     memset(&connect, 0, sizeof(connect));
-    NCCLCHECK(selectTransport<0>(comm->topo, comm->peerInfo+comm->rank, comm->peerInfo+peer, &connect, conn, channel->buffSize, channel->id));
+    NCCLCHECK(selectTransport<0>(comm->topo, graph, comm->peerInfo+comm->rank, comm->peerInfo+peer, &connect, conn, channel->buffSize, channel->id));
     NCCLCHECK(bootstrapSend(comm->bootstrap, peer, &connect, sizeof(struct ncclConnect)));
   }
   for (int i=0; i<nsend; i++) {
@@ -513,7 +513,7 @@ static ncclResult_t p2pSetup(struct ncclComm* comm, struct ncclChannel* channel,
     conn = &channel->peers[peer].send;
     if (conn->connected) { ++nSkippedSend; continue; }
     memset(&connect, 0, sizeof(connect));
-    NCCLCHECK(selectTransport<1>(comm->topo, comm->peerInfo+comm->rank, comm->peerInfo+peer, &connect, conn, channel->buffSize, channel->id));
+    NCCLCHECK(selectTransport<1>(comm->topo, graph, comm->peerInfo+comm->rank, comm->peerInfo+peer, &connect, conn, channel->buffSize, channel->id));
     NCCLCHECK(bootstrapSend(comm->bootstrap, peer, &connect, sizeof(struct ncclConnect)));
   }
   for (int i=0; i<nsend; i++) {
@@ -626,18 +626,18 @@ static ncclResult_t initTransportsRank(struct ncclComm* comm, ncclUniqueId* comm
   // We communicate only half the data between node with trees on 2 nodes.
   treeLoopGraph.netFactor = comm->nNodes == 2 ? 2 : 1;
   NCCLCHECK(ncclTopoCompute(comm->topo, &treeLoopGraph, NULL));
-  NCCLCHECK(ncclTopoPrintGraph(&treeLoopGraph, comm->localRanks));
+  NCCLCHECK(ncclTopoPrintGraph(comm->topo, &treeLoopGraph));
   treeGraph.pattern = NCCL_TOPO_PATTERN_SPLIT_TREE;
   treeGraph.crossNic = ncclParamCrossNic();
   treeGraph.netFactor = comm->nNodes == 2 ? 2 : 1;
   NCCLCHECK(ncclTopoCompute(comm->topo, &treeGraph, &treeLoopGraph));
-  NCCLCHECK(ncclTopoPrintGraph(&treeGraph, comm->localRanks));
+  NCCLCHECK(ncclTopoPrintGraph(comm->topo, &treeGraph));
   struct ncclTopoGraph ringGraph;
   ringGraph.pattern = NCCL_TOPO_PATTERN_RING;
   ringGraph.crossNic = ncclParamCrossNic();
   ringGraph.netFactor = 1;
   NCCLCHECK(ncclTopoCompute(comm->topo, &ringGraph, &treeLoopGraph));
-  NCCLCHECK(ncclTopoPrintGraph(&ringGraph, comm->localRanks));
+  NCCLCHECK(ncclTopoPrintGraph(comm->topo, &ringGraph));
 
   int nChannels = std::min(treeGraph.nChannels, ringGraph.nChannels);
 
@@ -714,9 +714,9 @@ static ncclResult_t initTransportsRank(struct ncclComm* comm, ncclUniqueId* comm
   for (int c=0; c<nChannels; c++) {
     struct ncclChannel* channel = comm->channels+c;
     NCCLCHECK(setupChannel(comm, c, rank, nranks, rings+c*nranks));
-    NCCLCHECK(p2pSetup(comm, channel, 1, &channel->ring.prev, 1, &channel->ring.next));
-    NCCLCHECK(p2pSetup(comm, channel, NCCL_MAX_TREE_ARITY, channel->treeUp.down, 1, &channel->treeUp.up));
-    NCCLCHECK(p2pSetup(comm, channel, 1, &channel->treeDn.up, NCCL_MAX_TREE_ARITY, channel->treeDn.down));
+    NCCLCHECK(p2pSetup(comm, &ringGraph, channel, 1, &channel->ring.prev, 1, &channel->ring.next));
+    NCCLCHECK(p2pSetup(comm, &treeGraph, channel, NCCL_MAX_TREE_ARITY, channel->treeUp.down, 1, &channel->treeUp.up));
+    NCCLCHECK(p2pSetup(comm, &treeGraph, channel, 1, &channel->treeDn.up, NCCL_MAX_TREE_ARITY, channel->treeDn.down));
   }
   TRACE(NCCL_INIT, "rank %d nranks %d - CONNECTED %d RINGS AND TREES", rank, nranks, nChannels);
   free(connect);

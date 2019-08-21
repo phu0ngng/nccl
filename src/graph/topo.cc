@@ -700,35 +700,6 @@ ncclResult_t ncclTopoHasNvlink(struct ncclTopoSystem* system, int nvmlDev, int* 
   return ncclSuccess;
 }
 
-// Return one of the closest nets and its distance ; round robin based on "rrid"
-ncclResult_t ncclTopoGetNet(struct ncclTopoSystem* system, int nvmlDev, int rrid, int* net) {
-  int id;
-  NCCLCHECK(nvmlToIndex(system, nvmlDev, &id));
-  int maxWidth = 0;
-  for (int n=0; n<system->nodes[NET].count; n++) {
-    struct ncclTopoLinkList* links = system->nodes[GPU].nodes[id].paths[NET]+n;
-    if (links->width > maxWidth) maxWidth = links->width;
-  }
-  if (maxWidth == 0) {
-    WARN("Error : could not find any network");
-    return ncclInternalError;
-  }
-
-  int i = 0;
-  while (1) {
-    for (int n=0; n<system->nodes[NET].count; n++) {
-      struct ncclTopoLinkList* links = system->nodes[GPU].nodes[id].paths[NET]+n;
-      if (links->width == maxWidth) {
-        if (i == rrid) {
-          *net = n;
-          return ncclSuccess;
-        }
-        i++;
-      }
-    }
-  }
-}
-
 static int pathDistance(struct ncclTopoLinkList* links) {
   int distance = PATH_PIX;
   if (links->count > 2) distance = PATH_PXB;

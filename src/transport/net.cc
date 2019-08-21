@@ -52,7 +52,7 @@ struct netRecvResources {
 };
 
 /* Determine if we can communicate with the peer */
-ncclResult_t netCanConnect(int* ret, struct ncclTopoSystem* topo, struct ncclPeerInfo* myInfo, struct ncclPeerInfo* peerInfo) {
+ncclResult_t netCanConnect(int* ret, struct ncclTopoSystem* topo, struct ncclTopoGraph* graph, struct ncclPeerInfo* myInfo, struct ncclPeerInfo* peerInfo) {
   *ret = 1;
   return ncclSuccess;
 }
@@ -93,12 +93,12 @@ static ncclResult_t netGetGdrSupport(struct ncclTopoSystem* topo, int nvmlDev, i
 
 /* Determine if we will use this transport for this peer and return connect
  * information for this peer */
-ncclResult_t netSendSetup(struct ncclTopoSystem* topo, struct ncclPeerInfo* myInfo, struct ncclPeerInfo* peerInfo, struct ncclConnect* connectInfo, struct ncclConnector* send, int buffSize, int channelId) {
+ncclResult_t netSendSetup(struct ncclTopoSystem* topo, struct ncclTopoGraph* graph, struct ncclPeerInfo* myInfo, struct ncclPeerInfo* peerInfo, struct ncclConnect* connectInfo, struct ncclConnector* send, int buffSize, int channelId) {
   struct netSendResources* resources;
   NCCLCHECK(ncclCalloc(&resources, 1));
   send->transportResources = resources;
 
-  NCCLCHECK(ncclTopoGetNet(topo, myInfo->nvmlDev, channelId, &resources->netDev));
+  NCCLCHECK(ncclTopoGetNetDev(graph, 1, channelId, &resources->netDev));
   NCCLCHECK(netGetGdrSupport(topo, myInfo->nvmlDev, resources->netDev, 1, &resources->useGdr));
 
   int sendSize = sizeof(struct ncclSendMem);
@@ -116,12 +116,12 @@ ncclResult_t netSendSetup(struct ncclTopoSystem* topo, struct ncclPeerInfo* myIn
   return ncclSuccess;
 }
 
-ncclResult_t netRecvSetup(struct ncclTopoSystem* topo, struct ncclPeerInfo* myInfo, struct ncclPeerInfo* peerInfo, struct ncclConnect* connectInfo, struct ncclConnector* recv, int buffSize, int channelId) {
+ncclResult_t netRecvSetup(struct ncclTopoSystem* topo, struct ncclTopoGraph* graph, struct ncclPeerInfo* myInfo, struct ncclPeerInfo* peerInfo, struct ncclConnect* connectInfo, struct ncclConnector* recv, int buffSize, int channelId) {
   struct netRecvResources* resources;
   NCCLCHECK(ncclCalloc(&resources, 1));
   recv->transportResources = resources;
 
-  NCCLCHECK(ncclTopoGetNet(topo, myInfo->nvmlDev, channelId, &resources->netDev));
+  NCCLCHECK(ncclTopoGetNetDev(graph, 0, channelId, &resources->netDev));
   NCCLCHECK(netGetGdrSupport(topo, myInfo->nvmlDev, resources->netDev, 0, &resources->useGdr));
 
   int sendSize = sizeof(struct ncclSendMem);

@@ -40,7 +40,7 @@ ncclResult_t ncclTopoSearchInit(struct ncclTopoSystem* system);
 ncclResult_t ncclTopoGetNvlink(struct ncclTopoSystem* system, int nvmlDev1, int nvmlDev2, int* nvlink);
 ncclResult_t ncclTopoHasNvlink(struct ncclTopoSystem* system, int nvmlDev, int* nvlink);
 ncclResult_t ncclTopoGpuDistance(struct ncclTopoSystem* system, int nvmlDev1, int nvmlDev2, int* distance);
-ncclResult_t ncclTopoGetNet(struct ncclTopoSystem* system, int nvmlDev, int id, int* net);
+ncclResult_t ncclTopoGetNetDev(struct ncclTopoGraph* graph, int dir, int channelId, int* net);
 ncclResult_t ncclTopoNetDistance(struct ncclTopoSystem* system, int nvmlDev, int netDev, int* distance);
 ncclResult_t ncclTopoCpuCount(struct ncclTopoSystem* system, int* count);
 
@@ -59,11 +59,12 @@ struct ncclTopoGraph {
   int speed;
   int nvlink;
   int intra[MAXCHANNELS*NCCL_TOPO_MAX_NODES];
+  int inter[MAXCHANNELS*2];
   int nChannels;
 };
 ncclResult_t ncclTopoCompute(struct ncclTopoSystem* system, struct ncclTopoGraph* graph, struct ncclTopoGraph* baseGraph);
 
-ncclResult_t ncclTopoPrintGraph(struct ncclTopoGraph* graph, int localRanks);
+ncclResult_t ncclTopoPrintGraph(struct ncclTopoSystem* system, struct ncclTopoGraph* graph);
 
 struct ncclTopoRanks {
   int ringRecv[MAXCHANNELS];
