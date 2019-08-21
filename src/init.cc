@@ -158,7 +158,9 @@ static ncclResult_t ncclSetThresholds(struct ncclComm* comm, int minCompCap, int
 
   // Enable LL128 by default only on Volta+NVLink. Other cases are not tested and may cause silent data corruption.
   int ll128Enable = ncclParamLl128Enable();
-  if (ll128Enable == -2) ll128Enable = (minCompCap == 70 && maxCompCap == 70 && comm->nvlink) ? 1 : 0;
+  if (ll128Enable == -2) ll128Enable = comm->nvlink;
+  // Only use LL128 on sm_70 (we don't compile kernels for other archs currently)
+  if (minCompCap != 70 || maxCompCap != 70) ll128Enable = 0;
   if (ll128Enable == 0) {
     comm->thresholds[NCCL_ALGO_TREE][NCCL_PROTO_LL128] = NCCL_THRESHOLD_DISABLED;
     comm->thresholds[NCCL_ALGO_TREE][NCCL_PROTO_SIMPLE] = 256*1024*comm->nChannels;

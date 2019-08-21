@@ -230,8 +230,12 @@ static ncclResult_t getAlgoInfo(struct ncclInfo* info) {
   int bestThreshold = -1;
   // Find algorithm / protocol.
   for (int a=NCCL_NUM_ALGORITHMS-1; a>=0; a--) {
+    // TODO : separate the tuning for each collective
+    if (info->coll != ncclCollAllReduce && a == NCCL_ALGO_TREE) continue;
     for (int p=NCCL_NUM_PROTOCOLS-1; p>=0; p--) {
-      if ((info->nBytes >= comm->thresholds[a][p]) && (comm->thresholds[a][p] > bestThreshold)) {
+      if ((bestThreshold == -1) ||
+          ((comm->thresholds[a][p] < bestThreshold) && (bestThreshold > info->nBytes)) ||
+          ((comm->thresholds[a][p] > bestThreshold) && (comm->thresholds[a][p] <= info->nBytes))) {
         bestThreshold = comm->thresholds[a][p];
         info->algorithm = a;
         info->protocol = p;
