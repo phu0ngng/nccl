@@ -384,11 +384,13 @@ int checkTopo(const char* name, const char** topo, int topoSize, int nvlinkWidth
   memset(&treeGraph, 0, sizeof(treeGraph));
   treeGraph.pattern = NCCL_TOPO_PATTERN_SPLIT_TREE_LOOP;
   treeGraph.crossNic = 2;
+  treeGraph.netFactor = 1;
 
   struct ncclTopoGraph ringGraph;
   memset(&ringGraph, 0, sizeof(ringGraph));
   ringGraph.pattern = NCCL_TOPO_PATTERN_RING;
   ringGraph.crossNic = 2;
+  ringGraph.netFactor = 1;
 
   uint64_t computeTime = getTime();
   CHECK(ncclTopoCompute(&system, &treeGraph, NULL));
