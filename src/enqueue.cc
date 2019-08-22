@@ -234,7 +234,7 @@ static ncclResult_t getAlgoInfo(struct ncclInfo* info) {
   for (int a=0; a<NCCL_NUM_ALGORITHMS; a++) {
     for (int p=0; p<NCCL_NUM_PROTOCOLS; p++) {
       if (comm->bandwidths[info->coll][a][p] == 0) continue;
-      uint64_t time = comm->latencies[info->coll][a][p] + info->nBytes / comm->bandwidths[info->coll][a][p];
+      uint64_t time = comm->latencies[info->coll][a][p] + (10 * info->nBytes) / comm->bandwidths[info->coll][a][p];
       if (time < minTime) {
         info->algorithm = a;
         info->protocol = p;
