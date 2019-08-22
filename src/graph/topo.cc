@@ -439,14 +439,26 @@ static ncclResult_t getPath(struct ncclTopoSystem* system, struct ncclTopoNode* 
 }
 
 static ncclResult_t ncclTopoSetPaths(struct ncclTopoNode* baseNode, struct ncclTopoSystem* system) {
+  if (baseNode->paths[baseNode->type] == NULL) {
+    NCCLCHECK(ncclCalloc(baseNode->paths+baseNode->type, system->nodes[baseNode->type].count));
+  }
+
+  if (baseNode->type == GPU) {
+    // Set path to itself
+    struct ncclTopoLinkList* locPath;
+    NCCLCHECK(getPath(system, baseNode, baseNode->type, baseNode->id, &locPath));
+    struct ncclTopoLink* locLink = baseNode->links;
+    locPath->count = 1;
+    locPath->list[0] = locLink;
+    locPath->width = locLink->width;
+    locPath->nvlink = 1;
+  }
+
   // breadth-first search to set all paths to that node in the system
   struct ncclTopoNodeList nodeList;
   struct ncclTopoNodeList nextNodeList;
   nodeList.count = 1; nodeList.list[0] = baseNode;
   nextNodeList.count = 0;
-  if (baseNode->paths[baseNode->type] == NULL) {
-    NCCLCHECK(ncclCalloc(baseNode->paths+baseNode->type, system->nodes[baseNode->type].count));
-  }
   struct ncclTopoLinkList* basePath;
   NCCLCHECK(getPath(system, baseNode, baseNode->type, baseNode->id, &basePath));
   basePath->count = 0;
@@ -544,7 +556,7 @@ static ncclResult_t getGpuSpeed(struct ncclTopoNode* node, int* speed) {
 
 ncclResult_t ncclTopoSearchInit(struct ncclTopoSystem* system) {
   if (system->searchInitDone) return ncclSuccess;
-  system->maxSpeed = 0xfffffff;
+  system->maxSpeed = LOC_WIDTH;
   for (int g=0; g<system->nodes[GPU].count; g++) {
     NCCLCHECK(ncclTopoSetPaths(system->nodes[GPU].nodes+g, system));
     NCCLCHECK(getGpuSpeed(system->nodes[GPU].nodes+g, &system->maxSpeed));
@@ -590,6 +602,7 @@ static ncclResult_t ncclTopoPrintRec(struct ncclTopoNode* node, struct ncclTopoN
 
   for (int l=0; l<node->nlinks; l++) {
     struct ncclTopoLink* link = node->links+l;
+    if (link->type == LINK_LOC) continue;
     if (link->remNode != prevNode) {
       sprintf(line+offset, "+ %s[%2d] - ", topoLinkTypeStr[link->type], link->width);
       int nextOffset = strlen(line);

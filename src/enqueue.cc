@@ -227,21 +227,26 @@ ncclResult_t ncclEnqueueEvents(ncclComm_t comm) {
 
 static ncclResult_t getAlgoInfo(struct ncclInfo* info) {
   struct ncclComm* comm = info->comm;
-  int bestThreshold = -1;
+  uint64_t minTime = 0x7fffffffffffffff;
   // Find algorithm / protocol.
-  for (int a=NCCL_NUM_ALGORITHMS-1; a>=0; a--) {
-    // TODO : separate the tuning for each collective
-    if (info->coll != ncclCollAllReduce && a == NCCL_ALGO_TREE) continue;
-    for (int p=NCCL_NUM_PROTOCOLS-1; p>=0; p--) {
-      if ((bestThreshold == -1) ||
-          ((comm->thresholds[a][p] < bestThreshold) && (bestThreshold > info->nBytes)) ||
-          ((comm->thresholds[a][p] > bestThreshold) && (comm->thresholds[a][p] <= info->nBytes))) {
-        bestThreshold = comm->thresholds[a][p];
+  info->algorithm = -1;
+  info->protocol = -1;
+  for (int a=0; a<NCCL_NUM_ALGORITHMS; a++) {
+    for (int p=0; p<NCCL_NUM_PROTOCOLS; p++) {
+      if (comm->bandwidths[info->coll][a][p] == 0) continue;
+      uint64_t time = comm->latencies[info->coll][a][p] + info->nBytes / comm->bandwidths[info->coll][a][p];
+      if (time < minTime) {
         info->algorithm = a;
         info->protocol = p;
+        minTime = time;
       }
     }
   }
+  if (info->algorithm == -1 || info->protocol == -1) {
+    WARN("Error : no algorithm/protocol available");
+    return ncclInternalError;
+  }
+  //if (comm->rank == 0) INFO(NCCL_INIT, "%ld Bytes -> Algo %d proto %d time %d", info->nBytes, info->algorithm, info->protocol, minTime);
   int nc = comm->nChannels;
   int nt = comm->maxThreads[info->protocol];
   int threadThreshold = comm->threadThresholds[info->algorithm][info->protocol];

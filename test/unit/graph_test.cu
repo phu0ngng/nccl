@@ -1,5 +1,10 @@
 #include "topo.h"
 
+const char* local_topo[] = {
+  "CPU/0-PCI/10-NIC/0-NET/0",
+  "      PCI/10-GPU/0"
+};
+
 const char* pci2R_topo[] = {
   "CPU/0-PCI/10-NIC/0-NET/0",
   "      PCI/10-GPU/0",
@@ -364,7 +369,8 @@ void createSystem(struct ncclTopoSystem* system, const char* desc[], int descSiz
   CHECK(ncclTopoSearchInit(system));
 }
 
-const char* treeMode[] = { "unknown", "split tree loop", "split tree", "tree" };
+const char* treeMode[] = { "unknown", "split tree loop", "split tree", "tree", "ring" };
+const char* xnicMode[] = { "    ", "/xNic", "/auto" };
 
 #include <sys/time.h>
 uint64_t getTime() {
@@ -403,9 +409,13 @@ int checkTopo(const char* name, const char** topo, int topoSize, int nvlinkWidth
   printf("%s (%s) : ", name, inter ? "inter" : "intra");
   int nChannels = std::min(ringGraph.nChannels, treeGraph.nChannels);
   int speed = std::min(ringGraph.speed, treeGraph.speed);
-  printf("%2d x %2d    %15s    %9s   %s", nChannels, speed, treeMode[treeGraph.pattern], ringGraph.crossNic == 1 ? "xNic ring" : "ring", ringGraph.nvlink ? "(N)" : "   ");
+  printf("%2d x %2d  %15s%5s %15s%5s %s", nChannels, speed,
+      treeMode[treeGraph.pattern], xnicMode[treeGraph.crossNic],
+      treeMode[ringGraph.pattern], xnicMode[ringGraph.crossNic],
+      ringGraph.nvlink ? "(N)" : "   ");
+
   if ((nChannels != expectedChannels) || (speed != expectedSpeed) || (treeGraph.pattern != expectedTreePattern) || (ringGraph.crossNic != expectedCrossnic)) {
-    printf(" FAILED Expected %d x %d (%s/%s)\n", expectedChannels, expectedSpeed, treeMode[expectedTreePattern], expectedCrossnic == 1 ? "xNic ring" : "ring");
+    printf(" FAILED Expected %d x %d (%s%s)\n", expectedChannels, expectedSpeed, treeMode[expectedTreePattern], xnicMode[expectedCrossnic]);
     errors++;
   } else if (computeTime > 1000000) {
     printf("   SLOW %ld ms\n", computeTime/1000);
@@ -418,6 +428,8 @@ int main() {
   setlinebuf(stdout);
   initDebug();
   int errors = 0;
+  errors += checkTopo("LOC-1G", local_topo, sizeof(local_topo)/sizeof(const char*), 0, 0, 1, PCI_WIDTH, NCCL_TOPO_PATTERN_TREE, 0);
+  errors += checkTopo("LOC-1G", local_topo, sizeof(local_topo)/sizeof(const char*), 0, 1, 1, PCI_WIDTH, NCCL_TOPO_PATTERN_TREE, 0);
   errors += checkTopo("PCI-1R", pci1R_topo, sizeof(pci1R_topo)/sizeof(const char*), 0, 0, 1, INTEL_PCI_WIDTH, NCCL_TOPO_PATTERN_SPLIT_TREE_LOOP, 0);
   errors += checkTopo("PCI-1R", pci1R_topo, sizeof(pci1R_topo)/sizeof(const char*), 0, 1, 1, PCI_WIDTH/2, NCCL_TOPO_PATTERN_SPLIT_TREE_LOOP, 0);
   errors += checkTopo("PCI-2R", pci2R_topo, sizeof(pci2R_topo)/sizeof(const char*), 0, 0, 1, QPI_WIDTH, NCCL_TOPO_PATTERN_SPLIT_TREE_LOOP, 0);

@@ -408,6 +408,8 @@ ncclResult_t ncclTopoCompute(ncclTopoSystem* system, struct ncclTopoGraph* graph
       // Translate gpu numbers into ranks
       graph->intra[i] = system->nodes[GPU].nodes[graph->intra[i]].rank;
     }
+    // TODO : let user specify NICs
+    graph->inter[0] = graph->inter[1] = 0;
     graph->speed = PCI_WIDTH+2;
     graph->nvlink = 0;
     if (graph->pattern == NCCL_TOPO_PATTERN_RING) {
@@ -422,13 +424,17 @@ ncclResult_t ncclTopoCompute(ncclTopoSystem* system, struct ncclTopoGraph* graph
     }
     if (graph->nChannels) return ncclSuccess;
   }
+
   if (ngpus == 1) {
-    graph->speed = PCI_WIDTH;
-    graph->nvlink = 1;
-    graph->nChannels = 1;
-    graph->intra[0] = system->nodes[GPU].nodes[0].rank;
     if (graph->pattern != NCCL_TOPO_PATTERN_RING) graph->pattern = NCCL_TOPO_PATTERN_TREE;
-    return ncclSuccess;
+    if (system->nodes[NET].count == 0) {
+      graph->speed = PCI_WIDTH;
+      graph->nvlink = 1;
+      graph->nChannels = 1;
+      graph->crossNic = 0;
+      graph->intra[0] = system->nodes[GPU].nodes[0].rank;
+      return ncclSuccess;
+    }
   }
 
   struct ncclTopoGraph tmpGraph;

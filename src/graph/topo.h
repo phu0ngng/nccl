@@ -10,6 +10,7 @@
 #include "graph.h"
 #include "core.h"
 
+#define LOC_WIDTH 5000
 #define PASCAL_NVLINK_WIDTH 18
 #define VOLTA_NVLINK_WIDTH 21
 #define PCI_WIDTH 12           // PCI Gen3 x16
@@ -28,11 +29,12 @@
 #define NET 5
 static const char* topoNodeTypeStr[] = { "GPU", "PCI", "NVS", "CPU", "NIC", "NET" };
 
-#define LINK_NVL 0
-#define LINK_PCI 1
-#define LINK_QPI 2
-#define LINK_NET 3
-static const char* topoLinkTypeStr[] = { "NVL", "PCI", "QPI", "NET" };
+#define LINK_LOC 0
+#define LINK_NVL 1
+#define LINK_PCI 2
+#define LINK_QPI 3
+#define LINK_NET 4
+static const char* topoLinkTypeStr[] = { "LOC", "NVL", "PCI", "QPI", "NET" };
 
 struct ncclTopoNode;
 struct ncclTopoLink {
@@ -86,10 +88,18 @@ static ncclResult_t ncclTopoCreateNode(struct ncclTopoSystem* system, struct ncc
     WARN("Error : tried to create too many nodes of type %d\n", type);
     return ncclInternalError;
   }
-  *node = system->nodes[type].nodes+system->nodes[type].count;
+  struct ncclTopoNode* n = system->nodes[type].nodes+system->nodes[type].count;
   system->nodes[type].count++;
-  (*node)->type = type;
-  (*node)->id = id;
+  n->type = type;
+  n->id = id;
+  if (type == GPU) {
+    // Create link to itself (used in some corner cases)
+    n->nlinks=1;
+    n->links[0].type = LINK_LOC;
+    n->links[0].remNode = n;
+    n->links[0].width = LOC_WIDTH;
+  }
+  *node = n;
   return ncclSuccess;
 }
 
