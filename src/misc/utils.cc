@@ -11,7 +11,6 @@
 #include <string.h>
 #include <stdarg.h>
 #include <stdlib.h>
-#include <string.h>
 
 #include "nvmlwrap.h"
 #include "core.h"
