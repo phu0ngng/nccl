@@ -56,6 +56,8 @@ struct ncclTopoGraph {
   int crossNic;
   int netFactor;
   // Output
+  int nHops;
+  int sameChannels;
   int speed;
   int nvlink;
   int intra[MAXCHANNELS*NCCL_TOPO_MAX_NODES];

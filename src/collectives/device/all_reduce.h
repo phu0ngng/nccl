@@ -151,15 +151,14 @@ __device__ void ncclAllReduceRingLLKernel(struct CollectiveArgs* args) {
   const int nranks = comm->nRanks;
   ssize_t chunkSize = NCCL_LL_SLICE_LINES * sizeof(uint64_t) / sizeof(T);
   const ssize_t loopSize = args->nChannels*nranks*chunkSize;
+  const ssize_t minChunkSize = nthreads * (sizeof(uint64_t)) / sizeof(T);
 
   // Compute pointers
   const T * __restrict__ thisInput = (const T*)args->ThisInput;
   T * __restrict__ thisOutput = (T*)args->ThisOutput;
 
   for (ssize_t gridOffset = 0; gridOffset < size; gridOffset += loopSize) {
-    if (size-gridOffset < loopSize) {
-      chunkSize = args->lastChunkSize;
-    }
+    chunkSize = min(DIVUP(size-gridOffset, args->nChannels*nranks*minChunkSize)*minChunkSize, chunkSize);
     ssize_t chunkOffset = gridOffset + bid*nranks*chunkSize;
 
     /////////////// begin AllReduce steps ///////////////
