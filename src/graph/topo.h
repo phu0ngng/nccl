@@ -60,7 +60,9 @@ struct ncclTopoNode {
   int rank;
   int nlinks;
   struct ncclTopoLink links[NCCL_TOPO_MAX_LINKS];
+  // Pre-computed paths to GPUs and NICs
   struct ncclTopoLinkList* paths[NCCL_TOPO_NODE_TYPES];
+  // Used during search
   uint64_t used;
 };
 

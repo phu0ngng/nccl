@@ -357,6 +357,45 @@ ncclResult_t ncclTopoCreatePciPath(struct ncclTopoSystem* system, struct ncclTop
   return ncclSuccess;
 }
 
+NCCL_PARAM(DetectIbDup, "DETECT_IB_DUP", 1);
+
+#include <glob.h>
+#define IB_HAS_SMI_PATH "%s/infiniband/mlx5_*/ports/1/has_smi"
+
+ncclResult_t ncclTopoGetNetNode(struct ncclTopoSystem* system, struct ncclTopoNode** netNode, int n, char* path) {
+  int net = n;
+
+  // Detect IB extra PF/VF case
+  int detectIbDup = ncclParamDetectIbDup();
+  if (detectIbDup) {
+    char hasSmiPath[PATH_MAX];
+    snprintf(hasSmiPath, PATH_MAX, IB_HAS_SMI_PATH, path);
+    // PATH has a wildcard in it so use glob()
+    glob_t globbuf;
+    glob(hasSmiPath, 0, NULL, &globbuf);
+    if (globbuf.gl_pathc > 0)
+      strncpy(hasSmiPath, globbuf.gl_pathv[0], PATH_MAX);
+    globfree(&globbuf);
+    hasSmiPath[PATH_MAX-1] = '\0';
+    FILE *file = fopen(hasSmiPath, "r");
+    if (file != NULL) {
+      int hasSmi = -1;
+      if (fscanf(file, "%d", &hasSmi) != EOF) {
+        TRACE(NCCL_GRAPH, "Opened %s has_smi %d", hasSmiPath, hasSmi);
+        if (hasSmi == 0) {
+          // We're a copy of another IB card. Try to guess which one ...
+          if (system->nodes[NET].count > 0) net = system->nodes[NET].nodes[n % system->nodes[NET].count].id;
+        }
+      }
+      fclose(file);
+    }
+  }
+
+  NCCLCHECK(ncclTopoCreateNode(system, netNode, NET, n));
+  (*netNode)->rank = net;
+  return ncclSuccess;
+}
+
 ncclResult_t ncclTopoConnectPCI(nvmlDevice_t* nvmlDevs, struct ncclTopoSystem* system, int inter) {
   for (int g=0; g<system->nodes[GPU].count; g++) {
     char* path;
@@ -373,10 +412,11 @@ ncclResult_t ncclTopoConnectPCI(nvmlDevice_t* nvmlDevs, struct ncclTopoSystem* s
     NCCLCHECK(ncclTopoGetNetWidth(&netWidth));
 
     for (int n=0; n<netDevCount; n++) {
-      struct ncclTopoNode* netNode;
-      NCCLCHECK(ncclTopoCreateNode(system, &netNode, NET, n));
       char* path;
       NCCLCHECK(ncclNetPciPath(n, &path));
+
+      struct ncclTopoNode* netNode;
+      NCCLCHECK(ncclTopoGetNetNode(system, &netNode, n, path));
 
       // Create NIC
       int pciId;
@@ -474,6 +514,7 @@ static ncclResult_t ncclTopoSetPaths(struct ncclTopoNode* baseNode, struct ncclT
       for (int l=0; l<node->nlinks; l++) {
         struct ncclTopoLink* link = node->links+l;
         struct ncclTopoNode* remNode = link->remNode;
+        if (remNode == node) continue; // Do not follow the link to ourselves
         if (remNode->paths[baseNode->type] == NULL) {
           NCCLCHECK(ncclCalloc(remNode->paths+baseNode->type, system->nodes[baseNode->type].count));
         }
@@ -593,11 +634,10 @@ ncclResult_t ncclTopoSearchInit(struct ncclTopoSystem* system) {
 static ncclResult_t ncclTopoPrintRec(struct ncclTopoNode* node, struct ncclTopoNode* prevNode, char* line, int offset) {
   if (node->type == GPU) {
     sprintf(line+offset, "%s/%X (%d)", topoNodeTypeStr[node->type], node->id, node->rank);
-    INFO(NCCL_GRAPH, "%s", line);
   } else {
     sprintf(line+offset, "%s/%X", topoNodeTypeStr[node->type], node->id);
-    INFO(NCCL_GRAPH, "%s", line);
   }
+  INFO(NCCL_GRAPH, "%s", line);
   for (int i=0; i<offset; i++) line[i] = ' ';
 
   for (int l=0; l<node->nlinks; l++) {
@@ -609,7 +649,11 @@ static ncclResult_t ncclTopoPrintRec(struct ncclTopoNode* node, struct ncclTopoN
       if (link->type == LINK_PCI) {
         NCCLCHECK(ncclTopoPrintRec(link->remNode, node, line, nextOffset));
       } else {
-        sprintf(line+nextOffset, "%s/%X", topoNodeTypeStr[link->remNode->type], link->remNode->id);
+        if (link->remNode->type == NET) {
+          sprintf(line+offset, "%s/%X (%d)", topoNodeTypeStr[link->remNode->type], link->remNode->id, link->remNode->rank);
+        } else {
+          sprintf(line+nextOffset, "%s/%X", topoNodeTypeStr[link->remNode->type], link->remNode->id);
+        }
         INFO(NCCL_GRAPH, "%s", line);
       }
     }

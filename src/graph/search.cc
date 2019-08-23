@@ -171,7 +171,6 @@ ncclResult_t ncclTopoSearchRecGpu(struct ncclTopoSystem* system, struct ncclTopo
     graph->nChannels--;
     return ncclSuccess;
   }
-  const uint64_t flag = 1ULL<<(graph->nChannels);
   graph->intra[graph->nChannels*ngpus+step] = gpu->rank;
   if (step == backToNet) {
     // first get back to NIC 
@@ -180,11 +179,11 @@ ncclResult_t ncclTopoSearchRecGpu(struct ncclTopoSystem* system, struct ncclTopo
       int speed = DIVUP(graph->speed, graph->netFactor);
       struct ncclTopoLinkList* paths = gpu->paths[NET];
       for (int n=0; n<system->nodes[NET].count; n++) {
-        if (graph->crossNic != 1 && (system->nodes[NET].nodes[n].used & flag) == 0) continue;
+        if (graph->crossNic != 1 && (system->nodes[NET].nodes[n].id != graph->inter[graph->nChannels*2])) continue;
         maxWidth = std::max(paths[n].width, maxWidth);
       }
       for (int n=0; n<system->nodes[NET].count; n++) {
-        if (graph->crossNic != 1 && (system->nodes[NET].nodes[n].used & flag) == 0) continue;
+        if (graph->crossNic != 1 && (system->nodes[NET].nodes[n].id != graph->inter[graph->nChannels*2])) continue;
         if (paths[n].width == maxWidth) {
           struct ncclTopoNode* net;
           NCCLCHECK(ncclTopoFollowPath(paths+n, &net, speed));
@@ -252,7 +251,9 @@ ncclResult_t ncclTopoSearchRecNet(struct ncclTopoSystem* system, struct ncclTopo
     struct ncclTopoNode* gpu;
     if (net->used == 0) {
       graph->inter[graph->nChannels*2] = net->id;
-      net->used ^= flag;
+      for (int i=0; i<system->nodes[NET].count; i++) {
+        if (system->nodes[NET].nodes[i].rank == net->rank) system->nodes[NET].nodes[i].used ^= flag;
+      }
       struct ncclTopoLinkList* paths = net->paths[GPU];
 
       // First try the PCI order to set a reference
@@ -290,7 +291,9 @@ ncclResult_t ncclTopoSearchRecNet(struct ncclTopoSystem* system, struct ncclTopo
           }
         }
       }
-      net->used ^= flag;
+      for (int i=0; i<system->nodes[NET].count; i++) {
+        if (system->nodes[NET].nodes[i].rank == net->rank) system->nodes[NET].nodes[i].used ^= flag;
+      }
     }
   }
   return ncclSuccess;
