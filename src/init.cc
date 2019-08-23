@@ -157,8 +157,10 @@ static ncclResult_t ncclSetThresholds(struct ncclComm* comm, int minCompCap, int
     int ringLlBusBw = std::min(ringBusBw/2,ringGraph->nChannels*1500);
     int ringLlAlgBw = ringLlBusBw * ringAlgBw / ringBusBw;
     int ringLlLat = ringGraph->nvlink ? 9 : 20;
-    int ringLl128Lat = 27;
-    int ringSimpleLat = comm->nNodes > 1 ? 66 : 27;
+    int ringLl128Lat = 25;
+    // Reflect a mid-size chunk instead of a 0 byte chunk.
+//    int ringSimpleLat = comm->nNodes > 1 ? 66 : 27;
+    int ringSimpleLat = comm->nNodes > 1 ? 110 : 50;
 
 
     comm->bandwidths[coll][NCCL_ALGO_RING][NCCL_PROTO_LL] = llEnabled ? ringLlAlgBw : 0;
@@ -177,16 +179,19 @@ static ncclResult_t ncclSetThresholds(struct ncclComm* comm, int minCompCap, int
           comm->bandwidths[coll][NCCL_ALGO_RING][NCCL_PROTO_SIMPLE] = 0;
       }
       if (treeEnabled) {
-        // Tree algorithm BW is 1/2 the bus BW
-	int treeBusBw = std::min(treeGraph->nChannels * treeGraph->speed, comm->nNodes > 1 ? 70 : 90) * 1000;
+        // Tree algorithm BW is 1/2 the bus BW ; tree have a ~90 peak compared to rings ; they are also limited intra-node
+	int treeBusBw = std::min(treeGraph->nChannels*treeGraph->speed*90/100, comm->nNodes > 1 ? 70 : 90) * 1000;
         int treeAlgBw = (treeBusBw)/2;
         int treeLlAlgBw = ringLlAlgBw * treeAlgBw / ringAlgBw;
 	int treeIntraLlLat = 10;
 	int treeInterLlLat = 100;
-	int treeIntraLl128Lat = 26;
+	int treeIntraLl128Lat = 25;
 	int treeInterLl128Lat = 150;
-	int treeIntraSimpleLat = 44;
-	int treeInterSimpleLat = 150;
+	// Reflect a mid-size chunk instead of a 0 byte chunk.
+	//int treeIntraSimpleLat = 44;
+	//int treeInterSimpleLat = 150;
+	int treeIntraSimpleLat = 80;
+	int treeInterSimpleLat = 300;
 
         comm->bandwidths[coll][NCCL_ALGO_TREE][NCCL_PROTO_LL] = llEnabled ? treeLlAlgBw : 0;
         comm->bandwidths[coll][NCCL_ALGO_TREE][NCCL_PROTO_LL128] = ll128Enabled ? treeAlgBw*120/128 : 0;
@@ -217,6 +222,7 @@ static ncclResult_t ncclSetThresholds(struct ncclComm* comm, int minCompCap, int
     comm->threadThresholds[a][NCCL_PROTO_LL128] = NCCL_LL128_THREAD_THRESHOLD;
     comm->threadThresholds[a][NCCL_PROTO_SIMPLE] = NCCL_SIMPLE_THREAD_THRESHOLD;
   }
+  comm->threadThresholds[NCCL_ALGO_RING][NCCL_PROTO_LL] *= comm->nRanks;
 
   // Override defaults with user env
   char* str = getenv("NCCL_THREAD_THRESHOLDS");
