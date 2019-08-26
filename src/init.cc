@@ -147,6 +147,7 @@ static ncclResult_t ncclSetThresholds(struct ncclComm* comm, int minCompCap, int
   int ringEnabled = ncclParamRingEnable();
 
   // Base numbers for time prediction. Latencies are x100ns, Bandwidth in MB/s
+  if (comm->nRanks <= 1) return ncclSuccess;
   for (int coll=0; coll<NCCL_NUM_FUNCTIONS; coll++) {
     int ringBusBw = ringGraph->nChannels * ringGraph->speed * 1000;
     int ringAlgBw = ringBusBw;
