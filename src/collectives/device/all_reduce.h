@@ -355,8 +355,13 @@ __device__ void ncclAllReduceTreeLL128Kernel(struct CollectiveArgs* args) {
   struct ncclTree* treeDn = &channel->treeDn;
   const ssize_t size = args->N;
   ssize_t chunkSize = args->lastChunkSize;
+  const ssize_t minChunkSize = (NCCL_LL128_SHMEM_ELEMS_PER_THREAD*nthreads*NCCL_LL128_DATAELEMS*sizeof(uint64_t))/(NCCL_LL128_LINEELEMS*sizeof(T))/8;
   const ssize_t loopSize = args->nChannels*chunkSize;
   int nthreadsSplit = NCCL_LL128_SPLIT(nthreads);
+
+  if (loopSize > size) {
+    chunkSize = DIVUP(size, args->nChannels*minChunkSize)*minChunkSize;
+  }
 
   // Compute pointers
   const T * __restrict__ thisInput = (const T*)args->ThisInput;

@@ -337,15 +337,8 @@ static ncclResult_t computeColl(struct ncclInfo* info /* input */, struct ncclCo
     ALIGN_SIZE(coll->args.lastChunkSize, info->nThreads*sizeof(uint64_t));
     coll->args.lastChunkSize /= ncclTypeSize(info->datatype);
   } else if (info->algorithm == NCCL_ALGO_TREE && info->protocol == NCCL_PROTO_LL128) {
-    if (info->pattern == ncclPatternTreeUpDown) {
-      // Optimize chunkSize / nSteps
-      for (int steps=16; steps; steps >>= 1) {
-        while ((info->nBytes / (info->nChannels*chunkSize) < steps*2) &&
-            (chunkSize > (steps*(info->nThreads/2)*sizeof(uint64_t)))) {
-          chunkSize /= 2;
-        }
-      }
-    }
+    int nstepsInter = 1+log2(info->comm->nNodes);
+    while (info->nBytes / (info->nChannels*chunkSize) < nstepsInter*4 && chunkSize > 32768) chunkSize /= 2;
     // Use lastChunkSize as chunkSize
     coll->args.lastChunkSize = chunkSize*NCCL_LL128_DATAELEMS/(NCCL_LL128_LINEELEMS*ncclTypeSize(info->datatype));
   }

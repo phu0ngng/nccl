@@ -28,7 +28,7 @@ struct cudaLaunchParams {
 
 // Channels / LL tuning
 #define NCCL_LL_THREAD_THRESHOLD 8
-#define NCCL_LL128_THREAD_THRESHOLD 32
+#define NCCL_LL128_THREAD_THRESHOLD 8
 #define NCCL_SIMPLE_THREAD_THRESHOLD 128
 
 struct ncclSendMem {
