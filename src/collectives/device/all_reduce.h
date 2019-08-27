@@ -511,6 +511,51 @@ __device__ void ncclAllReduceTreeLL128Kernel(struct CollectiveArgs* args) {
 
 template<int UNUSED, class FUNC, typename T>
 __device__ void ncclAllReduceAcclLL128Kernel(struct CollectiveArgs* args) {
-  //FIXME: implement
+  const int tid = threadIdx.x;
+  const int nthreads = args->nThreads;
+  const int bid = args->bid;
+  struct ncclDevComm* comm = args->comm;
+  struct ncclChannel* channel = comm->channels+blockIdx.x;
+  const ssize_t size = args->N;
+  ssize_t chunkSize = args->lastChunkSize;
+  const ssize_t loopSize = args->nChannels*chunkSize;
+
+  // Compute pointers
+  const T * __restrict__ thisInput = (const T*)args->ThisInput;
+  T * __restrict__ thisOutput = (T*)args->ThisOutput;
+
+  if (blockIdx.x % 2 == 0) {
+    struct ncclTree* tree = &channel->collTreeUp;
+    ncclLL128Primitives<T, FUNC, 1, 1> LLprims(tid, nthreads, tree->down, &tree->up, channel, comm, args->opCount);
+    for (ssize_t gridOffset = 0; gridOffset < size; gridOffset += loopSize) {
+      // Up
+      ssize_t offset = gridOffset + bid*chunkSize;
+      int nelem = min(chunkSize, size-offset);
+      if (tree->up == -1) {
+        LLprims.recvReduceCopy(thisInput+offset, thisOutput+offset, nelem);
+      } else if (tree->down[0] == -1) {
+        LLprims.send(thisInput+offset, nelem);
+      } else {
+        LLprims.recvReduceSend(thisInput+offset, nelem);
+      }
+    }
+  }
+
+  if (blockIdx.x % 2 == 1) {
+    struct ncclTree* tree = &channel->collTreeDn;
+    ncclLLPrimitives<T, FUNC, 1, 1> LLprims(tid, nthreads, &tree->up, tree->down, channel, comm, args->opCount);
+    for (ssize_t gridOffset = 0; gridOffset < size; gridOffset += loopSize) {
+      // Down
+      ssize_t offset = gridOffset + bid*chunkSize;
+      int nelem = min(chunkSize, size-offset);
+      if (tree->up == -1) {
+        LLprims.send(thisOutput+offset, nelem);
+      } else if (tree->down[0] == -1) {
+        LLprims.recv(thisOutput+offset, nelem);
+      } else {
+        LLprims.recvCopySend(thisOutput+offset, nelem);
+      }
+    }
+  }
 }
 #endif
