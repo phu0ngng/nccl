@@ -225,6 +225,14 @@ ncclResult_t ncclEnqueueEvents(ncclComm_t comm) {
 /* Enqueueing system : computation of kernel and proxy operations parameters */
 /*****************************************************************************/
 
+// Trees are not perfectly sticking to the model for medium sizes. Applying a static correction
+// factor is not ideal but works quite well.
+static int treeCorrectionFactor[NCCL_NUM_PROTOCOLS][25] = {
+  { 10, 10, 10, 10, 10, 10, 10,  9,  8,  7,  7,  7,  7,  6,  5,  5,  5,  6,  7,  8,  9,  9, 10, 10, 10 },
+  { 10, 10, 10, 10, 10, 10, 10, 10,  9,  8,  8,  8,  8,  7,  7,  7,  6,  6,  7,  7,  8,  8,  9,  9, 10 },
+  { 10, 10, 10,  9,  9,  9,  9,  9,  9,  9,  8,  7,  6,  6,  5,  5,  5,  5,  5,  5,  6,  6,  7,  8,  9 }
+};
+
 static ncclResult_t getAlgoInfo(struct ncclInfo* info) {
   struct ncclComm* comm = info->comm;
   uint64_t minTime = 0x7fffffffffffffff;
@@ -233,8 +241,11 @@ static ncclResult_t getAlgoInfo(struct ncclInfo* info) {
   info->protocol = -1;
   for (int a=0; a<NCCL_NUM_ALGORITHMS; a++) {
     for (int p=0; p<NCCL_NUM_PROTOCOLS; p++) {
-      if (comm->bandwidths[info->coll][a][p] == 0) continue;
-      uint64_t time = comm->latencies[info->coll][a][p] + (10 * info->nBytes) / comm->bandwidths[info->coll][a][p];
+      int bw = comm->bandwidths[info->coll][a][p];
+      if (bw == 0) continue;
+      int logSize = log2(info->nBytes);
+      if (a == NCCL_ALGO_TREE && logSize < 25) bw = bw*treeCorrectionFactor[p][logSize]/10;
+      uint64_t time = comm->latencies[info->coll][a][p] + (10 * info->nBytes) / bw;
       if (time < minTime) {
         info->algorithm = a;
         info->protocol = p;
