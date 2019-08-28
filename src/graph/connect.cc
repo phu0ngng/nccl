@@ -143,7 +143,7 @@ static ncclResult_t connectTrees(struct ncclComm* comm, int* treeUpRecv, int* tr
 
   // Compute tree depth. Not an exact value but a good approximation in most
   // cases
-  int depth = comm->nRanks/nNodes - 1 + log2(nNodes);
+  int depth = comm->nRanks/nNodes - 1 + log2i(nNodes);
 
   int u0, d0_0, d0_1, u1, d1_0, d1_1;
   NCCLCHECK(ncclGetDtree(nNodes, node, &u0, &d0_0, &d0_1, &u1, &d1_0, &d1_1));
