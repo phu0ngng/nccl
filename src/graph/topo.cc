@@ -529,6 +529,11 @@ static ncclResult_t ncclTopoSetPaths(struct ncclTopoNode* baseNode, struct ncclT
               break;
             }
           }
+          if (remPath->list[0] == NULL) {
+            WARN("Failed to find reverse path from remNode id %d type %d nlinks %d to node id %d type %d",
+                 remNode->id, remNode->type, remNode->nlinks, node->id, node->type);
+            return ncclInternalError;
+          }
           // Copy the rest of the path
           for (int i=0; i<path->count; i++) remPath->list[i+1] = path->list[i];
           remPath->count = path->count + 1;

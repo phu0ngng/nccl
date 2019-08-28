@@ -243,7 +243,7 @@ static ncclResult_t getAlgoInfo(struct ncclInfo* info) {
     for (int p=0; p<NCCL_NUM_PROTOCOLS; p++) {
       int bw = comm->bandwidths[info->coll][a][p];
       if (bw == 0) continue;
-      int logSize = log2(info->nBytes);
+      int logSize = log2i(info->nBytes);
       if (a == NCCL_ALGO_TREE && logSize < 25) bw = bw*treeCorrectionFactor[p][logSize]/10;
       uint64_t time = comm->latencies[info->coll][a][p] + (10 * info->nBytes) / bw;
       if (time < minTime) {
@@ -348,7 +348,7 @@ static ncclResult_t computeColl(struct ncclInfo* info /* input */, struct ncclCo
     ALIGN_SIZE(coll->args.lastChunkSize, info->nThreads*sizeof(uint64_t));
     coll->args.lastChunkSize /= ncclTypeSize(info->datatype);
   } else if (info->algorithm == NCCL_ALGO_TREE && info->protocol == NCCL_PROTO_LL128) {
-    int nstepsInter = 1+log2(info->comm->nNodes);
+    int nstepsInter = 1+log2i(info->comm->nNodes);
     while (info->nBytes / (info->nChannels*chunkSize) < nstepsInter*4 && chunkSize > 32768) chunkSize /= 2;
     // Use lastChunkSize as chunkSize
     coll->args.lastChunkSize = chunkSize*NCCL_LL128_DATAELEMS/(NCCL_LL128_LINEELEMS*ncclTypeSize(info->datatype));

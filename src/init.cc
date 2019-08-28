@@ -205,9 +205,9 @@ static ncclResult_t ncclSetThresholds(struct ncclComm* comm, int minCompCap, int
         comm->bandwidths[coll][NCCL_ALGO_TREE][NCCL_PROTO_LL] = llEnabled ? treeLlAlgBw : 0;
         comm->bandwidths[coll][NCCL_ALGO_TREE][NCCL_PROTO_LL128] = ll128Enabled ? treeAlgBw*7/9 : 0;
         comm->bandwidths[coll][NCCL_ALGO_TREE][NCCL_PROTO_SIMPLE] = simpleEnabled ? treeAlgBw : 0;
-        comm->latencies[coll][NCCL_ALGO_TREE][NCCL_PROTO_LL] = 44 + 2 * ((comm->nRanks/comm->nNodes-1) * treeIntraLlLat + log2(comm->nNodes) * treeInterLlLat);
-        comm->latencies[coll][NCCL_ALGO_TREE][NCCL_PROTO_LL128] = 44 + 2 * ((comm->nRanks/comm->nNodes-1) * treeIntraLl128Lat + log2(comm->nNodes) * treeInterLl128Lat);
-        comm->latencies[coll][NCCL_ALGO_TREE][NCCL_PROTO_SIMPLE] = 2 * ((comm->nRanks/comm->nNodes-1) * treeIntraSimpleLat + log2(comm->nNodes) * treeInterSimpleLat);
+        comm->latencies[coll][NCCL_ALGO_TREE][NCCL_PROTO_LL] = 44 + 2 * ((comm->nRanks/comm->nNodes-1) * treeIntraLlLat + log2i(comm->nNodes) * treeInterLlLat);
+        comm->latencies[coll][NCCL_ALGO_TREE][NCCL_PROTO_LL128] = 44 + 2 * ((comm->nRanks/comm->nNodes-1) * treeIntraLl128Lat + log2i(comm->nNodes) * treeInterLl128Lat);
+        comm->latencies[coll][NCCL_ALGO_TREE][NCCL_PROTO_SIMPLE] = 2 * ((comm->nRanks/comm->nNodes-1) * treeIntraSimpleLat + log2i(comm->nNodes) * treeInterSimpleLat);
       }
     } else {
       int sameRings = 1;
