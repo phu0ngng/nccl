@@ -164,7 +164,7 @@ static ncclResult_t ncclSetThresholds(struct ncclComm* comm, int minCompCap, int
     int ringLlAlgBw = ringLlBusBw * comm->nRanks / nsteps;
     int ringLl128BusBw = std::min(ringBusBw*120/128, 91000);
     int ringLl128AlgBw = ringLl128BusBw * comm->nRanks / nsteps;
-    int ringLlLat = ringGraph->nvlink ? 4 : 10;
+    int ringLlLat = comm->nNodes > 1 ? 9 : ringGraph->nvlink ? 4 : 10 ;
     int ringLl128Lat = 25;
     int ringSimpleLat = comm->nNodes == 1 ? 57 : 66;
 
