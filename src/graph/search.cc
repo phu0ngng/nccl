@@ -181,13 +181,12 @@ ncclResult_t ncclTopoSearchRecGpu(struct ncclTopoSystem* system, struct ncclTopo
   if (step == ngpus) {
     // Determine whether we found a better solution or not
     int copy = 0;
-    graph->nChannels++;
     int sameChannels = graph->sameChannels;
-    if (graph->nChannels == 1) graph->sameChannels = 1;
-    if (graph->nChannels > 1) {
+    if (graph->nChannels > 0) {
       int* intra = graph->intra+graph->nChannels*ngpus;
       for (int g=0; g<ngpus; g++) if (intra[g] != intra[g-ngpus]) graph->sameChannels = 0;
     }
+    graph->nChannels++;
     NCCLCHECK(ncclTopoCompareGraphs(graph, saveGraph, &copy));
     if (copy) {
       memcpy(saveGraph, graph, sizeof(struct ncclTopoGraph));
@@ -197,8 +196,8 @@ ncclResult_t ncclTopoSearchRecGpu(struct ncclTopoSystem* system, struct ncclTopo
       //printf("New Channel %d\n", graph->nChannels);
       NCCLCHECK(ncclTopoSearchRec(system, graph, saveGraph, time));
     }
-    graph->sameChannels = sameChannels;
     graph->nChannels--;
+    graph->sameChannels = sameChannels;
     return ncclSuccess;
   }
   graph->intra[graph->nChannels*ngpus+step] = gpu->rank;
@@ -433,6 +432,7 @@ ncclResult_t ncclTopoCompute(ncclTopoSystem* system, struct ncclTopoGraph* graph
   graph->speed = 0;
   graph->nvlink = 0;
   graph->nChannels = 0;
+  graph->sameChannels = 1;
 
   char* str = getenv("NCCL_GRAPH");
   if (str) {
@@ -481,6 +481,7 @@ ncclResult_t ncclTopoCompute(ncclTopoSystem* system, struct ncclTopoGraph* graph
         int time = NCCL_SEARCH_TIMEOUT;
         tmpGraph.nvlink = 1;
         tmpGraph.nChannels = 0;
+        tmpGraph.sameChannels = 1;
         NCCLCHECK(ncclTopoSearchRec(system, &tmpGraph, graph, &time));
 #if 0
         printf("Pattern %d, crossNic %d, Speed %d, nChannels %d %s\n", tmpGraph.pattern, tmpGraph.crossNic, tmpGraph.speed, graph->nChannels, time == 0 ? "TIMEOUT" : "");
@@ -511,7 +512,7 @@ ncclResult_t ncclTopoCompute(ncclTopoSystem* system, struct ncclTopoGraph* graph
 }
 
 ncclResult_t ncclTopoPrintGraph(struct ncclTopoSystem* system, struct ncclTopoGraph* graph) {
-  INFO(NCCL_GRAPH, "Pattern %d, crossNic %d, nChannels %d, speed %d, nvlink %d", graph->pattern, graph->crossNic, graph->nChannels, graph->speed, graph->nvlink);
+  INFO(NCCL_GRAPH, "Pattern %d, crossNic %d, nChannels %d, speed %d, nvlink %d, sameChannels %d", graph->pattern, graph->crossNic, graph->nChannels, graph->speed, graph->nvlink, graph->sameChannels);
   int ngpus = system->nodes[GPU].count;
 
   char line[1024];
