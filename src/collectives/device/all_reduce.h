@@ -91,8 +91,13 @@ __device__ void ncclAllReduceTreeKernel(struct CollectiveArgs* args) {
   struct ncclChannel* channel = comm->channels+blockIdx.x;
   const ssize_t size = args->N;
   const int stepSize = channel->buffSize / (sizeof(T)*NCCL_STEPS);
-  const int chunkSize = args->lastChunkSize;
+  int chunkSize = args->lastChunkSize;
+  const ssize_t minChunkSize = nthreads*8*sizeof(uint64_t) / sizeof(T);
   const ssize_t loopSize = args->nChannels*chunkSize;
+
+  if (loopSize > size) {
+    chunkSize = DIVUP(size, args->nChannels*minChunkSize)*minChunkSize;
+  }
 
   // Compute pointers
   const T * __restrict__ thisInput = (const T*)args->ThisInput;
@@ -217,7 +222,12 @@ __device__ void ncclAllReduceTreeLLKernel(struct CollectiveArgs* args) {
   struct ncclChannel* channel = comm->channels+blockIdx.x;
   const ssize_t size = args->N;
   ssize_t chunkSize = NCCL_LL_SLICE_LINES * sizeof(uint64_t) / sizeof(T);
+  const ssize_t minChunkSize = nthreads*sizeof(uint64_t) / sizeof(T);
   const ssize_t loopSize = args->nChannels*chunkSize;
+
+  if (loopSize > size) {
+    chunkSize = DIVUP(size, args->nChannels*minChunkSize)*minChunkSize;
+  }
 
   // Compute pointers
   const T * __restrict__ thisInput = (const T*)args->ThisInput;
