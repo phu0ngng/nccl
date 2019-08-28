@@ -135,7 +135,8 @@ class ncclPrimitives {
   inline __device__ void
   GenericOp(const T* srcPtr, T* dstPtr, int nelem, int directOffset) {
     int offset = 0;
-    int sliceSize = stepSize * SLICESTEPS;
+    int sliceSize = stepSize*SLICESTEPS;
+    int dataSize = max(DIVUP(nelem, SLICESPERCHUNK), sliceSize/32);
 
     const T* srcs[RECV*NRECV+SRC];
     srcs[0] = SRC ? srcPtr : directRecvPtr<DIRECTRECV>(0, directOffset);
@@ -153,7 +154,7 @@ class ncclPrimitives {
 
     #pragma unroll 1
     for (int slice=0; slice<SLICESPERCHUNK; ++slice) {
-      int realSize = max(0, min(sliceSize, nelem-offset));
+      int realSize = max(0, min(dataSize, nelem-offset));
       if (tid < nthreads) {
         FOR_SEND(waitSend);
         FOR_RECV(waitRecv);
@@ -176,9 +177,11 @@ class ncclPrimitives {
         FOR_SEND(postSend);
         FOR_RECV(postRecv);
       }
-      for (int i=0; i<RECV*NRECV+SRC; i++) srcs[i] += sliceSize;
-      for (int i=0; i<SEND*NSEND+DST; i++) dsts[i] += sliceSize;
-      offset += sliceSize;
+      if (SRC) srcs[0] += realSize;
+      for (int i=0; i<RECV*NRECV; i++) srcs[SRC+i] += sliceSize;
+      if (DST) dsts[0] += realSize;
+      for (int i=0; i<SEND*NSEND; i++) dsts[DST+i] += sliceSize;
+      offset += realSize;
     }
   }
 
