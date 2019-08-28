@@ -708,21 +708,36 @@ static ncclResult_t initTransportsRank(struct ncclComm* comm, ncclUniqueId* comm
   NCCLCHECK(ncclTopoCompute(comm->topo, &ringGraph, &treeLoopGraph));
   NCCLCHECK(ncclTopoPrintGraph(comm->topo, &ringGraph));
 
-  int nChannels = std::min(treeGraph.nChannels, ringGraph.nChannels);
-
   // AllGather3 - begin
+
   struct {
     int cudaCompCap;
     int fullCudaCompCap;
     int nvlink;
     int nChannels;
+    struct {
+      int sameChannels;
+      int speed;
+      int nvlink;
+    } tree;
+    struct {
+      int sameChannels;
+      int speed;
+      int nvlink;
+    } ring;
     struct ncclTopoRanks topoRanks;
   } *allGather3Data;
 
   NCCLCHECK(ncclCalloc(&allGather3Data, nranks));
   allGather3Data[rank].cudaCompCap = ncclCudaCompCap();
   allGather3Data[rank].nvlink = treeGraph.nvlink;
-  allGather3Data[rank].nChannels = comm->nChannels = nChannels;
+  allGather3Data[rank].nChannels = comm->nChannels = std::min(treeGraph.nChannels, ringGraph.nChannels);
+  allGather3Data[rank].tree.sameChannels = treeGraph.sameChannels;
+  allGather3Data[rank].tree.speed = treeGraph.speed;
+  allGather3Data[rank].tree.nvlink = treeGraph.nvlink;
+  allGather3Data[rank].ring.sameChannels = ringGraph.sameChannels;
+  allGather3Data[rank].ring.speed = ringGraph.speed;
+  allGather3Data[rank].ring.nvlink = ringGraph.nvlink;
 
   NCCLCHECK(ncclTopoPreset(comm, nodesFirstRank, &treeGraph, &ringGraph, &allGather3Data[rank].topoRanks));
 
@@ -743,17 +758,20 @@ static ncclResult_t initTransportsRank(struct ncclComm* comm, ncclUniqueId* comm
   NCCLCHECK(ncclCalloc(&allTopoRanks, comm->nRanks));
   for (int i=0; i<nranks; i++) {
     allTopoRanks[i] = &allGather3Data[i].topoRanks;
-    nChannels = std::min(allGather3Data[i].nChannels, nChannels);
+    // Make sure we align all ranks so that the tuning is consistent across ranks
+    treeGraph.nChannels = ringGraph.nChannels = comm->nChannels = std::min(allGather3Data[i].nChannels, comm->nChannels);
+    treeGraph.sameChannels = std::min(allGather3Data[i].tree.sameChannels, treeGraph.sameChannels);
+    treeGraph.speed = std::min(allGather3Data[i].tree.speed, treeGraph.speed);
+    treeGraph.nvlink = std::min(allGather3Data[i].tree.nvlink, treeGraph.nvlink);
+    ringGraph.sameChannels = std::min(allGather3Data[i].ring.sameChannels, ringGraph.sameChannels);
+    ringGraph.speed = std::min(allGather3Data[i].ring.speed, ringGraph.speed);
+    ringGraph.nvlink = std::min(allGather3Data[i].ring.nvlink, ringGraph.nvlink);
   }
-  comm->nChannels = nChannels;
 
   int *rings;
   NCCLCHECK(ncclCalloc(&rings, nranks*MAXCHANNELS));
 
   NCCLCHECK(ncclTopoPostset(comm, nodesFirstRank, allTopoRanks, rings));
-
-  // Might have been modified (i.e. channels being duplicated) -- reload.
-  nChannels = comm->nChannels;
 
   free(allTopoRanks);
   free(nodesFirstRank);
@@ -767,7 +785,7 @@ static ncclResult_t initTransportsRank(struct ncclComm* comm, ncclUniqueId* comm
 
   char line[1024];
   line[0]='\0';
-  for (int c=0; c<nChannels; c++) {
+  for (int c=0; c<comm->nChannels; c++) {
     struct ncclTree* treeUp = &comm->channels[c].treeUp;
     struct ncclTree* treeDn = &comm->channels[c].treeDn;
     snprintf(line+strlen(line), 1023-strlen(line), " [%d] %d/%d/%d->%d->%d|%d->%d->%d/%d/%d",
@@ -780,14 +798,14 @@ static ncclResult_t initTransportsRank(struct ncclComm* comm, ncclUniqueId* comm
   // Connect with prev/next for each ring
   struct ncclConnect *connect;
   NCCLCHECK(ncclCalloc(&connect, 2));
-  for (int c=0; c<nChannels; c++) {
+  for (int c=0; c<comm->nChannels; c++) {
     struct ncclChannel* channel = comm->channels+c;
     NCCLCHECK(setupChannel(comm, c, rank, nranks, rings+c*nranks));
     NCCLCHECK(p2pSetup(comm, &ringGraph, channel, 1, &channel->ring.prev, 1, &channel->ring.next));
     NCCLCHECK(p2pSetup(comm, &treeGraph, channel, NCCL_MAX_TREE_ARITY, channel->treeUp.down, 1, &channel->treeUp.up));
     NCCLCHECK(p2pSetup(comm, &treeGraph, channel, 1, &channel->treeDn.up, NCCL_MAX_TREE_ARITY, channel->treeDn.down));
   }
-  TRACE(NCCL_INIT, "rank %d nranks %d - CONNECTED %d RINGS AND TREES", rank, nranks, nChannels);
+  TRACE(NCCL_INIT, "rank %d nranks %d - CONNECTED %d RINGS AND TREES", rank, nranks, comm->nChannels);
   free(connect);
   free(rings);
 
