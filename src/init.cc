@@ -193,7 +193,7 @@ static ncclResult_t ncclSetThresholds(struct ncclComm* comm, int minCompCap, int
         // Tree algorithm BW is 1/2 the bus BW ; tree have a ~90 peak compared to rings ; they are also limited intra-node
 	int treeBusBw = std::min(treeGraph->nChannels*treeGraph->speed*90/100, comm->nNodes > 1 ? 70 : 90) * 1000;
         int treeAlgBw = (treeBusBw)/2;
-        int treeLlAlgBw = ringLlAlgBw * comm->nRanks / nsteps;
+        int treeLlAlgBw = treeAlgBw/3; // Just an obvservation
 	int treeIntraLlLat = treeGraph->nvlink ? 5 : 10;
 	int treeInterLlLat = 50;
 	int treeIntraLl128Lat = 19;
