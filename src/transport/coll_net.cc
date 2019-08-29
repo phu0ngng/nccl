@@ -336,7 +336,7 @@ ncclResult_t collNetSendProxy(struct ncclProxyArgs* args) {
               }
             }
           }
-        } if (args->llMode == 1) {
+        } else if (args->llMode == 1) {
           int size = sizesFifo[buffSlot];
           if (size != -1) {
             uint32_t flag = NCCL_LL_FLAG(args->tail + 1);
@@ -430,7 +430,7 @@ ncclResult_t collNetRecvProxy(struct ncclProxyArgs* args) {
     struct reqSlot* reqFifo = resources->reqFifo;
     if (args->head < args->end) {
       struct ncclRecvMem* localMem = (resources->useGdr && args->llMode != 2) ? resources->devRecvMem : resources->hostRecvMem;
-      char* localBuff = args->llMode == 1 ? (char*)localMem->llBuff : args->llMode == 2 ? (char*)localMem->ll128Buff : localMem->buff;
+      char* localBuff = args->llMode == 1 ? (char*)resources->llData : args->llMode == 2 ? (char*)localMem->ll128Buff : localMem->buff;
       void* mhandle = args->llMode == 1 ? resources->llMhandle : args->llMode == 2 ? resources->ll128Mhandle : resources->mhandle;
       if ((args->tail < args->head + NCCL_STEPS) && (args->tail < (resources->hostSendMem->head) + NCCL_STEPS) && (args->tail < args->end)) {
         int buffSlot = args->tail%NCCL_STEPS;
