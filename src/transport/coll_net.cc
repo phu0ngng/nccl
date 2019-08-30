@@ -327,6 +327,7 @@ ncclResult_t collNetSendProxy(struct ncclProxyArgs* args) {
                 // Send through network
                 NCCLCHECK(collNetIallreduce(resources->collNetSendComm, (void*)lines, (void*)(reqFifo[buffSlot].recvBuff), count, args->dtype, args->redOp, resources->ll128SendMhandle, resources->ll128RecvMhandle, args->requests+buffSlot));
                 if (args->requests[buffSlot] != NULL) {
+                  TRACE(NCCL_NET, "sendProxy [%d/%d] Iallreduce (LL128) posted, req %p", args->head, buffSlot, args->requests[buffSlot]);
                   sizesFifo[buffSlot] = -1;
                   // Make sure size is reset to zero before we update the head.
                   __sync_synchronize();
@@ -464,6 +465,7 @@ ncclResult_t collNetRecvProxy(struct ncclProxyArgs* args) {
             for (int i=0; i<nFifoLines; i++) {
               lines[i*NCCL_LL128_LINEELEMS+NCCL_LL128_DATAELEMS] = flag;
             }
+            resources->hostRecvMem->tail = args->head;
           }
           args->idle = 0;
         }
