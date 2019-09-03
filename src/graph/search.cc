@@ -427,7 +427,7 @@ end:
   return ncclSuccess;
 }
 
-ncclResult_t ncclTopoCompute(ncclTopoSystem* system, struct ncclTopoGraph* graph, struct ncclTopoGraph* baseGraph) {
+ncclResult_t ncclTopoCompute(ncclTopoSystem* system, struct ncclTopoGraph* graph) {
   int ngpus = system->nodes[GPU].count;
   graph->speed = 0;
   graph->nvlink = 0;

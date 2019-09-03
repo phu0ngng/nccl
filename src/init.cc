@@ -686,26 +686,18 @@ static ncclResult_t initTransportsRank(struct ncclComm* comm, ncclUniqueId* comm
   free(rankIndexes);
 
   // Get rings and trees
-  struct ncclTopoGraph treeLoopGraph;
   struct ncclTopoGraph treeGraph;
-  // FIXME : The tree loop cannot be used currently for LL128 because we have
-  // a single FIFO for both treeUp and treeDn and both are used concurrently.
-  treeLoopGraph.pattern = NCCL_TOPO_PATTERN_SPLIT_TREE_LOOP;
-  treeLoopGraph.crossNic = ncclParamCrossNic();
-  // We communicate only half the data between node with trees on 2 nodes.
-  treeLoopGraph.netFactor = comm->nNodes == 2 ? 2 : 1;
-  NCCLCHECK(ncclTopoCompute(comm->topo, &treeLoopGraph, NULL));
-  NCCLCHECK(ncclTopoPrintGraph(comm->topo, &treeLoopGraph));
   treeGraph.pattern = NCCL_TOPO_PATTERN_SPLIT_TREE;
   treeGraph.crossNic = ncclParamCrossNic();
+  // We communicate only half the data between node with trees on 2 nodes.
   treeGraph.netFactor = comm->nNodes == 2 ? 2 : 1;
-  NCCLCHECK(ncclTopoCompute(comm->topo, &treeGraph, &treeLoopGraph));
+  NCCLCHECK(ncclTopoCompute(comm->topo, &treeGraph));
   NCCLCHECK(ncclTopoPrintGraph(comm->topo, &treeGraph));
   struct ncclTopoGraph ringGraph;
   ringGraph.pattern = NCCL_TOPO_PATTERN_RING;
   ringGraph.crossNic = ncclParamCrossNic();
   ringGraph.netFactor = 1;
-  NCCLCHECK(ncclTopoCompute(comm->topo, &ringGraph, &treeLoopGraph));
+  NCCLCHECK(ncclTopoCompute(comm->topo, &ringGraph));
   NCCLCHECK(ncclTopoPrintGraph(comm->topo, &ringGraph));
 
   // AllGather3 - begin

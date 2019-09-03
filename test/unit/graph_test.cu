@@ -401,8 +401,8 @@ int checkTopo(const char* name, const char** topo, int topoSize, int nvlinkWidth
   ringGraph.netFactor = 1;
 
   uint64_t computeTime = getTime();
-  CHECK(ncclTopoCompute(&system, &treeGraph, NULL));
-  CHECK(ncclTopoCompute(&system, &ringGraph, &treeGraph));
+  CHECK(ncclTopoCompute(&system, &treeGraph));
+  CHECK(ncclTopoCompute(&system, &ringGraph));
   computeTime = getTime() - computeTime;
 
   CHECK(ncclTopoPrintGraph(&system, &treeGraph));
