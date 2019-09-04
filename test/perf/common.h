@@ -45,8 +45,11 @@ typedef enum {
   testInternalError = 1,
   testCudaError = 2,
   testNcclError = 3,
-  testCuRandError = 4
+  testTimeout = 4,
+  testNumResults = 5
 } testResult_t;
+
+extern const char* test_errornames[testNumResults];
 
 // Relay errors up and trace
 #define TESTCHECK(cmd) do {                         \
@@ -54,9 +57,10 @@ typedef enum {
   if (r!= testSuccess) {                            \
     char hostname[1024];                            \
     getHostName(hostname, 1024);                    \
-    printf(" .. %s: Test failure %s:%d\n",          \
+    printf(" .. %s: Test failure %s:%d : %s\n",     \
          hostname,                                  \
-        __FILE__,__LINE__);                         \
+        __FILE__,__LINE__,                          \
+        test_errornames[r]);                        \
     return r;                                       \
   }                                                 \
 } while(0)

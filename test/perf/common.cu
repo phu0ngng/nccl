@@ -22,6 +22,8 @@ const char *test_typenames[ncclNumTypes] = {"char", "int", "half", "float", "dou
 ncclRedOp_t test_ops[ncclNumOps] = {ncclSum, ncclProd, ncclMax, ncclMin};
 const char *test_opnames[ncclNumOps] = {"sum", "prod", "max", "min"};
 
+const char* test_errornames[testNumResults] = {"Success", "Internal Error", "CUDA Error", "NCCL Error", "Timeout"};
+
 thread_local int is_main_thread = 0;
 
 // Command line parameter defaults
@@ -42,6 +44,7 @@ static int parallel_init = 0;
 static int blocking_coll = 0;
 static int streamnull = 0;
 static int side_comp = 0;
+static int timeout = 60;
 
 static char* replay_file = NULL;
 
@@ -322,6 +325,8 @@ testResult_t testStreamSynchronize(int ngpus, cudaStream_t* streams, ncclComm_t*
   int remaining = ngpus;
   int* done = (int*)malloc(sizeof(int)*ngpus);
   memset(done, 0, sizeof(int)*ngpus);
+  auto start = std::chrono::high_resolution_clock::now();
+
   while (remaining) {
    int idle = 1;
    for (int i=0; i<ngpus; i++) {
@@ -353,6 +358,12 @@ testResult_t testStreamSynchronize(int ngpus, cudaStream_t* streams, ncclComm_t*
        }
      }
 #endif
+     auto delta = std::chrono::high_resolution_clock::now() - start;
+     if (std::chrono::duration_cast<std::chrono::seconds>(delta).count() > timeout) {
+       for (int i=0; i<ngpus; i++)
+         NCCLCHECK(ncclCommAbort(comms[i]));
+       return testTimeout;
+     }
    }
 
    // We might want to let other threads (including NCCL threads) use the CPU.
@@ -494,6 +505,9 @@ void setupArgs(size_t size, ncclDataType_t type, struct threadArgs* args) {
 }
 
 testResult_t TimeTest(struct threadArgs* args, ncclDataType_t type, const char* typeName, ncclRedOp_t op, const char* opName, int root) {
+  // Sync to avoid first-call timeout
+  Barrier(args);
+
   // Warm-up for large size
   setupArgs(args->maxbytes, type, args);
   for (int iter = 0; iter < warmup_iters; iter++) {
@@ -659,12 +673,13 @@ int main(int argc, char* argv[]) {
     {"stream_null", required_argument, 0, 'y'},
     {"side_comp", required_argument, 0, 'k'},
     {"replay", required_argument, 0, 'l'},
+    {"timeout", required_argument, 0, 'T'},
     {"help", no_argument, 0, 'h'}
   };
 
   while(1) {
     int c;
-    c = getopt_long(argc, argv, "t:g:b:e:i:f:n:m:w:s:p:c:o:d:r:z:y:k:h:l:", longopts, &longindex);
+    c = getopt_long(argc, argv, "t:g:b:e:i:f:n:m:w:s:p:c:o:d:r:z:y:k:h:l:T:", longopts, &longindex);
 
     if (c == -1)
       break;
@@ -729,31 +744,12 @@ int main(int argc, char* argv[]) {
         replay_file = optarg;
         warmup_iters = 0;    // by default, no warm-up in case of trace replay
         break;
+      case 'T':
+        timeout = strtol(optarg, NULL, 0);
+        break;
       case 'h':
-        printf("USAGE: %s \n\t"
-            "[-t,--nthreads <num threads>] \n\t"
-            "[-g,--ngpus <gpus per thread>] \n\t"
-            "[-b,--minbytes <min size in bytes>] \n\t"
-            "[-e,--maxbytes <max size in bytes>] \n\t"
-            "[-i,--stepbytes <increment size>] \n\t"
-            "[-f,--stepfactor <increment factor>] \n\t"
-            "[-n,--iters <iteration count>] \n\t"
-            "[-m,--agg_iters <aggregated iteration count>] \n\t"
-            "[-w,--warmup_iters <warmup iteration count>] \n\t"
-            "[-p,--parallel_init <0/1>] \n\t"
-            "[-c,--check <0/1>] \n\t"
-            "[-o,--op <sum/prod/min/max/all>] \n\t"
-            "[-d,--datatype <nccltype/all>] \n\t"
-            "[-r,--root <root>] \n\t"
-            "[-z,--blocking <0/1>] \n\t"
-            "[-y,--stream_null <0/1>] \n\t"
-            "[-k,--side_comp <0/1>] \n\t"
-            "[-l,--replay <path to replay file>] \n\t"
-	    "[-h,--help]\n",
-            basename(argv[0]));
-        return 0;
       default:
-        printf("invalid option \n");
+        if (c != 'h') printf("invalid option '%c'\n", c);
         printf("USAGE: %s \n\t"
             "[-t,--nthreads <num threads>] \n\t"
             "[-g,--ngpus <gpus per thread>] \n\t"
@@ -773,6 +769,7 @@ int main(int argc, char* argv[]) {
             "[-y,--stream_null <0/1>] \n\t"
             "[-k,--side_comp <0/1>] \n\t"
             "[-l,--replay <path to replay file>] \n\t"
+            "[-T,--timeout <time in seconds>] \n\t"
 	    "[-h,--help]\n",
             basename(argv[0]));
         return 0;
