@@ -62,11 +62,12 @@ static inline void initDebug() {
    */
   char* nccl_debug_subsys = getenv("NCCL_DEBUG_SUBSYS");
   if (nccl_debug_subsys != NULL) {
+    int invert = 0;
+    if (nccl_debug_subsys[0] == '^') { invert = 1; nccl_debug_subsys++; }
+    ncclDebugMask = invert ? ~0ULL : 0ULL;
     char *subsys = strtok(nccl_debug_subsys, ",");
     while (subsys != NULL) {
-      int invert = 0;
       uint64_t mask = 0;
-      if (subsys[0] == '^') { invert = 1; subsys++; }
       if (strcasecmp(subsys, "INIT") == 0) {
         mask = NCCL_INIT;
       } else if (strcasecmp(subsys, "COLL") == 0) {
@@ -79,6 +80,8 @@ static inline void initDebug() {
         mask = NCCL_NET;
       } else if (strcasecmp(subsys, "GRAPH") == 0) {
         mask = NCCL_GRAPH;
+      } else if (strcasecmp(subsys, "TUNING") == 0) {
+        mask = NCCL_TUNING;
       } else if (strcasecmp(subsys, "ALL") == 0) {
         mask = NCCL_ALL;
       }
