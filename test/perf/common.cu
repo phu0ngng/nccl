@@ -22,8 +22,6 @@ const char *test_typenames[ncclNumTypes] = {"char", "int", "half", "float", "dou
 ncclRedOp_t test_ops[ncclNumOps] = {ncclSum, ncclProd, ncclMax, ncclMin};
 const char *test_opnames[ncclNumOps] = {"sum", "prod", "max", "min"};
 
-const char* test_errornames[testNumResults] = {"Success", "Internal Error", "CUDA Error", "NCCL Error", "Timeout"};
-
 thread_local int is_main_thread = 0;
 
 // Command line parameter defaults
@@ -362,6 +360,12 @@ testResult_t testStreamSynchronize(int ngpus, cudaStream_t* streams, ncclComm_t*
      if (std::chrono::duration_cast<std::chrono::seconds>(delta).count() > timeout) {
        for (int i=0; i<ngpus; i++)
          NCCLCHECK(ncclCommAbort(comms[i]));
+       char hostname[1024];
+       getHostName(hostname, 1024);
+       printf("%s: Test timeout (%ds) %s:%d\n",
+           hostname,
+           timeout,
+           __FILE__,__LINE__);
        return testTimeout;
      }
    }
