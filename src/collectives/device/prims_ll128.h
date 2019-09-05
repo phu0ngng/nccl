@@ -13,20 +13,22 @@ class ncclLL128Primitives {
  private:
   const int tid;
   const int nthreads;
-  const int warp;
   const int wid;
+  const int warp;
   const bool flagThread;
   int nrecv = 0;
   int nsend = 0;
-
-  struct ncclConnInfo* recvConn[NRECV];
+  struct ncclConnInfo* recvConn = NULL;
   volatile uint64_t* recvConnHeadPtr = NULL;
+  uint64_t recvConnHead;
 
-  struct ncclConnInfo* sendConn[NSEND];
+  struct ncclConnInfo* sendConn = NULL;
   volatile int* sendConnFifoPtr = NULL;
   volatile uint64_t* sendConnTailPtr = NULL;
+  uint64_t sendConnTail;
   volatile uint64_t* sendConnHeadPtr = NULL;
-  uint64_t sendConnHead; // Cache last seen value
+  uint64_t sendConnHead;
+  uint64_t sendConnHeadCache; // Cache last seen value
 
   uint64_t recvStep[NRECV];
   uint64_t sendStep[NSEND];
@@ -43,48 +45,23 @@ class ncclLL128Primitives {
   inline __device__ uint64_t recvFlag(int i) { return recvStep[i]+1; }
   inline __device__ uint64_t sendFlag(int i) { return sendStep[i]+1; }
 
-  // Exit If Abort Barrier : make sure all threads exit consistently
-  // Each thread sets a predicate to true if val == 1
-  // all CTA's threads enter the barrier and do a popc on their predicates being True
-  // If any of the thread's predicate was True, all the threads call exit()
-  inline __device__ void exitIfAbortLocalBarrier() {
-    uint32_t popc;
-    if (NSEND>NRECV) {
-      asm volatile ("{"
-          "   .reg .pred barr_pred;"
-          "   setp.eq.u32 barr_pred, %1, 1;"
-          "   bar.red.popc.u32 %0, 1, %2, barr_pred;"
-          "}" : "=r"(popc) : "r"(abort), "r"(nthreads));
-    } else {
-      asm volatile ("{"
-          "   .reg .pred barr_pred;"
-          "   setp.eq.u32 barr_pred, %1, 1;"
-          "   bar.red.popc.u32 %0, 2, %2, barr_pred;"
-          "}" : "=r"(popc) : "r"(abort), "r"(nthreads));
-    }
-    if (popc) {
-      // Make sure threads not participating in the operation get the abort and all threads exit
-      exitIfAbortBarrier(1);
-    }
-  }
-
   inline __device__ void barrier() {
     if (NSEND>NRECV) {
-      asm volatile ("bar.sync 1, %0;" :: "r"(nthreads));
-    } else {
       asm volatile ("bar.sync 2, %0;" :: "r"(nthreads));
+    } else {
+      asm volatile ("bar.sync 3, %0;" :: "r"(nthreads));
     }
   }
 
   uint32_t mismatch = 0;
   const uint64_t opCount;
 
-  inline __device__ void checkMismatch(volatile uint64_t* remoteOpCount) {
+  inline __device__ void checkMismatch(struct ncclConnInfo* conn) {
     if (mismatch > 20) {
       // We have seen that the peer advanced opcount so many times yet we are still waiting for credit of current op, so it is _most likely_ a mismatch
       // Note that we are not using _threadfence_system in LL so the error cannot be asserted
       *(comm->fatalDevError) = ncclDevSuspectedMismatch;
-    } else if (remoteOpCount && *remoteOpCount > opCount) {
+    } else if (conn && *conn->opCountRem > opCount) {
       mismatch += 1;
     }
   }
@@ -92,11 +69,11 @@ class ncclLL128Primitives {
   uint32_t spins = 0;
   uint32_t abort = 0;
 
-  inline __device__ int checkAbort(volatile uint64_t* remoteOpCount) {
+  inline __device__ int checkAbort(struct ncclConnInfo* conn) {
     spins++;
-    if (spins == SPINS_BEFORE_CHECK_ABORT) {
+    if (abort == 0 && spins == SPINS_BEFORE_CHECK_ABORT) {
       abort = *(comm->abortFlag);
-      checkMismatch(remoteOpCount);
+      checkMismatch(conn);
       spins = 0;
     }
     return abort;
@@ -106,26 +83,29 @@ class ncclLL128Primitives {
     spins = 0;
     mismatch = 0;
     if (sendConnHeadPtr) {
-      while (sendConnHead + NCCL_STEPS < sendStep[tid] + 1) {
-        sendConnHead = *sendConnHeadPtr;
-        if (checkAbort(sendConn[tid]->opCountRem)) break;
+      while (sendConnHeadCache + NCCL_STEPS < sendConnHead + 1) {
+        sendConnHeadCache = *sendConnHeadPtr;
+        if (checkAbort(sendConn)) break;
       }
-      if (sendConnFifoPtr) sendConnFifoPtr[sendStep[tid]%NCCL_STEPS] = nbytes;
+      if (sendConnFifoPtr) {
+        sendConnFifoPtr[sendConnHead%NCCL_STEPS] = nbytes;
+      }
+      sendConnHead += 1;
     }
   }
 
   inline __device__ void incRecv(int i) {
-    recvStep[i]++;
+    recvStep[i] += 1;
   }
   inline __device__ void postRecv() {
-    if (recvConnHeadPtr) *recvConnHeadPtr = recvStep[tid];
+    if (recvConnHeadPtr) *recvConnHeadPtr = recvConnHead += 1;
   }
 
   inline __device__ void incSend(int i) {
-    sendStep[i]++;
+    sendStep[i] += 1;
   }
   inline __device__ void postSend() {
-    if (sendConnTailPtr) { __threadfence(); *sendConnTailPtr = sendStep[tid]; }
+    if (sendConnTailPtr) { __threadfence(); *sendConnTailPtr = sendConnTail += 1; }
   }
 
   template <int ELEMS_PER_THREAD>
@@ -212,6 +192,7 @@ class ncclLL128Primitives {
           load128(ptr+u*WARP_SIZE, v0, v1);
           needReload |= flagThread && (v1 != flag);
         }
+        if (checkAbort(recvConn)) break;
       } while (__any_sync(WARP_MASK, needReload));
       #pragma unroll
       for (int u=0; u<ELEMS_PER_THREAD; u+=2) {
@@ -231,6 +212,7 @@ class ncclLL128Primitives {
             load128(ptr+u*WARP_SIZE, v0, v1);
             needReload |= flagThread && (v1 != flag);
           }
+          if (checkAbort(recvConn)) break;;
         } while (__any_sync(WARP_MASK, needReload));
         #pragma unroll
         for (int u=0; u<ELEMS_PER_THREAD; u+=2) {
@@ -280,9 +262,9 @@ class ncclLL128Primitives {
   __device__ void GenericOp(const T* srcPtr, T* dstPtr, int nelem) {
     if (nelem <= 0) {
       // Don't move any data but still increase steps and sync with prev/next
-      waitSend(0);
-      FOR_SEND(incSend); postSend();
-      FOR_RECV(incRecv); postRecv();
+      if (SEND) waitSend(0);
+      FOR_SEND(incSend); if (SEND) postSend();
+      FOR_RECV(incRecv); if (RECV) postRecv();
       return;
     }
     const int nelem64 = ((nelem*sizeof(T))/(2*sizeof(uint64_t)))*2;
@@ -293,7 +275,7 @@ class ncclLL128Primitives {
     int elemOffset = ELEMINC*warp;
     const int nwarps = nthreads/WARP_SIZE;
 
-    waitSend(DIVUP(nelem*sizeof(T), ELEMINC*sizeof(uint64_t))*LL128INC*sizeof(uint64_t));
+    if (SEND) waitSend(DIVUP(nelem*sizeof(T), ELEMINC*sizeof(uint64_t))*LL128INC*sizeof(uint64_t));
     barrier();
 
     while (elemOffset*(sizeof(uint64_t)/sizeof(T)) < nelem) {
@@ -323,52 +305,58 @@ class ncclLL128Primitives {
       elemOffset += ELEMINC*nwarps;
     }
 
-    exitIfAbortLocalBarrier();
-    FOR_SEND(incSend); postSend();
-    FOR_RECV(incRecv); postRecv();
+    barrier();
+    FOR_SEND(incSend); if (SEND) postSend();
+    FOR_RECV(incRecv); if (RECV) postRecv();
   }
 
   __device__ __forceinline__ void loadRecvConn(struct ncclConnInfo* conn, int i) {
-    recvConn[i] = conn;
-    recvBuff[i] = recvConn[i]->ll128Buff;
-    recvStep[i] = recvConn[i]->step;
+    if (wid == i) recvConn = conn;
+    recvBuff[i] = conn->ll128Buff;
+    recvStep[i] = conn->step;
     nrecv++;
   }
   __device__ __forceinline__ void loadRecvSync() {
-    if (tid<nrecv) {
-      recvConnHeadPtr = recvConn[tid]->head;
-      *(recvConn[tid]->opCountLoc) = opCount;
+    if (tid >= nthreads-WARP_SIZE && wid < nrecv) {
+      recvConnHeadPtr = recvConn->head;
+      recvConnHead = recvConn->step;
+      // Update opCount in case we skipped some operations
+      *(recvConn->opCountLoc) = opCount;
     }
   }
 
   __device__ __forceinline__ void loadSendConn(struct ncclConnInfo* conn, int i) {
-    sendConn[i] = conn;
-    sendBuff[i] = sendConn[i]->ll128Buff;
-    sendStep[i] = sendConn[i]->step;
+    if (wid == i) sendConn = conn;
+    sendBuff[i] = conn->ll128Buff;
+    sendStep[i] = conn->step;
     nsend++;
   }
   __device__ __forceinline__ void loadSendSync() {
-    if (tid<nsend) {
-      sendConnFifoPtr = sendConn[tid]->fifo;
-      if (sendConnFifoPtr) sendConnTailPtr = sendConn[tid]->tail;
-      sendConnHeadPtr = sendConn[tid]->head;
-      sendConnHead = *sendConnHeadPtr;
-      *(sendConn[tid]->opCountLoc) = opCount;
+    if (tid < nsend) {
+      sendConnHeadPtr = sendConn->head;
+      sendConnHeadCache = *sendConnHeadPtr;
+      sendConnHead = sendConn->step;
+      sendConnFifoPtr = sendConn->fifo;
+      *(sendConn->opCountLoc) = opCount;
+    }
+    if (tid >= nthreads-WARP_SIZE && wid<nsend) {
+      sendConnTailPtr = sendConn->tail;
+      sendConnTail = sendConn->step;
     }
   }
 
   __device__ __forceinline__ void saveRecvSync() {
-    if (tid<nrecv) {
-      recvConn[tid]->step = recvStep[tid];
-      *(recvConn[tid]->opCountLoc) += 1;
+    if (tid >= nthreads-WARP_SIZE && wid < nrecv) {
+      recvConn->step = recvConnHead;
+      *(recvConn->opCountLoc) = opCount+1;
       __threadfence_block();
     }
   }
 
   __device__ __forceinline__ void saveSendSync() {
-    if (tid<nsend) {
-      sendConn[tid]->step = sendStep[tid];
-      *(sendConn[tid]->opCountLoc) += 1;
+    if (tid < nsend) {
+      sendConn->step = sendConnHead;
+      *(sendConn->opCountLoc) = opCount+1;
       __threadfence_block();
     }
   }
@@ -376,7 +364,7 @@ class ncclLL128Primitives {
  public:
   __device__ __forceinline__
   ncclLL128Primitives(const int tid, const int nthreads, int* recvPeers, int* sendPeers, struct ncclChannel* channel, struct ncclDevComm* comm, const uint64_t opCount)
-    : comm(comm), tid(tid), nthreads(nthreads), warp(tid/WARP_SIZE), wid(tid%WARP_SIZE), flagThread((tid%8)==7), opCount(opCount), shmem(ncclShmem+(threadIdx.x/WARP_SIZE)*NCCL_LL128_SHMEM_ELEMS_PER_THREAD*WARP_SIZE+2*wid) {
+    : comm(comm), tid(tid), nthreads(nthreads), wid(tid%WARP_SIZE), warp(tid/WARP_SIZE), flagThread((tid%8)==7), opCount(opCount), shmem(ncclShmem+(threadIdx.x/WARP_SIZE)*NCCL_LL128_SHMEM_ELEMS_PER_THREAD*WARP_SIZE+2*wid) {
     // Make sure step is updated before we read it.
     barrier();
 

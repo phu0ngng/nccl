@@ -313,13 +313,15 @@ ncclResult_t netSendProxy(struct ncclProxyArgs* args) {
           struct ncclRecvMem* localMem = resources->useGdr ? resources->devRecvMem : resources->hostRecvMem;
           // Send through network
           int buffSlot = args->tail%NCCL_STEPS;
-          NCCLCHECK(ncclNetIsend(resources->netSendComm, localMem->buff+buffSlot*stepSize, sizesFifo[buffSlot], resources->mhandle, args->requests+buffSlot));
-          if (args->requests[buffSlot] != NULL) {
-            sizesFifo[buffSlot] = -1;
-            // Make sure size is reset to zero before we update the head.
-            __sync_synchronize();
-            args->tail += args->sliceSteps;
-            args->idle = 0;
+          if (sizesFifo[buffSlot] != -1) {
+            NCCLCHECK(ncclNetIsend(resources->netSendComm, localMem->buff+buffSlot*stepSize, sizesFifo[buffSlot], resources->mhandle, args->requests+buffSlot));
+            if (args->requests[buffSlot] != NULL) {
+              sizesFifo[buffSlot] = -1;
+              // Make sure size is reset to zero before we update the head.
+              __sync_synchronize();
+              args->tail += args->sliceSteps;
+              args->idle = 0;
+            }
           }
         }
       }

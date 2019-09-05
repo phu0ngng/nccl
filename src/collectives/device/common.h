@@ -30,14 +30,14 @@ extern __device__ ncclKern_t ncclFuncs[];
 static __device__ void load_parallel(void* dst, void* src, size_t size, int tid) {
   int* d = (int*)dst;
   int* s = (int*)src;
-  // When aggregation is effective, if some threads have aborted inside the LL kernel,
-  // make sure the rest of the threads abort as well
-  exitIfAbortBarrier(0);
   for (int o = tid; o < (size/sizeof(int)); o += blockDim.x) d[o] = s[o];
-  __syncthreads();
 }
-static __device__ void load_coll(struct ncclColl* localColl, struct ncclColl* hostColl, int tid) {
+static __device__ void load_coll(struct ncclColl* localColl, struct ncclColl* hostColl, int tid, struct ncclDevComm* comm) {
+  // Check whether the last operation was aborted and make sure all threads exit
+  int abort = tid == 0 ? *(comm->abortFlag) : 0;
+  exitIfAbortBarrier(abort);
   load_parallel(localColl, hostColl, sizeof(struct ncclColl), tid);
+  __syncthreads();
   if (tid == 0) hostColl->active = 0;
 }
 
@@ -67,7 +67,7 @@ __global__ void NCCL_KERN_NAME(coll, op, dtype)(struct ncclColl firstColl) { \
     c = &firstColl; \
   } else { \
     c = &localColl; \
-    load_coll(c, channel->devCollectives+channel->collFifoHead, tid); \
+    load_coll(c, channel->devCollectives+channel->collFifoHead, tid, comm); \
   } \
   while (1) { \
     if (tid < c->args.nThreads) { \
@@ -86,7 +86,7 @@ __global__ void NCCL_KERN_NAME(coll, op, dtype)(struct ncclColl firstColl) { \
  \
     /* Load next collective operation*/ \
     c = &localColl; /* for bid 0 */ \
-    load_coll(c, channel->devCollectives+nextIndex, tid); \
+    load_coll(c, channel->devCollectives+nextIndex, tid, comm); \
   } \
 }
 #else

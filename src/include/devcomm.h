@@ -44,10 +44,11 @@ union ncclLLFifoLine {
 #define NCCL_LL_SLICE_LINES (NCCL_LL_LINES_PER_THREAD*NCCL_LL_MAX_NTHREADS)
 #define NCCL_LL_BUFF_LINES (NCCL_LL_SLICE_LINES*NCCL_STEPS)
 #define NCCL_LL_BUFF_SIZE (NCCL_LL_BUFF_LINES*sizeof(union ncclLLFifoLine))
-#ifdef DEBUG_LL
-#define NCCL_LL_CLEAN_MASK 0x00000ff8
-#define NCCL_LL_FLAG_MAX   0x00001000
-#define NCCL_LL_FLAG(a) ((uint32_t)(a % NCCL_LL_FLAG_MAX))
+//#define DEBUG_LL_CLEANUP 1
+#ifdef DEBUG_LL_CLEANUP
+#define NCCL_LL_CLEAN_MASK 0x07f8
+#define NCCL_LL_FLAG_MAX   0x1000
+#define NCCL_LL_FLAG(a) ((uint32_t)((a) % NCCL_LL_FLAG_MAX))
 #else
 #define NCCL_LL_CLEAN_MASK 0x7ffffff8
 #define NCCL_LL_FLAG(a) ((uint32_t)(a))

@@ -115,7 +115,7 @@ static int getNthreads(const char* name, int env, int min, int max) {
     } else if (nt > max) {
       WARN("Invalid %s %d (maximum %d).", name, nt, max);
       nt = max;
-    } else if (nt < 2*WARP_SIZE) {
+    } else if (nt < min) {
       WARN("Invalid %s %d (minimum %d).", name, nt, min);
       nt = min;
      }
