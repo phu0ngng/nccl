@@ -24,7 +24,7 @@ if [ "$mode" == "reorder" ]; then
   GPU_REORDER="${GPU_REORDER}0"
   echo $GPU_REORDER
   result=$path/$op.$ngpus
-  mpirun -np 1 --cpus-per-rank $ngpus -x CUDA_VISIBLE_DEVICES=$GPU_REORDER test/perf/${op}_perf -g $ngpus -b 40000000 -e 400000000 -i 40000000 -w 1 -n 5 2>&1 | tee $result.out
+  mpirun -q -np 1 --cpus-per-rank $ngpus -x CUDA_VISIBLE_DEVICES=$GPU_REORDER test/perf/${op}_perf -g $ngpus -b 40000000 -e 400000000 -i 40000000 -w 1 -n 5 2>&1 | tee $result.out
 fi
 
 if [ "$mode" == "all" ]; then
@@ -35,14 +35,14 @@ if [ "$mode" == "all" ]; then
   for dtype in float double half int8 int32 int64 uint8 uint32 uint64 ; do
     echo "Running test/perf/${op}_perf on $ngpus GPUs [$dtype] ..."
     result=$op.$ngpus.$dtype.sum
-    mpirun -np 1 --cpus-per-rank $ngpus test/perf/${op}_perf -t $ngpus -p 1 -d $dtype -o sum -b 64 -e 4194304 -f 256 -w 1 -n 5 2>&1 | tee $path/pow2/$result.out
-    mpirun -np 1 --cpus-per-rank $ngpus test/perf/${op}_perf -t $ngpus -p 1 -d $dtype -o sum -b 63 -e 4357647 -f 263 -w 1 -n 5 2>&1 | tee $path/npow2/$result.out
+    mpirun -q -np 1 --cpus-per-rank $ngpus test/perf/${op}_perf -t $ngpus -p 1 -d $dtype -o sum -b 64 -e 4194304 -f 256 -w 1 -n 5 2>&1 | tee $path/pow2/$result.out
+    mpirun -q -np 1 --cpus-per-rank $ngpus test/perf/${op}_perf -t $ngpus -p 1 -d $dtype -o sum -b 63 -e 4357647 -f 263 -w 1 -n 5 2>&1 | tee $path/npow2/$result.out
   done
   for otype in sum max min prod ; do
     echo "Running test/perf/${op}_perf on $ngpus GPUs [$otype] ..."
     result=$op.$ngpus.float.$otype
-    mpirun -np 1 --cpus-per-rank $ngpus test/perf/${op}_perf -t $ngpus -p 1 -d float -o $otype -b 64 -e 4194304 -f 256 -w 1 -n 5 2>&1 | tee $path/pow2/$result.out
-    mpirun -np 1 --cpus-per-rank $ngpus test/perf/${op}_perf -t $ngpus -p 1 -d float -o $otype -b 63 -e 4357647 -f 263 -w 1 -n 5 2>&1 | tee $path/npow2/$result.out
+    mpirun -q -np 1 --cpus-per-rank $ngpus test/perf/${op}_perf -t $ngpus -p 1 -d float -o $otype -b 64 -e 4194304 -f 256 -w 1 -n 5 2>&1 | tee $path/pow2/$result.out
+    mpirun -q -np 1 --cpus-per-rank $ngpus test/perf/${op}_perf -t $ngpus -p 1 -d float -o $otype -b 63 -e 4357647 -f 263 -w 1 -n 5 2>&1 | tee $path/npow2/$result.out
   done
 fi
 
@@ -52,9 +52,9 @@ if [ "$mode" == "single" ]; then
   path=$resdir/$gpumodel
   mkdir -p $path
   result=$path/$op.$ngpus
-  mpirun -np 1 --cpus-per-rank $ngpus test/perf/${op}_perf -t $ngpus -b 40000 -e 1960000 -i 40000 $extra -w 20 -n 20 2>&1 | tee $result.out
-  mpirun -np 1 --cpus-per-rank $ngpus test/perf/${op}_perf -t $ngpus -p 1 -b 2000000 -e 38000000 -i 2000000 $extra -w 20 -n 20 2>&1 | tee -a $result.out
-  mpirun -np 1 --cpus-per-rank $ngpus test/perf/${op}_perf -g $ngpus -b 40000000 -e 400000000 -i 40000000 $extra -w 5 -n 1 2>&1 | tee -a $result.out
+  mpirun -q -np 1 --cpus-per-rank $ngpus test/perf/${op}_perf -t $ngpus -b 40000 -e 1960000 -i 40000 $extra -w 20 -n 20 2>&1 | tee $result.out
+  mpirun -q -np 1 --cpus-per-rank $ngpus test/perf/${op}_perf -t $ngpus -p 1 -b 2000000 -e 38000000 -i 2000000 $extra -w 20 -n 20 2>&1 | tee -a $result.out
+  mpirun -q -np 1 --cpus-per-rank $ngpus test/perf/${op}_perf -g $ngpus -b 40000000 -e 400000000 -i 40000000 $extra -w 5 -n 1 2>&1 | tee -a $result.out
 fi
 
 if [ "$mode" == "latency" ]; then
@@ -63,8 +63,8 @@ if [ "$mode" == "latency" ]; then
   path=$resdir/$gpumodel
   mkdir -p $path
   result=$path/$op.$ngpus
-  mpirun -np 1 --cpus-per-rank $ngpus test/perf/${op}_perf -t $ngpus -b 32 -e 1K -f 2 -w 20 -n 1000 2>&1 | tee $result.out
-  mpirun -np 1 --cpus-per-rank $ngpus test/perf/${op}_perf -g $ngpus -b 2K -e 64K -f 2 -w 20 -n 500 2>&1 | tee -a $result.out
+  mpirun -q -np 1 --cpus-per-rank $ngpus test/perf/${op}_perf -t $ngpus -b 32 -e 1K -f 2 -w 20 -n 1000 2>&1 | tee $result.out
+  mpirun -q -np 1 --cpus-per-rank $ngpus test/perf/${op}_perf -g $ngpus -b 2K -e 64K -f 2 -w 20 -n 500 2>&1 | tee -a $result.out
 fi
 
 if [ "$mode" == "mpi" ]; then
@@ -73,9 +73,9 @@ if [ "$mode" == "mpi" ]; then
   path=$resdir/$gpumodel
   mkdir -p $path
   result=$path/$op.$ngpus
-  mpirun $mpi_hosts -x NCCL_DEBUG -x NCCL_LAUNCH_MODE -np $ngpus test/perf/${op}_perf -b 40000 -e 1960000 -i 40000 -w 20 -n 20 2>&1 | tee $result.out
-  mpirun $mpi_hosts -x NCCL_DEBUG -x NCCL_LAUNCH_MODE -np $ngpus test/perf/${op}_perf -b 2000000 -e 38000000 -i 2000000  -w 20 -n 5 2>&1 | tee -a $result.out
-  mpirun $mpi_hosts -x NCCL_DEBUG -x NCCL_LAUNCH_MODE -np $ngpus test/perf/${op}_perf -b 40000000 -e 400000000 -i 40000000 -w 5 -n 1 2>&1 | tee -a $result.out
+  mpirun -q $mpi_hosts -x NCCL_DEBUG -x NCCL_LAUNCH_MODE -np $ngpus test/perf/${op}_perf -b 40000 -e 1960000 -i 40000 -w 20 -n 20 2>&1 | tee $result.out
+  mpirun -q $mpi_hosts -x NCCL_DEBUG -x NCCL_LAUNCH_MODE -np $ngpus test/perf/${op}_perf -b 2000000 -e 38000000 -i 2000000  -w 20 -n 5 2>&1 | tee -a $result.out
+  mpirun -q $mpi_hosts -x NCCL_DEBUG -x NCCL_LAUNCH_MODE -np $ngpus test/perf/${op}_perf -b 40000000 -e 400000000 -i 40000000 -w 5 -n 1 2>&1 | tee -a $result.out
 fi
 
 if [ "$mode" == "mpi_latency" ]; then
@@ -84,8 +84,8 @@ if [ "$mode" == "mpi_latency" ]; then
   path=$resdir/$gpumodel
   mkdir -p $path
   result=$path/$op.$ngpus
-  mpirun $mpi_hosts -x NCCL_DEBUG -x NCCL_LAUNCH_MODE -np $ngpus test/perf/${op}_perf -b 32 -e 1K -f 2 -w 20 -n 1000 2>&1 | tee $result.out
-  mpirun $mpi_hosts -x NCCL_DEBUG -x NCCL_LAUNCH_MODE -np $ngpus test/perf/${op}_perf -b 2K -e 64K -f 2 -w 20 -n 500 2>&1 | tee -a $result.out
+  mpirun -q $mpi_hosts -x NCCL_DEBUG -x NCCL_LAUNCH_MODE -np $ngpus test/perf/${op}_perf -b 32 -e 1K -f 2 -w 20 -n 1000 2>&1 | tee $result.out
+  mpirun -q $mpi_hosts -x NCCL_DEBUG -x NCCL_LAUNCH_MODE -np $ngpus test/perf/${op}_perf -b 2K -e 64K -f 2 -w 20 -n 500 2>&1 | tee -a $result.out
 fi
 
 if [ "$mode" == "aggregation" ]; then
@@ -97,7 +97,7 @@ if [ "$mode" == "aggregation" ]; then
     path=$resdir/$gpumodel
     mkdir -p $path
     result=$path/$op.$ngpus
-    mpirun -np 1 --cpus-per-rank $ngpus test/perf/${op}_perf -t $ngpus -b 32 -e 512 -f 2 -w 20 -n $n -m $m 2>&1 | tee $result.out
+    mpirun -q -np 1 --cpus-per-rank $ngpus test/perf/${op}_perf -t $ngpus -b 32 -e 512 -f 2 -w 20 -n $n -m $m 2>&1 | tee $result.out
   done
 fi
 
@@ -107,9 +107,9 @@ if [ "$mode" == "deadlock" ]; then
   path=$resdir/$gpumodel
   mkdir -p $path
   result=$path/$op.$ngpus
-  mpirun -np 1 --cpus-per-rank $ngpus -mca mpi_leave_pinned 0 -mca btl ^openib test/perf/${op}_perf -t $ngpus -k 1 -w 0 -n 1 2>&1 | tee $result.out
-  mpirun -np 1 --cpus-per-rank $ngpus -mca mpi_leave_pinned 0 -mca btl ^openib test/perf/${op}_perf -g $ngpus -k 1 -w 0 -n 1 2>&1 | tee -a $result.out
-  mpirun -np $ngpus --cpus-per-rank 1 -mca mpi_leave_pinned 0 -mca btl ^openib test/perf/${op}_perf -k 1 -w 0 -n 1 2>&1 | tee -a $result.out
+  mpirun -q -np 1 --cpus-per-rank $ngpus -mca mpi_leave_pinned 0 -mca btl ^openib test/perf/${op}_perf -t $ngpus -k 1 -w 0 -n 1 2>&1 | tee $result.out
+  mpirun -q -np 1 --cpus-per-rank $ngpus -mca mpi_leave_pinned 0 -mca btl ^openib test/perf/${op}_perf -g $ngpus -k 1 -w 0 -n 1 2>&1 | tee -a $result.out
+  mpirun -q -np $ngpus --cpus-per-rank 1 -mca mpi_leave_pinned 0 -mca btl ^openib test/perf/${op}_perf -k 1 -w 0 -n 1 2>&1 | tee -a $result.out
 fi
 }
 

@@ -21,6 +21,9 @@
 #include <errno.h>
 #include <assert.h>
 #include <dlfcn.h>
+#include <sys/types.h>
+#include <sys/stat.h>
+#include <unistd.h>
 
 #define STR2(v) #v
 #define STR(v) STR2(v)
@@ -83,14 +86,15 @@ cleanup:
 }
 
 ncclResult_t initNet() {
-  // Always initialize sockets as we use it for bootstrap
-  NCCLCHECK(initNet(&ncclNetSocket));
+  // Always initialize bootstrap network
+  NCCLCHECK(bootstrapNetInit());
 
   NCCLCHECK(initNetPlugin(&ncclNet));
   if (ncclNet != NULL) return ncclSuccess;
   if (initNet(&ncclNetIb) == ncclSuccess) {
     ncclNet = &ncclNetIb;
   } else {
+    NCCLCHECK(initNet(&ncclNetSocket));
     ncclNet = &ncclNetSocket;
   }
   return ncclSuccess;
@@ -433,12 +437,19 @@ static void showVersion() {
   }
 }
 
-static ncclResult_t fillInfo(struct ncclPeerInfo* info, int rank) {
+static ncclResult_t fillInfo(struct ncclPeerInfo* info, int rank, uint64_t commHash) {
   info->rank = rank;
   CUDACHECK(cudaGetDevice(&info->cudaDev));
   NCCLCHECK(getNvmlDevice(info->cudaDev, &info->nvmlDev))
-  info->hostHash=getHostHash();
-  info->pidHash=getPidHash();
+  info->hostHash=getHostHash()+commHash;
+  info->pidHash=getPidHash()+commHash;
+
+  // Get the device MAJOR:MINOR of /dev/shm so we can use that
+  // information to decide whether we can use SHM for inter-process
+  // communication in a container environment
+  struct stat statbuf;
+  SYSCHECK(stat("/dev/shm", &statbuf), "stat");
+  info->shmDev = statbuf.st_dev;
 
   // Get PCI Bus Id. We need to get the bus ID through CUDA first, since the
   // cudaDev is a CUDA runtime dev number which could be different from the
@@ -649,7 +660,8 @@ static ncclResult_t initTransportsRank(struct ncclComm* comm, ncclUniqueId* comm
 
   int rank = comm->rank;
   int nranks = comm->nRanks;
-  TRACE(NCCL_INIT, "rank %d nranks %d - BEGIN", rank, nranks);
+  uint64_t commHash = getHash(commId->internal, NCCL_UNIQUE_ID_BYTES);
+  TRACE(NCCL_INIT, "comm %p, commHash %lx, rank %d nranks %d - BEGIN", comm, commHash, rank, nranks);
   NCCLCHECK(bootstrapInit(commId, rank, nranks, &comm->bootstrap));
 
   // AllGather1 - begin
@@ -661,7 +673,7 @@ static ncclResult_t initTransportsRank(struct ncclComm* comm, ncclUniqueId* comm
   NCCLCHECK(ncclCalloc(&allGather1Data, nranks));
   allGather1Data[rank].comm = comm;
   struct ncclPeerInfo* myInfo = &allGather1Data[rank].peerInfo;
-  NCCLCHECK(fillInfo(myInfo, rank));
+  NCCLCHECK(fillInfo(myInfo, rank, commHash));
   NCCLCHECK(bootstrapAllGather(comm->bootstrap, allGather1Data, sizeof(*allGather1Data)));
 
   NCCLCHECK(ncclCalloc(&comm->peerInfo, nranks));
@@ -839,10 +851,12 @@ static ncclResult_t getCpuGpuAffinity(int cudaDev, cpu_set_t* mask) {
   path[PATH_MAX-1] = '\0';
   int fd;
   SYSCHECKVAL(open(path, O_RDONLY), "open", fd);
-  char affinityStr[sizeof(cpu_set_t)*2];
+  char affinityStr[sizeof(cpu_set_t)*2 + 1];
   int r = read(fd, affinityStr, sizeof(cpu_set_t)*2);
-  if (r > 0)
+  if (r > 0) {
+    affinityStr[r] = '\0';
     NCCLCHECK(ncclStrToCpuset(affinityStr, mask));
+  }
   close(fd);
   free(cudaPath);
   return ncclSuccess;
