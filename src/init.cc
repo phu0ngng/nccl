@@ -924,30 +924,35 @@ cleanup:
 
 NCCL_API(ncclResult_t, ncclCommInitRank, ncclComm_t* newcomm, int nranks, ncclUniqueId commId, int myrank);
 ncclResult_t ncclCommInitRank(ncclComm_t* newcomm, int nranks, ncclUniqueId commId, int myrank) {
+  ncclResult_t res;
   char* env = getenv("NCCL_COMM_ID");
   if (env && myrank == 0) {
-    NCCLCHECK(bootstrapCreateRoot(&commId, true));
+    NCCLCHECKGOTO(bootstrapCreateRoot(&commId, true), res, end);
   }
 
-  NCCLCHECK(ncclInit());
+  NCCLCHECKGOTO(ncclInit(), res, end);
   if (myrank == 0) showVersion();
 
   // Make sure the CUDA runtime is initialized.
-  CUDACHECK(cudaFree(NULL));
+  CUDACHECKGOTO(cudaFree(NULL), res, end);
 
-  NCCLCHECK(PtrCheck(newcomm, "CommInitRank", "newcomm"));
+  NCCLCHECKGOTO(PtrCheck(newcomm, "CommInitRank", "newcomm"), res, end);
   if (nranks < 1 || myrank < 0 || myrank >= nranks) {
     WARN("Invalid rank requested : %d/%d", myrank, nranks);
-    return ncclInvalidArgument;
+    res = ncclInvalidArgument;
+    goto end;
   }
 
   if (ncclAsyncMode()) {
     int cudaDev;
-    CUDACHECK(cudaGetDevice(&cudaDev));
-    return ncclAsyncInit(ncclCommInitRankSync, cudaDev, newcomm, nranks, commId, myrank);
+    CUDACHECKGOTO(cudaGetDevice(&cudaDev), res, end);
+    NCCLCHECKGOTO(ncclAsyncInit(ncclCommInitRankSync, cudaDev, newcomm, nranks, commId, myrank), res, end);
   } else {
-    return ncclCommInitRankSync(newcomm, nranks, commId, myrank);
+    NCCLCHECKGOTO(ncclCommInitRankSync(newcomm, nranks, commId, myrank), res, end);
   }
+end:
+  if (ncclAsyncMode()) return ncclAsyncErrCheck(res);
+  else return res;
 }
 
 NCCL_API(ncclResult_t, ncclCommInitAll, ncclComm_t* comms, int ndev, const int* devlist);
@@ -962,8 +967,9 @@ ncclResult_t ncclCommInitAll(ncclComm_t* comms, int ndev, const int* devlist) {
   NCCLCHECK(ncclGetUniqueId(&uniqueId));
   NCCLCHECK(ncclGroupStart());
   for (int i=0; i<ndev; i++) {
-    CUDACHECK(cudaSetDevice(devlist ? devlist[i] : i));
-    NCCLCHECK(ncclCommInitRank(comms+i, ndev, uniqueId, i));
+    // Ignore return codes .. we need to call ncclGroupEnd to clean up anyway
+    cudaSetDevice(devlist ? devlist[i] : i);
+    ncclCommInitRank(comms+i, ndev, uniqueId, i);
   }
   NCCLCHECK(ncclGroupEnd());
   return ncclSuccess;

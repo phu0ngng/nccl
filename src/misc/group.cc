@@ -73,7 +73,7 @@ void* ncclAsyncThreadMain(void* args_) {
 ncclResult_t ncclAsyncInit(ncclInitFunc_t func, int cudaDev, ncclComm_t* newcomm, int ndev, ncclUniqueId commId, int myrank) {
   if (ncclGroupIndex >= MAX_ASYNC_OPS) {
     WARN("Too many async operations in progress, max is %d", MAX_ASYNC_OPS);
-    return ncclAsyncErrCheck(ncclInternalError);
+    return ncclAsyncErrCheck(ncclInvalidUsage);
   }
   int index = ncclGroupIndex++;
   struct ncclAsyncArgs* args = ncclGroupArgs+index;
@@ -84,8 +84,6 @@ ncclResult_t ncclAsyncInit(ncclInitFunc_t func, int cudaDev, ncclComm_t* newcomm
   args->init.ndev = ndev;
   memcpy(&args->init.commId, &commId, sizeof(commId));
   args->init.myrank = myrank;
-  // We need to use threads for Init
-  pthread_create(ncclGroupThreads+index, NULL, ncclAsyncThreadMain, args);
   return ncclSuccess;
 }
 
@@ -97,7 +95,7 @@ ncclResult_t ncclAsyncColl(ncclComm_t comm) {
   }
   if (ncclGroupIndex >= MAX_ASYNC_OPS) {
     WARN("Too many async operations in progress, max is %d", MAX_ASYNC_OPS);
-    return ncclAsyncErrCheck(ncclInternalError);
+    return ncclAsyncErrCheck(ncclInvalidUsage);
   }
   ncclGroupIndex++;
   args->funcType = ASYNC_FUNC_COLL;
@@ -123,6 +121,14 @@ ncclResult_t ncclGroupEnd() {
 
   ncclResult_t ret = ncclGroupError;
   if (ret != ncclSuccess) goto group_cleanup;
+
+  /* Launch async ncclCommInitRank */
+  for (int i=0; i<ncclGroupIndex; i++) {
+    struct ncclAsyncArgs* args = ncclGroupArgs+i;
+    if (args->funcType == ASYNC_FUNC_INIT) {
+      pthread_create(ncclGroupThreads+i, NULL, ncclAsyncThreadMain, args);
+    }
+  }
 
   /* Collectives are done in three steps :
    * 1. Barrier Check In. Only the last call may call cudaLaunchKernel[cooperative]

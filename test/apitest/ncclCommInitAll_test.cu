@@ -1,21 +1,13 @@
 class ncclCommInitAll_test : public ::testing::Test {
   protected:
     ncclComm_t* comms = NULL;
-    int* devList = NULL;
     int nVis = 0;
     virtual void SetUp() {
+        (void) setenv("NCCL_CHECK_POINTERS", "1", 0); // API tests expect this behaviour (ncclCommInitAll)
         ASSERT_EQ(cudaSuccess, cudaGetDeviceCount(&nVis));
         comms = (ncclComm_t*)calloc(nVis, sizeof(ncclComm_t));
-        devList = (int*)calloc(nVis, sizeof(int));
-        for (int i = 0; i < nVis; i++) {
-            devList[i] = i;
-        }
     };
     virtual void TearDown() {
-        if (NULL != devList) {
-            free(devList);
-            devList = NULL;
-        }
         if (NULL != comms) {
             for (int i = 0; i < nVis; ++i) {
                 ASSERT_EQ(ncclSuccess, ncclCommDestroy(comms[i]));
@@ -27,33 +19,45 @@ class ncclCommInitAll_test : public ::testing::Test {
     };
 };
 TEST_F(ncclCommInitAll_test, basic) {
-    ASSERT_EQ(ncclSuccess, ncclCommInitAll(comms, nVis, devList));
+    ASSERT_EQ(ncclSuccess, ncclCommInitAll(comms, nVis, NULL));
+};
+TEST_F(ncclCommInitAll_test, devListRev) {
+    int* devList = (int*)calloc(nVis, sizeof(int));
+    for (int i=0; i<nVis; i++) {
+      devList[i] = nVis-1-i;
+    }
+    ASSERT_EQ(ncclSuccess, ncclCommInitAll(comms, nVis, NULL));
+    free(devList);
 };
 // 1.
 TEST_F(ncclCommInitAll_test, comms_null) {
-    ASSERT_EQ(ncclInvalidArgument, ncclCommInitAll(NULL, nVis, devList));
+    ASSERT_EQ(ncclInvalidArgument, ncclCommInitAll(NULL, nVis, NULL));
 };
 // 2.
 TEST_F(ncclCommInitAll_test, ndev_negative) {
-    ASSERT_EQ(ncclInvalidArgument, ncclCommInitAll(comms, -1, devList));
+    ASSERT_EQ(ncclInvalidArgument, ncclCommInitAll(comms, -1, NULL));
 };
-TEST_F(ncclCommInitAll_test, ndev_toomany_and_devList_allZero) {
-    nVis = 64;
-    comms = (ncclComm_t*)calloc(nVis, sizeof(ncclComm_t));
-    devList = (int*)calloc(nVis, sizeof(int));
+TEST_F(ncclCommInitAll_test, ndev_toomany) {
+    comms = (ncclComm_t*)calloc(256, sizeof(ncclComm_t));
     ASSERT_EQ(ncclInvalidUsage,
-              ncclCommInitAll(comms, nVis, devList));
+              ncclCommInitAll(comms, 256, NULL));
 };
-// 3.
 TEST_F(ncclCommInitAll_test, devList_null) {
     ASSERT_EQ(ncclSuccess, ncclCommInitAll(comms, nVis, NULL));
 };
+TEST_F(ncclCommInitAll_test, devList_duplicate) {
+    comms = (ncclComm_t*)calloc(nVis, sizeof(ncclComm_t));
+    int* devList = (int*)calloc(nVis, sizeof(int));
+    ASSERT_EQ(ncclInvalidUsage,
+              ncclCommInitAll(comms, nVis, devList));
+    free(devList);
+};
 TEST_F(ncclCommInitAll_test, devList_nonexist) {
-    int* badDevList = (int*)calloc(nVis, sizeof(int));
+    int* devList = (int*)calloc(nVis, sizeof(int));
     for (int i = 0; i < nVis; ++i) {
-        badDevList[i] = 1000 + i;
+        devList[i] = 1000 + i;
     }
-    ASSERT_EQ(ncclUnhandledCudaError, ncclCommInitAll(comms, nVis, badDevList));
-    free(badDevList);
+    ASSERT_EQ(ncclInvalidUsage, ncclCommInitAll(comms, nVis, devList));
+    free(devList);
 };
 // EOF
