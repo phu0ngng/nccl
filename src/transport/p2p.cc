@@ -58,6 +58,7 @@ ncclResult_t p2pCanConnect(int* ret, struct ncclTopoSystem* topo, struct ncclTop
   if (ncclParamP2pDisable() == 1) p2pLevel = 0;
   if (ncclParamP2pLevel() != -2) p2pLevel = ncclParamP2pLevel();
 
+  // Disable P2P
   *ret = 0;
 
   if (p2pLevel == 0) return ncclSuccess;
@@ -131,7 +132,8 @@ ncclResult_t p2pSendSetup(struct ncclTopoSystem* topo, struct ncclTopoGraph* gra
   struct p2pSendResources* resources;
   NCCLCHECK(ncclCalloc(&resources, 1));
   send->transportResources = resources;
-  const int sendSize = sizeof(struct ncclSendMem);
+  int sendSize = sizeof(struct ncclSendMem);
+  ALIGN_SIZE(sendSize, CUDA_IPC_MIN);
   NCCLCHECK(ncclCudaCalloc((char**)&resources->devMem, sendSize));
 
   struct p2pConnectInfo info;
@@ -180,7 +182,8 @@ ncclResult_t p2pRecvSetup(struct ncclTopoSystem* topo, struct ncclTopoGraph* gra
   struct p2pRecvResources* resources;
   NCCLCHECK(ncclCalloc(&resources, 1));
   recv->transportResources = resources;
-  const int recvSize = offsetof(struct ncclRecvMem, buff)+buffSize;
+  int recvSize = offsetof(struct ncclRecvMem, buff)+buffSize;
+  ALIGN_SIZE(recvSize, CUDA_IPC_MIN);
   NCCLCHECK(ncclCudaCalloc((char**)&resources->devMem, recvSize));
 
   struct p2pConnectInfo info;

@@ -42,7 +42,7 @@ static inline const char *socketToString(struct sockaddr *saddr, char *buf) {
   return buf;
 }
 
-static inline short socketToPort(struct sockaddr *saddr) {
+static inline uint16_t socketToPort(struct sockaddr *saddr) {
   return ntohs(saddr->sa_family == AF_INET ? ((struct sockaddr_in*)saddr)->sin_port : ((struct sockaddr_in6*)saddr)->sin6_port);
 }
 
@@ -66,6 +66,9 @@ static int findInterfaces(const char* prefixList, char* names, union socketAddre
 #endif
   struct netIf userIfs[MAX_IFS];
   bool searchNot = prefixList && prefixList[0] == '^';
+  if (searchNot) prefixList++;
+  bool searchExact = prefixList && prefixList[0] == '=';
+  if (searchExact) prefixList++;
   int nUserIfs = parseStringList(prefixList, userIfs, MAX_IFS);
 
   int found = 0;
@@ -92,7 +95,7 @@ static int findInterfaces(const char* prefixList, char* names, union socketAddre
     }
 
     // check against user specified interfaces
-    if (!(matchIfList(interface->ifa_name, -1, userIfs, nUserIfs) ^ searchNot)) {
+    if (!(matchIfList(interface->ifa_name, -1, userIfs, nUserIfs, searchExact) ^ searchNot)) {
       continue;
     }
 
@@ -161,7 +164,10 @@ static bool matchSubnet(struct ifaddrs local_if, union socketAddress remote) {
 }
 
 static int findInterfaceMatchSubnet(char* ifNames, union socketAddress* localAddrs, union socketAddress remoteAddr, int ifNameMaxSize, int maxIfs) {
-  char line[1024], line_a[1024];
+#ifdef ENABLE_TRACE
+  char line[1024];
+#endif
+  char line_a[1024];
   int found = 0;
   struct ifaddrs *interfaces, *interface;
   getifaddrs(&interfaces);
@@ -185,7 +191,7 @@ static int findInterfaceMatchSubnet(char* ifNames, union socketAddress* localAdd
     // Store the interface name
     strncpy(ifNames+found*ifNameMaxSize, interface->ifa_name, ifNameMaxSize);
 
-    INFO(NCCL_INIT|NCCL_NET,"NET : Found interface %s:%s in the same subnet as remote address %s", interface->ifa_name, socketToString(&(localAddrs[found].sa), line), socketToString(&(remoteAddr.sa), line_a));
+    TRACE(NCCL_INIT|NCCL_NET,"NET : Found interface %s:%s in the same subnet as remote address %s", interface->ifa_name, socketToString(&(localAddrs[found].sa), line), socketToString(&(remoteAddr.sa), line_a));
     found++;
     if (found == maxIfs) break;
   }
@@ -323,7 +329,11 @@ static ncclResult_t createListenSocket(int *fd, union socketAddress *localAddr) 
   if (socketToPort(&localAddr->sa)) {
     // Port is forced by env. Make sure we get the port.
     int opt = 1;
+#if defined(SO_REUSEPORT)
     SYSCHECK(setsockopt(sockfd, SOL_SOCKET, SO_REUSEADDR | SO_REUSEPORT, &opt, sizeof(opt)), "setsockopt");
+#else
+    SYSCHECK(setsockopt(sockfd, SOL_SOCKET, SO_REUSEADDR, &opt, sizeof(opt)), "setsockopt");
+#endif
   }
 
   // localAddr port should be 0 (Any port)
@@ -390,12 +400,12 @@ retry:
 
 #define NCCL_SOCKET_SEND 0
 #define NCCL_SOCKET_RECV 1
-static ncclResult_t socketProgress(int op, int fd, void* ptr, int size, int* offset) {
+static ncclResult_t socketProgressOpt(int op, int fd, void* ptr, int size, int* offset, int block) {
   int bytes = 0;
   char* data = (char*)ptr;
   do {
-    if (op == NCCL_SOCKET_RECV) bytes = recv(fd, data+(*offset), size-(*offset), MSG_DONTWAIT);
-    if (op == NCCL_SOCKET_SEND) bytes = send(fd, data+(*offset), size-(*offset), MSG_DONTWAIT);
+    if (op == NCCL_SOCKET_RECV) bytes = recv(fd, data+(*offset), size-(*offset), block ? 0 : MSG_DONTWAIT);
+    if (op == NCCL_SOCKET_SEND) bytes = send(fd, data+(*offset), size-(*offset), block ? 0 : MSG_DONTWAIT);
     if (op == NCCL_SOCKET_RECV && bytes == 0) {
       WARN("Net : Connection closed by remote peer");
       return ncclSystemError;
@@ -413,9 +423,13 @@ static ncclResult_t socketProgress(int op, int fd, void* ptr, int size, int* off
   return ncclSuccess;
 }
 
+static ncclResult_t socketProgress(int op, int fd, void* ptr, int size, int* offset) {
+  return socketProgressOpt(op, fd, ptr, size, offset, 0);
+}
+
 static ncclResult_t socketWait(int op, int fd, void* ptr, int size, int* offset) {
   while (*offset < size)
-    NCCLCHECK(socketProgress(op, fd, ptr, size, offset));
+    NCCLCHECK(socketProgressOpt(op, fd, ptr, size, offset, 1));
   return ncclSuccess;
 }
 
