@@ -152,6 +152,16 @@ class ncclPrimitives {
     return DIRECTSEND && sendDirectBuff[i] ? sendDirectBuff[i]+directOffset : sendPtr(i);
   }
 
+  template <int DIRECTRECV>
+  inline __device__ int directRecvInc(int i, int directInc, int sliceInc) {
+    return DIRECTRECV && recvDirectBuff[i] ? directInc : sliceInc;
+  }
+
+  template <int DIRECTSEND>
+  inline __device__ int directSendInc(int i, int directInc, int sliceInc) {
+    return DIRECTSEND && sendDirectBuff[i] ? directInc : sliceInc;
+  }
+
   template <int DIRECTRECV, int DIRECTSEND, int RECV, int SEND, int SRC, int DST>
   inline __device__ void
   GenericOp(const T* srcPtr, T* dstPtr, int nelem, int directOffset) {
@@ -204,10 +214,10 @@ class ncclPrimitives {
         }
         if (RECV) postRecv();
       }
-      if (SRC) srcs[0] += realSize;
-      for (int i=0; i<RECV*NRECV; i++) srcs[SRC+i] += sliceSize;
-      if (DST) dsts[0] += realSize;
-      for (int i=0; i<SEND*NSEND; i++) dsts[DST+i] += sliceSize;
+      srcs[0] += SRC ? realSize : directRecvInc<DIRECTRECV>(0, realSize, sliceSize);
+      for (int i=1-SRC; i<RECV*NRECV; i++) srcs[SRC+i] += sliceSize;
+      dsts[0] += DST ? realSize : directSendInc<DIRECTSEND>(0, realSize, sliceSize);
+      for (int i=1-DST; i<SEND*NSEND; i++) dsts[DST+i] += directSendInc<DIRECTSEND>(i, realSize, sliceSize);
       offset += realSize;
     }
   }
