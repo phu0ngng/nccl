@@ -236,7 +236,7 @@ static ncclResult_t ncclSetThresholds(struct ncclComm* comm, int minCompCap, int
         offset = strlen(line);
       }
     }
-    INFO(NCCL_INIT, "%s", line);
+    INFO(NCCL_TUNING, "%s", line);
     for (int c=0; c<NCCL_NUM_FUNCTIONS; c++) {
       sprintf(line, "%13s |", funcStr[c]);
       offset = strlen(line);
@@ -246,7 +246,7 @@ static ncclResult_t ncclSetThresholds(struct ncclComm* comm, int minCompCap, int
           offset = strlen(line);
         }
       }
-      INFO(NCCL_INIT, "%s", line);
+      INFO(NCCL_TUNING, "%s", line);
     }
   }
 
