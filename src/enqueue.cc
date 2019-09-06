@@ -258,6 +258,8 @@ static ncclResult_t getAlgoInfo(struct ncclInfo* info) {
     return ncclInternalError;
   }
   //if (comm->rank == 0) INFO(NCCL_INIT, "%ld Bytes -> Algo %d proto %d time %d", info->nBytes, info->algorithm, info->protocol, minTime);
+  TRACE(NCCL_INIT, "%ld Bytes -> Algo %d proto %d time %d", info->nBytes, info->algorithm, info->protocol, minTime);
+
   int nc = comm->nChannels;
   int nt = comm->maxThreads[info->protocol];
   int threadThreshold = comm->threadThresholds[info->algorithm][info->protocol];

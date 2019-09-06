@@ -771,7 +771,7 @@ static ncclResult_t initTransportsRank(struct ncclComm* comm, ncclUniqueId* comm
 
   // AllGather3 - end
 
-  TRACE(NCCL_INIT, "rank %d nranks %d - BUILT %d TREES/RINGS", rank, nranks, nChannels);
+  TRACE(NCCL_INIT, "rank %d nranks %d - BUILT %d TREES/RINGS", rank, nranks, comm->nChannels);
 
   NCCLCHECK(ncclSetThresholds(comm, minCompCap, maxCompCap, &treeGraph, &ringGraph));
 
