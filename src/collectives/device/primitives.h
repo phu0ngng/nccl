@@ -167,7 +167,7 @@ class ncclPrimitives {
   GenericOp(const T* srcPtr, T* dstPtr, int nelem, int directOffset) {
     int offset = 0;
     int sliceSize = stepSize*SLICESTEPS;
-    int dataSize = max(DIVUP(nelem, SLICESPERCHUNK), sliceSize/32);
+    int dataSize = max(DIVUP(nelem, 16*SLICESPERCHUNK)*16, sliceSize/32);
 
     const T* srcs[RECV*NRECV+SRC];
     srcs[0] = SRC ? srcPtr : directRecvPtr<DIRECTRECV>(0, directOffset);
