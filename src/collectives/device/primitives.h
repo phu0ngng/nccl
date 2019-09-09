@@ -91,11 +91,11 @@ class ncclPrimitives {
   uint32_t spins = 0;
   uint32_t abort = 0;
 
-  inline __device__ int checkAbort(struct ncclConnInfo* conn) {
+  inline __device__ int checkAbort(int i, int send) {
     spins++;
     if (abort == 0 && spins == SPINS_BEFORE_CHECK_ABORT) {
       abort = *(comm->abortFlag);
-      checkMismatch(conn);
+      if (wid == i) checkMismatch(send ? sendConn : recvConn);
       spins = 0;
     }
     return abort;
@@ -107,7 +107,7 @@ class ncclPrimitives {
     if (sendConnHeadPtr) {
       while (sendConnHeadCache + NCCL_STEPS < sendConnHead + SLICESTEPS) {
         sendConnHeadCache = *sendConnHeadPtr;
-        if (checkAbort(sendConn)) break;
+        if (checkAbort(wid, 1)) break;
       }
       if (sendConnFifoPtr) {
         sendConnFifoPtr[sendConnHead%NCCL_STEPS] = nbytes;
@@ -122,7 +122,7 @@ class ncclPrimitives {
     if (recvConnTailPtr) {
       while (recvConnTailCache < recvConnTail + SLICESTEPS) {
         recvConnTailCache = *recvConnTailPtr;
-        if (checkAbort(recvConn)) break;
+        if (checkAbort(wid, 0)) break;
       }
       recvConnTail += SLICESTEPS;
     }

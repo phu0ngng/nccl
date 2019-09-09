@@ -69,11 +69,11 @@ class ncclLL128Primitives {
   uint32_t spins = 0;
   uint32_t abort = 0;
 
-  inline __device__ int checkAbort(struct ncclConnInfo* conn) {
+  inline __device__ int checkAbort(int i, int send) {
     spins++;
     if (abort == 0 && spins == SPINS_BEFORE_CHECK_ABORT) {
       abort = *(comm->abortFlag);
-      checkMismatch(conn);
+      if (wid == i) checkMismatch(send ? sendConn : recvConn);
       spins = 0;
     }
     return abort;
@@ -85,7 +85,7 @@ class ncclLL128Primitives {
     if (sendConnHeadPtr) {
       while (sendConnHeadCache + NCCL_STEPS < sendConnHead + 1) {
         sendConnHeadCache = *sendConnHeadPtr;
-        if (checkAbort(sendConn)) break;
+        if (checkAbort(wid, 1)) break;
       }
       if (sendConnFifoPtr) {
         sendConnFifoPtr[sendConnHead%NCCL_STEPS] = nbytes;
@@ -192,7 +192,7 @@ class ncclLL128Primitives {
           load128(ptr+u*WARP_SIZE, v0, v1);
           needReload |= flagThread && (v1 != flag);
         }
-        if (checkAbort(recvConn)) break;
+        if (checkAbort(0, 0)) break;
       } while (__any_sync(WARP_MASK, needReload));
       #pragma unroll
       for (int u=0; u<ELEMS_PER_THREAD; u+=2) {
@@ -212,7 +212,7 @@ class ncclLL128Primitives {
             load128(ptr+u*WARP_SIZE, v0, v1);
             needReload |= flagThread && (v1 != flag);
           }
-          if (checkAbort(recvConn)) break;;
+          if (checkAbort(i, 0)) break;;
         } while (__any_sync(WARP_MASK, needReload));
         #pragma unroll
         for (int u=0; u<ELEMS_PER_THREAD; u+=2) {

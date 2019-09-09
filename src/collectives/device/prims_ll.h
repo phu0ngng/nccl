@@ -49,11 +49,11 @@ class ncclLLPrimitives {
   uint32_t spins = 0;
   uint32_t abort = 0;
 
-  inline __device__ int checkAbort(struct ncclConnInfo* conn) {
+  inline __device__ int checkAbort(int i, int send) {
     spins++;
     if (abort == 0 && spins == SPINS_BEFORE_CHECK_ABORT) {
       abort = *(comm->abortFlag);
-      checkMismatch(conn);
+      if (wid == i) checkMismatch(send ? sendConn : recvConn);
       spins = 0;
     }
     return abort;
@@ -65,7 +65,7 @@ class ncclLLPrimitives {
     if (sendConnHeadPtr) {
       while (sendConnHeadCache + NCCL_STEPS < sendConnHead + 1) {
         sendConnHeadCache = *sendConnHeadPtr;
-        if (checkAbort(sendConn)) break;
+        if (checkAbort(wid, 1)) break;
       }
       if (sendConnFifoPtr) {
         int size = ((sendConnHead & NCCL_LL_CLEAN_MASK) == NCCL_LL_CLEAN_MASK) ? NCCL_LL_SLICE_LINES*sizeof(union ncclLLFifoLine) : nbytes;
@@ -101,7 +101,7 @@ class ncclLLPrimitives {
     mismatch = 0;
     do {
       asm volatile("ld.volatile.global.v4.u32 {%0,%1,%2,%3}, [%4];" : "=r"(data1), "=r"(flag1), "=r"(data2), "=r"(flag2) : "l"(&src->i4));
-      if (checkAbort(recvConn)) break;
+      if (checkAbort(i, 0)) break;
     } while ((flag1 != flag) || (flag2 != flag));
     uint64_t val64 = data1 + (((uint64_t)data2) << 32);
     return val64;
