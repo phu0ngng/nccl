@@ -27,14 +27,14 @@
 #define CPU 3 // Actually NUMA domains
 #define NIC 4
 #define NET 5
-static const char* topoNodeTypeStr[] = { "GPU", "PCI", "NVS", "CPU", "NIC", "NET" };
+extern const char* topoNodeTypeStr[];
 
 #define LINK_LOC 0
 #define LINK_NVL 1
 #define LINK_PCI 2
 #define LINK_QPI 3
 #define LINK_NET 4
-static const char* topoLinkTypeStr[] = { "LOC", "NVL", "PCI", "QPI", "NET" };
+extern const char* topoLinkTypeStr[];
 
 struct ncclTopoNode;
 struct ncclTopoLink {

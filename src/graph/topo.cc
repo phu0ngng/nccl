@@ -18,6 +18,9 @@
 
 const char* pathDists[] = { "PIX", "PXB", "PHB", "NODE", "SYS" };
 
+const char* topoNodeTypeStr[] = { "GPU", "PCI", "NVS", "CPU", "NIC", "NET" };
+const char* topoLinkTypeStr[] = { "LOC", "NVL", "PCI", "QPI", "NET" };
+
 /******************************************************************/
 /******************* Graph Creation Functions *********************/
 /******************************************************************/
