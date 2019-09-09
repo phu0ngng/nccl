@@ -155,8 +155,9 @@ __device__ void ncclAllReduceRingLLKernel(struct CollectiveArgs* args) {
   //const int rank = comm->rank;
   const int nranks = comm->nRanks;
   ssize_t chunkSize = NCCL_LL_SLICE_LINES * sizeof(uint64_t) / sizeof(T);
-  const ssize_t loopSize = args->nChannels*nranks*chunkSize;
   const ssize_t minChunkSize = nthreads * (sizeof(uint64_t)) / sizeof(T);
+
+  const ssize_t loopSize = args->nChannels*nranks*chunkSize;
 
   // Compute pointers
   const T * __restrict__ thisInput = (const T*)args->ThisInput;

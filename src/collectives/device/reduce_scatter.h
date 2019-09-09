@@ -19,7 +19,7 @@ __device__ void ncclReduceScatterRingKernel(struct CollectiveArgs* args) {
   const ssize_t size = args->N;
   const int nranks = comm->nRanks;
   const int stepSize = channel->buffSize / (sizeof(T)*NCCL_STEPS);
-  const int chunkSize = stepSize * ALLREDUCE_CHUNKSTEPS;
+  const int chunkSize = stepSize * REDUCESCATTER_CHUNKSTEPS;
   const ssize_t loopSize = args->nChannels*(ssize_t)chunkSize;
 
   // Compute pointers
@@ -122,8 +122,68 @@ __device__ void ncclReduceScatterRingLLKernel(struct CollectiveArgs* args) {
 template<int UNUSED, class FUNC, typename T>
 __device__ void ncclReduceScatterTreeLLKernel(struct CollectiveArgs* args) { }
 
+#if (__CUDA_ARCH__ != 700)
 template<int UNUSED, class FUNC, typename T>
 __device__ void ncclReduceScatterRingLL128Kernel(struct CollectiveArgs* args) { }
+#else
+#include "prims_ll128.h"
+template<int UNUSED, class FUNC, typename T>
+__device__ void ncclReduceScatterRingLL128Kernel(struct CollectiveArgs* args) {
+  const int tid = threadIdx.x;
+  const int bid = args->bid;
+  const int nthreads = args->nThreads;
+  struct ncclDevComm* comm = args->comm;
+  struct ncclChannel* channel = comm->channels+blockIdx.x;
+  struct ncclRing* ring = &channel->ring;
+
+  ncclLL128Primitives<T, FUNC, 1, 1> LLprims(tid, nthreads, &ring->prev, &ring->next, channel, comm, args->opCount);
+
+  const ssize_t size = args->N;
+  //const int rank = comm->rank;
+  const int nranks = comm->nRanks;
+  ssize_t chunkSize = (NCCL_LL128_ELEMS_PER_THREAD*nthreads*NCCL_LL128_DATAELEMS*sizeof(uint64_t))/(NCCL_LL128_LINEELEMS*sizeof(T));
+  // We should not need the final /2 but it makes performance much, much smoother. Might be a bug somewhere.
+  const ssize_t minChunkSize = (NCCL_LL128_SHMEM_ELEMS_PER_THREAD*nthreads*NCCL_LL128_DATAELEMS*sizeof(uint64_t))/(NCCL_LL128_LINEELEMS*sizeof(T))/2;
+
+  const ssize_t loopSize = args->nChannels*chunkSize;
+
+  // Compute pointers
+  const T * __restrict__ thisInput = (const T*)args->ThisInput;
+  T * __restrict__ thisOutput = (T*)args->ThisOutput;
+
+  for (ssize_t gridOffset = 0; gridOffset < size; gridOffset += loopSize) {
+    chunkSize = min(DIVUP(size-gridOffset, args->nChannels*minChunkSize)*minChunkSize, chunkSize);
+
+    ssize_t chunkOffset = gridOffset + bid*chunkSize;
+
+    /////////////// begin ReduceScatter steps ///////////////
+    ssize_t offset;
+    int nelem = min(chunkSize, size-chunkOffset);
+    int rankDest;
+
+    // step 0: push data to next GPU
+    rankDest = ring->devUserRanks[nranks-1];
+    offset = chunkOffset + rankDest * size;
+
+    LLprims.send(thisInput+offset, nelem);
+
+    // k-2 steps: reduce and copy to next GPU
+    for (int j=2; j<nranks; ++j) {
+      rankDest = ring->devUserRanks[nranks-j];
+      offset = chunkOffset + rankDest * size;
+
+      LLprims.recvReduceSend(thisInput+offset, nelem);
+    }
+
+    // step k-1: reduce this buffer and data, which will produce the final
+    // result that we store in this data
+    rankDest = ring->devUserRanks[0];
+    offset = chunkOffset + rankDest * size;
+
+    LLprims.recvReduceCopy(thisInput+offset, thisOutput+chunkOffset, nelem);
+  }
+}
+#endif
 
 template<int UNUSED, class FUNC, typename T>
 __device__ void ncclReduceScatterTreeLL128Kernel(struct CollectiveArgs* args) { }
