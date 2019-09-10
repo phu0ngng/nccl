@@ -88,7 +88,7 @@ class ncclLL128Primitives {
         if (checkAbort(wid, 1)) break;
       }
       if (sendConnFifoPtr) {
-        sendConnFifoPtr[sendConnHead%NCCL_STEPS] = nbytes;
+        sendConnFifoPtr[sendStep[wid]%NCCL_STEPS] = nbytes;
       }
       sendConnHead += 1;
     }
@@ -192,8 +192,7 @@ class ncclLL128Primitives {
           load128(ptr+u*WARP_SIZE, v0, v1);
           needReload |= flagThread && (v1 != flag);
         }
-        if (checkAbort(0, 0)) break;
-      } while (__any_sync(WARP_MASK, needReload));
+      } while (__any_sync(WARP_MASK, needReload) && checkAbort(0, 0) == 0);
       #pragma unroll
       for (int u=0; u<ELEMS_PER_THREAD; u+=2) {
         load128(ptr+u*WARP_SIZE, v0, v1);
@@ -212,8 +211,7 @@ class ncclLL128Primitives {
             load128(ptr+u*WARP_SIZE, v0, v1);
             needReload |= flagThread && (v1 != flag);
           }
-          if (checkAbort(i, 0)) break;;
-        } while (__any_sync(WARP_MASK, needReload));
+        } while (__any_sync(WARP_MASK, needReload) && checkAbort(i, 0) == 0);
         #pragma unroll
         for (int u=0; u<ELEMS_PER_THREAD; u+=2) {
           load128(ptr+u*WARP_SIZE, v0, v1);
@@ -340,8 +338,10 @@ class ncclLL128Primitives {
       *(sendConn->opCountLoc) = opCount;
     }
     if (tid >= nthreads-WARP_SIZE && wid<nsend) {
-      sendConnTailPtr = sendConn->tail;
-      sendConnTail = sendConn->step;
+      if (sendConn->fifo) {
+        sendConnTailPtr = sendConn->tail;
+        sendConnTail = sendConn->step;
+      }
     }
   }
 
