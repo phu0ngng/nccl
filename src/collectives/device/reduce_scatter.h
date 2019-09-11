@@ -122,10 +122,6 @@ __device__ void ncclReduceScatterRingLLKernel(struct CollectiveArgs* args) {
 template<int UNUSED, class FUNC, typename T>
 __device__ void ncclReduceScatterTreeLLKernel(struct CollectiveArgs* args) { }
 
-#if (__CUDA_ARCH__ != 700)
-template<int UNUSED, class FUNC, typename T>
-__device__ void ncclReduceScatterRingLL128Kernel(struct CollectiveArgs* args) { }
-#else
 #include "prims_ll128.h"
 template<int UNUSED, class FUNC, typename T>
 __device__ void ncclReduceScatterRingLL128Kernel(struct CollectiveArgs* args) {
@@ -183,7 +179,6 @@ __device__ void ncclReduceScatterRingLL128Kernel(struct CollectiveArgs* args) {
     LLprims.recvReduceCopy(thisInput+offset, thisOutput+chunkOffset, nelem);
   }
 }
-#endif
 
 template<int UNUSED, class FUNC, typename T>
 __device__ void ncclReduceScatterTreeLL128Kernel(struct CollectiveArgs* args) { }

@@ -130,10 +130,6 @@ __device__ void ncclAllGatherRingLLKernel(struct CollectiveArgs* args) {
 template<int UNUSED, class FUNC, typename T>
 __device__ void ncclAllGatherTreeLLKernel(struct CollectiveArgs* args) { }
 
-#if (__CUDA_ARCH__ != 700)
-template<int UNUSED, class FUNC, typename T>
-__device__ void ncclAllGatherRingLL128Kernel(struct CollectiveArgs* args) { }
-#else
 #include "prims_ll128.h"
 template<int UNUSED, class FUNC, typename T>
 __device__ void ncclAllGatherRingLL128Kernel(struct CollectiveArgs* args) {
@@ -194,7 +190,6 @@ __device__ void ncclAllGatherRingLL128Kernel(struct CollectiveArgs* args) {
     LLprims.recv(thisOutput+offset, nelem);
   }
 }
-#endif
 
 template<int UNUSED, class FUNC, typename T>
 __device__ void ncclAllGatherTreeLL128Kernel(struct CollectiveArgs* args) { }

@@ -101,11 +101,6 @@ __device__ void ncclBroadcastRingLLKernel(struct CollectiveArgs* args) {
 template<int UNUSED, class FUNC, typename T>
 __device__ void ncclBroadcastTreeLLKernel(struct CollectiveArgs* args) { }
 
-#if (__CUDA_ARCH__ != 700)
-template<int UNUSED, class FUNC, typename T>
-__device__ void ncclBroadcastRingLL128Kernel(struct CollectiveArgs* args) {
-}
-#else
 #include "prims_ll128.h"
 template<int UNUSED, class FUNC, typename T>
 __device__ void ncclBroadcastRingLL128Kernel(struct CollectiveArgs* args) {
@@ -150,7 +145,6 @@ __device__ void ncclBroadcastRingLL128Kernel(struct CollectiveArgs* args) {
     }
   }
 }
-#endif
 
 template<int UNUSED, class FUNC, typename T>
 __device__ void ncclBroadcastTreeLL128Kernel(struct CollectiveArgs* args) { }
