@@ -226,26 +226,26 @@ ncclResult_t ncclEnqueueEvents(ncclComm_t comm) {
 /*****************************************************************************/
 
 // Trees are not perfectly sticking to the model for medium sizes. Applying a static correction
-// factor is not ideal but works quite well.
-static int treeCorrectionFactor[NCCL_NUM_PROTOCOLS][22] = {
-  { 10, 10, 10, 10,  9,  8,  7,  7,  7,  7,  6,  5,  5,  5,  6,  7,  8,  9,  9, 10, 10, 10 },
-  { 10, 10, 10, 10, 10,  9,  8,  8,  8,  8,  7,  7,  7,  6,  6,  7,  7,  8,  8,  9,  9, 10 },
-  {  9,  9,  9,  9,  9,  9,  9,  8,  7,  6,  6,  5,  5,  5,  5,  5,  5,  6,  6,  7,  8,  9 }
+// factor is not ideal but works quite well. Powers of two, 64 B to 1 GB.
+static float treeCorrectionFactor[NCCL_NUM_PROTOCOLS][22] = {
+  { 1.0, 1.0, 1.0, 1.0,  .9,  .8,  .7,  .7,  .7,  .7,  .6,  .5,  .5,  .5,  .6,  .7,  .8,  .9,  .9, 1.0, 1.0, 1.0 },
+  { 1.0, 1.0, 1.0, 1.0, 1.0,  .9,  .8,  .8,  .8,  .8,  .7,  .7,  .7,  .6,  .6,  .7,  .7,  .8,  .8,  .9,  .9, 1.0 },
+  {  .9,  .9,  .9,  .9,  .9,  .9,  .9,  .8,  .7,  .6,  .6,  .5,  .5,  .5,  .5,  .5,  .5,  .6,  .6,  .7,  .8,  .9 }
 };
 
 static ncclResult_t getAlgoInfo(struct ncclInfo* info) {
   struct ncclComm* comm = info->comm;
-  uint64_t minTime = 0x7fffffffffffffff;
+  float minTime = 3600000.0; // Hopefully no operation will take an hour to complete.
   // Find algorithm / protocol.
   info->algorithm = -1;
   info->protocol = -1;
   for (int a=0; a<NCCL_NUM_ALGORITHMS; a++) {
     for (int p=0; p<NCCL_NUM_PROTOCOLS; p++) {
-      int bw = comm->bandwidths[info->coll][a][p];
+      float bw = comm->bandwidths[info->coll][a][p];
       if (bw == 0) continue;
       int logSize = log2i(info->nBytes>>6);
-      if (a == NCCL_ALGO_TREE && logSize < 22) bw = bw*treeCorrectionFactor[p][logSize]/10;
-      uint64_t time = comm->latencies[info->coll][a][p] + (10 * info->nBytes) / bw;
+      if (a == NCCL_ALGO_TREE && logSize < 22) bw *= treeCorrectionFactor[p][logSize];
+      float time = comm->latencies[info->coll][a][p] + (info->nBytes) / (1000 * bw);
       if (time < minTime) {
         info->algorithm = a;
         info->protocol = p;
@@ -258,7 +258,7 @@ static ncclResult_t getAlgoInfo(struct ncclInfo* info) {
     return ncclInternalError;
   }
   //if (comm->rank == 0) INFO(NCCL_INIT, "%ld Bytes -> Algo %d proto %d time %d", info->nBytes, info->algorithm, info->protocol, minTime);
-  TRACE(NCCL_INIT, "%ld Bytes -> Algo %d proto %d time %d", info->nBytes, info->algorithm, info->protocol, minTime);
+  TRACE(NCCL_INIT, "%ld Bytes -> Algo %d proto %d time %f", info->nBytes, info->algorithm, info->protocol, minTime);
 
   int nc = comm->nChannels;
   int nt = comm->maxThreads[info->protocol];

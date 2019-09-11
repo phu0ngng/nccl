@@ -133,6 +133,20 @@ static const char* funcStr[] = { "Broadcast", "Reduce", "AllGather", "ReduceScat
 static const char* algoStr[] = { "Tree", "Ring" };
 static const char* protoStr[] = { "LL    ", "LL128 ", "Simple" };
 
+// Latencies in us, Bandwidths in GB/s
+// Tree { LL, LL128, Simple } , Ring { LL, LL128, Simple }
+static const float baseLat  [NCCL_NUM_ALGORITHMS][NCCL_NUM_PROTOCOLS] = { { 4.4, 4.4,  0 }, { 3.6, 3.6, 8.4 } };
+
+// NVLink, PCI, Network
+#define NCCL_HW_NVLINK 0
+#define NCCL_HW_PCI 1
+#define NCCL_HW_NET 2
+// Tree/Simple is the latency a 256kB chunk, which is ~ base lat + 256k/12GB/s (+ 256k/12GB/s for the network).
+static const float hwLat [3][NCCL_NUM_ALGORITHMS][NCCL_NUM_PROTOCOLS] =
+ { { {  .5, 1.9, 28 }, {  .4, 2.5, 5.7 } },
+   { { 1.0, 1.9, 28 }, { 1.0, 2.5, 5.7 } },
+   { { 5.0, 7.5, 50 }, {  .9, 2.5, 6.6 } } };
+
 static ncclResult_t ncclSetThresholds(struct ncclComm* comm, int minCompCap, int maxCompCap, struct ncclTopoGraph* treeGraph, struct ncclTopoGraph* ringGraph) {
   // Default algorithm (normal/LL)
   comm->maxThreads[NCCL_PROTO_SIMPLE] = comm->maxThreads[NCCL_PROTO_LL]
@@ -144,89 +158,66 @@ static ncclResult_t ncclSetThresholds(struct ncclComm* comm, int minCompCap, int
 
   INFO(NCCL_INIT, "Threads per block : %d/%d/%d", comm->maxThreads[NCCL_PROTO_LL], comm->maxThreads[NCCL_PROTO_LL128], comm->maxThreads[NCCL_PROTO_SIMPLE]);
 
-  // Enable LL128 by default only on Volta+NVLink. Other cases are not tested and may cause silent data corruption.
-  int ll128Enabled = ncclParamLl128Enable();
-  if (ll128Enabled == -2) ll128Enabled = comm->nvlink;
-  // Only use LL128 on sm_70 (we don't compile kernels for other archs currently)
-  if (minCompCap != 70 || maxCompCap != 70) ll128Enabled = 0;
-  int llEnabled = ncclParamLlEnable();
-  int simpleEnabled = ncclParamSimpleEnable();
-  int treeEnabled = ncclParamTreeEnable();
-  int ringEnabled = ncclParamRingEnable();
-
-  // Base numbers for time prediction. Latencies are x100ns, Bandwidth in MB/s
   if (comm->nRanks <= 1) return ncclSuccess;
+
+  struct ncclTopoGraph* graphs[2] = { treeGraph, ringGraph };
+  int intraHw[2], hw[2];
+  for (int a=0; a<NCCL_NUM_ALGORITHMS; a++) intraHw[a] = graphs[a]->nvlink ? NCCL_HW_NVLINK : NCCL_HW_PCI;
+  for (int a=0; a<NCCL_NUM_ALGORITHMS; a++) hw[a] = comm->nNodes == 1 ? intraHw[a] : NCCL_HW_NET;
+
   for (int coll=0; coll<NCCL_NUM_FUNCTIONS; coll++) {
     int nsteps = coll == ncclCollAllReduce ? 2*(comm->nRanks-1) :
-        coll == ncclCollReduceScatter || coll == ncclCollAllGather ? comm->nRanks-1 :
-        comm->nRanks;
+      coll == ncclCollReduceScatter || coll == ncclCollAllGather ? comm->nRanks-1 :
+      comm->nRanks;
 
-    int ringBusBw = ringGraph->nChannels * ringGraph->speed * 1000;
-    int ringAlgBw = ringBusBw * comm->nRanks / nsteps;
+    for (int a=0; a<NCCL_NUM_ALGORITHMS; a++) {
+      if (coll != ncclCollAllReduce && a == NCCL_ALGO_TREE) continue;
 
-    int ringLlBusBw = std::min(ringBusBw/2,ringGraph->nChannels*(ringGraph->nvlink == 0 ? 4500 : comm->nNodes == 1 ? 6000:3000));
-    int ringLlAlgBw = ringLlBusBw * comm->nRanks / nsteps;
-    int ringLl128BusBw = std::min(ringBusBw*120/128, 91000);
-    int ringLl128AlgBw = ringLl128BusBw * comm->nRanks / nsteps;
-    int ringLlLat = comm->nNodes > 1 ? 9 : ringGraph->nvlink ? 4 : 10 ;
-    int ringLl128Lat = 25;
-    int ringSimpleLat = comm->nNodes == 1 ? 57 : 66;
+      for (int p=0; p<NCCL_NUM_PROTOCOLS; p++) {
+        float busBw = graphs[a]->nChannels * graphs[a]->speed * 1.0;
 
-    comm->bandwidths[coll][NCCL_ALGO_RING][NCCL_PROTO_LL] = llEnabled ? ringLlAlgBw : 0;
-    comm->bandwidths[coll][NCCL_ALGO_RING][NCCL_PROTO_LL128] = ll128Enabled ? ringLl128AlgBw : 0;
-    comm->bandwidths[coll][NCCL_ALGO_RING][NCCL_PROTO_SIMPLE] = simpleEnabled ? ringAlgBw : 0;
-    if ((coll == ncclCollReduce || coll == ncclCollBroadcast) && ringGraph->sameChannels) {
-      comm->latencies[coll][NCCL_ALGO_RING][NCCL_PROTO_LL] = 36 + ringLlLat;
-      comm->latencies[coll][NCCL_ALGO_RING][NCCL_PROTO_LL128] = 36 + ringLl128Lat;
-      comm->latencies[coll][NCCL_ALGO_RING][NCCL_PROTO_SIMPLE] = 84 + ringSimpleLat;
-    } else {
-      comm->latencies[coll][NCCL_ALGO_RING][NCCL_PROTO_LL] = 36 + nsteps * ringLlLat;
-      comm->latencies[coll][NCCL_ALGO_RING][NCCL_PROTO_LL128] = 36 + nsteps * ringLl128Lat;
-      comm->latencies[coll][NCCL_ALGO_RING][NCCL_PROTO_SIMPLE] = 84 + nsteps * ringSimpleLat;
-    }
+        // Various model refinements
+        if (a == NCCL_ALGO_RING && p == NCCL_PROTO_LL)    busBw *= 1.0/4.0;
+        if (a == NCCL_ALGO_RING && p == NCCL_PROTO_LL128) busBw = std::min(busBw*120.0/128.0, 91.0);
+        if (a == NCCL_ALGO_TREE) busBw = std::min(busBw*.9, comm->nNodes > 1 ? 70.0 : 90.0);
+        if (a == NCCL_ALGO_TREE && p == NCCL_PROTO_LL) busBw *= 1.0/3.0;
+        if (a == NCCL_ALGO_TREE && p == NCCL_PROTO_LL128) busBw *= 7.0/9.0;
 
-    if (coll == ncclCollAllReduce) {
+        // Convert bus BW to algorithm BW
+        float ratio = a == NCCL_ALGO_TREE ? .5 : (1.0 * comm->nRanks) / nsteps;
+        comm->bandwidths[coll][a][p] = busBw * ratio;
 
-      if (ringEnabled == 0) {
-        // Only disable rings on Allreduce
-        comm->bandwidths[coll][NCCL_ALGO_RING][NCCL_PROTO_LL] =
-          comm->bandwidths[coll][NCCL_ALGO_RING][NCCL_PROTO_LL128] =
-          comm->bandwidths[coll][NCCL_ALGO_RING][NCCL_PROTO_SIMPLE] = 0;
-      }
-      if (treeEnabled) {
-        // Tree algorithm BW is 1/2 the bus BW ; tree have a ~90 peak compared to rings ; they are also limited intra-node
-	int treeBusBw = std::min(treeGraph->nChannels*treeGraph->speed*90/100, comm->nNodes > 1 ? 70 : 90) * 1000;
-        int treeAlgBw = (treeBusBw)/2;
-        int treeLlAlgBw = treeAlgBw/3; // Just an obvservation
-	int treeIntraLlLat = treeGraph->nvlink ? 5 : 10;
-	int treeInterLlLat = 50;
-	int treeIntraLl128Lat = 19;
-	int treeInterLl128Lat = 75;
-        // This is reflecting the large sizes since Tree/Simple should not be used for small sizes
-	int treeIntraSimpleLat = 280;
-	int treeInterSimpleLat = 500;
-
-        comm->bandwidths[coll][NCCL_ALGO_TREE][NCCL_PROTO_LL] = llEnabled ? treeLlAlgBw : 0;
-        comm->bandwidths[coll][NCCL_ALGO_TREE][NCCL_PROTO_LL128] = ll128Enabled ? treeAlgBw*7/9 : 0;
-        comm->bandwidths[coll][NCCL_ALGO_TREE][NCCL_PROTO_SIMPLE] = simpleEnabled ? treeAlgBw : 0;
-        comm->latencies[coll][NCCL_ALGO_TREE][NCCL_PROTO_LL] = 44 + 2 * ((comm->nRanks/comm->nNodes-1) * treeIntraLlLat + log2i(comm->nNodes) * treeInterLlLat);
-        comm->latencies[coll][NCCL_ALGO_TREE][NCCL_PROTO_LL128] = 44 + 2 * ((comm->nRanks/comm->nNodes-1) * treeIntraLl128Lat + log2i(comm->nNodes) * treeInterLl128Lat);
-        comm->latencies[coll][NCCL_ALGO_TREE][NCCL_PROTO_SIMPLE] = 2 * ((comm->nRanks/comm->nNodes-1) * treeIntraSimpleLat + log2i(comm->nNodes) * treeInterSimpleLat);
-      }
-    } else {
-      int sameRings = 1;
-      for (int c=1; c<ringGraph->nChannels; c++) {
-        for (int r=0; r<comm->nRanks; r++) {
-          if (ringGraph->intra[c*comm->nRanks+r] != ringGraph->intra[r]) sameRings = 0;
+        comm->latencies[coll][a][p] = baseLat[a][p];
+        if (a == NCCL_ALGO_RING) {
+          float lat = hwLat[hw[a]][a][p];
+          if ((coll == ncclCollReduce || coll == ncclCollBroadcast) && ringGraph->sameChannels) {
+            comm->latencies[coll][a][p] += lat;
+          } else {
+            comm->latencies[coll][a][p] += nsteps*lat;
+          }
+        } else {
+          float intraLat = hwLat[intraHw[a]][a][p];
+          float interLat = hwLat[NCCL_HW_NET][a][p];
+          comm->latencies[coll][a][p] +=
+            2 * ((comm->nRanks/comm->nNodes-1) * intraLat + log2i(comm->nNodes) * interLat);
         }
       }
-      // latency = 0 for bcast/reduce on same rings
-      if (sameRings == 0 || (coll != ncclCollBroadcast && coll != ncclCollReduce)) {
-        comm->latencies[coll][NCCL_ALGO_RING][NCCL_PROTO_LL] = (comm->nRanks-1) * ringLlLat;
-        comm->latencies[coll][NCCL_ALGO_RING][NCCL_PROTO_LL128] = (comm->nRanks-1) * ringLl128Lat;
-        comm->latencies[coll][NCCL_ALGO_RING][NCCL_PROTO_SIMPLE] = (comm->nRanks-1) * ringSimpleLat;
-      }
     }
+  }
+
+  int64_t protoEnable[NCCL_NUM_PROTOCOLS] = { ncclParamLl128Enable(), ncclParamLlEnable(), ncclParamSimpleEnable() };
+  int64_t algoEnable[NCCL_NUM_ALGORITHMS] = { ncclParamTreeEnable(), ncclParamRingEnable() };
+  // Enable LL128 by default only on Volta+NVLink. Other cases are not tested and may cause silent data corruption.
+  if (protoEnable[NCCL_PROTO_LL128] == -2) protoEnable[NCCL_PROTO_LL128] = comm->nvlink;
+  // Only use LL128 on sm_70 (we don't compile kernels for other archs currently)
+  if (minCompCap != 70 || maxCompCap != 70) protoEnable[NCCL_PROTO_LL128] = 0;
+  for (int p=0; p<NCCL_NUM_PROTOCOLS; p++) {
+    if (protoEnable[p] == 0)
+      for (int c=0; c<NCCL_NUM_FUNCTIONS; c++) for (int a=0; a<NCCL_NUM_ALGORITHMS; a++) comm->bandwidths[c][a][p] = 0;
+  }
+  for (int a=0; a<NCCL_NUM_ALGORITHMS; a++) {
+    if (algoEnable[a] == 0)
+      for (int c=0; c<NCCL_NUM_FUNCTIONS; c++) for (int p=0; p<NCCL_NUM_ALGORITHMS; p++) comm->bandwidths[c][a][p] = 0;
   }
 
   if (comm->rank == 0) {
@@ -236,7 +227,7 @@ static ncclResult_t ncclSetThresholds(struct ncclComm* comm, int minCompCap, int
     offset = strlen(line);
     for (int a=0; a<NCCL_NUM_ALGORITHMS; a++) {
       for (int p=0; p<NCCL_NUM_PROTOCOLS; p++) {
-        sprintf(line+offset, "%4s/%6s|", algoStr[a], protoStr[p]);
+        sprintf(line+offset, " %4s/%6s |", algoStr[a], protoStr[p]);
         offset = strlen(line);
       }
     }
@@ -246,7 +237,7 @@ static ncclResult_t ncclSetThresholds(struct ncclComm* comm, int minCompCap, int
       offset = strlen(line);
       for (int a=0; a<NCCL_NUM_ALGORITHMS; a++) {
         for (int p=0; p<NCCL_NUM_PROTOCOLS; p++) {
-          sprintf(line+offset, "%7.1f/%3d|", comm->latencies[c][a][p]*0.1, comm->bandwidths[c][a][p]/1000);
+          sprintf(line+offset, "%7.1f/%5.1f|", comm->latencies[c][a][p], comm->bandwidths[c][a][p]);
           offset = strlen(line);
         }
       }
@@ -274,8 +265,7 @@ static ncclResult_t ncclSetThresholds(struct ncclComm* comm, int minCompCap, int
     }
   }
 
-  INFO(NCCL_INIT, "LL128 %s, threadThresholds %ld/%ld/%ld | %ld/%ld/%ld",
-      ll128Enabled ? "Enabled" : "Disabled",
+  INFO(NCCL_INIT, "threadThresholds %ld/%ld/%ld | %ld/%ld/%ld",
       comm->threadThresholds[NCCL_ALGO_TREE][NCCL_PROTO_LL],
       comm->threadThresholds[NCCL_ALGO_TREE][NCCL_PROTO_LL128],
       comm->threadThresholds[NCCL_ALGO_TREE][NCCL_PROTO_SIMPLE],
