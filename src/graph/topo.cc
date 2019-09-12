@@ -394,6 +394,11 @@ ncclResult_t ncclTopoGetNetNode(struct ncclTopoSystem* system, struct ncclTopoNo
     }
   }
 
+  // Also store the GDR capability in the field
+  int ptrSupport;
+  NCCLCHECK(ncclNetPtrSupport(n, &ptrSupport));
+  net |= (ptrSupport & NCCL_PTR_CUDA) ? NET_GDR_MASK : 0;
+
   NCCLCHECK(ncclTopoCreateNode(system, netNode, NET, n));
   (*netNode)->rank = net;
   return ncclSuccess;
@@ -494,7 +499,7 @@ static ncclResult_t ncclTopoSetPaths(struct ncclTopoNode* baseNode, struct ncclT
     locPath->count = 1;
     locPath->list[0] = locLink;
     locPath->width = locLink->width;
-    locPath->nvlink = 1;
+    locPath->type = LINK_LOC;
   }
 
   // breadth-first search to set all paths to that node in the system
@@ -506,7 +511,7 @@ static ncclResult_t ncclTopoSetPaths(struct ncclTopoNode* baseNode, struct ncclT
   NCCLCHECK(getPath(system, baseNode, baseNode->type, baseNode->id, &basePath));
   basePath->count = 0;
   basePath->width = 0xfffffff;
-  basePath->nvlink = 1;
+  basePath->type = LINK_LOC;
 
   while (nodeList.count) {
     nextNodeList.count = 0;
@@ -541,7 +546,11 @@ static ncclResult_t ncclTopoSetPaths(struct ncclTopoNode* baseNode, struct ncclT
           for (int i=0; i<path->count; i++) remPath->list[i+1] = path->list[i];
           remPath->count = path->count + 1;
           remPath->width = width;
-          remPath->nvlink = path->nvlink & ((link->type == LINK_NVL) ? 1 : 0);
+
+          // Consider the path is QPI when going through the CPU
+          // Also don't consider LINK_NET as we only care about the NIC->GPU path.
+          int type = remNode->type == CPU ? LINK_QPI : link->type == LINK_NET ? 0 : link->type;
+          remPath->type = std::max(path->type, type);
 
           // Add to the list for the next iteration if not already in the list
           // Disallow GPUs as intermediate steps for now
@@ -580,7 +589,7 @@ static void printNodePaths(struct ncclTopoSystem* system, struct ncclTopoNode* n
       }
       INFO(NCCL_GRAPH, "%s (%d)", line, node->paths[t][n].width);
 #else
-      sprintf(line+offset, "%s/%X (%d/%d%s) ", topoNodeTypeStr[t], n, node->paths[t][n].count, node->paths[t][n].width, node->paths[t][n].nvlink ? "/N" : "");
+      sprintf(line+offset, "%s/%X (%d/%d/%d) ", topoNodeTypeStr[t], system->nodes[t].nodes[n].id, node->paths[t][n].count, node->paths[t][n].width, node->paths[t][n].type);
       offset = strlen(line);
 #endif
     }
@@ -636,6 +645,9 @@ ncclResult_t ncclTopoSearchInit(struct ncclTopoSystem* system) {
   for (int i=0; i<system->nodes[GPU].count; i++) {
     printNodePaths(system, system->nodes[GPU].nodes+i);
   }
+  for (int i=0; i<system->nodes[NET].count; i++) {
+    printNodePaths(system, system->nodes[NET].nodes+i);
+  }
   return ncclSuccess;
 }
 
@@ -658,7 +670,7 @@ static ncclResult_t ncclTopoPrintRec(struct ncclTopoNode* node, struct ncclTopoN
         NCCLCHECK(ncclTopoPrintRec(link->remNode, node, line, nextOffset));
       } else {
         if (link->remNode->type == NET) {
-          sprintf(line+offset, "%s/%X (%d)", topoNodeTypeStr[link->remNode->type], link->remNode->id, link->remNode->rank);
+          sprintf(line+offset, "%s/%X (%d)", topoNodeTypeStr[link->remNode->type], link->remNode->id, link->remNode->rank & (~NET_GDR_MASK));
         } else {
           sprintf(line+nextOffset, "%s/%X", topoNodeTypeStr[link->remNode->type], link->remNode->id);
         }
@@ -747,7 +759,7 @@ ncclResult_t ncclTopoGetNvlink(struct ncclTopoSystem* system, int nvmlDev1, int 
   int id1, id2;
   NCCLCHECK(nvmlToIndex(system, nvmlDev1, &id1));
   NCCLCHECK(nvmlToIndex(system, nvmlDev2, &id2));
-  *nvlink = system->nodes[GPU].nodes[id1].paths[GPU][id2].nvlink;
+  *nvlink = system->nodes[GPU].nodes[id1].paths[GPU][id2].type == LINK_NVL;
   return ncclSuccess;
 }
 
@@ -756,7 +768,7 @@ ncclResult_t ncclTopoHasNvlink(struct ncclTopoSystem* system, int nvmlDev, int* 
   NCCLCHECK(nvmlToIndex(system, nvmlDev, &id));
   for (int i=0; i<system->nodes[GPU].count; i++) {
     if (i == id) continue;
-    if (system->nodes[GPU].nodes[id].paths[GPU][i].nvlink) {
+    if (system->nodes[GPU].nodes[id].paths[GPU][i].type == LINK_NVL) {
       *nvlink = 1;
       return ncclSuccess;
     }

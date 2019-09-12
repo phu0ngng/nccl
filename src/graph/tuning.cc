@@ -127,19 +127,25 @@ ncclResult_t ncclSetThresholds(struct ncclComm* comm, int minCompCap, int maxCom
   }
 
   // Protocols/Algorithms enable/disable, and user overrides.
-  int protoEnable[NCCL_NUM_PROTOCOLS];
-  int algoEnable[NCCL_NUM_ALGORITHMS];
+  // All are enabled except ll128 which is enabled by default only in certain cases.
+  int protoEnable[NCCL_NUM_PROTOCOLS] = { 1, 2, 1 };
+  int algoEnable[NCCL_NUM_ALGORITHMS] = { 1, 1 };
 
   const char *protoStr = getenv("NCCL_PROTO");
-  // Enable LL128 by default only on Volta+NVLink. Other cases are not tested and may cause silent data corruption.
-  if (protoStr == NULL) protoStr = comm->nvlink && minCompCap == 70 && maxCompCap == 70 ? "LL,LL128,Simple" : "LL,Simple";
-  NCCLCHECK(parseList(protoStr, ncclProtoStr, NCCL_NUM_PROTOCOLS, protoEnable));
+  if (protoStr) NCCLCHECK(parseList(protoStr, ncclProtoStr, NCCL_NUM_PROTOCOLS, protoEnable));
   const char *algoStr = getenv("NCCL_ALGO");
-  if (algoStr == NULL) algoStr = "Tree,Ring";
-  NCCLCHECK(parseList(algoStr, ncclAlgoStr, NCCL_NUM_ALGORITHMS, algoEnable));
+  if (algoStr) NCCLCHECK(parseList(algoStr, ncclAlgoStr, NCCL_NUM_ALGORITHMS, algoEnable));
+
+  for (int c=0; c<NCCL_NUM_FUNCTIONS; c++) for (int a=0; a<NCCL_NUM_ALGORITHMS; a++) {
+  }
 
   for (int c=0; c<NCCL_NUM_FUNCTIONS; c++) for (int a=0; a<NCCL_NUM_ALGORITHMS; a++) for (int p=0; p<NCCL_NUM_PROTOCOLS; p++) {
-    if (protoEnable[p] == 0 || algoEnable[a] == 0) comm->bandwidths[c][a][p] = 0;
+    int pEnable = protoEnable[p];
+    if (pEnable == 2 && p == NCCL_PROTO_LL128) {
+      // Enable LL128 by default only on Volta+NVLink. Other cases are not tested and may cause silent data corruption.
+      pEnable = (graphs[a]->gdr == 1) && comm->nvlink && minCompCap == 70 && maxCompCap == 70 ? 1 : 0;
+    }
+    if (pEnable == 0 || algoEnable[a] == 0) comm->bandwidths[c][a][p] = 0;
   }
 
   if (comm->rank == 0) {

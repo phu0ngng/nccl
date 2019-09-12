@@ -60,6 +60,7 @@ struct ncclTopoGraph {
   int sameChannels;
   int speed;
   int nvlink;
+  int gdr;
   int intra[MAXCHANNELS*NCCL_TOPO_MAX_NODES];
   int inter[MAXCHANNELS*2];
   int nChannels;

@@ -47,11 +47,13 @@ struct ncclTopoLink {
 #define SELECT_PATH 1
 #define SELECT_LAST 2
 
+#define NET_GDR_MASK 0x70000000
+
 struct ncclTopoLinkList {
   struct ncclTopoLink* list[NCCL_TOPO_MAX_HOPS];
   int count;
   int width;
-  int nvlink;
+  int type;
 };
 
 struct ncclTopoNode {
