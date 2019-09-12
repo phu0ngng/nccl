@@ -39,13 +39,13 @@ ncclResult_t parseList(const char* str, const char* elems[], int nelems, int* li
   }
   for (int i=0; i<nelems; i++) list[i] = def;
   char* tokStr = strdup(str);
-  char* token = strtok(tokStr, ",");
+  char* tmpStr;
+  char* token = strtok_r(tokStr, ",", &tmpStr);
   while (token) {
     for (int i=0; i<nelems; i++)
       if (strcasecmp(token, elems[i]) == 0) list[i] = set;
-    token = strtok(NULL, ",");
+    token = strtok_r(NULL, ",", &tmpStr);
   }
-  for (int i=0; i<nelems; i++) printf("%s : %s\n", elems[i], list[i] ? "Enabled" : "Disabled");
   free(tokStr);
   return ncclSuccess;
 }
