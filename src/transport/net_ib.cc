@@ -626,7 +626,6 @@ ncclResult_t ncclIbIsend(void* sendComm, void* data, int size, void* mhandle, vo
 
   struct ncclIbRequest* req;
   NCCLCHECK(ncclIbGetRequest(comm->reqs, &req));
-  req->type = 1;
   req->verbs = &comm->verbs;
   req->size = size;
 
@@ -679,7 +678,6 @@ ncclResult_t ncclIbPostFifo(struct ncclIbRecvComm* comm, uint32_t rkey, uint64_t
   memset(&wr, 0, sizeof(wr));
   struct ncclIbRequest* req;
   NCCLCHECK(ncclIbGetRequest(comm->reqs, &req));
-  req->type = 3;
   req->verbs = &comm->verbs;
   req->free = 1; // Not a user req ; free as soon as it is complete.
   wr.wr_id = (uint64_t)req;
@@ -714,7 +712,6 @@ ncclResult_t ncclIbIrecv(void* recvComm, void* data, int size, void* mhandle, vo
 
   struct ncclIbRequest* req;
   NCCLCHECK(ncclIbGetRequest(comm->reqs, &req));
-  req->type = 2;
   req->verbs = &comm->verbs;
   req->size = size;
 
@@ -747,7 +744,6 @@ ncclResult_t ncclIbFlush(void* recvComm, void* data, int size, void* mhandle) {
 
   struct ncclIbRequest* req;
   NCCLCHECK(ncclIbGetRequest(comm->reqs, &req));
-  req->type = 4;
   req->verbs = &comm->verbs;
   struct ibv_mr* mr = (struct ibv_mr*)mhandle;
 
