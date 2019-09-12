@@ -202,5 +202,3 @@ ncclResult_t ncclSetThresholds(struct ncclComm* comm, int minCompCap, int maxCom
       comm->threadThresholds[NCCL_ALGO_RING][NCCL_PROTO_SIMPLE]);
   return ncclSuccess;
 }
-
-
