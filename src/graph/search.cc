@@ -214,7 +214,7 @@ ncclResult_t ncclTopoSearchRecGpu(struct ncclTopoSystem* system, struct ncclTopo
   }
   graph->intra[graph->nChannels*ngpus+step] = gpu->rank;
   if (step == backToNet) {
-    // first get back to NIC 
+    // first get back to NIC
     if (system->nodes[NET].count) {
       int maxWidth = 0;
       int speed = DIVUP(graph->speed, graph->netFactor);
