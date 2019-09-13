@@ -573,6 +573,7 @@ static ncclResult_t initTransportsRank(struct ncclComm* comm, ncclUniqueId* comm
   comm->nvlink = 1;
   for (int i = 0; i < nranks; i++) comm->nvlink &= allGather3Data[i].nvlink;
 
+  int nChannelsOrig = comm->nChannels;
   struct ncclTopoRanks** allTopoRanks;
   NCCLCHECK(ncclCalloc(&allTopoRanks, comm->nRanks));
   for (int i=0; i<nranks; i++) {
@@ -585,6 +586,12 @@ static ncclResult_t initTransportsRank(struct ncclComm* comm, ncclUniqueId* comm
     ringGraph.sameChannels = std::min(allGather3Data[i].ring.sameChannels, ringGraph.sameChannels);
     ringGraph.speed = std::min(allGather3Data[i].ring.speed, ringGraph.speed);
     ringGraph.nvlink = std::min(allGather3Data[i].ring.nvlink, ringGraph.nvlink);
+  }
+
+  if (comm->nChannels < nChannelsOrig) {
+    // We started duplicating channels during Preset(), so we need to move the
+    // duplicated channels since we have removed some.
+    for (int i=0; i<comm->nChannels; i++) memcpy(comm->channels+comm->nChannels+i, comm->channels+nChannelsOrig+i, sizeof(struct ncclChannel));
   }
 
   int *rings;
