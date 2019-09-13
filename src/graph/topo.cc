@@ -184,6 +184,18 @@ static ncclResult_t ncclDeviceType(const char* busId, enum ncclNvLinkDeviceType*
   return ncclSuccess;
 }
 
+ncclResult_t ncclTopoConnectCpu(struct ncclTopoSystem* system, int numaId, struct ncclTopoNode* node, int linkType, int linkWidth) {
+  struct ncclTopoNode* cpuNode = NULL;
+  for (int c=0; c<system->nodes[CPU].count; c++) {
+    if (system->nodes[CPU].nodes[c].id == numaId) cpuNode = system->nodes[CPU].nodes+c;
+  }
+  if (cpuNode == NULL) { // Create CPU
+    NCCLCHECK(ncclTopoCreateNode(system, &cpuNode, CPU, numaId));
+  }
+  NCCLCHECK(ncclTopoConnectNodes(node, cpuNode, linkType, linkWidth));
+  NCCLCHECK(ncclTopoConnectNodes(cpuNode, node, linkType, linkWidth));
+  return ncclSuccess;
+}
 
 ncclResult_t ncclTopoConnectNVLink(nvmlDevice_t* nvmlDevs, struct ncclTopoSystem* system) {
   struct ncclTopoNode* nvsNode = NULL;
@@ -246,15 +258,7 @@ ncclResult_t ncclTopoConnectNVLink(nvmlDevice_t* nvmlDevs, struct ncclTopoSystem
         NCCLCHECK(getNvmlPath(nvmlDevs[g], &path));
         int numaId = getNumaId(path);
         free(path);
-        struct ncclTopoNode* cpuNode = NULL;
-        for (int c=0; c<system->nodes[CPU].count; c++) {
-          if (system->nodes[CPU].nodes[c].id == numaId) cpuNode = system->nodes[CPU].nodes+c;
-        }
-        if (cpuNode == NULL) { // Create CPU
-          NCCLCHECK(ncclTopoCreateNode(system, &cpuNode, CPU, numaId));
-        }
-        NCCLCHECK(ncclTopoConnectNodes(system->nodes[GPU].nodes+g, cpuNode, LINK_NVL, width));
-        NCCLCHECK(ncclTopoConnectNodes(cpuNode, system->nodes[GPU].nodes+g, LINK_NVL, width));
+        NCCLCHECK(ncclTopoConnectCpu(system, numaId, system->nodes[GPU].nodes+g, LINK_NVL, width));
       } else { // Nvswitch
         if (type == ncclNvLinkDeviceUnknown) {
           // The NVLink is up but we couldn't find the PCI device on the other
@@ -344,19 +348,9 @@ ncclResult_t ncclTopoCreatePciPath(struct ncclTopoSystem* system, struct ncclTop
   }
   // Then attach to a CPU node
   int numaId = getNumaId(path);
-  for (int n=0; n<system->nodes[CPU].count; n++) {
-    if (system->nodes[CPU].nodes[n].id == numaId) {
-      int width;
-      NCCLCHECK(ncclTopoGetCpuPciP2pWidth(&width));
-      NCCLCHECK(ncclTopoConnectNodes(system->nodes[CPU].nodes+n, lastNode, LINK_PCI, width));
-      NCCLCHECK(ncclTopoConnectNodes(lastNode, system->nodes[CPU].nodes+n, LINK_PCI, width));
-      return ncclSuccess;
-    }
-  }
-  struct ncclTopoNode* numaNode;
-  NCCLCHECK(ncclTopoCreateNode(system, &numaNode, CPU, numaId));
-  NCCLCHECK(ncclTopoConnectNodes(numaNode, lastNode, LINK_PCI, pciWidth));
-  NCCLCHECK(ncclTopoConnectNodes(lastNode, numaNode, LINK_PCI, pciWidth));
+  int width;
+  NCCLCHECK(ncclTopoGetCpuPciP2pWidth(&width));
+  NCCLCHECK(ncclTopoConnectCpu(system, numaId, lastNode, LINK_PCI, width));
   return ncclSuccess;
 }
 
@@ -421,7 +415,19 @@ ncclResult_t ncclTopoConnectPCI(nvmlDevice_t* nvmlDevs, struct ncclTopoSystem* s
 
     for (int n=0; n<netDevCount; n++) {
       char* path;
-      NCCLCHECK(ncclNetPciPath(n, &path));
+      ncclResult_t res = ncclNetPciPath(n, &path);
+      if (res != ncclSuccess || path == NULL) {
+        // This is probably a virtual NIC. Just attach it directly to CPU 0
+        struct ncclTopoNode *netNode, *nicNode;
+        NCCLCHECK(ncclTopoCreateNode(system, &nicNode, NIC, n));
+        NCCLCHECK(ncclTopoCreateNode(system, &netNode, NET, n));
+        NCCLCHECK(ncclTopoConnectNodes(nicNode, netNode, LINK_NET, netWidth));
+        NCCLCHECK(ncclTopoConnectNodes(netNode, nicNode, LINK_NET, netWidth));
+        int width;
+        NCCLCHECK(ncclTopoGetCpuPciP2pWidth(&width));
+        NCCLCHECK(ncclTopoConnectCpu(system, 0, nicNode, LINK_PCI, width));
+        continue;
+      }
 
       struct ncclTopoNode* netNode;
       NCCLCHECK(ncclTopoGetNetNode(system, &netNode, n, path));
