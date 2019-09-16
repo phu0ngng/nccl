@@ -98,7 +98,6 @@ static ncclResult_t getCpuWidths() {
   if (strncmp(cpuid0.vendor, "GenuineIntel", 12) == 0) sprintf(cpu, "Intel");
 
   if (strcmp(cpu, "Intel") == 0) {
-    cpuPciWidth = INTEL_PCI_WIDTH;
     union {
       struct {
         int steppingId:4;
@@ -627,7 +626,47 @@ ncclResult_t ncclTopoSearchInit(struct ncclTopoSystem* system) {
   }
   if (system->nodes[NET].count) {
     for (int n=0; n<system->nodes[NET].count; n++) {
-      NCCLCHECK(ncclTopoSetPaths(system->nodes[NET].nodes+n, system));
+      struct ncclTopoNode* netNode = system->nodes[NET].nodes+n;
+      NCCLCHECK(ncclTopoSetPaths(netNode, system));
+      if ((netNode->rank & NET_GDR_MASK) == 0) {
+        // We cannot use GPU Direct RDMA, so we need all NIC<->GPU paths
+        // to go through a CPU
+        // Find the closest CPU
+        int minHops = 0;
+        int localCpu = -1;
+        for (int c=0; c<system->nodes[CPU].count; c++) {
+          int hops = system->nodes[CPU].nodes[c].paths[NET][n].count;
+          if (minHops == 0 || hops < minHops) {
+            localCpu = c;
+            minHops = hops;
+          }
+        }
+        if (localCpu == -1) {
+          WARN("Error : could not find CPU close to NIC %d", n);
+          return ncclInternalError;
+        }
+        // Compute paths to that CPU
+        struct ncclTopoNode* cpuNode = system->nodes[CPU].nodes+localCpu;
+        NCCLCHECK(ncclTopoSetPaths(cpuNode, system));
+        // Update NIC<->GPU paths
+        for (int g=0; g<system->nodes[GPU].count; g++) {
+          // NIC -> GPU
+          int l=0;
+          for (int i=0; i<netNode->paths[CPU][localCpu].count; i++) netNode->paths[GPU][g].list[l++] = netNode->paths[CPU][localCpu].list[i];
+          for (int i=0; i<cpuNode->paths[GPU][g].count; i++) netNode->paths[GPU][g].list[l++] = cpuNode->paths[GPU][g].list[i];
+          netNode->paths[GPU][g].count = l;
+          netNode->paths[GPU][g].type = LINK_QPI;
+          netNode->paths[GPU][g].width = std::min(netNode->paths[CPU][localCpu].width, cpuNode->paths[GPU][g].width);
+          // GPU -> NIC
+          struct ncclTopoNode* gpuNode = system->nodes[GPU].nodes+g;
+          l = 0;
+          for (int i=0; i<gpuNode->paths[CPU][localCpu].count; i++) gpuNode->paths[NET][n].list[l++] = gpuNode->paths[CPU][localCpu].list[i];
+          for (int i=0; i<cpuNode->paths[NET][n].count; i++) gpuNode->paths[NET][n].list[l++] = gpuNode->paths[NET][n].list[i];
+          gpuNode->paths[NET][n].count = l;
+          gpuNode->paths[NET][n].type = LINK_QPI;
+          gpuNode->paths[NET][n].width = std::min(gpuNode->paths[CPU][localCpu].width, cpuNode->paths[NET][n].width);
+        }
+      }
     }
     // Try to assign one NIC per GPU
     int netMaxSpeed = 0;

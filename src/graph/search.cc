@@ -157,23 +157,21 @@ ncclResult_t ncclTopoSearchTryGpu(struct ncclTopoSystem* system, struct ncclTopo
 }
 
 ncclResult_t ncclTopoSearchTryGpuNet(struct ncclTopoSystem* system, struct ncclTopoGraph* graph, struct ncclTopoGraph* saveGraph, struct ncclTopoLinkList* paths, int step, int backToNet, int backToFirstRank, int forcedOrder, int maxSpeed, int *time, int g, int speed, struct ncclTopoNode* net) {
-  int gdr = graph->gdr;
-  graph->gdr &= (paths[g].type <= LINK_PCI) && (net->rank & NET_GDR_MASK) ? 1 : 0;
+  if ((graph->gdr == 1) && ((paths[g].type > LINK_PCI) || ((net->rank & NET_GDR_MASK) == 0))) return ncclSuccess;
   NCCLCHECK(ncclTopoSearchTryGpu(system, graph, saveGraph, paths, step, backToNet, backToFirstRank, forcedOrder, maxSpeed, time, g, speed));
-  graph->gdr = gdr;
   return ncclSuccess;
 }
 
 ncclResult_t ncclTopoCompareGraphs(struct ncclTopoGraph* graph, struct ncclTopoGraph* refGraph, int* copy) {
+  // 0. When netFactor is more than one, do not copy if the solution has less channels
+  // since it would likely impact the rings algorithms too.
+  if (graph->netFactor > 1 && graph->nChannels < refGraph->nChannels) return ncclSuccess;
+
   // 1. Try to get better bandwidth
   if (graph->nChannels*graph->speed < refGraph->nChannels*refGraph->speed) return ncclSuccess;
   if (graph->nChannels*graph->speed > refGraph->nChannels*refGraph->speed) {
-   // When netFactor is more than one, do not copy if the solution has less channels
-   // since it would likely impact the rings algorithms too.
-   if (graph->netFactor == 1 || graph->nChannels >= refGraph->nChannels) {
-     *copy = 1;
-     return ncclSuccess;
-   }
+    *copy = 1;
+    return ncclSuccess;
   }
   // 2. Give an advantage when all channels are the same
   if (graph->nChannels > 1 && graph->sameChannels && refGraph->sameChannels == 0) {
@@ -255,7 +253,9 @@ ncclResult_t ncclTopoSearchRecGpu(struct ncclTopoSystem* system, struct ncclTopo
       int g = next[i];
       int nvlink = graph->nvlink;
       graph->nvlink &= paths[g].type <= LINK_NVL ? 1 : 0;
-      NCCLCHECK(ncclTopoSearchTryGpu(system, graph, saveGraph, paths, step+1, backToNet, backToFirstRank, forcedOrder, maxSpeed, time, g, graph->speed));
+      int speed = graph->speed;
+      if (paths[g].type == LINK_QPI) speed = INTEL_P2P_OVERHEAD(speed);
+      NCCLCHECK(ncclTopoSearchTryGpu(system, graph, saveGraph, paths, step+1, backToNet, backToFirstRank, forcedOrder, maxSpeed, time, g, speed));
       graph->nvlink = nvlink;
     }
   } else if (step == backToFirstRank) {
@@ -494,37 +494,52 @@ ncclResult_t ncclTopoCompute(ncclTopoSystem* system, struct ncclTopoGraph* graph
   tmpGraph.netFactor = 1;
   tmpGraph.speed = system->maxWidth;
   tmpGraph.crossNic = 0;
+  tmpGraph.gdr = 1;
   int maxSpeed = system->maxSpeed;
+  tmpGraph.pattern = graph->pattern;
 
 search:
-  tmpGraph.pattern = graph->pattern;
   int time = NCCL_SEARCH_TIMEOUT;
-  while (1) {
-    tmpGraph.nvlink = 1;
-    tmpGraph.gdr = 1;
-    tmpGraph.nChannels = 0;
-    tmpGraph.sameChannels = 1;
-    NCCLCHECK(ncclTopoSearchRec(system, &tmpGraph, graph, maxSpeed, &time));
+  tmpGraph.nvlink = 1;
+  tmpGraph.nChannels = 0;
+  tmpGraph.sameChannels = 1;
+  NCCLCHECK(ncclTopoSearchRec(system, &tmpGraph, graph, maxSpeed, &time));
 #if 0
-    printf("Pattern %d, crossNic %d, Speed %d, netFactor %d -> nChannels %dx%d %s\n", tmpGraph.pattern, tmpGraph.crossNic, tmpGraph.speed, tmpGraph.netFactor, graph->nChannels, graph->speed, time == 0 ? "TIMEOUT" : "");
-    for (int c=0; c<graph->nChannels; c++) {
-      printf("%2d : ", c);
-      for (int g=0; g<ngpus; g++) {
-        printf("%d ", graph->intra[c*ngpus+g]);
-      }
-      printf("\n");
+  printf("Pattern %d, crossNic %d, Speed %d, netFactor %d -> nChannels %dx%d %s\n", tmpGraph.pattern, tmpGraph.crossNic, tmpGraph.speed, tmpGraph.netFactor, graph->nChannels, graph->speed, time == 0 ? "TIMEOUT" : "");
+  for (int c=0; c<graph->nChannels; c++) {
+    printf("%2d : ", c);
+    for (int g=0; g<ngpus; g++) {
+      printf("%d ", graph->intra[c*ngpus+g]);
     }
-#endif
-    if (time == -1) goto done;
-    // We already have a solution and we timed out so lower speed will just timeout as well
-    if (time == 0 && graph->nChannels > 0) goto done;
-    if ((graph->nChannels > 0) && (bestSpeed == 0)) bestSpeed = graph->speed;
-    if (tmpGraph.pattern == NCCL_TOPO_PATTERN_SPLIT_TREE_LOOP) tmpGraph.pattern = NCCL_TOPO_PATTERN_SPLIT_TREE;
-    else if (tmpGraph.pattern == NCCL_TOPO_PATTERN_SPLIT_TREE) tmpGraph.pattern = NCCL_TOPO_PATTERN_TREE;
-    else break;
+    printf("\n");
   }
+#endif
+  if (time == -1) goto done;
+  // We already have a solution and we timed out so lower speed will just timeout as well
+  if (time == 0 && graph->nChannels > 0) goto done;
+  if ((graph->nChannels > 0) && (bestSpeed == 0)) bestSpeed = graph->speed;
 
   if (tmpGraph.netFactor == 1) {
+    // First pass, we don't have a solution yet ; try to go slower.
+
+    // Try a simpler tree
+    if (tmpGraph.pattern == NCCL_TOPO_PATTERN_SPLIT_TREE_LOOP) {
+      tmpGraph.pattern = NCCL_TOPO_PATTERN_SPLIT_TREE;
+      goto search;
+    }
+    if (tmpGraph.pattern == NCCL_TOPO_PATTERN_SPLIT_TREE) {
+      tmpGraph.pattern = NCCL_TOPO_PATTERN_TREE;
+      goto search;
+    }
+    tmpGraph.pattern = graph->pattern;
+
+    if (tmpGraph.gdr == 1) {
+      // try without GDR
+      tmpGraph.gdr = 0;
+      goto search;
+    }
+    tmpGraph.gdr = 1;
+
     if (crossNic && tmpGraph.crossNic == 0) {
       // Try again with crossNic if permitted
       tmpGraph.crossNic = crossNic;
@@ -538,6 +553,7 @@ search:
   }
 
 done:
+  // We have a solution now. See if we can increase the speed (if netFactor is not 1)
   if (netFactor > 1 && graph->nChannels > 0) {
     if (tmpGraph.netFactor == 1) {
       // Restart from the best speed;
@@ -546,7 +562,7 @@ done:
       // Ignore timeout on the first loop
       time = -1;
     }
-    if (time != 0) {
+    if (time != 0 && tmpGraph.speed == graph->speed) {
       // Try to increase the speed setting netFactor to more then 1 but keeping nChannels the same
       tmpGraph.speed += 3;
       maxSpeed = tmpGraph.speed * graph->nChannels;
