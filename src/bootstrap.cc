@@ -466,3 +466,13 @@ ncclResult_t bootstrapClose(void* commState) {
 
   return ncclSuccess;
 }
+
+ncclResult_t bootstrapAbort(void* commState) {
+  struct extState* state = (struct extState*)commState;
+  bootstrapNetCloseListen(state->extBstrapListenComm);
+  bootstrapNetCloseSend(state->extBstrapRingSendComm);
+  bootstrapNetCloseRecv(state->extBstrapRingRecvComm);
+  free(state->peerBstrapHandles);
+  free(state);
+  return ncclSuccess;
+}
