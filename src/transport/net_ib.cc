@@ -201,21 +201,7 @@ ncclResult_t ncclIbGdrSupport(int ibDev) {
     moduleLoaded = (access("/sys/kernel/mm/memory_peers/nv_mem/version", F_OK) == -1) ? 0 : 1;
   }
   if (moduleLoaded == 0) return ncclSystemError;
-  ncclResult_t ret = ncclSystemError;
-  void* ptr;
-  if (cudaMalloc(&ptr, sizeof(int)) == cudaSuccess) {
-    struct ibv_mr* mr;
-    struct ibv_pd* pd;
-    if (wrap_ibv_alloc_pd(&pd, ncclIbDevs[ibDev].context) == ncclSuccess) {
-      if ((mr = wrap_direct_ibv_reg_mr(pd, ptr, sizeof(int), IBV_ACCESS_LOCAL_WRITE|IBV_ACCESS_REMOTE_WRITE|IBV_ACCESS_REMOTE_READ)) != NULL) {
-        ret = ncclSuccess;
-        wrap_ibv_dereg_mr(mr);
-      }
-      wrap_ibv_dealloc_pd(pd);
-    }
-    cudaFree(ptr);
-  }
-  return ret;
+  return ncclSuccess;
 }
 
 ncclResult_t ncclIbPtrSupport(int dev, int* supportedTypes) {
