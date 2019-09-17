@@ -48,7 +48,7 @@ TEST_F(ncclCommInitAll_test, devList_null) {
 TEST_F(ncclCommInitAll_test, devList_duplicate) {
     comms = (ncclComm_t*)calloc(nVis, sizeof(ncclComm_t));
     int* devList = (int*)calloc(nVis, sizeof(int));
-    ASSERT_EQ(ncclInvalidUsage,
+    ASSERT_EQ(nVis > 1 ? ncclInvalidUsage : ncclSuccess,
               ncclCommInitAll(comms, nVis, devList));
     free(devList);
 };
