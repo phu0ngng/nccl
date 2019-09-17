@@ -661,7 +661,7 @@ ncclResult_t ncclTopoSearchInit(struct ncclTopoSystem* system) {
           struct ncclTopoNode* gpuNode = system->nodes[GPU].nodes+g;
           l = 0;
           for (int i=0; i<gpuNode->paths[CPU][localCpu].count; i++) gpuNode->paths[NET][n].list[l++] = gpuNode->paths[CPU][localCpu].list[i];
-          for (int i=0; i<cpuNode->paths[NET][n].count; i++) gpuNode->paths[NET][n].list[l++] = gpuNode->paths[NET][n].list[i];
+          for (int i=0; i<cpuNode->paths[NET][n].count; i++) gpuNode->paths[NET][n].list[l++] = cpuNode->paths[NET][n].list[i];
           gpuNode->paths[NET][n].count = l;
           gpuNode->paths[NET][n].type = LINK_QPI;
           gpuNode->paths[NET][n].width = std::min(gpuNode->paths[CPU][localCpu].width, cpuNode->paths[NET][n].width);

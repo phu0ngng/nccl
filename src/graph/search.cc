@@ -549,7 +549,7 @@ search:
 
     // Try to reduce speed per channel
     tmpGraph.speed -= 3;
-    if (tmpGraph.speed >= bestSpeed/2 && tmpGraph.speed >= 6) goto search;
+    if (tmpGraph.speed >= bestSpeed/2 && tmpGraph.speed >= 3) goto search;
   }
 
 done:
