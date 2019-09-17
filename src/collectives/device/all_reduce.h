@@ -543,7 +543,7 @@ __device__ void ncclAllReduceAcclLL128Kernel(struct CollectiveArgs* args) {
 
   if (blockIdx.x % 2 == 1) {
     struct ncclTree* tree = &channel->collTreeDn;
-    ncclLLPrimitives<T, FUNC, 1, 1> LLprims(tid, nthreads, &tree->up, tree->down, channel, comm, args->opCount);
+    ncclLL128Primitives<T, FUNC, 1, 1> LLprims(tid, nthreads, &tree->up, tree->down, channel, comm, args->opCount);
     for (ssize_t gridOffset = 0; gridOffset < size; gridOffset += loopSize) {
       // Down
       ssize_t offset = gridOffset + bid*chunkSize;
