@@ -235,6 +235,7 @@ ncclResult_t bootstrapCreateRoot(ncclUniqueId* id, bool idFromEnv) {
 
 ncclResult_t bootstrapGetUniqueId(ncclUniqueId* id) {
   static_assert(sizeof(ncclNetHandle_t) < sizeof(ncclUniqueId), "NetId does not fit inside ncclUniqueId");
+  memset(id, 0, sizeof(ncclUniqueId));
   ncclNetHandle_t* netHandle = (ncclNetHandle_t*) id;
 
   char* env = getenv("NCCL_COMM_ID");
