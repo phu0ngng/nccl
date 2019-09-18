@@ -479,6 +479,8 @@ ncclResult_t ncclTopoConnectPCI(nvmlDevice_t* nvmlDevs, struct ncclTopoSystem* s
       NCCLCHECK(ncclTopoConnectNodes(nicNode, netNode, LINK_NET, netWidth));
       NCCLCHECK(ncclTopoConnectNodes(netNode, nicNode, LINK_NET, netWidth));
     }
+    free(netInfos);
+
     system->maxSpeed = std::min(system->maxSpeed, netDevCount*netWidth);
     system->maxChannels = std::max(system->maxChannels, netDevCount);
     system->maxWidth = netWidth;
