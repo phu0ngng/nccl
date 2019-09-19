@@ -437,36 +437,6 @@ static ncclResult_t p2pSetup(struct ncclComm* comm, struct ncclTopoGraph* graph,
 
 NCCL_PARAM(CrossNic, "CROSS_NIC", 2);
 
-static ncclResult_t getNodesInfo(struct ncclComm* comm,
-    int* rankIndexes, int* nvmlIndexes, int* firstRanks) {
-  int nNodes = 0;
-  int localRanks = 0;
-  uint64_t* nodesHashes;
-  NCCLCHECK(ncclCalloc(&nodesHashes, comm->nRanks));
-  for (int r=0; r<comm->nRanks; r++) {
-    uint64_t hostHash = comm->peerInfo[r].hostHash;
-    int nodeIndex = 0;
-    while (nodeIndex < nNodes) {
-      if (nodesHashes[nodeIndex] == hostHash) break;
-      nodeIndex++;
-    }
-    if (nodeIndex == nNodes) { // new node
-      nodesHashes[nNodes] = hostHash;
-      firstRanks[nNodes++] = r;
-    }
-    if (r == comm->rank) comm->node = nodeIndex;
-    if (hostHash == comm->peerInfo[comm->rank].hostHash) {
-      nvmlIndexes[localRanks] = comm->peerInfo[r].nvmlDev;
-      rankIndexes[localRanks] = r;
-      localRanks++;
-    }
-  }
-  free(nodesHashes);
-  comm->nNodes = nNodes;
-  comm->localRanks = localRanks;
-  return ncclSuccess;
-}
-
 static ncclResult_t initTransportsRank(struct ncclComm* comm, ncclUniqueId* commId) {
   // We use 3 AllGathers
   // 1. { peerInfo, comm }
@@ -503,14 +473,15 @@ static ncclResult_t initTransportsRank(struct ncclComm* comm, ncclUniqueId* comm
   // AllGather1 - end
 
   // Topo detection / System graph creation
-  int* nvmlIndexes, *rankIndexes, *nodesFirstRank;
-  NCCLCHECK(ncclCalloc(&nvmlIndexes, nranks));
-  NCCLCHECK(ncclCalloc(&rankIndexes, nranks));
-  NCCLCHECK(ncclCalloc(&nodesFirstRank, nranks));
-  NCCLCHECK(getNodesInfo(comm, rankIndexes, nvmlIndexes, nodesFirstRank));
-  NCCLCHECK(ncclTopoGetSystem(comm->localRanks, nvmlIndexes, rankIndexes, &comm->topo, comm->localRanks == nranks ? 0 : 1));
-  free(nvmlIndexes);
-  free(rankIndexes);
+  NCCLCHECK(ncclTopoGetSystem(comm, &comm->topo));
+  // Per-compute paths between GPUs and NICs
+  NCCLCHECK(ncclTopoComputePaths(comm->topo, comm->peerInfo));
+  // Remove inaccessible GPUs and unused NICs
+  NCCLCHECK(ncclTopoTrimSystem(comm->topo, comm));
+  // Compute max speed to accelerate search
+  NCCLCHECK(ncclTopoGetMaxSpeed(comm->topo));
+  // Print final topology
+  NCCLCHECK(ncclTopoPrint(comm->topo));
 
   // Get rings and trees
   struct ncclTopoGraph treeGraph;
@@ -558,9 +529,25 @@ static ncclResult_t initTransportsRank(struct ncclComm* comm, ncclUniqueId* comm
   allGather3Data[rank].ring.speed = ringGraph.speed;
   allGather3Data[rank].ring.nvlink = ringGraph.nvlink;
 
-  NCCLCHECK(ncclTopoPreset(comm, nodesFirstRank, &treeGraph, &ringGraph, &allGather3Data[rank].topoRanks));
+  NCCLCHECK(ncclTopoPreset(comm, &treeGraph, &ringGraph, &allGather3Data[rank].topoRanks));
 
   NCCLCHECK(bootstrapAllGather(comm->bootstrap, allGather3Data, sizeof(*allGather3Data)));
+
+  // Determine nNodes, firstRanks, ...
+  int* nodesFirstRank;
+  NCCLCHECK(ncclCalloc(&nodesFirstRank, nranks));
+  for (int i=0; i<nranks; i++) {
+    int node = -1;
+    int firstRank = allGather3Data[i].topoRanks.ringRecv[0];
+    for (int n=0; n<comm->nNodes; n++) {
+      if (nodesFirstRank[n] == firstRank) node = n;
+    }
+    if (node == -1) {
+      node = comm->nNodes++;
+      nodesFirstRank[node] = firstRank;
+    }
+    if (i == comm->rank) comm->node = node;
+  }
 
   // Determine the minimum CUDA Compute capability of all GPUs
   int myCompCap = allGather3Data[rank].cudaCompCap;

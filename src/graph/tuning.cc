@@ -7,6 +7,7 @@
 #include "core.h"
 #include "devcomm.h"
 #include "comm.h"
+#include "topo.h"
 
 NCCL_PARAM(Nthreads, "NTHREADS", -2);
 NCCL_PARAM(Ll128Nthreads, "LL128_NTHREADS", -2);
@@ -140,7 +141,7 @@ ncclResult_t ncclSetThresholds(struct ncclComm* comm, int minCompCap, int maxCom
     int pEnable = protoEnable[p];
     if (pEnable == 2 && p == NCCL_PROTO_LL128) {
       // Enable LL128 by default only on Volta+NVLink. Other cases are not tested and may cause silent data corruption.
-      pEnable = (graphs[a]->gdr == 1) && comm->nvlink && minCompCap == 70 && maxCompCap == 70 ? 1 : 0;
+      pEnable = (graphs[a]->type >= LINK_PCI) && graphs[a]->nvlink && minCompCap == 70 && maxCompCap == 70 ? 1 : 0;
     }
     if (pEnable == 0 || algoEnable[a] == 0) comm->bandwidths[c][a][p] = 0;
   }

@@ -365,9 +365,10 @@ void createSystem(struct ncclTopoSystem* system, const char* desc[], int descSiz
     system->maxWidth = NET_WIDTH;
   }
 
-  // Sort system to accelerate search
   CHECK(ncclTopoSortSystem(system));
-  CHECK(ncclTopoSearchInit(system));
+  CHECK(ncclTopoComputePaths(system, NULL));
+  CHECK(ncclTopoGetMaxSpeed(system));
+  CHECK(ncclTopoPrint(system));
 }
 
 const char* treeMode[] = { "unknown", "split tree loop", "split tree", "tree", "ring" };
@@ -381,8 +382,8 @@ uint64_t getTime() {
 }
 
 int checkTopo(const char* name, const char** topo, int topoSize, int nvlinkWidth, int inter,
-  int expectedTreeChannels, int expectedTreeSpeed, int expectedTreeNvLink, int expectedTreeGdr, int expectedTreePattern,
-  int expectedRingChannels, int expectedRingSpeed, int expectedRingNvLink, int expectedRingGdr, int expectedRingCrossnic) {
+  int expectedTreeChannels, int expectedTreeSpeed, int expectedTreeNvLink, int expectedTreeLinkType, int expectedTreePattern,
+  int expectedRingChannels, int expectedRingSpeed, int expectedRingNvLink, int expectedRingLinkType, int expectedRingCrossnic) {
   int errors = 0;
   struct ncclTopoSystem system;
   memset(&system, 0, sizeof(system));
@@ -410,32 +411,32 @@ int checkTopo(const char* name, const char** topo, int topoSize, int nvlinkWidth
   CHECK(ncclTopoPrintGraph(&system, &ringGraph));
 
   printf("%s / %s : ", name, inter == 0 ? "1 node " : inter == 1 ? "N nodes" : "2 nodes");
-  printf("%2dx%2d %15s %1s%1s | %2dx%2d %5s %1s%1s",
+  printf("%2dx%2d %15s %1s %3s | %2dx%2d %5s %1s %3s",
       treeGraph.nChannels, treeGraph.speed,
       treeMode[treeGraph.pattern],
       treeGraph.nvlink ? "N" : " ",
-      treeGraph.gdr ? "G" : " ",
+      topoLinkTypeStr[treeGraph.type],
       ringGraph.nChannels, ringGraph.speed,
       xnicMode[ringGraph.crossNic],
       ringGraph.nvlink ? "N" : " ",
-      ringGraph.gdr ? "G" : " ");
+      topoLinkTypeStr[ringGraph.type]);
 
   if ((treeGraph.nChannels != expectedTreeChannels) || (treeGraph.speed != expectedTreeSpeed) ||
-      (treeGraph.nvlink != expectedTreeNvLink) || (treeGraph.gdr != expectedTreeGdr) ||
+      (treeGraph.nvlink != expectedTreeNvLink) || (treeGraph.type != expectedTreeLinkType) ||
       (treeGraph.pattern != expectedTreePattern) ||
       (ringGraph.nChannels != expectedRingChannels) || (ringGraph.speed != expectedRingSpeed) ||
-      (ringGraph.nvlink != expectedRingNvLink) || (ringGraph.gdr != expectedRingGdr) ||
+      (ringGraph.nvlink != expectedRingNvLink) || (ringGraph.type != expectedRingLinkType) ||
       (ringGraph.crossNic != expectedRingCrossnic)) {
-    printf(" FAILED %5ld ms, Expected : %2dx%2d %15s %1s%1s | %2dx%2d %5s %1s%1s\n",
+    printf(" FAILED %5ld ms, Expected : %2dx%2d %15s %1s %3s | %2dx%2d %5s %1s %3s\n",
        computeTime/1000,
        expectedTreeChannels, expectedTreeSpeed,
        treeMode[expectedTreePattern],
        expectedTreeNvLink ? "N" : " ",
-       expectedTreeGdr ? "G" : " ",
+       topoLinkTypeStr[expectedTreeLinkType],
        expectedRingChannels, expectedRingSpeed,
        xnicMode[expectedRingCrossnic],
        expectedRingNvLink ? "N" : " ",
-       expectedRingGdr ? "G" : " ");
+       topoLinkTypeStr[expectedRingLinkType]);
     errors++;
   } else if (computeTime > 1000000) {
     printf("   SLOW %5ld ms\n", computeTime/1000);
@@ -450,45 +451,45 @@ int main() {
   setlinebuf(stdout);
   initDebug();
   int errors = 0;
-  errors += checkTopo("LOC-1G", TOPO(local_topo), 0,                   0, 1, PCI_WIDTH,             1, 1, NCCL_TOPO_PATTERN_TREE,            1, PCI_WIDTH,             1, 1, 0);
-  errors += checkTopo("LOC-1G", TOPO(local_topo), 0,                   1, 1, PCI_WIDTH,             1, 1, NCCL_TOPO_PATTERN_TREE,            1, PCI_WIDTH,             1, 1, 0);
-  errors += checkTopo("LOC-1G", TOPO(local_topo), 0,                   2, 1, 2*PCI_WIDTH,           1, 1, NCCL_TOPO_PATTERN_TREE,            1, PCI_WIDTH,             1, 1, 0);
-  errors += checkTopo("PCI-1R", TOPO(pci1R_topo), 0,                   0, 1, INTEL_P2P(PCI_WIDTH),  0, 1, NCCL_TOPO_PATTERN_SPLIT_TREE_LOOP, 1, INTEL_P2P(PCI_WIDTH),  0, 1, 0);
-  errors += checkTopo("PCI-1R", TOPO(pci1R_topo), 0,                   1, 1, PCI_WIDTH/2,           0, 1, NCCL_TOPO_PATTERN_SPLIT_TREE_LOOP, 1, INTEL_P2P(PCI_WIDTH),  0, 1, 0);
-  errors += checkTopo("PCI-1R", TOPO(pci1R_topo), 0,                   2, 1, PCI_WIDTH/2,           0, 1, NCCL_TOPO_PATTERN_SPLIT_TREE_LOOP, 1, INTEL_P2P(PCI_WIDTH),  0, 1, 0);
-  errors += checkTopo("PCI-2R", TOPO(pci2R_topo), 0,                   0, 1, INTEL_P2P(QPI_WIDTH),  0, 1, NCCL_TOPO_PATTERN_SPLIT_TREE_LOOP, 1, INTEL_P2P(QPI_WIDTH),  0, 1, 0);
-  errors += checkTopo("PCI-2R", TOPO(pci2R_topo), 0,                   1, 1, INTEL_P2P(QPI_WIDTH),  0, 1, NCCL_TOPO_PATTERN_SPLIT_TREE_LOOP, 1, INTEL_P2P(QPI_WIDTH),  0, 1, 0);
-  errors += checkTopo("PCI-2R", TOPO(pci2R_topo), 0,                   2, 1, INTEL_P2P(QPI_WIDTH),  0, 1, NCCL_TOPO_PATTERN_SPLIT_TREE_LOOP, 1, INTEL_P2P(QPI_WIDTH),  0, 1, 0);
-  errors += checkTopo("PCI-NV", TOPO(pciNV_topo), PASCAL_NVLINK_WIDTH, 0, 1, INTEL_P2P(PCI_WIDTH),  0, 1, NCCL_TOPO_PATTERN_SPLIT_TREE_LOOP, 1, INTEL_P2P(PCI_WIDTH),  0, 1, 0);
-  errors += checkTopo("PCI-NV", TOPO(pciNV_topo), PASCAL_NVLINK_WIDTH, 1, 1, INTEL_P2P(PCI_WIDTH),  0, 1, NCCL_TOPO_PATTERN_SPLIT_TREE,      1, INTEL_P2P(PCI_WIDTH),  0, 1, 0);
-  errors += checkTopo("PCI-NV", TOPO(pciNV_topo), PASCAL_NVLINK_WIDTH, 2, 1, INTEL_P2P(PCI_WIDTH),  0, 1, NCCL_TOPO_PATTERN_SPLIT_TREE,      1, INTEL_P2P(PCI_WIDTH),  0, 1, 0);
-  errors += checkTopo("DGX-1P", TOPO(dgx1p_topo), PASCAL_NVLINK_WIDTH, 0, 4, PASCAL_NVLINK_WIDTH,   1, 1, NCCL_TOPO_PATTERN_SPLIT_TREE_LOOP, 4, PASCAL_NVLINK_WIDTH,   1, 1, 0);
-  errors += checkTopo("DGX-1P", TOPO(dgx1p_topo), PASCAL_NVLINK_WIDTH, 1, 4, NET_WIDTH,             1, 1, NCCL_TOPO_PATTERN_SPLIT_TREE_LOOP, 4, NET_WIDTH,             1, 1, 0);
-  errors += checkTopo("DGX-1P", TOPO(dgx1p_topo), PASCAL_NVLINK_WIDTH, 2, 4, NET_WIDTH*3/2,         1, 1, NCCL_TOPO_PATTERN_SPLIT_TREE_LOOP, 4, NET_WIDTH,             1, 1, 0);
-  errors += checkTopo("DGX-1H", TOPO(dgx1h_topo), PASCAL_NVLINK_WIDTH, 0, 6, PASCAL_NVLINK_WIDTH/2, 1, 1, NCCL_TOPO_PATTERN_SPLIT_TREE_LOOP, 6, PASCAL_NVLINK_WIDTH/2, 1, 1, 0);
-  errors += checkTopo("DGX-1H", TOPO(dgx1h_topo), PASCAL_NVLINK_WIDTH, 1, 2, NET_WIDTH,             1, 1, NCCL_TOPO_PATTERN_SPLIT_TREE_LOOP, 2, NET_WIDTH,             1, 1, 0);
-  errors += checkTopo("DGX-1H", TOPO(dgx1h_topo), PASCAL_NVLINK_WIDTH, 2, 2, NET_WIDTH*3/2,         1, 1, NCCL_TOPO_PATTERN_SPLIT_TREE_LOOP, 2, NET_WIDTH,             1, 1, 0);
-  errors += checkTopo("DGX-1V", TOPO(dgx1v_topo), VOLTA_NVLINK_WIDTH,  0, 6, VOLTA_NVLINK_WIDTH,    1, 1, NCCL_TOPO_PATTERN_SPLIT_TREE_LOOP, 6, VOLTA_NVLINK_WIDTH,    1, 1, 0);
-  errors += checkTopo("DGX-1V", TOPO(dgx1v_topo), VOLTA_NVLINK_WIDTH,  1, 4, NET_WIDTH,             1, 1, NCCL_TOPO_PATTERN_SPLIT_TREE_LOOP, 4, NET_WIDTH,             1, 1, 0);
-  errors += checkTopo("DGX-1V", TOPO(dgx1v_topo), VOLTA_NVLINK_WIDTH,  2, 4, 21,                    1, 1, NCCL_TOPO_PATTERN_SPLIT_TREE_LOOP, 4, NET_WIDTH,             1, 1, 0);
-  errors += checkTopo("DGX-2V", TOPO(dgx2v_topo), VOLTA_NVLINK_WIDTH,  0, 6, VOLTA_NVLINK_WIDTH,    1, 1, NCCL_TOPO_PATTERN_SPLIT_TREE_LOOP, 6, VOLTA_NVLINK_WIDTH,    1, 1, 0);
-  errors += checkTopo("DGX-2V", TOPO(dgx2v_topo), VOLTA_NVLINK_WIDTH,  1, 8, NET_WIDTH,             1, 1, NCCL_TOPO_PATTERN_SPLIT_TREE_LOOP, 8, NET_WIDTH,             1, 1, 0);
-  errors += checkTopo("DGX-2V", TOPO(dgx2v_topo), VOLTA_NVLINK_WIDTH,  2, 8, 15,                    1, 1, NCCL_TOPO_PATTERN_SPLIT_TREE_LOOP, 8, NET_WIDTH,             1, 1, 0);
-  errors += checkTopo("DGX-2A", TOPO(dgx2a_topo), VOLTA_NVLINK_WIDTH,  0, 6, VOLTA_NVLINK_WIDTH,    1, 1, NCCL_TOPO_PATTERN_SPLIT_TREE_LOOP, 6, VOLTA_NVLINK_WIDTH,    1, 1, 0);
-  errors += checkTopo("DGX-2A", TOPO(dgx2a_topo), VOLTA_NVLINK_WIDTH,  1, 8, NET_WIDTH,             1, 1, NCCL_TOPO_PATTERN_SPLIT_TREE_LOOP, 8, NET_WIDTH,             1, 1, 0);
-  errors += checkTopo("DGX-2A", TOPO(dgx2a_topo), VOLTA_NVLINK_WIDTH,  2, 8, 15,                    1, 1, NCCL_TOPO_PATTERN_SPLIT_TREE_LOOP, 8, NET_WIDTH,             1, 1, 0);
-  errors += checkTopo("XMAN-3", TOPO(xman3_topo), VOLTA_NVLINK_WIDTH,  0, 6, VOLTA_NVLINK_WIDTH,    1, 1, NCCL_TOPO_PATTERN_SPLIT_TREE_LOOP, 6, VOLTA_NVLINK_WIDTH,    1, 1, 0);
-  errors += checkTopo("XMAN-3", TOPO(xman3_topo), VOLTA_NVLINK_WIDTH,  1, 8, NET_WIDTH,             1, 1, NCCL_TOPO_PATTERN_SPLIT_TREE_LOOP, 8, NET_WIDTH,             1, 1, 0);
-  errors += checkTopo("XMAN-3", TOPO(xman3_topo), VOLTA_NVLINK_WIDTH,  2, 8, 15,                    1, 1, NCCL_TOPO_PATTERN_SPLIT_TREE_LOOP, 8, NET_WIDTH,             1, 1, 0);
-  errors += checkTopo("GCP-NV", TOPO(gcpnv_topo), VOLTA_NVLINK_WIDTH,  0, 6, VOLTA_NVLINK_WIDTH,    1, 1, NCCL_TOPO_PATTERN_SPLIT_TREE_LOOP, 6, VOLTA_NVLINK_WIDTH,    1, 1, 0);
-  errors += checkTopo("GCP-NV", TOPO(gcpnv_topo), VOLTA_NVLINK_WIDTH,  1, 1, NET_WIDTH,             1, 0, NCCL_TOPO_PATTERN_SPLIT_TREE_LOOP, 1, NET_WIDTH,             1, 0, 0);
-  errors += checkTopo("GCP-NV", TOPO(gcpnv_topo), VOLTA_NVLINK_WIDTH,  2, 1, NET_WIDTH*2,           1, 0, NCCL_TOPO_PATTERN_SPLIT_TREE_LOOP, 1, NET_WIDTH,             1, 0, 0);
-  errors += checkTopo("FB-BUG", TOPO(fbbug_topo), VOLTA_NVLINK_WIDTH,  0, 1, VOLTA_NVLINK_WIDTH,    1, 1, NCCL_TOPO_PATTERN_SPLIT_TREE,      2, INTEL_P2P(QPI_WIDTH),  0, 1, 0);
-  errors += checkTopo("FB-BUG", TOPO(fbbug_topo), VOLTA_NVLINK_WIDTH,  1, 2, NET_WIDTH,             1, 1, NCCL_TOPO_PATTERN_TREE,            2, NET_WIDTH,             1, 1, 1);
-  errors += checkTopo("FB-BUG", TOPO(fbbug_topo), VOLTA_NVLINK_WIDTH,  2, 2, 21,                    1, 1, NCCL_TOPO_PATTERN_TREE,            2, NET_WIDTH,             1, 1, 1);
-  errors += checkTopo("P9-6V ", TOPO(p9_6v_topo), VOLTA_NVLINK_WIDTH,  0, 2, 15,                    0, 1, NCCL_TOPO_PATTERN_SPLIT_TREE_LOOP, 2, 15,                    0, 1, 0);
-  errors += checkTopo("P9-6V ", TOPO(p9_6v_topo), VOLTA_NVLINK_WIDTH,  1, 2, NET_WIDTH,             0, 0, NCCL_TOPO_PATTERN_SPLIT_TREE_LOOP, 2, NET_WIDTH,             0, 0, 0);
-  errors += checkTopo("P9-6V ", TOPO(p9_6v_topo), VOLTA_NVLINK_WIDTH,  2, 2, 15,                    0, 0, NCCL_TOPO_PATTERN_SPLIT_TREE_LOOP, 2, NET_WIDTH,             0, 0, 0);
+  errors += checkTopo("LOC-1G", TOPO(local_topo), 0,                   0, 1, PCI_WIDTH,             1, LINK_LOC, NCCL_TOPO_PATTERN_TREE,            1, PCI_WIDTH,             1, LINK_LOC, 0);
+  errors += checkTopo("LOC-1G", TOPO(local_topo), 0,                   1, 1, PCI_WIDTH,             1, LINK_PCI, NCCL_TOPO_PATTERN_TREE,            1, PCI_WIDTH,             1, LINK_PCI, 0);
+  errors += checkTopo("LOC-1G", TOPO(local_topo), 0,                   2, 1, 2*PCI_WIDTH,           1, LINK_PCI, NCCL_TOPO_PATTERN_TREE,            1, PCI_WIDTH,             1, LINK_PCI, 0);
+  errors += checkTopo("PCI-1R", TOPO(pci1R_topo), 0,                   0, 1, INTEL_P2P(PCI_WIDTH),  0, LINK_QPI, NCCL_TOPO_PATTERN_SPLIT_TREE_LOOP, 1, INTEL_P2P(PCI_WIDTH),  0, LINK_QPI, 0);
+  errors += checkTopo("PCI-1R", TOPO(pci1R_topo), 0,                   1, 1, PCI_WIDTH/2,           0, LINK_QPI, NCCL_TOPO_PATTERN_SPLIT_TREE_LOOP, 1, INTEL_P2P(PCI_WIDTH),  0, LINK_QPI, 0);
+  errors += checkTopo("PCI-1R", TOPO(pci1R_topo), 0,                   2, 1, PCI_WIDTH/2,           0, LINK_QPI, NCCL_TOPO_PATTERN_SPLIT_TREE_LOOP, 1, INTEL_P2P(PCI_WIDTH),  0, LINK_QPI, 0);
+  errors += checkTopo("PCI-2R", TOPO(pci2R_topo), 0,                   0, 1, INTEL_P2P(QPI_WIDTH),  0, LINK_QPI, NCCL_TOPO_PATTERN_SPLIT_TREE_LOOP, 1, INTEL_P2P(QPI_WIDTH),  0, LINK_QPI, 0);
+  errors += checkTopo("PCI-2R", TOPO(pci2R_topo), 0,                   1, 1, INTEL_P2P(QPI_WIDTH),  0, LINK_QPI, NCCL_TOPO_PATTERN_SPLIT_TREE_LOOP, 1, INTEL_P2P(QPI_WIDTH),  0, LINK_QPI, 0);
+  errors += checkTopo("PCI-2R", TOPO(pci2R_topo), 0,                   2, 1, INTEL_P2P(QPI_WIDTH),  0, LINK_QPI, NCCL_TOPO_PATTERN_SPLIT_TREE_LOOP, 1, INTEL_P2P(QPI_WIDTH),  0, LINK_QPI, 0);
+  errors += checkTopo("PCI-NV", TOPO(pciNV_topo), PASCAL_NVLINK_WIDTH, 0, 1, INTEL_P2P(PCI_WIDTH),  0, LINK_QPI, NCCL_TOPO_PATTERN_SPLIT_TREE_LOOP, 1, INTEL_P2P(PCI_WIDTH),  0, LINK_QPI, 0);
+  errors += checkTopo("PCI-NV", TOPO(pciNV_topo), PASCAL_NVLINK_WIDTH, 1, 1, INTEL_P2P(PCI_WIDTH),  0, LINK_QPI, NCCL_TOPO_PATTERN_SPLIT_TREE,      1, INTEL_P2P(PCI_WIDTH),  0, LINK_QPI, 0);
+  errors += checkTopo("PCI-NV", TOPO(pciNV_topo), PASCAL_NVLINK_WIDTH, 2, 1, INTEL_P2P(PCI_WIDTH),  0, LINK_QPI, NCCL_TOPO_PATTERN_SPLIT_TREE,      1, INTEL_P2P(PCI_WIDTH),  0, LINK_QPI, 0);
+  errors += checkTopo("DGX-1P", TOPO(dgx1p_topo), PASCAL_NVLINK_WIDTH, 0, 4, PASCAL_NVLINK_WIDTH,   1, LINK_NVL, NCCL_TOPO_PATTERN_SPLIT_TREE_LOOP, 4, PASCAL_NVLINK_WIDTH,   1, LINK_NVL, 0);
+  errors += checkTopo("DGX-1P", TOPO(dgx1p_topo), PASCAL_NVLINK_WIDTH, 1, 4, NET_WIDTH,             1, LINK_PCI, NCCL_TOPO_PATTERN_SPLIT_TREE_LOOP, 4, NET_WIDTH,             1, LINK_PCI, 0);
+  errors += checkTopo("DGX-1P", TOPO(dgx1p_topo), PASCAL_NVLINK_WIDTH, 2, 4, NET_WIDTH*3/2,         1, LINK_PCI, NCCL_TOPO_PATTERN_SPLIT_TREE_LOOP, 4, NET_WIDTH,             1, LINK_PCI, 0);
+  errors += checkTopo("DGX-1H", TOPO(dgx1h_topo), PASCAL_NVLINK_WIDTH, 0, 6, PASCAL_NVLINK_WIDTH/2, 1, LINK_NVL, NCCL_TOPO_PATTERN_SPLIT_TREE_LOOP, 6, PASCAL_NVLINK_WIDTH/2, 1, LINK_NVL, 0);
+  errors += checkTopo("DGX-1H", TOPO(dgx1h_topo), PASCAL_NVLINK_WIDTH, 1, 2, NET_WIDTH,             1, LINK_PCI, NCCL_TOPO_PATTERN_SPLIT_TREE_LOOP, 2, NET_WIDTH,             1, LINK_PCI, 0);
+  errors += checkTopo("DGX-1H", TOPO(dgx1h_topo), PASCAL_NVLINK_WIDTH, 2, 2, NET_WIDTH*3/2,         1, LINK_PCI, NCCL_TOPO_PATTERN_SPLIT_TREE_LOOP, 2, NET_WIDTH,             1, LINK_PCI, 0);
+  errors += checkTopo("DGX-1V", TOPO(dgx1v_topo), VOLTA_NVLINK_WIDTH,  0, 6, VOLTA_NVLINK_WIDTH,    1, LINK_NVL, NCCL_TOPO_PATTERN_SPLIT_TREE_LOOP, 6, VOLTA_NVLINK_WIDTH,    1, LINK_NVL, 0);
+  errors += checkTopo("DGX-1V", TOPO(dgx1v_topo), VOLTA_NVLINK_WIDTH,  1, 4, NET_WIDTH,             1, LINK_PCI, NCCL_TOPO_PATTERN_SPLIT_TREE_LOOP, 4, NET_WIDTH,             1, LINK_PCI, 0);
+  errors += checkTopo("DGX-1V", TOPO(dgx1v_topo), VOLTA_NVLINK_WIDTH,  2, 4, 21,                    1, LINK_PCI, NCCL_TOPO_PATTERN_SPLIT_TREE_LOOP, 4, NET_WIDTH,             1, LINK_PCI, 0);
+  errors += checkTopo("DGX-2V", TOPO(dgx2v_topo), VOLTA_NVLINK_WIDTH,  0, 6, VOLTA_NVLINK_WIDTH,    1, LINK_NVL, NCCL_TOPO_PATTERN_SPLIT_TREE_LOOP, 6, VOLTA_NVLINK_WIDTH,    1, LINK_NVL, 0);
+  errors += checkTopo("DGX-2V", TOPO(dgx2v_topo), VOLTA_NVLINK_WIDTH,  1, 8, NET_WIDTH,             1, LINK_PCI, NCCL_TOPO_PATTERN_SPLIT_TREE_LOOP, 8, NET_WIDTH,             1, LINK_PCI, 0);
+  errors += checkTopo("DGX-2V", TOPO(dgx2v_topo), VOLTA_NVLINK_WIDTH,  2, 8, 15,                    1, LINK_PCI, NCCL_TOPO_PATTERN_SPLIT_TREE_LOOP, 8, NET_WIDTH,             1, LINK_PCI, 0);
+  errors += checkTopo("DGX-2A", TOPO(dgx2a_topo), VOLTA_NVLINK_WIDTH,  0, 6, VOLTA_NVLINK_WIDTH,    1, LINK_NVL, NCCL_TOPO_PATTERN_SPLIT_TREE_LOOP, 6, VOLTA_NVLINK_WIDTH,    1, LINK_NVL, 0);
+  errors += checkTopo("DGX-2A", TOPO(dgx2a_topo), VOLTA_NVLINK_WIDTH,  1, 8, NET_WIDTH,             1, LINK_PCI, NCCL_TOPO_PATTERN_SPLIT_TREE_LOOP, 8, NET_WIDTH,             1, LINK_PCI, 0);
+  errors += checkTopo("DGX-2A", TOPO(dgx2a_topo), VOLTA_NVLINK_WIDTH,  2, 8, 15,                    1, LINK_PCI, NCCL_TOPO_PATTERN_SPLIT_TREE_LOOP, 8, NET_WIDTH,             1, LINK_PCI, 0);
+  errors += checkTopo("XMAN-3", TOPO(xman3_topo), VOLTA_NVLINK_WIDTH,  0, 6, VOLTA_NVLINK_WIDTH,    1, LINK_NVL, NCCL_TOPO_PATTERN_SPLIT_TREE_LOOP, 6, VOLTA_NVLINK_WIDTH,    1, LINK_NVL, 0);
+  errors += checkTopo("XMAN-3", TOPO(xman3_topo), VOLTA_NVLINK_WIDTH,  1, 8, NET_WIDTH,             1, LINK_PCI, NCCL_TOPO_PATTERN_SPLIT_TREE_LOOP, 8, NET_WIDTH,             1, LINK_PCI, 0);
+  errors += checkTopo("XMAN-3", TOPO(xman3_topo), VOLTA_NVLINK_WIDTH,  2, 8, 15,                    1, LINK_PCI, NCCL_TOPO_PATTERN_SPLIT_TREE_LOOP, 8, NET_WIDTH,             1, LINK_PCI, 0);
+  errors += checkTopo("GCP-NV", TOPO(gcpnv_topo), VOLTA_NVLINK_WIDTH,  0, 6, VOLTA_NVLINK_WIDTH,    1, LINK_NVL, NCCL_TOPO_PATTERN_SPLIT_TREE_LOOP, 6, VOLTA_NVLINK_WIDTH,    1, LINK_NVL, 0);
+  errors += checkTopo("GCP-NV", TOPO(gcpnv_topo), VOLTA_NVLINK_WIDTH,  1, 1, NET_WIDTH,             1, LINK_QPI, NCCL_TOPO_PATTERN_SPLIT_TREE_LOOP, 1, NET_WIDTH,             1, LINK_QPI, 0);
+  errors += checkTopo("GCP-NV", TOPO(gcpnv_topo), VOLTA_NVLINK_WIDTH,  2, 1, NET_WIDTH*2,           1, LINK_QPI, NCCL_TOPO_PATTERN_SPLIT_TREE_LOOP, 1, NET_WIDTH,             1, LINK_QPI, 0);
+  errors += checkTopo("FB-BUG", TOPO(fbbug_topo), VOLTA_NVLINK_WIDTH,  0, 1, VOLTA_NVLINK_WIDTH,    1, LINK_NVL, NCCL_TOPO_PATTERN_SPLIT_TREE,      2, INTEL_P2P(QPI_WIDTH),  0, LINK_QPI, 0);
+  errors += checkTopo("FB-BUG", TOPO(fbbug_topo), VOLTA_NVLINK_WIDTH,  1, 2, NET_WIDTH,             1, LINK_PCI, NCCL_TOPO_PATTERN_TREE,            2, NET_WIDTH,             1, LINK_PCI, 1);
+  errors += checkTopo("FB-BUG", TOPO(fbbug_topo), VOLTA_NVLINK_WIDTH,  2, 2, 21,                    1, LINK_PCI, NCCL_TOPO_PATTERN_TREE,            2, NET_WIDTH,             1, LINK_PCI, 1);
+  errors += checkTopo("P9-6V ", TOPO(p9_6v_topo), VOLTA_NVLINK_WIDTH,  0, 2, 15,                    0, LINK_QPI, NCCL_TOPO_PATTERN_SPLIT_TREE_LOOP, 2, 15,                    0, LINK_QPI, 0);
+  errors += checkTopo("P9-6V ", TOPO(p9_6v_topo), VOLTA_NVLINK_WIDTH,  1, 2, NET_WIDTH,             0, LINK_QPI, NCCL_TOPO_PATTERN_SPLIT_TREE_LOOP, 2, NET_WIDTH,             0, LINK_QPI, 0);
+  errors += checkTopo("P9-6V ", TOPO(p9_6v_topo), VOLTA_NVLINK_WIDTH,  2, 2, 15,                    0, LINK_QPI, NCCL_TOPO_PATTERN_SPLIT_TREE_LOOP, 2, NET_WIDTH,             0, LINK_QPI, 0);
   printf("%d errors (%s)\n", errors, errors ? "FAILED" : "PASSED");
   return errors;
 }

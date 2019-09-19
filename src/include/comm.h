@@ -75,7 +75,6 @@ struct ncclComm {
 
   int node;
   int nNodes;
-  int localRank;
   int localRanks;
 
   enum { GROUP, PARALLEL } launchMode;

@@ -29,12 +29,13 @@ ncclResult_t ncclTopoCudaPath(int cudaDev, char** path);
 
 struct ncclTopoSystem;
 // Build the topology
-ncclResult_t ncclTopoGetSystem(int nranks, int* nvmlIndexes, int* rankIndexes, struct ncclTopoSystem** system, int inter);
-
-// For unit tests
+ncclResult_t ncclTopoGetSystem(struct ncclComm* comm, struct ncclTopoSystem** system);
 ncclResult_t ncclTopoSortSystem(struct ncclTopoSystem* system);
 ncclResult_t ncclTopoPrint(struct ncclTopoSystem* system);
-ncclResult_t ncclTopoSearchInit(struct ncclTopoSystem* system);
+
+ncclResult_t ncclTopoComputePaths(struct ncclTopoSystem* system, struct ncclPeerInfo* info);
+ncclResult_t ncclTopoTrimSystem(struct ncclTopoSystem* system, struct ncclComm* comm);
+ncclResult_t ncclTopoGetMaxSpeed(struct ncclTopoSystem* system);
 
 // Query topology
 ncclResult_t ncclTopoGetNvlink(struct ncclTopoSystem* system, int nvmlDev1, int nvmlDev2, int* nvlink);
@@ -60,7 +61,7 @@ struct ncclTopoGraph {
   int sameChannels;
   int speed;
   int nvlink;
-  int gdr;
+  int type;
   int intra[MAXCHANNELS*NCCL_TOPO_MAX_NODES];
   int inter[MAXCHANNELS*2];
   int nChannels;
@@ -80,7 +81,7 @@ struct ncclTopoRanks {
   int treeDnSend[MAXCHANNELS];
 };
 
-ncclResult_t ncclTopoPreset(struct ncclComm* comm, int* firstRanks,
+ncclResult_t ncclTopoPreset(struct ncclComm* comm,
     struct ncclTopoGraph* treeGraph, struct ncclTopoGraph* ringGraph,
     struct ncclTopoRanks* topoRanks);
 
