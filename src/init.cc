@@ -740,6 +740,7 @@ ncclResult_t ncclCommInitRankSync(ncclComm_t* newcomm, int nranks, ncclUniqueId 
 
   return ncclSuccess;
 cleanup:
+  if ((*newcomm) && (*newcomm)->bootstrap) bootstrapAbort((*newcomm)->bootstrap);
   *newcomm = NULL;
   sched_setaffinity(0, sizeof(cpu_set_t), &affinitySave);
   return res;

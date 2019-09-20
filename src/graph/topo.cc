@@ -354,42 +354,62 @@ ncclResult_t ncclTopoCreatePciPath(struct ncclTopoSystem* system, struct ncclTop
   return ncclSuccess;
 }
 
-NCCL_PARAM(DetectIbDup, "DETECT_IB_DUP", 1);
-
+// Try to detect if IB cards are in fact the same physical NIC, hence sharing ports.
 #include <glob.h>
-#define IB_HAS_SMI_PATH "%s/infiniband/mlx5_*/ports/1/has_smi"
-
-ncclResult_t ncclTopoGetNetNode(struct ncclTopoSystem* system, struct ncclTopoNode** netNode, int n, char* path) {
-  int net = n;
-
-  // Detect IB extra PF/VF case
-  int detectIbDup = ncclParamDetectIbDup();
-  if (detectIbDup) {
-    char hasSmiPath[PATH_MAX];
-    snprintf(hasSmiPath, PATH_MAX, IB_HAS_SMI_PATH, path);
-    // PATH has a wildcard in it so use glob()
-    glob_t globbuf;
-    glob(hasSmiPath, 0, NULL, &globbuf);
-    if (globbuf.gl_pathc > 0)
-      strncpy(hasSmiPath, globbuf.gl_pathv[0], PATH_MAX);
-    globfree(&globbuf);
-    hasSmiPath[PATH_MAX-1] = '\0';
-    FILE *file = fopen(hasSmiPath, "r");
-    if (file != NULL) {
-      int hasSmi = -1;
-      if (fscanf(file, "%d", &hasSmi) != EOF) {
-        TRACE(NCCL_GRAPH, "Opened %s has_smi %d", hasSmiPath, hasSmi);
-        if (hasSmi == 0) {
-          // We're a copy of another IB card. Try to guess which one ...
-          if (system->nodes[NET].count > 0) net = system->nodes[NET].nodes[n % system->nodes[NET].count].id;
-        }
-      }
-      fclose(file);
+#define IB_GUID_PATH "%s/infiniband/mlx5_*/sys_image_guid"
+uint64_t getIbGuid(char* path) {
+  uint64_t guid = 0ULL;
+  char guidPath[PATH_MAX];
+  snprintf(guidPath, PATH_MAX, IB_GUID_PATH, path);
+  // PATH has a wildcard in it so use glob()
+  glob_t globbuf;
+  glob(guidPath, 0, NULL, &globbuf);
+  if (globbuf.gl_pathc > 0)
+    strncpy(guidPath, globbuf.gl_pathv[0], PATH_MAX);
+  globfree(&globbuf);
+  guidPath[PATH_MAX-1] = '\0';
+  FILE *file = fopen(guidPath, "r");
+  if (file != NULL) {
+    uint64_t a, b, c, d;
+    if (fscanf(file, "%04lx:%04lx:%04lx:%04lx", &a, &b, &c, &d) != EOF) {
+      guid = (a << 48) + (b << 32) + (c<<16) + d;
+      TRACE(NCCL_GRAPH, "Opened %s guid %lx", guidPath, guid);
     }
+    fclose(file);
   }
+  return guid;
+}
 
-  NCCLCHECK(ncclTopoCreateNode(system, netNode, NET, n));
-  (*netNode)->rank = net;
+struct netInfo {
+  char* path;
+  int nic;
+  uint64_t asic;
+  int port;
+  int net;
+};
+
+ncclResult_t ncclTopoComputeNetInfo(struct netInfo* netInfos, int ndev) {
+  for (int n=0; n<ndev; n++) {
+    struct netInfo* info = netInfos+n;
+    uint64_t ibGuid;
+    info->nic = n;
+    info->asic = n;
+    info->port = 0;
+    info->net = n;
+    if (info->path && (ibGuid = getIbGuid(info->path)) != 0) {
+      info->asic = ibGuid;
+
+      // Use "strlen(path)-2" to remove trailing subdevice and merge multi-port cards into one
+      NCCLCHECK(pciHexToInt(info->path, strlen(info->path)-2, 0, &info->nic));
+
+      // Same PCI path -> different ports of the same NIC
+      for (int i=0; i<n; i++) if (netInfos[i].nic == info->nic) info->port++;
+
+      // Same GUID -> same network links as the other NIC
+      for (int i=0; i<n; i++) if (netInfos[i].asic == info->asic && netInfos[i].port == info->port) info->net = netInfos[i].net;
+    }
+    INFO(NCCL_GRAPH, "%s -> %x/%lx/%d/%d", info->path, info->nic, info->asic, info->port, info->net);
+  }
   return ncclSuccess;
 }
 
@@ -407,50 +427,51 @@ ncclResult_t ncclTopoConnectPCI(nvmlDevice_t* nvmlDevs, struct ncclTopoSystem* s
   int netWidth;
   NCCLCHECK(ncclTopoGetNetWidth(&netWidth));
 
+  struct netInfo* netInfos;
+  NCCLCHECK(ncclCalloc(&netInfos, netDevCount));
+
   for (int n=0; n<netDevCount; n++) {
-    char* path;
-    ncclResult_t res = ncclNetPciPath(n, &path);
-    if (res != ncclSuccess || path == NULL) {
-      // This is probably a virtual NIC. Just attach it directly to CPU 0
-      struct ncclTopoNode *netNode, *nicNode;
-      NCCLCHECK(ncclTopoCreateNode(system, &nicNode, NIC, n));
-      NCCLCHECK(ncclTopoCreateNode(system, &netNode, NET, n));
-      NCCLCHECK(ncclTopoConnectNodes(nicNode, netNode, LINK_NET, netWidth));
-      NCCLCHECK(ncclTopoConnectNodes(netNode, nicNode, LINK_NET, netWidth));
-      int width;
-      NCCLCHECK(ncclTopoGetCpuPciP2pWidth(&width));
-      NCCLCHECK(ncclTopoConnectCpu(system, 0, nicNode, LINK_PCI, width));
-      continue;
-    }
+    ncclResult_t res = ncclNetPciPath(n, &netInfos[n].path);
+    if (res != ncclSuccess) netInfos[n].path = NULL;
+  }
 
-    struct ncclTopoNode* netNode;
-    NCCLCHECK(ncclTopoGetNetNode(system, &netNode, n, path));
+  NCCLCHECK(ncclTopoComputeNetInfo(netInfos, netDevCount));
 
-    // Create NIC
-    int pciId;
-    // Use "strlen(path)-1" to remove trailing subdevice and merge multi-port cards into one
-    NCCLCHECK(pciHexToInt(path, strlen(path)-2, 0, &pciId));
-    int found = 0;
-    for (int n=0; n<system->nodes[NIC].count; n++) {
-      if (system->nodes[NIC].nodes[n].id == pciId) {
-        // Found our NIC. Attach to it.
-        NCCLCHECK(ncclTopoConnectNodes(system->nodes[NIC].nodes+n, netNode, LINK_NET, netWidth));
-        NCCLCHECK(ncclTopoConnectNodes(netNode, system->nodes[NIC].nodes+n, LINK_NET, netWidth));
-        found = 1;
+  for (int n=0; n<netDevCount; n++) {
+    struct netInfo* info = netInfos+n;
+    // Create NIC and attach it to the PCI tree
+    struct ncclTopoNode* nicNode = NULL;
+    for (int i=0; i<system->nodes[NIC].count; i++) {
+      if (system->nodes[NIC].nodes[i].id == info->nic) {
+        nicNode = system->nodes[NIC].nodes+i;
         break;
       }
     }
-    if (!found) {
-      struct ncclTopoNode* nicNode;
-      NCCLCHECK(ncclTopoCreateNode(system, &nicNode, NIC, pciId));
-      NCCLCHECK(ncclTopoConnectNodes(nicNode, netNode, LINK_NET, netWidth));
-      NCCLCHECK(ncclTopoConnectNodes(netNode, nicNode, LINK_NET, netWidth));
-
-      // Create the PCI path
-      NCCLCHECK(ncclTopoCreatePciPath(system, nicNode, path));
+    if (!nicNode) {
+      NCCLCHECK(ncclTopoCreateNode(system, &nicNode, NIC, info->nic));
+      if (info->path) {
+        // Create the PCI path
+        NCCLCHECK(ncclTopoCreatePciPath(system, nicNode, info->path));
+      } else {
+        // This is probably a virtual NIC. Just attach it directly to CPU 0
+        int width;
+        NCCLCHECK(ncclTopoGetCpuPciP2pWidth(&width));
+        NCCLCHECK(ncclTopoConnectCpu(system, 0, nicNode, LINK_PCI, width));
+      }
     }
-    free(path);
+    free(info->path);
+
+    // Create the network side
+    struct ncclTopoNode* netNode;
+    NCCLCHECK(ncclTopoCreateNode(system, &netNode, NET, n));
+
+    // Use rank to store the net information
+    netNode->rank = info->net;
+
+    NCCLCHECK(ncclTopoConnectNodes(nicNode, netNode, LINK_NET, netWidth));
+    NCCLCHECK(ncclTopoConnectNodes(netNode, nicNode, LINK_NET, netWidth));
   }
+  free(netInfos);
 
   // And connect all CPU nodes together
   for (int n=0; n<system->nodes[CPU].count; n++) {
