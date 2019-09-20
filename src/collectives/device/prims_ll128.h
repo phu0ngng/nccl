@@ -26,6 +26,8 @@ class ncclLL128Primitives {
   volatile int* sendConnFifoPtr = NULL;
   volatile uint64_t* sendConnTailPtr = NULL;
   volatile uint64_t* sendConnHeadPtr = NULL;
+  uint32_t nextIsNet[NSEND];
+  uint32_t gdr[NSEND];
   uint64_t sendConnHead; // Cache last seen value
 
   uint64_t recvStep[NRECV];
@@ -41,7 +43,7 @@ class ncclLL128Primitives {
   inline __device__ uint64_t* recvPtr(int i) { return recvBuff[i]+recvOffset(i); }
   inline __device__ uint64_t* sendPtr(int i) { return sendBuff[i]+sendOffset(i); }
   inline __device__ uint64_t recvFlag(int i) { return recvStep[i]+1; }
-  inline __device__ uint64_t sendFlag(int i) { return sendStep[i]+1; }
+  inline __device__ uint64_t sendFlag(int i) { FUNC f; return nextIsNet[i] ? f.acclFlag(comm->rank, sendStep[i]+1) : sendStep[i]+1; }
 
   // Exit If Abort Barrier : make sure all threads exit consistently
   // Each thread sets a predicate to true if val == 1
@@ -74,6 +76,16 @@ class ncclLL128Primitives {
     } else {
       asm volatile ("bar.sync 2, %0;" :: "r"(nthreads));
     }
+  }
+
+  inline __device__ uint32_t reduce(uint32_t pred) {
+    uint32_t popc;
+    asm ("{");
+    asm volatile ("   .reg .pred barr_pred;");
+    asm volatile ("   setp.eq.u32 barr_pred,%0,1;" :: "r"(pred));
+    asm volatile ("   bar.red.popc.u32 %0, 13, %1, barr_pred;" : "=r"(popc) : "r"(nthreads));
+    asm ("}");
+    return popc;
   }
 
   uint32_t mismatch = 0;
@@ -342,6 +354,9 @@ class ncclLL128Primitives {
       sendConnHeadPtr = sendConn[tid]->head;
       sendConnHead = *sendConnHeadPtr;
       *(sendConn[tid]->opCountLoc) = opCount;
+    }
+    for (int i=0; i<nsend; i++) {
+      nextIsNet[i] = reduce(tid == i && sendConnTailPtr != NULL ? 1 : 0);
     }
   }
 
