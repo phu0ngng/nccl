@@ -8,15 +8,21 @@
 #include "graph.h"
 #include "topo.h"
 
-static ncclResult_t ncclTopoFollowPath(struct ncclTopoGraph* graph, struct ncclTopoLinkList* path, struct ncclTopoNode** node, int width) {
-  if (width > 0) graph->nHops += path->count;
-  if (width < 0) graph->nHops -= path->count;
+static ncclResult_t ncclTopoFollowPath(struct ncclTopoGraph* graph, struct ncclTopoLinkList* path, struct ncclTopoNode** node, int width, int typeSave) {
+  *node = NULL;
+  if (width > 0) {
+    if (path->type > graph->type) return ncclSuccess;
+    graph->type = std::max(graph->type, path->type);
+    graph->nHops += path->count;
+  } else {
+    graph->type = typeSave;
+    graph->nHops -= path->count;
+  }
 
   for (int i=0; i<path->count; i++) {
     if (path->list[i]->width < width) {
       // Can't follow this path, rewind and exit
       for (int j=0; j<i; j++) path->list[j]->width += width;
-      *node = NULL;
       return ncclSuccess;
     }
     path->list[i]->width -= width;
@@ -145,19 +151,16 @@ ncclResult_t ncclTopoReplayGetGpu(struct ncclTopoSystem* system, struct ncclTopo
 ncclResult_t ncclTopoSearchRecGpu(struct ncclTopoSystem* system, struct ncclTopoGraph* graph, struct ncclTopoGraph* saveGraph, struct ncclTopoNode* gpu, int step, int backToNet, int backToFirstRank, int forcedOrder, int maxSpeed, int *time);
 
 ncclResult_t ncclTopoSearchTryGpu(struct ncclTopoSystem* system, struct ncclTopoGraph* graph, struct ncclTopoGraph* saveGraph, struct ncclTopoLinkList* paths, int step, int backToNet, int backToFirstRank, int forcedOrder, int maxSpeed, int *time, int g, int speed) {
-  if (paths && paths[g].type > graph->type) return ncclSuccess;
   int typeSave = graph->type;
   const uint64_t flag = 1ULL<<(graph->nChannels);
   struct ncclTopoNode* gpu = system->nodes[GPU].nodes+g;
-  if (paths) NCCLCHECK(ncclTopoFollowPath(graph, paths+g, &gpu, speed));
+  if (paths) NCCLCHECK(ncclTopoFollowPath(graph, paths+g, &gpu, speed, typeSave));
   if (gpu) {
-    if (paths) graph->type = std::max(graph->type, paths[g].type);
     gpu->used ^= flag;
     NCCLCHECK(ncclTopoSearchRecGpu(system, graph, saveGraph, gpu, step, backToNet, backToFirstRank, forcedOrder, maxSpeed, time));
     gpu->used ^= flag;
-    if (paths) NCCLCHECK(ncclTopoFollowPath(graph, paths+g, &gpu, -speed));
+    if (paths) NCCLCHECK(ncclTopoFollowPath(graph, paths+g, &gpu, -speed, typeSave));
   }
-  graph->type = typeSave;
   return ncclSuccess;
 }
 
@@ -224,12 +227,13 @@ ncclResult_t ncclTopoSearchRecGpu(struct ncclTopoSystem* system, struct ncclTopo
         if (graph->crossNic != 1 && (system->nodes[NET].nodes[n].id != graph->inter[graph->nChannels*2])) continue;
         if (paths[n].width == maxWidth) {
           struct ncclTopoNode* net;
-          NCCLCHECK(ncclTopoFollowPath(graph, paths+n, &net, speed));
+          int typeSave = graph->type;
+          NCCLCHECK(ncclTopoFollowPath(graph, paths+n, &net, speed, typeSave));
           if (net) {
             graph->inter[graph->nChannels*2+1] = net->id;
             //printf("GPU/%d -> NET/%d\n", gpu->id, n);
             NCCLCHECK(ncclTopoSearchRecGpu(system, graph, saveGraph, gpu, step, -1, backToFirstRank, forcedOrder, maxSpeed, time));
-            NCCLCHECK(ncclTopoFollowPath(graph, paths+n, &net, -speed));
+            NCCLCHECK(ncclTopoFollowPath(graph, paths+n, &net, -speed, typeSave));
           }
         }
       }
@@ -270,11 +274,12 @@ ncclResult_t ncclTopoSearchRecGpu(struct ncclTopoSystem* system, struct ncclTopo
     }
     struct ncclTopoLinkList* paths = gpu->paths[GPU];
     struct ncclTopoNode* firstGpu;
-    NCCLCHECK(ncclTopoFollowPath(graph, paths+g, &firstGpu, graph->speed));
+    int typeSave = graph->type;
+    NCCLCHECK(ncclTopoFollowPath(graph, paths+g, &firstGpu, graph->speed, typeSave));
     if (firstGpu) {
       //printf("GPU/%d -> GPU/%d (%d)\n", gpu->id, g, step+1);
       NCCLCHECK(ncclTopoSearchRecGpu(system, graph, saveGraph, firstGpu, step+1, backToNet, -1, forcedOrder, maxSpeed, time));
-      NCCLCHECK(ncclTopoFollowPath(graph, paths+g, &firstGpu, -graph->speed));
+      NCCLCHECK(ncclTopoFollowPath(graph, paths+g, &firstGpu, -graph->speed, typeSave));
     }
   } else {
     // Next path
