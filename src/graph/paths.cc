@@ -221,7 +221,7 @@ ncclResult_t ncclTopoComputePaths(struct ncclTopoSystem* system, struct ncclPeer
     if (peerInfos == NULL) continue;
     int ptrSupport;
     NCCLCHECK(ncclNetPtrSupport(n, &ptrSupport));
-    if ((ptrSupport & NCCL_PTR_CUDA == 0)) {
+    if (((ptrSupport & NCCL_PTR_CUDA) == 0)) {
       // We cannot use GPU Direct RDMA, so we need all NIC<->GPU paths
       // to go through a CPU
       for (int g=0; g<system->nodes[GPU].count; g++) {
@@ -245,7 +245,7 @@ ncclResult_t ncclTopoComputePaths(struct ncclTopoSystem* system, struct ncclPeer
 ncclResult_t ncclTopoTrimSystem(struct ncclTopoSystem* system, struct ncclComm* comm) {
   int* domains;
   NCCLCHECK(ncclCalloc(&domains, system->nodes[GPU].count));
-  int myDomain;
+  int myDomain = 0;
   for (int g=0; g<system->nodes[GPU].count; g++) {
     domains[g] = g;
     for (int p=0; p<g; p++) {
