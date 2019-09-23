@@ -223,7 +223,6 @@ class ncclPrimitives {
   }
 
   __device__ __forceinline__ void loadRecvConn(struct ncclConnInfo* conn, int i, T* directBuff) {
-    if (wid == i) recvConn = conn;
     recvBuff[i] = (const T*)conn->buff;
     recvStep[i] = conn->step;
     recvStep[i] = ROUNDUP(recvStep[i], SLICESPERCHUNK*SLICESTEPS);
@@ -232,17 +231,17 @@ class ncclPrimitives {
       recvDirectBuff[i] = directBuff;
       if (tid == 0) *conn->ptrExchange = directBuff;
     }
+    if (wid == i) recvConn = conn;
+    if (wid == i) recvConnTail = recvConnHead = recvStep[i]; // Make sure we set this after rounding up
     nrecv++;
   }
   __device__ __forceinline__ void loadRecvSync() {
     if (tid >= WARP_SIZE && tid < 2*WARP_SIZE && wid<nrecv) {
       recvConnTailPtr = recvConn->tail;
       recvConnTailCache = *recvConnTailPtr;
-      recvConnTail = recvConn->step;
     }
     if (tid >= nthreads-WARP_SIZE && wid < nrecv) {
       recvConnHeadPtr = recvConn->head;
-      recvConnHead = recvConn->step;
       // Return credits in case we rounded up.
       *recvConnHeadPtr = recvConnHead;
       // Update opCount in case we skipped some operations
@@ -251,7 +250,6 @@ class ncclPrimitives {
   }
 
   __device__ __forceinline__ void loadSendConn(struct ncclConnInfo* conn, int i, T* directBuff) {
-    if (wid == i) sendConn = conn;
     sendBuff[i] = (T*)conn->buff;
     sendStep[i] = conn->step;
     sendStep[i] = ROUNDUP(sendStep[i], SLICESPERCHUNK*SLICESTEPS);
@@ -262,19 +260,19 @@ class ncclPrimitives {
       barrier();
       if (tid == 0) *ptr = NULL;
     }
+    if (wid == i) sendConn = conn;
+    if (wid == i) sendConnTail = sendConnHead = sendStep[i]; // Make sure we set this after rounding up
     nsend++;
   }
   __device__ __forceinline__ void loadSendSync() {
     if (tid < nsend) {
       sendConnHeadPtr = sendConn->head;
       sendConnHeadCache = *sendConnHeadPtr;
-      sendConnHead = sendConn->step;
       sendConnFifoPtr = sendConn->fifo;
       *(sendConn->opCountLoc) = opCount;
     }
     if (tid >= nthreads-WARP_SIZE && wid<nsend) {
       sendConnTailPtr = sendConn->tail;
-      sendConnTail = sendConn->step;
     }
   }
 

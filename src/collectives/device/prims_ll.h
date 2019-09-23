@@ -164,9 +164,9 @@ class ncclLLPrimitives {
   }
 
   __device__ __forceinline__ void loadRecvConn(struct ncclConnInfo* conn, int i) {
-    if (wid == i) recvConn = conn;
     recvBuff[i] = conn->llBuff;
     recvStep[i] = conn->step;
+    if (wid == i) recvConn = conn;
     nrecv++;
   }
   __device__ __forceinline__ void loadRecvSync() {
@@ -179,9 +179,9 @@ class ncclLLPrimitives {
   }
 
   __device__ __forceinline__ void loadSendConn(struct ncclConnInfo* conn, int i) {
-    if (wid == i) sendConn = conn;
     sendBuff[i] = conn->llBuff;
     sendStep[i] = conn->step;
+    if (wid == i) sendConn = conn;
     nsend++;
   }
   __device__ __forceinline__ void loadSendSync() {
