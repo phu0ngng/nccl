@@ -453,6 +453,7 @@ int main() {
   setlinebuf(stdout);
   initDebug();
   int errors = 0;
+#ifndef __PPC__
   RUN("LOC-1G", TOPO(local_topo, DEF),    0, 1, PCI_WIDTH,            PCI_WIDTH,            1, LINK_LOC, NCCL_TOPO_PATTERN_TREE,       1, PCI_WIDTH,            1, LINK_LOC, 0);
   RUN("LOC-1G", TOPO(local_topo, DEF),    1, 1, PCI_WIDTH,            2*PCI_WIDTH,          1, LINK_PCI, NCCL_TOPO_PATTERN_TREE,       1, PCI_WIDTH,            1, LINK_PCI, 0);
   RUN("PCI-1R", TOPO(pci1R_topo, DEF),    0, 1, INTEL_P2P(PCI_WIDTH), INTEL_P2P(PCI_WIDTH), 0, LINK_QPI, NCCL_TOPO_PATTERN_SPLIT_TREE, 1, INTEL_P2P(PCI_WIDTH), 0, LINK_QPI, 0);
@@ -477,6 +478,7 @@ int main() {
   RUN("GCP-NV", TOPO(gcpnv_topo, VOLTA),  1, 1, NET_WIDTH,            NET_WIDTH*2,          1, LINK_QPI, NCCL_TOPO_PATTERN_SPLIT_TREE, 1, NET_WIDTH,            1, LINK_QPI, 0);
   RUN("FB-BUG", TOPO(fbbug_topo, VOLTA),  0, 1, VOLTA_NVLINK_WIDTH,   VOLTA_NVLINK_WIDTH,   1, LINK_NVL, NCCL_TOPO_PATTERN_SPLIT_TREE, 2, INTEL_P2P(QPI_WIDTH), 0, LINK_QPI, 0);
   RUN("FB-BUG", TOPO(fbbug_topo, VOLTA),  1, 2, NET_WIDTH,            21,                   1, LINK_PCI, NCCL_TOPO_PATTERN_TREE,       2, NET_WIDTH,            1, LINK_PCI, 1);
+#endif
   RUN("P9-6V ", TOPO(p9_6v_topo, VOLTA),  0, 2, 15,                   15,                   0, LINK_QPI, NCCL_TOPO_PATTERN_SPLIT_TREE, 2, 15,                   0, LINK_QPI, 0);
   RUN("P9-6V ", TOPO(p9_6v_topo, VOLTA),  1, 2, NET_WIDTH,            NET_WIDTH*2,          0, LINK_QPI, NCCL_TOPO_PATTERN_SPLIT_TREE, 2, NET_WIDTH,            0, LINK_QPI, 0);
   printf("%d errors (%s)\n", errors, errors ? "FAILED" : "PASSED");
