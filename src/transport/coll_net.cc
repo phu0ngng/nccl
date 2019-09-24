@@ -53,6 +53,7 @@ struct collNetSendResources {
   uint64_t llStep;
   uint64_t llLastCleaning;
   struct reqSlot* reqFifo;
+  int collNetRank;
 };
 
 struct collNetRecvResources {
@@ -74,6 +75,7 @@ struct collNetRecvResources {
   uint64_t llStep;
   uint64_t llLastCleaning;
   struct reqSlot* reqFifo;
+  int collNetRank;
 };
 
 struct netInfoFuncs collNetInfoFuncs = {
@@ -160,12 +162,14 @@ ncclResult_t collNetRecvSetup(struct ncclPeerInfo* myInfo, struct ncclPeerInfo* 
 ncclResult_t collNetSendConnect(struct ncclConnect* connectInfos, int nranks, int rank, struct ncclConnector* send) {
   // Setup device pointers
   struct collNetSendResources* sendResources = (struct collNetSendResources*)send->transportResources;
+  sendResources->collNetRank = rank;
 
   // Intermediate buffering on GPU for GPU Direct RDMA, but LL buffer is always on host
   struct ncclRecvMem* sRecvMem = sendResources->useGdr ? sendResources->devRecvMem : sendResources->devHostRecvMem;
   send->conn.buff = sRecvMem->buff;
   send->conn.llBuff = sendResources->devHostRecvMem->llBuff;
   send->conn.ll128Buff = sRecvMem->ll128Buff;
+  send->conn.gdr = sendResources->useGdr;
 
   // Head/Tail/Opcount/Fifos are always on host
   send->conn.tail = &sendResources->devHostRecvMem->tail;
@@ -181,12 +185,14 @@ ncclResult_t collNetSendConnect(struct ncclConnect* connectInfos, int nranks, in
 ncclResult_t collNetRecvConnect(struct ncclConnect* connectInfos, int nranks, int rank, struct ncclConnector* recv) {
   // Setup device pointers
   struct collNetRecvResources* recvResources = (struct collNetRecvResources*)recv->transportResources;
+  recvResources->collNetRank = rank;
 
   // Intermediate buffering on GPU for GPU Direct RDMA
   struct ncclRecvMem* rRecvMem = recvResources->useGdr ? recvResources->devRecvMem : recvResources->devHostRecvMem;
   recv->conn.buff = rRecvMem->buff;
   recv->conn.llBuff = recvResources->devHostRecvMem->llBuff;  // recv LL buff always on host
   recv->conn.ll128Buff = rRecvMem->ll128Buff;
+  recv->conn.gdr = recvResources->useGdr;
 
   // Head/Tail/Opcount are always on host
   recv->conn.tail = &recvResources->devHostRecvMem->tail;
@@ -311,16 +317,24 @@ ncclResult_t collNetSendProxy(struct ncclProxyArgs* args) {
               int ready = resources->useGdr;
               int nFifoLines = DIVUP(sizesFifo[buffSlot], sizeof(uint64_t)*NCCL_LL128_LINEELEMS);
               volatile uint64_t* lines = (volatile uint64_t*)(localBuff+buffSlot*stepSize);
+              uint64_t flag = args->tail + 1;
               if (!ready) {
                 // When data is in sysmem, we need to wait until all flags are correct since the GPU only
                 // called threadfence()
-                uint64_t flag = args->tail + 1;
                 ready = 1;
                 for (int i=0; i<nFifoLines; i++) {
                   if (lines[i*NCCL_LL128_LINEELEMS+NCCL_LL128_DATAELEMS] != flag) { ready = 0; break; }
                 }
               }
               if (ready) {
+                // CPU adjusts the flag based on reduction type
+                if (!resources->useGdr) {
+                  uint64_t newFlag = (resources->collNetRank == 0) ? flag : args->redOp == ncclSum ? 0 : args->redOp == ncclProd ? 1 : flag;
+                  TRACE(NCCL_NET, "sendProxy [%d/%d] Iallreduce (LL128) rank %d, non-GDR, setting flag %lu", args->head, buffSlot, resources->collNetRank, newFlag);
+                  for (int i=0; i<nFifoLines; i++) {
+                    lines[i*NCCL_LL128_LINEELEMS+NCCL_LL128_DATAELEMS] = newFlag;
+                  }
+                }
                 int count = nFifoLines*sizeof(uint64_t)*NCCL_LL128_LINEELEMS / ncclTypeSize(args->dtype);
                 // Send through network
                 NCCLCHECK(collNetIallreduce(resources->collNetSendComm, (void*)lines, (void*)(reqFifo[buffSlot].recvBuff), count, args->dtype, args->redOp, resources->ll128SendMhandle, resources->ll128RecvMhandle, args->requests+buffSlot));

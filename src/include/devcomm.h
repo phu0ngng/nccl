@@ -73,6 +73,7 @@ struct ncclConnInfo {
 
   int direct;         // Direct communication
   void **ptrExchange; // Pointer exchange for direct communication
+  int gdr;            // GDR enabled or not
 
   int *fifo;          // Size fifo for proxy
 
