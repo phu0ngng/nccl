@@ -488,13 +488,11 @@ static ncclResult_t initTransportsRank(struct ncclComm* comm, ncclUniqueId* comm
   treeGraph.pattern = NCCL_TOPO_PATTERN_SPLIT_TREE;
   treeGraph.crossNic = ncclParamCrossNic();
   // We communicate only half the data between node with trees on 2 nodes.
-  treeGraph.netFactor = comm->nNodes == 2 ? 2 : 1;
   NCCLCHECK(ncclTopoCompute(comm->topo, &treeGraph));
   NCCLCHECK(ncclTopoPrintGraph(comm->topo, &treeGraph));
   struct ncclTopoGraph ringGraph;
   ringGraph.pattern = NCCL_TOPO_PATTERN_RING;
   ringGraph.crossNic = ncclParamCrossNic();
-  ringGraph.netFactor = 1;
   NCCLCHECK(ncclTopoCompute(comm->topo, &ringGraph));
   NCCLCHECK(ncclTopoPrintGraph(comm->topo, &ringGraph));
 
@@ -507,12 +505,14 @@ static ncclResult_t initTransportsRank(struct ncclComm* comm, ncclUniqueId* comm
     int nChannels;
     struct {
       int sameChannels;
-      int speed;
+      int speedIntra;
+      int speedInter;
       int nvlink;
     } tree;
     struct {
       int sameChannels;
-      int speed;
+      int speedIntra;
+      int speedInter;
       int nvlink;
     } ring;
     struct ncclTopoRanks topoRanks;
@@ -523,10 +523,12 @@ static ncclResult_t initTransportsRank(struct ncclComm* comm, ncclUniqueId* comm
   allGather3Data[rank].nvlink = treeGraph.nvlink;
   allGather3Data[rank].nChannels = comm->nChannels = std::min(treeGraph.nChannels, ringGraph.nChannels);
   allGather3Data[rank].tree.sameChannels = treeGraph.sameChannels;
-  allGather3Data[rank].tree.speed = treeGraph.speed;
+  allGather3Data[rank].tree.speedIntra = treeGraph.speedIntra;
+  allGather3Data[rank].tree.speedInter = treeGraph.speedInter;
   allGather3Data[rank].tree.nvlink = treeGraph.nvlink;
   allGather3Data[rank].ring.sameChannels = ringGraph.sameChannels;
-  allGather3Data[rank].ring.speed = ringGraph.speed;
+  allGather3Data[rank].ring.speedIntra = ringGraph.speedIntra;
+  allGather3Data[rank].ring.speedInter = ringGraph.speedInter;
   allGather3Data[rank].ring.nvlink = ringGraph.nvlink;
 
   NCCLCHECK(ncclTopoPreset(comm, &treeGraph, &ringGraph, &allGather3Data[rank].topoRanks));
@@ -568,10 +570,12 @@ static ncclResult_t initTransportsRank(struct ncclComm* comm, ncclUniqueId* comm
     // Make sure we align all ranks so that the tuning is consistent across ranks
     treeGraph.nChannels = ringGraph.nChannels = comm->nChannels = std::min(allGather3Data[i].nChannels, comm->nChannels);
     treeGraph.sameChannels = std::min(allGather3Data[i].tree.sameChannels, treeGraph.sameChannels);
-    treeGraph.speed = std::min(allGather3Data[i].tree.speed, treeGraph.speed);
+    treeGraph.speedIntra = std::min(allGather3Data[i].tree.speedIntra, treeGraph.speedIntra);
+    treeGraph.speedInter = std::min(allGather3Data[i].tree.speedInter, treeGraph.speedInter);
     treeGraph.nvlink = std::min(allGather3Data[i].tree.nvlink, treeGraph.nvlink);
     ringGraph.sameChannels = std::min(allGather3Data[i].ring.sameChannels, ringGraph.sameChannels);
-    ringGraph.speed = std::min(allGather3Data[i].ring.speed, ringGraph.speed);
+    ringGraph.speedIntra = std::min(allGather3Data[i].ring.speedIntra, ringGraph.speedIntra);
+    ringGraph.speedInter = std::min(allGather3Data[i].ring.speedInter, ringGraph.speedInter);
     ringGraph.nvlink = std::min(allGather3Data[i].ring.nvlink, ringGraph.nvlink);
   }
 

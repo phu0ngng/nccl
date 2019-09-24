@@ -100,7 +100,8 @@ ncclResult_t ncclSetThresholds(struct ncclComm* comm, int minCompCap, int maxCom
       if (coll != ncclCollAllReduce && a == NCCL_ALGO_TREE) continue;
 
       for (int p=0; p<NCCL_NUM_PROTOCOLS; p++) {
-        float busBw = graphs[a]->nChannels * graphs[a]->speed * 1.0;
+        int speed = comm->nNodes <= 2 ? graphs[a]->speedIntra : graphs[a]->speedInter;
+        float busBw = graphs[a]->nChannels * speed * 1.0;
 
         // Various model refinements
         if (a == NCCL_ALGO_RING && p == NCCL_PROTO_LL)    busBw *= 1.0/4.0;
