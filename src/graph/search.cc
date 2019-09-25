@@ -9,6 +9,8 @@
 #include "topo.h"
 
 static ncclResult_t ncclTopoFollowPath(struct ncclTopoGraph* graph, struct ncclTopoLinkList* path, struct ncclTopoNode** node, int width, int typeSave) {
+  if (path->count == 0) return ncclSuccess;
+
   *node = NULL;
   if (width > 0) {
     if (path->type > graph->type) return ncclSuccess;
@@ -225,7 +227,7 @@ ncclResult_t ncclTopoSearchRecGpu(struct ncclTopoSystem* system, struct ncclTopo
       for (int n=0; n<system->nodes[NET].count; n++) {
         if (graph->crossNic != 1 && (system->nodes[NET].nodes[n].id != graph->inter[graph->nChannels*2])) continue;
         if (paths[n].width == maxWidth) {
-          struct ncclTopoNode* net;
+          struct ncclTopoNode* net = system->nodes[NET].nodes+n;
           int typeSave = graph->type;
           NCCLCHECK(ncclTopoFollowPath(graph, paths+n, &net, graph->speedInter, typeSave));
           if (net) {
@@ -272,7 +274,7 @@ ncclResult_t ncclTopoSearchRecGpu(struct ncclTopoSystem* system, struct ncclTopo
       return ncclInternalError;
     }
     struct ncclTopoLinkList* paths = gpu->paths[GPU];
-    struct ncclTopoNode* firstGpu;
+    struct ncclTopoNode* firstGpu = system->nodes[GPU].nodes+g;
     int typeSave = graph->type;
     NCCLCHECK(ncclTopoFollowPath(graph, paths+g, &firstGpu, graph->speedIntra, typeSave));
     if (firstGpu) {
@@ -476,16 +478,7 @@ ncclResult_t ncclTopoCompute(ncclTopoSystem* system, struct ncclTopoGraph* graph
     if (graph->nChannels) return ncclSuccess;
   }
 
-  if (ngpus == 1) {
-    if (graph->pattern != NCCL_TOPO_PATTERN_RING) graph->pattern = NCCL_TOPO_PATTERN_TREE;
-    if (system->nodes[NET].count == 0) {
-      graph->speedIntra = graph->speedInter = PCI_WIDTH;
-      graph->nvlink = 1;
-      graph->nChannels = 1;
-      graph->intra[0] = system->nodes[GPU].nodes[0].rank;
-      return ncclSuccess;
-    }
-  }
+  if (ngpus == 1) if (graph->pattern != NCCL_TOPO_PATTERN_RING) graph->pattern = NCCL_TOPO_PATTERN_TREE;
 
   struct ncclTopoGraph tmpGraph;
   memcpy(&tmpGraph, graph, sizeof(struct ncclTopoGraph));

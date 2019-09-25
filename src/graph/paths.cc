@@ -33,17 +33,6 @@ static ncclResult_t ncclTopoSetPaths(struct ncclTopoNode* baseNode, struct ncclT
     NCCLCHECK(ncclCalloc(baseNode->paths+baseNode->type, system->nodes[baseNode->type].count));
   }
 
-  if (baseNode->type == GPU) {
-    // Set path to itself
-    struct ncclTopoLinkList* locPath;
-    NCCLCHECK(getPath(system, baseNode, baseNode->type, baseNode->id, &locPath));
-    struct ncclTopoLink* locLink = baseNode->links;
-    locPath->count = 1;
-    locPath->list[0] = locLink;
-    locPath->width = locLink->width;
-    locPath->type = LINK_LOC;
-  }
-
   // breadth-first search to set all paths to that node in the system
   struct ncclTopoNodeList nodeList;
   struct ncclTopoNodeList nextNodeList;
@@ -52,7 +41,7 @@ static ncclResult_t ncclTopoSetPaths(struct ncclTopoNode* baseNode, struct ncclT
   struct ncclTopoLinkList* basePath;
   NCCLCHECK(getPath(system, baseNode, baseNode->type, baseNode->id, &basePath));
   basePath->count = 0;
-  basePath->width = 0xfffffff;
+  basePath->width = LOC_WIDTH;
   basePath->type = LINK_LOC;
 
   while (nodeList.count) {
@@ -64,7 +53,6 @@ static ncclResult_t ncclTopoSetPaths(struct ncclTopoNode* baseNode, struct ncclT
       for (int l=0; l<node->nlinks; l++) {
         struct ncclTopoLink* link = node->links+l;
         struct ncclTopoNode* remNode = link->remNode;
-        if (remNode == node) continue; // Do not follow the link to ourselves
         if (remNode->paths[baseNode->type] == NULL) {
           NCCLCHECK(ncclCalloc(remNode->paths+baseNode->type, system->nodes[baseNode->type].count));
         }
