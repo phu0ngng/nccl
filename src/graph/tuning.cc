@@ -73,6 +73,9 @@ static const float hwLat [3][NCCL_NUM_ALGORITHMS][NCCL_NUM_PROTOCOLS] =
   { /* Tree (LL/LL128/Simple)*/ { 5.0, 7.5, 50 }, /* Ring (LL/LL128/Simple)*/ {  .9, 2.5, 6.6 } }
 };
 
+// LL128 max BW for the different collectives
+static const double ll128MaxBw[NCCL_NUM_FUNCTIONS] = { 113.0, 72.0, 110.0, 91.0, 100.0 };
+
 ncclResult_t ncclSetThresholds(struct ncclComm* comm, int minCompCap, int maxCompCap, struct ncclTopoGraph* treeGraph, struct ncclTopoGraph* ringGraph) {
   int simpleDefaultThreads = (treeGraph->nvlink == 0 && ringGraph->nvlink == 0) ? 256 : NCCL_MAX_NTHREADS;
   comm->maxThreads[NCCL_PROTO_SIMPLE] = getNthreads("NCCL_NTHREADS", ncclParamNthreads(), 2*WARP_SIZE, simpleDefaultThreads);
@@ -102,7 +105,7 @@ ncclResult_t ncclSetThresholds(struct ncclComm* comm, int minCompCap, int maxCom
 
         // Various model refinements
         if (a == NCCL_ALGO_RING && p == NCCL_PROTO_LL)    busBw *= 1.0/4.0;
-        if (a == NCCL_ALGO_RING && p == NCCL_PROTO_LL128) busBw = std::min(busBw*120.0/128.0, 91.0);
+        if (a == NCCL_ALGO_RING && p == NCCL_PROTO_LL128) busBw = std::min(busBw*120.0/128.0, ll128MaxBw[coll]);
         if (a == NCCL_ALGO_TREE) busBw = std::min(busBw*.9, comm->nNodes > 1 ? 70.0 : 90.0);
         if (a == NCCL_ALGO_TREE && p == NCCL_PROTO_LL) busBw *= 1.0/3.0;
         if (a == NCCL_ALGO_TREE && p == NCCL_PROTO_LL128) busBw *= 7.0/9.0;
@@ -114,8 +117,13 @@ ncclResult_t ncclSetThresholds(struct ncclComm* comm, int minCompCap, int maxCom
         comm->latencies[coll][a][p] = baseLat[a][p];
         if (a == NCCL_ALGO_RING) {
           float lat = hwLat[hw[a]][a][p];
-          if ((coll == ncclCollReduce || coll == ncclCollBroadcast) && ringGraph->sameChannels) {
-            comm->latencies[coll][a][p] += lat;
+          if ((coll == ncclCollReduce || coll == ncclCollBroadcast)) {
+            if (ringGraph->sameChannels) {
+              comm->latencies[coll][a][p] += lat;
+            } else {
+              if (p == NCCL_PROTO_SIMPLE) lat = hwLat[hw[a]][NCCL_ALGO_TREE][p]; // Add some chunk latency, waiting for proper chunk modeling
+              comm->latencies[coll][a][p] += nsteps*lat;
+            }
           } else {
             comm->latencies[coll][a][p] += nsteps*lat;
           }
