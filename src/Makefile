@@ -118,8 +118,8 @@ $(OBJDIR)/%.o : %.cc
 	@rm -f $(@:%.o=%.d.tmp)
 
 clean :
-	rm -rf ${INCDIR} ${LIBDIR} ${PKGDIR} ${OBJDIR}
 	$(MAKE) -C collectives/device clean
+	rm -rf ${INCDIR} ${LIBDIR} ${PKGDIR} ${OBJDIR}
 
 install : lib
 	mkdir -p $(PREFIX)/lib
