@@ -169,6 +169,17 @@ static ncclResult_t addCpuStep(struct ncclTopoSystem* system, int c, int t1, int
 ncclResult_t ncclTopoComputePaths(struct ncclTopoSystem* system, struct ncclPeerInfo* peerInfos) {
   // Precompute paths between GPUs/NICs.
 
+  // Remove everything in case we're re-computing
+  for (int t=0; t<NCCL_TOPO_NODE_TYPES; t++) {
+    for (int n=0; n<system->nodes[t].count; n++) {
+      struct ncclTopoNode* node = system->nodes[t].nodes+n;
+      for (int t=0; t<NCCL_TOPO_NODE_TYPES; t++) {
+        free(node->paths[t]);
+        node->paths[t] = NULL;
+      }
+    }
+  }
+
   // Set direct paths from/to CPUs. We need them in many cases.
   for (int c=0; c<system->nodes[CPU].count; c++) {
     NCCLCHECK(ncclTopoSetPaths(system->nodes[CPU].nodes+c, system));
@@ -195,7 +206,7 @@ ncclResult_t ncclTopoComputePaths(struct ncclTopoSystem* system, struct ncclPeer
           NCCLCHECK(addCpuStep(system, cpu, GPU, p, GPU, g));
         } else {
           // We cannot communicate with that peer.
-          system->nodes[GPU].nodes[p].paths[GPU][g].count = 0;
+          system->nodes[GPU].nodes[g].paths[GPU][p].count = 0;
         }
       }
     }
@@ -231,33 +242,51 @@ ncclResult_t ncclTopoComputePaths(struct ncclTopoSystem* system, struct ncclPeer
 }
 
 ncclResult_t ncclTopoTrimSystem(struct ncclTopoSystem* system, struct ncclComm* comm) {
-  int* domains;
+  int *domains, *ids;
   NCCLCHECK(ncclCalloc(&domains, system->nodes[GPU].count));
+  NCCLCHECK(ncclCalloc(&ids, system->nodes[GPU].count));
   int myDomain = 0;
   for (int g=0; g<system->nodes[GPU].count; g++) {
+    struct ncclTopoNode* gpu = system->nodes[GPU].nodes+g;
     domains[g] = g;
+    ids[g] = gpu->id;
     for (int p=0; p<g; p++) {
-      if (system->nodes[GPU].nodes[g].paths[GPU][p].count > 0) {
+      if (gpu->paths[GPU][p].count > 0) {
         domains[g] = std::min(domains[g], domains[p]);
       }
     }
-    if (system->nodes[GPU].nodes[g].rank == comm->rank) myDomain = domains[g];
+    if (gpu->rank == comm->rank) myDomain = domains[g];
   }
 
-  for (int g=0; g<system->nodes[GPU].count; g++) {
-    if (domains[g] != myDomain) {
-      // Remove GPUs I can't access (even indirectly) from my view of the node
-      for (int i=g; i<system->nodes[GPU].count; i++) {
-        memcpy(system->nodes[GPU].nodes+i, system->nodes[GPU].nodes+i+1, sizeof(struct ncclTopoNode));
-      }
-      // Also shift all paths
-      for (int t=0; t<NCCL_TOPO_NODE_TYPES; t++) {
-        for (int i=0; i<system->nodes[t].count; i++) {
-          memcpy(system->nodes[t].nodes[i].paths[GPU]+i, system->nodes[t].nodes[i].paths[GPU]+i+1, sizeof(struct ncclTopoLinkList));
+  int ngpus = system->nodes[GPU].count;
+  for (int i=0; i<ngpus; i++) {
+    if (domains[i] == myDomain) continue;
+    struct ncclTopoNode* gpu = NULL;
+    int g;
+    for (g=0; g<system->nodes[GPU].count /* This one varies over the loops */; g++) {
+      gpu = system->nodes[GPU].nodes+g;
+      if (gpu->id == ids[i]) break;
+    }
+    if (gpu == NULL) { WARN("Could not find id %d", ids[i]); return ncclInternalError; }
+
+    // Remove GPUs I can't access (even indirectly) from my view of the node
+    for (int t=0; t<NCCL_TOPO_NODE_TYPES; t++) {
+      for (int n=0; n<system->nodes[t].count; n++) {
+        struct ncclTopoNode* node = system->nodes[t].nodes+n;
+        if (node == gpu) continue;
+        for (int l=0; l<node->nlinks; l++) {
+          while (node->links[l].remNode == gpu) {
+            memcpy(node->links+l, node->links+l+1, (node->nlinks-l-1)*sizeof(struct ncclTopoLink));
+            node->nlinks--;
+          }
+          if (node->links[l].remNode->type == GPU && node->links[l].remNode >= gpu) {
+            node->links[l].remNode--;
+          }
         }
       }
-      system->nodes[GPU].count--;
     }
+    memcpy(gpu, gpu+1, (system->nodes[GPU].count-g-1)*sizeof(struct ncclTopoNode));
+    system->nodes[GPU].count--;
   }
 
   comm->localRanks = system->nodes[GPU].count;

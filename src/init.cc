@@ -474,10 +474,12 @@ static ncclResult_t initTransportsRank(struct ncclComm* comm, ncclUniqueId* comm
 
   // Topo detection / System graph creation
   NCCLCHECK(ncclTopoGetSystem(comm, &comm->topo));
-  // Per-compute paths between GPUs and NICs
+  // Compute paths between GPUs and NICs
   NCCLCHECK(ncclTopoComputePaths(comm->topo, comm->peerInfo));
   // Remove inaccessible GPUs and unused NICs
   NCCLCHECK(ncclTopoTrimSystem(comm->topo, comm));
+  // Recompute paths after trimming
+  NCCLCHECK(ncclTopoComputePaths(comm->topo, comm->peerInfo));
   // Compute max speed to accelerate search
   NCCLCHECK(ncclTopoGetMaxSpeed(comm->topo));
   // Print final topology

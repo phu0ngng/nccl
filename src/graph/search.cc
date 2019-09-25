@@ -207,7 +207,6 @@ ncclResult_t ncclTopoSearchRecGpu(struct ncclTopoSystem* system, struct ncclTopo
       if (graph->nChannels*graph->speedIntra == maxSpeed) *time = -1;
     }
     if (graph->nChannels < MAXCHANNELS) {
-      //printf("New Channel %d\n", graph->nChannels);
       NCCLCHECK(ncclTopoSearchRec(system, graph, saveGraph, maxSpeed, time));
     }
     graph->nChannels--;
@@ -232,7 +231,6 @@ ncclResult_t ncclTopoSearchRecGpu(struct ncclTopoSystem* system, struct ncclTopo
           NCCLCHECK(ncclTopoFollowPath(graph, paths+n, &net, graph->speedInter, typeSave));
           if (net) {
             graph->inter[graph->nChannels*2+1] = net->id;
-            //printf("GPU/%d -> NET/%d\n", gpu->id, n);
             NCCLCHECK(ncclTopoSearchRecGpu(system, graph, saveGraph, gpu, step, -1, backToFirstRank, forcedOrder, maxSpeed, time));
             NCCLCHECK(ncclTopoFollowPath(graph, paths+n, &net, -graph->speedInter, typeSave));
           }
@@ -278,7 +276,6 @@ ncclResult_t ncclTopoSearchRecGpu(struct ncclTopoSystem* system, struct ncclTopo
     int typeSave = graph->type;
     NCCLCHECK(ncclTopoFollowPath(graph, paths+g, &firstGpu, graph->speedIntra, typeSave));
     if (firstGpu) {
-      //printf("GPU/%d -> GPU/%d (%d)\n", gpu->id, g, step+1);
       NCCLCHECK(ncclTopoSearchRecGpu(system, graph, saveGraph, firstGpu, step+1, backToNet, -1, forcedOrder, maxSpeed, time));
       NCCLCHECK(ncclTopoFollowPath(graph, paths+g, &firstGpu, -graph->speedIntra, typeSave));
     }
@@ -561,6 +558,7 @@ done:
     graph->inter[0] = graph->inter[1] = 0;
     graph->speedIntra = graph->speedInter = 3;
     graph->nvlink = 0;
+    graph->nChannels = 1;
   }
   return ncclSuccess;
 }

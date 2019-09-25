@@ -582,21 +582,20 @@ ncclResult_t ncclTopoGetSystem(struct ncclComm* comm, struct ncclTopoSystem** sy
 }
 
 static ncclResult_t nvmlToIndex(struct ncclTopoSystem* system, int nvmlDev, int* index) {
+  *index = -1;
   for (int i=0; i<system->nodes[GPU].count; i++) {
     if (system->nodes[GPU].nodes[i].id == nvmlDev) {
       *index = i;
-      return ncclSuccess;
     }
   }
-  WARN("nvmlToIndex : error finding NVML device %d", nvmlDev);
-  return ncclInternalError;
+  return ncclSuccess;
 }
 
 ncclResult_t ncclTopoGetNvlink(struct ncclTopoSystem* system, int nvmlDev1, int nvmlDev2, int* nvlink) {
   int id1, id2;
   NCCLCHECK(nvmlToIndex(system, nvmlDev1, &id1));
   NCCLCHECK(nvmlToIndex(system, nvmlDev2, &id2));
-  *nvlink = system->nodes[GPU].nodes[id1].paths[GPU][id2].type == LINK_NVL;
+  *nvlink = id1 != -1 && id2 != -1 && system->nodes[GPU].nodes[id1].paths[GPU][id2].type == LINK_NVL;
   return ncclSuccess;
 }
 
