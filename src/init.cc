@@ -614,6 +614,7 @@ static int collNetSetup(struct ncclComm* comm, struct ncclChannel* channel, int 
   // connect
   if (isMaster && ret > 0) {
     NCCLCHECKGOTO(transportComm->connect(masterConnects, nMasters, rankInCollNet, conn), res, cleanup);
+    channel->collTreeRank = rankInCollNet;
     INFO(NCCL_INIT, "rank %d collNetRank %d collNetNranks %d init COMPLETE", rank, rankInCollNet, nMasters);
   }
   // connect send and recv (perform only once)
