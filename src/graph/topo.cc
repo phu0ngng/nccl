@@ -281,7 +281,6 @@ ncclResult_t ncclTopoConnectNVLink(nvmlDevice_t* nvmlDevs, struct ncclTopoSystem
   int pciWidth;
   NCCLCHECK(ncclTopoGetPciWidth(&pciWidth));
   system->maxSpeed = minNvlinks ? minNvlinks*minWidth : pciWidth;
-  system->maxChannels = minNvlinks ? minNvlinks : 1;
   system->maxWidth = minNvlinks ? minWidth : pciWidth;
   return ncclSuccess;
 }
@@ -518,7 +517,7 @@ static ncclResult_t ncclTopoPrintRec(struct ncclTopoNode* node, struct ncclTopoN
 }
 
 ncclResult_t ncclTopoPrint(struct ncclTopoSystem* s) {
-  INFO(NCCL_GRAPH, "=== System : maxChannels %1d maxWidth %2d ===", s->maxChannels, s->maxWidth);
+  INFO(NCCL_GRAPH, "=== System : maxWidth %2d maxSpeed %2d ===", s->maxWidth, s->maxSpeed);
   char line[1024];
   for (int n=0; n<s->nodes[CPU].count; n++) NCCLCHECK(ncclTopoPrintRec(s->nodes[CPU].nodes+n, NULL, line, 0));
   INFO(NCCL_GRAPH, "==========================================");

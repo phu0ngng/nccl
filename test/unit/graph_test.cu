@@ -348,7 +348,7 @@ void createSystem(struct ncclTopoSystem* system, const char* desc[], int descSiz
     }
   }
 
-  // Compute maxChannels and maxWidth
+  // Compute maxWidth
   int minNvlinks = 0xfffffff;
   for (int g=0; g<system->nodes[GPU].count; g++) {
     struct ncclTopoNode* node = system->nodes[GPU].nodes+g;
@@ -358,12 +358,8 @@ void createSystem(struct ncclTopoSystem* system, const char* desc[], int descSiz
     }
     minNvlinks = std::min(minNvlinks, nvlinks);
   }
-  system->maxChannels = minNvlinks ? minNvlinks : 1;
   system->maxWidth = minNvlinks ? nvlinkWidth : PCI_WIDTH;
-  if (inter) {
-    system->maxChannels = std::max(system->maxChannels, system->nodes[NET].count);
-    system->maxWidth = NET_WIDTH;
-  }
+  if (inter) system->maxWidth = NET_WIDTH;
 
   CHECK(ncclTopoSortSystem(system));
   CHECK(ncclTopoComputePaths(system, NULL));

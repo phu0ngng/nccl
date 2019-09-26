@@ -80,7 +80,6 @@ struct ncclTopoNodeSet {
 struct ncclTopoSystem {
   struct ncclTopoNodeSet nodes[NCCL_TOPO_NODE_TYPES];
   int maxSpeed;
-  int maxChannels;
   int maxWidth;
   int searchInitDone;
 };
