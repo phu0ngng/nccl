@@ -129,6 +129,16 @@ static void printNodePaths(struct ncclTopoSystem* system, struct ncclTopoNode* n
 #endif
 }
 
+ncclResult_t ncclTopoPrintPaths(struct ncclTopoSystem* system) {
+  for (int i=0; i<system->nodes[GPU].count; i++) {
+    printNodePaths(system, system->nodes[GPU].nodes+i);
+  }
+  for (int i=0; i<system->nodes[NET].count; i++) {
+    printNodePaths(system, system->nodes[NET].nodes+i);
+  }
+  return ncclSuccess;
+}
+
 static ncclResult_t getLocalCpu(struct ncclTopoSystem* system, int gpu, int* retCpu) {
   // Find the closest CPU to a GPU
   int minHops = 0;
@@ -232,12 +242,6 @@ ncclResult_t ncclTopoComputePaths(struct ncclTopoSystem* system, struct ncclPeer
     }
   }
 
-  for (int i=0; i<system->nodes[GPU].count; i++) {
-    printNodePaths(system, system->nodes[GPU].nodes+i);
-  }
-  for (int i=0; i<system->nodes[NET].count; i++) {
-    printNodePaths(system, system->nodes[NET].nodes+i);
-  }
   return ncclSuccess;
 }
 

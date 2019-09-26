@@ -134,4 +134,6 @@ static ncclResult_t ncclTopoConnectNodes(struct ncclTopoNode* node, struct ncclT
   return ncclSuccess;
 }
 
+ncclResult_t ncclTopoPrintPaths(struct ncclTopoSystem* system);
+
 #endif

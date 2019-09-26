@@ -520,6 +520,7 @@ ncclResult_t ncclTopoPrint(struct ncclTopoSystem* s) {
   char line[1024];
   for (int n=0; n<s->nodes[CPU].count; n++) NCCLCHECK(ncclTopoPrintRec(s->nodes[CPU].nodes+n, NULL, line, 0));
   INFO(NCCL_GRAPH, "==========================================");
+  NCCLCHECK(ncclTopoPrintPaths(s));
   return ncclSuccess;
 }
 
