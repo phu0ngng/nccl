@@ -318,7 +318,7 @@ ncclResult_t ncclTopoGetMaxSpeed(struct ncclTopoSystem* system) {
   // Compute max speed to try to accelerate the search.
   system->maxSpeed = LOC_WIDTH;
 
-  for (int g=0; g<system->nodes[CPU].count; g++) {
+  for (int g=0; g<system->nodes[GPU].count; g++) {
     NCCLCHECK(getGpuSpeed(system->nodes[GPU].nodes+g, &system->maxSpeed));
   }
   if (system->nodes[NET].count) {
