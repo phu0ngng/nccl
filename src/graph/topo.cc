@@ -247,6 +247,7 @@ ncclResult_t ncclTopoConnectNVLink(nvmlDevice_t* nvmlDevs, struct ncclTopoSystem
           NCCLCHECK(wrapNvmlDeviceGetPciInfo(nvmlDevs[peer], &pci));
           if (strncmp(pci.busId, remoteProc.busId, NVML_DEVICE_PCI_BUS_ID_BUFFER_SIZE) == 0) {
             NCCLCHECK(ncclTopoConnectNodes(system->nodes[GPU].nodes+g, system->nodes[GPU].nodes+peer, LINK_NVL, width));
+            nvlinks++;
             break;
           }
         }
@@ -259,6 +260,7 @@ ncclResult_t ncclTopoConnectNVLink(nvmlDevice_t* nvmlDevs, struct ncclTopoSystem
         int numaId = getNumaId(path);
         free(path);
         NCCLCHECK(ncclTopoConnectCpu(system, numaId, system->nodes[GPU].nodes+g, LINK_NVL, width));
+        nvlinks++;
       } else { // Nvswitch
         if (type == ncclNvLinkDeviceUnknown) {
           // The NVLink is up but we couldn't find the PCI device on the other
@@ -270,8 +272,8 @@ ncclResult_t ncclTopoConnectNVLink(nvmlDevice_t* nvmlDevs, struct ncclTopoSystem
         }
         NCCLCHECK(ncclTopoConnectNodes(system->nodes[GPU].nodes+g, nvsNode, LINK_NVL, VOLTA_NVLINK_WIDTH));
         NCCLCHECK(ncclTopoConnectNodes(nvsNode, system->nodes[GPU].nodes+g, LINK_NVL, VOLTA_NVLINK_WIDTH));
+        nvlinks++;
       }
-      nvlinks++;
     }
     minNvlinks = std::min(minNvlinks, nvlinks);
     minWidth = std::min(minWidth, width);
