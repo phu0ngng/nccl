@@ -206,7 +206,7 @@ ncclResult_t ncclTopoSearchRecGpu(struct ncclTopoSystem* system, struct ncclTopo
       memcpy(saveGraph, graph, sizeof(struct ncclTopoGraph));
       if (graph->nChannels*graph->speedIntra == maxSpeed) *time = -1;
     }
-    if (graph->nChannels < MAXCHANNELS) {
+    if (graph->nChannels < MAXCHANNELS/2) {
       NCCLCHECK(ncclTopoSearchRec(system, graph, saveGraph, maxSpeed, time));
     }
     graph->nChannels--;
