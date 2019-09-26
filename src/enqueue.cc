@@ -204,6 +204,7 @@ ncclResult_t ncclBarrierEnqueueWait(ncclComm_t comm) {
     channel->collCount = 0;
   }
   params->gridDim.x = params->blockDim.x = 0;
+  comm->lastOpCount = comm->opCount;
   NCCLCHECK(transportStartProxy(comm));
   return ncclSuccess;
 }
@@ -421,7 +422,7 @@ static ncclResult_t saveKernel(struct ncclInfo* info) {
     channel->collFifoTail = opIndex;
     channel->collCount++;
   }
-  /*if (llMode == 0)*/ info->comm->opCount++;
+  info->comm->opCount++;
   return ncclSuccess;
 }
 
