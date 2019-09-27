@@ -51,8 +51,8 @@ struct netRecvResources {
   uint64_t llLastCleaning;
 };
 
-/* Determine if we can communicate with the peer */
-ncclResult_t netCanConnect(int* ret, struct ncclTopoSystem* topo, struct ncclTopoGraph* graph, struct ncclPeerInfo* myInfo, struct ncclPeerInfo* peerInfo) {
+/* Determine if two peers can communicate with NET */
+ncclResult_t netCanConnect(int* ret, struct ncclTopoSystem* topo, struct ncclTopoGraph* graph, struct ncclPeerInfo* info1, struct ncclPeerInfo* info2) {
   *ret = 1;
   return ncclSuccess;
 }
