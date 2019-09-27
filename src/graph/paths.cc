@@ -197,13 +197,15 @@ ncclResult_t ncclTopoComputePaths(struct ncclTopoSystem* system, struct ncclPeer
 
   // Set direct paths from/to GPUs.
   for (int g=0; g<system->nodes[GPU].count; g++) {
+    // Compute paths to GPU g
     NCCLCHECK(ncclTopoSetPaths(system->nodes[GPU].nodes+g, system));
 
     if (peerInfos == NULL) continue;
-    struct ncclPeerInfo* srcInfo = peerInfos+system->nodes[GPU].nodes[g].rank;
+    // Update paths from GPUs p to GPU g when we can't or don't want to use P2P or even SHM
+    struct ncclPeerInfo* dstInfo = peerInfos+system->nodes[GPU].nodes[g].rank;
     for (int p=0; p<system->nodes[GPU].count; p++) {
       if (p == g) continue;
-      struct ncclPeerInfo* dstInfo = peerInfos+system->nodes[GPU].nodes[p].rank;
+      struct ncclPeerInfo* srcInfo = peerInfos+system->nodes[GPU].nodes[p].rank;
       int p2p;
       NCCLCHECK(ncclTransports[TRANSPORT_P2P].canConnect(&p2p, system, NULL, srcInfo, dstInfo));
       if (p2p == 0) {
@@ -216,7 +218,7 @@ ncclResult_t ncclTopoComputePaths(struct ncclTopoSystem* system, struct ncclPeer
           NCCLCHECK(addCpuStep(system, cpu, GPU, p, GPU, g));
         } else {
           // We cannot communicate with that peer.
-          system->nodes[GPU].nodes[g].paths[GPU][p].count = 0;
+          system->nodes[GPU].nodes[p].paths[GPU][g].count = 0;
         }
       }
     }

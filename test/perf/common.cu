@@ -550,7 +550,8 @@ testResult_t threadRunTests(struct threadArgs* args) {
   // Set device to the first of our GPUs. If we don't do that, some operations
   // will be done on the current GPU (by default : 0) and if the GPUs are in
   // exclusive mode those operations will fail.
-  int gpuid = args->localRank*args->nThreads*args->nGpus + args->thread*args->nGpus;
+  char* str = getenv("NCCL_TESTS_DEVICE");
+  int gpuid = str ? atoi(str) : args->localRank*args->nThreads*args->nGpus + args->thread*args->nGpus;
   CUDACHECK(cudaSetDevice(gpuid));
   TESTCHECK(ncclTestEngine.runTest(args, ncclroot, (ncclDataType_t)nccltype, test_typenames[nccltype], (ncclRedOp_t)ncclop, test_opnames[ncclop]));
   return testSuccess;
@@ -567,7 +568,8 @@ testResult_t threadInit(struct threadArgs* args) {
   NCCLCHECK(ncclGroupStart());
   for (int i=0; i<args->nGpus; i++) {
     int rank = args->proc*args->nThreads*args->nGpus + args->thread*args->nGpus + i;
-    int gpuid = args->localRank*args->nThreads*args->nGpus + args->thread*args->nGpus + i;
+    char* str = getenv("NCCL_TESTS_DEVICE");
+    int gpuid = str ? atoi(str) : args->localRank*args->nThreads*args->nGpus + args->thread*args->nGpus;
     CUDACHECK(cudaSetDevice(gpuid));
     NCCLCHECK(ncclCommInitRank(args->comms+i, nranks, args->ncclId, rank));
   }
@@ -817,7 +819,8 @@ testResult_t run() {
   char line[MAX_LINE];
   int len = 0;
   for (int i=0; i<nThreads*nGpus; i++) {
-    int cudaDev = localRank*nThreads*nGpus+i;
+    char* str = getenv("NCCL_TESTS_DEVICE");
+    int cudaDev = str ? atoi(str) : localRank*nThreads*nGpus+i;
     int rank = proc*nThreads*nGpus+i;
     cudaDeviceProp prop;
     CUDACHECK(cudaGetDeviceProperties(&prop, cudaDev));
@@ -854,7 +857,9 @@ testResult_t run() {
   ncclTestEngine.getBuffSize(&sendBytes, &recvBytes, (size_t)maxBytes, (size_t)nProcs*nGpus*nThreads);
 
   for (int i=0; i<nGpus*nThreads; i++) {
-    CUDACHECK(cudaSetDevice(localRank*nThreads*nGpus+i));
+    char* str = getenv("NCCL_TESTS_DEVICE");
+    int gpuid = str ? atoi(str) : localRank*nThreads*nGpus+i;
+    CUDACHECK(cudaSetDevice(gpuid));
     AllocateBuffs(sendbuffs+i, sendBytes, recvbuffs+i, recvBytes, expected+i, (size_t)maxBytes, nProcs*nThreads*nGpus);
     if (streamnull)
       streams[i] = NULL;
