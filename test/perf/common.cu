@@ -355,7 +355,6 @@ testResult_t testStreamSynchronize(int ngpus, cudaStream_t* streams, ncclComm_t*
          NCCLCHECK(ncclAsyncErr);
        }
      }
-#endif
      auto delta = std::chrono::high_resolution_clock::now() - start;
      if (std::chrono::duration_cast<std::chrono::seconds>(delta).count() > timeout) {
        for (int i=0; i<ngpus; i++)
@@ -368,6 +367,7 @@ testResult_t testStreamSynchronize(int ngpus, cudaStream_t* streams, ncclComm_t*
            __FILE__,__LINE__);
        return testTimeout;
      }
+#endif
    }
 
    // We might want to let other threads (including NCCL threads) use the CPU.
