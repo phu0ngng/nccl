@@ -44,7 +44,7 @@ class ncclLL128Primitives {
   inline __device__ uint64_t* recvPtr(int i) { return recvBuff[i]+recvOffset(i); }
   inline __device__ uint64_t* sendPtr(int i) { return sendBuff[i]+sendOffset(i); }
   inline __device__ uint64_t recvFlag(int i) { return recvStep[i]+1; }
-  inline __device__ uint64_t sendFlag(int i) { FUNC f; return (nextIsNet[i] && gdr[i]) ? f.acclFlag(collTreeRank, sendStep[i]+1) : sendStep[i]+1; }
+  inline __device__ uint64_t sendFlag(int i) { return (nextIsNet[i] && gdr[i]) ? FUNC::acclFlag(collTreeRank, sendStep[i]+1) : sendStep[i]+1; }
 
   // Exit If Abort Barrier : make sure all threads exit consistently
   // Each thread sets a predicate to true if val == 1
