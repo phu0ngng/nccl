@@ -449,7 +449,7 @@ int main() {
   setlinebuf(stdout);
   initDebug();
   int errors = 0;
-#ifndef __PPC__
+#ifdef __x86_64__
   RUN("LOC-1G", TOPO(local_topo, DEF),    0, 1, PCI_WIDTH,            2*PCI_WIDTH,          1, LINK_LOC, NCCL_TOPO_PATTERN_TREE,       1, PCI_WIDTH,            1, LINK_LOC, 0);
   RUN("LOC-1G", TOPO(local_topo, DEF),    1, 1, PCI_WIDTH,            2*PCI_WIDTH,          1, LINK_PCI, NCCL_TOPO_PATTERN_TREE,       1, PCI_WIDTH,            1, LINK_PCI, 0);
   RUN("PCI-1R", TOPO(pci1R_topo, DEF),    0, 1, INTEL_P2P(PCI_WIDTH), INTEL_P2P(PCI_WIDTH), 0, LINK_QPI, NCCL_TOPO_PATTERN_SPLIT_TREE, 1, INTEL_P2P(PCI_WIDTH), 0, LINK_QPI, 0);
