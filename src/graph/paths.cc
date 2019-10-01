@@ -229,13 +229,10 @@ ncclResult_t ncclTopoComputePaths(struct ncclTopoSystem* system, struct ncclPeer
     struct ncclTopoNode* netNode = system->nodes[NET].nodes+n;
     NCCLCHECK(ncclTopoSetPaths(netNode, system));
 
-    if (peerInfos == NULL) continue;
-    int ptrSupport;
-    NCCLCHECK(ncclNetPtrSupport(n, &ptrSupport));
-    if (((ptrSupport & NCCL_PTR_CUDA) == 0)) {
-      // We cannot use GPU Direct RDMA, so we need all NIC<->GPU paths
-      // to go through a CPU
-      for (int g=0; g<system->nodes[GPU].count; g++) {
+    for (int g=0; g<system->nodes[GPU].count; g++) {
+      if ((peerInfos[system->nodes[GPU].nodes[g].rank].gdrSupport & (1 << n)) == 0) {
+        // We cannot use GPU Direct RDMA, so we need all NIC<->GPU paths
+        // to go through a CPU
         int localCpu;
         NCCLCHECK(getLocalCpu(system, g, &localCpu));
         NCCLCHECK(addCpuStep(system, localCpu, NET, n, GPU, g));

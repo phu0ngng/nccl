@@ -276,6 +276,13 @@ static ncclResult_t fillInfo(struct ncclPeerInfo* info, int rank, uint64_t commH
   nvmlPciInfo_t pciInfo;
   NCCLCHECK(wrapNvmlDeviceGetPciInfo(nvmlDevice, &pciInfo));
   strncpy(info->busId, pciInfo.busId, NVML_DEVICE_PCI_BUS_ID_BUFFER_SIZE);
+  int netDevs;
+  NCCLCHECK(ncclNetDevices(&netDevs));
+  for (int n=0; n<netDevs; n++) {
+    int ptrSupport;
+    NCCLCHECK(ncclNetPtrSupport(n, &ptrSupport));
+    if (ptrSupport & NCCL_PTR_CUDA) info->gdrSupport |= (1 << n);
+  }
   return ncclSuccess;
 }
 
