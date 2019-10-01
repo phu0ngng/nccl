@@ -62,7 +62,7 @@ struct ncclTopoLinkList {
 
 struct ncclTopoNode {
   int type;
-  int id;
+  int64_t id;
   int rank;
   int nlinks;
   struct ncclTopoLink links[NCCL_TOPO_MAX_LINKS];
@@ -84,7 +84,7 @@ struct ncclTopoSystem {
   int searchInitDone;
 };
 
-static ncclResult_t ncclTopoCreateNode(struct ncclTopoSystem* system, struct ncclTopoNode** node, int type, int id) {
+static ncclResult_t ncclTopoCreateNode(struct ncclTopoSystem* system, struct ncclTopoNode** node, int type, uint64_t id) {
   for (int i=0; i<system->nodes[type].count; i++) {
     if (system->nodes[type].nodes[i].id == id) {
       *node = system->nodes[type].nodes+i;

@@ -291,7 +291,7 @@ void createSystem(struct ncclTopoSystem* system, const char* desc[], int descSiz
         }
       }
       if (type == -1) ERROR("Unable to find type in %s", line);
-      int id = -1;
+      int64_t id = -1;
       while (line[0] != '-' && line[0] != '\0') {
         int digit = line[0] - '0';
         if (digit < 0 || digit > 9) ERROR("Could not find id : %s", line);

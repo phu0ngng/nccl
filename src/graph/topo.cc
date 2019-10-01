@@ -288,7 +288,7 @@ ncclResult_t ncclTopoConnectNVLink(nvmlDevice_t* nvmlDevs, struct ncclTopoSystem
 // Walk backwards a PCI path to generate a PCI ID as an integer.
 // For example, a path pointer pointing on the last "/" of
 // /sys/class/pci0000:00/0000:00:02.0/0000:02:00.0/ will give 02*4096+00*8+0 = 4096.
-ncclResult_t pciHexToInt(char* path, int offset, int minOffset, int* id) {
+ncclResult_t pciHexToInt(char* path, int offset, int minOffset, int64_t* id) {
   // Copy hex value without ':', '.' and stop when we reach '/'
   if (path[offset] == '/') offset--; // Ignore trailing '/'
 
@@ -328,7 +328,7 @@ ncclResult_t ncclTopoCreatePciPath(struct ncclTopoSystem* system, struct ncclTop
       slashCount++;
       // Find if already existing
       if ((slashCount%2) == 0) {
-        int pciId;
+        int64_t pciId;
         NCCLCHECK(pciHexToInt(path, offset, offsetRC, &pciId));
         for (int p=0; p<system->nodes[PCI].count; p++) {
           if (system->nodes[PCI].nodes[p].id == pciId) {
@@ -383,7 +383,7 @@ uint64_t getIbGuid(char* path) {
 
 struct netInfo {
   char* path;
-  int nic;
+  int64_t nic;
   uint64_t asic;
   int port;
   int net;
@@ -488,9 +488,9 @@ ncclResult_t ncclTopoConnectPCI(nvmlDevice_t* nvmlDevs, struct ncclTopoSystem* s
 
 static ncclResult_t ncclTopoPrintRec(struct ncclTopoNode* node, struct ncclTopoNode* prevNode, char* line, int offset) {
   if (node->type == GPU) {
-    sprintf(line+offset, "%s/%X (%d)", topoNodeTypeStr[node->type], node->id, node->rank);
+    sprintf(line+offset, "%s/%lX (%d)", topoNodeTypeStr[node->type], node->id, node->rank);
   } else {
-    sprintf(line+offset, "%s/%X", topoNodeTypeStr[node->type], node->id);
+    sprintf(line+offset, "%s/%lX", topoNodeTypeStr[node->type], node->id);
   }
   INFO(NCCL_GRAPH, "%s", line);
   for (int i=0; i<offset; i++) line[i] = ' ';
@@ -505,9 +505,9 @@ static ncclResult_t ncclTopoPrintRec(struct ncclTopoNode* node, struct ncclTopoN
         NCCLCHECK(ncclTopoPrintRec(link->remNode, node, line, nextOffset));
       } else {
         if (link->remNode->type == NET) {
-          sprintf(line+nextOffset, "%s/%X (%d)", topoNodeTypeStr[link->remNode->type], link->remNode->id, link->remNode->rank);
+          sprintf(line+nextOffset, "%s/%lX (%d)", topoNodeTypeStr[link->remNode->type], link->remNode->id, link->remNode->rank);
         } else {
-          sprintf(line+nextOffset, "%s/%X", topoNodeTypeStr[link->remNode->type], link->remNode->id);
+          sprintf(line+nextOffset, "%s/%lX", topoNodeTypeStr[link->remNode->type], link->remNode->id);
         }
         INFO(NCCL_GRAPH, "%s", line);
       }
