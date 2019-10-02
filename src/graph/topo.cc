@@ -51,9 +51,7 @@ static ncclResult_t getPciPath(char* busId, char** path) {
   return ncclSuccess;
 }
 
-// Walk backwards a PCI path to generate a PCI ID as an integer.
-// For example, a path pointer pointing on the last "/" of
-// /sys/class/pci0000:00/0000:00:02.0/0000:02:00.0/ will give 02*4096+00*8+0 = 4096.
+// Get an int64 from a PCI path. For example, sys/class/pci0000:00/0000:00:02.0/0000:02:00.0/ will return 0x000002000.
 ncclResult_t pciPathToInt64(char* path, int offset, int minOffset, int64_t* id) {
   char* str = path+offset;
   // Remove trailing "/"
