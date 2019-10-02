@@ -5,12 +5,8 @@
  ************************************************************************/
 
 #include "comm.h"
-#include "nvmlwrap.h"
 #include "net.h"
 #include "graph.h"
-
-#define NET_MAX_IFS 16
-#define NET_MAX_GPUS 32
 
 struct netConnectInfo {
   ncclNetHandle_t netHandle;
