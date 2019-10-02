@@ -131,7 +131,7 @@ ncclResult_t ncclGetUniqueId(ncclUniqueId* out) {
 
 // Prevent compiler from optimizing out these operations
 void __attribute__((optimize("O0"))) commPoison(ncclComm_t comm) {
-  comm->rank = comm->cudaDev = comm->nvmlDev = comm->nRanks = -1;
+  comm->rank = comm->cudaDev = comm->busId = comm->nRanks = -1;
 }
 
 static ncclResult_t commFree(ncclComm_t comm) {
@@ -197,8 +197,8 @@ static ncclResult_t commAlloc(ncclComm_t* comret, int ndev, int rank) {
   comm->rank = comm->hostDevComm.rank =rank;
   comm->nRanks = comm->hostDevComm.nRanks = ndev;
   cudaGetDevice(&comm->cudaDev);
-  getNvmlDevice(comm->cudaDev, &comm->nvmlDev);
-  TRACE(NCCL_INIT,"comm %p rank %d nranks %d cudaDev %d nvmlDev %d", comm, rank, ndev, comm->cudaDev, comm->nvmlDev);
+  NCCLCHECK(getBusId(comm->cudaDev, &comm->busId));
+  TRACE(NCCL_INIT,"comm %p rank %d nranks %d cudaDev %d busId %x", comm, rank, ndev, comm->cudaDev, comm->busId);
 
   comm->doneEvent = doneEvent;
   comm->checkPointers = ncclParamCheckPointers() == 1 ? true : false;
@@ -252,10 +252,8 @@ static void showVersion() {
   }
 }
 
-static ncclResult_t fillInfo(struct ncclPeerInfo* info, int rank, uint64_t commHash) {
-  info->rank = rank;
-  CUDACHECK(cudaGetDevice(&info->cudaDev));
-  NCCLCHECK(getNvmlDevice(info->cudaDev, &info->nvmlDev))
+static ncclResult_t fillInfo(struct ncclComm* comm, struct ncclPeerInfo* info, uint64_t commHash) {
+  info->rank = comm->rank;
   info->hostHash=getHostHash()+commHash;
   info->pidHash=getPidHash()+commHash;
 
@@ -266,17 +264,9 @@ static ncclResult_t fillInfo(struct ncclPeerInfo* info, int rank, uint64_t commH
   SYSCHECK(stat("/dev/shm", &statbuf), "stat");
   info->shmDev = statbuf.st_dev;
 
-  // Get PCI Bus Id. We need to get the bus ID through CUDA first, since the
-  // cudaDev is a CUDA runtime dev number which could be different from the
-  // NVML device number. Then we get the busID from NVML to be sure it is
-  // consistent with NVML remote PCI bus Ids.
-  CUDACHECK(cudaDeviceGetPCIBusId(info->busId, NVML_DEVICE_PCI_BUS_ID_BUFFER_SIZE, info->cudaDev));
-  nvmlDevice_t nvmlDevice;
-  NCCLCHECK(wrapNvmlDeviceGetHandleByPciBusId(info->busId, &nvmlDevice));
-  nvmlPciInfo_t pciInfo;
-  NCCLCHECK(wrapNvmlDeviceGetPciInfo(nvmlDevice, &pciInfo));
-  strncpy(info->busId, pciInfo.busId, NVML_DEVICE_PCI_BUS_ID_BUFFER_SIZE);
+  info->busId = comm->busId;
   int netDevs;
+
   NCCLCHECK(ncclNetDevices(&netDevs));
   for (int n=0; n<netDevs; n++) {
     int ptrSupport;
@@ -465,14 +455,14 @@ static ncclResult_t initTransportsRank(struct ncclComm* comm, ncclUniqueId* comm
   NCCLCHECK(ncclCalloc(&allGather1Data, nranks));
   allGather1Data[rank].comm = comm;
   struct ncclPeerInfo* myInfo = &allGather1Data[rank].peerInfo;
-  NCCLCHECK(fillInfo(myInfo, rank, commHash));
+  NCCLCHECK(fillInfo(comm, myInfo, commHash));
   NCCLCHECK(bootstrapAllGather(comm->bootstrap, allGather1Data, sizeof(*allGather1Data)));
 
   NCCLCHECK(ncclCalloc(&comm->peerInfo, nranks));
   for (int i = 0; i < nranks; i++) {
     memcpy(comm->peerInfo+i, &allGather1Data[i].peerInfo, sizeof(struct ncclPeerInfo));
-    if ((i != rank) && (comm->peerInfo[i].hostHash == myInfo->hostHash) && (comm->peerInfo[i].nvmlDev == myInfo->nvmlDev)) {
-      WARN("Duplicate GPU detected : rank %d and rank %d both on CUDA device %d", rank, i, myInfo->nvmlDev);
+    if ((i != rank) && (comm->peerInfo[i].hostHash == myInfo->hostHash) && (comm->peerInfo[i].busId == myInfo->busId)) {
+      WARN("Duplicate GPU detected : rank %d and rank %d both on CUDA device %x", rank, i, myInfo->busId);
       return ncclInvalidUsage;
     }
   }
@@ -749,7 +739,7 @@ ncclResult_t ncclCommInitRankSync(ncclComm_t* newcomm, int nranks, ncclUniqueId 
   sched_setaffinity(0, sizeof(cpu_set_t), &affinitySave);
   NCCLCHECKGOTO(wrapNvmlShutdown(), res, cleanup);
 
-  INFO(NCCL_INIT,"comm %p rank %d nranks %d cudaDev %d nvmlDev %d - Init COMPLETE", *newcomm, myrank, nranks, (*newcomm)->cudaDev, (*newcomm)->nvmlDev);
+  INFO(NCCL_INIT,"comm %p rank %d nranks %d cudaDev %d busId %x - Init COMPLETE", *newcomm, myrank, nranks, (*newcomm)->cudaDev, (*newcomm)->busId);
 
   return ncclSuccess;
 cleanup:
@@ -847,10 +837,10 @@ ncclResult_t ncclCommDestroy(ncclComm_t comm) {
   if (comm == NULL)
     return ncclSuccess;
 
-  TRACE(NCCL_INIT, "comm %p rank %d nRanks %d cudaDev %d nvmlDev %d", comm, comm->rank, comm->nRanks, comm->cudaDev, comm->nvmlDev);
+  TRACE(NCCL_INIT, "comm %p rank %d nRanks %d cudaDev %d busId %x", comm, comm->rank, comm->nRanks, comm->cudaDev, comm->busId);
 
   // Try and prevent a double free of the comm struct (user error)
-  if (comm->rank == -1 || comm->nRanks <= 0 || comm->cudaDev == -1 || comm->nvmlDev == -1) {
+  if (comm->rank == -1 || comm->nRanks <= 0 || comm->cudaDev == -1 || comm->busId == -1) {
     WARN("comm %p has already been destroyed", comm);
     return ncclInvalidArgument;
   }

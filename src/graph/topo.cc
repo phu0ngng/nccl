@@ -13,7 +13,6 @@
 #include <sys/stat.h>
 #include <fcntl.h>
 
-
 #define BUSID_SIZE (sizeof("0000:00:00.0"))
 #define BUSID_REDUCED_SIZE (sizeof("0000:00"))
 
@@ -52,10 +51,35 @@ static ncclResult_t getPciPath(char* busId, char** path) {
   return ncclSuccess;
 }
 
-static ncclResult_t getNvmlPath(nvmlDevice_t nvmlDev, char** path) {
-  nvmlPciInfo_t pci;
-  NCCLCHECK(wrapNvmlDeviceGetPciInfo(nvmlDev, &pci));
-  NCCLCHECK(getPciPath(pci.busId, path));
+// Walk backwards a PCI path to generate a PCI ID as an integer.
+// For example, a path pointer pointing on the last "/" of
+// /sys/class/pci0000:00/0000:00:02.0/0000:02:00.0/ will give 02*4096+00*8+0 = 4096.
+ncclResult_t pciPathToInt64(char* path, int offset, int minOffset, int64_t* id) {
+  char* str = path+offset;
+  // Remove trailing "/"
+  if (*str == '/') str--;
+  // Find next /
+  while (*str != '/') str--;
+  str++;
+  NCCLCHECK(busIdToInt64(str, id));
+  return ncclSuccess;
+}
+
+static ncclResult_t idToIndex(struct ncclTopoSystem* system, int64_t id, int* index) {
+  *index = -1;
+  for (int i=0; i<system->nodes[GPU].count; i++) {
+    if (system->nodes[GPU].nodes[i].id == id) {
+      *index = i;
+    }
+  }
+  return ncclSuccess;
+}
+
+
+static ncclResult_t getPath(int64_t id, char** path) {
+  char busId[] = "0000:00:00.0";
+  NCCLCHECK(int64ToBusId(id, busId));
+  NCCLCHECK(getPciPath(busId, path));
   return ncclSuccess;
 }
 
@@ -202,6 +226,7 @@ ncclResult_t ncclTopoConnectNVLink(nvmlDevice_t* nvmlDevs, struct ncclTopoSystem
 
   int minNvlinks = 6, minWidth = VOLTA_NVLINK_WIDTH;
   for (int g=0; g<system->nodes[GPU].count; g++) {
+    struct ncclTopoNode* gpu = system->nodes[GPU].nodes+g;
     int cudaMajor, cudaMinor;
     NCCLCHECK(wrapNvmlDeviceGetCudaComputeCapability(nvmlDevs[g], &cudaMajor, &cudaMinor));
     int maxNvLinks, width;
@@ -242,24 +267,23 @@ ncclResult_t ncclTopoConnectNVLink(nvmlDevice_t* nvmlDevs, struct ncclTopoSystem
       enum ncclNvLinkDeviceType type;
       NCCLCHECK(ncclDeviceType(lowerId, &type));
       if (type == ncclNvLinkDeviceGpu) {
-        for (int peer=0; peer<system->nodes[GPU].count; peer++) {
-          nvmlPciInfo_t pci;
-          NCCLCHECK(wrapNvmlDeviceGetPciInfo(nvmlDevs[peer], &pci));
-          if (strncmp(pci.busId, remoteProc.busId, NVML_DEVICE_PCI_BUS_ID_BUFFER_SIZE) == 0) {
-            NCCLCHECK(ncclTopoConnectNodes(system->nodes[GPU].nodes+g, system->nodes[GPU].nodes+peer, LINK_NVL, width));
-            nvlinks++;
-            break;
-          }
+        int64_t remoteId;
+        NCCLCHECK(busIdToInt64(lowerId, &remoteId));
+        int peer;
+        NCCLCHECK(idToIndex(system, remoteId, &peer));
+        if (peer != -1) {
+          NCCLCHECK(ncclTopoConnectNodes(gpu, system->nodes[GPU].nodes+peer, LINK_NVL, width));
+          nvlinks++;
         }
       } else if (type == ncclNvLinkDeviceBridge) {
         // Nvlink between GPU and CPU (PPC)
         // Since the remote bridge does not have a valid numa_node, assume we
         // are connected to the closest CPU.
         char* path;
-        NCCLCHECK(getNvmlPath(nvmlDevs[g], &path));
+        NCCLCHECK(getPath(gpu->id, &path));
         int numaId = getNumaId(path);
         free(path);
-        NCCLCHECK(ncclTopoConnectCpu(system, numaId, system->nodes[GPU].nodes+g, LINK_NVL, width));
+        NCCLCHECK(ncclTopoConnectCpu(system, numaId, gpu, LINK_NVL, width));
         nvlinks++;
       } else { // Nvswitch
         if (type == ncclNvLinkDeviceUnknown) {
@@ -270,8 +294,8 @@ ncclResult_t ncclTopoConnectNVLink(nvmlDevice_t* nvmlDevs, struct ncclTopoSystem
         if (nvsNode == NULL) { // Create nvswitch
           NCCLCHECK(ncclTopoCreateNode(system, &nvsNode, NVS, 0));
         }
-        NCCLCHECK(ncclTopoConnectNodes(system->nodes[GPU].nodes+g, nvsNode, LINK_NVL, VOLTA_NVLINK_WIDTH));
-        NCCLCHECK(ncclTopoConnectNodes(nvsNode, system->nodes[GPU].nodes+g, LINK_NVL, VOLTA_NVLINK_WIDTH));
+        NCCLCHECK(ncclTopoConnectNodes(gpu, nvsNode, LINK_NVL, VOLTA_NVLINK_WIDTH));
+        NCCLCHECK(ncclTopoConnectNodes(nvsNode, gpu, LINK_NVL, VOLTA_NVLINK_WIDTH));
         nvlinks++;
       }
     }
@@ -283,30 +307,6 @@ ncclResult_t ncclTopoConnectNVLink(nvmlDevice_t* nvmlDevs, struct ncclTopoSystem
   system->maxSpeed = minNvlinks ? minNvlinks*minWidth : pciWidth;
   system->maxWidth = minNvlinks ? minWidth : pciWidth;
   return ncclSuccess;
-}
-
-// Walk backwards a PCI path to generate a PCI ID as an integer.
-// For example, a path pointer pointing on the last "/" of
-// /sys/class/pci0000:00/0000:00:02.0/0000:02:00.0/ will give 02*4096+00*8+0 = 4096.
-ncclResult_t pciHexToInt(char* path, int offset, int minOffset, int64_t* id) {
-  // Copy hex value without ':', '.' and stop when we reach '/'
-  if (path[offset] == '/') offset--; // Ignore trailing '/'
-
-  char* hexStr;
-  NCCLCHECK(ncclCalloc(&hexStr, offset-minOffset+2));
-  int hexOffset = offset-minOffset;
-  for (; offset >= minOffset; offset--) {
-    if (path[offset] == '.' || path[offset] == ':') continue;
-    if (path[offset] == '/') {
-      *id = strtol(hexStr+hexOffset+1, NULL, 16);
-      free(hexStr);
-      return ncclSuccess;
-    }
-    hexStr[hexOffset--] = path[offset];
-  }
-  WARN("Topo/PCI : could not find preceding '/'");
-  free(hexStr);
-  return ncclInternalError;
 }
 
 ncclResult_t ncclTopoCreatePciPath(struct ncclTopoSystem* system, struct ncclTopoNode* endNode, char* path) {
@@ -329,7 +329,7 @@ ncclResult_t ncclTopoCreatePciPath(struct ncclTopoSystem* system, struct ncclTop
       // Find if already existing
       if ((slashCount%2) == 0) {
         int64_t pciId;
-        NCCLCHECK(pciHexToInt(path, offset, offsetRC, &pciId));
+        NCCLCHECK(pciPathToInt64(path, offset, offsetRC, &pciId));
         for (int p=0; p<system->nodes[PCI].count; p++) {
           if (system->nodes[PCI].nodes[p].id == pciId) {
             // Found our PCI switch. Attach and stop since the rest should already
@@ -401,7 +401,7 @@ ncclResult_t ncclTopoComputeNetInfo(struct netInfo* netInfos, int ndev) {
       info->asic = ibGuid;
 
       // Use "strlen(path)-2" to remove trailing subdevice and merge multi-port cards into one
-      NCCLCHECK(pciHexToInt(info->path, strlen(info->path)-2, 0, &info->nic));
+      NCCLCHECK(pciPathToInt64(info->path, strlen(info->path)-2, 0, &info->nic));
 
       // Same PCI path -> different ports of the same NIC
       for (int i=0; i<n; i++) if (netInfos[i].nic == info->nic) info->port++;
@@ -414,11 +414,12 @@ ncclResult_t ncclTopoComputeNetInfo(struct netInfo* netInfos, int ndev) {
   return ncclSuccess;
 }
 
-ncclResult_t ncclTopoConnectPCI(nvmlDevice_t* nvmlDevs, struct ncclTopoSystem* system) {
+ncclResult_t ncclTopoConnectPCI(struct ncclTopoSystem* system) {
   for (int g=0; g<system->nodes[GPU].count; g++) {
+    struct ncclTopoNode* gpu = system->nodes[GPU].nodes+g;
     char* path;
-    NCCLCHECK(getNvmlPath(nvmlDevs[g], &path));
-    NCCLCHECK(ncclTopoCreatePciPath(system, system->nodes[GPU].nodes+g, path));
+    NCCLCHECK(getPath(gpu->id, &path));
+    NCCLCHECK(ncclTopoCreatePciPath(system, gpu, path));
     free(path);
   }
 
@@ -566,16 +567,18 @@ ncclResult_t ncclTopoGetSystem(struct ncclComm* comm, struct ncclTopoSystem** sy
   for (int r=0; r<comm->nRanks; r++) {
     if (comm->peerInfo[r].hostHash == comm->peerInfo[comm->rank].hostHash) {
       // Consider the GPU as outside of our node if we can't see it through NVML.
-      if (wrapNvmlDeviceGetHandleByPciBusId(comm->peerInfo[r].busId, nvmlDevs+g) != ncclSuccess) continue;
+      char busId[NVML_DEVICE_PCI_BUS_ID_BUFFER_SIZE];
+      NCCLCHECK(int64ToBusId(comm->peerInfo[r].busId, busId));
+      if (wrapNvmlDeviceGetHandleByPciBusId(busId, nvmlDevs+g) != ncclSuccess) continue;
       g++;
       struct ncclTopoNode* gpuNode;
-      NCCLCHECK(ncclTopoCreateNode(s, &gpuNode, GPU, comm->peerInfo[r].nvmlDev));
+      NCCLCHECK(ncclTopoCreateNode(s, &gpuNode, GPU, comm->peerInfo[r].busId));
       gpuNode->rank = r;
     }
   }
 
   NCCLCHECK(ncclTopoConnectNVLink(nvmlDevs, s));
-  NCCLCHECK(ncclTopoConnectPCI(nvmlDevs, s));
+  NCCLCHECK(ncclTopoConnectPCI(s));
 
   free(nvmlDevs);
   NCCLCHECK(ncclTopoSortSystem(s));
@@ -583,30 +586,20 @@ ncclResult_t ncclTopoGetSystem(struct ncclComm* comm, struct ncclTopoSystem** sy
   return ncclSuccess;
 }
 
-static ncclResult_t nvmlToIndex(struct ncclTopoSystem* system, int nvmlDev, int* index) {
-  *index = -1;
-  for (int i=0; i<system->nodes[GPU].count; i++) {
-    if (system->nodes[GPU].nodes[i].id == nvmlDev) {
-      *index = i;
-    }
-  }
+ncclResult_t ncclTopoGetNvlink(struct ncclTopoSystem* system, int64_t busId1, int64_t busId2, int* nvlink) {
+  int g1, g2;
+  NCCLCHECK(idToIndex(system, busId1, &g1));
+  NCCLCHECK(idToIndex(system, busId2, &g2));
+  *nvlink = g1 != -1 && g2 != -1 && system->nodes[GPU].nodes[g1].paths[GPU][g2].type == LINK_NVL;
   return ncclSuccess;
 }
 
-ncclResult_t ncclTopoGetNvlink(struct ncclTopoSystem* system, int nvmlDev1, int nvmlDev2, int* nvlink) {
-  int id1, id2;
-  NCCLCHECK(nvmlToIndex(system, nvmlDev1, &id1));
-  NCCLCHECK(nvmlToIndex(system, nvmlDev2, &id2));
-  *nvlink = id1 != -1 && id2 != -1 && system->nodes[GPU].nodes[id1].paths[GPU][id2].type == LINK_NVL;
-  return ncclSuccess;
-}
-
-ncclResult_t ncclTopoHasNvlink(struct ncclTopoSystem* system, int nvmlDev, int* nvlink) {
-  int id;
-  NCCLCHECK(nvmlToIndex(system, nvmlDev, &id));
+ncclResult_t ncclTopoHasNvlink(struct ncclTopoSystem* system, int64_t busId, int* nvlink) {
+  int g;
+  NCCLCHECK(idToIndex(system, busId, &g));
   for (int i=0; i<system->nodes[GPU].count; i++) {
-    if (i == id) continue;
-    if (system->nodes[GPU].nodes[id].paths[GPU][i].type == LINK_NVL) {
+    if (i == g) continue;
+    if (system->nodes[GPU].nodes[g].paths[GPU][i].type == LINK_NVL) {
       *nvlink = 1;
       return ncclSuccess;
     }
@@ -625,18 +618,18 @@ static int pathDistance(struct ncclTopoLinkList* links) {
   return distance;
 }
 
-ncclResult_t ncclTopoGpuDistance(struct ncclTopoSystem* system, int nvmlDev1, int nvmlDev2, int* distance) {
-  int id1, id2;
-  NCCLCHECK(nvmlToIndex(system, nvmlDev1, &id1));
-  NCCLCHECK(nvmlToIndex(system, nvmlDev2, &id2));
-  *distance = pathDistance(system->nodes[GPU].nodes[id1].paths[GPU]+id2);
+ncclResult_t ncclTopoGpuDistance(struct ncclTopoSystem* system, int64_t busId1, int64_t busId2, int* distance) {
+  int g1, g2;
+  NCCLCHECK(idToIndex(system, busId1, &g1));
+  NCCLCHECK(idToIndex(system, busId2, &g2));
+  *distance = pathDistance(system->nodes[GPU].nodes[g1].paths[GPU]+g2);
   return ncclSuccess;
 }
 
-ncclResult_t ncclTopoNetDistance(struct ncclTopoSystem* system, int nvmlDev, int netDev, int* distance) {
-  int id;
-  NCCLCHECK(nvmlToIndex(system, nvmlDev, &id));
-  *distance = pathDistance(system->nodes[GPU].nodes[id].paths[NET]+netDev);
+ncclResult_t ncclTopoNetDistance(struct ncclTopoSystem* system, int64_t busId, int netDev, int* distance) {
+  int g;
+  NCCLCHECK(idToIndex(system, busId, &g));
+  *distance = pathDistance(system->nodes[GPU].nodes[g].paths[NET]+netDev);
   return ncclSuccess;
 }
 

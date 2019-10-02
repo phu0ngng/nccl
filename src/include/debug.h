@@ -24,7 +24,6 @@ extern uint64_t ncclDebugMask;
 extern pthread_mutex_t ncclDebugOutputLock;
 extern FILE *ncclDebugFile;
 extern ncclResult_t getHostName(char* hostname, int maxlen, const char delim);
-extern ncclResult_t getNvmlDevice(int cudaDev, int *nvmlDev);
 
 extern void ncclDebugLog(ncclDebugLogLevel level, unsigned long flags, const char *filefunc, int line, const char *fmt, ...);
 

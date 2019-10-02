@@ -23,18 +23,39 @@ int ncclCudaCompCap() {
   return ccMajor*10+ccMinor;
 }
 
+ncclResult_t int64ToBusId(int64_t id, char* busId) {
+  sprintf(busId, "%04lx:%02lx:%02lx.%01lx", (id) >> 20, (id & 0xff000) >> 12, (id & 0xff0) >> 4, (id & 0xf));
+  return ncclSuccess;
+}
+
+ncclResult_t busIdToInt64(char* busId, int64_t* id) {
+  const int size = strlen(busId);
+  char* hexStr;
+  NCCLCHECK(ncclCalloc(&hexStr, size));
+  int hexOffset = 0;
+  for (int i=0; i<size; i++) {
+    char c = busId[i];
+    if (c == '.' || c == ':') continue;
+    if ((c >= '0' && c <= '9') ||
+        (c >= 'A' && c <= 'F') ||
+        (c >= 'a' && c <= 'f')) {
+      hexStr[hexOffset++] = busId[i];
+    } else break;
+  }
+  hexStr[hexOffset] = '\0';
+  *id = strtol(hexStr, NULL, 16);
+  free(hexStr);
+  return ncclSuccess;
+}
+
 // Convert a logical cudaDev index to the NVML device minor number
-ncclResult_t getNvmlDevice(int cudaDev, int *nvmlDev) {
-  char busId[NVML_DEVICE_PCI_BUS_ID_BUFFER_SIZE];
-  nvmlDevice_t nvmlDevice;
-  unsigned int dev;
-  *nvmlDev = -1;
-  CUDACHECK(cudaDeviceGetPCIBusId(busId, NVML_DEVICE_PCI_BUS_ID_BUFFER_SIZE, cudaDev));
-  NCCLCHECK(wrapNvmlDeviceGetHandleByPciBusId(busId, &nvmlDevice));
-  NCCLCHECK(wrapNvmlDeviceGetMinorNumber(nvmlDevice, &dev));
-
-  *nvmlDev = dev;
-
+ncclResult_t getBusId(int cudaDev, int64_t *busId) {
+  // On most systems, the PCI bus ID comes back as in the 0000:00:00.0
+  // format. Still need to allocate proper space in case PCI domain goes
+  // higher.
+  char busIdStr[] = "00000000:00:00.0";
+  CUDACHECK(cudaDeviceGetPCIBusId(busIdStr, sizeof(busIdStr), cudaDev));
+  NCCLCHECK(busIdToInt64(busIdStr, busId));
   return ncclSuccess;
 }
 

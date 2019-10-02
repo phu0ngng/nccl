@@ -27,12 +27,11 @@ struct ncclComm;
 struct ncclPeerInfo {
   int rank;
   int cudaDev;
-  int nvmlDev;
   int gdrSupport;
   uint64_t hostHash;
   uint64_t pidHash;
   dev_t shmDev;
-  char busId[NVML_DEVICE_PCI_BUS_ID_BUFFER_SIZE];
+  int64_t busId;
 };
 
 #define CONNECT_SIZE 128

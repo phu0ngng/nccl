@@ -12,6 +12,12 @@
 
 int ncclCudaCompCap();
 
+// PCI Bus ID <-> int64 conversion functions
+ncclResult_t int64ToBusId(int64_t id, char* busId);
+ncclResult_t busIdToInt64(char* busId, int64_t* id);
+
+ncclResult_t getBusId(int cudaDev, int64_t *busId);
+
 ncclResult_t getHostName(char* hostname, int maxlen, const char delim);
 uint64_t getHash(const char* string, int n);
 uint64_t getHostHash();
@@ -30,6 +36,5 @@ static long log2i(long n) {
  while (n>>=1) l++;
  return l;
 }
-
 
 #endif
