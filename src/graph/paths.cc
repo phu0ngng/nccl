@@ -229,6 +229,7 @@ ncclResult_t ncclTopoComputePaths(struct ncclTopoSystem* system, struct ncclPeer
     struct ncclTopoNode* netNode = system->nodes[NET].nodes+n;
     NCCLCHECK(ncclTopoSetPaths(netNode, system));
 
+    if (peerInfos == NULL) continue;
     for (int g=0; g<system->nodes[GPU].count; g++) {
       if ((peerInfos[system->nodes[GPU].nodes[g].rank].gdrSupport & (1 << n)) == 0) {
         // We cannot use GPU Direct RDMA, so we need all NIC<->GPU paths
