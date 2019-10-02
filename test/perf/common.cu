@@ -42,6 +42,7 @@ static int parallel_init = 0;
 static int blocking_coll = 0;
 static int streamnull = 0;
 static int side_comp = 0;
+static int timeout = 60;
 
 static char* replay_file = NULL;
 
@@ -322,6 +323,8 @@ testResult_t testStreamSynchronize(int ngpus, cudaStream_t* streams, ncclComm_t*
   int remaining = ngpus;
   int* done = (int*)malloc(sizeof(int)*ngpus);
   memset(done, 0, sizeof(int)*ngpus);
+  auto start = std::chrono::high_resolution_clock::now();
+
   while (remaining) {
    int idle = 1;
    for (int i=0; i<ngpus; i++) {
@@ -351,6 +354,18 @@ testResult_t testStreamSynchronize(int ngpus, cudaStream_t* streams, ncclComm_t*
          // Abort the perf test
          NCCLCHECK(ncclAsyncErr);
        }
+     }
+     auto delta = std::chrono::high_resolution_clock::now() - start;
+     if (std::chrono::duration_cast<std::chrono::seconds>(delta).count() > timeout) {
+       for (int i=0; i<ngpus; i++)
+         NCCLCHECK(ncclCommAbort(comms[i]));
+       char hostname[1024];
+       getHostName(hostname, 1024);
+       printf("%s: Test timeout (%ds) %s:%d\n",
+           hostname,
+           timeout,
+           __FILE__,__LINE__);
+       return testTimeout;
      }
 #endif
    }
@@ -494,6 +509,9 @@ void setupArgs(size_t size, ncclDataType_t type, struct threadArgs* args) {
 }
 
 testResult_t TimeTest(struct threadArgs* args, ncclDataType_t type, const char* typeName, ncclRedOp_t op, const char* opName, int root) {
+  // Sync to avoid first-call timeout
+  Barrier(args);
+
   // Warm-up for large size
   setupArgs(args->maxbytes, type, args);
   for (int iter = 0; iter < warmup_iters; iter++) {
@@ -532,7 +550,8 @@ testResult_t threadRunTests(struct threadArgs* args) {
   // Set device to the first of our GPUs. If we don't do that, some operations
   // will be done on the current GPU (by default : 0) and if the GPUs are in
   // exclusive mode those operations will fail.
-  int gpuid = args->localRank*args->nThreads*args->nGpus + args->thread*args->nGpus;
+  char* str = getenv("NCCL_TESTS_DEVICE");
+  int gpuid = str ? atoi(str) : args->localRank*args->nThreads*args->nGpus + args->thread*args->nGpus;
   CUDACHECK(cudaSetDevice(gpuid));
   TESTCHECK(ncclTestEngine.runTest(args, ncclroot, (ncclDataType_t)nccltype, test_typenames[nccltype], (ncclRedOp_t)ncclop, test_opnames[ncclop]));
   return testSuccess;
@@ -549,7 +568,8 @@ testResult_t threadInit(struct threadArgs* args) {
   NCCLCHECK(ncclGroupStart());
   for (int i=0; i<args->nGpus; i++) {
     int rank = args->proc*args->nThreads*args->nGpus + args->thread*args->nGpus + i;
-    int gpuid = args->localRank*args->nThreads*args->nGpus + args->thread*args->nGpus + i;
+    char* str = getenv("NCCL_TESTS_DEVICE");
+    int gpuid = str ? atoi(str) : args->localRank*args->nThreads*args->nGpus + args->thread*args->nGpus;
     CUDACHECK(cudaSetDevice(gpuid));
     NCCLCHECK(ncclCommInitRank(args->comms+i, nranks, args->ncclId, rank));
   }
@@ -659,12 +679,13 @@ int main(int argc, char* argv[]) {
     {"stream_null", required_argument, 0, 'y'},
     {"side_comp", required_argument, 0, 'k'},
     {"replay", required_argument, 0, 'l'},
+    {"timeout", required_argument, 0, 'T'},
     {"help", no_argument, 0, 'h'}
   };
 
   while(1) {
     int c;
-    c = getopt_long(argc, argv, "t:g:b:e:i:f:n:m:w:s:p:c:o:d:r:z:y:k:h:l:", longopts, &longindex);
+    c = getopt_long(argc, argv, "t:g:b:e:i:f:n:m:w:s:p:c:o:d:r:z:y:k:h:l:T:", longopts, &longindex);
 
     if (c == -1)
       break;
@@ -729,31 +750,12 @@ int main(int argc, char* argv[]) {
         replay_file = optarg;
         warmup_iters = 0;    // by default, no warm-up in case of trace replay
         break;
+      case 'T':
+        timeout = strtol(optarg, NULL, 0);
+        break;
       case 'h':
-        printf("USAGE: %s \n\t"
-            "[-t,--nthreads <num threads>] \n\t"
-            "[-g,--ngpus <gpus per thread>] \n\t"
-            "[-b,--minbytes <min size in bytes>] \n\t"
-            "[-e,--maxbytes <max size in bytes>] \n\t"
-            "[-i,--stepbytes <increment size>] \n\t"
-            "[-f,--stepfactor <increment factor>] \n\t"
-            "[-n,--iters <iteration count>] \n\t"
-            "[-m,--agg_iters <aggregated iteration count>] \n\t"
-            "[-w,--warmup_iters <warmup iteration count>] \n\t"
-            "[-p,--parallel_init <0/1>] \n\t"
-            "[-c,--check <0/1>] \n\t"
-            "[-o,--op <sum/prod/min/max/all>] \n\t"
-            "[-d,--datatype <nccltype/all>] \n\t"
-            "[-r,--root <root>] \n\t"
-            "[-z,--blocking <0/1>] \n\t"
-            "[-y,--stream_null <0/1>] \n\t"
-            "[-k,--side_comp <0/1>] \n\t"
-            "[-l,--replay <path to replay file>] \n\t"
-	    "[-h,--help]\n",
-            basename(argv[0]));
-        return 0;
       default:
-        printf("invalid option \n");
+        if (c != 'h') printf("invalid option '%c'\n", c);
         printf("USAGE: %s \n\t"
             "[-t,--nthreads <num threads>] \n\t"
             "[-g,--ngpus <gpus per thread>] \n\t"
@@ -773,6 +775,7 @@ int main(int argc, char* argv[]) {
             "[-y,--stream_null <0/1>] \n\t"
             "[-k,--side_comp <0/1>] \n\t"
             "[-l,--replay <path to replay file>] \n\t"
+            "[-T,--timeout <time in seconds>] \n\t"
 	    "[-h,--help]\n",
             basename(argv[0]));
         return 0;
@@ -833,7 +836,8 @@ testResult_t run() {
   char line[MAX_LINE];
   int len = 0;
   for (int i=0; i<nThreads*nGpus; i++) {
-    int cudaDev = localRank*nThreads*nGpus+i;
+    char* str = getenv("NCCL_TESTS_DEVICE");
+    int cudaDev = str ? atoi(str) : localRank*nThreads*nGpus+i;
     int rank = proc*nThreads*nGpus+i;
     cudaDeviceProp prop;
     CUDACHECK(cudaGetDeviceProperties(&prop, cudaDev));
@@ -870,7 +874,9 @@ testResult_t run() {
   ncclTestEngine.getBuffSize(&sendBytes, &recvBytes, (size_t)maxBytes, (size_t)nProcs*nGpus*nThreads);
 
   for (int i=0; i<nGpus*nThreads; i++) {
-    CUDACHECK(cudaSetDevice(localRank*nThreads*nGpus+i));
+    char* str = getenv("NCCL_TESTS_DEVICE");
+    int gpuid = str ? atoi(str) : localRank*nThreads*nGpus+i;
+    CUDACHECK(cudaSetDevice(gpuid));
     AllocateBuffs(sendbuffs+i, sendBytes, recvbuffs+i, recvBytes, expected+i, (size_t)maxBytes, nProcs*nThreads*nGpus);
     if (streamnull)
       streams[i] = NULL;

@@ -45,7 +45,8 @@ typedef enum {
   testInternalError = 1,
   testCudaError = 2,
   testNcclError = 3,
-  testCuRandError = 4
+  testTimeout = 4,
+  testNumResults = 5
 } testResult_t;
 
 // Relay errors up and trace

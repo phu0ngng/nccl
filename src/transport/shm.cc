@@ -4,13 +4,8 @@
  * See LICENSE.txt for license information
  ************************************************************************/
 
-#include "core.h"
-#include "utils.h"
-#include "transport.h"
-#include "param.h"
+#include "comm.h"
 #include "shm.h"
-#include <unistd.h>
-#include <cuda_runtime.h>
 
 struct shmConnectInfo {
   uint64_t pidHash;
@@ -40,16 +35,29 @@ struct shmRecvResources {
 
 NCCL_PARAM(ShmDisable, "SHM_DISABLE", 0);
 
-/* Determine if we can communicate with the peer */
-ncclResult_t shmCanConnect(int* ret, struct ncclPeerInfo* myInfo, struct ncclPeerInfo* peerInfo) {
-  *ret = ((ncclParamShmDisable() == 1) || (myInfo->hostHash != peerInfo->hostHash)) ? 0 : 1;
+/* Determine two peers can communicate with SHM */
+ncclResult_t shmCanConnect(int* ret, struct ncclTopoSystem* topo, struct ncclTopoGraph* graph, struct ncclPeerInfo* info1, struct ncclPeerInfo* info2) {
+  *ret = 0;
+
+  if (ncclParamShmDisable() == 1) return ncclSuccess;
+
+  // Same host?
+  TRACE(NCCL_INIT|NCCL_SHM, "peer1 hostHash %lx peer2 hostHash %lx", info1->hostHash, info2->hostHash);
+  if (info1->hostHash != info2->hostHash) return ncclSuccess;
+
+  // Common /dev/shm (between containers) ?
+  TRACE(NCCL_INIT|NCCL_SHM, "peer1 shmDev %lx peer2 shmDev %lx", info1->shmDev, info2->shmDev);
+  if (info1->shmDev != info2->shmDev) return ncclSuccess;
+
+  *ret = 1;
+
   return ncclSuccess;
 }
 
 #define MAX_SHM_NAME_LEN 1024
 
 /* Create and return connect structures for this peer to connect to me */
-ncclResult_t shmSendSetup(struct ncclPeerInfo* myInfo, struct ncclPeerInfo* peerInfo, struct ncclConnect* connectInfo, struct ncclConnector* send, int buffSize, int channelId) {
+ncclResult_t shmSendSetup(struct ncclTopoSystem* topo, struct ncclTopoGraph* graph, struct ncclPeerInfo* myInfo, struct ncclPeerInfo* peerInfo, struct ncclConnect* connectInfo, struct ncclConnector* send, int buffSize, int channelId) {
 
   struct shmSendResources* resources;
   NCCLCHECK(ncclCalloc(&resources, 1));
@@ -73,7 +81,7 @@ ncclResult_t shmSendSetup(struct ncclPeerInfo* myInfo, struct ncclPeerInfo* peer
   return ncclSuccess;
 }
 
-ncclResult_t shmRecvSetup(struct ncclPeerInfo* myInfo, struct ncclPeerInfo* peerInfo, struct ncclConnect* connectInfo, struct ncclConnector* recv, int buffSize, int channelId) {
+ncclResult_t shmRecvSetup(struct ncclTopoSystem* topo, struct ncclTopoGraph* graph, struct ncclPeerInfo* myInfo, struct ncclPeerInfo* peerInfo, struct ncclConnect* connectInfo, struct ncclConnector* recv, int buffSize, int channelId) {
   struct shmRecvResources* resources;
   NCCLCHECK(ncclCalloc(&resources, 1));
   recv->transportResources = resources;

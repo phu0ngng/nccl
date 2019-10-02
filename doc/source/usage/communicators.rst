@@ -45,6 +45,22 @@ Related links:
  * :c:func:`ncclGetUniqueId`
  * :c:func:`ncclCommInitRank`
 
+Using multiple NCCL communicators concurrently
+----------------------------------------------
+
+Using multiple NCCL communicators requires careful synchronization, or can lead to deadlocks.
+
+NCCL kernels are blocking (waiting for data to arrive), and any CUDA operation can cause a device synchronization,
+meaning it will wait for all NCCL kernels to complete. This can quickly lead to deadlocks since NCCL operations perform
+CUDA calls themselves.
+
+Operations on different communicators should therefore be used at different epochs with a locking mechanism, and
+applications should ensure operations are submitted in the same order across ranks.
+
+Launching multiple communication operations (on different streams) might work provided they can fit within the GPU, but
+could break at any time if NCCL were to use more CUDA blocks per operation, or if some calls used inside NCCL
+collectives were to perform a device synchronization (e.g. allocate some CUDA memory dynamically).
+
 *******************************************
 Error handling and communicator destruction
 *******************************************

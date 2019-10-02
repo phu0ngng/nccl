@@ -7,12 +7,15 @@
 #ifndef NCCL_TRANSPORT_H_
 #define NCCL_TRANSPORT_H_
 
-#include "nccl.h"
 #include "devcomm.h"
-#include <stdint.h>
+#include "graph.h"
 #include "nvmlwrap.h"
+#include "core.h"
 
 #define NTRANSPORTS 3
+#define TRANSPORT_P2P 0
+#define TRANSPORT_SHM 1
+#define TRANSPORT_NET 2
 
 extern struct ncclTransport ncclTransports[];
 
@@ -27,6 +30,7 @@ struct ncclPeerInfo {
   int nvmlDev;
   uint64_t hostHash;
   uint64_t pidHash;
+  dev_t shmDev;
   char busId[NVML_DEVICE_PCI_BUS_ID_BUFFER_SIZE];
 };
 
@@ -48,7 +52,7 @@ struct ncclProxyArgs {
   int chunkSteps;
   int nsteps;
   uint64_t opCount;
-  int llMode;
+  int protocol;
   ncclDataType_t dtype;
   ncclRedOp_t redOp;
   int state;   // add component before this line -- it is left out during initialization
@@ -77,7 +81,7 @@ struct ncclProxyState {
 };
 
 struct ncclTransportComm {
-  ncclResult_t (*setup)(struct ncclPeerInfo*, struct ncclPeerInfo*, struct ncclConnect*, struct ncclConnector*, int buffSize, int channelId);
+  ncclResult_t (*setup)(struct ncclTopoSystem* topo, struct ncclTopoGraph* graph, struct ncclPeerInfo*, struct ncclPeerInfo*, struct ncclConnect*, struct ncclConnector*, int buffSize, int channelId);
   ncclResult_t (*connect)(struct ncclConnect*, int nranks, int rank, struct ncclConnector*);
   ncclResult_t (*free)(void*);
   ncclResult_t (*proxy)(struct ncclProxyArgs*);
@@ -85,14 +89,14 @@ struct ncclTransportComm {
 
 struct ncclTransport {
   const char name[4];
-  ncclResult_t (*canConnect)(int*, struct ncclPeerInfo*, struct ncclPeerInfo*);
+  ncclResult_t (*canConnect)(int*, struct ncclTopoSystem* topo, struct ncclTopoGraph* graph, struct ncclPeerInfo*, struct ncclPeerInfo*);
   struct ncclTransportComm send;
   struct ncclTransportComm recv;
 };
 
 struct ncclCollTransport {
   const char name[4];
-  ncclResult_t (*canConnect)(int*, struct ncclPeerInfo*, struct ncclPeerInfo*);
+  ncclResult_t (*canConnect)(int*, struct ncclTopoSystem* topo, struct ncclTopoGraph* graph, struct ncclPeerInfo*, struct ncclPeerInfo*);
   ncclResult_t (*connectSendRecv)(ncclConnector* send, ncclConnector* recv);
   struct ncclTransportComm send;
   struct ncclTransportComm recv;

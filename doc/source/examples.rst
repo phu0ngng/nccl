@@ -156,7 +156,7 @@ Next, a single rank will create a unique ID and send it to all other ranks to ma
 
  ncclUniqueId id;
  if (myRank == 0) ncclGetUniqueId(&id);
- MPI_Bcast(id, sizeof(id), MPI_BYTE, 0, 0, MPI_COMM_WORLD);
+ MPI_Bcast(&id, sizeof(id), MPI_BYTE, 0, MPI_COMM_WORLD);
 
 Finally, we create the communicator:
 

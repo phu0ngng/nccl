@@ -93,17 +93,20 @@ ncclResult_t ncclIbInit(ncclDebugLogger_t logFunction) {
       char* userIbEnv = getenv("NCCL_IB_HCA");
       struct netIf userIfs[MAX_IB_DEVS];
       bool searchNot = userIbEnv && userIbEnv[0] == '^';
+      if (searchNot) userIbEnv++;
+      bool searchExact = userIbEnv && userIbEnv[0] == '=';
+      if (searchExact) userIbEnv++;
       int nUserIfs = parseStringList(userIbEnv, userIfs, MAX_IB_DEVS);
 
       if (ncclSuccess != wrap_ibv_get_device_list(&devices, &nIbDevs)) return ncclInternalError;
 
-      for (int d=0; d<nIbDevs; d++) {
+      for (int d=0; d<nIbDevs && ncclNIbDevs<MAX_IB_DEVS; d++) {
         struct ibv_context * context;
         if (ncclSuccess != wrap_ibv_open_device(&context, devices[d]) || context == NULL) {
           WARN("NET/IB : Unable to open device %s", devices[d]->name);
           continue;
         }
-        int found = 0;
+        int nPorts = 0;
         struct ibv_device_attr devAttr;
         memset(&devAttr, 0, sizeof(devAttr));
         if (ncclSuccess != wrap_ibv_query_device(context, &devAttr)) {
@@ -122,7 +125,7 @@ ncclResult_t ncclIbInit(ncclDebugLogger_t logFunction) {
               && portAttr.link_layer != IBV_LINK_LAYER_ETHERNET) continue;
 
           // check against user specified HCAs/ports
-          if (! (matchIfList(devices[d]->name, port, userIfs, nUserIfs) ^ searchNot)) {
+          if (! (matchIfList(devices[d]->name, port, userIfs, nUserIfs, searchExact) ^ searchNot)) {
             continue;
           }
           TRACE(NCCL_INIT|NCCL_NET,"NET/IB: [%d] %s:%d/%s ", d, devices[d]->name, port,
@@ -133,10 +136,10 @@ ncclResult_t ncclIbInit(ncclDebugLogger_t logFunction) {
           ncclIbDevs[ncclNIbDevs].context = context;
           strncpy(ncclIbDevs[ncclNIbDevs].devName, devices[d]->name, MAXNAMESIZE);
           ncclNIbDevs++;
-          found++;
+          nPorts++;
           pthread_create(&ncclIbAsyncThread, NULL, ncclIbAsyncThreadMain, context);
         }
-        if (found == 0 && ncclSuccess != wrap_ibv_close_device(context)) { return ncclInternalError; }
+        if (nPorts == 0 && ncclSuccess != wrap_ibv_close_device(context)) { return ncclInternalError; }
       }
       if (nIbDevs && (ncclSuccess != wrap_ibv_free_device_list(devices))) { return ncclInternalError; };
     }
@@ -184,21 +187,7 @@ ncclResult_t ncclIbGdrSupport(int ibDev) {
     moduleLoaded = (access("/sys/kernel/mm/memory_peers/nv_mem/version", F_OK) == -1) ? 0 : 1;
   }
   if (moduleLoaded == 0) return ncclSystemError;
-  ncclResult_t ret = ncclSystemError;
-  void* ptr;
-  if (cudaMalloc(&ptr, sizeof(int)) == cudaSuccess) {
-    struct ibv_mr* mr;
-    struct ibv_pd* pd;
-    if (wrap_ibv_alloc_pd(&pd, ncclIbDevs[ibDev].context) == ncclSuccess) {
-      if ((mr = wrap_direct_ibv_reg_mr(pd, ptr, sizeof(int), IBV_ACCESS_LOCAL_WRITE|IBV_ACCESS_REMOTE_WRITE|IBV_ACCESS_REMOTE_READ)) != NULL) {
-        ret = ncclSuccess;
-        wrap_ibv_dereg_mr(mr);
-      }
-      wrap_ibv_dealloc_pd(pd);
-    }
-    cudaFree(ptr);
-  }
-  return ret;
+  return ncclSuccess;
 }
 
 ncclResult_t ncclIbPtrSupport(int dev, int* supportedTypes) {
@@ -609,7 +598,6 @@ ncclResult_t ncclIbIsend(void* sendComm, void* data, int size, void* mhandle, vo
 
   struct ncclIbRequest* req;
   NCCLCHECK(ncclIbGetRequest(comm->reqs, &req));
-  req->type = 1;
   req->verbs = &comm->verbs;
   req->size = size;
 
@@ -662,7 +650,6 @@ ncclResult_t ncclIbPostFifo(struct ncclIbRecvComm* comm, uint32_t rkey, uint64_t
   memset(&wr, 0, sizeof(wr));
   struct ncclIbRequest* req;
   NCCLCHECK(ncclIbGetRequest(comm->reqs, &req));
-  req->type = 3;
   req->verbs = &comm->verbs;
   req->free = 1; // Not a user req ; free as soon as it is complete.
   wr.wr_id = (uint64_t)req;
@@ -697,7 +684,6 @@ ncclResult_t ncclIbIrecv(void* recvComm, void* data, int size, void* mhandle, vo
 
   struct ncclIbRequest* req;
   NCCLCHECK(ncclIbGetRequest(comm->reqs, &req));
-  req->type = 2;
   req->verbs = &comm->verbs;
   req->size = size;
 
@@ -730,7 +716,6 @@ ncclResult_t ncclIbFlush(void* recvComm, void* data, int size, void* mhandle) {
 
   struct ncclIbRequest* req;
   NCCLCHECK(ncclIbGetRequest(comm->reqs, &req));
-  req->type = 4;
   req->verbs = &comm->verbs;
   struct ibv_mr* mr = (struct ibv_mr*)mhandle;
 

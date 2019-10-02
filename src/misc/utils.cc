@@ -5,14 +5,23 @@
  ************************************************************************/
 
 #include "utils.h"
-#include "debug.h"
+#include "core.h"
 #include "nccl_net.h"
-#include <unistd.h>
 #include <string.h>
 #include <stdarg.h>
+#include <stdlib.h>
 
 #include "nvmlwrap.h"
-#include "core.h"
+
+// Get current Compute Capability
+int ncclCudaCompCap() {
+  int cudaDev;
+  if (cudaGetDevice(&cudaDev) != cudaSuccess) return 0;
+  int ccMajor, ccMinor;
+  if (cudaDeviceGetAttribute(&ccMajor, cudaDevAttrComputeCapabilityMajor, cudaDev) != cudaSuccess) return 0;
+  if (cudaDeviceGetAttribute(&ccMinor, cudaDevAttrComputeCapabilityMinor, cudaDev) != cudaSuccess) return 0;
+  return ccMajor*10+ccMinor;
+}
 
 // Convert a logical cudaDev index to the NVML device minor number
 ncclResult_t getNvmlDevice(int cudaDev, int *nvmlDev) {
@@ -87,10 +96,10 @@ void ncclDebugLog(ncclDebugLogLevel level, unsigned long flags, const char *file
   }
 }
 
-uint64_t getHash(const char* string) {
+uint64_t getHash(const char* string, int n) {
   // Based on DJB2, result = result * 33 + char
   uint64_t result = 5381;
-  for (int c = 0; string[c] != '\0'; c++) {
+  for (int c = 0; c < n; c++) {
     result = ((result << 5) + result) + string[c];
   }
   return result;
@@ -100,27 +109,39 @@ uint64_t getHash(const char* string) {
  * that will be unique for both bare-metal and container instances
  * Equivalent of a hash of;
  *
- * $(hostname) $(readlink /proc/self/ns/uts) $(readlink /proc/self/ns/mnt)
+ * $(hostname)$(cat /proc/sys/kernel/random/boot_id)
+ *
+ * This string can be overridden by using the NCCL_HOSTID env var.
  */
+#define HOSTID_FILE "/proc/sys/kernel/random/boot_id"
 uint64_t getHostHash(void) {
-  char uname[1024];
-  // Start off with the full hostname
-  (void) getHostName(uname, sizeof(uname), '\0');
-  int offset = strlen(uname);
-  int len;
-  // $(readlink /proc/self/ns/uts)
-  len = readlink("/proc/self/ns/uts", uname+offset, sizeof(uname)-1-offset);
-  if (len < 0) len = 0;
-  offset += len;
-  // $(readlink /proc/self/ns/mnt)
-  len = readlink("/proc/self/ns/mnt", uname+offset, sizeof(uname)-1-offset);
-  if (len < 0) len = 0;
-  offset += len;
-  // Trailing '\0'
-  uname[offset]='\0';
-  TRACE(NCCL_INIT,"unique hostname '%s'", uname);
+  char hostHash[1024];
+  char *hostId;
 
-  return getHash(uname);
+  // Fall back is the full hostname if something fails
+  (void) getHostName(hostHash, sizeof(hostHash), '\0');
+  int offset = strlen(hostHash);
+
+  if ((hostId = getenv("NCCL_HOSTID")) != NULL) {
+    strncpy(hostHash, hostId, sizeof(hostHash));
+  } else {
+    FILE *file = fopen(HOSTID_FILE, "r");
+    if (file != NULL) {
+      char *p;
+      if (fscanf(file, "%ms", &p) == 1) {
+        strncpy(hostHash+offset, p, sizeof(hostHash)-offset-1);
+        free(p);
+      }
+    }
+    fclose(file);
+  }
+
+  // Make sure the string is terminated
+  hostHash[sizeof(hostHash)-1]='\0';
+
+  TRACE(NCCL_INIT,"unique hostname '%s'", hostHash);
+
+  return getHash(hostHash, strlen(hostHash));
 }
 
 /* Generate a hash of the unique identifying string for this process
@@ -140,15 +161,13 @@ uint64_t getPidHash(void) {
   pname[plen+len]='\0';
   TRACE(NCCL_INIT,"unique PID '%s'", pname);
 
-  return getHash(pname);
+  return getHash(pname, strlen(pname));
 }
 
 int parseStringList(const char* string, struct netIf* ifList, int maxList) {
   if (!string) return 0;
 
   const char* ptr = string;
-  // Ignore "^" prefix, will be detected outside of this function
-  if (ptr[0] == '^') ptr++;
 
   int ifNum = 0;
   int ifC = 0;
@@ -177,8 +196,10 @@ int parseStringList(const char* string, struct netIf* ifList, int maxList) {
   return ifNum;
 }
 
-static bool matchPrefix(const char* string, const char* prefix) {
-  return (strncmp(string, prefix, strlen(prefix)) == 0);
+static bool matchIf(const char* string, const char* ref, bool matchExact) {
+  // Make sure to include '\0' in the exact case
+  int matchLen = matchExact ? strlen(string) + 1 : strlen(ref);
+  return strncmp(string, ref, matchLen) == 0;
 }
 
 static bool matchPort(const int port1, const int port2) {
@@ -189,12 +210,12 @@ static bool matchPort(const int port1, const int port2) {
 }
 
 
-bool matchIfList(const char* string, int port, struct netIf* ifList, int listSize) {
+bool matchIfList(const char* string, int port, struct netIf* ifList, int listSize, bool matchExact) {
   // Make an exception for the case where no user list is defined
   if (listSize == 0) return true;
 
   for (int i=0; i<listSize; i++) {
-    if (matchPrefix(string, ifList[i].prefix)
+    if (matchIf(string, ifList[i].prefix, matchExact)
         && matchPort(port, ifList[i].port)) {
       return true;
     }

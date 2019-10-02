@@ -21,7 +21,8 @@ testResult_t AllReduceInitData(struct threadArgs* args, ncclDataType_t type, ncc
   int nranks = args->nProcs*args->nThreads*args->nGpus;
 
   for (int i=0; i<args->nGpus; i++) {
-    int gpuid = args->localRank*args->nThreads*args->nGpus + args->thread*args->nGpus + i;
+    char* str = getenv("NCCL_TESTS_DEVICE");
+    int gpuid = str ? atoi(str) : args->localRank*args->nThreads*args->nGpus + args->thread*args->nGpus + i;
     CUDACHECK(cudaSetDevice(gpuid));
     int rank = ((args->proc*args->nThreads + args->thread)*args->nGpus + i);
     CUDACHECK(cudaMemset(args->recvbuffs[i], 0, args->expectedBytes));

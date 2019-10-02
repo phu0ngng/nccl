@@ -37,15 +37,27 @@ class ncclPrimitives {
  private:
   const int tid;
   const int nthreads;
+  const int wid;
+  const int stepSize;
   int nrecv = 0;
   int nsend = 0;
-  const int stepSize;
-  struct ncclConnInfo* recvConn[NRECV];
-  struct ncclConnInfo* sendConn[NSEND];
-  volatile uint64_t* waitPtr;
+  struct ncclConnInfo* recvConn = NULL;
+  volatile uint64_t* recvConnHeadPtr = NULL;
+  uint64_t recvConnHead;
+  volatile uint64_t* recvConnTailPtr = NULL;
+  uint64_t recvConnTail;
+  uint64_t recvConnTailCache; // Cache last seen value
+
+  struct ncclConnInfo* sendConn = NULL;
+  volatile int* sendConnFifoPtr = NULL;
+  volatile uint64_t* sendConnTailPtr = NULL;
+  uint64_t sendConnTail;
+  volatile uint64_t* sendConnHeadPtr = NULL;
+  uint64_t sendConnHead;
+  uint64_t sendConnHeadCache; // Cache last seen value
+
   uint64_t recvStep[NRECV];
   uint64_t sendStep[NSEND];
-  uint64_t sendConnHead[NSEND];
   const T* recvDirectBuff[NRECV];
   T* sendDirectBuff[NSEND];
   const T* recvBuff[NRECV];
@@ -60,15 +72,18 @@ class ncclPrimitives {
   inline __device__ void barrier() {
     asm volatile ("bar.sync 1, %0;" :: "r"(nthreads));
   }
+  inline __device__ void subBarrier() {
+    asm volatile ("bar.sync 2, %0;" :: "r"(nthreads-WARP_SIZE));
+  }
 
   uint32_t mismatch = 0;
   const uint64_t opCount;
 
-  inline __device__ void checkMismatch(volatile uint64_t* remoteOpCount) {
+  inline __device__ void checkMismatch(struct ncclConnInfo* conn) {
     if (mismatch) {
       // In non-LL, we use _threadfence_system before incrementing opCount, yet we are still waiting for credits here, so there must be a size mismatch
       *(comm->fatalDevError) = ncclDevAssertedMismatch;
-    } else if (remoteOpCount && *remoteOpCount > opCount) {
+    } else if (conn && *conn->opCountRem > opCount) {
       mismatch += 1;
     }
   }
@@ -76,49 +91,55 @@ class ncclPrimitives {
   uint32_t spins = 0;
   uint32_t abort = 0;
 
-  inline __device__ int checkAbort(volatile uint64_t* remoteOpCount) {
+  inline __device__ int checkAbort(int i, int send) {
     spins++;
-    if (spins == SPINS_BEFORE_CHECK_ABORT) {
+    if (abort == 0 && spins == SPINS_BEFORE_CHECK_ABORT) {
       abort = *(comm->abortFlag);
-      checkMismatch(remoteOpCount);
+      if (wid == i) checkMismatch(send ? sendConn : recvConn);
       spins = 0;
     }
     return abort;
   }
 
-  inline __device__ void waitRecv(int i) {
+  inline __device__ void waitSend(int nbytes) {
     spins = 0;
     mismatch = 0;
+    if (sendConnHeadPtr) {
+      while (sendConnHeadCache + NCCL_STEPS < sendConnHead + SLICESTEPS) {
+        sendConnHeadCache = *sendConnHeadPtr;
+        if (checkAbort(wid, 1)) break;
+      }
+      if (sendConnFifoPtr) {
+        sendConnFifoPtr[sendConnHead%NCCL_STEPS] = nbytes;
+      }
+      sendConnHead += SLICESTEPS;
+    }
+  }
+
+  inline __device__ void waitRecv() {
+    spins = 0;
+    mismatch = 0;
+    if (recvConnTailPtr) {
+      while (recvConnTailCache < recvConnTail + SLICESTEPS) {
+        recvConnTailCache = *recvConnTailPtr;
+        if (checkAbort(wid, 0)) break;
+      }
+      recvConnTail += SLICESTEPS;
+    }
+  }
+
+  inline __device__ void incRecv(int i) {
     recvStep[i] += SLICESTEPS;
-    if (tid == i) {
-      while (*(waitPtr) < recvStep[i]) {
-        if (checkAbort(recvConn[i]->opCountRem)) break;
-      }
-    }
+  }
+  inline __device__ void postRecv() {
+    if (recvConnHeadPtr) *recvConnHeadPtr = recvConnHead += SLICESTEPS;
   }
 
-  inline __device__ void waitSend(int i) {
-    spins = 0;
-    mismatch = 0;
+  inline __device__ void incSend(int i) {
     sendStep[i] += SLICESTEPS;
-    if (tid == WARP_SIZE+i) {
-      while (sendConnHead[i] + NCCL_STEPS < sendStep[i]) {
-        sendConnHead[i] = *waitPtr;
-        if (checkAbort(sendConn[i]->opCountRem)) break;
-      }
-    }
   }
-
-  inline __device__ void postRecv(int i) {
-    *(recvConn[i]->head) = recvStep[i] += SLICESTEPS;
-  }
-
-  inline __device__ void postSend(int i) {
-    *(sendConn[i]->tail) = sendStep[i] += SLICESTEPS;
-  }
-
-  inline __device__ void postSendSize(int i, int size) {
-    if (sendConn[i]->fifo) sendConn[i]->fifo[sendStep[i]%NCCL_STEPS] = size;
+  inline __device__ void postSend() {
+    if (sendConnTailPtr) *sendConnTailPtr = sendConnTail += SLICESTEPS;
   }
 
   template <int DIRECTRECV>
@@ -131,11 +152,22 @@ class ncclPrimitives {
     return DIRECTSEND && sendDirectBuff[i] ? sendDirectBuff[i]+directOffset : sendPtr(i);
   }
 
+  template <int DIRECTRECV>
+  inline __device__ int directRecvInc(int i, int directInc, int sliceInc) {
+    return DIRECTRECV && recvDirectBuff[i] ? directInc : sliceInc;
+  }
+
+  template <int DIRECTSEND>
+  inline __device__ int directSendInc(int i, int directInc, int sliceInc) {
+    return DIRECTSEND && sendDirectBuff[i] ? directInc : sliceInc;
+  }
+
   template <int DIRECTRECV, int DIRECTSEND, int RECV, int SEND, int SRC, int DST>
   inline __device__ void
   GenericOp(const T* srcPtr, T* dstPtr, int nelem, int directOffset) {
     int offset = 0;
-    int sliceSize = stepSize * SLICESTEPS;
+    int sliceSize = stepSize*SLICESTEPS;
+    int dataSize = max(DIVUP(nelem, 16*SLICESPERCHUNK)*16, sliceSize/32);
 
     const T* srcs[RECV*NRECV+SRC];
     srcs[0] = SRC ? srcPtr : directRecvPtr<DIRECTRECV>(0, directOffset);
@@ -151,101 +183,126 @@ class ncclPrimitives {
       for (int i=1; i<NSEND && i<nsend; i++) dsts[DST+i] = directSendPtr<DIRECTSEND>(i, directOffset);
     }
 
-    #pragma unroll 1
+    bool syncThread = tid >= nthreads-WARP_SIZE;
+
+    #pragma unroll
     for (int slice=0; slice<SLICESPERCHUNK; ++slice) {
-      int realSize = max(0, min(sliceSize, nelem-offset));
-      if (tid < nthreads) {
-        FOR_SEND(waitSend);
-        FOR_RECV(waitRecv);
+      int realSize = max(0, min(dataSize, nelem-offset));
+      if (!syncThread) {
+        if (SEND) waitSend(realSize*sizeof(T));
+        if (RECV) waitRecv();
         if (realSize > 0) {
-          barrier();
+          subBarrier();
           if (DIRECTRECV && recvDirectBuff[0]) {
             // We can only have one direct receive. Since srcs[0] == dstPtr+offset, skip one copy
             if (SEND) {
-              ReduceOrCopyMulti<UNROLL, FUNC, T, 1, 1, 1, NSEND>(tid, nthreads, 1, srcs, nsend, dsts+1, realSize);
+              ReduceOrCopyMulti<UNROLL, FUNC, T, 1, 1, 1, NSEND>(tid, nthreads-WARP_SIZE, 1, srcs, nsend, dsts+1, realSize);
             }
           } else {
-            ReduceOrCopyMulti<UNROLL, FUNC, T, RECV+SRC, RECV*NRECV+SRC, SEND+DST, SEND*NSEND+DST>(tid, nthreads, RECV*nrecv+SRC, srcs, SEND*nsend+DST, dsts, realSize);
+            ReduceOrCopyMulti<UNROLL, FUNC, T, RECV+SRC, RECV*NRECV+SRC, SEND+DST, SEND*NSEND+DST>(tid, nthreads-WARP_SIZE, RECV*nrecv+SRC, srcs, SEND*nsend+DST, dsts, realSize);
           }
         }
-        exitIfAbortBarrier(abort);
-      } else {
-        exitIfAbortBarrier(abort);
-        FOR_SEND(postSendSize, realSize*sizeof(T));
-        if (SEND) __threadfence_system();
-        FOR_SEND(postSend);
-        FOR_RECV(postRecv);
       }
-      for (int i=0; i<RECV*NRECV+SRC; i++) srcs[i] += sliceSize;
-      for (int i=0; i<SEND*NSEND+DST; i++) dsts[i] += sliceSize;
-      offset += sliceSize;
+      barrier();
+      FOR_SEND(incSend);
+      FOR_RECV(incRecv);
+      if (syncThread) {
+        if (SEND) {
+          if (realSize > 0 && wid == 0) __threadfence_system();
+          __syncwarp();
+          postSend();
+        }
+        if (RECV) postRecv();
+      }
+      srcs[0] += SRC ? realSize : directRecvInc<DIRECTRECV>(0, realSize, sliceSize);
+      for (int i=1-SRC; i<RECV*NRECV; i++) srcs[SRC+i] += sliceSize;
+      dsts[0] += DST ? realSize : directSendInc<DIRECTSEND>(0, realSize, sliceSize);
+      for (int i=1-DST; i<SEND*NSEND; i++) dsts[DST+i] += directSendInc<DIRECTSEND>(i, realSize, sliceSize);
+      offset += realSize;
     }
   }
 
   __device__ __forceinline__ void loadRecvConn(struct ncclConnInfo* conn, int i, T* directBuff) {
-    recvConn[i] = conn;
-    recvBuff[i] = (const T*)recvConn[i]->buff;
-    recvStep[i] = recvConn[i]->step;
+    recvBuff[i] = (const T*)conn->buff;
+    recvStep[i] = conn->step;
     recvStep[i] = ROUNDUP(recvStep[i], SLICESPERCHUNK*SLICESTEPS);
-    // Return credits in case we rounded up.
-    if (tid == nthreads) *recvConn[i]->head = recvStep[i];
-    if (tid == i) {
-      waitPtr = recvConn[i]->tail;
-      *(recvConn[i]->opCountLoc) = opCount;
-    }
     recvDirectBuff[i] = NULL;
-    if (directBuff && recvConn[i]->direct) {
+    if (directBuff && conn->direct) {
       recvDirectBuff[i] = directBuff;
-      if (tid == 0) *recvConn[i]->ptrExchange = directBuff;
+      if (tid == 0) *conn->ptrExchange = directBuff;
     }
+    if (wid == i) recvConn = conn;
+    if (wid == i) recvConnTail = recvConnHead = recvStep[i]; // Make sure we set this after rounding up
     nrecv++;
+  }
+  __device__ __forceinline__ void loadRecvSync() {
+    if (tid >= WARP_SIZE && tid < 2*WARP_SIZE && wid<nrecv) {
+      recvConnTailPtr = recvConn->tail;
+      recvConnTailCache = *recvConnTailPtr;
+    }
+    if (tid >= nthreads-WARP_SIZE && wid < nrecv) {
+      recvConnHeadPtr = recvConn->head;
+      // Return credits in case we rounded up.
+      *recvConnHeadPtr = recvConnHead;
+      // Update opCount in case we skipped some operations
+      *(recvConn->opCountLoc) = opCount;
+    }
   }
 
   __device__ __forceinline__ void loadSendConn(struct ncclConnInfo* conn, int i, T* directBuff) {
-    sendConn[i] = conn;
-    sendBuff[i] = (T*)sendConn[i]->buff;
-    sendStep[i] = sendConn[i]->step;
+    sendBuff[i] = (T*)conn->buff;
+    sendStep[i] = conn->step;
     sendStep[i] = ROUNDUP(sendStep[i], SLICESPERCHUNK*SLICESTEPS);
-    if (tid == WARP_SIZE+i) {
-      waitPtr = sendConn[i]->head;
-      sendConnHead[i] = *waitPtr;
-      *(sendConn[i]->opCountLoc) = opCount;
-    }
     sendDirectBuff[i] = NULL;
-    if (directBuff && sendConn[i]->direct) {
-      void* volatile* ptr = sendConn[i]->ptrExchange;
+    if (directBuff && conn->direct) {
+      void* volatile* ptr = conn->ptrExchange;
       while ((sendDirectBuff[i] = (T*)(*ptr)) == NULL);
-      __syncthreads();
+      barrier();
       if (tid == 0) *ptr = NULL;
     }
+    if (wid == i) sendConn = conn;
+    if (wid == i) sendConnTail = sendConnHead = sendStep[i]; // Make sure we set this after rounding up
     nsend++;
   }
-
-  __device__ __forceinline__ void saveRecvConn(int i) {
-    if (tid == i) {
-      recvConn[i]->step = recvStep[i];
-      __threadfence_system();
-      *(recvConn[i]->opCountLoc) += 1;
+  __device__ __forceinline__ void loadSendSync() {
+    if (tid < nsend) {
+      sendConnHeadPtr = sendConn->head;
+      sendConnHeadCache = *sendConnHeadPtr;
+      sendConnFifoPtr = sendConn->fifo;
+      *(sendConn->opCountLoc) = opCount;
+    }
+    if (tid >= nthreads-WARP_SIZE && wid<nsend) {
+      sendConnTailPtr = sendConn->tail;
     }
   }
 
-  __device__ __forceinline__ void saveSendConn(int i) {
-    if (tid == WARP_SIZE+i) {
-      sendConn[i]->step = sendStep[i];
+  __device__ __forceinline__ void saveRecvSync() {
+    if (tid >= nthreads-WARP_SIZE && wid < nrecv) {
+      recvConn->step = recvConnHead;
+      *(recvConn->opCountLoc) = opCount+1;
       __threadfence_system();
-      *(sendConn[i]->opCountLoc) += 1;
+    }
+  }
+
+  __device__ __forceinline__ void saveSendSync() {
+    if (tid < nsend) {
+      sendConn->step = sendConnHead;
+      *(sendConn->opCountLoc) = opCount+1;
+      __threadfence_system();
     }
   }
 
  public:
   __device__ __forceinline__
   ncclPrimitives(const int tid, const int nthreads, int* recvPeers, int* sendPeers, T* directBuff, int stepSize, struct ncclChannel* channel, struct ncclDevComm* comm, const uint64_t opCount)
-    : comm(comm), tid(tid), nthreads(nthreads), stepSize(stepSize), opCount(opCount) {
-    // Make sure step is updated before we read it
-    __syncthreads();
+    : comm(comm), tid(tid), nthreads(nthreads), wid(tid%WARP_SIZE), stepSize(stepSize), opCount(opCount) {
+    // Make sure step is updated before we read it.
+    barrier();
 
     for (int i=0; i<NRECV && recvPeers[i] >= 0; i++) loadRecvConn(&channel->devPeers[recvPeers[i]].recv.conn, i, directBuff);
     for (int i=0; i<NSEND && sendPeers[i] >= 0; i++) loadSendConn(&channel->devPeers[sendPeers[i]].send.conn, i, directBuff);
+    loadRecvSync();
+    loadSendSync();
   }
 
   __device__ __forceinline__ void
@@ -305,10 +362,9 @@ class ncclPrimitives {
   }
 
   __device__ __forceinline__ ~ncclPrimitives() {
-    // Save steps for next collective. Have thread 0 do it to be compatible
-    // with the way LL works.
-    for (int i=0; i<NRECV && i<nrecv; i++) saveRecvConn(i);
-    for (int i=0; i<NSEND && i<nsend; i++) saveSendConn(i);
+    // Save steps for the next operation
+    saveRecvSync();
+    saveSendSync();
   }
 };
 

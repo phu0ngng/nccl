@@ -65,6 +65,26 @@ example, ^eth,ib would select interfaces not starting with eth or ib.
 
 Note:  By default, the loopback interface (lo) and docker interfaces (docker*) would not be selected unless there are no other interfaces available. If you prefer to use lo or docker* over other interfaces, you would need to explicitly select them using ``NCCL_SOCKET_IFNAME``.
 
+NCCL_SOCKET_NTHREADS
+--------------------
+(since 2.4.8)
+
+The ``NCCL_SOCKET_NTHREADS`` variable specifies the number of CPU helper threads used per network connection for socket transport. Increasing this value may increase the socket transport performance, at the cost of higher CPU usage.
+
+Values accepted
+^^^^^^^^^^^^^^^
+1 to 16. On AWS, the default value is 2; in other cases, the default value is 1.
+
+NCCL_NSOCKS_PERTHREAD
+---------------------
+(since 2.4.8)
+
+The ``NCCL_NSOCKS_PERTHREAD`` variable specifies the number of sockets opened by each helper thread of the socket transport. In environments where per-socket speed is limited, setting this variable larger than 1 may improve the network performance.
+
+Values accepted
+^^^^^^^^^^^^^^^
+On AWS, the default value is 8; in other cases, the default value is 1. The product of ``NCCL_SOCKET_NTHREADS`` and ``NCCL_NSOCKS_PERTHREAD`` cannot be greater than 64.
+
 .. _NCCL_DEBUG:
 
 NCCL_DEBUG

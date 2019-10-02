@@ -11,9 +11,9 @@ include ../makefiles/version.mk
 INCEXPORTS  := nccl.h nccl_net.h
 LIBSRCFILES := init.cc channel.cc bootstrap.cc transport.cc enqueue.cc \
                 misc/group.cc misc/nvmlwrap.cc misc/ibvwrap.cc misc/utils.cc misc/argcheck.cc \
-		transport/p2p.cc transport/shm.cc transport/net_common.cc transport/net.cc transport/net_socket.cc transport/net_ib.cc transport/coll_net.cc \
+		transport/p2p.cc transport/shm.cc transport/net.cc transport/net_socket.cc transport/net_ib.cc transport/coll_net.cc \
                 collectives/all_reduce.cc collectives/all_gather.cc collectives/broadcast.cc collectives/reduce.cc collectives/reduce_scatter.cc \
-                graph/topo.cc graph/search.cc graph/connect.cc graph/rings.cc graph/trees.cc
+                graph/topo.cc graph/paths.cc graph/search.cc graph/connect.cc graph/rings.cc graph/trees.cc graph/tuning.cc
 
 ##### lib files
 LIBNAME     := libnccl.so
@@ -118,8 +118,8 @@ $(OBJDIR)/%.o : %.cc
 	@rm -f $(@:%.o=%.d.tmp)
 
 clean :
-	rm -rf ${INCDIR} ${LIBDIR} ${PKGDIR} ${OBJDIR}
 	$(MAKE) -C collectives/device clean
+	rm -rf ${INCDIR} ${LIBDIR} ${PKGDIR} ${OBJDIR}
 
 install : lib
 	mkdir -p $(PREFIX)/lib

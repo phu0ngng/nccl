@@ -13,14 +13,14 @@ ifeq ($(MPI_IBM),1)
 NVLDFLAGS += -lmpi_ibm
 endif
 # We need private functions. Include and link with src
-NVCUFLAGS += -I$(BUILDDIR)/include/ -I../include -I../../src/include -I ../../src/collectives/device/
+NVCUFLAGS += -I$(BUILDDIR)/include/ -I../include -I../../src/include -I ../../src/collectives/device/ -I../../src/graph
 # Use static library since all the internal symbols are there
 LIBRARIES += nccl_static
 STATICLIB = ${BUILDDIR}/lib/libnccl_static.a
 NVLDFLAGS += -L$(BUILDDIR)/lib $(LIBRARIES:%=-l%)
 ##
 DST_DIR := $(abspath ${BUILDDIR}/test/unit)
-CU_FILES := rings_test.cu kernel_test.cu graph_test.cu
+CU_FILES := kernel_test.cu graph_test.cu
 #ifeq ($(MPI),1)
 #CU_FILES += ncclNet_test.cu ncclNet_read_write_stress_test.cu
 #endif
@@ -55,11 +55,6 @@ ${DST_DIR}/kernel_test: ${DST_DIR}/kernel_test.o
 #	@printf "Compiling   %-35s > %s\n" $< $@
 #	@mkdir -p ${DST_DIR}
 #	mpicc -std=c99 $(CXXFLAGS) -I$(BUILDDIR)/include/ -o $@ -c $<
-#
-${DST_DIR}/rings_test: ${DST_DIR}/rings_test.o ${STATICLIB}
-	@printf "Linking  %-35s > %s\n" $< $@
-	@mkdir -p ${DST_DIR}
-	$(NVCC) -o $@ $(NVCUFLAGS) $^ ${NVLDFLAGS}
 #
 ${DST_DIR}/graph_test: ${DST_DIR}/graph_test.o ${STATICLIB}
 	@printf "Linking  %-35s > %s\n" $< $@

@@ -8,26 +8,11 @@
 #define NCCL_GRAPH_H_
 
 #include "nccl.h"
+#include "devcomm.h"
 #include <limits.h>
 #include <stdlib.h>
 #include <ctype.h>
 #include <stdio.h>
-
-ncclResult_t getCudaPath(int cudaDev, char** path);
-
-static int getNumaId(char *path) {
-  char npath[PATH_MAX];
-  snprintf(npath, PATH_MAX, "%s/numa_node", path);
-  npath[PATH_MAX-1] = '\0';
-
-  int numaId = -1;
-  FILE *file = fopen(npath, "r");
-  if (file == NULL) return -1;
-  if (fscanf(file, "%d", &numaId) == EOF) { fclose(file); return -1; }
-  fclose(file);
-
-  return numaId;
-}
 
 enum ncclPathDist {
   PATH_PIX  = 0,
@@ -40,10 +25,25 @@ enum ncclPathDist {
 
 extern const char* pathDists[PATH_ARRAY_SIZE];
 
-int pciDistance(char* path1, char* path2);
+ncclResult_t ncclTopoCudaPath(int cudaDev, char** path);
 
 struct ncclTopoSystem;
-ncclResult_t ncclTopoGetSystem(int nranks, int* nvmlIndexes, int* rankIndexes, struct ncclTopoSystem** system, int inter);
+// Build the topology
+ncclResult_t ncclTopoGetSystem(struct ncclComm* comm, struct ncclTopoSystem** system);
+ncclResult_t ncclTopoSortSystem(struct ncclTopoSystem* system);
+ncclResult_t ncclTopoPrint(struct ncclTopoSystem* system);
+
+ncclResult_t ncclTopoComputePaths(struct ncclTopoSystem* system, struct ncclPeerInfo* info);
+ncclResult_t ncclTopoTrimSystem(struct ncclTopoSystem* system, struct ncclComm* comm);
+ncclResult_t ncclTopoGetMaxSpeed(struct ncclTopoSystem* system);
+
+// Query topology
+ncclResult_t ncclTopoGetNvlink(struct ncclTopoSystem* system, int nvmlDev1, int nvmlDev2, int* nvlink);
+ncclResult_t ncclTopoHasNvlink(struct ncclTopoSystem* system, int nvmlDev, int* nvlink);
+ncclResult_t ncclTopoGpuDistance(struct ncclTopoSystem* system, int nvmlDev1, int nvmlDev2, int* distance);
+ncclResult_t ncclTopoGetNetDev(struct ncclTopoGraph* graph, int dir, int channelId, int* net);
+ncclResult_t ncclTopoNetDistance(struct ncclTopoSystem* system, int nvmlDev, int netDev, int* distance);
+ncclResult_t ncclTopoCpuCount(struct ncclTopoSystem* system, int* count);
 
 #define NCCL_TOPO_MAX_NODES 256
 
@@ -52,13 +52,23 @@ ncclResult_t ncclTopoGetSystem(int nranks, int* nvmlIndexes, int* rankIndexes, s
 #define NCCL_TOPO_PATTERN_TREE 3            // Simple tree (send/recv from same rank) flowing in both directions
 #define NCCL_TOPO_PATTERN_RING 4            // Ring
 struct ncclTopoGraph {
+  // Input / output
   int pattern;
   int crossNic;
-  int speed;
-  int intra[MAXCHANNELS*NCCL_TOPO_MAX_NODES];
+  // Output
   int nChannels;
+  int speedIntra;
+  int speedInter;
+  int type;
+  int nvlink;
+  int sameChannels;
+  int nHops;
+  int intra[MAXCHANNELS*NCCL_TOPO_MAX_NODES];
+  int inter[MAXCHANNELS*2];
 };
-ncclResult_t ncclTopoCompute(struct ncclTopoSystem* system, struct ncclTopoGraph* graph, struct ncclTopoGraph* baseGraph);
+ncclResult_t ncclTopoCompute(struct ncclTopoSystem* system, struct ncclTopoGraph* graph);
+
+ncclResult_t ncclTopoPrintGraph(struct ncclTopoSystem* system, struct ncclTopoGraph* graph);
 
 struct ncclTopoRanks {
   int ringRecv[MAXCHANNELS];
@@ -71,11 +81,13 @@ struct ncclTopoRanks {
   int treeDnSend[MAXCHANNELS];
 };
 
-ncclResult_t ncclTopoPreset(struct ncclComm* comm, int* firstRanks,
+ncclResult_t ncclTopoPreset(struct ncclComm* comm,
     struct ncclTopoGraph* treeGraph, struct ncclTopoGraph* ringGraph,
     struct ncclTopoRanks* topoRanks);
 
 ncclResult_t ncclTopoPostset(struct ncclComm* comm, int* firstRanks,
     struct ncclTopoRanks** allTopoRanks, int* rings);
+
+ncclResult_t ncclSetThresholds(struct ncclComm* comm, int minCompCap, int maxCompCap, struct ncclTopoGraph* treeGraph, struct ncclTopoGraph* ringGraph);
 
 #endif

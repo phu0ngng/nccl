@@ -4,6 +4,10 @@ lib=$1
 if [ "$lib" == "" ]; then
   lib=../../build/lib/libnccl.so
 fi
+if [ ! -f $lib ]; then
+  echo -e "\e[31m\e[1m [FAILED]\e[0m : Library not found."
+  exit 1
+fi
 
 errors=""
 
@@ -13,7 +17,7 @@ stripldd() {
   done
 }
 
-libs="linux-vdso.so librt.so libstdc++.so libm.so libgcc_s.so libc.so ld-linux-x86-64.so libpthread.so"
+libs="linux-vdso.so librt.so libdl.so libstdc++.so libm.so libgcc_s.so libc.so ld-linux-x86-64.so libpthread.so"
 lddlibs=`ldd $lib | stripldd`
 
 for lddlib in $lddlibs; do

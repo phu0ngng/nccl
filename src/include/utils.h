@@ -10,7 +10,10 @@
 #include "nccl.h"
 #include <stdint.h>
 
+int ncclCudaCompCap();
+
 ncclResult_t getHostName(char* hostname, int maxlen, const char delim);
+uint64_t getHash(const char* string, int n);
 uint64_t getHostHash();
 uint64_t getPidHash();
 
@@ -20,10 +23,10 @@ struct netIf {
 };
 
 int parseStringList(const char* string, struct netIf* ifList, int maxList);
-bool matchIfList(const char* string, int port, struct netIf* ifList, int listSize);
+bool matchIfList(const char* string, int port, struct netIf* ifList, int listSize, bool matchExact);
 
-static int log2(int n) {
- int l = 0;
+static long log2i(long n) {
+ long l = 0;
  while (n>>=1) l++;
  return l;
 }
