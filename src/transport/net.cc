@@ -74,7 +74,7 @@ static ncclResult_t netGetGdrSupport(struct ncclTopoSystem* topo, int64_t busId,
   int distance;
   NCCLCHECK(ncclTopoNetDistance(topo, busId, netDev, &distance));
   if (distance >= netGdrLevel) {
-    INFO(NCCL_NET,"NET/%s : GPU Direct RDMA Disabled for GPU %x / HCA %d (distance %d >= %d)", ncclNetName(), busId, netDev, distance, netGdrLevel);
+    INFO(NCCL_NET,"NET/%s : GPU Direct RDMA Disabled for GPU %lx / HCA %d (distance %d >= %d)", ncclNetName(), busId, netDev, distance, netGdrLevel);
     return ncclSuccess;
   }
 
@@ -83,7 +83,7 @@ static ncclResult_t netGetGdrSupport(struct ncclTopoSystem* topo, int64_t busId,
   NCCLCHECK(ncclNetPtrSupport(netDev, &flags));
   if ((flags & NCCL_PTR_CUDA) == 0) return ncclSuccess;
   *useGdr = 1;
-  INFO(NCCL_NET,"NET/%s : GPU Direct RDMA Enabled for GPU %x / HCA %d (distance %d < %d), read %d", ncclNetName(), busId, netDev, distance, netGdrLevel, read);
+  INFO(NCCL_NET,"NET/%s : GPU Direct RDMA Enabled for GPU %lx / HCA %d (distance %d < %d), read %d", ncclNetName(), busId, netDev, distance, netGdrLevel, read);
   return ncclSuccess;
 }
 
@@ -107,7 +107,7 @@ ncclResult_t netSendSetup(struct ncclTopoSystem* topo, struct ncclTopoGraph* gra
   NCCLCHECK(ncclCudaHostAlloc((void**)&resources->hostRecvMem, (void**)&resources->devHostRecvMem, recvSize));
   resources->buffSize = buffSize;
 
-  INFO(NCCL_INIT|NCCL_NET,"Ring %02d : %d -> %d [send] via NET/%s/%d%s", channelId, myInfo->rank, peerInfo->rank, ncclNetName(), resources->netDev,
+  INFO(NCCL_INIT|NCCL_NET,"Ring %02d : %d[%lx] -> %d[%lx] [send] via NET/%s/%d%s", channelId, myInfo->rank, myInfo->busId, peerInfo->rank, peerInfo->busId, ncclNetName(), resources->netDev,
       resources->useGdr ? "/GDRDMA" : "");
   return ncclSuccess;
 }
@@ -130,7 +130,7 @@ ncclResult_t netRecvSetup(struct ncclTopoSystem* topo, struct ncclTopoGraph* gra
   NCCLCHECK(ncclCudaHostAlloc((void**)&resources->hostRecvMem, (void**)&resources->devHostRecvMem, recvSize));
   resources->buffSize = buffSize;
 
-  INFO(NCCL_INIT|NCCL_NET,"Ring %02d : %d -> %d [receive] via NET/%s/%d%s", channelId, peerInfo->rank, myInfo->rank, ncclNetName(), resources->netDev,
+  INFO(NCCL_INIT|NCCL_NET,"Ring %02d : %d[%lx] -> %d[%lx] [receive] via NET/%s/%d%s", channelId, peerInfo->rank, peerInfo->busId, myInfo->rank, myInfo->busId, ncclNetName(), resources->netDev,
       resources->useGdr ? "/GDRDMA" : "");
   struct netConnectInfo* info = (struct netConnectInfo*) connectInfo;
   NCCLCHECK(ncclNetListen(resources->netDev, &info->netHandle, &resources->netListenComm));

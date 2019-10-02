@@ -68,13 +68,13 @@ ncclResult_t p2pCanConnect(int* ret, struct ncclTopoSystem* topo, struct ncclTop
   if (info1->hostHash != info2->hostHash) return ncclSuccess;
 
   // Convert the peer's busId into a local cudaDev index (cf. CUDA_VISIBLE_DEVICES)
-  int peerCudaDev = busIdToCudaDev(info2->busId);
-  int myCudaDev = busIdToCudaDev(info1->busId);
-  if (peerCudaDev == -1 || myCudaDev == -1) {
+  int cudaDev1 = busIdToCudaDev(info1->busId);
+  int cudaDev2 = busIdToCudaDev(info2->busId);
+  if (cudaDev1 == -1 || cudaDev2 == -1) {
     // Peer's CUDA device is not visible in this process
 #if CUDART_VERSION >= 10010
     // But in CUDA 10.1 we can still communicate with 'invisible' devices
-    TRACE(NCCL_INIT|NCCL_P2P, "Checking P2P connection between %x and %x" info1->busId, info2->busId);
+    TRACE(NCCL_INIT|NCCL_P2P, "Checking P2P connection between %lx and %lx" info1->busId, info2->busId);
     // Check for NVLink/NVswitch including P2P access
     int nvlink;
     NCCLCHECK(ncclTopoGetNvlink(topo, info1->busId, info2->busId, &nvlink));
@@ -86,19 +86,19 @@ ncclResult_t p2pCanConnect(int* ret, struct ncclTopoSystem* topo, struct ncclTop
     return ncclSuccess;
   }
 
-  TRACE(NCCL_INIT|NCCL_P2P, "Checking P2P connection between [%d=%x] and [%d=%x]", myCudaDev, info1->busId, peerCudaDev, info2->busId);
+  TRACE(NCCL_INIT|NCCL_P2P, "Checking P2P connection between [%d=%lx] and [%d=%lx]", cudaDev1, info1->busId, cudaDev2, info2->busId);
 
   // Do not detect topology if we're on the same GPU. Note this is not really supported.
-  if (myCudaDev == peerCudaDev) {
+  if (cudaDev1 == cudaDev2) {
     *ret = 1;
     return ncclSuccess;
   }
 
   // See if CUDA can do P2P
   int p2p;
-  if (cudaDeviceCanAccessPeer(&p2p, myCudaDev, peerCudaDev) != cudaSuccess) {
-    INFO(NCCL_INIT|NCCL_P2P,"peer query failed between dev %d(=%x) and dev %d(=%x)",
-         myCudaDev, info1->busId, peerCudaDev, info2->busId);
+  if (cudaDeviceCanAccessPeer(&p2p, cudaDev1, cudaDev2) != cudaSuccess) {
+    INFO(NCCL_INIT|NCCL_P2P,"peer query failed between dev %d(=%lx) and dev %d(=%lx)",
+         cudaDev1, info1->busId, cudaDev2, info2->busId);
     return ncclSuccess;
   }
   if (p2p == 0) return ncclSuccess;
@@ -150,11 +150,11 @@ ncclResult_t p2pSendSetup(struct ncclTopoSystem* topo, struct ncclTopoGraph* gra
       if (err == cudaErrorPeerAccessAlreadyEnabled) {
         cudaGetLastError();
       } else if (err != cudaSuccess) {
-        WARN("failed to peer with device %d(=%x): %d %s",
+        WARN("failed to peer with device %d(=%lx): %d %s",
              peerInfo->cudaDev, peerInfo->busId, err, cudaGetErrorString(err));
         return ncclInternalError;
       }
-      INFO(NCCL_INIT|NCCL_P2P,"Ring %02d : %d[%x] -> %d[%x] via P2P/direct pointer",
+      INFO(NCCL_INIT|NCCL_P2P,"Ring %02d : %d[%lx] -> %d[%lx] via P2P/direct pointer",
           channelId, myInfo->rank, myInfo->busId, peerInfo->rank, peerInfo->busId);
     }
   } else {
@@ -164,11 +164,11 @@ ncclResult_t p2pSendSetup(struct ncclTopoSystem* topo, struct ncclTopoGraph* gra
     // Map IPC and enable P2P access
     cudaError_t err = cudaIpcGetMemHandle(&info.devIpc, (void*)resources->devMem);
     if (err != cudaSuccess) {
-      WARN("rank %d failed to get CUDA IPC handle to device %d(=%x) : %d %s",
+      WARN("rank %d failed to get CUDA IPC handle to device %d(=%lx) : %d %s",
            myInfo->rank, peerCudaDev, peerInfo->busId, err, cudaGetErrorString(err));
       return ncclInternalError;
     }
-    INFO(NCCL_INIT|NCCL_P2P,"Ring %02d : %d[%x] -> %d[%x] via P2P/IPC",
+    INFO(NCCL_INIT|NCCL_P2P,"Ring %02d : %d[%lx] -> %d[%lx] via P2P/IPC",
         channelId, myInfo->rank, myInfo->busId, peerInfo->rank, peerInfo->busId);
     //TRACE_DUMP_IPC(&info.devIpc);
   }
@@ -200,11 +200,11 @@ ncclResult_t p2pRecvSetup(struct ncclTopoSystem* topo, struct ncclTopoGraph* gra
       if (err == cudaErrorPeerAccessAlreadyEnabled) {
         cudaGetLastError();
       } else if (err != cudaSuccess) {
-        WARN("failed to peer with device %d(=%x): %d %s",
+        WARN("failed to peer with device %d(=%lx): %d %s",
              peerInfo->cudaDev, peerInfo->busId, err, cudaGetErrorString(err));
         return ncclInternalError;
       }
-      TRACE(NCCL_INIT|NCCL_P2P,"Ring %02d : %d[%x] <- %d[%x] via P2P/direct pointer", channelId, myInfo->rank, myInfo->busId, peerInfo->rank, peerInfo->busId);
+      TRACE(NCCL_INIT|NCCL_P2P,"Ring %02d : %d[%lx] <- %d[%lx] via P2P/direct pointer", channelId, myInfo->rank, myInfo->busId, peerInfo->rank, peerInfo->busId);
     }
   } else {
     // Convert the peer's busId into a local cudaDev index (cf. CUDA_VISIBLE_DEVICES)
@@ -213,11 +213,11 @@ ncclResult_t p2pRecvSetup(struct ncclTopoSystem* topo, struct ncclTopoGraph* gra
     // Map IPC and enable P2P access
     cudaError_t err = cudaIpcGetMemHandle(&info.devIpc, (void*)resources->devMem);
     if (err != cudaSuccess) {
-      WARN("rank %d failed to get CUDA IPC handle to device %d(=%x) : %d %s",
+      WARN("rank %d failed to get CUDA IPC handle to device %d(=%lx) : %d %s",
            myInfo->rank, peerCudaDev, peerInfo->busId, err, cudaGetErrorString(err));
       return ncclInternalError;
     }
-    TRACE(NCCL_INIT|NCCL_P2P,"Ring %02d : %d[%x] <- %d[%x] via P2P/IPC", channelId, myInfo->rank, myInfo->busId, peerInfo->rank, peerInfo->busId);
+    TRACE(NCCL_INIT|NCCL_P2P,"Ring %02d : %d[%lx] <- %d[%lx] via P2P/IPC", channelId, myInfo->rank, myInfo->busId, peerInfo->rank, peerInfo->busId);
     //TRACE_DUMP_IPC(&info.devIpc);
   }
   static_assert(sizeof(struct p2pConnectInfo) <= sizeof(struct ncclConnect), "p2p Connect Info is too big");
