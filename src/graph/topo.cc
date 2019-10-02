@@ -560,18 +560,18 @@ ncclResult_t ncclTopoSortSystem(struct ncclTopoSystem* system) {
 ncclResult_t ncclTopoGetSystem(struct ncclComm* comm, struct ncclTopoSystem** system) {
   struct ncclTopoSystem* s;
   NCCLCHECK(ncclCalloc(&s, 1));
+  nvmlDevice_t* nvmlDevs;
+  int g = 0;
+  NCCLCHECK(ncclCalloc(&nvmlDevs, comm->nRanks));
   for (int r=0; r<comm->nRanks; r++) {
     if (comm->peerInfo[r].hostHash == comm->peerInfo[comm->rank].hostHash) {
+      // Consider the GPU as outside of our node if we can't see it through NVML.
+      if (wrapNvmlDeviceGetHandleByPciBusId(comm->peerInfo[r].busId, nvmlDevs+g) != ncclSuccess) continue;
+      g++;
       struct ncclTopoNode* gpuNode;
       NCCLCHECK(ncclTopoCreateNode(s, &gpuNode, GPU, comm->peerInfo[r].nvmlDev));
       gpuNode->rank = r;
     }
-  }
-
-  nvmlDevice_t* nvmlDevs;
-  NCCLCHECK(ncclCalloc(&nvmlDevs, s->nodes[GPU].count));
-  for (int g=0; g<s->nodes[GPU].count; g++) {
-    NCCLCHECK(wrapNvmlDeviceGetHandleByIndex(comm->peerInfo[g].nvmlDev, nvmlDevs+g));
   }
 
   NCCLCHECK(ncclTopoConnectNVLink(nvmlDevs, s));
