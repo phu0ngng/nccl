@@ -52,7 +52,7 @@ ncclResult_t parseList(const char* str, const char* elems[], int nelems, int* li
 }
 
 static const char* ncclFuncStr[] = { "Broadcast", "Reduce", "AllGather", "ReduceScatter", "AllReduce" };
-static const char* ncclAlgoStr[] = { "Tree", "Ring" };
+static const char* ncclAlgoStr[] = { "Tree", "Ring", "Accl" };
 static const char* ncclProtoStr[] = { "LL", "LL128", "Simple" };
 
 // Latencies in us, Bandwidths in GB/s
@@ -76,7 +76,7 @@ static const float hwLat [3][NCCL_NUM_ALGORITHMS][NCCL_NUM_PROTOCOLS] =
 // LL128 max BW for the different collectives
 static const double ll128MaxBw[NCCL_NUM_FUNCTIONS] = { 113.0, 72.0, 110.0, 91.0, 100.0 };
 
-ncclResult_t ncclSetThresholds(struct ncclComm* comm, int minCompCap, int maxCompCap, struct ncclTopoGraph* treeGraph, struct ncclTopoGraph* ringGraph) {
+ncclResult_t ncclSetThresholds(struct ncclComm* comm, int minCompCap, int maxCompCap, struct ncclTopoGraph* treeGraph, struct ncclTopoGraph* ringGraph, struct ncclTopoGraph* collNetGraph) {
   int simpleDefaultThreads = (treeGraph->nvlink == 0 && ringGraph->nvlink == 0) ? 256 : NCCL_MAX_NTHREADS;
   comm->maxThreads[NCCL_PROTO_SIMPLE] = getNthreads("NCCL_NTHREADS", ncclParamNthreads(), 2*WARP_SIZE, simpleDefaultThreads);
   comm->maxThreads[NCCL_PROTO_LL] = getNthreads("NCCL_NTHREADS", ncclParamNthreads(), 2*WARP_SIZE, NCCL_MAX_NTHREADS);
@@ -86,8 +86,8 @@ ncclResult_t ncclSetThresholds(struct ncclComm* comm, int minCompCap, int maxCom
 
   if (comm->nRanks <= 1) return ncclSuccess;
 
-  struct ncclTopoGraph* graphs[2] = { treeGraph, ringGraph };
-  int intraHw[2], hw[2];
+  struct ncclTopoGraph* graphs[3] = { treeGraph, ringGraph, collNetGraph };
+  int intraHw[3], hw[3];
   for (int a=0; a<NCCL_NUM_ALGORITHMS; a++) intraHw[a] = graphs[a]->nvlink ? NCCL_HW_NVLINK : NCCL_HW_PCI;
   for (int a=0; a<NCCL_NUM_ALGORITHMS; a++) hw[a] = comm->nNodes == 1 ? intraHw[a] : NCCL_HW_NET;
 
@@ -97,10 +97,10 @@ ncclResult_t ncclSetThresholds(struct ncclComm* comm, int minCompCap, int maxCom
       comm->nRanks;
 
     for (int a=0; a<NCCL_NUM_ALGORITHMS; a++) {
-      if (coll != ncclCollAllReduce && a == NCCL_ALGO_TREE) continue;
+      if (coll != ncclCollAllReduce && a != NCCL_ALGO_RING) continue;
 
       for (int p=0; p<NCCL_NUM_PROTOCOLS; p++) {
-        int speed = comm->nNodes <= 2 ? graphs[a]->speedIntra : graphs[a]->speedInter;
+        int speed = comm->nNodes <= 2 || a == NCCL_ALGO_ACCL ? graphs[a]->speedIntra : graphs[a]->speedInter;
         float busBw = graphs[a]->nChannels * speed * 1.0;
 
         // Various model refinements
@@ -111,7 +111,7 @@ ncclResult_t ncclSetThresholds(struct ncclComm* comm, int minCompCap, int maxCom
         if (a == NCCL_ALGO_TREE && p == NCCL_PROTO_LL128) busBw *= 7.0/9.0;
 
         // Convert bus BW to algorithm BW
-        float ratio = a == NCCL_ALGO_TREE ? .5 : (1.0 * comm->nRanks) / nsteps;
+        float ratio = a == NCCL_ALGO_TREE || a == NCCL_ALGO_ACCL ? .5 : (1.0 * comm->nRanks) / nsteps;
         comm->bandwidths[coll][a][p] = busBw * ratio;
 
         comm->latencies[coll][a][p] = baseLat[a][p];
@@ -140,7 +140,7 @@ ncclResult_t ncclSetThresholds(struct ncclComm* comm, int minCompCap, int maxCom
   // Protocols/Algorithms enable/disable, and user overrides.
   // All are enabled except ll128 which is enabled by default only in certain cases.
   int protoEnable[NCCL_NUM_PROTOCOLS] = { 1, 2, 1 };
-  int algoEnable[NCCL_NUM_ALGORITHMS] = { 1, 1 };
+  int algoEnable[NCCL_NUM_ALGORITHMS] = { 1, 1, comm->collNetSupport };
 
   const char *protoStr = getenv("NCCL_PROTO");
   if (protoStr) NCCLCHECK(parseList(protoStr, ncclProtoStr, NCCL_NUM_PROTOCOLS, protoEnable));
