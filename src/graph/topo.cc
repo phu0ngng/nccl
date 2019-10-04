@@ -610,8 +610,8 @@ static int pathDistance(struct ncclTopoLinkList* links) {
   int distance = PATH_PIX;
   if (links->count > 2) distance = PATH_PXB;
   for (int l=0; l<links->count; l++) {
-    if (links->list[l]->remNode->type == CPU) distance = PATH_PHB;
-    if (links->list[l]->type == LINK_QPI) distance = PATH_SYS;
+    // PHB if we go through 1 CPU, SYS if we go through 2 CPUs
+    if (links->list[l]->remNode->type == CPU) distance = (distance == PATH_PHB) ? PATH_SYS : PATH_PHB;
   }
   return distance;
 }
