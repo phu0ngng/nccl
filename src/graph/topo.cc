@@ -399,7 +399,8 @@ ncclResult_t ncclTopoComputeNetInfo(struct netInfo* netInfos, int ndev) {
       info->asic = ibGuid;
 
       // Use "strlen(path)-2" to remove trailing subdevice and merge multi-port cards into one
-      NCCLCHECK(pciPathToInt64(info->path, strlen(info->path)-2, 0, &info->nic));
+      info->path[strlen(info->path)-2]='\0';
+      NCCLCHECK(pciPathToInt64(info->path, strlen(info->path), 0, &info->nic));
 
       // Same PCI path -> different ports of the same NIC
       for (int i=0; i<n; i++) if (netInfos[i].nic == info->nic) info->port++;
