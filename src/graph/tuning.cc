@@ -12,7 +12,7 @@
 NCCL_PARAM(Nthreads, "NTHREADS", -2);
 NCCL_PARAM(Ll128Nthreads, "LL128_NTHREADS", -2);
 
-static int getNthreads(const char* name, int env, int min, int max) {
+static int getNthreads(const char* name, int env, int min, int max, int def) {
   int nt = env;
   if (nt > 0) {
     if (nt % WARP_SIZE != 0) {
@@ -26,7 +26,7 @@ static int getNthreads(const char* name, int env, int min, int max) {
       nt = min;
      }
   } else {
-    nt = max;
+    nt = def;
   }
   return nt;
 }
@@ -78,9 +78,9 @@ static const double ll128MaxBw[NCCL_NUM_FUNCTIONS] = { 113.0, 72.0, 110.0, 91.0,
 
 ncclResult_t ncclSetThresholds(struct ncclComm* comm, int minCompCap, int maxCompCap, struct ncclTopoGraph* treeGraph, struct ncclTopoGraph* ringGraph) {
   int simpleDefaultThreads = (treeGraph->nvlink == 0 && ringGraph->nvlink == 0) ? 256 : NCCL_MAX_NTHREADS;
-  comm->maxThreads[NCCL_PROTO_SIMPLE] = getNthreads("NCCL_NTHREADS", ncclParamNthreads(), 2*WARP_SIZE, simpleDefaultThreads);
-  comm->maxThreads[NCCL_PROTO_LL] = getNthreads("NCCL_NTHREADS", ncclParamNthreads(), 2*WARP_SIZE, NCCL_MAX_NTHREADS);
-  comm->maxThreads[NCCL_PROTO_LL128] = getNthreads("NCCL_LL128_NTHREADS", ncclParamLl128Nthreads(), NCCL_LL128_MAX_NTHREADS/4, NCCL_LL128_MAX_NTHREADS);
+  comm->maxThreads[NCCL_PROTO_SIMPLE] = getNthreads("NCCL_NTHREADS", ncclParamNthreads(), 2*WARP_SIZE, NCCL_MAX_NTHREADS, simpleDefaultThreads);
+  comm->maxThreads[NCCL_PROTO_LL] = getNthreads("NCCL_NTHREADS", ncclParamNthreads(), 2*WARP_SIZE, NCCL_MAX_NTHREADS, NCCL_MAX_NTHREADS);
+  comm->maxThreads[NCCL_PROTO_LL128] = getNthreads("NCCL_LL128_NTHREADS", ncclParamLl128Nthreads(), NCCL_LL128_MAX_NTHREADS/4, NCCL_LL128_MAX_NTHREADS, NCCL_LL128_MAX_NTHREADS);
 
   INFO(NCCL_INIT, "Threads per block : %d/%d/%d", comm->maxThreads[NCCL_PROTO_LL], comm->maxThreads[NCCL_PROTO_LL128], comm->maxThreads[NCCL_PROTO_SIMPLE]);
 
