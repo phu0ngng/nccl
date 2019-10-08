@@ -28,11 +28,6 @@
 #define STR2(v) #v
 #define STR(v) STR2(v)
 
-int ncclDebugLevel;
-uint64_t ncclDebugMask = NCCL_INIT; // Default debug sub-system mask is INIT
-pthread_mutex_t ncclDebugOutputLock;
-FILE *ncclDebugFile = stdout;
-
 #ifdef ENABLE_TRACE
 std::chrono::high_resolution_clock::time_point ncclEpoch;
 #endif
@@ -107,7 +102,6 @@ static ncclResult_t ncclInit() {
   pthread_mutex_lock(&initLock);
   if (!initialized) {
     initEnv();
-    initDebug();
     initNet();
     initialized = true;
   }

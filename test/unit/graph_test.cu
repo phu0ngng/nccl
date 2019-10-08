@@ -447,7 +447,6 @@ int checkTopo(const char* name, const char** topo, int topoSize, int nvlinkWidth
 
 int main() {
   setlinebuf(stdout);
-  initDebug();
   int errors = 0;
 #ifdef __x86_64__
   RUN("LOC-1G", TOPO(local_topo, DEF),    0, 1, PCI_WIDTH,            2*PCI_WIDTH,          1, LINK_LOC, NCCL_TOPO_PATTERN_TREE,       1, PCI_WIDTH,            1, LINK_LOC, 0);
