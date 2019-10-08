@@ -143,7 +143,7 @@ __device__ void ncclAllReduceTreeKernel(struct CollectiveArgs* args) {
 template<int UNROLL, class FUNC, typename T>
 __device__ void ncclAllReduceAcclKernel(struct CollectiveArgs* args) {
   const int tid = threadIdx.x;
-  const int nthreads = blockDim.x - 1;
+  const int nthreads = args->nThreads-WARP_SIZE;
   const int bid = args->bid;
   struct ncclDevComm* comm = args->comm;
   struct ncclChannel* channel = comm->channels+blockIdx.x;
@@ -158,7 +158,7 @@ __device__ void ncclAllReduceAcclKernel(struct CollectiveArgs* args) {
 
   if (blockIdx.x % 2 == 0) {
     struct ncclTree* tree = &channel->collTreeUp;
-    ncclPrimitives<UNROLL, 1, 1, T, 1, 1, FUNC> prims(tid, nthreads, tree->down, &tree->up, NULL, stepSize, channel, comm, args->opCount);
+    ncclPrimitives<UNROLL, 1, 1, T, 1, 1, FUNC> prims(tid, args->nThreads, tree->down, &tree->up, NULL, stepSize, channel, comm, args->opCount);
     for (ssize_t gridOffset = 0; gridOffset < size; gridOffset += loopSize) {
       // Up
       ssize_t offset = gridOffset + bid*chunkSize;
@@ -175,7 +175,7 @@ __device__ void ncclAllReduceAcclKernel(struct CollectiveArgs* args) {
 
   if (blockIdx.x % 2 == 1) {
   struct ncclTree* tree = &channel->collTreeDn;
-    ncclPrimitives<UNROLL, 1, 1, T, 1, 1, FUNC> prims(tid, nthreads, &tree->up, tree->down, NULL, stepSize, channel, comm, args->opCount);
+    ncclPrimitives<UNROLL, 1, 1, T, 1, 1, FUNC> prims(tid, args->nThreads, &tree->up, tree->down, NULL, stepSize, channel, comm, args->opCount);
     for (ssize_t gridOffset = 0; gridOffset < size; gridOffset += loopSize) {
       // Down
       ssize_t offset = gridOffset + bid*chunkSize;
