@@ -363,15 +363,17 @@ ncclResult_t collNetSendProxy(struct ncclProxyArgs* args) {
           int stepSize = args->channel->buffSize/NCCL_STEPS;
           struct ncclRecvMem* localMem = resources->useGdr ? resources->devRecvMem : resources->hostRecvMem;
           // Send through network
-          int count = sizesFifo[buffSlot]/ncclTypeSize(args->dtype);
-          NCCLCHECK(collNetIallreduce(resources->collNetSendComm, localMem->buff+buffSlot*stepSize, (void*)(reqFifo[buffSlot].recvBuff), count, args->dtype, args->redOp, resources->sendMhandle, resources->recvMhandle, args->requests+buffSlot));
-          if (args->requests[buffSlot] != NULL) {
-            TRACE(NCCL_NET, "sendProxy [%d/%d] Iallreduce posted, req %p", args->head, buffSlot, args->requests[buffSlot]);
-            sizesFifo[buffSlot] = -1;
-            // Make sure size is reset to zero before we update the head.
-            __sync_synchronize();
-            args->tail += args->sliceSteps;
-            args->idle = 0;
+          if (sizesFifo[buffSlot] != -1) {
+            int count = sizesFifo[buffSlot]/ncclTypeSize(args->dtype);
+            NCCLCHECK(collNetIallreduce(resources->collNetSendComm, localMem->buff+buffSlot*stepSize, (void*)(reqFifo[buffSlot].recvBuff), count, args->dtype, args->redOp, resources->sendMhandle, resources->recvMhandle, args->requests+buffSlot));
+            if (args->requests[buffSlot] != NULL) {
+              TRACE(NCCL_NET, "sendProxy [%d/%d] Iallreduce posted, req %p count %d", args->head, buffSlot, args->requests[buffSlot], count);
+              sizesFifo[buffSlot] = -1;
+              // Make sure size is reset to zero before we update the head.
+              __sync_synchronize();
+              args->tail += args->sliceSteps;
+              args->idle = 0;
+            }
           }
         }
       }
