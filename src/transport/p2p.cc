@@ -74,7 +74,7 @@ ncclResult_t p2pCanConnect(int* ret, struct ncclTopoSystem* topo, struct ncclTop
     // Peer's CUDA device is not visible in this process
 #if CUDART_VERSION >= 10010
     // But in CUDA 10.1 we can still communicate with 'invisible' devices
-    TRACE(NCCL_INIT|NCCL_P2P, "Checking P2P connection between %lx and %lx" info1->busId, info2->busId);
+    TRACE(NCCL_INIT|NCCL_P2P, "Checking P2P connection between %lx and %lx", info1->busId, info2->busId);
     // Check for NVLink/NVswitch including P2P access
     int nvlink;
     NCCLCHECK(ncclTopoGetNvlink(topo, info1->busId, info2->busId, &nvlink));
