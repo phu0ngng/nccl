@@ -279,7 +279,7 @@ ncclResult_t ncclTopoTrimSystem(struct ncclTopoSystem* system, struct ncclComm* 
         struct ncclTopoNode* node = system->nodes[t].nodes+n;
         if (node == gpu) continue;
         for (int l=0; l<node->nlinks; l++) {
-          while (node->links[l].remNode == gpu) {
+          while (node->links[l].remNode == gpu && l<node->nlinks) {
             memcpy(node->links+l, node->links+l+1, (node->nlinks-l-1)*sizeof(struct ncclTopoLink));
             node->nlinks--;
           }
