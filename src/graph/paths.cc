@@ -271,7 +271,12 @@ ncclResult_t ncclTopoTrimSystem(struct ncclTopoSystem* system, struct ncclComm* 
       gpu = system->nodes[GPU].nodes+g;
       if (gpu->id == ids[i]) break;
     }
-    if (gpu == NULL) { WARN("Could not find id %d", ids[i]); return ncclInternalError; }
+    if (gpu == NULL) {
+      WARN("Could not find id %d", ids[i]);
+      free(domains);
+      free(ids);
+      return ncclInternalError;
+    }
 
     // Remove GPUs I can't access (even indirectly) from my view of the node
     for (int t=0; t<NCCL_TOPO_NODE_TYPES; t++) {
@@ -298,6 +303,8 @@ ncclResult_t ncclTopoTrimSystem(struct ncclTopoSystem* system, struct ncclComm* 
     // Trim network
     system->nodes[NET].count = 0;
   }
+  free(domains);
+  free(ids);
   return ncclSuccess;
 }
 
