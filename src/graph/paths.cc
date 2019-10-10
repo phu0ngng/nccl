@@ -246,7 +246,8 @@ ncclResult_t ncclTopoComputePaths(struct ncclTopoSystem* system, struct ncclPeer
 }
 
 ncclResult_t ncclTopoTrimSystem(struct ncclTopoSystem* system, struct ncclComm* comm) {
-  int *domains, *ids;
+  int *domains;
+  int64_t *ids;
   NCCLCHECK(ncclCalloc(&domains, system->nodes[GPU].count));
   NCCLCHECK(ncclCalloc(&ids, system->nodes[GPU].count));
   int myDomain = 0;
@@ -269,10 +270,10 @@ ncclResult_t ncclTopoTrimSystem(struct ncclTopoSystem* system, struct ncclComm* 
     int g;
     for (g=0; g<system->nodes[GPU].count /* This one varies over the loops */; g++) {
       gpu = system->nodes[GPU].nodes+g;
-      if (gpu->id == ids[i]) break;
+      if (gpu->id == ids[i]) break; else gpu=NULL;
     }
     if (gpu == NULL) {
-      WARN("Could not find id %d", ids[i]);
+      WARN("Could not find id %lx", ids[i]);
       free(domains);
       free(ids);
       return ncclInternalError;
@@ -284,17 +285,19 @@ ncclResult_t ncclTopoTrimSystem(struct ncclTopoSystem* system, struct ncclComm* 
         struct ncclTopoNode* node = system->nodes[t].nodes+n;
         if (node == gpu) continue;
         for (int l=0; l<node->nlinks; l++) {
-          while (node->links[l].remNode == gpu && l<node->nlinks) {
-            memcpy(node->links+l, node->links+l+1, (node->nlinks-l-1)*sizeof(struct ncclTopoLink));
+          while (l<node->nlinks && node->links[l].remNode == gpu) {
+            if (l<node->nlinks-1)
+              memmove(node->links+l, node->links+l+1, (node->nlinks-l-1)*sizeof(struct ncclTopoLink));
             node->nlinks--;
           }
-          if (node->links[l].remNode->type == GPU && node->links[l].remNode >= gpu) {
+          if (l<node->nlinks && node->links[l].remNode->type == GPU && node->links[l].remNode >= gpu) {
             node->links[l].remNode--;
           }
         }
       }
     }
-    memcpy(gpu, gpu+1, (system->nodes[GPU].count-g-1)*sizeof(struct ncclTopoNode));
+    if (g != system->nodes[GPU].count-1)
+      memmove(gpu, gpu+1, (system->nodes[GPU].count-g-1)*sizeof(struct ncclTopoNode));
     system->nodes[GPU].count--;
   }
 
