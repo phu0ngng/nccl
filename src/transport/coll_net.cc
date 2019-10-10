@@ -42,7 +42,6 @@ struct collNetSendResources {
   void* ll128RecvMhandle;
   struct ncclRecvMem* devRecvMem;
   uint64_t step;
-  uint64_t llStep;
   uint64_t llLastCleaning;
   struct reqSlot* reqFifo;
   int collNetRank;
@@ -64,7 +63,6 @@ struct collNetRecvResources {
   void* ll128Mhandle;
   struct ncclRecvMem* devRecvMem;
   uint64_t step;
-  uint64_t llStep;
   uint64_t llLastCleaning;
   struct reqSlot* reqFifo;
   int collNetRank;
