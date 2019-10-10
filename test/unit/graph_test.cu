@@ -305,7 +305,7 @@ void createSystem(struct ncclTopoSystem* system, const char* desc[], int descSiz
       struct ncclTopoNode* node;
       CHECK(ncclTopoCreateNode(system, &node, type, id));
       if (node->type == GPU) node->rank = id;
-      if (node->type == NET) node->rank = id | NET_GDR_MASK;
+      if (node->type == NET) node->rank = id;
 
       // Don't add NICs in intra-node mode
       if (inter == 0 && node->type == NIC) break;
