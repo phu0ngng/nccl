@@ -149,8 +149,13 @@ __device__ void ncclAllReduceAcclKernel(struct CollectiveArgs* args) {
   struct ncclChannel* channel = comm->channels+blockIdx.x;
   const ssize_t size = args->N;
   const int stepSize = channel->buffSize / (sizeof(T)*NCCL_STEPS);
-  const int chunkSize = args->lastChunkSize;
+  int chunkSize = args->lastChunkSize;
+  const ssize_t minChunkSize = nthreads*8*sizeof(uint64_t) / sizeof(T);
   const ssize_t loopSize = args->nChannels*chunkSize;
+
+  if (loopSize > size) {
+    chunkSize = DIVUP(size, args->nChannels*minChunkSize)*minChunkSize;
+  }
 
   // Compute pointers
   const T * __restrict__ thisInput = (const T*)args->ThisInput;
@@ -174,7 +179,7 @@ __device__ void ncclAllReduceAcclKernel(struct CollectiveArgs* args) {
   }
 
   if (blockIdx.x % 2 == 1) {
-  struct ncclTree* tree = &channel->collTreeDn;
+    struct ncclTree* tree = &channel->collTreeDn;
     ncclPrimitives<UNROLL, 1, 1, T, 1, 1, FUNC> prims(tid, args->nThreads, &tree->up, tree->down, NULL, stepSize, channel, comm, args->opCount);
     for (ssize_t gridOffset = 0; gridOffset < size; gridOffset += loopSize) {
       // Down
@@ -331,7 +336,12 @@ __device__ void ncclAllReduceAcclLLKernel(struct CollectiveArgs* args) {
   struct ncclChannel* channel = comm->channels+blockIdx.x;
   const ssize_t size = args->N;
   ssize_t chunkSize = NCCL_LL_SLICE_LINES * sizeof(uint64_t) / sizeof(T);
+  const ssize_t minChunkSize = nthreads*sizeof(uint64_t) / sizeof(T);
   const ssize_t loopSize = args->nChannels*chunkSize;
+
+  if (loopSize > size) {
+    chunkSize = DIVUP(size, args->nChannels*minChunkSize)*minChunkSize;
+  }
 
   // Compute pointers
   const T * __restrict__ thisInput = (const T*)args->ThisInput;
@@ -519,7 +529,12 @@ __device__ void ncclAllReduceAcclLL128Kernel(struct CollectiveArgs* args) {
   struct ncclChannel* channel = comm->channels+blockIdx.x;
   const ssize_t size = args->N;
   ssize_t chunkSize = args->lastChunkSize;
+  const ssize_t minChunkSize = (NCCL_LL128_SHMEM_ELEMS_PER_THREAD*nthreads*NCCL_LL128_DATAELEMS*sizeof(uint64_t))/(NCCL_LL128_LINEELEMS*sizeof(T))/8;
   const ssize_t loopSize = args->nChannels*chunkSize;
+
+  if (loopSize > size) {
+    chunkSize = DIVUP(size, args->nChannels*minChunkSize)*minChunkSize;
+  }
 
   // Compute pointers
   const T * __restrict__ thisInput = (const T*)args->ThisInput;
