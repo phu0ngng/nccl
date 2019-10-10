@@ -55,6 +55,7 @@ struct ncclTopoGraph {
   // Input / output
   int pattern;
   int crossNic;
+  int maxChannels;
   // Output
   int nChannels;
   int speedIntra;

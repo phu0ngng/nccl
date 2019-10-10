@@ -386,19 +386,21 @@ int checkTopo(const char* name, const char** topo, int topoSize, int nvlinkWidth
   createSystem(&system, topo, topoSize, nvlinkWidth, inter);
   CHECK(ncclTopoPrint(&system));
 
+  struct ncclTopoGraph ringGraph;
+  memset(&ringGraph, 0, sizeof(ringGraph));
+  ringGraph.pattern = NCCL_TOPO_PATTERN_RING;
+  ringGraph.crossNic = 2;
+  ringGraph.maxChannels = 16;
+
   struct ncclTopoGraph treeGraph;
   memset(&treeGraph, 0, sizeof(treeGraph));
   treeGraph.pattern = NCCL_TOPO_PATTERN_SPLIT_TREE;
   treeGraph.crossNic = 2;
 
-  struct ncclTopoGraph ringGraph;
-  memset(&ringGraph, 0, sizeof(ringGraph));
-  ringGraph.pattern = NCCL_TOPO_PATTERN_RING;
-  ringGraph.crossNic = 2;
-
   uint64_t computeTime = getTime();
-  CHECK(ncclTopoCompute(&system, &treeGraph));
   CHECK(ncclTopoCompute(&system, &ringGraph));
+  treeGraph.maxChannels = ringGraph.nChannels;
+  CHECK(ncclTopoCompute(&system, &treeGraph));
   computeTime = getTime() - computeTime;
 
   CHECK(ncclTopoPrintGraph(&system, &treeGraph));

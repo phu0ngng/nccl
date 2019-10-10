@@ -484,17 +484,19 @@ static ncclResult_t initTransportsRank(struct ncclComm* comm, ncclUniqueId* comm
   NCCLCHECK(ncclTopoPrint(comm->topo));
 
   // Get rings and trees
-  struct ncclTopoGraph treeGraph;
-  treeGraph.pattern = NCCL_TOPO_PATTERN_SPLIT_TREE;
-  treeGraph.crossNic = ncclParamCrossNic();
-  // We communicate only half the data between node with trees on 2 nodes.
-  NCCLCHECK(ncclTopoCompute(comm->topo, &treeGraph));
-  NCCLCHECK(ncclTopoPrintGraph(comm->topo, &treeGraph));
   struct ncclTopoGraph ringGraph;
   ringGraph.pattern = NCCL_TOPO_PATTERN_RING;
   ringGraph.crossNic = ncclParamCrossNic();
+  ringGraph.maxChannels = MAXCHANNELS/2;
   NCCLCHECK(ncclTopoCompute(comm->topo, &ringGraph));
   NCCLCHECK(ncclTopoPrintGraph(comm->topo, &ringGraph));
+  struct ncclTopoGraph treeGraph;
+  treeGraph.pattern = NCCL_TOPO_PATTERN_SPLIT_TREE;
+  treeGraph.crossNic = ncclParamCrossNic();
+  ringGraph.maxChannels = ringGraph.nChannels;
+  // We communicate only half the data between node with trees on 2 nodes.
+  NCCLCHECK(ncclTopoCompute(comm->topo, &treeGraph));
+  NCCLCHECK(ncclTopoPrintGraph(comm->topo, &treeGraph));
 
   // AllGather3 - begin
 
