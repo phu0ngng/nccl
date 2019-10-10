@@ -157,12 +157,46 @@ static ncclResult_t ncclTopoGetCpuPciP2pWidth(int* width) {
   *width = cpuPciWidth;
   return ncclSuccess;
 }
-static ncclResult_t ncclTopoGetPciWidth(int* width) {
-  *width = PCI_WIDTH;
-  return ncclSuccess;
-}
 static ncclResult_t ncclTopoGetNetWidth(int* width) {
   *width = NET_WIDTH;
+  return ncclSuccess;
+}
+static ncclResult_t ncclTopoGetPciWidth(char* path, int offset, int* pciWidth) {
+  char* filePath;
+  NCCLCHECK(ncclCalloc(&filePath, offset + sizeof("/max_link_speed")));
+  int fd;
+
+  /* Get speed from max_link_speed */
+  int speed = 0;
+  memcpy(filePath, path, offset);
+  sprintf(filePath+offset, "/max_link_speed");
+  if ((fd = open(filePath, O_RDONLY)) != -1) {
+    char str[8];
+    int len;
+    SYSCHECKVAL(read(fd, str, 8), "read", len);
+    str[len-1] = '\0'; // Replace \n by \0
+    close(fd);
+    if (strcmp(str, "2.5 GT/s") == 0) speed=187; // Gen 1
+    if (strcmp(str, "5 GT/s") == 0) speed=375;   // Gen 2
+    if (strcmp(str, "8 GT/s") == 0) speed=750;   // Gen 3
+    if (strcmp(str, "16 GT/s") == 0) speed=1500; // Gen 4
+  }
+
+  /* Get width from max_link_width */
+  int width = 0;
+  sprintf(filePath+offset, "/max_link_width");
+  if ((fd = open(filePath, O_RDONLY)) != -1) {
+    char str[8];
+    int len;
+    SYSCHECKVAL(read(fd, str, 8), "read", len);
+    str[len-1] = '\0'; // Replace \n by \0
+    close(fd);
+    width = strtol(str, NULL, 0);
+  }
+  int GBps = speed*width/1000;
+  memcpy(filePath, path, offset);
+  filePath[offset] = '\0';
+  *pciWidth = GBps ? GBps : PCI_WIDTH;
   return ncclSuccess;
 }
 
@@ -300,17 +334,13 @@ ncclResult_t ncclTopoConnectNVLink(nvmlDevice_t* nvmlDevs, struct ncclTopoSystem
     minNvlinks = std::min(minNvlinks, nvlinks);
     minWidth = std::min(minWidth, width);
   }
-  int pciWidth;
-  NCCLCHECK(ncclTopoGetPciWidth(&pciWidth));
-  system->maxSpeed = minNvlinks ? minNvlinks*minWidth : pciWidth;
-  system->maxWidth = minNvlinks ? minWidth : pciWidth;
+  system->maxSpeed = minNvlinks*minWidth;
+  system->maxWidth = minWidth;
   return ncclSuccess;
 }
 
 ncclResult_t ncclTopoCreatePciPath(struct ncclTopoSystem* system, struct ncclTopoNode* endNode, char* path) {
   struct ncclTopoNode* lastNode = endNode;
-  int pciWidth;
-  NCCLCHECK(ncclTopoGetPciWidth(&pciWidth));
   // Find intermediate PCI switches
   int slashCount = 0;
   int offsetRC = 0;
@@ -320,35 +350,43 @@ ncclResult_t ncclTopoCreatePciPath(struct ncclTopoSystem* system, struct ncclTop
     offsetRC++;
   }
   int offset = strlen(path);
+
+  // lastPciWidth should be the speed of the PCI endpoint
+  // pciWidth should be the speed of the PCI switch / CPU
+  int lastPciWidth = 0, pciWidth;
+  NCCLCHECK(ncclTopoGetPciWidth(path, offset, &pciWidth));
+
   slashCount = 0;
   while (--offset > offsetRC) {
     if (path[offset] == '/') {
       slashCount++;
+      lastPciWidth = pciWidth;
+      NCCLCHECK(ncclTopoGetPciWidth(path, offset, &pciWidth));
       // Find if already existing
       if ((slashCount%2) == 0) {
+        int width = std::min(pciWidth, lastPciWidth);
         int64_t pciId;
         NCCLCHECK(pciPathToInt64(path, offset, offsetRC, &pciId));
         for (int p=0; p<system->nodes[PCI].count; p++) {
           if (system->nodes[PCI].nodes[p].id == pciId) {
             // Found our PCI switch. Attach and stop since the rest should already
             // be connected
-            NCCLCHECK(ncclTopoConnectNodes(system->nodes[PCI].nodes+p, lastNode, LINK_PCI, pciWidth));
-            NCCLCHECK(ncclTopoConnectNodes(lastNode, system->nodes[PCI].nodes+p, LINK_PCI, pciWidth));
+            NCCLCHECK(ncclTopoConnectNodes(system->nodes[PCI].nodes+p, lastNode, LINK_PCI, width));
+            NCCLCHECK(ncclTopoConnectNodes(lastNode, system->nodes[PCI].nodes+p, LINK_PCI, width));
             return ncclSuccess;
           }
         }
         struct ncclTopoNode* pciNode;
         NCCLCHECK(ncclTopoCreateNode(system, &pciNode, PCI, pciId));
-        NCCLCHECK(ncclTopoConnectNodes(pciNode, lastNode, LINK_PCI, pciWidth));
-        NCCLCHECK(ncclTopoConnectNodes(lastNode, pciNode, LINK_PCI, pciWidth));
+        NCCLCHECK(ncclTopoConnectNodes(pciNode, lastNode, LINK_PCI, width));
+        NCCLCHECK(ncclTopoConnectNodes(lastNode, pciNode, LINK_PCI, width));
         lastNode = pciNode;
       }
     }
   }
   // Then attach to a CPU node
   int numaId = getNumaId(path);
-  int width;
-  NCCLCHECK(ncclTopoGetCpuPciP2pWidth(&width));
+  int width = std::min(pciWidth, lastPciWidth);
   NCCLCHECK(ncclTopoConnectCpu(system, numaId, lastNode, LINK_PCI, width));
   return ncclSuccess;
 }
@@ -398,8 +436,8 @@ ncclResult_t ncclTopoComputeNetInfo(struct netInfo* netInfos, int ndev) {
     if (info->path && (ibGuid = getIbGuid(info->path)) != 0) {
       info->asic = ibGuid;
 
-      // Use "strlen(path)-2" to remove trailing subdevice and merge multi-port cards into one
-      info->path[strlen(info->path)-2]='\0';
+      // Set PCI subdevice to 0 to merge multi-port cards into one
+      info->path[strlen(info->path)-1]='0';
       NCCLCHECK(pciPathToInt64(info->path, strlen(info->path), 0, &info->nic));
 
       // Same PCI path -> different ports of the same NIC
