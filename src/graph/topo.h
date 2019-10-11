@@ -17,6 +17,7 @@
 #define QPI_WIDTH 8
 #define SKL_QPI_WIDTH 12
 #define P9_WIDTH 32
+#define AMD_WIDTH 5000         // Refine later
 #define NET_WIDTH 12           // 100Gbit
 
 // Intel CPU convert GPU P2P traffic into 64B PCI TLPs, to GPU
@@ -24,13 +25,14 @@
 #define INTEL_P2P(speed) (speed*9/12)
 #define INTEL_P2P_OVERHEAD(speed) (speed*12/9)
 
-#define NCCL_TOPO_NODE_TYPES 6
+#define NCCL_TOPO_NODE_TYPES 7
 #define GPU 0
 #define PCI 1
 #define NVS 2
 #define CPU 3 // Actually NUMA domains
 #define NIC 4
 #define NET 5
+#define NPT 6
 extern const char* topoNodeTypeStr[];
 
 #define LINK_LOC 0
@@ -58,10 +60,34 @@ struct ncclTopoLinkList {
   int type;
 };
 
+#define NCCL_TOPO_CPU_UNKNOWN 0
+#define NCCL_TOPO_CPU_INTEL 1
+#define NCCL_TOPO_CPU_AMD 2
+#define NCCL_TOPO_CPU_POWER 3
+#define NCCL_TOPO_CPU_ARM 4
+
+#define NCCL_TOPO_CPU_INTEL_HSW 1
+#define NCCL_TOPO_CPU_INTEL_SKL 2
+
 struct ncclTopoNode {
   int type;
   int64_t id;
-  int rank;
+  // Type specific data
+  union {
+    struct {
+      int rank;
+      int cudaCompCap;
+    }gpu;
+    struct {
+      uint64_t asic;
+      int port;
+      int width;
+    }net;
+    struct {
+      int type;
+      int model;
+    }cpu;
+  };
   int nlinks;
   struct ncclTopoLink links[NCCL_TOPO_MAX_LINKS];
   // Pre-computed paths to GPUs and NICs

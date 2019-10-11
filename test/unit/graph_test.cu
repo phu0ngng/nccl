@@ -304,8 +304,11 @@ void createSystem(struct ncclTopoSystem* system, const char* desc[], int descSiz
       // Create new node if needed
       struct ncclTopoNode* node;
       CHECK(ncclTopoCreateNode(system, &node, type, id));
-      if (node->type == GPU) node->rank = id;
-      if (node->type == NET) node->rank = id;
+      if (node->type == GPU) node->gpu.rank = id;
+      if (node->type == NET) {
+        node->net.asic = node->net.port = id;
+        node->net.width = PCI_WIDTH;
+      }
 
       // Don't add NICs in intra-node mode
       if (inter == 0 && node->type == NIC) break;

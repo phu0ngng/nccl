@@ -202,10 +202,10 @@ ncclResult_t ncclTopoComputePaths(struct ncclTopoSystem* system, struct ncclPeer
 
     if (peerInfos == NULL) continue;
     // Update paths from GPUs p to GPU g when we can't or don't want to use P2P or even SHM
-    struct ncclPeerInfo* dstInfo = peerInfos+system->nodes[GPU].nodes[g].rank;
+    struct ncclPeerInfo* dstInfo = peerInfos+system->nodes[GPU].nodes[g].gpu.rank;
     for (int p=0; p<system->nodes[GPU].count; p++) {
       if (p == g) continue;
-      struct ncclPeerInfo* srcInfo = peerInfos+system->nodes[GPU].nodes[p].rank;
+      struct ncclPeerInfo* srcInfo = peerInfos+system->nodes[GPU].nodes[p].gpu.rank;
       int p2p;
       NCCLCHECK(ncclTransports[TRANSPORT_P2P].canConnect(&p2p, system, NULL, srcInfo, dstInfo));
       if (p2p == 0) {
@@ -231,7 +231,7 @@ ncclResult_t ncclTopoComputePaths(struct ncclTopoSystem* system, struct ncclPeer
 
     if (peerInfos == NULL) continue;
     for (int g=0; g<system->nodes[GPU].count; g++) {
-      if ((peerInfos[system->nodes[GPU].nodes[g].rank].gdrSupport & (1 << n)) == 0) {
+      if ((peerInfos[system->nodes[GPU].nodes[g].gpu.rank].gdrSupport & (1 << n)) == 0) {
         // We cannot use GPU Direct RDMA, so we need all NIC<->GPU paths
         // to go through a CPU
         int localCpu;
@@ -259,7 +259,7 @@ ncclResult_t ncclTopoTrimSystem(struct ncclTopoSystem* system, struct ncclComm* 
         domains[g] = std::min(domains[g], domains[p]);
       }
     }
-    if (gpu->rank == comm->rank) myDomain = domains[g];
+    if (gpu->gpu.rank == comm->rank) myDomain = domains[g];
   }
 
   int ngpus = system->nodes[GPU].count;
@@ -301,25 +301,29 @@ ncclResult_t ncclTopoTrimSystem(struct ncclTopoSystem* system, struct ncclComm* 
   return ncclSuccess;
 }
 
-static ncclResult_t getGpuSpeed(struct ncclTopoNode* node, int* speed) {
+static ncclResult_t getGpuSpeed(struct ncclTopoNode* node, struct ncclTopoSystem* system) {
   int nvlSpeed = 0;
-  int nvlPeers = 0;
+  int nvlWidth = 0;
   int pciSpeed = 0;
   for (int l=0; l<node->nlinks; l++) {
-    if (node->links[l].type == LINK_NVL) nvlSpeed += node->links[l].width;
-    if (node->links[l].remNode->type == GPU) nvlPeers++; else nvlPeers = 2;
+    if (node->links[l].type == LINK_NVL) {
+      nvlSpeed += node->links[l].width;
+      nvlWidth = node->gpu.cudaCompCap/10 == 6 ? PASCAL_NVLINK_WIDTH : VOLTA_NVLINK_WIDTH;
+    }
     if (node->links[l].type == LINK_PCI) pciSpeed = node->links[l].width;
   }
-  *speed = std::min(*speed, std::max(nvlSpeed, pciSpeed));
+  system->maxSpeed = std::min(system->maxSpeed, std::max(nvlSpeed, pciSpeed));
+  system->maxWidth = std::min(system->maxWidth, std::max(nvlWidth, pciSpeed));
   return ncclSuccess;
 }
 
 ncclResult_t ncclTopoGetMaxSpeed(struct ncclTopoSystem* system) {
   // Compute max speed to try to accelerate the search.
   system->maxSpeed = LOC_WIDTH;
+  system->maxWidth = LOC_WIDTH;
 
   for (int g=0; g<system->nodes[GPU].count; g++) {
-    NCCLCHECK(getGpuSpeed(system->nodes[GPU].nodes+g, &system->maxSpeed));
+    NCCLCHECK(getGpuSpeed(system->nodes[GPU].nodes+g, system));
   }
   if (system->nodes[NET].count) {
     // Try to assign one NIC per GPU

@@ -92,21 +92,14 @@ ncclResult_t ncclTopoCudaPath(int cudaDev, char** path) {
 int interCpuWidth = 0;
 int cpuPciWidth = 0;
 
-static ncclResult_t getCpuWidths() {
-  // Check if already detected
-  if (interCpuWidth + cpuPciWidth) return ncclSuccess;
-
-  // Defaults
-  char cpu[256];
-  sprintf(cpu, "Generic");
-  cpuPciWidth = interCpuWidth = PCI_WIDTH;
-
-#ifdef __PPC__
-  sprintf(cpu, "ppc64");
-  interCpuWidth = P9_WIDTH;
-#endif
-#ifdef __x86_64__
-  sprintf(cpu, "x86_64");
+static ncclResult_t ncclTopoGetCpuInfo(struct ncclTopoNode* cpu) {
+#if defined(__PPC__)
+  cpu->cpu.type = NCCL_TOPO_CPU_POWER;
+  INFO(NCCL_GRAPH, "CPU: PPC");
+#elif defined(__aarch64__)
+  cpu->cpu.type = NCCL_TOPO_CPU_ARM;
+  INFO(NCCL_GRAPH, "CPU: Arm");
+#elif defined(__x86_64__)
   union {
     struct {
       // CPUID 0 String register order
@@ -118,9 +111,8 @@ static ncclResult_t getCpuWidths() {
   } cpuid0;
 
   asm volatile("cpuid" : "=b" (cpuid0.ebx), "=c" (cpuid0.ecx), "=d" (cpuid0.edx) : "a" (0));
-  if (strncmp(cpuid0.vendor, "GenuineIntel", 12) == 0) sprintf(cpu, "Intel");
-
-  if (strcmp(cpu, "Intel") == 0) {
+  if (strncmp(cpuid0.vendor, "GenuineIntel", 12) == 0) {
+    cpu->cpu.type = NCCL_TOPO_CPU_INTEL;
     union {
       struct {
         int steppingId:4;
@@ -136,25 +128,27 @@ static ncclResult_t getCpuWidths() {
     } cpuid1;
     asm volatile("cpuid" : "=a" (cpuid1.val) : "a" (1));
     if (cpuid1.familyId == 6 && cpuid1.modelId >= 0x55) { // Skylake
-      sprintf(cpu, "Intel/Skylake (or later)");
-      interCpuWidth = SKL_QPI_WIDTH;
+      cpu->cpu.model = NCCL_TOPO_CPU_INTEL_SKL;
+      INFO(NCCL_GRAPH, "CPU : Intel Skylake or later");
     } else {
-      interCpuWidth = QPI_WIDTH;
+      cpu->cpu.model = NCCL_TOPO_CPU_INTEL_HSW;
+      INFO(NCCL_GRAPH, "CPU : Intel Haswell or earlier");
     }
   }
+  else if (strncmp(cpuid0.vendor, "AuthenticAMD", 12) == 0) {
+    cpu->cpu.type = NCCL_TOPO_CPU_AMD;
+    INFO(NCCL_GRAPH, "CPU : AMD");
+  }
 #endif
-  INFO(NCCL_GRAPH, "%s CPU (PCI %d, InterCpu %d)", cpu, cpuPciWidth, interCpuWidth);
   return ncclSuccess;
 }
 
-static ncclResult_t ncclTopoGetInterCpuWidth(int* width) {
-  NCCLCHECK(getCpuWidths());
-  *width = interCpuWidth;
-  return ncclSuccess;
-}
-static ncclResult_t ncclTopoGetCpuPciP2pWidth(int* width) {
-  NCCLCHECK(getCpuWidths());
-  *width = cpuPciWidth;
+static ncclResult_t ncclTopoGetInterCpuWidth(struct ncclTopoNode* cpu, int* width) {
+  switch (cpu->cpu.type) {
+    case NCCL_TOPO_CPU_INTEL: *width = cpu->cpu.model == NCCL_TOPO_CPU_INTEL_SKL ? SKL_QPI_WIDTH : QPI_WIDTH; break;
+    case NCCL_TOPO_CPU_POWER: *width = P9_WIDTH; break;
+    default: *width = LOC_WIDTH;
+  }
   return ncclSuccess;
 }
 static ncclResult_t ncclTopoGetNetWidth(int* width) {
@@ -256,11 +250,11 @@ ncclResult_t ncclTopoConnectCpu(struct ncclTopoSystem* system, int numaId, struc
 ncclResult_t ncclTopoConnectNVLink(nvmlDevice_t* nvmlDevs, struct ncclTopoSystem* system) {
   struct ncclTopoNode* nvsNode = NULL;
 
-  int minNvlinks = 6, minWidth = VOLTA_NVLINK_WIDTH;
   for (int g=0; g<system->nodes[GPU].count; g++) {
     struct ncclTopoNode* gpu = system->nodes[GPU].nodes+g;
     int cudaMajor, cudaMinor;
     NCCLCHECK(wrapNvmlDeviceGetCudaComputeCapability(nvmlDevs[g], &cudaMajor, &cudaMinor));
+    gpu->gpu.cudaCompCap = cudaMajor*10+cudaMinor;
     int maxNvLinks, width;
     if (cudaMajor < 6) {
       maxNvLinks = 0;
@@ -326,16 +320,13 @@ ncclResult_t ncclTopoConnectNVLink(nvmlDevice_t* nvmlDevs, struct ncclTopoSystem
         if (nvsNode == NULL) { // Create nvswitch
           NCCLCHECK(ncclTopoCreateNode(system, &nvsNode, NVS, 0));
         }
-        NCCLCHECK(ncclTopoConnectNodes(gpu, nvsNode, LINK_NVL, VOLTA_NVLINK_WIDTH));
-        NCCLCHECK(ncclTopoConnectNodes(nvsNode, gpu, LINK_NVL, VOLTA_NVLINK_WIDTH));
+        NCCLCHECK(ncclTopoConnectNodes(gpu, nvsNode, LINK_NVL, width));
+        NCCLCHECK(ncclTopoConnectNodes(nvsNode, gpu, LINK_NVL, width));
         nvlinks++;
       }
     }
-    minNvlinks = std::min(minNvlinks, nvlinks);
-    minWidth = std::min(minWidth, width);
+    if (nvlinks > 0) system->maxWidth = std::min(system->maxWidth, width);
   }
-  system->maxSpeed = minNvlinks*minWidth;
-  system->maxWidth = minWidth;
   return ncclSuccess;
 }
 
@@ -417,12 +408,35 @@ uint64_t getIbGuid(char* path) {
   return guid;
 }
 
+#define IB_RATE_PATH "%s/infiniband/mlx5_*/ports/%d/rate"
+int getIbWidth(char* path, int port) {
+  int rate = NET_WIDTH;
+  char ratePath[PATH_MAX];
+  snprintf(ratePath, PATH_MAX, IB_RATE_PATH, path, port);
+  // PATH has a wildcard in it so use glob()
+  glob_t globbuf;
+  glob(ratePath, 0, NULL, &globbuf);
+  if (globbuf.gl_pathc > 0)
+    strncpy(ratePath, globbuf.gl_pathv[0], PATH_MAX);
+  globfree(&globbuf);
+  ratePath[PATH_MAX-1] = '\0';
+  FILE *file = fopen(ratePath, "r");
+  if (file != NULL) {
+    if (fscanf(file, "%d Gb/sec", &rate) != EOF) {
+      TRACE(NCCL_GRAPH, "Opened %s rate %d", ratePath, rate);
+    }
+    fclose(file);
+  }
+  return rate/8;
+}
+
 struct netInfo {
   char* path;
   int64_t nic;
   uint64_t asic;
   int port;
   int net;
+  int width;
 };
 
 ncclResult_t ncclTopoComputeNetInfo(struct netInfo* netInfos, int ndev) {
@@ -445,6 +459,7 @@ ncclResult_t ncclTopoComputeNetInfo(struct netInfo* netInfos, int ndev) {
 
       // Same GUID -> same network links as the other NIC
       for (int i=0; i<n; i++) if (netInfos[i].asic == info->asic && netInfos[i].port == info->port) info->net = netInfos[i].net;
+      info->width = getIbWidth(info->path, info->port+1); // IB ports start at 1
     }
     INFO(NCCL_GRAPH, "%s -> %x/%lx/%d/%d", info->path, info->nic, info->asic, info->port, info->net);
   }
@@ -463,8 +478,6 @@ ncclResult_t ncclTopoConnectPCI(struct ncclTopoSystem* system) {
   // Connect the NICs
   int netDevCount;
   NCCLCHECK(ncclNetDevices(&netDevCount));
-  int netWidth;
-  NCCLCHECK(ncclTopoGetNetWidth(&netWidth));
 
   struct netInfo* netInfos;
   NCCLCHECK(ncclCalloc(&netInfos, netDevCount));
@@ -493,9 +506,7 @@ ncclResult_t ncclTopoConnectPCI(struct ncclTopoSystem* system) {
         NCCLCHECK(ncclTopoCreatePciPath(system, nicNode, info->path));
       } else {
         // This is probably a virtual NIC. Just attach it directly to CPU 0
-        int width;
-        NCCLCHECK(ncclTopoGetCpuPciP2pWidth(&width));
-        NCCLCHECK(ncclTopoConnectCpu(system, 0, nicNode, LINK_PCI, width));
+        NCCLCHECK(ncclTopoConnectCpu(system, 0, nicNode, LINK_PCI, PCI_WIDTH));
       }
     }
     free(info->path);
@@ -504,11 +515,13 @@ ncclResult_t ncclTopoConnectPCI(struct ncclTopoSystem* system) {
     struct ncclTopoNode* netNode;
     NCCLCHECK(ncclTopoCreateNode(system, &netNode, NET, n));
 
-    // Use rank to store the net information
-    netNode->rank = info->net;
+    // Store the net information
+    netNode->net.asic = info->asic;
+    netNode->net.port = info->port;
+    netNode->net.width = info->width;
 
-    NCCLCHECK(ncclTopoConnectNodes(nicNode, netNode, LINK_NET, netWidth));
-    NCCLCHECK(ncclTopoConnectNodes(netNode, nicNode, LINK_NET, netWidth));
+    NCCLCHECK(ncclTopoConnectNodes(nicNode, netNode, LINK_NET, info->width));
+    NCCLCHECK(ncclTopoConnectNodes(netNode, nicNode, LINK_NET, info->width));
   }
   free(netInfos);
 
@@ -517,7 +530,7 @@ ncclResult_t ncclTopoConnectPCI(struct ncclTopoSystem* system) {
     for (int p=0; p<system->nodes[CPU].count; p++) {
       if (n == p) continue;
       int width;
-      NCCLCHECK(ncclTopoGetInterCpuWidth(&width));
+      NCCLCHECK(ncclTopoGetInterCpuWidth(system->nodes[CPU].nodes+n, &width));
       NCCLCHECK(ncclTopoConnectNodes(system->nodes[CPU].nodes+n, system->nodes[CPU].nodes+p, LINK_QPI, width));
     }
   }
@@ -526,7 +539,7 @@ ncclResult_t ncclTopoConnectPCI(struct ncclTopoSystem* system) {
 
 static ncclResult_t ncclTopoPrintRec(struct ncclTopoNode* node, struct ncclTopoNode* prevNode, char* line, int offset) {
   if (node->type == GPU) {
-    sprintf(line+offset, "%s/%lX (%d)", topoNodeTypeStr[node->type], node->id, node->rank);
+    sprintf(line+offset, "%s/%lX (%d)", topoNodeTypeStr[node->type], node->id, node->gpu.rank);
   } else {
     sprintf(line+offset, "%s/%lX", topoNodeTypeStr[node->type], node->id);
   }
@@ -543,7 +556,7 @@ static ncclResult_t ncclTopoPrintRec(struct ncclTopoNode* node, struct ncclTopoN
         NCCLCHECK(ncclTopoPrintRec(link->remNode, node, line, nextOffset));
       } else {
         if (link->remNode->type == NET) {
-          sprintf(line+nextOffset, "%s/%lX (%d)", topoNodeTypeStr[link->remNode->type], link->remNode->id, link->remNode->rank);
+          sprintf(line+nextOffset, "%s/%lX (%d)", topoNodeTypeStr[link->remNode->type], link->remNode->id, link->remNode->gpu.rank);
         } else {
           sprintf(line+nextOffset, "%s/%lX", topoNodeTypeStr[link->remNode->type], link->remNode->id);
         }
@@ -598,6 +611,7 @@ ncclResult_t ncclTopoSortSystem(struct ncclTopoSystem* system) {
 ncclResult_t ncclTopoGetSystem(struct ncclComm* comm, struct ncclTopoSystem** system) {
   struct ncclTopoSystem* s;
   NCCLCHECK(ncclCalloc(&s, 1));
+  s->maxWidth = LOC_WIDTH;
   nvmlDevice_t* nvmlDevs;
   int g = 0;
   NCCLCHECK(ncclCalloc(&nvmlDevs, comm->nRanks));
@@ -610,7 +624,7 @@ ncclResult_t ncclTopoGetSystem(struct ncclComm* comm, struct ncclTopoSystem** sy
       g++;
       struct ncclTopoNode* gpuNode;
       NCCLCHECK(ncclTopoCreateNode(s, &gpuNode, GPU, comm->peerInfo[r].busId));
-      gpuNode->rank = r;
+      gpuNode->gpu.rank = r;
     }
   }
 
