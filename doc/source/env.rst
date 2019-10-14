@@ -406,7 +406,7 @@ The ``NCCL_ALGO`` variable defines which algorithms NCCL will use.
 
 Values accepted
 ^^^^^^^^^^^^^^^
-Coma-separated list of algorithms (not case sensitive) : Tree, Ring. To specifiy algorithms to exclude (instead of include), start the list with ^.
+Coma-separated list of algorithms (not case sensitive) : Tree, Ring. To specify algorithms to exclude (instead of include), start the list with ^.
 
 Default is ``Tree,Ring``.
 
@@ -418,7 +418,7 @@ The ``NCCL_PROTO`` variable defines which protocol NCCL will use.
 
 Values accepted
 ^^^^^^^^^^^^^^^
-Coma-separated list of protocols (not case sensitive) : LL, LL128, Simple. To specifiy protocols to exclude (instead of include), start the list with ^.
+Coma-separated list of protocols (not case sensitive) : LL, LL128, Simple. To specify protocols to exclude (instead of include), start the list with ^.
 
 Default is ``LL,LL128,Simple`` on platform which support LL128, ``LL,Simple`` otherwise.
 
