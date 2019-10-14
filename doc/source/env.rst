@@ -420,7 +420,7 @@ Values accepted
 ^^^^^^^^^^^^^^^
 Coma-separated list of protocols (not case sensitive) : LL, LL128, Simple. To specify protocols to exclude (instead of include), start the list with ^.
 
-Default is ``LL,LL128,Simple`` on platform which support LL128, ``LL,Simple`` otherwise.
+Default is ``LL,LL128,Simple`` on platforms which support LL128, ``LL,Simple`` otherwise.
 
 
 NCCL_IGNORE_CPU_AFFINITY
