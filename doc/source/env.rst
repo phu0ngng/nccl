@@ -129,6 +129,8 @@ The values allowed are 64, 128 and 256.
 
 NCCL_RINGS
 ----------
+(since 2.0, removed in 2.5)
+
 The ``NCCL_RINGS`` variable overrides the rings that NCCL forms by default. Rings are sequences of ranks. They can be any permutations of ranks.
 
 NCCL filters out any rings that do not contain the number of ranks in the NCCL communicator. In general, the ring
@@ -145,30 +147,34 @@ Multiple rings can be specified separated by the pipe character "|".
 For example, if you have 4 GPUs in a communicator, you can form communication rings as such: "0 1 2 3  |  3 2 1 0".
 This will form two rings, one in each direction.
 
-NCCL_MAX_NRINGS
----------------
-(since 2.0.5)
+NCCL_MAX_NCHANNELS
+------------------
+(NCCL_MAX_NRINGS since 2.0.5, NCCL_MAX_NCHANNELS since 2.5.0)
 
-The ``NCCL_MAX_NRINGS`` variable limits the number of rings NCCL can use. Reducing the number of rings also reduces the
+The ``NCCL_MAX_NCHANNELS`` variable limits the number of channels NCCL can use. Reducing the number of channels also reduces the
 number of CUDA blocks used for communication, hence the impact on GPU computing resources.
+
+The old ``NCCL_MAX_NRINGS`` variable (used until 2.4) still works as an alias in newer versions, but is ignored if ``NCCL_MAX_NCHANNELS`` is set.
 
 Values accepted
 ^^^^^^^^^^^^^^^
 Any value above or equal to 1.
 
-NCCL_MIN_NRINGS
----------------
-(since 2.2.0)
+NCCL_MIN_NCHANNELS
+------------------
+(NCCL_MIN_NRINGS since 2.2.0, NCCL_MIN_NCHANNELS since 2.5.0)
 
-The ``NCCL_MIN_NRINGS`` variable controls the minimum number of rings you want NCCL to use.
-Increasing the number of rings also increases the number of
+The ``NCCL_MIN_NCHANNELS`` variable controls the minimum number of channels you want NCCL to use.
+Increasing the number of channels also increases the number of
 CUDA blocks NCCL uses, which may be useful to improve performance; however, it uses more CUDA compute resources.
 
-This is especially useful when using aggregated collectives on platforms where NCCL would usually only create one ring.
+This is especially useful when using aggregated collectives on platforms where NCCL would usually only create one channel.
+
+The old ``NCCL_MIN_NRINGS`` variable (used until 2.4) still works as an alias in newer versions, but is ignored if ``NCCL_MIN_NCHANNELS`` is set.
 
 Values accepted
 ^^^^^^^^^^^^^^^
-Default is platform dependent. Set to a integer value, up to 12 (up to 2.2) or 16 (2.3 and later).
+Default is platform dependent. Set to a integer value, up to 12 (up to 2.2), 16 (2.3 and 2.4) or 32 (2.5 and later).
 
 NCCL_CHECKS_DISABLE
 -------------------
@@ -357,7 +363,7 @@ Before 2.4.2, the default value is 0 for all platforms. Since 2.4.2, the default
 
 NCCL_SINGLE_RING_THRESHOLD
 --------------------------
-(since 2.1.0, deprecated in 2.3)
+(since 2.1, removed in 2.3)
 
 The ``NCCL_SINGLE_RING_THRESHOLD`` variable sets the limit under which NCCL will only use one ring.
 This will limit bandwidth but improve latency.
@@ -370,7 +376,7 @@ Values are integers, in bytes.
 
 NCCL_LL_THRESHOLD
 -----------------
-(since 2.1.0)
+(since 2.1, removed in 2.5)
 
 The ``NCCL_LL_THRESHOLD`` variable sets the size limit under which NCCL uses low-latency algorithms.
 
@@ -382,7 +388,7 @@ Values are integers, in bytes.
 
 NCCL_TREE_THRESHOLD
 -------------------
-(since 2.4.0)
+(since 2.4, removed in 2.5)
 
 The ``NCCL_TREE_THRESHOLD`` variable sets the size limit under which NCCL uses tree algorithms instead of rings.
 
@@ -391,6 +397,31 @@ Values accepted
 Default is dependent on the number of ranks.
 
 Values are integers, in bytes.
+
+NCCL_ALGO
+----------
+(since 2.5)
+
+The ``NCCL_ALGO`` variable defines which algorithms NCCL will use.
+
+Values accepted
+^^^^^^^^^^^^^^^
+Coma-separated list of algorithms (not case sensitive) : Tree, Ring. To specifiy algorithms to exclude (instead of include), start the list with ^.
+
+Default is ``Tree,Ring``.
+
+NCCL_PROTO
+----------
+(since 2.5)
+
+The ``NCCL_PROTO`` variable defines which protocol NCCL will use.
+
+Values accepted
+^^^^^^^^^^^^^^^
+Coma-separated list of protocols (not case sensitive) : LL, LL128, Simple. To specifiy protocols to exclude (instead of include), start the list with ^.
+
+Default is ``LL,LL128,Simple`` on platform which support LL128, ``LL,Simple`` otherwise.
+
 
 NCCL_IGNORE_CPU_AFFINITY
 ------------------------
@@ -433,4 +464,5 @@ Values accepted
 The default value is INIT.
 
 Supported subsystem names are INIT (stands for initialization), COLL (stands for collectives), P2P (stands for
-peer-to-peer), SHM (stands for shared memory), NET (stands for network) and ALL (includes every subsystem).
+peer-to-peer), SHM (stands for shared memory), NET (stands for network), GRAPH (stands for topology detection
+and graph search), TUNING (stands for algorithm/protocol tuning) and ALL (includes every subsystem).
