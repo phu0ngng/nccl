@@ -108,7 +108,7 @@ Use this variable if you encounter memory constraint issues when using NCCL or y
 
 Values accepted
 ^^^^^^^^^^^^^^^
-Default is 4194304 (4 MB).
+The default is 4194304 (4 MB).
 
 Values are integers, in bytes. The recommendation is to use powers of 2. For example,  1024 will give a 1K buffer.
 
@@ -123,7 +123,7 @@ You can also use this variable to reduce the number of threads to decrease the G
 
 Values accepted
 ^^^^^^^^^^^^^^^
-Default is 256.
+The default is 256.
 
 The values allowed are 64, 128 and 256.
 
@@ -154,7 +154,7 @@ NCCL_MAX_NCHANNELS
 The ``NCCL_MAX_NCHANNELS`` variable limits the number of channels NCCL can use. Reducing the number of channels also reduces the
 number of CUDA blocks used for communication, hence the impact on GPU computing resources.
 
-The old ``NCCL_MAX_NRINGS`` variable (used until 2.4) still works as an alias in newer versions, but is ignored if ``NCCL_MAX_NCHANNELS`` is set.
+The old ``NCCL_MAX_NRINGS`` variable (used until 2.4) still works as an alias in newer versions but is ignored if ``NCCL_MAX_NCHANNELS`` is set.
 
 Values accepted
 ^^^^^^^^^^^^^^^
@@ -174,7 +174,7 @@ The old ``NCCL_MIN_NRINGS`` variable (used until 2.4) still works as an alias in
 
 Values accepted
 ^^^^^^^^^^^^^^^
-Default is platform dependent. Set to a integer value, up to 12 (up to 2.2), 16 (2.3 and 2.4) or 32 (2.5 and later).
+The default is platform dependent. Set to an integer value, up to 12 (up to 2.2), 16 (2.3 and 2.4) or 32 (2.5 and later).
 
 NCCL_CHECKS_DISABLE
 -------------------
@@ -186,7 +186,7 @@ improve performance in production.
 
 Values accepted
 ^^^^^^^^^^^^^^^
-Default is 0, set to 1 to disable checks.
+The default is 0, set to 1 to disable checks.
 
 NCCL_CHECK_POINTERS
 -------------------
@@ -197,7 +197,7 @@ Checks are useful during development but can increase the latency.
 
 Values accepted
 ^^^^^^^^^^^^^^^
-Default is 0, set to 1 to enable checking.
+The default is 0, set to 1 to enable checking.
 
 Setting to 1 restores the original behavior of NCCL prior to 2.2.12.
 
@@ -382,7 +382,7 @@ The ``NCCL_LL_THRESHOLD`` variable sets the size limit under which NCCL uses low
 
 Values accepted
 ^^^^^^^^^^^^^^^
-Default is 16384 (up to 2.2) or is dependent on the number of ranks (2.3 and later).
+The default is 16384 (up to 2.2) or is dependent on the number of ranks (2.3 and later).
 
 Values are integers, in bytes.
 
@@ -394,7 +394,7 @@ The ``NCCL_TREE_THRESHOLD`` variable sets the size limit under which NCCL uses t
 
 Values accepted
 ^^^^^^^^^^^^^^^
-Default is dependent on the number of ranks.
+The default is dependent on the number of ranks.
 
 Values are integers, in bytes.
 
@@ -406,9 +406,9 @@ The ``NCCL_ALGO`` variable defines which algorithms NCCL will use.
 
 Values accepted
 ^^^^^^^^^^^^^^^
-Coma-separated list of algorithms (not case sensitive) : Tree, Ring. To specify algorithms to exclude (instead of include), start the list with ^.
+Coma-separated list of algorithms (not case sensitive) among: Tree, Ring. To specify algorithms to exclude (instead of include), start the list with ^.
 
-Default is ``Tree,Ring``.
+The default is ``Tree,Ring``.
 
 NCCL_PROTO
 ----------
@@ -418,9 +418,9 @@ The ``NCCL_PROTO`` variable defines which protocol NCCL will use.
 
 Values accepted
 ^^^^^^^^^^^^^^^
-Coma-separated list of protocols (not case sensitive) : LL, LL128, Simple. To specify protocols to exclude (instead of include), start the list with ^.
+Coma-separated list of protocols (not case sensitive) among: LL, LL128, Simple. To specify protocols to exclude (instead of include), start the list with ^.
 
-Default is ``LL,LL128,Simple`` on platforms which support LL128, ``LL,Simple`` otherwise.
+The default is ``LL,LL128,Simple`` on platforms which support LL128, ``LL,Simple`` otherwise.
 
 
 NCCL_IGNORE_CPU_AFFINITY
@@ -431,7 +431,7 @@ The ``NCCL_IGNORE_CPU_AFFINITY`` variable can be used to cause NCCL to ignore th
 
 Values accepted
 ^^^^^^^^^^^^^^^
-Default is 0, set to 1 to cause NCCL to ignore the job's supplied CPU affinity.
+The default is 0, set to 1 to cause NCCL to ignore the job's supplied CPU affinity.
 
 
 NCCL_DEBUG_FILE
