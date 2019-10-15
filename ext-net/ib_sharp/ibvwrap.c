@@ -106,10 +106,6 @@ ncclResult_t wrap_ibv_reg_mr(struct ibv_mr **ret, struct ibv_pd *pd, void *addr,
 }
 
 struct ibv_mr * wrap_direct_ibv_reg_mr(struct ibv_pd *pd, void *addr, size_t length, int access) {
-  if (ibv_reg_mr == NULL) {
-    WARN("lib wrapper not initialized.");
-    return NULL;
-  }
   return ibv_reg_mr(pd, addr, length, access);
 }
 
