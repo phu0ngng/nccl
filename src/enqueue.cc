@@ -5,6 +5,7 @@
  ************************************************************************/
 
 #include "enqueue.h"
+#include "argcheck.h"
 
 // Only generate inline kernels for LL
 #define NCCL_FUNC5(coll, op, dtype) \
