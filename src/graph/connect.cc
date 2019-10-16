@@ -14,7 +14,7 @@
 /******************************************************************/
 
 ncclResult_t ncclTopoPreset(struct ncclComm* comm,
-    struct ncclTopoGraph* treeGraph, struct ncclTopoGraph* ringGraph,
+    struct ncclTopoGraph* treeGraph, struct ncclTopoGraph* ringGraph, struct ncclTopoGraph* acclGraph,
     struct ncclTopoRanks* topoRanks) {
   int rank = comm->rank;
   int localRanks = comm->localRanks;
@@ -37,6 +37,7 @@ ncclResult_t ncclTopoPreset(struct ncclComm* comm,
 
     int* ringIntra = ringGraph->intra+c*localRanks;
     int* treeIntra = treeGraph->intra+c*localRanks;
+    int* acclIntra = acclGraph->intra+c*localRanks;
 
     for (int i=0; i<localRanks; i++) {
       if (ringIntra[i] == rank) {
@@ -58,15 +59,25 @@ ncclResult_t ncclTopoPreset(struct ncclComm* comm,
         topoRanks->treeDnSend[c] = treeIntra[sendIndex];
         channel->treeDn.up       = treeIntra[prev];
         channel->treeDn.down[0]  = treeIntra[next];
-        channel->collTreeDn.up   = treeIntra[prev];
-        channel->collTreeDn.down[0] = treeIntra[next];
         // Up tree depends on the pattern
         topoRanks->treeUpRecv[c] = sym ? topoRanks->treeDnSend[c] : topoRanks->treeDnRecv[c];
         topoRanks->treeUpSend[c] = sym ? topoRanks->treeDnRecv[c] : topoRanks->treeDnSend[c];
         channel->treeUp.down[0]  = sym ? channel->treeDn.down[0]  : channel->treeDn.up ;
         channel->treeUp.up       = sym ? channel->treeDn.up       : channel->treeDn.down[0];
-        channel->collTreeUp.down[0]  = sym ? channel->treeDn.down[0]  : channel->treeDn.up ;
-        channel->collTreeUp.up       = sym ? channel->treeDn.up       : channel->treeDn.down[0];
+      }
+      if (acclIntra[i] == rank) {
+        int prev = (i-1+localRanks)%localRanks, next = (i+1)%localRanks;
+
+        // Tree loop always flows in the same direction. Other trees are symmetric, i.e.
+        // up/down go in reverse directions
+        int sym = acclGraph->pattern == NCCL_TOPO_PATTERN_SPLIT_TREE_LOOP ? 0 : 1;
+
+        // Down tree is common
+        channel->collTreeDn.up   = acclIntra[prev];
+        channel->collTreeDn.down[0] = acclIntra[next];
+        // Up tree depends on the pattern
+        channel->collTreeUp.down[0]  = sym ? channel->collTreeDn.down[0]  : channel->collTreeDn.up ;
+        channel->collTreeUp.up       = sym ? channel->collTreeDn.up       : channel->collTreeDn.down[0];
       }
     }
     topoRanks->ringPrev[c] = channel->ring.prev;
