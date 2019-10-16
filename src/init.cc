@@ -133,7 +133,7 @@ static ncclResult_t commFree(ncclComm_t comm) {
     return ncclSuccess;
 
   free(comm->peerInfo);
-  free(comm->topo);
+  ncclTopoFree(comm->topo);
 
   if (comm->bootstrap)
     NCCLCHECK(bootstrapClose(comm->bootstrap));

@@ -176,19 +176,22 @@ static ncclResult_t addCpuStep(struct ncclTopoSystem* system, int c, int t1, int
   return ncclSuccess;
 }
 
+// Remove/free paths for a given type
+static void ncclTopoRemovePathType(struct ncclTopoSystem* system, int nodeType) {
+  for (int t=0; t<NCCL_TOPO_NODE_TYPES; t++) {
+    for (int n=0; n<system->nodes[t].count; n++) {
+      struct ncclTopoNode* node = system->nodes[t].nodes+n;
+      free(node->paths[nodeType]);
+      node->paths[nodeType] = NULL;
+    }
+  }
+}
+
 ncclResult_t ncclTopoComputePaths(struct ncclTopoSystem* system, struct ncclPeerInfo* peerInfos) {
   // Precompute paths between GPUs/NICs.
 
   // Remove everything in case we're re-computing
-  for (int t=0; t<NCCL_TOPO_NODE_TYPES; t++) {
-    for (int n=0; n<system->nodes[t].count; n++) {
-      struct ncclTopoNode* node = system->nodes[t].nodes+n;
-      for (int t=0; t<NCCL_TOPO_NODE_TYPES; t++) {
-        free(node->paths[t]);
-        node->paths[t] = NULL;
-      }
-    }
-  }
+  for (int t=0; t<NCCL_TOPO_NODE_TYPES; t++) ncclTopoRemovePathType(system, t);
 
   // Set direct paths from/to CPUs. We need them in many cases.
   for (int c=0; c<system->nodes[CPU].count; c++) {
@@ -304,6 +307,7 @@ ncclResult_t ncclTopoTrimSystem(struct ncclTopoSystem* system, struct ncclComm* 
   comm->localRanks = system->nodes[GPU].count;
   if (system->nodes[GPU].count == comm->nRanks) {
     // Trim network
+    ncclTopoRemovePathType(system, NET);
     system->nodes[NET].count = 0;
   }
   free(domains);
@@ -351,4 +355,9 @@ ncclResult_t ncclTopoGetMaxSpeed(struct ncclTopoSystem* system) {
     system->maxSpeed = std::min(system->maxSpeed, netMaxSpeedCount*NET_WIDTH);
   }
   return ncclSuccess;
+}
+
+void ncclTopoFree(struct ncclTopoSystem* system) {
+  for (int t=0; t<NCCL_TOPO_NODE_TYPES; t++) ncclTopoRemovePathType(system, t);
+  free(system);
 }
