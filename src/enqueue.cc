@@ -412,35 +412,31 @@ static ncclResult_t saveKernel(struct ncclInfo* info) {
 
   int useCollTree = (info->pattern == ncclPatternCollTreeUp || info->pattern == ncclPatternCollTreeDown) ? 1 : 0;
   int nSubChannels = useCollTree ? 2 : 1;
-  // Logical channel loop
-  for (int bid=0; bid<coll.args.nChannels; bid++) {
-    // Sub channel loop
-    for (int sub=0; sub < nSubChannels; sub++) {
-      int channelOffset = info->comm->myParams->gridDim.x % info->comm->nChannels;
-      // Skip a channel if we are not aligned with send/recv (happens in case of LL+aggregation)
-      if (useCollTree && sub == 0 && channelOffset % 2 != 0) {
-        info->comm->myParams->gridDim.x++;
-        channelOffset = info->comm->myParams->gridDim.x % info->comm->nChannels;
-      }
-      struct ncclChannel* channel = info->comm->channels+channelOffset;
+  // Sub channel loop
+  for (int sub=0; sub < nSubChannels; sub++) {
+    // Logical channel loop
+    for (int bid=0; bid<coll.args.nChannels; bid++) {
+      int enqueueChannelId = info->comm->myParams->gridDim.x % info->comm->nChannels;
+      struct ncclChannel* enqueueChannel = info->comm->channels+enqueueChannelId;
+      int topoChannelId = (bid + sub*useCollTree*coll.args.nChannels) % info->comm->nChannels;
 
-      if (channel->collCount == NCCL_MAX_OPS) {
+      if (enqueueChannel->collCount == NCCL_MAX_OPS) {
         WARN("Too many aggregated operations (%d max)", NCCL_MAX_OPS);
         return ncclInvalidUsage;
       }
 
       // Proxy
-      proxyArgs.channel = channel;
+      proxyArgs.channel = info->comm->channels+topoChannelId;
       // Adjust pattern for CollNet based on channel index: 0 - send, 1 - recv
       if (useCollTree == 1) {
-        info->pattern = (channelOffset % 2 == 0) ? ncclPatternCollTreeUp : ncclPatternCollTreeDown;
+        info->pattern = (sub == 0) ? ncclPatternCollTreeUp : ncclPatternCollTreeDown;
       }
       NCCLCHECK(transportSaveProxies(&proxyArgs, info->pattern, info->root, info->comm->nRanks));
 
       info->comm->myParams->gridDim.x++;
 
-      int opIndex = channel->collFifoTail;
-      struct ncclColl* c = channel->collectives+opIndex;
+      int opIndex = enqueueChannel->collFifoTail;
+      struct ncclColl* c = enqueueChannel->collectives+opIndex;
       volatile uint8_t* activePtr = (volatile uint8_t*)&c->active;
       while (activePtr[0] != 0) sched_yield();
 
@@ -448,10 +444,11 @@ static ncclResult_t saveKernel(struct ncclInfo* info) {
 
       c->args.bid = bid;
       c->active = 1;
+      c->args.channel = topoChannelId;
       opIndex = (opIndex+1)%NCCL_MAX_OPS;
       c->nextIndex = opIndex;
-      channel->collFifoTail = opIndex;
-      channel->collCount++;
+      enqueueChannel->collFifoTail = opIndex;
+      enqueueChannel->collCount++;
     }
   }
   info->comm->opCount++;

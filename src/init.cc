@@ -458,7 +458,7 @@ extern struct ncclCollTransport collNetTransport;
 // All ranks must participate in collNetSetup call
 // type: 0 for send, 1 for recv
 // return: 0 - unsupported, 1 - supported
-static int collNetSetup(struct ncclComm* comm, struct ncclTopoGraph* collNetGraph, struct ncclChannel* channel, int rank, int nranks,  int* intraRanks, int* nodesFirstRank, int nMasters, int type) {
+static int collNetSetup(struct ncclComm* comm, struct ncclTopoGraph* collNetGraph, struct ncclChannel* channel, int collNetChannels, int rank, int nranks,  int* intraRanks, int* nodesFirstRank, int nMasters, int type) {
   int rankInCollNet = -1;
   int supported = 0;
   int isMaster = (rank == intraRanks[0]) ? 1 : 0;
@@ -521,7 +521,7 @@ static int collNetSetup(struct ncclComm* comm, struct ncclTopoGraph* collNetGrap
   }
   // connect send and recv (perform only once)
   if (isMaster && ret > 0 && type == 1) {
-    struct ncclChannel* sendChannel = channel - 1;
+    struct ncclChannel* sendChannel = channel - collNetChannels;
     ncclConnector* send = &sendChannel->peers[nranks].send;
     NCCLCHECKGOTO(collNetTransport.connectSendRecv(send, conn), res, cleanup);
   }
@@ -728,18 +728,10 @@ static ncclResult_t initTransportsRank(struct ncclComm* comm, ncclUniqueId* comm
 
   NCCLCHECK(ncclTopoPostset(comm, nodesFirstRank, allTopoRanks, rings));
 
-  /* FIXME: we may need to eventually make collTree ordering the bulky style (as with ring, tree)
-   * because that is how things are done in graph/connect.cc
-   */
-  // Re-arrange collTree ordering to interleaving style
-  for (int c=comm->nChannels/2-1; c>=0; c--) {
-    struct ncclChannel* channel = comm->channels+c;
-    struct ncclChannel* channel0 = comm->channels+c*2;  // interleave
-    struct ncclChannel* channel1 = channel0+1;
-    memcpy(&channel0->collTreeUp, &channel->collTreeUp, sizeof(struct ncclTree));
-    memcpy(&channel0->collTreeDn, &channel->collTreeDn, sizeof(struct ncclTree));
-    memcpy(&channel1->collTreeUp, &channel->collTreeUp, sizeof(struct ncclTree));
-    memcpy(&channel1->collTreeDn, &channel->collTreeDn, sizeof(struct ncclTree));
+  // Set root of collTree to rank id nranks
+  for (int c=0; c<comm->nChannels/2; c++) {
+    struct ncclChannel* channel0 = comm->channels+c;
+    struct ncclChannel* channel1 = channel0+comm->nChannels/2;
     if (rank == collNetGraph.intra[0+c*comm->localRanks]) { // is master
       channel0->collTreeUp.up = channel0->collTreeDn.up = nranks;
       channel1->collTreeUp.up = channel1->collTreeDn.up = nranks;
@@ -786,8 +778,8 @@ static ncclResult_t initTransportsRank(struct ncclComm* comm, ncclUniqueId* comm
     NCCLCHECK(p2pSetup(comm, &collNetGraph, channel, NCCL_MAX_TREE_ARITY, channel->collTreeUp.down, 1, &channel->collTreeUp.up));
     NCCLCHECK(p2pSetup(comm, &collNetGraph, channel, 1, &channel->collTreeDn.up, NCCL_MAX_TREE_ARITY, channel->collTreeDn.down));
     if (collNetSetupCond) {
-      int sendrecv = c%2; // 0 for send, 1 for recv
-      if (collNetSetup(comm, &collNetGraph, channel, rank, nranks, collNetGraph.intra+c/2*comm->localRanks, nodesFirstRank, comm->nNodes, sendrecv) != 1)
+      int sendrecv = c < comm->nChannels/2 ? 0 : 1; // 0 for send, 1 for recv
+      if (collNetSetup(comm, &collNetGraph, channel, comm->nChannels/2, rank, nranks, collNetGraph.intra+c/2*comm->localRanks, nodesFirstRank, comm->nNodes, sendrecv) != 1)
         collNetSetupFail = 1;
     }
   }
