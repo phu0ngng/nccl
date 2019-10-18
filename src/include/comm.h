@@ -91,9 +91,6 @@ struct ncclComm {
   // Channels for collectives
   int nChannels;
 
-  // Only nvlink is used for inter-GPU communication
-  int nvlink;
-
   // Algorithm/Protocols thresholds
   ssize_t threadThresholds[NCCL_NUM_ALGORITHMS][NCCL_NUM_PROTOCOLS];
   float latencies[NCCL_NUM_FUNCTIONS][NCCL_NUM_ALGORITHMS][NCCL_NUM_PROTOCOLS];

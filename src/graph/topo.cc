@@ -241,6 +241,7 @@ ncclResult_t ncclTopoConnectCpu(struct ncclTopoSystem* system, int numaId, struc
   }
   if (cpuNode == NULL) { // Create CPU
     NCCLCHECK(ncclTopoCreateNode(system, &cpuNode, CPU, numaId));
+    NCCLCHECK(ncclTopoGetCpuInfo(cpuNode));
   }
   NCCLCHECK(ncclTopoConnectNodes(node, cpuNode, linkType, linkWidth));
   NCCLCHECK(ncclTopoConnectNodes(cpuNode, node, linkType, linkWidth));
@@ -540,6 +541,8 @@ ncclResult_t ncclTopoConnectPCI(struct ncclTopoSystem* system) {
 static ncclResult_t ncclTopoPrintRec(struct ncclTopoNode* node, struct ncclTopoNode* prevNode, char* line, int offset) {
   if (node->type == GPU) {
     sprintf(line+offset, "%s/%lX (%d)", topoNodeTypeStr[node->type], node->id, node->gpu.rank);
+  } else if (node->type == CPU) {
+    sprintf(line+offset, "%s/%lX (%d/%d)", topoNodeTypeStr[node->type], node->id, node->cpu.type, node->cpu.model);
   } else {
     sprintf(line+offset, "%s/%lX", topoNodeTypeStr[node->type], node->id);
   }
@@ -556,7 +559,7 @@ static ncclResult_t ncclTopoPrintRec(struct ncclTopoNode* node, struct ncclTopoN
         NCCLCHECK(ncclTopoPrintRec(link->remNode, node, line, nextOffset));
       } else {
         if (link->remNode->type == NET) {
-          sprintf(line+nextOffset, "%s/%lX (%d)", topoNodeTypeStr[link->remNode->type], link->remNode->id, link->remNode->gpu.rank);
+          sprintf(line+nextOffset, "%s/%lX (%lx/%d/%d)", topoNodeTypeStr[link->remNode->type], link->remNode->id, link->remNode->net.asic, link->remNode->net.port, link->remNode->net.width);
         } else {
           sprintf(line+nextOffset, "%s/%lX", topoNodeTypeStr[link->remNode->type], link->remNode->id);
         }

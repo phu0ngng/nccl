@@ -487,13 +487,14 @@ static ncclResult_t initTransportsRank(struct ncclComm* comm, ncclUniqueId* comm
   struct ncclTopoGraph ringGraph;
   ringGraph.pattern = NCCL_TOPO_PATTERN_RING;
   ringGraph.crossNic = ncclParamCrossNic();
+  ringGraph.minChannels = 1;
   ringGraph.maxChannels = MAXCHANNELS/2;
   NCCLCHECK(ncclTopoCompute(comm->topo, &ringGraph));
   NCCLCHECK(ncclTopoPrintGraph(comm->topo, &ringGraph));
   struct ncclTopoGraph treeGraph;
   treeGraph.pattern = NCCL_TOPO_PATTERN_SPLIT_TREE;
   treeGraph.crossNic = ncclParamCrossNic();
-  ringGraph.maxChannels = ringGraph.nChannels;
+  treeGraph.minChannels = treeGraph.maxChannels = ringGraph.nChannels;
   // We communicate only half the data between node with trees on 2 nodes.
   NCCLCHECK(ncclTopoCompute(comm->topo, &treeGraph));
   NCCLCHECK(ncclTopoPrintGraph(comm->topo, &treeGraph));
@@ -503,35 +504,33 @@ static ncclResult_t initTransportsRank(struct ncclComm* comm, ncclUniqueId* comm
   struct {
     int cudaCompCap;
     int fullCudaCompCap;
-    int nvlink;
     int nChannels;
     struct {
       int sameChannels;
       int speedIntra;
       int speedInter;
-      int nvlink;
+      int typeIntra;
     } tree;
     struct {
       int sameChannels;
       int speedIntra;
       int speedInter;
-      int nvlink;
+      int typeIntra;
     } ring;
     struct ncclTopoRanks topoRanks;
   } *allGather3Data;
 
   NCCLCHECK(ncclCalloc(&allGather3Data, nranks));
   allGather3Data[rank].cudaCompCap = ncclCudaCompCap();
-  allGather3Data[rank].nvlink = treeGraph.nvlink;
   allGather3Data[rank].nChannels = comm->nChannels = std::min(treeGraph.nChannels, ringGraph.nChannels);
   allGather3Data[rank].tree.sameChannels = treeGraph.sameChannels;
   allGather3Data[rank].tree.speedIntra = treeGraph.speedIntra;
   allGather3Data[rank].tree.speedInter = treeGraph.speedInter;
-  allGather3Data[rank].tree.nvlink = treeGraph.nvlink;
+  allGather3Data[rank].tree.typeIntra = treeGraph.typeIntra;
   allGather3Data[rank].ring.sameChannels = ringGraph.sameChannels;
   allGather3Data[rank].ring.speedIntra = ringGraph.speedIntra;
   allGather3Data[rank].ring.speedInter = ringGraph.speedInter;
-  allGather3Data[rank].ring.nvlink = ringGraph.nvlink;
+  allGather3Data[rank].ring.typeIntra = ringGraph.typeIntra;
 
   NCCLCHECK(ncclTopoPreset(comm, &treeGraph, &ringGraph, &allGather3Data[rank].topoRanks));
 
@@ -561,9 +560,6 @@ static ncclResult_t initTransportsRank(struct ncclComm* comm, ncclUniqueId* comm
     maxCompCap = std::max(allGather3Data[i].cudaCompCap, maxCompCap);
   }
 
-  comm->nvlink = 1;
-  for (int i = 0; i < nranks; i++) comm->nvlink &= allGather3Data[i].nvlink;
-
   int nChannelsOrig = comm->nChannels;
   struct ncclTopoRanks** allTopoRanks;
   NCCLCHECK(ncclCalloc(&allTopoRanks, comm->nRanks));
@@ -574,11 +570,11 @@ static ncclResult_t initTransportsRank(struct ncclComm* comm, ncclUniqueId* comm
     treeGraph.sameChannels = std::min(allGather3Data[i].tree.sameChannels, treeGraph.sameChannels);
     treeGraph.speedIntra = std::min(allGather3Data[i].tree.speedIntra, treeGraph.speedIntra);
     treeGraph.speedInter = std::min(allGather3Data[i].tree.speedInter, treeGraph.speedInter);
-    treeGraph.nvlink = std::min(allGather3Data[i].tree.nvlink, treeGraph.nvlink);
+    treeGraph.typeIntra = std::min(allGather3Data[i].tree.typeIntra, treeGraph.typeIntra);
     ringGraph.sameChannels = std::min(allGather3Data[i].ring.sameChannels, ringGraph.sameChannels);
     ringGraph.speedIntra = std::min(allGather3Data[i].ring.speedIntra, ringGraph.speedIntra);
     ringGraph.speedInter = std::min(allGather3Data[i].ring.speedInter, ringGraph.speedInter);
-    ringGraph.nvlink = std::min(allGather3Data[i].ring.nvlink, ringGraph.nvlink);
+    ringGraph.typeIntra = std::min(allGather3Data[i].ring.typeIntra, ringGraph.typeIntra);
   }
 
   if (comm->nChannels < nChannelsOrig) {

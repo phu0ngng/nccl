@@ -88,7 +88,7 @@ ncclResult_t ncclSetThresholds(struct ncclComm* comm, int minCompCap, int maxCom
 
   struct ncclTopoGraph* graphs[2] = { treeGraph, ringGraph };
   int intraHw[2], hw[2];
-  for (int a=0; a<NCCL_NUM_ALGORITHMS; a++) intraHw[a] = graphs[a]->nvlink ? NCCL_HW_NVLINK : NCCL_HW_PCI;
+  for (int a=0; a<NCCL_NUM_ALGORITHMS; a++) intraHw[a] = graphs[a]->typeIntra == LINK_NVL ? NCCL_HW_NVLINK : NCCL_HW_PCI;
   for (int a=0; a<NCCL_NUM_ALGORITHMS; a++) hw[a] = comm->nNodes == 1 ? intraHw[a] : NCCL_HW_NET;
 
   for (int coll=0; coll<NCCL_NUM_FUNCTIONS; coll++) {
@@ -151,7 +151,7 @@ ncclResult_t ncclSetThresholds(struct ncclComm* comm, int minCompCap, int maxCom
     int pEnable = protoEnable[p];
     if (pEnable == 2 && p == NCCL_PROTO_LL128) {
       // Enable LL128 by default only on Volta+NVLink. Other cases are not tested and may cause silent data corruption.
-      pEnable = (graphs[a]->type <= LINK_PCI) && graphs[a]->nvlink && minCompCap == 70 && maxCompCap == 70 ? 1 : 0;
+      pEnable = (graphs[a]->typeInter <= LINK_PCI) && graphs[a]->typeIntra == LINK_NVL && minCompCap == 70 && maxCompCap == 70 ? 1 : 0;
     }
     if (pEnable == 0 || algoEnable[a] == 0) comm->bandwidths[c][a][p] = 0;
   }
