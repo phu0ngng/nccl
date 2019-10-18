@@ -137,7 +137,6 @@ ncclResult_t collNetRecvSetup(struct ncclTopoSystem* topo, struct ncclTopoGraph*
 ncclResult_t collNetSendConnect(struct ncclConnect* connectInfos, int nranks, int rank, struct ncclConnector* send) {
   // Setup device pointers
   struct collNetSendResources* sendResources = (struct collNetSendResources*)send->transportResources;
-  sendResources->collNetRank = rank;
 
   // Intermediate buffering on GPU for GPU Direct RDMA, but LL buffer is always on host
   struct ncclRecvMem* sRecvMem = sendResources->useGdr ? sendResources->devRecvMem : sendResources->devHostRecvMem;
@@ -196,6 +195,7 @@ cleanup:
 ncclResult_t collNetConnectSendRecv(ncclConnector* send, ncclConnector* recv) {
   struct collNetSendResources* sendResources = (struct collNetSendResources*)send->transportResources;
   struct collNetRecvResources* recvResources = (struct collNetRecvResources*)recv->transportResources;
+  sendResources->collNetRank = recvResources->collNetRank;
   recvResources->reqFifo = sendResources->reqFifo;
   sendResources->collNetSendComm = recvResources->collNetRecvComm;
   // Register buffer

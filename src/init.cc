@@ -455,15 +455,6 @@ static int collNetSetup(struct ncclComm* comm, struct ncclTopoGraph* collNetGrap
   int rankInCollNet = -1;
   int supported = 0;
   int isMaster = (rank == intraRanks[0]) ? 1 : 0;
-  for (int n=0; n<nMasters; n++) {
-    if (rank >= nodesFirstRank[n] && (n+1 == nMasters || rank < nodesFirstRank[n+1])) {
-      rankInCollNet = n;
-      break;
-    }
-  }
-  if (isMaster) {
-    INFO(NCCL_INIT, "Node %d rank %d intraRank[0] %d is master [%s]", rankInCollNet, rank, intraRanks[0], type == 0 ? "send" : "recv");
-  }
 
   // check if we can connect to collnet, whose root is the nranks-th rank
   struct ncclPeerInfo *myInfo = comm->peerInfo+rank, *peerInfo = comm->peerInfo+nranks;
@@ -502,6 +493,7 @@ static int collNetSetup(struct ncclComm* comm, struct ncclTopoGraph* collNetGrap
     for (int r = 0; r < nranks; r++) {
       if (allConnects[r].isMaster) {
         memcpy(masterConnects+c, &(allConnects[r].connect), sizeof(struct ncclConnect));
+        if (r == rank) channel->collTreeRank = rankInCollNet = c;
         c++;
       }
     }
@@ -509,14 +501,13 @@ static int collNetSetup(struct ncclComm* comm, struct ncclTopoGraph* collNetGrap
   // connect
   if (isMaster && ret > 0) {
     NCCLCHECKGOTO(transportComm->connect(masterConnects, nMasters, rankInCollNet, conn), res, cleanup);
-    channel->collTreeRank = rankInCollNet;
-    INFO(NCCL_INIT, "rank %d collNetRank %d collNetNranks %d init COMPLETE", rank, rankInCollNet, nMasters);
   }
   // connect send and recv (perform only once)
   if (isMaster && ret > 0 && type == 1) {
     struct ncclChannel* sendChannel = channel - collNetChannels;
     ncclConnector* send = &sendChannel->peers[nranks].send;
     NCCLCHECKGOTO(collNetTransport.connectSendRecv(send, conn), res, cleanup);
+    INFO(NCCL_INIT, "CollNet : rank %d collNetRank %d collNetNranks %d init COMPLETE", rank, rankInCollNet, nMasters);
   }
   if (ret > 0) {
     supported = 1;
