@@ -76,7 +76,7 @@ struct ncclConnInfo {
 
   int direct;         // Direct communication
   void **ptrExchange; // Pointer exchange for direct communication
-  int gdr;            // GDR enabled or not
+  int useAcclFlag;    // GPU sets flag for ACCL algorithm
 
   int *fifo;          // Size fifo for proxy
 

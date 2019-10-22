@@ -74,7 +74,7 @@ ncclResult_t collNetCanConnect(int* ret, struct ncclTopoSystem* topo, struct ncc
   return ncclSuccess;
 }
 
-extern ncclResult_t netGetGdrSupport(struct ncclTopoSystem* topo, int busId, int netDev, int read, int* useGdr);
+extern ncclResult_t netGetGdrSupport(struct ncclTopoSystem* topo, int64_t busId, int netDev, int read, int* useGdr);
 
 /* Setup send connector, and return connect information for others in the coll communicator to connect to me */
 ncclResult_t collNetSendSetup(struct ncclTopoSystem* topo, struct ncclTopoGraph* graph, struct ncclPeerInfo* myInfo, struct ncclPeerInfo* peerInfo, struct ncclConnect* connectInfo, struct ncclConnector* send, int buffSize, int channelId) {
@@ -144,7 +144,7 @@ ncclResult_t collNetSendConnect(struct ncclConnect* connectInfos, int nranks, in
   send->conn.buff = sRecvMem->buff;
   send->conn.llBuff = sendResources->devHostRecvMem->llBuff;
   send->conn.ll128Buff = sRecvMem->ll128Buff;
-  send->conn.gdr = sendResources->useGdr;
+  send->conn.useAcclFlag = sendResources->useGdr;
 
   // Head/Tail/Opcount/Fifos are always on host
   send->conn.tail = &sendResources->devHostRecvMem->tail;
@@ -167,7 +167,7 @@ ncclResult_t collNetRecvConnect(struct ncclConnect* connectInfos, int nranks, in
   recv->conn.buff = rRecvMem->buff;
   recv->conn.llBuff = recvResources->devHostRecvMem->llBuff;  // recv LL buff always on host
   recv->conn.ll128Buff = rRecvMem->ll128Buff;
-  recv->conn.gdr = recvResources->useGdr;
+  recv->conn.useAcclFlag = 0;
 
   // Head/Tail/Opcount are always on host
   recv->conn.tail = &recvResources->devHostRecvMem->tail;

@@ -27,8 +27,7 @@ class ncclLL128Primitives {
   volatile uint64_t* sendConnTailPtr = NULL;
   uint64_t sendConnTail;
   volatile uint64_t* sendConnHeadPtr = NULL;
-  uint32_t nextIsNet[NSEND];
-  uint32_t gdr[NSEND];
+  int useAcclFlag;
   int collTreeRank;
   uint64_t sendConnHead;
   uint64_t sendConnHeadCache; // Cache last seen value
@@ -46,7 +45,7 @@ class ncclLL128Primitives {
   inline __device__ uint64_t* recvPtr(int i) { return recvBuff[i]+recvOffset(i); }
   inline __device__ uint64_t* sendPtr(int i) { return sendBuff[i]+sendOffset(i); }
   inline __device__ uint64_t recvFlag(int i) { return recvStep[i]+1; }
-  inline __device__ uint64_t sendFlag(int i) { return (nextIsNet[i] && gdr[i]) ? FUNC::acclFlag(collTreeRank, sendStep[i]+1) : sendStep[i]+1; }
+  inline __device__ uint64_t sendFlag(int i) { return useAcclFlag ? FUNC::acclFlag(collTreeRank, sendStep[i]+1) : sendStep[i]+1; }
 
   inline __device__ void barrier() {
     if (NSEND>NRECV) {
@@ -339,7 +338,8 @@ class ncclLL128Primitives {
   __device__ __forceinline__ void loadSendConn(struct ncclConnInfo* conn, int i) {
     sendBuff[i] = conn->ll128Buff;
     sendStep[i] = conn->step;
-    if (wid == i) sendConn = conn;
+    if (wid % NSEND == i) sendConn = conn;
+    useAcclFlag = conn->useAcclFlag;
     nsend++;
   }
 
@@ -356,10 +356,6 @@ class ncclLL128Primitives {
         sendConnTailPtr = sendConn->tail;
         sendConnTail = sendConn->step;
       }
-    }
-    for (int i=0; i<nsend; i++) {
-      nextIsNet[i] = reduce(tid >= nthreads-WARP_SIZE && wid == i && sendConnTailPtr != NULL ? 1 : 0);
-      gdr[i] = reduce(tid == i ? sendConn->gdr : 0);
     }
   }
 
