@@ -55,16 +55,6 @@ class ncclLL128Primitives {
     }
   }
 
-  inline __device__ uint32_t reduce(uint32_t pred) {
-    uint32_t popc;
-    asm ("{");
-    asm volatile ("   .reg .pred barr_pred;");
-    asm volatile ("   setp.eq.u32 barr_pred,%0,1;" :: "r"(pred));
-    asm volatile ("   bar.red.popc.u32 %0, 13, %1, barr_pred;" : "=r"(popc) : "r"(nthreads));
-    asm ("}");
-    return popc;
-  }
-
   uint32_t mismatch = 0;
   const uint64_t opCount;
 
