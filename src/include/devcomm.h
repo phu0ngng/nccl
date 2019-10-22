@@ -66,6 +66,9 @@ static_assert(NCCL_LL_CLEAN_MASK % NCCL_STEPS == 0, "Invalid NCCL_LL_CLEAN_MASK 
 #define NCCL_LL128_SHMEM_ELEMS_PER_THREAD 8
 #define NCCL_LL128_SHMEM_SIZE (NCCL_LL128_SHMEM_ELEMS_PER_THREAD*NCCL_LL128_MAX_NTHREADS)
 
+#define NCCL_DIRECT_GPU 0x01
+#define NCCL_DIRECT_NIC 0x10
+
 struct ncclConnInfo {
   // Regular comm mechanism
   char *buff;         // Local for recv, remote for send

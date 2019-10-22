@@ -144,7 +144,7 @@ ncclResult_t collNetSendConnect(struct ncclConnect* connectInfos, int nranks, in
   send->conn.buff = sRecvMem->buff;
   send->conn.llBuff = sendResources->devHostRecvMem->llBuff;
   send->conn.ll128Buff = sRecvMem->ll128Buff;
-  send->conn.useAcclFlag = sendResources->useGdr;
+  send->conn.direct |= sendResources->useGdr ? NCCL_DIRECT_NIC : 0;
 
   // Head/Tail/Opcount/Fifos are always on host
   send->conn.tail = &sendResources->devHostRecvMem->tail;
@@ -167,7 +167,7 @@ ncclResult_t collNetRecvConnect(struct ncclConnect* connectInfos, int nranks, in
   recv->conn.buff = rRecvMem->buff;
   recv->conn.llBuff = recvResources->devHostRecvMem->llBuff;  // recv LL buff always on host
   recv->conn.ll128Buff = rRecvMem->ll128Buff;
-  recv->conn.useAcclFlag = 0;
+  recv->conn.direct |= recvResources->useGdr ? NCCL_DIRECT_NIC : 0;
 
   // Head/Tail/Opcount are always on host
   recv->conn.tail = &recvResources->devHostRecvMem->tail;

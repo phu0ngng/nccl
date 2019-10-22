@@ -16,6 +16,7 @@ class ncclLL128Primitives {
   const int wid;
   const int warp;
   const bool flagThread;
+  bool useAcclFlag;
   int nrecv = 0;
   int nsend = 0;
   struct ncclConnInfo* recvConn = NULL;
@@ -27,7 +28,6 @@ class ncclLL128Primitives {
   volatile uint64_t* sendConnTailPtr = NULL;
   uint64_t sendConnTail;
   volatile uint64_t* sendConnHeadPtr = NULL;
-  int useAcclFlag;
   int collTreeRank;
   uint64_t sendConnHead;
   uint64_t sendConnHeadCache; // Cache last seen value
@@ -339,7 +339,7 @@ class ncclLL128Primitives {
     sendBuff[i] = conn->ll128Buff;
     sendStep[i] = conn->step;
     if (wid % NSEND == i) sendConn = conn;
-    useAcclFlag = conn->useAcclFlag;
+    useAcclFlag = conn->direct & NCCL_DIRECT_NIC;
     nsend++;
   }
 

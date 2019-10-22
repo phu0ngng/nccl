@@ -233,7 +233,7 @@ static ncclResult_t p2pSendConnect(struct ncclConnect* connectInfo, int nranks, 
   struct p2pConnectInfo* info = (struct p2pConnectInfo*)connectInfo;
   if (info->direct) {
     remDevMem = (struct ncclRecvMem*)(info->directPtr);
-    send->conn.direct = 1;
+    send->conn.direct |= NCCL_DIRECT_GPU;
   } else {
     //TRACE_DUMP_IPC(&info->devIpc);
     cudaError_t err = cudaIpcOpenMemHandle(&resources->ipcPtr, info->devIpc, cudaIpcMemLazyEnablePeerAccess);
@@ -263,7 +263,7 @@ ncclResult_t p2pRecvConnect(struct ncclConnect* connectInfo, int nranks, int ran
   struct p2pConnectInfo* info = (struct p2pConnectInfo*)connectInfo;
   if (info->direct) {
     remDevMem = (struct ncclSendMem*)(info->directPtr);
-    recv->conn.direct = 1;
+    recv->conn.direct |= NCCL_DIRECT_GPU;
     recv->conn.ptrExchange = &remDevMem->ptrExchange;
   } else {
     //TRACE_DUMP_IPC(&info->devIpc);
