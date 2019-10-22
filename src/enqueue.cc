@@ -5,6 +5,7 @@
  ************************************************************************/
 
 #include "enqueue.h"
+#include "argcheck.h"
 #include "coll_net.h"
 
 // Only generate inline kernels for LL
@@ -269,8 +270,8 @@ static ncclResult_t getAlgoInfo(struct ncclInfo* info) {
     WARN("Error : no algorithm/protocol available");
     return ncclInternalError;
   }
-  //if (comm->rank == 0) INFO(NCCL_INIT, "%ld Bytes -> Algo %d proto %d time %d", info->nBytes, info->algorithm, info->protocol, minTime);
-  TRACE(NCCL_INIT, "%ld Bytes -> Algo %d proto %d time %f", info->nBytes, info->algorithm, info->protocol, minTime);
+  //if (comm->rank == 0) INFO(NCCL_COLL, "%ld Bytes -> Algo %d proto %d time %d", info->nBytes, info->algorithm, info->protocol, minTime);
+  TRACE(NCCL_COLL, "%ld Bytes -> Algo %d proto %d time %f", info->nBytes, info->algorithm, info->protocol, minTime);
 
   int nc = (info->algorithm == NCCL_ALGO_ACCL) ? comm->nChannels/2 : comm->nChannels; // CollNet uses one channel for up and on channel for down
   int nt = comm->maxThreads[info->protocol];

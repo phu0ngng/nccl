@@ -74,7 +74,7 @@ ncclResult_t collNetCanConnect(int* ret, struct ncclTopoSystem* topo, struct ncc
   return ncclSuccess;
 }
 
-extern ncclResult_t netGetGdrSupport(struct ncclTopoSystem* topo, int nvmlDev, int netDev, int read, int* useGdr);
+extern ncclResult_t netGetGdrSupport(struct ncclTopoSystem* topo, int busId, int netDev, int read, int* useGdr);
 
 /* Setup send connector, and return connect information for others in the coll communicator to connect to me */
 ncclResult_t collNetSendSetup(struct ncclTopoSystem* topo, struct ncclTopoGraph* graph, struct ncclPeerInfo* myInfo, struct ncclPeerInfo* peerInfo, struct ncclConnect* connectInfo, struct ncclConnector* send, int buffSize, int channelId) {
@@ -83,7 +83,7 @@ ncclResult_t collNetSendSetup(struct ncclTopoSystem* topo, struct ncclTopoGraph*
   send->transportResources = sendResources;
 
   NCCLCHECK(ncclTopoGetNetDev(graph, 1, channelId, &sendResources->netDev));
-  NCCLCHECK(netGetGdrSupport(topo, myInfo->nvmlDev, sendResources->netDev, 1, &sendResources->useGdr));
+  NCCLCHECK(netGetGdrSupport(topo, myInfo->busId, sendResources->netDev, 1, &sendResources->useGdr));
 
   int sendSize = sizeof(struct ncclSendMem);
   NCCLCHECK(ncclCudaHostAlloc((void**)&sendResources->hostSendMem, (void**)&sendResources->devHostSendMem, sendSize));
@@ -112,7 +112,7 @@ ncclResult_t collNetRecvSetup(struct ncclTopoSystem* topo, struct ncclTopoGraph*
   recv->transportResources = recvResources;
 
   NCCLCHECK(ncclTopoGetNetDev(graph, 0, channelId, &recvResources->netDev));
-  NCCLCHECK(netGetGdrSupport(topo, myInfo->nvmlDev, recvResources->netDev, 0, &recvResources->useGdr));
+  NCCLCHECK(netGetGdrSupport(topo, myInfo->busId, recvResources->netDev, 0, &recvResources->useGdr));
 
   int sendSize = sizeof(struct ncclSendMem);
   NCCLCHECK(ncclCudaHostAlloc((void**)&recvResources->hostSendMem, (void**)&recvResources->devHostSendMem, sendSize));

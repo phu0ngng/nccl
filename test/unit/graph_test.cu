@@ -291,7 +291,7 @@ void createSystem(struct ncclTopoSystem* system, const char* desc[], int descSiz
         }
       }
       if (type == -1) ERROR("Unable to find type in %s", line);
-      int id = -1;
+      int64_t id = -1;
       while (line[0] != '-' && line[0] != '\0') {
         int digit = line[0] - '0';
         if (digit < 0 || digit > 9) ERROR("Could not find id : %s", line);
@@ -447,9 +447,8 @@ int checkTopo(const char* name, const char** topo, int topoSize, int nvlinkWidth
 
 int main() {
   setlinebuf(stdout);
-  initDebug();
   int errors = 0;
-#ifndef __PPC__
+#ifdef __x86_64__
   RUN("LOC-1G", TOPO(local_topo, DEF),    0, 1, PCI_WIDTH,            2*PCI_WIDTH,          1, LINK_LOC, NCCL_TOPO_PATTERN_TREE,       1, PCI_WIDTH,            1, LINK_LOC, 0);
   RUN("LOC-1G", TOPO(local_topo, DEF),    1, 1, PCI_WIDTH,            2*PCI_WIDTH,          1, LINK_PCI, NCCL_TOPO_PATTERN_TREE,       1, PCI_WIDTH,            1, LINK_PCI, 0);
   RUN("PCI-1R", TOPO(pci1R_topo, DEF),    0, 1, INTEL_P2P(PCI_WIDTH), INTEL_P2P(PCI_WIDTH), 0, LINK_QPI, NCCL_TOPO_PATTERN_SPLIT_TREE, 1, INTEL_P2P(PCI_WIDTH), 0, LINK_QPI, 0);

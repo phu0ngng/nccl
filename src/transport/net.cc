@@ -5,12 +5,8 @@
  ************************************************************************/
 
 #include "comm.h"
-#include "nvmlwrap.h"
 #include "net.h"
 #include "graph.h"
-
-#define NET_MAX_IFS 16
-#define NET_MAX_GPUS 32
 
 struct netConnectInfo {
   ncclNetHandle_t netHandle;
@@ -60,7 +56,7 @@ ncclResult_t netCanConnect(int* ret, struct ncclTopoSystem* topo, struct ncclTop
 NCCL_PARAM(NetGdrRead, "NET_GDR_READ", -2);
 NCCL_PARAM(NetGdrLevel, "NET_GDR_LEVEL", PATH_PHB);
 
-ncclResult_t netGetGdrSupport(struct ncclTopoSystem* topo, int nvmlDev, int netDev, int read, int* useGdr) {
+ncclResult_t netGetGdrSupport(struct ncclTopoSystem* topo, int64_t busId, int netDev, int read, int* useGdr) {
   *useGdr = 0;
 
   if (read) { // For reads (sends) only enable under certain conditions
@@ -68,7 +64,7 @@ ncclResult_t netGetGdrSupport(struct ncclTopoSystem* topo, int nvmlDev, int netD
     if (gdrReadParam == 0) return ncclSuccess;
     if (gdrReadParam < 0) {
        int nvlink;
-       NCCLCHECK(ncclTopoHasNvlink(topo, nvmlDev, &nvlink));
+       NCCLCHECK(ncclTopoHasNvlink(topo, busId, &nvlink));
        if (!nvlink) return ncclSuccess;
     }
   }
@@ -76,9 +72,9 @@ ncclResult_t netGetGdrSupport(struct ncclTopoSystem* topo, int nvmlDev, int netD
   // Check if we are close enough that it makes sense to enable GDR
   int netGdrLevel = ncclParamNetGdrLevel();
   int distance;
-  NCCLCHECK(ncclTopoNetDistance(topo, nvmlDev, netDev, &distance));
+  NCCLCHECK(ncclTopoNetDistance(topo, busId, netDev, &distance));
   if (distance >= netGdrLevel) {
-    INFO(NCCL_NET,"NET/%s : GPU Direct RDMA Disabled for GPU %d / HCA %d (distance %d >= %d)", ncclNetName(), nvmlDev, netDev, distance, netGdrLevel);
+    INFO(NCCL_NET,"NET/%s : GPU Direct RDMA Disabled for GPU %lx / HCA %d (distance %d >= %d)", ncclNetName(), busId, netDev, distance, netGdrLevel);
     return ncclSuccess;
   }
 
@@ -87,7 +83,7 @@ ncclResult_t netGetGdrSupport(struct ncclTopoSystem* topo, int nvmlDev, int netD
   NCCLCHECK(ncclNetPtrSupport(netDev, &flags));
   if ((flags & NCCL_PTR_CUDA) == 0) return ncclSuccess;
   *useGdr = 1;
-  INFO(NCCL_NET,"NET/%s : GPU Direct RDMA Enabled for GPU %d / HCA %d (distance %d < %d), read %d", ncclNetName(), nvmlDev, netDev, distance, netGdrLevel, read);
+  INFO(NCCL_NET,"NET/%s : GPU Direct RDMA Enabled for GPU %lx / HCA %d (distance %d < %d), read %d", ncclNetName(), busId, netDev, distance, netGdrLevel, read);
   return ncclSuccess;
 }
 
@@ -99,7 +95,7 @@ ncclResult_t netSendSetup(struct ncclTopoSystem* topo, struct ncclTopoGraph* gra
   send->transportResources = resources;
 
   NCCLCHECK(ncclTopoGetNetDev(graph, 1, channelId, &resources->netDev));
-  NCCLCHECK(netGetGdrSupport(topo, myInfo->nvmlDev, resources->netDev, 1, &resources->useGdr));
+  NCCLCHECK(netGetGdrSupport(topo, myInfo->busId, resources->netDev, 1, &resources->useGdr));
 
   int sendSize = sizeof(struct ncclSendMem);
   NCCLCHECK(ncclCudaHostAlloc((void**)&resources->hostSendMem, (void**)&resources->devHostSendMem, sendSize));
@@ -111,7 +107,7 @@ ncclResult_t netSendSetup(struct ncclTopoSystem* topo, struct ncclTopoGraph* gra
   NCCLCHECK(ncclCudaHostAlloc((void**)&resources->hostRecvMem, (void**)&resources->devHostRecvMem, recvSize));
   resources->buffSize = buffSize;
 
-  INFO(NCCL_INIT|NCCL_NET,"Ring %02d : %d -> %d [send] via NET/%s/%d%s", channelId, myInfo->rank, peerInfo->rank, ncclNetName(), resources->netDev,
+  INFO(NCCL_INIT|NCCL_NET,"Ring %02d : %d[%lx] -> %d[%lx] [send] via NET/%s/%d%s", channelId, myInfo->rank, myInfo->busId, peerInfo->rank, peerInfo->busId, ncclNetName(), resources->netDev,
       resources->useGdr ? "/GDRDMA" : "");
   return ncclSuccess;
 }
@@ -122,7 +118,7 @@ ncclResult_t netRecvSetup(struct ncclTopoSystem* topo, struct ncclTopoGraph* gra
   recv->transportResources = resources;
 
   NCCLCHECK(ncclTopoGetNetDev(graph, 0, channelId, &resources->netDev));
-  NCCLCHECK(netGetGdrSupport(topo, myInfo->nvmlDev, resources->netDev, 0, &resources->useGdr));
+  NCCLCHECK(netGetGdrSupport(topo, myInfo->busId, resources->netDev, 0, &resources->useGdr));
 
   int sendSize = sizeof(struct ncclSendMem);
   NCCLCHECK(ncclCudaHostAlloc((void**)&resources->hostSendMem, (void**)&resources->devHostSendMem, sendSize));
@@ -134,7 +130,7 @@ ncclResult_t netRecvSetup(struct ncclTopoSystem* topo, struct ncclTopoGraph* gra
   NCCLCHECK(ncclCudaHostAlloc((void**)&resources->hostRecvMem, (void**)&resources->devHostRecvMem, recvSize));
   resources->buffSize = buffSize;
 
-  INFO(NCCL_INIT|NCCL_NET,"Ring %02d : %d -> %d [receive] via NET/%s/%d%s", channelId, peerInfo->rank, myInfo->rank, ncclNetName(), resources->netDev,
+  INFO(NCCL_INIT|NCCL_NET,"Ring %02d : %d[%lx] -> %d[%lx] [receive] via NET/%s/%d%s", channelId, peerInfo->rank, peerInfo->busId, myInfo->rank, myInfo->busId, ncclNetName(), resources->netDev,
       resources->useGdr ? "/GDRDMA" : "");
   struct netConnectInfo* info = (struct netConnectInfo*) connectInfo;
   NCCLCHECK(ncclNetListen(resources->netDev, &info->netHandle, &resources->netListenComm));

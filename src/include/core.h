@@ -65,7 +65,6 @@ typedef enum { ncclCollBroadcast, ncclCollReduce, ncclCollAllGather, ncclCollRed
 
 #include "debug.h"
 #include "checks.h"
-#include "argcheck.h"
 #include "alloc.h"
 #include "utils.h"
 #include "param.h"

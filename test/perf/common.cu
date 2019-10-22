@@ -365,6 +365,7 @@ testResult_t testStreamSynchronize(int ngpus, cudaStream_t* streams, ncclComm_t*
            hostname,
            timeout,
            __FILE__,__LINE__);
+       free(done);
        return testTimeout;
      }
 #endif
@@ -373,6 +374,7 @@ testResult_t testStreamSynchronize(int ngpus, cudaStream_t* streams, ncclComm_t*
    // We might want to let other threads (including NCCL threads) use the CPU.
    if (idle) pthread_yield();
   }
+  free(done);
   return testSuccess;
 }
 
@@ -419,8 +421,8 @@ testResult_t completeColl(struct threadArgs* args) {
 testResult_t BenchTime(struct threadArgs* args, ncclDataType_t type, ncclRedOp_t op, int root, int in_place) {
   size_t count = args->nbytes / wordSize(type);
 
-      // Initialize sendbuffs, recvbuffs and expected
-      TESTCHECK(args->collTest->initData(args, type, op, root, 99, in_place));
+  // Initialize sendbuffs, recvbuffs and expected
+  TESTCHECK(args->collTest->initData(args, type, op, root, 99, in_place));
 
   // Sync
   TESTCHECK(startColl(args, type, op, root, in_place, 0));
