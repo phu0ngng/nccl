@@ -507,6 +507,7 @@ static int collNetSetup(struct ncclComm* comm, struct ncclTopoGraph* collNetGrap
     struct ncclChannel* sendChannel = channel - collNetChannels;
     ncclConnector* send = &sendChannel->peers[nranks].send;
     NCCLCHECKGOTO(collNetTransport.connectSendRecv(send, conn), res, cleanup);
+    sendChannel->collTreeRank = rankInCollNet;  // Let send channel know the rank too when send and recv are in different channels
     INFO(NCCL_INIT, "CollNet : rank %d collNetRank %d collNetNranks %d init COMPLETE", rank, rankInCollNet, nMasters);
   }
   if (ret > 0) {
