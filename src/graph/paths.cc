@@ -312,37 +312,6 @@ static ncclResult_t getGpuSpeed(struct ncclTopoNode* node, struct ncclTopoSystem
     }
     if (node->links[l].type == LINK_PCI) pciSpeed = node->links[l].width;
   }
-  system->maxSpeed = std::min(system->maxSpeed, std::max(nvlSpeed, pciSpeed));
   system->maxWidth = std::min(system->maxWidth, std::max(nvlWidth, pciSpeed));
-  return ncclSuccess;
-}
-
-ncclResult_t ncclTopoGetMaxSpeed(struct ncclTopoSystem* system) {
-  // Compute max speed to try to accelerate the search.
-  system->maxSpeed = LOC_WIDTH;
-  system->maxWidth = LOC_WIDTH;
-
-  for (int g=0; g<system->nodes[GPU].count; g++) {
-    NCCLCHECK(getGpuSpeed(system->nodes[GPU].nodes+g, system));
-  }
-  if (system->nodes[NET].count) {
-    // Try to assign one NIC per GPU
-    int netMaxSpeed = 0;
-    int netMaxSpeedCount = 0;
-    for (int n=0; n<system->nodes[NET].count; n++) {
-      int maxSpeed = 0;
-      struct ncclTopoNode* net = system->nodes[NET].nodes+n;
-      for (int g=0; g<system->nodes[GPU].count; g++) {
-        maxSpeed = std::max(maxSpeed, net->paths[GPU][g].width);
-      }
-      if (maxSpeed > netMaxSpeed) {
-        netMaxSpeed = maxSpeed;
-        netMaxSpeedCount = 1;
-      } else if (maxSpeed == netMaxSpeed) {
-        netMaxSpeedCount++;
-      }
-    }
-    system->maxSpeed = std::min(system->maxSpeed, netMaxSpeedCount*NET_WIDTH);
-  }
   return ncclSuccess;
 }

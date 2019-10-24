@@ -478,8 +478,6 @@ static ncclResult_t initTransportsRank(struct ncclComm* comm, ncclUniqueId* comm
   NCCLCHECK(ncclTopoTrimSystem(comm->topo, comm));
   // Recompute paths after trimming
   NCCLCHECK(ncclTopoComputePaths(comm->topo, comm->peerInfo));
-  // Compute max speed to accelerate search
-  NCCLCHECK(ncclTopoGetMaxSpeed(comm->topo));
   // Print final topology
   NCCLCHECK(ncclTopoPrint(comm->topo));
 

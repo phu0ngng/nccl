@@ -35,7 +35,6 @@ ncclResult_t ncclTopoPrint(struct ncclTopoSystem* system);
 
 ncclResult_t ncclTopoComputePaths(struct ncclTopoSystem* system, struct ncclPeerInfo* info);
 ncclResult_t ncclTopoTrimSystem(struct ncclTopoSystem* system, struct ncclComm* comm);
-ncclResult_t ncclTopoGetMaxSpeed(struct ncclTopoSystem* system);
 
 // Query topology
 ncclResult_t ncclTopoGetNvlink(struct ncclTopoSystem* system, int64_t busId1, int64_t busId2, int* nvlink);

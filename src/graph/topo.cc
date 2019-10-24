@@ -190,7 +190,7 @@ static ncclResult_t ncclTopoGetPciWidth(char* path, int offset, int* pciWidth) {
   int GBps = speed*width/1000;
   memcpy(filePath, path, offset);
   filePath[offset] = '\0';
-  *pciWidth = GBps ? GBps : PCI_WIDTH;
+  *pciWidth = GBps ? 10*GBps : PCI_WIDTH;
   return ncclSuccess;
 }
 
@@ -327,6 +327,7 @@ ncclResult_t ncclTopoConnectNVLink(nvmlDevice_t* nvmlDevs, struct ncclTopoSystem
       }
     }
     if (nvlinks > 0) system->maxWidth = std::min(system->maxWidth, width);
+    else system->maxWidth = PCI_WIDTH;
   }
   return ncclSuccess;
 }
@@ -343,21 +344,22 @@ ncclResult_t ncclTopoCreatePciPath(struct ncclTopoSystem* system, struct ncclTop
   }
   int offset = strlen(path);
 
-  // lastPciWidth should be the speed of the PCI endpoint
-  // pciWidth should be the speed of the PCI switch / CPU
-  int lastPciWidth = 0, pciWidth;
-  NCCLCHECK(ncclTopoGetPciWidth(path, offset, &pciWidth));
+  // Retain device PCI max speed, then get the port max speed and
+  // take the min.
+  int devPciWidth, portPciWidth;
+  NCCLCHECK(ncclTopoGetPciWidth(path, offset, &devPciWidth));
 
   slashCount = 0;
   while (--offset > offsetRC) {
     if (path[offset] == '/') {
       slashCount++;
-      lastPciWidth = pciWidth;
-      NCCLCHECK(ncclTopoGetPciWidth(path, offset, &pciWidth));
       // Find if already existing
+      if ((slashCount%2) == 1) {
+        NCCLCHECK(ncclTopoGetPciWidth(path, offset, &portPciWidth));
+      }
       if ((slashCount%2) == 0) {
-        int width = std::min(pciWidth, lastPciWidth);
         int64_t pciId;
+        int width = std::min(portPciWidth, devPciWidth);
         NCCLCHECK(pciPathToInt64(path, offset, offsetRC, &pciId));
         for (int p=0; p<system->nodes[PCI].count; p++) {
           if (system->nodes[PCI].nodes[p].id == pciId) {
@@ -373,12 +375,16 @@ ncclResult_t ncclTopoCreatePciPath(struct ncclTopoSystem* system, struct ncclTop
         NCCLCHECK(ncclTopoConnectNodes(pciNode, lastNode, LINK_PCI, width));
         NCCLCHECK(ncclTopoConnectNodes(lastNode, pciNode, LINK_PCI, width));
         lastNode = pciNode;
+
+        // Get this device pci width.
+        NCCLCHECK(ncclTopoGetPciWidth(path, offset, &devPciWidth));
       }
     }
   }
   // Then attach to a CPU node
   int numaId = getNumaId(path);
-  int width = std::min(pciWidth, lastPciWidth);
+  NCCLCHECK(ncclTopoGetPciWidth(path, offset, &portPciWidth));
+  int width = std::min(portPciWidth, devPciWidth);
   NCCLCHECK(ncclTopoConnectCpu(system, numaId, lastNode, LINK_PCI, width));
   return ncclSuccess;
 }
@@ -428,7 +434,7 @@ int getIbWidth(char* path, int port) {
     }
     fclose(file);
   }
-  return rate/8;
+  return 10*rate/8;
 }
 
 struct netInfo {
@@ -571,7 +577,7 @@ static ncclResult_t ncclTopoPrintRec(struct ncclTopoNode* node, struct ncclTopoN
 }
 
 ncclResult_t ncclTopoPrint(struct ncclTopoSystem* s) {
-  INFO(NCCL_GRAPH, "=== System : maxWidth %2d maxSpeed %2d ===", s->maxWidth, s->maxSpeed);
+  INFO(NCCL_GRAPH, "=== System : maxWidth %2d ===", s->maxWidth);
   char line[1024];
   for (int n=0; n<s->nodes[CPU].count; n++) NCCLCHECK(ncclTopoPrintRec(s->nodes[CPU].nodes+n, NULL, line, 0));
   INFO(NCCL_GRAPH, "==========================================");

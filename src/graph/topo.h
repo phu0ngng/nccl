@@ -10,20 +10,20 @@
 #include "graph.h"
 #include "core.h"
 
-#define LOC_WIDTH 5000
-#define PASCAL_NVLINK_WIDTH 18
-#define VOLTA_NVLINK_WIDTH 21
-#define PCI_WIDTH 12           // PCI Gen3 x16
-#define QPI_WIDTH 8
-#define SKL_QPI_WIDTH 12
-#define P9_WIDTH 32
-#define AMD_WIDTH 5000         // Refine later
-#define NET_WIDTH 12           // 100Gbit
+#define LOC_WIDTH 50000
+#define PASCAL_NVLINK_WIDTH 180
+#define VOLTA_NVLINK_WIDTH 210
+#define PCI_WIDTH 120           // PCI Gen3 x16
+#define QPI_WIDTH 80
+#define SKL_QPI_WIDTH 120
+#define P9_WIDTH 320
+#define AMD_WIDTH 50000         // Refine later
+#define NET_WIDTH 120           // 100Gbit
 
 // Intel CPU convert GPU P2P traffic into 64B PCI TLPs, to GPU
 // to GPU traffic consumed more PCI bandwidth.
-#define INTEL_P2P(speed) (speed*9/12)
-#define INTEL_P2P_OVERHEAD(speed) (speed*12/9)
+#define INTEL_P2P(speed) (DIVUP(speed*9, 12))
+#define INTEL_P2P_OVERHEAD(speed) (DIVUP(speed*12, 9))
 
 #define NCCL_TOPO_NODE_TYPES 7
 #define GPU 0
@@ -103,7 +103,6 @@ struct ncclTopoNodeSet {
 
 struct ncclTopoSystem {
   struct ncclTopoNodeSet nodes[NCCL_TOPO_NODE_TYPES];
-  int maxSpeed;
   int maxWidth;
   int searchInitDone;
 };
