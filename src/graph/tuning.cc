@@ -114,7 +114,7 @@ ncclResult_t ncclSetThresholds(struct ncclComm* comm, int minCompCap, int maxCom
         if (a == NCCL_ALGO_ACCL && p == NCCL_PROTO_LL128) busBw *= 7.0/9.0;
 
         // Convert bus BW to algorithm BW
-        float ratio = a == NCCL_ALGO_TREE || a == NCCL_ALGO_ACCL ? .5 : (1.0 * comm->nRanks) / nsteps;
+        float ratio = a == NCCL_ALGO_ACCL ? 1.0 : a == NCCL_ALGO_TREE ? .5 : (1.0 * comm->nRanks) / nsteps;
         comm->bandwidths[coll][a][p] = busBw * ratio;
 
         comm->latencies[coll][a][p] = baseLat[a][p];
@@ -139,7 +139,7 @@ ncclResult_t ncclSetThresholds(struct ncclComm* comm, int minCompCap, int maxCom
           float intraLat = hwLat[intraHw[a]][a][p];
           float interLat = hwLat[NCCL_HW_NET][a][p];
           comm->latencies[coll][a][p] +=
-            2 * ((comm->nRanks/comm->nNodes-1) * intraLat + interLat);
+            2 * (comm->nRanks/comm->nNodes-1) * intraLat + interLat;
         }
       }
     }
@@ -148,7 +148,7 @@ ncclResult_t ncclSetThresholds(struct ncclComm* comm, int minCompCap, int maxCom
   // Protocols/Algorithms enable/disable, and user overrides.
   // All are enabled except ll128 which is enabled by default only in certain cases.
   int protoEnable[NCCL_NUM_PROTOCOLS] = { 1, 2, 1 };
-  int algoEnable[NCCL_NUM_ALGORITHMS] = { 1, 1, comm->collNetSupport };
+  int algoEnable[NCCL_NUM_ALGORITHMS] = { 1, 1, 1 };
 
   const char *protoStr = getenv("NCCL_PROTO");
   if (protoStr) NCCLCHECK(parseList(protoStr, ncclProtoStr, NCCL_NUM_PROTOCOLS, protoEnable));
