@@ -419,7 +419,7 @@ static ncclResult_t saveKernel(struct ncclInfo* info) {
     for (int bid=0; bid<coll.args.nChannels; bid++) {
       int enqueueChannelId = info->comm->myParams->gridDim.x % info->comm->nChannels;
       struct ncclChannel* enqueueChannel = info->comm->channels+enqueueChannelId;
-      int topoChannelId = (bid + sub*useCollTree*coll.args.nChannels) % info->comm->nChannels;
+      int topoChannelId = (bid + sub*useCollTree*info->comm->nChannels/2) % info->comm->nChannels;
 
       if (enqueueChannel->collCount == NCCL_MAX_OPS) {
         WARN("Too many aggregated operations (%d max)", NCCL_MAX_OPS);
