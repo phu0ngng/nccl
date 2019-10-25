@@ -764,7 +764,9 @@ static ncclResult_t initTransportsRank(struct ncclComm* comm, ncclUniqueId* comm
     NCCLCHECK(p2pSetup(comm, &collNetGraph, channel, 1, &channel->collTreeDn.up, NCCL_MAX_TREE_ARITY, channel->collTreeDn.down));
     if (collNetSetupCond) {
       int sendrecv = c < comm->nChannels/2 ? 0 : 1; // 0 for send, 1 for recv
-      if (collNetSetup(comm, &collNetGraph, channel, comm->nChannels/2, rank, nranks, collNetGraph.intra+c/2*comm->localRanks, nodesFirstRank, comm->nNodes, sendrecv) != 1)
+      int masterIndex = 0;
+      int lc = c % (comm->nChannels/2);
+      if (collNetSetup(comm, &collNetGraph, channel, comm->nChannels/2, rank, nranks, collNetGraph.intra+lc*comm->localRanks+masterIndex, nodesFirstRank, comm->nNodes, sendrecv) != 1)
         collNetSetupFail = 1;
     }
   }
