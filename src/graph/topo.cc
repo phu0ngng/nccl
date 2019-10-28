@@ -339,7 +339,7 @@ ncclResult_t ncclTopoCreatePciPath(struct ncclTopoSystem* system, struct ncclTop
   int offsetRC = 0;
   while (offsetRC < strlen(path)) {
     if (path[offsetRC] == '/') slashCount++;
-    if (slashCount == 4) break;
+    if (slashCount == 5) break;
     offsetRC++;
   }
   int offset = strlen(path);
