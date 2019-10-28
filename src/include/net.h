@@ -46,7 +46,8 @@ static ncclResult_t ncclNetPtrSupport(int dev, int* supportedTypes) {
     NCCLCHECKGOTO(ncclNetConnect(dev, &handle, &sComm), res, cleanup);
     NCCLCHECKGOTO(ncclNetAccept(lComm, &rComm), res, cleanup);
     CUDACHECKGOTO(cudaMalloc(&gpuPtr, GPU_BUF_SIZE), res, cleanup);
-    NCCLCHECKGOTO(ncclNetRegMr(sComm, gpuPtr, GPU_BUF_SIZE, NCCL_PTR_CUDA, &mHandle), res, cleanup);
+    NOWARN(ncclNetRegMr(sComm, gpuPtr, GPU_BUF_SIZE, NCCL_PTR_CUDA, &mHandle), res);
+    if (res != ncclSuccess) goto cleanup;
     NCCLCHECKGOTO(ncclNetDeregMr(sComm, mHandle), res, cleanup);
     NCCLCHECKGOTO(ncclNetRegMr(rComm, gpuPtr, GPU_BUF_SIZE, NCCL_PTR_CUDA, &mHandle), res, cleanup);
     NCCLCHECKGOTO(ncclNetDeregMr(rComm, mHandle), res, cleanup);

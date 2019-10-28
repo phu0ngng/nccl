@@ -28,11 +28,6 @@
 #define STR2(v) #v
 #define STR(v) STR2(v)
 
-int ncclDebugLevel;
-uint64_t ncclDebugMask = NCCL_INIT; // Default debug sub-system mask is INIT
-pthread_mutex_t ncclDebugOutputLock;
-FILE *ncclDebugFile = stdout;
-
 #ifdef ENABLE_TRACE
 std::chrono::high_resolution_clock::time_point ncclEpoch;
 #endif
@@ -65,7 +60,7 @@ ncclResult_t initNetPlugin(ncclNet_t** net) {
     // string, so checking errno doesn't hurt to try to provide a better
     // error message
     if (errno == ENOENT) {
-      INFO(NCCL_INIT|NCCL_NET, "NET/Plugin : No plugin found (libnccl-net.so).");
+      INFO(NCCL_INIT|NCCL_NET, "NET/Plugin : No plugin found (libnccl-net.so), using internel implementation");
     } else {
       INFO(NCCL_INIT|NCCL_NET, "NET/Plugin : Plugin load returned %d : %s.", errno, dlerror());
     }
@@ -107,7 +102,6 @@ static ncclResult_t ncclInit() {
   pthread_mutex_lock(&initLock);
   if (!initialized) {
     initEnv();
-    initDebug();
     initNet();
     initialized = true;
   }
@@ -139,6 +133,7 @@ static ncclResult_t commFree(ncclComm_t comm) {
     return ncclSuccess;
 
   free(comm->peerInfo);
+  ncclTopoFree(comm->topo);
 
   if (comm->bootstrap)
     NCCLCHECK(bootstrapClose(comm->bootstrap));

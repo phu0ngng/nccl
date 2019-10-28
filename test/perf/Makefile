@@ -14,7 +14,13 @@ NVCUFLAGS += -DMPI_SUPPORT
 NVLDFLAGS += -lmpi_ibm
 endif
 LIBRARIES += nccl
-NVLDFLAGS   += -L$(NCCLDIR)/lib $(LIBRARIES:%=-l%)
+NVLDFLAGS += -L$(NCCLDIR)/lib $(LIBRARIES:%=-l%)
+
+# Setting MEMLEAK=1 enables simply memory leak detection using clang++
+ifeq ($(MEMLEAK),1)
+CXX=clang++
+NVLDFLAGS += --compiler-options="-fsanitize=leak"
+endif
 
 DST_DIR := $(BUILDDIR)/test/perf
 SRC_FILES := $(wildcard *.cu)
