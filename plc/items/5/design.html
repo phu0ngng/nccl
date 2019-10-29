@@ -10,24 +10,52 @@
 $CONTENTS
 <!-- end of table of contents -->
 <h2>Proposed Design</h2>
-
+<h3>Overview</h4>
+<p>A new protocol, LL128, will use the same technique as the current LL protocol, but assuming atomicity on 128B lines
+instead of 8B.
+<h3>Principle</h3>
+<h4>General communication</h4>
+<p>Each CUDA warp will write 120 bytes of data and 8 bytes of flag, which will be aggregated as a single 128B store.
+<p>This store will be observed by the receiver which will consider data is valid whenever the last 8 bytes have the
+correct value as flag.
+<p>Each warp is polling on a different 128B line, and progress independently. Because of this polling, LL128 is to
+be only enabled when the buffer is in GPU memory, i.e. when we receive data through GPU Direct P2P or GPU Direct
+RDMA.
+<h4>Network communication</h4>
+<p> On the sender side, we copy the data to a local buffer which we fence with threadfence() (MEMBAR.GL), then
+initiate an IB transfer from that GPU memory to the destination GPU memory. It is not very different from the
+<i>Simple</i> protocol aside from the fence being only local and not having the system scope.
+<p>On the receiver side, we receive directly to GPU memory and the GPU polls immediately for data, making the
+protocol similar to the <i>LL</i> protocol.
+<h3>Limitations and risks</h3>
+<p>This relies on 128B stores not being reordered (or even observed in a reverse order) by the next GPU. This needs
+to work all the way from one GPU to another :
+<ul>
+<li>1. GPUs must consistently aggregate aligned, contiguous stores at the SM level into 128B stores.
+<li>2. Stores in transit through NVLink must not be broken down.
+<li>3. GPUs receiving data need to observe stores to their local memory in order. We do not rely on aggregation in
+this phase, i.e. we first observe the flag, then read the data.
+</ul>
+<p>The first release of NCCL 2.5 intends to enable LL128 on :
+<ul>
+<li>Volta+NVLink for intra-node communication,
+<li>Mellanox CX-5 (and later) + PCI switch for inter-node communication.
+</ul>
+<p>On the network side, there is no risk on the sender side since we use a memory fence. On the receiver side however,
+we need to ensure PCI stores from the NIC to the GPU do not get split and reordered.
+<p><i>Notes</i>
+<p>Prior generations have issues with step 3 where changes were not always observed in the right order when doing a
+single aggregated read, even on local data. Reading the data after reading the flag (instead of reading all data as
+a single aggregated load) would get rid of the problem. This behavior was never observed on Volta, so we might be able
+to improve performance a bit by leveraging aggregation also on loads.
+<p>PCI transfers are known to be split by Intel CPUs into two 64B TLPs but message reordering has never been observed.
+Some PCI configuration might affect that functionality however, for example relaxed ordering.
 <h2>Interface Architecture</h2>
-
+Not applicable since there is no new API.
 <h2>System KPIs & Metrics</h2>
-
-<h2>Data Architecture</h2>
-N/A
-<h2>Security Design</h2>
-N/A
-<h2>Debugging & Troubleshooting</h2>
-None.
-<h2>Logging and Instrumentation</h2>
-None.
-<h2>Operational Considerations</h2>
-None.
-
+LL128 gets 95% of the peak bandwidth (compared to 50% with LL) with only 2x the latency of LL (or 3x faster than Simple).
 <h2>Signoff list</h2>
-<p><!-- Author : First Last -->
+<p>Author: Sylvain Jeaugey
 <p><!-- Reviewer : First Last -->
 <p><!-- Reviewer : First Last -->
 
