@@ -61,6 +61,12 @@ ncclResult_t ncclSocketDevices(int* ndev) {
 
 ncclResult_t ncclSocketPciPath(int dev, char** path) {
   char devicepath[PATH_MAX];
+  // Only report the PCI path for real PCI devices, not for virtual, USB, ...
+  snprintf(devicepath, PATH_MAX, "/sys/class/net/%s/device/device", ncclNetIfNames+dev*MAX_IF_NAME_SIZE);
+  if (access(devicepath, F_OK ) == -1 ) {
+    INFO(NCCL_NET|NCCL_INIT, "Not returning PCI path for non-PCI device %s", ncclNetIfNames+dev*MAX_IF_NAME_SIZE);
+    return ncclSuccess;
+  }
   snprintf(devicepath, PATH_MAX, "/sys/class/net/%s/device", ncclNetIfNames+dev*MAX_IF_NAME_SIZE);
   *path = realpath(devicepath, NULL);
   if (*path == NULL) {

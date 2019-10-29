@@ -454,6 +454,7 @@ ncclResult_t ncclTopoComputeNetInfo(struct netInfo* netInfos, int ndev) {
     info->asic = n;
     info->port = 0;
     info->net = n;
+    info->width = PCI_WIDTH;
     if (info->path && (ibGuid = getIbGuid(info->path)) != 0) {
       info->asic = ibGuid;
 
@@ -515,7 +516,7 @@ ncclResult_t ncclTopoConnectPCI(struct ncclTopoSystem* system) {
         // Create the PCI path
         NCCLCHECK(ncclTopoCreatePciPath(system, nicNode, info->path));
       } else {
-        // This is probably a virtual NIC. Just attach it directly to CPU 0
+        // Virtual or USB NIC. Just attach it directly to CPU 0
         NCCLCHECK(ncclTopoConnectCpu(system, 0, nicNode, LINK_PCI, PCI_WIDTH));
       }
     }
