@@ -79,7 +79,8 @@ protocol on the receiver side, where the path is :
 <ol>
 <li>NIC sends IB completion to the CPU
 <li>CPU flushes writes from NIC to GPU using a read to GPU through IB loopback
-<li>CPU sets a flag in system memory on which the GPU polls.
+<li>CPU sets a flag in system memory on which one thread from the GPU is polling
+<li>GPU threads synchronize
 </ol>
 <p>The receiving GPU does not know it is receiving from the network; it is polling on its local memory.
 <h3>Limitations, risks, and scope</h3>
