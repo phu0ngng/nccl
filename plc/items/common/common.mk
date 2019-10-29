@@ -41,6 +41,9 @@ $(BUILDDIR)/$(REQ).html: req.html
 $(BUILDDIR)/$(DESIGN).html: design.html
 	@printf "Building   %-35s > %s\n" $< $@
 	mkdir -p $(BUILDDIR)
+	rsync -a images $(BUILDDIR)
+	mkdir -p $(BUILDDIR)/../../html
+	rsync -a ../../html/css $(BUILDDIR)/../../html/
 	cp $< $@.tmp
 	../../html/tools/git_history.sh $< >> $@.tmp
 	../../html/tools/index_titles.py $@.tmp > $@
