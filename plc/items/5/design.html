@@ -94,12 +94,14 @@ this phase, i.e. we first observe the flag, then read the data.
 </ol>
 <p>The first release of NCCL 2.5 intends to enable LL128 on :
 <ul>
-<li>Volta+NVLink for intra-node communication,
+<li>Volta+NVLink for intra-node communication.
 <li>Mellanox CX-5 (and later) + PCI switch for inter-node communication.
 </ul>
 <p>On the network side, there is no risk on the sender side since we use a memory fence. On the receiver side
 however, we need to ensure PCI stores from the NIC to the GPU do not get split and reordered.
 <p><img src=images/PCI-NVLink.png>
+<p>In all cases, the intermediate buffer is located in GPU memory on the receiver side. We therefore always consider
+in the LL128 atomicity problem that stores are remote and reads are local.
 <p><i>Notes</i>
 <p>GPUs prior to Volta have issues with step 3 where changes were not always observed in the right order when
 doing a single aggregated read, even on local data. Reading the data after reading the flag (instead of reading all
