@@ -176,11 +176,6 @@ static ncclResult_t connectTrees(struct ncclComm* comm, int* treeUpRecv, int* tr
      NCCLCHECK(getIndexes(treeUpRecv+c*comm->nRanks, indexesRecv, nNodes, firstRanks));
      NCCLCHECK(openRing(&channel0->treeUp, comm->rank, indexesSend[node]));
      NCCLCHECK(openRing(&channel1->treeUp, comm->rank, indexesSend[node]));
-     /* FIXME: added openRing calls here for collTree
-      * Otherwise collTree will have intra-node loop
-      */
-     NCCLCHECK(openRing(&channel0->collTreeUp, comm->rank, indexesSend[node]));
-     NCCLCHECK(openRing(&channel1->collTreeUp, comm->rank, indexesSend[node]));
      int root = indexesSend[node];
      if (indexesSend[node] == comm->rank) NCCLCHECK(setTreeUp(&channel0->treeUp, &channel1->treeUp, indexesRecv, u0, u1));
      if (indexesRecv[node] == comm->rank) NCCLCHECK(setTreeDown(&channel0->treeUp, &channel1->treeUp, indexesSend, d0_0, d0_1, d1_0, d1_1));
@@ -188,8 +183,6 @@ static ncclResult_t connectTrees(struct ncclComm* comm, int* treeUpRecv, int* tr
      NCCLCHECK(getIndexes(treeDnRecv+c*comm->nRanks, indexesRecv, nNodes, firstRanks));
      NCCLCHECK(openRing(&channel0->treeDn, comm->rank, u0 == -1 ? root : indexesRecv[node]));
      NCCLCHECK(openRing(&channel1->treeDn, comm->rank, u1 == -1 ? root : indexesRecv[node]));
-     NCCLCHECK(openRing(&channel0->collTreeDn, comm->rank, u0 == -1 ? root : indexesRecv[node]));
-     NCCLCHECK(openRing(&channel1->collTreeDn, comm->rank, u1 == -1 ? root : indexesRecv[node]));
      if (indexesSend[node] == comm->rank) NCCLCHECK(setTreeDown(&channel0->treeDn, &channel1->treeDn, indexesRecv, d0_0, d0_1, d1_0, d1_1));
      if (indexesRecv[node] == comm->rank) NCCLCHECK(setTreeUp(&channel0->treeDn, &channel1->treeDn, indexesSend, u0, u1));
      TRACE(NCCL_GRAPH, "TreeUp %d : %d -> %d/%d/%d", c,           channel0->treeUp.up, channel0->treeUp.down[0], channel0->treeUp.down[1], channel0->treeUp.down[2]);

@@ -717,9 +717,13 @@ static ncclResult_t initTransportsRank(struct ncclComm* comm, ncclUniqueId* comm
   for (int c=0; c<comm->nChannels/2; c++) {
     struct ncclChannel* channel0 = comm->channels+c;
     struct ncclChannel* channel1 = channel0+comm->nChannels/2;
-    if (rank == collNetGraph.intra[0+c*comm->localRanks]) { // is master
+    int masterIndex = 0, endIndex = (masterIndex+comm->localRanks-1)%comm->localRanks;
+    if (rank == collNetGraph.intra[masterIndex+c*comm->localRanks]) { // is master
       channel0->collTreeUp.up = channel0->collTreeDn.up = nranks;
       channel1->collTreeUp.up = channel1->collTreeDn.up = nranks;
+    } else if (rank == collNetGraph.intra[endIndex+c*comm->localRanks]) { // is master
+      channel0->collTreeUp.down[0] = channel0->collTreeDn.down[0] = -1;
+      channel1->collTreeUp.down[0] = channel1->collTreeDn.down[0] = -1;
     }
     INFO(NCCL_INIT, "Channel %d rank %d up %d down %d", c, rank, channel0->collTreeUp.up, channel1->collTreeUp.down[0]);
   }
@@ -760,12 +764,15 @@ static ncclResult_t initTransportsRank(struct ncclComm* comm, ncclUniqueId* comm
     NCCLCHECK(p2pSetup(comm, &ringGraph, channel, 1, &channel->ring.prev, 1, &channel->ring.next));
     NCCLCHECK(p2pSetup(comm, &treeGraph, channel, NCCL_MAX_TREE_ARITY, channel->treeUp.down, 1, &channel->treeUp.up));
     NCCLCHECK(p2pSetup(comm, &treeGraph, channel, 1, &channel->treeDn.up, NCCL_MAX_TREE_ARITY, channel->treeDn.down));
-    NCCLCHECK(p2pSetup(comm, &collNetGraph, channel, NCCL_MAX_TREE_ARITY, channel->collTreeUp.down, 1, &channel->collTreeUp.up));
-    NCCLCHECK(p2pSetup(comm, &collNetGraph, channel, 1, &channel->collTreeDn.up, NCCL_MAX_TREE_ARITY, channel->collTreeDn.down));
     if (collNetSetupCond) {
       int sendrecv = c < comm->nChannels/2 ? 0 : 1; // 0 for send, 1 for recv
       int masterIndex = 0;
       int lc = c % (comm->nChannels/2);
+      if (sendrecv == 0) {
+        NCCLCHECK(p2pSetup(comm, &collNetGraph, channel, 1, channel->collTreeUp.down, 1, &channel->collTreeUp.up));
+      } else {
+        NCCLCHECK(p2pSetup(comm, &collNetGraph, channel, 1, &channel->collTreeDn.up, 1, channel->collTreeDn.down));
+      }
       if (collNetSetup(comm, &collNetGraph, channel, comm->nChannels/2, rank, nranks, collNetGraph.intra+lc*comm->localRanks+masterIndex, nodesFirstRank, comm->nNodes, sendrecv) != 1)
         collNetSetupFail = 1;
     }
