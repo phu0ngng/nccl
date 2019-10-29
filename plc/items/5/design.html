@@ -46,10 +46,11 @@ this phase, i.e. we first observe the flag, then read the data.
 </ul>
 <p>On the network side, there is no risk on the sender side since we use a memory fence. On the receiver side however,
 we need to ensure PCI stores from the NIC to the GPU do not get split and reordered.
+<p><img src=images/PCI-NVLink.png>
 <p><i>Notes</i>
-<p>Prior generations have issues with step 3 where changes were not always observed in the right order when doing a
+<p>GPUs prior to Volta have issues with step 3 where changes were not always observed in the right order when doing a
 single aggregated read, even on local data. Reading the data after reading the flag (instead of reading all data as
-a single aggregated load) would get rid of the problem. This behavior was never observed on Volta, so we might be able
+a single aggregated load) seems to get rid of the problem. This behavior was never observed on Volta, so we might be able
 to improve performance a bit by leveraging aggregation also on loads.
 <p>PCI transfers are known to be split by Intel CPUs into two 64B TLPs but message reordering has never been observed.
 Some PCI configuration might affect that functionality however, for example relaxed ordering.
