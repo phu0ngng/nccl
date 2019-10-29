@@ -37,8 +37,9 @@ protocol on the receiver side, where the path is :
 <li>CPU flushes writes from NIC to GPU using a read to GPU through IB loopback
 <li>CPU sets a flag in system memory on which the GPU polls.
 </ol>
-<h3>Limitations and risks</h3>
-<p>This protocol relies on 128B stores not being reordered (or even observed in a reverse order) by the next GPU.
+<h3>Limitations, risks, and scope</h3>
+<h4>128B atomicity</h4>
+<p>This protocol relies on 128B stores not being observed in a reverse order by the next GPU.
 This needs to work all the way from one GPU to another :
 <ol>
 <li>SMs must consistently aggregate aligned, contiguous stores at the SM level into 128B stores.
@@ -51,23 +52,33 @@ this phase, i.e. we first observe the flag, then read the data.
 <li>Volta+NVLink for intra-node communication,
 <li>Mellanox CX-5 (and later) + PCI switch for inter-node communication.
 </ul>
-<p>On the network side, there is no risk on the sender side since we use a memory fence. On the receiver side however,
-we need to ensure PCI stores from the NIC to the GPU do not get split and reordered.
+<p>On the network side, there is no risk on the sender side since we use a memory fence. On the receiver side
+however, we need to ensure PCI stores from the NIC to the GPU do not get split and reordered.
 <p><img src=images/PCI-NVLink.png>
 <p><i>Notes</i>
-<p>GPUs prior to Volta have issues with step 3 where changes were not always observed in the right order when doing a
-single aggregated read, even on local data. Reading the data after reading the flag (instead of reading all data as
-a single aggregated load) seems to get rid of the problem. This behavior was never observed on Volta, so we might be able
-to improve performance a bit by leveraging aggregation also on loads.
+<p>GPUs prior to Volta have issues with step 3 where changes were not always observed in the right order when
+doing a single aggregated read, even on local data. Reading the data after reading the flag (instead of reading all
+data as a single aggregated load) seems to get rid of the problem. This behavior was never observed on Volta, so we
+might be able to improve performance a bit by leveraging aggregation also on loads.
 <p>PCI transfers are known to be split by Intel CPUs into two 64B TLPs but message reordering has never been observed.
 Some PCI configuration might affect that functionality however, for example relaxed ordering.
+<h4>Network memory fence</h4>
+<p>Unrelated to the 128B atomicity issue, the network send is using MEMBAR.GL instead of MEMBAR.SYS. This has the
+effect of flushing data up to L2 cache, which, on current GPUs, guarantees that further reads from PCI will see the
+correct data. The CUDA model however, defines target-scope synchronization; since the reader is the NIC, it is outside
+the GPU, and therefore MEMBAR.SYS should be used.
 <h2>Interface Architecture</h2>
-Not applicable since there is no new API.
+<p>Not applicable since the API is unchanged.
 <h2>System KPIs & Metrics</h2>
-LL128 gets 95% of the peak bandwidth (compared to 50% with LL) with only 2x the latency of LL (or 3x faster than Simple).
+<p>LL128 gets 95% of the peak bandwidth (compared to 50% with LL) with only 2x the latency of LL (or 3x faster than
+Simple).
 <h2>Signoff list</h2>
 <p>Author: Sylvain Jeaugey
-<p><!-- Reviewer : First Last -->
-<p><!-- Reviewer : First Last -->
+<p>Reviewer : NCCL Team /<!--  David Addison -->
+<p>Reviewer : NCCL Team /<!--  Ke Wen -->
+<p>Reviewer : GPU Arch / <!-- Wishwesh Gandhi -->
+<p>Reviewer : GPU Design /<!-- Manas Mandal -->
+<p>Reviewer : Compiler Arch /<!-- Olivier Giroux -->
+<p>Reviewer : PCI Arch /<!-- TBD -->
 
 <!-- do not end body and html, bottom will be auto-generated -->
