@@ -25,6 +25,47 @@ i.e. 4 lines of 128B.
 <p>Each warp is polling on different 128B lines, and progress independently. Because of this polling by all
 CUDA threads, LL128 is to be only enabled when the buffer is in GPU memory, i.e. when we receive data through
 GPU Direct P2P or GPU Direct RDMA.
+<p>Sending data is implemented with 16B stores using the following inline assembly :
+<pre>
+inline __device__ void store128(uint64_t* ptr, uint64_t v0, uint64_t v1) {
+  asm volatile("st.volatile.global.v2.u64 [%2], {%0,%1};"
+      :: "l"(v0), "l"(v1), "l"(ptr));
+}
+</pre>
+<p>The store128 function is always called by all the threads of a warp on contiguous and 128B-aligned data,
+using this code (flagThread is true only for threads 7, 15, 23 and 31) :
+<pre>
+#pragma unroll
+for (int u=0; u&lt;ELEMS_PER_THREAD; u+=2) {
+  store128(ptr+u*WARP_SIZE, v[u], flagThread ? flag : v[u+1]);
+}
+</pre>
+<p>Receiving data is using similar 16B reads :
+<pre>
+inline __device__ void load128(const uint64_t* ptr, uint64_t &amp;v0, uint64_t &amp;v1) {
+  asm volatile("ld.volatile.global.v2.u64 {%0,%1}, [%2];"
+      : "=l"(v0), "=l"(v1) : "l"(ptr));
+}
+</pre>
+<p>Loads are used twice. The first time, we only load data in L1 cache and check flags, the second time
+we re-read data and process it (through MULTI).
+<pre>
+do {
+  needReload = false;
+  #pragma unroll
+  for (int u=0; u&lt;ELEMS_PER_THREAD; u+=2) {
+    load128(ptr+u*WARP_SIZE, v0, v1);
+    needReload |= flagThread &amp;&amp; (v1 != flag);
+  }
+} while (__any_sync(WARP_MASK, needReload) &amp;&amp; checkAbort(0, 0) == 0);
+#pragma unroll
+for (int u=0; u&lt;ELEMS_PER_THREAD; u+=2) {
+  load128(ptr+u*WARP_SIZE, v0, v1);
+  v[u] = SRC ? MULTI&lt;FUNC, T&gt;()(v0, v[u]) : v0;
+  v[u+1] = SRC ? MULTI&lt;FUNC, T&gt;()(v1, v[u+1]) : v1;
+}
+</pre>
+
 <h3>Network communication</h3>
 <p> On the sender side, we copy the data to a local buffer which we fence with threadfence() (MEMBAR.GL), then
 initiate an IB transfer from that GPU memory to the destination GPU memory. It is not very different from the
@@ -37,6 +78,7 @@ protocol on the receiver side, where the path is :
 <li>CPU flushes writes from NIC to GPU using a read to GPU through IB loopback
 <li>CPU sets a flag in system memory on which the GPU polls.
 </ol>
+<p>The receiving GPU does not know it is receiving from the network; it is polling on its local memory.
 <h3>Limitations, risks, and scope</h3>
 <h4>128B atomicity</h4>
 <p>This protocol relies on 128B stores not being observed in a reverse order by the next GPU.
@@ -79,6 +121,6 @@ Simple).
 <p>Reviewer : GPU Arch / <!-- Wishwesh Gandhi -->
 <p>Reviewer : GPU Design /<!-- Manas Mandal -->
 <p>Reviewer : Compiler Arch /<!-- Olivier Giroux -->
-<p>Reviewer : PCI Arch /<!-- TBD -->
+<p>Reviewer : System Arch /<!-- TBD -->
 
 <!-- do not end body and html, bottom will be auto-generated -->
