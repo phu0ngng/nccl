@@ -8,9 +8,10 @@ write_revisions() {
     set -- $line
     if [ "$1" == "commit" ]; then
       if [ "$first" != "1" ]; then
-        echo "</td></tr>"
+        echo "</pre></td></tr>"
       fi
       echo "<tr><td>$2</td>"
+      first=0
     elif [ "$1" == "Author:" ]; then
       shift
       echo "<td>"
@@ -19,7 +20,7 @@ write_revisions() {
       echo "</td>"
     elif [ "$1" == "Date:" ]; then
       shift
-      echo "<td>$@</td><td>"
+      echo "<td>$@</td><td><pre>"
       read line # Empty line
     else
       echo $line
