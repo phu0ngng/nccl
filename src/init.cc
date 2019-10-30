@@ -721,11 +721,11 @@ static ncclResult_t initTransportsRank(struct ncclComm* comm, ncclUniqueId* comm
     if (rank == collNetGraph.intra[masterIndex+c*comm->localRanks]) { // is master
       channel0->collTreeUp.up = channel0->collTreeDn.up = nranks;
       channel1->collTreeUp.up = channel1->collTreeDn.up = nranks;
-    } else if (rank == collNetGraph.intra[endIndex+c*comm->localRanks]) { // is master
+    } else if (rank == collNetGraph.intra[endIndex+c*comm->localRanks]) { // is bottom of intra-node chain
       channel0->collTreeUp.down[0] = channel0->collTreeDn.down[0] = -1;
       channel1->collTreeUp.down[0] = channel1->collTreeDn.down[0] = -1;
     }
-    INFO(NCCL_INIT, "Channel %d rank %d up %d down %d", c, rank, channel0->collTreeUp.up, channel1->collTreeUp.down[0]);
+    INFO(NCCL_INIT, "CollNet Channel %d rank %d up %d down %d", c, rank, channel0->collTreeUp.up, channel1->collTreeDn.down[0]);
   }
 
   free(allTopoRanks);
