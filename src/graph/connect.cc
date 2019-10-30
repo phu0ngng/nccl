@@ -27,9 +27,6 @@ ncclResult_t ncclTopoPreset(struct ncclComm* comm,
     for (int i=0; i<NCCL_MAX_TREE_ARITY; i++) channel->treeUp.down[i] = -1;
     channel->treeDn.up = -1;
     for (int i=0; i<NCCL_MAX_TREE_ARITY; i++) channel->treeDn.down[i] = -1;
-    /* FIXME: we may be able to move colltree out of this function and just copy tree
-     * But this is only legit after PreSet, not PostSet
-     */
     channel->collTreeUp.up = -1;
     for (int i=0; i<NCCL_MAX_TREE_ARITY; i++) channel->collTreeUp.down[i] = -1;
     channel->collTreeDn.up = -1;
@@ -68,16 +65,12 @@ ncclResult_t ncclTopoPreset(struct ncclComm* comm,
       if (acclIntra[i] == rank) {
         int prev = (i-1+localRanks)%localRanks, next = (i+1)%localRanks;
 
-        // Tree loop always flows in the same direction. Other trees are symmetric, i.e.
+        // CollTrees are always symmetric, i.e.
         // up/down go in reverse directions
-        int sym = acclGraph->pattern == NCCL_TOPO_PATTERN_SPLIT_TREE_LOOP ? 0 : 1;
-
-        // Down tree is common
-        channel->collTreeDn.up   = acclIntra[prev];
+        channel->collTreeDn.up      = acclIntra[prev];
         channel->collTreeDn.down[0] = acclIntra[next];
-        // Up tree depends on the pattern
-        channel->collTreeUp.down[0]  = sym ? channel->collTreeDn.down[0]  : channel->collTreeDn.up ;
-        channel->collTreeUp.up       = sym ? channel->collTreeDn.up       : channel->collTreeDn.down[0];
+        channel->collTreeUp.down[0] = channel->collTreeDn.down[0];
+        channel->collTreeUp.up      = channel->collTreeDn.up;
       }
     }
     topoRanks->ringPrev[c] = channel->ring.prev;
