@@ -60,7 +60,7 @@ ncclResult_t initNetPlugin(ncclNet_t** net) {
     // string, so checking errno doesn't hurt to try to provide a better
     // error message
     if (errno == ENOENT) {
-      INFO(NCCL_INIT|NCCL_NET, "NET/Plugin : No plugin found (libnccl-net.so), using internel implementation");
+      INFO(NCCL_INIT|NCCL_NET, "NET/Plugin : No plugin found (libnccl-net.so), using internal implementation");
     } else {
       INFO(NCCL_INIT|NCCL_NET, "NET/Plugin : Plugin load returned %d : %s.", errno, dlerror());
     }
