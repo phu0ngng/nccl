@@ -451,10 +451,10 @@ extern struct ncclCollTransport collNetTransport;
 // All ranks must participate in collNetSetup call
 // type: 0 for send, 1 for recv
 // return: 0 - unsupported, 1 - supported
-static int collNetSetup(struct ncclComm* comm, struct ncclTopoGraph* collNetGraph, struct ncclChannel* channel, int collNetChannels, int rank, int nranks,  int* intraRanks, int* nodesFirstRank, int nMasters, int type) {
+static int collNetSetup(struct ncclComm* comm, struct ncclTopoGraph* collNetGraph, struct ncclChannel* channel, int collNetChannels, int rank, int nranks,  int masterRank, int nMasters, int type) {
   int rankInCollNet = -1;
   int supported = 0;
-  int isMaster = (rank == intraRanks[0]) ? 1 : 0;
+  int isMaster = (rank == masterRank) ? 1 : 0;
 
   // check if we can connect to collnet, whose root is the nranks-th rank
   struct ncclPeerInfo *myInfo = comm->peerInfo+rank, *peerInfo = comm->peerInfo+nranks;
@@ -749,11 +749,6 @@ static ncclResult_t initTransportsRank(struct ncclComm* comm, ncclUniqueId* comm
   line[1023] = '\0';
   INFO(NCCL_INIT, "Trees%s", line);
 
-  // Check if we can setup CollNet
-  int collNetDisable = ncclParamCollNetDisable();
-  int collNetSetupCond = (comm->nNodes > 1 && collNetDisable != 1 && collNetSupport()) ? 1 : 0;
-  int collNetSetupFail = 0;
-
   // Connect with prev/next for each ring
   struct ncclConnect *connect;
   NCCLCHECK(ncclCalloc(&connect, 2));
@@ -764,21 +759,31 @@ static ncclResult_t initTransportsRank(struct ncclComm* comm, ncclUniqueId* comm
     NCCLCHECK(p2pSetup(comm, &ringGraph, channel, 1, &channel->ring.prev, 1, &channel->ring.next));
     NCCLCHECK(p2pSetup(comm, &treeGraph, channel, NCCL_MAX_TREE_ARITY, channel->treeUp.down, 1, &channel->treeUp.up));
     NCCLCHECK(p2pSetup(comm, &treeGraph, channel, 1, &channel->treeDn.up, NCCL_MAX_TREE_ARITY, channel->treeDn.down));
-    if (collNetSetupCond) {
-      int sendrecv = c < comm->nChannels/2 ? 0 : 1; // 0 for send, 1 for recv
-      int masterIndex = 0;
-      int lc = c % (comm->nChannels/2);
-      if (sendrecv == 0) {
-        NCCLCHECK(p2pSetup(comm, &collNetGraph, channel, 1, channel->collTreeUp.down, 1, &channel->collTreeUp.up));
-      } else {
-        NCCLCHECK(p2pSetup(comm, &collNetGraph, channel, 1, &channel->collTreeDn.up, 1, channel->collTreeDn.down));
-      }
-      if (collNetSetup(comm, &collNetGraph, channel, comm->nChannels/2, rank, nranks, collNetGraph.intra+lc*comm->localRanks+masterIndex, nodesFirstRank, comm->nNodes, sendrecv) != 1)
+  }
+
+  // Check if we can setup CollNet
+  int collNetDisable = ncclParamCollNetDisable();
+  int collNetSetupCond = (comm->nNodes > 1 && collNetDisable != 1 && collNetSupport()) ? 1 : 0;
+  int collNetSetupFail = 0;
+  int logicChannels = comm->nChannels/2;
+  if (collNetSetupCond) {
+    // send
+    for (int c=0; c<logicChannels; c++) {
+      struct ncclChannel* channel = comm->channels+c;
+      int sendIndex = collNetGraph.pattern == NCCL_TOPO_PATTERN_TREE ? 0 : 1;  // send GPU index depends on topo pattern
+      NCCLCHECK(p2pSetup(comm, &collNetGraph, channel, 1, channel->collTreeUp.down, 1, &channel->collTreeUp.up));
+      if (collNetSetup(comm, &collNetGraph, channel, logicChannels, rank, nranks, collNetGraph.intra[c*comm->localRanks+sendIndex], comm->nNodes, 0) != 1)
         collNetSetupFail = 1;
     }
-  }
-  // Verify CollNet setup
-  if (collNetSetupCond) {
+    // recv
+    for (int c=0; c<logicChannels; c++) {
+      struct ncclChannel* channel = comm->channels+logicChannels+c;
+      int recvIndex = 0;  // recv GPU index is always 0
+      NCCLCHECK(p2pSetup(comm, &collNetGraph, channel, 1, &channel->collTreeDn.up, 1, channel->collTreeDn.down));
+      if (collNetSetup(comm, &collNetGraph, channel, logicChannels, rank, nranks, collNetGraph.intra[c*comm->localRanks+recvIndex], comm->nNodes, 1) != 1)
+        collNetSetupFail = 1;
+    }
+    // Verify CollNet setup across ranks
     NCCLCHECK(checkCollNetSetup(comm, rank, collNetSetupFail));
   }
   TRACE(NCCL_INIT, "rank %d nranks %d - CONNECTED %d RINGS AND TREES", rank, nranks, comm->nChannels);
