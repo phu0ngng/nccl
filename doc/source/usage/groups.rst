@@ -5,7 +5,7 @@ Group Calls
 ***********
 
 Group functions (ncclGroupStart/ncclGroupEnd) can be used to merge multiple calls into one. This is needed for two
-purposes : managing multiple GPUs from one thread (to avoid deadlocks) and aggregating communication operations to
+purposes: managing multiple GPUs from one thread (to avoid deadlocks) and aggregating communication operations to
 improve performance.
 
 Management Of Multiple GPUs From One Thread
