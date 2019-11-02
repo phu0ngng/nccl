@@ -1,0 +1,77 @@
+<system name="DGX-2">
+  <cpu id=0 type="intel" model="skylake" pci="gen3" width=16>
+    <nic id=0 pci="gen3" width=16><net id=0 asic=0 port=0 speed="EDR"/></nic>
+    <pci id=10 pci="gen3" width=16>
+      <pci id=110 pci="gen3" width=16>
+        <gpu id=0 pci="gen3" width=16 dev=0 sm=70 nvlid=0><nvlink count=6 target=16/></gpu>
+        <gpu id=1 pci="gen3" width=16 dev=1 sm=70 nvlid=1><nvlink count=6 target=16/></gpu>
+        <nic id=1 pci="gen3" width=16><net id=1 asic=1 port=0 speed="EDR"/></nic>
+      </pci>
+      <pci id=210 pci="gen3" width=16>
+        <gpu id=2 pci="gen3" width=16 dev=2 sm=70 nvlid=2><nvlink count=6 target=16/></gpu>
+        <gpu id=3 pci="gen3" width=16 dev=3 sm=70 nvlid=3><nvlink count=6 target=16/></gpu>
+        <nic id=2 pci="gen3" width=16><net id=2 asic=2 port=0 speed="EDR"/></nic>
+      </pci>
+    </pci>
+    <pci id=20 pci="gen3" width=16>
+      <pci id=120 pci="gen3" width=16>
+        <gpu id=4 pci="gen3" width=16 dev=4 sm=70 nvlid=4><nvlink count=6 target=16/></gpu>
+        <gpu id=5 pci="gen3" width=16 dev=5 sm=70 nvlid=5><nvlink count=6 target=16/></gpu>
+        <nic id=3 pci="gen3" width=16><net id=3 asic=3 port=0 speed="EDR"/></nic>
+      </pci>
+      <pci id=220 pci="gen3" width=16>
+        <gpu id=6 pci="gen3" width=16 dev=6 sm=70 nvlid=6><nvlink count=6 target=16/></gpu>
+        <gpu id=7 pci="gen3" width=16 dev=7 sm=70 nvlid=7><nvlink count=6 target=16/></gpu>
+        <nic id=4 pci="gen3" width=16><net id=4 asic=4 port=0 speed="EDR"/></nic>
+      </pci>
+    </pci>
+  </cpu>
+  <cpu id=1 type="intel" model="skylake" pci="gen3" width=16>
+    <nic id=5 pci="gen3" width=16>
+      <net id=5 asic=5 port=0 speed="EDR"/>
+      <net id=6 asic=5 port=1 speed="EDR"/>
+    </nic>
+    <pci id=11 pci="gen3" width=16>
+      <pci id=111 pci="gen3" width=16>
+        <gpu id=8 pci="gen3" width=16 dev=8 sm=70 nvlid=8><nvlink count=6 target=16/></gpu>
+        <gpu id=9 pci="gen3" width=16 dev=9 sm=70 nvlid=9><nvlink count=6 target=16/></gpu>
+        <nic id=7 pci="gen3" width=16><net id=7 asic=7 port=0 speed="EDR"></net></nic>
+      </pci>
+      <pci id=211 pci="gen3" width=16>
+        <gpu id=10 pci="gen3" width=16 dev=2 sm=70 nvlid=10><nvlink count=6 target=16/></gpu>
+        <gpu id=11 pci="gen3" width=16 dev=3 sm=70 nvlid=11><nvlink count=6 target=16/></gpu>
+        <nic id=8 pci="gen3" width=16><net id=8 asic=8 port=0 speed="EDR"></net></nic>
+      </pci>
+    </pci>
+    <pci id=21 pci="gen3" width=16>
+      <pci id=121 pci="gen3" width=16>
+        <gpu id=12 pci="gen3" width=16 dev=4 sm=70 nvlid=12><nvlink count=6 target=16/></gpu>
+        <gpu id=13 pci="gen3" width=16 dev=5 sm=70 nvlid=13><nvlink count=6 target=16/></gpu>
+        <nic id=9 pci="gen3" width=16><net id=9 asic=9 port=0 speed="EDR"></net></nic>
+      </pci>
+      <pci id=221 pci="gen3" width=16>
+        <gpu id=14 pci="gen3" width=16 dev=6 sm=70 nvlid=14><nvlink count=6 target=16/></gpu>
+        <gpu id=15 pci="gen3" width=16 dev=7 sm=70 nvlid=15><nvlink count=6 target=16/></gpu>
+        <nic id=10 pci="gen3" width=16><net id=10 asic=10 port=0 speed="EDR"></net></nic>
+      </pci>
+    </pci>
+  </cpu>
+  <nvs nvlid=16>
+    <nvlink count=6 target=0>
+    <nvlink count=6 target=1>
+    <nvlink count=6 target=2>
+    <nvlink count=6 target=3>
+    <nvlink count=6 target=4>
+    <nvlink count=6 target=5>
+    <nvlink count=6 target=6>
+    <nvlink count=6 target=7>
+    <nvlink count=6 target=8>
+    <nvlink count=6 target=9>
+    <nvlink count=6 target=10>
+    <nvlink count=6 target=11>
+    <nvlink count=6 target=12>
+    <nvlink count=6 target=13>
+    <nvlink count=6 target=14>
+    <nvlink count=6 target=15>
+  </nvs>
+</system>

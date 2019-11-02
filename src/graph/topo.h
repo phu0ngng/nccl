@@ -50,8 +50,6 @@ struct ncclTopoLink {
 };
 #define NCCL_TOPO_MAX_LINKS 32
 #define NCCL_TOPO_MAX_HOPS (NCCL_TOPO_MAX_NODES*NCCL_TOPO_NODE_TYPES)
-#define SELECT_PATH 1
-#define SELECT_LAST 2
 
 struct ncclTopoLinkList {
   struct ncclTopoLink* list[NCCL_TOPO_MAX_HOPS];
@@ -66,8 +64,10 @@ struct ncclTopoLinkList {
 #define NCCL_TOPO_CPU_POWER 3
 #define NCCL_TOPO_CPU_ARM 4
 
-#define NCCL_TOPO_CPU_INTEL_HSW 1
+#define NCCL_TOPO_CPU_INTEL_BDW 1
 #define NCCL_TOPO_CPU_INTEL_SKL 2
+
+#define NCCL_TOPO_UNDEF (-1)
 
 struct ncclTopoNode {
   int type;
@@ -75,6 +75,7 @@ struct ncclTopoNode {
   // Type specific data
   union {
     struct {
+      int dev; // NVML dev number
       int rank;
       int cudaCompCap;
     }gpu;
@@ -107,13 +108,16 @@ struct ncclTopoSystem {
   int searchInitDone;
 };
 
-static ncclResult_t ncclTopoCreateNode(struct ncclTopoSystem* system, struct ncclTopoNode** node, int type, uint64_t id) {
+static ncclResult_t ncclTopoGetNode(struct ncclTopoSystem* system, struct ncclTopoNode** node, int type, uint64_t id) {
   for (int i=0; i<system->nodes[type].count; i++) {
     if (system->nodes[type].nodes[i].id == id) {
       *node = system->nodes[type].nodes+i;
       return ncclSuccess;
     }
   }
+  return ncclSuccess;
+}
+static ncclResult_t ncclTopoCreateNode(struct ncclTopoSystem* system, struct ncclTopoNode** node, int type, uint64_t id) {
   if (system->nodes[type].count == NCCL_TOPO_MAX_NODES) {
     WARN("Error : tried to create too many nodes of type %d\n", type);
     return ncclInternalError;
@@ -128,6 +132,16 @@ static ncclResult_t ncclTopoCreateNode(struct ncclTopoSystem* system, struct ncc
     n->links[0].type = LINK_LOC;
     n->links[0].remNode = n;
     n->links[0].width = LOC_WIDTH;
+    n->gpu.dev = NCCL_TOPO_UNDEF;
+    n->gpu.rank = NCCL_TOPO_UNDEF;
+    n->gpu.cudaCompCap = NCCL_TOPO_UNDEF;
+  } else if (type == CPU) {
+    n->cpu.type = NCCL_TOPO_UNDEF;
+    n->cpu.model = NCCL_TOPO_UNDEF;
+  } else if (type == NET) {
+    n->net.asic = 0ULL;
+    n->net.port = NCCL_TOPO_UNDEF;
+    n->net.width = NCCL_TOPO_UNDEF;
   }
   *node = n;
   return ncclSuccess;
@@ -157,5 +171,7 @@ static ncclResult_t ncclTopoConnectNodes(struct ncclTopoNode* node, struct ncclT
 }
 
 ncclResult_t ncclTopoPrintPaths(struct ncclTopoSystem* system);
+
+ncclResult_t ncclTopoLoadSystemFromXml(const char* xmlTopoFile, struct ncclTopoSystem* system);
 
 #endif
