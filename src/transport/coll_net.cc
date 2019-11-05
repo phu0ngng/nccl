@@ -304,7 +304,7 @@ ncclResult_t collNetSendProxy(struct ncclProxyArgs* args) {
               if (ready) {
                 // CPU adjusts the flag based on reduction type
                 if (!resources->useGdr) {
-                  uint64_t newFlag = (resources->collNetRank == 0) ? flag : args->redOp == ncclSum ? 0 : args->redOp == ncclProd ? 1 : flag;
+                  uint64_t newFlag = (resources->collNetRank == 0) ? flag : args->redOp == ncclSum ? 0ULL : args->redOp == ncclProd ? 1ULL : flag;
                   TRACE(NCCL_NET, "sendProxy [%d/%d] Iallreduce (LL128) rank %d, non-GDR, setting flag %lu", args->head, buffSlot, resources->collNetRank, newFlag);
                   for (int i=0; i<nFifoLines; i++) {
                     lines[i*NCCL_LL128_LINEELEMS+NCCL_LL128_DATAELEMS] = newFlag;

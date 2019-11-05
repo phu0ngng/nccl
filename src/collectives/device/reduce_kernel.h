@@ -27,7 +27,7 @@ struct FuncSum {
     return x + y;
   }
   static __device__ uint64_t acclFlag(const int rank, const uint64_t flag) {
-    return rank == 0 ? flag : 0;
+    return rank == 0 ? flag : 0ULL;
   }
 };
 
@@ -89,7 +89,7 @@ struct FuncSum<int8_t> {
     return x+y;
   }
   static __device__ uint64_t acclFlag(const int rank, const uint64_t flag) {
-    return rank == 0 ? flag : 0;
+    return rank == 0 ? flag : 0ULL;
   }
 };
 template<>
@@ -107,7 +107,7 @@ struct FuncSum<uint8_t> {
     return x+y;
   }
   static __device__ uint64_t acclFlag(const int rank, const uint64_t flag) {
-    return rank == 0 ? flag : 0;
+    return rank == 0 ? flag : 0ULL;
   }
 };
 
@@ -277,7 +277,7 @@ struct FuncSum<half> {
 #endif
   }
   static __device__ uint64_t acclFlag(const int rank, const uint64_t flag) {
-    return rank == 0 ? flag : 0;
+    return rank == 0 ? flag : 0ULL;
   }
 };
 
