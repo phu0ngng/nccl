@@ -17,14 +17,14 @@ struct ncclTopoNodeList {
   int count;
 };
 
-static ncclResult_t getPath(struct ncclTopoSystem* system, struct ncclTopoNode* node, int t, int id, struct ncclTopoLinkList** path) {
+static ncclResult_t getPath(struct ncclTopoSystem* system, struct ncclTopoNode* node, int t, int64_t id, struct ncclTopoLinkList** path) {
   for (int i=0; i<system->nodes[t].count; i++) {
     if (system->nodes[t].nodes[i].id == id) {
       *path = node->paths[t]+i;
       return ncclSuccess;
     }
   }
-  WARN("Could not find node of type %d id %d\n", t, id);
+  WARN("Could not find node of type %d id %lx\n", t, id);
   return ncclInternalError;
 }
 
