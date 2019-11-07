@@ -446,7 +446,7 @@ static ncclResult_t p2pSetup(struct ncclComm* comm, struct ncclTopoGraph* graph,
   return ncclSuccess;
 }
 
-extern struct ncclCollTransport collNetTransport;
+extern struct ncclTransport collNetTransport;
 
 // All ranks must participate in collNetSetup call
 // type: 0 for send, 1 for recv

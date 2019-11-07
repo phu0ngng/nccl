@@ -37,8 +37,6 @@ ncclResult_t initChannel(struct ncclComm* comm, int channelid) {
   return ncclSuccess;
 }
 
-extern struct ncclCollTransport collNetTransport;
-
 ncclResult_t freeChannel(struct ncclChannel* channel, int nRanks) {
   // Operation list
   NCCLCHECK(ncclCudaHostFree(channel->collectives));

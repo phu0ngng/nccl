@@ -233,10 +233,6 @@ cleanup:
   return res;
 }
 
-ncclResult_t collNetConnectSendRecv(ncclConnector* send, ncclConnector* recv) {
-  return ncclSuccess;
-}
-
 ncclResult_t collNetSendFree(void* sendTransportResources) {
   struct collNetSendResources* sendResources = (struct collNetSendResources*)sendTransportResources;
   NCCLCHECK(ncclCudaHostFree(sendResources->hostSendMem));
@@ -475,10 +471,9 @@ ncclResult_t collNetRecvProxy(struct ncclProxyArgs* args) {
   return ncclSuccess;
 }
 
-struct ncclCollTransport collNetTransport = {
+struct ncclTransport collNetTransport = {
   "COL",
   collNetCanConnect,
-  collNetConnectSendRecv,
   { collNetSendSetup, collNetSendConnect, collNetSendFree, collNetSendProxy },
   { collNetRecvSetup, collNetRecvConnect, collNetRecvFree, collNetRecvProxy }
 };

@@ -94,14 +94,6 @@ struct ncclTransport {
   struct ncclTransportComm recv;
 };
 
-struct ncclCollTransport {
-  const char name[4];
-  ncclResult_t (*canConnect)(int*, struct ncclTopoSystem* topo, struct ncclTopoGraph* graph, struct ncclPeerInfo*, struct ncclPeerInfo*);
-  ncclResult_t (*connectSendRecv)(ncclConnector* send, ncclConnector* recv);
-  struct ncclTransportComm send;
-  struct ncclTransportComm recv;
-};
-
 #include <pthread.h>
 
 typedef ncclResult_t (*threadFunc_t)(struct ncclProxyArgs*);
