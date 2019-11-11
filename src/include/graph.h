@@ -44,6 +44,13 @@ ncclResult_t ncclTopoGetNetDev(struct ncclTopoGraph* graph, int dir, int channel
 ncclResult_t ncclTopoNetDistance(struct ncclTopoSystem* system, int64_t busId, int netDev, int* distance);
 ncclResult_t ncclTopoCpuCount(struct ncclTopoSystem* system, int* count);
 
+#define NCCL_TOPO_CPU_UNKNOWN 0
+#define NCCL_TOPO_CPU_INTEL 1
+#define NCCL_TOPO_CPU_AMD 2
+#define NCCL_TOPO_CPU_POWER 3
+#define NCCL_TOPO_CPU_ARM 4
+ncclResult_t ncclTopoCpuType(struct ncclTopoSystem* system, int* type);
+
 #define NCCL_TOPO_MAX_NODES 256
 
 #define NCCL_TOPO_PATTERN_SPLIT_TREE_LOOP 1 // Split tree (send/recv from different ranks) always flowing in the same direction

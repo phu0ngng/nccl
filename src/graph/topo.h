@@ -58,12 +58,6 @@ struct ncclTopoLinkList {
   int type;
 };
 
-#define NCCL_TOPO_CPU_UNKNOWN 0
-#define NCCL_TOPO_CPU_INTEL 1
-#define NCCL_TOPO_CPU_AMD 2
-#define NCCL_TOPO_CPU_POWER 3
-#define NCCL_TOPO_CPU_ARM 4
-
 #define NCCL_TOPO_CPU_INTEL_BDW 1
 #define NCCL_TOPO_CPU_INTEL_SKL 2
 

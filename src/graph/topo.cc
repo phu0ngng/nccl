@@ -485,31 +485,31 @@ ncclResult_t ncclTopoCreatePciPath(struct ncclTopoSystem* system, struct ncclTop
 // Try to detect if IB cards are in fact the same physical NIC, hence sharing ports.
 #include <glob.h>
 #define IB_GUID_PATH "%s/infiniband/mlx5_*/sys_image_guid"
-uint64_t getIbGuid(char* path) {
-  uint64_t guid = 0ULL;
+ncclResult_t getIbGuid(char* path, uint64_t* value) {
   char guidPath[PATH_MAX];
   snprintf(guidPath, PATH_MAX, IB_GUID_PATH, path);
   // PATH has a wildcard in it so use glob()
   glob_t globbuf;
   glob(guidPath, 0, NULL, &globbuf);
-  if (globbuf.gl_pathc > 0)
-    strncpy(guidPath, globbuf.gl_pathv[0], PATH_MAX);
+  if (globbuf.gl_pathc <= 0) return ncclInternalError;
+  strncpy(guidPath, globbuf.gl_pathv[0], PATH_MAX);
   globfree(&globbuf);
   guidPath[PATH_MAX-1] = '\0';
   FILE *file = fopen(guidPath, "r");
-  if (file != NULL) {
-    uint64_t a, b, c, d;
-    if (fscanf(file, "%04lx:%04lx:%04lx:%04lx", &a, &b, &c, &d) != EOF) {
-      guid = (a << 48) + (b << 32) + (c<<16) + d;
-      TRACE(NCCL_GRAPH, "Opened %s guid %lx", guidPath, guid);
-    }
-    fclose(file);
-  }
-  return guid;
+  if (file == NULL) return ncclInternalError;
+  uint64_t a, b, c, d;
+  if (fscanf(file, "%04lx:%04lx:%04lx:%04lx", &a, &b, &c, &d) == EOF) return ncclInternalError;
+  uint64_t guid;
+  guid = (a << 48) + (b << 32) + (c<<16) + d;
+  TRACE(NCCL_GRAPH, "Opened %s guid %lx", guidPath, guid);
+  fclose(file);
+  *value = guid;
+  return ncclSuccess;
 }
 
 #define IB_RATE_PATH "%s/infiniband/mlx5_*/ports/%d/rate"
 int getIbWidth(char* path, int port) {
+  float rate = NET_WIDTH;
   char ratePath[PATH_MAX];
   snprintf(ratePath, PATH_MAX, IB_RATE_PATH, path, port);
   // PATH has a wildcard in it so use glob()
@@ -521,15 +521,14 @@ int getIbWidth(char* path, int port) {
   ratePath[PATH_MAX-1] = '\0';
   FILE *file = fopen(ratePath, "r");
   if (file == NULL) return 0;
-  int rate;
-  if (fscanf(file, "%d Gb/sec", &rate) != EOF) {
-    TRACE(NCCL_GRAPH, "Opened %s rate %d", ratePath, rate);
+  if (fscanf(file, "%f Gb/sec", &rate) != EOF) {
+    TRACE(NCCL_GRAPH, "Opened %s rate %f", ratePath, rate);
   } else {
     TRACE(NCCL_GRAPH, "Could not read rate from %s.", ratePath);
     rate = 0;
   }
   fclose(file);
-  return 10*rate/8;
+  return (int)(10*rate/8);
 }
 
 ncclResult_t ncclTopoAddNet(struct ncclTopoSystem* system) {
@@ -563,8 +562,8 @@ ncclResult_t ncclTopoAddNet(struct ncclTopoSystem* system) {
     NCCLCHECK(ncclTopoCreateNode(system, &netNode, NET, n));
 
     if (netNode->net.asic == NCCL_TOPO_UNDEF) {
-      uint64_t ibGuid = getIbGuid(path);
-      netNode->net.asic = (ibGuid == 0) ? n : ibGuid;
+      if (getIbGuid(path, &netNode->net.asic) != ncclSuccess)
+        netNode->net.asic = n;
     }
     if (netNode->net.port == NCCL_TOPO_UNDEF) {
       netNode->net.port = 0;
@@ -779,5 +778,10 @@ ncclResult_t ncclTopoNetDistance(struct ncclTopoSystem* system, int64_t busId, i
 
 ncclResult_t ncclTopoCpuCount(struct ncclTopoSystem* system, int* count) {
   *count = system->nodes[CPU].count;
+  return ncclSuccess;
+}
+
+ncclResult_t ncclTopoCpuType(struct ncclTopoSystem* system, int* type) {
+  *type = system->nodes[CPU].nodes[0].cpu.type;
   return ncclSuccess;
 }

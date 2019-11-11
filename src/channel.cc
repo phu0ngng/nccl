@@ -6,15 +6,23 @@
 
 #include "channel.h"
 #include "param.h"
+#include "graph.h"
 
-NCCL_PARAM(Buffsize, "BUFFSIZE", DEFAULT_BUFFER_SIZE_BYTES);
+#define DEFAULT_BUFFER_SIZE_BYTES (1LL << 22) /* 4MiB */
+#define DEFAULT_BUFFER_SIZE_BYTES_ARM (1LL << 20) /* 1MiB */
+
+NCCL_PARAM(Buffsize, "BUFFSIZE", -2);
 
 ncclResult_t initChannel(struct ncclComm* comm, int channelid) {
   struct ncclChannel* channel = comm->channels+channelid;
   channel->id = channelid;
 
   // Setup intermediate buffering
-  channel->buffSize = ncclParamBuffsize();
+  int buffSize = ncclParamBuffsize();
+  int cpuType;
+  NCCLCHECK(ncclTopoCpuType(comm->topo, &cpuType));
+  channel->buffSize = buffSize != -2 ? buffSize :
+	  cpuType == NCCL_TOPO_CPU_ARM ? DEFAULT_BUFFER_SIZE_BYTES_ARM : DEFAULT_BUFFER_SIZE_BYTES;
 
   // Ring index to user rank table.
   NCCLCHECK(ncclCudaCalloc(&channel->ring.devUserRanks, comm->nRanks));
