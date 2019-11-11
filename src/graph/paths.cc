@@ -272,31 +272,13 @@ ncclResult_t ncclTopoTrimSystem(struct ncclTopoSystem* system, struct ncclComm* 
       if (gpu->id == ids[i]) break;
     }
     if (gpu == NULL) { WARN("Could not find id %d", ids[i]); return ncclInternalError; }
-
-    // Remove GPUs I can't access (even indirectly) from my view of the node
-    for (int t=0; t<NCCL_TOPO_NODE_TYPES; t++) {
-      for (int n=0; n<system->nodes[t].count; n++) {
-        struct ncclTopoNode* node = system->nodes[t].nodes+n;
-        if (node == gpu) continue;
-        for (int l=0; l<node->nlinks; l++) {
-          while (node->links[l].remNode == gpu) {
-            memcpy(node->links+l, node->links+l+1, (node->nlinks-l-1)*sizeof(struct ncclTopoLink));
-            node->nlinks--;
-          }
-          if (node->links[l].remNode->type == GPU && node->links[l].remNode >= gpu) {
-            node->links[l].remNode--;
-          }
-        }
-      }
-    }
-    memcpy(gpu, gpu+1, (system->nodes[GPU].count-g-1)*sizeof(struct ncclTopoNode));
-    system->nodes[GPU].count--;
+    NCCLCHECK(ncclTopoRemoveNode(system, GPU, g));
   }
 
   comm->localRanks = system->nodes[GPU].count;
   if (system->nodes[GPU].count == comm->nRanks) {
-    // Trim network
-    system->nodes[NET].count = 0;
+    for (int n=system->nodes[NET].count-1; n>=0; n--)
+      NCCLCHECK(ncclTopoRemoveNode(system, NET, n));
   }
   return ncclSuccess;
 }

@@ -108,70 +108,11 @@ struct ncclTopoSystem {
   int searchInitDone;
 };
 
-static ncclResult_t ncclTopoGetNode(struct ncclTopoSystem* system, struct ncclTopoNode** node, int type, uint64_t id) {
-  for (int i=0; i<system->nodes[type].count; i++) {
-    if (system->nodes[type].nodes[i].id == id) {
-      *node = system->nodes[type].nodes+i;
-      return ncclSuccess;
-    }
-  }
-  return ncclSuccess;
-}
-static ncclResult_t ncclTopoCreateNode(struct ncclTopoSystem* system, struct ncclTopoNode** node, int type, uint64_t id) {
-  if (system->nodes[type].count == NCCL_TOPO_MAX_NODES) {
-    WARN("Error : tried to create too many nodes of type %d\n", type);
-    return ncclInternalError;
-  }
-  struct ncclTopoNode* n = system->nodes[type].nodes+system->nodes[type].count;
-  system->nodes[type].count++;
-  n->type = type;
-  n->id = id;
-  if (type == GPU) {
-    // Create link to itself (used in some corner cases)
-    n->nlinks=1;
-    n->links[0].type = LINK_LOC;
-    n->links[0].remNode = n;
-    n->links[0].width = LOC_WIDTH;
-    n->gpu.dev = NCCL_TOPO_UNDEF;
-    n->gpu.rank = NCCL_TOPO_UNDEF;
-    n->gpu.cudaCompCap = NCCL_TOPO_UNDEF;
-  } else if (type == CPU) {
-    n->cpu.type = NCCL_TOPO_UNDEF;
-    n->cpu.model = NCCL_TOPO_UNDEF;
-  } else if (type == NET) {
-    n->net.asic = 0ULL;
-    n->net.port = NCCL_TOPO_UNDEF;
-    n->net.width = NCCL_TOPO_UNDEF;
-  }
-  *node = n;
-  return ncclSuccess;
-}
-
-static ncclResult_t ncclTopoConnectNodes(struct ncclTopoNode* node, struct ncclTopoNode* remNode, int type, int width) {
-  // Aggregate links into higher width for NVLink
-  struct ncclTopoLink* link;
-  for (link = node->links; link->remNode; link++) {
-    if (link->remNode == remNode && link->type == type) break;
-  }
-  if (link->remNode == NULL) node->nlinks++;
-  link->type = type;
-  link->remNode = remNode;
-  link->width += width;
-
-  // Sort links in BW descending order
-  struct ncclTopoLink linkSave;
-  memcpy(&linkSave, link, sizeof(struct ncclTopoLink));
-  while (link != node->links) {
-    if ((link-1)->width >= linkSave.width) break;
-    memcpy(link, link-1, sizeof(struct ncclTopoLink));
-    link--;
-  }
-  memcpy(link, &linkSave, sizeof(struct ncclTopoLink));
-  return ncclSuccess;
-}
-
+ncclResult_t ncclTopoGetNode(struct ncclTopoSystem* system, struct ncclTopoNode** node, int type, uint64_t id);
+ncclResult_t ncclTopoCreateNode(struct ncclTopoSystem* system, struct ncclTopoNode** node, int type, uint64_t id);
+ncclResult_t ncclTopoRemoveNode(struct ncclTopoSystem* system, int type, int id);
+ncclResult_t ncclTopoConnectNodes(struct ncclTopoNode* node, struct ncclTopoNode* remNode, int type, int width);
 ncclResult_t ncclTopoPrintPaths(struct ncclTopoSystem* system);
-
 ncclResult_t ncclTopoLoadSystemFromXml(const char* xmlTopoFile, struct ncclTopoSystem* system);
 
 #endif

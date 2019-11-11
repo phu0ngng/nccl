@@ -238,6 +238,91 @@ static ncclResult_t ncclDeviceType(const char* busId, enum ncclNvLinkDeviceType*
   return ncclSuccess;
 }
 
+ncclResult_t ncclTopoGetNode(struct ncclTopoSystem* system, struct ncclTopoNode** node, int type, uint64_t id) {
+  for (int i=0; i<system->nodes[type].count; i++) {
+    if (system->nodes[type].nodes[i].id == id) {
+      *node = system->nodes[type].nodes+i;
+      return ncclSuccess;
+    }
+  }
+  return ncclSuccess;
+}
+
+ncclResult_t ncclTopoCreateNode(struct ncclTopoSystem* system, struct ncclTopoNode** node, int type, uint64_t id) {
+  if (system->nodes[type].count == NCCL_TOPO_MAX_NODES) {
+    WARN("Error : tried to create too many nodes of type %d\n", type);
+    return ncclInternalError;
+  }
+  struct ncclTopoNode* n = system->nodes[type].nodes+system->nodes[type].count;
+  system->nodes[type].count++;
+  n->type = type;
+  n->id = id;
+  if (type == GPU) {
+    // Create link to itself (used in some corner cases)
+    n->nlinks=1;
+    n->links[0].type = LINK_LOC;
+    n->links[0].remNode = n;
+    n->links[0].width = LOC_WIDTH;
+    n->gpu.dev = NCCL_TOPO_UNDEF;
+    n->gpu.rank = NCCL_TOPO_UNDEF;
+    n->gpu.cudaCompCap = NCCL_TOPO_UNDEF;
+  } else if (type == CPU) {
+    n->cpu.type = NCCL_TOPO_UNDEF;
+    n->cpu.model = NCCL_TOPO_UNDEF;
+  } else if (type == NET) {
+    n->net.asic = 0ULL;
+    n->net.port = NCCL_TOPO_UNDEF;
+    n->net.width = NCCL_TOPO_UNDEF;
+  }
+  *node = n;
+  return ncclSuccess;
+}
+
+ncclResult_t ncclTopoRemoveNode(struct ncclTopoSystem* system, int type, int index) {
+  struct ncclTopoNode* delNode = system->nodes[type].nodes+index;
+  for (int t=0; t<NCCL_TOPO_NODE_TYPES; t++) {
+    for (int n=0; n<system->nodes[t].count; n++) {
+      struct ncclTopoNode* node = system->nodes[t].nodes+n;
+      if (node == delNode) continue;
+      for (int l=0; l<node->nlinks; l++) {
+        while (node->links[l].remNode == delNode) {
+          memmove(node->links+l, node->links+l+1, (node->nlinks-l-1)*sizeof(struct ncclTopoLink));
+          node->nlinks--;
+        }
+        if (node->links[l].remNode->type == type && node->links[l].remNode >= delNode) {
+          node->links[l].remNode--;
+        }
+      }
+    }
+  }
+  memmove(delNode, delNode+1, (system->nodes[type].count-index-1)*sizeof(struct ncclTopoNode));
+  system->nodes[type].count--;
+  return ncclSuccess;
+}
+
+ncclResult_t ncclTopoConnectNodes(struct ncclTopoNode* node, struct ncclTopoNode* remNode, int type, int width) {
+  // Aggregate links into higher width for NVLink
+  struct ncclTopoLink* link;
+  for (link = node->links; link->remNode; link++) {
+    if (link->remNode == remNode && link->type == type) break;
+  }
+  if (link->remNode == NULL) node->nlinks++;
+  link->type = type;
+  link->remNode = remNode;
+  link->width += width;
+
+  // Sort links in BW descending order
+  struct ncclTopoLink linkSave;
+  memcpy(&linkSave, link, sizeof(struct ncclTopoLink));
+  while (link != node->links) {
+    if ((link-1)->width >= linkSave.width) break;
+    memcpy(link, link-1, sizeof(struct ncclTopoLink));
+    link--;
+  }
+  memcpy(link, &linkSave, sizeof(struct ncclTopoLink));
+  return ncclSuccess;
+}
+
 ncclResult_t ncclTopoConnectCpu(struct ncclTopoSystem* system, int numaId, struct ncclTopoNode* node, int linkType, int linkWidth) {
   struct ncclTopoNode* cpuNode = NULL;
   NCCLCHECK(ncclTopoGetNode(system, &cpuNode, CPU, numaId));
@@ -447,54 +532,10 @@ int getIbWidth(char* path, int port) {
   return 10*rate/8;
 }
 
-struct netInfo {
-  char* path;
-  int64_t nic;
-  uint64_t asic;
-  int port;
-  int net;
-  int width;
-};
-
-ncclResult_t ncclTopoComputeNetInfo(struct netInfo* netInfos, int ndev) {
-  for (int n=0; n<ndev; n++) {
-    struct netInfo* info = netInfos+n;
-    uint64_t ibGuid;
-    info->nic = n;
-    info->asic = n;
-    info->port = 0;
-    info->net = n;
-    if (info->path && (ibGuid = getIbGuid(info->path)) != 0) {
-      info->asic = ibGuid;
-
-      // Set PCI subdevice to 0 to merge multi-port cards into one
-      info->path[strlen(info->path)-1]='0';
-      NCCLCHECK(pciPathToInt64(info->path, strlen(info->path), 0, &info->nic));
-
-      // Same PCI path -> different ports of the same NIC
-      for (int i=0; i<n; i++) if (netInfos[i].nic == info->nic) info->port++;
-
-      // Same GUID -> same network links as the other NIC
-      for (int i=0; i<n; i++) if (netInfos[i].asic == info->asic && netInfos[i].port == info->port) info->net = netInfos[i].net;
-      info->width = getIbWidth(info->path, info->port+1); // IB ports start at 1
-    }
-    INFO(NCCL_GRAPH, "%s -> %x/%lx/%d/%d", info->path, info->nic, info->asic, info->port, info->net);
-  }
-  return ncclSuccess;
-}
-
 ncclResult_t ncclTopoAddNet(struct ncclTopoSystem* system) {
   // Connect the NICs
   int netDevCount;
   NCCLCHECK(ncclNetDevices(&netDevCount));
-
-  struct netInfo* netInfos;
-  NCCLCHECK(ncclCalloc(&netInfos, netDevCount));
-
-  for (int n=0; n<netDevCount; n++) {
-  }
-
-  NCCLCHECK(ncclTopoComputeNetInfo(netInfos, netDevCount));
 
   for (int n=0; n<netDevCount; n++) {
     char* path = NULL;
@@ -540,8 +581,16 @@ ncclResult_t ncclTopoAddNet(struct ncclTopoSystem* system) {
     NCCLCHECK(ncclTopoConnectNodes(nicNode, netNode, LINK_NET, netNode->net.width));
     NCCLCHECK(ncclTopoConnectNodes(netNode, nicNode, LINK_NET, netNode->net.width));
   }
-  free(netInfos);
 
+  for (int n=system->nodes[NET].count-1; n>=0; n--) {
+    struct ncclTopoNode* net = system->nodes[NET].nodes+n;
+    if (net->net.asic == NCCL_TOPO_UNDEF || net->net.port == NCCL_TOPO_UNDEF || net->net.width == NCCL_TOPO_UNDEF)
+      NCCLCHECK(ncclTopoRemoveNode(system, NET, n));
+  }
+  return ncclSuccess;
+}
+
+ncclResult_t ncclTopoConnectCpus(struct ncclTopoSystem* system) {
   // And connect all CPU nodes together
   for (int n=0; n<system->nodes[CPU].count; n++) {
     for (int p=0; p<system->nodes[CPU].count; p++) {
@@ -669,8 +718,13 @@ ncclResult_t ncclTopoGetSystem(struct ncclComm* comm, struct ncclTopoSystem** sy
       gpu->gpu.rank = r;
     }
   }
+  for (int g=s->nodes[GPU].count-1; g>=0; g--) {
+    struct ncclTopoNode* gpu = s->nodes[GPU].nodes+g;
+    if (gpu->gpu.rank == -1) NCCLCHECK(ncclTopoRemoveNode(s, GPU, g));
+  }
 
   NCCLCHECK(ncclTopoAddNet(s));
+  NCCLCHECK(ncclTopoConnectCpus(s));
   NCCLCHECK(ncclTopoSortSystem(s));
   *system = s;
   return ncclSuccess;
