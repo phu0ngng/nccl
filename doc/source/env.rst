@@ -73,7 +73,7 @@ The ``NCCL_SOCKET_NTHREADS`` variable specifies the number of CPU helper threads
 
 Values accepted
 ^^^^^^^^^^^^^^^
-1 to 16. On AWS, the default value is 2; in other cases, the default value is 1.
+1 to 16. On AWS, the default value is 2; on Google Cloud instances with the gVNIC network interface, the default value is 4 (since 2.5.6); in other cases, the default value is 1.
 
 NCCL_NSOCKS_PERTHREAD
 ---------------------
