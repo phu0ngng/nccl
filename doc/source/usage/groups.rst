@@ -4,6 +4,10 @@
 Group Calls
 ***********
 
+Group functions (ncclGroupStart/ncclGroupEnd) can be used to merge multiple calls into one. This is needed for two
+purposes: managing multiple GPUs from one thread (to avoid deadlocks) and aggregating communication operations to
+improve performance.
+
 Management Of Multiple GPUs From One Thread
 -------------------------------------------
 
@@ -32,6 +36,17 @@ Caution: When called inside a group, stream operations (like ncclAllReduce) can 
 operation on the stream. Stream operations like cudaStreamSynchronize can therefore be called only after ncclGroupEnd
 returns.
 
+Group calls must also be used to create a communicator when one thread manages more than one device:
+
+.. code:: C
+
+  ncclGroupStart();
+  for (int i=0; i<nLocalDevs; i++) {
+    cudaSetDevice(device[i]);
+    ncclCommInitRank(comms+i, nranks, commId, rank[i]);
+  }
+  ncclGroupEnd();
+
 
 Note: Contrary to NCCL 1.x, there is no need to set the CUDA device before every NCCL communication call within a group,
 but it is still needed when calling ncclCommInitRank within a group.
@@ -46,6 +61,7 @@ Aggregated Operations (2.2 and later)
 
 The group semantics can also be used to have multiple collective operations performed within a single NCCL launch. This
 is useful for reducing the launch overhead, in other words, latency, as it only occurs once for multiple operations.
+Init functions cannot be aggregated with other init functions, nor with communication functions.
 
 Aggregation of collective operations can be done simply by having multiple calls to NCCL within a ncclGroupStart /
 ncclGroupEnd section.
