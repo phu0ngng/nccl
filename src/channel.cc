@@ -37,8 +37,6 @@ ncclResult_t initChannel(struct ncclComm* comm, int channelid) {
   return ncclSuccess;
 }
 
-extern struct ncclCollTransport collNetTransport;
-
 ncclResult_t freeChannel(struct ncclChannel* channel, int nRanks) {
   // Operation list
   NCCLCHECK(ncclCudaHostFree(channel->collectives));
@@ -48,9 +46,13 @@ ncclResult_t freeChannel(struct ncclChannel* channel, int nRanks) {
   CUDACHECK(cudaFree(channel->ring.devUserRanks));
 
   // Free transport proxy resources
+  // Note: free all send resources first due to CollNet arragement
   for (int r=0; r<nRanks+1; r++) {
     struct ncclPeer* peer = channel->peers+r;
     if (peer->send.transportResources) NCCLCHECK(peer->send.transportComm->free(peer->send.transportResources));
+  }
+  for (int r=0; r<nRanks+1; r++) {
+    struct ncclPeer* peer = channel->peers+r;
     if (peer->recv.transportResources) NCCLCHECK(peer->recv.transportComm->free(peer->recv.transportResources));
   }
 

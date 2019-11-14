@@ -446,15 +446,19 @@ static ncclResult_t p2pSetup(struct ncclComm* comm, struct ncclTopoGraph* graph,
   return ncclSuccess;
 }
 
-extern struct ncclCollTransport collNetTransport;
+extern struct ncclTransport collNetTransport;
 
 // All ranks must participate in collNetSetup call
 // type: 0 for send, 1 for recv
 // return: 0 - unsupported, 1 - supported
-static int collNetSetup(struct ncclComm* comm, struct ncclTopoGraph* collNetGraph, struct ncclChannel* channel, int collNetChannels, int rank, int nranks,  int masterRank, int nMasters, int type) {
+static int collNetSetup(struct ncclComm* comm, struct ncclTopoGraph* collNetGraph, struct ncclChannel* channel, int collNetChannels, int rank, int nranks,  int masterRank, int masterPeer, int nMasters, int type) {
   int rankInCollNet = -1;
   int supported = 0;
   int isMaster = (rank == masterRank) ? 1 : 0;
+  struct {
+    int collNetRank;
+    ncclConnect connect;
+  } sendrecvExchange;
 
   // check if we can connect to collnet, whose root is the nranks-th rank
   struct ncclPeerInfo *myInfo = comm->peerInfo+rank, *peerInfo = comm->peerInfo+nranks;
@@ -462,6 +466,13 @@ static int collNetSetup(struct ncclComm* comm, struct ncclTopoGraph* collNetGrap
   int ret = 1;
   if (isMaster) {
     NCCLCHECK(collNetTransport.canConnect(&ret, comm->topo, collNetGraph, myInfo, peerInfo));
+  }
+
+  // send master receives connect info from peer recv master
+  if (isMaster && type == 0) {
+    NCCLCHECK(bootstrapRecv(comm->bootstrap, masterPeer, &sendrecvExchange, sizeof(sendrecvExchange)));
+    channel->collTreeRank = rankInCollNet = sendrecvExchange.collNetRank;
+    INFO(NCCL_INIT, "CollNet [send] : rank %d collNetRank %d collNetNranks %d received connect from rank %d", rank, rankInCollNet, nMasters, masterPeer);
   }
 
   // select
@@ -474,17 +485,17 @@ static int collNetSetup(struct ncclComm* comm, struct ncclTopoGraph* collNetGrap
   if (isMaster && ret > 0) {
     NCCLCHECK(transportComm->setup(comm->topo, collNetGraph, myInfo, peerInfo, &myConnect, conn, channel->buffSize, channel->id));
   }
-  // exchange connect handles
-  // all ranks must participate in the AllGather call
+  // prepare connect handles
   ncclResult_t res;
   struct {
     int isMaster;
     ncclConnect connect;
   } *allConnects = NULL;
   ncclConnect *masterConnects = NULL;
-  if (type == 1) {  // perform AllGather only once
+  NCCLCHECK(ncclCalloc(&masterConnects, nMasters));
+  if (type == 1) {  // recv side: AllGather
+    // all ranks must participate
     NCCLCHECK(ncclCalloc(&allConnects, nranks));
-    NCCLCHECK(ncclCalloc(&masterConnects, nMasters));
     allConnects[rank].isMaster = isMaster;
     memcpy(&(allConnects[rank].connect), &myConnect, sizeof(struct ncclConnect));
     NCCLCHECKGOTO(bootstrapAllGather(comm->bootstrap, allConnects, sizeof(*allConnects)), res, cleanup);
@@ -497,18 +508,19 @@ static int collNetSetup(struct ncclComm* comm, struct ncclTopoGraph* collNetGrap
         c++;
       }
     }
+  } else { // send side : copy in connect info received from peer recv master
+    if (isMaster) memcpy(masterConnects+rankInCollNet, &(sendrecvExchange.connect), sizeof(struct ncclConnect));
   }
   // connect
   if (isMaster && ret > 0) {
     NCCLCHECKGOTO(transportComm->connect(masterConnects, nMasters, rankInCollNet, conn), res, cleanup);
   }
-  // connect send and recv (perform only once)
-  if (isMaster && ret > 0 && type == 1) {
-    struct ncclChannel* sendChannel = channel - collNetChannels;
-    ncclConnector* send = &sendChannel->peers[nranks].send;
-    NCCLCHECKGOTO(collNetTransport.connectSendRecv(send, conn), res, cleanup);
-    sendChannel->collTreeRank = rankInCollNet;  // Let send channel know the rank too when send and recv are in different channels
-    INFO(NCCL_INIT, "CollNet : rank %d collNetRank %d collNetNranks %d init COMPLETE", rank, rankInCollNet, nMasters);
+  // recv side sends connect info to send side
+  if (isMaster && type == 1) {
+    sendrecvExchange.collNetRank = rankInCollNet;
+    memcpy(&sendrecvExchange.connect, masterConnects+rankInCollNet, sizeof(struct ncclConnect));
+    NCCLCHECK(bootstrapSend(comm->bootstrap, masterPeer, &sendrecvExchange, sizeof(sendrecvExchange)));
+    INFO(NCCL_INIT, "CollNet [recv] : rank %d collNetRank %d collNetNranks %d sent connect to rank %d", rank, rankInCollNet, nMasters, masterPeer);
   }
   if (ret > 0) {
     supported = 1;
@@ -614,7 +626,7 @@ static ncclResult_t initTransportsRank(struct ncclComm* comm, ncclUniqueId* comm
   NCCLCHECK(ncclTopoCompute(comm->topo, &ringGraph));
   NCCLCHECK(ncclTopoPrintGraph(comm->topo, &ringGraph));
   struct ncclTopoGraph collNetGraph;
-  collNetGraph.pattern = NCCL_TOPO_PATTERN_TREE;
+  collNetGraph.pattern = NCCL_TOPO_PATTERN_SPLIT_TREE_LOOP;
   collNetGraph.crossNic = ncclParamCrossNic();
   NCCLCHECK(ncclTopoCompute(comm->topo, &collNetGraph));
   NCCLCHECK(ncclTopoPrintGraph(comm->topo, &collNetGraph));
@@ -714,18 +726,27 @@ static ncclResult_t initTransportsRank(struct ncclComm* comm, ncclUniqueId* comm
   NCCLCHECK(ncclTopoPostset(comm, nodesFirstRank, allTopoRanks, rings));
 
   // Set root of collTree to rank id nranks
+  int sendIndex = collNetGraph.pattern == NCCL_TOPO_PATTERN_TREE ? 0 : 1;  // send GPU index depends on topo pattern
+  int sendEndIndex = (sendIndex+comm->localRanks-1)%comm->localRanks;
   for (int c=0; c<comm->nChannels/2; c++) {
-    struct ncclChannel* channel0 = comm->channels+c;
-    struct ncclChannel* channel1 = channel0+comm->nChannels/2;
-    int masterIndex = 0, endIndex = (masterIndex+comm->localRanks-1)%comm->localRanks;
-    if (rank == collNetGraph.intra[masterIndex+c*comm->localRanks]) { // is master
-      channel0->collTreeUp.up = channel0->collTreeDn.up = nranks;
-      channel1->collTreeUp.up = channel1->collTreeDn.up = nranks;
-    } else if (rank == collNetGraph.intra[endIndex+c*comm->localRanks]) { // is bottom of intra-node chain
-      channel0->collTreeUp.down[0] = channel0->collTreeDn.down[0] = -1;
-      channel1->collTreeUp.down[0] = channel1->collTreeDn.down[0] = -1;
+    struct ncclChannel* channel = comm->channels+c;
+    if (rank == collNetGraph.intra[sendIndex+c*comm->localRanks]) { // is master
+      channel->collTreeUp.up = channel->collTreeDn.up = nranks;
+    } else if (rank == collNetGraph.intra[sendEndIndex+c*comm->localRanks]) { // is bottom of intra-node chain
+      channel->collTreeUp.down[0] = channel->collTreeDn.down[0] = -1;
     }
-    INFO(NCCL_INIT, "CollNet Channel %d rank %d up %d down %d", c, rank, channel0->collTreeUp.up, channel1->collTreeDn.down[0]);
+    INFO(NCCL_INIT, "CollNet Channel %d rank %d up %d down %d", c, rank, channel->collTreeUp.up, channel->collTreeUp.down[0]);
+  }
+  int recvIndex = 0;  // recv GPU index is always 0
+  int recvEndIndex = (recvIndex+comm->localRanks-1)%comm->localRanks;
+  for (int c=0; c<comm->nChannels/2; c++) {
+    struct ncclChannel* channel = comm->channels+comm->nChannels/2+c;
+    if (rank == collNetGraph.intra[recvIndex+c*comm->localRanks]) { // is master
+      channel->collTreeUp.up = channel->collTreeDn.up = nranks;
+    } else if (rank == collNetGraph.intra[recvEndIndex+c*comm->localRanks]) { // is bottom of intra-node chain
+      channel->collTreeUp.down[0] = channel->collTreeDn.down[0] = -1;
+    }
+    INFO(NCCL_INIT, "CollNet Channel %d rank %d up %d down %d", c, rank, channel->collTreeDn.up, channel->collTreeDn.down[0]);
   }
 
   free(allTopoRanks);
@@ -767,20 +788,18 @@ static ncclResult_t initTransportsRank(struct ncclComm* comm, ncclUniqueId* comm
   int collNetSetupFail = 0;
   int logicChannels = comm->nChannels/2;
   if (collNetSetupCond) {
-    // send
+    int recvIndex = 0;  // recv GPU index is always 0
+    int sendIndex = collNetGraph.pattern == NCCL_TOPO_PATTERN_TREE ? 0 : 1;  // send GPU index depends on topo pattern
     for (int c=0; c<logicChannels; c++) {
-      struct ncclChannel* channel = comm->channels+c;
-      int sendIndex = collNetGraph.pattern == NCCL_TOPO_PATTERN_TREE ? 0 : 1;  // send GPU index depends on topo pattern
-      NCCLCHECK(p2pSetup(comm, &collNetGraph, channel, 1, channel->collTreeUp.down, 1, &channel->collTreeUp.up));
-      if (collNetSetup(comm, &collNetGraph, channel, logicChannels, rank, nranks, collNetGraph.intra[c*comm->localRanks+sendIndex], comm->nNodes, 0) != 1)
+      struct ncclChannel* channelRecv = comm->channels+logicChannels+c;
+      struct ncclChannel* channelSend = comm->channels+c;
+      NCCLCHECK(p2pSetup(comm, &collNetGraph, channelRecv, 1, &channelRecv->collTreeDn.up, 1, channelRecv->collTreeDn.down));
+      NCCLCHECK(p2pSetup(comm, &collNetGraph, channelSend, 1, channelSend->collTreeUp.down, 1, &channelSend->collTreeUp.up));
+      int recvMaster = collNetGraph.intra[c*comm->localRanks+recvIndex];
+      int sendMaster = collNetGraph.intra[c*comm->localRanks+sendIndex];
+      if (collNetSetup(comm, &collNetGraph, channelRecv, logicChannels, rank, nranks, recvMaster, sendMaster, comm->nNodes, 1) != 1)
         collNetSetupFail = 1;
-    }
-    // recv
-    for (int c=0; c<logicChannels; c++) {
-      struct ncclChannel* channel = comm->channels+logicChannels+c;
-      int recvIndex = 0;  // recv GPU index is always 0
-      NCCLCHECK(p2pSetup(comm, &collNetGraph, channel, 1, &channel->collTreeDn.up, 1, channel->collTreeDn.down));
-      if (collNetSetup(comm, &collNetGraph, channel, logicChannels, rank, nranks, collNetGraph.intra[c*comm->localRanks+recvIndex], comm->nNodes, 1) != 1)
+      if (collNetSetup(comm, &collNetGraph, channelSend, logicChannels, rank, nranks, sendMaster, recvMaster, comm->nNodes, 0) != 1)
         collNetSetupFail = 1;
     }
     // Verify CollNet setup across ranks
