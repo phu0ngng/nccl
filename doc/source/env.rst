@@ -297,7 +297,7 @@ For more information, see the InfiniBand specification Volume 1
 
 Values accepted
 ^^^^^^^^^^^^^^^
-The default value is 1.
+The default value is 0.
 
 NCCL_IB_TC
 ----------
