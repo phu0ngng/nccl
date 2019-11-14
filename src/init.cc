@@ -626,7 +626,7 @@ static ncclResult_t initTransportsRank(struct ncclComm* comm, ncclUniqueId* comm
   NCCLCHECK(ncclTopoCompute(comm->topo, &ringGraph));
   NCCLCHECK(ncclTopoPrintGraph(comm->topo, &ringGraph));
   struct ncclTopoGraph collNetGraph;
-  collNetGraph.pattern = NCCL_TOPO_PATTERN_SPLIT_TREE_LOOP;
+  collNetGraph.pattern = NCCL_TOPO_PATTERN_TREE;
   collNetGraph.crossNic = ncclParamCrossNic();
   NCCLCHECK(ncclTopoCompute(comm->topo, &collNetGraph));
   NCCLCHECK(ncclTopoPrintGraph(comm->topo, &collNetGraph));
