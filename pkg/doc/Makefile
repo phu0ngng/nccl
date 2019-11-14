@@ -23,6 +23,7 @@ prep: $(DOCTARGETS)
 build: prep
 	@printf "Building doc package\n"
 	make -C $(DOCPREPDIR) html
+	rm -Rf $(DOCPREPDIR)/html
 	mv $(DOCPREPDIR)/../html $(DOCPREPDIR)
 	mkdir -p $(PKGDIR)
 	(cd $(DOCPREPDIR); zip -r $(PKGDIR)/nccl-doc_$(NCCL_MAJOR).$(NCCL_MINOR).$(NCCL_PATCH)$(NCCL_SUFFIX)-$(PKG_REVISION).zip html)
