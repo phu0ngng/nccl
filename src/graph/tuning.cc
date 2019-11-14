@@ -111,7 +111,7 @@ ncclResult_t ncclSetThresholds(struct ncclComm* comm, int minCompCap, int maxCom
         if (a == NCCL_ALGO_TREE && p == NCCL_PROTO_LL128) busBw *= 7.0/9.0;
         if (a == NCCL_ALGO_ACCL) busBw = std::min(busBw*.9, 74.0);
         if (a == NCCL_ALGO_ACCL && p == NCCL_PROTO_LL) busBw *= 1.0/3.0;
-        if (a == NCCL_ALGO_ACCL && p == NCCL_PROTO_LL128) busBw *= 7.0/9.0;
+        if (a == NCCL_ALGO_ACCL && p == NCCL_PROTO_LL128) busBw = 0;  // CollNet does not support LL128
 
         // Convert bus BW to algorithm BW
         float ratio = a == NCCL_ALGO_ACCL ? 1.0 : a == NCCL_ALGO_TREE ? .5 : (1.0 * comm->nRanks) / nsteps;

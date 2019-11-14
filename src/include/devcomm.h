@@ -171,7 +171,6 @@ struct ncclChannel {
       struct ncclTree treeDn;
       struct ncclTree collTreeUp;
       struct ncclTree collTreeDn;
-      int collTreeRank;
 
       int id;
       int nthreads;

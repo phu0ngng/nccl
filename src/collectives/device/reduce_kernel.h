@@ -16,18 +16,12 @@ struct FuncNull {
   __device__ T operator()(const T x, const T y) const {
     return 0;
   }
-  static __device__ uint64_t acclFlag(const int rank, const uint64_t flag) {
-    return flag;
-  }
 };
 
 template<typename T>
 struct FuncSum {
   __device__ T operator()(const T x, const T y) const {
     return x + y;
-  }
-  static __device__ uint64_t acclFlag(const int rank, const uint64_t flag) {
-    return rank == 0 ? flag : 0ULL;
   }
 };
 
@@ -36,9 +30,6 @@ struct FuncProd {
   __device__ T operator()(const T x, const T y) const {
     return x * y;
   }
-  static __device__ uint64_t acclFlag(const int rank, const uint64_t flag) {
-    return rank == 0 ? flag : 1ULL;
-  }
 };
 
 template<typename T>
@@ -46,18 +37,12 @@ struct FuncMax {
   __device__ T operator()(const T x, const T y) const {
     return (x < y) ? y : x;
   }
-  static __device__ uint64_t acclFlag(const int rank, const uint64_t flag) {
-    return flag;
-  }
 };
 
 template<typename T>
 struct FuncMin {
   __device__ T operator()(const T x, const T y) const {
     return (x < y) ? x : y;
-  }
-  static __device__ uint64_t acclFlag(const int rank, const uint64_t flag) {
-    return flag;
   }
 };
 
@@ -88,9 +73,6 @@ struct FuncSum<int8_t> {
   __device__ int8_t operator()(const int8_t x, const int8_t y) const {
     return x+y;
   }
-  static __device__ uint64_t acclFlag(const int rank, const uint64_t flag) {
-    return rank == 0 ? flag : 0ULL;
-  }
 };
 template<>
 struct FuncSum<uint8_t> {
@@ -105,9 +87,6 @@ struct FuncSum<uint8_t> {
   }
   __device__ uint8_t operator()(const uint8_t x, const uint8_t y) const {
     return x+y;
-  }
-  static __device__ uint64_t acclFlag(const int rank, const uint64_t flag) {
-    return rank == 0 ? flag : 0ULL;
   }
 };
 
@@ -132,9 +111,6 @@ struct FuncProd<int8_t> {
   __device__ int8_t operator()(const int8_t x, const int8_t y) const {
     return x*y;
   }
-  static __device__ uint64_t acclFlag(const int rank, const uint64_t flag) {
-    return rank == 0 ? flag : 1ULL;
-  }
 };
 template<>
 struct FuncProd<uint8_t> {
@@ -143,9 +119,6 @@ struct FuncProd<uint8_t> {
   }
   __device__ uint8_t operator()(const uint8_t x, const uint8_t y) const {
     return x*y;
-  }
-  static __device__ uint64_t acclFlag(const int rank, const uint64_t flag) {
-    return rank == 0 ? flag : 1ULL;
   }
 };
 
@@ -171,9 +144,6 @@ struct FuncMax<int8_t> {
   __device__ int8_t operator()(const int8_t x, const int8_t y) const {
     return (x>y) ? x : y;
   }
-  static __device__ uint64_t acclFlag(const int rank, const uint64_t flag) {
-    return flag;
-  }
 };
 template<>
 struct FuncMax<uint8_t> {
@@ -196,9 +166,6 @@ struct FuncMax<uint8_t> {
   }
   __device__ uint8_t operator()(const uint8_t x, const uint8_t y) const {
     return (x>y) ? x : y;
-  }
-  static __device__ uint64_t acclFlag(const int rank, const uint64_t flag) {
-    return flag;
   }
 };
 
@@ -224,9 +191,6 @@ struct FuncMin<int8_t> {
   __device__ int8_t operator()(const int8_t x, const int8_t y) const {
     return (x<y) ? x : y;
   }
-  static __device__ uint64_t acclFlag(const int rank, const uint64_t flag) {
-    return flag;
-  }
 };
 template<>
 struct FuncMin<uint8_t> {
@@ -249,9 +213,6 @@ struct FuncMin<uint8_t> {
   }
   __device__ uint8_t operator()(const uint8_t x, const uint8_t y) const {
     return (x<y) ? x : y;
-  }
-  static __device__ uint64_t acclFlag(const int rank, const uint64_t flag) {
-    return flag;
   }
 };
 
@@ -276,9 +237,6 @@ struct FuncSum<half> {
     return __float2half( __half2float(x) + __half2float(y) );
 #endif
   }
-  static __device__ uint64_t acclFlag(const int rank, const uint64_t flag) {
-    return rank == 0 ? flag : 0ULL;
-  }
 };
 
 template<>
@@ -302,9 +260,6 @@ struct FuncProd<half> {
     return __float2half( __half2float(x) * __half2float(y) );
 #endif
   }
-  static __device__ uint64_t acclFlag(const int rank, const uint64_t flag) {
-    return rank == 0 ? flag : 1ULL;
-  }
 };
 
 template<>
@@ -324,9 +279,6 @@ struct FuncMax<half> {
     fm = fmaxf(fx, fy);
     return __float2half(fm);
   }
-  static __device__ uint64_t acclFlag(const int rank, const uint64_t flag) {
-    return flag;
-  }
 };
 
 template<>
@@ -345,9 +297,6 @@ struct FuncMin<half> {
     fy = __half2float(y);
     fm = fminf(fx, fy);
     return __float2half(fm);
-  }
-  static __device__ uint64_t acclFlag(const int rank, const uint64_t flag) {
-    return flag;
   }
 };
 #endif // REDUCE_KERNEL_H_

@@ -471,7 +471,7 @@ static int collNetSetup(struct ncclComm* comm, struct ncclTopoGraph* collNetGrap
   // send master receives connect info from peer recv master
   if (isMaster && type == 0) {
     NCCLCHECK(bootstrapRecv(comm->bootstrap, masterPeer, &sendrecvExchange, sizeof(sendrecvExchange)));
-    channel->collTreeRank = rankInCollNet = sendrecvExchange.collNetRank;
+    rankInCollNet = sendrecvExchange.collNetRank;
     INFO(NCCL_INIT, "CollNet [send] : rank %d collNetRank %d collNetNranks %d received connect from rank %d", rank, rankInCollNet, nMasters, masterPeer);
   }
 
@@ -504,7 +504,7 @@ static int collNetSetup(struct ncclComm* comm, struct ncclTopoGraph* collNetGrap
     for (int r = 0; r < nranks; r++) {
       if (allConnects[r].isMaster) {
         memcpy(masterConnects+c, &(allConnects[r].connect), sizeof(struct ncclConnect));
-        if (r == rank) channel->collTreeRank = rankInCollNet = c;
+        if (r == rank) rankInCollNet = c;
         c++;
       }
     }
