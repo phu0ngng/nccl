@@ -9,7 +9,7 @@ include ../../makefiles/version.mk
 BUILDDIR ?= $(abspath ../../build)
 DOCSRC  := $(abspath ../../doc/)
 DOCPREPDIR  := $(BUILDDIR)/doc
-PKGDIR  := $(BUILDDIR)/pkg/doc/
+PKGDIR  := $(BUILDDIR)/pkg/doc
 
 DOCGEN_IN  := $(shell (cd $(DOCSRC); find . -name "*.in" -type f))
 DOCGEN     := $(DOCGEN_IN:.in=)
@@ -23,8 +23,9 @@ prep: $(DOCTARGETS)
 build: prep
 	@printf "Building doc package\n"
 	make -C $(DOCPREPDIR) html
+	mv $(DOCPREPDIR)/../html $(DOCPREPDIR)
 	mkdir -p $(PKGDIR)
-	zip -r $(PKGDIR)/nccl-doc_$(NCCL_MAJOR).$(NCCL_MINOR).$(NCCL_PATCH)$(NCCL_SUFFIX)-$(PKG_REVISION).zip $(DOCPREPDIR)/html 
+	(cd $(DOCPREPDIR); zip -r $(PKGDIR)/nccl-doc_$(NCCL_MAJOR).$(NCCL_MINOR).$(NCCL_PATCH)$(NCCL_SUFFIX)-$(PKG_REVISION).zip html)
 
 clean:
 	rm -Rf $(DOCPREPDIR) $(PKGDIR)
