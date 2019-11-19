@@ -16,6 +16,81 @@ Errors are grouped into different categories.
 
 In either case, refer to the NCCL warning message to understand how to resolve the problem. 
 
+**********
+GPU Direct
+**********
+
+NCCL heavily relies on GPU Direct for inter-GPU communication. This refers to the ability for a GPU to directly
+communicate with another device, such as another GPU or a network card, using direct point-to-point PCI messages.
+
+Direct point-to-point PCI messages can fail or perform poorly for a variety of reasons, like missing components,
+a bad configuration of a virtual machine or a container, or some BIOS settings.
+
+GPU to GPU communication
+------------------------
+
+To make sure GPU to GPU communication is working correctly, look for the p2pBandwidthLastencyTest from the CUDA
+samples.
+
+.. code::
+
+  cd /usr/local/cuda/samples/1_Utilities/p2pBandwidthLatencyTest
+  sudo make
+  ./p2pBandwidthLatencyTest
+
+The test should run to completion and report good performance between GPUs.
+
+GPU to NIC communication
+------------------------
+
+GPUs can also communicate directly with a network card using GPU Direct RDMA. This requires to have a compatible
+network card and driver, also load an extra kernel module. For Mellanox Infiniband/RoCE cards, the module is
+called nv_peer_mem and can be found at https://github.com/Mellanox/nv_peer_memory.
+
+Please refer to your vendor's documentation for information on how to install and configure GPU Direct RDMA.
+
+ACS
+---
+
+IO virtualization (a.k.a. VT-d or IOMMU) can interfere with GPU Direct by redirecting all PCI point-to-point
+traffic to the CPU root complex, causing a significant performance reduction or even a hang. You can check
+whether ACS is enabled on PCI switches by running :
+
+.. code::
+
+  sudo lspci -vvv | grep ACSCtl
+
+If lines show "SrcValid+", then ACS might be enabled. Looking at the full output of lspci, one can check if
+a PCI bridge has ACS enabled.
+
+.. code::
+
+  sudo lspci -vvv
+
+If PCI switches have ACS enabled, it needs to be disabled. On some systems this can be done from the BIOS
+by disabling IO virtualization or VT-d. For Broadcom PLX devices, it can be done from the OS but needs to
+be done again after each reboot.
+
+Use the command below to find the PCI bus IDs of PLX PCI bridges :
+
+.. code::
+
+  sudo lspci | grep PLX
+
+Then use setpci to disable ACS with the command below, replacing 03:00.0 by the PCI bus ID of each PCI bridge.
+
+.. code::
+
+  sudo setpci -s 03:00.0 f2a.w=0000
+
+******************
+Topology detection
+******************
+
+NCCL relies on /sys to discover the PCI topology of GPUs and network cards. When running inside a virtual
+machine or container, make sure /sys is properly mounted. Having /sys expose a virtual PCI topology can
+result in suboptimal performance.
+
 *****************
 Networking issues
 *****************
