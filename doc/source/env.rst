@@ -75,6 +75,8 @@ Values accepted
 ^^^^^^^^^^^^^^^
 1 to 16. On AWS, the default value is 2; on Google Cloud instances with the gVNIC network interface, the default value is 4 (since 2.5.6); in other cases, the default value is 1.
 
+For generic 100G networks, this value can be manually set to 4. However, the product of ``NCCL_SOCKET_NTHREADS`` and ``NCCL_NSOCKS_PERTHREAD`` cannot exceed 64. See also ``NCCL_NSOCKS_PERTHREAD``.
+
 NCCL_NSOCKS_PERTHREAD
 ---------------------
 (since 2.4.8)
@@ -83,7 +85,9 @@ The ``NCCL_NSOCKS_PERTHREAD`` variable specifies the number of sockets opened by
 
 Values accepted
 ^^^^^^^^^^^^^^^
-On AWS, the default value is 8; in other cases, the default value is 1. The product of ``NCCL_SOCKET_NTHREADS`` and ``NCCL_NSOCKS_PERTHREAD`` cannot be greater than 64.
+On AWS, the default value is 8; in other cases, the default value is 1.
+
+For generic 100G networks, this value can be manually set to 4. However, the product of ``NCCL_SOCKET_NTHREADS`` and ``NCCL_NSOCKS_PERTHREAD`` cannot exceed 64. See also ``NCCL_SOCKET_NTHREADS``.
 
 .. _NCCL_DEBUG:
 
