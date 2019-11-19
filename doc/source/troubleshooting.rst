@@ -49,8 +49,8 @@ called nv_peer_mem and can be found at https://github.com/Mellanox/nv_peer_memor
 
 Refer to your vendor's documentation for information on how to install and configure GPU Direct RDMA.
 
-ACS
----
+PCI Access Control Services (ACS)
+---------------------------------
 
 IO virtualization (also known as, VT-d or IOMMU) can interfere with GPU Direct by redirecting all PCI point-to-point
 traffic to the CPU root complex, causing a significant performance reduction or even a hang. You can check
