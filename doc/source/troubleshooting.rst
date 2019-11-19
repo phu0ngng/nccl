@@ -26,10 +26,10 @@ communicate with another device, such as another GPU or a network card, using di
 Direct point-to-point PCI messages can fail or perform poorly for a variety of reasons, like missing components,
 a bad configuration of a virtual machine or a container, or some BIOS settings.
 
-GPU to GPU communication
+GPU-to-GPU communication
 ------------------------
 
-To make sure GPU to GPU communication is working correctly, look for the p2pBandwidthLastencyTest from the CUDA
+To make sure GPU-to-GPU communication is working correctly, look for the p2pBandwidthLastencyTest from the CUDA
 samples.
 
 .. code::
@@ -40,21 +40,21 @@ samples.
 
 The test should run to completion and report good performance between GPUs.
 
-GPU to NIC communication
+GPU-to-NIC communication
 ------------------------
 
 GPUs can also communicate directly with a network card using GPU Direct RDMA. This requires to have a compatible
-network card and driver, also load an extra kernel module. For Mellanox Infiniband/RoCE cards, the module is
+network card and driver and load an extra kernel module. For Mellanox Infiniband/RoCE cards, the module is
 called nv_peer_mem and can be found at https://github.com/Mellanox/nv_peer_memory.
 
-Please refer to your vendor's documentation for information on how to install and configure GPU Direct RDMA.
+Refer to your vendor's documentation for information on how to install and configure GPU Direct RDMA.
 
 ACS
 ---
 
-IO virtualization (a.k.a. VT-d or IOMMU) can interfere with GPU Direct by redirecting all PCI point-to-point
+IO virtualization (also known as, VT-d or IOMMU) can interfere with GPU Direct by redirecting all PCI point-to-point
 traffic to the CPU root complex, causing a significant performance reduction or even a hang. You can check
-whether ACS is enabled on PCI switches by running :
+whether ACS is enabled on PCI bridges by running:
 
 .. code::
 
@@ -71,13 +71,13 @@ If PCI switches have ACS enabled, it needs to be disabled. On some systems this 
 by disabling IO virtualization or VT-d. For Broadcom PLX devices, it can be done from the OS but needs to
 be done again after each reboot.
 
-Use the command below to find the PCI bus IDs of PLX PCI bridges :
+Use the command below to find the PCI bus IDs of PLX PCI bridges:
 
 .. code::
 
   sudo lspci | grep PLX
 
-Then use setpci to disable ACS with the command below, replacing 03:00.0 by the PCI bus ID of each PCI bridge.
+Next, use setpci to disable ACS with the command below, replacing 03:00.0 by the PCI bus ID of each PCI bridge.
 
 .. code::
 
