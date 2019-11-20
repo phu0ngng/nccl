@@ -243,15 +243,12 @@ static ncclResult_t getAlgoInfo(struct ncclInfo* info) {
   // Find algorithm / protocol.
   info->algorithm = -1;
   info->protocol = -1;
-  int nAlgos = NCCL_NUM_ALGORITHMS - 1; // Assume Accl is not supported by default
+  int nAlgos = NCCL_NUM_ALGORITHMS;
   // Check collNet support
-  if (info->comm->collNetSupport && info->coll == ncclCollAllReduce) {
-    int collNetTypeSupport = 0;
+  int collNetTypeSupport = 0;
+  if (info->comm->collNetSupport)
     NCCLCHECK(collNetReduceSupport(info->datatype, info->op, &collNetTypeSupport));
-    if (collNetTypeSupport) {
-      nAlgos = NCCL_NUM_ALGORITHMS;
-    }
-  }
+  if (collNetTypeSupport != 1) nAlgos--;
   for (int a=0; a<nAlgos; a++) {
     for (int p=0; p<NCCL_NUM_PROTOCOLS; p++) {
       float bw = comm->bandwidths[info->coll][a][p];
