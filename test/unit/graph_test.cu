@@ -396,13 +396,20 @@ int checkTopo(const char* name, const char** topo, int topoSize, int nvlinkWidth
   ringGraph.pattern = NCCL_TOPO_PATTERN_RING;
   ringGraph.crossNic = 2;
 
+  struct ncclTopoGraph collNetGraph;
+  memset(&collNetGraph, 0, sizeof(collNetGraph));
+  collNetGraph.pattern = NCCL_TOPO_PATTERN_TREE;
+  collNetGraph.crossNic = 2;
+
   uint64_t computeTime = getTime();
   CHECK(ncclTopoCompute(&system, &treeGraph));
   CHECK(ncclTopoCompute(&system, &ringGraph));
+  CHECK(ncclTopoCompute(&system, &collNetGraph));
   computeTime = getTime() - computeTime;
 
   CHECK(ncclTopoPrintGraph(&system, &treeGraph));
   CHECK(ncclTopoPrintGraph(&system, &ringGraph));
+  CHECK(ncclTopoPrintGraph(&system, &collNetGraph));
 
   printf("%s / %s : ", name, inter == 0 ? "intra" : "inter");
   printf("%2dx%2d/%2d %15s %1s %3s | %2dx%2d/%2d %5s %1s %3s",
