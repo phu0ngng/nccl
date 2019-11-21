@@ -732,7 +732,8 @@ static ncclResult_t initTransportsRank(struct ncclComm* comm, ncclUniqueId* comm
     struct ncclChannel* channel = comm->channels+c;
     if (rank == collNetGraph.intra[sendIndex+c*comm->localRanks]) { // is master
       channel->collTreeUp.up = channel->collTreeDn.up = nranks;
-    } else if (rank == collNetGraph.intra[sendEndIndex+c*comm->localRanks]) { // is bottom of intra-node chain
+    }
+    if (rank == collNetGraph.intra[sendEndIndex+c*comm->localRanks]) { // is bottom of intra-node chain
       channel->collTreeUp.down[0] = channel->collTreeDn.down[0] = -1;
     }
     INFO(NCCL_INIT, "CollNet Channel %d rank %d up %d down %d", c, rank, channel->collTreeUp.up, channel->collTreeUp.down[0]);
@@ -743,7 +744,8 @@ static ncclResult_t initTransportsRank(struct ncclComm* comm, ncclUniqueId* comm
     struct ncclChannel* channel = comm->channels+comm->nChannels/2+c;
     if (rank == collNetGraph.intra[recvIndex+c*comm->localRanks]) { // is master
       channel->collTreeUp.up = channel->collTreeDn.up = nranks;
-    } else if (rank == collNetGraph.intra[recvEndIndex+c*comm->localRanks]) { // is bottom of intra-node chain
+    }
+    if (rank == collNetGraph.intra[recvEndIndex+c*comm->localRanks]) { // is bottom of intra-node chain
       channel->collTreeUp.down[0] = channel->collTreeDn.down[0] = -1;
     }
     INFO(NCCL_INIT, "CollNet Channel %d rank %d up %d down %d", c, rank, channel->collTreeDn.up, channel->collTreeDn.down[0]);
