@@ -346,13 +346,20 @@ static ncclResult_t computeColl(struct ncclInfo* info /* input */, struct ncclCo
   int chunkSize  = stepSize*chunkSteps;
 
   // Compute lastChunkSize
-  if ((info->algorithm == NCCL_ALGO_TREE || info->algorithm == NCCL_ALGO_ACCL) && info->protocol == NCCL_PROTO_SIMPLE) {
-    if (info->pattern == ncclPatternTreeUpDown || info->pattern == ncclPatternCollTreeUp || info->pattern == ncclPatternCollTreeDown) {
+  if (info->algorithm == NCCL_ALGO_TREE && info->protocol == NCCL_PROTO_SIMPLE) {
+    if (info->pattern == ncclPatternTreeUpDown) {
       // Optimize chunkSize / nSteps
       while (info->nBytes / (info->nChannels*chunkSize) < info->comm->channels[0].treeUp.depth*8 && chunkSize > 131072) chunkSize /= 2;
       while (info->nBytes / (info->nChannels*chunkSize) < info->comm->channels[0].treeUp.depth*4 && chunkSize > 65536) chunkSize /= 2;
       while (info->nBytes / (info->nChannels*chunkSize) < info->comm->channels[0].treeUp.depth && chunkSize > 32768) chunkSize /= 2;
     }
+    // Use lastChunkSize as chunkSize
+    coll->args.lastChunkSize = chunkSize / ncclTypeSize(info->datatype);
+  } else if (info->algorithm == NCCL_ALGO_ACCL && info->protocol == NCCL_PROTO_SIMPLE) {
+    // Optimize chunkSize / nSteps
+    while (info->nBytes / (info->nChannels*chunkSize) < info->comm->channels[0].collTreeUp.depth*16 && chunkSize > 131072) chunkSize /= 2;
+    while (info->nBytes / (info->nChannels*chunkSize) < info->comm->channels[0].collTreeUp.depth*4 && chunkSize > 65536) chunkSize /= 2;
+    while (info->nBytes / (info->nChannels*chunkSize) < info->comm->channels[0].collTreeUp.depth && chunkSize > 32768) chunkSize /= 2;
     // Use lastChunkSize as chunkSize
     coll->args.lastChunkSize = chunkSize / ncclTypeSize(info->datatype);
   } else if (info->protocol == NCCL_PROTO_LL) {
