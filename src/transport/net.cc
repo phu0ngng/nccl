@@ -146,6 +146,7 @@ ncclResult_t netSendConnect(struct ncclConnect* connectInfo, int nranks, int ran
   send->conn.buff = recvMem->buff;
   send->conn.llBuff = resources->devHostRecvMem->llBuff;
   send->conn.ll128Buff = recvMem->ll128Buff;
+  send->conn.direct |= resources->useGdr ? NCCL_DIRECT_NIC : 0;
 
   // Head/Tail/Opcount/Fifos are always on host
   send->conn.tail = &resources->devHostRecvMem->tail;
@@ -179,6 +180,7 @@ ncclResult_t netRecvConnect(struct ncclConnect* connectInfo, int nranks, int ran
   recv->conn.buff = recvMem->buff;
   recv->conn.llBuff = recvMem->llBuff;
   recv->conn.ll128Buff = recvMem->ll128Buff;
+  recv->conn.direct |= resources->useGdr ? NCCL_DIRECT_NIC : 0;
 
   // Head/Tail/Opcount are always on host
   recv->conn.tail = &resources->devHostRecvMem->tail;
