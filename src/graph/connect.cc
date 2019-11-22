@@ -189,6 +189,40 @@ static ncclResult_t connectTrees(struct ncclComm* comm, int* treeUpRecv, int* tr
   return ncclSuccess;
 }
 
+ncclResult_t connectCollNet(struct ncclComm* comm, struct ncclTopoGraph* collNetGraph, int rank) {
+  int nranks = comm->nRanks;
+  int depth = nranks/comm->nNodes;
+  int sendIndex = collNetGraph->pattern == NCCL_TOPO_PATTERN_TREE ? 0 : 1;  // send GPU index depends on topo pattern
+  int sendEndIndex = (sendIndex+comm->localRanks-1)%comm->localRanks;
+  for (int c=0; c<comm->nChannels/2; c++) {
+    struct ncclChannel* channel = comm->channels+c;
+    // Set root of collTree to id nranks
+    if (rank == collNetGraph->intra[sendIndex+c*comm->localRanks]) { // is master
+      channel->collTreeUp.up = channel->collTreeDn.up = nranks;
+    }
+    if (rank == collNetGraph->intra[sendEndIndex+c*comm->localRanks]) { // is bottom of intra-node chain
+      channel->collTreeUp.down[0] = channel->collTreeDn.down[0] = -1;
+    }
+    channel->collTreeUp.depth = channel->collTreeDn.depth = depth;
+    INFO(NCCL_INIT, "CollNet Channel %d rank %d up %d down %d", c, rank, channel->collTreeUp.up, channel->collTreeUp.down[0]);
+  }
+  int recvIndex = 0;  // recv GPU index is always 0
+  int recvEndIndex = (recvIndex+comm->localRanks-1)%comm->localRanks;
+  for (int c=0; c<comm->nChannels/2; c++) {
+    struct ncclChannel* channel = comm->channels+comm->nChannels/2+c;
+    // Set root of collTree to id nranks
+    if (rank == collNetGraph->intra[recvIndex+c*comm->localRanks]) { // is master
+      channel->collTreeUp.up = channel->collTreeDn.up = nranks;
+    }
+    if (rank == collNetGraph->intra[recvEndIndex+c*comm->localRanks]) { // is bottom of intra-node chain
+      channel->collTreeUp.down[0] = channel->collTreeDn.down[0] = -1;
+    }
+    channel->collTreeUp.depth = channel->collTreeDn.depth = depth;
+    INFO(NCCL_INIT, "CollNet Channel %d rank %d up %d down %d", c, rank, channel->collTreeDn.up, channel->collTreeDn.down[0]);
+  }
+  return ncclSuccess;
+}
+
 // Legacy naming
 NCCL_PARAM(MinNrings, "MIN_NRINGS", -2);
 NCCL_PARAM(MaxNrings, "MAX_NRINGS", -2);
