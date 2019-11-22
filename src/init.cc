@@ -109,7 +109,7 @@ ncclResult_t initNet() {
   return ncclSuccess;
 }
 
-NCCL_PARAM(CollNetDisable, "COLLNET_DISABLE", 0);
+NCCL_PARAM(CollNetEnable, "COLLNET_ENABLE", 0);
 
 pthread_mutex_t initLock = PTHREAD_MUTEX_INITIALIZER;
 static bool initialized = false;
@@ -760,8 +760,8 @@ static ncclResult_t initTransportsRank(struct ncclComm* comm, ncclUniqueId* comm
   }
 
   // Check if we can setup CollNet
-  int collNetDisable = ncclParamCollNetDisable();
-  int collNetSetupCond = (comm->nNodes > 1 && collNetDisable != 1 && collNetSupport()) ? 1 : 0;
+  int collNetEnable = ncclParamCollNetEnable();
+  int collNetSetupCond = (comm->nNodes > 1 && collNetEnable == 1 && collNetSupport()) ? 1 : 0;
   int collNetSetupFail = 0;
   int logicChannels = comm->nChannels/2;
   if (collNetSetupCond) {
