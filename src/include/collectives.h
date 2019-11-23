@@ -31,7 +31,7 @@
 #define DECL_COLL3(coll, op, dtype) \
   DECL_COLL4(coll##Ring, op, dtype) \
   DECL_COLL4(coll##Tree, op, dtype) \
-  DECL_COLL4(coll##Accl, op, dtype)
+  DECL_COLL4(coll##CollNet, op, dtype)
 
 #define DECL_COLL2(coll, op) \
   DECL_COLL3(coll, op, i8) \

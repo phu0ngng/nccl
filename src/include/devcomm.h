@@ -79,7 +79,7 @@ struct ncclConnInfo {
 
   int direct;         // Direct communication
   void **ptrExchange; // Pointer exchange for direct communication
-  int useAcclFlag;    // GPU sets flag for ACCL algorithm
+  int useCollNetFlag; // GPU sets flag for COLLNET algorithm
 
   int *fifo;          // Size fifo for proxy
 

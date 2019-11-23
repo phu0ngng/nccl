@@ -14,7 +14,7 @@
 /******************************************************************/
 
 ncclResult_t ncclTopoPreset(struct ncclComm* comm,
-    struct ncclTopoGraph* treeGraph, struct ncclTopoGraph* ringGraph, struct ncclTopoGraph* acclGraph,
+    struct ncclTopoGraph* treeGraph, struct ncclTopoGraph* ringGraph, struct ncclTopoGraph* collNetGraph,
     struct ncclTopoRanks* topoRanks) {
   int rank = comm->rank;
   int localRanks = comm->localRanks;
@@ -34,7 +34,7 @@ ncclResult_t ncclTopoPreset(struct ncclComm* comm,
 
     int* ringIntra = ringGraph->intra+c*localRanks;
     int* treeIntra = treeGraph->intra+c*localRanks;
-    int* acclIntra = acclGraph->intra+c*localRanks;
+    int* collNetIntra = collNetGraph->intra+c*localRanks;
 
     for (int i=0; i<localRanks; i++) {
       if (ringIntra[i] == rank) {
@@ -62,13 +62,13 @@ ncclResult_t ncclTopoPreset(struct ncclComm* comm,
         channel->treeUp.down[0]  = sym ? channel->treeDn.down[0]  : channel->treeDn.up ;
         channel->treeUp.up       = sym ? channel->treeDn.up       : channel->treeDn.down[0];
       }
-      if (acclIntra[i] == rank) {
+      if (collNetIntra[i] == rank) {
         int prev = (i-1+localRanks)%localRanks, next = (i+1)%localRanks;
 
         // CollTrees are always symmetric, i.e.
         // up/down go in reverse directions
-        channel->collTreeDn.up      = acclIntra[prev];
-        channel->collTreeDn.down[0] = acclIntra[next];
+        channel->collTreeDn.up      = collNetIntra[prev];
+        channel->collTreeDn.down[0] = collNetIntra[next];
         channel->collTreeUp.down[0] = channel->collTreeDn.down[0];
         channel->collTreeUp.up      = channel->collTreeDn.up;
       }

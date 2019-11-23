@@ -52,7 +52,7 @@ ncclResult_t parseList(const char* str, const char* elems[], int nelems, int* li
 }
 
 static const char* ncclFuncStr[] = { "Broadcast", "Reduce", "AllGather", "ReduceScatter", "AllReduce" };
-static const char* ncclAlgoStr[] = { "Tree", "Ring", "Accl" };
+static const char* ncclAlgoStr[] = { "Tree", "Ring", "CollNet" };
 static const char* ncclProtoStr[] = { "LL", "LL128", "Simple" };
 
 // Latencies in us, Bandwidths in GB/s
@@ -66,11 +66,11 @@ static const float baseLat  [NCCL_NUM_ALGORITHMS][NCCL_NUM_PROTOCOLS] = { { 4.4,
 // Tree/Simple is the latency a 256kB chunk, which is ~ base lat + 256k/12GB/s (+ 256k/12GB/s for the network).
 static const float hwLat [3][NCCL_NUM_ALGORITHMS][NCCL_NUM_PROTOCOLS] =
 { /* NVLINK */
-  { /* Tree (LL/LL128/Simple)*/ {  .5, 1.9, 28 }, /* Ring (LL/LL128/Simple)*/ {  .4, 2.5, 5.7 }, /* Accl (LL/LL128/Simple)*/ {  .5, 1.9, 28 } },
+  { /* Tree (LL/LL128/Simple)*/ {  .5, 1.9, 28 }, /* Ring (LL/LL128/Simple)*/ {  .4, 2.5, 5.7 }, /* CollNet (LL/LL128/Simple)*/ {  .5, 1.9, 28 } },
   /* PCI */
-  { /* Tree (LL/LL128/Simple)*/ { 1.0, 1.9, 28 }, /* Ring (LL/LL128/Simple)*/ { 1.0, 2.5, 5.7 }, /* Accl (LL/LL128/Simple)*/ { 1.0, 1.9, 28 } },
+  { /* Tree (LL/LL128/Simple)*/ { 1.0, 1.9, 28 }, /* Ring (LL/LL128/Simple)*/ { 1.0, 2.5, 5.7 }, /* CollNet (LL/LL128/Simple)*/ { 1.0, 1.9, 28 } },
   /* NET */
-  { /* Tree (LL/LL128/Simple)*/ { 5.0, 7.5, 50 }, /* Ring (LL/LL128/Simple)*/ {  .9, 2.5, 6.6 }, /* Accl (LL/LL128/Simple)*/ { 5.0, 5.0, 10.7 } }
+  { /* Tree (LL/LL128/Simple)*/ { 5.0, 7.5, 50 }, /* Ring (LL/LL128/Simple)*/ {  .9, 2.5, 6.6 }, /* CollNet (LL/LL128/Simple)*/ { 5.0, 5.0, 10.7 } }
 };
 
 // LL128 max BW for the different collectives
@@ -100,7 +100,7 @@ ncclResult_t ncclSetThresholds(struct ncclComm* comm, int minCompCap, int maxCom
       if (coll != ncclCollAllReduce && a != NCCL_ALGO_RING) continue;
 
       for (int p=0; p<NCCL_NUM_PROTOCOLS; p++) {
-        int speed = comm->nNodes <= 2 || a == NCCL_ALGO_ACCL ? graphs[a]->speedIntra : graphs[a]->speedInter;
+        int speed = comm->nNodes <= 2 || a == NCCL_ALGO_COLLNET ? graphs[a]->speedIntra : graphs[a]->speedInter;
         float busBw = graphs[a]->nChannels * speed * 1.0;
 
         // Various model refinements
@@ -109,12 +109,12 @@ ncclResult_t ncclSetThresholds(struct ncclComm* comm, int minCompCap, int maxCom
         if (a == NCCL_ALGO_TREE) busBw = std::min(busBw*.9, comm->nNodes > 1 ? 70.0 : 90.0);
         if (a == NCCL_ALGO_TREE && p == NCCL_PROTO_LL) busBw *= 1.0/3.0;
         if (a == NCCL_ALGO_TREE && p == NCCL_PROTO_LL128) busBw *= 7.0/9.0;
-        if (a == NCCL_ALGO_ACCL) busBw = std::min(busBw*.9, 74.0);
-        if (a == NCCL_ALGO_ACCL && p == NCCL_PROTO_LL) busBw *= 1.0/3.0;
-        if (a == NCCL_ALGO_ACCL && p == NCCL_PROTO_LL128) busBw = 0;  // CollNet does not support LL128
+        if (a == NCCL_ALGO_COLLNET) busBw = std::min(busBw*.9, 74.0);
+        if (a == NCCL_ALGO_COLLNET && p == NCCL_PROTO_LL) busBw *= 1.0/3.0;
+        if (a == NCCL_ALGO_COLLNET && p == NCCL_PROTO_LL128) busBw = 0;  // CollNet does not support LL128
 
         // Convert bus BW to algorithm BW
-        float ratio = a == NCCL_ALGO_ACCL ? 1.0 : a == NCCL_ALGO_TREE ? .5 : (1.0 * comm->nRanks) / nsteps;
+        float ratio = a == NCCL_ALGO_COLLNET ? 1.0 : a == NCCL_ALGO_TREE ? .5 : (1.0 * comm->nRanks) / nsteps;
         comm->bandwidths[coll][a][p] = busBw * ratio;
 
         comm->latencies[coll][a][p] = baseLat[a][p];
@@ -216,8 +216,8 @@ ncclResult_t ncclSetThresholds(struct ncclComm* comm, int minCompCap, int maxCom
       comm->threadThresholds[NCCL_ALGO_RING][NCCL_PROTO_LL],
       comm->threadThresholds[NCCL_ALGO_RING][NCCL_PROTO_LL128],
       comm->threadThresholds[NCCL_ALGO_RING][NCCL_PROTO_SIMPLE],
-      comm->threadThresholds[NCCL_ALGO_ACCL][NCCL_PROTO_LL],
-      comm->threadThresholds[NCCL_ALGO_ACCL][NCCL_PROTO_LL128],
-      comm->threadThresholds[NCCL_ALGO_ACCL][NCCL_PROTO_SIMPLE]);
+      comm->threadThresholds[NCCL_ALGO_COLLNET][NCCL_PROTO_LL],
+      comm->threadThresholds[NCCL_ALGO_COLLNET][NCCL_PROTO_LL128],
+      comm->threadThresholds[NCCL_ALGO_COLLNET][NCCL_PROTO_SIMPLE]);
   return ncclSuccess;
 }

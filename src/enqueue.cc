@@ -17,7 +17,7 @@
 #define NCCL_FUNC4(coll, op, dtype) \
   (void*)NCCL_FUNC5(coll##Tree, op, dtype), \
   (void*)NCCL_FUNC5(coll##Ring, op, dtype), \
-  (void*)NCCL_FUNC5(coll##Accl, op, dtype)
+  (void*)NCCL_FUNC5(coll##CollNet, op, dtype)
 
 // Must be consistent with ncclDataType_t
 #define NCCL_FUNCS3A(coll, op) \
@@ -270,7 +270,7 @@ static ncclResult_t getAlgoInfo(struct ncclInfo* info) {
   //if (comm->rank == 0) INFO(NCCL_TUNING, "%ld Bytes -> Algo %d proto %d time %f", info->nBytes, info->algorithm, info->protocol, minTime);
   TRACE(NCCL_COLL, "%ld Bytes -> Algo %d proto %d time %f", info->nBytes, info->algorithm, info->protocol, minTime);
 
-  int nc = (info->algorithm == NCCL_ALGO_ACCL) ? comm->nChannels/2 : comm->nChannels; // CollNet uses one channel for up and on channel for down
+  int nc = (info->algorithm == NCCL_ALGO_COLLNET) ? comm->nChannels/2 : comm->nChannels; // CollNet uses one channel for up and on channel for down
   int nt = comm->maxThreads[info->protocol];
   int threadThreshold = comm->threadThresholds[info->algorithm][info->protocol];
   while (info->nBytes < nc*nt*threadThreshold) {
@@ -294,7 +294,7 @@ static ncclResult_t getPatternInfo(struct ncclInfo* info) {
     case ncclCollAllGather:
       info->pattern = ncclPatternRing; break;
     case ncclCollAllReduce:
-      info->pattern = info->algorithm == NCCL_ALGO_ACCL ? ncclPatternCollTreeUp : info->algorithm == NCCL_ALGO_TREE ? ncclPatternTreeUpDown : ncclPatternRingTwice; break;
+      info->pattern = info->algorithm == NCCL_ALGO_COLLNET ? ncclPatternCollTreeUp : info->algorithm == NCCL_ALGO_TREE ? ncclPatternTreeUpDown : ncclPatternRingTwice; break;
     default:
       WARN("Unknown pattern for collective %d algorithm %d", info->coll, info->algorithm);
       return ncclInternalError;
@@ -355,7 +355,7 @@ static ncclResult_t computeColl(struct ncclInfo* info /* input */, struct ncclCo
     }
     // Use lastChunkSize as chunkSize
     coll->args.lastChunkSize = chunkSize / ncclTypeSize(info->datatype);
-  } else if (info->algorithm == NCCL_ALGO_ACCL && info->protocol == NCCL_PROTO_SIMPLE) {
+  } else if (info->algorithm == NCCL_ALGO_COLLNET && info->protocol == NCCL_PROTO_SIMPLE) {
     // Optimize chunkSize / nSteps
     while (info->nBytes / (info->nChannels*chunkSize) < info->comm->channels[0].collTreeUp.depth*16 && chunkSize > 131072) chunkSize /= 2;
     while (info->nBytes / (info->nChannels*chunkSize) < info->comm->channels[0].collTreeUp.depth*4 && chunkSize > 65536) chunkSize /= 2;

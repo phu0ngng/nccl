@@ -83,7 +83,7 @@ struct ncclTopoRanks {
 };
 
 ncclResult_t ncclTopoPreset(struct ncclComm* comm,
-    struct ncclTopoGraph* treeGraph, struct ncclTopoGraph* ringGraph, struct ncclTopoGraph* acclGraph,
+    struct ncclTopoGraph* treeGraph, struct ncclTopoGraph* ringGraph, struct ncclTopoGraph* collNetGraph,
     struct ncclTopoRanks* topoRanks);
 
 ncclResult_t ncclTopoPostset(struct ncclComm* comm, int* firstRanks,
