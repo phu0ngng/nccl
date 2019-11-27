@@ -19,10 +19,10 @@ ncclResult_t initChannel(struct ncclComm* comm, int channelid) {
 
   // Setup intermediate buffering
   int buffSize = ncclParamBuffsize();
-  int cpuType;
-  NCCLCHECK(ncclTopoCpuType(comm->topo, &cpuType));
+  int cpuArch, cpuVendor, cpuModel;
+  NCCLCHECK(ncclTopoCpuType(comm->topo, &cpuArch, &cpuVendor, &cpuModel));
   channel->buffSize = buffSize != -2 ? buffSize :
-	  cpuType == NCCL_TOPO_CPU_ARM ? DEFAULT_BUFFER_SIZE_BYTES_ARM : DEFAULT_BUFFER_SIZE_BYTES;
+	  cpuArch == NCCL_TOPO_CPU_ARCH_ARM ? DEFAULT_BUFFER_SIZE_BYTES_ARM : DEFAULT_BUFFER_SIZE_BYTES;
 
   // Ring index to user rank table.
   NCCLCHECK(ncclCudaCalloc(&channel->ring.devUserRanks, comm->nRanks));

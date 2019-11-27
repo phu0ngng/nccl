@@ -9,6 +9,7 @@
 
 #include "graph.h"
 #include "core.h"
+#include <sched.h>
 
 #define LOC_WIDTH 50000
 #define PASCAL_NVLINK_WIDTH 180
@@ -79,8 +80,10 @@ struct ncclTopoNode {
       int width;
     }net;
     struct {
-      int type;
+      int arch;
+      int vendor;
       int model;
+      cpu_set_t affinity;
     }cpu;
   };
   int nlinks;

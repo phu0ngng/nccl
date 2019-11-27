@@ -44,12 +44,17 @@ ncclResult_t ncclTopoGetNetDev(struct ncclTopoGraph* graph, int dir, int channel
 ncclResult_t ncclTopoNetDistance(struct ncclTopoSystem* system, int64_t busId, int netDev, int* distance);
 ncclResult_t ncclTopoCpuCount(struct ncclTopoSystem* system, int* count);
 
-#define NCCL_TOPO_CPU_UNKNOWN 0
-#define NCCL_TOPO_CPU_INTEL 1
-#define NCCL_TOPO_CPU_AMD 2
-#define NCCL_TOPO_CPU_POWER 3
-#define NCCL_TOPO_CPU_ARM 4
-ncclResult_t ncclTopoCpuType(struct ncclTopoSystem* system, int* type);
+// Set CPU affinity
+ncclResult_t ncclTopoSetAffinity(struct ncclTopoSystem* system, int rank);
+
+#define NCCL_TOPO_CPU_ARCH_X86 1
+#define NCCL_TOPO_CPU_ARCH_POWER 2
+#define NCCL_TOPO_CPU_ARCH_ARM 3
+#define NCCL_TOPO_CPU_VENDOR_INTEL 1
+#define NCCL_TOPO_CPU_VENDOR_AMD 2
+#define NCCL_TOPO_CPU_TYPE_BDW 1
+#define NCCL_TOPO_CPU_TYPE_SKL 2
+ncclResult_t ncclTopoCpuType(struct ncclTopoSystem* system, int* arch, int* vendor, int* model);
 
 #define NCCL_TOPO_MAX_NODES 256
 

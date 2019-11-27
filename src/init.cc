@@ -14,8 +14,6 @@
 #include "enqueue.h"
 #include "graph.h"
 #include "argcheck.h"
-#include "cpuset.h"
-#include <sched.h>
 #include <fcntl.h>
 #include <string.h>
 #include <errno.h>
@@ -608,20 +606,33 @@ static ncclResult_t initTransportsRank(struct ncclComm* comm, ncclUniqueId* comm
   line[1023] = '\0';
   INFO(NCCL_INIT, "Trees%s", line);
 
+  // Set Affinity to a CPU local the our GPU, so that all memory we allocate
+  // on the host is local.
+  cpu_set_t affinitySave;
+  sched_getaffinity(0, sizeof(cpu_set_t), &affinitySave);
+  NCCLCHECK(ncclTopoSetAffinity(comm->topo, comm->rank));
+  ncclResult_t ret;
+
   // Connect with prev/next for each ring
   struct ncclConnect *connect;
-  NCCLCHECK(ncclCalloc(&connect, 2));
+  NCCLCHECKGOTO(ncclCalloc(&connect, 2), ret, affinity_restore);
   for (int c=0; c<comm->nChannels; c++) {
     struct ncclChannel* channel = comm->channels+c;
-    NCCLCHECK(setupChannel(comm, c, rank, nranks, rings+c*nranks));
+    NCCLCHECKGOTO(setupChannel(comm, c, rank, nranks, rings+c*nranks), ret, affinity_restore);
     if (comm->nRanks == 1) continue;
-    NCCLCHECK(p2pSetup(comm, &ringGraph, channel, 1, &channel->ring.prev, 1, &channel->ring.next));
-    NCCLCHECK(p2pSetup(comm, &treeGraph, channel, NCCL_MAX_TREE_ARITY, channel->treeUp.down, 1, &channel->treeUp.up));
-    NCCLCHECK(p2pSetup(comm, &treeGraph, channel, 1, &channel->treeDn.up, NCCL_MAX_TREE_ARITY, channel->treeDn.down));
+    NCCLCHECKGOTO(p2pSetup(comm, &ringGraph, channel, 1, &channel->ring.prev, 1, &channel->ring.next), ret, affinity_restore);
+    NCCLCHECKGOTO(p2pSetup(comm, &treeGraph, channel, NCCL_MAX_TREE_ARITY, channel->treeUp.down, 1, &channel->treeUp.up), ret, affinity_restore);
+    NCCLCHECKGOTO(p2pSetup(comm, &treeGraph, channel, 1, &channel->treeDn.up, NCCL_MAX_TREE_ARITY, channel->treeDn.down), ret, affinity_restore);
   }
   TRACE(NCCL_INIT, "rank %d nranks %d - CONNECTED %d RINGS AND TREES", rank, nranks, comm->nChannels);
   free(connect);
   free(rings);
+
+  // We should have allocated all buffers, collective fifos, ... we can
+  // restore the affinity.
+affinity_restore:
+  sched_setaffinity(0, sizeof(cpu_set_t), &affinitySave);
+  if (ret != ncclSuccess) return ret;
 
   // Compute intra ranks (using AllGather1 data)
   int intraRank0 = -1, intraRank = -1, intraRanks = 0;
@@ -651,90 +662,13 @@ static ncclResult_t initTransportsRank(struct ncclComm* comm, ncclUniqueId* comm
   return ncclSuccess;
 }
 
-static ncclResult_t getCpuGpuAffinity(int cudaDev, cpu_set_t* mask) {
-  CPU_ZERO_S(sizeof(cpu_set_t), mask);
-  char* cudaPath;
-  NCCLCHECK(ncclTopoCudaPath(cudaDev, &cudaPath));
-  char path[PATH_MAX];
-  strncpy(path, cudaPath, PATH_MAX-1);
-  snprintf(path+strlen(path), PATH_MAX-1-strlen(path), "/local_cpus");
-  path[PATH_MAX-1] = '\0';
-  int fd;
-  SYSCHECKVAL(open(path, O_RDONLY), "open", fd);
-  char affinityStr[sizeof(cpu_set_t)*2 + 1];
-  int r = read(fd, affinityStr, sizeof(cpu_set_t)*2);
-  if (r > 0) {
-    affinityStr[r] = '\0';
-    NCCLCHECK(ncclStrToCpuset(affinityStr, mask));
-  }
-  close(fd);
-  free(cudaPath);
-  return ncclSuccess;
-}
-
-NCCL_PARAM(IgnoreCpuAffinity, "IGNORE_CPU_AFFINITY", 0);
-
-static ncclResult_t setCpuAffinity(int cudaDev) {
-  // Query the CPU affinity set we were provided
-  cpu_set_t mask;
-  SYSCHECK(sched_getaffinity(0, sizeof(cpu_set_t), &mask), "sched_getaffinity");
-
-#ifdef ENABLE_TRACE
-  {
-    char affinityStr[sizeof(cpu_set_t)*2];
-    NCCLCHECK(ncclCpusetToStr(&mask, affinityStr));
-    TRACE(NCCL_INIT, "Current affinity for GPU %d is %s", cudaDev, affinityStr);
-  }
-#endif
-
-  // Find the CPUs that are local to the supplied GPU
-  cpu_set_t gpuMask;
-  NCCLCHECK(getCpuGpuAffinity(cudaDev, &gpuMask));
-
-#ifdef ENABLE_TRACE
-  {
-    char affinityStr[sizeof(cpu_set_t)*2];
-    NCCLCHECK(ncclCpusetToStr(&gpuMask, affinityStr));
-    TRACE(NCCL_INIT, "CPU GPU affinity for GPU %d is %s", cudaDev, affinityStr);
-  }
-#endif
-
-  cpu_set_t finalMask;
-  if (ncclParamIgnoreCpuAffinity())
-    // Ignore the CPU affinity set and use the GPU one instead
-    finalMask = gpuMask;
-  else
-    // Use a subset of the GPU affinity set
-    CPU_AND(&finalMask, &mask, &gpuMask);
-
-  // If there is a non empty set, use it to set affinity
-  if (CPU_COUNT(&finalMask)) {
-    char affinityStr[sizeof(cpu_set_t)*2];
-    NCCLCHECK(ncclCpusetToStr(&finalMask, affinityStr));
-    INFO(NCCL_INIT, "Setting affinity for GPU %d to %s", cudaDev, affinityStr);
-    SYSCHECK(sched_setaffinity(0, sizeof(cpu_set_t), &finalMask), "sched_setaffinity");
-  }
-  return ncclSuccess;
-}
-
 ncclResult_t ncclCommInitRankSync(ncclComm_t* newcomm, int nranks, ncclUniqueId commId, int myrank, int cudaDev) {
-  cpu_set_t affinitySave;
-  sched_getaffinity(0, sizeof(cpu_set_t), &affinitySave);
-
-  NCCLCHECK(wrapNvmlSymbols());
-  NCCLCHECK(wrapNvmlInit());
-
-  // Make sure all host memory allocation are close to the GPU
-  CUDACHECK(cudaSetDevice(cudaDev));
-  NCCLCHECK(setCpuAffinity(cudaDev));
   ncclResult_t res;
 
+  CUDACHECK(cudaSetDevice(cudaDev));
   NCCLCHECKGOTO(commAlloc(newcomm, nranks, myrank), res, cleanup);
   NCCLCHECKGOTO(initTransportsRank(*newcomm, &commId), res, cleanup);
   NCCLCHECKGOTO(devCommSetup(*newcomm), res, cleanup);
-
-  sched_setaffinity(0, sizeof(cpu_set_t), &affinitySave);
-  NCCLCHECKGOTO(wrapNvmlShutdown(), res, cleanup);
 
   INFO(NCCL_INIT,"comm %p rank %d nranks %d cudaDev %d busId %x - Init COMPLETE", *newcomm, myrank, nranks, (*newcomm)->cudaDev, (*newcomm)->busId);
 
@@ -742,7 +676,6 @@ ncclResult_t ncclCommInitRankSync(ncclComm_t* newcomm, int nranks, ncclUniqueId 
 cleanup:
   if ((*newcomm) && (*newcomm)->bootstrap) bootstrapAbort((*newcomm)->bootstrap);
   *newcomm = NULL;
-  sched_setaffinity(0, sizeof(cpu_set_t), &affinitySave);
   return res;
 }
 

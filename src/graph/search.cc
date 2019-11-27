@@ -26,7 +26,8 @@ static ncclResult_t ncclTopoFollowPath(struct ncclTopoSystem* system, struct ncc
 
   // Account for P2P inefficiency when going through Intel CPUs
   if (intra && pathFw->type == LINK_QPI &&
-      system->nodes[CPU].nodes[0].cpu.type == NCCL_TOPO_CPU_INTEL)
+      system->nodes[CPU].nodes[0].cpu.arch == NCCL_TOPO_CPU_ARCH_X86 &&
+      system->nodes[CPU].nodes[0].cpu.vendor == NCCL_TOPO_CPU_VENDOR_INTEL)
     speed = INTEL_P2P_OVERHEAD(speed);
 
   int speedFw = bidir ? DIVUP(speed, 2) : speed;
