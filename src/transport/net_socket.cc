@@ -61,7 +61,7 @@ ncclResult_t ncclSocketDevices(int* ndev) {
 
 ncclResult_t ncclSocketPciPath(int dev, char** path) {
   char devicepath[PATH_MAX];
-  snprintf(devicepath, PATH_MAX, "/sys/class/net/%s/device", ncclNetIfNames+dev*MAX_IF_NAME_SIZE);
+  snprintf(devicepath, PATH_MAX, "/sys/class/net/%s", ncclNetIfNames+dev*MAX_IF_NAME_SIZE);
   *path = realpath(devicepath, NULL);
   if (*path == NULL) {
     INFO(NCCL_NET|NCCL_INIT, "Could not find real path of %s", devicepath);

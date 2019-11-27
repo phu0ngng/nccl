@@ -107,6 +107,6 @@ ncclResult_t ncclTopoCreateNode(struct ncclTopoSystem* system, struct ncclTopoNo
 ncclResult_t ncclTopoRemoveNode(struct ncclTopoSystem* system, int type, int id);
 ncclResult_t ncclTopoConnectNodes(struct ncclTopoNode* node, struct ncclTopoNode* remNode, int type, int width);
 ncclResult_t ncclTopoPrintPaths(struct ncclTopoSystem* system);
-ncclResult_t ncclTopoLoadSystemFromXml(const char* xmlTopoFile, struct ncclTopoSystem* system);
+ncclResult_t ncclTopoLoadSystem(const char* xmlTopoFile, struct ncclTopoSystem* system);
 
 #endif

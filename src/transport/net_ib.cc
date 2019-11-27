@@ -182,7 +182,7 @@ ncclResult_t ncclIbDevices(int* ndev) {
 
 ncclResult_t ncclIbPciPath(int dev, char** path) {
   char devicepath[PATH_MAX];
-  snprintf(devicepath, PATH_MAX, "/sys/class/infiniband/%s/device", ncclIbDevs[dev].devName);
+  snprintf(devicepath, PATH_MAX, "/sys/class/infiniband/%s", ncclIbDevs[dev].devName);
   *path = realpath(devicepath, NULL);
   if (*path == NULL) {
     WARN("Could not find real path of %s", devicepath);

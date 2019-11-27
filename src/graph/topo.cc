@@ -12,6 +12,7 @@
 #include "net.h"
 #include <sys/stat.h>
 #include <fcntl.h>
+#include "xml.h"
 
 #define BUSID_SIZE (sizeof("0000:00:00.0"))
 #define BUSID_REDUCED_SIZE (sizeof("0000:00"))
@@ -679,9 +680,39 @@ ncclResult_t ncclTopoGetSystem(struct ncclComm* comm, struct ncclTopoSystem** sy
   struct ncclTopoSystem* s;
   NCCLCHECK(ncclCalloc(&s, 1));
 
+  struct xmlSystem xml;
+  memset(&xml, 0, sizeof(struct xmlSystem));
   char* xmlTopoFile = getenv("NCCL_TOPO_FILE");
   if (xmlTopoFile) {
-    NCCLCHECK(ncclTopoLoadSystemFromXml(xmlTopoFile, s));
+    NCCLCHECK(ncclTopoGetXmlFromFile(xmlTopoFile, &xml));
+  }
+  if (xml.maxIndex == 0) {
+    // Create top tag
+    struct xmlNode* top = xml.nodes+xml.maxIndex++;
+    strcpy(top->name, "system");
+  }
+
+  // Auto-detect GPUs if needed
+  for (int r=0; r<comm->nRanks; r++) {
+    if (comm->peerInfo[r].hostHash == comm->peerInfo[comm->rank].hostHash) {
+      char busId[NVML_DEVICE_PCI_BUS_ID_BUFFER_SIZE];
+      NCCLCHECK(int64ToBusId(comm->peerInfo[r].busId, busId));
+      NCCLCHECK(ncclTopoFillGpu(&xml, busId));
+    }
+  }
+  // Auto-detect NICs if needed
+  int netDevCount;
+  NCCLCHECK(ncclNetDevices(&netDevCount));
+  for (int n=0; n<netDevCount; n++) {
+    char* path = NULL;
+    ncclResult_t res = ncclNetPciPath(n, &path);
+    if (res != ncclSuccess) path = NULL;
+    NCCLCHECK(ncclTopoFillNic(&xml, path));
+  }
+  
+  xmlTopoFile = getenv("NCCL_TOPO_DUMP_FILE");
+  if (xmlTopoFile && comm->rank == 0) {
+    NCCLCHECK(ncclTopoDumpSystemToXml(xmlTopoFile, &xml));
   }
 
   s->maxWidth = LOC_WIDTH;
@@ -726,6 +757,7 @@ ncclResult_t ncclTopoGetSystem(struct ncclComm* comm, struct ncclTopoSystem** sy
   NCCLCHECK(ncclTopoConnectCpus(s));
   NCCLCHECK(ncclTopoSortSystem(s));
   *system = s;
+
   return ncclSuccess;
 }
 
