@@ -215,6 +215,9 @@ ncclResult_t ncclSocketGetNsockNthread(int dev, int* ns, int* nt) {
     if (strcmp(vendor, "0x1d0f") == 0) { // AWS
       autoNt = 2;
       autoNs = 8;
+    } else if (strcmp(vendor, "0x1ae0") == 0) { // GCP
+      autoNt = 4;
+      autoNs = 1;
     }
 end:
     if (nThreads == -2) nThreads = autoNt;
