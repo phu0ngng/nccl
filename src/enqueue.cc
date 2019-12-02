@@ -415,8 +415,7 @@ static ncclResult_t saveKernel(struct ncclInfo* info) {
     return ncclInvalidUsage;
   }
 
-  int useCollTree = (info->pattern == ncclPatternCollTreeUp || info->pattern == ncclPatternCollTreeDown) ? 1 : 0;
-  int nSubChannels = useCollTree ? 2 : 1;
+  int nSubChannels = (info->pattern == ncclPatternCollTreeUp || info->pattern == ncclPatternCollTreeDown) ? 2 : 1;
   for (int bid=0; bid<coll.args.nChannels*nSubChannels; bid++) {
     int channelId = info->comm->myParams->gridDim.x % info->comm->nChannels;
     struct ncclChannel* channel = info->comm->channels+channelId;
@@ -428,8 +427,8 @@ static ncclResult_t saveKernel(struct ncclInfo* info) {
 
     // Proxy
     proxyArgs.channel = channel;
-    // Adjust pattern for CollNet based on channel index: 0 - send, 1 - recv
-    if (useCollTree == 1) {
+    // Adjust pattern for CollNet based on channel index
+    if (nSubChannels == 2) {
       info->pattern = (channelId < info->comm->nChannels/nSubChannels) ? ncclPatternCollTreeUp : ncclPatternCollTreeDown;
     }
     NCCLCHECK(transportSaveProxies(&proxyArgs, info->pattern, info->root, info->comm->nRanks));
