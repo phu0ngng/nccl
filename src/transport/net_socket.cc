@@ -66,11 +66,8 @@ ncclResult_t ncclSocketPciPath(int dev, char** path) {
   } else {
     snprintf(devicepath, PATH_MAX, "/sys/class/net/%s", ncclNetIfNames+dev*MAX_IF_NAME_SIZE);
   }
+  // May return NULL if the file doesn't exist. Upper layer should handle that correctly
   *path = realpath(devicepath, NULL);
-  if (*path == NULL) {
-    INFO(NCCL_NET|NCCL_INIT, "Could not find real path of %s", devicepath);
-    return ncclSystemError;
-  }
   return ncclSuccess;
 }
 

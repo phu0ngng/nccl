@@ -176,19 +176,22 @@ static ncclResult_t addCpuStep(struct ncclTopoSystem* system, int c, int t1, int
   return ncclSuccess;
 }
 
+// Remove/free paths for a given type
+static void ncclTopoRemovePathType(struct ncclTopoSystem* system, int nodeType) {
+  for (int t=0; t<NCCL_TOPO_NODE_TYPES; t++) {
+    for (int n=0; n<system->nodes[t].count; n++) {
+      struct ncclTopoNode* node = system->nodes[t].nodes+n;
+      free(node->paths[nodeType]);
+      node->paths[nodeType] = NULL;
+    }
+  }
+}
+
 ncclResult_t ncclTopoComputePaths(struct ncclTopoSystem* system, struct ncclPeerInfo* peerInfos) {
   // Precompute paths between GPUs/NICs.
 
   // Remove everything in case we're re-computing
-  for (int t=0; t<NCCL_TOPO_NODE_TYPES; t++) {
-    for (int n=0; n<system->nodes[t].count; n++) {
-      struct ncclTopoNode* node = system->nodes[t].nodes+n;
-      for (int t=0; t<NCCL_TOPO_NODE_TYPES; t++) {
-        free(node->paths[t]);
-        node->paths[t] = NULL;
-      }
-    }
-  }
+  for (int t=0; t<NCCL_TOPO_NODE_TYPES; t++) ncclTopoRemovePathType(system, t);
 
   // Set direct paths from/to CPUs. We need them in many cases.
   for (int c=0; c<system->nodes[CPU].count; c++) {
@@ -246,7 +249,8 @@ ncclResult_t ncclTopoComputePaths(struct ncclTopoSystem* system, struct ncclPeer
 }
 
 ncclResult_t ncclTopoTrimSystem(struct ncclTopoSystem* system, struct ncclComm* comm) {
-  int *domains, *ids;
+  int *domains;
+  int64_t *ids;
   NCCLCHECK(ncclCalloc(&domains, system->nodes[GPU].count));
   NCCLCHECK(ncclCalloc(&ids, system->nodes[GPU].count));
   int myDomain = 0;
@@ -269,9 +273,14 @@ ncclResult_t ncclTopoTrimSystem(struct ncclTopoSystem* system, struct ncclComm* 
     int g;
     for (g=0; g<system->nodes[GPU].count /* This one varies over the loops */; g++) {
       gpu = system->nodes[GPU].nodes+g;
-      if (gpu->id == ids[i]) break;
+      if (gpu->id == ids[i]) break; else gpu=NULL;
     }
-    if (gpu == NULL) { WARN("Could not find id %d", ids[i]); return ncclInternalError; }
+    if (gpu == NULL) {
+      WARN("Could not find id %lx", ids[i]);
+      free(domains);
+      free(ids);
+      return ncclInternalError;
+    }
     NCCLCHECK(ncclTopoRemoveNode(system, GPU, g));
   }
 
@@ -280,6 +289,8 @@ ncclResult_t ncclTopoTrimSystem(struct ncclTopoSystem* system, struct ncclComm* 
     for (int n=system->nodes[NET].count-1; n>=0; n--)
       NCCLCHECK(ncclTopoRemoveNode(system, NET, n));
   }
+  free(domains);
+  free(ids);
   return ncclSuccess;
 }
 
@@ -296,4 +307,9 @@ static ncclResult_t getGpuSpeed(struct ncclTopoNode* node, struct ncclTopoSystem
   }
   system->maxWidth = std::min(system->maxWidth, std::max(nvlWidth, pciSpeed));
   return ncclSuccess;
+}
+
+void ncclTopoFree(struct ncclTopoSystem* system) {
+  for (int t=0; t<NCCL_TOPO_NODE_TYPES; t++) ncclTopoRemovePathType(system, t);
+  free(system);
 }
