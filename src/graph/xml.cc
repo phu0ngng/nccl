@@ -343,7 +343,7 @@ ncclResult_t ncclTopoSetAttrFromSys(struct xmlNode* pciNode, const char* path, c
   char strValue[MAX_STR_LEN];
   NCCLCHECK(ncclTopoGetStrFromSys(path, fileName, strValue));
   if (strValue[0] != '\0') { NCCLCHECK(xmlSetAttrStr(pciNode, attrName, strValue)); }
-  INFO(NCCL_GRAPH, "%s/%s -> %s=%s\n", path, fileName, attrName, strValue);
+  TRACE(NCCL_GRAPH, "Read from sys %s/%s -> %s=%s\n", path, fileName, attrName, strValue);
   return ncclSuccess;
 }
 
