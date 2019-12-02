@@ -146,7 +146,7 @@ __device__ void ncclAllReduceCollNetKernel(struct CollectiveArgs* args) {
   const int nthreads = args->nThreads-WARP_SIZE;
   const int bid = args->bid;
   struct ncclDevComm* comm = args->comm;
-  struct ncclChannel* channel = comm->channels+args->channel;
+  struct ncclChannel* channel = comm->channels+blockIdx.x;
   const ssize_t size = args->N;
   const int stepSize = channel->buffSize / (sizeof(T)*NCCL_STEPS);
   int chunkSize = args->lastChunkSize;
@@ -333,7 +333,7 @@ __device__ void ncclAllReduceCollNetLLKernel(struct CollectiveArgs* args) {
   const int nthreads = args->nThreads;
   const int bid = args->bid;
   struct ncclDevComm* comm = args->comm;
-  struct ncclChannel* channel = comm->channels+args->channel;
+  struct ncclChannel* channel = comm->channels+blockIdx.x;
   const ssize_t size = args->N;
   ssize_t chunkSize = NCCL_LL_SLICE_LINES * sizeof(uint64_t) / sizeof(T);
   const ssize_t minChunkSize = nthreads*sizeof(uint64_t) / sizeof(T);

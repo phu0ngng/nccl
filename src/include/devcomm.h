@@ -144,7 +144,6 @@ struct CollectiveArgs {
   uint32_t root;
   uint8_t bid;
   uint8_t nChannels;
-  uint8_t channel;
   uint16_t nThreads;
 
   int lastChunkSize;

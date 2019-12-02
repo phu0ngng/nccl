@@ -274,7 +274,7 @@ static ncclResult_t getAlgoInfo(struct ncclInfo* info) {
   int nt = comm->maxThreads[info->protocol];
   int threadThreshold = comm->threadThresholds[info->algorithm][info->protocol];
   while (info->nBytes < nc*nt*threadThreshold) {
-    if (nc >= 2) nc--;
+    if (info->algorithm != NCCL_ALGO_COLLNET && nc >= 2) nc--;
     else if ((nt % 128) == 0) nt/=2;
     else break;
   }
@@ -417,44 +417,38 @@ static ncclResult_t saveKernel(struct ncclInfo* info) {
 
   int useCollTree = (info->pattern == ncclPatternCollTreeUp || info->pattern == ncclPatternCollTreeDown) ? 1 : 0;
   int nSubChannels = useCollTree ? 2 : 1;
-  // Sub channel loop
-  for (int sub=0; sub < nSubChannels; sub++) {
-    // Logical channel loop
-    for (int bid=0; bid<coll.args.nChannels; bid++) {
-      int enqueueChannelId = info->comm->myParams->gridDim.x % info->comm->nChannels;
-      struct ncclChannel* enqueueChannel = info->comm->channels+enqueueChannelId;
-      int topoChannelId = (bid + sub*useCollTree*info->comm->nChannels/2) % info->comm->nChannels;
+  for (int bid=0; bid<coll.args.nChannels*nSubChannels; bid++) {
+    int channelId = info->comm->myParams->gridDim.x % info->comm->nChannels;
+    struct ncclChannel* channel = info->comm->channels+channelId;
 
-      if (enqueueChannel->collCount == NCCL_MAX_OPS) {
-        WARN("Too many aggregated operations (%d max)", NCCL_MAX_OPS);
-        return ncclInvalidUsage;
-      }
-
-      // Proxy
-      proxyArgs.channel = info->comm->channels+topoChannelId;
-      // Adjust pattern for CollNet based on channel index: 0 - send, 1 - recv
-      if (useCollTree == 1) {
-        info->pattern = (sub == 0) ? ncclPatternCollTreeUp : ncclPatternCollTreeDown;
-      }
-      NCCLCHECK(transportSaveProxies(&proxyArgs, info->pattern, info->root, info->comm->nRanks));
-
-      info->comm->myParams->gridDim.x++;
-
-      int opIndex = enqueueChannel->collFifoTail;
-      struct ncclColl* c = enqueueChannel->collectives+opIndex;
-      volatile uint8_t* activePtr = (volatile uint8_t*)&c->active;
-      while (activePtr[0] != 0) sched_yield();
-
-      memcpy(c, &coll, sizeof(struct ncclColl));
-
-      c->args.bid = bid;
-      c->active = 1;
-      c->args.channel = topoChannelId;
-      opIndex = (opIndex+1)%NCCL_MAX_OPS;
-      c->nextIndex = opIndex;
-      enqueueChannel->collFifoTail = opIndex;
-      enqueueChannel->collCount++;
+    if (channel->collCount == NCCL_MAX_OPS) {
+      WARN("Too many aggregated operations (%d max)", NCCL_MAX_OPS);
+      return ncclInvalidUsage;
     }
+
+    // Proxy
+    proxyArgs.channel = channel;
+    // Adjust pattern for CollNet based on channel index: 0 - send, 1 - recv
+    if (useCollTree == 1) {
+      info->pattern = (channelId < info->comm->nChannels/nSubChannels) ? ncclPatternCollTreeUp : ncclPatternCollTreeDown;
+    }
+    NCCLCHECK(transportSaveProxies(&proxyArgs, info->pattern, info->root, info->comm->nRanks));
+
+    info->comm->myParams->gridDim.x++;
+
+    int opIndex = channel->collFifoTail;
+    struct ncclColl* c = channel->collectives+opIndex;
+    volatile uint8_t* activePtr = (volatile uint8_t*)&c->active;
+    while (activePtr[0] != 0) sched_yield();
+
+    memcpy(c, &coll, sizeof(struct ncclColl));
+
+    c->args.bid = bid % coll.args.nChannels;
+    c->active = 1;
+    opIndex = (opIndex+1)%NCCL_MAX_OPS;
+    c->nextIndex = opIndex;
+    channel->collFifoTail = opIndex;
+    channel->collCount++;
   }
   info->comm->opCount++;
   return ncclSuccess;
