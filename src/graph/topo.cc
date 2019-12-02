@@ -43,10 +43,10 @@ ncclResult_t pciPathToInt64(char* path, int offset, int minOffset, int64_t* id) 
   return ncclSuccess;
 }
 
-static ncclResult_t idToIndex(struct ncclTopoSystem* system, int64_t id, int* index) {
+static ncclResult_t idToIndex(struct ncclTopoSystem* system, int type, int64_t id, int* index) {
   *index = -1;
-  for (int i=0; i<system->nodes[GPU].count; i++) {
-    if (system->nodes[GPU].nodes[i].id == id) {
+  for (int i=0; i<system->nodes[type].count; i++) {
+    if (system->nodes[type].nodes[i].id == id) {
       *index = i;
     }
   }
@@ -566,15 +566,15 @@ ncclResult_t ncclTopoGetSystem(struct ncclComm* comm, struct ncclTopoSystem** sy
 
 ncclResult_t ncclTopoGetNvlink(struct ncclTopoSystem* system, int64_t busId1, int64_t busId2, int* nvlink) {
   int g1, g2;
-  NCCLCHECK(idToIndex(system, busId1, &g1));
-  NCCLCHECK(idToIndex(system, busId2, &g2));
+  NCCLCHECK(idToIndex(system, GPU, busId1, &g1));
+  NCCLCHECK(idToIndex(system, GPU, busId2, &g2));
   *nvlink = g1 != -1 && g2 != -1 && system->nodes[GPU].nodes[g1].paths[GPU][g2].type == LINK_NVL;
   return ncclSuccess;
 }
 
 ncclResult_t ncclTopoHasNvlink(struct ncclTopoSystem* system, int64_t busId, int* nvlink) {
   int g;
-  NCCLCHECK(idToIndex(system, busId, &g));
+  NCCLCHECK(idToIndex(system, GPU, busId, &g));
   for (int i=0; i<system->nodes[GPU].count; i++) {
     if (i == g) continue;
     if (system->nodes[GPU].nodes[g].paths[GPU][i].type == LINK_NVL) {
@@ -590,6 +590,8 @@ static int pathDistance(struct ncclTopoLinkList* links) {
   int distance = PATH_PIX;
   if (links->count > 2) distance = PATH_PXB;
   for (int l=0; l<links->count; l++) {
+    struct ncclTopoLink* link = links->list[l];
+    printf("PathDistance >> link %d/%d type %d, going to node %d/%lx\n", l, links->count, link->type, link->remNode->type, link->remNode->id);
     // PHB if we go through 1 CPU, SYS if we go through 2 CPUs
     if (links->list[l]->remNode->type == CPU) distance = (distance == PATH_PHB) ? PATH_SYS : PATH_PHB;
   }
@@ -598,16 +600,17 @@ static int pathDistance(struct ncclTopoLinkList* links) {
 
 ncclResult_t ncclTopoGpuDistance(struct ncclTopoSystem* system, int64_t busId1, int64_t busId2, int* distance) {
   int g1, g2;
-  NCCLCHECK(idToIndex(system, busId1, &g1));
-  NCCLCHECK(idToIndex(system, busId2, &g2));
+  NCCLCHECK(idToIndex(system, GPU, busId1, &g1));
+  NCCLCHECK(idToIndex(system, GPU, busId2, &g2));
   *distance = pathDistance(system->nodes[GPU].nodes[g1].paths[GPU]+g2);
   return ncclSuccess;
 }
 
 ncclResult_t ncclTopoNetDistance(struct ncclTopoSystem* system, int64_t busId, int netDev, int* distance) {
-  int g;
-  NCCLCHECK(idToIndex(system, busId, &g));
-  *distance = pathDistance(system->nodes[GPU].nodes[g].paths[NET]+netDev);
+  int g, n;
+  NCCLCHECK(idToIndex(system, GPU, busId, &g));
+  NCCLCHECK(idToIndex(system, NET, netDev, &n));
+  *distance = pathDistance(system->nodes[GPU].nodes[g].paths[NET]+n);
   return ncclSuccess;
 }
 
