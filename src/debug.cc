@@ -135,7 +135,6 @@ void ncclDebugLog(ncclDebugLogLevel level, unsigned long flags, const char *file
   char buffer[1024];
   size_t len = 0;
   pthread_mutex_lock(&ncclDebugLock);
-  if (ncclDebugNoWarn && ncclDebugLevel == NCCL_LOG_WARN) printf("WARN -> INFO\n");
   if (level == NCCL_LOG_WARN && ncclDebugLevel >= NCCL_LOG_WARN)
     len = snprintf(buffer, sizeof(buffer),
                    "\n%s:%d:%d [%d] %s:%d NCCL WARN ", hostname, getpid(), gettid(), cudaDev, filefunc, line);
