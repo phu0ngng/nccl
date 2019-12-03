@@ -7,6 +7,7 @@
 #include "core.h"
 #include "graph.h"
 #include "topo.h"
+#include "xml.h"
 
 // Initialize system->maxWidth. This is the per-channel (i.e. per-SM)
 // max speed.
@@ -449,55 +450,52 @@ ncclResult_t ncclTopoSearchRec(struct ncclTopoSystem* system, struct ncclTopoGra
   return ncclSuccess;
 }
 
-/* Parse user defined rings. Format is like :
- * "0 1|1 0|0 1 2 3|3 2 1 0|0 2 3 1|1 3 2 0|0 1 2 3 4 5 6 7|7 6 5 4 3 2 1 0"
- * Rings with a non-matching number of ranks are ignored so we can provide
- * rings for multiple cases.
- */
-#define MAX_ENV_RANKS 512
-static ncclResult_t parseGraph(const char* str, int* nChannelsRet, int ngpus, int* channels) {
-  int ranks[MAX_ENV_RANKS];
-  int nChannels = 0;
-  int rank = 0;
-  int offset = 0;
-  int status = 0; // 0 : between numbers, 1 : inside number
-  do {
-    int digit = str[offset] - '0';
-    if (digit >= 0 && digit <= 9) {
-      if (status == 0) {
-        ranks[rank] = digit;
-        status = 1;
-      } else {
-        ranks[rank] = ranks[rank]*10+digit;
-      }
-    } else {
-      if (status == 1) {
-        rank++;
-        if (rank == MAX_ENV_RANKS) goto end;
-      }
-      status = 0;
-      if (str[offset] == '|' || str[offset] == '\0') {
-        // Ignore if ngpus doesn't match
-        if (rank != ngpus) goto newchannel;
-
-        for (int r=0; r<ngpus; r++) {
-          int rank = ranks[r];
-          // Ignore if ranks are out of bounds
-          if (rank < 0 || rank >= ngpus) goto newchannel;
-          // Ignore if ranks are duplicate
-          for (int i=0; i<r; i++)
-            if (ranks[i] == rank) goto newchannel;
-
-          channels[nChannels*ngpus+r] = rank;
-        }
-        nChannels++;
-newchannel:
-        rank = 0;
-      }
+/* User defined graph from XML file */
+struct kvDict kvDictLinkType[] = { { "PCI", LINK_PCI }, { "NVL", LINK_NVL }, { "LOC", LINK_LOC }, { NULL, 0 } };
+ncclResult_t ncclTopoGetChannelFromXml(struct ncclXmlNode *xmlChannel, int c, int ngpus, struct ncclTopoGraph* graph) {
+  int* inter = graph->inter+2*c;
+  int* intra = graph->intra+ngpus*c;
+  int n=0, g=0;
+  for (int s=0; s<xmlChannel->nSubs; s++) {
+    struct ncclXmlNode* sub = xmlChannel->subs[s];
+    int dev;
+    NCCLCHECK(xmlGetAttrInt(sub, "dev", &dev));
+    if (strcmp(sub->name, "net") == 0) {
+      inter[n++] = dev;
+    } else if (strcmp(sub->name, "gpu") == 0) {
+      intra[g++] = dev;
     }
-  } while (str[offset++] != 0);
-end:
-  *nChannelsRet = nChannels;
+  }
+  return ncclSuccess;
+}
+ncclResult_t ncclTopoGetGraphFromXml(struct ncclXmlNode *xmlGraph, int ngpus, struct ncclTopoGraph* graph) {
+  int pattern;
+  NCCLCHECK(xmlGetAttrInt(xmlGraph, "pattern", &pattern));
+  if ((graph->pattern == NCCL_TOPO_PATTERN_RING) ^ (pattern == NCCL_TOPO_PATTERN_RING)) return ncclSuccess;
+  int crossNic;
+  NCCLCHECK(xmlGetAttrInt(xmlGraph, "crossnic", &crossNic));
+  if (graph->crossNic == 0 && crossNic == 1) return ncclSuccess;
+
+  graph->pattern = pattern;
+  graph->crossNic = crossNic;
+  NCCLCHECK(xmlGetAttrInt(xmlGraph, "nchannels", &graph->nChannels));
+  NCCLCHECK(xmlGetAttrInt(xmlGraph, "speedintra", &graph->speedIntra));
+  NCCLCHECK(xmlGetAttrInt(xmlGraph, "speedinter", &graph->speedInter));
+  char* str;
+  NCCLCHECK(xmlGetAttrStr(xmlGraph, "typeintra", &str));
+  NCCLCHECK(kvConvert(str, &graph->typeIntra, kvDictLinkType));
+  NCCLCHECK(xmlGetAttrStr(xmlGraph, "typeinter", &str));
+  NCCLCHECK(kvConvert(str, &graph->typeInter, kvDictLinkType));
+  NCCLCHECK(xmlGetAttrInt(xmlGraph, "samechannels", &graph->sameChannels));
+  for (int s=0; s<xmlGraph->nSubs; s++) {
+    NCCLCHECK(ncclTopoGetChannelFromXml(xmlGraph->subs[s], s, ngpus, graph));
+  }
+  return ncclSuccess;
+}
+ncclResult_t ncclTopoGetGraphsFromXml(struct ncclXmlNode *xmlGraphs, int ngpus, struct ncclTopoGraph* graph) {
+  for (int s=0; s<xmlGraphs->nSubs; s++) {
+    NCCLCHECK(ncclTopoGetGraphFromXml(xmlGraphs->subs[s], ngpus, graph));
+  }
   return ncclSuccess;
 }
 
@@ -514,29 +512,12 @@ ncclResult_t ncclTopoCompute(ncclTopoSystem* system, struct ncclTopoGraph* graph
   graph->nChannels = 0;
   graph->sameChannels = 1;
 
-  char* str = getenv("NCCL_GRAPH");
+  char* str = getenv("NCCL_GRAPH_FILE");
   if (str) {
-    NCCLCHECK(parseGraph(str, &graph->nChannels, ngpus, graph->intra));
-    for (int i=0; i<graph->nChannels*ngpus; i++) {
-      // Translate gpu numbers into ranks
-      graph->intra[i] = system->nodes[GPU].nodes[graph->intra[i]].gpu.rank;
-    }
-    // TODO : let user specify NICs
-    graph->inter[0] = graph->inter[1] = 0;
-    graph->speedIntra = graph->speedInter = PCI_WIDTH+2;
-    // TODO compute proper path
-    graph->typeIntra = graph->typeInter = LINK_QPI;
-    if (graph->pattern == NCCL_TOPO_PATTERN_RING) {
-      // Reverse the loop
-      for (int c=0; c<graph->nChannels; c++) {
-        for (int i=0; i<=ngpus/2; i++) {
-          int tmp = graph->intra[ngpus*c+i];
-          graph->intra[ngpus*c+i] = graph->intra[ngpus*c+(ngpus-i)%ngpus];
-          graph->intra[ngpus*c+ngpus-i] = tmp;
-        }
-      }
-    } else graph->pattern = NCCL_TOPO_PATTERN_TREE;
-    if (graph->nChannels) return ncclSuccess;
+    struct ncclXml xml;
+    NCCLCHECK(ncclTopoGetXmlGraphFromFile(str, &xml));
+    NCCLCHECK(ncclTopoGetGraphsFromXml(xml.nodes, ngpus, graph));
+    if (graph->nChannels > 0) return ncclSuccess;
   }
 
   if (ngpus == 1) if (graph->pattern != NCCL_TOPO_PATTERN_RING) graph->pattern = NCCL_TOPO_PATTERN_TREE;

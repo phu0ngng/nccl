@@ -22,7 +22,7 @@
 #define NODE_TYPE_CLOSE 2
 #define NODE_TYPE_SINGLE 3
 
-struct xmlNode {
+struct ncclXmlNode {
   char name[MAX_STR_LEN];
   struct {
     char key[MAX_STR_LEN];
@@ -32,30 +32,31 @@ struct xmlNode {
   } attrs[MAX_ATTR_COUNT+1]; // Need an extra one to consume extra params
   int nAttrs;
   int type;
-  struct xmlNode* parent;
-  struct xmlNode* subs[MAX_SUBS];
+  struct ncclXmlNode* parent;
+  struct ncclXmlNode* subs[MAX_SUBS];
   int nSubs;
 };
 
-struct xmlSystem {
-  struct xmlNode nodes[MAX_NODES];
+struct ncclXml {
+  struct ncclXmlNode nodes[MAX_NODES];
   int maxIndex;
 };
 
 /* File functions */
-ncclResult_t ncclTopoGetXmlFromFile(const char* xmlTopoFile, struct xmlSystem* system);
-ncclResult_t ncclTopoDumpSystemToXml(const char* xmlTopoFile, struct xmlSystem* system);
+ncclResult_t ncclTopoGetXmlFromFile(const char* xmlTopoFile, struct ncclXml* xml);
+ncclResult_t ncclTopoDumpSystemToXml(const char* xmlTopoFile, struct ncclXml* xml);
+ncclResult_t ncclTopoGetXmlGraphFromFile(const char* xmlGraphFile, struct ncclXml* xml);
 
 /* Auto-detect functions */
-ncclResult_t ncclTopoFillGpu(struct xmlSystem* system, const char* busId, struct xmlNode** gpuNode);
-ncclResult_t ncclTopoFillNic(struct xmlSystem* system, const char* sysPath, struct xmlNode** netNode);
+ncclResult_t ncclTopoFillGpu(struct ncclXml* xml, const char* busId, struct ncclXmlNode** gpuNode);
+ncclResult_t ncclTopoFillNic(struct ncclXml* xml, const char* sysPath, struct ncclXmlNode** netNode);
 
 /**************/
 /* XML Struct */
 /* Functions  */
 /**************/
 
-static ncclResult_t xmlGetAttrIndex(struct xmlNode* node, const char* attrName, int* index) {
+static ncclResult_t xmlGetAttrIndex(struct ncclXmlNode* node, const char* attrName, int* index) {
   *index = -1;
   for (int a=0; a<node->nAttrs; a++) {
     if (strcmp(node->attrs[a].key, attrName) == 0) {
@@ -66,7 +67,7 @@ static ncclResult_t xmlGetAttrIndex(struct xmlNode* node, const char* attrName, 
   return ncclSuccess;
 }
 
-static ncclResult_t xmlGetAttrInt(struct xmlNode* node, const char* attrName, int* value) {
+static ncclResult_t xmlGetAttrInt(struct ncclXmlNode* node, const char* attrName, int* value) {
   int index;
   NCCLCHECK(xmlGetAttrIndex(node, attrName, &index));
   if (index == -1) {
@@ -81,7 +82,7 @@ static ncclResult_t xmlGetAttrInt(struct xmlNode* node, const char* attrName, in
   return ncclSuccess;
 }
 
-static ncclResult_t xmlGetAttrStr(struct xmlNode* node, const char* attrName, char** str) {
+static ncclResult_t xmlGetAttrStr(struct ncclXmlNode* node, const char* attrName, char** str) {
   int index;
   NCCLCHECK(xmlGetAttrIndex(node, attrName, &index));
   if (index == -1) {
@@ -96,10 +97,10 @@ static ncclResult_t xmlGetAttrStr(struct xmlNode* node, const char* attrName, ch
   return ncclSuccess;
 }
 
-static ncclResult_t xmlFindTag(struct xmlSystem* system, const char* tagName, struct xmlNode** node) {
+static ncclResult_t xmlFindTag(struct ncclXml* xml, const char* tagName, struct ncclXmlNode** node) {
   *node = NULL;
-  for (int i=0; i<system->maxIndex; i++) {
-    struct xmlNode* n = system->nodes+i;
+  for (int i=0; i<xml->maxIndex; i++) {
+    struct ncclXmlNode* n = xml->nodes+i;
     if (strcmp(n->name, tagName) == 0) {
       *node = n;
       return ncclSuccess;
@@ -108,10 +109,10 @@ static ncclResult_t xmlFindTag(struct xmlSystem* system, const char* tagName, st
   return ncclSuccess;
 }
 
-static ncclResult_t xmlFindTagKvStr(struct xmlSystem* system, const char* tagName, struct xmlNode** node, const char* attrName, const char* attrValue) {
+static ncclResult_t xmlFindTagKvStr(struct ncclXml* xml, const char* tagName, struct ncclXmlNode** node, const char* attrName, const char* attrValue) {
   *node = NULL;
-  for (int i=0; i<system->maxIndex; i++) {
-    struct xmlNode* n = system->nodes+i;
+  for (int i=0; i<xml->maxIndex; i++) {
+    struct ncclXmlNode* n = xml->nodes+i;
     if (strcmp(n->name, tagName) == 0) {
       int index;
       NCCLCHECK(xmlGetAttrIndex(n, attrName, &index));
@@ -128,7 +129,7 @@ static ncclResult_t xmlFindTagKvStr(struct xmlSystem* system, const char* tagNam
   return ncclSuccess;
 }
 
-static ncclResult_t xmlSetAttrInt(struct xmlNode* node, const char* attrName, int value) {
+static ncclResult_t xmlSetAttrInt(struct ncclXmlNode* node, const char* attrName, int value) {
   int index;
   NCCLCHECK(xmlGetAttrIndex(node, attrName, &index));
   if (index == -1) {
@@ -139,7 +140,7 @@ static ncclResult_t xmlSetAttrInt(struct xmlNode* node, const char* attrName, in
   node->attrs[index].intValue = value;
   return ncclSuccess;
 }
-static ncclResult_t xmlSetAttrStr(struct xmlNode* node, const char* attrName, const char* str) {
+static ncclResult_t xmlSetAttrStr(struct ncclXmlNode* node, const char* attrName, const char* str) {
   int index;
   NCCLCHECK(xmlGetAttrIndex(node, attrName, &index));
   if (index == -1) {
@@ -151,7 +152,7 @@ static ncclResult_t xmlSetAttrStr(struct xmlNode* node, const char* attrName, co
   return ncclSuccess;
 }
 
-static ncclResult_t xmlGetSub(struct xmlNode* node, const char* subName, struct xmlNode** sub) {
+static ncclResult_t xmlGetSub(struct ncclXmlNode* node, const char* subName, struct ncclXmlNode** sub) {
   *sub = NULL;
   for (int s=0; s<node->nSubs; s++) {
     if (strcmp(node->subs[s]->name, subName) == 0) {
@@ -162,10 +163,10 @@ static ncclResult_t xmlGetSub(struct xmlNode* node, const char* subName, struct 
   return ncclSuccess;
 }
 
-static ncclResult_t xmlGetSubKvStr(struct xmlNode* node, const char* subName, struct xmlNode** sub, const char* attrName, const char* attrValue) {
+static ncclResult_t xmlGetSubKvStr(struct ncclXmlNode* node, const char* subName, struct ncclXmlNode** sub, const char* attrName, const char* attrValue) {
   *sub = NULL;
   for (int s=0; s<node->nSubs; s++) {
-    struct xmlNode* subNode = node->subs[s];
+    struct ncclXmlNode* subNode = node->subs[s];
     if (strcmp(subNode->name, subName) == 0) {
       int index;
       NCCLCHECK(xmlGetAttrIndex(subNode, attrName, &index));
@@ -182,10 +183,10 @@ static ncclResult_t xmlGetSubKvStr(struct xmlNode* node, const char* subName, st
   return ncclSuccess;
 }
 
-static ncclResult_t xmlGetSubKvInt(struct xmlNode* node, const char* subName, struct xmlNode** sub, const char* attrName, int attrValue) {
+static ncclResult_t xmlGetSubKvInt(struct ncclXmlNode* node, const char* subName, struct ncclXmlNode** sub, const char* attrName, int attrValue) {
   *sub = NULL;
   for (int s=0; s<node->nSubs; s++) {
-    struct xmlNode* subNode = node->subs[s];
+    struct ncclXmlNode* subNode = node->subs[s];
     if (strcmp(subNode->name, subName) == 0) {
       int index;
       NCCLCHECK(xmlGetAttrIndex(subNode, attrName, &index));
@@ -202,13 +203,33 @@ static ncclResult_t xmlGetSubKvInt(struct xmlNode* node, const char* subName, st
   return ncclSuccess;
 }
 
-static ncclResult_t xmlAddSub(struct xmlSystem* system, struct xmlNode* node, const char* subName, struct xmlNode** sub) {
-  struct xmlNode* s = system->nodes+system->maxIndex++;
+static ncclResult_t xmlAddSub(struct ncclXml* xml, struct ncclXmlNode* node, const char* subName, struct ncclXmlNode** sub) {
+  struct ncclXmlNode* s = xml->nodes+xml->maxIndex++;
   *sub = s;
   s->parent = node;
   node->subs[node->nSubs++] = s;
   strncpy(s->name, subName, MAX_STR_LEN);
   return ncclSuccess;
+}
+
+// Dictionary for STR -> INT conversions. No dictionary size information,
+// there needs to be a last element with str == NULL.
+struct kvDict {
+  const char* str;
+  int value;
+};
+
+static ncclResult_t kvConvert(const char* str, int* value, struct kvDict* dict) {
+  struct kvDict* d = dict;
+  while (d->str) {
+    if (strcmp(str, d->str) == 0) {
+      *value = d->value;
+      return ncclSuccess;
+    }
+    d++;
+  }
+  WARN("Could not find value of %s in dictionary", str);
+  return ncclInternalError;
 }
 
 #endif
