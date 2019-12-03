@@ -8,6 +8,27 @@
 #include "graph.h"
 #include "topo.h"
 
+// Initialize system->maxWidth. This is the per-channel (i.e. per-SM)
+// max speed.
+ncclResult_t ncclTopoSearchInit(struct ncclTopoSystem* system) {
+  printf("Search Init\n");
+  system->maxWidth = LOC_WIDTH;
+  for (int g=0; g<system->nodes[GPU].count; g++) {
+    struct ncclTopoNode* gpu = system->nodes[GPU].nodes+g;
+    int gpuLinkType = LINK_PCI;
+    for (int l=0; l<gpu->nlinks; l++) {
+      if (gpu->links[l]->type == LINK_NVL) gpuLinkType = LINK_NVL;
+    }
+    int gpuMaxWidth = gpuLinkType == LINK_NVL ? (gpu->gpu.cudaCompCap > 60 ? VOLTA_NVLINK_WIDTH : PASCAL_NVLINK_WIDTH) : PCI_WIDTH;
+    system->maxWidth = std::min(system->maxWidth, gpuMaxWidth);
+    printf("GPU %d maxWidth %d type %d\n", g, gpuMaxWidth, gpuLinkType);
+  }
+  if (system->nodes[NET].count > 0) {
+    system->maxWidth = PCI_WIDTH;
+  }
+  return ncclSuccess;
+}
+
 // Try to go from node type1/index1 to no type2/index2. mult indicates whether we are counting the bandwidth (1) or undoing (-1).
 static ncclResult_t ncclTopoFollowPath(struct ncclTopoSystem* system, struct ncclTopoGraph* graph, int type1, int index1, int type2, int index2, int mult, struct ncclTopoNode** node) {
   // First handle easy cases

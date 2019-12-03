@@ -507,8 +507,6 @@ ncclResult_t ncclTopoGetSystemFromXml(struct xmlSystem* xmlSystem, struct ncclTo
   }
   NCCLCHECK(ncclTopoAddNvLinks(topNode, *topoSystem, 0));
 
-  (*topoSystem)->maxWidth = LOC_WIDTH;
-
   NCCLCHECK(ncclTopoConnectCpus(*topoSystem));
   NCCLCHECK(ncclTopoSortSystem(*topoSystem));
   NCCLCHECK(ncclTopoPrint(*topoSystem));

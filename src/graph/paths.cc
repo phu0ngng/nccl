@@ -294,21 +294,6 @@ ncclResult_t ncclTopoTrimSystem(struct ncclTopoSystem* system, struct ncclComm* 
   return ncclSuccess;
 }
 
-static ncclResult_t getGpuSpeed(struct ncclTopoNode* node, struct ncclTopoSystem* system) {
-  int nvlSpeed = 0;
-  int nvlWidth = 0;
-  int pciSpeed = 0;
-  for (int l=0; l<node->nlinks; l++) {
-    if (node->links[l].type == LINK_NVL) {
-      nvlSpeed += node->links[l].width;
-      nvlWidth = node->gpu.cudaCompCap/10 == 6 ? PASCAL_NVLINK_WIDTH : VOLTA_NVLINK_WIDTH;
-    }
-    if (node->links[l].type == LINK_PCI) pciSpeed = node->links[l].width;
-  }
-  system->maxWidth = std::min(system->maxWidth, std::max(nvlWidth, pciSpeed));
-  return ncclSuccess;
-}
-
 void ncclTopoFree(struct ncclTopoSystem* system) {
   for (int t=0; t<NCCL_TOPO_NODE_TYPES; t++) ncclTopoRemovePathType(system, t);
   free(system);
