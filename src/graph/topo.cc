@@ -335,7 +335,7 @@ ncclResult_t ncclTopoAddPci(struct ncclXmlNode* xmlPci, struct ncclTopoSystem* s
 
   int type;
   NCCLCHECK(xmlGetAttrStr(xmlPci, "class", &str));
-  NCCLCHECK(kvConvert(str, &type, kvDictPciClass));
+  NCCLCHECK(kvConvertToInt(str, &type, kvDictPciClass));
 
   int64_t busId;
   NCCLCHECK(xmlGetAttrStr(xmlPci, "busid", &str));
@@ -383,7 +383,7 @@ ncclResult_t ncclTopoAddPci(struct ncclXmlNode* xmlPci, struct ncclTopoSystem* s
     int width, speed;
     NCCLCHECK(xmlGetAttrInt(xmlPci, "link_width", &width));
     NCCLCHECK(xmlGetAttrStr(xmlPci, "link_speed", &str));
-    NCCLCHECK(kvConvert(str, &speed, kvDictPciGen)); // Values in 100Mbps, per lane (we want x100MB/s in the end)
+    NCCLCHECK(kvConvertToInt(str, &speed, kvDictPciGen)); // Values in 100Mbps, per lane (we want x100MB/s in the end)
 
     NCCLCHECK(ncclTopoConnectNodes(node, parent, LINK_PCI, width*speed/8));
     NCCLCHECK(ncclTopoConnectNodes(parent, node, LINK_PCI, width*speed/8));
@@ -404,10 +404,10 @@ ncclResult_t ncclTopoAddCpu(struct ncclXmlNode* xmlCpu, struct ncclTopoSystem* s
   NCCLCHECK(ncclStrToCpuset(str, &cpu->cpu.affinity));
 
   NCCLCHECK(xmlGetAttrStr(xmlCpu, "arch", &str));
-  NCCLCHECK(kvConvert(str, &cpu->cpu.arch, kvDictCpuArch));
+  NCCLCHECK(kvConvertToInt(str, &cpu->cpu.arch, kvDictCpuArch));
   if (cpu->cpu.arch == NCCL_TOPO_CPU_ARCH_X86) {
     NCCLCHECK(xmlGetAttrStr(xmlCpu, "vendor", &str));
-    NCCLCHECK(kvConvert(str, &cpu->cpu.vendor, kvDictCpuVendor));
+    NCCLCHECK(kvConvertToInt(str, &cpu->cpu.vendor, kvDictCpuVendor));
     if (cpu->cpu.vendor == NCCL_TOPO_CPU_VENDOR_INTEL) {
       int familyId, modelId;
       NCCLCHECK(xmlGetAttrInt(xmlCpu, "familyid", &familyId));
@@ -436,7 +436,7 @@ ncclResult_t ncclTopoAddNvLinks(struct ncclXmlNode* node, struct ncclTopoSystem*
     char* targetClass;
     NCCLCHECK(xmlGetAttrStr(node, "tclass", &targetClass));
     int targetType;
-    NCCLCHECK(kvConvert(targetClass, &targetType, kvDictPciClass));
+    NCCLCHECK(kvConvertToInt(targetClass, &targetType, kvDictPciClass));
     struct ncclTopoNode* remote = NULL;
     if (targetType == GPU) {
       // NVL P2P connection to another GPU

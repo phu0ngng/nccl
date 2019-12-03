@@ -220,9 +220,7 @@ ncclResult_t ncclTopoDumpSystemToXml(const char* xmlTopoFile, struct ncclXml* xm
     WARN("Unable to open %s, not dumping topology.", xmlTopoFile);
     return ncclSuccess;
   }
-  printf("Opened %s\n", xmlTopoFile);
   NCCLCHECK(ncclTopoDumpXmlRec(0, fd, xml->nodes));
-  printf("Closed %s\n", xmlTopoFile);
   close(fd);
   return ncclSuccess;
 }

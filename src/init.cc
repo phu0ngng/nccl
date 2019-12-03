@@ -491,6 +491,7 @@ static ncclResult_t initTransportsRank(struct ncclComm* comm, ncclUniqueId* comm
   // We communicate only half the data between node with trees on 2 nodes.
   NCCLCHECK(ncclTopoCompute(comm->topo, &treeGraph));
   NCCLCHECK(ncclTopoPrintGraph(comm->topo, &treeGraph));
+  if (comm->rank == 0) NCCLCHECK(ncclTopoDumpGraphs(comm->topo, &ringGraph, &treeGraph));
 
   // AllGather3 - begin
 

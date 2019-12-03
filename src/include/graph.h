@@ -86,6 +86,7 @@ struct ncclTopoGraph {
 ncclResult_t ncclTopoCompute(struct ncclTopoSystem* system, struct ncclTopoGraph* graph);
 
 ncclResult_t ncclTopoPrintGraph(struct ncclTopoSystem* system, struct ncclTopoGraph* graph);
+ncclResult_t ncclTopoDumpGraphs(struct ncclTopoSystem* system, struct ncclTopoGraph* ringGraph, struct ncclTopoGraph* treeGraph);
 
 struct ncclTopoRanks {
   int ringRecv[MAXCHANNELS];

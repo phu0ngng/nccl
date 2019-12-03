@@ -379,6 +379,44 @@ uint64_t getTime() {
   return tv.tv_sec*1000000+tv.tv_usec;
 }
 
+int checkTopo(const char* xmlTopoFile, const char* xmlGraphFile) {
+  struct ncclXml xmlSystem;
+  NCCLCHECK(ncclTopoGetXmlFromFile(xmlTopoFile, &xmlSystem));
+  struct ncclTopoSystem* system;
+  NCCLCHECK(ncclTopoGetSystemFromXml(&xmlSystem, &system));
+  struct ncclXml xmlGraph;
+  NCCLCHECK(ncclTopoGetXmlGraphFromFile(xmlGraphFile, &xmlGraph));
+  struct ncclTopoGraph refRingGraph, refTreeGraph;
+
+  struct ncclTopoGraph ringGraph;
+  memset(&ringGraph, 0, sizeof(ringGraph));
+  ringGraph.pattern = NCCL_TOPO_PATTERN_RING;
+  ringGraph.crossNic = 2;
+  ringGraph.minChannels = 1;
+  ringGraph.maxChannels = 16;
+
+  struct ncclTopoGraph treeGraph;
+  memset(&treeGraph, 0, sizeof(treeGraph));
+  treeGraph.pattern = NCCL_TOPO_PATTERN_SPLIT_TREE;
+  treeGraph.crossNic = 2;
+
+  /* Get reference graphs from XML */
+  memcpy(refRingGraph, ringGraph, sizeof(ringGraph));
+  memcpy(refTreeGraph, treeGraph, sizeof(treeGraph));
+  CHECK(ncclTopoGetGraphsFromXml(xmlGraph.nodes, system->nodes[GPU].count, &refRingGraph));
+  CHECK(ncclTopoGetGraphsFromXml(xmlGraph.nodes, system->nodes[GPU].count, &refTreeGraph));
+
+  /* Compute */
+  uint64_t computeTime = getTime();
+  CHECK(ncclTopoCompute(&system, &ringGraph));
+  treeGraph.minChannels = treeGraph.maxChannels = ringGraph.nChannels;
+  CHECK(ncclTopoCompute(&system, &treeGraph));
+  computeTime = getTime() - computeTime;
+
+  /* Compare */
+  return errors;
+}
+
 int checkTopo(const char* name, const char** topo, int topoSize, int nvlinkWidth, int inter,
   int expectedTreeChannels, int expectedTreeSpeedInter, int expectedTreeSpeedIntra, int expectedTreeTypeIntra, int expectedTreeTypeInter, int expectedTreePattern,
   int expectedRingChannels, int expectedRingSpeed, int expectedRingTypeIntra, int expectedRingTypeInter, int expectedRingCrossnic) {

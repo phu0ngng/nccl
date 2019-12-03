@@ -219,7 +219,7 @@ struct kvDict {
   int value;
 };
 
-static ncclResult_t kvConvert(const char* str, int* value, struct kvDict* dict) {
+static ncclResult_t kvConvertToInt(const char* str, int* value, struct kvDict* dict) {
   struct kvDict* d = dict;
   while (d->str) {
     if (strcmp(str, d->str) == 0) {
@@ -228,7 +228,19 @@ static ncclResult_t kvConvert(const char* str, int* value, struct kvDict* dict) 
     }
     d++;
   }
-  WARN("Could not find value of %s in dictionary", str);
+  WARN("KV Convert to int : could not find value of %s in dictionary", str);
+  return ncclInternalError;
+}
+static ncclResult_t kvConvertToStr(int value, const char** str, struct kvDict* dict) {
+  struct kvDict* d = dict;
+  while (d->str) {
+    if (value == d->value) {
+      *str = d->str;
+      return ncclSuccess;
+    }
+    d++;
+  }
+  WARN("KV Convert to str : could not find value %d in dictionary", value);
   return ncclInternalError;
 }
 

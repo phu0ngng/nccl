@@ -450,9 +450,13 @@ ncclResult_t ncclTopoSearchRec(struct ncclTopoSystem* system, struct ncclTopoGra
   return ncclSuccess;
 }
 
+/************************************/
 /* User defined graph from XML file */
-struct kvDict kvDictLinkType[] = { { "PCI", LINK_PCI }, { "NVL", LINK_NVL }, { "LOC", LINK_LOC }, { NULL, 0 } };
-ncclResult_t ncclTopoGetChannelFromXml(struct ncclXmlNode *xmlChannel, int c, int ngpus, struct ncclTopoGraph* graph) {
+/************************************/
+
+struct kvDict kvDictLinkType[] = { { "QPI", LINK_QPI}, { "PCI", LINK_PCI }, { "NVL", LINK_NVL }, { "LOC", LINK_LOC }, { NULL, 0 } };
+ncclResult_t ncclTopoGetChannelFromXml(struct ncclXmlNode *xmlChannel, int c, struct ncclTopoSystem* system, struct ncclTopoGraph* graph) {
+  int ngpus = system->nodes[GPU].count;
   int* inter = graph->inter+2*c;
   int* intra = graph->intra+ngpus*c;
   int n=0, g=0;
@@ -463,12 +467,20 @@ ncclResult_t ncclTopoGetChannelFromXml(struct ncclXmlNode *xmlChannel, int c, in
     if (strcmp(sub->name, "net") == 0) {
       inter[n++] = dev;
     } else if (strcmp(sub->name, "gpu") == 0) {
-      intra[g++] = dev;
+      int rank = -1;
+      for (int g=0; g<ngpus; g++) {
+        if (system->nodes[GPU].nodes[g].gpu.dev == dev) rank = system->nodes[GPU].nodes[g].gpu.rank;
+      }
+      if (rank == -1) {
+        WARN("XML Import Channel : dev %d not found.", dev);
+        return ncclSystemError;
+      }
+      intra[g++] = rank;
     }
   }
   return ncclSuccess;
 }
-ncclResult_t ncclTopoGetGraphFromXml(struct ncclXmlNode *xmlGraph, int ngpus, struct ncclTopoGraph* graph) {
+ncclResult_t ncclTopoGetGraphFromXml(struct ncclXmlNode *xmlGraph, struct ncclTopoSystem* system, struct ncclTopoGraph* graph) {
   int pattern;
   NCCLCHECK(xmlGetAttrInt(xmlGraph, "pattern", &pattern));
   if ((graph->pattern == NCCL_TOPO_PATTERN_RING) ^ (pattern == NCCL_TOPO_PATTERN_RING)) return ncclSuccess;
@@ -483,19 +495,74 @@ ncclResult_t ncclTopoGetGraphFromXml(struct ncclXmlNode *xmlGraph, int ngpus, st
   NCCLCHECK(xmlGetAttrInt(xmlGraph, "speedinter", &graph->speedInter));
   char* str;
   NCCLCHECK(xmlGetAttrStr(xmlGraph, "typeintra", &str));
-  NCCLCHECK(kvConvert(str, &graph->typeIntra, kvDictLinkType));
+  NCCLCHECK(kvConvertToInt(str, &graph->typeIntra, kvDictLinkType));
   NCCLCHECK(xmlGetAttrStr(xmlGraph, "typeinter", &str));
-  NCCLCHECK(kvConvert(str, &graph->typeInter, kvDictLinkType));
+  NCCLCHECK(kvConvertToInt(str, &graph->typeInter, kvDictLinkType));
   NCCLCHECK(xmlGetAttrInt(xmlGraph, "samechannels", &graph->sameChannels));
   for (int s=0; s<xmlGraph->nSubs; s++) {
-    NCCLCHECK(ncclTopoGetChannelFromXml(xmlGraph->subs[s], s, ngpus, graph));
+    NCCLCHECK(ncclTopoGetChannelFromXml(xmlGraph->subs[s], s, system, graph));
   }
   return ncclSuccess;
 }
-ncclResult_t ncclTopoGetGraphsFromXml(struct ncclXmlNode *xmlGraphs, int ngpus, struct ncclTopoGraph* graph) {
+ncclResult_t ncclTopoGetGraphsFromXml(struct ncclXmlNode *xmlGraphs, struct ncclTopoSystem* system, struct ncclTopoGraph* graph) {
   for (int s=0; s<xmlGraphs->nSubs; s++) {
-    NCCLCHECK(ncclTopoGetGraphFromXml(xmlGraphs->subs[s], ngpus, graph));
+    NCCLCHECK(ncclTopoGetGraphFromXml(xmlGraphs->subs[s], system, graph));
   }
+  return ncclSuccess;
+}
+/* And the reverse : graph->xml */
+ncclResult_t ncclTopoGetXmlFromChannel(struct ncclTopoGraph* graph, int c, struct ncclTopoSystem* system, struct ncclXml *xml, struct ncclXmlNode* parent) {
+  struct ncclXmlNode* xmlChannel;
+  int ngpus = system->nodes[GPU].count;
+  int* inter = graph->inter+2*c;
+  int* intra = graph->intra+ngpus*c;
+  NCCLCHECK(xmlAddSub(xml, parent, "channel", &xmlChannel));
+  struct ncclXmlNode* node;
+  if (system->nodes[NET].count) {
+    NCCLCHECK(xmlAddSub(xml, xmlChannel, "net", &node));
+    NCCLCHECK(xmlSetAttrInt(node, "dev", inter[0]));
+  }
+  for (int g=0; g<ngpus; g++) {
+    NCCLCHECK(xmlAddSub(xml, xmlChannel, "gpu", &node));
+    int dev = -1;
+    for (int i=0; i<ngpus; i++) {
+      if (system->nodes[GPU].nodes[i].gpu.rank == intra[g]) dev = system->nodes[GPU].nodes[i].gpu.dev;
+    }
+    if (dev == -1) {
+      WARN("XML Export Channel : rank %d not found.", intra[g]);
+      return ncclInternalError;
+    }
+    NCCLCHECK(xmlSetAttrInt(node, "dev", dev));
+  }
+  if (system->nodes[NET].count) {
+    NCCLCHECK(xmlAddSub(xml, xmlChannel, "net", &node));
+    NCCLCHECK(xmlSetAttrInt(node, "dev", inter[1]));
+  }
+  return ncclSuccess;
+}
+ncclResult_t ncclTopoGetXmlFromGraph(struct ncclTopoGraph* graph, struct ncclTopoSystem* system, struct ncclXml *xml, struct ncclXmlNode* parent) {
+  struct ncclXmlNode* xmlGraph;
+  NCCLCHECK(xmlAddSub(xml, parent, "graph", &xmlGraph));
+  NCCLCHECK(xmlSetAttrInt(xmlGraph, "nchannels", graph->nChannels));
+  NCCLCHECK(xmlSetAttrInt(xmlGraph, "speedintra", graph->speedIntra));
+  NCCLCHECK(xmlSetAttrInt(xmlGraph, "speedinter", graph->speedInter));
+  const char* str;
+  NCCLCHECK(kvConvertToStr(graph->typeIntra, &str, kvDictLinkType));
+  NCCLCHECK(xmlSetAttrStr(xmlGraph, "typeintra", str));
+  NCCLCHECK(kvConvertToStr(graph->typeInter, &str, kvDictLinkType));
+  NCCLCHECK(xmlSetAttrStr(xmlGraph, "typeinter", str));
+  NCCLCHECK(xmlSetAttrInt(xmlGraph, "samechannels", graph->sameChannels));
+  for (int c=0; c<graph->nChannels; c++) {
+    NCCLCHECK(ncclTopoGetXmlFromChannel(graph, c, system, xml, xmlGraph));
+  }
+  return ncclSuccess;
+}
+ncclResult_t ncclTopoGetXmlFromGraphs(struct ncclTopoGraph* ringGraph, struct ncclTopoGraph* treeGraph, struct ncclTopoSystem* system, struct ncclXml *xml) {
+  xml->maxIndex = 0;
+  struct ncclXmlNode* xmlGraphs = xml->nodes+xml->maxIndex++;
+  strcpy(xmlGraphs->name, "graphs");
+  NCCLCHECK(ncclTopoGetXmlFromGraph(ringGraph, system, xml, xmlGraphs));
+  NCCLCHECK(ncclTopoGetXmlFromGraph(treeGraph, system, xml, xmlGraphs));
   return ncclSuccess;
 }
 
@@ -516,7 +583,7 @@ ncclResult_t ncclTopoCompute(ncclTopoSystem* system, struct ncclTopoGraph* graph
   if (str) {
     struct ncclXml xml;
     NCCLCHECK(ncclTopoGetXmlGraphFromFile(str, &xml));
-    NCCLCHECK(ncclTopoGetGraphsFromXml(xml.nodes, ngpus, graph));
+    NCCLCHECK(ncclTopoGetGraphsFromXml(xml.nodes, system, graph));
     if (graph->nChannels > 0) return ncclSuccess;
   }
 
@@ -678,6 +745,16 @@ ncclResult_t ncclTopoPrintGraph(struct ncclTopoSystem* system, struct ncclTopoGr
       offset = strlen(line);
     }
     INFO(NCCL_GRAPH, "%s", line);
+  }
+  return ncclSuccess;
+}
+
+ncclResult_t ncclTopoDumpGraphs(struct ncclTopoSystem* system, struct ncclTopoGraph* ringGraph, struct ncclTopoGraph* treeGraph) {
+  char* str = getenv("NCCL_GRAPH_DUMP_FILE");
+  if (str) {
+    struct ncclXml xml;
+    NCCLCHECK(ncclTopoGetXmlFromGraphs(ringGraph, treeGraph, system, &xml));
+    NCCLCHECK(ncclTopoDumpSystemToXml(str, &xml));
   }
   return ncclSuccess;
 }
