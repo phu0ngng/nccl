@@ -161,7 +161,7 @@ __device__ void ncclAllReduceCollNetKernel(struct CollectiveArgs* args) {
   const T * __restrict__ thisInput = (const T*)args->ThisInput;
   T * __restrict__ thisOutput = (T*)args->ThisOutput;
 
-  if (blockIdx.x < args->nChannels) {
+  if (blockIdx.x < args->nChannels) { // first half of the channels do reduce
     struct ncclTree* tree = &channel->collTreeUp;
     ncclPrimitives<UNROLL, 1, 1, T, 1, 1, FUNC> prims(tid, args->nThreads, tree->down, &tree->up, NULL, stepSize, channel, comm, args->opCount);
     for (ssize_t gridOffset = 0; gridOffset < size; gridOffset += loopSize) {
@@ -178,7 +178,7 @@ __device__ void ncclAllReduceCollNetKernel(struct CollectiveArgs* args) {
     }
   }
 
-  if (blockIdx.x >= args->nChannels) {
+  if (blockIdx.x >= args->nChannels) { // second half of the channels do broadcast
     struct ncclTree* tree = &channel->collTreeDn;
     ncclPrimitives<UNROLL, 1, 1, T, 1, 1, FUNC> prims(tid, args->nThreads, &tree->up, tree->down, NULL, stepSize, channel, comm, args->opCount);
     for (ssize_t gridOffset = 0; gridOffset < size; gridOffset += loopSize) {
@@ -347,7 +347,7 @@ __device__ void ncclAllReduceCollNetLLKernel(struct CollectiveArgs* args) {
   const T * __restrict__ thisInput = (const T*)args->ThisInput;
   T * __restrict__ thisOutput = (T*)args->ThisOutput;
 
-  if (blockIdx.x < args->nChannels) {
+  if (blockIdx.x < args->nChannels) { // first half of the channels do reduce
     struct ncclTree* tree = &channel->collTreeUp;
     ncclLLPrimitives<T, FUNC, 1, 1> LLprims(tid, nthreads, tree->down, &tree->up, channel, comm, args->opCount);
     for (ssize_t gridOffset = 0; gridOffset < size; gridOffset += loopSize) {
@@ -364,7 +364,7 @@ __device__ void ncclAllReduceCollNetLLKernel(struct CollectiveArgs* args) {
     }
   }
 
-  if (blockIdx.x >= args->nChannels) {
+  if (blockIdx.x >= args->nChannels) { // second half of the channels do broadcast
     struct ncclTree* tree = &channel->collTreeDn;
     ncclLLPrimitives<T, FUNC, 1, 1> LLprims(tid, nthreads, &tree->up, tree->down, channel, comm, args->opCount);
     for (ssize_t gridOffset = 0; gridOffset < size; gridOffset += loopSize) {
