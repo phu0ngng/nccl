@@ -16,7 +16,7 @@ ncclResult_t ncclTopoSearchInit(struct ncclTopoSystem* system) {
     struct ncclTopoNode* gpu = system->nodes[GPU].nodes+g;
     int gpuLinkType = LINK_PCI;
     for (int l=0; l<gpu->nlinks; l++) {
-      if (gpu->links[l]->type == LINK_NVL) gpuLinkType = LINK_NVL;
+      if (gpu->links[l].type == LINK_NVL) gpuLinkType = LINK_NVL;
     }
     int gpuMaxWidth = gpuLinkType == LINK_NVL ? (gpu->gpu.cudaCompCap > 60 ? VOLTA_NVLINK_WIDTH : PASCAL_NVLINK_WIDTH) : PCI_WIDTH;
     system->maxWidth = std::min(system->maxWidth, gpuMaxWidth);
