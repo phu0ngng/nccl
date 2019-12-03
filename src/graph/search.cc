@@ -11,7 +11,6 @@
 // Initialize system->maxWidth. This is the per-channel (i.e. per-SM)
 // max speed.
 ncclResult_t ncclTopoSearchInit(struct ncclTopoSystem* system) {
-  printf("Search Init\n");
   system->maxWidth = LOC_WIDTH;
   for (int g=0; g<system->nodes[GPU].count; g++) {
     struct ncclTopoNode* gpu = system->nodes[GPU].nodes+g;
@@ -21,7 +20,6 @@ ncclResult_t ncclTopoSearchInit(struct ncclTopoSystem* system) {
     }
     int gpuMaxWidth = gpuLinkType == LINK_NVL ? (gpu->gpu.cudaCompCap > 60 ? VOLTA_NVLINK_WIDTH : PASCAL_NVLINK_WIDTH) : PCI_WIDTH;
     system->maxWidth = std::min(system->maxWidth, gpuMaxWidth);
-    printf("GPU %d maxWidth %d type %d\n", g, gpuMaxWidth, gpuLinkType);
   }
   if (system->nodes[NET].count > 0) {
     system->maxWidth = PCI_WIDTH;
