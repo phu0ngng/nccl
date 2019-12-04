@@ -393,20 +393,22 @@ ncclResult_t ncclTopoGetXmlFromCpu(struct ncclXmlNode* cpuNode, struct ncclXml* 
   if (index == -1) {
     union {
       struct {
-        int steppingId:4;
-        int model:4;
-        int familyId:4;
-        int processorType:2;
-        int resv0:2;
-        int extModelId:4;
-        int modelId:8;
-        int resv1:4;
+        unsigned steppingId:4;
+        unsigned modelId:4;
+        unsigned familyId:4;
+        unsigned processorType:2;
+        unsigned resv0:2;
+        unsigned extModelId:4;
+        unsigned extFamilyId:8;
+        unsigned resv1:4;
       };
       uint32_t val;
     } cpuid1;
     asm volatile("cpuid" : "=a" (cpuid1.val) : "a" (1));
-    NCCLCHECK(xmlSetAttrInt(cpuNode, "familyid", cpuid1.familyId));
-    NCCLCHECK(xmlSetAttrInt(cpuNode, "modelid", cpuid1.modelId));
+    int familyId = cpuid1.familyId + (cpuid1.extFamilyId << 4);
+    int modelId = cpuid1.modelId + (cpuid1.extModelId << 4);
+    NCCLCHECK(xmlSetAttrInt(cpuNode, "familyid", familyId));
+    NCCLCHECK(xmlSetAttrInt(cpuNode, "modelid", modelId));
   }
 #endif
   return ncclSuccess;
