@@ -1,0 +1,222 @@
+<graphs>
+  <graph pattern=4 crossnic=0 nchannels=6 speedintra=210 speedinter=210 typeintra="NVL" typeinter="PCI" samechannels=1>
+    <channel>
+      <gpu dev=0/>
+      <gpu dev=1/>
+      <gpu dev=2/>
+      <gpu dev=3/>
+      <gpu dev=4/>
+      <gpu dev=5/>
+      <gpu dev=6/>
+      <gpu dev=7/>
+      <gpu dev=8/>
+      <gpu dev=9/>
+      <gpu dev=10/>
+      <gpu dev=11/>
+      <gpu dev=12/>
+      <gpu dev=13/>
+      <gpu dev=14/>
+      <gpu dev=15/>
+    </channel>
+    <channel>
+      <gpu dev=0/>
+      <gpu dev=1/>
+      <gpu dev=2/>
+      <gpu dev=3/>
+      <gpu dev=4/>
+      <gpu dev=5/>
+      <gpu dev=6/>
+      <gpu dev=7/>
+      <gpu dev=8/>
+      <gpu dev=9/>
+      <gpu dev=10/>
+      <gpu dev=11/>
+      <gpu dev=12/>
+      <gpu dev=13/>
+      <gpu dev=14/>
+      <gpu dev=15/>
+    </channel>
+    <channel>
+      <gpu dev=0/>
+      <gpu dev=1/>
+      <gpu dev=2/>
+      <gpu dev=3/>
+      <gpu dev=4/>
+      <gpu dev=5/>
+      <gpu dev=6/>
+      <gpu dev=7/>
+      <gpu dev=8/>
+      <gpu dev=9/>
+      <gpu dev=10/>
+      <gpu dev=11/>
+      <gpu dev=12/>
+      <gpu dev=13/>
+      <gpu dev=14/>
+      <gpu dev=15/>
+    </channel>
+    <channel>
+      <gpu dev=0/>
+      <gpu dev=1/>
+      <gpu dev=2/>
+      <gpu dev=3/>
+      <gpu dev=4/>
+      <gpu dev=5/>
+      <gpu dev=6/>
+      <gpu dev=7/>
+      <gpu dev=8/>
+      <gpu dev=9/>
+      <gpu dev=10/>
+      <gpu dev=11/>
+      <gpu dev=12/>
+      <gpu dev=13/>
+      <gpu dev=14/>
+      <gpu dev=15/>
+    </channel>
+    <channel>
+      <gpu dev=0/>
+      <gpu dev=1/>
+      <gpu dev=2/>
+      <gpu dev=3/>
+      <gpu dev=4/>
+      <gpu dev=5/>
+      <gpu dev=6/>
+      <gpu dev=7/>
+      <gpu dev=8/>
+      <gpu dev=9/>
+      <gpu dev=10/>
+      <gpu dev=11/>
+      <gpu dev=12/>
+      <gpu dev=13/>
+      <gpu dev=14/>
+      <gpu dev=15/>
+    </channel>
+    <channel>
+      <gpu dev=0/>
+      <gpu dev=1/>
+      <gpu dev=2/>
+      <gpu dev=3/>
+      <gpu dev=4/>
+      <gpu dev=5/>
+      <gpu dev=6/>
+      <gpu dev=7/>
+      <gpu dev=8/>
+      <gpu dev=9/>
+      <gpu dev=10/>
+      <gpu dev=11/>
+      <gpu dev=12/>
+      <gpu dev=13/>
+      <gpu dev=14/>
+      <gpu dev=15/>
+    </channel>
+  </graph>
+  <graph pattern=2 crossnic=0 nchannels=6 speedintra=210 speedinter=210 typeintra="NVL" typeinter="PCI" samechannels=1>
+    <channel>
+      <gpu dev=0/>
+      <gpu dev=1/>
+      <gpu dev=2/>
+      <gpu dev=3/>
+      <gpu dev=4/>
+      <gpu dev=5/>
+      <gpu dev=6/>
+      <gpu dev=7/>
+      <gpu dev=8/>
+      <gpu dev=9/>
+      <gpu dev=10/>
+      <gpu dev=11/>
+      <gpu dev=12/>
+      <gpu dev=13/>
+      <gpu dev=14/>
+      <gpu dev=15/>
+    </channel>
+    <channel>
+      <gpu dev=0/>
+      <gpu dev=1/>
+      <gpu dev=2/>
+      <gpu dev=3/>
+      <gpu dev=4/>
+      <gpu dev=5/>
+      <gpu dev=6/>
+      <gpu dev=7/>
+      <gpu dev=8/>
+      <gpu dev=9/>
+      <gpu dev=10/>
+      <gpu dev=11/>
+      <gpu dev=12/>
+      <gpu dev=13/>
+      <gpu dev=14/>
+      <gpu dev=15/>
+    </channel>
+    <channel>
+      <gpu dev=0/>
+      <gpu dev=1/>
+      <gpu dev=2/>
+      <gpu dev=3/>
+      <gpu dev=4/>
+      <gpu dev=5/>
+      <gpu dev=6/>
+      <gpu dev=7/>
+      <gpu dev=8/>
+      <gpu dev=9/>
+      <gpu dev=10/>
+      <gpu dev=11/>
+      <gpu dev=12/>
+      <gpu dev=13/>
+      <gpu dev=14/>
+      <gpu dev=15/>
+    </channel>
+    <channel>
+      <gpu dev=0/>
+      <gpu dev=1/>
+      <gpu dev=2/>
+      <gpu dev=3/>
+      <gpu dev=4/>
+      <gpu dev=5/>
+      <gpu dev=6/>
+      <gpu dev=7/>
+      <gpu dev=8/>
+      <gpu dev=9/>
+      <gpu dev=10/>
+      <gpu dev=11/>
+      <gpu dev=12/>
+      <gpu dev=13/>
+      <gpu dev=14/>
+      <gpu dev=15/>
+    </channel>
+    <channel>
+      <gpu dev=0/>
+      <gpu dev=1/>
+      <gpu dev=2/>
+      <gpu dev=3/>
+      <gpu dev=4/>
+      <gpu dev=5/>
+      <gpu dev=6/>
+      <gpu dev=7/>
+      <gpu dev=8/>
+      <gpu dev=9/>
+      <gpu dev=10/>
+      <gpu dev=11/>
+      <gpu dev=12/>
+      <gpu dev=13/>
+      <gpu dev=14/>
+      <gpu dev=15/>
+    </channel>
+    <channel>
+      <gpu dev=0/>
+      <gpu dev=1/>
+      <gpu dev=2/>
+      <gpu dev=3/>
+      <gpu dev=4/>
+      <gpu dev=5/>
+      <gpu dev=6/>
+      <gpu dev=7/>
+      <gpu dev=8/>
+      <gpu dev=9/>
+      <gpu dev=10/>
+      <gpu dev=11/>
+      <gpu dev=12/>
+      <gpu dev=13/>
+      <gpu dev=14/>
+      <gpu dev=15/>
+    </channel>
+  </graph>
+</graphs>

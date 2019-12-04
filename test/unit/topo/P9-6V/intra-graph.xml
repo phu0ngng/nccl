@@ -1,0 +1,38 @@
+<graphs>
+  <graph pattern=4 crossnic=0 nchannels=2 speedintra=120 speedinter=120 typeintra="QPI" typeinter="PCI" samechannels=0>
+    <channel>
+      <gpu dev=0/>
+      <gpu dev=1/>
+      <gpu dev=2/>
+      <gpu dev=3/>
+      <gpu dev=4/>
+      <gpu dev=5/>
+    </channel>
+    <channel>
+      <gpu dev=0/>
+      <gpu dev=1/>
+      <gpu dev=3/>
+      <gpu dev=5/>
+      <gpu dev=4/>
+      <gpu dev=2/>
+    </channel>
+  </graph>
+  <graph pattern=2 crossnic=0 nchannels=2 speedintra=240 speedinter=210 typeintra="QPI" typeinter="PCI" samechannels=0>
+    <channel>
+      <gpu dev=0/>
+      <gpu dev=1/>
+      <gpu dev=2/>
+      <gpu dev=3/>
+      <gpu dev=4/>
+      <gpu dev=5/>
+    </channel>
+    <channel>
+      <gpu dev=0/>
+      <gpu dev=2/>
+      <gpu dev=1/>
+      <gpu dev=4/>
+      <gpu dev=5/>
+      <gpu dev=3/>
+    </channel>
+  </graph>
+</graphs>

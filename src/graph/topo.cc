@@ -90,22 +90,6 @@ enum ncclNvLinkDeviceType {
   ncclNvLinkDeviceBridge, // IBM/Power NVLink bridge (Device 04ea)
 };
 
-static ncclResult_t ncclDeviceType(const char* pciClass, enum ncclNvLinkDeviceType* type) {
-  if (strcmp(pciClass, "0x068000") == 0) {
-    // PCI device is of type "Bridge / Other Bridge Device" (NVswitch)
-    *type = ncclNvLinkDeviceSwitch;
-  } else if (strcmp(pciClass, "0x068001") == 0) {
-    // PCI device is of type "Bridge: IBM Device 04ea"
-    *type = ncclNvLinkDeviceBridge;
-  } else if (strcmp(pciClass, "0x030200") == 0 // "3D Controller" (Tesla)
-      || strcmp(pciClass, "0x030000") == 0) {  // "VGA Controller" (GeForce)
-    *type = ncclNvLinkDeviceGpu;
-  } else {
-    *type = ncclNvLinkDeviceUnknown;
-  }
-  return ncclSuccess;
-}
-
 ncclResult_t ncclTopoGetNode(struct ncclTopoSystem* system, struct ncclTopoNode** node, int type, uint64_t id) {
   for (int i=0; i<system->nodes[type].count; i++) {
     if (system->nodes[type].nodes[i].id == id) {
@@ -498,16 +482,16 @@ ncclResult_t ncclTopoGetSystem(struct ncclComm* comm, struct ncclTopoSystem** sy
   struct ncclTopoSystem* s;
   NCCLCHECK(ncclCalloc(&s, 1));
 
-  struct ncclXml xml;
-  memset(&xml, 0, sizeof(struct ncclXml));
+  struct ncclXml* xml;
+  NCCLCHECK(ncclCalloc(&xml, 1));
   char* xmlTopoFile = getenv("NCCL_TOPO_FILE");
   if (xmlTopoFile) {
-    NCCLCHECK(ncclTopoGetXmlFromFile(xmlTopoFile, &xml));
+    NCCLCHECK(ncclTopoGetXmlFromFile(xmlTopoFile, xml));
   }
-  if (xml.maxIndex == 0) {
+  if (xml->maxIndex == 0) {
     // Create top tag
-    struct ncclXmlNode* top = xml.nodes+xml.maxIndex++;
-    strcpy(top->name, "system");
+    struct ncclXmlNode* top;
+    NCCLCHECK(xmlAddNode(xml, NULL, "system", &top));
   }
 
   // Auto-detect GPUs if needed
@@ -516,7 +500,7 @@ ncclResult_t ncclTopoGetSystem(struct ncclComm* comm, struct ncclTopoSystem** sy
       char busId[NVML_DEVICE_PCI_BUS_ID_BUFFER_SIZE];
       NCCLCHECK(int64ToBusId(comm->peerInfo[r].busId, busId));
       struct ncclXmlNode* node;
-      NCCLCHECK(ncclTopoFillGpu(&xml, busId, &node));
+      NCCLCHECK(ncclTopoFillGpu(xml, busId, &node));
       NCCLCHECK(xmlSetAttrInt(node, "rank", r));
     }
   }
@@ -528,16 +512,17 @@ ncclResult_t ncclTopoGetSystem(struct ncclComm* comm, struct ncclTopoSystem** sy
     ncclResult_t res = ncclNetPciPath(n, &path);
     if (res != ncclSuccess) path = NULL;
     struct ncclXmlNode* node;
-    NCCLCHECK(ncclTopoFillNic(&xml, path, &node));
+    NCCLCHECK(ncclTopoFillNic(xml, path, &node));
     NCCLCHECK(xmlSetAttrInt(node, "dev", n));
   }
 
   xmlTopoFile = getenv("NCCL_TOPO_DUMP_FILE");
   if (xmlTopoFile && comm->rank == 0) {
-    NCCLCHECK(ncclTopoDumpSystemToXml(xmlTopoFile, &xml));
+    NCCLCHECK(ncclTopoDumpXmlToFile(xmlTopoFile, xml));
   }
 
-  NCCLCHECK(ncclTopoGetSystemFromXml(&xml, system));
+  NCCLCHECK(ncclTopoGetSystemFromXml(xml, system));
+  free(xml);
   return ncclSuccess;
 }
 

@@ -173,6 +173,7 @@ ncclResult_t xmlLoadSub(int fd, struct ncclXml* xml, struct ncclXmlNode* head, s
       if (strcmp(node->name, handlers[h].name) == 0) {
         if (head) head->subs[head->nSubs++] = node;
         node->parent = head;
+        node->nSubs = 0;
         xml->maxIndex++;
         NCCLCHECK(handlers[h].func(fd, xml, node));
         found = 1;
@@ -214,7 +215,7 @@ ncclResult_t ncclTopoDumpXmlRec(int indent, int fd, struct ncclXmlNode* node) {
   return ncclSuccess;
 }
 
-ncclResult_t ncclTopoDumpSystemToXml(const char* xmlTopoFile, struct ncclXml* xml) {
+ncclResult_t ncclTopoDumpXmlToFile(const char* xmlTopoFile, struct ncclXml* xml) {
   int fd = open(xmlTopoFile, O_TRUNC|O_CREAT|O_WRONLY, 0644);
   if (fd == -1) {
     WARN("Unable to open %s, not dumping topology.", xmlTopoFile);
@@ -425,9 +426,7 @@ ncclResult_t ncclTopoGetPciNode(struct ncclXml* xml, const char* busId, struct n
     }
   }
   if (*pciNode == NULL) {
-    // GPU not in topo yet. Add it.
-    *pciNode = xml->nodes+xml->maxIndex++;
-    strcpy((*pciNode)->name, "pci");
+    NCCLCHECK(xmlAddNode(xml, NULL, "pci", pciNode));
   }
   NCCLCHECK(xmlSetAttrStr(*pciNode, "busid", busId));
   return ncclSuccess;
@@ -491,7 +490,7 @@ ncclResult_t ncclTopoGetXmlFromSys(struct ncclXmlNode* pciNode, struct ncclXml* 
       NCCLCHECK(xmlFindTag(xml, "system", &topNode));
       NCCLCHECK(xmlGetSubKvInt(topNode, "cpu", &parent, "numaid", numaId));
       if (parent == NULL) {
-        NCCLCHECK(xmlAddSub(xml, topNode, "cpu", &parent));
+        NCCLCHECK(xmlAddNode(xml, topNode, "cpu", &parent));
         NCCLCHECK(xmlSetAttrInt(parent, "numaid", numaId));
       }
     } else {
@@ -500,8 +499,7 @@ ncclResult_t ncclTopoGetXmlFromSys(struct ncclXmlNode* pciNode, struct ncclXml* 
         if (path[i] == '/') {
           NCCLCHECK(xmlFindTagKvStr(xml, "pci", &parent, "busid", path+i+1));
           if (parent == NULL) {
-            parent = xml->nodes+xml->maxIndex++;
-            strcpy(parent->name, "pci");
+            NCCLCHECK(xmlAddNode(xml, NULL, "pci", &parent));
             NCCLCHECK(xmlSetAttrStr(parent, "busid", path+i+1));
           }
           break;
@@ -522,7 +520,7 @@ ncclResult_t ncclTopoGetXmlFromSys(struct ncclXmlNode* pciNode, struct ncclXml* 
 ncclResult_t ncclTopoGetXmlFromGpu(struct ncclXmlNode* pciNode, nvmlDevice_t nvmlDev, struct ncclXml* xml, struct ncclXmlNode** gpuNodeRet) {
   struct ncclXmlNode* gpuNode = NULL;
   NCCLCHECK(xmlGetSub(pciNode, "gpu", &gpuNode));
-  if (gpuNode == NULL) NCCLCHECK(xmlAddSub(xml, pciNode, "gpu", &gpuNode));
+  if (gpuNode == NULL) NCCLCHECK(xmlAddNode(xml, pciNode, "gpu", &gpuNode));
 
   int index = -1;
 
@@ -592,7 +590,7 @@ ncclResult_t ncclTopoGetXmlFromGpu(struct ncclXmlNode* pciNode, nvmlDevice_t nvm
       
       NCCLCHECK(xmlGetSubKvStr(gpuNode, "nvlink", &nvlNode, "target", lowerId));
       if (nvlNode == NULL) {
-        NCCLCHECK(xmlAddSub(xml, gpuNode, "nvlink", &nvlNode));
+        NCCLCHECK(xmlAddNode(xml, gpuNode, "nvlink", &nvlNode));
         NCCLCHECK(xmlSetAttrStr(nvlNode, "target", lowerId));
         NCCLCHECK(xmlSetAttrInt(nvlNode, "count", 1));
       } else {
@@ -636,7 +634,7 @@ ncclResult_t ncclTopoGetXmlFromNet(struct ncclXmlNode* nicNode, struct ncclXml* 
   struct ncclXmlNode* netNode;
   NCCLCHECK(xmlGetSub(nicNode, "net", &netNode));
   if (netNode == NULL) {
-    NCCLCHECK(xmlAddSub(xml, nicNode, "net", &netNode));
+    NCCLCHECK(xmlAddNode(xml, nicNode, "net", &netNode));
   }
   int index;
   NCCLCHECK(xmlGetAttrIndex(netNode, "name", &index));
@@ -707,13 +705,13 @@ ncclResult_t ncclTopoFillNic(struct ncclXml* xml, const char* sysPath, struct nc
     NCCLCHECK(ncclTopoGetXmlFromSys(pciNode, xml));
     NCCLCHECK(xmlGetSub(pciNode, "nic", &nicNode));
     if (nicNode == NULL) {
-      NCCLCHECK(xmlAddSub(xml, pciNode, "nic", &nicNode));
+      NCCLCHECK(xmlAddNode(xml, pciNode, "nic", &nicNode));
     }
   } else {
     // Virtual NIC, no PCI device, attach to first CPU
     struct ncclXmlNode* cpuNode;
     NCCLCHECK(xmlFindTag(xml, "cpu", &cpuNode));
-    NCCLCHECK(xmlAddSub(xml, cpuNode, "nic", &nicNode));
+    NCCLCHECK(xmlAddNode(xml, cpuNode, "nic", &nicNode));
   }
   free(pciSysPath);
   

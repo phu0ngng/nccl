@@ -13,7 +13,7 @@ ifeq ($(MPI_IBM),1)
 NVLDFLAGS += -lmpi_ibm
 endif
 # We need private functions. Include and link with src
-NVCUFLAGS += -I$(BUILDDIR)/include/ -I../include -I../../src/include -I ../../src/collectives/device/ -I../../src/graph
+SRCINC = -I$(BUILDDIR)/include/ -I../include -I../../src/include -I ../../src/collectives/device/ -I../../src/graph
 # Use static library since all the internal symbols are there
 LIBRARIES += nccl_static
 STATICLIB = ${BUILDDIR}/lib/libnccl_static.a
@@ -26,25 +26,32 @@ CU_FILES := kernel_test.cu graph_test.cu
 #endif
 OBJ_FILES:= $(CU_FILES:%.cu=${DST_DIR}/%.o)
 EXE_FILES:= $(CU_FILES:%.cu=${DST_DIR}/%)
-DEP_FILES:= $(CU_FILES:%.cu=${DST_DIR}/%.dep)
+DEP_FILES:= $(OBJ_FILES:%.o=${DST_DIR}/%.d)
 #
 all:${EXE_FILES}
+	@printf "Syncing  %-35s > %s\n" topo ${DST_DIR}
+	rsync -q -av topo ${DST_DIR}
 clean:
 	rm -rf ${DST_DIR}
 #
 ifneq (clean,${MAKECMDGOALS})
 -include ${DEP_FILES}
-${DST_DIR}/%.dep:%.cu
-	@mkdir -p ${DST_DIR}
-	$(NVCC) --generate-dependencies $(NVCUFLAGS) $< \
-	| sed "0,/^$*.o :/s//$(subst /,\/,${DST_DIR}/$*.o) :/" \
-	> $@
 endif
+#
+${DST_DIR}/%.o:%.cc
+	@printf "Compiling  %-35s > %s\n" $< $@
+	@mkdir -p ${DST_DIR}
+	$(CXX) $(SRCINC) $(CXXFLAGS) -c $< -o $@
+	@$(CXX) $(SRCINC) $(CXXFLAGS) -M $< > $(@:%.o=%.d.tmp)
+	@sed "0,/^.*:/s//$(subst /,\/,$@):/" $(@:%.o=%.d.tmp) > $(@:%.o=%.d)
+	@sed -e 's/.*://' -e 's/\\$$//' < $(@:%.o=%.d.tmp) | fmt -1 | \
+                sed -e 's/^ *//' -e 's/$$/:/' >> $(@:%.o=%.d)
+	@rm -f $(@:%.o=%.d.tmp)
 #
 ${DST_DIR}/%.o:%.cu
 	@printf "Compiling  %-35s > %s\n" $< $@
 	@mkdir -p ${DST_DIR}
-	$(NVCC) --compile -o $@ $(NVCUFLAGS) $<
+	$(NVCC) --compile -o $@ $(SRCINC) $(NVCUFLAGS) $<
 #
 ${DST_DIR}/kernel_test: ${DST_DIR}/kernel_test.o
 	@printf "Linking  %-35s > %s\n" $< $@

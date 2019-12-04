@@ -1,0 +1,39 @@
+<system>
+  <cpu numaid=0 affinity="000f,ff000fff" arch="x86_64" vendor="GenuineIntel" familyid=6 modelid=0>
+    <pci busid="0000:02:00.0" class="0x060400" link_speed="8 GT/s" link_width=16>
+      <pci busid="0000:04:00.0" class="0x030200" link_speed="8 GT/s" link_width=16>
+        <gpu dev=0 sm=60 rank=0/>
+      </pci>
+      <pci busid="0000:06:00.0" class="0x030200" link_speed="8 GT/s" link_width=16>
+        <gpu dev=1 sm=60 rank=1/>
+      </pci>
+      <pci busid="0000:07:00.0" class="0x030200" link_speed="8 GT/s" link_width=16>
+        <gpu dev=2 sm=60 rank=2/>
+      </pci>
+      <pci busid="0000:08:00.0" class="0x030200" link_speed="8 GT/s" link_width=16>
+        <gpu dev=3 sm=60 rank=3/>
+      </pci>
+      <pci busid="0000:05:00.0" class="0x020700" link_speed="8 GT/s" link_width=16>
+        <nic type="infiniband">
+          <net name="mlx5_0" sys_guid="9803:9b03:0067:a76c" link_rate="100 Gb/sec (4X EDR)" dev=0/>
+        </nic>
+      </pci>
+    </pci>
+  </cpu>
+  <cpu numaid=1 affinity="fff0,00fff000" arch="x86_64" vendor="GenuineIntel" familyid=6 modelid=0>
+    <pci busid="0000:09:00.0" class="0x060400" link_speed="8 GT/s" link_width=16>
+      <pci busid="0000:0c:00.0" class="0x030200" link_speed="8 GT/s" link_width=16>
+        <gpu dev=4 sm=60 rank=4/>
+      </pci>
+      <pci busid="0000:0d:00.0" class="0x030200" link_speed="8 GT/s" link_width=16>
+        <gpu dev=5 sm=60 rank=5/>
+      </pci>
+      <pci busid="0000:0e:00.0" class="0x030200" link_speed="8 GT/s" link_width=16>
+        <gpu dev=6 sm=60 rank=6/>
+      </pci>
+      <pci busid="0000:0f:00.0" class="0x030200" link_speed="8 GT/s" link_width=16>
+        <gpu dev=7 sm=60 rank=7/>
+      </pci>
+    </pci>
+  </cpu>
+</system>

@@ -44,7 +44,7 @@ struct ncclXml {
 
 /* File functions */
 ncclResult_t ncclTopoGetXmlFromFile(const char* xmlTopoFile, struct ncclXml* xml);
-ncclResult_t ncclTopoDumpSystemToXml(const char* xmlTopoFile, struct ncclXml* xml);
+ncclResult_t ncclTopoDumpXmlToFile(const char* xmlTopoFile, struct ncclXml* xml);
 ncclResult_t ncclTopoGetXmlGraphFromFile(const char* xmlGraphFile, struct ncclXml* xml);
 
 /* Auto-detect functions */
@@ -203,11 +203,16 @@ static ncclResult_t xmlGetSubKvInt(struct ncclXmlNode* node, const char* subName
   return ncclSuccess;
 }
 
-static ncclResult_t xmlAddSub(struct ncclXml* xml, struct ncclXmlNode* node, const char* subName, struct ncclXmlNode** sub) {
+static ncclResult_t xmlAddNode(struct ncclXml* xml, struct ncclXmlNode* parent, const char* subName, struct ncclXmlNode** sub) {
+  if (xml->maxIndex == MAX_NODES) {
+    WARN("Error : too many XML nodes (max %d)", MAX_NODES);
+    return ncclInternalError;
+  }
   struct ncclXmlNode* s = xml->nodes+xml->maxIndex++;
+  s->nSubs = 0;
   *sub = s;
-  s->parent = node;
-  node->subs[node->nSubs++] = s;
+  s->parent = parent;
+  if (parent) parent->subs[parent->nSubs++] = s;
   strncpy(s->name, subName, MAX_STR_LEN);
   return ncclSuccess;
 }

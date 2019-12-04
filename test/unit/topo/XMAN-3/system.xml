@@ -1,0 +1,241 @@
+<system>
+  <cpu numaid=0 affinity="000000ff,ffff0000,00ffffff" arch="x86_64" vendor="GenuineIntel" familyid=6 modelid=0>
+    <pci busid="0000:2c:00.0" class="0x060400" link_speed="8 GT/s" link_width=16>
+      <pci busid="0000:35:00.0" class="0x020700" link_speed="8 GT/s" link_width=16>
+        <nic type="infiniband">
+          <net name="mlx5_1" sys_guid="9803:9b03:0070:59f2" link_rate="100 Gb/sec (4X EDR)" dev=2/>
+        </nic>
+      </pci>
+      <pci busid="0000:32:00.0" class="0x060400" link_speed="8 GT/s" link_width=16>
+        <pci busid="0000:34:00.0" class="0x030200" link_speed="8 GT/s" link_width=16>
+          <gpu dev=0 sm=70 rank=0>
+            <nvlink target="0000:65:00.0" count=1 tclass="0x068000"/>
+            <nvlink target="0000:61:00.0" count=1 tclass="0x068000"/>
+            <nvlink target="0000:63:00.0" count=1 tclass="0x068000"/>
+            <nvlink target="0000:67:00.0" count=1 tclass="0x068000"/>
+            <nvlink target="0000:62:00.0" count=1 tclass="0x068000"/>
+            <nvlink target="0000:66:00.0" count=1 tclass="0x068000"/>
+          </gpu>
+        </pci>
+        <pci busid="0000:36:00.0" class="0x030200" link_speed="8 GT/s" link_width=16>
+          <gpu dev=1 sm=70 rank=1>
+            <nvlink target="0000:65:00.0" count=1 tclass="0x068000"/>
+            <nvlink target="0000:61:00.0" count=1 tclass="0x068000"/>
+            <nvlink target="0000:67:00.0" count=1 tclass="0x068000"/>
+            <nvlink target="0000:63:00.0" count=1 tclass="0x068000"/>
+            <nvlink target="0000:66:00.0" count=1 tclass="0x068000"/>
+            <nvlink target="0000:62:00.0" count=1 tclass="0x068000"/>
+          </gpu>
+        </pci>
+        <pci busid="0000:39:00.0" class="0x030200" link_speed="8 GT/s" link_width=16>
+          <gpu dev=2 sm=70 rank=2>
+            <nvlink target="0000:65:00.0" count=1 tclass="0x068000"/>
+            <nvlink target="0000:61:00.0" count=1 tclass="0x068000"/>
+            <nvlink target="0000:63:00.0" count=1 tclass="0x068000"/>
+            <nvlink target="0000:67:00.0" count=1 tclass="0x068000"/>
+            <nvlink target="0000:66:00.0" count=1 tclass="0x068000"/>
+            <nvlink target="0000:62:00.0" count=1 tclass="0x068000"/>
+          </gpu>
+        </pci>
+        <pci busid="0000:3b:00.0" class="0x030200" link_speed="8 GT/s" link_width=16>
+          <gpu dev=3 sm=70 rank=3>
+            <nvlink target="0000:65:00.0" count=1 tclass="0x068000"/>
+            <nvlink target="0000:61:00.0" count=1 tclass="0x068000"/>
+            <nvlink target="0000:63:00.0" count=1 tclass="0x068000"/>
+            <nvlink target="0000:67:00.0" count=1 tclass="0x068000"/>
+            <nvlink target="0000:62:00.0" count=1 tclass="0x068000"/>
+            <nvlink target="0000:66:00.0" count=1 tclass="0x068000"/>
+          </gpu>
+        </pci>
+        <pci busid="0000:37:00.0" class="0x060400" link_speed="8 GT/s" link_width=16>
+          <pci busid="0000:3a:00.0" class="0x020700" link_speed="8 GT/s" link_width=16>
+            <nic type="infiniband">
+              <net name="mlx5_2" sys_guid="9803:9b03:0070:3ede" link_rate="100 Gb/sec (4X EDR)" dev=9/>
+            </nic>
+          </pci>
+        </pci>
+      </pci>
+    </pci>
+    <pci busid="0000:4f:00.0" class="0x060400" link_speed="8 GT/s" link_width=16>
+      <pci busid="0000:58:00.0" class="0x020700" link_speed="8 GT/s" link_width=16>
+        <nic type="infiniband">
+          <net name="mlx5_3" sys_guid="9803:9b03:0068:05fe" link_rate="100 Gb/sec (4X EDR)" dev=3/>
+        </nic>
+      </pci>
+      <pci busid="0000:55:00.0" class="0x060400" link_speed="8 GT/s" link_width=16>
+        <pci busid="0000:57:00.0" class="0x030200" link_speed="8 GT/s" link_width=16>
+          <gpu dev=4 sm=70 rank=4>
+            <nvlink target="0000:65:00.0" count=1 tclass="0x068000"/>
+            <nvlink target="0000:61:00.0" count=1 tclass="0x068000"/>
+            <nvlink target="0000:67:00.0" count=1 tclass="0x068000"/>
+            <nvlink target="0000:66:00.0" count=1 tclass="0x068000"/>
+            <nvlink target="0000:63:00.0" count=1 tclass="0x068000"/>
+            <nvlink target="0000:62:00.0" count=1 tclass="0x068000"/>
+          </gpu>
+        </pci>
+        <pci busid="0000:59:00.0" class="0x030200" link_speed="8 GT/s" link_width=16>
+          <gpu dev=5 sm=70 rank=5>
+            <nvlink target="0000:65:00.0" count=1 tclass="0x068000"/>
+            <nvlink target="0000:61:00.0" count=1 tclass="0x068000"/>
+            <nvlink target="0000:67:00.0" count=1 tclass="0x068000"/>
+            <nvlink target="0000:63:00.0" count=1 tclass="0x068000"/>
+            <nvlink target="0000:62:00.0" count=1 tclass="0x068000"/>
+            <nvlink target="0000:66:00.0" count=1 tclass="0x068000"/>
+          </gpu>
+        </pci>
+        <pci busid="0000:5c:00.0" class="0x030200" link_speed="8 GT/s" link_width=16>
+          <gpu dev=6 sm=70 rank=6>
+            <nvlink target="0000:65:00.0" count=1 tclass="0x068000"/>
+            <nvlink target="0000:61:00.0" count=1 tclass="0x068000"/>
+            <nvlink target="0000:66:00.0" count=1 tclass="0x068000"/>
+            <nvlink target="0000:63:00.0" count=1 tclass="0x068000"/>
+            <nvlink target="0000:67:00.0" count=1 tclass="0x068000"/>
+            <nvlink target="0000:62:00.0" count=1 tclass="0x068000"/>
+          </gpu>
+        </pci>
+        <pci busid="0000:5e:00.0" class="0x030200" link_speed="8 GT/s" link_width=16>
+          <gpu dev=7 sm=70 rank=7>
+            <nvlink target="0000:65:00.0" count=1 tclass="0x068000"/>
+            <nvlink target="0000:61:00.0" count=1 tclass="0x068000"/>
+            <nvlink target="0000:66:00.0" count=1 tclass="0x068000"/>
+            <nvlink target="0000:63:00.0" count=1 tclass="0x068000"/>
+            <nvlink target="0000:62:00.0" count=1 tclass="0x068000"/>
+            <nvlink target="0000:67:00.0" count=1 tclass="0x068000"/>
+          </gpu>
+        </pci>
+        <pci busid="0000:5d:00.0" class="0x020700" link_speed="8 GT/s" link_width=16>
+          <nic type="infiniband">
+            <net name="mlx5_4" sys_guid="9803:9b03:0068:14ee" link_rate="100 Gb/sec (4X EDR)" dev=10/>
+          </nic>
+        </pci>
+      </pci>
+    </pci>
+    <pci busid="0000:0c:00.0" class="0x020700" link_speed="8 GT/s" link_width=16>
+      <nic type="infiniband">
+        <net name="mlx5_0" sys_guid="9803:9b03:004f:b384" link_rate="100 Gb/sec (4X EDR)" dev=8/>
+      </nic>
+    </pci>
+  </cpu>
+  <cpu numaid=1 affinity="ffffff00,0000ffff,ff000000" arch="x86_64" vendor="GenuineIntel" familyid=6 modelid=0>
+    <pci busid="0000:af:00.0" class="0x060400" link_speed="8 GT/s" link_width=16>
+      <pci busid="0000:b8:00.0" class="0x020700" link_speed="8 GT/s" link_width=16>
+        <nic type="infiniband">
+          <net name="mlx5_7" sys_guid="9803:9b03:0068:13f6" link_rate="100 Gb/sec (4X EDR)" dev=5/>
+        </nic>
+      </pci>
+      <pci busid="0000:b5:00.0" class="0x060400" link_speed="8 GT/s" link_width=16>
+        <pci busid="0000:b7:00.0" class="0x030200" link_speed="8 GT/s" link_width=16>
+          <gpu dev=8 sm=70 rank=8>
+            <nvlink target="0000:c5:00.0" count=1 tclass="0x068000"/>
+            <nvlink target="0000:c1:00.0" count=1 tclass="0x068000"/>
+            <nvlink target="0000:c7:00.0" count=1 tclass="0x068000"/>
+            <nvlink target="0000:c3:00.0" count=1 tclass="0x068000"/>
+            <nvlink target="0000:c6:00.0" count=1 tclass="0x068000"/>
+            <nvlink target="0000:c2:00.0" count=1 tclass="0x068000"/>
+          </gpu>
+        </pci>
+        <pci busid="0000:b9:00.0" class="0x030200" link_speed="8 GT/s" link_width=16>
+          <gpu dev=9 sm=70 rank=9>
+            <nvlink target="0000:c5:00.0" count=1 tclass="0x068000"/>
+            <nvlink target="0000:c1:00.0" count=1 tclass="0x068000"/>
+            <nvlink target="0000:c3:00.0" count=1 tclass="0x068000"/>
+            <nvlink target="0000:c7:00.0" count=1 tclass="0x068000"/>
+            <nvlink target="0000:c2:00.0" count=1 tclass="0x068000"/>
+            <nvlink target="0000:c6:00.0" count=1 tclass="0x068000"/>
+          </gpu>
+        </pci>
+        <pci busid="0000:bc:00.0" class="0x030200" link_speed="8 GT/s" link_width=16>
+          <gpu dev=10 sm=70 rank=10>
+            <nvlink target="0000:c5:00.0" count=1 tclass="0x068000"/>
+            <nvlink target="0000:c1:00.0" count=1 tclass="0x068000"/>
+            <nvlink target="0000:c3:00.0" count=1 tclass="0x068000"/>
+            <nvlink target="0000:c7:00.0" count=1 tclass="0x068000"/>
+            <nvlink target="0000:c6:00.0" count=1 tclass="0x068000"/>
+            <nvlink target="0000:c2:00.0" count=1 tclass="0x068000"/>
+          </gpu>
+        </pci>
+        <pci busid="0000:be:00.0" class="0x030200" link_speed="8 GT/s" link_width=16>
+          <gpu dev=11 sm=70 rank=11>
+            <nvlink target="0000:c5:00.0" count=1 tclass="0x068000"/>
+            <nvlink target="0000:c1:00.0" count=1 tclass="0x068000"/>
+            <nvlink target="0000:c3:00.0" count=1 tclass="0x068000"/>
+            <nvlink target="0000:c7:00.0" count=1 tclass="0x068000"/>
+            <nvlink target="0000:c2:00.0" count=1 tclass="0x068000"/>
+            <nvlink target="0000:c6:00.0" count=1 tclass="0x068000"/>
+          </gpu>
+        </pci>
+        <pci busid="0000:ba:00.0" class="0x060400" link_speed="8 GT/s" link_width=16>
+          <pci busid="0000:bd:00.0" class="0x020700" link_speed="8 GT/s" link_width=16>
+            <nic type="infiniband">
+              <net name="mlx5_8" sys_guid="9803:9b03:0070:6032" link_rate="100 Gb/sec (4X EDR)" dev=1/>
+            </nic>
+          </pci>
+        </pci>
+      </pci>
+    </pci>
+    <pci busid="0000:d8:00.0" class="0x060400" link_speed="8 GT/s" link_width=16>
+      <pci busid="0000:e1:00.0" class="0x020700" link_speed="8 GT/s" link_width=16>
+        <nic type="infiniband">
+          <net name="mlx5_9" sys_guid="9803:9b03:0068:1232" link_rate="100 Gb/sec (4X EDR)" dev=7/>
+        </nic>
+      </pci>
+      <pci busid="0000:de:00.0" class="0x060400" link_speed="8 GT/s" link_width=16>
+        <pci busid="0000:e0:00.0" class="0x030200" link_speed="8 GT/s" link_width=16>
+          <gpu dev=12 sm=70 rank=12>
+            <nvlink target="0000:c5:00.0" count=1 tclass="0x068000"/>
+            <nvlink target="0000:c1:00.0" count=1 tclass="0x068000"/>
+            <nvlink target="0000:c6:00.0" count=1 tclass="0x068000"/>
+            <nvlink target="0000:c3:00.0" count=1 tclass="0x068000"/>
+            <nvlink target="0000:c7:00.0" count=1 tclass="0x068000"/>
+            <nvlink target="0000:c2:00.0" count=1 tclass="0x068000"/>
+          </gpu>
+        </pci>
+        <pci busid="0000:e2:00.0" class="0x030200" link_speed="8 GT/s" link_width=16>
+          <gpu dev=13 sm=70 rank=13>
+            <nvlink target="0000:c5:00.0" count=1 tclass="0x068000"/>
+            <nvlink target="0000:c1:00.0" count=1 tclass="0x068000"/>
+            <nvlink target="0000:c7:00.0" count=1 tclass="0x068000"/>
+            <nvlink target="0000:c6:00.0" count=1 tclass="0x068000"/>
+            <nvlink target="0000:c3:00.0" count=1 tclass="0x068000"/>
+            <nvlink target="0000:c2:00.0" count=1 tclass="0x068000"/>
+          </gpu>
+        </pci>
+        <pci busid="0000:e5:00.0" class="0x030200" link_speed="8 GT/s" link_width=16>
+          <gpu dev=14 sm=70 rank=14>
+            <nvlink target="0000:c5:00.0" count=1 tclass="0x068000"/>
+            <nvlink target="0000:c1:00.0" count=1 tclass="0x068000"/>
+            <nvlink target="0000:c6:00.0" count=1 tclass="0x068000"/>
+            <nvlink target="0000:c3:00.0" count=1 tclass="0x068000"/>
+            <nvlink target="0000:c2:00.0" count=1 tclass="0x068000"/>
+            <nvlink target="0000:c7:00.0" count=1 tclass="0x068000"/>
+          </gpu>
+        </pci>
+        <pci busid="0000:e7:00.0" class="0x030200" link_speed="8 GT/s" link_width=16>
+          <gpu dev=15 sm=70 rank=15>
+            <nvlink target="0000:c5:00.0" count=1 tclass="0x068000"/>
+            <nvlink target="0000:c1:00.0" count=1 tclass="0x068000"/>
+            <nvlink target="0000:c7:00.0" count=1 tclass="0x068000"/>
+            <nvlink target="0000:c3:00.0" count=1 tclass="0x068000"/>
+            <nvlink target="0000:c2:00.0" count=1 tclass="0x068000"/>
+            <nvlink target="0000:c6:00.0" count=1 tclass="0x068000"/>
+          </gpu>
+        </pci>
+        <pci busid="0000:e6:00.0" class="0x020700" link_speed="8 GT/s" link_width=16>
+          <nic type="infiniband">
+            <net name="mlx5_10" sys_guid="9803:9b03:0068:0c96" link_rate="100 Gb/sec (4X EDR)" dev=6/>
+          </nic>
+        </pci>
+      </pci>
+    </pci>
+    <pci busid="0000:86:00.1" class="0x020700" link_speed="8 GT/s" link_width=16>
+      <nic type="infiniband">
+        <net name="mlx5_6" sys_guid="9803:9b03:0067:2984" link_rate="100 Gb/sec (4X EDR)" dev=0/>
+      </nic>
+    </pci>
+    <pci busid="0000:86:00.0" class="0x020000" link_speed="8 GT/s" link_width=16>
+      <nic type="infiniband">
+        <net name="mlx5_5" sys_guid="9803:9b03:0067:2984" link_rate="100 Gb/sec (4X EDR)" dev=4/>
+      </nic>
+    </pci>
+  </cpu>
+</system>
