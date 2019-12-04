@@ -150,21 +150,27 @@ int checkPlatform(const char* platform) {
 
 #define RUN(...) errors += checkPlatform(__VA_ARGS__)
 
-int main() {
+int main(int argc, const char* argv[]) {
   setlinebuf(stdout);
   int errors = 0;
-  RUN("LOC-1G");
-  RUN("PCI-1R");
-  RUN("PCI-2R");
-  RUN("PCI-NV");
-  RUN("DGX-1V");
-  RUN("DGX-2V");
-  RUN("XMAN-3");
-  RUN("GCP-NV");
-  RUN("FB-BUG");
-  RUN("DGX-1G");
-  RUN("P9-6V");
-  RUN("P9-4V");
+  if (argc > 1) {
+    for (int a=1; a<argc; a++) {
+      RUN(argv[a]);
+    }
+  } else {
+    RUN("LOC-1G");
+    RUN("PCI-1R");
+    RUN("PCI-2R");
+    RUN("PCI-NV");
+    RUN("DGX-1V");
+    RUN("DGX-2V");
+    RUN("XMAN-3");
+    RUN("GCP-NV");
+    RUN("FB-BUG");
+    RUN("DGX-1G");
+    RUN("P9-6V");
+    RUN("P9-4V");
+  }
   printf("%d errors (%s)\n", errors, errors ? "FAILED" : "PASSED");
   return errors;
 }
