@@ -126,6 +126,8 @@ struct threadArgs {
   int* bw_count;
 
   int compThreadStop;
+  volatile int* compThreadCount;
+  int compThreadCountLast;
   char* replayFile;
 
   struct testColl* collTest;

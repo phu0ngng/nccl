@@ -46,6 +46,10 @@ static int timeout = 60;
 
 static char* replay_file = NULL;
 
+// Side computation constants
+#define COMP_SIZE (1 << 22)
+#define NUM_BLOCKS 16
+
 double parsesize(char *value) {
     long long int units;
     double size;
@@ -429,6 +433,7 @@ testResult_t BenchTime(struct threadArgs* args, ncclDataType_t type, ncclRedOp_t
   TESTCHECK(completeColl(args));
 
   Barrier(args);
+  args->compThreadCountLast = *(args->compThreadCount);
 
   // Performance Benchmark
   auto start = std::chrono::high_resolution_clock::now();
@@ -441,6 +446,7 @@ testResult_t BenchTime(struct threadArgs* args, ncclDataType_t type, ncclRedOp_t
   }
   TESTCHECK(completeColl(args));
 
+  int compThreadCount = (*(args->compThreadCount)) - args->compThreadCountLast;
   auto delta = std::chrono::high_resolution_clock::now() - start;
   double deltaSec = std::chrono::duration_cast<std::chrono::duration<double>>(delta).count();
   deltaSec = deltaSec/(iters*agg_iters);
@@ -485,10 +491,19 @@ testResult_t BenchTime(struct threadArgs* args, ncclDataType_t type, ncclRedOp_t
   } else {
     sprintf(timeStr, "%7.2f", timeUsec);
   }
+  double sideBw = ((double)compThreadCount)*COMP_SIZE*NUM_BLOCKS/(1000*timeUsec);
   if (datacheck) {
-     PRINT("  %7s  %6.2f  %6.2f  %5.0le", timeStr, algBw, busBw, maxDelta);
+     if (side_comp == 1) {
+       PRINT("  %7s  %6.2f  %6.2f  %5.0le %6.2f", timeStr, algBw, busBw, maxDelta, sideBw);
+     } else {
+       PRINT("  %7s  %6.2f  %6.2f  %5.0le", timeStr, algBw, busBw, maxDelta);
+     }
   } else {
-     PRINT("  %7s  %6.2f  %6.2f  %5s", timeStr, algBw, busBw, "N/A");
+     if (side_comp == 1) {
+       PRINT("  %7s  %6.2f  %6.2f  %6.2f", timeStr, algBw, busBw, sideBw);
+     } else {
+       PRINT("  %7s  %6.2f  %6.2f", timeStr, algBw, busBw);
+     }
   }
 
   args->bw[0] += busBw;
@@ -586,13 +601,14 @@ testResult_t threadInit(struct threadArgs* args) {
 }
 
 __global__ void compute(void* _ptr, int _size) {
-  uint64_t *ptr = (uint64_t*)_ptr;
-  int size = _size / sizeof(uint64_t);
-  for (int offset=threadIdx.x; offset < size; offset += blockDim.x) {
+  uint64_t *ptr = (uint64_t*)(_ptr);
+  uint64_t size = _size / sizeof(uint64_t);
+  ptr += size*blockIdx.x;
+  for (uint64_t offset=threadIdx.x; offset < size; offset += blockDim.x) {
      ptr[offset] <<= 1;
   }
 }
-#define COMP_SIZE (1 << 20)
+
 testResult_t compThread(struct threadArgs* args) {
   void* ptrs[args->nGpus];
   int gpuids[args->nGpus];
@@ -601,38 +617,48 @@ testResult_t compThread(struct threadArgs* args) {
     gpuids[i] = args->localRank*args->nThreads*args->nGpus + args->thread*args->nGpus + i;
     CUDACHECK(cudaSetDevice(gpuids[i]));
     CUDACHECK(cudaStreamCreateWithFlags(streams+i, cudaStreamNonBlocking));
+    if (side_comp == 1) CUDACHECK(cudaMalloc(ptrs+i, ((uint64_t)COMP_SIZE)*NUM_BLOCKS));
   }
   while (args->compThreadStop == 0) {
-    for (int i=0; i<args->nGpus; i++) {
-      CUDACHECK(cudaSetDevice(gpuids[i]));
-      CUDACHECK(cudaMalloc(ptrs+i, COMP_SIZE));
-    }
-    for (int i=0; i<args->nGpus; i++) {
-      CUDACHECK(cudaSetDevice(gpuids[i]));
-      compute<<<1, 256, 0, streams[i]>>>(ptrs[i], COMP_SIZE);
-    }
-    TESTCHECK(testStreamSynchronize(args->nGpus, streams, NULL));
-    for (int i=0; i<args->nGpus; i++) {
-      CUDACHECK(cudaFree(ptrs[i]));
-    }
-    fflush(stdout);
-    fflush(stderr);
-    pid_t pid = fork();
-    if (pid == 0) {
-      uint64_t* p = (uint64_t*)malloc(sizeof(uint64_t));
-      p[0] = 0xfedcba9284353;
-      usleep(40000);
-      free(p);
-      // Do not exit, as it would call the CUDA destructors which may break the parent.
-      // Replace with another process that does nothing instead. That also simulates
-      // The behavior of a popen() call.
-      execl("/bin/true", "/bin/true", NULL);
-    } else {
-      usleep(40000);
+    if (side_comp == 1) {
+      for (int i=0; i<args->nGpus; i++) {
+        CUDACHECK(cudaSetDevice(gpuids[i]));
+        compute<<<NUM_BLOCKS, 1024, 0, streams[i]>>>(ptrs[i], COMP_SIZE);
+      }
+      TESTCHECK(testStreamSynchronize(args->nGpus, streams, NULL));
+      (*args->compThreadCount)++;
+    } else if (side_comp == 2) {
+      for (int i=0; i<args->nGpus; i++) {
+        CUDACHECK(cudaMalloc(ptrs+i, ((uint64_t)COMP_SIZE)/1024));
+      }
+      for (int i=0; i<args->nGpus; i++) {
+        CUDACHECK(cudaSetDevice(gpuids[i]));
+        compute<<<1, 1024, 0, streams[i]>>>(ptrs[i], COMP_SIZE/1024);
+      }
+      TESTCHECK(testStreamSynchronize(args->nGpus, streams, NULL));
+      for (int i=0; i<args->nGpus; i++) {
+        CUDACHECK(cudaFree(ptrs[i]));
+      }
+      fflush(stdout);
+      fflush(stderr);
+      pid_t pid = fork();
+      if (pid == 0) {
+        uint64_t* p = (uint64_t*)malloc(sizeof(uint64_t));
+        p[0] = 0xfedcba9284353;
+        usleep(40000);
+        free(p);
+        // Do not exit, as it would call the CUDA destructors which may break the parent.
+        // Replace with another process that does nothing instead. That also simulates
+        // The behavior of a popen() call.
+        execl("/bin/true", "/bin/true", NULL);
+      } else {
+        usleep(40000);
+      }
     }
   }
   for (int i=0; i<args->nGpus; i++) {
     CUDACHECK(cudaStreamDestroy(streams[i]));
+    if (side_comp == 1) CUDACHECK(cudaFree(ptrs[i]));
   }
   return testSuccess;
 }
@@ -931,6 +957,8 @@ testResult_t run() {
     printf("Failed to set up automatic cleanup of zombie processes\n");
     exit(EXIT_FAILURE);
   }
+  int compThreadCounts[nThreads];
+  memset(compThreadCounts, 0, sizeof(int)*nThreads);
 
   for (int t=nThreads-1; t>=0; t--) {
     threads[t].args.minbytes=minBytes;
@@ -963,6 +991,8 @@ testResult_t run() {
     threads[t].args.bw_count=bw_count+t;
 
     threads[t].args.replayFile = replay_file;
+
+    threads[t].args.compThreadCount = compThreadCounts+t;
 
     if (side_comp) {
       memset(compThreads+t, 0, sizeof(struct testThread));
