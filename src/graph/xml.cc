@@ -266,13 +266,13 @@ ncclResult_t ncclTopoXmlLoadCpu(int fd, struct ncclXml* xml, struct ncclXmlNode*
 
 ncclResult_t ncclTopoXmlLoadSystem(int fd, struct ncclXml* xml, struct ncclXmlNode* head) {
   int a;
-  for (a=0; a<MAX_ATTR_COUNT; a++) {
+  for (a=0; a<head->nAttrs; a++) {
     if (head->attrs[a].type == KEY_TYPE_STR && strcmp(head->attrs[a].key, "name") == 0) {
       INFO(NCCL_GRAPH, "Loading topology %s", head->attrs[a].strValue);
       break;
     }
   }
-  if (a == MAX_ATTR_COUNT) INFO(NCCL_GRAPH, "Loading unnamed topology");
+  if (a == head->nAttrs) INFO(NCCL_GRAPH, "Loading unnamed topology");
 
   struct xmlHandler handlers[] = { { "cpu", ncclTopoXmlLoadCpu } };
   NCCLCHECK(xmlLoadSub(fd, xml, head, handlers, 1));
@@ -759,13 +759,13 @@ ncclResult_t ncclTopoXmlGraphLoadGraph(int fd, struct ncclXml* xml, struct ncclX
 
 ncclResult_t ncclTopoXmlGraphLoadGraphs(int fd, struct ncclXml* xmlGraph, struct ncclXmlNode* head) {
   int a;
-  for (a=0; a<MAX_ATTR_COUNT; a++) {
+  for (a=0; a<head->nAttrs; a++) {
     if (head->attrs[a].type == KEY_TYPE_STR && strcmp(head->attrs[a].key, "name") == 0) {
       INFO(NCCL_GRAPH, "Loading graphs for topology %s", head->attrs[a].strValue);
       break;
     }
   }
-  if (a == MAX_ATTR_COUNT) INFO(NCCL_GRAPH, "Loading graphs");
+  if (a == head->nAttrs) INFO(NCCL_GRAPH, "Loading graphs");
 
   struct xmlHandler handlers[] = { { "graph", ncclTopoXmlGraphLoadGraph } };
   NCCLCHECK(xmlLoadSub(fd, xmlGraph, head, handlers, 1));
