@@ -492,6 +492,7 @@ ncclResult_t ncclTopoGetSystem(struct ncclComm* comm, struct ncclTopoSystem** sy
     // Create top tag
     struct ncclXmlNode* top;
     NCCLCHECK(xmlAddNode(xml, NULL, "system", &top));
+    NCCLCHECK(xmlSetAttrInt(top, "version", NCCL_TOPO_XML_VERSION));
   }
 
   // Auto-detect GPUs if needed

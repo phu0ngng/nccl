@@ -1,4 +1,4 @@
-<graphs>
+<graphs version=1>
   <graph pattern=4 crossnic=0 nchannels=4 speedintra=120 speedinter=120 typeintra="NVL" typeinter="PCI" samechannels=0>
     <channel>
       <net dev=2/>

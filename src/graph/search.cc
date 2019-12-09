@@ -563,6 +563,7 @@ ncclResult_t ncclTopoGetXmlFromGraphs(struct ncclTopoGraph* ringGraph, struct nc
   xml->maxIndex = 0;
   struct ncclXmlNode* xmlGraphs;
   NCCLCHECK(xmlAddNode(xml, NULL, "graphs", &xmlGraphs));
+  NCCLCHECK(xmlSetAttrInt(xmlGraphs, "version", NCCL_GRAPH_XML_VERSION));
   NCCLCHECK(ncclTopoGetXmlFromGraph(ringGraph, system, xml, xmlGraphs));
   NCCLCHECK(ncclTopoGetXmlFromGraph(treeGraph, system, xml, xmlGraphs));
   return ncclSuccess;

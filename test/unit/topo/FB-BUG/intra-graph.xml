@@ -1,4 +1,4 @@
-<graphs>
+<graphs version=1>
   <graph pattern=4 crossnic=0 nchannels=2 speedintra=60 speedinter=60 typeintra="QPI" typeinter="PCI" samechannels=0>
     <channel>
       <gpu dev=0/>

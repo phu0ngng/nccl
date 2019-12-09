@@ -265,6 +265,12 @@ ncclResult_t ncclTopoXmlLoadCpu(int fd, struct ncclXml* xml, struct ncclXmlNode*
 }
 
 ncclResult_t ncclTopoXmlLoadSystem(int fd, struct ncclXml* xml, struct ncclXmlNode* head) {
+  int version;
+  NCCLCHECK(xmlGetAttrInt(head, "version", &version));
+  if (version != NCCL_TOPO_XML_VERSION) {
+    WARN("XML Topology has wrong version %d, %d needed", version, NCCL_TOPO_XML_VERSION);
+    return ncclInvalidUsage;
+  }
   int a;
   for (a=0; a<head->nAttrs; a++) {
     if (head->attrs[a].type == KEY_TYPE_STR && strcmp(head->attrs[a].key, "name") == 0) {
@@ -758,6 +764,12 @@ ncclResult_t ncclTopoXmlGraphLoadGraph(int fd, struct ncclXml* xml, struct ncclX
 }
 
 ncclResult_t ncclTopoXmlGraphLoadGraphs(int fd, struct ncclXml* xmlGraph, struct ncclXmlNode* head) {
+  int version;
+  NCCLCHECK(xmlGetAttrInt(head, "version", &version));
+  if (version != NCCL_GRAPH_XML_VERSION) {
+    WARN("XML Graph has wrong version %d, %d needed", version, NCCL_GRAPH_XML_VERSION);
+    return ncclInvalidUsage;
+  }
   int a;
   for (a=0; a<head->nAttrs; a++) {
     if (head->attrs[a].type == KEY_TYPE_STR && strcmp(head->attrs[a].key, "name") == 0) {
