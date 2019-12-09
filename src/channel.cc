@@ -30,7 +30,6 @@ ncclResult_t initChannel(struct ncclComm* comm, int channelid) {
 
   // Per-channel operation list.
   NCCLCHECK(ncclCudaHostAlloc((void**)&channel->collectives, (void**)&channel->devCollectives, sizeof(struct ncclColl)*NCCL_MAX_OPS));
-
   return ncclSuccess;
 }
 
@@ -43,7 +42,7 @@ ncclResult_t freeChannel(struct ncclChannel* channel, int nRanks) {
   CUDACHECK(cudaFree(channel->ring.devUserRanks));
 
   // Free transport proxy resources
-  // Note: free all send resources first due to CollNet arragement
+  // Note: free all send resources first due to CollNet arrangement
   for (int r=0; r<nRanks+1; r++) {
     struct ncclPeer* peer = channel->peers+r;
     if (peer->send.transportResources) NCCLCHECK(peer->send.transportComm->free(peer->send.transportResources));
