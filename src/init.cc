@@ -544,6 +544,7 @@ static ncclResult_t checkCollNetSetup(struct ncclComm* comm, int rank, int collN
       break;
     }
   }
+  free(allGatherFailures);
   if (collNetSetupFail) {
     if (rank == 0) WARN("Cannot initialize CollNet, using %s instead", ncclNetName());
     // Free collNet resources
@@ -727,6 +728,7 @@ static ncclResult_t initTransportsRank(struct ncclComm* comm, ncclUniqueId* comm
   NCCLCHECK(connectCollNet(comm, &collNetGraph, rank));
 
   free(allTopoRanks);
+  free(nodesFirstRank);
   free(allGather3Data);
 
   // AllGather3 - end
@@ -783,7 +785,6 @@ static ncclResult_t initTransportsRank(struct ncclComm* comm, ncclUniqueId* comm
     NCCLCHECK(checkCollNetSetup(comm, rank, collNetSetupFail));
   }
   TRACE(NCCL_INIT, "rank %d nranks %d - CONNECTED %d RINGS AND TREES", rank, nranks, comm->nChannels);
-  free(nodesFirstRank);
   free(connect);
   free(rings);
 
