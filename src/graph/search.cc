@@ -28,6 +28,17 @@ ncclResult_t ncclTopoSearchInit(struct ncclTopoSystem* system) {
   return ncclSuccess;
 }
 
+static int followPath(struct ncclTopoLinkList* path, int maxSteps, int speed, int extraSpeed) {
+  for (int step=0; step<maxSteps; step++) {
+    struct ncclTopoLink* link = path->list[step];
+    int s = speed;
+    if (step == path->count-1) s += extraSpeed;
+    if (link->width < s) return step;
+    link->width -= s;
+  }
+  return maxSteps;
+}
+
 // Try to go from node type1/index1 to no type2/index2. mult indicates whether we are counting the bandwidth (1) or undoing (-1).
 static ncclResult_t ncclTopoFollowPath(struct ncclTopoSystem* system, struct ncclTopoGraph* graph, int type1, int index1, int type2, int index2, int mult, struct ncclTopoNode** node) {
   // First handle easy cases
@@ -37,12 +48,16 @@ static ncclResult_t ncclTopoFollowPath(struct ncclTopoSystem* system, struct ncc
   struct ncclTopoLinkList* pathBw = system->nodes[type2].nodes[index2].paths[type1]+index1;
   if (pathFw->count == 0 ) return ncclSuccess;
 
-  // Now try to follow paths
+  // Now check link type
   *node = NULL;
   int bidir = graph->pattern == NCCL_TOPO_PATTERN_TREE || graph->pattern == NCCL_TOPO_PATTERN_SPLIT_TREE;
   int intra = type1 == GPU && type2 == GPU;
   int speed = intra ? graph->speedIntra : graph->speedInter;
   int type = intra ? graph->typeIntra : graph->typeInter;
+
+  if (mult == 1 && (pathFw->type > type || (bidir && pathBw->type > type)) return ncclSuccess;
+
+  // Compute the bandwidth needed in both directions
 
   // Account for P2P inefficiency when going through Intel CPUs
   if (intra && pathFw->type == LINK_QPI &&
@@ -59,39 +74,20 @@ static ncclResult_t ncclTopoFollowPath(struct ncclTopoSystem* system, struct ncc
 
   speedFw *= mult; speedBw *= mult; extraSpeedFw *= mult; extraSpeedBw *= mult;
 
+  // Check there is enough bandwidth on paths.
   int stepFw = 0, stepBw = 0;
+  if ((stepFw = followPath(pathFw, pathFw->count, speedFw, extraSpeedFw)) < pathFw->count) goto rewind;
+  if ((stepBw = followPath(pathBw, pathBw->count, speedBw, extraSpeedBw)) < pathBw->count) goto rewind;
 
-  if (mult == 1 && pathFw->type > type) goto rewind;
-  for (; stepFw<pathFw->count; stepFw++) {
-    int speed = speedFw;
-    if (stepFw == pathFw->count-1) speed += extraSpeedFw;
-    if (pathFw->list[stepFw]->width < speed) goto rewind;
-    pathFw->list[stepFw]->width -= speed;
-  }
-
-  if (mult == 1 && bidir && pathBw->type > type) goto rewind;
-  for (; stepBw<pathBw->count; stepBw++) {
-    int speed = speedBw;
-    if (stepBw == pathBw->count-1) speed += extraSpeedBw;
-    if (pathBw->list[stepBw]->width < speed) goto rewind;
-    pathBw->list[stepBw]->width -= speed;
-  }
-
+  // Enough bandwidth : return destination node.
   graph->nHops += mult*pathFw->count;
   *node = system->nodes[type2].nodes+index2;
   return ncclSuccess;
 
 rewind:
-  for (int j=0; j<stepFw; j++) {
-    int speed = speedFw;
-    if (j == pathFw->count-1) speed += extraSpeedFw;
-    pathFw->list[j]->width += speed;
-  }
-  for (int j=0; j<stepBw; j++) {
-    int speed = speedBw;
-    if (j == pathBw->count-1) speed += extraSpeedBw;
-    pathBw->list[j]->width += speed;
-  }
+  // Not enough bandwidth : rewind and exit.
+  followPath(pathFw, stepFw, -speedFw, -extraSpeedFw);
+  followPath(pathBw, stepBw, -speedBw, -extraSpeedBw);
   return ncclSuccess;
 }
 
