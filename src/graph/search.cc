@@ -670,7 +670,7 @@ search:
         tmpGraph.speedIntra = tmpGraph.speedInter -= BW_FINE_INC;
         goto search;
       }
-    } else if (graph->nChannels == 1 && tmpGraph.speedIntra-BW_COARSE_INC > graph->speedIntra/2) {
+    } else if (tmpGraph.speedIntra-BW_COARSE_INC >= graph->speedIntra/2) {
       // It's OK to go from 1 path to 2 in order to gain some BW
       tmpGraph.speedInter = tmpGraph.speedIntra -= BW_COARSE_INC;
       goto search;
