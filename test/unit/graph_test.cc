@@ -169,6 +169,7 @@ int main(int argc, const char* argv[]) {
     RUN("DGX-2V");
     RUN("XMAN-3");
     RUN("GCP-NV");
+    RUN("Azure");
     RUN("FB-BUG");
     RUN("DGX-1V-1G");
     RUN("P9-6V");
