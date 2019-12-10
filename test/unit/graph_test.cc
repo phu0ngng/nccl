@@ -162,12 +162,15 @@ int main(int argc, const char* argv[]) {
     RUN("PCI-1R");
     RUN("PCI-2R");
     RUN("PCI-NV");
+    RUN("DGX-1P");
+    RUN("DGX-1P-4G");
     RUN("DGX-1V");
+    RUN("DGX-1V-4G");
     RUN("DGX-2V");
     RUN("XMAN-3");
     RUN("GCP-NV");
     RUN("FB-BUG");
-    RUN("DGX-1G");
+    RUN("DGX-1V-1G");
     RUN("P9-6V");
     RUN("P9-4V");
   }
