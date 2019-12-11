@@ -55,7 +55,7 @@ static ncclResult_t ncclTopoFollowPath(struct ncclTopoSystem* system, struct ncc
   int speed = intra ? graph->speedIntra : graph->speedInter;
   int type = intra ? graph->typeIntra : graph->typeInter;
 
-  if (mult == 1 && (pathFw->type > type || (bidir && pathBw->type > type)) return ncclSuccess;
+  if (mult == 1 && (pathFw->type > type || (bidir && pathBw->type > type))) return ncclSuccess;
 
   // Compute the bandwidth needed in both directions
 
