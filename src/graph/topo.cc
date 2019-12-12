@@ -54,12 +54,14 @@ static ncclResult_t idToIndex(struct ncclTopoSystem* system, int type, int64_t i
 }
 
 static ncclResult_t findLocalCpu(struct ncclTopoNode* node, struct ncclTopoNode** cpu) {
+  *cpu = NULL;
   if (node->type == CPU) {
     *cpu = node;
     return ncclSuccess;
   }
   for (int l=0; l<node->nlinks; l++) {
     if (node->links[l].type == LINK_PCI) NCCLCHECK(findLocalCpu(node->links[l].remNode, cpu));
+    if (*cpu != NULL) return ncclSuccess;
   }
   return ncclSuccess;
 }
