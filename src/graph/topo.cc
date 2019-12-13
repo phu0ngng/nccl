@@ -343,18 +343,26 @@ ncclResult_t ncclTopoAddPci(struct ncclXmlNode* xmlPci, struct ncclTopoSystem* s
     NCCLCHECK(xmlGetSub(xmlPci, "nic", &xmlNic));
     if (xmlNic == NULL) return ncclSuccess;
 
-    // Ignore sub device ID to merge multi-port NICs into one PCI device.
+    // Ignore sub device ID and merge multi-port NICs into one PCI device.
     busId &= 0xfffffffffffffff0;
-    NCCLCHECK(ncclTopoCreateNode(system, &node, type, busId));
+    struct ncclTopoNode* nicNode = NULL;
+    NCCLCHECK(ncclTopoGetNode(system, &nicNode, type, busId));
+    if (nicNode == NULL) {
+      NCCLCHECK(ncclTopoCreateNode(system, &nicNode, type, busId));
+      node = nicNode; // Connect it to parent later on
+    }
 
     int port=0;
+    for (int l=0; l<nicNode->nlinks; l++) {
+      if (nicNode->links[l].remNode->type == NET) port++;
+    }
     for (int s=0; s<xmlNic->nSubs; s++) {
       struct ncclXmlNode* xmlNet = xmlNic->subs[s];
       if (strcmp(xmlNet->name, "net") != 0) continue;
       int index;
       NCCLCHECK(xmlGetAttrIndex(xmlNet, "dev", &index));
       if (index == -1) continue;
-      NCCLCHECK(ncclTopoAddNet(xmlNet, system, node, port));
+      NCCLCHECK(ncclTopoAddNet(xmlNet, system, nicNode, port));
       port++;
     }
   } else if (type == PCI) {
