@@ -28,15 +28,39 @@ ncclResult_t ncclTopoSearchInit(struct ncclTopoSystem* system) {
   return ncclSuccess;
 }
 
-static int followPath(struct ncclTopoLinkList* path, int maxSteps, int speed, int extraSpeed) {
+static ncclResult_t findRevLink(struct ncclTopoNode* node1, struct ncclTopoNode* node2, struct ncclTopoLink** revLink) {
+  for (int l=0; l<node2->nlinks; l++) {
+    struct ncclTopoLink* link = node2->links+l;
+    if (link->remNode == node1) {
+      *revLink = link;
+      return ncclSuccess;
+    }
+  }
+  WARN("Could not find rev link for %d/%d -> %d/%d\n", node1->type, node1->id, node2->type, node2->id);
+  return ncclInternalError;
+}
+
+static ncclResult_t followPath(struct ncclTopoLinkList* path, struct ncclTopoNode* start, int maxSteps, int speed, int* steps) {
+  struct ncclTopoNode* node = start;
   for (int step=0; step<maxSteps; step++) {
     struct ncclTopoLink* link = path->list[step];
-    int s = speed;
-    if (step == path->count-1) s += extraSpeed;
-    if (link->width < s) return step;
-    link->width -= s;
+    struct ncclTopoLink* revLink = link;
+    int revSpeed = 0;
+    if (link->remNode->type == GPU && start->type != GPU && path->type == LINK_PCI) {
+      NCCLCHECK(findRevLink(node, link->remNode, &revLink));
+      revSpeed = speed/8;
+    }
+    if (link->remNode->type == CPU && link->type == LINK_NVL) {
+      NCCLCHECK(findRevLink(node, link->remNode, &revLink));
+      revSpeed = speed;
+    }
+    if (link->width < speed || revLink->width < revSpeed) { *steps = step; return ncclSuccess; }
+    link->width -= speed;
+    revLink->width -= revSpeed;
+    node = link->remNode;
   }
-  return maxSteps;
+  *steps = maxSteps;
+  return ncclSuccess;
 }
 
 // Try to go from node type1/index1 to no type2/index2. mult indicates whether we are counting the bandwidth (1) or undoing (-1).
@@ -44,50 +68,41 @@ static ncclResult_t ncclTopoFollowPath(struct ncclTopoSystem* system, struct ncc
   // First handle easy cases
   *node = system->nodes[type2].nodes+index2;
   if (type1 == -1) return ncclSuccess;
-  struct ncclTopoLinkList* pathFw = system->nodes[type1].nodes[index1].paths[type2]+index2;
-  struct ncclTopoLinkList* pathBw = system->nodes[type2].nodes[index2].paths[type1]+index1;
-  if (pathFw->count == 0 ) return ncclSuccess;
+  struct ncclTopoNode* node1 = system->nodes[type1].nodes+index1;
+  struct ncclTopoLinkList* path = node1->paths[type2]+index2;
+  if (path->count == 0 ) return ncclSuccess;
 
   // Now check link type
   *node = NULL;
-  int bidir = graph->pattern == NCCL_TOPO_PATTERN_TREE || graph->pattern == NCCL_TOPO_PATTERN_SPLIT_TREE;
   int intra = type1 == GPU && type2 == GPU;
   int speed = intra ? graph->speedIntra : graph->speedInter;
   int type = intra ? graph->typeIntra : graph->typeInter;
 
-  if (mult == 1 && (pathFw->type > type || (bidir && pathBw->type > type))) return ncclSuccess;
+  if (mult == 1 && (path->type > type)) return ncclSuccess;
 
   // Compute the bandwidth needed in both directions
 
   // Account for P2P inefficiency when going through Intel CPUs
-  if (intra && pathFw->type == LINK_QPI &&
+  if (intra && path->type == LINK_QPI &&
       system->nodes[CPU].nodes[0].cpu.arch == NCCL_TOPO_CPU_ARCH_X86 &&
       system->nodes[CPU].nodes[0].cpu.vendor == NCCL_TOPO_CPU_VENDOR_INTEL)
     speed = INTEL_P2P_OVERHEAD(speed);
 
-  int speedFw = bidir ? DIVUP(speed, 2) : speed;
-  int speedBw = bidir ? speed/2 : 0;
-
-  // Pulling data from GPUs on PCI impacts performance in the other direction.
-  int extraSpeedFw = (type2 == GPU && type1 != GPU && pathBw->type == LINK_PCI) ? DIVUP(speedBw,8) : 0;
-  int extraSpeedBw = (type1 == GPU && type2 != GPU && pathFw->type == LINK_PCI) ? DIVUP(speedFw,8) : 0;
-
-  speedFw *= mult; speedBw *= mult; extraSpeedFw *= mult; extraSpeedBw *= mult;
+  speed *= mult;
 
   // Check there is enough bandwidth on paths.
-  int stepFw = 0, stepBw = 0;
-  if ((stepFw = followPath(pathFw, pathFw->count, speedFw, extraSpeedFw)) < pathFw->count) goto rewind;
-  if ((stepBw = followPath(pathBw, pathBw->count, speedBw, extraSpeedBw)) < pathBw->count) goto rewind;
+  int step = 0;
+  NCCLCHECK(followPath(path, node1, path->count, speed, &step));
+  if (step < path->count) goto rewind;
 
   // Enough bandwidth : return destination node.
-  graph->nHops += mult*pathFw->count;
+  graph->nHops += mult*path->count;
   *node = system->nodes[type2].nodes+index2;
   return ncclSuccess;
 
 rewind:
   // Not enough bandwidth : rewind and exit.
-  followPath(pathFw, stepFw, -speedFw, -extraSpeedFw);
-  followPath(pathBw, stepBw, -speedBw, -extraSpeedBw);
+  NCCLCHECK(followPath(path, node1, step, -speed, &step));
   return ncclSuccess;
 }
 
@@ -210,7 +225,7 @@ ncclResult_t ncclTopoSearchNextGpuSort(struct ncclTopoSystem* system, struct ncc
 
 ncclResult_t ncclTopoSearchRec(struct ncclTopoSystem* system, struct ncclTopoGraph* graph, struct ncclTopoGraph* saveGraph, int* time);
 
-#define NCCL_SEARCH_TIMEOUT (1ULL<<18) // This should get contain all search within a second or so.
+#define NCCL_SEARCH_TIMEOUT (1ULL<<19) // This should get contain all search within a second or so.
 #define NCCL_SEARCH_TIMEOUT_SAMECHANNELS (1ULL<<10) // This should get contain all search within a second or so.
 
 #define FORCED_ORDER_PCI 1
@@ -437,10 +452,15 @@ ncclResult_t ncclTopoSearchRec(struct ncclTopoSystem* system, struct ncclTopoGra
   } else {
     // Start from GPU 0
     if (graph->nChannels > 0 && graph->sameChannels == 1) {
-       NCCLCHECK(ncclTopoSearchTryGpu(system, graph, saveGraph, 0, backToNet, backToFirstRank, FORCED_ORDER_REPLAY, time, -1, -1, 0));
-    } else {
+      int g;
+      NCCLCHECK(ncclTopoReplayGetGpu(system, graph, -1, &g));
+      NCCLCHECK(ncclTopoSearchTryGpu(system, graph, saveGraph, 0, backToNet, backToFirstRank, FORCED_ORDER_REPLAY, time, -1, -1, 0));
+    } else if (graph->nChannels == 0) {
       NCCLCHECK(ncclTopoSearchTryGpu(system, graph, saveGraph, 0, backToNet, backToFirstRank, FORCED_ORDER_PCI, time, -1, -1, 0));
-      NCCLCHECK(ncclTopoSearchTryGpu(system, graph, saveGraph, 0, backToNet, backToFirstRank, 0, time, -1, -1, 0));
+    } else {
+      for (int g=0; g<system->nodes[GPU].count; g++) {
+        NCCLCHECK(ncclTopoSearchTryGpu(system, graph, saveGraph, 0, backToNet, backToFirstRank, 0, time, -1, -1, g));
+      }
     }
   }
   return ncclSuccess;

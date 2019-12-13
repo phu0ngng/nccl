@@ -116,7 +116,7 @@ int checkTopo(const char* xmlTopoFile, const char* xmlGraphFile, const char* pla
         line1[offset] = c;
       }
       if (strcmp(line0, line1) != 0) {
-        printf("Error on %s at line %d :\n%s\n%s\n", xmlGraphFile, line, line0, line1);
+        printf("Error on %s at line %d :\nREF: %s\nOUT: %s\n", xmlGraphFile, line, line0, line1);
         errors++;
         break;
       }
