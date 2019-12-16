@@ -450,14 +450,18 @@ ncclResult_t ncclTopoSearchRec(struct ncclTopoSystem* system, struct ncclTopoGra
     // Start from NET
     ncclTopoSearchRecNet(system, graph, saveGraph, backToNet, backToFirstRank, time);
   } else {
-    // Start from GPU 0
-    if (graph->nChannels > 0 && graph->sameChannels == 1) {
+    // Intra-node only.
+    if (graph->nChannels == 0) {
+      // Try PCI order first
+      NCCLCHECK(ncclTopoSearchTryGpu(system, graph, saveGraph, 0, backToNet, backToFirstRank, FORCED_ORDER_PCI, time, -1, -1, 0));
+    } else {
+      // Also try to replay previous channel
       int g;
       NCCLCHECK(ncclTopoReplayGetGpu(system, graph, -1, &g));
       NCCLCHECK(ncclTopoSearchTryGpu(system, graph, saveGraph, 0, backToNet, backToFirstRank, FORCED_ORDER_REPLAY, time, -1, -1, 0));
-    } else if (graph->nChannels == 0) {
-      NCCLCHECK(ncclTopoSearchTryGpu(system, graph, saveGraph, 0, backToNet, backToFirstRank, FORCED_ORDER_PCI, time, -1, -1, 0));
-    } else {
+    }
+    if (graph->sameChannels == 0 || graph->nChannels == 0) {
+      // Finally, try all other possibilities unless we are forced to use the same channels
       for (int g=0; g<system->nodes[GPU].count; g++) {
         NCCLCHECK(ncclTopoSearchTryGpu(system, graph, saveGraph, 0, backToNet, backToFirstRank, 0, time, -1, -1, g));
       }
