@@ -24,7 +24,7 @@
 // Intel CPU convert GPU P2P traffic into 64B PCI TLPs, to GPU
 // to GPU traffic consumed more PCI bandwidth.
 #define INTEL_P2P(speed) (DIVUP(speed*9, 12))
-#define INTEL_P2P_OVERHEAD(speed) (DIVUP(speed*12, 9))
+#define INTEL_P2P_OVERHEAD(speed) (speed*12/9)
 
 #define NCCL_TOPO_NODE_TYPES 7
 #define GPU 0

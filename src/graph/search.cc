@@ -41,13 +41,19 @@ static ncclResult_t findRevLink(struct ncclTopoNode* node1, struct ncclTopoNode*
 }
 
 static ncclResult_t followPath(struct ncclTopoLinkList* path, struct ncclTopoNode* start, int maxSteps, int speed, int* steps) {
-  // Consider polling from CPU consumes reverse BW.
   int pastCpuStep = path->count;
-  if (path->type >= LINK_QPI) {
-    for (int step=0; step<path->count; step++) {
-      if (path->list[step]->remNode->type == CPU) pastCpuStep = step;
+  for (int step=0; step<path->count; step++) {
+    struct ncclTopoNode* node = path->list[step]->remNode;
+    if (node->type == CPU) {
+      if (path->type == LINK_QPI) pastCpuStep = step;
+      if (path->type == LINK_PCI &&
+          node->cpu.arch == NCCL_TOPO_CPU_ARCH_X86 &&
+          node->cpu.vendor == NCCL_TOPO_CPU_VENDOR_INTEL) {
+        speed = INTEL_P2P_OVERHEAD(speed);
+      }
     }
   }
+
   struct ncclTopoNode* node = start;
   for (int step=0; step<maxSteps; step++) {
     struct ncclTopoLink* link = path->list[step];
@@ -90,14 +96,6 @@ static ncclResult_t ncclTopoFollowPath(struct ncclTopoSystem* system, struct ncc
   int type = intra ? graph->typeIntra : graph->typeInter;
 
   if (mult == 1 && (path->type > type)) return ncclSuccess;
-
-  // Compute the bandwidth needed in both directions
-
-  // Account for P2P inefficiency when going through Intel CPUs
-  if (intra && path->type == LINK_QPI &&
-      system->nodes[CPU].nodes[0].cpu.arch == NCCL_TOPO_CPU_ARCH_X86 &&
-      system->nodes[CPU].nodes[0].cpu.vendor == NCCL_TOPO_CPU_VENDOR_INTEL)
-    speed = INTEL_P2P_OVERHEAD(speed);
 
   speed *= mult;
 

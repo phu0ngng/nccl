@@ -77,9 +77,8 @@ static ncclResult_t ncclTopoSetPaths(struct ncclTopoNode* baseNode, struct ncclT
           remPath->count = path->count + 1;
           remPath->width = width;
 
-          // Consider the path is QPI when going through the CPU
-          // Also don't consider LINK_NET as we only care about the NIC->GPU path.
-          int type = remNode->type == CPU ? LINK_QPI : link->type == LINK_NET ? 0 : link->type;
+          // Don't consider LINK_NET as we only care about the NIC->GPU path.
+          int type = link->type == LINK_NET ? 0 : link->type;
           remPath->type = std::max(path->type, type);
 
           // Add to the list for the next iteration if not already in the list
