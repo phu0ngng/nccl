@@ -41,22 +41,33 @@ static ncclResult_t findRevLink(struct ncclTopoNode* node1, struct ncclTopoNode*
 }
 
 static ncclResult_t followPath(struct ncclTopoLinkList* path, struct ncclTopoNode* start, int maxSteps, int speed, int* steps) {
+  // Consider polling from CPU consumes reverse BW.
+  int pastCpuStep = path->count;
+  if (path->type >= LINK_QPI) {
+    for (int step=0; step<path->count; step++) {
+      if (path->list[step]->remNode->type == CPU) pastCpuStep = step;
+    }
+  }
   struct ncclTopoNode* node = start;
   for (int step=0; step<maxSteps; step++) {
     struct ncclTopoLink* link = path->list[step];
-    struct ncclTopoLink* revLink = link;
+    struct ncclTopoLink* revLink = NULL;
     int revSpeed = 0;
     if (link->remNode->type == GPU && start->type != GPU && path->type == LINK_PCI) {
-      NCCLCHECK(findRevLink(node, link->remNode, &revLink));
-      revSpeed = speed/8;
+      if (revLink == NULL) NCCLCHECK(findRevLink(node, link->remNode, &revLink));
+      revSpeed += speed/8;
     }
     if (link->remNode->type == CPU && link->type == LINK_NVL) {
-      NCCLCHECK(findRevLink(node, link->remNode, &revLink));
-      revSpeed = speed;
+      if (revLink == NULL) NCCLCHECK(findRevLink(node, link->remNode, &revLink));
+      revSpeed += speed;
     }
-    if (link->width < speed || revLink->width < revSpeed) { *steps = step; return ncclSuccess; }
+    if (step > pastCpuStep) {
+      if (revLink == NULL) NCCLCHECK(findRevLink(node, link->remNode, &revLink));
+      revSpeed += speed/3;
+    }
+    if (link->width < speed || (revSpeed && revLink->width < revSpeed)) { *steps = step; return ncclSuccess; }
     link->width -= speed;
-    revLink->width -= revSpeed;
+    if (revSpeed) revLink->width -= revSpeed;
     node = link->remNode;
   }
   *steps = maxSteps;
