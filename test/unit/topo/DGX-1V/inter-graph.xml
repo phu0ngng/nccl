@@ -49,7 +49,7 @@
       <net dev=1/>
     </channel>
   </graph>
-  <graph pattern=2 crossnic=0 nchannels=4 speedintra=240 speedinter=120 typeintra="NVL" typeinter="PCI" samechannels=0>
+  <graph pattern=2 crossnic=0 nchannels=4 speedintra=210 speedinter=120 typeintra="NVL" typeinter="PCI" samechannels=0>
     <channel>
       <net dev=2/>
       <gpu dev=0/>
@@ -58,8 +58,8 @@
       <gpu dev=3/>
       <gpu dev=7/>
       <gpu dev=4/>
-      <gpu dev=6/>
       <gpu dev=5/>
+      <gpu dev=6/>
       <net dev=2/>
     </channel>
     <channel>
@@ -76,14 +76,14 @@
     </channel>
     <channel>
       <net dev=3/>
-      <gpu dev=4/>
       <gpu dev=5/>
+      <gpu dev=4/>
+      <gpu dev=7/>
+      <gpu dev=6/>
+      <gpu dev=2/>
       <gpu dev=1/>
       <gpu dev=3/>
       <gpu dev=0/>
-      <gpu dev=2/>
-      <gpu dev=6/>
-      <gpu dev=7/>
       <net dev=3/>
     </channel>
     <channel>

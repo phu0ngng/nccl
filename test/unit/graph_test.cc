@@ -84,13 +84,15 @@ int checkTopo(const char* xmlTopoFile, const char* xmlGraphFile, const char* pla
   int errors = 0;
   if (memcmp(&treeGraph, &refTreeGraph, sizeof(struct ncclTopoGraph)) != 0 ||
       memcmp(&ringGraph, &refRingGraph, sizeof(struct ncclTopoGraph)) != 0) {
+    char dumpFile[1024];
+    sprintf(dumpFile, "%s.dump", xmlGraphFile);
     struct ncclXml* xml;
     CHECK(ncclCalloc(&xml, 1));
     CHECK(ncclTopoGetXmlFromGraphs(&ringGraph, &treeGraph, system, xml));
-    CHECK(ncclTopoDumpXmlToFile("dump.xml", xml));
+    CHECK(ncclTopoDumpXmlToFile(dumpFile, xml));
     free(xml);
     int fd0 = open(xmlGraphFile, O_RDONLY);
-    int fd1 = open("dump.xml", O_RDONLY);
+    int fd1 = open(dumpFile, O_RDONLY);
     int eof = 0;
     int line = 0;
     while (!eof) {
@@ -108,7 +110,6 @@ int checkTopo(const char* xmlTopoFile, const char* xmlGraphFile, const char* pla
         char c;
         if (read(fd1, &c, 1) == 0) {
           eof = 1;
-          unlink("dump.xml");
         }
         if (eof || c == '\n') {
           line1[offset] = '\0'; break;
