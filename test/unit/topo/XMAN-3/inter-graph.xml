@@ -161,7 +161,7 @@
       <net dev=6/>
     </channel>
   </graph>
-  <graph pattern=2 crossnic=0 nchannels=8 speedintra=160 speedinter=120 typeintra="NVL" typeinter="PCI" samechannels=0>
+  <graph pattern=2 crossnic=0 nchannels=8 speedintra=150 speedinter=120 typeintra="NVL" typeinter="PCI" samechannels=0>
     <channel>
       <net dev=2/>
       <gpu dev=0/>

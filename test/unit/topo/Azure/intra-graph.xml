@@ -84,33 +84,23 @@
     </channel>
     <channel>
       <gpu dev=0/>
-      <gpu dev=3/>
-      <gpu dev=2/>
-      <gpu dev=1/>
-      <gpu dev=5/>
-      <gpu dev=6/>
-      <gpu dev=7/>
       <gpu dev=4/>
+      <gpu dev=7/>
+      <gpu dev=6/>
+      <gpu dev=5/>
+      <gpu dev=1/>
+      <gpu dev=2/>
+      <gpu dev=3/>
     </channel>
     <channel>
       <gpu dev=0/>
-      <gpu dev=3/>
-      <gpu dev=2/>
-      <gpu dev=1/>
-      <gpu dev=5/>
-      <gpu dev=6/>
-      <gpu dev=7/>
       <gpu dev=4/>
-    </channel>
-    <channel>
-      <gpu dev=0/>
-      <gpu dev=1/>
-      <gpu dev=3/>
       <gpu dev=7/>
-      <gpu dev=5/>
-      <gpu dev=4/>
       <gpu dev=6/>
+      <gpu dev=5/>
+      <gpu dev=1/>
       <gpu dev=2/>
+      <gpu dev=3/>
     </channel>
     <channel>
       <gpu dev=0/>
@@ -121,6 +111,16 @@
       <gpu dev=4/>
       <gpu dev=6/>
       <gpu dev=2/>
+    </channel>
+    <channel>
+      <gpu dev=0/>
+      <gpu dev=2/>
+      <gpu dev=6/>
+      <gpu dev=4/>
+      <gpu dev=5/>
+      <gpu dev=7/>
+      <gpu dev=3/>
+      <gpu dev=1/>
     </channel>
   </graph>
 </graphs>

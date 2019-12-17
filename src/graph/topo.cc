@@ -205,7 +205,7 @@ static ncclResult_t ncclTopoPrintRec(struct ncclTopoNode* node, struct ncclTopoN
   for (int l=0; l<node->nlinks; l++) {
     struct ncclTopoLink* link = node->links+l;
     if (link->type == LINK_LOC) continue;
-    if (link->remNode != prevNode) {
+    if (link->type != LINK_PCI || link->remNode != prevNode) {
       sprintf(line+offset, "+ %s[%2d] - ", topoLinkTypeStr[link->type], link->width);
       int nextOffset = strlen(line);
       if (link->type == LINK_PCI) {

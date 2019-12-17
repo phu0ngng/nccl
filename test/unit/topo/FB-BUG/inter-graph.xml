@@ -1,12 +1,12 @@
 <graphs version=1>
-  <graph pattern=4 crossnic=1 nchannels=2 speedintra=120 speedinter=120 typeintra="NVL" typeinter="QPI" samechannels=0>
+  <graph pattern=4 crossnic=0 nchannels=2 speedintra=100 speedinter=100 typeintra="NVL" typeinter="QPI" samechannels=0>
     <channel>
       <net dev=2/>
       <gpu dev=0/>
       <gpu dev=4/>
       <gpu dev=6/>
       <gpu dev=7/>
-      <net dev=1/>
+      <net dev=2/>
     </channel>
     <channel>
       <net dev=1/>
@@ -14,7 +14,7 @@
       <gpu dev=7/>
       <gpu dev=4/>
       <gpu dev=0/>
-      <net dev=0/>
+      <net dev=1/>
     </channel>
   </graph>
   <graph pattern=2 crossnic=0 nchannels=2 speedintra=240 speedinter=120 typeintra="NVL" typeinter="QPI" samechannels=0>
@@ -22,8 +22,8 @@
       <net dev=2/>
       <gpu dev=0/>
       <gpu dev=4/>
-      <gpu dev=6/>
       <gpu dev=7/>
+      <gpu dev=6/>
       <net dev=2/>
     </channel>
     <channel>

@@ -79,6 +79,8 @@ static ncclResult_t ncclTopoSetPaths(struct ncclTopoNode* baseNode, struct ncclT
 
           // Don't consider LINK_NET as we only care about the NIC->GPU path.
           int type = link->type == LINK_NET ? 0 : link->type;
+          // Ignore Power CPU in an NVLink path
+          if (path->type == LINK_NVL && link->type == LINK_QPI && link->remNode->cpu.arch == NCCL_TOPO_CPU_ARCH_POWER) type = 0;
           remPath->type = std::max(path->type, type);
 
           // Add to the list for the next iteration if not already in the list

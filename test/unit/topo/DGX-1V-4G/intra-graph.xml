@@ -25,12 +25,12 @@
       <gpu dev=3/>
     </channel>
   </graph>
-  <graph pattern=2 crossnic=0 nchannels=4 speedintra=210 speedinter=210 typeintra="NVL" typeinter="PCI" samechannels=1>
+  <graph pattern=2 crossnic=0 nchannels=4 speedintra=210 speedinter=210 typeintra="NVL" typeinter="PCI" samechannels=0>
     <channel>
       <gpu dev=0/>
-      <gpu dev=3/>
-      <gpu dev=2/>
       <gpu dev=1/>
+      <gpu dev=2/>
+      <gpu dev=3/>
     </channel>
     <channel>
       <gpu dev=0/>
@@ -46,8 +46,8 @@
     </channel>
     <channel>
       <gpu dev=0/>
-      <gpu dev=3/>
       <gpu dev=2/>
+      <gpu dev=3/>
       <gpu dev=1/>
     </channel>
   </graph>

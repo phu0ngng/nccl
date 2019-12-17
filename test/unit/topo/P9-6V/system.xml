@@ -1,60 +1,72 @@
 <system version=1>
-  <cpu numaid=0 affinity="0000,0fffff00,000fffff" arch="ppc64">
-    <pci busid="0000:05:00.0" class="0x020700" link_speed="16 GT/s" link_width=8>
+  <cpu numaid=0 affinity="00000000,00000000,0000ffff,ffff" arch="ppc64">
+    <pci busid="0004:01:00.0" class="0x060400" link_speed="8 GT/s" link_width=4>
+      <pci busid="0004:04:00.0" class="0x030200" link_speed="8 GT/s" link_width=2>
+        <gpu dev=0 sm=70 rank=0>
+          <nvlink target="0004:05:00.0" count=2 tclass="0x030200"/>
+          <nvlink target="0004:06:00.0" count=2 tclass="0x030200"/>
+          <nvlink target="0006:00:00.0" count=2 tclass="0x068001"/>
+        </gpu>
+      </pci>
+      <pci busid="0004:05:00.0" class="0x030200" link_speed="8 GT/s" link_width=2>
+        <gpu dev=1 sm=70 rank=1>
+          <nvlink target="0004:04:00.0" count=2 tclass="0x030200"/>
+          <nvlink target="0004:06:00.0" count=2 tclass="0x030200"/>
+          <nvlink target="0006:00:01.0" count=2 tclass="0x068001"/>
+        </gpu>
+      </pci>
+      <pci busid="0004:06:00.0" class="0x030200" link_speed="8 GT/s" link_width=2>
+        <gpu dev=2 sm=70 rank=2>
+          <nvlink target="0004:04:00.0" count=2 tclass="0x030200"/>
+          <nvlink target="0004:05:00.0" count=2 tclass="0x030200"/>
+          <nvlink target="0006:00:02.0" count=2 tclass="0x068001"/>
+        </gpu>
+      </pci>
+    </pci>
+    <pci busid="0003:01:00.1" class="0x020700" link_speed="16 GT/s" link_width=8>
       <nic type="infiniband">
-        <net name="mlx5_0" sys_guid="b859:9f03:004e:b948" link_rate="100 Gb/sec (4X EDR)" dev=0/>
-        <net name="mlx5_2" sys_guid="b859:9f03:004e:b948" link_rate="100 Gb/sec (4X EDR)" dev=2/>
+        <net name="mlx5_1" sys_guid="ec0d:9a03:00cc:9986" link_rate="100 Gb/sec (4X EDR)" dev=0/>
       </nic>
     </pci>
-    <pci busid="0000:06:00.0" class="0x030200" link_speed="8 GT/s" link_width=16>
-      <gpu dev=0 sm=70 rank=0>
-        <nvlink target="0000:07:00.0" count=2 tclass="0x030200"/>
-        <nvlink target="0000:0a:00.0" count=2 tclass="0x030200"/>
-        <nvlink target="0000:00:00.0" count=2 tclass="0x068001"/>
-      </gpu>
-    </pci>
-    <pci busid="0000:07:00.0" class="0x030200" link_speed="8 GT/s" link_width=16>
-      <gpu dev=1 sm=70 rank=1>
-        <nvlink target="0000:06:00.0" count=2 tclass="0x030200"/>
-        <nvlink target="0000:0a:00.0" count=2 tclass="0x030200"/>
-        <nvlink target="0000:00:00.0" count=2 tclass="0x068001"/>
-      </gpu>
-    </pci>
-    <pci busid="0000:0a:00.0" class="0x030200" link_speed="8 GT/s" link_width=16>
-      <gpu dev=2 sm=70 rank=2>
-        <nvlink target="0000:06:00.0" count=2 tclass="0x030200"/>
-        <nvlink target="0000:07:00.0" count=2 tclass="0x030200"/>
-        <nvlink target="0000:00:00.0" count=2 tclass="0x068001"/>
-      </gpu>
+    <pci busid="0003:01:00.0" class="0x020700" link_speed="16 GT/s" link_width=8>
+      <nic type="infiniband">
+        <net name="mlx5_0" sys_guid="ec0d:9a03:00cc:9986" link_rate="100 Gb/sec (4X EDR)" dev=2/>
+      </nic>
     </pci>
   </cpu>
-  <cpu numaid=1 affinity="ffff,f00000ff,fff00000" arch="ppc64">
-    <pci busid="0000:84:00.0" class="0x020700" link_speed="16 GT/s" link_width=8>
+  <cpu numaid=8 affinity="ffffffff,ffffffff,ffff0000,0000" arch="ppc64">
+    <pci busid="0035:01:00.0" class="0x060400" link_speed="8 GT/s" link_width=4>
+      <pci busid="0035:03:00.0" class="0x030200" link_speed="8 GT/s" link_width=2>
+        <gpu dev=3 sm=70 rank=3>
+          <nvlink target="0035:04:00.0" count=2 tclass="0x030200"/>
+          <nvlink target="0035:05:00.0" count=2 tclass="0x030200"/>
+          <nvlink target="0007:00:00.0" count=2 tclass="0x068001"/>
+        </gpu>
+      </pci>
+      <pci busid="0035:04:00.0" class="0x030200" link_speed="8 GT/s" link_width=2>
+        <gpu dev=4 sm=70 rank=4>
+          <nvlink target="0035:03:00.0" count=2 tclass="0x030200"/>
+          <nvlink target="0035:05:00.0" count=2 tclass="0x030200"/>
+          <nvlink target="0007:00:01.0" count=2 tclass="0x068001"/>
+        </gpu>
+      </pci>
+      <pci busid="0035:05:00.0" class="0x030200" link_speed="8 GT/s" link_width=2>
+        <gpu dev=5 sm=70 rank=5>
+          <nvlink target="0035:03:00.0" count=2 tclass="0x030200"/>
+          <nvlink target="0035:04:00.0" count=2 tclass="0x030200"/>
+          <nvlink target="0007:00:01.0" count=2 tclass="0x068001"/>
+        </gpu>
+      </pci>
+    </pci>
+    <pci busid="0033:01:00.1" class="0x020700" link_speed="16 GT/s" link_width=8>
       <nic type="infiniband">
-        <net name="mlx5_1" sys_guid="b859:9f03:004e:b948" link_rate="100 Gb/sec (4X EDR)" dev=1/>
-        <net name="mlx5_3" sys_guid="b859:9f03:004e:b948" link_rate="100 Gb/sec (4X EDR)" dev=3/>
+        <net name="mlx5_3" sys_guid="ec0d:9a03:00cc:9986" link_rate="100 Gb/sec (4X EDR)" dev=1/>
       </nic>
     </pci>
-    <pci busid="0000:85:00.0" class="0x030200" link_speed="8 GT/s" link_width=16>
-      <gpu dev=3 sm=70 rank=3>
-        <nvlink target="0000:86:00.0" count=2 tclass="0x030200"/>
-        <nvlink target="0000:89:00.0" count=2 tclass="0x030200"/>
-        <nvlink target="0000:80:00.0" count=2 tclass="0x068001"/>
-      </gpu>
-    </pci>
-    <pci busid="0000:86:00.0" class="0x030200" link_speed="8 GT/s" link_width=16>
-      <gpu dev=4 sm=70 rank=4>
-        <nvlink target="0000:89:00.0" count=2 tclass="0x030200"/>
-        <nvlink target="0000:85:00.0" count=2 tclass="0x030200"/>
-        <nvlink target="0000:80:00.0" count=2 tclass="0x068001"/>
-      </gpu>
-    </pci>
-    <pci busid="0000:89:00.0" class="0x030200" link_speed="8 GT/s" link_width=16>
-      <gpu dev=5 sm=70 rank=5>
-        <nvlink target="0000:85:00.0" count=2 tclass="0x030200"/>
-        <nvlink target="0000:86:00.0" count=2 tclass="0x030200"/>
-        <nvlink target="0000:80:00.0" count=2 tclass="0x068001"/>
-      </gpu>
+    <pci busid="0033:01:00.0" class="0x020700" link_speed="16 GT/s" link_width=8>
+      <nic type="infiniband">
+        <net name="mlx5_2" sys_guid="ec0d:9a03:00cc:9986" link_rate="100 Gb/sec (4X EDR)" dev=3/>
+      </nic>
     </pci>
   </cpu>
 </system>

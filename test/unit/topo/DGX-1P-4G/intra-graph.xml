@@ -52,18 +52,6 @@
     </channel>
     <channel>
       <gpu dev=0/>
-      <gpu dev=1/>
-      <gpu dev=3/>
-      <gpu dev=2/>
-    </channel>
-    <channel>
-      <gpu dev=0/>
-      <gpu dev=1/>
-      <gpu dev=3/>
-      <gpu dev=2/>
-    </channel>
-    <channel>
-      <gpu dev=0/>
       <gpu dev=2/>
       <gpu dev=1/>
       <gpu dev=3/>
@@ -73,6 +61,18 @@
       <gpu dev=2/>
       <gpu dev=1/>
       <gpu dev=3/>
+    </channel>
+    <channel>
+      <gpu dev=1/>
+      <gpu dev=0/>
+      <gpu dev=3/>
+      <gpu dev=2/>
+    </channel>
+    <channel>
+      <gpu dev=1/>
+      <gpu dev=0/>
+      <gpu dev=3/>
+      <gpu dev=2/>
     </channel>
   </graph>
 </graphs>
