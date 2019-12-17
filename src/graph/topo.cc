@@ -311,6 +311,7 @@ ncclResult_t ncclTopoAddGpu(struct ncclXmlNode* xmlGpu, struct ncclTopoSystem* s
   NCCLCHECK(xmlGetAttrInt(xmlGpu, "sm", &gpu->gpu.cudaCompCap));
   NCCLCHECK(xmlGetAttrInt(xmlGpu, "rank", &gpu->gpu.rank));
   NCCLCHECK(xmlGetAttrInt(xmlGpu, "dev", &gpu->gpu.dev));
+  NCCLCHECK(xmlGetAttrInt(xmlGpu, "gdr", &gpu->gpu.gdrSupport));
   // Do not go any further, nvlinks will be added in a second pass
   return ncclSuccess;
 }
@@ -513,6 +514,11 @@ ncclResult_t ncclTopoGetSystem(struct ncclComm* comm, struct ncclTopoSystem** sy
       struct ncclXmlNode* node;
       NCCLCHECK(ncclTopoFillGpu(xml, busId, &node));
       NCCLCHECK(xmlSetAttrInt(node, "rank", r));
+      int index;
+      NCCLCHECK(xmlGetAttrIndex(node, "gdr", &index));
+      if (index == -1) {
+        NCCLCHECK(xmlSetAttrInt(node, "gdr", comm->peerInfo[comm->rank].gdrSupport));
+      }
     }
   }
   // Auto-detect NICs if needed

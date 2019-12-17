@@ -2,14 +2,14 @@
   <cpu numaid=0 affinity="0000,0fffff00,000fffff" arch="x86_64" vendor="GenuineIntel" familyid=6 modelid=79>
     <pci busid="0000:03:00.0" class="0x060400" link_speed="8 GT/s" link_width=16>
       <pci busid="0000:06:00.0" class="0x030200" link_speed="8 GT/s" link_width=16>
-        <gpu dev=0 sm=60 rank=0>
+        <gpu dev=0 sm=60 rank=0 gdr=1>
           <nvlink target="0000:07:00.0" count=1 tclass="0x030200"/>
           <nvlink target="0000:0a:00.0" count=1 tclass="0x030200"/>
           <nvlink target="0000:0b:00.0" count=1 tclass="0x030200"/>
         </gpu>
       </pci>
       <pci busid="0000:07:00.0" class="0x030200" link_speed="8 GT/s" link_width=16>
-        <gpu dev=1 sm=60 rank=1>
+        <gpu dev=1 sm=60 rank=1 gdr=1>
           <nvlink target="0000:0a:00.0" count=1 tclass="0x030200"/>
           <nvlink target="0000:0b:00.0" count=1 tclass="0x030200"/>
           <nvlink target="0000:06:00.0" count=1 tclass="0x030200"/>
@@ -23,14 +23,14 @@
     </pci>
     <pci busid="0000:08:00.0" class="0x060400" link_speed="8 GT/s" link_width=16>
       <pci busid="0000:0a:00.0" class="0x030200" link_speed="8 GT/s" link_width=16>
-        <gpu dev=2 sm=60 rank=2>
+        <gpu dev=2 sm=60 rank=2 gdr=1>
           <nvlink target="0000:0b:00.0" count=1 tclass="0x030200"/>
           <nvlink target="0000:06:00.0" count=1 tclass="0x030200"/>
           <nvlink target="0000:07:00.0" count=1 tclass="0x030200"/>
         </gpu>
       </pci>
       <pci busid="0000:0b:00.0" class="0x030200" link_speed="8 GT/s" link_width=16>
-        <gpu dev=3 sm=60 rank=3>
+        <gpu dev=3 sm=60 rank=3 gdr=1>
           <nvlink target="0000:06:00.0" count=1 tclass="0x030200"/>
           <nvlink target="0000:07:00.0" count=1 tclass="0x030200"/>
           <nvlink target="0000:0a:00.0" count=1 tclass="0x030200"/>

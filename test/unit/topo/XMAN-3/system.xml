@@ -8,7 +8,7 @@
       </pci>
       <pci busid="0000:32:00.0" class="0x060400" link_speed="8 GT/s" link_width=16>
         <pci busid="0000:34:00.0" class="0x030200" link_speed="8 GT/s" link_width=16>
-          <gpu dev=0 sm=70 rank=0>
+          <gpu dev=0 sm=70 rank=0 gdr=1>
             <nvlink target="0000:65:00.0" count=1 tclass="0x068000"/>
             <nvlink target="0000:61:00.0" count=1 tclass="0x068000"/>
             <nvlink target="0000:63:00.0" count=1 tclass="0x068000"/>
@@ -18,7 +18,7 @@
           </gpu>
         </pci>
         <pci busid="0000:36:00.0" class="0x030200" link_speed="8 GT/s" link_width=16>
-          <gpu dev=1 sm=70 rank=1>
+          <gpu dev=1 sm=70 rank=1 gdr=1>
             <nvlink target="0000:65:00.0" count=1 tclass="0x068000"/>
             <nvlink target="0000:61:00.0" count=1 tclass="0x068000"/>
             <nvlink target="0000:67:00.0" count=1 tclass="0x068000"/>
@@ -28,7 +28,7 @@
           </gpu>
         </pci>
         <pci busid="0000:39:00.0" class="0x030200" link_speed="8 GT/s" link_width=16>
-          <gpu dev=2 sm=70 rank=2>
+          <gpu dev=2 sm=70 rank=2 gdr=1>
             <nvlink target="0000:65:00.0" count=1 tclass="0x068000"/>
             <nvlink target="0000:61:00.0" count=1 tclass="0x068000"/>
             <nvlink target="0000:63:00.0" count=1 tclass="0x068000"/>
@@ -38,7 +38,7 @@
           </gpu>
         </pci>
         <pci busid="0000:3b:00.0" class="0x030200" link_speed="8 GT/s" link_width=16>
-          <gpu dev=3 sm=70 rank=3>
+          <gpu dev=3 sm=70 rank=3 gdr=1>
             <nvlink target="0000:65:00.0" count=1 tclass="0x068000"/>
             <nvlink target="0000:61:00.0" count=1 tclass="0x068000"/>
             <nvlink target="0000:63:00.0" count=1 tclass="0x068000"/>
@@ -64,7 +64,7 @@
       </pci>
       <pci busid="0000:55:00.0" class="0x060400" link_speed="8 GT/s" link_width=16>
         <pci busid="0000:57:00.0" class="0x030200" link_speed="8 GT/s" link_width=16>
-          <gpu dev=4 sm=70 rank=4>
+          <gpu dev=4 sm=70 rank=4 gdr=1>
             <nvlink target="0000:65:00.0" count=1 tclass="0x068000"/>
             <nvlink target="0000:61:00.0" count=1 tclass="0x068000"/>
             <nvlink target="0000:67:00.0" count=1 tclass="0x068000"/>
@@ -74,7 +74,7 @@
           </gpu>
         </pci>
         <pci busid="0000:59:00.0" class="0x030200" link_speed="8 GT/s" link_width=16>
-          <gpu dev=5 sm=70 rank=5>
+          <gpu dev=5 sm=70 rank=5 gdr=1>
             <nvlink target="0000:65:00.0" count=1 tclass="0x068000"/>
             <nvlink target="0000:61:00.0" count=1 tclass="0x068000"/>
             <nvlink target="0000:67:00.0" count=1 tclass="0x068000"/>
@@ -84,7 +84,7 @@
           </gpu>
         </pci>
         <pci busid="0000:5c:00.0" class="0x030200" link_speed="8 GT/s" link_width=16>
-          <gpu dev=6 sm=70 rank=6>
+          <gpu dev=6 sm=70 rank=6 gdr=1>
             <nvlink target="0000:65:00.0" count=1 tclass="0x068000"/>
             <nvlink target="0000:61:00.0" count=1 tclass="0x068000"/>
             <nvlink target="0000:66:00.0" count=1 tclass="0x068000"/>
@@ -94,7 +94,7 @@
           </gpu>
         </pci>
         <pci busid="0000:5e:00.0" class="0x030200" link_speed="8 GT/s" link_width=16>
-          <gpu dev=7 sm=70 rank=7>
+          <gpu dev=7 sm=70 rank=7 gdr=1>
             <nvlink target="0000:65:00.0" count=1 tclass="0x068000"/>
             <nvlink target="0000:61:00.0" count=1 tclass="0x068000"/>
             <nvlink target="0000:66:00.0" count=1 tclass="0x068000"/>
@@ -125,7 +125,7 @@
       </pci>
       <pci busid="0000:b5:00.0" class="0x060400" link_speed="8 GT/s" link_width=16>
         <pci busid="0000:b7:00.0" class="0x030200" link_speed="8 GT/s" link_width=16>
-          <gpu dev=8 sm=70 rank=8>
+          <gpu dev=8 sm=70 rank=8 gdr=1>
             <nvlink target="0000:c5:00.0" count=1 tclass="0x068000"/>
             <nvlink target="0000:c1:00.0" count=1 tclass="0x068000"/>
             <nvlink target="0000:c7:00.0" count=1 tclass="0x068000"/>
@@ -135,7 +135,7 @@
           </gpu>
         </pci>
         <pci busid="0000:b9:00.0" class="0x030200" link_speed="8 GT/s" link_width=16>
-          <gpu dev=9 sm=70 rank=9>
+          <gpu dev=9 sm=70 rank=9 gdr=1>
             <nvlink target="0000:c5:00.0" count=1 tclass="0x068000"/>
             <nvlink target="0000:c1:00.0" count=1 tclass="0x068000"/>
             <nvlink target="0000:c3:00.0" count=1 tclass="0x068000"/>
@@ -145,7 +145,7 @@
           </gpu>
         </pci>
         <pci busid="0000:bc:00.0" class="0x030200" link_speed="8 GT/s" link_width=16>
-          <gpu dev=10 sm=70 rank=10>
+          <gpu dev=10 sm=70 rank=10 gdr=1>
             <nvlink target="0000:c5:00.0" count=1 tclass="0x068000"/>
             <nvlink target="0000:c1:00.0" count=1 tclass="0x068000"/>
             <nvlink target="0000:c3:00.0" count=1 tclass="0x068000"/>
@@ -155,7 +155,7 @@
           </gpu>
         </pci>
         <pci busid="0000:be:00.0" class="0x030200" link_speed="8 GT/s" link_width=16>
-          <gpu dev=11 sm=70 rank=11>
+          <gpu dev=11 sm=70 rank=11 gdr=1>
             <nvlink target="0000:c5:00.0" count=1 tclass="0x068000"/>
             <nvlink target="0000:c1:00.0" count=1 tclass="0x068000"/>
             <nvlink target="0000:c3:00.0" count=1 tclass="0x068000"/>
@@ -181,7 +181,7 @@
       </pci>
       <pci busid="0000:de:00.0" class="0x060400" link_speed="8 GT/s" link_width=16>
         <pci busid="0000:e0:00.0" class="0x030200" link_speed="8 GT/s" link_width=16>
-          <gpu dev=12 sm=70 rank=12>
+          <gpu dev=12 sm=70 rank=12 gdr=1>
             <nvlink target="0000:c5:00.0" count=1 tclass="0x068000"/>
             <nvlink target="0000:c1:00.0" count=1 tclass="0x068000"/>
             <nvlink target="0000:c6:00.0" count=1 tclass="0x068000"/>
@@ -191,7 +191,7 @@
           </gpu>
         </pci>
         <pci busid="0000:e2:00.0" class="0x030200" link_speed="8 GT/s" link_width=16>
-          <gpu dev=13 sm=70 rank=13>
+          <gpu dev=13 sm=70 rank=13 gdr=1>
             <nvlink target="0000:c5:00.0" count=1 tclass="0x068000"/>
             <nvlink target="0000:c1:00.0" count=1 tclass="0x068000"/>
             <nvlink target="0000:c7:00.0" count=1 tclass="0x068000"/>
@@ -201,7 +201,7 @@
           </gpu>
         </pci>
         <pci busid="0000:e5:00.0" class="0x030200" link_speed="8 GT/s" link_width=16>
-          <gpu dev=14 sm=70 rank=14>
+          <gpu dev=14 sm=70 rank=14 gdr=1>
             <nvlink target="0000:c5:00.0" count=1 tclass="0x068000"/>
             <nvlink target="0000:c1:00.0" count=1 tclass="0x068000"/>
             <nvlink target="0000:c6:00.0" count=1 tclass="0x068000"/>
@@ -211,7 +211,7 @@
           </gpu>
         </pci>
         <pci busid="0000:e7:00.0" class="0x030200" link_speed="8 GT/s" link_width=16>
-          <gpu dev=15 sm=70 rank=15>
+          <gpu dev=15 sm=70 rank=15 gdr=1>
             <nvlink target="0000:c5:00.0" count=1 tclass="0x068000"/>
             <nvlink target="0000:c1:00.0" count=1 tclass="0x068000"/>
             <nvlink target="0000:c7:00.0" count=1 tclass="0x068000"/>

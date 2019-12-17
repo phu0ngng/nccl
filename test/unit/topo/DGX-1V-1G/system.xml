@@ -9,7 +9,7 @@
     </pci>
     <pci busid="0000:08:00.0" class="0x060400" link_speed="8 GT/s" link_width=16>
       <pci busid="0000:0a:00.0" class="0x030200" link_speed="8 GT/s" link_width=16>
-        <gpu dev=2 sm=70 rank=0>
+        <gpu dev=2 sm=70 rank=0 gdr=1>
           <nvlink target="0000:89:00.0" count=1 tclass="0x030200"/>
           <nvlink target="0000:0b:00.0" count=2 tclass="0x030200"/>
           <nvlink target="0000:06:00.0" count=1 tclass="0x030200"/>

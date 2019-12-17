@@ -2,21 +2,21 @@
   <cpu numaid=0 affinity="00000000,00000000,0000ffff,ffff" arch="ppc64">
     <pci busid="0004:01:00.0" class="0x060400" link_speed="8 GT/s" link_width=4>
       <pci busid="0004:04:00.0" class="0x030200" link_speed="8 GT/s" link_width=2>
-        <gpu dev=0 sm=70 rank=0>
+        <gpu dev=0 sm=70 rank=0 gdr=0>
           <nvlink target="0004:05:00.0" count=2 tclass="0x030200"/>
           <nvlink target="0004:06:00.0" count=2 tclass="0x030200"/>
           <nvlink target="0006:00:00.0" count=2 tclass="0x068001"/>
         </gpu>
       </pci>
       <pci busid="0004:05:00.0" class="0x030200" link_speed="8 GT/s" link_width=2>
-        <gpu dev=1 sm=70 rank=1>
+        <gpu dev=1 sm=70 rank=1 gdr=0>
           <nvlink target="0004:04:00.0" count=2 tclass="0x030200"/>
           <nvlink target="0004:06:00.0" count=2 tclass="0x030200"/>
           <nvlink target="0006:00:01.0" count=2 tclass="0x068001"/>
         </gpu>
       </pci>
       <pci busid="0004:06:00.0" class="0x030200" link_speed="8 GT/s" link_width=2>
-        <gpu dev=2 sm=70 rank=2>
+        <gpu dev=2 sm=70 rank=2 gdr=0>
           <nvlink target="0004:04:00.0" count=2 tclass="0x030200"/>
           <nvlink target="0004:05:00.0" count=2 tclass="0x030200"/>
           <nvlink target="0006:00:02.0" count=2 tclass="0x068001"/>
@@ -37,21 +37,21 @@
   <cpu numaid=8 affinity="ffffffff,ffffffff,ffff0000,0000" arch="ppc64">
     <pci busid="0035:01:00.0" class="0x060400" link_speed="8 GT/s" link_width=4>
       <pci busid="0035:03:00.0" class="0x030200" link_speed="8 GT/s" link_width=2>
-        <gpu dev=3 sm=70 rank=3>
+        <gpu dev=3 sm=70 rank=3 gdr=0>
           <nvlink target="0035:04:00.0" count=2 tclass="0x030200"/>
           <nvlink target="0035:05:00.0" count=2 tclass="0x030200"/>
           <nvlink target="0007:00:00.0" count=2 tclass="0x068001"/>
         </gpu>
       </pci>
       <pci busid="0035:04:00.0" class="0x030200" link_speed="8 GT/s" link_width=2>
-        <gpu dev=4 sm=70 rank=4>
+        <gpu dev=4 sm=70 rank=4 gdr=0>
           <nvlink target="0035:03:00.0" count=2 tclass="0x030200"/>
           <nvlink target="0035:05:00.0" count=2 tclass="0x030200"/>
           <nvlink target="0007:00:01.0" count=2 tclass="0x068001"/>
         </gpu>
       </pci>
       <pci busid="0035:05:00.0" class="0x030200" link_speed="8 GT/s" link_width=2>
-        <gpu dev=5 sm=70 rank=5>
+        <gpu dev=5 sm=70 rank=5 gdr=0>
           <nvlink target="0035:03:00.0" count=2 tclass="0x030200"/>
           <nvlink target="0035:04:00.0" count=2 tclass="0x030200"/>
           <nvlink target="0007:00:01.0" count=2 tclass="0x068001"/>

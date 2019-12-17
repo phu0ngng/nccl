@@ -265,7 +265,10 @@ static ncclResult_t fillInfo(struct ncclComm* comm, struct ncclPeerInfo* info, u
   for (int n=0; n<netDevs; n++) {
     int ptrSupport;
     NCCLCHECK(ncclNetPtrSupport(n, &ptrSupport));
-    if (ptrSupport & NCCL_PTR_CUDA) info->gdrSupport |= (1 << n);
+    if (ptrSupport & NCCL_PTR_CUDA) {
+      NCCLCHECK(ncclGpuGdrSupport(n, &info->gdrSupport));
+      break;
+    }
   }
   return ncclSuccess;
 }
