@@ -233,9 +233,10 @@ ncclResult_t ncclTopoComputePaths(struct ncclTopoSystem* system, struct ncclPeer
     struct ncclTopoNode* netNode = system->nodes[NET].nodes+n;
     NCCLCHECK(ncclTopoSetPaths(netNode, system));
 
-    if (peerInfos == NULL) continue;
     for (int g=0; g<system->nodes[GPU].count; g++) {
-      if ((peerInfos[system->nodes[GPU].nodes[g].gpu.rank].gdrSupport & (1 << n)) == 0) {
+      // Better take the information that is GPU-specific if we have it. Otherwise take the XML info.
+      int gdrSupport = peerInfos ? (peerInfos[system->nodes[GPU].nodes[g].gpu.rank].gdrSupport & (1 << n)) == 0 : netNode->net.gdrSupport;
+      if (gdrSupport == 0) {
         // We cannot use GPU Direct RDMA, so we need all NIC<->GPU paths
         // to go through a CPU
         int localCpu;
@@ -245,7 +246,6 @@ ncclResult_t ncclTopoComputePaths(struct ncclTopoSystem* system, struct ncclPeer
       }
     }
   }
-
   return ncclSuccess;
 }
 

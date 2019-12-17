@@ -73,11 +73,13 @@ struct ncclTopoNode {
       int dev; // NVML dev number
       int rank;
       int cudaCompCap;
+      int gdrSupport;
     }gpu;
     struct {
       uint64_t asic;
       int port;
       int width;
+      int gdrSupport;
     }net;
     struct {
       int arch;

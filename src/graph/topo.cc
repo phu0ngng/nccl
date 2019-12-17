@@ -300,6 +300,7 @@ ncclResult_t ncclTopoAddNet(struct ncclXmlNode* xmlNet, struct ncclTopoSystem* s
   if (gbps == 0) gbps = 1; // Default for undefined NICs
   net->net.width = gbps * 10 / 8;
   net->net.port = port;
+  NCCLCHECK(xmlGetAttrInt(xmlNet, "gdr", &net->net.gdrSupport));
 
   NCCLCHECK(ncclTopoConnectNodes(nic, net, LINK_NET, net->net.width));
   NCCLCHECK(ncclTopoConnectNodes(net, nic, LINK_NET, net->net.width));
@@ -483,7 +484,6 @@ ncclResult_t ncclTopoGetSystemFromXml(struct ncclXml* xml, struct ncclTopoSystem
 
   NCCLCHECK(ncclTopoConnectCpus(*topoSystem));
   NCCLCHECK(ncclTopoSortSystem(*topoSystem));
-  NCCLCHECK(ncclTopoPrint(*topoSystem));
 
   return ncclSuccess;
 }
@@ -525,6 +525,14 @@ ncclResult_t ncclTopoGetSystem(struct ncclComm* comm, struct ncclTopoSystem** sy
     struct ncclXmlNode* node;
     NCCLCHECK(ncclTopoFillNic(xml, path, &node));
     NCCLCHECK(xmlSetAttrInt(node, "dev", n));
+    int index;
+    NCCLCHECK(xmlGetAttrIndex(node, "gdr", &index));
+    if (index == -1) {
+      int ptrSupport;
+      NCCLCHECK(ncclNetPtrSupport(n, &ptrSupport));
+      int gdr = ptrSupport & NCCL_PTR_CUDA ? 1 : 0;
+      NCCLCHECK(xmlSetAttrInt(node, "gdr", gdr));
+    }
   }
 
   xmlTopoFile = getenv("NCCL_TOPO_DUMP_FILE");
