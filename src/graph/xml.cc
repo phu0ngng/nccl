@@ -17,26 +17,26 @@
 /* XML File Parser */
 /*******************/
 
-ncclResult_t xmlGetChar(int fd, char* c) {
-  if (read(fd, c, 1) == 0) {
+ncclResult_t xmlGetChar(FILE* file, char* c) {
+  if (fread(c, 1, 1, file) == 0) {
     WARN("XML Parse : Unexpected EOF");
     return ncclInternalError;
   }
   return ncclSuccess;
 }
 
-ncclResult_t xmlGetValue(int fd, char* strValue, int* intValue, int* valueType, char* last) {
+ncclResult_t xmlGetValue(FILE* file, char* strValue, int* intValue, int* valueType, char* last) {
   char c;
-  NCCLCHECK(xmlGetChar(fd, &c));
+  NCCLCHECK(xmlGetChar(file, &c));
   if (c == '"') {
     *valueType = KEY_TYPE_STR;
     int o = 0;
     do {
-      NCCLCHECK(xmlGetChar(fd, &c));
+      NCCLCHECK(xmlGetChar(file, &c));
       strValue[o++] = c;
     } while (strValue[o-1] != '"');
     strValue[o-1] = '\0';
-    NCCLCHECK(xmlGetChar(fd, last));
+    NCCLCHECK(xmlGetChar(file, last));
   } else {
     *valueType = KEY_TYPE_INT;
     int value = 0;
@@ -48,7 +48,7 @@ ncclResult_t xmlGetValue(int fd, char* strValue, int* intValue, int* valueType, 
         return ncclInternalError;
       }
       value = value*10 + digit;
-      NCCLCHECK(xmlGetChar(fd, &c));
+      NCCLCHECK(xmlGetChar(file, &c));
     }
     *intValue = value;
     *last = c;
@@ -56,20 +56,20 @@ ncclResult_t xmlGetValue(int fd, char* strValue, int* intValue, int* valueType, 
   return ncclSuccess;
 }
 
-ncclResult_t xmlGetToken(int fd, char* name, char* strValue, int* intValue, int* valueType, char* last) {
+ncclResult_t xmlGetToken(FILE* file, char* name, char* strValue, int* intValue, int* valueType, char* last) {
   char c;
   char* ptr = name;
   int o = 0;
   if (valueType) *valueType = KEY_TYPE_NONE;
   do {
-    NCCLCHECK(xmlGetChar(fd, &c));
+    NCCLCHECK(xmlGetChar(file, &c));
     if (c == '=') {
       ptr[o] = '\0';
       if (strValue == NULL || intValue == NULL || valueType == NULL) {
         WARN("XML Parse : Unexpected value with name %s\n", ptr);
         return ncclInternalError;
       }
-      return xmlGetValue(fd, strValue, intValue, valueType, last);
+      return xmlGetValue(file, strValue, intValue, valueType, last);
     }
     ptr[o] = c;
     if (o == MAX_STR_LEN-1) {
@@ -84,24 +84,24 @@ ncclResult_t xmlGetToken(int fd, char* name, char* strValue, int* intValue, int*
   return ncclSuccess;
 }
 
-ncclResult_t xmlGetNode(int fd, struct ncclXmlNode* node) {
+ncclResult_t xmlGetNode(FILE* file, struct ncclXmlNode* node) {
   node->type = NODE_TYPE_NONE;
   char c = ' ';
   while (c == ' ' || c == '\n' || c == '\r') {
-    if (read(fd, &c, 1) == 0) return ncclSuccess;
+    if (fread(&c, 1, 1, file) == 0) return ncclSuccess;
   }
   if (c != '<') {
     WARN("XML Parse error : expecting '<', got '%c'", c);
     return ncclInternalError;
   }
   // Read XML element name
-  NCCLCHECK(xmlGetToken(fd, node->name, NULL, NULL, NULL, &c));
+  NCCLCHECK(xmlGetToken(file, node->name, NULL, NULL, NULL, &c));
 
   // Check for closing tag
   if (node->name[0] == '\0' && c == '/') {
     node->type = NODE_TYPE_CLOSE;
     // Re-read the name, we got '/' in the first call
-    NCCLCHECK(xmlGetToken(fd, node->name, NULL, NULL, NULL, &c));
+    NCCLCHECK(xmlGetToken(file, node->name, NULL, NULL, NULL, &c));
     if (c != '>') {
       WARN("XML Parse error : unexpected trailing %c in closing tag %s\n", c, node->name);
       return ncclInternalError;
@@ -114,7 +114,7 @@ ncclResult_t xmlGetNode(int fd, struct ncclXmlNode* node) {
   // Get Attributes
   int a = 0;
   while (c == ' ') {
-    NCCLCHECK(xmlGetToken(fd, node->attrs[a].key, node->attrs[a].strValue, &node->attrs[a].intValue, &node->attrs[a].type, &c));
+    NCCLCHECK(xmlGetToken(file, node->attrs[a].key, node->attrs[a].strValue, &node->attrs[a].intValue, &node->attrs[a].type, &c));
     if (node->attrs[a].type != KEY_TYPE_NONE) {
       if (a == MAX_ATTR_COUNT) {
         INFO(NCCL_GRAPH, "XML Parse : Ignoring extra attributes (max %d)\n", MAX_ATTR_COUNT);
@@ -126,7 +126,7 @@ ncclResult_t xmlGetNode(int fd, struct ncclXmlNode* node) {
   if (c == '/') {
     node->type = NODE_TYPE_SINGLE;
     char str[MAX_STR_LEN];
-    NCCLCHECK(xmlGetToken(fd, str, NULL, NULL, NULL, &c));
+    NCCLCHECK(xmlGetToken(file, str, NULL, NULL, NULL, &c));
   }
   if (c != '>') {
     WARN("XML Parse : expected >, got '%c'", c);
@@ -135,14 +135,14 @@ ncclResult_t xmlGetNode(int fd, struct ncclXmlNode* node) {
   return ncclSuccess;
 }
 
-typedef ncclResult_t (*xmlHandlerFunc_t)(int, struct ncclXml*, struct ncclXmlNode*);
+typedef ncclResult_t (*xmlHandlerFunc_t)(FILE*, struct ncclXml*, struct ncclXmlNode*);
 
 struct xmlHandler {
   const char * name;
   xmlHandlerFunc_t func;
 };
 
-ncclResult_t xmlLoadSub(int fd, struct ncclXml* xml, struct ncclXmlNode* head, struct xmlHandler handlers[], int nHandlers) {
+ncclResult_t xmlLoadSub(FILE* file, struct ncclXml* xml, struct ncclXmlNode* head, struct xmlHandler handlers[], int nHandlers) {
   if (head && head->type == NODE_TYPE_SINGLE) return ncclSuccess;
   while (1) {
     if (xml->maxIndex == MAX_NODES) {
@@ -151,7 +151,7 @@ ncclResult_t xmlLoadSub(int fd, struct ncclXml* xml, struct ncclXmlNode* head, s
     }
     struct ncclXmlNode* node = xml->nodes+xml->maxIndex;
     memset(node, 0, sizeof(struct ncclXmlNode));
-    NCCLCHECK(xmlGetNode(fd, node));
+    NCCLCHECK(xmlGetNode(file, node));
     if (node->type == NODE_TYPE_NONE) {
       if (head) {
         WARN("XML Parse : unterminated %s", head->name);
@@ -175,14 +175,14 @@ ncclResult_t xmlLoadSub(int fd, struct ncclXml* xml, struct ncclXmlNode* head, s
         node->parent = head;
         node->nSubs = 0;
         xml->maxIndex++;
-        NCCLCHECK(handlers[h].func(fd, xml, node));
+        NCCLCHECK(handlers[h].func(file, xml, node));
         found = 1;
         break;
       }
     }
     if (!found) {
       if (nHandlers) INFO(NCCL_GRAPH, "Ignoring element %s", node->name);
-      NCCLCHECK(xmlLoadSub(fd, xml, node, NULL, 0));
+      NCCLCHECK(xmlLoadSub(file, xml, node, NULL, 0));
     }
   }
 }
@@ -191,38 +191,38 @@ ncclResult_t xmlLoadSub(int fd, struct ncclXml* xml, struct ncclXmlNode* head, s
 /* XML Writer */
 /**************/
 
-ncclResult_t ncclTopoDumpXmlRec(int indent, int fd, struct ncclXmlNode* node) {
-  for (int i=0; i<indent; i++) dprintf(fd, " ");
-  dprintf(fd, "<%s", node->name);
+ncclResult_t ncclTopoDumpXmlRec(int indent, FILE* file, struct ncclXmlNode* node) {
+  for (int i=0; i<indent; i++) fprintf(file, " ");
+  fprintf(file, "<%s", node->name);
 
   for (int a=0; a<node->nAttrs; a++) {
     if (node->attrs[a].type == KEY_TYPE_INT) {
-      dprintf(fd, " %s=%d", node->attrs[a].key, node->attrs[a].intValue);
+      fprintf(file, " %s=%d", node->attrs[a].key, node->attrs[a].intValue);
     } else {
-      dprintf(fd, " %s=\"%s\"", node->attrs[a].key, node->attrs[a].strValue);
+      fprintf(file, " %s=\"%s\"", node->attrs[a].key, node->attrs[a].strValue);
     }
   }
   if (node->nSubs == 0) {
-    dprintf(fd, "/>\n");
+    fprintf(file, "/>\n");
   } else {
-    dprintf(fd, ">\n");
+    fprintf(file, ">\n");
     for (int s=0; s<node->nSubs; s++) {
-      NCCLCHECK(ncclTopoDumpXmlRec(indent+2, fd, node->subs[s]));
+      NCCLCHECK(ncclTopoDumpXmlRec(indent+2, file, node->subs[s]));
     }
-    for (int i=0; i<indent; i++) dprintf(fd, " ");
-    dprintf(fd, "</%s>\n", node->name);
+    for (int i=0; i<indent; i++) fprintf(file, " ");
+    fprintf(file, "</%s>\n", node->name);
   }
   return ncclSuccess;
 }
 
 ncclResult_t ncclTopoDumpXmlToFile(const char* xmlTopoFile, struct ncclXml* xml) {
-  int fd = open(xmlTopoFile, O_TRUNC|O_CREAT|O_WRONLY, 0644);
-  if (fd == -1) {
+  FILE* file = fopen(xmlTopoFile, "w");
+  if (file == NULL) {
     WARN("Unable to open %s, not dumping topology.", xmlTopoFile);
     return ncclSuccess;
   }
-  NCCLCHECK(ncclTopoDumpXmlRec(0, fd, xml->nodes));
-  close(fd);
+  NCCLCHECK(ncclTopoDumpXmlRec(0, file, xml->nodes));
+  fclose(file);
   return ncclSuccess;
 }
 
@@ -230,41 +230,41 @@ ncclResult_t ncclTopoDumpXmlToFile(const char* xmlTopoFile, struct ncclXml* xml)
 /* Parser rules for our specific format */
 /****************************************/
 
-ncclResult_t ncclTopoXmlLoadNvlink(int fd, struct ncclXml* xml, struct ncclXmlNode* head) {
-  NCCLCHECK(xmlLoadSub(fd, xml, head, NULL, 0));
+ncclResult_t ncclTopoXmlLoadNvlink(FILE* file, struct ncclXml* xml, struct ncclXmlNode* head) {
+  NCCLCHECK(xmlLoadSub(file, xml, head, NULL, 0));
   return ncclSuccess;
 }
 
-ncclResult_t ncclTopoXmlLoadGpu(int fd, struct ncclXml* xml, struct ncclXmlNode* head) {
+ncclResult_t ncclTopoXmlLoadGpu(FILE* file, struct ncclXml* xml, struct ncclXmlNode* head) {
   struct xmlHandler handlers[] = { { "nvlink", ncclTopoXmlLoadNvlink } };
-  NCCLCHECK(xmlLoadSub(fd, xml, head, handlers, 1));
+  NCCLCHECK(xmlLoadSub(file, xml, head, handlers, 1));
   return ncclSuccess;
 }
 
-ncclResult_t ncclTopoXmlLoadNet(int fd, struct ncclXml* xml, struct ncclXmlNode* head) {
-  NCCLCHECK(xmlLoadSub(fd, xml, head, NULL, 0));
+ncclResult_t ncclTopoXmlLoadNet(FILE* file, struct ncclXml* xml, struct ncclXmlNode* head) {
+  NCCLCHECK(xmlLoadSub(file, xml, head, NULL, 0));
   return ncclSuccess;
 }
 
-ncclResult_t ncclTopoXmlLoadNic(int fd, struct ncclXml* xml, struct ncclXmlNode* head) {
+ncclResult_t ncclTopoXmlLoadNic(FILE* file, struct ncclXml* xml, struct ncclXmlNode* head) {
   struct xmlHandler handlers[] = { { "net", ncclTopoXmlLoadNet } };
-  NCCLCHECK(xmlLoadSub(fd, xml, head, handlers, 1));
+  NCCLCHECK(xmlLoadSub(file, xml, head, handlers, 1));
   return ncclSuccess;
 }
 
-ncclResult_t ncclTopoXmlLoadPci(int fd, struct ncclXml* xml, struct ncclXmlNode* head) {
+ncclResult_t ncclTopoXmlLoadPci(FILE* file, struct ncclXml* xml, struct ncclXmlNode* head) {
   struct xmlHandler handlers[] = { { "pci", ncclTopoXmlLoadPci }, { "gpu", ncclTopoXmlLoadGpu }, { "nic", ncclTopoXmlLoadNic} };
-  NCCLCHECK(xmlLoadSub(fd, xml, head, handlers, 3));
+  NCCLCHECK(xmlLoadSub(file, xml, head, handlers, 3));
   return ncclSuccess;
 }
 
-ncclResult_t ncclTopoXmlLoadCpu(int fd, struct ncclXml* xml, struct ncclXmlNode* head) {
+ncclResult_t ncclTopoXmlLoadCpu(FILE* file, struct ncclXml* xml, struct ncclXmlNode* head) {
   struct xmlHandler handlers[] = { { "pci", ncclTopoXmlLoadPci } };
-  NCCLCHECK(xmlLoadSub(fd, xml, head, handlers, 1));
+  NCCLCHECK(xmlLoadSub(file, xml, head, handlers, 1));
   return ncclSuccess;
 }
 
-ncclResult_t ncclTopoXmlLoadSystem(int fd, struct ncclXml* xml, struct ncclXmlNode* head) {
+ncclResult_t ncclTopoXmlLoadSystem(FILE* file, struct ncclXml* xml, struct ncclXmlNode* head) {
   int version;
   NCCLCHECK(xmlGetAttrInt(head, "version", &version));
   if (version != NCCL_TOPO_XML_VERSION) {
@@ -281,20 +281,20 @@ ncclResult_t ncclTopoXmlLoadSystem(int fd, struct ncclXml* xml, struct ncclXmlNo
   if (a == head->nAttrs) INFO(NCCL_GRAPH, "Loading unnamed topology");
 
   struct xmlHandler handlers[] = { { "cpu", ncclTopoXmlLoadCpu } };
-  NCCLCHECK(xmlLoadSub(fd, xml, head, handlers, 1));
+  NCCLCHECK(xmlLoadSub(file, xml, head, handlers, 1));
   return ncclSuccess;
 }
 
 ncclResult_t ncclTopoGetXmlFromFile(const char* xmlTopoFile, struct ncclXml* xml) {
-  int fd = open(xmlTopoFile, O_RDONLY);
-  if (fd == -1) {
+  FILE* file = fopen(xmlTopoFile, "r");
+  if (file == NULL) {
     WARN("Could not open XML topology file %s : %s", xmlTopoFile, strerror(errno));
     return ncclSuccess;
   }
   struct xmlHandler handlers[] = { { "system", ncclTopoXmlLoadSystem } };
   xml->maxIndex = 0;
-  NCCLCHECK(xmlLoadSub(fd, xml, NULL, handlers, 1));
-  close(fd);
+  NCCLCHECK(xmlLoadSub(file, xml, NULL, handlers, 1));
+  fclose(file);
   return ncclSuccess;
 }
 
@@ -324,14 +324,13 @@ ncclResult_t ncclTopoGetStrFromSys(const char* path, const char* fileName, char*
   strcpy(filePath, path);
   sprintf(filePath, "%s/%s", path, fileName);
   int offset = 0;
-  int fd;
-  if ((fd = open(filePath, O_RDONLY)) != -1) {
-    int len = 1;
-    while (len != 0 && offset < MAX_STR_LEN) {
-      SYSCHECKVAL(read(fd, strValue+offset, MAX_STR_LEN-offset), "read", len);
+  FILE* file;
+  if ((file = fopen(filePath, "r")) != NULL) {
+    while (feof(file) == 0 && ferror(file) == 0 && offset < MAX_STR_LEN) {
+      int len = fread(strValue+offset, 1, MAX_STR_LEN-offset, file);
       offset += len;
     }
-    close(fd);
+    fclose(file);
   }
   if (offset == 0) {
     strValue[0] = '\0';
@@ -741,29 +740,29 @@ ncclResult_t ncclTopoFillNic(struct ncclXml* xml, const char* sysPath, struct nc
 /* Parser rules for the user-defined graph search */
 /**************************************************/
 
-ncclResult_t ncclTopoXmlGraphLoadGpu(int fd, struct ncclXml* xml, struct ncclXmlNode* head) {
-  NCCLCHECK(xmlLoadSub(fd, xml, head, NULL, 0));
+ncclResult_t ncclTopoXmlGraphLoadGpu(FILE* file, struct ncclXml* xml, struct ncclXmlNode* head) {
+  NCCLCHECK(xmlLoadSub(file, xml, head, NULL, 0));
   return ncclSuccess;
 }
 
-ncclResult_t ncclTopoXmlGraphLoadNet(int fd, struct ncclXml* xml, struct ncclXmlNode* head) {
-  NCCLCHECK(xmlLoadSub(fd, xml, head, NULL, 0));
+ncclResult_t ncclTopoXmlGraphLoadNet(FILE* file, struct ncclXml* xml, struct ncclXmlNode* head) {
+  NCCLCHECK(xmlLoadSub(file, xml, head, NULL, 0));
   return ncclSuccess;
 }
 
-ncclResult_t ncclTopoXmlGraphLoadChannel(int fd, struct ncclXml* xml, struct ncclXmlNode* head) {
+ncclResult_t ncclTopoXmlGraphLoadChannel(FILE* file, struct ncclXml* xml, struct ncclXmlNode* head) {
   struct xmlHandler handlers[] = { { "net", ncclTopoXmlGraphLoadNet }, { "gpu", ncclTopoXmlGraphLoadGpu } };
-  NCCLCHECK(xmlLoadSub(fd, xml, head, handlers, 2));
+  NCCLCHECK(xmlLoadSub(file, xml, head, handlers, 2));
   return ncclSuccess;
 }
 
-ncclResult_t ncclTopoXmlGraphLoadGraph(int fd, struct ncclXml* xml, struct ncclXmlNode* head) {
+ncclResult_t ncclTopoXmlGraphLoadGraph(FILE* file, struct ncclXml* xml, struct ncclXmlNode* head) {
   struct xmlHandler handlers[] = { { "channel", ncclTopoXmlGraphLoadChannel } };
-  NCCLCHECK(xmlLoadSub(fd, xml, head, handlers, 1));
+  NCCLCHECK(xmlLoadSub(file, xml, head, handlers, 1));
   return ncclSuccess;
 }
 
-ncclResult_t ncclTopoXmlGraphLoadGraphs(int fd, struct ncclXml* xmlGraph, struct ncclXmlNode* head) {
+ncclResult_t ncclTopoXmlGraphLoadGraphs(FILE* file, struct ncclXml* xmlGraph, struct ncclXmlNode* head) {
   int version;
   NCCLCHECK(xmlGetAttrInt(head, "version", &version));
   if (version != NCCL_GRAPH_XML_VERSION) {
@@ -780,19 +779,19 @@ ncclResult_t ncclTopoXmlGraphLoadGraphs(int fd, struct ncclXml* xmlGraph, struct
   if (a == head->nAttrs) INFO(NCCL_GRAPH, "Loading graphs");
 
   struct xmlHandler handlers[] = { { "graph", ncclTopoXmlGraphLoadGraph } };
-  NCCLCHECK(xmlLoadSub(fd, xmlGraph, head, handlers, 1));
+  NCCLCHECK(xmlLoadSub(file, xmlGraph, head, handlers, 1));
   return ncclSuccess;
 }
 
 ncclResult_t ncclTopoGetXmlGraphFromFile(const char* xmlGraphFile, struct ncclXml* xml) {
-  int fd = open(xmlGraphFile, O_RDONLY);
-  if (fd == -1) {
+  FILE* file = fopen(xmlGraphFile, "r");
+  if (file == NULL) {
     WARN("Could not open XML graph file %s : %s", xmlGraphFile, strerror(errno));
     return ncclSystemError;
   }
   struct xmlHandler handlers[] = { { "graphs", ncclTopoXmlGraphLoadGraphs } };
   xml->maxIndex = 0;
-  NCCLCHECK(xmlLoadSub(fd, xml, NULL, handlers, 1));
-  close(fd);
+  NCCLCHECK(xmlLoadSub(file, xml, NULL, handlers, 1));
+  fclose(file);
   return ncclSuccess;
 }
