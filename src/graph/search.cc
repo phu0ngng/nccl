@@ -42,7 +42,7 @@ static ncclResult_t findRevLink(struct ncclTopoNode* node1, struct ncclTopoNode*
 
 static ncclResult_t followPath(struct ncclTopoLinkList* path, struct ncclTopoNode* start, int maxSteps, int speed, int* steps) {
   int lastCpuStep = path->count;
-  struct ncclTopoNode* end;
+  struct ncclTopoNode* end = NULL;
   for (int step=0; step<path->count; step++) {
     struct ncclTopoNode* node = path->list[step]->remNode;
     if (node->type == CPU) {
