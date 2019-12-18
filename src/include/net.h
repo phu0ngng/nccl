@@ -40,7 +40,7 @@ static ncclResult_t ncclGpuGdrSupport(int dev, int* gdrSupport) {
   // Double check the net device is GDR-capable.
   int support;
   NCCLCHECK(ncclNet->ptrSupport(dev, &support));
-  if (support & NCCL_PTR_CUDA == 0) return ncclInternalError;
+  if ((support & NCCL_PTR_CUDA) == 0) return ncclInternalError;
 
   // Allocate memory on the GPU and try to register it on the NIC.
   void *lComm = NULL, *sComm = NULL, *rComm = NULL;

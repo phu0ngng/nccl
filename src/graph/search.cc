@@ -52,8 +52,8 @@ static ncclResult_t followPath(struct ncclTopoLinkList* path, struct ncclTopoNod
           node->cpu.vendor == NCCL_TOPO_CPU_VENDOR_INTEL) {
         speed = INTEL_P2P_OVERHEAD(speed);
       }
-      // Account for polling for GPU-GPU communication going through QPI
-      if (path->type == LINK_QPI) lastCpuStep = step;
+      // Account for polling, for NET->GPU through CPU mem or GPU->GPU through QPI
+      if (start->type == NET || path->list[step]->type == LINK_QPI) lastCpuStep = step;
     }
     if (step == path->count-1) end = node;
   }

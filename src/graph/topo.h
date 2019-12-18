@@ -117,4 +117,15 @@ ncclResult_t ncclTopoGetSystemFromXml(struct ncclXml* xml, struct ncclTopoSystem
 ncclResult_t ncclTopoGetGraphsFromXml(struct ncclXmlNode *xmlGraphs, struct ncclTopoSystem* system, struct ncclTopoGraph* graph);
 ncclResult_t ncclTopoGetXmlFromGraphs(struct ncclTopoGraph* ringGraph, struct ncclTopoGraph* treeGraph, struct ncclTopoSystem* system, struct ncclXml *xml);
 
+static ncclResult_t ncclTopoIdToIndex(struct ncclTopoSystem* system, int type, int64_t id, int* index) {
+  *index = -1;
+  for (int i=0; i<system->nodes[type].count; i++) {
+    if (system->nodes[type].nodes[i].id == id) {
+      *index = i;
+      return ncclSuccess;
+    }
+  }
+  return ncclInternalError;
+}
+
 #endif

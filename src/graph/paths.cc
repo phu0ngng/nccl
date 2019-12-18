@@ -188,6 +188,106 @@ static void ncclTopoRemovePathType(struct ncclTopoSystem* system, int nodeType) 
   }
 }
 
+static int pathDistance(struct ncclTopoLinkList* links) {
+  int distance = PATH_PIX;
+  if (links->count > 2) distance = PATH_PXB;
+  for (int l=0; l<links->count; l++) {
+    // PHB if we go through 1 CPU, SYS if we go through 2 CPUs
+    if (links->list[l]->remNode->type == CPU) distance = (distance == PATH_PHB) ? PATH_SYS : PATH_PHB;
+  }
+  return distance;
+}
+
+NCCL_PARAM(P2pLevel, "P2P_LEVEL", -2);
+NCCL_PARAM(P2pDisable, "P2P_DISABLE", -2);
+
+ncclResult_t ncclTopoCheckP2p(struct ncclTopoSystem* system, int64_t id1, int64_t id2, int* p2p, int* distance) {
+  *p2p = 0;
+  if (ncclParamP2pDisable() == 1) return ncclSuccess;
+
+  // Get GPUs from topology
+  int g1, g2;
+  NCCLCHECK(ncclTopoIdToIndex(system, GPU, id1, &g1));
+  struct ncclTopoNode* gpu1 = system->nodes[GPU].nodes+g1;
+  NCCLCHECK(ncclTopoIdToIndex(system, GPU, id2, &g2));
+  struct ncclTopoLinkList* path = gpu1->paths[GPU]+g2;
+
+  // Check for NVLink/NVswitch
+  if (g1 != -1 && g2 != -1 && path->type == LINK_NVL) {
+    *distance = -1;
+    *p2p = 1;
+    return ncclSuccess;
+  }
+
+  // In general, use P2P whenever we can.
+  int p2pLevel = PATH_SYS;
+
+  // On Broadwell and earlier, P2P is worse than going to memory once per direction.
+  int arch, vendor, model;
+  NCCLCHECK(ncclTopoCpuType(system, &arch, &vendor, &model));
+  if (arch == NCCL_TOPO_CPU_ARCH_X86 &&
+      vendor == NCCL_TOPO_CPU_VENDOR_INTEL &&
+      model == NCCL_TOPO_CPU_TYPE_BDW &&
+      system->nodes[CPU].count == 1) p2pLevel = PATH_PHB;
+
+  // Also don't use P2P through ARM CPUs
+  if (arch == NCCL_TOPO_CPU_ARCH_ARM) p2pLevel = PATH_PHB;
+
+  // User override
+  if (ncclParamP2pLevel() != -2) p2pLevel = ncclParamP2pLevel();
+
+  // Compute the PCI distance and compare with the p2pLevel.
+  if ((*distance = pathDistance(path)) < p2pLevel) *p2p = 1;
+
+  return ncclSuccess;
+}
+
+NCCL_PARAM(NetGdrRead, "NET_GDR_READ", -2);
+NCCL_PARAM(NetGdrLevel, "NET_GDR_LEVEL", PATH_PHB);
+
+ncclResult_t ncclTopoCheckGdr(struct ncclTopoSystem* system, int64_t busId, int netDev, int read, int* useGdr) {
+  *useGdr = 0;
+
+  // Get GPU and NET
+  int n, g;
+  NCCLCHECK(ncclTopoIdToIndex(system, NET, netDev, &n));
+  struct ncclTopoNode* net = system->nodes[NET].nodes+n;
+  NCCLCHECK(ncclTopoIdToIndex(system, GPU, busId, &g));
+  struct ncclTopoNode* gpu = system->nodes[GPU].nodes+g;
+
+  // Check that both the NIC and GPUs support it
+  if (net->net.gdrSupport == 0) return ncclSuccess;
+  if (gpu->gpu.gdrSupport == 0) return ncclSuccess;
+
+  if (read) { // For reads (sends) only enable under certain conditions
+    int gdrReadParam = ncclParamNetGdrRead();
+    if (gdrReadParam == 0) return ncclSuccess;
+    if (gdrReadParam < 0) {
+      int nvlink = 0;
+      for (int i=0; i<system->nodes[GPU].count; i++) {
+        if (i == g) continue;
+        if (gpu->paths[GPU][i].type == LINK_NVL) {
+          nvlink = 1;
+          return ncclSuccess;
+        }
+      }
+      if (!nvlink) return ncclSuccess;
+    }
+  }
+
+  // Check if we are close enough that it makes sense to enable GDR
+  int netGdrLevel = ncclParamNetGdrLevel();
+  int distance = pathDistance(gpu->paths[NET]+n);
+  if (distance >= netGdrLevel) {
+    INFO(NCCL_NET,"GPU Direct RDMA Disabled for GPU %lx / HCA %d (distance %d >= %d)", busId, netDev, distance, netGdrLevel);
+    return ncclSuccess;
+  }
+
+  *useGdr = 1;
+  INFO(NCCL_NET,"GPU Direct RDMA Enabled for GPU %lx / HCA %d (distance %d < %d), read %d", busId, netDev, distance, netGdrLevel, read);
+  return ncclSuccess;
+}
+
 ncclResult_t ncclTopoComputePaths(struct ncclTopoSystem* system, struct ncclPeerInfo* peerInfos) {
   // Precompute paths between GPUs/NICs.
 
@@ -204,26 +304,29 @@ ncclResult_t ncclTopoComputePaths(struct ncclTopoSystem* system, struct ncclPeer
     // Compute paths to GPU g
     NCCLCHECK(ncclTopoSetPaths(system->nodes[GPU].nodes+g, system));
 
+    // Update path when we don't want to / can't use GPU Direct P2P
+    for (int p=0; p<system->nodes[GPU].count; p++) {
+      int p2p, distance;
+      NCCLCHECK(ncclTopoCheckP2p(system, system->nodes[GPU].nodes[g].id, system->nodes[GPU].nodes[p].id, &p2p, &distance));
+      if (p2p == 0) {
+        // Divert all traffic through the CPU
+        int cpu;
+        NCCLCHECK(getLocalCpu(system, g, &cpu));
+        NCCLCHECK(addCpuStep(system, cpu, GPU, p, GPU, g));
+      }
+    }
+
     if (peerInfos == NULL) continue;
-    // Update paths from GPUs p to GPU g when we can't or don't want to use P2P or even SHM
+    // Remove GPUs we can't talk to because of containers.
     struct ncclPeerInfo* dstInfo = peerInfos+system->nodes[GPU].nodes[g].gpu.rank;
     for (int p=0; p<system->nodes[GPU].count; p++) {
       if (p == g) continue;
       struct ncclPeerInfo* srcInfo = peerInfos+system->nodes[GPU].nodes[p].gpu.rank;
-      int p2p;
-      NCCLCHECK(ncclTransports[TRANSPORT_P2P].canConnect(&p2p, system, NULL, srcInfo, dstInfo));
-      if (p2p == 0) {
-        int shm;
-        NCCLCHECK(ncclTransports[TRANSPORT_SHM].canConnect(&shm, system, NULL, srcInfo, dstInfo));
-        if (shm == 1) {
-          // We cannot use GPU Direct, so we need all traffic to go through a CPU
-          int cpu;
-          NCCLCHECK(getLocalCpu(system, g, &cpu));
-          NCCLCHECK(addCpuStep(system, cpu, GPU, p, GPU, g));
-        } else {
-          // We cannot communicate with that peer.
-          system->nodes[GPU].nodes[p].paths[GPU][g].count = 0;
-        }
+      int shm;
+      NCCLCHECK(ncclTransports[TRANSPORT_SHM].canConnect(&shm, system, NULL, srcInfo, dstInfo));
+      if (shm == 0) {
+        // Mark this peer as inaccessible. We'll trim it later.
+        system->nodes[GPU].nodes[p].paths[GPU][g].count = 0;
       }
     }
   }
@@ -234,9 +337,11 @@ ncclResult_t ncclTopoComputePaths(struct ncclTopoSystem* system, struct ncclPeer
     NCCLCHECK(ncclTopoSetPaths(netNode, system));
 
     for (int g=0; g<system->nodes[GPU].count; g++) {
-      if (system->nodes[GPU].nodes[g].gpu.gdrSupport == 0 || netNode->net.gdrSupport == 0) {
-        // We cannot use GPU Direct RDMA, so we need all NIC<->GPU paths
-        // to go through a CPU
+      // Update path when we dont want to / can't use GPU Direct RDMA.
+      int gdr;
+      NCCLCHECK(ncclTopoCheckGdr(system, system->nodes[GPU].nodes[g].id, netNode->id, 0, &gdr));
+      if (gdr == 0) {
+        // We cannot use GPU Direct RDMA, divert all traffic through the CPU local to the GPU
         int localCpu;
         NCCLCHECK(getLocalCpu(system, g, &localCpu));
         NCCLCHECK(addCpuStep(system, localCpu, NET, n, GPU, g));
