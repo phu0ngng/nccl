@@ -268,7 +268,7 @@ ncclResult_t ncclTopoCheckGdr(struct ncclTopoSystem* system, int64_t busId, int 
         if (i == g) continue;
         if (gpu->paths[GPU][i].type == LINK_NVL) {
           nvlink = 1;
-          return ncclSuccess;
+          break;
         }
       }
       if (!nvlink) return ncclSuccess;
