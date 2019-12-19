@@ -76,8 +76,8 @@ static ncclResult_t xmlGetAttrInt(struct ncclXmlNode* node, const char* attrName
     WARN("Attribute %s of node %s not found\n", attrName, node->name);
     return ncclInternalError;
   }
-  if (node->attrs[index].type != KEY_TYPE_INT) {
-    WARN("Attribute %s of node %s is not an int (%d)\n", attrName, node->name, node->attrs[index].type);
+  if (node->attrs[index].type == KEY_TYPE_STR) {
+    WARN("Attribute %s of node %s is not an int (%s)\n", attrName, node->name, node->attrs[index].strValue);
     return ncclInternalError;
   }
   *value = node->attrs[index].intValue;
@@ -91,8 +91,8 @@ static ncclResult_t xmlGetAttrStr(struct ncclXmlNode* node, const char* attrName
     WARN("Attribute %s of node %s not found\n", attrName, node->name);
     return ncclInternalError;
   }
-  if (node->attrs[index].type != KEY_TYPE_STR) {
-    WARN("Attribute %s of node %s is not a string (%d)\n", attrName, node->name, node->attrs[index].type);
+  if (node->attrs[index].type == KEY_TYPE_INT) {
+    WARN("Attribute %s of node %s is not a string (%d)\n", attrName, node->name, node->attrs[index].intValue);
     return ncclInternalError;
   }
   *str = node->attrs[index].strValue;

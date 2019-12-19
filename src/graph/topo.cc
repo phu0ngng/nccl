@@ -280,7 +280,8 @@ ncclResult_t ncclTopoAddNet(struct ncclXmlNode* xmlNet, struct ncclTopoSystem* s
   int gbps = 0;
   NCCLCHECK(xmlGetAttrIndex(xmlNet, "speed", &index));
   if (index != -1) {
-    NCCLCHECK(xmlGetAttrInt(xmlNet, "speed", &gbps));
+    NCCLCHECK(xmlGetAttrStr(xmlNet, "speed", &str));
+    if (sscanf(str, "%d", &gbps) == EOF) gbps = 0;
   }
   NCCLCHECK(xmlGetAttrIndex(xmlNet, "link_rate", &index));
   if (index != -1) {
