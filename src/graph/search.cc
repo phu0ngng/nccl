@@ -515,16 +515,17 @@ ncclResult_t ncclTopoGetChannelFromXml(struct ncclXmlNode *xmlChannel, int c, st
   }
   return ncclSuccess;
 }
-ncclResult_t ncclTopoGetGraphFromXml(struct ncclXmlNode *xmlGraph, struct ncclTopoSystem* system, struct ncclTopoGraph* graph) {
-  int pattern;
-  NCCLCHECK(xmlGetAttrInt(xmlGraph, "pattern", &pattern));
-  if ((graph->pattern == NCCL_TOPO_PATTERN_RING) ^ (pattern == NCCL_TOPO_PATTERN_RING)) return ncclSuccess;
+ncclResult_t ncclTopoGetGraphFromXmlSub(struct ncclXmlNode *xmlGraph, struct ncclTopoSystem* system, struct ncclTopoGraph* graph) {
+  int id;
+  NCCLCHECK(xmlGetAttrInt(xmlGraph, "id", &id));
+  if (graph->id != id) return ncclSuccess;
+
   int crossNic;
   NCCLCHECK(xmlGetAttrInt(xmlGraph, "crossnic", &crossNic));
   if (graph->crossNic == 0 && crossNic == 1) return ncclSuccess;
-
-  graph->pattern = pattern;
   graph->crossNic = crossNic;
+
+  NCCLCHECK(xmlGetAttrInt(xmlGraph, "pattern", &graph->pattern));
   NCCLCHECK(xmlGetAttrInt(xmlGraph, "nchannels", &graph->nChannels));
   NCCLCHECK(xmlGetAttrInt(xmlGraph, "speedintra", &graph->speedIntra));
   NCCLCHECK(xmlGetAttrInt(xmlGraph, "speedinter", &graph->speedInter));
@@ -539,12 +540,13 @@ ncclResult_t ncclTopoGetGraphFromXml(struct ncclXmlNode *xmlGraph, struct ncclTo
   }
   return ncclSuccess;
 }
-ncclResult_t ncclTopoGetGraphsFromXml(struct ncclXmlNode *xmlGraphs, struct ncclTopoSystem* system, struct ncclTopoGraph* graph) {
+ncclResult_t ncclTopoGetGraphFromXml(struct ncclXmlNode *xmlGraphs, struct ncclTopoSystem* system, struct ncclTopoGraph* graph) {
   for (int s=0; s<xmlGraphs->nSubs; s++) {
-    NCCLCHECK(ncclTopoGetGraphFromXml(xmlGraphs->subs[s], system, graph));
+    NCCLCHECK(ncclTopoGetGraphFromXmlSub(xmlGraphs->subs[s], system, graph));
   }
   return ncclSuccess;
 }
+
 /* And the reverse : graph->xml */
 ncclResult_t ncclTopoGetXmlFromChannel(struct ncclTopoGraph* graph, int c, struct ncclTopoSystem* system, struct ncclXml *xml, struct ncclXmlNode* parent) {
   struct ncclXmlNode* xmlChannel;
@@ -578,6 +580,7 @@ ncclResult_t ncclTopoGetXmlFromChannel(struct ncclTopoGraph* graph, int c, struc
 ncclResult_t ncclTopoGetXmlFromGraph(struct ncclTopoGraph* graph, struct ncclTopoSystem* system, struct ncclXml *xml, struct ncclXmlNode* parent) {
   struct ncclXmlNode* xmlGraph;
   NCCLCHECK(xmlAddNode(xml, parent, "graph", &xmlGraph));
+  NCCLCHECK(xmlSetAttrInt(xmlGraph, "id", graph->id));
   NCCLCHECK(xmlSetAttrInt(xmlGraph, "pattern", graph->pattern));
   NCCLCHECK(xmlSetAttrInt(xmlGraph, "crossnic", graph->crossNic));
   NCCLCHECK(xmlSetAttrInt(xmlGraph, "nchannels", graph->nChannels));
@@ -594,13 +597,14 @@ ncclResult_t ncclTopoGetXmlFromGraph(struct ncclTopoGraph* graph, struct ncclTop
   }
   return ncclSuccess;
 }
-ncclResult_t ncclTopoGetXmlFromGraphs(struct ncclTopoGraph* ringGraph, struct ncclTopoGraph* treeGraph, struct ncclTopoSystem* system, struct ncclXml *xml) {
+ncclResult_t ncclTopoGetXmlFromGraphs(int ngraphs, struct ncclTopoGraph** graphs, struct ncclTopoSystem* system, struct ncclXml *xml) {
   xml->maxIndex = 0;
   struct ncclXmlNode* xmlGraphs;
   NCCLCHECK(xmlAddNode(xml, NULL, "graphs", &xmlGraphs));
   NCCLCHECK(xmlSetAttrInt(xmlGraphs, "version", NCCL_GRAPH_XML_VERSION));
-  NCCLCHECK(ncclTopoGetXmlFromGraph(ringGraph, system, xml, xmlGraphs));
-  NCCLCHECK(ncclTopoGetXmlFromGraph(treeGraph, system, xml, xmlGraphs));
+  for (int g=0; g<ngraphs; g++) {
+    NCCLCHECK(ncclTopoGetXmlFromGraph(graphs[g], system, xml, xmlGraphs));
+  }
   return ncclSuccess;
 }
 
@@ -622,7 +626,7 @@ ncclResult_t ncclTopoCompute(ncclTopoSystem* system, struct ncclTopoGraph* graph
     struct ncclXml* xml;
     NCCLCHECK(ncclCalloc(&xml, 1));
     NCCLCHECK(ncclTopoGetXmlGraphFromFile(str, xml));
-    NCCLCHECK(ncclTopoGetGraphsFromXml(xml->nodes, system, graph));
+    NCCLCHECK(ncclTopoGetGraphFromXml(xml->nodes, system, graph));
     free(xml);
     if (graph->nChannels > 0) return ncclSuccess;
   }
@@ -789,12 +793,12 @@ ncclResult_t ncclTopoPrintGraph(struct ncclTopoSystem* system, struct ncclTopoGr
   return ncclSuccess;
 }
 
-ncclResult_t ncclTopoDumpGraphs(struct ncclTopoSystem* system, struct ncclTopoGraph* ringGraph, struct ncclTopoGraph* treeGraph) {
+ncclResult_t ncclTopoDumpGraphs(struct ncclTopoSystem* system, int ngraphs, struct ncclTopoGraph** graphs) {
   char* str = getenv("NCCL_GRAPH_DUMP_FILE");
   if (str) {
     struct ncclXml* xml;
     NCCLCHECK(ncclCalloc(&xml, 1));
-    NCCLCHECK(ncclTopoGetXmlFromGraphs(ringGraph, treeGraph, system, xml));
+    NCCLCHECK(ncclTopoGetXmlFromGraphs(ngraphs, graphs, system, xml));
     NCCLCHECK(ncclTopoDumpXmlToFile(str, xml));
     free(xml);
   }

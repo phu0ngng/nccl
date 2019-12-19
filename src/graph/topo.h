@@ -114,8 +114,8 @@ ncclResult_t ncclTopoPrintPaths(struct ncclTopoSystem* system);
 ncclResult_t ncclTopoLoadSystem(const char* xmlTopoFile, struct ncclTopoSystem* system);
 
 ncclResult_t ncclTopoGetSystemFromXml(struct ncclXml* xml, struct ncclTopoSystem** topoSystem);
-ncclResult_t ncclTopoGetGraphsFromXml(struct ncclXmlNode *xmlGraphs, struct ncclTopoSystem* system, struct ncclTopoGraph* graph);
-ncclResult_t ncclTopoGetXmlFromGraphs(struct ncclTopoGraph* ringGraph, struct ncclTopoGraph* treeGraph, struct ncclTopoSystem* system, struct ncclXml *xml);
+ncclResult_t ncclTopoGetGraphFromXml(struct ncclXmlNode *xmlGraphs, struct ncclTopoSystem* system, struct ncclTopoGraph* graph);
+ncclResult_t ncclTopoGetXmlFromGraphs(int ngraphs, struct ncclTopoGraph** graphs, struct ncclTopoSystem* system, struct ncclXml *xml);
 
 static ncclResult_t ncclTopoIdToIndex(struct ncclTopoSystem* system, int type, int64_t id, int* index) {
   *index = -1;

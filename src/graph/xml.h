@@ -9,7 +9,7 @@
 
 // A few constraints to make the implementation easy
 #define MAX_STR_LEN 256
-#define MAX_ATTR_COUNT 8
+#define MAX_ATTR_COUNT 16
 #define MAX_SUBS 32
 #define MAX_NODES 1024
 

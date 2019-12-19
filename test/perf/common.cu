@@ -810,10 +810,21 @@ int main(int argc, char* argv[]) {
     }
   }
 #ifdef MPI_SUPPORT
+#ifdef MPI_COLLNET_SUPPORT
+  int threadProvided;
+  MPI_Init_thread(&argc, &argv, MPI_THREAD_MULTIPLE, &threadProvided);
+  printf("Thread provided = %d\n", threadProvided);
+#else
   MPI_Init(&argc, &argv);
+#endif
 #endif
   return run();
 }
+
+#ifdef MPI_COLLNET_SUPPORT
+extern "C"
+void ncclCollNetMpiHook(MPI_Comm comm);
+#endif
 
 testResult_t run() {
   int nProcs = 1, proc = 0;
@@ -831,6 +842,12 @@ testResult_t run() {
     if (p == proc) break;
     if (hostHashs[p] == hostHashs[proc]) localRank++;
   }
+#ifdef MPI_COLLNET_SUPPORT
+  MPI_Comm master_comm;
+  int color = localRank;
+  MPI_Comm_split(MPI_COMM_WORLD, color, proc, &master_comm);
+  ncclCollNetMpiHook(master_comm);
+#endif
 #endif
   is_main_thread = (proc == 0) ? 1 : 0;
 

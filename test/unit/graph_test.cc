@@ -26,6 +26,7 @@ uint64_t getTime() {
 
 int checkTopo(const char* xmlTopoFile, const char* xmlGraphFile, const char* platform, int inter) {
   struct ncclXml* xmlSystem;
+  INFO(NCCL_GRAPH, "Loading platform %s", platform);
   CHECK(ncclCalloc(&xmlSystem, 1));
   CHECK(ncclTopoGetXmlFromFile(xmlTopoFile, xmlSystem));
   struct ncclTopoSystem* system;
@@ -42,16 +43,9 @@ int checkTopo(const char* xmlTopoFile, const char* xmlGraphFile, const char* pla
   CHECK(ncclTopoSearchInit(system));
   CHECK(ncclTopoPrint(system));
 
-  struct ncclXml* xmlGraph;
-  CHECK(ncclCalloc(&xmlGraph, 1));
-  if (ncclTopoGetXmlGraphFromFile(xmlGraphFile, xmlGraph) == ncclSystemError) {
-    printf(" %10s/%s  Error : no graph in %s\n", platform, inter ? "Inter":"Intra", xmlGraphFile);
-    return 1;
-  }
-  struct ncclTopoGraph refRingGraph, refTreeGraph;
-
   struct ncclTopoGraph ringGraph;
   memset(&ringGraph, 0, sizeof(ringGraph));
+  ringGraph.id = 0;
   ringGraph.pattern = NCCL_TOPO_PATTERN_RING;
   ringGraph.crossNic = 2;
   ringGraph.minChannels = 1;
@@ -59,36 +53,52 @@ int checkTopo(const char* xmlTopoFile, const char* xmlGraphFile, const char* pla
 
   struct ncclTopoGraph treeGraph;
   memset(&treeGraph, 0, sizeof(treeGraph));
+  treeGraph.id = 1;
   treeGraph.pattern = NCCL_TOPO_PATTERN_SPLIT_TREE;
   treeGraph.crossNic = 2;
 
-  /* Get reference graphs from XML */
-  memcpy(&refRingGraph, &ringGraph, sizeof(ringGraph));
-  memcpy(&refTreeGraph, &treeGraph, sizeof(treeGraph));
-  CHECK(ncclTopoGetGraphsFromXml(xmlGraph->nodes, system, &refRingGraph));
-  CHECK(ncclTopoGetGraphsFromXml(xmlGraph->nodes, system, &refTreeGraph));
+  struct ncclTopoGraph cNetGraph;
+  memset(&cNetGraph, 0, sizeof(cNetGraph));
+  cNetGraph.id = 2;
+  cNetGraph.pattern = NCCL_TOPO_PATTERN_TREE;
+  cNetGraph.crossNic = 2;
 
   /* Compute */
   uint64_t computeTime = getTime();
   CHECK(ncclTopoCompute(system, &ringGraph));
   treeGraph.minChannels = treeGraph.maxChannels = ringGraph.nChannels;
   CHECK(ncclTopoCompute(system, &treeGraph));
+  cNetGraph.minChannels = cNetGraph.maxChannels = ringGraph.nChannels;
+  CHECK(ncclTopoCompute(system, &cNetGraph));
   computeTime = getTime() - computeTime;
 
-  /* We do not check those */
-  refTreeGraph.minChannels = refTreeGraph.maxChannels = treeGraph.minChannels;
-  refTreeGraph.nHops = treeGraph.nHops;
-  refRingGraph.nHops = ringGraph.nHops;
+  /* Get reference graphs from XML */
+  struct ncclXml* xmlGraph;
+  CHECK(ncclCalloc(&xmlGraph, 1));
+  if (ncclTopoGetXmlGraphFromFile(xmlGraphFile, xmlGraph) == ncclSystemError) {
+    printf(" %10s/%s  Error : no graph in %s\n", platform, inter ? "Inter":"Intra", xmlGraphFile);
+    return 1;
+  }
+  struct ncclTopoGraph refRingGraph, refTreeGraph, refCNetGraph;
+  memcpy(&refRingGraph, &ringGraph, sizeof(ringGraph));
+  memcpy(&refTreeGraph, &treeGraph, sizeof(treeGraph));
+  memcpy(&refCNetGraph, &cNetGraph, sizeof(cNetGraph));
+  // Get graphs from XML. We select the right graph based on the id.
+  CHECK(ncclTopoGetGraphFromXml(xmlGraph->nodes, system, &refRingGraph));
+  CHECK(ncclTopoGetGraphFromXml(xmlGraph->nodes, system, &refTreeGraph));
+  CHECK(ncclTopoGetGraphFromXml(xmlGraph->nodes, system, &refCNetGraph));
 
   /* Compare */
   int errors = 0;
   if (memcmp(&treeGraph, &refTreeGraph, sizeof(struct ncclTopoGraph)) != 0 ||
-      memcmp(&ringGraph, &refRingGraph, sizeof(struct ncclTopoGraph)) != 0) {
+      memcmp(&ringGraph, &refRingGraph, sizeof(struct ncclTopoGraph)) != 0 ||
+      memcmp(&cNetGraph, &refCNetGraph, sizeof(struct ncclTopoGraph)) != 0) {
     char dumpFile[1024];
     sprintf(dumpFile, "%s.dump", xmlGraphFile);
     struct ncclXml* xml;
     CHECK(ncclCalloc(&xml, 1));
-    CHECK(ncclTopoGetXmlFromGraphs(&ringGraph, &treeGraph, system, xml));
+    struct ncclTopoGraph* graphs[3] = { &ringGraph, &treeGraph, &cNetGraph };
+    CHECK(ncclTopoGetXmlFromGraphs(3, graphs, system, xml));
     CHECK(ncclTopoDumpXmlToFile(dumpFile, xml));
     free(xml);
     int fd0 = open(xmlGraphFile, O_RDONLY);
@@ -125,9 +135,10 @@ int checkTopo(const char* xmlTopoFile, const char* xmlGraphFile, const char* pla
     }
   }
 
-  printf(" %10s/%s  %2dx%3d/%3d | %2dx%3d/%3d", platform, inter ? "Inter":"Intra",
+  printf(" %10s/%s  %2dx%3d/%3d | %2dx%3d/%3d | %2dx%3d/%3d", platform, inter ? "Inter":"Intra",
       ringGraph.nChannels, ringGraph.speedIntra, ringGraph.speedInter,
-      treeGraph.nChannels, treeGraph.speedIntra, treeGraph.speedInter);
+      treeGraph.nChannels, treeGraph.speedIntra, treeGraph.speedInter,
+      cNetGraph.nChannels, cNetGraph.speedIntra, cNetGraph.speedInter);
   if (errors > 0) {
     printf(" FAILED %5ld ms\n", computeTime/1000);
   } else if (computeTime > 1000000) {

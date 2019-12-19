@@ -103,7 +103,7 @@ ncclResult_t netRecvSetup(struct ncclTopoSystem* topo, struct ncclTopoGraph* gra
   return ncclSuccess;
 }
 
-ncclResult_t netSendConnect(struct ncclConnect* connectInfo, struct ncclConnector* send) {
+ncclResult_t netSendConnect(struct ncclConnect* connectInfo, int nranks, int rank, struct ncclConnector* send) {
   // Setup device pointers
   struct netSendResources* resources = (struct netSendResources*)send->transportResources;
 
@@ -112,6 +112,7 @@ ncclResult_t netSendConnect(struct ncclConnect* connectInfo, struct ncclConnecto
   send->conn.buff = recvMem->buff;
   send->conn.llBuff = resources->devHostRecvMem->llBuff;
   send->conn.ll128Buff = recvMem->ll128Buff;
+  send->conn.direct |= resources->useGdr ? NCCL_DIRECT_NIC : 0;
 
   // Head/Tail/Opcount/Fifos are always on host
   send->conn.tail = &resources->devHostRecvMem->tail;
@@ -136,7 +137,7 @@ ncclResult_t netSendConnect(struct ncclConnect* connectInfo, struct ncclConnecto
 }
 
 /* Connect to this peer */
-ncclResult_t netRecvConnect(struct ncclConnect* connectInfo, struct ncclConnector* recv) {
+ncclResult_t netRecvConnect(struct ncclConnect* connectInfo, int nranks, int rank, struct ncclConnector* recv) {
   // Setup device pointers
   struct netRecvResources* resources = (struct netRecvResources*)recv->transportResources;
 
@@ -145,6 +146,7 @@ ncclResult_t netRecvConnect(struct ncclConnect* connectInfo, struct ncclConnecto
   recv->conn.buff = recvMem->buff;
   recv->conn.llBuff = recvMem->llBuff;
   recv->conn.ll128Buff = recvMem->ll128Buff;
+  recv->conn.direct |= resources->useGdr ? NCCL_DIRECT_NIC : 0;
 
   // Head/Tail/Opcount are always on host
   recv->conn.tail = &resources->devHostRecvMem->tail;

@@ -65,6 +65,7 @@ ncclResult_t ncclTopoSearchInit(struct ncclTopoSystem* system);
 #define NCCL_TOPO_PATTERN_RING 4            // Ring
 struct ncclTopoGraph {
   // Input / output
+  int id; // ring : 0, tree : 1, collnet : 2
   int pattern;
   int crossNic;
   int minChannels;
@@ -83,7 +84,7 @@ struct ncclTopoGraph {
 ncclResult_t ncclTopoCompute(struct ncclTopoSystem* system, struct ncclTopoGraph* graph);
 
 ncclResult_t ncclTopoPrintGraph(struct ncclTopoSystem* system, struct ncclTopoGraph* graph);
-ncclResult_t ncclTopoDumpGraphs(struct ncclTopoSystem* system, struct ncclTopoGraph* ringGraph, struct ncclTopoGraph* treeGraph);
+ncclResult_t ncclTopoDumpGraphs(struct ncclTopoSystem* system, int ngraphs, struct ncclTopoGraph** graphs);
 
 struct ncclTopoRanks {
   int ringRecv[MAXCHANNELS];
@@ -97,12 +98,14 @@ struct ncclTopoRanks {
 };
 
 ncclResult_t ncclTopoPreset(struct ncclComm* comm,
-    struct ncclTopoGraph* treeGraph, struct ncclTopoGraph* ringGraph,
+    struct ncclTopoGraph* treeGraph, struct ncclTopoGraph* ringGraph, struct ncclTopoGraph* collNetGraph,
     struct ncclTopoRanks* topoRanks);
 
 ncclResult_t ncclTopoPostset(struct ncclComm* comm, int* firstRanks,
     struct ncclTopoRanks** allTopoRanks, int* rings);
 
-ncclResult_t ncclSetThresholds(struct ncclComm* comm, int minCompCap, int maxCompCap, struct ncclTopoGraph* treeGraph, struct ncclTopoGraph* ringGraph);
+ncclResult_t connectCollNet(struct ncclComm* comm, struct ncclTopoGraph* collNetGraph, int rank);
+
+ncclResult_t ncclSetThresholds(struct ncclComm* comm, int minCompCap, int maxCompCap, struct ncclTopoGraph* treeGraph, struct ncclTopoGraph* ringGraph, struct ncclTopoGraph* collNetGraph);
 
 #endif
