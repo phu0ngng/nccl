@@ -48,7 +48,7 @@ static char* replay_file = NULL;
 
 // Side computation constants
 #define COMP_SIZE (1 << 22)
-#define NUM_BLOCKS 16
+#define NUM_BLOCKS 32
 
 double parsesize(char *value) {
     long long int units;
@@ -111,9 +111,9 @@ void deltaKern(void* A_, void* B_, size_t count, double* max) {
   const T* A = (const T*)A_;
   const T* B = (const T*)B_;
   __shared__ double temp[BSIZE];
-  int tid = threadIdx.x;
+  int tid = blockIdx.x*gridDim.x + threadIdx.x;
   double locmax = 0.0;
-  for(int i=tid; i<count; i+=blockDim.x) {
+  for(int i=tid; i<count; i+=blockDim.x*gridDim.x) {
 
     double delta = absDiff(A[i], B[i]);
     if( delta > locmax ) {
@@ -124,6 +124,7 @@ void deltaKern(void* A_, void* B_, size_t count, double* max) {
     }
   }
 
+  tid = threadIdx.x;
   temp[tid] = locmax;
   for(int stride = BSIZE/2; stride > 1; stride>>=1) {
     __syncthreads();
@@ -132,34 +133,34 @@ void deltaKern(void* A_, void* B_, size_t count, double* max) {
   }
   __syncthreads();
   if( threadIdx.x == 0)
-    *max = temp[0] > temp[1] ? temp[0] : temp[1];
+    max[blockIdx.x] = temp[0] > temp[1] ? temp[0] : temp[1];
 }
-
 
 testResult_t CheckDelta(void* expected, void* results, size_t count, ncclDataType_t type, double* devmax) {
   switch (type) {
     case ncclHalf:
-      deltaKern<half, 512><<<1, 512>>>(results, expected, count, devmax); break;
+      deltaKern<half, 512><<<NUM_BLOCKS, 512>>>(results, expected, count, devmax); break;
     case ncclFloat:
-      deltaKern<float, 512><<<1, 512>>>(results, expected, count, devmax); break;
+      deltaKern<float, 512><<<NUM_BLOCKS, 512>>>(results, expected, count, devmax); break;
     case ncclDouble:
-      deltaKern<double, 512><<<1, 512>>>(results, expected, count, devmax); break;
+      deltaKern<double, 512><<<NUM_BLOCKS, 512>>>(results, expected, count, devmax); break;
 
     case ncclChar:
 #if NCCL_MAJOR >= 2
     case ncclUint8:
 #endif
-      deltaKern<uint8_t, 512><<<1, 512>>>(results, expected, count, devmax); break;
+      deltaKern<uint8_t, 512><<<NUM_BLOCKS, 512>>>(results, expected, count, devmax); break;
     case ncclInt:
 #if NCCL_MAJOR >= 2
     case ncclUint32:
 #endif
-      deltaKern<uint32_t, 512><<<1, 512>>>(results, expected, count, devmax); break;
+      deltaKern<uint32_t, 512><<<NUM_BLOCKS, 512>>>(results, expected, count, devmax); break;
     case ncclInt64:
     case ncclUint64:
-      deltaKern<uint64_t, 512><<<1, 512>>>(results, expected, count, devmax); break;
+      deltaKern<uint64_t, 512><<<NUM_BLOCKS, 512>>>(results, expected, count, devmax); break;
   }
   CUDACHECK(cudaDeviceSynchronize());
+  for (int i=1; i<NUM_BLOCKS; i++) devmax[0] = std::max(devmax[0], devmax[i]);
   return testSuccess;
 }
 
@@ -424,9 +425,10 @@ testResult_t completeColl(struct threadArgs* args) {
 
 testResult_t BenchTime(struct threadArgs* args, ncclDataType_t type, ncclRedOp_t op, int root, int in_place) {
   size_t count = args->nbytes / wordSize(type);
-
-  // Initialize sendbuffs, recvbuffs and expected
-  TESTCHECK(args->collTest->initData(args, type, op, root, 99, in_place));
+  if (datacheck) {
+    // Initialize sendbuffs, recvbuffs and expected
+    TESTCHECK(args->collTest->initData(args, type, op, root, 99, in_place));
+  }
 
   // Sync
   TESTCHECK(startColl(args, type, op, root, in_place, 0));
@@ -932,7 +934,7 @@ testResult_t run() {
   int errors[nThreads];
   double bw[nThreads];
   double* delta;
-  CUDACHECK(cudaHostAlloc(&delta, sizeof(double)*nThreads, cudaHostAllocPortable | cudaHostAllocMapped));
+  CUDACHECK(cudaHostAlloc(&delta, sizeof(double)*nThreads*NUM_BLOCKS, cudaHostAllocPortable | cudaHostAllocMapped));
   int bw_count[nThreads];
   for (int t=0; t<nThreads; t++) {
     bw[t] = 0.0;
@@ -984,7 +986,7 @@ testResult_t run() {
     threads[t].args.sync = (volatile int*)sync;
     threads[t].args.sync_idx = 0;
     threads[t].args.deltaThreads = delta;
-    threads[t].args.deltaHost = (delta + t);
+    threads[t].args.deltaHost = (delta + t*NUM_BLOCKS);
     threads[t].args.delta = delta;
     threads[t].args.errors=errors+t;
     threads[t].args.bw=bw+t;
