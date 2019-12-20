@@ -240,8 +240,10 @@ ncclResult_t ncclTopoSearchNextGpuSort(struct ncclTopoSystem* system, struct ncc
 
 ncclResult_t ncclTopoSearchRec(struct ncclTopoSystem* system, struct ncclTopoGraph* graph, struct ncclTopoGraph* saveGraph, int* time);
 
-#define NCCL_SEARCH_TIMEOUT (1ULL<<19) // This should get contain all search within a second or so.
-#define NCCL_SEARCH_TIMEOUT_SAMECHANNELS (1ULL<<10) // This should get contain all search within a second or so.
+// Try to keep all searchs within one second
+#define NCCL_SEARCH_TIMEOUT (1ULL<<19)
+#define NCCL_SEARCH_TIMEOUT_TREE (1ULL<<17)
+#define NCCL_SEARCH_TIMEOUT_SAMECHANNELS (1ULL<<10)
 
 #define FORCED_ORDER_PCI 1
 #define FORCED_ORDER_REPLAY 2
@@ -642,7 +644,8 @@ ncclResult_t ncclTopoCompute(ncclTopoSystem* system, struct ncclTopoGraph* graph
   int pass = 1;
 
 search:
-  int time = tmpGraph.sameChannels ? NCCL_SEARCH_TIMEOUT_SAMECHANNELS : NCCL_SEARCH_TIMEOUT;
+  int time = tmpGraph.sameChannels ? NCCL_SEARCH_TIMEOUT_SAMECHANNELS :
+    tmpGraph.pattern == NCCL_TOPO_PATTERN_TREE ? NCCL_SEARCH_TIMEOUT_TREE : NCCL_SEARCH_TIMEOUT;
   tmpGraph.nChannels = 0;
   NCCLCHECK(ncclTopoSearchRec(system, &tmpGraph, graph, &time));
 #if 0

@@ -174,6 +174,7 @@ int main(int argc, const char* argv[]) {
     RUN("PCI-1R");
     RUN("PCI-2R");
     RUN("PCI-NV");
+#ifdef __x86_64__
     RUN("DGX-1P");
     RUN("DGX-1P-4G");
     RUN("DGX-1V");
@@ -184,6 +185,7 @@ int main(int argc, const char* argv[]) {
     RUN("Azure");
     RUN("FB-BUG");
     RUN("DGX-1V-1G");
+#endif
     RUN("P9-6V");
     RUN("P9-4V");
   }
