@@ -204,7 +204,7 @@ ncclResult_t connectCollNet(struct ncclComm* comm, struct ncclTopoGraph* collNet
       channel->collTreeUp.down[0] = channel->collTreeDn.down[0] = -1;
     }
     channel->collTreeUp.depth = channel->collTreeDn.depth = depth;
-    INFO(NCCL_INIT, "CollNet Channel %d rank %d up %d down %d", c, rank, channel->collTreeUp.up, channel->collTreeUp.down[0]);
+    INFO(NCCL_GRAPH, "CollNet Channel %d rank %d up %d down %d", c, rank, channel->collTreeUp.up, channel->collTreeUp.down[0]);
   }
   int recvIndex = 0;  // recv GPU index is always 0
   int recvEndIndex = (recvIndex+comm->localRanks-1)%comm->localRanks;
@@ -218,7 +218,7 @@ ncclResult_t connectCollNet(struct ncclComm* comm, struct ncclTopoGraph* collNet
       channel->collTreeUp.down[0] = channel->collTreeDn.down[0] = -1;
     }
     channel->collTreeUp.depth = channel->collTreeDn.depth = depth;
-    INFO(NCCL_INIT, "CollNet Channel %d rank %d up %d down %d", c, rank, channel->collTreeDn.up, channel->collTreeDn.down[0]);
+    INFO(NCCL_GRAPH, "CollNet Channel %d rank %d up %d down %d", comm->nChannels/2+c, rank, channel->collTreeDn.up, channel->collTreeDn.down[0]);
   }
   return ncclSuccess;
 }
