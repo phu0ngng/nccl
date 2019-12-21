@@ -368,60 +368,61 @@ ncclResult_t ncclTopoSearchRecNet(struct ncclTopoSystem* system, struct ncclTopo
   for (int n=0; n<system->nodes[NET].count; n++) {
     struct ncclTopoNode* net = system->nodes[NET].nodes+n;
     struct ncclTopoNode* gpu;
-    if (net->net.width >= speed) {
-      graph->inter[graph->nChannels*2] = net->id;
-      for (int i=0; i<system->nodes[NET].count; i++) {
-        if ((system->nodes[NET].nodes[i].net.asic == net->net.asic) &&
-            (system->nodes[NET].nodes[i].net.port == net->net.port)) {
-          system->nodes[NET].nodes[i].net.width -= speed;
-        }
+    if (graph->collNet && net->net.collSupport == 0) continue;
+    if (net->net.width < speed) continue;
+
+    graph->inter[graph->nChannels*2] = net->id;
+    for (int i=0; i<system->nodes[NET].count; i++) {
+      if ((system->nodes[NET].nodes[i].net.asic == net->net.asic) &&
+          (system->nodes[NET].nodes[i].net.port == net->net.port)) {
+        system->nodes[NET].nodes[i].net.width -= speed;
+      }
+    }
+
+    // Then try to replay the last channel if sameChannels is 1
+    if (graph->nChannels > 0 && graph->sameChannels == 1) {
+      int g;
+      NCCLCHECK(ncclTopoReplayGetGpu(system, graph, -1, &g));
+      NCCLCHECK(ncclTopoSearchTryGpu(system, graph, saveGraph, 0, backToNet, backToFirstRank, FORCED_ORDER_REPLAY, time, NET, n, g));
+    } else {
+      if (graph->nChannels == 0) {
+        // Always try the PCI order first to set a reference
+        NCCLCHECK(ncclTopoSearchTryGpu(system, graph, saveGraph, 0, backToNet, backToFirstRank, FORCED_ORDER_PCI, time, NET, n, 0));
       }
 
-      // Then try to replay the last channel if sameChannels is 1
-      if (graph->nChannels > 0 && graph->sameChannels == 1) {
-        int g;
-        NCCLCHECK(ncclTopoReplayGetGpu(system, graph, -1, &g));
-        NCCLCHECK(ncclTopoSearchTryGpu(system, graph, saveGraph, 0, backToNet, backToFirstRank, FORCED_ORDER_REPLAY, time, NET, n, g));
-      } else {
-        if (graph->nChannels == 0) {
-          // Always try the PCI order first to set a reference
-          NCCLCHECK(ncclTopoSearchTryGpu(system, graph, saveGraph, 0, backToNet, backToFirstRank, FORCED_ORDER_PCI, time, NET, n, 0));
+      // Then try the most local GPUs
+      int maxWidth = 0, minHops = 0xfffffff;
+      struct ncclTopoLinkList* paths = net->paths[GPU];
+      for (int g=0; g<system->nodes[GPU].count; g++) {
+        if (paths[g].width > maxWidth) {
+          maxWidth = paths[g].width;
+          minHops = paths[g].count;
+        } else if (paths[g].width == maxWidth && paths[g].count < minHops) {
+          minHops = paths[g].count;
         }
-
-        // Then try the most local GPUs
-        int maxWidth = 0, minHops = 0xfffffff;
-        struct ncclTopoLinkList* paths = net->paths[GPU];
-        for (int g=0; g<system->nodes[GPU].count; g++) {
-          if (paths[g].width > maxWidth) {
-            maxWidth = paths[g].width;
-            minHops = paths[g].count;
-          } else if (paths[g].width == maxWidth && paths[g].count < minHops) {
-            minHops = paths[g].count;
-          }
-        }
-        if (maxWidth >= speed) {
-          // In the first loop, avoid using GPUs in both directions between channels (one channel
-          // sending from that GPU and one channel receiving to that GPU), since that usually leads
-          // to lower BW.
-          for (int tryGpuBidir=0; tryGpuBidir<2; tryGpuBidir++) {
-            for (int g=0; g<system->nodes[GPU].count; g++) {
-              if (paths[g].width == maxWidth && paths[g].count == minHops) {
-                gpu = system->nodes[GPU].nodes+g;
-                int gpuUsed = gpuPciWidth(gpu) > 0 ? 0 : 1;
-                if (tryGpuBidir == gpuUsed) {
-                  NCCLCHECK(ncclTopoSearchTryGpu(system, graph, saveGraph, 0, backToNet, backToFirstRank, 0, time, NET, n, g));
-                }
+      }
+      if (maxWidth >= speed) {
+        // In the first loop, avoid using GPUs in both directions between channels (one channel
+        // sending from that GPU and one channel receiving to that GPU), since that usually leads
+        // to lower BW.
+        for (int tryGpuBidir=0; tryGpuBidir<2; tryGpuBidir++) {
+          for (int g=0; g<system->nodes[GPU].count; g++) {
+            if (paths[g].width == maxWidth && paths[g].count == minHops) {
+              gpu = system->nodes[GPU].nodes+g;
+              int gpuUsed = gpuPciWidth(gpu) > 0 ? 0 : 1;
+              if (tryGpuBidir == gpuUsed) {
+                NCCLCHECK(ncclTopoSearchTryGpu(system, graph, saveGraph, 0, backToNet, backToFirstRank, 0, time, NET, n, g));
               }
             }
           }
         }
       }
+    }
 
-      for (int i=0; i<system->nodes[NET].count; i++) {
-        if ((system->nodes[NET].nodes[i].net.asic == net->net.asic) &&
-            (system->nodes[NET].nodes[i].net.port == net->net.port)) {
-          system->nodes[NET].nodes[i].net.width += speed;
-        }
+    for (int i=0; i<system->nodes[NET].count; i++) {
+      if ((system->nodes[NET].nodes[i].net.asic == net->net.asic) &&
+          (system->nodes[NET].nodes[i].net.port == net->net.port)) {
+        system->nodes[NET].nodes[i].net.width += speed;
       }
     }
   }
@@ -760,7 +761,7 @@ done:
     goto search;
   }
 
-  if (graph->nChannels == 0) {
+  if (graph->nChannels == 0 && graph->pattern == NCCL_TOPO_PATTERN_RING) {
     WARN("Could not find a path for pattern %d, falling back to simple order\n", graph->pattern);
     for (int i=0; i<ngpus; i++) graph->intra[i] = system->nodes[GPU].nodes[i].gpu.rank;
     graph->inter[0] = graph->inter[1] = 0;

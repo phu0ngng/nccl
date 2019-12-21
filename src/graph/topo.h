@@ -80,6 +80,7 @@ struct ncclTopoNode {
       int port;
       int width;
       int gdrSupport;
+      int collSupport;
     }net;
     struct {
       int arch;

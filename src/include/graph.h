@@ -68,6 +68,7 @@ struct ncclTopoGraph {
   int id; // ring : 0, tree : 1, collnet : 2
   int pattern;
   int crossNic;
+  int collNet;
   int minChannels;
   int maxChannels;
   // Output

@@ -1,10 +1,8 @@
 <system version=1>
   <cpu numaid=0 affinity="0000,0fffff00,000fffff" arch="x86_64" vendor="GenuineIntel" familyid=6 modelid=79>
-    <pci busid="0000:05:00.0" class="0x020700" link_speed="8 GT/s" link_width=16>
-      <nic type="net">
-        <net name="eth0" speed="100000" dev=0 gdr=0/>
-      </nic>
-    </pci>
+    <nic id=0>
+      <net dev=0 gdr=0/>
+    </nic>
     <pci busid="0000:03:00.0" class="0x060400" link_speed="8 GT/s" link_width=16>
       <pci busid="0000:06:00.0" class="0x030200" link_speed="8 GT/s" link_width=16>
         <gpu dev=0 sm=70 rank=0 gdr=0>

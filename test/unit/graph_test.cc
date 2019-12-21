@@ -48,6 +48,7 @@ int checkTopo(const char* xmlTopoFile, const char* xmlGraphFile, const char* pla
   ringGraph.id = 0;
   ringGraph.pattern = NCCL_TOPO_PATTERN_RING;
   ringGraph.crossNic = 2;
+  ringGraph.collNet = 0;
   ringGraph.minChannels = 1;
   ringGraph.maxChannels = 16;
 
@@ -56,12 +57,14 @@ int checkTopo(const char* xmlTopoFile, const char* xmlGraphFile, const char* pla
   treeGraph.id = 1;
   treeGraph.pattern = NCCL_TOPO_PATTERN_SPLIT_TREE;
   treeGraph.crossNic = 2;
+  treeGraph.collNet = 0;
 
   struct ncclTopoGraph cNetGraph;
   memset(&cNetGraph, 0, sizeof(cNetGraph));
   cNetGraph.id = 2;
   cNetGraph.pattern = NCCL_TOPO_PATTERN_TREE;
   cNetGraph.crossNic = 2;
+  cNetGraph.collNet = 1;
 
   /* Compute */
   uint64_t computeTime = getTime();
@@ -135,7 +138,7 @@ int checkTopo(const char* xmlTopoFile, const char* xmlGraphFile, const char* pla
     }
   }
 
-  printf(" %10s/%s  %2dx%3d/%3d | %2dx%3d/%3d | %2dx%3d/%3d", platform, inter ? "Inter":"Intra",
+  printf(" %15s/%s  %2dx%3d/%3d | %2dx%3d/%3d | %2dx%3d/%3d", platform, inter ? "Inter":"Intra",
       ringGraph.nChannels, ringGraph.speedIntra, ringGraph.speedInter,
       treeGraph.nChannels, treeGraph.speedIntra, treeGraph.speedInter,
       cNetGraph.nChannels, cNetGraph.speedIntra, cNetGraph.speedInter);
@@ -179,6 +182,7 @@ int main(int argc, const char* argv[]) {
     RUN("DGX-1P-4G");
     RUN("DGX-1V");
     RUN("DGX-1V-4G");
+    RUN("DGX-1V-SHARP");
     RUN("DGX-2V");
     RUN("XMAN-3");
     RUN("GCP-NV");

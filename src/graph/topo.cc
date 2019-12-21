@@ -10,6 +10,7 @@
 #include "comm.h"
 #include "nvmlwrap.h"
 #include "net.h"
+#include "coll_net.h"
 #include <sys/stat.h>
 #include <fcntl.h>
 #include "xml.h"
@@ -293,6 +294,11 @@ ncclResult_t ncclTopoAddNet(struct ncclXmlNode* xmlNet, struct ncclTopoSystem* s
   net->net.port = port;
   NCCLCHECK(xmlGetAttrInt(xmlNet, "gdr", &net->net.gdrSupport));
 
+  NCCLCHECK(xmlGetAttrIndex(xmlNet, "coll", &index));
+  if (index != -1) {
+    NCCLCHECK(xmlGetAttrInt(xmlNet, "coll", &net->net.collSupport));
+  } else net->net.collSupport = 0;
+
   NCCLCHECK(ncclTopoConnectNodes(nic, net, LINK_NET, net->net.width));
   NCCLCHECK(ncclTopoConnectNodes(net, nic, LINK_NET, net->net.width));
   return ncclSuccess;
@@ -543,6 +549,32 @@ ncclResult_t ncclTopoGetSystem(struct ncclComm* comm, struct ncclTopoSystem** sy
       int ptrSupport;
       NCCLCHECK(ncclNetPtrSupport(n, &ptrSupport));
       int gdr = ptrSupport & NCCL_PTR_CUDA ? 1 : 0;
+      NCCLCHECK(xmlSetAttrInt(node, "gdr", gdr));
+    }
+  }
+  if (ncclCollNet) {
+    // Also set their collnet capability
+    NCCLCHECK(collNetDevices(&netDevCount));
+    for (int n=0; n<netDevCount; n++) {
+      char* path = NULL;
+      ncclResult_t res = collNetPciPath(n, &path);
+      if (res != ncclSuccess) path = NULL;
+      struct ncclXmlNode* node;
+      NCCLCHECK(ncclTopoFillNic(xml, path, &node, n));
+      NCCLCHECK(xmlSetAttrInt(node, "coll", 1));
+      int index;
+      NCCLCHECK(xmlGetAttrIndex(node, "gdr", &index));
+      // We do not currently support the case where the
+      // net and collnet for the same device has different
+      // PtrSupport.
+      int ptrSupport;
+      NCCLCHECK(collNetPtrSupport(n, &ptrSupport));
+      int gdr = ptrSupport & NCCL_PTR_CUDA ? 1 : 0;
+      if (index != -1) {
+        int p2pGdr;
+        NCCLCHECK(xmlGetAttrInt(node, "gdr", &p2pGdr));
+        gdr = std::min(p2pGdr, gdr);
+      }
       NCCLCHECK(xmlSetAttrInt(node, "gdr", gdr));
     }
   }

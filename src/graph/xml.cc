@@ -259,8 +259,8 @@ ncclResult_t ncclTopoXmlLoadPci(FILE* file, struct ncclXml* xml, struct ncclXmlN
 }
 
 ncclResult_t ncclTopoXmlLoadCpu(FILE* file, struct ncclXml* xml, struct ncclXmlNode* head) {
-  struct xmlHandler handlers[] = { { "pci", ncclTopoXmlLoadPci } };
-  NCCLCHECK(xmlLoadSub(file, xml, head, handlers, 1));
+  struct xmlHandler handlers[] = { { "pci", ncclTopoXmlLoadPci }, { "nic", ncclTopoXmlLoadNic } };
+  NCCLCHECK(xmlLoadSub(file, xml, head, handlers, 2));
   return ncclSuccess;
 }
 
@@ -763,7 +763,7 @@ ncclResult_t ncclTopoFillNic(struct ncclXml* xml, const char* sysPath, struct nc
       NCCLCHECK(xmlSetAttrInt(nicNode, "id", netIndex));
     }
   }
-  
+
   NCCLCHECK(ncclTopoGetXmlFromNet(nicNode, xml, netSysPath, netNode));
   free(netSysPath);
   return ncclSuccess;
