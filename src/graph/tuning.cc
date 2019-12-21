@@ -109,7 +109,7 @@ ncclResult_t ncclSetThresholds(struct ncclComm* comm, int minCompCap, int maxCom
         if (a == NCCL_ALGO_TREE) busBw = std::min(busBw*.9, comm->nNodes > 2 ? 80.0 : 110.0);
         if (a == NCCL_ALGO_TREE && p == NCCL_PROTO_LL) busBw *= 1.0/3.0;
         if (a == NCCL_ALGO_TREE && p == NCCL_PROTO_LL128) busBw *= 7.0/9.0;
-        if (a == NCCL_ALGO_COLLNET) busBw = std::min(busBw*.9, 74.0);
+        if (a == NCCL_ALGO_COLLNET) busBw *= .9;
         if (a == NCCL_ALGO_COLLNET && p == NCCL_PROTO_LL) busBw *= 1.0/6.0; // Take into account that GDR read is disabled on both sides
         if (a == NCCL_ALGO_COLLNET && p == NCCL_PROTO_LL128) busBw = 0;  // CollNet does not support LL128
 
@@ -171,7 +171,7 @@ ncclResult_t ncclSetThresholds(struct ncclComm* comm, int minCompCap, int maxCom
     offset = strlen(line);
     for (int a=0; a<NCCL_NUM_ALGORITHMS; a++) {
       for (int p=0; p<NCCL_NUM_PROTOCOLS; p++) {
-        sprintf(line+offset, " %4s/%6s |", ncclAlgoStr[a], ncclProtoStr[p]);
+        sprintf(line+offset, " %7s/%6s |", ncclAlgoStr[a], ncclProtoStr[p]);
         offset = strlen(line);
       }
     }
@@ -181,7 +181,7 @@ ncclResult_t ncclSetThresholds(struct ncclComm* comm, int minCompCap, int maxCom
       offset = strlen(line);
       for (int a=0; a<NCCL_NUM_ALGORITHMS; a++) {
         for (int p=0; p<NCCL_NUM_PROTOCOLS; p++) {
-          sprintf(line+offset, "%7.1f/%5.1f|", comm->latencies[c][a][p], comm->bandwidths[c][a][p]);
+          sprintf(line+offset, "%8.1f/%6.1f |", comm->latencies[c][a][p], comm->bandwidths[c][a][p]);
           offset = strlen(line);
         }
       }

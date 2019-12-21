@@ -650,23 +650,20 @@ static ncclResult_t initTransportsRank(struct ncclComm* comm, ncclUniqueId* comm
   }
 
   // AllGather3 - begin
+  struct ncclGraphInfo {
+    int sameChannels;
+    int speedIntra;
+    int speedInter;
+    int typeIntra;
+  };
 
   struct {
     int cudaCompCap;
     int fullCudaCompCap;
     int nChannels;
-    struct {
-      int sameChannels;
-      int speedIntra;
-      int speedInter;
-      int typeIntra;
-    } tree;
-    struct {
-      int sameChannels;
-      int speedIntra;
-      int speedInter;
-      int typeIntra;
-    } ring;
+    struct ncclGraphInfo tree;
+    struct ncclGraphInfo ring;
+    struct ncclGraphInfo collNet;
     struct ncclTopoRanks topoRanks;
   } *allGather3Data;
 
@@ -681,6 +678,10 @@ static ncclResult_t initTransportsRank(struct ncclComm* comm, ncclUniqueId* comm
   allGather3Data[rank].ring.speedIntra = ringGraph.speedIntra;
   allGather3Data[rank].ring.speedInter = ringGraph.speedInter;
   allGather3Data[rank].ring.typeIntra = ringGraph.typeIntra;
+  allGather3Data[rank].collNet.sameChannels = collNetGraph.sameChannels;
+  allGather3Data[rank].collNet.speedIntra = collNetGraph.speedIntra;
+  allGather3Data[rank].collNet.speedInter = collNetGraph.speedInter;
+  allGather3Data[rank].collNet.typeIntra = collNetGraph.typeIntra;
 
   NCCLCHECK(ncclTopoPreset(comm, &treeGraph, &ringGraph, &collNetGraph, &allGather3Data[rank].topoRanks));
 
@@ -725,6 +726,10 @@ static ncclResult_t initTransportsRank(struct ncclComm* comm, ncclUniqueId* comm
     ringGraph.speedIntra = std::min(allGather3Data[i].ring.speedIntra, ringGraph.speedIntra);
     ringGraph.speedInter = std::min(allGather3Data[i].ring.speedInter, ringGraph.speedInter);
     ringGraph.typeIntra = std::min(allGather3Data[i].ring.typeIntra, ringGraph.typeIntra);
+    collNetGraph.sameChannels = std::min(allGather3Data[i].collNet.sameChannels, collNetGraph.sameChannels);
+    collNetGraph.speedIntra = std::min(allGather3Data[i].collNet.speedIntra, collNetGraph.speedIntra);
+    collNetGraph.speedInter = std::min(allGather3Data[i].collNet.speedInter, collNetGraph.speedInter);
+    collNetGraph.typeIntra = std::min(allGather3Data[i].collNet.typeIntra, collNetGraph.typeIntra);
   }
 
   if (comm->nChannels < nChannelsOrig) {
