@@ -51,7 +51,7 @@ ncclResult_t ncclTopoGetXmlGraphFromFile(const char* xmlGraphFile, struct ncclXm
 
 /* Auto-detect functions */
 ncclResult_t ncclTopoFillGpu(struct ncclXml* xml, const char* busId, struct ncclXmlNode** gpuNode);
-ncclResult_t ncclTopoFillNic(struct ncclXml* xml, const char* sysPath, struct ncclXmlNode** netNode);
+ncclResult_t ncclTopoFillNic(struct ncclXml* xml, const char* sysPath, struct ncclXmlNode** netNode, int netIndex);
 
 /**************/
 /* XML Struct */

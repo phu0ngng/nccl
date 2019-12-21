@@ -288,7 +288,7 @@ ncclResult_t ncclTopoAddNet(struct ncclXmlNode* xmlNet, struct ncclTopoSystem* s
     NCCLCHECK(xmlGetAttrStr(xmlNet, "link_rate", &str));
     if (sscanf(str, "%d Gb/sec", &gbps) == EOF) gbps = 0;
   }
-  if (gbps == 0) gbps = 1; // Default for undefined NICs
+  if (gbps == 0) gbps = 10; // Default for undefined NICs
   net->net.width = gbps * 10 / 8;
   net->net.port = port;
   NCCLCHECK(xmlGetAttrInt(xmlNet, "gdr", &net->net.gdrSupport));
@@ -296,6 +296,22 @@ ncclResult_t ncclTopoAddNet(struct ncclXmlNode* xmlNet, struct ncclTopoSystem* s
   NCCLCHECK(ncclTopoConnectNodes(nic, net, LINK_NET, net->net.width));
   NCCLCHECK(ncclTopoConnectNodes(net, nic, LINK_NET, net->net.width));
   return ncclSuccess;
+}
+
+ncclResult_t ncclTopoAddNic(struct ncclXmlNode* xmlNic, struct ncclTopoSystem* system, struct ncclTopoNode* nic) {
+  int port=0;
+  for (int l=0; l<nic->nlinks; l++) {
+    if (nic->links[l].remNode->type == NET) port++;
+  }
+  for (int s=0; s<xmlNic->nSubs; s++) {
+    struct ncclXmlNode* xmlNet = xmlNic->subs[s];
+    if (strcmp(xmlNet->name, "net") != 0) continue;
+    int index;
+    NCCLCHECK(xmlGetAttrIndex(xmlNet, "dev", &index));
+    if (index == -1) continue;
+    NCCLCHECK(ncclTopoAddNet(xmlNet, system, nic, port));
+    port++;
+  }
 }
 
 ncclResult_t ncclTopoAddGpu(struct ncclXmlNode* xmlGpu, struct ncclTopoSystem* system, struct ncclTopoNode* gpu) {
@@ -344,20 +360,7 @@ ncclResult_t ncclTopoAddPci(struct ncclXmlNode* xmlPci, struct ncclTopoSystem* s
       NCCLCHECK(ncclTopoCreateNode(system, &nicNode, type, busId));
       node = nicNode; // Connect it to parent later on
     }
-
-    int port=0;
-    for (int l=0; l<nicNode->nlinks; l++) {
-      if (nicNode->links[l].remNode->type == NET) port++;
-    }
-    for (int s=0; s<xmlNic->nSubs; s++) {
-      struct ncclXmlNode* xmlNet = xmlNic->subs[s];
-      if (strcmp(xmlNet->name, "net") != 0) continue;
-      int index;
-      NCCLCHECK(xmlGetAttrIndex(xmlNet, "dev", &index));
-      if (index == -1) continue;
-      NCCLCHECK(ncclTopoAddNet(xmlNet, system, nicNode, port));
-      port++;
-    }
+    NCCLCHECK(ncclTopoAddNic(xmlNic, system, nicNode));
   } else if (type == PCI) {
     NCCLCHECK(ncclTopoCreateNode(system, &node, type, busId));
     for (int s=0; s<xmlPci->nSubs; s++) {
@@ -405,6 +408,18 @@ ncclResult_t ncclTopoAddCpu(struct ncclXmlNode* xmlCpu, struct ncclTopoSystem* s
   for (int s=0; s<xmlCpu->nSubs; s++) {
     struct ncclXmlNode* node = xmlCpu->subs[s];
     if (strcmp(node->name, "pci") == 0) NCCLCHECK(ncclTopoAddPci(node, system, cpu));
+    if (strcmp(node->name, "nic") == 0) {
+      int id;
+      NCCLCHECK(xmlGetAttrInt(node, "id", &id));
+      struct ncclTopoNode* nic = NULL;
+      NCCLCHECK(ncclTopoGetNode(system, &nic, NIC, id));
+      if (nic == NULL) {
+        NCCLCHECK(ncclTopoCreateNode(system, &nic, NIC, id));
+        NCCLCHECK(ncclTopoConnectNodes(cpu, nic, LINK_PCI, LOC_WIDTH));
+        NCCLCHECK(ncclTopoConnectNodes(nic, cpu, LINK_PCI, LOC_WIDTH));
+      }
+      NCCLCHECK(ncclTopoAddNic(node, system, nic));
+    }
   }
   return ncclSuccess;
 }
@@ -520,7 +535,7 @@ ncclResult_t ncclTopoGetSystem(struct ncclComm* comm, struct ncclTopoSystem** sy
     ncclResult_t res = ncclNetPciPath(n, &path);
     if (res != ncclSuccess) path = NULL;
     struct ncclXmlNode* node;
-    NCCLCHECK(ncclTopoFillNic(xml, path, &node));
+    NCCLCHECK(ncclTopoFillNic(xml, path, &node, n));
     NCCLCHECK(xmlSetAttrInt(node, "dev", n));
     int index;
     NCCLCHECK(xmlGetAttrIndex(node, "gdr", &index));

@@ -638,18 +638,27 @@ ncclResult_t ncclTopoFillGpu(struct ncclXml* xml, const char* busId, struct nccl
 }
 
 ncclResult_t ncclTopoGetXmlFromNet(struct ncclXmlNode* nicNode, struct ncclXml* xml, const char* netSysPath, struct ncclXmlNode** netNodeRet) {
+  char* netName = NULL;
+  if (netSysPath) {
+    int offset = strlen(netSysPath)-1;
+    while (netSysPath[offset] != '/') offset--;
+    netName = strdup(netSysPath+offset+1);
+  }
   struct ncclXmlNode* netNode;
-  NCCLCHECK(xmlGetSub(nicNode, "net", &netNode));
+  if (netName == NULL) {
+    NCCLCHECK(xmlGetSub(nicNode, "net", &netNode));
+  } else {
+    NCCLCHECK(xmlGetSubKvStr(nicNode, "net", &netNode, "name", netName));
+  }
   if (netNode == NULL) {
     NCCLCHECK(xmlAddNode(xml, nicNode, "net", &netNode));
   }
   int index;
   NCCLCHECK(xmlGetAttrIndex(netNode, "name", &index));
-  if (index == -1 && netSysPath) {
-    int offset = strlen(netSysPath)-1;
-    while (netSysPath[offset] != '/') offset--;
-    NCCLCHECK(xmlSetAttrStr(netNode, "name", netSysPath+offset+1));
+  if (index == -1 && netName) {
+    NCCLCHECK(xmlSetAttrStr(netNode, "name", netName));
   }
+  free(netName);
   // IP interfaces
   NCCLCHECK(xmlGetAttrIndex(netNode, "speed", &index));
   if (index == -1 && netSysPath) {
@@ -668,41 +677,66 @@ ncclResult_t ncclTopoGetXmlFromNet(struct ncclXmlNode* nicNode, struct ncclXml* 
   return ncclSuccess;
 }
 
-ncclResult_t ncclTopoFillNic(struct ncclXml* xml, const char* sysPath, struct ncclXmlNode** netNode) {
+#include <glob.h>
+#define IB_GUID_PATH "%s/infiniband/mlx5_*/sys_image_guid"
+
+ncclResult_t ncclTopoFillNic(struct ncclXml* xml, const char* sysPath, struct ncclXmlNode** netNode, int netIndex) {
   // First detect whether it is the net sysPath (old behavior) or the pci sysPath (new behavior)
-  int old = 1;
-  char* netName = NULL;
+  char* nicType = NULL;
+  char* netSysPath = NULL;
+  struct ncclXmlNode* nicNode;
   if (sysPath != NULL) {
-    char* subsystemPath;
-    NCCLCHECK(ncclCalloc(&subsystemPath, strlen(sysPath)+sizeof("/subsystem")));
-    sprintf(subsystemPath, "%s/subsystem", sysPath);
-    char* subsystemRealPath = realpath(subsystemPath, NULL);
-    if (strcmp(subsystemRealPath, "/sys/bus/pci") != 0) {
-      old = 0;
+    char* pciSysPath = NULL;
+    char classPath[PATH_MAX];
+    snprintf(classPath, PATH_MAX, "%s/class", sysPath);
+    if (access(classPath, F_OK ) == -1 ) {
+      // New behavior
+      netSysPath = strdup(sysPath);
+      // Find pciSysPath in path/device
+      char* deviceFilePath;
+      NCCLCHECK(ncclCalloc(&deviceFilePath, strlen(sysPath)+sizeof("/device")));
+      sprintf(deviceFilePath, "%s/device", sysPath);
+      struct stat s;
+      if (stat(deviceFilePath, &s) == 0) {
+        pciSysPath = realpath(deviceFilePath, NULL);
+      }
+    } else {
+      // Old behavior
+      pciSysPath = strdup(sysPath);
+      // Find netSysPath as path/infiniband/<interface> or path/net/<interface>.
+      char devPath[PATH_MAX];
+      snprintf(devPath, PATH_MAX, "%s/infiniband/*", sysPath);
+      glob_t globbuf;
+      glob(devPath, 0, NULL, &globbuf);
+      if (globbuf.gl_pathc > 0) {
+        strncpy(devPath, globbuf.gl_pathv[0], PATH_MAX);
+        netSysPath = strdup(devPath);
+      }
+      globfree(&globbuf);
+      if (netSysPath == NULL) {
+        snprintf(devPath, PATH_MAX, "%s/net/*", sysPath);
+        glob(devPath, 0, NULL, &globbuf);
+        if (globbuf.gl_pathc > 0) {
+          strncpy(devPath, globbuf.gl_pathv[0], PATH_MAX);
+          netSysPath = strdup(devPath);
+        }
+        globfree(&globbuf);
+      }
+    }
+
+    if (netSysPath) {
+      // Find nicType
+      char* subsystemPath;
+      NCCLCHECK(ncclCalloc(&subsystemPath, strlen(netSysPath)+sizeof("/subsystem")));
+      sprintf(subsystemPath, "%s/subsystem", netSysPath);
+      char* subsystemRealPath = realpath(subsystemPath, NULL);
       int offset = strlen(subsystemRealPath)-1;
       while (subsystemRealPath[offset] != '/') offset--;
-      NCCLCHECK(ncclCalloc(&netName, strlen(subsystemRealPath)));
-      strcpy(netName, subsystemRealPath+offset+1);
+      NCCLCHECK(ncclCalloc(&nicType, strlen(subsystemRealPath)));
+      strcpy(nicType, subsystemRealPath+offset+1);
+      free(subsystemRealPath);
     }
-    free(subsystemRealPath);
-  }
 
-  char *pciSysPath = NULL, *netSysPath = NULL;
-  if (old == 1) {
-    pciSysPath = strdup(sysPath);
-  } else {
-    netSysPath = strdup(sysPath);
-    char* deviceFilePath;
-    NCCLCHECK(ncclCalloc(&deviceFilePath, strlen(sysPath)+sizeof("/device")));
-    sprintf(deviceFilePath, "%s/device", sysPath);
-    struct stat s;
-    if (stat(deviceFilePath, &s) == 0) {
-      pciSysPath = realpath(deviceFilePath, NULL);
-    }
-  }
-
-  struct ncclXmlNode* nicNode;
-  if (pciSysPath != NULL) {
     struct ncclXmlNode* pciNode;
     int offset;
     for (offset=strlen(pciSysPath)-1; sysPath[offset] != '/'; offset--);
@@ -713,22 +747,21 @@ ncclResult_t ncclTopoFillNic(struct ncclXml* xml, const char* sysPath, struct nc
     NCCLCHECK(xmlGetSub(pciNode, "nic", &nicNode));
     if (nicNode == NULL) {
       NCCLCHECK(xmlAddNode(xml, pciNode, "nic", &nicNode));
+      if (nicType != NULL) {
+        NCCLCHECK(xmlSetAttrStr(nicNode, "type", nicType));
+      }
     }
+    free(pciSysPath);
+    free(nicType);
   } else {
     // Virtual NIC, no PCI device, attach to first CPU
     struct ncclXmlNode* cpuNode;
     NCCLCHECK(xmlFindTag(xml, "cpu", &cpuNode));
-    NCCLCHECK(xmlAddNode(xml, cpuNode, "nic", &nicNode));
-  }
-  free(pciSysPath);
-  
-  if (netName != NULL) {
-    int index = -1;
-    NCCLCHECK(xmlGetAttrIndex(nicNode, "type", &index));
-    if (index == -1) {
-      NCCLCHECK(xmlSetAttrStr(nicNode, "type", netName));
+    NCCLCHECK(xmlGetSubKvInt(cpuNode, "nic", &nicNode, "id", netIndex));
+    if (nicNode == NULL) {
+      NCCLCHECK(xmlAddNode(xml, cpuNode, "nic", &nicNode));
+      NCCLCHECK(xmlSetAttrInt(nicNode, "id", netIndex));
     }
-    free(netName);
   }
   
   NCCLCHECK(ncclTopoGetXmlFromNet(nicNode, xml, netSysPath, netNode));
