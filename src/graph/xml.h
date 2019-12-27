@@ -212,6 +212,7 @@ static ncclResult_t xmlAddNode(struct ncclXml* xml, struct ncclXmlNode* parent, 
   }
   struct ncclXmlNode* s = xml->nodes+xml->maxIndex++;
   s->nSubs = 0;
+  s->nAttrs = 0;
   *sub = s;
   s->parent = parent;
   if (parent) parent->subs[parent->nSubs++] = s;
