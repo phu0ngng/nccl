@@ -278,19 +278,21 @@ ncclResult_t ncclTopoAddNet(struct ncclXmlNode* xmlNet, struct ncclTopoSystem* s
     NCCLCHECK(ncclTopoIbGuidToUint64(str, &net->net.asic));
   } else net->net.asic = dev;
 
-  int gbps = 0;
+  int mbps = 0;
   NCCLCHECK(xmlGetAttrIndex(xmlNet, "speed", &index));
   if (index != -1) {
     NCCLCHECK(xmlGetAttrStr(xmlNet, "speed", &str));
-    if (sscanf(str, "%d", &gbps) == EOF) gbps = 0;
+    if (sscanf(str, "%d", &mbps) == EOF) mbps = 0;
   }
   NCCLCHECK(xmlGetAttrIndex(xmlNet, "link_rate", &index));
   if (index != -1) {
+    int gbps;
     NCCLCHECK(xmlGetAttrStr(xmlNet, "link_rate", &str));
     if (sscanf(str, "%d Gb/sec", &gbps) == EOF) gbps = 0;
+    mbps = gbps*1000;
   }
-  if (gbps == 0) gbps = 10; // Default for undefined NICs
-  net->net.width = gbps * 10 / 8;
+  if (mbps == 0) mbps = 10000; // Default for undefined NICs
+  net->net.width = mbps / 800;
   net->net.port = port;
   NCCLCHECK(xmlGetAttrInt(xmlNet, "gdr", &net->net.gdrSupport));
 
