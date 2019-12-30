@@ -1,0 +1,17 @@
+<system version=1>
+  <cpu numaid=1 affinity="ff,ffc0000f,fffc0000" arch="x86_64" vendor="GenuineIntel" familyid=6 modelid=85>
+    <pci busid="0000:86:00.0" class="0x030200" link_speed="8 GT/s" link_width=16>
+      <gpu dev=0 sm=75 rank=0 gdr=0/>
+    </pci>
+    <pci busid="0000:af:00.0" class="0x030200" link_speed="8 GT/s" link_width=16>
+      <gpu dev=1 sm=75 rank=1 gdr=0/>
+    </pci>
+  </cpu>
+  <cpu numaid=0 affinity="00,003ffff0,0003ffff" arch="x86_64" vendor="GenuineIntel" familyid=6 modelid=85>
+    <pci busid="0000:02:00.0" class="0x020000" link_speed="5 GT/s" link_width=2>
+      <nic type="net">
+        <net name="eno1" speed="1000" dev=0 gdr=0/>
+      </nic>
+    </pci>
+  </cpu>
+</system>

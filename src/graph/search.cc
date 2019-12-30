@@ -712,6 +712,9 @@ search:
       } else if (tmpGraph.speedInter > BW_FINE_INC) {
         tmpGraph.speedIntra = tmpGraph.speedInter -= BW_FINE_INC;
         goto search;
+      } else if (tmpGraph.speedInter > 1) {
+        tmpGraph.speedIntra = tmpGraph.speedInter -= 1;
+        goto search;
       }
     } else if (tmpGraph.speedIntra-BW_COARSE_INC >= graph->speedIntra/2) {
       // It's OK to go from 1 path to 2 in order to gain some BW
@@ -757,7 +760,7 @@ done:
 
   // 4. try to fine tune the speedIntra up a bit
   if (pass == 4 && time != 0 && tmpGraph.speedIntra == graph->speedIntra && tmpGraph.speedIntra < tmpGraph.speedInter*2) {
-    tmpGraph.speedIntra += BW_FINE_INC;
+    tmpGraph.speedIntra += (tmpGraph.speedInter > BW_FINE_INC) ? BW_FINE_INC : 1;
     goto search;
   }
 

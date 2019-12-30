@@ -177,6 +177,7 @@ int main(int argc, const char* argv[]) {
     RUN("PCI-1R");
     RUN("PCI-2R");
     RUN("PCI-NV");
+    RUN("T4");
 #ifdef __x86_64__
     RUN("DGX-1P");
     RUN("DGX-1P-4G");
