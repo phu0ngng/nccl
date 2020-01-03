@@ -78,7 +78,7 @@ int checkTopo(const char* xmlTopoFile, const char* xmlGraphFile, const char* pla
   /* Get reference graphs from XML */
   struct ncclXml* xmlGraph;
   CHECK(ncclCalloc(&xmlGraph, 1));
-  if (ncclTopoGetXmlGraphFromFile(xmlGraphFile, xmlGraph) == ncclSystemError) {
+  if (ncclTopoGetXmlGraphFromFile(xmlGraphFile, xmlGraph) != ncclSuccess) {
     printf(" %10s/%s  Error : no graph in %s\n", platform, inter ? "Inter":"Intra", xmlGraphFile);
     return 1;
   }

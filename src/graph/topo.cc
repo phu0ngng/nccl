@@ -255,7 +255,7 @@ ncclResult_t ncclTopoSortSystem(struct ncclTopoSystem* system) {
   return ncclSuccess;
 }
 
-ncclResult_t ncclTopoIbGuidToUint64(char* guidStr, uint64_t* guidRet) {
+ncclResult_t ncclTopoIbGuidToUint64(const char* guidStr, uint64_t* guidRet) {
   uint64_t a, b, c, d;
   if (sscanf(guidStr, "%04lx:%04lx:%04lx:%04lx", &a, &b, &c, &d) == EOF) return ncclInternalError;
   uint64_t guid;
@@ -270,24 +270,20 @@ ncclResult_t ncclTopoAddNet(struct ncclXmlNode* xmlNet, struct ncclTopoSystem* s
 
   struct ncclTopoNode* net;
   NCCLCHECK(ncclTopoCreateNode(system, &net, NET, dev));
-  char* str;
-  int index;
-  NCCLCHECK(xmlGetAttrIndex(xmlNet, "sys_guid", &index));
-  if (index != -1) {
-    NCCLCHECK(xmlGetAttrStr(xmlNet, "sys_guid", &str));
+  const char* str;
+  NCCLCHECK(xmlGetAttr(xmlNet, "sys_guid", &str));
+  if (str != NULL) {
     NCCLCHECK(ncclTopoIbGuidToUint64(str, &net->net.asic));
   } else net->net.asic = dev;
 
   int mbps = 0;
-  NCCLCHECK(xmlGetAttrIndex(xmlNet, "speed", &index));
-  if (index != -1) {
-    NCCLCHECK(xmlGetAttrStr(xmlNet, "speed", &str));
+  NCCLCHECK(xmlGetAttr(xmlNet, "speed", &str));
+  if (str != NULL) {
     if (sscanf(str, "%d", &mbps) == EOF) mbps = 0;
   }
-  NCCLCHECK(xmlGetAttrIndex(xmlNet, "link_rate", &index));
-  if (index != -1) {
+  NCCLCHECK(xmlGetAttr(xmlNet, "link_rate", &str));
+  if (str != NULL) {
     int gbps;
-    NCCLCHECK(xmlGetAttrStr(xmlNet, "link_rate", &str));
     if (sscanf(str, "%d Gb/sec", &gbps) == EOF) gbps = 0;
     mbps = gbps*1000;
   }
@@ -296,10 +292,8 @@ ncclResult_t ncclTopoAddNet(struct ncclXmlNode* xmlNet, struct ncclTopoSystem* s
   net->net.port = port;
   NCCLCHECK(xmlGetAttrInt(xmlNet, "gdr", &net->net.gdrSupport));
 
-  NCCLCHECK(xmlGetAttrIndex(xmlNet, "coll", &index));
-  if (index != -1) {
-    NCCLCHECK(xmlGetAttrInt(xmlNet, "coll", &net->net.collSupport));
-  } else net->net.collSupport = 0;
+  NCCLCHECK(xmlGetAttr(xmlNet, "coll", &str));
+  net->net.collSupport = str ? strtol(str, NULL, 0) : 0;
 
   NCCLCHECK(ncclTopoConnectNodes(nic, net, LINK_NET, net->net.width));
   NCCLCHECK(ncclTopoConnectNodes(net, nic, LINK_NET, net->net.width));
@@ -335,14 +329,14 @@ ncclResult_t ncclTopoAddGpu(struct ncclXmlNode* xmlGpu, struct ncclTopoSystem* s
 struct kvDict kvDictPciClass[] = { { "0x060400", PCI }, { "0x068000", NVS }, { "0x068001", CPU }, { "0x030200", GPU }, { "0x030000", GPU }, { "0x020700", NIC }, { "0x020000", NIC }, { NULL, 0 } };
 struct kvDict kvDictPciGen[] = { { "2.5 GT/s", 15 }, { "5 GT/s", 30 }, { "8 GT/s", 60 }, { "16 GT/s", 120 }, { NULL, 0 } }; // x100 Mbps per lane
 ncclResult_t ncclTopoAddPci(struct ncclXmlNode* xmlPci, struct ncclTopoSystem* system, struct ncclTopoNode* parent) {
-  char* str;
+  const char* str;
 
   int type;
-  NCCLCHECK(xmlGetAttrStr(xmlPci, "class", &str));
+  NCCLCHECK(xmlGetAttr(xmlPci, "class", &str));
   NCCLCHECK(kvConvertToInt(str, &type, kvDictPciClass));
 
   int64_t busId;
-  NCCLCHECK(xmlGetAttrStr(xmlPci, "busid", &str));
+  NCCLCHECK(xmlGetAttr(xmlPci, "busid", &str));
   NCCLCHECK(busIdToInt64(str, &busId));
 
   struct ncclTopoNode* node = NULL;
@@ -381,7 +375,7 @@ ncclResult_t ncclTopoAddPci(struct ncclXmlNode* xmlPci, struct ncclTopoSystem* s
   if (node) {
     int width, speed;
     NCCLCHECK(xmlGetAttrInt(xmlPci, "link_width", &width));
-    NCCLCHECK(xmlGetAttrStr(xmlPci, "link_speed", &str));
+    NCCLCHECK(xmlGetAttr(xmlPci, "link_speed", &str));
     NCCLCHECK(kvConvertToInt(str, &speed, kvDictPciGen)); // Values in 100Mbps, per lane (we want x100MB/s in the end)
 
     NCCLCHECK(ncclTopoConnectNodes(node, parent, LINK_PCI, width*speed/8));
@@ -398,14 +392,14 @@ ncclResult_t ncclTopoAddCpu(struct ncclXmlNode* xmlCpu, struct ncclTopoSystem* s
   NCCLCHECK(xmlGetAttrInt(xmlCpu, "numaid", &numaId));
   struct ncclTopoNode* cpu;
   NCCLCHECK(ncclTopoCreateNode(system, &cpu, CPU, numaId));
-  char* str;
-  NCCLCHECK(xmlGetAttrStr(xmlCpu, "affinity", &str));
+  const char* str;
+  NCCLCHECK(xmlGetAttr(xmlCpu, "affinity", &str));
   NCCLCHECK(ncclStrToCpuset(str, &cpu->cpu.affinity));
 
-  NCCLCHECK(xmlGetAttrStr(xmlCpu, "arch", &str));
+  NCCLCHECK(xmlGetAttr(xmlCpu, "arch", &str));
   NCCLCHECK(kvConvertToInt(str, &cpu->cpu.arch, kvDictCpuArch));
   if (cpu->cpu.arch == NCCL_TOPO_CPU_ARCH_X86) {
-    NCCLCHECK(xmlGetAttrStr(xmlCpu, "vendor", &str));
+    NCCLCHECK(xmlGetAttr(xmlCpu, "vendor", &str));
     NCCLCHECK(kvConvertToInt(str, &cpu->cpu.vendor, kvDictCpuVendor));
     if (cpu->cpu.vendor == NCCL_TOPO_CPU_VENDOR_INTEL) {
       int familyId, modelId;
@@ -433,10 +427,11 @@ ncclResult_t ncclTopoAddCpu(struct ncclXmlNode* xmlCpu, struct ncclTopoSystem* s
   return ncclSuccess;
 }
 
-ncclResult_t ncclTopoAddNvLinks(struct ncclXmlNode* node, struct ncclTopoSystem* system, int64_t parentBusId) {
-  int64_t pBusId = parentBusId;
+ncclResult_t ncclTopoAddNvLinks(struct ncclXmlNode* node, struct ncclTopoSystem* system, const char* parentBusId) {
   if (strcmp(node->name, "nvlink") == 0) {
     struct ncclTopoNode* gpu = NULL;
+    int64_t pBusId;
+    NCCLCHECK(busIdToInt64(parentBusId, &pBusId));
     NCCLCHECK(ncclTopoGetNode(system, &gpu, GPU, pBusId));
     if (gpu == NULL) {
       WARN("Add NVLink error : could not find GPU %lx\n", pBusId);
@@ -444,15 +439,15 @@ ncclResult_t ncclTopoAddNvLinks(struct ncclXmlNode* node, struct ncclTopoSystem*
     }
     int count;
     NCCLCHECK(xmlGetAttrInt(node, "count", &count));
-    char* targetClass;
-    NCCLCHECK(xmlGetAttrStr(node, "tclass", &targetClass));
+    const char* targetClass;
+    NCCLCHECK(xmlGetAttr(node, "tclass", &targetClass));
     int targetType;
     NCCLCHECK(kvConvertToInt(targetClass, &targetType, kvDictPciClass));
     struct ncclTopoNode* remote = NULL;
     if (targetType == GPU) {
       // NVL P2P connection to another GPU
-      char* target;
-      NCCLCHECK(xmlGetAttrStr(node, "target", &target));
+      const char* target;
+      NCCLCHECK(xmlGetAttr(node, "target", &target));
       int64_t busId;
       NCCLCHECK(busIdToInt64(target, &busId));
       NCCLCHECK(ncclTopoGetNode(system, &remote, GPU, busId));
@@ -474,15 +469,10 @@ ncclResult_t ncclTopoAddNvLinks(struct ncclXmlNode* node, struct ncclTopoSystem*
       }
     }
   } else {
-    int index;
-    NCCLCHECK(xmlGetAttrIndex(node, "busid", &index));
-    if (index != -1) {
-      char* busId;
-      NCCLCHECK(xmlGetAttrStr(node, "busid", &busId));
-      NCCLCHECK(busIdToInt64(busId, &pBusId));
-    }
+    const char* busId;
+    NCCLCHECK(xmlGetAttr(node, "busid", &busId));
     for (int s=0; s<node->nSubs; s++) {
-      NCCLCHECK(ncclTopoAddNvLinks(node->subs[s], system, pBusId));
+      NCCLCHECK(ncclTopoAddNvLinks(node->subs[s], system, busId ? busId : parentBusId));
     }
   }
   return ncclSuccess;
@@ -496,7 +486,7 @@ ncclResult_t ncclTopoGetSystemFromXml(struct ncclXml* xml, struct ncclTopoSystem
     struct ncclXmlNode* node = topNode->subs[s];
     if (strcmp(node->name, "cpu") == 0) NCCLCHECK(ncclTopoAddCpu(node, *topoSystem));
   }
-  NCCLCHECK(ncclTopoAddNvLinks(topNode, *topoSystem, 0));
+  NCCLCHECK(ncclTopoAddNvLinks(topNode, *topoSystem, NULL));
 
   NCCLCHECK(ncclTopoConnectCpus(*topoSystem));
   NCCLCHECK(ncclTopoSortSystem(*topoSystem));

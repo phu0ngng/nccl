@@ -25,51 +25,47 @@ ncclResult_t xmlGetChar(FILE* file, char* c) {
   return ncclSuccess;
 }
 
-ncclResult_t xmlGetValue(FILE* file, char* strValue, int* intValue, int* valueType, char* last) {
+ncclResult_t xmlGetValue(FILE* file, char* value, char* last) {
   char c;
   NCCLCHECK(xmlGetChar(file, &c));
-  if (c == '"') {
-    *valueType = KEY_TYPE_STR;
+  if (c != '"' && c != '\'') {
+#if INT_OK
     int o = 0;
     do {
+      value[o++] = c;
       NCCLCHECK(xmlGetChar(file, &c));
-      strValue[o++] = c;
-    } while (strValue[o-1] != '"');
-    strValue[o-1] = '\0';
-    NCCLCHECK(xmlGetChar(file, last));
-  } else {
-    *valueType = KEY_TYPE_INT;
-    int value = 0;
-    while (1) {
-      if (c == ' ' || c == '\n' || c == '\r' || c == '/' || c == '>') break;
-      int digit = c-'0';
-      if (digit < 0 || digit > 9) {
-        WARN("XML Parse : invalid digit : %c\n", c);
-        return ncclInternalError;
-      }
-      value = value*10 + digit;
-      NCCLCHECK(xmlGetChar(file, &c));
-    }
-    *intValue = value;
+    } while (c >= '0' && c <= '9');
+    value[o] = '\0';
     *last = c;
+    return ncclSuccess;
+#else
+    WARN("XML Parse : Expected (double) quote.");
+    return ncclInternalError;
+#endif
   }
+  int o = 0;
+  do {
+    NCCLCHECK(xmlGetChar(file, &c));
+    value[o++] = c;
+  } while (c != '"');
+  value[o-1] = '\0';
+  NCCLCHECK(xmlGetChar(file, last));
   return ncclSuccess;
 }
 
-ncclResult_t xmlGetToken(FILE* file, char* name, char* strValue, int* intValue, int* valueType, char* last) {
+ncclResult_t xmlGetToken(FILE* file, char* name, char* value, char* last) {
   char c;
   char* ptr = name;
   int o = 0;
-  if (valueType) *valueType = KEY_TYPE_NONE;
   do {
     NCCLCHECK(xmlGetChar(file, &c));
     if (c == '=') {
       ptr[o] = '\0';
-      if (strValue == NULL || intValue == NULL || valueType == NULL) {
+      if (value == NULL) {
         WARN("XML Parse : Unexpected value with name %s\n", ptr);
         return ncclInternalError;
       }
-      return xmlGetValue(file, strValue, intValue, valueType, last);
+      return xmlGetValue(file, value, last);
     }
     ptr[o] = c;
     if (o == MAX_STR_LEN-1) {
@@ -95,13 +91,13 @@ ncclResult_t xmlGetNode(FILE* file, struct ncclXmlNode* node) {
     return ncclInternalError;
   }
   // Read XML element name
-  NCCLCHECK(xmlGetToken(file, node->name, NULL, NULL, NULL, &c));
+  NCCLCHECK(xmlGetToken(file, node->name, NULL, &c));
 
   // Check for closing tag
   if (node->name[0] == '\0' && c == '/') {
     node->type = NODE_TYPE_CLOSE;
     // Re-read the name, we got '/' in the first call
-    NCCLCHECK(xmlGetToken(file, node->name, NULL, NULL, NULL, &c));
+    NCCLCHECK(xmlGetToken(file, node->name, NULL, &c));
     if (c != '>') {
       WARN("XML Parse error : unexpected trailing %c in closing tag %s\n", c, node->name);
       return ncclInternalError;
@@ -114,19 +110,17 @@ ncclResult_t xmlGetNode(FILE* file, struct ncclXmlNode* node) {
   // Get Attributes
   int a = 0;
   while (c == ' ') {
-    NCCLCHECK(xmlGetToken(file, node->attrs[a].key, node->attrs[a].strValue, &node->attrs[a].intValue, &node->attrs[a].type, &c));
-    if (node->attrs[a].type != KEY_TYPE_NONE) {
-      if (a == MAX_ATTR_COUNT) {
-        INFO(NCCL_GRAPH, "XML Parse : Ignoring extra attributes (max %d)\n", MAX_ATTR_COUNT);
-        // Actually we need to still consume the extra attributes so we have an extra one.
-      } else a++;
-    }
+    NCCLCHECK(xmlGetToken(file, node->attrs[a].key, node->attrs[a].value, &c));
+    if (a == MAX_ATTR_COUNT) {
+      INFO(NCCL_GRAPH, "XML Parse : Ignoring extra attributes (max %d)\n", MAX_ATTR_COUNT);
+      // Actually we need to still consume the extra attributes so we have an extra one.
+    } else a++;
   }
   node->nAttrs = a;
   if (c == '/') {
     node->type = NODE_TYPE_SINGLE;
     char str[MAX_STR_LEN];
-    NCCLCHECK(xmlGetToken(file, str, NULL, NULL, NULL, &c));
+    NCCLCHECK(xmlGetToken(file, str, NULL, &c));
   }
   if (c != '>') {
     WARN("XML Parse : expected >, got '%c'", c);
@@ -196,11 +190,7 @@ ncclResult_t ncclTopoDumpXmlRec(int indent, FILE* file, struct ncclXmlNode* node
   fprintf(file, "<%s", node->name);
 
   for (int a=0; a<node->nAttrs; a++) {
-    if (node->attrs[a].type == KEY_TYPE_INT) {
-      fprintf(file, " %s=%d", node->attrs[a].key, node->attrs[a].intValue);
-    } else {
-      fprintf(file, " %s=\"%s\"", node->attrs[a].key, node->attrs[a].strValue);
-    }
+    fprintf(file, " %s=\"%s\"", node->attrs[a].key, node->attrs[a].value);
   }
   if (node->nSubs == 0) {
     fprintf(file, "/>\n");
@@ -271,14 +261,10 @@ ncclResult_t ncclTopoXmlLoadSystem(FILE* file, struct ncclXml* xml, struct ncclX
     WARN("XML Topology has wrong version %d, %d needed", version, NCCL_TOPO_XML_VERSION);
     return ncclInvalidUsage;
   }
-  int a;
-  for (a=0; a<head->nAttrs; a++) {
-    if (head->attrs[a].type == KEY_TYPE_STR && strcmp(head->attrs[a].key, "name") == 0) {
-      INFO(NCCL_GRAPH, "Loading topology %s", head->attrs[a].strValue);
-      break;
-    }
-  }
-  if (a == head->nAttrs) INFO(NCCL_GRAPH, "Loading unnamed topology");
+  const char* name;
+  NCCLCHECK(xmlGetAttr(head, "name", &name));
+  if (name != NULL) INFO(NCCL_GRAPH, "Loading topology %s", name);
+  else INFO(NCCL_GRAPH, "Loading unnamed topology");
 
   struct xmlHandler handlers[] = { { "cpu", ncclTopoXmlLoadCpu } };
   NCCLCHECK(xmlLoadSub(file, xml, head, handlers, 1));
@@ -305,11 +291,13 @@ ncclResult_t ncclTopoGetXmlFromFile(const char* xmlTopoFile, struct ncclXml* xml
 
 #define BUSID_SIZE (sizeof("0000:00:00.0"))
 #define BUSID_REDUCED_SIZE (sizeof("0000:00"))
-static ncclResult_t getPciPath(char* busId, char** path) {
-  for (int i=0; i<BUSID_SIZE; i++) busId[i] = tolower(busId[i]);
+static void memcpylower(char* dst, const char* src, const size_t size) {
+  for (int i=0; i<size; i++) dst[i] = tolower(src[i]);
+}
+static ncclResult_t getPciPath(const char* busId, char** path) {
   char busPath[] = "/sys/class/pci_bus/0000:00/../../0000:00:00.0";
-  memcpy(busPath+sizeof("/sys/class/pci_bus/")-1, busId, BUSID_REDUCED_SIZE-1);
-  memcpy(busPath+sizeof("/sys/class/pci_bus/0000:00/../../")-1, busId, BUSID_SIZE-1);
+  memcpylower(busPath+sizeof("/sys/class/pci_bus/")-1, busId, BUSID_REDUCED_SIZE-1);
+  memcpylower(busPath+sizeof("/sys/class/pci_bus/0000:00/../../")-1, busId, BUSID_SIZE-1);
   *path = realpath(busPath, NULL);
   if (*path == NULL) {
     WARN("Could not find real path of %s", busPath);
@@ -345,7 +333,7 @@ ncclResult_t ncclTopoGetStrFromSys(const char* path, const char* fileName, char*
 ncclResult_t ncclTopoSetAttrFromSys(struct ncclXmlNode* pciNode, const char* path, const char* fileName, const char* attrName) {
   char strValue[MAX_STR_LEN];
   NCCLCHECK(ncclTopoGetStrFromSys(path, fileName, strValue));
-  if (strValue[0] != '\0') { NCCLCHECK(xmlSetAttrStr(pciNode, attrName, strValue)); }
+  if (strValue[0] != '\0') { NCCLCHECK(xmlSetAttr(pciNode, attrName, strValue)); }
   TRACE(NCCL_GRAPH, "Read from sys %s/%s -> %s=%s\n", path, fileName, attrName, strValue);
   return ncclSuccess;
 }
@@ -354,11 +342,15 @@ ncclResult_t ncclTopoGetXmlFromCpu(struct ncclXmlNode* cpuNode, struct ncclXml* 
   int index;
   NCCLCHECK(xmlGetAttrIndex(cpuNode, "affinity", &index));
   if (index == -1) {
-    int numaId;
-    NCCLCHECK(xmlGetAttrInt(cpuNode, "numaid", &numaId));
+    const char* numaId;
+    NCCLCHECK(xmlGetAttr(cpuNode, "numaid", &numaId));
+    if (numaId == NULL) {
+      WARN("GetXmlFromCpu : could not find CPU numa ID.");
+      return ncclInternalError;
+    }
     // Set affinity
     char cpumaskPath[] = "/sys/devices/system/node/node0000";
-    sprintf(cpumaskPath, "/sys/devices/system/node/node%d", numaId);
+    sprintf(cpumaskPath, "/sys/devices/system/node/node%s", numaId);
     NCCLCHECK(ncclTopoSetAttrFromSys(cpuNode, cpumaskPath, "cpumap", "affinity"));
   }
 
@@ -366,11 +358,11 @@ ncclResult_t ncclTopoGetXmlFromCpu(struct ncclXmlNode* cpuNode, struct ncclXml* 
   if (index == -1) {
     // Fill CPU type / vendor / model
 #if defined(__PPC__)
-    NCCLCHECK(xmlSetAttrStr(cpuNode, "arch", "ppc64"));
+    NCCLCHECK(xmlSetAttr(cpuNode, "arch", "ppc64"));
 #elif defined(__aarch64__)
-    NCCLCHECK(xmlSetAttrStr(cpuNode, "arch", "arm64"));
+    NCCLCHECK(xmlSetAttr(cpuNode, "arch", "arm64"));
 #elif defined(__x86_64__)
-    NCCLCHECK(xmlSetAttrStr(cpuNode, "arch", "x86_64"));
+    NCCLCHECK(xmlSetAttr(cpuNode, "arch", "x86_64"));
 #endif
   }
 
@@ -387,11 +379,11 @@ ncclResult_t ncclTopoGetXmlFromCpu(struct ncclXmlNode* cpuNode, struct ncclXml* 
       char vendor[12];
     } cpuid0;
 
-    asm volatile("cpuid" : "=b" (cpuid0.ebx), "=c" (cpuid0.ecx), "=d" (cpuid0.edx) : "a" (0));
+    asm volatile("cpuid" : "=b" (cpuid0.ebx), "=c" (cpuid0.ecx), "=d" (cpuid0.edx) : "a" (0) : "memory");
     char vendor[13];
     strncpy(vendor, cpuid0.vendor, 12);
     vendor[12] = '\0';
-    NCCLCHECK(xmlSetAttrStr(cpuNode, "vendor", vendor));
+    NCCLCHECK(xmlSetAttr(cpuNode, "vendor", vendor));
   }
 
   NCCLCHECK(xmlGetAttrIndex(cpuNode, "familyid", &index));
@@ -409,7 +401,7 @@ ncclResult_t ncclTopoGetXmlFromCpu(struct ncclXmlNode* cpuNode, struct ncclXml* 
       };
       uint32_t val;
     } cpuid1;
-    asm volatile("cpuid" : "=a" (cpuid1.val) : "a" (1));
+    asm volatile("cpuid" : "=a" (cpuid1.val) : "a" (1) : "memory");
     int familyId = cpuid1.familyId + (cpuid1.extFamilyId << 4);
     int modelId = cpuid1.modelId + (cpuid1.extModelId << 4);
     NCCLCHECK(xmlSetAttrInt(cpuNode, "familyid", familyId));
@@ -420,29 +412,18 @@ ncclResult_t ncclTopoGetXmlFromCpu(struct ncclXmlNode* cpuNode, struct ncclXml* 
 }
 
 ncclResult_t ncclTopoGetPciNode(struct ncclXml* xml, const char* busId, struct ncclXmlNode** pciNode) {
-  *pciNode = NULL;
-  for (int i=0; i<xml->maxIndex; i++) {
-    struct ncclXmlNode* node = xml->nodes+i;
-    if (strcmp(node->name, "pci") == 0) {
-      int index;
-      NCCLCHECK(xmlGetAttrIndex(node, "busid", &index));
-      if (index != -1 && node->attrs[index].type == KEY_TYPE_STR && strcmp(node->attrs[index].strValue, busId) == 0) {
-        *pciNode = node;
-        break;
-      }
-    }
-  }
+  NCCLCHECK(xmlFindTagKv(xml, "pci", pciNode, "busid", busId));
   if (*pciNode == NULL) {
     NCCLCHECK(xmlAddNode(xml, NULL, "pci", pciNode));
   }
-  NCCLCHECK(xmlSetAttrStr(*pciNode, "busid", busId));
+  NCCLCHECK(xmlSetAttr(*pciNode, "busid", busId));
   return ncclSuccess;
 }
 
 ncclResult_t ncclTopoGetXmlFromSys(struct ncclXmlNode* pciNode, struct ncclXml* xml) {
   // Fill info, then parent
-  char* busId;
-  NCCLCHECK(xmlGetAttrStr(pciNode, "busid", &busId));
+  const char* busId;
+  NCCLCHECK(xmlGetAttr(pciNode, "busid", &busId));
   char* path = NULL;
   int index;
   NCCLCHECK(xmlGetAttrIndex(pciNode, "class", &index));
@@ -461,7 +442,7 @@ ncclResult_t ncclTopoGetXmlFromSys(struct ncclXmlNode* pciNode, struct ncclXml* 
     float portSpeed;
     NCCLCHECK(ncclTopoGetStrFromSys(path, "../max_link_speed", portSpeedStr));
     sscanf(portSpeedStr, "%f GT/s", &portSpeed);
-    NCCLCHECK(xmlSetAttrStr(pciNode, "link_speed", portSpeed < deviceSpeed ? portSpeedStr : deviceSpeedStr));
+    NCCLCHECK(xmlSetAttr(pciNode, "link_speed", portSpeed < deviceSpeed ? portSpeedStr : deviceSpeedStr));
   }
   NCCLCHECK(xmlGetAttrIndex(pciNode, "link_width", &index));
   if (index == -1) {
@@ -492,22 +473,21 @@ ncclResult_t ncclTopoGetXmlFromSys(struct ncclXmlNode* pciNode, struct ncclXml* 
 
     if (strlen(path) == strlen("/sys/devices/pci0000:00")) {
       // This a CPU root complex. Create a CPU tag
-      int numaId = strtol(numaIdStr, NULL, 0);
       struct ncclXmlNode* topNode;
       NCCLCHECK(xmlFindTag(xml, "system", &topNode));
-      NCCLCHECK(xmlGetSubKvInt(topNode, "cpu", &parent, "numaid", numaId));
+      NCCLCHECK(xmlGetSubKv(topNode, "cpu", &parent, "numaid", numaIdStr));
       if (parent == NULL) {
         NCCLCHECK(xmlAddNode(xml, topNode, "cpu", &parent));
-        NCCLCHECK(xmlSetAttrInt(parent, "numaid", numaId));
+        NCCLCHECK(xmlSetAttr(parent, "numaid", numaIdStr));
       }
     } else {
       // Continue on the upper PCI switch
       for (int i = strlen(path)-1; i>0; i--) {
         if (path[i] == '/') {
-          NCCLCHECK(xmlFindTagKvStr(xml, "pci", &parent, "busid", path+i+1));
+          NCCLCHECK(xmlFindTagKv(xml, "pci", &parent, "busid", path+i+1));
           if (parent == NULL) {
             NCCLCHECK(xmlAddNode(xml, NULL, "pci", &parent));
-            NCCLCHECK(xmlSetAttrStr(parent, "busid", path+i+1));
+            NCCLCHECK(xmlSetAttr(parent, "busid", path+i+1));
           }
           break;
         }
@@ -536,9 +516,9 @@ ncclResult_t ncclTopoGetXmlFromGpu(struct ncclXmlNode* pciNode, nvmlDevice_t nvm
   if (index == -1) {
     if (nvmlDev == NULL) {
       WARN("No NVML, trying to use CUDA instead");
-      char* busId;
-      NCCLCHECK(xmlGetAttrStr(pciNode, "busid", &busId));
-      if (cudaDeviceGetByPCIBusId(&dev, busId) != cudaSuccess) dev = -1;
+      const char* busId;
+      NCCLCHECK(xmlGetAttr(pciNode, "busid", &busId));
+      if (busId == NULL || cudaDeviceGetByPCIBusId(&dev, busId) != cudaSuccess) dev = -1;
     } else {
       NCCLCHECK(wrapNvmlDeviceGetIndex(nvmlDev, (unsigned int*)&dev));
     }
@@ -595,10 +575,10 @@ ncclResult_t ncclTopoGetXmlFromGpu(struct ncclXmlNode* pciNode, nvmlDevice_t nvm
         if (p[c] == 0) break;
       }
       
-      NCCLCHECK(xmlGetSubKvStr(gpuNode, "nvlink", &nvlNode, "target", lowerId));
+      NCCLCHECK(xmlGetSubKv(gpuNode, "nvlink", &nvlNode, "target", lowerId));
       if (nvlNode == NULL) {
         NCCLCHECK(xmlAddNode(xml, gpuNode, "nvlink", &nvlNode));
-        NCCLCHECK(xmlSetAttrStr(nvlNode, "target", lowerId));
+        NCCLCHECK(xmlSetAttr(nvlNode, "target", lowerId));
         NCCLCHECK(xmlSetAttrInt(nvlNode, "count", 1));
       } else {
         int count;
@@ -614,8 +594,8 @@ ncclResult_t ncclTopoGetXmlFromGpu(struct ncclXmlNode* pciNode, nvmlDevice_t nvm
     int index;
     NCCLCHECK(xmlGetAttrIndex(sub, "tclass", &index));
     if (index == -1) {
-      char* busId;
-      NCCLCHECK(xmlGetAttrStr(sub, "target", &busId));
+      const char* busId;
+      NCCLCHECK(xmlGetAttr(sub, "target", &busId));
       char* path;
       NCCLCHECK(getPciPath(busId, &path));
       NCCLCHECK(ncclTopoSetAttrFromSys(sub, path, "class", "tclass"));
@@ -648,7 +628,7 @@ ncclResult_t ncclTopoGetXmlFromNet(struct ncclXmlNode* nicNode, struct ncclXml* 
   if (netName == NULL) {
     NCCLCHECK(xmlGetSub(nicNode, "net", &netNode));
   } else {
-    NCCLCHECK(xmlGetSubKvStr(nicNode, "net", &netNode, "name", netName));
+    NCCLCHECK(xmlGetSubKv(nicNode, "net", &netNode, "name", netName));
   }
   if (netNode == NULL) {
     NCCLCHECK(xmlAddNode(xml, nicNode, "net", &netNode));
@@ -656,7 +636,7 @@ ncclResult_t ncclTopoGetXmlFromNet(struct ncclXmlNode* nicNode, struct ncclXml* 
   int index;
   NCCLCHECK(xmlGetAttrIndex(netNode, "name", &index));
   if (index == -1 && netName) {
-    NCCLCHECK(xmlSetAttrStr(netNode, "name", netName));
+    NCCLCHECK(xmlSetAttr(netNode, "name", netName));
   }
   free(netName);
   // IP interfaces
@@ -748,7 +728,7 @@ ncclResult_t ncclTopoFillNic(struct ncclXml* xml, const char* sysPath, struct nc
     if (nicNode == NULL) {
       NCCLCHECK(xmlAddNode(xml, pciNode, "nic", &nicNode));
       if (nicType != NULL) {
-        NCCLCHECK(xmlSetAttrStr(nicNode, "type", nicType));
+        NCCLCHECK(xmlSetAttr(nicNode, "type", nicType));
       }
     }
     free(pciSysPath);
@@ -802,14 +782,10 @@ ncclResult_t ncclTopoXmlGraphLoadGraphs(FILE* file, struct ncclXml* xmlGraph, st
     WARN("XML Graph has wrong version %d, %d needed", version, NCCL_GRAPH_XML_VERSION);
     return ncclInvalidUsage;
   }
-  int a;
-  for (a=0; a<head->nAttrs; a++) {
-    if (head->attrs[a].type == KEY_TYPE_STR && strcmp(head->attrs[a].key, "name") == 0) {
-      INFO(NCCL_GRAPH, "Loading graphs for topology %s", head->attrs[a].strValue);
-      break;
-    }
-  }
-  if (a == head->nAttrs) INFO(NCCL_GRAPH, "Loading graphs");
+  const char* name;
+  NCCLCHECK(xmlGetAttr(head, "name", &name));
+  if (name != NULL) INFO(NCCL_GRAPH, "Loading graphs for topology %s", name);
+  else INFO(NCCL_GRAPH, "Loading graphs");
 
   struct xmlHandler handlers[] = { { "graph", ncclTopoXmlGraphLoadGraph } };
   NCCLCHECK(xmlLoadSub(file, xmlGraph, head, handlers, 1));

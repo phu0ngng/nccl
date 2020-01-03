@@ -13,10 +13,6 @@
 #define MAX_SUBS 32
 #define MAX_NODES 1024
 
-#define KEY_TYPE_NONE 0
-#define KEY_TYPE_INT 1
-#define KEY_TYPE_STR 2
-
 #define NODE_TYPE_NONE 0
 #define NODE_TYPE_OPEN 1
 #define NODE_TYPE_CLOSE 2
@@ -26,9 +22,7 @@ struct ncclXmlNode {
   char name[MAX_STR_LEN];
   struct {
     char key[MAX_STR_LEN];
-    char strValue[MAX_STR_LEN];
-    int intValue;
-    int type;
+    char value[MAX_STR_LEN];
   } attrs[MAX_ATTR_COUNT+1]; // Need an extra one to consume extra params
   int nAttrs;
   int type;
@@ -60,8 +54,9 @@ ncclResult_t ncclTopoFillNic(struct ncclXml* xml, const char* sysPath, struct nc
 
 static ncclResult_t xmlGetAttrIndex(struct ncclXmlNode* node, const char* attrName, int* index) {
   *index = -1;
-  for (int a=0; a<node->nAttrs; a++) {
-    if (strcmp(node->attrs[a].key, attrName) == 0) {
+  const int nAttrs = node->nAttrs;
+  for (int a=0; a<nAttrs; a++) {
+    if (strncmp(node->attrs[a].key, attrName, MAX_STR_LEN-1) == 0) {
       *index = a;
       return ncclSuccess;
     }
@@ -69,33 +64,21 @@ static ncclResult_t xmlGetAttrIndex(struct ncclXmlNode* node, const char* attrNa
   return ncclSuccess;
 }
 
-static ncclResult_t xmlGetAttrInt(struct ncclXmlNode* node, const char* attrName, int* value) {
+static ncclResult_t xmlGetAttr(struct ncclXmlNode* node, const char* attrName, const char** value) {
   int index;
   NCCLCHECK(xmlGetAttrIndex(node, attrName, &index));
-  if (index == -1) {
-    WARN("Attribute %s of node %s not found\n", attrName, node->name);
-    return ncclInternalError;
-  }
-  if (node->attrs[index].type == KEY_TYPE_STR) {
-    WARN("Attribute %s of node %s is not an int (%s)\n", attrName, node->name, node->attrs[index].strValue);
-    return ncclInternalError;
-  }
-  *value = node->attrs[index].intValue;
+  *value = index == -1 ? NULL : node->attrs[index].value;
   return ncclSuccess;
 }
 
-static ncclResult_t xmlGetAttrStr(struct ncclXmlNode* node, const char* attrName, char** str) {
-  int index;
-  NCCLCHECK(xmlGetAttrIndex(node, attrName, &index));
-  if (index == -1) {
+static ncclResult_t xmlGetAttrInt(struct ncclXmlNode* node, const char* attrName, int* value) {
+  const char* str;
+  NCCLCHECK(xmlGetAttr(node, attrName, &str));
+  if (str == NULL) {
     WARN("Attribute %s of node %s not found\n", attrName, node->name);
     return ncclInternalError;
   }
-  if (node->attrs[index].type == KEY_TYPE_INT) {
-    WARN("Attribute %s of node %s is not a string (%d)\n", attrName, node->name, node->attrs[index].intValue);
-    return ncclInternalError;
-  }
-  *str = node->attrs[index].strValue;
+  *value = strtol(str, NULL, 0);
   return ncclSuccess;
 }
 
@@ -111,46 +94,41 @@ static ncclResult_t xmlFindTag(struct ncclXml* xml, const char* tagName, struct 
   return ncclSuccess;
 }
 
-static ncclResult_t xmlFindTagKvStr(struct ncclXml* xml, const char* tagName, struct ncclXmlNode** node, const char* attrName, const char* attrValue) {
+static ncclResult_t xmlFindTagKv(struct ncclXml* xml, const char* tagName, struct ncclXmlNode** node, const char* attrName, const char* attrValue) {
   *node = NULL;
   for (int i=0; i<xml->maxIndex; i++) {
     struct ncclXmlNode* n = xml->nodes+i;
     if (strcmp(n->name, tagName) == 0) {
-      int index;
-      NCCLCHECK(xmlGetAttrIndex(n, attrName, &index));
-      if (index != -1) {
-        char* strValue;
-        NCCLCHECK(xmlGetAttrStr(n, attrName, &strValue));
-        if (strcmp(strValue, attrValue) == 0) {
-          *node = n;
-          return ncclSuccess;
-        }
+      const char* value;
+      NCCLCHECK(xmlGetAttr(n, attrName, &value));
+      if (value && strcmp(value, attrValue) == 0) {
+        *node = n;
+        return ncclSuccess;
       }
     }
   }
   return ncclSuccess;
 }
 
-static ncclResult_t xmlSetAttrInt(struct ncclXmlNode* node, const char* attrName, int value) {
+static ncclResult_t xmlSetAttr(struct ncclXmlNode* node, const char* attrName, const char* value) {
   int index;
   NCCLCHECK(xmlGetAttrIndex(node, attrName, &index));
   if (index == -1) {
     index = node->nAttrs++;
     strncpy(node->attrs[index].key, attrName, MAX_STR_LEN);
   }
-  node->attrs[index].type = KEY_TYPE_INT;
-  node->attrs[index].intValue = value;
+  strncpy(node->attrs[index].value, value, MAX_STR_LEN);
   return ncclSuccess;
 }
-static ncclResult_t xmlSetAttrStr(struct ncclXmlNode* node, const char* attrName, const char* str) {
+
+static ncclResult_t xmlSetAttrInt(struct ncclXmlNode* node, const char* attrName, const int value) {
   int index;
   NCCLCHECK(xmlGetAttrIndex(node, attrName, &index));
   if (index == -1) {
     index = node->nAttrs++;
     strncpy(node->attrs[index].key, attrName, MAX_STR_LEN);
   }
-  node->attrs[index].type = KEY_TYPE_STR;
-  strncpy(node->attrs[index].strValue, str, MAX_STR_LEN);
+  snprintf(node->attrs[index].value, MAX_STR_LEN, "%d", value);
   return ncclSuccess;
 }
 
@@ -165,43 +143,25 @@ static ncclResult_t xmlGetSub(struct ncclXmlNode* node, const char* subName, str
   return ncclSuccess;
 }
 
-static ncclResult_t xmlGetSubKvStr(struct ncclXmlNode* node, const char* subName, struct ncclXmlNode** sub, const char* attrName, const char* attrValue) {
+static ncclResult_t xmlGetSubKv(struct ncclXmlNode* node, const char* subName, struct ncclXmlNode** sub, const char* attrName, const char* attrValue) {
   *sub = NULL;
   for (int s=0; s<node->nSubs; s++) {
     struct ncclXmlNode* subNode = node->subs[s];
     if (strcmp(subNode->name, subName) == 0) {
-      int index;
-      NCCLCHECK(xmlGetAttrIndex(subNode, attrName, &index));
-      if (index != -1) {
-        char* strValue;
-        NCCLCHECK(xmlGetAttrStr(subNode, attrName, &strValue));
-        if (strcmp(strValue, attrValue) == 0) {
-          *sub = node->subs[s];
-          return ncclSuccess;
-        }
+      const char* value;
+      NCCLCHECK(xmlGetAttr(subNode, attrName, &value));
+      if (value && strcmp(value, attrValue) == 0) {
+        *sub = node->subs[s];
+        return ncclSuccess;
       }
     }
   }
   return ncclSuccess;
 }
-
-static ncclResult_t xmlGetSubKvInt(struct ncclXmlNode* node, const char* subName, struct ncclXmlNode** sub, const char* attrName, int attrValue) {
-  *sub = NULL;
-  for (int s=0; s<node->nSubs; s++) {
-    struct ncclXmlNode* subNode = node->subs[s];
-    if (strcmp(subNode->name, subName) == 0) {
-      int index;
-      NCCLCHECK(xmlGetAttrIndex(subNode, attrName, &index));
-      if (index != -1) {
-        int intValue;
-        NCCLCHECK(xmlGetAttrInt(subNode, attrName, &intValue));
-        if (intValue == attrValue) {
-          *sub = node->subs[s];
-          return ncclSuccess;
-        }
-      }
-    }
-  }
+static ncclResult_t xmlGetSubKvInt(struct ncclXmlNode* node, const char* subName, struct ncclXmlNode** sub, const char* attrName, const int attrValue) {
+  char strValue[10];
+  snprintf(strValue, 10, "%d", attrValue);
+  NCCLCHECK(xmlGetSubKv(node, subName, sub, attrName, strValue));
   return ncclSuccess;
 }
 

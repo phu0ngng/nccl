@@ -1,40 +1,40 @@
-<system version=1>
-  <cpu numaid=0 affinity="0000,0fffff00,000fffff" arch="x86_64" vendor="GenuineIntel" familyid=6 modelid=0>
-    <pci busid="0000:03:00.0" class="0x060400" link_speed="8 GT/s" link_width=16>
-      <pci busid="0000:05:00.0" class="0x020700" link_speed="8 GT/s" link_width=16>
+<system version="1">
+  <cpu numaid="0" affinity="0000,0fffff00,000fffff" arch="x86_64" vendor="GenuineIntel" familyid="6" modelid="0">
+    <pci busid="0000:03:00.0" class="0x060400" link_speed="8 GT/s" link_width="16">
+      <pci busid="0000:05:00.0" class="0x020700" link_speed="8 GT/s" link_width="16">
         <nic type="infiniband">
-          <net name="mlx5_0" sys_guid="b859:9f03:004e:b948" link_rate="100 Gb/sec (2X HDR)" dev=2 gdr=1/>
+          <net name="mlx5_0" sys_guid="b859:9f03:004e:b948" link_rate="100 Gb/sec (2X HDR)" dev="2" gdr="1"/>
         </nic>
       </pci>
     </pci>
-    <pci busid="0000:08:00.0" class="0x060400" link_speed="8 GT/s" link_width=16>
-      <pci busid="0000:0a:00.0" class="0x030200" link_speed="8 GT/s" link_width=16>
-        <gpu dev=2 sm=70 rank=0 gdr=1>
-          <nvlink target="0000:89:00.0" count=1 tclass="0x030200"/>
-          <nvlink target="0000:0b:00.0" count=2 tclass="0x030200"/>
-          <nvlink target="0000:06:00.0" count=1 tclass="0x030200"/>
-          <nvlink target="0000:07:00.0" count=2 tclass="0x030200"/>
+    <pci busid="0000:08:00.0" class="0x060400" link_speed="8 GT/s" link_width="16">
+      <pci busid="0000:0a:00.0" class="0x030200" link_speed="8 GT/s" link_width="16">
+        <gpu dev="2" sm="70" rank="0" gdr="1">
+          <nvlink target="0000:89:00.0" count="1" tclass="0x030200"/>
+          <nvlink target="0000:0b:00.0" count="2" tclass="0x030200"/>
+          <nvlink target="0000:06:00.0" count="1" tclass="0x030200"/>
+          <nvlink target="0000:07:00.0" count="2" tclass="0x030200"/>
         </gpu>
       </pci>
-      <pci busid="0000:0c:00.0" class="0x020700" link_speed="8 GT/s" link_width=16>
+      <pci busid="0000:0c:00.0" class="0x020700" link_speed="8 GT/s" link_width="16">
         <nic type="infiniband">
-          <net name="mlx5_1" sys_guid="b859:9f03:004e:b9f4" link_rate="100 Gb/sec (2X HDR)" dev=0 gdr=1/>
+          <net name="mlx5_1" sys_guid="b859:9f03:004e:b9f4" link_rate="100 Gb/sec (2X HDR)" dev="0" gdr="1"/>
         </nic>
       </pci>
     </pci>
   </cpu>
-  <cpu numaid=1 affinity="ffff,f00000ff,fff00000" arch="x86_64" vendor="GenuineIntel" familyid=6 modelid=0>
-    <pci busid="0000:82:00.0" class="0x060400" link_speed="8 GT/s" link_width=16>
-      <pci busid="0000:84:00.0" class="0x020700" link_speed="8 GT/s" link_width=16>
+  <cpu numaid="1" affinity="ffff,f00000ff,fff00000" arch="x86_64" vendor="GenuineIntel" familyid="6" modelid="0">
+    <pci busid="0000:82:00.0" class="0x060400" link_speed="8 GT/s" link_width="16">
+      <pci busid="0000:84:00.0" class="0x020700" link_speed="8 GT/s" link_width="16">
         <nic type="infiniband">
-          <net name="mlx5_2" sys_guid="b859:9f03:004e:ba14" link_rate="100 Gb/sec (2X HDR)" dev=3 gdr=1/>
+          <net name="mlx5_2" sys_guid="b859:9f03:004e:ba14" link_rate="100 Gb/sec (2X HDR)" dev="3" gdr="1"/>
         </nic>
       </pci>
     </pci>
-    <pci busid="0000:87:00.0" class="0x060400" link_speed="8 GT/s" link_width=16>
-      <pci busid="0000:8b:00.0" class="0x020700" link_speed="8 GT/s" link_width=16>
+    <pci busid="0000:87:00.0" class="0x060400" link_speed="8 GT/s" link_width="16">
+      <pci busid="0000:8b:00.0" class="0x020700" link_speed="8 GT/s" link_width="16">
         <nic type="infiniband">
-          <net name="mlx5_3" sys_guid="b859:9f03:004e:b9ec" link_rate="100 Gb/sec (2X HDR)" dev=1 gdr=1/>
+          <net name="mlx5_3" sys_guid="b859:9f03:004e:b9ec" link_rate="100 Gb/sec (2X HDR)" dev="1" gdr="1"/>
         </nic>
       </pci>
     </pci>

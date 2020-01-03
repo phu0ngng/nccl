@@ -532,10 +532,10 @@ ncclResult_t ncclTopoGetGraphFromXmlSub(struct ncclXmlNode *xmlGraph, struct ncc
   NCCLCHECK(xmlGetAttrInt(xmlGraph, "nchannels", &graph->nChannels));
   NCCLCHECK(xmlGetAttrInt(xmlGraph, "speedintra", &graph->speedIntra));
   NCCLCHECK(xmlGetAttrInt(xmlGraph, "speedinter", &graph->speedInter));
-  char* str;
-  NCCLCHECK(xmlGetAttrStr(xmlGraph, "typeintra", &str));
+  const char* str;
+  NCCLCHECK(xmlGetAttr(xmlGraph, "typeintra", &str));
   NCCLCHECK(kvConvertToInt(str, &graph->typeIntra, kvDictLinkType));
-  NCCLCHECK(xmlGetAttrStr(xmlGraph, "typeinter", &str));
+  NCCLCHECK(xmlGetAttr(xmlGraph, "typeinter", &str));
   NCCLCHECK(kvConvertToInt(str, &graph->typeInter, kvDictLinkType));
   NCCLCHECK(xmlGetAttrInt(xmlGraph, "samechannels", &graph->sameChannels));
   for (int s=0; s<xmlGraph->nSubs; s++) {
@@ -591,9 +591,9 @@ ncclResult_t ncclTopoGetXmlFromGraph(struct ncclTopoGraph* graph, struct ncclTop
   NCCLCHECK(xmlSetAttrInt(xmlGraph, "speedinter", graph->speedInter));
   const char* str;
   NCCLCHECK(kvConvertToStr(graph->typeIntra, &str, kvDictLinkType));
-  NCCLCHECK(xmlSetAttrStr(xmlGraph, "typeintra", str));
+  NCCLCHECK(xmlSetAttr(xmlGraph, "typeintra", str));
   NCCLCHECK(kvConvertToStr(graph->typeInter, &str, kvDictLinkType));
-  NCCLCHECK(xmlSetAttrStr(xmlGraph, "typeinter", str));
+  NCCLCHECK(xmlSetAttr(xmlGraph, "typeinter", str));
   NCCLCHECK(xmlSetAttrInt(xmlGraph, "samechannels", graph->sameChannels));
   for (int c=0; c<graph->nChannels; c++) {
     NCCLCHECK(ncclTopoGetXmlFromChannel(graph, c, system, xml, xmlGraph));
