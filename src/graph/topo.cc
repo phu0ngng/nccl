@@ -376,6 +376,11 @@ ncclResult_t ncclTopoAddPci(struct ncclXmlNode* xmlPci, struct ncclTopoSystem* s
     int width, speed;
     NCCLCHECK(xmlGetAttrInt(xmlPci, "link_width", &width));
     NCCLCHECK(xmlGetAttr(xmlPci, "link_speed", &str));
+
+    // Manage cases where speed was not indicated in /sys
+    if (width == 0) width = 16;
+    if (strlen(str) == 0) str = "8 GT/s";
+
     NCCLCHECK(kvConvertToInt(str, &speed, kvDictPciGen)); // Values in 100Mbps, per lane (we want x100MB/s in the end)
 
     NCCLCHECK(ncclTopoConnectNodes(node, parent, LINK_PCI, width*speed/8));
