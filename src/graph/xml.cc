@@ -462,36 +462,38 @@ ncclResult_t ncclTopoGetXmlFromSys(struct ncclXmlNode* pciNode, struct ncclXml* 
     char numaIdStr[MAX_STR_LEN];
     NCCLCHECK(ncclTopoGetStrFromSys(path, "numa_node", numaIdStr));
 
-    // Go up one level : rewind two "/"
+    // Go up one level in the PCI tree. Rewind two "/" and follow the upper PCI
+    // switch, or stop if we reach a CPU root complex.
     int slashCount = 0;
     int parentOffset;
     for (parentOffset = strlen(path)-1; parentOffset>0; parentOffset--) {
-      if (path[parentOffset] == '/') slashCount++;
-      if (slashCount == 2) break;
-    }
-    path[parentOffset] = '\0';
-
-    if (strlen(path) == strlen("/sys/devices/pci0000:00")) {
-      // This a CPU root complex. Create a CPU tag
-      struct ncclXmlNode* topNode;
-      NCCLCHECK(xmlFindTag(xml, "system", &topNode));
-      NCCLCHECK(xmlGetSubKv(topNode, "cpu", &parent, "numaid", numaIdStr));
-      if (parent == NULL) {
-        NCCLCHECK(xmlAddNode(xml, topNode, "cpu", &parent));
-        NCCLCHECK(xmlSetAttr(parent, "numaid", numaIdStr));
-      }
-    } else {
-      // Continue on the upper PCI switch
-      for (int i = strlen(path)-1; i>0; i--) {
-        if (path[i] == '/') {
-          NCCLCHECK(xmlFindTagKv(xml, "pci", &parent, "busid", path+i+1));
+      if (path[parentOffset] == '/') {
+        slashCount++;
+        path[parentOffset] = '\0';
+        if (strlen(path) == strlen("/sys/devices/pci0000:00")) {
+          // This a CPU root complex. Create a CPU tag and stop there.
+          struct ncclXmlNode* topNode;
+          NCCLCHECK(xmlFindTag(xml, "system", &topNode));
+          NCCLCHECK(xmlGetSubKv(topNode, "cpu", &parent, "numaid", numaIdStr));
           if (parent == NULL) {
-            NCCLCHECK(xmlAddNode(xml, NULL, "pci", &parent));
-            NCCLCHECK(xmlSetAttr(parent, "busid", path+i+1));
+            NCCLCHECK(xmlAddNode(xml, topNode, "cpu", &parent));
+            NCCLCHECK(xmlSetAttr(parent, "numaid", numaIdStr));
           }
-          break;
+        } else if (slashCount == 2) {
+          // Continue on the upper PCI switch
+          for (int i = strlen(path)-1; i>0; i--) {
+            if (path[i] == '/') {
+              NCCLCHECK(xmlFindTagKv(xml, "pci", &parent, "busid", path+i+1));
+              if (parent == NULL) {
+                NCCLCHECK(xmlAddNode(xml, NULL, "pci", &parent));
+                NCCLCHECK(xmlSetAttr(parent, "busid", path+i+1));
+              }
+              break;
+            }
+          }
         }
       }
+      if (parent) break;
     }
     pciNode->parent = parent;
     parent->subs[parent->nSubs++] = pciNode;
