@@ -399,7 +399,9 @@ ncclResult_t ncclTopoAddCpu(struct ncclXmlNode* xmlCpu, struct ncclTopoSystem* s
   NCCLCHECK(ncclTopoCreateNode(system, &cpu, CPU, numaId));
   const char* str;
   NCCLCHECK(xmlGetAttr(xmlCpu, "affinity", &str));
-  NCCLCHECK(ncclStrToCpuset(str, &cpu->cpu.affinity));
+  if (str != NULL) {
+    NCCLCHECK(ncclStrToCpuset(str, &cpu->cpu.affinity));
+  }
 
   NCCLCHECK(xmlGetAttr(xmlCpu, "arch", &str));
   NCCLCHECK(kvConvertToInt(str, &cpu->cpu.arch, kvDictCpuArch));
