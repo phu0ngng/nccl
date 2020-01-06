@@ -287,7 +287,7 @@ ncclResult_t ncclTopoAddNet(struct ncclXmlNode* xmlNet, struct ncclTopoSystem* s
     if (sscanf(str, "%d Gb/sec", &gbps) == EOF) gbps = 0;
     mbps = gbps*1000;
   }
-  if (mbps == 0) mbps = 10000; // Default for undefined NICs
+  if (mbps <= 0) mbps = 10000; // Default for undefined NICs
   net->net.width = mbps / 800;
   net->net.port = port;
   NCCLCHECK(xmlGetAttrInt(xmlNet, "gdr", &net->net.gdrSupport));
