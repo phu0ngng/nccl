@@ -659,6 +659,23 @@ ncclResult_t ncclTopoGetXmlFromNet(struct ncclXmlNode* nicNode, struct ncclXml* 
   return ncclSuccess;
 }
 
+// Returns the subsystem name of a path, i.e. the end of the path
+// where sysPath/subsystem points to.
+ncclResult_t ncclTopoGetSubsystem(const char* sysPath, char* subSys) {
+  char subSysPath[PATH_MAX];
+  sprintf(subSysPath, "%s/subsystem", sysPath);
+  char* path = realpath(subSysPath, NULL);
+  if (path == NULL) {
+    subSys[0] = '\0';
+  } else {
+    int offset;
+    for (offset = strlen(path); offset > 0 && path[offset] != '/'; offset--);
+    strcpy(subSys, path+offset+1);
+    free(path);
+  }
+  return ncclSuccess;
+}
+
 #include <glob.h>
 #define IB_GUID_PATH "%s/infiniband/mlx5_*/sys_image_guid"
 
@@ -675,8 +692,7 @@ ncclResult_t ncclTopoFillNic(struct ncclXml* xml, const char* sysPath, struct nc
       // New behavior
       netSysPath = strdup(sysPath);
       // Find pciSysPath in path/device
-      char* deviceFilePath;
-      NCCLCHECK(ncclCalloc(&deviceFilePath, strlen(sysPath)+sizeof("/device")));
+      char deviceFilePath[PATH_MAX];
       sprintf(deviceFilePath, "%s/device", sysPath);
       struct stat s;
       if (stat(deviceFilePath, &s) == 0) {
@@ -721,18 +737,21 @@ ncclResult_t ncclTopoFillNic(struct ncclXml* xml, const char* sysPath, struct nc
   }
 
   if (pciSysPath) {
+    char subSystem[PATH_MAX];
+    NCCLCHECK(ncclTopoGetSubsystem(pciSysPath, subSystem));
+    // This is not a PCI device (virtual, usb, ...).
+    if (strcmp(subSystem, "pci") != 0) {
+      INFO(NCCL_GRAPH, "Topology detection: network path %s is not a PCI device (%s). Attaching to first CPU", pciSysPath, subSystem);
+      pciSysPath = NULL;
+    }
+  }
+
+  if (pciSysPath) {
     struct ncclXmlNode* pciNode;
     int offset;
     for (offset=strlen(pciSysPath)-1; pciSysPath[offset] != '/'; offset--);
     char busId[NVML_DEVICE_PCI_BUS_ID_BUFFER_SIZE];
     strcpy(busId, pciSysPath+offset+1);
-    if (strncmp(busId, "virtio", strlen("virtio")) == 0) {
-      // This is a virtio device. Go up one level to find the
-      // virtual PCI device.
-      pciSysPath[offset] = '\0';
-      for (;pciSysPath[offset] != '/'; offset--);
-      strcpy(busId, pciSysPath+offset+1);
-    }
     NCCLCHECK(ncclTopoGetPciNode(xml, busId, &pciNode));
     NCCLCHECK(ncclTopoGetXmlFromSys(pciNode, xml));
     NCCLCHECK(xmlGetSub(pciNode, "nic", &nicNode));
