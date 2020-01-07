@@ -127,6 +127,7 @@ ncclResult_t ncclTopoCreateNode(struct ncclTopoSystem* system, struct ncclTopoNo
 ncclResult_t ncclTopoRemoveNode(struct ncclTopoSystem* system, int type, int index) {
   struct ncclTopoNode* delNode = system->nodes[type].nodes+index;
   for (int t=0; t<NCCL_TOPO_NODE_TYPES; t++) {
+    free(delNode->paths[t]);
     for (int n=0; n<system->nodes[t].count; n++) {
       struct ncclTopoNode* node = system->nodes[t].nodes+n;
       if (node == delNode) continue;
