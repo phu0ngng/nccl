@@ -131,11 +131,11 @@ ncclResult_t ncclTopoRemoveNode(struct ncclTopoSystem* system, int type, int ind
       struct ncclTopoNode* node = system->nodes[t].nodes+n;
       if (node == delNode) continue;
       for (int l=0; l<node->nlinks; l++) {
-        while (node->links[l].remNode == delNode) {
+        while (l<node->nlinks && node->links[l].remNode == delNode) {
           memmove(node->links+l, node->links+l+1, (node->nlinks-l-1)*sizeof(struct ncclTopoLink));
           node->nlinks--;
         }
-        if (node->links[l].remNode->type == type && node->links[l].remNode >= delNode) {
+        if (l<node->nlinks && node->links[l].remNode->type == type && node->links[l].remNode >= delNode) {
           node->links[l].remNode--;
         }
       }
