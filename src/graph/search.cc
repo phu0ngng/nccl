@@ -764,7 +764,7 @@ done:
     goto search;
   }
 
-  if (graph->nChannels == 0 && graph->pattern == NCCL_TOPO_PATTERN_RING) {
+  if (graph->nChannels == 0 && graph->collNet == 0) {
     WARN("Could not find a path for pattern %d, falling back to simple order\n", graph->pattern);
     for (int i=0; i<ngpus; i++) graph->intra[i] = system->nodes[GPU].nodes[i].gpu.rank;
     graph->inter[0] = graph->inter[1] = 0;
