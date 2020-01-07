@@ -379,7 +379,7 @@ ncclResult_t ncclTopoAddPci(struct ncclXmlNode* xmlPci, struct ncclTopoSystem* s
 
     // Manage cases where speed was not indicated in /sys
     if (width == 0) width = 16;
-    if (strlen(str) == 0) str = "8 GT/s";
+    if (strlen(str) == 0 || strcasecmp(str, "Unknown speed") == 0) str = "8 GT/s";
 
     NCCLCHECK(kvConvertToInt(str, &speed, kvDictPciGen)); // Values in 100Mbps, per lane (we want x100MB/s in the end)
 
