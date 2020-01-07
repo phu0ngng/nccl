@@ -666,9 +666,9 @@ ncclResult_t ncclTopoFillNic(struct ncclXml* xml, const char* sysPath, struct nc
   // First detect whether it is the net sysPath (old behavior) or the pci sysPath (new behavior)
   char* nicType = NULL;
   char* netSysPath = NULL;
+  char* pciSysPath = NULL;
   struct ncclXmlNode* nicNode;
   if (sysPath != NULL) {
-    char* pciSysPath = NULL;
     char classPath[PATH_MAX];
     snprintf(classPath, PATH_MAX, "%s/class", sysPath);
     if (access(classPath, F_OK ) == -1 ) {
@@ -705,20 +705,22 @@ ncclResult_t ncclTopoFillNic(struct ncclXml* xml, const char* sysPath, struct nc
         globfree(&globbuf);
       }
     }
+  }
 
-    if (netSysPath) {
-      // Find nicType
-      char* subsystemPath;
-      NCCLCHECK(ncclCalloc(&subsystemPath, strlen(netSysPath)+sizeof("/subsystem")));
-      sprintf(subsystemPath, "%s/subsystem", netSysPath);
-      char* subsystemRealPath = realpath(subsystemPath, NULL);
-      int offset = strlen(subsystemRealPath)-1;
-      while (subsystemRealPath[offset] != '/') offset--;
-      NCCLCHECK(ncclCalloc(&nicType, strlen(subsystemRealPath)));
-      strcpy(nicType, subsystemRealPath+offset+1);
-      free(subsystemRealPath);
-    }
+  if (netSysPath) {
+    // Find nicType
+    char* subsystemPath;
+    NCCLCHECK(ncclCalloc(&subsystemPath, strlen(netSysPath)+sizeof("/subsystem")));
+    sprintf(subsystemPath, "%s/subsystem", netSysPath);
+    char* subsystemRealPath = realpath(subsystemPath, NULL);
+    int offset = strlen(subsystemRealPath)-1;
+    while (subsystemRealPath[offset] != '/') offset--;
+    NCCLCHECK(ncclCalloc(&nicType, strlen(subsystemRealPath)));
+    strcpy(nicType, subsystemRealPath+offset+1);
+    free(subsystemRealPath);
+  }
 
+  if (pciSysPath) {
     struct ncclXmlNode* pciNode;
     int offset;
     for (offset=strlen(pciSysPath)-1; pciSysPath[offset] != '/'; offset--);
