@@ -307,9 +307,7 @@ static ncclResult_t getPciPath(const char* busId, char** path) {
 }
 
 ncclResult_t ncclTopoGetStrFromSys(const char* path, const char* fileName, char* strValue) {
-  char* filePath;
-  NCCLCHECK(ncclCalloc(&filePath, strlen(path) + strlen(fileName) + 1));
-  strcpy(filePath, path);
+  char filePath[PATH_MAX];
   sprintf(filePath, "%s/%s", path, fileName);
   int offset = 0;
   FILE* file;
@@ -326,7 +324,6 @@ ncclResult_t ncclTopoGetStrFromSys(const char* path, const char* fileName, char*
   } else {
     strValue[offset-1] = '\0';
   }
-  free(filePath);
   return ncclSuccess;
 }
 
