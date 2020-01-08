@@ -503,9 +503,6 @@ ncclResult_t ncclTopoGetSystemFromXml(struct ncclXml* xml, struct ncclTopoSystem
 }
 
 ncclResult_t ncclTopoGetSystem(struct ncclComm* comm, struct ncclTopoSystem** system) {
-  struct ncclTopoSystem* s;
-  NCCLCHECK(ncclCalloc(&s, 1));
-
   struct ncclXml* xml;
   NCCLCHECK(ncclCalloc(&xml, 1));
   char* xmlTopoFile = getenv("NCCL_TOPO_FILE");
