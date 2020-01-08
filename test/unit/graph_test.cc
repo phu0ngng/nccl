@@ -186,6 +186,7 @@ int main(int argc, const char* argv[]) {
     RUN("DGX-1V-SHARP");
     RUN("DGX-2V");
     RUN("XMAN-3");
+    RUN("Luna");
     RUN("GCP-NV");
     RUN("AWS-NV");
     RUN("Azure");
