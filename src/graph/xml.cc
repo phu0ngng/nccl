@@ -503,6 +503,7 @@ ncclResult_t ncclTopoGetXmlFromSys(struct ncclXmlNode* pciNode, struct ncclXml* 
   } else if (strcmp(parent->name, "cpu") == 0) {
     NCCLCHECK(ncclTopoGetXmlFromCpu(parent, xml));
   }
+  free(path);
   return ncclSuccess;
 }
 
@@ -725,8 +726,7 @@ ncclResult_t ncclTopoFillNic(struct ncclXml* xml, const char* sysPath, struct nc
 
   if (netSysPath) {
     // Find nicType
-    char* subsystemPath;
-    NCCLCHECK(ncclCalloc(&subsystemPath, strlen(netSysPath)+sizeof("/subsystem")));
+    char subsystemPath[PATH_MAX];
     sprintf(subsystemPath, "%s/subsystem", netSysPath);
     char* subsystemRealPath = realpath(subsystemPath, NULL);
     int offset = strlen(subsystemRealPath)-1;

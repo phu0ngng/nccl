@@ -552,6 +552,7 @@ ncclResult_t ncclTopoGetSystem(struct ncclComm* comm, struct ncclTopoSystem** sy
       int gdr = ptrSupport & NCCL_PTR_CUDA ? 1 : 0;
       NCCLCHECK(xmlSetAttrInt(node, "gdr", gdr));
     }
+    free(path);
   }
   if (ncclCollNet) {
     // Also set their collnet capability
@@ -577,6 +578,7 @@ ncclResult_t ncclTopoGetSystem(struct ncclComm* comm, struct ncclTopoSystem** sy
         gdr = std::min(p2pGdr, gdr);
       }
       NCCLCHECK(xmlSetAttrInt(node, "gdr", gdr));
+      free(path);
     }
   }
 
