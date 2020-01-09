@@ -1,0 +1,27 @@
+<system version="1">
+  <cpu numaid="0" affinity="00000000,00000000,00000000,0000ffff,ffffffff,ffffffff,ffffffff" arch="arm64">
+    <pci busid="0000:01:00.0" class="0x030200" link_speed="8 GT/s" link_width="16">
+      <gpu dev="0" sm="70" rank="0" gdr="0"/>
+    </pci>
+    <pci busid="0000:0b:00.0" class="0x020000" link_speed="8 GT/s" link_width="8">
+      <nic type="infiniband">
+        <net name="mlx5_1" sys_guid="0000:0000:0000:0000" link_rate="2.5 Gb/sec (1X)" dev="0" gdr="0"/>
+      </nic>
+    </pci>
+    <pci busid="0000:05:00.0" class="0x020700" link_speed="8 GT/s" link_width="8">
+      <nic type="infiniband">
+        <net name="mlx5_0" sys_guid="b883:03ff:ff6b:8208" link_rate="100 Gb/sec (4X EDR)" dev="2" gdr="0"/>
+      </nic>
+    </pci>
+  </cpu>
+  <cpu numaid="1" affinity="ffffffff,ffffffff,ffffffff,ffff0000,00000000,00000000,00000000" arch="arm64">
+    <pci busid="0000:81:00.0" class="0x030200" link_speed="8 GT/s" link_width="16">
+      <gpu dev="1" sm="70" rank="1" gdr="0"/>
+    </pci>
+    <pci busid="0000:82:00.0" class="0x020700" link_speed="8 GT/s" link_width="8">
+      <nic type="infiniband">
+        <net name="mlx5_3" sys_guid="b883:03ff:ff6b:8208" link_rate="100 Gb/sec (4X EDR)" dev="1" gdr="0"/>
+      </nic>
+    </pci>
+  </cpu>
+</system>

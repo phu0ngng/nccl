@@ -195,6 +195,7 @@ int main(int argc, const char* argv[]) {
 #endif
     RUN("P9-6V");
     RUN("P9-4V");
+    RUN("HP-ARM-V100");
   }
   printf("%d errors (%s)\n", errors, errors ? "FAILED" : "PASSED");
   return errors;
