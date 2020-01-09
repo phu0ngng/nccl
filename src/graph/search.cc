@@ -691,7 +691,7 @@ search:
       goto search;
     }
     tmpGraph.typeIntra = LINK_LOC;
-    if (system->nodes[NET].count > 0 && tmpGraph.typeInter < LINK_QPI) {
+    if (system->nodes[NET].count > 0 && tmpGraph.typeInter < LINK_QPI && graph->nChannels == 0) {
       tmpGraph.typeInter += 1;
       goto search;
     }
