@@ -726,11 +726,16 @@ ncclResult_t ncclTopoFillNic(struct ncclXml* xml, const char* sysPath, struct nc
     char subsystemPath[PATH_MAX];
     sprintf(subsystemPath, "%s/subsystem", netSysPath);
     char* subsystemRealPath = realpath(subsystemPath, NULL);
-    int offset = strlen(subsystemRealPath)-1;
-    while (subsystemRealPath[offset] != '/') offset--;
-    NCCLCHECK(ncclCalloc(&nicType, strlen(subsystemRealPath)));
-    strcpy(nicType, subsystemRealPath+offset+1);
-    free(subsystemRealPath);
+    if (subsystemRealPath == NULL) {
+      INFO(NCCL_GRAPH, "Topology detection : could not find realpath '%s'", subsystemPath);
+    }
+    else {
+      int offset = strlen(subsystemRealPath)-1;
+      while (subsystemRealPath[offset] != '/') offset--;
+      NCCLCHECK(ncclCalloc(&nicType, strlen(subsystemRealPath)));
+      strcpy(nicType, subsystemRealPath+offset+1);
+      free(subsystemRealPath);
+    }
   }
 
   if (pciSysPath) {
