@@ -865,6 +865,7 @@ testResult_t run() {
 #define MAX_LINE 2048
   char line[MAX_LINE];
   int len = 0;
+  size_t maxMem = maxBytes*7/2;
   for (int i=0; i<nThreads*nGpus; i++) {
     char* str = getenv("NCCL_TESTS_DEVICE");
     int cudaDev = str ? atoi(str) : localRank*nThreads*nGpus+i;
@@ -873,6 +874,7 @@ testResult_t run() {
     CUDACHECK(cudaGetDeviceProperties(&prop, cudaDev));
     len += snprintf(line+len, MAX_LINE-len, "#   Rank %2d Pid %6d on %10s device %2d [0x%02x] %s\n",
                     rank, getpid(), hostname, cudaDev, prop.pciBusID, prop.name);
+    maxMem = std::min(maxMem, prop.totalGlobalMem);
   }
 
 #if MPI_SUPPORT
@@ -884,9 +886,14 @@ testResult_t run() {
       PRINT("%s", lines+MAX_LINE*p);
     free(lines);
   }
+  MPI_Allreduce(MPI_IN_PLACE, &maxMem, 1, MPI_LONG, MPI_MIN, MPI_COMM_WORLD);
 #else
   PRINT("%s", line);
 #endif
+  if (maxMem < maxBytes*7/2) {
+    while (maxMem < maxBytes*7/2) maxBytes /= 2;
+    if (proc == 0) printf("#\n# Reducing maxBytes to %ld due to memory limitation\n", maxBytes);
+  }
 
   ncclUniqueId ncclId;
   if (proc == 0) {
