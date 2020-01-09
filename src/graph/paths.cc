@@ -271,6 +271,9 @@ ncclResult_t ncclTopoCheckGdr(struct ncclTopoSystem* system, int64_t busId, int 
     if (gdrReadParam == 0) return ncclSuccess;
     if (gdrReadParam < 0) {
       int nvlink = 0;
+      // Since we don't know whether there are other communicators,
+      // it's better to keep things local if we have a single GPU.
+      if (system->nodes[CPU].count == 1) nvlink = 1;
       for (int i=0; i<system->nodes[GPU].count; i++) {
         if (i == g) continue;
         if (gpu->paths[GPU][i].type == LINK_NVL) {
