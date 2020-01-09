@@ -59,7 +59,7 @@ int compareGraphs(struct ncclTopoGraph* ref, struct ncclTopoGraph* out, int ngpu
       }
       while (strlen(line) < margin+width) sprintf(line+strlen(line), " ");
       if (i < out->nChannels) {
-        if (inter) sprintf(line+strlen(line), "[%2d %2d] ", ref->inter[i*2], ref->inter[i*2+1]);
+        if (inter) sprintf(line+strlen(line), "[%2d %2d] ", out->inter[i*2], out->inter[i*2+1]);
         for (int g=0; g<ngpus; g++) sprintf(line+strlen(line), "%2d ", ref->intra[i*ngpus+g]);
       }
       printf("%s\n", line);
