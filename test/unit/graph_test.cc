@@ -60,7 +60,7 @@ int compareGraphs(struct ncclTopoGraph* ref, struct ncclTopoGraph* out, int ngpu
       while (strlen(line) < margin+width) sprintf(line+strlen(line), " ");
       if (i < out->nChannels) {
         if (inter) sprintf(line+strlen(line), "[%2d %2d] ", out->inter[i*2], out->inter[i*2+1]);
-        for (int g=0; g<ngpus; g++) sprintf(line+strlen(line), "%2d ", ref->intra[i*ngpus+g]);
+        for (int g=0; g<ngpus; g++) sprintf(line+strlen(line), "%2d ", out->intra[i*ngpus+g]);
       }
       printf("%s\n", line);
     }
@@ -188,6 +188,7 @@ int main(int argc, const char* argv[]) {
     RUN("PCI-1R");
     RUN("PCI-2R");
     RUN("PCI-NV");
+    RUN("SKL-V100");
     RUN("T4");
 #ifdef __x86_64__
     RUN("DGX-1P");
