@@ -44,9 +44,9 @@ int compareGraphs(struct ncclTopoGraph* ref, struct ncclTopoGraph* out, int ngpu
     line[0] = '\0';
     sprintf(line+strlen(line), "                        Properties : ");
     while (strlen(line) < margin) sprintf(line+strlen(line), " ");
-    sprintf(line+strlen(line), "%7s %2dx%4d/%4d %3s/%3s P%1d C%1d S%1d", graphNames[ref->id], ref->nChannels, ref->speedIntra, ref->speedInter, topoLinkTypeStr[ref->typeIntra], topoLinkTypeStr[ref->typeInter], ref->pattern, ref->crossNic, ref->sameChannels);
+    sprintf(line+strlen(line), "%7s %2dx%4.1f/%4.1f %3s/%3s P%1d C%1d S%1d", graphNames[ref->id], ref->nChannels, ref->speedIntra, ref->speedInter, topoLinkTypeStr[ref->typeIntra], topoLinkTypeStr[ref->typeInter], ref->pattern, ref->crossNic, ref->sameChannels);
     while (strlen(line) < margin+width) sprintf(line+strlen(line), " ");
-    sprintf(line+strlen(line), "%7s %2dx%4d/%4d %3s/%3s P%1d C%1d S%1d", graphNames[out->id], out->nChannels, out->speedIntra, out->speedInter, topoLinkTypeStr[out->typeIntra], topoLinkTypeStr[out->typeInter], out->pattern, out->crossNic, out->sameChannels);
+    sprintf(line+strlen(line), "%7s %2dx%4.1f/%4.1f %3s/%3s P%1d C%1d S%1d", graphNames[out->id], out->nChannels, out->speedIntra, out->speedInter, topoLinkTypeStr[out->typeIntra], topoLinkTypeStr[out->typeInter], out->pattern, out->crossNic, out->sameChannels);
     printf("%s\n", line);
 
     line[0] = '\0';
@@ -141,7 +141,7 @@ int checkTopo(const char* xmlTopoFile, const char* xmlGraphFile, const char* pla
   errors += compareGraphs(&refTreeGraph, &treeGraph, system->nodes[GPU].count, inter);
   errors += compareGraphs(&refCNetGraph, &cNetGraph, system->nodes[GPU].count, inter);
 
-  printf(" %15s/%s  %2dx%3d/%3d | %2dx%3d/%3d | %2dx%3d/%3d", platform, inter ? "Inter":"Intra",
+  printf(" %15s/%s  %2dx%4.1f/%4.1f | %2dx%4.1f/%4.1f | %2dx%4.1f/%4.1f", platform, inter ? "Inter":"Intra",
       ringGraph.nChannels, ringGraph.speedIntra, ringGraph.speedInter,
       treeGraph.nChannels, treeGraph.speedIntra, treeGraph.speedInter,
       cNetGraph.nChannels, cNetGraph.speedIntra, cNetGraph.speedInter);

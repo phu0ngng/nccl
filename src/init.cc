@@ -660,8 +660,8 @@ static ncclResult_t initTransportsRank(struct ncclComm* comm, ncclUniqueId* comm
   // AllGather3 - begin
   struct ncclGraphInfo {
     int sameChannels;
-    int speedIntra;
-    int speedInter;
+    float speedIntra;
+    float speedInter;
     int typeIntra;
   };
 

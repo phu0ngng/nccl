@@ -1,12 +1,12 @@
 <graphs version="1">
-  <graph id="0" pattern="4" crossnic="0" nchannels="1" speedintra="100" speedinter="100" typeintra="LOC" typeinter="PCI" samechannels="1">
+  <graph id="0" pattern="4" crossnic="0" nchannels="1" speedintra="10" speedinter="10" typeintra="LOC" typeinter="PCI" samechannels="1">
     <channel>
       <net dev="0"/>
       <gpu dev="2"/>
       <net dev="0"/>
     </channel>
   </graph>
-  <graph id="1" pattern="3" crossnic="0" nchannels="1" speedintra="200" speedinter="100" typeintra="LOC" typeinter="PCI" samechannels="1">
+  <graph id="1" pattern="3" crossnic="0" nchannels="1" speedintra="20" speedinter="10" typeintra="LOC" typeinter="PCI" samechannels="1">
     <channel>
       <net dev="0"/>
       <gpu dev="2"/>

@@ -58,7 +58,7 @@ static ncclResult_t ncclTopoSetPaths(struct ncclTopoNode* baseNode, struct ncclT
         }
         struct ncclTopoLinkList* remPath;
         NCCLCHECK(getPath(system, remNode, baseNode->type, baseNode->id, &remPath));
-        int width = std::min(path->width, link->width);
+        float width = std::min(path->width, link->width);
         if (remPath->width < width) {
           // Find reverse link
           for (int l=0; l<remNode->nlinks; l++) {
@@ -118,9 +118,9 @@ static void printNodePaths(struct ncclTopoSystem* system, struct ncclTopoNode* n
         sprintf(line+offset, "--%s->%s/%lX", topoLinkTypeStr[link->type], topoNodeTypeStr[remNode->type], remNode->id);
         offset = strlen(line);
       }
-      INFO(NCCL_GRAPH, "%s (%d)", line, node->paths[t][n].width);
+      INFO(NCCL_GRAPH, "%s (%f)", line, node->paths[t][n].width);
 #else
-      sprintf(line+offset, "%s/%lX (%d/%d/%d) ", topoNodeTypeStr[t], system->nodes[t].nodes[n].id, node->paths[t][n].count, node->paths[t][n].width, node->paths[t][n].type);
+      sprintf(line+offset, "%s/%lX (%d/%f/%d) ", topoNodeTypeStr[t], system->nodes[t].nodes[n].id, node->paths[t][n].count, node->paths[t][n].width, node->paths[t][n].type);
       offset = strlen(line);
 #endif
     }

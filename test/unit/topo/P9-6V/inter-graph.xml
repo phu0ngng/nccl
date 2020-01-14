@@ -1,5 +1,5 @@
 <graphs version="1">
-  <graph id="0" pattern="4" crossnic="0" nchannels="2" speedintra="120" speedinter="120" typeintra="NVL" typeinter="QPI" samechannels="0">
+  <graph id="0" pattern="4" crossnic="0" nchannels="2" speedintra="12" speedinter="12" typeintra="NVL" typeinter="QPI" samechannels="0">
     <channel>
       <net dev="0"/>
       <gpu dev="0"/>
@@ -21,7 +21,7 @@
       <net dev="2"/>
     </channel>
   </graph>
-  <graph id="1" pattern="2" crossnic="0" nchannels="2" speedintra="240" speedinter="120" typeintra="NVL" typeinter="QPI" samechannels="0">
+  <graph id="1" pattern="2" crossnic="0" nchannels="2" speedintra="24" speedinter="12" typeintra="NVL" typeinter="QPI" samechannels="0">
     <channel>
       <net dev="0"/>
       <gpu dev="0"/>

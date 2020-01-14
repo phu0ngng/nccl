@@ -60,7 +60,7 @@ static ncclResult_t findLocalCpu(struct ncclTopoNode* node, struct ncclTopoNode*
 int interCpuWidth = 0;
 int cpuPciWidth = 0;
 
-static ncclResult_t ncclTopoGetInterCpuWidth(struct ncclTopoNode* cpu, int* width) {
+static ncclResult_t ncclTopoGetInterCpuWidth(struct ncclTopoNode* cpu, float* width) {
   *width = LOC_WIDTH;
   if (cpu->cpu.arch == NCCL_TOPO_CPU_ARCH_POWER) {
     *width = P9_WIDTH;
@@ -69,10 +69,6 @@ static ncclResult_t ncclTopoGetInterCpuWidth(struct ncclTopoNode* cpu, int* widt
   if (cpu->cpu.arch == NCCL_TOPO_CPU_ARCH_X86 && cpu->cpu.vendor == NCCL_TOPO_CPU_VENDOR_INTEL) {
     *width = cpu->cpu.model == NCCL_TOPO_CPU_TYPE_SKL ? SKL_QPI_WIDTH : QPI_WIDTH;
   }
-  return ncclSuccess;
-}
-static ncclResult_t ncclTopoGetNetWidth(int* width) {
-  *width = NET_WIDTH;
   return ncclSuccess;
 }
 
@@ -118,7 +114,7 @@ ncclResult_t ncclTopoCreateNode(struct ncclTopoSystem* system, struct ncclTopoNo
   } else if (type == NET) {
     n->net.asic = 0ULL;
     n->net.port = NCCL_TOPO_UNDEF;
-    n->net.width = NCCL_TOPO_UNDEF;
+    n->net.width = 0.0;
   }
   *node = n;
   return ncclSuccess;
@@ -147,7 +143,7 @@ ncclResult_t ncclTopoRemoveNode(struct ncclTopoSystem* system, int type, int ind
   return ncclSuccess;
 }
 
-ncclResult_t ncclTopoConnectNodes(struct ncclTopoNode* node, struct ncclTopoNode* remNode, int type, int width) {
+ncclResult_t ncclTopoConnectNodes(struct ncclTopoNode* node, struct ncclTopoNode* remNode, int type, float width) {
   // Aggregate links into higher width for NVLink
   struct ncclTopoLink* link;
   for (link = node->links; link->remNode; link++) {
@@ -175,7 +171,7 @@ ncclResult_t ncclTopoConnectCpus(struct ncclTopoSystem* system) {
   for (int n=0; n<system->nodes[CPU].count; n++) {
     for (int p=0; p<system->nodes[CPU].count; p++) {
       if (n == p) continue;
-      int width;
+      float width;
       NCCLCHECK(ncclTopoGetInterCpuWidth(system->nodes[CPU].nodes+n, &width));
       NCCLCHECK(ncclTopoConnectNodes(system->nodes[CPU].nodes+n, system->nodes[CPU].nodes+p, LINK_QPI, width));
     }
@@ -198,13 +194,13 @@ static ncclResult_t ncclTopoPrintRec(struct ncclTopoNode* node, struct ncclTopoN
     struct ncclTopoLink* link = node->links+l;
     if (link->type == LINK_LOC) continue;
     if (link->type != LINK_PCI || link->remNode != prevNode) {
-      sprintf(line+offset, "+ %s[%2d] - ", topoLinkTypeStr[link->type], link->width);
+      sprintf(line+offset, "+ %s[%2.1f] - ", topoLinkTypeStr[link->type], link->width);
       int nextOffset = strlen(line);
       if (link->type == LINK_PCI) {
         NCCLCHECK(ncclTopoPrintRec(link->remNode, node, line, nextOffset));
       } else {
         if (link->remNode->type == NET) {
-          sprintf(line+nextOffset, "%s/%lX (%lx/%d/%d)", topoNodeTypeStr[link->remNode->type], link->remNode->id, link->remNode->net.asic, link->remNode->net.port, link->remNode->net.width);
+          sprintf(line+nextOffset, "%s/%lX (%lx/%d/%f)", topoNodeTypeStr[link->remNode->type], link->remNode->id, link->remNode->net.asic, link->remNode->net.port, link->remNode->net.width);
         } else {
           sprintf(line+nextOffset, "%s/%lX", topoNodeTypeStr[link->remNode->type], link->remNode->id);
         }
@@ -216,7 +212,7 @@ static ncclResult_t ncclTopoPrintRec(struct ncclTopoNode* node, struct ncclTopoN
 }
 
 ncclResult_t ncclTopoPrint(struct ncclTopoSystem* s) {
-  INFO(NCCL_GRAPH, "=== System : maxWidth %2d ===", s->maxWidth);
+  INFO(NCCL_GRAPH, "=== System : maxWidth %2.1f ===", s->maxWidth);
   char line[1024];
   for (int n=0; n<s->nodes[CPU].count; n++) NCCLCHECK(ncclTopoPrintRec(s->nodes[CPU].nodes+n, NULL, line, 0));
   INFO(NCCL_GRAPH, "==========================================");
@@ -289,7 +285,7 @@ ncclResult_t ncclTopoAddNet(struct ncclXmlNode* xmlNet, struct ncclTopoSystem* s
     mbps = gbps*1000;
   }
   if (mbps <= 0) mbps = 10000; // Default for undefined NICs
-  net->net.width = mbps / 800;
+  net->net.width = mbps / 8000.0;
   net->net.port = port;
   NCCLCHECK(xmlGetAttrInt(xmlNet, "gdr", &net->net.gdrSupport));
 
@@ -382,10 +378,10 @@ ncclResult_t ncclTopoAddPci(struct ncclXmlNode* xmlPci, struct ncclTopoSystem* s
     if (width == 0) width = 16;
     if (strlen(str) == 0 || strcasecmp(str, "Unknown speed") == 0) str = "8 GT/s";
 
-    NCCLCHECK(kvConvertToInt(str, &speed, kvDictPciGen)); // Values in 100Mbps, per lane (we want x100MB/s in the end)
+    NCCLCHECK(kvConvertToInt(str, &speed, kvDictPciGen)); // Values in 100Mbps, per lane (we want GB/s in the end)
 
-    NCCLCHECK(ncclTopoConnectNodes(node, parent, LINK_PCI, width*speed/8));
-    NCCLCHECK(ncclTopoConnectNodes(parent, node, LINK_PCI, width*speed/8));
+    NCCLCHECK(ncclTopoConnectNodes(node, parent, LINK_PCI, width*speed/80.0));
+    NCCLCHECK(ncclTopoConnectNodes(parent, node, LINK_PCI, width*speed/80.0));
   }
   return ncclSuccess;
 }

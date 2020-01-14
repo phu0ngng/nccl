@@ -82,6 +82,17 @@ static ncclResult_t xmlGetAttrInt(struct ncclXmlNode* node, const char* attrName
   return ncclSuccess;
 }
 
+static ncclResult_t xmlGetAttrFloat(struct ncclXmlNode* node, const char* attrName, float* value) {
+  const char* str;
+  NCCLCHECK(xmlGetAttr(node, attrName, &str));
+  if (str == NULL) {
+    WARN("Attribute %s of node %s not found\n", attrName, node->name);
+    return ncclInternalError;
+  }
+  *value = strtof(str, NULL);
+  return ncclSuccess;
+}
+
 static ncclResult_t xmlFindTag(struct ncclXml* xml, const char* tagName, struct ncclXmlNode** node) {
   *node = NULL;
   for (int i=0; i<xml->maxIndex; i++) {
@@ -129,6 +140,17 @@ static ncclResult_t xmlSetAttrInt(struct ncclXmlNode* node, const char* attrName
     strncpy(node->attrs[index].key, attrName, MAX_STR_LEN);
   }
   snprintf(node->attrs[index].value, MAX_STR_LEN, "%d", value);
+  return ncclSuccess;
+}
+
+static ncclResult_t xmlSetAttrFloat(struct ncclXmlNode* node, const char* attrName, const float value) {
+  int index;
+  NCCLCHECK(xmlGetAttrIndex(node, attrName, &index));
+  if (index == -1) {
+    index = node->nAttrs++;
+    strncpy(node->attrs[index].key, attrName, MAX_STR_LEN);
+  }
+  snprintf(node->attrs[index].value, MAX_STR_LEN, "%f", value);
   return ncclSuccess;
 }
 

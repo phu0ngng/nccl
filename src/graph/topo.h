@@ -11,19 +11,19 @@
 #include "core.h"
 #include <sched.h>
 
-#define LOC_WIDTH 50000
-#define PASCAL_NVLINK_WIDTH 180
-#define VOLTA_NVLINK_WIDTH 210
-#define PCI_WIDTH 120           // PCI Gen3 x16
-#define QPI_WIDTH 240
-#define SKL_QPI_WIDTH 90
-#define P9_WIDTH 320
-#define AMD_WIDTH 50000         // Refine later
-#define NET_WIDTH 120           // 100Gbit
+#define LOC_WIDTH 5000.0
+#define PASCAL_NVLINK_WIDTH 18.0
+#define VOLTA_NVLINK_WIDTH 21.0
+#define PCI_WIDTH 12.0           // PCI Gen3 x16
+#define QPI_WIDTH 24.0
+#define SKL_QPI_WIDTH 9.0
+#define P9_WIDTH 32.0
+#define AMD_WIDTH 5000.0         // Refine later
+#define NET_WIDTH 12.0           // 100Gbit
 
 // Intel CPU convert GPU P2P traffic into 64B PCI TLPs, to GPU
 // to GPU traffic consumed more PCI bandwidth.
-#define INTEL_P2P(speed) (DIVUP(speed*9, 12))
+#define INTEL_P2P(speed) (speed*9/12)
 #define INTEL_P2P_OVERHEAD(speed) (speed*12/9)
 
 #define NCCL_TOPO_NODE_TYPES 7
@@ -46,7 +46,7 @@ extern const char* topoLinkTypeStr[];
 struct ncclTopoNode;
 struct ncclTopoLink {
   int type;
-  int width;
+  float width;
   struct ncclTopoNode* remNode;
 };
 #define NCCL_TOPO_MAX_LINKS 32
@@ -55,7 +55,7 @@ struct ncclTopoLink {
 struct ncclTopoLinkList {
   struct ncclTopoLink* list[NCCL_TOPO_MAX_HOPS];
   int count;
-  int width;
+  float width;
   int type;
 };
 
@@ -78,7 +78,7 @@ struct ncclTopoNode {
     struct {
       uint64_t asic;
       int port;
-      int width;
+      float width;
       int gdrSupport;
       int collSupport;
     }net;
@@ -104,13 +104,13 @@ struct ncclTopoNodeSet {
 
 struct ncclTopoSystem {
   struct ncclTopoNodeSet nodes[NCCL_TOPO_NODE_TYPES];
-  int maxWidth;
+  float maxWidth;
 };
 
 ncclResult_t ncclTopoGetNode(struct ncclTopoSystem* system, struct ncclTopoNode** node, int type, uint64_t id);
 ncclResult_t ncclTopoCreateNode(struct ncclTopoSystem* system, struct ncclTopoNode** node, int type, uint64_t id);
 ncclResult_t ncclTopoRemoveNode(struct ncclTopoSystem* system, int type, int id);
-ncclResult_t ncclTopoConnectNodes(struct ncclTopoNode* node, struct ncclTopoNode* remNode, int type, int width);
+ncclResult_t ncclTopoConnectNodes(struct ncclTopoNode* node, struct ncclTopoNode* remNode, int type, float width);
 ncclResult_t ncclTopoPrintPaths(struct ncclTopoSystem* system);
 ncclResult_t ncclTopoLoadSystem(const char* xmlTopoFile, struct ncclTopoSystem* system);
 

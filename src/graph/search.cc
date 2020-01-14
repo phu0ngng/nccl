@@ -19,7 +19,7 @@ ncclResult_t ncclTopoSearchInit(struct ncclTopoSystem* system) {
     for (int l=0; l<gpu->nlinks; l++) {
       if (gpu->links[l].type == LINK_NVL) gpuLinkType = LINK_NVL;
     }
-    int gpuMaxWidth = gpuLinkType == LINK_NVL ? (gpu->gpu.cudaCompCap > 60 ? VOLTA_NVLINK_WIDTH : PASCAL_NVLINK_WIDTH) : PCI_WIDTH;
+    float gpuMaxWidth = gpuLinkType == LINK_NVL ? (gpu->gpu.cudaCompCap > 60 ? VOLTA_NVLINK_WIDTH : PASCAL_NVLINK_WIDTH) : PCI_WIDTH;
     system->maxWidth = std::min(system->maxWidth, gpuMaxWidth);
   }
   if (system->nodes[NET].count > 0) {
@@ -40,7 +40,7 @@ static ncclResult_t findRevLink(struct ncclTopoNode* node1, struct ncclTopoNode*
   return ncclInternalError;
 }
 
-static ncclResult_t followPath(struct ncclTopoLinkList* path, struct ncclTopoNode* start, int maxSteps, int speed, int* steps) {
+static ncclResult_t followPath(struct ncclTopoLinkList* path, struct ncclTopoNode* start, int maxSteps, float speed, int* steps) {
   int lastCpuStep = path->count;
   struct ncclTopoNode* end = NULL;
   for (int step=0; step<path->count; step++) {
@@ -96,7 +96,7 @@ static ncclResult_t ncclTopoFollowPath(struct ncclTopoSystem* system, struct ncc
   // Now check link type
   *node = NULL;
   int intra = type1 == GPU && type2 == GPU;
-  int speed = intra ? graph->speedIntra : graph->speedInter;
+  float speed = intra ? graph->speedIntra : graph->speedInter;
   int type = intra ? graph->typeIntra : graph->typeInter;
 
 //  printf("%d/%x -> %d/%x : Type %d/%d\n", type1, index1, type2, index2, path->type, type);
@@ -530,8 +530,8 @@ ncclResult_t ncclTopoGetGraphFromXmlSub(struct ncclXmlNode *xmlGraph, struct ncc
 
   NCCLCHECK(xmlGetAttrInt(xmlGraph, "pattern", &graph->pattern));
   NCCLCHECK(xmlGetAttrInt(xmlGraph, "nchannels", &graph->nChannels));
-  NCCLCHECK(xmlGetAttrInt(xmlGraph, "speedintra", &graph->speedIntra));
-  NCCLCHECK(xmlGetAttrInt(xmlGraph, "speedinter", &graph->speedInter));
+  NCCLCHECK(xmlGetAttrFloat(xmlGraph, "speedintra", &graph->speedIntra));
+  NCCLCHECK(xmlGetAttrFloat(xmlGraph, "speedinter", &graph->speedInter));
   const char* str;
   NCCLCHECK(xmlGetAttr(xmlGraph, "typeintra", &str));
   NCCLCHECK(kvConvertToInt(str, &graph->typeIntra, kvDictLinkType));
@@ -587,8 +587,8 @@ ncclResult_t ncclTopoGetXmlFromGraph(struct ncclTopoGraph* graph, struct ncclTop
   NCCLCHECK(xmlSetAttrInt(xmlGraph, "pattern", graph->pattern));
   NCCLCHECK(xmlSetAttrInt(xmlGraph, "crossnic", graph->crossNic));
   NCCLCHECK(xmlSetAttrInt(xmlGraph, "nchannels", graph->nChannels));
-  NCCLCHECK(xmlSetAttrInt(xmlGraph, "speedintra", graph->speedIntra));
-  NCCLCHECK(xmlSetAttrInt(xmlGraph, "speedinter", graph->speedInter));
+  NCCLCHECK(xmlSetAttrFloat(xmlGraph, "speedintra", graph->speedIntra));
+  NCCLCHECK(xmlSetAttrFloat(xmlGraph, "speedinter", graph->speedInter));
   const char* str;
   NCCLCHECK(kvConvertToStr(graph->typeIntra, &str, kvDictLinkType));
   NCCLCHECK(xmlSetAttr(xmlGraph, "typeintra", str));
@@ -611,8 +611,8 @@ ncclResult_t ncclTopoGetXmlFromGraphs(int ngraphs, struct ncclTopoGraph** graphs
   return ncclSuccess;
 }
 
-#define BW_COARSE_INC 30
-#define BW_FINE_INC 10
+#define BW_COARSE_INC 3.0
+#define BW_FINE_INC 1.0
 
 ncclResult_t ncclTopoCompute(ncclTopoSystem* system, struct ncclTopoGraph* graph) {
   int ngpus = system->nodes[GPU].count;
@@ -712,8 +712,8 @@ search:
       } else if (tmpGraph.speedInter > BW_FINE_INC) {
         tmpGraph.speedIntra = tmpGraph.speedInter -= BW_FINE_INC;
         goto search;
-      } else if (tmpGraph.speedInter > 1) {
-        tmpGraph.speedIntra = tmpGraph.speedInter -= 1;
+      } else if (tmpGraph.speedInter > .1) {
+        tmpGraph.speedIntra = tmpGraph.speedInter -= .1;
         goto search;
       }
     } else if (tmpGraph.speedIntra-BW_COARSE_INC >= graph->speedIntra/2) {
@@ -768,7 +768,7 @@ done:
     WARN("Could not find a path for pattern %d, falling back to simple order\n", graph->pattern);
     for (int i=0; i<ngpus; i++) graph->intra[i] = system->nodes[GPU].nodes[i].gpu.rank;
     graph->inter[0] = graph->inter[1] = 0;
-    graph->speedIntra = graph->speedInter = 1;
+    graph->speedIntra = graph->speedInter = 0.1;
     graph->typeIntra = graph->typeInter = LINK_QPI;
     graph->nChannels = 1;
   }
@@ -776,7 +776,7 @@ done:
 }
 
 ncclResult_t ncclTopoPrintGraph(struct ncclTopoSystem* system, struct ncclTopoGraph* graph) {
-  INFO(NCCL_GRAPH, "Pattern %d, crossNic %d, nChannels %d, speed %d/%d, type %d/%d, sameChannels %d", graph->pattern, graph->crossNic, graph->nChannels, graph->speedIntra, graph->speedInter, graph->typeIntra, graph->typeInter, graph->sameChannels);
+  INFO(NCCL_GRAPH, "Pattern %d, crossNic %d, nChannels %d, speed %f/%f, type %d/%d, sameChannels %d", graph->pattern, graph->crossNic, graph->nChannels, graph->speedIntra, graph->speedInter, graph->typeIntra, graph->typeInter, graph->sameChannels);
   int ngpus = system->nodes[GPU].count;
 
   char line[1024];
