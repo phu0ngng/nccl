@@ -62,7 +62,7 @@ static ncclResult_t followPath(struct ncclTopoLinkList* path, struct ncclTopoNod
   for (int step=0; step<maxSteps; step++) {
     struct ncclTopoLink* link = path->list[step];
     struct ncclTopoLink* revLink = NULL;
-    int revSpeed = 0;
+    float revSpeed = 0;
     if (link->remNode->type == GPU && start->type != GPU && path->type == LINK_PCI) {
       if (revLink == NULL) NCCLCHECK(findRevLink(node, link->remNode, &revLink));
       revSpeed += speed/8;
@@ -99,7 +99,6 @@ static ncclResult_t ncclTopoFollowPath(struct ncclTopoSystem* system, struct ncc
   float speed = intra ? graph->speedIntra : graph->speedInter;
   int type = intra ? graph->typeIntra : graph->typeInter;
 
-//  printf("%d/%x -> %d/%x : Type %d/%d\n", type1, index1, type2, index2, path->type, type);
   if (mult == 1 && (path->type > type)) return ncclSuccess;
 
   speed *= mult;
@@ -107,7 +106,6 @@ static ncclResult_t ncclTopoFollowPath(struct ncclTopoSystem* system, struct ncc
   // Check there is enough bandwidth on paths.
   int step = 0;
   NCCLCHECK(followPath(path, node1, path->count, speed, &step));
-//  printf("%d/%x -> %d/%x : %d/%d\n", type1, index1, type2, index2, step, path->count);
   if (step < path->count) goto rewind;
 
   // Enough bandwidth : return destination node.
@@ -391,7 +389,8 @@ ncclResult_t ncclTopoSearchRecNet(struct ncclTopoSystem* system, struct ncclTopo
       }
 
       // Then try the most local GPUs
-      int maxWidth = 0, minHops = 0xfffffff;
+      float maxWidth = 0;
+      int minHops = 0xfffffff;
       struct ncclTopoLinkList* paths = net->paths[GPU];
       for (int g=0; g<system->nodes[GPU].count; g++) {
         if (paths[g].width > maxWidth) {
@@ -650,7 +649,7 @@ search:
   tmpGraph.nChannels = 0;
   NCCLCHECK(ncclTopoSearchRec(system, &tmpGraph, graph, &time));
 #if 0
-  printf("Pattern %d, crossNic %d, Speed %d/%d, type %d/%d, channels %d-%d sameChannels %d -> nChannels %dx%d/%d %s\n", tmpGraph.pattern, tmpGraph.crossNic, tmpGraph.speedInter, tmpGraph.speedIntra, tmpGraph.typeInter, tmpGraph.typeIntra, tmpGraph.minChannels, tmpGraph.maxChannels, tmpGraph.sameChannels, graph->nChannels, graph->speedInter, graph->speedIntra, time == 0 ? "TIMEOUT" : "");
+  printf("Pattern %d, crossNic %d, Speed %g/%g, type %d/%d, channels %d-%d sameChannels %d -> nChannels %dx%g/%g %s\n", tmpGraph.pattern, tmpGraph.crossNic, tmpGraph.speedInter, tmpGraph.speedIntra, tmpGraph.typeInter, tmpGraph.typeIntra, tmpGraph.minChannels, tmpGraph.maxChannels, tmpGraph.sameChannels, graph->nChannels, graph->speedInter, graph->speedIntra, time == 0 ? "TIMEOUT" : "");
   for (int c=0; c<graph->nChannels; c++) {
     printf("%2d : ", c);
     for (int g=0; g<ngpus; g++) {
