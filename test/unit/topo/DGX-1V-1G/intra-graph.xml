@@ -149,7 +149,7 @@
       <gpu dev="2"/>
     </channel>
   </graph>
-  <graph id="1" pattern="3" crossnic="0" nchannels="16" speedintra="240" speedinter="120" typeintra="LOC" typeinter="PCI" samechannels="1">
+  <graph id="1" pattern="3" crossnic="0" nchannels="16" speedintra="24" speedinter="12" typeintra="LOC" typeinter="PCI" samechannels="1">
     <channel>
       <gpu dev="2"/>
     </channel>
@@ -199,7 +199,7 @@
       <gpu dev="2"/>
     </channel>
   </graph>
-  <graph id="1" pattern="3" crossnic="0" nchannels="16" speedintra="240" speedinter="120" typeintra="LOC" typeinter="PCI" samechannels="1">
+  <graph id="1" pattern="3" crossnic="0" nchannels="16" speedintra="24" speedinter="12" typeintra="LOC" typeinter="PCI" samechannels="1">
     <channel>
       <gpu dev="2"/>
     </channel>
