@@ -150,7 +150,7 @@ static ncclResult_t xmlSetAttrFloat(struct ncclXmlNode* node, const char* attrNa
     index = node->nAttrs++;
     strncpy(node->attrs[index].key, attrName, MAX_STR_LEN);
   }
-  snprintf(node->attrs[index].value, MAX_STR_LEN, "%f", value);
+  snprintf(node->attrs[index].value, MAX_STR_LEN, "%g", value);
   return ncclSuccess;
 }
 
