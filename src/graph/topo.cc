@@ -498,6 +498,8 @@ ncclResult_t ncclTopoGetSystemFromXml(struct ncclXml* xml, struct ncclTopoSystem
   return ncclSuccess;
 }
 
+NCCL_PARAM(TopoDumpFileRank, "TOPO_DUMP_FILE_RANK", 0);
+
 ncclResult_t ncclTopoGetSystem(struct ncclComm* comm, struct ncclTopoSystem** system) {
   struct ncclXml* xml;
   NCCLCHECK(ncclCalloc(&xml, 1));
@@ -576,7 +578,7 @@ ncclResult_t ncclTopoGetSystem(struct ncclComm* comm, struct ncclTopoSystem** sy
   }
 
   xmlTopoFile = getenv("NCCL_TOPO_DUMP_FILE");
-  if (xmlTopoFile && comm->rank == 0) {
+  if (xmlTopoFile && comm->rank == ncclParamTopoDumpFileRank()) {
     NCCLCHECK(ncclTopoDumpXmlToFile(xmlTopoFile, xml));
   }
 
