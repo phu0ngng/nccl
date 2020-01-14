@@ -8,6 +8,7 @@
 #include "graph.h"
 #include "topo.h"
 #include "xml.h"
+#include <math.h>
 
 // Initialize system->maxWidth. This is the per-channel (i.e. per-SM)
 // max speed.
@@ -41,8 +42,6 @@ static ncclResult_t findRevLink(struct ncclTopoNode* node1, struct ncclTopoNode*
 }
 
 static ncclResult_t followPath(struct ncclTopoLinkList* path, struct ncclTopoNode* start, int maxSteps, float speed, int* steps) {
-  int lastCpuStep = path->count;
-  struct ncclTopoNode* end = NULL;
   for (int step=0; step<path->count; step++) {
     struct ncclTopoNode* node = path->list[step]->remNode;
     if (node->type == CPU) {
@@ -52,10 +51,7 @@ static ncclResult_t followPath(struct ncclTopoLinkList* path, struct ncclTopoNod
           node->cpu.vendor == NCCL_TOPO_CPU_VENDOR_INTEL) {
         speed = INTEL_P2P_OVERHEAD(speed);
       }
-      // Account for polling, for NET->GPU through CPU mem or GPU->GPU through QPI
-      if (start->type == NET || path->list[step]->type == LINK_QPI) lastCpuStep = step;
     }
-    if (step == path->count-1) end = node;
   }
 
   struct ncclTopoNode* node = start;
@@ -68,10 +64,6 @@ static ncclResult_t followPath(struct ncclTopoLinkList* path, struct ncclTopoNod
       revSpeed += speed/8;
     }
     if (link->remNode->type == CPU && link->type == LINK_NVL) {
-      if (revLink == NULL) NCCLCHECK(findRevLink(node, link->remNode, &revLink));
-      revSpeed += speed;
-    }
-    if (end->type == GPU && step > lastCpuStep) {
       if (revLink == NULL) NCCLCHECK(findRevLink(node, link->remNode, &revLink));
       revSpeed += speed;
     }
@@ -647,6 +639,10 @@ search:
   int time = tmpGraph.sameChannels ? NCCL_SEARCH_TIMEOUT_SAMECHANNELS :
     tmpGraph.pattern == NCCL_TOPO_PATTERN_TREE ? NCCL_SEARCH_TIMEOUT_TREE : NCCL_SEARCH_TIMEOUT;
   tmpGraph.nChannels = 0;
+
+  // Fix rounding issues
+  tmpGraph.speedIntra = roundf(tmpGraph.speedIntra*100)/100;
+  tmpGraph.speedInter = roundf(tmpGraph.speedInter*100)/100;
   NCCLCHECK(ncclTopoSearchRec(system, &tmpGraph, graph, &time));
 #if 0
   printf("Pattern %d, crossNic %d, Speed %g/%g, type %d/%d, channels %d-%d sameChannels %d -> nChannels %dx%g/%g %s\n", tmpGraph.pattern, tmpGraph.crossNic, tmpGraph.speedInter, tmpGraph.speedIntra, tmpGraph.typeInter, tmpGraph.typeIntra, tmpGraph.minChannels, tmpGraph.maxChannels, tmpGraph.sameChannels, graph->nChannels, graph->speedInter, graph->speedIntra, time == 0 ? "TIMEOUT" : "");
@@ -759,7 +755,7 @@ done:
 
   // 4. try to fine tune the speedIntra up a bit
   if (pass == 4 && time != 0 && tmpGraph.speedIntra == graph->speedIntra && tmpGraph.speedIntra < tmpGraph.speedInter*2) {
-    tmpGraph.speedIntra += (tmpGraph.speedInter > BW_FINE_INC) ? BW_FINE_INC : 1;
+    tmpGraph.speedIntra += (tmpGraph.speedInter > BW_FINE_INC) ? BW_FINE_INC : .1;
     goto search;
   }
 

@@ -15,13 +15,13 @@
 #define PASCAL_NVLINK_WIDTH 18.0
 #define VOLTA_NVLINK_WIDTH 21.0
 #define PCI_WIDTH 12.0           // PCI Gen3 x16
-#define QPI_WIDTH 24.0
+#define QPI_WIDTH 6.0
 #define SKL_QPI_WIDTH 9.0
 #define P9_WIDTH 32.0
 #define NET_WIDTH 12.0           // 100Gbit
 
-// Intel CPU convert GPU P2P traffic into 64B PCI TLPs, to GPU
-// to GPU traffic consumed more PCI bandwidth.
+// Intel CPU convert GPU P2P traffic into 64B PCI TLPs, so GPU
+// to GPU traffic consumes more PCI bandwidth.
 #define INTEL_P2P(speed) (speed*9/12)
 #define INTEL_P2P_OVERHEAD(speed) (speed*12/9)
 
