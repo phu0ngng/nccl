@@ -18,7 +18,6 @@
 #define QPI_WIDTH 24.0
 #define SKL_QPI_WIDTH 9.0
 #define P9_WIDTH 32.0
-#define AMD_WIDTH 5000.0         // Refine later
 #define NET_WIDTH 12.0           // 100Gbit
 
 // Intel CPU convert GPU P2P traffic into 64B PCI TLPs, to GPU
