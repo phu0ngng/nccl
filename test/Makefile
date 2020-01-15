@@ -1,5 +1,5 @@
 .DEFAULT_GOAL: build
-DIRS := apitest single unit perf examples
+DIRS := apitest single unit perf examples binary
 ifeq ($(MPI),1)
 DIRS += mpi
 endif
