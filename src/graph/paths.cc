@@ -317,7 +317,7 @@ ncclResult_t ncclTopoComputePaths(struct ncclTopoSystem* system, struct ncclPeer
     // Update path when we don't want to / can't use GPU Direct P2P
     for (int p=0; p<system->nodes[GPU].count; p++) {
       int p2p, distance;
-      NCCLCHECK(ncclTopoCheckP2p(system, system->nodes[GPU].nodes[g].id, system->nodes[GPU].nodes[p].id, &p2p, &distance));
+      NCCLCHECK(ncclTopoCheckP2p(system, system->nodes[GPU].nodes[p].id, system->nodes[GPU].nodes[g].id, &p2p, &distance));
       if (p2p == 0) {
         // Divert all traffic through the CPU
         int cpu;
