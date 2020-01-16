@@ -2,7 +2,7 @@
 
 lib=$1
 if [ "$lib" == "" ]; then
-  lib=../../build/lib/libnccl.so
+  lib=`dirname $0`/../../lib/libnccl.so
 fi
 if [ ! -f $lib ]; then
   echo -e "\e[31m\e[1m [FAILED]\e[0m : Library not found."
