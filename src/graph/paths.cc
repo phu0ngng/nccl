@@ -42,7 +42,7 @@ static ncclResult_t ncclTopoSetPaths(struct ncclTopoNode* baseNode, struct ncclT
   NCCLCHECK(getPath(system, baseNode, baseNode->type, baseNode->id, &basePath));
   basePath->count = 0;
   basePath->width = LOC_WIDTH;
-  basePath->type = LINK_LOC;
+  basePath->type = PATH_LOC;
 
   while (nodeList.count) {
     nextNodeList.count = 0;
@@ -77,14 +77,15 @@ static ncclResult_t ncclTopoSetPaths(struct ncclTopoNode* baseNode, struct ncclT
           remPath->count = path->count + 1;
           remPath->width = width;
 
+          // Start with path type = link type. PATH and LINK types are supposed to match.
           // Don't consider LINK_NET as we only care about the NIC->GPU path.
           int type = link->type == LINK_NET ? 0 : link->type;
           // Differentiate between one and multiple PCI switches
-          if (type == LINK_PCI && (node->type == PCI || link->remNode->type == PCI) && remPath->count > 3) type = LINK_PXB;
-          // Consider a path going through the CPU as LINK_CPU instead of LINK_PCI
-          if (type == LINK_PCI && (node->type == CPU || link->remNode->type == CPU)) type = LINK_CPU;
+          if (type == PATH_PIX && (node->type == PCI || link->remNode->type == PCI) && remPath->count > 3) type = PATH_PXB;
+          // Consider a path going through the CPU as PATH_PHB
+          if (link->type == LINK_PCI && (node->type == CPU || link->remNode->type == CPU)) type = PATH_PHB;
           // Ignore Power CPU in an NVLink path
-          if (path->type == LINK_NVL && type == LINK_SYS && link->remNode->type == CPU &&
+          if (path->type == PATH_NVL && type == PATH_SYS && link->remNode->type == CPU &&
               link->remNode->cpu.arch == NCCL_TOPO_CPU_ARCH_POWER) type = 0;
 
           remPath->type = std::max(path->type, type);
@@ -126,7 +127,7 @@ static void printNodePaths(struct ncclTopoSystem* system, struct ncclTopoNode* n
       }
       INFO(NCCL_GRAPH, "%s (%f)", line, node->paths[t][n].width);
 #else
-      sprintf(line+offset, "%s/%lX (%d/%f/%s) ", topoNodeTypeStr[t], system->nodes[t].nodes[n].id, node->paths[t][n].count, node->paths[t][n].width, topoLinkTypeStr[node->paths[t][n].type]);
+      sprintf(line+offset, "%s/%lX (%d/%f/%s) ", topoNodeTypeStr[t], system->nodes[t].nodes[n].id, node->paths[t][n].count, node->paths[t][n].width, topoPathTypeStr[node->paths[t][n].type]);
       offset = strlen(line);
 #endif
     }
@@ -201,7 +202,7 @@ static void ncclTopoRemovePathType(struct ncclTopoSystem* system, int nodeType) 
   }
 }
 
-static const int levelsOldToNew[] = { LINK_LOC, LINK_PCI, LINK_PXB, LINK_CPU, LINK_CPU, LINK_SYS };
+static const int levelsOldToNew[] = { PATH_LOC, PATH_PIX, PATH_PXB, PATH_PHB, PATH_SYS, PATH_SYS };
 ncclResult_t ncclGetLevel(int* level, const char* disableEnv, const char* levelEnv) {
   if (*level == -1) {
     int l = -1;
@@ -215,14 +216,14 @@ ncclResult_t ncclGetLevel(int* level, const char* disableEnv, const char* levelE
     if (l == -1) {
       char* str = getenv(levelEnv);
       if (str) {
-        for (int i=0; i<LINK_NET; i++) {
-          if (strcmp(str, topoLinkTypeStr[i]) == 0) {
+        for (int i=0; i<PATH_NET; i++) {
+          if (strcmp(str, topoPathTypeStr[i]) == 0) {
             l = i;
             break;
           }
         }
         // Old style numbering
-        if (l == -1) {
+        if (l == -1 && str[0] >= '0' && str[0] <= '9') {
           int oldLevel = strtol(str, NULL, 0);
           const int maxOldLevel = sizeof(levelsOldToNew)/sizeof(int);
           if (oldLevel > maxOldLevel) oldLevel = maxOldLevel;
@@ -230,6 +231,7 @@ ncclResult_t ncclGetLevel(int* level, const char* disableEnv, const char* levelE
         }
       }
     }
+    if (l >= 0) INFO(NCCL_GRAPH, "%s set from environment to %s", levelEnv, topoPathTypeStr[l]);
     *level = l >= 0 ? l : -2;
   }
   return ncclSuccess;
@@ -247,15 +249,15 @@ ncclResult_t ncclTopoCheckP2p(struct ncclTopoSystem* system, int64_t id1, int64_
   struct ncclTopoLinkList* path = gpu1->paths[GPU]+g2;
 
   // In general, use P2P whenever we can.
-  int p2pLevel = LINK_SYS;
+  int p2pLevel = PATH_SYS;
 
   // Don't use P2P through ARM CPUs
   int arch, vendor, model;
   NCCLCHECK(ncclTopoCpuType(system, &arch, &vendor, &model));
-  if (arch == NCCL_TOPO_CPU_ARCH_ARM) p2pLevel = LINK_PXB;
+  if (arch == NCCL_TOPO_CPU_ARCH_ARM) p2pLevel = PATH_PXB;
   if (arch == NCCL_TOPO_CPU_ARCH_X86 &&
       vendor == NCCL_TOPO_CPU_VENDOR_INTEL &&
-      model == NCCL_TOPO_CPU_TYPE_BDW) p2pLevel = LINK_PXB;
+      model == NCCL_TOPO_CPU_TYPE_BDW) p2pLevel = PATH_PXB;
 
   // User override
   NCCLCHECK(ncclGetLevel(&ncclTopoUserP2pLevel, "NCCL_P2P_DISABLE", "NCCL_P2P_LEVEL"));
@@ -294,7 +296,7 @@ ncclResult_t ncclTopoCheckGdr(struct ncclTopoSystem* system, int64_t busId, int 
       if (system->nodes[GPU].count == 1) nvlink = 1;
       for (int i=0; i<system->nodes[GPU].count; i++) {
         if (i == g) continue;
-        if (gpu->paths[GPU][i].type == LINK_NVL) {
+        if (gpu->paths[GPU][i].type == PATH_NVL) {
           nvlink = 1;
           break;
         }
@@ -304,7 +306,7 @@ ncclResult_t ncclTopoCheckGdr(struct ncclTopoSystem* system, int64_t busId, int 
   }
 
   // Check if we are close enough that it makes sense to enable GDR
-  int netGdrLevel = LINK_PXB;
+  int netGdrLevel = PATH_PXB;
   NCCLCHECK(ncclGetLevel(&ncclTopoUserGdrLevel, NULL, "NCCL_GDR_LEVEL"));
   if (ncclTopoUserGdrLevel != -2) netGdrLevel = ncclTopoUserGdrLevel;
   int distance = gpu->paths[NET][n].type;

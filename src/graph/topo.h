@@ -36,14 +36,24 @@
 #define NPT 6
 extern const char* topoNodeTypeStr[];
 
+// We want link types and path types to match as much as possible
 #define LINK_LOC 0
 #define LINK_NVL 1
 #define LINK_PCI 2
-#define LINK_PXB 3 // Multiple PCI steps, only for paths
-#define LINK_CPU 4 // Going through a CPU PCI bridge, only for paths
+// Skipping 3 for PATH_PXB
+// Skipping 4 for PATH_PHB
 #define LINK_SYS 5
 #define LINK_NET 6
 extern const char* topoLinkTypeStr[];
+
+#define PATH_LOC 0
+#define PATH_NVL 1
+#define PATH_PIX 2
+#define PATH_PXB 3
+#define PATH_PHB 4
+#define PATH_SYS 5
+#define PATH_NET 6
+extern const char* topoPathTypeStr[];
 
 struct ncclTopoNode;
 struct ncclTopoLink {

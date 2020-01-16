@@ -50,7 +50,7 @@ static ncclResult_t followPath(struct ncclTopoLinkList* path, struct ncclTopoNod
     struct ncclTopoNode* node = path->list[step]->remNode;
     if (node->type == CPU) {
       // Account for P2P inefficiency through Intel CPU RC
-      if (path->type == LINK_CPU && start->type == GPU &&
+      if (path->type == PATH_PHB && start->type == GPU &&
           node->cpu.arch == NCCL_TOPO_CPU_ARCH_X86 &&
           node->cpu.vendor == NCCL_TOPO_CPU_VENDOR_INTEL) {
         pciSpeed = INTEL_P2P_OVERHEAD(speed);
@@ -490,7 +490,7 @@ ncclResult_t ncclTopoSearchRec(struct ncclTopoSystem* system, struct ncclTopoGra
 /* User defined graph from XML file */
 /************************************/
 
-struct kvDict kvDictLinkType[] = { { "SYS", LINK_SYS }, { "CPU", LINK_CPU }, { "PCI", LINK_PCI }, { "PXB", LINK_PXB }, { "NVL", LINK_NVL }, { "LOC", LINK_LOC }, { NULL, 0 } };
+struct kvDict kvDictLinkType[] = { { "SYS", PATH_SYS }, { "PHB", PATH_PHB }, { "PIX", PATH_PIX }, { "PXB", PATH_PXB }, { "NVL", PATH_NVL }, { "LOC", PATH_LOC }, { NULL, 0 } };
 ncclResult_t ncclTopoGetChannelFromXml(struct ncclXmlNode *xmlChannel, int c, struct ncclTopoSystem* system, struct ncclTopoGraph* graph) {
   int ngpus = system->nodes[GPU].count;
   int* inter = graph->inter+2*c;
@@ -617,8 +617,8 @@ ncclResult_t ncclTopoCompute(ncclTopoSystem* system, struct ncclTopoGraph* graph
   int crossNic = (system->nodes[NET].count > 1) && graph->crossNic ? 1 : 0;
   graph->speedIntra = graph->speedInter = 0;
   if (graph->crossNic == 2) graph->crossNic = 0;
-  graph->typeIntra = ngpus == 1 ? LINK_LOC : LINK_NVL;
-  graph->typeInter = LINK_PCI;
+  graph->typeIntra = ngpus == 1 ? PATH_LOC : PATH_NVL;
+  graph->typeInter = PATH_PIX;
   graph->nChannels = 0;
   graph->sameChannels = 1;
 
@@ -679,17 +679,17 @@ search:
     else globalTimeout = NCCL_SEARCH_GLOBAL_TIMEOUT;
     if (globalTimeout < 0) goto done;
 
-    int maxTypeIntra = system->nodes[NET].count > 0 ? tmpGraph.typeInter : LINK_SYS;
+    int maxTypeIntra = system->nodes[NET].count > 0 ? tmpGraph.typeInter : PATH_SYS;
     if (tmpGraph.typeIntra < maxTypeIntra && (graph->nChannels == 0 || tmpGraph.typeIntra < graph->typeIntra)) {
       tmpGraph.typeIntra += 1;
       goto search;
     }
-    tmpGraph.typeIntra = ngpus == 1 ? LINK_LOC : LINK_NVL;
-    if (system->nodes[NET].count > 0 && tmpGraph.typeInter < LINK_SYS && (graph->nChannels == 0 || tmpGraph.typeInter < graph->typeInter || tmpGraph.typeInter < LINK_PXB)) {
+    tmpGraph.typeIntra = ngpus == 1 ? PATH_LOC : PATH_NVL;
+    if (system->nodes[NET].count > 0 && tmpGraph.typeInter < PATH_SYS && (graph->nChannels == 0 || tmpGraph.typeInter < graph->typeInter || tmpGraph.typeInter < PATH_PXB)) {
       tmpGraph.typeInter += 1;
       goto search;
     }
-    tmpGraph.typeInter = LINK_PCI;
+    tmpGraph.typeInter = PATH_PIX;
 
     // Try a simpler tree
     if (tmpGraph.pattern == NCCL_TOPO_PATTERN_SPLIT_TREE_LOOP) {
@@ -749,14 +749,14 @@ done:
     for (int i=0; i<ngpus; i++) graph->intra[i] = system->nodes[GPU].nodes[i].gpu.rank;
     graph->inter[0] = graph->inter[1] = 0;
     graph->speedIntra = graph->speedInter = 0.1;
-    graph->typeIntra = graph->typeInter = LINK_SYS;
+    graph->typeIntra = graph->typeInter = PATH_SYS;
     graph->nChannels = 1;
   }
   return ncclSuccess;
 }
 
 ncclResult_t ncclTopoPrintGraph(struct ncclTopoSystem* system, struct ncclTopoGraph* graph) {
-  INFO(NCCL_GRAPH, "Pattern %d, crossNic %d, nChannels %d, speed %f/%f, type %d/%d, sameChannels %d", graph->pattern, graph->crossNic, graph->nChannels, graph->speedIntra, graph->speedInter, graph->typeIntra, graph->typeInter, graph->sameChannels);
+  INFO(NCCL_GRAPH, "Pattern %d, crossNic %d, nChannels %d, speed %f/%f, type %s/%s, sameChannels %d", graph->pattern, graph->crossNic, graph->nChannels, graph->speedIntra, graph->speedInter, topoPathTypeStr[graph->typeIntra], topoPathTypeStr[graph->typeInter], graph->sameChannels);
   int ngpus = system->nodes[GPU].count;
 
   char line[1024];

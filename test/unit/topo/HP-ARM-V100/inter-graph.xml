@@ -27,5 +27,5 @@
       <net dev="2"/>
     </channel>
   </graph>
-  <graph id="2" pattern="3" crossnic="0" nchannels="0" speedintra="0" speedinter="0" typeintra="NVL" typeinter="PCI" samechannels="1"/>
+  <graph id="2" pattern="3" crossnic="0" nchannels="0" speedintra="0" speedinter="0" typeintra="NVL" typeinter="PIX" samechannels="1"/>
 </graphs>
