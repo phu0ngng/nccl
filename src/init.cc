@@ -752,7 +752,11 @@ static ncclResult_t initTransportsRank(struct ncclComm* comm, ncclUniqueId* comm
   NCCLCHECK(ncclCalloc(&rings, nranks*MAXCHANNELS));
 
   NCCLCHECK(ncclTopoPostset(comm, nodesFirstRank, allTopoRanks, rings));
-  NCCLCHECK(connectCollNet(comm, &collNetGraph, rank));
+  if (comm->nNodes > 1 &&
+      ncclParamCollNetEnable() == 1 &&
+      collNetSupport()) {
+    NCCLCHECK(ncclTopoConnectCollNet(comm, &collNetGraph, rank));
+  }
 
   free(allTopoRanks);
   free(nodesFirstRank);

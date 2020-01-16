@@ -94,7 +94,7 @@ ncclResult_t ncclTopoPreset(struct ncclComm* comm,
 ncclResult_t ncclTopoPostset(struct ncclComm* comm, int* firstRanks,
     struct ncclTopoRanks** allTopoRanks, int* rings);
 
-ncclResult_t connectCollNet(struct ncclComm* comm, struct ncclTopoGraph* collNetGraph, int rank);
+ncclResult_t ncclTopoConnectCollNet(struct ncclComm* comm, struct ncclTopoGraph* collNetGraph, int rank);
 
 ncclResult_t ncclSetThresholds(struct ncclComm* comm, int minCompCap, int maxCompCap, struct ncclTopoGraph* treeGraph, struct ncclTopoGraph* ringGraph, struct ncclTopoGraph* collNetGraph);
 

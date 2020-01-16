@@ -189,7 +189,7 @@ static ncclResult_t connectTrees(struct ncclComm* comm, int* treeUpRecv, int* tr
   return ncclSuccess;
 }
 
-ncclResult_t connectCollNet(struct ncclComm* comm, struct ncclTopoGraph* collNetGraph, int rank) {
+ncclResult_t ncclTopoConnectCollNet(struct ncclComm* comm, struct ncclTopoGraph* collNetGraph, int rank) {
   int nranks = comm->nRanks;
   int depth = nranks/comm->nNodes;
   int sendIndex = collNetGraph->pattern == NCCL_TOPO_PATTERN_TREE ? 0 : 1;  // send GPU index depends on topo pattern
