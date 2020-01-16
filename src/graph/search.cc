@@ -490,7 +490,7 @@ ncclResult_t ncclTopoSearchRec(struct ncclTopoSystem* system, struct ncclTopoGra
 /* User defined graph from XML file */
 /************************************/
 
-struct kvDict kvDictLinkType[] = { { "QPI", LINK_QPI }, { "CPU", LINK_CPU }, { "PCI", LINK_PCI }, { "PXB", LINK_PXB }, { "NVL", LINK_NVL }, { "LOC", LINK_LOC }, { NULL, 0 } };
+struct kvDict kvDictLinkType[] = { { "SYS", LINK_SYS }, { "CPU", LINK_CPU }, { "PCI", LINK_PCI }, { "PXB", LINK_PXB }, { "NVL", LINK_NVL }, { "LOC", LINK_LOC }, { NULL, 0 } };
 ncclResult_t ncclTopoGetChannelFromXml(struct ncclXmlNode *xmlChannel, int c, struct ncclTopoSystem* system, struct ncclTopoGraph* graph) {
   int ngpus = system->nodes[GPU].count;
   int* inter = graph->inter+2*c;
@@ -679,13 +679,13 @@ search:
     else globalTimeout = NCCL_SEARCH_GLOBAL_TIMEOUT;
     if (globalTimeout < 0) goto done;
 
-    int maxTypeIntra = system->nodes[NET].count > 0 ? tmpGraph.typeInter : LINK_QPI;
+    int maxTypeIntra = system->nodes[NET].count > 0 ? tmpGraph.typeInter : LINK_SYS;
     if (tmpGraph.typeIntra < maxTypeIntra && (graph->nChannels == 0 || tmpGraph.typeIntra < graph->typeIntra)) {
       tmpGraph.typeIntra += 1;
       goto search;
     }
     tmpGraph.typeIntra = ngpus == 1 ? LINK_LOC : LINK_NVL;
-    if (system->nodes[NET].count > 0 && tmpGraph.typeInter < LINK_QPI && (graph->nChannels == 0 || tmpGraph.typeInter < graph->typeInter || tmpGraph.typeInter < LINK_PXB)) {
+    if (system->nodes[NET].count > 0 && tmpGraph.typeInter < LINK_SYS && (graph->nChannels == 0 || tmpGraph.typeInter < graph->typeInter || tmpGraph.typeInter < LINK_PXB)) {
       tmpGraph.typeInter += 1;
       goto search;
     }
@@ -749,7 +749,7 @@ done:
     for (int i=0; i<ngpus; i++) graph->intra[i] = system->nodes[GPU].nodes[i].gpu.rank;
     graph->inter[0] = graph->inter[1] = 0;
     graph->speedIntra = graph->speedInter = 0.1;
-    graph->typeIntra = graph->typeInter = LINK_QPI;
+    graph->typeIntra = graph->typeInter = LINK_SYS;
     graph->nChannels = 1;
   }
   return ncclSuccess;

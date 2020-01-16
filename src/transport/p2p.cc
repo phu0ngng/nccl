@@ -54,8 +54,7 @@ ncclResult_t p2pCanConnect(int* ret, struct ncclTopoSystem* topo, struct ncclTop
   }
 
   // Check topology / p2p level.
-  int distance;
-  NCCLCHECK(ncclTopoCheckP2p(topo, info1->busId, info2->busId, ret, &distance));
+  NCCLCHECK(ncclTopoCheckP2p(topo, info1->busId, info2->busId, ret));
   if (*ret == 0) return ncclSuccess;
 
   // Convert the peer's busId into a local cudaDev index (cf. CUDA_VISIBLE_DEVICES)

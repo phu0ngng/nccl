@@ -14,17 +14,6 @@
 #include <ctype.h>
 #include <stdio.h>
 
-enum ncclPathDist {
-  PATH_PIX  = 0,
-  PATH_PXB  = 1,
-  PATH_PHB  = 2,
-  PATH_NODE = 3,
-  PATH_SYS  = 4,
-  PATH_ARRAY_SIZE = 5
-};
-
-extern const char* pathDists[PATH_ARRAY_SIZE];
-
 ncclResult_t ncclTopoCudaPath(int cudaDev, char** path);
 
 struct ncclTopoSystem;
@@ -39,7 +28,7 @@ ncclResult_t ncclTopoTrimSystem(struct ncclTopoSystem* system, struct ncclComm* 
 
 // Query topology
 ncclResult_t ncclTopoGetNetDev(struct ncclTopoGraph* graph, int dir, int channelId, int* net);
-ncclResult_t ncclTopoCheckP2p(struct ncclTopoSystem* system, int64_t id1, int64_t id2, int* p2p, int* distance);
+ncclResult_t ncclTopoCheckP2p(struct ncclTopoSystem* system, int64_t id1, int64_t id2, int* p2p);
 ncclResult_t ncclTopoCheckGdr(struct ncclTopoSystem* topo, int64_t busId, int netDev, int read, int* useGdr);
 
 // Set CPU affinity

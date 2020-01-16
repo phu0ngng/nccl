@@ -41,7 +41,7 @@ extern const char* topoNodeTypeStr[];
 #define LINK_PCI 2
 #define LINK_PXB 3 // Multiple PCI steps, only for paths
 #define LINK_CPU 4 // Going through a CPU PCI bridge, only for paths
-#define LINK_QPI 5
+#define LINK_SYS 5
 #define LINK_NET 6
 extern const char* topoLinkTypeStr[];
 

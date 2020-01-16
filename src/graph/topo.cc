@@ -19,10 +19,8 @@
 #define BUSID_SIZE (sizeof("0000:00:00.0"))
 #define BUSID_REDUCED_SIZE (sizeof("0000:00"))
 
-const char* pathDists[] = { "PIX", "PXB", "PHB", "NODE", "SYS" };
-
 const char* topoNodeTypeStr[] = { "GPU", "PCI", "NVS", "CPU", "NIC", "NET" };
-const char* topoLinkTypeStr[] = { "LOC", "NVL", "PCI", "PXB", "CPU", "QPI", "NET" };
+const char* topoLinkTypeStr[] = { "LOC", "NVL", "PCI", "PXB", "CPU", "SYS", "NET" };
 
 /******************************************************************/
 /******************* Graph Creation Functions *********************/
@@ -177,7 +175,7 @@ ncclResult_t ncclTopoConnectCpus(struct ncclTopoSystem* system) {
       if (n == p) continue;
       float width;
       NCCLCHECK(ncclTopoGetInterCpuWidth(system->nodes[CPU].nodes+n, &width));
-      NCCLCHECK(ncclTopoConnectNodes(system->nodes[CPU].nodes+n, system->nodes[CPU].nodes+p, LINK_QPI, width));
+      NCCLCHECK(ncclTopoConnectNodes(system->nodes[CPU].nodes+n, system->nodes[CPU].nodes+p, LINK_SYS, width));
     }
   }
   return ncclSuccess;
@@ -250,7 +248,7 @@ static ncclResult_t ncclTopoSort(struct ncclTopoNode* node, struct ncclTopoNode*
 // 1. NVLinks (already the case)
 // 2. PCI down
 // 3. PCI up
-// 4. QPI (already the case)
+// 4. SYS (already the case)
 ncclResult_t ncclTopoSortSystem(struct ncclTopoSystem* system) {
   for (int n=0; n<system->nodes[CPU].count; n++) NCCLCHECK(ncclTopoSort(system->nodes[CPU].nodes+n, NULL));
   return ncclSuccess;
