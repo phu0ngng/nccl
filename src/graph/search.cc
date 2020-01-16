@@ -710,7 +710,7 @@ search:
     tmpGraph.crossNic = 0;
 
     // Decrease speed until we find a solution
-    if ((speedIndex < NSPEEDS-1) && (graph->nChannels == 0 || tmpGraph.speedIntra > graph->speedIntra/2)) {
+    if ((speedIndex < NSPEEDS-1) && (graph->nChannels == 0 || (speedArray[speedIndex+1]/graph->speedInter > .49))) {
       tmpGraph.speedInter = tmpGraph.speedIntra = speedArray[++speedIndex];
       goto search;
     }
