@@ -22,7 +22,7 @@
 const char* pathDists[] = { "PIX", "PXB", "PHB", "NODE", "SYS" };
 
 const char* topoNodeTypeStr[] = { "GPU", "PCI", "NVS", "CPU", "NIC", "NET" };
-const char* topoLinkTypeStr[] = { "LOC", "NVL", "PCI", "QPI", "NET" };
+const char* topoLinkTypeStr[] = { "LOC", "NVL", "PCI", "PXB", "CPU", "QPI", "NET" };
 
 /******************************************************************/
 /******************* Graph Creation Functions *********************/
@@ -64,6 +64,10 @@ static ncclResult_t ncclTopoGetInterCpuWidth(struct ncclTopoNode* cpu, float* wi
   *width = LOC_WIDTH;
   if (cpu->cpu.arch == NCCL_TOPO_CPU_ARCH_POWER) {
     *width = P9_WIDTH;
+    return ncclSuccess;
+  }
+  if (cpu->cpu.arch == NCCL_TOPO_CPU_ARCH_ARM) {
+    *width = ARM_WIDTH;
     return ncclSuccess;
   }
   if (cpu->cpu.arch == NCCL_TOPO_CPU_ARCH_X86 && cpu->cpu.vendor == NCCL_TOPO_CPU_VENDOR_INTEL) {

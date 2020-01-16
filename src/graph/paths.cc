@@ -79,8 +79,14 @@ static ncclResult_t ncclTopoSetPaths(struct ncclTopoNode* baseNode, struct ncclT
 
           // Don't consider LINK_NET as we only care about the NIC->GPU path.
           int type = link->type == LINK_NET ? 0 : link->type;
+          // Differentiate between one and multiple PCI switches
+          if (type == LINK_PCI && (node->type == PCI || link->remNode->type == PCI) && remPath->count > 3) type = LINK_PXB;
+          // Consider a path going through the CPU as LINK_CPU instead of LINK_PCI
+          if (type == LINK_PCI && (node->type == CPU || link->remNode->type == CPU)) type = LINK_CPU;
           // Ignore Power CPU in an NVLink path
-          if (path->type == LINK_NVL && link->type == LINK_QPI && link->remNode->cpu.arch == NCCL_TOPO_CPU_ARCH_POWER) type = 0;
+          if (path->type == LINK_NVL && type == LINK_QPI && link->remNode->type == CPU &&
+              link->remNode->cpu.arch == NCCL_TOPO_CPU_ARCH_POWER) type = 0;
+
           remPath->type = std::max(path->type, type);
 
           // Add to the list for the next iteration if not already in the list
@@ -120,7 +126,7 @@ static void printNodePaths(struct ncclTopoSystem* system, struct ncclTopoNode* n
       }
       INFO(NCCL_GRAPH, "%s (%f)", line, node->paths[t][n].width);
 #else
-      sprintf(line+offset, "%s/%lX (%d/%f/%d) ", topoNodeTypeStr[t], system->nodes[t].nodes[n].id, node->paths[t][n].count, node->paths[t][n].width, node->paths[t][n].type);
+      sprintf(line+offset, "%s/%lX (%d/%f/%s) ", topoNodeTypeStr[t], system->nodes[t].nodes[n].id, node->paths[t][n].count, node->paths[t][n].width, topoLinkTypeStr[node->paths[t][n].type]);
       offset = strlen(line);
 #endif
     }
@@ -172,7 +178,7 @@ static ncclResult_t addCpuStep(struct ncclTopoSystem* system, int c, int t1, int
 
   // Update path characteristics
   srcNode->paths[t2][i2].count = l;
-  srcNode->paths[t2][i2].type = LINK_QPI;
+  srcNode->paths[t2][i2].type = std::max(srcNode->paths[CPU][c].type, cpuNode->paths[t2][i2].type);
   srcNode->paths[t2][i2].width = std::min(srcNode->paths[CPU][c].width, cpuNode->paths[t2][i2].width);
   return ncclSuccess;
 }
@@ -229,15 +235,9 @@ ncclResult_t ncclTopoCheckP2p(struct ncclTopoSystem* system, int64_t id1, int64_
   // In general, use P2P whenever we can.
   int p2pLevel = PATH_SYS;
 
-  // On Broadwell and earlier, P2P is worse than going to memory once per direction.
+  // Don't use P2P through ARM CPUs
   int arch, vendor, model;
   NCCLCHECK(ncclTopoCpuType(system, &arch, &vendor, &model));
-  if (arch == NCCL_TOPO_CPU_ARCH_X86 &&
-      vendor == NCCL_TOPO_CPU_VENDOR_INTEL &&
-      model == NCCL_TOPO_CPU_TYPE_BDW &&
-      system->nodes[CPU].count == 1) p2pLevel = PATH_PHB;
-
-  // Also don't use P2P through ARM CPUs
   if (arch == NCCL_TOPO_CPU_ARCH_ARM) p2pLevel = PATH_PHB;
 
   // User override

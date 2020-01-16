@@ -41,15 +41,19 @@ static ncclResult_t findRevLink(struct ncclTopoNode* node1, struct ncclTopoNode*
   return ncclInternalError;
 }
 
+// This is unfortunately needed since manipulating floats often results in rounding errors.
+#define SUB_ROUND(a, b) (a = roundf((a-b)*1000)/1000)
+
 static ncclResult_t followPath(struct ncclTopoLinkList* path, struct ncclTopoNode* start, int maxSteps, float speed, int* steps) {
+  float pciSpeed = speed;
   for (int step=0; step<path->count; step++) {
     struct ncclTopoNode* node = path->list[step]->remNode;
     if (node->type == CPU) {
       // Account for P2P inefficiency through Intel CPU RC
-      if (path->type == LINK_PCI && start->type == GPU &&
+      if (path->type == LINK_CPU && start->type == GPU &&
           node->cpu.arch == NCCL_TOPO_CPU_ARCH_X86 &&
           node->cpu.vendor == NCCL_TOPO_CPU_VENDOR_INTEL) {
-        speed = INTEL_P2P_OVERHEAD(speed);
+        pciSpeed = INTEL_P2P_OVERHEAD(speed);
       }
     }
   }
@@ -58,18 +62,19 @@ static ncclResult_t followPath(struct ncclTopoLinkList* path, struct ncclTopoNod
   for (int step=0; step<maxSteps; step++) {
     struct ncclTopoLink* link = path->list[step];
     struct ncclTopoLink* revLink = NULL;
+    float fwSpeed = link->type == LINK_PCI ? pciSpeed : speed;
     float revSpeed = 0;
-    if (link->remNode->type == GPU && start->type != GPU && path->type == LINK_PCI) {
+    if (link->remNode->type == GPU && start->type != GPU) {
       if (revLink == NULL) NCCLCHECK(findRevLink(node, link->remNode, &revLink));
-      revSpeed += speed/8;
+      revSpeed += fwSpeed/8;
     }
     if (link->remNode->type == CPU && link->type == LINK_NVL) {
       if (revLink == NULL) NCCLCHECK(findRevLink(node, link->remNode, &revLink));
-      revSpeed += speed;
+      revSpeed += fwSpeed;
     }
-    if (link->width < speed || (revSpeed && revLink->width < revSpeed)) { *steps = step; return ncclSuccess; }
-    link->width -= speed;
-    if (revSpeed) revLink->width -= revSpeed;
+    if (link->width < fwSpeed || (revSpeed && revLink->width < revSpeed)) { *steps = step; return ncclSuccess; }
+    SUB_ROUND(link->width, fwSpeed);
+    if (revSpeed) SUB_ROUND(revLink->width, revSpeed);
     node = link->remNode;
   }
   *steps = maxSteps;
@@ -231,9 +236,10 @@ ncclResult_t ncclTopoSearchNextGpuSort(struct ncclTopoSystem* system, struct ncc
 ncclResult_t ncclTopoSearchRec(struct ncclTopoSystem* system, struct ncclTopoGraph* graph, struct ncclTopoGraph* saveGraph, int* time);
 
 // Try to keep all searchs within one second
-#define NCCL_SEARCH_TIMEOUT (1ULL<<19)
-#define NCCL_SEARCH_TIMEOUT_TREE (1ULL<<17)
-#define NCCL_SEARCH_TIMEOUT_SAMECHANNELS (1ULL<<10)
+#define NCCL_SEARCH_GLOBAL_TIMEOUT (3ULL<<19)
+#define NCCL_SEARCH_TIMEOUT (1<<18)
+#define NCCL_SEARCH_TIMEOUT_TREE (1<<17)
+#define NCCL_SEARCH_TIMEOUT_SAMECHANNELS (1<<10)
 
 #define FORCED_ORDER_PCI 1
 #define FORCED_ORDER_REPLAY 2
@@ -369,12 +375,13 @@ ncclResult_t ncclTopoSearchRecNet(struct ncclTopoSystem* system, struct ncclTopo
       }
     }
 
-    // Then try to replay the last channel if sameChannels is 1
-    if (graph->nChannels > 0 && graph->sameChannels == 1) {
+    // First try to replay the last channel
+    if (graph->nChannels > 0) {
       int g;
       NCCLCHECK(ncclTopoReplayGetGpu(system, graph, -1, &g));
       NCCLCHECK(ncclTopoSearchTryGpu(system, graph, saveGraph, 0, backToNet, backToFirstRank, FORCED_ORDER_REPLAY, time, NET, n, g));
-    } else {
+    }
+    if (graph->nChannels == 0 || graph->sameChannels == 0) {
       if (graph->nChannels == 0) {
         // Always try the PCI order first to set a reference
         NCCLCHECK(ncclTopoSearchTryGpu(system, graph, saveGraph, 0, backToNet, backToFirstRank, FORCED_ORDER_PCI, time, NET, n, 0));
@@ -483,7 +490,7 @@ ncclResult_t ncclTopoSearchRec(struct ncclTopoSystem* system, struct ncclTopoGra
 /* User defined graph from XML file */
 /************************************/
 
-struct kvDict kvDictLinkType[] = { { "QPI", LINK_QPI}, { "PCI", LINK_PCI }, { "NVL", LINK_NVL }, { "LOC", LINK_LOC }, { NULL, 0 } };
+struct kvDict kvDictLinkType[] = { { "QPI", LINK_QPI }, { "CPU", LINK_CPU }, { "PCI", LINK_PCI }, { "PXB", LINK_PXB }, { "NVL", LINK_NVL }, { "LOC", LINK_LOC }, { NULL, 0 } };
 ncclResult_t ncclTopoGetChannelFromXml(struct ncclXmlNode *xmlChannel, int c, struct ncclTopoSystem* system, struct ncclTopoGraph* graph) {
   int ngpus = system->nodes[GPU].count;
   int* inter = graph->inter+2*c;
@@ -602,15 +609,15 @@ ncclResult_t ncclTopoGetXmlFromGraphs(int ngraphs, struct ncclTopoGraph** graphs
   return ncclSuccess;
 }
 
-#define BW_COARSE_INC 3.0
-#define BW_FINE_INC 1.0
+float speedArray[] = { 24.0, 21.0, 18.0, 15.0, 12.0, 10.0, 9.0, 6.0, 5.0, 4.0, 3.0, 2.4, 1.2, 0.24, 0.12 };
+#define NSPEEDS (sizeof(speedArray)/sizeof(float))
 
 ncclResult_t ncclTopoCompute(ncclTopoSystem* system, struct ncclTopoGraph* graph) {
   int ngpus = system->nodes[GPU].count;
   int crossNic = (system->nodes[NET].count > 1) && graph->crossNic ? 1 : 0;
   graph->speedIntra = graph->speedInter = 0;
   if (graph->crossNic == 2) graph->crossNic = 0;
-  graph->typeIntra = LINK_LOC;
+  graph->typeIntra = ngpus == 1 ? LINK_LOC : LINK_NVL;
   graph->typeInter = LINK_PCI;
   graph->nChannels = 0;
   graph->sameChannels = 1;
@@ -631,18 +638,19 @@ ncclResult_t ncclTopoCompute(ncclTopoSystem* system, struct ncclTopoGraph* graph
   memcpy(&tmpGraph, graph, sizeof(struct ncclTopoGraph));
 
   // First try crossnic, then decrease speed and finally increase speedIntra.
-  tmpGraph.speedIntra = tmpGraph.speedInter = system->maxWidth;
   tmpGraph.pattern = graph->pattern;
   int pass = 1;
+  int speedIndex = 0;
+  while (speedArray[speedIndex] > system->maxWidth && speedIndex < NSPEEDS-1) speedIndex++;
+  tmpGraph.speedIntra = tmpGraph.speedInter = speedArray[speedIndex];
+  int64_t globalTimeout = NCCL_SEARCH_GLOBAL_TIMEOUT;
 
 search:
   int time = tmpGraph.sameChannels ? NCCL_SEARCH_TIMEOUT_SAMECHANNELS :
     tmpGraph.pattern == NCCL_TOPO_PATTERN_TREE ? NCCL_SEARCH_TIMEOUT_TREE : NCCL_SEARCH_TIMEOUT;
   tmpGraph.nChannels = 0;
+  globalTimeout -= time;
 
-  // Fix rounding issues
-  tmpGraph.speedIntra = roundf(tmpGraph.speedIntra*100)/100;
-  tmpGraph.speedInter = roundf(tmpGraph.speedInter*100)/100;
   NCCLCHECK(ncclTopoSearchRec(system, &tmpGraph, graph, &time));
 #if 0
   printf("Pattern %d, crossNic %d, Speed %g/%g, type %d/%d, channels %d-%d sameChannels %d -> nChannels %dx%g/%g %s\n", tmpGraph.pattern, tmpGraph.crossNic, tmpGraph.speedInter, tmpGraph.speedIntra, tmpGraph.typeInter, tmpGraph.typeIntra, tmpGraph.minChannels, tmpGraph.maxChannels, tmpGraph.sameChannels, graph->nChannels, graph->speedInter, graph->speedIntra, time == 0 ? "TIMEOUT" : "");
@@ -654,7 +662,8 @@ search:
     printf("\n");
   }
 #endif
-  if (time == -1) goto done;
+  // Optimal solution, stop here
+  if (graph->nChannels == graph->maxChannels && graph->speedInter == system->maxWidth) goto done;
 
   if (pass == 1) {
     // First pass, we don't have a solution yet ; try other options
@@ -666,8 +675,21 @@ search:
     }
     tmpGraph.sameChannels = 1;
 
-    // We already have a solution and we timed out so lower speed will just timeout as well
-    if (time == 0 && graph->nChannels > 0) goto done;
+    if (time != -1) globalTimeout += time;
+    else globalTimeout = NCCL_SEARCH_GLOBAL_TIMEOUT;
+    if (globalTimeout < 0) goto done;
+
+    int maxTypeIntra = system->nodes[NET].count > 0 ? tmpGraph.typeInter : LINK_QPI;
+    if (tmpGraph.typeIntra < maxTypeIntra && (graph->nChannels == 0 || tmpGraph.typeIntra < graph->typeIntra)) {
+      tmpGraph.typeIntra += 1;
+      goto search;
+    }
+    tmpGraph.typeIntra = ngpus == 1 ? LINK_LOC : LINK_NVL;
+    if (system->nodes[NET].count > 0 && tmpGraph.typeInter < LINK_QPI && (graph->nChannels == 0 || tmpGraph.typeInter < graph->typeInter || tmpGraph.typeInter < LINK_PXB)) {
+      tmpGraph.typeInter += 1;
+      goto search;
+    }
+    tmpGraph.typeInter = LINK_PCI;
 
     // Try a simpler tree
     if (tmpGraph.pattern == NCCL_TOPO_PATTERN_SPLIT_TREE_LOOP) {
@@ -680,42 +702,22 @@ search:
     }
     tmpGraph.pattern = graph->pattern;
 
-    int maxTypeIntra = system->nodes[NET].count > 0 ? tmpGraph.typeInter : LINK_QPI;
-    if (tmpGraph.typeIntra < maxTypeIntra) {
-      tmpGraph.typeIntra += 1;
-      goto search;
-    }
-    tmpGraph.typeIntra = LINK_LOC;
-    if (system->nodes[NET].count > 0 && tmpGraph.typeInter < LINK_QPI && graph->nChannels == 0) {
-      tmpGraph.typeInter += 1;
-      goto search;
-    }
-    tmpGraph.typeInter = LINK_PCI;
-
     if (crossNic && tmpGraph.crossNic == 0) {
       // Try again with crossNic if permitted
       tmpGraph.crossNic = crossNic;
       goto search;
     }
-    tmpGraph.crossNic = graph->crossNic;
+    tmpGraph.crossNic = 0;
 
-    // Decrease speed until we find a sotution
-    if (graph->nChannels == 0) {
-      if (tmpGraph.speedInter > BW_COARSE_INC) {
-        tmpGraph.speedIntra = tmpGraph.speedInter -= BW_COARSE_INC;
-        goto search;
-      } else if (tmpGraph.speedInter > BW_FINE_INC) {
-        tmpGraph.speedIntra = tmpGraph.speedInter -= BW_FINE_INC;
-        goto search;
-      } else if (tmpGraph.speedInter > .1) {
-        tmpGraph.speedIntra = tmpGraph.speedInter -= .1;
-        goto search;
-      }
-    } else if (tmpGraph.speedIntra-BW_COARSE_INC >= graph->speedIntra/2) {
-      // It's OK to go from 1 path to 2 in order to gain some BW
-      tmpGraph.speedInter = tmpGraph.speedIntra -= BW_COARSE_INC;
+    // Decrease speed until we find a solution
+    if ((speedIndex < NSPEEDS-1) && (graph->nChannels == 0 || tmpGraph.speedIntra > graph->speedIntra/2)) {
+      tmpGraph.speedInter = tmpGraph.speedIntra = speedArray[++speedIndex];
       goto search;
     }
+    speedIndex = 0;
+    while (speedArray[speedIndex] > system->maxWidth && speedIndex < NSPEEDS-1) speedIndex++;
+    tmpGraph.speedIntra = tmpGraph.speedInter = speedArray[speedIndex];
+
   }
 
 done:
@@ -723,40 +725,23 @@ done:
   if (pass == 1) {
     time = -1;
     memcpy(&tmpGraph, graph, sizeof(tmpGraph));
+    speedIndex = 0;
+    while (speedArray[speedIndex] > graph->speedInter && speedIndex < NSPEEDS-1) speedIndex++;
+    tmpGraph.speedIntra = tmpGraph.speedInter = speedArray[speedIndex];
+    tmpGraph.minChannels = graph->nChannels;
     pass = 2;
   }
 
-  // 2. try to fine tune the speedInter up a bit
+  // 3. See if we can increase speedIntra for trees (2 nodes or collnet)
   if (pass == 2) {
-    if (tmpGraph.speedInter < system->maxWidth && tmpGraph.speedInter == graph->speedInter) {
-      time = -1;
-      tmpGraph.speedIntra = tmpGraph.speedInter += BW_FINE_INC;
+    if (time != 0 && graph->pattern != NCCL_TOPO_PATTERN_RING &&
+        tmpGraph.speedIntra == graph->speedIntra && tmpGraph.speedIntra < tmpGraph.speedInter*2 &&
+        speedIndex > 0) {
+      tmpGraph.speedIntra = speedArray[--speedIndex];
       goto search;
     }
-    // Fine tuning done. Moving to pass 3
     time = -1;
     memcpy(&tmpGraph, graph, sizeof(tmpGraph));
-    pass = tmpGraph.pattern == NCCL_TOPO_PATTERN_RING ? 5 : 3;
-  }
-
-
-  // 3. See if we can increase speedIntra for trees (2 nodes case)
-  if (pass == 3) {
-    if (time != 0 && tmpGraph.speedIntra == graph->speedIntra && tmpGraph.speedIntra <= tmpGraph.speedInter*2-BW_COARSE_INC) {
-      // Try to increase the intra speed only but keeping nChannels the same
-      tmpGraph.speedIntra += BW_COARSE_INC;
-      goto search;
-    }
-    // SpeedIntra done. Moving to pass 4
-    time = -1;
-    memcpy(&tmpGraph, graph, sizeof(tmpGraph));
-    pass = 4;
-  }
-
-  // 4. try to fine tune the speedIntra up a bit
-  if (pass == 4 && time != 0 && tmpGraph.speedIntra == graph->speedIntra && tmpGraph.speedIntra < tmpGraph.speedInter*2) {
-    tmpGraph.speedIntra += (tmpGraph.speedInter > BW_FINE_INC) ? BW_FINE_INC : .1;
-    goto search;
   }
 
   if (graph->nChannels == 0 && graph->collNet == 0) {

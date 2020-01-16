@@ -18,6 +18,7 @@
 #define QPI_WIDTH 6.0
 #define SKL_QPI_WIDTH 9.0
 #define P9_WIDTH 32.0
+#define ARM_WIDTH 6.0
 #define NET_WIDTH 12.0           // 100Gbit
 
 // Intel CPU convert GPU P2P traffic into 64B PCI TLPs, so GPU
@@ -38,8 +39,10 @@ extern const char* topoNodeTypeStr[];
 #define LINK_LOC 0
 #define LINK_NVL 1
 #define LINK_PCI 2
-#define LINK_QPI 3
-#define LINK_NET 4
+#define LINK_PXB 3 // Multiple PCI steps, only for paths
+#define LINK_CPU 4 // Going through a CPU PCI bridge, only for paths
+#define LINK_QPI 5
+#define LINK_NET 6
 extern const char* topoLinkTypeStr[];
 
 struct ncclTopoNode;

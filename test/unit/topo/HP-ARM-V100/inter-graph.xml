@@ -1,19 +1,31 @@
 <graphs version="1">
-  <graph id="0" pattern="4" crossnic="0" nchannels="1" speedintra="6" speedinter="6" typeintra="QPI" typeinter="QPI" samechannels="1">
+  <graph id="0" pattern="4" crossnic="0" nchannels="2" speedintra="5" speedinter="5" typeintra="QPI" typeinter="QPI" samechannels="0">
     <channel>
       <net dev="2"/>
       <gpu dev="0"/>
       <gpu dev="1"/>
       <net dev="1"/>
     </channel>
+    <channel>
+      <net dev="1"/>
+      <gpu dev="1"/>
+      <gpu dev="0"/>
+      <net dev="2"/>
+    </channel>
   </graph>
-  <graph id="1" pattern="2" crossnic="0" nchannels="1" speedintra="6" speedinter="6" typeintra="QPI" typeinter="QPI" samechannels="1">
+  <graph id="1" pattern="2" crossnic="0" nchannels="2" speedintra="6" speedinter="5" typeintra="QPI" typeinter="QPI" samechannels="0">
     <channel>
       <net dev="2"/>
       <gpu dev="0"/>
       <gpu dev="1"/>
+      <net dev="1"/>
+    </channel>
+    <channel>
+      <net dev="1"/>
+      <gpu dev="1"/>
+      <gpu dev="0"/>
       <net dev="2"/>
     </channel>
   </graph>
-  <graph id="2" pattern="3" crossnic="0" nchannels="0" speedintra="0" speedinter="0" typeintra="LOC" typeinter="PCI" samechannels="1"/>
+  <graph id="2" pattern="3" crossnic="0" nchannels="0" speedintra="0" speedinter="0" typeintra="NVL" typeinter="PCI" samechannels="1"/>
 </graphs>

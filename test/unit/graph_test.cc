@@ -26,49 +26,54 @@ uint64_t getTime() {
 
 const char* graphNames[] = { "Ring", "Tree", "CollNet" };
 
-int compareGraphs(struct ncclTopoGraph* ref, struct ncclTopoGraph* out, int ngpus, int inter) {
-  int errors = 0;
+int dumpDiff = 1;
+
+void compareGraphs(struct ncclTopoGraph* ref, struct ncclTopoGraph* out, int ngpus, int inter, int* errors, int* warnings) {
   if (memcmp(ref, out, sizeof(struct ncclTopoGraph)) != 0) {
-    errors++;
-    char line[256];
-    int margin = 37;
-    int width = std::max(3*ngpus+10, 40);
+    if (ref->nChannels*ref->speedInter > out->nChannels*out->speedInter ||
+        ref->nChannels*ref->speedIntra > out->nChannels*out->speedIntra) (*errors)++;
+    else (*warnings)++;
 
-    line[0] = '\0';
-    while (strlen(line) < margin) sprintf(line+strlen(line), " ");
-    sprintf(line+strlen(line), "    --- Reference --- ");
-    while (strlen(line) < margin+width) sprintf(line+strlen(line), " ");
-    sprintf(line+strlen(line), "    --- Computed  --- ");
-    printf("%s\n", line);
+    if (dumpDiff) {
+      char line[256];
+      int margin = 37;
+      int width = std::max(3*ngpus+10, 40);
 
-    line[0] = '\0';
-    sprintf(line+strlen(line), "                        Properties : ");
-    while (strlen(line) < margin) sprintf(line+strlen(line), " ");
-    sprintf(line+strlen(line), "%7s %2dx%4.1f/%4.1f %3s/%3s P%1d C%1d S%1d", graphNames[ref->id], ref->nChannels, ref->speedIntra, ref->speedInter, topoLinkTypeStr[ref->typeIntra], topoLinkTypeStr[ref->typeInter], ref->pattern, ref->crossNic, ref->sameChannels);
-    while (strlen(line) < margin+width) sprintf(line+strlen(line), " ");
-    sprintf(line+strlen(line), "%7s %2dx%4.1f/%4.1f %3s/%3s P%1d C%1d S%1d", graphNames[out->id], out->nChannels, out->speedIntra, out->speedInter, topoLinkTypeStr[out->typeIntra], topoLinkTypeStr[out->typeInter], out->pattern, out->crossNic, out->sameChannels);
-    printf("%s\n", line);
-
-    line[0] = '\0';
-    for (int i=0; i<std::max(ref->nChannels, out->nChannels); i++) {
-      sprintf(line, "                        Channel %2d : ", i);
+      line[0] = '\0';
       while (strlen(line) < margin) sprintf(line+strlen(line), " ");
-      if (i < ref->nChannels) {
-        if (inter) sprintf(line+strlen(line), "[%2d %2d] ", ref->inter[i*2], ref->inter[i*2+1]);
-        for (int g=0; g<ngpus; g++) sprintf(line+strlen(line), "%2d ", ref->intra[i*ngpus+g]);
-      }
+      sprintf(line+strlen(line), "    --- Reference --- ");
       while (strlen(line) < margin+width) sprintf(line+strlen(line), " ");
-      if (i < out->nChannels) {
-        if (inter) sprintf(line+strlen(line), "[%2d %2d] ", out->inter[i*2], out->inter[i*2+1]);
-        for (int g=0; g<ngpus; g++) sprintf(line+strlen(line), "%2d ", out->intra[i*ngpus+g]);
-      }
+      sprintf(line+strlen(line), "    --- Computed  --- ");
       printf("%s\n", line);
+
+      line[0] = '\0';
+      sprintf(line+strlen(line), "                        Properties : ");
+      while (strlen(line) < margin) sprintf(line+strlen(line), " ");
+      sprintf(line+strlen(line), "%7s %2dx%4.1f/%4.1f %3s/%3s P%1d C%1d S%1d", graphNames[ref->id], ref->nChannels, ref->speedIntra, ref->speedInter, topoLinkTypeStr[ref->typeIntra], topoLinkTypeStr[ref->typeInter], ref->pattern, ref->crossNic, ref->sameChannels);
+      while (strlen(line) < margin+width) sprintf(line+strlen(line), " ");
+      sprintf(line+strlen(line), "%7s %2dx%4.1f/%4.1f %3s/%3s P%1d C%1d S%1d", graphNames[out->id], out->nChannels, out->speedIntra, out->speedInter, topoLinkTypeStr[out->typeIntra], topoLinkTypeStr[out->typeInter], out->pattern, out->crossNic, out->sameChannels);
+      printf("%s\n", line);
+
+      line[0] = '\0';
+      for (int i=0; i<std::max(ref->nChannels, out->nChannels); i++) {
+        sprintf(line, "                        Channel %2d : ", i);
+        while (strlen(line) < margin) sprintf(line+strlen(line), " ");
+        if (i < ref->nChannels) {
+          if (inter) sprintf(line+strlen(line), "[%2d %2d] ", ref->inter[i*2], ref->inter[i*2+1]);
+          for (int g=0; g<ngpus; g++) sprintf(line+strlen(line), "%2d ", ref->intra[i*ngpus+g]);
+        }
+        while (strlen(line) < margin+width) sprintf(line+strlen(line), " ");
+        if (i < out->nChannels) {
+          if (inter) sprintf(line+strlen(line), "[%2d %2d] ", out->inter[i*2], out->inter[i*2+1]);
+          for (int g=0; g<ngpus; g++) sprintf(line+strlen(line), "%2d ", out->intra[i*ngpus+g]);
+        }
+        printf("%s\n", line);
+      }
     }
   }
-  return errors;
 }
 
-int checkTopo(const char* xmlTopoFile, const char* xmlGraphFile, const char* platform, int inter) {
+void checkTopo(const char* xmlTopoFile, const char* xmlGraphFile, const char* platform, int inter, int* errors, int* warnings) {
   struct ncclXml* xmlSystem;
   INFO(NCCL_GRAPH, "Loading platform %s", platform);
   CHECK(ncclCalloc(&xmlSystem, 1));
@@ -76,13 +81,14 @@ int checkTopo(const char* xmlTopoFile, const char* xmlGraphFile, const char* pla
   struct ncclTopoSystem* system;
   if (xmlSystem->maxIndex == 0) {
     printf("Error : no system in %s\n", xmlTopoFile);
-    return 1;
+    (*errors)++;
+    return;
   }
   CHECK(ncclTopoGetSystemFromXml(xmlSystem, &system));
   CHECK(ncclTopoComputePaths(system, NULL));
   if (inter == 0) {
     for (int n=system->nodes[NET].count-1; n>=0; n--)
-      NCCLCHECK(ncclTopoRemoveNode(system, NET, n));
+      CHECK(ncclTopoRemoveNode(system, NET, n));
   }
   CHECK(ncclTopoSearchInit(system));
   CHECK(ncclTopoPrint(system));
@@ -113,9 +119,11 @@ int checkTopo(const char* xmlTopoFile, const char* xmlGraphFile, const char* pla
   /* Compute */
   uint64_t computeTime = getTime();
   CHECK(ncclTopoCompute(system, &ringGraph));
-  treeGraph.minChannels = treeGraph.maxChannels = ringGraph.nChannels;
+  treeGraph.minChannels = 1;
+  treeGraph.maxChannels = ringGraph.nChannels;
   CHECK(ncclTopoCompute(system, &treeGraph));
-  cNetGraph.minChannels = cNetGraph.maxChannels = ringGraph.nChannels;
+  cNetGraph.minChannels = 1;
+  cNetGraph.maxChannels = ringGraph.nChannels;
   CHECK(ncclTopoCompute(system, &cNetGraph));
   computeTime = getTime() - computeTime;
 
@@ -124,7 +132,8 @@ int checkTopo(const char* xmlTopoFile, const char* xmlGraphFile, const char* pla
   CHECK(ncclCalloc(&xmlGraph, 1));
   if (ncclTopoGetXmlGraphFromFile(xmlGraphFile, xmlGraph) != ncclSuccess) {
     printf(" %10s/%s  Error : no graph in %s\n", platform, inter ? "Inter":"Intra", xmlGraphFile);
-    return 1;
+    (*errors)++;
+    return;
   }
   struct ncclTopoGraph refRingGraph, refTreeGraph, refCNetGraph;
   memcpy(&refRingGraph, &ringGraph, sizeof(ringGraph));
@@ -136,16 +145,16 @@ int checkTopo(const char* xmlTopoFile, const char* xmlGraphFile, const char* pla
   CHECK(ncclTopoGetGraphFromXml(xmlGraph->nodes, system, &refCNetGraph));
 
   /* Compare */
-  int errors = 0;
-  errors += compareGraphs(&refRingGraph, &ringGraph, system->nodes[GPU].count, inter);
-  errors += compareGraphs(&refTreeGraph, &treeGraph, system->nodes[GPU].count, inter);
-  errors += compareGraphs(&refCNetGraph, &cNetGraph, system->nodes[GPU].count, inter);
+  int err = 0, warn = 0;
+  compareGraphs(&refRingGraph, &ringGraph, system->nodes[GPU].count, inter, &err, &warn);
+  compareGraphs(&refTreeGraph, &treeGraph, system->nodes[GPU].count, inter, &err, &warn);
+  compareGraphs(&refCNetGraph, &cNetGraph, system->nodes[GPU].count, inter, &err, &warn);
 
   printf(" %15s/%s  %2dx%4.1f/%4.1f | %2dx%4.1f/%4.1f | %2dx%4.1f/%4.1f", platform, inter ? "Inter":"Intra",
       ringGraph.nChannels, ringGraph.speedIntra, ringGraph.speedInter,
       treeGraph.nChannels, treeGraph.speedIntra, treeGraph.speedInter,
       cNetGraph.nChannels, cNetGraph.speedIntra, cNetGraph.speedInter);
-  if (errors > 0) {
+  if (err || warn) {
     char dumpFile[PATH_MAX];
     sprintf(dumpFile, "%s.dump", xmlGraphFile);
     struct ncclXml* xml;
@@ -154,31 +163,32 @@ int checkTopo(const char* xmlTopoFile, const char* xmlGraphFile, const char* pla
     CHECK(ncclTopoGetXmlFromGraphs(3, graphs, system, xml));
     CHECK(ncclTopoDumpXmlToFile(dumpFile, xml));
     free(xml);
-    printf(" FAILED %5ld ms\n", computeTime/1000);
+    printf(" %s %5ld ms\n", err ? "FAILED" : "  WARN", computeTime/1000);
   } else if (computeTime > 1000000) {
     printf("   SLOW %5ld ms\n", computeTime/1000);
-    errors++;
+    warn++;
   } else printf("     OK %5ld ms\n", computeTime/1000);
-  return errors;
+  *errors += err;
+  *warnings += warn;
 }
 
-int checkPlatform(const char* platform) {
-  int errors = 0;
+void checkPlatform(const char* platform, int* errors, int* warnings) {
   char xmlTopoFile[1024];
   char xmlGraphFile[1024];
   sprintf(xmlTopoFile, "topo/%s/system.xml", platform);
   sprintf(xmlGraphFile, "topo/%s/intra-graph.xml", platform);
-  errors += checkTopo(xmlTopoFile, xmlGraphFile, platform, 0);
+  checkTopo(xmlTopoFile, xmlGraphFile, platform, 0, errors, warnings);
   sprintf(xmlGraphFile, "topo/%s/inter-graph.xml", platform);
-  errors += checkTopo(xmlTopoFile, xmlGraphFile, platform, 1);
-  return errors;
+  checkTopo(xmlTopoFile, xmlGraphFile, platform, 1, errors, warnings);
 }
 
-#define RUN(...) errors += checkPlatform(__VA_ARGS__)
+#define RUN(...) checkPlatform(__VA_ARGS__, &errors, &warnings)
 
 int main(int argc, const char* argv[]) {
   setlinebuf(stdout);
-  int errors = 0;
+  char* str = getenv("NCCL_GRAPH_TEST_DUMP");
+  if (str) dumpDiff = atoi(str);
+  int errors = 0, warnings = 0;
   if (argc > 1) {
     for (int a=1; a<argc; a++) {
       RUN(argv[a]);
@@ -209,6 +219,6 @@ int main(int argc, const char* argv[]) {
     RUN("P9-4V");
     RUN("HP-ARM-V100");
   }
-  printf("%d errors (%s)\n", errors, errors ? "FAILED" : "PASSED");
-  return errors;
+  printf("%d errors, %d warnings (%s)\n", errors, warnings, errors ? "FAILED" : "PASSED");
+  return errors ? 1 : 0;
 }

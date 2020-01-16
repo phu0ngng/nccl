@@ -78,6 +78,13 @@
           </nic>
         </pci>
       </pci>
+      <pci busid="0000:2c:00.0" class="0x060400" link_speed="16 GT/s" link_width="16">
+        <pci busid="0000:2e:00.0" class="0x020700" link_speed="16 GT/s" link_width="16">
+          <nic type="infiniband">
+            <net name="mlx5_3" sys_guid="b859:9f03:0054:1ea8" link_rate="200 Gb/sec (4X HDR)" dev="6" gdr="1"/>
+          </nic>
+        </pci>
+      </pci>
     </pci>
   </cpu>
   <cpu numaid="7" affinity="ffff0000,00000000,00000000,00000000,ffff0000,00000000,00000000,00000000" arch="x86_64" vendor="AuthenticAMD" familyid="143" modelid="49">
@@ -156,6 +163,13 @@
         <pci busid="0000:ab:00.0" class="0x020700" link_speed="16 GT/s" link_width="16">
           <nic type="infiniband">
             <net name="mlx5_8" sys_guid="b859:9f03:0054:1020" link_rate="200 Gb/sec (4X HDR)" dev="1" gdr="1"/>
+          </nic>
+        </pci>
+      </pci>
+      <pci busid="0000:ac:00.0" class="0x060400" link_speed="16 GT/s" link_width="16">
+        <pci busid="0000:ae:00.0" class="0x020700" link_speed="16 GT/s" link_width="16">
+          <nic type="infiniband">
+            <net name="mlx5_9" sys_guid="b859:9f03:0054:2ea8" link_rate="200 Gb/sec (4X HDR)" dev="7" gdr="1"/>
           </nic>
         </pci>
       </pci>
