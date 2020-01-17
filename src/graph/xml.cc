@@ -80,6 +80,29 @@ ncclResult_t xmlGetToken(FILE* file, char* name, char* value, char* last) {
   return ncclSuccess;
 }
 
+// Shift the 3-chars string by one char and append c at the end
+#define SHIFT_APPEND(s, c) do { s[0]=s[1]; s[1]=s[2]; s[2]=c; } while(0)
+ncclResult_t xmlSkipComment(FILE* file, char* start, char next) {
+  // Start from something neutral with \0 at the end.
+  char end[4] = "...";
+
+  // Inject all trailing chars from previous reads. We don't need
+  // to check for --> here because there cannot be a > in the name.
+  for (int i=0; i<strlen(start); i++) SHIFT_APPEND(end, start[i]);
+  SHIFT_APPEND(end, next);
+
+  // Stop when we find "-->"
+  while (strcmp(end, "-->") != 0) {
+    int c;
+    if (fread(&c, 1, 1, file) != 1) {
+      WARN("XML Parse error : unterminated comment");
+      return ncclInternalError;
+    }
+    SHIFT_APPEND(end, c);
+  }
+  return ncclSuccess;
+}
+
 ncclResult_t xmlGetNode(FILE* file, struct ncclXmlNode* node) {
   node->type = NODE_TYPE_NONE;
   char c = ' ';
@@ -92,6 +115,12 @@ ncclResult_t xmlGetNode(FILE* file, struct ncclXmlNode* node) {
   }
   // Read XML element name
   NCCLCHECK(xmlGetToken(file, node->name, NULL, &c));
+
+  // Check for comments
+  if (strncmp(node->name, "!--", 3) == 0) {
+    NCCLCHECK(xmlSkipComment(file, node->name+3, c));
+    return xmlGetNode(file, node);
+  }
 
   // Check for closing tag
   if (node->name[0] == '\0' && c == '/') {
