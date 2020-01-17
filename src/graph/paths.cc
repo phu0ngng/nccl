@@ -225,7 +225,7 @@ ncclResult_t ncclGetLevel(int* level, const char* disableEnv, const char* levelE
         // Old style numbering
         if (l == -1 && str[0] >= '0' && str[0] <= '9') {
           int oldLevel = strtol(str, NULL, 0);
-          const int maxOldLevel = sizeof(levelsOldToNew)/sizeof(int);
+          const int maxOldLevel = sizeof(levelsOldToNew)/sizeof(int) - 1;
           if (oldLevel > maxOldLevel) oldLevel = maxOldLevel;
           l = levelsOldToNew[oldLevel];
         }
