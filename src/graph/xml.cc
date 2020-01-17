@@ -1,5 +1,5 @@
 /*************************************************************************
- * Copyright (c) 2019, NVIDIA CORPORATION. All rights reserved.
+ * Copyright (c) 2019-2020, NVIDIA CORPORATION. All rights reserved.
  *
  * See LICENSE.txt for license information
  ************************************************************************/
@@ -574,7 +574,7 @@ ncclResult_t ncclTopoGetXmlFromGpu(struct ncclXmlNode* pciNode, nvmlDevice_t nvm
         lowerId[c] = tolower(p[c]);
         if (p[c] == 0) break;
       }
-      
+
       NCCLCHECK(xmlGetSubKv(gpuNode, "nvlink", &nvlNode, "target", lowerId));
       if (nvlNode == NULL) {
         NCCLCHECK(xmlAddNode(xml, gpuNode, "nvlink", &nvlNode));
