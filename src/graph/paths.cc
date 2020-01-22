@@ -245,7 +245,10 @@ ncclResult_t ncclTopoCheckP2p(struct ncclTopoSystem* system, int64_t id1, int64_
   int g1, g2;
   NCCLCHECK(ncclTopoIdToIndex(system, GPU, id1, &g1));
   struct ncclTopoNode* gpu1 = system->nodes[GPU].nodes+g1;
-  NCCLCHECK(ncclTopoIdToIndex(system, GPU, id2, &g2));
+  if (ncclTopoIdToIndex(system, GPU, id2, &g2) == ncclInternalError) {
+    // GPU not found, we can't use p2p.
+    return ncclSuccess;
+  }
   struct ncclTopoLinkList* path = gpu1->paths[GPU]+g2;
 
   // In general, use P2P whenever we can.
