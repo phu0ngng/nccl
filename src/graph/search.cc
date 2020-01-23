@@ -12,19 +12,28 @@
 
 // Initialize system->maxWidth. This is the per-channel (i.e. per-SM)
 // max speed.
+static float getMaxWidth(struct ncclTopoSystem* system, struct ncclTopoNode* gpu, int type) {
+  float nvLinkWidth = gpu->gpu.cudaCompCap > 60 ? VOLTA_NVLINK_WIDTH : PASCAL_NVLINK_WIDTH;
+  float maxWidth = 0.0;
+  for (int i=0; i<system->nodes[type].count; i++) {
+    struct ncclTopoLinkList* path = gpu->paths[type]+i;
+    float width = path->width;
+    if (path->count == 0) continue;
+    if (path->type == PATH_NVL) width = std::min(nvLinkWidth, width);
+    maxWidth = std::max(maxWidth, width);
+  }
+  return maxWidth;
+}
 ncclResult_t ncclTopoSearchInit(struct ncclTopoSystem* system) {
-  system->maxWidth = LOC_WIDTH;
+  system->maxWidth = 0.0;
+  int inter = system->nodes[NET].count;
+  if (inter == 0 && system->nodes[GPU].count == 1) {
+    system->maxWidth = LOC_WIDTH;
+    return ncclSuccess;
+  }
   for (int g=0; g<system->nodes[GPU].count; g++) {
     struct ncclTopoNode* gpu = system->nodes[GPU].nodes+g;
-    int gpuLinkType = LINK_PCI;
-    for (int l=0; l<gpu->nlinks; l++) {
-      if (gpu->links[l].type == LINK_NVL) gpuLinkType = LINK_NVL;
-    }
-    float gpuMaxWidth = gpuLinkType == LINK_NVL ? (gpu->gpu.cudaCompCap > 60 ? VOLTA_NVLINK_WIDTH : PASCAL_NVLINK_WIDTH) : PCI_WIDTH;
-    system->maxWidth = std::min(system->maxWidth, gpuMaxWidth);
-  }
-  if (system->nodes[NET].count > 0) {
-    system->maxWidth = PCI_WIDTH;
+    system->maxWidth = std::max(system->maxWidth, getMaxWidth(system, gpu, inter ? NET : GPU));
   }
   return ncclSuccess;
 }
