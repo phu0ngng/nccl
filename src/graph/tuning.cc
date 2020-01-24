@@ -70,7 +70,7 @@ static const float hwLat [3][NCCL_NUM_ALGORITHMS][NCCL_NUM_PROTOCOLS] =
   /* PCI */
   { /* Tree (LL/LL128/Simple)*/ { 1.0, 1.9, 5.5 }, /* Ring (LL/LL128/Simple)*/ { 1.0, 2.5, 5.7 }, /* CollNet (LL/LL128/Simple)*/ { 1.0, 1.9, 5.5 } },
   /* NET */
-  { /* Tree (LL/LL128/Simple)*/ { 5.0, 7.5, 15.5 }, /* Ring (LL/LL128/Simple)*/ {  .9, 2.5, 6.6 }, /* CollNet (LL/LL128/Simple)*/ { 5.0, 5.0, 10.7 } }
+  { /* Tree (LL/LL128/Simple)*/ { 5.0, 7.5, 50.0 }, /* Ring (LL/LL128/Simple)*/ {  .9, 2.5, 6.6 }, /* CollNet (LL/LL128/Simple)*/ { 5.0, 5.0, 10.7 } }
 };
 
 // LL128 max BW for the different collectives
