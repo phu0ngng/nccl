@@ -16,8 +16,7 @@ typedef char collNetHandle_t[NCCL_NET_HANDLE_MAXSIZE];
 // Translation to external API
 static const char* collNetName() { return ncclCollNet->name; }
 static ncclResult_t collNetDevices(int* ndev) { NCCLCHECK(ncclCollNet->devices(ndev)); return ncclSuccess; }
-static ncclResult_t collNetPciPath(int dev, char** path) { NCCLCHECK(ncclCollNet->pciPath(dev, path)); return ncclSuccess; }
-static ncclResult_t collNetPtrSupport(int dev, int* supportedTypes) { NCCLCHECK(ncclCollNet->ptrSupport(dev, supportedTypes)); return ncclSuccess; }
+static ncclResult_t collNetGetProperties(int dev, ncclNetProperties_t* props) { NCCLCHECK(ncclCollNet->getProperties(dev, props)); return ncclSuccess; }
 static ncclResult_t collNetListen(int dev, void* handle, void** listenComm) { NCCLCHECK(ncclCollNet->listen(dev, handle, listenComm)); return ncclSuccess; }
 static ncclResult_t collNetConnect(void* handles[], int nranks, int rank, void* listenComm, void** collComm) { NCCLCHECK(ncclCollNet->connect(handles, nranks, rank, listenComm, collComm)); return ncclSuccess; }
 static ncclResult_t collNetReduceSupport(ncclDataType_t dataType, ncclRedOp_t redOp, int* supported) { NCCLCHECK(ncclCollNet->reduceSupport(dataType, redOp, supported)); return ncclSuccess; }

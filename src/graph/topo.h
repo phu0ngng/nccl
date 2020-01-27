@@ -33,7 +33,6 @@
 #define CPU 3 // Actually NUMA domains
 #define NIC 4
 #define NET 5
-#define NPT 6
 extern const char* topoNodeTypeStr[];
 
 // We want link types and path types to match as much as possible
@@ -93,6 +92,7 @@ struct ncclTopoNode {
       float width;
       int gdrSupport;
       int collSupport;
+      int maxChannels;
     }net;
     struct {
       int arch;

@@ -375,6 +375,7 @@ ncclResult_t ncclTopoSearchRecNet(struct ncclTopoSystem* system, struct ncclTopo
     struct ncclTopoNode* gpu;
     if (graph->collNet && net->net.collSupport == 0) continue;
     if (net->net.width < speed) continue;
+    if (net->net.maxChannels == 0) continue;
 
     graph->inter[graph->nChannels*2] = net->id;
     for (int i=0; i<system->nodes[NET].count; i++) {
@@ -383,6 +384,7 @@ ncclResult_t ncclTopoSearchRecNet(struct ncclTopoSystem* system, struct ncclTopo
         system->nodes[NET].nodes[i].net.width -= speed;
       }
     }
+    net->net.maxChannels--;
 
     // First try to replay the last channel
     if (graph->nChannels > 0) {
@@ -426,6 +428,7 @@ ncclResult_t ncclTopoSearchRecNet(struct ncclTopoSystem* system, struct ncclTopo
       }
     }
 
+    net->net.maxChannels++;
     for (int i=0; i<system->nodes[NET].count; i++) {
       if ((system->nodes[NET].nodes[i].net.asic == net->net.asic) &&
           (system->nodes[NET].nodes[i].net.port == net->net.port)) {

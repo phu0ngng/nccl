@@ -50,7 +50,7 @@
     </pci>
     <pci busid="0000:00:0c.0" class="0x020000" link_speed="" link_width="0">
       <nic type="net">
-        <net name="ens12" speed="-1" dev="0" gdr="0"/>
+        <net name="ens12" port="0" guid="0x0" speed="-1" dev="0" gdr="0"/>
       </nic>
     </pci>
   </cpu>

@@ -30,14 +30,14 @@
         </pci>
         <pci busid="0000:0d:00.0" class="0x020700" link_speed="16 GT/s" link_width="16">
           <nic type="infiniband">
-            <net name="mlx5_0" sys_guid="b859:9f03:0054:0fec" link_rate="200 Gb/sec (4X HDR)" dev="4" gdr="1"/>
+            <net name="mlx5_0" port="1" guid="0xb8599f0300540fec" speed="200000" dev="4" gdr="1"/>
           </nic>
         </pci>
       </pci>
       <pci busid="0000:12:00.0" class="0x060400" link_speed="16 GT/s" link_width="16">
         <pci busid="0000:14:00.0" class="0x020700" link_speed="16 GT/s" link_width="16">
           <nic type="infiniband">
-            <net name="mlx5_1" sys_guid="b859:9f03:0054:0ea8" link_rate="200 Gb/sec (4X HDR)" dev="2" gdr="1"/>
+            <net name="mlx5_1" port="1" guid="0xb8599f0300540ea8" speed="200000" dev="2" gdr="1"/>
           </nic>
         </pci>
       </pci>
@@ -74,14 +74,14 @@
         </pci>
         <pci busid="0000:2b:00.0" class="0x020700" link_speed="16 GT/s" link_width="16">
           <nic type="infiniband">
-            <net name="mlx5_2" sys_guid="b859:9f03:0054:0dbc" link_rate="200 Gb/sec (4X HDR)" dev="5" gdr="1"/>
+            <net name="mlx5_2" port="1" guid="0xb8599f0300540dbc" speed="200000" dev="5" gdr="1"/>
           </nic>
         </pci>
       </pci>
       <pci busid="0000:2c:00.0" class="0x060400" link_speed="16 GT/s" link_width="16">
         <pci busid="0000:2e:00.0" class="0x020700" link_speed="16 GT/s" link_width="16">
           <nic type="infiniband">
-            <net name="mlx5_3" sys_guid="b859:9f03:0054:1ea8" link_rate="200 Gb/sec (4X HDR)" dev="6" gdr="1"/>
+            <net name="mlx5_3" port="1" guid="0xb8599f0300541ea8" speed="200000" dev="6" gdr="1"/>
           </nic>
         </pci>
       </pci>
@@ -118,14 +118,14 @@
         </pci>
         <pci busid="0000:8d:00.0" class="0x020700" link_speed="16 GT/s" link_width="16">
           <nic type="infiniband">
-            <net name="mlx5_6" sys_guid="b859:9f03:0054:0b40" link_rate="200 Gb/sec (4X HDR)" dev="0" gdr="1"/>
+            <net name="mlx5_6" port="1" guid="0xb8599f0300540b40" speed="200000" dev="0" gdr="1"/>
           </nic>
         </pci>
       </pci>
       <pci busid="0000:92:00.0" class="0x060400" link_speed="16 GT/s" link_width="16">
         <pci busid="0000:94:00.0" class="0x020700" link_speed="16 GT/s" link_width="16">
           <nic type="infiniband">
-            <net name="mlx5_7" sys_guid="b859:9f03:0054:0e98" link_rate="200 Gb/sec (4X HDR)" dev="3" gdr="1"/>
+            <net name="mlx5_7" port="1" guid="0xb8599f0300540e98" speed="200000" dev="3" gdr="1"/>
           </nic>
         </pci>
       </pci>
@@ -162,14 +162,14 @@
         </pci>
         <pci busid="0000:ab:00.0" class="0x020700" link_speed="16 GT/s" link_width="16">
           <nic type="infiniband">
-            <net name="mlx5_8" sys_guid="b859:9f03:0054:1020" link_rate="200 Gb/sec (4X HDR)" dev="1" gdr="1"/>
+            <net name="mlx5_8" port="1" guid="0xb8599f0300541020" speed="200000" dev="1" gdr="1"/>
           </nic>
         </pci>
       </pci>
       <pci busid="0000:ac:00.0" class="0x060400" link_speed="16 GT/s" link_width="16">
         <pci busid="0000:ae:00.0" class="0x020700" link_speed="16 GT/s" link_width="16">
           <nic type="infiniband">
-            <net name="mlx5_9" sys_guid="b859:9f03:0054:2ea8" link_rate="200 Gb/sec (4X HDR)" dev="7" gdr="1"/>
+            <net name="mlx5_9" port="1" guid="0xb8599f0300542ea8" speed="200000" dev="7" gdr="1"/>
           </nic>
         </pci>
       </pci>

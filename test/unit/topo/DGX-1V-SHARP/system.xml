@@ -19,7 +19,7 @@
       </pci>
       <pci busid="0000:05:00.0" class="0x020700" link_speed="8 GT/s" link_width="16">
         <nic type="infiniband">
-          <net name="mlx5_0" sys_guid="b859:9f03:004e:b948" link_rate="100 Gb/sec (2X HDR)" dev="2" gdr="1" coll="1"/>
+          <net name="mlx5_0" port="1" guid="0xb8599f03004eb948" speed="100000" dev="2" gdr="1" coll="1"/>
         </nic>
       </pci>
     </pci>
@@ -42,7 +42,7 @@
       </pci>
       <pci busid="0000:0c:00.0" class="0x020700" link_speed="8 GT/s" link_width="16">
         <nic type="infiniband">
-          <net name="mlx5_1" sys_guid="b859:9f03:004e:b9f4" link_rate="100 Gb/sec (2X HDR)" dev="0" gdr="1" coll="1"/>
+          <net name="mlx5_1" port="1" guid="0xb8599f03004eb9f4" speed="100000" dev="0" gdr="1" coll="1"/>
         </nic>
       </pci>
     </pci>
@@ -67,7 +67,7 @@
       </pci>
       <pci busid="0000:84:00.0" class="0x020700" link_speed="8 GT/s" link_width="16">
         <nic type="infiniband">
-          <net name="mlx5_2" sys_guid="b859:9f03:004e:ba14" link_rate="100 Gb/sec (2X HDR)" dev="3" gdr="1" coll="1"/>
+          <net name="mlx5_2" port="1" guid="0xb8599f03004eba14" speed="100000" dev="3" gdr="1" coll="1"/>
         </nic>
       </pci>
     </pci>
@@ -90,7 +90,7 @@
       </pci>
       <pci busid="0000:8b:00.0" class="0x020700" link_speed="8 GT/s" link_width="16">
         <nic type="infiniband">
-          <net name="mlx5_3" sys_guid="b859:9f03:004e:b9ec" link_rate="100 Gb/sec (2X HDR)" dev="1" gdr="1" coll="1"/>
+          <net name="mlx5_3" port="1" guid="0xb8599f03004eb9ec" speed="100000" dev="1" gdr="1" coll="1"/>
         </nic>
       </pci>
     </pci>

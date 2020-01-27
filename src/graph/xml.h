@@ -45,7 +45,7 @@ ncclResult_t ncclTopoGetXmlGraphFromFile(const char* xmlGraphFile, struct ncclXm
 
 /* Auto-detect functions */
 ncclResult_t ncclTopoFillGpu(struct ncclXml* xml, const char* busId, struct ncclXmlNode** gpuNode);
-ncclResult_t ncclTopoFillNic(struct ncclXml* xml, const char* sysPath, struct ncclXmlNode** netNode, int netIndex);
+ncclResult_t ncclTopoFillNet(struct ncclXml* xml, const char* pciPath, const char* netName, struct ncclXmlNode** netNode);
 
 /**************/
 /* XML Struct */
@@ -71,24 +71,24 @@ static ncclResult_t xmlGetAttr(struct ncclXmlNode* node, const char* attrName, c
   return ncclSuccess;
 }
 
-static ncclResult_t xmlGetAttrInt(struct ncclXmlNode* node, const char* attrName, int* value) {
-  const char* str;
-  NCCLCHECK(xmlGetAttr(node, attrName, &str));
-  if (str == NULL) {
+static ncclResult_t xmlGetAttrStr(struct ncclXmlNode* node, const char* attrName, const char** value) {
+  NCCLCHECK(xmlGetAttr(node, attrName, value));
+  if (*value == NULL) {
     WARN("Attribute %s of node %s not found\n", attrName, node->name);
     return ncclInternalError;
   }
+  return ncclSuccess;
+}
+static ncclResult_t xmlGetAttrInt(struct ncclXmlNode* node, const char* attrName, int* value) {
+  const char* str;
+  NCCLCHECK(xmlGetAttrStr(node, attrName, &str));
   *value = strtol(str, NULL, 0);
   return ncclSuccess;
 }
 
 static ncclResult_t xmlGetAttrFloat(struct ncclXmlNode* node, const char* attrName, float* value) {
   const char* str;
-  NCCLCHECK(xmlGetAttr(node, attrName, &str));
-  if (str == NULL) {
-    WARN("Attribute %s of node %s not found\n", attrName, node->name);
-    return ncclInternalError;
-  }
+  NCCLCHECK(xmlGetAttrStr(node, attrName, &str));
   *value = strtof(str, NULL);
   return ncclSuccess;
 }

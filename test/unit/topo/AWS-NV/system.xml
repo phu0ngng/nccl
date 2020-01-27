@@ -66,7 +66,7 @@
     </pci>
     <pci busid="0000:00:05.0" class="0x020000" link_speed="Unknown speed" link_width="0">
       <nic type="net">
-        <net name="eth0" dev="0" gdr="0"/>
+        <net name="eth0" port="0" guid="0x0" speed="0" dev="0" gdr="0"/>
       </nic>
     </pci>
   </cpu>

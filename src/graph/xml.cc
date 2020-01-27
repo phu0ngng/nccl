@@ -646,46 +646,6 @@ ncclResult_t ncclTopoFillGpu(struct ncclXml* xml, const char* busId, struct nccl
   return ncclSuccess;
 }
 
-ncclResult_t ncclTopoGetXmlFromNet(struct ncclXmlNode* nicNode, struct ncclXml* xml, const char* netSysPath, struct ncclXmlNode** netNodeRet) {
-  char* netName = NULL;
-  if (netSysPath) {
-    int offset = strlen(netSysPath)-1;
-    while (netSysPath[offset] != '/') offset--;
-    netName = strdup(netSysPath+offset+1);
-  }
-  struct ncclXmlNode* netNode;
-  if (netName == NULL) {
-    NCCLCHECK(xmlGetSub(nicNode, "net", &netNode));
-  } else {
-    NCCLCHECK(xmlGetSubKv(nicNode, "net", &netNode, "name", netName));
-  }
-  if (netNode == NULL) {
-    NCCLCHECK(xmlAddNode(xml, nicNode, "net", &netNode));
-  }
-  int index;
-  NCCLCHECK(xmlGetAttrIndex(netNode, "name", &index));
-  if (index == -1 && netName) {
-    NCCLCHECK(xmlSetAttr(netNode, "name", netName));
-  }
-  free(netName);
-  // IP interfaces
-  NCCLCHECK(xmlGetAttrIndex(netNode, "speed", &index));
-  if (index == -1 && netSysPath) {
-    NCCLCHECK(ncclTopoSetAttrFromSys(netNode, netSysPath, "speed", "speed"));
-  }
-  // Infiniband interfaces
-  NCCLCHECK(xmlGetAttrIndex(netNode, "sys_guid", &index));
-  if (index == -1 && netSysPath) {
-    NCCLCHECK(ncclTopoSetAttrFromSys(netNode, netSysPath, "sys_image_guid", "sys_guid"));
-  }
-  NCCLCHECK(xmlGetAttrIndex(netNode, "link_rate", &index));
-  if (index == -1 && netSysPath) {
-    NCCLCHECK(ncclTopoSetAttrFromSys(netNode, netSysPath, "ports/1/rate", "link_rate"));
-  }
-  *netNodeRet = netNode;
-  return ncclSuccess;
-}
-
 // Returns the subsystem name of a path, i.e. the end of the path
 // where sysPath/subsystem points to.
 ncclResult_t ncclTopoGetSubsystem(const char* sysPath, char* subSys) {
@@ -703,70 +663,11 @@ ncclResult_t ncclTopoGetSubsystem(const char* sysPath, char* subSys) {
   return ncclSuccess;
 }
 
-#include <glob.h>
-#define IB_GUID_PATH "%s/infiniband/mlx5_*/sys_image_guid"
+ncclResult_t ncclTopoFillNet(struct ncclXml* xml, const char* pciPath, const char* netName, struct ncclXmlNode** netNode) {
+  NCCLCHECK(xmlFindTagKv(xml, "net", netNode, "name", netName));
+  if (*netNode != NULL) return ncclSuccess;
 
-ncclResult_t ncclTopoFillNic(struct ncclXml* xml, const char* sysPath, struct ncclXmlNode** netNode, int netIndex) {
-  // First detect whether it is the net sysPath (old behavior) or the pci sysPath (new behavior)
-  char* nicType = NULL;
-  char* netSysPath = NULL;
-  char* pciSysPath = NULL;
-  struct ncclXmlNode* nicNode;
-  if (sysPath != NULL) {
-    char classPath[PATH_MAX];
-    snprintf(classPath, PATH_MAX, "%s/class", sysPath);
-    if (access(classPath, F_OK ) == -1 ) {
-      // New behavior
-      netSysPath = strdup(sysPath);
-      // Find pciSysPath in path/device
-      char deviceFilePath[PATH_MAX];
-      sprintf(deviceFilePath, "%s/device", sysPath);
-      struct stat s;
-      if (stat(deviceFilePath, &s) == 0) {
-        pciSysPath = realpath(deviceFilePath, NULL);
-      }
-    } else {
-      // Old behavior
-      pciSysPath = strdup(sysPath);
-      // Find netSysPath as path/infiniband/<interface> or path/net/<interface>.
-      char devPath[PATH_MAX];
-      snprintf(devPath, PATH_MAX, "%s/infiniband/*", sysPath);
-      glob_t globbuf;
-      glob(devPath, 0, NULL, &globbuf);
-      if (globbuf.gl_pathc > 0) {
-        strncpy(devPath, globbuf.gl_pathv[0], PATH_MAX);
-        netSysPath = strdup(devPath);
-      }
-      globfree(&globbuf);
-      if (netSysPath == NULL) {
-        snprintf(devPath, PATH_MAX, "%s/net/*", sysPath);
-        glob(devPath, 0, NULL, &globbuf);
-        if (globbuf.gl_pathc > 0) {
-          strncpy(devPath, globbuf.gl_pathv[0], PATH_MAX);
-          netSysPath = strdup(devPath);
-        }
-        globfree(&globbuf);
-      }
-    }
-  }
-
-  if (netSysPath) {
-    // Find nicType
-    char subsystemPath[PATH_MAX];
-    sprintf(subsystemPath, "%s/subsystem", netSysPath);
-    char* subsystemRealPath = realpath(subsystemPath, NULL);
-    if (subsystemRealPath == NULL) {
-      INFO(NCCL_GRAPH, "Topology detection : could not find realpath '%s'", subsystemPath);
-    }
-    else {
-      int offset = strlen(subsystemRealPath)-1;
-      while (subsystemRealPath[offset] != '/') offset--;
-      NCCLCHECK(ncclCalloc(&nicType, strlen(subsystemRealPath)));
-      strcpy(nicType, subsystemRealPath+offset+1);
-      free(subsystemRealPath);
-    }
-  }
-
+  const char* pciSysPath = pciPath;
   if (pciSysPath) {
     char subSystem[PATH_MAX];
     NCCLCHECK(ncclTopoGetSubsystem(pciSysPath, subSystem));
@@ -777,36 +678,33 @@ ncclResult_t ncclTopoFillNic(struct ncclXml* xml, const char* sysPath, struct nc
     }
   }
 
+  struct ncclXmlNode* parent = NULL;
   if (pciSysPath) {
-    struct ncclXmlNode* pciNode;
     int offset;
     for (offset=strlen(pciSysPath)-1; pciSysPath[offset] != '/'; offset--);
     char busId[NVML_DEVICE_PCI_BUS_ID_BUFFER_SIZE];
     strcpy(busId, pciSysPath+offset+1);
-    NCCLCHECK(ncclTopoGetPciNode(xml, busId, &pciNode));
-    NCCLCHECK(ncclTopoGetXmlFromSys(pciNode, xml));
-    NCCLCHECK(xmlGetSub(pciNode, "nic", &nicNode));
-    if (nicNode == NULL) {
-      NCCLCHECK(xmlAddNode(xml, pciNode, "nic", &nicNode));
-      if (nicType != NULL) {
-        NCCLCHECK(xmlSetAttr(nicNode, "type", nicType));
-      }
+    NCCLCHECK(xmlFindTagKv(xml, "pci", &parent, "busid", busId));
+    if (parent == NULL) {
+      NCCLCHECK(xmlAddNode(xml, NULL, "pci", &parent));
+      NCCLCHECK(xmlSetAttr(parent, "busid", busId));
+      NCCLCHECK(ncclTopoGetXmlFromSys(parent, xml));
     }
-    free(pciSysPath);
-    free(nicType);
   } else {
     // Virtual NIC, no PCI device, attach to first CPU
-    struct ncclXmlNode* cpuNode;
-    NCCLCHECK(xmlFindTag(xml, "cpu", &cpuNode));
-    NCCLCHECK(xmlGetSubKvInt(cpuNode, "nic", &nicNode, "id", netIndex));
-    if (nicNode == NULL) {
-      NCCLCHECK(xmlAddNode(xml, cpuNode, "nic", &nicNode));
-      NCCLCHECK(xmlSetAttrInt(nicNode, "id", netIndex));
-    }
+    NCCLCHECK(xmlFindTag(xml, "cpu", &parent));
   }
 
-  NCCLCHECK(ncclTopoGetXmlFromNet(nicNode, xml, netSysPath, netNode));
-  free(netSysPath);
+  struct ncclXmlNode* nicNode = NULL;
+  NCCLCHECK(xmlGetSub(parent, "nic", &nicNode));
+  if (nicNode == NULL) {
+    NCCLCHECK(xmlAddNode(xml, parent, "nic", &nicNode));
+  }
+
+  // We know that this net does not exist yet (we searched for it at the
+  // beginning of this function), so we can add it.
+  NCCLCHECK(xmlAddNode(xml, nicNode, "net", netNode));
+  NCCLCHECK(xmlSetAttr(*netNode, "name", netName));
   return ncclSuccess;
 }
 

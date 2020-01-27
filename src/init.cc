@@ -285,17 +285,8 @@ static ncclResult_t fillInfo(struct ncclComm* comm, struct ncclPeerInfo* info, u
   info->shmDev = statbuf.st_dev;
 
   info->busId = comm->busId;
-  int netDevs;
 
-  NCCLCHECK(ncclNetDevices(&netDevs));
-  for (int n=0; n<netDevs; n++) {
-    int ptrSupport;
-    NCCLCHECK(ncclNetPtrSupport(n, &ptrSupport));
-    if (ptrSupport & NCCL_PTR_CUDA) {
-      NCCLCHECK(ncclGpuGdrSupport(n, &info->gdrSupport));
-      break;
-    }
-  }
+  NCCLCHECK(ncclGpuGdrSupport(&info->gdrSupport));
   return ncclSuccess;
 }
 

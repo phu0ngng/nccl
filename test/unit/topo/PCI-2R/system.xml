@@ -2,7 +2,7 @@
   <cpu numaid="0" affinity="000f,ff000fff" arch="x86_64" vendor="GenuineIntel" familyid="6" modelid="79">
     <pci busid="0000:15:00.0" class="0x020700" link_speed="8 GT/s" link_width="16">
       <nic type="infiniband">
-        <net name="mlx5_0" sys_guid="9803:9b03:0067:a76c" link_rate="100 Gb/sec (4X EDR)" dev="0" gdr="1"/>
+        <net name="mlx5_0" port="1" guid="0x98039b030067a76c" speed="100000" dev="0" gdr="1"/>
       </nic>
     </pci>
     <pci busid="0000:02:00.0" class="0x060400" link_speed="8 GT/s" link_width="16">

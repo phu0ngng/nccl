@@ -85,6 +85,7 @@ void checkTopo(const char* xmlTopoFile, const char* xmlGraphFile, const char* pl
     return;
   }
   CHECK(ncclTopoGetSystemFromXml(xmlSystem, &system));
+  CHECK(ncclTopoPrint(system));
   CHECK(ncclTopoComputePaths(system, NULL));
   if (inter == 0) {
     for (int n=system->nodes[NET].count-1; n>=0; n--)
