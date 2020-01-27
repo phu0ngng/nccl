@@ -85,7 +85,7 @@ static ncclResult_t ncclSocketGetSpeed(char* devName, int* speed) {
     close(fd);
   }
   if (*speed <= 0) {
-    WARN("Could not get speed from %s. Defaulting to 10 Gbps.", speedPath);
+    INFO(NCCL_NET, "Could not get speed from %s. Defaulting to 10 Gbps.", speedPath);
     *speed = 10000;
   }
   return ncclSuccess;

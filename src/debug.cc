@@ -125,7 +125,7 @@ void ncclDebugInit() {
  */
 void ncclDebugLog(ncclDebugLogLevel level, unsigned long flags, const char *filefunc, int line, const char *fmt, ...) {
   if (ncclDebugLevel == -1) ncclDebugInit();
-  if (ncclDebugNoWarn == 1 && level == NCCL_LOG_WARN) level = NCCL_LOG_INFO;
+  if (ncclDebugNoWarn != 0 && level == NCCL_LOG_WARN) { level = NCCL_LOG_INFO; flags = ncclDebugNoWarn; }
 
   char hostname[1024];
   getHostName(hostname, 1024, '.');

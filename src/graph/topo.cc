@@ -266,6 +266,7 @@ ncclResult_t ncclTopoAddNet(struct ncclXmlNode* xmlNet, struct ncclTopoSystem* s
   if (str) sscanf(str, "0x%lx", &net->net.asic);
   else net->net.asic = dev;
 
+  ncclDebugNoWarn = NCCL_GRAPH;
   int mbps;
   if (xmlGetAttrInt(xmlNet, "speed", &mbps) != ncclSuccess) mbps = 0;
   if (mbps <= 0) mbps = 10000; // Some NICs define speed = -1
@@ -274,6 +275,7 @@ ncclResult_t ncclTopoAddNet(struct ncclXmlNode* xmlNet, struct ncclTopoSystem* s
   if (xmlGetAttrInt(xmlNet, "gdr", &net->net.gdrSupport) != ncclSuccess) net->net.gdrSupport = 0;
   if (xmlGetAttrInt(xmlNet, "maxconn", &net->net.maxChannels) != ncclSuccess) net->net.maxChannels = MAXCHANNELS;
   if (xmlGetAttrInt(xmlNet, "coll", &net->net.collSupport) != ncclSuccess) net->net.collSupport = 0;
+  ncclDebugNoWarn = 0;
 
   NCCLCHECK(ncclTopoConnectNodes(nic, net, LINK_NET, net->net.width));
   NCCLCHECK(ncclTopoConnectNodes(net, nic, LINK_NET, net->net.width));
