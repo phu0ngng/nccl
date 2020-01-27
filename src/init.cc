@@ -757,7 +757,7 @@ static ncclResult_t initTransportsRank(struct ncclComm* comm, ncclUniqueId* comm
 
   TRACE(NCCL_INIT, "rank %d nranks %d - BUILT %d TREES/RINGS", rank, nranks, comm->nChannels);
 
-  NCCLCHECK(ncclSetThresholds(comm, minCompCap, maxCompCap, &treeGraph, &ringGraph, &collNetGraph));
+  NCCLCHECK(ncclTopoSetThresholds(comm, minCompCap, maxCompCap, &treeGraph, &ringGraph, &collNetGraph));
 
   char line[1024];
   line[0]='\0';

@@ -70,13 +70,13 @@ static const float hwLat [3][NCCL_NUM_ALGORITHMS][NCCL_NUM_PROTOCOLS] =
   /* PCI */
   { /* Tree (LL/LL128/Simple)*/ { 1.0, 1.9, 5.5 }, /* Ring (LL/LL128/Simple)*/ { 1.0, 2.5, 5.7 }, /* CollNet (LL/LL128/Simple)*/ { 1.0, 1.9, 5.5 } },
   /* NET */
-  { /* Tree (LL/LL128/Simple)*/ { 5.0, 7.5, 15.5 }, /* Ring (LL/LL128/Simple)*/ {  .9, 2.5, 6.6 }, /* CollNet (LL/LL128/Simple)*/ { 5.0, 5.0, 10.7 } }
+  { /* Tree (LL/LL128/Simple)*/ { 5.0, 7.5, 50.0 }, /* Ring (LL/LL128/Simple)*/ {  .9, 2.5, 6.6 }, /* CollNet (LL/LL128/Simple)*/ { 5.0, 5.0, 10.7 } }
 };
 
 // LL128 max BW for the different collectives
 static const double ll128MaxBw[NCCL_NUM_FUNCTIONS] = { 113.0, 72.0, 110.0, 91.0, 100.0 };
 
-ncclResult_t ncclSetThresholds(struct ncclComm* comm, int minCompCap, int maxCompCap, struct ncclTopoGraph* treeGraph, struct ncclTopoGraph* ringGraph, struct ncclTopoGraph* collNetGraph) {
+ncclResult_t ncclTopoSetThresholds(struct ncclComm* comm, int minCompCap, int maxCompCap, struct ncclTopoGraph* treeGraph, struct ncclTopoGraph* ringGraph, struct ncclTopoGraph* collNetGraph) {
   int simpleDefaultThreads = (treeGraph->speedIntra*treeGraph->nChannels <= PCI_WIDTH) ? 256 : NCCL_MAX_NTHREADS;
   comm->maxThreads[NCCL_PROTO_SIMPLE] = getNthreads("NCCL_NTHREADS", ncclParamNthreads(), 2*WARP_SIZE, NCCL_MAX_NTHREADS, simpleDefaultThreads);
   comm->maxThreads[NCCL_PROTO_LL] = getNthreads("NCCL_NTHREADS", ncclParamNthreads(), 2*WARP_SIZE, NCCL_MAX_NTHREADS, NCCL_MAX_NTHREADS);
@@ -219,5 +219,24 @@ ncclResult_t ncclSetThresholds(struct ncclComm* comm, int minCompCap, int maxCom
       comm->threadThresholds[NCCL_ALGO_COLLNET][NCCL_PROTO_LL],
       comm->threadThresholds[NCCL_ALGO_COLLNET][NCCL_PROTO_LL128],
       comm->threadThresholds[NCCL_ALGO_COLLNET][NCCL_PROTO_SIMPLE]);
+  return ncclSuccess;
+}
+
+// Trees are not perfectly sticking to the model for medium sizes. Applying a static correction
+// factor is not ideal but works quite well. Powers of two, 64 B to 1 GB.
+static float treeCorrectionFactor[NCCL_NUM_PROTOCOLS][22] = {
+  { 1.0, 1.0, 1.0, 1.0,  .9,  .8,  .7,  .7,  .7,  .7,  .6,  .5,  .5,  .5,  .6,  .7,  .8,  .9,  .9, 1.0, 1.0, 1.0 },
+  { 1.0, 1.0, 1.0, 1.0, 1.0,  .9,  .8,  .8,  .8,  .8,  .7,  .7,  .7,  .6,  .6,  .7,  .7,  .8,  .8,  .9,  .9, 1.0 },
+  {  .9,  .9,  .9,  .9,  .9,  .9,  .9,  .8,  .7,  .6,  .6,  .5,  .5,  .5,  .5,  .5,  .5,  .6,  .6,  .7,  .8,  .9 }
+};
+
+ncclResult_t ncclTopoGetAlgoTime(struct ncclInfo* info, int algorithm, int protocol, float* time) {
+  float bw = info->comm->bandwidths[info->coll][algorithm][protocol];
+  if (bw == 0) {
+    *time = -1.0; return ncclSuccess;
+  }
+  int logSize = log2i(info->nBytes>>6);
+  if (algorithm == NCCL_ALGO_TREE && logSize < 22) bw *= treeCorrectionFactor[protocol][logSize];
+  *time = info->comm->latencies[info->coll][algorithm][protocol] + (info->nBytes) / (1000 * bw);
   return ncclSuccess;
 }

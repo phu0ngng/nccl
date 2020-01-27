@@ -20,7 +20,7 @@ STATICLIB = ${BUILDDIR}/lib/libnccl_static.a
 NVLDFLAGS += -L$(BUILDDIR)/lib $(LIBRARIES:%=-l%)
 ##
 DST_DIR := $(abspath ${BUILDDIR}/test/unit)
-CU_FILES := kernel_test.cu graph_test.cu
+CU_FILES := kernel_test.cu graph_test.cu model.cu
 #ifeq ($(MPI),1)
 #CU_FILES += ncclNet_test.cu ncclNet_read_write_stress_test.cu
 #endif
@@ -64,6 +64,11 @@ ${DST_DIR}/kernel_test: ${DST_DIR}/kernel_test.o
 #	mpicc -std=c99 $(CXXFLAGS) -I$(BUILDDIR)/include/ -o $@ -c $<
 #
 ${DST_DIR}/graph_test: ${DST_DIR}/graph_test.o ${STATICLIB}
+	@printf "Linking  %-35s > %s\n" $< $@
+	@mkdir -p ${DST_DIR}
+	$(NVCC) -o $@ $(NVCUFLAGS) $^ ${NVLDFLAGS}
+#
+${DST_DIR}/model: ${DST_DIR}/model.o ${STATICLIB}
 	@printf "Linking  %-35s > %s\n" $< $@
 	@mkdir -p ${DST_DIR}
 	$(NVCC) -o $@ $(NVCUFLAGS) $^ ${NVLDFLAGS}
