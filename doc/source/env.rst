@@ -10,7 +10,6 @@ They can also be set statically in /etc/nccl.conf (for an administrator to set s
 
  NCCL_SOCKET_IFNAME=eth0
  NCCL_DEBUG=WARN
- NCCL_RINGS=0 1 2 3|3 2 1 0
 
 NCCL_P2P_DISABLE
 ----------------
@@ -30,19 +29,17 @@ The level defines the maximum distance between GPUs where NCCL will use the P2P 
 
 Values accepted
 ^^^^^^^^^^^^^^^
-0 : Never use P2P. (always disabled)
+LOC or 0 : Never use P2P (always disabled)
 
-1 : Use P2P when GPUs are on the same PCI switch.
+NVL : Use P2P when GPUs are connected through NVLink
 
-2 : Use P2P when GPUs are connected through PCI switches (potentially multiple hops).
+PIX or 1 : Use P2P when GPUs are on the same PCI switch.
 
-3 : Use P2P when GPUs are on the same PCI root complex, potentially going through the CPU.
+PXB or 2 : Use P2P when GPUs are connected through PCI switches (potentially multiple hops).
 
-4 : (Since 2.4.7) Use P2P even across PCI root complexes, as long as the GPUs are within the same NUMA node. (Before 2.4.7) Use P2P even across PCI root complexes, regardless of whether the GPUs are within the same NUMA node (always enabled).
+PHB or 3, or 4 : Use P2P when GPUs are on the same NUMA node. Traffic will go through the CPU.
 
-5 : Use P2P even across the SMP interconnect between NUMA nodes (e.g., QPI/UPI). (always enabled)
-
-The default value is 3.
+SYS or 5 : Use P2P betweem NUMA nodes, potentially crossing the SMP interconnect (e.g. QPI/UPI).
 
 NCCL_SHM_DISABLE
 ----------------
@@ -316,6 +313,19 @@ Values accepted
 ^^^^^^^^^^^^^^^
 The default value is 0.
 
+NCCL_IB_AR_THRESHOLD
+--------------------
+(since 2.6)
+
+Threshold after which we send Infiniband data in a separate message which can
+leverage adaptive routing.
+
+Values accepted
+^^^^^^^^^^^^^^^
+Size in bytes, the default value is 8192.
+
+Setting it above NCCL_BUFFSIZE will disable the use of adaptive routing completely.
+
 NCCL_IB_CUDA_SUPPORT
 --------------------
 (removed in 2.4.0, see NCCL_NET_GDR_LEVEL)
@@ -410,9 +420,9 @@ The ``NCCL_ALGO`` variable defines which algorithms NCCL will use.
 
 Values accepted
 ^^^^^^^^^^^^^^^
-Coma-separated list of algorithms (not case sensitive) among: Tree, Ring. To specify algorithms to exclude (instead of include), start the list with ^.
+Coma-separated list of algorithms (not case sensitive) among: Tree, Ring, Collnet. To specify algorithms to exclude (instead of include), start the list with ^.
 
-The default is ``Tree,Ring``.
+The default is ``Tree,Ring,Collnet``.
 
 NCCL_PROTO
 ----------
@@ -470,3 +480,23 @@ The default value is INIT.
 Supported subsystem names are INIT (stands for initialization), COLL (stands for collectives), P2P (stands for
 peer-to-peer), SHM (stands for shared memory), NET (stands for network), GRAPH (stands for topology detection
 and graph search), TUNING (stands for algorithm/protocol tuning) and ALL (includes every subsystem).
+
+NCCL_TOPO_FILE
+--------------
+(since 2.6)
+
+Path to an XML file to load before detecting the topology.
+
+Value accepted
+^^^^^^^^^^^^^^
+A path to an accessible file describing part or all of the topology.
+
+NCCL_TOPO_DUMP_FILE
+-------------------
+(since 2.6)
+
+Path to an XML file to dump the topology after detection.
+
+Value accepted
+^^^^^^^^^^^^^^
+A path to a file which will be created or overwritten.
