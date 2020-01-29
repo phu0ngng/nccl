@@ -49,9 +49,9 @@ void compareGraphs(struct ncclTopoGraph* ref, struct ncclTopoGraph* out, int ngp
       line[0] = '\0';
       sprintf(line+strlen(line), "                        Properties : ");
       while (strlen(line) < margin) sprintf(line+strlen(line), " ");
-      sprintf(line+strlen(line), "%7s %2dx%4.1f/%4.1f %3s/%3s P%1d C%1d S%1d", graphNames[ref->id], ref->nChannels, ref->speedIntra, ref->speedInter, topoLinkTypeStr[ref->typeIntra], topoLinkTypeStr[ref->typeInter], ref->pattern, ref->crossNic, ref->sameChannels);
+      sprintf(line+strlen(line), "%7s %2dx%4.1f/%4.1f %3s/%3s P%1d C%1d S%1d", graphNames[ref->id], ref->nChannels, ref->speedIntra, ref->speedInter, topoPathTypeStr[ref->typeIntra], topoPathTypeStr[ref->typeInter], ref->pattern, ref->crossNic, ref->sameChannels);
       while (strlen(line) < margin+width) sprintf(line+strlen(line), " ");
-      sprintf(line+strlen(line), "%7s %2dx%4.1f/%4.1f %3s/%3s P%1d C%1d S%1d", graphNames[out->id], out->nChannels, out->speedIntra, out->speedInter, topoLinkTypeStr[out->typeIntra], topoLinkTypeStr[out->typeInter], out->pattern, out->crossNic, out->sameChannels);
+      sprintf(line+strlen(line), "%7s %2dx%4.1f/%4.1f %3s/%3s P%1d C%1d S%1d", graphNames[out->id], out->nChannels, out->speedIntra, out->speedInter, topoPathTypeStr[out->typeIntra], topoPathTypeStr[out->typeInter], out->pattern, out->crossNic, out->sameChannels);
       printf("%s\n", line);
 
       line[0] = '\0';

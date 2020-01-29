@@ -68,8 +68,8 @@ static ncclResult_t ncclTopoSetPaths(struct ncclTopoNode* baseNode, struct ncclT
             }
           }
           if (remPath->list[0] == NULL) {
-            WARN("Failed to find reverse path from remNode id %d type %d nlinks %d to node id %d type %d",
-                 remNode->id, remNode->type, remNode->nlinks, node->id, node->type);
+            WARN("Failed to find reverse path from remNode %d/%lx nlinks %d to node %d/%lx",
+                 remNode->type, remNode->id, remNode->nlinks, node->type, node->id);
             return ncclInternalError;
           }
           // Copy the rest of the path
