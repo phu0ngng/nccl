@@ -213,6 +213,7 @@ int main(int argc, const char* argv[]) {
     RUN("DGX-2-Delta");
     RUN("GCP-NV");
     RUN("AWS-NV");
+    RUN("AWS-NV-EFA");
     RUN("Azure");
     RUN("FB-BUG");
     RUN("DGX-1V-1G");
