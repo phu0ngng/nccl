@@ -114,7 +114,7 @@ ncclResult_t ncclTopoSetThresholds(struct ncclComm* comm, int minCompCap, int ma
         if (a == NCCL_ALGO_COLLNET && p == NCCL_PROTO_LL128) busBw = 0;  // CollNet does not support LL128
 
         // Convert bus BW to algorithm BW
-        float ratio = a == NCCL_ALGO_COLLNET ? 1.0 : a == NCCL_ALGO_TREE ? .5 : (1.0 * comm->nRanks) / nsteps;
+        float ratio = (a != NCCL_ALGO_RING) ? .5 : (1.0 * comm->nRanks) / nsteps;
         comm->bandwidths[coll][a][p] = busBw * ratio;
 
         comm->latencies[coll][a][p] = baseLat[a][p];
