@@ -20,10 +20,18 @@
   } \
 } while (0);
 
+// We don't support collnet yet
+#undef NCCL_NUM_ALGORITHMS
+#define NCCL_NUM_ALGORITHMS 2
+
 const char* protocolNames[] = { "LL", "LL128", "Simple" };
 const char* algorithmNames[] = { "Tree", "Ring", "CollNet" };
 
 void runTopo(const char* xmlTopoFile, const char* platform, int nnodes) {
+  int compareData = 0;
+  char* str = getenv("COMPARE_DATA");
+  if (str && atoi(str)) compareData=1;
+
   struct ncclXml* xmlSystem;
   INFO(NCCL_GRAPH, "Loading platform %s", platform);
   CHECK(ncclCalloc(&xmlSystem, 1));
@@ -93,37 +101,82 @@ void runTopo(const char* xmlTopoFile, const char* platform, int nnodes) {
   info.coll = ncclCollAllReduce;
   info.chunkSteps = ALLREDUCE_CHUNKSTEPS;
   info.sliceSteps = ALLREDUCE_SLICESTEPS;
-  printf("#     Size ");
+  printf("----------+"); for (int i=0; i<NCCL_NUM_ALGORITHMS*NCCL_NUM_PROTOCOLS+1; i++) printf("---------------------+"); printf("\n");
+  printf("     Size |");
   for (int a=0; a<NCCL_NUM_ALGORITHMS; a++) {
     for (int p=0; p<NCCL_NUM_PROTOCOLS; p++) {
-      char fullName[15];
-      sprintf(fullName, "%s/%s", algorithmNames[a], protocolNames[p]);
-      printf("%14s ", fullName);
+      printf(" %7s  / %7s  |", algorithmNames[a], protocolNames[p]);
     }
   }
-  printf("\n");
-  
+  printf("%17s    |\n", "Default");
+  if (compareData) {
+    printf("          |");
+    for (int i=0; i<NCCL_NUM_ALGORITHMS*NCCL_NUM_PROTOCOLS+1; i++) printf("[%9s] %9s|", "data", "model");
+    printf("\n");
+  }
+  printf("----------+"); for (int i=0; i<NCCL_NUM_ALGORITHMS*NCCL_NUM_PROTOCOLS+1; i++) printf("---------------------+"); printf("\n");
+
+  int fd = 0;
+  if (compareData) {
+    char path[1024];
+    sprintf(path, "topo/%s/data/%d.csv", platform, nnodes);
+    fd = open(path, O_RDONLY);
+    if (fd == -1) {
+      printf("Could not open %s\n", path);
+    }
+  }
+
+  int m = NCCL_NUM_ALGORITHMS*NCCL_NUM_PROTOCOLS;
   for (ssize_t size=8; size<(2LL<<32); size<<=1) {
-    float times[NCCL_NUM_ALGORITHMS][NCCL_NUM_PROTOCOLS];
+    float times[NCCL_NUM_ALGORITHMS*NCCL_NUM_PROTOCOLS+1];
+    float data[NCCL_NUM_ALGORITHMS*NCCL_NUM_PROTOCOLS+1];
     info.nBytes = size;
-    float minTime = -1;
+    times[m] = -1.0; // Min time
     for (int a=0; a<NCCL_NUM_ALGORITHMS; a++) {
       for (int p=0; p<NCCL_NUM_PROTOCOLS; p++) {
-        CHECK(ncclTopoGetAlgoTime(&info, a, p, &times[a][p]));
-        if (minTime < 0 || (times[a][p] < minTime && times[a][p]>0)) minTime = times[a][p];
+        int i = a*NCCL_NUM_PROTOCOLS+p;
+        CHECK(ncclTopoGetAlgoTime(&info, a, p, times+i));
+        if (times[m] < 0 || (times[i] < times[m] && times[i]>0)) times[m] = times[i];
       }
     }
-    
-    printf("%10ld ", size);
-    for (int a=0; a<NCCL_NUM_ALGORITHMS; a++) {
-      for (int p=0; p<NCCL_NUM_PROTOCOLS; p++) {
-        if (times[a][p] == minTime) printf("%c[0;32m", 0x1b);
-        printf("%14.1f ", times[a][p]);
-        if (times[a][p] == minTime) printf("%c[00m", 0x1b);
+
+    if (compareData) {
+      for (int i=0; i<NCCL_NUM_ALGORITHMS*NCCL_NUM_PROTOCOLS+1; i++) data[i] = 0.0;
+      int c, s, o = 0, i = 0;
+      char valueStr[128];
+      while (fd != -1) {
+        s = read(fd, &c, 1);
+        if (s != 1) break;
+        if (c == ',' || c == '\n') {
+          valueStr[o] = '\0';
+          data[i++] = atof(valueStr);
+          o = 0;
+        } else {
+          valueStr[o++] = c;
+        }
+        if (c == '\n') break;
       }
+      if (s != 1) { close(fd); fd = -1; }
+    }
+
+    printf("%10ld|", size);
+    for (int i=0; i<NCCL_NUM_ALGORITHMS*NCCL_NUM_PROTOCOLS+1; i++) {
+      float delta;
+      if (compareData && data[i] != 0.0) printf("[%9.1f] ", data[i]); else printf("%11s ", "");
+      if (compareData) {
+        if (data[i] != 0.0) {
+          delta = (times[i]-data[i])/times[i]; delta *= delta;
+          if (delta > .1) printf("%c[0;31m", 0x1b);
+          else if (delta > .02) printf("%c[0;33m", 0x1b);
+          else printf("%c[0;32m", 0x1b);
+        }
+      } else if (i != m && times[i] == times[m]) printf("%c[0;32m", 0x1b);
+      printf("%9.1f|", times[i]);
+      if ((compareData && data[i] != 0.0) || (compareData == 0 && i != m && times[i] == times[m])) printf("%c[00m", 0x1b);
     }
     printf("\n");
   }
+  printf("----------+"); for (int i=0; i<NCCL_NUM_ALGORITHMS*NCCL_NUM_PROTOCOLS+1; i++) printf("---------------------+"); printf("\n");
 }
 
 void runPlatform(const char* platform, int nnodes) {
