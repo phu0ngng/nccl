@@ -145,7 +145,7 @@ void runTopo(const char* xmlTopoFile, const char* platform, int nnodes) {
 
     if (compareData) {
       for (int i=0; i<NCCL_NUM_ALGORITHMS*NCCL_NUM_PROTOCOLS+1; i++) data[i] = 0.0;
-      int c, s, o = 0, i = 0;
+      int c, s = 0, o = 0, i = 0;
       char valueStr[128];
       while (fd != -1) {
         s = read(fd, &c, 1);

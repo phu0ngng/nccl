@@ -20,7 +20,7 @@ STATICLIB = ${BUILDDIR}/lib/libnccl_static.a
 NVLDFLAGS += -L$(BUILDDIR)/lib $(LIBRARIES:%=-l%)
 ##
 DST_DIR := $(abspath ${BUILDDIR}/test/unit)
-CU_FILES := kernel_test.cu graph_test.cu model.cu
+CU_FILES := kernel_test.cu graph_test.cu model.cu data.cu
 #ifeq ($(MPI),1)
 #CU_FILES += ncclNet_test.cu ncclNet_read_write_stress_test.cu
 #endif
