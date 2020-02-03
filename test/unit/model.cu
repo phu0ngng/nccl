@@ -101,6 +101,10 @@ void runTopo(const char* xmlTopoFile, const char* platform, int nnodes) {
   info.coll = ncclCollAllReduce;
   info.chunkSteps = ALLREDUCE_CHUNKSTEPS;
   info.sliceSteps = ALLREDUCE_SLICESTEPS;
+
+  // Last column is used for min/best/default.
+  int m = NCCL_NUM_ALGORITHMS*NCCL_NUM_PROTOCOLS;
+
   printf("----------+"); for (int i=0; i<NCCL_NUM_ALGORITHMS*NCCL_NUM_PROTOCOLS+1; i++) printf("---------------------+"); printf("\n");
   printf("     Size |");
   for (int a=0; a<NCCL_NUM_ALGORITHMS; a++) {
@@ -111,7 +115,7 @@ void runTopo(const char* xmlTopoFile, const char* platform, int nnodes) {
   printf("%17s    |\n", "Default");
   if (compareData) {
     printf("          |");
-    for (int i=0; i<NCCL_NUM_ALGORITHMS*NCCL_NUM_PROTOCOLS+1; i++) printf("[%9s] %9s|", "data", "model");
+    for (int i=0; i<NCCL_NUM_ALGORITHMS*NCCL_NUM_PROTOCOLS+1; i++) printf("[%9s] %9s|", "data", (i == m) ? "best" : "model");
     printf("\n");
   }
   printf("----------+"); for (int i=0; i<NCCL_NUM_ALGORITHMS*NCCL_NUM_PROTOCOLS+1; i++) printf("---------------------+"); printf("\n");
@@ -126,7 +130,6 @@ void runTopo(const char* xmlTopoFile, const char* platform, int nnodes) {
     }
   }
 
-  int m = NCCL_NUM_ALGORITHMS*NCCL_NUM_PROTOCOLS;
   for (ssize_t size=8; size<(2LL<<32); size<<=1) {
     float times[NCCL_NUM_ALGORITHMS*NCCL_NUM_PROTOCOLS+1];
     float data[NCCL_NUM_ALGORITHMS*NCCL_NUM_PROTOCOLS+1];
@@ -136,7 +139,7 @@ void runTopo(const char* xmlTopoFile, const char* platform, int nnodes) {
       for (int p=0; p<NCCL_NUM_PROTOCOLS; p++) {
         int i = a*NCCL_NUM_PROTOCOLS+p;
         CHECK(ncclTopoGetAlgoTime(&info, a, p, times+i));
-        if (times[m] < 0 || (times[i] < times[m] && times[i]>0)) times[m] = times[i];
+        if (times[m] < 0 || (times[i] < times[m] && times[i] > 0)) times[m] = times[i];
       }
     }
 
@@ -155,6 +158,12 @@ void runTopo(const char* xmlTopoFile, const char* platform, int nnodes) {
           valueStr[o++] = c;
         }
         if (c == '\n') break;
+      }
+      // Overwrite min model as the min of data instead of the min of model
+      // This is more useful to see how good/bad the algo/proto choices are.
+      times[m] = -1.0;
+      for (int i=0; i<NCCL_NUM_ALGORITHMS*NCCL_NUM_PROTOCOLS; i++) {
+        if (times[m] < 0 || (data[i] < times[m] && data[i] > 0)) times[m] = data[i];
       }
       if (s != 1) { close(fd); fd = -1; }
     }
