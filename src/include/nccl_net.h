@@ -8,6 +8,7 @@
 #define NCCL_NET_H_
 
 #include "nccl.h"
+#include <stdint.h>
 
 #define NCCL_NET_HANDLE_MAXSIZE 64
 
