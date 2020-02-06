@@ -87,6 +87,8 @@ void runTopo(const char* xmlTopoFile, const char* platform, int nnodes) {
     CHECK(ncclTopoPrintGraph(system, &cNetGraph));
   }
 
+  treeGraph.nChannels = ringGraph.nChannels = std::min(treeGraph.nChannels, ringGraph.nChannels);
+
   struct ncclComm comm;
   comm.topo = system;
   comm.nNodes = nnodes;
