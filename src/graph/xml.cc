@@ -446,6 +446,18 @@ ncclResult_t ncclTopoGetPciNode(struct ncclXml* xml, const char* busId, struct n
   return ncclSuccess;
 }
 
+// Check whether a string is in BDF format or not.
+// BDF (Bus-Device-Function) is "BBBB:BB:DD.F" where B, D and F are hex digits.
+// There can be trailing chars.
+int isHex(char c) { return ((c >= '0' && c <= '9') || (c >= 'a' && c <= 'f') || (c >= 'A' && c <= 'F')); }
+int checkBDFFormat(char* bdf) {
+  if (bdf[4] != ':' || bdf[7] != ':' || bdf[10] != '.') return 0;
+  if (isHex(bdf[0]) == 0 || isHex(bdf[1] == 0) || isHex(bdf[2] == 0) || isHex(bdf[3] == 0) ||
+      isHex(bdf[5] == 0) || isHex(bdf[6] == 0) || isHex(bdf[8] == 0) || isHex(bdf[9] == 0) ||
+      isHex(bdf[11] == 0)) return 0;
+  return 1;
+}
+
 ncclResult_t ncclTopoGetXmlFromSys(struct ncclXmlNode* pciNode, struct ncclXml* xml) {
   // Fill info, then parent
   const char* busId;
@@ -496,7 +508,10 @@ ncclResult_t ncclTopoGetXmlFromSys(struct ncclXmlNode* pciNode, struct ncclXml* 
       if (path[parentOffset] == '/') {
         slashCount++;
         path[parentOffset] = '\0';
-        if (strlen(path) == strlen("/sys/devices/pci0000:00")) {
+        int start = parentOffset - 1;
+        while (start>0 && path[start] != '/') start--;
+        // Check whether the parent path looks like "BBBB:BB:DD.F" or not.
+        if (checkBDFFormat(path+start+1) == 0) {
           // This a CPU root complex. Create a CPU tag and stop there.
           struct ncclXmlNode* topNode;
           NCCLCHECK(xmlFindTag(xml, "system", &topNode));
