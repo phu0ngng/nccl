@@ -231,7 +231,7 @@ ncclResult_t ncclEnqueueEvents(ncclComm_t comm) {
 
 static ncclResult_t getAlgoInfo(struct ncclInfo* info) {
   struct ncclComm* comm = info->comm;
-  float minTime = 3600000.0; // Hopefully no operation will take an hour to complete.
+  float minTime = 3600000000.0; // Hopefully no operation will take an hour to complete.
   // Find algorithm / protocol.
   info->algorithm = -1;
   info->protocol = -1;
