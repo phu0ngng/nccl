@@ -212,7 +212,7 @@ struct kvDict {
 static ncclResult_t kvConvertToInt(const char* str, int* value, struct kvDict* dict) {
   struct kvDict* d = dict;
   while (d->str) {
-    if (strcmp(str, d->str) == 0) {
+    if (strncmp(str, d->str, strlen(d->str)) == 0) {
       *value = d->value;
       return ncclSuccess;
     }
