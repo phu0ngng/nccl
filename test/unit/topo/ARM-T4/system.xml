@@ -1,0 +1,17 @@
+<system version="1">
+  <cpu numaid="2" affinity="000000ff,ffff0000,00000000" arch="arm64">
+    <pci busid="0000:81:00.0" class="0x030200" link_speed="8 GT/s" link_width="16">
+      <gpu dev="0" sm="75" rank="0" gdr="0"/>
+    </pci>
+    <pci busid="0000:83:00.0" class="0x030200" link_speed="8 GT/s" link_width="8">
+      <gpu dev="1" sm="75" rank="1" gdr="0"/>
+    </pci>
+  </cpu>
+  <cpu numaid="0" affinity="00000000,00000000,00ffffff" arch="arm64">
+    <pci busid="0000:7d:00.0" class="0x020000" link_speed="2.5 GT/s" link_width="1">
+      <nic>
+        <net name="hns_0" dev="0" speed="10000" port="1" guid="0xfe2583feff476746" maxconn="8192" gdr="0"/>
+      </nic>
+    </pci>
+  </cpu>
+</system>
