@@ -77,12 +77,15 @@ static const float hwLat [3][NCCL_NUM_ALGORITHMS][NCCL_NUM_PROTOCOLS] =
 static const double ll128MaxBw[NCCL_NUM_FUNCTIONS] = { 113.0, 72.0, 110.0, 91.0, 100.0 };
 
 ncclResult_t ncclTopoSetThresholds(struct ncclComm* comm, int minCompCap, int maxCompCap, struct ncclTopoGraph* treeGraph, struct ncclTopoGraph* ringGraph, struct ncclTopoGraph* collNetGraph) {
-  int simpleDefaultThreads = (treeGraph->speedIntra*treeGraph->nChannels <= PCI_WIDTH) ? 256 : NCCL_MAX_NTHREADS;
-  comm->maxThreads[NCCL_PROTO_SIMPLE] = getNthreads("NCCL_NTHREADS", ncclParamNthreads(), 2*WARP_SIZE, NCCL_MAX_NTHREADS, simpleDefaultThreads);
-  comm->maxThreads[NCCL_PROTO_LL] = getNthreads("NCCL_NTHREADS", ncclParamNthreads(), 2*WARP_SIZE, NCCL_MAX_NTHREADS, NCCL_MAX_NTHREADS);
-  comm->maxThreads[NCCL_PROTO_LL128] = getNthreads("NCCL_LL128_NTHREADS", ncclParamLl128Nthreads(), NCCL_LL128_MAX_NTHREADS/4, NCCL_LL128_MAX_NTHREADS, NCCL_LL128_MAX_NTHREADS);
-
-  INFO(NCCL_INIT, "Threads per block : %d/%d/%d", comm->maxThreads[NCCL_PROTO_LL], comm->maxThreads[NCCL_PROTO_LL128], comm->maxThreads[NCCL_PROTO_SIMPLE]);
+  int simpleDefaultThreads = (ringGraph->speedIntra*ringGraph->nChannels <= PCI_WIDTH) ? 256 : NCCL_MAX_NTHREADS;
+  comm->maxThreads[NCCL_ALGO_RING][NCCL_PROTO_SIMPLE] =
+    getNthreads("NCCL_NTHREADS", ncclParamNthreads(), 2*WARP_SIZE, NCCL_MAX_NTHREADS, simpleDefaultThreads);
+  comm->maxThreads[NCCL_ALGO_TREE][NCCL_PROTO_SIMPLE] = comm->maxThreads[NCCL_ALGO_COLLNET][NCCL_PROTO_SIMPLE] =
+    getNthreads("NCCL_NTHREADS", ncclParamNthreads(), 2*WARP_SIZE, NCCL_MAX_NTHREADS, NCCL_MAX_NTHREADS);
+  comm->maxThreads[NCCL_ALGO_RING][NCCL_PROTO_LL] = comm->maxThreads[NCCL_ALGO_TREE][NCCL_PROTO_LL] = comm->maxThreads[NCCL_ALGO_COLLNET][NCCL_PROTO_LL] =
+    getNthreads("NCCL_NTHREADS", ncclParamNthreads(), 2*WARP_SIZE, NCCL_MAX_NTHREADS, NCCL_MAX_NTHREADS);
+  comm->maxThreads[NCCL_ALGO_RING][NCCL_PROTO_LL128] = comm->maxThreads[NCCL_ALGO_TREE][NCCL_PROTO_LL128] = comm->maxThreads[NCCL_ALGO_COLLNET][NCCL_PROTO_LL128] =
+    getNthreads("NCCL_LL128_NTHREADS", ncclParamLl128Nthreads(), NCCL_LL128_MAX_NTHREADS/4, NCCL_LL128_MAX_NTHREADS, NCCL_LL128_MAX_NTHREADS);
 
   if (comm->nRanks <= 1) return ncclSuccess;
 
@@ -166,23 +169,25 @@ ncclResult_t ncclTopoSetThresholds(struct ncclComm* comm, int minCompCap, int ma
 
   if (comm->rank == 0) {
     char line[1024];
-    int offset = 0;
     sprintf(line, "Latency/AlgBw |");
-    offset = strlen(line);
     for (int a=0; a<NCCL_NUM_ALGORITHMS; a++) {
       for (int p=0; p<NCCL_NUM_PROTOCOLS; p++) {
-        sprintf(line+offset, " %7s/%6s |", ncclAlgoStr[a], ncclProtoStr[p]);
-        offset = strlen(line);
+        sprintf(line+strlen(line), " %7s/%6s |", ncclAlgoStr[a], ncclProtoStr[p]);
+      }
+    }
+    INFO(NCCL_TUNING, "%s", line);
+    sprintf(line, " Max NThreads |");
+    for (int a=0; a<NCCL_NUM_ALGORITHMS; a++) {
+      for (int p=0; p<NCCL_NUM_PROTOCOLS; p++) {
+        sprintf(line+strlen(line), " %14d |", comm->maxThreads[a][p]);
       }
     }
     INFO(NCCL_TUNING, "%s", line);
     for (int c=0; c<NCCL_NUM_FUNCTIONS; c++) {
       sprintf(line, "%13s |", ncclFuncStr[c]);
-      offset = strlen(line);
       for (int a=0; a<NCCL_NUM_ALGORITHMS; a++) {
         for (int p=0; p<NCCL_NUM_PROTOCOLS; p++) {
-          sprintf(line+offset, "%8.1f/%6.1f |", comm->latencies[c][a][p], comm->bandwidths[c][a][p]);
-          offset = strlen(line);
+          sprintf(line+strlen(line), "%8.1f/%6.1f |", comm->latencies[c][a][p], comm->bandwidths[c][a][p]);
         }
       }
       INFO(NCCL_TUNING, "%s", line);
