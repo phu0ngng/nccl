@@ -54,7 +54,8 @@
   NCCL_FUNCS3B(coll, copy)
 
 // Must be consistent with the ncclFuncSet enum
-static void* const ncclKerns[NCCL_NUM_FUNCTIONS*ncclNumOps*ncclNumTypes*NCCL_NUM_ALGORITHMS*NCCL_NUM_PROTOCOLS] = {
+static void* const ncclKerns[1+NCCL_NUM_FUNCTIONS*ncclNumOps*ncclNumTypes*NCCL_NUM_ALGORITHMS*NCCL_NUM_PROTOCOLS] = {
+  (void*)NCCL_KERN_NAME(ncclSendRecv, copy, i8),
   NCCL_FUNCS2B(ncclBroadcast),
   NCCL_FUNCS2A(ncclReduce),
   NCCL_FUNCS2B(ncclAllGather),
@@ -313,15 +314,28 @@ static ncclResult_t getLoopInfo(struct ncclInfo* info) {
 }
 
 static ncclResult_t computeColl(struct ncclInfo* info /* input */, struct ncclColl* coll, struct ncclProxyArgs* proxyArgs /* output */) {
+  if(info->coll==ncclCollSendRecv) {
+    coll->args.sendbuff = info->sendbuff;
+    coll->args.recvbuff = info->recvbuff;
+    int is_send = info->recvbuff == NULL;
+    coll->args.comm = info->comm->devComm;
+    coll->funcIndex = 0;
+    coll->args.p2p.sendCount = is_send ? info->count : 0;
+    coll->args.p2p.recvCount = is_send ? 0 : info->count;
+    coll->args.root = info->root; //FIXME to rankDelta
+    coll->args.nChannels = 1; //FIXME
+    coll->args.nThreads = NCCL_MAX_NTHREADS+WARP_SIZE; //FIXME: ONLY SIMPLE
+    return ncclSuccess;
+  }
   // Set nstepsPerLoop and nchunksPerLoop
   NCCLCHECK(getAlgoInfo(info));
   NCCLCHECK(getPatternInfo(info));
   NCCLCHECK(getLoopInfo(info));
 
   coll->args.root = info->root;
-  coll->args.N = info->count;
-  coll->args.ThisInput = info->sendbuff;
-  coll->args.ThisOutput = info->recvbuff;
+  coll->args.coll.count = info->count;
+  coll->args.sendbuff = info->sendbuff;
+  coll->args.recvbuff = info->recvbuff;
   coll->args.comm = info->comm->devComm;
   coll->args.opCount = info->comm->opCount;
   coll->args.nChannels = info->nChannels;
@@ -343,25 +357,25 @@ static ncclResult_t computeColl(struct ncclInfo* info /* input */, struct ncclCo
       while (info->nBytes / (info->nChannels*chunkSize) < info->comm->channels[0].treeUp.depth && chunkSize > 32768) chunkSize /= 2;
     }
     // Use lastChunkSize as chunkSize
-    coll->args.lastChunkSize = chunkSize / ncclTypeSize(info->datatype);
+    coll->args.coll.lastChunkSize = chunkSize / ncclTypeSize(info->datatype);
   } else if (info->algorithm == NCCL_ALGO_COLLNET && info->protocol == NCCL_PROTO_SIMPLE) {
     // Optimize chunkSize / nSteps
     while (info->nBytes / (info->nChannels*chunkSize) < info->comm->channels[0].collTreeUp.depth*16 && chunkSize > 131072) chunkSize /= 2;
     while (info->nBytes / (info->nChannels*chunkSize) < info->comm->channels[0].collTreeUp.depth*4 && chunkSize > 65536) chunkSize /= 2;
     while (info->nBytes / (info->nChannels*chunkSize) < info->comm->channels[0].collTreeUp.depth && chunkSize > 32768) chunkSize /= 2;
     // Use lastChunkSize as chunkSize
-    coll->args.lastChunkSize = chunkSize / ncclTypeSize(info->datatype);
+    coll->args.coll.lastChunkSize = chunkSize / ncclTypeSize(info->datatype);
   } else if (info->protocol == NCCL_PROTO_LL) {
     int sliceSize = NCCL_LL_SLICE_LINES * sizeof(uint64_t);
     const ssize_t loopSize = info->nChannels*info->nchunksPerLoop*(ssize_t)sliceSize;
-    coll->args.lastChunkSize = DIVUP((info->nBytes-(info->nBytes/loopSize)*loopSize), info->nChannels*info->nchunksPerLoop);
-    ALIGN_SIZE(coll->args.lastChunkSize, info->nThreads*sizeof(uint64_t));
-    coll->args.lastChunkSize /= ncclTypeSize(info->datatype);
+    coll->args.coll.lastChunkSize = DIVUP((info->nBytes-(info->nBytes/loopSize)*loopSize), info->nChannels*info->nchunksPerLoop);
+    ALIGN_SIZE(coll->args.coll.lastChunkSize, info->nThreads*sizeof(uint64_t));
+    coll->args.coll.lastChunkSize /= ncclTypeSize(info->datatype);
   } else if (info->algorithm == NCCL_ALGO_TREE && info->protocol == NCCL_PROTO_LL128) {
     int nstepsInter = 1+log2i(info->comm->nNodes);
     while (info->nBytes / (info->nChannels*chunkSize) < nstepsInter*4 && chunkSize > 32768) chunkSize /= 2;
     // Use lastChunkSize as chunkSize
-    coll->args.lastChunkSize = chunkSize*NCCL_LL128_DATAELEMS/(NCCL_LL128_LINEELEMS*ncclTypeSize(info->datatype));
+    coll->args.coll.lastChunkSize = chunkSize*NCCL_LL128_DATAELEMS/(NCCL_LL128_LINEELEMS*ncclTypeSize(info->datatype));
   }
 
   // Compute nSteps for proxies

@@ -16,15 +16,15 @@ __device__ void ncclReduceScatterRingKernel(struct CollectiveArgs* args) {
   struct ncclDevComm* comm = args->comm;
   struct ncclChannel* channel = comm->channels+blockIdx.x;
   struct ncclRing* ring = &channel->ring;
-  const ssize_t size = args->N;
+  const ssize_t size = args->coll.count;
   const int nranks = comm->nRanks;
   const int stepSize = channel->buffSize / (sizeof(T)*NCCL_STEPS);
   const int chunkSize = stepSize * REDUCESCATTER_CHUNKSTEPS;
   const ssize_t loopSize = args->nChannels*(ssize_t)chunkSize;
 
   // Compute pointers
-  const T * __restrict__ thisInput = (const T*)args->ThisInput;
-  T * __restrict__ thisOutput = (T*)args->ThisOutput;
+  const T * __restrict__ thisInput = (const T*)args->sendbuff;
+  T * __restrict__ thisOutput = (T*)args->recvbuff;
 
   ncclPrimitives<UNROLL, REDUCESCATTER_CHUNKSTEPS/REDUCESCATTER_SLICESTEPS, REDUCESCATTER_SLICESTEPS, T, 1, 1, FUNC>
     prims(tid, args->nThreads, &ring->prev, &ring->next, NULL, stepSize, channel, comm, args->opCount);
@@ -78,19 +78,19 @@ __device__ void ncclReduceScatterRingLLKernel(struct CollectiveArgs* args) {
 
   ncclLLPrimitives<T, FUNC, 1, 1> LLprims(tid, nthreads, &ring->prev, &ring->next, channel, comm, args->opCount);
 
-  const ssize_t size = args->N;
+  const ssize_t size = args->coll.count;
   //const int rank = comm->rank;
   const int nranks = comm->nRanks;
   ssize_t chunkSize = NCCL_LL_SLICE_LINES * sizeof(uint64_t) / sizeof(T);
   const ssize_t loopSize = args->nChannels*chunkSize;
 
   // Compute pointers
-  const T * __restrict__ thisInput = (const T*)args->ThisInput;
-  T * __restrict__ thisOutput = (T*)args->ThisOutput;
+  const T * __restrict__ thisInput = (const T*)args->sendbuff;
+  T * __restrict__ thisOutput = (T*)args->recvbuff;
 
   for (ssize_t gridOffset = 0; gridOffset < size; gridOffset += loopSize) {
     if (size-gridOffset < loopSize) {
-      chunkSize = args->lastChunkSize;
+      chunkSize = args->coll.lastChunkSize;
     }
     ssize_t chunkOffset = gridOffset + bid*chunkSize;
 
@@ -140,7 +140,7 @@ __device__ void ncclReduceScatterRingLL128Kernel(struct CollectiveArgs* args) {
 
   ncclLL128Primitives<T, FUNC, 1, 1> LLprims(tid, nthreads, &ring->prev, &ring->next, channel, comm, args->opCount);
 
-  const ssize_t size = args->N;
+  const ssize_t size = args->coll.count;
   //const int rank = comm->rank;
   const int nranks = comm->nRanks;
   ssize_t chunkSize = (NCCL_LL128_ELEMS_PER_THREAD*nthreads*NCCL_LL128_DATAELEMS*sizeof(uint64_t))/(NCCL_LL128_LINEELEMS*sizeof(T));
@@ -150,8 +150,8 @@ __device__ void ncclReduceScatterRingLL128Kernel(struct CollectiveArgs* args) {
   const ssize_t loopSize = args->nChannels*chunkSize;
 
   // Compute pointers
-  const T * __restrict__ thisInput = (const T*)args->ThisInput;
-  T * __restrict__ thisOutput = (T*)args->ThisOutput;
+  const T * __restrict__ thisInput = (const T*)args->sendbuff;
+  T * __restrict__ thisOutput = (T*)args->recvbuff;
 
   for (ssize_t gridOffset = 0; gridOffset < size; gridOffset += loopSize) {
     chunkSize = min(DIVUP(size-gridOffset, args->nChannels*minChunkSize)*minChunkSize, chunkSize);

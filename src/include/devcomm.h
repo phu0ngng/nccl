@@ -136,17 +136,31 @@ struct CollectiveArgs {
   uint64_t opCount;
 
   // local and remote input, output, and buffer
-  const void * ThisInput;
-  void * ThisOutput;
+  const void * sendbuff;
+  void * recvbuff;
 
   // general parameters
-  size_t N;
-  uint32_t root;
+  union {
+    struct {
+      size_t count;
+      size_t lastChunkSize;
+
+    } coll;
+    struct {
+      size_t sendCount;
+      size_t recvCount;
+
+    } p2p;
+  };
+  union {
+      uint32_t root;
+      uint32_t rankDelta;
+  };
+  
+  uint16_t nThreads;
   uint8_t bid;
   uint8_t nChannels;
-  uint16_t nThreads;
 
-  int lastChunkSize;
 };
 struct ncclColl {
   union {

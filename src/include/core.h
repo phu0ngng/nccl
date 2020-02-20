@@ -50,8 +50,8 @@ static __inline__ int ncclTypeSize(ncclDataType_t type) {
   }
 }
 
-#define NCCL_NUM_FUNCTIONS 5
-typedef enum { ncclCollBroadcast, ncclCollReduce, ncclCollAllGather, ncclCollReduceScatter, ncclCollAllReduce } ncclFunc_t;
+#define NCCL_NUM_FUNCTIONS 5 //p2p not including as of now
+typedef enum { ncclCollBroadcast, ncclCollReduce, ncclCollAllGather, ncclCollReduceScatter, ncclCollAllReduce ,ncclCollSendRecv} ncclFunc_t;
 
 #define NCCL_NUM_ALGORITHMS 3 // Tree/Ring/CollNet
 #define NCCL_ALGO_TREE 0
