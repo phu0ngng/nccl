@@ -312,7 +312,7 @@ static ncclResult_t getLoopInfo(struct ncclInfo* info) {
   }
   return ncclSuccess;
 }
-
+ncclResult_t p2pSetup(struct ncclComm* comm, struct ncclTopoGraph* graph, struct ncclChannel* channel, int nrecv, int* peerRecv, int nsend, int* peerSend);
 static ncclResult_t computeColl(struct ncclInfo* info /* input */, struct ncclColl* coll, struct ncclProxyArgs* proxyArgs /* output */) {
   if(info->coll==ncclCollSendRecv) {
     coll->args.sendbuff = info->sendbuff;
@@ -323,8 +323,15 @@ static ncclResult_t computeColl(struct ncclInfo* info /* input */, struct ncclCo
     coll->args.p2p.sendCount = is_send ? info->count : 0;
     coll->args.p2p.recvCount = is_send ? 0 : info->count;
     coll->args.root = info->root; //FIXME to rankDelta
-    coll->args.nChannels = 1; //FIXME
+    coll->args.nChannels = std::max<unsigned>(1,std::min<unsigned>(info->comm->nChannels, NCCL_STEPS*info->count/info->comm->channels[0].buffSize));
     coll->args.nThreads = NCCL_MAX_NTHREADS+WARP_SIZE; //FIXME: ONLY SIMPLE
+    int peer = coll->args.root;
+    for (int c=0; c<info->comm->nChannels; c++) {
+        struct ncclChannel* channel = info->comm->channels+c;
+        if(channel->peers[peer].recv.connected && channel->peers[peer].send.connected) continue;
+        NCCLCHECK(p2pSetup(info->comm, NULL, channel, 1,&peer, 1, &peer));
+        NCCLCHECK(ncclCudaMemcpy(info->comm->channels[c].devPeers, info->comm->channels[c].peers, info->comm->nRanks+1));
+    }
     return ncclSuccess;
   }
   // Set nstepsPerLoop and nchunksPerLoop
@@ -477,7 +484,18 @@ ncclResult_t ncclEnqueueCheck(struct ncclInfo* info) {
     // Always register comm even in case of error to make sure ncclGroupEnd
     // cleans it up.
     NCCLCHECKGOTO(ncclAsyncColl(info->comm), ret, end);
-    NCCLCHECKGOTO(saveKernel(info), ret, end);
+    if(info->coll==ncclCollSendRecv) { //p2p stored separately
+      //schedule in comm->p2plist
+      if(info->comm->p2plist.peerlist==NULL) info->comm->p2plist.peerlist = (ncclP2Pinfo*) calloc(info->comm->nRanks,sizeof(struct ncclP2Pinfo));
+      if(info->recvbuff==NULL) { //FIXME check if wasnt used already
+        info->comm->p2plist.peerlist[info->root].sendcount=info->count;
+        info->comm->p2plist.peerlist[info->root].sendbuff=info->sendbuff;
+       } else {
+        info->comm->p2plist.peerlist[info->root].recvcount=info->count;
+        info->comm->p2plist.peerlist[info->root].recvbuff=info->recvbuff;
+       }
+    } else
+        NCCLCHECKGOTO(saveKernel(info), ret, end);
 end:
     if (savedDev != -1) CUDACHECK(cudaSetDevice(savedDev));
     ncclAsyncErrCheck(ret);
