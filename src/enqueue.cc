@@ -93,6 +93,22 @@ ncclResult_t setupLaunch(struct ncclComm* comm, struct cudaLaunchParams* params)
   // Set active = 2 for the last operation
   for (int r=0; r<params->gridDim.x; r++) {
     struct ncclChannel* channel = comm->channels+r;
+    if(channel->collCount==0) { //non-alltoall sendrecv patterns may lead to launching SMs doing nothing
+    //inject an noop if no ops in the fifo for the channel
+      int opIndex = channel->collFifoTail;
+      struct ncclColl* c = channel->collectives+opIndex;
+      volatile uint8_t* activePtr = (volatile uint8_t*)&c->active;
+      while (activePtr[0] != 0) sched_yield();
+
+      c->args.rankDelta=0;
+      c->funcIndex=0; //noop for rankdelta=0
+      c->args.comm=comm->devComm;
+      c->active = 1;
+      opIndex = (opIndex+1)%NCCL_MAX_OPS;
+      c->nextIndex = opIndex;
+      channel->collFifoTail = opIndex;
+      channel->collCount++;
+    }
     channel->collectives[(channel->collStart+channel->collCount-1)%NCCL_MAX_OPS].active = 2;
   }
 
@@ -317,7 +333,7 @@ ncclResult_t connectPeer(struct ncclComm* comm, int peerfrom, int peerto);
 static ncclResult_t computeColl(struct ncclInfo* info /* input */, struct ncclColl* coll, struct ncclProxyArgs* proxyArgs /* output */) {
   if(info->coll==ncclCollSendRecv) {
     if(info->root==-1) { //async send/recv from p2plist
-      coll->args.nChannels = 4; //FIXME based on what should we compute it?
+      coll->args.nChannels = 1; //FIXME based on what should we compute it?
     } else { //non async: single send or recv
       int is_send = info->recvbuff == NULL;
       info->sendcount = is_send ? info->count : 0;
@@ -435,7 +451,7 @@ static ncclResult_t saveKernel(struct ncclInfo* info) {
   int nSubChannels = (info->pattern == ncclPatternCollTreeUp || info->pattern == ncclPatternCollTreeDown) ? 2 : 1;
   for (int bid=0; bid<coll.args.nChannels*nSubChannels; bid++) {
     int channelId = info->comm->myParams->gridDim.x % info->comm->nChannels;
-    //if(info->coll==ncclCollSendRecv) channelId = (info->delta) % info->comm->nChannels;
+    if(info->coll==ncclCollSendRecv) channelId = (info->delta-1+bid*(info->comm->nChannels-1)) % info->comm->nChannels;
     //printf("delta %d channel %d\n",info->delta,channelId);
     struct ncclChannel* channel = info->comm->channels+channelId;
 
@@ -451,8 +467,8 @@ static ncclResult_t saveKernel(struct ncclInfo* info) {
       info->pattern = (channelId < info->comm->nChannels/nSubChannels) ? ncclPatternCollTreeUp : ncclPatternCollTreeDown;
     }
     NCCLCHECK(transportSaveProxies(&proxyArgs, info->pattern, info->root, info->comm->nRanks));
-
-    info->comm->myParams->gridDim.x++;
+    if(info->coll==ncclCollSendRecv) info->comm->myParams->gridDim.x = std::max<unsigned>(info->comm->myParams->gridDim.x,channelId+1);
+    else info->comm->myParams->gridDim.x++;
 
     int opIndex = channel->collFifoTail;
     struct ncclColl* c = channel->collectives+opIndex;

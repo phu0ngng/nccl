@@ -10,6 +10,7 @@
 
 template<int UNROLL, class FUNC, typename T>
 __device__ void ncclSendRecvKernel(struct CollectiveArgs* args) {
+  if(args->rankDelta==0) return; //NOOP
   const int tid = threadIdx.x;
   const int nthreads = args->nThreads-WARP_SIZE;
   const int bid = args->bid;
