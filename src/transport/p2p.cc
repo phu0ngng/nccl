@@ -95,6 +95,9 @@ ncclResult_t p2pCanConnect(int* ret, struct ncclTopoSystem* topo, struct ncclTop
     TRACE(P2P,"IPC: %016lx %016lx %016lx %016lx", devIpc[4], devIpc[5], devIpc[6], devIpc[7]); \
   } while (0)
 
+// Setting this causes P2P to use Reads rather than Writes
+NCCL_PARAM(P2pReadEnable, "P2P_READ_ENABLE", 0);
+
 /* Send: Create and return connect structures for this peer to connect to me */
 ncclResult_t p2pSendSetup(struct ncclTopoSystem* topo, struct ncclTopoGraph* graph, struct ncclPeerInfo* myInfo, struct ncclPeerInfo* peerInfo,
     struct ncclConnect* connectInfo, struct ncclConnector* send, int buffSize, int channelId) {
@@ -102,7 +105,8 @@ ncclResult_t p2pSendSetup(struct ncclTopoSystem* topo, struct ncclTopoGraph* gra
   struct p2pSendResources* resources;
   NCCLCHECK(ncclCalloc(&resources, 1));
   send->transportResources = resources;
-  int sendSize = sizeof(struct ncclSendMem);
+  // For P2P_READ_ENABLE=1 the buffer is tagged on the end of the ncclSendMem structure
+  int sendSize = ncclParamP2pReadEnable() ? offsetof(struct ncclSendMem, buff)+buffSize : sizeof(struct ncclSendMem);
   ALIGN_SIZE(sendSize, CUDA_IPC_MIN);
   NCCLCHECK(ncclCudaCalloc((char**)&resources->devMem, sendSize));
 
@@ -153,7 +157,8 @@ ncclResult_t p2pRecvSetup(struct ncclTopoSystem* topo, struct ncclTopoGraph* gra
   struct p2pRecvResources* resources;
   NCCLCHECK(ncclCalloc(&resources, 1));
   recv->transportResources = resources;
-  int recvSize = offsetof(struct ncclRecvMem, buff)+buffSize;
+  // For P2P_READ_ENABLE=0 the buffer is tagged on the end of the ncclRecvMem structure
+  int recvSize = !ncclParamP2pReadEnable() ? offsetof(struct ncclRecvMem, buff)+buffSize : sizeof(struct ncclRecvMem);
   ALIGN_SIZE(recvSize, CUDA_IPC_MIN);
   NCCLCHECK(ncclCudaCalloc((char**)&resources->devMem, recvSize));
 
@@ -213,7 +218,7 @@ static ncclResult_t p2pSendConnect(struct ncclConnect* connectInfo, int nranks, 
     }
   }
 
-  send->conn.buff = remDevMem->buff;
+  send->conn.buff = ncclParamP2pReadEnable() ? /*local*/ resources->devMem->buff : /*remote*/ remDevMem->buff;
   send->conn.llBuff = remDevMem->llBuff;
   send->conn.ll128Buff = remDevMem->ll128Buff;
   send->conn.tail = &remDevMem->tail;
@@ -244,7 +249,7 @@ ncclResult_t p2pRecvConnect(struct ncclConnect* connectInfo, int nranks, int ran
     }
   }
 
-  recv->conn.buff = resources->devMem->buff;
+  recv->conn.buff = ncclParamP2pReadEnable() ? /*remote*/ remDevMem->buff : /*local*/ resources->devMem->buff;
   recv->conn.llBuff = resources->devMem->llBuff;
   recv->conn.ll128Buff = resources->devMem->ll128Buff;
   recv->conn.tail = &resources->devMem->tail;

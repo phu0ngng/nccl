@@ -40,6 +40,7 @@ struct ncclSendMem {
     };
     char pad3[MEM_ALIGN];
   };
+  char buff[1]; // Actually larger than that
 };
 
 struct ncclRecvMem {
