@@ -161,8 +161,9 @@ ncclResult_t ncclTopoSetThresholds(struct ncclComm* comm, int minCompCap, int ma
   for (int c=0; c<NCCL_NUM_FUNCTIONS; c++) for (int a=0; a<NCCL_NUM_ALGORITHMS; a++) for (int p=0; p<NCCL_NUM_PROTOCOLS; p++) {
     int pEnable = protoEnable[p];
     if (pEnable == 2 && p == NCCL_PROTO_LL128) {
-      // Enable LL128 by default only on Volta+NVLink. Other cases are not tested and may cause silent data corruption.
-      pEnable = (graphs[a]->typeInter <= LINK_PCI) && graphs[a]->typeIntra == LINK_NVL && minCompCap == 70 && maxCompCap == 70 ? 1 : 0;
+      // Enable LL128 by default only on Volta/Ampere+NVLink. Other cases are not tested and may cause silent data corruption.
+      pEnable = (graphs[a]->typeInter <= LINK_PCI) && graphs[a]->typeIntra == LINK_NVL &&
+        ((minCompCap == 70 && maxCompCap == 70) || (minCompCap == 80 && maxCompCap == 80)) ? 1 : 0;
     }
     if (pEnable == 0 || algoEnable[a] == 0) comm->bandwidths[c][a][p] = 0;
   }
