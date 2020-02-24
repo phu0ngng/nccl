@@ -103,6 +103,9 @@ ncclResult_t ncclGroupStart() {
   return ncclSuccess;
 }
 
+ncclResult_t connectPeer(struct ncclComm* comm, int peerfrom, int peerto);
+ncclResult_t scheduleSendRecv(struct ncclComm* comm, int delta, size_t recvcount, void* recvbuff, size_t sendcount, const void* sendbuff);
+
 NCCL_API(ncclResult_t, ncclGroupEnd);
 ncclResult_t ncclGroupEnd() {
   ncclGroupMode--;
@@ -123,7 +126,33 @@ ncclResult_t ncclGroupEnd() {
       pthread_create(ncclGroupThreads+i, NULL, ncclAsyncThreadMain, args);
     }
   }
+  
+  for (int i=0; i<ncclGroupIndex; i++) {
+    struct ncclAsyncArgs* args = ncclGroupArgs+i;
+    if (args->funcType == ASYNC_FUNC_COLL) {
+      struct ncclP2Plist* p2plist = &args->coll.comm->p2plist;
+      if (p2plist->count != 0) {
+        for(int delta=0;delta<args->coll.comm->nRanks;delta++) {
+          uint32_t from=(args->coll.comm->rank+args->coll.comm->nRanks-delta)%args->coll.comm->nRanks;
+          uint32_t to=(args->coll.comm->rank+delta)%args->coll.comm->nRanks;
+          //printf("%d[%d]: send ld bytes to %d, recv ld bytes from %d\n",args->coll.comm->rank,delta,to,from);
+          int recv = p2plist->peerlist[from].recvcount!=0;
+          int send = p2plist->peerlist[to].sendcount!=0;
+          if(send || recv) {
+            //printf("%d[%d]: send %ld bytes to %d, recv %ld bytes from %d\n",args->coll.comm->rank,delta,p2plist->peerlist[to].sendcount,to,p2plist->peerlist[to].recvcount,from);
+            NCCLCHECK(connectPeer(args->coll.comm,recv?from:-1,send?to:-1));
+            NCCLCHECK(scheduleSendRecv(args->coll.comm,delta,p2plist->peerlist[from].recvcount,p2plist->peerlist[from].recvbuff,
+                              p2plist->peerlist[to].sendcount,p2plist->peerlist[to].sendbuff));
+            p2plist->peerlist[from].recvcount=0;
+            p2plist->peerlist[to].sendcount=0;
+          }
+        }
+      }
 
+    }
+    args->coll.comm->p2plist.count=0;
+  }
+ 
   /* Collectives are done in three steps :
    * 1. Barrier Check In. Only the last call may call cudaLaunchKernel[cooperative]
    * 2. Barrier Wait. No CUDA call is permitted

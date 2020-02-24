@@ -17,8 +17,8 @@ struct ncclP2Pinfo {
 };
 
 struct ncclP2Plist {
-  ncclP2Pinfo *peerlist;
-
+  ncclP2Pinfo *peerlist=NULL;
+  int count=0;
 };
 
 

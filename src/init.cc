@@ -445,6 +445,19 @@ ncclResult_t p2pSetup(struct ncclComm* comm, struct ncclTopoGraph* graph, struct
   TRACE(NCCL_INIT, "nsend %d nrecv %d nSkippedSend %u nSkippedRecv %u - DONE", nsend, nrecv, nSkippedSend, nSkippedRecv);
   return ncclSuccess;
 }
+//Used by P2P operations to preconnect on demand
+ncclResult_t connectPeer(struct ncclComm* comm, int peerfrom, int peerto) {
+    for (int c=0; c<comm->nChannels; c++) {
+        struct ncclChannel* channel = comm->channels+c;
+        int connectRecv = peerfrom>=0 && !channel->peers[peerfrom].recv.connected;
+        int connectSend = peerto>=0 && !channel->peers[peerto].send.connected;
+        //printf("%d[%d]: preconnect peerfrom %d[%d] peerto %d[%d]\n",comm->rank,c,peerfrom,connectRecv,peerto,connectSend);
+        if(!connectRecv && !connectSend) continue;
+        NCCLCHECK(p2pSetup(comm, NULL, channel, 1,&peerfrom, 1, &peerto));
+        NCCLCHECK(ncclCudaMemcpy(comm->channels[c].devPeers, comm->channels[c].peers, comm->nRanks+1));
+    }
+  return ncclSuccess;
+}
 
 extern struct ncclTransport collNetTransport;
 

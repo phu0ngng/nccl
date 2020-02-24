@@ -312,26 +312,29 @@ static ncclResult_t getLoopInfo(struct ncclInfo* info) {
   }
   return ncclSuccess;
 }
-ncclResult_t p2pSetup(struct ncclComm* comm, struct ncclTopoGraph* graph, struct ncclChannel* channel, int nrecv, int* peerRecv, int nsend, int* peerSend);
+ncclResult_t connectPeer(struct ncclComm* comm, int peerfrom, int peerto);
+
 static ncclResult_t computeColl(struct ncclInfo* info /* input */, struct ncclColl* coll, struct ncclProxyArgs* proxyArgs /* output */) {
   if(info->coll==ncclCollSendRecv) {
+    if(info->root==-1) { //async send/recv from p2plist
+      coll->args.nChannels = 4; //FIXME based on what should we compute it?
+    } else { //non async: single send or recv
+      int is_send = info->recvbuff == NULL;
+      info->sendcount = is_send ? info->count : 0;
+      info->recvcount = is_send ? 0 : info->count;
+      info->delta = (info->comm->nRanks+(is_send?-1:1) * (info->comm->rank-info->root))%info->comm->nRanks;
+      coll->args.nChannels = std::max<unsigned>(1,std::min<unsigned>(info->comm->nChannels, NCCL_STEPS*info->count/info->comm->channels[0].buffSize));
+      NCCLCHECK(connectPeer(info->comm,is_send?-1:info->root,is_send?info->root:-1));
+    }
     coll->args.sendbuff = info->sendbuff;
     coll->args.recvbuff = info->recvbuff;
-    int is_send = info->recvbuff == NULL;
+    coll->args.p2p.sendCount = info->sendcount;
+    coll->args.p2p.recvCount = info->recvcount;
     coll->args.comm = info->comm->devComm;
     coll->funcIndex = 0;
-    coll->args.p2p.sendCount = is_send ? info->count : 0;
-    coll->args.p2p.recvCount = is_send ? 0 : info->count;
-    coll->args.root = info->root; //FIXME to rankDelta
-    coll->args.nChannels = std::max<unsigned>(1,std::min<unsigned>(info->comm->nChannels, NCCL_STEPS*info->count/info->comm->channels[0].buffSize));
+    coll->args.rankDelta = info -> delta;
     coll->args.nThreads = NCCL_MAX_NTHREADS+WARP_SIZE; //FIXME: ONLY SIMPLE
-    int peer = coll->args.root;
-    for (int c=0; c<info->comm->nChannels; c++) {
-        struct ncclChannel* channel = info->comm->channels+c;
-        if(channel->peers[peer].recv.connected && channel->peers[peer].send.connected) continue;
-        NCCLCHECK(p2pSetup(info->comm, NULL, channel, 1,&peer, 1, &peer));
-        NCCLCHECK(ncclCudaMemcpy(info->comm->channels[c].devPeers, info->comm->channels[c].peers, info->comm->nRanks+1));
-    }
+    coll->args.opCount = info->comm->opCount;
     return ncclSuccess;
   }
   // Set nstepsPerLoop and nchunksPerLoop
@@ -404,8 +407,19 @@ static ncclResult_t computeColl(struct ncclInfo* info /* input */, struct ncclCo
   return ncclSuccess;
 }
 
+static ncclResult_t checkSetStream(struct ncclInfo* info) {
+ if (info->comm->userStreamSet == false) {
+    info->comm->userStream = info->stream;
+    info->comm->userStreamSet = true;
+  } else if (info->stream != info->comm->userStream) {
+    WARN("Error : mixing different streams within a group call is not supported.");
+    return ncclInvalidUsage;
+  }
+  return ncclSuccess;
+}
 static ncclResult_t saveKernel(struct ncclInfo* info) {
-  if (info->comm->nRanks == 1) {
+  if ((info->coll!=ncclCollSendRecv && info->comm->nRanks == 1) ||
+      (info->coll==ncclCollSendRecv && info->root==-1 && info->delta==0)) {
     if (info->sendbuff != info->recvbuff)
       CUDACHECK(cudaMemcpyAsync(info->recvbuff, info->sendbuff, info->nBytes, cudaMemcpyDeviceToDevice, info->stream));
     return ncclSuccess;
@@ -417,17 +431,12 @@ static ncclResult_t saveKernel(struct ncclInfo* info) {
   NCCLCHECK(computeColl(info, &coll, &proxyArgs));
 
   info->comm->myParams->blockDim.x = std::max<unsigned>(info->comm->myParams->blockDim.x, coll.args.nThreads);
-  if (info->comm->userStreamSet == false) {
-    info->comm->userStream = info->stream;
-    info->comm->userStreamSet = true;
-  } else if (info->stream != info->comm->userStream) {
-    WARN("Error : mixing different streams within a group call is not supported.");
-    return ncclInvalidUsage;
-  }
-
+ 
   int nSubChannels = (info->pattern == ncclPatternCollTreeUp || info->pattern == ncclPatternCollTreeDown) ? 2 : 1;
   for (int bid=0; bid<coll.args.nChannels*nSubChannels; bid++) {
     int channelId = info->comm->myParams->gridDim.x % info->comm->nChannels;
+    //if(info->coll==ncclCollSendRecv) channelId = (info->delta) % info->comm->nChannels;
+    //printf("delta %d channel %d\n",info->delta,channelId);
     struct ncclChannel* channel = info->comm->channels+channelId;
 
     if (channel->collCount == NCCL_MAX_OPS) {
@@ -463,6 +472,16 @@ static ncclResult_t saveKernel(struct ncclInfo* info) {
   return ncclSuccess;
 }
 
+ncclResult_t scheduleSendRecv(struct ncclComm* comm, int delta, size_t recvcount, void* recvbuff, size_t sendcount, const void* sendbuff) {
+  struct ncclInfo info = { ncclCollSendRecv, "SendRecv",
+    sendbuff, recvbuff, sendcount, ncclInt8, ncclSum, -1, comm, comm->userStream, /* Args */
+    SENDRECV_CHUNKSTEPS, SENDRECV_SLICESTEPS };
+  info.delta=delta;
+  info.sendcount=sendcount;
+  info.recvcount=recvcount;
+  NCCLCHECK(saveKernel(&info));
+  return ncclSuccess;
+}
 
 ncclResult_t ncclEnqueueCheck(struct ncclInfo* info) {
   if (info->comm == NULL) return ncclInvalidArgument;
@@ -484,9 +503,11 @@ ncclResult_t ncclEnqueueCheck(struct ncclInfo* info) {
     // Always register comm even in case of error to make sure ncclGroupEnd
     // cleans it up.
     NCCLCHECKGOTO(ncclAsyncColl(info->comm), ret, end);
+    NCCLCHECKGOTO(checkSetStream(info), ret, end);
     if(info->coll==ncclCollSendRecv) { //p2p stored separately
-      //schedule in comm->p2plist
+      //save in comm->p2plist
       if(info->comm->p2plist.peerlist==NULL) info->comm->p2plist.peerlist = (ncclP2Pinfo*) calloc(info->comm->nRanks,sizeof(struct ncclP2Pinfo));
+      info->comm->p2plist.count++;
       if(info->recvbuff==NULL) { //FIXME check if wasnt used already
         info->comm->p2plist.peerlist[info->root].sendcount=info->count;
         info->comm->p2plist.peerlist[info->root].sendbuff=info->sendbuff;
@@ -502,6 +523,7 @@ end:
     return ret;
   } else {
     NCCLCHECK(ArgsCheck(info));
+    NCCLCHECK(checkSetStream(info));
     NCCLCHECK(saveKernel(info));
     NCCLCHECK(ncclBarrierEnqueue(info->comm));
     NCCLCHECK(ncclBarrierEnqueueWait(info->comm));
