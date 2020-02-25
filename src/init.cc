@@ -236,7 +236,8 @@ static ncclResult_t commAlloc(ncclComm_t* comret, int ndev, int rank) {
 
   comm->argsptr = &comm->args;
   comm->collNetSupport = 0;
-
+  comm->p2plist.count=0;
+  comm->p2plist.peerlist=NULL;
   *comret = comm;
   return ncclSuccess;
 }

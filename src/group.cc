@@ -147,10 +147,11 @@ ncclResult_t ncclGroupEnd() {
             p2plist->peerlist[to].sendcount=0;
           }
         }
+      p2plist->count=0;
       }
 
     }
-    args->coll.comm->p2plist.count=0;
+
   }
  
   /* Collectives are done in three steps :
