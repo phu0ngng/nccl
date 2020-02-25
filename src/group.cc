@@ -149,9 +149,7 @@ ncclResult_t ncclGroupEnd() {
         }
       p2plist->count=0;
       }
-
     }
-
   }
  
   /* Collectives are done in three steps :

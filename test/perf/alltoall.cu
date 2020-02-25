@@ -45,13 +45,13 @@ void AlltoAllGetBw(size_t count, int typesize, double sec, double* algBw, double
 }
 
 testResult_t AlltoAllRunColl(void* sendbuff, void* recvbuff, size_t count, ncclDataType_t type, ncclRedOp_t op, int root, ncclComm_t comm, cudaStream_t stream) {
-  int nRanks;
+  int nRanks,typebytes=wordSize(type);
   NCCLCHECK(ncclCommCount(comm,&nRanks));
   size_t chunk = count / nRanks;
   NCCLCHECK(ncclGroupStart());
   for(int nnn=0;nnn<nRanks;nnn++) {
-    NCCLCHECK(ncclSend((const void*)(sendbuff+chunk*nnn), chunk, type,nnn,comm, stream));
-    NCCLCHECK(ncclRecv((void*)(recvbuff+chunk*nnn), chunk, type, nnn,comm, stream));
+    NCCLCHECK(ncclSend((const void*)((char*)sendbuff+chunk*nnn*typebytes), chunk, type,nnn,comm, stream));
+    NCCLCHECK(ncclRecv((void*)((char*)recvbuff+typebytes*chunk*nnn), chunk, type, nnn,comm, stream));
   }
   NCCLCHECK(ncclGroupEnd());
   return testSuccess;
