@@ -333,7 +333,8 @@ ncclResult_t connectPeer(struct ncclComm* comm, int peerfrom, int peerto);
 static ncclResult_t computeColl(struct ncclInfo* info /* input */, struct ncclColl* coll, struct ncclProxyArgs* proxyArgs /* output */) {
   if(info->coll==ncclCollSendRecv) {
     if(info->root==-1) { //async send/recv from p2plist
-      coll->args.nChannels = 1; //FIXME based on what should we compute it?
+      coll->args.nChannels = info->comm->nChannels/(info->comm->nRanks-1); //FIXME based on what should we compute it?
+      if (coll->args.nChannels==0) coll->args.nChannels=1;
     } else { //non async: single send or recv
       int is_send = info->recvbuff == NULL;
       info->sendcount = is_send ? info->count : 0;
@@ -451,7 +452,7 @@ static ncclResult_t saveKernel(struct ncclInfo* info) {
   int nSubChannels = (info->pattern == ncclPatternCollTreeUp || info->pattern == ncclPatternCollTreeDown) ? 2 : 1;
   for (int bid=0; bid<coll.args.nChannels*nSubChannels; bid++) {
     int channelId = info->comm->myParams->gridDim.x % info->comm->nChannels;
-    if(info->coll==ncclCollSendRecv) channelId = (info->delta-1+bid*(info->comm->nChannels-1)) % info->comm->nChannels;
+    if(info->coll==ncclCollSendRecv) channelId = (info->delta-1+bid*(info->comm->nRanks-1)) % info->comm->nChannels;
     //printf("delta %d channel %d\n",info->delta,channelId);
     struct ncclChannel* channel = info->comm->channels+channelId;
 
@@ -467,8 +468,10 @@ static ncclResult_t saveKernel(struct ncclInfo* info) {
       info->pattern = (channelId < info->comm->nChannels/nSubChannels) ? ncclPatternCollTreeUp : ncclPatternCollTreeDown;
     }
     NCCLCHECK(transportSaveProxies(&proxyArgs, info->pattern, info->root, info->comm->nRanks));
-    if(info->coll==ncclCollSendRecv) info->comm->myParams->gridDim.x = std::max<unsigned>(info->comm->myParams->gridDim.x,channelId+1);
-    else info->comm->myParams->gridDim.x++;
+    if(info->coll==ncclCollSendRecv) 
+      info->comm->myParams->gridDim.x = std::max<unsigned>(info->comm->myParams->gridDim.x,channelId+1);
+    else 
+      info->comm->myParams->gridDim.x++;
 
     int opIndex = channel->collFifoTail;
     struct ncclColl* c = channel->collectives+opIndex;
