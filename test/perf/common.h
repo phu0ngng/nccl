@@ -79,6 +79,7 @@ extern struct testColl allGatherTest;
 extern struct testColl reduceScatterTest;
 extern struct testColl broadcastTest;
 extern struct testColl reduceTest;
+extern struct testColl alltoAllTest;
 
 struct testEngine {
   void (*getBuffSize)(size_t *sendcount, size_t *recvcount, size_t count, int nranks);

@@ -33,6 +33,8 @@ struct ncclInitArgs {
 };
 struct ncclCollArgs {
   ncclComm_t comm;
+  int *send,*recv;
+  int nsend,nrecv;
 };
 
 enum ncclAsyncFuncType {
@@ -94,6 +96,8 @@ ncclResult_t ncclAsyncColl(ncclComm_t comm) {
   ncclGroupIndex++;
   args->funcType = ASYNC_FUNC_COLL;
   args->coll.comm = comm;
+  args->coll.recv=NULL; args->coll.send=NULL;
+  args->coll.nsend=0; args->coll.nrecv=0;
   return ncclSuccess;
 }
 
@@ -103,8 +107,22 @@ ncclResult_t ncclGroupStart() {
   return ncclSuccess;
 }
 
+void isPeerConnected(struct ncclComm* comm, int peerfrom, int peerto,int* recvconnected, int *sendconnected);
 ncclResult_t connectPeer(struct ncclComm* comm, int peerfrom, int peerto);
 ncclResult_t scheduleSendRecv(struct ncclComm* comm, int delta, size_t recvcount, void* recvbuff, size_t sendcount, const void* sendbuff);
+ncclResult_t p2pSetup(struct ncclComm* comm, struct ncclTopoGraph* graph, struct ncclChannel* channel, int nrecv, int* peerRecv, int nsend, int* peerSend);
+
+void* ncclAsyncThreadPreconnect(void* args_) {
+  struct ncclAsyncArgs* args = (struct ncclAsyncArgs*)args_;
+  for (int c=0; c<args->coll.comm->nChannels; c++) {
+    //printf("IN  rank %d/%d channel %d preconnect nsend %d nrecv%d\n",args->coll.comm->rank,args->coll.comm->nRanks,c,args->coll.nsend,args->coll.nrecv);
+    struct ncclChannel* channel = args->coll.comm->channels+c;
+    CHECK(p2pSetup(args->coll.comm,NULL,channel,args->coll.nrecv,args->coll.recv,args->coll.nsend,args->coll.send));
+    //printf("OUT rank %d/%d channel %d preconnect nsend %d nrecv%d\n",args->coll.comm->rank,args->coll.comm->nRanks,c,args->coll.nsend,args->coll.nrecv);
+    //CHECK(ncclCudaMemcpy(args->coll.comm->channels[c].devPeers, args->coll.comm->channels[c].peers, args->coll.comm->nRanks+1));
+  }
+  return args;
+}
 
 NCCL_API(ncclResult_t, ncclGroupEnd);
 ncclResult_t ncclGroupEnd() {
@@ -126,12 +144,13 @@ ncclResult_t ncclGroupEnd() {
       pthread_create(ncclGroupThreads+i, NULL, ncclAsyncThreadMain, args);
     }
   }
-  
+
   for (int i=0; i<ncclGroupIndex; i++) {
     struct ncclAsyncArgs* args = ncclGroupArgs+i;
     if (args->funcType == ASYNC_FUNC_COLL) {
       struct ncclP2Plist* p2plist = &args->coll.comm->p2plist;
       if (p2plist->count != 0) {
+
         for(int delta=0;delta<args->coll.comm->nRanks;delta++) {
           uint32_t from=(args->coll.comm->rank+args->coll.comm->nRanks-delta)%args->coll.comm->nRanks;
           uint32_t to=(args->coll.comm->rank+delta)%args->coll.comm->nRanks;
@@ -140,7 +159,19 @@ ncclResult_t ncclGroupEnd() {
           int send = p2plist->peerlist[to].sendcount!=0;
           if(send || recv) {
             //printf("%d[%d]: send %ld bytes to %d, recv %ld bytes from %d\n",args->coll.comm->rank,delta,p2plist->peerlist[to].sendcount,to,p2plist->peerlist[to].recvcount,from);
-            NCCLCHECK(connectPeer(args->coll.comm,recv?from:-1,send?to:-1));
+            //NCCLCHECK(connectPeer(args->coll.comm,recv?from:-1,send?to:-1));
+            if(delta>0) {
+              int sendconnected,recvconnected;
+              isPeerConnected(args->coll.comm,recv?from:-1,send?to:-1,&recvconnected,&sendconnected);
+              if(!recvconnected) {
+                if(args->coll.recv==NULL) args->coll.recv = (int*)malloc(sizeof(int)*args->coll.comm->nRanks);
+                args->coll.recv[args->coll.nrecv++]=from;
+              }
+              if(!sendconnected) {
+                if(args->coll.send==NULL) args->coll.send = (int*)malloc(sizeof(int)*args->coll.comm->nRanks);
+                args->coll.send[args->coll.nsend++]=to;
+              }
+            }
             NCCLCHECK(scheduleSendRecv(args->coll.comm,delta,p2plist->peerlist[from].recvcount,p2plist->peerlist[from].recvbuff,
                               p2plist->peerlist[to].sendcount,p2plist->peerlist[to].sendbuff));
             p2plist->peerlist[from].recvcount=0;
@@ -148,8 +179,28 @@ ncclResult_t ncclGroupEnd() {
           }
         }
       p2plist->count=0;
+
+      //if (args->coll.nrecv+args->coll.nsend>0)
+         //ncclAsyncThreadPreconnect(args);
+         //pthread_create(ncclGroupThreads+i, NULL, ncclAsyncThreadPreconnect, args);
       }
     }
+  }
+
+  for (int i=0; i<ncclGroupIndex; i++) {
+    struct ncclAsyncArgs* args = ncclGroupArgs+i;
+    if (args->funcType == ASYNC_FUNC_COLL)
+      if (args->coll.nrecv+args->coll.nsend>0) {
+        ncclAsyncThreadPreconnect(args);
+        //pthread_create(ncclGroupThreads+i, NULL, ncclAsyncThreadPreconnect, args);
+        //int err = pthread_join(ncclGroupThreads[i],NULL);
+        //if (err != 0) {ret = ncclSystemError; printf("system err\n");}
+        NCCLCHECK(args->ret);
+        if(args->coll.send!=NULL) { free(args->coll.send);args->coll.send=NULL;args->coll.nsend=0; }
+        if(args->coll.recv!=NULL) { free(args->coll.recv);args->coll.recv=NULL;args->coll.nrecv=0; }
+        for (int c=0; c<args->coll.comm->nChannels; c++)
+          NCCLCHECK(ncclCudaMemcpy(args->coll.comm->channels[c].devPeers, args->coll.comm->channels[c].peers, args->coll.comm->nRanks+1));
+      }
   }
  
   /* Collectives are done in three steps :
@@ -186,7 +237,6 @@ ncclResult_t ncclGroupEnd() {
       done--;
     }
   }
-
   /* For init, since we use threads, we just wait for threads to complete */
   while (done) {
     for (int i=0; i<ncclGroupIndex; i++) {
@@ -201,6 +251,7 @@ ncclResult_t ncclGroupEnd() {
       }
     }
   }
+
   goto end;
 group_cleanup:
   if (ret != ncclSuccess) {

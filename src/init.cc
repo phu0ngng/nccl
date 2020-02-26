@@ -460,6 +460,17 @@ ncclResult_t connectPeer(struct ncclComm* comm, int peerfrom, int peerto) {
   return ncclSuccess;
 }
 
+//check if peers need to be connected on one of the channels
+void isPeerConnected(struct ncclComm* comm, int peerfrom, int peerto,int* recvconnected, int *sendconnected) {
+    *recvconnected=1;
+    *sendconnected=1;
+    for (int c=0; c<comm->nChannels; c++) {
+        struct ncclChannel* channel = comm->channels+c;
+        if(peerfrom>=0 && !channel->peers[peerfrom].recv.connected) *recvconnected=0;
+        if(peerto>=0 && !channel->peers[peerto].send.connected) *sendconnected=0;
+    }
+}
+
 extern struct ncclTransport collNetTransport;
 
 // All ranks must participate in collNetSetup call

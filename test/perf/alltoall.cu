@@ -27,9 +27,9 @@ testResult_t AlltoAllInitData(struct threadArgs* args, ncclDataType_t type, nccl
     int rank = ((args->proc*args->nThreads + args->thread)*args->nGpus + i);
     CUDACHECK(cudaMemset(args->recvbuffs[i], 0, args->expectedBytes));
     void* data = in_place ? args->recvbuffs[i] : args->sendbuffs[i];
-    TESTCHECK(InitData(data, sendcount, type, rep, rank));
     for (int j=0; j<nranks; j++) {
-      TESTCHECK(InitData(((char*)args->expected[i])+args->sendBytes*j, sendcount, type, rep, j));
+      TESTCHECK(InitData(((char*)data)+args->sendBytes/nranks*j, sendcount/nranks, type, rep, rank));
+      TESTCHECK(InitData(((char*)args->expected[i])+args->sendBytes/nranks*j, sendcount/nranks, type, rep, in_place?rank:j));
     }
     CUDACHECK(cudaDeviceSynchronize());
   }
@@ -40,14 +40,16 @@ void AlltoAllGetBw(size_t count, int typesize, double sec, double* algBw, double
   double baseBw = (double)(count * typesize) / 1.0E9 / sec;
 
   *algBw = baseBw;
-  double factor = ((double)((nranks - 1)))/((double)nranks);
+  double factor = ((double)(nranks))/((double)(nranks-1));
   *busBw = baseBw * factor;
 }
 
 testResult_t AlltoAllRunColl(void* sendbuff, void* recvbuff, size_t count, ncclDataType_t type, ncclRedOp_t op, int root, ncclComm_t comm, cudaStream_t stream) {
+  if(sendbuff==recvbuff) return testSuccess;
   int nRanks,typebytes=wordSize(type);
   NCCLCHECK(ncclCommCount(comm,&nRanks));
   size_t chunk = count / nRanks;
+  if(chunk==0) return testSuccess;
   NCCLCHECK(ncclGroupStart());
   for(int nnn=0;nnn<nRanks;nnn++) {
     NCCLCHECK(ncclSend((const void*)((char*)sendbuff+chunk*nnn*typebytes), chunk, type,nnn,comm, stream));
