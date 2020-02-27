@@ -34,9 +34,6 @@ union ncclLLFifoLine {
 #define NCCL_MAX_NTHREADS 512
 #define NCCL_LL_MAX_NTHREADS NCCL_MAX_NTHREADS
 #define NCCL_LL_LINES_PER_THREAD 8
-#define NCCL_LL_SLICE_LINES (NCCL_LL_LINES_PER_THREAD*NCCL_LL_MAX_NTHREADS)
-#define NCCL_LL_BUFF_LINES (NCCL_LL_SLICE_LINES*NCCL_STEPS)
-#define NCCL_LL_BUFF_SIZE (NCCL_LL_BUFF_LINES*sizeof(union ncclLLFifoLine))
 #ifdef TEST_LL_CLEANUP
 #define NCCL_LL_CLEAN_MASK 0x078 // Set to 0x100 to disable cleanup
 #define NCCL_LL_FLAG_MAX   0x100
@@ -58,10 +55,6 @@ static_assert(NCCL_LL_CLEAN_MASK % NCCL_STEPS == 0, "Invalid NCCL_LL_CLEAN_MASK 
 // Receiving from up to 3 sources is more compute intensive than sending
 // to 3 dests. Use 70% for reduce and 30% for bcast.
 #define NCCL_LL128_SPLIT(nt) ((nt*7/(10*32))*32)
-
-#define NCCL_LL128_SLICE_ELEMS (NCCL_LL128_ELEMS_PER_THREAD*NCCL_LL128_MAX_NTHREADS)
-#define NCCL_LL128_BUFF_ELEMS (NCCL_LL128_SLICE_ELEMS*NCCL_STEPS)
-#define NCCL_LL128_BUFF_SIZE (NCCL_LL128_BUFF_ELEMS*sizeof(uint64_t))
 
 #define NCCL_LL128_SHMEM_ELEMS_PER_THREAD 8
 #define NCCL_LL128_SHMEM_SIZE (NCCL_LL128_SHMEM_ELEMS_PER_THREAD*NCCL_LL128_MAX_NTHREADS)
@@ -199,6 +192,8 @@ typedef enum {
 struct ncclDevComm {
   int rank;
   int nRanks;
+  int llBuffSize;
+  int ll128BuffSize;
   int buffSize;
 
   // Flag to ask NCCL kernels to abort

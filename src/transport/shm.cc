@@ -94,7 +94,10 @@ ncclResult_t shmRecvSetup(struct ncclTopoSystem* topo, struct ncclTopoGraph* gra
 
   char shmName[MAX_SHM_NAME_LEN];
   sprintf(shmName, "nccl-shm-recv-%lx-%d-%d-%d", info.pidHash, info.id, info.sendRank, info.recvRank);
-  info.shmSize = resources->shmSize = offsetof(struct ncclRecvMem, buff)+recv->comm->buffSize;
+  info.shmSize = resources->shmSize = offsetof(struct ncclRecvMem, buff) +
+    recv->comm->llBuffSize +
+    recv->comm->ll128BuffSize +
+    recv->comm->buffSize;
   TRACE(NCCL_SHM,"Open shmName %s shmSize %d", shmName, info.shmSize);
   NCCLCHECK(shmOpen(shmName, resources->shmSize, (void**)&resources->hostMem, (void**)&resources->devHostMem, 1));
 
@@ -118,9 +121,9 @@ ncclResult_t shmSendConnect(struct ncclConnect* connectInfo, int nranks, int ran
   NCCLCHECK(shmUnlink(shmName));
 
   send->transportResources = resources;
-  send->conn.buff = resources->devRemHostMem->buff;
-  send->conn.llBuff = resources->devRemHostMem->llBuff;
-  send->conn.ll128Buff = resources->devRemHostMem->ll128Buff;
+  send->conn.buff = resources->devRemHostMem->buff+send->comm->llBuffSize+send->comm->ll128BuffSize;
+  send->conn.llBuff = (union ncclLLFifoLine*)(resources->devRemHostMem->buff);
+  send->conn.ll128Buff = (uint64_t*)(resources->devRemHostMem->buff+send->comm->llBuffSize);
   send->conn.tail = &resources->devRemHostMem->tail;
   send->conn.opCountRem = &resources->devRemHostMem->opCount;
 
@@ -143,9 +146,9 @@ ncclResult_t shmRecvConnect(struct ncclConnect* connectInfo, int nranks, int ran
   recv->conn.head = &resources->devRemHostMem->head;
   recv->conn.opCountRem = &resources->devRemHostMem->opCount;
 
-  recv->conn.buff = resources->devHostMem->buff;
-  recv->conn.llBuff = resources->devHostMem->llBuff;
-  recv->conn.ll128Buff = resources->devHostMem->ll128Buff;
+  recv->conn.buff = resources->devHostMem->buff+recv->comm->llBuffSize+recv->comm->ll128BuffSize;
+  recv->conn.llBuff = (union ncclLLFifoLine*)resources->devHostMem->buff;
+  recv->conn.ll128Buff = (uint64_t*)(resources->devHostMem->buff+recv->comm->llBuffSize);
   recv->conn.tail = &resources->devHostMem->tail;
   recv->conn.opCountLoc = &resources->devHostMem->opCount;
   return ncclSuccess;

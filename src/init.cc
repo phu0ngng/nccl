@@ -399,17 +399,25 @@ ncclResult_t ncclCommSetIntra(struct ncclComm* comm, int rank, int ranks, struct
   return ncclSuccess;
 }
 
-#define DEFAULT_BUFFER_SIZE_BYTES (1LL << 22) /* 4MiB */
-#define DEFAULT_BUFFER_SIZE_BYTES_ARM (1LL << 20) /* 1MiB */
-NCCL_PARAM(Buffsize, "BUFFSIZE", -2);
+#define DEFAULT_LL_BUFFSIZE (NCCL_LL_LINES_PER_THREAD*NCCL_LL_MAX_NTHREADS*NCCL_STEPS*sizeof(union ncclLLFifoLine))
+#define DEFAULT_LL128_BUFFSIZE (NCCL_LL128_ELEMS_PER_THREAD*NCCL_LL128_MAX_NTHREADS*NCCL_STEPS*sizeof(uint64_t));
+#define DEFAULT_BUFFSIZE (1LL << 22) /* 4MiB */
+#define DEFAULT_BUFFSIZE_ARM (1LL << 20) /* 1MiB */
+NCCL_PARAM(BuffSize, "BUFFSIZE", -2);
+NCCL_PARAM(LlBuffSize, "LL_BUFFSIZE", -2);
+NCCL_PARAM(Ll128BuffSize, "LL128_BUFFSIZE", -2);
 
 static ncclResult_t computeBuffSizes(struct ncclComm* comm) {
   // Setup intermediate buffering
-  int buffSize = ncclParamBuffsize();
+  int buffSize = ncclParamBuffSize();
   int cpuArch, cpuVendor, cpuModel;
   NCCLCHECK(ncclTopoCpuType(comm->topo, &cpuArch, &cpuVendor, &cpuModel));
   comm->buffSize = comm->hostDevComm.buffSize = buffSize != -2 ? buffSize :
-	  cpuArch == NCCL_TOPO_CPU_ARCH_ARM ? DEFAULT_BUFFER_SIZE_BYTES_ARM : DEFAULT_BUFFER_SIZE_BYTES;
+	  cpuArch == NCCL_TOPO_CPU_ARCH_ARM ? DEFAULT_BUFFSIZE_ARM : DEFAULT_BUFFSIZE;
+  int llBuffSize = ncclParamLlBuffSize();
+  comm->llBuffSize = comm->hostDevComm.llBuffSize = llBuffSize != -2 ? llBuffSize : DEFAULT_LL_BUFFSIZE;
+  int ll128BuffSize = ncclParamLl128BuffSize();
+  comm->ll128BuffSize = comm->hostDevComm.ll128BuffSize = ll128BuffSize != -2 ? ll128BuffSize : DEFAULT_LL128_BUFFSIZE;
   return ncclSuccess;
 }
 

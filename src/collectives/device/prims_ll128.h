@@ -14,6 +14,7 @@ class ncclLL128Primitives {
   const int tid;
   const int nthreads;
   const int wid;
+  const int stepSize;
   const int warp;
   const bool flagThread;
   int nrecv = 0;
@@ -38,8 +39,8 @@ class ncclLL128Primitives {
 
   volatile uint64_t* shmem;
 
-  inline __device__ int recvOffset(int i) { return (recvStep[i]%NCCL_STEPS)*NCCL_LL128_SLICE_ELEMS; }
-  inline __device__ int sendOffset(int i) { return (sendStep[i]%NCCL_STEPS)*NCCL_LL128_SLICE_ELEMS; }
+  inline __device__ int recvOffset(int i) { return (recvStep[i]%NCCL_STEPS)*stepSize; }
+  inline __device__ int sendOffset(int i) { return (sendStep[i]%NCCL_STEPS)*stepSize; }
   inline __device__ uint64_t* recvPtr(int i) { return recvBuff[i]+recvOffset(i); }
   inline __device__ uint64_t* sendPtr(int i) { return sendBuff[i]+sendOffset(i); }
   inline __device__ uint64_t recvFlag(int i) { return recvStep[i]+1; }
@@ -363,8 +364,8 @@ class ncclLL128Primitives {
 
  public:
   __device__ __forceinline__
-  ncclLL128Primitives(const int tid, const int nthreads, int* recvPeers, int* sendPeers, struct ncclChannel* channel, struct ncclDevComm* comm, const uint64_t opCount)
-    : comm(comm), tid(tid), nthreads(nthreads), wid(tid%WARP_SIZE), warp(tid/WARP_SIZE), flagThread((tid%8)==7), opCount(opCount), shmem(ncclShmem+(threadIdx.x/WARP_SIZE)*NCCL_LL128_SHMEM_ELEMS_PER_THREAD*WARP_SIZE+2*wid) {
+  ncclLL128Primitives(const int tid, const int nthreads, int* recvPeers, int* sendPeers, int stepSize, struct ncclChannel* channel, struct ncclDevComm* comm, const uint64_t opCount)
+    : comm(comm), tid(tid), nthreads(nthreads), wid(tid%WARP_SIZE), warp(tid/WARP_SIZE), flagThread((tid%8)==7), stepSize(stepSize), opCount(opCount), shmem(ncclShmem+(threadIdx.x/WARP_SIZE)*NCCL_LL128_SHMEM_ELEMS_PER_THREAD*WARP_SIZE+2*wid) {
     // Make sure step is updated before we read it.
     barrier();
 

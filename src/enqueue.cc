@@ -329,7 +329,7 @@ static ncclResult_t computeColl(struct ncclInfo* info /* input */, struct ncclCo
 
   coll->funcIndex = FUNC_INDEX(info->coll, info->op, info->datatype, info->algorithm, info->protocol);
 
-  int stepSize   = (info->protocol == NCCL_PROTO_LL ? NCCL_LL_BUFF_SIZE : info->protocol == NCCL_PROTO_LL128 ? NCCL_LL128_BUFF_SIZE : info->comm->buffSize ) / NCCL_STEPS;
+  int stepSize   = (info->protocol == NCCL_PROTO_LL ? info->comm->llBuffSize : info->protocol == NCCL_PROTO_LL128 ? info->comm->ll128BuffSize : info->comm->buffSize ) / NCCL_STEPS;
   int chunkSteps = (info->protocol == NCCL_PROTO_SIMPLE && info->algorithm == NCCL_ALGO_RING) ? info->chunkSteps : 1;
   int sliceSteps = (info->protocol == NCCL_PROTO_SIMPLE && info->algorithm == NCCL_ALGO_RING) ? info->sliceSteps : 1;
   int chunkSize  = stepSize*chunkSteps;
@@ -352,7 +352,7 @@ static ncclResult_t computeColl(struct ncclInfo* info /* input */, struct ncclCo
     // Use lastChunkSize as chunkSize
     coll->args.lastChunkSize = chunkSize / ncclTypeSize(info->datatype);
   } else if (info->protocol == NCCL_PROTO_LL) {
-    int sliceSize = NCCL_LL_SLICE_LINES * sizeof(uint64_t);
+    int sliceSize = info->comm->llBuffSize / NCCL_STEPS;
     const ssize_t loopSize = info->nChannels*info->nchunksPerLoop*(ssize_t)sliceSize;
     coll->args.lastChunkSize = DIVUP((info->nBytes-(info->nBytes/loopSize)*loopSize), info->nChannels*info->nchunksPerLoop);
     ALIGN_SIZE(coll->args.lastChunkSize, info->nThreads*sizeof(uint64_t));
