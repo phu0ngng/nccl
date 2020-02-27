@@ -57,7 +57,7 @@ ncclResult_t shmCanConnect(int* ret, struct ncclTopoSystem* topo, struct ncclTop
 #define MAX_SHM_NAME_LEN 1024
 
 /* Create and return connect structures for this peer to connect to me */
-ncclResult_t shmSendSetup(struct ncclTopoSystem* topo, struct ncclTopoGraph* graph, struct ncclPeerInfo* myInfo, struct ncclPeerInfo* peerInfo, struct ncclConnect* connectInfo, struct ncclConnector* send, int buffSize, int channelId) {
+ncclResult_t shmSendSetup(struct ncclTopoSystem* topo, struct ncclTopoGraph* graph, struct ncclPeerInfo* myInfo, struct ncclPeerInfo* peerInfo, struct ncclConnect* connectInfo, struct ncclConnector* send, int channelId) {
 
   struct shmSendResources* resources;
   NCCLCHECK(ncclCalloc(&resources, 1));
@@ -81,7 +81,7 @@ ncclResult_t shmSendSetup(struct ncclTopoSystem* topo, struct ncclTopoGraph* gra
   return ncclSuccess;
 }
 
-ncclResult_t shmRecvSetup(struct ncclTopoSystem* topo, struct ncclTopoGraph* graph, struct ncclPeerInfo* myInfo, struct ncclPeerInfo* peerInfo, struct ncclConnect* connectInfo, struct ncclConnector* recv, int buffSize, int channelId) {
+ncclResult_t shmRecvSetup(struct ncclTopoSystem* topo, struct ncclTopoGraph* graph, struct ncclPeerInfo* myInfo, struct ncclPeerInfo* peerInfo, struct ncclConnect* connectInfo, struct ncclConnector* recv, int channelId) {
   struct shmRecvResources* resources;
   NCCLCHECK(ncclCalloc(&resources, 1));
   recv->transportResources = resources;
@@ -94,7 +94,7 @@ ncclResult_t shmRecvSetup(struct ncclTopoSystem* topo, struct ncclTopoGraph* gra
 
   char shmName[MAX_SHM_NAME_LEN];
   sprintf(shmName, "nccl-shm-recv-%lx-%d-%d-%d", info.pidHash, info.id, info.sendRank, info.recvRank);
-  info.shmSize = resources->shmSize = offsetof(struct ncclRecvMem, buff)+buffSize;
+  info.shmSize = resources->shmSize = offsetof(struct ncclRecvMem, buff)+recv->comm->buffSize;
   TRACE(NCCL_SHM,"Open shmName %s shmSize %d", shmName, info.shmSize);
   NCCLCHECK(shmOpen(shmName, resources->shmSize, (void**)&resources->hostMem, (void**)&resources->devHostMem, 1));
 

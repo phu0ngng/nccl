@@ -20,7 +20,6 @@ struct netSendResources {
   struct ncclRecvMem* devHostRecvMem;
   int netDev;
   int useGdr;
-  int buffSize;
   void* mhandle;
   void* llMhandle;
   void* ll128Mhandle;
@@ -38,7 +37,6 @@ struct netRecvResources {
   struct ncclRecvMem* devHostRecvMem;
   int netDev;
   int useGdr;
-  int buffSize;
   void* mhandle;
   void* llMhandle;
   void* ll128Mhandle;
@@ -55,7 +53,7 @@ ncclResult_t netCanConnect(int* ret, struct ncclTopoSystem* topo, struct ncclTop
 
 /* Determine if we will use this transport for this peer and return connect
  * information for this peer */
-ncclResult_t netSendSetup(struct ncclTopoSystem* topo, struct ncclTopoGraph* graph, struct ncclPeerInfo* myInfo, struct ncclPeerInfo* peerInfo, struct ncclConnect* connectInfo, struct ncclConnector* send, int buffSize, int channelId) {
+ncclResult_t netSendSetup(struct ncclTopoSystem* topo, struct ncclTopoGraph* graph, struct ncclPeerInfo* myInfo, struct ncclPeerInfo* peerInfo, struct ncclConnect* connectInfo, struct ncclConnector* send, int channelId) {
   struct netSendResources* resources;
   NCCLCHECK(ncclCalloc(&resources, 1));
   send->transportResources = resources;
@@ -66,19 +64,18 @@ ncclResult_t netSendSetup(struct ncclTopoSystem* topo, struct ncclTopoGraph* gra
   int sendSize = sizeof(struct ncclSendMem);
   NCCLCHECK(ncclCudaHostAlloc((void**)&resources->hostSendMem, (void**)&resources->devHostSendMem, sendSize));
 
-  int recvSize = offsetof(struct ncclRecvMem, buff)+buffSize;
+  int recvSize = offsetof(struct ncclRecvMem, buff)+send->comm->buffSize;
   if (resources->useGdr) {
     NCCLCHECK(ncclCudaCalloc((char**)(&resources->devRecvMem), recvSize));
   }
   NCCLCHECK(ncclCudaHostAlloc((void**)&resources->hostRecvMem, (void**)&resources->devHostRecvMem, recvSize));
-  resources->buffSize = buffSize;
 
   INFO(NCCL_INIT|NCCL_NET,"Ring %02d : %d[%lx] -> %d[%lx] [send] via NET/%s/%d%s", channelId, myInfo->rank, myInfo->busId, peerInfo->rank, peerInfo->busId, ncclNetName(), resources->netDev,
       resources->useGdr ? "/GDRDMA" : "");
   return ncclSuccess;
 }
 
-ncclResult_t netRecvSetup(struct ncclTopoSystem* topo, struct ncclTopoGraph* graph, struct ncclPeerInfo* myInfo, struct ncclPeerInfo* peerInfo, struct ncclConnect* connectInfo, struct ncclConnector* recv, int buffSize, int channelId) {
+ncclResult_t netRecvSetup(struct ncclTopoSystem* topo, struct ncclTopoGraph* graph, struct ncclPeerInfo* myInfo, struct ncclPeerInfo* peerInfo, struct ncclConnect* connectInfo, struct ncclConnector* recv, int channelId) {
   struct netRecvResources* resources;
   NCCLCHECK(ncclCalloc(&resources, 1));
   recv->transportResources = resources;
@@ -89,12 +86,11 @@ ncclResult_t netRecvSetup(struct ncclTopoSystem* topo, struct ncclTopoGraph* gra
   int sendSize = sizeof(struct ncclSendMem);
   NCCLCHECK(ncclCudaHostAlloc((void**)&resources->hostSendMem, (void**)&resources->devHostSendMem, sendSize));
 
-  int recvSize = offsetof(struct ncclRecvMem, buff)+buffSize;
+  int recvSize = offsetof(struct ncclRecvMem, buff)+recv->comm->buffSize;
   if (resources->useGdr) {
     NCCLCHECK(ncclCudaCalloc((char**)(&resources->devRecvMem), recvSize));
   }
   NCCLCHECK(ncclCudaHostAlloc((void**)&resources->hostRecvMem, (void**)&resources->devHostRecvMem, recvSize));
-  resources->buffSize = buffSize;
 
   INFO(NCCL_INIT|NCCL_NET,"Ring %02d : %d[%lx] -> %d[%lx] [receive] via NET/%s/%d%s", channelId, peerInfo->rank, peerInfo->busId, myInfo->rank, myInfo->busId, ncclNetName(), resources->netDev,
       resources->useGdr ? "/GDRDMA" : "");
@@ -126,7 +122,7 @@ ncclResult_t netSendConnect(struct ncclConnect* connectInfo, int nranks, int ran
   struct netConnectInfo* info = (struct netConnectInfo*)connectInfo;
   NCCLCHECK(ncclNetConnect(resources->netDev, info->netHandle, &resources->netSendComm));
 
-  NCCLCHECK(ncclNetRegMr(resources->netSendComm, recvMem->buff, resources->buffSize,
+  NCCLCHECK(ncclNetRegMr(resources->netSendComm, recvMem->buff, send->comm->buffSize,
         resources->useGdr ? NCCL_PTR_CUDA : NCCL_PTR_HOST, &resources->mhandle));
   NCCLCHECK(ncclNetRegMr(resources->netSendComm, resources->devHostRecvMem->llBuff,
         NCCL_LL_BUFF_SIZE, NCCL_PTR_HOST, &resources->llMhandle));
@@ -158,7 +154,7 @@ ncclResult_t netRecvConnect(struct ncclConnect* connectInfo, int nranks, int ran
   NCCLCHECK(ncclNetAccept(resources->netListenComm, &resources->netRecvComm));
   NCCLCHECK(ncclNetCloseListen(resources->netListenComm));
 
-  NCCLCHECK(ncclNetRegMr(resources->netRecvComm, recvMem->buff, resources->buffSize,
+  NCCLCHECK(ncclNetRegMr(resources->netRecvComm, recvMem->buff, recv->comm->buffSize,
         resources->useGdr ? NCCL_PTR_CUDA : NCCL_PTR_HOST, &resources->mhandle));
   NCCLCHECK(ncclNetRegMr(resources->netRecvComm, recvMem->llBuff, NCCL_LL_BUFF_SIZE,
         resources->useGdr ? NCCL_PTR_CUDA : NCCL_PTR_HOST, &resources->llMhandle));
@@ -273,7 +269,7 @@ ncclResult_t netSendProxy(struct ncclProxyArgs* args) {
             }
           }
         } else if (args->tail < *recvTail) {
-          int stepSize = args->channel->buffSize/NCCL_STEPS;
+          int stepSize = args->connector->comm->buffSize/NCCL_STEPS;
           struct ncclRecvMem* localMem = resources->useGdr ? resources->devRecvMem : resources->hostRecvMem;
           // Send through network
           int buffSlot = args->tail%NCCL_STEPS;
@@ -324,7 +320,7 @@ ncclResult_t netRecvProxy(struct ncclProxyArgs* args) {
   }
   if (args->state == ncclProxyOpProgress) {
     args->idle = 1;
-    int stepSize = ( args->protocol == NCCL_PROTO_LL ? NCCL_LL_BUFF_SIZE : args->protocol == NCCL_PROTO_LL128 ? NCCL_LL128_BUFF_SIZE : args->channel->buffSize ) / NCCL_STEPS;
+    int stepSize = ( args->protocol == NCCL_PROTO_LL ? NCCL_LL_BUFF_SIZE : args->protocol == NCCL_PROTO_LL128 ? NCCL_LL128_BUFF_SIZE : args->connector->comm->buffSize ) / NCCL_STEPS;
     if (args->head < args->end) {
       struct ncclRecvMem* localMem = resources->useGdr ? resources->devRecvMem : resources->hostRecvMem;
       char* localBuff = args->protocol == NCCL_PROTO_LL ? (char*)localMem->llBuff : args->protocol == NCCL_PROTO_LL128 ? (char*)localMem->ll128Buff : localMem->buff;

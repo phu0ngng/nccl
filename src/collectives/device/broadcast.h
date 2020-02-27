@@ -17,7 +17,7 @@ __device__ void ncclBroadcastRingKernel(struct CollectiveArgs* args) {
   struct ncclChannel* channel = comm->channels+blockIdx.x;
   struct ncclRing* ring = &channel->ring;
   const ssize_t size = args->N;
-  const int stepSize = channel->buffSize / (sizeof(T)*NCCL_STEPS);
+  const int stepSize = comm->buffSize / (sizeof(T)*NCCL_STEPS);
   const int chunkSize = stepSize * BROADCAST_CHUNKSTEPS;
   const ssize_t loopSize = args->nChannels*(ssize_t)chunkSize;
   const int rank = ring->devUserRanks[0];

@@ -172,7 +172,6 @@ struct ncclChannel {
 
       int id;
       int nthreads;
-      int buffSize;
 
       // Communication structures
       struct ncclPeer* peers;
@@ -200,6 +199,7 @@ typedef enum {
 struct ncclDevComm {
   int rank;
   int nRanks;
+  int buffSize;
 
   // Flag to ask NCCL kernels to abort
   volatile uint32_t *abortFlag;

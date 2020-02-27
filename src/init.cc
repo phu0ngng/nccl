@@ -291,7 +291,7 @@ static ncclResult_t fillInfo(struct ncclComm* comm, struct ncclPeerInfo* info, u
 }
 
 template <int type>
-static ncclResult_t selectTransport(struct ncclTopoSystem* topo, struct ncclTopoGraph* graph, struct ncclPeerInfo* myInfo, struct ncclPeerInfo* peerInfo, struct ncclConnect* connect, struct ncclConnector* connector, int buffSize, int channelId) {
+static ncclResult_t selectTransport(struct ncclTopoSystem* topo, struct ncclTopoGraph* graph, struct ncclPeerInfo* myInfo, struct ncclPeerInfo* peerInfo, struct ncclConnect* connect, struct ncclConnector* connector, int channelId) {
   for (int t=0; t<NTRANSPORTS; t++) {
     struct ncclTransport *transport = ncclTransports+t;
     struct ncclTransportComm* transportComm = type == 1 ? &transport->send : &transport->recv;
@@ -299,7 +299,7 @@ static ncclResult_t selectTransport(struct ncclTopoSystem* topo, struct ncclTopo
     NCCLCHECK(transport->canConnect(&ret, topo, graph, myInfo, peerInfo));
     if (ret) {
       connector->transportComm = transportComm;
-      NCCLCHECK(transportComm->setup(topo, graph, myInfo, peerInfo, connect, connector, buffSize, channelId));
+      NCCLCHECK(transportComm->setup(topo, graph, myInfo, peerInfo, connect, connector, channelId));
       return ncclSuccess;
     }
   }
@@ -399,6 +399,20 @@ ncclResult_t ncclCommSetIntra(struct ncclComm* comm, int rank, int ranks, struct
   return ncclSuccess;
 }
 
+#define DEFAULT_BUFFER_SIZE_BYTES (1LL << 22) /* 4MiB */
+#define DEFAULT_BUFFER_SIZE_BYTES_ARM (1LL << 20) /* 1MiB */
+NCCL_PARAM(Buffsize, "BUFFSIZE", -2);
+
+static ncclResult_t computeBuffSizes(struct ncclComm* comm) {
+  // Setup intermediate buffering
+  int buffSize = ncclParamBuffsize();
+  int cpuArch, cpuVendor, cpuModel;
+  NCCLCHECK(ncclTopoCpuType(comm->topo, &cpuArch, &cpuVendor, &cpuModel));
+  comm->buffSize = comm->hostDevComm.buffSize = buffSize != -2 ? buffSize :
+	  cpuArch == NCCL_TOPO_CPU_ARCH_ARM ? DEFAULT_BUFFER_SIZE_BYTES_ARM : DEFAULT_BUFFER_SIZE_BYTES;
+  return ncclSuccess;
+}
+
 static ncclResult_t p2pSetup(struct ncclComm* comm, struct ncclTopoGraph* graph, struct ncclChannel* channel, int nrecv, int* peerRecv, int nsend, int* peerSend) {
   TRACE(NCCL_INIT, "nsend %d nrecv %d", nsend, nrecv);
   uint32_t nSkippedSend = 0, nSkippedRecv = 0; /* for tracing */
@@ -410,7 +424,7 @@ static ncclResult_t p2pSetup(struct ncclComm* comm, struct ncclTopoGraph* graph,
     conn = &channel->peers[peer].recv;
     if (conn->connected) { ++nSkippedRecv; continue; }
     memset(&connect, 0, sizeof(connect));
-    NCCLCHECK(selectTransport<0>(comm->topo, graph, comm->peerInfo+comm->rank, comm->peerInfo+peer, &connect, conn, channel->buffSize, channel->id));
+    NCCLCHECK(selectTransport<0>(comm->topo, graph, comm->peerInfo+comm->rank, comm->peerInfo+peer, &connect, conn, channel->id));
     NCCLCHECK(bootstrapSend(comm->bootstrap, peer, &connect, sizeof(struct ncclConnect)));
   }
   for (int i=0; i<nsend; i++) {
@@ -419,7 +433,7 @@ static ncclResult_t p2pSetup(struct ncclComm* comm, struct ncclTopoGraph* graph,
     conn = &channel->peers[peer].send;
     if (conn->connected) { ++nSkippedSend; continue; }
     memset(&connect, 0, sizeof(connect));
-    NCCLCHECK(selectTransport<1>(comm->topo, graph, comm->peerInfo+comm->rank, comm->peerInfo+peer, &connect, conn, channel->buffSize, channel->id));
+    NCCLCHECK(selectTransport<1>(comm->topo, graph, comm->peerInfo+comm->rank, comm->peerInfo+peer, &connect, conn, channel->id));
     NCCLCHECK(bootstrapSend(comm->bootstrap, peer, &connect, sizeof(struct ncclConnect)));
   }
   for (int i=0; i<nsend; i++) {
@@ -483,7 +497,7 @@ static int collNetSetup(struct ncclComm* comm, struct ncclTopoGraph* collNetGrap
   // setup
   struct ncclConnect myConnect;
   if (isMaster && ret > 0) {
-    NCCLCHECK(transportComm->setup(comm->topo, collNetGraph, myInfo, peerInfo, &myConnect, conn, channel->buffSize, channel->id));
+    NCCLCHECK(transportComm->setup(comm->topo, collNetGraph, myInfo, peerInfo, &myConnect, conn, channel->id));
   }
   // prepare connect handles
   ncclResult_t res;
@@ -778,6 +792,8 @@ static ncclResult_t initTransportsRank(struct ncclComm* comm, ncclUniqueId* comm
   sched_getaffinity(0, sizeof(cpu_set_t), &affinitySave);
   NCCLCHECK(ncclTopoSetAffinity(comm->topo, comm->rank));
   ncclResult_t ret;
+
+  NCCLCHECK(computeBuffSizes(comm));
 
   // Connect with prev/next for each ring
   struct ncclConnect *connect;

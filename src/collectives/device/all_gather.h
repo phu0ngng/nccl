@@ -18,7 +18,7 @@ __device__ void ncclAllGatherRingKernel(struct CollectiveArgs* args) {
   struct ncclRing* ring = &channel->ring;
   const ssize_t size = args->N;
   const int nranks = comm->nRanks;
-  const int stepSize = channel->buffSize / (sizeof(T)*NCCL_STEPS);
+  const int stepSize = comm->buffSize / (sizeof(T)*NCCL_STEPS);
   const int chunkSize = stepSize * ALLGATHER_CHUNKSTEPS;
   const ssize_t loopSize = args->nChannels*(ssize_t)chunkSize;
 

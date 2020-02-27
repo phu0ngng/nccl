@@ -40,7 +40,6 @@ struct collNetSendResources {
   struct ncclLLDataLine* llData;
   int netDev;
   int useGdr;
-  int buffSize;
   void* sendMhandle;
   void* llSendMhandle;
   void* recvMhandle;
@@ -62,7 +61,6 @@ struct collNetRecvResources {
   struct ncclLLDataLine* llData;
   int netDev;
   int useGdr;
-  int buffSize;
   void* mhandle;
   void* llMhandle;
   struct ncclRecvMem* devRecvMem;
@@ -79,7 +77,7 @@ ncclResult_t collNetCanConnect(int* ret, struct ncclTopoSystem* topo, struct ncc
 }
 
 /* Setup send connector, and return connect information for others in the coll communicator to connect to me */
-ncclResult_t collNetSendSetup(struct ncclTopoSystem* topo, struct ncclTopoGraph* graph, struct ncclPeerInfo* myInfo, struct ncclPeerInfo* peerInfo, struct ncclConnect* connectInfo, struct ncclConnector* send, int buffSize, int channelId) {
+ncclResult_t collNetSendSetup(struct ncclTopoSystem* topo, struct ncclTopoGraph* graph, struct ncclPeerInfo* myInfo, struct ncclPeerInfo* peerInfo, struct ncclConnect* connectInfo, struct ncclConnector* send, int channelId) {
   struct collNetSendResources* sendResources;
   NCCLCHECK(ncclCalloc(&sendResources, 1));
   send->transportResources = sendResources;
@@ -90,13 +88,12 @@ ncclResult_t collNetSendSetup(struct ncclTopoSystem* topo, struct ncclTopoGraph*
   int sendSize = sizeof(struct ncclSendMem);
   NCCLCHECK(ncclCudaHostAlloc((void**)&sendResources->hostSendMem, (void**)&sendResources->devHostSendMem, sendSize));
 
-  int recvSize = offsetof(struct ncclRecvMem, buff)+buffSize;
+  int recvSize = offsetof(struct ncclRecvMem, buff)+send->comm->buffSize;
   if (sendResources->useGdr) {
     NCCLCHECK(ncclCudaCalloc((char**)(&sendResources->devRecvMem), recvSize));
   }
   NCCLCHECK(ncclCudaHostAlloc((void**)&sendResources->hostRecvMem, (void**)&sendResources->devHostRecvMem, recvSize));
   NCCLCHECK(ncclIbMalloc((void**)&(sendResources->llData), NCCL_LL_BUFF_LINES*sizeof(struct ncclLLDataLine)));
-  sendResources->buffSize = buffSize;
 
   INFO(NCCL_INIT|NCCL_NET,"Coll %02d : %d [send] via COLLNET/%s/%d%s", channelId, myInfo->rank, collNetName(), sendResources->netDev,
       sendResources->useGdr ? "/GDRDMA" : "");
@@ -105,7 +102,7 @@ ncclResult_t collNetSendSetup(struct ncclTopoSystem* topo, struct ncclTopoGraph*
 }
 
 /* Setup recv connector */
-ncclResult_t collNetRecvSetup(struct ncclTopoSystem* topo, struct ncclTopoGraph* graph, struct ncclPeerInfo* myInfo, struct ncclPeerInfo* peerInfo, struct ncclConnect* connectInfo, struct ncclConnector* recv, int buffSize, int channelId) {
+ncclResult_t collNetRecvSetup(struct ncclTopoSystem* topo, struct ncclTopoGraph* graph, struct ncclPeerInfo* myInfo, struct ncclPeerInfo* peerInfo, struct ncclConnect* connectInfo, struct ncclConnector* recv, int channelId) {
   struct collNetRecvResources* recvResources;
   NCCLCHECK(ncclCalloc(&recvResources, 1));
   recv->transportResources = recvResources;
@@ -116,13 +113,12 @@ ncclResult_t collNetRecvSetup(struct ncclTopoSystem* topo, struct ncclTopoGraph*
   int sendSize = sizeof(struct ncclSendMem);
   NCCLCHECK(ncclCudaHostAlloc((void**)&recvResources->hostSendMem, (void**)&recvResources->devHostSendMem, sendSize));
 
-  int recvSize = offsetof(struct ncclRecvMem, buff)+buffSize;
+  int recvSize = offsetof(struct ncclRecvMem, buff)+recv->comm->buffSize;
   if (recvResources->useGdr) {
     NCCLCHECK(ncclCudaCalloc((char**)(&recvResources->devRecvMem), recvSize));
   }
   NCCLCHECK(ncclCudaHostAlloc((void**)&recvResources->hostRecvMem, (void**)&recvResources->devHostRecvMem, recvSize));
   NCCLCHECK(ncclIbMalloc((void**)&(recvResources->llData), NCCL_LL_BUFF_LINES*sizeof(struct ncclLLDataLine)));
-  recvResources->buffSize = buffSize;
 
   INFO(NCCL_INIT|NCCL_NET,"Coll %02d : %d [receive] via COLLNET/%s/%d%s", channelId, myInfo->rank, collNetName(), recvResources->netDev,
       recvResources->useGdr ? "/GDRDMA" : "");
@@ -148,7 +144,7 @@ ncclResult_t collNetSendConnect(struct ncclConnect* connectInfos, int nranks, in
   // Intermediate buffering on GPU for GPU Direct RDMA, but LL buffer is always on host
   struct ncclRecvMem* sRecvMem = sendResources->useGdr ? sendResources->devRecvMem : sendResources->devHostRecvMem;
   // Register buffers
-  NCCLCHECK(collNetRegMr(sendResources->collNetSendComm, sRecvMem->buff, sendResources->buffSize,
+  NCCLCHECK(collNetRegMr(sendResources->collNetSendComm, sRecvMem->buff, send->comm->buffSize,
         sendResources->useGdr ? NCCL_PTR_CUDA : NCCL_PTR_HOST, &sendResources->sendMhandle));
   NCCLCHECK(collNetRegMr(sendResources->collNetSendComm, sendResources->llData,
         NCCL_LL_BUFF_LINES*sizeof(struct ncclLLDataLine), NCCL_PTR_HOST, &sendResources->llSendMhandle));
@@ -197,7 +193,7 @@ ncclResult_t collNetRecvConnect(struct ncclConnect* connectInfos, int nranks, in
   NCCLCHECKGOTO(collNetConnect((void**)handlePtrs, nranks, rank, recvResources->netListenComm, &recvResources->collNetRecvComm), res, cleanup);
 
   // Register buffers
-  NCCLCHECK(collNetRegMr(recvResources->collNetRecvComm, rRecvMem->buff, recvResources->buffSize,
+  NCCLCHECK(collNetRegMr(recvResources->collNetRecvComm, rRecvMem->buff, recv->comm->buffSize,
         recvResources->useGdr ? NCCL_PTR_CUDA : NCCL_PTR_HOST, &recvResources->mhandle));
   NCCLCHECK(collNetRegMr(recvResources->collNetRecvComm, recvResources->llData,
         NCCL_LL_BUFF_LINES*sizeof(struct ncclLLDataLine), NCCL_PTR_HOST, &recvResources->llMhandle));
@@ -315,7 +311,7 @@ ncclResult_t collNetSendProxy(struct ncclProxyArgs* args) {
             }
           }
         } else if (args->tail < *recvTail) {
-          int stepSize = args->channel->buffSize/NCCL_STEPS;
+          int stepSize = args->connector->comm->buffSize/NCCL_STEPS;
           struct ncclRecvMem* localMem = resources->useGdr ? resources->devRecvMem : resources->hostRecvMem;
           // Send through network
           if (sizesFifo[buffSlot] != -1) {
@@ -377,7 +373,7 @@ ncclResult_t collNetRecvProxy(struct ncclProxyArgs* args) {
   }
   if (args->state == ncclProxyOpProgress) {
     args->idle = 1;
-    int stepSize = ( args->protocol == NCCL_PROTO_LL ? NCCL_LL_BUFF_LINES*sizeof(struct ncclLLDataLine) : args->channel->buffSize ) / NCCL_STEPS;
+    int stepSize = ( args->protocol == NCCL_PROTO_LL ? NCCL_LL_BUFF_LINES*sizeof(struct ncclLLDataLine) : args->connector->comm->buffSize ) / NCCL_STEPS;
     struct reqSlot* reqFifo = resources->reqFifo;
     if (args->head < args->end) {
       struct ncclRecvMem* localMem = resources->useGdr ? resources->devRecvMem : resources->hostRecvMem;

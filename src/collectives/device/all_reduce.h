@@ -18,7 +18,7 @@ __device__ void ncclAllReduceRingKernel(struct CollectiveArgs* args) {
   struct ncclRing* ring = &channel->ring;
   const ssize_t size = args->N;
   const int nranks = comm->nRanks;
-  const int stepSize = channel->buffSize / (sizeof(T)*NCCL_STEPS);
+  const int stepSize = comm->buffSize / (sizeof(T)*NCCL_STEPS);
   const int chunkSize = stepSize * ALLREDUCE_CHUNKSTEPS;
   const ssize_t loopSize = args->nChannels*(ssize_t)chunkSize;
 
@@ -90,7 +90,7 @@ __device__ void ncclAllReduceTreeKernel(struct CollectiveArgs* args) {
   struct ncclDevComm* comm = args->comm;
   struct ncclChannel* channel = comm->channels+blockIdx.x;
   const ssize_t size = args->N;
-  const int stepSize = channel->buffSize / (sizeof(T)*NCCL_STEPS);
+  const int stepSize = comm->buffSize / (sizeof(T)*NCCL_STEPS);
   int chunkSize = args->lastChunkSize;
   const ssize_t minChunkSize = nthreads*8*sizeof(uint64_t) / sizeof(T);
   const ssize_t loopSize = args->nChannels*chunkSize;
@@ -148,7 +148,7 @@ __device__ void ncclAllReduceCollNetKernel(struct CollectiveArgs* args) {
   struct ncclDevComm* comm = args->comm;
   struct ncclChannel* channel = comm->channels+blockIdx.x;
   const ssize_t size = args->N;
-  const int stepSize = channel->buffSize / (sizeof(T)*NCCL_STEPS);
+  const int stepSize = comm->buffSize / (sizeof(T)*NCCL_STEPS);
   int chunkSize = args->lastChunkSize;
   const ssize_t minChunkSize = nthreads*8*sizeof(uint64_t) / sizeof(T);
   const ssize_t loopSize = args->nChannels*chunkSize;

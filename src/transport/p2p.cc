@@ -97,7 +97,7 @@ ncclResult_t p2pCanConnect(int* ret, struct ncclTopoSystem* topo, struct ncclTop
 
 /* Send: Create and return connect structures for this peer to connect to me */
 ncclResult_t p2pSendSetup(struct ncclTopoSystem* topo, struct ncclTopoGraph* graph, struct ncclPeerInfo* myInfo, struct ncclPeerInfo* peerInfo,
-    struct ncclConnect* connectInfo, struct ncclConnector* send, int buffSize, int channelId) {
+    struct ncclConnect* connectInfo, struct ncclConnector* send, int channelId) {
 
   struct p2pSendResources* resources;
   NCCLCHECK(ncclCalloc(&resources, 1));
@@ -148,12 +148,12 @@ ncclResult_t p2pSendSetup(struct ncclTopoSystem* topo, struct ncclTopoGraph* gra
 
 /* Create and return connect structures for this peer to connect to me */
 ncclResult_t p2pRecvSetup(struct ncclTopoSystem* topo, struct ncclTopoGraph* graph, struct ncclPeerInfo* myInfo, struct ncclPeerInfo* peerInfo,
-    struct ncclConnect* connectInfo, struct ncclConnector * recv, int buffSize, int channelId) {
+    struct ncclConnect* connectInfo, struct ncclConnector * recv, int channelId) {
 
   struct p2pRecvResources* resources;
   NCCLCHECK(ncclCalloc(&resources, 1));
   recv->transportResources = resources;
-  int recvSize = offsetof(struct ncclRecvMem, buff)+buffSize;
+  int recvSize = offsetof(struct ncclRecvMem, buff)+recv->comm->buffSize;
   ALIGN_SIZE(recvSize, CUDA_IPC_MIN);
   NCCLCHECK(ncclCudaCalloc((char**)&resources->devMem, recvSize));
 
