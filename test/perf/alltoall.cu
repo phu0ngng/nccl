@@ -28,8 +28,8 @@ testResult_t AlltoAllInitData(struct threadArgs* args, ncclDataType_t type, nccl
     CUDACHECK(cudaMemset(args->recvbuffs[i], 0, args->expectedBytes));
     void* data = in_place ? args->recvbuffs[i] : args->sendbuffs[i];
     for (int j=0; j<nranks; j++) {
-      TESTCHECK(InitData(((char*)data)+args->sendBytes/nranks*j, sendcount/nranks, type, rep, rank));
-      TESTCHECK(InitData(((char*)args->expected[i])+args->sendBytes/nranks*j, sendcount/nranks, type, rep, in_place?rank:j));
+      TESTCHECK(InitData(((char*)data)+args->sendBytes/nranks*j, sendcount/nranks, type, rep+j, rank));
+      TESTCHECK(InitData(((char*)args->expected[i])+args->sendBytes/nranks*j, sendcount/nranks, type, rep+(in_place?j:rank), in_place?rank:j));
     }
     CUDACHECK(cudaDeviceSynchronize());
   }
