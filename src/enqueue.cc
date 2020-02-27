@@ -498,6 +498,7 @@ ncclResult_t scheduleSendRecv(struct ncclComm* comm, int delta, size_t recvcount
   info.delta=delta;
   info.sendcount=sendcount;
   info.recvcount=recvcount;
+  if(delta==0) info.nBytes=sendcount;
   NCCLCHECK(saveKernel(&info));
   return ncclSuccess;
 }

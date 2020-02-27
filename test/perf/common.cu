@@ -313,7 +313,6 @@ testResult_t CheckData(struct threadArgs* args, ncclDataType_t type, ncclRedOp_t
          printf("%d:%d ", j, dataHost[j]);
        }
        printf("\n");
-       free(temp);
     }
 #endif
   }
