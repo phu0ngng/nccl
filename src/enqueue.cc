@@ -328,25 +328,26 @@ static ncclResult_t getLoopInfo(struct ncclInfo* info) {
   }
   return ncclSuccess;
 }
-ncclResult_t connectPeer(struct ncclComm* comm, int peerfrom, int peerto);
+ncclResult_t connectPeer(struct ncclComm* comm, int peerrecv, int peersend);
+
+static int nChannelsP2P(struct ncclInfo* info, int count) {
+  if(count<0) return 0;
+  if(count==0) return 1; //FIXME: 1 channel needed
+  int channels = info->comm->nChannels/(info->comm->nRanks-1);
+  //return std::max<unsigned>(1,std::min<unsigned>(info->comm->nChannels, NCCL_STEPS*count/info->comm->channels[0].buffSize));
+  return channels==0?1:channels;
+}
 
 static ncclResult_t computeColl(struct ncclInfo* info /* input */, struct ncclColl* coll, struct ncclProxyArgs* proxyArgs /* output */) {
   if(info->coll==ncclCollSendRecv) {
-    if(info->root==-1) { //async send/recv from p2plist
-      coll->args.nChannels = info->comm->nChannels/(info->comm->nRanks-1); //FIXME based on what should we compute it?
-      if (coll->args.nChannels==0) coll->args.nChannels=1;
-    } else { //non async: single send or recv
-      int is_send = info->recvbuff == NULL;
-      info->sendcount = is_send ? info->count : 0;
-      info->recvcount = is_send ? 0 : info->count;
-      info->delta = (info->comm->nRanks+(is_send?-1:1) * (info->comm->rank-info->root))%info->comm->nRanks;
-      coll->args.nChannels = std::max<unsigned>(1,std::min<unsigned>(info->comm->nChannels, NCCL_STEPS*info->count/info->comm->channels[0].buffSize));
-      NCCLCHECK(connectPeer(info->comm,is_send?-1:info->root,is_send?info->root:-1));
-    }
+    if(info->root!=-1) //non-async, preconnect now
+      NCCLCHECK(connectPeer(info->comm,info->recvbuff!=NULL?info->root:-1,info->sendbuff!=NULL?info->root:-1));
+
+    coll->args.nChannels = std::max<unsigned>(nChannelsP2P(info,info->sendbytes),nChannelsP2P(info,info->recvbytes));
     coll->args.sendbuff = info->sendbuff;
     coll->args.recvbuff = info->recvbuff;
-    coll->args.p2p.sendCount = info->sendcount;
-    coll->args.p2p.recvCount = info->recvcount;
+    coll->args.p2p.sendCount = info->sendbytes;
+    coll->args.p2p.recvCount = info->recvbytes;
     coll->args.comm = info->comm->devComm;
     coll->funcIndex = 0;
     coll->args.rankDelta = info -> delta;
@@ -491,14 +492,14 @@ static ncclResult_t saveKernel(struct ncclInfo* info) {
   return ncclSuccess;
 }
 
-ncclResult_t scheduleSendRecv(struct ncclComm* comm, int delta, size_t recvcount, void* recvbuff, size_t sendcount, const void* sendbuff) {
+ncclResult_t scheduleSendRecv(struct ncclComm* comm, int delta, size_t recvbytes, void* recvbuff, size_t sendbytes, const void* sendbuff) {
   struct ncclInfo info = { ncclCollSendRecv, "SendRecv",
-    sendbuff, recvbuff, sendcount, ncclInt8, ncclSum, -1, comm, comm->userStream, /* Args */
+    sendbuff, recvbuff, std::max<size_t>(sendbytes,recvbytes), ncclInt8, ncclSum, -1, comm, comm->userStream, /* Args */
     SENDRECV_CHUNKSTEPS, SENDRECV_SLICESTEPS };
   info.delta=delta;
-  info.sendcount=sendcount;
-  info.recvcount=recvcount;
-  if(delta==0) info.nBytes=sendcount;
+  info.sendbytes=sendbytes;
+  info.recvbytes=recvbytes;
+  if(delta==0) info.nBytes=sendbytes;
   NCCLCHECK(saveKernel(&info));
   return ncclSuccess;
 }

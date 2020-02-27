@@ -109,7 +109,7 @@ ncclResult_t ncclGroupStart() {
 
 void isPeerConnected(struct ncclComm* comm, int peerfrom, int peerto,int* recvconnected, int *sendconnected);
 ncclResult_t connectPeer(struct ncclComm* comm, int peerfrom, int peerto);
-ncclResult_t scheduleSendRecv(struct ncclComm* comm, int delta, size_t recvcount, void* recvbuff, size_t sendcount, const void* sendbuff);
+ncclResult_t scheduleSendRecv(struct ncclComm* comm, int delta, size_t recvbytes, void* recvbuff, size_t sendbytes, const void* sendbuff);
 ncclResult_t p2pSetup(struct ncclComm* comm, struct ncclTopoGraph* graph, struct ncclChannel* channel, int nrecv, int* peerRecv, int nsend, int* peerSend);
 
 void* ncclAsyncThreadPreconnect(void* args_) {
