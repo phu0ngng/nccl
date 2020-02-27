@@ -32,13 +32,21 @@ __device__ void ncclSendRecvKernel(struct CollectiveArgs* args) {
   ncclPrimitives<UNROLL, SENDRECV_CHUNKSTEPS/SENDRECV_SLICESTEPS, SENDRECV_SLICESTEPS, T, 1, 1, FUNC>
     prims(tid, args->nThreads, &peerRecv, &peerSend, NULL, stepSize, channel, comm, args->opCount);
 
-  int maxSize = sendSize>recvSize ? sendSize : recvSize;
+  int maxSize = sendSize-loopSize>recvSize ? sendSize-loopSize : recvSize;
+  
+  if(0<sendSize) {
+      int realChunkSize = min(chunkSize, DIVUP(sendSize,args->nChannels));
+      ALIGN_SIZE(realChunkSize, nthreads*sizeof(uint64_t)/sizeof(T));
+      ssize_t offset = bid*realChunkSize;
+      int nelem = min(realChunkSize, sendSize-offset);
+      prims.send(sendbuff+offset, nelem);
+    }
 
   for (ssize_t gridOffset = 0; gridOffset < maxSize; gridOffset += loopSize) {
-    if(gridOffset<sendSize) {
-      int realChunkSize = min(chunkSize, DIVUP(sendSize-gridOffset,args->nChannels));
+    if(gridOffset+loopSize<sendSize) {
+      int realChunkSize = min(chunkSize, DIVUP(sendSize-gridOffset-loopSize,args->nChannels));
       ALIGN_SIZE(realChunkSize, nthreads*sizeof(uint64_t)/sizeof(T));
-      ssize_t offset = gridOffset + bid*realChunkSize;
+      ssize_t offset = gridOffset +loopSize+ bid*realChunkSize;
       int nelem = min(realChunkSize, sendSize-offset);
       prims.send(sendbuff+offset, nelem);
     }
