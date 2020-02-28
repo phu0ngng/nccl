@@ -330,12 +330,11 @@ static ncclResult_t getLoopInfo(struct ncclInfo* info) {
 }
 ncclResult_t connectPeer(struct ncclComm* comm, int peerrecv, int peersend);
 
-static int nChannelsP2P(struct ncclInfo* info, int count) {
-  if(count<0) return 0;
-  if(count==0) return 1; //FIXME: 1 channel needed
-  int channels = info->comm->nChannels/(info->comm->nRanks-1);
-  //return std::max<unsigned>(1,std::min<unsigned>(info->comm->nChannels, NCCL_STEPS*count/info->comm->channels[0].buffSize));
-  return channels==0?1:channels;
+static int nChannelsP2P(struct ncclInfo* info, int bytes) {
+  if(bytes<0) return 0;
+  if(bytes==0) return 1;
+  int maxchannels = info->comm->nChannels; //int channels = info->comm->nChannels/(info->comm->nRanks-1);
+  return std::max<unsigned>(1,std::min<unsigned>(maxchannels, NCCL_STEPS*bytes/info->comm->channels[0].buffSize));
 }
 
 static ncclResult_t computeColl(struct ncclInfo* info /* input */, struct ncclColl* coll, struct ncclProxyArgs* proxyArgs /* output */) {
@@ -453,8 +452,7 @@ static ncclResult_t saveKernel(struct ncclInfo* info) {
   int nSubChannels = (info->pattern == ncclPatternCollTreeUp || info->pattern == ncclPatternCollTreeDown) ? 2 : 1;
   for (int bid=0; bid<coll.args.nChannels*nSubChannels; bid++) {
     int channelId = info->comm->myParams->gridDim.x % info->comm->nChannels;
-    if(info->coll==ncclCollSendRecv && info->root==-1) channelId = (info->delta-1+bid*(info->comm->nRanks-1)) % info->comm->nChannels;
-    //printf("delta %d channel %d\n",info->delta,channelId);
+    if(info->coll==ncclCollSendRecv && info->root==-1) channelId = (info->delta-1+bid/* *(info->comm->nRanks-1)*/) % info->comm->nChannels;
     struct ncclChannel* channel = info->comm->channels+channelId;
 
     if (channel->collCount == NCCL_MAX_OPS) {
@@ -480,8 +478,28 @@ static ncclResult_t saveKernel(struct ncclInfo* info) {
     while (activePtr[0] != 0) sched_yield();
 
     memcpy(c, &coll, sizeof(struct ncclColl));
+    if(info->coll==ncclCollSendRecv) {
+      size_t min_chunk=128;
+      if(info->sendbytes!=-1) {
+        size_t send_chunks=(info->sendbytes+min_chunk-1)/min_chunk;
+        int send_channels=nChannelsP2P(info,info->sendbytes);
+        size_t send_chunks_per_ch=(send_chunks+send_channels-1)/send_channels;
+        size_t send_start_pos = bid * send_chunks_per_ch * min_chunk;
+        size_t real_sendsize = std::min<long>(info->sendbytes-send_start_pos,send_chunks_per_ch*min_chunk);
+        c->args.p2p.sendCount=real_sendsize<=0 && bid!=0?-1:real_sendsize;
+        c->args.sendbuff=(char*)c->args.sendbuff+send_start_pos;
+      }
+      if(info->recvbytes!=-1) {
+        size_t recv_chunks=(info->recvbytes+min_chunk-1)/min_chunk;
+        int recv_channels=nChannelsP2P(info,info->recvbytes);
+        size_t recv_chunks_per_ch=(recv_chunks+recv_channels-1)/recv_channels;
+        size_t recv_start_pos = bid * recv_chunks_per_ch * min_chunk;
+        size_t real_recvsize = std::min<long>(info->recvbytes-recv_start_pos,recv_chunks_per_ch*min_chunk);
+        c->args.p2p.recvCount=real_recvsize<=0 && bid!=0?-1:real_recvsize;
+        c->args.recvbuff=(char*)c->args.recvbuff+recv_start_pos;
+      }
+    } else c->args.bid = bid % coll.args.nChannels;
 
-    c->args.bid = bid % coll.args.nChannels;
     c->active = 1;
     opIndex = (opIndex+1)%NCCL_MAX_OPS;
     c->nextIndex = opIndex;

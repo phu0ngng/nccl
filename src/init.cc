@@ -154,7 +154,7 @@ void NCCL_NO_OPTIMIZE commPoison(ncclComm_t comm) {
 static ncclResult_t commFree(ncclComm_t comm) {
   if (comm == NULL)
     return ncclSuccess;
-
+  if(comm->p2plist.peerlist) free(comm->p2plist.peerlist);
   free(comm->peerInfo);
   ncclTopoFree(comm->topo);
 
