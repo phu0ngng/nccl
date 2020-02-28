@@ -38,8 +38,8 @@ __device__ void ncclSendRecvKernel(struct CollectiveArgs* args) {
       int nelem = min(realChunkSize, sendSize);
       prims.send(sendbuff, nelem);
     }
-
-  for (ssize_t gridOffset = 0; gridOffset < maxSize; gridOffset += chunkSize) {
+   
+   for (ssize_t gridOffset = 0; gridOffset < maxSize; gridOffset += chunkSize) {
     if(gridOffset+chunkSize<sendSize) {
       int realChunkSize = min(chunkSize, sendSize-gridOffset-chunkSize);
       ALIGN_SIZE(realChunkSize, nthreads*sizeof(uint64_t)/sizeof(T));
@@ -47,7 +47,7 @@ __device__ void ncclSendRecvKernel(struct CollectiveArgs* args) {
       int nelem = min(realChunkSize, sendSize-offset);
       prims.send(sendbuff+offset, nelem);
     }
-    if(gridOffset<=recvSize){
+    if(gridOffset<recvSize){
       int realChunkSize = min(chunkSize, recvSize-gridOffset);
       ALIGN_SIZE(realChunkSize, nthreads*sizeof(uint64_t)/sizeof(T));
       ssize_t offset = gridOffset;
@@ -55,5 +55,5 @@ __device__ void ncclSendRecvKernel(struct CollectiveArgs* args) {
       prims.recv(recvbuff+offset, nelem);
     }
   }
-
+  if(recvSize==0) prims.recv(recvbuff,0);
 }

@@ -452,7 +452,7 @@ static ncclResult_t saveKernel(struct ncclInfo* info) {
   int nSubChannels = (info->pattern == ncclPatternCollTreeUp || info->pattern == ncclPatternCollTreeDown) ? 2 : 1;
   for (int bid=0; bid<coll.args.nChannels*nSubChannels; bid++) {
     int channelId = info->comm->myParams->gridDim.x % info->comm->nChannels;
-    if(info->coll==ncclCollSendRecv && info->root==-1) channelId = (info->delta-1+bid/* *(info->comm->nRanks-1)*/) % info->comm->nChannels;
+    if(info->coll==ncclCollSendRecv) channelId = (info->delta-1+bid/* *(info->comm->nRanks-1)*/) % info->comm->nChannels;
     struct ncclChannel* channel = info->comm->channels+channelId;
 
     if (channel->collCount == NCCL_MAX_OPS) {
@@ -467,7 +467,7 @@ static ncclResult_t saveKernel(struct ncclInfo* info) {
       info->pattern = (channelId < info->comm->nChannels/nSubChannels) ? ncclPatternCollTreeUp : ncclPatternCollTreeDown;
     }
     NCCLCHECK(transportSaveProxies(&proxyArgs, info->pattern, info->root, info->comm->nRanks));
-    if(info->coll==ncclCollSendRecv && info->root==-1)
+    if(info->coll==ncclCollSendRecv)
       info->comm->myParams->gridDim.x = std::max<unsigned>(info->comm->myParams->gridDim.x,channelId+1);
     else 
       info->comm->myParams->gridDim.x++;

@@ -155,8 +155,8 @@ ncclResult_t ncclGroupEnd() {
           uint32_t from=(args->coll.comm->rank+args->coll.comm->nRanks-delta)%args->coll.comm->nRanks;
           uint32_t to=(args->coll.comm->rank+delta)%args->coll.comm->nRanks;
           //printf("%d[%d]: send ld bytes to %d, recv ld bytes from %d\n",args->coll.comm->rank,delta,to,from);
-          int recv = p2plist->peerlist[from].recvcount!=0;
-          int send = p2plist->peerlist[to].sendcount!=0;
+          int recv = p2plist->peerlist[from].recvcount>=0;
+          int send = p2plist->peerlist[to].sendcount>=0;
           if(send || recv) {
             //printf("%d[%d]: send %ld bytes to %d, recv %ld bytes from %d\n",args->coll.comm->rank,delta,p2plist->peerlist[to].sendcount,to,p2plist->peerlist[to].recvcount,from);
             //NCCLCHECK(connectPeer(args->coll.comm,recv?from:-1,send?to:-1));
@@ -174,8 +174,8 @@ ncclResult_t ncclGroupEnd() {
             }
             NCCLCHECK(scheduleSendRecv(args->coll.comm,delta,p2plist->peerlist[from].recvcount,p2plist->peerlist[from].recvbuff,
                               p2plist->peerlist[to].sendcount,p2plist->peerlist[to].sendbuff));
-            p2plist->peerlist[from].recvcount=0;
-            p2plist->peerlist[to].sendcount=0;
+            p2plist->peerlist[from].recvcount=-1;
+            p2plist->peerlist[to].sendcount=-1;
           }
         }
       p2plist->count=0;
