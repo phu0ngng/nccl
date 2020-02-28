@@ -130,10 +130,9 @@ ncclResult_t ncclGroupEnd() {
   if (ncclGroupMode > 0) return ncclSuccess;
   int savedDev;
   CUDACHECK(cudaGetDevice(&savedDev));
-  int done = ncclGroupIndex;
+  int activeThreads = 0;
   int doneArray[MAX_ASYNC_OPS];
-  for (int i=0; i<ncclGroupIndex; i++) doneArray[i] = 0;
-
+  for (int i=0; i<ncclGroupIndex; i++) doneArray[i] = 1;
   ncclResult_t ret = ncclGroupError;
   if (ret != ncclSuccess) goto group_cleanup;
 
@@ -142,6 +141,22 @@ ncclResult_t ncclGroupEnd() {
     struct ncclAsyncArgs* args = ncclGroupArgs+i;
     if (args->funcType == ASYNC_FUNC_INIT) {
       pthread_create(ncclGroupThreads+i, NULL, ncclAsyncThreadMain, args);
+      activeThreads++;
+      doneArray[i] = 0;
+    }
+  }
+  /* For init, since we use threads, we just wait for threads to complete */
+  while (activeThreads) {
+    for (int i=0; i<ncclGroupIndex; i++) {
+      struct ncclAsyncArgs* args = ncclGroupArgs+i;
+      if (args->funcType == ASYNC_FUNC_INIT && doneArray[i] == 0) {
+        int err = pthread_tryjoin_np(ncclGroupThreads[i], NULL);
+        if (err == EBUSY) continue;
+        if (err != 0) ret = ncclSystemError;
+        if (args->ret != ncclSuccess) ret = args->ret;
+        doneArray[i] = 1;
+        activeThreads--;
+      }
     }
   }
 
@@ -233,24 +248,9 @@ ncclResult_t ncclGroupEnd() {
       if (args->coll.comm->userStream == NULL)
         CUDACHECKGOTO(cudaSetDevice(args->coll.comm->cudaDev), ret, end);
       NCCLCHECKGOTO(ncclEnqueueEvents(args->coll.comm), ret, end);
-      doneArray[i] = 1;
-      done--;
     }
   }
-  /* For init, since we use threads, we just wait for threads to complete */
-  while (done) {
-    for (int i=0; i<ncclGroupIndex; i++) {
-      struct ncclAsyncArgs* args = ncclGroupArgs+i;
-      if (args->funcType == ASYNC_FUNC_INIT && doneArray[i] == 0) {
-        int err = pthread_tryjoin_np(ncclGroupThreads[i], NULL);
-        if (err == EBUSY) continue;
-        if (err != 0) ret = ncclSystemError;
-        if (args->ret != ncclSuccess) ret = args->ret;
-        doneArray[i] = 1;
-        done--;
-      }
-    }
-  }
+
 
   goto end;
 group_cleanup:
@@ -259,7 +259,7 @@ group_cleanup:
     // an atomic operation, we need to cancel all operations.
     for (int i=0; i<ncclGroupIndex; i++) {
       struct ncclAsyncArgs* args = ncclGroupArgs+i;
-      if (args->funcType == ASYNC_FUNC_INIT && doneArray[i] == 0) {
+      if (args->funcType == ASYNC_FUNC_INIT) {
         if (args->init.newcomm) NCCLCHECK(ncclCommDestroy(*args->init.newcomm));
         *args->init.newcomm = NULL;
       } else {
