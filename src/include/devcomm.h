@@ -11,6 +11,20 @@
 #include "align.h"
 #include <stdint.h>
 
+#define NCCL_NUM_FUNCTIONS 5
+typedef enum { ncclCollBroadcast, ncclCollReduce, ncclCollAllGather, ncclCollReduceScatter, ncclCollAllReduce } ncclFunc_t;
+
+#define NCCL_NUM_ALGORITHMS 3 // Tree/Ring/CollNet
+#define NCCL_ALGO_TREE 0
+#define NCCL_ALGO_RING 1
+#define NCCL_ALGO_COLLNET 2
+
+#define NCCL_NUM_PROTOCOLS 3 // Simple/LL/LL128
+#define NCCL_PROTO_LL 0
+#define NCCL_PROTO_LL128 1
+#define NCCL_PROTO_SIMPLE 2
+
+
 #define NCCL_MAX_OPS 2048
 #define NCCL_STEPS 8
 
@@ -64,7 +78,7 @@ static_assert(NCCL_LL_CLEAN_MASK % NCCL_STEPS == 0, "Invalid NCCL_LL_CLEAN_MASK 
 
 struct ncclConnInfo {
   // Regular comm mechanism
-  char *buff;         // Local for recv, remote for send
+  char *buffs[NCCL_NUM_PROTOCOLS]; // Local for recv, remote for send
   uint64_t *tail;     // Local for recv, remote for send
   uint64_t *head;     // Local for send, remote for recv
   uint64_t *opCountLoc; // opCount of local rank
@@ -76,13 +90,7 @@ struct ncclConnInfo {
   int *fifo;          // Size fifo for proxy
 
   uint64_t step;      // Keep where we are
-
-  // Low latency mechanism
-  union ncclLLFifoLine *llBuff; // Local for recv, remote for send
   uint64_t llLastCleaning;
-
-  // High bandwidth, low latency protocol
-  uint64_t* ll128Buff; // Local for recv, remote for send
 };
 
 struct ncclConnector {
@@ -192,9 +200,7 @@ typedef enum {
 struct ncclDevComm {
   int rank;
   int nRanks;
-  int llBuffSize;
-  int ll128BuffSize;
-  int buffSize;
+  int buffSizes[NCCL_NUM_PROTOCOLS];
 
   // Flag to ask NCCL kernels to abort
   volatile uint32_t *abortFlag;

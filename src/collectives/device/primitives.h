@@ -223,7 +223,7 @@ class ncclPrimitives {
   }
 
   __device__ __forceinline__ void loadRecvConn(struct ncclConnInfo* conn, int i, T* directBuff) {
-    recvBuff[i] = (const T*)conn->buff;
+    recvBuff[i] = (const T*)conn->buffs[NCCL_PROTO_SIMPLE];
     recvStep[i] = conn->step;
     recvStep[i] = ROUNDUP(recvStep[i], SLICESPERCHUNK*SLICESTEPS);
     recvDirectBuff[i] = NULL;
@@ -250,7 +250,7 @@ class ncclPrimitives {
   }
 
   __device__ __forceinline__ void loadSendConn(struct ncclConnInfo* conn, int i, T* directBuff) {
-    sendBuff[i] = (T*)conn->buff;
+    sendBuff[i] = (T*)conn->buffs[NCCL_PROTO_SIMPLE];
     sendStep[i] = conn->step;
     sendStep[i] = ROUNDUP(sendStep[i], SLICESPERCHUNK*SLICESTEPS);
     sendDirectBuff[i] = NULL;

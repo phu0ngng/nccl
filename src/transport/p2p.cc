@@ -153,10 +153,8 @@ ncclResult_t p2pRecvSetup(struct ncclTopoSystem* topo, struct ncclTopoGraph* gra
   struct p2pRecvResources* resources;
   NCCLCHECK(ncclCalloc(&resources, 1));
   recv->transportResources = resources;
-  int recvSize = offsetof(struct ncclRecvMem, buff) +
-    recv->comm->llBuffSize +
-    recv->comm->ll128BuffSize +
-    recv->comm->buffSize;
+  int recvSize = offsetof(struct ncclRecvMem, buff);
+  for (int p=0; p<NCCL_NUM_PROTOCOLS; p++) recvSize += recv->comm->buffSizes[p];
   ALIGN_SIZE(recvSize, CUDA_IPC_MIN);
   NCCLCHECK(ncclCudaCalloc((char**)&resources->devMem, recvSize));
 
@@ -216,9 +214,11 @@ static ncclResult_t p2pSendConnect(struct ncclConnect* connectInfo, int nranks, 
     }
   }
 
-  send->conn.buff = remDevMem->buff+send->comm->llBuffSize+send->comm->ll128BuffSize;
-  send->conn.llBuff = (union ncclLLFifoLine*)remDevMem->buff;
-  send->conn.ll128Buff = (uint64_t*)(remDevMem->buff+send->comm->llBuffSize);
+  int offset = 0;
+  for (int p=0; p<NCCL_NUM_PROTOCOLS; p++) {
+    send->conn.buffs[p] = remDevMem->buff + offset;
+    offset += send->comm->buffSizes[p];
+  }
   send->conn.tail = &remDevMem->tail;
   send->conn.opCountRem = &remDevMem->opCount;
   send->conn.head = &resources->devMem->head;
@@ -247,9 +247,11 @@ ncclResult_t p2pRecvConnect(struct ncclConnect* connectInfo, int nranks, int ran
     }
   }
 
-  recv->conn.buff = resources->devMem->buff+recv->comm->llBuffSize+recv->comm->ll128BuffSize;
-  recv->conn.llBuff = (union ncclLLFifoLine*)resources->devMem->buff;
-  recv->conn.ll128Buff = (uint64_t*)(resources->devMem->buff+recv->comm->llBuffSize);
+  int offset = 0;
+  for (int p=0; p<NCCL_NUM_PROTOCOLS; p++) {
+    recv->conn.buffs[p] = resources->devMem->buff + offset;
+    offset += recv->comm->buffSizes[p];
+  }
   recv->conn.tail = &resources->devMem->tail;
   recv->conn.opCountLoc = &resources->devMem->opCount;
   recv->conn.head = &remDevMem->head;

@@ -94,10 +94,9 @@ ncclResult_t shmRecvSetup(struct ncclTopoSystem* topo, struct ncclTopoGraph* gra
 
   char shmName[MAX_SHM_NAME_LEN];
   sprintf(shmName, "nccl-shm-recv-%lx-%d-%d-%d", info.pidHash, info.id, info.sendRank, info.recvRank);
-  info.shmSize = resources->shmSize = offsetof(struct ncclRecvMem, buff) +
-    recv->comm->llBuffSize +
-    recv->comm->ll128BuffSize +
-    recv->comm->buffSize;
+  int shmSize = offsetof(struct ncclRecvMem, buff);
+  for (int p=0; p<NCCL_NUM_PROTOCOLS; p++) shmSize += recv->comm->buffSizes[p];
+  info.shmSize = resources->shmSize = shmSize;
   TRACE(NCCL_SHM,"Open shmName %s shmSize %d", shmName, info.shmSize);
   NCCLCHECK(shmOpen(shmName, resources->shmSize, (void**)&resources->hostMem, (void**)&resources->devHostMem, 1));
 
@@ -121,9 +120,11 @@ ncclResult_t shmSendConnect(struct ncclConnect* connectInfo, int nranks, int ran
   NCCLCHECK(shmUnlink(shmName));
 
   send->transportResources = resources;
-  send->conn.buff = resources->devRemHostMem->buff+send->comm->llBuffSize+send->comm->ll128BuffSize;
-  send->conn.llBuff = (union ncclLLFifoLine*)(resources->devRemHostMem->buff);
-  send->conn.ll128Buff = (uint64_t*)(resources->devRemHostMem->buff+send->comm->llBuffSize);
+  int offset = 0;
+  for (int p=0; p<NCCL_NUM_PROTOCOLS; p++) {
+    send->conn.buffs[p] = resources->devRemHostMem->buff + offset;
+    offset += send->comm->buffSizes[p];
+  }
   send->conn.tail = &resources->devRemHostMem->tail;
   send->conn.opCountRem = &resources->devRemHostMem->opCount;
 
@@ -146,9 +147,11 @@ ncclResult_t shmRecvConnect(struct ncclConnect* connectInfo, int nranks, int ran
   recv->conn.head = &resources->devRemHostMem->head;
   recv->conn.opCountRem = &resources->devRemHostMem->opCount;
 
-  recv->conn.buff = resources->devHostMem->buff+recv->comm->llBuffSize+recv->comm->ll128BuffSize;
-  recv->conn.llBuff = (union ncclLLFifoLine*)resources->devHostMem->buff;
-  recv->conn.ll128Buff = (uint64_t*)(resources->devHostMem->buff+recv->comm->llBuffSize);
+  int offset = 0;
+  for (int p=0; p<NCCL_NUM_PROTOCOLS; p++) {
+    recv->conn.buffs[p] = resources->devHostMem->buff + offset;
+    offset += recv->comm->buffSizes[p];
+  }
   recv->conn.tail = &resources->devHostMem->tail;
   recv->conn.opCountLoc = &resources->devHostMem->opCount;
   return ncclSuccess;

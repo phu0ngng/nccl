@@ -165,7 +165,7 @@ class ncclLLPrimitives {
   }
 
   __device__ __forceinline__ void loadRecvConn(struct ncclConnInfo* conn, int i) {
-    recvBuff[i] = conn->llBuff;
+    recvBuff[i] = (union ncclLLFifoLine*)conn->buffs[NCCL_PROTO_LL];
     recvStep[i] = conn->step;
     if (wid == i) recvConn = conn;
     nrecv++;
@@ -180,7 +180,7 @@ class ncclLLPrimitives {
   }
 
   __device__ __forceinline__ void loadSendConn(struct ncclConnInfo* conn, int i) {
-    sendBuff[i] = conn->llBuff;
+    sendBuff[i] = (union ncclLLFifoLine*)conn->buffs[NCCL_PROTO_LL];
     sendStep[i] = conn->step;
     if (wid == i) sendConn = conn;
     nsend++;

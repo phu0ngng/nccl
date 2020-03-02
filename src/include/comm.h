@@ -88,9 +88,7 @@ struct ncclComm {
   int nChannels;
 
   // Buffer sizes
-  int llBuffSize;
-  int ll128BuffSize;
-  int buffSize;
+  int buffSizes[NCCL_NUM_PROTOCOLS];
 
   // Algorithm/Protocols thresholds
   ssize_t threadThresholds[NCCL_NUM_ALGORITHMS][NCCL_NUM_PROTOCOLS];
