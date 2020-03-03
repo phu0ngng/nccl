@@ -238,8 +238,9 @@ ncclResult_t ncclGetLevel(int* level, const char* disableEnv, const char* levelE
 }
 
 int ncclTopoUserP2pLevel = -1;
-ncclResult_t ncclTopoCheckP2p(struct ncclTopoSystem* system, int64_t id1, int64_t id2, int* p2p) {
+ncclResult_t ncclTopoCheckP2p(struct ncclTopoSystem* system, int64_t id1, int64_t id2, int* p2p, int *read) {
   *p2p = 0;
+  *read = 0;
 
   // Get GPUs from topology
   int g1, g2;
@@ -268,6 +269,12 @@ ncclResult_t ncclTopoCheckP2p(struct ncclTopoSystem* system, int64_t id1, int64_
 
   // Compute the PCI distance and compare with the p2pLevel.
   if (path->type <= p2pLevel) *p2p = 1;
+
+  if (path->type == PATH_NVL) {
+    struct ncclTopoNode* gpu2 = system->nodes[GPU].nodes+g2;
+    // Enable P2P Read for Ampere/NVLink only
+    if ((gpu1->gpu.cudaCompCap == gpu2->gpu.cudaCompCap) && (gpu1->gpu.cudaCompCap == 80)) *read = 1;
+  }
 
   return ncclSuccess;
 }
@@ -341,8 +348,8 @@ ncclResult_t ncclTopoComputePaths(struct ncclTopoSystem* system, struct ncclPeer
 
     // Update path when we don't want to / can't use GPU Direct P2P
     for (int p=0; p<system->nodes[GPU].count; p++) {
-      int p2p;
-      NCCLCHECK(ncclTopoCheckP2p(system, system->nodes[GPU].nodes[p].id, system->nodes[GPU].nodes[g].id, &p2p));
+      int p2p, read;
+      NCCLCHECK(ncclTopoCheckP2p(system, system->nodes[GPU].nodes[p].id, system->nodes[GPU].nodes[g].id, &p2p, &read));
       if (p2p == 0) {
         // Divert all traffic through the CPU
         int cpu;
