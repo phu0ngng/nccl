@@ -328,7 +328,6 @@ static ncclResult_t getLoopInfo(struct ncclInfo* info) {
   }
   return ncclSuccess;
 }
-ncclResult_t connectPeer(struct ncclComm* comm, int peerrecv, int peersend);
 
 static int nChannelsP2P(struct ncclInfo* info, int bytes) {
   if(bytes<0) return 0;
@@ -336,12 +335,23 @@ static int nChannelsP2P(struct ncclInfo* info, int bytes) {
   int maxchannels = info->comm->nChannels; //int channels = info->comm->nChannels/(info->comm->nRanks-1);
   return std::max<unsigned>(1,std::min<unsigned>(maxchannels, NCCL_STEPS*bytes/info->comm->channels[0].buffSize));
 }
+ncclResult_t p2pSetup(struct ncclComm* comm, struct ncclTopoGraph* graph, struct ncclChannel* channel, int nrecv, int* peerRecv, int nsend, int* peerSend);
 
 static ncclResult_t computeColl(struct ncclInfo* info /* input */, struct ncclColl* coll, struct ncclProxyArgs* proxyArgs /* output */) {
   if(info->coll==ncclCollSendRecv) {
-    if(info->root!=-1) //non-async, preconnect now
-      NCCLCHECK(connectPeer(info->comm,info->recvbuff!=NULL?info->root:-1,info->sendbuff!=NULL?info->root:-1));
+    if(info->root!=-1) { //non-async, preconnect now
+      int peerfrom=info->recvbuff!=NULL?info->root:-1;
+      int peerto=info->sendbuff!=NULL?info->root:-1;
+      for (int c=0; c<info->comm->nChannels; c++) {
+        struct ncclChannel* channel = info->comm->channels+c;
+        int connectRecv = peerfrom>=0 && !channel->peers[peerfrom].recv.connected;
+        int connectSend = peerto>=0 && !channel->peers[peerto].send.connected;
 
+        if(!connectRecv && !connectSend) continue;
+        NCCLCHECK(p2pSetup(info->comm, NULL, channel, 1,&peerfrom, 1, &peerto));
+        NCCLCHECK(ncclCudaMemcpy(info->comm->channels[c].devPeers, info->comm->channels[c].peers, info->comm->nRanks+1));
+      }
+    }
     coll->args.nChannels = std::max<unsigned>(nChannelsP2P(info,info->sendbytes),nChannelsP2P(info,info->recvbytes));
     coll->args.sendbuff = info->sendbuff;
     coll->args.recvbuff = info->recvbuff;
@@ -466,12 +476,13 @@ static ncclResult_t saveKernel(struct ncclInfo* info) {
     if (nSubChannels == 2) {
       info->pattern = (channelId < info->comm->nChannels/nSubChannels) ? ncclPatternCollTreeUp : ncclPatternCollTreeDown;
     }
-    NCCLCHECK(transportSaveProxies(&proxyArgs, info->pattern, info->root, info->comm->nRanks));
+
     if(info->coll==ncclCollSendRecv)
       info->comm->myParams->gridDim.x = std::max<unsigned>(info->comm->myParams->gridDim.x,channelId+1);
-    else 
+    else {
+      NCCLCHECK(transportSaveProxiesColl(&proxyArgs, info->pattern, info->root, info->comm->nRanks));
       info->comm->myParams->gridDim.x++;
-
+    }
     int opIndex = channel->collFifoTail;
     struct ncclColl* c = channel->collectives+opIndex;
     volatile uint8_t* activePtr = (volatile uint8_t*)&c->active;
@@ -488,6 +499,7 @@ static ncclResult_t saveKernel(struct ncclInfo* info) {
         size_t real_sendsize = std::min<long>(info->sendbytes-send_start_pos,send_chunks_per_ch*min_chunk);
         c->args.p2p.sendCount=real_sendsize<=0 && bid!=0?-1:real_sendsize;
         c->args.sendbuff=(char*)c->args.sendbuff+send_start_pos;
+        transportSaveProxySend(info,channel,(info->comm->rank+info->delta)%info->comm->nRanks,c->args.p2p.sendCount);
       }
       if(info->recvbytes!=-1) {
         size_t recv_chunks=(info->recvbytes+min_chunk-1)/min_chunk;
@@ -497,6 +509,7 @@ static ncclResult_t saveKernel(struct ncclInfo* info) {
         size_t real_recvsize = std::min<long>(info->recvbytes-recv_start_pos,recv_chunks_per_ch*min_chunk);
         c->args.p2p.recvCount=real_recvsize<=0 && bid!=0?-1:real_recvsize;
         c->args.recvbuff=(char*)c->args.recvbuff+recv_start_pos;
+        transportSaveProxyRecv(info,channel,(info->comm->nRanks+info->comm->rank-info->delta)%info->comm->nRanks,c->args.p2p.recvCount);
       }
     } else c->args.bid = bid % coll.args.nChannels;
 

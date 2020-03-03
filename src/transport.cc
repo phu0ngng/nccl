@@ -113,7 +113,38 @@ static ncclResult_t SaveProxy(int peer, struct ncclProxyArgs* args) {
   return ncclSuccess;
 }
 
-ncclResult_t transportSaveProxies(struct ncclProxyArgs* args, int pattern, int root, int nranks) {
+ncclResult_t transportSaveProxySend(struct ncclInfo* info,struct ncclChannel* channel,int peersend,size_t sendcount) {
+  if(peersend<0) return ncclSuccess;
+  struct ncclProxyArgs args;
+  memset(&args, 0, sizeof(struct ncclProxyArgs));
+  args.channel = channel;
+  args.sliceSteps = 1;
+  args.chunkSteps = 1;
+  args.protocol = NCCL_PROTO_SIMPLE;
+  args.opCount = info->comm->opCount;
+  args.dtype = info->datatype;
+  args.nsteps=1;  
+  NCCLCHECK(SaveProxy<proxySend>(peersend, &args));
+  return ncclSuccess;
+}
+
+ncclResult_t transportSaveProxyRecv(struct ncclInfo* info,struct ncclChannel* channel,int peerrecv,size_t recvcount) {
+  if(peerrecv<0) return ncclSuccess;
+  struct ncclProxyArgs args;
+  memset(&args, 0, sizeof(struct ncclProxyArgs));
+  args.channel = channel;
+  args.sliceSteps = 1;
+  args.chunkSteps = 1;
+  args.protocol = NCCL_PROTO_SIMPLE;
+  args.opCount = info->comm->opCount;
+  args.dtype = info->datatype;
+  args.nsteps=1;
+  NCCLCHECK(SaveProxy<proxyRecv>(peerrecv, &args));
+  return ncclSuccess;
+}
+
+
+ncclResult_t transportSaveProxiesColl(struct ncclProxyArgs* args, int pattern, int root, int nranks) {
   if (pattern == ncclPatternRing || pattern == ncclPatternRingTwice || pattern == ncclPatternPipelineFrom || pattern == ncclPatternPipelineTo) {
     struct ncclRing* ring = &args->channel->ring;
     if (NeedProxy(RECV, pattern, root, ring, nranks)) NCCLCHECK(SaveProxy<proxyRecv>(ring->prev, args));

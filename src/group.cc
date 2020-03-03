@@ -116,16 +116,23 @@ ncclResult_t ncclGroupStart() {
 }
 
 void isPeerConnected(struct ncclComm* comm, int peerfrom, int peerto,int* recvconnected, int *sendconnected);
-ncclResult_t connectPeer(struct ncclComm* comm, int peerfrom, int peerto);
 ncclResult_t scheduleSendRecv(struct ncclComm* comm, int delta, size_t recvbytes, void* recvbuff, size_t sendbytes, const void* sendbuff);
 ncclResult_t p2pSetup(struct ncclComm* comm, struct ncclTopoGraph* graph, struct ncclChannel* channel, int nrecv, int* peerRecv, int nsend, int* peerSend);
 
 void* ncclAsyncThreadPreconnect(void* args_) {
   struct ncclAsyncArgs* args = (struct ncclAsyncArgs*)args_;
   CUCHECK(cudaSetDevice(args->coll.comm->cudaDev));
+  struct ncclTopoGraph ringGraph;
+  ringGraph.id = 0;
+  ringGraph.pattern = NCCL_TOPO_PATTERN_RING;
+  ringGraph.crossNic = 2;//ncclParamCrossNic();
+  ringGraph.collNet = 0;
+  ringGraph.minChannels = 1;
+  ringGraph.maxChannels = MAXCHANNELS/2;
+  CHECK(ncclTopoCompute(args->coll.comm->topo, &ringGraph));
   for (int c=0; c<args->coll.comm->nChannels; c++) {
     struct ncclChannel* channel = args->coll.comm->channels+c;
-    CHECK(p2pSetup(args->coll.comm,NULL,channel,args->coll.nrecv,args->coll.recv,args->coll.nsend,args->coll.send));
+    CHECK(p2pSetup(args->coll.comm,&ringGraph,channel,args->coll.nrecv,args->coll.recv,args->coll.nsend,args->coll.send));
   }
   return args;
 }
