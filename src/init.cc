@@ -412,7 +412,7 @@ static ncclResult_t computeBuffSizes(struct ncclComm* comm) {
   NCCLCHECK(ncclTopoCpuType(comm->topo, &cpuArch, &cpuVendor, &cpuModel));
 
   int64_t envs[NCCL_NUM_PROTOCOLS] = { ncclParamBuffSize(), ncclParamLlBuffSize(), ncclParamLl128BuffSize() };
-  int defaults[NCCL_NUM_PROTOCOLS] = { DEFAULT_BUFFSIZE, DEFAULT_LL_BUFFSIZE, DEFAULT_LL128_BUFFSIZE };
+  int defaults[NCCL_NUM_PROTOCOLS] = { DEFAULT_LL_BUFFSIZE, DEFAULT_LL128_BUFFSIZE, DEFAULT_BUFFSIZE };
 
   if (cpuArch == NCCL_TOPO_CPU_ARCH_ARM) defaults[NCCL_PROTO_SIMPLE] = DEFAULT_BUFFSIZE_ARM;
 
