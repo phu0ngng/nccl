@@ -123,7 +123,7 @@ ncclResult_t transportSaveProxySend(struct ncclInfo* info,struct ncclChannel* ch
   args.protocol = NCCL_PROTO_SIMPLE;
   args.opCount = info->comm->opCount;
   args.dtype = info->datatype;
-  args.nsteps=1;  
+  args.nsteps=sendcount<0?0:sendcount==0?1:DIVUP(sendcount,channel->buffSize/NCCL_STEPS);  
   NCCLCHECK(SaveProxy<proxySend>(peersend, &args));
   return ncclSuccess;
 }
@@ -138,7 +138,7 @@ ncclResult_t transportSaveProxyRecv(struct ncclInfo* info,struct ncclChannel* ch
   args.protocol = NCCL_PROTO_SIMPLE;
   args.opCount = info->comm->opCount;
   args.dtype = info->datatype;
-  args.nsteps=1;
+  args.nsteps=recvcount<0?0:recvcount==0?1:DIVUP(recvcount,channel->buffSize/NCCL_STEPS);
   NCCLCHECK(SaveProxy<proxyRecv>(peerrecv, &args));
   return ncclSuccess;
 }
