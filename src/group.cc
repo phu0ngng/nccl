@@ -9,8 +9,10 @@
 #include "enqueue.h"
 
 #define MAX_ASYNC_OPS 128
+#define MAX_GROUP_INFOS NCCL_MAX_OPS /*(MAX_ASYNC_OPS*NCCL_MAX_OPS)*/
 thread_local pthread_t ncclGroupThreads[MAX_ASYNC_OPS];
 thread_local int ncclGroupIndex = 0;
+thread_local int ncclGroupInfoCount = 0;
 thread_local int ncclGroupMode = 0;
 thread_local ncclResult_t ncclGroupError = ncclSuccess;
 
@@ -50,6 +52,7 @@ struct ncclAsyncArgs {
 };
 
 thread_local struct ncclAsyncArgs ncclGroupArgs[MAX_ASYNC_OPS];
+thread_local struct ncclInfo ncclGroupInfos[MAX_GROUP_INFOS];	/*FIXME: determine max number */
 
 #define CHECK(a) do { \
   if ((args->ret = (a)) != ncclSuccess) { \
@@ -81,8 +84,16 @@ ncclResult_t ncclAsyncInit(ncclInitFunc_t func, ncclComm_t* newcomm, int ndev, n
   return ncclSuccess;
 }
 
-ncclResult_t ncclAsyncColl(ncclComm_t comm) {
+ncclResult_t ncclAsyncColl(struct ncclInfo* info) {
+  if (ncclGroupInfoCount >= MAX_GROUP_INFOS) {
+    WARN("Too many group operations in progress, max is %d", MAX_GROUP_INFOS);
+    return ncclAsyncErrCheck(ncclInvalidUsage);
+  }
+  memcpy(ncclGroupInfos+ncclGroupInfoCount, info, sizeof(struct ncclInfo));
+  ncclGroupInfoCount++;
+
   struct ncclAsyncArgs* args = ncclGroupArgs;
+  ncclComm_t comm = info->comm;
   for (int i=0; i<ncclGroupIndex; i++) {
     if (args->coll.comm == comm) return ncclSuccess;
     args++;
@@ -112,6 +123,7 @@ ncclResult_t ncclGroupEnd() {
   int done = ncclGroupIndex;
   int doneArray[MAX_ASYNC_OPS];
   for (int i=0; i<ncclGroupIndex; i++) doneArray[i] = 0;
+  int c = 0, nChannels = 0, res = 0;
 
   ncclResult_t ret = ncclGroupError;
   if (ret != ncclSuccess) goto group_cleanup;
@@ -133,6 +145,23 @@ ncclResult_t ncclGroupEnd() {
    * prevent some ranks from launching their network threads, which would
    * prevent the NCCL call from completing, blocking the cudaFree call.
    */
+  // Move saveKernel from enqueue to here
+  if (ncclGroupInfoCount > 0) nChannels = ncclGroupInfos[0].comm->nChannels;
+  while (ncclGroupInfoCount - c > nChannels) {
+    struct ncclInfo* info = ncclGroupInfos+c;
+    info->nChannels = 1;
+    NCCLCHECKGOTO(saveKernel(info), ret, end);
+    c++;
+  }
+  res = ncclGroupInfoCount - c;
+  while (res > 0) {
+    struct ncclInfo* info = ncclGroupInfos+c;
+    info->nChannels = nChannels/res;
+    NCCLCHECKGOTO(saveKernel(info), ret, end);
+    nChannels -= info->nChannels;
+    c++; res--;
+  }
+
   for (int i=0; i<ncclGroupIndex; i++) {
     struct ncclAsyncArgs* args = ncclGroupArgs+i;
     if (args->funcType == ASYNC_FUNC_COLL) {
@@ -220,6 +249,7 @@ group_cleanup:
 end:
   ncclGroupError = ncclSuccess;
   ncclGroupIndex = 0;
+  ncclGroupInfoCount = 0;
   CUDACHECK(cudaSetDevice(savedDev)); // do other clean-ups first before calling cudaSetDevice, because this call can fail too
   return ret;
 }

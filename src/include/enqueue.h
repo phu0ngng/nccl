@@ -18,5 +18,6 @@ ncclResult_t ncclCpuBarrierOut(ncclComm_t comm);
 ncclResult_t ncclBarrierEnqueue(ncclComm_t comm);
 ncclResult_t ncclBarrierEnqueueWait(ncclComm_t comm);
 ncclResult_t ncclEnqueueEvents(ncclComm_t comm);
+ncclResult_t saveKernel(struct ncclInfo* info);
 
 #endif // End include guard

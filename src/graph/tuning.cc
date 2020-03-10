@@ -242,6 +242,7 @@ ncclResult_t ncclTopoGetAlgoTime(struct ncclInfo* info, int algorithm, int proto
   }
   int logSize = log2i(info->nBytes>>6);
   if (algorithm == NCCL_ALGO_TREE && logSize < 22) bw *= treeCorrectionFactor[protocol][logSize];
+  if (info->nChannels != 0) bw = bw / info->comm->nChannels * info->nChannels;	/* FIXME: nChannels may vary by graph, should better be graph->nChannels */
   *time = info->comm->latencies[info->coll][algorithm][protocol] + (info->nBytes) / (1000 * bw);
   return ncclSuccess;
 }

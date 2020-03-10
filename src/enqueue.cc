@@ -230,7 +230,6 @@ ncclResult_t ncclEnqueueEvents(ncclComm_t comm) {
 /*****************************************************************************/
 
 static ncclResult_t getAlgoInfo(struct ncclInfo* info) {
-  struct ncclComm* comm = info->comm;
   float minTime = 3600000000.0; // Hopefully no operation will take an hour to complete.
   // Find algorithm / protocol.
   info->algorithm = -1;
@@ -258,17 +257,32 @@ static ncclResult_t getAlgoInfo(struct ncclInfo* info) {
   }
   //if (comm->rank == 0) INFO(NCCL_TUNING, "%ld Bytes -> Algo %d proto %d time %f", info->nBytes, info->algorithm, info->protocol, minTime);
   TRACE(NCCL_COLL, "%ld Bytes -> Algo %d proto %d time %f", info->nBytes, info->algorithm, info->protocol, minTime);
+  return ncclSuccess;
+}
 
+static ncclResult_t getChannelInfo(struct ncclInfo* info) {
+  struct ncclComm* comm = info->comm;
   int nc = (info->algorithm == NCCL_ALGO_COLLNET) ? comm->nChannels/2 : comm->nChannels; // CollNet uses one channel for up and one channel for down
   int nt = comm->maxThreads[info->algorithm][info->protocol];
   int threadThreshold = comm->threadThresholds[info->algorithm][info->protocol];
   while (info->nBytes < nc*nt*threadThreshold) {
     if (info->algorithm != NCCL_ALGO_COLLNET && nc >= 2) nc--;
-    else if ((nt % 128) == 0) nt/=2;
+    else break;
+  }
+  info->nChannels = nc;
+  return ncclSuccess;
+}
+
+static ncclResult_t getThreadInfo(struct ncclInfo* info) {
+  struct ncclComm* comm = info->comm;
+  int nc = info->nChannels;	// nChannels must be known before this function is called
+  int nt = comm->maxThreads[info->algorithm][info->protocol];
+  int threadThreshold = comm->threadThresholds[info->algorithm][info->protocol];
+  while (info->nBytes < nc*nt*threadThreshold) {
+    if ((nt % 128) == 0) nt/=2;
     else break;
   }
   if (info->protocol == NCCL_PROTO_SIMPLE) nt += WARP_SIZE; // Extra warp for sync
-  info->nChannels = nc;
   info->nThreads = nt;
   return ncclSuccess;
 }
@@ -315,6 +329,8 @@ static ncclResult_t getLoopInfo(struct ncclInfo* info) {
 static ncclResult_t computeColl(struct ncclInfo* info /* input */, struct ncclColl* coll, struct ncclProxyArgs* proxyArgs /* output */) {
   // Set nstepsPerLoop and nchunksPerLoop
   NCCLCHECK(getAlgoInfo(info));
+  if (info->nChannels == 0) NCCLCHECK(getChannelInfo(info));
+  NCCLCHECK(getThreadInfo(info));
   NCCLCHECK(getPatternInfo(info));
   NCCLCHECK(getLoopInfo(info));
 
@@ -383,7 +399,7 @@ static ncclResult_t computeColl(struct ncclInfo* info /* input */, struct ncclCo
   return ncclSuccess;
 }
 
-static ncclResult_t saveKernel(struct ncclInfo* info) {
+ncclResult_t saveKernel(struct ncclInfo* info) {
   if (info->comm->nRanks == 1) {
     if (info->sendbuff != info->recvbuff)
       CUDACHECK(cudaMemcpyAsync(info->recvbuff, info->sendbuff, info->nBytes, cudaMemcpyDeviceToDevice, info->stream));
@@ -462,8 +478,8 @@ ncclResult_t ncclEnqueueCheck(struct ncclInfo* info) {
     NCCLCHECKGOTO(ArgsCheck(info), ret, end);
     // Always register comm even in case of error to make sure ncclGroupEnd
     // cleans it up.
-    NCCLCHECKGOTO(ncclAsyncColl(info->comm), ret, end);
-    NCCLCHECKGOTO(saveKernel(info), ret, end);
+    NCCLCHECKGOTO(ncclAsyncColl(info), ret, end);
+    //NCCLCHECKGOTO(saveKernel(info), ret, end);
 end:
     if (savedDev != -1) CUDACHECK(cudaSetDevice(savedDev));
     ncclAsyncErrCheck(ret);
