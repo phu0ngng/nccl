@@ -114,6 +114,8 @@ ncclResult_t ncclGroupStart() {
   return ncclSuccess;
 }
 
+NCCL_PARAM(AggrAdpChannel, "AGGR_ADP_CHANNEL", 0);
+
 NCCL_API(ncclResult_t, ncclGroupEnd);
 ncclResult_t ncclGroupEnd() {
   ncclGroupMode--;
@@ -124,6 +126,7 @@ ncclResult_t ncclGroupEnd() {
   int doneArray[MAX_ASYNC_OPS];
   for (int i=0; i<ncclGroupIndex; i++) doneArray[i] = 0;
   int c = 0, nChannels = 0, res = 0;
+  int adpChannel = ncclParamAggrAdpChannel();
 
   ncclResult_t ret = ncclGroupError;
   if (ret != ncclSuccess) goto group_cleanup;
@@ -149,14 +152,14 @@ ncclResult_t ncclGroupEnd() {
   if (ncclGroupInfoCount > 0) nChannels = ncclGroupInfos[0].comm->nChannels;
   while (ncclGroupInfoCount - c > nChannels) {
     struct ncclInfo* info = ncclGroupInfos+c;
-    info->nChannels = 1;
+    info->nChannels = adpChannel ? 1 : 0;
     NCCLCHECKGOTO(saveKernel(info), ret, end);
     c++;
   }
   res = ncclGroupInfoCount - c;
   while (res > 0) {
     struct ncclInfo* info = ncclGroupInfos+c;
-    info->nChannels = nChannels/res;
+    info->nChannels = adpChannel ? nChannels/res : 0;
     NCCLCHECKGOTO(saveKernel(info), ret, end);
     nChannels -= info->nChannels;
     c++; res--;
