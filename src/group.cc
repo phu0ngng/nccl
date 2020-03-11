@@ -124,7 +124,7 @@ void* ncclAsyncThreadPreconnect(void* args_) {
   CUCHECK(cudaSetDevice(args->coll.comm->cudaDev));
   for (int c=0; c<args->coll.comm->nChannels; c++) {
     struct ncclChannel* channel = args->coll.comm->channels+c;
-    CHECK(p2pSetup(args->coll.comm,NULL,channel,args->coll.nrecv,args->coll.recv,args->coll.nsend,args->coll.send));
+    CHECK(p2pSetup(args->coll.comm, NULL, channel, args->coll.nrecv, args->coll.recv, args->coll.nsend, args->coll.send));
   }
   return args;
 }
@@ -171,55 +171,80 @@ ncclResult_t ncclGroupEnd() {
       struct ncclP2Plist* p2plist = &args->coll.comm->p2plist;
       if (p2plist->count != 0) {
 
-        for(int delta=0;delta<args->coll.comm->nRanks;delta++) {
-          uint32_t from=(args->coll.comm->rank+args->coll.comm->nRanks-delta)%args->coll.comm->nRanks;
-          uint32_t to=(args->coll.comm->rank+delta)%args->coll.comm->nRanks;
+        for (int delta=0; delta<args->coll.comm->nRanks; delta++) {
+          uint32_t from = (args->coll.comm->rank+args->coll.comm->nRanks-delta)%args->coll.comm->nRanks;
+          uint32_t to = (args->coll.comm->rank+delta)%args->coll.comm->nRanks;
 
           int recv = p2plist->peerlist[from].recvcount>=0;
           int send = p2plist->peerlist[to].sendcount>=0;
-          if(send || recv) {
-            if(delta>0) {
-              int sendconnected,recvconnected;
-              isPeerConnected(args->coll.comm,recv?from:-1,send?to:-1,&recvconnected,&sendconnected);
-              if(!recvconnected) {
-                if(args->coll.recv==NULL)
+          if (send || recv) {
+            if (delta > 0) {
+              int sendconnected, recvconnected;
+              isPeerConnected(args->coll.comm, recv?from:-1, send?to:-1, &recvconnected, &sendconnected);
+              if (!recvconnected) {
+                if (args->coll.recv == NULL)
                   NCCLCHECK(ncclCalloc(&args->coll.recv, args->coll.comm->nRanks));
-                args->coll.recv[args->coll.nrecv++]=from;
+                args->coll.recv[args->coll.nrecv++] = from;
               }
-              if(!sendconnected) {
-                if(args->coll.send==NULL)
+              if (!sendconnected) {
+                if(args->coll.send == NULL)
                   NCCLCHECK(ncclCalloc(&args->coll.send, args->coll.comm->nRanks));
-                args->coll.send[args->coll.nsend++]=to;
+                args->coll.send[args->coll.nsend++] = to;
               }
             }
-            NCCLCHECK(scheduleSendRecv(args->coll.comm,delta,p2plist->peerlist[from].recvcount,p2plist->peerlist[from].recvbuff,
-                              p2plist->peerlist[to].sendcount,p2plist->peerlist[to].sendbuff));
-            p2plist->peerlist[from].recvcount=-1;
-            p2plist->peerlist[to].sendcount=-1;
           }
         }
-      p2plist->count=0;
-
-      if (args->coll.nrecv+args->coll.nsend>0)
-         pthread_create(ncclGroupThreads+i, NULL, ncclAsyncThreadPreconnect, args);
+        if (args->coll.nrecv+args->coll.nsend>0) {
+          pthread_create(ncclGroupThreads+i, NULL, ncclAsyncThreadPreconnect, args);
+        }
       }
     }
   }
 
   for (int i=0; i<ncclGroupIndex; i++) {
     struct ncclAsyncArgs* args = ncclGroupArgs+i;
-    if (args->funcType == ASYNC_FUNC_COLL)
-      if (args->coll.nrecv+args->coll.nsend>0) {
-        int err = pthread_join(ncclGroupThreads[i],NULL);
-        if (err != 0) {ret = ncclSystemError; printf("system err\n");}
-        NCCLCHECK(args->ret);
-        if(args->coll.send!=NULL) { free(args->coll.send);args->coll.send=NULL;args->coll.nsend=0; }
-        if(args->coll.recv!=NULL) { free(args->coll.recv);args->coll.recv=NULL;args->coll.nrecv=0; }
-        for (int c=0; c<args->coll.comm->nChannels; c++)
-          NCCLCHECK(ncclCudaMemcpy(args->coll.comm->channels[c].devPeers, args->coll.comm->channels[c].peers, args->coll.comm->nRanks+1));
+    if (args->funcType == ASYNC_FUNC_COLL && args->coll.nrecv+args->coll.nsend > 0) {
+      int err = pthread_join(ncclGroupThreads[i], NULL);
+      if (err != 0) {
+        WARN("Error waiting for pthread_join : %s\n", strerror(errno));
+        return ncclSystemError;
       }
+      NCCLCHECK(args->ret);
+      if (args->coll.send!=NULL) { free(args->coll.send); args->coll.send=NULL; args->coll.nsend=0; }
+      if (args->coll.recv!=NULL) { free(args->coll.recv); args->coll.recv=NULL; args->coll.nrecv=0; }
+      for (int c=0; c<args->coll.comm->nChannels; c++)
+        NCCLCHECK(ncclCudaMemcpy(args->coll.comm->channels[c].devPeers, args->coll.comm->channels[c].peers, args->coll.comm->nRanks+1));
+    }
   }
  
+  for (int i=0; i<ncclGroupIndex; i++) {
+    struct ncclAsyncArgs* args = ncclGroupArgs+i;
+    if (args->funcType == ASYNC_FUNC_COLL) {
+      struct ncclP2Plist* p2plist = &args->coll.comm->p2plist;
+      if (p2plist->count != 0) {
+        for (int delta=0; delta<args->coll.comm->nRanks; delta++) {
+          uint32_t from = (args->coll.comm->rank+args->coll.comm->nRanks-delta)%args->coll.comm->nRanks;
+          uint32_t to = (args->coll.comm->rank+delta)%args->coll.comm->nRanks;
+          int recvcount = p2plist->peerlist[from].recvcount;
+          int sendcount = p2plist->peerlist[to].sendcount;
+          if (sendcount || recvcount) {
+            NCCLCHECK(scheduleSendRecv(args->coll.comm, delta,
+                  recvcount, p2plist->peerlist[from].recvbuff,
+                  sendcount, p2plist->peerlist[to].sendbuff));
+            p2plist->peerlist[from].recvcount = -1;
+            p2plist->peerlist[to].sendcount = -1;
+          }
+        }
+        p2plist->count = 0;
+
+        if (args->coll.nrecv+args->coll.nsend>0) {
+          pthread_create(ncclGroupThreads+i, NULL, ncclAsyncThreadPreconnect, args);
+          printf("Launched connect pthread %p\n", ncclGroupThreads+i);
+        }
+      }
+    }
+  }
+
   /* Collectives are done in three steps :
    * 1. Barrier Check In. Only the last call may call cudaLaunchKernel[cooperative]
    * 2. Barrier Wait. No CUDA call is permitted
@@ -252,7 +277,6 @@ ncclResult_t ncclGroupEnd() {
       NCCLCHECKGOTO(ncclEnqueueEvents(args->coll.comm), ret, end);
     }
   }
-
 
   goto end;
 group_cleanup:
