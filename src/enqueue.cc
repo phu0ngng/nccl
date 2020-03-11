@@ -507,7 +507,7 @@ static ncclResult_t saveKernel(struct ncclInfo* info) {
         size_t real_sendsize = std::min<long>(info->sendbytes-send_start_pos,send_chunks_per_ch*min_chunk);
         c->args.p2p.sendCount=real_sendsize<=0 && bid!=0?-1:real_sendsize;
         c->args.sendbuff=(char*)c->args.sendbuff+send_start_pos;
-        transportSaveProxySend(info,channel,(info->comm->rank+info->delta)%info->comm->nRanks,c->args.p2p.sendCount);
+        NCCLCHECK(transportSaveProxySend(info,channel,(info->comm->rank+info->delta)%info->comm->nRanks,c->args.p2p.sendCount));
       }
       if(info->recvbytes!=-1) {
         size_t recv_chunks=(info->recvbytes+min_chunk-1)/min_chunk;
@@ -517,7 +517,7 @@ static ncclResult_t saveKernel(struct ncclInfo* info) {
         size_t real_recvsize = std::min<long>(info->recvbytes-recv_start_pos,recv_chunks_per_ch*min_chunk);
         c->args.p2p.recvCount=real_recvsize<=0 && bid!=0?-1:real_recvsize;
         c->args.recvbuff=(char*)c->args.recvbuff+recv_start_pos;
-        transportSaveProxyRecv(info,channel,(info->comm->nRanks+info->comm->rank-info->delta)%info->comm->nRanks,c->args.p2p.recvCount);
+        NCCLCHECK(transportSaveProxyRecv(info,channel,(info->comm->nRanks+info->comm->rank-info->delta)%info->comm->nRanks,c->args.p2p.recvCount));
       }
     } else c->args.bid = bid % coll.args.nChannels;
 
