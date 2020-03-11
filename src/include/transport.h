@@ -108,7 +108,6 @@ ncclResult_t transportAllocateProxyArgs(struct ncclComm* comm, struct ncclProxyA
 ncclResult_t transportSaveProxiesColl(struct ncclProxyArgs* args, int pattern, int root, int nranks);
 ncclResult_t transportSaveProxySend(struct ncclInfo* info,struct ncclChannel* channel,int peersend,size_t sendcount);
 ncclResult_t transportSaveProxyRecv(struct ncclInfo* info,struct ncclChannel* channel,int peerrecv,size_t recvcount);
-ncclResult_t transportSaveProxiesP2P(struct ncclInfo* info,int peerrecv,size_t recvcount, int peersend,size_t sendcount);
 ncclResult_t transportStartProxy(struct ncclComm* comm);
 ncclResult_t transportCreateProxy(struct ncclComm* comm);
 ncclResult_t transportDestroyProxy(struct ncclComm* comm);
