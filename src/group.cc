@@ -212,8 +212,6 @@ ncclResult_t ncclGroupEnd() {
       NCCLCHECK(args->ret);
       if (args->coll.send!=NULL) { free(args->coll.send); args->coll.send=NULL; args->coll.nsend=0; }
       if (args->coll.recv!=NULL) { free(args->coll.recv); args->coll.recv=NULL; args->coll.nrecv=0; }
-      for (int c=0; c<args->coll.comm->nChannels; c++)
-        NCCLCHECK(ncclCudaMemcpy(args->coll.comm->channels[c].devPeers, args->coll.comm->channels[c].peers, args->coll.comm->nRanks+1));
     }
   }
  

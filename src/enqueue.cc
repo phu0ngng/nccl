@@ -344,12 +344,7 @@ static ncclResult_t computeColl(struct ncclInfo* info /* input */, struct ncclCo
       int peerto=info->sendbuff!=NULL?info->root:-1;
       for (int c=0; c<info->comm->nChannels; c++) {
         struct ncclChannel* channel = info->comm->channels+c;
-        int connectRecv = peerfrom>=0 && !channel->peers[peerfrom].recv.connected;
-        int connectSend = peerto>=0 && !channel->peers[peerto].send.connected;
-
-        if(!connectRecv && !connectSend) continue;
-        NCCLCHECK(p2pSetup(info->comm, NULL, channel, 1,&peerfrom, 1, &peerto));
-        NCCLCHECK(ncclCudaMemcpy(info->comm->channels[c].devPeers, info->comm->channels[c].peers, info->comm->nRanks+1));
+        NCCLCHECK(p2pSetup(info->comm, NULL, channel, 1, &peerfrom, 1, &peerto));
       }
     }
     coll->args.nChannels = std::max<unsigned>(nChannelsP2P(info,info->sendbytes),nChannelsP2P(info,info->recvbytes));

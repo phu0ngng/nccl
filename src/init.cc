@@ -250,7 +250,6 @@ static ncclResult_t devCommSetup(ncclComm_t comm) {
   // Copy userRanks and peers
   for (int r=0; r<comm->nChannels; r++) {
     NCCLCHECK(ncclCudaMemcpy(comm->channels[r].ring.devUserRanks, comm->channels[r].ring.userRanks, comm->nRanks));
-    NCCLCHECK(ncclCudaMemcpy(comm->channels[r].devPeers, comm->channels[r].peers, comm->nRanks+1));
   }
 
   // Duplicate the dev comm on the device
@@ -432,6 +431,7 @@ ncclResult_t p2pSetup(struct ncclComm* comm, struct ncclTopoGraph* graph, struct
     NCCLCHECK(bootstrapRecv(comm->bootstrap, peer, &connect, sizeof(struct ncclConnect)));
     NCCLCHECK(conn->transportComm->connect(&connect, 1, comm->rank, conn));
     conn->connected = 1;
+    CUDACHECK(cudaMemcpy(&channel->devPeers[peer].send, conn, sizeof(struct ncclConnector), cudaMemcpyHostToDevice));
   }
   for (int i=0; i<nrecv; i++) {
     int peer = peerRecv[i];
@@ -442,6 +442,7 @@ ncclResult_t p2pSetup(struct ncclComm* comm, struct ncclTopoGraph* graph, struct
     NCCLCHECK(bootstrapRecv(comm->bootstrap, peer, &connect, sizeof(struct ncclConnect)));
     NCCLCHECK(conn->transportComm->connect(&connect, 1, comm->rank, conn));
     conn->connected = 1;
+    CUDACHECK(cudaMemcpy(&channel->devPeers[peer].recv, conn, sizeof(struct ncclConnector), cudaMemcpyHostToDevice));
   }
   TRACE(NCCL_INIT, "nsend %d nrecv %d nSkippedSend %u nSkippedRecv %u - DONE", nsend, nrecv, nSkippedSend, nSkippedRecv);
   return ncclSuccess;
@@ -526,6 +527,9 @@ static int collNetSetup(struct ncclComm* comm, struct ncclTopoGraph* collNetGrap
   // connect
   if (isMaster && ret > 0) {
     NCCLCHECKGOTO(transportComm->connect(masterConnects, nMasters, rankInCollNet, conn), res, cleanup);
+    struct ncclPeer* devRoot = channel->devPeers+nranks;
+    struct ncclConnector* devConn = (type == 1) ? &devRoot->recv : &devRoot->send;
+    CUDACHECKGOTO(cudaMemcpy(devConn, conn, sizeof(struct ncclConnector), cudaMemcpyHostToDevice), res, cleanup);
   }
   // recv side sends connect info to send side
   if (isMaster && type == 1) {
