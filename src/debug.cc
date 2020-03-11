@@ -107,7 +107,6 @@ void ncclDebugInit() {
     if (debugFn[0] != '\0') {
       FILE *file = fopen(debugFn, "w");
       if (file != NULL) {
-        INFO(NCCL_ALL,"DEBUG file is '%s'", debugFn);
         ncclDebugFile = file;
       }
     }
