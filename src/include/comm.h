@@ -134,6 +134,10 @@ struct ncclComm {
 
   // Whether this communicator uses collNet
   int collNetSupport;
+
+  // Store info of async operations
+  struct ncclInfo* asyncOps;
+  int asyncOpCount;
 };
 
 #endif
