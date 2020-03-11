@@ -182,11 +182,13 @@ ncclResult_t ncclGroupEnd() {
               int sendconnected,recvconnected;
               isPeerConnected(args->coll.comm,recv?from:-1,send?to:-1,&recvconnected,&sendconnected);
               if(!recvconnected) {
-                if(args->coll.recv==NULL) args->coll.recv = (int*)malloc(sizeof(int)*args->coll.comm->nRanks);
+                if(args->coll.recv==NULL)
+                  NCCLCHECK(ncclCalloc(&args->coll.recv, args->coll.comm->nRanks));
                 args->coll.recv[args->coll.nrecv++]=from;
               }
               if(!sendconnected) {
-                if(args->coll.send==NULL) args->coll.send = (int*)malloc(sizeof(int)*args->coll.comm->nRanks);
+                if(args->coll.send==NULL)
+                  NCCLCHECK(ncclCalloc(&args->coll.send, args->coll.comm->nRanks));
                 args->coll.send[args->coll.nsend++]=to;
               }
             }

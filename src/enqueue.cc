@@ -558,7 +558,8 @@ ncclResult_t ncclEnqueueCheck(struct ncclInfo* info) {
     NCCLCHECKGOTO(checkSetStream(info), ret, end);
     if(info->coll==ncclCollSendRecv) { //p2p stored separately
       //save in comm->p2plist
-      if(info->comm->p2plist.peerlist==NULL) info->comm->p2plist.peerlist = (ncclP2Pinfo*) calloc(info->comm->nRanks,sizeof(struct ncclP2Pinfo));
+      if(info->comm->p2plist.peerlist==NULL)
+        NCCLCHECK(ncclCalloc(&info->comm->p2plist.peerlist, info->comm->nRanks));
       info->comm->p2plist.count++;
       if(info->recvbuff==NULL) { //FIXME check if wasnt used already
         info->comm->p2plist.peerlist[info->root].sendcount=info->count;
