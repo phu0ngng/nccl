@@ -122,17 +122,9 @@ ncclResult_t p2pSetup(struct ncclComm* comm, struct ncclTopoGraph* graph, struct
 void* ncclAsyncThreadPreconnect(void* args_) {
   struct ncclAsyncArgs* args = (struct ncclAsyncArgs*)args_;
   CUCHECK(cudaSetDevice(args->coll.comm->cudaDev));
-  struct ncclTopoGraph ringGraph;
-  ringGraph.id = 0;
-  ringGraph.pattern = NCCL_TOPO_PATTERN_RING;
-  ringGraph.crossNic = 2;//ncclParamCrossNic();
-  ringGraph.collNet = 0;
-  ringGraph.minChannels = 1;
-  ringGraph.maxChannels = MAXCHANNELS/2;
-  CHECK(ncclTopoCompute(args->coll.comm->topo, &ringGraph));
   for (int c=0; c<args->coll.comm->nChannels; c++) {
     struct ncclChannel* channel = args->coll.comm->channels+c;
-    CHECK(p2pSetup(args->coll.comm,&ringGraph,channel,args->coll.nrecv,args->coll.recv,args->coll.nsend,args->coll.send));
+    CHECK(p2pSetup(args->coll.comm,NULL,channel,args->coll.nrecv,args->coll.recv,args->coll.nsend,args->coll.send));
   }
   return args;
 }

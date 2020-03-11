@@ -804,7 +804,33 @@ ncclResult_t ncclTopoDumpGraphs(struct ncclTopoSystem* system, int ngraphs, stru
   return ncclSuccess;
 }
 
-ncclResult_t ncclTopoGetNetDev(struct ncclTopoGraph* graph, int dir, int channelId, int* dev) {
-  *dev = graph->inter[(channelId%graph->nChannels)*2+dir];
+ncclResult_t ncclTopoGetNetDev(struct ncclTopoSystem* system, int rank, struct ncclTopoGraph* graph, int dir, int channelId, int* dev) {
+  if (graph) {
+    // Honor the net device in the graph
+    *dev = graph->inter[(channelId%graph->nChannels)*2+dir];
+  } else {
+    // Use closest net device
+    struct ncclTopoLinkList* paths = NULL;
+    for (int g=0; g<system->nodes[GPU].count; g++) {
+      struct ncclTopoNode* gpu = system->nodes[GPU].nodes+g;
+      if (gpu->gpu.rank == rank) paths = gpu->paths[NIC];
+    }
+    if (paths == NULL) return ncclInternalError;
+    int minType = paths[0].type;
+    int count = 1;
+    int* nets;
+    NCCLCHECK(ncclCalloc(&nets, system->nodes[NET].count));
+    nets[0] = 0;
+    for (int n=1; n<system->nodes[NET].count; n++) {
+      struct ncclTopoNode* net = system->nodes[GPU].nodes+n;
+      if (net->type < minType) {
+        minType = net->type;
+        count = 0;
+      }
+      if (net->type == minType) nets[count++] = n;
+    }
+    *dev = nets[channelId % count];
+    free(nets);
+  }
   return ncclSuccess;
 }

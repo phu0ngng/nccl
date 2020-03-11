@@ -348,15 +348,7 @@ static ncclResult_t computeColl(struct ncclInfo* info /* input */, struct ncclCo
         int connectSend = peerto>=0 && !channel->peers[peerto].send.connected;
 
         if(!connectRecv && !connectSend) continue;
-        struct ncclTopoGraph ringGraph;
-        ringGraph.id = 0;
-        ringGraph.pattern = NCCL_TOPO_PATTERN_RING;
-        ringGraph.crossNic = 2;//ncclParamCrossNic();
-        ringGraph.collNet = 0;
-        ringGraph.minChannels = 1;
-        ringGraph.maxChannels = MAXCHANNELS/2;
-        NCCLCHECK(ncclTopoCompute(info->comm->topo, &ringGraph));
-        NCCLCHECK(p2pSetup(info->comm, &ringGraph, channel, 1,&peerfrom, 1, &peerto));
+        NCCLCHECK(p2pSetup(info->comm, NULL, channel, 1,&peerfrom, 1, &peerto));
         NCCLCHECK(ncclCudaMemcpy(info->comm->channels[c].devPeers, info->comm->channels[c].peers, info->comm->nRanks+1));
       }
     }
