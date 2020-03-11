@@ -810,24 +810,26 @@ ncclResult_t ncclTopoGetNetDev(struct ncclTopoSystem* system, int rank, struct n
     *dev = graph->inter[(channelId%graph->nChannels)*2+dir];
   } else {
     // Use closest net device
-    struct ncclTopoLinkList* paths = NULL;
-    for (int g=0; g<system->nodes[GPU].count; g++) {
+    int g;
+    for (g=0; g<system->nodes[GPU].count; g++) {
       struct ncclTopoNode* gpu = system->nodes[GPU].nodes+g;
-      if (gpu->gpu.rank == rank) paths = gpu->paths[NIC];
+      if (gpu->gpu.rank == rank) break;
     }
-    if (paths == NULL) return ncclInternalError;
-    int minType = paths[0].type;
+    if (g == system->nodes[GPU].count) return ncclInternalError;
+    int minType = PATH_SYS;
+    int maxWidth = 0;
     int count = 1;
     int* nets;
     NCCLCHECK(ncclCalloc(&nets, system->nodes[NET].count));
     nets[0] = 0;
     for (int n=1; n<system->nodes[NET].count; n++) {
-      struct ncclTopoNode* net = system->nodes[GPU].nodes+n;
-      if (net->type < minType) {
-        minType = net->type;
+      struct ncclTopoLinkList* path = system->nodes[NET].nodes[n].paths[GPU]+g;
+      if (path->width > maxWidth || (path->width == maxWidth && path->type < minType)) {
+        maxWidth = path->width;
+        minType = path->type;
         count = 0;
       }
-      if (net->type == minType) nets[count++] = n;
+      if (path->width == maxWidth && path->type == minType) nets[count++] = n;
     }
     *dev = nets[channelId % count];
     free(nets);
