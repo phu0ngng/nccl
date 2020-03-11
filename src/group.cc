@@ -111,8 +111,6 @@ ncclResult_t ncclGroupStart() {
   return ncclSuccess;
 }
 
-NCCL_PARAM(AggrAdpChannel, "AGGR_ADP_CHANNEL", 0);
-
 NCCL_API(ncclResult_t, ncclGroupEnd);
 ncclResult_t ncclGroupEnd() {
   ncclGroupMode--;
@@ -122,7 +120,6 @@ ncclResult_t ncclGroupEnd() {
   int done = ncclGroupIndex;
   int doneArray[MAX_ASYNC_OPS];
   for (int i=0; i<ncclGroupIndex; i++) doneArray[i] = 0;
-  int adpChannel = ncclParamAggrAdpChannel();
 
   ncclResult_t ret = ncclGroupError;
   if (ret != ncclSuccess) goto group_cleanup;
@@ -136,6 +133,7 @@ ncclResult_t ncclGroupEnd() {
   }
 
   /* Collectives are done in three steps :
+   * 0. Save kernels previously enqueued. Compute channel, algo, proto, etc.
    * 1. Barrier Check In. Only the last call may call cudaLaunchKernel[cooperative]
    * 2. Barrier Wait. No CUDA call is permitted
    * 3. Enqueue Events. CUDA event wait/enqueue.
@@ -144,31 +142,14 @@ ncclResult_t ncclGroupEnd() {
    * prevent some ranks from launching their network threads, which would
    * prevent the NCCL call from completing, blocking the cudaFree call.
    */
-  // Move saveKernel from enqueue to here
   for (int i=0; i<ncclGroupIndex; i++) {
     struct ncclAsyncArgs* args = ncclGroupArgs+i;
     if (args->funcType == ASYNC_FUNC_COLL) {
       ncclComm_t comm = args->coll.comm;
-      int nChannels = comm->nChannels;
-      int c = 0, res = 0;
-      while (comm->asyncOpCount - c > nChannels) {
-        struct ncclInfo* info = comm->asyncOps+c;
-        info->nChannels = adpChannel ? 1 : 0;
-        NCCLCHECKGOTO(saveKernel(info), ret, end);
-        c++;
-      }
-      res = comm->asyncOpCount - c;
-      while (res > 0) {
-        struct ncclInfo* info = comm->asyncOps+c;
-        info->nChannels = adpChannel ? nChannels/res : 0;
-        NCCLCHECKGOTO(saveKernel(info), ret, end);
-        nChannels -= info->nChannels;
-        c++; res--;
-      }
+      NCCLCHECKGOTO(ncclSaveKernelComm(comm), ret, end);
       comm->asyncOpCount = 0;
     }
   }
-
   for (int i=0; i<ncclGroupIndex; i++) {
     struct ncclAsyncArgs* args = ncclGroupArgs+i;
     if (args->funcType == ASYNC_FUNC_COLL) {

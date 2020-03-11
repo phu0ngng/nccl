@@ -138,6 +138,7 @@ struct ncclComm {
   // Store info of async operations
   struct ncclInfo* asyncOps;
   int asyncOpCount;
+  bool useAdpChannel;
 };
 
 #endif

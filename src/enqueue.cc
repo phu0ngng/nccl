@@ -399,7 +399,7 @@ static ncclResult_t computeColl(struct ncclInfo* info /* input */, struct ncclCo
   return ncclSuccess;
 }
 
-ncclResult_t saveKernel(struct ncclInfo* info) {
+static ncclResult_t saveKernel(struct ncclInfo* info) {
   if (info->comm->nRanks == 1) {
     if (info->sendbuff != info->recvbuff)
       CUDACHECK(cudaMemcpyAsync(info->recvbuff, info->sendbuff, info->nBytes, cudaMemcpyDeviceToDevice, info->stream));
@@ -458,6 +458,25 @@ ncclResult_t saveKernel(struct ncclInfo* info) {
   return ncclSuccess;
 }
 
+ncclResult_t ncclSaveKernelComm(ncclComm_t comm) {
+  int nChannels = comm->nChannels;
+  int c = 0, res = 0;
+  while (comm->asyncOpCount - c > nChannels) {
+    struct ncclInfo* info = comm->asyncOps+c;
+    info->nChannels = comm->useAdpChannel ? 1 : 0;
+    NCCLCHECK(saveKernel(info));
+    c++;
+  }
+  res = comm->asyncOpCount - c;
+  while (res > 0) {
+    struct ncclInfo* info = comm->asyncOps+c;
+    info->nChannels = comm->useAdpChannel ? nChannels/res : 0;
+    NCCLCHECK(saveKernel(info));
+    nChannels -= info->nChannels;
+    c++; res--;
+  }
+  return ncclSuccess;
+}
 
 ncclResult_t ncclEnqueueCheck(struct ncclInfo* info) {
   if (info->comm == NULL) return ncclInvalidArgument;
