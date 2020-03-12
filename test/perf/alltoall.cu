@@ -12,7 +12,7 @@ void AlltoAllGetCollByteCount(size_t *sendcount, size_t *recvcount, size_t *para
   *recvcount = (count/nranks)*nranks;
   *sendInplaceOffset = 0;
   *recvInplaceOffset = 0;
-  *paramcount = *sendcount;
+  *paramcount = count/nranks;
 }
 
 testResult_t AlltoAllInitData(struct threadArgs* args, ncclDataType_t type, ncclRedOp_t op, int root, int rep, int in_place) {
@@ -27,9 +27,9 @@ testResult_t AlltoAllInitData(struct threadArgs* args, ncclDataType_t type, nccl
     int rank = ((args->proc*args->nThreads + args->thread)*args->nGpus + i);
     CUDACHECK(cudaMemset(args->recvbuffs[i], 0, args->expectedBytes));
     void* data = in_place ? args->recvbuffs[i] : args->sendbuffs[i];
+    TESTCHECK(InitData(data, sendcount, type, rep, rank));
     for (int j=0; j<nranks; j++) {
-      TESTCHECK(InitData(((char*)data)+args->sendBytes/nranks*j, sendcount/nranks, type, rep+j, rank));
-      TESTCHECK(InitData(((char*)args->expected[i])+args->sendBytes/nranks*j, sendcount/nranks, type, rep+(in_place?j:rank), in_place?rank:j));
+      TESTCHECK(InitData(((char*)args->expected[i])+args->sendBytes/nranks*j, sendcount/nranks, type, rep+rank*sendcount/nranks, j));
     }
     CUDACHECK(cudaDeviceSynchronize());
   }
@@ -47,14 +47,13 @@ void AlltoAllGetBw(size_t count, int typesize, double sec, double* algBw, double
 testResult_t AlltoAllRunColl(void* sendbuff, void* recvbuff, size_t count, ncclDataType_t type, ncclRedOp_t op, int root, ncclComm_t comm, cudaStream_t stream) {
   int nRanks;
   NCCLCHECK(ncclCommCount(comm, &nRanks));
-  size_t chunk = count / nRanks;
-  size_t rankOffset = chunk * wordSize(type);
-  if ((sendbuff == recvbuff) || (chunk == 0)) return testSuccess;
+  size_t rankOffset = count * wordSize(type);
+  if (count == 0) return testSuccess;
 
   NCCLCHECK(ncclGroupStart());
   for (int r=0; r<nRanks; r++) {
-    NCCLCHECK(ncclSend(((char*)sendbuff)+r*rankOffset, chunk, type, r, comm, stream));
-    NCCLCHECK(ncclRecv(((char*)recvbuff)+r*rankOffset, chunk, type, r, comm, stream));
+    NCCLCHECK(ncclSend(((char*)sendbuff)+r*rankOffset, count, type, r, comm, stream));
+    NCCLCHECK(ncclRecv(((char*)recvbuff)+r*rankOffset, count, type, r, comm, stream));
   }
   NCCLCHECK(ncclGroupEnd());
 
