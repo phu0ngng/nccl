@@ -7,6 +7,7 @@
 #include "group.h"
 #include "debug.h"
 #include "enqueue.h"
+#include "transport.h"
 
 #define MAX_ASYNC_OPS 128
 thread_local pthread_t ncclGroupThreads[MAX_ASYNC_OPS];
@@ -33,8 +34,8 @@ struct ncclInitArgs {
 };
 struct ncclCollArgs {
   ncclComm_t comm;
-  int *send,*recv;
-  int nsend,nrecv;
+  int *send, *recv;
+  int nsend, nrecv;
 };
 
 enum ncclAsyncFuncType {
@@ -53,15 +54,15 @@ struct ncclAsyncArgs {
 
 thread_local struct ncclAsyncArgs ncclGroupArgs[MAX_ASYNC_OPS];
 
-#define CHECK(a) do { \
+#define NCCLCHECKTHREAD(a) do { \
   if ((args->ret = (a)) != ncclSuccess) { \
     INFO(NCCL_INIT,"%s:%d -> %d [Async thread]", __FILE__, __LINE__, args->ret); \
     return args; \
   } \
 } while(0)
 
-#define CUCHECK(a) do { \
-  if (((a)) != cudaSuccess) { \
+#define CUDACHECKTHREAD(a) do { \
+  if ((a) != cudaSuccess) { \
     INFO(NCCL_INIT,"%s:%d -> %d [Async thread]", __FILE__, __LINE__, args->ret); \
     args->ret = ncclUnhandledCudaError; \
     return args; \
@@ -70,7 +71,7 @@ thread_local struct ncclAsyncArgs ncclGroupArgs[MAX_ASYNC_OPS];
 
 void* ncclAsyncThreadMain(void* args_) {
   struct ncclAsyncArgs* args = (struct ncclAsyncArgs*)args_;
-  CHECK(args->init.func(args->init.newcomm, args->init.ndev, args->init.commId, args->init.myrank, args->init.cudaDev));
+  NCCLCHECKTHREAD(args->init.func(args->init.newcomm, args->init.ndev, args->init.commId, args->init.myrank, args->init.cudaDev));
   return args;
 }
 
@@ -115,16 +116,33 @@ ncclResult_t ncclGroupStart() {
   return ncclSuccess;
 }
 
-void isPeerConnected(struct ncclComm* comm, int peerfrom, int peerto,int* recvconnected, int *sendconnected);
-ncclResult_t scheduleSendRecv(struct ncclComm* comm, int delta, size_t recvbytes, void* recvbuff, size_t sendbytes, const void* sendbuff);
-ncclResult_t p2pSetup(struct ncclComm* comm, struct ncclTopoGraph* graph, struct ncclChannel* channel, int nrecv, int* peerRecv, int nsend, int* peerSend);
+//check if peers need to be connected on one of the channels
+static int isPeerConnected(struct ncclComm* comm, int peer) {
+  for (int c=0; c<comm->nChannels; c++) {
+    struct ncclChannel* channel = comm->channels+c;
+    if (channel->peers[peer].recv.connected == 0) return 0;
+  }
+  return 1;
+}
+
+static ncclResult_t scheduleSendRecv(struct ncclComm* comm, int delta, size_t recvbytes, void* recvbuff, size_t sendbytes, const void* sendbuff) {
+  struct ncclInfo info = { ncclCollSendRecv, "SendRecv",
+    sendbuff, recvbuff, std::max<size_t>(sendbytes,recvbytes), ncclInt8, ncclSum, -1, comm, comm->userStream, /* Args */
+    SENDRECV_CHUNKSTEPS, SENDRECV_SLICESTEPS };
+  info.delta=delta;
+  info.sendbytes=sendbytes;
+  info.recvbytes=recvbytes;
+  if(delta==0) info.nBytes=sendbytes;
+  NCCLCHECK(ncclSaveKernel(&info));
+  return ncclSuccess;
+}
 
 void* ncclAsyncThreadPreconnect(void* args_) {
   struct ncclAsyncArgs* args = (struct ncclAsyncArgs*)args_;
-  CUCHECK(cudaSetDevice(args->coll.comm->cudaDev));
+  CUDACHECKTHREAD(cudaSetDevice(args->coll.comm->cudaDev));
   for (int c=0; c<args->coll.comm->nChannels; c++) {
     struct ncclChannel* channel = args->coll.comm->channels+c;
-    CHECK(p2pSetup(args->coll.comm, NULL, channel, args->coll.nrecv, args->coll.recv, args->coll.nsend, args->coll.send));
+    NCCLCHECKTHREAD(ncclTransportP2pSetup(args->coll.comm, NULL, channel, args->coll.nrecv, args->coll.recv, args->coll.nsend, args->coll.send));
   }
   return args;
 }
@@ -179,14 +197,12 @@ ncclResult_t ncclGroupEnd() {
           int send = p2plist->peerlist[to].sendcount>=0;
           if (send || recv) {
             if (delta > 0) {
-              int sendconnected, recvconnected;
-              isPeerConnected(args->coll.comm, recv?from:-1, send?to:-1, &recvconnected, &sendconnected);
-              if (!recvconnected) {
+              if (recv && isPeerConnected(args->coll.comm, from) == 0) {
                 if (args->coll.recv == NULL)
                   NCCLCHECK(ncclCalloc(&args->coll.recv, args->coll.comm->nRanks));
                 args->coll.recv[args->coll.nrecv++] = from;
               }
-              if (!sendconnected) {
+              if (send && isPeerConnected(args->coll.comm, to) == 0) {
                 if(args->coll.send == NULL)
                   NCCLCHECK(ncclCalloc(&args->coll.send, args->coll.comm->nRanks));
                 args->coll.send[args->coll.nsend++] = to;
@@ -214,7 +230,7 @@ ncclResult_t ncclGroupEnd() {
       if (args->coll.recv!=NULL) { free(args->coll.recv); args->coll.recv=NULL; args->coll.nrecv=0; }
     }
   }
- 
+
   for (int i=0; i<ncclGroupIndex; i++) {
     struct ncclAsyncArgs* args = ncclGroupArgs+i;
     if (args->funcType == ASYNC_FUNC_COLL) {

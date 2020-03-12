@@ -11,17 +11,17 @@
 
 // Check CUDA calls
 #define CUDACHECK(cmd) do {                                 \
-    cudaError_t e = cmd;                                    \
-    if( e != cudaSuccess ) {                                \
-        WARN("Cuda failure '%s'", cudaGetErrorString(e));   \
+    cudaError_t err = cmd;                                  \
+    if( err != cudaSuccess ) {                              \
+        WARN("Cuda failure '%s'", cudaGetErrorString(err)); \
         return ncclUnhandledCudaError;                      \
     }                                                       \
 } while(false)
 
 #define CUDACHECKGOTO(cmd, res, label) do {                 \
-    cudaError_t e = cmd;                                    \
-    if( e != cudaSuccess ) {                                \
-        WARN("Cuda failure '%s'", cudaGetErrorString(e));   \
+    cudaError_t err = cmd;                                  \
+    if( err != cudaSuccess ) {                              \
+        WARN("Cuda failure '%s'", cudaGetErrorString(err)); \
         res = ncclUnhandledCudaError;                       \
         goto label;                                         \
     }                                                       \

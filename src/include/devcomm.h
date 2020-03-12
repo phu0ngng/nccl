@@ -156,7 +156,7 @@ struct CollectiveArgs {
       uint32_t root;
       uint32_t rankDelta;
   };
-  
+
   uint16_t nThreads;
   uint8_t bid;
   uint8_t nChannels;

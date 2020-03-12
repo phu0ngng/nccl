@@ -12,15 +12,12 @@ struct ncclP2Pinfo {
  const void* sendbuff;
   void* recvbuff;
   size_t sendcount;
-  size_t recvcount; 
-
+  size_t recvcount;
 };
 
 struct ncclP2Plist {
   ncclP2Pinfo *peerlist;
   int count;
 };
-
-
 
 #endif

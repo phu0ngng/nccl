@@ -225,27 +225,27 @@ ncclResult_t pncclAllGather(const void* sendbuff, void* recvbuff, size_t sendcou
  *
  * Send: Sends count values to peer rank.
  * Recv: Receives count values from peer rank.
- * 
+ *
  * ncclSend and ncclRecv should always match each other,
- * i.e. for each ncclSend of N bytes on GPU A to GPU B, 
+ * i.e. for each ncclSend of N bytes on GPU A to GPU B,
  * GPU B must have matching ncclRecv with N bytes from GPU A.
- *  
+ *
  * ncclSend might block till matching ncclRecv is not started.
- * 
+ *
  * Multiple sends/recvs on same pair should be called in same order on both GPUs.
- * 
- * Recommended to be used in combination with group semantics to combine multiple send/recv 
+ *
+ * Recommended to be used in combination with group semantics to combine multiple send/recv
  * operation and avoid deadlocking.
- * 
+ *
  */
 ncclResult_t  ncclSend(const void* sendbuff, size_t count, ncclDataType_t datatype, int peer,
     ncclComm_t comm, cudaStream_t stream);
-ncclResult_t  ncclRecv(void* recvbuff, size_t count, ncclDataType_t datatype, int peer,
-    ncclComm_t comm, cudaStream_t stream);
-
 ncclResult_t pncclSend(const void* sendbuff, size_t count, ncclDataType_t datatype, int peer,
     ncclComm_t comm, cudaStream_t stream);
+
 ncclResult_t pncclRecv(void* recvbuff, size_t count, ncclDataType_t datatype, int peer,
+    ncclComm_t comm, cudaStream_t stream);
+ncclResult_t  ncclRecv(void* recvbuff, size_t count, ncclDataType_t datatype, int peer,
     ncclComm_t comm, cudaStream_t stream);
 
 /*
