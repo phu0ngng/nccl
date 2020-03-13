@@ -117,10 +117,11 @@ ncclResult_t ncclGroupStart() {
 }
 
 //check if peers need to be connected on one of the channels
-static int isPeerConnected(struct ncclComm* comm, int peer) {
+static int isPeerConnected(struct ncclComm* comm, int peer, int send) {
   for (int c=0; c<comm->nChannels; c++) {
     struct ncclChannel* channel = comm->channels+c;
-    if (channel->peers[peer].recv.connected == 0) return 0;
+    int connected = send ? channel->peers[peer].send.connected : channel->peers[peer].recv.connected;
+    if (connected == 0) return 0;
   }
   return 1;
 }
@@ -189,25 +190,19 @@ ncclResult_t ncclGroupEnd() {
       struct ncclP2Plist* p2plist = &args->coll.comm->p2plist;
       if (p2plist->count != 0) {
 
-        for (int delta=0; delta<args->coll.comm->nRanks; delta++) {
+        for (int delta=1; delta<args->coll.comm->nRanks; delta++) {
           uint32_t from = (args->coll.comm->rank+args->coll.comm->nRanks-delta)%args->coll.comm->nRanks;
           uint32_t to = (args->coll.comm->rank+delta)%args->coll.comm->nRanks;
 
-          int recv = p2plist->peerlist[from].recvcount>=0;
-          int send = p2plist->peerlist[to].sendcount>=0;
-          if (send || recv) {
-            if (delta > 0) {
-              if (recv && isPeerConnected(args->coll.comm, from) == 0) {
-                if (args->coll.recv == NULL)
-                  NCCLCHECK(ncclCalloc(&args->coll.recv, args->coll.comm->nRanks));
-                args->coll.recv[args->coll.nrecv++] = from;
-              }
-              if (send && isPeerConnected(args->coll.comm, to) == 0) {
-                if(args->coll.send == NULL)
-                  NCCLCHECK(ncclCalloc(&args->coll.send, args->coll.comm->nRanks));
-                args->coll.send[args->coll.nsend++] = to;
-              }
-            }
+          if (p2plist->peerlist[from].recvcount >= 0 && isPeerConnected(args->coll.comm, from, 0) == 0) {
+            if (args->coll.recv == NULL)
+              NCCLCHECK(ncclCalloc(&args->coll.recv, args->coll.comm->nRanks));
+            args->coll.recv[args->coll.nrecv++] = from;
+          }
+          if (p2plist->peerlist[to].recvcount >= 0 && isPeerConnected(args->coll.comm, to, 1) == 0) {
+            if(args->coll.send == NULL)
+              NCCLCHECK(ncclCalloc(&args->coll.send, args->coll.comm->nRanks));
+            args->coll.send[args->coll.nsend++] = to;
           }
         }
         if (args->coll.nrecv+args->coll.nsend>0) {

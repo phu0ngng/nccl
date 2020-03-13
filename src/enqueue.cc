@@ -335,18 +335,18 @@ static int nChannelsP2P(struct ncclComm* comm, int bytes) {
   int maxchannels = comm->nChannels; //int channels = comm->nChannels/(comm->nRanks-1);
   return std::max<unsigned>(1,std::min<unsigned>(maxchannels, NCCL_STEPS*bytes/comm->channels[0].buffSize));
 }
-static ncclResult_t getChannelSizeAndOffset(struct ncclComm* comm, size_t nbytes, size_t* channelSize, size_t* channelOffset) {
+static ncclResult_t getChannelOffset(struct ncclComm* comm, size_t nbytes, size_t* channelOffset) {
   size_t minChunk = 128;
   size_t chunks = DIVUP(nbytes, minChunk);
   int channels = nChannelsP2P(comm, nbytes);
   size_t chunksPerCh = DIVUP(chunks, channels);
   *channelOffset = chunksPerCh * minChunk;
-  *channelSize = std::min<long>(nbytes-(*channelOffset), chunksPerCh*minChunk);
   return ncclSuccess;
 }
+
 static ncclResult_t computeColl(struct ncclInfo* info /* input */, struct ncclColl* coll, struct ncclProxyArgs* proxyArgs /* output */) {
   if (info->coll == ncclCollSendRecv) {
-    if(info->root!=-1) { //non-async, preconnect now
+    if (info->root != -1) { //non-async, preconnect now
       int peerfrom = info->recvbuff != NULL ? info->root : -1;
       int peerto = info->sendbuff != NULL ? info->root : -1;
       for (int c=0; c<info->comm->nChannels; c++) {
@@ -354,7 +354,7 @@ static ncclResult_t computeColl(struct ncclInfo* info /* input */, struct ncclCo
         NCCLCHECK(ncclTransportP2pSetup(info->comm, NULL, channel, 1, &peerfrom, 1, &peerto));
       }
     }
-    coll->args.nChannels = std::max<unsigned>(nChannelsP2P(info->comm,info->sendbytes), nChannelsP2P(info->comm,info->recvbytes));
+    coll->args.nChannels = std::max<unsigned>(nChannelsP2P(info->comm, info->sendbytes), nChannelsP2P(info->comm, info->recvbytes));
     coll->args.sendbuff = info->sendbuff;
     coll->args.recvbuff = info->recvbuff;
     coll->args.p2p.sendCount = info->sendbytes;
@@ -463,10 +463,10 @@ ncclResult_t ncclSaveKernel(struct ncclInfo* info) {
 
   int nSubChannels = (info->pattern == ncclPatternCollTreeUp || info->pattern == ncclPatternCollTreeDown) ? 2 : 1;
 
-  size_t channelSendSize = 0, channelRecvSize = 0, channelSendOffset = 0, channelRecvOffset = 0;
+  size_t channelSendOffset = 0, channelRecvOffset = 0;
   if (info->coll == ncclCollSendRecv) {
-    NCCLCHECK(getChannelSizeAndOffset(info->comm, info->sendbytes, &channelSendSize, &channelSendOffset));
-    NCCLCHECK(getChannelSizeAndOffset(info->comm, info->recvbytes, &channelRecvSize, &channelRecvOffset));
+    if (info->sendbytes != -1) NCCLCHECK(getChannelOffset(info->comm, info->sendbytes, &channelSendOffset));
+    if (info->recvbytes != -1) NCCLCHECK(getChannelOffset(info->comm, info->recvbytes, &channelRecvOffset));
   }
   for (int bid=0; bid<coll.args.nChannels*nSubChannels; bid++) {
     int channelId = info->comm->myParams->gridDim.x % info->comm->nChannels;
@@ -485,9 +485,9 @@ ncclResult_t ncclSaveKernel(struct ncclInfo* info) {
       info->pattern = (channelId < info->comm->nChannels/nSubChannels) ? ncclPatternCollTreeUp : ncclPatternCollTreeDown;
     }
 
-    if(info->coll==ncclCollSendRecv)
+    if (info->coll == ncclCollSendRecv) {
       info->comm->myParams->gridDim.x = std::max<unsigned>(info->comm->myParams->gridDim.x,channelId+1);
-    else {
+    } else {
       NCCLCHECK(ncclProxySaveColl(&proxyArgs, info->pattern, info->root, info->comm->nRanks));
       info->comm->myParams->gridDim.x++;
     }
@@ -499,11 +499,13 @@ ncclResult_t ncclSaveKernel(struct ncclInfo* info) {
     memcpy(c, &coll, sizeof(struct ncclColl));
     if (info->coll == ncclCollSendRecv) {
       if (info->sendbytes != -1) {
+        int channelSendSize = std::min<long>(info->sendbytes-(bid*channelSendOffset), channelSendOffset);
         c->args.p2p.sendCount = (channelSendSize <= 0) && (bid != 0) ? -1 : channelSendSize;
         c->args.sendbuff = (char*)c->args.sendbuff+bid*channelSendOffset;
         NCCLCHECK(ncclProxySaveSend(info, channel, (info->comm->rank+info->delta)%info->comm->nRanks, c->args.p2p.sendCount));
       }
       if (info->recvbytes != -1) {
+        int channelRecvSize = std::min<long>(info->recvbytes-(bid*channelRecvOffset), channelRecvOffset);
         c->args.p2p.recvCount = (channelRecvSize <= 0) && (bid != 0) ? -1 : channelRecvSize;
         c->args.recvbuff = (char*)c->args.recvbuff+bid*channelRecvOffset;
         NCCLCHECK(ncclProxySaveRecv(info, channel, (info->comm->nRanks+info->comm->rank-info->delta)%info->comm->nRanks, c->args.p2p.recvCount));

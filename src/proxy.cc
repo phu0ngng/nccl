@@ -103,7 +103,7 @@ static ncclResult_t SaveProxy(int peer, struct ncclProxyArgs* args) {
   return ncclSuccess;
 }
 
-ncclResult_t ncclProxySaveSend(struct ncclInfo* info,struct ncclChannel* channel,int peersend,size_t sendcount) {
+ncclResult_t ncclProxySaveSend(struct ncclInfo* info, struct ncclChannel* channel, int peersend, size_t sendcount) {
   struct ncclProxyArgs args;
   memset(&args, 0, sizeof(struct ncclProxyArgs));
   args.channel = channel;
@@ -117,7 +117,7 @@ ncclResult_t ncclProxySaveSend(struct ncclInfo* info,struct ncclChannel* channel
   return ncclSuccess;
 }
 
-ncclResult_t ncclProxySaveRecv(struct ncclInfo* info,struct ncclChannel* channel,int peerrecv,size_t recvcount) {
+ncclResult_t ncclProxySaveRecv(struct ncclInfo* info, struct ncclChannel* channel, int peerrecv, size_t recvcount) {
   struct ncclProxyArgs args;
   memset(&args, 0, sizeof(struct ncclProxyArgs));
   args.channel = channel;
