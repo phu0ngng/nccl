@@ -8,7 +8,7 @@
 #define NCCL_INFO_H_
 
 #include "nccl.h"
-#include "core.h"
+#include "devcomm.h"
 
 typedef enum {
   ncclPatternRing,

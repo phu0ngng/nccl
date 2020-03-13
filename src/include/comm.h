@@ -54,8 +54,6 @@ struct ncclRecvMem {
     };
     char pad4[MEM_ALIGN];
   };
-  ncclLLFifoLine llBuff[NCCL_LL_BUFF_LINES];
-  uint64_t ll128Buff[NCCL_LL128_BUFF_ELEMS];
   char buff[1]; // Actually larger than that
 };
 
@@ -89,6 +87,9 @@ struct ncclComm {
 
   // Channels for collectives
   int nChannels;
+
+  // Buffer sizes
+  int buffSizes[NCCL_NUM_PROTOCOLS];
 
   // Algorithm/Protocols thresholds
   ssize_t threadThresholds[NCCL_NUM_ALGORITHMS][NCCL_NUM_PROTOCOLS];

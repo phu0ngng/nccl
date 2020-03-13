@@ -50,19 +50,6 @@ static __inline__ int ncclTypeSize(ncclDataType_t type) {
   }
 }
 
-#define NCCL_NUM_FUNCTIONS 5 //p2p not including as of now
-typedef enum { ncclCollBroadcast, ncclCollReduce, ncclCollAllGather, ncclCollReduceScatter, ncclCollAllReduce ,ncclCollSendRecv} ncclFunc_t;
-
-#define NCCL_NUM_ALGORITHMS 3 // Tree/Ring/CollNet
-#define NCCL_ALGO_TREE 0
-#define NCCL_ALGO_RING 1
-#define NCCL_ALGO_COLLNET 2
-
-#define NCCL_NUM_PROTOCOLS 3 // Simple/LL/LL128
-#define NCCL_PROTO_LL 0
-#define NCCL_PROTO_LL128 1
-#define NCCL_PROTO_SIMPLE 2
-
 #include "debug.h"
 #include "checks.h"
 #include "alloc.h"
