@@ -36,5 +36,6 @@ tar --exclude fortran \
     --exclude ".git*" \
     --exclude share \
     --exclude ompi \
+    --exclude ext-net \
     --exclude pkg/srctxz \
     --transform "s/^$NCCLDIR/$NCCLNAME/" -Jcf $NCCLNAME.txz --owner=0 --group=0 $NCCLDIR
