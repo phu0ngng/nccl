@@ -333,7 +333,7 @@ static int nChannelsP2P(struct ncclComm* comm, int bytes) {
   if (bytes < 0) return 0;
   if (bytes == 0) return 1;
   int maxchannels = comm->nChannels; //int channels = comm->nChannels/(comm->nRanks-1);
-  return std::max<unsigned>(1,std::min<unsigned>(maxchannels, NCCL_STEPS*bytes/comm->channels[0].buffSize));
+  return std::max<unsigned>(1,std::min<unsigned>(maxchannels, NCCL_STEPS*bytes/comm->buffSizes[NCCL_PROTO_SIMPLE]));
 }
 static ncclResult_t getChannelOffset(struct ncclComm* comm, size_t nbytes, size_t* channelOffset) {
   size_t minChunk = 128;

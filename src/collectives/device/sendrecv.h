@@ -19,7 +19,7 @@ __device__ void ncclSendRecvKernel(struct CollectiveArgs* args) {
 
   const ssize_t sendSize = args->p2p.sendCount;
   const ssize_t recvSize = args->p2p.recvCount;
-  const int stepSize = channel->buffSize / (sizeof(T)*NCCL_STEPS);
+  const int stepSize = comm->buffSizes[NCCL_PROTO_SIMPLE] / (sizeof(T)*NCCL_STEPS);
   const int chunkSize = stepSize * SENDRECV_CHUNKSTEPS;
   int peerRecv = recvSize >= 0 ? (comm->rank-(int)args->rankDelta+comm->nRanks)%comm->nRanks : -1;
   int peerSend = sendSize >= 0 ? (comm->rank+(int)args->rankDelta)%comm->nRanks : -1;

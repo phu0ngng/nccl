@@ -194,7 +194,6 @@ struct ncclChannel {
 
       // Operation list for aggregation
       struct ncclColl* collectives;
-      struct ncclColl* devCollectives;
       int collStart;
       int collCount;
       int collFifoHead; // Only used by GPU

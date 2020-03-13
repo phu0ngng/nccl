@@ -228,10 +228,12 @@ static ncclResult_t commAlloc(ncclComm_t* comret, int ndev, int rank) {
 #endif
   comm->fatalError = ncclSuccess;
 
-  NCCLCHECK(ncclCudaHostAlloc((void**) &comm->fatalDevError, (void**) &comm->hostDevComm.fatalDevError, sizeof(ncclDevError_t)));
+  NCCLCHECK(ncclCudaHostCalloc((ncclDevError_t**)&comm->fatalDevError, 1));
+  comm->hostDevComm.fatalDevError = comm->fatalDevError;
   *comm->fatalDevError = ncclDevSuccess;
 
-  NCCLCHECK(ncclCudaHostAlloc((void**) &comm->abortFlag, (void**) &comm->hostDevComm.abortFlag, sizeof(uint32_t)));
+  NCCLCHECK(ncclCudaHostCalloc((uint32_t**)&comm->abortFlag, 1));
+  comm->hostDevComm.abortFlag = comm->abortFlag;
   *comm->abortFlag = 0;
 
   comm->argsptr = &comm->args;
@@ -394,7 +396,7 @@ static ncclResult_t computeBuffSizes(struct ncclComm* comm) {
   int cpuArch, cpuVendor, cpuModel;
   NCCLCHECK(ncclTopoCpuType(comm->topo, &cpuArch, &cpuVendor, &cpuModel));
 
-  int64_t envs[NCCL_NUM_PROTOCOLS] = { ncclParamBuffSize(), ncclParamLlBuffSize(), ncclParamLl128BuffSize() };
+  int64_t envs[NCCL_NUM_PROTOCOLS] = { ncclParamLlBuffSize(), ncclParamLl128BuffSize(), ncclParamBuffSize() };
   int defaults[NCCL_NUM_PROTOCOLS] = { DEFAULT_LL_BUFFSIZE, DEFAULT_LL128_BUFFSIZE, DEFAULT_BUFFSIZE };
 
   if (cpuArch == NCCL_TOPO_CPU_ARCH_ARM) defaults[NCCL_PROTO_SIMPLE] = DEFAULT_BUFFSIZE_ARM;

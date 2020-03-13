@@ -16,13 +16,11 @@ __device__ void ncclAllGatherRingKernel(struct CollectiveArgs* args) {
   struct ncclDevComm* comm = args->comm;
   struct ncclChannel* channel = comm->channels+blockIdx.x;
   struct ncclRing* ring = &channel->ring;
-  const ssize_t size = args->coll.count;
-  const int nranks = comm->nRanks;
-  const int stepSize = channel->buffSizes[NCCL_PROTO_SIMPLE] / (sizeof(T)*NCCL_STEPS);
+  const int stepSize = comm->buffSizes[NCCL_PROTO_SIMPLE] / (sizeof(T)*NCCL_STEPS);
   const int chunkSize = stepSize * ALLGATHER_CHUNKSTEPS;
   const int nranks = comm->nRanks;
   const ssize_t loopSize = args->nChannels*(ssize_t)chunkSize;
-  const ssize_t size = args->N;
+  const ssize_t size = args->coll.count;
 
   // Compute pointers
   const T * __restrict__ thisInput = (const T*)args->sendbuff;

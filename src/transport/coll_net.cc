@@ -75,8 +75,8 @@ ncclResult_t collNetSendSetup(struct ncclTopoSystem* topo, struct ncclTopoGraph*
   NCCLCHECK(ncclTopoGetNetDev(topo, myInfo->rank, graph, 1, channelId, &resources->netDev));
   NCCLCHECK(ncclTopoCheckGdr(topo, myInfo->busId, resources->netDev, 1, &resources->useGdr));
 
-  int sendSize = sizeof(struct ncclSendMem);
-  NCCLCHECK(ncclCudaHostAlloc((void**)&resources->hostSendMem, (void**)&resources->devHostSendMem, sendSize));
+  NCCLCHECK(ncclCudaHostCalloc(&resources->hostSendMem, 1));
+  resources->devHostSendMem = resources->hostSendMem;
 
   int recvSize = offsetof(struct ncclRecvMem, buff);
   for (int p=0; p<NCCL_NUM_PROTOCOLS; p++) recvSize += send->comm->buffSizes[p];
@@ -84,7 +84,8 @@ ncclResult_t collNetSendSetup(struct ncclTopoSystem* topo, struct ncclTopoGraph*
   if (resources->useGdr) {
     NCCLCHECK(ncclCudaCalloc((char**)(&resources->devRecvMem), recvSize));
   }
-  NCCLCHECK(ncclCudaHostAlloc((void**)&resources->hostRecvMem, (void**)&resources->devHostRecvMem, recvSize));
+  NCCLCHECK(ncclCudaHostCalloc((char**)&resources->hostRecvMem, recvSize));
+  resources->devHostRecvMem = resources->hostRecvMem;
   NCCLCHECK(ncclIbMalloc((void**)&(resources->llData), send->comm->buffSizes[NCCL_PROTO_LL]/2));
 
   INFO(NCCL_INIT|NCCL_NET,"Coll %02d : %d [send] via COLLNET/%s/%d%s", channelId, myInfo->rank, collNetName(), resources->netDev,
@@ -101,8 +102,8 @@ ncclResult_t collNetRecvSetup(struct ncclTopoSystem* topo, struct ncclTopoGraph*
   NCCLCHECK(ncclTopoGetNetDev(topo, myInfo->rank, graph, 0, channelId, &resources->netDev));
   NCCLCHECK(ncclTopoCheckGdr(topo, myInfo->busId, resources->netDev, 0, &resources->useGdr));
 
-  int sendSize = sizeof(struct ncclSendMem);
-  NCCLCHECK(ncclCudaHostAlloc((void**)&resources->hostSendMem, (void**)&resources->devHostSendMem, sendSize));
+  NCCLCHECK(ncclCudaHostCalloc(&resources->hostSendMem, 1));
+  resources->devHostSendMem = resources->hostSendMem;
 
   int recvSize = offsetof(struct ncclRecvMem, buff);
   for (int p=0; p<NCCL_NUM_PROTOCOLS; p++) recvSize += recv->comm->buffSizes[p];
@@ -110,7 +111,9 @@ ncclResult_t collNetRecvSetup(struct ncclTopoSystem* topo, struct ncclTopoGraph*
   if (resources->useGdr) {
     NCCLCHECK(ncclCudaCalloc((char**)(&resources->devRecvMem), recvSize));
   }
-  NCCLCHECK(ncclCudaHostAlloc((void**)&resources->hostRecvMem, (void**)&resources->devHostRecvMem, recvSize));
+  NCCLCHECK(ncclCudaHostCalloc((char**)&resources->hostRecvMem, recvSize));
+  resources->devHostRecvMem = resources->hostRecvMem;
+
   NCCLCHECK(ncclIbMalloc((void**)&(resources->llData), recv->comm->buffSizes[NCCL_PROTO_LL]/2));
 
   INFO(NCCL_INIT|NCCL_NET,"Coll %02d : %d [receive] via COLLNET/%s/%d%s", channelId, myInfo->rank, collNetName(), resources->netDev,

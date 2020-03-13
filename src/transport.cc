@@ -19,7 +19,7 @@ struct ncclTransport ncclTransports[NTRANSPORTS] = {
 };
 
 template <int type>
-static ncclResult_t selectTransport(struct ncclTopoSystem* topo, struct ncclTopoGraph* graph, struct ncclPeerInfo* myInfo, struct ncclPeerInfo* peerInfo, struct ncclConnect* connect, struct ncclConnector* connector, int buffSize, int channelId) {
+static ncclResult_t selectTransport(struct ncclTopoSystem* topo, struct ncclTopoGraph* graph, struct ncclPeerInfo* myInfo, struct ncclPeerInfo* peerInfo, struct ncclConnect* connect, struct ncclConnector* connector, int channelId) {
   for (int t=0; t<NTRANSPORTS; t++) {
     struct ncclTransport *transport = ncclTransports+t;
     struct ncclTransportComm* transportComm = type == 1 ? &transport->send : &transport->recv;
@@ -27,7 +27,7 @@ static ncclResult_t selectTransport(struct ncclTopoSystem* topo, struct ncclTopo
     NCCLCHECK(transport->canConnect(&ret, topo, graph, myInfo, peerInfo));
     if (ret) {
       connector->transportComm = transportComm;
-      NCCLCHECK(transportComm->setup(topo, graph, myInfo, peerInfo, connect, connector, buffSize, channelId));
+      NCCLCHECK(transportComm->setup(topo, graph, myInfo, peerInfo, connect, connector, channelId));
       return ncclSuccess;
     }
   }
@@ -46,7 +46,7 @@ ncclResult_t ncclTransportP2pSetup(struct ncclComm* comm, struct ncclTopoGraph* 
     conn = &channel->peers[peer].recv;
     if (conn->connected) { ++nSkippedRecv; continue; }
     memset(&connect, 0, sizeof(connect));
-    NCCLCHECK(selectTransport<0>(comm->topo, graph, comm->peerInfo+comm->rank, comm->peerInfo+peer, &connect, conn, channel->buffSize, channel->id));
+    NCCLCHECK(selectTransport<0>(comm->topo, graph, comm->peerInfo+comm->rank, comm->peerInfo+peer, &connect, conn, channel->id));
     NCCLCHECK(bootstrapSend(comm->bootstrap, peer, &connect, sizeof(struct ncclConnect)));
   }
   for (int i=0; i<nsend; i++) {
@@ -55,7 +55,7 @@ ncclResult_t ncclTransportP2pSetup(struct ncclComm* comm, struct ncclTopoGraph* 
     conn = &channel->peers[peer].send;
     if (conn->connected) { ++nSkippedSend; continue; }
     memset(&connect, 0, sizeof(connect));
-    NCCLCHECK(selectTransport<1>(comm->topo, graph, comm->peerInfo+comm->rank, comm->peerInfo+peer, &connect, conn, channel->buffSize, channel->id));
+    NCCLCHECK(selectTransport<1>(comm->topo, graph, comm->peerInfo+comm->rank, comm->peerInfo+peer, &connect, conn, channel->id));
     NCCLCHECK(bootstrapSend(comm->bootstrap, peer, &connect, sizeof(struct ncclConnect)));
   }
   for (int i=0; i<nsend; i++) {
