@@ -67,7 +67,7 @@ __global__ void NCCL_KERN_NAME(coll, op, dtype)(struct ncclColl firstColl) { \
     c = &firstColl; \
   } else { \
     c = &localColl; \
-    load_coll(c, channel->devCollectives+channel->collFifoHead, tid, comm); \
+    load_coll(c, channel->collectives+channel->collFifoHead, tid, comm); \
   } \
   while (1) { \
     if (tid < c->args.nThreads) { \
@@ -86,7 +86,7 @@ __global__ void NCCL_KERN_NAME(coll, op, dtype)(struct ncclColl firstColl) { \
  \
     /* Load next collective operation*/ \
     c = &localColl; /* for bid 0 */ \
-    load_coll(c, channel->devCollectives+nextIndex, tid, comm); \
+    load_coll(c, channel->collectives+nextIndex, tid, comm); \
   } \
 }
 #else

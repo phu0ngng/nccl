@@ -228,10 +228,12 @@ static ncclResult_t commAlloc(ncclComm_t* comret, int ndev, int rank) {
 #endif
   comm->fatalError = ncclSuccess;
 
-  NCCLCHECK(ncclCudaHostAlloc((void**) &comm->fatalDevError, (void**) &comm->hostDevComm.fatalDevError, sizeof(ncclDevError_t)));
+  NCCLCHECK(ncclCudaHostCalloc((ncclDevError_t**)&comm->fatalDevError, 1));
+  comm->hostDevComm.fatalDevError = comm->fatalDevError;
   *comm->fatalDevError = ncclDevSuccess;
 
-  NCCLCHECK(ncclCudaHostAlloc((void**) &comm->abortFlag, (void**) &comm->hostDevComm.abortFlag, sizeof(uint32_t)));
+  NCCLCHECK(ncclCudaHostCalloc((uint32_t**)&comm->abortFlag, 1));
+  comm->hostDevComm.abortFlag = comm->abortFlag;
   *comm->abortFlag = 0;
 
   comm->argsptr = &comm->args;
@@ -382,6 +384,29 @@ ncclResult_t ncclCommSetIntra(struct ncclComm* comm, int rank, int ranks, struct
   return ncclSuccess;
 }
 
+#define DEFAULT_LL_BUFFSIZE (NCCL_LL_LINES_PER_THREAD*NCCL_LL_MAX_NTHREADS*NCCL_STEPS*sizeof(union ncclLLFifoLine))
+#define DEFAULT_LL128_BUFFSIZE (NCCL_LL128_ELEMS_PER_THREAD*NCCL_LL128_MAX_NTHREADS*NCCL_STEPS*sizeof(uint64_t))
+#define DEFAULT_BUFFSIZE (1LL << 22) /* 4MiB */
+#define DEFAULT_BUFFSIZE_ARM (1LL << 20) /* 1MiB */
+NCCL_PARAM(BuffSize, "BUFFSIZE", -2);
+NCCL_PARAM(LlBuffSize, "LL_BUFFSIZE", -2);
+NCCL_PARAM(Ll128BuffSize, "LL128_BUFFSIZE", -2);
+
+static ncclResult_t computeBuffSizes(struct ncclComm* comm) {
+  int cpuArch, cpuVendor, cpuModel;
+  NCCLCHECK(ncclTopoCpuType(comm->topo, &cpuArch, &cpuVendor, &cpuModel));
+
+  int64_t envs[NCCL_NUM_PROTOCOLS] = { ncclParamLlBuffSize(), ncclParamLl128BuffSize(), ncclParamBuffSize() };
+  int defaults[NCCL_NUM_PROTOCOLS] = { DEFAULT_LL_BUFFSIZE, DEFAULT_LL128_BUFFSIZE, DEFAULT_BUFFSIZE };
+
+  if (cpuArch == NCCL_TOPO_CPU_ARCH_ARM) defaults[NCCL_PROTO_SIMPLE] = DEFAULT_BUFFSIZE_ARM;
+
+  for (int p=0; p<NCCL_NUM_PROTOCOLS; p++) {
+    comm->buffSizes[p] = comm->hostDevComm.buffSizes[p] = envs[p] != -2 ? envs[p] : defaults[p];
+  }
+  return ncclSuccess;
+}
+
 extern struct ncclTransport collNetTransport;
 
 // All ranks must participate in collNetSetup call
@@ -419,7 +444,7 @@ static int collNetSetup(struct ncclComm* comm, struct ncclTopoGraph* collNetGrap
   // setup
   struct ncclConnect myConnect;
   if (isMaster && ret > 0) {
-    NCCLCHECK(transportComm->setup(comm->topo, collNetGraph, myInfo, peerInfo, &myConnect, conn, channel->buffSize, channel->id));
+    NCCLCHECK(transportComm->setup(comm->topo, collNetGraph, myInfo, peerInfo, &myConnect, conn, channel->id));
   }
   // prepare connect handles
   ncclResult_t res;
@@ -717,6 +742,8 @@ static ncclResult_t initTransportsRank(struct ncclComm* comm, ncclUniqueId* comm
   sched_getaffinity(0, sizeof(cpu_set_t), &affinitySave);
   NCCLCHECK(ncclTopoSetAffinity(comm->topo, comm->rank));
   ncclResult_t ret;
+
+  NCCLCHECK(computeBuffSizes(comm));
 
   // Connect with prev/next for each ring
   struct ncclConnect *connect;

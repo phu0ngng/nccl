@@ -333,7 +333,7 @@ static int nChannelsP2P(struct ncclComm* comm, int bytes) {
   if (bytes < 0) return 0;
   if (bytes == 0) return 1;
   int maxchannels = comm->nChannels; //int channels = comm->nChannels/(comm->nRanks-1);
-  return std::max<unsigned>(1,std::min<unsigned>(maxchannels, NCCL_STEPS*bytes/comm->channels[0].buffSize));
+  return std::max<unsigned>(1,std::min<unsigned>(maxchannels, NCCL_STEPS*bytes/comm->buffSizes[NCCL_PROTO_SIMPLE]));
 }
 static ncclResult_t getChannelOffset(struct ncclComm* comm, size_t nbytes, size_t* channelOffset) {
   size_t minChunk = 128;
@@ -382,7 +382,7 @@ static ncclResult_t computeColl(struct ncclInfo* info /* input */, struct ncclCo
 
   coll->funcIndex = FUNC_INDEX(info->coll, info->op, info->datatype, info->algorithm, info->protocol);
 
-  int stepSize   = (info->protocol == NCCL_PROTO_LL ? NCCL_LL_BUFF_SIZE : info->protocol == NCCL_PROTO_LL128 ? NCCL_LL128_BUFF_SIZE : info->comm->channels[0].buffSize ) / NCCL_STEPS;
+  int stepSize   = info->comm->buffSizes[info->protocol]/NCCL_STEPS;
   int chunkSteps = (info->protocol == NCCL_PROTO_SIMPLE && info->algorithm == NCCL_ALGO_RING) ? info->chunkSteps : 1;
   int sliceSteps = (info->protocol == NCCL_PROTO_SIMPLE && info->algorithm == NCCL_ALGO_RING) ? info->sliceSteps : 1;
   int chunkSize  = stepSize*chunkSteps;
@@ -405,8 +405,7 @@ static ncclResult_t computeColl(struct ncclInfo* info /* input */, struct ncclCo
     // Use lastChunkSize as chunkSize
     coll->args.coll.lastChunkSize = chunkSize / ncclTypeSize(info->datatype);
   } else if (info->protocol == NCCL_PROTO_LL) {
-    int sliceSize = NCCL_LL_SLICE_LINES * sizeof(uint64_t);
-    const ssize_t loopSize = info->nChannels*info->nchunksPerLoop*(ssize_t)sliceSize;
+    const ssize_t loopSize = info->nChannels*info->nchunksPerLoop*(ssize_t)stepSize;
     coll->args.coll.lastChunkSize = DIVUP((info->nBytes-(info->nBytes/loopSize)*loopSize), info->nChannels*info->nchunksPerLoop);
     ALIGN_SIZE(coll->args.coll.lastChunkSize, info->nThreads*sizeof(uint64_t));
     coll->args.coll.lastChunkSize /= ncclTypeSize(info->datatype);

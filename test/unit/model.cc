@@ -95,7 +95,7 @@ void runTopo(const char* xmlTopoFile, const char* platform, int nnodes) {
   comm.nRanks = system->nodes[GPU].count*nnodes;
   comm.nChannels = ringGraph.nChannels*2;
   comm.channels[0].treeUp.depth = system->nodes[GPU].count-1+log2i(nnodes);
-  comm.channels[0].buffSize = 1 << 22;
+  comm.buffSizes[NCCL_PROTO_SIMPLE] = 1 << 22;
   int compCap = system->nodes[GPU].nodes[0].gpu.cudaCompCap;
   CHECK(ncclTopoSetThresholds(&comm, compCap, compCap, &treeGraph, &ringGraph, &cNetGraph));
   struct ncclInfo info;
