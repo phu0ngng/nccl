@@ -501,9 +501,9 @@ testResult_t BenchTime(struct threadArgs* args, ncclDataType_t type, ncclRedOp_t
      }
   } else {
      if (side_comp == 1) {
-       PRINT("  %7s  %6.2f  %6.2f  %6.2f", timeStr, algBw, busBw, sideBw);
+       PRINT("  %7s  %6.2f  %6.2f    N/A %6.2f", timeStr, algBw, busBw, sideBw);
      } else {
-       PRINT("  %7s  %6.2f  %6.2f", timeStr, algBw, busBw);
+       PRINT("  %7s  %6.2f  %6.2f    N/A", timeStr, algBw, busBw);
      }
   }
 
