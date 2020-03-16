@@ -133,7 +133,7 @@ static ncclResult_t scheduleSendRecv(struct ncclComm* comm, int delta, size_t re
   info.delta=delta;
   info.sendbytes=sendbytes;
   info.recvbytes=recvbytes;
-  if(delta==0) info.nBytes=sendbytes;
+  if (delta == 0) info.nBytes=sendbytes;
   NCCLCHECK(ncclSaveKernel(&info));
   return ncclSuccess;
 }
@@ -189,17 +189,16 @@ ncclResult_t ncclGroupEnd() {
     if (args->funcType == ASYNC_FUNC_COLL) {
       struct ncclP2Plist* p2plist = &args->coll.comm->p2plist;
       if (p2plist->count != 0) {
-
         for (int delta=1; delta<args->coll.comm->nRanks; delta++) {
           uint32_t from = (args->coll.comm->rank+args->coll.comm->nRanks-delta)%args->coll.comm->nRanks;
           uint32_t to = (args->coll.comm->rank+delta)%args->coll.comm->nRanks;
 
-          if (p2plist->peerlist[from].recvcount >= 0 && isPeerConnected(args->coll.comm, from, 0) == 0) {
+          if (p2plist->peerlist[from].recvbytes >= 0 && isPeerConnected(args->coll.comm, from, 0) == 0) {
             if (args->coll.recv == NULL)
               NCCLCHECK(ncclCalloc(&args->coll.recv, args->coll.comm->nRanks));
             args->coll.recv[args->coll.nrecv++] = from;
           }
-          if (p2plist->peerlist[to].recvcount >= 0 && isPeerConnected(args->coll.comm, to, 1) == 0) {
+          if (p2plist->peerlist[to].recvbytes >= 0 && isPeerConnected(args->coll.comm, to, 1) == 0) {
             if(args->coll.send == NULL)
               NCCLCHECK(ncclCalloc(&args->coll.send, args->coll.comm->nRanks));
             args->coll.send[args->coll.nsend++] = to;
@@ -221,8 +220,8 @@ ncclResult_t ncclGroupEnd() {
         return ncclSystemError;
       }
       NCCLCHECK(args->ret);
-      if (args->coll.send!=NULL) { free(args->coll.send); args->coll.send=NULL; args->coll.nsend=0; }
-      if (args->coll.recv!=NULL) { free(args->coll.recv); args->coll.recv=NULL; args->coll.nrecv=0; }
+      if (args->coll.send != NULL) { free(args->coll.send); args->coll.send = NULL; args->coll.nsend = 0; }
+      if (args->coll.recv != NULL) { free(args->coll.recv); args->coll.recv = NULL; args->coll.nrecv = 0; }
     }
   }
 
@@ -230,26 +229,48 @@ ncclResult_t ncclGroupEnd() {
     struct ncclAsyncArgs* args = ncclGroupArgs+i;
     if (args->funcType == ASYNC_FUNC_COLL) {
       struct ncclP2Plist* p2plist = &args->coll.comm->p2plist;
-      if (p2plist->count != 0) {
-        for (int delta=0; delta<args->coll.comm->nRanks; delta++) {
-          uint32_t from = (args->coll.comm->rank+args->coll.comm->nRanks-delta)%args->coll.comm->nRanks;
-          uint32_t to = (args->coll.comm->rank+delta)%args->coll.comm->nRanks;
-          int recvcount = p2plist->peerlist[from].recvcount;
-          int sendcount = p2plist->peerlist[to].sendcount;
-          if (sendcount || recvcount) {
-            NCCLCHECK(scheduleSendRecv(args->coll.comm, delta,
-                  recvcount, p2plist->peerlist[from].recvbuff,
-                  sendcount, p2plist->peerlist[to].sendbuff));
-            p2plist->peerlist[from].recvcount = -1;
-            p2plist->peerlist[to].sendcount = -1;
+      int rank = args->coll.comm->rank;
+      int nRanks = args->coll.comm->nRanks;
+      if (p2plist->peerlist[rank].recvbytes > 0 || p2plist->peerlist[rank].sendbytes > 0) {
+        if (p2plist->peerlist[rank].sendbytes != p2plist->peerlist[rank].recvbytes) {
+          WARN("Error : send/recv to/from self : size mismatch.");
+          return ncclInvalidUsage;
+        }
+        if (p2plist->peerlist[rank].sendbuff != p2plist->peerlist[rank].recvbuff) {
+          CUDACHECK(cudaMemcpyAsync(p2plist->peerlist[rank].recvbuff, p2plist->peerlist[rank].sendbuff,
+                p2plist->peerlist[rank].sendbytes, cudaMemcpyDeviceToDevice, args->coll.comm->userStream));
+        }
+      }
+      if (p2plist->count) {
+        // Natural step size matching buffer steps.
+        size_t stepSize = args->coll.comm->buffSizes[NCCL_PROTO_SIMPLE] / NCCL_STEPS;
+        // Split each operation on nChannels max.
+        size_t chunkSize = p2plist->maxBytes / (args->coll.comm->nChannels);
+        chunkSize = std::max((size_t)1, chunkSize / stepSize) * stepSize;
+
+        size_t offset = 0;
+        int remaining = 1;
+        while (remaining) {
+          remaining = 0;
+          // Skip one channel for our self-copy. Makes things more regular.
+          args->coll.comm->myParams->gridDim.x++;
+          for (int delta=1; delta<nRanks; delta++) {
+            uint32_t from = (rank+nRanks-delta)%nRanks;
+            uint32_t to = (rank+delta)%nRanks;
+            int recvbytes = p2plist->peerlist[from].recvbytes-offset;
+            int sendbytes = p2plist->peerlist[to].sendbytes-offset;
+            if (recvbytes > chunkSize) { remaining = 1; recvbytes = chunkSize; } else p2plist->peerlist[from].recvbytes = -1;
+            if (sendbytes > chunkSize) { remaining = 1; sendbytes = chunkSize; } else p2plist->peerlist[to].sendbytes = -1;
+            if (sendbytes >= 0 || recvbytes >= 0) {
+              NCCLCHECK(scheduleSendRecv(args->coll.comm, delta,
+                    recvbytes, ((char*)(p2plist->peerlist[from].recvbuff)) + offset,
+                    sendbytes, ((const char*)(p2plist->peerlist[to].sendbuff)) + offset));
+            }
           }
+          offset += chunkSize;
         }
         p2plist->count = 0;
-
-        if (args->coll.nrecv+args->coll.nsend>0) {
-          pthread_create(ncclGroupThreads+i, NULL, ncclAsyncThreadPreconnect, args);
-          printf("Launched connect pthread %p\n", ncclGroupThreads+i);
-        }
+        p2plist->maxBytes = 0;
       }
     }
   }
