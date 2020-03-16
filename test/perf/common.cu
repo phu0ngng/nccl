@@ -317,7 +317,7 @@ testResult_t CheckData(struct threadArgs* args, ncclDataType_t type, ncclRedOp_t
 #endif
   }
   double nranks = args->nProcs*args->nThreads*args->nGpus;
-  if (maxDelta > DeltaMaxValue(type)*(nranks - 1)) args->errors[0]++;
+  if (args->reportErrors && maxDelta > DeltaMaxValue(type)*(nranks - 1)) args->errors[0]++;
   *delta = maxDelta;
   return testSuccess;
 }
@@ -997,6 +997,8 @@ testResult_t run() {
     threads[t].args.errors=errors+t;
     threads[t].args.bw=bw+t;
     threads[t].args.bw_count=bw_count+t;
+
+    threads[t].args.reportErrors = 1;
 
     threads[t].args.replayFile = replay_file;
 

@@ -33,6 +33,8 @@ testResult_t AlltoAllInitData(struct threadArgs* args, ncclDataType_t type, nccl
     }
     CUDACHECK(cudaDeviceSynchronize());
   }
+  // We don't support in-place alltoall
+  args->reportErrors = in_place ? 0 : 1;
   return testSuccess;
 }
 

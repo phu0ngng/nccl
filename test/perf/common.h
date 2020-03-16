@@ -126,6 +126,8 @@ struct threadArgs {
   double* bw;
   int* bw_count;
 
+  int reportErrors;
+
   int compThreadStop;
   volatile int* compThreadCount;
   int compThreadCountLast;
