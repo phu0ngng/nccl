@@ -26,6 +26,7 @@ __device__ void ncclSendRecvKernel(struct CollectiveArgs* args) {
   // Compute pointers
   const T * __restrict__ sendbuff = (const T*)args->sendbuff;
   T * __restrict__ recvbuff = (T*)args->recvbuff;
+  //if(tid==0) printf("rank %d[ch%d] delta %d sendrecv kernel  %ld send to %d  %ld recv peer %d\n",comm->rank,blockIdx.x,args->rankDelta,sendSize,peerSend,recvSize,peerRecv);
 
   ncclPrimitives<UNROLL, SENDRECV_CHUNKSTEPS/SENDRECV_SLICESTEPS, SENDRECV_SLICESTEPS, T, 1, 1, FUNC>
     prims(tid, args->nThreads, &peerRecv, &peerSend, NULL, stepSize, channel, comm, args->opCount);
