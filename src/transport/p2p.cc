@@ -98,7 +98,8 @@ ncclResult_t p2pCanConnect(int* ret, struct ncclTopoSystem* topo, struct ncclTop
   } while (0)
 
 // Setting this to non zero causes P2P to use Reads rather than Writes
-NCCL_PARAM(P2pReadEnable, "P2P_READ_ENABLE", -2);
+// Currently set to 0 by default due to Xid=45 issues on Luna (NVBug 2844535)
+NCCL_PARAM(P2pReadEnable, "P2P_READ_ENABLE", 0);
 
 static int p2pUseRead(struct ncclTopoSystem* topo, struct ncclPeerInfo* info1, struct ncclPeerInfo* info2) {
   int readEnable = ncclParamP2pReadEnable();
