@@ -812,29 +812,9 @@ ncclResult_t ncclTopoGetNetDev(struct ncclTopoSystem* system, int rank, struct n
     // Honor the net device in the graph
     *dev = graph->inter[(channelId%graph->nChannels)*2+dir];
   } else {
-    // Use closest net device
-    int g;
-    for (g=0; g<system->nodes[GPU].count; g++) {
-      struct ncclTopoNode* gpu = system->nodes[GPU].nodes+g;
-      if (gpu->gpu.rank == rank) break;
-    }
-    if (g == system->nodes[GPU].count) return ncclInternalError;
-    int minType = PATH_SYS;
-    int maxWidth = 0;
-    int count = 0;
-    int* nets;
-    NCCLCHECK(ncclCalloc(&nets, system->nodes[NET].count));
-    for (int n=0; n<system->nodes[NET].count; n++) {
-      struct ncclTopoLinkList* path = system->nodes[NET].nodes[n].paths[GPU]+g;
-      if (path->width > maxWidth || (path->width == maxWidth && path->type < minType)) {
-        maxWidth = path->width;
-        minType = path->type;
-        count = 0;
-      }
-      if (path->width == maxWidth && path->type == minType) nets[count++] = system->nodes[NET].nodes[n].id;
-    }
-    *dev = nets[channelId % count];
-    free(nets);
+    int64_t id;
+    NCCLCHECK(ncclTopoGetLocalNet(system, rank, &id, channelId));
+    *dev = id;
   }
   return ncclSuccess;
 }

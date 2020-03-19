@@ -437,3 +437,30 @@ void ncclTopoFree(struct ncclTopoSystem* system) {
   for (int t=0; t<NCCL_TOPO_NODE_TYPES; t++) ncclTopoRemovePathType(system, t);
   free(system);
 }
+
+ncclResult_t ncclTopoGetNchannels(struct ncclTopoSystem* system, int rank, int peerRank, int* nChannels) {
+  int g, peer;
+  NCCLCHECK(ncclTopoRankToIndex(system, rank, &g));
+  struct ncclTopoLinkList* path = NULL;
+  if (ncclTopoRankToIndex(system, peerRank, &peer) == ncclSuccess) {
+    // Local rank
+    path = system->nodes[GPU].nodes[peer].paths[GPU]+g;
+  } else {
+    // Remote rank, check network
+    int64_t id;
+    int n;
+    NCCLCHECK(ncclTopoGetLocalNet(system, rank, &id, peer));
+    NCCLCHECK(ncclTopoIdToIndex(system, NET, id, &n));
+    path = system->nodes[NET].nodes[n].paths[GPU]+g;
+  }
+  if (path->type == PATH_NVL) {
+    int sm = system->nodes[GPU].nodes[g].gpu.cudaCompCap;
+    double nvlWidth = sm < 70 ? PASCAL_NVLINK_WIDTH : VOLTA_NVLINK_WIDTH;
+    *nChannels = std::max(1, (int)(path->width / nvlWidth));
+  } else {
+    *nChannels = 1;
+  }
+  // We always allocate 2 channels per NVLink/NIC/PCI/...
+  *nChannels *= 2;
+  return ncclSuccess;
+}

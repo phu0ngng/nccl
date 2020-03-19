@@ -19,7 +19,10 @@ ncclResult_t ncclSend(const void* sendbuff, size_t count, ncclDataType_t datatyp
   info.sendbytes = count*ncclTypeSize(datatype);
   info.recvbytes = -1;
   info.delta = (comm->nRanks - (comm->rank-peer)) % comm->nRanks;
-  return ncclEnqueueCheck(&info);
+  NCCLCHECK(ncclGroupStart());
+  NCCLCHECK(ncclEnqueueCheck(&info));
+  NCCLCHECK(ncclGroupEnd());
+  return ncclSuccess;
 }
 ncclResult_t ncclRecv(void* recvbuff, size_t count, ncclDataType_t datatype, int peer,
     ncclComm_t comm, cudaStream_t stream) {
@@ -29,5 +32,8 @@ ncclResult_t ncclRecv(void* recvbuff, size_t count, ncclDataType_t datatype, int
   info.sendbytes = -1;
   info.recvbytes = count*ncclTypeSize(datatype);
   info.delta = (comm->nRanks+(comm->rank-peer)) % comm->nRanks;
-  return ncclEnqueueCheck(&info);
+  NCCLCHECK(ncclGroupStart());
+  NCCLCHECK(ncclEnqueueCheck(&info));
+  NCCLCHECK(ncclGroupEnd());
+  return ncclSuccess;
 }
