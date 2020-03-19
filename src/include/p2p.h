@@ -18,7 +18,6 @@ struct ncclP2Pinfo {
 struct ncclP2Plist {
   ncclP2Pinfo *peerlist;
   int count;
-  size_t maxBytes;
 };
 
 #endif

@@ -91,8 +91,8 @@ ncclResult_t setupLaunch(struct ncclComm* comm, struct cudaLaunchParams* params)
   params->gridDim.x = std::min<unsigned>(params->gridDim.x, comm->nChannels);
 
   // Set active = 2 for the last operation
-  for (int r=0; r<params->gridDim.x; r++) {
-    struct ncclChannel* channel = comm->channels+r;
+  for (int c=0; c<params->gridDim.x; c++) {
+    struct ncclChannel* channel = comm->channels+c;
     if(channel->collCount==0) { //non-alltoall sendrecv patterns may lead to launching SMs doing nothing
     //inject an noop if no ops in the fifo for the channel
       int opIndex = channel->collFifoTail;
@@ -522,7 +522,6 @@ ncclResult_t ncclEnqueueCheck(struct ncclInfo* info) {
       if (info->comm->p2plist.peerlist == NULL)
         NCCLCHECK(ncclCalloc(&info->comm->p2plist.peerlist, info->comm->nRanks));
       info->comm->p2plist.count++;
-      info->comm->p2plist.maxBytes = std::max(info->comm->p2plist.maxBytes, info->count);
       if (info->recvbuff == NULL) { //FIXME check if wasnt used already
         info->comm->p2plist.peerlist[info->root].sendbytes = info->count;
         info->comm->p2plist.peerlist[info->root].sendbuff = info->sendbuff;
