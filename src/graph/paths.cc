@@ -469,7 +469,9 @@ ncclResult_t ncclTopoComputeP2pChannels(struct ncclComm* comm) {
   if (comm->p2pChannels) return ncclSuccess;
   NCCLCHECK(ncclCalloc(&comm->p2pChannels, comm->nRanks));
   for (int r=0; r<comm->nRanks; r++) {
-    NCCLCHECK(ncclTopoGetNchannels(comm->topo, comm->rank, r, comm->p2pChannels+r));
+    int nChannels;
+    NCCLCHECK(ncclTopoGetNchannels(comm->topo, comm->rank, r, &nChannels));
+    comm->p2pChannels[r] = std::min(comm->nChannels, nChannels);
   }
   return ncclSuccess;
 }
