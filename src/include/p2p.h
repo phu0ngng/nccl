@@ -15,9 +15,17 @@ struct ncclP2Pinfo {
   size_t recvbytes;
 };
 
+struct ncclP2PConnect {
+  int nrecv[MAXCHANNELS];
+  int nsend[MAXCHANNELS];
+  int* recv;
+  int* send;
+};
+
 struct ncclP2Plist {
-  ncclP2Pinfo *peerlist;
+  struct ncclP2Pinfo *peerlist;
   int count;
+  struct ncclP2PConnect connect;
 };
 
 #endif

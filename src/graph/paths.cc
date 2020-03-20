@@ -438,7 +438,7 @@ void ncclTopoFree(struct ncclTopoSystem* system) {
   free(system);
 }
 
-ncclResult_t ncclTopoGetNchannels(struct ncclTopoSystem* system, int rank, int peerRank, int* nChannels) {
+static ncclResult_t ncclTopoGetNchannels(struct ncclTopoSystem* system, int rank, int peerRank, int* nChannels) {
   int g, peer;
   NCCLCHECK(ncclTopoRankToIndex(system, rank, &g));
   struct ncclTopoLinkList* path = NULL;
@@ -462,5 +462,14 @@ ncclResult_t ncclTopoGetNchannels(struct ncclTopoSystem* system, int rank, int p
   }
   // We always allocate 2 channels per NVLink/NIC/PCI/...
   *nChannels *= 2;
+  return ncclSuccess;
+}
+
+ncclResult_t ncclTopoComputeP2pChannels(struct ncclComm* comm) {
+  if (comm->p2pChannels) return ncclSuccess;
+  NCCLCHECK(ncclCalloc(&comm->p2pChannels, comm->nRanks));
+  for (int r=0; r<comm->nRanks; r++) {
+    NCCLCHECK(ncclTopoGetNchannels(comm->topo, comm->rank, r, comm->p2pChannels+r));
+  }
   return ncclSuccess;
 }

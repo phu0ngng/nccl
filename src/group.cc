@@ -34,8 +34,7 @@ struct ncclInitArgs {
 };
 struct ncclCollArgs {
   ncclComm_t comm;
-  int *send, *recv;
-  int *nsend, *nrecv;
+  int connect;
 };
 
 enum ncclAsyncFuncType {
@@ -105,8 +104,6 @@ ncclResult_t ncclAsyncColl(ncclComm_t comm) {
   ncclGroupIndex++;
   args->funcType = ASYNC_FUNC_COLL;
   args->coll.comm = comm;
-  args->coll.recv=NULL; args->coll.send=NULL;
-  args->coll.nsend=0; args->coll.nrecv=0;
   return ncclSuccess;
 }
 
@@ -117,11 +114,6 @@ ncclResult_t ncclGroupStart() {
   }
   ncclGroupMode++;
   return ncclSuccess;
-}
-
-//check if peers need to be connected on one of the channels
-static int isPeerConnected(struct ncclChannel* channel, int peer, int send) {
-  return send ? channel->peers[peer].send.connected : channel->peers[peer].recv.connected;
 }
 
 static ncclResult_t scheduleSendRecv(struct ncclComm* comm, int delta, int channelId, size_t recvbytes, void* recvbuff, size_t sendbytes, const void* sendbuff) {
@@ -141,8 +133,12 @@ void* ncclAsyncThreadPreconnect(void* args_) {
   struct ncclAsyncArgs* args = (struct ncclAsyncArgs*)args_;
   CUDACHECKTHREAD(cudaSetDevice(args->coll.comm->cudaDev));
   for (int c=0; c<args->coll.comm->nChannels; c++) {
-    struct ncclChannel* channel = args->coll.comm->channels+c;
-    NCCLCHECKTHREAD(ncclTransportP2pSetup(args->coll.comm, NULL, channel, args->coll.nrecv[c], args->coll.recv+c*args->coll.comm->nRanks, args->coll.nsend[c], args->coll.send+c*args->coll.comm->nRanks));
+    struct ncclComm* comm = args->coll.comm;
+    struct ncclChannel* channel = comm->channels+c;
+    struct ncclP2PConnect* connect = &comm->p2plist.connect;
+    NCCLCHECKTHREAD(ncclTransportP2pSetup(comm, NULL, channel, connect->nrecv[c], connect->recv+c*comm->nRanks, connect->nsend[c], connect->send+c*comm->nRanks));
+    connect->nrecv[c] = 0;
+    connect->nsend[c] = 0;
   }
   return args;
 }
@@ -189,70 +185,25 @@ ncclResult_t ncclGroupEnd() {
       struct ncclP2Plist* p2plist = &args->coll.comm->p2plist;
       if (p2plist->count != 0) {
         struct ncclComm* comm = args->coll.comm;
-        int rank = comm->rank;
-        int nRanks = comm->nRanks;
-        int ops = 0;
-        int connect = 0;
-        if (args->coll.nrecv == NULL)
-          NCCLCHECK(ncclCalloc(&args->coll.nrecv, comm->nChannels));
-        if (args->coll.nsend == NULL)
-          NCCLCHECK(ncclCalloc(&args->coll.nsend, comm->nChannels));
-        for (int delta=1; delta<nRanks; delta++) {
-          uint32_t from = (rank+nRanks-delta)%nRanks;
-          uint32_t to = (rank+delta)%nRanks;
-	  int channelStart = (delta-1) % (comm->nChannels);
-          if (p2plist->peerlist[from].recvbytes >= 0 || p2plist->peerlist[to].recvbytes >= 0) ops++;
-
-          if (p2plist->peerlist[from].recvbytes >= 0) {
-            int nChannels;
-            NCCLCHECK(ncclTopoGetNchannels(comm->topo, rank, from, &nChannels));
-            for (int c=channelStart; c<channelStart+nChannels; c++) {
-              int channelId = c % comm->nChannels;
-              if (isPeerConnected(comm->channels+channelId, from, 0) == 1) continue;
-              if (args->coll.recv == NULL)
-                NCCLCHECK(ncclCalloc(&args->coll.recv, comm->nChannels*nRanks));
-              args->coll.recv[channelId*nRanks+args->coll.nrecv[channelId]++] = from;
-            }
-            connect = 1;
-          }
-          if (p2plist->peerlist[to].recvbytes >= 0) {
-            int nChannels;
-            NCCLCHECK(ncclTopoGetNchannels(comm->topo, rank, to, &nChannels));
-            for (int c=channelStart; c<channelStart+nChannels; c++) {
-              int channelId = c % comm->nChannels;
-              if (isPeerConnected(comm->channels+channelId, to, 1) == 1) continue;
-              if(args->coll.send == NULL)
-                NCCLCHECK(ncclCalloc(&args->coll.send, comm->nChannels*nRanks));
-              args->coll.send[channelId*nRanks+args->coll.nsend[channelId]++] = to;
-            }
-            connect = 1;
-          }
-        }
-        if (connect) {
+        args->coll.connect = 0;
+        for (int c=0; c<comm->nChannels; c++)
+          args->coll.connect += comm->p2plist.connect.nsend[c] + comm->p2plist.connect.nrecv[c];
+        if (args->coll.connect) {
           pthread_create(ncclGroupThreads+i, NULL, ncclAsyncThreadPreconnect, args);
-        } else {
-          free(args->coll.nsend); args->coll.nsend = NULL;
-          free(args->coll.nrecv); args->coll.nrecv = NULL;
         }
-        // Keep the number of operations for next step
-        p2plist->count = ops;
       }
     }
   }
 
   for (int i=0; i<ncclGroupIndex; i++) {
     struct ncclAsyncArgs* args = ncclGroupArgs+i;
-    if (args->funcType == ASYNC_FUNC_COLL && (args->coll.nrecv || args->coll.nsend)) {
+    if (args->funcType == ASYNC_FUNC_COLL && (args->coll.connect)) {
       int err = pthread_join(ncclGroupThreads[i], NULL);
       if (err != 0) {
         WARN("Error waiting for pthread_join : %s\n", strerror(errno));
         return ncclSystemError;
       }
       NCCLCHECK(args->ret);
-      if (args->coll.send != NULL) { free(args->coll.send); args->coll.send = NULL; }
-      if (args->coll.recv != NULL) { free(args->coll.recv); args->coll.recv = NULL; }
-      free(args->coll.nsend); args->coll.nsend = NULL;
-      free(args->coll.nrecv); args->coll.nrecv = NULL;
     }
   }
 
@@ -279,11 +230,10 @@ ncclResult_t ncclGroupEnd() {
           uint32_t to = (rank+delta)%nRanks;
 
           // Compute how much to split operations
-          int recvChannels, sendChannels;
-          NCCLCHECK(ncclTopoGetNchannels(comm->topo, rank, from, &recvChannels));
-          NCCLCHECK(ncclTopoGetNchannels(comm->topo, rank, to, &sendChannels));
+          int recvChannels = comm->p2pChannels[from];
+          int sendChannels = comm->p2pChannels[to];
           // Natural step size matching buffer steps.
-          size_t stepSize = args->coll.comm->buffSizes[NCCL_PROTO_SIMPLE] / NCCL_STEPS;
+          size_t stepSize = comm->buffSizes[NCCL_PROTO_SIMPLE] / NCCL_STEPS;
           // Split each operation on nChannels max.
           size_t recvChunkSize = DIVUP(p2plist->peerlist[from].recvbytes, recvChannels);
           size_t sendChunkSize = DIVUP(p2plist->peerlist[to].sendbytes, sendChannels);
@@ -301,7 +251,7 @@ ncclResult_t ncclGroupEnd() {
             if (recvbytes > recvChunkSize) { remaining = 1; recvbytes = recvChunkSize; } else p2plist->peerlist[from].recvbytes = -1;
             if (sendbytes > sendChunkSize) { remaining = 1; sendbytes = sendChunkSize; } else p2plist->peerlist[to].sendbytes = -1;
             if (sendbytes >= 0 || recvbytes >= 0) {
-              NCCLCHECK(scheduleSendRecv(args->coll.comm, delta, channelId,
+              NCCLCHECK(scheduleSendRecv(comm, delta, channelId,
                     recvbytes, ((char*)(p2plist->peerlist[from].recvbuff)) + recvOffset,
                     sendbytes, ((const char*)(p2plist->peerlist[to].sendbuff)) + sendOffset));
             }

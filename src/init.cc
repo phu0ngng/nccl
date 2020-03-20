@@ -154,9 +154,13 @@ void NCCL_NO_OPTIMIZE commPoison(ncclComm_t comm) {
 static ncclResult_t commFree(ncclComm_t comm) {
   if (comm == NULL)
     return ncclSuccess;
-  if(comm->p2plist.peerlist) free(comm->p2plist.peerlist);
+  free(comm->p2plist.peerlist);
+  free(comm->p2plist.connect.recv);
+  free(comm->p2plist.connect.send);
+
   free(comm->peerInfo);
   ncclTopoFree(comm->topo);
+  free(comm->p2pChannels);
 
   if (comm->bootstrap)
     NCCLCHECK(bootstrapClose(comm->bootstrap));
@@ -239,7 +243,10 @@ static ncclResult_t commAlloc(ncclComm_t* comret, int ndev, int rank) {
   comm->argsptr = &comm->args;
   comm->collNetSupport = 0;
   comm->p2plist.count=0;
-  comm->p2plist.peerlist=NULL;
+  NCCLCHECK(ncclCalloc(&comm->p2plist.peerlist, comm->nRanks));
+  NCCLCHECK(ncclCalloc(&comm->p2plist.connect.recv, MAXCHANNELS*comm->nRanks));
+  NCCLCHECK(ncclCalloc(&comm->p2plist.connect.send, MAXCHANNELS*comm->nRanks));
+
   *comret = comm;
   return ncclSuccess;
 }
@@ -574,6 +581,8 @@ static ncclResult_t initTransportsRank(struct ncclComm* comm, ncclUniqueId* comm
   NCCLCHECK(ncclTopoTrimSystem(comm->topo, comm));
   // Recompute paths after trimming
   NCCLCHECK(ncclTopoComputePaths(comm->topo, comm->peerInfo));
+  // Compute nChannels per peer for p2p
+  NCCLCHECK(ncclTopoComputeP2pChannels(comm));
   // Init search
   NCCLCHECK(ncclTopoSearchInit(comm->topo));
   // Print final topology

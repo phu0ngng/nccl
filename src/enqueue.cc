@@ -518,16 +518,34 @@ ncclResult_t ncclEnqueueCheck(struct ncclInfo* info) {
     NCCLCHECKGOTO(ncclAsyncColl(info->comm), ret, end);
     NCCLCHECKGOTO(checkSetStream(info), ret, end);
     if (info->coll == ncclCollSendRecv) { //p2p stored separately
+      struct ncclComm* comm = info->comm;
+      struct ncclP2Plist* p2plist = &comm->p2plist;
       // Save in comm->p2plist
-      if (info->comm->p2plist.peerlist == NULL)
-        NCCLCHECK(ncclCalloc(&info->comm->p2plist.peerlist, info->comm->nRanks));
-      info->comm->p2plist.count++;
+      p2plist->count++;
       if (info->recvbuff == NULL) { //FIXME check if wasnt used already
-        info->comm->p2plist.peerlist[info->root].sendbytes = info->count;
-        info->comm->p2plist.peerlist[info->root].sendbuff = info->sendbuff;
+        if (info->root != comm->rank) {
+          int channelStart = (info->delta-1) % comm->nChannels;
+          for (int c=channelStart; c<channelStart+comm->p2pChannels[info->root]; c++) {
+            int channelId = c % comm->nChannels;
+            if (comm->channels[channelId].peers[info->root].send.connected == 0) {
+              p2plist->connect.send[channelId*comm->nRanks+p2plist->connect.nsend[channelId]++] = info->root;
+            }
+          }
+        }
+        p2plist->peerlist[info->root].sendbytes = info->count;
+        p2plist->peerlist[info->root].sendbuff = info->sendbuff;
       } else {
-        info->comm->p2plist.peerlist[info->root].recvbytes = info->count;
-        info->comm->p2plist.peerlist[info->root].recvbuff = info->recvbuff;
+        if (info->root != comm->rank) {
+          int channelStart = (info->delta-1) % comm->nChannels;
+          for (int c=channelStart; c<channelStart+comm->p2pChannels[info->root]; c++) {
+            int channelId = c % comm->nChannels;
+            if (comm->channels[channelId].peers[info->root].recv.connected == 0) {
+              p2plist->connect.recv[channelId*comm->nRanks+p2plist->connect.nrecv[channelId]++] = info->root;
+            }
+          }
+        }
+        p2plist->peerlist[info->root].recvbytes = info->count;
+        p2plist->peerlist[info->root].recvbuff = info->recvbuff;
       }
     } else
         NCCLCHECKGOTO(ncclSaveKernel(info), ret, end);
