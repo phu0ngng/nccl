@@ -833,7 +833,7 @@ static ncclResult_t initTransportsRank(struct ncclComm* comm, ncclUniqueId* comm
       const int sendMaster = collNetGraph.intra[c*comm->localRanks+sendIndex];
       if (collNetSetup(comm, &collNetGraph, channelRecv, logicChannels, rank, nranks, recvMaster, sendMaster, comm->nNodes, 1) != 1)
         collNetSetupFail = 1;
-      if (collNetSetup(comm, &collNetGraph, channelSend, logicChannels, rank, nranks, sendMaster, recvMaster, comm->nNodes, 0) != 1)
+      else if (collNetSetup(comm, &collNetGraph, channelSend, logicChannels, rank, nranks, sendMaster, recvMaster, comm->nNodes, 0) != 1)
         collNetSetupFail = 1;
     }
     // Verify CollNet setup across ranks
