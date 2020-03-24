@@ -115,14 +115,15 @@ static int p2pUseRead(struct ncclTopoSystem* topo, struct ncclPeerInfo* info1, s
 
 /* Send: Create and return connect structures for this peer to connect to me */
 ncclResult_t p2pSendSetup(struct ncclTopoSystem* topo, struct ncclTopoGraph* graph, struct ncclPeerInfo* myInfo, struct ncclPeerInfo* peerInfo,
-    struct ncclConnect* connectInfo, struct ncclConnector* send, int buffSize, int channelId) {
+    struct ncclConnect* connectInfo, struct ncclConnector* send, int channelId) {
 
   struct p2pSendResources* resources;
   NCCLCHECK(ncclCalloc(&resources, 1));
   send->transportResources = resources;
-  // For P2P Read the buffer is tagged on the end of the ncclSendMem structure
   int useRead = p2pUseRead(topo, myInfo, peerInfo);
-  int sendSize = useRead ? offsetof(struct ncclSendMem, buff)+buffSize : sizeof(struct ncclSendMem);
+  int sendSize = sizeof(struct ncclSendMem);
+  // For P2P Read the SIMPLE buffer is tagged on the end of the ncclSendMem structure
+  if (useRead) sendSize += send->comm->buffSizes[NCCL_PROTO_SIMPLE];
   ALIGN_SIZE(sendSize, CUDA_IPC_MIN);
   NCCLCHECK(ncclCudaCalloc((char**)&resources->devMem, sendSize));
 
@@ -169,14 +170,15 @@ ncclResult_t p2pSendSetup(struct ncclTopoSystem* topo, struct ncclTopoGraph* gra
 
 /* Create and return connect structures for this peer to connect to me */
 ncclResult_t p2pRecvSetup(struct ncclTopoSystem* topo, struct ncclTopoGraph* graph, struct ncclPeerInfo* myInfo, struct ncclPeerInfo* peerInfo,
-    struct ncclConnect* connectInfo, struct ncclConnector * recv, int buffSize, int channelId) {
+    struct ncclConnect* connectInfo, struct ncclConnector * recv, int channelId) {
 
   struct p2pRecvResources* resources;
   NCCLCHECK(ncclCalloc(&resources, 1));
   recv->transportResources = resources;
-  // For P2P Write the buffer is tagged on the end of the ncclRecvMem structure
   int useRead = p2pUseRead(topo, myInfo, peerInfo);
-  int recvSize = !useRead ? offsetof(struct ncclRecvMem, buff)+buffSize : sizeof(struct ncclRecvMem);
+  int recvSize = offsetof(struct ncclRecvMem, buff);
+  // For P2P Read the SIMPLE buffer is tagged on the end of the ncclSendMem structure
+  for (int p=0; p<NCCL_NUM_PROTOCOLS; p++) if (!(useRead && p == NCCL_PROTO_SIMPLE)) recvSize += recv->comm->buffSizes[p];
   ALIGN_SIZE(recvSize, CUDA_IPC_MIN);
   NCCLCHECK(ncclCudaCalloc((char**)&resources->devMem, recvSize));
 
@@ -237,9 +239,14 @@ static ncclResult_t p2pSendConnect(struct ncclConnect* connectInfo, int nranks, 
     }
   }
 
-  send->conn.buff = info->read ? /*local write*/ resources->devMem->buff : /*remote write*/ remDevMem->buff;
-  send->conn.llBuff = remDevMem->llBuff;
-  send->conn.ll128Buff = remDevMem->ll128Buff;
+  int offset = 0;
+  for (int p=0; p<NCCL_NUM_PROTOCOLS; p++) {
+    send->conn.buffs[p] = remDevMem->buff + offset;
+    offset += send->comm->buffSizes[p];
+  }
+  /* For P2P Read the SIMPLE buffer is local */
+  if (info->read) send->conn.buffs[NCCL_PROTO_SIMPLE] = resources->devMem->buff;
+
   send->conn.tail = &remDevMem->tail;
   send->conn.opCountRem = &remDevMem->opCount;
   send->conn.head = &resources->devMem->head;
@@ -268,9 +275,14 @@ ncclResult_t p2pRecvConnect(struct ncclConnect* connectInfo, int nranks, int ran
     }
   }
 
-  recv->conn.buff = info->read ? /*remote read*/ remDevMem->buff : /*local read*/ resources->devMem->buff;
-  recv->conn.llBuff = resources->devMem->llBuff;
-  recv->conn.ll128Buff = resources->devMem->ll128Buff;
+  int offset = 0;
+  for (int p=0; p<NCCL_NUM_PROTOCOLS; p++) {
+    recv->conn.buffs[p] = resources->devMem->buff + offset;
+    offset += recv->comm->buffSizes[p];
+  }
+  /* For P2P Read the SIMPLE buffer is remote */
+  if (info->read) recv->conn.buffs[NCCL_PROTO_SIMPLE] = remDevMem->buff;
+
   recv->conn.tail = &resources->devMem->tail;
   recv->conn.opCountLoc = &resources->devMem->opCount;
   recv->conn.head = &remDevMem->head;
