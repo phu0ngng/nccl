@@ -368,7 +368,7 @@ ncclResult_t netRecvProxy(struct ncclProxyArgs* args) {
         if (done) {
           args->head += args->sliceSteps;
           if (args->protocol == NCCL_PROTO_SIMPLE) {
-            if (resources->useGdr) ncclNetFlush(resources->netRecvComm, localBuff+buffSlot*stepSize, size, mhandle);
+            if (resources->useGdr) NCCLCHECK(ncclNetFlush(resources->netRecvComm, localBuff+buffSlot*stepSize, size, mhandle));
             resources->recvMem->tail = args->head;
           }
           args->idle = 0;

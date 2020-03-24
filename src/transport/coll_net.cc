@@ -408,7 +408,7 @@ ncclResult_t collNetRecvProxy(struct ncclProxyArgs* args) {
               lines[i].v[1] = ((uint64_t)flag << 32) + recvData[2*i+1];
             }
           } else if (args->protocol == NCCL_PROTO_SIMPLE) {
-            if (resources->useGdr) collNetFlush(resources->collNetRecvComm, localBuff+buffSlot*stepSize, reqFifo[buffSlot].size, mhandle);
+            if (resources->useGdr) NCCLCHECK(collNetFlush(resources->collNetRecvComm, localBuff+buffSlot*stepSize, reqFifo[buffSlot].size, mhandle));
             resources->hostRecvMem->tail = args->head;
           }
           args->idle = 0;

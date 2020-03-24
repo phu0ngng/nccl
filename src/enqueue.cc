@@ -1,5 +1,5 @@
 /*************************************************************************
- * Copyright (c) 2017-2019, NVIDIA CORPORATION. All rights reserved.
+ * Copyright (c) 2017-2020, NVIDIA CORPORATION. All rights reserved.
  *
  * See LICENSE.txt for license information
  ************************************************************************/
@@ -396,7 +396,8 @@ static ncclResult_t computeColl(struct ncclInfo* info /* input */, struct ncclCo
     // Use lastChunkSize as chunkSize
     coll->args.coll.lastChunkSize = chunkSize / ncclTypeSize(info->datatype);
   } else if (info->protocol == NCCL_PROTO_LL) {
-    const ssize_t loopSize = info->nChannels*info->nchunksPerLoop*(ssize_t)stepSize;
+    const ssize_t sliceSize = stepSize*sizeof(uint64_t)/sizeof(union ncclLLFifoLine);
+    const ssize_t loopSize = info->nChannels*info->nchunksPerLoop*(ssize_t)sliceSize;
     coll->args.coll.lastChunkSize = DIVUP((info->nBytes-(info->nBytes/loopSize)*loopSize), info->nChannels*info->nchunksPerLoop);
     ALIGN_SIZE(coll->args.coll.lastChunkSize, info->nThreads*sizeof(uint64_t));
     coll->args.coll.lastChunkSize /= ncclTypeSize(info->datatype);
