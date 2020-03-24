@@ -88,7 +88,9 @@ struct ncclComm {
   // Channels for collectives
   int nChannels;
   // Channels (per peer) for p2p
-  int* p2pChannels;
+  int p2pnChannels;
+  int p2pnChannelsPerPeer;
+  int p2pChannels[MAXCHANNELS];
 
   // Buffer sizes
   int buffSizes[NCCL_NUM_PROTOCOLS];

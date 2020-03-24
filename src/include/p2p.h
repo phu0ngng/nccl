@@ -3,6 +3,7 @@
  *
  * See LICENSE.txt for license information
  ************************************************************************/
+
 #include <stdlib.h>
 
 #ifndef NCCL_P2P_H_

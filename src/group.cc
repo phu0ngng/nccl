@@ -132,7 +132,7 @@ static ncclResult_t scheduleSendRecv(struct ncclComm* comm, int delta, int chann
 void* ncclAsyncThreadPreconnect(void* args_) {
   struct ncclAsyncArgs* args = (struct ncclAsyncArgs*)args_;
   CUDACHECKTHREAD(cudaSetDevice(args->coll.comm->cudaDev));
-  for (int c=0; c<args->coll.comm->nChannels; c++) {
+  for (int c=0; c<args->coll.comm->p2pnChannels; c++) {
     struct ncclComm* comm = args->coll.comm;
     struct ncclChannel* channel = comm->channels+c;
     struct ncclP2PConnect* connect = &comm->p2plist.connect;
@@ -186,7 +186,7 @@ ncclResult_t ncclGroupEnd() {
       if (p2plist->count != 0) {
         struct ncclComm* comm = args->coll.comm;
         args->coll.connect = 0;
-        for (int c=0; c<comm->nChannels; c++)
+        for (int c=0; c<comm->p2pnChannels; c++)
           args->coll.connect += comm->p2plist.connect.nsend[c] + comm->p2plist.connect.nrecv[c];
         if (args->coll.connect) {
           pthread_create(ncclGroupThreads+i, NULL, ncclAsyncThreadPreconnect, args);
@@ -230,21 +230,20 @@ ncclResult_t ncclGroupEnd() {
           uint32_t to = (rank+delta)%nRanks;
 
           // Compute how much to split operations
-          int recvChannels = comm->p2pChannels[from];
-          int sendChannels = comm->p2pChannels[to];
           // Natural step size matching buffer steps.
-          size_t stepSize = comm->buffSizes[NCCL_PROTO_SIMPLE] / NCCL_STEPS;
-          // Split each operation on nChannels max.
-          size_t recvChunkSize = DIVUP(p2plist->peerlist[from].recvbytes, recvChannels);
-          size_t sendChunkSize = DIVUP(p2plist->peerlist[to].sendbytes, sendChannels);
+          size_t stepSize = 4*comm->buffSizes[NCCL_PROTO_SIMPLE] / NCCL_STEPS;
+          // Split each operation on p2pnChannelsPerPeer max.
+          size_t recvChunkSize = DIVUP(p2plist->peerlist[from].recvbytes, comm->p2pnChannelsPerPeer);
+          size_t sendChunkSize = DIVUP(p2plist->peerlist[to].sendbytes, comm->p2pnChannelsPerPeer);
           recvChunkSize = std::max((size_t)1, DIVUP(recvChunkSize, stepSize)) * stepSize;
           sendChunkSize = std::max((size_t)1, DIVUP(sendChunkSize, stepSize)) * stepSize;
 
           size_t sendOffset = 0;
           size_t recvOffset = 0;
           int remaining = 1;
-          int channelId = (delta-1) % comm->nChannels;
+          int chunk = 0;
           while (remaining) {
+            int channelId = (delta-1+comm->p2pChannels[chunk%comm->p2pnChannelsPerPeer]) % comm->p2pnChannels;
             remaining = 0;
             size_t recvbytes = p2plist->peerlist[from].recvbytes-recvOffset;
             size_t sendbytes = p2plist->peerlist[to].sendbytes-sendOffset;
@@ -257,7 +256,7 @@ ncclResult_t ncclGroupEnd() {
             }
             recvOffset += recvChunkSize;
             sendOffset += sendChunkSize;
-            channelId = (channelId+1) % comm->nChannels;
+            chunk++;
           }
         }
         p2plist->count = 0;
@@ -310,7 +309,7 @@ group_cleanup:
         *args->init.newcomm = NULL;
       } else {
         struct ncclComm* comm = args->coll.comm;
-        for (int c=0; c<comm->nChannels; c++) {
+        for (int c=0; c<comm->p2pnChannels; c++) {
           struct ncclChannel* channel = comm->channels+c;
           for (int i=0; i<channel->collCount; i++) {
             channel->collectives[(channel->collStart + i)%NCCL_MAX_OPS].active = 0;

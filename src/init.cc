@@ -160,7 +160,6 @@ static ncclResult_t commFree(ncclComm_t comm) {
 
   free(comm->peerInfo);
   ncclTopoFree(comm->topo);
-  free(comm->p2pChannels);
 
   if (comm->bootstrap)
     NCCLCHECK(bootstrapClose(comm->bootstrap));
@@ -168,7 +167,7 @@ static ncclResult_t commFree(ncclComm_t comm) {
   CUDACHECK(cudaFree(comm->hostDevComm.channels));
   CUDACHECK(cudaFree(comm->devComm));
 
-  for (int channel=0; channel<comm->nChannels; channel++)
+  for (int channel=0; channel<comm->p2pnChannels; channel++)
     NCCLCHECK(freeChannel(comm->channels+channel, comm->nRanks));
 
   if (comm->doneEvent != NULL)
@@ -253,11 +252,11 @@ static ncclResult_t commAlloc(ncclComm_t* comret, int ndev, int rank) {
 
 static ncclResult_t devCommSetup(ncclComm_t comm) {
   // Duplicate the channels on the device
-  NCCLCHECK(ncclCudaCalloc(&comm->hostDevComm.channels, comm->nChannels));
-  NCCLCHECK(ncclCudaMemcpy(comm->hostDevComm.channels, comm->channels, comm->nChannels));
+  NCCLCHECK(ncclCudaCalloc(&comm->hostDevComm.channels, comm->p2pnChannels));
+  NCCLCHECK(ncclCudaMemcpy(comm->hostDevComm.channels, comm->channels, comm->p2pnChannels));
 
   // Copy userRanks and peers
-  for (int r=0; r<comm->nChannels; r++) {
+  for (int r=0; r<comm->p2pnChannels; r++) {
     NCCLCHECK(ncclCudaMemcpy(comm->channels[r].ring.devUserRanks, comm->channels[r].ring.userRanks, comm->nRanks));
   }
 
@@ -727,9 +726,6 @@ static ncclResult_t initTransportsRank(struct ncclComm* comm, ncclUniqueId* comm
 
   // AllGather3 - end
 
-  // Compute nChannels per peer for p2p
-  NCCLCHECK(ncclTopoComputeP2pChannels(comm));
-
   TRACE(NCCL_INIT, "rank %d nranks %d - BUILT %d TREES/RINGS", rank, nranks, comm->nChannels);
 
   NCCLCHECK(ncclTopoSetThresholds(comm, minCompCap, maxCompCap, &treeGraph, &ringGraph, &collNetGraph));
@@ -793,6 +789,9 @@ static ncclResult_t initTransportsRank(struct ncclComm* comm, ncclUniqueId* comm
   TRACE(NCCL_INIT, "rank %d nranks %d - CONNECTED %d RINGS AND TREES", rank, nranks, comm->nChannels);
   free(connect);
   free(rings);
+
+  // Compute nChannels per peer for p2p
+  NCCLCHECK(ncclTopoComputeP2pChannels(comm));
 
   // We should have allocated all buffers, collective fifos, ... we can
   // restore the affinity.

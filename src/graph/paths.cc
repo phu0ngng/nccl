@@ -9,6 +9,7 @@
 #include "topo.h"
 #include "comm.h"
 #include "net.h"
+#include "channel.h"
 
 // Pre-compute GPU->NIC, GPU->GPU and NIC->GPU paths
 
@@ -445,33 +446,46 @@ static ncclResult_t ncclTopoGetNchannels(struct ncclTopoSystem* system, int rank
   if (ncclTopoRankToIndex(system, peerRank, &peer) == ncclSuccess) {
     // Local rank
     path = system->nodes[GPU].nodes[peer].paths[GPU]+g;
+    if (path->type == PATH_NVL) {
+      int sm = system->nodes[GPU].nodes[g].gpu.cudaCompCap;
+      double nvlWidth = sm < 70 ? PASCAL_NVLINK_WIDTH : VOLTA_NVLINK_WIDTH;
+      *nChannels = 2*std::max(1, (int)(path->width / nvlWidth));
+    } else {
+      *nChannels = 2;
+    }
   } else {
-    // Remote rank, check network
-    int64_t id;
-    int n;
-    NCCLCHECK(ncclTopoGetLocalNet(system, rank, &id, peer));
-    NCCLCHECK(ncclTopoIdToIndex(system, NET, id, &n));
-    path = system->nodes[NET].nodes[n].paths[GPU]+g;
-  }
-  if (path->type == PATH_NVL) {
-    int sm = system->nodes[GPU].nodes[g].gpu.cudaCompCap;
-    double nvlWidth = sm < 70 ? PASCAL_NVLINK_WIDTH : VOLTA_NVLINK_WIDTH;
-    *nChannels = std::max(1, (int)(path->width / nvlWidth));
-  } else {
+    // Remote rank, use network
     *nChannels = 1;
   }
-  // We always allocate 2 channels per NVLink/NIC/PCI/...
-  *nChannels *= 2;
   return ncclSuccess;
 }
 
 ncclResult_t ncclTopoComputeP2pChannels(struct ncclComm* comm) {
-  if (comm->p2pChannels) return ncclSuccess;
-  NCCLCHECK(ncclCalloc(&comm->p2pChannels, comm->nRanks));
+  int minChannels = MAXCHANNELS;
   for (int r=0; r<comm->nRanks; r++) {
     int nChannels;
+    if (r == comm->rank) continue;
     NCCLCHECK(ncclTopoGetNchannels(comm->topo, comm->rank, r, &nChannels));
-    comm->p2pChannels[r] = std::min(comm->nChannels, nChannels);
+    minChannels = std::min(minChannels, nChannels);
   }
+
+  // Round to next pow2 minChannels and nChannels
+  int pow2;
+  for (pow2=1; minChannels > pow2; pow2 <<= 1);
+  comm->p2pnChannelsPerPeer = pow2;
+  for (pow2=1; comm->nChannels > pow2; pow2 <<= 1);
+  comm->p2pnChannels = pow2;
+  // Init channels that weren't used so far
+  for (int c=comm->nChannels; c<comm->p2pnChannels; c++) NCCLCHECK(initChannel(comm, c));
+
+  // We want to spread channels used when there aren't many and progressively
+  // fill the whole space of nChannels. To do so we mirror the bits in the
+  // nChannels space.
+  for (int c=0; c<comm->p2pnChannelsPerPeer; c++) {
+    int mirror = 0;
+    for (int b=1, mb=(pow2>>1); b<pow2; b<<=1, mb>>=1) if (c & b) mirror |= mb;
+    comm->p2pChannels[c] = mirror;
+  }
+  INFO(NCCL_INIT, "%d coll channels, %d p2p channels, %d p2p channels per peer\n", comm->nChannels, comm->p2pnChannels, comm->p2pnChannelsPerPeer);
   return ncclSuccess;
 }

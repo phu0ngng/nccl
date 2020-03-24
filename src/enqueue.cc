@@ -88,21 +88,23 @@ ncclResult_t ncclLaunchCooperativeKernelMultiDevice(struct cudaLaunchParams *par
 }
 
 ncclResult_t setupLaunch(struct ncclComm* comm, struct cudaLaunchParams* params) {
-  params->gridDim.x = std::min<unsigned>(params->gridDim.x, comm->nChannels);
+  // Only launch blocks where we have work to do.
+  for (int c=0; c<comm->p2pnChannels; c++) {
+    if (comm->channels[c].collCount) params->gridDim.x = c+1;
+  }
 
-  // Set active = 2 for the last operation
+  // Set active = 2 for the last operation and add a no-op on empty channels (p2p case).
   for (int c=0; c<params->gridDim.x; c++) {
     struct ncclChannel* channel = comm->channels+c;
-    if(channel->collCount==0) { //non-alltoall sendrecv patterns may lead to launching SMs doing nothing
-    //inject an noop if no ops in the fifo for the channel
+    if (channel->collCount == 0) {
       int opIndex = channel->collFifoTail;
       struct ncclColl* c = channel->collectives+opIndex;
       volatile uint8_t* activePtr = (volatile uint8_t*)&c->active;
       while (activePtr[0] != 0) sched_yield();
 
-      c->args.rankDelta=0;
-      c->funcIndex=0; //noop for rankdelta=0
-      c->args.comm=comm->devComm;
+      c->args.rankDelta = 0;
+      c->funcIndex = 0; // noop for rankdelta=0
+      c->args.comm = comm->devComm;
       c->active = 1;
       opIndex = (opIndex+1)%NCCL_MAX_OPS;
       c->nextIndex = opIndex;
@@ -524,9 +526,8 @@ ncclResult_t ncclEnqueueCheck(struct ncclInfo* info) {
       p2plist->count++;
       if (info->recvbuff == NULL) { //FIXME check if wasnt used already
         if (info->root != comm->rank) {
-          int channelStart = (info->delta-1) % comm->nChannels;
-          for (int c=channelStart; c<channelStart+comm->p2pChannels[info->root]; c++) {
-            int channelId = c % comm->nChannels;
+          for (int c=0; c<comm->p2pnChannelsPerPeer; c++) {
+            int channelId = (info->delta-1+comm->p2pChannels[c]) % comm->p2pnChannels;
             if (comm->channels[channelId].peers[info->root].send.connected == 0) {
               p2plist->connect.send[channelId*comm->nRanks+p2plist->connect.nsend[channelId]++] = info->root;
             }
@@ -536,9 +537,8 @@ ncclResult_t ncclEnqueueCheck(struct ncclInfo* info) {
         p2plist->peerlist[info->root].sendbuff = info->sendbuff;
       } else {
         if (info->root != comm->rank) {
-          int channelStart = (info->delta-1) % comm->nChannels;
-          for (int c=channelStart; c<channelStart+comm->p2pChannels[info->root]; c++) {
-            int channelId = c % comm->nChannels;
+          for (int c=0; c<comm->p2pnChannelsPerPeer; c++) {
+            int channelId = (info->delta-1+comm->p2pChannels[c]) % comm->p2pnChannels;
             if (comm->channels[channelId].peers[info->root].recv.connected == 0) {
               p2plist->connect.recv[channelId*comm->nRanks+p2plist->connect.nrecv[channelId]++] = info->root;
             }

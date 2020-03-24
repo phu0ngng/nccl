@@ -186,7 +186,6 @@ struct ncclChannel {
       struct ncclTree collTreeDn;
 
       int id;
-      int nthreads;
 
       // Communication structures
       struct ncclPeer* peers;
