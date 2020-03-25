@@ -70,7 +70,7 @@ __global__ void NCCL_KERN_NAME(coll, op, dtype)(struct ncclColl firstColl) { \
     load_coll(c, channel->collectives+channel->collFifoHead, tid, comm); \
   } \
   while (1) { \
-    if (tid < c->args.nThreads) { \
+    if (tid < c->args.common.nThreads) { \
       if (c->funcIndex == fIndex) { \
         coll##Kernel<COLL_UNROLL, ncclFunc<ctype>, ctype>(&c->args); \
       } else { \

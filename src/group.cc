@@ -124,7 +124,6 @@ static ncclResult_t scheduleSendRecv(struct ncclComm* comm, int delta, int chann
   info.channelId=channelId;
   info.sendbytes=sendbytes;
   info.recvbytes=recvbytes;
-  if (delta == 0) info.nBytes=sendbytes;
   NCCLCHECK(ncclSaveKernel(&info));
   return ncclSuccess;
 }
@@ -214,18 +213,8 @@ ncclResult_t ncclGroupEnd() {
       int rank = comm->rank;
       int nRanks = comm->nRanks;
       struct ncclP2Plist* p2plist = &args->coll.comm->p2plist;
-      if (p2plist->peerlist[rank].recvbytes > 0 || p2plist->peerlist[rank].sendbytes > 0) {
-        if (p2plist->peerlist[rank].sendbytes != p2plist->peerlist[rank].recvbytes) {
-          WARN("Error : send/recv to/from self : size mismatch.");
-          return ncclInvalidUsage;
-        }
-        if (p2plist->peerlist[rank].sendbuff != p2plist->peerlist[rank].recvbuff) {
-          CUDACHECK(cudaMemcpyAsync(p2plist->peerlist[rank].recvbuff, p2plist->peerlist[rank].sendbuff,
-                p2plist->peerlist[rank].sendbytes, cudaMemcpyDeviceToDevice, args->coll.comm->userStream));
-        }
-      }
       if (p2plist->count) {
-        for (int delta=1; delta<nRanks; delta++) {
+        for (int delta=0; delta<nRanks; delta++) {
           uint32_t from = (rank+nRanks-delta)%nRanks;
           uint32_t to = (rank+delta)%nRanks;
 
@@ -243,7 +232,7 @@ ncclResult_t ncclGroupEnd() {
           int remaining = 1;
           int chunk = 0;
           while (remaining) {
-            int channelId = (delta-1+comm->p2pChannels[chunk%comm->p2pnChannelsPerPeer]) % comm->p2pnChannels;
+            int channelId = (delta+comm->p2pChannels[chunk%comm->p2pnChannelsPerPeer]) % comm->p2pnChannels;
             remaining = 0;
             size_t recvbytes = p2plist->peerlist[from].recvbytes-recvOffset;
             size_t sendbytes = p2plist->peerlist[to].sendbytes-sendOffset;

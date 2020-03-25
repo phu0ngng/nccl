@@ -10,10 +10,23 @@
 
 template<int UNROLL, class FUNC, typename T>
 __device__ void ncclSendRecvKernel(struct CollectiveArgs* args) {
-  if (args->rankDelta == 0) return; //NOOP
-
   const int tid = threadIdx.x;
-  const int nthreads = args->nThreads-WARP_SIZE;
+  const int nthreads = args->p2p.nThreads-WARP_SIZE;
+
+  // Compute pointers
+  const T* sendbuff = (const T*)args->sendbuff;
+  T* recvbuff = (T*)args->recvbuff;
+
+  if (args->p2p.delta < 0 ) return; // No-op
+
+  if (args->p2p.delta == 0) {
+    if (tid < nthreads && sendbuff != recvbuff) {
+      // local copy
+      ReduceOrCopyMulti<UNROLL, FUNC, T, 1, 1, 1, 1>(tid, nthreads, 1, &sendbuff, 1, &recvbuff, args->p2p.sendCount);
+    }
+    return;
+  }
+
   struct ncclDevComm* comm = args->comm;
   struct ncclChannel* channel = comm->channels+blockIdx.x;
 
@@ -21,14 +34,11 @@ __device__ void ncclSendRecvKernel(struct CollectiveArgs* args) {
   const ssize_t recvSize = args->p2p.recvCount;
   const int stepSize = comm->buffSizes[NCCL_PROTO_SIMPLE] / (sizeof(T)*NCCL_STEPS);
   const int chunkSize = stepSize * SENDRECV_CHUNKSTEPS;
-  int peerRecv = recvSize >= 0 ? (comm->rank-(int)args->rankDelta+comm->nRanks)%comm->nRanks : -1;
-  int peerSend = sendSize >= 0 ? (comm->rank+(int)args->rankDelta)%comm->nRanks : -1;
-  // Compute pointers
-  const T * __restrict__ sendbuff = (const T*)args->sendbuff;
-  T * __restrict__ recvbuff = (T*)args->recvbuff;
+  int peerRecv = recvSize >= 0 ? (comm->rank-(int)args->p2p.delta+comm->nRanks)%comm->nRanks : -1;
+  int peerSend = sendSize >= 0 ? (comm->rank+(int)args->p2p.delta)%comm->nRanks : -1;
 
   ncclPrimitives<UNROLL, SENDRECV_CHUNKSTEPS/SENDRECV_SLICESTEPS, SENDRECV_SLICESTEPS, T, 1, 1, FUNC>
-    prims(tid, args->nThreads, &peerRecv, &peerSend, NULL, stepSize, channel, comm, args->opCount);
+    prims(tid, args->p2p.nThreads, &peerRecv, &peerSend, NULL, stepSize, channel, comm, args->opCount);
 
   int maxSize = sendSize-chunkSize>recvSize ? sendSize-chunkSize : recvSize;
 

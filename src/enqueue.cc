@@ -102,8 +102,8 @@ ncclResult_t setupLaunch(struct ncclComm* comm, struct cudaLaunchParams* params)
       volatile uint8_t* activePtr = (volatile uint8_t*)&c->active;
       while (activePtr[0] != 0) sched_yield();
 
-      c->args.rankDelta = 0;
-      c->funcIndex = 0; // noop for rankdelta=0
+      c->args.p2p.delta = -1; // no-op
+      c->funcIndex = FUNC_INDEX_P2P;
       c->args.comm = comm->devComm;
       c->active = 1;
       opIndex = (opIndex+1)%NCCL_MAX_OPS;
@@ -353,12 +353,11 @@ static ncclResult_t computeColl(struct ncclInfo* info /* input */, struct ncclCo
   coll->args.opCount = info->comm->opCount;
 
   if (info->coll == ncclCollSendRecv) {
-    coll->args.nChannels = 1;
     coll->args.p2p.sendCount = info->sendbytes;
     coll->args.p2p.recvCount = info->recvbytes;
-    coll->funcIndex = 0;
-    coll->args.rankDelta = info->delta;
-    coll->args.nThreads = NCCL_MAX_NTHREADS+WARP_SIZE; //FIXME: ONLY SIMPLE
+    coll->args.p2p.delta = info->delta;
+    coll->funcIndex = FUNC_INDEX_P2P;
+    coll->args.p2p.nThreads = info->nThreads = info->comm->maxThreads[NCCL_ALGO_RING][NCCL_PROTO_SIMPLE]+WARP_SIZE;
     return ncclSuccess;
   }
   // Set nstepsPerLoop and nchunksPerLoop
@@ -366,10 +365,10 @@ static ncclResult_t computeColl(struct ncclInfo* info /* input */, struct ncclCo
   NCCLCHECK(getPatternInfo(info));
   NCCLCHECK(getLoopInfo(info));
 
-  coll->args.root = info->root;
+  coll->args.coll.root = info->root;
   coll->args.coll.count = info->count;
-  coll->args.nChannels = info->nChannels;
-  coll->args.nThreads = info->nThreads;
+  coll->args.coll.nChannels = info->nChannels;
+  coll->args.coll.nThreads = info->nThreads;
 
   coll->funcIndex = FUNC_INDEX(info->coll, info->op, info->datatype, info->algorithm, info->protocol);
 
@@ -448,11 +447,12 @@ ncclResult_t ncclSaveKernel(struct ncclInfo* info) {
   memset(&proxyArgs, 0, sizeof(struct ncclProxyArgs));
   NCCLCHECK(computeColl(info, &coll, &proxyArgs));
 
-  info->comm->myParams->blockDim.x = std::max<unsigned>(info->comm->myParams->blockDim.x, coll.args.nThreads);
+  info->comm->myParams->blockDim.x = std::max<unsigned>(info->comm->myParams->blockDim.x, info->nThreads);
 
+  int nChannels = info->coll == ncclCollSendRecv ? 1 : coll.args.coll.nChannels;
   int nSubChannels = (info->pattern == ncclPatternCollTreeUp || info->pattern == ncclPatternCollTreeDown) ? 2 : 1;
 
-  for (int bid=0; bid<coll.args.nChannels*nSubChannels; bid++) {
+  for (int bid=0; bid<nChannels*nSubChannels; bid++) {
     int channelId = (info->coll == ncclCollSendRecv) ? info->channelId :
       info->comm->myParams->gridDim.x % info->comm->nChannels;
     struct ncclChannel* channel = info->comm->channels+channelId;
@@ -471,10 +471,10 @@ ncclResult_t ncclSaveKernel(struct ncclInfo* info) {
 
     if (info->coll == ncclCollSendRecv) {
       info->comm->myParams->gridDim.x = std::max<unsigned>(info->comm->myParams->gridDim.x, channelId+1);
-      if (info->sendbytes >= 0) {
+      if (info->delta > 0 && info->sendbytes >= 0) {
         NCCLCHECK(ncclProxySaveSend(info, channel, (info->comm->rank+info->delta)%info->comm->nRanks, info->sendbytes));
       }
-      if (info->recvbytes >= 0) {
+      if (info->delta > 0 && info->recvbytes >= 0) {
         NCCLCHECK(ncclProxySaveRecv(info, channel, (info->comm->nRanks+info->comm->rank-info->delta)%info->comm->nRanks, info->recvbytes));
       }
     } else {
@@ -487,7 +487,7 @@ ncclResult_t ncclSaveKernel(struct ncclInfo* info) {
     while (activePtr[0] != 0) sched_yield();
 
     memcpy(c, &coll, sizeof(struct ncclColl));
-    if (info->coll != ncclCollSendRecv) c->args.bid = bid % coll.args.nChannels;
+    if (info->coll != ncclCollSendRecv) c->args.coll.bid = bid % coll.args.coll.nChannels;
 
     c->active = 1;
     opIndex = (opIndex+1)%NCCL_MAX_OPS;
@@ -528,7 +528,7 @@ ncclResult_t ncclEnqueueCheck(struct ncclInfo* info) {
       if (info->recvbuff == NULL) { //FIXME check if wasnt used already
         if (info->root != comm->rank) {
           for (int c=0; c<comm->p2pnChannelsPerPeer; c++) {
-            int channelId = (info->delta-1+comm->p2pChannels[c]) % comm->p2pnChannels;
+            int channelId = (info->delta+comm->p2pChannels[c]) % comm->p2pnChannels;
             if (comm->channels[channelId].peers[info->root].send.connected == 0) {
               p2plist->connect.send[channelId*comm->nRanks+p2plist->connect.nsend[channelId]++] = info->root;
             }
@@ -539,7 +539,7 @@ ncclResult_t ncclEnqueueCheck(struct ncclInfo* info) {
       } else {
         if (info->root != comm->rank) {
           for (int c=0; c<comm->p2pnChannelsPerPeer; c++) {
-            int channelId = (info->delta-1+comm->p2pChannels[c]) % comm->p2pnChannels;
+            int channelId = (info->delta+comm->p2pChannels[c]) % comm->p2pnChannels;
             if (comm->channels[channelId].peers[info->root].recv.connected == 0) {
               p2plist->connect.recv[channelId*comm->nRanks+p2plist->connect.nrecv[channelId]++] = info->root;
             }
