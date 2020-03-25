@@ -352,7 +352,8 @@ static ncclResult_t computeColl(struct ncclInfo* info /* input */, struct ncclCo
     // Use lastChunkSize as chunkSize
     coll->args.lastChunkSize = chunkSize / ncclTypeSize(info->datatype);
   } else if (info->protocol == NCCL_PROTO_LL) {
-    const ssize_t loopSize = info->nChannels*info->nchunksPerLoop*(ssize_t)stepSize;
+    const ssize_t sliceSize = stepSize*sizeof(uint64_t)/sizeof(union ncclLLFifoLine);
+    const ssize_t loopSize = info->nChannels*info->nchunksPerLoop*(ssize_t)sliceSize;
     coll->args.lastChunkSize = DIVUP((info->nBytes-(info->nBytes/loopSize)*loopSize), info->nChannels*info->nchunksPerLoop);
     ALIGN_SIZE(coll->args.lastChunkSize, info->nThreads*sizeof(uint64_t));
     coll->args.lastChunkSize /= ncclTypeSize(info->datatype);
