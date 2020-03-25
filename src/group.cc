@@ -120,10 +120,10 @@ static ncclResult_t scheduleSendRecv(struct ncclComm* comm, int delta, int chann
   struct ncclInfo info = { ncclCollSendRecv, "SendRecv",
     sendbuff, recvbuff, std::max<size_t>(sendbytes,recvbytes), ncclInt8, ncclSum, -1, comm, comm->userStream, /* Args */
     SENDRECV_CHUNKSTEPS, SENDRECV_SLICESTEPS };
-  info.delta=delta;
-  info.channelId=channelId;
-  info.sendbytes=sendbytes;
-  info.recvbytes=recvbytes;
+  info.delta = delta;
+  info.channelId = channelId;
+  info.sendbytes = sendbytes;
+  info.recvbytes = recvbytes;
   NCCLCHECK(ncclSaveKernel(&info));
   return ncclSuccess;
 }

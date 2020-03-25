@@ -523,25 +523,26 @@ ncclResult_t ncclEnqueueCheck(struct ncclInfo* info) {
     if (info->coll == ncclCollSendRecv) { //p2p stored separately
       struct ncclComm* comm = info->comm;
       struct ncclP2Plist* p2plist = &comm->p2plist;
+      int peer = info->root;
       // Save in comm->p2plist
       p2plist->count++;
       if (info->recvbuff == NULL) { //FIXME check if wasnt used already
-        if (info->root != comm->rank) {
+        if (peer != comm->rank) {
           for (int c=0; c<comm->p2pnChannelsPerPeer; c++) {
             int channelId = (info->delta+comm->p2pChannels[c]) % comm->p2pnChannels;
-            if (comm->channels[channelId].peers[info->root].send.connected == 0) {
-              p2plist->connect.send[channelId*comm->nRanks+p2plist->connect.nsend[channelId]++] = info->root;
+            if (comm->channels[channelId].peers[peer].send.connected == 0) {
+              p2plist->connect.send[channelId*comm->nRanks+p2plist->connect.nsend[channelId]++] = peer;
             }
           }
         }
         p2plist->peerlist[info->root].sendbytes = info->count;
         p2plist->peerlist[info->root].sendbuff = info->sendbuff;
       } else {
-        if (info->root != comm->rank) {
+        if (peer != comm->rank) {
           for (int c=0; c<comm->p2pnChannelsPerPeer; c++) {
             int channelId = (info->delta+comm->p2pChannels[c]) % comm->p2pnChannels;
-            if (comm->channels[channelId].peers[info->root].recv.connected == 0) {
-              p2plist->connect.recv[channelId*comm->nRanks+p2plist->connect.nrecv[channelId]++] = info->root;
+            if (comm->channels[channelId].peers[peer].recv.connected == 0) {
+              p2plist->connect.recv[channelId*comm->nRanks+p2plist->connect.nrecv[channelId]++] = peer;
             }
           }
         }

@@ -31,7 +31,7 @@ ncclResult_t ncclRecv(void* recvbuff, size_t count, ncclDataType_t datatype, int
     SENDRECV_CHUNKSTEPS, SENDRECV_SLICESTEPS };
   info.sendbytes = -1;
   info.recvbytes = count*ncclTypeSize(datatype);
-  info.delta = (comm->nRanks+(comm->rank-peer)) % comm->nRanks;
+  info.delta = (comm->nRanks + (comm->rank-peer)) % comm->nRanks;
   NCCLCHECK(ncclGroupStart());
   NCCLCHECK(ncclEnqueueCheck(&info));
   NCCLCHECK(ncclGroupEnd());
