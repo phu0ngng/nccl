@@ -28,7 +28,7 @@ __device__ void ncclAllGatherRingKernel(struct CollectiveArgs* args) {
   T * __restrict__ thisOutput = (T*)args->recvbuff;
 
   ncclPrimitives<UNROLL, ALLGATHER_CHUNKSTEPS/ALLGATHER_SLICESTEPS, ALLGATHER_SLICESTEPS, T, 1, 1, FUNC>
-    prims(tid, args->coll.nThreads, &ring->prev, &ring->next, thisOutput, stepSize, channel, comm, args->opCount);
+    prims(tid, nthreads, &ring->prev, &ring->next, thisOutput, stepSize, channel, comm, args->opCount);
 
   for (ssize_t gridOffset = 0; gridOffset < size; gridOffset += loopSize) {
     int realChunkSize = min(chunkSize, DIVUP(size-gridOffset,nChannels));

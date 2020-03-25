@@ -28,7 +28,7 @@ __device__ void ncclAllReduceRingKernel(struct CollectiveArgs* args) {
   T * __restrict__ thisOutput = (T*)args->recvbuff;
 
   ncclPrimitives<UNROLL, ALLREDUCE_CHUNKSTEPS/ALLREDUCE_SLICESTEPS, ALLREDUCE_SLICESTEPS, T, 1, 1, FUNC>
-    prims(tid, args->coll.nThreads, &ring->prev, &ring->next, thisOutput, stepSize, channel, comm, args->opCount);
+    prims(tid, nthreads, &ring->prev, &ring->next, thisOutput, stepSize, channel, comm, args->opCount);
 
   for (ssize_t gridOffset = 0; gridOffset < size; gridOffset += nranks*loopSize) {
     int realChunkSize = min(chunkSize, DIVUP(size-gridOffset,nranks*nChannels));
@@ -108,7 +108,7 @@ __device__ void ncclAllReduceTreeKernel(struct CollectiveArgs* args) {
   do {
     struct ncclTree* tree = &channel->treeUp;
     // Reduce : max number of recv is 3, max number of send is 1 (binary tree + local)
-    ncclPrimitives<UNROLL/2, 1, 1, T, NCCL_MAX_TREE_ARITY, 1, FUNC> prims(tid, args->coll.nThreads, tree->down, &tree->up, NULL, stepSize, channel, comm, args->opCount);
+    ncclPrimitives<UNROLL/2, 1, 1, T, NCCL_MAX_TREE_ARITY, 1, FUNC> prims(tid, nthreads, tree->down, &tree->up, NULL, stepSize, channel, comm, args->opCount);
     for (ssize_t gridOffset = 0; gridOffset < size; gridOffset += loopSize) {
       // Up
       ssize_t offset = gridOffset + bid*chunkSize;
@@ -126,7 +126,7 @@ __device__ void ncclAllReduceTreeKernel(struct CollectiveArgs* args) {
   do {
     struct ncclTree* tree = &channel->treeDn;
     // Broadcast : max number of recv is 1, max number of send is 3 (binary tree + local)
-    ncclPrimitives<UNROLL/2, 1, 1, T, 1, NCCL_MAX_TREE_ARITY, FUNC> prims(tid, args->coll.nThreads, &tree->up, tree->down, NULL, stepSize, channel, comm, args->opCount);
+    ncclPrimitives<UNROLL/2, 1, 1, T, 1, NCCL_MAX_TREE_ARITY, FUNC> prims(tid, nthreads, &tree->up, tree->down, NULL, stepSize, channel, comm, args->opCount);
     for (ssize_t gridOffset = 0; gridOffset < size; gridOffset += loopSize) {
       // Down
       ssize_t offset = gridOffset + bid*chunkSize;
@@ -166,7 +166,7 @@ __device__ void ncclAllReduceCollNetKernel(struct CollectiveArgs* args) {
 
   if (blockIdx.x < nChannels) { // first half of the channels do reduce
     struct ncclTree* tree = &channel->collTreeUp;
-    ncclPrimitives<UNROLL, 1, 1, T, 1, 1, FUNC> prims(tid, args->coll.nThreads, tree->down, &tree->up, NULL, stepSize, channel, comm, args->opCount);
+    ncclPrimitives<UNROLL, 1, 1, T, 1, 1, FUNC> prims(tid, nthreads, tree->down, &tree->up, NULL, stepSize, channel, comm, args->opCount);
     for (ssize_t gridOffset = 0; gridOffset < size; gridOffset += loopSize) {
       // Up
       ssize_t offset = gridOffset + bid*chunkSize;
@@ -183,7 +183,7 @@ __device__ void ncclAllReduceCollNetKernel(struct CollectiveArgs* args) {
 
   if (blockIdx.x >= nChannels) { // second half of the channels do broadcast
     struct ncclTree* tree = &channel->collTreeDn;
-    ncclPrimitives<UNROLL, 1, 1, T, 1, 1, FUNC> prims(tid, args->coll.nThreads, &tree->up, tree->down, NULL, stepSize, channel, comm, args->opCount);
+    ncclPrimitives<UNROLL, 1, 1, T, 1, 1, FUNC> prims(tid, nthreads, &tree->up, tree->down, NULL, stepSize, channel, comm, args->opCount);
     for (ssize_t gridOffset = 0; gridOffset < size; gridOffset += loopSize) {
       // Down
       ssize_t offset = gridOffset + bid*chunkSize;

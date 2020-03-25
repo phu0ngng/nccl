@@ -38,7 +38,7 @@ __device__ void ncclSendRecvKernel(struct CollectiveArgs* args) {
   int peerSend = sendSize >= 0 ? (comm->rank+(int)args->p2p.delta)%comm->nRanks : -1;
 
   ncclPrimitives<UNROLL, SENDRECV_CHUNKSTEPS/SENDRECV_SLICESTEPS, SENDRECV_SLICESTEPS, T, 1, 1, FUNC>
-    prims(tid, args->p2p.nThreads, &peerRecv, &peerSend, NULL, stepSize, channel, comm, args->opCount);
+    prims(tid, nthreads, &peerRecv, &peerSend, NULL, stepSize, channel, comm, args->opCount);
 
   int maxSize = sendSize-chunkSize>recvSize ? sendSize-chunkSize : recvSize;
 
