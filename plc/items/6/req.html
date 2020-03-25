@@ -1,0 +1,69 @@
+<!DOCTYPE html>
+<html>
+<head>
+<title>NCCL-6 : Topology Graph : Requirements</title>
+<link rel="stylesheet" type="text/css" href="../../html/css/doc.css">
+</head>
+<body>
+<center><h1>NCCL-6 : Topology Graph<br>Requirements</h1></center>
+<!-- table of contents, auto-generated -->
+$CONTENTS
+<!-- end of table of contents -->
+<h2>Project Context and Purpose</h2>
+NCCL provides fast inter-GPU communication for parallel applications.
+
+<h2>NVbugs / Jira Tickets</h2>
+<p><a href="https://github.com/NVIDIA/nccl/issues/179">Github #179</a>
+<p><a href="http://nvbugs.nvidia.com/2313751">NVBug 2313751</a>
+<p><a href="https://jirasw.nvidia.com/browse/NCCL-827">Jira NCCL-827</a>
+
+<h2>User Experience</h2>
+NCCL is used through deep learning frameworks or other HPC applications to
+accelerate GPU-to-GPU communication. It is supposed to be transparent to the
+user.
+
+<h2>Assumptions, constraints and dependencies</h2>
+None
+
+<h2>Use Cases</h2>
+DL training on GPU platforms, in particular DGX systems, potentially within a large cluster.
+HPC applications
+
+<h2>Functional Requirements</h2>
+Fix the few cases which didn't work so far (see nvbugs).
+
+Provide trees with different in/out GPUs when possible.
+Provide trees flowing in a unique direction intra-node when possible.
+
+<h2>System Requirements</h2>
+Provide the best performance based on the node topology.
+
+<h2>Interface Requirements</h2>
+No new API.
+
+<h2>KPI Requirements</h2>
+Performance should remain the same or better.
+
+DGX systems should get peak performance when using a regular subpart of the node (e.g. GPUs 0,1,2,3 or 4,5,6,7 of a 8 GPU node).
+DGX systems should be functional and get reasonable performance when using a random subpart of the node (e.g. GPUs 0,4,6,7 or an 8 GPU node).
+
+<h2>Platform Requirements</h2>
+N/A
+<h2>Security Requirements</h2>
+NCCL is a user library and benefits from the user-mode security.
+<h2>Legal and Standards Requirements</h2>
+N/A
+<h2>Telemetry Requirements</h2>
+N/A
+<h2>Backward Compatibility Requirements</h2>
+Changes do not need to be backward compatible.
+<h2>Virtualization Requirements</h2>
+N/A
+
+<h2>Signoff list</h2>
+<p>Author : Sylvain Jeaugey
+<p><!-- Reviewer : First Last -->
+<p><!-- Reviewer : First Last  -->
+<p><!-- Product Manager : First Last -->
+
+<!-- do not end body and html, bottom will be auto-generated -->

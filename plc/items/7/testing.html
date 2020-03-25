@@ -1,0 +1,66 @@
+<!DOCTYPE html>
+<html>
+<head>
+<title>NCCL-7 : Point to point communication : Testing</title>
+<link rel="stylesheet" type="text/css" href="../../html/css/doc.css">
+</head>
+<body>
+<center><h1>NCCL-7 : Point to point communication<br>Testing</h1></center>
+<!-- table of contents, auto-generated -->
+$CONTENTS
+<!-- end of table of contents -->
+<h2>Objectives and Timeline</h2>
+<h3>Code Coverage Goal Defined</h3>
+None.
+<h3>KPI Coverage Goals Defined (performance, stress, stability, throughput, latency)</h3>
+No change.
+<h3>Requirement Coverage Goal Defined</h3>
+As a first step, we need to test point-to-point operations through an alltoall performance test.
+Next steps will require running sendrecv, halo exchange, ...
+
+<h3>Quality Thresholds Defined</h3>
+No error.
+
+<h3>Test Timeline</h3>
+Alltoall will be tested in NCCL 2.7 (Q2 2020).
+
+Other tests will be in NCCL 2.8 (Q3 2020).
+
+<h3>SW Verification and Test Plan</h3>
+Run above tests on DGX platforms, PCI platforms, P9 (CPU Nvlink), both intra-node and multi-node.
+
+<h2>Test plan</h2>
+<h3>Requirements Tests</h3>
+Performance tests need to be written for Alltoall, Scatter, Gather, Halo, Sendrecv.
+
+<h3>Interface Tests</h3>
+New API tests needs to be written for ncclSend and ncclRecv.
+
+<h3>Fault-injection Tests</h3>
+None.
+<h3>Resource Usage Tests</h3>
+None.
+<h3>Design Coverage Testing</h3>
+None.
+<h3>Boundary Tests</h3>
+None.
+<h3>Certification Tests</h3>
+None.
+<h3>Stress Tests</h3>
+None.
+<h3>Stability Tests</h3>
+None.
+<h3>Perf and Power KPI Tests</h3>
+None.
+<h3>Usability & OOBE Tests</h3>
+None.
+<h3>Manufacturing Diagnostic(Factory) Tests</h3>
+None.
+
+<h2>Signoff list</h2>
+<p>Author : Sylvain Jeaugey
+<!-- <p>Reviewer : First Last -->
+<!-- <p>Reviewer : First Last -->
+<!-- <p>QA : First Last -->
+
+<!-- do not end body and html, bottom will be auto-generated -->
