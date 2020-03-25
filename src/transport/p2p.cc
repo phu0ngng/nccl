@@ -241,12 +241,14 @@ static ncclResult_t p2pSendConnect(struct ncclConnect* connectInfo, int nranks, 
 
   int offset = 0;
   for (int p=0; p<NCCL_NUM_PROTOCOLS; p++) {
-    send->conn.buffs[p] = remDevMem->buff + offset;
-    offset += send->comm->buffSizes[p];
+    if (info->read && p == NCCL_PROTO_SIMPLE) {
+      /* For P2P Read the SIMPLE buffer is local (ncclSendMem) */
+      send->conn.buffs[p] = resources->devMem->buff;
+    } else {
+      send->conn.buffs[p] = remDevMem->buff + offset;
+      offset += send->comm->buffSizes[p];
+    }
   }
-  /* For P2P Read the SIMPLE buffer is local */
-  if (info->read) send->conn.buffs[NCCL_PROTO_SIMPLE] = resources->devMem->buff;
-
   send->conn.tail = &remDevMem->tail;
   send->conn.opCountRem = &remDevMem->opCount;
   send->conn.head = &resources->devMem->head;
@@ -277,12 +279,14 @@ ncclResult_t p2pRecvConnect(struct ncclConnect* connectInfo, int nranks, int ran
 
   int offset = 0;
   for (int p=0; p<NCCL_NUM_PROTOCOLS; p++) {
-    recv->conn.buffs[p] = resources->devMem->buff + offset;
-    offset += recv->comm->buffSizes[p];
+    if (info->read && p == NCCL_PROTO_SIMPLE) {
+      /* For P2P Read the SIMPLE buffer is remote (ncclSendMem) */
+      recv->conn.buffs[p] = remDevMem->buff;
+    } else {
+      recv->conn.buffs[p] = resources->devMem->buff + offset;
+      offset += recv->comm->buffSizes[p];
+    }
   }
-  /* For P2P Read the SIMPLE buffer is remote */
-  if (info->read) recv->conn.buffs[NCCL_PROTO_SIMPLE] = remDevMem->buff;
-
   recv->conn.tail = &resources->devMem->tail;
   recv->conn.opCountLoc = &resources->devMem->opCount;
   recv->conn.head = &remDevMem->head;
