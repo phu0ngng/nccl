@@ -471,12 +471,7 @@ ncclResult_t ncclSaveKernel(struct ncclInfo* info) {
 
     if (info->coll == ncclCollSendRecv) {
       info->comm->myParams->gridDim.x = std::max<unsigned>(info->comm->myParams->gridDim.x, channelId+1);
-      if (info->delta > 0 && info->sendbytes >= 0) {
-        NCCLCHECK(ncclProxySaveSend(info, channel, (info->comm->rank+info->delta)%info->comm->nRanks, info->sendbytes));
-      }
-      if (info->delta > 0 && info->recvbytes >= 0) {
-        NCCLCHECK(ncclProxySaveRecv(info, channel, (info->comm->nRanks+info->comm->rank-info->delta)%info->comm->nRanks, info->recvbytes));
-      }
+      NCCLCHECK(ncclProxySaveP2p(info, channel));
     } else {
       NCCLCHECK(ncclProxySaveColl(&proxyArgs, info->pattern, info->root, info->comm->nRanks));
     }
@@ -496,6 +491,39 @@ ncclResult_t ncclSaveKernel(struct ncclInfo* info) {
     channel->collCount++;
   }
   info->comm->opCount++;
+  return ncclSuccess;
+}
+
+// Save p2p operations in comm->p2plist. Operations will be posted to channels
+// during ncclGroupEnd()
+ncclResult_t ncclSaveP2p(struct ncclInfo* info) {
+  struct ncclComm* comm = info->comm;
+  struct ncclP2Plist* p2plist = &comm->p2plist;
+  int peer = info->root;
+  p2plist->count++;
+  if (info->recvbuff == NULL) {
+    if (peer != comm->rank) {
+      for (int c=0; c<comm->p2pnChannelsPerPeer; c++) {
+        int channelId = (info->delta+comm->p2pChannels[c]) % comm->p2pnChannels;
+        if (comm->channels[channelId].peers[peer].send.connected == 0) {
+          p2plist->connect.send[channelId*comm->nRanks+p2plist->connect.nsend[channelId]++] = peer;
+        }
+      }
+    }
+    p2plist->peerlist[info->root].sendbytes = info->count;
+    p2plist->peerlist[info->root].sendbuff = info->sendbuff;
+  } else {
+    if (peer != comm->rank) {
+      for (int c=0; c<comm->p2pnChannelsPerPeer; c++) {
+        int channelId = (info->delta+comm->p2pChannels[c]) % comm->p2pnChannels;
+        if (comm->channels[channelId].peers[peer].recv.connected == 0) {
+          p2plist->connect.recv[channelId*comm->nRanks+p2plist->connect.nrecv[channelId]++] = peer;
+        }
+      }
+    }
+    p2plist->peerlist[info->root].recvbytes = info->count;
+    p2plist->peerlist[info->root].recvbuff = info->recvbuff;
+  }
   return ncclSuccess;
 }
 
@@ -521,36 +549,10 @@ ncclResult_t ncclEnqueueCheck(struct ncclInfo* info) {
     NCCLCHECKGOTO(ncclAsyncColl(info->comm), ret, end);
     NCCLCHECKGOTO(checkSetStream(info), ret, end);
     if (info->coll == ncclCollSendRecv) { //p2p stored separately
-      struct ncclComm* comm = info->comm;
-      struct ncclP2Plist* p2plist = &comm->p2plist;
-      int peer = info->root;
-      // Save in comm->p2plist
-      p2plist->count++;
-      if (info->recvbuff == NULL) { //FIXME check if wasnt used already
-        if (peer != comm->rank) {
-          for (int c=0; c<comm->p2pnChannelsPerPeer; c++) {
-            int channelId = (info->delta+comm->p2pChannels[c]) % comm->p2pnChannels;
-            if (comm->channels[channelId].peers[peer].send.connected == 0) {
-              p2plist->connect.send[channelId*comm->nRanks+p2plist->connect.nsend[channelId]++] = peer;
-            }
-          }
-        }
-        p2plist->peerlist[info->root].sendbytes = info->count;
-        p2plist->peerlist[info->root].sendbuff = info->sendbuff;
-      } else {
-        if (peer != comm->rank) {
-          for (int c=0; c<comm->p2pnChannelsPerPeer; c++) {
-            int channelId = (info->delta+comm->p2pChannels[c]) % comm->p2pnChannels;
-            if (comm->channels[channelId].peers[peer].recv.connected == 0) {
-              p2plist->connect.recv[channelId*comm->nRanks+p2plist->connect.nrecv[channelId]++] = peer;
-            }
-          }
-        }
-        p2plist->peerlist[info->root].recvbytes = info->count;
-        p2plist->peerlist[info->root].recvbuff = info->recvbuff;
-      }
-    } else
-        NCCLCHECKGOTO(ncclSaveKernel(info), ret, end);
+      NCCLCHECKGOTO(ncclSaveP2p(info), ret, end);
+    } else {
+      NCCLCHECKGOTO(ncclSaveKernel(info), ret, end);
+    }
 end:
     if (savedDev != -1) CUDACHECK(cudaSetDevice(savedDev));
     ncclAsyncErrCheck(ret);
