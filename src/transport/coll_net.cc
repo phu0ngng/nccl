@@ -153,11 +153,11 @@ ncclResult_t collNetSendConnect(struct ncclConnect* connectInfos, int nranks, in
   for (int p=0; p<NCCL_NUM_PROTOCOLS; p++)
     resources->recvMhandles[p] = info->mhandles[p];
 
-  for (int p=0; p<NCCL_NUM_PROTOCOLS; p++) {
-    int useGdr = (p != NCCL_PROTO_LL && resources->useGdr) ? NCCL_PTR_CUDA : NCCL_PTR_HOST;
-    NCCLCHECK(collNetRegMr(resources->collNetSendComm, send->conn.buffs[p], send->comm->buffSizes[p],
-          useGdr, &resources->sendMhandles[p]));
-  }
+  // Register buffers
+  NCCLCHECK(collNetRegMr(resources->collNetSendComm, send->conn.buffs[NCCL_PROTO_SIMPLE], send->comm->buffSizes[NCCL_PROTO_SIMPLE],
+        resources->useGdr ? NCCL_PTR_CUDA : NCCL_PTR_HOST, &resources->sendMhandles[NCCL_PROTO_SIMPLE]));
+  NCCLCHECK(collNetRegMr(resources->collNetSendComm, resources->llData, send->comm->buffSizes[NCCL_PROTO_LL]/2,
+        NCCL_PTR_HOST, &resources->sendMhandles[NCCL_PROTO_LL]));
   return ncclSuccess;
 }
 
@@ -193,8 +193,8 @@ ncclResult_t collNetRecvConnect(struct ncclConnect* connectInfos, int nranks, in
   NCCLCHECKGOTO(collNetConnect((void**)handlePtrs, nranks, rank, resources->netListenComm, &resources->collNetRecvComm), res, cleanup);
 
   // Register buffers
-  NCCLCHECK(collNetRegMr(resources->collNetRecvComm, recvMem->buff, recv->comm->buffSizes[NCCL_PROTO_SIMPLE],
-        resources->useGdr ? NCCL_PTR_CUDA : NCCL_PTR_HOST, &resources->mhandles[NCCL_PROTO_LL]));
+  NCCLCHECK(collNetRegMr(resources->collNetRecvComm, recv->conn.buffs[NCCL_PROTO_SIMPLE], recv->comm->buffSizes[NCCL_PROTO_SIMPLE],
+        resources->useGdr ? NCCL_PTR_CUDA : NCCL_PTR_HOST, &resources->mhandles[NCCL_PROTO_SIMPLE]));
   NCCLCHECK(collNetRegMr(resources->collNetRecvComm, resources->llData, recv->comm->buffSizes[NCCL_PROTO_LL]/2,
         NCCL_PTR_HOST, &resources->mhandles[NCCL_PROTO_LL]));
 
@@ -220,8 +220,8 @@ ncclResult_t collNetSendFree(void* sendTransportResources) {
   NCCLCHECK(ncclCudaHostFree(resources->hostSendMem));
   NCCLCHECK(ncclCudaHostFree(resources->hostRecvMem));
   if (resources->collNetSendComm) {
-    for (int p=0; p<NCCL_NUM_PROTOCOLS; p++)
-      NCCLCHECK(collNetDeregMr(resources->collNetSendComm, resources->sendMhandles[p]));
+    NCCLCHECK(collNetDeregMr(resources->collNetSendComm, resources->sendMhandles[NCCL_PROTO_LL]));
+    NCCLCHECK(collNetDeregMr(resources->collNetSendComm, resources->sendMhandles[NCCL_PROTO_SIMPLE]));
   }
   if (resources->useGdr)
     CUDACHECK(cudaFree(resources->devRecvMem));
@@ -234,8 +234,8 @@ ncclResult_t collNetRecvFree(void* recvTransportResources) {
   struct collNetRecvResources* resources = (struct collNetRecvResources*)recvTransportResources;
   NCCLCHECK(ncclCudaHostFree(resources->hostSendMem));
   if (resources->collNetRecvComm) {
-    for (int p=0; p<NCCL_NUM_PROTOCOLS; p++)
-      NCCLCHECK(collNetDeregMr(resources->collNetRecvComm, resources->mhandles[p]));
+    NCCLCHECK(collNetDeregMr(resources->collNetRecvComm, resources->mhandles[NCCL_PROTO_LL]));
+    NCCLCHECK(collNetDeregMr(resources->collNetRecvComm, resources->mhandles[NCCL_PROTO_SIMPLE]));
   }
   NCCLCHECK(ncclCudaHostFree(resources->hostRecvMem));
   if (resources->useGdr)
@@ -287,7 +287,6 @@ ncclResult_t collNetSendProxy(struct ncclProxyArgs* args) {
           if (size != -1) {
             uint32_t flag = NCCL_LL_FLAG(args->tail + 1);
             int nFifoLines = DIVUP(size, sizeof(union ncclLLFifoLine));
-            size = nFifoLines * sizeof(union ncclLLFifoLine);
             union ncclLLFifoLine* lines = (union ncclLLFifoLine*)(localBuff+buffSlot*stepSize);
             int ready = 1;
             for (int i=0; i<nFifoLines; i++) {
@@ -296,9 +295,9 @@ ncclResult_t collNetSendProxy(struct ncclProxyArgs* args) {
               if (f1[0] != flag || f2[0] != flag) { ready = 0; break; }
             }
             if (ready) {
-              int stepLines = stepSize / sizeof(uint64_t);
+              int stepLines = stepSize / sizeof(union ncclLLFifoLine);
               //separate data from flag
-              uint32_t* sendBuff = resources->llData+buffSlot*stepLines;
+              uint32_t* sendBuff = resources->llData+buffSlot*2*stepLines;  // each line has two data elements
               for (int i=0; i<nFifoLines; i++) {
                 volatile uint32_t *d1 = &lines[i].data1;
                 volatile uint32_t *d2 = &lines[i].data2;
