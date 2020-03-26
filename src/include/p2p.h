@@ -12,8 +12,8 @@
 struct ncclP2Pinfo {
  const void* sendbuff;
   void* recvbuff;
-  size_t sendbytes;
-  size_t recvbytes;
+  ssize_t sendbytes;
+  ssize_t recvbytes;
 };
 
 struct ncclP2PConnect {

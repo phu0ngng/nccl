@@ -331,21 +331,6 @@ static ncclResult_t getLoopInfo(struct ncclInfo* info) {
   return ncclSuccess;
 }
 
-static int nChannelsP2P(struct ncclComm* comm, int bytes) {
-  if (bytes < 0) return 0;
-  if (bytes == 0) return 1;
-  int maxchannels = comm->nChannels; //int channels = comm->nChannels/(comm->nRanks-1);
-  return std::max<unsigned>(1,std::min<unsigned>(maxchannels, NCCL_STEPS*bytes/comm->buffSizes[NCCL_PROTO_SIMPLE]));
-}
-static ncclResult_t getChannelOffset(struct ncclComm* comm, size_t nbytes, size_t* channelOffset) {
-  size_t minChunk = 128;
-  size_t chunks = DIVUP(nbytes, minChunk);
-  int channels = nChannelsP2P(comm, nbytes);
-  size_t chunksPerCh = DIVUP(chunks, channels);
-  *channelOffset = chunksPerCh * minChunk;
-  return ncclSuccess;
-}
-
 static ncclResult_t computeColl(struct ncclInfo* info /* input */, struct ncclColl* coll, struct ncclProxyArgs* proxyArgs /* output */) {
   coll->args.sendbuff = info->sendbuff;
   coll->args.recvbuff = info->recvbuff;
@@ -458,7 +443,7 @@ ncclResult_t ncclSaveKernel(struct ncclInfo* info) {
     struct ncclChannel* channel = info->comm->channels+channelId;
 
     if (channel->collCount == NCCL_MAX_OPS) {
-      WARN("Too many aggregated operations (%d max)", NCCL_MAX_OPS);
+      WARN("Too many aggregated operations on channel %d (%d max)", channel->id, NCCL_MAX_OPS);
       return ncclInvalidUsage;
     }
 
@@ -501,53 +486,56 @@ ncclResult_t ncclSaveP2p(struct ncclInfo* info) {
   struct ncclP2Plist* p2plist = &comm->p2plist;
   int peer = info->root;
   p2plist->count++;
+  ssize_t nBytes = info->count*ncclTypeSize(info->datatype);
   if (info->recvbuff == NULL) {
     if (peer != comm->rank) {
+      int delta = (comm->nRanks - (comm->rank-peer)) % comm->nRanks;
       for (int c=0; c<comm->p2pnChannelsPerPeer; c++) {
-        int channelId = (info->delta+comm->p2pChannels[c]) % comm->p2pnChannels;
+        int channelId = (delta+comm->p2pChannels[c]) % comm->p2pnChannels;
         if (comm->channels[channelId].peers[peer].send.connected == 0) {
           p2plist->connect.send[channelId*comm->nRanks+p2plist->connect.nsend[channelId]++] = peer;
         }
       }
     }
-    p2plist->peerlist[info->root].sendbytes = info->count;
+    p2plist->peerlist[info->root].sendbytes = nBytes;
     p2plist->peerlist[info->root].sendbuff = info->sendbuff;
   } else {
     if (peer != comm->rank) {
+      int delta = (comm->nRanks + (comm->rank-peer)) % comm->nRanks;
       for (int c=0; c<comm->p2pnChannelsPerPeer; c++) {
-        int channelId = (info->delta+comm->p2pChannels[c]) % comm->p2pnChannels;
+        int channelId = (delta+comm->p2pChannels[c]) % comm->p2pnChannels;
         if (comm->channels[channelId].peers[peer].recv.connected == 0) {
           p2plist->connect.recv[channelId*comm->nRanks+p2plist->connect.nrecv[channelId]++] = peer;
         }
       }
     }
-    p2plist->peerlist[info->root].recvbytes = info->count;
+    p2plist->peerlist[info->root].recvbytes = nBytes;
     p2plist->peerlist[info->root].recvbuff = info->recvbuff;
   }
   return ncclSuccess;
 }
 
 ncclResult_t ncclEnqueueCheck(struct ncclInfo* info) {
-  if (info->comm == NULL) return ncclInvalidArgument;
-
-  INFO(NCCL_COLL,"%s: opCount %lx sendbuff %p recvbuff %p count %zi datatype %d op %d root %d comm %p [nranks=%d] stream %p",
-       info->opName, info->comm->opCount, info->sendbuff, info->recvbuff, info->count,
-       info->datatype, info->op, info->root, info->comm, info->comm->nRanks, info->stream);
-
   // Launch asynchronously if needed
   if (ncclAsyncMode()) {
     ncclResult_t ret = ncclSuccess;
     int savedDev = -1;
+    // Check arguments
+    NCCLCHECK(PtrCheck(info->comm, info->opName, "comm"));
     if (info->comm->checkPointers) {
       CUDACHECKGOTO(cudaGetDevice(&savedDev), ret, end);
       CUDACHECKGOTO(cudaSetDevice(info->comm->cudaDev), ret, end);
     }
-    // Check arguments
     NCCLCHECKGOTO(ArgsCheck(info), ret, end);
     // Always register comm even in case of error to make sure ncclGroupEnd
     // cleans it up.
     NCCLCHECKGOTO(ncclAsyncColl(info->comm), ret, end);
     NCCLCHECKGOTO(checkSetStream(info), ret, end);
+
+    INFO(NCCL_COLL,"%s: opCount %lx sendbuff %p recvbuff %p count %zi datatype %d op %d root %d comm %p [nranks=%d] stream %p",
+        info->opName, info->comm->opCount, info->sendbuff, info->recvbuff, info->count,
+        info->datatype, info->op, info->root, info->comm, info->comm->nRanks, info->stream);
+
     if (info->coll == ncclCollSendRecv) { //p2p stored separately
       NCCLCHECKGOTO(ncclSaveP2p(info), ret, end);
     } else {
@@ -558,8 +546,14 @@ end:
     ncclAsyncErrCheck(ret);
     return ret;
   } else {
+    NCCLCHECK(PtrCheck(info->comm, info->opName, "comm"));
     NCCLCHECK(ArgsCheck(info));
     NCCLCHECK(checkSetStream(info));
+
+    INFO(NCCL_COLL,"%s: opCount %lx sendbuff %p recvbuff %p count %zi datatype %d op %d root %d comm %p [nranks=%d] stream %p",
+        info->opName, info->comm->opCount, info->sendbuff, info->recvbuff, info->count,
+        info->datatype, info->op, info->root, info->comm, info->comm->nRanks, info->stream);
+
     NCCLCHECK(ncclSaveKernel(info));
     NCCLCHECK(ncclBarrierEnqueue(info->comm));
     NCCLCHECK(ncclBarrierEnqueueWait(info->comm));

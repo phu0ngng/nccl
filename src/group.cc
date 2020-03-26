@@ -116,9 +116,9 @@ ncclResult_t ncclGroupStart() {
   return ncclSuccess;
 }
 
-static ncclResult_t scheduleSendRecv(struct ncclComm* comm, int delta, int channelId, size_t recvbytes, void* recvbuff, size_t sendbytes, const void* sendbuff) {
+static ncclResult_t scheduleSendRecv(struct ncclComm* comm, int delta, int channelId, ssize_t recvbytes, void* recvbuff, ssize_t sendbytes, const void* sendbuff) {
   struct ncclInfo info = { ncclCollSendRecv, "SendRecv",
-    sendbuff, recvbuff, std::max<size_t>(sendbytes,recvbytes), ncclInt8, ncclSum, -1, comm, comm->userStream, /* Args */
+    sendbuff, recvbuff, (size_t)std::max<ssize_t>(sendbytes,recvbytes), ncclInt8, ncclSum, -1, comm, comm->userStream, /* Args */
     SENDRECV_CHUNKSTEPS, SENDRECV_SLICESTEPS };
   info.delta = delta;
   info.channelId = channelId;
@@ -144,6 +144,7 @@ void* ncclAsyncThreadPreconnect(void* args_) {
 
 NCCL_API(ncclResult_t, ncclGroupEnd);
 ncclResult_t ncclGroupEnd() {
+  if (ncclGroupMode == 0) return ncclInvalidUsage;
   ncclGroupMode--;
   if (ncclGroupMode > 0) return ncclSuccess;
   int savedDev;
@@ -220,22 +221,22 @@ ncclResult_t ncclGroupEnd() {
 
           // Compute how much to split operations
           // Natural step size matching buffer steps.
-          size_t stepSize = 4*comm->buffSizes[NCCL_PROTO_SIMPLE] / NCCL_STEPS;
+          ssize_t stepSize = 4*comm->buffSizes[NCCL_PROTO_SIMPLE] / NCCL_STEPS;
           // Split each operation on p2pnChannelsPerPeer max.
-          size_t recvChunkSize = DIVUP(p2plist->peerlist[from].recvbytes, comm->p2pnChannelsPerPeer);
-          size_t sendChunkSize = DIVUP(p2plist->peerlist[to].sendbytes, comm->p2pnChannelsPerPeer);
-          recvChunkSize = std::max((size_t)1, DIVUP(recvChunkSize, stepSize)) * stepSize;
-          sendChunkSize = std::max((size_t)1, DIVUP(sendChunkSize, stepSize)) * stepSize;
+          ssize_t recvChunkSize = DIVUP(p2plist->peerlist[from].recvbytes, comm->p2pnChannelsPerPeer);
+          ssize_t sendChunkSize = DIVUP(p2plist->peerlist[to].sendbytes, comm->p2pnChannelsPerPeer);
+          recvChunkSize = std::max((ssize_t)1, DIVUP(recvChunkSize, stepSize)) * stepSize;
+          sendChunkSize = std::max((ssize_t)1, DIVUP(sendChunkSize, stepSize)) * stepSize;
 
-          size_t sendOffset = 0;
-          size_t recvOffset = 0;
+          ssize_t sendOffset = 0;
+          ssize_t recvOffset = 0;
           int remaining = 1;
           int chunk = 0;
           while (remaining) {
             int channelId = (delta+comm->p2pChannels[chunk%comm->p2pnChannelsPerPeer]) % comm->p2pnChannels;
             remaining = 0;
-            size_t recvbytes = p2plist->peerlist[from].recvbytes-recvOffset;
-            size_t sendbytes = p2plist->peerlist[to].sendbytes-sendOffset;
+            ssize_t recvbytes = p2plist->peerlist[from].recvbytes-recvOffset;
+            ssize_t sendbytes = p2plist->peerlist[to].sendbytes-sendOffset;
             if (recvbytes > recvChunkSize) { remaining = 1; recvbytes = recvChunkSize; } else p2plist->peerlist[from].recvbytes = -1;
             if (sendbytes > sendChunkSize) { remaining = 1; sendbytes = sendChunkSize; } else p2plist->peerlist[to].sendbytes = -1;
             if (sendbytes >= 0 || recvbytes >= 0) {

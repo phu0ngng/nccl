@@ -6,34 +6,32 @@
 
 #include "enqueue.h"
 #include "collectives.h"
+#include "argcheck.h" // Need some checks here since we access comm
 
 NCCL_API(ncclResult_t, ncclSend, const void* sendbuff, size_t count, ncclDataType_t datatype, int peer,
     ncclComm_t comm, cudaStream_t stream);
-NCCL_API(ncclResult_t, ncclRecv, void* recvbuff, size_t count, ncclDataType_t datatype, int peer,
-    ncclComm_t comm, cudaStream_t stream);
 ncclResult_t ncclSend(const void* sendbuff, size_t count, ncclDataType_t datatype, int peer,
     ncclComm_t comm, cudaStream_t stream) {
-  struct ncclInfo info = { ncclCollSendRecv, "SendRecv",
-    sendbuff, NULL, count*ncclTypeSize(datatype), ncclInt8, ncclSum, peer, comm, stream, /* Args */
+  struct ncclInfo info = { ncclCollSendRecv, "Send",
+    sendbuff, NULL, count, datatype, ncclSum, peer, comm, stream, /* Args */
     SENDRECV_CHUNKSTEPS, SENDRECV_SLICESTEPS };
-  info.sendbytes = count*ncclTypeSize(datatype);
-  info.recvbytes = -1;
-  info.delta = (comm->nRanks - (comm->rank-peer)) % comm->nRanks;
+  ncclResult_t ret;
   NCCLCHECK(ncclGroupStart());
-  NCCLCHECK(ncclEnqueueCheck(&info));
+  ret = ncclEnqueueCheck(&info);
   NCCLCHECK(ncclGroupEnd());
-  return ncclSuccess;
+  return ret;
 }
+
+NCCL_API(ncclResult_t, ncclRecv, void* recvbuff, size_t count, ncclDataType_t datatype, int peer,
+    ncclComm_t comm, cudaStream_t stream);
 ncclResult_t ncclRecv(void* recvbuff, size_t count, ncclDataType_t datatype, int peer,
     ncclComm_t comm, cudaStream_t stream) {
-  struct ncclInfo info = { ncclCollSendRecv, "SendRecv",
-    NULL, recvbuff, count*ncclTypeSize(datatype), ncclInt8, ncclSum, peer, comm, stream, /* Args */
+  struct ncclInfo info = { ncclCollSendRecv, "Recv",
+    NULL, recvbuff, count, datatype, ncclSum, peer, comm, stream, /* Args */
     SENDRECV_CHUNKSTEPS, SENDRECV_SLICESTEPS };
-  info.sendbytes = -1;
-  info.recvbytes = count*ncclTypeSize(datatype);
-  info.delta = (comm->nRanks + (comm->rank-peer)) % comm->nRanks;
+  ncclResult_t ret;
   NCCLCHECK(ncclGroupStart());
-  NCCLCHECK(ncclEnqueueCheck(&info));
+  ret = ncclEnqueueCheck(&info);
   NCCLCHECK(ncclGroupEnd());
-  return ncclSuccess;
+  return ret;
 }
