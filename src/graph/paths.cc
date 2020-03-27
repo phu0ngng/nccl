@@ -460,8 +460,19 @@ static ncclResult_t ncclTopoGetNchannels(struct ncclTopoSystem* system, int rank
   return ncclSuccess;
 }
 
+NCCL_PARAM(MinP2pNChannels, "MIN_P2P_NCHANNELS", 1);
+NCCL_PARAM(MaxP2pNChannels, "MAX_P2P_NCHANNELS", MAXCHANNELS);
+
+static int nextPow2(int v) {
+  int pow2 = 1;
+  while (pow2 < v) pow2 <<= 1;
+  return pow2;
+}
+
 ncclResult_t ncclTopoComputeP2pChannels(struct ncclComm* comm) {
-  int minChannels = MAXCHANNELS;
+  comm->p2pnChannels = std::min(comm->nChannels, (int)ncclParamMaxP2pNChannels());
+  comm->p2pnChannels = std::max(comm->p2pnChannels, (int)ncclParamMinP2pNChannels());
+  int minChannels = comm->p2pnChannels;
   for (int r=0; r<comm->nRanks; r++) {
     int nChannels;
     if (r == comm->rank) continue;
@@ -469,12 +480,10 @@ ncclResult_t ncclTopoComputeP2pChannels(struct ncclComm* comm) {
     minChannels = std::min(minChannels, nChannels);
   }
 
-  // Round to next pow2 minChannels and nChannels
-  int pow2;
-  for (pow2=1; minChannels > pow2; pow2 <<= 1);
-  comm->p2pnChannelsPerPeer = pow2;
-  for (pow2=1; comm->nChannels > pow2; pow2 <<= 1);
-  comm->p2pnChannels = pow2;
+  // Round to next pow2 nChannelsPerPeer and nChannels
+  comm->p2pnChannelsPerPeer = nextPow2(minChannels);
+  comm->p2pnChannels = nextPow2(comm->p2pnChannels);
+
   // Init channels that weren't used so far
   for (int c=comm->nChannels; c<comm->p2pnChannels; c++) NCCLCHECK(initChannel(comm, c));
 
