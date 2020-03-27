@@ -1,3 +1,9 @@
+/*************************************************************************
+ * Copyright (c) 2016-2020, NVIDIA CORPORATION. All rights reserved.
+ *
+ * See LICENSE.txt for license information
+ ************************************************************************/
+
 template <typename T, class FUNC, int NRECV, int NSEND>
 class ncclLLPrimitives {
  private:
