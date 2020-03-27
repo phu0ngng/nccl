@@ -101,6 +101,7 @@ struct threadArgs {
   int nThreads;
   int thread;
   int nGpus;
+  int* gpus;
   int localRank;
   void** sendbuffs;
   size_t sendBytes;
