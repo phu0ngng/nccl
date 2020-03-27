@@ -1,0 +1,62 @@
+/* This is to remove chrome header and footer */
+@page {
+   margin: 0;
+   size: auto;
+}
+
+body {
+  font-family: Sans-Serif;
+  font-size: 14px;
+  margin: 1cm 1cm 1cm 1cm;
+}
+
+h1, h2, h3, h4 {
+  color:#76b900;
+}
+
+a {
+  color:#008;
+  text-decoration:none;
+}
+
+a:hover {
+  color:#008;
+  text-decoration:underline;
+}
+
+th {
+  text-align:left;
+}
+
+td.code {
+  background-color:#eee;
+  font-family:monospace;
+}
+td.desc {
+  background-color:#eee;
+}
+
+pre {
+  background-color:#eee;
+}
+
+div.contents {
+  width: 500px;
+  background-color:#eee;
+}
+div.contents a {
+  color:#333;
+}
+
+div.main {
+  position: fixed;
+  top: 0;
+  left: 300px;
+  width: 100%;
+  max-height: 100%;
+  overflow-y: auto;
+}
+div.inmain {
+  margin-left:50px;
+  margin-right:350px;
+}
