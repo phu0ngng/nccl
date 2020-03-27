@@ -32,6 +32,7 @@ NCCLNAME="nccl-src_${NCCL_MAJOR}.${NCCL_MINOR}.${NCCL_PATCH}${NCCL_SUFFIX}-${NCC
 tar --exclude fortran \
     --exclude test \
     --exclude doc \
+    --exclude plc \
     --exclude build \
     --exclude ".git*" \
     --exclude share \
