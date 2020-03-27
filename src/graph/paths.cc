@@ -492,7 +492,7 @@ ncclResult_t ncclTopoComputeP2pChannels(struct ncclComm* comm) {
   // nChannels space.
   for (int c=0; c<comm->p2pnChannelsPerPeer; c++) {
     int mirror = 0;
-    for (int b=1, mb=(pow2>>1); b<pow2; b<<=1, mb>>=1) if (c & b) mirror |= mb;
+    for (int b=1, mb=(comm->p2pnChannels>>1); b<comm->p2pnChannels; b<<=1, mb>>=1) if (c & b) mirror |= mb;
     comm->p2pChannels[c] = mirror;
   }
   INFO(NCCL_INIT, "%d coll channels, %d p2p channels, %d p2p channels per peer\n", comm->nChannels, comm->p2pnChannels, comm->p2pnChannelsPerPeer);
