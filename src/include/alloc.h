@@ -12,10 +12,10 @@
 #include "align.h"
 #include <sys/mman.h>
 
-static inline ncclResult_t ncclCudaHostAlloc(void** ptr, void** devPtr, size_t size) {
-  CUDACHECK(cudaHostAlloc(ptr, size, cudaHostAllocMapped));
-  memset(*ptr, 0, size);
-  *devPtr = *ptr;
+template <typename T>
+static ncclResult_t ncclCudaHostCalloc(T** ptr, size_t nelem) {
+  CUDACHECK(cudaHostAlloc(ptr, nelem*sizeof(T), cudaHostAllocMapped));
+  memset(*ptr, 0, nelem*sizeof(T));
   return ncclSuccess;
 }
 

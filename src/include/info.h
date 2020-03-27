@@ -47,6 +47,10 @@ struct ncclInfo {
   size_t nBytes;
   int nstepsPerLoop;
   int nchunksPerLoop;
+  ssize_t sendbytes;
+  ssize_t recvbytes;
+  uint32_t delta;
+  int channelId;
 };
 
 #endif

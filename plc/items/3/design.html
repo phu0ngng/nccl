@@ -1,0 +1,65 @@
+<!DOCTYPE html>
+<html>
+<head>
+<title>NCCL-3 : Direct algorithms : Design</title>
+<link rel="stylesheet" type="text/css" href="../../html/css/doc.css">
+</head>
+<body>
+<center><h1>NCCL-3 : Direct algorithms<br>Design</h1></center>
+<!-- table of contents, auto-generated -->
+$CONTENTS
+<!-- end of table of contents -->
+<h2>Proposed Design</h2>
+<h3>Overview</h3>
+<p>We add a new set of so-called "Direct" algorithms which do not use rings and
+have better latency, but only work when we have direct all-to-all access between
+all GPUs in the NCCL communicator, i.e. on DGX2 intra-node.
+
+<p>Those algorithms might only be enabled on 8 or 16 GPUs ; performance at 4 or 2
+GPUs might be better with rings.
+
+<p>Inter-node still uses rings.
+
+<h3>Detailed design</h3>
+<p>We define a new set of CUDA kernels and functions. As we used to have a
+single array for kernels and functions, we duplicate them to have a set for
+ring algorithms and another one for direct algorithms.
+<p>During ncclCommInit functions, if we detect that all GPUs are connected
+through the P2P transport, through NVswitch, and we have more than 8 GPUs, we
+set the algorithm table to point to the direct algorithms instead of the default
+ring algorithms.
+<p>Whether we'll enable direct algorithms for NVLink connected GPUs or on less
+than 8 GPUs is still to be determined and will depend on the observed
+performance.
+<p>Whether we will need to keep both sets of algorithms and use rings or direct
+based on the size is still to be determined and will depend on the performance
+we can achieve with direct algorithms at large sizes.
+
+<h2>Interface Architecture</h2>
+<p>A new environment variable should be added to disable the usage of direct
+algorithms.
+<p>If we use both direct and rings depending on the size, an enviromnent
+variable should control the size at which we switch from one algorithm to
+another.
+
+<h2>System KPIs & Metrics</h2>
+
+
+<h2>Data Architecture</h2>
+N/A
+<h2>Security Design</h2>
+N/A
+<h2>Debugging & Troubleshooting</h2>
+None.
+<h2>Logging and Instrumentation</h2>
+None.
+<h2>Operational Considerations</h2>
+None.
+
+<h2>Signoff list</h2>
+<p>Author : Sylvain Jeaugey
+<!-- <p>Reviewer : Ke Wen -->
+<!-- <p>Reviewer : David Addison -->
+<!-- <p>Reviewer : Sreeram Potluri -->
+
+<!-- do not end body and html, bottom will be auto-generated -->
