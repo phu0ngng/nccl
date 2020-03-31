@@ -9,6 +9,7 @@
 
 ncclResult_t initChannel(struct ncclComm* comm, int channelid) {
   struct ncclChannel* channel = comm->channels+channelid;
+  if (channel->id != -1) return ncclSuccess;
   channel->id = channelid;
 
   // Ring index to user rank table.
@@ -29,6 +30,7 @@ ncclResult_t initChannel(struct ncclComm* comm, int channelid) {
 }
 
 ncclResult_t freeChannel(struct ncclChannel* channel, int nRanks) {
+  if (channel->id == -1) return ncclSuccess;
   // Operation list
   NCCLCHECK(ncclCudaHostFree(channel->collectives));
 
