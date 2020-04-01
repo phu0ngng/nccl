@@ -13,13 +13,11 @@
 // Initialize system->maxWidth. This is the per-channel (i.e. per-SM)
 // max speed.
 static float getMaxWidth(struct ncclTopoSystem* system, struct ncclTopoNode* gpu, int type) {
-  float nvLinkWidth = gpu->gpu.cudaCompCap > 60 ? VOLTA_NVLINK_WIDTH : PASCAL_NVLINK_WIDTH;
   float maxWidth = 0.0;
   for (int i=0; i<system->nodes[type].count; i++) {
     struct ncclTopoLinkList* path = gpu->paths[type]+i;
     float width = path->width;
     if (path->count == 0) continue;
-    if (path->type == PATH_NVL) width = std::min(nvLinkWidth, width);
     maxWidth = std::max(maxWidth, width);
   }
   return maxWidth;
@@ -622,7 +620,7 @@ ncclResult_t ncclTopoGetXmlFromGraphs(int ngraphs, struct ncclTopoGraph** graphs
   return ncclSuccess;
 }
 
-float speedArray[] = { 24.0, 21.0, 18.0, 15.0, 12.0, 10.0, 9.0, 7.0, 6.0, 5.0, 4.0, 3.0, 2.4, 1.2, 0.24, 0.12 };
+float speedArray[] = { 42.0, 24.0, 21.0, 18.0, 15.0, 12.0, 10.0, 9.0, 7.0, 6.0, 5.0, 4.0, 3.0, 2.4, 1.2, 0.24, 0.12 };
 #define NSPEEDS (sizeof(speedArray)/sizeof(float))
 
 ncclResult_t ncclTopoCompute(ncclTopoSystem* system, struct ncclTopoGraph* graph) {
@@ -766,6 +764,15 @@ done:
     graph->speedIntra = graph->speedInter = 0.1;
     graph->typeIntra = graph->typeInter = PATH_SYS;
     graph->nChannels = 1;
+  }
+
+  if (graph->speedIntra >= 25.0) {
+    int dupChannels = std::min(graph->nChannels*2, graph->maxChannels);
+    memcpy(graph->intra+graph->nChannels*ngpus, graph->intra, (dupChannels-graph->nChannels)*ngpus*sizeof(int));
+    memcpy(graph->inter+graph->nChannels*2,graph->inter, (dupChannels-graph->nChannels)*2*sizeof(int));
+    graph->speedIntra /= 2;
+    graph->speedInter /= 2;
+    graph->nChannels = dupChannels;
   }
   return ncclSuccess;
 }
