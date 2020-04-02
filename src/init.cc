@@ -116,7 +116,7 @@ static ncclResult_t ncclInit() {
   pthread_mutex_lock(&initLock);
   if (!initialized) {
     initEnv();
-    initNet();
+    NCCLCHECK(initNet());
     INFO(NCCL_INIT, "Using network %s", ncclNetName());
     initialized = true;
   }
@@ -167,7 +167,7 @@ static ncclResult_t commFree(ncclComm_t comm) {
   CUDACHECK(cudaFree(comm->hostDevComm.channels));
   CUDACHECK(cudaFree(comm->devComm));
 
-  for (int channel=0; channel<comm->p2pnChannels; channel++)
+  for (int channel=0; channel<MAXCHANNELS; channel++)
     NCCLCHECK(freeChannel(comm->channels+channel, comm->nRanks));
 
   if (comm->doneEvent != NULL)
@@ -246,6 +246,9 @@ static ncclResult_t commAlloc(ncclComm_t* comret, int ndev, int rank) {
   for (int r=0; r<comm->nRanks; r++) comm->p2plist.peerlist[r].sendbytes = comm->p2plist.peerlist[r].recvbytes = -1;
   NCCLCHECK(ncclCalloc(&comm->p2plist.connect.recv, MAXCHANNELS*comm->nRanks));
   NCCLCHECK(ncclCalloc(&comm->p2plist.connect.send, MAXCHANNELS*comm->nRanks));
+
+  // Mark channels as non initialized.
+  for (int c=0; c<MAXCHANNELS; c++) comm->channels[c].id = -1;
 
   *comret = comm;
   return ncclSuccess;

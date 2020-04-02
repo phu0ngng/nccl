@@ -972,7 +972,7 @@ testResult_t run() {
     threads[t].args.nThreads=nThreads;
     threads[t].args.thread=t;
     threads[t].args.nGpus=nGpus;
-    threads[t].args.gpus=gpus;
+    threads[t].args.gpus=gpus+t*nGpus;
     threads[t].args.sendbuffs = sendbuffs+t*nGpus;
     threads[t].args.recvbuffs = recvbuffs+t*nGpus;
     threads[t].args.expected = expected+t*nGpus;

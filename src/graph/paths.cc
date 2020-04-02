@@ -232,7 +232,7 @@ ncclResult_t ncclGetLevel(int* level, const char* disableEnv, const char* levelE
         }
       }
     }
-    if (l >= 0) INFO(NCCL_GRAPH, "%s set from environment to %s", levelEnv, topoPathTypeStr[l]);
+    if (l >= 0) INFO(NCCL_ALL, "%s set by environment to %s", levelEnv, topoPathTypeStr[l]);
     *level = l >= 0 ? l : -2;
   }
   return ncclSuccess;
@@ -256,18 +256,24 @@ ncclResult_t ncclTopoCheckP2p(struct ncclTopoSystem* system, int64_t id1, int64_
   // In general, use P2P whenever we can.
   int p2pLevel = PATH_SYS;
 
+  // User override
+  if (ncclTopoUserP2pLevel == -1)
+    NCCLCHECK(ncclGetLevel(&ncclTopoUserP2pLevel, "NCCL_P2P_DISABLE", "NCCL_P2P_LEVEL"));
+  if (ncclTopoUserP2pLevel != -2) {
+    p2pLevel = ncclTopoUserP2pLevel;
+    goto compare;
+  }
+
   // Don't use P2P through ARM CPUs
   int arch, vendor, model;
   NCCLCHECK(ncclTopoCpuType(system, &arch, &vendor, &model));
   if (arch == NCCL_TOPO_CPU_ARCH_ARM) p2pLevel = PATH_PXB;
-  if (arch == NCCL_TOPO_CPU_ARCH_X86 &&
-      vendor == NCCL_TOPO_CPU_VENDOR_INTEL &&
-      model == NCCL_TOPO_CPU_TYPE_BDW) p2pLevel = PATH_PXB;
+  if (arch == NCCL_TOPO_CPU_ARCH_X86 && vendor == NCCL_TOPO_CPU_VENDOR_INTEL) {
+    if (model == NCCL_TOPO_CPU_TYPE_BDW) p2pLevel = PATH_PXB;
+    else p2pLevel = PATH_PHB;
+  }
 
-  // User override
-  NCCLCHECK(ncclGetLevel(&ncclTopoUserP2pLevel, "NCCL_P2P_DISABLE", "NCCL_P2P_LEVEL"));
-  if (ncclTopoUserP2pLevel != -2) p2pLevel = ncclTopoUserP2pLevel;
-
+compare:
   // Compute the PCI distance and compare with the p2pLevel.
   if (path->type <= p2pLevel) *p2p = 1;
 
