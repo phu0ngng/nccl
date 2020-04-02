@@ -421,9 +421,11 @@ static ncclResult_t checkSetStream(struct ncclInfo* info) {
   }
   return ncclSuccess;
 }
+
 ncclResult_t ncclSaveKernel(struct ncclInfo* info) {
-  if (info->comm->nRanks == 1 && info->sendbuff != info->recvbuff) {
-    CUDACHECK(cudaMemcpyAsync(info->recvbuff, info->sendbuff, info->nBytes, cudaMemcpyDeviceToDevice, info->stream));
+  if (info->comm->nRanks == 1) {
+    if (info->sendbuff != info->recvbuff)
+      CUDACHECK(cudaMemcpyAsync(info->recvbuff, info->sendbuff, info->nBytes, cudaMemcpyDeviceToDevice, info->stream));
     return ncclSuccess;
   }
 
