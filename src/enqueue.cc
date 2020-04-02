@@ -165,8 +165,8 @@ ncclResult_t ncclCpuBarrierOut(struct ncclComm* comm) {
 }
 
 ncclResult_t ncclBarrierEnqueue(struct ncclComm* comm) {
-  if (comm->nRanks == 1) return ncclSuccess;
   struct cudaLaunchParams* params = comm->myParams;
+  if (params->gridDim.x == 0) return ncclSuccess;
 
   NCCLCHECK(setupLaunch(comm, params));
 
@@ -199,7 +199,9 @@ ncclResult_t ncclBarrierEnqueue(struct ncclComm* comm) {
 }
 
 ncclResult_t ncclBarrierEnqueueWait(ncclComm_t comm) {
-  if (comm->nRanks == 1) return ncclSuccess;
+  struct cudaLaunchParams *params = comm->myParams;
+  if (params->gridDim.x == 0) return ncclSuccess;
+
   // We can't print the CG mode before the first barrier happened.
   if (comm->rank == 0 && *comm->intraCGMode & 0x10) {
     *comm->intraCGMode ^= 0x10;
@@ -211,7 +213,6 @@ ncclResult_t ncclBarrierEnqueueWait(ncclComm_t comm) {
 
   NCCLCHECK(ncclCpuBarrierOut(comm));
 
-  struct cudaLaunchParams *params = comm->myParams;
   if (comm->launchMode == ncclComm::PARALLEL) {
     CUDACHECK(cudaLaunchKernel(params->func, params->gridDim, params->blockDim, params->args, params->sharedMem, params->stream));
   }
@@ -423,7 +424,7 @@ static ncclResult_t checkSetStream(struct ncclInfo* info) {
 }
 
 ncclResult_t ncclSaveKernel(struct ncclInfo* info) {
-  if (info->comm->nRanks == 1) {
+  if (info->comm->nRanks == 1 && info->coll != ncclCollSendRecv) {
     if (info->sendbuff != info->recvbuff)
       CUDACHECK(cudaMemcpyAsync(info->recvbuff, info->sendbuff, info->nBytes, cudaMemcpyDeviceToDevice, info->stream));
     return ncclSuccess;
