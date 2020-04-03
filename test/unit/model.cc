@@ -24,14 +24,11 @@
 #undef NCCL_NUM_ALGORITHMS
 #define NCCL_NUM_ALGORITHMS 2
 
-const char* protocolNames[] = { "LL", "LL128", "Simple" };
-const char* algorithmNames[] = { "Tree", "Ring", "CollNet" };
-
 int compactMode;
 float totalScore = 0.0;
 int totalNpoints = 0;
 
-void runTopo(const char* xmlTopoFile, const char* platform, int nnodes) {
+void runTopo(const char* xmlTopoFile, const char* platform, int ngpus, int nnodes, ncclFunc_t coll) {
   struct ncclXml* xmlSystem;
   INFO(NCCL_GRAPH, "Loading platform %s", platform);
   CHECK(ncclCalloc(&xmlSystem, 1));
@@ -47,6 +44,10 @@ void runTopo(const char* xmlTopoFile, const char* platform, int nnodes) {
     for (int n=system->nodes[NET].count-1; n>=0; n--)
       CHECK(ncclTopoRemoveNode(system, NET, n));
   }
+  // Only keep ngpus
+  for (int g=system->nodes[GPU].count-1; g>ngpus; g--)
+    CHECK(ncclTopoRemoveNode(system, GPU, g));
+
   CHECK(ncclTopoSearchInit(system));
   CHECK(ncclTopoPrint(system));
 
@@ -100,95 +101,93 @@ void runTopo(const char* xmlTopoFile, const char* platform, int nnodes) {
   CHECK(ncclTopoSetThresholds(&comm, compCap, compCap, &treeGraph, &ringGraph, &cNetGraph));
   struct ncclInfo info;
   info.comm = &comm;
-  info.coll = ncclCollAllReduce;
+  info.coll = coll;
   info.chunkSteps = ALLREDUCE_CHUNKSTEPS;
   info.sliceSteps = ALLREDUCE_SLICESTEPS;
 
-  int compareData = 1;
-  int fd = 0;
+  // Last column is used for min/best/default.
+  const int m = NCCL_NUM_ALGORITHMS*NCCL_NUM_PROTOCOLS;
+
+  int fds[m+1];
   char path[1024];
-  sprintf(path, "topo/%s/data/%d.csv", platform, nnodes);
-  fd = open(path, O_RDONLY);
-  if (fd == -1) compareData = 0;
-  if (compactMode && compareData == 0) return;
+  for (int a=0; a<NCCL_NUM_ALGORITHMS; a++) for (int p=0; p<NCCL_NUM_PROTOCOLS; p++) {
+    int i = a*NCCL_NUM_PROTOCOLS+p;
+    sprintf(path, "topo/%s/data/%d/%d/%s/%s/%s/time.txt", platform, ngpus, nnodes, ncclFuncStr[coll], ncclAlgoStr[a], ncclProtoStr[p]);
+    fds[i] = open(path, O_RDONLY);
+  }
+  sprintf(path, "topo/%s/data/%d/%d/%s/time.txt", platform, ngpus, nnodes, ncclFuncStr[coll]);
+  fds[m] = open(path, O_RDONLY);
   float score = 0.0;
   int npoints = 0;
 
-  // Last column is used for min/best/default.
-  int m = NCCL_NUM_ALGORITHMS*NCCL_NUM_PROTOCOLS;
-
   if (!compactMode) {
-    printf("----------+"); for (int i=0; i<NCCL_NUM_ALGORITHMS*NCCL_NUM_PROTOCOLS+1; i++) printf("---------------------+"); printf("\n");
+    printf("----------+"); for (int i=0; i<m+1; i++) printf("---------------------+"); printf("\n");
     printf("     Size |");
-    for (int a=0; a<NCCL_NUM_ALGORITHMS; a++) {
-      for (int p=0; p<NCCL_NUM_PROTOCOLS; p++) {
-        printf(" %7s  / %7s  |", algorithmNames[a], protocolNames[p]);
-      }
+    for (int a=0; a<NCCL_NUM_ALGORITHMS; a++) for (int p=0; p<NCCL_NUM_PROTOCOLS; p++) {
+      printf(" %7s  / %7s  |", ncclAlgoStr[a], ncclProtoStr[p]);
     }
     printf("%17s    |\n", "Default");
-    if (compareData) {
-      printf("          |");
-      for (int i=0; i<NCCL_NUM_ALGORITHMS*NCCL_NUM_PROTOCOLS+1; i++) printf("[%9s] %9s|", "data", (i == m) ? "best" : "model");
-      printf("\n");
-    }
-    printf("----------+"); for (int i=0; i<NCCL_NUM_ALGORITHMS*NCCL_NUM_PROTOCOLS+1; i++) printf("---------------------+"); printf("\n");
+    printf("          |");
+    for (int i=0; i<m+1; i++) printf("[%9s] %9s|", "data", (i == m) ? "best" : "model");
+    printf("\n");
+    printf("----------+"); for (int i=0; i<m+1; i++) printf("---------------------+"); printf("\n");
   } else {
     printf("%10s/%5d |", platform, nnodes);
   }
 
   for (ssize_t size=8; size<(2LL<<32); size<<=1) {
-    float times[NCCL_NUM_ALGORITHMS*NCCL_NUM_PROTOCOLS+1];
-    float data[NCCL_NUM_ALGORITHMS*NCCL_NUM_PROTOCOLS+1];
+    float times[m+1];
+    float data[m+1];
     info.nBytes = size;
     times[m] = -1.0; // Min time
-    for (int a=0; a<NCCL_NUM_ALGORITHMS; a++) {
-      for (int p=0; p<NCCL_NUM_PROTOCOLS; p++) {
-        int i = a*NCCL_NUM_PROTOCOLS+p;
-        CHECK(ncclTopoGetAlgoTime(&info, a, p, times+i));
-        if (times[m] < 0 || (times[i] < times[m] && times[i] > 0)) times[m] = times[i];
-      }
+    for (int a=0; a<NCCL_NUM_ALGORITHMS; a++) for (int p=0; p<NCCL_NUM_PROTOCOLS; p++) {
+      int i = a*NCCL_NUM_PROTOCOLS+p;
+      CHECK(ncclTopoGetAlgoTime(&info, a, p, times+i));
     }
 
-    if (compareData) {
-      for (int i=0; i<NCCL_NUM_ALGORITHMS*NCCL_NUM_PROTOCOLS+1; i++) data[i] = 0.0;
-      int c, s = 0, o = 0, i = 0;
+    for (int i=0; i<m+1; i++) {
       char valueStr[128];
-      while (fd != -1) {
-        s = read(fd, &c, 1);
-        if (s != 1) break;
-        if (c == ',' || c == '\n') {
-          valueStr[o] = '\0';
-          data[i++] = atof(valueStr);
-          o = 0;
-        } else {
-          valueStr[o++] = c;
+      if (fds[i] == -1) {
+        data[i] = -1.0;
+      } else {
+        for (int o=0; fds[i] != -1 && o<128; o++) {
+          int s = read(fds[i], valueStr+o, 1);
+          if (s != 1) {
+            close(fds[i]);
+            fds[i] = -1;
+          } else if (valueStr[o] == '\n') {
+            valueStr[o] = '\0';
+            break;
+          }
         }
-        if (c == '\n') break;
+        data[i] = atof(valueStr);
       }
-      // Overwrite min model as the min of data instead of the min of model
-      // This is more useful to see how good/bad the algo/proto choices are.
-      times[m] = -1.0;
-      for (int i=0; i<NCCL_NUM_ALGORITHMS*NCCL_NUM_PROTOCOLS; i++) {
-        if (times[m] < 0 || (data[i] < times[m] && data[i] > 0)) times[m] = data[i];
-      }
-      if (s != 1) { close(fd); fd = -1; }
+    }
+    // Compute best performance
+    times[m] = -1.0;
+    for (int i=0; i<m; i++) {
+      float val = times[i];
+      if (val != -1.0 && data[i] != -1.0) val = data[i];
+      if (times[m] < 0 || (val < times[m] && val > 0)) times[m] = data[i];
     }
 
     if (!compactMode) {
       printf("%10ld|", size);
-      for (int i=0; i<NCCL_NUM_ALGORITHMS*NCCL_NUM_PROTOCOLS+1; i++) {
+      for (int i=0; i<m+1; i++) {
         float delta;
-        if (compareData && data[i] != 0.0) printf("[%9.1f] ", data[i]); else printf("%11s ", "");
-        if (compareData) {
-          if (data[i] != 0.0) {
-            delta = (times[i]-data[i])/times[i]; delta *= delta;
-            if (delta > .1) printf("%c[0;31m", 0x1b);
-            else if (delta > .02) printf("%c[0;33m", 0x1b);
-            else printf("%c[0;32m", 0x1b);
-          }
-        } else if (i != m && times[i] == times[m]) printf("%c[0;32m", 0x1b);
-        printf("%9.1f|", times[i]);
-        if ((compareData && data[i] != 0.0) || (compareData == 0 && i != m && times[i] == times[m])) printf("%c[00m", 0x1b);
+        if (data[i] != -1.0) {
+          printf("[%9.1f] ", data[i]);
+          delta = (times[i]-data[i])/times[i]; delta *= delta;
+          if (delta > .1) printf("%c[0;31m", 0x1b);
+          else if (delta > .02) printf("%c[0;33m", 0x1b);
+          else printf("%c[0;32m", 0x1b);
+        } else {
+          printf("%11s ", "");
+          if (i != m && times[i] == times[m]) printf("%c[0;32m", 0x1b);
+        }
+        printf("%9.1f", times[i]);
+        if ((data[i] != -1.0) || (i != m && times[i] == times[m])) printf("%c[00m", 0x1b);
+        printf("|");
       }
       printf("\n");
     } else {
@@ -209,10 +208,10 @@ void runTopo(const char* xmlTopoFile, const char* platform, int nnodes) {
   }
 }
 
-void runPlatform(const char* platform, int nnodes) {
+void runPlatform(const char* platform, int ngpus, int nnodes, ncclFunc_t coll) {
   char xmlTopoFile[1024];
   sprintf(xmlTopoFile, "topo/%s/system.xml", platform);
-  runTopo(xmlTopoFile, platform, nnodes);
+  runTopo(xmlTopoFile, platform, ngpus, nnodes, coll);
 }
 
 #define RUN(...) runPlatform(__VA_ARGS__)
@@ -222,18 +221,26 @@ int main(int argc, const char* argv[]) {
   compactMode = str ? atoi(str) : 0;
 
   setlinebuf(stdout);
-  if (argc > 2) {
-    RUN(argv[1], atoi(argv[2]));
+  if (argc > 4) {
+    int coll = -1;
+    for (int i=0; i<NCCL_NUM_FUNCTIONS; i++) {
+      if (strcmp(argv[4], ncclFuncStr[i]) == 0) coll = i;
+    }
+    if (coll == -1) {
+      printf("Error : unknown collective %s\n", argv[4]);
+      return 1;
+    }
+    RUN(argv[1], atoi(argv[2]), atoi(argv[3]), (ncclFunc_t)coll);
   } else if (argc > 1) {
-    printf("Usage : %s <platform> <nnodes>\n", argv[0]);
+    printf("Usage : %s <platform> <nnodes> <ngpus> <collective>\n", argv[0]);
     return 1;
   } else {
     compactMode = 1;
-    printf("%10s/%5s |    Delta at size 8 to 2G     | Score\n", "Platform", "Nodes");
+    printf("%10s/%5s |    Delta at size 8 to 4G     | Score\n", "Platform", "Nodes");
     printf("-----------------+------------------------------+-------\n");
     for (int n=1; n<128; n<<=1) {
-      RUN("DGX-1V", n);
-      RUN("DGX-2V", n);
+      RUN("DGX-1V", 8, n, ncclCollAllReduce);
+      RUN("DGX-2V", 16, n, ncclCollAllReduce);
 //      RUN("Luna", n);
     }
     printf("-----------------+------------------------------+-------\n");

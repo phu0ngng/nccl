@@ -51,10 +51,6 @@ ncclResult_t parseList(const char* str, const char* elems[], int nelems, int* li
   return ncclSuccess;
 }
 
-static const char* ncclFuncStr[] = { "Broadcast", "Reduce", "AllGather", "ReduceScatter", "AllReduce" };
-static const char* ncclAlgoStr[] = { "Tree", "Ring", "CollNet" };
-static const char* ncclProtoStr[] = { "LL", "LL128", "Simple" };
-
 // Latencies in us, Bandwidths in GB/s
 // Tree { LL, LL128, Simple } , Ring { LL, LL128, Simple }
 static const float baseLat  [NCCL_NUM_ALGORITHMS][NCCL_NUM_PROTOCOLS] = { { 4.4, 4.4,  0 }, { 3.6, 3.6, 8.4 }, { 4.4, 4.4,  0 } };
