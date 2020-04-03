@@ -8,6 +8,7 @@
 #define NCCL_COMM_H_
 
 #include "transport.h"
+#include "p2p.h"
 
 #if CUDART_VERSION < 9000
 struct cudaLaunchParams {
@@ -86,6 +87,10 @@ struct ncclComm {
 
   // Channels for collectives
   int nChannels;
+  // Channels (per peer) for p2p
+  int p2pnChannels;
+  int p2pnChannelsPerPeer;
+  int p2pChannels[MAXCHANNELS];
 
   // Buffer sizes
   int buffSizes[NCCL_NUM_PROTOCOLS];
@@ -135,6 +140,8 @@ struct ncclComm {
 
   // Whether this communicator uses collNet
   int collNetSupport;
+  //list of async p2p operation queued in a group semantics
+  struct ncclP2Plist p2plist;
 };
 
 #endif

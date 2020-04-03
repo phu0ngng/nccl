@@ -287,10 +287,8 @@ testResult_t CheckData(struct threadArgs* args, ncclDataType_t type, ncclRedOp_t
   size_t count = args->expectedBytes/wordSize(type);
   double maxDelta = 0.0;
   for (int i=0; i<args->nGpus; i++) {
-    int device;
     int rank = ((args->proc*args->nThreads + args->thread)*args->nGpus + i);
-    NCCLCHECK(ncclCommCuDevice(args->comms[i], &device));
-    CUDACHECK(cudaSetDevice(device));
+    CUDACHECK(cudaSetDevice(args->gpus[i]));
     void *data = in_place ? ((void *)((uintptr_t)args->recvbuffs[i] + args->recvInplaceOffset*rank)) : args->recvbuffs[i];
     TESTCHECK(CheckDelta(data , args->expected[i], count, type, args->delta));
     maxDelta = std::max(*(args->deltaHost), maxDelta);
@@ -313,12 +311,11 @@ testResult_t CheckData(struct threadArgs* args, ncclDataType_t type, ncclRedOp_t
          printf("%d:%d ", j, dataHost[j]);
        }
        printf("\n");
-       free(temp);
     }
 #endif
   }
   double nranks = args->nProcs*args->nThreads*args->nGpus;
-  if (maxDelta > DeltaMaxValue(type)*(nranks - 1)) args->errors[0]++;
+  if (args->reportErrors && maxDelta > DeltaMaxValue(type)*(nranks - 1)) args->errors[0]++;
   *delta = maxDelta;
   return testSuccess;
 }
@@ -394,9 +391,7 @@ testResult_t startColl(struct threadArgs* args, ncclDataType_t type, ncclRedOp_t
   if (args->nGpus > 1) NCCLCHECK(ncclGroupStart());
   for (int i = 0; i < args->nGpus; i++) {
 #ifndef NCCL_MAJOR
-    int cudaDev;
-    NCCLCHECK(ncclCommCuDevice(args->comms[i], &cudaDev));
-    CUDACHECK(cudaSetDevice(cudaDev));
+    CUDACHECK(cudaSetDevice(args->gpus[i]));
 #endif
     int rank = ((args->proc*args->nThreads + args->thread)*args->nGpus + i);
     char* recvBuff = ((char*)args->recvbuffs[i]) + shift;
@@ -502,9 +497,9 @@ testResult_t BenchTime(struct threadArgs* args, ncclDataType_t type, ncclRedOp_t
      }
   } else {
      if (side_comp == 1) {
-       PRINT("  %7s  %6.2f  %6.2f  %6.2f", timeStr, algBw, busBw, sideBw);
+       PRINT("  %7s  %6.2f  %6.2f    N/A %6.2f", timeStr, algBw, busBw, sideBw);
      } else {
-       PRINT("  %7s  %6.2f  %6.2f", timeStr, algBw, busBw);
+       PRINT("  %7s  %6.2f  %6.2f    N/A", timeStr, algBw, busBw);
      }
   }
 
@@ -569,9 +564,7 @@ testResult_t threadRunTests(struct threadArgs* args) {
   // Set device to the first of our GPUs. If we don't do that, some operations
   // will be done on the current GPU (by default : 0) and if the GPUs are in
   // exclusive mode those operations will fail.
-  char* str = getenv("NCCL_TESTS_DEVICE");
-  int gpuid = str ? atoi(str) : args->localRank*args->nThreads*args->nGpus + args->thread*args->nGpus;
-  CUDACHECK(cudaSetDevice(gpuid));
+  CUDACHECK(cudaSetDevice(args->gpus[0]));
   TESTCHECK(ncclTestEngine.runTest(args, ncclroot, (ncclDataType_t)nccltype, test_typenames[nccltype], (ncclRedOp_t)ncclop, test_opnames[ncclop]));
   return testSuccess;
 }
@@ -587,9 +580,7 @@ testResult_t threadInit(struct threadArgs* args) {
   NCCLCHECK(ncclGroupStart());
   for (int i=0; i<args->nGpus; i++) {
     int rank = args->proc*args->nThreads*args->nGpus + args->thread*args->nGpus + i;
-    char* str = getenv("NCCL_TESTS_DEVICE");
-    int gpuid = str ? atoi(str) : args->localRank*args->nThreads*args->nGpus + args->thread*args->nGpus;
-    CUDACHECK(cudaSetDevice(gpuid));
+    CUDACHECK(cudaSetDevice(args->gpus[i]));
     NCCLCHECK(ncclCommInitRank(args->comms+i, nranks, args->ncclId, rank));
   }
   NCCLCHECK(ncclGroupEnd());
@@ -616,7 +607,8 @@ testResult_t compThread(struct threadArgs* args) {
   int gpuids[args->nGpus];
   cudaStream_t streams[args->nGpus];
   for (int i=0; i<args->nGpus; i++) {
-    gpuids[i] = args->localRank*args->nThreads*args->nGpus + args->thread*args->nGpus + i;
+    char* str = getenv("NCCL_TESTS_DEVICE");
+    gpuids[i] = (str ? atoi(str) : args->localRank*args->nThreads*args->nGpus + args->thread*args->nGpus) + i;
     CUDACHECK(cudaSetDevice(gpuids[i]));
     CUDACHECK(cudaStreamCreateWithFlags(streams+i, cudaStreamNonBlocking));
     if (side_comp == 1) CUDACHECK(cudaMalloc(ptrs+i, ((uint64_t)COMP_SIZE)*NUM_BLOCKS));
@@ -660,7 +652,7 @@ testResult_t compThread(struct threadArgs* args) {
   }
   for (int i=0; i<args->nGpus; i++) {
     CUDACHECK(cudaStreamDestroy(streams[i]));
-    if (side_comp == 1) CUDACHECK(cudaFree(ptrs[i]));
+    if (side_comp == 2) CUDACHECK(cudaFree(ptrs[i]));
   }
   return testSuccess;
 }
@@ -902,6 +894,7 @@ testResult_t run() {
 #ifdef MPI_SUPPORT
   MPI_Bcast(&ncclId, sizeof(ncclId), MPI_BYTE, 0, MPI_COMM_WORLD);
 #endif
+  int gpus[nGpus*nThreads];
   cudaStream_t streams[nGpus*nThreads];
   void* sendbuffs[nGpus*nThreads];
   void* recvbuffs[nGpus*nThreads];
@@ -912,8 +905,8 @@ testResult_t run() {
 
   for (int i=0; i<nGpus*nThreads; i++) {
     char* str = getenv("NCCL_TESTS_DEVICE");
-    int gpuid = str ? atoi(str) : localRank*nThreads*nGpus+i;
-    CUDACHECK(cudaSetDevice(gpuid));
+    gpus[i] = str ? atoi(str) : localRank*nThreads*nGpus+i;
+    CUDACHECK(cudaSetDevice(gpus[i]));
     AllocateBuffs(sendbuffs+i, sendBytes, recvbuffs+i, recvBytes, expected+i, (size_t)maxBytes, nProcs*nThreads*nGpus);
     if (streamnull)
       streams[i] = NULL;
@@ -925,13 +918,11 @@ testResult_t run() {
   ncclComm_t* comms = (ncclComm_t*)malloc(sizeof(ncclComm_t)*nThreads*nGpus);
   if (!parallel_init) {
      if (nProcs == 1) {
-       int gpuArray[nGpus*nThreads];
-       for (int i=0; i<nGpus*nThreads; i++) gpuArray[i] = i;
-       NCCLCHECK(ncclCommInitAll(comms, nGpus*nThreads, gpuArray));
+       NCCLCHECK(ncclCommInitAll(comms, nGpus*nThreads, gpus));
      } else {
        NCCLCHECK(ncclGroupStart());
        for (int i=0; i<nGpus*nThreads; i++) {
-         CUDACHECK(cudaSetDevice(localRank*nThreads*nGpus+i));
+         CUDACHECK(cudaSetDevice(gpus[i]));
          NCCLCHECK(ncclCommInitRank(comms+i, nProcs*nThreads*nGpus, ncclId, proc*nThreads*nGpus+i));
        }
        NCCLCHECK(ncclGroupEnd());
@@ -981,6 +972,7 @@ testResult_t run() {
     threads[t].args.nThreads=nThreads;
     threads[t].args.thread=t;
     threads[t].args.nGpus=nGpus;
+    threads[t].args.gpus=gpus+t*nGpus;
     threads[t].args.sendbuffs = sendbuffs+t*nGpus;
     threads[t].args.recvbuffs = recvbuffs+t*nGpus;
     threads[t].args.expected = expected+t*nGpus;
@@ -998,6 +990,8 @@ testResult_t run() {
     threads[t].args.errors=errors+t;
     threads[t].args.bw=bw+t;
     threads[t].args.bw_count=bw_count+t;
+
+    threads[t].args.reportErrors = 1;
 
     threads[t].args.replayFile = replay_file;
 

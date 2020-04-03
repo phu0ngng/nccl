@@ -807,7 +807,14 @@ ncclResult_t ncclTopoDumpGraphs(struct ncclTopoSystem* system, int ngraphs, stru
   return ncclSuccess;
 }
 
-ncclResult_t ncclTopoGetNetDev(struct ncclTopoGraph* graph, int dir, int channelId, int* dev) {
-  *dev = graph->inter[(channelId%graph->nChannels)*2+dir];
+ncclResult_t ncclTopoGetNetDev(struct ncclTopoSystem* system, int rank, struct ncclTopoGraph* graph, int dir, int channelId, int* dev) {
+  if (graph) {
+    // Honor the net device in the graph
+    *dev = graph->inter[(channelId%graph->nChannels)*2+dir];
+  } else {
+    int64_t id;
+    NCCLCHECK(ncclTopoGetLocalNet(system, rank, &id, channelId));
+    *dev = id;
+  }
   return ncclSuccess;
 }

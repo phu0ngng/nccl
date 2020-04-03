@@ -1,5 +1,5 @@
 /*************************************************************************
- * Copyright (c) 2015-2019, NVIDIA CORPORATION. All rights reserved.
+ * Copyright (c) 2015-2020, NVIDIA CORPORATION. All rights reserved.
  *
  * See LICENSE.txt for license information
  ************************************************************************/
@@ -9,6 +9,7 @@
 
 ncclResult_t initChannel(struct ncclComm* comm, int channelid) {
   struct ncclChannel* channel = comm->channels+channelid;
+  if (channel->id != -1) return ncclSuccess;
   channel->id = channelid;
 
   // Ring index to user rank table.
@@ -24,11 +25,12 @@ ncclResult_t initChannel(struct ncclComm* comm, int channelid) {
   }
 
   // Per-channel operation list.
-  NCCLCHECK(ncclCudaHostAlloc((void**)&channel->collectives, (void**)&channel->devCollectives, sizeof(struct ncclColl)*NCCL_MAX_OPS));
+  NCCLCHECK(ncclCudaHostCalloc(&channel->collectives, NCCL_MAX_OPS));
   return ncclSuccess;
 }
 
 ncclResult_t freeChannel(struct ncclChannel* channel, int nRanks) {
+  if (channel->id == -1) return ncclSuccess;
   // Operation list
   NCCLCHECK(ncclCudaHostFree(channel->collectives));
 

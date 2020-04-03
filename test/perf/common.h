@@ -17,25 +17,25 @@
 #include "nccl1_compat.h"
 
 #define CUDACHECK(cmd) do {                         \
-  cudaError_t e = cmd;                              \
-  if( e != cudaSuccess ) {                          \
+  cudaError_t err = cmd;                            \
+  if( err != cudaSuccess ) {                        \
     char hostname[1024];                            \
     getHostName(hostname, 1024);                    \
     printf("%s: Test CUDA failure %s:%d '%s'\n",    \
          hostname,                                  \
-        __FILE__,__LINE__,cudaGetErrorString(e));   \
+        __FILE__,__LINE__,cudaGetErrorString(err)); \
     return testCudaError;                           \
   }                                                 \
 } while(0)
 
 #define NCCLCHECK(cmd) do {                         \
-  ncclResult_t r = cmd;                             \
-  if (r!= ncclSuccess) {                            \
+  ncclResult_t res = cmd;                           \
+  if (res != ncclSuccess) {                         \
     char hostname[1024];                            \
     getHostName(hostname, 1024);                    \
     printf("%s: Test NCCL failure %s:%d '%s'\n",    \
          hostname,                                  \
-        __FILE__,__LINE__,ncclGetErrorString(r));   \
+        __FILE__,__LINE__,ncclGetErrorString(res)); \
     return testNcclError;                           \
   }                                                 \
 } while(0)
@@ -79,6 +79,7 @@ extern struct testColl allGatherTest;
 extern struct testColl reduceScatterTest;
 extern struct testColl broadcastTest;
 extern struct testColl reduceTest;
+extern struct testColl alltoAllTest;
 
 struct testEngine {
   void (*getBuffSize)(size_t *sendcount, size_t *recvcount, size_t count, int nranks);
@@ -100,6 +101,7 @@ struct threadArgs {
   int nThreads;
   int thread;
   int nGpus;
+  int* gpus;
   int localRank;
   void** sendbuffs;
   size_t sendBytes;
@@ -124,6 +126,8 @@ struct threadArgs {
   int* errors;
   double* bw;
   int* bw_count;
+
+  int reportErrors;
 
   int compThreadStop;
   volatile int* compThreadCount;

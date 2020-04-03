@@ -1,5 +1,5 @@
 /*************************************************************************
- * Copyright (c) 2015-2019, NVIDIA CORPORATION. All rights reserved.
+ * Copyright (c) 2015-2020, NVIDIA CORPORATION. All rights reserved.
  *
  * See LICENSE.txt for license information
  ************************************************************************/
@@ -11,8 +11,8 @@
 #include "align.h"
 #include <stdint.h>
 
-#define NCCL_NUM_FUNCTIONS 5
-typedef enum { ncclCollBroadcast, ncclCollReduce, ncclCollAllGather, ncclCollReduceScatter, ncclCollAllReduce } ncclFunc_t;
+#define NCCL_NUM_FUNCTIONS 5 //p2p not including as of now
+typedef enum { ncclCollBroadcast, ncclCollReduce, ncclCollAllGather, ncclCollReduceScatter, ncclCollAllReduce ,ncclCollSendRecv} ncclFunc_t;
 
 #define NCCL_NUM_ALGORITHMS 3 // Tree/Ring/CollNet
 #define NCCL_ALGO_TREE 0
@@ -137,17 +137,31 @@ struct CollectiveArgs {
   uint64_t opCount;
 
   // local and remote input, output, and buffer
-  const void * ThisInput;
-  void * ThisOutput;
+  const void * sendbuff;
+  void * recvbuff;
 
-  // general parameters
-  size_t N;
-  uint32_t root;
-  uint8_t bid;
-  uint8_t nChannels;
-  uint16_t nThreads;
-
-  int lastChunkSize;
+  // Op-specific fields. Make sure the common part stays the
+  // same on all structs of the union
+  union {
+    struct {
+      uint16_t nThreads;
+    } common;
+    struct {
+      uint16_t nThreads;
+      uint8_t bid;
+      uint8_t nChannels;
+      uint32_t root;
+      size_t count;
+      size_t lastChunkSize;
+    } coll;
+    struct {
+      uint16_t nThreads;
+      uint16_t unused;
+      int32_t delta;
+      size_t sendCount;
+      size_t recvCount;
+    } p2p;
+  };
 };
 struct ncclColl {
   union {
@@ -172,7 +186,6 @@ struct ncclChannel {
       struct ncclTree collTreeDn;
 
       int id;
-      int nthreads;
 
       // Communication structures
       struct ncclPeer* peers;
@@ -180,7 +193,6 @@ struct ncclChannel {
 
       // Operation list for aggregation
       struct ncclColl* collectives;
-      struct ncclColl* devCollectives;
       int collStart;
       int collCount;
       int collFifoHead; // Only used by GPU
