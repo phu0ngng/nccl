@@ -165,8 +165,8 @@ ncclResult_t ncclCpuBarrierOut(struct ncclComm* comm) {
 }
 
 ncclResult_t ncclBarrierEnqueue(struct ncclComm* comm) {
-  if (comm->nRanks == 1) return ncclSuccess;
   struct cudaLaunchParams* params = comm->myParams;
+  if (params->gridDim.x == 0) return ncclSuccess;
 
   NCCLCHECK(setupLaunch(comm, params));
 
@@ -199,7 +199,9 @@ ncclResult_t ncclBarrierEnqueue(struct ncclComm* comm) {
 }
 
 ncclResult_t ncclBarrierEnqueueWait(ncclComm_t comm) {
-  if (comm->nRanks == 1) return ncclSuccess;
+  struct cudaLaunchParams *params = comm->myParams;
+  if (params->gridDim.x == 0) return ncclSuccess;
+
   // We can't print the CG mode before the first barrier happened.
   if (comm->rank == 0 && *comm->intraCGMode & 0x10) {
     *comm->intraCGMode ^= 0x10;
@@ -211,7 +213,6 @@ ncclResult_t ncclBarrierEnqueueWait(ncclComm_t comm) {
 
   NCCLCHECK(ncclCpuBarrierOut(comm));
 
-  struct cudaLaunchParams *params = comm->myParams;
   if (comm->launchMode == ncclComm::PARALLEL) {
     CUDACHECK(cudaLaunchKernel(params->func, params->gridDim, params->blockDim, params->args, params->sharedMem, params->stream));
   }
@@ -386,8 +387,11 @@ static ncclResult_t computeColl(struct ncclInfo* info /* input */, struct ncclCo
     ALIGN_SIZE(coll->args.coll.lastChunkSize, info->nThreads*sizeof(uint64_t));
     coll->args.coll.lastChunkSize /= ncclTypeSize(info->datatype);
   } else if (info->algorithm == NCCL_ALGO_TREE && info->protocol == NCCL_PROTO_LL128) {
-    int nstepsInter = 1+log2i(info->comm->nNodes);
-    while (info->nBytes / (info->nChannels*chunkSize) < nstepsInter*4 && chunkSize > 32768) chunkSize /= 2;
+    int nNodes = info->comm->nNodes;
+    float ppn = info->comm->nRanks / (float)nNodes;
+    float nstepsLL128 = 1+log2i(nNodes) + 0.1*ppn;
+    while (info->nBytes / (info->nChannels*chunkSize) < nstepsLL128*64/ppn && chunkSize > 131072) chunkSize /= 2;
+    while (info->nBytes / (info->nChannels*chunkSize) < nstepsLL128*16/ppn && chunkSize > 32768) chunkSize /= 2;
     // Use lastChunkSize as chunkSize
     coll->args.coll.lastChunkSize = chunkSize*NCCL_LL128_DATAELEMS/(NCCL_LL128_LINEELEMS*ncclTypeSize(info->datatype));
   }
@@ -421,9 +425,11 @@ static ncclResult_t checkSetStream(struct ncclInfo* info) {
   }
   return ncclSuccess;
 }
+
 ncclResult_t ncclSaveKernel(struct ncclInfo* info) {
-  if (info->comm->nRanks == 1 && info->sendbuff != info->recvbuff) {
-    CUDACHECK(cudaMemcpyAsync(info->recvbuff, info->sendbuff, info->nBytes, cudaMemcpyDeviceToDevice, info->stream));
+  if (info->comm->nRanks == 1 && info->coll != ncclCollSendRecv) {
+    if (info->sendbuff != info->recvbuff)
+      CUDACHECK(cudaMemcpyAsync(info->recvbuff, info->sendbuff, info->nBytes, cudaMemcpyDeviceToDevice, info->stream));
     return ncclSuccess;
   }
 

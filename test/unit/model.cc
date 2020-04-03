@@ -27,11 +27,11 @@
 const char* protocolNames[] = { "LL", "LL128", "Simple" };
 const char* algorithmNames[] = { "Tree", "Ring", "CollNet" };
 
-void runTopo(const char* xmlTopoFile, const char* platform, int nnodes) {
-  int compareData = 0;
-  char* str = getenv("COMPARE_DATA");
-  if (str && atoi(str)) compareData=1;
+int compactMode;
+float totalScore = 0.0;
+int totalNpoints = 0;
 
+void runTopo(const char* xmlTopoFile, const char* platform, int nnodes) {
   struct ncclXml* xmlSystem;
   INFO(NCCL_GRAPH, "Loading platform %s", platform);
   CHECK(ncclCalloc(&xmlSystem, 1));
@@ -104,32 +104,36 @@ void runTopo(const char* xmlTopoFile, const char* platform, int nnodes) {
   info.chunkSteps = ALLREDUCE_CHUNKSTEPS;
   info.sliceSteps = ALLREDUCE_SLICESTEPS;
 
+  int compareData = 1;
+  int fd = 0;
+  char path[1024];
+  sprintf(path, "topo/%s/data/%d.csv", platform, nnodes);
+  fd = open(path, O_RDONLY);
+  if (fd == -1) compareData = 0;
+  if (compactMode && compareData == 0) return;
+  float score = 0.0;
+  int npoints = 0;
+
   // Last column is used for min/best/default.
   int m = NCCL_NUM_ALGORITHMS*NCCL_NUM_PROTOCOLS;
 
-  printf("----------+"); for (int i=0; i<NCCL_NUM_ALGORITHMS*NCCL_NUM_PROTOCOLS+1; i++) printf("---------------------+"); printf("\n");
-  printf("     Size |");
-  for (int a=0; a<NCCL_NUM_ALGORITHMS; a++) {
-    for (int p=0; p<NCCL_NUM_PROTOCOLS; p++) {
-      printf(" %7s  / %7s  |", algorithmNames[a], protocolNames[p]);
+  if (!compactMode) {
+    printf("----------+"); for (int i=0; i<NCCL_NUM_ALGORITHMS*NCCL_NUM_PROTOCOLS+1; i++) printf("---------------------+"); printf("\n");
+    printf("     Size |");
+    for (int a=0; a<NCCL_NUM_ALGORITHMS; a++) {
+      for (int p=0; p<NCCL_NUM_PROTOCOLS; p++) {
+        printf(" %7s  / %7s  |", algorithmNames[a], protocolNames[p]);
+      }
     }
-  }
-  printf("%17s    |\n", "Default");
-  if (compareData) {
-    printf("          |");
-    for (int i=0; i<NCCL_NUM_ALGORITHMS*NCCL_NUM_PROTOCOLS+1; i++) printf("[%9s] %9s|", "data", (i == m) ? "best" : "model");
-    printf("\n");
-  }
-  printf("----------+"); for (int i=0; i<NCCL_NUM_ALGORITHMS*NCCL_NUM_PROTOCOLS+1; i++) printf("---------------------+"); printf("\n");
-
-  int fd = 0;
-  if (compareData) {
-    char path[1024];
-    sprintf(path, "topo/%s/data/%d.csv", platform, nnodes);
-    fd = open(path, O_RDONLY);
-    if (fd == -1) {
-      printf("Could not open %s\n", path);
+    printf("%17s    |\n", "Default");
+    if (compareData) {
+      printf("          |");
+      for (int i=0; i<NCCL_NUM_ALGORITHMS*NCCL_NUM_PROTOCOLS+1; i++) printf("[%9s] %9s|", "data", (i == m) ? "best" : "model");
+      printf("\n");
     }
+    printf("----------+"); for (int i=0; i<NCCL_NUM_ALGORITHMS*NCCL_NUM_PROTOCOLS+1; i++) printf("---------------------+"); printf("\n");
+  } else {
+    printf("%10s/%5d |", platform, nnodes);
   }
 
   for (ssize_t size=8; size<(2LL<<32); size<<=1) {
@@ -170,24 +174,39 @@ void runTopo(const char* xmlTopoFile, const char* platform, int nnodes) {
       if (s != 1) { close(fd); fd = -1; }
     }
 
-    printf("%10ld|", size);
-    for (int i=0; i<NCCL_NUM_ALGORITHMS*NCCL_NUM_PROTOCOLS+1; i++) {
-      float delta;
-      if (compareData && data[i] != 0.0) printf("[%9.1f] ", data[i]); else printf("%11s ", "");
-      if (compareData) {
-        if (data[i] != 0.0) {
-          delta = (times[i]-data[i])/times[i]; delta *= delta;
-          if (delta > .1) printf("%c[0;31m", 0x1b);
-          else if (delta > .02) printf("%c[0;33m", 0x1b);
-          else printf("%c[0;32m", 0x1b);
-        }
-      } else if (i != m && times[i] == times[m]) printf("%c[0;32m", 0x1b);
-      printf("%9.1f|", times[i]);
-      if ((compareData && data[i] != 0.0) || (compareData == 0 && i != m && times[i] == times[m])) printf("%c[00m", 0x1b);
+    if (!compactMode) {
+      printf("%10ld|", size);
+      for (int i=0; i<NCCL_NUM_ALGORITHMS*NCCL_NUM_PROTOCOLS+1; i++) {
+        float delta;
+        if (compareData && data[i] != 0.0) printf("[%9.1f] ", data[i]); else printf("%11s ", "");
+        if (compareData) {
+          if (data[i] != 0.0) {
+            delta = (times[i]-data[i])/times[i]; delta *= delta;
+            if (delta > .1) printf("%c[0;31m", 0x1b);
+            else if (delta > .02) printf("%c[0;33m", 0x1b);
+            else printf("%c[0;32m", 0x1b);
+          }
+        } else if (i != m && times[i] == times[m]) printf("%c[0;32m", 0x1b);
+        printf("%9.1f|", times[i]);
+        if ((compareData && data[i] != 0.0) || (compareData == 0 && i != m && times[i] == times[m])) printf("%c[00m", 0x1b);
+      }
+      printf("\n");
+    } else {
+      float s = times[m]/data[m];
+      if (s < 0.8) printf("%c[0;31m#", 0x1b);
+      else if (s < .95) printf("%c[0;33mX", 0x1b);
+      else printf("%c[0;32mO", 0x1b);
+      score += s;
+      totalScore += s;
+      npoints++;
+      totalNpoints++;     
     }
-    printf("\n");
   }
-  printf("----------+"); for (int i=0; i<NCCL_NUM_ALGORITHMS*NCCL_NUM_PROTOCOLS+1; i++) printf("---------------------+"); printf("\n");
+  if (!compactMode) {
+    printf("----------+"); for (int i=0; i<NCCL_NUM_ALGORITHMS*NCCL_NUM_PROTOCOLS+1; i++) printf("---------------------+"); printf("\n");
+  } else {
+    printf("%c[00m| %.1f %%\n", 0x1b, 100.0*score/npoints);
+  }
 }
 
 void runPlatform(const char* platform, int nnodes) {
@@ -199,12 +218,26 @@ void runPlatform(const char* platform, int nnodes) {
 #define RUN(...) runPlatform(__VA_ARGS__)
 
 int main(int argc, const char* argv[]) {
+  char* str = getenv("COMPACT_MODE");
+  compactMode = str ? atoi(str) : 0;
+
   setlinebuf(stdout);
   if (argc > 2) {
     RUN(argv[1], atoi(argv[2]));
-  } else {
+  } else if (argc > 1) {
     printf("Usage : %s <platform> <nnodes>\n", argv[0]);
     return 1;
+  } else {
+    compactMode = 1;
+    printf("%10s/%5s |    Delta at size 8 to 2G     | Score\n", "Platform", "Nodes");
+    printf("-----------------+------------------------------+-------\n");
+    for (int n=1; n<128; n<<=1) {
+      RUN("DGX-1V", n);
+      RUN("DGX-2V", n);
+//      RUN("Luna", n);
+    }
+    printf("-----------------+------------------------------+-------\n");
+    printf("           Total |                              | %.1f %%\n", 100.0*totalScore/totalNpoints);
   }
   return 0;
 }
