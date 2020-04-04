@@ -45,8 +45,9 @@ void runTopo(const char* xmlTopoFile, const char* platform, int ngpus, int nnode
       CHECK(ncclTopoRemoveNode(system, NET, n));
   }
   // Only keep ngpus
-  for (int g=system->nodes[GPU].count-1; g>ngpus; g--)
+  for (int g=system->nodes[GPU].count-1; g>=ngpus; g--) {
     CHECK(ncclTopoRemoveNode(system, GPU, g));
+  }
 
   CHECK(ncclTopoSearchInit(system));
   CHECK(ncclTopoPrint(system));
@@ -232,7 +233,7 @@ int main(int argc, const char* argv[]) {
     }
     RUN(argv[1], atoi(argv[2]), atoi(argv[3]), (ncclFunc_t)coll);
   } else if (argc > 1) {
-    printf("Usage : %s <platform> <nnodes> <ngpus> <collective>\n", argv[0]);
+    printf("Usage : %s <platform> <ngpus> <nnodes> <collective>\n", argv[0]);
     return 1;
   } else {
     compactMode = 1;
