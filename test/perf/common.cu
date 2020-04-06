@@ -506,9 +506,9 @@ testResult_t BenchTime(struct threadArgs* args, ncclDataType_t type, ncclRedOp_t
      }
   }
   if (dump_file) {
+    size_t nBytes = max(args->sendBytes, args->expectedBytes);
     // Dump 8B to 4G to file.
-    int size = count*wordSize(type);
-    for (int p=0; p<30; p++) if (size == (8<<p)) {
+    for (int p=0; p<30; p++) if (nBytes == (8ULL<<p)) {
       if (dump_values[p] == 0.0) {
         dump_values[p] = timeUsec;
       } else {
