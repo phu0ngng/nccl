@@ -55,12 +55,12 @@ gen_data() {
     for proto in LL LL128 Simple; do
       dir="$topo_path/$coll/$algo/$proto"
       mkdir -p $dir
-      echo "############ $coll/$algo/$proto #############"
+      echo "############ $coll/$algo/$proto -> $dir/time.txt #############"
       mpirun -x NCCL_ALGO=$algo -x NCCL_PROTO=$proto -x NCCL_TESTS_DUMP_FILE=$dir/time.txt $perftest -w 1 -n $REPS -b 8 -e 4G -f 2 -o all -c 0
     done
   done
   # Default
-  echo "############ $coll/Default #############"
+  echo "############ $coll/Default -> $topo_path/$coll/time.txt #############"
   mpirun -x NCCL_TESTS_DUMP_FILE=$topo_path/$coll/time.txt $perftest -w 1 -n $REPS -b 8 -e 4G -f 2 -o all -c 0
 }
 
