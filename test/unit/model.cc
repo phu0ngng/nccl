@@ -148,20 +148,20 @@ void runTopo(const char* xmlTopoFile, const char* platform, int ngpus, int nnode
 
     for (int i=0; i<m+1; i++) {
       char valueStr[128];
-      if (fds[i] == -1) {
-        data[i] = -1.0;
-      } else {
+      data[i] = -1.0;
+      if (fds[i] != -1) {
         for (int o=0; fds[i] != -1 && o<128; o++) {
           int s = read(fds[i], valueStr+o, 1);
           if (s != 1) {
+	    printf("Error while reading value for size %ld in file %d\n", size, i);
             close(fds[i]);
             fds[i] = -1;
           } else if (valueStr[o] == '\n') {
             valueStr[o] = '\0';
+	    data[i] = atof(valueStr);
             break;
           }
         }
-        data[i] = atof(valueStr);
       }
     }
     // Compute best performance
@@ -178,9 +178,12 @@ void runTopo(const char* xmlTopoFile, const char* platform, int ngpus, int nnode
         float delta;
         if (data[i] != -1.0) {
           printf("[%9.1f] ", data[i]);
-          delta = (times[i]-data[i])/times[i]; delta *= delta;
-          if (delta > .1) printf("%c[0;31m", 0x1b);
-          else if (delta > .02) printf("%c[0;33m", 0x1b);
+          delta = 1-(times[i]/data[i]);
+          if (i < m) delta *= delta;
+          float s = 1-delta;
+          if (s < .8) printf("%c[0;31m", 0x1b);
+          else if (s < .95) printf("%c[0;33m", 0x1b);
+          else if (s > 1.1) printf("%c[0;34m", 0x1b);
           else printf("%c[0;32m", 0x1b);
         } else {
           printf("%11s ", "");
@@ -195,6 +198,7 @@ void runTopo(const char* xmlTopoFile, const char* platform, int ngpus, int nnode
       float s = times[m]/data[m];
       if (s < 0.8) printf("%c[0;31m#", 0x1b);
       else if (s < .95) printf("%c[0;33mX", 0x1b);
+      else if (s > 1.1) printf("%c[0;34mO", 0x1b);
       else printf("%c[0;32mO", 0x1b);
       score += s;
       totalScore += s;
@@ -209,10 +213,19 @@ void runTopo(const char* xmlTopoFile, const char* platform, int ngpus, int nnode
   }
 }
 
+#define COMPACT_SEPARATOR printf("-----------------+------------------------------+-------\n")
+
 void runPlatform(const char* platform, int ngpus, int nnodes, ncclFunc_t coll) {
   char xmlTopoFile[1024];
   sprintf(xmlTopoFile, "topo/%s/system.xml", platform);
-  runTopo(xmlTopoFile, platform, ngpus, nnodes, coll);
+  if (nnodes == 0) {
+    for (int n=1; n<128; n<<=1) {
+      runTopo(xmlTopoFile, platform, ngpus, n, coll);
+    }
+  } else {
+    runTopo(xmlTopoFile, platform, ngpus, nnodes, coll);
+  }
+  if (compactMode) COMPACT_SEPARATOR;
 }
 
 #define RUN(...) runPlatform(__VA_ARGS__)
@@ -239,12 +252,9 @@ int main(int argc, const char* argv[]) {
     compactMode = 1;
     printf("%10s/%5s |    Delta at size 8 to 4G     | Score\n", "Platform", "Nodes");
     printf("-----------------+------------------------------+-------\n");
-    for (int n=1; n<128; n<<=1) {
-      RUN("DGX-1V", 8, n, ncclCollAllReduce);
-      RUN("DGX-2V", 16, n, ncclCollAllReduce);
-//      RUN("Luna", n);
-    }
-    printf("-----------------+------------------------------+-------\n");
+    RUN("DGX-1V", 8, 0, ncclCollAllReduce);
+    RUN("DGX-2V", 16, 0, ncclCollAllReduce);
+//  RUN("Luna", 8, 0, ncclCollallReduce);
     printf("           Total |                              | %.1f %%\n", 100.0*totalScore/totalNpoints);
   }
   return 0;
