@@ -128,11 +128,13 @@ ncclResult_t p2pSendSetup(struct ncclTopoSystem* topo, struct ncclTopoGraph* gra
 
   struct p2pConnectInfo info;
   info.read = useRead;
+  const char* useReadStr = info.read ? "/read" : "";
   if (myInfo->pidHash == peerInfo->pidHash) {
     info.direct = 1;
     info.directPtr = resources->devMem;
     if (myInfo->cudaDev == peerInfo->cudaDev) {
-      INFO(NCCL_INIT|NCCL_P2P,"Channel %02d : %d[%d] -> %d[%d] via P2P/common device", channelId, myInfo->rank, myInfo->cudaDev, peerInfo->rank, peerInfo->cudaDev);
+      INFO(NCCL_INIT|NCCL_P2P,"Channel %02d : %d[%d] -> %d[%d] via P2P/common device%s",
+          channelId, myInfo->rank, myInfo->cudaDev, peerInfo->rank, peerInfo->cudaDev, useReadStr);
       return ncclInternalError;
     } else {
       // Enable P2P access
@@ -144,8 +146,8 @@ ncclResult_t p2pSendSetup(struct ncclTopoSystem* topo, struct ncclTopoGraph* gra
              peerInfo->cudaDev, peerInfo->busId, err, cudaGetErrorString(err));
         return ncclInternalError;
       }
-      INFO(NCCL_INIT|NCCL_P2P,"Channel %02d : %d[%lx] -> %d[%lx] via P2P/direct pointer",
-          channelId, myInfo->rank, myInfo->busId, peerInfo->rank, peerInfo->busId);
+      INFO(NCCL_INIT|NCCL_P2P,"Channel %02d : %d[%lx] -> %d[%lx] via P2P/direct pointer%s",
+          channelId, myInfo->rank, myInfo->busId, peerInfo->rank, peerInfo->busId, useReadStr);
     }
   } else {
     // Convert the peer's busId into a local cudaDev index (cf. CUDA_VISIBLE_DEVICES)
@@ -158,8 +160,8 @@ ncclResult_t p2pSendSetup(struct ncclTopoSystem* topo, struct ncclTopoGraph* gra
            myInfo->rank, peerCudaDev, peerInfo->busId, err, cudaGetErrorString(err));
       return ncclInternalError;
     }
-    INFO(NCCL_INIT|NCCL_P2P,"Channel %02d : %d[%lx] -> %d[%lx] via P2P/IPC",
-        channelId, myInfo->rank, myInfo->busId, peerInfo->rank, peerInfo->busId);
+    INFO(NCCL_INIT|NCCL_P2P,"Channel %02d : %d[%lx] -> %d[%lx] via P2P/IPC%s",
+        channelId, myInfo->rank, myInfo->busId, peerInfo->rank, peerInfo->busId, useReadStr);
     //TRACE_DUMP_IPC(&info.devIpc);
   }
   static_assert(sizeof(struct p2pConnectInfo) <= sizeof(struct ncclConnect), "p2p Connect Info is too big");
@@ -226,7 +228,7 @@ static ncclResult_t p2pSendConnect(struct ncclConnect* connectInfo, int nranks, 
   struct p2pConnectInfo* info = (struct p2pConnectInfo*)connectInfo;
   if (info->direct) {
     remDevMem = (struct ncclRecvMem*)(info->directPtr);
-    send->conn.direct |= NCCL_DIRECT_GPU;
+    if (info->read == 0) send->conn.direct |= NCCL_DIRECT_GPU;
   } else {
     //TRACE_DUMP_IPC(&info->devIpc);
     cudaError_t err = cudaIpcOpenMemHandle(&resources->ipcPtr, info->devIpc, cudaIpcMemLazyEnablePeerAccess);
@@ -263,8 +265,10 @@ ncclResult_t p2pRecvConnect(struct ncclConnect* connectInfo, int nranks, int ran
   struct p2pConnectInfo* info = (struct p2pConnectInfo*)connectInfo;
   if (info->direct) {
     remDevMem = (struct ncclSendMem*)(info->directPtr);
-    recv->conn.direct |= NCCL_DIRECT_GPU;
-    recv->conn.ptrExchange = &remDevMem->ptrExchange;
+    if (info->read == 0) {
+      recv->conn.direct |= NCCL_DIRECT_GPU;
+      recv->conn.ptrExchange = &remDevMem->ptrExchange;
+    }
   } else {
     //TRACE_DUMP_IPC(&info->devIpc);
     cudaError_t err = cudaIpcOpenMemHandle(&resources->ipcPtr, info->devIpc, cudaIpcMemLazyEnablePeerAccess);
