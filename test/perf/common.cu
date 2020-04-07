@@ -46,6 +46,9 @@ static int timeout = 60;
 
 static char* replay_file = NULL;
 
+static FILE* dump_file = NULL;
+static double dump_values[30]; // 8 to 4G
+
 // Side computation constants
 #define COMP_SIZE (1 << 22)
 #define NUM_BLOCKS 32
@@ -502,6 +505,17 @@ testResult_t BenchTime(struct threadArgs* args, ncclDataType_t type, ncclRedOp_t
        PRINT("  %7s  %6.2f  %6.2f    N/A", timeStr, algBw, busBw);
      }
   }
+  if (dump_file) {
+    size_t nBytes = max(args->sendBytes, args->expectedBytes);
+    // Dump 8B to 4G to file.
+    for (int p=0; p<30; p++) if (nBytes == (8ULL<<p)) {
+      if (dump_values[p] == 0.0) {
+        dump_values[p] = timeUsec;
+      } else {
+        dump_values[p] = std::min(timeUsec, dump_values[p]);
+      }
+    }
+  }
 
   args->bw[0] += busBw;
   args->bw_count[0]++;
@@ -812,7 +826,8 @@ int main(int argc, char* argv[]) {
   MPI_Init(&argc, &argv);
 #endif
 #endif
-  return run();
+  TESTCHECK(run());
+  return 0;
 }
 
 #ifdef MPI_COLLNET_SUPPORT
@@ -845,6 +860,9 @@ testResult_t run() {
 #endif
   is_main_thread = (proc == 0) ? 1 : 0;
 
+  char* envstr = getenv("NCCL_TESTS_DUMP_FILE");
+  if (envstr && is_main_thread) dump_file = fopen(envstr, "w");
+
   PRINT("# nThread %d nGpus %d minBytes %ld maxBytes %ld step: %ld(%s) warmup iters: %d iters: %d agg iters: %d validation: %d \n",
         nThreads, nGpus, minBytes, maxBytes,
         (stepFactor > 1)?stepFactor:stepBytes, (stepFactor > 1)?"factor":"bytes",
@@ -859,8 +877,8 @@ testResult_t run() {
   int len = 0;
   size_t maxMem = maxBytes*7/2;
   for (int i=0; i<nThreads*nGpus; i++) {
-    char* str = getenv("NCCL_TESTS_DEVICE");
-    int cudaDev = str ? atoi(str) : localRank*nThreads*nGpus+i;
+    envstr = getenv("NCCL_TESTS_DEVICE");
+    int cudaDev = envstr ? atoi(envstr) : localRank*nThreads*nGpus+i;
     int rank = proc*nThreads*nGpus+i;
     cudaDeviceProp prop;
     CUDACHECK(cudaGetDeviceProperties(&prop, cudaDev));
@@ -904,8 +922,8 @@ testResult_t run() {
   ncclTestEngine.getBuffSize(&sendBytes, &recvBytes, (size_t)maxBytes, (size_t)nProcs*nGpus*nThreads);
 
   for (int i=0; i<nGpus*nThreads; i++) {
-    char* str = getenv("NCCL_TESTS_DEVICE");
-    gpus[i] = str ? atoi(str) : localRank*nThreads*nGpus+i;
+    envstr = getenv("NCCL_TESTS_DEVICE");
+    gpus[i] = envstr ? atoi(envstr) : localRank*nThreads*nGpus+i;
     CUDACHECK(cudaSetDevice(gpus[i]));
     AllocateBuffs(sendbuffs+i, sendBytes, recvbuffs+i, recvBytes, expected+i, (size_t)maxBytes, nProcs*nThreads*nGpus);
     if (streamnull)
@@ -1044,8 +1062,8 @@ testResult_t run() {
   }
   CUDACHECK(cudaFreeHost(delta));
 
-  char* str = getenv("NCCL_TESTS_MIN_BW");
-  double check_avg_bw = str ? atof(str) : -1;
+  envstr = getenv("NCCL_TESTS_MIN_BW");
+  double check_avg_bw = envstr ? atof(envstr) : -1;
   bw[0] /= bw_count[0];
 
   PRINT("# Out of bounds values : %d %s\n", errors[0], errors[0] ? "FAILED" : "OK");
@@ -1054,6 +1072,13 @@ testResult_t run() {
 #ifdef MPI_SUPPORT
   MPI_Finalize();
 #endif
+
+  if (dump_file) {
+    for (int p=0; p<30; p++) {
+      fprintf(dump_file, "%.1f\n", dump_values[p]);
+    }
+    fclose(dump_file);
+  }
 
   // 'cuda-memcheck --leak-check full' requires this
   cudaDeviceReset();

@@ -51,10 +51,6 @@ ncclResult_t parseList(const char* str, const char* elems[], int nelems, int* li
   return ncclSuccess;
 }
 
-static const char* ncclFuncStr[] = { "Broadcast", "Reduce", "AllGather", "ReduceScatter", "AllReduce" };
-static const char* ncclAlgoStr[] = { "Tree", "Ring", "CollNet" };
-static const char* ncclProtoStr[] = { "LL", "LL128", "Simple" };
-
 // Latencies in us, Bandwidths in GB/s
 // Tree { LL, LL128, Simple } , Ring { LL, LL128, Simple }
 static const float baseLat  [NCCL_NUM_ALGORITHMS][NCCL_NUM_PROTOCOLS] = { { 4.4, 4.4,  0 }, { 3.6, 3.6, 8.4 }, { 4.4, 4.4,  0 } };
@@ -66,11 +62,11 @@ static const float baseLat  [NCCL_NUM_ALGORITHMS][NCCL_NUM_PROTOCOLS] = { { 4.4,
 // Tree/Simple is the latency a 256kB chunk, which is ~ base lat + 256k/12GB/s (+ 256k/12GB/s for the network).
 static const float hwLat [3][NCCL_NUM_ALGORITHMS][NCCL_NUM_PROTOCOLS] =
 { /* NVLINK */
-  { /* Tree (LL/LL128/Simple)*/ {  .5, 1.9, 28 }, /* Ring (LL/LL128/Simple)*/ {  .4, 2.5, 5.7 }, /* CollNet (LL/LL128/Simple)*/ {  .5, 1.9, 4.0 } },
+  { /* Tree (LL/LL128/Simple)*/ {  .5, 1.9, 28 }, /* Ring (LL/LL128/Simple)*/ {  .9, 1.9, 5.2 }, /* CollNet (LL/LL128/Simple)*/ {  .5, 1.9, 4.0 } },
   /* PCI */
   { /* Tree (LL/LL128/Simple)*/ { 1.0, 1.9, 28 }, /* Ring (LL/LL128/Simple)*/ { 1.0, 2.5, 5.7 }, /* CollNet (LL/LL128/Simple)*/ { 1.0, 1.9, 5.5 } },
   /* NET */
-  { /* Tree (LL/LL128/Simple)*/ { 5.0, 7.5, 50 }, /* Ring (LL/LL128/Simple)*/ {  .9, 2.5, 6.6 }, /* CollNet (LL/LL128/Simple)*/ { 5.0, 5.0, 10.7 } }
+  { /* Tree (LL/LL128/Simple)*/ { 5.0, 7.5, 50 }, /* Ring (LL/LL128/Simple)*/ { 2.7, 4.0, 9.6 }, /* CollNet (LL/LL128/Simple)*/ { 5.0, 5.0, 10.7 } }
 };
 
 // LL128 max BW for the different collectives
@@ -100,6 +96,9 @@ ncclResult_t ncclTopoSetThresholds(struct ncclComm* comm, int minCompCap, int ma
     int nsteps = coll == ncclCollAllReduce ? 2*(comm->nRanks-1) :
       coll == ncclCollReduceScatter || coll == ncclCollAllGather ? comm->nRanks-1 :
       comm->nRanks;
+    int nInterSteps = coll == ncclCollAllReduce ? 2*(comm->nNodes-1) :
+      coll == ncclCollReduceScatter || coll == ncclCollAllGather ? comm->nNodes-1 :
+      comm->nNodes;
 
     for (int a=0; a<NCCL_NUM_ALGORITHMS; a++) {
       if (coll != ncclCollAllReduce && a != NCCL_ALGO_RING) continue;
@@ -126,6 +125,8 @@ ncclResult_t ncclTopoSetThresholds(struct ncclComm* comm, int minCompCap, int ma
         comm->bandwidths[coll][a][p] = busBw * ratio;
 
         comm->latencies[coll][a][p] = baseLat[a][p];
+        float intraLat = hwLat[intraHw[a]][a][p];
+        float interLat = hwLat[NCCL_HW_NET][a][p];
         if (a == NCCL_ALGO_RING) {
           float lat = hwLat[hw[a]][a][p];
           if ((coll == ncclCollReduce || coll == ncclCollBroadcast)) {
@@ -136,16 +137,12 @@ ncclResult_t ncclTopoSetThresholds(struct ncclComm* comm, int minCompCap, int ma
               comm->latencies[coll][a][p] += nsteps*lat;
             }
           } else {
-            comm->latencies[coll][a][p] += nsteps*lat;
+            comm->latencies[coll][a][p] += (nsteps-nInterSteps)*intraLat + nInterSteps*interLat;
           }
         } else if (a == NCCL_ALGO_TREE) {
-          float intraLat = hwLat[intraHw[a]][a][p];
-          float interLat = hwLat[NCCL_HW_NET][a][p];
           comm->latencies[coll][a][p] +=
             2 * ((comm->nRanks/comm->nNodes-1) * intraLat + log2i(comm->nNodes) * interLat);
         } else {
-          float intraLat = hwLat[intraHw[a]][a][p];
-          float interLat = hwLat[NCCL_HW_NET][a][p];
           comm->latencies[coll][a][p] +=
             2 * (comm->nRanks/comm->nNodes-1) * intraLat + interLat;
         }
@@ -243,11 +240,14 @@ static float treeCorrectionFactor[NCCL_NUM_PROTOCOLS][22] = {
 
 ncclResult_t ncclTopoGetAlgoTime(struct ncclInfo* info, int algorithm, int protocol, float* time) {
   float bw = info->comm->bandwidths[info->coll][algorithm][protocol];
+  float lat = info->comm->latencies[info->coll][algorithm][protocol];
   if (bw == 0) {
     *time = -1.0; return ncclSuccess;
   }
   int logSize = log2i(info->nBytes>>6);
   if (algorithm == NCCL_ALGO_TREE && logSize < 22) bw *= treeCorrectionFactor[protocol][logSize];
-  *time = info->comm->latencies[info->coll][algorithm][protocol] + (info->nBytes) / (1000 * bw);
+  if (algorithm == NCCL_ALGO_RING && protocol == NCCL_PROTO_SIMPLE && info->comm->nNodes > 1
+      && info->coll == ncclCollAllReduce && info->nBytes >= info->comm->nRanks/16.0*65536) lat *= 1.9; // Plateau effect of ring
+  *time = lat + (info->nBytes) / (1000 * bw);
   return ncclSuccess;
 }
