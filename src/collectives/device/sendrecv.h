@@ -38,7 +38,7 @@ __device__ void ncclSendRecvKernel(struct CollectiveArgs* args) {
   int peerSend = sendSize >= 0 ? (comm->rank+(int)args->p2p.delta)%comm->nRanks : -1;
 
   ncclPrimitives<UNROLL, SENDRECV_CHUNKSTEPS/SENDRECV_SLICESTEPS, SENDRECV_SLICESTEPS, T, 1, 1, FUNC>
-    prims(tid, nthreads, &peerRecv, &peerSend, NULL, stepSize, channel, comm, args->opCount);
+    prims(tid, nthreads, &peerRecv, &peerSend, recvbuff, stepSize, channel, comm, args->opCount);
 
   int maxSize = sendSize-chunkSize>recvSize ? sendSize-chunkSize : recvSize;
 
@@ -46,7 +46,7 @@ __device__ void ncclSendRecvKernel(struct CollectiveArgs* args) {
     int realChunkSize = min(chunkSize, sendSize);
     ALIGN_SIZE(realChunkSize, nthreads*sizeof(uint64_t)/sizeof(T));
     int nelem = min(realChunkSize, sendSize);
-    prims.send(sendbuff, nelem);
+    prims.directSend(sendbuff, 0, nelem);
   }
 
   for (ssize_t gridOffset = 0; gridOffset < maxSize; gridOffset += chunkSize) {
@@ -55,14 +55,14 @@ __device__ void ncclSendRecvKernel(struct CollectiveArgs* args) {
       ALIGN_SIZE(realChunkSize, nthreads*sizeof(uint64_t)/sizeof(T));
       ssize_t offset = gridOffset + chunkSize;
       int nelem = min(realChunkSize, sendSize-offset);
-      prims.send(sendbuff+offset, nelem);
+      prims.directSend(sendbuff+offset, offset, nelem);
     }
     if (gridOffset < recvSize) {
       int realChunkSize = min(chunkSize, recvSize-gridOffset);
       ALIGN_SIZE(realChunkSize, nthreads*sizeof(uint64_t)/sizeof(T));
       ssize_t offset = gridOffset;
       int nelem = min(realChunkSize, recvSize-offset);
-      prims.recv(recvbuff+offset, nelem);
+      prims.directRecv(recvbuff+offset, offset, nelem);
     }
   }
   if (recvSize == 0) prims.recv(recvbuff,0);
