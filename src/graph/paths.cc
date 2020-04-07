@@ -501,6 +501,6 @@ ncclResult_t ncclTopoComputeP2pChannels(struct ncclComm* comm) {
     for (int b=1, mb=(comm->p2pnChannels>>1); b<comm->p2pnChannels; b<<=1, mb>>=1) if (c & b) mirror |= mb;
     comm->p2pChannels[c] = mirror;
   }
-  INFO(NCCL_INIT, "%d coll channels, %d p2p channels, %d p2p channels per peer\n", comm->nChannels, comm->p2pnChannels, comm->p2pnChannelsPerPeer);
+  INFO(NCCL_INIT, "%d coll channels, %d p2p channels, %d p2p channels per peer", comm->nChannels, comm->p2pnChannels, comm->p2pnChannelsPerPeer);
   return ncclSuccess;
 }
