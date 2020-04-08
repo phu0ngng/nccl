@@ -159,7 +159,7 @@ ncclResult_t ncclTopoTuneModel(struct ncclComm* comm, int minCompCap, int maxCom
     int pEnable = protoEnable[p];
     if (pEnable == 2 && p == NCCL_PROTO_LL128) {
       // Enable LL128 by default only on Volta+NVLink. Other cases are not tested and may cause silent data corruption.
-      pEnable = (graphs[a]->typeInter <= LINK_PCI) && graphs[a]->typeIntra <= LINK_NVL && minCompCap == 70 && maxCompCap == 70 ? 1 : 0;
+      pEnable = (graphs[a]->typeInter <= PATH_PXB) && graphs[a]->typeIntra <= PATH_NVL && minCompCap == 70 && maxCompCap == 70 ? 1 : 0;
     }
     if (pEnable == 0 || algoEnable[a] == 0) comm->bandwidths[c][a][p] = 0;
   }
