@@ -166,11 +166,21 @@ void runTopo(const char* xmlTopoFile, const char* platform, int ngpus, int nnode
     }
     // Compute best performance
     times[m] = -1.0;
+    float bestModelTime = -1.0;
+    int bestModel = -1;
     for (int i=0; i<m; i++) {
-      float val = times[i];
-      if (val != -1.0 && data[i] != -1.0) val = data[i];
-      if (times[m] < 0 || (val < times[m] && val > 0)) times[m] = data[i];
+      if (times[i] < 0 || data[i] < 0) continue;
+      // find best model
+      if (bestModelTime < 0 || bestModelTime > times[i]) {
+        bestModelTime = times[i];
+        bestModel = i;
+      }
+      // find best data
+      if (times[m] < 0 || times[m] > data[i]) times[m] = data[i];
     }
+    // Set data[m] to the one picked by the best model (as if we have done a default run)
+    if (bestModel != -1) data[m] = data[bestModel];
+    else data[m] = -1;
 
     if (!compactMode) {
       printf("%10ld|", size);
