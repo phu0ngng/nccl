@@ -106,7 +106,7 @@ ncclResult_t ncclTopoSetThresholds(struct ncclComm* comm, int minCompCap, int ma
         float busBw = graphs[a]->nChannels * speed;
 
         // Various model refinements
-        if (a == NCCL_ALGO_RING && p == NCCL_PROTO_LL)    busBw *= 1.0/4.0;
+        if (a == NCCL_ALGO_RING && p == NCCL_PROTO_LL)    busBw *= (comm->nNodes > 1 || coll == ncclCollAllReduce || coll == ncclCollReduce) ? 1.0/4.0 : 1.0/3.0;
         if (a == NCCL_ALGO_RING && p == NCCL_PROTO_LL128) busBw = std::min(busBw*120.0/128.0, ll128MaxBw[coll]);
         if (a == NCCL_ALGO_TREE) busBw = std::min(busBw*.9, comm->nNodes > 2 ? 80.0 : 110.0);
         if (a == NCCL_ALGO_TREE && p == NCCL_PROTO_LL) busBw *= 1.0/3.0;
