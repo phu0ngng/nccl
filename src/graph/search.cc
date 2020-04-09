@@ -326,6 +326,7 @@ ncclResult_t ncclTopoSearchRecGpu(struct ncclTopoSystem* system, struct ncclTopo
       struct ncclTopoNode* startNet = system->nodes[NET].nodes+startNetIndex;
       for (int n=0; n<system->nodes[NET].count; n++) {
         struct ncclTopoNode* net = system->nodes[NET].nodes+n;
+        if (graph->pattern == NCCL_TOPO_PATTERN_TREE && net->id != startNet->id) continue; // Trees are symmetric
         if (graph->crossNic != 1 && (net->net.asic != startNet->net.asic || net->net.port != startNet->net.port)) continue;
         NCCLCHECK(ncclTopoFollowPath(system, graph, GPU, g, NET, n, 1, &net));
         if (net) {
@@ -807,10 +808,11 @@ ncclResult_t ncclTopoDumpGraphs(struct ncclTopoSystem* system, int ngraphs, stru
   return ncclSuccess;
 }
 
-ncclResult_t ncclTopoGetNetDev(struct ncclTopoSystem* system, int rank, struct ncclTopoGraph* graph, int dir, int channelId, int* dev) {
+ncclResult_t ncclTopoGetNetDev(struct ncclTopoSystem* system, int rank, struct ncclTopoGraph* graph, int channelId, int* dev) {
   if (graph) {
+    int index = graph->intra[0] == rank ? 0 : 1;
     // Honor the net device in the graph
-    *dev = graph->inter[(channelId%graph->nChannels)*2+dir];
+    *dev = graph->inter[(channelId%graph->nChannels)*2+index];
   } else {
     int64_t id;
     NCCLCHECK(ncclTopoGetLocalNet(system, rank, &id, channelId));
