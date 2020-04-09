@@ -810,9 +810,11 @@ ncclResult_t ncclTopoDumpGraphs(struct ncclTopoSystem* system, int ngraphs, stru
 
 ncclResult_t ncclTopoGetNetDev(struct ncclTopoSystem* system, int rank, struct ncclTopoGraph* graph, int channelId, int* dev) {
   if (graph) {
-    int index = graph->intra[0] == rank ? 0 : 1;
     // Honor the net device in the graph
-    *dev = graph->inter[(channelId%graph->nChannels)*2+index];
+    int channel = channelId%graph->nChannels;
+    int ngpus = system->nodes[GPU].count;
+    int index = graph->intra[channel*ngpus] == rank ? 0 : 1;
+    *dev = graph->inter[channel*2+index];
   } else {
     int64_t id;
     NCCLCHECK(ncclTopoGetLocalNet(system, rank, &id, channelId));
