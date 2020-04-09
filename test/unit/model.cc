@@ -121,6 +121,11 @@ void runTopo(const char* xmlTopoFile, const char* platform, int ngpus, int nnode
   fds[m] = open(path, O_RDONLY);
   float score = 0.0;
   int npoints = 0;
+  if (compactMode) {
+    int nfds = 0;
+    for (int i=0; i<=m; i++) if (fds[i] != -1) nfds++;
+    if (nfds == 0) return;
+  }
 
   if (!compactMode) {
     printf("----------+"); for (int i=0; i<m+1; i++) printf("---------------------+"); printf("\n");
@@ -270,7 +275,7 @@ int main(int argc, const char* argv[]) {
     printf("-----------------+------------------------------+-------\n");
     RUN("DGX-1V", 8, 0, ncclCollAllReduce);
     RUN("DGX-2V", 16, 0, ncclCollAllReduce);
-//  RUN("Luna", 8, 0, ncclCollallReduce);
+    RUN("Luna", 8, 0, ncclCollAllReduce);
     printf("           Total |                              | %.1f %%\n", 100.0*totalScore/totalNpoints);
   }
   return 0;
