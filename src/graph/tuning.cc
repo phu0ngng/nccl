@@ -123,9 +123,9 @@ ncclResult_t ncclTopoTuneModel(struct ncclComm* comm, int minCompCap, int maxCom
         comm->latencies[coll][a][p] = baseLat[a][p];
         float intraLat = hwLat[intraHw[a]][a][p];
         float interLat = hwLat[NCCL_HW_NET][a][p];
+        if (comm->nNodes > 1 && p == NCCL_PROTO_LL) intraLat *= 1.8;
         if (a == NCCL_ALGO_RING) {
           float lat = hwLat[hw[a]][a][p];
-          if (comm->nNodes > 1 && p == NCCL_PROTO_LL) intraLat *= 1.8;
           if ((coll == ncclCollReduce || coll == ncclCollBroadcast)) {
             if (ringGraph->sameChannels) {
               comm->latencies[coll][a][p] += lat;
