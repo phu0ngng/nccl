@@ -70,7 +70,8 @@ static const float hwLat [3][NCCL_NUM_ALGORITHMS][NCCL_NUM_PROTOCOLS] =
 };
 
 // LL128 max BW for the different collectives
-static const double ll128MaxBw[NCCL_NUM_FUNCTIONS] = { 113.0, 72.0, 110.0, 91.0, 100.0 };
+//static const double ll128MaxBw[NCCL_NUM_FUNCTIONS] = { 113.0, 72.0, 110.0, 91.0, 100.0 };
+static const double ll128MaxBwPerCh[NCCL_NUM_FUNCTIONS] = { 18.8, 12.0, 18.3, 15.2, 16.7 };
 
 ncclResult_t ncclTopoTuneModel(struct ncclComm* comm, int minCompCap, int maxCompCap, struct ncclTopoGraph* treeGraph, struct ncclTopoGraph* ringGraph, struct ncclTopoGraph* collNetGraph) {
   int simpleDefaultThreads = (ringGraph->speedIntra*ringGraph->nChannels <= PCI_WIDTH) ? 256 : NCCL_MAX_NTHREADS;
@@ -108,10 +109,10 @@ ncclResult_t ncclTopoTuneModel(struct ncclComm* comm, int minCompCap, int maxCom
 
         // Various model refinements
         if (a == NCCL_ALGO_RING && p == NCCL_PROTO_LL)    busBw *= (comm->nNodes > 1 || coll == ncclCollAllReduce || coll == ncclCollReduce) ? 1.0/4.0 : 1.0/3.0;
-        if (a == NCCL_ALGO_RING && p == NCCL_PROTO_LL128) busBw = std::min(busBw * (ppn < 2 ? 0.7 : 0.92 /*120.0/128.0*/), ll128MaxBw[coll]);
+        if (a == NCCL_ALGO_RING && p == NCCL_PROTO_LL128) busBw = std::min(busBw * (ppn < 2 ? 0.7 : 0.92 /*120.0/128.0*/), ll128MaxBwPerCh[coll]*graphs[a]->nChannels);
         if (a == NCCL_ALGO_TREE) busBw = std::min(busBw*.9, comm->nNodes > 2 ? 80.0 : 110.0);
-        if (a == NCCL_ALGO_TREE && p == NCCL_PROTO_LL) busBw *= 1.0/3.5;
-        if (a == NCCL_ALGO_TREE && p == NCCL_PROTO_LL128) busBw *= comm->nNodes == 1 ? 7.0/9.0 : ppn < 2 ? 0.8 : 120.0/128.0;
+        if (a == NCCL_ALGO_TREE && p == NCCL_PROTO_LL) busBw *= 1.0/3.8;
+        if (a == NCCL_ALGO_TREE && p == NCCL_PROTO_LL128) busBw = std::min(busBw * (comm->nNodes == 1 ? 7.0/9.0 : ppn < 2 ? 0.8 : 120.0/128.0), ll128MaxBwPerCh[coll]*graphs[a]->nChannels*7.0/9.0);
         if (a == NCCL_ALGO_COLLNET) busBw *= .9;
         if (a == NCCL_ALGO_COLLNET && p == NCCL_PROTO_LL) busBw *= 1.0/6.0; // Take into account that GDR read is disabled on both sides
         if (a == NCCL_ALGO_COLLNET && p == NCCL_PROTO_LL128) busBw = 0;  // CollNet does not support LL128
@@ -123,9 +124,9 @@ ncclResult_t ncclTopoTuneModel(struct ncclComm* comm, int minCompCap, int maxCom
         comm->latencies[coll][a][p] = baseLat[a][p];
         float intraLat = hwLat[intraHw[a]][a][p];
         float interLat = hwLat[NCCL_HW_NET][a][p];
+        if (comm->nNodes > 1 && p == NCCL_PROTO_LL) intraLat *= 1.8;
         if (a == NCCL_ALGO_RING) {
           float lat = hwLat[hw[a]][a][p];
-          if (comm->nNodes > 1 && p == NCCL_PROTO_LL) intraLat *= 1.8;
           if ((coll == ncclCollReduce || coll == ncclCollBroadcast)) {
             if (ringGraph->sameChannels) {
               comm->latencies[coll][a][p] += lat;
@@ -229,8 +230,8 @@ ncclResult_t ncclTopoTuneModel(struct ncclComm* comm, int minCompCap, int maxCom
 // Trees are not perfectly sticking to the model for medium sizes. Applying a static correction
 // factor is not ideal but works quite well. Powers of two, 64 B to 1 GB.
 static float treeCorrectionFactor[NCCL_NUM_PROTOCOLS][22] = {
-  { 1.0, 1.0, 1.0, 1.0,  .9,  .8,  .7,  .7,  .7,  .7,  .6,  .5,  .5,  .5,  .6,  .7,  .8,  .9,  .9, 1.0, 1.0, 1.0 },
-  { 1.0, 1.0, 1.0, 1.0, 1.0,  .9,  .8,  .8,  .8,  .8,  .7,  .7,  .7,  .6,  .6,  .7,  .7,  .8,  .8,  .9,  .9, 1.0 },
+  { 1.0, 1.0, 1.0, 1.0,  .9,  .8,  .7,  .7,  .7,  .7,  .6,  .5,  .4,  .4,  .5,  .6,  .7,  .8,  .9, 1.0, 1.0, 1.0 },
+  { 1.0, 1.0, 1.0, 1.0, 1.0,  .9,  .8,  .8,  .8,  .7,  .6,  .6,  .6,  .5,  .5,  .6,  .6,  .7,  .8,  .9,  .9, 1.0 },
   {  .9,  .9,  .9,  .9,  .9,  .9,  .9,  .8,  .7,  .6,  .6,  .5,  .5,  .5,  .5,  .5,  .5,  .6,  .6,  .7,  .8,  .9 }
 };
 

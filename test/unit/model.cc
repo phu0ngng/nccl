@@ -28,6 +28,8 @@ int compactMode = 0;
 int compareMode = 0;
 float totalScore = 0.0;
 int totalNpoints = 0;
+int totalX = 0;
+int totalHash = 0;
 
 void runTopo(const char* xmlTopoFile, const char* platform, int ngpus, int nnodes, ncclFunc_t coll) {
   struct ncclXml* xmlSystem;
@@ -216,8 +218,8 @@ void runTopo(const char* xmlTopoFile, const char* platform, int ngpus, int nnode
     } else {
       int n = (compareMode == 0) ? m : m+1; // which data to compare: m = data from file, m+1 = data chosen by model
       float s = times[n]/data[n];
-      if (s < 0.8) printf("%c[0;31m#", 0x1b);
-      else if (s < .95) printf("%c[0;33mX", 0x1b);
+      if (s < 0.8) { printf("%c[0;31m#", 0x1b); totalHash++; }
+      else if (s < .95) { printf("%c[0;33mX", 0x1b); totalX++; }
       else if (s > 1.1) printf("%c[0;34mO", 0x1b);
       else printf("%c[0;32mO", 0x1b);
       score += s;
@@ -276,7 +278,7 @@ int main(int argc, const char* argv[]) {
     RUN("DGX-1V", 8, 0, ncclCollAllReduce);
     RUN("DGX-2V", 16, 0, ncclCollAllReduce);
     RUN("Luna", 8, 0, ncclCollAllReduce);
-    printf("           Total |                              | %.1f %%\n", 100.0*totalScore/totalNpoints);
+    printf("           Total |         %3d X, %3d #         | %.1f %%\n", totalX, totalHash, 100.0*totalScore/totalNpoints);
   }
   return 0;
 }
