@@ -152,6 +152,23 @@ TYPED_TEST(ncclSendRecv_test, DISABLED_hypercube) {
     }
     ASSERT_EQ(ncclSuccess, ncclGroupEnd());
 };
+// send to self (without a recv)
+TYPED_TEST(ncclSendRecv_test, send_self) {
+    EXPECT_EQ(ncclInvalidUsage,
+            ncclSend(this->sendbuffs[0], 1,
+                this->DataType(), 0, this->comms[0], this->streams[0]));
+};
+// send to self (with a recv)
+TYPED_TEST(ncclSendRecv_test, DISABLED_sendrecv_self) {
+    ASSERT_EQ(ncclSuccess, ncclGroupStart());
+    EXPECT_EQ(ncclSuccess,
+            ncclSend(this->sendbuffs[0], std::min(this->N, 1024 * 1024),
+                this->DataType(), 0, this->comms[0], this->streams[0]));
+    EXPECT_EQ(ncclSuccess,
+            ncclRecv(this->recvbuffs[0], std::min(this->N, 1024 * 1024),
+                this->DataType(), 0, this->comms[0], this->streams[0]));
+    ASSERT_EQ(ncclSuccess, ncclGroupEnd());
+};
 // sendbuff
 TYPED_TEST(ncclSendRecv_test, sendbuf_null) {
     int i = 0;
