@@ -164,7 +164,9 @@ ncclResult_t ncclTopoTuneModel(struct ncclComm* comm, int minCompCap, int maxCom
       // Enable LL128 by default only on Volta+NVLink. Other cases are not tested and may cause silent data corruption.
       pEnable = (graphs[a]->typeInter <= PATH_PXB) && graphs[a]->typeIntra <= PATH_NVL && minCompCap == 70 && maxCompCap == 70 ? 1 : 0;
     }
-    if (pEnable == 0 || algoEnable[a] == 0) comm->bandwidths[c][a][p] = 0;
+    if (pEnable == 0) comm->bandwidths[c][a][p] = 0;
+    // Only disable algo for Allreduce since others only have one
+    if (c == ncclCollAllReduce && algoEnable[a] == 0) comm->bandwidths[c][a][p] = 0;
   }
 
   if (comm->rank == 0) {
