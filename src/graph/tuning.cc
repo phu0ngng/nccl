@@ -71,8 +71,8 @@ static const float hwLat [3][NCCL_NUM_ALGORITHMS][NCCL_NUM_PROTOCOLS] =
 
 // LL128 max BW for the different collectives
 // ncclCollBroadcast, ncclCollReduce, ncclCollAllGather, ncclCollReduceScatter, ncclCollAllReduce
-//static const double ll128MaxBw[NCCL_NUM_FUNCTIONS] = { 113.0, 72.0, 110.0, 91.0, 100.0 }; // Volta
-static const double ll128MaxBw[NCCL_NUM_FUNCTIONS] = { 138.0, 118.0, 146.0, 114.0, 135.0 }; // Ampere
+static const double ll128MaxBw70[NCCL_NUM_FUNCTIONS] = { 113.0, 72.0, 110.0, 91.0, 100.0 }; // Volta
+static const double ll128MaxBw80[NCCL_NUM_FUNCTIONS] = { 138.0, 118.0, 146.0, 114.0, 135.0 }; // Ampere
 
 ncclResult_t ncclTopoTuneModel(struct ncclComm* comm, int minCompCap, int maxCompCap, struct ncclTopoGraph* treeGraph, struct ncclTopoGraph* ringGraph, struct ncclTopoGraph* collNetGraph) {
   int simpleDefaultThreads = (ringGraph->speedIntra*ringGraph->nChannels <= PCI_WIDTH) ? 256 : NCCL_MAX_NTHREADS;
@@ -87,6 +87,7 @@ ncclResult_t ncclTopoTuneModel(struct ncclComm* comm, int minCompCap, int maxCom
 
   if (comm->nRanks <= 1) return ncclSuccess;
 
+  const double* ll128MaxBw = (minCompCap >= 80 && maxCompCap >= 80) ? ll128MaxBw80 : ll128MaxBw70;
   float ppn = (float)comm->nRanks / comm->nNodes; // if ppn < 2, then we are sending/receiving at the same GPU through the NIC, apply some bw discount
   struct ncclTopoGraph* graphs[NCCL_NUM_ALGORITHMS] = { treeGraph, ringGraph, collNetGraph };
   int intraHw[NCCL_NUM_ALGORITHMS], hw[NCCL_NUM_ALGORITHMS];
