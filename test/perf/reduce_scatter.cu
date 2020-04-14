@@ -7,12 +7,15 @@
 #include "cuda_runtime.h"
 #include "common.h"
 
+#define ALIGN 4
+
 void ReduceScatterGetCollByteCount(size_t *sendcount, size_t *recvcount, size_t *paramcount, size_t *sendInplaceOffset, size_t *recvInplaceOffset, size_t count, int nranks) {
-  *sendcount = (count/nranks)*nranks;
-  *recvcount = count/nranks;
+  size_t base = (count/(ALIGN*nranks))*ALIGN;
+  *sendcount = base*nranks;
+  *recvcount = base;
   *sendInplaceOffset = 0;
-  *recvInplaceOffset = count/nranks;
-  *paramcount = *recvcount;
+  *recvInplaceOffset = base;
+  *paramcount = base;
 }
 
 testResult_t ReduceScatterInitData(struct threadArgs* args, ncclDataType_t type, ncclRedOp_t op, int root, int rep, int in_place) {

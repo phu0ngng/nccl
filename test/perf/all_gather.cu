@@ -7,12 +7,15 @@
 #include "cuda_runtime.h"
 #include "common.h"
 
+#define ALIGN 4
+
 void AllGatherGetCollByteCount(size_t *sendcount, size_t *recvcount, size_t *paramcount, size_t *sendInplaceOffset, size_t *recvInplaceOffset, size_t count, int nranks) {
-  *sendcount = count/nranks;
-  *recvcount = (count/nranks)*nranks;
-  *sendInplaceOffset = count/nranks;
+  size_t base = (count/(ALIGN*nranks))*ALIGN;
+  *sendcount = base;
+  *recvcount = base*nranks;
+  *sendInplaceOffset = base;
   *recvInplaceOffset = 0;
-  *paramcount = *sendcount;
+  *paramcount = base;
 }
 
 testResult_t AllGatherInitData(struct threadArgs* args, ncclDataType_t type, ncclRedOp_t op, int root, int rep, int in_place) {
