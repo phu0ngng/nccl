@@ -28,7 +28,11 @@
 int nGpus = -1;
 int nNodes = -1;
 char* platform = NULL;
+#ifdef CUDA11_GENCODE
 const char* platforms[] = { "DGX-1V", "DGX-2V", "Luna" };
+#else
+const char* platforms[] = { "DGX-1V", "DGX-2V" };
+#endif
 ncclFunc_t function = ncclCollAllReduce;
 
 int compactMode = -1;
