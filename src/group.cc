@@ -204,7 +204,7 @@ ncclResult_t ncclGroupEnd() {
         WARN("Error waiting for pthread_join : %s\n", strerror(errno));
         return ncclSystemError;
       }
-      NCCLCHECK(args->ret);
+      NCCLCHECKGOTO(args->ret, ret, end);
     }
   }
 
@@ -241,9 +241,9 @@ ncclResult_t ncclGroupEnd() {
             if (recvbytes > recvChunkSize) { remaining = 1; recvbytes = recvChunkSize; } else p2plist->peerlist[from].recvbytes = -1;
             if (sendbytes > sendChunkSize) { remaining = 1; sendbytes = sendChunkSize; } else p2plist->peerlist[to].sendbytes = -1;
             if (sendbytes >= 0 || recvbytes >= 0) {
-              NCCLCHECK(scheduleSendRecv(comm, delta, channelId,
+              NCCLCHECKGOTO(scheduleSendRecv(comm, delta, channelId,
                     recvbytes, ((char*)(p2plist->peerlist[from].recvbuff)) + recvOffset,
-                    sendbytes, ((const char*)(p2plist->peerlist[to].sendbuff)) + sendOffset));
+                    sendbytes, ((const char*)(p2plist->peerlist[to].sendbuff)) + sendOffset), ret, end);
             }
             recvOffset += recvChunkSize;
             sendOffset += sendChunkSize;
@@ -296,7 +296,7 @@ group_cleanup:
     for (int i=0; i<ncclGroupIndex; i++) {
       struct ncclAsyncArgs* args = ncclGroupArgs+i;
       if (args->funcType == ASYNC_FUNC_INIT) {
-        if (args->init.newcomm) NCCLCHECK(ncclCommDestroy(*args->init.newcomm));
+        if (args->init.newcomm) ncclCommDestroy(*args->init.newcomm);
         *args->init.newcomm = NULL;
       } else {
         struct ncclComm* comm = args->coll.comm;

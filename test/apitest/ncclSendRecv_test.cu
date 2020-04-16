@@ -4,8 +4,9 @@ class ncclSendRecv_test : public ncclCommon_test<DT> {};
 TYPED_TEST_CASE(ncclSendRecv_test, testDataTypes);
 #if NCCL_MAJOR > 2 || (NCCL_MAJOR == 2 && NCCL_MINOR >=7)
 // typical usage.
-// simple send/recv is not yet support with single process
-// since we wait for all ranks to join
+// DISABLED tests should work with NCCL_LAUNCH_MODE=PARALLEL
+// coop launch doesn't support incomplete sets of ranks,
+// nor different numbers of blocks.
 TYPED_TEST(ncclSendRecv_test, DISABLED_simple) {
     size_t size = std::min(this->N, 1024 * 1024);
     ASSERT_EQ(ncclSuccess, ncclGroupStart());
@@ -79,8 +80,6 @@ TYPED_TEST(ncclSendRecv_test, alltoallv) {
     }
     ASSERT_EQ(ncclSuccess, ncclGroupEnd());
 };
-// Coop group launch doesn't support different numbers of blocks.
-// We'd need to sync between the ranks of a process
 TYPED_TEST(ncclSendRecv_test, DISABLED_scatter) {
     size_t size = std::min(this->N, 1024 * 1024) / this->nVis;
     ASSERT_EQ(ncclSuccess, ncclGroupStart());
@@ -104,8 +103,6 @@ TYPED_TEST(ncclSendRecv_test, DISABLED_scatter) {
     }
     ASSERT_EQ(ncclSuccess, ncclGroupEnd());
 };
-// Coop group launch doesn't support different numbers of blocks.
-// We'd need to sync between the ranks of a process
 TYPED_TEST(ncclSendRecv_test, DISABLED_gather) {
     size_t size = std::min(this->N, 1024 * 1024) / this->nVis;
     ASSERT_EQ(ncclSuccess, ncclGroupStart());
@@ -129,8 +126,6 @@ TYPED_TEST(ncclSendRecv_test, DISABLED_gather) {
     }
     ASSERT_EQ(ncclSuccess, ncclGroupEnd());
 };
-// Coop group launch doesn't support different numbers of blocks.
-// We'd need to sync between the ranks of a process
 TYPED_TEST(ncclSendRecv_test, DISABLED_hypercube) {
     size_t size = std::min(this->N, 1024 * 1024) / this->nVis;
     ASSERT_EQ(ncclSuccess, ncclGroupStart());
