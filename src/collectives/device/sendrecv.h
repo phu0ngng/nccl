@@ -21,8 +21,15 @@ __device__ void ncclSendRecvKernel(struct CollectiveArgs* args) {
 
   if (args->p2p.delta == 0) {
     if (tid < nthreads && sendbuff != recvbuff) {
-      // local copy
-      ReduceOrCopyMulti<UNROLL, FUNC, T, 1, 1, 1, 1>(tid, nthreads, 1, &sendbuff, 1, &recvbuff, args->p2p.sendCount);
+      // local copy : ReduceOrCopyMulti takes an int as number of elements,
+      // so we split it in blocks of 1G elements.
+      int blockSize = 1<<30;
+      for (size_t offset=0; offset<args->p2p.sendCount; offset += blockSize) {
+        size_t remaining = args->p2p.sendCount - offset;
+        if (remaining < blockSize) blockSize = remaining;
+        ReduceOrCopyMulti<UNROLL, FUNC, T, 1, 1, 1, 1>(tid, nthreads, 1, &sendbuff, 1, &recvbuff, blockSize);
+        sendbuff += blockSize; recvbuff += blockSize;
+      }
     }
     return;
   }
@@ -37,7 +44,7 @@ __device__ void ncclSendRecvKernel(struct CollectiveArgs* args) {
   int peerRecv = recvSize >= 0 ? (comm->rank-(int)args->p2p.delta+comm->nRanks)%comm->nRanks : -1;
   int peerSend = sendSize >= 0 ? (comm->rank+(int)args->p2p.delta)%comm->nRanks : -1;
 
-  ncclPrimitives<UNROLL, SENDRECV_CHUNKSTEPS/SENDRECV_SLICESTEPS, SENDRECV_SLICESTEPS, T, 1, 1, FUNC>
+  ncclPrimitives<UNROLL, SENDRECV_CHUNKSTEPS/SENDRECV_SLICESTEPS, SENDRECV_SLICESTEPS, T, 1, 1, 1, FUNC>
     prims(tid, nthreads, &peerRecv, &peerSend, recvbuff, stepSize, channel, comm, args->opCount);
 
   int maxSize = sendSize-chunkSize>recvSize ? sendSize-chunkSize : recvSize;
@@ -65,5 +72,6 @@ __device__ void ncclSendRecvKernel(struct CollectiveArgs* args) {
       prims.directRecv(recvbuff+offset, offset, nelem);
     }
   }
-  if (recvSize == 0) prims.recv(recvbuff,0);
+
+  if (recvSize == 0) prims.recv(recvbuff, 0);
 }

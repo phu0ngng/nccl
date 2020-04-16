@@ -124,6 +124,7 @@ static ncclResult_t scheduleSendRecv(struct ncclComm* comm, int delta, int chann
   info.channelId = channelId;
   info.sendbytes = sendbytes;
   info.recvbytes = recvbytes;
+  if (delta == 0 && sendbytes != recvbytes) return ncclInvalidUsage;
   NCCLCHECK(ncclSaveKernel(&info));
   return ncclSuccess;
 }

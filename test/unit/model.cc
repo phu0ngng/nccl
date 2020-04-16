@@ -6,6 +6,7 @@
 #include <sys/types.h>
 #include <sys/stat.h>
 #include <fcntl.h>
+#include <getopt.h>
 
 #define ERROR(fmt, ...) do { \
   printf("%s:%d " fmt "\n", __FILE__, __LINE__, __VA_ARGS__); \
@@ -24,14 +25,41 @@
 #undef NCCL_NUM_ALGORITHMS
 #define NCCL_NUM_ALGORITHMS 2
 
-int compactMode = 0;
+int nGpus = -1;
+int nNodes = -1;
+char* platform = NULL;
+#ifdef CUDA11_GENCODE
+const char* platforms[] = { "DGX-1V", "DGX-2V", "Luna" };
+#else
+const char* platforms[] = { "DGX-1V", "DGX-2V" };
+#endif
+ncclFunc_t function = ncclCollAllReduce;
+
+int compactMode = -1;
 int compareMode = 0;
+
+int strConvert(const char* option, const char* dict[], int nvalues, const char* str) {
+  for (int i=0; i<nvalues; i++) {
+    if (strcasecmp(dict[i], str) == 0) {
+      return i;
+    }
+  }
+  printf("Ignoring invalid value '%s' for option '%s'. Possible values are :\n", str, option);
+  for (int i=0; i<nvalues; i++) {
+    printf(" %s,", dict[i]);
+  }
+  printf("\n");
+  return -1;
+}
+
 float totalScore = 0.0;
 int totalNpoints = 0;
 int totalX = 0;
 int totalHash = 0;
 
-void runTopo(const char* xmlTopoFile, const char* platform, int ngpus, int nnodes, ncclFunc_t coll) {
+
+void runTopo(const char* xmlTopoFile, const char* platform, int nnodes) {
+  int ngpus = nGpus;
   struct ncclXml* xmlSystem;
   INFO(NCCL_GRAPH, "Loading platform %s", platform);
   CHECK(ncclCalloc(&xmlSystem, 1));
@@ -39,18 +67,50 @@ void runTopo(const char* xmlTopoFile, const char* platform, int ngpus, int nnode
   struct ncclTopoSystem* system;
   if (xmlSystem->maxIndex == 0) {
     printf("Error : no system in %s\n", xmlTopoFile);
+    free(xmlSystem);
     return;
   }
   CHECK(ncclTopoGetSystemFromXml(xmlSystem, &system));
+  free(xmlSystem);
+
   CHECK(ncclTopoComputePaths(system, NULL));
   if (nnodes == 1) {
     for (int n=system->nodes[NET].count-1; n>=0; n--)
       CHECK(ncclTopoRemoveNode(system, NET, n));
   }
-  // Only keep ngpus
-  for (int g=system->nodes[GPU].count-1; g>=ngpus; g--) {
-    CHECK(ncclTopoRemoveNode(system, GPU, g));
+
+  if (ngpus == -1 ) {
+    ngpus = system->nodes[GPU].count;
+  } else {
+    // Only keep ngpus
+    for (int g=system->nodes[GPU].count-1; g>=nGpus; g--) {
+      CHECK(ncclTopoRemoveNode(system, GPU, g));
+    }
   }
+
+  // Last column is used for min/best/default.
+  const int m = NCCL_NUM_ALGORITHMS*NCCL_NUM_PROTOCOLS;
+
+  int fds[m+1];
+  char path[1024];
+  for (int a=0; a<NCCL_NUM_ALGORITHMS; a++) for (int p=0; p<NCCL_NUM_PROTOCOLS; p++) {
+    int i = a*NCCL_NUM_PROTOCOLS+p;
+    sprintf(path, "topo/%s/data/%d/%d/%s/%s/%s/time.txt", platform, ngpus, nnodes, ncclFuncStr[function], ncclAlgoStr[a], ncclProtoStr[p]);
+    fds[i] = open(path, O_RDONLY);
+  }
+  sprintf(path, "topo/%s/data/%d/%d/%s/time.txt", platform, ngpus, nnodes, ncclFuncStr[function]);
+  fds[m] = open(path, O_RDONLY);
+  float score = 0.0;
+  int npoints = 0;
+  if (compactMode) {
+    int nfds = 0;
+    for (int i=0; i<=m; i++) if (fds[i] != -1) nfds++;
+    if (nfds == 0 || ngpus*nnodes == 1) {
+      ncclTopoFree(system);
+      return;
+    }
+  }
+
 
   CHECK(ncclTopoSearchInit(system));
   CHECK(ncclTopoPrint(system));
@@ -105,31 +165,12 @@ void runTopo(const char* xmlTopoFile, const char* platform, int ngpus, int nnode
   CHECK(ncclTopoTuneModel(&comm, compCap, compCap, &treeGraph, &ringGraph, &cNetGraph));
   struct ncclInfo info;
   info.comm = &comm;
-  info.coll = coll;
+  info.coll = function;
   info.chunkSteps = ALLREDUCE_CHUNKSTEPS;
   info.sliceSteps = ALLREDUCE_SLICESTEPS;
 
-  // Last column is used for min/best/default.
-  const int m = NCCL_NUM_ALGORITHMS*NCCL_NUM_PROTOCOLS;
-
-  int fds[m+1];
-  char path[1024];
-  for (int a=0; a<NCCL_NUM_ALGORITHMS; a++) for (int p=0; p<NCCL_NUM_PROTOCOLS; p++) {
-    int i = a*NCCL_NUM_PROTOCOLS+p;
-    sprintf(path, "topo/%s/data/%d/%d/%s/%s/%s/time.txt", platform, ngpus, nnodes, ncclFuncStr[coll], ncclAlgoStr[a], ncclProtoStr[p]);
-    fds[i] = open(path, O_RDONLY);
-  }
-  sprintf(path, "topo/%s/data/%d/%d/%s/time.txt", platform, ngpus, nnodes, ncclFuncStr[coll]);
-  fds[m] = open(path, O_RDONLY);
-  float score = 0.0;
-  int npoints = 0;
-  if (compactMode) {
-    int nfds = 0;
-    for (int i=0; i<=m; i++) if (fds[i] != -1) nfds++;
-    if (nfds == 0) return;
-  }
-
   if (!compactMode) {
+    printf("%s/%dx%d, %s\n", platform, nnodes, ngpus, ncclFuncStr[function]);
     printf("----------+"); for (int i=0; i<m+1; i++) printf("---------------------+"); printf("\n");
     printf("     Size |");
     for (int a=0; a<NCCL_NUM_ALGORITHMS; a++) for (int p=0; p<NCCL_NUM_PROTOCOLS; p++) {
@@ -141,7 +182,7 @@ void runTopo(const char* xmlTopoFile, const char* platform, int ngpus, int nnode
     printf("\n");
     printf("----------+"); for (int i=0; i<m+1; i++) printf("---------------------+"); printf("\n");
   } else {
-    printf("%10s/%5d |", platform, nnodes);
+    printf("%10s/%5dx%5d |", platform, nnodes, ngpus);
   }
 
   for (ssize_t size=8; size<(2LL<<32); size<<=1) {
@@ -160,12 +201,12 @@ void runTopo(const char* xmlTopoFile, const char* platform, int ngpus, int nnode
         for (int o=0; fds[i] != -1 && o<128; o++) {
           int s = read(fds[i], valueStr+o, 1);
           if (s != 1) {
-	    printf("Error while reading value for size %ld in file %d\n", size, i);
             close(fds[i]);
             fds[i] = -1;
           } else if (valueStr[o] == '\n') {
             valueStr[o] = '\0';
 	    data[i] = atof(valueStr);
+            if (data[i] == 0.0) data[i] = -1.0;
             break;
           }
         }
@@ -217,15 +258,19 @@ void runTopo(const char* xmlTopoFile, const char* platform, int ngpus, int nnode
       printf("\n");
     } else {
       int n = (compareMode == 0) ? m : m+1; // which data to compare: m = data from file, m+1 = data chosen by model
-      float s = times[n]/data[n];
-      if (s < 0.8) { printf("%c[0;31m#", 0x1b); totalHash++; }
-      else if (s < .95) { printf("%c[0;33mX", 0x1b); totalX++; }
-      else if (s > 1.1) printf("%c[0;34mO", 0x1b);
-      else printf("%c[0;32mO", 0x1b);
-      score += s;
-      totalScore += s;
-      npoints++;
-      totalNpoints++;     
+      if (data[n] == 0.0) {
+        printf("%c[00m.", 0x1b);
+      } else {
+        float s = times[n]/data[n];
+        if (s < 0.8) { printf("%c[0;31m#", 0x1b); totalHash++; }
+        else if (s < .95) { printf("%c[0;33mX", 0x1b); totalX++; }
+        else if (s > 1.1) printf("%c[0;34mO", 0x1b);
+        else printf("%c[0;32mO", 0x1b);
+        score += s;
+        totalScore += s;
+        npoints++;
+        totalNpoints++;
+      }
     }
   }
   if (!compactMode) {
@@ -233,52 +278,101 @@ void runTopo(const char* xmlTopoFile, const char* platform, int ngpus, int nnode
   } else {
     printf("%c[00m| %.1f %%\n", 0x1b, 100.0*score/npoints);
   }
+  ncclTopoFree(system);
 }
 
-#define COMPACT_SEPARATOR printf("-----------------+------------------------------+-------\n")
+#define COMPACT_SEPARATOR printf("-----------------------+------------------------------+--------\n")
 
-void runPlatform(const char* platform, int ngpus, int nnodes, ncclFunc_t coll) {
+void runPlatform(const char* platform) {
   char xmlTopoFile[1024];
   sprintf(xmlTopoFile, "topo/%s/system.xml", platform);
-  if (nnodes == 0) {
+  if (nNodes == -1) {
     for (int n=1; n<128; n<<=1) {
-      runTopo(xmlTopoFile, platform, ngpus, n, coll);
+      runTopo(xmlTopoFile, platform, n);
     }
   } else {
-    runTopo(xmlTopoFile, platform, ngpus, nnodes, coll);
+    runTopo(xmlTopoFile, platform, nNodes);
   }
   if (compactMode) COMPACT_SEPARATOR;
 }
 
-#define RUN(...) runPlatform(__VA_ARGS__)
-
-int main(int argc, const char* argv[]) {
-  char* str = getenv("COMPARE_MODE");
-  compareMode = str ? atoi(str) : 0;
-
+int main(int argc, char* argv[]) {
   setlinebuf(stdout);
-  if (argc > 4) {
-    int coll = -1;
-    for (int i=0; i<NCCL_NUM_FUNCTIONS; i++) {
-      if (strcmp(argv[4], ncclFuncStr[i]) == 0) coll = i;
+
+  // Parse args
+  int longindex;
+  static struct option longopts[] = {
+    {"nnodes", required_argument, 0, 'n'},
+    {"ngpus", required_argument, 0, 'g'},
+    {"platform", required_argument, 0, 'p'},
+    {"function", required_argument, 0, 'f'},
+    {"compact", required_argument, 0, 'c'},
+    {"compare", required_argument, 0, 'C'},
+    {"help", no_argument, 0, 'h'}
+  };
+
+  while(1) {
+    int c;
+    c = getopt_long(argc, argv, "n:g:p:f:c:C:h:", longopts, &longindex);
+
+    if (c == -1)
+      break;
+
+    switch(c) {
+      case 'n':
+        nNodes = strtol(optarg, NULL, 0);
+        break;
+      case 'g':
+        nGpus = strtol(optarg, NULL, 0);
+        break;
+      case 'p':
+        platform = optarg;
+        break;
+      case 'f':
+        function = (ncclFunc_t)strConvert("function", ncclFuncStr, NCCL_NUM_FUNCTIONS, optarg);
+        break;
+      case 'c':
+        compactMode = strtol(optarg, NULL, 0);
+        break;
+      case 'C':
+        compareMode = strtol(optarg, NULL, 0);
+        break;
+      case 'h':
+      default:
+        if (c != 'h') printf("invalid option '%c'\n", c);
+        printf("USAGE: %s \n\t"
+            "[-n,--nnodes <number of nodes (default : 1 to 128)>] \n\t"
+            "[-g,--ngpus <gpus per node (default : All)>] \n\t"
+            "[-p,--platform <platform (default : All)>] \n\t"
+            "[-f,--function <function (default : AllReduce)>] \n\t"
+            "[-c,--compact <compact mode : 0/1>\n\t"
+            "[-C,--compare <compare mode : 0/1>\n\t"
+	    "[-h,--help]\n",
+            basename(argv[0]));
+        return 0;
     }
-    if (coll == -1) {
-      printf("Error : unknown collective %s\n", argv[4]);
-      return 1;
-    }
-    RUN(argv[1], atoi(argv[2]), atoi(argv[3]), (ncclFunc_t)coll);
-  } else if (argc > 1) {
-    printf("Usage : %s <platform> <ngpus> <nnodes> <collective>\n", argv[0]);
-    printf("Set COMPARE_MODE to select which data to use as the Default: 0 - from file, 1 - dry run\n");
-    return 1;
+  }
+
+  if (compactMode == -1) compactMode = nGpus == -1 || nNodes == -1 || platform == NULL || function == -1 ? 1 : 0;
+
+  if (compactMode) {
+    COMPACT_SEPARATOR;
+    printf("  Function             |    %15s           |\n", ncclFuncStr[function]);
+    COMPACT_SEPARATOR;
+    printf("%10s/%5sx%5s |    Delta at size 8 to 4G     | Score\n", "Platform", "Nodes", "Ngpus");
+    COMPACT_SEPARATOR;
+  }
+
+  if (platform) {
+    runPlatform(platform);
   } else {
-    compactMode = 1;
-    printf("%10s/%5s |    Delta at size 8 to 4G     | Score\n", "Platform", "Nodes");
-    printf("-----------------+------------------------------+-------\n");
-    RUN("DGX-1V", 8, 0, ncclCollAllReduce);
-    RUN("DGX-2V", 16, 0, ncclCollAllReduce);
-    RUN("Luna", 8, 0, ncclCollAllReduce);
-    printf("           Total |         %3d X, %3d #         | %.1f %%\n", totalX, totalHash, 100.0*totalScore/totalNpoints);
+    for (int p=0; p<sizeof(platforms)/sizeof(platform); p++) {
+      runPlatform(platforms[p]);
+    }
+  }
+
+  if (compactMode) {
+    printf("                 Total |         %3d X, %3d #         | %.1f %%\n", totalX, totalHash, 100.0*totalScore/totalNpoints);
   }
   return 0;
 }
