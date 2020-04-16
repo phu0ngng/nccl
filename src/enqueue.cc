@@ -185,15 +185,14 @@ ncclResult_t ncclBarrierEnqueue(struct ncclComm* comm) {
     params->stream = comm->userStream;
   }
 
-  int isLast = 0;
-  NCCLCHECK(ncclCpuBarrierIn(comm, &isLast));
-
-  if (isLast) {
-    if (comm->launchMode == ncclComm::GROUP) {
+  if (comm->launchMode == ncclComm::GROUP) {
+    int isLast = 0;
+    NCCLCHECK(ncclCpuBarrierIn(comm, &isLast));
+    if (isLast) {
       // I'm the last. Launch all operations.
       NCCLCHECK(ncclLaunchCooperativeKernelMultiDevice(comm->intraParams, comm->intraCudaDevs, comm->intraRanks, *comm->intraCGMode));
+      NCCLCHECK(ncclCpuBarrierLast(comm));
     }
-    NCCLCHECK(ncclCpuBarrierLast(comm));
   }
   return ncclSuccess;
 }
@@ -211,11 +210,13 @@ ncclResult_t ncclBarrierEnqueueWait(ncclComm_t comm) {
         (comm->launchMode == ncclComm::GROUP && comm->groupCudaStream) ? "/Stream" : "");
   }
 
-  NCCLCHECK(ncclCpuBarrierOut(comm));
 
   if (comm->launchMode == ncclComm::PARALLEL) {
     CUDACHECK(cudaLaunchKernel(params->func, params->gridDim, params->blockDim, params->args, params->sharedMem, params->stream));
+  } else {
+    NCCLCHECK(ncclCpuBarrierOut(comm));
   }
+
   // Start the network proxies as soon as the kernel has been launched. We can't
   // perform any CUDA call between the two or having a cudaFree between the CUDA
   // launch and the ncclProxyStart call could cause a deadlock.
