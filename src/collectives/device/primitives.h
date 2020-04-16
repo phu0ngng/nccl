@@ -32,7 +32,7 @@
 } while (0)
 
 // Implementation of primitive types
-template <int UNROLL, int SLICESPERCHUNK, int SLICESTEPS, typename T, int NRECV, int NSEND, class FUNC>
+template <int UNROLL, int SLICESPERCHUNK, int SLICESTEPS, typename T, int NRECV, int NSEND, int DIRECT, class FUNC>
 class ncclPrimitives {
  private:
   const int tid;
@@ -227,7 +227,7 @@ class ncclPrimitives {
     recvStep[i] = conn->step;
     recvStep[i] = ROUNDUP(recvStep[i], SLICESPERCHUNK*SLICESTEPS);
     recvDirectBuff[i] = NULL;
-    if (directBuff && (conn->direct & NCCL_DIRECT_GPU)) {
+    if (DIRECT && (conn->direct & NCCL_DIRECT_GPU)) {
       recvDirectBuff[i] = directBuff;
       if (tid == 0) *conn->ptrExchange = directBuff;
     }
@@ -249,12 +249,12 @@ class ncclPrimitives {
     }
   }
 
-  __device__ __forceinline__ void loadSendConn(struct ncclConnInfo* conn, int i, T* directBuff) {
+  __device__ __forceinline__ void loadSendConn(struct ncclConnInfo* conn, int i) {
     sendBuff[i] = (T*)conn->buffs[NCCL_PROTO_SIMPLE];
     sendStep[i] = conn->step;
     sendStep[i] = ROUNDUP(sendStep[i], SLICESPERCHUNK*SLICESTEPS);
     sendDirectBuff[i] = NULL;
-    if (directBuff && (conn->direct & NCCL_DIRECT_GPU)) {
+    if (DIRECT && (conn->direct & NCCL_DIRECT_GPU)) {
       void* volatile* ptr = conn->ptrExchange;
       while ((sendDirectBuff[i] = (T*)(*ptr)) == NULL);
       barrier();
@@ -300,7 +300,7 @@ class ncclPrimitives {
     barrier();
 
     for (int i=0; i<NRECV && recvPeers[i] >= 0; i++) loadRecvConn(&channel->devPeers[recvPeers[i]].recv.conn, i, directBuff);
-    for (int i=0; i<NSEND && sendPeers[i] >= 0; i++) loadSendConn(&channel->devPeers[sendPeers[i]].send.conn, i, directBuff);
+    for (int i=0; i<NSEND && sendPeers[i] >= 0; i++) loadSendConn(&channel->devPeers[sendPeers[i]].send.conn, i);
     loadRecvSync();
     loadSendSync();
   }

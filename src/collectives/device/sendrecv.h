@@ -44,7 +44,7 @@ __device__ void ncclSendRecvKernel(struct CollectiveArgs* args) {
   int peerRecv = recvSize >= 0 ? (comm->rank-(int)args->p2p.delta+comm->nRanks)%comm->nRanks : -1;
   int peerSend = sendSize >= 0 ? (comm->rank+(int)args->p2p.delta)%comm->nRanks : -1;
 
-  ncclPrimitives<UNROLL, SENDRECV_CHUNKSTEPS/SENDRECV_SLICESTEPS, SENDRECV_SLICESTEPS, T, 1, 1, FUNC>
+  ncclPrimitives<UNROLL, SENDRECV_CHUNKSTEPS/SENDRECV_SLICESTEPS, SENDRECV_SLICESTEPS, T, 1, 1, 1, FUNC>
     prims(tid, nthreads, &peerRecv, &peerSend, recvbuff, stepSize, channel, comm, args->opCount);
 
   int maxSize = sendSize-chunkSize>recvSize ? sendSize-chunkSize : recvSize;
@@ -72,5 +72,6 @@ __device__ void ncclSendRecvKernel(struct CollectiveArgs* args) {
       prims.directRecv(recvbuff+offset, offset, nelem);
     }
   }
-  if (recvSize == 0) prims.recv(recvbuff,0);
+
+  if (recvSize == 0) prims.recv(recvbuff, 0);
 }

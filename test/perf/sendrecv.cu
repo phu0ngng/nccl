@@ -30,6 +30,8 @@ testResult_t SendRecvInitData(struct threadArgs* args, ncclDataType_t type, nccl
     TESTCHECK(InitData(args->expected[i], recvcount, type, rep, peer));
     CUDACHECK(cudaDeviceSynchronize());
   }
+  // We don't support in-place sendrecv
+  args->reportErrors = in_place ? 0 : 1;
   return testSuccess;
 }
 
