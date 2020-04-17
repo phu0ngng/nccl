@@ -128,34 +128,39 @@ void checkTopo(const char* xmlTopoFile, const char* xmlGraphFile, const char* pl
   CHECK(ncclTopoCompute(system, &cNetGraph));
   computeTime = getTime() - computeTime;
 
+  int err = 0, warn = 0, incompleteRef = 0;
+
   /* Get reference graphs from XML */
   struct ncclXml* xmlGraph;
   CHECK(ncclCalloc(&xmlGraph, 1));
   if (ncclTopoGetXmlGraphFromFile(xmlGraphFile, xmlGraph) != ncclSuccess) {
-    printf(" %10s/%s  Error : no graph in %s\n", platform, inter ? "Inter":"Intra", xmlGraphFile);
-    (*errors)++;
-    return;
+    warn = 1; incompleteRef = 1;
+  } else {
+    struct ncclTopoGraph refRingGraph, refTreeGraph, refCNetGraph;
+    memcpy(&refRingGraph, &ringGraph, sizeof(ringGraph));
+    memcpy(&refTreeGraph, &treeGraph, sizeof(treeGraph));
+    memcpy(&refCNetGraph, &cNetGraph, sizeof(cNetGraph));
+    // Get graphs from XML. We select the right graph based on the id.
+    int refNChannels[3];
+    CHECK(ncclTopoGetGraphFromXml(xmlGraph->nodes, system, &refRingGraph, refNChannels));
+    CHECK(ncclTopoGetGraphFromXml(xmlGraph->nodes, system, &refTreeGraph, refNChannels+1));
+    CHECK(ncclTopoGetGraphFromXml(xmlGraph->nodes, system, &refCNetGraph, refNChannels+2));
+    if (ringGraph.nChannels != refNChannels[0] || treeGraph.nChannels != refNChannels[1] || cNetGraph.nChannels != refNChannels[2]) {
+      warn = 1;
+      incompleteRef = 1;
+    }
+    /* Compare */
+    compareGraphs(&refRingGraph, &ringGraph, system->nodes[GPU].count, inter, &err, &warn);
+    compareGraphs(&refTreeGraph, &treeGraph, system->nodes[GPU].count, inter, &err, &warn);
+    compareGraphs(&refCNetGraph, &cNetGraph, system->nodes[GPU].count, inter, &err, &warn);
   }
-  struct ncclTopoGraph refRingGraph, refTreeGraph, refCNetGraph;
-  memcpy(&refRingGraph, &ringGraph, sizeof(ringGraph));
-  memcpy(&refTreeGraph, &treeGraph, sizeof(treeGraph));
-  memcpy(&refCNetGraph, &cNetGraph, sizeof(cNetGraph));
-  // Get graphs from XML. We select the right graph based on the id.
-  CHECK(ncclTopoGetGraphFromXml(xmlGraph->nodes, system, &refRingGraph));
-  CHECK(ncclTopoGetGraphFromXml(xmlGraph->nodes, system, &refTreeGraph));
-  CHECK(ncclTopoGetGraphFromXml(xmlGraph->nodes, system, &refCNetGraph));
-
-  /* Compare */
-  int err = 0, warn = 0;
-  compareGraphs(&refRingGraph, &ringGraph, system->nodes[GPU].count, inter, &err, &warn);
-  compareGraphs(&refTreeGraph, &treeGraph, system->nodes[GPU].count, inter, &err, &warn);
-  compareGraphs(&refCNetGraph, &cNetGraph, system->nodes[GPU].count, inter, &err, &warn);
 
   printf(" %15s/%s  %2dx%4.1f/%4.1f | %2dx%4.1f/%4.1f | %2dx%4.1f/%4.1f", platform, inter ? "Inter":"Intra",
       ringGraph.nChannels, ringGraph.speedIntra, ringGraph.speedInter,
       treeGraph.nChannels, treeGraph.speedIntra, treeGraph.speedInter,
       cNetGraph.nChannels, cNetGraph.speedIntra, cNetGraph.speedInter);
-  if (err || warn) {
+
+  if (err || warn || incompleteRef) {
     char dumpFile[PATH_MAX];
     sprintf(dumpFile, "%s.dump", xmlGraphFile);
     struct ncclXml* xml;
@@ -211,6 +216,7 @@ int main(int argc, const char* argv[]) {
     RUN("XMAN-3");
     RUN("Luna");
     RUN("DGX-2-Delta");
+    RUN("Redstone");
     RUN("GCP-NV");
     RUN("AWS-NV");
     RUN("AWS-NV-EFA");

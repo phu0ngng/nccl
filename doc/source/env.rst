@@ -481,6 +481,16 @@ Supported subsystem names are INIT (stands for initialization), COLL (stands for
 peer-to-peer), SHM (stands for shared memory), NET (stands for network), GRAPH (stands for topology detection
 and graph search), TUNING (stands for algorithm/protocol tuning) and ALL (includes every subsystem).
 
+NCCL_COLLNET_ENABLE
+-------------------
+(since 2.6)
+
+Enable the use of CollNet plugin.
+
+Value accepted
+^^^^^^^^^^^^^^
+Default is 0, define and set to 1 to use the CollNet plugin.
+
 NCCL_TOPO_FILE
 --------------
 (since 2.6)

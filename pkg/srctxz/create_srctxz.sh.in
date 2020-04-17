@@ -32,9 +32,11 @@ NCCLNAME="nccl-src_${NCCL_MAJOR}.${NCCL_MINOR}.${NCCL_PATCH}${NCCL_SUFFIX}-${NCC
 tar --exclude fortran \
     --exclude test \
     --exclude doc \
+    --exclude plc \
     --exclude build \
     --exclude ".git*" \
     --exclude share \
     --exclude ompi \
+    --exclude ext-net \
     --exclude pkg/srctxz \
     --transform "s/^$NCCLDIR/$NCCLNAME/" -Jcf $NCCLNAME.txz --owner=0 --group=0 $NCCLDIR

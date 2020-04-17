@@ -46,6 +46,9 @@ static int timeout = 60;
 
 static char* replay_file = NULL;
 
+static FILE* dump_file = NULL;
+static double dump_values[30]; // 8 to 4G
+
 // Side computation constants
 #define COMP_SIZE (1 << 22)
 #define NUM_BLOCKS 32
@@ -287,10 +290,8 @@ testResult_t CheckData(struct threadArgs* args, ncclDataType_t type, ncclRedOp_t
   size_t count = args->expectedBytes/wordSize(type);
   double maxDelta = 0.0;
   for (int i=0; i<args->nGpus; i++) {
-    int device;
     int rank = ((args->proc*args->nThreads + args->thread)*args->nGpus + i);
-    NCCLCHECK(ncclCommCuDevice(args->comms[i], &device));
-    CUDACHECK(cudaSetDevice(device));
+    CUDACHECK(cudaSetDevice(args->gpus[i]));
     void *data = in_place ? ((void *)((uintptr_t)args->recvbuffs[i] + args->recvInplaceOffset*rank)) : args->recvbuffs[i];
     TESTCHECK(CheckDelta(data , args->expected[i], count, type, args->delta));
     maxDelta = std::max(*(args->deltaHost), maxDelta);
@@ -313,12 +314,11 @@ testResult_t CheckData(struct threadArgs* args, ncclDataType_t type, ncclRedOp_t
          printf("%d:%d ", j, dataHost[j]);
        }
        printf("\n");
-       free(temp);
     }
 #endif
   }
   double nranks = args->nProcs*args->nThreads*args->nGpus;
-  if (maxDelta > DeltaMaxValue(type)*(nranks - 1)) args->errors[0]++;
+  if (args->reportErrors && maxDelta > DeltaMaxValue(type)*(nranks - 1)) args->errors[0]++;
   *delta = maxDelta;
   return testSuccess;
 }
@@ -394,9 +394,7 @@ testResult_t startColl(struct threadArgs* args, ncclDataType_t type, ncclRedOp_t
   if (args->nGpus > 1) NCCLCHECK(ncclGroupStart());
   for (int i = 0; i < args->nGpus; i++) {
 #ifndef NCCL_MAJOR
-    int cudaDev;
-    NCCLCHECK(ncclCommCuDevice(args->comms[i], &cudaDev));
-    CUDACHECK(cudaSetDevice(cudaDev));
+    CUDACHECK(cudaSetDevice(args->gpus[i]));
 #endif
     int rank = ((args->proc*args->nThreads + args->thread)*args->nGpus + i);
     char* recvBuff = ((char*)args->recvbuffs[i]) + shift;
@@ -502,10 +500,21 @@ testResult_t BenchTime(struct threadArgs* args, ncclDataType_t type, ncclRedOp_t
      }
   } else {
      if (side_comp == 1) {
-       PRINT("  %7s  %6.2f  %6.2f  %6.2f", timeStr, algBw, busBw, sideBw);
+       PRINT("  %7s  %6.2f  %6.2f    N/A %6.2f", timeStr, algBw, busBw, sideBw);
      } else {
-       PRINT("  %7s  %6.2f  %6.2f", timeStr, algBw, busBw);
+       PRINT("  %7s  %6.2f  %6.2f    N/A", timeStr, algBw, busBw);
      }
+  }
+  if (dump_file) {
+    size_t nBytes = max(args->sendBytes, args->expectedBytes);
+    // Dump 8B to 4G to file.
+    for (int p=0; p<30; p++) if (nBytes == (8ULL<<p)) {
+      if (dump_values[p] == 0.0) {
+        dump_values[p] = timeUsec;
+      } else {
+        dump_values[p] = std::min(timeUsec, dump_values[p]);
+      }
+    }
   }
 
   args->bw[0] += busBw;
@@ -569,9 +578,7 @@ testResult_t threadRunTests(struct threadArgs* args) {
   // Set device to the first of our GPUs. If we don't do that, some operations
   // will be done on the current GPU (by default : 0) and if the GPUs are in
   // exclusive mode those operations will fail.
-  char* str = getenv("NCCL_TESTS_DEVICE");
-  int gpuid = str ? atoi(str) : args->localRank*args->nThreads*args->nGpus + args->thread*args->nGpus;
-  CUDACHECK(cudaSetDevice(gpuid));
+  CUDACHECK(cudaSetDevice(args->gpus[0]));
   TESTCHECK(ncclTestEngine.runTest(args, ncclroot, (ncclDataType_t)nccltype, test_typenames[nccltype], (ncclRedOp_t)ncclop, test_opnames[ncclop]));
   return testSuccess;
 }
@@ -587,9 +594,7 @@ testResult_t threadInit(struct threadArgs* args) {
   NCCLCHECK(ncclGroupStart());
   for (int i=0; i<args->nGpus; i++) {
     int rank = args->proc*args->nThreads*args->nGpus + args->thread*args->nGpus + i;
-    char* str = getenv("NCCL_TESTS_DEVICE");
-    int gpuid = str ? atoi(str) : args->localRank*args->nThreads*args->nGpus + args->thread*args->nGpus;
-    CUDACHECK(cudaSetDevice(gpuid));
+    CUDACHECK(cudaSetDevice(args->gpus[i]));
     NCCLCHECK(ncclCommInitRank(args->comms+i, nranks, args->ncclId, rank));
   }
   NCCLCHECK(ncclGroupEnd());
@@ -616,7 +621,8 @@ testResult_t compThread(struct threadArgs* args) {
   int gpuids[args->nGpus];
   cudaStream_t streams[args->nGpus];
   for (int i=0; i<args->nGpus; i++) {
-    gpuids[i] = args->localRank*args->nThreads*args->nGpus + args->thread*args->nGpus + i;
+    char* str = getenv("NCCL_TESTS_DEVICE");
+    gpuids[i] = (str ? atoi(str) : args->localRank*args->nThreads*args->nGpus + args->thread*args->nGpus) + i;
     CUDACHECK(cudaSetDevice(gpuids[i]));
     CUDACHECK(cudaStreamCreateWithFlags(streams+i, cudaStreamNonBlocking));
     if (side_comp == 1) CUDACHECK(cudaMalloc(ptrs+i, ((uint64_t)COMP_SIZE)*NUM_BLOCKS));
@@ -660,7 +666,7 @@ testResult_t compThread(struct threadArgs* args) {
   }
   for (int i=0; i<args->nGpus; i++) {
     CUDACHECK(cudaStreamDestroy(streams[i]));
-    if (side_comp == 1) CUDACHECK(cudaFree(ptrs[i]));
+    if (side_comp == 2) CUDACHECK(cudaFree(ptrs[i]));
   }
   return testSuccess;
 }
@@ -820,7 +826,8 @@ int main(int argc, char* argv[]) {
   MPI_Init(&argc, &argv);
 #endif
 #endif
-  return run();
+  TESTCHECK(run());
+  return 0;
 }
 
 #ifdef MPI_COLLNET_SUPPORT
@@ -853,6 +860,9 @@ testResult_t run() {
 #endif
   is_main_thread = (proc == 0) ? 1 : 0;
 
+  char* envstr = getenv("NCCL_TESTS_DUMP_FILE");
+  if (envstr && is_main_thread) dump_file = fopen(envstr, "w");
+
   PRINT("# nThread %d nGpus %d minBytes %ld maxBytes %ld step: %ld(%s) warmup iters: %d iters: %d agg iters: %d validation: %d \n",
         nThreads, nGpus, minBytes, maxBytes,
         (stepFactor > 1)?stepFactor:stepBytes, (stepFactor > 1)?"factor":"bytes",
@@ -867,8 +877,8 @@ testResult_t run() {
   int len = 0;
   size_t maxMem = maxBytes*7/2;
   for (int i=0; i<nThreads*nGpus; i++) {
-    char* str = getenv("NCCL_TESTS_DEVICE");
-    int cudaDev = str ? atoi(str) : localRank*nThreads*nGpus+i;
+    envstr = getenv("NCCL_TESTS_DEVICE");
+    int cudaDev = envstr ? atoi(envstr) : localRank*nThreads*nGpus+i;
     int rank = proc*nThreads*nGpus+i;
     cudaDeviceProp prop;
     CUDACHECK(cudaGetDeviceProperties(&prop, cudaDev));
@@ -902,6 +912,7 @@ testResult_t run() {
 #ifdef MPI_SUPPORT
   MPI_Bcast(&ncclId, sizeof(ncclId), MPI_BYTE, 0, MPI_COMM_WORLD);
 #endif
+  int gpus[nGpus*nThreads];
   cudaStream_t streams[nGpus*nThreads];
   void* sendbuffs[nGpus*nThreads];
   void* recvbuffs[nGpus*nThreads];
@@ -911,9 +922,9 @@ testResult_t run() {
   ncclTestEngine.getBuffSize(&sendBytes, &recvBytes, (size_t)maxBytes, (size_t)nProcs*nGpus*nThreads);
 
   for (int i=0; i<nGpus*nThreads; i++) {
-    char* str = getenv("NCCL_TESTS_DEVICE");
-    int gpuid = str ? atoi(str) : localRank*nThreads*nGpus+i;
-    CUDACHECK(cudaSetDevice(gpuid));
+    envstr = getenv("NCCL_TESTS_DEVICE");
+    gpus[i] = envstr ? atoi(envstr) : localRank*nThreads*nGpus+i;
+    CUDACHECK(cudaSetDevice(gpus[i]));
     AllocateBuffs(sendbuffs+i, sendBytes, recvbuffs+i, recvBytes, expected+i, (size_t)maxBytes, nProcs*nThreads*nGpus);
     if (streamnull)
       streams[i] = NULL;
@@ -925,13 +936,11 @@ testResult_t run() {
   ncclComm_t* comms = (ncclComm_t*)malloc(sizeof(ncclComm_t)*nThreads*nGpus);
   if (!parallel_init) {
      if (nProcs == 1) {
-       int gpuArray[nGpus*nThreads];
-       for (int i=0; i<nGpus*nThreads; i++) gpuArray[i] = i;
-       NCCLCHECK(ncclCommInitAll(comms, nGpus*nThreads, gpuArray));
+       NCCLCHECK(ncclCommInitAll(comms, nGpus*nThreads, gpus));
      } else {
        NCCLCHECK(ncclGroupStart());
        for (int i=0; i<nGpus*nThreads; i++) {
-         CUDACHECK(cudaSetDevice(localRank*nThreads*nGpus+i));
+         CUDACHECK(cudaSetDevice(gpus[i]));
          NCCLCHECK(ncclCommInitRank(comms+i, nProcs*nThreads*nGpus, ncclId, proc*nThreads*nGpus+i));
        }
        NCCLCHECK(ncclGroupEnd());
@@ -981,6 +990,7 @@ testResult_t run() {
     threads[t].args.nThreads=nThreads;
     threads[t].args.thread=t;
     threads[t].args.nGpus=nGpus;
+    threads[t].args.gpus=gpus+t*nGpus;
     threads[t].args.sendbuffs = sendbuffs+t*nGpus;
     threads[t].args.recvbuffs = recvbuffs+t*nGpus;
     threads[t].args.expected = expected+t*nGpus;
@@ -998,6 +1008,8 @@ testResult_t run() {
     threads[t].args.errors=errors+t;
     threads[t].args.bw=bw+t;
     threads[t].args.bw_count=bw_count+t;
+
+    threads[t].args.reportErrors = 1;
 
     threads[t].args.replayFile = replay_file;
 
@@ -1050,8 +1062,8 @@ testResult_t run() {
   }
   CUDACHECK(cudaFreeHost(delta));
 
-  char* str = getenv("NCCL_TESTS_MIN_BW");
-  double check_avg_bw = str ? atof(str) : -1;
+  envstr = getenv("NCCL_TESTS_MIN_BW");
+  double check_avg_bw = envstr ? atof(envstr) : -1;
   bw[0] /= bw_count[0];
 
   PRINT("# Out of bounds values : %d %s\n", errors[0], errors[0] ? "FAILED" : "OK");
@@ -1060,6 +1072,13 @@ testResult_t run() {
 #ifdef MPI_SUPPORT
   MPI_Finalize();
 #endif
+
+  if (dump_file) {
+    for (int p=0; p<30; p++) {
+      fprintf(dump_file, "%.1f\n", dump_values[p]);
+    }
+    fclose(dump_file);
+  }
 
   // 'cuda-memcheck --leak-check full' requires this
   cudaDeviceReset();

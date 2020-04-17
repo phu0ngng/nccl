@@ -1,0 +1,132 @@
+<!DOCTYPE html>
+<html>
+<head>
+<title>NCCL-5 : LL128 : Design</title>
+<link rel="stylesheet" type="text/css" href="../../html/css/doc.css">
+</head>
+<body>
+<center><h1>NCCL-5 : LL128<br>Design</h1></center>
+<!-- table of contents, auto-generated -->
+$CONTENTS
+<!-- end of table of contents -->
+<h2>Proposed Design</h2>
+<h3>Overview</h3>
+<p>To communicate between GPUs, NCCL implements CUDA code running on GPU SMs.
+<p>The new protocol for inter-SM communication, LL128, uses the same technique as the current LL protocol, but
+assuming atomicity on 128B lines instead of 8B.
+<p>Bundling a flag together with the data removes the need to fence memory operations and set a separate flag,
+improving latency at the expense of some bandwidth used to write flags.
+<h3>General communication</h3>
+<p>When writing data to a remote buffer, each CUDA warp writes at least 120 bytes of data and 8 bytes of flag,
+which should be aggregated as a single 128B store.
+<p>This store is observed by the receiver which will consider data is valid whenever the last 8 bytes have the
+correct value as flag.
+<p><img src=images/128BLine.png>
+<p>For efficiency reasons, each thread writes 16B of data, hence a warp of 32 threads will write 512B in total,
+i.e. 4 lines of 128B.
+<p><img src=images/512BBlock.png>
+<p>Each warp is polling on different 128B lines, and progress independently. Because of this polling by all
+CUDA threads, LL128 is to be only enabled when the buffer is in GPU memory, i.e. when we receive data through
+GPU Direct P2P or GPU Direct RDMA.
+<p>Sending data is implemented with 16B stores using the following inline assembly :
+<pre>
+inline __device__ void store128(uint64_t* ptr, uint64_t v0, uint64_t v1) {
+  asm volatile("st.volatile.global.v2.u64 [%2], {%0,%1};"
+      :: "l"(v0), "l"(v1), "l"(ptr));
+}
+</pre>
+<p>The store128 function is always called by all the threads of a warp on contiguous and 128B-aligned data,
+using this code (flagThread is true only for threads 7, 15, 23 and 31) :
+<pre>
+#pragma unroll
+for (int u=0; u&lt;ELEMS_PER_THREAD; u+=2) {
+  store128(ptr+u*WARP_SIZE, v[u], flagThread ? flag : v[u+1]);
+}
+</pre>
+<p>Receiving data is using similar 16B reads :
+<pre>
+inline __device__ void load128(const uint64_t* ptr, uint64_t &amp;v0, uint64_t &amp;v1) {
+  asm volatile("ld.volatile.global.v2.u64 {%0,%1}, [%2];"
+      : "=l"(v0), "=l"(v1) : "l"(ptr));
+}
+</pre>
+<p>Loads are used twice. The first time, we only load data in L1 cache and check flags, the second time
+we re-read data and process it (through MULTI).
+<pre>
+do {
+  needReload = false;
+  #pragma unroll
+  for (int u=0; u&lt;ELEMS_PER_THREAD; u+=2) {
+    load128(ptr+u*WARP_SIZE, v0, v1);
+    needReload |= flagThread &amp;&amp; (v1 != flag);
+  }
+} while (__any_sync(WARP_MASK, needReload) &amp;&amp; checkAbort(0, 0) == 0);
+#pragma unroll
+for (int u=0; u&lt;ELEMS_PER_THREAD; u+=2) {
+  load128(ptr+u*WARP_SIZE, v0, v1);
+  v[u] = SRC ? MULTI&lt;FUNC, T&gt;()(v0, v[u]) : v0;
+  v[u+1] = SRC ? MULTI&lt;FUNC, T&gt;()(v1, v[u+1]) : v1;
+}
+</pre>
+
+<h3>Network communication</h3>
+<p> On the sender side, we copy the data to a local buffer which we fence with threadfence() (MEMBAR.GL), then
+initiate an IB transfer from that GPU memory to the destination GPU memory. It is not very different from the
+<i>Simple</i> protocol aside from the fence being only local i.e. not having the system scope.
+<p>On the receiver side, we receive directly to GPU memory and the GPU polls immediately on data, making the
+protocol similar to the <i>LL</i> protocol. This also avoids the large overhead we have with the <i>Simple</i>
+protocol on the receiver side, where the path is :
+<ol>
+<li>NIC sends IB completion to the CPU
+<li>CPU flushes writes from NIC to GPU using a read to GPU through IB loopback
+<li>CPU sets a flag in system memory on which one thread from the GPU is polling
+<li>GPU threads synchronize
+</ol>
+<p>The receiving GPU does not know it is receiving from the network; it is polling on its local memory.
+<h3>Limitations, risks, and scope</h3>
+<h4>128B atomicity</h4>
+<p>This protocol relies on 128B stores not being observed in a reverse order by the next GPU.
+This needs to work all the way from one GPU to another :
+<ol>
+<li>SMs must consistently aggregate aligned, contiguous stores at the SM level into 128B stores.
+<li>Stores in transit through NVLink must not be broken down.
+<li>SMs receiving data need to observe stores to their local memory in order. We do not rely on aggregation in
+this phase, i.e. we first observe the flag, then read the data.
+</ol>
+<p>The first release of NCCL 2.5 intends to enable LL128 on :
+<ul>
+<li>Volta+NVLink for intra-node communication.
+<li>Mellanox CX-5 (and later) + PCI switch for inter-node communication.
+</ul>
+<p>On the network side, there is no risk on the sender side since we use a memory fence. On the receiver side
+however, we need to ensure PCI stores from the NIC to the GPU do not get split and reordered.
+<p><img src=images/PCI-NVLink.png>
+<p>In all cases, the intermediate buffer is located in GPU memory on the receiver side. We therefore always consider
+in the LL128 atomicity problem that stores are remote and reads are local.
+<p><i>Notes</i>
+<p>GPUs prior to Volta have issues with step 3 where changes were not always observed in the right order when
+doing a single aggregated read, even on local data. Reading the data after reading the flag (instead of reading all
+data as a single aggregated load) seems to get rid of the problem. This behavior was never observed on Volta, so we
+might be able to improve performance a bit by leveraging aggregation also on loads.
+<p>PCI transfers are known to be split by Intel CPUs into two 64B TLPs but message reordering has never been observed.
+Some PCI configuration might affect that functionality however, for example relaxed ordering.
+<h4>Network memory fence</h4>
+<p>Unrelated to the 128B atomicity issue, the network send is using MEMBAR.GL instead of MEMBAR.SYS. This has the
+effect of flushing data up to L2 cache, which, on current GPUs, guarantees that further reads from PCI will see the
+correct data. The CUDA model however, defines target-scope synchronization; since the reader is the NIC, it is outside
+the GPU, and therefore MEMBAR.SYS should be used.
+<h2>Interface Architecture</h2>
+<p>Not applicable since the API is unchanged.
+<h2>System KPIs & Metrics</h2>
+<p>LL128 gets 95% of the peak bandwidth (compared to 50% with LL) with only 2x the latency of LL (or 3x faster than
+Simple).
+<h2>Signoff list</h2>
+<p>Author: Sylvain Jeaugey
+<p>Reviewer : NCCL Team /<!--  David Addison -->
+<p>Reviewer : NCCL Team /<!--  Ke Wen -->
+<p>Reviewer : GPU Arch / <!-- Wishwesh Gandhi -->
+<p>Reviewer : GPU Design /<!-- Manas Mandal -->
+<p>Reviewer : Compiler Arch /<!-- Olivier Giroux -->
+<p>Reviewer : System Arch /<!-- TBD -->
+
+<!-- do not end body and html, bottom will be auto-generated -->
