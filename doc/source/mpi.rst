@@ -24,6 +24,13 @@ For AllGather and ReduceScatter operations, the count is equal to the per-rank s
 
 Note: When performing or comparing AllReduce operations using a combination of ReduceScatter and AllGather, define the sendcount and recvcount as the total count divided by the number of ranks, with the correct count rounding-up, if it is not a perfect multiple of the number of ranks.
 
+Other collectives and point-to-point operations
+-----------------------------------------------
+
+NCCL does not define specific verbs for sendrecv, gather, gatherv, scatter, scatterv, alltoall, alltoallv, alltoallw,
+nor neighbor collectives. All those operations can be simply expressed using a combination of ncclSend, ncclRecv, and
+ncclGroupStart/ncclGroupEnd, similarly to how they can be expressed with MPI_Isend, MPI_Irecv and MPI_Waitall.
+
 In-place operations
 -------------------
 For more information, see :ref:`in-place-operations`.

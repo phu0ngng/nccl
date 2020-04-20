@@ -11,4 +11,5 @@ The following sections describe the collective communications methods and operat
  api/comms
  api/colls
  api/group
+ api/p2p
  api/types
