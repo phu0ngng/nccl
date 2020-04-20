@@ -25,7 +25,7 @@ endif
 DST_DIR := $(BUILDDIR)/test/perf
 SRC_FILES := $(wildcard *.cu)
 OBJ_FILES := $(SRC_FILES:%.cu=${DST_DIR}/%.o)
-COLLS := all_reduce all_gather broadcast reduce_scatter reduce alltoall gather scatter sendrecv
+COLLS := all_reduce all_gather broadcast reduce_scatter reduce alltoall gather scatter sendrecv hypercube
 EXTRA_COLLS := all_gatherv reduce_scatterv
 COLL_OBJS := $(COLLS:%=${DST_DIR}/%.o)
 BIN_FILES := $(COLLS:%=${DST_DIR}/%_perf) $(EXTRA_COLLS:%=${DST_DIR}/%_perf) ${DST_DIR}/replay
