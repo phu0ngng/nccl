@@ -581,8 +581,6 @@ ncclResult_t ncclEnqueueCheck(struct ncclInfo* info) {
 
     if (info->coll == ncclCollSendRecv) { //p2p stored separately
       NCCLCHECKGOTO(ncclSaveP2p(info), ret, end);
-    } else {
-      NCCLCHECKGOTO(ncclSaveKernel(info), ret, end);
     }
 end:
     if (savedDev != -1) CUDACHECK(cudaSetDevice(savedDev));
