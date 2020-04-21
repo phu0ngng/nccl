@@ -60,6 +60,8 @@ void ncclDebugInit() {
         mask = NCCL_GRAPH;
       } else if (strcasecmp(subsys, "TUNING") == 0) {
         mask = NCCL_TUNING;
+      } else if (strcasecmp(subsys, "ENV") == 0) {
+        mask = NCCL_ENV;
       } else if (strcasecmp(subsys, "ALL") == 0) {
         mask = NCCL_ALL;
       }
