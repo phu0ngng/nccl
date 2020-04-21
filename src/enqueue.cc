@@ -506,13 +506,20 @@ ncclResult_t ncclSaveKernel(struct ncclInfo* info) {
 #define NCCL_AGG_CHANNEL_SIZE (1LL << 21) /* 2 MiB */
 
 ncclResult_t ncclSaveKernelComm(ncclComm_t comm) {
-  size_t channelSize = NCCL_AGG_CHANNEL_SIZE * comm->nRanks;
-  while (comm->asyncTotalSize < channelSize * comm->nChannels && channelSize > NCCL_MIN_CHANNEL_SIZE) channelSize /= 2;
-
-  for (int c = 0; c < comm->asyncOpCount; c++) {
-    struct ncclInfo* info = comm->asyncOps+c;
-    info->nChannels = comm->useAdpChannel ? std::min((int)DIVUP(info->nBytes, channelSize), comm->nChannels) : 0;
+  // No aggregation
+  if (comm->asyncOpCount <= 1) {
+    struct ncclInfo* info = comm->asyncOps;
+    info->nChannels = 0;
     NCCLCHECK(ncclSaveKernel(info));
+  } else {
+    // Aggregation
+    size_t channelSize = NCCL_AGG_CHANNEL_SIZE * comm->nRanks;
+    while (comm->asyncTotalSize < channelSize * comm->nChannels && channelSize > NCCL_MIN_CHANNEL_SIZE) channelSize /= 2;
+    for (int c = 0; c < comm->asyncOpCount; c++) {
+      struct ncclInfo* info = comm->asyncOps+c;
+      info->nChannels = std::min((int)DIVUP(info->nBytes, channelSize), comm->nChannels);
+      NCCLCHECK(ncclSaveKernel(info));
+    }
   }
   // Reset counters
   comm->asyncOpCount = 0;
