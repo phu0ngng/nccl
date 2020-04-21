@@ -21,9 +21,10 @@ The creation of a communicator is the first step needed before launching any com
 .. toctree::
 
  usage/communicators
- usage/operations
+ usage/collectives
  usage/data
  usage/streams
  usage/groups
+ usage/p2p
  usage/threadsafety
  usage/inplace

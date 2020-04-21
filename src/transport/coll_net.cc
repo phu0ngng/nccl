@@ -171,7 +171,7 @@ ncclResult_t collNetRecvConnect(struct ncclConnect* connectInfos, int nranks, in
   struct ncclRecvMem* recvMem = resources->useGdr ? resources->devRecvMem : resources->devHostRecvMem;
   int offset = 0;
   for (int p=0; p<NCCL_NUM_PROTOCOLS; p++) {
-    recv->conn.buffs[p] = recvMem->buff + offset;
+    recv->conn.buffs[p] = (p == NCCL_PROTO_LL ? resources->devHostRecvMem->buff : recvMem->buff) + offset;
     offset += recv->comm->buffSizes[p];
   }
   recv->conn.direct |= resources->useGdr ? NCCL_DIRECT_NIC : 0;
@@ -385,8 +385,10 @@ ncclResult_t collNetRecvProxy(struct ncclProxyArgs* args) {
     if (args->head < args->end) {
       if ((args->tail < args->head + NCCL_STEPS) && (args->tail < (resources->hostSendMem->head) + NCCL_STEPS) && (args->tail < args->end)) {
         int buffSlot = args->tail%NCCL_STEPS;
-        reqFifo[buffSlot].recvBuff = localBuff+buffSlot*stepSize;
-        TRACE(NCCL_NET, "recvProxy [%d/%d] posted buffer %p", args->tail, buffSlot, localBuff+buffSlot*stepSize);
+        char* recvBuff = p == NCCL_PROTO_LL ? (char*)resources->llData : localBuff;
+        int recvStepSize = p == NCCL_PROTO_LL ? stepSize/2 : stepSize;
+        reqFifo[buffSlot].recvBuff = recvBuff+buffSlot*recvStepSize;
+        TRACE(NCCL_NET, "recvProxy [%d/%d] posted buffer %p", args->tail, buffSlot, reqFifo[buffSlot].recvBuff);
         args->tail += args->sliceSteps;
         args->idle = 0;
       }

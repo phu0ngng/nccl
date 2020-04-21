@@ -1,8 +1,8 @@
-**********
-Operations
-**********
+*********************
+Collective Operations
+*********************
 
-Like MPI collective operations, NCCL collective operations have to be called for each rank (hence CUDA device) to form a complete collective operation. Failure to do so will result in other ranks waiting indefinitely.
+Collective operations have to be called for each rank (hence CUDA device) to form a complete collective operation. Failure to do so will result in other ranks waiting indefinitely.
 
 .. _allreduce:
 
