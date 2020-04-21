@@ -505,7 +505,7 @@ ncclResult_t ncclSaveKernel(struct ncclInfo* info) {
 #define NCCL_MIN_CHANNEL_SIZE (NCCL_LL_THREAD_THRESHOLD*64)
 #define NCCL_AGG_CHANNEL_SIZE (1LL << 21) /* 2 MiB */
 
-ncclResult_t ncclSaveKernelComm(ncclComm_t comm) {
+ncclResult_t ncclSaveCommKernels(ncclComm_t comm) {
   // No aggregation
   if (comm->asyncOpCount <= 1) {
     struct ncclInfo* info = comm->asyncOps;

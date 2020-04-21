@@ -19,6 +19,6 @@ ncclResult_t ncclBarrierEnqueue(struct ncclComm* comm);
 ncclResult_t ncclBarrierEnqueueWait(struct ncclComm* comm);
 ncclResult_t ncclEnqueueEvents(struct ncclComm* comm);
 ncclResult_t ncclSaveKernel(struct ncclInfo* info);
-ncclResult_t ncclSaveKernelComm(struct ncclComm* comm);
+ncclResult_t ncclSaveCommKernels(struct ncclComm* comm);
 
 #endif // End include guard
