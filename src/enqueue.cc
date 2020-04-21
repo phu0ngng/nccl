@@ -502,23 +502,21 @@ ncclResult_t ncclSaveKernel(struct ncclInfo* info) {
   return ncclSuccess;
 }
 
+#define NCCL_MIN_CHANNEL_SIZE (NCCL_LL_THREAD_THRESHOLD*64)
+#define NCCL_AGG_CHANNEL_SIZE (1LL << 21) /* 2 MiB */
+
 ncclResult_t ncclSaveKernelComm(ncclComm_t comm) {
-  int nChannels = comm->nChannels;
-  int c = 0, res = 0;
-  while (comm->asyncOpCount - c > nChannels) {
+  size_t channelSize = NCCL_AGG_CHANNEL_SIZE * comm->nRanks;
+  while (comm->asyncTotalSize < channelSize * comm->nChannels && channelSize > NCCL_MIN_CHANNEL_SIZE) channelSize /= 2;
+
+  for (int c = 0; c < comm->asyncOpCount; c++) {
     struct ncclInfo* info = comm->asyncOps+c;
-    info->nChannels = comm->useAdpChannel ? 1 : 0;
+    info->nChannels = comm->useAdpChannel ? std::min((int)DIVUP(info->nBytes, channelSize), comm->nChannels) : 0;
     NCCLCHECK(ncclSaveKernel(info));
-    c++;
   }
-  res = comm->asyncOpCount - c;
-  while (res > 0) {
-    struct ncclInfo* info = comm->asyncOps+c;
-    info->nChannels = comm->useAdpChannel ? nChannels/res : 0;
-    NCCLCHECK(ncclSaveKernel(info));
-    nChannels -= info->nChannels;
-    c++; res--;
-  }
+  // Reset counters
+  comm->asyncOpCount = 0;
+  comm->asyncTotalSize = 0;
   return ncclSuccess;
 }
 

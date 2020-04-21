@@ -99,6 +99,7 @@ ncclResult_t ncclAsyncColl(struct ncclInfo* info) {
   }
   memcpy(comm->asyncOps+comm->asyncOpCount, info, sizeof(struct ncclInfo));
   comm->asyncOpCount++;
+  comm->asyncTotalSize += info->nBytes;
 
   struct ncclAsyncArgs* args = ncclGroupArgs;
   for (int i=0; i<ncclGroupIndex; i++) {
@@ -278,7 +279,6 @@ ncclResult_t ncclGroupEnd() {
     if (args->funcType == ASYNC_FUNC_COLL) {
       ncclComm_t comm = args->coll.comm;
       NCCLCHECKGOTO(ncclSaveKernelComm(comm), ret, end);
-      comm->asyncOpCount = 0;
     }
   }
   for (int i=0; i<ncclGroupIndex; i++) {

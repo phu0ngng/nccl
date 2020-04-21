@@ -145,6 +145,7 @@ struct ncclComm {
   // Store info of async operations
   struct ncclInfo* asyncOps;
   int asyncOpCount;
+  size_t asyncTotalSize;
   bool useAdpChannel;
 
   //list of async p2p operation queued in a group semantics
