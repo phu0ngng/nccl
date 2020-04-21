@@ -48,9 +48,9 @@ class ncclLL128Primitives {
 
   inline __device__ void barrier() {
     if (NSEND>NRECV) {
-      asm volatile ("bar.sync 2, %0;" :: "r"(nthreads));
+      asm volatile ("bar.sync 1, %0;" :: "r"(nthreads));
     } else {
-      asm volatile ("bar.sync 3, %0;" :: "r"(nthreads));
+      asm volatile ("bar.sync 2, %0;" :: "r"(nthreads));
     }
   }
 
