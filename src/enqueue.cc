@@ -513,11 +513,11 @@ ncclResult_t ncclSaveCommKernels(ncclComm_t comm) {
     NCCLCHECK(ncclSaveKernel(info));
   } else {
     // Aggregation
-    size_t channelSize = NCCL_AGG_CHANNEL_SIZE * comm->nRanks;
-    while (comm->asyncTotalSize < channelSize * comm->nChannels && channelSize > NCCL_MIN_CHANNEL_SIZE) channelSize /= 2;
+    size_t channelSize = NCCL_AGG_CHANNEL_SIZE * comm->nRanks;  // scale channel size based on nranks as latency increases
+    while (comm->asyncTotalSize < channelSize * comm->nChannels && channelSize > NCCL_MIN_CHANNEL_SIZE) channelSize /= 2; // try to fully utilize the channels
     for (int c = 0; c < comm->asyncOpCount; c++) {
       struct ncclInfo* info = comm->asyncOps+c;
-      info->nChannels = std::min((int)DIVUP(info->nBytes, channelSize), comm->nChannels);
+      info->nChannels = std::min((int)DIVUP(info->nBytes, channelSize), comm->nChannels); // assign number of channels
       NCCLCHECK(ncclSaveKernel(info));
     }
   }
