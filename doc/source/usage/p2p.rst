@@ -17,7 +17,7 @@ all-to-all or communication with neighbors in a N-dimensional space.
 
 Point-to-point calls within a group will be blocking until that group of calls completes,
 but calls within a group can be seen as progressing independently, hence should never block
-each other. It is therefore important to merge calls that needs to progress concurrently to
+each other. It is therefore important to merge calls that need to progress concurrently to
 avoid deadlocks.
 
 Below are a few examples of classic point-to-point communication patterns used by parallel
@@ -62,8 +62,8 @@ Similarly, an all-to-one operations to a ``root`` rank would be implemented this
 
  ncclGroupStart();
  if (rank == root) {
- for (int r=0; r<nranks; r++)
-   ncclRecv(recvbuff[r], size, type, r, comm, stream);
+   for (int r=0; r<nranks; r++)
+     ncclRecv(recvbuff[r], size, type, r, comm, stream);
  }
  ncclSend(sendbuff, size, type, root, comm, stream);
  ncclGroupEnd();
