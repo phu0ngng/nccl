@@ -666,7 +666,7 @@ testResult_t compThread(struct threadArgs* args) {
   }
   for (int i=0; i<args->nGpus; i++) {
     CUDACHECK(cudaStreamDestroy(streams[i]));
-    if (side_comp == 2) CUDACHECK(cudaFree(ptrs[i]));
+    if (side_comp == 1) CUDACHECK(cudaFree(ptrs[i]));
   }
   return testSuccess;
 }
