@@ -378,6 +378,7 @@ ncclResult_t ncclCommSetIntra(struct ncclComm* comm, int rank, int ranks, struct
   // Set CG Mode
   comm->launchMode = ncclComm::GROUP;
   char* str = getenv("NCCL_LAUNCH_MODE");
+  if (str) INFO(NCCL_ENV, "NCCL_LAUNCH_MODE set by environment to %s", str);
   if (comm->intraRanks == 1 || (str && strcmp(str, "PARALLEL") == 0)) {
     comm->launchMode = ncclComm::PARALLEL;
   }
@@ -856,6 +857,7 @@ static ncclResult_t ncclCommInitRankDev(ncclComm_t* newcomm, int nranks, ncclUni
   ncclResult_t res;
   char* env = getenv("NCCL_COMM_ID");
   if (env && myrank == 0) {
+    INFO(NCCL_ENV, "NCCL_COMM_ID set by environment to %s", env);
     NCCLCHECKGOTO(bootstrapCreateRoot(&commId, true), res, end);
   }
 
