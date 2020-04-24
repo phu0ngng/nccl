@@ -441,7 +441,7 @@ static ncclResult_t socketSend(int fd, void* ptr, int size) {
   return ncclSuccess;
 }
 
-static ncclResult_t socketReceive(int fd, void* ptr, int size) {
+static ncclResult_t socketRecv(int fd, void* ptr, int size) {
   int offset = 0;
   NCCLCHECK(socketWait(NCCL_SOCKET_RECV, fd, ptr, size, &offset));
   return ncclSuccess;
