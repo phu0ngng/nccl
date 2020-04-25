@@ -194,6 +194,13 @@ struct unexConn {
   struct unexConn* next;
 };
 
+// Remote allocator state
+struct remAllocState {
+  int cudaDev;
+  int listenFd;
+  int stop;
+};
+
 struct extState {
   int extListenFd;
   int extRingRecvFd;
@@ -201,114 +208,117 @@ struct extState {
   union socketAddress* peerCommAddresses;
   union socketAddress* peerAllocAddresses;
   struct unexConn* unexpectedConnections;
+  int cudaDev;
   int rank;
   int nranks;
 
   // Intermediate memory allocation service
-  int extAllocFd;
+  struct remAllocState* allocState;
   pthread_t allocThread;
 };
 
 #define MAX_SEGMENTS 128
-#define CMD_ALLOC 1
-#define CMD_FREE  2
-#define REMCHECK(call, res, label) do { \
-  res = call;  \
-  if (res != ncclSuccess) { \
-    if (ncclDebugNoWarn == 0) INFO(NCCL_ALL,"[Rem Allocator] %s:%d -> %d", __FILE__, __LINE__, res);    \
-    goto label; \
-  } \
-} while (0);
 
-ncclResult_t allocAndMap(void** ptr, size_t size, cudaIpcMemHandle_t* ipc) {
+ncclResult_t remoteAlloc(void** ptr, int fd) {
+  size_t size;
+  NCCLCHECK(socketRecv(fd, &size, sizeof(size_t)));
+  cudaIpcMemHandle_t devIpc;
   NCCLCHECK(ncclCudaCalloc((char**)ptr, size));
-  cudaError_t res = cudaIpcGetMemHandle(ipc, *ptr);
+  cudaError_t res = cudaIpcGetMemHandle(&devIpc, *ptr);
   if (res != cudaSuccess) {
+    WARN("[Rem Allocator] cudaIpcGetMemHandle failed : %s", cudaGetErrorString(res));
     cudaFree(*ptr);
     CUDACHECK(res);
   }
+  // The CUDA IPC
+  NCCLCHECK(socketSend(fd, &devIpc, sizeof(cudaIpcMemHandle_t)));
+  // And the direct pointer
+  NCCLCHECK(socketSend(fd, ptr, sizeof(void*)));
+  printf("Allocated and sent %p, size %ld\n", *ptr, size);
   return ncclSuccess;
 }
-ncclResult_t ncclCudaFree(void* ptr) { CUDACHECK(cudaFree(ptr)); return ncclSuccess; }
+
+#include <poll.h>
 
 // Service thread to allocate memory for other GPUs, used as intermediate step.
 void* ncclRemoteMemAllocationService(void* args) {
-  struct extState* state = (struct extState *) args;
-  ncclResult_t res;
-  void* segments[MAX_SEGMENTS];
-  for (int s=0; s<MAX_SEGMENTS; s++) segments[s] = NULL;
-  while (1) {
-    int fd;
-    NCCLCHECKGOTO(bootstrapNetAccept(state->extAllocFd, &fd), res, stop);
-    int cmd;
-    int s;
-    cudaIpcMemHandle_t devIpc;
-    NCCLCHECKGOTO(socketRecv(fd, &cmd, sizeof(int)), res, stop);
-    if (cmd == CMD_ALLOC) {
-      size_t size;
-      NCCLCHECKGOTO(socketRecv(fd, &size, sizeof(size_t)), res, stop);
-      s = 0;
-      while (segments[s] != NULL && s < MAX_SEGMENTS) s++;
-      if (s == MAX_SEGMENTS) {
-        REMCHECK(ncclInternalError, res, done);
-      } else {
-        REMCHECK(allocAndMap(segments+s, size, &devIpc), res, done);
-      }
-    } else if (cmd == CMD_FREE) {
-      NCCLCHECKGOTO(socketRecv(fd, &s, sizeof(int)), res, stop);
-      if (s < 0 || s > MAX_SEGMENTS || segments[s] == NULL) REMCHECK(ncclInternalError, res, done);
-      REMCHECK(ncclCudaFree(segments[s]), res, done);
-      segments[s] = NULL;
-    }
-done:
-    // Return error code to caller
-    NCCLCHECKGOTO(socketSend(fd, &res, sizeof(ncclResult_t)), res, stop);
-    if (res == ncclSuccess && cmd == CMD_ALLOC) {
-      // Send the segment id for future free
-      NCCLCHECKGOTO(socketSend(fd, &s, sizeof(int)), res, stop);
-      // And the CUDA IPC
-      NCCLCHECKGOTO(socketSend(fd, &devIpc, sizeof(cudaIpcMemHandle_t)), res, stop);
-    }
-    close(fd);
+  struct remAllocState* state = (struct remAllocState *) args;
+  if (cudaSetDevice(state->cudaDev) != cudaSuccess) {
+    WARN("[Rem Allocator] Failed to set CUDA device %d\n", state->cudaDev);
   }
-stop:
-  for (int s=0; s<MAX_SEGMENTS; s++) if (segments[s]) cudaFree(segments[s]);
-  close(state->extAllocFd);
+
+  // Prepare poll descriptor
+  void* segments[MAX_SEGMENTS];
+  struct pollfd pollfds[MAX_SEGMENTS+1];
+  for (int s=0; s<MAX_SEGMENTS; s++) segments[s] = NULL;
+  for (int s=0; s<MAX_SEGMENTS; s++) {
+    pollfds[s].fd = -1;
+    pollfds[s].events = POLLHUP;
+  }
+  pollfds[MAX_SEGMENTS].fd = state->listenFd;
+  pollfds[MAX_SEGMENTS].events = POLLIN;
+
+  int nbuffers = 0;
+  while (state->stop == 0 || (state->stop == 1 && nbuffers > 0)) {
+    if (int error = poll(pollfds, MAX_SEGMENTS+1, 1000000) < 0) {
+      WARN("[Rem Allocator] Poll failed with error %d", error);
+      return NULL;
+    }
+    if (pollfds[MAX_SEGMENTS].revents) {
+      int s = 0;
+      while (segments[s] != NULL && s < MAX_SEGMENTS) s++;
+      if (bootstrapNetAccept(pollfds[MAX_SEGMENTS].fd, &pollfds[s].fd) != ncclSuccess) {
+        pollfds[s].fd = -1;
+      } else {
+        if (s == MAX_SEGMENTS || (remoteAlloc(segments+s, pollfds[s].fd) != ncclSuccess)) {
+          WARN("[Rem Allocator] Allocation failed (segment %d, fd %d)", s, pollfds[s].fd);
+          close(pollfds[s].fd);
+          pollfds[s].fd = -1;
+        } else {
+          printf("Segment %d -> fd %d\n", s, pollfds[s].fd);
+          nbuffers++;
+        }
+      }
+    }
+    for (int s=0; s<MAX_SEGMENTS; s++) {
+      if (pollfds[s].revents & POLLHUP) {
+        if (cudaFree(segments[s]) != cudaSuccess) {
+          WARN("[Rem Allocator] cudaFree %p failed", segments[s]);
+        }
+        segments[s] = NULL;
+        close(pollfds[s].fd);
+        pollfds[s].fd = -1;
+        nbuffers--;
+      }
+    }
+  }
+  for (int s=0; s<MAX_SEGMENTS; s++) {
+    if (segments[s]) cudaFree(segments[s]);
+    close(pollfds[s].fd);
+  }
+  close(state->listenFd);
+  free(state);
   return NULL;
 }
 
-ncclResult_t bootstrapRemAlloc(size_t size, int rank, void* commState, int* id, cudaIpcMemHandle_t* ipc) {
+ncclResult_t bootstrapRemAlloc(size_t size, int rank, void* commState, int* id, cudaIpcMemHandle_t* ipc, void** ptr) {
   struct extState* state = (struct extState*)commState;
   int fd;
   ncclResult_t res;
+  *id = -1;
   NCCLCHECK(connectAddress(&fd, state->peerAllocAddresses+rank));
-  int cmd = CMD_ALLOC;
-  NCCLCHECKGOTO(socketSend(fd, &cmd, sizeof(int)), res, end);
   NCCLCHECKGOTO(socketSend(fd, &size, sizeof(size_t)), res, end);
-  ncclResult_t remoteResult;
-  NCCLCHECKGOTO(socketRecv(fd, &remoteResult, sizeof(ncclResult_t)), res, end);
-  NCCLCHECKGOTO(remoteResult, res, end);
-  NCCLCHECKGOTO(socketRecv(fd, &id, sizeof(int)), res, end);
-  NCCLCHECKGOTO(socketRecv(fd, &ipc, sizeof(cudaIpcMemHandle_t)), res, end);
+  NCCLCHECKGOTO(socketRecv(fd, ipc, sizeof(cudaIpcMemHandle_t)), res, end);
+  NCCLCHECKGOTO(socketRecv(fd, ptr, sizeof(void*)), res, end);
+  printf("Rem Alloc %ld bytes from rank %d -> %p, id %d\n", size, rank, *ptr, fd);
+  *id = fd;
 end:
-  close(fd);
   return res;
 }
 
 ncclResult_t bootstrapRemFree(int id, int rank, void* commState) {
-  struct extState* state = (struct extState*)commState;
-  int fd;
-  ncclResult_t res;
-  NCCLCHECK(connectAddress(&fd, state->peerAllocAddresses+rank));
-  int cmd = CMD_FREE;
-  NCCLCHECKGOTO(socketSend(fd, &cmd, sizeof(int)), res, end);
-  NCCLCHECKGOTO(socketSend(fd, &id, sizeof(size_t)), res, end);
-  ncclResult_t remoteResult;
-  NCCLCHECKGOTO(socketRecv(fd, &remoteResult, sizeof(ncclResult_t)), res, end);
-  NCCLCHECKGOTO(remoteResult, res, end);
-end:
-  close(fd);
-  return res;
+  SYSCHECK(close(id), "close");
+  return ncclSuccess;
 }
 
 ncclResult_t bootstrapInit(ncclUniqueId * id, int rank, int nranks, void** commState) {
@@ -366,8 +376,10 @@ ncclResult_t bootstrapInit(ncclUniqueId * id, int rank, int nranks, void** commS
   // Create the memory allocation service
   NCCLCHECK(ncclCalloc(&state->peerAllocAddresses, nranks));
   memcpy(state->peerAllocAddresses+rank, &bootstrapNetIfAddr, sizeof(union socketAddress));
-  NCCLCHECK(createListenSocket(&state->extAllocFd, state->peerAllocAddresses+rank));
-  pthread_create(&state->allocThread, NULL, ncclRemoteMemAllocationService, *commState);
+  NCCLCHECK(ncclCalloc(&state->allocState, 1));
+  CUDACHECK(cudaGetDevice(&state->allocState->cudaDev));
+  NCCLCHECK(createListenSocket(&state->allocState->listenFd, state->peerAllocAddresses+rank));
+  pthread_create(&state->allocThread, NULL, ncclRemoteMemAllocationService, state->allocState);
   NCCLCHECK(bootstrapAllGather(state, state->peerAllocAddresses, sizeof(union socketAddress)));
 
   TRACE(NCCL_INIT, "rank %d nranks %d - DONE", rank, nranks);
@@ -486,8 +498,7 @@ ncclResult_t bootstrapClose(void* commState) {
   close(state->extListenFd);
   close(state->extRingSendFd);
   close(state->extRingRecvFd);
-  close(state->extAllocFd);
-
+  state->allocState->stop = 1;
   free(state->peerCommAddresses);
   free(state->peerAllocAddresses);
   free(state);
@@ -500,7 +511,7 @@ ncclResult_t bootstrapAbort(void* commState) {
   close(state->extListenFd);
   close(state->extRingSendFd);
   close(state->extRingRecvFd);
-  close(state->extAllocFd);
+  state->allocState->stop = 2;
   free(state->peerCommAddresses);
   free(state->peerAllocAddresses);
   free(state);
