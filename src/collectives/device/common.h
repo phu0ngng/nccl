@@ -43,21 +43,25 @@ static __device__ void load_coll(struct ncclColl* localColl, struct ncclColl* ho
   if (tid == 0) hostColl->active = 0;
 }
 
-extern __device__ volatile uint64_t* ncclShmem;
-
 template <ncclFunc_t FUNCTION, int ALGO, int PROTO, class REDOP, typename T, int UNROLL>
 class ncclFunction {
   public:
   __device__ void run(struct CollectiveArgs* args) {}
 };
 
+struct ncclShmemData {
+  volatile uint64_t data[NCCL_LL128_SHMEM_SIZE];
+  struct ncclColl localColl;
+};
+
+extern __device__ struct ncclShmemData *ncclShmem;
+
 template <ncclFunc_t FUNCTION, int ALGO, int PROTO, class REDOP, typename T, int UNROLL>
 __device__ void ncclKernel(struct ncclColl firstColl, int fIndex)  {
   int tid = threadIdx.x;
   int bid = blockIdx.x;
-  __shared__ volatile uint64_t shmem[NCCL_LL128_SHMEM_SIZE];
-  ncclShmem = shmem;
-  __shared__ struct ncclColl localColl;
+  __shared__ struct ncclShmemData shmem;
+  ncclShmem = &shmem;
 
   auto f = ncclFunction<FUNCTION, ALGO, PROTO, REDOP, T, UNROLL>();
 
@@ -68,7 +72,7 @@ __device__ void ncclKernel(struct ncclColl firstColl, int fIndex)  {
     /* To optimize for latency, (only) the first operation is passed as argument.*/
     c = &firstColl;
   } else {
-    c = &localColl;
+    c = &shmem.localColl;
     load_coll(c, channel->collectives+channel->collFifoHead, tid, comm);
   }
   while (1) {
@@ -87,7 +91,7 @@ __device__ void ncclKernel(struct ncclColl firstColl, int fIndex)  {
     }
 
     /* Load next collective operation*/
-    c = &localColl; /* for bid 0 */
+    c = &shmem.localColl; /* for bid 0 */
     load_coll(c, channel->collectives+nextIndex, tid, comm);
   }
 }

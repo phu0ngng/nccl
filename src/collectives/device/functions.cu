@@ -8,7 +8,7 @@
 #include "collectives.h"
 #include "common.h"
 
-__device__ volatile uint64_t* ncclShmem;
+__device__ struct ncclShmemData* ncclShmem;
 
 #define NCCL_FUNC5(func, algo, redop, type) \
   NCCL_FUNC_NAME(func, algo, LL,     redop, type), \
