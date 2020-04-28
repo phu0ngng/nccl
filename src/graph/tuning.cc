@@ -70,7 +70,7 @@ static const float hwLat [3][NCCL_NUM_ALGORITHMS][NCCL_NUM_PROTOCOLS] =
 };
 
 // LL128 max BW (per channel) for the different collectives
-// ncclCollBroadcast, ncclCollReduce, ncclCollAllGather, ncclCollReduceScatter, ncclCollAllReduce
+// ncclFuncBroadcast, ncclFuncReduce, ncclFuncAllGather, ncclFuncReduceScatter, ncclFuncAllReduce
 static const double ll128MaxBwPerCh[NCCL_NUM_FUNCTIONS] = { 18.8, 12.0, 18.3, 15.2, 16.7 };
 
 ncclResult_t ncclTopoTuneModel(struct ncclComm* comm, int minCompCap, int maxCompCap, struct ncclTopoGraph* treeGraph, struct ncclTopoGraph* ringGraph, struct ncclTopoGraph* collNetGraph) {
@@ -93,15 +93,15 @@ ncclResult_t ncclTopoTuneModel(struct ncclComm* comm, int minCompCap, int maxCom
   for (int a=0; a<NCCL_NUM_ALGORITHMS; a++) hw[a] = comm->nNodes == 1 ? intraHw[a] : NCCL_HW_NET;
 
   for (int coll=0; coll<NCCL_NUM_FUNCTIONS; coll++) {
-    int nsteps = coll == ncclCollAllReduce ? 2*(comm->nRanks-1) :
-      coll == ncclCollReduceScatter || coll == ncclCollAllGather ? comm->nRanks-1 :
+    int nsteps = coll == ncclFuncAllReduce ? 2*(comm->nRanks-1) :
+      coll == ncclFuncReduceScatter || coll == ncclFuncAllGather ? comm->nRanks-1 :
       comm->nRanks;
-    int nInterSteps = coll == ncclCollAllReduce ? 2*(comm->nNodes-1) :
-      coll == ncclCollReduceScatter || coll == ncclCollAllGather ? comm->nNodes-1 :
+    int nInterSteps = coll == ncclFuncAllReduce ? 2*(comm->nNodes-1) :
+      coll == ncclFuncReduceScatter || coll == ncclFuncAllGather ? comm->nNodes-1 :
       comm->nNodes;
 
     for (int a=0; a<NCCL_NUM_ALGORITHMS; a++) {
-      if (coll != ncclCollAllReduce && a != NCCL_ALGO_RING) continue;
+      if (coll != ncclFuncAllReduce && a != NCCL_ALGO_RING) continue;
 
       for (int p=0; p<NCCL_NUM_PROTOCOLS; p++) {
         float speed = comm->nNodes <= 2 || a == NCCL_ALGO_COLLNET ? graphs[a]->speedIntra : graphs[a]->speedInter;
@@ -110,7 +110,7 @@ ncclResult_t ncclTopoTuneModel(struct ncclComm* comm, int minCompCap, int maxCom
         if (minCompCap == 80 && maxCompCap == 80) busBw *= 0.92;
 
         // Various model refinements
-        if (a == NCCL_ALGO_RING && p == NCCL_PROTO_LL)    busBw *= (comm->nNodes > 1 || coll == ncclCollAllReduce || coll == ncclCollReduce) ? 1.0/4.0 : 1.0/3.0;
+        if (a == NCCL_ALGO_RING && p == NCCL_PROTO_LL)    busBw *= (comm->nNodes > 1 || coll == ncclFuncAllReduce || coll == ncclFuncReduce) ? 1.0/4.0 : 1.0/3.0;
         if (a == NCCL_ALGO_RING && p == NCCL_PROTO_LL128) busBw = std::min(busBw * (ppn < 2 ? 0.7 : 0.92 /*120.0/128.0*/), ll128MaxBwPerCh[coll]*graphs[a]->nChannels);
         if (a == NCCL_ALGO_TREE) busBw = std::min(busBw*.9, comm->nNodes > 2 ? 80.0 : 110.0);
         if (a == NCCL_ALGO_TREE && p == NCCL_PROTO_LL) busBw *= 1.0/3.8;
@@ -129,7 +129,7 @@ ncclResult_t ncclTopoTuneModel(struct ncclComm* comm, int minCompCap, int maxCom
         if (comm->nNodes > 1 && p == NCCL_PROTO_LL) intraLat *= 1.8;
         if (a == NCCL_ALGO_RING) {
           float lat = hwLat[hw[a]][a][p];
-          if ((coll == ncclCollReduce || coll == ncclCollBroadcast)) {
+          if ((coll == ncclFuncReduce || coll == ncclFuncBroadcast)) {
             if (ringGraph->sameChannels) {
               comm->latencies[coll][a][p] += lat;
             } else {
@@ -175,7 +175,7 @@ ncclResult_t ncclTopoTuneModel(struct ncclComm* comm, int minCompCap, int maxCom
     }
     if (pEnable == 0) comm->bandwidths[c][a][p] = 0;
     // Only disable algo for Allreduce since others only have one
-    if (c == ncclCollAllReduce && algoEnable[a] == 0) comm->bandwidths[c][a][p] = 0;
+    if (c == ncclFuncAllReduce && algoEnable[a] == 0) comm->bandwidths[c][a][p] = 0;
   }
 
   if (comm->rank == 0) {
@@ -256,7 +256,7 @@ ncclResult_t ncclTopoGetAlgoTime(struct ncclInfo* info, int algorithm, int proto
   int logSize = log2i(info->nBytes>>6);
   if (algorithm == NCCL_ALGO_TREE && logSize < 22) bw *= treeCorrectionFactor[protocol][logSize];
   if (algorithm == NCCL_ALGO_RING && protocol == NCCL_PROTO_SIMPLE && info->comm->nNodes > 1
-      && info->coll == ncclCollAllReduce && info->nBytes >= info->comm->nRanks/16.0*65536) lat *= 1.9; // Plateau effect of ring
+      && info->coll == ncclFuncAllReduce && info->nBytes >= info->comm->nRanks/16.0*65536) lat *= 1.9; // Plateau effect of ring
   *time = lat + (info->nBytes) / (1000 * bw);
   return ncclSuccess;
 }

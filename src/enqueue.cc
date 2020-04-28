@@ -9,58 +9,58 @@
 #include "coll_net.h"
 
 // Only generate inline kernels for LL
-#define NCCL_FUNC5(coll, op, dtype) \
-  (void*)NCCL_KERN_NAME(coll##LL, op, dtype), \
-  (void*)NCCL_KERN_NAME(coll##LL, op, dtype), \
-  (void*)NCCL_KERN_NAME(coll##LL, op, dtype)
+#define NCCL_FUNC5(func, algo, redop, dtype) \
+  (void*)NCCL_KERN_NAME(func, algo, LL, redop, dtype), \
+  (void*)NCCL_KERN_NAME(func, algo, LL, redop, dtype), \
+  (void*)NCCL_KERN_NAME(func, algo, LL, redop, dtype)
 
-#define NCCL_FUNC4(coll, op, dtype) \
-  (void*)NCCL_FUNC5(coll##Tree, op, dtype), \
-  (void*)NCCL_FUNC5(coll##Ring, op, dtype), \
-  (void*)NCCL_FUNC5(coll##CollNet, op, dtype)
+#define NCCL_FUNC4(func, redop, type) \
+  (void*)NCCL_FUNC5(func, TREE,    redop, type), \
+  (void*)NCCL_FUNC5(func, RING,    redop, type), \
+  (void*)NCCL_FUNC5(func, COLLNET, redop, type)
 
 // Must be consistent with ncclDataType_t
-#define NCCL_FUNCS3A(coll, op) \
-  (void*)NCCL_FUNC4(coll, op,  i8), \
-  (void*)NCCL_FUNC4(coll, op,  u8), \
-  (void*)NCCL_FUNC4(coll, op, i32), \
-  (void*)NCCL_FUNC4(coll, op, u32), \
-  (void*)NCCL_FUNC4(coll, op, i64), \
-  (void*)NCCL_FUNC4(coll, op, u64), \
-  (void*)NCCL_FUNC4(coll, op, f16), \
-  (void*)NCCL_FUNC4(coll, op, f32), \
-  (void*)NCCL_FUNC4(coll, op, f64)
-#define NCCL_FUNCS3B(coll, op) \
-  (void*)NCCL_FUNC4(coll, op,  i8), \
-  (void*)NCCL_FUNC4(coll, op,  i8), \
-  (void*)NCCL_FUNC4(coll, op,  i8), \
-  (void*)NCCL_FUNC4(coll, op,  i8), \
-  (void*)NCCL_FUNC4(coll, op,  i8), \
-  (void*)NCCL_FUNC4(coll, op,  i8), \
-  (void*)NCCL_FUNC4(coll, op,  i8), \
-  (void*)NCCL_FUNC4(coll, op,  i8), \
-  (void*)NCCL_FUNC4(coll, op,  i8)
+#define NCCL_FUNCS3A(func, redop) \
+  (void*)NCCL_FUNC4(func, redop, int8_t), \
+  (void*)NCCL_FUNC4(func, redop, uint8_t), \
+  (void*)NCCL_FUNC4(func, redop, int32_t), \
+  (void*)NCCL_FUNC4(func, redop, uint32_t), \
+  (void*)NCCL_FUNC4(func, redop, int64_t), \
+  (void*)NCCL_FUNC4(func, redop, uint64_t), \
+  (void*)NCCL_FUNC4(func, redop, half), \
+  (void*)NCCL_FUNC4(func, redop, float), \
+  (void*)NCCL_FUNC4(func, redop, double)
+#define NCCL_FUNCS3B(func, redop) \
+  (void*)NCCL_FUNC4(func, redop, int8_t), \
+  (void*)NCCL_FUNC4(func, redop, int8_t), \
+  (void*)NCCL_FUNC4(func, redop, int8_t), \
+  (void*)NCCL_FUNC4(func, redop, int8_t), \
+  (void*)NCCL_FUNC4(func, redop, int8_t), \
+  (void*)NCCL_FUNC4(func, redop, int8_t), \
+  (void*)NCCL_FUNC4(func, redop, int8_t), \
+  (void*)NCCL_FUNC4(func, redop, int8_t), \
+  (void*)NCCL_FUNC4(func, redop, int8_t)
 
 // Must be consistent with ncclRedOp_t -- but we only generate kernel for sums.
-#define NCCL_FUNCS2A(coll) \
-  NCCL_FUNCS3A(coll, sum), \
-  NCCL_FUNCS3A(coll, sum), \
-  NCCL_FUNCS3A(coll, sum), \
-  NCCL_FUNCS3A(coll, sum)
-#define NCCL_FUNCS2B(coll) \
-  NCCL_FUNCS3B(coll, copy), \
-  NCCL_FUNCS3B(coll, copy), \
-  NCCL_FUNCS3B(coll, copy), \
-  NCCL_FUNCS3B(coll, copy)
+#define NCCL_FUNCS2A(func) \
+  NCCL_FUNCS3A(func, Sum), \
+  NCCL_FUNCS3A(func, Sum), \
+  NCCL_FUNCS3A(func, Sum), \
+  NCCL_FUNCS3A(func, Sum)
+#define NCCL_FUNCS2B(func) \
+  NCCL_FUNCS3B(func, Sum), \
+  NCCL_FUNCS3B(func, Sum), \
+  NCCL_FUNCS3B(func, Sum), \
+  NCCL_FUNCS3B(func, Sum)
 
 // Must be consistent with the ncclFuncSet enum
 static void* const ncclKerns[1+NCCL_NUM_FUNCTIONS*ncclNumOps*ncclNumTypes*NCCL_NUM_ALGORITHMS*NCCL_NUM_PROTOCOLS] = {
-  (void*)NCCL_KERN_NAME(ncclSendRecv, copy, i8),
-  NCCL_FUNCS2B(ncclBroadcast),
-  NCCL_FUNCS2A(ncclReduce),
-  NCCL_FUNCS2B(ncclAllGather),
-  NCCL_FUNCS2A(ncclReduceScatter),
-  NCCL_FUNCS2A(ncclAllReduce)
+  (void*)NCCL_KERN_NAME(SendRecv, RING, SIMPLE, Sum, int8_t),
+  NCCL_FUNCS2B(Broadcast),
+  NCCL_FUNCS2A(Reduce),
+  NCCL_FUNCS2B(AllGather),
+  NCCL_FUNCS2A(ReduceScatter),
+  NCCL_FUNCS2A(AllReduce)
 };
 
 /*****************************************************************************/
@@ -296,14 +296,14 @@ static ncclResult_t getAlgoInfo(struct ncclInfo* info) {
 
 static ncclResult_t getPatternInfo(struct ncclInfo* info) {
   switch (info->coll) {
-    case ncclCollBroadcast:
+    case ncclFuncBroadcast:
       info->pattern = info->algorithm == NCCL_ALGO_TREE ? ncclPatternTreeDown : ncclPatternPipelineFrom; break;
-    case ncclCollReduce:
+    case ncclFuncReduce:
       info->pattern = info->algorithm == NCCL_ALGO_TREE ? ncclPatternTreeUp : ncclPatternPipelineTo; break;
-    case ncclCollReduceScatter:
-    case ncclCollAllGather:
+    case ncclFuncReduceScatter:
+    case ncclFuncAllGather:
       info->pattern = ncclPatternRing; break;
-    case ncclCollAllReduce:
+    case ncclFuncAllReduce:
       info->pattern = info->algorithm == NCCL_ALGO_COLLNET ? ncclPatternCollTreeUp : info->algorithm == NCCL_ALGO_TREE ? ncclPatternTreeUpDown : ncclPatternRingTwice; break;
     default:
       WARN("Unknown pattern for collective %d algorithm %d", info->coll, info->algorithm);
@@ -339,7 +339,7 @@ static ncclResult_t computeColl(struct ncclInfo* info /* input */, struct ncclCo
   coll->args.comm = info->comm->devComm;
   coll->args.opCount = info->comm->opCount;
 
-  if (info->coll == ncclCollSendRecv) {
+  if (info->coll == ncclFuncSendRecv) {
     coll->args.p2p.sendCount = info->sendbytes;
     coll->args.p2p.recvCount = info->recvbytes;
     coll->args.p2p.delta = info->delta;
@@ -428,7 +428,7 @@ static ncclResult_t checkSetStream(struct ncclInfo* info) {
 }
 
 ncclResult_t ncclSaveKernel(struct ncclInfo* info) {
-  if (info->comm->nRanks == 1 && info->coll != ncclCollSendRecv) {
+  if (info->comm->nRanks == 1 && info->coll != ncclFuncSendRecv) {
     if (info->sendbuff != info->recvbuff)
       CUDACHECK(cudaMemcpyAsync(info->recvbuff, info->sendbuff, info->nBytes, cudaMemcpyDeviceToDevice, info->stream));
     return ncclSuccess;
@@ -441,11 +441,11 @@ ncclResult_t ncclSaveKernel(struct ncclInfo* info) {
 
   info->comm->myParams->blockDim.x = std::max<unsigned>(info->comm->myParams->blockDim.x, info->nThreads);
 
-  int nChannels = info->coll == ncclCollSendRecv ? 1 : coll.args.coll.nChannels;
+  int nChannels = info->coll == ncclFuncSendRecv ? 1 : coll.args.coll.nChannels;
   int nSubChannels = (info->pattern == ncclPatternCollTreeUp || info->pattern == ncclPatternCollTreeDown) ? 2 : 1;
 
   for (int bid=0; bid<nChannels*nSubChannels; bid++) {
-    int channelId = (info->coll == ncclCollSendRecv) ? info->channelId :
+    int channelId = (info->coll == ncclFuncSendRecv) ? info->channelId :
       info->comm->myParams->gridDim.x % info->comm->nChannels;
     struct ncclChannel* channel = info->comm->channels+channelId;
 
@@ -461,7 +461,7 @@ ncclResult_t ncclSaveKernel(struct ncclInfo* info) {
       info->pattern = (channelId < info->comm->nChannels/nSubChannels) ? ncclPatternCollTreeUp : ncclPatternCollTreeDown;
     }
 
-    if (info->coll == ncclCollSendRecv) {
+    if (info->coll == ncclFuncSendRecv) {
       info->comm->myParams->gridDim.x = std::max<unsigned>(info->comm->myParams->gridDim.x, channelId+1);
       NCCLCHECK(ncclProxySaveP2p(info, channel));
     } else {
@@ -474,7 +474,7 @@ ncclResult_t ncclSaveKernel(struct ncclInfo* info) {
     while (activePtr[0] != 0) sched_yield();
 
     memcpy(c, &coll, sizeof(struct ncclColl));
-    if (info->coll != ncclCollSendRecv) c->args.coll.bid = bid % coll.args.coll.nChannels;
+    if (info->coll != ncclFuncSendRecv) c->args.coll.bid = bid % coll.args.coll.nChannels;
 
     c->active = 1;
     opIndex = (opIndex+1)%NCCL_MAX_OPS;
@@ -543,7 +543,7 @@ ncclResult_t ncclEnqueueCheck(struct ncclInfo* info) {
         info->opName, info->comm->opCount, info->sendbuff, info->recvbuff, info->count,
         info->datatype, info->op, info->root, info->comm, info->comm->nRanks, info->stream);
 
-    if (info->coll == ncclCollSendRecv) { //p2p stored separately
+    if (info->coll == ncclFuncSendRecv) { //p2p stored separately
       NCCLCHECKGOTO(ncclSaveP2p(info), ret, end);
     } else {
       NCCLCHECKGOTO(ncclSaveKernel(info), ret, end);

@@ -12,7 +12,7 @@
 #include <stdint.h>
 
 #define NCCL_NUM_FUNCTIONS 5 //p2p not including as of now
-typedef enum { ncclCollBroadcast, ncclCollReduce, ncclCollAllGather, ncclCollReduceScatter, ncclCollAllReduce, ncclCollSendRecv} ncclFunc_t;
+typedef enum { ncclFuncBroadcast, ncclFuncReduce, ncclFuncAllGather, ncclFuncReduceScatter, ncclFuncAllReduce, ncclFuncSendRecv} ncclFunc_t;
 extern const char* ncclFuncStr[NCCL_NUM_FUNCTIONS];
 
 #define NCCL_NUM_ALGORITHMS 3 // Tree/Ring/CollNet

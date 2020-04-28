@@ -29,7 +29,7 @@ int nGpus = -1;
 int nNodes = -1;
 char* platform = NULL;
 const char* platforms[] = { "DGX-1V", "DGX-2V", "Luna" };
-ncclFunc_t function = ncclCollAllReduce;
+ncclFunc_t function = ncclFuncAllReduce;
 
 int compactMode = -1;
 int compareMode = 0;
