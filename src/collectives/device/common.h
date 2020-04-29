@@ -51,6 +51,8 @@ class ncclFunction {
 
 struct ncclShmemData {
   volatile uint64_t data[NCCL_LL128_SHMEM_SIZE];
+  void* srcs[NCCL_MAX_TREE_ARITY+1];
+  void* dsts[NCCL_MAX_TREE_ARITY+1];
   struct ncclColl localColl;
 };
 

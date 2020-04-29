@@ -64,6 +64,9 @@ class ncclPrimitives {
   T* sendBuff[NSEND];
   struct ncclDevComm* comm;
 
+  const T** srcs;
+  T** dsts;
+
   inline __device__ int recvOffset(int i) { return (recvStep[i]%NCCL_STEPS)*stepSize; }
   inline __device__ int sendOffset(int i) { return (sendStep[i]%NCCL_STEPS)*stepSize; }
   inline __device__ const T* recvPtr(int i) { return ((const T*)recvBuff[i])+recvOffset(i); }
@@ -144,7 +147,7 @@ class ncclPrimitives {
 
   template <int DIRECTRECV>
   inline __device__ const T* directRecvPtr(int i, ssize_t directOffset) {
-    return DIRECTRECV && recvDirectBuff[i] ? recvDirectBuff[i]+directOffset : recvPtr(i);
+    return DIRECTRECV && i && recvDirectBuff[i] ? recvDirectBuff[i]+directOffset : recvPtr(i);
   }
 
   template <int DIRECTSEND>
@@ -169,19 +172,10 @@ class ncclPrimitives {
     int sliceSize = stepSize*SLICESTEPS;
     int dataSize = max(DIVUP(nelem, 16*SLICESPERCHUNK)*16, sliceSize/32);
 
-    const T* srcs[RECV*NRECV+SRC];
-    srcs[0] = SRC ? srcPtr : directRecvPtr<DIRECTRECV>(0, directOffset);
-    if (RECV) {
-      if (SRC) srcs[1] = recvPtr(0);
-      for (int i=1; i<NRECV && i<nrecv; i++) srcs[SRC+i] = recvPtr(i);
-    }
-
-    T* dsts[SEND*NSEND+DST];
-    dsts[0] = DST ? dstPtr : directSendPtr<DIRECTSEND>(0, directOffset);
-    if (SEND) {
-      if (DST) dsts[1] = directSendPtr<DIRECTSEND>(0, directOffset);
-      for (int i=1; i<NSEND && i<nsend; i++) dsts[DST+i] = directSendPtr<DIRECTSEND>(i, directOffset);
-    }
+    if (tid < RECV*nrecv) srcs[tid] = directRecvPtr<DIRECTRECV>(tid, directOffset);
+    if (SRC && tid == RECV*nrecv) srcs[tid] = srcPtr;
+    if (tid < SEND*nsend) dsts[tid] = directSendPtr<DIRECTSEND>(tid, directOffset);
+    if (DST && tid == SEND*nsend) dsts[tid] = dstPtr;
 
     bool syncThread = tid >= nthreads;
 
@@ -202,6 +196,10 @@ class ncclPrimitives {
             ReduceOrCopyMulti<UNROLL, FUNC, T, RECV+SRC, RECV*NRECV+SRC, SEND+DST, SEND*NSEND+DST>(tid, nthreads, RECV*nrecv+SRC, srcs, SEND*nsend+DST, dsts, realSize);
           }
         }
+        if (tid < RECV*nrecv) srcs[tid] += directRecvInc<DIRECTRECV>(tid, realSize, sliceSize);
+        if (SRC && tid == RECV*nrecv) srcs[tid] += realSize;
+        if (tid < SEND*nsend) dsts[tid] += directSendInc<DIRECTSEND>(tid, realSize, sliceSize);
+        if (DST && tid == SEND*nsend) dsts[tid] += realSize;
       }
       barrier();
       FOR_SEND(incSend);
@@ -214,10 +212,6 @@ class ncclPrimitives {
         }
         if (RECV) postRecv();
       }
-      srcs[0] += SRC ? realSize : directRecvInc<DIRECTRECV>(0, realSize, sliceSize);
-      for (int i=1-SRC; i<RECV*NRECV; i++) srcs[SRC+i] += sliceSize;
-      dsts[0] += DST ? realSize : directSendInc<DIRECTSEND>(0, realSize, sliceSize);
-      for (int i=1-DST; i<SEND*NSEND; i++) dsts[DST+i] += directSendInc<DIRECTSEND>(i, realSize, sliceSize);
       offset += realSize;
     }
   }
@@ -295,7 +289,7 @@ class ncclPrimitives {
  public:
   __device__ __forceinline__
   ncclPrimitives(const int tid, const int nthreads, int* recvPeers, int* sendPeers, T* directBuff, int stepSize, struct ncclChannel* channel, struct ncclDevComm* comm, const uint64_t opCount)
-    : comm(comm), tid(tid), nthreads(nthreads), wid(tid%WARP_SIZE), stepSize(stepSize), opCount(opCount) {
+    : comm(comm), tid(tid), nthreads(nthreads), wid(tid%WARP_SIZE), stepSize(stepSize), opCount(opCount), srcs((const T**)ncclShmem->srcs), dsts((T**)ncclShmem->dsts) {
     // Make sure step is updated before we read it.
     barrier();
 
