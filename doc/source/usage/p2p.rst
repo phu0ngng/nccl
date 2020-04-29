@@ -10,7 +10,7 @@ Any point-to-point communication needs two NCCL calls : a call to :c:func:`ncclS
 rank and a corresponding :c:func:`ncclRecv` on the other rank, with the same count and data
 type.
 
-Multiple calls to :c:func:`ncclSend` and :c:func:`ncclRecv` and targeting different peers
+Multiple calls to :c:func:`ncclSend` and :c:func:`ncclRecv` targeting different peers
 can be fused together with :c:func:`ncclGroupStart` and :c:func:`ncclGroupEnd` to form more
 complex communication patterns such as one-to-all (scatter), all-to-one (gather),
 all-to-all or communication with neighbors in a N-dimensional space.
@@ -21,7 +21,7 @@ each other. It is therefore important to merge calls that need to progress concu
 avoid deadlocks.
 
 Below are a few examples of classic point-to-point communication patterns used by parallel
-applications using MPI. NCCL semantics allow for all variants with different sizes, 
+applications. NCCL semantics allow for all variants with different sizes,
 datatypes, and buffers, per rank.
 
 Sendrecv
