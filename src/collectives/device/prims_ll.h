@@ -196,7 +196,7 @@ class ncclLLPrimitives {
       sendConnHeadPtr = sendConn->head;
       sendConnHeadCache = *sendConnHeadPtr;
       sendConnHead = sendConn->step;
-      sendConnFifoPtr = sendConn->fifo;
+      sendConnFifoPtr = sendConn->sizesFifo;
       *(sendConn->opCountLoc) = opCount;
     }
   }

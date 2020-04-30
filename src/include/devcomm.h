@@ -87,9 +87,11 @@ struct ncclConnInfo {
   uint64_t *opCountRem; // opCount of remote rank
 
   int direct;         // Direct communication
+  int shared;         // Buffers are shared
   void **ptrExchange; // Pointer exchange for direct communication
 
-  int *fifo;          // Size fifo for proxy
+  int *sizesFifo;     // Sizes fifo from GPU to proxy
+  void* *ptrsFifo;      // Buffer fifo from proxy to GPU
 
   uint64_t step;      // Keep where we are
   uint64_t llLastCleaning;

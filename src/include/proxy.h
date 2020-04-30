@@ -28,8 +28,9 @@ struct ncclProxyArgs {
   int state;   // add component before this line -- it is left out during initialization
 
   // Internal state
-  uint64_t head;
-  uint64_t tail;
+  uint64_t posted;
+  uint64_t transmitted;
+  uint64_t done;
   uint64_t end;
   void* requests[NCCL_STEPS];
   int idle;
@@ -38,6 +39,17 @@ struct ncclProxyArgs {
   pthread_mutex_t mutex;
   struct ncclProxyArgs* next;
   struct ncclProxyArgs* nextPeer;
+  struct ncclProxyArgs** proxyAppendPtr;
+};
+
+struct ncclProxySharedBuffers {
+  int nslots;
+  int slotSize;
+  char* cudaBuff;
+  int* cudaUsed;
+  char* hostBuff;
+  int* hostUsed;
+  struct ncclProxyArgs* proxyAppend[2*MAXCHANNELS]; // Separate send and recv
 };
 
 struct ncclProxyPool;
@@ -45,6 +57,7 @@ struct ncclProxyState {
   pthread_cond_t cond;
   pthread_mutex_t mutex;
   bool stop;
+  struct ncclProxySharedBuffers* sharedBuffs;
   struct ncclProxyArgs* ops;
   struct ncclProxyArgs* pool;
   struct ncclProxyPool* pools;
@@ -63,6 +76,11 @@ ncclResult_t ncclProxySaveP2p(struct ncclInfo* info, struct ncclChannel* channel
 ncclResult_t ncclProxyStart(struct ncclComm* comm);
 ncclResult_t ncclProxyCreate(struct ncclComm* comm);
 ncclResult_t ncclProxyDestroy(struct ncclComm* comm);
+
+ncclResult_t ncclProxySharedBuffersInit(struct ncclComm* comm, int cuda, int* size, char** ptr);
+ncclResult_t ncclProxySharedBuffersAlloc(struct ncclComm* comm, int cuda, int size, char** ptr);
+ncclResult_t ncclProxySharedBuffersFree(struct ncclComm* comm, int cuda, int size, char* ptr);
+ncclResult_t ncclProxySharedBuffersDestroy(struct ncclComm* comm);
 
 #include <unistd.h>
 

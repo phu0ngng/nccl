@@ -669,3 +669,8 @@ ncclResult_t ncclTopoSetAffinity(struct ncclTopoSystem* system, int rank) {
   }
   return ncclSuccess;
 }
+
+ncclResult_t ncclTopoGetNetCount(struct ncclTopoSystem* system, int* count) {
+  *count = system->nodes[NET].count;
+  return ncclSuccess;
+}

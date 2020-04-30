@@ -6,6 +6,7 @@
 
 #include "comm.h"
 #include "info.h"
+#include "graph.h"
 
 #define RECV 0
 #define SEND 1
@@ -59,11 +60,12 @@ static ncclResult_t allocateArgs(struct ncclComm* comm, struct ncclProxyArgs** a
   return ncclSuccess;
 }
 
-static void ProxyAppend(struct ncclConnector* connector, struct ncclProxyArgs* args) {
-  struct ncclComm* comm = connector->comm;
-  struct ncclProxyState* state = &comm->proxyState;
+static void ProxyAppend(struct ncclProxyState* state, struct ncclProxyArgs* args) {
   pthread_mutex_lock(&state->mutex);
-  if (connector->proxyAppend == NULL) {
+  struct ncclProxyArgs* proxyAppend = *args->proxyAppendPtr;
+  if (proxyAppend) {
+    proxyAppend->nextPeer = args;
+  } else {
     // Nothing running for that peer. Add to the circular list
     if (state->ops == NULL) {
       // Create the list
@@ -74,13 +76,8 @@ static void ProxyAppend(struct ncclConnector* connector, struct ncclProxyArgs* a
       args->next = state->ops->next;
       state->ops->next = args;
     }
-    connector->proxyAppend = args;
-  } else {
-    // There is an active operation already for that peer.
-    // Add it to the per-peer list
-    connector->proxyAppend->nextPeer = args;
-    connector->proxyAppend = args;
   }
+  *(args->proxyAppendPtr) = args;
   pthread_mutex_unlock(&state->mutex);
 }
 
@@ -103,7 +100,16 @@ static ncclResult_t SaveProxy(int peer, struct ncclProxyArgs* args) {
   op->connector = connector;
   op->progress = connector->transportComm->proxy;
   op->state = ncclProxyOpReady;
-  ProxyAppend(connector, op);
+
+
+  struct ncclProxyState* state = &connector->comm->proxyState;
+
+  op->proxyAppendPtr =
+    connector->conn.shared ?
+    state->sharedBuffs->proxyAppend+2*args->channel->id+type : // Shared buffers
+    &connector->proxyAppend;  // Dedicated buffers
+
+  ProxyAppend(state, op);
   return ncclSuccess;
 }
 
@@ -211,8 +217,7 @@ void* persistentThread(void *comm_) {
           next->next = next;
         }
       } else {
-        // Remove next from circular list
-        next->connector->proxyAppend = NULL;
+        *(next->proxyAppendPtr) = NULL;
         if (op != freeOp) {
           next = next->next;
           op->next = next;
@@ -246,6 +251,82 @@ ncclResult_t ncclProxyStart(struct ncclComm* comm) {
   return ncclSuccess;
 }
 
+NCCL_PARAM(ProxySharedBuffersCount, "SHARED_BUFF_COUNT", -2);
+
+ncclResult_t ncclProxySharedBuffersInit(struct ncclComm* comm, int cuda, int* size, char** ptr) {
+  struct ncclProxySharedBuffers* state = comm->proxyState.sharedBuffs;
+  if (state == NULL) {
+    NCCLCHECK(ncclCalloc(&state, 1));
+    comm->proxyState.sharedBuffs = state;
+    state->nslots = ncclParamProxySharedBuffersCount();
+    if (state->nslots == -2)  {
+      int netCount;
+      NCCLCHECK(ncclTopoGetNetCount(comm->topo, &netCount));
+      state->nslots = NCCL_STEPS*2*comm->nChannels*netCount;
+    }
+    state->slotSize = comm->buffSizes[NCCL_PROTO_SIMPLE]/NCCL_STEPS;
+  }
+
+  if (cuda && state->cudaBuff == NULL) {
+    NCCLCHECK(ncclCudaCalloc(&state->cudaBuff, state->nslots*state->slotSize));
+    NCCLCHECK(ncclCalloc(&state->cudaUsed, state->nslots));
+  } else if (state->hostBuff == NULL) {
+    NCCLCHECK(ncclCudaHostCalloc(&state->hostBuff, state->nslots*state->slotSize));
+    NCCLCHECK(ncclCalloc(&state->hostUsed, state->nslots));
+  }
+  char* buff = cuda ? state->cudaBuff : state->hostBuff;
+
+  *size = state->slotSize*state->nslots;
+  *ptr = buff;
+  return ncclSuccess;
+}
+
+ncclResult_t ncclProxySharedBuffersAlloc(struct ncclComm* comm, int cuda, int size, char** ptr) {
+  struct ncclProxySharedBuffers* state = comm->proxyState.sharedBuffs;
+  int* used = cuda ? state->cudaUsed : state->hostUsed;
+  char* buff = cuda ? state->cudaBuff : state->hostBuff;
+  if (buff == NULL) return ncclInternalError;
+  int firstSlot = 0;
+  for (int i=0; i<state->nslots; i++) {
+    if (used[i] == 0) {
+      if ((i+1-firstSlot)*state->slotSize >= size) {
+        for (int slot=firstSlot; slot<=i; slot++) used[slot] = 1;
+        *ptr = buff+state->slotSize*firstSlot;
+        return ncclSuccess;
+      }
+    } else firstSlot++;
+  }
+  *ptr = NULL;
+  WARN("Could not allocate shared buffer (%d total)", state->nslots);
+  return ncclInternalError;
+}
+
+ncclResult_t ncclProxySharedBuffersFree(struct ncclComm* comm, int cuda, int size, char* ptr) {
+  struct ncclProxySharedBuffers* state = comm->proxyState.sharedBuffs;
+  int nslots = DIVUP(size, state->slotSize);
+  char* buff = cuda ? state->cudaBuff : state->hostBuff;
+  int firstSlot = (ptr-buff)/state->slotSize;
+  if (firstSlot < 0 || firstSlot >= state->nslots) {
+    WARN("Error freeing shared buffer : freeing ptr %p size %d (start %p slot size %d nslots %d)\n", ptr, size, buff, state->slotSize, state->nslots);
+    return ncclInternalError;
+  }
+  int* used = cuda ? state->cudaUsed : state->hostUsed;
+  for (int slot=firstSlot; slot<firstSlot+nslots; slot++) used[slot] = 0;
+  return ncclSuccess;
+}
+
+ncclResult_t ncclProxySharedBuffersDestroy(struct ncclComm* comm) {
+  struct ncclProxySharedBuffers* state = comm->proxyState.sharedBuffs;
+  if (state) {
+    CUDACHECK(cudaFree(state->cudaBuff));
+    free(state->cudaUsed);
+    NCCLCHECK(ncclCudaHostFree(state->hostBuff));
+    free(state->hostUsed);
+    free(state);
+  }
+  return ncclSuccess;
+}
+
 ncclResult_t ncclProxyCreate(struct ncclComm* comm) {
   if (!comm->proxyThread) {
     comm->proxyState.cond = PTHREAD_COND_INITIALIZER;
@@ -275,6 +356,8 @@ ncclResult_t ncclProxyDestroy(struct ncclComm* comm) {
     proxyState->pools = next;
   }
   pthread_mutex_unlock(&state->mutex);
+
+  NCCLCHECK(ncclProxySharedBuffersDestroy(comm));
 
   return ncclSuccess;
 }

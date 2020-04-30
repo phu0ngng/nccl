@@ -335,11 +335,11 @@ class ncclLL128Primitives {
       sendConnHeadPtr = sendConn->head;
       sendConnHeadCache = *sendConnHeadPtr;
       sendConnHead = sendConn->step;
-      sendConnFifoPtr = sendConn->fifo;
+      sendConnFifoPtr = sendConn->sizesFifo;
       *(sendConn->opCountLoc) = opCount;
     }
     if (tid >= nthreads-WARP_SIZE && wid<nsend) {
-      if (sendConn->fifo) {
+      if (sendConn->sizesFifo) {
         sendConnTailPtr = sendConn->tail;
         sendConnTail = sendConn->step;
       }
