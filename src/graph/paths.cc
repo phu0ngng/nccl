@@ -452,11 +452,15 @@ void ncclTopoFree(struct ncclTopoSystem* system) {
   free(system);
 }
 
-static ncclResult_t ncclTopoGetNchannels(struct ncclTopoSystem* system, int rank, int peerRank, int* nChannels) {
-  int g, peer;
-  NCCLCHECK(ncclTopoRankToIndex(system, rank, &g));
+static ncclResult_t ncclTopoGetNchannels(struct ncclTopoSystem* system, int g /*local gpu index*/, int peerRank, int* nChannels) {
+  int peer;
   struct ncclTopoLinkList* path = NULL;
   if (ncclTopoRankToIndex(system, peerRank, &peer) == ncclSuccess) {
+    // Same rank
+    if (g == peer) {
+      *nChannels = -1;
+      return ncclSuccess;
+    }
     // Local rank
     path = system->nodes[GPU].nodes[peer].paths[GPU]+g;
     if (path->type == PATH_NVL) {
@@ -486,11 +490,13 @@ ncclResult_t ncclTopoComputeP2pChannels(struct ncclComm* comm) {
   comm->p2pnChannels = std::min(comm->nChannels, (int)ncclParamMaxP2pNChannels());
   comm->p2pnChannels = std::max(comm->p2pnChannels, (int)ncclParamMinP2pNChannels());
   int minChannels = comm->p2pnChannels;
-  for (int r=0; r<comm->nRanks; r++) {
-    int nChannels;
-    if (r == comm->rank) continue;
-    NCCLCHECK(ncclTopoGetNchannels(comm->topo, comm->rank, r, &nChannels));
-    minChannels = std::min(minChannels, nChannels);
+  // We need to loop through all local GPUs to have a global picture
+  for (int g=0; g<comm->topo->nodes[GPU].count; g++) {
+    for (int r=0; r<comm->nRanks; r++) {
+      int nChannels;
+      NCCLCHECK(ncclTopoGetNchannels(comm->topo, g, r, &nChannels));
+      if (nChannels >= 0) minChannels = std::min(minChannels, nChannels);
+    }
   }
 
   // Round to next pow2 nChannelsPerPeer and nChannels
