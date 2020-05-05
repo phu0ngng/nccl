@@ -17,7 +17,7 @@ pthread_mutex_t ncclDebugLock = PTHREAD_MUTEX_INITIALIZER;
 
 void ncclDebugInit() {
   pthread_mutex_lock(&ncclDebugLock);
-  if (ncclDebugLevel != -1) return;
+  if (ncclDebugLevel != -1) { pthread_mutex_unlock(&ncclDebugLock); return; }
   const char* nccl_debug = getenv("NCCL_DEBUG");
   if (nccl_debug == NULL) {
     ncclDebugLevel = NCCL_LOG_NONE;
@@ -60,6 +60,8 @@ void ncclDebugInit() {
         mask = NCCL_GRAPH;
       } else if (strcasecmp(subsys, "TUNING") == 0) {
         mask = NCCL_TUNING;
+      } else if (strcasecmp(subsys, "ENV") == 0) {
+        mask = NCCL_ENV;
       } else if (strcasecmp(subsys, "ALL") == 0) {
         mask = NCCL_ALL;
       }

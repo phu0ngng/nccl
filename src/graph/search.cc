@@ -636,6 +636,7 @@ ncclResult_t ncclTopoCompute(ncclTopoSystem* system, struct ncclTopoGraph* graph
 
   char* str = getenv("NCCL_GRAPH_FILE");
   if (str) {
+    INFO(NCCL_ENV, "NCCL_GRAPH_FILE set by environment to %s", str);
     struct ncclXml* xml;
     NCCLCHECK(ncclCalloc(&xml, 1));
     NCCLCHECK(ncclTopoGetXmlGraphFromFile(str, xml));
@@ -806,6 +807,7 @@ ncclResult_t ncclTopoPrintGraph(struct ncclTopoSystem* system, struct ncclTopoGr
 ncclResult_t ncclTopoDumpGraphs(struct ncclTopoSystem* system, int ngraphs, struct ncclTopoGraph** graphs) {
   char* str = getenv("NCCL_GRAPH_DUMP_FILE");
   if (str) {
+    INFO(NCCL_ENV, "NCCL_GRAPH_DUMP_FILE set by environment to %s", str);
     struct ncclXml* xml;
     NCCLCHECK(ncclCalloc(&xml, 1));
     NCCLCHECK(ncclTopoGetXmlFromGraphs(ngraphs, graphs, system, xml));
