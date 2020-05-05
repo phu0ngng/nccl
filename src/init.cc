@@ -427,6 +427,7 @@ extern struct ncclTransport collNetTransport;
 // All ranks must participate in collNetSetup call
 // type: 0 for send, 1 for recv
 // return: 0 - unsupported, 1 - supported
+// We do not NCCLCHECK this call because we would fall back to P2P network in case CollNet setup fails
 static int collNetSetup(struct ncclComm* comm, struct ncclTopoGraph* collNetGraph, struct ncclChannel* channel, int rank, int nranks,  int masterRank, int masterPeer, int nMasters, int type) {
   int rankInCollNet = -1;
   int supported = 0;
@@ -498,7 +499,7 @@ static int collNetSetup(struct ncclComm* comm, struct ncclTopoGraph* collNetGrap
   if (isMaster && type == 1) {
     sendrecvExchange.collNetRank = rankInCollNet;
     memcpy(&sendrecvExchange.connect, masterConnects+rankInCollNet, sizeof(struct ncclConnect));
-    NCCLCHECK(bootstrapSend(comm->bootstrap, masterPeer, &sendrecvExchange, sizeof(sendrecvExchange)));
+    NCCLCHECKGOTO(bootstrapSend(comm->bootstrap, masterPeer, &sendrecvExchange, sizeof(sendrecvExchange)), res, cleanup);
     INFO(NCCL_INIT, "CollNet [recv] : rank %d collNetRank %d collNetNranks %d sent connect to rank %d", rank, rankInCollNet, nMasters, masterPeer);
   }
   if (ret > 0) {
