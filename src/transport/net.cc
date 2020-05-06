@@ -413,7 +413,9 @@ ncclResult_t netRecvProxy(struct ncclProxyArgs* args) {
     if (args->transmitted > args->done) {
       volatile uint64_t* sendHead = &resources->sendMem->head;
       uint64_t done = *sendHead;
-      while (done > args->done) {
+      while (done > args->done &&
+          // LL and LL128 can acknowledge 0-bytes send before they even happen. Don't go past what we transmitted.
+          args->transmitted > args->done) {
         if (resources->shared) {
           char* ptr = (char*)resources->recvMem->ptrsFifo[args->done%NCCL_STEPS];
           NCCLCHECK(ncclProxySharedBuffersFree(args->connector->comm, resources->useGdr, stepSize*args->sliceSteps, ptr));
