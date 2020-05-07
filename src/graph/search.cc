@@ -71,7 +71,7 @@ static ncclResult_t followPath(struct ncclTopoLinkList* path, struct ncclTopoNod
     struct ncclTopoLink* revLink = NULL;
     float fwSpeed = link->type == LINK_PCI ? pciSpeed : speed;
     float revSpeed = 0;
-    if (link->remNode->type == GPU && start->type != GPU) {
+    if (link->remNode->type == GPU && link->remNode->gpu.cudaCompCap < 80 && start->type != GPU) {
       if (revLink == NULL) NCCLCHECK(findRevLink(node, link->remNode, &revLink));
       revSpeed += fwSpeed/8;
     }
