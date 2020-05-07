@@ -86,6 +86,7 @@ ncclResult_t ncclTopoTuneModel(struct ncclComm* comm, int minCompCap, int maxCom
 
   if (comm->nRanks <= 1) return ncclSuccess;
 
+  int ampere = minCompCap == 80 && maxCompCap == 80 ? 1 : 0;
   float ppn = (float)comm->nRanks / comm->nNodes; // if ppn < 2, then we are sending/receiving at the same GPU through the NIC, apply some bw discount
   struct ncclTopoGraph* graphs[NCCL_NUM_ALGORITHMS] = { treeGraph, ringGraph, collNetGraph };
   int intraHw[NCCL_NUM_ALGORITHMS], hw[NCCL_NUM_ALGORITHMS];
@@ -107,12 +108,15 @@ ncclResult_t ncclTopoTuneModel(struct ncclComm* comm, int minCompCap, int maxCom
         float speed = comm->nNodes <= 2 || a == NCCL_ALGO_COLLNET ? graphs[a]->speedIntra : graphs[a]->speedInter;
         float busBw = graphs[a]->nChannels * speed;
         // Reduce Ampere busBw to match reality
-        if (minCompCap == 80 && maxCompCap == 80) busBw *= 0.92;
+        if (ampere) busBw *= 0.92;
 
         // Various model refinements
         if (a == NCCL_ALGO_RING && p == NCCL_PROTO_LL)    busBw *= (comm->nNodes > 1 || coll == ncclCollAllReduce || coll == ncclCollReduce) ? 1.0/4.0 : 1.0/3.0;
         if (a == NCCL_ALGO_RING && p == NCCL_PROTO_LL128) busBw = std::min(busBw * (ppn < 2 ? 0.7 : 0.92 /*120.0/128.0*/), ll128MaxBwPerCh[coll]*graphs[a]->nChannels);
-        if (a == NCCL_ALGO_TREE) busBw = std::min(busBw*.9, comm->nNodes > 2 ? 80.0 : 110.0);
+        double maxTreeBw = comm->nNodes > 2 ?
+          ampere && p == NCCL_PROTO_LL128 ? 105.0 : 80.0 :
+          ampere && p == NCCL_PROTO_LL128 ? 130.0 : 110.0;
+        if (a == NCCL_ALGO_TREE) busBw = std::min(busBw*.9, maxTreeBw);
         if (a == NCCL_ALGO_TREE && p == NCCL_PROTO_LL) busBw *= 1.0/3.8;
         if (a == NCCL_ALGO_TREE && p == NCCL_PROTO_LL128) busBw = std::min(busBw * (comm->nNodes == 1 ? 7.0/9.0 : 0.915 /*120.0/128.0*/), ll128MaxBwPerCh[coll]*graphs[a]->nChannels*7.0/9.0);
         if (a == NCCL_ALGO_COLLNET) busBw *= .9;
