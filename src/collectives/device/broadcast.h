@@ -32,7 +32,7 @@ class ncclFunction<ncclFuncBroadcast, NCCL_ALGO_RING, NCCL_PROTO_SIMPLE, FUNC, T
       T * __restrict__ thisOutput = (T*)args->recvbuff;
 
       ncclPrimitives<UNROLL, BROADCAST_CHUNKSTEPS/BROADCAST_SLICESTEPS, BROADCAST_SLICESTEPS, T, 1, 1, 0, FUNC>
-        prims(tid, nthreads, &ring->prev, &ring->next, NULL, stepSize, channel, comm, args->opCount);
+        prims(tid, nthreads, &ring->prev, &ring->next, NULL, stepSize, channel, comm, args->opCount, ncclShmem->ptrs);
 
       for (ssize_t gridOffset = 0; gridOffset < size; gridOffset += loopSize) {
         int realChunkSize = min(chunkSize, DIVUP(size-gridOffset,nChannels));

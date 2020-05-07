@@ -66,10 +66,18 @@ class ncclPrimitives {
   T** dsts;
 
   inline __device__ void barrier() {
-    asm volatile ("bar.sync 1, %0;" :: "r"(nthreads+WARP_SIZE));
+    if (NSEND>NRECV) {
+      asm volatile ("bar.sync 1, %0;" :: "r"(nthreads+WARP_SIZE));
+    } else {
+      asm volatile ("bar.sync 2, %0;" :: "r"(nthreads+WARP_SIZE));
+    }
   }
   inline __device__ void subBarrier() {
-    asm volatile ("bar.sync 2, %0;" :: "r"(nthreads));
+    if (NSEND>NRECV) {
+      asm volatile ("bar.sync 3, %0;" :: "r"(nthreads));
+    } else {
+      asm volatile ("bar.sync 4, %0;" :: "r"(nthreads));
+    }
   }
 
   uint32_t mismatch = 0;
@@ -239,8 +247,8 @@ class ncclPrimitives {
 
  public:
   __device__ __forceinline__
-  ncclPrimitives(const int tid, const int nthreads, int* recvPeers, int* sendPeers, T* directBuff, int stepSize, struct ncclChannel* channel, struct ncclDevComm* comm, const uint64_t opCount)
-    : comm(comm), tid(tid), nthreads(nthreads), stepSize(stepSize), opCount(opCount), srcs((const T**)ncclShmem->srcs), dsts((T**)ncclShmem->dsts) {
+  ncclPrimitives(const int tid, const int nthreads, int* recvPeers, int* sendPeers, T* directBuff, int stepSize, struct ncclChannel* channel, struct ncclDevComm* comm, const uint64_t opCount, struct ncclShmemPtrs* ptrs)
+    : comm(comm), tid(tid), nthreads(nthreads), stepSize(stepSize), opCount(opCount), srcs((const T**)ptrs->srcs), dsts((T**)ptrs->dsts) {
     // Make sure step is updated before we read it.
     barrier();
 

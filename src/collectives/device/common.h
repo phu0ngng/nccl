@@ -49,10 +49,14 @@ class ncclFunction {
   __device__ void run(struct CollectiveArgs* args) {}
 };
 
-struct ncclShmemData {
-  volatile uint64_t data[NCCL_LL128_SHMEM_SIZE];
+struct ncclShmemPtrs {
   void* srcs[NCCL_MAX_TREE_ARITY+1];
   void* dsts[NCCL_MAX_TREE_ARITY+1];
+};
+
+struct ncclShmemData {
+  volatile uint64_t data[NCCL_LL128_SHMEM_SIZE];
+  struct ncclShmemPtrs ptrs[2];
   struct ncclColl localColl;
 };
 
