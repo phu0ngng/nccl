@@ -289,6 +289,7 @@ static ncclResult_t getAlgoInfo(struct ncclInfo* info) {
     else break;
   }
   if (info->protocol == NCCL_PROTO_SIMPLE) nt += WARP_SIZE; // Extra warp for sync
+  if (info->protocol == NCCL_PROTO_SIMPLE && info->algorithm == NCCL_ALGO_TREE) nt += WARP_SIZE;
   info->nChannels = nc;
   info->nThreads = nt;
   return ncclSuccess;

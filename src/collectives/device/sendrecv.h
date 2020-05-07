@@ -48,7 +48,7 @@ class ncclFunction<ncclFuncSendRecv, NCCL_ALGO_RING, NCCL_PROTO_SIMPLE, FUNC, T,
       // receive threads don't send.
       int peerNone[2] = {-1,-1};
 
-      if (tid < nthreadsSplit + WARP_SIZE ) {
+      if (tid < nthreadsSplit + WARP_SIZE) {
         const ssize_t sendSize = args->p2p.sendCount;
         if (sendSize < 0) return;
 

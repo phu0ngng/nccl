@@ -273,7 +273,7 @@ class ncclPrimitives {
       if (peer != -1) {
         role |= ROLE_SEND;
       } else {
-        index -= WARP_SIZE;
+        if (nthreads > WARP_SIZE) index -= WARP_SIZE; else index -= WARP_SIZE/2;
         if (index == NRECV) role |= ROLE_SRC;
         if (index >= 0 && index < NRECV) peer = recvPeers[index];
         if (peer != -1) role |= ROLE_RECV;
