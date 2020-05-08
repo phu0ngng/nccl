@@ -9,7 +9,7 @@ when all data sent and received is different.
 ncclSend
 --------
 
-.. c:function:: ncclResult_t  ncclSend(const void* sendbuff, size_t count, ncclDataType_t datatype, int peer, ncclComm_t comm, cudaStream_t stream)
+.. c:function:: ncclResult_t ncclSend(const void* sendbuff, size_t count, ncclDataType_t datatype, int peer, ncclComm_t comm, cudaStream_t stream)
  
  Send data from ``sendbuff`` to rank ``peer``.
  
@@ -24,7 +24,7 @@ Related links: :ref:`point-to-point`.
 ncclRecv
 --------
 
-.. c:function:: ncclResult_t  ncclSend(const void* sendbuff, size_t count, ncclDataType_t datatype, int peer, ncclComm_t comm, cudaStream_t stream)
+.. c:function:: ncclResult_t ncclRecv(void* recvbuff, size_t count, ncclDataType_t datatype, int peer, ncclComm_t comm, cudaStream_t stream)
  
  Receive data from rank ``peer`` into ``recvbuff``.
  

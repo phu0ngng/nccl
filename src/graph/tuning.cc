@@ -86,6 +86,7 @@ ncclResult_t ncclTopoTuneModel(struct ncclComm* comm, int minCompCap, int maxCom
 
   if (comm->nRanks <= 1) return ncclSuccess;
 
+  int ampere = minCompCap == 80 && maxCompCap == 80 ? 1 : 0;
   float ppn = (float)comm->nRanks / comm->nNodes; // if ppn < 2, then we are sending/receiving at the same GPU through the NIC, apply some bw discount
   struct ncclTopoGraph* graphs[NCCL_NUM_ALGORITHMS] = { treeGraph, ringGraph, collNetGraph };
   int intraHw[NCCL_NUM_ALGORITHMS], hw[NCCL_NUM_ALGORITHMS];
@@ -107,12 +108,15 @@ ncclResult_t ncclTopoTuneModel(struct ncclComm* comm, int minCompCap, int maxCom
         float speed = comm->nNodes <= 2 || a == NCCL_ALGO_COLLNET ? graphs[a]->speedIntra : graphs[a]->speedInter;
         float busBw = graphs[a]->nChannels * speed;
         // Reduce Ampere busBw to match reality
-        if (minCompCap == 80 && maxCompCap == 80) busBw *= 0.92;
+        if (ampere) busBw *= 0.92;
 
         // Various model refinements
         if (a == NCCL_ALGO_RING && p == NCCL_PROTO_LL)    busBw *= (comm->nNodes > 1 || coll == ncclCollAllReduce || coll == ncclCollReduce) ? 1.0/4.0 : 1.0/3.0;
         if (a == NCCL_ALGO_RING && p == NCCL_PROTO_LL128) busBw = std::min(busBw * (ppn < 2 ? 0.7 : 0.92 /*120.0/128.0*/), ll128MaxBwPerCh[coll]*graphs[a]->nChannels);
-        if (a == NCCL_ALGO_TREE) busBw = std::min(busBw*.9, comm->nNodes > 2 ? 80.0 : 110.0);
+        double maxTreeBw = comm->nNodes > 2 ?
+          ampere && p == NCCL_PROTO_LL128 ? 105.0 : 80.0 :
+          ampere && p == NCCL_PROTO_LL128 ? 130.0 : 110.0;
+        if (a == NCCL_ALGO_TREE) busBw = std::min(busBw*.9, maxTreeBw);
         if (a == NCCL_ALGO_TREE && p == NCCL_PROTO_LL) busBw *= 1.0/3.8;
         if (a == NCCL_ALGO_TREE && p == NCCL_PROTO_LL128) busBw = std::min(busBw * (comm->nNodes == 1 ? 7.0/9.0 : 0.915 /*120.0/128.0*/), ll128MaxBwPerCh[coll]*graphs[a]->nChannels*7.0/9.0);
         if (a == NCCL_ALGO_COLLNET) busBw *= .9;
@@ -156,9 +160,15 @@ ncclResult_t ncclTopoTuneModel(struct ncclComm* comm, int minCompCap, int maxCom
   int algoEnable[NCCL_NUM_ALGORITHMS] = { 1, 1, 1 };
 
   const char *protoStr = getenv("NCCL_PROTO");
-  if (protoStr) NCCLCHECK(parseList(protoStr, ncclProtoStr, NCCL_NUM_PROTOCOLS, protoEnable));
+  if (protoStr) {
+    INFO(NCCL_ENV, "NCCL_PROTO set by environment to %s", protoStr);
+    NCCLCHECK(parseList(protoStr, ncclProtoStr, NCCL_NUM_PROTOCOLS, protoEnable));
+  }
   const char *algoStr = getenv("NCCL_ALGO");
-  if (algoStr) NCCLCHECK(parseList(algoStr, ncclAlgoStr, NCCL_NUM_ALGORITHMS, algoEnable));
+  if (algoStr) {
+    INFO(NCCL_ENV, "NCCL_ALGO set by environment to %s", algoStr);
+    NCCLCHECK(parseList(algoStr, ncclAlgoStr, NCCL_NUM_ALGORITHMS, algoEnable));
+  }
 
   for (int c=0; c<NCCL_NUM_FUNCTIONS; c++) for (int a=0; a<NCCL_NUM_ALGORITHMS; a++) for (int p=0; p<NCCL_NUM_PROTOCOLS; p++) {
     int pEnable = protoEnable[p];
@@ -210,6 +220,7 @@ ncclResult_t ncclTopoTuneModel(struct ncclComm* comm, int minCompCap, int maxCom
   // Override defaults with user env
   char* str = getenv("NCCL_THREAD_THRESHOLDS");
   if (str) {
+    INFO(NCCL_ENV, "NCCL_THREAD_THRESHOLDS set by environment to %s", str);
     ssize_t t[NCCL_NUM_ALGORITHMS][NCCL_NUM_PROTOCOLS] = {{ -2, -2, -2 }, { -2, -2, -2}};
     sscanf(str, "%ld %ld %ld %ld %ld %ld", t[0], t[0]+1, t[0]+2, t[1], t[1]+1, t[1]+2);
     for (int a=0; a<NCCL_NUM_ALGORITHMS; a++) {

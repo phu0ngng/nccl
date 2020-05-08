@@ -283,7 +283,7 @@ void runPlatform(const char* platform) {
   char xmlTopoFile[1024];
   sprintf(xmlTopoFile, "topo/%s/system.xml", platform);
   if (nNodes == -1) {
-    for (int n=1; n<128; n<<=1) {
+    for (int n=1; n<=128; n<<=1) {
       runTopo(xmlTopoFile, platform, n);
     }
   } else {

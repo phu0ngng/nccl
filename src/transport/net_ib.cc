@@ -132,7 +132,7 @@ ncclResult_t ncclIbInit(ncclDebugLogger_t logFunction) {
 
       // Check if user defined which IB device:port to use
       char* userIbEnv = getenv("NCCL_IB_HCA");
-      if (userIbEnv != NULL && shownIbHcaEnv++ == 0) INFO(NCCL_NET, "NCCL_IB_HCA set to %s", userIbEnv);
+      if (userIbEnv != NULL && shownIbHcaEnv++ == 0) INFO(NCCL_NET|NCCL_ENV, "NCCL_IB_HCA set to %s", userIbEnv);
       struct netIf userIfs[MAX_IB_DEVS];
       bool searchNot = userIbEnv && userIbEnv[0] == '^';
       if (searchNot) userIbEnv++;

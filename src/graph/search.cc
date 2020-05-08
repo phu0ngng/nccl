@@ -71,7 +71,7 @@ static ncclResult_t followPath(struct ncclTopoLinkList* path, struct ncclTopoNod
     struct ncclTopoLink* revLink = NULL;
     float fwSpeed = link->type == LINK_PCI ? pciSpeed : speed;
     float revSpeed = 0;
-    if (link->remNode->type == GPU && start->type != GPU) {
+    if (link->remNode->type == GPU && link->remNode->gpu.cudaCompCap < 80 && start->type != GPU) {
       if (revLink == NULL) NCCLCHECK(findRevLink(node, link->remNode, &revLink));
       revSpeed += fwSpeed/8;
     }
@@ -393,8 +393,10 @@ ncclResult_t ncclTopoSearchRecNet(struct ncclTopoSystem* system, struct ncclTopo
     }
     if (graph->nChannels == 0 || graph->sameChannels == 0) {
       if (graph->nChannels == 0) {
-        // Always try the PCI order first to set a reference
-        NCCLCHECK(ncclTopoSearchTryGpu(system, graph, saveGraph, 0, backToNet, backToFirstRank, FORCED_ORDER_PCI, time, NET, n, 0));
+        // Always try the PCI order first to set a reference, but don't count in the timeout nor let it run for long
+        int t = 1 << 10;
+        NCCLCHECK(ncclTopoSearchTryGpu(system, graph, saveGraph, 0, backToNet, backToFirstRank, FORCED_ORDER_PCI, &t, NET, n, 0));
+        if (t == -1) *time = -1;
       }
 
       // Then try the most local GPUs
@@ -636,6 +638,7 @@ ncclResult_t ncclTopoCompute(ncclTopoSystem* system, struct ncclTopoGraph* graph
 
   char* str = getenv("NCCL_GRAPH_FILE");
   if (str) {
+    INFO(NCCL_ENV, "NCCL_GRAPH_FILE set by environment to %s", str);
     struct ncclXml* xml;
     NCCLCHECK(ncclCalloc(&xml, 1));
     NCCLCHECK(ncclTopoGetXmlGraphFromFile(str, xml));
@@ -806,6 +809,7 @@ ncclResult_t ncclTopoPrintGraph(struct ncclTopoSystem* system, struct ncclTopoGr
 ncclResult_t ncclTopoDumpGraphs(struct ncclTopoSystem* system, int ngraphs, struct ncclTopoGraph** graphs) {
   char* str = getenv("NCCL_GRAPH_DUMP_FILE");
   if (str) {
+    INFO(NCCL_ENV, "NCCL_GRAPH_DUMP_FILE set by environment to %s", str);
     struct ncclXml* xml;
     NCCLCHECK(ncclCalloc(&xml, 1));
     NCCLCHECK(ncclTopoGetXmlFromGraphs(ngraphs, graphs, system, xml));

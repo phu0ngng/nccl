@@ -48,7 +48,6 @@ testResult_t AlltoAllRunColl(void* sendbuff, void* recvbuff, size_t count, ncclD
   int nRanks;
   NCCLCHECK(ncclCommCount(comm, &nRanks));
   size_t rankOffset = count * wordSize(type);
-  if (count == 0) return testSuccess;
 
   NCCLCHECK(ncclGroupStart());
   for (int r=0; r<nRanks; r++) {

@@ -684,7 +684,7 @@ testResult_t threadLaunch(struct testThread* thread) {
 testResult_t AllocateBuffs(void **sendbuff, size_t sendBytes, void **recvbuff, size_t recvBytes, void **expected, size_t nbytes, int nranks) {
     CUDACHECK(cudaMalloc(sendbuff, nbytes));
     CUDACHECK(cudaMalloc(recvbuff, nbytes));
-    CUDACHECK(cudaMalloc(expected, recvBytes));
+    if (datacheck) CUDACHECK(cudaMalloc(expected, recvBytes));
     return testSuccess;
 }
 
@@ -875,7 +875,8 @@ testResult_t run() {
 #define MAX_LINE 2048
   char line[MAX_LINE];
   int len = 0;
-  size_t maxMem = maxBytes*7/2;
+  size_t requiredMem = datacheck ? maxBytes*7/2 : maxBytes*2;
+  size_t maxMem = requiredMem;
   for (int i=0; i<nThreads*nGpus; i++) {
     envstr = getenv("NCCL_TESTS_DEVICE");
     int cudaDev = envstr ? atoi(envstr) : localRank*nThreads*nGpus+i;
@@ -900,8 +901,8 @@ testResult_t run() {
 #else
   PRINT("%s", line);
 #endif
-  if (maxMem < maxBytes*7/2) {
-    while (maxMem < maxBytes*7/2) maxBytes /= 2;
+  if (maxMem < requiredMem) {
+    while (maxMem < requiredMem) maxBytes /= 2;
     if (proc == 0) printf("#\n# Reducing maxBytes to %ld due to memory limitation\n", maxBytes);
   }
 
@@ -925,7 +926,7 @@ testResult_t run() {
     envstr = getenv("NCCL_TESTS_DEVICE");
     gpus[i] = envstr ? atoi(envstr) : localRank*nThreads*nGpus+i;
     CUDACHECK(cudaSetDevice(gpus[i]));
-    AllocateBuffs(sendbuffs+i, sendBytes, recvbuffs+i, recvBytes, expected+i, (size_t)maxBytes, nProcs*nThreads*nGpus);
+    TESTCHECK(AllocateBuffs(sendbuffs+i, sendBytes, recvbuffs+i, recvBytes, expected+i, (size_t)maxBytes, nProcs*nThreads*nGpus));
     if (streamnull)
       streams[i] = NULL;
     else
@@ -1058,7 +1059,7 @@ testResult_t run() {
   for (int i=0; i<nGpus*nThreads; i++) {
     CUDACHECK(cudaFree(sendbuffs[i]));
     CUDACHECK(cudaFree(recvbuffs[i]));
-    CUDACHECK(cudaFree(expected[i]));
+    if (datacheck) CUDACHECK(cudaFree(expected[i]));
   }
   CUDACHECK(cudaFreeHost(delta));
 

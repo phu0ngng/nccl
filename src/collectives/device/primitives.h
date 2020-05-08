@@ -70,10 +70,18 @@ class ncclPrimitives {
   inline __device__ T* sendPtr(int i) { return ((T*)sendBuff[i])+sendOffset(i); }
 
   inline __device__ void barrier() {
-    asm volatile ("bar.sync 1, %0;" :: "r"(nthreads+WARP_SIZE));
+    if (NSEND>NRECV) {
+      asm volatile ("bar.sync 1, %0;" :: "r"(nthreads+WARP_SIZE));
+    } else {
+      asm volatile ("bar.sync 2, %0;" :: "r"(nthreads+WARP_SIZE));
+    }
   }
   inline __device__ void subBarrier() {
-    asm volatile ("bar.sync 2, %0;" :: "r"(nthreads));
+    if (NSEND>NRECV) {
+      asm volatile ("bar.sync 3, %0;" :: "r"(nthreads));
+    } else {
+      asm volatile ("bar.sync 4, %0;" :: "r"(nthreads));
+    }
   }
 
   uint32_t mismatch = 0;
