@@ -37,8 +37,7 @@ __device__ void ncclSendRecvKernel(struct CollectiveArgs* args) {
   struct ncclDevComm* comm = args->comm;
   struct ncclChannel* channel = comm->channels+blockIdx.x;
 
-  const int stepSize = comm->buffSizes[NCCL_PROTO_SIMPLE] / (sizeof(T)*NCCL_STEPS);
-  const int chunkSize = stepSize * SENDRECV_CHUNKSTEPS;
+  const int stepSize = comm->buffSizes[NCCL_PROTO_SIMPLE]/(sizeof(T)*NCCL_STEPS)/SENDRECV_SLICEFACTOR;
 
   int nthreadsSplit = nthreads/2;
   // We set NRECV or NSEND to 2 to use different barriers in primitives for the send threads and
@@ -51,13 +50,13 @@ __device__ void ncclSendRecvKernel(struct CollectiveArgs* args) {
     if (sendSize < 0) return;
 
     int peer = (comm->rank+(int)args->p2p.delta)%comm->nRanks;
-    ncclPrimitives<UNROLL, SENDRECV_CHUNKSTEPS/SENDRECV_SLICESTEPS, SENDRECV_SLICESTEPS, T, 2, 1, 1, FUNC>
-      prims(tid, nthreadsSplit, peerNone, &peer, recvbuff, stepSize, channel, comm, args->opCount);
+    ncclPrimitives<UNROLL, 1, 1, T, 2, 1, 1, FUNC>
+      prims(tid, nthreadsSplit, peerNone, &peer, recvbuff, stepSize*4, channel, comm, args->opCount);
 
     if (sendSize == 0) {
       prims.send(sendbuff, 0);
-    } else for (ssize_t offset = 0; offset < sendSize; offset += chunkSize) {
-      int realChunkSize = min(chunkSize, sendSize-offset);
+    } else for (ssize_t offset = 0; offset < sendSize; offset += stepSize) {
+      int realChunkSize = min(stepSize, sendSize-offset);
       ALIGN_SIZE(realChunkSize, nthreads*sizeof(uint64_t)/sizeof(T));
       int nelem = min(realChunkSize, sendSize-offset);
       prims.directSend(sendbuff+offset, offset, nelem);
@@ -67,13 +66,13 @@ __device__ void ncclSendRecvKernel(struct CollectiveArgs* args) {
     if (recvSize < 0) return;
 
     int peer = (comm->rank-(int)args->p2p.delta+comm->nRanks)%comm->nRanks;
-    ncclPrimitives<UNROLL, SENDRECV_CHUNKSTEPS/SENDRECV_SLICESTEPS, SENDRECV_SLICESTEPS, T, 1, 2, 1, FUNC>
-      prims(tid-nthreadsSplit-WARP_SIZE, nthreads-nthreadsSplit, &peer, peerNone, recvbuff, stepSize, channel, comm, args->opCount);
+    ncclPrimitives<UNROLL, 1, 1, T, 1, 2, 1, FUNC>
+      prims(tid-nthreadsSplit-WARP_SIZE, nthreads-nthreadsSplit, &peer, peerNone, recvbuff, stepSize*4, channel, comm, args->opCount);
 
     if (recvSize == 0) {
       prims.recv(recvbuff, 0);
-    } else for (ssize_t offset = 0; offset < recvSize; offset += chunkSize) {
-      int realChunkSize = min(chunkSize, recvSize-offset);
+    } else for (ssize_t offset = 0; offset < recvSize; offset += stepSize) {
+      int realChunkSize = min(stepSize, recvSize-offset);
       ALIGN_SIZE(realChunkSize, nthreads*sizeof(uint64_t)/sizeof(T));
       int nelem = min(realChunkSize, recvSize-offset);
       prims.directRecv(recvbuff+offset, offset, nelem);
