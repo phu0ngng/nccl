@@ -726,7 +726,7 @@ static ncclResult_t initTransportsRank(struct ncclComm* comm, ncclUniqueId* comm
   NCCLCHECK(ncclTopoPostset(comm, nodesFirstRank, allTopoRanks, rings));
   if (comm->nNodes > 1 &&
       ncclParamCollNetEnable() == 1 &&
-      collNetSupport()) {
+      collNetSupport() && collNetGraph.nChannels) {
     NCCLCHECK(ncclTopoConnectCollNet(comm, &collNetGraph, rank));
   }
 
@@ -776,7 +776,7 @@ static ncclResult_t initTransportsRank(struct ncclComm* comm, ncclUniqueId* comm
   // Check if we can setup CollNet
   if (comm->nNodes > 1 &&
       ncclParamCollNetEnable() == 1 &&
-      collNetSupport()) {
+      collNetSupport() && collNetGraph.nChannels) {
     int logicChannels = comm->nChannels/2;
     int collNetSetupFail = 0;
     const int recvIndex = 0;  // recv GPU index is always 0
