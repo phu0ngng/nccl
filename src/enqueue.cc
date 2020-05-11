@@ -488,18 +488,19 @@ ncclResult_t ncclSaveKernel(struct ncclInfo* info) {
 }
 
 #define NCCL_MIN_CHANNEL_SIZE (NCCL_LL_THREAD_THRESHOLD*64)
-#define NCCL_AGG_CHANNEL_SIZE (1LL << 21) /* 2 MiB */
+#define NCCL_AGG_CHANNEL_SIZE (1LL << 21) /* 2 MiB, ideal per-channel size to fully utilize bandwidth */
 
 ncclResult_t ncclSaveCommKernels(ncclComm_t comm) {
   // No aggregation
-  if (comm->asyncOpCount <= 1) {
+  if (comm->asyncOpCount == 1) {
     struct ncclInfo* info = comm->asyncOps;
     info->nChannels = 0;
     NCCLCHECK(ncclSaveKernel(info));
   } else {
     // Aggregation
     size_t channelSize = NCCL_AGG_CHANNEL_SIZE * comm->nRanks;  // scale channel size based on nranks as latency increases
-    while (comm->asyncTotalSize < channelSize * comm->nChannels && channelSize > NCCL_MIN_CHANNEL_SIZE) channelSize /= 2; // try to fully utilize the channels
+    // Reduce the per-channel size if we cannot fully utilize the channels
+    while (comm->asyncTotalSize < channelSize * comm->nChannels && channelSize > NCCL_MIN_CHANNEL_SIZE) channelSize /= 2;
     for (int c = 0; c < comm->asyncOpCount; c++) {
       struct ncclInfo* info = comm->asyncOps+c;
       info->nChannels = std::min((int)DIVUP(info->nBytes, channelSize), comm->nChannels); // assign number of channels
