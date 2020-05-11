@@ -278,7 +278,7 @@ ncclResult_t ncclGroupEnd() {
     struct ncclAsyncArgs* args = ncclGroupArgs+i;
     if (args->funcType == ASYNC_FUNC_COLL) {
       ncclComm_t comm = args->coll.comm;
-      NCCLCHECKGOTO(ncclSaveCommKernels(comm), ret, end);
+      NCCLCHECKGOTO(ncclSaveCommKernels(comm), ret, group_cleanup);
     }
   }
   for (int i=0; i<ncclGroupIndex; i++) {
