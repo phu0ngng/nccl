@@ -251,6 +251,7 @@ ncclResult_t ncclEnqueueEvents(ncclComm_t comm) {
 /*****************************************************************************/
 
 static ncclResult_t getAlgoInfo(struct ncclInfo* info) {
+  struct ncclComm* comm = info->comm;
   float minTime = 3600000000.0; // Hopefully no operation will take an hour to complete.
   // Find algorithm / protocol.
   info->algorithm = -1;
@@ -278,32 +279,18 @@ static ncclResult_t getAlgoInfo(struct ncclInfo* info) {
   }
   //if (comm->rank == 0) INFO(NCCL_TUNING, "%ld Bytes -> Algo %d proto %d time %f", info->nBytes, info->algorithm, info->protocol, minTime);
   TRACE(NCCL_COLL, "%ld Bytes -> Algo %d proto %d time %f", info->nBytes, info->algorithm, info->protocol, minTime);
-  return ncclSuccess;
-}
 
-static ncclResult_t getChannelInfo(struct ncclInfo* info) {
-  struct ncclComm* comm = info->comm;
-  int nc = (info->algorithm == NCCL_ALGO_COLLNET) ? comm->nChannels/2 : comm->nChannels; // CollNet uses one channel for up and one channel for down
+  int nc = (info->nChannels > 0) ? info->nChannels :
+           (info->algorithm == NCCL_ALGO_COLLNET) ? comm->nChannels/2 : comm->nChannels; // CollNet uses one channel for up and one channel for down
   int nt = comm->maxThreads[info->algorithm][info->protocol];
   int threadThreshold = comm->threadThresholds[info->algorithm][info->protocol];
   while (info->nBytes < nc*nt*threadThreshold) {
     if (info->algorithm != NCCL_ALGO_COLLNET && nc >= 2) nc--;
-    else break;
-  }
-  info->nChannels = nc;
-  return ncclSuccess;
-}
-
-static ncclResult_t getThreadInfo(struct ncclInfo* info) {
-  struct ncclComm* comm = info->comm;
-  int nc = info->nChannels;	// nChannels must be known before this function is called
-  int nt = comm->maxThreads[info->algorithm][info->protocol];
-  int threadThreshold = comm->threadThresholds[info->algorithm][info->protocol];
-  while (info->nBytes < nc*nt*threadThreshold) {
-    if ((nt % 128) == 0) nt/=2;
+    else if ((nt % 128) == 0) nt/=2;
     else break;
   }
   if (info->protocol == NCCL_PROTO_SIMPLE) nt += WARP_SIZE; // Extra warp for sync
+  info->nChannels = nc;
   info->nThreads = nt;
   return ncclSuccess;
 }
@@ -363,8 +350,6 @@ static ncclResult_t computeColl(struct ncclInfo* info /* input */, struct ncclCo
   }
   // Set nstepsPerLoop and nchunksPerLoop
   NCCLCHECK(getAlgoInfo(info));
-  if (info->nChannels == 0) NCCLCHECK(getChannelInfo(info));
-  NCCLCHECK(getThreadInfo(info));
   NCCLCHECK(getPatternInfo(info));
   NCCLCHECK(getLoopInfo(info));
 
