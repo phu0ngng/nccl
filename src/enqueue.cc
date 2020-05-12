@@ -280,7 +280,8 @@ static ncclResult_t getAlgoInfo(struct ncclInfo* info) {
   //if (comm->rank == 0) INFO(NCCL_TUNING, "%ld Bytes -> Algo %d proto %d time %f", info->nBytes, info->algorithm, info->protocol, minTime);
   TRACE(NCCL_COLL, "%ld Bytes -> Algo %d proto %d time %f", info->nBytes, info->algorithm, info->protocol, minTime);
 
-  int nc = (info->algorithm == NCCL_ALGO_COLLNET) ? comm->nChannels/2 : comm->nChannels; // CollNet uses one channel for up and one channel for down
+  int nc = (info->nChannels > 0) ? info->nChannels :
+           (info->algorithm == NCCL_ALGO_COLLNET) ? comm->nChannels/2 : comm->nChannels; // CollNet uses one channel for up and one channel for down
   int nt = comm->maxThreads[info->algorithm][info->protocol];
   int threadThreshold = comm->threadThresholds[info->algorithm][info->protocol];
   while (info->nBytes < nc*nt*threadThreshold) {
@@ -487,6 +488,32 @@ ncclResult_t ncclSaveKernel(struct ncclInfo* info) {
   return ncclSuccess;
 }
 
+#define NCCL_MIN_CHANNEL_SIZE (NCCL_LL_THREAD_THRESHOLD*64)
+#define NCCL_AGG_CHANNEL_SIZE (1LL << 21) /* 2 MiB, ideal per-channel size to fully utilize bandwidth */
+
+ncclResult_t ncclSaveCommKernels(ncclComm_t comm) {
+  // No aggregation
+  if (comm->asyncOpCount == 1) {
+    struct ncclInfo* info = comm->asyncOps;
+    info->nChannels = 0;
+    NCCLCHECK(ncclSaveKernel(info));
+  } else {
+    // Aggregation
+    size_t channelSize = NCCL_AGG_CHANNEL_SIZE * comm->nRanks;  // scale channel size based on nranks as latency increases
+    // Reduce the per-channel size if we cannot fully utilize the channels
+    while (comm->asyncTotalSize < channelSize * comm->nChannels && channelSize > NCCL_MIN_CHANNEL_SIZE) channelSize /= 2;
+    for (int c = 0; c < comm->asyncOpCount; c++) {
+      struct ncclInfo* info = comm->asyncOps+c;
+      info->nChannels = std::min((int)DIVUP(info->nBytes, channelSize), comm->nChannels); // assign number of channels
+      NCCLCHECK(ncclSaveKernel(info));
+    }
+  }
+  // Reset counters
+  comm->asyncOpCount = 0;
+  comm->asyncTotalSize = 0;
+  return ncclSuccess;
+}
+
 // Save p2p operations in comm->p2plist. Operations will be posted to channels
 // during ncclGroupEnd()
 ncclResult_t ncclSaveP2p(struct ncclInfo* info) {
@@ -537,7 +564,7 @@ ncclResult_t ncclEnqueueCheck(struct ncclInfo* info) {
     NCCLCHECKGOTO(ArgsCheck(info), ret, end);
     // Always register comm even in case of error to make sure ncclGroupEnd
     // cleans it up.
-    NCCLCHECKGOTO(ncclAsyncColl(info->comm), ret, end);
+    NCCLCHECKGOTO(ncclAsyncColl(info), ret, end);
     NCCLCHECKGOTO(checkSetStream(info), ret, end);
 
     INFO(NCCL_COLL,"%s: opCount %lx sendbuff %p recvbuff %p count %zi datatype %d op %d root %d comm %p [nranks=%d] stream %p",
@@ -546,8 +573,6 @@ ncclResult_t ncclEnqueueCheck(struct ncclInfo* info) {
 
     if (info->coll == ncclFuncSendRecv) { //p2p stored separately
       NCCLCHECKGOTO(ncclSaveP2p(info), ret, end);
-    } else {
-      NCCLCHECKGOTO(ncclSaveKernel(info), ret, end);
     }
 end:
     if (savedDev != -1) CUDACHECK(cudaSetDevice(savedDev));

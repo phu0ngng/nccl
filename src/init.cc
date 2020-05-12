@@ -245,6 +245,11 @@ static ncclResult_t commAlloc(ncclComm_t* comret, int ndev, int rank) {
 
   comm->argsptr = &comm->args;
   comm->collNetSupport = 0;
+
+  NCCLCHECK(ncclCalloc(&comm->asyncOps, NCCL_MAX_OPS));
+  comm->asyncOpCount = 0;
+  comm->asyncTotalSize = 0;
+
   comm->p2plist.count=0;
   NCCLCHECK(ncclCalloc(&comm->p2plist.peerlist, comm->nRanks));
   for (int r=0; r<comm->nRanks; r++) comm->p2plist.peerlist[r].sendbytes = comm->p2plist.peerlist[r].recvbytes = -1;

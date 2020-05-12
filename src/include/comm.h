@@ -142,6 +142,12 @@ struct ncclComm {
 
   // Whether this communicator uses collNet
   int collNetSupport;
+
+  // Store info of async operations
+  struct ncclInfo* asyncOps;
+  int asyncOpCount;
+  size_t asyncTotalSize;
+
   //list of async p2p operation queued in a group semantics
   struct ncclP2Plist p2plist;
 };

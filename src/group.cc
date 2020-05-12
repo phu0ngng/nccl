@@ -91,7 +91,16 @@ ncclResult_t ncclAsyncInit(ncclInitFunc_t func, ncclComm_t* newcomm, int ndev, n
   return ncclSuccess;
 }
 
-ncclResult_t ncclAsyncColl(ncclComm_t comm) {
+ncclResult_t ncclAsyncColl(struct ncclInfo* info) {
+  ncclComm_t comm = info->comm;
+  if (comm->asyncOpCount >= NCCL_MAX_OPS) {
+    WARN("Too many async operations in progress, max is %d", NCCL_MAX_OPS);
+    return ncclAsyncErrCheck(ncclInvalidUsage);
+  }
+  memcpy(comm->asyncOps+comm->asyncOpCount, info, sizeof(struct ncclInfo));
+  comm->asyncOpCount++;
+  comm->asyncTotalSize += info->nBytes;
+
   struct ncclAsyncArgs* args = ncclGroupArgs;
   for (int i=0; i<ncclGroupIndex; i++) {
     if (args->coll.comm == comm) return ncclSuccess;
@@ -256,6 +265,7 @@ ncclResult_t ncclGroupEnd() {
   }
 
   /* Collectives are done in three steps :
+   * 0. Save kernels previously enqueued. Compute channel, algo, proto, etc.
    * 1. Barrier Check In. Only the last call may call cudaLaunchKernel[cooperative]
    * 2. Barrier Wait. No CUDA call is permitted
    * 3. Enqueue Events. CUDA event wait/enqueue.
@@ -264,6 +274,13 @@ ncclResult_t ncclGroupEnd() {
    * prevent some ranks from launching their network threads, which would
    * prevent the NCCL call from completing, blocking the cudaFree call.
    */
+  for (int i=0; i<ncclGroupIndex; i++) {
+    struct ncclAsyncArgs* args = ncclGroupArgs+i;
+    if (args->funcType == ASYNC_FUNC_COLL) {
+      ncclComm_t comm = args->coll.comm;
+      NCCLCHECKGOTO(ncclSaveCommKernels(comm), ret, group_cleanup);
+    }
+  }
   for (int i=0; i<ncclGroupIndex; i++) {
     struct ncclAsyncArgs* args = ncclGroupArgs+i;
     if (args->funcType == ASYNC_FUNC_COLL) {
