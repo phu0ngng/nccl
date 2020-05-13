@@ -107,9 +107,10 @@ ncclResult_t ncclTopoTuneModel(struct ncclComm* comm, int minCompCap, int maxCom
       for (int p=0; p<NCCL_NUM_PROTOCOLS; p++) {
         float speed = comm->nNodes <= 2 || a == NCCL_ALGO_COLLNET ? graphs[a]->speedIntra : graphs[a]->speedInter;
         float busBw = graphs[a]->nChannels * speed;
-        if (compCap80) busBw = std::min(busBw*(comm->nNodes>1 ? 0.83:1.0), 235.0);
+        if (compCap80) busBw = std::min(busBw, 235.0f);
 
         // Various model refinements
+        if (a == NCCL_ALGO_RING && p == NCCL_PROTO_SIMPLE) busBw *= (compCap80 && comm->nNodes > 1) ? 0.83 : 1.0;
         if (a == NCCL_ALGO_RING && p == NCCL_PROTO_LL)    busBw *= (comm->nNodes > 1 || coll == ncclCollAllReduce || coll == ncclCollReduce) ? 1.0/4.0 : 1.0/3.0;
         if (a == NCCL_ALGO_RING && p == NCCL_PROTO_LL128) busBw = std::min(busBw * (ppn < 2 ? 0.7 : 0.92 /*120.0/128.0*/), ll128MaxBwPerCh[coll]*graphs[a]->nChannels);
         double maxTreeBw = comm->nNodes > 2 ?
