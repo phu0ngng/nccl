@@ -128,7 +128,7 @@ ncclResult_t ncclGroupStart() {
 static ncclResult_t scheduleSendRecv(struct ncclComm* comm, int delta, int channelId, ssize_t recvbytes, void* recvbuff, ssize_t sendbytes, const void* sendbuff) {
   struct ncclInfo info = { ncclFuncSendRecv, "SendRecv",
     sendbuff, recvbuff, (size_t)std::max<ssize_t>(sendbytes,recvbytes), ncclInt8, ncclSum, -1, comm, comm->userStream, /* Args */
-    SENDRECV_CHUNKSTEPS, SENDRECV_SLICESTEPS };
+    1, 1 };
   info.delta = delta;
   info.channelId = channelId;
   info.sendbytes = sendbytes;

@@ -14,7 +14,7 @@ ncclResult_t ncclSend(const void* sendbuff, size_t count, ncclDataType_t datatyp
     ncclComm_t comm, cudaStream_t stream) {
   struct ncclInfo info = { ncclFuncSendRecv, "Send",
     sendbuff, NULL, count, datatype, ncclSum, peer, comm, stream, /* Args */
-    SENDRECV_CHUNKSTEPS, SENDRECV_SLICESTEPS };
+    1, 1 };
   ncclResult_t ret;
   NCCLCHECK(ncclGroupStart());
   ret = ncclEnqueueCheck(&info);
@@ -28,7 +28,7 @@ ncclResult_t ncclRecv(void* recvbuff, size_t count, ncclDataType_t datatype, int
     ncclComm_t comm, cudaStream_t stream) {
   struct ncclInfo info = { ncclFuncSendRecv, "Recv",
     NULL, recvbuff, count, datatype, ncclSum, peer, comm, stream, /* Args */
-    SENDRECV_CHUNKSTEPS, SENDRECV_SLICESTEPS };
+    1, 1 };
   ncclResult_t ret;
   NCCLCHECK(ncclGroupStart());
   ret = ncclEnqueueCheck(&info);

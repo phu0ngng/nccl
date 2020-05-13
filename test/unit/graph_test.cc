@@ -215,6 +215,7 @@ int main(int argc, const char* argv[]) {
     RUN("DGX-2V");
     RUN("XMAN-3");
     RUN("Luna");
+    RUN("Luna-SHARP");
     RUN("DGX-2-Delta");
     RUN("Redstone");
     RUN("GCP-NV");

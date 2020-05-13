@@ -71,7 +71,7 @@ static ncclResult_t followPath(struct ncclTopoLinkList* path, struct ncclTopoNod
     struct ncclTopoLink* revLink = NULL;
     float fwSpeed = link->type == LINK_PCI ? pciSpeed : speed;
     float revSpeed = 0;
-    if (link->remNode->type == GPU && start->type != GPU) {
+    if (link->remNode->type == GPU && link->remNode->gpu.cudaCompCap < 80 && start->type != GPU) {
       if (revLink == NULL) NCCLCHECK(findRevLink(node, link->remNode, &revLink));
       revSpeed += fwSpeed/8;
     }
@@ -393,8 +393,10 @@ ncclResult_t ncclTopoSearchRecNet(struct ncclTopoSystem* system, struct ncclTopo
     }
     if (graph->nChannels == 0 || graph->sameChannels == 0) {
       if (graph->nChannels == 0) {
-        // Always try the PCI order first to set a reference
-        NCCLCHECK(ncclTopoSearchTryGpu(system, graph, saveGraph, 0, backToNet, backToFirstRank, FORCED_ORDER_PCI, time, NET, n, 0));
+        // Always try the PCI order first to set a reference, but don't count in the timeout nor let it run for long
+        int t = 1 << 10;
+        NCCLCHECK(ncclTopoSearchTryGpu(system, graph, saveGraph, 0, backToNet, backToFirstRank, FORCED_ORDER_PCI, &t, NET, n, 0));
+        if (t == -1) *time = -1;
       }
 
       // Then try the most local GPUs

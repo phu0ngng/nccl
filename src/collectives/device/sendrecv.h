@@ -39,8 +39,8 @@ class ncclFunction<ncclFuncSendRecv, NCCL_ALGO_RING, NCCL_PROTO_SIMPLE, FUNC, T,
       struct ncclDevComm* comm = args->comm;
       struct ncclChannel* channel = comm->channels+blockIdx.x;
 
-      const int stepSize = comm->buffSizes[NCCL_PROTO_SIMPLE] / (sizeof(T)*NCCL_STEPS);
-      const int chunkSize = stepSize * SENDRECV_CHUNKSTEPS;
+      const int stepSize = comm->buffSizes[NCCL_PROTO_SIMPLE]/(sizeof(T)*NCCL_STEPS);
+      const int chunkSize = stepSize/SENDRECV_SLICEFACTOR;
 
       int nthreadsSplit = nthreads/2;
 
@@ -49,7 +49,7 @@ class ncclFunction<ncclFuncSendRecv, NCCL_ALGO_RING, NCCL_PROTO_SIMPLE, FUNC, T,
         if (sendSize < 0) return;
 
         int peer = (comm->rank+(int)args->p2p.delta)%comm->nRanks;
-        ncclPrimitives<UNROLL, SENDRECV_CHUNKSTEPS/SENDRECV_SLICESTEPS, SENDRECV_SLICESTEPS, T, 0, 1, 1, FUNC, 0>
+        ncclPrimitives<UNROLL, 1, 1, T, 0, 1, 1, FUNC, 0>
           prims(tid, nthreadsSplit, NULL, &peer, recvbuff, stepSize, channel, comm, args->opCount, ncclShmem->ptrs);
 
         if (sendSize == 0) {
@@ -65,7 +65,7 @@ class ncclFunction<ncclFuncSendRecv, NCCL_ALGO_RING, NCCL_PROTO_SIMPLE, FUNC, T,
         if (recvSize < 0) return;
 
         int peer = (comm->rank-(int)args->p2p.delta+comm->nRanks)%comm->nRanks;
-        ncclPrimitives<UNROLL, SENDRECV_CHUNKSTEPS/SENDRECV_SLICESTEPS, SENDRECV_SLICESTEPS, T, 1, 0, 1, FUNC, 1>
+        ncclPrimitives<UNROLL, 1, 1, T, 1, 0, 1, FUNC, 1>
           prims(tid-nthreadsSplit-WARP_SIZE, nthreads-nthreadsSplit, &peer, NULL, recvbuff, stepSize, channel, comm, args->opCount, ncclShmem->ptrs+1);
 
         if (recvSize == 0) {
