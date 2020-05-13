@@ -53,7 +53,7 @@ class ncclFunction<ncclFuncSendRecv, NCCL_ALGO_RING, NCCL_PROTO_SIMPLE, FUNC, T,
         if (sendSize < 0) return;
 
         int peer = (comm->rank+(int)args->p2p.delta)%comm->nRanks;
-        ncclPrimitives<UNROLL, SENDRECV_CHUNKSTEPS/SENDRECV_SLICESTEPS, SENDRECV_SLICESTEPS, T, 2, 1, 1, FUNC>
+        ncclPrimitives<UNROLL, SENDRECV_CHUNKSTEPS/SENDRECV_SLICESTEPS, SENDRECV_SLICESTEPS, T, 2, 1, 1, FUNC, 0>
           prims(tid, nthreadsSplit, peerNone, &peer, recvbuff, stepSize, channel, comm, args->opCount, ncclShmem->ptrs);
 
         if (sendSize == 0) {
@@ -69,7 +69,7 @@ class ncclFunction<ncclFuncSendRecv, NCCL_ALGO_RING, NCCL_PROTO_SIMPLE, FUNC, T,
         if (recvSize < 0) return;
 
         int peer = (comm->rank-(int)args->p2p.delta+comm->nRanks)%comm->nRanks;
-        ncclPrimitives<UNROLL, SENDRECV_CHUNKSTEPS/SENDRECV_SLICESTEPS, SENDRECV_SLICESTEPS, T, 1, 2, 1, FUNC>
+        ncclPrimitives<UNROLL, SENDRECV_CHUNKSTEPS/SENDRECV_SLICESTEPS, SENDRECV_SLICESTEPS, T, 1, 2, 1, FUNC, 1>
           prims(tid-nthreadsSplit-WARP_SIZE, nthreads-nthreadsSplit, &peer, peerNone, recvbuff, stepSize, channel, comm, args->opCount, ncclShmem->ptrs+1);
 
         if (recvSize == 0) {

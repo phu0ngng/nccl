@@ -38,7 +38,7 @@
 #define ROLE_SYNC 0x10
 
 // Implementation of primitive types
-template <int UNROLL, int SLICESPERCHUNK, int SLICESTEPS, typename T, int NRECV, int NSEND, int DIRECT, class FUNC>
+template <int UNROLL, int SLICESPERCHUNK, int SLICESTEPS, typename T, int NRECV, int NSEND, int DIRECT, class FUNC, int GROUP>
 class ncclPrimitives {
  private:
   const int tid;
@@ -66,18 +66,10 @@ class ncclPrimitives {
   T** dsts;
 
   inline __device__ void barrier() {
-    if (NSEND>NRECV) {
-      asm volatile ("bar.sync 1, %0;" :: "r"(nthreads+WARP_SIZE));
-    } else {
-      asm volatile ("bar.sync 2, %0;" :: "r"(nthreads+WARP_SIZE));
-    }
+    asm volatile ("bar.sync %0, %1;" :: "r"(GROUP), "r"(nthreads+WARP_SIZE));
   }
   inline __device__ void subBarrier() {
-    if (NSEND>NRECV) {
-      asm volatile ("bar.sync 3, %0;" :: "r"(nthreads));
-    } else {
-      asm volatile ("bar.sync 4, %0;" :: "r"(nthreads));
-    }
+    asm volatile ("bar.sync %0, %1;" :: "r"(GROUP+8), "r"(nthreads));
   }
 
   uint32_t mismatch = 0;
