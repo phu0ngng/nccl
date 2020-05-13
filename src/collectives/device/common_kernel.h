@@ -247,7 +247,7 @@ inline __device__ void Store128(Pack128* p, Pack128& v) {
 
 template<class FUNC, typename T, int MINSRCS, int MAXSRCS, int MINDSTS, int MAXDSTS>
 __device__ __forceinline__ void ReduceCopyMulti(const int tid, const int nthreads,
-    int nsrcs, const T* srcs[MAXSRCS], int ndsts, T* dsts[MAXDSTS],
+    int nsrcs, const T** srcs, int ndsts, T** dsts,
     const int offset, const int N) {
   for (int idx = offset+tid; idx < offset+N; idx += nthreads) {
     T val = vFetch(srcs[0]+idx);
@@ -265,7 +265,7 @@ __device__ __forceinline__ void ReduceCopyMulti(const int tid, const int nthread
 
 template<class FUNC, typename T, int UNROLL, int MINSRCS, int MAXSRCS, int MINDSTS, int MAXDSTS>
 __device__ __forceinline__ void ReduceCopy128bMulti( const int w, const int nw, const int t,
-    int nsrcs, const T* s[MAXSRCS], int ndsts, T* d[MAXDSTS],
+    int nsrcs, const T** s, int ndsts, T** d,
     const int elemOffset, const int Npack) {
   const int inc = nw * UNROLL * WARP_SIZE;
   int offset = w * UNROLL * WARP_SIZE + t;
@@ -315,7 +315,7 @@ __device__ int ptrAlign128(T* ptr) { return (uint64_t)ptr % alignof(Pack128); }
 
 template<int UNROLL, class FUNC, typename T, int MINSRCS, int MAXSRCS, int MINDSTS, int MAXDSTS>
 __device__ __forceinline__ void ReduceOrCopyMulti(const int tid, const int nthreads,
-    int nsrcs, const T* srcs[MAXSRCS], int ndsts, T* dsts[MAXDSTS],
+    int nsrcs, const T** srcs, int ndsts, T** dsts,
     int N) {
   int Nrem = N;
   if (Nrem <= 0) return;

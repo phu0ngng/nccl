@@ -43,18 +43,14 @@ class ncclFunction<ncclFuncSendRecv, NCCL_ALGO_RING, NCCL_PROTO_SIMPLE, FUNC, T,
       const int chunkSize = stepSize * SENDRECV_CHUNKSTEPS;
 
       int nthreadsSplit = nthreads/2;
-      // We set NRECV or NSEND to 2 to use different barriers in primitives for the send threads and
-      // receive threads, but then we define all peers to -1 since sender threads don't receive and
-      // receive threads don't send.
-      int peerNone[2] = {-1,-1};
 
       if (tid < nthreadsSplit + WARP_SIZE) {
         const ssize_t sendSize = args->p2p.sendCount;
         if (sendSize < 0) return;
 
         int peer = (comm->rank+(int)args->p2p.delta)%comm->nRanks;
-        ncclPrimitives<UNROLL, SENDRECV_CHUNKSTEPS/SENDRECV_SLICESTEPS, SENDRECV_SLICESTEPS, T, 2, 1, 1, FUNC, 0>
-          prims(tid, nthreadsSplit, peerNone, &peer, recvbuff, stepSize, channel, comm, args->opCount, ncclShmem->ptrs);
+        ncclPrimitives<UNROLL, SENDRECV_CHUNKSTEPS/SENDRECV_SLICESTEPS, SENDRECV_SLICESTEPS, T, 0, 1, 1, FUNC, 0>
+          prims(tid, nthreadsSplit, NULL, &peer, recvbuff, stepSize, channel, comm, args->opCount, ncclShmem->ptrs);
 
         if (sendSize == 0) {
           prims.send(sendbuff, 0);
@@ -69,8 +65,8 @@ class ncclFunction<ncclFuncSendRecv, NCCL_ALGO_RING, NCCL_PROTO_SIMPLE, FUNC, T,
         if (recvSize < 0) return;
 
         int peer = (comm->rank-(int)args->p2p.delta+comm->nRanks)%comm->nRanks;
-        ncclPrimitives<UNROLL, SENDRECV_CHUNKSTEPS/SENDRECV_SLICESTEPS, SENDRECV_SLICESTEPS, T, 1, 2, 1, FUNC, 1>
-          prims(tid-nthreadsSplit-WARP_SIZE, nthreads-nthreadsSplit, &peer, peerNone, recvbuff, stepSize, channel, comm, args->opCount, ncclShmem->ptrs+1);
+        ncclPrimitives<UNROLL, SENDRECV_CHUNKSTEPS/SENDRECV_SLICESTEPS, SENDRECV_SLICESTEPS, T, 1, 0, 1, FUNC, 1>
+          prims(tid-nthreadsSplit-WARP_SIZE, nthreads-nthreadsSplit, &peer, NULL, recvbuff, stepSize, channel, comm, args->opCount, ncclShmem->ptrs+1);
 
         if (recvSize == 0) {
           prims.recv(recvbuff, 0);
