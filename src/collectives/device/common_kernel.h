@@ -253,13 +253,13 @@ __device__ __forceinline__ void ReduceCopyMulti(const int tid, const int nthread
     T val = vFetch(srcs[0]+idx);
     #pragma unroll
     for (int i=1; i<MINSRCS; i++) val = FUNC()(val, vFetch(srcs[i]+idx));
-    #pragma unroll 1
-    for (int i=MINSRCS; i<MAXSRCS && i<nsrcs; i++) val = FUNC()(val, vFetch(srcs[i]+idx));
+    #pragma unroll
+    for (int i=MINSRCS; i<MAXSRCS; i++) if (i<nsrcs) val = FUNC()(val, vFetch(srcs[i]+idx));
 
     #pragma unroll
     for (int i=0; i<MINDSTS; i++) vStore(dsts[i]+idx, val);
-    #pragma unroll 1
-    for (int i=MINDSTS; i<MAXDSTS && i<ndsts; i++) vStore(dsts[i]+idx, val);
+    #pragma unroll
+    for (int i=MINDSTS; i<MAXDSTS; i++) if (i<ndsts) vStore(dsts[i]+idx, val);
   }
 }
 
@@ -285,20 +285,24 @@ __device__ __forceinline__ void ReduceCopy128bMulti( const int w, const int nw, 
       for (int u = 0; u < UNROLL; ++u) Fetch128(vals2[u], srcs[i]+u*WARP_SIZE);
       for (int u = 0; u < UNROLL; ++u) MULTI128<FUNC, T>()(vals[u], vals2[u]);
     }
-    #pragma unroll 1
-    for (int i=MINSRCS; i<MAXSRCS && i<nsrcs; i++) {
-      Pack128 vals2[UNROLL];
-      for (int u = 0; u < UNROLL; ++u) Fetch128(vals2[u], srcs[i]+u*WARP_SIZE);
-      for (int u = 0; u < UNROLL; ++u) MULTI128<FUNC, T>()(vals[u], vals2[u]);
+    #pragma unroll
+    for (int i=MINSRCS; i<MAXSRCS; i++) {
+      if (i<nsrcs) {
+        Pack128 vals2[UNROLL];
+        for (int u = 0; u < UNROLL; ++u) Fetch128(vals2[u], srcs[i]+u*WARP_SIZE);
+        for (int u = 0; u < UNROLL; ++u) MULTI128<FUNC, T>()(vals[u], vals2[u]);
+      }
     }
 
     // Store
     for (int i = 0; i < MINDSTS; i++) {
       for (int u = 0; u < UNROLL; ++u) Store128(dsts[i]+u*WARP_SIZE, vals[u]);
     }
-    #pragma unroll 1
-    for (int i=MINDSTS; i<MAXDSTS && i<ndsts; i++) {
-      for (int u = 0; u < UNROLL; ++u) Store128(dsts[i]+u*WARP_SIZE, vals[u]);
+    #pragma unroll
+    for (int i=MINDSTS; i<MAXDSTS; i++) {
+      if (i<ndsts) {
+        for (int u = 0; u < UNROLL; ++u) Store128(dsts[i]+u*WARP_SIZE, vals[u]);
+      }
     }
     for (int i=0; i<MAXSRCS; i++) srcs[i] += inc;
     for (int i=0; i<MAXDSTS; i++) dsts[i] += inc;
