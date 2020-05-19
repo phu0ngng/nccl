@@ -235,7 +235,6 @@ ncclResult_t remoteAlloc(void** ptr, int fd) {
   NCCLCHECK(socketSend(fd, &devIpc, sizeof(cudaIpcMemHandle_t)));
   // And the direct pointer
   NCCLCHECK(socketSend(fd, ptr, sizeof(void*)));
-  printf("Allocated and sent %p, size %ld\n", *ptr, size);
   return ncclSuccess;
 }
 
@@ -276,7 +275,6 @@ void* ncclRemoteMemAllocationService(void* args) {
           close(pollfds[s].fd);
           pollfds[s].fd = -1;
         } else {
-          printf("Segment %d -> fd %d\n", s, pollfds[s].fd);
           nbuffers++;
         }
       }
@@ -311,7 +309,6 @@ ncclResult_t bootstrapRemAlloc(size_t size, int rank, void* commState, int* id, 
   NCCLCHECKGOTO(socketSend(fd, &size, sizeof(size_t)), res, end);
   NCCLCHECKGOTO(socketRecv(fd, ipc, sizeof(cudaIpcMemHandle_t)), res, end);
   NCCLCHECKGOTO(socketRecv(fd, ptr, sizeof(void*)), res, end);
-  printf("Rem Alloc %ld bytes from rank %d -> %p, id %d\n", size, rank, *ptr, fd);
   *id = fd;
 end:
   return res;

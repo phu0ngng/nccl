@@ -172,7 +172,6 @@ ncclResult_t p2pSendSetup(struct ncclComm* comm, struct ncclTopoGraph* graph, st
           channelId, myInfo->rank, myInfo->busId, peerInfo->rank, peerInfo->busId, useReadStr);
     }
   } else {
-    printf("Send %02d %d->%d : Rem alloc graph %p\n", channelId, myInfo->rank, peerInfo->rank, graph);
     NCCLCHECK(bootstrapRemAlloc(sendSize, intermediateRank, resources->bootstrap, &resources->remoteId, &info.devIpc, &info.directPtr));
     info.rank = intermediateRank;
     INFO(NCCL_INIT|NCCL_P2P, "Channel %02d : %d[%lx] -> %d[%lx] via P2P/indirect/%d[%lx]%s",
@@ -216,7 +215,6 @@ ncclResult_t p2pRecvSetup(struct ncclComm* comm, struct ncclTopoGraph* graph, st
       CUDACHECK(cudaIpcGetMemHandle(&info.devIpc, info.directPtr));
     }
   } else {
-    printf("Recv %02d %d->%d : Rem alloc graph %p\n", channelId, myInfo->rank, peerInfo->rank, graph);
     NCCLCHECK(bootstrapRemAlloc(recvSize, intermediateRank, resources->bootstrap, &resources->remoteId, &info.devIpc, &info.directPtr));
     info.rank = intermediateRank;
   }
