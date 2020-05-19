@@ -476,7 +476,7 @@ ncclResult_t ncclIbAccept(void* listenComm, void** recvComm) {
   socklen_t socklen = sizeof(struct sockaddr_in);
   SYSCHECKVAL(accept(lComm->fd, (struct sockaddr*)&sockaddr, &socklen), "accept", rComm->fd);
   struct ncclIbQpInfo remQpInfo;
-  NCCLCHECK(socketReceive(rComm->fd, &remQpInfo, sizeof(remQpInfo)));
+  NCCLCHECK(socketRecv(rComm->fd, &remQpInfo, sizeof(remQpInfo)));
 
   // IB setup
   ibv_context* ctx = ncclIbDevs[lComm->dev].context;

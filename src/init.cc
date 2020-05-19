@@ -465,7 +465,7 @@ static int collNetSetup(struct ncclComm* comm, struct ncclTopoGraph* collNetGrap
   // setup
   struct ncclConnect myConnect;
   if (isMaster && ret > 0) {
-    NCCLCHECK(transportComm->setup(comm->topo, collNetGraph, myInfo, peerInfo, &myConnect, conn, channel->id));
+    NCCLCHECK(transportComm->setup(comm, collNetGraph, myInfo, peerInfo, &myConnect, conn, channel->id));
   }
   // prepare connect handles
   ncclResult_t res;
@@ -495,7 +495,7 @@ static int collNetSetup(struct ncclComm* comm, struct ncclTopoGraph* collNetGrap
   }
   // connect
   if (isMaster && ret > 0) {
-    NCCLCHECKGOTO(transportComm->connect(masterConnects, nMasters, rankInCollNet, conn), res, cleanup);
+    NCCLCHECKGOTO(transportComm->connect(comm, masterConnects, nMasters, rankInCollNet, conn), res, cleanup);
     struct ncclPeer* devRoot = channel->devPeers+nranks;
     struct ncclConnector* devConn = (type == 1) ? &devRoot->recv : &devRoot->send;
     CUDACHECKGOTO(cudaMemcpy(devConn, conn, sizeof(struct ncclConnector), cudaMemcpyHostToDevice), res, cleanup);
