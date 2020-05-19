@@ -60,9 +60,12 @@ static ncclResult_t ncclTopoSetPaths(struct ncclTopoNode* baseNode, struct ncclT
         struct ncclTopoLinkList* remPath;
         NCCLCHECK(getPath(system, remNode, baseNode->type, baseNode->id, &remPath));
         float width = std::min(path->width, link->width);
-        // allow routing through a GPU only as 1-step
-        int gpuSteps = remNode->type == GPU ? path->count : 0;
-        if ((remPath->width == 0 || remPath->count > path->count) && remPath->width < width && gpuSteps <= 1) {
+
+        // allow routing through a GPU only as 1 hop
+        if (node != baseNode && node->type == GPU &&
+            (link->type != LINK_NVL || remNode->type != GPU || path->count > 1)) continue;
+
+        if ((remPath->width == 0 || remPath->count > path->count) && remPath->width < width) {
           // Find reverse link
           for (int l=0; l<remNode->nlinks; l++) {
             if (remNode->links[l].remNode == node) {
@@ -90,6 +93,8 @@ static ncclResult_t ncclTopoSetPaths(struct ncclTopoNode* baseNode, struct ncclT
           // Ignore Power CPU in an NVLink path
           if (path->type == PATH_NVL && type == PATH_SYS && link->remNode->type == CPU &&
               link->remNode->cpu.arch == NCCL_TOPO_CPU_ARCH_POWER) type = 0;
+          // Set 1 hop NVLink as NVB
+          if (node->type == GPU && path->type == PATH_NVL && type == PATH_NVL && remPath->count > 1) type = PATH_NVB;
 
           remPath->type = std::max(path->type, type);
 
@@ -216,7 +221,7 @@ ncclResult_t ncclGetLevel(int* level, const char* disableEnv, const char* levelE
     if (l == -1) {
       char* str = getenv(levelEnv);
       if (str) {
-        for (int i=0; i<PATH_NET; i++) {
+        for (int i=0; i<PATH_SYS; i++) {
           if (strcmp(str, topoPathTypeStr[i]) == 0) {
             l = i;
             break;
