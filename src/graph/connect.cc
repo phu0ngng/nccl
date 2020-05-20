@@ -120,27 +120,28 @@ static ncclResult_t getIndexes(int* ranks, int* indexes, int nNodes, int* firstR
  return ncclSuccess;
 }
 
-static ncclResult_t setTreeUp(struct ncclTree* tree0, struct ncclTree* tree1, int* indexes, int u0, int u1) {
-  if (u0 != -1) tree0->up = indexes[u0];
-  if (u1 != -1) tree1->up = indexes[u1];
+#define SIDE_TO_INDEX(node, u, indexesSend, indexesRecv) (node < u ? indexesRecv[u] : indexesSend[u])
+
+static ncclResult_t setTreeUp(struct ncclTree* tree0, struct ncclTree* tree1, int* indexesSend, int* indexesRecv, int node, int u0, int u1) {
+  if (u0 != -1) tree0->up = SIDE_TO_INDEX(node, u0, indexesSend, indexesRecv);
+  if (u1 != -1) tree1->up = SIDE_TO_INDEX(node, u1, indexesSend, indexesRecv);
   return ncclSuccess;
 }
 
-static ncclResult_t addRanksDown(int* down, int* indexes, int r0, int r1) {
+#define TREE_ARITY 3
+static ncclResult_t addRanksDown(int* down, int* indexes, int r) {
   int x = 0;
-  if (down[x] >= 0) x++;
-  if (down[x] >= 0) {
-    WARN("Internal error : tree already has more than one child (%d %d %d)\n", down[0], down[1], down[2]);
+  while (x < TREE_ARITY && down[x] >= 0) x++;
+  if (x == TREE_ARITY) {
+    WARN("Internal error : tree already has %d children (%d %d %d)\n", x, down[0], down[1], down[2]);
     return ncclInternalError;
   }
-  if (r0 != -1) down[x++] = indexes[r0];
-  if (r1 != -1) down[x++] = indexes[r1];
+  if (r != -1) down[x] = indexes[r];
   return ncclSuccess;
 }
 
-static ncclResult_t setTreeDown(struct ncclTree* tree0, struct ncclTree* tree1, int* indexes, int d0_0, int d0_1, int d1_0, int d1_1) {
-  NCCLCHECK(addRanksDown(tree0->down, indexes, d0_0, d0_1));
-  NCCLCHECK(addRanksDown(tree1->down, indexes, d1_0, d1_1));
+static ncclResult_t setTreeDown(struct ncclTree* tree, int* indexes, int d) {
+  NCCLCHECK(addRanksDown(tree->down, indexes, d));
   return ncclSuccess;
 }
 
@@ -170,18 +171,42 @@ static ncclResult_t connectTrees(struct ncclComm* comm, int* treeUpRecv, int* tr
      NCCLCHECK(openRing(&channel0->treeUp, comm->rank, indexesSend[node]));
      NCCLCHECK(openRing(&channel1->treeUp, comm->rank, indexesSend[node]));
      int root = indexesSend[node];
-     if (indexesSend[node] == comm->rank) NCCLCHECK(setTreeUp(&channel0->treeUp, &channel1->treeUp, indexesRecv, u0, u1));
-     if (indexesRecv[node] == comm->rank) NCCLCHECK(setTreeDown(&channel0->treeUp, &channel1->treeUp, indexesSend, d0_0, d0_1, d1_0, d1_1));
+     if (indexesSend[node] == comm->rank) NCCLCHECK(setTreeUp(&channel0->treeUp, &channel1->treeUp, indexesSend, indexesRecv, node, u0, u1));
+     int d0_r, d0_s, d1_r, d1_s;
+     d0_r = d0_0 < d0_1 ? d0_0 : d0_1;
+     d0_s = d0_0 < d0_1 ? d0_1 : d0_0;
+     d1_r = d1_0 < d1_1 ? d1_0 : d1_1;
+     d1_s = d1_0 < d1_1 ? d1_1 : d1_0;
+     if (indexesRecv[node] == comm->rank) {
+       NCCLCHECK(setTreeDown(&channel0->treeUp, indexesSend, d0_r));
+       NCCLCHECK(setTreeDown(&channel1->treeUp, indexesSend, d1_r));
+     }
+     if (indexesSend[node] == comm->rank) { // Added (may correspond to the -1 child)
+       INFO(NCCL_GRAPH, "Tree Node [%d]: up %d left %d right %d", node, u0, d0_r, d0_s);
+       NCCLCHECK(setTreeDown(&channel0->treeUp, indexesSend, d0_s));
+       NCCLCHECK(setTreeDown(&channel1->treeUp, indexesSend, d1_s));
+     }
+     if (indexesSend[node] == comm->rank || indexesRecv[node] == comm->rank) {
+       INFO(NCCL_GRAPH, "TreeUp %d : %d -> %d -> %d/%d/%d", c,           channel0->treeUp.up, comm->rank, channel0->treeUp.down[0], channel0->treeUp.down[1], channel0->treeUp.down[2]);
+       INFO(NCCL_GRAPH, "TreeUp %d : %d -> %d -> %d/%d/%d", c+nChannels, channel1->treeUp.up, comm->rank, channel1->treeUp.down[0], channel1->treeUp.down[1], channel1->treeUp.down[2]);
+     }
      NCCLCHECK(getIndexes(treeDnSend+c*comm->nRanks, indexesSend, nNodes, firstRanks));
      NCCLCHECK(getIndexes(treeDnRecv+c*comm->nRanks, indexesRecv, nNodes, firstRanks));
      NCCLCHECK(openRing(&channel0->treeDn, comm->rank, u0 == -1 ? root : indexesRecv[node]));
      NCCLCHECK(openRing(&channel1->treeDn, comm->rank, u1 == -1 ? root : indexesRecv[node]));
-     if (indexesSend[node] == comm->rank) NCCLCHECK(setTreeDown(&channel0->treeDn, &channel1->treeDn, indexesRecv, d0_0, d0_1, d1_0, d1_1));
-     if (indexesRecv[node] == comm->rank) NCCLCHECK(setTreeUp(&channel0->treeDn, &channel1->treeDn, indexesSend, u0, u1));
-     TRACE(NCCL_GRAPH, "TreeUp %d : %d -> %d/%d/%d", c,           channel0->treeUp.up, channel0->treeUp.down[0], channel0->treeUp.down[1], channel0->treeUp.down[2]);
-     TRACE(NCCL_GRAPH, "TreeUp %d : %d -> %d/%d/%d", c+nChannels, channel1->treeUp.up, channel1->treeUp.down[0], channel1->treeUp.down[1], channel1->treeUp.down[2]);
-     TRACE(NCCL_GRAPH, "TreeDn %d : %d -> %d/%d/%d", c,           channel0->treeDn.up, channel0->treeDn.down[0], channel0->treeDn.down[1], channel0->treeDn.down[2]);
-     TRACE(NCCL_GRAPH, "TreeDn %d : %d -> %d/%d/%d", c+nChannels, channel1->treeDn.up, channel1->treeDn.down[0], channel1->treeDn.down[1], channel1->treeDn.down[2]);
+     if (indexesSend[node] == comm->rank) {
+       NCCLCHECK(setTreeDown(&channel0->treeDn, indexesRecv, d0_r));
+       NCCLCHECK(setTreeDown(&channel1->treeDn, indexesRecv, d1_r));
+     }
+     if (indexesRecv[node] == comm->rank) {
+       NCCLCHECK(setTreeDown(&channel0->treeDn, indexesRecv, d0_s));  // Added (may be -1 child)
+       NCCLCHECK(setTreeDown(&channel1->treeDn, indexesRecv, d1_s));  // Added (may be -1 child)
+     }
+     if (indexesRecv[node] == comm->rank) NCCLCHECK(setTreeUp(&channel0->treeDn, &channel1->treeDn, indexesRecv, indexesSend, node, u0, u1));
+     if (indexesSend[node] == comm->rank || indexesRecv[node] == comm->rank) {
+       INFO(NCCL_GRAPH, "TreeDn %d : %d -> %d/%d/%d", c,           channel0->treeDn.up, channel0->treeDn.down[0], channel0->treeDn.down[1], channel0->treeDn.down[2]);
+       INFO(NCCL_GRAPH, "TreeDn %d : %d -> %d/%d/%d", c+nChannels, channel1->treeDn.up, channel1->treeDn.down[0], channel1->treeDn.down[1], channel1->treeDn.down[2]);
+     }
      channel0->treeUp.depth = channel1->treeUp.depth = depth;
   }
   free(indexesSend);
