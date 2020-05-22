@@ -11,7 +11,7 @@
 #include "align.h"
 #include <stdint.h>
 
-#define NCCL_NUM_FUNCTIONS 5 //p2p not including as of now
+#define NCCL_NUM_FUNCTIONS 5 // p2p not included as of now
 typedef enum { ncclCollBroadcast, ncclCollReduce, ncclCollAllGather, ncclCollReduceScatter, ncclCollAllReduce, ncclCollSendRecv} ncclFunc_t;
 extern const char* ncclFuncStr[NCCL_NUM_FUNCTIONS];
 
