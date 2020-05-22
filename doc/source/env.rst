@@ -479,7 +479,7 @@ The default value is INIT.
 
 Supported subsystem names are INIT (stands for initialization), COLL (stands for collectives), P2P (stands for
 peer-to-peer), SHM (stands for shared memory), NET (stands for network), GRAPH (stands for topology detection
-and graph search), TUNING (stands for algorithm/protocol tuning) and ALL (includes every subsystem).
+and graph search), TUNING (stands for algorithm/protocol tuning), ENV (stands for environment settings), and ALL (includes every subsystem).
 
 NCCL_COLLNET_ENABLE
 -------------------
