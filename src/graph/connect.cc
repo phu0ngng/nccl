@@ -47,20 +47,16 @@ ncclResult_t ncclTopoPreset(struct ncclComm* comm,
         int recvIndex = 0, sendIndex = treeGraph->pattern == NCCL_TOPO_PATTERN_TREE ? 0 : 1;
         int prev = (i-1+localRanks)%localRanks, next = (i+1)%localRanks;
 
-        // Tree loop always flows in the same direction. Other trees are symmetric, i.e.
-        // up/down go in reverse directions
-        int sym = treeGraph->pattern == NCCL_TOPO_PATTERN_SPLIT_TREE_LOOP ? 0 : 1;
-
         // Down tree is common
         topoRanks->treeDnRecv[c] = treeIntra[recvIndex];
         topoRanks->treeDnSend[c] = treeIntra[sendIndex];
         channel->treeDn.up       = treeIntra[prev];
         channel->treeDn.down[0]  = treeIntra[next];
         // Up tree depends on the pattern
-        topoRanks->treeUpRecv[c] = sym ? topoRanks->treeDnSend[c] : topoRanks->treeDnRecv[c];
-        topoRanks->treeUpSend[c] = sym ? topoRanks->treeDnRecv[c] : topoRanks->treeDnSend[c];
-        channel->treeUp.down[0]  = sym ? channel->treeDn.down[0]  : channel->treeDn.up ;
-        channel->treeUp.up       = sym ? channel->treeDn.up       : channel->treeDn.down[0];
+        topoRanks->treeUpRecv[c] = topoRanks->treeDnSend[c];
+        topoRanks->treeUpSend[c] = topoRanks->treeDnRecv[c];
+        channel->treeUp.down[0]  = channel->treeDn.down[0];
+        channel->treeUp.up       = channel->treeDn.up;
       }
       if (collNetIntra[i] == rank) {
         int prev = (i-1+localRanks)%localRanks, next = (i+1)%localRanks;

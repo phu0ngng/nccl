@@ -50,9 +50,9 @@ ncclResult_t ncclTopoGetNetCount(struct ncclTopoSystem* system, int* count);
 // Init search. Needs to be done before calling ncclTopoCompute
 ncclResult_t ncclTopoSearchInit(struct ncclTopoSystem* system);
 
-#define NCCL_TOPO_PATTERN_SPLIT_TREE_LOOP 1 // Split tree (send/recv from different ranks) always flowing in the same direction
-#define NCCL_TOPO_PATTERN_SPLIT_TREE 2      // Split tree (send/recv from different ranks) flowing in both directions
-#define NCCL_TOPO_PATTERN_TREE 3            // Simple tree (send/recv from same rank) flowing in both directions
+#define NCCL_TOPO_PATTERN_BALANCED_TREE 1   // Spread NIC traffic between two GPUs (Tree parent + one child on first GPU, second child on second GPU)
+#define NCCL_TOPO_PATTERN_SPLIT_TREE 2      // Spread NIC traffic between two GPUs (Tree parent on first GPU, tree children on the second GPU)
+#define NCCL_TOPO_PATTERN_TREE 3            // All NIC traffic going to/from the same GPU
 #define NCCL_TOPO_PATTERN_RING 4            // Ring
 struct ncclTopoGraph {
   // Input / output

@@ -326,11 +326,26 @@ ncclResult_t ncclTopoSearchRecGpu(struct ncclTopoSystem* system, struct ncclTopo
         struct ncclTopoNode* net = system->nodes[NET].nodes+n;
         if (graph->pattern == NCCL_TOPO_PATTERN_TREE && net->id != startNet->id) continue; // Trees are symmetric
         if (graph->crossNic != 1 && (net->net.asic != startNet->net.asic || net->net.port != startNet->net.port)) continue;
+
+        // Balanced Tree : count half of the bandwidth on first two GPUs
+        int nextBackToNet = -1;
+        float speedInterSave = graph->speedInter;
+        if (graph->pattern == NCCL_TOPO_PATTERN_BALANCED_TREE) {
+          // Count half of the bandwidth on first two GPUs
+          if (step == 0) nextBackToNet = 1;
+          else if (net->id != graph->inter[graph->nChannels*2]+1) continue;
+          graph->speedInter /= 2;
+        }
+
         NCCLCHECK(ncclTopoFollowPath(system, graph, GPU, g, NET, n, 1, &net));
+        graph->speedInter = speedInterSave;
         if (net) {
           graph->inter[graph->nChannels*2+1] = net->id;
-          NCCLCHECK(ncclTopoSearchRecGpu(system, graph, saveGraph, gpu, step, -1, backToFirstRank, forcedOrder, time));
+          NCCLCHECK(ncclTopoSearchRecGpu(system, graph, saveGraph, gpu, step, nextBackToNet, backToFirstRank, forcedOrder, time));
+
+          if (graph->pattern == NCCL_TOPO_PATTERN_BALANCED_TREE) graph->speedInter /= 2;
           NCCLCHECK(ncclTopoFollowPath(system, graph, GPU, g, NET, n, -1, &net));
+          graph->speedInter = speedInterSave;
         }
       }
     }
@@ -460,13 +475,12 @@ ncclResult_t ncclTopoSearchRecNet(struct ncclTopoSystem* system, struct ncclTopo
 ncclResult_t ncclTopoSearchParams(struct ncclTopoSystem* system, int pattern, int* backToNet, int* backToFirstRank) {
   if (system->nodes[NET].count) {
     if (pattern == NCCL_TOPO_PATTERN_RING) *backToNet = system->nodes[GPU].count-1;
-    else if (pattern == NCCL_TOPO_PATTERN_TREE) *backToNet = 0;
-    else *backToNet = 1;
-    if (pattern == NCCL_TOPO_PATTERN_SPLIT_TREE_LOOP) *backToFirstRank = system->nodes[GPU].count-1;
-    else *backToFirstRank = -1;
+    else if (pattern == NCCL_TOPO_PATTERN_SPLIT_TREE) *backToNet = 1;
+    else *backToNet = 0;
+    *backToFirstRank = -1;
   } else {
     *backToNet = -1;
-    if (pattern == NCCL_TOPO_PATTERN_RING || pattern == NCCL_TOPO_PATTERN_SPLIT_TREE_LOOP) *backToFirstRank = system->nodes[GPU].count-1;
+    if (pattern == NCCL_TOPO_PATTERN_RING) *backToFirstRank = system->nodes[GPU].count-1;
     else *backToFirstRank = -1;
   }
   return ncclSuccess;
@@ -709,7 +723,7 @@ search:
     tmpGraph.typeInter = PATH_PIX;
 
     // Try a simpler tree
-    if (tmpGraph.pattern == NCCL_TOPO_PATTERN_SPLIT_TREE_LOOP) {
+    if (tmpGraph.pattern == NCCL_TOPO_PATTERN_BALANCED_TREE) {
       tmpGraph.pattern = NCCL_TOPO_PATTERN_SPLIT_TREE;
       goto search;
     }
