@@ -120,6 +120,9 @@ static ncclResult_t getIndexes(int* ranks, int* indexes, int nNodes, int* firstR
  return ncclSuccess;
 }
 
+// leftRight indicates whether the current node is the left child or the right child of node u
+// 0: left, connect to the regular receive GPU of node u
+// 1: right, connect to the send GPU of node u
 #define SIDE_TO_INDEX(leftRight, u, indexesSend, indexesRecv) (leftRight == 0 ? indexesRecv[u] : indexesSend[u])
 
 static ncclResult_t setTreeUp(struct ncclTree* tree0, struct ncclTree* tree1, int* indexesSend, int* indexesRecv, int u0, int leftRight0, int u1, int leftRight1) {
@@ -175,14 +178,9 @@ static ncclResult_t connectTrees(struct ncclComm* comm, int* treeUpRecv, int* tr
        NCCLCHECK(setTreeDown(&channel0->treeUp, indexesSend, d0_0));
        NCCLCHECK(setTreeDown(&channel1->treeUp, indexesSend, d1_0));
      }
-     if (indexesSend[node] == comm->rank) { // Added (right child)
-       INFO(NCCL_GRAPH, "Tree Node [%d]: up %d left %d right %d", node, u0, d0_0, d0_1);
+     if (indexesSend[node] == comm->rank) {
        NCCLCHECK(setTreeDown(&channel0->treeUp, indexesSend, d0_1));
        NCCLCHECK(setTreeDown(&channel1->treeUp, indexesSend, d1_1));
-     }
-     if (indexesSend[node] == comm->rank || indexesRecv[node] == comm->rank) {
-       INFO(NCCL_GRAPH, "TreeUp %d : %d -> %d -> %d/%d/%d", c,           channel0->treeUp.up, comm->rank, channel0->treeUp.down[0], channel0->treeUp.down[1], channel0->treeUp.down[2]);
-       INFO(NCCL_GRAPH, "TreeUp %d : %d -> %d -> %d/%d/%d", c+nChannels, channel1->treeUp.up, comm->rank, channel1->treeUp.down[0], channel1->treeUp.down[1], channel1->treeUp.down[2]);
      }
      NCCLCHECK(getIndexes(treeDnSend+c*comm->nRanks, indexesSend, nNodes, firstRanks));
      NCCLCHECK(getIndexes(treeDnRecv+c*comm->nRanks, indexesRecv, nNodes, firstRanks));
@@ -192,12 +190,14 @@ static ncclResult_t connectTrees(struct ncclComm* comm, int* treeUpRecv, int* tr
        NCCLCHECK(setTreeDown(&channel0->treeDn, indexesRecv, d0_0));
        NCCLCHECK(setTreeDown(&channel1->treeDn, indexesRecv, d1_0));
      }
-     if (indexesRecv[node] == comm->rank) { // Added (right child)
+     if (indexesRecv[node] == comm->rank) {
        NCCLCHECK(setTreeDown(&channel0->treeDn, indexesRecv, d0_1));
        NCCLCHECK(setTreeDown(&channel1->treeDn, indexesRecv, d1_1));
      }
      if (indexesRecv[node] == comm->rank) NCCLCHECK(setTreeUp(&channel0->treeDn, &channel1->treeDn, indexesRecv, indexesSend, u0, leftRight0, u1, leftRight1));
      if (indexesSend[node] == comm->rank || indexesRecv[node] == comm->rank) {
+       INFO(NCCL_GRAPH, "TreeUp %d : %d -> %d -> %d/%d/%d", c,           channel0->treeUp.up, comm->rank, channel0->treeUp.down[0], channel0->treeUp.down[1], channel0->treeUp.down[2]);
+       INFO(NCCL_GRAPH, "TreeUp %d : %d -> %d -> %d/%d/%d", c+nChannels, channel1->treeUp.up, comm->rank, channel1->treeUp.down[0], channel1->treeUp.down[1], channel1->treeUp.down[2]);
        INFO(NCCL_GRAPH, "TreeDn %d : %d -> %d -> %d/%d/%d", c,           channel0->treeDn.up, comm->rank, channel0->treeDn.down[0], channel0->treeDn.down[1], channel0->treeDn.down[2]);
        INFO(NCCL_GRAPH, "TreeDn %d : %d -> %d -> %d/%d/%d", c+nChannels, channel1->treeDn.up, comm->rank, channel1->treeDn.down[0], channel1->treeDn.down[1], channel1->treeDn.down[2]);
      }

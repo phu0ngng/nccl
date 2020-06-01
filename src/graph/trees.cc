@@ -43,6 +43,7 @@ ncclResult_t ncclGetBtree(int nranks, int rank, int* u, int* d0, int* d1, int* l
   }
 
   up = (rank ^ bit) | (bit << 1);
+  // if smaller than the parent, we are on the left, otherwise on the right
   *leftRight = (rank < up) ? 0 : 1;
   if (up >= nranks) up = (rank ^ bit);
   *u = up;
