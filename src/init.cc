@@ -548,10 +548,9 @@ NCCL_PARAM(CrossNic, "CROSS_NIC", 2);
 NCCL_PARAM(GraphDumpFileRank, "GRAPH_DUMP_FILE_RANK", 0);
 
 static ncclResult_t initTransportsRank(struct ncclComm* comm, ncclUniqueId* commId) {
-  // We use 3 AllGathers
-  // 1. { peerInfo, comm }
-  // 2. ConnectTransport[nranks], ConnectValue[nranks]
-  // 3. { nThreads, nrings, compCap, prev[MAXCHANNELS], next[MAXCHANNELS] }
+  // We use 2 AllGathers
+  // 1. { peerInfo, comm, compCap}
+  // 2. { nChannels, graphInfo, topoRanks }
 
   int rank = comm->rank;
   int nranks = comm->nRanks;
@@ -563,10 +562,12 @@ static ncclResult_t initTransportsRank(struct ncclComm* comm, ncclUniqueId* comm
   struct {
     struct ncclPeerInfo peerInfo;
     struct ncclComm* comm;
+    int cudaCompCap;
   } *allGather1Data;
 
   NCCLCHECK(ncclCalloc(&allGather1Data, nranks));
   allGather1Data[rank].comm = comm;
+  allGather1Data[rank].cudaCompCap = ncclCudaCompCap();
   struct ncclPeerInfo* myInfo = &allGather1Data[rank].peerInfo;
   NCCLCHECK(fillInfo(comm, myInfo, commHash));
   NCCLCHECK(bootstrapAllGather(comm->bootstrap, allGather1Data, sizeof(*allGather1Data)));
@@ -579,7 +580,35 @@ static ncclResult_t initTransportsRank(struct ncclComm* comm, ncclUniqueId* comm
       return ncclInvalidUsage;
     }
   }
-  // AllGather1 data is used again below
+
+  // Compute intra ranks and minimum CUDA Compute capabilities of intra-node GPUs and all GPUs
+  int intraRank0 = -1, intraRank = -1, intraRanks = 0;
+  int myCompCap = allGather1Data[rank].cudaCompCap;
+  int intraMinCompCap = myCompCap, intraMaxCompCap = myCompCap;
+  int minCompCap = myCompCap, maxCompCap = myCompCap;
+  for (int i = 0; i < nranks; i++) {
+    if ((allGather1Data[i].peerInfo.hostHash == allGather1Data[rank].peerInfo.hostHash) &&
+        (allGather1Data[i].peerInfo.pidHash == allGather1Data[rank].peerInfo.pidHash)) {
+      if (intraRanks == 0) intraRank0 = i;
+      if (i == rank) intraRank = intraRanks;
+      intraRanks++;
+      intraMinCompCap = std::min(allGather1Data[i].cudaCompCap, intraMinCompCap);
+      intraMaxCompCap = std::max(allGather1Data[i].cudaCompCap, intraMaxCompCap);
+    }
+    minCompCap = std::min(allGather1Data[i].cudaCompCap, minCompCap);
+    maxCompCap = std::max(allGather1Data[i].cudaCompCap, maxCompCap);
+  }
+  TRACE(NCCL_INIT,"hostHash[%d] %lx intraRank %d intraRanks %d intraRank0 %d",
+        rank, allGather1Data[rank].peerInfo.hostHash, intraRank, intraRanks, intraRank0);
+  if (intraRank == -1 || intraRank0 == -1 || allGather1Data[intraRank0].comm == NULL) {
+    WARN("Failed to determine intra ranks hostHash[%d] %lx intraRank %d intraRanks %d intraRank0 %d",
+         rank, allGather1Data[rank].peerInfo.hostHash, intraRank, intraRanks, intraRank0);
+    return ncclInternalError;
+  }
+  struct ncclComm* intraRank0Comm = allGather1Data[intraRank0].comm;
+
+  free(allGather1Data);
+
   // AllGather1 - end
 
   // Topo detection / System graph creation
@@ -608,7 +637,7 @@ static ncclResult_t initTransportsRank(struct ncclComm* comm, ncclUniqueId* comm
 
   struct ncclTopoGraph treeGraph;
   treeGraph.id = 1;
-  treeGraph.pattern = NCCL_TOPO_PATTERN_SPLIT_TREE;
+  treeGraph.pattern = intraMinCompCap >= 80 ? NCCL_TOPO_PATTERN_BALANCED_TREE : NCCL_TOPO_PATTERN_SPLIT_TREE;
   treeGraph.crossNic = ncclParamCrossNic();
   treeGraph.collNet = 0;
   treeGraph.minChannels = 1;
@@ -640,7 +669,6 @@ static ncclResult_t initTransportsRank(struct ncclComm* comm, ncclUniqueId* comm
   };
 
   struct {
-    int cudaCompCap;
     int fullCudaCompCap;
     int nChannels;
     struct ncclGraphInfo tree;
@@ -650,7 +678,6 @@ static ncclResult_t initTransportsRank(struct ncclComm* comm, ncclUniqueId* comm
   } *allGather3Data;
 
   NCCLCHECK(ncclCalloc(&allGather3Data, nranks));
-  allGather3Data[rank].cudaCompCap = ncclCudaCompCap();
   allGather3Data[rank].nChannels = comm->nChannels = treeGraph.nChannels = ringGraph.nChannels =
     std::min(treeGraph.nChannels, ringGraph.nChannels);
   allGather3Data[rank].tree.pattern = treeGraph.pattern;
@@ -674,7 +701,7 @@ static ncclResult_t initTransportsRank(struct ncclComm* comm, ncclUniqueId* comm
   NCCLCHECK(bootstrapAllGather(comm->bootstrap, allGather3Data, sizeof(*allGather3Data)));
 
   // Determine nNodes, firstRanks, ...
-  int* nodesFirstRank;
+  int *nodesFirstRank, *nodesTreePatterns;
   NCCLCHECK(ncclCalloc(&nodesFirstRank, nranks));
   NCCLCHECK(ncclCalloc(&nodesTreePatterns, nranks));
   for (int i=0; i<nranks; i++) {
@@ -686,22 +713,14 @@ static ncclResult_t initTransportsRank(struct ncclComm* comm, ncclUniqueId* comm
     if (node == -1) {
       node = comm->nNodes++;
       nodesFirstRank[node] = firstRank;
+      // Record tree pattern of each node as they can be different depending on sm arch
       nodesTreePatterns[node] = allGather3Data[i].tree.pattern;
     }
     if (i == comm->rank) comm->node = node;
   }
 
-  // Determine the minimum CUDA Compute capability of all GPUs
-  int myCompCap = allGather3Data[rank].cudaCompCap;
-  int minCompCap = myCompCap, maxCompCap = myCompCap;
-  for (int i = 0; i < nranks; i++) {
-    minCompCap = std::min(allGather3Data[i].cudaCompCap, minCompCap);
-    maxCompCap = std::max(allGather3Data[i].cudaCompCap, maxCompCap);
-  }
-
   int nChannelsOrig = comm->nChannels;
   struct ncclTopoRanks** allTopoRanks;
-  int* nodesTreePatterns;
   NCCLCHECK(ncclCalloc(&allTopoRanks, comm->nRanks));
   for (int i=0; i<nranks; i++) {
     allTopoRanks[i] = &allGather3Data[i].topoRanks;
@@ -817,27 +836,7 @@ affinity_restore:
   sched_setaffinity(0, sizeof(cpu_set_t), &affinitySave);
   if (ret != ncclSuccess) return ret;
 
-  // Compute intra ranks (using AllGather1 data)
-  int intraRank0 = -1, intraRank = -1, intraRanks = 0;
-  for (int i = 0; i < nranks; i++) {
-    if ((allGather1Data[i].peerInfo.hostHash == allGather1Data[rank].peerInfo.hostHash) &&
-        (allGather1Data[i].peerInfo.pidHash == allGather1Data[rank].peerInfo.pidHash)) {
-      if (intraRanks == 0) intraRank0 = i;
-      if (i == rank) intraRank = intraRanks;
-      intraRanks++;
-    }
-  }
-  TRACE(NCCL_INIT,"hostHash[%d] %lx intraRank %d intraRanks %d intraRank0 %d",
-        rank, allGather1Data[rank].peerInfo.hostHash, intraRank, intraRanks, intraRank0);
-  if (intraRank == -1 || intraRank0 == -1 || allGather1Data[intraRank0].comm == NULL) {
-    WARN("Failed to determine intra ranks hostHash[%d] %lx intraRank %d intraRanks %d intraRank0 %d",
-         rank, allGather1Data[rank].peerInfo.hostHash, intraRank, intraRanks, intraRank0);
-    return ncclInternalError;
-  }
-  NCCLCHECK(ncclCommSetIntra(comm, intraRank, intraRanks, allGather1Data[intraRank0].comm));
-
-  // Done with AllGather1 data
-  free(allGather1Data);
+  NCCLCHECK(ncclCommSetIntra(comm, intraRank, intraRanks, intraRank0Comm));
 
   if (comm->nNodes) NCCLCHECK(ncclProxyCreate(comm));
 
