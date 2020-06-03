@@ -640,7 +640,6 @@ static ncclResult_t initTransportsRank(struct ncclComm* comm, ncclUniqueId* comm
 
   struct {
     int cudaCompCap;
-    int fullCudaCompCap;
     int nChannels;
     struct ncclGraphInfo tree;
     struct ncclGraphInfo ring;
