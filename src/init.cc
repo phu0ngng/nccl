@@ -632,6 +632,7 @@ static ncclResult_t initTransportsRank(struct ncclComm* comm, ncclUniqueId* comm
 
   // AllGather3 - begin
   struct ncclGraphInfo {
+    int pattern;
     int sameChannels;
     float speedIntra;
     float speedInter;
@@ -652,14 +653,17 @@ static ncclResult_t initTransportsRank(struct ncclComm* comm, ncclUniqueId* comm
   allGather3Data[rank].cudaCompCap = ncclCudaCompCap();
   allGather3Data[rank].nChannels = comm->nChannels = treeGraph.nChannels = ringGraph.nChannels =
     std::min(treeGraph.nChannels, ringGraph.nChannels);
+  allGather3Data[rank].tree.pattern = treeGraph.pattern;
   allGather3Data[rank].tree.sameChannels = treeGraph.sameChannels;
   allGather3Data[rank].tree.speedIntra = treeGraph.speedIntra;
   allGather3Data[rank].tree.speedInter = treeGraph.speedInter;
   allGather3Data[rank].tree.typeIntra = treeGraph.typeIntra;
+  allGather3Data[rank].ring.pattern = ringGraph.pattern;
   allGather3Data[rank].ring.sameChannels = ringGraph.sameChannels;
   allGather3Data[rank].ring.speedIntra = ringGraph.speedIntra;
   allGather3Data[rank].ring.speedInter = ringGraph.speedInter;
   allGather3Data[rank].ring.typeIntra = ringGraph.typeIntra;
+  allGather3Data[rank].collNet.pattern = collNetGraph.pattern;
   allGather3Data[rank].collNet.sameChannels = collNetGraph.sameChannels;
   allGather3Data[rank].collNet.speedIntra = collNetGraph.speedIntra;
   allGather3Data[rank].collNet.speedInter = collNetGraph.speedInter;
@@ -672,6 +676,7 @@ static ncclResult_t initTransportsRank(struct ncclComm* comm, ncclUniqueId* comm
   // Determine nNodes, firstRanks, ...
   int* nodesFirstRank;
   NCCLCHECK(ncclCalloc(&nodesFirstRank, nranks));
+  NCCLCHECK(ncclCalloc(&nodesTreePatterns, nranks));
   for (int i=0; i<nranks; i++) {
     int node = -1;
     int firstRank = allGather3Data[i].topoRanks.ringRecv[0];
@@ -681,6 +686,7 @@ static ncclResult_t initTransportsRank(struct ncclComm* comm, ncclUniqueId* comm
     if (node == -1) {
       node = comm->nNodes++;
       nodesFirstRank[node] = firstRank;
+      nodesTreePatterns[node] = allGather3Data[i].tree.pattern;
     }
     if (i == comm->rank) comm->node = node;
   }
@@ -695,6 +701,7 @@ static ncclResult_t initTransportsRank(struct ncclComm* comm, ncclUniqueId* comm
 
   int nChannelsOrig = comm->nChannels;
   struct ncclTopoRanks** allTopoRanks;
+  int* nodesTreePatterns;
   NCCLCHECK(ncclCalloc(&allTopoRanks, comm->nRanks));
   for (int i=0; i<nranks; i++) {
     allTopoRanks[i] = &allGather3Data[i].topoRanks;
@@ -723,7 +730,7 @@ static ncclResult_t initTransportsRank(struct ncclComm* comm, ncclUniqueId* comm
   int *rings;
   NCCLCHECK(ncclCalloc(&rings, nranks*MAXCHANNELS));
 
-  NCCLCHECK(ncclTopoPostset(comm, nodesFirstRank, allTopoRanks, rings));
+  NCCLCHECK(ncclTopoPostset(comm, nodesFirstRank, nodesTreePatterns, allTopoRanks, rings));
   if (comm->nNodes > 1 &&
       ncclParamCollNetEnable() == 1 &&
       collNetSupport() && collNetGraph.nChannels) {
@@ -731,6 +738,7 @@ static ncclResult_t initTransportsRank(struct ncclComm* comm, ncclUniqueId* comm
   }
 
   free(allTopoRanks);
+  free(nodesTreePatterns);
   free(nodesFirstRank);
   free(allGather3Data);
 

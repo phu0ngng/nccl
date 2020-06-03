@@ -123,11 +123,11 @@ static ncclResult_t getIndexes(int* ranks, int* indexes, int nNodes, int* firstR
 // leftRight indicates whether the current node is the left child or the right child of node u
 // 0: left, connect to the regular receive GPU of node u
 // 1: right, connect to the send GPU of node u
-#define SIDE_TO_INDEX(leftRight, u, indexesSend, indexesRecv) (leftRight == 0 ? indexesRecv[u] : indexesSend[u])
+#define SIDE_TO_INDEX(leftRight, u, indexesSend, indexesRecv, treePatterns) (leftRight == 0 || treePatterns[u] != NCCL_TOPO_PATTERN_BALANCED_TREE ? indexesRecv[u] : indexesSend[u])
 
-static ncclResult_t setTreeUp(struct ncclTree* tree0, struct ncclTree* tree1, int* indexesSend, int* indexesRecv, int u0, int leftRight0, int u1, int leftRight1) {
-  if (u0 != -1) tree0->up = SIDE_TO_INDEX(leftRight0, u0, indexesSend, indexesRecv);
-  if (u1 != -1) tree1->up = SIDE_TO_INDEX(leftRight1, u1, indexesSend, indexesRecv);
+static ncclResult_t setTreeUp(struct ncclTree* tree0, struct ncclTree* tree1, int* indexesSend, int* indexesRecv, int* treePatterns, int u0, int leftRight0, int u1, int leftRight1) {
+  if (u0 != -1) tree0->up = SIDE_TO_INDEX(leftRight0, u0, indexesSend, indexesRecv, treePatterns);
+  if (u1 != -1) tree1->up = SIDE_TO_INDEX(leftRight1, u1, indexesSend, indexesRecv, treePatterns);
   return ncclSuccess;
 }
 
@@ -153,7 +153,7 @@ static ncclResult_t openRing(struct ncclTree* tree, int rank, int upRank) {
   return ncclSuccess;
 }
 
-static ncclResult_t connectTrees(struct ncclComm* comm, int* treeUpRecv, int* treeUpSend, int* treeDnRecv, int* treeDnSend, int* firstRanks) {
+static ncclResult_t connectTrees(struct ncclComm* comm, int* treeUpRecv, int* treeUpSend, int* treeDnRecv, int* treeDnSend, int* firstRanks, int* treePatterns) {
   const int nChannels = comm->nChannels, nNodes = comm->nNodes, node = comm->node;
   int* indexesSend, *indexesRecv;
   NCCLCHECK(ncclCalloc(&indexesSend, nNodes));
@@ -173,12 +173,13 @@ static ncclResult_t connectTrees(struct ncclComm* comm, int* treeUpRecv, int* tr
      NCCLCHECK(openRing(&channel0->treeUp, comm->rank, indexesSend[node]));
      NCCLCHECK(openRing(&channel1->treeUp, comm->rank, indexesSend[node]));
      int root = indexesSend[node];
-     if (indexesSend[node] == comm->rank) NCCLCHECK(setTreeUp(&channel0->treeUp, &channel1->treeUp, indexesSend, indexesRecv, u0, leftRight0, u1, leftRight1));
-     if (indexesRecv[node] == comm->rank) {
+     if (indexesSend[node] == comm->rank) NCCLCHECK(setTreeUp(&channel0->treeUp, &channel1->treeUp, indexesSend, indexesRecv, treePatterns, u0, leftRight0, u1, leftRight1));
+     if (indexesRecv[node] == comm->rank) { // Left child is common
        NCCLCHECK(setTreeDown(&channel0->treeUp, indexesSend, d0_0));
        NCCLCHECK(setTreeDown(&channel1->treeUp, indexesSend, d1_0));
      }
-     if (indexesSend[node] == comm->rank) {
+     if ((treePatterns[node] != NCCL_TOPO_PATTERN_BALANCED_TREE && indexesRecv[node] == comm->rank) ||
+         (treePatterns[node] == NCCL_TOPO_PATTERN_BALANCED_TREE && indexesSend[node] == comm->rank)) { // Right child depends on tree pattern
        NCCLCHECK(setTreeDown(&channel0->treeUp, indexesSend, d0_1));
        NCCLCHECK(setTreeDown(&channel1->treeUp, indexesSend, d1_1));
      }
@@ -186,15 +187,16 @@ static ncclResult_t connectTrees(struct ncclComm* comm, int* treeUpRecv, int* tr
      NCCLCHECK(getIndexes(treeDnRecv+c*comm->nRanks, indexesRecv, nNodes, firstRanks));
      NCCLCHECK(openRing(&channel0->treeDn, comm->rank, u0 == -1 ? root : indexesRecv[node]));
      NCCLCHECK(openRing(&channel1->treeDn, comm->rank, u1 == -1 ? root : indexesRecv[node]));
-     if (indexesSend[node] == comm->rank) {
+     if (indexesSend[node] == comm->rank) { // Left child is common
        NCCLCHECK(setTreeDown(&channel0->treeDn, indexesRecv, d0_0));
        NCCLCHECK(setTreeDown(&channel1->treeDn, indexesRecv, d1_0));
      }
-     if (indexesRecv[node] == comm->rank) {
+     if ((treePatterns[node] != NCCL_TOPO_PATTERN_BALANCED_TREE && indexesSend[node] == comm->rank) ||
+         (treePatterns[node] == NCCL_TOPO_PATTERN_BALANCED_TREE && indexesRecv[node] == comm->rank)) { // Right child depends on tree pattern
        NCCLCHECK(setTreeDown(&channel0->treeDn, indexesRecv, d0_1));
        NCCLCHECK(setTreeDown(&channel1->treeDn, indexesRecv, d1_1));
      }
-     if (indexesRecv[node] == comm->rank) NCCLCHECK(setTreeUp(&channel0->treeDn, &channel1->treeDn, indexesRecv, indexesSend, u0, leftRight0, u1, leftRight1));
+     if (indexesRecv[node] == comm->rank) NCCLCHECK(setTreeUp(&channel0->treeDn, &channel1->treeDn, indexesRecv, indexesSend, treePatterns, u0, leftRight0, u1, leftRight1));
      if (indexesSend[node] == comm->rank || indexesRecv[node] == comm->rank) {
        INFO(NCCL_GRAPH, "TreeUp %d : %d -> %d -> %d/%d/%d", c,           channel0->treeUp.up, comm->rank, channel0->treeUp.down[0], channel0->treeUp.down[1], channel0->treeUp.down[2]);
        INFO(NCCL_GRAPH, "TreeUp %d : %d -> %d -> %d/%d/%d", c+nChannels, channel1->treeUp.up, comm->rank, channel1->treeUp.down[0], channel1->treeUp.down[1], channel1->treeUp.down[2]);
@@ -272,7 +274,7 @@ int ncclMaxNchannels() {
   return maxNchannels;
 }
 
-ncclResult_t ncclTopoPostset(struct ncclComm* comm, int* firstRanks, struct ncclTopoRanks** allTopoRanks, int* rings) {
+ncclResult_t ncclTopoPostset(struct ncclComm* comm, int* firstRanks, int* treePatterns, struct ncclTopoRanks** allTopoRanks, int* rings) {
   // Gather data from all ranks
   int *ringRecv, *ringSend, *ringPrev, *ringNext, *treeUpRecv, *treeUpSend, *treeDnRecv,*treeDnSend;
   int nranks = comm->nRanks;
@@ -300,7 +302,7 @@ ncclResult_t ncclTopoPostset(struct ncclComm* comm, int* firstRanks, struct nccl
 
   // Connect rings and trees. This should also duplicate the channels.
   NCCLCHECK(connectRings(comm, ringRecv, ringSend, ringPrev, ringNext, firstRanks));
-  NCCLCHECK(connectTrees(comm, treeUpRecv, treeUpSend, treeDnRecv, treeDnSend, firstRanks));
+  NCCLCHECK(connectTrees(comm, treeUpRecv, treeUpSend, treeDnRecv, treeDnSend, firstRanks, treePatterns));
 
   // Duplicate ringPrev/ringNext for ncclBuildRing
   memcpy(ringPrev+nChannels*nranks, ringPrev, nChannels*nranks*sizeof(int));
