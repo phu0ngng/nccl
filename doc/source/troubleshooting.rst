@@ -29,7 +29,7 @@ a bad configuration of a virtual machine or a container, or some BIOS settings.
 GPU-to-GPU communication
 ------------------------
 
-To make sure GPU-to-GPU communication is working correctly, look for the p2pBandwidthLastencyTest from the CUDA
+To make sure GPU-to-GPU communication is working correctly, look for the p2pBandwidthLatencyTest from the CUDA
 samples.
 
 .. code::

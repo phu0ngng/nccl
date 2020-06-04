@@ -107,15 +107,15 @@ ncclResult_t ncclTopoTuneModel(struct ncclComm* comm, int minCompCap, int maxCom
       for (int p=0; p<NCCL_NUM_PROTOCOLS; p++) {
         float speed = comm->nNodes <= 2 || a == NCCL_ALGO_COLLNET ? graphs[a]->speedIntra : graphs[a]->speedInter;
         float busBw = graphs[a]->nChannels * speed;
-        if (compCap80) busBw *= 0.92;
 
         // Various model refinements
+        if (compCap80) busBw = std::min(busBw, 235.0f);
         if (a == NCCL_ALGO_RING && p == NCCL_PROTO_LL)    busBw *= (comm->nNodes > 1 || coll == ncclFuncAllReduce || coll == ncclFuncReduce) ? 1.0/4.0 : 1.0/3.0;
         if (a == NCCL_ALGO_RING && p == NCCL_PROTO_LL128) busBw = std::min(busBw * (ppn < 2 ? 0.7 : 0.92 /*120.0/128.0*/), ll128MaxBwPerCh[coll]*graphs[a]->nChannels);
-        double maxTreeBw = comm->nNodes > 2 ?
-          compCap80 && p == NCCL_PROTO_LL128 ? 105.0 : 80.0 :
-          compCap80 && p == NCCL_PROTO_LL128 ? 130.0 : 110.0;
-        if (a == NCCL_ALGO_TREE) busBw = std::min(busBw*.9, maxTreeBw);
+        double perChMaxTreeBw = comm->nNodes > 2 ?
+          compCap80 && p == NCCL_PROTO_LL128 ? 13.125 : 10.0 :
+          compCap80 && p == NCCL_PROTO_LL128 ? 16.25  : 13.75;
+        if (a == NCCL_ALGO_TREE) busBw = std::min(busBw*.9, graphs[a]->nChannels*perChMaxTreeBw);
         if (a == NCCL_ALGO_TREE && p == NCCL_PROTO_LL) busBw *= 1.0/3.8;
         if (a == NCCL_ALGO_TREE && p == NCCL_PROTO_LL128) busBw = std::min(busBw * (comm->nNodes == 1 ? 7.0/9.0 : 0.915 /*120.0/128.0*/), ll128MaxBwPerCh[coll]*graphs[a]->nChannels*7.0/9.0);
         if (a == NCCL_ALGO_COLLNET) busBw *= .9;

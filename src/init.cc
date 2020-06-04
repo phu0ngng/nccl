@@ -645,7 +645,6 @@ static ncclResult_t initTransportsRank(struct ncclComm* comm, ncclUniqueId* comm
 
   struct {
     int cudaCompCap;
-    int fullCudaCompCap;
     int nChannels;
     struct ncclGraphInfo tree;
     struct ncclGraphInfo ring;
@@ -919,9 +918,6 @@ ncclResult_t ncclCommInitAll(ncclComm_t* comms, int ndev, const int* devlist) {
 
 static ncclResult_t commDestroy(ncclComm_t comm) {
   int savedDevice;
-#ifdef ENABLE_TRACE
-  int rank = comm->rank;
-#endif
   CUDACHECK(cudaGetDevice(&savedDevice));
   int commDevice = comm->cudaDev;
 
@@ -929,7 +925,7 @@ static ncclResult_t commDestroy(ncclComm_t comm) {
     CUDACHECK(cudaSetDevice(commDevice));
   }
 
-  TRACE(NCCL_INIT, "Destroying comm %p rank %d abortFlag %d fatalError %d", comm, rank, *comm->abortFlag, comm->fatalError);
+  TRACE(NCCL_INIT, "Destroying comm %p rank %d abortFlag %d fatalError %d", comm, comm->rank, *comm->abortFlag, comm->fatalError);
 
   CUDACHECK(cudaStreamSynchronize(comm->groupStream));
   NCCLCHECK(ncclProxyDestroy(comm));
