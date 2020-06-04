@@ -7,7 +7,7 @@
 #ifndef NCCL_TREES_H_
 #define NCCL_TREES_H_
 
-ncclResult_t ncclGetBtree(int nranks, int rank, int* u0, int* d1, int* d0);
-ncclResult_t ncclGetDtree(int nranks, int rank, int* u0, int* d0_0, int* d0_1, int* u1, int* d1_0, int* d1_1);
+ncclResult_t ncclGetBtree(int nranks, int rank, int* u0, int* d1, int* d0, int* leftRight);
+ncclResult_t ncclGetDtree(int nranks, int rank, int* u0, int* d0_0, int* d0_1, int* leftRight0, int* u1, int* d1_0, int* d1_1, int* leftRight1);
 
 #endif

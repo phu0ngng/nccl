@@ -28,7 +28,7 @@
  *    / \     / \     /  \     \
  *   1   3   5   7   9   11    13
  */
-ncclResult_t ncclGetBtree(int nranks, int rank, int* u, int* d0, int* d1) {
+ncclResult_t ncclGetBtree(int nranks, int rank, int* u, int* d0, int* d1, int* leftRight) {
   int up, down0, down1;
   int bit;
   for (bit=1; bit<nranks; bit<<=1) {
@@ -43,6 +43,8 @@ ncclResult_t ncclGetBtree(int nranks, int rank, int* u, int* d0, int* d1) {
   }
 
   up = (rank ^ bit) | (bit << 1);
+  // if smaller than the parent, we are on the left, otherwise on the right
+  *leftRight = (rank < up) ? 0 : 1;
   if (up >= nranks) up = (rank ^ bit);
   *u = up;
 
@@ -82,22 +84,22 @@ ncclResult_t ncclGetBtree(int nranks, int rank, int* u, int* d0, int* d1) {
  *    / \     / \     /  \     / \     / \     /  \
  *   1   3   5   7   9   11   2   4   6   8   10   1
  */
-ncclResult_t ncclGetDtree(int nranks, int rank, int* s0, int* d0_0, int* d0_1, int* s1, int* d1_0, int* d1_1) {
+ncclResult_t ncclGetDtree(int nranks, int rank, int* s0, int* d0_0, int* d0_1, int* leftRight0, int* s1, int* d1_0, int* d1_1, int* leftRight1) {
   // First tree ... use a btree
-  ncclGetBtree(nranks, rank, s0, d0_0, d0_1);
+  ncclGetBtree(nranks, rank, s0, d0_0, d0_1, leftRight0);
   // Second tree ... mirror or shift
   if (nranks % 2 == 0) {
     // shift
     int shiftrank = (rank-1+nranks) % nranks;
     int u, d0, d1;
-    ncclGetBtree(nranks, shiftrank, &u, &d0, &d1);
+    ncclGetBtree(nranks, shiftrank, &u, &d0, &d1, leftRight1);
     *s1 = u == -1 ? -1 : (u+1) % nranks;
     *d1_0 = d0 == -1 ? -1 : (d0+1) % nranks;
     *d1_1 = d1 == -1 ? -1 : (d1+1) % nranks;
   } else {
     // mirror
     int u, d0, d1;
-    ncclGetBtree(nranks, nranks-1-rank, &u, &d0, &d1);
+    ncclGetBtree(nranks, nranks-1-rank, &u, &d0, &d1, leftRight1);
     *s1 = u == -1 ? -1 : nranks-1-u;
     *d1_0 = d0 == -1 ? -1 : nranks-1-d0;
     *d1_1 = d1 == -1 ? -1 : nranks-1-d1;
