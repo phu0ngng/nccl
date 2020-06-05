@@ -85,9 +85,9 @@ static ncclResult_t ncclTopoSetPaths(struct ncclTopoNode* baseNode, struct ncclT
 
           // Start with path type = link type. PATH and LINK types are supposed to match.
           // Don't consider LINK_NET as we only care about the NIC->GPU path.
-          int type = link->type == LINK_NET ? 0 : link->type;
+          int type = link->type == LINK_NET ? LINK_LOC : link->type;
           // Differentiate between one and multiple PCI switches
-          if (type == PATH_PIX && (node->type == PCI || link->remNode->type == PCI) && remPath->count > 3) type = PATH_PXB;
+          if (node->type == PCI && remNode->type == PCI) type = PATH_PXB;
           // Consider a path going through the CPU as PATH_PHB
           if (link->type == LINK_PCI && (node->type == CPU || link->remNode->type == CPU)) type = PATH_PHB;
           // Ignore Power CPU in an NVLink path
