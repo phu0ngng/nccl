@@ -592,13 +592,14 @@ static ncclResult_t initTransportsRank(struct ncclComm* comm, ncclUniqueId* comm
   int intraMinCompCap = myCompCap, intraMaxCompCap = myCompCap;
   int minCompCap = myCompCap, maxCompCap = myCompCap;
   for (int i = 0; i < nranks; i++) {
-    if ((allGather1Data[i].peerInfo.hostHash == allGather1Data[rank].peerInfo.hostHash) &&
-        (allGather1Data[i].peerInfo.pidHash == allGather1Data[rank].peerInfo.pidHash)) {
-      if (intraRanks == 0) intraRank0 = i;
-      if (i == rank) intraRank = intraRanks;
-      intraRanks++;
+    if (allGather1Data[i].peerInfo.hostHash == allGather1Data[rank].peerInfo.hostHash) {
       intraMinCompCap = std::min(allGather1Data[i].cudaCompCap, intraMinCompCap);
       intraMaxCompCap = std::max(allGather1Data[i].cudaCompCap, intraMaxCompCap);
+      if (allGather1Data[i].peerInfo.pidHash == allGather1Data[rank].peerInfo.pidHash) {
+        if (intraRanks == 0) intraRank0 = i;
+        if (i == rank) intraRank = intraRanks;
+        intraRanks++;
+      }
     }
     minCompCap = std::min(allGather1Data[i].cudaCompCap, minCompCap);
     maxCompCap = std::max(allGather1Data[i].cudaCompCap, maxCompCap);
