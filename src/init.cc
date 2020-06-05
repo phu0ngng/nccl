@@ -591,6 +591,8 @@ static ncclResult_t initTransportsRank(struct ncclComm* comm, ncclUniqueId* comm
   int myCompCap = allGather1Data[rank].cudaCompCap;
   int intraMinCompCap = myCompCap, intraMaxCompCap = myCompCap;
   int minCompCap = myCompCap, maxCompCap = myCompCap;
+  uint64_t otherHostHash;
+  int tmpNnodes = 1;
   for (int i = 0; i < nranks; i++) {
     if (allGather1Data[i].peerInfo.hostHash == allGather1Data[rank].peerInfo.hostHash) {
       intraMinCompCap = std::min(allGather1Data[i].cudaCompCap, intraMinCompCap);
@@ -599,6 +601,13 @@ static ncclResult_t initTransportsRank(struct ncclComm* comm, ncclUniqueId* comm
         if (intraRanks == 0) intraRank0 = i;
         if (i == rank) intraRank = intraRanks;
         intraRanks++;
+      }
+    } else {  // Determine whether number of nodes is 2 (for use in tree pattern determination)
+      if (tmpNnodes == 1) {
+        otherHostHash = allGather1Data[i].peerInfo.hostHash;
+        tmpNnodes = 2;
+      } else if (tmpNnodes == 2 && otherHostHash != allGather1Data[i].peerInfo.hostHash) {
+        tmpNnodes = 3;
       }
     }
     minCompCap = std::min(allGather1Data[i].cudaCompCap, minCompCap);
@@ -643,7 +652,7 @@ static ncclResult_t initTransportsRank(struct ncclComm* comm, ncclUniqueId* comm
 
   struct ncclTopoGraph treeGraph;
   treeGraph.id = 1;
-  treeGraph.pattern = intraMinCompCap >= 80 ? NCCL_TOPO_PATTERN_BALANCED_TREE : NCCL_TOPO_PATTERN_SPLIT_TREE;
+  treeGraph.pattern = intraMinCompCap >= 80 ? NCCL_TOPO_PATTERN_BALANCED_TREE : tmpNnodes <= 2 ? NCCL_TOPO_PATTERN_TREE : NCCL_TOPO_PATTERN_SPLIT_TREE;
   treeGraph.crossNic = ncclParamCrossNic();
   treeGraph.collNet = 0;
   treeGraph.minChannels = 1;
