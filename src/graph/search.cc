@@ -665,11 +665,15 @@ ncclResult_t ncclTopoCompute(ncclTopoSystem* system, struct ncclTopoGraph* graph
 
   if (ngpus == 1) if (graph->pattern != NCCL_TOPO_PATTERN_RING) graph->pattern = NCCL_TOPO_PATTERN_TREE;
 
+  // SPLIT_TREE works better on older archs.
+  int ccMin;
+  NCCLCHECK(ncclTopoGetCompCap(system, &ccMin, NULL));
+  if (ccMin < 80 && graph->pattern == NCCL_TOPO_PATTERN_BALANCED_TREE) graph->pattern = NCCL_TOPO_PATTERN_SPLIT_TREE;
+
   struct ncclTopoGraph tmpGraph;
   memcpy(&tmpGraph, graph, sizeof(struct ncclTopoGraph));
 
   // First try crossnic, then decrease speed and finally increase speedIntra.
-  tmpGraph.pattern = graph->pattern;
   int pass = 1;
   int speedIndex = 0;
   while (speedArray[speedIndex] > system->maxWidth && speedIndex < NSPEEDS-1) speedIndex++;

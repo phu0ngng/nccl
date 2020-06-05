@@ -674,3 +674,16 @@ ncclResult_t ncclTopoGetNetCount(struct ncclTopoSystem* system, int* count) {
   *count = system->nodes[NET].count;
   return ncclSuccess;
 }
+
+ncclResult_t ncclTopoGetCompCap(struct ncclTopoSystem* system, int* ccMin, int* ccMax) {
+  if (system->nodes[GPU].count == 0) return ncclInternalError;
+  int min, max;
+  min = max = system->nodes[GPU].nodes[0].gpu.cudaCompCap;
+  for (int g=1; g<system->nodes[GPU].count; g++) {
+    min = std::min(min, system->nodes[GPU].nodes[g].gpu.cudaCompCap);
+    max = std::max(max, system->nodes[GPU].nodes[g].gpu.cudaCompCap);
+  }
+  if (ccMin) *ccMin = min;
+  if (ccMax) *ccMax = max;
+  return ncclSuccess;
+}
