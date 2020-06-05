@@ -184,8 +184,7 @@ struct ncclChannel {
   union {
     struct {
       struct ncclRing ring;
-      struct ncclTree treeUp;
-      struct ncclTree treeDn;
+      struct ncclTree tree;
       struct ncclTree collTreeUp;
       struct ncclTree collTreeDn;
 
