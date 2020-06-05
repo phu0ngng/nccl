@@ -331,9 +331,9 @@ ncclResult_t ncclTopoSearchRecGpu(struct ncclTopoSystem* system, struct ncclTopo
         int nextBackToNet = -1;
         float speedInterSave = graph->speedInter;
         if (graph->pattern == NCCL_TOPO_PATTERN_BALANCED_TREE) {
-          // Count half of the bandwidth on first two GPUs
+          // Count half of the bandwidth on each of the first two GPUs
           if (step == 0) nextBackToNet = 1;
-          else if (net->id != graph->inter[graph->nChannels*2]+1) continue;
+          else if (net->id != graph->inter[graph->nChannels*2+1]) continue;
           graph->speedInter /= 2;
         }
 
