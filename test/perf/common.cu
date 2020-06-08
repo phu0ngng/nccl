@@ -875,8 +875,7 @@ testResult_t run() {
 #define MAX_LINE 2048
   char line[MAX_LINE];
   int len = 0;
-  size_t requiredMem = datacheck ? maxBytes*7/2 : maxBytes*2;
-  size_t maxMem = requiredMem;
+  size_t maxMem = ~0;
   for (int i=0; i<nThreads*nGpus; i++) {
     envstr = getenv("NCCL_TESTS_DEVICE");
     int cudaDev = envstr ? atoi(envstr) : localRank*nThreads*nGpus+i;
@@ -901,8 +900,11 @@ testResult_t run() {
 #else
   PRINT("%s", line);
 #endif
-  if (maxMem < requiredMem) {
-    while (maxMem < requiredMem) maxBytes /= 2;
+
+  // We need sendbuff, recvbuff, expected (when datacheck enabled), plus 1G for the rest.
+  size_t memMaxBytes = (maxMem - (1<<30)) / (datacheck ? 3 : 2);
+  if (maxBytes > memMaxBytes) {
+    maxBytes = memMaxBytes;
     if (proc == 0) printf("#\n# Reducing maxBytes to %ld due to memory limitation\n", maxBytes);
   }
 
