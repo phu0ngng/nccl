@@ -691,7 +691,7 @@ search:
   }
 #endif
   // Optimal solution, stop here
-  if (graph->nChannels*graph->speedInter == system->totalWidth) goto done;
+  if (graph->nChannels*graph->speedInter >= system->totalWidth) goto done;
 
   if (pass == 1) {
     // First pass, we don't have a solution yet ; try other options
