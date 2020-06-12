@@ -21,10 +21,6 @@
   } \
 } while (0);
 
-// We don't support collnet yet
-#undef NCCL_NUM_ALGORITHMS
-#define NCCL_NUM_ALGORITHMS 2
-
 int nGpus = -1;
 int nNodes = -1;
 char* platform = NULL;
@@ -32,7 +28,6 @@ const char* platforms[] = { "DGX-1V", "DGX-2V", "Luna" };
 ncclFunc_t function = ncclCollAllReduce;
 
 int compactMode = -1;
-int compareMode = 0;
 
 int strConvert(const char* option, const char* dict[], int nvalues, const char* str) {
   for (int i=0; i<nvalues; i++) {
@@ -50,9 +45,14 @@ int strConvert(const char* option, const char* dict[], int nvalues, const char* 
 
 float totalScore = 0.0;
 int totalNpoints = 0;
-int totalX = 0;
-int totalHash = 0;
 
+enum colorNames            {     RED = 0, YELLOW = 1,   BLUE = 2,  GREEN = 3,  RESET = 4 };
+const char* colorCodes[] = {    "[0;31m",   "[0;33m",   "[0;34m",   "[0;32m",     "[00m" };
+const char  markers[]    = {         '#',        'X',        'O',        'O' };
+
+int stats[RESET] = { 0, 0, 0, 0 };
+
+#define GET_COLOR(s) (s < .80) ? RED : (s < .95) ? YELLOW : (s > 1.1) ? BLUE : GREEN;
 
 void runTopo(const char* xmlTopoFile, const char* platform, int nnodes) {
   int ngpus = nGpus;
@@ -83,30 +83,6 @@ void runTopo(const char* xmlTopoFile, const char* platform, int nnodes) {
       CHECK(ncclTopoRemoveNode(system, GPU, g));
     }
   }
-
-  // Last column is used for min/best/default.
-  const int m = NCCL_NUM_ALGORITHMS*NCCL_NUM_PROTOCOLS;
-
-  int fds[m+1];
-  char path[1024];
-  for (int a=0; a<NCCL_NUM_ALGORITHMS; a++) for (int p=0; p<NCCL_NUM_PROTOCOLS; p++) {
-    int i = a*NCCL_NUM_PROTOCOLS+p;
-    sprintf(path, "topo/%s/data/%d/%d/%s/%s/%s/time.txt", platform, ngpus, nnodes, ncclFuncStr[function], ncclAlgoStr[a], ncclProtoStr[p]);
-    fds[i] = open(path, O_RDONLY);
-  }
-  sprintf(path, "topo/%s/data/%d/%d/%s/time.txt", platform, ngpus, nnodes, ncclFuncStr[function]);
-  fds[m] = open(path, O_RDONLY);
-  float score = 0.0;
-  int npoints = 0;
-  if (compactMode) {
-    int nfds = 0;
-    for (int i=0; i<=m; i++) if (fds[i] != -1) nfds++;
-    if (nfds == 0 || ngpus*nnodes == 1) {
-      ncclTopoFree(system);
-      return;
-    }
-  }
-
 
   CHECK(ncclTopoSearchInit(system));
   CHECK(ncclTopoPrint(system));
@@ -150,6 +126,33 @@ void runTopo(const char* xmlTopoFile, const char* platform, int nnodes) {
 
   treeGraph.nChannels = ringGraph.nChannels = std::min(treeGraph.nChannels, ringGraph.nChannels);
 
+  int num_algorithms = NCCL_NUM_ALGORITHMS;
+  if (cNetGraph.nChannels == 0) num_algorithms--;
+
+  // Last column is used for min/best/default.
+  const int m = num_algorithms*NCCL_NUM_PROTOCOLS;
+  const int M = NCCL_NUM_ALGORITHMS*NCCL_NUM_PROTOCOLS;
+
+  int fds[M+1];
+  char path[1024];
+  for (int a=0; a<num_algorithms; a++) for (int p=0; p<NCCL_NUM_PROTOCOLS; p++) {
+    int i = a*NCCL_NUM_PROTOCOLS+p;
+    sprintf(path, "topo/%s/data/%d/%d/%s/%s/%s/time.txt", platform, ngpus, nnodes, ncclFuncStr[function], ncclAlgoStr[a], ncclProtoStr[p]);
+    fds[i] = open(path, O_RDONLY);
+  }
+  sprintf(path, "topo/%s/data/%d/%d/%s/time.txt", platform, ngpus, nnodes, ncclFuncStr[function]);
+  fds[m] = open(path, O_RDONLY);
+  float score = 0.0;
+  int npoints = 0;
+  if (compactMode) {
+    int nfds = 0;
+    for (int i=0; i<=m; i++) if (fds[i] != -1) nfds++;
+    if (nfds == 0 || ngpus*nnodes == 1) {
+      ncclTopoFree(system);
+      return;
+    }
+  }
+
   struct ncclComm comm;
   comm.topo = system;
   comm.nNodes = nnodes;
@@ -167,27 +170,28 @@ void runTopo(const char* xmlTopoFile, const char* platform, int nnodes) {
 
   if (!compactMode) {
     printf("%s/%dx%d, %s\n", platform, nnodes, ngpus, ncclFuncStr[function]);
-    printf("----------+"); for (int i=0; i<m+1; i++) printf("---------------------+"); printf("\n");
+    printf("----------+"); for (int i=0; i<m; i++) printf("---------------------+"); printf("-------------------------------+"); printf("\n");
     printf("     Size |");
-    for (int a=0; a<NCCL_NUM_ALGORITHMS; a++) for (int p=0; p<NCCL_NUM_PROTOCOLS; p++) {
+    for (int a=0; a<num_algorithms; a++) for (int p=0; p<NCCL_NUM_PROTOCOLS; p++) {
       printf(" %7s  / %7s  |", ncclAlgoStr[a], ncclProtoStr[p]);
     }
-    printf("%19s  |\n", compareMode == 0 ? "Default (file)" : "Default (dry run)");
+    printf("%19s            |\n", "Default");
     printf("          |");
-    for (int i=0; i<m+1; i++) printf("[%9s] %9s|", "data", (i == m) ? "best" : "model");
+    for (int i=0; i<m; i++) printf("[%9s] %9s|", "data", (i == m) ? "best" : "model");
+    printf("[%9s] %9s %9s|", "best", "dryrun", "data");
     printf("\n");
-    printf("----------+"); for (int i=0; i<m+1; i++) printf("---------------------+"); printf("\n");
+    printf("----------+"); for (int i=0; i<m; i++) printf("---------------------+"); printf("-------------------------------+"); printf("\n");
   } else {
     printf("%10s/%5dx%5d |", platform, nnodes, ngpus);
   }
 
   for (ssize_t size=8; size<(2LL<<32); size<<=1) {
-    float times[m+2];
-    float data[m+2];
+    float model[M];
+    float data[M+1];
     info.nBytes = size;
-    for (int a=0; a<NCCL_NUM_ALGORITHMS; a++) for (int p=0; p<NCCL_NUM_PROTOCOLS; p++) {
+    for (int a=0; a<num_algorithms; a++) for (int p=0; p<NCCL_NUM_PROTOCOLS; p++) {
       int i = a*NCCL_NUM_PROTOCOLS+p;
-      CHECK(ncclTopoGetAlgoTime(&info, a, p, times+i));
+      CHECK(ncclTopoGetAlgoTime(&info, a, p, model+i));
     }
 
     for (int i=0; i<m+1; i++) {
@@ -209,68 +213,71 @@ void runTopo(const char* xmlTopoFile, const char* platform, int nnodes) {
       }
     }
     // Compute best performance
-    times[m] = -1.0;
-    float bestModelTime = -1.0;
-    int bestModel = -1;
+    float dryrun = -1.0;
+    float bestdata = -1.0;
+    float bestmodel = -1.0;
     for (int i=0; i<m; i++) {
-      if (data[i] < 0) continue;
-      // find best data
-      if (times[m] < 0 || times[m] > data[i]) times[m] = data[i];
-      // find best model
-      if (times[i] < 0) continue;
-      if (bestModelTime < 0 || bestModelTime > times[i]) {
-        bestModelTime = times[i];
-        bestModel = i;
+      // Find best data
+      if (data[i] > 0 && (bestdata < 0 || data[i] < bestdata)) bestdata = data[i];
+
+      // Find best model and compute dryrun
+      if (model[i] > 0 && (bestmodel < 0 || model[i] < bestmodel)) {
+        bestmodel = model[i];
+        dryrun = data[i] > 0 ? data[i] : model[i];
       }
     }
-    // Add a column
-    times[m+1] = times[m];
-    // Store the data picked by the best model (as if we have done a dry default run)
-    data[m+1] = -1;
-    if (bestModel != -1) data[m+1] = data[bestModel];
 
+    // Display each protocol/algorithm
     if (!compactMode) {
       printf("%10ld|", size);
-      for (int i=0; i<m+1; i++) {
-        float delta;
-        if (i == m && compareMode != 0) i = m+1;
-        if (data[i] != -1.0) {
-          printf("[%9.1f] ", data[i]);
-          delta = 1-(times[i]/data[i]);
-          if (i < m) delta *= delta;
-          float s = 1-delta;
-          if (s < .8) printf("%c[0;31m", 0x1b);
-          else if (s < .95) printf("%c[0;33m", 0x1b);
-          else if (s > 1.1) printf("%c[0;34m", 0x1b);
-          else printf("%c[0;32m", 0x1b);
-        } else {
+      for (int i=0; i<m; i++) {
+        float ref = data[i];
+        float value = model[i];
+        int bold = value == bestmodel ? 7 : 0;
+        if (ref == -1.0) {
           printf("%11s ", "");
-          if (i < m && times[i] == times[m]) printf("%c[0;32m", 0x1b);
+          if (bold) printf("%c[%d;32m", 0x1b, bold);
+        } else {
+          printf("[%9.1f] ", ref);
+          float s = 1-ref/value;
+          s *= s;
+          if (s > .15) printf("%c[%d;31m", 0x1b, bold);
+          else if (s > .08) printf("%c[%d;33m", 0x1b, bold);
+          else printf("%c[%d;32m", 0x1b, bold);
         }
-        printf("%9.1f", times[i]);
-        if ((data[i] != -1.0) || (i < m && times[i] == times[m])) printf("%c[00m", 0x1b);
+        printf("%9.1f", value);
+        if ((ref != -1.0) || bold) printf("%c[00m", 0x1b);
         printf("|");
       }
-      printf("\n");
-    } else {
-      int n = (compareMode == 0) ? m : m+1; // which data to compare: m = data from file, m+1 = data chosen by model
-      if (data[n] == 0.0) {
+    }
+
+    // Last column : best model, best data, dryrun and how well we do.
+    if (bestdata == -1.0) {
+      if (compactMode) {
         printf("%c[00m.", 0x1b);
       } else {
-        float s = times[n]/data[n];
-        if (s < 0.8) { printf("%c[0;31m#", 0x1b); totalHash++; }
-        else if (s < .95) { printf("%c[0;33mX", 0x1b); totalX++; }
-        else if (s > 1.1) printf("%c[0;34mO", 0x1b);
-        else printf("%c[0;32mO", 0x1b);
+        printf("%11s %9s %9.1f|\n", "", "", bestmodel);
+      }
+    } else {
+      float s = bestdata/dryrun;
+      int c = GET_COLOR(s);
+      if (compactMode) {
+        printf("%c%s%c", 0x1b, colorCodes[c], markers[c]);
+        stats[c]++;
         score += s;
         totalScore += s;
         npoints++;
         totalNpoints++;
+      } else {
+        printf("[%9.1f] %c%s%9.1f", bestdata, 0x1b, colorCodes[c], dryrun);
+        s = bestdata/data[m];
+        c = GET_COLOR(s);
+        printf(" %c%s%9.1f%c%s|\n", 0x1b, colorCodes[c], data[m], 0x1b, colorCodes[RESET]);
       }
     }
   }
   if (!compactMode) {
-    printf("----------+"); for (int i=0; i<NCCL_NUM_ALGORITHMS*NCCL_NUM_PROTOCOLS+1; i++) printf("---------------------+"); printf("\n");
+    printf("----------+"); for (int i=0; i<m; i++) printf("---------------------+"); printf("-------------------------------+"); printf("\n");
   } else {
     printf("%c[00m| %.1f %%\n", 0x1b, 100.0*score/npoints);
   }
@@ -303,13 +310,12 @@ int main(int argc, char* argv[]) {
     {"platform", required_argument, 0, 'p'},
     {"function", required_argument, 0, 'f'},
     {"compact", required_argument, 0, 'c'},
-    {"compare", required_argument, 0, 'C'},
     {"help", no_argument, 0, 'h'}
   };
 
   while(1) {
     int c;
-    c = getopt_long(argc, argv, "n:g:p:f:c:C:h:", longopts, &longindex);
+    c = getopt_long(argc, argv, "n:g:p:f:c:h:", longopts, &longindex);
 
     if (c == -1)
       break;
@@ -330,9 +336,6 @@ int main(int argc, char* argv[]) {
       case 'c':
         compactMode = strtol(optarg, NULL, 0);
         break;
-      case 'C':
-        compareMode = strtol(optarg, NULL, 0);
-        break;
       case 'h':
       default:
         if (c != 'h') printf("invalid option '%c'\n", c);
@@ -342,7 +345,6 @@ int main(int argc, char* argv[]) {
             "[-p,--platform <platform (default : All)>] \n\t"
             "[-f,--function <function (default : AllReduce)>] \n\t"
             "[-c,--compact <compact mode : 0/1>\n\t"
-            "[-C,--compare <compare mode : 0/1>\n\t"
 	    "[-h,--help]\n",
             basename(argv[0]));
         return 0;
@@ -368,7 +370,7 @@ int main(int argc, char* argv[]) {
   }
 
   if (compactMode) {
-    printf("                 Total |         %3d X, %3d #         | %.1f %%\n", totalX, totalHash, 100.0*totalScore/totalNpoints);
+    printf("                 Total |         %3d %c, %3d %c         | %.1f %%\n", stats[YELLOW], markers[YELLOW], stats[RED], markers[RED], 100.0*totalScore/totalNpoints);
   }
   return 0;
 }
