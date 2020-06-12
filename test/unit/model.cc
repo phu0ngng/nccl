@@ -28,6 +28,7 @@ const char* platforms[] = { "DGX-1V", "DGX-2V", "Luna" };
 ncclFunc_t function = ncclCollAllReduce;
 
 int compactMode = -1;
+int dispMode = 0;
 
 int strConvert(const char* option, const char* dict[], int nvalues, const char* str) {
   for (int i=0; i<nvalues; i++) {
@@ -53,6 +54,18 @@ const char  markers[]    = {         '#',        'X',        'O',        'O' };
 int stats[RESET] = { 0, 0, 0, 0 };
 
 #define GET_COLOR(s) (s < .80) ? RED : (s < .95) ? YELLOW : (s > 1.1) ? BLUE : GREEN;
+
+#define PRINT_MODE(str, val) do { \
+  float v = val; \
+  if (dispMode > 0  && v != -1.0) v = size / v; \
+  if (dispMode == 2 && v != -1.0) { \
+    float nranks = nnodes*ngpus; \
+    if (function == ncclCollAllReduce) v *= 2*(nranks-1)/nranks; \
+    if (function == ncclCollReduceScatter) v *= (nranks-1)/nranks; \
+    if (function == ncclCollAllGather) v *= (nranks-1)/nranks; \
+  } \
+  printf(str, v); \
+}while(0);
 
 void runTopo(const char* xmlTopoFile, const char* platform, int nnodes) {
   int ngpus = nGpus;
@@ -238,14 +251,14 @@ void runTopo(const char* xmlTopoFile, const char* platform, int nnodes) {
           printf("%11s ", "");
           if (bold) printf("%c[%d;32m", 0x1b, bold);
         } else {
-          printf("[%9.1f] ", ref);
+          PRINT_MODE("[%9.1f] ", ref);
           float s = 1-ref/value;
           s *= s;
           if (s > .15) printf("%c[%d;31m", 0x1b, bold);
           else if (s > .08) printf("%c[%d;33m", 0x1b, bold);
           else printf("%c[%d;32m", 0x1b, bold);
         }
-        printf("%9.1f", value);
+        PRINT_MODE("%9.1f", value);
         if ((ref != -1.0) || bold) printf("%c[00m", 0x1b);
         printf("|");
       }
@@ -256,7 +269,8 @@ void runTopo(const char* xmlTopoFile, const char* platform, int nnodes) {
       if (compactMode) {
         printf("%c[00m.", 0x1b);
       } else {
-        printf("%11s %9s %9.1f|\n", "", "", bestmodel);
+        printf("%11s %9s", "", "");
+        PRINT_MODE(" %9.1f|\n", bestmodel);
       }
     } else {
       float s = bestdata/dryrun;
@@ -269,10 +283,14 @@ void runTopo(const char* xmlTopoFile, const char* platform, int nnodes) {
         npoints++;
         totalNpoints++;
       } else {
-        printf("[%9.1f] %c%s%9.1f", bestdata, 0x1b, colorCodes[c], dryrun);
+        PRINT_MODE("[%9.1f]", bestdata);
+        printf(" %c%s", 0x1b, colorCodes[c]);
+        PRINT_MODE("%9.1f", dryrun);
         s = bestdata/data[m];
         c = GET_COLOR(s);
-        printf(" %c%s%9.1f%c%s|\n", 0x1b, colorCodes[c], data[m], 0x1b, colorCodes[RESET]);
+        printf(" %c%s", 0x1b, colorCodes[c]);
+        PRINT_MODE("%9.1f", data[m]);
+        printf("%c%s|\n", 0x1b, colorCodes[RESET]);
       }
     }
   }
@@ -310,12 +328,13 @@ int main(int argc, char* argv[]) {
     {"platform", required_argument, 0, 'p'},
     {"function", required_argument, 0, 'f'},
     {"compact", required_argument, 0, 'c'},
+    {"mode", required_argument, 0, 'm'},
     {"help", no_argument, 0, 'h'}
   };
 
   while(1) {
     int c;
-    c = getopt_long(argc, argv, "n:g:p:f:c:h:", longopts, &longindex);
+    c = getopt_long(argc, argv, "n:g:p:f:c:m:h", longopts, &longindex);
 
     if (c == -1)
       break;
@@ -336,6 +355,9 @@ int main(int argc, char* argv[]) {
       case 'c':
         compactMode = strtol(optarg, NULL, 0);
         break;
+      case 'm':
+        dispMode = strtol(optarg, NULL, 0);
+        break;
       case 'h':
       default:
         if (c != 'h') printf("invalid option '%c'\n", c);
@@ -345,6 +367,7 @@ int main(int argc, char* argv[]) {
             "[-p,--platform <platform (default : All)>] \n\t"
             "[-f,--function <function (default : AllReduce)>] \n\t"
             "[-c,--compact <compact mode : 0/1>\n\t"
+            "[-m,--mode <0:time, 1:algbw, 2:busbw>\n\t"
 	    "[-h,--help]\n",
             basename(argv[0]));
         return 0;
