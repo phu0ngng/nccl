@@ -6,7 +6,12 @@ coll=$3
 gpus=$4
 
 if [ "$coll" == "" ]; then coll=AllReduce; fi
-if [ "$gpus" == "" ]; then gpus=`ls $platform/data/ | tail -1`; fi
+if [ "$gpus" == "" ]; then 
+  gpus=1
+  for g in `ls $platform/data/`; do
+    if [ "$g" -gt "$gpus" ]; then gpus=$g; fi
+  done
+fi
 
 path=$platform/data/$gpus/$nodes/$coll
 
