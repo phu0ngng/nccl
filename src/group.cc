@@ -143,6 +143,16 @@ void* ncclAsyncThreadPreconnect(void* args_) {
   return args;
 }
 
+size_t getP2pNchannels(size_t totalSize, int minChannels, int maxChannels, size_t minSize, size_t maxSize) {
+  size_t size = std::max(minSize, DIVUP(totalSize, minChannels));
+  int nChannels = minChannels;
+  while (size > maxSize && nChannels <= maxChannels/2) {
+    nChannels *= 2;
+    size = DIVUP(totalSize, nChannels);
+  }
+  return size;
+}
+
 NCCL_API(ncclResult_t, ncclGroupEnd);
 ncclResult_t ncclGroupEnd() {
   if (ncclGroupMode == 0) {
@@ -225,12 +235,14 @@ ncclResult_t ncclGroupEnd() {
 
           // Compute how much to split operations
           // Natural step size matching buffer steps.
-          ssize_t stepSize = 4*comm->buffSizes[NCCL_PROTO_SIMPLE] / NCCL_STEPS;
-          // Split each operation on p2pnChannelsPerPeer max.
-          ssize_t recvChunkSize = DIVUP(p2plist->peerlist[from].recvbytes, comm->p2pnChannelsPerPeer);
-          ssize_t sendChunkSize = DIVUP(p2plist->peerlist[to].sendbytes, comm->p2pnChannelsPerPeer);
-          recvChunkSize = std::max((ssize_t)1, DIVUP(recvChunkSize, stepSize)) * stepSize;
-          sendChunkSize = std::max((ssize_t)1, DIVUP(sendChunkSize, stepSize)) * stepSize;
+          ssize_t stepSize = comm->buffSizes[NCCL_PROTO_SIMPLE] / NCCL_STEPS;
+         // Try to use all channels
+         int nChannelsMax = comm->p2pnChannelsPerPeer;
+         int nChannelsMin = nChannelsMax;
+         while (nChannelsMin*comm->nRanks > comm->p2pnChannels && nChannelsMin > 1) nChannelsMin /= 2;
+
+         ssize_t recvChunkSize = getP2pNchannels(p2plist->peerlist[from].recvbytes, nChannelsMin, nChannelsMax, stepSize, 4*stepSize);
+         ssize_t sendChunkSize = getP2pNchannels(p2plist->peerlist[to].sendbytes, nChannelsMin, nChannelsMax, stepSize, 4*stepSize);
 
           ssize_t sendOffset = 0;
           ssize_t recvOffset = 0;
