@@ -265,7 +265,7 @@ ncclResult_t ncclProxySharedBuffersInit(struct ncclComm* comm, int cuda, int* si
     if (state->nslots == -2)  {
       int netCount;
       NCCLCHECK(ncclTopoGetNetCount(comm->topo, &netCount));
-      state->nslots = NCCL_STEPS*2*comm->nChannels*netCount;
+      state->nslots = NCCL_STEPS*2*comm->p2pnChannels*netCount;
     }
     state->slotSize = comm->buffSizes[NCCL_PROTO_SIMPLE]/NCCL_STEPS;
   }
