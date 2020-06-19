@@ -134,13 +134,13 @@ ncclResult_t ncclProxySaveColl(struct ncclProxyArgs* args, int pattern, int root
   }
   if (pattern == ncclPatternCollTreeUp) {
     // CollTree up
-    struct ncclTree* tree = &args->channel->collTreeUp;
+    struct ncclTree* tree = &args->channel->collTree;
     NCCLCHECK(SaveProxy<proxyRecv>(tree->down[0], args));
     NCCLCHECK(SaveProxy<proxySend>(tree->up, args));
   }
   if (pattern == ncclPatternCollTreeDown) {
     // CollTree down
-    struct ncclTree* tree = &args->channel->collTreeDn;
+    struct ncclTree* tree = &args->channel->collTree;
     NCCLCHECK(SaveProxy<proxySend>(tree->down[0], args));
     NCCLCHECK(SaveProxy<proxyRecv>(tree->up, args));
   }

@@ -185,8 +185,7 @@ struct ncclChannel {
     struct {
       struct ncclRing ring;
       struct ncclTree tree;
-      struct ncclTree collTreeUp;
-      struct ncclTree collTreeDn;
+      struct ncclTree collTree;
 
       int id;
 

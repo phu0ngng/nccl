@@ -167,6 +167,7 @@ class ncclFunction<ncclFuncAllReduce, NCCL_ALGO_COLLNET, NCCL_PROTO_SIMPLE, FUNC
     const int nChannels = args->coll.nChannels;
     struct ncclDevComm* comm = args->comm;
     struct ncclChannel* channel = comm->channels+blockIdx.x;
+    struct ncclTree* tree = &channel->collTree;
     const int stepSize = comm->buffSizes[NCCL_PROTO_SIMPLE] / (sizeof(T)*NCCL_STEPS);
     int chunkSize = args->coll.lastChunkSize;
     const ssize_t minChunkSize = nthreads*8*sizeof(uint64_t) / sizeof(T);
@@ -182,7 +183,6 @@ class ncclFunction<ncclFuncAllReduce, NCCL_ALGO_COLLNET, NCCL_PROTO_SIMPLE, FUNC
     T * __restrict__ thisOutput = (T*)args->recvbuff;
 
     if (blockIdx.x < nChannels) { // first half of the channels do reduce
-      struct ncclTree* tree = &channel->collTreeUp;
       ncclPrimitives<UNROLL, 1, 1, T, 1, 1, 0, FUNC, 0>
         prims(tid, nthreads, tree->down, &tree->up, NULL, stepSize, channel, comm, args->opCount, ncclShmem->ptrs);
       for (ssize_t gridOffset = 0; gridOffset < size; gridOffset += loopSize) {
@@ -200,7 +200,6 @@ class ncclFunction<ncclFuncAllReduce, NCCL_ALGO_COLLNET, NCCL_PROTO_SIMPLE, FUNC
     }
 
     if (blockIdx.x >= nChannels) { // second half of the channels do broadcast
-      struct ncclTree* tree = &channel->collTreeDn;
       ncclPrimitives<UNROLL, 1, 1, T, 1, 1, 0, FUNC, 0>
         prims(tid, nthreads, &tree->up, tree->down, NULL, stepSize, channel, comm, args->opCount, ncclShmem->ptrs);
       for (ssize_t gridOffset = 0; gridOffset < size; gridOffset += loopSize) {
@@ -366,6 +365,7 @@ class ncclFunction<ncclFuncAllReduce, NCCL_ALGO_COLLNET, NCCL_PROTO_LL, FUNC, T,
     const int nChannels = args->coll.nChannels;
     struct ncclDevComm* comm = args->comm;
     struct ncclChannel* channel = comm->channels+blockIdx.x;
+    struct ncclTree* tree = &channel->collTree;
     const int stepLines = comm->buffSizes[NCCL_PROTO_LL] / (sizeof(union ncclLLFifoLine)*NCCL_STEPS);
     ssize_t chunkSize = stepLines * sizeof(uint64_t) / sizeof(T);
     const ssize_t minChunkSize = nthreads*sizeof(uint64_t) / sizeof(T);
@@ -381,7 +381,6 @@ class ncclFunction<ncclFuncAllReduce, NCCL_ALGO_COLLNET, NCCL_PROTO_LL, FUNC, T,
     T * __restrict__ thisOutput = (T*)args->recvbuff;
 
     if (blockIdx.x < nChannels) { // first half of the channels do reduce
-      struct ncclTree* tree = &channel->collTreeUp;
       ncclLLPrimitives<T, FUNC, 1, 1> LLprims(tid, nthreads, tree->down, &tree->up, stepLines, channel, comm, args->opCount);
       for (ssize_t gridOffset = 0; gridOffset < size; gridOffset += loopSize) {
         // Up
@@ -398,7 +397,6 @@ class ncclFunction<ncclFuncAllReduce, NCCL_ALGO_COLLNET, NCCL_PROTO_LL, FUNC, T,
     }
 
     if (blockIdx.x >= nChannels) { // second half of the channels do broadcast
-      struct ncclTree* tree = &channel->collTreeDn;
       ncclLLPrimitives<T, FUNC, 1, 1> LLprims(tid, nthreads, &tree->up, tree->down, stepLines, channel, comm, args->opCount);
       for (ssize_t gridOffset = 0; gridOffset < size; gridOffset += loopSize) {
         // Down
