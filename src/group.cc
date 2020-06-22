@@ -236,13 +236,13 @@ ncclResult_t ncclGroupEnd() {
           // Compute how much to split operations
           // Natural step size matching buffer steps.
           ssize_t stepSize = comm->buffSizes[NCCL_PROTO_SIMPLE] / NCCL_STEPS;
-         // Try to use all channels
-         int nChannelsMax = comm->p2pnChannelsPerPeer;
-         int nChannelsMin = nChannelsMax;
-         while (nChannelsMin*comm->nRanks > comm->p2pnChannels && nChannelsMin > 1) nChannelsMin /= 2;
+          // Try to use all channels
+          int nChannelsMax = comm->p2pnChannelsPerPeer;
+          int nChannelsMin = nChannelsMax;
+          while (nChannelsMin*comm->nRanks > comm->p2pnChannels && nChannelsMin > 1) nChannelsMin /= 2;
 
-         ssize_t recvChunkSize = getP2pNchannels(p2plist->peerlist[from].recvbytes, nChannelsMin, nChannelsMax, stepSize, 4*stepSize);
-         ssize_t sendChunkSize = getP2pNchannels(p2plist->peerlist[to].sendbytes, nChannelsMin, nChannelsMax, stepSize, 4*stepSize);
+          ssize_t recvChunkSize = getP2pNchannels(p2plist->peerlist[from].recvbytes, nChannelsMin, nChannelsMax, stepSize, 4*stepSize);
+          ssize_t sendChunkSize = getP2pNchannels(p2plist->peerlist[to].sendbytes, nChannelsMin, nChannelsMax, stepSize, 4*stepSize);
 
           ssize_t sendOffset = 0;
           ssize_t recvOffset = 0;
