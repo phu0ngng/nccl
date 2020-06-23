@@ -173,7 +173,7 @@ class ncclPrimitives {
       }
       barrier();
       if (role & ROLE_SYNC) {
-        if (SEND && (role & ROLE_SEND) && realSize > 0 && tid == nthreads) __threadfence_system();
+       if (SEND && (role & ROLE_SEND) && realSize > 0 && tid == nthreads) __threadfence_system();
        __syncwarp();
        if (SEND && (role & ROLE_SEND)) postSend();
         if (RECV && (role & ROLE_RECV)) postRecv();
