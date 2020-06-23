@@ -10,7 +10,7 @@
 #include "collectives.h"
 #include "devcomm.h"
 
-#define COLL_UNROLL 4
+#define COLL_UNROLL 8
 
 // Exit If Abort Barrier across CTA: make sure all threads exit consistently
 // Each thread sets a predicate to true if abort == 1
