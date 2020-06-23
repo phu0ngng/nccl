@@ -406,18 +406,19 @@ ncclResult_t ncclCommSetIntra(struct ncclComm* comm, int rank, int ranks, struct
 
 #define DEFAULT_LL_BUFFSIZE (NCCL_LL_LINES_PER_THREAD*NCCL_LL_MAX_NTHREADS*NCCL_STEPS*sizeof(union ncclLLFifoLine))
 #define DEFAULT_LL128_BUFFSIZE (NCCL_LL128_ELEMS_PER_THREAD*NCCL_LL128_MAX_NTHREADS*NCCL_STEPS*sizeof(uint64_t))
-#define DEFAULT_BUFFSIZE (1LL << 22) /* 4MiB */
-#define DEFAULT_BUFFSIZE_ARM (1LL << 20) /* 1MiB */
+#define DEFAULT_BUFFSIZE (1 << 22) /* 4MiB */
+#define DEFAULT_BUFFSIZE_ARM (1 << 20) /* 1MiB */
 NCCL_PARAM(BuffSize, "BUFFSIZE", -2);
 NCCL_PARAM(LlBuffSize, "LL_BUFFSIZE", -2);
 NCCL_PARAM(Ll128BuffSize, "LL128_BUFFSIZE", -2);
 
-static ncclResult_t computeBuffSizes(struct ncclComm* comm) {
+static ncclResult_t computeBuffSizes(struct ncclComm* comm, int speed) {
   int cpuArch, cpuVendor, cpuModel;
   NCCLCHECK(ncclTopoCpuType(comm->topo, &cpuArch, &cpuVendor, &cpuModel));
 
   int64_t envs[NCCL_NUM_PROTOCOLS] = { ncclParamLlBuffSize(), ncclParamLl128BuffSize(), ncclParamBuffSize() };
-  int defaults[NCCL_NUM_PROTOCOLS] = { DEFAULT_LL_BUFFSIZE, DEFAULT_LL128_BUFFSIZE, DEFAULT_BUFFSIZE };
+  int speedFactor = speed < 20 ? 1 : 2;
+  int defaults[NCCL_NUM_PROTOCOLS] = { DEFAULT_LL_BUFFSIZE, DEFAULT_LL128_BUFFSIZE, DEFAULT_BUFFSIZE*speedFactor };
 
   if (cpuArch == NCCL_TOPO_CPU_ARCH_ARM) defaults[NCCL_PROTO_SIMPLE] = DEFAULT_BUFFSIZE_ARM;
 
@@ -799,7 +800,7 @@ static ncclResult_t initTransportsRank(struct ncclComm* comm, ncclUniqueId* comm
   NCCLCHECK(ncclTopoSetAffinity(comm->topo, comm->rank));
   ncclResult_t ret;
 
-  NCCLCHECK(computeBuffSizes(comm));
+  NCCLCHECK(computeBuffSizes(comm, treeGraph.speedIntra));
 
   // Connect with prev/next for each ring
   struct ncclConnect *connect;
