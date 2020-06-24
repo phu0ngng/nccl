@@ -514,9 +514,21 @@ ncclResult_t ncclSaveCommKernels(ncclComm_t comm) {
   return ncclSuccess;
 }
 
+static ncclResult_t ncclSaveAsyncColl(struct ncclInfo* info) {
+  ncclComm_t comm = info->comm;
+  if (comm->asyncOpCount >= NCCL_MAX_OPS) {
+    WARN("Too many async operations in progress, max is %d", NCCL_MAX_OPS);
+    return ncclInvalidUsage;
+  }
+  memcpy(comm->asyncOps+comm->asyncOpCount, info, sizeof(struct ncclInfo));
+  comm->asyncOpCount++;
+  comm->asyncTotalSize += info->nBytes;
+  return ncclSuccess;
+}
+
 // Save p2p operations in comm->p2plist. Operations will be posted to channels
 // during ncclGroupEnd()
-ncclResult_t ncclSaveP2p(struct ncclInfo* info) {
+static ncclResult_t ncclSaveP2p(struct ncclInfo* info) {
   struct ncclComm* comm = info->comm;
   struct ncclP2Plist* p2plist = &comm->p2plist;
   int peer = info->root;
@@ -564,7 +576,7 @@ ncclResult_t ncclEnqueueCheck(struct ncclInfo* info) {
     NCCLCHECKGOTO(ArgsCheck(info), ret, end);
     // Always register comm even in case of error to make sure ncclGroupEnd
     // cleans it up.
-    NCCLCHECKGOTO(ncclAsyncColl(info), ret, end);
+    NCCLCHECKGOTO(ncclAsyncColl(info->comm), ret, end);
     NCCLCHECKGOTO(checkSetStream(info), ret, end);
 
     INFO(NCCL_COLL,"%s: opCount %lx sendbuff %p recvbuff %p count %zi datatype %d op %d root %d comm %p [nranks=%d] stream %p",
@@ -573,6 +585,8 @@ ncclResult_t ncclEnqueueCheck(struct ncclInfo* info) {
 
     if (info->coll == ncclFuncSendRecv) { //p2p stored separately
       NCCLCHECKGOTO(ncclSaveP2p(info), ret, end);
+    } else {
+      NCCLCHECKGOTO(ncclSaveAsyncColl(info), ret, end);
     }
 end:
     if (savedDev != -1) CUDACHECK(cudaSetDevice(savedDev));

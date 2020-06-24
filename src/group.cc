@@ -91,16 +91,7 @@ ncclResult_t ncclAsyncInit(ncclInitFunc_t func, ncclComm_t* newcomm, int ndev, n
   return ncclSuccess;
 }
 
-ncclResult_t ncclAsyncColl(struct ncclInfo* info) {
-  ncclComm_t comm = info->comm;
-  if (comm->asyncOpCount >= NCCL_MAX_OPS) {
-    WARN("Too many async operations in progress, max is %d", NCCL_MAX_OPS);
-    return ncclAsyncErrCheck(ncclInvalidUsage);
-  }
-  memcpy(comm->asyncOps+comm->asyncOpCount, info, sizeof(struct ncclInfo));
-  comm->asyncOpCount++;
-  comm->asyncTotalSize += info->nBytes;
-
+ncclResult_t ncclAsyncColl(ncclComm_t comm) {
   struct ncclAsyncArgs* args = ncclGroupArgs;
   for (int i=0; i<ncclGroupIndex; i++) {
     if (args->coll.comm == comm) return ncclSuccess;
