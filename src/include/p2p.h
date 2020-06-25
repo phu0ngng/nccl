@@ -10,7 +10,7 @@
 #define NCCL_P2P_H_
 
 struct ncclP2Pinfo {
- const void* sendbuff;
+  const void* sendbuff;
   void* recvbuff;
   ssize_t sendbytes;
   ssize_t recvbytes;
