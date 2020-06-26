@@ -225,6 +225,7 @@ int main(int argc, const char* argv[]) {
     RUN("FB-BUG");
     RUN("DGX-1V-1G");
     RUN("GCP-Shared-NVS");
+    RUN("Dual-Delta-VM");
 #endif
     RUN("P9-6V");
     RUN("P9-4V");
