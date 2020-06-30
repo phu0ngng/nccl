@@ -647,6 +647,7 @@ ncclResult_t ncclTopoGetXmlFromGpu(struct ncclXmlNode* pciNode, nvmlDevice_t nvm
         char* path;
         NCCLCHECK(getPciPath(busId, &path));
         NCCLCHECK(ncclTopoSetAttrFromSys(sub, path, "class", "tclass"));
+        free(path);
       }
     }
   }
