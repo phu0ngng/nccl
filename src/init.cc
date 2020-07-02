@@ -225,6 +225,8 @@ static ncclResult_t commAlloc(ncclComm_t* comret, int ndev, int rank) {
   NCCLCHECK(getBusId(comm->cudaDev, &comm->busId));
   TRACE(NCCL_INIT,"comm %p rank %d nranks %d cudaDev %d busId %x", comm, rank, ndev, comm->cudaDev, comm->busId);
 
+  // Send/recv operations reuse opCount-1; start at 1.
+  comm->opCount = 1;
   comm->doneEvent = doneEvent;
   comm->checkPointers = ncclParamCheckPointers() == 1 ? true : false;
 #if CUDART_VERSION >= 9020
