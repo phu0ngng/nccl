@@ -434,6 +434,10 @@ ncclResult_t ncclSaveKernel(struct ncclInfo* info) {
     return ncclSuccess;
   }
 
+  // Reuse previous opCount for send/recv operations to avoid causing a mismatch
+  // when different ranks send/recv different amounts of data.
+  if (info->coll == ncclCollSendRecv) info->comm->opCount--;
+
   struct ncclColl coll;
   struct ncclProxyArgs proxyArgs;
   memset(&proxyArgs, 0, sizeof(struct ncclProxyArgs));
