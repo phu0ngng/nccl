@@ -150,6 +150,7 @@ size_t getP2pNchannels(size_t totalSize, int minChannels, int maxChannels, size_
     nChannels *= 2;
     size = DIVUP(totalSize, nChannels);
   }
+  ALIGN_SIZE(size, minSize);
   return size;
 }
 
