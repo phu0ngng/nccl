@@ -401,6 +401,9 @@ ncclResult_t ncclTopoComputePaths(struct ncclTopoSystem* system, struct ncclPeer
   return ncclSuccess;
 }
 
+// MNNVL: Flag to indicate that this is a Multi-node NVLink system
+NCCL_PARAM(MNNVL, "MNNVL", 1);
+
 ncclResult_t ncclTopoTrimSystem(struct ncclTopoSystem* system, struct ncclComm* comm) {
   int *domains;
   int64_t *ids;
@@ -438,7 +441,7 @@ ncclResult_t ncclTopoTrimSystem(struct ncclTopoSystem* system, struct ncclComm* 
   }
 
   comm->localRanks = system->nodes[GPU].count;
-  if (system->nodes[GPU].count == comm->nRanks) {
+  if (system->nodes[GPU].count == comm->nRanks || ncclParamMNNVL()) {
     for (int n=system->nodes[NET].count-1; n>=0; n--)
       NCCLCHECK(ncclTopoRemoveNode(system, NET, n));
   }
