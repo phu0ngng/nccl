@@ -337,7 +337,6 @@ static ncclResult_t computeColl(struct ncclInfo* info /* input */, struct ncclCo
   coll->args.sendbuff = info->sendbuff;
   coll->args.recvbuff = info->recvbuff;
   coll->args.comm = info->comm->devComm;
-  coll->args.opCount = info->comm->opCount;
 
   if (info->coll == ncclCollSendRecv) {
     coll->args.p2p.sendCount = info->sendbytes;
@@ -433,10 +432,6 @@ ncclResult_t ncclSaveKernel(struct ncclInfo* info) {
       CUDACHECK(cudaMemcpyAsync(info->recvbuff, info->sendbuff, info->nBytes, cudaMemcpyDeviceToDevice, info->stream));
     return ncclSuccess;
   }
-
-  // Reuse previous opCount for send/recv operations to avoid causing a mismatch
-  // when different ranks send/recv different amounts of data.
-  if (info->coll == ncclCollSendRecv) info->comm->opCount--;
 
   struct ncclColl coll;
   struct ncclProxyArgs proxyArgs;
