@@ -28,8 +28,8 @@ class ncclFunction<ncclFuncBroadcast, NCCL_ALGO_RING, NCCL_PROTO_SIMPLE, FUNC, T
       const int root = args->coll.root;
 
       // Compute pointers
-      const T * __restrict__ thisInput = (const T*)args->sendbuff;
-      T * __restrict__ thisOutput = (T*)args->recvbuff;
+      const T * __restrict__ thisInput = (const T*)args->coll.sendbuff;
+      T * __restrict__ thisOutput = (T*)args->coll.recvbuff;
 
       ncclPrimitives<UNROLL, BROADCAST_CHUNKSTEPS/BROADCAST_SLICESTEPS, BROADCAST_SLICESTEPS, T, 1, 1, 0, FUNC, 0>
         prims(tid, nthreads, &ring->prev, &ring->next, NULL, stepSize, channel, comm, ncclShmem->ptrs);
@@ -77,8 +77,8 @@ class ncclFunction<ncclFuncBroadcast, NCCL_ALGO_RING, NCCL_PROTO_LL, FUNC, T, UN
       ncclLLPrimitives<T, FUNC, 1, 1> LLprims(tid, nthreads, &ring->prev, &ring->next, stepLines, channel, comm);
 
       // Compute pointers
-      const T * __restrict__ thisInput = (const T*)args->sendbuff;
-      T * __restrict__ thisOutput = (T*)args->recvbuff;
+      const T * __restrict__ thisInput = (const T*)args->coll.sendbuff;
+      T * __restrict__ thisOutput = (T*)args->coll.recvbuff;
 
       for (ssize_t gridOffset = 0; gridOffset < size; gridOffset += loopSize) {
         if (size-gridOffset < loopSize) {
@@ -126,8 +126,8 @@ class ncclFunction<ncclFuncBroadcast, NCCL_ALGO_RING, NCCL_PROTO_LL128, FUNC, T,
       ncclLL128Primitives<T, FUNC, 1, 1> LLprims(tid, nthreads, &ring->prev, &ring->next, stepSize, channel, comm);
 
       // Compute pointers
-      const T * __restrict__ thisInput = (const T*)args->sendbuff;
-      T * __restrict__ thisOutput = (T*)args->recvbuff;
+      const T * __restrict__ thisInput = (const T*)args->coll.sendbuff;
+      T * __restrict__ thisOutput = (T*)args->coll.recvbuff;
 
       for (ssize_t gridOffset = 0; gridOffset < size; gridOffset += loopSize) {
         chunkSize = min(DIVUP(size-gridOffset, nChannels*minChunkSize)*minChunkSize, chunkSize);

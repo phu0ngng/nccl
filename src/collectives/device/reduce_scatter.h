@@ -26,8 +26,8 @@ class ncclFunction<ncclFuncReduceScatter, NCCL_ALGO_RING, NCCL_PROTO_SIMPLE, FUN
       const ssize_t size = args->coll.count;
 
       // Compute pointers
-      const T * __restrict__ thisInput = (const T*)args->sendbuff;
-      T * __restrict__ thisOutput = (T*)args->recvbuff;
+      const T * __restrict__ thisInput = (const T*)args->coll.sendbuff;
+      T * __restrict__ thisOutput = (T*)args->coll.recvbuff;
 
       ncclPrimitives<UNROLL, REDUCESCATTER_CHUNKSTEPS/REDUCESCATTER_SLICESTEPS, REDUCESCATTER_SLICESTEPS, T, 1, 1, 0, FUNC, 0>
         prims(tid, nthreads, &ring->prev, &ring->next, NULL, stepSize, channel, comm, ncclShmem->ptrs);
@@ -85,8 +85,8 @@ class ncclFunction<ncclFuncReduceScatter, NCCL_ALGO_RING, NCCL_PROTO_LL, FUNC, T
       ncclLLPrimitives<T, FUNC, 1, 1> LLprims(tid, nthreads, &ring->prev, &ring->next, stepLines, channel, comm);
 
       // Compute pointers
-      const T * __restrict__ thisInput = (const T*)args->sendbuff;
-      T * __restrict__ thisOutput = (T*)args->recvbuff;
+      const T * __restrict__ thisInput = (const T*)args->coll.sendbuff;
+      T * __restrict__ thisOutput = (T*)args->coll.recvbuff;
 
       for (ssize_t gridOffset = 0; gridOffset < size; gridOffset += loopSize) {
         if (size-gridOffset < loopSize) {
@@ -146,8 +146,8 @@ class ncclFunction<ncclFuncReduceScatter, NCCL_ALGO_RING, NCCL_PROTO_LL128, FUNC
       ncclLL128Primitives<T, FUNC, 1, 1> LLprims(tid, nthreads, &ring->prev, &ring->next, stepSize, channel, comm);
 
       // Compute pointers
-      const T * __restrict__ thisInput = (const T*)args->sendbuff;
-      T * __restrict__ thisOutput = (T*)args->recvbuff;
+      const T * __restrict__ thisInput = (const T*)args->coll.sendbuff;
+      T * __restrict__ thisOutput = (T*)args->coll.recvbuff;
 
       for (ssize_t gridOffset = 0; gridOffset < size; gridOffset += loopSize) {
         chunkSize = min(DIVUP(size-gridOffset, nChannels*minChunkSize)*minChunkSize, chunkSize);

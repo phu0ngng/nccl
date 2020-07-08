@@ -102,7 +102,7 @@ ncclResult_t setupLaunch(struct ncclComm* comm, struct cudaLaunchParams* params)
       volatile uint8_t* activePtr = (volatile uint8_t*)&c->active;
       while (activePtr[0] != 0) sched_yield();
 
-      c->args.p2p.delta = -1; // no-op
+      c->args.p2p.delta[0] = -1; // no-op
       c->funcIndex = FUNC_INDEX_P2P;
       c->args.comm = comm->devComm;
       c->active = 1;
@@ -336,14 +336,14 @@ static ncclResult_t getLoopInfo(struct ncclInfo* info) {
 }
 
 static ncclResult_t computeColl(struct ncclInfo* info /* input */, struct ncclColl* coll, struct ncclProxyArgs* proxyArgs /* output */) {
-  coll->args.sendbuff = info->sendbuff;
-  coll->args.recvbuff = info->recvbuff;
   coll->args.comm = info->comm->devComm;
 
   if (info->coll == ncclFuncSendRecv) {
-    coll->args.p2p.sendCount = info->sendbytes;
-    coll->args.p2p.recvCount = info->recvbytes;
-    coll->args.p2p.delta = info->delta;
+    coll->args.p2p.sendCount[0] = info->sendbytes;
+    coll->args.p2p.recvCount[0] = info->recvbytes;
+    coll->args.p2p.sendbuff[0] = info->sendbuff;
+    coll->args.p2p.recvbuff[0] = info->recvbuff;
+    coll->args.p2p.delta[0] = info->delta;
     coll->funcIndex = FUNC_INDEX_P2P;
     coll->args.p2p.nThreads = info->nThreads = info->comm->maxThreads[NCCL_ALGO_RING][NCCL_PROTO_SIMPLE]+2*WARP_SIZE;
     return ncclSuccess;
@@ -353,6 +353,8 @@ static ncclResult_t computeColl(struct ncclInfo* info /* input */, struct ncclCo
   NCCLCHECK(getPatternInfo(info));
   NCCLCHECK(getLoopInfo(info));
 
+  coll->args.coll.sendbuff = info->sendbuff;
+  coll->args.coll.recvbuff = info->recvbuff;
   coll->args.coll.root = info->root;
   coll->args.coll.count = info->count;
   coll->args.coll.nChannels = info->nChannels;

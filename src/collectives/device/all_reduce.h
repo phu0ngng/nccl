@@ -26,8 +26,8 @@ class ncclFunction<ncclFuncAllReduce, NCCL_ALGO_RING, NCCL_PROTO_SIMPLE, FUNC, T
     const ssize_t size = args->coll.count;
 
     // Compute pointers
-    const T * __restrict__ thisInput = (const T*)args->sendbuff;
-    T * __restrict__ thisOutput = (T*)args->recvbuff;
+    const T * __restrict__ thisInput = (const T*)args->coll.sendbuff;
+    T * __restrict__ thisOutput = (T*)args->coll.recvbuff;
 
     ncclPrimitives<UNROLL, ALLREDUCE_CHUNKSTEPS/ALLREDUCE_SLICESTEPS, ALLREDUCE_SLICESTEPS, T, 1, 1, 1, FUNC, 0>
       prims(tid, nthreads, &ring->prev, &ring->next, thisOutput, stepSize, channel, comm, ncclShmem->ptrs);
@@ -110,8 +110,8 @@ class ncclFunction<ncclFuncAllReduce, NCCL_ALGO_TREE, NCCL_PROTO_SIMPLE, FUNC, T
     }
 
     // Compute pointers
-    const T * __restrict__ thisInput = (const T*)args->sendbuff;
-    T * __restrict__ thisOutput = (T*)args->recvbuff;
+    const T * __restrict__ thisInput = (const T*)args->coll.sendbuff;
+    T * __restrict__ thisOutput = (T*)args->coll.recvbuff;
 
 #if 1
     if (tid < nthreads+WARP_SIZE) {
@@ -218,8 +218,8 @@ class ncclFunction<ncclFuncAllReduce, NCCL_ALGO_COLLNET, NCCL_PROTO_SIMPLE, FUNC
     }
 
     // Compute pointers
-    const T * __restrict__ thisInput = (const T*)args->sendbuff;
-    T * __restrict__ thisOutput = (T*)args->recvbuff;
+    const T * __restrict__ thisInput = (const T*)args->coll.sendbuff;
+    T * __restrict__ thisOutput = (T*)args->coll.recvbuff;
 
     if (blockIdx.x < nChannels) { // first half of the channels do reduce
       ncclPrimitives<UNROLL, 1, 1, T, 1, 1, 0, FUNC, 0>
@@ -278,8 +278,8 @@ class ncclFunction<ncclFuncAllReduce, NCCL_ALGO_RING, NCCL_PROTO_LL, FUNC, T, UN
     ncclLLPrimitives<T, FUNC, 1, 1> LLprims(tid, nthreads, &ring->prev, &ring->next, stepLines, channel, comm);
 
     // Compute pointers
-    const T * __restrict__ thisInput = (const T*)args->sendbuff;
-    T * __restrict__ thisOutput = (T*)args->recvbuff;
+    const T * __restrict__ thisInput = (const T*)args->coll.sendbuff;
+    T * __restrict__ thisOutput = (T*)args->coll.recvbuff;
 
     for (ssize_t gridOffset = 0; gridOffset < size; gridOffset += loopSize) {
       chunkSize = min(DIVUP(size-gridOffset, nChannels*nranks*minChunkSize)*minChunkSize, chunkSize);
@@ -355,8 +355,8 @@ class ncclFunction<ncclFuncAllReduce, NCCL_ALGO_TREE, NCCL_PROTO_LL, FUNC, T, UN
     }
 
     // Compute pointers
-    const T * __restrict__ thisInput = (const T*)args->sendbuff;
-    T * __restrict__ thisOutput = (T*)args->recvbuff;
+    const T * __restrict__ thisInput = (const T*)args->coll.sendbuff;
+    T * __restrict__ thisOutput = (T*)args->coll.recvbuff;
 
     do {
       // Reduce : max number of recv is 3, max number of send is 1 (binary tree + local)
@@ -416,8 +416,8 @@ class ncclFunction<ncclFuncAllReduce, NCCL_ALGO_COLLNET, NCCL_PROTO_LL, FUNC, T,
     }
 
     // Compute pointers
-    const T * __restrict__ thisInput = (const T*)args->sendbuff;
-    T * __restrict__ thisOutput = (T*)args->recvbuff;
+    const T * __restrict__ thisInput = (const T*)args->coll.sendbuff;
+    T * __restrict__ thisOutput = (T*)args->coll.recvbuff;
 
     if (blockIdx.x < nChannels) { // first half of the channels do reduce
       ncclLLPrimitives<T, FUNC, 1, 1> LLprims(tid, nthreads, tree->down, &tree->up, stepLines, channel, comm);
@@ -476,8 +476,8 @@ class ncclFunction<ncclFuncAllReduce, NCCL_ALGO_RING, NCCL_PROTO_LL128, FUNC, T,
     ncclLL128Primitives<T, FUNC, 1, 1> LLprims(tid, nthreads, &ring->prev, &ring->next, stepSize, channel, comm);
 
     // Compute pointers
-    const T * __restrict__ thisInput = (const T*)args->sendbuff;
-    T * __restrict__ thisOutput = (T*)args->recvbuff;
+    const T * __restrict__ thisInput = (const T*)args->coll.sendbuff;
+    T * __restrict__ thisOutput = (T*)args->coll.recvbuff;
 
     for (ssize_t gridOffset = 0; gridOffset < size; gridOffset += loopSize) {
       chunkSize = min(DIVUP(size-gridOffset, nChannels*nranks*minChunkSize)*minChunkSize, chunkSize);
@@ -554,8 +554,8 @@ class ncclFunction<ncclFuncAllReduce, NCCL_ALGO_TREE, NCCL_PROTO_LL128, FUNC, T,
     }
 
     // Compute pointers
-    const T * __restrict__ thisInput = (const T*)args->sendbuff;
-    T * __restrict__ thisOutput = (T*)args->recvbuff;
+    const T * __restrict__ thisInput = (const T*)args->coll.sendbuff;
+    T * __restrict__ thisOutput = (T*)args->coll.recvbuff;
 
     if (tree->up == -1) {
       // ReduceAndBroadcast : max number of recv is 3, max number of send is 3

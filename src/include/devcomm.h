@@ -131,15 +131,13 @@ struct ncclPeer {
 
 struct ncclDevComm;
 
+#define MAX_SEGMENTS 4
+
 /* CollectiveArgs + ncclColl are to be a power of two, currently 64 bytes, */
 /* to make sure reads to host from the CUDA kernel are aligned. */
 /* Make sure to adjust padding at the end of ncclColl. */
 struct CollectiveArgs {
   struct ncclDevComm* comm;
-
-  // local and remote input, output, and buffer
-  const void * sendbuff;
-  void * recvbuff;
 
   // Op-specific fields. Make sure the common part stays the
   // same on all structs of the union
@@ -152,15 +150,19 @@ struct CollectiveArgs {
       uint8_t bid;
       uint8_t nChannels;
       uint32_t root;
+      const void * sendbuff;
+      void * recvbuff;
       size_t count;
       size_t lastChunkSize;
     } coll;
     struct {
       uint16_t nThreads;
       uint16_t unused;
-      int32_t delta;
-      size_t sendCount;
-      size_t recvCount;
+      int32_t delta[MAX_SEGMENTS];
+      size_t sendCount[MAX_SEGMENTS];
+      size_t recvCount[MAX_SEGMENTS];
+      const void * sendbuff[MAX_SEGMENTS];
+      void * recvbuff[MAX_SEGMENTS];
     } p2p;
   };
 };
@@ -172,10 +174,10 @@ struct ncclColl {
       uint16_t nextIndex;
       uint8_t  active;
     };
-    int data[0x10];
+    int data[0x40];
   };
 };
-static_assert(sizeof(struct ncclColl) == (0x10*sizeof(int)), "ncclColl must have a pow2 size");
+static_assert(sizeof(struct ncclColl) == (0x40*sizeof(int)), "ncclColl must have a pow2 size");
 
 struct ncclChannel {
   union {
