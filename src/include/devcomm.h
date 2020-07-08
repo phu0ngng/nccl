@@ -159,6 +159,7 @@ struct CollectiveArgs {
       uint16_t nThreads;
       uint16_t unused;
       int32_t delta[MAX_SEGMENTS];
+      uint16_t nThreadsPerOp[MAX_SEGMENTS];
       size_t sendCount[MAX_SEGMENTS];
       size_t recvCount[MAX_SEGMENTS];
       const void * sendbuff[MAX_SEGMENTS];

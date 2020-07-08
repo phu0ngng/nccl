@@ -344,8 +344,10 @@ static ncclResult_t computeColl(struct ncclInfo* info /* input */, struct ncclCo
     coll->args.p2p.sendbuff[0] = info->sendbuff;
     coll->args.p2p.recvbuff[0] = info->recvbuff;
     coll->args.p2p.delta[0] = info->delta;
+    coll->args.p2p.delta[1] = -1;
     coll->funcIndex = FUNC_INDEX_P2P;
     coll->args.p2p.nThreads = info->nThreads = info->comm->maxThreads[NCCL_ALGO_RING][NCCL_PROTO_SIMPLE]+2*WARP_SIZE;
+    coll->args.p2p.nThreadsPerOp[0] = info->nThreads;
     return ncclSuccess;
   }
   // Set nstepsPerLoop and nchunksPerLoop
