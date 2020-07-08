@@ -40,11 +40,16 @@ class ncclCommon_test : public ::testing::Test {
                 EXPECT_EQ(cudaSuccess, cudaSetDevice(i));
                 if (done[i])
                     continue;
-                cudaError_t err = cudaStreamQuery(this->streams[i]);
-                if (err != cudaErrorNotReady) {
-                    EXPECT_EQ(cudaSuccess, err)
-                        << "Rank : " << i << ". Error: " << cudaGetErrorName(err)
-                        << "(" << cudaGetErrorString(err) << ")" << std::endl;
+                ncclResult_t ncclAsyncErr;
+                EXPECT_EQ(ncclSuccess, ncclCommGetAsyncError(comms[i], &ncclAsyncErr))
+                    << "Rank : " << i << ", " << std::endl;
+                EXPECT_EQ(ncclSuccess, ncclAsyncErr)
+                    << "Rank : " << i << ". Error: " << ncclAsyncErr << std::endl;
+                cudaError_t cudaErr = cudaStreamQuery(this->streams[i]);
+                if (cudaErr != cudaErrorNotReady) {
+                    EXPECT_EQ(cudaSuccess, cudaErr)
+                        << "Rank : " << i << ". Error: " << cudaGetErrorName(cudaErr)
+                        << "(" << cudaGetErrorString(cudaErr) << ")" << std::endl;
                     done[i] = 1;
                     total++;
                 }
