@@ -1,4 +1,4 @@
-/*************************************************************************
+  /*************************************************************************
  * Copyright (c) 2016-2020, NVIDIA CORPORATION. All rights reserved.
  *
  * See LICENSE.txt for license information
@@ -69,13 +69,11 @@ ncclResult_t netSendSetup(struct ncclComm* comm, struct ncclTopoGraph* graph, st
 
   send->conn.direct |= resources->useGdr ? NCCL_DIRECT_NIC : 0;
   send->conn.tail = &resources->recvMem->tail;
-  send->conn.opCountRem = &resources->recvMem->opCount;
   send->conn.sizesFifo = resources->recvMem->sizesFifo;
   // Only fuse P2P buffers, continue to allocate dedicated buffers for ring/tree
   send->conn.ptrsFifo = resources->shared ? resources->recvMem->ptrsFifo : NULL;
   send->conn.head = &resources->sendMem->head;
   resources->sendMem->head = resources->shared ? -NCCL_STEPS : 0; // Don't give any credit yet when sharing buffers
-  send->conn.opCountLoc = &resources->sendMem->opCount;
   for (int i=0; i<NCCL_STEPS; i++) send->conn.sizesFifo[i] = -1;
 
   if (resources->shared == 0) {
@@ -124,11 +122,9 @@ ncclResult_t netRecvSetup(struct ncclComm* comm, struct ncclTopoGraph* graph, st
 
   recv->conn.direct |= resources->useGdr ? NCCL_DIRECT_NIC : 0;
   recv->conn.tail = &resources->recvMem->tail;
-  recv->conn.opCountLoc = &resources->recvMem->opCount;
   // Only fuse P2P buffers, continue to allocate dedicated buffers for ring/tree
   recv->conn.ptrsFifo = resources->shared ? resources->recvMem->ptrsFifo : NULL;
   recv->conn.head = &resources->sendMem->head;
-  recv->conn.opCountRem = &resources->sendMem->opCount;
 
   if (resources->shared == 0) { // Only allocate dedicated buffers for ring/tree not for p2p
     int protoLoc[NCCL_NUM_PROTOCOLS];
@@ -252,9 +248,6 @@ ncclResult_t netRecvFree(void* transportResources) {
 ncclResult_t netSendProxy(struct ncclProxyArgs* args) {
   struct netSendResources* resources = (struct netSendResources*) (args->connector->transportResources);
   if (args->state == ncclProxyOpReady) {
-    // Update opCount
-    resources->recvMem->opCount = args->opCount;
-
     // Round to next multiple of sliceSteps
     resources->step = ROUNDUP(resources->step, args->chunkSteps);
     args->posted = args->transmitted = args->done = resources->step;
@@ -358,9 +351,6 @@ ncclResult_t netSendProxy(struct ncclProxyArgs* args) {
 ncclResult_t netRecvProxy(struct ncclProxyArgs* args) {
   struct netRecvResources* resources = (struct netRecvResources*) (args->connector->transportResources);
   if (args->state == ncclProxyOpReady) {
-    // Update opCount
-    resources->sendMem->opCount = args->opCount;
-
     // Round to next multiple of sliceSteps
     resources->step = ROUNDUP(resources->step, args->chunkSteps);
     args->posted = args->transmitted = args->done = resources->step;

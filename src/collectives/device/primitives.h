@@ -72,18 +72,6 @@ class ncclPrimitives {
     asm volatile ("bar.sync %0, %1;" :: "r"(GROUP+8), "r"(nthreads));
   }
 
-  uint32_t mismatch = 0;
-  const uint64_t opCount;
-
-  inline __device__ void checkMismatch() {
-    if (mismatch) {
-      // In non-LL, we use _threadfence_system before incrementing opCount, yet we are still waiting for credits here, so there must be a size mismatch
-      *(comm->fatalDevError) = ncclDevAssertedMismatch;
-    } else if (conn && *conn->opCountRem > opCount) {
-      mismatch += 1;
-    }
-  }
-
   uint32_t spins = 0;
   uint32_t abort = 0;
 
@@ -91,7 +79,6 @@ class ncclPrimitives {
     spins++;
     if (abort == 0 && spins == SPINS_BEFORE_CHECK_ABORT) {
       abort = *(comm->abortFlag);
-      checkMismatch();
       spins = 0;
     }
     return abort;
@@ -105,7 +92,6 @@ class ncclPrimitives {
   template <int DST, int DIRECTSEND>
   inline __device__ void waitSend(ssize_t directOffset, int nbytes) {
     spins = 0;
-    mismatch = 0;
     while (connHeadCache + NCCL_STEPS < step + SLICESTEPS) {
       connHeadCache = *connHeadPtr;
       if (checkAbort()) break;
@@ -123,7 +109,6 @@ class ncclPrimitives {
   template <int SRC, int DIRECTRECV>
   inline __device__ void waitRecv(ssize_t directOffset) {
     spins = 0;
-    mismatch = 0;
     while (connTailCache < step + SLICESTEPS) {
       connTailCache = *connTailPtr;
       if (checkAbort()) break;
@@ -191,8 +176,6 @@ class ncclPrimitives {
         connHeadPtr = conn->head;
         // Return credits in case we rounded up.
         *connHeadPtr = step;
-        // Update opCount in case we skipped some operations
-        *(conn->opCountLoc) = opCount;
       } else {
         buff = (T*)conn->buffs[NCCL_PROTO_SIMPLE];
         if (DIRECT && (conn->direct & NCCL_DIRECT_GPU)) {
@@ -213,8 +196,6 @@ class ncclPrimitives {
       step = ROUNDUP(step, SLICESPERCHUNK*SLICESTEPS);
       if (role & ROLE_SYNC) {
         connTailPtr = conn->tail;
-        // Update opCount in case we skipped some operations
-        *(conn->opCountLoc) = opCount;
       } else {
         buff = (T*)conn->buffs[NCCL_PROTO_SIMPLE];
         if (DIRECT && (conn->direct & NCCL_DIRECT_GPU)) {
@@ -233,15 +214,14 @@ class ncclPrimitives {
   __device__ __forceinline__ void saveSync() {
     if ((role & ROLE_SYNC) && conn) {
       conn->step = step;
-      *(conn->opCountLoc) = opCount+1;
       __threadfence_system();
     }
   }
 
  public:
   __device__ __forceinline__
-  ncclPrimitives(const int tid, const int nthreads, int* recvPeers, int* sendPeers, T* directBuff, int stepSize, struct ncclChannel* channel, struct ncclDevComm* comm, const uint64_t opCount, struct ncclShmemPtrs* ptrs)
-    : comm(comm), tid(tid), nthreads(nthreads), stepSize(stepSize), opCount(opCount), srcs((const T**)ptrs->srcs), dsts((T**)ptrs->dsts) {
+  ncclPrimitives(const int tid, const int nthreads, int* recvPeers, int* sendPeers, T* directBuff, int stepSize, struct ncclChannel* channel, struct ncclDevComm* comm, struct ncclShmemPtrs* ptrs)
+    : comm(comm), tid(tid), nthreads(nthreads), stepSize(stepSize), srcs((const T**)ptrs->srcs), dsts((T**)ptrs->dsts) {
     // Make sure step is updated before we read it.
     barrier();
 

@@ -131,10 +131,8 @@ ncclResult_t collNetSendConnect(struct ncclComm* comm, struct ncclConnect* conne
 
   // Head/Tail/Opcount/Fifos are always on host
   send->conn.tail = &resources->recvMem->tail;
-  send->conn.opCountRem = &resources->recvMem->opCount;
   send->conn.sizesFifo = resources->recvMem->sizesFifo;
   send->conn.head = &resources->sendMem->head;
-  send->conn.opCountLoc = &resources->sendMem->opCount;
   for (int i=0; i<NCCL_STEPS; i++) send->conn.sizesFifo[i] = -1;
 
   // Get info from recv side
@@ -170,9 +168,7 @@ ncclResult_t collNetRecvConnect(struct ncclComm* comm, struct ncclConnect* conne
 
   // Head/Tail/Opcount are always on host
   recv->conn.tail = &resources->recvMem->tail;
-  recv->conn.opCountLoc = &resources->recvMem->opCount;
   recv->conn.head = &resources->sendMem->head;
-  recv->conn.opCountRem = &resources->sendMem->opCount;
 
   // Connect to coll comm
   collNetHandle_t** handlePtrs = NULL;
@@ -246,9 +242,6 @@ ncclResult_t collNetRecvFree(void* recvTransportResources) {
 ncclResult_t collNetSendProxy(struct ncclProxyArgs* args) {
   struct collNetSendResources* resources = (struct collNetSendResources*) (args->connector->transportResources);
   if (args->state == ncclProxyOpReady) {
-    // Update opCount
-    resources->recvMem->opCount = args->opCount;
-
     // Round to next multiple of sliceSteps
     resources->step = ROUNDUP(resources->step, args->chunkSteps);
     args->posted = args->transmitted = args->done = resources->step;
@@ -338,9 +331,6 @@ ncclResult_t collNetSendProxy(struct ncclProxyArgs* args) {
 ncclResult_t collNetRecvProxy(struct ncclProxyArgs* args) {
   struct collNetRecvResources* resources = (struct collNetRecvResources*) (args->connector->transportResources);
   if (args->state == ncclProxyOpReady) {
-    // Update opCount
-    resources->sendMem->opCount = args->opCount;
-
     // Round to next multiple of sliceSteps
     resources->step = ROUNDUP(resources->step, args->chunkSteps);
     args->posted = args->transmitted = args->done = resources->step;

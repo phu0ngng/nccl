@@ -22,8 +22,18 @@ static float getMaxWidth(struct ncclTopoSystem* system, struct ncclTopoNode* gpu
   }
   return maxWidth;
 }
+static float getTotalWidth(struct ncclTopoSystem* system, struct ncclTopoNode* gpu) {
+  float nvlinkWidth = 0.0, pciWidth = 0.0;
+  for (int l=0; l<gpu->nlinks; l++) {
+    struct ncclTopoLink* link = gpu->links+l;
+    if (link->type == LINK_NVL) nvlinkWidth += link->width;
+    if (link->type == LINK_PCI) pciWidth = link->width;
+  }
+  return std::max(pciWidth, nvlinkWidth);
+}
 ncclResult_t ncclTopoSearchInit(struct ncclTopoSystem* system) {
   system->maxWidth = 0.0;
+  system->totalWidth = 0.0;
   int inter = system->nodes[NET].count;
   if (inter == 0 && system->nodes[GPU].count == 1) {
     system->maxWidth = LOC_WIDTH;
@@ -32,6 +42,7 @@ ncclResult_t ncclTopoSearchInit(struct ncclTopoSystem* system) {
   for (int g=0; g<system->nodes[GPU].count; g++) {
     struct ncclTopoNode* gpu = system->nodes[GPU].nodes+g;
     system->maxWidth = std::max(system->maxWidth, getMaxWidth(system, gpu, inter ? NET : GPU));
+    system->totalWidth = std::max(system->totalWidth, getTotalWidth(system, gpu));
   }
   return ncclSuccess;
 }
@@ -637,7 +648,7 @@ ncclResult_t ncclTopoGetXmlFromGraphs(int ngraphs, struct ncclTopoGraph** graphs
   return ncclSuccess;
 }
 
-float speedArray[] = { 42.0, 24.0, 21.0, 18.0, 15.0, 12.0, 10.0, 9.0, 7.0, 6.0, 5.0, 4.0, 3.0, 2.4, 1.2, 0.24, 0.12 };
+float speedArray[] = { 42.0, 30.0, 24.0, 21.0, 18.0, 15.0, 12.0, 10.0, 9.0, 7.0, 6.0, 5.0, 4.0, 3.0, 2.4, 1.2, 0.24, 0.12 };
 #define NSPEEDS (sizeof(speedArray)/sizeof(float))
 
 ncclResult_t ncclTopoCompute(ncclTopoSystem* system, struct ncclTopoGraph* graph) {
@@ -688,7 +699,7 @@ search:
 
   NCCLCHECK(ncclTopoSearchRec(system, &tmpGraph, graph, &time));
 #if 0
-  printf("Pattern %d, crossNic %d, Speed %g/%g, type %d/%d, channels %d-%d sameChannels %d -> nChannels %dx%g/%g %s\n", tmpGraph.pattern, tmpGraph.crossNic, tmpGraph.speedInter, tmpGraph.speedIntra, tmpGraph.typeInter, tmpGraph.typeIntra, tmpGraph.minChannels, tmpGraph.maxChannels, tmpGraph.sameChannels, graph->nChannels, graph->speedInter, graph->speedIntra, time == 0 ? "TIMEOUT" : "");
+  printf("Pattern %d, crossNic %d, Speed %g/%g, type %d/%d, channels %d-%d sameChannels %d -> nChannels %dx%g/%g %s\n", tmpGraph.pattern, tmpGraph.crossNic, tmpGraph.speedInter, tmpGraph.speedIntra, tmpGraph.typeInter, tmpGraph.typeIntra, tmpGraph.minChannels, tmpGraph.maxChannels, tmpGraph.sameChannels, graph->nChannels, graph->speedInter, graph->speedIntra, time == 0 ? "TIMEOUT" : time == -1 ? "PERFECT" : "");
   for (int c=0; c<graph->nChannels; c++) {
     printf("%2d : ", c);
     for (int g=0; g<ngpus; g++) {
@@ -698,7 +709,7 @@ search:
   }
 #endif
   // Optimal solution, stop here
-  if (graph->nChannels == graph->maxChannels && graph->speedInter == system->maxWidth) goto done;
+  if (graph->nChannels*graph->speedInter >= system->totalWidth) goto done;
 
   if (pass == 1) {
     // First pass, we don't have a solution yet ; try other options
