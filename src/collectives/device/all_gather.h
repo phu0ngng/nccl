@@ -29,8 +29,8 @@ class ncclFunction<ncclFuncAllGather, NCCL_ALGO_RING, NCCL_PROTO_SIMPLE, FUNC, T
       const T * __restrict__ thisInput = (const T*)args->coll.sendbuff;
       T * __restrict__ thisOutput = (T*)args->coll.recvbuff;
 
-      ncclPrimitives<UNROLL, ALLGATHER_CHUNKSTEPS/ALLGATHER_SLICESTEPS, ALLGATHER_SLICESTEPS, T, 1, 1, 1, FUNC, 0>
-        prims(tid, nthreads, &ring->prev, &ring->next, thisOutput, stepSize, channel, comm, ncclShmem->ptrs);
+      ncclPrimitives<UNROLL, ALLGATHER_CHUNKSTEPS/ALLGATHER_SLICESTEPS, ALLGATHER_SLICESTEPS, T, 1, 1, 1, FUNC>
+        prims(tid, nthreads, &ring->prev, &ring->next, thisOutput, stepSize, channel, comm, ncclShmem->ptrs, 0);
 
       for (ssize_t gridOffset = 0; gridOffset < size; gridOffset += loopSize) {
         int realChunkSize = min(chunkSize, DIVUP(size-gridOffset,nChannels));

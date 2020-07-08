@@ -38,7 +38,7 @@
 #define ROLE_SYNC 0x10
 
 // Implementation of primitive types
-template <int UNROLL, int SLICESPERCHUNK, int SLICESTEPS, typename T, int NRECV, int NSEND, int DIRECT, class FUNC, int GROUP>
+template <int UNROLL, int SLICESPERCHUNK, int SLICESTEPS, typename T, int NRECV, int NSEND, int DIRECT, class FUNC>
 class ncclPrimitives {
  private:
   const int tid;
@@ -57,6 +57,7 @@ class ncclPrimitives {
   int index; // Peer index I'm responsible for
   int peer = -1;
   int role = 0;
+  int group;
   uint64_t step;
   T* direct = NULL;
   T* buff;
@@ -66,10 +67,10 @@ class ncclPrimitives {
   T** dsts;
 
   inline __device__ void barrier() {
-    asm volatile ("bar.sync %0, %1;" :: "r"(GROUP), "r"(nthreads+WARP_SIZE));
+    asm volatile ("bar.sync %0, %1;" :: "r"(group), "r"(nthreads+WARP_SIZE));
   }
   inline __device__ void subBarrier() {
-    asm volatile ("bar.sync %0, %1;" :: "r"(GROUP+8), "r"(nthreads));
+    asm volatile ("bar.sync %0, %1;" :: "r"(group+8), "r"(nthreads));
   }
 
   uint32_t spins = 0;
@@ -220,8 +221,8 @@ class ncclPrimitives {
 
  public:
   __device__ __forceinline__
-  ncclPrimitives(const int tid, const int nthreads, int* recvPeers, int* sendPeers, T* directBuff, int stepSize, struct ncclChannel* channel, struct ncclDevComm* comm, struct ncclShmemPtrs* ptrs)
-    : comm(comm), tid(tid), nthreads(nthreads), stepSize(stepSize), srcs((const T**)ptrs->srcs), dsts((T**)ptrs->dsts) {
+  ncclPrimitives(const int tid, const int nthreads, int* recvPeers, int* sendPeers, T* directBuff, int stepSize, struct ncclChannel* channel, struct ncclDevComm* comm, struct ncclShmemPtrs* ptrs, int group)
+    : comm(comm), tid(tid), nthreads(nthreads), stepSize(stepSize), srcs((const T**)ptrs->srcs), dsts((T**)ptrs->dsts), group(group) {
     // Make sure step is updated before we read it.
     barrier();
 
