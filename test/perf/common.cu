@@ -114,9 +114,9 @@ void deltaKern(void* A_, void* B_, size_t count, double* max) {
   const T* A = (const T*)A_;
   const T* B = (const T*)B_;
   __shared__ double temp[BSIZE];
-  int tid = blockIdx.x*gridDim.x + threadIdx.x;
+  int tid = blockIdx.x*blockDim.x + threadIdx.x;
   double locmax = 0.0;
-  for(int i=tid; i<count; i+=blockDim.x*gridDim.x) {
+  for(size_t i=tid; i<count; i+=blockDim.x*gridDim.x) {
 
     double delta = absDiff(A[i], B[i]);
     if( delta > locmax ) {
@@ -139,7 +139,7 @@ void deltaKern(void* A_, void* B_, size_t count, double* max) {
     max[blockIdx.x] = temp[0] > temp[1] ? temp[0] : temp[1];
 }
 
-testResult_t CheckDelta(void* expected, void* results, size_t count, ncclDataType_t type, double* devmax) {
+testResult_t CheckDelta(void* results, void* expected, size_t count, ncclDataType_t type, double* devmax) {
   switch (type) {
     case ncclHalf:
       deltaKern<half, 512><<<NUM_BLOCKS, 512>>>(results, expected, count, devmax); break;
