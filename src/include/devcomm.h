@@ -47,8 +47,9 @@ union ncclLLFifoLine {
 
 #define WARP_SIZE 32
 #define MAXCHANNELS 32
-#define NCCL_MAX_NTHREADS 512
-#define NCCL_LL_MAX_NTHREADS NCCL_MAX_NTHREADS
+#define NCCL_MAX_NTHREADS 640
+#define NCCL_SIMPLE_MAX_NTHREADS 512
+#define NCCL_LL_MAX_NTHREADS 512
 #define NCCL_LL_LINES_PER_THREAD 8
 #ifdef TEST_LL_CLEANUP
 #define NCCL_LL_CLEAN_MASK 0x078 // Set to 0x100 to disable cleanup
@@ -131,7 +132,8 @@ struct ncclPeer {
 
 struct ncclDevComm;
 
-#define MAX_SEGMENTS 4
+#define NCCL_MAX_SEGMENTS 8
+#define NCCL_MAX_GROUPS (NCCL_MAX_SEGMENTS*2)
 
 /* CollectiveArgs + ncclColl are to be a power of two, currently 64 bytes, */
 /* to make sure reads to host from the CUDA kernel are aligned. */
@@ -158,12 +160,12 @@ struct CollectiveArgs {
     struct {
       uint16_t nThreads;
       uint16_t unused;
-      int32_t delta[MAX_SEGMENTS];
-      uint16_t nThreadsPerOp[MAX_SEGMENTS];
-      size_t sendCount[MAX_SEGMENTS];
-      size_t recvCount[MAX_SEGMENTS];
-      const void * sendbuff[MAX_SEGMENTS];
-      void * recvbuff[MAX_SEGMENTS];
+      int32_t delta[NCCL_MAX_SEGMENTS];
+      uint16_t nThreadsPerOp[NCCL_MAX_SEGMENTS];
+      size_t sendCount[NCCL_MAX_SEGMENTS];
+      size_t recvCount[NCCL_MAX_SEGMENTS];
+      const void * sendbuff[NCCL_MAX_SEGMENTS];
+      void * recvbuff[NCCL_MAX_SEGMENTS];
     } p2p;
   };
 };
@@ -175,10 +177,10 @@ struct ncclColl {
       uint16_t nextIndex;
       uint8_t  active;
     };
-    int data[0x40];
+    int data[0x80];
   };
 };
-static_assert(sizeof(struct ncclColl) == (0x40*sizeof(int)), "ncclColl must have a pow2 size");
+static_assert(sizeof(struct ncclColl) == (0x80*sizeof(int)), "ncclColl must have a pow2 size");
 
 struct ncclChannel {
   union {

@@ -21,7 +21,7 @@ static inline __device__ void exitIfAbortBarrier(int abort) {
   asm ("{");
   asm volatile ("   .reg .pred barr_pred;");
   asm volatile ("   setp.eq.u32 barr_pred,%0,1;" :: "r"(abort));
-  asm volatile ("   bar.red.popc.u32 %0, 13, barr_pred;" : "=r"(popc));
+  asm volatile ("   bar.red.popc.u32 %0, 0, barr_pred;" : "=r"(popc));
   asm ("}");
   if (popc) { asm volatile ("exit;"); }
 }
@@ -35,11 +35,11 @@ static __device__ void load_parallel(void* dst, void* src, size_t size, int tid)
   for (int o = tid; o < (size/sizeof(int)); o += blockDim.x) d[o] = s[o];
 }
 static __device__ void load_coll(struct ncclColl* localColl, struct ncclColl* hostColl, int tid, struct ncclDevComm* comm) {
+  __syncthreads();
+  load_parallel(localColl, hostColl, sizeof(struct ncclColl), tid);
   // Check whether the last operation was aborted and make sure all threads exit
   int abort = tid == 0 ? *(comm->abortFlag) : 0;
   exitIfAbortBarrier(abort);
-  load_parallel(localColl, hostColl, sizeof(struct ncclColl), tid);
-  __syncthreads();
   if (tid == 0) hostColl->active = 0;
 }
 
@@ -55,8 +55,10 @@ struct ncclShmemPtrs {
 };
 
 struct ncclShmemData {
-  volatile uint64_t data[NCCL_LL128_SHMEM_SIZE];
-  struct ncclShmemPtrs ptrs[2];
+  union {
+    volatile uint64_t data[NCCL_LL128_SHMEM_SIZE];
+    struct ncclShmemPtrs ptrs[NCCL_MAX_GROUPS];
+  };
   struct ncclColl localColl;
 };
 

@@ -102,7 +102,6 @@ static ncclResult_t SaveProxy(int peer, struct ncclProxyArgs* args) {
   op->progress = connector->transportComm->proxy;
   op->state = ncclProxyOpReady;
 
-
   struct ncclProxyState* state = &connector->comm->proxyState;
 
   op->proxyAppendPtr =

@@ -125,7 +125,7 @@ static ncclResult_t scheduleSendRecv(struct ncclComm* comm, int delta, int chann
   info.sendbytes = sendbytes;
   info.recvbytes = recvbytes;
   if (delta == 0 && sendbytes != recvbytes) return ncclInvalidUsage;
-  NCCLCHECK(ncclSaveKernel(&info));
+  NCCLCHECK(ncclSaveP2pKernel(&info));
   return ncclSuccess;
 }
 

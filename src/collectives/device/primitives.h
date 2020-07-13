@@ -31,18 +31,20 @@
   } \
 } while (0)
 
-#define ROLE_RECV 0x01
-#define ROLE_SEND 0x02
-#define ROLE_SRC  0x04
-#define ROLE_DST  0x08
-#define ROLE_SYNC 0x10
+#define ROLE_SRC       0x01
+#define ROLE_DST       0x02
+#define ROLE_WAIT_RECV 0x04
+#define ROLE_WAIT_SEND 0x08
+#define ROLE_POST_SEND 0x10
+#define ROLE_POST_RECV 0x20
 
 // Implementation of primitive types
 template <int UNROLL, int SLICESPERCHUNK, int SLICESTEPS, typename T, int NRECV, int NSEND, int DIRECT, class FUNC>
 class ncclPrimitives {
  private:
   const int tid;
-  const int nthreads;
+  int nthreads;
+  int nworkers;
   const int stepSize;
   int nrecv = 0;
   int nsend = 0;
@@ -67,10 +69,12 @@ class ncclPrimitives {
   T** dsts;
 
   inline __device__ void barrier() {
-    asm volatile ("bar.sync %0, %1;" :: "r"(group), "r"(nthreads+WARP_SIZE));
+    if (nthreads == WARP_SIZE) __syncwarp();
+    else asm volatile ("bar.sync %0, %1;" :: "r"(group), "r"(nthreads));
   }
   inline __device__ void subBarrier() {
-    asm volatile ("bar.sync %0, %1;" :: "r"(group+8), "r"(nthreads));
+    if (nworkers == nthreads) barrier();
+    else asm volatile ("bar.sync %0, %1;" :: "r"(group+8), "r"(nworkers));
   }
 
   uint32_t spins = 0;
@@ -139,50 +143,49 @@ class ncclPrimitives {
     #pragma unroll
     for (int slice=0; slice<SLICESPERCHUNK; ++slice) {
       int realSize = max(0, min(dataSize, nelem-offset));
-      if ((role & ROLE_SYNC) == 0) {
+      if (tid < nworkers) {
         if (SRC && (role & ROLE_SRC)) srcs[0] = srcPtr+offset;
-        if (RECV && (role & ROLE_RECV)) waitRecv<SRC, DIRECTRECV>(directOffset+offset);
+        if (RECV && (role & ROLE_WAIT_RECV)) waitRecv<SRC, DIRECTRECV>(directOffset+offset);
         if (DST && (role & ROLE_DST)) dsts[0] = dstPtr+offset;
-        if (SEND && (role & ROLE_SEND)) waitSend<DST, DIRECTSEND>(directOffset+offset, realSize*sizeof(T));
+        if (SEND && (role & ROLE_WAIT_SEND)) waitSend<DST, DIRECTSEND>(directOffset+offset, realSize*sizeof(T));
         if (realSize > 0) {
           subBarrier();
           if (DIRECTRECV && srcs[0] == dsts[0]) {
             // We can only have one direct receive. Since srcs[0] == dstPtr+offset, skip one copy
             if (SEND) {
               // (1-SEND) is only there to avoid compilation errors in case NSEND=0 (and SEND=0).
-              ReduceOrCopyMulti<UNROLL, FUNC, T, 1, 1, 1, (1-SEND)+NSEND>(tid, nthreads, 1, srcs, nsend, dsts+1, realSize);
+              ReduceOrCopyMulti<UNROLL, FUNC, T, 1, 1, 1, (1-SEND)+NSEND>(tid, nworkers, 1, srcs, nsend, dsts+1, realSize);
             }
           } else {
-            ReduceOrCopyMulti<UNROLL, FUNC, T, RECV+SRC, RECV*NRECV+SRC, SEND+DST, SEND*NSEND+DST>(tid, nthreads, RECV*nrecv+SRC, srcs, SEND*nsend+DST, dsts, realSize);
+            ReduceOrCopyMulti<UNROLL, FUNC, T, RECV+SRC, RECV*NRECV+SRC, SEND+DST, SEND*NSEND+DST>(tid, nworkers, RECV*nrecv+SRC, srcs, SEND*nsend+DST, dsts, realSize);
           }
         }
       }
       barrier();
-      if (role & ROLE_SYNC) {
-       if (SEND && (role & ROLE_SEND) && realSize > 0 && tid == nthreads) __threadfence_system();
-       __syncwarp();
-       if (SEND && (role & ROLE_SEND)) postSend();
-        if (RECV && (role & ROLE_RECV)) postRecv();
-      }
+      if (SEND && (role & ROLE_POST_SEND) && realSize > 0 && index == 0) __threadfence_system();
+      __syncwarp();
+      if (SEND && (role & ROLE_POST_SEND)) postSend();
+      if (RECV && (role & ROLE_POST_RECV)) postRecv();
       offset += realSize;
     }
   }
 
   __device__ __forceinline__ void loadRecvConn(struct ncclChannel* channel, T* directBuff) {
-    if (role & ROLE_RECV) {
+    if (role & (ROLE_WAIT_RECV|ROLE_POST_RECV)) {
       conn = &channel->devPeers[peer].recv.conn;
       step = conn->step;
       step = ROUNDUP(step, SLICESPERCHUNK*SLICESTEPS);
-      if (role & ROLE_SYNC) {
+      if (role & ROLE_POST_RECV) {
         connHeadPtr = conn->head;
         // Return credits in case we rounded up.
         *connHeadPtr = step;
-      } else {
+      }
+      if (role & ROLE_WAIT_RECV) {
         buff = (T*)conn->buffs[NCCL_PROTO_SIMPLE];
         if (DIRECT && (conn->direct & NCCL_DIRECT_GPU)) {
           direct = directBuff;
           *conn->ptrExchange = directBuff;
-         }
+        }
         connTailPtr = conn->tail;
         connTailCache = *connTailPtr;
         connPtrsFifoPtr = (volatile void**)conn->ptrsFifo;
@@ -191,13 +194,14 @@ class ncclPrimitives {
   }
 
   __device__ __forceinline__ void loadSendConn(struct ncclChannel* channel) {
-    if (role & ROLE_SEND) {
+    if (role & (ROLE_WAIT_SEND|ROLE_POST_SEND)) {
       conn = &channel->devPeers[peer].send.conn;
       step = conn->step;
       step = ROUNDUP(step, SLICESPERCHUNK*SLICESTEPS);
-      if (role & ROLE_SYNC) {
+      if (role & ROLE_POST_SEND) {
         connTailPtr = conn->tail;
-      } else {
+      }
+      if (role & ROLE_WAIT_SEND) {
         buff = (T*)conn->buffs[NCCL_PROTO_SIMPLE];
         if (DIRECT && (conn->direct & NCCL_DIRECT_GPU)) {
           void* volatile* ptr = conn->ptrExchange;
@@ -213,7 +217,7 @@ class ncclPrimitives {
   }
 
   __device__ __forceinline__ void saveSync() {
-    if ((role & ROLE_SYNC) && conn) {
+    if (role & (ROLE_POST_SEND|ROLE_POST_RECV)) {
       conn->step = step;
       __threadfence_system();
     }
@@ -221,38 +225,41 @@ class ncclPrimitives {
 
  public:
   __device__ __forceinline__
-  ncclPrimitives(const int tid, const int nthreads, int* recvPeers, int* sendPeers, T* directBuff, int stepSize, struct ncclChannel* channel, struct ncclDevComm* comm, struct ncclShmemPtrs* ptrs, int group)
-    : comm(comm), tid(tid), nthreads(nthreads), stepSize(stepSize), srcs((const T**)ptrs->srcs), dsts((T**)ptrs->dsts), group(group) {
+  ncclPrimitives(const int tid, const int nworkers, int* recvPeers, int* sendPeers, T* directBuff, int stepSize, struct ncclChannel* channel, struct ncclDevComm* comm, struct ncclShmemPtrs* ptrs, int group)
+    : comm(comm), tid(tid), nworkers(nworkers), stepSize(stepSize), srcs((const T**)ptrs[group].srcs), dsts((T**)ptrs[group].dsts), group(group) {
+    nthreads = nworkers;
+    // For send operations, we need an extra warp to overlap the threadfence and the copy
+    int postThreads = NSEND && nworkers >= 64 ? WARP_SIZE : 0;
+    nthreads += postThreads;
+
     // Make sure step is updated before we read it.
     barrier();
 
-    if (tid >= nthreads) role |= ROLE_SYNC;
-
     for (int i=0; i<NRECV; i++) if (recvPeers[i] != -1) nrecv++;
     for (int i=0; i<NSEND; i++) if (sendPeers[i] != -1) nsend++;
-    if (role & ROLE_SYNC) {
-      index = tid-nthreads;
-      if (index < NSEND) peer = sendPeers[index];
-      if (peer != -1) {
-        role |= ROLE_SEND;
-      } else {
-        index -= WARP_SIZE/2;
-        if (index >= 0 && index < NRECV) peer = recvPeers[index];
-        if (peer != -1) role |= ROLE_RECV;
-      }
-    } else {
-      index = tid;
-      if (index == NSEND) role |= ROLE_DST;
-      if (index < NSEND) peer = sendPeers[index];
-      if (peer != -1) {
-        role |= ROLE_SEND;
-      } else {
-        if (nthreads > WARP_SIZE) index -= WARP_SIZE; else index -= WARP_SIZE/2;
-        if (index == NRECV) role |= ROLE_SRC;
-        if (index >= 0 && index < NRECV) peer = recvPeers[index];
-        if (peer != -1) role |= ROLE_RECV;
-      }
+
+    #define SYNC_GROUP 8
+    static_assert(NSEND < SYNC_GROUP && NRECV < SYNC_GROUP, "Not enough threads to cover all peers");
+
+    int g = tid / SYNC_GROUP;
+    int ng = nthreads / SYNC_GROUP;
+    index = tid % SYNC_GROUP;
+
+    if (g == 0) {
+      if (index < nrecv) role |= ROLE_WAIT_RECV;
+      if (index == nrecv) role |= ROLE_SRC;
+    } else if (g == 1) {
+      if (index < nsend) role |= ROLE_WAIT_SEND;
+      if (index == nsend) role |= ROLE_DST;
+    } else if (g == ng - 2) {
+      if (index < nrecv) role |= ROLE_POST_RECV;
+    } else if (g == ng - 1) {
+      if (index < nsend) role |= ROLE_POST_SEND;
     }
+
+    if (role & (ROLE_WAIT_RECV|ROLE_POST_RECV)) peer = recvPeers[index];
+    if (role & (ROLE_WAIT_SEND|ROLE_POST_SEND)) peer = sendPeers[index];
+
     loadRecvConn(channel, directBuff);
     loadSendConn(channel);
   }
