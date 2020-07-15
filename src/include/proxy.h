@@ -9,7 +9,7 @@
 
 #include <pthread.h>
 
-enum ncclProxyOpState { ncclProxyOpNone, ncclProxyOpReady, ncclProxyOpProgress };
+enum ncclProxyOpState { ncclProxyOpNone, ncclProxyOpReady, ncclProxyOpProgress, ncclProxyOpBufferAllocationComplete };
 
 struct ncclProxyArgs;
 typedef ncclResult_t (*proxyProgressFunc_t)(struct ncclProxyArgs*);
@@ -18,6 +18,8 @@ struct ncclProxyArgs {
   proxyProgressFunc_t progress;
   struct ncclChannel* channel;
   struct ncclConnector* connector;
+  size_t sendbytes;
+  size_t recvbytes;
   int sliceSteps;
   int chunkSteps;
   int nsteps;
@@ -45,10 +47,10 @@ struct ncclProxyArgs {
 struct ncclProxySharedBuffers {
   int nslots;
   int slotSize;
-  char* cudaBuff;
-  int* cudaUsed;
-  char* hostBuff;
-  int* hostUsed;
+  char* cudaBuff[2*MAXCHANNELS];
+  int* cudaUsed[2*MAXCHANNELS];
+  char* hostBuff[2*MAXCHANNELS];
+  int* hostUsed[2*MAXCHANNELS];
   struct ncclProxyArgs* proxyAppend[2*MAXCHANNELS]; // Separate send and recv
 };
 
@@ -78,8 +80,8 @@ ncclResult_t ncclProxyCreate(struct ncclComm* comm);
 ncclResult_t ncclProxyDestroy(struct ncclComm* comm);
 
 ncclResult_t ncclProxySharedBuffersInit(struct ncclComm* comm, int cuda, int* size, char** ptr);
-ncclResult_t ncclProxySharedBuffersAlloc(struct ncclComm* comm, int cuda, int size, char** ptr);
-ncclResult_t ncclProxySharedBuffersFree(struct ncclComm* comm, int cuda, int size, char* ptr);
+ncclResult_t ncclProxySharedBuffersAlloc(struct ncclComm* comm, int cuda, int type, int channel, int size, char** ptr);
+ncclResult_t ncclProxySharedBuffersFree(struct ncclComm* comm, int cuda, int type, int channel, int size, char* ptr);
 ncclResult_t ncclProxySharedBuffersDestroy(struct ncclComm* comm);
 
 #include <unistd.h>

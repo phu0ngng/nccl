@@ -403,6 +403,11 @@ static ncclResult_t computeColl(struct ncclInfo* info /* input */, struct ncclCo
   proxyArgs->opCount = info->comm->opCount;
   proxyArgs->dtype = info->datatype;
   proxyArgs->redOp = info->op;
+  // This is used by P2P to reduce the receive buffer size. We don't use it in collectives
+  // because some protocols need to transmit more than the total size, plus they sometimes
+  // round up
+  proxyArgs->recvbytes = stepSize*proxyArgs->sliceSteps;
+
   TRACE(NCCL_NET,"opCount %lx slicesteps %d spl %d cpl %d nbytes %zi -> protocol %d nchannels %d nthreads %d, nloops %d nsteps %d comm %p",
       coll->args.opCount, proxyArgs->sliceSteps, info->nstepsPerLoop, info->nchunksPerLoop, info->nBytes, info->protocol, info->nChannels, info->nThreads,
       nLoops, proxyArgs->nsteps, info->comm);

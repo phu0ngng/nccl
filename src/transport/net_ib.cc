@@ -580,7 +580,6 @@ ncclResult_t ncclSendCheck(struct ncclIbSendComm* comm) {
   NCCLCHECK(ncclIbRtrQp(qp, &remQpInfo));
   NCCLCHECK(ncclIbRtsQp(qp));
   comm->ready = 1;
-
   // Block until this is done. It *should* not block indefinitely.
   NCCLCHECK(socketSend(comm->fd, &comm->ready, sizeof(int)));
 
@@ -662,7 +661,7 @@ ncclResult_t ncclIbIsend(void* sendComm, void* data, int size, void* mhandle, vo
   __sync_synchronize(); // order the readyPtr load against rkey load below
   // Sanity checks to catch user collective call count/size mismatches
   // plus any potential programming errors
-  if (size > slot->size || slot->size <= 0 || slot->addr == 0 || slot->rkey == 0 || slot->seq != comm->fifoHead) {
+  if (size > slot->size || slot->size < 0 || slot->addr == 0 || slot->rkey == 0 || slot->seq != comm->fifoHead) {
     WARN("NET/IB : collective mismatch error local size %d remote %d addr %lx rkey %x seq %x/%x",
         size, slot->size, slot->addr, slot->rkey, slot->seq, comm->fifoHead);
     return ncclInternalError;
