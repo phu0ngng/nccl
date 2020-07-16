@@ -68,13 +68,14 @@ class ncclPrimitives {
   const T** srcs;
   T** dsts;
 
+  // Don't use barrier 0 as it's used by the final sync
   inline __device__ void barrier() {
     if (nthreads == WARP_SIZE) __syncwarp();
-    else asm volatile ("bar.sync %0, %1;" :: "r"(group), "r"(nthreads));
+    else asm volatile ("bar.sync %0, %1;" :: "r"(group+1), "r"(nthreads));
   }
   inline __device__ void subBarrier() {
     if (nworkers == nthreads) barrier();
-    else asm volatile ("bar.sync %0, %1;" :: "r"(group+8), "r"(nworkers));
+    else asm volatile ("bar.sync %0, %1;" :: "r"(group+2), "r"(nworkers));
   }
 
   uint32_t spins = 0;
