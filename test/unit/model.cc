@@ -249,7 +249,7 @@ void runTopo(const char* xmlTopoFile, const char* platform, int nnodes) {
         float value = model[i];
         int bold = value == bestmodel ? 7 : 0;
         if (ref == -1.0) {
-          printf("%11s ", "");
+          printf("%10s ", "");
           if (bold) printf("%c[%d;32m", 0x1b, bold);
         } else {
           PRINT_MODE("%9.1f  ", ref);
@@ -270,7 +270,7 @@ void runTopo(const char* xmlTopoFile, const char* platform, int nnodes) {
       if (compactMode) {
         printf("%c[00m.", 0x1b);
       } else {
-        printf("%11s %9s", "", "");
+        printf("%10s %9s", "", "");
         PRINT_MODE(" %9.1f |\n", bestmodel);
       }
     } else {
