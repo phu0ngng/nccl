@@ -579,7 +579,7 @@ ncclResult_t ncclSaveP2pKernel(struct ncclInfo* info) {
   int opIndex = (channel->collFifoTail-1+NCCL_MAX_OPS)%NCCL_MAX_OPS;
   struct ncclColl* c = channel->collectives+opIndex;
   int segment = 0;
-  if (opIndex >= channel->collStart && c->funcIndex == FUNC_INDEX_P2P && c->args.p2p.nThreadsPerOp[NCCL_MAX_SEGMENTS-1] == 0) {
+  if (channel->collFifoTail-1 >= channel->collStart && c->funcIndex == FUNC_INDEX_P2P && c->args.p2p.nThreadsPerOp[NCCL_MAX_SEGMENTS-1] == 0) {
     int nThreadsRemaining = 0;
     nThreadsRemaining = NCCL_MAX_NTHREADS;
     while (segment<NCCL_MAX_SEGMENTS && c->args.p2p.nThreadsPerOp[segment]) {
