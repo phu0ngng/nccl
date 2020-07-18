@@ -588,7 +588,8 @@ ncclResult_t ncclSaveP2pKernel(struct ncclInfo* info) {
     }
     if (segment == NCCL_MAX_SEGMENTS || nThreadsRemaining < nThreads) segment = 0;
   }
-  if (segment == 0) NCCLCHECK(getNextOp(channel, &c, NULL));
+  if (segment == 0) { NCCLCHECK(getNextOp(channel, &c, NULL)); }
+  else info->comm->opCount--;
 
   NCCLCHECK(ncclProxySaveP2p(info, channel));
   info->comm->opCount++;

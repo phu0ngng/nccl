@@ -157,17 +157,17 @@ ncclResult_t ncclProxySaveP2p(struct ncclInfo* info, struct ncclChannel* channel
   args.protocol = NCCL_PROTO_SIMPLE;
   args.opCount = info->comm->opCount;
   args.dtype = info->datatype;
-  if (info->delta > 0 && info->sendbytes >= 0) {
-    int peersend = (info->comm->rank+info->delta)%info->comm->nRanks;
-    args.nsteps = DIVUP(info->sendbytes, info->comm->buffSizes[NCCL_PROTO_SIMPLE]/NCCL_STEPS/SENDRECV_SLICEFACTOR);
-    if (args.nsteps == 0) args.nsteps = 1;
-    NCCLCHECK(SaveProxy<proxySend>(peersend, &args));
-  }
   if (info->delta > 0 && info->recvbytes >= 0) {
     int peerrecv = (info->comm->nRanks+info->comm->rank-info->delta)%info->comm->nRanks;
     args.nsteps = DIVUP(info->recvbytes, info->comm->buffSizes[NCCL_PROTO_SIMPLE]/NCCL_STEPS/SENDRECV_SLICEFACTOR);
     if (args.nsteps == 0) args.nsteps = 1;
     NCCLCHECK(SaveProxy<proxyRecv>(peerrecv, &args));
+  }
+  if (info->delta > 0 && info->sendbytes >= 0) {
+    int peersend = (info->comm->rank+info->delta)%info->comm->nRanks;
+    args.nsteps = DIVUP(info->sendbytes, info->comm->buffSizes[NCCL_PROTO_SIMPLE]/NCCL_STEPS/SENDRECV_SLICEFACTOR);
+    if (args.nsteps == 0) args.nsteps = 1;
+    NCCLCHECK(SaveProxy<proxySend>(peersend, &args));
   }
   return ncclSuccess;
 }
@@ -209,12 +209,14 @@ void* persistentThread(void *comm_) {
     pthread_mutex_lock(&state->mutex);
     if (!idle) idleSpin = 0;
     if (op->state == ncclProxyOpBufferAllocationComplete) {
+      op->state = ncclProxyOpProgress;
       if (op->nextPeer && op->nextPeer->opCount == op->opCount) {
         op->nextPeer->next = op->next;
         op->next = op->nextPeer;
         op->nextPeer = NULL;
+        op->proxyAppendPtr = NULL;
+        op = op->next;
       }
-      op->state = ncclProxyOpProgress;
     }
     struct ncclProxyArgs *next = op->next;
     if (next->state == ncclProxyOpNone) {
@@ -229,7 +231,7 @@ void* persistentThread(void *comm_) {
           next->next = next;
         }
       } else {
-        *(next->proxyAppendPtr) = NULL;
+        if (next->proxyAppendPtr) *(next->proxyAppendPtr) = NULL;
         if (op != freeOp) {
           next = next->next;
           op->next = next;
