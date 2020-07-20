@@ -9,7 +9,7 @@
 
 #include <pthread.h>
 
-enum ncclProxyOpState { ncclProxyOpNone, ncclProxyOpReady, ncclProxyOpProgress, ncclProxyOpBufferAllocationComplete };
+enum ncclProxyOpState { ncclProxyOpNone, ncclProxyOpReady, ncclProxyOpProgress };
 
 struct ncclProxyArgs;
 typedef ncclResult_t (*proxyProgressFunc_t)(struct ncclProxyArgs*);
@@ -41,6 +41,7 @@ struct ncclProxyArgs {
   pthread_mutex_t mutex;
   struct ncclProxyArgs* next;
   struct ncclProxyArgs* nextPeer;
+  struct ncclProxyArgs* nextGroup;
   struct ncclProxyArgs** proxyAppendPtr;
 };
 

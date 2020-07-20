@@ -28,7 +28,7 @@ static bool NeedProxy(int type, int pattern, int root, struct ncclRing* ring, in
 
 enum { proxyRecv=0, proxySend=1 };
 
-#define PROXYARGS_ALLOCATE_SIZE 32
+#define PROXYARGS_ALLOCATE_SIZE 128
 struct ncclProxyPool {
   struct ncclProxyPool *next;
   struct ncclProxyArgs elems[PROXYARGS_ALLOCATE_SIZE];
@@ -37,7 +37,6 @@ struct ncclProxyPool {
 static ncclResult_t allocateArgs(struct ncclComm* comm, struct ncclProxyArgs** argsptr) {
   struct ncclProxyState* state = &comm->proxyState;
   struct ncclProxyArgs* elem;
-  pthread_mutex_lock(&state->mutex);
   if (state->pool == NULL) {
     // Allocate a new pool of elements
     struct ncclProxyPool* newPool;
@@ -55,35 +54,111 @@ static ncclResult_t allocateArgs(struct ncclComm* comm, struct ncclProxyArgs** a
   }
   elem = state->pool;
   state->pool = state->pool->next;
-  pthread_mutex_unlock(&state->mutex);
-  elem->next = elem->nextPeer = NULL;
+  elem->next = elem->nextPeer = elem->nextGroup = NULL;
   *argsptr = elem;
   return ncclSuccess;
 }
 
-static void ProxyAppend(struct ncclProxyState* state, struct ncclProxyArgs* args) {
-  pthread_mutex_lock(&state->mutex);
+#ifdef DEBUG_PROXY
+#define DEBUG_PROXY_PRINT printf
+#else
+#define DEBUG_PROXY_PRINT(...)
+#endif
+
+#define OP_INDEX(op) ((op) ? (op)-state->pools->elems : -1)
+#define OP_SEEN 0x100000
+ncclResult_t dumpProxyState(struct ncclProxyState* state) {
+#ifdef DEBUG_PROXY
+  struct ncclProxyArgs* op = state->ops;
+  while (op) {
+    if (op->idle & OP_SEEN) {
+      WARN("Active list loop at element %ld\n", OP_INDEX(op));
+    }
+    op->idle |= OP_SEEN;
+    printf("[%ld]", OP_INDEX(op));
+    if (op->nextPeer) {
+      printf("(%ld)", OP_INDEX(op->nextPeer));
+      struct ncclProxyArgs* n = op->nextPeer;
+      n->idle |= OP_SEEN;
+      while (n->nextGroup || n->nextPeer) {
+        n = n->nextGroup ? n->nextGroup : n->nextPeer;
+        n->idle |= OP_SEEN;
+      }
+    }
+    if (op->nextGroup)  {
+      printf("--G->");
+      op = op->nextGroup;
+    } else {
+      printf("--N->");
+      op = op->next;
+    }
+  }
+  printf("[X]\n");
+
+  struct ncclProxyArgs* free = state->pool;
+  while (free) {
+    if (free->idle & OP_SEEN) {
+      WARN("Free list loop at element %ld\n", OP_INDEX(free));
+    }
+    free->idle |= OP_SEEN;
+    free = free->next;
+  }
+
+  struct ncclProxyPool* p = state->pools;
+  int i = 0;
+  while (p) {
+    for (int e=0; e<PROXYARGS_ALLOCATE_SIZE; e++) {
+      if ((p->elems[e].idle & OP_SEEN) == 0) {
+        WARN("Element %d of pool %d has been lost\n", e, i);
+        struct ncclProxyArgs* free = state->pool;
+        printf("Free list ");
+        while (free) {
+          printf("--> %ld ", OP_INDEX(free));
+          free = free->next;
+        }
+        printf("\n");
+        return ncclInternalError;
+      }
+      p->elems[e].idle -= OP_SEEN;
+    }
+    p = p->next;
+    i++;
+  }
+#endif
+  return ncclSuccess;
+}
+
+static ncclResult_t ProxyAppend(struct ncclProxyState* state, struct ncclProxyArgs* args, int shared) {
   struct ncclProxyArgs* proxyAppend = *args->proxyAppendPtr;
   if (proxyAppend) {
-    proxyAppend->nextPeer = args;
+    if (shared && proxyAppend->opCount == args->opCount) {
+      args->next = proxyAppend->next;
+      proxyAppend->next = NULL;
+      proxyAppend->nextGroup = args;
+      DEBUG_PROXY_PRINT("Insert  %5ld (%d/%5ld/%5ld) as group, prevGroup %5ld, next %5ld : ", OP_INDEX(args), shared, proxyAppend->opCount, args->opCount, OP_INDEX(proxyAppend), OP_INDEX(args->next));
+    } else {
+      proxyAppend->nextPeer = args;
+      DEBUG_PROXY_PRINT("Insert  %5ld (%d/%5ld/%5ld) as nextPeer of %5ld                  : ", OP_INDEX(args), shared, proxyAppend->opCount, args->opCount, OP_INDEX(proxyAppend));
+    }
   } else {
-    // Nothing running for that peer. Add to the circular list
+    // Nothing running for that peer. Add to the list
     if (state->ops == NULL) {
       // Create the list
-      args->next = args;
+      DEBUG_PROXY_PRINT("Insert  %5ld (%d/%5ld) as first element                            : ", OP_INDEX(args), shared, args->opCount);
       state->ops = args;
     } else {
-      // Insert element in the list
-      args->next = state->ops->next;
-      state->ops->next = args;
+      // Append element at the end of the list
+      struct ncclProxyArgs* last = state->ops;
+      while (last->nextGroup || last->next) last = last->nextGroup ? last->nextGroup : last->next;
+      last->next = args;
+      DEBUG_PROXY_PRINT("Insert  %5ld (%d/%5ld) as last element                             : ", OP_INDEX(args),shared, args->opCount);
     }
   }
   *(args->proxyAppendPtr) = args;
-  pthread_mutex_unlock(&state->mutex);
+  return ncclSuccess;
 }
 
-template <int type>
-static ncclResult_t SaveProxy(int peer, struct ncclProxyArgs* args) {
+static ncclResult_t SaveProxy(int type, int peer, struct ncclProxyArgs* args) {
   if (peer < 0) return ncclSuccess;
 
   struct ncclPeer* peerComm = args->channel->peers+peer;
@@ -95,6 +170,8 @@ static ncclResult_t SaveProxy(int peer, struct ncclProxyArgs* args) {
   }
   if (connector->transportComm->proxy == NULL) return ncclSuccess;
 
+  struct ncclProxyState* state = &connector->comm->proxyState;
+  pthread_mutex_lock(&state->mutex);
   struct ncclProxyArgs* op;
   NCCLCHECK(allocateArgs(connector->comm, &op));
   memcpy(op, args, sizeof(struct ncclProxyArgs));
@@ -102,46 +179,46 @@ static ncclResult_t SaveProxy(int peer, struct ncclProxyArgs* args) {
   op->progress = connector->transportComm->proxy;
   op->state = ncclProxyOpReady;
 
-  struct ncclProxyState* state = &connector->comm->proxyState;
-
   op->proxyAppendPtr =
     connector->conn.shared ?
     state->sharedBuffs->proxyAppend+2*args->channel->id+type : // Shared buffers
     &connector->proxyAppend;  // Dedicated buffers
 
-  ProxyAppend(state, op);
+  NCCLCHECK(ProxyAppend(state, op, connector->conn.shared));
+  NCCLCHECK(dumpProxyState(state));
+  pthread_mutex_unlock(&state->mutex);
   return ncclSuccess;
 }
 
 ncclResult_t ncclProxySaveColl(struct ncclProxyArgs* args, int pattern, int root, int nranks) {
   if (pattern == ncclPatternRing || pattern == ncclPatternRingTwice || pattern == ncclPatternPipelineFrom || pattern == ncclPatternPipelineTo) {
     struct ncclRing* ring = &args->channel->ring;
-    if (NeedProxy(RECV, pattern, root, ring, nranks)) NCCLCHECK(SaveProxy<proxyRecv>(ring->prev, args));
-    if (NeedProxy(SEND, pattern, root, ring, nranks)) NCCLCHECK(SaveProxy<proxySend>(ring->next, args));
+    if (NeedProxy(RECV, pattern, root, ring, nranks)) NCCLCHECK(SaveProxy(proxyRecv, ring->prev, args));
+    if (NeedProxy(SEND, pattern, root, ring, nranks)) NCCLCHECK(SaveProxy(proxySend, ring->next, args));
   }
   if (pattern == ncclPatternTreeUp || pattern == ncclPatternTreeUpDown) {
     // Tree up
     struct ncclTree* tree = &args->channel->tree;
-    for (int i=0; i<NCCL_MAX_TREE_ARITY; i++) NCCLCHECK(SaveProxy<proxyRecv>(tree->down[i], args));
-    NCCLCHECK(SaveProxy<proxySend>(tree->up, args));
+    for (int i=0; i<NCCL_MAX_TREE_ARITY; i++) NCCLCHECK(SaveProxy(proxyRecv, tree->down[i], args));
+    NCCLCHECK(SaveProxy(proxySend, tree->up, args));
   }
   if (pattern == ncclPatternTreeDown || pattern == ncclPatternTreeUpDown) {
     // Tree down
     struct ncclTree* tree = &args->channel->tree;
-    for (int i=0; i< NCCL_MAX_TREE_ARITY; i++) NCCLCHECK(SaveProxy<proxySend>(tree->down[i], args));
-    NCCLCHECK(SaveProxy<proxyRecv>(tree->up, args));
+    for (int i=0; i< NCCL_MAX_TREE_ARITY; i++) NCCLCHECK(SaveProxy(proxySend, tree->down[i], args));
+    NCCLCHECK(SaveProxy(proxyRecv, tree->up, args));
   }
   if (pattern == ncclPatternCollTreeUp) {
     // CollTree up
     struct ncclTree* tree = &args->channel->collTree;
-    NCCLCHECK(SaveProxy<proxyRecv>(tree->down[0], args));
-    NCCLCHECK(SaveProxy<proxySend>(tree->up, args));
+    NCCLCHECK(SaveProxy(proxyRecv, tree->down[0], args));
+    NCCLCHECK(SaveProxy(proxySend, tree->up, args));
   }
   if (pattern == ncclPatternCollTreeDown) {
     // CollTree down
     struct ncclTree* tree = &args->channel->collTree;
-    NCCLCHECK(SaveProxy<proxySend>(tree->down[0], args));
-    NCCLCHECK(SaveProxy<proxyRecv>(tree->up, args));
+    NCCLCHECK(SaveProxy(proxySend, tree->down[0], args));
+    NCCLCHECK(SaveProxy(proxyRecv, tree->up, args));
   }
   return ncclSuccess;
 }
@@ -161,13 +238,91 @@ ncclResult_t ncclProxySaveP2p(struct ncclInfo* info, struct ncclChannel* channel
     int peerrecv = (info->comm->nRanks+info->comm->rank-info->delta)%info->comm->nRanks;
     args.nsteps = DIVUP(info->recvbytes, info->comm->buffSizes[NCCL_PROTO_SIMPLE]/NCCL_STEPS/SENDRECV_SLICEFACTOR);
     if (args.nsteps == 0) args.nsteps = 1;
-    NCCLCHECK(SaveProxy<proxyRecv>(peerrecv, &args));
+    NCCLCHECK(SaveProxy(proxyRecv, peerrecv, &args));
   }
   if (info->delta > 0 && info->sendbytes >= 0) {
     int peersend = (info->comm->rank+info->delta)%info->comm->nRanks;
     args.nsteps = DIVUP(info->sendbytes, info->comm->buffSizes[NCCL_PROTO_SIMPLE]/NCCL_STEPS/SENDRECV_SLICEFACTOR);
     if (args.nsteps == 0) args.nsteps = 1;
-    NCCLCHECK(SaveProxy<proxySend>(peersend, &args));
+    NCCLCHECK(SaveProxy(proxySend, peersend, &args));
+  }
+  return ncclSuccess;
+}
+
+static ncclResult_t removeOp(struct ncclProxyState* state, struct ncclProxyArgs** opPtr, struct ncclProxyArgs** prevOpPtr, struct ncclProxyArgs** prevGroupPtr) {
+  struct ncclProxyArgs* freeOp = *opPtr;
+  DEBUG_PROXY_PRINT("Remove %ld/%ld -> %ld -> %ld/%ld\n", OP_INDEX(*prevOpPtr), OP_INDEX(*prevGroupPtr), OP_INDEX(freeOp), OP_INDEX(freeOp->next), OP_INDEX(freeOp->nextGroup));
+  if (*prevGroupPtr && *prevOpPtr) return ncclInternalError;
+  if (freeOp->nextGroup) {
+    // Part of a group : remove the element
+    struct ncclProxyArgs* next = freeOp->nextGroup;
+    *opPtr = next;
+    if (*prevGroupPtr) {
+      (*prevGroupPtr)->nextGroup = next;
+    } else if (*prevOpPtr) {
+      (*prevOpPtr)->next = next;
+    } else {
+      state->ops = next;
+    }
+  } else {
+    struct ncclProxyArgs* next = freeOp->next;
+    *opPtr = next;
+    if ((*prevGroupPtr)) {
+      (*prevGroupPtr)->next = next;
+      (*prevGroupPtr)->nextGroup = NULL;
+      (*prevGroupPtr)->nextPeer = freeOp->nextPeer;
+      if (*(freeOp->proxyAppendPtr) == freeOp) *(freeOp->proxyAppendPtr) = *prevGroupPtr;
+      (*prevOpPtr) = *prevGroupPtr;
+      (*prevGroupPtr) = NULL;
+    } else {
+      if (freeOp->nextPeer) {
+        // replace op by nextPeer
+        struct ncclProxyArgs* nextPeer = freeOp->nextPeer;
+        if (*prevOpPtr) {
+          (*prevOpPtr)->next = nextPeer;
+        } else {
+          state->ops = nextPeer;
+        }
+        struct ncclProxyArgs* lastGroup = nextPeer;
+        while (lastGroup->nextGroup) lastGroup = lastGroup->nextGroup;
+        lastGroup->next = next;
+        *(prevOpPtr) = lastGroup;
+      } else {
+        *(freeOp->proxyAppendPtr) = NULL;
+        if (*prevOpPtr) {
+          (*prevOpPtr)->next = next;
+        } else {
+          state->ops = next;
+        }
+      }
+    }
+  }
+  freeOp->next = state->pool;
+  state->pool = freeOp;
+  DEBUG_PROXY_PRINT("Removed %5ld (%5ld)                                               : ", OP_INDEX(freeOp), OP_INDEX(*freeOp->proxyAppendPtr));
+  NCCLCHECK(dumpProxyState(state));
+  return ncclSuccess;
+}
+
+static ncclResult_t progressOp(struct ncclProxyState* state, struct ncclProxyArgs** opPtr, struct ncclProxyArgs** prevOpPtr, struct ncclProxyArgs** prevGroupPtr, int* idle, struct ncclComm* comm) {
+  struct ncclProxyArgs* op = *opPtr;
+  if (op->state == ncclProxyOpNone) return ncclInternalError;
+  if (op->opCount < comm->lastOpCount) {
+    NCCLCHECK(op->progress(op));
+    *idle &= op->idle;
+  }
+  if (op->state == ncclProxyOpNone) {
+    NCCLCHECK(removeOp(state, opPtr, prevOpPtr, prevGroupPtr));
+  } else {
+    if (op->nextGroup) {
+      *prevGroupPtr = op;
+      *prevOpPtr = NULL;
+      *opPtr = op->nextGroup;
+    } else {
+      *prevOpPtr = op;
+      *prevGroupPtr = NULL;
+      *opPtr = op->next;
+    }
   }
   return ncclSuccess;
 }
@@ -175,85 +330,38 @@ ncclResult_t ncclProxySaveP2p(struct ncclInfo* info, struct ncclChannel* channel
 void* persistentThread(void *comm_) {
   struct ncclComm* comm = (struct ncclComm*)comm_;
   struct ncclProxyState* state = &comm->proxyState;
-  struct ncclProxyArgs* op = NULL;
   ncclResult_t ret = ncclSuccess;
-  int idle = 1;
-  int idleSpin = 0;
   while (1) {
-    do {
-      if (*comm->abortFlag) return NULL;
-      if (op == NULL) {
-        pthread_mutex_lock(&state->mutex);
-        op = state->ops;
-        if (op == NULL) {
-          if (state->stop) {
-            // No more commands to process and proxy has been requested to stop
-            pthread_mutex_unlock(&state->mutex);
-            return NULL;
-          }
-          pthread_cond_wait(&state->cond, &state->mutex);
-        }
-        pthread_mutex_unlock(&state->mutex);
-      }
-    } while (op == NULL);
-    op->idle = 0;
-    // opCount >= lastOpCount are part of an ongoing GroupStart/GroupEnd that hasn't started
-    // yet and might be cancelled before they even start. Hold on on those.
-    if (op->state != ncclProxyOpNone && op->opCount < comm->lastOpCount) ret = op->progress(op);
-    if (ret != ncclSuccess) {
-      comm->fatalError = ret;
-      INFO(NCCL_ALL,"%s:%d -> %d [Proxy Thread]", __FILE__, __LINE__, ret);
-      return NULL;
-    }
-    idle &= op->idle;
+    if (*comm->abortFlag) return NULL;
+    struct ncclProxyArgs* volatile * opsPtr = (struct ncclProxyArgs* volatile *)&state->ops;
+
     pthread_mutex_lock(&state->mutex);
-    if (!idle) idleSpin = 0;
-    if (op->state == ncclProxyOpBufferAllocationComplete) {
-      op->state = ncclProxyOpProgress;
-      if (op->nextPeer && op->nextPeer->opCount == op->opCount) {
-        op->nextPeer->next = op->next;
-        op->next = op->nextPeer;
-        op->nextPeer = NULL;
-        op->proxyAppendPtr = NULL;
-        op = op->next;
+    struct ncclProxyArgs* op = *opsPtr;
+    while (op == NULL) {
+      if (state->stop) {
+        // No more commands to process and proxy has been requested to stop
+        pthread_mutex_unlock(&state->mutex);
+        return NULL;
       }
+      pthread_cond_wait(&state->cond, &state->mutex);
+      op = *opsPtr;
     }
-    struct ncclProxyArgs *next = op->next;
-    if (next->state == ncclProxyOpNone) {
-      struct ncclProxyArgs *freeOp = next;
-      if (next->nextPeer) {
-        // Replace next by its next per-peer element.
-        next = next->nextPeer;
-        if (op != freeOp) {
-          next->next = freeOp->next;
-          op->next = next;
-        } else {
-          next->next = next;
-        }
-      } else {
-        if (next->proxyAppendPtr) *(next->proxyAppendPtr) = NULL;
-        if (op != freeOp) {
-          next = next->next;
-          op->next = next;
-        } else {
-          next = NULL;
-        }
+    struct ncclProxyArgs* prevOp = NULL;
+    struct ncclProxyArgs* prevGroup = NULL;
+    int idle = 1;
+    while (op) {
+      // opCount >= lastOpCount are part of an ongoing GroupStart/GroupEnd that hasn't started
+      // yet and might be cancelled before they even start. Hold on on those.
+      ret = progressOp(state, &op, &prevOp, &prevGroup, &idle, comm);
+      if (ret != ncclSuccess) {
+        comm->fatalError = ret;
+        INFO(NCCL_ALL,"%s:%d -> %d [Proxy Thread]", __FILE__, __LINE__, ret);
+        pthread_mutex_unlock(&state->mutex);
+        return NULL;
       }
-      if (freeOp == state->ops) state->ops = next;
-      freeOp->next = state->pool;
-      state->pool = freeOp;
-    }
-    op = next;
-    if (op == state->ops) {
-      if (idle == 1) {
-        if (++idleSpin == 10) {
-          sched_yield();
-          idleSpin = 0;
-        }
-      }
-      idle = 1;
     }
     pthread_mutex_unlock(&state->mutex);
+    if (idle) sched_yield(); // No request progressed. Let others run.
   }
 }
 

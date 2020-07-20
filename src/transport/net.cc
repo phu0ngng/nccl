@@ -275,10 +275,6 @@ ncclResult_t netSendProxy(struct ncclProxyArgs* args) {
         args->posted += args->sliceSteps;
         *sendHead = args->posted - NCCL_STEPS;
         idle = 0;
-        if (args->posted == args->end) {
-          args->state = ncclProxyOpBufferAllocationComplete;
-          return ncclSuccess;
-        }
       } else args->posted += args->sliceSteps;
     }
     // Check whether we received data from the GPU and send it to the network
@@ -393,10 +389,6 @@ ncclResult_t netRecvProxy(struct ncclProxyArgs* args) {
         idle = 0;
       } else if (resources->shared) {
         NCCLCHECK(ncclProxySharedBuffersFree(args->connector->comm, resources->useGdr, 1, args->channel->id, buffSize, ptr));
-      }
-      if (resources->shared && args->posted == args->end) {
-        args->state = ncclProxyOpBufferAllocationComplete;
-        return ncclSuccess;
       }
     }
     if (args->posted > args->transmitted) {
