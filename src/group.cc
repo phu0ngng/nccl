@@ -135,7 +135,7 @@ void* ncclAsyncThreadPreconnect(void* args_) {
   for (int c=0; c<args->coll.comm->p2pnChannels; c++) {
     struct ncclComm* comm = args->coll.comm;
     struct ncclChannel* channel = comm->channels+c;
-    struct ncclP2PConnect* connect = &comm->p2plist.connect;
+    struct ncclP2PConnect* connect = &comm->p2pConnect;
     NCCLCHECKTHREAD(ncclTransportP2pSetup(comm, NULL, channel, connect->nrecv[c], connect->recv+c*comm->nRanks, connect->nsend[c], connect->send+c*comm->nRanks));
     connect->nrecv[c] = 0;
     connect->nsend[c] = 0;
@@ -197,12 +197,13 @@ ncclResult_t ncclGroupEnd() {
   for (int i=0; i<ncclGroupIndex; i++) {
     struct ncclAsyncArgs* args = ncclGroupArgs+i;
     if (args->funcType == ASYNC_FUNC_COLL) {
-      struct ncclP2Plist* p2plist = &args->coll.comm->p2plist;
-      if (p2plist->count != 0) {
+      struct ncclP2Plist* p2pSend = &args->coll.comm->p2pSend;
+      struct ncclP2Plist* p2pRecv = &args->coll.comm->p2pRecv;
+      if (p2pSend->count != 0 || p2pRecv->count != 0) {
         struct ncclComm* comm = args->coll.comm;
         args->coll.connect = 0;
         for (int c=0; c<comm->p2pnChannels; c++)
-          args->coll.connect += comm->p2plist.connect.nsend[c] + comm->p2plist.connect.nrecv[c];
+          args->coll.connect += comm->p2pConnect.nsend[c] + comm->p2pConnect.nrecv[c];
         if (args->coll.connect) {
           pthread_create(ncclGroupThreads+i, NULL, ncclAsyncThreadPreconnect, args);
         }
@@ -228,8 +229,9 @@ ncclResult_t ncclGroupEnd() {
       struct ncclComm* comm = args->coll.comm;
       int rank = comm->rank;
       int nRanks = comm->nRanks;
-      struct ncclP2Plist* p2plist = &args->coll.comm->p2plist;
-      if (p2plist->count) {
+      struct ncclP2Plist* p2pSend = &args->coll.comm->p2pSend;
+      struct ncclP2Plist* p2pRecv = &args->coll.comm->p2pRecv;
+      if (p2pSend->count != 0 || p2pRecv->count != 0) {
         for (int delta=0; delta<nRanks; delta++) {
           uint32_t from = (rank+nRanks-delta)%nRanks;
           uint32_t to = (rank+delta)%nRanks;
@@ -242,31 +244,33 @@ ncclResult_t ncclGroupEnd() {
           int nChannelsMin = nChannelsMax;
           while (nChannelsMin*comm->nRanks > comm->p2pnChannels && nChannelsMin > 1) nChannelsMin /= 2;
 
-          ssize_t recvChunkSize = getP2pNchannels(p2plist->peerlist[from].recvbytes, nChannelsMin, nChannelsMax, stepSize, 4*stepSize);
-          ssize_t sendChunkSize = getP2pNchannels(p2plist->peerlist[to].sendbytes, nChannelsMin, nChannelsMax, stepSize, 4*stepSize);
+          ssize_t recvChunkSize = getP2pNchannels(p2pRecv->peerlist[from]->nbytes, nChannelsMin, nChannelsMax, stepSize, 4*stepSize);
+          ssize_t sendChunkSize = getP2pNchannels(p2pSend->peerlist[to]->nbytes, nChannelsMin, nChannelsMax, stepSize, 4*stepSize);
 
           ssize_t sendOffset = 0;
           ssize_t recvOffset = 0;
-          int remaining = 1;
+          int sendRemaining = 1, recvRemaining = 1;
           int chunk = 0;
-          while (remaining) {
+          do {
             int channelId = (delta+comm->p2pChannels[chunk%comm->p2pnChannelsPerPeer]) % comm->p2pnChannels;
-            remaining = 0;
-            ssize_t recvbytes = p2plist->peerlist[from].recvbytes-recvOffset;
-            ssize_t sendbytes = p2plist->peerlist[to].sendbytes-sendOffset;
-            if (recvbytes > recvChunkSize) { remaining = 1; recvbytes = recvChunkSize; } else p2plist->peerlist[from].recvbytes = -1;
-            if (sendbytes > sendChunkSize) { remaining = 1; sendbytes = sendChunkSize; } else p2plist->peerlist[to].sendbytes = -1;
+            ssize_t recvbytes = p2pRecv->peerlist[from]->nbytes-recvOffset;
+            ssize_t sendbytes = p2pSend->peerlist[to]->nbytes-sendOffset;
+            if (recvbytes > recvChunkSize) { recvRemaining = 1; recvbytes = recvChunkSize; } else { recvRemaining = 0; }
+            if (sendbytes > sendChunkSize) { sendRemaining = 1; sendbytes = sendChunkSize; } else { sendRemaining = 0; }
             if (sendbytes >= 0 || recvbytes >= 0) {
               NCCLCHECKGOTO(scheduleSendRecv(comm, delta, channelId,
-                    recvbytes, ((char*)(p2plist->peerlist[from].recvbuff)) + recvOffset,
-                    sendbytes, ((const char*)(p2plist->peerlist[to].sendbuff)) + sendOffset), ret, end);
+                    recvbytes, ((char*)(p2pRecv->peerlist[from]->buff)) + recvOffset,
+                    sendbytes, ((const char*)(p2pSend->peerlist[to]->buff)) + sendOffset), ret, end);
             }
             recvOffset += recvChunkSize;
             sendOffset += sendChunkSize;
             chunk++;
-          }
+            if (recvRemaining == 0) dequeueP2pInfo(p2pRecv, from);
+            if (sendRemaining == 0) dequeueP2pInfo(p2pSend, to);
+          } while (sendRemaining || recvRemaining);
         }
-        p2plist->count = 0;
+        p2pSend->count = 0;
+        p2pRecv->count = 0;
       }
     }
   }

@@ -10,10 +10,9 @@
 #define NCCL_P2P_H_
 
 struct ncclP2Pinfo {
-  const void* sendbuff;
-  void* recvbuff;
-  ssize_t sendbytes;
-  ssize_t recvbytes;
+  void* buff;
+  ssize_t nbytes;
+  struct ncclP2Pinfo* next;
 };
 
 struct ncclP2PConnect {
@@ -24,9 +23,31 @@ struct ncclP2PConnect {
 };
 
 struct ncclP2Plist {
-  struct ncclP2Pinfo *peerlist;
+  struct ncclP2Pinfo **peerlist;
+  struct ncclP2Pinfo **peerlistTail;
   int count;
-  struct ncclP2PConnect connect;
 };
 
+static ncclResult_t enqueueP2pInfo(ncclP2Plist* p2p, int peer, void* buff, ssize_t nBytes) {
+  struct ncclP2Pinfo* & head = p2p->peerlist[peer];
+  struct ncclP2Pinfo* & tail = p2p->peerlistTail[peer];
+  struct ncclP2Pinfo* next;
+  NCCLCHECK(ncclCalloc(&next, 1));
+  next->buff = buff;
+  next->nbytes = nBytes;
+  if (tail != NULL) tail->next = next;
+  tail = next;
+  if (head == NULL) head = next;
+  return ncclSuccess;
+}
+
+static ncclResult_t dequeueP2pInfo(ncclP2Plist* p2p, int peer) {
+  struct ncclP2Pinfo* & head = p2p->peerlist[peer];
+  struct ncclP2Pinfo* & tail = p2p->peerlistTail[peer];
+  struct ncclP2Pinfo* temp = head;
+  head = head->next;
+  if (tail == temp) tail = NULL;
+  free(temp);
+  return ncclSuccess;
+}
 #endif

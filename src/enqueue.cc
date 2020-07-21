@@ -525,38 +525,36 @@ static ncclResult_t ncclSaveAsyncColl(struct ncclInfo* info) {
   return ncclSuccess;
 }
 
-// Save p2p operations in comm->p2plist. Operations will be posted to channels
+// Save p2p operations in comm->p2pSend and p2pRecv. Operations will be posted to channels
 // during ncclGroupEnd()
 static ncclResult_t ncclSaveP2p(struct ncclInfo* info) {
   struct ncclComm* comm = info->comm;
-  struct ncclP2Plist* p2plist = &comm->p2plist;
   int peer = info->root;
-  p2plist->count++;
   ssize_t nBytes = info->count*ncclTypeSize(info->datatype);
   if (info->recvbuff == NULL) {
+    comm->p2pSend.count++;
     if (peer != comm->rank) {
       int delta = (comm->nRanks - (comm->rank-peer)) % comm->nRanks;
       for (int c=0; c<comm->p2pnChannelsPerPeer; c++) {
         int channelId = (delta+comm->p2pChannels[c]) % comm->p2pnChannels;
         if (comm->channels[channelId].peers[peer].send.connected == 0) {
-          p2plist->connect.send[channelId*comm->nRanks+p2plist->connect.nsend[channelId]++] = peer;
+          comm->p2pConnect.send[channelId*comm->nRanks+comm->p2pConnect.nsend[channelId]++] = peer;
         }
       }
     }
-    p2plist->peerlist[info->root].sendbytes = nBytes;
-    p2plist->peerlist[info->root].sendbuff = info->sendbuff;
+    NCCLCHECK(enqueueP2pInfo(&comm->p2pSend, info->root, (void*)info->sendbuff, nBytes));
   } else {
+    comm->p2pRecv.count++;
     if (peer != comm->rank) {
       int delta = (comm->nRanks + (comm->rank-peer)) % comm->nRanks;
       for (int c=0; c<comm->p2pnChannelsPerPeer; c++) {
         int channelId = (delta+comm->p2pChannels[c]) % comm->p2pnChannels;
         if (comm->channels[channelId].peers[peer].recv.connected == 0) {
-          p2plist->connect.recv[channelId*comm->nRanks+p2plist->connect.nrecv[channelId]++] = peer;
+          comm->p2pConnect.recv[channelId*comm->nRanks+comm->p2pConnect.nrecv[channelId]++] = peer;
         }
       }
     }
-    p2plist->peerlist[info->root].recvbytes = nBytes;
-    p2plist->peerlist[info->root].recvbuff = info->recvbuff;
+    NCCLCHECK(enqueueP2pInfo(&comm->p2pRecv, info->root, info->recvbuff, nBytes));
   }
   return ncclSuccess;
 }
