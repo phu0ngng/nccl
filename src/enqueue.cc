@@ -537,7 +537,9 @@ static ncclResult_t ncclSaveP2p(struct ncclInfo* info) {
       int delta = (comm->nRanks - (comm->rank-peer)) % comm->nRanks;
       for (int c=0; c<comm->p2pnChannelsPerPeer; c++) {
         int channelId = (delta+comm->p2pChannels[c]) % comm->p2pnChannels;
-        if (comm->channels[channelId].peers[peer].send.connected == 0) {
+        struct ncclConnector* conn = &comm->channels[channelId].peers[peer].send;
+        if (conn->connected == 0 && conn->recorded == 0) {
+          conn->recorded = 1;
           comm->p2pConnect.send[channelId*comm->nRanks+comm->p2pConnect.nsend[channelId]++] = peer;
         }
       }
@@ -549,7 +551,9 @@ static ncclResult_t ncclSaveP2p(struct ncclInfo* info) {
       int delta = (comm->nRanks + (comm->rank-peer)) % comm->nRanks;
       for (int c=0; c<comm->p2pnChannelsPerPeer; c++) {
         int channelId = (delta+comm->p2pChannels[c]) % comm->p2pnChannels;
-        if (comm->channels[channelId].peers[peer].recv.connected == 0) {
+        struct ncclConnector* conn = &comm->channels[channelId].peers[peer].recv;
+        if (conn->connected == 0 && conn->recorded == 0) {
+          conn->recorded = 1;
           comm->p2pConnect.recv[channelId*comm->nRanks+comm->p2pConnect.nrecv[channelId]++] = peer;
         }
       }

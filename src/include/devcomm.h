@@ -96,7 +96,8 @@ struct ncclConnInfo {
 };
 
 struct ncclConnector {
-  int connected;
+  uint16_t connected;
+  uint16_t recorded;
   struct ncclProxyArgs *proxyAppend;
   struct ncclTransportComm* transportComm;
   void* transportResources; // Host-side resources
