@@ -232,8 +232,10 @@ ncclResult_t ncclGroupEnd() {
       if (p2plist->count) {
 	// schedule delta 0, +1, -1, +2, -2, ...
 	// also make sure we don't do 0 twice, nor +n/2 and -n/2 if n is even.
-        for (int d=0; d<=nRanks/2; d++) {
-          int delta = d;
+        for (int d=0; d<=nRanks/4; d++) {
+          int deltas[4] = { d, (nRanks-d)%nRanks, nRanks/2-d, nRanks-(nRanks/2-d) };
+	  int index = 0;
+          int delta = deltas[index];
 sched_delta:
 	  uint32_t from = (rank+nRanks-delta)%nRanks;
 	  uint32_t to = (rank+delta)%nRanks;
@@ -255,6 +257,7 @@ sched_delta:
 	  int chunk = 0;
 	  while (remaining) {
 	    int channelId = (delta+comm->p2pChannels[chunk%comm->p2pnChannelsPerPeer]) % comm->p2pnChannels;
+	    //printf("Delta %d/Chunk %d -> %d\n", delta, chunk, channelId);
 	    remaining = 0;
 	    ssize_t recvbytes = p2plist->peerlist[from].recvbytes-recvOffset;
 	    ssize_t sendbytes = p2plist->peerlist[to].sendbytes-sendOffset;
@@ -269,8 +272,9 @@ sched_delta:
 	    sendOffset += sendChunkSize;
 	    chunk++;
 	  }
-	  if (from != to && delta != nRanks-d) {
-	    delta = nRanks-d;
+	  while (deltas[index] == delta && index < 4) index++;
+	  if (index < 4) {
+	    delta = deltas[index];
 	    goto sched_delta;
 	  }
         }

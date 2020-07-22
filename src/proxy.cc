@@ -9,8 +9,7 @@
 #include "graph.h"
 #include "collectives.h"
 
-#define RECV 0
-#define SEND 1
+enum { proxyRecv=0, proxySend=1 };
 
 static bool NeedProxy(int type, int pattern, int root, struct ncclRing* ring, int nranks) {
   if (pattern == ncclPatternRing || pattern == ncclPatternRingTwice) return true;
@@ -20,13 +19,11 @@ static bool NeedProxy(int type, int pattern, int root, struct ncclRing* ring, in
   const int myrank = 0, nextrank = 1, prevrank = nranks-1;
   int index = pattern == ncclPatternPipelineFrom ?
       /*                            no recv /  no send    if root = */
-      /* bcast  */ (type == RECV ?   myrank : nextrank ):
-      /* reduce */ (type == RECV ? prevrank :   myrank );
+      /* bcast  */ (type == proxyRecv ?   myrank : nextrank ):
+      /* reduce */ (type == proxyRecv ? prevrank :   myrank );
   int rank = ring->userRanks[index];
   return (root != rank);
 }
-
-enum { proxyRecv=0, proxySend=1 };
 
 #define PROXYARGS_ALLOCATE_SIZE 128
 struct ncclProxyPool {
@@ -193,8 +190,8 @@ static ncclResult_t SaveProxy(int type, int peer, struct ncclProxyArgs* args) {
 ncclResult_t ncclProxySaveColl(struct ncclProxyArgs* args, int pattern, int root, int nranks) {
   if (pattern == ncclPatternRing || pattern == ncclPatternRingTwice || pattern == ncclPatternPipelineFrom || pattern == ncclPatternPipelineTo) {
     struct ncclRing* ring = &args->channel->ring;
-    if (NeedProxy(RECV, pattern, root, ring, nranks)) NCCLCHECK(SaveProxy(proxyRecv, ring->prev, args));
-    if (NeedProxy(SEND, pattern, root, ring, nranks)) NCCLCHECK(SaveProxy(proxySend, ring->next, args));
+    if (NeedProxy(proxyRecv, pattern, root, ring, nranks)) NCCLCHECK(SaveProxy(proxyRecv, ring->prev, args));
+    if (NeedProxy(proxySend, pattern, root, ring, nranks)) NCCLCHECK(SaveProxy(proxySend, ring->next, args));
   }
   if (pattern == ncclPatternTreeUp || pattern == ncclPatternTreeUpDown) {
     // Tree up
