@@ -382,9 +382,7 @@ ncclResult_t ncclProxySharedBuffersInit(struct ncclComm* comm, int cuda, int* si
     comm->proxyState.sharedBuffs = state;
     state->nslots = ncclParamProxySharedBuffersCount();
     if (state->nslots == -2)  {
-      int netCount;
-      NCCLCHECK(ncclTopoGetNetCount(comm->topo, &netCount));
-      state->nslots = NCCL_STEPS*NCCL_MAX_SEGMENTS*netCount;
+      state->nslots = NCCL_STEPS*NCCL_MAX_SEGMENTS;
     }
     state->slotSize = comm->buffSizes[NCCL_PROTO_SIMPLE]/(NCCL_STEPS*NCCL_MAX_SEGMENTS);
   }
