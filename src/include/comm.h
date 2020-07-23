@@ -143,9 +143,10 @@ struct ncclComm {
   size_t asyncTotalSize;
 
   //list of async p2p operation queued in a group semantics
-  struct ncclP2Plist p2pSend;
-  struct ncclP2Plist p2pRecv;
+  struct ncclP2Plist* p2pSends;
+  struct ncclP2Plist* p2pRecvs;
   struct ncclP2PConnect p2pConnect;
+  int p2pCount;
 };
 
 #endif

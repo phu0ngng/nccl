@@ -197,10 +197,8 @@ ncclResult_t ncclGroupEnd() {
   for (int i=0; i<ncclGroupIndex; i++) {
     struct ncclAsyncArgs* args = ncclGroupArgs+i;
     if (args->funcType == ASYNC_FUNC_COLL) {
-      struct ncclP2Plist* p2pSend = &args->coll.comm->p2pSend;
-      struct ncclP2Plist* p2pRecv = &args->coll.comm->p2pRecv;
-      if (p2pSend->count != 0 || p2pRecv->count != 0) {
-        struct ncclComm* comm = args->coll.comm;
+      struct ncclComm* comm = args->coll.comm;
+      if (comm->p2pCount != 0) {
         args->coll.connect = 0;
         for (int c=0; c<comm->p2pnChannels; c++)
           args->coll.connect += comm->p2pConnect.nsend[c] + comm->p2pConnect.nrecv[c];
@@ -229,9 +227,9 @@ ncclResult_t ncclGroupEnd() {
       struct ncclComm* comm = args->coll.comm;
       int rank = comm->rank;
       int nRanks = comm->nRanks;
-      struct ncclP2Plist* p2pSend = &args->coll.comm->p2pSend;
-      struct ncclP2Plist* p2pRecv = &args->coll.comm->p2pRecv;
-      if (p2pSend->count != 0 || p2pRecv->count != 0) {
+      struct ncclP2Plist* p2pSends = comm->p2pSends;
+      struct ncclP2Plist* p2pRecvs = comm->p2pRecvs;
+      if (comm->p2pCount != 0) {
         for (int delta=0; delta<nRanks; delta++) {
           uint32_t from = (rank+nRanks-delta)%nRanks;
           uint32_t to = (rank+delta)%nRanks;
@@ -244,10 +242,12 @@ ncclResult_t ncclGroupEnd() {
           int nChannelsMin = nChannelsMax;
           while (nChannelsMin*comm->nRanks > comm->p2pnChannels && nChannelsMin > 1) nChannelsMin /= 2;
 
-          while (p2pRecv->peerlist[from] != NULL || p2pSend->peerlist[to] != NULL) {
+          struct ncclP2Pinfo* recvHead = p2pRecvs[from].head;
+          struct ncclP2Pinfo* sendHead = p2pSends[to].head;
+          while (recvHead != NULL || sendHead != NULL) {
             ssize_t totRecvBytes = 0, totSendBytes = 0;
-            if (p2pRecv->peerlist[from] != NULL) totRecvBytes = p2pRecv->peerlist[from]->nbytes;
-            if (p2pSend->peerlist[to] != NULL) totSendBytes = p2pSend->peerlist[to]->nbytes;
+            if (recvHead != NULL) totRecvBytes = recvHead->nbytes;
+            if (sendHead != NULL) totSendBytes = sendHead->nbytes;
             ssize_t recvChunkSize = getP2pNchannels(totRecvBytes, nChannelsMin, nChannelsMax, stepSize, 4*stepSize);
             ssize_t sendChunkSize = getP2pNchannels(totSendBytes, nChannelsMin, nChannelsMax, stepSize, 4*stepSize);
 
@@ -263,19 +263,20 @@ ncclResult_t ncclGroupEnd() {
               if (sendbytes > sendChunkSize) { sendbytes = sendChunkSize; } else { sendRemaining = 0; }
               if (sendbytes >= 0 || recvbytes >= 0) {
                 NCCLCHECKGOTO(scheduleSendRecv(comm, delta, channelId,
-                      recvbytes, ((char*)(p2pRecv->peerlist[from]->buff)) + recvOffset,
-                      sendbytes, ((const char*)(p2pSend->peerlist[to]->buff)) + sendOffset), ret, end);
+                      recvbytes, ((char*)(recvHead->buff)) + recvOffset,
+                      sendbytes, ((const char*)(sendHead->buff)) + sendOffset), ret, end);
               }
               recvOffset += recvChunkSize;
               sendOffset += sendChunkSize;
               chunk++;
             } while (sendRemaining || recvRemaining);
-            NCCLCHECKGOTO(dequeueP2pInfo(p2pRecv, from), ret, end);
-            NCCLCHECKGOTO(dequeueP2pInfo(p2pSend, to), ret, end);
+            NCCLCHECKGOTO(dequeueP2pInfo(p2pRecvs+from), ret, end);
+            NCCLCHECKGOTO(dequeueP2pInfo(p2pSends+to), ret, end);
+            recvHead = p2pRecvs[from].head;
+            sendHead = p2pSends[to].head;
           }
         }
-        p2pSend->count = 0;
-        p2pRecv->count = 0;
+        comm->p2pCount = 0;
       }
     }
   }

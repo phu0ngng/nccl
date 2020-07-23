@@ -525,14 +525,13 @@ static ncclResult_t ncclSaveAsyncColl(struct ncclInfo* info) {
   return ncclSuccess;
 }
 
-// Save p2p operations in comm->p2pSend and p2pRecv. Operations will be posted to channels
+// Save p2p operations in comm->p2pSends and p2pRecvs. Operations will be posted to channels
 // during ncclGroupEnd()
 static ncclResult_t ncclSaveP2p(struct ncclInfo* info) {
   struct ncclComm* comm = info->comm;
   int peer = info->root;
   ssize_t nBytes = info->count*ncclTypeSize(info->datatype);
   if (info->recvbuff == NULL) {
-    comm->p2pSend.count++;
     if (peer != comm->rank) {
       int delta = (comm->nRanks - (comm->rank-peer)) % comm->nRanks;
       for (int c=0; c<comm->p2pnChannelsPerPeer; c++) {
@@ -544,9 +543,8 @@ static ncclResult_t ncclSaveP2p(struct ncclInfo* info) {
         }
       }
     }
-    NCCLCHECK(enqueueP2pInfo(&comm->p2pSend, info->root, (void*)info->sendbuff, nBytes));
+    NCCLCHECK(enqueueP2pInfo(comm->p2pSends+info->root, (void*)info->sendbuff, nBytes));
   } else {
-    comm->p2pRecv.count++;
     if (peer != comm->rank) {
       int delta = (comm->nRanks + (comm->rank-peer)) % comm->nRanks;
       for (int c=0; c<comm->p2pnChannelsPerPeer; c++) {
@@ -558,8 +556,9 @@ static ncclResult_t ncclSaveP2p(struct ncclInfo* info) {
         }
       }
     }
-    NCCLCHECK(enqueueP2pInfo(&comm->p2pRecv, info->root, info->recvbuff, nBytes));
+    NCCLCHECK(enqueueP2pInfo(comm->p2pRecvs+info->root, info->recvbuff, nBytes));
   }
+  comm->p2pCount++;
   return ncclSuccess;
 }
 

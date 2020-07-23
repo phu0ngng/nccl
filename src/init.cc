@@ -158,10 +158,8 @@ void NCCL_NO_OPTIMIZE commPoison(ncclComm_t comm) {
 static ncclResult_t commFree(ncclComm_t comm) {
   if (comm == NULL)
     return ncclSuccess;
-  free(comm->p2pSend.peerlist);
-  free(comm->p2pRecv.peerlist);
-  free(comm->p2pSend.peerlistTail);
-  free(comm->p2pRecv.peerlistTail);
+  free(comm->p2pSends);
+  free(comm->p2pRecvs);
   free(comm->p2pConnect.send);
   free(comm->p2pConnect.recv);
 
@@ -248,12 +246,9 @@ static ncclResult_t commAlloc(ncclComm_t* comret, int ndev, int rank) {
   comm->asyncOpCount = 0;
   comm->asyncTotalSize = 0;
 
-  comm->p2pSend.count=0;
-  comm->p2pRecv.count=0;
-  NCCLCHECK(ncclCalloc(&comm->p2pSend.peerlist, comm->nRanks));
-  NCCLCHECK(ncclCalloc(&comm->p2pRecv.peerlist, comm->nRanks));
-  NCCLCHECK(ncclCalloc(&comm->p2pSend.peerlistTail, comm->nRanks));
-  NCCLCHECK(ncclCalloc(&comm->p2pRecv.peerlistTail, comm->nRanks));
+  comm->p2pCount=0;
+  NCCLCHECK(ncclCalloc(&comm->p2pSends, comm->nRanks));
+  NCCLCHECK(ncclCalloc(&comm->p2pRecvs, comm->nRanks));
   NCCLCHECK(ncclCalloc(&comm->p2pConnect.send, MAXCHANNELS*comm->nRanks));
   NCCLCHECK(ncclCalloc(&comm->p2pConnect.recv, MAXCHANNELS*comm->nRanks));
 
