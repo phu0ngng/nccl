@@ -493,7 +493,7 @@ ncclResult_t ncclSaveP2p(struct ncclInfo* info) {
   int peer = info->root;
   p2plist->count++;
   ssize_t nBytes = info->count*ncclTypeSize(info->datatype);
-  if (info->recvbuff == NULL) {
+  if (info->opName[0] == 'S') { // Send
     if (peer != comm->rank) {
       int delta = (comm->nRanks - (comm->rank-peer)) % comm->nRanks;
       for (int c=0; c<comm->p2pnChannelsPerPeer; c++) {
@@ -505,7 +505,7 @@ ncclResult_t ncclSaveP2p(struct ncclInfo* info) {
     }
     p2plist->peerlist[info->root].sendbytes = nBytes;
     p2plist->peerlist[info->root].sendbuff = info->sendbuff;
-  } else {
+  } else { // Recv
     if (peer != comm->rank) {
       int delta = (comm->nRanks + (comm->rank-peer)) % comm->nRanks;
       for (int c=0; c<comm->p2pnChannelsPerPeer; c++) {
