@@ -553,7 +553,21 @@ static ncclResult_t ncclSaveP2p(struct ncclInfo* info) {
   return ncclSuccess;
 }
 
-static ncclResult_t saveP2pOp(struct ncclInfo* info /* input */, struct ncclColl* coll, int nThreads, int s) {
+static int getSegment(struct ncclInfo* info, struct ncclColl* coll) {
+  // First check operations are small enough that we can have multiple segments in one operation
+  size_t maxSize = std::max(info->sendbytes, info->recvbytes);
+  int s;
+  for (s=0; s<NCCL_MAX_SEGMENTS && coll->args.p2p.nThreadsPerOp[s]; s++) {
+    maxSize = std::max(coll->args.p2p.sendCount[s], maxSize);
+    maxSize = std::max(coll->args.p2p.recvCount[s], maxSize);
+  }
+  int maxSegments = NCCL_MAX_SEGMENTS;
+  int buffSize = info->comm->buffSizes[NCCL_PROTO_SIMPLE];
+  while (maxSegments * maxSize > buffSize) maxSegments /= 2;
+  return (s < maxSegments) ? s : -1;
+}
+
+static ncclResult_t saveP2pOp(struct ncclInfo* info /* input */, struct ncclColl* coll, int s) {
   coll->args.comm = info->comm->devComm;
   coll->args.p2p.sendCount[s] = info->sendbytes;
   coll->args.p2p.recvCount[s] = info->recvbytes;
@@ -562,7 +576,11 @@ static ncclResult_t saveP2pOp(struct ncclInfo* info /* input */, struct ncclColl
   coll->args.p2p.delta[s] = info->delta;
   coll->funcIndex = FUNC_INDEX_P2P;
   coll->args.p2p.nThreads = info->nThreads = NCCL_MAX_NTHREADS;
-  coll->args.p2p.nThreadsPerOp[s] = nThreads;
+  const int nsegments = s+1;
+  int nThreads = 512;
+  while (nsegments*nThreads > NCCL_MAX_NTHREADS) nThreads /= 2;
+  if (nThreads >= 128) nThreads += WARP_SIZE;
+  for (int i=0; i<nsegments; i++) coll->args.p2p.nThreadsPerOp[i] = nThreads;
   return ncclSuccess;
 }
 
@@ -570,30 +588,23 @@ ncclResult_t ncclSaveP2pKernel(struct ncclInfo* info) {
   int channelId = info->channelId;
   struct ncclChannel* channel = info->comm->channels+channelId;
 
-  size_t maxSize = std::max(info->sendbytes, info->recvbytes);
-  int nThreads = 64;
-  while ((maxSize / nThreads > 32) && (nThreads < 512)) nThreads *= 2;
-  if (nThreads >= 128) nThreads += WARP_SIZE;
-
   // Try to reuse last p2p operation if not full yet
   int opIndex = (channel->collFifoTail-1+NCCL_MAX_OPS)%NCCL_MAX_OPS;
   struct ncclColl* c = channel->collectives+opIndex;
-  int segment = 0;
+  int segment = -1;
   if (channel->collFifoTail-1 >= channel->collStart && c->funcIndex == FUNC_INDEX_P2P && c->args.p2p.nThreadsPerOp[NCCL_MAX_SEGMENTS-1] == 0) {
-    int nThreadsRemaining = 0;
-    nThreadsRemaining = NCCL_MAX_NTHREADS;
-    while (segment<NCCL_MAX_SEGMENTS && c->args.p2p.nThreadsPerOp[segment]) {
-      nThreadsRemaining -= c->args.p2p.nThreadsPerOp[segment];
-      segment++;
-    }
-    if (segment == NCCL_MAX_SEGMENTS || nThreadsRemaining < nThreads) segment = 0;
+    // Try to pack more segments into a single operation
+    segment = getSegment(info, c);
   }
-  if (segment == 0) { NCCLCHECK(getNextOp(channel, &c, NULL)); }
+  if (segment == -1) {
+    NCCLCHECK(getNextOp(channel, &c, NULL));
+    segment = 0;
+  }
   else info->comm->opCount--;
 
-  NCCLCHECK(ncclProxySaveP2p(info, channel));
+  NCCLCHECK(ncclProxySaveP2p(info, channel, segment));
   info->comm->opCount++;
-  NCCLCHECK(saveP2pOp(info, c, nThreads, segment));
+  NCCLCHECK(saveP2pOp(info, c, segment));
   info->comm->myParams->gridDim.x = std::max<unsigned>(info->comm->myParams->gridDim.x, channelId+1);
   info->comm->myParams->blockDim.x = std::max<unsigned>(info->comm->myParams->blockDim.x, info->nThreads);
 

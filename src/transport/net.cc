@@ -255,6 +255,8 @@ ncclResult_t netSendProxy(struct ncclProxyArgs* args) {
     args->posted = args->transmitted = args->done = resources->step;
     args->end = resources->step + args->nsteps;
     args->state = ncclProxyOpProgress;
+    args->idle = 0;
+    return ncclSuccess;
   }
   args->idle = 1;
   while (args->state == ncclProxyOpProgress) {
@@ -363,6 +365,8 @@ ncclResult_t netRecvProxy(struct ncclProxyArgs* args) {
     args->posted = args->transmitted = args->done = resources->step;
     args->end = resources->step + args->nsteps;
     args->state = ncclProxyOpProgress;
+    args->idle = 0;
+    return ncclSuccess;
   }
   args->idle = 1;
   while (args->state == ncclProxyOpProgress) {

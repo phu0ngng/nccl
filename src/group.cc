@@ -344,24 +344,16 @@ group_cleanup:
           channel->collFifoTail = channel->collStart;
           channel->collCount = 0;
         }
-        /* Cancel all proxy ops : mark them as ncclProxyOpNone and they should be freed later on */
+        /* Free all proxy ops in state->nextOps */
         struct ncclProxyState* state = &comm->proxyState;
-        struct ncclProxyArgs *op, *start;
-        pthread_mutex_lock(&state->mutex);
-        op = start = state->ops;
-        while (op) {
-          if (op->opCount >= comm->lastOpCount) op->state = ncclProxyOpNone;
-          struct ncclProxyArgs* peerOp = op->nextPeer;
-          while (peerOp) {
-            if (peerOp->opCount >= comm->lastOpCount) peerOp->state = ncclProxyOpNone;
-            peerOp = peerOp->nextPeer;
-          }
-          op = op->next;
-          if (op == start) break;
+	pthread_mutex_lock(&state->poolMutex);
+	for (struct ncclProxyArgs *op = state->nextOps; op; op = op->next) {
+          op->next = state->pool;
+          state->pool = op;
         }
+	pthread_mutex_unlock(&state->poolMutex);
+        state->nextOps = NULL;
         comm->opCount = comm->lastOpCount;
-        pthread_cond_signal(&state->cond);
-        pthread_mutex_unlock(&state->mutex);
 
         comm->myParams->gridDim.x = comm->myParams->blockDim.x = 0;
         comm->userStreamSet = false;
