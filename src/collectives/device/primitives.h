@@ -50,7 +50,7 @@ class ncclPrimitives {
   int nsend = 0;
   struct ncclConnInfo* conn = NULL;
   volatile int* connSizesFifoPtr = NULL;
-  volatile void** connPtrsFifoPtr = NULL;
+  void** connPtrsFifoPtr = NULL;
   volatile uint64_t* connHeadPtr = NULL;
   volatile uint64_t* connTailPtr = NULL;
   uint64_t connTailCache; // Cache last seen value
@@ -105,10 +105,9 @@ class ncclPrimitives {
     if (connSizesFifoPtr) {
       connSizesFifoPtr[step%NCCL_STEPS] = nbytes;
     }
-    dsts[DST+index] =
-      connPtrsFifoPtr ?
-      (T*)connPtrsFifoPtr[step%NCCL_STEPS] :
-      directPtr<DIRECTSEND>(directOffset);
+
+    if (connPtrsFifoPtr) loadPtr(connPtrsFifoPtr+step%NCCL_STEPS, dsts[DST+index]);
+    else dsts[DST+index] = directPtr<DIRECTSEND>(directOffset);
     step += SLICESTEPS;
   }
 
@@ -119,10 +118,8 @@ class ncclPrimitives {
       connTailCache = *connTailPtr;
       if (checkAbort()) break;
     }
-    srcs[SRC+index] =
-      connPtrsFifoPtr ?
-      (const T*)connPtrsFifoPtr[step%NCCL_STEPS] :
-      directPtr<DIRECTRECV>(directOffset);
+    if (connPtrsFifoPtr) loadPtr(connPtrsFifoPtr+step%NCCL_STEPS, srcs[SRC+index]);
+    else srcs[SRC+index] = directPtr<DIRECTRECV>(directOffset);
     step += SLICESTEPS;
   }
 
@@ -189,7 +186,7 @@ class ncclPrimitives {
         }
         connTailPtr = conn->tail;
         connTailCache = *connTailPtr;
-        connPtrsFifoPtr = (volatile void**)conn->ptrsFifo;
+        connPtrsFifoPtr = conn->ptrsFifo;
       }
     }
   }
@@ -212,7 +209,7 @@ class ncclPrimitives {
         connHeadPtr = conn->head;
         connHeadCache = *connHeadPtr;
         connSizesFifoPtr = conn->sizesFifo;
-        connPtrsFifoPtr = (volatile void**)conn->ptrsFifo;
+        connPtrsFifoPtr = conn->ptrsFifo;
       }
     }
   }

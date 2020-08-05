@@ -16,6 +16,12 @@
 // Define min for ssize_t
 static __device__ int min(int a, ssize_t b) { return (a < b) ? a : b; }
 
+template <typename T>
+inline __device__ void loadPtr(void** ptr, T* &v) {
+  asm volatile("ld.volatile.global.u64 %0, [%1];"
+      : "=l"(v) : "l"(ptr));
+}
+
 typedef uint64_t PackType;
 
 // unpack x and y to elements of type T and apply FUNC to each element
