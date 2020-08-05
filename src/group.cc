@@ -131,15 +131,16 @@ static ncclResult_t scheduleSendRecv(struct ncclComm* comm, int delta, int chann
 
 void* ncclAsyncThreadPreconnect(void* args_) {
   struct ncclAsyncArgs* args = (struct ncclAsyncArgs*)args_;
-  CUDACHECKTHREAD(cudaSetDevice(args->coll.comm->cudaDev));
+  struct ncclComm* comm = args->coll.comm;
+  CUDACHECKTHREAD(cudaSetDevice(comm->cudaDev));
   for (int c=0; c<args->coll.comm->p2pnChannels; c++) {
-    struct ncclComm* comm = args->coll.comm;
     struct ncclChannel* channel = comm->channels+c;
     struct ncclP2PConnect* connect = &comm->p2plist.connect;
-    NCCLCHECKTHREAD(ncclTransportP2pSetup(comm, NULL, channel, connect->nrecv[c], connect->recv+c*comm->nRanks, connect->nsend[c], connect->send+c*comm->nRanks));
+    NCCLCHECKTHREAD(ncclTransportP2pConnect(comm, channel, connect->nrecv[c], connect->recv+c*comm->nRanks, connect->nsend[c], connect->send+c*comm->nRanks));
     connect->nrecv[c] = 0;
     connect->nsend[c] = 0;
   }
+  NCCLCHECKTHREAD(ncclTransportP2pSetup(comm, NULL));
   return args;
 }
 

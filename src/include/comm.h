@@ -63,6 +63,9 @@ struct ncclComm {
   struct ncclTopoSystem* topo;
 
   void* bootstrap;
+  // Bitmasks for ncclTransportP2pSetup
+  uint32_t* connectSend;
+  uint32_t* connectRecv;
 
   int rank;    // my rank in the communicator
   int nRanks;  // number of GPUs in communicator
