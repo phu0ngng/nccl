@@ -255,12 +255,9 @@ ncclResult_t netSendProxy(struct ncclProxyArgs* args) {
     args->posted = args->transmitted = args->done = resources->step;
     args->end = resources->step + args->nsteps;
     args->state = ncclProxyOpProgress;
-    args->idle = 0;
-    return ncclSuccess;
   }
   args->idle = 1;
-  while (args->state == ncclProxyOpProgress) {
-    int idle = 1;
+  if (args->state == ncclProxyOpProgress) {
     int p = args->protocol;
     int stepSize = args->connector->comm->buffSizes[p] / NCCL_STEPS;
     char* localBuff = args->connector->conn.buffs[p];
@@ -278,8 +275,9 @@ ncclResult_t netSendProxy(struct ncclProxyArgs* args) {
         volatile uint64_t* sendHead = &resources->sendMem->head;
         args->posted += args->sliceSteps;
         *sendHead = args->posted - NCCL_STEPS;
-        idle = 0;
       } else args->posted += args->sliceSteps;
+      args->idle = 0;
+      return ncclSuccess;
     }
     // Check whether we received data from the GPU and send it to the network
     int buffSlot = args->transmitted%NCCL_STEPS;
@@ -323,7 +321,8 @@ ncclResult_t netSendProxy(struct ncclProxyArgs* args) {
             // Make sure size is reset to zero before we update the head.
             __sync_synchronize();
             args->transmitted += args->sliceSteps;
-            idle = 0;
+            args->idle = 0;
+            return ncclSuccess;
           }
         }
       }
@@ -340,19 +339,18 @@ ncclResult_t netSendProxy(struct ncclProxyArgs* args) {
           NCCLCHECK(ncclProxySharedBuffersFree(args->connector->comm, resources->useGdr, 0, args->channel->id, buffSize, ptr));
         }
         args->done += args->sliceSteps;
+
         if (resources->shared == 0) {
           resources->sendMem->head = args->done;
         }
-        idle = 0;
+        args->idle = 0;
+        if (args->done == args->end) {
+          resources->step = args->end;
+          args->state = ncclProxyOpNone;
+        }
+        return ncclSuccess;
       }
     }
-    if (args->done == args->end) {
-      resources->step = args->end;
-      idle = 0;
-      args->state = ncclProxyOpNone;
-    }
-    if (idle == 0) args->idle = 0;
-    else break;
   }
   return ncclSuccess;
 }
@@ -365,12 +363,9 @@ ncclResult_t netRecvProxy(struct ncclProxyArgs* args) {
     args->posted = args->transmitted = args->done = resources->step;
     args->end = resources->step + args->nsteps;
     args->state = ncclProxyOpProgress;
-    args->idle = 0;
-    return ncclSuccess;
   }
   args->idle = 1;
-  while (args->state == ncclProxyOpProgress) {
-    int idle = 1;
+  if (args->state == ncclProxyOpProgress) {
     int p = args->protocol;
     int stepSize = args->connector->comm->buffSizes[p] / NCCL_STEPS;
     char* localBuff = args->connector->conn.buffs[p];
@@ -392,7 +387,8 @@ ncclResult_t netRecvProxy(struct ncclProxyArgs* args) {
       if (args->requests[buffSlot] != NULL) {
         TRACE(NCCL_NET, "recvProxy [%d/%d] posted recv request %p", args->posted, buffSlot, args->requests[buffSlot]);
         args->posted += args->sliceSteps;
-        idle = 0;
+        args->idle = 0;
+        return ncclSuccess;
       } else if (resources->shared) {
         NCCLCHECK(ncclProxySharedBuffersFree(args->connector->comm, resources->useGdr, 1, args->channel->id, buffSize, ptr));
       }
@@ -410,7 +406,8 @@ ncclResult_t netRecvProxy(struct ncclProxyArgs* args) {
           __sync_synchronize();
           resources->recvMem->tail = args->transmitted;
         }
-        idle = 0;
+        args->idle = 0;
+        return ncclSuccess;
       }
     }
     if (args->transmitted > args->done) {
@@ -424,16 +421,14 @@ ncclResult_t netRecvProxy(struct ncclProxyArgs* args) {
           NCCLCHECK(ncclProxySharedBuffersFree(args->connector->comm, resources->useGdr, 1, args->channel->id, buffSize, ptr));
         }
         args->done += args->sliceSteps;
-        idle = 0;
+        args->idle = 0;
+        if (args->done == args->end) {
+          resources->step = args->end;
+          args->state = ncclProxyOpNone;
+        }
+        return ncclSuccess;
       }
     }
-    if (args->done == args->end) {
-      resources->step = args->end;
-      idle = 0;
-      args->state = ncclProxyOpNone;
-    }
-    if (idle == 0) args->idle = 0;
-    else break;
   }
   return ncclSuccess;
 }
