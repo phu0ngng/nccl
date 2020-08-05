@@ -562,8 +562,8 @@ static int getSegment(struct ncclInfo* info, struct ncclColl* coll) {
     maxSize = std::max(coll->args.p2p.recvCount[s], maxSize);
   }
   int maxSegments = NCCL_MAX_SEGMENTS;
-  int buffSize = info->comm->buffSizes[NCCL_PROTO_SIMPLE];
-  while (maxSegments * maxSize > buffSize) maxSegments /= 2;
+  int stepSize = info->comm->buffSizes[NCCL_PROTO_SIMPLE]/NCCL_STEPS;
+  while (maxSegments * maxSize > stepSize) maxSegments /= 2;
   return (s < maxSegments) ? s : -1;
 }
 

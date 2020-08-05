@@ -269,7 +269,7 @@ ncclResult_t netSendProxy(struct ncclProxyArgs* args) {
       if (resources->shared) {
         char* ptr;
         NCCLCHECK(ncclProxySharedBuffersAlloc(args->connector->comm, resources->useGdr, 0, args->channel->id, buffSize, &ptr));
-        if (ptr == NULL) return ncclSuccess;
+        if (ptr == NULL) return ncclInternalError;
         resources->recvMem->ptrsFifo[args->posted%NCCL_STEPS] = ptr;
         __sync_synchronize();
         volatile uint64_t* sendHead = &resources->sendMem->head;
@@ -377,7 +377,7 @@ ncclResult_t netRecvProxy(struct ncclProxyArgs* args) {
       char* ptr;
       if (resources->shared) {
         NCCLCHECK(ncclProxySharedBuffersAlloc(args->connector->comm, resources->useGdr, 1, args->channel->id, buffSize, &ptr));
-        if (ptr == NULL) return ncclSuccess;
+        if (ptr == NULL) return ncclInternalError;
         volatile void** ptrsFifo = (volatile void**)resources->recvMem->ptrsFifo;
         ptrsFifo[buffSlot] = ptr;
       } else {
