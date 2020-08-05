@@ -64,6 +64,7 @@ struct ncclComm {
 
   void* bootstrap;
   // Bitmasks for ncclTransportP2pSetup
+  int connect;
   uint32_t* connectSend;
   uint32_t* connectRecv;
 

@@ -531,7 +531,8 @@ static ncclResult_t ncclSaveP2p(struct ncclInfo* info) {
       for (int c=0; c<comm->p2pnChannelsPerPeer; c++) {
         int channelId = (delta+comm->p2pChannels[c]) % comm->p2pnChannels;
         if (comm->channels[channelId].peers[peer].send.connected == 0) {
-          p2plist->connect.send[channelId*comm->nRanks+p2plist->connect.nsend[channelId]++] = peer;
+          comm->connectSend[peer] |= (1<<channelId);
+          comm->connect = 1;
         }
       }
     }
@@ -543,7 +544,8 @@ static ncclResult_t ncclSaveP2p(struct ncclInfo* info) {
       for (int c=0; c<comm->p2pnChannelsPerPeer; c++) {
         int channelId = (delta+comm->p2pChannels[c]) % comm->p2pnChannels;
         if (comm->channels[channelId].peers[peer].recv.connected == 0) {
-          p2plist->connect.recv[channelId*comm->nRanks+p2plist->connect.nrecv[channelId]++] = peer;
+          comm->connectRecv[peer] |= (1<<channelId);
+          comm->connect = 1;
         }
       }
     }

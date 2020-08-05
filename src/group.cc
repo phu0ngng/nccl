@@ -34,7 +34,6 @@ struct ncclInitArgs {
 };
 struct ncclCollArgs {
   ncclComm_t comm;
-  int connect;
 };
 
 enum ncclAsyncFuncType {
@@ -133,13 +132,6 @@ void* ncclAsyncThreadPreconnect(void* args_) {
   struct ncclAsyncArgs* args = (struct ncclAsyncArgs*)args_;
   struct ncclComm* comm = args->coll.comm;
   CUDACHECKTHREAD(cudaSetDevice(comm->cudaDev));
-  for (int c=0; c<args->coll.comm->p2pnChannels; c++) {
-    struct ncclChannel* channel = comm->channels+c;
-    struct ncclP2PConnect* connect = &comm->p2plist.connect;
-    NCCLCHECKTHREAD(ncclTransportP2pConnect(comm, channel, connect->nrecv[c], connect->recv+c*comm->nRanks, connect->nsend[c], connect->send+c*comm->nRanks));
-    connect->nrecv[c] = 0;
-    connect->nsend[c] = 0;
-  }
   NCCLCHECKTHREAD(ncclTransportP2pSetup(comm, NULL));
   return args;
 }
@@ -197,29 +189,21 @@ ncclResult_t ncclGroupEnd() {
 
   for (int i=0; i<ncclGroupIndex; i++) {
     struct ncclAsyncArgs* args = ncclGroupArgs+i;
-    if (args->funcType == ASYNC_FUNC_COLL) {
-      struct ncclP2Plist* p2plist = &args->coll.comm->p2plist;
-      if (p2plist->count != 0) {
-        struct ncclComm* comm = args->coll.comm;
-        args->coll.connect = 0;
-        for (int c=0; c<comm->p2pnChannels; c++)
-          args->coll.connect += comm->p2plist.connect.nsend[c] + comm->p2plist.connect.nrecv[c];
-        if (args->coll.connect) {
-          pthread_create(ncclGroupThreads+i, NULL, ncclAsyncThreadPreconnect, args);
-        }
-      }
+    if (args->funcType == ASYNC_FUNC_COLL && args->coll.comm->connect) {
+      pthread_create(ncclGroupThreads+i, NULL, ncclAsyncThreadPreconnect, args);
     }
   }
 
   for (int i=0; i<ncclGroupIndex; i++) {
     struct ncclAsyncArgs* args = ncclGroupArgs+i;
-    if (args->funcType == ASYNC_FUNC_COLL && (args->coll.connect)) {
+    if (args->funcType == ASYNC_FUNC_COLL && args->coll.comm->connect) {
       int err = pthread_join(ncclGroupThreads[i], NULL);
       if (err != 0) {
         WARN("Error waiting for pthread_join : %s\n", strerror(errno));
         return ncclSystemError;
       }
       NCCLCHECKGOTO(args->ret, ret, end);
+      args->coll.comm->connect = 0;
     }
   }
 
