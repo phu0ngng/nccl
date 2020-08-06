@@ -213,57 +213,74 @@ ncclResult_t ncclGroupEnd() {
       struct ncclComm* comm = args->coll.comm;
       int rank = comm->rank;
       int nRanks = comm->nRanks;
-      struct ncclP2Plist* p2plist = &args->coll.comm->p2plist;
-      if (p2plist->count) {
-	// schedule delta 0, +1, -1, +2, -2, ...
-	// also make sure we don't do 0 twice, nor +n/2 and -n/2 if n is even.
+      struct ncclP2Plist* p2pSends = comm->p2pSends;
+      struct ncclP2Plist* p2pRecvs = comm->p2pRecvs;
+      while (comm->p2pCount) {
+        // schedule delta 0, +1, -1, +2, -2, ...
+        // also make sure we don't do 0 twice, nor +n/2 and -n/2 if n is even.
         for (int d=0; d<=nRanks/4; d++) {
           int deltas[4] = { d, (nRanks-d)%nRanks, nRanks/2-d, nRanks-(nRanks/2-d) };
-	  int index = 0;
+          int index = 0;
           int delta = deltas[index];
 sched_delta:
-	  uint32_t from = (rank+nRanks-delta)%nRanks;
-	  uint32_t to = (rank+delta)%nRanks;
+          uint32_t from = (rank+nRanks-delta)%nRanks;
+          uint32_t to = (rank+delta)%nRanks;
 
-	  // Compute how much to split operations
-	  // Natural step size matching buffer steps.
-	  ssize_t stepSize = comm->buffSizes[NCCL_PROTO_SIMPLE] / NCCL_STEPS;
-	  // Try to use all channels
-	  int nChannelsMax = comm->p2pnChannelsPerPeer;
-	  int nChannelsMin = nChannelsMax;
-	  while (nChannelsMin*comm->nRanks > comm->p2pnChannels && nChannelsMin > 1) nChannelsMin /= 2;
+          // Compute how much to split operations
+          // Natural step size matching buffer steps.
+          ssize_t stepSize = comm->buffSizes[NCCL_PROTO_SIMPLE] / NCCL_STEPS;
+          // Try to use all channels
+          int nChannelsMax = comm->p2pnChannelsPerPeer;
+          int nChannelsMin = nChannelsMax;
+          while (nChannelsMin*comm->nRanks > comm->p2pnChannels && nChannelsMin > 1) nChannelsMin /= 2;
 
-	  ssize_t recvChunkSize = getP2pNchannels(p2plist->peerlist[from].recvbytes, nChannelsMin, nChannelsMax, stepSize, 4*stepSize);
-	  ssize_t sendChunkSize = getP2pNchannels(p2plist->peerlist[to].sendbytes, nChannelsMin, nChannelsMax, stepSize, 4*stepSize);
+          struct ncclP2Pinfo* recv = p2pRecvs[from].head;
+          struct ncclP2Pinfo* send = p2pSends[to].head;
+          if (recv != NULL || send != NULL) {
+            ssize_t totRecvBytes = 0, totSendBytes = 0;
+            if (recv != NULL) totRecvBytes = recv->nbytes;
+            if (send != NULL) totSendBytes = send->nbytes;
+            ssize_t recvChunkSize = getP2pNchannels(totRecvBytes, nChannelsMin, nChannelsMax, stepSize, 4*stepSize);
+            ssize_t sendChunkSize = getP2pNchannels(totSendBytes, nChannelsMin, nChannelsMax, stepSize, 4*stepSize);
 
-	  ssize_t sendOffset = 0;
-	  ssize_t recvOffset = 0;
-	  int remaining = 1;
-	  int chunk = 0;
-	  while (remaining) {
-	    int channelId = (delta+comm->p2pChannels[chunk%comm->p2pnChannelsPerPeer]) % comm->p2pnChannels;
-	    //printf("Delta %d/Chunk %d -> %d\n", delta, chunk, channelId);
-	    remaining = 0;
-	    ssize_t recvbytes = p2plist->peerlist[from].recvbytes-recvOffset;
-	    ssize_t sendbytes = p2plist->peerlist[to].sendbytes-sendOffset;
-	    if (recvbytes > recvChunkSize) { remaining = 1; recvbytes = recvChunkSize; } else p2plist->peerlist[from].recvbytes = -1;
-	    if (sendbytes > sendChunkSize) { remaining = 1; sendbytes = sendChunkSize; } else p2plist->peerlist[to].sendbytes = -1;
-	    if (sendbytes >= 0 || recvbytes >= 0) {
-	      NCCLCHECKGOTO(scheduleSendRecv(comm, delta, channelId,
-	            recvbytes, ((char*)(p2plist->peerlist[from].recvbuff)) + recvOffset,
-	            sendbytes, ((const char*)(p2plist->peerlist[to].sendbuff)) + sendOffset), ret, end);
-	    }
-	    recvOffset += recvChunkSize;
-	    sendOffset += sendChunkSize;
-	    chunk++;
-	  }
-	  while (deltas[index] == delta && index < 4) index++;
-	  if (index < 4) {
-	    delta = deltas[index];
-	    goto sched_delta;
-	  }
+            ssize_t sendOffset = 0;
+            ssize_t recvOffset = 0;
+            int sendRemaining = 1, recvRemaining = 1;
+            int chunk = 0;
+            do {
+              int channelId = (delta+comm->p2pChannels[chunk%comm->p2pnChannelsPerPeer]) % comm->p2pnChannels;
+              ssize_t recvbytes = totRecvBytes-recvOffset;
+              ssize_t sendbytes = totSendBytes-sendOffset;
+              if (recvbytes > recvChunkSize) { recvbytes = recvChunkSize; } else { recvRemaining = 0; }
+              if (sendbytes > sendChunkSize) { sendbytes = sendChunkSize; } else { sendRemaining = 0; }
+              if (sendbytes >= 0 || recvbytes >= 0) {
+                NCCLCHECKGOTO(scheduleSendRecv(comm, delta, channelId,
+                      recvbytes, ((char*)(recv->buff)) + recvOffset,
+                      sendbytes, ((const char*)(send->buff)) + sendOffset), ret, end);
+              }
+              recvOffset += recvChunkSize;
+              sendOffset += sendChunkSize;
+              chunk++;
+            } while (sendRemaining || recvRemaining);
+            if (recv) {
+              NCCLCHECKGOTO(dequeueP2pInfo(p2pRecvs+from), ret, end);
+              comm->p2pCount--;
+            }
+            if (send) {
+              NCCLCHECKGOTO(dequeueP2pInfo(p2pSends+to), ret, end);
+              comm->p2pCount--;
+            }
+          }
+          index++;
+          if (index == 1 && deltas[1] == deltas[0]) index++;
+          if (index == 2 && deltas[2] == deltas[0]) index++;
+          if (index == 3 && deltas[3] == deltas[2]) index++;
+          if (index == 3 && deltas[3] == deltas[1]) index++;
+          if (index < 4) {
+            delta = deltas[index];
+            goto sched_delta;
+          }
         }
-        p2plist->count = 0;
       }
     }
   }

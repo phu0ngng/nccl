@@ -517,13 +517,11 @@ static ncclResult_t ncclSaveAsyncColl(struct ncclInfo* info) {
   return ncclSuccess;
 }
 
-// Save p2p operations in comm->p2plist. Operations will be posted to channels
+// Save p2p operations in comm->p2pSends and p2pRecvs. Operations will be posted to channels
 // during ncclGroupEnd()
 static ncclResult_t ncclSaveP2p(struct ncclInfo* info) {
   struct ncclComm* comm = info->comm;
-  struct ncclP2Plist* p2plist = &comm->p2plist;
   int peer = info->root;
-  p2plist->count++;
   ssize_t nBytes = info->count*ncclTypeSize(info->datatype);
   if (info->recvbuff == NULL) {
     if (peer != comm->rank) {
@@ -536,8 +534,7 @@ static ncclResult_t ncclSaveP2p(struct ncclInfo* info) {
         }
       }
     }
-    p2plist->peerlist[info->root].sendbytes = nBytes;
-    p2plist->peerlist[info->root].sendbuff = info->sendbuff;
+    NCCLCHECK(enqueueP2pInfo(comm->p2pSends+info->root, (void*)info->sendbuff, nBytes));
   } else {
     if (peer != comm->rank) {
       int delta = (comm->nRanks + (comm->rank-peer)) % comm->nRanks;
@@ -549,9 +546,9 @@ static ncclResult_t ncclSaveP2p(struct ncclInfo* info) {
         }
       }
     }
-    p2plist->peerlist[info->root].recvbytes = nBytes;
-    p2plist->peerlist[info->root].recvbuff = info->recvbuff;
+    NCCLCHECK(enqueueP2pInfo(comm->p2pRecvs+info->root, info->recvbuff, nBytes));
   }
+  comm->p2pCount++;
   return ncclSuccess;
 }
 
@@ -562,6 +559,7 @@ static int getSegment(struct ncclInfo* info, struct ncclColl* coll) {
   for (s=0; s<NCCL_MAX_SEGMENTS && coll->args.p2p.nThreadsPerOp[s]; s++) {
     maxSize = std::max(coll->args.p2p.sendCount[s], maxSize);
     maxSize = std::max(coll->args.p2p.recvCount[s], maxSize);
+    if (coll->args.p2p.delta[s] == info->delta) return -1;
   }
   int maxSegments = NCCL_MAX_SEGMENTS;
   int stepSize = info->comm->buffSizes[NCCL_PROTO_SIMPLE]/NCCL_STEPS;

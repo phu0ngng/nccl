@@ -160,7 +160,8 @@ static ncclResult_t commFree(ncclComm_t comm) {
     return ncclSuccess;
   free(comm->connectSend);
   free(comm->connectRecv);
-  free(comm->p2plist.peerlist);
+  free(comm->p2pSends);
+  free(comm->p2pRecvs);
 
   free(comm->peerInfo);
   ncclTopoFree(comm->topo);
@@ -250,9 +251,9 @@ static ncclResult_t commAlloc(ncclComm_t* comret, int ndev, int rank) {
   NCCLCHECK(ncclCalloc(&comm->connectSend, comm->nRanks));
   NCCLCHECK(ncclCalloc(&comm->connectRecv, comm->nRanks));
 
-  comm->p2plist.count=0;
-  NCCLCHECK(ncclCalloc(&comm->p2plist.peerlist, comm->nRanks));
-  for (int r=0; r<comm->nRanks; r++) comm->p2plist.peerlist[r].sendbytes = comm->p2plist.peerlist[r].recvbytes = -1;
+  comm->p2pCount=0;
+  NCCLCHECK(ncclCalloc(&comm->p2pSends, comm->nRanks));
+  NCCLCHECK(ncclCalloc(&comm->p2pRecvs, comm->nRanks));
 
   // Mark channels as non initialized.
   for (int c=0; c<MAXCHANNELS; c++) comm->channels[c].id = -1;
