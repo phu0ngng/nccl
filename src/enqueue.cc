@@ -523,7 +523,7 @@ static ncclResult_t ncclSaveP2p(struct ncclInfo* info) {
   struct ncclComm* comm = info->comm;
   int peer = info->root;
   ssize_t nBytes = info->count*ncclTypeSize(info->datatype);
-  if (info->recvbuff == NULL) {
+  if (info->opName[0] == 'S') { // Send
     if (peer != comm->rank) {
       int delta = (comm->nRanks - (comm->rank-peer)) % comm->nRanks;
       for (int c=0; c<comm->p2pnChannelsPerPeer; c++) {
