@@ -215,6 +215,15 @@ ncclResult_t ncclGroupEnd() {
       int nRanks = comm->nRanks;
       struct ncclP2Plist* p2pSends = comm->p2pSends;
       struct ncclP2Plist* p2pRecvs = comm->p2pRecvs;
+
+      // Compute how much to split operations
+      // Natural step size matching buffer steps.
+      ssize_t stepSize = comm->buffSizes[NCCL_PROTO_SIMPLE] / NCCL_STEPS;
+      // Try to use all channels
+      int nChannelsMax = comm->p2pnChannelsPerPeer;
+      int nChannelsMin = nChannelsMax;
+      while (nChannelsMin*comm->nRanks > comm->p2pnChannels && nChannelsMin > 1) nChannelsMin /= 2;
+
       while (comm->p2pCount) {
         // schedule delta 0, +1, -1, +2, -2, ...
         // also make sure we don't do 0 twice, nor +n/2 and -n/2 if n is even.
@@ -225,15 +234,6 @@ ncclResult_t ncclGroupEnd() {
 sched_delta:
           uint32_t from = (rank+nRanks-delta)%nRanks;
           uint32_t to = (rank+delta)%nRanks;
-
-          // Compute how much to split operations
-          // Natural step size matching buffer steps.
-          ssize_t stepSize = comm->buffSizes[NCCL_PROTO_SIMPLE] / NCCL_STEPS;
-          // Try to use all channels
-          int nChannelsMax = comm->p2pnChannelsPerPeer;
-          int nChannelsMin = nChannelsMax;
-          while (nChannelsMin*comm->nRanks > comm->p2pnChannels && nChannelsMin > 1) nChannelsMin /= 2;
-
           struct ncclP2Pinfo* recv = p2pRecvs[from].head;
           struct ncclP2Pinfo* send = p2pSends[to].head;
           if (recv != NULL || send != NULL) {
