@@ -119,7 +119,7 @@ ncclResult_t setupLaunch(struct ncclComm* comm, struct cudaLaunchParams* params)
     if (channel->collCount == 0) {
       struct ncclColl* c;
       NCCLCHECK(getNextOp(channel, &c, NULL));
-      c->funcIndex = FUNC_INDEX_P2P;
+      c->args.comm = comm->devComm;
     }
     channel->collectives[(channel->collStart+channel->collCount-1)%NCCL_MAX_OPS].active = 2;
   }
