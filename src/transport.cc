@@ -52,40 +52,39 @@ ncclResult_t ncclTransportP2pConnect(struct ncclComm* comm, struct ncclChannel* 
 }
 
 ncclResult_t ncclTransportP2pSetup(struct ncclComm* comm, struct ncclTopoGraph* graph) {
-  struct ncclConnect* connectDataSend, *connectDataRecv;
-  NCCLCHECK(ncclCalloc(&connectDataSend, MAXCHANNELS));
-  NCCLCHECK(ncclCalloc(&connectDataRecv, MAXCHANNELS));
+  struct ncclConnect locDataSend[MAXCHANNELS];
+  struct ncclConnect locDataRecv[MAXCHANNELS];
+  struct ncclConnect remDataSend[MAXCHANNELS];
+  struct ncclConnect remDataRecv[MAXCHANNELS];
   for (int i=1; i<comm->nRanks; i++) {
     int recvPeer = (comm->rank - i + comm->nRanks) % comm->nRanks;
     int sendPeer = (comm->rank + i) % comm->nRanks;
     uint32_t recvMask = comm->connectRecv[recvPeer];
     uint32_t sendMask = comm->connectSend[sendPeer];
-    int recvStartC = MAXCHANNELS, recvEndC = 0;
+    int sendChannels = 0, recvChannels = 0;
     for (int c=0; c<MAXCHANNELS; c++) {
       if (recvMask & (1<<c)) {
         struct ncclConnector* conn = &comm->channels[c].peers[recvPeer].recv;
-        recvStartC = std::min(recvStartC, c);
-        recvEndC = std::max(recvEndC, c+1);
-        NCCLCHECK(selectTransport<0>(comm, graph, comm->peerInfo+comm->rank, comm->peerInfo+recvPeer, connectDataRecv+c, conn, c));
+        NCCLCHECK(selectTransport<0>(comm, graph, comm->peerInfo+comm->rank, comm->peerInfo+recvPeer, locDataRecv+recvChannels++, conn, c));
       }
     }
-    int sendStartC = MAXCHANNELS, sendEndC = 0;
     for (int c=0; c<MAXCHANNELS; c++) {
       if (sendMask & (1<<c)) {
         struct ncclConnector* conn = &comm->channels[c].peers[sendPeer].send;
-        sendStartC = std::min(sendStartC, c);
-        sendEndC = std::max(sendEndC, c+1);
-        NCCLCHECK(selectTransport<1>(comm, graph, comm->peerInfo+comm->rank, comm->peerInfo+sendPeer, connectDataSend+c, conn, c));
+        NCCLCHECK(selectTransport<1>(comm, graph, comm->peerInfo+comm->rank, comm->peerInfo+sendPeer, locDataSend+sendChannels++, conn, c));
       }
     }
-    if (recvEndC) NCCLCHECK(bootstrapSend(comm->bootstrap, recvPeer, connectDataRecv+recvStartC, sizeof(struct ncclConnect)*(recvEndC-recvStartC)));
-    if (sendEndC) NCCLCHECK(bootstrapSend(comm->bootstrap, sendPeer, connectDataSend+sendStartC, sizeof(struct ncclConnect)*(sendEndC-sendStartC)));
-    if (sendEndC) NCCLCHECK(bootstrapRecv(comm->bootstrap, sendPeer, connectDataSend+sendStartC, sizeof(struct ncclConnect)*(sendEndC-sendStartC)));
-    if (recvEndC) NCCLCHECK(bootstrapRecv(comm->bootstrap, recvPeer, connectDataRecv+recvStartC, sizeof(struct ncclConnect)*(recvEndC-recvStartC)));
+
+    if (recvChannels) NCCLCHECK(bootstrapSend(comm->bootstrap, recvPeer, locDataRecv, sizeof(struct ncclConnect)*recvChannels));
+    if (sendChannels) NCCLCHECK(bootstrapSend(comm->bootstrap, sendPeer, locDataSend, sizeof(struct ncclConnect)*sendChannels));
+    if (sendChannels) NCCLCHECK(bootstrapRecv(comm->bootstrap, sendPeer, remDataSend, sizeof(struct ncclConnect)*sendChannels));
+    if (recvChannels) NCCLCHECK(bootstrapRecv(comm->bootstrap, recvPeer, remDataRecv, sizeof(struct ncclConnect)*recvChannels));
+
+    sendChannels = recvChannels = 0;
     for (int c=0; c<MAXCHANNELS; c++) {
       if (sendMask & (1<<c)) {
         struct ncclConnector* conn = &comm->channels[c].peers[sendPeer].send;
-        NCCLCHECK(conn->transportComm->connect(comm, connectDataSend+c, 1, comm->rank, conn));
+        NCCLCHECK(conn->transportComm->connect(comm, remDataSend+sendChannels++, 1, comm->rank, conn));
         conn->connected = 1;
         CUDACHECK(cudaMemcpy(&comm->channels[c].devPeers[sendPeer].send, conn, sizeof(struct ncclConnector), cudaMemcpyHostToDevice));
       }
@@ -93,7 +92,7 @@ ncclResult_t ncclTransportP2pSetup(struct ncclComm* comm, struct ncclTopoGraph* 
     for (int c=0; c<MAXCHANNELS; c++) {
       if (recvMask & (1<<c)) {
         struct ncclConnector* conn = &comm->channels[c].peers[recvPeer].recv;
-        NCCLCHECK(conn->transportComm->connect(comm, connectDataRecv+c, 1, comm->rank, conn));
+        NCCLCHECK(conn->transportComm->connect(comm, remDataRecv+recvChannels++, 1, comm->rank, conn));
         conn->connected = 1;
         CUDACHECK(cudaMemcpy(&comm->channels[c].devPeers[recvPeer].recv, conn, sizeof(struct ncclConnector), cudaMemcpyHostToDevice));
       }
