@@ -483,8 +483,10 @@ ncclResult_t ncclSaveKernel(struct ncclInfo* info) {
 #define NCCL_AGG_CHANNEL_SIZE (1LL << 21) /* 2 MiB, ideal per-channel size to fully utilize bandwidth */
 
 ncclResult_t ncclSaveCommKernels(ncclComm_t comm) {
-  // No aggregation
-  if (comm->asyncOpCount == 1) {
+  if (comm->asyncOpCount == 0) {
+    return ncclSuccess;
+  } else if (comm->asyncOpCount == 1) {
+    // No aggregation
     struct ncclInfo* info = comm->asyncOps;
     info->nChannels = 0;
     NCCLCHECK(ncclSaveKernel(info));
