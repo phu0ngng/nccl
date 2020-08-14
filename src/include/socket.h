@@ -365,6 +365,10 @@ static ncclResult_t createListenSocket(int *fd, union socketAddress *localAddr) 
 static ncclResult_t connectAddress(int* fd, union socketAddress* remoteAddr) {
   /* IPv4/IPv6 support */
   int family = remoteAddr->sa.sa_family;
+  if (family != AF_INET && family != AF_INET6) {
+    WARN("Error : connecting to address with family %d is neither AF_INET(%d) nor AF_INET6(%d)\n", family, AF_INET, AF_INET6);
+    return ncclInternalError;
+  }
   int salen = (family == AF_INET) ? sizeof(sockaddr_in) : sizeof(sockaddr_in6);
 
   /* Connect to a hostname / port */
@@ -423,6 +427,7 @@ static ncclResult_t socketProgressOpt(int op, int fd, void* ptr, int size, int* 
       }
     }
     (*offset) += bytes;
+    if (((*offset) > 0) && ((*offset) < size)) printf("Socket %s : %d/%d\n", op == NCCL_SOCKET_RECV ? "Recv" : "Send", *offset, size);
   } while (bytes > 0 && (*offset) < size);
   return ncclSuccess;
 }
