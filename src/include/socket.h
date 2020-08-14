@@ -427,7 +427,6 @@ static ncclResult_t socketProgressOpt(int op, int fd, void* ptr, int size, int* 
       }
     }
     (*offset) += bytes;
-    if (((*offset) > 0) && ((*offset) < size)) printf("Socket %s : %d/%d\n", op == NCCL_SOCKET_RECV ? "Recv" : "Send", *offset, size);
   } while (bytes > 0 && (*offset) < size);
   return ncclSuccess;
 }
