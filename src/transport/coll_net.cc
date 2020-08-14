@@ -249,13 +249,12 @@ ncclResult_t collNetSendProxy(struct ncclProxyArgs* args) {
     args->state = ncclProxyOpProgress;
   }
   args->idle = 1;
-  while (args->state == ncclProxyOpProgress && args->idle == 0) {
+  if (args->state == ncclProxyOpProgress) {
     int p = args->protocol;
     int stepSize = args->connector->comm->buffSizes[p] / NCCL_STEPS;
     char* localBuff = args->connector->conn.buffs[p];
     void* sendMhandle = resources->sendMhandles[p];
     void* recvMhandle = resources->recvMhandles[p];
-    args->idle = 1;
     struct reqSlot* reqFifo = resources->reqFifo;
     int buffSlot = args->transmitted%NCCL_STEPS;
     if (args->transmitted < args->end && args->transmitted < args->done + NCCL_STEPS
@@ -298,6 +297,7 @@ ncclResult_t collNetSendProxy(struct ncclProxyArgs* args) {
             __sync_synchronize();
             args->transmitted += args->sliceSteps;
             args->idle = 0;
+            return ncclSuccess;
           }
         }
       }
@@ -317,12 +317,12 @@ ncclResult_t collNetSendProxy(struct ncclProxyArgs* args) {
         args->done += args->sliceSteps;
         resources->sendMem->head = args->done;
         args->idle = 0;
+        if (args->done == args->end) {
+          resources->step = args->end;
+          args->state = ncclProxyOpNone;
+        }
+        return ncclSuccess;
       }
-    }
-    if (args->done == args->end) {
-      resources->step = args->end;
-      args->idle = 0;
-      args->state = ncclProxyOpNone;
     }
   }
   return ncclSuccess;
@@ -338,12 +338,11 @@ ncclResult_t collNetRecvProxy(struct ncclProxyArgs* args) {
     args->state = ncclProxyOpProgress;
   }
   args->idle = 1;
-  while (args->state == ncclProxyOpProgress && args->idle == 0) {
+  if (args->state == ncclProxyOpProgress) {
     int p = args->protocol;
     int stepSize = args->connector->comm->buffSizes[p] / NCCL_STEPS;
     char* localBuff = args->connector->conn.buffs[p];
     void* mhandle = resources->mhandles[p];
-    args->idle = 1;
     struct reqSlot* reqFifo = resources->reqFifo;
     if ((args->posted < args->done + NCCL_STEPS) && (args->posted < args->end)) {
       int buffSlot = args->posted%NCCL_STEPS;
@@ -353,6 +352,7 @@ ncclResult_t collNetRecvProxy(struct ncclProxyArgs* args) {
       TRACE(NCCL_NET, "recvProxy [%d/%d] posted buffer %p", args->posted, buffSlot, reqFifo[buffSlot].recvBuff);
       args->posted += args->sliceSteps;
       args->idle = 0;
+      return ncclSuccess;
     }
     if (args->posted > args->transmitted) {
       int buffSlot = args->transmitted%NCCL_STEPS;
@@ -379,20 +379,21 @@ ncclResult_t collNetRecvProxy(struct ncclProxyArgs* args) {
           resources->recvMem->tail = args->transmitted;
         }
         args->idle = 0;
+        return ncclSuccess;
       }
     }
     if (args->transmitted > args->done) {
       volatile uint64_t* sendHead = &resources->sendMem->head;
-      int done = *sendHead;
+      uint64_t done = *sendHead;
       if (done > args->done) {
         args->done = done;
         args->idle = 0;
+        if (args->done == args->end) {
+          resources->step = args->end;
+          args->state = ncclProxyOpNone;
+        }
+        return ncclSuccess;
       }
-    }
-    if (args->done == args->end) {
-      resources->step = args->end;
-      args->idle = 0;
-      args->state = ncclProxyOpNone;
     }
   }
   return ncclSuccess;
