@@ -72,6 +72,8 @@ static const float hwLat [3][NCCL_NUM_ALGORITHMS][NCCL_NUM_PROTOCOLS] =
 // LL128 max BW (per channel) for the different collectives
 // ncclFuncBroadcast, ncclFuncReduce, ncclFuncAllGather, ncclFuncReduceScatter, ncclFuncAllReduce
 static const double ll128MaxBwPerCh[NCCL_NUM_FUNCTIONS] = { 18.8, 12.0, 18.3, 15.2, 16.7 };
+static const double llMaxBws[2][3]        = { /* Volta (N1/N2/N4) */ {39.0, 39.0, 20.4}, /* Ampere (N1/N2/N4) */ {87.7, 14.8, 10.3} };
+static const double perChMaxTreeBws[2][3] = { /* Volta (N1/N2/N4) */ {17.5, 18.5, 10.0}, /* Ampere (N1/N2/N4) */ {24.0, 22.5, 16.0} };
 
 ncclResult_t ncclTopoTuneModel(struct ncclComm* comm, int minCompCap, int maxCompCap, struct ncclTopoGraph* treeGraph, struct ncclTopoGraph* ringGraph, struct ncclTopoGraph* collNetGraph) {
   int simpleDefaultThreads = (ringGraph->speedIntra*ringGraph->nChannels <= PCI_WIDTH) ? 256 : NCCL_SIMPLE_MAX_NTHREADS;
@@ -87,6 +89,10 @@ ncclResult_t ncclTopoTuneModel(struct ncclComm* comm, int minCompCap, int maxCom
   if (comm->nRanks <= 1) return ncclSuccess;
 
   int compCap80 = minCompCap == 80 && maxCompCap == 80 ? 1 : 0;
+  int index = comm->nNodes-1;
+  if (index > 2) index = 2;
+  double llMaxBw =  llMaxBws[compCap80][index];
+  double perChMaxTreeBw = perChMaxTreeBws[compCap80][index];
   float ppn = (float)comm->nRanks / comm->nNodes; // if ppn < 2, then we are sending/receiving at the same GPU through the NIC, apply some bw discount
   struct ncclTopoGraph* graphs[NCCL_NUM_ALGORITHMS] = { treeGraph, ringGraph, collNetGraph };
   int intraHw[NCCL_NUM_ALGORITHMS], hw[NCCL_NUM_ALGORITHMS];
@@ -110,13 +116,10 @@ ncclResult_t ncclTopoTuneModel(struct ncclComm* comm, int minCompCap, int maxCom
 
         // Various model refinements
         if (compCap80) busBw = std::min(busBw, 235.0f);
-        if (a == NCCL_ALGO_RING && p == NCCL_PROTO_LL)    busBw *= (comm->nNodes > 1 || coll == ncclFuncAllReduce || coll == ncclFuncReduce) ? 1.0/4.0 : 1.0/3.0;
+        if (a == NCCL_ALGO_RING && p == NCCL_PROTO_LL) { busBw = std::min(llMaxBw, busBw * ((comm->nNodes > 1 || coll == ncclFuncAllReduce || coll == ncclFuncReduce) ? 1.0/4.0 : 1.0/3.0)); }
         if (a == NCCL_ALGO_RING && p == NCCL_PROTO_LL128) busBw = std::min(busBw * (ppn < 2 ? 0.7 : 0.92 /*120.0/128.0*/), ll128MaxBwPerCh[coll]*graphs[a]->nChannels);
-        double perChMaxTreeBw = comm->nNodes > 2 ?
-          compCap80 && p == NCCL_PROTO_LL128 ? 13.125 : 10.0 :
-          compCap80 && p == NCCL_PROTO_LL128 ? 16.25  : 13.75;
         if (a == NCCL_ALGO_TREE) busBw = std::min(busBw*.9, graphs[a]->nChannels*perChMaxTreeBw);
-        if (a == NCCL_ALGO_TREE && p == NCCL_PROTO_LL) busBw *= 1.0/3.8;
+        if (a == NCCL_ALGO_TREE && p == NCCL_PROTO_LL) busBw = std::min(busBw*1.0/3.8, llMaxBw);
         if (a == NCCL_ALGO_TREE && p == NCCL_PROTO_LL128) busBw = std::min(busBw * (comm->nNodes == 1 ? 7.0/9.0 : 0.915 /*120.0/128.0*/), ll128MaxBwPerCh[coll]*graphs[a]->nChannels*7.0/9.0);
         if (a == NCCL_ALGO_COLLNET) busBw *= .9;
         if (a == NCCL_ALGO_COLLNET && p == NCCL_PROTO_LL) busBw *= 1.0/6.0; // Take into account that GDR read is disabled on both sides
