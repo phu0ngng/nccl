@@ -763,7 +763,7 @@ ncclResult_t ncclIbIrecv(void* recvComm, void* data, int size, void* mhandle, vo
   return ncclSuccess;
 }
 
-ncclResult_t ncclIbFlush(void* recvComm, void* data, int size, void* mhandle) {
+ncclResult_t ncclIbIflush(void* recvComm, void* data, int size, void* mhandle, void** request) {
   struct ncclIbRecvComm* comm = (struct ncclIbRecvComm*)recvComm;
   if (comm->gpuFlush.enabled == 0 || size == 0) return ncclSuccess;
 
@@ -786,11 +786,7 @@ ncclResult_t ncclIbFlush(void* recvComm, void* data, int size, void* mhandle) {
   struct ibv_send_wr* bad_wr;
   NCCLCHECK(wrap_ibv_post_send(comm->gpuFlush.qp, &wr, &bad_wr));
 
-  int done = 0;
-  while (done == 0) {
-    NCCLCHECK((ncclResult_t)ncclIbTest(req, &done, NULL));
-  }
-
+  *request = req;
   return ncclSuccess;
 }
 
@@ -886,7 +882,7 @@ ncclNet_t ncclNetIb = {
   ncclIbDeregMr,
   ncclIbIsend,
   ncclIbIrecv,
-  ncclIbFlush,
+  ncclIbIflush,
   ncclIbTest,
   ncclIbCloseSend,
   ncclIbCloseRecv,
