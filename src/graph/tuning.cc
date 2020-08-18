@@ -72,7 +72,7 @@ static const float hwLat [3][NCCL_NUM_ALGORITHMS][NCCL_NUM_PROTOCOLS] =
 // LL128 max BW (per channel) for the different collectives
 // ncclFuncBroadcast, ncclFuncReduce, ncclFuncAllGather, ncclFuncReduceScatter, ncclFuncAllReduce
 static const double ll128MaxBwPerCh[NCCL_NUM_FUNCTIONS] = { 18.8, 12.0, 18.3, 15.2, 16.7 };
-static const double llMaxBws[2][3]        = { /* Volta (N1/N2/N4) */ {39.0, 39.0, 20.4}, /* Ampere (N1/N2/N4) */ {87.7, 14.8, 10.3} };
+static const double llMaxBws[2][3] = { /* Volta-N1/Intel-N2/Intel-N4) */ {39.0, 39.0, 20.4}, /* Ampere-N1/AMD-N2/AMD-N4) */ {87.7, 14.8, 10.3} };
 static const double perChMaxTreeBws[2][3] = { /* Volta (N1/N2/N4) */ {17.5, 18.5, 10.0}, /* Ampere (N1/N2/N4) */ {24.0, 22.5, 16.0} };
 
 ncclResult_t ncclTopoTuneModel(struct ncclComm* comm, int minCompCap, int maxCompCap, struct ncclTopoGraph* treeGraph, struct ncclTopoGraph* ringGraph, struct ncclTopoGraph* collNetGraph) {
@@ -89,11 +89,15 @@ ncclResult_t ncclTopoTuneModel(struct ncclComm* comm, int minCompCap, int maxCom
   if (comm->nRanks <= 1) return ncclSuccess;
 
   int compCap80 = minCompCap == 80 && maxCompCap == 80 ? 1 : 0;
-  int index = comm->nNodes-1;
-  if (index > 2) index = 2;
-  double llMaxBw =  llMaxBws[compCap80][index];
-  double perChMaxTreeBw = perChMaxTreeBws[compCap80][index];
+  int cpuArch, cpuVendor, cpuModel;
+  NCCLCHECK(ncclTopoCpuType(comm->topo, &cpuArch, &cpuVendor, &cpuModel));
+  int index2 = comm->nNodes <= 2 ? comm->nNodes-1 : 2;
+  // LL: for single node, we look at GPU type; for multi-node, we look at CPU type
+  int index1 = comm->nNodes == 1 ? compCap80 : cpuVendor == NCCL_TOPO_CPU_VENDOR_AMD ? 1 : 0;
+  double llMaxBw = llMaxBws[index1][index2];
+  double perChMaxTreeBw = perChMaxTreeBws[compCap80][index2];
   float ppn = (float)comm->nRanks / comm->nNodes; // if ppn < 2, then we are sending/receiving at the same GPU through the NIC, apply some bw discount
+
   struct ncclTopoGraph* graphs[NCCL_NUM_ALGORITHMS] = { treeGraph, ringGraph, collNetGraph };
   int intraHw[NCCL_NUM_ALGORITHMS], hw[NCCL_NUM_ALGORITHMS];
   for (int a=0; a<NCCL_NUM_ALGORITHMS; a++) intraHw[a] = graphs[a]->typeIntra == LINK_NVL ? NCCL_HW_NVLINK : NCCL_HW_PCI;
