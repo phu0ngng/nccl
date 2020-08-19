@@ -32,6 +32,7 @@ struct ncclProxyArgs {
 
   // Internal state
   uint64_t posted;
+  uint64_t received; // Only used by recv proxy to wait for flush.
   uint64_t transmitted;
   uint64_t done;
   uint64_t end;

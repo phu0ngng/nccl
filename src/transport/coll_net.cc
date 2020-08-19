@@ -333,7 +333,7 @@ ncclResult_t collNetRecvProxy(struct ncclProxyArgs* args) {
   if (args->state == ncclProxyOpReady) {
     // Round to next multiple of sliceSteps
     resources->step = ROUNDUP(resources->step, args->chunkSteps);
-    args->posted = args->transmitted = args->done = resources->step;
+    args->posted = args->received = args->transmitted = args->done = resources->step;
     args->end = resources->step + args->nsteps;
     args->state = ncclProxyOpProgress;
   }
@@ -354,16 +354,16 @@ ncclResult_t collNetRecvProxy(struct ncclProxyArgs* args) {
       args->idle = 0;
       return ncclSuccess;
     }
-    if (args->posted > args->transmitted) {
-      int buffSlot = args->transmitted%NCCL_STEPS;
+    if (args->posted > args->received) {
+      int buffSlot = args->received%NCCL_STEPS;
       if (reqFifo[buffSlot].recvBuff == NULL) { // Buffer is cleared : coll is complete
-        TRACE(NCCL_NET, "recvProxy [%d/%d] done, size %d", args->transmitted, buffSlot, reqFifo[buffSlot].size);
+        TRACE(NCCL_NET, "recvProxy [%d/%d] done, size %d", args->received, buffSlot, reqFifo[buffSlot].size);
         if (args->protocol == NCCL_PROTO_LL128) {
           WARN("CollNet does not support LL128");
           return ncclInternalError;
         } else if (args->protocol == NCCL_PROTO_LL) { // ll
           // re-attach flag
-          uint32_t flag = NCCL_LL_FLAG(args->transmitted + 1);
+          uint32_t flag = NCCL_LL_FLAG(args->received + 1);
           int stepLines = stepSize / sizeof(union ncclLLFifoLine);
           union ncclLLFifoLine* lines = (union ncclLLFifoLine*)(localBuff+buffSlot*stepSize);
           uint32_t* recvData = resources->llData+buffSlot*2*stepLines;
@@ -373,11 +373,29 @@ ncclResult_t collNetRecvProxy(struct ncclProxyArgs* args) {
             lines[i].v[1] = ((uint64_t)flag << 32) + recvData[2*i+1];
           }
         }
-        args->transmitted += args->sliceSteps;
-        if (args->protocol == NCCL_PROTO_SIMPLE) {
-          if (resources->useGdr) NCCLCHECK(collNetFlush(resources->collNetRecvComm, localBuff+buffSlot*stepSize, reqFifo[buffSlot].size, mhandle));
-          resources->recvMem->tail = args->transmitted;
+        args->received += args->sliceSteps;
+        if (args->protocol == NCCL_PROTO_SIMPLE && resources->useGdr) {
+          NCCLCHECK(collNetIflush(resources->collNetRecvComm, localBuff+buffSlot*stepSize, reqFifo[buffSlot].size, mhandle, args->requests+buffSlot));
+        } else {
+          args->transmitted += args->sliceSteps;
+          if (args->protocol == NCCL_PROTO_SIMPLE) {
+            __sync_synchronize();
+            resources->recvMem->tail = args->transmitted;
+          }
         }
+        args->idle = 0;
+        return ncclSuccess;
+      }
+    }
+    if (args->received > args->transmitted) {
+      // Progress flush operations
+      int buffSlot = args->transmitted%NCCL_STEPS;
+      int done;
+      NCCLCHECK(collNetTest(args->requests[buffSlot], &done, NULL));
+      if (done) {
+        args->transmitted += args->sliceSteps;
+        __sync_synchronize();
+        resources->recvMem->tail = args->transmitted;
         args->idle = 0;
         return ncclSuccess;
       }

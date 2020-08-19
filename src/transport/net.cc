@@ -360,7 +360,7 @@ ncclResult_t netRecvProxy(struct ncclProxyArgs* args) {
   if (args->state == ncclProxyOpReady) {
     // Round to next multiple of sliceSteps
     resources->step = ROUNDUP(resources->step, args->chunkSteps);
-    args->posted = args->transmitted = args->done = resources->step;
+    args->posted = args->received = args->transmitted = args->done = resources->step;
     args->end = resources->step + args->nsteps;
     args->state = ncclProxyOpProgress;
   }
@@ -393,19 +393,37 @@ ncclResult_t netRecvProxy(struct ncclProxyArgs* args) {
         NCCLCHECK(ncclProxySharedBuffersFree(args->connector->comm, resources->useGdr, 1, args->channel->id, buffSize, ptr));
       }
     }
-    if (args->posted > args->transmitted) {
-      int buffSlot = args->transmitted%NCCL_STEPS;
+    if (args->posted > args->received) {
+      int buffSlot = args->received%NCCL_STEPS;
       int done, size;
       NCCLCHECK(ncclNetTest(args->requests[buffSlot], &done, &size));
       if (done) {
-        args->transmitted += args->sliceSteps;
-        if (args->protocol == NCCL_PROTO_SIMPLE) {
+        args->received += args->sliceSteps;
+        if (args->protocol == NCCL_PROTO_SIMPLE && resources->useGdr) {
+          // Don't pass data to the GPU yet, flush first.
           volatile void** ptrsFifo = (volatile void**)resources->recvMem->ptrsFifo;
           char* ptr = resources->shared ? (char*)(ptrsFifo[buffSlot]) : localBuff+buffSlot*stepSize;
-          if (resources->useGdr) NCCLCHECK(ncclNetFlush(resources->netRecvComm, ptr, size, mhandle));
-          __sync_synchronize();
-          resources->recvMem->tail = args->transmitted;
+          NCCLCHECK(ncclNetIflush(resources->netRecvComm, ptr, size, mhandle, args->requests+buffSlot));
+        } else {
+          args->transmitted += args->sliceSteps;
+          if (args->protocol == NCCL_PROTO_SIMPLE) {
+            __sync_synchronize();
+            resources->recvMem->tail = args->transmitted;
+          }
         }
+        args->idle = 0;
+        return ncclSuccess;
+      }
+    }
+    if (args->received > args->transmitted) {
+      // Progress flush operations
+      int buffSlot = args->transmitted%NCCL_STEPS;
+      int done;
+      NCCLCHECK(ncclNetTest(args->requests[buffSlot], &done, NULL));
+      if (done) {
+        args->transmitted += args->sliceSteps;
+        __sync_synchronize();
+        resources->recvMem->tail = args->transmitted;
         args->idle = 0;
         return ncclSuccess;
       }
