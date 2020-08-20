@@ -74,7 +74,12 @@ static ncclResult_t xmlGetAttr(struct ncclXmlNode* node, const char* attrName, c
 static ncclResult_t xmlGetAttrStr(struct ncclXmlNode* node, const char* attrName, const char** value) {
   NCCLCHECK(xmlGetAttr(node, attrName, value));
   if (*value == NULL) {
-    WARN("Attribute %s of node %s not found", attrName, node->name);
+    const char* busId;
+    if (strcmp(attrName, "busid") != 0 && xmlGetAttrStr(node, "busid", &busId) != ncclInternalError) {
+      WARN("Attribute %s of node %s/%s not found", attrName, node->name, busId);
+    } else {
+      WARN("Attribute %s of node %s not found", attrName, node->name);
+    }
     return ncclInternalError;
   }
   return ncclSuccess;
