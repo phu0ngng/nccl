@@ -468,7 +468,7 @@ ncclResult_t ncclSaveKernel(struct ncclInfo* info) {
       info->pattern = (channelId < info->comm->nChannels/nSubChannels) ? ncclPatternCollTreeUp : ncclPatternCollTreeDown;
     }
 
-    NCCLCHECK(ncclProxySaveColl(&proxyArgs, info->pattern, info->root, info->comm->nRanks));
+    if (proxyArgs.nsteps) NCCLCHECK(ncclProxySaveColl(&proxyArgs, info->pattern, info->root, info->comm->nRanks));
 
     info->comm->myParams->gridDim.x++;
     struct ncclColl* c;
