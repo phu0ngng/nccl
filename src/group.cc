@@ -255,8 +255,8 @@ sched_delta:
               if (sendbytes > sendChunkSize) { sendbytes = sendChunkSize; } else { sendRemaining = 0; }
               if (sendbytes >= 0 || recvbytes >= 0) {
                 NCCLCHECKGOTO(scheduleSendRecv(comm, delta, channelId,
-                      recvbytes, ((char*)(recv->buff)) + recvOffset,
-                      sendbytes, ((const char*)(send->buff)) + sendOffset), ret, end);
+                      recvbytes, recv ? ((char*)(recv->buff)) + recvOffset : NULL,
+                      sendbytes, send ? ((const char*)(send->buff)) + sendOffset : NULL), ret, end);
               }
               recvOffset += recvChunkSize;
               sendOffset += sendChunkSize;
