@@ -338,14 +338,8 @@ group_cleanup:
         *args->init.newcomm = NULL;
       } else {
         struct ncclComm* comm = args->coll.comm;
-        for (int c=0; c<comm->p2pnChannels; c++) {
-          struct ncclChannel* channel = comm->channels+c;
-          for (int i=0; i<channel->collCount; i++) {
-            channel->collectives[(channel->collStart + i)%NCCL_MAX_OPS].active = 0;
-          }
-          channel->collFifoTail = channel->collStart;
-          channel->collCount = 0;
-        }
+        comm->asyncOpCount = 0;
+        comm->asyncTotalSize = 0;
         /* Free all proxy ops in state->nextOps */
         struct ncclProxyState* state = &comm->proxyState;
 	pthread_mutex_lock(&state->poolMutex);
