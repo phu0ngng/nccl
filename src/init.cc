@@ -162,6 +162,7 @@ static ncclResult_t commFree(ncclComm_t comm) {
   free(comm->connectRecv);
   free(comm->p2pSends);
   free(comm->p2pRecvs);
+  free(comm->asyncOps);
 
   free(comm->peerInfo);
   ncclTopoFree(comm->topo);
