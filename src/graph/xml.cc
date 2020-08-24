@@ -559,7 +559,6 @@ ncclResult_t ncclTopoGetXmlFromGpu(struct ncclXmlNode* pciNode, nvmlDevice_t nvm
   NCCLCHECK(xmlGetAttrIndex(gpuNode, "dev", &index));
   if (index == -1) {
     if (nvmlDev == NULL) {
-      WARN("No NVML, trying to use CUDA instead");
       const char* busId;
       NCCLCHECK(xmlGetAttr(pciNode, "busid", &busId));
       if (busId == NULL || cudaDeviceGetByPCIBusId(&dev, busId) != cudaSuccess) dev = -1;
@@ -659,10 +658,13 @@ ncclResult_t ncclTopoFillGpu(struct ncclXml* xml, const char* busId, struct nccl
   struct ncclXmlNode* node;
   NCCLCHECK(ncclTopoGetPciNode(xml, busId, &node));
   NCCLCHECK(ncclTopoGetXmlFromSys(node, xml));
-  NCCLCHECK(wrapNvmlSymbols());
-  NCCLCHECK(wrapNvmlInit());
-  nvmlDevice_t nvmlDev;
-  if (wrapNvmlDeviceGetHandleByPciBusId(busId, &nvmlDev) != ncclSuccess) nvmlDev = NULL;
+  nvmlDevice_t nvmlDev = NULL;
+  static int nvmlInit = 0;
+  if (nvmlInit == 0) {
+    nvmlInit = (wrapNvmlSymbols() != ncclSuccess || wrapNvmlInit() != ncclSuccess) ? 2 : 1;
+  } else if (nvmlInit == 1) {
+    if (wrapNvmlDeviceGetHandleByPciBusId(busId, &nvmlDev) != ncclSuccess) nvmlDev = NULL;
+  }
   NCCLCHECK(ncclTopoGetXmlFromGpu(node, nvmlDev, xml, gpuNode));
   return ncclSuccess;
 }
