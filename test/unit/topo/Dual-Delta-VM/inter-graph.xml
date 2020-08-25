@@ -201,7 +201,7 @@
       <net dev="0"/>
     </channel>
   </graph>
-  <graph id="1" pattern="2" crossnic="0" nchannels="10" speedintra="0.24" speedinter="0.12" typeintra="NVL" typeinter="PHB" samechannels="0">
+  <graph id="1" pattern="1" crossnic="0" nchannels="10" speedintra="0.24" speedinter="0.12" typeintra="NVL" typeinter="PHB" samechannels="0">
     <channel>
       <net dev="0"/>
       <gpu dev="0"/>

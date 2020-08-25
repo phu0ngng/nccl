@@ -301,7 +301,7 @@ ncclResult_t ncclTopoCompareGraphs(struct ncclTopoGraph* graph, struct ncclTopoG
     return ncclSuccess;
   }
   // 3. Less hops (but not at the price of going cross NICs)
-  if (graph->crossNic == refGraph->crossNic && graph->nHops < refGraph->nHops) *copy = 1;
+  if (graph->pattern == refGraph->pattern && graph->crossNic == refGraph->crossNic && graph->nHops < refGraph->nHops) *copy = 1;
   return ncclSuccess;
 }
 
@@ -709,6 +709,7 @@ search:
   }
 #endif
   // Optimal solution, stop here
+  if (time == -1) goto done;
   if (graph->nChannels*graph->speedInter >= system->totalWidth) goto done;
 
   if (pass == 1) {
