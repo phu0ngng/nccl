@@ -256,18 +256,18 @@ sched_delta:
               if (sendbytes >= 0 || recvbytes >= 0) {
                 NCCLCHECKGOTO(scheduleSendRecv(comm, delta, channelId,
                       recvbytes, recv ? ((char*)(recv->buff)) + recvOffset : NULL,
-                      sendbytes, send ? ((const char*)(send->buff)) + sendOffset : NULL), ret, end);
+                      sendbytes, send ? ((const char*)(send->buff)) + sendOffset : NULL), ret, group_cleanup);
               }
               recvOffset += recvChunkSize;
               sendOffset += sendChunkSize;
               chunk++;
             } while (sendRemaining || recvRemaining);
             if (recv) {
-              NCCLCHECKGOTO(dequeueP2pInfo(p2pRecvs+from), ret, end);
+              NCCLCHECKGOTO(dequeueP2pInfo(p2pRecvs+from), ret, group_cleanup);
               comm->p2pCount--;
             }
             if (send) {
-              NCCLCHECKGOTO(dequeueP2pInfo(p2pSends+to), ret, end);
+              NCCLCHECKGOTO(dequeueP2pInfo(p2pSends+to), ret, group_cleanup);
               comm->p2pCount--;
             }
           }
@@ -338,8 +338,19 @@ group_cleanup:
         *args->init.newcomm = NULL;
       } else {
         struct ncclComm* comm = args->coll.comm;
+        // Reset aggregation counters
         comm->asyncOpCount = 0;
         comm->asyncTotalSize = 0;
+        // Dequeue p2p lists
+        if (comm->p2pCount > 0) {
+          struct ncclP2Plist* p2pSends = comm->p2pSends;
+          struct ncclP2Plist* p2pRecvs = comm->p2pRecvs;
+          for (int peer=0; peer<comm->nRanks; peer++) {
+            while (p2pSends[peer].head != NULL) dequeueP2pInfo(p2pSends+peer);
+            while (p2pRecvs[peer].head != NULL) dequeueP2pInfo(p2pRecvs+peer);
+          }
+          comm->p2pCount = 0;
+        }
         /* Free all proxy ops in state->nextOps */
         struct ncclProxyState* state = &comm->proxyState;
 	pthread_mutex_lock(&state->poolMutex);
