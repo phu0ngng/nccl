@@ -92,7 +92,7 @@ ncclResult_t getNextOp(struct ncclChannel* channel, struct ncclColl** coll, stru
     WARN("Too many aggregated operations on channel %d (%d max)", channel->id, NCCL_MAX_OPS);
     return ncclInvalidUsage;
   }
-  int opIndex = channel->collFifoTail;
+  int opIndex = channel->collFifoTail%NCCL_MAX_OPS;
   struct ncclColl* c = channel->collectives+opIndex;
   volatile uint8_t* activePtr = (volatile uint8_t*)&c->active;
   while (activePtr[0] != 0) sched_yield();
@@ -101,7 +101,8 @@ ncclResult_t getNextOp(struct ncclChannel* channel, struct ncclColl** coll, stru
   else
     memset(c, 0, sizeof(struct ncclColl));
   c->active = 1;
-  channel->collFifoTail = c->nextIndex = (opIndex+1)%NCCL_MAX_OPS;
+  c->index = opIndex;
+  channel->collFifoTail++;
   channel->collCount++;
   *coll = c;
   return ncclSuccess;
@@ -121,12 +122,12 @@ ncclResult_t setupLaunch(struct ncclComm* comm, struct cudaLaunchParams* params)
       NCCLCHECK(getNextOp(channel, &c, NULL));
       c->args.comm = comm->devComm;
     }
-    channel->collectives[(channel->collStart+channel->collCount-1)%NCCL_MAX_OPS].active = 2;
+    channel->collectives[(channel->collFifoTail-1)%NCCL_MAX_OPS].active = 2;
   }
 
   // Find the first operation, choose the kernel accordingly and pass it
   // as the first argument.
-  struct ncclColl* coll = comm->channels[0].collectives+comm->channels[0].collStart;
+  struct ncclColl* coll = comm->channels[0].collectives+(comm->channels[0].collFifoTail-comm->channels[0].collCount)%NCCL_MAX_OPS;
   memcpy(&comm->args, coll, sizeof(struct ncclColl));
   // As we pass that coll directly, we can free it immediately.
   coll->active = 0;
@@ -232,13 +233,14 @@ ncclResult_t ncclBarrierEnqueueWait(ncclComm_t comm) {
   // launch and the ncclProxyStart call could cause a deadlock.
   // Also, starting the proxies after the CUDA launch seems to be better for
   // performance (latency).
+  uint64_t max = 0ULL;
   for (int r=0; r<params->gridDim.x; r++) {
     struct ncclChannel* channel = comm->channels+r;
-    channel->collStart = channel->collFifoTail;
+    max = std::max(max, channel->collFifoTail);
     channel->collCount = 0;
   }
   params->gridDim.x = params->blockDim.x = 0;
-  comm->lastOpCount = comm->opCount;
+  comm->lastOpCount = max;
   NCCLCHECK(ncclProxyStart(comm));
   return ncclSuccess;
 }
@@ -410,7 +412,6 @@ static ncclResult_t computeColl(struct ncclInfo* info /* input */, struct ncclCo
   proxyArgs->sliceSteps = sliceSteps;
   proxyArgs->chunkSteps = chunkSteps;
   proxyArgs->protocol = info->protocol;
-  proxyArgs->opCount = info->comm->opCount;
   proxyArgs->dtype = info->datatype;
   proxyArgs->redOp = info->op;
   // This is used by P2P to reduce the receive buffer size. We don't use it in collectives
@@ -456,11 +457,6 @@ ncclResult_t ncclSaveKernel(struct ncclInfo* info) {
     int channelId = info->comm->myParams->gridDim.x % info->comm->nChannels;
     struct ncclChannel* channel = info->comm->channels+channelId;
 
-    if (channel->collCount == NCCL_MAX_OPS) {
-      WARN("Too many aggregated operations on channel %d (%d max)", channel->id, NCCL_MAX_OPS);
-      return ncclInvalidUsage;
-    }
-
     // Proxy
     proxyArgs.channel = channel;
     // Adjust pattern for CollNet based on channel index
@@ -475,7 +471,6 @@ ncclResult_t ncclSaveKernel(struct ncclInfo* info) {
     NCCLCHECK(getNextOp(channel, &c, &coll));
     c->args.coll.bid = bid % coll.args.coll.nChannels;
   }
-  info->comm->opCount++;
   return ncclSuccess;
 }
 
@@ -594,7 +589,7 @@ ncclResult_t ncclSaveP2pKernel(struct ncclInfo* info) {
   int opIndex = (channel->collFifoTail-1+NCCL_MAX_OPS)%NCCL_MAX_OPS;
   struct ncclColl* c = channel->collectives+opIndex;
   int segment = -1;
-  if (channel->collFifoTail-1 >= channel->collStart && c->funcIndex == FUNC_INDEX_P2P && c->args.p2p.nThreadsPerOp[NCCL_MAX_SEGMENTS-1] == 0) {
+  if (channel->collCount && c->funcIndex == FUNC_INDEX_P2P && c->args.p2p.nThreadsPerOp[NCCL_MAX_SEGMENTS-1] == 0) {
     // Try to pack more segments into a single operation
     segment = getSegment(info, c);
   }
@@ -602,10 +597,8 @@ ncclResult_t ncclSaveP2pKernel(struct ncclInfo* info) {
     NCCLCHECK(getNextOp(channel, &c, NULL));
     segment = 0;
   }
-  else info->comm->opCount--;
 
   NCCLCHECK(ncclProxySaveP2p(info, channel, segment));
-  info->comm->opCount++;
   NCCLCHECK(saveP2pOp(info, c, segment));
   info->comm->myParams->gridDim.x = std::max<unsigned>(info->comm->myParams->gridDim.x, channelId+1);
   info->comm->myParams->blockDim.x = std::max<unsigned>(info->comm->myParams->blockDim.x, info->nThreads);

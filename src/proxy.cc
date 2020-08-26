@@ -230,7 +230,7 @@ ncclResult_t ncclProxySaveP2p(struct ncclInfo* info, struct ncclChannel* channel
   args.chunkSteps = 1;
   args.protocol = NCCL_PROTO_SIMPLE;
   args.segment = segment;
-  args.opCount = info->comm->opCount;
+  args.opCount = channel->collFifoTail-1;
   args.dtype = info->datatype;
   if (info->delta > 0 && info->recvbytes >= 0) {
     int peerrecv = (info->comm->nRanks+info->comm->rank-info->delta)%info->comm->nRanks;

@@ -360,7 +360,6 @@ group_cleanup:
         }
 	pthread_mutex_unlock(&state->poolMutex);
         state->nextOps = NULL;
-        comm->opCount = comm->lastOpCount;
 
         comm->myParams->gridDim.x = comm->myParams->blockDim.x = 0;
         comm->userStreamSet = false;

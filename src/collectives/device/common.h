@@ -75,15 +75,17 @@ __device__ void ncclKernel(struct ncclColl firstColl, int fIndex)  {
 
   struct ncclDevComm* comm = firstColl.args.comm;
   struct ncclChannel* channel = comm->channels+bid;
-  struct ncclColl* c;
+  struct ncclColl* c = NULL;
+  uint16_t index = firstColl.index;
   if (bid == 0) {
     /* To optimize for latency, (only) the first operation is passed as argument.*/
     c = &firstColl;
-  } else {
-    c = &shmem.localColl;
-    load_coll(c, channel->collectives+channel->collFifoHead, tid, comm);
   }
   while (1) {
+    if (c == NULL) {
+      c = &shmem.localColl;
+      load_coll(c, channel->collectives+index, tid, comm);
+    }
     if (tid < c->args.common.nThreads) {
       if (c->funcIndex == fIndex) {
         f.run(&c->args);
@@ -91,16 +93,11 @@ __device__ void ncclKernel(struct ncclColl firstColl, int fIndex)  {
         ncclFuncs[c->funcIndex](&c->args);
       }
     }
-    int nextIndex = c->nextIndex;
-    if (tid == 0) channel->collFifoHead = nextIndex;
-
+    index = (index+1) % NCCL_MAX_OPS;
     if (c->active == 2) {
       return;
     }
-
-    /* Load next collective operation*/
-    c = &shmem.localColl; /* for bid 0 */
-    load_coll(c, channel->collectives+nextIndex, tid, comm);
+    c = NULL;
   }
 }
 
