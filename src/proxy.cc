@@ -308,26 +308,30 @@ static ncclResult_t removeOp(struct ncclProxyState* state, struct ncclProxyArgs*
   return ncclSuccess;
 }
 
-static ncclResult_t progressOp(struct ncclProxyState* state, struct ncclProxyArgs** opPtr, struct ncclProxyArgs** prevOpPtr, struct ncclProxyArgs** prevGroupPtr, int* idle, struct ncclComm* comm) {
-  struct ncclProxyArgs* op = *opPtr;
-  if (op->state == ncclProxyOpNone) return ncclInternalError;
-  // opCount >= lastOpCount are part of an ongoing GroupStart/GroupEnd that hasn't started
-  // yet and might be cancelled before they even start. Hold on on those.
-  if (op->opCount < comm->lastOpCount) {
-    NCCLCHECK(op->progress(op));
-    *idle &= op->idle;
-  }
-  if (op->state == ncclProxyOpNone) {
-    NCCLCHECK(removeOp(state, opPtr, prevOpPtr, prevGroupPtr));
-  } else {
-    if (op->nextGroup) {
-      *prevGroupPtr = op;
-      *prevOpPtr = NULL;
-      *opPtr = op->nextGroup;
+static ncclResult_t progressOps(struct ncclProxyState* state, struct ncclProxyArgs** opsPtr, int* idle, struct ncclComm* comm) {
+  struct ncclProxyArgs* prevOp = NULL;
+  struct ncclProxyArgs* prevGroup = NULL;
+  struct ncclProxyArgs* op = *opsPtr;
+  while (op) {
+    if (op->state == ncclProxyOpNone) return ncclInternalError;
+    // opCount >= lastOpCount are part of an ongoing GroupStart/GroupEnd that hasn't started
+    // yet and might be cancelled before they even start. Hold on on those.
+    if (op->opCount < comm->lastOpCount) {
+      NCCLCHECK(op->progress(op));
+      *idle &= op->idle;
+    }
+    if (op->state == ncclProxyOpNone) {
+      NCCLCHECK(removeOp(state, &op, &prevOp, &prevGroup));
     } else {
-      *prevOpPtr = op;
-      *prevGroupPtr = NULL;
-      *opPtr = op->next;
+      if (op->nextGroup) {
+        prevGroup = op;
+        prevOp = NULL;
+        op = op->nextGroup;
+      } else {
+        prevOp = op;
+        prevGroup = NULL;
+        op = op->next;
+      }
     }
   }
   return ncclSuccess;
@@ -336,33 +340,26 @@ static ncclResult_t progressOp(struct ncclProxyState* state, struct ncclProxyArg
 void* persistentThread(void *comm_) {
   struct ncclComm* comm = (struct ncclComm*)comm_;
   struct ncclProxyState* state = &comm->proxyState;
-  ncclResult_t ret = ncclSuccess;
   pthread_mutex_lock(&state->opsMutex);
-  struct ncclProxyArgs* volatile * opsPtr = (struct ncclProxyArgs* volatile *)&state->ops;
+  struct ncclProxyArgs** opsPtr = &state->ops;
   while (1) {
     if (*comm->abortFlag) return NULL;
 
-    struct ncclProxyArgs* op = *opsPtr;
-    while (op == NULL) {
+    while (*opsPtr == NULL) {
       if (state->stop) {
         // No more commands to process and proxy has been requested to stop
         pthread_mutex_unlock(&state->opsMutex);
         return NULL;
       }
       pthread_cond_wait(&state->cond, &state->opsMutex);
-      op = *opsPtr;
     }
-    struct ncclProxyArgs* prevOp = NULL;
-    struct ncclProxyArgs* prevGroup = NULL;
     int idle = 1;
-    while (op) {
-      ret = progressOp(state, &op, &prevOp, &prevGroup, &idle, comm);
-      if (ret != ncclSuccess) {
-        comm->fatalError = ret;
-        INFO(NCCL_ALL,"%s:%d -> %d [Proxy Thread]", __FILE__, __LINE__, ret);
-        pthread_mutex_unlock(&state->opsMutex);
-        return NULL;
-      }
+    ncclResult_t ret = progressOps(state, opsPtr, &idle, comm);
+    if (ret != ncclSuccess) {
+      comm->fatalError = ret;
+      INFO(NCCL_ALL,"%s:%d -> %d [Proxy Thread]", __FILE__, __LINE__, ret);
+      pthread_mutex_unlock(&state->opsMutex);
+      return NULL;
     }
     if (idle) {
       pthread_mutex_unlock(&state->opsMutex);
