@@ -58,12 +58,6 @@ static ncclResult_t allocateArgs(struct ncclComm* comm, struct ncclProxyArgs** a
   return ncclSuccess;
 }
 
-static inline uint64_t gettime() {
-  uint32_t a, d;
-  __asm__ volatile("rdtsc":"=a"(a), "=d"(d));
-  return (((uint64_t)d) << 32) | a;
-}
-
 //#define DEBUG_PROXY 1
 #ifdef DEBUG_PROXY
 #define DEBUG_PROXY_PRINT printf
@@ -313,10 +307,6 @@ static ncclResult_t removeOp(struct ncclProxyState* state, struct ncclProxyArgs*
   NCCLCHECK(dumpProxyState(state));
   return ncclSuccess;
 }
-
-uint64_t removeTime = 0;
-uint64_t progressTotalTime = 0;
-uint64_t progressOpTime = 0;
 
 static ncclResult_t progressOp(struct ncclProxyState* state, struct ncclProxyArgs** opPtr, struct ncclProxyArgs** prevOpPtr, struct ncclProxyArgs** prevGroupPtr, int* idle, struct ncclComm* comm) {
   struct ncclProxyArgs* op = *opPtr;
