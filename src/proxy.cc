@@ -230,7 +230,7 @@ ncclResult_t ncclProxySaveP2p(struct ncclInfo* info, struct ncclChannel* channel
   args.chunkSteps = 1;
   args.protocol = NCCL_PROTO_SIMPLE;
   args.segment = segment;
-  args.opCount = info->comm->opCount;
+  args.opCount = channel->collFifoTail-1;
   args.dtype = info->datatype;
   if (info->delta > 0 && info->recvbytes >= 0) {
     int peerrecv = (info->comm->nRanks+info->comm->rank-info->delta)%info->comm->nRanks;
@@ -373,7 +373,20 @@ ncclResult_t ncclProxyStart(struct ncclComm* comm) {
   struct ncclProxyState* state = &comm->proxyState;
   pthread_mutex_lock(&state->opsMutex);
 
-  ncclProxyArgs* next, *op = state->nextOps;
+  // Sort operations as we append them : collectives and
+  // receives first, then sends.
+  ncclProxyArgs* next, *prev = NULL, *op = state->nextOps;
+  while (op) {
+    next = op->next;
+    if (op->recvbytes) {
+      if (prev) prev->next = next;
+      else state->nextOps = next;
+      op->next = NULL;
+      NCCLCHECK(ProxyAppend(state, op, op->connector->conn.shared));
+    } else prev = op;
+    op = next;
+  }
+  op = state->nextOps;
   while (op) {
     next = op->next;
     op->next = NULL;

@@ -174,7 +174,7 @@ struct ncclColl {
     struct {
       struct CollectiveArgs args;
       uint16_t funcIndex;
-      uint16_t nextIndex;
+      uint16_t index;
       uint8_t  active;
     };
     int data[0x80];
@@ -197,10 +197,8 @@ struct ncclChannel {
 
       // Operation list for aggregation
       struct ncclColl* collectives;
-      int collStart;
       int collCount;
-      int collFifoHead; // Only used by GPU
-      int collFifoTail; // Only used by CPU
+      uint64_t collFifoTail; // Only used by CPU
     };
     int data[0x80];
   };
