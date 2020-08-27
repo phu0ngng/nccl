@@ -373,7 +373,20 @@ ncclResult_t ncclProxyStart(struct ncclComm* comm) {
   struct ncclProxyState* state = &comm->proxyState;
   pthread_mutex_lock(&state->opsMutex);
 
-  ncclProxyArgs* next, *op = state->nextOps;
+  // Sort operations as we append them : collectives and
+  // receives first, then sends.
+  ncclProxyArgs* next, *prev = NULL, *op = state->nextOps;
+  while (op) {
+    next = op->next;
+    if (op->recvbytes) {
+      if (prev) prev->next = next;
+      else state->nextOps = next;
+      op->next = NULL;
+      NCCLCHECK(ProxyAppend(state, op, op->connector->conn.shared));
+    } else prev = op;
+    op = next;
+  }
+  op = state->nextOps;
   while (op) {
     next = op->next;
     op->next = NULL;
