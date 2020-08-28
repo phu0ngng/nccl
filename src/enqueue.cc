@@ -239,6 +239,10 @@ ncclResult_t ncclBarrierEnqueueWait(ncclComm_t comm) {
     max = std::max(max, channel->collFifoTail);
     channel->collCount = 0;
   }
+  for (int r=0; r<comm->p2pnChannels; r++) {
+    struct ncclChannel* channel = comm->channels+r;
+    channel->collFifoTail = max;
+  }
   params->gridDim.x = params->blockDim.x = 0;
   comm->lastOpCount = max;
   NCCLCHECK(ncclProxyStart(comm));
