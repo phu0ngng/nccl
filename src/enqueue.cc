@@ -554,18 +554,10 @@ static ncclResult_t ncclSaveP2p(struct ncclInfo* info) {
 }
 
 static int getSegment(struct ncclInfo* info, struct ncclColl* coll) {
-  // First check operations are small enough that we can have multiple segments in one operation
-  size_t maxSize = std::max(info->sendbytes, info->recvbytes);
-  int s;
-  for (s=0; s<NCCL_MAX_SEGMENTS && coll->args.p2p.nThreadsPerOp[s]; s++) {
-    maxSize = std::max(coll->args.p2p.sendCount[s], maxSize);
-    maxSize = std::max(coll->args.p2p.recvCount[s], maxSize);
-    if (coll->args.p2p.delta[s] == info->delta) return -1;
+  for (int s=0; s<NCCL_MAX_SEGMENTS && coll->args.p2p.delta[s] != info->delta; s++) {
+    if (coll->args.p2p.nThreadsPerOp[s] == 0) return s;
   }
-  int maxSegments = NCCL_MAX_SEGMENTS;
-  int stepSize = info->comm->buffSizes[NCCL_PROTO_SIMPLE]/NCCL_STEPS;
-  while (maxSegments * maxSize > stepSize) maxSegments /= 2;
-  return (s < maxSegments) ? s : -1;
+  return -1;
 }
 
 static ncclResult_t saveP2pOp(struct ncclInfo* info /* input */, struct ncclColl* coll, int s) {

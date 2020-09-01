@@ -381,7 +381,7 @@ ncclResult_t ncclProxyStart(struct ncclComm* comm) {
   ncclProxyArgs* next, *prev = NULL, *op = state->nextOps;
   while (op) {
     next = op->next;
-    if (op->recvbytes) {
+    if (op->sendbytes) {
       if (prev) prev->next = next;
       else state->nextOps = next;
       op->next = NULL;
@@ -416,7 +416,7 @@ ncclResult_t ncclProxySharedBuffersInit(struct ncclComm* comm, int cuda, int* si
     if (state->nslots == -2)  {
       state->nslots = NCCL_STEPS*NCCL_MAX_SEGMENTS;
     }
-    state->slotSize = comm->buffSizes[NCCL_PROTO_SIMPLE]/(NCCL_STEPS*NCCL_MAX_SEGMENTS*SENDRECV_SLICEFACTOR);
+    state->slotSize = comm->buffSizes[NCCL_PROTO_SIMPLE]/(NCCL_STEPS*SENDRECV_SLICEFACTOR);
   }
 
   char* buff;
