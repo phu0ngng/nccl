@@ -112,7 +112,7 @@ ncclResult_t GetSocketAddr(int dev, union socketAddress* addr) {
 
 #define MAX_SOCKETS 64
 #define MAX_THREADS 16
-#define MAX_REQUESTS 128
+#define MAX_REQUESTS NCCL_NET_MAX_REQUESTS
 #define MAX_QUEUE_LEN MAX_REQUESTS
 #define MIN_CHUNKSIZE (64*1024)
 

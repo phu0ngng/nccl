@@ -254,7 +254,7 @@ ncclResult_t ncclIbGetProperties(int dev, ncclNetProperties_t* props) {
   return ncclSuccess;
 }
 
-#define MAX_REQUESTS 128
+#define MAX_REQUESTS NCCL_NET_MAX_REQUESTS
 
 struct ncclIbQpInfo {
   uint32_t lid;
