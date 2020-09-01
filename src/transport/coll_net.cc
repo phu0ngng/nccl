@@ -274,8 +274,8 @@ ncclResult_t collNetSendProxy(struct ncclProxyArgs* args) {
           int nFifoLines = DIVUP(size, sizeof(union ncclLLFifoLine));
           union ncclLLFifoLine* lines = (union ncclLLFifoLine*)buff;
           // Pack data into another buffer
-          uint32_t* sendBuff = resources->llData+buffSlot*stepSize/2;
-          size /= 2;
+          int stepLines = stepSize / sizeof(union ncclLLFifoLine);
+          uint32_t* sendBuff = resources->llData+buffSlot*2*stepLines;  // each line has two data elements
           buff = (char*)sendBuff;
           for (int i=0; i<nFifoLines; i++) {
             volatile uint32_t *f1 = &lines[i].flag1;
@@ -286,12 +286,14 @@ ncclResult_t collNetSendProxy(struct ncclProxyArgs* args) {
             sendBuff[2*i] = d1[0];
             sendBuff[2*i+1] = d2[0];
           }
+          size = nFifoLines*2*sizeof(uint32_t);
         }
         if (ready) {
           // Data is ready, try to send.
-          NCCLCHECK(collNetIallreduce(resources->collNetSendComm, buff, (void*)(reqFifo[buffSlot].recvBuff), size, args->dtype, args->redOp, sendMhandle, recvMhandle, args->requests+buffSlot));
+          int count = size/ncclTypeSize(args->dtype);
+          NCCLCHECK(collNetIallreduce(resources->collNetSendComm, (void*) buff, (void*)(reqFifo[buffSlot].recvBuff), count, args->dtype, args->redOp, sendMhandle, recvMhandle, args->requests+buffSlot));
           if (args->requests[buffSlot] != NULL) {
-            TRACE(NCCL_NET, "sendProxy [%d/%d] Iallreduce (LL) posted, req %p", args->transmitted, buffSlot, args->requests[buffSlot]);
+            TRACE(NCCL_NET, "sendProxy [%d/%d] Iallreduce posted, req %p", args->transmitted, buffSlot, args->requests[buffSlot]);
             sizesFifo[buffSlot] = -1;
             // Make sure size is reset to zero before we update the head.
             __sync_synchronize();
@@ -390,8 +392,8 @@ ncclResult_t collNetRecvProxy(struct ncclProxyArgs* args) {
     if (args->received > args->transmitted) {
       // Progress flush operations
       int buffSlot = args->transmitted%NCCL_STEPS;
-      int done;
-      NCCLCHECK(collNetTest(args->requests[buffSlot], &done, NULL));
+      int done = 1;
+      if (args->requests[buffSlot]) NCCLCHECK(collNetTest(args->requests[buffSlot], &done, NULL));
       if (done) {
         args->transmitted += args->sliceSteps;
         __sync_synchronize();
