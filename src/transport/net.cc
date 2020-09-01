@@ -7,6 +7,7 @@
 #include "comm.h"
 #include "net.h"
 #include "graph.h"
+#include "collectives.h"
 
 struct netConnectInfo {
   ncclNetHandle_t netHandle;
@@ -266,6 +267,7 @@ ncclResult_t netSendProxy(struct ncclProxyArgs* args) {
     char* localBuff = args->connector->conn.buffs[p];
     void* mhandle = *(resources->mhandlesProto[p]);
     int buffSize = stepSize*args->sliceSteps;
+    if (resources->shared) buffSize /= SENDRECV_SLICEFACTOR;
     if (args->sendbytes < buffSize) buffSize = args->sendbytes;
     // Post buffers to the GPU
     if (args->posted < args->end && args->posted < args->done + NCCL_STEPS) {
@@ -374,6 +376,7 @@ ncclResult_t netRecvProxy(struct ncclProxyArgs* args) {
     char* localBuff = args->connector->conn.buffs[p];
     void* mhandle = *(resources->mhandlesProto[p]);
     int buffSize = stepSize*args->sliceSteps;
+    if (resources->shared) buffSize /= SENDRECV_SLICEFACTOR;
     if (args->recvbytes < buffSize) buffSize = args->recvbytes;
     if ((args->posted < args->done + NCCL_STEPS) && (args->posted < args->end)) {
       int buffSlot = args->posted%NCCL_STEPS;

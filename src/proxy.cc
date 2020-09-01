@@ -343,7 +343,10 @@ void* persistentThread(void *comm_) {
   pthread_mutex_lock(&state->opsMutex);
   struct ncclProxyArgs** opsPtr = &state->ops;
   while (1) {
-    if (*comm->abortFlag) return NULL;
+    if (*comm->abortFlag) {
+      pthread_mutex_unlock(&state->opsMutex);
+      return NULL;
+    }
 
     while (*opsPtr == NULL) {
       if (state->stop) {
@@ -413,7 +416,7 @@ ncclResult_t ncclProxySharedBuffersInit(struct ncclComm* comm, int cuda, int* si
     if (state->nslots == -2)  {
       state->nslots = NCCL_STEPS*NCCL_MAX_SEGMENTS;
     }
-    state->slotSize = comm->buffSizes[NCCL_PROTO_SIMPLE]/(NCCL_STEPS*NCCL_MAX_SEGMENTS);
+    state->slotSize = comm->buffSizes[NCCL_PROTO_SIMPLE]/(NCCL_STEPS*NCCL_MAX_SEGMENTS*SENDRECV_SLICEFACTOR);
   }
 
   char* buff;
