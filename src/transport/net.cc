@@ -421,8 +421,8 @@ ncclResult_t netRecvProxy(struct ncclProxyArgs* args) {
     if (args->received > args->transmitted) {
       // Progress flush operations
       int buffSlot = args->transmitted%NCCL_STEPS;
-      int done;
-      NCCLCHECK(ncclNetTest(args->requests[buffSlot], &done, NULL));
+      int done = 1;
+      if (args->requests[buffSlot]) NCCLCHECK(ncclNetTest(args->requests[buffSlot], &done, NULL));
       if (done) {
         args->transmitted += args->sliceSteps;
         __sync_synchronize();
