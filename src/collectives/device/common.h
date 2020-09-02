@@ -12,6 +12,12 @@
 
 #define COLL_UNROLL 8
 
+#if __CUDA_ARCH__ >= 800
+#define NCCL_MAX_DEV_ARITY (NCCL_MAX_TREE_ARITY-1)  // Using balanced tree instead of split tree
+#else
+#define NCCL_MAX_DEV_ARITY NCCL_MAX_TREE_ARITY
+#endif
+
 // Exit If Abort Barrier across CTA: make sure all threads exit consistently
 // Each thread sets a predicate to true if abort == 1
 // all CTA's threads enter the barrier and do a popc on their predicates being True
@@ -50,8 +56,8 @@ class ncclFunction {
 };
 
 struct ncclShmemPtrs {
-  void* srcs[NCCL_MAX_TREE_ARITY+1];
-  void* dsts[NCCL_MAX_TREE_ARITY+1];
+  void* srcs[NCCL_MAX_DEV_ARITY+1];
+  void* dsts[NCCL_MAX_DEV_ARITY+1];
 };
 
 struct ncclShmemData {

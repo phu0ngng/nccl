@@ -739,10 +739,6 @@ search:
     tmpGraph.typeInter = PATH_PIX;
 
     // Try a simpler tree
-    if (tmpGraph.pattern == NCCL_TOPO_PATTERN_BALANCED_TREE) {
-      tmpGraph.pattern = NCCL_TOPO_PATTERN_SPLIT_TREE;
-      goto search;
-    }
     if (tmpGraph.pattern == NCCL_TOPO_PATTERN_SPLIT_TREE) {
       tmpGraph.pattern = NCCL_TOPO_PATTERN_TREE;
       goto search;
