@@ -450,7 +450,6 @@ ncclResult_t netRecvProxy(struct ncclProxyArgs* args) {
           resources->step = args->end;
           args->state = ncclProxyOpNone;
         }
-        return ncclSuccess;
       }
     }
   }
