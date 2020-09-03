@@ -240,6 +240,10 @@ ncclResult_t collNetRecvFree(void* recvTransportResources) {
 }
 
 ncclResult_t collNetSendProxy(struct ncclProxyArgs* args) {
+  if (args->protocol == NCCL_PROTO_LL128) {
+    WARN("CollNet does not support LL128");
+    return ncclInternalError;
+  }
   struct collNetSendResources* resources = (struct collNetSendResources*) (args->connector->transportResources);
   if (args->state == ncclProxyOpReady) {
     // Round to next multiple of sliceSteps
@@ -266,10 +270,7 @@ ncclResult_t collNetSendProxy(struct ncclProxyArgs* args) {
         int size = sizesFifo[buffSlot];
         char* buff = localBuff+buffSlot*stepSize;
         int ready = 1;
-        if (args->protocol == NCCL_PROTO_LL128) {
-          WARN("CollNet does not support LL128");
-          return ncclInternalError;
-        } else if (args->protocol == NCCL_PROTO_LL) {
+        if (args->protocol == NCCL_PROTO_LL) {
           uint32_t flag = NCCL_LL_FLAG(args->transmitted + 1);
           int nFifoLines = DIVUP(size, sizeof(union ncclLLFifoLine));
           union ncclLLFifoLine* lines = (union ncclLLFifoLine*)buff;
@@ -331,6 +332,10 @@ ncclResult_t collNetSendProxy(struct ncclProxyArgs* args) {
 }
 
 ncclResult_t collNetRecvProxy(struct ncclProxyArgs* args) {
+  if (args->protocol == NCCL_PROTO_LL128) {
+    WARN("CollNet does not support LL128");
+    return ncclInternalError;
+  }
   struct collNetRecvResources* resources = (struct collNetRecvResources*) (args->connector->transportResources);
   if (args->state == ncclProxyOpReady) {
     // Round to next multiple of sliceSteps
@@ -360,10 +365,7 @@ ncclResult_t collNetRecvProxy(struct ncclProxyArgs* args) {
       int buffSlot = args->received%NCCL_STEPS;
       if (reqFifo[buffSlot].recvBuff == NULL) { // Buffer is cleared : coll is complete
         TRACE(NCCL_NET, "recvProxy [%d/%d] done, size %d", args->received, buffSlot, reqFifo[buffSlot].size);
-        if (args->protocol == NCCL_PROTO_LL128) {
-          WARN("CollNet does not support LL128");
-          return ncclInternalError;
-        } else if (args->protocol == NCCL_PROTO_LL) { // ll
+        if (args->protocol == NCCL_PROTO_LL) { // ll
           // re-attach flag
           uint32_t flag = NCCL_LL_FLAG(args->received + 1);
           int stepLines = stepSize / sizeof(union ncclLLFifoLine);
@@ -405,14 +407,15 @@ ncclResult_t collNetRecvProxy(struct ncclProxyArgs* args) {
     if (args->transmitted > args->done) {
       volatile uint64_t* sendHead = &resources->sendMem->head;
       uint64_t done = *sendHead;
-      if (done > args->done) {
-        args->done = done;
+      while (done > args->done &&
+             // LL and LL128 can acknowledge 0-bytes send before they even happen. Don't go past what we transmitted.
+             args->transmitted > args->done) {
+        args->done += args->sliceSteps;
         args->idle = 0;
         if (args->done == args->end) {
           resources->step = args->end;
           args->state = ncclProxyOpNone;
         }
-        return ncclSuccess;
       }
     }
   }
