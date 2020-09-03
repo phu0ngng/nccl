@@ -10,11 +10,12 @@
 #include "collectives.h"
 #include "devcomm.h"
 
-#define COLL_UNROLL 8
 
 #if __CUDA_ARCH__ >= 800
+#define COLL_UNROLL 8
 #define NCCL_MAX_DEV_ARITY (NCCL_MAX_TREE_ARITY-1)  // Using balanced tree instead of split tree
 #else
+#define COLL_UNROLL 4
 #define NCCL_MAX_DEV_ARITY NCCL_MAX_TREE_ARITY
 #endif
 
