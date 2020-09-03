@@ -589,14 +589,11 @@ static ncclResult_t initTransportsRank(struct ncclComm* comm, ncclUniqueId* comm
   // Compute intra ranks and minimum CUDA Compute capabilities of intra-node GPUs and all GPUs
   int intraRank0 = -1, intraRank = -1, intraRanks = 0;
   int myCompCap = allGather1Data[rank].cudaCompCap;
-  int intraMinCompCap = myCompCap, intraMaxCompCap = myCompCap;
   int minCompCap = myCompCap, maxCompCap = myCompCap;
   uint64_t otherHostHash;
   int tmpNnodes = 1;
   for (int i = 0; i < nranks; i++) {
     if (allGather1Data[i].peerInfo.hostHash == allGather1Data[rank].peerInfo.hostHash) {
-      intraMinCompCap = std::min(allGather1Data[i].cudaCompCap, intraMinCompCap);
-      intraMaxCompCap = std::max(allGather1Data[i].cudaCompCap, intraMaxCompCap);
       if (allGather1Data[i].peerInfo.pidHash == allGather1Data[rank].peerInfo.pidHash) {
         if (intraRanks == 0) intraRank0 = i;
         if (i == rank) intraRank = intraRanks;
