@@ -309,6 +309,11 @@ struct ncclIbSendComm {
   struct ibv_qp* qp;
   struct ibv_mr* fifoMr;
 };
+// The SendFifo needs to be 32-byte aligned and each element needs
+// to be a 32-byte multiple, so that an entry does not get split and
+// written out of order when IB Relaxed Ordering is enabled
+static_assert((offsetof(struct ncclIbSendComm, fifo) % 32) == 0, "ncclIbSendComm fifo must be 32-byte aligned");
+static_assert((sizeof(ncclIbSendFifo) % 32) == 0, "ncclIbSendFifo element size must be 32-byte multiples");
 
 struct ncclIbGpuFlush {
   int enabled;
@@ -614,11 +619,6 @@ ncclResult_t ncclIbTest(void* request, int* done, int* size);
 
 ncclResult_t ncclIbRegMr(void* comm, void* data, int size, int type, void** mhandle) {
   static_assert(offsetof(struct ncclIbSendComm, dev) == offsetof(struct ncclIbRecvComm, dev), "Send and recv comms must have dev at the same offset");
-  // The SendFifo needs to be 32-byte aligned and each element needs
-  // to be a 32-byte multiple, so that an entry does not get split and
-  // written out of order when IB Relaxed Ordering is enabled
-  static_assert((offsetof(struct ncclIbSendComm, fifo) % 32) == 0, "ncclIbSendComm fifo must be 32-byte aligned");
-  static_assert((sizeof(ncclIbSendFifo) % 32) == 0, "ncclIbSendFifo element size must be 32-byte multiples");
   struct ncclIbSendComm* c = (struct ncclIbSendComm*)comm;
   struct ncclIbVerbs* verbs = &c->dev->verbs;
   uint64_t addr = (uint64_t)data;
