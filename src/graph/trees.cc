@@ -67,8 +67,8 @@ ncclResult_t ncclGetBtree(int nranks, int rank, int* u, int* d0, int* d1, int* p
  * For the second tree, we use a mirror tree (if nranks is even)
  *
  * 0---------------8                   3----------------11
- *          ______/ \                 / \______ 
- *         4         \               /         7 
+ *          ______/ \                 / \______
+ *         4         \               /         7
  *       /   \        \             /        /   \
  *     2       6       10         1        5      9
  *    / \     / \     /  \       / \      / \    / \
