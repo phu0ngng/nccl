@@ -295,10 +295,12 @@ struct ncclIbSendFifo {
   uint32_t seq;
   uint32_t rkey;
   uint32_t ready;
+  uint64_t pad[1]; // Pad FIFO element size to be 32-bytes
 };
 
 struct ncclIbSendComm {
   struct ncclIbDev* dev;
+  uint64_t pad[3]; // Pad SendFifo base to be 32-byte aligned
   struct ncclIbSendFifo fifo[MAX_REQUESTS];
   struct ncclIbRequest reqs[MAX_REQUESTS];
   uint32_t fifoHead;
@@ -612,6 +614,11 @@ ncclResult_t ncclIbTest(void* request, int* done, int* size);
 
 ncclResult_t ncclIbRegMr(void* comm, void* data, int size, int type, void** mhandle) {
   static_assert(offsetof(struct ncclIbSendComm, dev) == offsetof(struct ncclIbRecvComm, dev), "Send and recv comms must have dev at the same offset");
+  // The SendFifo needs to be 32-byte aligned and each element needs
+  // to be a 32-byte multiple, so that an entry does not get split and
+  // written out of order when IB Relaxed Ordering is enabled
+  static_assert((offsetof(struct ncclIbSendComm, fifo) % 32) == 0, "ncclIbSendComm fifo must be 32-byte aligned");
+  static_assert((sizeof(ncclIbSendFifo) % 32) == 0, "ncclIbSendFifo element size must be 32-byte multiples");
   struct ncclIbSendComm* c = (struct ncclIbSendComm*)comm;
   struct ncclIbVerbs* verbs = &c->dev->verbs;
   uint64_t addr = (uint64_t)data;
