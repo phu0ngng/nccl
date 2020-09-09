@@ -343,7 +343,10 @@ struct ncclIbRecvComm {
   struct ncclIbGpuFlush gpuFlush;
 };
 
+pthread_mutex_t ibDevLock = PTHREAD_MUTEX_INITIALIZER;
+
 ncclResult_t ncclIbUseDev(int dev, struct ncclIbDev** ibDevPtr) {
+  pthread_mutex_lock(&ibDevLock);
   struct ncclIbDev* ibDev = ncclIbDevs+dev;
   if (ibDev->verbs.refCount == 0) {
     NCCLCHECK(wrap_ibv_alloc_pd(&ibDev->verbs.pd, ibDev->context));
@@ -351,15 +354,18 @@ ncclResult_t ncclIbUseDev(int dev, struct ncclIbDev** ibDevPtr) {
   }
   ibDev->verbs.refCount++;
   *ibDevPtr = ibDev;
+  pthread_mutex_unlock(&ibDevLock);
   return ncclSuccess;
 }
 
 ncclResult_t ncclIbFreeDev(struct ncclIbDev* ibDev) {
+  pthread_mutex_lock(&ibDevLock);
   ibDev->verbs.refCount--;
   if (ibDev->verbs.refCount == 0) {
     NCCLCHECK(wrap_ibv_destroy_cq(ibDev->verbs.cq));
     NCCLCHECK(wrap_ibv_dealloc_pd(ibDev->verbs.pd));
   }
+  pthread_mutex_unlock(&ibDevLock);
   return ncclSuccess;
 }
 
