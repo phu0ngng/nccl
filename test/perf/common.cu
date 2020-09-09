@@ -484,9 +484,9 @@ testResult_t BenchTime(struct threadArgs* args, ncclDataType_t type, ncclRedOp_t
 
   double timeUsec = deltaSec*1.0E6;
   char timeStr[10];
-  if (timeUsec > 10000.0) {
+  if (timeUsec >= 10000.0) {
     sprintf(timeStr, "%7.0f", timeUsec);
-  } else if (timeUsec > 100.0) {
+  } else if (timeUsec >= 100.0) {
     sprintf(timeStr, "%7.1f", timeUsec);
   } else {
     sprintf(timeStr, "%7.2f", timeUsec);
