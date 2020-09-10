@@ -193,7 +193,7 @@ static ncclResult_t commFree(ncclComm_t comm) {
     free(comm->intraCGMode);
     free(comm->intraCC);
   }
-  CUDACHECK(cudaFreeHost((void *)comm->abortFlag));
+  NCCLCHECK(ncclCudaHostFree((void *)comm->abortFlag));
 
   // Poison comm to try and catch a double free
   commPoison(comm);
