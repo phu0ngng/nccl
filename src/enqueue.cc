@@ -571,7 +571,7 @@ static ncclResult_t saveP2pOp(struct ncclInfo* info /* input */, struct ncclColl
   coll->args.p2p.nThreads = info->nThreads = NCCL_MAX_NTHREADS;
   const int nsegments = s+1;
   int nThreads = 512;
-  while (nsegments*nThreads > NCCL_MAX_NTHREADS) nThreads /= 2;
+  while (nsegments*nThreads > 512) nThreads /= 2;
   if (nThreads >= 128) nThreads += WARP_SIZE;
   for (int i=0; i<nsegments; i++) coll->args.p2p.nThreadsPerOp[i] = nThreads;
   return ncclSuccess;
