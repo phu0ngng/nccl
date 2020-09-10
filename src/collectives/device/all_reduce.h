@@ -101,8 +101,6 @@ class ncclFunction<ncclFuncAllReduce, NCCL_ALGO_TREE, NCCL_PROTO_SIMPLE, FUNC, T
     int chunkSize = args->coll.lastChunkSize;
     const ssize_t minChunkSize = nthreads*8*sizeof(uint64_t) / sizeof(T);
     const ssize_t loopSize = nChannels*chunkSize;
-    int nthreadsSplit = nthreads/2;
-    if (nthreadsSplit == 256) nthreadsSplit += 64;
     const ssize_t size = args->coll.count;
 
     if (loopSize > size) {
@@ -150,6 +148,8 @@ class ncclFunction<ncclFuncAllReduce, NCCL_ALGO_TREE, NCCL_PROTO_SIMPLE, FUNC, T
       }
     }
 #else
+    int nthreadsSplit = nthreads/2;
+    if (nthreadsSplit == 256) nthreadsSplit += 64;
     if (tree->up == -1) {
       if (tid < nthreads+WARP_SIZE) {
         // ReduceAndBroadcast : max number of recv is 3, max number of send is 3
