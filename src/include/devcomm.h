@@ -174,7 +174,6 @@ struct ncclColl {
     struct {
       struct CollectiveArgs args;
       uint16_t funcIndex;
-      uint16_t index;
       uint8_t  active;
     };
     int data[0x80];
@@ -209,6 +208,7 @@ struct ncclDevComm {
   int rank;
   int nRanks;
   int buffSizes[NCCL_NUM_PROTOCOLS];
+  int index;
 
   // Flag to ask NCCL kernels to abort
   volatile uint32_t *abortFlag;
