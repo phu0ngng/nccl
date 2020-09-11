@@ -87,7 +87,7 @@ ncclResult_t ncclLaunchCooperativeKernelMultiDevice(struct cudaLaunchParams *par
   return ncclSuccess;
 }
 
-ncclResult_t getNextOp(struct ncclChannel* channel, struct ncclColl** coll, struct ncclColl* base) {
+static ncclResult_t getNextOp(struct ncclChannel* channel, struct ncclColl** coll, struct ncclColl* base) {
   if (channel->collCount == NCCL_MAX_OPS) {
     WARN("Too many aggregated operations on channel %d (%d max)", channel->id, NCCL_MAX_OPS);
     return ncclInvalidUsage;
@@ -107,7 +107,7 @@ ncclResult_t getNextOp(struct ncclChannel* channel, struct ncclColl** coll, stru
   return ncclSuccess;
 }
 
-ncclResult_t setupLaunch(struct ncclComm* comm, struct cudaLaunchParams* params) {
+static ncclResult_t setupLaunch(struct ncclComm* comm, struct cudaLaunchParams* params) {
   // Only launch blocks where we have work to do.
   for (int c=0; c<comm->p2pnChannels; c++) {
     if (comm->channels[c].collCount) params->gridDim.x = c+1;

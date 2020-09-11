@@ -117,7 +117,7 @@ static ncclResult_t p2pGetInfo(struct ncclTopoSystem* topo, struct ncclPeerInfo*
   return ncclSuccess;
 }
 
-ncclResult_t p2pMap(struct ncclPeerInfo* myInfo, struct ncclPeerInfo* peerInfo, struct p2pConnectInfo* p2pInfo, void** devMem, void** ipcPtr) {
+static ncclResult_t p2pMap(struct ncclPeerInfo* myInfo, struct ncclPeerInfo* peerInfo, struct p2pConnectInfo* p2pInfo, void** devMem, void** ipcPtr) {
   if (myInfo->pidHash == peerInfo->pidHash) {
     if (peerInfo->cudaDev != myInfo->cudaDev) {
       // Enable P2P access

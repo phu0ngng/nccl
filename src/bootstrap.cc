@@ -220,7 +220,7 @@ struct extState {
 
 #define MAX_SEGMENTS 128
 
-ncclResult_t remoteAlloc(void** ptr, int fd) {
+static ncclResult_t remoteAlloc(void** ptr, int fd) {
   size_t size;
   NCCLCHECK(socketRecv(fd, &size, sizeof(size_t)));
   cudaIpcMemHandle_t devIpc;
