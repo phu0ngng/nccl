@@ -13,27 +13,90 @@
  *  See the License for the specific language governing permissions and
  *  limitations under the License.
  */
-#pragma once
 
-#if defined(NVTX3_MINOR_VERSION) and NVTX3_MINOR_VERSION < 0
-#error \
-    "Trying to #include NVTX version 3 in a source file where an older NVTX version has already been included.  If you are not directly using NVTX (the NVIDIA Tools Extension library), you are getting this error because libraries you are using have included different versions of NVTX.  Suggested solutions are: (1) reorder #includes so the newest NVTX version is included first, (2) avoid using the conflicting libraries in the same .c/.cpp file, or (3) update the library using the older NVTX version to use the newer version instead."
-#endif
+/* Temporary helper #defines, #undef'ed at end of header */
+#define NVTX3_CPP_VERSION_MAJOR 1
+#define NVTX3_CPP_VERSION_MINOR 0
 
-/**
- * @brief Semantic minor version number.
- *
- * Major version number is hardcoded into the "nvtx3" namespace/prefix.
- *
- * If this value is incremented, the above version include guard needs to be
- * updated.
- *
+/* This section handles the decision of whether to provide unversioned symbols.
+ * If NVTX3_CPP_REQUIRE_EXPLICIT_VERSION is #defined, unversioned symbols are
+ * not provided, and explicit-version symbols such as nvtx3::v1::thread_range
+ * and NVTX3_V1_FUNC_RANGE must be used.  By default, the first #include of this
+ * header will define the unversioned symbols such as nvtx3::thread_range and
+ * NVTX3_FUNC_RANGE.  Subsequently including a different major version of this
+ * header without #defining NVTX3_CPP_REQUIRE_EXPLICIT_VERSION triggers an error
+ * since the symbols would conflict.  Subsequently including of a different
+ * minor version within the same major version is allowed. Functionality of
+ * minor versions is cumulative, regardless of include order.
+ * 
+ * Since NVTX3_CPP_REQUIRE_EXPLICIT_VERSION allows all combinations of versions
+ * to coexist without problems within a translation unit, the recommended best
+ * practice for instrumenting header-based libraries with NVTX C++ Wrappers is
+ * is to #define NVTX3_CPP_REQUIRE_EXPLICIT_VERSION before including nvtx3.hpp,
+ * #undef it afterward, and only use explicit-version symbols.  This is not
+ * necessary in common cases, such as instrumenting a standalone application, or
+ * static/shared libraries in .cpp files or headers private to those projects.
  */
-#define NVTX3_MINOR_VERSION 0
+/* clang-format off */
+#if !defined(NVTX3_CPP_REQUIRE_EXPLICIT_VERSION)
+    /* Define macro used by all definitions in this header to indicate the
+     * unversioned symbols should be defined in addition to the versioned ones.
+     */
+    #define NVTX3_INLINE_THIS_VERSION
 
-#include <nvToolsExt.h>
+    #if !defined(NVTX3_CPP_INLINED_VERSION_MAJOR)
+        /* First occurrence of this header in the translation unit.  Define macros
+         * indicating which version shall be used for unversioned symbols.
+         */
 
+        /**
+         * @brief Semantic major version number for NVTX C++ wrappers of unversioned symbols
+         *
+         * Breaking changes may occur between major versions, and different major versions
+         * cannot provide unversioned symbols in the same translation unit (.cpp file).
+         * 
+         * Note: If NVTX3_CPP_REQUIRE_EXPLICIT_VERSION is defined, this macro is not defined.
+         *
+         * Not to be confused with the version number of the NVTX core library.
+         */
+        #define NVTX3_CPP_INLINED_VERSION_MAJOR 1  // NVTX3_CPP_VERSION_MAJOR
+
+        /**
+         * @brief Semantic minor version number for NVTX C++ wrappers of unversioned symbols
+         *
+         * No breaking changes occur between minor versions -- minor version changes within
+         * a major version are purely additive.
+         *
+         * Note: If NVTX3_CPP_REQUIRE_EXPLICIT_VERSION is defined, this macro is not defined.
+         *
+         * Not to be confused with the version number of the NVTX core library.
+         */
+        #define NVTX3_CPP_INLINED_VERSION_MINOR 0  // NVTX3_CPP_VERSION_MINOR
+    #elif NVTX3_CPP_INLINED_VERSION_MAJOR != NVTX3_CPP_VERSION_MAJOR
+        /* Unsupported case -- cannot define unversioned symbols for different major versions
+         * in the same translation unit.
+         */
+        #error \
+          "Two different major versions of the NVTX C++ Wrappers are being included in a single .cpp file, with unversioned symbols enabled in both.  Only one major version can enable unversioned symbols in a .cpp file.  To disable unversioned symbols, #define NVTX3_CPP_REQUIRE_EXPLICIT_VERSION before #including nvtx3.hpp, and use the explicit-version symbols instead -- this is the preferred way to use nvtx3.hpp from a header file."
+    #elif (NVTX3_CPP_INLINED_VERSION_MAJOR == NVTX3_CPP_VERSION_MAJOR) && \
+      (NVTX3_CPP_INLINED_VERSION_MINOR < NVTX3_CPP_VERSION_MINOR)
+        /* An older minor version of the same major version already defined unversioned
+         * symbols.  The new features provided in this header will be inlined 
+         * redefine the minor version macro to this header's version.
+         */
+        #undef NVTX3_CPP_INLINED_VERSION_MINOR
+        #define NVTX3_CPP_INLINED_VERSION_MINOR 0  // NVTX3_CPP_VERSION_MINOR
+        // else, already have this version or newer, nothing to do
+    #endif
+#endif
+/* clang-format on */
+
+#include <nvtx3/nvToolsExt.h>
+
+#include <memory>
 #include <string>
+#include <type_traits>
+#include <utility>
 
 /**
  * @file nvtx3.hpp
@@ -148,7 +211,7 @@
  * inconvenience. In short, a function local static object is constructed upon
  * the first invocation of a function and returns a reference to that object on
  * all future invocations. See the documentation for
- * `nvtx3::registered_message`, `nvtx3::domain`, `nvtx3::named_category`,  and
+ * `nvtx3::registered_string`, `nvtx3::domain`, `nvtx3::named_category`,  and
  * https://isocpp.org/wiki/faq/ctors#static-init-order-on-first-use for more
  * information.
  *
@@ -219,7 +282,7 @@
  *
  * `nvtx3::mark` allows annotating an instantaneous event in an application's
  * timeline. For example, indicating when a mutex is locked or unlocked.
- * 
+ *
  * \code{.cpp}
  * std::mutex global_lock;
  * void lock_mutex(){
@@ -269,7 +332,7 @@
  * constructs in the custom domain.
  * ```
  * using my_thread_range = nvtx3::domain_thread_range<my_domain>;
- * using my_registered_message = nvtx3::registered_message<my_domain>;
+ * using my_registered_string = nvtx3::registered_string<my_domain>;
  * using my_named_category = nvtx3::named_category<my_domain>;
  * ```
  *
@@ -342,17 +405,17 @@
  *
  * A message should be registered once and the handle reused throughout the rest
  * of the application. This can be done by either explicitly creating static
- * `nvtx3::registered_message` objects, or using the
- * `nvtx3::registered_message::get` construct on first use helper (recommended).
+ * `nvtx3::registered_string` objects, or using the
+ * `nvtx3::registered_string::get` construct on first use helper (recommended).
  *
- * Similar to \ref DOMAINS, `nvtx3::registered_message::get` requires defining a
+ * Similar to \ref DOMAINS, `nvtx3::registered_string::get` requires defining a
  * custom tag type with a static `message` member whose value will be the
  * contents of the registered string.
  *
  * Example:
  * \code{.cpp}
- * // Explicitly constructed, static `registered_message`
- * static registered_message<my_domain> static_message{"my message"};
+ * // Explicitly constructed, static `registered_string`
+ * static registered_string<my_domain> static_message{"my message"};
  *
  * // Or use construct on first use:
  * // Define a tag type with a `message` member string to register
@@ -360,8 +423,8 @@
  *
  * // Uses construct on first use to register the contents of
  * // `my_message::message`
- * nvtx3::registered_message<my_domain> const& msg =
- * nvtx3::registered_message<my_domain>::get<my_message>(); \endcode
+ * nvtx3::registered_string<my_domain> const& msg =
+ * nvtx3::registered_string<my_domain>::get<my_message>(); \endcode
  *
  * \subsection COLOR color
  *
@@ -445,12 +508,12 @@
  *    static constexpr uint32_t id{42};
  * };
  *
- * // Define a registered message tag type
+ * // Define a registered string tag type
  * struct my_message{ static constexpr char const* message{"my message"}; };
  *
  * // For convenience, use aliases for domain scoped objects
  * using my_thread_range = nvtx3::domain_thread_range<my_domain>;
- * using my_registered_message = nvtx3::registered_message<my_domain>;
+ * using my_registered_string = nvtx3::registered_string<my_domain>;
  * using my_named_category = nvtx3::named_category<my_domain>;
  *
  * // Default values for all attributes
@@ -465,13 +528,13 @@
  * // `my_thread_range`
  * my_thread_range r2{"message", nvtx3::category{2}};
  *
- * // construct on first use a registered message
- * auto msg = my_registered_message::get<my_message>();
+ * // construct on first use a registered string
+ * auto msg = my_registered_string::get<my_message>();
  *
  * // construct on first use a named category
  * auto category = my_named_category::get<my_category>();
  *
- * // Use registered message and named category
+ * // Use registered string and named category
  * my_thread_range r3{msg, category, nvtx3::rgb{127, 255, 0},
  *                    nvtx3::payload{42}};
  *
@@ -499,14 +562,30 @@
  *
  */
 
-/**
- * @brief Enables the use of constexpr when support for C++14 relaxed constexpr
+/* Temporary helper #defines, removed with #undef at end of header */
+
+/* Within this header, nvtx3::NVTX3_VERSION_NAMESPACE resolves to nvtx3::vX,
+ * where "X" is the major version number. */
+#define NVTX3_CONCAT(A, B) A##B
+#define NVTX3_NAMESPACE_FOR(VERSION) NVTX3_CONCAT(v, VERSION)
+#define NVTX3_VERSION_NAMESPACE NVTX3_NAMESPACE_FOR(NVTX3_CPP_VERSION_MAJOR)
+
+/* Avoid duplicating #if defined(NVTX3_INLINE_THIS_VERSION) for namespaces
+ * in each minor version by making a macro to use unconditionally, which
+ * resolves to "inline" or nothing as appropriate. */
+#if defined(NVTX3_INLINE_THIS_VERSION)
+#define NVTX3_INLINE_IF_REQUESTED inline
+#else
+#define NVTX3_INLINE_IF_REQUESTED
+#endif
+
+/* Enables the use of constexpr when support for C++14 relaxed constexpr
  * is present.
  *
  * Initializing a legacy-C (i.e., no constructor) union member requires
  * initializing in the constructor body. Non-empty constexpr constructors
- * require C++14 relaxed constexpr.
- *
+ * require C++14 relaxed constexpr.  In strict C++11 compilation, fall back
+ * to using non-constexpr constructors for classes with union members.
  */
 #if __cpp_constexpr >= 201304L
 #define NVTX3_RELAXED_CONSTEXPR constexpr
@@ -514,7 +593,16 @@
 #define NVTX3_RELAXED_CONSTEXPR
 #endif
 
+/* Implementation sections, enclosed in guard macros for each minor version */
+
+#ifndef NVTX3_CPP_DEFINITIONS_V1_0
+#define NVTX3_CPP_DEFINITIONS_V1_0
+
 namespace nvtx3 {
+
+NVTX3_INLINE_IF_REQUESTED namespace NVTX3_VERSION_NAMESPACE
+{
+
 namespace detail {
 
 /**
@@ -526,11 +614,10 @@ namespace detail {
  * `const wchar_t*`.
  */
 template <typename T>
-constexpr auto has_name_member() noexcept -> decltype(T::name, bool()) {
-  return (std::is_same<char const*,
-                       typename std::decay<decltype(T::name)>::type>::value or
-          std::is_same<wchar_t const*,
-                       typename std::decay<decltype(T::name)>::type>::value);
+constexpr auto has_name_member() noexcept -> decltype(T::name, bool())
+{
+  return (std::is_same<char const*, typename std::decay<decltype(T::name)>::type>::value ||
+          std::is_same<wchar_t const*, typename std::decay<decltype(T::name)>::type>::value);
 }
 }  // namespace detail
 
@@ -592,7 +679,7 @@ class domain {
  public:
   domain(domain const&) = delete;
   domain& operator=(domain const&) = delete;
-  domain(domain&&) = delete;
+  domain(domain&&)                 = delete;
   domain& operator=(domain&&) = delete;
 
   /**
@@ -640,7 +727,8 @@ class domain {
    * @return Reference to the `domain` corresponding to the type `DomainName`.
    */
   template <typename DomainName>
-  static domain const& get() {
+  static domain const& get()
+  {
     static_assert(detail::has_name_member<DomainName>(),
                   "Type used to identify a domain must contain a name member of"
                   "type const char* or const wchar_t*");
@@ -667,7 +755,8 @@ class domain {
    * applications will be grouped together.
    *
    */
-  struct global {};
+  struct global {
+  };
 
  private:
   /**
@@ -678,8 +767,7 @@ class domain {
    *
    * @param name A unique name identifying the domain
    */
-  explicit domain(char const* name) noexcept
-      : _domain{nvtxDomainCreateA(name)} {}
+  explicit domain(char const* name) noexcept : _domain{nvtxDomainCreateA(name)} {}
 
   /**
    * @brief Construct a new domain with the specified `name`.
@@ -689,8 +777,7 @@ class domain {
    *
    * @param name A unique name identifying the domain
    */
-  explicit domain(wchar_t const* name) noexcept
-      : _domain{nvtxDomainCreateW(name)} {}
+  explicit domain(wchar_t const* name) noexcept : _domain{nvtxDomainCreateW(name)} {}
 
   /**
    * @brief Construct a new domain with the specified `name`.
@@ -723,10 +810,20 @@ class domain {
   domain() = default;
 
   /**
-   * @brief Destroy the domain object, unregistering and freeing all domain
-   * specific resources.
+   * @brief Intentionally avoid calling nvtxDomainDestroy on the `domain` object.
+   *
+   * No currently-available tools attempt to free domain resources when the
+   * nvtxDomainDestroy function is called, due to the thread-safety and
+   * efficiency challenges of freeing thread-local storage for other threads.
+   * Since libraries may be disallowed from introducing static destructors,
+   * and destroying the domain is likely to have no effect, the destructor
+   * for `domain` intentionally chooses to not destroy the domain.
+   *
+   * In a situation where domain destruction is necessary, either manually
+   * call nvtxDomainDestroy on the domain's handle, or make a class that
+   * derives from `domain` and calls nvtxDomainDestroy in its destructor.
    */
-  ~domain() noexcept { nvtxDomainDestroy(_domain); }
+  ~domain() = default;
 
  private:
   nvtxDomainHandle_t const _domain{};  ///< The `domain`s NVTX handle
@@ -746,7 +843,8 @@ class domain {
  *
  */
 template <>
-inline domain const& domain::get<domain::global>() {
+inline domain const& domain::get<domain::global>()
+{
   static domain const d{};
   return d;
 }
@@ -770,9 +868,10 @@ struct rgb {
    * @param green_ Value of the green channel
    * @param blue_ Value of the blue channel
    */
-  constexpr rgb(component_type red_, component_type green_,
-                component_type blue_) noexcept
-      : red{red_}, green{green_}, blue{blue_} {}
+  constexpr rgb(component_type red_, component_type green_, component_type blue_) noexcept
+    : red{red_}, green{green_}, blue{blue_}
+  {
+  }
 
   component_type const red{};    ///< Red channel value
   component_type const green{};  ///< Green channel value
@@ -797,9 +896,13 @@ struct argb final : rgb {
    * @param blue_  Value of the blue channel
    *
    */
-  constexpr argb(component_type alpha_, component_type red_,
-                 component_type green_, component_type blue_) noexcept
-      : rgb{red_, green_, blue_}, alpha{alpha_} {}
+  constexpr argb(component_type alpha_,
+                 component_type red_,
+                 component_type green_,
+                 component_type blue_) noexcept
+    : rgb{red_, green_, blue_}, alpha{alpha_}
+  {
+  }
 
   component_type const alpha{};  ///< Alpha channel value
 };
@@ -844,8 +947,9 @@ class color {
    * @param argb The alpha, red, green, blue components of the desired `color`
    */
   constexpr color(argb argb) noexcept
-      : color{from_bytes_msb_to_lsb(argb.alpha, argb.red, argb.green,
-                                    argb.blue)} {}
+    : color{from_bytes_msb_to_lsb(argb.alpha, argb.red, argb.green, argb.blue)}
+  {
+  }
 
   /**
    * @brief Construct a `color` using the red, green, blue components in
@@ -856,7 +960,9 @@ class color {
    * @param rgb The red, green, blue components of the desired `color`
    */
   constexpr color(rgb rgb) noexcept
-      : color{from_bytes_msb_to_lsb(0xFF, rgb.red, rgb.green, rgb.blue)} {}
+    : color{from_bytes_msb_to_lsb(0xFF, rgb.red, rgb.green, rgb.blue)}
+  {
+  }
 
   /**
    * @brief Returns the `color`s argb hex code
@@ -870,11 +976,11 @@ class color {
    */
   constexpr nvtxColorType_t get_type() const noexcept { return _type; }
 
-  color() = delete;
-  ~color() = default;
+  color()             = delete;
+  ~color()            = default;
   color(color const&) = default;
   color& operator=(color const&) = default;
-  color(color&&) = default;
+  color(color&&)                 = default;
   color& operator=(color&&) = default;
 
  private:
@@ -886,9 +992,9 @@ class color {
   constexpr static value_type from_bytes_msb_to_lsb(uint8_t byte3,
                                                     uint8_t byte2,
                                                     uint8_t byte1,
-                                                    uint8_t byte0) noexcept {
-    return uint32_t{byte3} << 24 | uint32_t{byte2} << 16 |
-           uint32_t{byte1} << 8 | uint32_t{byte0};
+                                                    uint8_t byte0) noexcept
+  {
+    return uint32_t{byte3} << 24 | uint32_t{byte2} << 16 | uint32_t{byte1} << 8 | uint32_t{byte0};
   }
 
   value_type const _value{};                     ///< color's argb color code
@@ -938,11 +1044,11 @@ class category {
    */
   constexpr id_type get_id() const noexcept { return id_; }
 
-  category() = delete;
-  ~category() = default;
+  category()                = delete;
+  ~category()               = default;
   category(category const&) = default;
   category& operator=(category const&) = default;
-  category(category&&) = default;
+  category(category&&)                 = default;
   category& operator=(category&&) = default;
 
  private:
@@ -1036,7 +1142,8 @@ class named_category final : public category {
    * `char const*` or `wchar_t const*` and `C::id`.
    */
   template <typename C>
-  static named_category<D> const& get() noexcept {
+  static named_category<D> const& get() noexcept
+  {
     static_assert(detail::has_name_member<C>(),
                   "Type used to name a category must contain a name member.");
     static named_category<D> const category{C::id, C::name};
@@ -1052,8 +1159,14 @@ class named_category final : public category {
    * @param[in] id The category id to name
    * @param[in] name The name to associated with `id`
    */
-  named_category(id_type id, char const* name) noexcept : category{id} {
+  named_category(id_type id, char const* name) noexcept : category{id}
+  {
+#ifndef NVTX_DISABLE
     nvtxDomainNameCategoryA(domain::get<D>(), get_id(), name);
+#else
+    (void)id;
+    (void)name;
+#endif
   };
 
   /**
@@ -1066,8 +1179,14 @@ class named_category final : public category {
    * @param[in] id The category id to name
    * @param[in] name The name to associated with `id`
    */
-  named_category(id_type id, wchar_t const* name) noexcept : category{id} {
+  named_category(id_type id, wchar_t const* name) noexcept : category{id}
+  {
+#ifndef NVTX_DISABLE
     nvtxDomainNameCategoryW(domain::get<D>(), get_id(), name);
+#else
+    (void)id;
+    (void)name;
+#endif
   };
 };
 
@@ -1085,13 +1204,13 @@ class named_category final : public category {
  *
  * A particular message should only be registered once and the handle
  * reused throughout the rest of the application. This can be done by either
- * explicitly creating static `registered_message` objects, or using the
- * `registered_message::get` construct on first use helper (recommended).
+ * explicitly creating static `registered_string` objects, or using the
+ * `registered_string::get` construct on first use helper (recommended).
  *
  * Example:
  * \code{.cpp}
- * // Explicitly constructed, static `registered_message`
- * static registered_message<my_domain> static_message{"message"};
+ * // Explicitly constructed, static `registered_string`
+ * static registered_string<my_domain> static_message{"message"};
  *
  * // "message" is associated with the range `r`
  * nvtx3::thread_range r{static_message};
@@ -1099,35 +1218,35 @@ class named_category final : public category {
  * // Or use construct on first use:
  *
  * // Define a type with a `message` member that defines the contents of the
- * // registered message
+ * // registered string
  * struct my_message{ static constexpr char const* message{ "my message" }; };
  *
  * // Uses construct on first use to register the contents of
  * // `my_message::message`
- * auto msg = registered_message<my_domain>::get<my_message>();
+ * auto msg = registered_string<my_domain>::get<my_message>();
  *
  * // "my message" is associated with the range `r`
  * nvtx3::thread_range r{msg};
  * \endcode
  *
- * `registered_message`s are local to a particular domain specified via
+ * `registered_string`s are local to a particular domain specified via
  * the type `D`.
  *
  * @tparam D Type containing `name` member used to identify the `domain` to
- * which the `registered_message` belongs. Else, `domain::global` to  indicate
+ * which the `registered_string` belongs. Else, `domain::global` to  indicate
  * that the global NVTX domain should be used.
  */
 template <typename D = domain::global>
-class registered_message {
+class registered_string {
  public:
   /**
-   * @brief Returns a global instance of a `registered_message` as a function
+   * @brief Returns a global instance of a `registered_string` as a function
    * local static.
    *
    * Provides a convenient way to register a message with NVTX without having
    * to explicitly register the message.
    *
-   * Upon first invocation, constructs a `registered_message` whose contents
+   * Upon first invocation, constructs a `registered_string` whose contents
    * are specified by `message::message`.
    *
    * All future invocations will return a reference to the object constructed
@@ -1136,13 +1255,13 @@ class registered_message {
    * Example:
    * \code{.cpp}
    * // Define a type with a `message` member that defines the contents of the
-   * // registered message
+   * // registered string
    * struct my_message{ static constexpr char const* message{ "my message" };
    * };
    *
    * // Uses construct on first use to register the contents of
    * // `my_message::message`
-   * auto msg = registered_message<my_domain>::get<my_message>();
+   * auto msg = registered_string<my_domain>::get<my_message>();
    *
    * // "my message" is associated with the range `r`
    * nvtx3::thread_range r{msg};
@@ -1150,17 +1269,18 @@ class registered_message {
    *
    * @tparam M Type required to contain a member `M::message` that
    * resolves to either a `char const*` or `wchar_t const*` used as the
-   * registered message's contents.
-   * @return Reference to a `registered_message` associated with the type `M`.
+   * registered string's contents.
+   * @return Reference to a `registered_string` associated with the type `M`.
    */
   template <typename M>
-  static registered_message<D> const& get() noexcept {
-    static registered_message<D> const registered_message{M::message};
-    return registered_message;
+  static registered_string<D> const& get() noexcept
+  {
+    static registered_string<D> const registered_string{M::message};
+    return registered_string;
   }
 
   /**
-   * @brief Constructs a `registered_message` from the specified `msg` string.
+   * @brief Constructs a `registered_string` from the specified `msg` string.
    *
    * Registers `msg` with NVTX and associates a handle with the registered
    * message.
@@ -1170,11 +1290,13 @@ class registered_message {
    *
    * @param msg The contents of the message
    */
-  explicit registered_message(char const* msg) noexcept
-      : handle_{nvtxDomainRegisterStringA(domain::get<D>(), msg)} {}
+  explicit registered_string(char const* msg) noexcept
+    : handle_{nvtxDomainRegisterStringA(domain::get<D>(), msg)}
+  {
+  }
 
   /**
-   * @brief Constructs a `registered_message` from the specified `msg` string.
+   * @brief Constructs a `registered_string` from the specified `msg` string.
    *
    * Registers `msg` with NVTX and associates a handle with the registered
    * message.
@@ -1184,11 +1306,10 @@ class registered_message {
    *
    * @param msg The contents of the message
    */
-  explicit registered_message(std::string const& msg) noexcept
-      : registered_message{msg.c_str()} {}
+  explicit registered_string(std::string const& msg) noexcept : registered_string{msg.c_str()} {}
 
   /**
-   * @brief Constructs a `registered_message` from the specified `msg` string.
+   * @brief Constructs a `registered_string` from the specified `msg` string.
    *
    * Registers `msg` with NVTX and associates a handle with the registered
    * message.
@@ -1198,11 +1319,13 @@ class registered_message {
    *
    * @param msg The contents of the message
    */
-  explicit registered_message(wchar_t const* msg) noexcept
-      : handle_{nvtxDomainRegisterStringW(domain::get<D>(), msg)} {}
+  explicit registered_string(wchar_t const* msg) noexcept
+    : handle_{nvtxDomainRegisterStringW(domain::get<D>(), msg)}
+  {
+  }
 
   /**
-   * @brief Constructs a `registered_message` from the specified `msg` string.
+   * @brief Constructs a `registered_string` from the specified `msg` string.
    *
    * Registers `msg` with NVTX and associates a handle with the registered
    * message.
@@ -1212,21 +1335,20 @@ class registered_message {
    *
    * @param msg The contents of the message
    */
-  explicit registered_message(std::wstring const& msg) noexcept
-      : registered_message{msg.c_str()} {}
+  explicit registered_string(std::wstring const& msg) noexcept : registered_string{msg.c_str()} {}
 
   /**
-   * @brief Returns the registered message's handle
+   * @brief Returns the registered string's handle
    *
    */
   nvtxStringHandle_t get_handle() const noexcept { return handle_; }
 
-  registered_message() = delete;
-  ~registered_message() = default;
-  registered_message(registered_message const&) = default;
-  registered_message& operator=(registered_message const&) = default;
-  registered_message(registered_message&&) = default;
-  registered_message& operator=(registered_message&&) = default;
+  registered_string()                         = delete;
+  ~registered_string()                        = default;
+  registered_string(registered_string const&) = default;
+  registered_string& operator=(registered_string const&) = default;
+  registered_string(registered_string&&)                 = default;
+  registered_string& operator=(registered_string&&) = default;
 
  private:
   nvtxStringHandle_t const handle_{};  ///< The handle returned from
@@ -1243,7 +1365,7 @@ class registered_message {
  * Every time an NVTX event is created with an associated `message`, the
  * contents of the message string must be copied.  This may cause non-trivial
  * overhead in highly performance sensitive sections of code. Use of a
- * `nvtx3::registered_message` is recommended in these situations.
+ * `nvtx3::registered_string` is recommended in these situations.
  *
  * Example:
  * \code{.cpp}
@@ -1279,8 +1401,8 @@ class message {
    *
    * @param msg The contents of the message
    */
-  NVTX3_RELAXED_CONSTEXPR message(char const* msg) noexcept
-      : type_{NVTX_MESSAGE_TYPE_ASCII} {
+  NVTX3_RELAXED_CONSTEXPR message(char const* msg) noexcept : type_{NVTX_MESSAGE_TYPE_ASCII}
+  {
     value_.ascii = msg;
   }
 
@@ -1306,8 +1428,8 @@ class message {
    *
    * @param msg The contents of the message
    */
-  NVTX3_RELAXED_CONSTEXPR message(wchar_t const* msg) noexcept
-      : type_{NVTX_MESSAGE_TYPE_UNICODE} {
+  NVTX3_RELAXED_CONSTEXPR message(wchar_t const* msg) noexcept : type_{NVTX_MESSAGE_TYPE_UNICODE}
+  {
     value_.unicode = msg;
   }
 
@@ -1329,16 +1451,17 @@ class message {
   message(std::wstring&&) = delete;
 
   /**
-   * @brief Construct a `message` from a `registered_message`.
+   * @brief Construct a `message` from a `registered_string`.
    *
    * @tparam D Type containing `name` member used to identify the `domain`
-   * to which the `registered_message` belongs. Else, `domain::global` to
+   * to which the `registered_string` belongs. Else, `domain::global` to
    * indicate that the global NVTX domain should be used.
    * @param msg The message that has already been registered with NVTX.
    */
   template <typename D>
-  NVTX3_RELAXED_CONSTEXPR message(registered_message<D> const& msg) noexcept
-      : type_{NVTX_MESSAGE_TYPE_REGISTERED} {
+  NVTX3_RELAXED_CONSTEXPR message(registered_string<D> const& msg) noexcept
+    : type_{NVTX_MESSAGE_TYPE_REGISTERED}
+  {
     value_.registered = msg.get_handle();
   }
 
@@ -1346,17 +1469,13 @@ class message {
    * @brief Return the union holding the value of the message.
    *
    */
-  NVTX3_RELAXED_CONSTEXPR value_type get_value() const noexcept {
-    return value_;
-  }
+  NVTX3_RELAXED_CONSTEXPR value_type get_value() const noexcept { return value_; }
 
   /**
    * @brief Return the type information about the value the union holds.
    *
    */
-  NVTX3_RELAXED_CONSTEXPR nvtxMessageType_t get_type() const noexcept {
-    return type_;
-  }
+  NVTX3_RELAXED_CONSTEXPR nvtxMessageType_t get_type() const noexcept { return type_; }
 
  private:
   nvtxMessageType_t const type_{};  ///< message type
@@ -1390,7 +1509,8 @@ class payload {
    * @param value Value to use as contents of the payload
    */
   NVTX3_RELAXED_CONSTEXPR explicit payload(int64_t value) noexcept
-      : type_{NVTX_PAYLOAD_TYPE_INT64}, value_{} {
+    : type_{NVTX_PAYLOAD_TYPE_INT64}, value_{}
+  {
     value_.llValue = value;
   }
 
@@ -1400,7 +1520,8 @@ class payload {
    * @param value Value to use as contents of the payload
    */
   NVTX3_RELAXED_CONSTEXPR explicit payload(int32_t value) noexcept
-      : type_{NVTX_PAYLOAD_TYPE_INT32}, value_{} {
+    : type_{NVTX_PAYLOAD_TYPE_INT32}, value_{}
+  {
     value_.iValue = value;
   }
 
@@ -1410,7 +1531,8 @@ class payload {
    * @param value Value to use as contents of the payload
    */
   NVTX3_RELAXED_CONSTEXPR explicit payload(uint64_t value) noexcept
-      : type_{NVTX_PAYLOAD_TYPE_UNSIGNED_INT64}, value_{} {
+    : type_{NVTX_PAYLOAD_TYPE_UNSIGNED_INT64}, value_{}
+  {
     value_.ullValue = value;
   }
 
@@ -1420,7 +1542,8 @@ class payload {
    * @param value Value to use as contents of the payload
    */
   NVTX3_RELAXED_CONSTEXPR explicit payload(uint32_t value) noexcept
-      : type_{NVTX_PAYLOAD_TYPE_UNSIGNED_INT32}, value_{} {
+    : type_{NVTX_PAYLOAD_TYPE_UNSIGNED_INT32}, value_{}
+  {
     value_.uiValue = value;
   }
 
@@ -1431,7 +1554,8 @@ class payload {
    * @param value Value to use as contents of the payload
    */
   NVTX3_RELAXED_CONSTEXPR explicit payload(float value) noexcept
-      : type_{NVTX_PAYLOAD_TYPE_FLOAT}, value_{} {
+    : type_{NVTX_PAYLOAD_TYPE_FLOAT}, value_{}
+  {
     value_.fValue = value;
   }
 
@@ -1442,7 +1566,8 @@ class payload {
    * @param value Value to use as contents of the payload
    */
   NVTX3_RELAXED_CONSTEXPR explicit payload(double value) noexcept
-      : type_{NVTX_PAYLOAD_TYPE_DOUBLE}, value_{} {
+    : type_{NVTX_PAYLOAD_TYPE_DOUBLE}, value_{}
+  {
     value_.dValue = value;
   }
 
@@ -1450,17 +1575,13 @@ class payload {
    * @brief Return the union holding the value of the payload
    *
    */
-  NVTX3_RELAXED_CONSTEXPR value_type get_value() const noexcept {
-    return value_;
-  }
+  NVTX3_RELAXED_CONSTEXPR value_type get_value() const noexcept { return value_; }
 
   /**
    * @brief Return the information about the type the union holds.
    *
    */
-  NVTX3_RELAXED_CONSTEXPR nvtxPayloadType_t get_type() const noexcept {
-    return type_;
-  }
+  NVTX3_RELAXED_CONSTEXPR nvtxPayloadType_t get_type() const noexcept { return type_; }
 
  private:
   nvtxPayloadType_t const type_;  ///< Type of the payload value
@@ -1537,17 +1658,20 @@ class event_attributes {
    * category, color, payload, nor message.
    */
   constexpr event_attributes() noexcept
-      : attributes_{
-            NVTX_VERSION,                   // version
-            sizeof(nvtxEventAttributes_t),  // size
-            0,                              // category
-            NVTX_COLOR_UNKNOWN,             // color type
-            0,                              // color value
-            NVTX_PAYLOAD_UNKNOWN,           // payload type
-            {},                             // payload value (union)
-            NVTX_MESSAGE_UNKNOWN,           // message type
-            {}                              // message value (union)
-        } {}
+    : attributes_{
+        NVTX_VERSION,                   // version
+        sizeof(nvtxEventAttributes_t),  // size
+        0,                              // category
+        NVTX_COLOR_UNKNOWN,             // color type
+        0,                              // color value
+        NVTX_PAYLOAD_UNKNOWN,           // payload type
+        0,                              // reserved 4B
+        0,                              // payload value (union)
+        NVTX_MESSAGE_UNKNOWN,           // message type
+        0                               // message value (union)
+      }
+  {
+  }
 
   /**
    * @brief Variadic constructor where the first argument is a `category`.
@@ -1557,9 +1681,9 @@ class event_attributes {
    *
    */
   template <typename... Args>
-  NVTX3_RELAXED_CONSTEXPR explicit event_attributes(
-      category const& c, Args const&... args) noexcept
-      : event_attributes(args...) {
+  NVTX3_RELAXED_CONSTEXPR explicit event_attributes(category const& c, Args const&... args) noexcept
+    : event_attributes(args...)
+  {
     attributes_.category = c.get_id();
   }
 
@@ -1571,10 +1695,10 @@ class event_attributes {
    *
    */
   template <typename... Args>
-  NVTX3_RELAXED_CONSTEXPR explicit event_attributes(
-      color const& c, Args const&... args) noexcept
-      : event_attributes(args...) {
-    attributes_.color = c.get_value();
+  NVTX3_RELAXED_CONSTEXPR explicit event_attributes(color const& c, Args const&... args) noexcept
+    : event_attributes(args...)
+  {
+    attributes_.color     = c.get_value();
     attributes_.colorType = c.get_type();
   }
 
@@ -1586,10 +1710,10 @@ class event_attributes {
    *
    */
   template <typename... Args>
-  NVTX3_RELAXED_CONSTEXPR explicit event_attributes(
-      payload const& p, Args const&... args) noexcept
-      : event_attributes(args...) {
-    attributes_.payload = p.get_value();
+  NVTX3_RELAXED_CONSTEXPR explicit event_attributes(payload const& p, Args const&... args) noexcept
+    : event_attributes(args...)
+  {
+    attributes_.payload     = p.get_value();
     attributes_.payloadType = p.get_type();
   }
 
@@ -1601,17 +1725,17 @@ class event_attributes {
    *
    */
   template <typename... Args>
-  NVTX3_RELAXED_CONSTEXPR explicit event_attributes(
-      message const& m, Args const&... args) noexcept
-      : event_attributes(args...) {
-    attributes_.message = m.get_value();
+  NVTX3_RELAXED_CONSTEXPR explicit event_attributes(message const& m, Args const&... args) noexcept
+    : event_attributes(args...)
+  {
+    attributes_.message     = m.get_value();
     attributes_.messageType = m.get_type();
   }
 
-  ~event_attributes() = default;
+  ~event_attributes()                       = default;
   event_attributes(event_attributes const&) = default;
   event_attributes& operator=(event_attributes const&) = default;
-  event_attributes(event_attributes&&) = default;
+  event_attributes(event_attributes&&)                 = default;
   event_attributes& operator=(event_attributes&&) = default;
 
   /**
@@ -1689,8 +1813,13 @@ class domain_thread_range {
    * @param[in] attr `event_attributes` that describes the desired attributes
    * of the range.
    */
-  explicit domain_thread_range(event_attributes const& attr) noexcept {
+  explicit domain_thread_range(event_attributes const& attr) noexcept
+  {
+#ifndef NVTX_DISABLE
     nvtxDomainRangePushEx(domain::get<D>(), attr.get());
+#else
+    (void)attr;
+#endif
   }
 
   /**
@@ -1720,11 +1849,14 @@ class domain_thread_range {
    * forward.
    *
    */
-  template <typename First, typename... Args,
-            typename = typename std::enable_if<not std::is_same<
-                event_attributes, typename std::decay<First>>::value>>
+  template <typename First,
+            typename... Args,
+            typename = typename std::enable_if<
+              !std::is_same<event_attributes, typename std::decay<First>>::value>>
   explicit domain_thread_range(First const& first, Args const&... args) noexcept
-      : domain_thread_range{event_attributes{first, args...}} {}
+    : domain_thread_range{event_attributes{first, args...}}
+  {
+  }
 
   /**
    * @brief Default constructor creates a `domain_thread_range` with no
@@ -1733,15 +1865,28 @@ class domain_thread_range {
    */
   domain_thread_range() : domain_thread_range{event_attributes{}} {}
 
+  /**
+   * @brief Delete `operator new` to disallow heap allocated objects.
+   *
+   * `domain_thread_range` must follow RAII semantics to guarantee proper push/pop semantics.
+   *
+   */
+  void* operator new(std::size_t) = delete;
+
   domain_thread_range(domain_thread_range const&) = delete;
   domain_thread_range& operator=(domain_thread_range const&) = delete;
-  domain_thread_range(domain_thread_range&&) = delete;
+  domain_thread_range(domain_thread_range&&)                 = delete;
   domain_thread_range& operator=(domain_thread_range&&) = delete;
 
   /**
    * @brief Destroy the domain_thread_range, ending the NVTX range event.
    */
-  ~domain_thread_range() noexcept { nvtxDomainRangePop(domain::get<D>()); }
+  ~domain_thread_range() noexcept
+  {
+#ifndef NVTX_DISABLE
+    nvtxDomainRangePop(domain::get<D>());
+#endif
+  }
 };
 
 /**
@@ -1751,8 +1896,132 @@ class domain_thread_range {
 using thread_range = domain_thread_range<>;
 
 /**
- * @brief A RAII object for creating a NVTX range within a domain that can be
- * created and destroyed on different threads.
+ * @brief Handle used for correlating explicit range start and end events.
+ *
+ */
+struct range_handle {
+  /// Type used for the handle's value
+  using value_type = nvtxRangeId_t;
+
+  /**
+   * @brief Construct a `range_handle` from the given id.
+   *
+   */
+  constexpr explicit range_handle(value_type id) noexcept : _range_id{id} {}
+
+  /**
+   * @brief Returns the `range_handle`'s value
+   *
+   * @return value_type The handle's value
+   */
+  constexpr value_type get_value() const noexcept { return _range_id; }
+
+ private:
+  value_type _range_id{};  ///< The underlying NVTX range id
+};
+
+/**
+ * @brief Manually begin an NVTX range.
+ *
+ * Explicitly begins an NVTX range and returns a unique handle. To end the
+ * range, pass the handle to `end_range()`.
+ *
+ * `start_range/end_range` are the most explicit and lowest level APIs provided
+ * for creating ranges.  Use of `nvtx3::domain_process_range` should be
+ * preferred unless one is unable to tie the range to the lifetime of an object.
+ *
+ * Example:
+ * ```
+ * nvtx3::event_attributes attr{"msg", nvtx3::rgb{127,255,0}};
+ * nvtx3::range_handle h = nvxt3::start_range(attr); // Manually begins a range
+ * ...
+ * nvtx3::end_range(h); // Ends the range
+ * ```
+ *
+ * @tparam D Type containing `name` member used to identify the `domain`
+ * to which the range belongs. Else, `domain::global` to indicate that the
+ * global NVTX domain should be used.
+ * @param[in] attr `event_attributes` that describes the desired attributes
+ * of the range.
+ * @return Unique handle to be passed to `end_range` to end the range.
+ */
+template <typename D = domain::global>
+range_handle start_range(event_attributes const& attr) noexcept
+{
+#ifndef NVTX_DISABLE
+  return range_handle{nvtxDomainRangeStartEx(domain::get<D>(), attr.get())};
+#else
+  (void)attr;
+  return range_handle{};
+#endif
+}
+
+/**
+ * @brief Manually begin an NVTX range.
+ *
+ * Explicitly begins an NVTX range and returns a unique handle. To end the
+ * range, pass the handle to `end_range()`.
+ *
+ * Forwards the arguments `first, args...` to construct an  `event_attributes`
+ * object. The `event_attributes` object is then  associated with the range.
+ *
+ * For more detail, see `event_attributes` documentation.
+ *
+ * Example:
+ * ```
+ * nvtx3::range_handle h = nvxt3::start_range("msg", nvtx3::rgb{127,255,0}); //
+ * Begin range
+ * ...
+ * nvtx3::end_range(h); // Ends the range
+ * ```
+ *
+ * `start_range/end_range` are the most explicit and lowest level APIs provided
+ * for creating ranges.  Use of `nvtx3::domain_process_range` should be
+ * preferred unless one is unable to tie the range to the lifetime of an object.
+ *
+ * @param first[in] First argument to pass to an `event_attributes`
+ * @param args[in] Variadiac parameter pack of the rest of the arguments for an
+ * `event_attributes`.
+ * @return Unique handle to be passed to `end_range` to end the range.
+ */
+template <typename First,
+          typename... Args,
+          typename = typename std::enable_if<
+            !std::is_same<event_attributes, typename std::decay<First>>::value>>
+range_handle start_range(First const& first, Args const&... args) noexcept
+{
+#ifndef NVTX_DISABLE
+  return start_range(event_attributes{first, args...});
+#else
+  (void)first;
+  return range_handle{};
+#endif
+}
+
+/**
+ * @brief Manually end the range associated with the handle `r`.
+ *
+ * Explicitly ends the NVTX range indicated by the handle `r` returned from a
+ * prior call to `start_range`. The range may end on a different thread from
+ * where it began.
+ *
+ * This function does not have a Domain tag type template parameter as the
+ * handle `r` already indicates the domain to which the range belongs.
+ *
+ * @param r Handle to a range started by a prior call to `start_range`.
+ */
+inline void end_range(range_handle r)
+{
+#ifndef NVTX_DISABLE
+  nvtxRangeEnd(r.get_value());
+#else
+  (void)r;
+#endif
+}
+
+/**
+ * @brief A RAII object for creating a NVTX range within a domain that can
+ * be created and destroyed on different threads.
  *
  * When constructed, begins a NVTX range in the specified domain. Upon
  * destruction, ends the NVTX range.
@@ -1778,7 +2047,9 @@ class domain_process_range {
    * @param attr
    */
   explicit domain_process_range(event_attributes const& attr) noexcept
-      : range_id_{nvtxDomainRangeStartEx(domain::get<D>(), attr.get())} {}
+    : handle_{new range_handle{start_range<D>(attr)}}
+  {
+  }
 
   /**
    * @brief Construct a new domain process range object
@@ -1786,50 +2057,58 @@ class domain_process_range {
    * @param first
    * @param args
    */
-  template <typename First, typename... Args,
-            typename = typename std::enable_if<not std::is_same<
-                event_attributes, typename std::decay<First>>::value>>
-  explicit domain_process_range(First const& first,
-                                Args const&... args) noexcept
-      : domain_process_range{event_attributes{first, args...}} {}
+  template <typename First,
+            typename... Args,
+            typename = typename std::enable_if<
+              !std::is_same<event_attributes, typename std::decay<First>>::value>>
+  explicit domain_process_range(First const& first, Args const&... args) noexcept
+    : domain_process_range{event_attributes{first, args...}}
+  {
+  }
 
   /**
    * @brief Construct a new domain process range object
    *
    */
-  constexpr domain_process_range() noexcept
-      : domain_process_range{event_attributes{}} {}
+  constexpr domain_process_range() noexcept : domain_process_range{event_attributes{}} {}
 
   /**
    * @brief Destroy the `domain_process_range` ending the range.
    *
    */
-  ~domain_process_range() noexcept {
-    if (not moved_from_) {
-      nvtxRangeEnd(range_id_);
-    }
+  ~domain_process_range()
+  {
+    if (handle_) { end_range(*handle_); }
   }
 
+  /**
+   * @brief Move constructor allows taking ownership of the NVTX range from
+   * another `domain_process_range`.
+   *
+   * @param other
+   */
+  domain_process_range(domain_process_range&& other) = default;
+
+  /**
+   * @brief Move assignment operator allows taking ownership of an NVTX range
+   * from another `domain_process_range`.
+   *
+   * @param other
+   * @return domain_process_range&
+   */
+  domain_process_range& operator=(domain_process_range&& other) = default;
+
+  /// Copy construction is not allowed to prevent multiple objects from owning
+  /// the same range handle
   domain_process_range(domain_process_range const&) = delete;
+
+  /// Copy assignment is not allowed to prevent multiple objects from owning the
+  /// same range handle
   domain_process_range& operator=(domain_process_range const&) = delete;
 
-  domain_process_range(domain_process_range&& other) noexcept
-      : range_id_{other.range_id_} {
-    other.moved_from_ = true;
-  }
-
-  domain_process_range& operator=(domain_process_range&& other) noexcept {
-    range_id_ = other.range_id_;
-    other.moved_from_ = true;
-  }
-
  private:
-  nvtxRangeId_t range_id_;  ///< Range id used to correlate
-                            ///< the start/end of the range
-  bool moved_from_{false};  ///< Indicates if the object has had
-                            ///< it's contents moved from it,
-                            ///< indicating it should not attempt
-                            ///< to end the NVTX range.
+  std::unique_ptr<range_handle> handle_;  ///< Range handle used to correlate
+                                          ///< the start/end of the range
 };
 
 /**
@@ -1859,10 +2138,17 @@ using process_range = domain_process_range<>;
  * @param[in] attr `event_attributes` that describes the desired attributes
  * of the mark.
  */
-template <typename D = nvtx3::domain::global>
-inline void mark(event_attributes const& attr) noexcept {
+template <typename D = domain::global>
+inline void mark(event_attributes const& attr) noexcept
+{
+#ifndef NVTX_DISABLE
   nvtxDomainMarkEx(domain::get<D>(), attr.get());
+#else
+  (void)(attr);
+#endif
 }
+
+}  // namespace NVTX3_VERSION_NAMESPACE
 
 }  // namespace nvtx3
 
@@ -1874,7 +2160,7 @@ inline void mark(event_attributes const& attr) noexcept {
  * the entry point of a function to its exit. It is intended to be the first
  * line of the function.
  *
- * Constructs a static `registered_message` using the name of the immediately
+ * Constructs a static `registered_string` using the name of the immediately
  * enclosing function returned by `__func__` and constructs a
  * `nvtx3::thread_range` using the registered function name as the range's
  * message.
@@ -1891,13 +2177,17 @@ inline void mark(event_attributes const& attr) noexcept {
  * ```
  *
  * @param[in] D Type containing `name` member used to identify the
- * `domain` to which the `registered_message` belongs. Else,
+ * `domain` to which the `registered_string` belongs. Else,
  * `domain::global` to  indicate that the global NVTX domain should be used.
  */
-#define NVTX3_FUNC_RANGE_IN(D)                                                 \
-  static ::nvtx3::registered_message<D> const nvtx3_func_name__{__func__};     \
-  static ::nvtx3::event_attributes const nvtx3_func_attr__{nvtx3_func_name__}; \
-  ::nvtx3::domain_thread_range<D> const nvtx3_range__{nvtx3_func_attr__};
+#ifndef NVTX_DISABLE
+#define NVTX3_V1_FUNC_RANGE_IN(D)                                                  \
+  static ::nvtx3::v1::registered_string<D> const nvtx3_func_name__{__func__};      \
+  static ::nvtx3::v1::event_attributes const nvtx3_func_attr__{nvtx3_func_name__}; \
+  ::nvtx3::v1::domain_thread_range<D> const nvtx3_range__{nvtx3_func_attr__};
+#else
+#define NVTX3_V1_FUNC_RANGE_IN(D)
+#endif
 
 /**
  * @brief Convenience macro for generating a range in the global domain from the
@@ -1907,7 +2197,7 @@ inline void mark(event_attributes const& attr) noexcept {
  * the entry point of a function to its exit. It is intended to be the first
  * line of the function.
  *
- * Constructs a static `registered_message` using the name of the immediately
+ * Constructs a static `registered_string` using the name of the immediately
  * enclosing function returned by `__func__` and constructs a
  * `nvtx3::thread_range` using the registered function name as the range's
  * message.
@@ -1921,4 +2211,58 @@ inline void mark(event_attributes const& attr) noexcept {
  * } // Range ends on return from foo()
  * ```
  */
-#define NVTX3_FUNC_RANGE() NVTX3_FUNC_RANGE_IN(::nvtx3::domain::global)
+#define NVTX3_V1_FUNC_RANGE() NVTX3_V1_FUNC_RANGE_IN(::nvtx3::v1::domain::global)
+
+/* When inlining this version, versioned macros must have unversioned aliases.
+ * For each NVTX3_Vx_ #define, make an NVTX3_ alias of it here.*/
+#if defined(NVTX3_INLINE_THIS_VERSION)
+/* clang format off */
+#define NVTX3_FUNC_RANGE_IN   NVTX3_V1_FUNC_RANGE_IN
+#define NVTX3_FUNC_RANGE      NVTX3_V1_FUNC_RANGE
+/* clang format on */
+#endif
+
+#endif  // NVTX3_CPP_DEFINITIONS_V1_0
+
+/* Add functionality for new minor versions here, by copying the above section enclosed
+ * in #ifndef NVTX3_CPP_DEFINITIONS_Vx_y, and incrementing the minor version.  This code
+ * is an example of how additions for version 1.2 would look, indented for clarity.  Note
+ * that the versioned symbols and macros are always provided, and the unversioned symbols
+ * are only provided if NVTX3_INLINE_THIS_VERSION was defined at the top of this header.
+ *
+ * \code{.cpp}
+ * #ifndef NVTX3_CPP_DEFINITIONS_V1_2
+ * #define NVTX3_CPP_DEFINITIONS_V1_2
+ *     namespace nvtx3 {
+ *         NVTX3_INLINE_IF_REQUESTED namespace NVTX3_VERSION_NAMESPACE {
+ *             class new_class {};
+ *             inline void new_function() {}
+ *         }
+ *     }
+ *
+ *     // Macros must have the major version in their names:
+ *     #define NVTX3_V1_NEW_MACRO_A() ...
+ *     #define NVTX3_V1_NEW_MACRO_B() ...
+ *
+ *     // If inlining, make aliases for the macros with the version number omitted
+ *     #if defined(NVTX3_INLINE_THIS_VERSION)
+ *         #define NVTX3_NEW_MACRO_A NVTX3_V1_NEW_MACRO_A
+ *         #define NVTX3_NEW_MACRO_B NVTX3_V1_NEW_MACRO_B
+ *     #endif
+ * #endif // NVTX3_CPP_DEFINITIONS_V1_2
+ * \endcode
+ */
+
+/* Undefine all temporarily-defined unversioned macros, which would conflict with
+ * subsequent includes of different versions of this header. */
+#undef NVTX3_CPP_VERSION_MAJOR
+#undef NVTX3_CPP_VERSION_MINOR
+#undef NVTX3_CONCAT
+#undef NVTX3_NAMESPACE_FOR
+#undef NVTX3_VERSION_NAMESPACE
+#undef NVTX3_INLINE_IF_REQUESTED
+#undef NVTX3_RELAXED_CONSTEXPR
+
+#if defined(NVTX3_INLINE_THIS_VERSION)
+#undef NVTX3_INLINE_THIS_VERSION
+#endif
