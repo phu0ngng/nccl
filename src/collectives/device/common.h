@@ -88,7 +88,7 @@ __device__ void ncclKernel(struct ncclDevComm* comm)  {
         auto f = ncclFunction<FUNCTION, ALGO, PROTO, REDOP, T, UNROLL>();
         f.run(&c->args);
       } else {
-       ncclFuncs[c->funcIndex](&c->args);
+        ncclFuncs[c->funcIndex](&c->args);
       }
     }
     // Increment index. Only the first block reaching a given index will actually
