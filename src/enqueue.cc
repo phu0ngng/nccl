@@ -101,6 +101,7 @@ static ncclResult_t getNextOp(struct ncclChannel* channel, struct ncclColl** col
   else
     memset(c, 0, sizeof(struct ncclColl));
   c->active = 1;
+  c->index = opIndex;
   channel->collFifoTail++;
   channel->collCount++;
   *coll = c;
@@ -124,7 +125,13 @@ static ncclResult_t setupLaunch(struct ncclComm* comm, struct cudaLaunchParams* 
     channel->collectives[(channel->collFifoTail-1)%NCCL_MAX_OPS].active = 2;
   }
 
+  // Find the first operation, choose the kernel accordingly and pass it
+  // as the first argument.
   struct ncclColl* coll = comm->channels[0].collectives+(comm->channels[0].collFifoTail-comm->channels[0].collCount)%NCCL_MAX_OPS;
+  memcpy(&comm->args, coll, sizeof(struct ncclColl));
+  // As we pass that coll directly, we can free it immediately.
+  coll->active = 0;
+
   params->func = ncclKerns[coll->funcIndex];
   return ncclSuccess;
 }

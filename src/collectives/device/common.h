@@ -71,40 +71,48 @@ struct ncclShmemData {
 
 extern __device__ struct ncclShmemData *ncclShmem;
 
-template <ncclFunc_t FUNCTION, int ALGO, int PROTO, class REDOP, typename T, int UNROLL, int fIndex>
-__device__ void ncclKernel(struct ncclDevComm* comm)  {
+template <ncclFunc_t FUNCTION, int ALGO, int PROTO, class REDOP, typename T, int UNROLL>
+__device__ void ncclKernel(struct ncclColl firstColl, int fIndex)  {
   int tid = threadIdx.x;
   int bid = blockIdx.x;
   __shared__ struct ncclShmemData shmem;
   ncclShmem = &shmem;
 
-  int index = comm->index;
+  auto f = ncclFunction<FUNCTION, ALGO, PROTO, REDOP, T, UNROLL>();
+
+  struct ncclDevComm* comm = firstColl.args.comm;
   struct ncclChannel* channel = comm->channels+bid;
-  struct ncclColl* c = &shmem.localColl;
-  do {
-    load_coll(c, channel->collectives+index, tid, comm);
+  struct ncclColl* c = NULL;
+  uint16_t index = firstColl.index;
+  if (bid == 0) {
+    /* To optimize for latency, (only) the first operation is passed as argument.*/
+    c = &firstColl;
+  }
+  while (1) {
+    if (c == NULL) {
+      c = &shmem.localColl;
+      load_coll(c, channel->collectives+index, tid, comm);
+    }
     if (tid < c->args.common.nThreads) {
       if (c->funcIndex == fIndex) {
-        auto f = ncclFunction<FUNCTION, ALGO, PROTO, REDOP, T, UNROLL>();
         f.run(&c->args);
       } else {
         ncclFuncs[c->funcIndex](&c->args);
       }
     }
-    // Increment index. Only the first block reaching a given index will actually
-    // increment the global index. This guarantees the index follows the max index
-    // that any block ever reached.
-    int nextIndex = (index+1) % NCCL_MAX_OPS;
-    if (tid == 0) atomicCAS(&comm->index, index, nextIndex);
-    index = nextIndex;
-  } while (c->active != 2);
+    index = (index+1) % NCCL_MAX_OPS;
+    if (c->active == 2) {
+      return;
+    }
+    c = NULL;
+  }
 }
 
 // Only generate kernels for SUM
 #if NCCL_OP == 0
 #define IMPL_COLL_KERN(func, algo, proto, redop, type, fIndex) \
-__global__ void NCCL_KERN_NAME(func, algo, proto, redop, type)(struct ncclDevComm* comm) { \
-  ncclKernel<ncclFunc##func, NCCL_ALGO_##algo, NCCL_PROTO_##proto, Func##redop<type>, type, COLL_UNROLL, fIndex>(comm); \
+__global__ void NCCL_KERN_NAME(func, algo, proto, redop, type)(struct ncclColl firstColl) { \
+  ncclKernel<ncclFunc##func, NCCL_ALGO_##algo, NCCL_PROTO_##proto, Func##redop<type>, type, COLL_UNROLL>(firstColl, fIndex); \
 }
 #else
 #define IMPL_COLL_KERN(func, algo, proto, redop, type, fInded)
