@@ -230,7 +230,7 @@ ncclResult_t ncclProxySaveP2p(struct ncclInfo* info, struct ncclChannel* channel
   args.chunkSteps = 1;
   args.protocol = NCCL_PROTO_SIMPLE;
   args.segment = segment;
-  args.opCount = channel->collFifoTail-1;
+  args.opCount = channel->workFifoTail-1;
   args.dtype = info->datatype;
   if (info->delta > 0 && info->recvbytes >= 0) {
     int peerrecv = (info->comm->nRanks+info->comm->rank-info->delta)%info->comm->nRanks;
@@ -414,7 +414,7 @@ ncclResult_t ncclProxySharedBuffersInit(struct ncclComm* comm, int cuda, int* si
     comm->proxyState.sharedBuffs = state;
     state->nslots = ncclParamProxySharedBuffersCount();
     if (state->nslots == -2)  {
-      state->nslots = NCCL_STEPS*NCCL_MAX_SEGMENTS;
+      state->nslots = NCCL_STEPS*NCCL_MAX_WORK_ELEMENTS;
     }
     state->slotSize = comm->buffSizes[NCCL_PROTO_SIMPLE]/(NCCL_STEPS*SENDRECV_SLICEFACTOR);
   }

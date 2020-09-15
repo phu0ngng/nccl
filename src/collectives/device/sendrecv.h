@@ -11,11 +11,12 @@
 template<class FUNC, typename T, int UNROLL>
 class ncclFunction<ncclFuncSendRecv, NCCL_ALGO_RING, NCCL_PROTO_SIMPLE, FUNC, T, UNROLL> {
   public:
-    __device__ void run(struct CollectiveArgs* args) {
+    __device__ void run(struct ncclWorkElem* firstArgs) {
+      struct ncclWorkElem* args = firstArgs;
       int tid = threadIdx.x;
       int group = 0;
-      for (int s=0; s<NCCL_MAX_SEGMENTS; s++) {
-        int nThreadsSegment = args->p2p.nThreadsPerOp[s];
+      for (int s=0; s<NCCL_MAX_WORK_ELEMENTS; s++) {
+        int nThreadsSegment = args->p2p.nThreads;
         if (nThreadsSegment == 0) return; // Nothing else to do
         int groupRecv = group;
         group += 1;
@@ -26,12 +27,12 @@ class ncclFunction<ncclFuncSendRecv, NCCL_ALGO_RING, NCCL_PROTO_SIMPLE, FUNC, T,
           const int nThreads = nThreadsSegment > 128 ? nThreadsSegment-WARP_SIZE : nThreadsSegment;
 
           // Compute pointers
-          const T* sendbuff = (const T*)args->p2p.sendbuff[s];
-          T* recvbuff = (T*)args->p2p.recvbuff[s];
-          const ssize_t sendCount = args->p2p.sendCount[s];
-          const ssize_t recvCount = args->p2p.recvCount[s];
+          const T* sendbuff = (const T*)args->sendbuff;
+          T* recvbuff = (T*)args->recvbuff;
+          const ssize_t sendCount = args->p2p.sendCount;
+          const ssize_t recvCount = args->p2p.recvCount;
 
-          const int delta = args->p2p.delta[s];
+          const int delta = args->p2p.delta;
           if (delta == 0) {
             if (tid < nThreads && sendbuff != recvbuff) {
               // local copy : ReduceOrCopyMulti takes an int as number of elements,
@@ -88,6 +89,7 @@ class ncclFunction<ncclFuncSendRecv, NCCL_ALGO_RING, NCCL_PROTO_SIMPLE, FUNC, T,
         }
         tid -= nThreadsSegment;
         if (tid < 0) return;
+	args++;
       }
     }
 };

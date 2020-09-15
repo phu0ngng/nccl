@@ -132,55 +132,46 @@ struct ncclPeer {
 
 struct ncclDevComm;
 
-#define NCCL_MAX_SEGMENTS 8
-#define NCCL_MAX_GROUPS (NCCL_MAX_SEGMENTS*2)
+#define NCCL_MAX_WORK_ELEMENTS 8
+#define NCCL_MAX_GROUPS (NCCL_MAX_WORK_ELEMENTS*2)
 
-/* CollectiveArgs + ncclColl are to be a power of two, currently 64 bytes, */
+/* ncclWork is to be a power of two, currently 8x64 bytes, */
 /* to make sure reads to host from the CUDA kernel are aligned. */
-/* Make sure to adjust padding at the end of ncclColl. */
-struct CollectiveArgs {
+/* Make sure to adjust padding at the end of ncclWork. */
+struct ncclWorkElem {
+  // Header
   struct ncclDevComm* comm;
+  uint16_t nThreads;
+  uint16_t funcIndex;
+  uint16_t index;
+  uint16_t active;
+
+  const void * sendbuff;
+  void * recvbuff;
 
   // Op-specific fields. Make sure the common part stays the
   // same on all structs of the union
   union {
     struct {
-      uint16_t nThreads;
-    } common;
-    struct {
-      uint16_t nThreads;
-      uint8_t bid;
-      uint8_t nChannels;
-      uint32_t root;
-      const void * sendbuff;
-      void * recvbuff;
       size_t count;
       size_t lastChunkSize;
+      uint32_t root;
+      uint8_t bid;
+      uint8_t nChannels;
     } coll;
     struct {
+      size_t sendCount;
+      size_t recvCount;
+      int32_t delta;
       uint16_t nThreads;
-      uint16_t unused;
-      int32_t delta[NCCL_MAX_SEGMENTS];
-      uint16_t nThreadsPerOp[NCCL_MAX_SEGMENTS];
-      size_t sendCount[NCCL_MAX_SEGMENTS];
-      size_t recvCount[NCCL_MAX_SEGMENTS];
-      const void * sendbuff[NCCL_MAX_SEGMENTS];
-      void * recvbuff[NCCL_MAX_SEGMENTS];
     } p2p;
+    uint64_t align[4];
   };
 };
-struct ncclColl {
-  union {
-    struct {
-      struct CollectiveArgs args;
-      uint16_t funcIndex;
-      uint16_t index;
-      uint8_t  active;
-    };
-    int data[0x80];
-  };
+struct ncclWork {
+  struct ncclWorkElem elems[NCCL_MAX_WORK_ELEMENTS];
 };
-static_assert(sizeof(struct ncclColl) == (0x80*sizeof(int)), "ncclColl must have a pow2 size");
+static_assert(sizeof(struct ncclWorkElem) == (0x10*sizeof(int)), "ncclWork must have a pow2 size");
 
 struct ncclChannel {
   union {
@@ -196,9 +187,9 @@ struct ncclChannel {
       struct ncclPeer* devPeers;
 
       // Operation list for aggregation
-      struct ncclColl* collectives;
-      int collCount;
-      uint64_t collFifoTail; // Only used by CPU
+      struct ncclWork* workFifo;
+      int workCount;
+      uint64_t workFifoTail; // Only used by CPU
     };
     int data[0x80];
   };

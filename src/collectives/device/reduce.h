@@ -11,9 +11,9 @@
 template<class FUNC, typename T, int UNROLL>
 class ncclFunction<ncclFuncReduce, NCCL_ALGO_RING, NCCL_PROTO_SIMPLE, FUNC, T, UNROLL> {
   public:
-    __device__ void run(struct CollectiveArgs* args) {
+    __device__ void run(struct ncclWorkElem* args) {
       const int tid = threadIdx.x;
-      const int nthreads = args->coll.nThreads-WARP_SIZE;
+      const int nthreads = args->nThreads-WARP_SIZE;
       const int bid = args->coll.bid;
       const int nChannels = args->coll.nChannels;
       struct ncclDevComm* comm = args->comm;
@@ -29,8 +29,8 @@ class ncclFunction<ncclFuncReduce, NCCL_ALGO_RING, NCCL_PROTO_SIMPLE, FUNC, T, U
       const int root = args->coll.root;
 
       // Compute pointers
-      const T * __restrict__ thisInput = (const T*)args->coll.sendbuff;
-      T * __restrict__ thisOutput = (T*)args->coll.recvbuff;
+      const T * __restrict__ thisInput = (const T*)args->sendbuff;
+      T * __restrict__ thisOutput = (T*)args->recvbuff;
 
       ncclPrimitives<UNROLL, REDUCE_CHUNKSTEPS/REDUCE_SLICESTEPS, REDUCE_SLICESTEPS, T, 1, 1, 0, FUNC>
         prims(tid, nthreads, &ring->prev, &ring->next, NULL, stepSize, channel, comm, ncclShmem->ptrs, 0);
@@ -54,9 +54,9 @@ class ncclFunction<ncclFuncReduce, NCCL_ALGO_RING, NCCL_PROTO_SIMPLE, FUNC, T, U
 template<class FUNC, typename T, int UNROLL>
 class ncclFunction<ncclFuncReduce, NCCL_ALGO_RING, NCCL_PROTO_LL, FUNC, T, UNROLL> {
   public:
-    __device__ void run(struct CollectiveArgs* args) {
+    __device__ void run(struct ncclWorkElem* args) {
       const int tid = threadIdx.x;
-      const int nthreads = args->coll.nThreads;
+      const int nthreads = args->nThreads;
       const int bid = args->coll.bid;
       const int nChannels = args->coll.nChannels;
       struct ncclDevComm* comm = args->comm;
@@ -74,8 +74,8 @@ class ncclFunction<ncclFuncReduce, NCCL_ALGO_RING, NCCL_PROTO_LL, FUNC, T, UNROL
       ncclLLPrimitives<T, FUNC, 1, 1> LLprims(tid, nthreads, &ring->prev, &ring->next, stepLines, channel, comm);
 
       // Compute pointers
-      const T * __restrict__ thisInput = (const T*)args->coll.sendbuff;
-      T * __restrict__ thisOutput = (T*)args->coll.recvbuff;
+      const T * __restrict__ thisInput = (const T*)args->sendbuff;
+      T * __restrict__ thisOutput = (T*)args->recvbuff;
 
       for (ssize_t gridOffset = 0; gridOffset < size; gridOffset += loopSize) {
         if (size-gridOffset < loopSize) {
@@ -99,9 +99,9 @@ class ncclFunction<ncclFuncReduce, NCCL_ALGO_RING, NCCL_PROTO_LL, FUNC, T, UNROL
 template<class FUNC, typename T, int UNROLL>
 class ncclFunction<ncclFuncReduce, NCCL_ALGO_RING, NCCL_PROTO_LL128, FUNC, T, UNROLL> {
   public:
-    __device__ void run(struct CollectiveArgs* args) {
+    __device__ void run(struct ncclWorkElem* args) {
       const int tid = threadIdx.x;
-      const int nthreads = args->coll.nThreads;
+      const int nthreads = args->nThreads;
       const int bid = args->coll.bid;
       const int nChannels = args->coll.nChannels;
       struct ncclDevComm* comm = args->comm;
@@ -120,8 +120,8 @@ class ncclFunction<ncclFuncReduce, NCCL_ALGO_RING, NCCL_PROTO_LL128, FUNC, T, UN
       ncclLL128Primitives<T, FUNC, 1, 1> LLprims(tid, nthreads, &ring->prev, &ring->next, stepSize, channel, comm);
 
       // Compute pointers
-      const T * __restrict__ thisInput = (const T*)args->coll.sendbuff;
-      T * __restrict__ thisOutput = (T*)args->coll.recvbuff;
+      const T * __restrict__ thisInput = (const T*)args->sendbuff;
+      T * __restrict__ thisOutput = (T*)args->recvbuff;
 
       for (ssize_t gridOffset = 0; gridOffset < size; gridOffset += loopSize) {
         chunkSize = min(DIVUP(size-gridOffset, nChannels*minChunkSize)*minChunkSize, chunkSize);
@@ -142,11 +142,11 @@ class ncclFunction<ncclFuncReduce, NCCL_ALGO_RING, NCCL_PROTO_LL128, FUNC, T, UN
 template<int PROTO, class REDOP, typename T, int UNROLL>
 class ncclFunction<ncclFuncReduce, NCCL_ALGO_TREE, PROTO, REDOP, T, UNROLL> {
   public:
-    __device__ void run(struct CollectiveArgs* args) {}
+    __device__ void run(struct ncclWorkElem* args) {}
 };
 
 template<int PROTO, class REDOP, typename T, int UNROLL>
 class ncclFunction<ncclFuncReduce, NCCL_ALGO_COLLNET, PROTO, REDOP, T, UNROLL> {
   public:
-    __device__ void run(struct CollectiveArgs* args) {}
+    __device__ void run(struct ncclWorkElem* args) {}
 };
