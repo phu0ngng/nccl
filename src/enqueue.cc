@@ -8,6 +8,9 @@
 #include "argcheck.h"
 #include "coll_net.h"
 
+#define USE_CUDA_GRAPH
+static int usingCudaGraph = 1;
+
 // Only generate inline kernels for LL
 #define NCCL_FUNC5(func, algo, redop, dtype) \
   (void*)NCCL_KERN_NAME(func, algo, LL, redop, dtype), \
@@ -107,12 +110,34 @@ static ncclResult_t getNextOp(struct ncclChannel* channel, struct ncclColl** col
   return ncclSuccess;
 }
 
-static ncclResult_t setupLaunch(struct ncclComm* comm, struct cudaLaunchParams* params) {
+static ncclResult_t setupParams(struct ncclInfo* info) {
+  ncclComm_t comm = info->comm;
+  struct cudaLaunchParams* params = comm->myParams;
+
+  int nSubChannels = (info->pattern == ncclPatternCollTreeUp || info->pattern == ncclPatternCollTreeDown) ? 2 : 1;
+  params->gridDim.x = info->nChannels * nSubChannels;
+  params->blockDim.x = std::max<unsigned>(params->blockDim.x, info->nThreads);
+
   // Only launch blocks where we have work to do.
-  for (int c=0; c<comm->p2pnChannels; c++) {
-    if (comm->channels[c].collCount) params->gridDim.x = c+1;
+  if (!usingCudaGraph) {
+    for (int c=0; c<comm->p2pnChannels; c++) {
+      if (comm->channels[c].collCount) params->gridDim.x = c+1;
+    }
   }
 
+  if (usingCudaGraph) {
+    int funcIndex = FUNC_INDEX(info->coll, info->op, info->datatype, info->algorithm, info->protocol);
+    params->func = ncclKerns[funcIndex];
+  } else {
+    struct ncclColl* coll = comm->channels[0].collectives+(comm->channels[0].collFifoTail-comm->channels[0].collCount)%NCCL_MAX_OPS;
+    params->func = ncclKerns[coll->funcIndex];
+  }
+
+  return ncclSuccess;
+}
+
+static ncclResult_t setupLaunch(struct ncclComm* comm) {
+  struct cudaLaunchParams* params = comm->myParams;
   // Set active = 2 for the last operation and add a no-op on empty channels (p2p case).
   for (int c=0; c<params->gridDim.x; c++) {
     struct ncclChannel* channel = comm->channels+c;
@@ -123,9 +148,6 @@ static ncclResult_t setupLaunch(struct ncclComm* comm, struct cudaLaunchParams* 
     }
     channel->collectives[(channel->collFifoTail-1)%NCCL_MAX_OPS].active = 2;
   }
-
-  struct ncclColl* coll = comm->channels[0].collectives+(comm->channels[0].collFifoTail-comm->channels[0].collCount)%NCCL_MAX_OPS;
-  params->func = ncclKerns[coll->funcIndex];
   return ncclSuccess;
 }
 
@@ -171,8 +193,6 @@ ncclResult_t ncclCpuBarrierOut(struct ncclComm* comm) {
 ncclResult_t ncclBarrierEnqueue(struct ncclComm* comm) {
   struct cudaLaunchParams* params = comm->myParams;
   if (params->gridDim.x == 0) return ncclSuccess;
-
-  NCCLCHECK(setupLaunch(comm, params));
 
   // Use internal NCCL stream for CGMD/GROUP launch if required or if the user stream is NULL
   if (comm->launchMode == ncclComm::GROUP && (comm->groupCudaStream || comm->userStream == NULL)) {
@@ -236,7 +256,6 @@ ncclResult_t ncclBarrierEnqueueWait(ncclComm_t comm) {
     struct ncclChannel* channel = comm->channels+r;
     channel->collFifoTail = max;
   }
-  params->gridDim.x = params->blockDim.x = 0;
   comm->lastOpCount = max;
   NCCLCHECK(ncclProxyStart(comm));
   return ncclSuccess;
@@ -244,6 +263,8 @@ ncclResult_t ncclBarrierEnqueueWait(ncclComm_t comm) {
 
 ncclResult_t ncclEnqueueEvents(ncclComm_t comm) {
   struct cudaLaunchParams *params = comm->myParams;
+  //FIXME
+  //params->gridDim.x = params->blockDim.x = 0;
   // Enqueue event after NCCL kernel
   CUDACHECK(cudaEventRecord(comm->doneEvent, params->stream));
   // Use internal NCCL stream for CGMD/GROUP launch if required or if the user stream is NULL
@@ -344,14 +365,15 @@ static ncclResult_t getLoopInfo(struct ncclInfo* info) {
   return ncclSuccess;
 }
 
-static ncclResult_t computeColl(struct ncclInfo* info /* input */, struct ncclColl* coll, struct ncclProxyArgs* proxyArgs /* output */) {
-  coll->args.comm = info->comm->devComm;
-
-  // Set nstepsPerLoop and nchunksPerLoop
+static ncclResult_t computeInfo(struct ncclInfo* info) {
   NCCLCHECK(getAlgoInfo(info));
   NCCLCHECK(getPatternInfo(info));
   NCCLCHECK(getLoopInfo(info));
+  return ncclSuccess;
+}
 
+static ncclResult_t computeColl(struct ncclInfo* info /* input */, struct ncclColl* coll, struct ncclProxyArgs* proxyArgs /* output */) {
+  coll->args.comm = info->comm->devComm;
   coll->args.coll.sendbuff = info->sendbuff;
   coll->args.coll.recvbuff = info->recvbuff;
   coll->args.coll.root = info->root;
@@ -433,6 +455,49 @@ static ncclResult_t checkSetStream(struct ncclInfo* info) {
   return ncclSuccess;
 }
 
+// Prepare things that will not change between graph launches
+// including cuda launch parameters
+ncclResult_t ncclSaveKernelStatic(struct ncclInfo* info) {
+  if (info->comm->nRanks == 1) {
+    if (info->sendbuff != info->recvbuff)
+      CUDACHECK(cudaMemcpyAsync(info->recvbuff, info->sendbuff, info->nBytes, cudaMemcpyDeviceToDevice, info->stream));
+    return ncclSuccess;
+  }
+
+  NCCLCHECK(computeInfo(info));
+  return ncclSuccess;
+}
+
+// Prepare things that will change between graph launches
+// including cuda kernel args
+ncclResult_t ncclSaveKernelDynamic(struct ncclInfo* info) {
+  struct ncclColl coll;
+  struct ncclProxyArgs proxyArgs;
+  memset(&proxyArgs, 0, sizeof(struct ncclProxyArgs));
+  NCCLCHECK(computeColl(info, &coll, &proxyArgs));
+
+  int nChannels = coll.args.coll.nChannels;
+  int nSubChannels = (info->pattern == ncclPatternCollTreeUp || info->pattern == ncclPatternCollTreeDown) ? 2 : 1;
+  for (int bid=0; bid<nChannels*nSubChannels; bid++) {
+    int channelId = bid;
+    struct ncclChannel* channel = info->comm->channels+channelId;
+
+    // Proxy
+    proxyArgs.channel = channel;
+    // Adjust pattern for CollNet based on channel index
+    if (nSubChannels == 2) {
+      info->pattern = (channelId < info->comm->nChannels/nSubChannels) ? ncclPatternCollTreeUp : ncclPatternCollTreeDown;
+    }
+
+    if (proxyArgs.nsteps) NCCLCHECK(ncclProxySaveColl(&proxyArgs, info->pattern, info->root, info->comm->nRanks));
+
+    struct ncclColl* c;
+    NCCLCHECK(getNextOp(channel, &c, &coll));
+    c->args.coll.bid = bid % coll.args.coll.nChannels;
+  }
+  return ncclSuccess;
+}
+
 ncclResult_t ncclSaveKernel(struct ncclInfo* info) {
   if (info->comm->nRanks == 1) {
     if (info->sendbuff != info->recvbuff)
@@ -443,6 +508,7 @@ ncclResult_t ncclSaveKernel(struct ncclInfo* info) {
   struct ncclColl coll;
   struct ncclProxyArgs proxyArgs;
   memset(&proxyArgs, 0, sizeof(struct ncclProxyArgs));
+  NCCLCHECK(computeInfo(info));
   NCCLCHECK(computeColl(info, &coll, &proxyArgs));
 
   info->comm->myParams->blockDim.x = std::max<unsigned>(info->comm->myParams->blockDim.x, info->nThreads);
@@ -595,6 +661,40 @@ ncclResult_t ncclSaveP2pKernel(struct ncclInfo* info) {
   return ncclSuccess;
 }
 
+void CUDART_CB ncclEnqueueProxyStart(void* arg) {
+  // Start the network proxies
+  ncclComm_t comm = (ncclComm_t)arg;
+  struct cudaLaunchParams *params = comm->myParams;
+  if (params->gridDim.x == 0) return;
+
+  uint64_t max = 0ULL;
+  for (int r=0; r<params->gridDim.x; r++) {
+    struct ncclChannel* channel = comm->channels+r;
+    max = std::max(max, channel->collFifoTail);
+    channel->collCount = 0;
+  }
+  for (int r=0; r<comm->p2pnChannels; r++) {
+    struct ncclChannel* channel = comm->channels+r;
+    channel->collFifoTail = max;
+  }
+  comm->lastOpCount = max;
+  ncclProxyStart(comm);
+}
+
+void CUDART_CB ncclEnqueueHostSetup(void* arg) {
+  struct ncclInfo* info = (struct ncclInfo*)arg;
+  INFO(NCCL_COLL,"%s: opCount %lx sendbuff %p recvbuff %p count %zi datatype %d op %d root %d comm %p [nranks=%d] stream %p",
+      info->opName, info->comm->opCount, info->sendbuff, info->recvbuff, info->count,
+      info->datatype, info->op, info->root, info->comm, info->comm->nRanks, info->stream);
+
+  cudaLaunchParams* params = info->comm->myParams;
+  INFO(NCCL_COLL,"params: func %p gridDim %d blockDim %d args %p sharedMem %ld stream %p",
+      params->func, params->gridDim.x, params->blockDim.x, params->args, params->sharedMem, params->stream);
+
+  ncclSaveKernelDynamic(info);
+  setupLaunch(info->comm);
+}
+
 ncclResult_t ncclEnqueueCheck(struct ncclInfo* info) {
   // Launch asynchronously if needed
   if (ncclAsyncMode()) {
@@ -630,14 +730,45 @@ end:
     NCCLCHECK(ArgsCheck(info));
     NCCLCHECK(checkSetStream(info));
 
+#ifdef USE_CUDA_GRAPH
+    cudaStream_t proxyStream;
+    cudaEvent_t setupDone, proxyDone;
+    CUDACHECK(cudaStreamCreate(&proxyStream));
+    CUDACHECK(cudaEventCreate(&setupDone));
+    CUDACHECK(cudaEventCreate(&proxyDone));
+    ncclComm_t comm = info->comm;
+
+    NCCLCHECK(ncclSaveKernelStatic(info));
+    NCCLCHECK(setupParams(info));
+    memcpy(&comm->cudaGraphInfo, info, sizeof(struct ncclInfo));
+
+    cudaHostFn_t fn1 = ncclEnqueueHostSetup;
+    CUDACHECK(cudaLaunchHostFunc(info->stream, fn1, &comm->cudaGraphInfo));
+    CUDACHECK(cudaEventRecord(setupDone, info->stream));
+
+    NCCLCHECK(ncclBarrierEnqueue(comm));
+    struct cudaLaunchParams *params = comm->myParams;
+    CUDACHECK(cudaLaunchKernel(params->func, params->gridDim, params->blockDim, params->args, params->sharedMem, params->stream));
+
+    cudaHostFn_t fn2 = ncclEnqueueProxyStart;
+    CUDACHECK(cudaStreamWaitEvent(proxyStream, setupDone, 0));
+    CUDACHECK(cudaLaunchHostFunc(proxyStream, fn2, comm));
+    CUDACHECK(cudaEventRecord(proxyDone, proxyStream));
+
+    CUDACHECK(cudaStreamWaitEvent(info->stream, proxyDone, 0));
+    NCCLCHECK(ncclEnqueueEvents(info->comm));
+#else
     INFO(NCCL_COLL,"%s: opCount %lx sendbuff %p recvbuff %p count %zi datatype %d op %d root %d comm %p [nranks=%d] stream %p",
         info->opName, info->comm->opCount, info->sendbuff, info->recvbuff, info->count,
         info->datatype, info->op, info->root, info->comm, info->comm->nRanks, info->stream);
 
     NCCLCHECK(ncclSaveKernel(info));
+    NCCLCHECK(setupParams(info));
+    NCCLCHECK(setupLaunch(info->comm));
     NCCLCHECK(ncclBarrierEnqueue(info->comm));
     NCCLCHECK(ncclBarrierEnqueueWait(info->comm));
     NCCLCHECK(ncclEnqueueEvents(info->comm));
+#endif
     return ncclSuccess;
   }
 }

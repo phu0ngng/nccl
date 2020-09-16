@@ -149,6 +149,9 @@ struct ncclComm {
   struct ncclP2Plist* p2pSends;
   struct ncclP2Plist* p2pRecvs;
   int p2pCount;
+
+  // Store info for cudaGraph
+  struct ncclInfo cudaGraphInfo;
 };
 
 #endif
