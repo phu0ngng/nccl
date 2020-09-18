@@ -336,8 +336,8 @@ __device__ __forceinline__ void ReduceOrCopyMulti(const int tid, const int nthre
   for (int i=MINDSTS; i<MAXDSTS && i<ndsts; i++) alignDiff |= (align ^ ptrAlign128(dsts[i]));
 
   int Npreamble = alignDiff ? Nrem :
-    N < alignof(Pack128) ? N :
-    (alignof(Pack128) - align) % alignof(Pack128);
+    N < (alignof(Pack128)/sizeof(T)) ? N :
+    ((alignof(Pack128) - align)/sizeof(T)) ;
 
   // stage 1: preamble: handle any elements up to the point of everything coming
   // into alignment
