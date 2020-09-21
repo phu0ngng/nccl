@@ -399,9 +399,9 @@ __device__ __forceinline__ void ReduceOrCopyMulti(const int tid, const int nthre
   }
 
   // unrolled, by-type (mostly for unaligned buffers)
-  int Nelem = (Nrem / (UNROLL*PACKELEMS*WARP_SIZE)) * (UNROLL*PACKELEMS*WARP_SIZE); // round down
+  int Nelem = (Nrem / (UNROLL*PACKELEMS/2*WARP_SIZE)) * (UNROLL*PACKELEMS/2*WARP_SIZE); // round down
 
-  ReduceCopyMulti<FUNC, T, UNROLL*PACKELEMS, MINSRCS, MAXSRCS, MINDSTS, MAXDSTS>(w, nw, t, nsrcs, srcs, ndsts, dsts, offset, Nelem);
+  ReduceCopyMulti<FUNC, T, UNROLL*PACKELEMS/2, MINSRCS, MAXSRCS, MINDSTS, MAXDSTS>(w, nw, t, nsrcs, srcs, ndsts, dsts, offset, Nelem);
 
   Nrem -= Nelem;
   if (Nrem == 0) return;

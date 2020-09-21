@@ -137,6 +137,7 @@ void* ncclAsyncThreadPreconnect(void* args_) {
 }
 
 size_t getP2pNchannels(size_t totalSize, int minChannels, int maxChannels, size_t minSize, size_t maxSize) {
+  return DIVUP(totalSize, maxChannels);
   size_t size = std::max(minSize, DIVUP(totalSize, minChannels));
   int nChannels = minChannels;
   while (size > maxSize && nChannels <= maxChannels/2) {
