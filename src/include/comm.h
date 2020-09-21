@@ -56,6 +56,12 @@ struct ncclRecvMem {
   char buff[1]; // Actually larger than that
 };
 
+struct ncclCudaGraphInfo {
+  ncclComm_t comm;
+  struct ncclColl coll;
+  struct ncclProxyArgs proxyArgs;
+};
+
 struct ncclComm {
   struct ncclChannel channels[MAXCHANNELS];
 
@@ -151,7 +157,7 @@ struct ncclComm {
   int p2pCount;
 
   // Store info for cudaGraph
-  struct ncclInfo cudaGraphInfo;
+  struct ncclCudaGraphInfo cudaGraphInfo;
 };
 
 #endif

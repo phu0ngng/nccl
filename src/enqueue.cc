@@ -365,14 +365,11 @@ static ncclResult_t getLoopInfo(struct ncclInfo* info) {
   return ncclSuccess;
 }
 
-static ncclResult_t computeInfo(struct ncclInfo* info) {
+static ncclResult_t computeColl(struct ncclInfo* info /* input */, struct ncclColl* coll, struct ncclProxyArgs* proxyArgs /* output */) {
   NCCLCHECK(getAlgoInfo(info));
   NCCLCHECK(getPatternInfo(info));
   NCCLCHECK(getLoopInfo(info));
-  return ncclSuccess;
-}
 
-static ncclResult_t computeColl(struct ncclInfo* info /* input */, struct ncclColl* coll, struct ncclProxyArgs* proxyArgs /* output */) {
   coll->args.comm = info->comm->devComm;
   coll->args.coll.sendbuff = info->sendbuff;
   coll->args.coll.recvbuff = info->recvbuff;
@@ -432,7 +429,9 @@ static ncclResult_t computeColl(struct ncclInfo* info /* input */, struct ncclCo
   proxyArgs->chunkSteps = chunkSteps;
   proxyArgs->protocol = info->protocol;
   proxyArgs->dtype = info->datatype;
-  proxyArgs->redOp = info->op;
+  proxyArgs->redOp = (info->algorithm == NCCL_ALGO_COLLNET) ? info->op : ncclNumOps;  // Only set redOp when using CollNet
+  proxyArgs->pattern = info->pattern;
+  proxyArgs->root = info->root;
   // This is used by P2P to reduce the receive buffer size. We don't use it in collectives
   // because some protocols need to transmit more than the total size, plus they sometimes
   // round up
@@ -457,43 +456,42 @@ static ncclResult_t checkSetStream(struct ncclInfo* info) {
 
 // Prepare things that will not change between graph launches
 // including cuda launch parameters
-ncclResult_t ncclSaveKernelStatic(struct ncclInfo* info) {
+ncclResult_t ncclSaveKernelStatic(struct ncclInfo* info /*input*/, struct ncclCudaGraphInfo* cgInfo /*output*/) {
   if (info->comm->nRanks == 1) {
     if (info->sendbuff != info->recvbuff)
       CUDACHECK(cudaMemcpyAsync(info->recvbuff, info->sendbuff, info->nBytes, cudaMemcpyDeviceToDevice, info->stream));
     return ncclSuccess;
   }
 
-  NCCLCHECK(computeInfo(info));
+  memset(&cgInfo->proxyArgs, 0, sizeof(struct ncclProxyArgs));
+  NCCLCHECK(computeColl(info, &cgInfo->coll, &cgInfo->proxyArgs));
   return ncclSuccess;
 }
 
 // Prepare things that will change between graph launches
 // including cuda kernel args
-ncclResult_t ncclSaveKernelDynamic(struct ncclInfo* info) {
-  struct ncclColl coll;
-  struct ncclProxyArgs proxyArgs;
-  memset(&proxyArgs, 0, sizeof(struct ncclProxyArgs));
-  NCCLCHECK(computeColl(info, &coll, &proxyArgs));
+ncclResult_t ncclSaveKernelDynamic(struct ncclCudaGraphInfo* cgInfo) {
+  struct ncclColl* coll = &cgInfo->coll;
+  struct ncclProxyArgs* proxyArgs = &cgInfo->proxyArgs;
 
-  int nChannels = coll.args.coll.nChannels;
-  int nSubChannels = (info->pattern == ncclPatternCollTreeUp || info->pattern == ncclPatternCollTreeDown) ? 2 : 1;
+  int nChannels = coll->args.coll.nChannels;
+  int nSubChannels = (proxyArgs->redOp < ncclNumOps) ? 2 : 1;
   for (int bid=0; bid<nChannels*nSubChannels; bid++) {
     int channelId = bid;
-    struct ncclChannel* channel = info->comm->channels+channelId;
+    struct ncclChannel* channel = cgInfo->comm->channels+channelId;
 
     // Proxy
-    proxyArgs.channel = channel;
+    proxyArgs->channel = channel;
     // Adjust pattern for CollNet based on channel index
     if (nSubChannels == 2) {
-      info->pattern = (channelId < info->comm->nChannels/nSubChannels) ? ncclPatternCollTreeUp : ncclPatternCollTreeDown;
+      proxyArgs->pattern = (channelId < cgInfo->comm->nChannels/nSubChannels) ? ncclPatternCollTreeUp : ncclPatternCollTreeDown;
     }
 
-    if (proxyArgs.nsteps) NCCLCHECK(ncclProxySaveColl(&proxyArgs, info->pattern, info->root, info->comm->nRanks));
+    if (proxyArgs->nsteps) NCCLCHECK(ncclProxySaveColl(proxyArgs, cgInfo->comm->nRanks));
 
     struct ncclColl* c;
-    NCCLCHECK(getNextOp(channel, &c, &coll));
-    c->args.coll.bid = bid % coll.args.coll.nChannels;
+    NCCLCHECK(getNextOp(channel, &c, coll));
+    c->args.coll.bid = bid % coll->args.coll.nChannels;
   }
   return ncclSuccess;
 }
@@ -508,7 +506,6 @@ ncclResult_t ncclSaveKernel(struct ncclInfo* info) {
   struct ncclColl coll;
   struct ncclProxyArgs proxyArgs;
   memset(&proxyArgs, 0, sizeof(struct ncclProxyArgs));
-  NCCLCHECK(computeInfo(info));
   NCCLCHECK(computeColl(info, &coll, &proxyArgs));
 
   info->comm->myParams->blockDim.x = std::max<unsigned>(info->comm->myParams->blockDim.x, info->nThreads);
@@ -527,7 +524,7 @@ ncclResult_t ncclSaveKernel(struct ncclInfo* info) {
       info->pattern = (channelId < info->comm->nChannels/nSubChannels) ? ncclPatternCollTreeUp : ncclPatternCollTreeDown;
     }
 
-    if (proxyArgs.nsteps) NCCLCHECK(ncclProxySaveColl(&proxyArgs, info->pattern, info->root, info->comm->nRanks));
+    if (proxyArgs.nsteps) NCCLCHECK(ncclProxySaveColl(&proxyArgs, info->comm->nRanks));
 
     info->comm->myParams->gridDim.x++;
     struct ncclColl* c;
@@ -682,17 +679,14 @@ void CUDART_CB ncclEnqueueProxyStart(void* arg) {
 }
 
 void CUDART_CB ncclEnqueueHostSetup(void* arg) {
-  struct ncclInfo* info = (struct ncclInfo*)arg;
-  INFO(NCCL_COLL,"%s: opCount %lx sendbuff %p recvbuff %p count %zi datatype %d op %d root %d comm %p [nranks=%d] stream %p",
-      info->opName, info->comm->opCount, info->sendbuff, info->recvbuff, info->count,
-      info->datatype, info->op, info->root, info->comm, info->comm->nRanks, info->stream);
+  struct ncclCudaGraphInfo* cgInfo = (struct ncclCudaGraphInfo*)arg;
 
-  cudaLaunchParams* params = info->comm->myParams;
+  cudaLaunchParams* params = cgInfo->comm->myParams;
   INFO(NCCL_COLL,"params: func %p gridDim %d blockDim %d args %p sharedMem %ld stream %p",
       params->func, params->gridDim.x, params->blockDim.x, params->args, params->sharedMem, params->stream);
 
-  ncclSaveKernelDynamic(info);
-  setupLaunch(info->comm);
+  ncclSaveKernelDynamic(cgInfo);
+  setupLaunch(cgInfo->comm);
 }
 
 ncclResult_t ncclEnqueueCheck(struct ncclInfo* info) {
@@ -730,20 +724,25 @@ end:
     NCCLCHECK(ArgsCheck(info));
     NCCLCHECK(checkSetStream(info));
 
+    INFO(NCCL_COLL,"%s: opCount %lx sendbuff %p recvbuff %p count %zi datatype %d op %d root %d comm %p [nranks=%d] stream %p",
+        info->opName, info->comm->opCount, info->sendbuff, info->recvbuff, info->count,
+        info->datatype, info->op, info->root, info->comm, info->comm->nRanks, info->stream);
+
 #ifdef USE_CUDA_GRAPH
+    ncclComm_t comm = info->comm;
+    struct ncclCudaGraphInfo* cgInfo = &comm->cudaGraphInfo;
+
     cudaStream_t proxyStream;
     cudaEvent_t setupDone, proxyDone;
     CUDACHECK(cudaStreamCreate(&proxyStream));
     CUDACHECK(cudaEventCreate(&setupDone));
     CUDACHECK(cudaEventCreate(&proxyDone));
-    ncclComm_t comm = info->comm;
 
-    NCCLCHECK(ncclSaveKernelStatic(info));
+    NCCLCHECK(ncclSaveKernelStatic(info, cgInfo));
     NCCLCHECK(setupParams(info));
-    memcpy(&comm->cudaGraphInfo, info, sizeof(struct ncclInfo));
 
     cudaHostFn_t fn1 = ncclEnqueueHostSetup;
-    CUDACHECK(cudaLaunchHostFunc(info->stream, fn1, &comm->cudaGraphInfo));
+    CUDACHECK(cudaLaunchHostFunc(info->stream, fn1, cgInfo));
     CUDACHECK(cudaEventRecord(setupDone, info->stream));
 
     NCCLCHECK(ncclBarrierEnqueue(comm));
@@ -756,12 +755,8 @@ end:
     CUDACHECK(cudaEventRecord(proxyDone, proxyStream));
 
     CUDACHECK(cudaStreamWaitEvent(info->stream, proxyDone, 0));
-    NCCLCHECK(ncclEnqueueEvents(info->comm));
+    NCCLCHECK(ncclEnqueueEvents(comm));
 #else
-    INFO(NCCL_COLL,"%s: opCount %lx sendbuff %p recvbuff %p count %zi datatype %d op %d root %d comm %p [nranks=%d] stream %p",
-        info->opName, info->comm->opCount, info->sendbuff, info->recvbuff, info->count,
-        info->datatype, info->op, info->root, info->comm, info->comm->nRanks, info->stream);
-
     NCCLCHECK(ncclSaveKernel(info));
     NCCLCHECK(setupParams(info));
     NCCLCHECK(setupLaunch(info->comm));

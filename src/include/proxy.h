@@ -28,6 +28,8 @@ struct ncclProxyArgs {
   int segment; // Only for profiling
   ncclDataType_t dtype;
   ncclRedOp_t redOp;
+  ncclPattern_t pattern;
+  int root;
   int state;   // add component before this line -- it is left out during initialization
 
   // Internal state
@@ -79,7 +81,7 @@ enum proxyMode {
   proxyTo = 2
 };
 
-ncclResult_t ncclProxySaveColl(struct ncclProxyArgs* args, int pattern, int root, int nranks);
+ncclResult_t ncclProxySaveColl(struct ncclProxyArgs* args, int nranks);
 ncclResult_t ncclProxySaveP2p(struct ncclInfo* info, struct ncclChannel* channel, int segment);
 ncclResult_t ncclProxyStart(struct ncclComm* comm);
 ncclResult_t ncclProxyCreate(struct ncclComm* comm);
