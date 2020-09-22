@@ -26,7 +26,7 @@
 #define USE_RDMA_WRITE 1
 #define USE_RDMA_SEND_INLINE 0
 #define MAXNAMESIZE 64
-static char ncclIbIfName[MAX_IF_NAME_SIZE];
+static char ncclIbIfName[MAX_IF_NAME_SIZE+1];
 static union socketAddress ncclIbIfAddr;
 
 #define MAX_REQUESTS NCCL_NET_MAX_REQUESTS
@@ -220,7 +220,7 @@ ncclResult_t ncclIbInit(ncclDebugLogger_t logFunction) {
             ncclIbDevs[d].port, ncclIbDevs[d].link == IBV_LINK_LAYER_INFINIBAND ? "IB" : "RoCE");
       }
       line[1023] = '\0';
-      char addrline[1024];
+      char addrline[SOCKET_NAME_MAXLEN+1];
       INFO(NCCL_INIT|NCCL_NET, "NET/IB : Using%s ; OOB %s:%s", line, ncclIbIfName, socketToString(&ncclIbIfAddr.sa, addrline));
     }
     pthread_mutex_unlock(&ncclIbLock);

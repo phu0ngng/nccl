@@ -21,6 +21,7 @@
 #define SLEEP_INT            1000 // connection retry sleep interval in usec
 #define RETRY_REFUSED_TIMES   2e4 // connection refused retry times before reporting a timeout (20 sec)
 #define RETRY_TIMEDOUT_TIMES    3 // connection timed out retry times (each one can take 20s)
+#define SOCKET_NAME_MAXLEN (NI_MAXHOST+NI_MAXSERV)
 
 /* Common socket address storage structure for IPv4/IPv6 */
 union socketAddress {
@@ -64,7 +65,7 @@ static inline int envSocketFamily(void) {
 
 static int findInterfaces(const char* prefixList, char* names, union socketAddress *addrs, int sock_family, int maxIfNameSize, int maxIfs) {
 #ifdef ENABLE_TRACE
-  char line[1024];
+  char line[SOCKET_NAME_MAXLEN+1];
 #endif
   struct netIf userIfs[MAX_IFS];
   bool searchNot = prefixList && prefixList[0] == '^';
@@ -167,9 +168,9 @@ static bool matchSubnet(struct ifaddrs local_if, union socketAddress* remote) {
 
 static int findInterfaceMatchSubnet(char* ifNames, union socketAddress* localAddrs, union socketAddress* remoteAddr, int ifNameMaxSize, int maxIfs) {
 #ifdef ENABLE_TRACE
-  char line[1024];
+  char line[SOCKET_NAME_MAXLEN+1];
 #endif
-  char line_a[1024];
+  char line_a[SOCKET_NAME_MAXLEN+1];
   int found = 0;
   struct ifaddrs *interfaces, *interface;
   getifaddrs(&interfaces);
@@ -350,7 +351,7 @@ static ncclResult_t createListenSocket(int *fd, union socketAddress *localAddr) 
   SYSCHECK(getsockname(sockfd, &localAddr->sa, &size), "getsockname");
 
 #ifdef ENABLE_TRACE
-  char line[1024];
+  char line[SOCKET_NAME_MAXLEN+1];
   TRACE(NCCL_INIT|NCCL_NET,"Listening on socket %s", socketToString(&localAddr->sa, line));
 #endif
 
@@ -385,7 +386,7 @@ static ncclResult_t connectAddress(int* fd, union socketAddress* remoteAddr) {
     SYSCHECK(setsockopt(*fd, SOL_SOCKET, SO_SNDBUF, (char*)&bufsize, sizeof(int)), "setsockopt");
     SYSCHECK(setsockopt(*fd, SOL_SOCKET, SO_RCVBUF, (char*)&bufsize, sizeof(int)), "setsockopt");*/
 
-  char line[1024];
+  char line[SOCKET_NAME_MAXLEN+1];
   TRACE(NCCL_INIT|NCCL_NET,"Connecting to socket %s", socketToString(&remoteAddr->sa, line));
 
   int ret;
