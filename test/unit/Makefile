@@ -20,14 +20,19 @@ STATICLIB = ${BUILDDIR}/lib/libnccl_static.a
 NVLDFLAGS += -L$(BUILDDIR)/lib $(LIBRARIES:%=-l%)
 ##
 DST_DIR := $(abspath ${BUILDDIR}/test/unit)
-CU_FILES := kernel_test.cu graph_test.cu model.cu data.cu
+CU_FILES := kernel_test.cu graph_test.cu model.cu data.cu align_test.cu
+KCU_FILES := kernel_test.cu align_test.cu
 #ifeq ($(MPI),1)
 #CU_FILES += ncclNet_test.cu ncclNet_read_write_stress_test.cu
 #endif
 OBJ_FILES:= $(CU_FILES:%.cu=${DST_DIR}/%.o)
 EXE_FILES:= $(CU_FILES:%.cu=${DST_DIR}/%)
+KEXE_FILES:= $(KCU_FILES:%.cu=${DST_DIR}/%)
 DEP_FILES:= $(OBJ_FILES:%.o=${DST_DIR}/%.d)
 #
+kernel: ${KEXE_FILES}
+
+
 all:${EXE_FILES}
 	@printf "Syncing  %-35s > %s\n" topo ${DST_DIR}
 	rsync -q -av topo ${DST_DIR}
@@ -54,6 +59,11 @@ ${DST_DIR}/%.o:%.cu
 	$(NVCC) --compile -o $@ $(SRCINC) $(NVCUFLAGS) $<
 #
 ${DST_DIR}/kernel_test: ${DST_DIR}/kernel_test.o
+	@printf "Linking  %-35s > %s\n" $< $@
+	@mkdir -p ${DST_DIR}
+	$(NVCC) -o $@ $(NVCUFLAGS) ${NVLDFLAGS} $^ -lcudart
+#
+${DST_DIR}/align_test: ${DST_DIR}/align_test.o
 	@printf "Linking  %-35s > %s\n" $< $@
 	@mkdir -p ${DST_DIR}
 	$(NVCC) -o $@ $(NVCUFLAGS) ${NVLDFLAGS} $^ -lcudart
