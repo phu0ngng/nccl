@@ -115,29 +115,31 @@ static ncclResult_t setupParams(struct ncclInfo* info) {
   struct cudaLaunchParams* params = comm->myParams;
 
   int nSubChannels = (info->pattern == ncclPatternCollTreeUp || info->pattern == ncclPatternCollTreeDown) ? 2 : 1;
-  params->gridDim.x = info->nChannels * nSubChannels;
+  params->gridDim.x += info->nChannels * nSubChannels;
+  //FIXME: check for p2p case
+  params->gridDim.x = std::max<unsigned>(params->gridDim.x, comm->nChannels);
   params->blockDim.x = std::max<unsigned>(params->blockDim.x, info->nThreads);
 
+  if (usingCudaGraph) {
+    int funcIndex = FUNC_INDEX(info->coll, info->op, info->datatype, info->algorithm, info->protocol);
+    params->func = ncclKerns[funcIndex];
+  }
+  return ncclSuccess;
+}
+
+static ncclResult_t setupLaunch(struct ncclComm* comm) {
+  struct cudaLaunchParams* params = comm->myParams;
+
   // Only launch blocks where we have work to do.
+  // This is not supported when we are in cudaGraph mode.
+  // Because in cudaGraph mode the launch param needs to be determined
+  // at capture time instead of launch time.
   if (!usingCudaGraph) {
     for (int c=0; c<comm->p2pnChannels; c++) {
       if (comm->channels[c].collCount) params->gridDim.x = c+1;
     }
   }
 
-  if (usingCudaGraph) {
-    int funcIndex = FUNC_INDEX(info->coll, info->op, info->datatype, info->algorithm, info->protocol);
-    params->func = ncclKerns[funcIndex];
-  } else {
-    struct ncclColl* coll = comm->channels[0].collectives+(comm->channels[0].collFifoTail-comm->channels[0].collCount)%NCCL_MAX_OPS;
-    params->func = ncclKerns[coll->funcIndex];
-  }
-
-  return ncclSuccess;
-}
-
-static ncclResult_t setupLaunch(struct ncclComm* comm) {
-  struct cudaLaunchParams* params = comm->myParams;
   // Set active = 2 for the last operation and add a no-op on empty channels (p2p case).
   for (int c=0; c<params->gridDim.x; c++) {
     struct ncclChannel* channel = comm->channels+c;
@@ -147,6 +149,13 @@ static ncclResult_t setupLaunch(struct ncclComm* comm) {
       c->args.comm = comm->devComm;
     }
     channel->collectives[(channel->collFifoTail-1)%NCCL_MAX_OPS].active = 2;
+  }
+
+  //FIXME: merge with new master which inlines first arg again
+  // Not supported in cudaGraph mode for the same reason as described above
+  if (!usingCudaGraph) {
+    struct ncclColl* coll = comm->channels[0].collectives+(comm->channels[0].collFifoTail-comm->channels[0].collCount)%NCCL_MAX_OPS;
+    params->func = ncclKerns[coll->funcIndex];
   }
   return ncclSuccess;
 }
@@ -465,30 +474,34 @@ ncclResult_t ncclSaveKernelStatic(struct ncclInfo* info /*input*/, struct ncclCu
 
   memset(&cgInfo->proxyArgs, 0, sizeof(struct ncclProxyArgs));
   NCCLCHECK(computeColl(info, &cgInfo->coll, &cgInfo->proxyArgs));
+
+  NCCLCHECK(setupParams(info));
   return ncclSuccess;
 }
 
 // Prepare things that will change between graph launches
 // including cuda kernel args
 ncclResult_t ncclSaveKernelDynamic(struct ncclCudaGraphInfo* cgInfo) {
+  ncclComm_t comm = cgInfo->comm;
   struct ncclColl* coll = &cgInfo->coll;
   struct ncclProxyArgs* proxyArgs = &cgInfo->proxyArgs;
 
   int nChannels = coll->args.coll.nChannels;
   int nSubChannels = (proxyArgs->redOp < ncclNumOps) ? 2 : 1;
   for (int bid=0; bid<nChannels*nSubChannels; bid++) {
-    int channelId = bid;
-    struct ncclChannel* channel = cgInfo->comm->channels+channelId;
+    int channelId = comm->lastChannel % comm->nChannels;
+    struct ncclChannel* channel = comm->channels+channelId;
 
     // Proxy
     proxyArgs->channel = channel;
     // Adjust pattern for CollNet based on channel index
     if (nSubChannels == 2) {
-      proxyArgs->pattern = (channelId < cgInfo->comm->nChannels/nSubChannels) ? ncclPatternCollTreeUp : ncclPatternCollTreeDown;
+      proxyArgs->pattern = (channelId < comm->nChannels/nSubChannels) ? ncclPatternCollTreeUp : ncclPatternCollTreeDown;
     }
 
-    if (proxyArgs->nsteps) NCCLCHECK(ncclProxySaveColl(proxyArgs, cgInfo->comm->nRanks));
+    if (proxyArgs->nsteps) NCCLCHECK(ncclProxySaveColl(proxyArgs, comm->nRanks));
 
+    comm->lastChannel++;
     struct ncclColl* c;
     NCCLCHECK(getNextOp(channel, &c, coll));
     c->args.coll.bid = bid % coll->args.coll.nChannels;
@@ -674,6 +687,7 @@ void CUDART_CB ncclEnqueueProxyStart(void* arg) {
     struct ncclChannel* channel = comm->channels+r;
     channel->collFifoTail = max;
   }
+  comm->lastChannel = 0;
   comm->lastOpCount = max;
   ncclProxyStart(comm);
 }
@@ -739,7 +753,6 @@ end:
     CUDACHECK(cudaEventCreate(&proxyDone));
 
     NCCLCHECK(ncclSaveKernelStatic(info, cgInfo));
-    NCCLCHECK(setupParams(info));
 
     cudaHostFn_t fn1 = ncclEnqueueHostSetup;
     CUDACHECK(cudaLaunchHostFunc(info->stream, fn1, cgInfo));
@@ -758,7 +771,6 @@ end:
     NCCLCHECK(ncclEnqueueEvents(comm));
 #else
     NCCLCHECK(ncclSaveKernel(info));
-    NCCLCHECK(setupParams(info));
     NCCLCHECK(setupLaunch(info->comm));
     NCCLCHECK(ncclBarrierEnqueue(info->comm));
     NCCLCHECK(ncclBarrierEnqueueWait(info->comm));
