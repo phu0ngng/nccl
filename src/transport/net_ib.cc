@@ -29,10 +29,22 @@
 static char ncclIbIfName[MAX_IF_NAME_SIZE];
 static union socketAddress ncclIbIfAddr;
 
+#define MAX_REQUESTS NCCL_NET_MAX_REQUESTS
+
+struct ncclIbRequest {
+  int used;
+  int type;
+  struct ncclIbVerbs* verbs;
+  int done;
+  int size;
+  int free;
+};
+
 struct ncclIbVerbs {
   int refCount;
   struct ibv_pd* pd;
   struct ibv_cq* cq;
+  struct ncclIbRequest reqs[MAX_REQUESTS];
 };
 
 static int ncclNIbDevs = -1;
@@ -255,8 +267,6 @@ ncclResult_t ncclIbGetProperties(int dev, ncclNetProperties_t* props) {
   return ncclSuccess;
 }
 
-#define MAX_REQUESTS NCCL_NET_MAX_REQUESTS
-
 struct ncclIbQpInfo {
   uint32_t lid;
   uint8_t ib_port;
@@ -274,15 +284,6 @@ struct ncclIbQpInfo {
 
 struct ncclIbHandle {
   union socketAddress connectAddr;
-};
-
-struct ncclIbRequest {
-  int used;
-  int type;
-  struct ncclIbVerbs* verbs;
-  int done;
-  int size;
-  int free;
 };
 
 struct ncclIbListenComm {
@@ -303,7 +304,6 @@ struct ncclIbSendComm {
   struct ncclIbDev* dev;
   uint64_t pad[3]; // Pad SendFifo base to be 32-byte aligned
   struct ncclIbSendFifo fifo[MAX_REQUESTS];
-  struct ncclIbRequest reqs[MAX_REQUESTS];
   uint32_t fifoHead;
   int fd;
   int ready;
@@ -351,7 +351,8 @@ ncclResult_t ncclIbUseDev(int dev, struct ncclIbDev** ibDevPtr) {
   struct ncclIbDev* ibDev = ncclIbDevs+dev;
   if (ibDev->verbs.refCount == 0) {
     NCCLCHECK(wrap_ibv_alloc_pd(&ibDev->verbs.pd, ibDev->context));
-    NCCLCHECK(wrap_ibv_create_cq(&ibDev->verbs.cq, ibDev->context, MAX_REQUESTS, NULL, NULL, 0));
+    // Receive requests can cause 2 events per receive, one for the FIFO_POST and one for the receive.
+    NCCLCHECK(wrap_ibv_create_cq(&ibDev->verbs.cq, ibDev->context, 2*MAX_REQUESTS, NULL, NULL, 0));
   }
   ibDev->verbs.refCount++;
   *ibDevPtr = ibDev;
@@ -573,13 +574,14 @@ ncclResult_t ncclIbAccept(void* listenComm, void** recvComm) {
   return ncclSuccess;
 }
 
-ncclResult_t ncclIbGetRequest(struct ncclIbRequest* reqs, struct ncclIbRequest** req) {
+ncclResult_t ncclIbGetRequest(struct ncclIbVerbs* verbs, struct ncclIbRequest** req) {
+  struct ncclIbRequest* reqs = verbs->reqs;
   for (int i=0; i<MAX_REQUESTS; i++) {
     struct ncclIbRequest* r = reqs+i;
     if (r->used == 0) {
       r->used = 1;
       r->type = 0;
-      r->verbs = NULL;
+      r->verbs = verbs;
       r->done = 0;
       r->size = -1;
       r->free = 0;
@@ -660,8 +662,7 @@ ncclResult_t ncclIbIsend(void* sendComm, void* data, int size, void* mhandle, vo
   if (*readyPtr == 0) { *request = NULL; return ncclSuccess; }
 
   struct ncclIbRequest* req;
-  NCCLCHECK(ncclIbGetRequest(comm->reqs, &req));
-  req->verbs = &comm->dev->verbs;
+  NCCLCHECK(ncclIbGetRequest(&comm->dev->verbs, &req));
   req->size = size;
 
   struct ibv_send_wr wr;
@@ -729,8 +730,7 @@ ncclResult_t ncclIbPostFifo(struct ncclIbRecvComm* comm, uint32_t rkey, uint64_t
   struct ibv_send_wr wr;
   memset(&wr, 0, sizeof(wr));
   struct ncclIbRequest* req;
-  NCCLCHECK(ncclIbGetRequest(comm->reqs, &req));
-  req->verbs = &comm->dev->verbs;
+  NCCLCHECK(ncclIbGetRequest(&comm->dev->verbs, &req));
   req->free = 1; // Not a user req ; free as soon as it is complete.
   wr.wr_id = (uint64_t)req;
 
@@ -763,8 +763,7 @@ ncclResult_t ncclIbIrecv(void* recvComm, void* data, int size, void* mhandle, vo
   struct ibv_mr* mr = (struct ibv_mr*)mhandle;
 
   struct ncclIbRequest* req;
-  NCCLCHECK(ncclIbGetRequest(comm->reqs, &req));
-  req->verbs = &comm->dev->verbs;
+  NCCLCHECK(ncclIbGetRequest(&comm->dev->verbs, &req));
   req->size = size;
 
   struct ibv_recv_wr wr;
@@ -795,8 +794,7 @@ ncclResult_t ncclIbIflush(void* recvComm, void* data, int size, void* mhandle, v
   if (comm->gpuFlush.enabled == 0 || size == 0) return ncclSuccess;
 
   struct ncclIbRequest* req;
-  NCCLCHECK(ncclIbGetRequest(comm->reqs, &req));
-  req->verbs = &comm->dev->verbs;
+  NCCLCHECK(ncclIbGetRequest(&comm->dev->verbs, &req));
   struct ibv_mr* mr = (struct ibv_mr*)mhandle;
 
   struct ibv_send_wr wr;
