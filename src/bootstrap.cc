@@ -14,7 +14,7 @@
 #include <sys/types.h>
 
 /* Init functions */
-static char bootstrapNetIfName[MAX_IF_NAME_SIZE];
+static char bootstrapNetIfName[MAX_IF_NAME_SIZE+1];
 static union socketAddress bootstrapNetIfAddr;
 static int bootstrapNetInitDone = 0;
 pthread_mutex_t bootstrapNetLock = PTHREAD_MUTEX_INITIALIZER;
@@ -41,7 +41,7 @@ ncclResult_t bootstrapNetInit() {
           return ncclInternalError;
         }
       }
-      char line[1024];
+      char line[SOCKET_NAME_MAXLEN+MAX_IF_NAME_SIZE+2];
       sprintf(line, " %s:", bootstrapNetIfName);
       socketToString(&bootstrapNetIfAddr.sa, line+strlen(line));
       INFO(NCCL_INIT, "Bootstrap : Using%s", line);

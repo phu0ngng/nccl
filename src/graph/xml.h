@@ -8,7 +8,7 @@
 #define XML_H_
 
 // A few constraints to make the implementation easy
-#define MAX_STR_LEN 256
+#define MAX_STR_LEN 255
 #define MAX_ATTR_COUNT 16
 #define MAX_SUBS 32
 #define MAX_NODES 1024
@@ -19,10 +19,10 @@
 #define NODE_TYPE_SINGLE 3
 
 struct ncclXmlNode {
-  char name[MAX_STR_LEN];
+  char name[MAX_STR_LEN+1];
   struct {
-    char key[MAX_STR_LEN];
-    char value[MAX_STR_LEN];
+    char key[MAX_STR_LEN+1];
+    char value[MAX_STR_LEN+1];
   } attrs[MAX_ATTR_COUNT+1]; // Need an extra one to consume extra params
   int nAttrs;
   int type;
@@ -56,7 +56,7 @@ static ncclResult_t xmlGetAttrIndex(struct ncclXmlNode* node, const char* attrNa
   *index = -1;
   const int nAttrs = node->nAttrs;
   for (int a=0; a<nAttrs; a++) {
-    if (strncmp(node->attrs[a].key, attrName, MAX_STR_LEN-1) == 0) {
+    if (strncmp(node->attrs[a].key, attrName, MAX_STR_LEN) == 0) {
       *index = a;
       return ncclSuccess;
     }
@@ -127,8 +127,10 @@ static ncclResult_t xmlSetAttr(struct ncclXmlNode* node, const char* attrName, c
   if (index == -1) {
     index = node->nAttrs++;
     strncpy(node->attrs[index].key, attrName, MAX_STR_LEN);
+    node->attrs[index].key[MAX_STR_LEN] = '\0';
   }
   strncpy(node->attrs[index].value, value, MAX_STR_LEN);
+  node->attrs[index].value[MAX_STR_LEN] = '\0';
   return ncclSuccess;
 }
 
@@ -138,8 +140,10 @@ static ncclResult_t xmlSetAttrInt(struct ncclXmlNode* node, const char* attrName
   if (index == -1) {
     index = node->nAttrs++;
     strncpy(node->attrs[index].key, attrName, MAX_STR_LEN);
+    node->attrs[index].key[MAX_STR_LEN] = '\0';
   }
   snprintf(node->attrs[index].value, MAX_STR_LEN, "%d", value);
+  node->attrs[index].value[MAX_STR_LEN] = '\0';
   return ncclSuccess;
 }
 
@@ -149,8 +153,10 @@ static ncclResult_t xmlSetAttrFloat(struct ncclXmlNode* node, const char* attrNa
   if (index == -1) {
     index = node->nAttrs++;
     strncpy(node->attrs[index].key, attrName, MAX_STR_LEN);
+    node->attrs[index].key[MAX_STR_LEN] = '\0';
   }
   snprintf(node->attrs[index].value, MAX_STR_LEN, "%g", value);
+  node->attrs[index].value[MAX_STR_LEN] = '\0';
   return ncclSuccess;
 }
 
@@ -199,6 +205,7 @@ static ncclResult_t xmlAddNode(struct ncclXml* xml, struct ncclXmlNode* parent, 
   s->parent = parent;
   if (parent) parent->subs[parent->nSubs++] = s;
   strncpy(s->name, subName, MAX_STR_LEN);
+  s->name[MAX_STR_LEN] = '\0';
   return ncclSuccess;
 }
 

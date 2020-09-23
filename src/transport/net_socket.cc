@@ -48,17 +48,19 @@ ncclResult_t ncclSocketInit(ncclDebugLogger_t logFunction) {
         WARN("NET/Socket : no interface found");
         return ncclInternalError;
       } else {
-        char line[1024];
-        char addrline[1024];
+        #define MAX_LINE_LEN (2047)
+        char line[MAX_LINE_LEN+1];
+        char addrline[SOCKET_NAME_MAXLEN+1];
         line[0] = '\0';
+        addrline[SOCKET_NAME_MAXLEN] = '\0';
         for (int i=0; i<ncclNetIfs; i++) {
           strcpy(ncclSocketDevs[i].devName, names+i*MAX_IF_NAME_SIZE);
           memcpy(&ncclSocketDevs[i].addr, addrs+i, sizeof(union socketAddress));
           NCCLCHECK(ncclSocketGetPciPath(ncclSocketDevs[i].devName, &ncclSocketDevs[i].pciPath));
-          snprintf(line+strlen(line), 1023-strlen(line), " [%d]%s:%s", i, names+i*MAX_IF_NAME_SIZE,
+          snprintf(line+strlen(line), MAX_LINE_LEN-strlen(line), " [%d]%s:%s", i, names+i*MAX_IF_NAME_SIZE,
               socketToString(&addrs[i].sa, addrline));
         }
-        line[1023] = '\0';
+        line[MAX_LINE_LEN] = '\0';
         INFO(NCCL_INIT|NCCL_NET,"NET/Socket : Using%s", line);
       }
     }
