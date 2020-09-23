@@ -561,6 +561,7 @@ const char *testTypeNames[ncclNumTypes] = {"ncclInt8", "ncclUint8", "ncclInt32",
 const char *testOpNames[ncclNumOps] = {"ncclSum", "ncclProd", "ncclMax", "ncclMin"};
 
 testResult_t threadRunTests(struct threadArgs* targs) {
+  int nranks = getNranks(targs);
   targs->errors = 0;
   targs->group = 0;
   for (struct testCall* c = targs->calls; c < targs->calls+targs->nCalls; c++) {
@@ -570,6 +571,7 @@ testResult_t threadRunTests(struct threadArgs* targs) {
         targs->recvBuffs[i] = (char*)targs->recvBuffsBase[i];
       }
     }
+    if (c->rank >= nranks || c->root >= nranks) continue;
     TESTCHECK(testFuncArray[c->func](c, targs));
   }
   return testSuccess;
@@ -603,6 +605,10 @@ testResult_t testLoadCalls(FILE* input, struct testCall** callsPtr, int* nCallsP
     int read = fscanf(input, "%s %d %ld %d %s %s\n", funcStr, &call->rank, &call->count, &call->root, dtypeStr, redopStr);
     if (read == EOF) break;
     if (read == 0) continue;
+    if (funcStr[0] == '#') { // Comments
+      for (int c = '#'; c != EOF && c != '\n'; c = fgetc(input));
+      continue;
+    }
     TESTCHECK(ncclStringToFunc(funcStr, &call->func));
     if (read >= 5) TESTCHECK(ncclStringToType(dtypeStr, &call->datatype));
     if (read >= 6) TESTCHECK(ncclStringToOp(redopStr, &call->redop));
