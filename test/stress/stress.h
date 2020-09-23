@@ -63,12 +63,14 @@ typedef enum {
 } while(0)
 
 struct testCall {
+  const char* name;
   int func;
   int rank;
   size_t count;
   int root;
   ncclDataType_t datatype;
   ncclRedOp_t redop;
+  int group;
 };
 
 struct threadArgs {
@@ -99,7 +101,6 @@ struct threadArgs {
   double* delta;
   struct testCall* calls;
   int nCalls;
-  int group;
   char** sendBuffs;
   char** recvBuffs;
   int* errors;
@@ -171,10 +172,11 @@ extern const char* testFuncNames[testNumFuncs];
 extern const char *testTypeNames[ncclNumTypes];
 extern const char *testOpNames[ncclNumOps];
 
-static testResult_t ncclStringToFunc(char *str, int* func) {
+static testResult_t ncclStringToFunc(char *str, int* func, const char** name) {
   for (int f=0; f<testNumFuncs; f++) {
     if (strcmp(str, testFuncNames[f]) == 0) {
       *func = f;
+      *name = testFuncNames[f];
       return testSuccess;
     }
   }

@@ -458,7 +458,7 @@ static int getRank(struct threadArgs* targs, int g) {
   return (targs->proc*targs->nThreads + targs->thread)*targs->nGpus + g;
 }
 static int getNranks(struct threadArgs* targs) {
-  return targs->proc*targs->nThreads*targs->nGpus;
+  return targs->nProcs*targs->nThreads*targs->nGpus;
 }
 static testResult_t allReduce(struct testCall* args, struct threadArgs* targs) {
   if (targs->nGpus > 1) NCCLCHECK(ncclGroupStart());
@@ -466,8 +466,8 @@ static testResult_t allReduce(struct testCall* args, struct threadArgs* targs) {
     int rank = getRank(targs, i);
     if (args->rank != -1 && args->rank != rank) continue;
     NCCLCHECK(ncclAllReduce(targs->sendBuffs[i], targs->recvBuffs[i], args->count, args->datatype, args->redop, targs->comms[i], targs->streams[i]));
-    if (targs->group) targs->sendBuffs[i] += args->count * wordSize(args->datatype);
-    if (targs->group) targs->recvBuffs[i] += args->count * wordSize(args->datatype);
+    if (args->group) targs->sendBuffs[i] += args->count * wordSize(args->datatype);
+    if (args->group) targs->recvBuffs[i] += args->count * wordSize(args->datatype);
   }
   if (targs->nGpus > 1) NCCLCHECK(ncclGroupEnd());
   return testSuccess;
@@ -479,8 +479,8 @@ static testResult_t allGather(struct testCall* args, struct threadArgs* targs) {
     int nranks = getNranks(targs);
     if (args->rank != -1 && args->rank != rank) continue;
     NCCLCHECK(ncclAllGather(targs->sendBuffs[i], targs->recvBuffs[i], args->count, args->datatype, targs->comms[i], targs->streams[i]));
-    if (targs->group) targs->sendBuffs[i] += args->count * wordSize(args->datatype);
-    if (targs->group) targs->recvBuffs[i] += nranks * args->count * wordSize(args->datatype);
+    if (args->group) targs->sendBuffs[i] += args->count * wordSize(args->datatype);
+    if (args->group) targs->recvBuffs[i] += nranks * args->count * wordSize(args->datatype);
   }
   if (targs->nGpus > 1) NCCLCHECK(ncclGroupEnd());
   return testSuccess;
@@ -492,8 +492,8 @@ static testResult_t reduceScatter(struct testCall* args, struct threadArgs* targ
     int nranks = getNranks(targs);
     if (args->rank != -1 && args->rank != rank) continue;
     NCCLCHECK(ncclReduceScatter(targs->sendBuffs[i], targs->recvBuffs[i], args->count, args->datatype, args->redop, targs->comms[i], targs->streams[i]));
-    if (targs->group) targs->sendBuffs[i] += nranks * args->count * wordSize(args->datatype);
-    if (targs->group) targs->recvBuffs[i] += args->count * wordSize(args->datatype);
+    if (args->group) targs->sendBuffs[i] += nranks * args->count * wordSize(args->datatype);
+    if (args->group) targs->recvBuffs[i] += args->count * wordSize(args->datatype);
   }
   if (targs->nGpus > 1) NCCLCHECK(ncclGroupEnd());
   return testSuccess;
@@ -504,8 +504,8 @@ static testResult_t broadcast(struct testCall* args, struct threadArgs* targs) {
     int rank = getRank(targs, i);
     if (args->rank != -1 && args->rank != rank) continue;
     NCCLCHECK(ncclBroadcast(targs->sendBuffs[i], targs->recvBuffs[i], args->count, args->datatype, args->root, targs->comms[i], targs->streams[i]));
-    if (targs->group && args->root == rank) targs->sendBuffs[i] += args->count * wordSize(args->datatype);
-    if (targs->group) targs->recvBuffs[i] += args->count * wordSize(args->datatype);
+    if (args->group && args->root == rank) targs->sendBuffs[i] += args->count * wordSize(args->datatype);
+    if (args->group) targs->recvBuffs[i] += args->count * wordSize(args->datatype);
   }
   if (targs->nGpus > 1) NCCLCHECK(ncclGroupEnd());
   return testSuccess;
@@ -516,20 +516,18 @@ static testResult_t reduce(struct testCall* args, struct threadArgs* targs) {
     int rank = getRank(targs, i);
     if (args->rank != -1 && args->rank != rank) continue;
     NCCLCHECK(ncclReduce(targs->sendBuffs[i], targs->recvBuffs[i], args->count, args->datatype, args->redop, args->root, targs->comms[i], targs->streams[i]));
-    if (targs->group) targs->sendBuffs[i] += args->count * wordSize(args->datatype);
-    if (targs->group && args->root == rank) targs->recvBuffs[i] += args->count * wordSize(args->datatype);
+    if (args->group) targs->sendBuffs[i] += args->count * wordSize(args->datatype);
+    if (args->group && args->root == rank) targs->recvBuffs[i] += args->count * wordSize(args->datatype);
   }
   if (targs->nGpus > 1) NCCLCHECK(ncclGroupEnd());
   return testSuccess;
 }
 static testResult_t groupStart(struct testCall* args, struct threadArgs* targs) {
   NCCLCHECK(ncclGroupStart());
-  targs->group++;
   return testSuccess;
 }
 static testResult_t groupEnd(struct testCall* args, struct threadArgs* targs) {
   NCCLCHECK(ncclGroupEnd());
-  targs->group--;
   return testSuccess;
 }
 static testResult_t send(struct testCall* args, struct threadArgs* targs) {
@@ -538,7 +536,7 @@ static testResult_t send(struct testCall* args, struct threadArgs* targs) {
     int rank = getRank(targs, i);
     if (args->rank != -1 && args->rank != rank) continue;
     NCCLCHECK(ncclSend(targs->sendBuffs[i], args->count, args->datatype, args->root, targs->comms[i], targs->streams[i]));
-    if (targs->group) targs->sendBuffs[i] += args->count * wordSize(args->datatype);
+    if (args->group) targs->sendBuffs[i] += args->count * wordSize(args->datatype);
   }
   NCCLCHECK(ncclGroupStart());
   return testSuccess;
@@ -549,7 +547,7 @@ static testResult_t recv(struct testCall* args, struct threadArgs* targs) {
     int rank = getRank(targs, i);
     if (args->rank != -1 && args->rank != rank) continue;
     NCCLCHECK(ncclRecv(targs->recvBuffs[i], args->count, args->datatype, args->root, targs->comms[i], targs->streams[i]));
-    if (targs->group) targs->recvBuffs[i] += args->count * wordSize(args->datatype);
+    if (args->group) targs->recvBuffs[i] += args->count * wordSize(args->datatype);
   }
   NCCLCHECK(ncclGroupStart());
   return testSuccess;
@@ -563,9 +561,8 @@ const char *testOpNames[ncclNumOps] = {"ncclSum", "ncclProd", "ncclMax", "ncclMi
 testResult_t threadRunTests(struct threadArgs* targs) {
   int nranks = getNranks(targs);
   targs->errors = 0;
-  targs->group = 0;
   for (struct testCall* c = targs->calls; c < targs->calls+targs->nCalls; c++) {
-    if (targs->group == 0) {
+    if (c->group == 0) {
       for (int i=0; i<targs->nGpus; i++) {
         targs->sendBuffs[i] = (char*)targs->sendBuffsBase[i];
         targs->recvBuffs[i] = (char*)targs->recvBuffsBase[i];
@@ -595,23 +592,34 @@ testResult_t testLoadCalls(FILE* input, struct testCall** callsPtr, int* nCallsP
   char redopStr[128];
   size_t bytes = 0ULL;
   int group = 0;
+  int read = 0;
+  char line[1024];
 
-  while (1) {
+  while (read != EOF) {
     if (nCalls == nCallsSize) {
       calls = (struct testCall*)realloc(calls, (nCallsSize+128)*sizeof(struct testCall));
       nCallsSize += 128;
     }
     struct testCall* call = calls+nCalls;
-    int read = fscanf(input, "%s %d %ld %d %s %s\n", funcStr, &call->rank, &call->count, &call->root, dtypeStr, redopStr);
-    if (read == EOF) break;
-    if (read == 0) continue;
-    if (funcStr[0] == '#') { // Comments
-      for (int c = '#'; c != EOF && c != '\n'; c = fgetc(input));
-      continue;
+
+    // Read next line
+    int offset = 0;
+    while (offset < 1023) {
+      read = fgetc(input);
+      if (read == '\n' || read == EOF) break;
+      line[offset++] = read;
     }
-    TESTCHECK(ncclStringToFunc(funcStr, &call->func));
-    if (read >= 5) TESTCHECK(ncclStringToType(dtypeStr, &call->datatype));
-    if (read >= 6) TESTCHECK(ncclStringToOp(redopStr, &call->redop));
+    line[offset] = '\0';
+
+    // Parse line
+    if (line[0] == '#') continue; // Comments
+    call->group = group;
+    int fields = sscanf(line, "%s %d %ld %d %s %s", funcStr, &call->rank, &call->count, &call->root, dtypeStr, redopStr);
+    if (fields <= 0) continue;
+
+    TESTCHECK(ncclStringToFunc(funcStr, &call->func, &call->name));
+    if (fields >= 5) TESTCHECK(ncclStringToType(dtypeStr, &call->datatype));
+    if (fields >= 6) TESTCHECK(ncclStringToOp(redopStr, &call->redop));
     if (strcmp(funcStr, "ncclGroupStart") == 0) group++;
     else if (strcmp(funcStr, "ncclGroupEnd") == 0) group--;
     else {
