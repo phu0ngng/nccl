@@ -7,9 +7,7 @@
 #include "enqueue.h"
 #include "argcheck.h"
 #include "coll_net.h"
-
-#define USE_CUDA_GRAPH
-static int usingCudaGraph = 1;
+#include <cuda.h>
 
 // Only generate inline kernels for LL
 #define NCCL_FUNC5(func, algo, redop, dtype) \
@@ -110,7 +108,7 @@ static ncclResult_t getNextOp(struct ncclChannel* channel, struct ncclColl** col
   return ncclSuccess;
 }
 
-static ncclResult_t setupParams(struct ncclInfo* info) {
+static ncclResult_t setupParams(struct ncclInfo* info, int usingCudaGraph) {
   ncclComm_t comm = info->comm;
   struct cudaLaunchParams* params = comm->myParams;
 
@@ -127,7 +125,7 @@ static ncclResult_t setupParams(struct ncclInfo* info) {
   return ncclSuccess;
 }
 
-static ncclResult_t setupLaunch(struct ncclComm* comm) {
+static ncclResult_t setupLaunch(struct ncclComm* comm, int usingCudaGraph) {
   struct cudaLaunchParams* params = comm->myParams;
 
   // Only launch blocks where we have work to do.
@@ -475,7 +473,7 @@ ncclResult_t ncclSaveKernelStatic(struct ncclInfo* info /*input*/, struct ncclCu
   memset(&cgInfo->proxyArgs, 0, sizeof(struct ncclProxyArgs));
   NCCLCHECK(computeColl(info, &cgInfo->coll, &cgInfo->proxyArgs));
 
-  NCCLCHECK(setupParams(info));
+  NCCLCHECK(setupParams(info, 1));
   return ncclSuccess;
 }
 
@@ -700,7 +698,7 @@ void CUDART_CB ncclEnqueueHostSetup(void* arg) {
       params->func, params->gridDim.x, params->blockDim.x, params->args, params->sharedMem, params->stream);
 
   ncclSaveKernelDynamic(cgInfo);
-  setupLaunch(cgInfo->comm);
+  setupLaunch(cgInfo->comm, 1);
 }
 
 ncclResult_t ncclEnqueueCheck(struct ncclInfo* info) {
@@ -742,40 +740,46 @@ end:
         info->opName, info->comm->opCount, info->sendbuff, info->recvbuff, info->count,
         info->datatype, info->op, info->root, info->comm, info->comm->nRanks, info->stream);
 
-#ifdef USE_CUDA_GRAPH
-    ncclComm_t comm = info->comm;
-    struct ncclCudaGraphInfo* cgInfo = &comm->cudaGraphInfo;
+    CUstreamCaptureStatus captureStatus;
+    cuStreamGetCaptureInfo(info->stream, &captureStatus, /*CUgraph *graph_out*/ NULL, /*const CUgraphNode **dependencies_out*/ NULL, /*size_t *numDependencies_out*/ NULL, /*cuuint64_t *id_out*/ NULL);
+    int usingCudaGraph = (captureStatus == CU_STREAM_CAPTURE_STATUS_ACTIVE) ? 1 : 0;
+    INFO(NCCL_COLL, "stream is %s being captured by a graph", usingCudaGraph ? "" : "not");
 
-    cudaStream_t proxyStream;
-    cudaEvent_t setupDone, proxyDone;
-    CUDACHECK(cudaStreamCreate(&proxyStream));
-    CUDACHECK(cudaEventCreate(&setupDone));
-    CUDACHECK(cudaEventCreate(&proxyDone));
+    if (usingCudaGraph) {
+      ncclComm_t comm = info->comm;
+      struct ncclCudaGraphInfo* cgInfo = &comm->cudaGraphInfo;
 
-    NCCLCHECK(ncclSaveKernelStatic(info, cgInfo));
+      cudaStream_t proxyStream;
+      cudaEvent_t setupDone, proxyDone;
+      CUDACHECK(cudaStreamCreate(&proxyStream));
+      CUDACHECK(cudaEventCreate(&setupDone));
+      CUDACHECK(cudaEventCreate(&proxyDone));
 
-    cudaHostFn_t fn1 = ncclEnqueueHostSetup;
-    CUDACHECK(cudaLaunchHostFunc(info->stream, fn1, cgInfo));
-    CUDACHECK(cudaEventRecord(setupDone, info->stream));
+      NCCLCHECK(ncclSaveKernelStatic(info, cgInfo));
 
-    NCCLCHECK(ncclBarrierEnqueue(comm));
-    struct cudaLaunchParams *params = comm->myParams;
-    CUDACHECK(cudaLaunchKernel(params->func, params->gridDim, params->blockDim, params->args, params->sharedMem, params->stream));
+      cudaHostFn_t fn1 = ncclEnqueueHostSetup;
+      //CUDACHECK(cudaLaunchHostFunc(info->stream, fn1, cgInfo));
+      cuLaunchHostFunc(info->stream, fn1, cgInfo, sizeof(ncclCudaGraphInfo)); //FIXME: wrap with error check
+      CUDACHECK(cudaEventRecord(setupDone, info->stream));
 
-    cudaHostFn_t fn2 = ncclEnqueueProxyStart;
-    CUDACHECK(cudaStreamWaitEvent(proxyStream, setupDone, 0));
-    CUDACHECK(cudaLaunchHostFunc(proxyStream, fn2, comm));
-    CUDACHECK(cudaEventRecord(proxyDone, proxyStream));
+      NCCLCHECK(ncclBarrierEnqueue(comm));
+      struct cudaLaunchParams *params = comm->myParams;
+      CUDACHECK(cudaLaunchKernel(params->func, params->gridDim, params->blockDim, params->args, params->sharedMem, params->stream));
 
-    CUDACHECK(cudaStreamWaitEvent(info->stream, proxyDone, 0));
-    NCCLCHECK(ncclEnqueueEvents(comm));
-#else
-    NCCLCHECK(ncclSaveKernel(info));
-    NCCLCHECK(setupLaunch(info->comm));
-    NCCLCHECK(ncclBarrierEnqueue(info->comm));
-    NCCLCHECK(ncclBarrierEnqueueWait(info->comm));
-    NCCLCHECK(ncclEnqueueEvents(info->comm));
-#endif
+      cudaHostFn_t fn2 = ncclEnqueueProxyStart;
+      CUDACHECK(cudaStreamWaitEvent(proxyStream, setupDone, 0));
+      CUDACHECK(cudaLaunchHostFunc(proxyStream, fn2, comm));
+      CUDACHECK(cudaEventRecord(proxyDone, proxyStream));
+
+      CUDACHECK(cudaStreamWaitEvent(info->stream, proxyDone, 0));
+      NCCLCHECK(ncclEnqueueEvents(comm));
+    } else {
+      NCCLCHECK(ncclSaveKernel(info));
+      NCCLCHECK(setupLaunch(info->comm, 0));
+      NCCLCHECK(ncclBarrierEnqueue(info->comm));
+      NCCLCHECK(ncclBarrierEnqueueWait(info->comm));
+      NCCLCHECK(ncclEnqueueEvents(info->comm));
+    }
     return ncclSuccess;
   }
 }

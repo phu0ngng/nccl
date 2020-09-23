@@ -16,6 +16,8 @@ NVCC = $(CUDA_HOME)/bin/nvcc
 
 CUDA_LIB ?= $(CUDA_HOME)/lib64
 CUDA_INC ?= $(CUDA_HOME)/include
+CUDA_DRIVER_LIB ?= $(CUDA_DRIVER_HOME)/lib64
+CUDA_DRIVER_INC ?= $(CUDA_DRIVER_HOME)/include
 CUDA_VERSION = $(strip $(shell which $(NVCC) >/dev/null && $(NVCC) --version | grep release | sed 's/.*release //' | sed 's/\,.*//'))
 #CUDA_VERSION ?= $(shell ls $(CUDA_LIB)/libcudart.so.* | head -1 | rev | cut -d "." -f -2 | rev)
 CUDA_MAJOR = $(shell echo $(CUDA_VERSION) | cut -d "." -f 1)
@@ -49,14 +51,14 @@ endif
 
 CXXFLAGS   := -DCUDA_MAJOR=$(CUDA_MAJOR) -DCUDA_MINOR=$(CUDA_MINOR) -fPIC -fvisibility=hidden \
               -Wall -Wno-unused-function -Wno-sign-compare -std=c++11 -Wvla \
-              -I $(CUDA_INC) \
+              -I $(CUDA_INC) -I $(CUDA_DRIVER_INC) \
               $(CXXFLAGS)
 # Maxrregcount needs to be set accordingly to NCCL_MAX_NTHREADS (otherwise it will cause kernel launch errors)
 # 512 : 120, 640 : 96, 768 : 80, 1024 : 60
 # We would not have to set this if we used __launch_bounds__, but this only works on kernels, not on functions.
 NVCUFLAGS  := -ccbin $(CXX) $(NVCC_GENCODE) -std=c++11 -Xptxas -maxrregcount=96 -Xfatbin -compress-all
 # Use addprefix so that we can specify more than one path
-NVLDFLAGS  := -L${CUDA_LIB} -lcudart -lrt
+NVLDFLAGS  := -L${CUDA_LIB} -lcudart -lrt -L${CUDA_DRIVER_LIB} -lcuda
 
 ########## GCOV ##########
 GCOV ?= 0 # disable by default.
