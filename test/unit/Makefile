@@ -30,12 +30,12 @@ EXE_FILES:= $(CU_FILES:%.cu=${DST_DIR}/%)
 KEXE_FILES:= $(KCU_FILES:%.cu=${DST_DIR}/%)
 DEP_FILES:= $(OBJ_FILES:%.o=${DST_DIR}/%.d)
 #
-kernel: ${KEXE_FILES}
-
-
 all:${EXE_FILES}
 	@printf "Syncing  %-35s > %s\n" topo ${DST_DIR}
 	rsync -q -av topo ${DST_DIR}
+
+kernel: ${KEXE_FILES}
+
 clean:
 	rm -rf ${DST_DIR}
 #
