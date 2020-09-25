@@ -115,7 +115,7 @@ static ncclResult_t setupParams(struct ncclInfo* info, int usingCudaGraph) {
   int nSubChannels = (info->pattern == ncclPatternCollTreeUp || info->pattern == ncclPatternCollTreeDown) ? 2 : 1;
   params->gridDim.x += info->nChannels * nSubChannels;
   //FIXME: check for p2p case
-  params->gridDim.x = std::max<unsigned>(params->gridDim.x, comm->nChannels);
+  params->gridDim.x = std::min<unsigned>(params->gridDim.x, comm->nChannels);
   params->blockDim.x = std::max<unsigned>(params->blockDim.x, info->nThreads);
 
   if (usingCudaGraph) {
