@@ -90,9 +90,6 @@ static ncclResult_t ncclTopoSetPaths(struct ncclTopoNode* baseNode, struct ncclT
           if (node->type == PCI && remNode->type == PCI) type = PATH_PXB;
           // Consider a path going through the CPU as PATH_PHB
           if (link->type == LINK_PCI && (node->type == CPU || link->remNode->type == CPU)) type = PATH_PHB;
-          // Ignore Power CPU in an NVLink path
-          if (path->type == PATH_NVL && type == PATH_SYS && link->remNode->type == CPU &&
-              link->remNode->cpu.arch == NCCL_TOPO_CPU_ARCH_POWER) type = 0;
           // Set 1 hop NVLink as NVB
           if (node->type == GPU && path->type == PATH_NVL && type == PATH_NVL && remPath->count > 1) type = PATH_NVB;
 
