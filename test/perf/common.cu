@@ -43,6 +43,7 @@ static int blocking_coll = 0;
 static int streamnull = 0;
 static int side_comp = 0;
 static int timeout = 60;
+static int cudaGraphMode = 0;
 
 static char* replay_file = NULL;
 
@@ -435,6 +436,14 @@ testResult_t BenchTime(struct threadArgs* args, ncclDataType_t type, ncclRedOp_t
   Barrier(args);
   args->compThreadCountLast = *(args->compThreadCount);
 
+  cudaGraph_t graph = NULL;
+  cudaGraphExec_t graphExec;
+  cudaStream_t s = args->streams[0];  //FIXME: currently only works for 1 GPU per thread mode
+  if (cudaGraphMode == 1) {
+    // Begin cuda graph capture
+    CUDACHECK(cudaStreamBeginCapture(s, cudaStreamCaptureModeGlobal));
+  }
+
   // Performance Benchmark
   auto start = std::chrono::high_resolution_clock::now();
   for (int iter = 0; iter < iters; iter++) {
@@ -444,12 +453,32 @@ testResult_t BenchTime(struct threadArgs* args, ncclDataType_t type, ncclRedOp_t
     }
     if (agg_iters>1) NCCLCHECK(ncclGroupEnd());
   }
+
+  if (cudaGraphMode == 1) {
+    // End cuda graph capture
+    CUDACHECK(cudaStreamEndCapture(s, &graph));
+
+    // Instantiate cuda graph
+    CUDACHECK(cudaGraphInstantiate(&graphExec, graph, NULL, NULL, 0));
+
+    // Resync CPU, restart timing, launch cuda graph
+    Barrier(args);
+    start = std::chrono::high_resolution_clock::now();
+    CUDACHECK(cudaGraphLaunch(graphExec, s));
+  }
+
   TESTCHECK(completeColl(args));
 
   int compThreadCount = (*(args->compThreadCount)) - args->compThreadCountLast;
   auto delta = std::chrono::high_resolution_clock::now() - start;
   double deltaSec = std::chrono::duration_cast<std::chrono::duration<double>>(delta).count();
   deltaSec = deltaSec/(iters*agg_iters);
+
+  if (cudaGraphMode == 1) {
+    //destroy cuda graph
+    CUDACHECK(cudaGraphExecDestroy(graphExec));
+    CUDACHECK(cudaGraphDestroy(graph));
+  }
 
   double algBw, busBw;
   args->collTest->getBw(count, wordSize(type), deltaSec, &algBw, &busBw, args->nProcs*args->nThreads*args->nGpus);
@@ -716,12 +745,13 @@ int main(int argc, char* argv[]) {
     {"side_comp", required_argument, 0, 'k'},
     {"replay", required_argument, 0, 'l'},
     {"timeout", required_argument, 0, 'T'},
+    {"cudagraph", required_argument, 0, 'G'},
     {"help", no_argument, 0, 'h'}
   };
 
   while(1) {
     int c;
-    c = getopt_long(argc, argv, "t:g:b:e:i:f:n:m:w:s:p:c:o:d:r:z:y:k:h:l:T:", longopts, &longindex);
+    c = getopt_long(argc, argv, "t:g:b:e:i:f:n:m:w:s:p:c:o:d:r:z:y:k:h:l:T:G:", longopts, &longindex);
 
     if (c == -1)
       break;
@@ -789,6 +819,9 @@ int main(int argc, char* argv[]) {
       case 'T':
         timeout = strtol(optarg, NULL, 0);
         break;
+      case 'G':
+        cudaGraphMode = strtol(optarg, NULL, 0);
+        break;
       case 'h':
       default:
         if (c != 'h') printf("invalid option '%c'\n", c);
@@ -812,6 +845,7 @@ int main(int argc, char* argv[]) {
             "[-k,--side_comp <0/1>] \n\t"
             "[-l,--replay <path to replay file>] \n\t"
             "[-T,--timeout <time in seconds>] \n\t"
+            "[-G,--cudagraph <0/1>] \n\t"
 	    "[-h,--help]\n",
             basename(argv[0]));
         return 0;
