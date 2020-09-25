@@ -760,9 +760,9 @@ end:
       cuLaunchHostFunc(info->stream, fn1, cgInfo, sizeof(ncclCudaGraphInfo)); //FIXME: wrap with error check
       CUDACHECK(cudaEventRecord(setupDone, info->stream));
 #else
-      cudaGraphNode_t setupNode;
-      cudaHostNodeParams setupNodeParams = {fn1, cgInfo};
-      CUDACHECK(cudaGraphAddHostNode(&setupNode, graph, NULL, 0, &setupNodeParams));
+      CUgraphNode setupNode;
+      CUDA_HOST_NODE_PARAMS setupNodeParams = {fn1, cgInfo, sizeof(ncclCudaGraphInfo)};
+      cuGraphAddHostNode(&setupNode, graph, NULL, 0, &setupNodeParams);
       cuStreamAddCaptureDependency(info->stream, setupNode, 0);
 #endif
 
@@ -781,9 +781,9 @@ end:
       CUDACHECK(cudaEventRecord(proxyDone, proxyStream));
       CUDACHECK(cudaStreamWaitEvent(info->stream, proxyDone, 0));
 #else
-      cudaGraphNode_t proxyNode;
-      cudaHostNodeParams proxyNodeParams = {fn2, comm};
-      CUDACHECK(cudaGraphAddHostNode(&proxyNode, graph, &setupNode, 1, &proxyNodeParams));
+      CUgraphNode proxyNode;
+      CUDA_HOST_NODE_PARAMS proxyNodeParams = {fn2, comm, sizeof(ncclComm)};
+      cuGraphAddHostNode(&proxyNode, graph, &setupNode, 1, &proxyNodeParams);
       cuStreamAddCaptureDependency(info->stream, proxyNode, 0);
 #endif
 
