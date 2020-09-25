@@ -15,6 +15,7 @@
 #include <sys/stat.h>
 #include <fcntl.h>
 #include "cuda.h"
+#include <errno.h>
 
 thread_local int is_main_thread = 0;
 
