@@ -463,7 +463,7 @@ static ncclResult_t checkSetStream(struct ncclInfo* info) {
 
 // Prepare things that will not change between graph launches
 // including cuda launch parameters
-ncclResult_t ncclSaveKernelStatic(struct ncclInfo* info /*input*/, struct ncclCudaGraphInfo* cgInfo /*output*/) {
+static ncclResult_t ncclSaveKernelStatic(struct ncclInfo* info /*input*/, struct ncclCudaGraphInfo* cgInfo /*output*/) {
   if (info->comm->nRanks == 1) {
     if (info->sendbuff != info->recvbuff)
       CUDACHECK(cudaMemcpyAsync(info->recvbuff, info->sendbuff, info->nBytes, cudaMemcpyDeviceToDevice, info->stream));
@@ -479,7 +479,7 @@ ncclResult_t ncclSaveKernelStatic(struct ncclInfo* info /*input*/, struct ncclCu
 
 // Prepare things that will change between graph launches
 // including cuda kernel args
-ncclResult_t ncclSaveKernelDynamic(struct ncclCudaGraphInfo* cgInfo) {
+static ncclResult_t ncclSaveKernelDynamic(struct ncclCudaGraphInfo* cgInfo) {
   ncclComm_t comm = cgInfo->comm;
   struct ncclColl* coll = &cgInfo->coll;
   struct ncclProxyArgs* proxyArgs = &cgInfo->proxyArgs;
@@ -669,11 +669,10 @@ ncclResult_t ncclSaveP2pKernel(struct ncclInfo* info) {
   return ncclSuccess;
 }
 
-void CUDART_CB ncclEnqueueProxyStart(void* arg) {
+static ncclResult_t ncclEnqueueProxyStart(ncclComm_t comm) {
   // Start the network proxies
-  ncclComm_t comm = (ncclComm_t)arg;
   struct cudaLaunchParams *params = comm->myParams;
-  if (params->gridDim.x == 0) return;
+  if (params->gridDim.x == 0) return ncclSuccess;
 
   uint64_t max = 0ULL;
   for (int r=0; r<params->gridDim.x; r++) {
@@ -687,7 +686,8 @@ void CUDART_CB ncclEnqueueProxyStart(void* arg) {
   }
   comm->lastChannel = 0;
   comm->lastOpCount = max;
-  ncclProxyStart(comm);
+  NCCLCHECK(ncclProxyStart(comm));
+  return ncclSuccess;
 }
 
 void CUDART_CB ncclEnqueueHostSetup(void* arg) {
@@ -699,6 +699,7 @@ void CUDART_CB ncclEnqueueHostSetup(void* arg) {
 
   ncclSaveKernelDynamic(cgInfo);
   setupLaunch(cgInfo->comm, 1);
+  ncclEnqueueProxyStart(cgInfo->comm);
 }
 
 ncclResult_t ncclEnqueueCheck(struct ncclInfo* info) {
@@ -769,24 +770,6 @@ end:
       NCCLCHECK(ncclBarrierEnqueue(comm));
       struct cudaLaunchParams *params = comm->myParams;
       CUDACHECK(cudaLaunchKernel(params->func, params->gridDim, params->blockDim, params->args, params->sharedMem, params->stream));
-
-      cudaHostFn_t fn2 = ncclEnqueueProxyStart;
-#ifdef NCCL_CUDA_GRAPH_SYNC_MODE
-      cudaStream_t proxyStream;
-      cudaEvent_t proxyDone;
-      CUDACHECK(cudaStreamCreate(&proxyStream));
-      CUDACHECK(cudaEventCreate(&proxyDone));
-      CUDACHECK(cudaStreamWaitEvent(proxyStream, setupDone, 0));
-      CUDACHECK(cudaLaunchHostFunc(proxyStream, fn2, comm));
-      CUDACHECK(cudaEventRecord(proxyDone, proxyStream));
-      CUDACHECK(cudaStreamWaitEvent(info->stream, proxyDone, 0));
-#else
-      CUgraphNode proxyNode;
-      CUDA_HOST_NODE_PARAMS proxyNodeParams = {fn2, comm, sizeof(ncclComm)};
-      cuGraphAddHostNode(&proxyNode, graph, &setupNode, 1, &proxyNodeParams);
-      cuStreamAddCaptureDependency(info->stream, proxyNode, 0);
-#endif
-
       NCCLCHECK(ncclEnqueueEvents(comm));
     } else {
       NCCLCHECK(ncclSaveKernel(info));
