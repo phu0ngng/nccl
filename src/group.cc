@@ -222,7 +222,11 @@ ncclResult_t ncclGroupEnd() {
       // Try to use all channels
       int nChannelsMax = comm->p2pnChannelsPerPeer;
       int nChannelsMin = nChannelsMax;
-      while (nChannelsMin*comm->nRanks > comm->p2pnChannels && nChannelsMin > 1) nChannelsMin /= 2;
+      int p2pMaxCount = std::max(comm->p2pSendCount, comm->p2pRecvCount);
+      // Try to use all channels, but one channel per operation.
+      while (nChannelsMin*p2pMaxCount > comm->p2pnChannels && nChannelsMin > 1) nChannelsMin /= 2;
+      // Avoid overloading channels with 8+ operations as we loose the sync warp, hence a bit of bandwidth.
+      while (nChannelsMax*p2pMaxCount > comm->p2pnChannels*4 && nChannelsMax > 1) nChannelsMax /= 2;
 
       while (comm->p2pCount) {
         // schedule delta 0, +1, -1, +2, -2, ...
@@ -240,8 +244,8 @@ sched_delta:
             ssize_t totRecvBytes = 0, totSendBytes = 0;
             if (recv != NULL) totRecvBytes = recv->nbytes;
             if (send != NULL) totSendBytes = send->nbytes;
-            ssize_t recvChunkSize = getP2pNchannels(totRecvBytes, nChannelsMin, nChannelsMax, stepSize, 4*stepSize);
-            ssize_t sendChunkSize = getP2pNchannels(totSendBytes, nChannelsMin, nChannelsMax, stepSize, 4*stepSize);
+            ssize_t recvChunkSize = getP2pNchannels(totRecvBytes, nChannelsMin, nChannelsMax, stepSize, SENDRECV_SLICEFACTOR*stepSize);
+            ssize_t sendChunkSize = getP2pNchannels(totSendBytes, nChannelsMin, nChannelsMax, stepSize, SENDRECV_SLICEFACTOR*stepSize);
 
             ssize_t sendOffset = 0;
             ssize_t recvOffset = 0;
@@ -282,6 +286,7 @@ sched_delta:
           }
         }
       }
+      comm->p2pSendCount = comm->p2pRecvCount = 0;
     }
   }
 
@@ -349,7 +354,7 @@ group_cleanup:
             while (p2pSends[peer].head != NULL) dequeueP2pInfo(p2pSends+peer);
             while (p2pRecvs[peer].head != NULL) dequeueP2pInfo(p2pRecvs+peer);
           }
-          comm->p2pCount = 0;
+          comm->p2pCount = comm->p2pSendCount = comm->p2pRecvCount = 0;
         }
         /* Free all proxy ops in state->nextOps */
         struct ncclProxyState* state = &comm->proxyState;

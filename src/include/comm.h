@@ -150,6 +150,8 @@ struct ncclComm {
   struct ncclP2Plist* p2pSends;
   struct ncclP2Plist* p2pRecvs;
   int p2pCount;
+  int p2pSendCount;
+  int p2pRecvCount;
 };
 
 #endif
