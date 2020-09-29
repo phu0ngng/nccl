@@ -133,8 +133,8 @@ static ncclResult_t connectTrees(struct ncclComm* comm, int* treeToParent, int* 
   // cases
   int depth = comm->nRanks/nNodes - 1 + log2i(nNodes);
 
-  int u0, d0_0, d0_1, childType0, u1, d1_0, d1_1, childType1;
-  NCCLCHECK(ncclGetDtree(nNodes, node, &u0, &d0_0, &d0_1, &childType0, &u1, &d1_0, &d1_1, &childType1));
+  int t0u, t0d0, t0d1, t0ChildType, t1u, t1d0, t1d1, t1ChildType;
+  NCCLCHECK(ncclGetDtree(nNodes, node, &t0u, &t0d0, &t0d1, &t0ChildType, &t1u, &t1d0, &t1d1, &t1ChildType));
   for (int c=0; c<nChannels; c++) {
      struct ncclChannel* channel0 = comm->channels+c;
      struct ncclChannel* channel1 = channel0+nChannels;
@@ -142,16 +142,16 @@ static ncclResult_t connectTrees(struct ncclComm* comm, int* treeToParent, int* 
      NCCLCHECK(getIndexes(treeToChild0+c*comm->nRanks, ranksToChild0, nNodes, firstRanks));
      NCCLCHECK(getIndexes(treeToChild1+c*comm->nRanks, ranksToChild1, nNodes, firstRanks));
      if (comm->rank == ranksToParent[node]) {
-       NCCLCHECK(setTreeUp(&channel0->tree, childType0 == 0 ? ranksToChild0 : ranksToChild1, u0));
-       NCCLCHECK(setTreeUp(&channel1->tree, childType1 == 0 ? ranksToChild0 : ranksToChild1, u1));
+       NCCLCHECK(setTreeUp(&channel0->tree, t0ChildType == 0 ? ranksToChild0 : ranksToChild1, t0u));
+       NCCLCHECK(setTreeUp(&channel1->tree, t1ChildType == 0 ? ranksToChild0 : ranksToChild1, t1u));
      }
      if (comm->rank == ranksToChild0[node]) {
-       NCCLCHECK(setTreeDown(&channel0->tree, ranksToParent, d0_0));
-       NCCLCHECK(setTreeDown(&channel1->tree, ranksToParent, d1_0));
+       NCCLCHECK(setTreeDown(&channel0->tree, ranksToParent, t0d0));
+       NCCLCHECK(setTreeDown(&channel1->tree, ranksToParent, t1d0));
      }
      if (comm->rank == ranksToChild1[node]) {
-       NCCLCHECK(setTreeDown(&channel0->tree, ranksToParent, d0_1));
-       NCCLCHECK(setTreeDown(&channel1->tree, ranksToParent, d1_1));
+       NCCLCHECK(setTreeDown(&channel0->tree, ranksToParent, t0d1));
+       NCCLCHECK(setTreeDown(&channel1->tree, ranksToParent, t1d1));
      }
      if (comm->rank == ranksToParent[node] ||
          comm->rank == ranksToChild0[node] ||
