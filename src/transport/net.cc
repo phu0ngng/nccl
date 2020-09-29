@@ -404,7 +404,7 @@ ncclResult_t netRecvProxy(struct ncclProxyArgs* args) {
       NCCLCHECK(ncclNetTest(args->requests[buffSlot], &done, &size));
       if (done) {
         args->received += args->sliceSteps;
-        if (args->protocol == NCCL_PROTO_SIMPLE && resources->useGdr) {
+        if (size > 0 && args->protocol == NCCL_PROTO_SIMPLE && resources->useGdr) {
           // Don't pass data to the GPU yet, flush first.
           volatile void** ptrsFifo = (volatile void**)resources->recvMem->ptrsFifo;
           char* ptr = resources->shared ? (char*)(ptrsFifo[buffSlot]) : localBuff+buffSlot*stepSize;
