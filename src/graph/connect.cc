@@ -41,8 +41,8 @@ ncclResult_t ncclTopoPreset(struct ncclComm* comm,
       }
       if (treeIntra[i] == rank) {
         int parentIndex = 0;
-        int child0Index = treeGraph->pattern == NCCL_TOPO_PATTERN_SPLIT_TREE ? 1 : 0;
-        int child1Index = treeGraph->pattern == NCCL_TOPO_PATTERN_TREE ? 0 : 1;
+        int child0Index = treeGraph->pattern == NCCL_TOPO_PATTERN_TREE ? 0 : 1;
+        int child1Index = treeGraph->pattern == NCCL_TOPO_PATTERN_SPLIT_TREE ? 1 : 0;
 
         topoRanks->treeToParent[c] = treeIntra[parentIndex];
         topoRanks->treeToChild0[c] = treeIntra[child0Index];
