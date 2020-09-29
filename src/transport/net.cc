@@ -248,7 +248,7 @@ ncclResult_t netRecvFree(void* transportResources) {
   return ncclSuccess;
 }
 
-static_assert(MAXCHANNELS*NCCL_STEPS*NCCL_MAX_WORK_ELEMENTS*2 <= NCCL_NET_MAX_REQUESTS, "Not enough net requests to cover for all channels x steps x work elements x send/recv");
+static_assert(NCCL_STEPS <= NCCL_NET_MAX_REQUESTS, "Not enough net requests to cover for steps");
 
 ncclResult_t netSendProxy(struct ncclProxyArgs* args) {
   struct netSendResources* resources = (struct netSendResources*) (args->connector->transportResources);
