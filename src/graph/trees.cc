@@ -37,15 +37,16 @@ ncclResult_t ncclGetBtree(int nranks, int rank, int* u, int* d0, int* d1, int* p
 
   if (rank == 0) {
     *u = -1;
-    *d0 = nranks > 1 ? bit >> 1 : -1;
-    *d1 = -1;
+    *d0 = -1;
+    // Child rank is > 0 so it has to be our child 1, not 0.
+    *d1 = nranks > 1 ? bit >> 1 : -1;
     return ncclSuccess;
   }
 
   up = (rank ^ bit) | (bit << 1);
   // if smaller than the parent, we are his first child, otherwise we're his second
-  *parentChildType = (rank < up) ? 0 : 1;
   if (up >= nranks) up = (rank ^ bit);
+  *parentChildType = (rank < up) ? 0 : 1;
   *u = up;
 
   int lowbit = bit >> 1;
