@@ -712,19 +712,43 @@ ncclResult_t ncclIbPostFifo(struct ncclIbRecvComm* comm, uint32_t rkey, uint64_t
   struct ibv_send_wr wr;
   memset(&wr, 0, sizeof(wr));
 
-  struct ncclIbSendFifo* localElem = comm->remFifo.elems + (comm->remFifo.tail%MAX_REQUESTS);
+  int slot = comm->remFifo.tail%MAX_REQUESTS;
+  struct ncclIbSendFifo* localElem = comm->remFifo.elems + slot;
   localElem->addr = addr;
   localElem->rkey = rkey;
   localElem->ready = 1;
   localElem->size = size; // Sanity/Debugging
   localElem->seq = comm->remFifo.tail; // Sanity/Debugging
-  wr.wr.rdma.remote_addr = comm->remFifo.addr + (comm->remFifo.tail%MAX_REQUESTS) * sizeof(struct ncclIbSendFifo);
+  wr.wr.rdma.remote_addr = comm->remFifo.addr + slot*sizeof(struct ncclIbSendFifo);
   wr.wr.rdma.rkey = comm->remFifo.rkey;
   comm->remFifo.sge.addr = (uint64_t)localElem;
   wr.sg_list = &comm->remFifo.sge;
   wr.num_sge = 1;
   wr.opcode = IBV_WR_RDMA_WRITE;
-  wr.send_flags = IBV_SEND_SIGNALED | comm->remFifo.flags; // IBV_SEND_INLINE
+  wr.send_flags = comm->remFifo.flags; // IBV_SEND_INLINE
+
+  // We need to occasionally post a request with the IBV_SEND_SIGNALED flag, otherwise
+  // the send queue will never empty.
+  //
+  // From https://www.rdmamojo.com/2014/06/30/working-unsignaled-completions/
+  // "How to use Unsignaled Completion?" / "Gotchas and Pitfalls"
+  // All posted Send Requested, Signaled and Unsignaled, are considered outstanding until
+  // a Work Completion that they, or Send Requests that were posted after them, was polled
+  // from the Completion Queue associated with the Send Queue. This means if one works with
+  // a Queue Pair that was configured to work with Unsignaled Completions, he must make
+  // sure that occasionally (before the Send Queue is full with outstanding Send Requests)
+  // a Send Request that generate Work Completion will be posted.
+  //
+  // Not following this rule may lead to a case that the Send Queue is full with Send
+  // Requests that won't generate Work Completion:
+  //
+  //  - The Send Queue is full, so no new Send Requests can be posted to it
+  //  - The Send Queue can't be emptied, since no Work Completion can be generated anymore
+  //    (the reason is that no Work Completion, that can generate Work Completion that
+  //    polling it will empty the Send Queue, can be posted)
+  //  - The status of all posted Send Request is considered unknown
+  //
+  if (slot == 0) wr.send_flags |= IBV_SEND_SIGNALED;
 
   struct ibv_send_wr* bad_wr;
   NCCLCHECK(wrap_ibv_post_send(comm->qp, &wr, &bad_wr));
