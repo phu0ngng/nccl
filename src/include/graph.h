@@ -83,9 +83,9 @@ struct ncclTopoRanks {
   int ringSend[MAXCHANNELS];
   int ringPrev[MAXCHANNELS];
   int ringNext[MAXCHANNELS];
-  int treeParent[MAXCHANNELS];
-  int treeChild0[MAXCHANNELS];
-  int treeChild1[MAXCHANNELS];
+  int treeToParent[MAXCHANNELS];
+  int treeToChild0[MAXCHANNELS];
+  int treeToChild1[MAXCHANNELS];
 };
 
 ncclResult_t ncclTopoPreset(struct ncclComm* comm,
