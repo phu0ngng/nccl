@@ -708,12 +708,8 @@ ncclResult_t ncclTopoFillNet(struct ncclXml* xml, const char* pciPath, const cha
     for (offset=strlen(pciSysPath)-1; pciSysPath[offset] != '/'; offset--);
     char busId[NVML_DEVICE_PCI_BUS_ID_BUFFER_SIZE];
     strcpy(busId, pciSysPath+offset+1);
-    NCCLCHECK(xmlFindTagKv(xml, "pci", &parent, "busid", busId));
-    if (parent == NULL) {
-      NCCLCHECK(xmlAddNode(xml, NULL, "pci", &parent));
-      NCCLCHECK(xmlSetAttr(parent, "busid", busId));
-      NCCLCHECK(ncclTopoGetXmlFromSys(parent, xml));
-    }
+    NCCLCHECK(ncclTopoGetPciNode(xml, busId, &parent));
+    NCCLCHECK(ncclTopoGetXmlFromSys(parent, xml));
   } else {
     // Virtual NIC, no PCI device, attach to first CPU
     NCCLCHECK(xmlFindTag(xml, "cpu", &parent));
