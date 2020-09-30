@@ -47,6 +47,9 @@ ncclResult_t ncclTopoGetXmlGraphFromFile(const char* xmlGraphFile, struct ncclXm
 ncclResult_t ncclTopoFillGpu(struct ncclXml* xml, const char* busId, struct ncclXmlNode** gpuNode);
 ncclResult_t ncclTopoFillNet(struct ncclXml* xml, const char* pciPath, const char* netName, struct ncclXmlNode** netNode);
 
+/* Remove unneeded parts */
+ncclResult_t ncclTopoTrimXml(struct ncclXml* xml);
+
 /**************/
 /* XML Struct */
 /* Functions  */
@@ -160,6 +163,18 @@ static ncclResult_t xmlSetAttrFloat(struct ncclXmlNode* node, const char* attrNa
   return ncclSuccess;
 }
 
+static ncclResult_t xmlUnsetAttr(struct ncclXmlNode* node, const char* attrName) {
+  int index;
+  NCCLCHECK(xmlGetAttrIndex(node, attrName, &index));
+  if (index == -1) return ncclSuccess;
+  for (int i=index+1; i<node->nAttrs; i++) {
+    strcpy(node->attrs[i-1].key, node->attrs[i].key);
+    strcpy(node->attrs[i-1].value, node->attrs[i].value);
+  }
+  node->nAttrs--;
+  return ncclSuccess;
+}
+
 static ncclResult_t xmlGetSub(struct ncclXmlNode* node, const char* subName, struct ncclXmlNode** sub) {
   *sub = NULL;
   for (int s=0; s<node->nSubs; s++) {
@@ -206,6 +221,19 @@ static ncclResult_t xmlAddNode(struct ncclXml* xml, struct ncclXmlNode* parent, 
   if (parent) parent->subs[parent->nSubs++] = s;
   strncpy(s->name, subName, MAX_STR_LEN);
   s->name[MAX_STR_LEN] = '\0';
+  return ncclSuccess;
+}
+
+static ncclResult_t xmlRemoveNode(struct ncclXmlNode* node) {
+  node->type = NODE_TYPE_NONE;
+  struct ncclXmlNode* parent = node->parent;
+  if (parent == NULL) return ncclSuccess;
+  int shift = 0;
+  for (int s=0; s<parent->nSubs; s++) {
+    if (parent->subs[s] == node) shift = 1;
+    else if (shift) parent->subs[s-1] = parent->subs[s];
+  }
+  parent->nSubs--;
   return ncclSuccess;
 }
 

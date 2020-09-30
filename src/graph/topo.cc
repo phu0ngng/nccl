@@ -521,6 +521,7 @@ ncclResult_t ncclTopoGetSystem(struct ncclComm* comm, struct ncclTopoSystem** sy
       struct ncclXmlNode* node;
       NCCLCHECK(ncclTopoFillGpu(xml, busId, &node));
       if (node == NULL) continue;
+      NCCLCHECK(xmlSetAttrInt(node, "keep", 1));
       NCCLCHECK(xmlSetAttrInt(node, "rank", r));
       NCCLCHECK(xmlInitAttrInt(node, "gdr", comm->peerInfo[r].gdrSupport));
     }
@@ -535,6 +536,7 @@ ncclResult_t ncclTopoGetSystem(struct ncclComm* comm, struct ncclTopoSystem** sy
       NCCLCHECK(collNetGetProperties(n, &props));
       struct ncclXmlNode* netNode;
       NCCLCHECK(ncclTopoFillNet(xml, props.pciPath, props.name, &netNode));
+      NCCLCHECK(xmlSetAttrInt(netNode, "keep", 1));
       NCCLCHECK(xmlSetAttrInt(netNode, "dev", n));
       NCCLCHECK(xmlInitAttrInt(netNode, "speed", props.speed));
       NCCLCHECK(xmlInitAttrInt(netNode, "port", props.port));
@@ -552,6 +554,7 @@ ncclResult_t ncclTopoGetSystem(struct ncclComm* comm, struct ncclTopoSystem** sy
     NCCLCHECK(ncclNetGetProperties(n, &props));
     struct ncclXmlNode* netNode;
     NCCLCHECK(ncclTopoFillNet(xml, props.pciPath, props.name, &netNode));
+    NCCLCHECK(xmlSetAttrInt(netNode, "keep", 1));
     NCCLCHECK(xmlSetAttrInt(netNode, "dev", n));
     NCCLCHECK(xmlInitAttrInt(netNode, "speed", props.speed));
     NCCLCHECK(xmlInitAttrInt(netNode, "port", props.port));
@@ -559,6 +562,9 @@ ncclResult_t ncclTopoGetSystem(struct ncclComm* comm, struct ncclTopoSystem** sy
     NCCLCHECK(xmlInitAttrInt(netNode, "maxconn", props.maxComms));
     NCCLCHECK(xmlInitAttrInt(netNode, "gdr", props.ptrSupport & NCCL_PTR_CUDA ? 1 : 0));
   }
+
+  // Remove XML branches which don't have a node with keep="1" (typically when importing a topology)
+  NCCLCHECK(ncclTopoTrimXml(xml));
 
   xmlTopoFile = getenv("NCCL_TOPO_DUMP_FILE");
   if (xmlTopoFile && comm->rank == ncclParamTopoDumpFileRank()) {

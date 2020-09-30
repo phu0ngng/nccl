@@ -728,6 +728,28 @@ ncclResult_t ncclTopoFillNet(struct ncclXml* xml, const char* pciPath, const cha
   return ncclSuccess;
 }
 
+ncclResult_t ncclTopoTrimXmlRec(struct ncclXmlNode* node) {
+  const char* str;
+  NCCLCHECK(xmlGetAttr(node, "keep", &str));
+  if (str && strcmp(str, "1") == 0) {
+    NCCLCHECK(xmlUnsetAttr(node, "keep"));
+  } else {
+    // Copy nSubs and subs as they could change as we trim recursively.
+    struct ncclXmlNode* subs[MAX_SUBS];
+    int nSubs = node->nSubs;
+    memcpy(subs, node->subs, node->nSubs*sizeof(struct ncclXmlNode*));
+    for (int s=0; s<nSubs; s++) {
+      NCCLCHECK(ncclTopoTrimXmlRec(subs[s]));
+    }
+    if (node->nSubs == 0) NCCLCHECK(xmlRemoveNode(node));
+  }
+  return ncclSuccess;
+}
+ncclResult_t ncclTopoTrimXml(struct ncclXml* xml) {
+  NCCLCHECK(ncclTopoTrimXmlRec(xml->nodes));
+  return ncclSuccess;
+}
+
 /**************************************************/
 /* Parser rules for the user-defined graph search */
 /**************************************************/
