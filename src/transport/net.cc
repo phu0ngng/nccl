@@ -410,11 +410,7 @@ ncclResult_t netRecvProxy(struct ncclProxyArgs* args) {
           char* ptr = resources->shared ? (char*)(ptrsFifo[buffSlot]) : localBuff+buffSlot*stepSize;
           NCCLCHECK(ncclNetIflush(resources->netRecvComm, ptr, size, mhandle, args->requests+buffSlot));
         } else {
-          args->transmitted += args->sliceSteps;
-          if (args->protocol == NCCL_PROTO_SIMPLE) {
-            __sync_synchronize();
-            resources->recvMem->tail = args->transmitted;
-          }
+          args->requests[buffSlot] = NULL;
         }
         args->idle = 0;
         return ncclSuccess;
