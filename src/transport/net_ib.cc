@@ -272,9 +272,8 @@ struct ncclIbRequest {
   int used;
   int type;
   struct ncclIbVerbs* verbs;
-  int done;
+  int events;
   int size;
-  int free;
 };
 
 struct ncclIbVerbs {
@@ -564,9 +563,8 @@ ncclResult_t ncclIbGetRequest(struct ncclIbVerbs* verbs, struct ncclIbRequest** 
       r->used = 1;
       r->type = 0;
       r->verbs = verbs;
-      r->done = 0;
+      r->events = 1;
       r->size = -1;
-      r->free = 0;
       *req = r;
       return ncclSuccess;
     }
@@ -708,7 +706,7 @@ ncclResult_t ncclIbIsend(void* sendComm, void* data, int size, void* mhandle, vo
   return ncclSuccess;
 }
 
-ncclResult_t ncclIbPostFifo(struct ncclIbRecvComm* comm, uint32_t rkey, uint64_t addr, int size) {
+ncclResult_t ncclIbPostFifo(struct ncclIbRecvComm* comm, uint32_t rkey, uint64_t addr, int size, struct ncclIbRequest* req) {
   struct ibv_send_wr wr;
   memset(&wr, 0, sizeof(wr));
 
@@ -748,7 +746,11 @@ ncclResult_t ncclIbPostFifo(struct ncclIbRecvComm* comm, uint32_t rkey, uint64_t
   //    polling it will empty the Send Queue, can be posted)
   //  - The status of all posted Send Request is considered unknown
   //
-  if (slot == 0) wr.send_flags |= IBV_SEND_SIGNALED;
+  if (slot == 0) {
+    wr.send_flags |= IBV_SEND_SIGNALED;
+    wr.wr_id = (uint64_t)req;
+    req->events++;
+  }
 
   struct ibv_send_wr* bad_wr;
   NCCLCHECK(wrap_ibv_post_send(comm->qp, &wr, &bad_wr));
@@ -787,7 +789,7 @@ ncclResult_t ncclIbIrecv(void* recvComm, void* data, int size, void* mhandle, vo
   *request = req;
 
   // Post to FIFO to notify sender
-  NCCLCHECK(ncclIbPostFifo(comm, mr->rkey, (uint64_t)data, size));
+  NCCLCHECK(ncclIbPostFifo(comm, mr->rkey, (uint64_t)data, size, req));
   return ncclSuccess;
 }
 
@@ -822,7 +824,7 @@ ncclResult_t ncclIbTest(void* request, int* done, int* size) {
   *done = 0;
 
   while (1) {
-    if (r->done == 1) {
+    if (r->events == 0) {
       *done = 1;
       if (size) *size = r->size;
       r->used = 0;
@@ -850,11 +852,7 @@ ncclResult_t ncclIbTest(void* request, int* done, int* size) {
           doneReq->size = wc->imm_data;
 #endif
         }
-        doneReq->done = 1;
-        if (doneReq->free == 1) {
-          // This is an internal (FIFO post) req. Free it immediately.
-          doneReq->used = 0;
-        }
+        doneReq->events--;
       }
     }
   }
