@@ -7,7 +7,6 @@
 #include "enqueue.h"
 #include "argcheck.h"
 #include "coll_net.h"
-#include <cuda.h>
 
 // Only generate inline kernels for LL
 #define NCCL_FUNC5(func, algo, redop, dtype) \
@@ -743,13 +742,20 @@ end:
 
     cudaGraph_t graph;
     CUstreamCaptureStatus captureStatus;
-    cuStreamGetCaptureInfo(info->stream, &captureStatus, &graph, /*const CUgraphNode **dependencies_out*/ NULL, /*size_t *numDependencies_out*/ NULL, /*cuuint64_t *id_out*/ NULL);
+    cuuint64_t cudaGraphId;
+    cuStreamGetCaptureInfo(info->stream, &captureStatus, &graph, /*const CUgraphNode **dependencies_out*/ NULL, /*size_t *numDependencies_out*/ NULL, &cudaGraphId);
     int usingCudaGraph = (captureStatus == CU_STREAM_CAPTURE_STATUS_ACTIVE) ? 1 : 0;
-    INFO(NCCL_COLL, "stream is %s being captured by a graph", usingCudaGraph ? "" : "not");
 
     if (usingCudaGraph) {
       ncclComm_t comm = info->comm;
       struct ncclCudaGraphInfo* cgInfo = &comm->cudaGraphInfo;
+      INFO(NCCL_COLL, "stream is being captured by %s graph, id %ld", cudaGraphId == comm->lastCudaGraphId ? "an old" : "a new", cudaGraphId);
+      if (cudaGraphId != comm->lastCudaGraphId) {
+        // We are in a new graph, hence need to forget the last setup node so that
+        // the first setup node in the new graph will not have a dependency
+        comm->lastCudaGraphId = cudaGraphId;
+        comm->lastSetupNode = NULL;
+      }
 
       NCCLCHECK(ncclSaveKernelStatic(info, cgInfo));
 
@@ -757,14 +763,15 @@ end:
 #ifdef NCCL_CUDA_GRAPH_SYNC_MODE
       cudaEvent_t setupDone;
       CUDACHECK(cudaEventCreate(&setupDone));
-      //CUDACHECK(cudaLaunchHostFunc(info->stream, fn1, cgInfo));
       cuLaunchHostFunc(info->stream, fn1, cgInfo, sizeof(ncclCudaGraphInfo)); //FIXME: wrap with error check
       CUDACHECK(cudaEventRecord(setupDone, info->stream));
 #else
       CUgraphNode setupNode;
       CUDA_HOST_NODE_PARAMS setupNodeParams = {fn1, cgInfo, sizeof(ncclCudaGraphInfo)};
-      cuGraphAddHostNode(&setupNode, graph, NULL, 0, &setupNodeParams);
+      int numDependencies = comm->lastSetupNode == NULL ? 0 : 1;
+      cuGraphAddHostNode(&setupNode, graph, &comm->lastSetupNode, numDependencies, &setupNodeParams);
       cuStreamAddCaptureDependency(info->stream, setupNode, 0);
+      comm->lastSetupNode = setupNode;
 #endif
 
       NCCLCHECK(ncclBarrierEnqueue(comm));
