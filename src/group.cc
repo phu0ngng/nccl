@@ -8,7 +8,6 @@
 #include "debug.h"
 #include "enqueue.h"
 #include "transport.h"
-#include "nvNcclProfiler.h"
 
 #define MAX_ASYNC_OPS 128
 thread_local pthread_t ncclGroupThreads[MAX_ASYNC_OPS];
@@ -109,7 +108,6 @@ ncclResult_t ncclAsyncColl(ncclComm_t comm) {
 
 NCCL_API(ncclResult_t, ncclGroupStart);
 ncclResult_t ncclGroupStart() {
-  NVTX3_FUNC_RANGE_IN(nccl_domain);
   if (ncclGroupMode == 0) {
     memset(ncclGroupArgs, 0, sizeof(struct ncclAsyncArgs)*MAX_ASYNC_OPS);
   }
@@ -151,7 +149,6 @@ size_t getP2pNchannels(size_t totalSize, int minChannels, int maxChannels, size_
 
 NCCL_API(ncclResult_t, ncclGroupEnd);
 ncclResult_t ncclGroupEnd() {
-  NVTX3_FUNC_RANGE_IN(nccl_domain);
   if (ncclGroupMode == 0) {
     WARN("ncclGroupEnd: not in a group call.");
     return ncclInvalidUsage;
