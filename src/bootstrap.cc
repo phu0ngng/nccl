@@ -496,12 +496,12 @@ ncclResult_t bootstrapClose(void* commState) {
   close(state->extListenFd);
   close(state->extRingSendFd);
   close(state->extRingRecvFd);
-  
+
   state->allocState->stop = 1;
-  
+
   // Join the allocThread so we catch resource leaks as being hung here
   // pthread_join(state->allocThread, nullptr);
-  
+
   free(state->peerCommAddresses);
   free(state->peerAllocAddresses);
   free(state);
