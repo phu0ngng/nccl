@@ -260,7 +260,7 @@ void* ncclRemoteMemAllocationService(void* args) {
 
   int nbuffers = 0;
   while (state->stop == 0 || (state->stop == 1 && nbuffers > 0)) {
-    if (int error = poll(pollfds, MAX_SEGMENTS+1, 1000000) < 0) {
+    if (int error = poll(pollfds, MAX_SEGMENTS+1, 100/*ms*/) < 0) {
       WARN("[Rem Allocator] Poll failed with error %d", error);
       return NULL;
     }
@@ -496,7 +496,12 @@ ncclResult_t bootstrapClose(void* commState) {
   close(state->extListenFd);
   close(state->extRingSendFd);
   close(state->extRingRecvFd);
+  
   state->allocState->stop = 1;
+  
+  // Join the allocThread so we catch resrouce leaks as being hung here
+  // pthread_join(state->allocThread, nullptr);
+  
   free(state->peerCommAddresses);
   free(state->peerAllocAddresses);
   free(state);
