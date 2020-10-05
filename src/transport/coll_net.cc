@@ -378,14 +378,10 @@ ncclResult_t collNetRecvProxy(struct ncclProxyArgs* args) {
           }
         }
         args->received += args->sliceSteps;
-        if (args->protocol == NCCL_PROTO_SIMPLE && resources->useGdr) {
+        if (reqFifo[buffSlot].size > 0 && args->protocol == NCCL_PROTO_SIMPLE && resources->useGdr) {
           NCCLCHECK(collNetIflush(resources->collNetRecvComm, localBuff+buffSlot*stepSize, reqFifo[buffSlot].size, mhandle, args->requests+buffSlot));
         } else {
-          args->transmitted += args->sliceSteps;
-          if (args->protocol == NCCL_PROTO_SIMPLE) {
-            __sync_synchronize();
-            resources->recvMem->tail = args->transmitted;
-          }
+          args->requests[buffSlot] = NULL;
         }
         args->idle = 0;
         return ncclSuccess;
