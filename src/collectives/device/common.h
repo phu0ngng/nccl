@@ -69,9 +69,8 @@ struct ncclShmemData {
   struct ncclWork localWork;
 };
 
-#include <stdio.h>
 extern __device__ struct ncclShmemData *ncclShmem;
-template <ncclFunc_t FUNCTION, int ALGO, int PROTO, class REDOP, typename T, int UNROLL, int fIndex>
+template <ncclFunc_t FUNCTION, int ALGO, int PROTO, class REDOP, typename T, int UNROLL, int FINDEX>
 __device__ void ncclKernel(struct ncclWorkElem first)  {
   int tid = threadIdx.x;
   int bid = blockIdx.x;
@@ -94,7 +93,7 @@ __device__ void ncclKernel(struct ncclWorkElem first)  {
       load_coll(&shmem.localWork, channel->workFifo+index, tid, comm);
     }
     if (tid < w->nThreads) {
-      if (w->funcIndex == fIndex) {
+      if (w->funcIndex == FINDEX) {
         f.run(w);
       } else {
         ncclFuncs[w->funcIndex](w);

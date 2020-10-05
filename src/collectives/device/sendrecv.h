@@ -89,7 +89,7 @@ class ncclFunction<ncclFuncSendRecv, NCCL_ALGO_RING, NCCL_PROTO_SIMPLE, FUNC, T,
         }
         tid -= nThreadsSegment;
         if (tid < 0) return;
-	args++;
+        args++;
       }
     }
 };

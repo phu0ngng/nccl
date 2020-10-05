@@ -137,7 +137,7 @@ struct ncclDevComm;
 
 /* ncclWork is to be a power of two, currently 8x64 bytes, */
 /* to make sure reads to host from the CUDA kernel are aligned. */
-/* Make sure to adjust padding at the end of ncclWork. */
+/* Make sure to adjust padding at the end of ncclWorkElem. */
 struct ncclWorkElem {
   // Header
   struct ncclDevComm* comm;
@@ -149,8 +149,7 @@ struct ncclWorkElem {
   const void * sendbuff;
   void * recvbuff;
 
-  // Op-specific fields. Make sure the common part stays the
-  // same on all structs of the union
+  // Op-specific fields.
   union {
     struct {
       size_t count;
@@ -171,7 +170,7 @@ struct ncclWorkElem {
 struct ncclWork {
   struct ncclWorkElem elems[NCCL_MAX_WORK_ELEMENTS];
 };
-static_assert(sizeof(struct ncclWorkElem) == (0x10*sizeof(int)), "ncclWork must have a pow2 size");
+static_assert(sizeof(struct ncclWorkElem) == (0x10*sizeof(int)), "ncclWorkElem must have a pow2 size");
 
 struct ncclChannel {
   union {
