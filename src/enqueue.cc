@@ -555,7 +555,6 @@ static ncclResult_t ncclSaveP2p(struct ncclInfo* info) {
     NCCLCHECK(enqueueP2pInfo(comm->p2pRecvs+info->root, info->recvbuff, nBytes));
     comm->p2pRecvCount++;
   }
-  comm->p2pCount++;
   return ncclSuccess;
 }
 

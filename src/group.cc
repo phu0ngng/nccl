@@ -228,7 +228,7 @@ ncclResult_t ncclGroupEnd() {
       // Avoid overloading channels with 8+ operations as we loose the sync warp, hence a bit of bandwidth.
       while (nChannelsMax*p2pMaxCount > comm->p2pnChannels*4 && nChannelsMax > 1) nChannelsMax /= 2;
 
-      while (comm->p2pCount) {
+      while (comm->p2pSendCount > 0 || comm->p2pRecvCount > 0) {
         // schedule delta 0, +1, -1, +2, -2, ...
         // also make sure we don't do 0 twice, nor +n/2 and -n/2 if n is even.
         for (int d=0; d<=nRanks/4; d++) {
@@ -268,11 +268,11 @@ sched_delta:
             } while (sendRemaining || recvRemaining);
             if (recv) {
               NCCLCHECKGOTO(dequeueP2pInfo(p2pRecvs+from), ret, group_cleanup);
-              comm->p2pCount--;
+              comm->p2pRecvCount--;
             }
             if (send) {
               NCCLCHECKGOTO(dequeueP2pInfo(p2pSends+to), ret, group_cleanup);
-              comm->p2pCount--;
+              comm->p2pSendCount--;
             }
           }
           index++;
@@ -286,7 +286,6 @@ sched_delta:
           }
         }
       }
-      comm->p2pSendCount = comm->p2pRecvCount = 0;
     }
   }
 
@@ -347,14 +346,14 @@ group_cleanup:
         comm->asyncOpCount = 0;
         comm->asyncTotalSize = 0;
         // Dequeue p2p lists
-        if (comm->p2pCount > 0) {
+        if (comm->p2pSendCount > 0 || comm->p2pRecvCount > 0) {
           struct ncclP2Plist* p2pSends = comm->p2pSends;
           struct ncclP2Plist* p2pRecvs = comm->p2pRecvs;
           for (int peer=0; peer<comm->nRanks; peer++) {
             while (p2pSends[peer].head != NULL) dequeueP2pInfo(p2pSends+peer);
             while (p2pRecvs[peer].head != NULL) dequeueP2pInfo(p2pRecvs+peer);
           }
-          comm->p2pCount = comm->p2pSendCount = comm->p2pRecvCount = 0;
+          comm->p2pSendCount = comm->p2pRecvCount = 0;
         }
         /* Free all proxy ops in state->nextOps */
         struct ncclProxyState* state = &comm->proxyState;
