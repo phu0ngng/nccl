@@ -499,7 +499,7 @@ ncclResult_t bootstrapClose(void* commState) {
   
   state->allocState->stop = 1;
   
-  // Join the allocThread so we catch resrouce leaks as being hung here
+  // Join the allocThread so we catch resource leaks as being hung here
   // pthread_join(state->allocThread, nullptr);
   
   free(state->peerCommAddresses);
