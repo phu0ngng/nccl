@@ -469,6 +469,7 @@ static ncclResult_t ncclSaveKernelStatic(struct ncclInfo* info /*input*/, struct
     return ncclSuccess;
   }
 
+  cgInfo->comm = info->comm;
   memset(&cgInfo->proxyArgs, 0, sizeof(struct ncclProxyArgs));
   NCCLCHECK(computeColl(info, &cgInfo->coll, &cgInfo->proxyArgs));
 
@@ -748,7 +749,7 @@ end:
 
     if (usingCudaGraph) {
       ncclComm_t comm = info->comm;
-      struct ncclCudaGraphInfo* cgInfo = &comm->cudaGraphInfo;
+      struct ncclCudaGraphInfo* cgInfo = comm->cudaGraphInfos;
       INFO(NCCL_COLL, "stream is being captured by %s graph, id %ld", cudaGraphId == comm->lastCudaGraphId ? "an old" : "a new", cudaGraphId);
       if (cudaGraphId != comm->lastCudaGraphId) {
         // We are in a new graph, hence need to forget the last setup node so that

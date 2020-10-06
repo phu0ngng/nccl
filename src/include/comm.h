@@ -159,7 +159,7 @@ struct ncclComm {
   int p2pCount;
 
   // Store info for cudaGraph
-  struct ncclCudaGraphInfo cudaGraphInfo;
+  struct ncclCudaGraphInfo* cudaGraphInfos;
   CUgraphNode lastSetupNode;
   cuuint64_t lastCudaGraphId;
 };
