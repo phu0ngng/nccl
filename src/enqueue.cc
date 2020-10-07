@@ -291,6 +291,13 @@ ncclResult_t ncclEnqueueEvents(ncclComm_t comm) {
     CUDACHECK(cudaStreamWaitEvent(comm->userStream, comm->doneEvent, 0));
   }
   comm->userStreamSet = false;
+
+  // We are finishing capturing CUDA graph
+  // Clearing info space and counter
+  struct ncclCudaGraphInfo* cgInfo = comm->cudaGraphInfo;
+  memset(cgInfo->cgElems, 0, sizeof(struct ncclCudaGraphElem)*cgInfo->nElems);
+  cgInfo->nElems = 0;
+
   return ncclSuccess;
 }
 
@@ -481,9 +488,9 @@ static ncclResult_t ncclSaveKernelStatic(struct ncclInfo* info /*input*/, struct
     return ncclSuccess;
   }
 
-  cgInfo->comm = info->comm;
-  memset(&cgInfo->proxyArgs, 0, sizeof(struct ncclProxyArgs));
-  NCCLCHECK(computeColl(info, &cgInfo->coll, &cgInfo->proxyArgs));
+  struct ncclCudaGraphElem* cgElem = cgInfo->cgElems + cgInfo->nElems;
+  NCCLCHECK(computeColl(info, &cgElem->coll, &cgElem->proxyArgs));
+  cgInfo->nElems++;
 
   NCCLCHECK(setupParams(info, 1));
   return ncclSuccess;
@@ -491,10 +498,9 @@ static ncclResult_t ncclSaveKernelStatic(struct ncclInfo* info /*input*/, struct
 
 // Prepare things that will change between graph launches
 // including cuda kernel args
-static ncclResult_t ncclSaveKernelDynamic(struct ncclCudaGraphInfo* cgInfo) {
-  ncclComm_t comm = cgInfo->comm;
-  struct ncclColl* coll = &cgInfo->coll;
-  struct ncclProxyArgs* proxyArgs = &cgInfo->proxyArgs;
+static ncclResult_t ncclSaveKernelDynamic(ncclComm_t comm, struct ncclCudaGraphElem* cgElem) {
+  struct ncclColl* coll = &cgElem->coll;
+  struct ncclProxyArgs* proxyArgs = &cgElem->proxyArgs;
 
   int nChannels = coll->args.coll.nChannels;
   int nSubChannels = (proxyArgs->redOp < ncclNumOps) ? 2 : 1;
@@ -561,13 +567,14 @@ ncclResult_t ncclSaveKernel(struct ncclInfo* info) {
 #define NCCL_AGG_CHANNEL_SIZE (1LL << 21) /* 2 MiB, ideal per-channel size to fully utilize bandwidth */
 
 ncclResult_t ncclSaveCommKernels(ncclComm_t comm) {
+  struct ncclCudaGraphInfo* cgInfo = comm->cudaGraphInfo;
   if (comm->asyncOpCount == 0) {
     return ncclSuccess;
   } else if (comm->asyncOpCount == 1) {
     // No aggregation
     struct ncclInfo* info = comm->asyncOps;
     info->nChannels = 0;
-    NCCLCHECK(ncclSaveKernel(info));
+    NCCLCHECK(ncclSaveKernelStatic(info, cgInfo));
   } else {
     // Aggregation
     size_t channelSize = NCCL_AGG_CHANNEL_SIZE * comm->nRanks;  // scale channel size based on nranks as latency increases
@@ -576,7 +583,7 @@ ncclResult_t ncclSaveCommKernels(ncclComm_t comm) {
     for (int c = 0; c < comm->asyncOpCount; c++) {
       struct ncclInfo* info = comm->asyncOps+c;
       info->nChannels = std::min((int)DIVUP(info->nBytes, channelSize), comm->nChannels); // assign number of channels
-      NCCLCHECK(ncclSaveKernel(info));
+      NCCLCHECK(ncclSaveKernelStatic(info, cgInfo));
     }
   }
   // Reset counters
@@ -684,14 +691,18 @@ ncclResult_t ncclSaveP2pKernel(struct ncclInfo* info) {
 template<int USING_CUDA_GRAPH>
 void CUDART_CB ncclEnqueueHostSetup(void* arg) {
   struct ncclCudaGraphInfo* cgInfo = (struct ncclCudaGraphInfo*)arg;
+  ncclComm_t comm = cgInfo->comm;
 
-  cudaLaunchParams* params = cgInfo->comm->myParams;
+  cudaLaunchParams* params = comm->myParams;
   INFO(NCCL_COLL,"params: func %p gridDim %d blockDim %d args %p sharedMem %ld stream %p",
       params->func, params->gridDim.x, params->blockDim.x, params->args, params->sharedMem, params->stream);
 
-  ncclSaveKernelDynamic(cgInfo);
-  setupLaunch(cgInfo->comm, USING_CUDA_GRAPH);
-  ncclEnqueueProxyStart(cgInfo->comm);
+  for (int i=0; i<cgInfo->nElems; i++) {
+    ncclSaveKernelDynamic(comm, cgInfo->cgElems+i);
+  }
+
+  setupLaunch(comm, USING_CUDA_GRAPH);
+  ncclEnqueueProxyStart(comm);
 }
 
 ncclResult_t ncclEnqueueCheck(struct ncclInfo* info) {
@@ -735,7 +746,8 @@ end:
 
     // Common part between graph mode and non-graph mode
     ncclComm_t comm = info->comm;
-    struct ncclCudaGraphInfo* cgInfo = comm->cudaGraphInfos;
+    struct ncclCudaGraphInfo* cgInfo = comm->cudaGraphInfo;
+    cgInfo->comm = info->comm;
     NCCLCHECK(ncclSaveKernelStatic(info, cgInfo));
 
     cudaGraph_t graph;
@@ -754,14 +766,15 @@ end:
       }
 
       cudaHostFn_t fn1 = ncclEnqueueHostSetup<1>;
+      size_t argSize = offsetof(struct ncclCudaGraphInfo, cgElems)+cgInfo->nElems*sizeof(struct ncclCudaGraphElem);
 #ifdef NCCL_CUDA_GRAPH_SYNC_MODE
       cudaEvent_t setupDone;
       CUDACHECK(cudaEventCreate(&setupDone));
-      cuLaunchHostFunc(info->stream, fn1, cgInfo, sizeof(ncclCudaGraphInfo)); //FIXME: wrap with error check
+      cuLaunchHostFunc(info->stream, fn1, cgInfo, argSize); //FIXME: wrap with error check
       CUDACHECK(cudaEventRecord(setupDone, info->stream));
 #else
       CUgraphNode setupNode;
-      CUDA_HOST_NODE_PARAMS setupNodeParams = {fn1, cgInfo, sizeof(ncclCudaGraphInfo)};
+      CUDA_HOST_NODE_PARAMS setupNodeParams = {fn1, cgInfo, argSize};
       int numDependencies = comm->lastSetupNode == NULL ? 0 : 1;
       cuGraphAddHostNode(&setupNode, graph, &comm->lastSetupNode, numDependencies, &setupNodeParams);
       cuStreamAddCaptureDependency(info->stream, setupNode, 0);

@@ -57,10 +57,15 @@ struct ncclRecvMem {
   char buff[1]; // Actually larger than that
 };
 
-struct ncclCudaGraphInfo {
-  ncclComm_t comm;
+struct ncclCudaGraphElem {
   struct ncclColl coll;
   struct ncclProxyArgs proxyArgs;
+};
+
+struct ncclCudaGraphInfo {
+  ncclComm_t comm;
+  int nElems;
+  struct ncclCudaGraphElem cgElems[];
 };
 
 struct ncclComm {
@@ -159,7 +164,7 @@ struct ncclComm {
   int p2pCount;
 
   // Store info for cudaGraph
-  struct ncclCudaGraphInfo* cudaGraphInfos;
+  struct ncclCudaGraphInfo* cudaGraphInfo;
   CUgraphNode lastSetupNode;
   cuuint64_t lastCudaGraphId;
 };

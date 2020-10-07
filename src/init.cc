@@ -246,7 +246,9 @@ static ncclResult_t commAlloc(ncclComm_t* comret, int ndev, int rank) {
   NCCLCHECK(ncclCalloc(&comm->asyncOps, NCCL_MAX_OPS));
   comm->asyncOpCount = 0;
   comm->asyncTotalSize = 0;
-  NCCLCHECK(ncclCalloc(&comm->cudaGraphInfos, NCCL_MAX_OPS));
+
+  ncclStructRealloc(struct ncclCudaGraphInfo, comm->cudaGraphInfo, struct ncclCudaGraphElem, cgElems, NCCL_MAX_OPS);
+  comm->cudaGraphInfo->nElems = 0;
   comm->lastSetupNode = NULL;
   comm->lastCudaGraphId = -1;
 
