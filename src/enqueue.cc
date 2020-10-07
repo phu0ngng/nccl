@@ -157,6 +157,18 @@ static ncclResult_t setupLaunch(struct ncclComm* comm, int usingCudaGraph) {
   return ncclSuccess;
 }
 
+ncclResult_t ncclStreamWait(struct ncclComm* comm) {
+  struct cudaLaunchParams* params = comm->myParams;
+  if (params->gridDim.x == 0) return ncclSuccess;
+
+  if (comm->userStream != params->stream) {
+    // Stream changed from last call, create dependency against last NCCL kernel launch
+    CUDACHECK(cudaStreamWaitEvent(comm->userStream, comm->doneEvent, 0));
+  }
+  params->stream = comm->userStream;
+  return ncclSuccess;
+}
+
 ncclResult_t ncclCpuBarrierIn(struct ncclComm* comm, int* isLast) {
   volatile int* ptr = (volatile int*)(comm->intraBarrier+comm->intraPhase);
   int val = *ptr;
@@ -196,12 +208,12 @@ ncclResult_t ncclCpuBarrierOut(struct ncclComm* comm) {
   return ncclSuccess;
 }
 
-ncclResult_t ncclBarrierEnqueue(struct ncclComm* comm) {
+ncclResult_t ncclCgmdBarrierEnqueue(struct ncclComm* comm) {
   struct cudaLaunchParams* params = comm->myParams;
   if (params->gridDim.x == 0) return ncclSuccess;
 
   // Use internal NCCL stream for CGMD/GROUP launch if required or if the user stream is NULL
-  if (comm->launchMode == ncclComm::GROUP && (comm->groupCudaStream || comm->userStream == NULL)) {
+  if (comm->groupCudaStream || comm->userStream == NULL) {
     // Enqueue event in user stream
     CUDACHECK(cudaEventRecord(comm->doneEvent, comm->userStream));
     // Create dependency between user stream and internal NCCL stream
@@ -215,20 +227,18 @@ ncclResult_t ncclBarrierEnqueue(struct ncclComm* comm) {
     params->stream = comm->userStream;
   }
 
-  if (comm->launchMode == ncclComm::GROUP) {
-    int isLast = 0;
-    NCCLCHECK(ncclCpuBarrierIn(comm, &isLast));
-    if (isLast) {
-      // I'm the last. Launch all operations.
-      NCCLCHECK(ncclLaunchCooperativeKernelMultiDevice(comm->intraParams, comm->intraCudaDevs, comm->intraRanks, *comm->intraCGMode));
-      NCCLCHECK(ncclCpuBarrierLast(comm));
-    }
+  int isLast = 0;
+  NCCLCHECK(ncclCpuBarrierIn(comm, &isLast));
+  if (isLast) {
+    // I'm the last. Launch all operations.
+    NCCLCHECK(ncclLaunchCooperativeKernelMultiDevice(comm->intraParams, comm->intraCudaDevs, comm->intraRanks, *comm->intraCGMode));
+    NCCLCHECK(ncclCpuBarrierLast(comm));
   }
   return ncclSuccess;
 }
 
-ncclResult_t ncclBarrierEnqueueWait(ncclComm_t comm) {
-  struct cudaLaunchParams *params = comm->myParams;
+ncclResult_t ncclCgmdBarrierEnqueueWait(ncclComm_t comm) {
+  struct cudaLaunchParams* params = comm->myParams;
   if (params->gridDim.x == 0) return ncclSuccess;
 
   // We can't print the CG mode before the first barrier happened.
@@ -240,18 +250,19 @@ ncclResult_t ncclBarrierEnqueueWait(ncclComm_t comm) {
         (comm->launchMode == ncclComm::GROUP && comm->groupCudaStream) ? "/Stream" : "");
   }
 
+  NCCLCHECK(ncclCpuBarrierOut(comm));
+  return ncclSuccess;
+}
 
-  if (comm->launchMode == ncclComm::PARALLEL) {
-    CUDACHECK(cudaLaunchKernel(params->func, params->gridDim, params->blockDim, params->args, params->sharedMem, params->stream));
-  } else {
-    NCCLCHECK(ncclCpuBarrierOut(comm));
-  }
-
+static ncclResult_t ncclEnqueueProxyStart(ncclComm_t comm) {
   // Start the network proxies as soon as the kernel has been launched. We can't
   // perform any CUDA call between the two or having a cudaFree between the CUDA
   // launch and the ncclProxyStart call could cause a deadlock.
   // Also, starting the proxies after the CUDA launch seems to be better for
   // performance (latency).
+  struct cudaLaunchParams* params = comm->myParams;
+  if (params->gridDim.x == 0) return ncclSuccess;
+
   uint64_t max = 0ULL;
   for (int r=0; r<params->gridDim.x; r++) {
     struct ncclChannel* channel = comm->channels+r;
@@ -262,6 +273,7 @@ ncclResult_t ncclBarrierEnqueueWait(ncclComm_t comm) {
     struct ncclChannel* channel = comm->channels+r;
     channel->collFifoTail = max;
   }
+  comm->lastChannel = 0;
   comm->lastOpCount = max;
   NCCLCHECK(ncclProxyStart(comm));
   return ncclSuccess;
@@ -669,27 +681,7 @@ ncclResult_t ncclSaveP2pKernel(struct ncclInfo* info) {
   return ncclSuccess;
 }
 
-static ncclResult_t ncclEnqueueProxyStart(ncclComm_t comm) {
-  // Start the network proxies
-  struct cudaLaunchParams *params = comm->myParams;
-  if (params->gridDim.x == 0) return ncclSuccess;
-
-  uint64_t max = 0ULL;
-  for (int r=0; r<params->gridDim.x; r++) {
-    struct ncclChannel* channel = comm->channels+r;
-    max = std::max(max, channel->collFifoTail);
-    channel->collCount = 0;
-  }
-  for (int r=0; r<comm->p2pnChannels; r++) {
-    struct ncclChannel* channel = comm->channels+r;
-    channel->collFifoTail = max;
-  }
-  comm->lastChannel = 0;
-  comm->lastOpCount = max;
-  NCCLCHECK(ncclProxyStart(comm));
-  return ncclSuccess;
-}
-
+template<int USING_CUDA_GRAPH>
 void CUDART_CB ncclEnqueueHostSetup(void* arg) {
   struct ncclCudaGraphInfo* cgInfo = (struct ncclCudaGraphInfo*)arg;
 
@@ -698,7 +690,7 @@ void CUDART_CB ncclEnqueueHostSetup(void* arg) {
       params->func, params->gridDim.x, params->blockDim.x, params->args, params->sharedMem, params->stream);
 
   ncclSaveKernelDynamic(cgInfo);
-  setupLaunch(cgInfo->comm, 1);
+  setupLaunch(cgInfo->comm, USING_CUDA_GRAPH);
   ncclEnqueueProxyStart(cgInfo->comm);
 }
 
@@ -741,6 +733,11 @@ end:
         info->opName, info->comm->opCount, info->sendbuff, info->recvbuff, info->count,
         info->datatype, info->op, info->root, info->comm, info->comm->nRanks, info->stream);
 
+    // Common part between graph mode and non-graph mode
+    ncclComm_t comm = info->comm;
+    struct ncclCudaGraphInfo* cgInfo = comm->cudaGraphInfos;
+    NCCLCHECK(ncclSaveKernelStatic(info, cgInfo));
+
     cudaGraph_t graph;
     CUstreamCaptureStatus captureStatus;
     cuuint64_t cudaGraphId;
@@ -748,8 +745,6 @@ end:
     int usingCudaGraph = (captureStatus == CU_STREAM_CAPTURE_STATUS_ACTIVE) ? 1 : 0;
 
     if (usingCudaGraph) {
-      ncclComm_t comm = info->comm;
-      struct ncclCudaGraphInfo* cgInfo = comm->cudaGraphInfos;
       INFO(NCCL_COLL, "stream is being captured by %s graph, id %ld", cudaGraphId == comm->lastCudaGraphId ? "an old" : "a new", cudaGraphId);
       if (cudaGraphId != comm->lastCudaGraphId) {
         // We are in a new graph, hence need to forget the last setup node so that
@@ -758,9 +753,7 @@ end:
         comm->lastSetupNode = NULL;
       }
 
-      NCCLCHECK(ncclSaveKernelStatic(info, cgInfo));
-
-      cudaHostFn_t fn1 = ncclEnqueueHostSetup;
+      cudaHostFn_t fn1 = ncclEnqueueHostSetup<1>;
 #ifdef NCCL_CUDA_GRAPH_SYNC_MODE
       cudaEvent_t setupDone;
       CUDACHECK(cudaEventCreate(&setupDone));
@@ -774,18 +767,14 @@ end:
       cuStreamAddCaptureDependency(info->stream, setupNode, 0);
       comm->lastSetupNode = setupNode;
 #endif
-
-      NCCLCHECK(ncclBarrierEnqueue(comm));
-      struct cudaLaunchParams *params = comm->myParams;
-      CUDACHECK(cudaLaunchKernel(params->func, params->gridDim, params->blockDim, params->args, params->sharedMem, params->stream));
-      NCCLCHECK(ncclEnqueueEvents(comm));
     } else {
-      NCCLCHECK(ncclSaveKernel(info));
-      NCCLCHECK(setupLaunch(info->comm, 0));
-      NCCLCHECK(ncclBarrierEnqueue(info->comm));
-      NCCLCHECK(ncclBarrierEnqueueWait(info->comm));
-      NCCLCHECK(ncclEnqueueEvents(info->comm));
+      ncclEnqueueHostSetup<0>(cgInfo);
     }
+    // Common part between graph mode and non-graph mode
+    NCCLCHECK(ncclStreamWait(comm));
+    struct cudaLaunchParams *params = comm->myParams;
+    CUDACHECK(cudaLaunchKernel(params->func, params->gridDim, params->blockDim, params->args, params->sharedMem, params->stream));
+    NCCLCHECK(ncclEnqueueEvents(comm));
     return ncclSuccess;
   }
 }
