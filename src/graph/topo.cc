@@ -441,7 +441,12 @@ ncclResult_t ncclTopoAddNvLinks(struct ncclXmlNode* node, struct ncclTopoSystem*
       }
     }
     if (remote) {
-      int nvlSpeed = gpu->gpu.cudaCompCap == 60 ? PASCAL_NVLINK_WIDTH : VOLTA_NVLINK_WIDTH;
+      int nvlSpeed =
+        gpu->gpu.cudaCompCap == 86 ? SM86_NVLINK_WIDTH :
+        gpu->gpu.cudaCompCap >= 80 ? SM80_NVLINK_WIDTH :
+        gpu->gpu.cudaCompCap >= 70 ? SM70_NVLINK_WIDTH :
+        gpu->gpu.cudaCompCap >= 60 ? SM60_NVLINK_WIDTH :
+        SM80_NVLINK_WIDTH;
       NCCLCHECK(ncclTopoConnectNodes(gpu, remote, LINK_NVL, count*nvlSpeed));
       if (remote->type != GPU) {
         NCCLCHECK(ncclTopoConnectNodes(remote, gpu, LINK_NVL, count*nvlSpeed));
