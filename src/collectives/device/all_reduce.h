@@ -179,7 +179,7 @@ class ncclFunction<ncclFuncAllReduce, NCCL_ALGO_TREE, NCCL_PROTO_SIMPLE, FUNC, T
       } else {
         // Broadcast : max number of recv is 1, max number of send is 3 (binary tree + local)
         ncclPrimitives<UNROLL, 1, 1, T, 1, NCCL_MAX_DEV_ARITY, 1, FUNC>
-          prims(tid-nthreadsSplit-WARP_SIZE, nthreads-nthreadsSplit, &tree->up, tree->down, thisOutput, stepSize, channel, comm, ncclShmem->ptrs+1, 1);
+          prims(tid-nthreadsSplit-WARP_SIZE, nthreads-nthreadsSplit, &tree->up, tree->down, thisOutput, stepSize, channel, comm, ncclShmem->ptrs, 2);
         for (ssize_t gridOffset = 0; gridOffset < size; gridOffset += loopSize) {
           // Down
           ssize_t offset = gridOffset + bid*chunkSize;
