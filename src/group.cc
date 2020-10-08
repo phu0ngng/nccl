@@ -161,6 +161,7 @@ ncclResult_t ncclGroupEnd() {
   int doneArray[MAX_ASYNC_OPS];
   for (int i=0; i<ncclGroupIndex; i++) doneArray[i] = 1;
   ncclResult_t ret = ncclGroupError;
+  int usingCudaGraphAll = -1;
   if (ret != ncclSuccess) goto group_cleanup;
 
   /* Launch async ncclCommInitRank */
@@ -295,6 +296,25 @@ sched_delta:
    * prevent some ranks from launching their network threads, which would
    * prevent the NCCL call from completing, blocking the cudaFree call.
    */
+
+  // Check whether we are in cuda graph mode
+  cudaGraph_t* graphs;
+  NCCLCHECK(ncclCalloc(&graphs, ncclGroupIndex));
+  for (int i=0; i<ncclGroupIndex; i++) {
+    struct ncclAsyncArgs* args = ncclGroupArgs+i;
+    if (args->funcType == ASYNC_FUNC_COLL) {
+      ncclComm_t comm = args->coll.comm;
+      int usingCudaGraph;
+      NCCLCHECKGOTO(ncclGetCudaGraph(comm, graphs+i, &usingCudaGraph), ret, group_cleanup);
+      if (usingCudaGraphAll == -1) {
+        usingCudaGraphAll = usingCudaGraph;
+      } else if (usingCudaGraphAll != usingCudaGraph) {
+        WARN("Illegal to have some communicators in graph mode while others not");
+        ret = ncclInvalidUsage;
+        goto group_cleanup;
+      }
+    }
+  }
   for (int i=0; i<ncclGroupIndex; i++) {
     struct ncclAsyncArgs* args = ncclGroupArgs+i;
     if (args->funcType == ASYNC_FUNC_COLL) {
@@ -307,14 +327,20 @@ sched_delta:
     if (args->funcType == ASYNC_FUNC_COLL) {
       if (args->coll.comm->userStream == NULL)
         CUDACHECKGOTO(cudaSetDevice(args->coll.comm->cudaDev), ret, end);
-      NCCLCHECKGOTO(ncclBarrierEnqueue(args->coll.comm), ret, end);
+      if (usingCudaGraphAll) {
+        NCCLCHECKGOTO(ncclCudaGraphAddHostSetup(args->coll.comm, graphs[i]), ret, end);
+      } else {
+        ncclEnqueueHostSetup<0>(args->coll.comm->cudaGraphInfo);
+      }
     }
   }
   for (int i=0; i<ncclGroupIndex; i++) {
     struct ncclAsyncArgs* args = ncclGroupArgs+i;
     if (args->funcType == ASYNC_FUNC_COLL) {
       CUDACHECKGOTO(cudaSetDevice(args->coll.comm->cudaDev), ret, end);
-      NCCLCHECKGOTO(ncclBarrierEnqueueWait(args->coll.comm), ret, end);
+      NCCLCHECK(ncclStreamWait(args->coll.comm));
+      struct cudaLaunchParams *params = args->coll.comm->myParams;
+      CUDACHECK(cudaLaunchKernel(params->func, params->gridDim, params->blockDim, params->args, params->sharedMem, params->stream));
     }
   }
   for (int i=0; i<ncclGroupIndex; i++) {

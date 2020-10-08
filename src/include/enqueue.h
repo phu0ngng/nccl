@@ -22,5 +22,9 @@ ncclResult_t ncclEnqueueEvents(struct ncclComm* comm);
 ncclResult_t ncclSaveKernel(struct ncclInfo* info);
 ncclResult_t ncclSaveP2pKernel(struct ncclInfo* info);
 ncclResult_t ncclSaveCommKernels(struct ncclComm* comm);
+template<int USING_CUDA_GRAPH>
+void CUDART_CB ncclEnqueueHostSetup(void* arg);
+ncclResult_t ncclGetCudaGraph(ncclComm_t comm, cudaGraph_t* graph, int* usingCudaGraph);
+ncclResult_t ncclCudaGraphAddHostSetup(ncclComm_t comm, cudaGraph_t graph);
 
 #endif // End include guard
