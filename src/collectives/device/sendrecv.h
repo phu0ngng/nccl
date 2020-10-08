@@ -22,7 +22,6 @@ class ncclFunction<ncclFuncSendRecv, NCCL_ALGO_RING, NCCL_PROTO_SIMPLE, FUNC, T,
         group += 1;
         int groupSend = group;
         group += nThreadsSegment > 128 ? 2 : 1;
-        //if (tid == 0) printf("[%d] %d %d\n", s, groupRecv, groupSend);
         if (tid < nThreadsSegment) {
           const int nThreads = nThreadsSegment > 128 ? nThreadsSegment-WARP_SIZE : nThreadsSegment;
 
@@ -56,7 +55,6 @@ class ncclFunction<ncclFuncSendRecv, NCCL_ALGO_RING, NCCL_PROTO_SIMPLE, FUNC, T,
             if ((tid < nThreadsSplit) && recvCount >= 0) {
               int peer = (comm->rank-delta+comm->nRanks)%comm->nRanks;
               int nt = nThreadsSplit;
-              //if (comm->rank == 0 && tid == 0) printf("[%d/%d] [%d-%d-%d] Recv %d / %d / %d\n", threadIdx.x, tid, s, delta, peer, nThreadsSegment, nThreadsSplit, nt);
               ncclPrimitives<UNROLL, 1, 1, T, 1, 0, 1, FUNC>
                 prims(tid, nt, &peer, NULL, recvbuff, stepSize, channel, comm, ncclShmem->ptrs, groupRecv);
 
@@ -72,7 +70,6 @@ class ncclFunction<ncclFuncSendRecv, NCCL_ALGO_RING, NCCL_PROTO_SIMPLE, FUNC, T,
             if ((tid >= nThreadsSplit) && sendCount >= 0) {
               int peer = (comm->rank+delta)%comm->nRanks;
               int nt = nThreads-nThreadsSplit;
-              //if (comm->rank == 0 && tid-nThreadsSplit == 0) printf("[%d/%d] [%d-%d-%d] Send %d / %d / %d\n", threadIdx.x, tid, s, delta, peer, nThreadsSegment, nThreadsSplit, nt);
               ncclPrimitives<UNROLL, 1, 1, T, 0, 1, 1, FUNC>
                 prims(tid-nThreadsSplit, nt, NULL, &peer, recvbuff, stepSize, channel, comm, ncclShmem->ptrs, groupSend);
 
