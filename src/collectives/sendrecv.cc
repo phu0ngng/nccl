@@ -5,7 +5,6 @@
  ************************************************************************/
 
 #include "enqueue.h"
-#include "nvNcclProfiler.h"
 #include "collectives.h"
 #include "argcheck.h" // Need some checks here since we access comm
 

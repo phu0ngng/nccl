@@ -15,7 +15,6 @@
 #include "enqueue.h"
 #include "graph.h"
 #include "argcheck.h"
-#include "nvNcclProfiler.h"
 #include <fcntl.h>
 #include <string.h>
 #include <errno.h>

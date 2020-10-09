@@ -4,8 +4,8 @@
  * See LICENSE.txt for license information
  ************************************************************************/
 
-#ifndef NCCL_NVNCCLPROFILER_H_
-#define NCCL_NVNCCLPROFILER_H_
+#ifndef NCCL_NVTX_H_
+#define NCCL_NVTX_H_
 
 #include "nvtx3.hpp"
 

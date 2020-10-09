@@ -6,7 +6,6 @@
 
 #include "enqueue.h"
 #include "collectives.h"
-#include "nvNcclProfiler.h"
 
 NCCL_API(ncclResult_t, ncclReduceScatter, const void* sendbuff, void* recvbuff, size_t recvcount,
     ncclDataType_t datatype, ncclRedOp_t op, ncclComm* comm, cudaStream_t stream);
