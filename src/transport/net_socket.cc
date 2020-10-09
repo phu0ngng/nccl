@@ -48,17 +48,19 @@ ncclResult_t ncclSocketInit(ncclDebugLogger_t logFunction) {
         WARN("NET/Socket : no interface found");
         return ncclInternalError;
       } else {
-        char line[1024];
-        char addrline[1024];
+        #define MAX_LINE_LEN (2047)
+        char line[MAX_LINE_LEN+1];
+        char addrline[SOCKET_NAME_MAXLEN+1];
         line[0] = '\0';
+        addrline[SOCKET_NAME_MAXLEN] = '\0';
         for (int i=0; i<ncclNetIfs; i++) {
           strcpy(ncclSocketDevs[i].devName, names+i*MAX_IF_NAME_SIZE);
           memcpy(&ncclSocketDevs[i].addr, addrs+i, sizeof(union socketAddress));
           NCCLCHECK(ncclSocketGetPciPath(ncclSocketDevs[i].devName, &ncclSocketDevs[i].pciPath));
-          snprintf(line+strlen(line), 1023-strlen(line), " [%d]%s:%s", i, names+i*MAX_IF_NAME_SIZE,
+          snprintf(line+strlen(line), MAX_LINE_LEN-strlen(line), " [%d]%s:%s", i, names+i*MAX_IF_NAME_SIZE,
               socketToString(&addrs[i].sa, addrline));
         }
-        line[1023] = '\0';
+        line[MAX_LINE_LEN] = '\0';
         INFO(NCCL_INIT|NCCL_NET,"NET/Socket : Using%s", line);
       }
     }
@@ -112,7 +114,7 @@ ncclResult_t GetSocketAddr(int dev, union socketAddress* addr) {
 
 #define MAX_SOCKETS 64
 #define MAX_THREADS 16
-#define MAX_REQUESTS 128
+#define MAX_REQUESTS NCCL_NET_MAX_REQUESTS
 #define MAX_QUEUE_LEN MAX_REQUESTS
 #define MIN_CHUNKSIZE (64*1024)
 
@@ -477,7 +479,7 @@ ncclResult_t ncclSocketIrecv(void* recvComm, void* data, int size, void* mhandle
   return ncclSuccess;
 }
 
-ncclResult_t ncclSocketFlush(void* recvComm, void* data, int size, void* mhandle) {
+ncclResult_t ncclSocketIflush(void* recvComm, void* data, int size, void* mhandle, void** request) {
   // We don't support CUDA pointers, so we don't need a flush operation
   return ncclInternalError;
 }
@@ -526,7 +528,7 @@ ncclNet_t ncclNetSocket = {
   ncclSocketDeregMr,
   ncclSocketIsend,
   ncclSocketIrecv,
-  ncclSocketFlush,
+  ncclSocketIflush,
   ncclSocketTest,
   ncclSocketClose,
   ncclSocketClose,

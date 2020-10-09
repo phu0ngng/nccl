@@ -11,6 +11,7 @@ Errors
 NCCL calls may return a variety of return codes. Ensure that the return codes are always equal to ncclSuccess. If any call fails and returns a value different from ncclSuccess, setting NCCL_DEBUG to “WARN” will make NCCL print an explicit warning message before returning the error.
 
 Errors are grouped into different categories.
+
 * ncclUnhandledCudaError and ncclSystemError indicate that a call to an external library failed.
 * ncclInvalidArgument and ncclInvalidUsage indicates there was a programming error in the application using NCCL.
 

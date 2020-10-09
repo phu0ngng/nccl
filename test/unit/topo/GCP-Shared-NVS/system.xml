@@ -1,0 +1,17 @@
+<system version="1">
+  <cpu numaid="-1" arch="x86_64" vendor="GenuineIntel" familyid="6" modelid="85">
+    <pci busid="0000:00:03.0" class="0x030200" link_speed="" link_width="0">
+      <gpu dev="0" sm="80" rank="0" gdr="0">
+        <nvlink target="fffffff:ffff:ff" count="12" tclass="0x068000"/>
+      </gpu>
+    </pci>
+    <pci busid="0000:00:04.0" class="0x030200" link_speed="" link_width="0">
+      <gpu dev="1" sm="80" rank="1" gdr="0">
+        <nvlink target="fffffff:ffff:ff" count="12" tclass="0x068000"/>
+      </gpu>
+    </pci>
+    <nic>
+      <net name="eth0" dev="0" speed="10000" port="0" guid="0x0" maxconn="65536" gdr="0"/>
+    </nic>
+  </cpu>
+</system>

@@ -106,7 +106,7 @@ void checkTopo(const char* xmlTopoFile, const char* xmlGraphFile, const char* pl
   struct ncclTopoGraph treeGraph;
   memset(&treeGraph, 0, sizeof(treeGraph));
   treeGraph.id = 1;
-  treeGraph.pattern = NCCL_TOPO_PATTERN_SPLIT_TREE;
+  treeGraph.pattern = NCCL_TOPO_PATTERN_BALANCED_TREE;
   treeGraph.crossNic = 2;
   treeGraph.collNet = 0;
 
@@ -224,6 +224,8 @@ int main(int argc, const char* argv[]) {
     RUN("Azure");
     RUN("FB-BUG");
     RUN("DGX-1V-1G");
+    RUN("GCP-Shared-NVS");
+    RUN("Dual-Delta-VM");
 #endif
     RUN("P9-6V");
     RUN("P9-4V");

@@ -1,0 +1,87 @@
+<system version="1">
+  <cpu numaid="-1" arch="x86_64" vendor="GenuineIntel" familyid="6" modelid="85">
+    <pci busid="0000:03:00.0" class="0x030200" link_speed="2.5 GT/s" link_width="1">
+      <gpu dev="0" sm="80" rank="0" gdr="0">
+        <nvlink target="fffffff:ffff:ff" count="12" tclass="0x068000"/>
+      </gpu>
+    </pci>
+    <pci busid="0000:04:00.0" class="0x030200" link_speed="2.5 GT/s" link_width="1">
+      <gpu dev="1" sm="80" rank="1" gdr="0">
+        <nvlink target="fffffff:ffff:ff" count="12" tclass="0x068000"/>
+      </gpu>
+    </pci>
+    <pci busid="0000:05:00.0" class="0x030200" link_speed="2.5 GT/s" link_width="1">
+      <gpu dev="2" sm="80" rank="2" gdr="0">
+        <nvlink target="fffffff:ffff:ff" count="12" tclass="0x068000"/>
+      </gpu>
+    </pci>
+    <pci busid="0000:06:00.0" class="0x030200" link_speed="2.5 GT/s" link_width="1">
+      <gpu dev="3" sm="80" rank="3" gdr="0">
+        <nvlink target="fffffff:ffff:ff" count="12" tclass="0x068000"/>
+      </gpu>
+    </pci>
+    <pci busid="0000:07:00.0" class="0x030200" link_speed="2.5 GT/s" link_width="1">
+      <gpu dev="4" sm="80" rank="4" gdr="0">
+        <nvlink target="fffffff:ffff:ff" count="12" tclass="0x068000"/>
+      </gpu>
+    </pci>
+    <pci busid="0000:08:00.0" class="0x030200" link_speed="2.5 GT/s" link_width="1">
+      <gpu dev="5" sm="80" rank="5" gdr="0">
+        <nvlink target="fffffff:ffff:ff" count="12" tclass="0x068000"/>
+      </gpu>
+    </pci>
+    <pci busid="0000:09:00.0" class="0x030200" link_speed="2.5 GT/s" link_width="1">
+      <gpu dev="6" sm="80" rank="6" gdr="0">
+        <nvlink target="fffffff:ffff:ff" count="12" tclass="0x068000"/>
+      </gpu>
+    </pci>
+    <pci busid="0000:0a:00.0" class="0x030200" link_speed="2.5 GT/s" link_width="1">
+      <gpu dev="7" sm="80" rank="7" gdr="0">
+        <nvlink target="fffffff:ffff:ff" count="12" tclass="0x068000"/>
+      </gpu>
+    </pci>
+    <pci busid="0000:0b:00.0" class="0x030200" link_speed="2.5 GT/s" link_width="1">
+      <gpu dev="8" sm="80" rank="8" gdr="0">
+        <nvlink target="fffffff:ffff:ff" count="12" tclass="0x068000"/>
+      </gpu>
+    </pci>
+    <pci busid="0000:0c:00.0" class="0x030200" link_speed="2.5 GT/s" link_width="1">
+      <gpu dev="9" sm="80" rank="9" gdr="0">
+        <nvlink target="fffffff:ffff:ff" count="12" tclass="0x068000"/>
+      </gpu>
+    </pci>
+    <pci busid="0000:0d:00.0" class="0x030200" link_speed="2.5 GT/s" link_width="1">
+      <gpu dev="10" sm="80" rank="10" gdr="0">
+        <nvlink target="fffffff:ffff:ff" count="12" tclass="0x068000"/>
+      </gpu>
+    </pci>
+    <pci busid="0000:0e:00.0" class="0x030200" link_speed="2.5 GT/s" link_width="1">
+      <gpu dev="11" sm="80" rank="11" gdr="0">
+        <nvlink target="fffffff:ffff:ff" count="12" tclass="0x068000"/>
+      </gpu>
+    </pci>
+    <pci busid="0000:0f:00.0" class="0x030200" link_speed="2.5 GT/s" link_width="1">
+      <gpu dev="12" sm="80" rank="12" gdr="0">
+        <nvlink target="fffffff:ffff:ff" count="12" tclass="0x068000"/>
+      </gpu>
+    </pci>
+    <pci busid="0000:10:00.0" class="0x030200" link_speed="2.5 GT/s" link_width="1">
+      <gpu dev="13" sm="80" rank="13" gdr="0">
+        <nvlink target="fffffff:ffff:ff" count="12" tclass="0x068000"/>
+      </gpu>
+    </pci>
+    <pci busid="0000:11:00.0" class="0x030200" link_speed="2.5 GT/s" link_width="1">
+      <gpu dev="14" sm="80" rank="14" gdr="0">
+        <nvlink target="fffffff:ffff:ff" count="12" tclass="0x068000"/>
+      </gpu>
+    </pci>
+    <pci busid="0000:12:00.0" class="0x030200" link_speed="2.5 GT/s" link_width="1">
+      <gpu dev="15" sm="80" rank="15" gdr="0">
+        <nvlink target="fffffff:ffff:ff" count="12" tclass="0x068000"/>
+      </gpu>
+    </pci>
+    <nic>
+      <net name="enp1s0" dev="0" speed="10000" port="0" guid="0x0" maxconn="65536" gdr="0"/>
+    </nic>
+  </cpu>
+</system>

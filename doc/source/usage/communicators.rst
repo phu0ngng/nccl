@@ -61,18 +61,90 @@ Launching multiple communication operations (on different streams) might work pr
 could break at any time if NCCL were to use more CUDA blocks per operation, or if some calls used inside NCCL
 collectives were to perform a device synchronization (e.g. allocate some CUDA memory dynamically).
 
-*******************************************
-Error handling and communicator destruction
-*******************************************
-
-Normal termination
-------------------
+Destroying a communicator
+-------------------------
 
 Resources associated to a communicator can be destroyed with ncclCommDestroy. This operation will wait for operations
 to complete but will not synchronize with other ranks. There is therefore no need to use group semantics with
 ncclCommDestroy.
 
 Related link: :c:func:`ncclCommDestroy`
+
+*************************************
+Error handling and communicator abort
+*************************************
+
+All NCCL calls return a NCCL error code which is sumarized in the table below. If a NCCL call returns an error code
+different from ncclSuccess and ncclInternalError, NCCL will print a human-readable message explaining what happened
+if NCCL_DEBUG is set to WARN. If NCCL_DEBUG is set to INFO, it will also print the call stack which lead to the error.
+This message is intended to help the user fix the problem.
+
+The table below summarizes how different errors should be understood and handled. Each case is explained in details
+in the following sections.
+
+.. list-table:: NCCL Errors
+   :widths: 20 50 10 10 10
+   :header-rows: 1
+
+   * - Error
+     - Description
+     - Resolution
+     - Error handling
+     - Group behavior
+   * - ncclSuccess
+     - No error
+     - None
+     - None
+     - None
+   * - ncclUnhandledCudaError
+     - Error during a CUDA call (1)
+     - CUDA configuration / usage (1)
+     - Communicator abort (5)
+     - Global (6)
+   * - ncclSystemError
+     - Error during a system call (1)
+     - System configuration / usage (1)
+     - Communicator abort (5)
+     - Global (6)
+   * - ncclInternalError
+     - Error inside NCCL (2)
+     - Fix in NCCL (2)
+     - Communicator abort (5)
+     - Global (6)
+   * - ncclInvalidArgument
+     - An argument to a NCCL call is invalid (3)
+     - Fix in the application (3)
+     - None (3)
+     - Individual (3)
+   * - ncclInvalidUsage
+     - The usage of NCCL calls is invalid (4)
+     - Fix in the application (4)
+     - Communicator abort (5)
+     - Global (6)
+
+
+(1) ncclUnhandledCudaError and ncclSystemError indicate that a call NCCL made to an external component failed,
+which caused the NCCL operation to fail. The error message should explain which component the user should look
+at and try to fix, potentially with the help of the administrators of the system.
+
+(2) ncclInternalError denotes a NCCL bug. It might not report a message with NCCL_DEBUG=WARN since it requires a
+fix in the NCCL source code. NCCL_DEBUG=INFO will print the back trace which lead to the error.
+
+(3) ncclInvalidArgument indicates an argument value is incorrect, like a NULL pointer, or an out-of-bounds value.
+When this error is returned, the NCCL call had no effect. The group state remains unchanged, the communicator is
+still functioning normally. The application can call ncclCommAbort or continue as if the call did not happen.
+This error will be returned immediately for a call happening within a group and applies to that specific NCCL
+call. It will not be returned by ncclGroupEnd since ncclGroupEnd takes no argument.
+
+(4) ncclInvalidUsage is returned when a dynamic condition causes a failure, which denotes an incorrect usage of
+the NCCL API.
+
+(5) These errors are fatal for the communicator. To recover, the application needs to call ncclCommAbort on the
+communicator and re-create it.
+
+(6) Dynamic errors for operations within a group are always reported by ncclGroupEnd and apply to all operations
+within the group, which may or may not have completed. The application must call ncclCommAbort on all communicators
+within the group.
 
 Asynchronous errors and error handling
 --------------------------------------
