@@ -1,3 +1,9 @@
+/*************************************************************************
+ * Copyright (c) 2019-2020, NVIDIA CORPORATION. All rights reserved.
+ *
+ * See LICENSE.txt for license information
+ ************************************************************************/
+
 #ifndef NCCL_NVNCCLPROFILER_H_
 #define NCCL_NVNCCLPROFILER_H_
 
