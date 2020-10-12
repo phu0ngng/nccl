@@ -65,6 +65,7 @@ struct ncclCudaGraphElem {
 struct ncclCudaGraphInfo {
   ncclComm_t comm;
   int nElems;
+  int maxChannels;
   struct ncclCudaGraphElem cgElems[];
 };
 

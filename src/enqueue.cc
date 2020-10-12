@@ -107,25 +107,10 @@ static ncclResult_t getNextOp(struct ncclChannel* channel, struct ncclColl** col
   return ncclSuccess;
 }
 
-static ncclResult_t setupParams(struct ncclInfo* info, int usingCudaGraph) {
-  ncclComm_t comm = info->comm;
+static ncclResult_t setupLaunch(struct ncclCudaGraphInfo* cgInfo, int usingCudaGraph) {
+  ncclComm_t comm = cgInfo->comm;
   struct cudaLaunchParams* params = comm->myParams;
-
-  int nSubChannels = (info->pattern == ncclPatternCollTreeUp || info->pattern == ncclPatternCollTreeDown) ? 2 : 1;
-  params->gridDim.x += info->nChannels * nSubChannels;
-  //FIXME: check for p2p case
-  params->gridDim.x = std::min<unsigned>(params->gridDim.x, comm->nChannels);
-  params->blockDim.x = std::max<unsigned>(params->blockDim.x, info->nThreads);
-
-  if (usingCudaGraph) {
-    int funcIndex = FUNC_INDEX(info->coll, info->op, info->datatype, info->algorithm, info->protocol);
-    params->func = ncclKerns[funcIndex];
-  }
-  return ncclSuccess;
-}
-
-static ncclResult_t setupLaunch(struct ncclComm* comm, int usingCudaGraph) {
-  struct cudaLaunchParams* params = comm->myParams;
+  int maxChannels;
 
   // Only launch blocks where we have work to do.
   // This is not supported when we are in cudaGraph mode.
@@ -135,10 +120,13 @@ static ncclResult_t setupLaunch(struct ncclComm* comm, int usingCudaGraph) {
     for (int c=0; c<comm->p2pnChannels; c++) {
       if (comm->channels[c].collCount) params->gridDim.x = c+1;
     }
+    maxChannels = params->gridDim.x;
+  } else {
+    maxChannels = cgInfo->maxChannels;
   }
 
   // Set active = 2 for the last operation and add a no-op on empty channels (p2p case).
-  for (int c=0; c<params->gridDim.x; c++) {
+  for (int c=0; c<maxChannels; c++) {
     struct ncclChannel* channel = comm->channels+c;
     if (channel->collCount == 0) {
       struct ncclColl* c;
@@ -254,17 +242,17 @@ ncclResult_t ncclCgmdBarrierEnqueueWait(ncclComm_t comm) {
   return ncclSuccess;
 }
 
-static ncclResult_t ncclEnqueueProxyStart(ncclComm_t comm) {
+static ncclResult_t ncclEnqueueProxyStart(struct ncclCudaGraphInfo* cgInfo) {
   // Start the network proxies as soon as the kernel has been launched. We can't
   // perform any CUDA call between the two or having a cudaFree between the CUDA
   // launch and the ncclProxyStart call could cause a deadlock.
   // Also, starting the proxies after the CUDA launch seems to be better for
   // performance (latency).
-  struct cudaLaunchParams* params = comm->myParams;
-  if (params->gridDim.x == 0) return ncclSuccess;
+  ncclComm_t comm = cgInfo->comm;
+  if (cgInfo->maxChannels == 0) return ncclSuccess;
 
   uint64_t max = 0ULL;
-  for (int r=0; r<params->gridDim.x; r++) {
+  for (int r=0; r<cgInfo->maxChannels; r++) {
     struct ncclChannel* channel = comm->channels+r;
     max = std::max(max, channel->collFifoTail);
     channel->collCount = 0;
@@ -282,7 +270,9 @@ static ncclResult_t ncclEnqueueProxyStart(ncclComm_t comm) {
 ncclResult_t ncclEnqueueEvents(ncclComm_t comm) {
   struct cudaLaunchParams *params = comm->myParams;
   //FIXME
-  //params->gridDim.x = params->blockDim.x = 0;
+  params->gridDim.x = params->blockDim.x = 0;
+  params->func = NULL;
+
   // Enqueue event after NCCL kernel
   CUDACHECK(cudaEventRecord(comm->doneEvent, params->stream));
   // Use internal NCCL stream for CGMD/GROUP launch if required or if the user stream is NULL
@@ -482,18 +472,30 @@ static ncclResult_t checkSetStream(struct ncclInfo* info) {
 // Prepare things that will not change between graph launches
 // including cuda launch parameters
 static ncclResult_t ncclSaveKernelStatic(struct ncclInfo* info) {
-  if (info->comm->nRanks == 1) {
+  ncclComm_t comm = info->comm;
+  if (comm->nRanks == 1) {
     if (info->sendbuff != info->recvbuff)
       CUDACHECK(cudaMemcpyAsync(info->recvbuff, info->sendbuff, info->nBytes, cudaMemcpyDeviceToDevice, info->stream));
     return ncclSuccess;
   }
 
-  struct ncclCudaGraphInfo* cgInfo = info->comm->cudaGraphInfo;
+  // Compute cuda kernel arg and proxy arg templates
+  struct ncclCudaGraphInfo* cgInfo = comm->cudaGraphInfo;
   struct ncclCudaGraphElem* cgElem = cgInfo->cgElems + cgInfo->nElems;
   NCCLCHECK(computeColl(info, &cgElem->coll, &cgElem->proxyArgs));
   cgInfo->nElems++;
 
-  NCCLCHECK(setupParams(info, 1));  //FIXME
+  // Determine grid size
+  struct cudaLaunchParams* params = comm->myParams;
+  int nSubChannels = (info->pattern == ncclPatternCollTreeUp || info->pattern == ncclPatternCollTreeDown) ? 2 : 1;
+  params->gridDim.x += info->nChannels * nSubChannels;
+  params->gridDim.x = std::min<unsigned>(params->gridDim.x, comm->nChannels);
+  params->blockDim.x = std::max<unsigned>(params->blockDim.x, info->nThreads);
+  cgInfo->maxChannels = params->gridDim.x;  // params maybe varied by a second graph hence we need to capture it here
+
+  // Record the first kernel to launch
+  if (params->func == NULL) params->func = ncclKerns[cgElem->coll.funcIndex];
+
   return ncclSuccess;
 }
 
@@ -693,16 +695,12 @@ void CUDART_CB ncclEnqueueHostSetup(void* arg) {
   struct ncclCudaGraphInfo* cgInfo = (struct ncclCudaGraphInfo*)arg;
   ncclComm_t comm = cgInfo->comm;
 
-  cudaLaunchParams* params = comm->myParams;
-  INFO(NCCL_COLL,"params: func %p gridDim %d blockDim %d args %p sharedMem %ld stream %p",
-      params->func, params->gridDim.x, params->blockDim.x, params->args, params->sharedMem, params->stream);
-
   for (int i=0; i<cgInfo->nElems; i++) {
     ncclSaveKernelDynamic(comm, cgInfo->cgElems+i);
   }
 
-  setupLaunch(comm, USING_CUDA_GRAPH);
-  ncclEnqueueProxyStart(comm);
+  setupLaunch(cgInfo, USING_CUDA_GRAPH);
+  ncclEnqueueProxyStart(cgInfo);
 }
 
 ncclResult_t ncclGetCudaGraph(ncclComm_t comm, cudaGraph_t* graph, int* usingCudaGraph) {
