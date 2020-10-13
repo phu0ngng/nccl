@@ -14,7 +14,7 @@
 #include <sys/types.h>
 
 /* Init functions */
-static char bootstrapNetIfName[MAX_IF_NAME_SIZE];
+static char bootstrapNetIfName[MAX_IF_NAME_SIZE+1];
 static union socketAddress bootstrapNetIfAddr;
 static int bootstrapNetInitDone = 0;
 pthread_mutex_t bootstrapNetLock = PTHREAD_MUTEX_INITIALIZER;
@@ -41,7 +41,7 @@ ncclResult_t bootstrapNetInit() {
           return ncclInternalError;
         }
       }
-      char line[1024];
+      char line[SOCKET_NAME_MAXLEN+MAX_IF_NAME_SIZE+2];
       sprintf(line, " %s:", bootstrapNetIfName);
       socketToString(&bootstrapNetIfAddr.sa, line+strlen(line));
       INFO(NCCL_INIT, "Bootstrap : Using%s", line);
@@ -260,7 +260,7 @@ void* ncclRemoteMemAllocationService(void* args) {
 
   int nbuffers = 0;
   while (state->stop == 0 || (state->stop == 1 && nbuffers > 0)) {
-    if (int error = poll(pollfds, MAX_SEGMENTS+1, 1000000) < 0) {
+    if (int error = poll(pollfds, MAX_SEGMENTS+1, 100/*ms*/) < 0) {
       WARN("[Rem Allocator] Poll failed with error %d", error);
       return NULL;
     }
@@ -496,7 +496,12 @@ ncclResult_t bootstrapClose(void* commState) {
   close(state->extListenFd);
   close(state->extRingSendFd);
   close(state->extRingRecvFd);
+
   state->allocState->stop = 1;
+
+  // Join the allocThread so we catch resource leaks as being hung here
+  // pthread_join(state->allocThread, nullptr);
+
   free(state->peerCommAddresses);
   free(state->peerAllocAddresses);
   free(state);

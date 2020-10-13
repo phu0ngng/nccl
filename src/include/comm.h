@@ -144,6 +144,7 @@ struct ncclComm {
   int* intraCudaDevs;
   int* intraCGMode; // Whether we can use CUDA9 CGMD or not
   int* intraCC; // Only to check all have the same ComputeCap and disable CGMode if not
+  struct ncclWorkElem args;
   void* argsptr;
 
   // Global proxy thread
@@ -162,7 +163,8 @@ struct ncclComm {
   //list of async p2p operation queued in a group semantics
   struct ncclP2Plist* p2pSends;
   struct ncclP2Plist* p2pRecvs;
-  int p2pCount;
+  int p2pSendCount;
+  int p2pRecvCount;
 
   // Store info for cudaGraph
   struct ncclCudaGraphInfo* cudaGraphInfo;

@@ -708,12 +708,8 @@ ncclResult_t ncclTopoFillNet(struct ncclXml* xml, const char* pciPath, const cha
     for (offset=strlen(pciSysPath)-1; pciSysPath[offset] != '/'; offset--);
     char busId[NVML_DEVICE_PCI_BUS_ID_BUFFER_SIZE];
     strcpy(busId, pciSysPath+offset+1);
-    NCCLCHECK(xmlFindTagKv(xml, "pci", &parent, "busid", busId));
-    if (parent == NULL) {
-      NCCLCHECK(xmlAddNode(xml, NULL, "pci", &parent));
-      NCCLCHECK(xmlSetAttr(parent, "busid", busId));
-      NCCLCHECK(ncclTopoGetXmlFromSys(parent, xml));
-    }
+    NCCLCHECK(ncclTopoGetPciNode(xml, busId, &parent));
+    NCCLCHECK(ncclTopoGetXmlFromSys(parent, xml));
   } else {
     // Virtual NIC, no PCI device, attach to first CPU
     NCCLCHECK(xmlFindTag(xml, "cpu", &parent));
@@ -729,6 +725,28 @@ ncclResult_t ncclTopoFillNet(struct ncclXml* xml, const char* pciPath, const cha
   // beginning of this function), so we can add it.
   NCCLCHECK(xmlAddNode(xml, nicNode, "net", netNode));
   NCCLCHECK(xmlSetAttr(*netNode, "name", netName));
+  return ncclSuccess;
+}
+
+ncclResult_t ncclTopoTrimXmlRec(struct ncclXmlNode* node) {
+  const char* str;
+  NCCLCHECK(xmlGetAttr(node, "keep", &str));
+  if (str && strcmp(str, "1") == 0) {
+    NCCLCHECK(xmlUnsetAttr(node, "keep"));
+  } else {
+    // Copy nSubs and subs as they could change as we trim recursively.
+    struct ncclXmlNode* subs[MAX_SUBS];
+    int nSubs = node->nSubs;
+    memcpy(subs, node->subs, node->nSubs*sizeof(struct ncclXmlNode*));
+    for (int s=0; s<nSubs; s++) {
+      NCCLCHECK(ncclTopoTrimXmlRec(subs[s]));
+    }
+    if (node->nSubs == 0) NCCLCHECK(xmlRemoveNode(node));
+  }
+  return ncclSuccess;
+}
+ncclResult_t ncclTopoTrimXml(struct ncclXml* xml) {
+  NCCLCHECK(ncclTopoTrimXmlRec(xml->nodes));
   return ncclSuccess;
 }
 

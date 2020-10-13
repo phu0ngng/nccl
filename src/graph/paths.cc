@@ -90,9 +90,6 @@ static ncclResult_t ncclTopoSetPaths(struct ncclTopoNode* baseNode, struct ncclT
           if (node->type == PCI && remNode->type == PCI) type = PATH_PXB;
           // Consider a path going through the CPU as PATH_PHB
           if (link->type == LINK_PCI && (node->type == CPU || link->remNode->type == CPU)) type = PATH_PHB;
-          // Ignore Power CPU in an NVLink path
-          if (path->type == PATH_NVL && type == PATH_SYS && link->remNode->type == CPU &&
-              link->remNode->cpu.arch == NCCL_TOPO_CPU_ARCH_POWER) type = 0;
           // Set 1 hop NVLink as NVB
           if (node->type == GPU && path->type == PATH_NVL && type == PATH_NVL && remPath->count > 1) type = PATH_NVB;
 
@@ -478,8 +475,7 @@ static ncclResult_t ncclTopoGetNchannels(struct ncclTopoSystem* system, int g /*
     // Local rank
     path = system->nodes[GPU].nodes[peer].paths[GPU]+g;
     if (path->type == PATH_NVL) {
-      int sm = system->nodes[GPU].nodes[g].gpu.cudaCompCap;
-      double nvlWidth = sm < 70 ? PASCAL_NVLINK_WIDTH : VOLTA_NVLINK_WIDTH;
+      float nvlWidth = ncclTopoNVLinkSpeed(system->nodes[GPU].nodes[g].gpu.cudaCompCap);
       *nChannels = 2*std::max(1, (int)(path->width / nvlWidth));
     } else {
       *nChannels = 2;

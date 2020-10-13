@@ -21,8 +21,8 @@
 
 /* Declare all collective operations */
 #define DECL5(func, algo, proto, redop, type) \
-  extern __device__ void NCCL_FUNC_NAME(func, algo, proto, redop, type)(struct CollectiveArgs* args); \
-  extern __global__ void NCCL_KERN_NAME(func, algo, proto, redop, type)(struct ncclDevComm* comm); \
+  extern __device__ void NCCL_FUNC_NAME(func, algo, proto, redop, type)(struct ncclWorkElem* args); \
+  extern __global__ void NCCL_KERN_NAME(func, algo, proto, redop, type)(struct ncclWorkElem c); \
 
 #define DECL4(func, algo, redop, type) \
   DECL5(func, algo, SIMPLE, redop, type) \

@@ -240,7 +240,7 @@ static ncclResult_t commAlloc(ncclComm_t* comret, int ndev, int rank) {
   comm->hostDevComm.abortFlag = comm->abortFlag;
   *comm->abortFlag = 0;
 
-  comm->argsptr = &comm->devComm;
+  comm->argsptr = &comm->args;
   comm->collNetSupport = 0;
 
   NCCLCHECK(ncclCalloc(&comm->asyncOps, NCCL_MAX_OPS));
@@ -258,7 +258,7 @@ static ncclResult_t commAlloc(ncclComm_t* comret, int ndev, int rank) {
   NCCLCHECK(ncclCalloc(&comm->connectSend, comm->nRanks));
   NCCLCHECK(ncclCalloc(&comm->connectRecv, comm->nRanks));
 
-  comm->p2pCount=0;
+  comm->p2pSendCount = comm->p2pRecvCount = 0;
   NCCLCHECK(ncclCalloc(&comm->p2pSends, comm->nRanks));
   NCCLCHECK(ncclCalloc(&comm->p2pRecvs, comm->nRanks));
 
@@ -919,6 +919,7 @@ end:
 
 NCCL_API(ncclResult_t, ncclCommInitRank, ncclComm_t* newcomm, int nranks, ncclUniqueId commId, int myrank);
 ncclResult_t ncclCommInitRank(ncclComm_t* newcomm, int nranks, ncclUniqueId commId, int myrank) {
+  NVTX3_FUNC_RANGE_IN(nccl_domain);
   int cudaDev;
   CUDACHECK(cudaGetDevice(&cudaDev));
   NCCLCHECK(ncclCommInitRankDev(newcomm, nranks, commId, myrank, cudaDev));
@@ -927,6 +928,7 @@ ncclResult_t ncclCommInitRank(ncclComm_t* newcomm, int nranks, ncclUniqueId comm
 
 NCCL_API(ncclResult_t, ncclCommInitAll, ncclComm_t* comms, int ndev, const int* devlist);
 ncclResult_t ncclCommInitAll(ncclComm_t* comms, int ndev, const int* devlist) {
+  NVTX3_FUNC_RANGE_IN(nccl_domain);
   NCCLCHECK(PtrCheck(comms, "CommInitAll", "comms"));
   if (ndev < 0) {
     WARN("Invalid device count requested : %d", ndev);
@@ -969,6 +971,7 @@ static ncclResult_t commDestroy(ncclComm_t comm) {
 
 NCCL_API(ncclResult_t, ncclCommDestroy, ncclComm_t comm);
 ncclResult_t ncclCommDestroy(ncclComm_t comm) {
+  NVTX3_FUNC_RANGE_IN(nccl_domain);
   if (comm == NULL)
     return ncclSuccess;
 
@@ -985,6 +988,7 @@ ncclResult_t ncclCommDestroy(ncclComm_t comm) {
 
 NCCL_API(ncclResult_t, ncclCommAbort, ncclComm_t comm);
 ncclResult_t ncclCommAbort(ncclComm_t comm) {
+  NVTX3_FUNC_RANGE_IN(nccl_domain);
   if (comm == NULL)
     return ncclSuccess;
 
@@ -1017,6 +1021,7 @@ ncclResult_t ncclCommGetAsyncError(ncclComm_t comm, ncclResult_t *asyncError) {
 
 NCCL_API(ncclResult_t, ncclCommCount, const ncclComm_t comm, int* count);
 ncclResult_t ncclCommCount(const ncclComm_t comm, int* count) {
+  NVTX3_FUNC_RANGE_IN(nccl_domain);
   NCCLCHECK(PtrCheck(comm, "CommCount", "comm"));
   NCCLCHECK(PtrCheck(count, "CommCount", "count"));
   *count = comm->nRanks;
@@ -1025,6 +1030,7 @@ ncclResult_t ncclCommCount(const ncclComm_t comm, int* count) {
 
 NCCL_API(ncclResult_t, ncclCommCuDevice, const ncclComm_t comm, int* devid);
 ncclResult_t ncclCommCuDevice(const ncclComm_t comm, int* devid) {
+  NVTX3_FUNC_RANGE_IN(nccl_domain);
   NCCLCHECK(PtrCheck(comm, "CommCuDevice", "comm"));
   NCCLCHECK(PtrCheck(devid, "CommCuDevice", "devid"));
   *devid = comm->cudaDev;
@@ -1033,6 +1039,7 @@ ncclResult_t ncclCommCuDevice(const ncclComm_t comm, int* devid) {
 
 NCCL_API(ncclResult_t, ncclCommUserRank, const ncclComm_t comm, int* rank);
 ncclResult_t ncclCommUserRank(const ncclComm_t comm, int* rank) {
+  NVTX3_FUNC_RANGE_IN(nccl_domain);
   NCCLCHECK(PtrCheck(comm, "CommUserRank", "comm"));
   NCCLCHECK(PtrCheck(rank, "CommUserRank", "rank"));
   *rank = comm->rank;

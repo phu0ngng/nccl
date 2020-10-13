@@ -108,6 +108,7 @@ ncclResult_t ncclAsyncColl(ncclComm_t comm) {
 
 NCCL_API(ncclResult_t, ncclGroupStart);
 ncclResult_t ncclGroupStart() {
+  NVTX3_FUNC_RANGE_IN(nccl_domain);
   if (ncclGroupMode == 0) {
     memset(ncclGroupArgs, 0, sizeof(struct ncclAsyncArgs)*MAX_ASYNC_OPS);
   }
@@ -149,6 +150,7 @@ size_t getP2pNchannels(size_t totalSize, int minChannels, int maxChannels, size_
 
 NCCL_API(ncclResult_t, ncclGroupEnd);
 ncclResult_t ncclGroupEnd() {
+  NVTX3_FUNC_RANGE_IN(nccl_domain);
   if (ncclGroupMode == 0) {
     WARN("ncclGroupEnd: not in a group call.");
     return ncclInvalidUsage;
@@ -223,9 +225,13 @@ ncclResult_t ncclGroupEnd() {
       // Try to use all channels
       int nChannelsMax = comm->p2pnChannelsPerPeer;
       int nChannelsMin = nChannelsMax;
-      while (nChannelsMin*comm->nRanks > comm->p2pnChannels && nChannelsMin > 1) nChannelsMin /= 2;
+      int p2pMaxCount = std::max(comm->p2pSendCount, comm->p2pRecvCount);
+      // Try to use all channels, but one channel per operation.
+      while (nChannelsMin*p2pMaxCount > comm->p2pnChannels && nChannelsMin > 1) nChannelsMin /= 2;
+      // Avoid overloading channels with 8+ operations as we loose the sync warp, hence a bit of bandwidth.
+      while (nChannelsMax*p2pMaxCount > comm->p2pnChannels*4 && nChannelsMax > 1) nChannelsMax /= 2;
 
-      while (comm->p2pCount) {
+      while (comm->p2pSendCount > 0 || comm->p2pRecvCount > 0) {
         // schedule delta 0, +1, -1, +2, -2, ...
         // also make sure we don't do 0 twice, nor +n/2 and -n/2 if n is even.
         for (int d=0; d<=nRanks/4; d++) {
@@ -241,8 +247,8 @@ sched_delta:
             ssize_t totRecvBytes = 0, totSendBytes = 0;
             if (recv != NULL) totRecvBytes = recv->nbytes;
             if (send != NULL) totSendBytes = send->nbytes;
-            ssize_t recvChunkSize = getP2pNchannels(totRecvBytes, nChannelsMin, nChannelsMax, stepSize, 4*stepSize);
-            ssize_t sendChunkSize = getP2pNchannels(totSendBytes, nChannelsMin, nChannelsMax, stepSize, 4*stepSize);
+            ssize_t recvChunkSize = getP2pNchannels(totRecvBytes, nChannelsMin, nChannelsMax, stepSize, SENDRECV_SLICEFACTOR*stepSize);
+            ssize_t sendChunkSize = getP2pNchannels(totSendBytes, nChannelsMin, nChannelsMax, stepSize, SENDRECV_SLICEFACTOR*stepSize);
 
             ssize_t sendOffset = 0;
             ssize_t recvOffset = 0;
@@ -265,11 +271,11 @@ sched_delta:
             } while (sendRemaining || recvRemaining);
             if (recv) {
               NCCLCHECKGOTO(dequeueP2pInfo(p2pRecvs+from), ret, group_cleanup);
-              comm->p2pCount--;
+              comm->p2pRecvCount--;
             }
             if (send) {
               NCCLCHECKGOTO(dequeueP2pInfo(p2pSends+to), ret, group_cleanup);
-              comm->p2pCount--;
+              comm->p2pSendCount--;
             }
           }
           index++;
@@ -368,14 +374,14 @@ group_cleanup:
         comm->asyncOpCount = 0;
         comm->asyncTotalSize = 0;
         // Dequeue p2p lists
-        if (comm->p2pCount > 0) {
+        if (comm->p2pSendCount > 0 || comm->p2pRecvCount > 0) {
           struct ncclP2Plist* p2pSends = comm->p2pSends;
           struct ncclP2Plist* p2pRecvs = comm->p2pRecvs;
           for (int peer=0; peer<comm->nRanks; peer++) {
             while (p2pSends[peer].head != NULL) dequeueP2pInfo(p2pSends+peer);
             while (p2pRecvs[peer].head != NULL) dequeueP2pInfo(p2pRecvs+peer);
           }
-          comm->p2pCount = 0;
+          comm->p2pSendCount = comm->p2pRecvCount = 0;
         }
         /* Free all proxy ops in state->nextOps */
         struct ncclProxyState* state = &comm->proxyState;

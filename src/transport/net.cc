@@ -248,8 +248,7 @@ ncclResult_t netRecvFree(void* transportResources) {
   return ncclSuccess;
 }
 
-static_assert(MAXCHANNELS*NCCL_STEPS*2 <= NCCL_NET_MAX_REQUESTS, "Not enough net requests to cover for all channels x steps x send/recv");
-static_assert(MAXCHANNELS*NCCL_MAX_SEGMENTS*2 <= NCCL_NET_MAX_REQUESTS, "Not enough net requests to cover for all channels x segments x send/recv");
+static_assert(NCCL_STEPS <= NCCL_NET_MAX_REQUESTS, "Not enough net requests to cover for steps");
 
 ncclResult_t netSendProxy(struct ncclProxyArgs* args) {
   struct netSendResources* resources = (struct netSendResources*) (args->connector->transportResources);
@@ -405,17 +404,13 @@ ncclResult_t netRecvProxy(struct ncclProxyArgs* args) {
       NCCLCHECK(ncclNetTest(args->requests[buffSlot], &done, &size));
       if (done) {
         args->received += args->sliceSteps;
-        if (args->protocol == NCCL_PROTO_SIMPLE && resources->useGdr) {
+        if (size > 0 && args->protocol == NCCL_PROTO_SIMPLE && resources->useGdr) {
           // Don't pass data to the GPU yet, flush first.
           volatile void** ptrsFifo = (volatile void**)resources->recvMem->ptrsFifo;
           char* ptr = resources->shared ? (char*)(ptrsFifo[buffSlot]) : localBuff+buffSlot*stepSize;
           NCCLCHECK(ncclNetIflush(resources->netRecvComm, ptr, size, mhandle, args->requests+buffSlot));
         } else {
-          args->transmitted += args->sliceSteps;
-          if (args->protocol == NCCL_PROTO_SIMPLE) {
-            __sync_synchronize();
-            resources->recvMem->tail = args->transmitted;
-          }
+          args->requests[buffSlot] = NULL;
         }
         args->idle = 0;
         return ncclSuccess;

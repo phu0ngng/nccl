@@ -12,8 +12,10 @@
 #include <sched.h>
 
 #define LOC_WIDTH 5000.0
-#define PASCAL_NVLINK_WIDTH 18.0
-#define VOLTA_NVLINK_WIDTH 21.0
+#define SM60_NVLINK_WIDTH 18.0
+#define SM70_NVLINK_WIDTH 21.0
+#define SM80_NVLINK_WIDTH 21.0
+#define SM86_NVLINK_WIDTH 12.0
 #define PCI_WIDTH 12.0           // PCI Gen3 x16
 #define QPI_WIDTH 6.0
 #define SKL_QPI_WIDTH 9.0
@@ -158,4 +160,13 @@ static ncclResult_t ncclTopoRankToIndex(struct ncclTopoSystem* system, int rank,
   return ncclInternalError;
 }
 
+// Returns NVLink speed in GB/s
+static float ncclTopoNVLinkSpeed(int cudaCompCap) {
+  return
+    cudaCompCap == 86 ? SM86_NVLINK_WIDTH :
+    cudaCompCap >= 80 ? SM80_NVLINK_WIDTH :
+    cudaCompCap >= 70 ? SM70_NVLINK_WIDTH :
+    cudaCompCap >= 60 ? SM60_NVLINK_WIDTH :
+    SM80_NVLINK_WIDTH;
+}
 #endif
