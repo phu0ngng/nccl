@@ -496,7 +496,7 @@ static ncclResult_t ncclSaveKernelStatic(struct ncclInfo* info) {
   // Compute cuda kernel arg and proxy arg templates
   struct ncclCudaGraphInfo* cgInfo = comm->cudaGraphInfo;
   struct ncclCudaGraphElem* cgElem = cgInfo->cgElems + cgInfo->nElems;
-  NCCLCHECK(computeColl(info, &cgElem->coll, &cgElem->proxyArgs));
+  NCCLCHECK(computeColl(info, &cgElem->work, &cgElem->proxyArgs));
   cgInfo->nElems++;
 
   // Determine grid size
@@ -508,7 +508,7 @@ static ncclResult_t ncclSaveKernelStatic(struct ncclInfo* info) {
   cgInfo->maxChannels = params->gridDim.x;  // params maybe varied by a second graph hence we need to capture it here
 
   // Record the first kernel to launch
-  if (params->func == NULL) params->func = ncclKerns[cgElem->coll.funcIndex];
+  if (params->func == NULL) params->func = ncclKerns[cgElem->work.funcIndex];
 
   return ncclSuccess;
 }
@@ -516,10 +516,10 @@ static ncclResult_t ncclSaveKernelStatic(struct ncclInfo* info) {
 // Prepare things that will change between graph launches
 // including cuda kernel args
 static ncclResult_t ncclSaveKernelDynamic(ncclComm_t comm, struct ncclCudaGraphElem* cgElem) {
-  struct ncclColl* coll = &cgElem->coll;
+  struct ncclWorkElem* work = &cgElem->work;
   struct ncclProxyArgs* proxyArgs = &cgElem->proxyArgs;
 
-  int nChannels = coll->args.coll.nChannels;
+  int nChannels = work->coll.nChannels;
   int nSubChannels = (proxyArgs->redOp < ncclNumOps) ? 2 : 1;
   for (int bid=0; bid<nChannels*nSubChannels; bid++) {
     int channelId = comm->lastChannel % comm->nChannels;
@@ -535,9 +535,8 @@ static ncclResult_t ncclSaveKernelDynamic(ncclComm_t comm, struct ncclCudaGraphE
     if (proxyArgs->nsteps) NCCLCHECK(ncclProxySaveColl(proxyArgs, comm->nRanks));
 
     comm->lastChannel++;
-    struct ncclColl* c;
-    NCCLCHECK(getNextOp(channel, &c, coll));
-    c->args.coll.bid = bid % coll->args.coll.nChannels;
+    work->coll.bid = bid % nChannels;
+    NCCLCHECK(getNextOp(channel, NULL, work));
   }
   return ncclSuccess;
 }

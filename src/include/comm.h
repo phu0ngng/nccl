@@ -58,7 +58,7 @@ struct ncclRecvMem {
 };
 
 struct ncclCudaGraphElem {
-  struct ncclColl coll;
+  struct ncclWorkElem work;
   struct ncclProxyArgs proxyArgs;
 };
 
