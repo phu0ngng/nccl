@@ -541,43 +541,6 @@ static ncclResult_t ncclSaveKernelDynamic(ncclComm_t comm, struct ncclCudaGraphE
   return ncclSuccess;
 }
 
-ncclResult_t ncclSaveKernel(struct ncclInfo* info) {
-  if (info->comm->nRanks == 1) {
-    if (info->sendbuff != info->recvbuff)
-      CUDACHECK(cudaMemcpyAsync(info->recvbuff, info->sendbuff, info->nBytes, cudaMemcpyDeviceToDevice, info->stream));
-    return ncclSuccess;
-  }
-
-  struct ncclWorkElem work;
-  struct ncclProxyArgs proxyArgs;
-  memset(&proxyArgs, 0, sizeof(struct ncclProxyArgs));
-  NCCLCHECK(computeColl(info, &work, &proxyArgs));
-
-  info->comm->myParams->blockDim.x = std::max<unsigned>(info->comm->myParams->blockDim.x, info->nThreads);
-
-  int nChannels = work.coll.nChannels;
-  int nSubChannels = (info->pattern == ncclPatternCollTreeUp || info->pattern == ncclPatternCollTreeDown) ? 2 : 1;
-
-  for (int bid=0; bid<nChannels*nSubChannels; bid++) {
-    int channelId = info->comm->myParams->gridDim.x % info->comm->nChannels;
-    struct ncclChannel* channel = info->comm->channels+channelId;
-
-    // Proxy
-    proxyArgs.channel = channel;
-    // Adjust pattern for CollNet based on channel index
-    if (nSubChannels == 2) {
-      info->pattern = (channelId < info->comm->nChannels/nSubChannels) ? ncclPatternCollTreeUp : ncclPatternCollTreeDown;
-    }
-
-    if (proxyArgs.nsteps) NCCLCHECK(ncclProxySaveColl(&proxyArgs, info->comm->nRanks));
-
-    info->comm->myParams->gridDim.x++;
-    work.coll.bid = bid % nChannels;
-    NCCLCHECK(getNextOp(channel, NULL, &work));
-  }
-  return ncclSuccess;
-}
-
 #define NCCL_MIN_CHANNEL_SIZE (NCCL_LL_THREAD_THRESHOLD*64)
 #define NCCL_AGG_CHANNEL_SIZE (1LL << 21) /* 2 MiB, ideal per-channel size to fully utilize bandwidth */
 

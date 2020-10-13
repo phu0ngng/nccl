@@ -19,7 +19,6 @@ ncclResult_t ncclCpuBarrierOut(struct ncclComm* comm);
 ncclResult_t ncclCgmdBarrierEnqueue(struct ncclComm* comm);
 ncclResult_t ncclCgmdBarrierEnqueueWait(struct ncclComm* comm);
 ncclResult_t ncclEnqueueEvents(struct ncclComm* comm);
-ncclResult_t ncclSaveKernel(struct ncclInfo* info);
 ncclResult_t ncclSaveP2pKernel(struct ncclInfo* info);
 ncclResult_t ncclSaveCommKernels(struct ncclComm* comm);
 template<int USING_CUDA_GRAPH>
