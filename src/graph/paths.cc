@@ -218,7 +218,7 @@ ncclResult_t ncclGetLevel(int* level, const char* disableEnv, const char* levelE
     if (l == -1) {
       char* str = getenv(levelEnv);
       if (str) {
-        for (int i=0; i<PATH_SYS; i++) {
+        for (int i=0; i<=PATH_SYS; i++) {
           if (strcmp(str, topoPathTypeStr[i]) == 0) {
             l = i;
             break;
