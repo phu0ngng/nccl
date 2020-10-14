@@ -27,6 +27,7 @@ buffers, which tends to indicate that by the time the CUDA kernel starts, proxy 
 buffers. Also reading the pointer from sysmem could cause a latency increase. This is only for the Simple protocol
 however which already has a significant latency.
 
+<p><img src="images/PLC-9.png">
 <h2>Interface Architecture</h2>
 <p>Connection have a new ptrsFifo field which CUDA kernels may use in send/receive operations.
 
