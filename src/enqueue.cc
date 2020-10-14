@@ -140,20 +140,18 @@ static ncclResult_t setupLaunch(struct ncclCudaGraphInfo* cgInfo, int usingCudaG
     channel->workFifo[(channel->workFifoTail-1)%NCCL_MAX_OPS].elems[0].active = 2;
   }
 
-  //FIXME: merge with new master which inlines first arg again
-  // Not supported in cudaGraph mode for the same reason as described above
+  // Find the first operation, choose the kernel accordingly and pass it as the first argument.
+  // Note that changing cuda launch argument after capture is not supported by cudaGraph
+  struct ncclChannel* c0 = comm->channels;
+  struct ncclWork* work = c0->workFifo+((c0->workFifoTail-c0->workCount)%NCCL_MAX_OPS);
+  struct ncclWorkElem* elem = work->elems;
   if (!usingCudaGraph) {
-    // Find the first operation, choose the kernel accordingly and pass it
-    // as the first argument.
-    struct ncclChannel* c0 = comm->channels;
-    struct ncclWork* work = c0->workFifo+((c0->workFifoTail-c0->workCount)%NCCL_MAX_OPS);
-    struct ncclWorkElem* elem = work->elems;
-    memcpy(&comm->args, elem, sizeof(struct ncclWorkElem));
-    // As we inline the first coll directly, we can free it immediately.
-    if (elem->funcIndex != FUNC_INDEX_P2P) elem->active = 0;
-
     params->func = ncclKerns[elem->funcIndex];
+    memcpy(&comm->args, elem, sizeof(struct ncclWorkElem));
   }
+  // As we inline the first coll directly, we can free it immediately.
+  if (elem->funcIndex != FUNC_INDEX_P2P) elem->active = 0;
+
   return ncclSuccess;
 }
 
@@ -496,7 +494,8 @@ static ncclResult_t ncclSaveKernelStatic(struct ncclInfo* info) {
   // Compute cuda kernel arg and proxy arg templates
   struct ncclCudaGraphInfo* cgInfo = comm->cudaGraphInfo;
   struct ncclCudaGraphElem* cgElem = cgInfo->cgElems + cgInfo->nElems;
-  NCCLCHECK(computeColl(info, &cgElem->work, &cgElem->proxyArgs));
+  struct ncclWorkElem* work = &cgElem->work;
+  NCCLCHECK(computeColl(info, work, &cgElem->proxyArgs));
   cgInfo->nElems++;
 
   // Determine grid size
@@ -508,7 +507,12 @@ static ncclResult_t ncclSaveKernelStatic(struct ncclInfo* info) {
   cgInfo->maxChannels = params->gridDim.x;  // params maybe varied by a second graph hence we need to capture it here
 
   // Record the first kernel to launch
-  if (params->func == NULL) params->func = ncclKerns[cgElem->work.funcIndex];
+  if (params->func == NULL) {
+    params->func = ncclKerns[work->funcIndex];
+    memcpy(&comm->args, work, sizeof(struct ncclWorkElem));
+    comm->args.coll.bid = 0;  // Only inline for channel 0
+    comm->args.active = 2;    // I am so far the last element; may be changed later in aggregation mode
+  }
 
   return ncclSuccess;
 }
@@ -562,6 +566,7 @@ ncclResult_t ncclSaveCommKernels(ncclComm_t comm) {
       info->nChannels = std::min((int)DIVUP(info->nBytes, channelSize), comm->nChannels); // assign number of channels
       NCCLCHECK(ncclSaveKernelStatic(info));
     }
+    comm->args.active = 1;  // There are more than 1 op, hence the inlined one is not the last
   }
   // Reset counters
   comm->asyncOpCount = 0;

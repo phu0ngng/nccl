@@ -199,6 +199,7 @@ struct ncclDevComm {
   int rank;
   int nRanks;
   int buffSizes[NCCL_NUM_PROTOCOLS];
+  int index;
 
   // Flag to ask NCCL kernels to abort
   volatile uint32_t *abortFlag;

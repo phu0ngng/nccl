@@ -82,7 +82,7 @@ __device__ void ncclKernel(struct ncclWorkElem first)  {
   struct ncclDevComm* comm = first.comm;
   struct ncclChannel* channel = comm->channels+bid;
   struct ncclWorkElem* w = NULL;
-  uint16_t index = first.index;
+  int index = comm->index;
 
   /* To optimize for latency, (only) the first operation is passed as argument.*/
   if (bid == 0 && first.funcIndex != FUNC_INDEX_P2P) w = &first;
@@ -99,7 +99,12 @@ __device__ void ncclKernel(struct ncclWorkElem first)  {
         ncclFuncs[w->funcIndex](w);
       }
     }
-    index = (index+1) % NCCL_MAX_OPS;
+    // Increment index. Only the first block reaching a given index will actually
+    // increment the global index. This guarantees the index follows the max index
+    // that any block ever reached.
+    int nextIndex = (index+1) % NCCL_MAX_OPS;
+    if (tid == 0) atomicCAS(&comm->index, index, nextIndex);
+    index = nextIndex;
     if (w->active == 2) {
       return;
     }
