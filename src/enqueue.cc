@@ -155,27 +155,6 @@ static ncclResult_t setupLaunch(struct ncclCudaGraphInfo* cgInfo, int usingCudaG
   return ncclSuccess;
 }
 
-ncclResult_t ncclStreamWait(struct ncclComm* comm) {
-  struct cudaLaunchParams* params = comm->myParams;
-  if (params->gridDim.x == 0) return ncclSuccess;
-
-  // Use internal NCCL stream for CGMD/GROUP launch if required or if the user stream is NULL
-  if (comm->groupCudaStream || comm->userStream == NULL) {
-    // Enqueue event in user stream
-    CUDACHECK(cudaEventRecord(comm->doneEvent, comm->userStream));
-    // Create dependency between user stream and internal NCCL stream
-    CUDACHECK(cudaStreamWaitEvent(comm->groupStream, comm->doneEvent, 0));
-    params->stream = comm->groupStream;
-  } else {
-    if (comm->userStream != params->stream) {
-      // Stream changed from last call, create dependency against last NCCL kernel launch
-      CUDACHECK(cudaStreamWaitEvent(comm->userStream, comm->doneEvent, 0));
-    }
-    params->stream = comm->userStream;
-  }
-  return ncclSuccess;
-}
-
 ncclResult_t ncclCpuBarrierIn(struct ncclComm* comm, int* isLast) {
   volatile int* ptr = (volatile int*)(comm->intraBarrier+comm->intraPhase);
   int val = *ptr;
