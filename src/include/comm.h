@@ -90,7 +90,7 @@ struct ncclComm {
   int nNodes;
   int localRanks;
 
-  enum { GROUP, PARALLEL } launchMode;
+  enum { GROUP, PARALLEL, GROUP_GRAPH } launchMode;
   cudaStream_t userStream;
   bool userStreamSet;
   cudaEvent_t doneEvent;

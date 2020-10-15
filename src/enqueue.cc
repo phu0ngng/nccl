@@ -259,10 +259,10 @@ ncclResult_t ncclBarrierEnqueueWait(ncclComm_t comm) {
         (comm->launchMode == ncclComm::GROUP && comm->groupCudaStream) ? "/Stream" : "");
   }
 
-  if (comm->launchMode == ncclComm::PARALLEL) {
-    CUDACHECK(cudaLaunchKernel(params->func, params->gridDim, params->blockDim, params->args, params->sharedMem, params->stream));
-  } else {
+  if (comm->launchMode == ncclComm::GROUP) {
     NCCLCHECK(ncclCpuBarrierOut(comm));
+  } else {
+    CUDACHECK(cudaLaunchKernel(params->func, params->gridDim, params->blockDim, params->args, params->sharedMem, params->stream));
   }
 
   return ncclSuccess;
@@ -303,6 +303,10 @@ ncclResult_t ncclEnqueueEvents(ncclComm_t comm) {
     // Create dependency between NCCL internal stream and user stream
     CUDACHECK(cudaStreamWaitEvent(comm->userStream, comm->doneEvent, 0));
   }
+  return ncclSuccess;
+}
+
+ncclResult_t ncclCommResetLaunchState(ncclComm_t comm) {
   comm->userStreamSet = false;
 
   // We are finishing capturing CUDA graph
@@ -311,8 +315,14 @@ ncclResult_t ncclEnqueueEvents(ncclComm_t comm) {
   memset(cgInfo->cgElems, 0, sizeof(struct ncclCudaGraphElem)*cgInfo->nElems);
   cgInfo->nElems = 0;
 
+  struct cudaLaunchParams *params = comm->myParams;
   params->gridDim.x = params->blockDim.x = 0;
   params->func = NULL;
+
+  // Reset launch mode to GROUP if changed
+  if (comm->launchMode == ncclComm::GROUP_GRAPH)
+    comm->launchMode = ncclComm::GROUP;
+
   return ncclSuccess;
 }
 
@@ -714,6 +724,8 @@ ncclResult_t ncclGetCudaGraph(ncclComm_t comm, cudaGraph_t* graph, int* usingCud
       comm->lastCudaGraphId = cudaGraphId;
       comm->lastSetupNode = NULL;
     }
+    if (comm->launchMode == ncclComm::GROUP)
+      comm->launchMode = ncclComm::GROUP_GRAPH;
   }
   return ncclSuccess;
 }
@@ -797,6 +809,7 @@ end:
     NCCLCHECK(ncclBarrierEnqueue(comm));
     NCCLCHECK(ncclBarrierEnqueueWait(comm));
     NCCLCHECK(ncclEnqueueEvents(comm));
+    NCCLCHECK(ncclCommResetLaunchState(comm));
     return ncclSuccess;
   }
 }

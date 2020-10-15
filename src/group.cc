@@ -354,6 +354,7 @@ sched_delta:
       if (args->coll.comm->userStream == NULL)
         CUDACHECKGOTO(cudaSetDevice(args->coll.comm->cudaDev), ret, end);
       NCCLCHECKGOTO(ncclEnqueueEvents(args->coll.comm), ret, end);
+      NCCLCHECKGOTO(ncclCommResetLaunchState(args->coll.comm), ret, end);
     }
   }
 
@@ -392,8 +393,7 @@ group_cleanup:
 	pthread_mutex_unlock(&state->poolMutex);
         state->nextOps = NULL;
 
-        comm->myParams->gridDim.x = comm->myParams->blockDim.x = 0;
-        comm->userStreamSet = false;
+        ncclCommResetLaunchState(comm);
       }
     }
   }
