@@ -436,12 +436,13 @@ testResult_t BenchTime(struct threadArgs* args, ncclDataType_t type, ncclRedOp_t
   Barrier(args);
   args->compThreadCountLast = *(args->compThreadCount);
 
-  cudaGraph_t graph = NULL;
-  cudaGraphExec_t graphExec;
-  cudaStream_t s = args->streams[0];  //FIXME: currently only works for 1 GPU per thread mode
+  cudaGraph_t graphs[args->nGpus];
+  cudaGraphExec_t graphExec[args->nGpus];
   if (cudaGraphMode == 1) {
     // Begin cuda graph capture
-    CUDACHECK(cudaStreamBeginCapture(s, cudaStreamCaptureModeGlobal));
+    for (int i=0; i<args->nGpus; i++) {
+      CUDACHECK(cudaStreamBeginCapture(args->streams[i], cudaStreamCaptureModeGlobal));
+    }
   }
 
   // Performance Benchmark
@@ -456,15 +457,21 @@ testResult_t BenchTime(struct threadArgs* args, ncclDataType_t type, ncclRedOp_t
 
   if (cudaGraphMode == 1) {
     // End cuda graph capture
-    CUDACHECK(cudaStreamEndCapture(s, &graph));
+    for (int i=0; i<args->nGpus; i++) {
+      CUDACHECK(cudaStreamEndCapture(args->streams[i], graphs+i));
+    }
 
     // Instantiate cuda graph
-    CUDACHECK(cudaGraphInstantiate(&graphExec, graph, NULL, NULL, 0));
+    for (int i=0; i<args->nGpus; i++) {
+      CUDACHECK(cudaGraphInstantiate(graphExec+i, graphs[i], NULL, NULL, 0));
+    }
 
     // Resync CPU, restart timing, launch cuda graph
     Barrier(args);
     start = std::chrono::high_resolution_clock::now();
-    CUDACHECK(cudaGraphLaunch(graphExec, s));
+    for (int i=0; i<args->nGpus; i++) {
+      CUDACHECK(cudaGraphLaunch(graphExec[i], args->streams[i]));
+    }
   }
 
   TESTCHECK(completeColl(args));
@@ -476,8 +483,10 @@ testResult_t BenchTime(struct threadArgs* args, ncclDataType_t type, ncclRedOp_t
 
   if (cudaGraphMode == 1) {
     //destroy cuda graph
-    CUDACHECK(cudaGraphExecDestroy(graphExec));
-    CUDACHECK(cudaGraphDestroy(graph));
+    for (int i=0; i<args->nGpus; i++) {
+      CUDACHECK(cudaGraphExecDestroy(graphExec[i]));
+      CUDACHECK(cudaGraphDestroy(graphs[i]));
+    }
   }
 
   double algBw, busBw;
