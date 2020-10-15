@@ -12,12 +12,11 @@
 #include "collectives.h"
 
 ncclResult_t ncclEnqueueCheck(struct ncclInfo* info);
-ncclResult_t ncclStreamWait(struct ncclComm* comm);
 ncclResult_t ncclCpuBarrierIn(struct ncclComm* comm, int* isLast);
 ncclResult_t ncclCpuBarrierLast(struct ncclComm* comm);
 ncclResult_t ncclCpuBarrierOut(struct ncclComm* comm);
-ncclResult_t ncclCgmdBarrierEnqueue(struct ncclComm* comm);
-ncclResult_t ncclCgmdBarrierEnqueueWait(struct ncclComm* comm);
+ncclResult_t ncclBarrierEnqueue(struct ncclComm* comm);
+ncclResult_t ncclBarrierEnqueueWait(ncclComm_t comm);
 ncclResult_t ncclEnqueueEvents(struct ncclComm* comm);
 ncclResult_t ncclSaveP2pKernel(struct ncclInfo* info);
 ncclResult_t ncclSaveCommKernels(struct ncclComm* comm);

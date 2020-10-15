@@ -159,11 +159,20 @@ ncclResult_t ncclStreamWait(struct ncclComm* comm) {
   struct cudaLaunchParams* params = comm->myParams;
   if (params->gridDim.x == 0) return ncclSuccess;
 
-  if (comm->userStream != params->stream) {
-    // Stream changed from last call, create dependency against last NCCL kernel launch
-    CUDACHECK(cudaStreamWaitEvent(comm->userStream, comm->doneEvent, 0));
+  // Use internal NCCL stream for CGMD/GROUP launch if required or if the user stream is NULL
+  if (comm->groupCudaStream || comm->userStream == NULL) {
+    // Enqueue event in user stream
+    CUDACHECK(cudaEventRecord(comm->doneEvent, comm->userStream));
+    // Create dependency between user stream and internal NCCL stream
+    CUDACHECK(cudaStreamWaitEvent(comm->groupStream, comm->doneEvent, 0));
+    params->stream = comm->groupStream;
+  } else {
+    if (comm->userStream != params->stream) {
+      // Stream changed from last call, create dependency against last NCCL kernel launch
+      CUDACHECK(cudaStreamWaitEvent(comm->userStream, comm->doneEvent, 0));
+    }
+    params->stream = comm->userStream;
   }
-  params->stream = comm->userStream;
   return ncclSuccess;
 }
 
@@ -206,12 +215,12 @@ ncclResult_t ncclCpuBarrierOut(struct ncclComm* comm) {
   return ncclSuccess;
 }
 
-ncclResult_t ncclCgmdBarrierEnqueue(struct ncclComm* comm) {
+ncclResult_t ncclBarrierEnqueue(struct ncclComm* comm) {
   struct cudaLaunchParams* params = comm->myParams;
   if (params->gridDim.x == 0) return ncclSuccess;
 
   // Use internal NCCL stream for CGMD/GROUP launch if required or if the user stream is NULL
-  if (comm->groupCudaStream || comm->userStream == NULL) {
+  if (comm->launchMode == ncclComm::GROUP && (comm->groupCudaStream || comm->userStream == NULL)) {
     // Enqueue event in user stream
     CUDACHECK(cudaEventRecord(comm->doneEvent, comm->userStream));
     // Create dependency between user stream and internal NCCL stream
@@ -225,18 +234,20 @@ ncclResult_t ncclCgmdBarrierEnqueue(struct ncclComm* comm) {
     params->stream = comm->userStream;
   }
 
-  int isLast = 0;
-  NCCLCHECK(ncclCpuBarrierIn(comm, &isLast));
-  if (isLast) {
-    // I'm the last. Launch all operations.
-    NCCLCHECK(ncclLaunchCooperativeKernelMultiDevice(comm->intraParams, comm->intraCudaDevs, comm->intraRanks, *comm->intraCGMode));
-    NCCLCHECK(ncclCpuBarrierLast(comm));
+  if (comm->launchMode == ncclComm::GROUP) {
+    int isLast = 0;
+    NCCLCHECK(ncclCpuBarrierIn(comm, &isLast));
+    if (isLast) {
+      // I'm the last. Launch all operations.
+      NCCLCHECK(ncclLaunchCooperativeKernelMultiDevice(comm->intraParams, comm->intraCudaDevs, comm->intraRanks, *comm->intraCGMode));
+      NCCLCHECK(ncclCpuBarrierLast(comm));
+    }
   }
   return ncclSuccess;
 }
 
-ncclResult_t ncclCgmdBarrierEnqueueWait(ncclComm_t comm) {
-  struct cudaLaunchParams* params = comm->myParams;
+ncclResult_t ncclBarrierEnqueueWait(ncclComm_t comm) {
+  struct cudaLaunchParams *params = comm->myParams;
   if (params->gridDim.x == 0) return ncclSuccess;
 
   // We can't print the CG mode before the first barrier happened.
@@ -248,7 +259,12 @@ ncclResult_t ncclCgmdBarrierEnqueueWait(ncclComm_t comm) {
         (comm->launchMode == ncclComm::GROUP && comm->groupCudaStream) ? "/Stream" : "");
   }
 
-  NCCLCHECK(ncclCpuBarrierOut(comm));
+  if (comm->launchMode == ncclComm::PARALLEL) {
+    CUDACHECK(cudaLaunchKernel(params->func, params->gridDim, params->blockDim, params->args, params->sharedMem, params->stream));
+  } else {
+    NCCLCHECK(ncclCpuBarrierOut(comm));
+  }
+
   return ncclSuccess;
 }
 
@@ -279,9 +295,6 @@ static ncclResult_t ncclEnqueueProxyStart(struct ncclCudaGraphInfo* cgInfo) {
 
 ncclResult_t ncclEnqueueEvents(ncclComm_t comm) {
   struct cudaLaunchParams *params = comm->myParams;
-  //FIXME
-  params->gridDim.x = params->blockDim.x = 0;
-  params->func = NULL;
 
   // Enqueue event after NCCL kernel
   CUDACHECK(cudaEventRecord(comm->doneEvent, params->stream));
@@ -298,6 +311,8 @@ ncclResult_t ncclEnqueueEvents(ncclComm_t comm) {
   memset(cgInfo->cgElems, 0, sizeof(struct ncclCudaGraphElem)*cgInfo->nElems);
   cgInfo->nElems = 0;
 
+  params->gridDim.x = params->blockDim.x = 0;
+  params->func = NULL;
   return ncclSuccess;
 }
 
@@ -779,9 +794,8 @@ end:
     }
 
     // Common part between graph mode and non-graph mode
-    NCCLCHECK(ncclStreamWait(comm));
-    struct cudaLaunchParams *params = comm->myParams;
-    CUDACHECK(cudaLaunchKernel(params->func, params->gridDim, params->blockDim, params->args, params->sharedMem, params->stream));
+    NCCLCHECK(ncclBarrierEnqueue(comm));
+    NCCLCHECK(ncclBarrierEnqueueWait(comm));
     NCCLCHECK(ncclEnqueueEvents(comm));
     return ncclSuccess;
   }

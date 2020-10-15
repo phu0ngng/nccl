@@ -338,15 +338,14 @@ sched_delta:
       } else {
         ncclEnqueueHostSetup<0>(args->coll.comm->cudaGraphInfo);
       }
+      NCCLCHECKGOTO(ncclBarrierEnqueue(args->coll.comm), ret, end);
     }
   }
   for (int i=0; i<ncclGroupIndex; i++) {
     struct ncclAsyncArgs* args = ncclGroupArgs+i;
     if (args->funcType == ASYNC_FUNC_COLL) {
       CUDACHECKGOTO(cudaSetDevice(args->coll.comm->cudaDev), ret, end);
-      NCCLCHECK(ncclStreamWait(args->coll.comm));
-      struct cudaLaunchParams *params = args->coll.comm->myParams;
-      CUDACHECK(cudaLaunchKernel(params->func, params->gridDim, params->blockDim, params->args, params->sharedMem, params->stream));
+      NCCLCHECKGOTO(ncclBarrierEnqueueWait(args->coll.comm), ret, end);
     }
   }
   for (int i=0; i<ncclGroupIndex; i++) {
