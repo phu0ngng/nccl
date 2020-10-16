@@ -211,14 +211,14 @@ class ncclLL128Primitives {
     /************************ Send **************************/
     if (SEND) {
       for (int i=1; i<NSEND && i<nsend; i++) {
-        int flag = sendFlag(i);
+        uint64_t flag = sendFlag(i);
         uint64_t* ptr = sendPtr(i)+ll128Offset;
         #pragma unroll
         for (int u=0; u<ELEMS_PER_THREAD; u+=2) {
           store128(ptr+u*WARP_SIZE, v[u], flagThread ? flag : v[u+1]);
         }
       }
-      int flag = sendFlag(0);
+      uint64_t flag = sendFlag(0);
       uint64_t* ptr = sendPtr(0)+ll128Offset;
       #pragma unroll
       for (int u=0; u<ELEMS_PER_THREAD; u+=2) {
