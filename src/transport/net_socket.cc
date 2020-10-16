@@ -368,7 +368,7 @@ ncclResult_t ncclSocketGetTask(struct ncclSocketComm* comm, int op, void* data, 
     // each request can be divided up to nSocks tasks, and
     // these tasks are distributed to nThreads threads,
     // we need to make sure each thread queue has enough slots for MAX_REQUESTS
-    queue->len = MAX_REQUESTS*comm->nSocks/comm->nThreads;
+    queue->len = MAX_REQUESTS * DIVUP(comm->nSocks, comm->nThreads);
     NCCLCHECK(ncclCalloc(&queue->tasks, queue->len));
     queue->next = 0;
     res->comm = comm;
