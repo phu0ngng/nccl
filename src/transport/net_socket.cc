@@ -365,6 +365,9 @@ ncclResult_t ncclSocketGetTask(struct ncclSocketComm* comm, int op, void* data, 
   struct ncclSocketTaskQueue* queue = &res->threadTaskQueue;
   // create helper threads and prepare per-thread task queue
   if (queue->tasks == NULL) {
+    // each request can be divided up to nSocks tasks, and
+    // these tasks are distributed to nThreads threads,
+    // we need to make sure each thread queue has enough slots for MAX_REQUESTS
     queue->len = MAX_REQUESTS*comm->nSocks/comm->nThreads;
     NCCLCHECK(ncclCalloc(&queue->tasks, queue->len));
     queue->next = 0;
@@ -423,6 +426,7 @@ ncclResult_t ncclSocketTest(void* request, int* done, int* size) {
     // divide into subtasks
     int chunkOffset = 0, i = 0;
     if (r->comm->nSocks > 0) {
+      // each request can be divided up to nSocks tasks
       int taskSize = std::max(MIN_CHUNKSIZE, DIVUP(r->size, r->comm->nSocks));
       while (chunkOffset < r->size) {
         int chunkSize = std::min(taskSize, r->size-chunkOffset);
