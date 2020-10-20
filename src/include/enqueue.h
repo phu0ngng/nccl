@@ -19,7 +19,7 @@ ncclResult_t ncclBarrierEnqueue(struct ncclComm* comm);
 ncclResult_t ncclBarrierEnqueueWait(ncclComm_t comm);
 ncclResult_t ncclEnqueueEvents(struct ncclComm* comm);
 ncclResult_t ncclCommResetLaunchState(ncclComm_t comm);
-ncclResult_t ncclSaveP2pKernel(struct ncclInfo* info);
+ncclResult_t ncclSaveP2pKernelStatic(struct ncclInfo* info);
 ncclResult_t ncclSaveCommKernels(struct ncclComm* comm);
 template<int USING_CUDA_GRAPH>
 void CUDART_CB ncclEnqueueHostSetup(void* arg);

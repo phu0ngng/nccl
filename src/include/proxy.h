@@ -26,6 +26,7 @@ struct ncclProxyArgs {
   uint64_t opCount;
   int protocol;
   int segment; // Only for profiling
+  int delta;
   ncclDataType_t dtype;
   ncclRedOp_t redOp;
   ncclPattern_t pattern;
@@ -82,7 +83,7 @@ enum proxyMode {
 };
 
 ncclResult_t ncclProxySaveColl(struct ncclProxyArgs* args, int nranks);
-ncclResult_t ncclProxySaveP2p(struct ncclInfo* info, struct ncclChannel* channel, int segment);
+ncclResult_t ncclProxySaveP2p(struct ncclComm* comm, struct ncclProxyArgs* args);
 ncclResult_t ncclProxyStart(struct ncclComm* comm);
 ncclResult_t ncclProxyCreate(struct ncclComm* comm);
 ncclResult_t ncclProxyDestroy(struct ncclComm* comm);

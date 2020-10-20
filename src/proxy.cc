@@ -223,31 +223,16 @@ ncclResult_t ncclProxySaveColl(struct ncclProxyArgs* args, int nranks) {
   return ncclSuccess;
 }
 
-ncclResult_t ncclProxySaveP2p(struct ncclInfo* info, struct ncclChannel* channel, int segment) {
-  struct ncclProxyArgs args;
-  memset(&args, 0, sizeof(struct ncclProxyArgs));
-  args.channel = channel;
-  args.sliceSteps = 1;
-  args.chunkSteps = 1;
-  args.protocol = NCCL_PROTO_SIMPLE;
-  args.segment = segment;
-  args.opCount = channel->workFifoTail-1;
-  args.dtype = info->datatype;
-  if (info->delta > 0 && info->recvbytes >= 0) {
-    int peerrecv = (info->comm->nRanks+info->comm->rank-info->delta)%info->comm->nRanks;
-    args.nsteps = DIVUP(info->recvbytes, info->comm->buffSizes[NCCL_PROTO_SIMPLE]/NCCL_STEPS/SENDRECV_SLICEFACTOR);
-    if (args.nsteps == 0) args.nsteps = 1;
-    args.recvbytes = info->recvbytes;
-    args.sendbytes = 0;
-    NCCLCHECK(SaveProxy(proxyRecv, peerrecv, &args));
+ncclResult_t ncclProxySaveP2p(struct ncclComm* comm, struct ncclProxyArgs* args) {
+  struct ncclChannel* channel = args->channel;
+  args->opCount = channel->workFifoTail-1;
+  if (args->delta > 0 && args->recvbytes >= 0) {
+    int peerrecv = (comm->nRanks+comm->rank-args->delta)%comm->nRanks;
+    NCCLCHECK(SaveProxy(proxyRecv, peerrecv, args));
   }
-  if (info->delta > 0 && info->sendbytes >= 0) {
-    int peersend = (info->comm->rank+info->delta)%info->comm->nRanks;
-    args.nsteps = DIVUP(info->sendbytes, info->comm->buffSizes[NCCL_PROTO_SIMPLE]/NCCL_STEPS/SENDRECV_SLICEFACTOR);
-    if (args.nsteps == 0) args.nsteps = 1;
-    args.sendbytes = info->sendbytes;
-    args.recvbytes = 0;
-    NCCLCHECK(SaveProxy(proxySend, peersend, &args));
+  if (args->delta > 0 && args->sendbytes >= 0) {
+    int peersend = (comm->rank+args->delta)%comm->nRanks;
+    NCCLCHECK(SaveProxy(proxySend, peersend, args));
   }
   return ncclSuccess;
 }
