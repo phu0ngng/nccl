@@ -243,7 +243,7 @@ sched_delta:
           struct ncclP2Pinfo* recv = p2pRecvs[from].head;
           struct ncclP2Pinfo* send = p2pSends[to].head;
           if (recv != NULL || send != NULL) {
-            ssize_t totRecvBytes = 0, totSendBytes = 0;
+            ssize_t totRecvBytes = -1, totSendBytes = -1;
             if (recv != NULL) totRecvBytes = recv->nbytes;
             if (send != NULL) totSendBytes = send->nbytes;
             ssize_t recvChunkSize = getP2pNchannels(totRecvBytes, nChannelsMin, nChannelsMax, stepSize, SENDRECV_SLICEFACTOR*stepSize);
