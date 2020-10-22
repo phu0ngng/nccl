@@ -241,7 +241,7 @@ static ncclResult_t commAlloc(ncclComm_t* comret, int ndev, int rank) {
   *comm->abortFlag = 0;
 
   comm->argsptr = &comm->args;
-  comm->collNetSupport = 0;
+  comm->collNetNchannels = 0;
 
   NCCLCHECK(ncclCalloc(&comm->asyncOps, NCCL_MAX_OPS));
   comm->asyncOpCount = 0;
@@ -542,9 +542,7 @@ static ncclResult_t checkCollNetSetup(struct ncclComm* comm, int rank, int collN
       peer->recv.transportResources = NULL; // avoid double free
     }
     // Set support to 0
-    comm->collNetSupport = 0;
-  } else {
-    comm->collNetSupport = 1;
+    comm->collNetNchannels = 0;
   }
   return ncclSuccess;
 }
@@ -764,6 +762,12 @@ static ncclResult_t initTransportsRank(struct ncclComm* comm, ncclUniqueId* comm
   }
 
   comm->nChannels = treeGraph.nChannels = ringGraph.nChannels = std::min(treeGraph.nChannels, ringGraph.nChannels);
+  if (comm->nNodes > 1 && ncclParamCollNetEnable() == 1 && collNetSupport() == 1) {
+    comm->collNetNchannels = collNetGraph.nChannels;
+  } else {
+    comm->collNetNchannels = 0;
+  }
+
   if (comm->nChannels < nChannelsOrig) {
     // We started duplicating channels during Preset(), so we need to move the
     // duplicated channels since we have removed some.
@@ -774,9 +778,7 @@ static ncclResult_t initTransportsRank(struct ncclComm* comm, ncclUniqueId* comm
   NCCLCHECK(ncclCalloc(&rings, nranks*MAXCHANNELS));
 
   NCCLCHECK(ncclTopoPostset(comm, nodesFirstRank, nodesTreePatterns, allTopoRanks, rings));
-  if (comm->nNodes > 1 &&
-      ncclParamCollNetEnable() == 1 &&
-      collNetSupport() && collNetGraph.nChannels) {
+  if (comm->collNetNchannels > 0) {
     NCCLCHECK(ncclTopoConnectCollNet(comm, &collNetGraph, rank));
   }
 
@@ -829,15 +831,12 @@ static ncclResult_t initTransportsRank(struct ncclComm* comm, ncclUniqueId* comm
   INFO(NCCL_INIT, "Connected all trees");
 
   // Check if we can setup CollNet
-  if (comm->nNodes > 1 &&
-      ncclParamCollNetEnable() == 1 &&
-      collNetSupport() && collNetGraph.nChannels) {
-    int logicChannels = collNetGraph.nChannels;
+  if (comm->collNetNchannels > 0) {
     int collNetSetupFail = 0;
     const int recvIndex = 0;  // recv GPU index is always 0
     const int sendIndex = collNetGraph.pattern == NCCL_TOPO_PATTERN_TREE ? 0 : 1;  // send GPU index depends on topo pattern
-    for (int c=0; c<logicChannels; c++) {
-      struct ncclChannel* channelRecv = comm->channels+logicChannels+c;
+    for (int c=0; c<comm->collNetNchannels; c++) {
+      struct ncclChannel* channelRecv = comm->channels+comm->collNetNchannels+c;
       struct ncclChannel* channelSend = comm->channels+c;
       NCCLCHECK(ncclTransportP2pConnect(comm, channelRecv, 1, &channelRecv->collTree.up, 1, channelRecv->collTree.down));
       NCCLCHECK(ncclTransportP2pConnect(comm, channelSend, 1, channelSend->collTree.down, 1, &channelSend->collTree.up));
