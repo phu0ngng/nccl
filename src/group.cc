@@ -137,7 +137,7 @@ void* ncclAsyncThreadPreconnect(void* args_) {
   return args;
 }
 
-size_t getP2pNchannels(size_t totalSize, int minChannels, int maxChannels, size_t minSize, size_t maxSize) {
+static size_t getP2pChunkSize(size_t totalSize, int minChannels, int maxChannels, size_t minSize, size_t maxSize) {
   size_t size = std::max(minSize, DIVUP(totalSize, minChannels));
   int nChannels = minChannels;
   while (size > maxSize && nChannels <= maxChannels/2) {
@@ -245,8 +245,8 @@ sched_delta:
             ssize_t totRecvBytes = -1, totSendBytes = -1;
             if (recv != NULL) totRecvBytes = recv->nbytes;
             if (send != NULL) totSendBytes = send->nbytes;
-            ssize_t recvChunkSize = getP2pNchannels(totRecvBytes, nChannelsMin, nChannelsMax, stepSize, SENDRECV_SLICEFACTOR*stepSize);
-            ssize_t sendChunkSize = getP2pNchannels(totSendBytes, nChannelsMin, nChannelsMax, stepSize, SENDRECV_SLICEFACTOR*stepSize);
+            ssize_t recvChunkSize = getP2pChunkSize(totRecvBytes, nChannelsMin, nChannelsMax, stepSize, SENDRECV_SLICEFACTOR*stepSize);
+            ssize_t sendChunkSize = getP2pChunkSize(totSendBytes, nChannelsMin, nChannelsMax, stepSize, SENDRECV_SLICEFACTOR*stepSize);
 
             ssize_t sendOffset = 0;
             ssize_t recvOffset = 0;
