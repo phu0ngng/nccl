@@ -224,11 +224,10 @@ ncclResult_t ncclGroupEnd() {
       // Try to use all channels
       int nChannelsMax = comm->p2pnChannelsPerPeer;
       int nChannelsMin = nChannelsMax;
-      int p2pMaxCount = std::max(comm->p2pSendCount, comm->p2pRecvCount);
       // Try to use all channels, but one channel per operation.
-      while (nChannelsMin*p2pMaxCount > comm->p2pnChannels && nChannelsMin > 1) nChannelsMin /= 2;
+      while (nChannelsMin*comm->nRanks > comm->p2pnChannels && nChannelsMin > 1) nChannelsMin /= 2;
       // Avoid overloading channels with 8+ operations as we loose the sync warp, hence a bit of bandwidth.
-      while (nChannelsMax*p2pMaxCount > comm->p2pnChannels*4 && nChannelsMax > 1) nChannelsMax /= 2;
+      while (nChannelsMax*comm->nRanks > comm->p2pnChannels*4 && nChannelsMax > 1) nChannelsMax /= 2;
 
       while (comm->p2pSendCount > 0 || comm->p2pRecvCount > 0) {
         // schedule delta 0, +1, -1, +2, -2, ...
