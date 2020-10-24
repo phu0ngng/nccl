@@ -164,6 +164,29 @@ TYPED_TEST(ncclSendRecv_test, DISABLED_sendrecv_self) {
                 this->DataType(), 0, this->comms[0], this->streams[0]));
     ASSERT_EQ(ncclSuccess, ncclGroupEnd());
 };
+// multi ops per pair
+TYPED_TEST(ncclSendRecv_test, multi_ops_per_pair) {
+    int nSegs = 2;
+    size_t size = std::min(this->N, 1024 * 1024) / nSegs;
+    ASSERT_EQ(ncclSuccess, ncclGroupStart());
+    for (int i = 0; i < this->nVis; ++i) {
+        for (int s = 0; s < nSegs; ++s) {
+            ASSERT_EQ(ncclSuccess,
+                      ncclSend(this->sendbuffs[i] + s * size, size,
+                                    this->DataType(),
+                                    (i+1) % this->nVis,
+                                    this->comms[i], this->streams[i]))
+                << "i" << i << ", " << std::endl;
+            ASSERT_EQ(ncclSuccess,
+                      ncclRecv(this->recvbuffs[i] + s * size, size,
+                                    this->DataType(),
+                                    (i-1+this->nVis) % this->nVis,
+                                    this->comms[i], this->streams[i]))
+                << "i" << i << ", " << std::endl;
+         }
+    }
+    ASSERT_EQ(ncclSuccess, ncclGroupEnd());
+};
 // sendbuff
 TYPED_TEST(ncclSendRecv_test, sendbuf_null) {
     int i = 0;
