@@ -15,15 +15,15 @@ ncclResult_t ncclEnqueueCheck(struct ncclInfo* info);
 ncclResult_t ncclCpuBarrierIn(struct ncclComm* comm, int* isLast);
 ncclResult_t ncclCpuBarrierLast(struct ncclComm* comm);
 ncclResult_t ncclCpuBarrierOut(struct ncclComm* comm);
-ncclResult_t ncclBarrierEnqueue(struct ncclComm* comm);
-ncclResult_t ncclBarrierEnqueueWait(ncclComm_t comm);
-ncclResult_t ncclEnqueueEvents(struct ncclComm* comm);
-ncclResult_t ncclCommResetLaunchState(ncclComm_t comm);
-ncclResult_t ncclSaveP2pKernelStatic(struct ncclInfo* info);
-ncclResult_t ncclSaveCommKernels(struct ncclComm* comm);
+ncclResult_t ncclLaunchBarrier(struct ncclComm* comm);
+ncclResult_t ncclLaunch(ncclComm_t comm);
+ncclResult_t ncclRecordEvents(struct ncclComm* comm);
+ncclResult_t ncclLaunchReset(ncclComm_t comm);
+ncclResult_t ncclSetupP2pKernel(struct ncclInfo* info);
+ncclResult_t ncclSetupAsyncKernels(struct ncclComm* comm);
 template<int USING_CUDA_GRAPH>
 void CUDART_CB ncclEnqueueHostSetup(void* arg);
 ncclResult_t ncclGetCudaGraph(ncclComm_t comm, cudaGraph_t* graph, int* usingCudaGraph);
-ncclResult_t ncclCudaGraphAddHostSetup(ncclComm_t comm, cudaGraph_t graph);
+ncclResult_t ncclCudaGraphHostSetup(ncclComm_t comm, cudaGraph_t graph);
 
 #endif // End include guard

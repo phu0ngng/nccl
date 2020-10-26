@@ -191,7 +191,7 @@ ncclResult_t ncclCpuBarrierOut(struct ncclComm* comm) {
   return ncclSuccess;
 }
 
-ncclResult_t ncclBarrierEnqueue(struct ncclComm* comm) {
+ncclResult_t ncclLaunchBarrier(struct ncclComm* comm) {
   struct cudaLaunchParams* params = comm->myParams;
   if (params->gridDim.x == 0) return ncclSuccess;
 
@@ -222,7 +222,7 @@ ncclResult_t ncclBarrierEnqueue(struct ncclComm* comm) {
   return ncclSuccess;
 }
 
-ncclResult_t ncclBarrierEnqueueWait(ncclComm_t comm) {
+ncclResult_t ncclLaunch(ncclComm_t comm) {
   struct cudaLaunchParams *params = comm->myParams;
   if (params->gridDim.x == 0) return ncclSuccess;
 
@@ -269,7 +269,7 @@ static ncclResult_t ncclEnqueueProxyStart(struct ncclCudaGraphInfo* cgInfo) {
   return ncclSuccess;
 }
 
-ncclResult_t ncclEnqueueEvents(ncclComm_t comm) {
+ncclResult_t ncclRecordEvents(ncclComm_t comm) {
   struct cudaLaunchParams *params = comm->myParams;
 
   // Enqueue event after NCCL kernel
@@ -282,7 +282,7 @@ ncclResult_t ncclEnqueueEvents(ncclComm_t comm) {
   return ncclSuccess;
 }
 
-ncclResult_t ncclCommResetLaunchState(ncclComm_t comm) {
+ncclResult_t ncclLaunchReset(ncclComm_t comm) {
   comm->userStreamSet = false;
 
   // We are finishing capturing CUDA graph
@@ -484,7 +484,7 @@ static ncclResult_t checkSetStream(struct ncclInfo* info) {
 
 // Prepare things that will not change between graph launches
 // including cuda launch parameters
-static ncclResult_t ncclSaveKernelStatic(struct ncclInfo* info) {
+static ncclResult_t ncclSetupCollKernel(struct ncclInfo* info) {
   ncclComm_t comm = info->comm;
   if (comm->nRanks == 1) {
     if (info->sendbuff != info->recvbuff)
@@ -520,7 +520,7 @@ static ncclResult_t ncclSaveKernelStatic(struct ncclInfo* info) {
 
 // Prepare things that will change between graph launches
 // including cuda kernel args
-static ncclResult_t ncclSaveKernelDynamic(ncclComm_t comm, struct ncclCudaGraphElem* cgElem) {
+static ncclResult_t ncclEnqueueCollKernel(ncclComm_t comm, struct ncclCudaGraphElem* cgElem) {
   struct ncclWorkElem* work = &cgElem->work;
   struct ncclProxyArgs* proxyArgs = &cgElem->proxyArgs;
 
@@ -549,14 +549,14 @@ static ncclResult_t ncclSaveKernelDynamic(ncclComm_t comm, struct ncclCudaGraphE
 #define NCCL_MIN_CHANNEL_SIZE (NCCL_LL_THREAD_THRESHOLD*64)
 #define NCCL_AGG_CHANNEL_SIZE (1LL << 21) /* 2 MiB, ideal per-channel size to fully utilize bandwidth */
 
-ncclResult_t ncclSaveCommKernels(ncclComm_t comm) {
+ncclResult_t ncclSetupAsyncKernels(ncclComm_t comm) {
   if (comm->asyncOpCount == 0) {
     return ncclSuccess;
   } else if (comm->asyncOpCount == 1) {
     // No aggregation
     struct ncclInfo* info = comm->asyncOps;
     info->nChannels = 0;
-    NCCLCHECK(ncclSaveKernelStatic(info));
+    NCCLCHECK(ncclSetupCollKernel(info));
   } else {
     // Aggregation
     size_t channelSize = NCCL_AGG_CHANNEL_SIZE * comm->nRanks;  // scale channel size based on nranks as latency increases
@@ -565,7 +565,7 @@ ncclResult_t ncclSaveCommKernels(ncclComm_t comm) {
     for (int c = 0; c < comm->asyncOpCount; c++) {
       struct ncclInfo* info = comm->asyncOps+c;
       info->nChannels = std::min((int)DIVUP(info->nBytes, channelSize), comm->nChannels); // assign number of channels
-      NCCLCHECK(ncclSaveKernelStatic(info));
+      NCCLCHECK(ncclSetupCollKernel(info));
     }
     comm->args.active = 1;  // There are more than 1 op, hence the inlined one is not the last
   }
@@ -642,7 +642,7 @@ static ncclResult_t computeP2pWorkElem(struct ncclInfo* info /* input */, struct
   return ncclSuccess;
 }
 
-static ncclResult_t saveP2pOp(struct ncclWorkElem* elem /* input */, struct ncclWork* work, int s) {
+static ncclResult_t enqueueP2pOp(struct ncclWorkElem* elem /* input */, struct ncclWork* work, int s) {
   // Copy element into corresponding segment of ncclWork
   memcpy(work->elems+s, elem, sizeof(struct ncclWorkElem));
 
@@ -683,7 +683,7 @@ static ncclResult_t computeP2pProxyArgs(struct ncclInfo* info, struct ncclProxyA
   return ncclSuccess;
 }
 
-ncclResult_t ncclSaveP2pKernelDynamic(struct ncclComm* comm, struct ncclCudaGraphElem* cgElem) {
+ncclResult_t ncclEnqueueP2pKernel(struct ncclComm* comm, struct ncclCudaGraphElem* cgElem) {
   struct ncclWorkElem* workElem = &cgElem->work;
   struct ncclProxyArgs* proxyArgs = &cgElem->proxyArgs;
 
@@ -702,13 +702,13 @@ ncclResult_t ncclSaveP2pKernelDynamic(struct ncclComm* comm, struct ncclCudaGrap
   }
 
   // store work element into FIFO
-  NCCLCHECK(saveP2pOp(workElem, w, segment));
+  NCCLCHECK(enqueueP2pOp(workElem, w, segment));
   proxyArgs->segment = segment;
   NCCLCHECK(ncclProxySaveP2p(comm, proxyArgs));
   return ncclSuccess;
 }
 
-ncclResult_t ncclSaveP2pKernelStatic(struct ncclInfo* info) {
+ncclResult_t ncclSetupP2pKernel(struct ncclInfo* info) {
   ncclComm* comm = info->comm;
   // Compute cuda kernel arg and proxy arg templates
   struct ncclCudaGraphInfo* cgInfo = comm->cudaGraphInfo;
@@ -739,9 +739,9 @@ void CUDART_CB ncclEnqueueHostSetup(void* arg) {
   for (int i=0; i<cgInfo->nElems; i++) {
     ncclCudaGraphElem* cgElem = cgInfo->cgElems+i;
     if (cgElem->work.funcIndex == FUNC_INDEX_P2P)
-      ncclSaveP2pKernelDynamic(comm, cgElem);
+      ncclEnqueueP2pKernel(comm, cgElem);
     else
-      ncclSaveKernelDynamic(comm, cgElem);
+      ncclEnqueueCollKernel(comm, cgElem);
   }
 
   setupLaunch(cgInfo, USING_CUDA_GRAPH);
@@ -768,7 +768,7 @@ ncclResult_t ncclGetCudaGraph(ncclComm_t comm, cudaGraph_t* graph, int* usingCud
   return ncclSuccess;
 }
 
-ncclResult_t ncclCudaGraphAddHostSetup(ncclComm_t comm, cudaGraph_t graph) {
+ncclResult_t ncclCudaGraphHostSetup(ncclComm_t comm, cudaGraph_t graph) {
   struct ncclCudaGraphInfo* cgInfo = comm->cudaGraphInfo;
   cudaHostFn_t fn = ncclEnqueueHostSetup<1>;
   size_t argSize = offsetof(struct ncclCudaGraphInfo, cgElems)+cgInfo->nElems*sizeof(struct ncclCudaGraphElem);
@@ -834,20 +834,20 @@ end:
     NCCLCHECK(ncclGetCudaGraph(comm, &graph, &usingCudaGraph));
 
     // Common part between graph mode and non-graph mode
-    NCCLCHECK(ncclSaveKernelStatic(info));
+    NCCLCHECK(ncclSetupCollKernel(info));
 
     // Host setup
     if (usingCudaGraph) {
-      NCCLCHECK(ncclCudaGraphAddHostSetup(comm, graph));
+      NCCLCHECK(ncclCudaGraphHostSetup(comm, graph));
     } else {
       ncclEnqueueHostSetup<0>(comm->cudaGraphInfo);
     }
 
     // Common part between graph mode and non-graph mode
-    NCCLCHECK(ncclBarrierEnqueue(comm));
-    NCCLCHECK(ncclBarrierEnqueueWait(comm));
-    NCCLCHECK(ncclEnqueueEvents(comm));
-    NCCLCHECK(ncclCommResetLaunchState(comm));
+    NCCLCHECK(ncclLaunchBarrier(comm));
+    NCCLCHECK(ncclLaunch(comm));
+    NCCLCHECK(ncclRecordEvents(comm));
+    NCCLCHECK(ncclLaunchReset(comm));
     return ncclSuccess;
   }
 }

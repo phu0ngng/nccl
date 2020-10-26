@@ -125,7 +125,7 @@ static ncclResult_t scheduleSendRecv(struct ncclComm* comm, int delta, int chann
   info.sendbytes = sendbytes;
   info.recvbytes = recvbytes;
   if (delta == 0 && sendbytes != recvbytes) return ncclInvalidUsage;
-  NCCLCHECK(ncclSaveP2pKernelStatic(&info));
+  NCCLCHECK(ncclSetupP2pKernel(&info));
   return ncclSuccess;
 }
 
@@ -325,7 +325,7 @@ sched_delta:
     struct ncclAsyncArgs* args = ncclGroupArgs+i;
     if (args->funcType == ASYNC_FUNC_COLL) {
       ncclComm_t comm = args->coll.comm;
-      NCCLCHECKGOTO(ncclSaveCommKernels(comm), ret, group_cleanup);
+      NCCLCHECKGOTO(ncclSetupAsyncKernels(comm), ret, group_cleanup);
     }
   }
   for (int i=0; i<ncclGroupIndex; i++) {
@@ -334,18 +334,18 @@ sched_delta:
       if (args->coll.comm->userStream == NULL)
         CUDACHECKGOTO(cudaSetDevice(args->coll.comm->cudaDev), ret, end);
       if (usingCudaGraphAll) {
-        NCCLCHECKGOTO(ncclCudaGraphAddHostSetup(args->coll.comm, graphs[i]), ret, end);
+        NCCLCHECKGOTO(ncclCudaGraphHostSetup(args->coll.comm, graphs[i]), ret, end);
       } else {
         ncclEnqueueHostSetup<0>(args->coll.comm->cudaGraphInfo);
       }
-      NCCLCHECKGOTO(ncclBarrierEnqueue(args->coll.comm), ret, end);
+      NCCLCHECKGOTO(ncclLaunchBarrier(args->coll.comm), ret, end);
     }
   }
   for (int i=0; i<ncclGroupIndex; i++) {
     struct ncclAsyncArgs* args = ncclGroupArgs+i;
     if (args->funcType == ASYNC_FUNC_COLL) {
       CUDACHECKGOTO(cudaSetDevice(args->coll.comm->cudaDev), ret, end);
-      NCCLCHECKGOTO(ncclBarrierEnqueueWait(args->coll.comm), ret, end);
+      NCCLCHECKGOTO(ncclLaunch(args->coll.comm), ret, end);
     }
   }
   for (int i=0; i<ncclGroupIndex; i++) {
@@ -353,8 +353,8 @@ sched_delta:
     if (args->funcType == ASYNC_FUNC_COLL) {
       if (args->coll.comm->userStream == NULL)
         CUDACHECKGOTO(cudaSetDevice(args->coll.comm->cudaDev), ret, end);
-      NCCLCHECKGOTO(ncclEnqueueEvents(args->coll.comm), ret, end);
-      NCCLCHECKGOTO(ncclCommResetLaunchState(args->coll.comm), ret, end);
+      NCCLCHECKGOTO(ncclRecordEvents(args->coll.comm), ret, end);
+      NCCLCHECKGOTO(ncclLaunchReset(args->coll.comm), ret, end);
     }
   }
 
@@ -393,7 +393,7 @@ group_cleanup:
 	pthread_mutex_unlock(&state->poolMutex);
         state->nextOps = NULL;
 
-        ncclCommResetLaunchState(comm);
+        ncclLaunchReset(comm);
       }
     }
   }
