@@ -1012,6 +1012,11 @@ const char* ncclGetErrorString(ncclResult_t code) {
   }
 }
 
+NCCL_API(const char*, ncclGetLastError);
+const char* ncclGetLastError() {
+  return ncclLastError;
+}
+
 NCCL_API(ncclResult_t, ncclCommGetAsyncError, ncclComm_t comm, ncclResult_t *asyncError);
 ncclResult_t ncclCommGetAsyncError(ncclComm_t comm, ncclResult_t *asyncError) {
   NCCLCHECK(PtrCheck(comm, "ncclGetAsyncError", "comm"));
