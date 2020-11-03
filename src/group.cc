@@ -233,7 +233,7 @@ ncclResult_t ncclGroupEnd() {
         // schedule delta 0, +1, -1, +2, -2, ...
         // also make sure we don't do 0 twice, nor +n/2 and -n/2 if n is even.
         for (int d=0; d<=nRanks/4; d++) {
-          int deltas[4] = { d, (nRanks-d)%nRanks, nRanks/2-d, nRanks-(nRanks/2-d) };
+          int deltas[4] = { d, (nRanks-d)%nRanks, nRanks/2-d, (nRanks-(nRanks/2-d))%nRanks };
           int index = 0;
           int delta = deltas[index];
 sched_delta:
