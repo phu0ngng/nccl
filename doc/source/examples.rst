@@ -188,6 +188,7 @@ The following code depicts a complete working example with multiple MPI processe
  #include "mpi.h"
  #include <unistd.h>
  #include <stdint.h>
+ #include <stdlib.h>
  
  
  #define MPICHECK(cmd) do {                          \
