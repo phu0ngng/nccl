@@ -10,16 +10,18 @@ TYPED_TEST_CASE(ncclSendRecv_test, testDataTypes);
 TYPED_TEST(ncclSendRecv_test, DISABLED_simple) {
     size_t size = std::min(this->N, 1024 * 1024);
     ASSERT_EQ(ncclSuccess, ncclGroupStart());
-    ASSERT_EQ(ncclSuccess,
-              ncclSend(this->sendbuffs[0], size,
-                            this->DataType(), 1,
-                            this->comms[0], this->streams[0]))
+    if (this->nVis >= 2) {
+      ASSERT_EQ(ncclSuccess,
+          ncclSend(this->sendbuffs[0], size,
+            this->DataType(), 1,
+            this->comms[0], this->streams[0]))
         << "i" << 0 << ", " << std::endl;
-    ASSERT_EQ(ncclSuccess,
-              ncclRecv(this->recvbuffs[1], size,
-                            this->DataType(), 0,
-                            this->comms[1], this->streams[1]))
+      ASSERT_EQ(ncclSuccess,
+          ncclRecv(this->recvbuffs[1], size,
+            this->DataType(), 0,
+            this->comms[1], this->streams[1]))
         << "i" << 1 << ", " << std::endl;
+    }
     ASSERT_EQ(ncclSuccess, ncclGroupEnd());
 };
 TYPED_TEST(ncclSendRecv_test, ring) {
@@ -162,6 +164,29 @@ TYPED_TEST(ncclSendRecv_test, DISABLED_sendrecv_self) {
     EXPECT_EQ(ncclSuccess,
             ncclRecv(this->recvbuffs[0], std::min(this->N, 1024 * 1024),
                 this->DataType(), 0, this->comms[0], this->streams[0]));
+    ASSERT_EQ(ncclSuccess, ncclGroupEnd());
+};
+// multi ops per pair
+TYPED_TEST(ncclSendRecv_test, multi_ops_per_pair) {
+    int nSegs = 2;
+    size_t size = std::min(this->N, 1024 * 1024) / nSegs;
+    ASSERT_EQ(ncclSuccess, ncclGroupStart());
+    for (int i = 0; i < this->nVis; ++i) {
+        for (int s = 0; s < nSegs; ++s) {
+            ASSERT_EQ(ncclSuccess,
+                      ncclSend(this->sendbuffs[i] + s * size, size,
+                                    this->DataType(),
+                                    (i+1) % this->nVis,
+                                    this->comms[i], this->streams[i]))
+                << "i" << i << ", " << std::endl;
+            ASSERT_EQ(ncclSuccess,
+                      ncclRecv(this->recvbuffs[i] + s * size, size,
+                                    this->DataType(),
+                                    (i-1+this->nVis) % this->nVis,
+                                    this->comms[i], this->streams[i]))
+                << "i" << i << ", " << std::endl;
+         }
+    }
     ASSERT_EQ(ncclSuccess, ncclGroupEnd());
 };
 // sendbuff

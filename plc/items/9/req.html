@@ -1,0 +1,62 @@
+<!DOCTYPE html>
+<html>
+<head>
+<title>NCCL-9 : Shared buffers for network communication : Requirements</title>
+<link rel="stylesheet" type="text/css" href="../../html/css/doc.css">
+</head>
+<body>
+<center><h1>NCCL-9 : Shared buffers for network communication<br>Requirements</h1></center>
+<!-- table of contents, auto-generated -->
+$CONTENTS
+<!-- end of table of contents -->
+<h2>Project Context and Purpose</h2>
+NCCL provides fast inter-GPU communication for parallel applications.
+
+<h2>NVbugs / Jira Tickets</h2>
+<p><a href="http://nvbugs.nvidia.com/12345">NVBug 12345</a>
+<p><a href="https://jirasw.nvidia.com/browse/NCCL-12345">Jira NCCL-12345</a>
+
+<h2>User Experience</h2>
+NCCL is used through deep learning frameworks or other HPC applications to
+accelerate GPU-to-GPU communication. It is supposed to be transparent to the
+user.
+
+<h2>Assumptions, constraints and dependencies</h2>
+None.
+
+<h2>Use Cases</h2>
+As we scale, NCCL allocates a distinct 4MB FIFO for each peer it needs to communicate with.
+This can become a problem for alltoall on 64-1024 GPUs (or more).
+
+<h2>Functional Requirements</h2>
+None.
+
+<h2>System Requirements</h2>
+GPU Memory usage needs to be capped as we scale.
+
+<h2>Interface Requirements</h2>
+None.
+
+<h2>KPI Requirements</h2>
+None.
+
+<h2>Platform Requirements</h2>
+N/A
+<h2>Security Requirements</h2>
+NCCL is a user library and benefits from the user-mode security.
+<h2>Legal and Standards Requirements</h2>
+N/A
+<h2>Telemetry Requirements</h2>
+N/A
+<h2>Backward Compatibility Requirements</h2>
+Changes do not need to be backward compatible.
+<h2>Virtualization Requirements</h2>
+N/A
+
+<h2>Signoff list</h2>
+<p><!-- Author : First Last -->
+<p><!-- Reviewer : First Last -->
+<p><!-- Reviewer : First Last  -->
+<p><!-- Product Manager : First Last -->
+
+<!-- do not end body and html, bottom will be auto-generated -->

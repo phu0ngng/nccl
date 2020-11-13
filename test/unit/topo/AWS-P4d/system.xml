@@ -1,0 +1,114 @@
+<system version="1">
+  <cpu numaid="0" affinity="000000ff,ffff0000,00ffffff" arch="x86_64" vendor="GenuineIntel" familyid="6" modelid="85">
+    <pci busid="ffff:ff:01.0" class="0x060400" link_speed="8 GT/s" link_width="16">
+      <pci busid="0000:10:1c.0" class="0x030200" link_speed="8 GT/s" link_width="16">
+        <gpu dev="0" sm="80" rank="0" gdr="1">
+          <nvlink target="0000:80:1d.0" count="2" tclass="0x068000"/>
+          <nvlink target="0000:80:1a.0" count="2" tclass="0x068000"/>
+          <nvlink target="0000:80:1c.0" count="2" tclass="0x068000"/>
+          <nvlink target="0000:80:1f.0" count="2" tclass="0x068000"/>
+          <nvlink target="0000:80:1b.0" count="2" tclass="0x068000"/>
+          <nvlink target="0000:80:1e.0" count="2" tclass="0x068000"/>
+        </gpu>
+      </pci>
+      <pci busid="0000:10:1d.0" class="0x030200" link_speed="8 GT/s" link_width="16">
+        <gpu dev="1" sm="80" rank="1" gdr="1">
+          <nvlink target="0000:80:1d.0" count="2" tclass="0x068000"/>
+          <nvlink target="0000:80:1a.0" count="2" tclass="0x068000"/>
+          <nvlink target="0000:80:1c.0" count="2" tclass="0x068000"/>
+          <nvlink target="0000:80:1f.0" count="2" tclass="0x068000"/>
+          <nvlink target="0000:80:1b.0" count="2" tclass="0x068000"/>
+          <nvlink target="0000:80:1e.0" count="2" tclass="0x068000"/>
+        </gpu>
+      </pci>
+      <pci busid="0000:10:1b.0" class="0x020000" link_speed="8 GT/s" link_width="16">
+        <nic>
+          <net name="efa_0" dev="0" speed="100000" port="1" guid="0x0" maxconn="256" gdr="1"/>
+        </nic>
+      </pci>
+    </pci>
+    <pci busid="ffff:ff:02.0" class="0x060400" link_speed="8 GT/s" link_width="16">
+      <pci busid="0000:20:1c.0" class="0x030200" link_speed="8 GT/s" link_width="16">
+        <gpu dev="2" sm="80" rank="2" gdr="1">
+          <nvlink target="0000:80:1d.0" count="2" tclass="0x068000"/>
+          <nvlink target="0000:80:1a.0" count="2" tclass="0x068000"/>
+          <nvlink target="0000:80:1c.0" count="2" tclass="0x068000"/>
+          <nvlink target="0000:80:1f.0" count="2" tclass="0x068000"/>
+          <nvlink target="0000:80:1b.0" count="2" tclass="0x068000"/>
+          <nvlink target="0000:80:1e.0" count="2" tclass="0x068000"/>
+        </gpu>
+      </pci>
+      <pci busid="0000:20:1d.0" class="0x030200" link_speed="8 GT/s" link_width="16">
+        <gpu dev="3" sm="80" rank="3" gdr="1">
+          <nvlink target="0000:80:1d.0" count="2" tclass="0x068000"/>
+          <nvlink target="0000:80:1a.0" count="2" tclass="0x068000"/>
+          <nvlink target="0000:80:1c.0" count="2" tclass="0x068000"/>
+          <nvlink target="0000:80:1f.0" count="2" tclass="0x068000"/>
+          <nvlink target="0000:80:1b.0" count="2" tclass="0x068000"/>
+          <nvlink target="0000:80:1e.0" count="2" tclass="0x068000"/>
+        </gpu>
+      </pci>
+      <pci busid="0000:20:1b.0" class="0x020000" link_speed="8 GT/s" link_width="16">
+        <nic>
+          <net name="efa_1" dev="1" speed="100000" port="1" guid="0x1" maxconn="256" gdr="1"/>
+        </nic>
+      </pci>
+    </pci>
+  </cpu>
+  <cpu numaid="1" affinity="ffffff00,0000ffff,ff000000" arch="x86_64" vendor="GenuineIntel" familyid="6" modelid="85">
+    <pci busid="ffff:ff:03.0" class="0x060400" link_speed="8 GT/s" link_width="16">
+      <pci busid="0000:90:1c.0" class="0x030200" link_speed="8 GT/s" link_width="16">
+        <gpu dev="4" sm="80" rank="4" gdr="1">
+          <nvlink target="0000:80:1d.0" count="2" tclass="0x068000"/>
+          <nvlink target="0000:80:1a.0" count="2" tclass="0x068000"/>
+          <nvlink target="0000:80:1c.0" count="2" tclass="0x068000"/>
+          <nvlink target="0000:80:1f.0" count="2" tclass="0x068000"/>
+          <nvlink target="0000:80:1b.0" count="2" tclass="0x068000"/>
+          <nvlink target="0000:80:1e.0" count="2" tclass="0x068000"/>
+        </gpu>
+      </pci>
+      <pci busid="0000:90:1d.0" class="0x030200" link_speed="8 GT/s" link_width="16">
+        <gpu dev="5" sm="80" rank="5" gdr="1">
+          <nvlink target="0000:80:1d.0" count="2" tclass="0x068000"/>
+          <nvlink target="0000:80:1a.0" count="2" tclass="0x068000"/>
+          <nvlink target="0000:80:1c.0" count="2" tclass="0x068000"/>
+          <nvlink target="0000:80:1f.0" count="2" tclass="0x068000"/>
+          <nvlink target="0000:80:1b.0" count="2" tclass="0x068000"/>
+          <nvlink target="0000:80:1e.0" count="2" tclass="0x068000"/>
+        </gpu>
+      </pci>
+      <pci busid="0000:90:1b.0" class="0x020000" link_speed="8 GT/s" link_width="16">
+        <nic>
+          <net name="efa_2" dev="2" speed="100000" port="1" guid="0x2" maxconn="256" gdr="1"/>
+        </nic>
+      </pci>
+    </pci>
+    <pci busid="ffff:ff:04.0" class="0x060400" link_speed="8 GT/s" link_width="16">
+      <pci busid="0000:a0:1c.0" class="0x030200" link_speed="8 GT/s" link_width="16">
+        <gpu dev="6" sm="80" rank="6" gdr="1">
+          <nvlink target="0000:80:1d.0" count="2" tclass="0x068000"/>
+          <nvlink target="0000:80:1a.0" count="2" tclass="0x068000"/>
+          <nvlink target="0000:80:1c.0" count="2" tclass="0x068000"/>
+          <nvlink target="0000:80:1f.0" count="2" tclass="0x068000"/>
+          <nvlink target="0000:80:1b.0" count="2" tclass="0x068000"/>
+          <nvlink target="0000:80:1e.0" count="2" tclass="0x068000"/>
+        </gpu>
+      </pci>
+      <pci busid="0000:a0:1d.0" class="0x030200" link_speed="8 GT/s" link_width="16">
+        <gpu dev="7" sm="80" rank="7" gdr="1">
+          <nvlink target="0000:80:1d.0" count="2" tclass="0x068000"/>
+          <nvlink target="0000:80:1a.0" count="2" tclass="0x068000"/>
+          <nvlink target="0000:80:1c.0" count="2" tclass="0x068000"/>
+          <nvlink target="0000:80:1f.0" count="2" tclass="0x068000"/>
+          <nvlink target="0000:80:1b.0" count="2" tclass="0x068000"/>
+          <nvlink target="0000:80:1e.0" count="2" tclass="0x068000"/>
+        </gpu>
+      </pci>
+      <pci busid="0000:a0:1b.0" class="0x020000" link_speed="8 GT/s" link_width="16">
+        <nic>
+          <net name="efa_3" dev="3" speed="100000" port="1" guid="0x3" maxconn="256" gdr="1"/>
+        </nic>
+      </pci>
+    </pci>
+  </cpu>
+</system>

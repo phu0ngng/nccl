@@ -137,7 +137,7 @@ void* ncclAsyncThreadPreconnect(void* args_) {
   return args;
 }
 
-size_t getP2pNchannels(size_t totalSize, int minChannels, int maxChannels, size_t minSize, size_t maxSize) {
+static size_t getP2pChunkSize(size_t totalSize, int minChannels, int maxChannels, size_t minSize, size_t maxSize) {
   size_t size = std::max(minSize, DIVUP(totalSize, minChannels));
   int nChannels = minChannels;
   while (size > maxSize && nChannels <= maxChannels/2) {
@@ -225,17 +225,16 @@ ncclResult_t ncclGroupEnd() {
       // Try to use all channels
       int nChannelsMax = comm->p2pnChannelsPerPeer;
       int nChannelsMin = nChannelsMax;
-      int p2pMaxCount = std::max(comm->p2pSendCount, comm->p2pRecvCount);
       // Try to use all channels, but one channel per operation.
-      while (nChannelsMin*p2pMaxCount > comm->p2pnChannels && nChannelsMin > 1) nChannelsMin /= 2;
+      while (nChannelsMin*comm->nRanks > comm->p2pnChannels && nChannelsMin > 1) nChannelsMin /= 2;
       // Avoid overloading channels with 8+ operations as we loose the sync warp, hence a bit of bandwidth.
-      while (nChannelsMax*p2pMaxCount > comm->p2pnChannels*4 && nChannelsMax > 1) nChannelsMax /= 2;
+      while (nChannelsMax*comm->nRanks > comm->p2pnChannels*4 && nChannelsMax > 1) nChannelsMax /= 2;
 
       while (comm->p2pSendCount > 0 || comm->p2pRecvCount > 0) {
         // schedule delta 0, +1, -1, +2, -2, ...
         // also make sure we don't do 0 twice, nor +n/2 and -n/2 if n is even.
         for (int d=0; d<=nRanks/4; d++) {
-          int deltas[4] = { d, (nRanks-d)%nRanks, nRanks/2-d, nRanks-(nRanks/2-d) };
+          int deltas[4] = { d, (nRanks-d)%nRanks, nRanks/2-d, (nRanks-(nRanks/2-d))%nRanks };
           int index = 0;
           int delta = deltas[index];
 sched_delta:
@@ -244,11 +243,11 @@ sched_delta:
           struct ncclP2Pinfo* recv = p2pRecvs[from].head;
           struct ncclP2Pinfo* send = p2pSends[to].head;
           if (recv != NULL || send != NULL) {
-            ssize_t totRecvBytes = 0, totSendBytes = 0;
+            ssize_t totRecvBytes = -1, totSendBytes = -1;
             if (recv != NULL) totRecvBytes = recv->nbytes;
             if (send != NULL) totSendBytes = send->nbytes;
-            ssize_t recvChunkSize = getP2pNchannels(totRecvBytes, nChannelsMin, nChannelsMax, stepSize, SENDRECV_SLICEFACTOR*stepSize);
-            ssize_t sendChunkSize = getP2pNchannels(totSendBytes, nChannelsMin, nChannelsMax, stepSize, SENDRECV_SLICEFACTOR*stepSize);
+            ssize_t recvChunkSize = getP2pChunkSize(totRecvBytes, nChannelsMin, nChannelsMax, stepSize, SENDRECV_SLICEFACTOR*stepSize);
+            ssize_t sendChunkSize = getP2pChunkSize(totSendBytes, nChannelsMin, nChannelsMax, stepSize, SENDRECV_SLICEFACTOR*stepSize);
 
             ssize_t sendOffset = 0;
             ssize_t recvOffset = 0;

@@ -115,7 +115,6 @@ ncclResult_t GetSocketAddr(int dev, union socketAddress* addr) {
 #define MAX_SOCKETS 64
 #define MAX_THREADS 16
 #define MAX_REQUESTS NCCL_NET_MAX_REQUESTS
-#define MAX_QUEUE_LEN MAX_REQUESTS
 #define MIN_CHUNKSIZE (64*1024)
 
 NCCL_PARAM(SocketNsocksPerThread, "NSOCKS_PERTHREAD", -2);
@@ -151,6 +150,7 @@ struct ncclSocketRequest {
 
 struct ncclSocketTaskQueue {
   int next;
+  int len;
   struct ncclSocketTask* tasks;
 };
 
@@ -190,7 +190,7 @@ void* persistentSocketThread(void *args_) {
   while (1) {
     int idle = 1;
     int mark = myQueue->next; // mark newest task seen
-    for (int i=0; i<MAX_QUEUE_LEN; i+=nSocksPerThread) {
+    for (int i=0; i<myQueue->len; i+=nSocksPerThread) {
       int repeat;
       do {
         repeat = 0;
@@ -365,7 +365,11 @@ ncclResult_t ncclSocketGetTask(struct ncclSocketComm* comm, int op, void* data, 
   struct ncclSocketTaskQueue* queue = &res->threadTaskQueue;
   // create helper threads and prepare per-thread task queue
   if (queue->tasks == NULL) {
-    NCCLCHECK(ncclCalloc(&queue->tasks, MAX_QUEUE_LEN));
+    // each request can be divided up to nSocks tasks, and
+    // these tasks are distributed to nThreads threads,
+    // we need to make sure each thread queue has enough slots for MAX_REQUESTS
+    queue->len = MAX_REQUESTS * DIVUP(comm->nSocks, comm->nThreads);
+    NCCLCHECK(ncclCalloc(&queue->tasks, queue->len));
     queue->next = 0;
     res->comm = comm;
     pthread_mutex_init(&res->threadLock, NULL);
@@ -384,7 +388,7 @@ ncclResult_t ncclSocketGetTask(struct ncclSocketComm* comm, int op, void* data, 
     r->used = 1;
     *req = r;
     pthread_mutex_lock(&res->threadLock);
-    queue->next = (queue->next+1)%MAX_QUEUE_LEN;
+    queue->next = (queue->next+1)%queue->len;
     res->state = start;
     pthread_cond_signal(&res->threadCond);
     pthread_mutex_unlock(&res->threadLock);
@@ -422,6 +426,7 @@ ncclResult_t ncclSocketTest(void* request, int* done, int* size) {
     // divide into subtasks
     int chunkOffset = 0, i = 0;
     if (r->comm->nSocks > 0) {
+      // each request can be divided up to nSocks tasks
       int taskSize = std::max(MIN_CHUNKSIZE, DIVUP(r->size, r->comm->nSocks));
       while (chunkOffset < r->size) {
         int chunkSize = std::min(taskSize, r->size-chunkOffset);

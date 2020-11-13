@@ -684,6 +684,7 @@ static ncclResult_t initTransportsRank(struct ncclComm* comm, ncclUniqueId* comm
     float speedIntra;
     float speedInter;
     int typeIntra;
+    int typeInter;
   };
 
   struct {
@@ -703,16 +704,19 @@ static ncclResult_t initTransportsRank(struct ncclComm* comm, ncclUniqueId* comm
   allGather3Data[rank].tree.speedIntra = treeGraph.speedIntra;
   allGather3Data[rank].tree.speedInter = treeGraph.speedInter;
   allGather3Data[rank].tree.typeIntra = treeGraph.typeIntra;
+  allGather3Data[rank].tree.typeInter = treeGraph.typeInter;
   allGather3Data[rank].ring.pattern = ringGraph.pattern;
   allGather3Data[rank].ring.sameChannels = ringGraph.sameChannels;
   allGather3Data[rank].ring.speedIntra = ringGraph.speedIntra;
   allGather3Data[rank].ring.speedInter = ringGraph.speedInter;
   allGather3Data[rank].ring.typeIntra = ringGraph.typeIntra;
+  allGather3Data[rank].ring.typeInter = ringGraph.typeInter;
   allGather3Data[rank].collNet.pattern = collNetGraph.pattern;
   allGather3Data[rank].collNet.sameChannels = collNetGraph.sameChannels;
   allGather3Data[rank].collNet.speedIntra = collNetGraph.speedIntra;
   allGather3Data[rank].collNet.speedInter = collNetGraph.speedInter;
   allGather3Data[rank].collNet.typeIntra = collNetGraph.typeIntra;
+  allGather3Data[rank].collNet.typeInter = collNetGraph.typeInter;
 
   NCCLCHECK(ncclTopoPreset(comm, &treeGraph, &ringGraph, &collNetGraph, &allGather3Data[rank].topoRanks));
 
@@ -748,14 +752,17 @@ static ncclResult_t initTransportsRank(struct ncclComm* comm, ncclUniqueId* comm
     treeGraph.speedIntra = std::min(allGather3Data[i].tree.speedIntra, treeGraph.speedIntra);
     treeGraph.speedInter = std::min(allGather3Data[i].tree.speedInter, treeGraph.speedInter);
     treeGraph.typeIntra = std::min(allGather3Data[i].tree.typeIntra, treeGraph.typeIntra);
+    treeGraph.typeInter = std::min(allGather3Data[i].tree.typeInter, treeGraph.typeInter);
     ringGraph.sameChannels = std::min(allGather3Data[i].ring.sameChannels, ringGraph.sameChannels);
     ringGraph.speedIntra = std::min(allGather3Data[i].ring.speedIntra, ringGraph.speedIntra);
     ringGraph.speedInter = std::min(allGather3Data[i].ring.speedInter, ringGraph.speedInter);
     ringGraph.typeIntra = std::min(allGather3Data[i].ring.typeIntra, ringGraph.typeIntra);
+    ringGraph.typeInter = std::min(allGather3Data[i].ring.typeInter, ringGraph.typeInter);
     collNetGraph.sameChannels = std::min(allGather3Data[i].collNet.sameChannels, collNetGraph.sameChannels);
     collNetGraph.speedIntra = std::min(allGather3Data[i].collNet.speedIntra, collNetGraph.speedIntra);
     collNetGraph.speedInter = std::min(allGather3Data[i].collNet.speedInter, collNetGraph.speedInter);
     collNetGraph.typeIntra = std::min(allGather3Data[i].collNet.typeIntra, collNetGraph.typeIntra);
+    collNetGraph.typeInter = std::min(allGather3Data[i].collNet.typeInter, collNetGraph.typeInter);
   }
 
   if (comm->nChannels < nChannelsOrig) {
@@ -855,15 +862,15 @@ static ncclResult_t initTransportsRank(struct ncclComm* comm, ncclUniqueId* comm
   // Compute nChannels per peer for p2p
   NCCLCHECK(ncclTopoComputeP2pChannels(comm));
 
+  NCCLCHECK(ncclCommSetIntra(comm, intraRank, intraRanks, intraRank0Comm));
+
+  if (comm->nNodes) NCCLCHECK(ncclProxyCreate(comm));
+
   // We should have allocated all buffers, collective fifos, ... we can
   // restore the affinity.
 affinity_restore:
   sched_setaffinity(0, sizeof(cpu_set_t), &affinitySave);
   if (ret != ncclSuccess) return ret;
-
-  NCCLCHECK(ncclCommSetIntra(comm, intraRank, intraRanks, intraRank0Comm));
-
-  if (comm->nNodes) NCCLCHECK(ncclProxyCreate(comm));
 
   TRACE(NCCL_INIT, "rank %d nranks %d - DONE", rank, nranks);
   return ncclSuccess;

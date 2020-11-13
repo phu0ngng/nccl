@@ -326,6 +326,10 @@ static ncclResult_t progressOps(struct ncclProxyState* state, struct ncclProxyAr
 void* persistentThread(void *comm_) {
   struct ncclComm* comm = (struct ncclComm*)comm_;
   struct ncclProxyState* state = &comm->proxyState;
+  char threadName[16];
+  sprintf(threadName, "NCCLproxy %5d", comm->rank);
+  nvtxNameOsThreadA(syscall(SYS_gettid), threadName);
+
   pthread_mutex_lock(&state->opsMutex);
   struct ncclProxyArgs** opsPtr = &state->ops;
   while (1) {
