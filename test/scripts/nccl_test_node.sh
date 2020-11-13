@@ -43,7 +43,7 @@ else
   salloc_cmd="timeout ${timeout}m "
 fi
 
-export NCCL_DEBUG=INFO
+export NCCL_DEBUG=VERSION
 
 cd $BLDDIR
 if [ "$mode" == "dlfw" ] && [ "$gpumodel" == "P100" ]; then

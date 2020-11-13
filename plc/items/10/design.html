@@ -1,0 +1,52 @@
+<!DOCTYPE html>
+<html>
+<head>
+<title>NCCL-10 : Indirect NVLink communication : Design</title>
+<link rel="stylesheet" type="text/css" href="../../html/css/doc.css">
+</head>
+<body>
+<center><h1>NCCL-10 : Indirect NVLink communication<br>Design</h1></center>
+<!-- table of contents, auto-generated -->
+$CONTENTS
+<!-- end of table of contents -->
+<h2>Proposed Design</h2>
+<p>GPUs which do not have a direct NVLink on DGX-1 need to communicate through system memory, i.e.
+through the CPU. This is extremely slow since we have many combinations which need to use that channel.
+<p>Instead, we want to use NVLinks which would have a much higher bandwidth, albeit shared with other
+direct flows needed for the alltoall operation. This is quite simple to implement in NCCL since we only
+need to have the intermediate FIFO used to communicate between two GPUs to be located on an intermediate
+GPU which both other GPUs can directly access (one GPU writing to it, one reading from it).
+<p>Also, we only want to go through GPUs in the NCCL communicator, since we would not want to
+use resources from a GPU used by another user, in particular as it could cause an error if the GPU is
+configured in exclusive mode.
+<p>The first change for that feature is to change the topology path exploration, and allow communication
+between two GPUs to go through another GPU, as long as it is a single hop. Doing so, we add a new PATH
+level, NVB (as NVlink Bridge, similar to PXB). That makes sure a further path search for collectives will
+accurately reflect the expected bandwidth, going through the two NVLinks and counting the bandwidth used
+accordingly.
+<p>Then, when creating the P2P connection between the two ranks, if the path type is NVB, we find the 
+intermediate GPU and allocate memory from it, then map it on both ranks using direct P2P or CUDA IPCs.
+A new service thread is therefore created, which listens to a socket and allocates memory for other GPUs,
+returning CUDA IPC handles. The thread exits when the communicator is destroyed and all buffers have been released.
+
+<h2>Interface Architecture</h2>
+None.
+<h2>System KPIs & Metrics</h2>
+Alltoall performance on DGX-1V is now above 40GB/s, compared to 10GB/s with NCCL 2.7.
+<h2>Data Architecture</h2>
+N/A
+<h2>Security Design</h2>
+N/A
+<h2>Debugging & Troubleshooting</h2>
+None.
+<h2>Logging and Instrumentation</h2>
+None.
+<h2>Operational Considerations</h2>
+None.
+
+<h2>Signoff list</h2>
+<p>Author : Sylvain Jeaugey
+<p><!-- Reviewer : First Last -->
+<p><!-- Reviewer : First Last -->
+
+<!-- do not end body and html, bottom will be auto-generated -->

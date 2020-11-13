@@ -23,7 +23,7 @@ import os
 # -- Project information -----------------------------------------------------
 
 project = u'NCCL'
-copyright = u'2019, NVIDIA Corporation'
+copyright = u'2020, NVIDIA Corporation'
 author = u'NVIDIA Corporation'
 
 version_long = u'${nccl:Major}.${nccl:Minor}.${nccl:Patch}'
@@ -168,3 +168,12 @@ texinfo_documents = [
      'Miscellaneous'),
 ]
 
+
+# Fix text wrapping in tables
+html_static_path = ['_static']
+
+html_context = {
+    'css_files': [
+        '_static/theme_overrides.css',  # override wide tables in RTD theme
+        ],
+     }

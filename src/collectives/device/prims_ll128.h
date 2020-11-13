@@ -54,19 +54,6 @@ class ncclLL128Primitives {
     }
   }
 
-  uint32_t mismatch = 0;
-  const uint64_t opCount;
-
-  inline __device__ void checkMismatch(struct ncclConnInfo* conn) {
-    if (mismatch > 20) {
-      // We have seen that the peer advanced opcount so many times yet we are still waiting for credit of current op, so it is _most likely_ a mismatch
-      // Note that we are not using _threadfence_system in LL so the error cannot be asserted
-      *(comm->fatalDevError) = ncclDevSuspectedMismatch;
-    } else if (conn && *conn->opCountRem > opCount) {
-      mismatch += 1;
-    }
-  }
-
   uint32_t spins = 0;
   uint32_t abort = 0;
 
@@ -74,7 +61,6 @@ class ncclLL128Primitives {
     spins++;
     if (abort == 0 && spins == SPINS_BEFORE_CHECK_ABORT) {
       abort = *(comm->abortFlag);
-      if (wid == i) checkMismatch(send ? sendConn : recvConn);
       spins = 0;
     }
     return abort;
@@ -82,7 +68,6 @@ class ncclLL128Primitives {
 
   inline __device__ void waitSend(int nbytes) {
     spins = 0;
-    mismatch = 0;
     if (sendConnHeadPtr) {
       while (sendConnHeadCache + NCCL_STEPS < sendConnHead + 1) {
         sendConnHeadCache = *sendConnHeadPtr;
@@ -226,14 +211,14 @@ class ncclLL128Primitives {
     /************************ Send **************************/
     if (SEND) {
       for (int i=1; i<NSEND && i<nsend; i++) {
-        int flag = sendFlag(i);
+        uint64_t flag = sendFlag(i);
         uint64_t* ptr = sendPtr(i)+ll128Offset;
         #pragma unroll
         for (int u=0; u<ELEMS_PER_THREAD; u+=2) {
           store128(ptr+u*WARP_SIZE, v[u], flagThread ? flag : v[u+1]);
         }
       }
-      int flag = sendFlag(0);
+      uint64_t flag = sendFlag(0);
       uint64_t* ptr = sendPtr(0)+ll128Offset;
       #pragma unroll
       for (int u=0; u<ELEMS_PER_THREAD; u+=2) {
@@ -319,8 +304,6 @@ class ncclLL128Primitives {
     if (tid >= nthreads-WARP_SIZE && wid < nrecv) {
       recvConnHeadPtr = recvConn->head;
       recvConnHead = recvConn->step;
-      // Update opCount in case we skipped some operations
-      *(recvConn->opCountLoc) = opCount;
     }
   }
 
@@ -335,11 +318,10 @@ class ncclLL128Primitives {
       sendConnHeadPtr = sendConn->head;
       sendConnHeadCache = *sendConnHeadPtr;
       sendConnHead = sendConn->step;
-      sendConnFifoPtr = sendConn->fifo;
-      *(sendConn->opCountLoc) = opCount;
+      sendConnFifoPtr = sendConn->sizesFifo;
     }
     if (tid >= nthreads-WARP_SIZE && wid<nsend) {
-      if (sendConn->fifo) {
+      if (sendConn->sizesFifo) {
         sendConnTailPtr = sendConn->tail;
         sendConnTail = sendConn->step;
       }
@@ -349,7 +331,6 @@ class ncclLL128Primitives {
   __device__ __forceinline__ void saveRecvSync() {
     if (tid >= nthreads-WARP_SIZE && wid < nrecv) {
       recvConn->step = recvConnHead;
-      *(recvConn->opCountLoc) = opCount+1;
       __threadfence_block();
     }
   }
@@ -357,15 +338,14 @@ class ncclLL128Primitives {
   __device__ __forceinline__ void saveSendSync() {
     if (tid < nsend) {
       sendConn->step = sendConnHead;
-      *(sendConn->opCountLoc) = opCount+1;
       __threadfence_block();
     }
   }
 
  public:
   __device__ __forceinline__
-  ncclLL128Primitives(const int tid, const int nthreads, int* recvPeers, int* sendPeers, int stepSize, struct ncclChannel* channel, struct ncclDevComm* comm, const uint64_t opCount)
-    : comm(comm), tid(tid), nthreads(nthreads), wid(tid%WARP_SIZE), warp(tid/WARP_SIZE), flagThread((tid%8)==7), stepSize(stepSize), opCount(opCount), shmem(ncclShmem+(threadIdx.x/WARP_SIZE)*NCCL_LL128_SHMEM_ELEMS_PER_THREAD*WARP_SIZE+2*wid) {
+  ncclLL128Primitives(const int tid, const int nthreads, int* recvPeers, int* sendPeers, int stepSize, struct ncclChannel* channel, struct ncclDevComm* comm)
+    : comm(comm), tid(tid), nthreads(nthreads), wid(tid%WARP_SIZE), warp(tid/WARP_SIZE), flagThread((tid%8)==7), stepSize(stepSize), shmem(ncclShmem->data+(threadIdx.x/WARP_SIZE)*NCCL_LL128_SHMEM_ELEMS_PER_THREAD*WARP_SIZE+2*wid) {
     // Make sure step is updated before we read it.
     barrier();
 

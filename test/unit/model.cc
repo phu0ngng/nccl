@@ -25,7 +25,7 @@ int nGpus = -1;
 int nNodes = -1;
 char* platform = NULL;
 const char* platforms[] = { "DGX-1V", "DGX-2V", "Luna" };
-ncclFunc_t function = ncclCollAllReduce;
+ncclFunc_t function = ncclFuncAllReduce;
 
 int compactMode = -1;
 int dispMode = 0;
@@ -60,9 +60,9 @@ int stats[RESET] = { 0, 0, 0, 0 };
   if (dispMode > 0  && v != -1.0) v = size / v; \
   if (dispMode == 2 && v != -1.0) { \
     float nranks = nnodes*ngpus; \
-    if (function == ncclCollAllReduce) v *= 2*(nranks-1)/nranks; \
-    if (function == ncclCollReduceScatter) v *= (nranks-1)/nranks; \
-    if (function == ncclCollAllGather) v *= (nranks-1)/nranks; \
+    if (function == ncclFuncAllReduce) v *= 2*(nranks-1)/nranks; \
+    if (function == ncclFuncReduceScatter) v *= (nranks-1)/nranks; \
+    if (function == ncclFuncAllGather) v *= (nranks-1)/nranks; \
   } \
   printf(str, v); \
 }while(0);
@@ -171,8 +171,9 @@ void runTopo(const char* xmlTopoFile, const char* platform, int nnodes) {
   comm.nNodes = nnodes;
   comm.nRanks = system->nodes[GPU].count*nnodes;
   comm.nChannels = ringGraph.nChannels*2;
-  comm.channels[0].treeUp.depth = system->nodes[GPU].count-1+log2i(nnodes);
+  comm.channels[0].tree.depth = system->nodes[GPU].count-1+log2i(nnodes);
   comm.buffSizes[NCCL_PROTO_SIMPLE] = 1 << 22;
+  comm.collNetSupport = (cNetGraph.nChannels == 0) ? 0 : 1;
   int compCap = system->nodes[GPU].nodes[0].gpu.cudaCompCap;
   CHECK(ncclTopoTuneModel(&comm, compCap, compCap, &treeGraph, &ringGraph, &cNetGraph));
   struct ncclInfo info;
@@ -183,17 +184,17 @@ void runTopo(const char* xmlTopoFile, const char* platform, int nnodes) {
 
   if (!compactMode) {
     printf("%s/%dx%d, %s\n", platform, nnodes, ngpus, ncclFuncStr[function]);
-    printf("----------+"); for (int i=0; i<m; i++) printf("---------------------+"); printf("-------------------------------+"); printf("\n");
-    printf("     Size |");
+    printf("-----------+"); for (int i=0; i<m; i++) printf("---------------------+"); printf("-------------------------------+"); printf("\n");
+    printf("     Size  |");
     for (int a=0; a<num_algorithms; a++) for (int p=0; p<NCCL_NUM_PROTOCOLS; p++) {
-      printf(" %7s  / %7s  |", ncclAlgoStr[a], ncclProtoStr[p]);
+      printf(" %6s  / %6s    |", ncclAlgoStr[a], ncclProtoStr[p]);
     }
     printf("%19s            |\n", "Default");
-    printf("          |");
-    for (int i=0; i<m; i++) printf("[%9s] %9s|", "data", (i == m) ? "best" : "model");
-    printf("[%9s] %9s %9s|", "best", "dryrun", "data");
+    printf("           |");
+    for (int i=0; i<m; i++) printf("%9s  %9s |", "data", (i == m) ? "best" : "model");
+    printf("%9s  %9s %9s |", "best", "dryrun", "data");
     printf("\n");
-    printf("----------+"); for (int i=0; i<m; i++) printf("---------------------+"); printf("-------------------------------+"); printf("\n");
+    printf("-----------+"); for (int i=0; i<m; i++) printf("---------------------+"); printf("-------------------------------+"); printf("\n");
   } else {
     printf("%10s/%5dx%5d |", platform, nnodes, ngpus);
   }
@@ -242,16 +243,16 @@ void runTopo(const char* xmlTopoFile, const char* platform, int nnodes) {
 
     // Display each protocol/algorithm
     if (!compactMode) {
-      printf("%10ld|", size);
+      printf("%10ld |", size);
       for (int i=0; i<m; i++) {
         float ref = data[i];
         float value = model[i];
         int bold = value == bestmodel ? 7 : 0;
         if (ref == -1.0) {
-          printf("%11s ", "");
+          printf("%10s ", "");
           if (bold) printf("%c[%d;32m", 0x1b, bold);
         } else {
-          PRINT_MODE("[%9.1f] ", ref);
+          PRINT_MODE("%9.1f  ", ref);
           float s = 1-ref/value;
           s *= s;
           if (s > .15) printf("%c[%d;31m", 0x1b, bold);
@@ -260,7 +261,7 @@ void runTopo(const char* xmlTopoFile, const char* platform, int nnodes) {
         }
         PRINT_MODE("%9.1f", value);
         if ((ref != -1.0) || bold) printf("%c[00m", 0x1b);
-        printf("|");
+        printf(" |");
       }
     }
 
@@ -269,8 +270,8 @@ void runTopo(const char* xmlTopoFile, const char* platform, int nnodes) {
       if (compactMode) {
         printf("%c[00m.", 0x1b);
       } else {
-        printf("%11s %9s", "", "");
-        PRINT_MODE(" %9.1f|\n", bestmodel);
+        printf("%10s %9s", "", "");
+        PRINT_MODE(" %9.1f |\n", bestmodel);
       }
     } else {
       float s = bestdata/dryrun;
@@ -283,19 +284,19 @@ void runTopo(const char* xmlTopoFile, const char* platform, int nnodes) {
         npoints++;
         totalNpoints++;
       } else {
-        PRINT_MODE("[%9.1f]", bestdata);
+        PRINT_MODE("%9.1f ", bestdata);
         printf(" %c%s", 0x1b, colorCodes[c]);
         PRINT_MODE("%9.1f", dryrun);
         s = bestdata/data[m];
         c = GET_COLOR(s);
         printf(" %c%s", 0x1b, colorCodes[c]);
         PRINT_MODE("%9.1f", data[m]);
-        printf("%c%s|\n", 0x1b, colorCodes[RESET]);
+        printf("%c%s |\n", 0x1b, colorCodes[RESET]);
       }
     }
   }
   if (!compactMode) {
-    printf("----------+"); for (int i=0; i<m; i++) printf("---------------------+"); printf("-------------------------------+"); printf("\n");
+    printf("-----------+"); for (int i=0; i<m; i++) printf("---------------------+"); printf("-------------------------------+"); printf("\n");
   } else {
     printf("%c[00m| %.1f %%\n", 0x1b, 100.0*score/npoints);
   }

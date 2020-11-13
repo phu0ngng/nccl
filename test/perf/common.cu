@@ -114,9 +114,9 @@ void deltaKern(void* A_, void* B_, size_t count, double* max) {
   const T* A = (const T*)A_;
   const T* B = (const T*)B_;
   __shared__ double temp[BSIZE];
-  int tid = blockIdx.x*gridDim.x + threadIdx.x;
+  int tid = blockIdx.x*blockDim.x + threadIdx.x;
   double locmax = 0.0;
-  for(int i=tid; i<count; i+=blockDim.x*gridDim.x) {
+  for(size_t i=tid; i<count; i+=blockDim.x*gridDim.x) {
 
     double delta = absDiff(A[i], B[i]);
     if( delta > locmax ) {
@@ -139,7 +139,7 @@ void deltaKern(void* A_, void* B_, size_t count, double* max) {
     max[blockIdx.x] = temp[0] > temp[1] ? temp[0] : temp[1];
 }
 
-testResult_t CheckDelta(void* expected, void* results, size_t count, ncclDataType_t type, double* devmax) {
+testResult_t CheckDelta(void* results, void* expected, size_t count, ncclDataType_t type, double* devmax) {
   switch (type) {
     case ncclHalf:
       deltaKern<half, 512><<<NUM_BLOCKS, 512>>>(results, expected, count, devmax); break;
@@ -388,8 +388,8 @@ testResult_t startColl(struct threadArgs* args, ncclDataType_t type, ncclRedOp_t
 
   // Try to change offset for each iteration so that we avoid cache effects and catch race conditions in ptrExchange
   size_t totalnbytes = max(args->sendBytes, args->expectedBytes);
-  size_t shift = (totalnbytes * iter) % args->maxbytes;
-  if (shift + totalnbytes > args->maxbytes) shift = 0;
+  size_t steps = totalnbytes ? args->maxbytes / totalnbytes : 1;
+  size_t shift = totalnbytes * (iter % steps);
 
   if (args->nGpus > 1) NCCLCHECK(ncclGroupStart());
   for (int i = 0; i < args->nGpus; i++) {
@@ -484,9 +484,9 @@ testResult_t BenchTime(struct threadArgs* args, ncclDataType_t type, ncclRedOp_t
 
   double timeUsec = deltaSec*1.0E6;
   char timeStr[10];
-  if (timeUsec > 10000.0) {
+  if (timeUsec >= 10000.0) {
     sprintf(timeStr, "%7.0f", timeUsec);
-  } else if (timeUsec > 100.0) {
+  } else if (timeUsec >= 100.0) {
     sprintf(timeStr, "%7.1f", timeUsec);
   } else {
     sprintf(timeStr, "%7.2f", timeUsec);
