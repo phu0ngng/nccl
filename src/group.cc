@@ -201,7 +201,7 @@ ncclResult_t ncclGroupEnd() {
     if (args->funcType == ASYNC_FUNC_COLL && args->coll.comm->connect) {
       int err = pthread_join(ncclGroupThreads[i], NULL);
       if (err != 0) {
-        WARN("Error waiting for pthread_join : %s\n", strerror(errno));
+        WARN("Error waiting for pthread_join : %s", strerror(errno));
         return ncclSystemError;
       }
       NCCLCHECKGOTO(args->ret, ret, end);
