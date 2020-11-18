@@ -18,8 +18,8 @@ struct ncclProxyArgs {
   proxyProgressFunc_t progress;
   struct ncclChannel* channel;
   struct ncclConnector* connector;
-  size_t sendbytes;
-  size_t recvbytes;
+  ssize_t sendbytes;
+  ssize_t recvbytes;
   int sliceSteps;
   int chunkSteps;
   int nsteps;

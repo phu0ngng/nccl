@@ -667,19 +667,8 @@ static ncclResult_t computeP2pProxyArgs(struct ncclInfo* info, struct ncclProxyA
   args->protocol = NCCL_PROTO_SIMPLE;
   args->dtype = info->datatype;
   args->delta = info->delta;
-
-  if (info->delta > 0 && info->recvbytes >= 0) {
-    args->nsteps = DIVUP(info->recvbytes, info->comm->buffSizes[NCCL_PROTO_SIMPLE]/NCCL_STEPS/SENDRECV_SLICEFACTOR);
-    if (args->nsteps == 0) args->nsteps = 1;
-    args->recvbytes = info->recvbytes;
-    args->sendbytes = 0;
-  }
-  if (info->delta > 0 && info->sendbytes >= 0) {
-    args->nsteps = DIVUP(info->sendbytes, info->comm->buffSizes[NCCL_PROTO_SIMPLE]/NCCL_STEPS/SENDRECV_SLICEFACTOR);
-    if (args->nsteps == 0) args->nsteps = 1;
-    args->sendbytes = info->sendbytes;
-    args->recvbytes = 0;
-  }
+  args->sendbytes = info->sendbytes;
+  args->recvbytes = info->recvbytes;
   return ncclSuccess;
 }
 
