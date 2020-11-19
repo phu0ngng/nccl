@@ -980,7 +980,7 @@ static __inline__ enum sharp_datatype typeConvert(ncclDataType_t type) {
     case ncclUint64: return SHARP_DTYPE_UNSIGNED_LONG;
     case ncclFloat64: return SHARP_DTYPE_DOUBLE;
     default:
-      WARN("SHARP: unsupported data type\n");
+      WARN("SHARP: unsupported data type");
       return -1;
   }
 }
@@ -995,7 +995,7 @@ static __inline__ int typeSize(ncclDataType_t type) {
     case ncclUint64: return 8;
     case ncclFloat64: return 8;
     default:
-      WARN("SHARP: unsupported data type\n");
+      WARN("SHARP: unsupported data type");
       return -1;
   }
 }
@@ -1007,7 +1007,7 @@ static __inline__ enum sharp_reduce_op opConvert(ncclRedOp_t op) {
     case ncclMax: return SHARP_OP_MAX;
     case ncclMin: return SHARP_OP_MIN;
     default:
-      WARN("SHARP: unsupported reduce operation\n");
+      WARN("SHARP: unsupported reduce operation");
       return -1;
   }
 }
@@ -1021,7 +1021,7 @@ ncclResult_t ncclSharpConnect(void* handles[], int nranks, int rank, void* liste
   cComm->nranks = nranks;
   cComm->rank = rank;
   if (cComm->rank == -1) {
-    WARN("Could not determine my rank\n");
+    WARN("Could not determine my rank");
     return ncclInternalError;
   }
   int next = (cComm->rank + 1) % nranks;
@@ -1072,7 +1072,7 @@ ncclResult_t ncclSharpConnect(void* handles[], int nranks, int rank, void* liste
   INFO(NCCL_INIT, "Sharp rank %d/%d initialized on %s", cComm->rank, nranks, devName);
 
   if (ret < 0) {
-    WARN("NET/IB :SHARP coll init error: %s(%d)\n", sharp_coll_strerror(ret), ret);
+    WARN("NET/IB :SHARP coll init error: %s(%d)", sharp_coll_strerror(ret), ret);
     return ncclInternalError;
   }
 
@@ -1084,7 +1084,7 @@ ncclResult_t ncclSharpConnect(void* handles[], int nranks, int rank, void* liste
 
   ret = sharp_coll_comm_init(cComm->sharpCollContext, &comm_spec, &cComm->sharpCollComm);
   if (ret < 0) {
-    WARN("SHARP group create failed: %s(%d)\n", sharp_coll_strerror(ret), ret);
+    WARN("SHARP group create failed: %s(%d)", sharp_coll_strerror(ret), ret);
     return ncclInternalError;
   }
 
@@ -1105,7 +1105,7 @@ ncclResult_t ncclSharpRegMr(void* collComm, void* data, int size, int type, void
 
   mh->type = type;
   if (SHARP_COLL_SUCCESS != sharp_coll_reg_mr(cComm->sharpCollContext, data, size, &(mh->mr)))  {
-    WARN("SHARP regmr failed\n");
+    WARN("SHARP regmr failed");
     return ncclSystemError;
   }
   TRACE(NCCL_INIT,"sharpRegAddr %lx size %ld handle %x", data, size, mh->mr);
@@ -1121,7 +1121,7 @@ ncclResult_t ncclSharpDeregMr(void* collComm, void* mhandle) {
   struct ncclSharpMemHandle *mh = (struct ncclSharpMemHandle *)mhandle;
 
   if (SHARP_COLL_SUCCESS != sharp_coll_dereg_mr(cComm->sharpCollContext, mh->mr)) {
-    WARN("SHARP deregmr failed\n");
+    WARN("SHARP deregmr failed");
   }
 
   NCCLCHECK(ncclIbDeregMr(cComm->recvComm, mh->ncclIbMr));
@@ -1182,12 +1182,12 @@ ncclResult_t ncclSharpIallreduce(void* collComm, void* sendData, void* recvData,
 
 #if BLOCKING==0
   if (SHARP_COLL_SUCCESS != sharp_coll_do_allreduce_nb(cComm->sharpCollComm, &reduce_spec, &req->sharpRequest)) {
-    WARN("SHARP allreduce failed\n");
+    WARN("SHARP allreduce failed");
   }
   req->size =  count * dt_size;
 #else
   if (SHARP_COLL_SUCCESS != sharp_coll_do_allreduce(cComm->sharpCollComm, &reduce_spec)) {
-    WARN("SHARP allreduce failed\n");
+    WARN("SHARP allreduce failed");
   }
   req->sharpRequest = (void *) 0xabababab;
   req->size =  count * dt_size;
