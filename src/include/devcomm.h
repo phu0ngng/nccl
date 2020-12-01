@@ -189,6 +189,7 @@ struct ncclChannel {
       struct ncclWork* workFifo;
       int workCount;
       uint64_t workFifoTail; // Only used by CPU
+      uint16_t index;        // Only used by GPU
     };
     int data[0x80];
   };
@@ -199,7 +200,6 @@ struct ncclDevComm {
   int rank;
   int nRanks;
   int buffSizes[NCCL_NUM_PROTOCOLS];
-  int index;
 
   // Flag to ask NCCL kernels to abort
   volatile uint32_t *abortFlag;

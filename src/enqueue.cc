@@ -259,10 +259,6 @@ static ncclResult_t ncclEnqueueProxyStart(struct ncclCudaGraphInfo* cgInfo) {
     max = std::max(max, channel->workFifoTail);
     channel->workCount = 0;
   }
-  for (int r=0; r<comm->p2pnChannels; r++) {
-    struct ncclChannel* channel = comm->channels+r;
-    channel->workFifoTail = max;
-  }
   comm->lastChannel = 0;
   comm->lastOpCount = max;
   NCCLCHECK(ncclProxyStart(comm));
@@ -713,7 +709,9 @@ ncclResult_t ncclSetupP2pKernel(struct ncclInfo* info) {
   cgInfo->maxChannels = params->gridDim.x;  // params may be varied by a second graph hence we need to capture it here
 
   // Record the first kernel to launch
-  if (params->func == NULL && channelId == 0) {
+  // Just for CUDA kernel to know this is a P2P operation
+  // The CUDA kernel does not use the inlined first work element as fastpath argument
+  if (params->func == NULL) {
     params->func = ncclKerns[cgElem->work.funcIndex];
     memcpy(&comm->args, &cgElem->work, sizeof(struct ncclWorkElem));
   }
