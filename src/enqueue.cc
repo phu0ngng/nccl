@@ -735,6 +735,9 @@ void CUDART_CB ncclEnqueueHostSetup(void* arg) {
   ncclEnqueueProxyStart(cgInfo);
 }
 
+template void CUDART_CB ncclEnqueueHostSetup<0>(void*);
+template void CUDART_CB ncclEnqueueHostSetup<1>(void*);
+
 ncclResult_t ncclGetCudaGraph(ncclComm_t comm, cudaGraph_t* graph, int* usingCudaGraph) {
   CUstreamCaptureStatus captureStatus;
   cuuint64_t cudaGraphId;
