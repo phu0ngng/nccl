@@ -164,7 +164,7 @@ static ncclResult_t SaveProxy(int type, int peer, struct ncclProxyArgs* args) {
   struct ncclPeer* peerComm = args->channel->peers+peer;
   struct ncclConnector* connector = type == proxyRecv ? &peerComm->recv : &peerComm->send;
   if (connector->transportComm == NULL) {
-    WARN("[%d] Error no transport for %s peer %d on channel %d", connector->comm->rank,
+    WARN("Rank %d has no transport for %s peer %d on channel %d", connector->comm->rank,
         type == proxyRecv ? "recv" : "send", peer, args->channel->id);
     return ncclInternalError;
   }
@@ -226,8 +226,8 @@ ncclResult_t ncclProxySaveColl(struct ncclProxyArgs* args, int nranks) {
 ncclResult_t ncclProxySaveP2p(struct ncclComm* comm, struct ncclProxyArgs* args) {
   struct ncclChannel* channel = args->channel;
   args->opCount = channel->workFifoTail-1;
-  ssize_t recvbytesOrig = args->recvbytes;
-  ssize_t sendbytesOrig = args->sendbytes;
+  const ssize_t recvbytesOrig = args->recvbytes;
+  const ssize_t sendbytesOrig = args->sendbytes;
   if (args->delta > 0 && recvbytesOrig >= ssize_t(0)) {
     int peerrecv = (comm->nRanks+comm->rank-args->delta)%comm->nRanks;
     args->nsteps = DIVUP(recvbytesOrig, comm->buffSizes[NCCL_PROTO_SIMPLE]/NCCL_STEPS/SENDRECV_SLICEFACTOR);
@@ -244,6 +244,10 @@ ncclResult_t ncclProxySaveP2p(struct ncclComm* comm, struct ncclProxyArgs* args)
     args->recvbytes = 0;
     NCCLCHECK(SaveProxy(proxySend, peersend, args));
   }
+  // Reset proxy args for potentially multiple cuda graph launches
+  // It is safe as long as SaveProxy copies contents of args to op
+  args->recvbytes = recvbytesOrig;
+  args->sendbytes = sendbytesOrig;
   return ncclSuccess;
 }
 
