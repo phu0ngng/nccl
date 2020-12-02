@@ -738,13 +738,11 @@ void CUDART_CB ncclEnqueueHostSetup(void* arg) {
 template void CUDART_CB ncclEnqueueHostSetup<0>(void*);
 template void CUDART_CB ncclEnqueueHostSetup<1>(void*);
 
-ncclResult_t ncclGetCudaGraph(ncclComm_t comm, cudaGraph_t* graph, int* usingCudaGraph) {
+ncclResult_t ncclGetCudaGraph(ncclComm_t comm, cudaGraph_t* graph) {
   CUstreamCaptureStatus captureStatus;
   cuuint64_t cudaGraphId;
   cuStreamGetCaptureInfo(comm->userStream, &captureStatus, graph, /*const CUgraphNode **dependencies_out*/ NULL, /*size_t *numDependencies_out*/ NULL, &cudaGraphId); //FIXME: wrap
-  *usingCudaGraph = (captureStatus == CU_STREAM_CAPTURE_STATUS_ACTIVE) ? 1 : 0;
-
-  if (*usingCudaGraph) {
+  if (captureStatus == CU_STREAM_CAPTURE_STATUS_ACTIVE) {
     INFO(NCCL_COLL, "stream is being captured by %s graph, id %ld", cudaGraphId == comm->lastCudaGraphId ? "an old" : "a new", cudaGraphId);
     if (cudaGraphId != comm->lastCudaGraphId) {
       // We are in a new graph, hence need to forget the last setup node so that
@@ -754,6 +752,8 @@ ncclResult_t ncclGetCudaGraph(ncclComm_t comm, cudaGraph_t* graph, int* usingCud
     }
     if (comm->launchMode == ncclComm::GROUP)
       comm->launchMode = ncclComm::GROUP_GRAPH;
+  } else {
+    *graph = NULL;
   }
   return ncclSuccess;
 }
@@ -819,15 +819,14 @@ end:
 
     // Check whether we are in cuda graph mode
     cudaGraph_t graph;
-    int usingCudaGraph = 0;
     ncclComm_t comm = info->comm;
-    NCCLCHECK(ncclGetCudaGraph(comm, &graph, &usingCudaGraph));
+    NCCLCHECK(ncclGetCudaGraph(comm, &graph));
 
     // Common part between graph mode and non-graph mode
     NCCLCHECK(ncclSetupCollKernel(info));
 
     // Host setup
-    if (usingCudaGraph) {
+    if (graph != NULL) {
       NCCLCHECK(ncclCudaGraphHostSetup(comm, graph));
     } else {
       ncclEnqueueHostSetup<0>(comm->cudaGraphInfo);
