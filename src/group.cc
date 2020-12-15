@@ -258,6 +258,8 @@ sched_delta:
               ssize_t sendbytes = totSendBytes-sendOffset;
               if (recvbytes > recvChunkSize) { recvbytes = recvChunkSize; } else { recvRemaining = 0; }
               if (sendbytes > sendChunkSize) { sendbytes = sendChunkSize; } else { sendRemaining = 0; }
+              if (sendbytes <= 0) sendbytes = sendOffset ? -1 : 0;
+              if (recvbytes <= 0) recvbytes = recvOffset ? -1 : 0;
               if (sendbytes >= 0 || recvbytes >= 0) {
                 NCCLCHECKGOTO(scheduleSendRecv(comm, delta, channelId,
                       recvbytes, recv ? ((char*)(recv->buff)) + recvOffset : NULL,
