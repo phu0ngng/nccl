@@ -17,7 +17,8 @@
 #define NCCL_FUNC4(func, redop, type) \
   (void*)NCCL_FUNC5(func, TREE,    redop, type), \
   (void*)NCCL_FUNC5(func, RING,    redop, type), \
-  (void*)NCCL_FUNC5(func, COLLNET, redop, type)
+  (void*)NCCL_FUNC5(func, COLLNET, redop, type), \
+  (void*)NCCL_FUNC5(func, DIRECT, redop, type)
 
 // Must be consistent with ncclDataType_t
 #define NCCL_FUNCS3A(func, redop) \
@@ -282,8 +283,8 @@ static ncclResult_t getAlgoInfo(struct ncclInfo* info) {
   int collNetTypeSupport = 0;
   if (info->comm->collNetSupport)
     NCCLCHECK(collNetReduceSupport(info->datatype, info->op, &collNetTypeSupport));
-  if (collNetTypeSupport != 1) nAlgos--;
   for (int a=0; a<nAlgos; a++) {
+    if (a == NCCL_ALGO_COLLNET && collNetTypeSupport != 1) continue;
     for (int p=0; p<NCCL_NUM_PROTOCOLS; p++) {
       float time;
       NCCLCHECK(ncclTopoGetAlgoTime(info, a, p, &time));
@@ -327,7 +328,7 @@ static ncclResult_t getPatternInfo(struct ncclInfo* info) {
     case ncclFuncAllGather:
       info->pattern = ncclPatternRing; break;
     case ncclFuncAllReduce:
-      info->pattern = info->algorithm == NCCL_ALGO_COLLNET ? ncclPatternCollTreeUp : info->algorithm == NCCL_ALGO_TREE ? ncclPatternTreeUpDown : ncclPatternRingTwice; break;
+      info->pattern = info->algorithm == NCCL_ALGO_DIRECT ? ncclPatternAllToAll : info->algorithm == NCCL_ALGO_COLLNET ? ncclPatternCollTreeUp : info->algorithm == NCCL_ALGO_TREE ? ncclPatternTreeUpDown : ncclPatternRingTwice; break;
     default:
       WARN("Unknown pattern for collective %d algorithm %d", info->coll, info->algorithm);
       return ncclInternalError;
@@ -344,6 +345,7 @@ static ncclResult_t getLoopInfo(struct ncclInfo* info) {
     case ncclPatternPipelineTo:
     case ncclPatternCollTreeUp:
     case ncclPatternCollTreeDown:
+    case ncclPatternAllToAll:
       info->nstepsPerLoop = info-> nchunksPerLoop = 1; break;
     case ncclPatternRing:
       info->nstepsPerLoop = info->comm->nRanks-1; info->nchunksPerLoop = info->comm->nRanks; break;
@@ -409,6 +411,9 @@ static ncclResult_t computeColl(struct ncclInfo* info /* input */, struct ncclWo
     while (info->nBytes / (info->nChannels*chunkSize) < nstepsLL128*16/ppn && chunkSize > 32768) chunkSize /= 2;
     // Use lastChunkSize as chunkSize
     work->coll.lastChunkSize = chunkSize*NCCL_LL128_DATAELEMS/(NCCL_LL128_LINEELEMS*ncclTypeSize(info->datatype));
+  } else if (info->algorithm == NCCL_ALGO_DIRECT) {
+    // Use lastChunkSize as chunkSize
+    work->coll.lastChunkSize = chunkSize / ncclTypeSize(info->datatype);
   }
 
   // Compute nSteps for proxies

@@ -258,6 +258,58 @@ class ncclFunction<ncclFuncAllReduce, NCCL_ALGO_COLLNET, NCCL_PROTO_SIMPLE, FUNC
 };
 
 template<class FUNC, typename T, int UNROLL>
+class ncclFunction<ncclFuncAllReduce, NCCL_ALGO_DIRECT, NCCL_PROTO_SIMPLE, FUNC, T, UNROLL> {
+  public:
+  __device__ void run(struct ncclWorkElem* args) {
+    const int tid = threadIdx.x;
+    const int nthreads = args->nThreads-WARP_SIZE;
+    const int bid = args->bid;
+    struct ncclDevComm* comm = args->comm;
+    struct ncclChannel* channel = comm->channels+blockIdx.x;
+    const ssize_t size = args->N;
+    const int nranks = comm->nRanks;
+    const int stepSize = channel->buffSize / (sizeof(T)*NCCL_STEPS);
+    int chunkSize = args->lastChunkSize;
+    const ssize_t minChunkSize = nthreads*8*sizeof(uint64_t) / sizeof(T);
+    const ssize_t loopSize = args->nChannels*nranks*(ssize_t)chunkSize;
+
+    if (loopSize > size) {
+      chunkSize = DIVUP(size, args->nChannels*nranks*minChunkSize)*minChunkSize;
+    }
+
+    // Compute pointers
+    const T * __restrict__ thisInput = (const T*)args->ThisInput;
+    T * __restrict__ thisOutput = (T*)args->ThisOutput;
+
+    struct ncclDirect* tree = &channel->directTree;
+    // max number of recv is MAX_ARITY, max number of send is MAX_ARITY
+    ncclPrimitives<UNROLL, 1, 1, T, NCCL_MAX_DIRECT_ARITY, NCCL_MAX_DIRECT_ARITY, FUNC> prims(tid, args->nThreads, tree->down, tree->up, NULL, stepSize, channel, comm, args->opCount);
+    for (ssize_t gridOffset = 0; gridOffset < size; gridOffset += loopSize) {
+      // Scatter
+      for (int peer = 0; peer < nranks-1; peer++) {
+        ssize_t offset = gridOffset + (bid*nranks+tree->down[peer])*chunkSize;
+        int nelem = min(chunkSize, size-offset);
+        prims.sendTo(thisInput+offset, nelem, peer);
+      }
+
+      // Reduce & Broadcast
+      ssize_t offset = gridOffset + (bid*nranks+comm->rank)*chunkSize;
+      int nelem = min(chunkSize, size-offset);
+      //prims.recvReduceCopySend(thisInput+offset, thisOutput+offset, nelem);
+      prims.recvReduceCopy(thisInput+offset, thisOutput+offset, nelem);
+      prims.send(thisOutput+offset, nelem);
+
+      // Gather
+      for (int peer = 0; peer < nranks-1; peer++) {
+        ssize_t offset = gridOffset + (bid*nranks+tree->down[peer])*chunkSize;
+        int nelem = min(chunkSize, size-offset);
+        prims.recvFrom(thisOutput+offset, nelem, peer);
+      }
+    }
+  }
+};
+
+template<class FUNC, typename T, int UNROLL>
 class ncclFunction<ncclFuncAllReduce, NCCL_ALGO_RING, NCCL_PROTO_LL, FUNC, T, UNROLL> {
   public:
   __device__ void run(struct ncclWorkElem* args) {
@@ -453,6 +505,12 @@ class ncclFunction<ncclFuncAllReduce, NCCL_ALGO_COLLNET, NCCL_PROTO_LL, FUNC, T,
   }
 };
 
+template<class FUNC, typename T, int UNROLL>
+class ncclFunction<ncclFuncAllReduce, NCCL_ALGO_DIRECT, NCCL_PROTO_LL, FUNC, T, UNROLL> {
+  public:
+__device__ void run(struct ncclWorkElem* args) { }
+};
+
 #include "prims_ll128.h"
 template<class FUNC, typename T, int UNROLL>
 class ncclFunction<ncclFuncAllReduce, NCCL_ALGO_RING, NCCL_PROTO_LL128, FUNC, T, UNROLL> {
@@ -599,6 +657,12 @@ class ncclFunction<ncclFuncAllReduce, NCCL_ALGO_TREE, NCCL_PROTO_LL128, FUNC, T,
 
 template<class FUNC, typename T, int UNROLL>
 class ncclFunction<ncclFuncAllReduce, NCCL_ALGO_COLLNET, NCCL_PROTO_LL128, FUNC, T, UNROLL> {
+  public:
+__device__ void run(struct ncclWorkElem* args) { }
+};
+
+template<class FUNC, typename T, int UNROLL>
+class ncclFunction<ncclFuncAllReduce, NCCL_ALGO_DIRECT, NCCL_PROTO_LL128, FUNC, T, UNROLL> {
   public:
 __device__ void run(struct ncclWorkElem* args) { }
 };

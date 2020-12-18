@@ -65,6 +65,63 @@ class ncclFunction<ncclFuncReduceScatter, NCCL_ALGO_RING, NCCL_PROTO_SIMPLE, FUN
     }
 };
 
+#define CPU_CHUNKSIZE 1
+template<class FUNC, typename T, int UNROLL>
+class ncclFunction<ncclFuncReduceScatter, NCCL_ALGO_RING, NCCL_PROTO_SIMPLE, FUNC, T, UNROLL> {
+  public:
+    __device__ void run(struct ncclWorkElem* args) {
+      const int tid = threadIdx.x;
+      const int nthreads = args->nThreads-WARP_SIZE;
+      const int bid = args->bid;
+      struct ncclDevComm* comm = args->comm;
+      struct ncclChannel* channel = comm->channels+blockIdx.x;
+      struct ncclRing* ring = &channel->ring;
+      const ssize_t size = args->N;
+      const int nranks = comm->nRanks;
+      const int rank = comm->rank;
+      const int stepSize = channel->buffSize / (sizeof(T)*NCCL_STEPS);
+#if CPU_CHUNKSIZE
+      int chunkSize = args->lastChunkSize;
+      const ssize_t minChunkSize = nthreads*8*sizeof(uint64_t) / sizeof(T);
+#else
+      const int chunkSize = stepSize * REDUCESCATTER_CHUNKSTEPS;
+#endif
+      const ssize_t loopSize = args->nChannels*(ssize_t)chunkSize;
+
+#if CPU_CHUNKSIZE
+      if (loopSize > size) {
+        chunkSize = DIVUP(size, args->nChannels*minChunkSize)*minChunkSize;
+      }
+#endif
+
+      // Compute pointers
+      const T * __restrict__ thisInput = (const T*)args->ThisInput;
+      T * __restrict__ thisOutput = (T*)args->ThisOutput;
+
+      struct ncclDirect* tree = &channel->directTree;
+      // max number of recv is MAX_ARITY, max number of send is MAX_ARITY
+      ncclPrimitives<UNROLL, 1, 1, T, NCCL_MAX_DIRECT_ARITY, NCCL_MAX_DIRECT_ARITY, FUNC> prims(tid, args->nThreads, tree->down, tree->up, NULL, stepSize, channel, comm, args->opCount);
+      for (ssize_t gridOffset = 0; gridOffset < size; gridOffset += loopSize) {
+        ssize_t chunkOffset = gridOffset + bid*chunkSize;
+
+        ssize_t offset;
+        int nelem = min(chunkSize, size-chunkOffset);
+        int rankDest;
+
+        // Scatter
+        for (int p = 0; p < nranks-1; p++) {
+          rankDest = tree->up[p];
+          offset = chunkOffset + rankDest * size;
+          prims.sendTo(thisInput+offset, nelem, p);
+        }
+
+        // Reduce & Copy
+        offset = chunkOffset + rank * size;
+        prims.recvReduceCopy(thisInput+offset, thisOutput+chunkOffset, nelem);
+      }
+    }
+};
+
 template<class FUNC, typename T, int UNROLL>
 class ncclFunction<ncclFuncReduceScatter, NCCL_ALGO_RING, NCCL_PROTO_LL, FUNC, T, UNROLL> {
   public:
@@ -121,6 +178,12 @@ class ncclFunction<ncclFuncReduceScatter, NCCL_ALGO_RING, NCCL_PROTO_LL, FUNC, T
         LLprims.recvReduceCopy(thisInput+offset, thisOutput+chunkOffset, nelem);
       }
     }
+};
+
+template<int PROTO, class REDOP, typename T, int UNROLL>
+class ncclFunction<ncclFuncReduceScatter, NCCL_ALGO_DIRECT, NCCL_PROTO_LL, REDOP, T, UNROLL> {
+  public:
+    __device__ void run(struct ncclWorkElem* args) {}
 };
 
 #include "prims_ll128.h"
@@ -181,6 +244,12 @@ class ncclFunction<ncclFuncReduceScatter, NCCL_ALGO_RING, NCCL_PROTO_LL128, FUNC
         LLprims.recvReduceCopy(thisInput+offset, thisOutput+chunkOffset, nelem);
       }
     }
+};
+
+template<int PROTO, class REDOP, typename T, int UNROLL>
+class ncclFunction<ncclFuncReduceScatter, NCCL_ALGO_DIRECT, NCCL_PROTO_LL128, REDOP, T, UNROLL> {
+  public:
+    __device__ void run(struct ncclWorkElem* args) {}
 };
 
 template<int PROTO, class REDOP, typename T, int UNROLL>

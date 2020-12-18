@@ -125,6 +125,12 @@ struct ncclTree {
   int down[NCCL_MAX_TREE_ARITY];
 };
 
+#define NCCL_MAX_DIRECT_ARITY 17
+struct ncclDirect {
+  int up[NCCL_MAX_DIRECT_ARITY];
+  int down[NCCL_MAX_DIRECT_ARITY];
+};
+
 struct ncclPeer {
   struct ncclConnector send;
   struct ncclConnector recv;
@@ -178,6 +184,7 @@ struct ncclChannel {
       struct ncclRing ring;
       struct ncclTree tree;
       struct ncclTree collTree;
+      struct ncclDirect directTree;
 
       int id;
 
