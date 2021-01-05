@@ -67,40 +67,40 @@ class ncclFunction<ncclFuncReduceScatter, NCCL_ALGO_RING, NCCL_PROTO_SIMPLE, FUN
 
 #define CPU_CHUNKSIZE 1
 template<class FUNC, typename T, int UNROLL>
-class ncclFunction<ncclFuncReduceScatter, NCCL_ALGO_RING, NCCL_PROTO_SIMPLE, FUNC, T, UNROLL> {
+class ncclFunction<ncclFuncReduceScatter, NCCL_ALGO_DIRECT, NCCL_PROTO_SIMPLE, FUNC, T, UNROLL> {
   public:
     __device__ void run(struct ncclWorkElem* args) {
       const int tid = threadIdx.x;
-      const int nthreads = args->nThreads-WARP_SIZE;
-      const int bid = args->bid;
+      const int nthreads = args->nThreads-2*WARP_SIZE;
+      const int bid = args->coll.bid;
+      const int nChannels = args->coll.nChannels;
       struct ncclDevComm* comm = args->comm;
       struct ncclChannel* channel = comm->channels+blockIdx.x;
-      struct ncclRing* ring = &channel->ring;
-      const ssize_t size = args->N;
+      const ssize_t size = args->coll.count;
       const int nranks = comm->nRanks;
       const int rank = comm->rank;
-      const int stepSize = channel->buffSize / (sizeof(T)*NCCL_STEPS);
+      const int stepSize = comm->buffSizes[NCCL_PROTO_SIMPLE] / (sizeof(T)*NCCL_STEPS);
 #if CPU_CHUNKSIZE
-      int chunkSize = args->lastChunkSize;
+      int chunkSize = args->coll.lastChunkSize;
       const ssize_t minChunkSize = nthreads*8*sizeof(uint64_t) / sizeof(T);
 #else
       const int chunkSize = stepSize * REDUCESCATTER_CHUNKSTEPS;
 #endif
-      const ssize_t loopSize = args->nChannels*(ssize_t)chunkSize;
+      const ssize_t loopSize = nChannels*(ssize_t)chunkSize;
 
 #if CPU_CHUNKSIZE
       if (loopSize > size) {
-        chunkSize = DIVUP(size, args->nChannels*minChunkSize)*minChunkSize;
+        chunkSize = DIVUP(size, nChannels*minChunkSize)*minChunkSize;
       }
 #endif
 
       // Compute pointers
-      const T * __restrict__ thisInput = (const T*)args->ThisInput;
-      T * __restrict__ thisOutput = (T*)args->ThisOutput;
+      const T * __restrict__ thisInput = (const T*)args->sendbuff;
+      T * __restrict__ thisOutput = (T*)args->recvbuff;
 
       struct ncclDirect* tree = &channel->directTree;
       // max number of recv is MAX_ARITY, max number of send is MAX_ARITY
-      ncclPrimitives<UNROLL, 1, 1, T, NCCL_MAX_DIRECT_ARITY, NCCL_MAX_DIRECT_ARITY, FUNC> prims(tid, args->nThreads, tree->down, tree->up, NULL, stepSize, channel, comm, args->opCount);
+      ncclPrimitives<UNROLL, 1, 1, T, NCCL_MAX_DEV_ARITY/*FIXME*/, NCCL_MAX_DEV_ARITY/*FIXME*/, 0/*FIXME*/, FUNC> prims(tid, nthreads, tree->down, tree->up, NULL, stepSize, channel, comm, ncclShmem->ptrs, 0);
       for (ssize_t gridOffset = 0; gridOffset < size; gridOffset += loopSize) {
         ssize_t chunkOffset = gridOffset + bid*chunkSize;
 
@@ -112,7 +112,7 @@ class ncclFunction<ncclFuncReduceScatter, NCCL_ALGO_RING, NCCL_PROTO_SIMPLE, FUN
         for (int p = 0; p < nranks-1; p++) {
           rankDest = tree->up[p];
           offset = chunkOffset + rankDest * size;
-          prims.sendTo(thisInput+offset, nelem, p);
+          prims.sendTo(thisInput+offset, nelem, rankDest);
         }
 
         // Reduce & Copy
@@ -180,10 +180,12 @@ class ncclFunction<ncclFuncReduceScatter, NCCL_ALGO_RING, NCCL_PROTO_LL, FUNC, T
     }
 };
 
-template<int PROTO, class REDOP, typename T, int UNROLL>
-class ncclFunction<ncclFuncReduceScatter, NCCL_ALGO_DIRECT, NCCL_PROTO_LL, REDOP, T, UNROLL> {
+template<class FUNC, typename T, int UNROLL>
+class ncclFunction<ncclFuncReduceScatter, NCCL_ALGO_DIRECT, NCCL_PROTO_LL, FUNC, T, UNROLL> {
   public:
-    __device__ void run(struct ncclWorkElem* args) {}
+    __device__ void run(struct ncclWorkElem* args) {
+      /* To be implemented */
+    }
 };
 
 #include "prims_ll128.h"
@@ -246,10 +248,12 @@ class ncclFunction<ncclFuncReduceScatter, NCCL_ALGO_RING, NCCL_PROTO_LL128, FUNC
     }
 };
 
-template<int PROTO, class REDOP, typename T, int UNROLL>
-class ncclFunction<ncclFuncReduceScatter, NCCL_ALGO_DIRECT, NCCL_PROTO_LL128, REDOP, T, UNROLL> {
+template<class FUNC, typename T, int UNROLL>
+class ncclFunction<ncclFuncReduceScatter, NCCL_ALGO_DIRECT, NCCL_PROTO_LL128, FUNC, T, UNROLL> {
   public:
-    __device__ void run(struct ncclWorkElem* args) {}
+    __device__ void run(struct ncclWorkElem* args) {
+      /* To be implemented */
+    }
 };
 
 template<int PROTO, class REDOP, typename T, int UNROLL>
