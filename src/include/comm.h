@@ -66,8 +66,12 @@ struct ncclCudaGraphInfo {
   ncclComm_t comm;
   int nElems;
   int maxChannels;
-  struct ncclCudaGraphElem cgElems[];
+  ncclResult_t ret;
+  struct ncclCudaGraphElem cgElems[]; // Keep this as the last member
 };
+
+// Temporarily added fork-stream mode to work with CUDA 11.2
+#define NCCL_CUDA_GRAPH_FORK_MODE
 
 struct ncclComm {
   struct ncclChannel channels[MAXCHANNELS];
@@ -170,6 +174,12 @@ struct ncclComm {
   struct ncclCudaGraphInfo* cudaGraphInfo;
   CUgraphNode lastSetupNode;
   cuuint64_t lastCudaGraphId;
+  enum { GRAPH_SYNC, GRAPH_FORK, GRAPH_ASYNC } cudaGraphMode;
+#ifdef NCCL_CUDA_GRAPH_FORK_MODE
+  cudaStream_t setupStream; // Stream for host setup callback
+  cudaEvent_t userStreamDone;
+  cudaEvent_t setupDone;
+#endif
 };
 
 #endif

@@ -183,6 +183,14 @@ static ncclResult_t commFree(ncclComm_t comm) {
     CUDACHECK(cudaStreamDestroy(comm->groupStream));
   }
 
+#ifdef NCCL_CUDA_GRAPH_FORK_MODE
+  CUDACHECK(cudaStreamDestroy(comm->setupStream));
+  if (comm->setupDone != NULL)
+    CUDACHECK(cudaEventDestroy(comm->setupDone));
+  if (comm->userStreamDone != NULL)
+    CUDACHECK(cudaEventDestroy(comm->userStreamDone));
+#endif
+
   // Last rank frees shared resources between threads
   int isLast;
   NCCLCHECK(ncclCpuBarrierIn(comm, &isLast));
@@ -252,6 +260,20 @@ static ncclResult_t commAlloc(ncclComm_t* comret, int ndev, int rank) {
   comm->cudaGraphInfo->comm = comm;
   comm->lastSetupNode = NULL;
   comm->lastCudaGraphId = -1;
+  comm->cudaGraphMode = ncclComm::GRAPH_ASYNC;
+  char* cgStr = getenv("NCCL_CUDA_GRAPH_MODE");
+  if (cgStr) INFO(NCCL_ENV, "NCCL_CUDA_GRAPH_MODE set by environment to %s", cgStr);
+  if (cgStr && strcmp(cgStr, "SYNC") == 0) {
+    comm->cudaGraphMode = ncclComm::GRAPH_SYNC;
+  }
+#ifdef NCCL_CUDA_GRAPH_FORK_MODE
+  if (cgStr && strcmp(cgStr, "FORK") == 0) {
+    comm->cudaGraphMode = ncclComm::GRAPH_FORK;
+  }
+  CUDACHECK(cudaStreamCreateWithFlags(&comm->setupStream, cudaStreamNonBlocking));
+  CUDACHECK(cudaEventCreateWithFlags(&comm->userStreamDone, cudaEventDisableTiming));
+  CUDACHECK(cudaEventCreateWithFlags(&comm->setupDone, cudaEventDisableTiming));
+#endif
 
   static_assert(MAXCHANNELS <= sizeof(*comm->connectSend)*8, "comm->connectSend must have enough bits for all channels");
   static_assert(MAXCHANNELS <= sizeof(*comm->connectRecv)*8, "comm->connectRecv must have enough bits for all channels");

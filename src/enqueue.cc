@@ -538,6 +538,8 @@ static ncclResult_t ncclEnqueueCollKernel(ncclComm_t comm, struct ncclCudaGraphE
     comm->lastChannel++;
     work->coll.bid = bid % nChannels;
     NCCLCHECK(getNextOp(channel, NULL, work));
+    INFO(NCCL_COLL, "Host enqueue: bid %d index %ld nThreads %d funcIndex %d active %d count %ld nChannels %d",
+          work->coll.bid, channel->workFifoTail, work->nThreads, work->funcIndex, work->active, work->coll.count, work->coll.nChannels);
   }
   return ncclSuccess;
 }
@@ -720,19 +722,28 @@ ncclResult_t ncclSetupP2pKernel(struct ncclInfo* info) {
 
 template<int USING_CUDA_GRAPH>
 void CUDART_CB ncclEnqueueHostSetup(void* arg) {
+  ncclResult_t ret;
   struct ncclCudaGraphInfo* cgInfo = (struct ncclCudaGraphInfo*)arg;
   ncclComm_t comm = cgInfo->comm;
+  INFO(NCCL_COLL, "Host setup %d elements", cgInfo->nElems);
 
   for (int i=0; i<cgInfo->nElems; i++) {
     ncclCudaGraphElem* cgElem = cgInfo->cgElems+i;
-    if (cgElem->work.funcIndex == FUNC_INDEX_P2P)
-      ncclEnqueueP2pKernel(comm, cgElem);
-    else
-      ncclEnqueueCollKernel(comm, cgElem);
+    if (cgElem->work.funcIndex == FUNC_INDEX_P2P) {
+      NCCLCHECKGOTO(ncclEnqueueP2pKernel(comm, cgElem), ret, cb_end);
+    } else {
+      NCCLCHECKGOTO(ncclEnqueueCollKernel(comm, cgElem), ret, cb_end);
+    }
   }
 
-  setupLaunch(cgInfo, USING_CUDA_GRAPH);
-  ncclEnqueueProxyStart(cgInfo);
+  NCCLCHECKGOTO(setupLaunch(cgInfo, USING_CUDA_GRAPH), ret, cb_end);
+  NCCLCHECKGOTO(ncclEnqueueProxyStart(cgInfo), ret, cb_end);
+
+cb_end:
+  if (ret != ncclSuccess) {
+    WARN("Failure in host setup : %s", ncclGetErrorString(ret));
+  }
+  cgInfo->ret = ret;
 }
 
 template void CUDART_CB ncclEnqueueHostSetup<0>(void*);
@@ -749,6 +760,13 @@ ncclResult_t ncclGetCudaGraph(ncclComm_t comm, cudaGraph_t* graph) {
       // the first setup node in the new graph will not have a dependency
       comm->lastCudaGraphId = cudaGraphId;
       comm->lastSetupNode = NULL;
+#ifdef NCCL_CUDA_GRAPH_FORK_MODE
+      if (comm->cudaGraphMode == ncclComm::GRAPH_FORK) {
+        // Fork setup stream from user stream
+        CUDACHECK(cudaEventRecord(comm->userStreamDone, comm->userStream));
+        CUDACHECK(cudaStreamWaitEvent(comm->setupStream, comm->userStreamDone, 0));
+      }
+#endif
     }
     if (comm->launchMode == ncclComm::GROUP)
       comm->launchMode = ncclComm::GROUP_GRAPH;
@@ -762,19 +780,25 @@ ncclResult_t ncclCudaGraphHostSetup(ncclComm_t comm, cudaGraph_t graph) {
   struct ncclCudaGraphInfo* cgInfo = comm->cudaGraphInfo;
   cudaHostFn_t fn = ncclEnqueueHostSetup<1>;
   size_t argSize = offsetof(struct ncclCudaGraphInfo, cgElems)+cgInfo->nElems*sizeof(struct ncclCudaGraphElem);
-#ifdef NCCL_CUDA_GRAPH_SYNC_MODE
-  cudaEvent_t setupDone;
-  CUDACHECK(cudaEventCreate(&setupDone));
-  cuLaunchHostFunc(comm->userStream, fn, cgInfo, argSize); //FIXME: wrap with error check
-  CUDACHECK(cudaEventRecord(setupDone, info->stream));
-#else
-  CUgraphNode setupNode;
-  CUDA_HOST_NODE_PARAMS setupNodeParams = {fn, cgInfo, argSize};
-  int numDependencies = comm->lastSetupNode == NULL ? 0 : 1;
-  cuGraphAddHostNode(&setupNode, graph, &comm->lastSetupNode, numDependencies, &setupNodeParams);
-  cuStreamAddCaptureDependency(comm->userStream, setupNode, 0);
-  comm->lastSetupNode = setupNode;
+  if (comm->cudaGraphMode == ncclComm::GRAPH_SYNC) {
+    cuLaunchHostFunc(comm->userStream, fn, cgInfo, argSize); //FIXME: wrap with error check
+  }
+#ifdef NCCL_CUDA_GRAPH_FORK_MODE
+  else if (comm->cudaGraphMode == ncclComm::GRAPH_FORK) {
+    cuLaunchHostFunc(comm->setupStream, fn, cgInfo, argSize); //FIXME: wrap with error check
+    CUDACHECK(cudaEventRecord(comm->setupDone, comm->setupStream));
+    // Create dependency from host setup stream to kernel stream
+    CUDACHECK(cudaStreamWaitEvent(comm->userStream, comm->setupDone, 0));
+  }
 #endif
+  else {  // GRAPH_ASYNC mode
+    CUgraphNode setupNode;
+    CUDA_HOST_NODE_PARAMS setupNodeParams = {fn, cgInfo, argSize};
+    int numDependencies = comm->lastSetupNode == NULL ? 0 : 1;
+    cuGraphAddHostNode(&setupNode, graph, &comm->lastSetupNode, numDependencies, &setupNodeParams);
+    cuStreamAddCaptureDependency(comm->userStream, setupNode, 0);
+    comm->lastSetupNode = setupNode;
+  }
   return ncclSuccess;
 }
 
@@ -830,6 +854,7 @@ end:
       NCCLCHECK(ncclCudaGraphHostSetup(comm, graph));
     } else {
       ncclEnqueueHostSetup<0>(comm->cudaGraphInfo);
+      NCCLCHECK(comm->cudaGraphInfo->ret);
     }
 
     // Common part between graph mode and non-graph mode
