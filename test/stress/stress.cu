@@ -539,7 +539,7 @@ static testResult_t send(struct testCall* args, struct threadArgs* targs) {
     NCCLCHECK(ncclSend(targs->sendBuffs[i], args->count, args->datatype, args->root, targs->comms[i], targs->streams[i]));
     if (args->group) targs->sendBuffs[i] += args->count * wordSize(args->datatype);
   }
-  NCCLCHECK(ncclGroupStart());
+  if (targs->nGpus > 1) NCCLCHECK(ncclGroupEnd());
   return testSuccess;
 }
 static testResult_t recv(struct testCall* args, struct threadArgs* targs) {
@@ -550,7 +550,7 @@ static testResult_t recv(struct testCall* args, struct threadArgs* targs) {
     NCCLCHECK(ncclRecv(targs->recvBuffs[i], args->count, args->datatype, args->root, targs->comms[i], targs->streams[i]));
     if (args->group) targs->recvBuffs[i] += args->count * wordSize(args->datatype);
   }
-  NCCLCHECK(ncclGroupStart());
+  if (targs->nGpus > 1) NCCLCHECK(ncclGroupEnd());
   return testSuccess;
 }
 
@@ -615,6 +615,7 @@ testResult_t testLoadCalls(FILE* input, struct testCall** callsPtr, int* nCallsP
     // Parse line
     if (line[0] == '#') continue; // Comments
     call->group = group;
+    call->rank = -1; call->count = 0; call->root = -1;
     int fields = sscanf(line, "%s %d %ld %d %s %s", funcStr, &call->rank, &call->count, &call->root, dtypeStr, redopStr);
     if (fields <= 0) continue;
 

@@ -10,16 +10,18 @@ TYPED_TEST_CASE(ncclSendRecv_test, testDataTypes);
 TYPED_TEST(ncclSendRecv_test, DISABLED_simple) {
     size_t size = std::min(this->N, 1024 * 1024);
     ASSERT_EQ(ncclSuccess, ncclGroupStart());
-    ASSERT_EQ(ncclSuccess,
-              ncclSend(this->sendbuffs[0], size,
-                            this->DataType(), 1,
-                            this->comms[0], this->streams[0]))
+    if (this->nVis >= 2) {
+      ASSERT_EQ(ncclSuccess,
+          ncclSend(this->sendbuffs[0], size,
+            this->DataType(), 1,
+            this->comms[0], this->streams[0]))
         << "i" << 0 << ", " << std::endl;
-    ASSERT_EQ(ncclSuccess,
-              ncclRecv(this->recvbuffs[1], size,
-                            this->DataType(), 0,
-                            this->comms[1], this->streams[1]))
+      ASSERT_EQ(ncclSuccess,
+          ncclRecv(this->recvbuffs[1], size,
+            this->DataType(), 0,
+            this->comms[1], this->streams[1]))
         << "i" << 1 << ", " << std::endl;
+    }
     ASSERT_EQ(ncclSuccess, ncclGroupEnd());
 };
 TYPED_TEST(ncclSendRecv_test, ring) {
@@ -73,6 +75,50 @@ TYPED_TEST(ncclSendRecv_test, alltoallv) {
                 << "i" << i << ", " << std::endl;
             ASSERT_EQ(ncclSuccess,
                       ncclRecv(this->recvbuffs[i] + p * size, size,
+                                    this->DataType(), p,
+                                    this->comms[i], this->streams[i]))
+                << "i" << i << ", " << std::endl;
+         }
+    }
+    ASSERT_EQ(ncclSuccess, ncclGroupEnd());
+};
+TYPED_TEST(ncclSendRecv_test, DISABLED_alltoallv_JoC) {
+   /* In BUG 3197885 this AlltoAllv pattern was found to causes hangs
+    * on DGX A100 and DGX2
+    */
+    size_t sendCount[8][8] = {
+      1048576, 1048576, 1048576, 1048576, 1048576, 1048576, 1048576, 1048576,
+      4194304, 4194304, 4194304, 4194304, 4194304, 4194304, 4194304, 4194304,
+      4194304, 4194304, 4194304, 4194304, 4194304, 4194304, 4194304, 4194304,
+      4194304, 4194304, 4194304, 4194304, 4194304, 4194304, 4194304, 4194304,
+      4194304, 4194304, 4194304, 4194304, 4194304, 4194304, 4194304, 4194304,
+      4194304, 4194304, 4194304, 4194304, 4194304, 4194304, 4194304, 4194304,
+      4194304, 4194304, 4194304, 4194304, 4194304, 4194304, 4194304, 4194304,
+      2097152, 2097152, 2097152, 2097152, 2097152, 2097152, 2097152, 2097152,
+    };
+    size_t recvCount[8][8] = {
+      1048576, 4194304, 4194304, 4194304, 4194304, 4194304, 4194304, 2097152,
+      1048576, 4194304, 4194304, 4194304, 4194304, 4194304, 4194304, 2097152,
+      1048576, 4194304, 4194304, 4194304, 4194304, 4194304, 4194304, 2097152,
+      1048576, 4194304, 4194304, 4194304, 4194304, 4194304, 4194304, 2097152,
+      1048576, 4194304, 4194304, 4194304, 4194304, 4194304, 4194304, 2097152,
+      1048576, 4194304, 4194304, 4194304, 4194304, 4194304, 4194304, 2097152,
+      1048576, 4194304, 4194304, 4194304, 4194304, 4194304, 4194304, 2097152,
+      1048576, 4194304, 4194304, 4194304, 4194304, 4194304, 4194304, 2097152,
+    };
+    ASSERT_EQ(ncclSuccess, ncclGroupStart());
+    size_t maxSize = this->N;
+    for (int i = 0; i < this->nVis; ++i) {
+        for (int p = 0; p < this->nVis; ++p) {
+            size_t sendSize = std::min(maxSize, sendCount[i%8][p%8]);
+            ASSERT_EQ(ncclSuccess,
+                      ncclSend(this->sendbuffs[i], sendSize,
+                                    this->DataType(), p,
+                                    this->comms[i], this->streams[i]))
+                << "i" << i << ", " << std::endl;
+            size_t recvSize = std::min(maxSize, recvCount[i%8][p%8]);
+            ASSERT_EQ(ncclSuccess,
+                      ncclRecv(this->recvbuffs[i], recvSize,
                                     this->DataType(), p,
                                     this->comms[i], this->streams[i]))
                 << "i" << i << ", " << std::endl;

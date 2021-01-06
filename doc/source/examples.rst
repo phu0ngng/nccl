@@ -188,6 +188,7 @@ The following code depicts a complete working example with multiple MPI processe
  #include "mpi.h"
  #include <unistd.h>
  #include <stdint.h>
+ #include <stdlib.h>
  
  
  #define MPICHECK(cmd) do {                          \
@@ -221,10 +222,10 @@ The following code depicts a complete working example with multiple MPI processe
  
  
  static uint64_t getHostHash(const char* string) {
-   // Based on DJB2, result = result * 33 + char
+   // Based on DJB2a, result = result * 33 ^ char
    uint64_t result = 5381;
    for (int c = 0; string[c] != '\0'; c++){
-     result = ((result << 5) + result) + string[c];
+     result = ((result << 5) + result) ^ string[c];
    }
    return result;
  }
@@ -405,10 +406,10 @@ The following code depicts a complete working example with multiple MPI processe
  
  
  static uint64_t getHostHash(const char* string) {
-   // Based on DJB2, result = result * 33 + char
+   // Based on DJB2a, result = result * 33 ^ char
    uint64_t result = 5381;
    for (int c = 0; string[c] != '\0'; c++){
-     result = ((result << 5) + result) + string[c];
+     result = ((result << 5) + result) ^ string[c];
    }
    return result;
  }
