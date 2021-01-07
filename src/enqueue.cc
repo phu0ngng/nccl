@@ -600,7 +600,7 @@ ncclResult_t ncclSaveP2pKernel(struct ncclInfo* info) {
     segment = 0;
   }
 
-  NCCLCHECK(ncclProxySaveP2p(info, channel, segment));
+  NCCLCHECK(ncclProxySaveP2p(info, channel));
   NCCLCHECK(saveP2pOp(info, w, segment));
   info->comm->myParams->gridDim.x = std::max<unsigned>(info->comm->myParams->gridDim.x, channelId+1);
   info->comm->myParams->blockDim.x = std::max<unsigned>(info->comm->myParams->blockDim.x, info->nThreads);

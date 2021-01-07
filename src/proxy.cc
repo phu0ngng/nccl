@@ -222,14 +222,13 @@ ncclResult_t ncclProxySaveColl(struct ncclProxyArgs* args, int pattern, int root
   return ncclSuccess;
 }
 
-ncclResult_t ncclProxySaveP2p(struct ncclInfo* info, struct ncclChannel* channel, int segment) {
+ncclResult_t ncclProxySaveP2p(struct ncclInfo* info, struct ncclChannel* channel) {
   struct ncclProxyArgs args;
   memset(&args, 0, sizeof(struct ncclProxyArgs));
   args.channel = channel;
   args.sliceSteps = 1;
   args.chunkSteps = 1;
   args.protocol = NCCL_PROTO_SIMPLE;
-  args.segment = segment;
   args.opCount = channel->workFifoTail-1;
   args.dtype = info->datatype;
   if (info->delta > 0 && info->recvbytes >= 0) {
