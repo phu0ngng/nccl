@@ -14,20 +14,15 @@ enum ncclProxyOpState { ncclProxyOpNone, ncclProxyOpReady, ncclProxyOpProgress }
 struct ncclProxyArgs;
 typedef ncclResult_t (*proxyProgressFunc_t)(struct ncclProxyArgs*);
 
-struct ncclProxyArgs {
-  proxyProgressFunc_t progress;
+
+#define NCCL_PROXY_MAX_SUBS NCCL_MAX_WORK_ELEMENTS
+
+struct ncclProxySubArgs {
   struct ncclChannel* channel;
   struct ncclConnector* connector;
+  int nsteps;
   size_t sendbytes;
   size_t recvbytes;
-  int sliceSteps;
-  int chunkSteps;
-  int nsteps;
-  uint64_t opCount;
-  int protocol;
-  ncclDataType_t dtype;
-  ncclRedOp_t redOp;
-  int state;   // add component before this line -- it is left out during initialization
 
   // Internal state
   uint64_t posted;
@@ -36,13 +31,27 @@ struct ncclProxyArgs {
   uint64_t done;
   uint64_t end;
   void* requests[NCCL_STEPS];
+};
+
+struct ncclProxyArgs {
+  proxyProgressFunc_t progress;
+  struct ncclProxySubArgs subs[NCCL_PROXY_MAX_SUBS];
+  int nsubs;
+  int done;
+  int sliceSteps;
+  int chunkSteps;
+  uint64_t opCount;
+  int protocol;
+  ncclDataType_t dtype;
+  ncclRedOp_t redOp;
+  int state;
+
   int idle;
 
   // Element linking
   pthread_mutex_t mutex;
   struct ncclProxyArgs* next;
   struct ncclProxyArgs* nextPeer;
-  struct ncclProxyArgs* nextGroup;
   struct ncclProxyArgs** proxyAppendPtr;
 };
 
