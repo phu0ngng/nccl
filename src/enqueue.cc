@@ -281,7 +281,7 @@ ncclResult_t ncclRecordEvents(ncclComm_t comm) {
 ncclResult_t ncclLaunchReset(ncclComm_t comm) {
   comm->userStreamSet = false;
 
-  // We are finishing capturing CUDA graph
+  // We are finishing capture of the current launch
   // Clearing info space and counter
   struct ncclCudaGraphInfo* cgInfo = comm->cudaGraphInfo;
   memset(cgInfo->cgElems, 0, sizeof(struct ncclCudaGraphElem)*cgInfo->nElems);
@@ -752,7 +752,7 @@ template void CUDART_CB ncclEnqueueHostSetup<1>(void*);
 ncclResult_t ncclGetCudaGraph(ncclComm_t comm, cudaGraph_t* graph) {
   CUstreamCaptureStatus captureStatus;
   cuuint64_t cudaGraphId;
-  cuStreamGetCaptureInfo(comm->userStream, &captureStatus, graph, /*const CUgraphNode **dependencies_out*/ NULL, /*size_t *numDependencies_out*/ NULL, &cudaGraphId); //FIXME: wrap
+  cuStreamGetCaptureInfo(comm->userStream, &captureStatus, &cudaGraphId, graph, NULL, NULL); //FIXME: wrap
   if (captureStatus == CU_STREAM_CAPTURE_STATUS_ACTIVE) {
     INFO(NCCL_COLL, "stream is being captured by %s graph, id %ld", cudaGraphId == comm->lastCudaGraphId ? "an old" : "a new", cudaGraphId);
     if (cudaGraphId != comm->lastCudaGraphId) {
@@ -776,16 +776,31 @@ ncclResult_t ncclGetCudaGraph(ncclComm_t comm, cudaGraph_t* graph) {
   return ncclSuccess;
 }
 
+void freeHostArgs(void* ptr) {
+  struct ncclCudaGraphInfo* cgInfo = (struct ncclCudaGraphInfo*)ptr;
+  free(cgInfo);
+}
+
 ncclResult_t ncclCudaGraphHostSetup(ncclComm_t comm, cudaGraph_t graph) {
-  struct ncclCudaGraphInfo* cgInfo = comm->cudaGraphInfo;
+  struct ncclCudaGraphInfo* baseInfo = comm->cudaGraphInfo;
+  // Prepare an argument space for CUDA graph host callback
+  // and create a wrapping CUDA object
+  // which CUDA graph would manage lifetime of
+  struct ncclCudaGraphInfo* cgInfo = NULL;
+  ncclStructRealloc(struct ncclCudaGraphInfo, cgInfo, struct ncclCudaGraphElem, cgElems, baseInfo->nElems);
+  size_t argSize = offsetof(struct ncclCudaGraphInfo, cgElems)+baseInfo->nElems*sizeof(struct ncclCudaGraphElem);
+  memcpy(cgInfo, baseInfo, argSize);
+  CUuserObject object;
+  cuUserObjectCreate(&object, cgInfo, freeHostArgs, 1, 0); //FIXME: wrap with error check
+  cuGraphRetainUserObject(graph, object, 1, CU_GRAPH_USER_OBJECT_MOVE); //FIXME: wrap with error check
+
   cudaHostFn_t fn = ncclEnqueueHostSetup<1>;
-  size_t argSize = offsetof(struct ncclCudaGraphInfo, cgElems)+cgInfo->nElems*sizeof(struct ncclCudaGraphElem);
   if (comm->cudaGraphMode == ncclComm::GRAPH_SYNC) {
-    cuLaunchHostFunc(comm->userStream, fn, cgInfo, argSize); //FIXME: wrap with error check
+    cuLaunchHostFunc(comm->userStream, fn, cgInfo); //FIXME: wrap with error check
   }
 #ifdef NCCL_CUDA_GRAPH_FORK_MODE
   else if (comm->cudaGraphMode == ncclComm::GRAPH_FORK) {
-    cuLaunchHostFunc(comm->setupStream, fn, cgInfo, argSize); //FIXME: wrap with error check
+    cuLaunchHostFunc(comm->setupStream, fn, cgInfo); //FIXME: wrap with error check
     CUDACHECK(cudaEventRecord(comm->setupDone, comm->setupStream));
     // Create dependency from host setup stream to kernel stream
     CUDACHECK(cudaStreamWaitEvent(comm->userStream, comm->setupDone, 0));
@@ -793,7 +808,7 @@ ncclResult_t ncclCudaGraphHostSetup(ncclComm_t comm, cudaGraph_t graph) {
 #endif
   else {  // GRAPH_ASYNC mode
     CUgraphNode setupNode;
-    CUDA_HOST_NODE_PARAMS setupNodeParams = {fn, cgInfo, argSize};
+    CUDA_HOST_NODE_PARAMS setupNodeParams = {fn, cgInfo};
     int numDependencies = comm->lastSetupNode == NULL ? 0 : 1;
     cuGraphAddHostNode(&setupNode, graph, &comm->lastSetupNode, numDependencies, &setupNodeParams);
     cuStreamAddCaptureDependency(comm->userStream, setupNode, 0);
