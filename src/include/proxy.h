@@ -59,9 +59,7 @@ struct ncclProxySharedBuffers {
   int nslots;
   int slotSize;
   char* cudaBuff[2*MAXCHANNELS];
-  int* cudaUsed[2*MAXCHANNELS];
   char* hostBuff[2*MAXCHANNELS];
-  int* hostUsed[2*MAXCHANNELS];
   struct ncclProxyArgs* proxyAppend[2*MAXCHANNELS]; // Separate send and recv
 };
 
@@ -94,8 +92,7 @@ ncclResult_t ncclProxyCreate(struct ncclComm* comm);
 ncclResult_t ncclProxyDestroy(struct ncclComm* comm);
 
 ncclResult_t ncclProxySharedBuffersInit(struct ncclComm* comm, int cuda, int* size, char** ptr);
-ncclResult_t ncclProxySharedBuffersAlloc(struct ncclComm* comm, int cuda, int type, int channel, int size, char** ptr);
-ncclResult_t ncclProxySharedBuffersFree(struct ncclComm* comm, int cuda, int type, int channel, int size, char* ptr);
+ncclResult_t ncclProxySharedBuffersGet(struct ncclComm* comm, int cuda, int type, int channel, int slot, int index, char** ptr);
 ncclResult_t ncclProxySharedBuffersDestroy(struct ncclComm* comm);
 
 #include <unistd.h>

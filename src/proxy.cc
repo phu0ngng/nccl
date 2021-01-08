@@ -385,81 +385,40 @@ ncclResult_t ncclProxyStart(struct ncclComm* comm) {
   return ncclSuccess;
 }
 
-NCCL_PARAM(ProxySharedBuffersCount, "SHARED_BUFF_COUNT", -2);
-
 ncclResult_t ncclProxySharedBuffersInit(struct ncclComm* comm, int cuda, int* size, char** ptr) {
   struct ncclProxySharedBuffers* state = comm->proxyState.sharedBuffs;
   if (state == NULL) {
     NCCLCHECK(ncclCalloc(&state, 1));
     comm->proxyState.sharedBuffs = state;
-    state->nslots = ncclParamProxySharedBuffersCount();
-    if (state->nslots == -2)  {
-      state->nslots = NCCL_STEPS*NCCL_MAX_WORK_ELEMENTS;
-    }
+    state->nslots = NCCL_STEPS*NCCL_MAX_WORK_ELEMENTS;
     state->slotSize = comm->buffSizes[NCCL_PROTO_SIMPLE]/(NCCL_STEPS*SENDRECV_SLICEFACTOR);
   }
 
   char* buff;
-  int* used;
   *size = 2*comm->p2pnChannels*state->slotSize*state->nslots;
 
   if (cuda && state->cudaBuff[0] == NULL) {
     NCCLCHECK(ncclCudaCalloc(&buff, *size));
-    NCCLCHECK(ncclCalloc(&used, 2*comm->p2pnChannels*state->nslots));
     for (int i=0; i<2*comm->p2pnChannels; i++) {
       state->cudaBuff[i] = buff + state->nslots*state->slotSize*i;
-      state->cudaUsed[i] = used + state->nslots*i;
     }
   } else if (state->hostBuff[0] == NULL) {
     NCCLCHECK(ncclCudaHostCalloc(&buff, *size));
-    NCCLCHECK(ncclCalloc(&used, 2*comm->p2pnChannels*state->nslots));
     for (int i=0; i<2*comm->p2pnChannels; i++) {
       state->hostBuff[i] = buff + state->nslots*state->slotSize*i;
-      state->hostUsed[i] = used + state->nslots*i;
     }
   }
   buff = cuda ? state->cudaBuff[0] : state->hostBuff[0];
-
   *ptr = buff;
   return ncclSuccess;
 }
 
-ncclResult_t ncclProxySharedBuffersAlloc(struct ncclComm* comm, int cuda, int type, int channel, int size, char** ptr) {
+ncclResult_t ncclProxySharedBuffersGet(struct ncclComm* comm, int cuda, int type, int channel, int slot, int index, char** ptr) {
   struct ncclProxySharedBuffers* state = comm->proxyState.sharedBuffs;
   // Use different pools for different channels and also separate send/recv.
-  int p = 2*channel+type;
-  int* used = cuda ? state->cudaUsed[p] : state->hostUsed[p];
+  int p = type*comm->p2pnChannels+channel;
   char* buff = cuda ? state->cudaBuff[p] : state->hostBuff[p];
-  if (buff == NULL) return ncclInternalError;
-  int nslots = 1;
-  while (nslots*state->slotSize < size) nslots *= 2;
-  for (int s=0; s<state->nslots; s+=nslots) {
-    int u = 0;
-    for (int i=0; i<nslots; i++) u += used[s+i];
-    if (u == 0) {
-      for (int i=0; i<nslots; i++) used[s+i] = 1;
-      *ptr = buff+state->slotSize*s;
-      return ncclSuccess;
-    }
-  }
-  *ptr = NULL;
-  return ncclSuccess;
-}
-
-ncclResult_t ncclProxySharedBuffersFree(struct ncclComm* comm, int cuda, int type, int channel, int size, char* ptr) {
-  struct ncclProxySharedBuffers* state = comm->proxyState.sharedBuffs;
-  int p = 2*channel+type;
-  int* used = cuda ? state->cudaUsed[p] : state->hostUsed[p];
-  char* buff = cuda ? state->cudaBuff[p] : state->hostBuff[p];
-  if (buff == NULL) return ncclInternalError;
-  int nslots = 1;
-  while (nslots*state->slotSize < size) nslots *= 2;
-  int s = (ptr-buff)/state->slotSize;
-  if (s < 0 || s+nslots > state->nslots) {
-    WARN("Error freeing shared buffer : freeing ptr %p size %d (start %p slot size %d nslots %d)", ptr, size, buff, state->slotSize, state->nslots);
-    return ncclInternalError;
-  }
-  for (int i=0; i<nslots; i++) used[s+i] = 0;
+  *ptr = buff + state->slotSize * (slot*NCCL_MAX_WORK_ELEMENTS+index);
   return ncclSuccess;
 }
 
@@ -467,9 +426,7 @@ ncclResult_t ncclProxySharedBuffersDestroy(struct ncclComm* comm) {
   struct ncclProxySharedBuffers* state = comm->proxyState.sharedBuffs;
   if (state) {
     CUDACHECK(cudaFree(state->cudaBuff[0]));
-    free(state->cudaUsed[0]);
     NCCLCHECK(ncclCudaHostFree(state->hostBuff[0]));
-    free(state->hostUsed[0]);
     free(state);
   }
   return ncclSuccess;

@@ -282,8 +282,8 @@ ncclResult_t netSendProxy(struct ncclProxyArgs* args) {
       if (sub->posted < sub->end && sub->posted < sub->done + NCCL_STEPS) {
         if (resources->shared) {
           char* ptr;
-          NCCLCHECK(ncclProxySharedBuffersAlloc(sub->connector->comm, resources->useGdr, 0, sub->channel->id, buffSize, &ptr));
-          if (ptr == NULL) return ncclInternalError;
+          int buffSlot = sub->posted%NCCL_STEPS;
+          NCCLCHECK(ncclProxySharedBuffersGet(sub->connector->comm, resources->useGdr, 0, sub->channel->id, buffSlot, s, &ptr));
           resources->recvMem->ptrsFifo[sub->posted%NCCL_STEPS] = ptr;
           __sync_synchronize();
           volatile uint64_t* sendHead = &resources->sendMem->head;
@@ -350,10 +350,6 @@ ncclResult_t netSendProxy(struct ncclProxyArgs* args) {
         NCCLCHECK(ncclNetTest(sub->requests[buffSlot], &done, NULL));
         if (done) {
           TRACE(NCCL_NET, "sendProxy [%d/%d] request %p done, size %d", sub->done, buffSlot, sub->requests[buffSlot]);
-          if (resources->shared) {
-            char* ptr = (char*)resources->recvMem->ptrsFifo[sub->done%NCCL_STEPS];
-            NCCLCHECK(ncclProxySharedBuffersFree(sub->connector->comm, resources->useGdr, 0, sub->channel->id, buffSize, ptr));
-          }
           STEP_PRINTF("[%d/%d/%ld/%d] %ld Send done [%d], done -> %ld\n", sub->connector->comm->rank, sub->channel->id, args->opCount, s, sub->done, buffSlot, sub->done + args->sliceSteps);
           sub->done += args->sliceSteps;
 
@@ -406,8 +402,8 @@ ncclResult_t netRecvProxy(struct ncclProxyArgs* args) {
         int buffSlot = sub->posted%NCCL_STEPS;
         char* ptr;
         if (resources->shared) {
-          NCCLCHECK(ncclProxySharedBuffersAlloc(sub->connector->comm, resources->useGdr, 1, sub->channel->id, buffSize, &ptr));
-          if (ptr == NULL) return ncclInternalError;
+          int buffSlot = sub->posted%NCCL_STEPS;
+          NCCLCHECK(ncclProxySharedBuffersGet(sub->connector->comm, resources->useGdr, 1, sub->channel->id, buffSlot, s, &ptr));
           volatile void** ptrsFifo = (volatile void**)resources->recvMem->ptrsFifo;
           ptrsFifo[buffSlot] = ptr;
         } else {
@@ -420,8 +416,6 @@ ncclResult_t netRecvProxy(struct ncclProxyArgs* args) {
           sub->posted += args->sliceSteps;
           args->idle = 0;
           continue;
-        } else if (resources->shared) {
-          NCCLCHECK(ncclProxySharedBuffersFree(sub->connector->comm, resources->useGdr, 1, sub->channel->id, buffSize, ptr));
         }
       }
       if (sub->posted > sub->received) {
@@ -463,10 +457,6 @@ ncclResult_t netRecvProxy(struct ncclProxyArgs* args) {
         while (done > sub->done &&
             // LL and LL128 can acknowledge 0-bytes send before they even happen. Don't go past what we transmitted.
             sub->transmitted > sub->done) {
-          if (resources->shared) {
-            char* ptr = (char*)resources->recvMem->ptrsFifo[sub->done%NCCL_STEPS];
-            NCCLCHECK(ncclProxySharedBuffersFree(sub->connector->comm, resources->useGdr, 1, sub->channel->id, buffSize, ptr));
-          }
           STEP_PRINTF("[%d/%d/%ld/%d] %ld Recv done -> %ld\n", sub->connector->comm->rank, sub->channel->id, args->opCount, s, sub->done, sub->done + args->sliceSteps);
           sub->done += args->sliceSteps;
           args->idle = 0;
