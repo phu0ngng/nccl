@@ -278,14 +278,14 @@ ncclResult_t ncclRecordEvents(ncclComm_t comm) {
   return ncclSuccess;
 }
 
-ncclResult_t ncclLaunchReset(ncclComm_t comm) {
+ncclResult_t ncclLaunchReset(ncclComm_t comm, int destroyInfo) {
   comm->userStreamSet = false;
 
   // We are finishing capture of the current launch
-  // Clearing info space and counter
-  struct ncclCudaGraphInfo* cgInfo = comm->cudaGraphInfo;
-  memset(cgInfo->cgElems, 0, sizeof(struct ncclCudaGraphElem)*cgInfo->nElems);
-  cgInfo->nElems = 0;
+  // Recycle info space if not in CUDA graph mode
+  if (destroyInfo) destroyCudaGraphInfo(comm->cudaGraphInfo);
+  NCCLCHECK(ncclCalloc(&comm->cudaGraphInfo, 1));
+  comm->cudaGraphInfo->comm = comm;
 
   struct cudaLaunchParams *params = comm->myParams;
   params->gridDim.x = params->blockDim.x = 0;
@@ -490,10 +490,10 @@ static ncclResult_t ncclSetupCollKernel(struct ncclInfo* info) {
 
   // Compute cuda kernel arg and proxy arg templates
   struct ncclCudaGraphInfo* cgInfo = comm->cudaGraphInfo;
-  struct ncclCudaGraphElem* cgElem = cgInfo->cgElems + cgInfo->nElems;
+  struct ncclCudaGraphElem* cgElem;
+  NCCLCHECK(getNewCudaGraphElem(cgInfo, &cgElem));
   struct ncclWorkElem* work = &cgElem->work;
   NCCLCHECK(computeColl(info, work, &cgElem->proxyArgs));
-  cgInfo->nElems++;
 
   // Determine grid size
   struct cudaLaunchParams* params = comm->myParams;
@@ -699,10 +699,10 @@ ncclResult_t ncclSetupP2pKernel(struct ncclInfo* info) {
   ncclComm* comm = info->comm;
   // Compute cuda kernel arg and proxy arg templates
   struct ncclCudaGraphInfo* cgInfo = comm->cudaGraphInfo;
-  struct ncclCudaGraphElem* cgElem = cgInfo->cgElems + cgInfo->nElems;
+  struct ncclCudaGraphElem* cgElem;
+  NCCLCHECK(getNewCudaGraphElem(cgInfo, &cgElem));
   NCCLCHECK(computeP2pWorkElem(info, &cgElem->work));
   NCCLCHECK(computeP2pProxyArgs(info, &cgElem->proxyArgs));
-  cgInfo->nElems++;
 
   int channelId = info->channelId;
   struct cudaLaunchParams* params = comm->myParams;
@@ -725,15 +725,16 @@ void CUDART_CB ncclEnqueueHostSetup(void* arg) {
   ncclResult_t ret;
   struct ncclCudaGraphInfo* cgInfo = (struct ncclCudaGraphInfo*)arg;
   ncclComm_t comm = cgInfo->comm;
-  INFO(NCCL_COLL, "Host setup %d elements", cgInfo->nElems);
 
-  for (int i=0; i<cgInfo->nElems; i++) {
-    ncclCudaGraphElem* cgElem = cgInfo->cgElems+i;
+  // Iterate through the element list
+  struct ncclCudaGraphElem* cgElem = cgInfo->cgElemList.head;
+  while (cgElem != NULL) {
     if (cgElem->work.funcIndex == FUNC_INDEX_P2P) {
       NCCLCHECKGOTO(ncclEnqueueP2pKernel(comm, cgElem), ret, cb_end);
     } else {
       NCCLCHECKGOTO(ncclEnqueueCollKernel(comm, cgElem), ret, cb_end);
     }
+    cgElem = cgElem->next;
   }
 
   NCCLCHECKGOTO(setupLaunch(cgInfo, USING_CUDA_GRAPH), ret, cb_end);
@@ -776,22 +777,12 @@ ncclResult_t ncclGetCudaGraph(ncclComm_t comm, cudaGraph_t* graph) {
   return ncclSuccess;
 }
 
-void freeHostArgs(void* ptr) {
-  struct ncclCudaGraphInfo* cgInfo = (struct ncclCudaGraphInfo*)ptr;
-  free(cgInfo);
-}
-
 ncclResult_t ncclCudaGraphHostSetup(ncclComm_t comm, cudaGraph_t graph) {
-  struct ncclCudaGraphInfo* baseInfo = comm->cudaGraphInfo;
-  // Prepare an argument space for CUDA graph host callback
-  // and create a wrapping CUDA object
+  struct ncclCudaGraphInfo* cgInfo = comm->cudaGraphInfo;
+  // Create a CUDA object to wrap around the argument space
   // which CUDA graph would manage lifetime of
-  struct ncclCudaGraphInfo* cgInfo = NULL;
-  ncclStructRealloc(struct ncclCudaGraphInfo, cgInfo, struct ncclCudaGraphElem, cgElems, baseInfo->nElems);
-  size_t argSize = offsetof(struct ncclCudaGraphInfo, cgElems)+baseInfo->nElems*sizeof(struct ncclCudaGraphElem);
-  memcpy(cgInfo, baseInfo, argSize);
   CUuserObject object;
-  cuUserObjectCreate(&object, cgInfo, freeHostArgs, 1, 0); //FIXME: wrap with error check
+  cuUserObjectCreate(&object, cgInfo, destroyCudaGraphInfo, 1, 0); //FIXME: wrap with error check
   cuGraphRetainUserObject(graph, object, 1, CU_GRAPH_USER_OBJECT_MOVE); //FIXME: wrap with error check
 
   cudaHostFn_t fn = ncclEnqueueHostSetup<1>;
@@ -865,7 +856,8 @@ end:
     NCCLCHECK(ncclSetupCollKernel(info));
 
     // Host setup
-    if (graph != NULL) {
+    int usingCudaGraph = (graph != NULL) ? 1 : 0;
+    if (usingCudaGraph) {
       NCCLCHECK(ncclCudaGraphHostSetup(comm, graph));
     } else {
       ncclEnqueueHostSetup<0>(comm->cudaGraphInfo);
@@ -876,7 +868,7 @@ end:
     NCCLCHECK(ncclLaunchBarrier(comm));
     NCCLCHECK(ncclLaunch(comm));
     NCCLCHECK(ncclRecordEvents(comm));
-    NCCLCHECK(ncclLaunchReset(comm));
+    NCCLCHECK(ncclLaunchReset(comm, !usingCudaGraph));
     return ncclSuccess;
   }
 }

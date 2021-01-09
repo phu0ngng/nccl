@@ -57,19 +57,6 @@ struct ncclRecvMem {
   char buff[1]; // Actually larger than that
 };
 
-struct ncclCudaGraphElem {
-  struct ncclWorkElem work;
-  struct ncclProxyArgs proxyArgs;
-};
-
-struct ncclCudaGraphInfo {
-  ncclComm_t comm;
-  int nElems;
-  int maxChannels;
-  ncclResult_t ret;
-  struct ncclCudaGraphElem cgElems[]; // Keep this as the last member
-};
-
 // Temporarily added fork-stream mode to work with CUDA 11.2
 #define NCCL_CUDA_GRAPH_FORK_MODE
 

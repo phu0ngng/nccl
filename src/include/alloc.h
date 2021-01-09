@@ -63,14 +63,4 @@ static ncclResult_t ncclIbMalloc(void** ptr, size_t size) {
   return ncclSuccess;
 }
 
-#define ncclStructRealloc(StructType, ptr, ElemType, member, nelem) do { \
-  size_t offset = offsetof(StructType, member); \
-  size_t size = offset+nelem*sizeof(ElemType); \
-  ptr = (StructType*) realloc(ptr, size); \
-  if (ptr == NULL) { \
-    WARN("Failed to realloc %ld bytes", size); \
-    return ncclSystemError; \
-  } \
-} while(0)
-
 #endif
