@@ -17,6 +17,7 @@ NVCC = $(CUDA_HOME)/bin/nvcc
 
 CUDA_LIB ?= $(CUDA_HOME)/lib64
 CUDA_INC ?= $(CUDA_HOME)/include
+# To be deleted
 CUDA_DRIVER_LIB ?= $(CUDA_DRIVER_HOME)/lib64
 CUDA_DRIVER_INC ?= $(CUDA_DRIVER_HOME)/include
 CUDA_VERSION = $(strip $(shell which $(NVCC) >/dev/null && $(NVCC) --version | grep release | sed 's/.*release //' | sed 's/\,.*//'))
@@ -59,6 +60,7 @@ CXXFLAGS   := -DCUDA_MAJOR=$(CUDA_MAJOR) -DCUDA_MINOR=$(CUDA_MINOR) -fPIC -fvisi
 # We would not have to set this if we used __launch_bounds__, but this only works on kernels, not on functions.
 NVCUFLAGS  := -ccbin $(CXX) $(NVCC_GENCODE) -std=c++11 -Xptxas -maxrregcount=96 -Xfatbin -compress-all
 # Use addprefix so that we can specify more than one path
+# To be deleted
 NVLDFLAGS  := -L${CUDA_LIB} -lcudart -lrt -L${CUDA_DRIVER_LIB} -lcuda
 
 ########## GCOV ##########

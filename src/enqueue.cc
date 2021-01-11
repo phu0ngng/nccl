@@ -753,7 +753,7 @@ template void CUDART_CB ncclEnqueueHostSetup<1>(void*);
 ncclResult_t ncclGetCudaGraph(ncclComm_t comm, cudaGraph_t* graph) {
   CUstreamCaptureStatus captureStatus;
   cuuint64_t cudaGraphId;
-  cuStreamGetCaptureInfo(comm->userStream, &captureStatus, &cudaGraphId, graph, NULL, NULL); //FIXME: wrap
+  cuStreamGetCaptureInfo(comm->userStream, &captureStatus, &cudaGraphId, graph, NULL, NULL); //FIXME: use runtime API + check
   if (captureStatus == CU_STREAM_CAPTURE_STATUS_ACTIVE) {
     INFO(NCCL_COLL, "stream is being captured by %s graph, id %ld", cudaGraphId == comm->lastCudaGraphId ? "an old" : "a new", cudaGraphId);
     if (cudaGraphId != comm->lastCudaGraphId) {
@@ -782,16 +782,16 @@ ncclResult_t ncclCudaGraphHostSetup(ncclComm_t comm, cudaGraph_t graph) {
   // Create a CUDA object to wrap around the argument space
   // which CUDA graph would manage lifetime of
   CUuserObject object;
-  cuUserObjectCreate(&object, eqInfo, destroyEnqueueInfo, 1, 0); //FIXME: wrap with error check
-  cuGraphRetainUserObject(graph, object, 1, CU_GRAPH_USER_OBJECT_MOVE); //FIXME: wrap with error check
+  cuUserObjectCreate(&object, eqInfo, destroyEnqueueInfo, 1, 0); //FIXME: use runtime API + check
+  cuGraphRetainUserObject(graph, object, 1, CU_GRAPH_USER_OBJECT_MOVE); //FIXME: use runtime API + check
 
   cudaHostFn_t fn = ncclEnqueueHostSetup<1>;
   if (comm->cudaGraphMode == ncclComm::GRAPH_SYNC) {
-    cuLaunchHostFunc(comm->userStream, fn, eqInfo); //FIXME: wrap with error check
+    cuLaunchHostFunc(comm->userStream, fn, eqInfo); //FIXME: use runtime API + check
   }
 #ifdef NCCL_CUDA_GRAPH_FORK_MODE
   else if (comm->cudaGraphMode == ncclComm::GRAPH_FORK) {
-    cuLaunchHostFunc(comm->setupStream, fn, eqInfo); //FIXME: wrap with error check
+    cuLaunchHostFunc(comm->setupStream, fn, eqInfo); //FIXME: use runtime API + check
     CUDACHECK(cudaEventRecord(comm->setupDone, comm->setupStream));
     // Create dependency from host setup stream to kernel stream
     CUDACHECK(cudaStreamWaitEvent(comm->userStream, comm->setupDone, 0));

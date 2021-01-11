@@ -26,24 +26,28 @@ void CUDART_CB ncclEnqueueHostSetup(void* arg);
 ncclResult_t ncclGetCudaGraph(ncclComm_t comm, cudaGraph_t* graph);
 ncclResult_t ncclCudaGraphHostSetup(ncclComm_t comm, cudaGraph_t graph);
 
+// Enqueue information (for kernel and proxy) for each operation
 struct ncclEnqueueElem {
   struct ncclWorkElem work;
   struct ncclProxyArgs proxyArgs;
   struct ncclEnqueueElem* next;
 };
 
+// Store enqueue elements in a list
 struct ncclEnqueueElemList {
   struct ncclEnqueueElem* head;
   struct ncclEnqueueElem* tail;
 };
 
+// Structure passed to CUDA graph
 struct ncclEnqueueInfo {
   ncclComm_t comm;
-  int maxChannels;
-  ncclResult_t ret;
+  int maxChannels;    // Dynamic version of gridDim
+  ncclResult_t ret;   // Return value of host setup call
   struct ncclEnqueueElemList eqElemList;
 };
 
+// Get next element from enqueue list
 static ncclResult_t getNewEnqueueElem(struct ncclEnqueueInfo* eqInfo, struct ncclEnqueueElem** elemOut) {
   if (eqInfo == NULL) return ncclInternalError;
   struct ncclEnqueueElemList* list = &eqInfo->eqElemList;
@@ -56,6 +60,8 @@ static ncclResult_t getNewEnqueueElem(struct ncclEnqueueInfo* eqInfo, struct ncc
   return ncclSuccess;
 }
 
+// Destroy enqueue info space
+// used by both CUDA graph and non CUDA graph
 static void destroyEnqueueInfo(void* ptr) {
   if (ptr == NULL) return;
   struct ncclEnqueueInfo* eqInfo = (struct ncclEnqueueInfo*)ptr;
