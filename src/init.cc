@@ -183,6 +183,8 @@ static ncclResult_t commFree(ncclComm_t comm) {
     CUDACHECK(cudaStreamDestroy(comm->groupStream));
   }
 
+  destroyCudaGraphInfo(comm->cudaGraphInfo);
+
 #ifdef NCCL_CUDA_GRAPH_FORK_MODE
   CUDACHECK(cudaStreamDestroy(comm->setupStream));
   if (comm->setupDone != NULL)
