@@ -335,7 +335,7 @@ sched_delta:
       if (usingCudaGraphAll) {
         NCCLCHECKGOTO(ncclCudaGraphHostSetup(args->coll.comm, graphs[i]), ret, end);
       } else {
-        ncclEnqueueHostSetup<0>(args->coll.comm->cudaGraphInfo);
+        ncclEnqueueHostSetup<0>(args->coll.comm->enqueueInfo);
       }
       NCCLCHECKGOTO(ncclLaunchBarrier(args->coll.comm), ret, end);
     }

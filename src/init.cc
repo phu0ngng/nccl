@@ -183,7 +183,7 @@ static ncclResult_t commFree(ncclComm_t comm) {
     CUDACHECK(cudaStreamDestroy(comm->groupStream));
   }
 
-  destroyCudaGraphInfo(comm->cudaGraphInfo);
+  destroyEnqueueInfo(comm->enqueueInfo);
 
 #ifdef NCCL_CUDA_GRAPH_FORK_MODE
   CUDACHECK(cudaStreamDestroy(comm->setupStream));
@@ -257,8 +257,8 @@ static ncclResult_t commAlloc(ncclComm_t* comret, int ndev, int rank) {
   comm->asyncOpCount = 0;
   comm->asyncTotalSize = 0;
 
-  NCCLCHECK(ncclCalloc(&comm->cudaGraphInfo, 1));
-  comm->cudaGraphInfo->comm = comm;
+  NCCLCHECK(ncclCalloc(&comm->enqueueInfo, 1));
+  comm->enqueueInfo->comm = comm;
   comm->lastSetupNode = NULL;
   comm->lastCudaGraphId = -1;
   comm->cudaGraphMode = ncclComm::GRAPH_ASYNC;

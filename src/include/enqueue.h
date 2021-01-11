@@ -26,28 +26,28 @@ void CUDART_CB ncclEnqueueHostSetup(void* arg);
 ncclResult_t ncclGetCudaGraph(ncclComm_t comm, cudaGraph_t* graph);
 ncclResult_t ncclCudaGraphHostSetup(ncclComm_t comm, cudaGraph_t graph);
 
-struct ncclCudaGraphElem {
+struct ncclEnqueueElem {
   struct ncclWorkElem work;
   struct ncclProxyArgs proxyArgs;
-  struct ncclCudaGraphElem* next;
+  struct ncclEnqueueElem* next;
 };
 
-struct ncclCgElemList {
-  struct ncclCudaGraphElem* head;
-  struct ncclCudaGraphElem* tail;
+struct ncclEnqueueElemList {
+  struct ncclEnqueueElem* head;
+  struct ncclEnqueueElem* tail;
 };
 
-struct ncclCudaGraphInfo {
+struct ncclEnqueueInfo {
   ncclComm_t comm;
   int maxChannels;
   ncclResult_t ret;
-  struct ncclCgElemList cgElemList;
+  struct ncclEnqueueElemList eqElemList;
 };
 
-static ncclResult_t getNewCudaGraphElem(struct ncclCudaGraphInfo* cgInfo, struct ncclCudaGraphElem** elemOut) {
-  if (cgInfo == NULL) return ncclInternalError;
-  struct ncclCgElemList* list = &cgInfo->cgElemList;
-  struct ncclCudaGraphElem* next;
+static ncclResult_t getNewEnqueueElem(struct ncclEnqueueInfo* eqInfo, struct ncclEnqueueElem** elemOut) {
+  if (eqInfo == NULL) return ncclInternalError;
+  struct ncclEnqueueElemList* list = &eqInfo->eqElemList;
+  struct ncclEnqueueElem* next;
   NCCLCHECK(ncclCalloc(&next, 1));
   *elemOut = next;
   if (list->tail != NULL) list->tail->next = next;
@@ -56,15 +56,15 @@ static ncclResult_t getNewCudaGraphElem(struct ncclCudaGraphInfo* cgInfo, struct
   return ncclSuccess;
 }
 
-static void destroyCudaGraphInfo(void* ptr) {
+static void destroyEnqueueInfo(void* ptr) {
   if (ptr == NULL) return;
-  struct ncclCudaGraphInfo* cgInfo = (struct ncclCudaGraphInfo*)ptr;
-  struct ncclCudaGraphElem* head = cgInfo->cgElemList.head;
+  struct ncclEnqueueInfo* eqInfo = (struct ncclEnqueueInfo*)ptr;
+  struct ncclEnqueueElem* head = eqInfo->eqElemList.head;
   while (head != NULL) {
-    struct ncclCudaGraphElem* temp = head;
+    struct ncclEnqueueElem* temp = head;
     head = head->next;
     free(temp);
   }
-  free(cgInfo);
+  free(eqInfo);
 }
 #endif // End include guard
