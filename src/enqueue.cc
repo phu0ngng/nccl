@@ -478,8 +478,9 @@ static ncclResult_t checkSetStream(struct ncclInfo* info) {
   return ncclSuccess;
 }
 
-// Prepare things that will not change between graph launches
-// including cuda launch parameters
+// Compute enqueue element, save it in list
+// Compute CUDA launch parameters
+// Capture time code in view of CUDA graph
 static ncclResult_t ncclSetupCollKernel(struct ncclInfo* info) {
   ncclComm_t comm = info->comm;
   if (comm->nRanks == 1) {
@@ -514,8 +515,7 @@ static ncclResult_t ncclSetupCollKernel(struct ncclInfo* info) {
   return ncclSuccess;
 }
 
-// Prepare things that will change between graph launches
-// including cuda kernel args
+// Dynamic enqueue code
 static ncclResult_t ncclEnqueueCollKernel(ncclComm_t comm, struct ncclEnqueueElem* eqElem) {
   struct ncclWorkElem* work = &eqElem->work;
   struct ncclProxyArgs* proxyArgs = &eqElem->proxyArgs;
