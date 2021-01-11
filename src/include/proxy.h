@@ -58,8 +58,8 @@ struct ncclProxyArgs {
 struct ncclProxySharedBuffers {
   int nslots;
   int slotSize;
-  char* cudaBuff[2*MAXCHANNELS];
-  char* hostBuff[2*MAXCHANNELS];
+  char* cudaBuff;
+  char* hostBuff;
   struct ncclProxyArgs* proxyAppend[2*MAXCHANNELS]; // Separate send and recv
 };
 

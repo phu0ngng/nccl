@@ -394,39 +394,31 @@ ncclResult_t ncclProxySharedBuffersInit(struct ncclComm* comm, int cuda, int* si
     state->slotSize = comm->buffSizes[NCCL_PROTO_SIMPLE]/(NCCL_STEPS*SENDRECV_SLICEFACTOR);
   }
 
-  char* buff;
   *size = 2*comm->p2pnChannels*state->slotSize*state->nslots;
 
-  if (cuda && state->cudaBuff[0] == NULL) {
-    NCCLCHECK(ncclCudaCalloc(&buff, *size));
-    for (int i=0; i<2*comm->p2pnChannels; i++) {
-      state->cudaBuff[i] = buff + state->nslots*state->slotSize*i;
-    }
-  } else if (state->hostBuff[0] == NULL) {
-    NCCLCHECK(ncclCudaHostCalloc(&buff, *size));
-    for (int i=0; i<2*comm->p2pnChannels; i++) {
-      state->hostBuff[i] = buff + state->nslots*state->slotSize*i;
-    }
+  if (cuda && state->cudaBuff == NULL) {
+    NCCLCHECK(ncclCudaCalloc(&state->cudaBuff, *size));
+  } else if (state->hostBuff == NULL) {
+    NCCLCHECK(ncclCudaHostCalloc(&state->hostBuff, *size));
   }
-  buff = cuda ? state->cudaBuff[0] : state->hostBuff[0];
-  *ptr = buff;
+  *ptr = cuda ? state->cudaBuff : state->hostBuff;
   return ncclSuccess;
 }
 
 ncclResult_t ncclProxySharedBuffersGet(struct ncclComm* comm, int cuda, int type, int channel, int slot, int index, char** ptr) {
   struct ncclProxySharedBuffers* state = comm->proxyState.sharedBuffs;
   // Use different pools for different channels and also separate send/recv.
-  int p = type*comm->p2pnChannels+channel;
-  char* buff = cuda ? state->cudaBuff[p] : state->hostBuff[p];
-  *ptr = buff + state->slotSize * (slot*NCCL_MAX_WORK_ELEMENTS+index);
+  char* buff = cuda ? state->cudaBuff : state->hostBuff;
+  int globalSlot = (((type*comm->p2pnChannels+channel)*NCCL_STEPS)+slot)*NCCL_MAX_WORK_ELEMENTS+index;
+  *ptr = buff + state->slotSize * globalSlot;
   return ncclSuccess;
 }
 
 ncclResult_t ncclProxySharedBuffersDestroy(struct ncclComm* comm) {
   struct ncclProxySharedBuffers* state = comm->proxyState.sharedBuffs;
   if (state) {
-    CUDACHECK(cudaFree(state->cudaBuff[0]));
-    NCCLCHECK(ncclCudaHostFree(state->hostBuff[0]));
+    CUDACHECK(cudaFree(state->cudaBuff));
+    NCCLCHECK(ncclCudaHostFree(state->hostBuff));
     free(state);
   }
   return ncclSuccess;
