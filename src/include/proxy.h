@@ -61,6 +61,10 @@ struct ncclProxySharedBuffers {
   char* cudaBuff;
   char* hostBuff;
   struct ncclProxyArgs* proxyAppend[2*MAXCHANNELS]; // Separate send and recv
+  // Collnet sharing is technically per device, but for now MAXDEVICES == MAXCHANNELS.
+  struct ncclProxyArgs* proxyAppendCollNet[2*MAXCHANNELS];
+  void* collNetListenComms[MAXCHANNELS];
+  void* collNetComms[MAXCHANNELS];
 };
 
 struct ncclProxyPool;
@@ -69,7 +73,7 @@ struct ncclProxyState {
   pthread_mutex_t opsMutex;
   pthread_mutex_t poolMutex;
   bool stop;
-  struct ncclProxySharedBuffers* sharedBuffs;
+  struct ncclProxySharedBuffers sharedBuffs;
   struct ncclProxyArgs* ops;
   struct ncclProxyArgs* nextOps;
   struct ncclProxyArgs* nextOpsEnd;

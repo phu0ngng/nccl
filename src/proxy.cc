@@ -187,7 +187,7 @@ static ncclResult_t SaveProxy(int type, int peer, struct ncclProxyArgs* args) {
 
   op->proxyAppendPtr =
     connector->conn.shared ?
-    state->sharedBuffs->proxyAppend+2*channel->id+type : // Shared buffers
+    state->sharedBuffs.proxyAppend+2*channel->id+type : // Shared buffers
     &connector->proxyAppend;  // Dedicated buffers
 
   if (state->nextOps == NULL) state->nextOps = op;
@@ -386,15 +386,16 @@ ncclResult_t ncclProxyStart(struct ncclComm* comm) {
 }
 
 ncclResult_t ncclProxySharedBuffersInit(struct ncclComm* comm, int cuda, int* size, char** ptr) {
-  struct ncclProxySharedBuffers* state = comm->proxyState.sharedBuffs;
-  if (state == NULL) {
-    NCCLCHECK(ncclCalloc(&state, 1));
-    comm->proxyState.sharedBuffs = state;
+  struct ncclProxySharedBuffers* state = &comm->proxyState.sharedBuffs;
+  if (state->nslots == 0) {
     state->nslots = NCCL_STEPS*NCCL_MAX_WORK_ELEMENTS;
     state->slotSize = comm->buffSizes[NCCL_PROTO_SIMPLE]/(NCCL_STEPS*SENDRECV_SLICEFACTOR);
   }
 
-  *size = 2*comm->p2pnChannels*state->slotSize*state->nslots;
+  int p2pnChannels = 1;
+  while (p2pnChannels < comm->nChannels) p2pnChannels *= 2;
+
+  *size = 2*p2pnChannels*state->slotSize*state->nslots;
 
   if (cuda && state->cudaBuff == NULL) {
     NCCLCHECK(ncclCudaCalloc(&state->cudaBuff, *size));
@@ -406,7 +407,7 @@ ncclResult_t ncclProxySharedBuffersInit(struct ncclComm* comm, int cuda, int* si
 }
 
 ncclResult_t ncclProxySharedBuffersGet(struct ncclComm* comm, int cuda, int type, int channel, int slot, int index, char** ptr) {
-  struct ncclProxySharedBuffers* state = comm->proxyState.sharedBuffs;
+  struct ncclProxySharedBuffers* state = &comm->proxyState.sharedBuffs;
   // Use different pools for different channels and also separate send/recv.
   char* buff = cuda ? state->cudaBuff : state->hostBuff;
   int globalSlot = (((type*comm->p2pnChannels+channel)*NCCL_STEPS)+slot)*NCCL_MAX_WORK_ELEMENTS+index;
@@ -415,11 +416,10 @@ ncclResult_t ncclProxySharedBuffersGet(struct ncclComm* comm, int cuda, int type
 }
 
 ncclResult_t ncclProxySharedBuffersDestroy(struct ncclComm* comm) {
-  struct ncclProxySharedBuffers* state = comm->proxyState.sharedBuffs;
-  if (state) {
+  struct ncclProxySharedBuffers* state = &comm->proxyState.sharedBuffs;
+  if (state->nslots) {
     CUDACHECK(cudaFree(state->cudaBuff));
     NCCLCHECK(ncclCudaHostFree(state->hostBuff));
-    free(state);
   }
   return ncclSuccess;
 }
