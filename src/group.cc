@@ -309,8 +309,8 @@ sched_delta:
     struct ncclAsyncArgs* args = ncclGroupArgs+i;
     if (args->funcType == ASYNC_FUNC_COLL) {
       ncclComm_t comm = args->coll.comm;
-      NCCLCHECKGOTO(ncclGetCudaGraph(comm, graphs+i), ret, group_cleanup);
-      int usingCudaGraph = graphs[i] == NULL ? 0 : 1;
+      int usingCudaGraph = 0;
+      NCCLCHECKGOTO(ncclGetCudaGraph(comm, graphs+i, &usingCudaGraph), ret, group_cleanup);
       if (usingCudaGraphAll == -1) {
         usingCudaGraphAll = usingCudaGraph;
       } else if (usingCudaGraphAll != usingCudaGraph) {

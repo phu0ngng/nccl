@@ -57,9 +57,6 @@ struct ncclRecvMem {
   char buff[1]; // Actually larger than that
 };
 
-// Temporarily added fork-stream mode to work with CUDA 11.2
-#define NCCL_CUDA_GRAPH_FORK_MODE
-
 struct ncclComm {
   struct ncclChannel channels[MAXCHANNELS];
 
@@ -162,11 +159,10 @@ struct ncclComm {
   CUgraphNode lastSetupNode;
   cuuint64_t lastCudaGraphId;
   enum { GRAPH_SYNC, GRAPH_FORK, GRAPH_ASYNC } cudaGraphMode;
-#ifdef NCCL_CUDA_GRAPH_FORK_MODE
+  // Side stream and events used in FORK mode
   cudaStream_t setupStream; // Stream for host setup callback
   cudaEvent_t userStreamDone;
   cudaEvent_t setupDone;
-#endif
 };
 
 #endif
