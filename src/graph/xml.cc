@@ -469,6 +469,26 @@ ncclResult_t ncclTopoGetXmlFromSys(struct ncclXmlNode* pciNode, struct ncclXml* 
     if (path == NULL) NCCLCHECK(getPciPath(busId, &path));
     NCCLCHECK(ncclTopoSetAttrFromSys(pciNode, path, "class", "class"));
   }
+  NCCLCHECK(xmlGetAttrIndex(pciNode, "vendor", &index));
+  if (index == -1) {
+    if (path == NULL) NCCLCHECK(getPciPath(busId, &path));
+    NCCLCHECK(ncclTopoSetAttrFromSys(pciNode, path, "vendor", "vendor"));
+  }
+  NCCLCHECK(xmlGetAttrIndex(pciNode, "device", &index));
+  if (index == -1) {
+    if (path == NULL) NCCLCHECK(getPciPath(busId, &path));
+    NCCLCHECK(ncclTopoSetAttrFromSys(pciNode, path, "device", "device"));
+  }
+  NCCLCHECK(xmlGetAttrIndex(pciNode, "subsystem_vendor", &index));
+  if (index == -1) {
+    if (path == NULL) NCCLCHECK(getPciPath(busId, &path));
+    NCCLCHECK(ncclTopoSetAttrFromSys(pciNode, path, "subsystem_vendor", "subsystem_vendor"));
+  }
+  NCCLCHECK(xmlGetAttrIndex(pciNode, "subsystem_device", &index));
+  if (index == -1) {
+    if (path == NULL) NCCLCHECK(getPciPath(busId, &path));
+    NCCLCHECK(ncclTopoSetAttrFromSys(pciNode, path, "subsystem_device", "subsystem_device"));
+  }
   NCCLCHECK(xmlGetAttrIndex(pciNode, "link_speed", &index));
   if (index == -1) {
     if (path == NULL) NCCLCHECK(getPciPath(busId, &path));
