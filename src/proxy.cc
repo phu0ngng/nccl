@@ -219,14 +219,10 @@ ncclResult_t ncclProxySaveColl(struct ncclProxyArgs* args, int pattern, int root
     NCCLCHECK(SaveProxy(proxySend, tree->down[0], args));
     NCCLCHECK(SaveProxy(proxyRecv, tree->up, args));
   }
-  if (pattern == ncclPatternAllToAll) {
-    struct ncclDirect* tree = &args->channel->directTree;
-    // Direct up
-    for (int i=0; i<NCCL_MAX_DIRECT_ARITY; i++) NCCLCHECK(SaveProxy(proxyRecv, tree->down[i], args));
-    for (int i=0; i<NCCL_MAX_DIRECT_ARITY; i++) NCCLCHECK(SaveProxy(proxySend, tree->up[i], args));
-    // Direct down
-    for (int i=0; i<NCCL_MAX_DIRECT_ARITY; i++) NCCLCHECK(SaveProxy(proxyRecv, tree->up[i], args));
-    for (int i=0; i<NCCL_MAX_DIRECT_ARITY; i++) NCCLCHECK(SaveProxy(proxySend, tree->down[i], args));
+  if (pattern == ncclPatternAllToAll) { // FIXME
+    struct ncclDirect* dtree = &args->channel->directTree;
+    for (int i=0; i<NCCL_MAX_DIRECT_ARITY; i++) NCCLCHECK(SaveProxy(proxyRecv, dtree->peers[i], args));
+    for (int i=0; i<NCCL_MAX_DIRECT_ARITY; i++) NCCLCHECK(SaveProxy(proxySend, dtree->peers[i], args));
   }
   return ncclSuccess;
 }

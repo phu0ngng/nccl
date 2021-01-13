@@ -281,13 +281,13 @@ class ncclFunction<ncclFuncAllReduce, NCCL_ALGO_DIRECT, NCCL_PROTO_SIMPLE, FUNC,
     const T * __restrict__ thisInput = (const T*)args->ThisInput;
     T * __restrict__ thisOutput = (T*)args->ThisOutput;
 
-    struct ncclDirect* tree = &channel->directTree;
+    struct ncclDirect* dtree = &channel->directTree;
     // max number of recv is MAX_ARITY, max number of send is MAX_ARITY
-    ncclPrimitives<UNROLL, 1, 1, T, NCCL_MAX_DIRECT_ARITY, NCCL_MAX_DIRECT_ARITY, FUNC> prims(tid, args->nThreads, tree->down, tree->up, NULL, stepSize, channel, comm, args->opCount);
+    ncclPrimitives<UNROLL, 1, 1, T, NCCL_MAX_DIRECT_ARITY, NCCL_MAX_DIRECT_ARITY, FUNC> prims(tid, args->nThreads, dtree->peers, dtree->peers, NULL, stepSize, channel, comm, args->opCount);
     for (ssize_t gridOffset = 0; gridOffset < size; gridOffset += loopSize) {
       // Scatter
       for (int i = 0; i < nranks-1; i++) {
-        int peer = tree->down[i];
+        int peer = dtree->peers[i];
         ssize_t offset = gridOffset + (bid*nranks+peer)*chunkSize;
         int nelem = min(chunkSize, size-offset);
         prims.sendTo(thisInput+offset, nelem, peer);
@@ -302,7 +302,7 @@ class ncclFunction<ncclFuncAllReduce, NCCL_ALGO_DIRECT, NCCL_PROTO_SIMPLE, FUNC,
 
       // Gather
       for (int i = 0; i < nranks-1; i++) {
-        int peer = tree->down[i];
+        int peer = dtree->peers[i];
         ssize_t offset = gridOffset + (bid*nranks+peer)*chunkSize;
         int nelem = min(chunkSize, size-offset);
         prims.recvFrom(thisOutput+offset, nelem, peer);
@@ -321,7 +321,7 @@ class ncclFunction<ncclFuncAllReduce, NCCL_ALGO_DIRECT, NCCL_PROTO_SIMPLE, FUNC,
     const int nChannels = args->coll.nChannels;
     struct ncclDevComm* comm = args->comm;
     struct ncclChannel* channel = comm->channels+blockIdx.x;
-    struct ncclTree* tree = &channel->tree;
+    struct ncclDirect* dtree = &channel->directTree;
     const int stepSize = comm->buffSizes[NCCL_PROTO_SIMPLE] / (sizeof(T)*NCCL_STEPS);
     int chunkSize = args->coll.lastChunkSize;
     const ssize_t minChunkSize = nthreads*8*sizeof(uint64_t) / sizeof(T);
@@ -339,11 +339,11 @@ class ncclFunction<ncclFuncAllReduce, NCCL_ALGO_DIRECT, NCCL_PROTO_SIMPLE, FUNC,
 
     int nthreadsSplit = nthreads/2;
     //if (nthreadsSplit == 256) nthreadsSplit += 64;
-    if (tree->up == -1) {
+    if (dtree->up == nranks) {
       if (tid < nthreads+WARP_SIZE) {
         // ReduceAndBroadcast : max number of recv is 3, max number of send is 3
-        ncclPrimitives<UNROLL, 1, 1, T, NCCL_MAX_DEV_ARITY, NCCL_MAX_DEV_ARITY, 1, FUNC>
-          prims(tid, nthreads, tree->down, tree->down, thisOutput, stepSize, channel, comm, ncclShmem->ptrs, 0);
+        ncclPrimitives<UNROLL, 1, 1, T, NCCL_MAX_DIRECT_ARITY, NCCL_MAX_DIRECT_ARITY, 1, FUNC>
+          prims(tid, nthreads, dtree->peers, dtree->peers, thisOutput, stepSize, channel, comm, ncclShmem->ptrs, 0);
         for (ssize_t gridOffset = 0; gridOffset < size; gridOffset += loopSize) {
           ssize_t offset = gridOffset + bid*chunkSize;
           int nelem = min(chunkSize, size-offset);
@@ -354,11 +354,11 @@ class ncclFunction<ncclFuncAllReduce, NCCL_ALGO_DIRECT, NCCL_PROTO_SIMPLE, FUNC,
     else {
       if (tid < nthreadsSplit + WARP_SIZE) {
         // Scatter : max number of recv is 3, max number of send is 1 (binary tree + local)
-        ncclPrimitives<UNROLL, 1, 1, T, 1, NCCL_MAX_DEV_ARITY, 0, FUNC>
-          prims(tid, nthreadsSplit, tree->down, &tree->up, NULL, stepSize, channel, comm, ncclShmem->ptrs, 0);
+        ncclPrimitives<UNROLL, 1, 1, T, 1, NCCL_MAX_DIRECT_ARITY, 0, FUNC>
+          prims(tid, nthreadsSplit, NULL, dtree->peers, NULL, stepSize, channel, comm, ncclShmem->ptrs, 0);
         for (ssize_t gridOffset = 0; gridOffset < size; gridOffset += loopSize) {
           for (int i = 0; i < nranks-1; i++) {
-            int peer = tree->up;
+            int peer = dtree->peers[i];
             ssize_t offset = gridOffset + (bid*nranks+peer)*chunkSize;
             int nelem = min(chunkSize, size-offset);
             prims.sendTo(thisInput+offset, nelem, peer);
@@ -367,11 +367,11 @@ class ncclFunction<ncclFuncAllReduce, NCCL_ALGO_DIRECT, NCCL_PROTO_SIMPLE, FUNC,
       }
       else {
         // Gather : max number of recv is 1, max number of send is 3 (binary tree + local)
-        ncclPrimitives<UNROLL, 1, 1, T, NCCL_MAX_DEV_ARITY, 1, 1, FUNC>
-          prims(tid-nthreadsSplit-WARP_SIZE, nthreads-nthreadsSplit, &tree->up, tree->down, thisOutput, stepSize, channel, comm, ncclShmem->ptrs, 2);
+        ncclPrimitives<UNROLL, 1, 1, T, NCCL_MAX_DIRECT_ARITY, 1, 1, FUNC>
+          prims(tid-nthreadsSplit-WARP_SIZE, nthreads-nthreadsSplit, dtree->peers, NULL, thisOutput, stepSize, channel, comm, ncclShmem->ptrs, 2);
         for (ssize_t gridOffset = 0; gridOffset < size; gridOffset += loopSize) {
           for (int i = 0; i < nranks-1; i++) {
-            int peer = tree->up;
+            int peer = dtree->peers[i];
             ssize_t offset = gridOffset + (bid*nranks+peer)*chunkSize;
             int nelem = min(chunkSize, size-offset);
             prims.recvFrom(thisOutput+offset, nelem, peer);

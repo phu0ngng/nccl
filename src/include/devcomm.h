@@ -126,10 +126,10 @@ struct ncclTree {
   int down[NCCL_MAX_TREE_ARITY];
 };
 
-#define NCCL_MAX_DIRECT_ARITY 17
+#define NCCL_MAX_DIRECT_ARITY 7
 struct ncclDirect {
-  int up[NCCL_MAX_DIRECT_ARITY];
-  int down[NCCL_MAX_DIRECT_ARITY];
+  int up;
+  int peers[NCCL_MAX_DIRECT_ARITY];
 };
 
 struct ncclPeer {

@@ -235,8 +235,8 @@ class ncclPrimitives {
     // Make sure step is updated before we read it.
     barrier();
 
-    for (int i=0; i<NRECV; i++) if (recvPeers[i] != -1) nrecv++;
-    for (int i=0; i<NSEND; i++) if (sendPeers[i] != -1) nsend++;
+    for (int i=0; i<NRECV; i++) if (recvPeers != NULL && recvPeers[i] != -1) nrecv++;
+    for (int i=0; i<NSEND; i++) if (sendPeers != NULL && sendPeers[i] != -1) nsend++;
 
     #define SYNC_GROUP 8
     static_assert(NSEND < SYNC_GROUP && NRECV < SYNC_GROUP, "Not enough threads to cover all peers");
