@@ -777,10 +777,10 @@ static ncclResult_t initTransportsRank(struct ncclComm* comm, ncclUniqueId* comm
   int *rings;
   NCCLCHECK(ncclCalloc(&rings, nranks*MAXCHANNELS));
 
-  NCCLCHECK(ncclTopoPostset(comm, nodesFirstRank, nodesTreePatterns, allTopoRanks, rings));
   if (comm->collNetNchannels > 0) {
     NCCLCHECK(ncclTopoConnectCollNet(comm, &collNetGraph, rank));
   }
+  NCCLCHECK(ncclTopoPostset(comm, nodesFirstRank, nodesTreePatterns, allTopoRanks, rings));
 
   free(allTopoRanks);
   free(nodesTreePatterns);
@@ -840,8 +840,9 @@ static ncclResult_t initTransportsRank(struct ncclComm* comm, ncclUniqueId* comm
       struct ncclChannel* channelSend = comm->channels+c;
       NCCLCHECK(ncclTransportP2pConnect(comm, channelRecv, 1, &channelRecv->collTree.up, 1, channelRecv->collTree.down));
       NCCLCHECK(ncclTransportP2pConnect(comm, channelSend, 1, channelSend->collTree.down, 1, &channelSend->collTree.up));
-      const int recvMaster = collNetGraph.intra[c*comm->localRanks+recvIndex];
-      const int sendMaster = collNetGraph.intra[c*comm->localRanks+sendIndex];
+      static int channelId = c%collNetGraph.nChannels;
+      const int recvMaster = collNetGraph.intra[channelId*comm->localRanks+recvIndex];
+      const int sendMaster = collNetGraph.intra[channelId*comm->localRanks+sendIndex];
       if (collNetSetup(comm, &collNetGraph, channelRecv, rank, nranks, recvMaster, sendMaster, comm->nNodes, 1) != 1)
         collNetSetupFail = 1;
       else if (collNetSetup(comm, &collNetGraph, channelSend, rank, nranks, sendMaster, recvMaster, comm->nNodes, 0) != 1)

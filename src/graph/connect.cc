@@ -269,6 +269,7 @@ ncclResult_t ncclTopoPostset(struct ncclComm* comm, int* firstRanks, int* treePa
   // Honor NCCL_MIN_NRINGS/NCCL_MAX_NRINGS.
   // We permit combining max, then min, to only use the first channels, then duplicate them.
   nChannels = comm->nChannels = std::min((int)ncclMaxNchannels(), nChannels);
+  if (comm->collNetNchannels) comm->collNetNchannels = std::min((int)ncclMaxNchannels()/2, comm->collNetNchannels);
   int c;
   for (c=nChannels; c<ncclMinNchannels(); c++) {
     memcpy(ringPrev+c*nranks, ringPrev+(c-nChannels)*nranks, nranks*sizeof(int));
@@ -276,9 +277,11 @@ ncclResult_t ncclTopoPostset(struct ncclComm* comm, int* firstRanks, int* treePa
     memcpy(comm->channels+c, comm->channels+c-nChannels, sizeof(struct ncclChannel));
   }
   nChannels = comm->nChannels = c;
+  if (comm->collNetNchannels) comm->collNetNchannels = c/2;
 
   // Create rings array and check all is fine
   NCCLCHECK(ncclBuildRings(nChannels, rings, comm->rank, comm->nRanks, ringPrev, ringNext));
+
 
   free(ringRecv);
   free(ringSend);
