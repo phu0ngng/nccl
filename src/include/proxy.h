@@ -56,15 +56,13 @@ struct ncclProxyArgs {
 };
 
 struct ncclProxySharedBuffers {
-  int nslots;
-  int slotSize;
+  int size;
   char* cudaBuff;
   char* hostBuff;
   struct ncclProxyArgs* proxyAppend[2*MAXCHANNELS]; // Separate send and recv
   // Collnet sharing is technically per device, but for now MAXDEVICES == MAXCHANNELS.
   struct ncclProxyArgs* proxyAppendCollNet[2*MAXCHANNELS];
-  void* collNetListenComms[MAXCHANNELS];
-  void* collNetComms[MAXCHANNELS];
+  void* collNetResources;
 };
 
 struct ncclProxyPool;
@@ -96,7 +94,8 @@ ncclResult_t ncclProxyCreate(struct ncclComm* comm);
 ncclResult_t ncclProxyDestroy(struct ncclComm* comm);
 
 ncclResult_t ncclProxySharedBuffersInit(struct ncclComm* comm, int cuda, int* size, char** ptr);
-ncclResult_t ncclProxySharedBuffersGet(struct ncclComm* comm, int cuda, int type, int channel, int slot, int index, char** ptr);
+ncclResult_t ncclProxySharedBuffersGetP2p(struct ncclComm* comm, int cuda, int type, int channel, int slot, int index, char** ptr);
+ncclResult_t ncclProxySharedBuffersGetCollNet(struct ncclComm* comm, int cuda, int type, int channel, int slot, int index, char** ptr);
 ncclResult_t ncclProxySharedBuffersDestroy(struct ncclComm* comm);
 
 #include <unistd.h>

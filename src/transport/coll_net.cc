@@ -24,6 +24,7 @@ struct reqSlot {
 };
 
 struct collNetSendResources {
+  struct ncclComm* comm;
   void* collNetComm;
   struct ncclSendMem* sendMem;
   struct ncclRecvMem* recvMem;
@@ -40,6 +41,7 @@ struct collNetSendResources {
 };
 
 struct collNetRecvResources {
+  struct ncclComm* comm;
   void* collNetComm;
   struct ncclSendMem* sendMem;
   struct ncclRecvMem* recvMem;
@@ -54,9 +56,26 @@ struct collNetRecvResources {
   int collNetRank;
 };
 
+struct collNetSharedResources {
+  void* collNetListenComms[MAXCHANNELS];
+  void* collNetComms[MAXCHANNELS];
+  int collNetCommRefCount[MAXCHANNELS];
+};
+
 /* Determine if we can communicate with the peer */
 ncclResult_t collNetCanConnect(int* ret, struct ncclTopoSystem* topo, struct ncclTopoGraph* graph, struct ncclPeerInfo* info1, struct ncclPeerInfo* info2) {
   *ret = 1;
+  return ncclSuccess;
+}
+
+ncclResult_t collNetSharedListen(struct ncclComm* comm, int netDev, void* collNetHandle) {
+  struct collNetSharedResources* resources = (struct collNetSharedResources*)comm->proxyState.sharedBuffs.collNetResources;
+  if (resources == NULL) {
+    NCCLCHECK(ncclCalloc(&resources, 1));
+    comm->proxyState.sharedBuffs.collNetResources = resources;
+  }
+  if (resources->collNetComms[netDev] == NULL)
+    NCCLCHECK(collNetListen(netDev, collNetHandle, resources->collNetListenComms+netDev));
   return ncclSuccess;
 }
 
@@ -65,6 +84,7 @@ ncclResult_t collNetSendSetup(struct ncclComm* comm, struct ncclTopoGraph* graph
   struct collNetSendResources* resources;
   NCCLCHECK(ncclCalloc(&resources, 1));
   send->transportResources = resources;
+  resources->comm = comm;
 
   NCCLCHECK(ncclTopoGetNetDev(comm->topo, myInfo->rank, graph, channelId, &resources->netDev));
   NCCLCHECK(ncclTopoCheckGdr(comm->topo, myInfo->busId, resources->netDev, 1, &resources->useGdr));
@@ -91,6 +111,7 @@ ncclResult_t collNetRecvSetup(struct ncclComm* comm, struct ncclTopoGraph* graph
   struct collNetRecvResources* resources;
   NCCLCHECK(ncclCalloc(&resources, 1));
   recv->transportResources = resources;
+  resources->comm = comm;
 
   NCCLCHECK(ncclTopoGetNetDev(comm->topo, myInfo->rank, graph, channelId, &resources->netDev));
   NCCLCHECK(ncclTopoCheckGdr(comm->topo, myInfo->busId, resources->netDev, 0, &resources->useGdr));
@@ -112,8 +133,30 @@ ncclResult_t collNetRecvSetup(struct ncclComm* comm, struct ncclTopoGraph* graph
       resources->useGdr ? "/GDRDMA" : "");
   struct collNetRecvConnectInfo* info = (struct collNetRecvConnectInfo*) connectInfo;
 
-  if (comm->proxyState.sharedBuffs.collNetComms[resources->netDev] == NULL)
-    NCCLCHECK(collNetListen(resources->netDev, &info->collNetHandle, comm->proxyState.sharedBuffs.collNetListenComms+resources->netDev));
+  NCCLCHECK(collNetSharedListen(comm, resources->netDev, &info->collNetHandle));
+  return ncclSuccess;
+}
+
+ncclResult_t collNetSharedConnect(struct ncclComm* comm, int netDev, struct ncclConnect* connectInfos, int nranks, int rank, void** collNetComm) {
+  struct collNetSharedResources* resources = (struct collNetSharedResources*)comm->proxyState.sharedBuffs.collNetResources;
+  if (resources->collNetComms[netDev] == NULL) {
+    // Connect to coll comm
+    collNetHandle_t** handlePtrs = NULL;
+    NCCLCHECK(ncclCalloc(&handlePtrs, nranks));
+    for (int i = 0; i < nranks; i++) {
+      struct collNetRecvConnectInfo* info = (struct collNetRecvConnectInfo*)(connectInfos+i);
+      handlePtrs[i] = &(info->collNetHandle);
+    }
+    ncclResult_t ret = collNetConnect((void**)handlePtrs, nranks, rank,
+          resources->collNetListenComms[netDev],
+          resources->collNetComms+netDev);
+    free(handlePtrs);
+    NCCLCHECK(ret);
+    // Close listen comm
+    NCCLCHECK(collNetCloseListen(resources->collNetListenComms[netDev]));
+  }
+  *collNetComm = resources->collNetComms[netDev];
+  resources->collNetCommRefCount[netDev]++;
   return ncclSuccess;
 }
 
@@ -142,7 +185,7 @@ ncclResult_t collNetSendConnect(struct ncclComm* comm, struct ncclConnect* conne
   for (int p=0; p<NCCL_NUM_PROTOCOLS; p++)
     resources->recvMhandles[p] = info->mhandles[p];
 
-  resources->collNetComm = send->comm->proxyState.sharedBuffs.collNetComms[resources->netDev];
+  NCCLCHECK(collNetSharedConnect(comm, resources->netDev, connectInfos, nranks, rank, &resources->collNetComm));
 
   int size;
   char* ptr;
@@ -179,27 +222,11 @@ ncclResult_t collNetRecvConnect(struct ncclComm* comm, struct ncclConnect* conne
   recv->conn.ptrsFifo = resources->recvMem->ptrsFifo;
   recv->conn.head = &resources->sendMem->head;
 
-  if (recv->comm->proxyState.sharedBuffs.collNetComms[resources->netDev] == NULL) {
-    // Connect to coll comm
-    collNetHandle_t** handlePtrs = NULL;
-    NCCLCHECK(ncclCalloc(&handlePtrs, nranks));
-    for (int i = 0; i < nranks; i++) {
-      struct collNetRecvConnectInfo* info = (struct collNetRecvConnectInfo*)(connectInfos+i);
-      handlePtrs[i] = &(info->collNetHandle);
-    }
-    ncclResult_t ret = collNetConnect((void**)handlePtrs, nranks, rank,
-          recv->comm->proxyState.sharedBuffs.collNetListenComms[resources->netDev],
-          recv->comm->proxyState.sharedBuffs.collNetComms+resources->netDev);
-    free(handlePtrs);
-    NCCLCHECK(ret);
-    // Close listen comm
-    NCCLCHECK(collNetCloseListen(recv->comm->proxyState.sharedBuffs.collNetListenComms[resources->netDev]));
-  }
+  NCCLCHECK(collNetSharedConnect(comm, resources->netDev, connectInfos, nranks, rank, &resources->collNetComm));
   int size;
   char* ptr;
   NCCLCHECK(ncclProxySharedBuffersInit(recv->comm, resources->useGdr, &size, &ptr));
 
-  resources->collNetComm = recv->comm->proxyState.sharedBuffs.collNetComms[resources->netDev];
   // Register buffers
   NCCLCHECK(collNetRegMr(resources->collNetComm,
         resources->useGdr ? recv->comm->proxyState.sharedBuffs.cudaBuff : recv->comm->proxyState.sharedBuffs.hostBuff,
@@ -220,6 +247,18 @@ ncclResult_t collNetRecvConnect(struct ncclComm* comm, struct ncclConnect* conne
   return ncclSuccess;
 }
 
+ncclResult_t collNetSharedFree(struct ncclComm* comm, int netDev) {
+  struct collNetSharedResources* resources = (struct collNetSharedResources*)comm->proxyState.sharedBuffs.collNetResources;
+  resources->collNetCommRefCount[netDev]--;
+  if (resources->collNetCommRefCount[netDev] == 0) {
+    NCCLCHECK(collNetCloseColl(resources->collNetComms[netDev]));
+  }
+  for (int c=0; c<MAXCHANNELS; c++) if (resources->collNetCommRefCount[c]) return ncclSuccess;
+  comm->proxyState.sharedBuffs.collNetResources = NULL;
+  free(resources);
+  return ncclSuccess;
+}
+
 ncclResult_t collNetSendFree(void* sendTransportResources) {
   struct collNetSendResources* resources = (struct collNetSendResources*)sendTransportResources;
   NCCLCHECK(ncclCudaHostFree(resources->sendMem));
@@ -231,6 +270,8 @@ ncclResult_t collNetSendFree(void* sendTransportResources) {
   if (resources->useGdr)
     CUDACHECK(cudaFree(resources->devRecvMem));
   free(resources->llData);
+
+  NCCLCHECK(collNetSharedFree(resources->comm, resources->netDev));
   free(resources);
   return ncclSuccess;
 }
@@ -238,20 +279,17 @@ ncclResult_t collNetSendFree(void* sendTransportResources) {
 ncclResult_t collNetRecvFree(void* recvTransportResources) {
   struct collNetRecvResources* resources = (struct collNetRecvResources*)recvTransportResources;
   NCCLCHECK(ncclCudaHostFree(resources->sendMem));
+  NCCLCHECK(ncclCudaHostFree(resources->recvMem));
   if (resources->collNetComm) {
     NCCLCHECK(collNetDeregMr(resources->collNetComm, resources->mhandles[NCCL_PROTO_LL]));
     NCCLCHECK(collNetDeregMr(resources->collNetComm, resources->mhandles[NCCL_PROTO_SIMPLE]));
   }
-  NCCLCHECK(ncclCudaHostFree(resources->recvMem));
   if (resources->useGdr)
     CUDACHECK(cudaFree(resources->devRecvMem));
   free(resources->llData);
   free(resources->reqFifo);
 
-  // Make sure SendFree is called before RecvFree
-  if (resources->collNetComm) {
-    NCCLCHECK(collNetCloseColl(resources->collNetComm));
-  }
+  NCCLCHECK(collNetSharedFree(resources->comm, resources->netDev));
   free(resources);
   return ncclSuccess;
 }
@@ -287,7 +325,7 @@ ncclResult_t collNetSendProxy(struct ncclProxyArgs* args) {
         if (p == NCCL_PROTO_SIMPLE) {
           char* ptr;
           int buffSlot = sub->posted%NCCL_STEPS;
-          NCCLCHECK(ncclProxySharedBuffersGet(sub->connector->comm, resources->useGdr, 0, sub->channel->id, buffSlot, s, &ptr));
+          NCCLCHECK(ncclProxySharedBuffersGetCollNet(sub->connector->comm, resources->useGdr, 0, sub->channel->id, buffSlot, s, &ptr));
           resources->recvMem->ptrsFifo[sub->posted%NCCL_STEPS] = ptr;
           __sync_synchronize();
         }
@@ -400,7 +438,7 @@ ncclResult_t collNetRecvProxy(struct ncclProxyArgs* args) {
         char* ptr = ((char*)resources->llData) + buffSlot*recvStepSize;
         if (p == NCCL_PROTO_SIMPLE) {
           int buffSlot = sub->posted%NCCL_STEPS;
-          NCCLCHECK(ncclProxySharedBuffersGet(sub->connector->comm, resources->useGdr, 1, sub->channel->id, buffSlot, s, &ptr));
+          NCCLCHECK(ncclProxySharedBuffersGetCollNet(sub->connector->comm, resources->useGdr, 1, sub->channel->id, buffSlot, s, &ptr));
           volatile void** ptrsFifo = (volatile void**)resources->recvMem->ptrsFifo;
           ptrsFifo[buffSlot] = ptr;
         }

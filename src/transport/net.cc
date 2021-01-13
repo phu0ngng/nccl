@@ -283,7 +283,7 @@ ncclResult_t netSendProxy(struct ncclProxyArgs* args) {
         if (resources->shared) {
           char* ptr;
           int buffSlot = sub->posted%NCCL_STEPS;
-          NCCLCHECK(ncclProxySharedBuffersGet(sub->connector->comm, resources->useGdr, 0, sub->channel->id, buffSlot, s, &ptr));
+          NCCLCHECK(ncclProxySharedBuffersGetP2p(sub->connector->comm, resources->useGdr, 0, sub->channel->id, buffSlot, s, &ptr));
           resources->recvMem->ptrsFifo[sub->posted%NCCL_STEPS] = ptr;
           __sync_synchronize();
           volatile uint64_t* sendHead = &resources->sendMem->head;
@@ -403,7 +403,7 @@ ncclResult_t netRecvProxy(struct ncclProxyArgs* args) {
         char* ptr;
         if (resources->shared) {
           int buffSlot = sub->posted%NCCL_STEPS;
-          NCCLCHECK(ncclProxySharedBuffersGet(sub->connector->comm, resources->useGdr, 1, sub->channel->id, buffSlot, s, &ptr));
+          NCCLCHECK(ncclProxySharedBuffersGetP2p(sub->connector->comm, resources->useGdr, 1, sub->channel->id, buffSlot, s, &ptr));
           volatile void** ptrsFifo = (volatile void**)resources->recvMem->ptrsFifo;
           ptrsFifo[buffSlot] = ptr;
         } else {
