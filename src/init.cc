@@ -665,9 +665,13 @@ static ncclResult_t initTransportsRank(struct ncclComm* comm, ncclUniqueId* comm
   collNetGraph.minChannels = collNetGraph.maxChannels = ringGraph.nChannels;
   NCCLCHECK(ncclTopoCompute(comm->topo, &collNetGraph));
   NCCLCHECK(ncclTopoPrintGraph(comm->topo, &collNetGraph));
+
   struct ncclTopoGraph directGraph;
   directGraph.pattern = NCCL_TOPO_PATTERN_TREE;
   directGraph.crossNic = ncclParamCrossNic();
+  directGraph.collNet = 0;
+  directGraph.minChannels = 1;
+  directGraph.maxChannels = ringGraph.nChannels;
   NCCLCHECK(ncclTopoCompute(comm->topo, &directGraph));
   NCCLCHECK(ncclTopoPrintGraph(comm->topo, &directGraph));
 
@@ -812,11 +816,14 @@ static ncclResult_t initTransportsRank(struct ncclComm* comm, ncclUniqueId* comm
   for (int c=0; c<comm->nChannels; c++) {
     struct ncclChannel* channel = comm->channels+c;
     struct ncclDirect* dTree = &channel->directTree;
-    dTree->up = (c == rank) ? comm->nRanks :  // reduce/CollNet/broadcast channels
-                              -1;             // scatter/gather channels
+    dTree->up = (c%comm->localRanks == rank%comm->localRanks) ?
+                comm->nRanks :      // reduce/CollNet/broadcast channels
+                c%comm->localRanks; // scatter/gather channels
     for (int i=0; i<NCCL_MAX_DIRECT_ARITY; i++) dTree->peers[i] = -1;
-    for (int r=0; r<nranks-1; r++) // FIXME: assuming intra node
-      dTree->peers[r] = (rank+r+1) % nranks;
+    if (dTree->up == comm->nRanks) {
+      for (int r=0; r<comm->localRanks-1; r++) // FIXME: assuming intra node
+        dTree->peers[r] = (rank+r+1) % nranks;
+    }
   }
 
   // Connect with prev/next for each ring
@@ -842,9 +849,13 @@ static ncclResult_t initTransportsRank(struct ncclComm* comm, ncclUniqueId* comm
   // Connect Direct
   for (int c=0; c<comm->nChannels; c++) {
     struct ncclChannel* channel = comm->channels+c;
+    struct ncclDirect* dTree = &channel->directTree;
     if (comm->nRanks == 1) continue;
-    // FIXME
-    NCCLCHECKGOTO(ncclTransportP2pConnect(comm, channel, NCCL_MAX_DIRECT_ARITY, channel->directTree.peers, NCCL_MAX_DIRECT_ARITY, channel->directTree.peers), ret, affinity_restore);
+    if (dTree->up == nranks) {
+      NCCLCHECKGOTO(ncclTransportP2pConnect(comm, channel, NCCL_MAX_DIRECT_ARITY, dTree->peers, NCCL_MAX_DIRECT_ARITY, dTree->peers), ret, affinity_restore);
+    } else {
+      NCCLCHECKGOTO(ncclTransportP2pConnect(comm, channel, 1, &dTree->up, 1, &dTree->up), ret, affinity_restore);
+    }
   }
   NCCLCHECKGOTO(ncclTransportP2pSetup(comm, &directGraph), ret, affinity_restore);
   INFO(NCCL_INIT, "Connected all direct trees");

@@ -354,28 +354,26 @@ class ncclFunction<ncclFuncAllReduce, NCCL_ALGO_DIRECT, NCCL_PROTO_SIMPLE, FUNC,
     else {
       if (tid < nthreadsSplit + WARP_SIZE) {
         // Scatter : max number of recv is 3, max number of send is 1 (binary tree + local)
-        ncclPrimitives<UNROLL, 1, 1, T, 1, NCCL_MAX_DIRECT_ARITY, 0, FUNC>
-          prims(tid, nthreadsSplit, NULL, dtree->peers, NULL, stepSize, channel, comm, ncclShmem->ptrs, 0);
+        ncclPrimitives<UNROLL, 1, 1, T, 1, 1, 0, FUNC>
+          prims(tid, nthreadsSplit, NULL, &dtree->up, NULL, stepSize, channel, comm, ncclShmem->ptrs, 0);
         for (ssize_t gridOffset = 0; gridOffset < size; gridOffset += loopSize) {
-          for (int i = 0; i < nranks-1; i++) {
-            int peer = dtree->peers[i];
-            ssize_t offset = gridOffset + (bid*nranks+peer)*chunkSize;
-            int nelem = min(chunkSize, size-offset);
-            prims.sendTo(thisInput+offset, nelem, peer);
-          }
+          //int peer = dtree->up;
+          //ssize_t offset = gridOffset + (bid*nranks+peer)*chunkSize;
+          ssize_t offset = gridOffset + bid*chunkSize;
+          int nelem = min(chunkSize, size-offset);
+          prims.send(thisInput+offset, nelem);
         }
       }
       else {
         // Gather : max number of recv is 1, max number of send is 3 (binary tree + local)
-        ncclPrimitives<UNROLL, 1, 1, T, NCCL_MAX_DIRECT_ARITY, 1, 1, FUNC>
-          prims(tid-nthreadsSplit-WARP_SIZE, nthreads-nthreadsSplit, dtree->peers, NULL, thisOutput, stepSize, channel, comm, ncclShmem->ptrs, 2);
+        ncclPrimitives<UNROLL, 1, 1, T, 1, 1, 1, FUNC>
+          prims(tid-nthreadsSplit-WARP_SIZE, nthreads-nthreadsSplit, &dtree->up, NULL, thisOutput, stepSize, channel, comm, ncclShmem->ptrs, 2);
         for (ssize_t gridOffset = 0; gridOffset < size; gridOffset += loopSize) {
-          for (int i = 0; i < nranks-1; i++) {
-            int peer = dtree->peers[i];
-            ssize_t offset = gridOffset + (bid*nranks+peer)*chunkSize;
-            int nelem = min(chunkSize, size-offset);
-            prims.recvFrom(thisOutput+offset, nelem, peer);
-          }
+          //int peer = dtree->up;
+          //ssize_t offset = gridOffset + (bid*nranks+peer)*chunkSize;
+          ssize_t offset = gridOffset + bid*chunkSize;
+          int nelem = min(chunkSize, size-offset);
+          prims.recv(thisOutput+offset, nelem);
         }
       }
     }
