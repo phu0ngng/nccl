@@ -115,11 +115,13 @@ NCCL_PARAM(CollNetEnable, "COLLNET_ENABLE", 0);
 
 pthread_mutex_t initLock = PTHREAD_MUTEX_INITIALIZER;
 static bool initialized = false;
+static size_t maxLocalSizeBytes = 0;
 static ncclResult_t ncclInit() {
   if (initialized) return ncclSuccess;
   pthread_mutex_lock(&initLock);
   if (!initialized) {
     initEnv();
+    ncclKernInit(&maxLocalSizeBytes);
     NCCLCHECK(initNet());
     INFO(NCCL_INIT, "Using network %s", ncclNetName());
     initialized = true;
@@ -913,6 +915,10 @@ static ncclResult_t ncclCommInitRankDev(ncclComm_t* newcomm, int nranks, ncclUni
   } else {
     NCCLCHECKGOTO(ncclCommInitRankSync(newcomm, nranks, commId, myrank, cudaDev), res, end);
   }
+
+  // Set the maximum kernel stack size of all kernels to avoid
+  // CUDA memory reconfig on load (NVSHMEM issue)
+  if (maxLocalSizeBytes) cudaDeviceSetLimit(cudaLimitStackSize, maxLocalSizeBytes);
 end:
   if (ncclAsyncMode()) return ncclAsyncErrCheck(res);
   else return res;
