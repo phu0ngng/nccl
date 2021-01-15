@@ -390,8 +390,8 @@ ncclResult_t ncclProxySharedBuffersInit(struct ncclComm* comm, int cuda, int* si
   if (state->size == 0) {
     int p2pnChannels = 1;
     while (p2pnChannels < comm->nChannels) p2pnChannels *= 2;
-    int p2pSize = 2*p2pnChannels*NCCL_STEPS*NCCL_MAX_WORK_ELEMENTS*comm->buffSizes[NCCL_PROTO_SIMPLE]/SENDRECV_SLICEFACTOR;
-    int collNetSize = 2*comm->collNetNchannels*NCCL_STEPS*comm->buffSizes[NCCL_PROTO_SIMPLE];
+    int p2pSize = 2*p2pnChannels*NCCL_MAX_WORK_ELEMENTS*comm->buffSizes[NCCL_PROTO_SIMPLE]/SENDRECV_SLICEFACTOR;
+    int collNetSize = 2*comm->collNetNchannels*comm->buffSizes[NCCL_PROTO_SIMPLE];
     state->size = std::max(p2pSize, collNetSize);
   }
 
