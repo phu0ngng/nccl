@@ -128,8 +128,12 @@ struct ncclTree {
 
 #define NCCL_MAX_DIRECT_ARITY 7
 struct ncclDirect {
-  int up;
-  int peers[NCCL_MAX_DIRECT_ARITY];
+  int depth;
+  int out;
+  int nUp;
+  int headRank;
+  int up[NCCL_MAX_DIRECT_ARITY];
+  int down[NCCL_MAX_DIRECT_ARITY];
 };
 
 struct ncclPeer {
@@ -184,7 +188,7 @@ struct ncclChannel {
     struct {
       struct ncclRing ring;
       struct ncclTree tree;
-      struct ncclTree collTree;
+      struct ncclDirect collTree;
       struct ncclDirect directTree;
 
       int id;

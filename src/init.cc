@@ -813,18 +813,21 @@ static ncclResult_t initTransportsRank(struct ncclComm* comm, ncclUniqueId* comm
   NCCLCHECK(computeBuffSizes(comm));
 
   // Create direct topology
+#ifdef NCCL_DIRECT_ONE_CHANNEL_PER_PEER
   for (int c=0; c<comm->nChannels; c++) {
     struct ncclChannel* channel = comm->channels+c;
     struct ncclDirect* dTree = &channel->directTree;
+    for (int i=0; i<NCCL_MAX_DIRECT_ARITY; i++) dTree->peers[i] = -1;
     dTree->up = (c%comm->localRanks == rank%comm->localRanks) ?
                 comm->nRanks :      // reduce/CollNet/broadcast channels
                 c%comm->localRanks; // scatter/gather channels
-    for (int i=0; i<NCCL_MAX_DIRECT_ARITY; i++) dTree->peers[i] = -1;
     if (dTree->up == comm->nRanks) {
       for (int r=0; r<comm->localRanks-1; r++) // FIXME: assuming intra node
         dTree->peers[r] = (rank+r+1) % nranks;
     }
+    dTree->depth = 1;
   }
+#endif
 
   // Connect with prev/next for each ring
   for (int c=0; c<comm->nChannels; c++) {
@@ -847,10 +850,11 @@ static ncclResult_t initTransportsRank(struct ncclComm* comm, ncclUniqueId* comm
   INFO(NCCL_INIT, "Connected all trees");
 
   // Connect Direct
+#ifdef NCCL_DIRECT_ONE_CHANNEL_PER_PEER
   for (int c=0; c<comm->nChannels; c++) {
     struct ncclChannel* channel = comm->channels+c;
-    struct ncclDirect* dTree = &channel->directTree;
     if (comm->nRanks == 1) continue;
+    struct ncclDirect* dTree = &channel->directTree;
     if (dTree->up == nranks) {
       NCCLCHECKGOTO(ncclTransportP2pConnect(comm, channel, NCCL_MAX_DIRECT_ARITY, dTree->peers, NCCL_MAX_DIRECT_ARITY, dTree->peers), ret, affinity_restore);
     } else {
@@ -859,6 +863,7 @@ static ncclResult_t initTransportsRank(struct ncclComm* comm, ncclUniqueId* comm
   }
   NCCLCHECKGOTO(ncclTransportP2pSetup(comm, &directGraph), ret, affinity_restore);
   INFO(NCCL_INIT, "Connected all direct trees");
+#endif
 
   // Check if we can setup CollNet
   if (comm->nNodes > 1 &&
@@ -871,8 +876,8 @@ static ncclResult_t initTransportsRank(struct ncclComm* comm, ncclUniqueId* comm
     for (int c=0; c<logicChannels; c++) {
       struct ncclChannel* channelRecv = comm->channels+logicChannels+c;
       struct ncclChannel* channelSend = comm->channels+c;
-      NCCLCHECK(ncclTransportP2pConnect(comm, channelRecv, 1, &channelRecv->collTree.up, 1, channelRecv->collTree.down));
-      NCCLCHECK(ncclTransportP2pConnect(comm, channelSend, 1, channelSend->collTree.down, 1, &channelSend->collTree.up));
+      NCCLCHECK(ncclTransportP2pConnect(comm, channelRecv, NCCL_MAX_DIRECT_ARITY, channelRecv->collTree.up, NCCL_MAX_DIRECT_ARITY, channelRecv->collTree.down));
+      NCCLCHECK(ncclTransportP2pConnect(comm, channelSend, NCCL_MAX_DIRECT_ARITY, channelSend->collTree.down, NCCL_MAX_DIRECT_ARITY, channelSend->collTree.up));
       const int recvMaster = collNetGraph.intra[c*comm->localRanks+recvIndex];
       const int sendMaster = collNetGraph.intra[c*comm->localRanks+sendIndex];
       if (collNetSetup(comm, &collNetGraph, channelRecv, rank, nranks, recvMaster, sendMaster, comm->nNodes, 1) != 1)

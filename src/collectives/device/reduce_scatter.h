@@ -100,7 +100,7 @@ class ncclFunction<ncclFuncReduceScatter, NCCL_ALGO_DIRECT, NCCL_PROTO_SIMPLE, F
 
       struct ncclDirect* dtree = &channel->directTree;
       // max number of recv is MAX_ARITY, max number of send is MAX_ARITY
-      ncclPrimitives<UNROLL, 1, 1, T, NCCL_MAX_DIRECT_ARITY, NCCL_MAX_DIRECT_ARITY, 0/*FIXME*/, FUNC> prims(tid, nthreads, dtree->peers, dtree->peers, NULL, stepSize, channel, comm, ncclShmem->ptrs, 0);
+      ncclPrimitives<UNROLL, 1, 1, T, NCCL_MAX_DIRECT_ARITY, NCCL_MAX_DIRECT_ARITY, 0/*FIXME*/, FUNC> prims(tid, nthreads, dtree->down, dtree->down, NULL, stepSize, channel, comm, ncclShmem->ptrs, 0);
       for (ssize_t gridOffset = 0; gridOffset < size; gridOffset += loopSize) {
         ssize_t chunkOffset = gridOffset + bid*chunkSize;
 
@@ -110,7 +110,7 @@ class ncclFunction<ncclFuncReduceScatter, NCCL_ALGO_DIRECT, NCCL_PROTO_SIMPLE, F
 
         // Scatter
         for (int p = 0; p < nranks-1; p++) {
-          rankDest = dtree->peers[p];
+          rankDest = dtree->down[p];
           offset = chunkOffset + rankDest * size;
           prims.sendTo(thisInput+offset, nelem, rankDest);
         }
