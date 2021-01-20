@@ -184,11 +184,7 @@ static ncclResult_t SaveProxy(int type, int peer, struct ncclProxyArgs* args) {
   op->subs[0].connector = connector;
   op->progress = connector->transportComm->proxy;
   op->state = ncclProxyOpReady;
-
-  op->proxyAppendPtr =
-    connector->conn.shared ?
-    state->sharedBuffs.proxyAppend+2*channel->id+type : // Shared buffers
-    &connector->proxyAppend;  // Dedicated buffers
+  op->proxyAppendPtr = connector->proxyAppendPtr;
 
   if (state->nextOps == NULL) state->nextOps = op;
   else state->nextOpsEnd->next = op;
