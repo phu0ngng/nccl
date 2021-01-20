@@ -27,31 +27,31 @@ ncclResult_t ncclGetCudaGraph(ncclComm_t comm, cudaGraph_t* graph, int* usingCud
 ncclResult_t ncclCudaGraphHostSetup(ncclComm_t comm, cudaGraph_t graph);
 
 // Enqueue information (for kernel and proxy) for each operation
-struct ncclEnqueueElem {
+struct ncclQueueElem {
   struct ncclWorkElem work;
   struct ncclProxyArgs proxyArgs;
-  struct ncclEnqueueElem* next;
+  struct ncclQueueElem* next;
 };
 
 // Store enqueue elements in a list
-struct ncclEnqueueElemList {
-  struct ncclEnqueueElem* head;
-  struct ncclEnqueueElem* tail;
+struct ncclQueueElemList {
+  struct ncclQueueElem* head;
+  struct ncclQueueElem* tail;
 };
 
 // Structure passed to CUDA graph
-struct ncclEnqueueInfo {
+struct ncclQueueInfo {
   ncclComm_t comm;
   int maxChannels;    // Dynamic version of gridDim
   ncclResult_t ret;   // Return value of host setup call
-  struct ncclEnqueueElemList eqElemList;
+  struct ncclQueueElemList elemList;
 };
 
 // Get next element from enqueue list
-static ncclResult_t getNewEnqueueElem(struct ncclEnqueueInfo* eqInfo, struct ncclEnqueueElem** elemOut) {
+static ncclResult_t ncclAddQueueElem(struct ncclQueueInfo* eqInfo, struct ncclQueueElem** elemOut) {
   if (eqInfo == NULL) return ncclInternalError;
-  struct ncclEnqueueElemList* list = &eqInfo->eqElemList;
-  struct ncclEnqueueElem* next;
+  struct ncclQueueElemList* list = &eqInfo->elemList;
+  struct ncclQueueElem* next;
   NCCLCHECK(ncclCalloc(&next, 1));
   *elemOut = next;
   if (list->tail != NULL) list->tail->next = next;
@@ -62,12 +62,12 @@ static ncclResult_t getNewEnqueueElem(struct ncclEnqueueInfo* eqInfo, struct ncc
 
 // Destroy enqueue info space
 // used by both CUDA graph and non CUDA graph
-static void destroyEnqueueInfo(void* ptr) {
+static void ncclDestroyQueueInfo(void* ptr) {
   if (ptr == NULL) return;
-  struct ncclEnqueueInfo* eqInfo = (struct ncclEnqueueInfo*)ptr;
-  struct ncclEnqueueElem* head = eqInfo->eqElemList.head;
+  struct ncclQueueInfo* eqInfo = (struct ncclQueueInfo*)ptr;
+  struct ncclQueueElem* head = eqInfo->elemList.head;
   while (head != NULL) {
-    struct ncclEnqueueElem* temp = head;
+    struct ncclQueueElem* temp = head;
     head = head->next;
     free(temp);
   }

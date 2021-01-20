@@ -183,7 +183,7 @@ static ncclResult_t commFree(ncclComm_t comm) {
     CUDACHECK(cudaStreamDestroy(comm->groupStream));
   }
 
-  destroyEnqueueInfo(comm->enqueueInfo);
+  ncclDestroyQueueInfo(comm->enqueueInfo);
 
   // Side stream and events used in FORK mode
   CUDACHECK(cudaStreamDestroy(comm->setupStream));

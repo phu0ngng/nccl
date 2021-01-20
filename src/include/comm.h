@@ -155,7 +155,7 @@ struct ncclComm {
   int p2pRecvCount;
 
   // Store info for cudaGraph
-  struct ncclEnqueueInfo* enqueueInfo;
+  struct ncclQueueInfo* enqueueInfo;
   CUgraphNode lastSetupNode;
   cuuint64_t lastCudaGraphId;
   enum { GRAPH_SYNC, GRAPH_FORK, GRAPH_ASYNC } cudaGraphMode;

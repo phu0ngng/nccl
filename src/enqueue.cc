@@ -108,7 +108,7 @@ static ncclResult_t getNextOp(struct ncclChannel* channel, struct ncclWork** wor
   return ncclSuccess;
 }
 
-static ncclResult_t setupLaunch(struct ncclEnqueueInfo* eqInfo, int usingCudaGraph) {
+static ncclResult_t setupLaunch(struct ncclQueueInfo* eqInfo, int usingCudaGraph) {
   ncclComm_t comm = eqInfo->comm;
   struct cudaLaunchParams* params = comm->myParams;
 
@@ -244,7 +244,7 @@ ncclResult_t ncclLaunch(ncclComm_t comm) {
   return ncclSuccess;
 }
 
-static ncclResult_t ncclEnqueueProxyStart(struct ncclEnqueueInfo* eqInfo) {
+static ncclResult_t ncclLaunchProxy(struct ncclQueueInfo* eqInfo) {
   // Start the network proxies as soon as the kernel has been launched. We can't
   // perform any CUDA call between the two or having a cudaFree between the CUDA
   // launch and the ncclProxyStart call could cause a deadlock.
@@ -283,7 +283,7 @@ ncclResult_t ncclLaunchReset(ncclComm_t comm, int destroyInfo) {
 
   // We are finishing capture of the current launch
   // Recycle info space if not in CUDA graph mode
-  if (destroyInfo) destroyEnqueueInfo(comm->enqueueInfo);
+  if (destroyInfo) ncclDestroyQueueInfo(comm->enqueueInfo);
   NCCLCHECK(ncclCalloc(&comm->enqueueInfo, 1));
   comm->enqueueInfo->comm = comm;
 
@@ -490,9 +490,8 @@ static ncclResult_t ncclSetupCollKernel(struct ncclInfo* info) {
   }
 
   // Compute cuda kernel arg and proxy arg templates
-  struct ncclEnqueueInfo* eqInfo = comm->enqueueInfo;
-  struct ncclEnqueueElem* eqElem;
-  NCCLCHECK(getNewEnqueueElem(eqInfo, &eqElem));
+  struct ncclQueueElem* eqElem;
+  NCCLCHECK(ncclAddQueueElem(comm->enqueueInfo, &eqElem));
   struct ncclWorkElem* work = &eqElem->work;
   NCCLCHECK(computeColl(info, work, &eqElem->proxyArgs));
 
@@ -502,7 +501,7 @@ static ncclResult_t ncclSetupCollKernel(struct ncclInfo* info) {
   params->gridDim.x += info->nChannels * nSubChannels;
   params->gridDim.x = std::min<unsigned>(params->gridDim.x, comm->nChannels);
   params->blockDim.x = std::max<unsigned>(params->blockDim.x, info->nThreads);
-  eqInfo->maxChannels = params->gridDim.x;  // params may be varied by a second graph hence we need to capture it here
+  comm->enqueueInfo->maxChannels = params->gridDim.x;  // params may be varied by a second graph hence we need to capture it here
 
   // Record the first kernel to launch
   if (params->func == NULL) {
@@ -516,7 +515,7 @@ static ncclResult_t ncclSetupCollKernel(struct ncclInfo* info) {
 }
 
 // Dynamic enqueue code
-static ncclResult_t ncclEnqueueCollKernel(ncclComm_t comm, struct ncclEnqueueElem* eqElem) {
+static ncclResult_t ncclEnqueueCollKernel(ncclComm_t comm, struct ncclQueueElem* eqElem) {
   struct ncclWorkElem* work = &eqElem->work;
   struct ncclProxyArgs* proxyArgs = &eqElem->proxyArgs;
 
@@ -670,7 +669,7 @@ static ncclResult_t computeP2pProxyArgs(struct ncclInfo* info, struct ncclProxyA
   return ncclSuccess;
 }
 
-ncclResult_t ncclEnqueueP2pKernel(struct ncclComm* comm, struct ncclEnqueueElem* eqElem) {
+ncclResult_t ncclEnqueueP2pKernel(struct ncclComm* comm, struct ncclQueueElem* eqElem) {
   struct ncclWorkElem* workElem = &eqElem->work;
   struct ncclProxyArgs* proxyArgs = &eqElem->proxyArgs;
 
@@ -698,9 +697,8 @@ ncclResult_t ncclEnqueueP2pKernel(struct ncclComm* comm, struct ncclEnqueueElem*
 ncclResult_t ncclSetupP2pKernel(struct ncclInfo* info) {
   ncclComm* comm = info->comm;
   // Compute cuda kernel arg and proxy arg templates
-  struct ncclEnqueueInfo* eqInfo = comm->enqueueInfo;
-  struct ncclEnqueueElem* eqElem;
-  NCCLCHECK(getNewEnqueueElem(eqInfo, &eqElem));
+  struct ncclQueueElem* eqElem;
+  NCCLCHECK(ncclAddQueueElem(comm->enqueueInfo, &eqElem));
   NCCLCHECK(computeP2pWorkElem(info, &eqElem->work));
   NCCLCHECK(computeP2pProxyArgs(info, &eqElem->proxyArgs));
 
@@ -708,7 +706,7 @@ ncclResult_t ncclSetupP2pKernel(struct ncclInfo* info) {
   struct cudaLaunchParams* params = comm->myParams;
   params->gridDim.x = std::max<unsigned>(params->gridDim.x, channelId+1);
   params->blockDim.x = std::max<unsigned>(params->blockDim.x, eqElem->work.nThreads);
-  eqInfo->maxChannels = params->gridDim.x;  // params may be varied by a second graph hence we need to capture it here
+  comm->enqueueInfo->maxChannels = params->gridDim.x;  // params may be varied by a second graph hence we need to capture it here
 
   // Record the first kernel to launch
   // Just for CUDA kernel to know this is a P2P operation
@@ -723,11 +721,11 @@ ncclResult_t ncclSetupP2pKernel(struct ncclInfo* info) {
 template<int USING_CUDA_GRAPH>
 void CUDART_CB ncclEnqueueHostSetup(void* arg) {
   ncclResult_t ret;
-  struct ncclEnqueueInfo* eqInfo = (struct ncclEnqueueInfo*)arg;
+  struct ncclQueueInfo* eqInfo = (struct ncclQueueInfo*)arg;
   ncclComm_t comm = eqInfo->comm;
 
   // Iterate through the element list
-  struct ncclEnqueueElem* eqElem = eqInfo->eqElemList.head;
+  struct ncclQueueElem* eqElem = eqInfo->elemList.head;
   while (eqElem != NULL) {
     if (eqElem->work.funcIndex == FUNC_INDEX_P2P) {
       NCCLCHECKGOTO(ncclEnqueueP2pKernel(comm, eqElem), ret, cb_end);
@@ -738,7 +736,7 @@ void CUDART_CB ncclEnqueueHostSetup(void* arg) {
   }
 
   NCCLCHECKGOTO(setupLaunch(eqInfo, USING_CUDA_GRAPH), ret, cb_end);
-  NCCLCHECKGOTO(ncclEnqueueProxyStart(eqInfo), ret, cb_end);
+  NCCLCHECKGOTO(ncclLaunchProxy(eqInfo), ret, cb_end);
 
 cb_end:
   if (ret != ncclSuccess) {
@@ -782,12 +780,12 @@ ncclResult_t ncclGetCudaGraph(ncclComm_t comm, cudaGraph_t* graph, int* usingCud
 }
 
 ncclResult_t ncclCudaGraphHostSetup(ncclComm_t comm, cudaGraph_t graph) {
-  struct ncclEnqueueInfo* eqInfo = comm->enqueueInfo;
+  struct ncclQueueInfo* eqInfo = comm->enqueueInfo;
 #if CUDA_VERSION >= 11030
   // Create a CUDA object to wrap around the argument space
   // which CUDA graph would manage lifetime of
   CUuserObject object;
-  cuUserObjectCreate(&object, eqInfo, destroyEnqueueInfo, 1, 0); //FIXME: use runtime API + check
+  cuUserObjectCreate(&object, eqInfo, ncclDestroyQueueInfo, 1, 0); //FIXME: use runtime API + check
   cuGraphRetainUserObject(graph, object, 1, CU_GRAPH_USER_OBJECT_MOVE); //FIXME: use runtime API + check
 #endif
 
