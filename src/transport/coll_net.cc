@@ -339,8 +339,10 @@ ncclResult_t collNetSendProxy(struct ncclProxyArgs* args) {
         sub->posted += args->sliceSteps;
         *sendHead = sub->base + sub->posted - NCCL_STEPS;
       }
+      // Enforce sync between operations of the same group.
+      bool groupSync = (((s == 0) && ((sub+args->nsubs-1)->transmitted == sub->transmitted)) || (s && (sub-1)->transmitted > sub->transmitted));
       int buffSlot = (sub->base+sub->transmitted)%NCCL_STEPS;
-      if (sub->transmitted < sub->posted && sub->transmitted < sub->done + NCCL_STEPS
+      if (groupSync && sub->transmitted < sub->posted && sub->transmitted < sub->done + NCCL_STEPS
         && reqFifo[buffSlot].recvBuff != NULL) {
         volatile int* sizesFifo = resources->recvMem->sizesFifo;
         volatile uint64_t* recvTail = &resources->recvMem->tail;
