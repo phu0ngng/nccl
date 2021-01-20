@@ -25,6 +25,7 @@ struct ncclProxySubArgs {
   size_t recvbytes;
 
   // Internal state
+  uint64_t base;
   uint64_t posted;
   uint64_t received; // Only used by recv proxy to wait for flush.
   uint64_t transmitted;
