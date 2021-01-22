@@ -840,7 +840,7 @@ static ncclResult_t initTransportsRank(struct ncclComm* comm, ncclUniqueId* comm
       struct ncclChannel* channelSend = comm->channels+c;
       NCCLCHECK(ncclTransportP2pConnect(comm, channelRecv, 1, &channelRecv->collTree.up, 1, channelRecv->collTree.down));
       NCCLCHECK(ncclTransportP2pConnect(comm, channelSend, 1, channelSend->collTree.down, 1, &channelSend->collTree.up));
-      static int channelId = c%collNetGraph.nChannels;
+      const int channelId = c%collNetGraph.nChannels;
       const int recvMaster = collNetGraph.intra[channelId*comm->localRanks+recvIndex];
       const int sendMaster = collNetGraph.intra[channelId*comm->localRanks+sendIndex];
       if (collNetSetup(comm, &collNetGraph, channelRecv, rank, nranks, recvMaster, sendMaster, comm->nNodes, 1) != 1)
