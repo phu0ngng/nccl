@@ -31,6 +31,7 @@ ncclResult_t ncclTopoPreset(struct ncclComm* comm,
 #else
     channel->collTree.out = -1;
     channel->collTree.headRank = -1;
+    channel->collTree.nHeads = 0;
     for (int i=0; i<NCCL_MAX_DIRECT_ARITY; i++) channel->collTree.up[i] = -1;
     for (int i=0; i<NCCL_MAX_DIRECT_ARITY; i++) channel->collTree.down[i] = -1;
 #endif
@@ -176,6 +177,8 @@ static ncclResult_t connectTrees(struct ncclComm* comm, int* treeToParent, int* 
   return ncclSuccess;
 }
 
+NCCL_PARAM(CollNetDuplicate, "COLLNET_DUPLICATE", 1);
+
 ncclResult_t ncclTopoConnectCollNet(struct ncclComm* comm, struct ncclTopoGraph* collNetGraph, int rank) {
 #if CHAIN_COLLNET == 1
   int nranks = comm->nRanks;
@@ -218,55 +221,83 @@ ncclResult_t ncclTopoConnectCollNet(struct ncclComm* comm, struct ncclTopoGraph*
   int sendIndex = collNetGraph->pattern == NCCL_TOPO_PATTERN_TREE ? 0 : 1;  // send GPU index depends on topo pattern
   int recvIndex = 0;  // recv GPU index is always 0
   // Find all head ranks
-  int nHeads = logicChannels;
+  int nHeads = 0;
   for (int c=0; c<logicChannels; c++) {
     int* collNetIntra = collNetGraph->intra+c*localRanks;
     sendHeads[c] = collNetIntra[sendIndex];
     recvHeads[c] = collNetIntra[recvIndex];
+    nHeads++;
   }
+  int duplicate = ncclParamCollNetDuplicate();
   // Send channels
-  for (int c=0; c<logicChannels; c++) {
+  for (int c=0; c<duplicate; c++) {
     struct ncclChannel* channel = comm->channels+c;
     int* collNetIntra = collNetGraph->intra+c*localRanks;
+    char line[1024];
+    sprintf(line, "CollNet send channel %d rank %d ", c, rank);
     int nDown = 0;
     for (int i=0; i<nHeads; i++) {
       if (rank == sendHeads[i]) { // is head
+        channel->collTree.headRank = i; // Mark the index for deciding offset in the CUDA kernel
         channel->collTree.out = nranks; // Set root of collTree to id nranks
-        for (int r=0; r<localRanks-1; r++)
-          channel->collTree.down[nDown++] = collNetIntra[(rank+r+1)%localRanks];  // connect to all peers
+        sprintf(line+strlen(line), "down ");
+        for (int r=0; r<localRanks; r++) {
+          if (collNetIntra[r] == rank) continue;
+          channel->collTree.down[nDown++] = collNetIntra[r];  // connect to all peers
+          sprintf(line+strlen(line), " %d ", collNetIntra[r]);
+        }
+        sprintf(line+strlen(line), "nDown %d ", nDown);
         break;
       }
     }
     // Connect to all heads
-    channel->collTree.nUp = 0;
+    int nUp = 0;
+    sprintf(line+strlen(line), "up ");
     for (int i=0; i<nHeads; i++) {
-      if (rank == sendHeads[i]) { channel->collTree.headRank = i; continue; }
-      channel->collTree.up[channel->collTree.nUp++] = sendHeads[i];
+      if (rank == sendHeads[i]) continue;
+      channel->collTree.up[nUp++] = sendHeads[i];
+      sprintf(line+strlen(line), " %d ", sendHeads[i]);
     }
+    channel->collTree.nHeads = nHeads;
     channel->collTree.depth = 1;
-    INFO(NCCL_GRAPH, "CollNet send channel %d rank %d out %d nUp %d nDown %d", c, rank, channel->collTree.out, channel->collTree.nUp, nDown);
+    sprintf(line+strlen(line), "nUp %d nHeads %d ", nUp, nHeads);
+    sprintf(line+strlen(line), "headRank %d out %d ", channel->collTree.headRank, channel->collTree.out);
+    INFO(NCCL_GRAPH, "%s", line);
   }
   // Recv channels
-  for (int c=0; c<logicChannels; c++) {
-    struct ncclChannel* channel = comm->channels+comm->nChannels/2+c;
+  for (int c=0; c<duplicate; c++) {
+    struct ncclChannel* channel = comm->channels+duplicate+c;
     int* collNetIntra = collNetGraph->intra+c*localRanks;
+    char line[1024];
+    sprintf(line, "CollNet recv channel %d rank %d ", c+duplicate, rank);
     int nDown = 0;
     for (int i=0; i<nHeads; i++) {
-      if (rank == recvHeads[i]) { // is master
+      if (rank == recvHeads[i]) { // is head
+        channel->collTree.headRank = i; // Mark the index for deciding offset in the CUDA kernel
         channel->collTree.out = nranks; // Set root of collTree to id nranks
-        for (int r=0; r<localRanks-1; r++)
-          channel->collTree.down[nDown++] = collNetIntra[(rank+r+1)%localRanks];  // connect to all peers
+        sprintf(line+strlen(line), "down ");
+        for (int r=0; r<localRanks; r++) {
+          if (collNetIntra[r] == rank) continue;
+          channel->collTree.down[nDown++] = collNetIntra[r];  // connect to all peers
+          sprintf(line+strlen(line), " %d ", collNetIntra[r]);
+        }
+        sprintf(line+strlen(line), "nDown %d ", nDown);
         break;
       }
     }
     // Connect to all heads
-    channel->collTree.nUp = 0;
+    int nUp = 0;
+    sprintf(line+strlen(line), "up ");
     for (int i=0; i<nHeads; i++) {
-      if (rank == recvHeads[i]) { channel->collTree.headRank = i; continue; }
-      channel->collTree.up[channel->collTree.nUp++] = recvHeads[i];
+      if (rank == recvHeads[i]) continue;
+      channel->collTree.up[nUp++] = recvHeads[i];
+      sprintf(line+strlen(line), " %d ", recvHeads[i]);
     }
+    channel->collTree.nHeads = nHeads;
     channel->collTree.depth = 1;
-    INFO(NCCL_GRAPH, "CollNet recv channel %d rank %d out %d nUp %d nDown %d", c, rank, channel->collTree.out, channel->collTree.nUp, nDown);
+    sprintf(line+strlen(line), "nUp %d nHeads %d ", nUp, nHeads);
+    sprintf(line+strlen(line), "headRank %d out %d ", channel->collTree.headRank, channel->collTree.out);
+    INFO(NCCL_GRAPH, "%s", line);
   }
 #endif
   return ncclSuccess;

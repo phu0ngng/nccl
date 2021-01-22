@@ -130,7 +130,7 @@ struct ncclTree {
 struct ncclDirect {
   int depth;
   int out;
-  int nUp;
+  int nHeads;
   int headRank;
   int up[NCCL_MAX_DIRECT_ARITY];
   int down[NCCL_MAX_DIRECT_ARITY];

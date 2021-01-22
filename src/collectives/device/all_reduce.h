@@ -8,6 +8,9 @@
 #include "primitives.h"
 #include "collectives.h"
 
+//#define PRINT(TID, GROUP) if (TID == 0) printf("Rank %d bid %d %s peer %d chunk %d\n", comm->rank, blockIdx.x, GROUP, peer, chunk++);
+#define PRINT(TID, GROUP) chunk++;
+
 template<class FUNC, typename T, int UNROLL>
 class ncclFunction<ncclFuncAllReduce, NCCL_ALGO_RING, NCCL_PROTO_SIMPLE, FUNC, T, UNROLL> {
   public:
@@ -209,13 +212,13 @@ class ncclFunction<ncclFuncAllReduce, NCCL_ALGO_COLLNET, NCCL_PROTO_SIMPLE, FUNC
     const int stepSize = comm->buffSizes[NCCL_PROTO_SIMPLE] / (sizeof(T)*NCCL_STEPS);
     int chunkSize = args->coll.lastChunkSize;
     const ssize_t minChunkSize = nthreads*8*sizeof(uint64_t) / sizeof(T);
-    const ssize_t loopSize = nChannels*nChannels*chunkSize;
+    ssize_t loopSize = nChannels*chunkSize;
     const ssize_t size = args->coll.count;
-
+/*
     if (loopSize > size) {
       chunkSize = DIVUP(size, nChannels*minChunkSize)*minChunkSize;
     }
-
+*/
     // Compute pointers
     const T * __restrict__ thisInput = (const T*)args->sendbuff;
     T * __restrict__ thisOutput = (T*)args->recvbuff;
@@ -256,19 +259,22 @@ class ncclFunction<ncclFuncAllReduce, NCCL_ALGO_COLLNET, NCCL_PROTO_SIMPLE, FUNC
       }
     }
 #else
+    int chunk = 0;
     int nthreadsSplit = nthreads/2;
     struct ncclDirect* tree = &channel->collTree;
+    loopSize *= tree->nHeads;
     if (blockIdx.x < nChannels) { // first half of the channels do reduce
       if (tid < nthreadsSplit + WARP_SIZE) {
         // Scatter
         ncclPrimitives<UNROLL, 1, 1, T, 1, NCCL_MAX_DIRECT_ARITY, 0, FUNC>
           prims(tid, nthreadsSplit, NULL, tree->up, NULL, stepSize, channel, comm, ncclShmem->ptrs, 0);
         for (ssize_t gridOffset = 0; gridOffset < size; gridOffset += loopSize) {
-          for (int i=0, c=0; i<nChannels; i++) {
+          for (int i=0, c=0; i<tree->nHeads; i++) {
             if (i == tree->headRank) continue;
             int peer = tree->up[c++];
-            ssize_t offset = gridOffset + (bid*nChannels+i)*chunkSize;
+            ssize_t offset = gridOffset + (bid*tree->nHeads+i)*chunkSize;
             int nelem = min(chunkSize, size-offset);
+            PRINT(tid, "scatter");
             prims.sendTo(thisInput+offset, nelem, peer);
           }
         }
@@ -277,8 +283,9 @@ class ncclFunction<ncclFuncAllReduce, NCCL_ALGO_COLLNET, NCCL_PROTO_SIMPLE, FUNC
         ncclPrimitives<UNROLL, 1, 1, T, NCCL_MAX_DIRECT_ARITY, 1, 0, FUNC>
           prims(tid-nthreadsSplit-WARP_SIZE, nthreads-nthreadsSplit, tree->down, &tree->out, NULL, stepSize, channel, comm, ncclShmem->ptrs, 2);
         for (ssize_t gridOffset = 0; gridOffset < size; gridOffset += loopSize) {
-          ssize_t offset = gridOffset + (bid*nChannels+tree->headRank)*chunkSize;
+          ssize_t offset = gridOffset + (bid*tree->nHeads+tree->headRank)*chunkSize;
           int nelem = min(chunkSize, size-offset);
+          int peer = tree->out; PRINT(tid-nthreadsSplit-WARP_SIZE, "reduce");
           prims.recvReduceSend(thisInput+offset, nelem);
         }
       }
@@ -290,11 +297,12 @@ class ncclFunction<ncclFuncAllReduce, NCCL_ALGO_COLLNET, NCCL_PROTO_SIMPLE, FUNC
         ncclPrimitives<UNROLL, 1, 1, T, NCCL_MAX_DIRECT_ARITY, 1, 1, FUNC>
           prims(tid, nthreadsSplit, tree->up, NULL, thisOutput, stepSize, channel, comm, ncclShmem->ptrs, 0);
         for (ssize_t gridOffset = 0; gridOffset < size; gridOffset += loopSize) {
-          for (int i=0, c=0; i<nChannels; i++) {
+          for (int i=0, c=0; i<tree->nHeads; i++) {
             if (i == tree->headRank) continue;
             int peer = tree->up[c++];
-            ssize_t offset = gridOffset + (bid*nChannels+i)*chunkSize;
+            ssize_t offset = gridOffset + (bid*tree->nHeads+i)*chunkSize;
             int nelem = min(chunkSize, size-offset);
+            PRINT(tid, "gather");
             prims.recvFrom(thisOutput+offset, nelem, peer); //FIXME: maybe use direct version to improve perf
           }
         }
@@ -303,8 +311,9 @@ class ncclFunction<ncclFuncAllReduce, NCCL_ALGO_COLLNET, NCCL_PROTO_SIMPLE, FUNC
         ncclPrimitives<UNROLL, 1, 1, T, 1, NCCL_MAX_DIRECT_ARITY, 0, FUNC>
           prims(tid-nthreadsSplit-WARP_SIZE, nthreads-nthreadsSplit, &tree->out, tree->down, thisOutput, stepSize, channel, comm, ncclShmem->ptrs, 2);
         for (ssize_t gridOffset = 0; gridOffset < size; gridOffset += loopSize) {
-          ssize_t offset = gridOffset + (bid*nChannels+tree->headRank)*chunkSize;
+          ssize_t offset = gridOffset + (bid*tree->nHeads+tree->headRank)*chunkSize;
           int nelem = min(chunkSize, size-offset);
+          int peer = tree->out; PRINT(tid-nthreadsSplit-WARP_SIZE, "bcast");
           prims.recvCopySend(thisOutput+offset, nelem);
         }
       }
@@ -384,7 +393,6 @@ class ncclFunction<ncclFuncAllReduce, NCCL_ALGO_DIRECT, NCCL_PROTO_SIMPLE, FUNC,
     const ssize_t minChunkSize = nthreads*8*sizeof(uint64_t) / sizeof(T);
     const ssize_t loopSize = nChannels*chunkSize;
     const ssize_t size = args->coll.count;
-    const int nranks = comm->nRanks;
 
     if (loopSize > size) {
       chunkSize = DIVUP(size, nChannels*minChunkSize)*minChunkSize;
