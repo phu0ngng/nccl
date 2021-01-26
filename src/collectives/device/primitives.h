@@ -276,6 +276,10 @@ class ncclPrimitives {
   sendTo(const T* src, int nelem, int peerIn) {
     GenericOp<0, 0, 0, 1, 1, 0, 1>(src, NULL, nelem, 0, peerIn);
   }
+  __device__ __forceinline__ void
+  directSendTo(const T* src, ssize_t directOffset, int nelem, int peerIn) {
+    GenericOp<0, 1, 0, 1, 1, 0, 1>(src, NULL, nelem, directOffset, peerIn);
+  }
 
   __device__ __forceinline__ void
   recv(T* dst, int nelem) {
@@ -288,6 +292,10 @@ class ncclPrimitives {
   __device__ __forceinline__ void
   recvFrom(T* dst, int nelem, int peerIn) {
     GenericOp<0, 0, 1, 0, 0, 1, 1>(NULL, dst, nelem, 0, peerIn);
+  }
+  __device__ __forceinline__ void
+  directRecvFrom(T* dst, ssize_t directOffset, int nelem, int peerIn) {
+    GenericOp<1, 0, 1, 0, 0, 1, 1>(NULL, dst, nelem, directOffset, peerIn);
   }
 
   __device__ __forceinline__ void

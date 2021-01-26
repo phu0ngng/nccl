@@ -303,18 +303,18 @@ class ncclFunction<ncclFuncAllReduce, NCCL_ALGO_COLLNET, NCCL_PROTO_SIMPLE, FUNC
             ssize_t offset = gridOffset + (bid*tree->nHeads+i)*chunkSize;
             int nelem = min(chunkSize, size-offset);
             PRINT(tid, "gather");
-            prims.recvFrom(thisOutput+offset, nelem, peer); //FIXME: maybe use direct version to improve perf
+            prims.directRecvFrom(thisOutput+offset, offset, nelem, peer);
           }
         }
       } else if (tree->out != -1) {
         // Recv from network, broadcast
-        ncclPrimitives<UNROLL, 1, 1, T, 1, NCCL_MAX_DIRECT_ARITY, 0, FUNC>
+        ncclPrimitives<UNROLL, 1, 1, T, 1, NCCL_MAX_DIRECT_ARITY, 1, FUNC>
           prims(tid-nthreadsSplit-WARP_SIZE, nthreads-nthreadsSplit, &tree->out, tree->down, thisOutput, stepSize, channel, comm, ncclShmem->ptrs, 2);
         for (ssize_t gridOffset = 0; gridOffset < size; gridOffset += loopSize) {
           ssize_t offset = gridOffset + (bid*tree->nHeads+tree->headRank)*chunkSize;
           int nelem = min(chunkSize, size-offset);
           int peer = tree->out; PRINT(tid-nthreadsSplit-WARP_SIZE, "bcast");
-          prims.recvCopySend(thisOutput+offset, nelem);
+          prims.directRecvCopySend(thisOutput+offset, offset, nelem);
         }
       }
     }
