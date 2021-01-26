@@ -347,10 +347,11 @@ static ncclResult_t getLoopInfo(struct ncclInfo* info) {
     case ncclPatternTreeUpDown:
     case ncclPatternPipelineFrom:
     case ncclPatternPipelineTo:
-    case ncclPatternCollTreeUp:
-    case ncclPatternCollTreeDown:
     case ncclPatternAllToAll:
       info->nstepsPerLoop = info-> nchunksPerLoop = 1; break;
+    case ncclPatternCollTreeUp:
+    case ncclPatternCollTreeDown:
+      info->nstepsPerLoop = 1; info->nchunksPerLoop = info->comm->channels[0].collTree.nHeads; break;
     case ncclPatternRing:
       info->nstepsPerLoop = info->comm->nRanks-1; info->nchunksPerLoop = info->comm->nRanks; break;
     case ncclPatternRingTwice:
