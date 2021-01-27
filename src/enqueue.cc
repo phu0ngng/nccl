@@ -281,7 +281,7 @@ static ncclResult_t getAlgoInfo(struct ncclInfo* info) {
   int nAlgos = NCCL_NUM_ALGORITHMS;
   // Check collNet support
   int collNetTypeSupport = 0;
-  if (info->comm->collNetSupport)
+  if (info->comm->collNetNchannels > 0)
     NCCLCHECK(collNetReduceSupport(info->datatype, info->op, &collNetTypeSupport));
   for (int a=0; a<nAlgos; a++) {
     if (a == NCCL_ALGO_COLLNET && collNetTypeSupport != 1) continue;
@@ -303,7 +303,7 @@ static ncclResult_t getAlgoInfo(struct ncclInfo* info) {
   TRACE(NCCL_COLL, "%ld Bytes -> Algo %d proto %d time %f", info->nBytes, info->algorithm, info->protocol, minTime);
 
   int nc = (info->nChannels > 0) ? info->nChannels :
-           (info->algorithm == NCCL_ALGO_COLLNET) ? comm->nChannels/2 : comm->nChannels; // CollNet uses one channel for up and one channel for down
+           (info->algorithm == NCCL_ALGO_COLLNET) ? comm->collNetNchannels : comm->nChannels; // CollNet uses one channel for up and one channel for down
   int nt = comm->maxThreads[info->algorithm][info->protocol];
   int threadThreshold = comm->threadThresholds[info->algorithm][info->protocol];
   while (info->nBytes < nc*nt*threadThreshold) {
@@ -427,7 +427,7 @@ static ncclResult_t computeColl(struct ncclInfo* info /* input */, struct ncclWo
   if (info->protocol == NCCL_PROTO_LL128) chunkEffectiveSize = (chunkSize / NCCL_LL128_LINEELEMS) * NCCL_LL128_DATAELEMS;
   //if (info->comm->rank == 0) printf("Coll %d, size %ld -> %dx%d, chunkSize %d (algo %d proto%d)\n", info->coll, info->nBytes, info->nChannels, info->nThreads, chunkSize, info->algorithm, info->protocol);
   int nLoops = (int)(DIVUP(info->nBytes, (((size_t)(info->nChannels))*info->nchunksPerLoop*chunkEffectiveSize)));
-  proxyArgs->nsteps = info->nstepsPerLoop * nLoops * chunkSteps;
+  proxyArgs->subs[0].nsteps = info->nstepsPerLoop * nLoops * chunkSteps;
   proxyArgs->sliceSteps = sliceSteps;
   proxyArgs->chunkSteps = chunkSteps;
   proxyArgs->protocol = info->protocol;
@@ -436,10 +436,10 @@ static ncclResult_t computeColl(struct ncclInfo* info /* input */, struct ncclWo
   // This is used by P2P to reduce the receive buffer size. We don't use it in collectives
   // because some protocols need to transmit more than the total size, plus they sometimes
   // round up
-  proxyArgs->recvbytes = stepSize*proxyArgs->sliceSteps;
+  proxyArgs->subs[0].recvbytes = stepSize*proxyArgs->sliceSteps;
 
   TRACE(NCCL_NET,"opCount %lx slicesteps %d spl %d cpl %d nbytes %zi -> protocol %d nchannels %d nthreads %d, nloops %d nsteps %d comm %p",
-      proxyArgs->opCount, proxyArgs->sliceSteps, info->nstepsPerLoop, info->nchunksPerLoop, info->nBytes, info->protocol, info->nChannels, info->nThreads,
+      proxyArgs->opCount, sliceSteps, info->nstepsPerLoop, info->nchunksPerLoop, info->nBytes, info->protocol, info->nChannels, info->nThreads,
       nLoops, proxyArgs->nsteps, info->comm);
   return ncclSuccess;
 }
@@ -465,6 +465,7 @@ ncclResult_t ncclSaveKernel(struct ncclInfo* info) {
   struct ncclWorkElem work;
   struct ncclProxyArgs proxyArgs;
   memset(&proxyArgs, 0, sizeof(struct ncclProxyArgs));
+  proxyArgs.nsubs = 1;
   NCCLCHECK(computeColl(info, &work, &proxyArgs));
 
   info->comm->myParams->blockDim.x = std::max<unsigned>(info->comm->myParams->blockDim.x, info->nThreads);
@@ -477,13 +478,14 @@ ncclResult_t ncclSaveKernel(struct ncclInfo* info) {
     struct ncclChannel* channel = info->comm->channels+channelId;
 
     // Proxy
-    proxyArgs.channel = channel;
+    proxyArgs.subs[0].channel = channel;
+    proxyArgs.opCount = channel->workFifoTail;
     // Adjust pattern for CollNet based on channel index
     if (nSubChannels == 2) {
       info->pattern = (channelId < info->comm->nChannels/nSubChannels) ? ncclPatternCollTreeUp : ncclPatternCollTreeDown;
     }
 
-    if (proxyArgs.nsteps) NCCLCHECK(ncclProxySaveColl(&proxyArgs, info->pattern, info->root, info->comm->nRanks));
+    if (proxyArgs.subs[0].nsteps) NCCLCHECK(ncclProxySaveColl(&proxyArgs, info->pattern, info->root, info->comm->nRanks));
 
     info->comm->myParams->gridDim.x++;
     work.coll.bid = bid % nChannels;
@@ -610,7 +612,7 @@ ncclResult_t ncclSaveP2pKernel(struct ncclInfo* info) {
     segment = 0;
   }
 
-  NCCLCHECK(ncclProxySaveP2p(info, channel, segment));
+  NCCLCHECK(ncclProxySaveP2p(info, channel));
   NCCLCHECK(saveP2pOp(info, w, segment));
   info->comm->myParams->gridDim.x = std::max<unsigned>(info->comm->myParams->gridDim.x, channelId+1);
   info->comm->myParams->blockDim.x = std::max<unsigned>(info->comm->myParams->blockDim.x, info->nThreads);

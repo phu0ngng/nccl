@@ -100,6 +100,7 @@ struct ncclConnInfo {
 struct ncclConnector {
   int connected;
   struct ncclProxyArgs *proxyAppend;
+  struct ncclProxyArgs **proxyAppendPtr;
   struct ncclTransportComm* transportComm;
   void* transportResources; // Host-side resources
   struct ncclConnInfo conn;

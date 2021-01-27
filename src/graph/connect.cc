@@ -14,7 +14,7 @@
 /******************************************************************/
 
 ncclResult_t ncclTopoPreset(struct ncclComm* comm,
-    struct ncclTopoGraph* treeGraph, struct ncclTopoGraph* ringGraph, struct ncclTopoGraph* collNetGraph, struct ncclTopoGraph* directGraph,
+    struct ncclTopoGraph* treeGraph, struct ncclTopoGraph* ringGraph, struct ncclTopoGraph* collNetGraph,
     struct ncclTopoRanks* topoRanks) {
   int rank = comm->rank;
   int localRanks = comm->localRanks;
@@ -185,7 +185,7 @@ ncclResult_t ncclTopoConnectCollNet(struct ncclComm* comm, struct ncclTopoGraph*
   int depth = nranks/comm->nNodes;
   int sendIndex = collNetGraph->pattern == NCCL_TOPO_PATTERN_TREE ? 0 : 1;  // send GPU index depends on topo pattern
   int sendEndIndex = (sendIndex+comm->localRanks-1)%comm->localRanks;
-  for (int c=0; c<comm->nChannels/2; c++) {
+  for (int c=0; c<comm->collNetNchannels; c++) {
     struct ncclChannel* channel = comm->channels+c;
     // Set root of collTree to id nranks
     if (rank == collNetGraph->intra[sendIndex+c*comm->localRanks]) { // is master
@@ -199,8 +199,8 @@ ncclResult_t ncclTopoConnectCollNet(struct ncclComm* comm, struct ncclTopoGraph*
   }
   int recvIndex = 0;  // recv GPU index is always 0
   int recvEndIndex = (recvIndex+comm->localRanks-1)%comm->localRanks;
-  for (int c=0; c<comm->nChannels/2; c++) {
-    struct ncclChannel* channel = comm->channels+comm->nChannels/2+c;
+  for (int c=0; c<comm->collNetNchannels; c++) {
+    struct ncclChannel* channel = comm->channels+comm->collNetNchannels+c;
     // Set root of collTree to id nranks
     if (rank == collNetGraph->intra[recvIndex+c*comm->localRanks]) { // is master
       channel->collTree.up = nranks;
@@ -209,7 +209,7 @@ ncclResult_t ncclTopoConnectCollNet(struct ncclComm* comm, struct ncclTopoGraph*
       channel->collTree.down[0] = -1;
     }
     channel->collTree.depth = depth;
-    INFO(NCCL_GRAPH, "CollNet Channel %d rank %d up %d down %d", comm->nChannels/2+c, rank, channel->collTree.up, channel->collTree.down[0]);
+    INFO(NCCL_GRAPH, "CollNet Channel %d rank %d up %d down %d", comm->collNetNchannels+c, rank, channel->collTree.up, channel->collTree.down[0]);
   }
 #else
   int nranks = comm->nRanks;
@@ -369,6 +369,7 @@ ncclResult_t ncclTopoPostset(struct ncclComm* comm, int* firstRanks, int* treePa
   // Honor NCCL_MIN_NRINGS/NCCL_MAX_NRINGS.
   // We permit combining max, then min, to only use the first channels, then duplicate them.
   nChannels = comm->nChannels = std::min((int)ncclMaxNchannels(), nChannels);
+  if (comm->collNetNchannels) comm->collNetNchannels = std::min((int)ncclMaxNchannels()/2, comm->collNetNchannels);
   int c;
   for (c=nChannels; c<ncclMinNchannels(); c++) {
     memcpy(ringPrev+c*nranks, ringPrev+(c-nChannels)*nranks, nranks*sizeof(int));
@@ -376,9 +377,11 @@ ncclResult_t ncclTopoPostset(struct ncclComm* comm, int* firstRanks, int* treePa
     memcpy(comm->channels+c, comm->channels+c-nChannels, sizeof(struct ncclChannel));
   }
   nChannels = comm->nChannels = c;
+  if (comm->collNetNchannels) comm->collNetNchannels = c/2;
 
   // Create rings array and check all is fine
   NCCLCHECK(ncclBuildRings(nChannels, rings, comm->rank, comm->nRanks, ringPrev, ringNext));
+
 
   free(ringRecv);
   free(ringSend);
