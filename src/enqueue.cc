@@ -281,7 +281,7 @@ static ncclResult_t getAlgoInfo(struct ncclInfo* info) {
   int nAlgos = NCCL_NUM_ALGORITHMS;
   // Check collNet support
   int collNetTypeSupport = 0;
-  if (info->comm->collNetNchannels > 0)
+  if (info->comm->collNetSupport > 0)
     NCCLCHECK(collNetReduceSupport(info->datatype, info->op, &collNetTypeSupport));
   for (int a=0; a<nAlgos; a++) {
     if (a == NCCL_ALGO_COLLNET && collNetTypeSupport != 1) continue;
@@ -303,7 +303,7 @@ static ncclResult_t getAlgoInfo(struct ncclInfo* info) {
   TRACE(NCCL_COLL, "%ld Bytes -> Algo %d proto %d time %f", info->nBytes, info->algorithm, info->protocol, minTime);
 
   int nc = (info->nChannels > 0) ? info->nChannels :
-           (info->algorithm == NCCL_ALGO_COLLNET) ? comm->collNetNchannels : comm->nChannels; // CollNet uses one channel for up and one channel for down
+           (info->algorithm == NCCL_ALGO_COLLNET) ? comm->nChannels/2 : comm->nChannels; // CollNet uses one channel for up and one channel for down
   int nt = comm->maxThreads[info->algorithm][info->protocol];
   int threadThreshold = comm->threadThresholds[info->algorithm][info->protocol];
   while (info->nBytes < nc*nt*threadThreshold) {

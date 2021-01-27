@@ -241,7 +241,7 @@ static ncclResult_t commAlloc(ncclComm_t* comret, int ndev, int rank) {
   *comm->abortFlag = 0;
 
   comm->argsptr = &comm->args;
-  comm->collNetNchannels = 0;
+  comm->collNetSupport = 0;
 
   NCCLCHECK(ncclCalloc(&comm->asyncOps, NCCL_MAX_OPS));
   comm->asyncOpCount = 0;
@@ -543,7 +543,7 @@ static ncclResult_t checkCollNetSetup(struct ncclComm* comm, int rank, int collN
       peer->recv.transportResources = NULL; // avoid double free
     }
     // Set support to 0
-    comm->collNetNchannels = 0;
+    comm->collNetSupport = 0;
   }
   return ncclSuccess;
 }
@@ -772,24 +772,17 @@ static ncclResult_t initTransportsRank(struct ncclComm* comm, ncclUniqueId* comm
   }
 
   comm->nChannels = treeGraph.nChannels = ringGraph.nChannels = std::min(treeGraph.nChannels, ringGraph.nChannels);
-  if (comm->nNodes > 1 && ncclParamCollNetEnable() == 1 && collNetSupport() == 1) {
-    comm->collNetNchannels = collNetGraph.nChannels;
-  } else {
-    comm->collNetNchannels = 0;
-  }
-
   if (comm->nChannels < nChannelsOrig) {
     // We started duplicating channels during Preset(), so we need to move the
     // duplicated channels since we have removed some.
     for (int i=0; i<comm->nChannels; i++) memcpy(comm->channels+comm->nChannels+i, comm->channels+nChannelsOrig+i, sizeof(struct ncclChannel));
   }
 
+  if (comm->nNodes > 1 && ncclParamCollNetEnable() == 1 && collNetSupport() == 1) comm->collNetSupport = 1;
+  if (comm->collNetSupport == 1) NCCLCHECK(ncclTopoConnectCollNet(comm, &collNetGraph, rank));
+
   int *rings;
   NCCLCHECK(ncclCalloc(&rings, nranks*MAXCHANNELS));
-
-  if (comm->collNetNchannels > 0) {
-    NCCLCHECK(ncclTopoConnectCollNet(comm, &collNetGraph, rank));
-  }
   NCCLCHECK(ncclTopoPostset(comm, nodesFirstRank, nodesTreePatterns, allTopoRanks, rings));
 
   free(allTopoRanks);
@@ -874,7 +867,7 @@ static ncclResult_t initTransportsRank(struct ncclComm* comm, ncclUniqueId* comm
 #endif
 
   // Check if we can setup CollNet
-  if (comm->collNetNchannels > 0) {
+  if (comm->collNetSupport > 0) {
     int collNetSetupFail = 0;
     // Find all head ranks
     int nHeads = collNetGraph.nChannels;
