@@ -214,25 +214,22 @@ ncclResult_t ncclTopoConnectCollNet(struct ncclComm* comm, struct ncclTopoGraph*
 #else
   int nranks = comm->nRanks;
   int localRanks = comm->localRanks;
-  int logicChannels = comm->nChannels/2;
+  int nHeads = collNetGraph->nChannels;
   int *sendHeads, *recvHeads;
-  NCCLCHECK(ncclCalloc(&sendHeads, logicChannels));
-  NCCLCHECK(ncclCalloc(&recvHeads, logicChannels));
+  NCCLCHECK(ncclCalloc(&sendHeads, nHeads));
+  NCCLCHECK(ncclCalloc(&recvHeads, nHeads));
   int sendIndex = collNetGraph->pattern == NCCL_TOPO_PATTERN_TREE ? 0 : 1;  // send GPU index depends on topo pattern
   int recvIndex = 0;  // recv GPU index is always 0
   // Find all head ranks
-  int nHeads = 0;
-  for (int c=0; c<logicChannels; c++) {
+  for (int c=0; c<nHeads; c++) {
     int* collNetIntra = collNetGraph->intra+c*localRanks;
     sendHeads[c] = collNetIntra[sendIndex];
     recvHeads[c] = collNetIntra[recvIndex];
-    nHeads++;
   }
   int duplicate = ncclParamCollNetDuplicate();
   // Send channels
   for (int c=0; c<duplicate; c++) {
     struct ncclChannel* channel = comm->channels+c;
-    int* collNetIntra = collNetGraph->intra+c*localRanks;
     char line[1024];
     sprintf(line, "CollNet send channel %d rank %d ", c, rank);
     int nDown = 0;
@@ -240,6 +237,7 @@ ncclResult_t ncclTopoConnectCollNet(struct ncclComm* comm, struct ncclTopoGraph*
       if (rank == sendHeads[i]) { // is head
         channel->collTree.headRank = i; // Mark the index for deciding offset in the CUDA kernel
         channel->collTree.out = nranks; // Set root of collTree to id nranks
+        int* collNetIntra = collNetGraph->intra+i*localRanks;
         sprintf(line+strlen(line), "down ");
         for (int r=0; r<localRanks; r++) {
           if (collNetIntra[r] == rank) continue;
@@ -267,7 +265,6 @@ ncclResult_t ncclTopoConnectCollNet(struct ncclComm* comm, struct ncclTopoGraph*
   // Recv channels
   for (int c=0; c<duplicate; c++) {
     struct ncclChannel* channel = comm->channels+duplicate+c;
-    int* collNetIntra = collNetGraph->intra+c*localRanks;
     char line[1024];
     sprintf(line, "CollNet recv channel %d rank %d ", c+duplicate, rank);
     int nDown = 0;
@@ -275,6 +272,7 @@ ncclResult_t ncclTopoConnectCollNet(struct ncclComm* comm, struct ncclTopoGraph*
       if (rank == recvHeads[i]) { // is head
         channel->collTree.headRank = i; // Mark the index for deciding offset in the CUDA kernel
         channel->collTree.out = nranks; // Set root of collTree to id nranks
+        int* collNetIntra = collNetGraph->intra+i*localRanks;
         sprintf(line+strlen(line), "down ");
         for (int r=0; r<localRanks; r++) {
           if (collNetIntra[r] == rank) continue;
