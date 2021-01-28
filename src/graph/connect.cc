@@ -177,8 +177,6 @@ static ncclResult_t connectTrees(struct ncclComm* comm, int* treeToParent, int* 
   return ncclSuccess;
 }
 
-NCCL_PARAM(CollNetDuplicate, "COLLNET_DUPLICATE", 1);
-
 ncclResult_t ncclTopoConnectCollNet(struct ncclComm* comm, struct ncclTopoGraph* collNetGraph, int rank) {
 #if CHAIN_COLLNET == 1
   int nranks = comm->nRanks;
@@ -227,9 +225,8 @@ ncclResult_t ncclTopoConnectCollNet(struct ncclComm* comm, struct ncclTopoGraph*
     sendHeads[c] = collNetIntra[sendIndex];
     recvHeads[c] = collNetIntra[recvIndex];
   }
-  int duplicate = ncclParamCollNetDuplicate();
   // Send channels
-  for (int c=0; c<duplicate; c++) {
+  for (int c=0; c<comm->nChannels/2; c++) {
     struct ncclChannel* channel = comm->channels+c;
     char line[1024];
     sprintf(line, "CollNet send channel %d rank %d ", c, rank);
@@ -264,10 +261,10 @@ ncclResult_t ncclTopoConnectCollNet(struct ncclComm* comm, struct ncclTopoGraph*
     INFO(NCCL_GRAPH, "%s", line);
   }
   // Recv channels
-  for (int c=0; c<duplicate; c++) {
-    struct ncclChannel* channel = comm->channels+duplicate+c;
+  for (int c=0; c<comm->nChannels/2; c++) {
+    struct ncclChannel* channel = comm->channels+comm->nChannels/2+c;
     char line[1024];
-    sprintf(line, "CollNet recv channel %d rank %d ", c+duplicate, rank);
+    sprintf(line, "CollNet recv channel %d rank %d ", c+comm->nChannels/2, rank);
     int nDown = 0;
     for (int i=0; i<nHeads; i++) {
       if (rank == recvHeads[i]) { // is head

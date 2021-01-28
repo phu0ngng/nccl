@@ -428,7 +428,6 @@ static ncclResult_t computeBuffSizes(struct ncclComm* comm) {
 }
 
 extern struct ncclTransport collNetTransport;
-extern int64_t ncclParamCollNetDuplicate();
 
 // All ranks must participate in collNetSetup call
 // type: 0 for send, 1 for recv
@@ -778,12 +777,12 @@ static ncclResult_t initTransportsRank(struct ncclComm* comm, ncclUniqueId* comm
     for (int i=0; i<comm->nChannels; i++) memcpy(comm->channels+comm->nChannels+i, comm->channels+nChannelsOrig+i, sizeof(struct ncclChannel));
   }
 
-  if (comm->nNodes > 1 && ncclParamCollNetEnable() == 1 && collNetSupport() == 1) comm->collNetSupport = 1;
-  if (comm->collNetSupport == 1) NCCLCHECK(ncclTopoConnectCollNet(comm, &collNetGraph, rank));
-
   int *rings;
   NCCLCHECK(ncclCalloc(&rings, nranks*MAXCHANNELS));
   NCCLCHECK(ncclTopoPostset(comm, nodesFirstRank, nodesTreePatterns, allTopoRanks, rings));
+
+  if (comm->nNodes > 1 && ncclParamCollNetEnable() == 1 && collNetSupport() == 1) comm->collNetSupport = 1;
+  if (comm->collNetSupport == 1) NCCLCHECK(ncclTopoConnectCollNet(comm, &collNetGraph, rank));
 
   free(allTopoRanks);
   free(nodesTreePatterns);
@@ -880,9 +879,8 @@ static ncclResult_t initTransportsRank(struct ncclComm* comm, ncclUniqueId* comm
       sendHeads[c] = collNetGraph.intra[c*comm->localRanks+sendIndex];
       recvHeads[c] = collNetGraph.intra[c*comm->localRanks+recvIndex];
     }
-    int duplicate = ncclParamCollNetDuplicate();
-    for (int c=0; c<duplicate; c++) {
-      struct ncclChannel* channelRecv = comm->channels+duplicate+c;
+    for (int c=0; c<comm->nChannels/2; c++) {
+      struct ncclChannel* channelRecv = comm->channels+comm->nChannels/2+c;
       struct ncclChannel* channelSend = comm->channels+c;
       NCCLCHECK(ncclTransportP2pConnect(comm, channelRecv, NCCL_MAX_DIRECT_ARITY, channelRecv->collTree.up, NCCL_MAX_DIRECT_ARITY, channelRecv->collTree.down));
       NCCLCHECK(ncclTransportP2pConnect(comm, channelSend, NCCL_MAX_DIRECT_ARITY, channelSend->collTree.down, NCCL_MAX_DIRECT_ARITY, channelSend->collTree.up));
