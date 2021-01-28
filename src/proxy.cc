@@ -65,6 +65,8 @@ static ncclResult_t allocateArgs(struct ncclComm* comm, struct ncclProxyArgs** a
 #define TYPE_SLEEP 2
 #define TYPE_WAKEUP 3
 #define TYPE_IDLE 4
+#define TYPE_APPEND 5
+#define TYPE_APPEND_END 6
 #ifdef PROFILE_PROXY
 struct ncclProxyProfile {
   void* op;
@@ -138,7 +140,7 @@ void figLine(FILE* f, uint64_t start, uint64_t oldVal, uint64_t newVal, int x, i
   if (oldVal == newVal) return;
   int y0 = y + (oldVal-start)*FIG_TICK;
   int y1 = y + (newVal-start)*FIG_TICK;
-  fprintf(f, "2 1 0 1 %d 7 50 -1 -1 0.000 0 0 -1 0 0 2\n\t  %d %d  %d %d\n", color, x, y0, x, y1);
+  fprintf(f, "2 1 0 1 %d 7 40 -1 -1 0.000 0 0 -1 0 0 2\n\t  %d %d  %d %d\n", color, x, y0, x, y1);
 }
 
 void profilingDump() {
@@ -158,16 +160,19 @@ void profilingDump() {
 
   // Background sleep/wakeup/idle
   int x = 0;
-  int xSleep = 0;
+  int xSleep = 0, xAppend = 0;
   for (int i=0; i<profilingIndex; i++) {
     if (profilingEvents[i].op == NULL && profilingEvents[i].channel == MAXCHANNELS) {
       struct ncclProxyProfile* e = profilingEvents+i;
       x = e->timestamp/cyclesFactor;
       if (e->type == TYPE_SLEEP) xSleep = x;
+      else if (e->type == TYPE_APPEND) xAppend = x;
       else if (e->type == TYPE_WAKEUP) {
         fprintf(f, "2 2 0 0 0 29 50 -1 20 0.000 0 0 -1 0 0 5\n\t  %d %d  %d %d  %d %d  %d %d  %d %d\n", xSleep, 500, x, 500, x, yMax, xSleep, yMax, xSleep, 500);
       } else if (e->type == TYPE_IDLE) {
         fprintf(f, "2 1 0 1 30 7 50 -1 20 0.000 0 0 -1 0 0 2\n\t  %d %d  %d %d\n", x, 500, x, yMax);
+      } else if (e->type == TYPE_APPEND_END) {
+        fprintf(f, "2 2 0 0 0 12 48 -1 20 0.000 0 0 -1 0 0 5\n\t  %d %d  %d %d  %d %d  %d %d  %d %d\n", xAppend, 500, x, 500, x, yMax, xAppend, yMax, xAppend, 500);
       }
     }
   }
@@ -201,8 +206,8 @@ void profilingDump() {
       } else if (e->state == ncclProxyOpNone) {
         int x = states[e->segment].x, y = states[e->segment].y, x2 = states[e->segment].x2;
         int y2 = y+(states[e->segment].end-states[e->segment].start)*FIG_TICK;
-        fprintf(f, "2 2 0 1 0 7 50 -1 -1 0.000 0 0 -1 0 0 5\n\t  %d %d  %d %d  %d %d  %d %d  %d %d\n", x, y, x, y2, x2, y2, x2, y, x, y);
-        fprintf(f, "4 0 0 50 -1 0 12 0.0000 4 135 90 %d %d %c %d/%d/%ld\\001\n", x, y2+2*FIG_TICK, e->type == TYPE_SEND ? 'S' : 'R', e->channel, e->segment, e->opCount);
+        fprintf(f, "2 2 0 1 0 7 30 -1 -1 0.000 0 0 -1 0 0 5\n\t  %d %d  %d %d  %d %d  %d %d  %d %d\n", x, y, x, y2, x2, y2, x2, y, x, y);
+        fprintf(f, "4 0 0 30 -1 0 12 0.0000 4 135 90 %d %d %c %d/%d/%ld\\001\n", x, y2+2*FIG_TICK, e->type == TYPE_SEND ? 'S' : 'R', e->channel, e->segment, e->opCount);
         states[e->segment].start = states[e->segment].posted = states[e->segment].received = states[e->segment].transmitted = states[e->segment].done = states[e->segment].end =
         states[e->segment].x = states[e->segment].y = states[e->segment].x2 = 0;
       } else {
@@ -533,6 +538,7 @@ void* persistentThread(void *comm_) {
 ncclResult_t ncclProxyStart(struct ncclComm* comm) {
   struct ncclProxyState* state = &comm->proxyState;
   pthread_mutex_lock(&state->opsMutex);
+  profilingRecord(NULL, TYPE_APPEND);
 
   // Sort operations as we append them : sends first, then
   // receives (and collectives).
@@ -557,6 +563,7 @@ ncclResult_t ncclProxyStart(struct ncclComm* comm) {
   state->nextOps = state->nextOpsEnd = NULL;
   NCCLCHECK(dumpProxyState(state));
 
+  profilingRecord(NULL, TYPE_APPEND_END);
   if (state->ops != NULL)
     pthread_cond_signal(&state->cond);
   pthread_mutex_unlock(&state->opsMutex);
