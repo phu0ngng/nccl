@@ -472,15 +472,15 @@ static ncclResult_t progressOps(struct ncclProxyState* state, struct ncclProxyAr
     // opCount >= lastOpCount are part of an ongoing GroupStart/GroupEnd that hasn't started
     // yet and might be cancelled before they even start. Hold on on those.
     if (op->opCount < comm->lastOpCount) {
-      if (op->state == ncclProxyOpReady) NCCLCHECK(profilingRecord(op, 0));
+      if (op->state == ncclProxyOpReady) profilingRecord(op, 0);
       NCCLCHECK(op->progress(op));
       *idle &= op->idle;
     }
     if (op->state == ncclProxyOpNone) {
-      NCCLCHECK(profilingRecord(op, 0));
+      profilingRecord(op, 0);
       NCCLCHECK(removeOp(state, &op, &prevOp));
     } else {
-      if (op->idle == 0) NCCLCHECK(profilingRecord(op, 0));
+      if (op->idle == 0) profilingRecord(op, 0);
       prevOp = op;
       op = op->next;
     }
@@ -509,9 +509,9 @@ void* persistentThread(void *comm_) {
         pthread_mutex_unlock(&state->opsMutex);
         return NULL;
       }
-      if (profilingRecord(NULL, TYPE_SLEEP) != ncclSuccess) { WARN("Failed allocating profiling buffer\n"); return NULL; }
+      profilingRecord(NULL, TYPE_SLEEP);
       pthread_cond_wait(&state->cond, &state->opsMutex);
-      if (profilingRecord(NULL, TYPE_WAKEUP) != ncclSuccess) { WARN("Failed allocating profiling buffer\n"); return NULL; }
+      profilingRecord(NULL, TYPE_WAKEUP);
     }
     int idle = 1;
     ncclResult_t ret = progressOps(state, opsPtr, &idle, comm);
@@ -524,7 +524,7 @@ void* persistentThread(void *comm_) {
     if (idle) {
       pthread_mutex_unlock(&state->opsMutex);
       sched_yield(); // No request progressed. Let others run.
-      if (profilingRecord(NULL, TYPE_IDLE) != ncclSuccess) { WARN("Failed allocating profiling buffer\n"); return NULL; }
+      profilingRecord(NULL, TYPE_IDLE);
       pthread_mutex_lock(&state->opsMutex);
     }
   }
