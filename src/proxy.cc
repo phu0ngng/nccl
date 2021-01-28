@@ -60,6 +60,11 @@ static ncclResult_t allocateArgs(struct ncclComm* comm, struct ncclProxyArgs** a
 }
 
 #define PROFILE_PROXY 1
+#define TYPE_SEND 0
+#define TYPE_RECV 1
+#define TYPE_SLEEP 2
+#define TYPE_WAKEUP 3
+#define TYPE_IDLE 4
 #ifdef PROFILE_PROXY
 struct ncclProxyProfile {
   void* op;
@@ -77,11 +82,6 @@ int profilingIndex = 0;
 uint64_t profilingStart = 0;
 uint64_t cyclesPerUsec = 0;
 #define MAX_EVENTS 200000
-#define TYPE_SEND 0
-#define TYPE_RECV 1
-#define TYPE_SLEEP 2
-#define TYPE_WAKEUP 3
-#define TYPE_IDLE 4
 
 static inline uint64_t gettime() {
   uint32_t a, d;
@@ -126,7 +126,7 @@ ncclResult_t profilingRecord(struct ncclProxyArgs* op, int type) {
     event->received = op->subs[s].received;
     event->transmitted = op->subs[s].transmitted;
     event->done = op->subs[s].done;
-    event->end = op->subs[s].end;
+    event->end = op->subs[s].nsteps;
   }
   return ncclSuccess;
 }
@@ -232,7 +232,7 @@ void profilingDump() {
 }
 #else
 ncclResult_t profilingRecord(struct ncclProxyArgs* op, int type) { return ncclSuccess; }
-void profilingDump();
+void profilingDump() {}
 #endif
 
 //#define DEBUG_PROXY 1
