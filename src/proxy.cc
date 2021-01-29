@@ -460,10 +460,18 @@ static ncclResult_t removeOp(struct ncclProxyState* state, struct ncclProxyArgs*
       state->ops = next;
     }
   }
-  pthread_mutex_lock(&state->poolMutex);
-  freeOp->next = state->pool;
-  state->pool = freeOp;
-  pthread_mutex_unlock(&state->poolMutex);
+  freeOp->next = NULL;
+  if (state->freeList) state->freeListEnd->next = freeOp;
+  else state->freeList = freeOp;
+  state->freeListEnd = freeOp;
+  state->freeListCount++;
+  if (state->freeListCount % 32 == 0) {
+    pthread_mutex_lock(&state->poolMutex);
+    state->freeListEnd->next = state->pool;
+    state->pool = state->freeList;
+    pthread_mutex_unlock(&state->poolMutex);
+    state->freeList = state->freeListEnd = NULL;
+  }
   DEBUG_PROXY_PRINT("Removed %5ld (%5ld)                                               : ", OP_INDEX(freeOp), OP_INDEX(*freeOp->proxyAppendPtr));
   NCCLCHECK(dumpProxyState(state));
   return ncclSuccess;

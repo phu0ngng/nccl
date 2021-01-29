@@ -71,6 +71,9 @@ struct ncclProxyState {
   pthread_cond_t cond;
   pthread_mutex_t opsMutex;
   pthread_mutex_t poolMutex;
+  struct ncclProxyArgs* freeList;
+  struct ncclProxyArgs* freeListEnd;
+  int freeListCount;
   bool stop;
   struct ncclProxySharedBuffers sharedBuffs;
   struct ncclProxyArgs* ops;
