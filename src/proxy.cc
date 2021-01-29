@@ -59,7 +59,7 @@ static ncclResult_t allocateArgs(struct ncclComm* comm, struct ncclProxyArgs** a
   return ncclSuccess;
 }
 
-#define PROFILE_PROXY 1
+//#define PROFILE_PROXY 1
 #define TYPE_SEND 0
 #define TYPE_RECV 1
 #define TYPE_SLEEP 2
