@@ -249,7 +249,8 @@ ncclResult_t ncclTopoConnectCollNet(struct ncclComm* comm, struct ncclTopoGraph*
     // Connect to all heads
     int nUp = 0;
     sprintf(line+strlen(line), "up ");
-    for (int i=0; i<nHeads; i++) {
+    for (int h=0; h<nHeads; h++) {
+      int i = (h+rank%localRanks)%nHeads; // Shift by intraRank so that leaves don't send to same head simultaneously
       if (rank == sendHeads[i]) continue;
       channel->collTree.up[nUp++] = sendHeads[i];
       sprintf(line+strlen(line), " %d ", sendHeads[i]);
@@ -284,7 +285,8 @@ ncclResult_t ncclTopoConnectCollNet(struct ncclComm* comm, struct ncclTopoGraph*
     // Connect to all heads
     int nUp = 0;
     sprintf(line+strlen(line), "up ");
-    for (int i=0; i<nHeads; i++) {
+    for (int h=0; h<nHeads; h++) {
+      int i = (h+rank%localRanks)%nHeads; // Shift by intraRank so that leaves don't send to same head simultaneously
       if (rank == recvHeads[i]) continue;
       channel->collTree.up[nUp++] = recvHeads[i];
       sprintf(line+strlen(line), " %d ", recvHeads[i]);
