@@ -673,7 +673,9 @@ ncclResult_t ncclTopoGetLocalNet(struct ncclTopoSystem* system, int rank, int64_
     }
     if (path->width == maxWidth && path->type == minType) nets[count++] = system->nodes[NET].nodes[n].id;
   }
-  *id = nets[rr % count];
+  // Different GPUs on the same PCI switch with multiple NICs should start with a different NIC.
+  int devId = system->nodes[GPU].nodes[g].gpu.dev;
+  *id = nets[(devId+rr) % count];
   free(nets);
   return ncclSuccess;
 }
