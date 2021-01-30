@@ -576,6 +576,8 @@ static ncclResult_t saveP2pOp(struct ncclInfo* info /* input */, struct ncclWork
   elem->recvbuff = info->recvbuff;
   elem->p2p.sendCount = info->sendbytes;
   elem->p2p.recvCount = info->recvbytes;
+  elem->p2p.sendChunkSize = info->sendChunkSize;
+  elem->p2p.recvChunkSize = info->recvChunkSize;
   elem->p2p.delta = info->delta;
   const int nsegments = s+1;
   int nThreads = 512;
@@ -602,6 +604,7 @@ ncclResult_t ncclSaveP2pKernel(struct ncclInfo* info) {
     segment = 0;
   }
 
+  // The proxy code will set the chunk size, make sure to run it first.
   NCCLCHECK(ncclProxySaveP2p(info, channel));
   NCCLCHECK(saveP2pOp(info, w, segment));
   info->comm->myParams->gridDim.x = std::max<unsigned>(info->comm->myParams->gridDim.x, channelId+1);

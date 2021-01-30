@@ -418,21 +418,36 @@ ncclResult_t ncclProxySaveP2p(struct ncclInfo* info, struct ncclChannel* channel
   args.protocol = NCCL_PROTO_SIMPLE;
   args.opCount = channel->workFifoTail-1;
   args.dtype = info->datatype;
+
+  int stepSize = info->comm->buffSizes[NCCL_PROTO_SIMPLE]/NCCL_STEPS/SENDRECV_SLICEFACTOR;
+  info->recvChunkSize = stepSize;
+  info->sendChunkSize = stepSize;
+
   if (info->delta > 0 && info->recvbytes >= 0) {
     int peerrecv = (info->comm->nRanks+info->comm->rank-info->delta)%info->comm->nRanks;
-    sub->nsteps = DIVUP(info->recvbytes, info->comm->buffSizes[NCCL_PROTO_SIMPLE]/NCCL_STEPS/SENDRECV_SLICEFACTOR);
-    if (sub->nsteps == 0) sub->nsteps = 1;
-    sub->recvbytes = info->recvbytes;
-    sub->sendbytes = 0;
-    NCCLCHECK(SaveProxy(proxyRecv, peerrecv, &args));
+    if (channel->peers[peerrecv].recv.transportComm && channel->peers[peerrecv].recv.transportComm->proxy) {
+      // Tune chunk size for the network
+      if (info->recvbytes < stepSize) info->recvChunkSize /= 4;
+      else if (info->recvbytes < 8*stepSize) info->recvChunkSize /= 2;
+      sub->nsteps = DIVUP(info->recvbytes, info->recvChunkSize);
+      if (sub->nsteps == 0) sub->nsteps = 1;
+      sub->recvbytes = info->recvbytes;
+      sub->sendbytes = 0;
+      NCCLCHECK(SaveProxy(proxyRecv, peerrecv, &args));
+    }
   }
   if (info->delta > 0 && info->sendbytes >= 0) {
     int peersend = (info->comm->rank+info->delta)%info->comm->nRanks;
-    sub->nsteps = DIVUP(info->sendbytes, info->comm->buffSizes[NCCL_PROTO_SIMPLE]/NCCL_STEPS/SENDRECV_SLICEFACTOR);
-    if (sub->nsteps == 0) sub->nsteps = 1;
-    sub->sendbytes = info->sendbytes;
-    sub->recvbytes = 0;
-    NCCLCHECK(SaveProxy(proxySend, peersend, &args));
+    if (channel->peers[peersend].send.transportComm && channel->peers[peersend].send.transportComm->proxy) {
+      // Tune chunk size for the network
+      if (info->sendbytes < stepSize) info->sendChunkSize /= 4;
+      else if (info->sendbytes < 8*stepSize) info->sendChunkSize /= 2;
+      sub->nsteps = DIVUP(info->sendbytes, info->sendChunkSize);
+      if (sub->nsteps == 0) sub->nsteps = 1;
+      sub->sendbytes = info->sendbytes;
+      sub->recvbytes = 0;
+      NCCLCHECK(SaveProxy(proxySend, peersend, &args));
+    }
   }
   return ncclSuccess;
 }
