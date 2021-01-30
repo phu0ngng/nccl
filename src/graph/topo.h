@@ -105,6 +105,9 @@ struct ncclTopoNode {
       int model;
       cpu_set_t affinity;
     }cpu;
+    struct {
+      uint64_t device;
+    }pci;
   };
   int nlinks;
   struct ncclTopoLink links[NCCL_TOPO_MAX_LINKS];
