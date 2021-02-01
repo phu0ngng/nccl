@@ -252,19 +252,14 @@ ncclResult_t netRecvFree(void* transportResources) {
 
 static_assert(NCCL_STEPS <= NCCL_NET_MAX_REQUESTS, "Not enough net requests to cover for steps");
 
-#define STEP_PRINTF(...)
-//#define STEP_PRINTF printf
-
 ncclResult_t netSendProxy(struct ncclProxyArgs* args) {
   if (args->state == ncclProxyOpReady) {
     for (int s=0; s<args->nsubs; s++) {
       struct ncclProxySubArgs* sub = args->subs+s;
       struct netSendResources* resources = (struct netSendResources*) (sub->connector->transportResources);
       // Round to next multiple of sliceSteps
-      resources->step = ROUNDUP(resources->step, args->chunkSteps);
-      sub->posted = sub->transmitted = sub->done = resources->step;
-      sub->end = sub->done + sub->nsteps;
-      STEP_PRINTF("[%d/%d/%ld/%d] Send starts at %ld, ends at %ld\n", sub->connector->comm->rank, sub->channel->id, args->opCount, s, sub->done, sub->end);
+      sub->base = ROUNDUP(resources->step, args->chunkSteps);
+      sub->posted = sub->transmitted = sub->done = 0;
     }
     args->state = ncclProxyOpProgress;
   }
@@ -273,6 +268,7 @@ ncclResult_t netSendProxy(struct ncclProxyArgs* args) {
     int p = args->protocol;
     for (int s=0; s<args->nsubs; s++) {
       struct ncclProxySubArgs* sub = args->subs+s;
+      if (sub->done == sub->nsteps) continue;
       struct netSendResources* resources = (struct netSendResources*) (sub->connector->transportResources);
       void* mhandle = *(resources->mhandlesProto[p]);
       int stepSize = sub->connector->comm->buffSizes[p] / NCCL_STEPS;
@@ -281,27 +277,27 @@ ncclResult_t netSendProxy(struct ncclProxyArgs* args) {
       if (resources->shared) buffSize /= SENDRECV_SLICEFACTOR;
       if (sub->sendbytes < buffSize) buffSize = sub->sendbytes;
       // Post buffers to the GPU
-      if (sub->posted < sub->end && sub->posted < sub->done + NCCL_STEPS) {
+      if (sub->posted < sub->nsteps && sub->posted < sub->done + NCCL_STEPS) {
+        int buffSlot = (sub->base+sub->posted)%NCCL_STEPS;
         if (resources->shared) {
           char* ptr;
-          int buffSlot = sub->posted%NCCL_STEPS;
-          NCCLCHECK(ncclProxySharedBuffersGetP2p(sub->connector->comm, resources->useGdr, 0, sub->channel->id, buffSlot, s, &ptr));
-          resources->recvMem->ptrsFifo[sub->posted%NCCL_STEPS] = ptr;
+          int sharedBuffSlot = sub->posted%NCCL_STEPS;
+          NCCLCHECK(ncclProxySharedBuffersGetP2p(sub->connector->comm, resources->useGdr, 0, sub->channel->id, sharedBuffSlot, s, &ptr));
+          resources->recvMem->ptrsFifo[buffSlot] = ptr;
           __sync_synchronize();
           volatile uint64_t* sendHead = &resources->sendMem->head;
           sub->posted += args->sliceSteps;
-          *sendHead = sub->posted - NCCL_STEPS;
+          *sendHead = sub->base + sub->posted - NCCL_STEPS;
         } else sub->posted += args->sliceSteps;
-        STEP_PRINTF("[%d/%d/%ld/%d] %ld Send posted -> %ld\n", sub->connector->comm->rank, sub->channel->id, args->opCount, s, sub->posted, sub->posted + args->sliceSteps);
         args->idle = 0;
         continue;
       }
       // Check whether we received data from the GPU and send it to the network
-      int buffSlot = sub->transmitted%NCCL_STEPS;
       if (sub->transmitted < sub->posted && sub->transmitted < sub->done + NCCL_STEPS) {
+        int buffSlot = (sub->base+sub->transmitted)%NCCL_STEPS;
         volatile int* sizesFifo = resources->recvMem->sizesFifo;
         volatile uint64_t* recvTail = &resources->recvMem->tail;
-        if (sizesFifo[buffSlot] != -1 && (*recvTail > sub->transmitted || p == NCCL_PROTO_LL)) {
+        if (sizesFifo[buffSlot] != -1 && ((*recvTail > (sub->base+sub->transmitted)) || p == NCCL_PROTO_LL)) {
           // We have something to receive, let's check if it's completely ready.
           int size = sizesFifo[buffSlot];
           char* buff = resources->shared ? (char*)resources->recvMem->ptrsFifo[buffSlot] : localBuff+buffSlot*stepSize;
@@ -311,7 +307,7 @@ ncclResult_t netSendProxy(struct ncclProxyArgs* args) {
             if (!ready) {
               // When data is in sysmem, we need to wait until all flags are correct since the GPU only
               // called threadfence()
-              uint64_t flag = sub->transmitted + 1;
+              uint64_t flag = sub->base+sub->transmitted+1;
               int nFifoLines = DIVUP(sizesFifo[buffSlot], sizeof(uint64_t)*NCCL_LL128_LINEELEMS);
               volatile uint64_t* lines = (volatile uint64_t*)buff;
               ready = 1;
@@ -320,7 +316,7 @@ ncclResult_t netSendProxy(struct ncclProxyArgs* args) {
               }
             }
           } else if (p == NCCL_PROTO_LL) {
-            uint32_t flag = NCCL_LL_FLAG(sub->transmitted + 1);
+            uint32_t flag = NCCL_LL_FLAG(sub->base+sub->transmitted+1);
             int nFifoLines = DIVUP(size, sizeof(union ncclLLFifoLine));
             union ncclLLFifoLine* lines = (union ncclLLFifoLine*)buff;
             for (int i=0; i<nFifoLines; i++) {
@@ -337,7 +333,6 @@ ncclResult_t netSendProxy(struct ncclProxyArgs* args) {
               sizesFifo[buffSlot] = -1;
               // Make sure size is reset to zero before we update the head.
               __sync_synchronize();
-              STEP_PRINTF("[%d/%d/%ld/%d] %ld Send transmitted [%d], transmitted -> %ld\n", sub->connector->comm->rank, sub->channel->id, args->opCount, s, sub->transmitted, buffSlot, sub->transmitted + args->sliceSteps);
               sub->transmitted += args->sliceSteps;
               args->idle = 0;
               continue;
@@ -348,20 +343,18 @@ ncclResult_t netSendProxy(struct ncclProxyArgs* args) {
       // Check whether the network has completed some send operations.
       if (sub->done < sub->transmitted) {
         int done;
-        int buffSlot = sub->done%NCCL_STEPS;
+        int buffSlot = (sub->base+sub->done)%NCCL_STEPS;
         NCCLCHECK(ncclNetTest(sub->requests[buffSlot], &done, NULL));
         if (done) {
           TRACE(NCCL_NET, "sendProxy [%d/%d] request %p done, size %d", sub->done, buffSlot, sub->requests[buffSlot]);
-          STEP_PRINTF("[%d/%d/%ld/%d] %ld Send done [%d], done -> %ld\n", sub->connector->comm->rank, sub->channel->id, args->opCount, s, sub->done, buffSlot, sub->done + args->sliceSteps);
           sub->done += args->sliceSteps;
 
           if (resources->shared == 0) {
-            resources->sendMem->head = sub->done;
+            resources->sendMem->head = sub->base + sub->done;
           }
           args->idle = 0;
-          if (sub->done == sub->end) {
-            STEP_PRINTF("[%d/%d/%ld/%d] Send ends at %ld\n", sub->connector->comm->rank, sub->channel->id, args->opCount, s, resources->step);
-            resources->step = sub->end;
+          if (sub->done == sub->nsteps) {
+            resources->step = sub->base + sub->nsteps;
             args->done++;
           }
         }
@@ -380,10 +373,8 @@ ncclResult_t netRecvProxy(struct ncclProxyArgs* args) {
       struct ncclProxySubArgs* sub = args->subs+s;
       struct netRecvResources* resources = (struct netRecvResources*) (sub->connector->transportResources);
       // Round to next multiple of sliceSteps
-      resources->step = ROUNDUP(resources->step, args->chunkSteps);
-      sub->posted = sub->received = sub->transmitted = sub->done = resources->step;
-      sub->end = sub->done + sub->nsteps;
-      STEP_PRINTF("[%d/%d/%ld/%d] Recv starts at %ld, ends at %ld\n", sub->connector->comm->rank, sub->channel->id, args->opCount, s, sub->done, sub->end);
+      sub->base = ROUNDUP(resources->step, args->chunkSteps);
+      sub->posted = sub->received = sub->transmitted = sub->done = 0;
     }
     args->state = ncclProxyOpProgress;
   }
@@ -392,7 +383,7 @@ ncclResult_t netRecvProxy(struct ncclProxyArgs* args) {
     int p = args->protocol;
     for (int s=0; s<args->nsubs; s++) {
       struct ncclProxySubArgs* sub = args->subs+s;
-      if (sub->done == sub->end) continue;
+      if (sub->done == sub->nsteps) continue;
       struct netRecvResources* resources = (struct netRecvResources*) (sub->connector->transportResources);
       void* mhandle = *(resources->mhandlesProto[p]);
       int stepSize = sub->connector->comm->buffSizes[p] / NCCL_STEPS;
@@ -400,12 +391,13 @@ ncclResult_t netRecvProxy(struct ncclProxyArgs* args) {
       int buffSize = stepSize*args->sliceSteps;
       if (resources->shared) buffSize /= SENDRECV_SLICEFACTOR;
       if (sub->recvbytes < buffSize) buffSize = sub->recvbytes;
-      if ((sub->posted < sub->done + NCCL_STEPS) && (sub->posted < sub->end)) {
-        int buffSlot = sub->posted%NCCL_STEPS;
+
+      if ((sub->posted < sub->done + NCCL_STEPS) && (sub->posted < sub->nsteps)) {
+        int buffSlot = (sub->base+sub->posted)%NCCL_STEPS;
         char* ptr;
         if (resources->shared) {
-          int buffSlot = sub->posted%NCCL_STEPS;
-          NCCLCHECK(ncclProxySharedBuffersGetP2p(sub->connector->comm, resources->useGdr, 1, sub->channel->id, buffSlot, s, &ptr));
+          int sharedBuffSlot = sub->posted%NCCL_STEPS;
+          NCCLCHECK(ncclProxySharedBuffersGetP2p(sub->connector->comm, resources->useGdr, 1, sub->channel->id, sharedBuffSlot, s, &ptr));
           volatile void** ptrsFifo = (volatile void**)resources->recvMem->ptrsFifo;
           ptrsFifo[buffSlot] = ptr;
         } else {
@@ -414,18 +406,16 @@ ncclResult_t netRecvProxy(struct ncclProxyArgs* args) {
         NCCLCHECK(ncclNetIrecv(resources->netRecvComm, ptr, buffSize, mhandle, sub->requests+buffSlot));
         if (sub->requests[buffSlot] != NULL) {
           TRACE(NCCL_NET, "recvProxy [%d/%d] posted recv request %p", sub->posted, buffSlot, sub->requests[buffSlot]);
-          STEP_PRINTF("[%d/%d/%ld/%d] %ld Recv posted [%d], posted -> %ld\n", sub->connector->comm->rank, sub->channel->id, args->opCount, s, sub->posted, buffSlot, sub->posted + args->sliceSteps);
           sub->posted += args->sliceSteps;
           args->idle = 0;
           continue;
         }
       }
       if (sub->posted > sub->received) {
-        int buffSlot = sub->received%NCCL_STEPS;
+        int buffSlot = (sub->base+sub->received)%NCCL_STEPS;
         int done, size;
         NCCLCHECK(ncclNetTest(sub->requests[buffSlot], &done, &size));
         if (done) {
-          STEP_PRINTF("[%d/%d/%ld/%d] %ld Recv received [%d], received -> %ld\n", sub->connector->comm->rank, sub->channel->id, args->opCount, s, sub->received, buffSlot, sub->received + args->sliceSteps);
           sub->received += args->sliceSteps;
           if (size > 0 && p == NCCL_PROTO_SIMPLE && resources->useGdr) {
             // Don't pass data to the GPU yet, flush first.
@@ -441,14 +431,13 @@ ncclResult_t netRecvProxy(struct ncclProxyArgs* args) {
       }
       if (sub->received > sub->transmitted) {
         // Progress flush operations
-        int buffSlot = sub->transmitted%NCCL_STEPS;
+        int buffSlot = (sub->base+sub->transmitted)%NCCL_STEPS;
         int done = 1;
         if (sub->requests[buffSlot]) NCCLCHECK(ncclNetTest(sub->requests[buffSlot], &done, NULL));
         if (done) {
-          STEP_PRINTF("[%d/%d/%ld/%d] %ld Recv transmitted [%d], transmitted -> %ld\n", sub->connector->comm->rank, sub->channel->id, args->opCount, s, sub->transmitted, buffSlot, sub->transmitted + args->sliceSteps);
           sub->transmitted += args->sliceSteps;
           __sync_synchronize();
-          resources->recvMem->tail = sub->transmitted;
+          resources->recvMem->tail = sub->base + sub->transmitted;
           args->idle = 0;
           continue;
         }
@@ -456,15 +445,13 @@ ncclResult_t netRecvProxy(struct ncclProxyArgs* args) {
       if (sub->transmitted > sub->done) {
         volatile uint64_t* sendHead = &resources->sendMem->head;
         uint64_t done = *sendHead;
-        while (done > sub->done &&
+        while (done > sub->base + sub->done &&
             // LL and LL128 can acknowledge 0-bytes send before they even happen. Don't go past what we transmitted.
             sub->transmitted > sub->done) {
-          STEP_PRINTF("[%d/%d/%ld/%d] %ld Recv done -> %ld\n", sub->connector->comm->rank, sub->channel->id, args->opCount, s, sub->done, sub->done + args->sliceSteps);
           sub->done += args->sliceSteps;
           args->idle = 0;
-          if (sub->done == sub->end) {
-            resources->step = sub->end;
-            STEP_PRINTF("[%d/%d/%ld/%d] Recv ends at %ld\n", sub->connector->comm->rank, sub->channel->id, args->opCount, s, resources->step);
+          if (sub->done == sub->nsteps) {
+            resources->step = sub->base + sub->nsteps;
             args->done++;
           }
         }

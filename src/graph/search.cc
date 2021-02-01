@@ -393,9 +393,43 @@ ncclResult_t ncclTopoSearchRecGpu(struct ncclTopoSystem* system, struct ncclTopo
   return ncclSuccess;
 }
 
+// Only try to use net interfaces which are close to GPUs.
+ncclResult_t ncclTopoSelectNets(struct ncclTopoSystem* system, int* nets, int* netcountRet) {
+  float maxwidth = 0.0;
+  int minhops = 255;
+  int netcount = 0;
+  for (int g=0; g<system->nodes[GPU].count; g++) {
+    struct ncclTopoNode* gpu = system->nodes[GPU].nodes+g;
+    struct ncclTopoLinkList* paths = gpu->paths[NET];
+    for (int n=0; n<system->nodes[NET].count; n++) {
+      if (paths[n].width > maxwidth || (paths[n].width == maxwidth && paths[n].count < minhops)) {
+        netcount = 0;
+        nets[netcount++] = n;
+        maxwidth = paths[n].width;
+        minhops = paths[n].count;
+      } else if (paths[n].width == maxwidth && paths[n].count == minhops) {
+        int found = 0;
+        for (int i=0; i<netcount; i++) if (nets[i] == n) found = 1;
+        if (!found) nets[netcount++] = n;
+      }
+    }
+  }
+  *netcountRet = netcount;
+  return ncclSuccess;
+}
+
 ncclResult_t ncclTopoSearchRecNet(struct ncclTopoSystem* system, struct ncclTopoGraph* graph, struct ncclTopoGraph* saveGraph, int backToNet, int backToFirstRank, int* time) {
   const int speed = graph->speedInter;
-  for (int n=0; n<system->nodes[NET].count; n++) {
+  int* nets;
+  NCCLCHECK(ncclCalloc(&nets, system->nodes[NET].count));
+  int netcount;
+  NCCLCHECK(ncclTopoSelectNets(system, nets, &netcount));
+  for (int i=0; i<netcount; i++) {
+    // Try to use a different NET on communicators with one GPU.
+    // When N GPUs are on a switch with N NICs, netcount should be
+    // equal to N and their GPU device should be consecutive, ensuring
+    // each GPU picks a different NIC as first choice.
+    int n = nets[(i+system->nodes[GPU].nodes[0].gpu.dev) % netcount];
     struct ncclTopoNode* net = system->nodes[NET].nodes+n;
     struct ncclTopoNode* gpu;
     if (graph->collNet && net->net.collSupport == 0) continue;
@@ -463,6 +497,7 @@ ncclResult_t ncclTopoSearchRecNet(struct ncclTopoSystem* system, struct ncclTopo
       }
     }
   }
+  free(nets);
   return ncclSuccess;
 }
 

@@ -173,6 +173,8 @@ struct ncclWorkElem {
     struct {
       size_t sendCount;
       size_t recvCount;
+      int sendChunkSize;
+      int recvChunkSize;
       int32_t delta;
       uint16_t nThreads;
     } p2p;
