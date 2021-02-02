@@ -152,7 +152,7 @@ class ncclFunction<ncclFuncAllReduce, NCCL_ALGO_TREE, NCCL_PROTO_SIMPLE, FUNC, T
     }
 #else
     int nthreadsSplit = nthreads/2;
-    if (nthreadsSplit == 256) nthreadsSplit += 64;
+    if (nthreadsSplit >= 256) nthreadsSplit += 64;
     if (tree->up == -1) {
       if (tid < nthreads+WARP_SIZE) {
         // ReduceAndBroadcast : max number of recv is 3, max number of send is 3
@@ -261,6 +261,7 @@ class ncclFunction<ncclFuncAllReduce, NCCL_ALGO_COLLNET, NCCL_PROTO_SIMPLE, FUNC
 #else
     int chunk = 0;
     int nthreadsSplit = nthreads/2;
+    if (nthreadsSplit >= 256) nthreadsSplit -= 64;
     struct ncclDirect* tree = &channel->collTree;
     loopSize *= tree->nHeads;
     if (blockIdx.x < nChannels) { // first half of the channels do reduce
