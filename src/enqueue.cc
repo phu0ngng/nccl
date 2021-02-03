@@ -420,6 +420,7 @@ static ncclResult_t computeColl(struct ncclInfo* info /* input */, struct ncclWo
   proxyArgs->subs[0].nsteps = info->nstepsPerLoop * nLoops * chunkSteps;
   proxyArgs->sliceSteps = sliceSteps;
   proxyArgs->chunkSteps = chunkSteps;
+  proxyArgs->chunkSize = chunkSize;
   proxyArgs->protocol = info->protocol;
   proxyArgs->dtype = info->datatype;
   proxyArgs->redOp = info->op;

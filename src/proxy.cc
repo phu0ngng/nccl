@@ -623,12 +623,12 @@ ncclResult_t ncclProxySharedBuffersGetP2p(struct ncclComm* comm, int cuda, int t
   *ptr = buff + slotSize * globalSlot;
   return ncclSuccess;
 }
-ncclResult_t ncclProxySharedBuffersGetCollNet(struct ncclComm* comm, int cuda, int type, int channel, int slot, int index, char** ptr) {
+ncclResult_t ncclProxySharedBuffersGetCollNet(struct ncclComm* comm, int cuda, int type, int slot, int index, char** ptr) {
   struct ncclProxySharedBuffers* state = &comm->proxyState.sharedBuffs;
   // Use different pools for different channels and also separate send/recv.
   char* buff = cuda ? state->cudaBuff : state->hostBuff;
   int slotSize = comm->buffSizes[NCCL_PROTO_SIMPLE]/NCCL_STEPS;
-  int globalSlot = ((type*NCCL_STEPS+slot)*comm->collNetNchannels)+channel;
+  int globalSlot = ((type*NCCL_STEPS+slot)*comm->collNetNchannels);
   *ptr = buff + slotSize * globalSlot;
   return ncclSuccess;
 }
