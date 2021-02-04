@@ -7,6 +7,7 @@
 #ifndef NCCL_COMM_H_
 #define NCCL_COMM_H_
 
+#include <cuda.h>
 #include "transport.h"
 #include "p2p.h"
 
@@ -77,7 +78,7 @@ struct ncclComm {
   int nNodes;
   int localRanks;
 
-  enum { GROUP, PARALLEL } launchMode;
+  enum { GROUP, PARALLEL, GROUP_GRAPH } launchMode;
   cudaStream_t userStream;
   bool userStreamSet;
   cudaEvent_t doneEvent;
@@ -145,12 +146,23 @@ struct ncclComm {
   struct ncclInfo* asyncOps;
   int asyncOpCount;
   size_t asyncTotalSize;
+  int lastChannel;
 
   //list of async p2p operation queued in a group semantics
   struct ncclP2Plist* p2pSends;
   struct ncclP2Plist* p2pRecvs;
   int p2pSendCount;
   int p2pRecvCount;
+
+  // Store info for cudaGraph
+  struct ncclQueueInfo* enqueueInfo;
+  cudaGraphNode_t lastSetupNode;
+  unsigned long long lastCudaGraphId;
+  enum { GRAPH_SYNC, GRAPH_FORK, GRAPH_ASYNC } cudaGraphMode;
+  // Side stream and events used in FORK mode
+  cudaStream_t setupStream; // Stream for host setup callback
+  cudaEvent_t userStreamDone;
+  cudaEvent_t setupDone;
 };
 
 #endif

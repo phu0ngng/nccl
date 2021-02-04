@@ -18,16 +18,19 @@ struct ncclProxyArgs {
   proxyProgressFunc_t progress;
   struct ncclChannel* channel;
   struct ncclConnector* connector;
-  size_t sendbytes;
-  size_t recvbytes;
+  ssize_t sendbytes;
+  ssize_t recvbytes;
   int sliceSteps;
   int chunkSteps;
   int nsteps;
   uint64_t opCount;
   int protocol;
   int segment; // Only for profiling
+  int delta;
   ncclDataType_t dtype;
   ncclRedOp_t redOp;
+  ncclPattern_t pattern;
+  int root;
   int state;   // add component before this line -- it is left out during initialization
 
   // Internal state
@@ -79,8 +82,8 @@ enum proxyMode {
   proxyTo = 2
 };
 
-ncclResult_t ncclProxySaveColl(struct ncclProxyArgs* args, int pattern, int root, int nranks);
-ncclResult_t ncclProxySaveP2p(struct ncclInfo* info, struct ncclChannel* channel, int segment);
+ncclResult_t ncclProxySaveColl(struct ncclProxyArgs* args, int nranks);
+ncclResult_t ncclProxySaveP2p(struct ncclComm* comm, struct ncclProxyArgs* args);
 ncclResult_t ncclProxyStart(struct ncclComm* comm);
 ncclResult_t ncclProxyCreate(struct ncclComm* comm);
 ncclResult_t ncclProxyDestroy(struct ncclComm* comm);

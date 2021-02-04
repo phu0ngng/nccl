@@ -164,7 +164,7 @@ static ncclResult_t SaveProxy(int type, int peer, struct ncclProxyArgs* args) {
   struct ncclPeer* peerComm = args->channel->peers+peer;
   struct ncclConnector* connector = type == proxyRecv ? &peerComm->recv : &peerComm->send;
   if (connector->transportComm == NULL) {
-    WARN("[%d] Error no transport for %s peer %d on channel %d", connector->comm->rank,
+    WARN("Rank %d has no transport for %s peer %d on channel %d", connector->comm->rank,
         type == proxyRecv ? "recv" : "send", peer, args->channel->id);
     return ncclInternalError;
   }
@@ -189,11 +189,12 @@ static ncclResult_t SaveProxy(int type, int peer, struct ncclProxyArgs* args) {
   return ncclSuccess;
 }
 
-ncclResult_t ncclProxySaveColl(struct ncclProxyArgs* args, int pattern, int root, int nranks) {
+ncclResult_t ncclProxySaveColl(struct ncclProxyArgs* args, int nranks) {
+  int pattern = args->pattern;
   if (pattern == ncclPatternRing || pattern == ncclPatternRingTwice || pattern == ncclPatternPipelineFrom || pattern == ncclPatternPipelineTo) {
     struct ncclRing* ring = &args->channel->ring;
-    if (NeedProxy(proxyRecv, pattern, root, ring, nranks)) NCCLCHECK(SaveProxy(proxyRecv, ring->prev, args));
-    if (NeedProxy(proxySend, pattern, root, ring, nranks)) NCCLCHECK(SaveProxy(proxySend, ring->next, args));
+    if (NeedProxy(proxyRecv, pattern, args->root, ring, nranks)) NCCLCHECK(SaveProxy(proxyRecv, ring->prev, args));
+    if (NeedProxy(proxySend, pattern, args->root, ring, nranks)) NCCLCHECK(SaveProxy(proxySend, ring->next, args));
   }
   if (pattern == ncclPatternTreeUp || pattern == ncclPatternTreeUpDown) {
     // Tree up
@@ -222,32 +223,31 @@ ncclResult_t ncclProxySaveColl(struct ncclProxyArgs* args, int pattern, int root
   return ncclSuccess;
 }
 
-ncclResult_t ncclProxySaveP2p(struct ncclInfo* info, struct ncclChannel* channel, int segment) {
-  struct ncclProxyArgs args;
-  memset(&args, 0, sizeof(struct ncclProxyArgs));
-  args.channel = channel;
-  args.sliceSteps = 1;
-  args.chunkSteps = 1;
-  args.protocol = NCCL_PROTO_SIMPLE;
-  args.segment = segment;
-  args.opCount = channel->workFifoTail-1;
-  args.dtype = info->datatype;
-  if (info->delta > 0 && info->recvbytes >= 0) {
-    int peerrecv = (info->comm->nRanks+info->comm->rank-info->delta)%info->comm->nRanks;
-    args.nsteps = DIVUP(info->recvbytes, info->comm->buffSizes[NCCL_PROTO_SIMPLE]/NCCL_STEPS/SENDRECV_SLICEFACTOR);
-    if (args.nsteps == 0) args.nsteps = 1;
-    args.recvbytes = info->recvbytes;
-    args.sendbytes = 0;
-    NCCLCHECK(SaveProxy(proxyRecv, peerrecv, &args));
+ncclResult_t ncclProxySaveP2p(struct ncclComm* comm, struct ncclProxyArgs* args) {
+  struct ncclChannel* channel = args->channel;
+  args->opCount = channel->workFifoTail-1;
+  const ssize_t recvbytesOrig = args->recvbytes;
+  const ssize_t sendbytesOrig = args->sendbytes;
+  if (args->delta > 0 && recvbytesOrig >= ssize_t(0)) {
+    int peerrecv = (comm->nRanks+comm->rank-args->delta)%comm->nRanks;
+    args->nsteps = DIVUP(recvbytesOrig, comm->buffSizes[NCCL_PROTO_SIMPLE]/NCCL_STEPS/SENDRECV_SLICEFACTOR);
+    if (args->nsteps == 0) args->nsteps = 1;
+    args->recvbytes = recvbytesOrig;
+    args->sendbytes = 0;
+    NCCLCHECK(SaveProxy(proxyRecv, peerrecv, args));
   }
-  if (info->delta > 0 && info->sendbytes >= 0) {
-    int peersend = (info->comm->rank+info->delta)%info->comm->nRanks;
-    args.nsteps = DIVUP(info->sendbytes, info->comm->buffSizes[NCCL_PROTO_SIMPLE]/NCCL_STEPS/SENDRECV_SLICEFACTOR);
-    if (args.nsteps == 0) args.nsteps = 1;
-    args.sendbytes = info->sendbytes;
-    args.recvbytes = 0;
-    NCCLCHECK(SaveProxy(proxySend, peersend, &args));
+  if (args->delta > 0 && sendbytesOrig >= ssize_t(0)) {
+    int peersend = (comm->rank+args->delta)%comm->nRanks;
+    args->nsteps = DIVUP(sendbytesOrig, comm->buffSizes[NCCL_PROTO_SIMPLE]/NCCL_STEPS/SENDRECV_SLICEFACTOR);
+    if (args->nsteps == 0) args->nsteps = 1;
+    args->sendbytes = sendbytesOrig;
+    args->recvbytes = 0;
+    NCCLCHECK(SaveProxy(proxySend, peersend, args));
   }
+  // Reset proxy args for potentially multiple cuda graph launches
+  // It is safe as long as SaveProxy copies contents of args to op
+  args->recvbytes = recvbytesOrig;
+  args->sendbytes = sendbytesOrig;
   return ncclSuccess;
 }
 

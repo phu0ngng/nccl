@@ -82,7 +82,6 @@ __device__ void ncclKernel(struct ncclWorkElem first)  {
   struct ncclDevComm* comm = first.comm;
   struct ncclChannel* channel = comm->channels+bid;
   struct ncclWorkElem* w = NULL;
-  uint16_t index = first.index;
 
   /* To optimize for latency, (only) the first operation is passed as argument.*/
   if (bid == 0 && first.funcIndex != FUNC_INDEX_P2P) w = &first;
@@ -90,7 +89,7 @@ __device__ void ncclKernel(struct ncclWorkElem first)  {
   while (1) {
     if (w == NULL) {
       w = shmem.localWork.elems;
-      load_coll(&shmem.localWork, channel->workFifo+index, tid, comm);
+      load_coll(&shmem.localWork, channel->workFifo+channel->index, tid, comm);
     }
     if (tid < w->nThreads) {
       if (w->funcIndex == FINDEX) {
@@ -99,7 +98,7 @@ __device__ void ncclKernel(struct ncclWorkElem first)  {
         ncclFuncs[w->funcIndex](w);
       }
     }
-    index = (index+1) % NCCL_MAX_OPS;
+    if (tid == 0) channel->index = (channel->index+1) % NCCL_MAX_OPS;
     if (w->active == 2) {
       return;
     }
