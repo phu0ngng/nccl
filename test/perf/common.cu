@@ -441,7 +441,7 @@ testResult_t BenchTime(struct threadArgs* args, ncclDataType_t type, ncclRedOp_t
   if (cudaGraphMode == 1) {
     // Begin cuda graph capture
     for (int i=0; i<args->nGpus; i++) {
-      CUDACHECK(cudaStreamBeginCapture(args->streams[i], cudaStreamCaptureModeGlobal));
+      CUDACHECK(cudaStreamBeginCapture(args->streams[i], cudaStreamCaptureModeThreadLocal));
     }
   }
 
@@ -460,12 +460,10 @@ testResult_t BenchTime(struct threadArgs* args, ncclDataType_t type, ncclRedOp_t
     for (int i=0; i<args->nGpus; i++) {
       CUDACHECK(cudaStreamEndCapture(args->streams[i], graphs+i));
     }
-
     // Instantiate cuda graph
     for (int i=0; i<args->nGpus; i++) {
       CUDACHECK(cudaGraphInstantiate(graphExec+i, graphs[i], NULL, NULL, 0));
     }
-
     // Resync CPU, restart timing, launch cuda graph
     Barrier(args);
     start = std::chrono::high_resolution_clock::now();
@@ -501,9 +499,40 @@ testResult_t BenchTime(struct threadArgs* args, ncclDataType_t type, ncclRedOp_t
       // Initialize sendbuffs, recvbuffs and expected
       TESTCHECK(args->collTest->initData(args, type, op, root, rep, in_place));
 
+      if (cudaGraphMode == 1) {
+        // Begin cuda graph capture for data check
+        for (int i=0; i<args->nGpus; i++) {
+          CUDACHECK(cudaStreamBeginCapture(args->streams[i], cudaStreamCaptureModeThreadLocal));
+        }
+      }
+
       //test validation in single itertion, should ideally be included into the multi-iteration run
       TESTCHECK(startColl(args, type, op, root, in_place, 0));
+
+      if (cudaGraphMode == 1) {
+        // End cuda graph capture
+        for (int i=0; i<args->nGpus; i++) {
+          CUDACHECK(cudaStreamEndCapture(args->streams[i], graphs+i));
+        }
+        // Instantiate cuda graph
+        for (int i=0; i<args->nGpus; i++) {
+          CUDACHECK(cudaGraphInstantiate(graphExec+i, graphs[i], NULL, NULL, 0));
+        }
+        // Launch cuda graph
+        for (int i=0; i<args->nGpus; i++) {
+          CUDACHECK(cudaGraphLaunch(graphExec[i], args->streams[i]));
+        }
+      }
+
       TESTCHECK(completeColl(args));
+
+      if (cudaGraphMode == 1) {
+        //destroy cuda graph
+        for (int i=0; i<args->nGpus; i++) {
+          CUDACHECK(cudaGraphExecDestroy(graphExec[i]));
+          CUDACHECK(cudaGraphDestroy(graphs[i]));
+        }
+      }
 
       TESTCHECK(CheckData(args, type, op, root, in_place, &maxDelta));
 
