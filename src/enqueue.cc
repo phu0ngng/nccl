@@ -751,16 +751,16 @@ template void CUDART_CB ncclEnqueueHostSetup<1>(void*);
 ncclResult_t ncclGetCudaGraph(ncclComm_t comm, cudaGraph_t* graph, int* usingCudaGraph) {
   *usingCudaGraph = 0;
 #if CUDA_VERSION >= 11020
-  CUstreamCaptureStatus captureStatus;
-  cuuint64_t cudaGraphId;
+  cudaStreamCaptureStatus captureStatus;
+  unsigned long long cudaGraphId;
 #if CUDA_VERSION >= 11030
-  cuStreamGetCaptureInfo(comm->userStream, &captureStatus, &cudaGraphId, graph, NULL, NULL); //FIXME: use runtime API + check
+  CUDACHECK(cudaStreamGetCaptureInfo(comm->userStream, &captureStatus, &cudaGraphId, graph, NULL, NULL));
 #else
-  cuStreamGetCaptureInfo(comm->userStream, &captureStatus, &cudaGraphId); // 11.2 API. FIXME: use runtime API + check
+  CUDACHECK(cudaStreamGetCaptureInfo(comm->userStream, &captureStatus, &cudaGraphId));
 #endif
-  if (captureStatus == CU_STREAM_CAPTURE_STATUS_ACTIVE) {
-    INFO(NCCL_COLL, "stream is being captured by %s graph, id %ld", cudaGraphId == comm->lastCudaGraphId ? "an old" : "a new", cudaGraphId);
+  if (captureStatus == cudaStreamCaptureStatusActive) {
     if (cudaGraphId != comm->lastCudaGraphId) {
+      INFO(NCCL_COLL, "stream is being captured by a new graph, id %llu", cudaGraphId);
       // We are in a new graph, hence need to forget the last setup node so that
       // the first setup node in the new graph will not have a dependency
       comm->lastCudaGraphId = cudaGraphId;
@@ -771,8 +771,7 @@ ncclResult_t ncclGetCudaGraph(ncclComm_t comm, cudaGraph_t* graph, int* usingCud
         CUDACHECK(cudaStreamWaitEvent(comm->setupStream, comm->userStreamDone, 0));
       }
     }
-    if (comm->launchMode == ncclComm::GROUP)
-      comm->launchMode = ncclComm::GROUP_GRAPH;
+    if (comm->launchMode == ncclComm::GROUP) comm->launchMode = ncclComm::GROUP_GRAPH;
     *usingCudaGraph = 1;
   }
 #endif
@@ -784,18 +783,18 @@ ncclResult_t ncclCudaGraphHostSetup(ncclComm_t comm, cudaGraph_t graph) {
 #if CUDA_VERSION >= 11030
   // Create a CUDA object to wrap around the argument space
   // which CUDA graph would manage lifetime of
-  CUuserObject object;
-  cuUserObjectCreate(&object, eqInfo, ncclDestroyQueueInfo, 1, 0); //FIXME: use runtime API + check
-  cuGraphRetainUserObject(graph, object, 1, CU_GRAPH_USER_OBJECT_MOVE); //FIXME: use runtime API + check
+  cudaUserObject_t object;
+  CUDACHECK(cudaUserObjectCreate(&object, eqInfo, ncclDestroyQueueInfo, 1, 0));
+  CUDACHECK(cudaGraphRetainUserObject(graph, object, 1, cudaGraphUserObjectMove));
 #endif
 
   cudaHostFn_t fn = ncclEnqueueHostSetup<1>;
   if (comm->cudaGraphMode == ncclComm::GRAPH_SYNC) {
     // Launch onto main stream
-    cuLaunchHostFunc(comm->userStream, fn, eqInfo); //FIXME: use runtime API + check
+    CUDACHECK(cudaLaunchHostFunc(comm->userStream, fn, eqInfo));
   } else if (comm->cudaGraphMode == ncclComm::GRAPH_FORK) {
     // Launch onto side stream
-    cuLaunchHostFunc(comm->setupStream, fn, eqInfo); //FIXME: use runtime API + check
+    CUDACHECK(cudaLaunchHostFunc(comm->setupStream, fn, eqInfo));
     CUDACHECK(cudaEventRecord(comm->setupDone, comm->setupStream));
     // Create dependency from host setup stream to kernel stream
     CUDACHECK(cudaStreamWaitEvent(comm->userStream, comm->setupDone, 0));
@@ -803,11 +802,11 @@ ncclResult_t ncclCudaGraphHostSetup(ncclComm_t comm, cudaGraph_t graph) {
 #if CUDA_VERSION >= 11030
   else {  // GRAPH_ASYNC mode
     // Add a CPU node to the graph
-    CUgraphNode setupNode;
-    CUDA_HOST_NODE_PARAMS setupNodeParams = {fn, eqInfo};
+    cudaGraphNode_t setupNode;
+    cudaHostNodeParams setupNodeParams = {fn, eqInfo};
     int numDependencies = comm->lastSetupNode == NULL ? 0 : 1;
-    cuGraphAddHostNode(&setupNode, graph, &comm->lastSetupNode, numDependencies, &setupNodeParams);
-    cuStreamAddCaptureDependency(comm->userStream, setupNode, 0);
+    CUDACHECK(cudaGraphAddHostNode(&setupNode, graph, &comm->lastSetupNode, numDependencies, &setupNodeParams));
+    CUDACHECK(cudaStreamUpdateCaptureDependencies(comm->userStream, &setupNode, 1, 0)); // Flag 0 for adding node to dependency set
     comm->lastSetupNode = setupNode;
   }
 #endif
