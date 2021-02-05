@@ -593,20 +593,42 @@ ncclResult_t ncclProxyStart(struct ncclComm* comm) {
   return ncclSuccess;
 }
 
-ncclResult_t ncclProxySharedBuffersInit(struct ncclComm* comm, int cuda, int* size, char** ptr) {
-  struct ncclProxySharedBuffers* state = &comm->proxyState.sharedBuffs;
-  if (state->size == 0) {
-    int p2pnChannels = 1;
-    while (p2pnChannels < comm->nChannels) p2pnChannels *= 2;
-    int p2pSize = 2*p2pnChannels*NCCL_MAX_WORK_ELEMENTS*comm->buffSizes[NCCL_PROTO_SIMPLE]/SENDRECV_SLICEFACTOR;
-    int collNetSize = 2*comm->collNetNchannels*comm->buffSizes[NCCL_PROTO_SIMPLE];
-    state->size = std::max(p2pSize, collNetSize);
+#include "bootstrap.h"
+ncclResult_t ncclProxySharedBuffersInitP2p(struct ncclComm* comm, int cuda, int netDev, int* size, char** ptr) {
+  struct ncclProxySharedP2p* state = comm->proxyState.sharedBuffs.p2p[netDev];
+  if (state == NULL) {
+    NCCLCHECK(ncclCalloc(&state, 1));
+    state->size = 2*comm->p2pnChannels*NCCL_MAX_WORK_ELEMENTS*comm->buffSizes[NCCL_PROTO_SIMPLE]/SENDRECV_SLICEFACTOR;
+    comm->proxyState.sharedBuffs.p2p[netDev] = state;
   }
 
   *size = state->size;
 
   if (cuda && state->cudaBuff == NULL) {
-    NCCLCHECK(ncclCudaCalloc(&state->cudaBuff, *size));
+    NCCLCHECK(ncclTopoGetIntermediateRank(comm->topo, comm->rank, netDev, &state->interRank));
+    if (state->interRank == -1) {
+      NCCLCHECK(ncclCudaCalloc(&state->cudaBuff, *size));
+    } else {
+      cudaIpcMemHandle_t devIpc;
+      void* directPtr;
+      NCCLCHECK(bootstrapRemAlloc(*size, state->interRank, comm->bootstrap, &state->remoteId, &devIpc, &directPtr));
+      if (comm->peerInfo[comm->rank].pidHash == comm->peerInfo[state->interRank].pidHash) {
+        // Enable P2P access
+        int cudaDev = comm->peerInfo[state->interRank].cudaDev;
+        cudaError_t err = cudaDeviceEnablePeerAccess(cudaDev, 0);
+        if (err == cudaErrorPeerAccessAlreadyEnabled) {
+          cudaGetLastError();
+        } else if (err != cudaSuccess) {
+          WARN("failed to peer with device %d: %d %s",
+              cudaDev, err, cudaGetErrorString(err));
+          return ncclInternalError;
+        }
+        state->cudaBuff = (char*)directPtr;
+      } else {
+        CUDACHECK(cudaIpcOpenMemHandle(&state->ipcMem, devIpc, cudaIpcMemLazyEnablePeerAccess));
+        state->cudaBuff = (char*)state->ipcMem;
+      }
+    }
   } else if (state->hostBuff == NULL) {
     NCCLCHECK(ncclCudaHostCalloc(&state->hostBuff, *size));
   }
@@ -614,8 +636,25 @@ ncclResult_t ncclProxySharedBuffersInit(struct ncclComm* comm, int cuda, int* si
   return ncclSuccess;
 }
 
-ncclResult_t ncclProxySharedBuffersGetP2p(struct ncclComm* comm, int cuda, int type, int channel, int slot, int index, char** ptr) {
+ncclResult_t ncclProxySharedBuffersInitCollNet(struct ncclComm* comm, int cuda, int* size, char** ptr) {
   struct ncclProxySharedBuffers* state = &comm->proxyState.sharedBuffs;
+  if (state->collNetSize == 0) {
+    state->collNetSize = 2*comm->collNetNchannels*comm->buffSizes[NCCL_PROTO_SIMPLE];
+  }
+
+  *size = state->collNetSize;
+
+  if (cuda && state->collNetCudaBuff == NULL) {
+    NCCLCHECK(ncclCudaCalloc(&state->collNetCudaBuff, *size));
+  } else if (state->collNetHostBuff == NULL) {
+    NCCLCHECK(ncclCudaHostCalloc(&state->collNetHostBuff, *size));
+  }
+  *ptr = cuda ? state->collNetCudaBuff : state->collNetHostBuff;
+  return ncclSuccess;
+}
+
+ncclResult_t ncclProxySharedBuffersGetP2p(struct ncclComm* comm, int cuda, int netDev, int type, int channel, int slot, int index, char** ptr) {
+  struct ncclProxySharedP2p* state = comm->proxyState.sharedBuffs.p2p[netDev];
   // Use different pools for different channels and also separate send/recv.
   char* buff = cuda ? state->cudaBuff : state->hostBuff;
   int slotSize = comm->buffSizes[NCCL_PROTO_SIMPLE]/(NCCL_STEPS*SENDRECV_SLICEFACTOR);
@@ -626,17 +665,31 @@ ncclResult_t ncclProxySharedBuffersGetP2p(struct ncclComm* comm, int cuda, int t
 ncclResult_t ncclProxySharedBuffersGetCollNet(struct ncclComm* comm, int cuda, int type, int slot, int index, char** ptr) {
   struct ncclProxySharedBuffers* state = &comm->proxyState.sharedBuffs;
   // Use different pools for different channels and also separate send/recv.
-  char* buff = cuda ? state->cudaBuff : state->hostBuff;
+  char* buff = cuda ? state->collNetCudaBuff : state->collNetHostBuff;
   int slotSize = comm->buffSizes[NCCL_PROTO_SIMPLE]/NCCL_STEPS;
   int globalSlot = ((type*NCCL_STEPS+slot)*comm->collNetNchannels);
   *ptr = buff + slotSize * globalSlot;
   return ncclSuccess;
 }
 
-ncclResult_t ncclProxySharedBuffersDestroy(struct ncclComm* comm) {
-  struct ncclProxySharedBuffers* state = &comm->proxyState.sharedBuffs;
-  CUDACHECK(cudaFree(state->cudaBuff));
+ncclResult_t ncclProxySharedBuffersDestroyP2p(struct ncclComm* comm, int netDev) {
+  struct ncclProxySharedP2p* state = comm->proxyState.sharedBuffs.p2p[netDev];
+  if (state == NULL) return ncclSuccess;
+  if (state->interRank == -1) {
+    CUDACHECK(cudaFree(state->cudaBuff));
+  } else {
+    if (state->ipcMem) CUDACHECK(cudaIpcCloseMemHandle(state->ipcMem));
+    NCCLCHECK(bootstrapRemFree(state->remoteId, state->interRank, comm->bootstrap));
+  }
   NCCLCHECK(ncclCudaHostFree(state->hostBuff));
+  free(state);
+  return ncclSuccess;
+}
+
+ncclResult_t ncclProxySharedBuffersDestroyCollNet(struct ncclComm* comm) {
+  struct ncclProxySharedBuffers* state = &comm->proxyState.sharedBuffs;
+  CUDACHECK(cudaFree(state->collNetCudaBuff));
+  NCCLCHECK(ncclCudaHostFree(state->collNetHostBuff));
   return ncclSuccess;
 }
 
@@ -672,7 +725,8 @@ ncclResult_t ncclProxyDestroy(struct ncclComm* comm) {
   }
   pthread_mutex_unlock(&state->poolMutex);
 
-  NCCLCHECK(ncclProxySharedBuffersDestroy(comm));
+  for (int i=0; i<NCCL_MAX_NETDEVS; i++) NCCLCHECK(ncclProxySharedBuffersDestroyP2p(comm, i));
+  NCCLCHECK(ncclProxySharedBuffersDestroyCollNet(comm));
 
   return ncclSuccess;
 }

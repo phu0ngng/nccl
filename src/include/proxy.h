@@ -59,14 +59,25 @@ struct ncclProxyArgs {
   struct ncclProxyArgs* nextPeer;
   struct ncclProxyArgs** proxyAppendPtr;
 };
+#define NCCL_MAX_NETDEVS 128
 
-struct ncclProxySharedBuffers {
+struct ncclProxySharedP2p {
   int size;
   char* cudaBuff;
   char* hostBuff;
+  int interRank;
+  int remoteId;
+  void* ipcMem;
+};
+
+struct ncclProxySharedBuffers {
+  struct ncclProxySharedP2p* p2p[NCCL_MAX_NETDEVS];
   struct ncclProxyArgs* proxyAppend[2*MAXCHANNELS]; // Separate send and recv
-  // Collnet sharing is technically per device, but for now MAXDEVICES == MAXCHANNELS.
-  struct ncclProxyArgs* proxyAppendCollNet[2*MAXCHANNELS];
+
+  int collNetSize;
+  char* collNetCudaBuff;
+  char* collNetHostBuff;
+  struct ncclProxyArgs* proxyAppendCollNet[2*NCCL_MAX_NETDEVS];
   void* collNetResources;
 };
 
@@ -101,10 +112,12 @@ ncclResult_t ncclProxyStart(struct ncclComm* comm);
 ncclResult_t ncclProxyCreate(struct ncclComm* comm);
 ncclResult_t ncclProxyDestroy(struct ncclComm* comm);
 
-ncclResult_t ncclProxySharedBuffersInit(struct ncclComm* comm, int cuda, int* size, char** ptr);
-ncclResult_t ncclProxySharedBuffersGetP2p(struct ncclComm* comm, int cuda, int type, int channel, int slot, int index, char** ptr);
+ncclResult_t ncclProxySharedBuffersInitP2p(struct ncclComm* comm, int cuda, int netDev, int* size, char** ptr);
+ncclResult_t ncclProxySharedBuffersInitCollNet(struct ncclComm* comm, int cuda, int* size, char** ptr);
+ncclResult_t ncclProxySharedBuffersGetP2p(struct ncclComm* comm, int cuda, int netDev, int type, int channel, int slot, int index, char** ptr);
 ncclResult_t ncclProxySharedBuffersGetCollNet(struct ncclComm* comm, int cuda, int type, int slot, int index, char** ptr);
-ncclResult_t ncclProxySharedBuffersDestroy(struct ncclComm* comm);
+ncclResult_t ncclProxySharedBuffersDestroyP2p(struct ncclComm* comm, int netDev);
+ncclResult_t ncclProxySharedBuffersDestroyCollNet(struct ncclComm* comm);
 
 #include <unistd.h>
 

@@ -191,13 +191,13 @@ ncclResult_t collNetSendConnect(struct ncclComm* comm, struct ncclConnect* conne
   int size;
   char* ptr;
   // Allocate & Register shared buffers for the Simple protocol
-  NCCLCHECK(ncclProxySharedBuffersInit(send->comm, resources->useGdr, &size, &ptr));
+  NCCLCHECK(ncclProxySharedBuffersInitCollNet(send->comm, resources->useGdr, &size, &ptr));
   NCCLCHECK(collNetRegMr(resources->collNetComm, ptr, size,
         resources->useGdr ? NCCL_PTR_CUDA : NCCL_PTR_HOST,
         &resources->sendMhandles[NCCL_PROTO_SIMPLE]));
 
   // Allocate & Register shared buffers for the LL protocol
-  NCCLCHECK(ncclProxySharedBuffersInit(send->comm, 0, &size, &ptr));
+  NCCLCHECK(ncclProxySharedBuffersInitCollNet(send->comm, 0, &size, &ptr));
   NCCLCHECK(collNetRegMr(resources->collNetComm, ptr, size,
         NCCL_PTR_HOST,
         &resources->sendMhandles[NCCL_PROTO_LL]));
@@ -230,13 +230,13 @@ ncclResult_t collNetRecvConnect(struct ncclComm* comm, struct ncclConnect* conne
   char* ptr;
 
   // Allocate & Register shared buffers for the Simple protocol
-  NCCLCHECK(ncclProxySharedBuffersInit(recv->comm, resources->useGdr, &size, &ptr));
+  NCCLCHECK(ncclProxySharedBuffersInitCollNet(recv->comm, resources->useGdr, &size, &ptr));
   NCCLCHECK(collNetRegMr(resources->collNetComm, ptr, size,
         resources->useGdr ? NCCL_PTR_CUDA : NCCL_PTR_HOST,
         &resources->mhandles[NCCL_PROTO_SIMPLE]));
 
   // Allocate & Register shared buffers for the LL protocol
-  NCCLCHECK(ncclProxySharedBuffersInit(recv->comm, 0, &size, &ptr));
+  NCCLCHECK(ncclProxySharedBuffersInitCollNet(recv->comm, 0, &size, &ptr));
   NCCLCHECK(collNetRegMr(resources->collNetComm, ptr, size,
         NCCL_PTR_HOST,
         &resources->mhandles[NCCL_PROTO_LL]));

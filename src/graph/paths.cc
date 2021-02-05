@@ -366,6 +366,23 @@ ncclResult_t ncclTopoCheckGdr(struct ncclTopoSystem* system, int64_t busId, int 
   return ncclSuccess;
 }
 
+ncclResult_t ncclTopoGetIntermediateRank(struct ncclTopoSystem* system, int rank, int netDev, int* intermediateRank) {
+  // Get GPU and NET
+  int n, g;
+  NCCLCHECK(ncclTopoIdToIndex(system, NET, netDev, &n));
+  NCCLCHECK(ncclTopoRankToIndex(system, rank, &g));
+  struct ncclTopoNode* gpu = system->nodes[GPU].nodes+g;
+  struct ncclTopoLinkList* path = gpu->paths[NET]+n;
+  if (path->type == PATH_PXN) {
+    struct ncclTopoNode* intermediateNode = path->list[0]->remNode;
+    if (intermediateNode->type != GPU) return ncclInternalError;
+    *intermediateRank = intermediateNode->gpu.rank;
+  } else {
+    *intermediateRank = -1;
+  }
+  return ncclSuccess;
+}
+
 ncclResult_t ncclTopoComputePaths(struct ncclTopoSystem* system, struct ncclPeerInfo* peerInfos) {
   // Precompute paths between GPUs/NICs.
 

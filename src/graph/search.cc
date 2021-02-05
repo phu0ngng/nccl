@@ -856,7 +856,18 @@ ncclResult_t ncclTopoGetNetDev(struct ncclComm* comm, int rank, struct ncclTopoG
   } else if (peerRank == -1) {
     return ncclInternalError;
   } else {
-    *dev = comm->peerInfo[peerRank].netDev;
+    // Start with our local NIC
+    NCCLCHECK(ncclTopoGetLocalNet(comm->topo, rank, dev, channelId));
+    // See whether we can use the remote rank preferred device.
+    int netDev = comm->peerInfo[peerRank].netDev;
+    int g, n;
+    // Check that device exists on our node
+    if (ncclTopoIdToIndex(comm->topo, NET, netDev, &n) == ncclSuccess) {
+      NCCLCHECK(ncclTopoRankToIndex(comm->topo, rank, &g));
+      struct ncclTopoLinkList* path = comm->topo->nodes[NET].nodes[n].paths[GPU]+g;
+      // Use it only if we have a fast access to the device
+      if (path->type <= PATH_PXN) *dev = netDev;
+    }
   }
   return ncclSuccess;
 }

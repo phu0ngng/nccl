@@ -178,7 +178,7 @@ ncclResult_t netSendConnect(struct ncclComm* comm, struct ncclConnect* connectIn
   if (resources->shared) {
     // Get shared buffers
     int loc = resources->useGdr ? LOC_DEVMEM : LOC_HOSTMEM;
-    NCCLCHECK(ncclProxySharedBuffersInit(send->comm, resources->useGdr, resources->buffSizes+loc, resources->buffers+loc));
+    NCCLCHECK(ncclProxySharedBuffersInitP2p(send->comm, resources->useGdr, resources->netDev, resources->buffSizes+loc, resources->buffers+loc));
     resources->mhandlesProto[NCCL_PROTO_SIMPLE] = resources->mhandles+loc;
   }
 
@@ -203,7 +203,7 @@ ncclResult_t netRecvConnect(struct ncclComm* comm, struct ncclConnect* connectIn
   if (resources->shared) {
     // Get shared buffers
     int loc = resources->useGdr ? LOC_DEVMEM : LOC_HOSTMEM;
-    NCCLCHECK(ncclProxySharedBuffersInit(recv->comm, resources->useGdr, resources->buffSizes+loc, resources->buffers+loc));
+    NCCLCHECK(ncclProxySharedBuffersInitP2p(recv->comm, resources->useGdr, resources->netDev, resources->buffSizes+loc, resources->buffers+loc));
     resources->mhandlesProto[NCCL_PROTO_SIMPLE] = resources->mhandles+loc;
   }
 
@@ -282,7 +282,7 @@ ncclResult_t netSendProxy(struct ncclProxyArgs* args) {
         if (resources->shared) {
           char* ptr;
           int sharedBuffSlot = sub->posted%NCCL_STEPS;
-          NCCLCHECK(ncclProxySharedBuffersGetP2p(sub->connector->comm, resources->useGdr, 0, sub->channel->id, sharedBuffSlot, s, &ptr));
+          NCCLCHECK(ncclProxySharedBuffersGetP2p(sub->connector->comm, resources->useGdr, resources->netDev, 0, sub->channel->id, sharedBuffSlot, s, &ptr));
           resources->recvMem->ptrsFifo[buffSlot] = ptr;
           __sync_synchronize();
           volatile uint64_t* sendHead = &resources->sendMem->head;
@@ -397,7 +397,7 @@ ncclResult_t netRecvProxy(struct ncclProxyArgs* args) {
         char* ptr;
         if (resources->shared) {
           int sharedBuffSlot = sub->posted%NCCL_STEPS;
-          NCCLCHECK(ncclProxySharedBuffersGetP2p(sub->connector->comm, resources->useGdr, 1, sub->channel->id, sharedBuffSlot, s, &ptr));
+          NCCLCHECK(ncclProxySharedBuffersGetP2p(sub->connector->comm, resources->useGdr, resources->netDev, 1, sub->channel->id, sharedBuffSlot, s, &ptr));
           volatile void** ptrsFifo = (volatile void**)resources->recvMem->ptrsFifo;
           ptrsFifo[buffSlot] = ptr;
         } else {
