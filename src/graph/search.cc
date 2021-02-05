@@ -853,9 +853,7 @@ ncclResult_t ncclTopoGetNetDev(struct ncclTopoSystem* system, int rank, struct n
     int index = graph->intra[channel*ngpus] == rank ? 0 : 1;
     *dev = graph->inter[channel*2+index];
   } else {
-    int64_t id;
-    NCCLCHECK(ncclTopoGetLocalNet(system, rank, &id, channelId));
-    *dev = id;
+    NCCLCHECK(ncclTopoGetLocalNet(system, rank, dev, channelId));
   }
   return ncclSuccess;
 }

@@ -46,6 +46,7 @@ ncclResult_t ncclTopoSetAffinity(struct ncclTopoSystem* system, int rank);
 #define NCCL_TOPO_CPU_TYPE_YONGFENG 1
 ncclResult_t ncclTopoCpuType(struct ncclTopoSystem* system, int* arch, int* vendor, int* model);
 ncclResult_t ncclTopoGetNetCount(struct ncclTopoSystem* system, int* count);
+ncclResult_t ncclTopoGetLocalNet(struct ncclTopoSystem* system, int rank, int* id, int rr);
 
 #define NCCL_TOPO_MAX_NODES 256
 

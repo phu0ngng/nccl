@@ -28,6 +28,7 @@ struct ncclComm;
 struct ncclPeerInfo {
   int rank;
   int cudaDev;
+  int netDev;
   int gdrSupport;
   uint64_t hostHash;
   uint64_t pidHash;

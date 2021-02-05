@@ -656,7 +656,7 @@ ncclResult_t ncclTopoGetSystem(struct ncclComm* comm, struct ncclTopoSystem** sy
   return ncclSuccess;
 }
 
-ncclResult_t ncclTopoGetLocalNet(struct ncclTopoSystem* system, int rank, int64_t* id, int rr) {
+ncclResult_t ncclTopoGetLocalNet(struct ncclTopoSystem* system, int rank, int* id, int rr) {
   int g;
   NCCLCHECK(ncclTopoRankToIndex(system, rank, &g));
   int minType = PATH_SYS;

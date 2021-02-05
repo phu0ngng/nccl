@@ -681,7 +681,7 @@ static ncclResult_t initTransportsRank(struct ncclComm* comm, ncclUniqueId* comm
   };
 
   struct {
-    int cudaCompCap;
+    int netDev;
     struct ncclGraphInfo tree;
     struct ncclGraphInfo ring;
     struct ncclGraphInfo collNet;
@@ -689,6 +689,7 @@ static ncclResult_t initTransportsRank(struct ncclComm* comm, ncclUniqueId* comm
   } *allGather3Data;
 
   NCCLCHECK(ncclCalloc(&allGather3Data, nranks));
+  NCCLCHECK(ncclTopoGetLocalNet(comm->topo, rank, &allGather3Data[rank].netDev, 0));
   allGather3Data[rank].tree.pattern = treeGraph.pattern;
   allGather3Data[rank].tree.nChannels = treeGraph.nChannels;
   allGather3Data[rank].tree.sameChannels = treeGraph.sameChannels;
@@ -739,6 +740,7 @@ static ncclResult_t initTransportsRank(struct ncclComm* comm, ncclUniqueId* comm
   struct ncclTopoRanks** allTopoRanks;
   NCCLCHECK(ncclCalloc(&allTopoRanks, comm->nRanks));
   for (int i=0; i<nranks; i++) {
+    comm->peerInfo[i].netDev = allGather3Data[i].netDev;
     allTopoRanks[i] = &allGather3Data[i].topoRanks;
     // Make sure we align all ranks so that the tuning is consistent across ranks
     treeGraph.nChannels = std::min(allGather3Data[i].tree.nChannels, treeGraph.nChannels);
