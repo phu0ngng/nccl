@@ -59,13 +59,39 @@ static ncclResult_t ncclTopoSetPaths(struct ncclTopoNode* baseNode, struct ncclT
         }
         struct ncclTopoLinkList* remPath;
         NCCLCHECK(getPath(system, remNode, baseNode->type, baseNode->id, &remPath));
+
+        // Compute potential new path width, type, count.
         float width = std::min(path->width, link->width);
 
-        // allow routing through a GPU only as 1 hop
-        if (node != baseNode && node->type == GPU &&
-            (link->type != LINK_NVL || remNode->type != GPU || path->count > 1)) continue;
+        // Start with path type = link type.
+        // PATH and LINK types are supposed to match.
+        // Don't consider LINK_NET as we only care about the NIC->GPU path.
+        int type = link->type == LINK_NET ? LINK_LOC : link->type;
+        // Differentiate between one and multiple PCI switches
+        if (node->type == PCI && remNode->type == PCI) type = PATH_PXB;
+        // Consider a path going through the CPU as PATH_PHB
+        if (link->type == LINK_PCI && (node->type == CPU || link->remNode->type == CPU)) type = PATH_PHB;
 
-        if ((remPath->width == 0 || remPath->count > path->count) && remPath->width < width) {
+        if (node != baseNode && node->type == GPU) {
+          if (link->type != LINK_NVL) type = PATH_DIS;
+          if (path->type == PATH_NVB) type = PATH_DIS;
+          if (path->type == PATH_PXN) type = PATH_DIS;
+          // Set NVL <-> NVL as NVB
+          if (path->type == PATH_NVL && link->type == LINK_NVL) type = PATH_NVB;
+          // Set NVL <-> PCI as PXN
+          if (path->type >= PATH_PIX && path->type <= PATH_PXB && type == LINK_NVL) type = PATH_PXN;
+          if (path->type == PATH_NVL && link->type == LINK_PCI) type = PATH_PXN;
+        }
+        type = std::max(path->type, type);
+
+        int count = path->count+1;
+
+        if (remPath->width == 0 ||
+            (count < remPath->count ||
+             (count == remPath->count &&
+              (width > remPath->width ||
+               (width == remPath->width &&
+                (type < remPath->type)))))) {
           // Find reverse link
           for (int l=0; l<remNode->nlinks; l++) {
             if (remNode->links[l].remNode == node) {
@@ -82,18 +108,7 @@ static ncclResult_t ncclTopoSetPaths(struct ncclTopoNode* baseNode, struct ncclT
           for (int i=0; i<path->count; i++) remPath->list[i+1] = path->list[i];
           remPath->count = path->count + 1;
           remPath->width = width;
-
-          // Start with path type = link type. PATH and LINK types are supposed to match.
-          // Don't consider LINK_NET as we only care about the NIC->GPU path.
-          int type = link->type == LINK_NET ? LINK_LOC : link->type;
-          // Differentiate between one and multiple PCI switches
-          if (node->type == PCI && remNode->type == PCI) type = PATH_PXB;
-          // Consider a path going through the CPU as PATH_PHB
-          if (link->type == LINK_PCI && (node->type == CPU || link->remNode->type == CPU)) type = PATH_PHB;
-          // Set 1 hop NVLink as NVB
-          if (node->type == GPU && path->type == PATH_NVL && type == PATH_NVL && remPath->count > 1) type = PATH_NVB;
-
-          remPath->type = std::max(path->type, type);
+          remPath->type = type;
 
           // Add to the list for the next iteration if not already in the list
           int i;
@@ -337,7 +352,7 @@ ncclResult_t ncclTopoCheckGdr(struct ncclTopoSystem* system, int64_t busId, int 
   }
 
   // Check if we are close enough that it makes sense to enable GDR
-  int netGdrLevel = PATH_PXB;
+  int netGdrLevel = PATH_PXN;
   NCCLCHECK(ncclGetLevel(&ncclTopoUserGdrLevel, NULL, "NCCL_NET_GDR_LEVEL"));
   if (ncclTopoUserGdrLevel != -2) netGdrLevel = ncclTopoUserGdrLevel;
   int distance = gpu->paths[NET][n].type;

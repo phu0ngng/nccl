@@ -15,37 +15,37 @@
     <channel>
       <net dev="0"/>
       <gpu dev="2"/>
+      <gpu dev="6"/>
+      <gpu dev="7"/>
+      <gpu dev="5"/>
+      <gpu dev="4"/>
       <gpu dev="0"/>
       <gpu dev="1"/>
-      <gpu dev="5"/>
-      <gpu dev="6"/>
-      <gpu dev="4"/>
-      <gpu dev="7"/>
       <gpu dev="3"/>
       <net dev="0"/>
     </channel>
     <channel>
       <net dev="3"/>
       <gpu dev="4"/>
+      <gpu dev="7"/>
+      <gpu dev="6"/>
+      <gpu dev="2"/>
       <gpu dev="0"/>
       <gpu dev="3"/>
       <gpu dev="1"/>
-      <gpu dev="2"/>
-      <gpu dev="6"/>
-      <gpu dev="7"/>
       <gpu dev="5"/>
       <net dev="3"/>
     </channel>
     <channel>
       <net dev="1"/>
-      <gpu dev="6"/>
+      <gpu dev="7"/>
+      <gpu dev="3"/>
       <gpu dev="2"/>
       <gpu dev="1"/>
-      <gpu dev="3"/>
       <gpu dev="0"/>
       <gpu dev="4"/>
       <gpu dev="5"/>
-      <gpu dev="7"/>
+      <gpu dev="6"/>
       <net dev="1"/>
     </channel>
   </graph>
