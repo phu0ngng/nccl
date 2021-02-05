@@ -820,7 +820,7 @@ int main(int argc, char* argv[]) {
         iters = (int)strtol(optarg, NULL, 0);
         break;
       case 'm':
-#if NCCL_MAJOR >= 2 && NCCL_MINOR >= 2
+#if NCCL_MAJOR > 2 || (NCCL_MAJOR >= 2 && NCCL_MINOR >= 2)
         agg_iters = (int)strtol(optarg, NULL, 0);
 #else
         printf("Option -m not supported before NCCL 2.2. Ignoring\n");
@@ -861,7 +861,11 @@ int main(int argc, char* argv[]) {
         timeout = strtol(optarg, NULL, 0);
         break;
       case 'G':
+#if NCCL_MAJOR > 2 || (NCCL_MAJOR >= 2 && NCCL_MINOR >= 9)
         cudaGraphLaunches = strtol(optarg, NULL, 0);
+#else
+        printf("Option -G (CUDA graph) not supported before NCCL 2.9. Ignoring\n");
+#endif
         break;
       case 'h':
       default:
