@@ -845,15 +845,18 @@ ncclResult_t ncclTopoDumpGraphs(struct ncclTopoSystem* system, int ngraphs, stru
   return ncclSuccess;
 }
 
-ncclResult_t ncclTopoGetNetDev(struct ncclTopoSystem* system, int rank, struct ncclTopoGraph* graph, int channelId, int* dev) {
+#include "comm.h"
+ncclResult_t ncclTopoGetNetDev(struct ncclComm* comm, int rank, struct ncclTopoGraph* graph, int channelId, int peerRank, int* dev) {
   if (graph) {
     // Honor the net device in the graph
     int channel = channelId%graph->nChannels;
-    int ngpus = system->nodes[GPU].count;
+    int ngpus = comm->topo->nodes[GPU].count;
     int index = graph->intra[channel*ngpus] == rank ? 0 : 1;
     *dev = graph->inter[channel*2+index];
+  } else if (peerRank == -1) {
+    return ncclInternalError;
   } else {
-    NCCLCHECK(ncclTopoGetLocalNet(system, rank, dev, channelId));
+    *dev = comm->peerInfo[peerRank].netDev;
   }
   return ncclSuccess;
 }
