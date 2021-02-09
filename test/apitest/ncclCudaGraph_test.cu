@@ -6,6 +6,8 @@ class ncclCudaGraph_test : public ncclCommon_test<DT> {
     static cudaGraphExec_t* graphExec;
     void SetUp();
     void TearDown();
+    void BeginCapture();
+    void EndCaptureAndLaunch();
 };
 
 template <typename DT>
@@ -30,23 +32,16 @@ void ncclCudaGraph_test<DT>::TearDown() {
     ncclCommon_test<DT>::TearDown();
 };
 
-TYPED_TEST_CASE(ncclCudaGraph_test, testNoType);
-// typical usage.
-TYPED_TEST(ncclCudaGraph_test, basic) {
+template <typename DT>
+void ncclCudaGraph_test<DT>::BeginCapture() {
     // Begin cuda graph capture
     for (int i=0; i<this->nVis; i++) {
         ASSERT_EQ(cudaSuccess, cudaStreamBeginCapture(this->streams[i], cudaStreamCaptureModeThreadLocal));
     }
-    ASSERT_EQ(ncclSuccess, ncclGroupStart());
-    for (int i = 0; i < this->nVis; ++i) {
-        ASSERT_EQ(ncclSuccess,
-                  ncclAllReduce(this->sendbuffs[i], this->recvbuffs[i],
-                                std::min(this->N, 1024 * 1024),
-                                this->DataType(), ncclSum,
-                                this->comms[i], this->streams[i]))
-            << "i" << i << ", " << std::endl;
-    }
-    ASSERT_EQ(ncclSuccess, ncclGroupEnd());
+};
+
+template <typename DT>
+void ncclCudaGraph_test<DT>::EndCaptureAndLaunch() {
     // End cuda graph capture
     for (int i=0; i<this->nVis; i++) {
         ASSERT_EQ(cudaSuccess, cudaStreamEndCapture(this->streams[i], this->graphs+i));
@@ -60,4 +55,48 @@ TYPED_TEST(ncclCudaGraph_test, basic) {
         ASSERT_EQ(cudaSuccess, cudaGraphLaunch(this->graphExec[i], this->streams[i]));
     }
 };
+
+TYPED_TEST_CASE(ncclCudaGraph_test, testNoType);
+
+#if NCCL_MAJOR > 2 || (NCCL_MAJOR == 2 && NCCL_MINOR >=9)
+// typical usage.
+TYPED_TEST(ncclCudaGraph_test, collective) {
+    this->BeginCapture();
+    ASSERT_EQ(ncclSuccess, ncclGroupStart());
+    for (int i = 0; i < this->nVis; ++i) {
+        ASSERT_EQ(ncclSuccess,
+                  ncclAllReduce(this->sendbuffs[i], this->recvbuffs[i],
+                                std::min(this->N, 1024 * 1024),
+                                this->DataType(), ncclSum,
+                                this->comms[i], this->streams[i]))
+            << "i" << i << ", " << std::endl;
+    }
+    ASSERT_EQ(ncclSuccess, ncclGroupEnd());
+    this->EndCaptureAndLaunch();
+};
+
+TYPED_TEST(ncclCudaGraph_test, alltoall) {
+    size_t size = std::min(this->N, 1024 * 1024) / this->nVis;
+    this->BeginCapture();
+    ASSERT_EQ(ncclSuccess, ncclGroupStart());
+    for (int i = 0; i < this->nVis; ++i) {
+        ASSERT_EQ(ncclSuccess, ncclGroupStart());
+        for (int p = 0; p < this->nVis; ++p) {
+            ASSERT_EQ(ncclSuccess,
+                      ncclSend(this->sendbuffs[i] + p * size, size,
+                                    this->DataType(), p,
+                                    this->comms[i], this->streams[i]))
+                << "i" << i << ", " << std::endl;
+            ASSERT_EQ(ncclSuccess,
+                      ncclRecv(this->recvbuffs[i] + p * size, size,
+                                    this->DataType(), p,
+                                    this->comms[i], this->streams[i]))
+                << "i" << i << ", " << std::endl;
+         }
+        ASSERT_EQ(ncclSuccess, ncclGroupEnd());
+    }
+    ASSERT_EQ(ncclSuccess, ncclGroupEnd());
+    this->EndCaptureAndLaunch();
+};
+#endif
 // EOF
