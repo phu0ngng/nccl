@@ -61,6 +61,10 @@ void dumpData(struct ncclConnect* data, int ndata) {
 }
 
 ncclResult_t ncclTransportP2pSetup(struct ncclComm* comm, struct ncclTopoGraph* graph) {
+  // Stream used during transport setup; need for P2P pre-connect + CUDA Graph
+  cudaStream_t transportSetupStream;
+  CUDACHECK(cudaStreamCreateWithFlags(&transportSetupStream, cudaStreamNonBlocking));
+
   struct ncclConnect data[2*MAXCHANNELS];
   for (int i=1; i<comm->nRanks; i++) {
     int recvPeer = (comm->rank - i + comm->nRanks) % comm->nRanks;
@@ -103,7 +107,7 @@ ncclResult_t ncclTransportP2pSetup(struct ncclComm* comm, struct ncclTopoGraph* 
         struct ncclConnector* conn = &comm->channels[c].peers[sendPeer].send;
         NCCLCHECK(conn->transportComm->connect(comm, sendData++, 1, comm->rank, conn));
         conn->connected = 1;
-        CUDACHECK(cudaMemcpy(&comm->channels[c].devPeers[sendPeer].send, conn, sizeof(struct ncclConnector), cudaMemcpyHostToDevice));
+        CUDACHECK(cudaMemcpyAsync(&comm->channels[c].devPeers[sendPeer].send, conn, sizeof(struct ncclConnector), cudaMemcpyHostToDevice, transportSetupStream));
       }
     }
     for (int c=0; c<MAXCHANNELS; c++) {
@@ -111,11 +115,13 @@ ncclResult_t ncclTransportP2pSetup(struct ncclComm* comm, struct ncclTopoGraph* 
         struct ncclConnector* conn = &comm->channels[c].peers[recvPeer].recv;
         NCCLCHECK(conn->transportComm->connect(comm, recvData++, 1, comm->rank, conn));
         conn->connected = 1;
-        CUDACHECK(cudaMemcpy(&comm->channels[c].devPeers[recvPeer].recv, conn, sizeof(struct ncclConnector), cudaMemcpyHostToDevice));
+        CUDACHECK(cudaMemcpyAsync(&comm->channels[c].devPeers[recvPeer].recv, conn, sizeof(struct ncclConnector), cudaMemcpyHostToDevice, transportSetupStream));
       }
     }
     comm->connectRecv[recvPeer] = comm->connectSend[sendPeer] = 0;
   }
+  CUDACHECK(cudaStreamSynchronize(transportSetupStream));
+  CUDACHECK(cudaStreamDestroy(transportSetupStream));
   return ncclSuccess;
 }
 

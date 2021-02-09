@@ -38,8 +38,13 @@ static ncclResult_t ncclCalloc(T** ptr, size_t nelem) {
 
 template <typename T>
 static ncclResult_t ncclCudaCalloc(T** ptr, size_t nelem) {
+  // Need async stream for P2P pre-connect + CUDA Graph
+  cudaStream_t stream;
+  CUDACHECK(cudaStreamCreateWithFlags(&stream, cudaStreamNonBlocking));
   CUDACHECK(cudaMalloc(ptr, nelem*sizeof(T)));
-  CUDACHECK(cudaMemset(*ptr, 0, nelem*sizeof(T)));
+  CUDACHECK(cudaMemsetAsync(*ptr, 0, nelem*sizeof(T), stream));
+  CUDACHECK(cudaStreamSynchronize(stream));
+  CUDACHECK(cudaStreamDestroy(stream));
   return ncclSuccess;
 }
 
