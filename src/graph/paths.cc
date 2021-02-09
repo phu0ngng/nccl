@@ -374,9 +374,17 @@ ncclResult_t ncclTopoGetIntermediateRank(struct ncclTopoSystem* system, int rank
   struct ncclTopoNode* gpu = system->nodes[GPU].nodes+g;
   struct ncclTopoLinkList* path = gpu->paths[NET]+n;
   if (path->type == PATH_PXN) {
-    struct ncclTopoNode* intermediateNode = path->list[0]->remNode;
-    if (intermediateNode->type != GPU) return ncclInternalError;
-    *intermediateRank = intermediateNode->gpu.rank;
+    struct ncclTopoNode* node;
+    int type = NVS;
+    for (int i=0; i<path->count && type == NVS; i++) {
+      node = path->list[i]->remNode;
+      type = node->type;
+    }
+    if (type != GPU) {
+      WARN("Could not find intermediate GPU between GPU rank %d and NIC %d\n", rank, netDev);
+      return ncclInternalError;
+    }
+    *intermediateRank = node->gpu.rank;
   } else {
     *intermediateRank = -1;
   }
