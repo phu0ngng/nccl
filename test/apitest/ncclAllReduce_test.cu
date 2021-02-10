@@ -64,6 +64,45 @@ TYPED_TEST(ncclAllReduce_test, stream_null) {
     }
     ASSERT_EQ(ncclSuccess, ncclGroupEnd());
 };
+TYPED_TEST(ncclAllReduce_test, stream_default) {
+    ASSERT_EQ(ncclSuccess, ncclGroupStart());
+    for (int i = 0; i < this->nVis; ++i) {
+        ASSERT_EQ(ncclSuccess,
+                  ncclAllReduce(
+                      this->sendbuffs[i], this->recvbuffs[i],
+                      std::min(this->N, 1024 * 1024),
+                      this->DataType(), ncclSum,
+                      this->comms[i], cudaStreamDefault))
+            << ", " << "i" << i << ", " << std::endl;
+    }
+    ASSERT_EQ(ncclSuccess, ncclGroupEnd());
+};
+TYPED_TEST(ncclAllReduce_test, stream_legacy) {
+    ASSERT_EQ(ncclSuccess, ncclGroupStart());
+    for (int i = 0; i < this->nVis; ++i) {
+        ASSERT_EQ(ncclSuccess,
+                  ncclAllReduce(
+                      this->sendbuffs[i], this->recvbuffs[i],
+                      std::min(this->N, 1024 * 1024),
+                      this->DataType(), ncclSum,
+                      this->comms[i], cudaStreamLegacy))
+            << ", " << "i" << i << ", " << std::endl;
+    }
+    ASSERT_EQ(ncclSuccess, ncclGroupEnd());
+};
+TYPED_TEST(ncclAllReduce_test, stream_per_thread) {
+    ASSERT_EQ(ncclSuccess, ncclGroupStart());
+    for (int i = 0; i < this->nVis; ++i) {
+        ASSERT_EQ(ncclSuccess,
+                  ncclAllReduce(
+                      this->sendbuffs[i], this->recvbuffs[i],
+                      std::min(this->N, 1024 * 1024),
+                      this->DataType(), ncclSum,
+                      this->comms[i], cudaStreamPerThread))
+            << ", " << "i" << i << ", " << std::endl;
+    }
+    ASSERT_EQ(ncclSuccess, ncclGroupEnd());
+};
 // sendbuff
 TYPED_TEST(ncclAllReduce_test, sendbuf_null) {
     int i = 0;
