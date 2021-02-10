@@ -62,6 +62,10 @@ static ncclResult_t wrapNvmlDeviceGetCudaComputeCapability(nvmlDevice_t device, 
   NVMLCHECK(nvmlDeviceGetCudaComputeCapability(device, major, minor));
   return ncclSuccess;
 }
+static ncclResult_t wrapNvmlDeviceGetComputeMode(nvmlDevice_t device, nvmlComputeMode_t *mode) {
+  NVMLCHECK(nvmlDeviceGetComputeMode(device, mode));
+  return ncclSuccess;
+}
 #else
 // Dynamically handle dependencies on NVML
 
@@ -129,6 +133,17 @@ typedef struct nvmlPciInfo_st
     unsigned int reserved2;
     unsigned int reserved3;
 } nvmlPciInfo_t;
+
+typedef enum nvmlComputeMode_enum
+{
+    NVML_COMPUTEMODE_DEFAULT           = 0,  //!< Default compute mode -- multiple contexts per device
+    NVML_COMPUTEMODE_EXCLUSIVE_THREAD  = 1,  //!< Support Removed
+    NVML_COMPUTEMODE_PROHIBITED        = 2,  //!< Compute-prohibited mode -- no contexts per device
+    NVML_COMPUTEMODE_EXCLUSIVE_PROCESS = 3,  //!< Compute-exclusive-process mode -- only one context per device, usable from multiple threads at a time
+
+    // Keep this last
+    NVML_COMPUTEMODE_COUNT
+} nvmlComputeMode_t;
 /* End of nvml.h */
 
 ncclResult_t wrapNvmlSymbols(void);
@@ -143,6 +158,7 @@ ncclResult_t wrapNvmlDeviceGetNvLinkRemotePciInfo(nvmlDevice_t device, unsigned 
 ncclResult_t wrapNvmlDeviceGetNvLinkCapability(nvmlDevice_t device, unsigned int link,
                                                    nvmlNvLinkCapability_t capability, unsigned int *capResult);
 ncclResult_t wrapNvmlDeviceGetCudaComputeCapability(nvmlDevice_t device, int* major, int* minor);
+ncclResult_t wrapNvmlDeviceGetComputeMode(nvmlDevice_t device, nvmlComputeMode_t *mode);
 
 #endif // NVML_DIRECT
 

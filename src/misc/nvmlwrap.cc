@@ -22,6 +22,7 @@ static nvmlReturn_t (*nvmlInternalDeviceGetNvLinkRemotePciInfo)(nvmlDevice_t dev
 static nvmlReturn_t (*nvmlInternalDeviceGetNvLinkCapability)(nvmlDevice_t device, unsigned int link,
     nvmlNvLinkCapability_t capability, unsigned int *capResult);
 static nvmlReturn_t (*nvmlInternalDeviceGetCudaComputeCapability)(nvmlDevice_t device, int* major, int* minor);
+static nvmlReturn_t (*nvmlInternalDeviceGetComputeMode)(nvmlDevice_t device, nvmlComputeMode_t *mode);
 
 // Used to make the NVML library calls thread safe
 pthread_mutex_t nvmlLock = PTHREAD_MUTEX_INITIALIZER;
@@ -76,6 +77,7 @@ ncclResult_t wrapNvmlSymbols(void) {
   LOAD_SYM_OPTIONAL(nvmlhandle, "nvmlDeviceGetNvLinkRemotePciInfo", nvmlInternalDeviceGetNvLinkRemotePciInfo);
   LOAD_SYM_OPTIONAL(nvmlhandle, "nvmlDeviceGetNvLinkCapability", nvmlInternalDeviceGetNvLinkCapability);
   LOAD_SYM(nvmlhandle, "nvmlDeviceGetCudaComputeCapability", nvmlInternalDeviceGetCudaComputeCapability);
+  LOAD_SYM(nvmlhandle, "nvmlDeviceGetComputeMode", nvmlInternalDeviceGetComputeMode);
 
   nvmlState = nvmlInitialized;
   return ncclSuccess;
@@ -203,7 +205,7 @@ ncclResult_t wrapNvmlDeviceGetNvLinkCapability(nvmlDevice_t device, unsigned int
 }
 
 ncclResult_t wrapNvmlDeviceGetCudaComputeCapability(nvmlDevice_t device, int* major, int* minor) {
-  if (nvmlInternalDeviceGetNvLinkCapability == NULL) {
+  if (nvmlInternalDeviceGetCudaComputeCapability == NULL) {
     WARN("lib wrapper not initialized.");
     return ncclInternalError;
   }
@@ -211,6 +213,21 @@ ncclResult_t wrapNvmlDeviceGetCudaComputeCapability(nvmlDevice_t device, int* ma
   NVMLLOCKCALL(nvmlInternalDeviceGetCudaComputeCapability(device, major, minor), ret);
   if (ret != NVML_SUCCESS) {
     WARN("nvmlDeviceGetCudaComputeCapability() failed: %s ",
+        nvmlInternalErrorString(ret));
+    return ncclSystemError;
+  }
+  return ncclSuccess;
+}
+
+ncclResult_t wrapNvmlDeviceGetComputeMode(nvmlDevice_t device, nvmlComputeMode_t *mode) {
+  if (nvmlInternalDeviceGetComputeMode == NULL) {
+    WARN("lib wrapper not initialized.");
+    return ncclInternalError;
+  }
+  nvmlReturn_t ret;
+  NVMLLOCKCALL(nvmlInternalDeviceGetComputeMode(device, mode), ret);
+  if (ret != NVML_SUCCESS) {
+    WARN("nvmlDeviceGetComputeMode() failed: %s ",
         nvmlInternalErrorString(ret));
     return ncclSystemError;
   }
