@@ -528,7 +528,18 @@ ncclResult_t ncclTopoSearchRec(struct ncclTopoSystem* system, struct ncclTopoGra
 /* User defined graph from XML file */
 /************************************/
 
-struct kvDict kvDictLinkType[] = { { "SYS", PATH_SYS }, { "PHB", PATH_PHB }, { "PIX", PATH_PIX }, { "PXB", PATH_PXB }, { "NVL", PATH_NVL }, { "NVB", PATH_NVB}, { "LOC", PATH_LOC }, { NULL, 0 } };
+struct kvDict kvDictLinkType[] = {
+  { "LOC", PATH_LOC },
+  { "NVL", PATH_NVL },
+  { "NVB", PATH_NVB },
+  { "PIX", PATH_PIX },
+  { "PXB", PATH_PXB },
+  { "PXN", PATH_PXN },
+  { "PHB", PATH_PHB },
+  { "SYS", PATH_SYS },
+  { NULL, 0 }
+};
+
 ncclResult_t ncclTopoGetChannelFromXml(struct ncclXmlNode *xmlChannel, int c, struct ncclTopoSystem* system, struct ncclTopoGraph* graph) {
   int ngpus = system->nodes[GPU].count;
   int* inter = graph->inter+2*c;

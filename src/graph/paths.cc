@@ -59,39 +59,13 @@ static ncclResult_t ncclTopoSetPaths(struct ncclTopoNode* baseNode, struct ncclT
         }
         struct ncclTopoLinkList* remPath;
         NCCLCHECK(getPath(system, remNode, baseNode->type, baseNode->id, &remPath));
-
-        // Compute potential new path width, type, count.
         float width = std::min(path->width, link->width);
 
-        // Start with path type = link type.
-        // PATH and LINK types are supposed to match.
-        // Don't consider LINK_NET as we only care about the NIC->GPU path.
-        int type = link->type == LINK_NET ? LINK_LOC : link->type;
-        // Differentiate between one and multiple PCI switches
-        if (node->type == PCI && remNode->type == PCI) type = PATH_PXB;
-        // Consider a path going through the CPU as PATH_PHB
-        if (link->type == LINK_PCI && (node->type == CPU || link->remNode->type == CPU)) type = PATH_PHB;
+        // allow routing through a GPU only as 1 hop
+        if (node != baseNode && node->type == GPU &&
+            (link->type != LINK_NVL || remNode->type != GPU || path->count > 1)) continue;
 
-        if (node != baseNode && node->type == GPU) {
-          if (link->type != LINK_NVL) type = PATH_DIS;
-          if (path->type == PATH_NVB) type = PATH_DIS;
-          if (path->type == PATH_PXN) type = PATH_DIS;
-          // Set NVL <-> NVL as NVB
-          if (path->type == PATH_NVL && link->type == LINK_NVL) type = PATH_NVB;
-          // Set NVL <-> PCI as PXN
-          if (path->type >= PATH_PIX && path->type <= PATH_PXB && type == LINK_NVL) type = PATH_PXN;
-          if (path->type == PATH_NVL && link->type == LINK_PCI) type = PATH_PXN;
-        }
-        type = std::max(path->type, type);
-
-        int count = path->count+1;
-
-        if (remPath->width == 0 ||
-            (count < remPath->count ||
-             (count == remPath->count &&
-              (width > remPath->width ||
-               (width == remPath->width &&
-                (type < remPath->type)))))) {
+        if ((remPath->width == 0 || remPath->count > path->count) && remPath->width < width) {
           // Find reverse link
           for (int l=0; l<remNode->nlinks; l++) {
             if (remNode->links[l].remNode == node) {
@@ -108,7 +82,18 @@ static ncclResult_t ncclTopoSetPaths(struct ncclTopoNode* baseNode, struct ncclT
           for (int i=0; i<path->count; i++) remPath->list[i+1] = path->list[i];
           remPath->count = path->count + 1;
           remPath->width = width;
-          remPath->type = type;
+
+          // Start with path type = link type. PATH and LINK types are supposed to match.
+          // Don't consider LINK_NET as we only care about the NIC->GPU path.
+          int type = link->type == LINK_NET ? LINK_LOC : link->type;
+          // Differentiate between one and multiple PCI switches
+          if (node->type == PCI && remNode->type == PCI) type = PATH_PXB;
+          // Consider a path going through the CPU as PATH_PHB
+          if (link->type == LINK_PCI && (node->type == CPU || link->remNode->type == CPU)) type = PATH_PHB;
+          // Set 1 hop NVLink as NVB
+          if (node->type == GPU && path->type == PATH_NVL && type == PATH_NVL && remPath->count > 1) type = PATH_NVB;
+
+          remPath->type = std::max(path->type, type);
 
           // Add to the list for the next iteration if not already in the list
           int i;
@@ -184,20 +169,21 @@ static ncclResult_t getLocalCpu(struct ncclTopoSystem* system, int gpu, int* ret
   return ncclSuccess;
 }
 
-static ncclResult_t addCpuStep(struct ncclTopoSystem* system, int c, int t1, int i1, int t2, int i2) {
-  struct ncclTopoNode* cpuNode = system->nodes[CPU].nodes+c;
+static ncclResult_t addInterStep(struct ncclTopoSystem* system, int tx, int ix, int t1, int i1, int t2, int i2) {
+  struct ncclTopoNode* cpuNode = system->nodes[tx].nodes+ix;
   struct ncclTopoNode* srcNode = system->nodes[t1].nodes+i1;
 
   int l=0;
   // Node 1 -> CPU
-  for (int i=0; i<srcNode->paths[CPU][c].count; i++) srcNode->paths[t2][i2].list[l++] = srcNode->paths[CPU][c].list[i];
+  for (int i=0; i<srcNode->paths[tx][ix].count; i++) srcNode->paths[t2][i2].list[l++] = srcNode->paths[tx][ix].list[i];
   // CPU -> Node 2
   for (int i=0; i<cpuNode->paths[t2][i2].count; i++) srcNode->paths[t2][i2].list[l++] = cpuNode->paths[t2][i2].list[i];
 
   // Update path characteristics
   srcNode->paths[t2][i2].count = l;
-  srcNode->paths[t2][i2].type = std::max(srcNode->paths[CPU][c].type, cpuNode->paths[t2][i2].type);
-  srcNode->paths[t2][i2].width = std::min(srcNode->paths[CPU][c].width, cpuNode->paths[t2][i2].width);
+  srcNode->paths[t2][i2].type = std::max(srcNode->paths[tx][ix].type, cpuNode->paths[t2][i2].type);
+  if (tx == GPU) srcNode->paths[t2][i2].type = PATH_PXN;
+  srcNode->paths[t2][i2].width = std::min(srcNode->paths[tx][ix].width, cpuNode->paths[t2][i2].width);
   return ncclSuccess;
 }
 
@@ -366,7 +352,7 @@ ncclResult_t ncclTopoCheckGdr(struct ncclTopoSystem* system, int64_t busId, int 
   return ncclSuccess;
 }
 
-ncclResult_t ncclTopoGetIntermediateRank(struct ncclTopoSystem* system, int rank, int netDev, int* intermediateRank) {
+ncclResult_t ncclTopoGetIntermediateDev(struct ncclTopoSystem* system, int rank, int netDev, int* intermediateDev) {
   // Get GPU and NET
   int n, g;
   NCCLCHECK(ncclTopoIdToIndex(system, NET, netDev, &n));
@@ -384,12 +370,14 @@ ncclResult_t ncclTopoGetIntermediateRank(struct ncclTopoSystem* system, int rank
       WARN("Could not find intermediate GPU between GPU rank %d and NIC %d\n", rank, netDev);
       return ncclInternalError;
     }
-    *intermediateRank = node->gpu.rank;
+    *intermediateDev = node->gpu.dev;
   } else {
-    *intermediateRank = -1;
+    *intermediateDev = -1;
   }
   return ncclSuccess;
 }
+
+NCCL_PARAM(PxnEnable, "PXN_ENABLE", 0);
 
 ncclResult_t ncclTopoComputePaths(struct ncclTopoSystem* system, struct ncclPeerInfo* peerInfos) {
   // Precompute paths between GPUs/NICs.
@@ -415,7 +403,7 @@ ncclResult_t ncclTopoComputePaths(struct ncclTopoSystem* system, struct ncclPeer
         // Divert all traffic through the CPU
         int cpu;
         NCCLCHECK(getLocalCpu(system, g, &cpu));
-        NCCLCHECK(addCpuStep(system, cpu, GPU, p, GPU, g));
+        NCCLCHECK(addInterStep(system, CPU, cpu, GPU, p, GPU, g));
       }
     }
 
@@ -440,6 +428,25 @@ ncclResult_t ncclTopoComputePaths(struct ncclTopoSystem* system, struct ncclPeer
     NCCLCHECK(ncclTopoSetPaths(netNode, system));
 
     for (int g=0; g<system->nodes[GPU].count; g++) {
+      // Check whether we can access the NIC through another NVLink-connected GPU (PXN)
+      struct ncclTopoNode* gpu = system->nodes[GPU].nodes+g;
+      if (ncclParamPxnEnable() && gpu->paths[NET][n].type > PATH_PXB) {
+        for (int p=0; p<system->nodes[GPU].count; p++) {
+          if (p == g) continue;
+          struct ncclTopoNode* peerNode = system->nodes[GPU].nodes+p;
+          int netDev;
+          NCCLCHECK(ncclTopoGetLocalNet(system, peerNode->gpu.rank, &netDev, 0));
+
+          // To ensure proper balancing, use only a local GPU which advertised that NIC as its preferred one.
+          if (netDev == netNode->id) {
+            if (netNode->paths[GPU][p].type <= PATH_PXB && peerNode->paths[GPU][g].type <= PATH_NVL) {
+              // We can use that GPU as relay to communicate with that NIC.
+              NCCLCHECK(addInterStep(system, GPU, p, NET, n, GPU, g));
+              NCCLCHECK(addInterStep(system, GPU, p, GPU, g, NET, n));
+            }
+          }
+        }
+      }
       // Update path when we dont want to / can't use GPU Direct RDMA.
       int gdr;
       NCCLCHECK(ncclTopoCheckGdr(system, system->nodes[GPU].nodes[g].id, netNode->id, 0, &gdr));
@@ -447,8 +454,8 @@ ncclResult_t ncclTopoComputePaths(struct ncclTopoSystem* system, struct ncclPeer
         // We cannot use GPU Direct RDMA, divert all traffic through the CPU local to the GPU
         int localCpu;
         NCCLCHECK(getLocalCpu(system, g, &localCpu));
-        NCCLCHECK(addCpuStep(system, localCpu, NET, n, GPU, g));
-        NCCLCHECK(addCpuStep(system, localCpu, GPU, g, NET, n));
+        NCCLCHECK(addInterStep(system, CPU, localCpu, NET, n, GPU, g));
+        NCCLCHECK(addInterStep(system, CPU, localCpu, GPU, g, NET, n));
       }
     }
   }

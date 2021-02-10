@@ -593,7 +593,6 @@ ncclResult_t ncclProxyStart(struct ncclComm* comm) {
   return ncclSuccess;
 }
 
-#include "bootstrap.h"
 ncclResult_t ncclProxySharedBuffersInitP2p(struct ncclComm* comm, int cuda, int netDev, int* size, char** ptr) {
   struct ncclProxySharedP2p* state = comm->proxyState.sharedBuffs.p2p[netDev];
   if (state == NULL) {
@@ -605,29 +604,25 @@ ncclResult_t ncclProxySharedBuffersInitP2p(struct ncclComm* comm, int cuda, int 
   *size = state->size;
 
   if (cuda && state->cudaBuff == NULL) {
-    NCCLCHECK(ncclTopoGetIntermediateRank(comm->topo, comm->rank, netDev, &state->interRank));
-    if (state->interRank == -1) {
-      NCCLCHECK(ncclCudaCalloc(&state->cudaBuff, *size));
-    } else {
-      cudaIpcMemHandle_t devIpc;
-      void* directPtr;
-      NCCLCHECK(bootstrapRemAlloc(*size, state->interRank, comm->bootstrap, &state->remoteId, &devIpc, &directPtr));
-      if (comm->peerInfo[comm->rank].pidHash == comm->peerInfo[state->interRank].pidHash) {
-        // Enable P2P access
-        int cudaDev = comm->peerInfo[state->interRank].cudaDev;
-        cudaError_t err = cudaDeviceEnablePeerAccess(cudaDev, 0);
-        if (err == cudaErrorPeerAccessAlreadyEnabled) {
-          cudaGetLastError();
-        } else if (err != cudaSuccess) {
-          WARN("failed to peer with device %d: %d %s",
-              cudaDev, err, cudaGetErrorString(err));
-          return ncclInternalError;
-        }
-        state->cudaBuff = (char*)directPtr;
-      } else {
-        CUDACHECK(cudaIpcOpenMemHandle(&state->ipcMem, devIpc, cudaIpcMemLazyEnablePeerAccess));
-        state->cudaBuff = (char*)state->ipcMem;
+    int cudaDev;
+    NCCLCHECK(ncclTopoGetIntermediateDev(comm->topo, comm->rank, netDev, &cudaDev));
+    int saveCudaDev;
+    if (cudaDev != -1) {
+      cudaError_t err = cudaDeviceEnablePeerAccess(cudaDev, 0);
+      if (err == cudaErrorPeerAccessAlreadyEnabled) {
+        cudaGetLastError();
+      } else if (err != cudaSuccess) {
+        WARN("failed to peer with device %d: %d %s",
+            cudaDev, err, cudaGetErrorString(err));
+        return ncclInternalError;
       }
+      CUDACHECK(cudaGetDevice(&saveCudaDev));
+      CUDACHECK(cudaSetDevice(cudaDev));
+      INFO(NCCL_INIT, "Allocating CUDA shared buffers for rank %d -> NIC %d through device %d", comm->rank, netDev, cudaDev);
+    }
+    NCCLCHECK(ncclCudaCalloc(&state->cudaBuff, *size));
+    if (cudaDev != -1) {
+      CUDACHECK(cudaSetDevice(saveCudaDev));
     }
   } else if (state->hostBuff == NULL) {
     NCCLCHECK(ncclCudaHostCalloc(&state->hostBuff, *size));
@@ -675,12 +670,7 @@ ncclResult_t ncclProxySharedBuffersGetCollNet(struct ncclComm* comm, int cuda, i
 ncclResult_t ncclProxySharedBuffersDestroyP2p(struct ncclComm* comm, int netDev) {
   struct ncclProxySharedP2p* state = comm->proxyState.sharedBuffs.p2p[netDev];
   if (state == NULL) return ncclSuccess;
-  if (state->interRank == -1) {
-    CUDACHECK(cudaFree(state->cudaBuff));
-  } else {
-    if (state->ipcMem) CUDACHECK(cudaIpcCloseMemHandle(state->ipcMem));
-    NCCLCHECK(bootstrapRemFree(state->remoteId, state->interRank, comm->bootstrap));
-  }
+  CUDACHECK(cudaFree(state->cudaBuff));
   NCCLCHECK(ncclCudaHostFree(state->hostBuff));
   free(state);
   return ncclSuccess;
