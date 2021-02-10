@@ -92,6 +92,7 @@ struct ncclTopoNode {
       int dev; // NVML dev number
       int rank;
       int cudaCompCap;
+      int compMode;
       int gdrSupport;
     }gpu;
     struct {
