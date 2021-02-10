@@ -503,7 +503,7 @@ static ncclResult_t ncclSetupCollKernel(struct ncclInfo* info) {
   params->blockDim.x = std::max<unsigned>(params->blockDim.x, info->nThreads);
   comm->enqueueInfo->maxChannels = params->gridDim.x;  // params may be varied by a second graph hence we need to capture it here
 
-  // Record the first kernel to launch
+  // Inline the first kernel
   if (params->func == NULL) {
     params->func = ncclKerns[work->funcIndex];
     memcpy(&comm->args, work, sizeof(struct ncclWorkElem));
@@ -537,8 +537,8 @@ static ncclResult_t ncclEnqueueCollKernel(ncclComm_t comm, struct ncclQueueElem*
     comm->lastChannel++;
     work->coll.bid = bid % nChannels;
     NCCLCHECK(getNextOp(channel, NULL, work));
-    INFO(NCCL_COLL, "Host enqueue: bid %d index %ld nThreads %d funcIndex %d active %d count %ld nChannels %d",
-          work->coll.bid, channel->workFifoTail, work->nThreads, work->funcIndex, work->active, work->coll.count, work->coll.nChannels);
+    //INFO(NCCL_COLL, "Host enqueue: bid %d channel %d index %ld nThreads %d funcIndex %d count %ld nChannels %d",
+    //      work->coll.bid, channelId, channel->workFifoTail, work->nThreads, work->funcIndex, work->coll.count, work->coll.nChannels);
   }
   return ncclSuccess;
 }
@@ -559,12 +559,16 @@ ncclResult_t ncclSetupAsyncKernels(ncclComm_t comm) {
     size_t channelSize = NCCL_AGG_CHANNEL_SIZE * comm->nRanks;  // scale channel size based on nranks as latency increases
     // Reduce the per-channel size if we cannot fully utilize the channels
     while (comm->asyncTotalSize < channelSize * comm->nChannels && channelSize > NCCL_MIN_CHANNEL_SIZE) channelSize /= 2;
+    int channelUsed = 0;
     for (int c = 0; c < comm->asyncOpCount; c++) {
       struct ncclInfo* info = comm->asyncOps+c;
       info->nChannels = std::min((int)DIVUP(info->nBytes, channelSize), comm->nChannels); // assign number of channels
+      channelUsed += info->nChannels;
       NCCLCHECK(ncclSetupCollKernel(info));
     }
-    comm->args.active = 1;  // There are more than 1 op, hence the inlined one is not the last
+    // If we wrap around on channels, then the inlined op on channel 0 is not the last one on this channel
+    // Then we need to change active from 2 to 1
+    if (channelUsed > comm->nChannels) comm->args.active = 1;
   }
   // Reset counters
   comm->asyncOpCount = 0;
