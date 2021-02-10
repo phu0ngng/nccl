@@ -98,5 +98,22 @@ TYPED_TEST(ncclCudaGraph_test, alltoall) {
     ASSERT_EQ(ncclSuccess, ncclGroupEnd());
     this->EndCaptureAndLaunch();
 };
+
+TYPED_TEST(ncclCudaGraph_test, aggregation) {
+    this->BeginCapture();
+    ASSERT_EQ(ncclSuccess, ncclGroupStart());
+    for (int j = 0; j < 2; ++j) {
+        for (int i = 0; i < this->nVis; ++i) {
+            ASSERT_EQ(ncclSuccess,
+                      ncclAllReduce(this->sendbuffs[i], this->recvbuffs[i],
+                                    std::min(this->N, 1024 * 1024),
+                                    this->DataType(), ncclSum,
+                                    this->comms[i], this->streams[i]))
+                << "i" << i << ", " << std::endl;
+        }
+    }
+    ASSERT_EQ(ncclSuccess, ncclGroupEnd());
+    this->EndCaptureAndLaunch();
+};
 #endif
 // EOF
