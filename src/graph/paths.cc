@@ -377,7 +377,7 @@ ncclResult_t ncclTopoGetIntermediateDev(struct ncclTopoSystem* system, int rank,
   return ncclSuccess;
 }
 
-NCCL_PARAM(PxnEnable, "PXN_ENABLE", 0);
+NCCL_PARAM(PxnDisable, "PXN_DISABLE", 0);
 
 ncclResult_t ncclTopoComputePaths(struct ncclTopoSystem* system, struct ncclPeerInfo* peerInfos) {
   // Precompute paths between GPUs/NICs.
@@ -430,21 +430,26 @@ ncclResult_t ncclTopoComputePaths(struct ncclTopoSystem* system, struct ncclPeer
     for (int g=0; g<system->nodes[GPU].count; g++) {
       // Check whether we can access the NIC through another NVLink-connected GPU (PXN)
       struct ncclTopoNode* gpu = system->nodes[GPU].nodes+g;
-      if (ncclParamPxnEnable() && gpu->paths[NET][n].type > PATH_PXB) {
+      if (ncclParamPxnDisable() != 1 && gpu->paths[NET][n].type > PATH_PXB) {
         for (int p=0; p<system->nodes[GPU].count; p++) {
           if (p == g) continue;
           struct ncclTopoNode* peerNode = system->nodes[GPU].nodes+p;
-          int netDev;
-          NCCLCHECK(ncclTopoGetLocalNet(system, peerNode->gpu.rank, &netDev, 0));
+
+          // Make sure we can allocate memory on that GPU.
+          if (peerNode->gpu.compMode != 0) continue;
 
           // To ensure proper balancing, use only a local GPU which advertised that NIC as its preferred one.
-          if (netDev == netNode->id) {
-            if (netNode->paths[GPU][p].type <= PATH_PXB && peerNode->paths[GPU][g].type <= PATH_NVL) {
-              // We can use that GPU as relay to communicate with that NIC.
-              NCCLCHECK(addInterStep(system, GPU, p, NET, n, GPU, g));
-              NCCLCHECK(addInterStep(system, GPU, p, GPU, g, NET, n));
-            }
-          }
+          int netDev;
+          NCCLCHECK(ncclTopoGetLocalNet(system, peerNode->gpu.rank, &netDev, 0));
+          if (netDev != netNode->id) continue;
+
+          // PXN = PCI + NVLink.
+          if (netNode->paths[GPU][p].type > PATH_PXB || peerNode->paths[GPU][g].type > PATH_NVL) continue;
+
+          // We can use that GPU as relay to communicate with that NIC.
+          NCCLCHECK(addInterStep(system, GPU, p, NET, n, GPU, g));
+          NCCLCHECK(addInterStep(system, GPU, p, GPU, g, NET, n));
+          break;
         }
       }
       // Update path when we dont want to / can't use GPU Direct RDMA.
