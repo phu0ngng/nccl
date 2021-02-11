@@ -87,7 +87,6 @@ struct ncclComm {
   // Counter to make sure collectives match (needed for bcast/reduce
   // where syncs are not symmetric).
   uint64_t opCount;
-  uint64_t lastOpCount;
 
   // Channels for collectives
   int nChannels;

@@ -316,7 +316,7 @@ static ncclResult_t progressOps(struct ncclProxyState* state, struct ncclProxyAr
     if (op->state == ncclProxyOpNone) return ncclInternalError;
     // opCount >= lastOpCount are part of an ongoing GroupStart/GroupEnd that hasn't started
     // yet and might be cancelled before they even start. Hold on on those.
-    if (op->opCount < comm->lastOpCount) {
+    if (op->opCount < op->channel->lastLaunchOpCount) {
       NCCLCHECK(op->progress(op));
       *idle &= op->idle;
     }

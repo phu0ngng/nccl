@@ -253,14 +253,12 @@ static ncclResult_t ncclLaunchProxy(struct ncclQueueInfo* eqInfo) {
   ncclComm_t comm = eqInfo->comm;
   if (eqInfo->maxChannels == 0) return ncclSuccess;
 
-  uint64_t max = 0ULL;
   for (int r=0; r<eqInfo->maxChannels; r++) {
     struct ncclChannel* channel = comm->channels+r;
-    max = std::max(max, channel->workFifoTail);
+    channel->lastLaunchOpCount = channel->workFifoTail;
     channel->workCount = 0;
   }
   comm->lastChannel = 0;
-  comm->lastOpCount = max;
   NCCLCHECK(ncclProxyStart(comm));
   return ncclSuccess;
 }
