@@ -786,7 +786,7 @@ ncclResult_t ncclCudaGraphHostSetup(ncclComm_t comm, cudaGraph_t graph) {
   // Create a CUDA object to wrap around the argument space
   // which CUDA graph would manage lifetime of
   cudaUserObject_t object;
-  CUDACHECK(cudaUserObjectCreate(&object, eqInfo, ncclDestroyQueueInfo, 1, 0));
+  CUDACHECK(cudaUserObjectCreate(&object, eqInfo, ncclDestroyQueueInfo, 1/*initialRefcount*/, cudaUserObjectNoDestructorSync));
   CUDACHECK(cudaGraphRetainUserObject(graph, object, 1, cudaGraphUserObjectMove));
 #endif
 
