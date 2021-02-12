@@ -756,7 +756,7 @@ ncclResult_t ncclGetCudaGraph(ncclComm_t comm, cudaGraph_t* graph, int* usingCud
   cudaStreamCaptureStatus captureStatus;
   unsigned long long cudaGraphId;
 #if CUDA_VERSION >= 11030
-  CUDACHECK(cudaStreamGetCaptureInfo(comm->userStream, &captureStatus, &cudaGraphId, graph, NULL, NULL));
+  CUDACHECK(cudaStreamGetCaptureInfo_v2(comm->userStream, &captureStatus, &cudaGraphId, graph, NULL, NULL));
 #else
   CUDACHECK(cudaStreamGetCaptureInfo(comm->userStream, &captureStatus, &cudaGraphId));
 #endif
