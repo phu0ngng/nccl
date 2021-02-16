@@ -430,9 +430,9 @@ static ncclResult_t computeColl(struct ncclInfo* info /* input */, struct ncclWo
   // round up
   proxyArgs->subs[0].recvbytes = stepSize*proxyArgs->sliceSteps;
 
-  TRACE(NCCL_NET,"opCount %lx slicesteps %d spl %d cpl %d nbytes %zi -> protocol %d nchannels %d nthreads %d, nloops %d nsteps %d comm %p",
+  TRACE(NCCL_COLL,"opCount %lx slicesteps %d spl %d cpl %d nbytes %zi -> protocol %d nchannels %d nthreads %d, nloops %d nsteps %d chunksize %d comm %p",
       proxyArgs->opCount, sliceSteps, info->nstepsPerLoop, info->nchunksPerLoop, info->nBytes, info->protocol, info->nChannels, info->nThreads,
-      nLoops, proxyArgs->nsteps, info->comm);
+      nLoops, proxyArgs->subs[0].nsteps, chunkSize, info->comm);
   return ncclSuccess;
 }
 
