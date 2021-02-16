@@ -256,7 +256,7 @@ ncclResult_t ncclTopoConnectCollNet(struct ncclComm* comm, struct ncclTopoGraph*
       sprintf(line+strlen(line), " %d ", sendHeads[i]);
     }
     channel->collTree.nHeads = nHeads;
-    channel->collTree.depth = 1;
+    channel->collTree.depth = 2;
     sprintf(line+strlen(line), "nUp %d nHeads %d ", nUp, nHeads);
     sprintf(line+strlen(line), "headRank %d out %d ", channel->collTree.headRank, channel->collTree.out);
     INFO(NCCL_GRAPH, "%s", line);
@@ -292,7 +292,7 @@ ncclResult_t ncclTopoConnectCollNet(struct ncclComm* comm, struct ncclTopoGraph*
       sprintf(line+strlen(line), " %d ", recvHeads[i]);
     }
     channel->collTree.nHeads = nHeads;
-    channel->collTree.depth = 1;
+    channel->collTree.depth = 2;
     sprintf(line+strlen(line), "nUp %d nHeads %d ", nUp, nHeads);
     sprintf(line+strlen(line), "headRank %d out %d ", channel->collTree.headRank, channel->collTree.out);
     INFO(NCCL_GRAPH, "%s", line);
