@@ -3,6 +3,7 @@
  *
  * See LICENSE.txt for license information
  ************************************************************************/
+//#define DEBUG_PRINT 1
 
 #include "common.h"
 #include <pthread.h>
@@ -19,8 +20,8 @@ const char *test_typenames[ncclNumTypes] = {"int8", "uint8", "int32", "uint32", 
 ncclDataType_t test_types[ncclNumTypes] = {ncclChar, ncclInt, ncclHalf, ncclFloat, ncclDouble, ncclInt64, ncclUint64};
 const char *test_typenames[ncclNumTypes] = {"char", "int", "half", "float", "double", "int64", "uint64"};
 #endif
-ncclRedOp_t test_ops[ncclNumOps] = {ncclSum, ncclProd, ncclMax, ncclMin};
-const char *test_opnames[ncclNumOps] = {"sum", "prod", "max", "min"};
+ncclRedOp_t test_ops[ncclNumOps] = {ncclSum, ncclProd, ncclMax, ncclMin, ncclAvg};
+const char *test_opnames[ncclNumOps] = {"sum", "prod", "max", "min", "avg"};
 
 thread_local int is_main_thread = 0;
 
@@ -211,19 +212,32 @@ __device__ half ncclOpMax(half a, half b) { return __half2float(a)>__half2float(
 template<>
 __device__ half ncclOpMin(half a, half b) { return __half2float(a)<__half2float(b) ? a : b; }
 
-template<typename T, T (*Op)(T, T)>
+template<typename T>
+__device__ T ncclPostOpIdent(T x, int n) { return x; }
+
+template<typename T>
+__device__ T ncclPostOpDiv(T x, int n) { return x/n; }
+template<>
+__device__ half ncclPostOpDiv<half>(half x, int n) { return __float2half(__half2float(x)/n); }
+
+template<typename T, T (*Op)(T, T), T(*PostOp)(T,int)>
 __global__ void InitDataReduceKernel(T* data, const size_t N, const size_t offset, const int rep, const int nranks) {
   for (size_t o=blockIdx.x*blockDim.x+threadIdx.x; o<N; o+=gridDim.x*blockDim.x) {
     T val = testValue<T>(o+offset, rep, 0);
     for (int i=1; i<nranks; i++) {
       val = Op(val, testValue<T>(o+offset, rep, i));
     }
-    data[o] = val;
+    data[o] = PostOp(val, nranks);
   }
 }
 
-#define KERN(type, op) (void*)InitDataReduceKernel<type, op<type>>
-#define OPS(type) KERN(type, ncclOpSum), KERN(type, ncclOpProd), KERN(type, ncclOpMax), KERN(type, ncclOpMin)
+#define KERN(type, op, postop) (void*)InitDataReduceKernel<type, op<type>, postop<type> >
+#define OPS(type) \
+  KERN(type, ncclOpSum, ncclPostOpIdent), \
+  KERN(type, ncclOpProd, ncclPostOpIdent), \
+  KERN(type, ncclOpMax, ncclPostOpIdent), \
+  KERN(type, ncclOpMin, ncclPostOpIdent), \
+  KERN(type, ncclOpSum/*Avg*/, ncclPostOpDiv)
 
 static void* const redInitDataKerns[ncclNumOps*ncclNumTypes] = {
   OPS(int8_t), OPS(uint8_t), OPS(int32_t), OPS(uint32_t), OPS(int64_t), OPS(uint64_t), OPS(half), OPS(float), OPS(double)
