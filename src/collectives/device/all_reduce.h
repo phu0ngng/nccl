@@ -270,14 +270,10 @@ class ncclFunction<ncclFuncAllReduce, NCCL_ALGO_COLLNET, NCCL_PROTO_SIMPLE, FUNC
         ncclPrimitives<UNROLL, 1, 1, T, 1, NCCL_MAX_DIRECT_ARITY, 0, FUNC>
           prims(tid, nthreadsSplit, NULL, tree->up, NULL, stepSize, channel, comm, ncclShmem->ptrs, 0);
         for (ssize_t gridOffset = 0; gridOffset < size; gridOffset += loopSize) {
-          for (int i=0, c=0; i<tree->nHeads; i++) {
-            if (i == tree->headRank) continue;
-            int peer = tree->up[c++];
-            ssize_t offset = gridOffset + (bid*tree->nHeads+i)*chunkSize;
-            int nelem = min(chunkSize, size-offset);
-            PRINT(tid, "scatter");
-            prims.sendTo(thisInput+offset, nelem, peer);
-          }
+          ssize_t offset = gridOffset + bid*tree->nHeads*chunkSize;
+          int nelem = min((tree->nHeads-1)*chunkSize, size-offset);
+          PRINT(tid, "scatter");
+          prims.scatter(thisInput+offset, nelem, chunkSize, tree->headRank);
         }
       } else if (tree->out != -1) {
         // Reduce, send to network
@@ -298,14 +294,10 @@ class ncclFunction<ncclFuncAllReduce, NCCL_ALGO_COLLNET, NCCL_PROTO_SIMPLE, FUNC
         ncclPrimitives<UNROLL, 1, 1, T, NCCL_MAX_DIRECT_ARITY, 1, 1, FUNC>
           prims(tid, nthreadsSplit, tree->up, NULL, thisOutput, stepSize, channel, comm, ncclShmem->ptrs, 0);
         for (ssize_t gridOffset = 0; gridOffset < size; gridOffset += loopSize) {
-          for (int i=0, c=0; i<tree->nHeads; i++) {
-            if (i == tree->headRank) continue;
-            int peer = tree->up[c++];
-            ssize_t offset = gridOffset + (bid*tree->nHeads+i)*chunkSize;
-            int nelem = min(chunkSize, size-offset);
-            PRINT(tid, "gather");
-            prims.directRecvFrom(thisOutput+offset, offset, nelem, peer);
-          }
+          ssize_t offset = gridOffset + bid*tree->nHeads*chunkSize;
+          int nelem = min((tree->nHeads-1)*chunkSize, size-offset);
+          PRINT(tid, "gather");
+          prims.gather(thisOutput+offset, nelem, chunkSize, tree->headRank);
         }
       } else if (tree->out != -1) {
         // Recv from network, broadcast

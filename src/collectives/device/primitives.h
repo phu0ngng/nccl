@@ -170,6 +170,42 @@ class ncclPrimitives {
     }
   }
 
+  template <int DIRECTRECV, int DIRECTSEND, int RECV, int SEND>
+  inline __device__ void
+  ScatterGatherOp(const T* srcPtr, T* dstPtr, int totalElem, ssize_t directOffset, int peerElem, int skip) {
+    int offset = 0;
+
+    if (tid < nworkers) {
+      if (RECV && (role & ROLE_WAIT_RECV)) waitRecv<0, DIRECTRECV>(directOffset+offset);
+      if (SEND && (role & ROLE_WAIT_SEND)) waitSend<0, DIRECTSEND>(directOffset+offset, peerElem*sizeof(T));
+      subBarrier();
+      if (SEND) {
+        #pragma unroll
+        for (int i=0; i<nsend; i++) {
+          if (i == skip) offset += peerElem;
+          const T* src0 = srcPtr + offset;
+          int realSize = max(0, min(peerElem, totalElem-offset));
+          if (realSize > 0) ReduceOrCopyMulti<UNROLL, FUNC, T, 1, 1, 1, 1>(tid, nworkers, 1, &src0, 1, dsts+i, realSize);
+          offset += realSize;
+        }
+      } else if (RECV) {
+        #pragma unroll
+        for (int i=0; i<nrecv; i++) {
+          if (i == skip) offset += peerElem;
+          T* dst0 = dstPtr + offset;
+          int realSize = max(0, min(peerElem, totalElem-offset));
+          if (realSize > 0) ReduceOrCopyMulti<UNROLL, FUNC, T, 1, 1, 1, 1>(tid, nworkers, 1, srcs+i, 1, &dst0, realSize);
+          offset += realSize;
+        }
+      }
+    }
+    barrier();
+    if (SEND && (role & ROLE_POST_SEND) && index == 0) __threadfence_system();
+    __syncwarp();
+    if (SEND && (role & ROLE_POST_SEND)) postSend();
+    if (RECV && (role & ROLE_POST_RECV)) postRecv();
+  }
+
   __device__ __forceinline__ void loadRecvConn(struct ncclChannel* channel, T* directBuff) {
     if (role & (ROLE_WAIT_RECV|ROLE_POST_RECV)) {
       conn = &channel->devPeers[peer].recv.conn;
@@ -334,6 +370,16 @@ class ncclPrimitives {
   directRecvReduceCopySend(const T* src, T* dst, ssize_t directOffset, int nelem) {
     // Direct is only for the send part
     GenericOp<0, 1, 1, 1, 1, 1, 0>(src, dst, nelem, directOffset, -1);
+  }
+
+  __device__ __forceinline__ void
+  scatter(const T* src, int totalElem, int peerElem, int skip) {
+    ScatterGatherOp<0, 0, 0, 1>(src, NULL, totalElem, 0, peerElem, skip);
+  }
+
+  __device__ __forceinline__ void
+  gather(T* dst, int totalElem, int peerElem, int skip) {
+    ScatterGatherOp<0, 0, 1, 0>(NULL, dst, totalElem, 0, peerElem, skip);
   }
 
   __device__ __forceinline__ ~ncclPrimitives() {
