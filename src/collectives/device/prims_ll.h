@@ -7,6 +7,7 @@
 template <typename T, class FUNC, int NRECV, int NSEND>
 class ncclLLPrimitives {
  private:
+  FUNC fn;
   const int tid;
   const int nthreads;
   const int wid;
@@ -128,13 +129,16 @@ class ncclLLPrimitives {
     #pragma unroll 2
     for (; offset<npack; offset+=nthreads) {
       // Recv : local, then intra-node, then inter-node
-      uint64_t val = SRC ? readAL(srcPack+offset) : readLL(0, offset);
+      uint64_t val;
+      if (SRC) val = MULTI<FUNC, T>().preOp(fn, readAL(srcPack+offset));
+      else     val = readLL(0, offset);
       if (RECV) {
-        if (SRC) val = MULTI<FUNC, T>()(readLL(0, offset), val);
-        for (int i=1; i<NRECV && i<nrecv; i++) {
-          val = MULTI<FUNC, T>()(readLL(i, offset), val);
+        for (int i=1-SRC; i<NRECV && i<nrecv; i++) {
+          val = MULTI<FUNC, T>()(fn, readLL(i, offset), val);
         }
       }
+
+      if (SRC && DST) val = MULTI<FUNC, T>().postOp(fn, val);
 
       // Send : inter-node, then intra-node, then local
       if (SEND) {
@@ -199,7 +203,7 @@ class ncclLLPrimitives {
  public:
   __device__ __forceinline__
   ncclLLPrimitives(const int tid, const int nthreads, int* recvPeers, int* sendPeers, int stepLines, struct ncclChannel* channel, struct ncclDevComm* comm)
-    : comm(comm), tid(tid), nthreads(nthreads), wid(tid%WARP_SIZE), stepLines(stepLines) {
+    : fn(FuncTraits<FUNC>().make(comm->nRanks)), comm(comm), tid(tid), nthreads(nthreads), wid(tid%WARP_SIZE), stepLines(stepLines) {
     // Make sure step is updated before we read it.
     barrier();
 

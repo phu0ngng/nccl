@@ -49,7 +49,8 @@
   DECL2(func, Sum) \
   DECL2(func, Prod) \
   DECL2(func, Min) \
-  DECL2(func, Max)
+  DECL2(func, Max) \
+  DECL2(func, Avg)
 
 #define DECL_ALL \
   DECL2(Broadcast, Sum) \

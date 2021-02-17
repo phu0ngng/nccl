@@ -10,6 +10,7 @@
 
 #include "common_kernel.h"
 #include <limits>
+#include <type_traits>
 
 template<typename T>
 struct FuncNull {
@@ -44,6 +45,18 @@ struct FuncMin {
   __device__ T operator()(const T x, const T y) const {
     return (x < y) ? x : y;
   }
+};
+
+template<typename Fn>
+struct FuncTraits { // generic implementation for FuncSum,Prod,Min,Max
+  static constexpr bool IsPreOpTrivial = true;
+  static constexpr bool IsPostOpTrivial = true;
+
+  __device__ static Fn make(int rankN) { return Fn(); }
+  template<typename T>
+  __device__ static T preOp(Fn, T x) { return x; }
+  template<typename T>
+  __device__ static T postOp(Fn, T x) { return x; }
 };
 
 #define MASK0 0x00ff00ff
@@ -299,4 +312,127 @@ struct FuncMin<half> {
     return __float2half(fm);
   }
 };
+
+template<typename T>
+struct FuncAvg: FuncSum<T> {
+  static_assert(!std::is_floating_point<T>::value, "Uhoh");
+  static constexpr bool IsPreOpTrivial = true;
+  static constexpr bool IsPostOpTrivial = false;
+  int n;
+
+  template<typename ...Arg>
+  __device__ FuncAvg(int n): n(n) {}
+
+  __device__ T preOp(T x) const {
+    return x;
+  }
+  __device__ T postOp(T x) const {
+    return T(x/n);
+  }
+};
+
+template<>
+struct FuncAvg<double>: FuncSum<double> {
+  static constexpr bool IsPreOpTrivial = true;
+  static constexpr bool IsPostOpTrivial = false;
+  double rcp;
+  __device__ FuncAvg(int n) {
+    rcp = __drcp_rn(double(n));
+  }
+  // inherits FuncSum::operator()
+  __device__ double preOp(double x) const {
+    return x;
+  }
+  __device__ double postOp(double x) const {
+    return x*rcp;
+  }
+};
+
+template<>
+struct FuncAvg<float>: FuncSum<float> {
+  static constexpr bool IsPreOpTrivial = true;
+  static constexpr bool IsPostOpTrivial = false;
+  float rcp;
+  __device__ FuncAvg(int n) {
+    rcp = __frcp_rn(float(n));
+  }
+  // inherits FuncSum::operator()
+  __device__ float preOp(float x) const {
+    return x;
+  }
+  __device__ float postOp(float x) const {
+    return x*rcp;
+  }
+};
+
+template<>
+struct FuncAvg<half>: FuncSum<half> {
+#if __CUDA_ARCH__ >= 530 && __CUDA_ARCH__ != 610
+  static constexpr bool IsPreOpTrivial = false;
+  static constexpr bool IsPostOpTrivial = false;
+  half2 rsqrt;
+  __device__ FuncAvg(int n) {
+    rsqrt.x = __float2half(__frsqrt_rn(float(n)));
+    rsqrt.y = rsqrt.x;
+  }
+  // inherits FuncSum::operator()
+  __device__ half preOp(half x) const {
+    return __hmul(x, rsqrt.x);
+  }
+  __device__ half2 preOp(half2 x) const {
+    return __hmul2(x, rsqrt);
+  }
+  __device__ half postOp(half x) const {
+    return __hmul(x, rsqrt.x);
+  }
+  __device__ half2 postOp(half2 x) const {
+    return __hmul2(x, rsqrt);
+  }
+#else
+  static constexpr bool IsPreOpTrivial = false;
+  static constexpr bool IsPostOpTrivial = false;
+  float rsqrt;
+  __device__ FuncAvg(int n) {
+    rsqrt = __frsqrt_rn(float(n));
+  }
+  // inherits FuncSum::operator()
+  __device__ half preOp(half x) const {
+    return __float2half(__half2float(x)*rsqrt);
+  }
+  __device__ half2 preOp(half2 x) const {
+    float2 a = __half22float2(x);
+    a.x *= rsqrt;
+    a.y *= rsqrt;
+    return __float22half2_rn(a);
+  }
+  __device__ half postOp(half x) const {
+    return __float2half(__half2float(x)*rsqrt);
+  }
+  __device__ half2 postOp(half2 x) const {
+    float2 a = __half22float2(x);
+    a.x *= rsqrt;
+    a.y *= rsqrt;
+    return __float22half2_rn(a);
+  }
+#endif
+};
+
+template<typename T>
+struct FuncTraits<FuncAvg<T>> {
+  static constexpr bool IsPreOpTrivial = FuncAvg<T>::IsPreOpTrivial;
+  static constexpr bool IsPostOpTrivial = FuncAvg<T>::IsPostOpTrivial;
+
+  __device__ static FuncAvg<T> make(int rankN) {
+    return FuncAvg<T>(rankN);
+  }
+  template<typename U>
+  __device__ static U preOp(FuncAvg<T> fn, U x) {
+    return fn.preOp(x);
+  }
+  template<typename U>
+  __device__ static U postOp(FuncAvg<T> fn, U x) {
+    return fn.postOp(x);
+  }
+};
+
 #endif // REDUCE_KERNEL_H_

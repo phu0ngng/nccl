@@ -11,6 +11,7 @@
 template <typename T, class FUNC, int NRECV, int NSEND>
 class ncclLL128Primitives {
  private:
+  FUNC fn;
   const int tid;
   const int nthreads;
   const int wid;
@@ -160,7 +161,11 @@ class ncclLL128Primitives {
       #pragma unroll
       for (int u=0; u<ELEMS_PER_THREAD; u+=2) {
         v[u] = shmem64Ptr[u*(WARP_SIZE-2)];
-        if (!flagThread) v[u+1] = shmem64Ptr[u*(WARP_SIZE-2)+1];
+        v[u] = MULTI<FUNC, T>().preOp(fn, v[u]);
+        if (!flagThread) {
+          v[u+1] = shmem64Ptr[u*(WARP_SIZE-2)+1];
+          v[u+1] = MULTI<FUNC, T>().preOp(fn, v[u+1]);
+        }
       }
     }
     /*********** End Data Loading : SHMEM -> REG ************/
@@ -179,13 +184,13 @@ class ncclLL128Primitives {
           needReload |= flagThread && (v1 != flag);
         }
       } while (__any_sync(WARP_MASK, needReload) && checkAbort(0, 0) == 0);
+
       #pragma unroll
       for (int u=0; u<ELEMS_PER_THREAD; u+=2) {
         load128(ptr+u*WARP_SIZE, v0, v1);
-        v[u] = SRC ? MULTI<FUNC, T>()(v0, v[u]) : v0;
-        v[u+1] = SRC ? MULTI<FUNC, T>()(v1, v[u+1]) : v1;
+        v[u] = SRC ? MULTI<FUNC, T>()(fn, v0, v[u]) : v0;
+        v[u+1] = SRC ? MULTI<FUNC, T>()(fn, v1, v[u+1]) : v1;
       }
-
       for (int i=1; i<NRECV && i<nrecv; i++) {
         uint64_t flag = recvFlag(i);
         uint64_t* ptr = recvPtr(i)+ll128Offset;
@@ -198,15 +203,24 @@ class ncclLL128Primitives {
             needReload |= flagThread && (v1 != flag);
           }
         } while (__any_sync(WARP_MASK, needReload) && checkAbort(i, 0) == 0);
+
         #pragma unroll
         for (int u=0; u<ELEMS_PER_THREAD; u+=2) {
           load128(ptr+u*WARP_SIZE, v0, v1);
-          v[u] = MULTI<FUNC, T>()(v0, v[u]);
-          v[u+1] = MULTI<FUNC, T>()(v1, v[u+1]);
+          v[u] = MULTI<FUNC, T>()(fn, v0, v[u]);
+          v[u+1] = MULTI<FUNC, T>()(fn, v1, v[u+1]);
         }
       }
     }
     /********************** End Recv ************************/
+
+    if (SRC && DST && !FuncTraits<FUNC>::IsPostOpTrivial) {
+      #pragma unroll
+      for (int u=0; u<ELEMS_PER_THREAD; u+=2) {
+        v[u]   = MULTI<FUNC, T>().postOp(fn, v[u]);
+        v[u+1] = MULTI<FUNC, T>().postOp(fn, v[u+1]);
+      }
+    }
 
     /************************ Send **************************/
     if (SEND) {
@@ -345,7 +359,7 @@ class ncclLL128Primitives {
  public:
   __device__ __forceinline__
   ncclLL128Primitives(const int tid, const int nthreads, int* recvPeers, int* sendPeers, int stepSize, struct ncclChannel* channel, struct ncclDevComm* comm)
-    : comm(comm), tid(tid), nthreads(nthreads), wid(tid%WARP_SIZE), warp(tid/WARP_SIZE), flagThread((tid%8)==7), stepSize(stepSize), shmem(ncclShmem->data+(threadIdx.x/WARP_SIZE)*NCCL_LL128_SHMEM_ELEMS_PER_THREAD*WARP_SIZE+2*wid) {
+    : fn(FuncTraits<FUNC>().make(comm->nRanks)), comm(comm), tid(tid), nthreads(nthreads), wid(tid%WARP_SIZE), warp(tid/WARP_SIZE), flagThread((tid%8)==7), stepSize(stepSize), shmem(ncclShmem->data+(threadIdx.x/WARP_SIZE)*NCCL_LL128_SHMEM_ELEMS_PER_THREAD*WARP_SIZE+2*wid) {
     // Make sure step is updated before we read it.
     barrier();
 

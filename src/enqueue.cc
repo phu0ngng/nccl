@@ -47,8 +47,10 @@
   NCCL_FUNCS3A(func, Sum), \
   NCCL_FUNCS3A(func, Sum), \
   NCCL_FUNCS3A(func, Sum), \
+  NCCL_FUNCS3A(func, Sum), \
   NCCL_FUNCS3A(func, Sum)
 #define NCCL_FUNCS2B(func) \
+  NCCL_FUNCS3B(func, Sum), \
   NCCL_FUNCS3B(func, Sum), \
   NCCL_FUNCS3B(func, Sum), \
   NCCL_FUNCS3B(func, Sum), \
