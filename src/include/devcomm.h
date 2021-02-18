@@ -103,7 +103,7 @@ struct ncclConnector {
   struct ncclProxyArgs *proxyAppend;
   struct ncclProxyArgs **proxyAppendPtr;
   struct ncclTransportComm* transportComm;
-  void* transportResources; // Host-side resources
+  void* transportResources;
   struct ncclConnInfo conn;
   struct ncclComm *comm;
 };
@@ -138,9 +138,10 @@ struct ncclDirect {
   int down[NCCL_MAX_DIRECT_ARITY];
 };
 
+#define NCCL_MAX_CONNS 2
 struct ncclPeer {
-  struct ncclConnector send;
-  struct ncclConnector recv;
+  struct ncclConnector send[NCCL_MAX_CONNS];
+  struct ncclConnector recv[NCCL_MAX_CONNS];
 };
 
 struct ncclDevComm;
