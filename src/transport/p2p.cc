@@ -19,11 +19,10 @@
 enum p2pType { P2P_DIRECT, P2P_INTERMEDIATE, P2P_IPC, P2P_MULTINODE };
 
 struct p2pConnectInfo {
-  enum p2pType type;
   int rank;
   int read;
+  void* directPtr;
   union {
-    void* directPtr;
 #ifdef MNNVL_SUPPORT
     CUmemFabricHandle desc; // 1KiB
     size_t size;
@@ -35,34 +34,6 @@ struct p2pConnectInfo {
 struct p2pResources {
   enum p2pType type;
   void* devMem;
-#ifdef MNNVL_SUPPORT
-  CUmemGenericAllocationHandle importHandle;
-  CUmemGenericAllocationHandle exportHandle;
-  size_t importSize, exportSize;
-#endif
-  void* remotePtr;
-  int remoteId;
-  int memRank;
-  void* bootstrap;
-};
-
-struct p2pSendResources {
-  enum p2pType type;
-  struct ncclSendMem* devMem;
-#ifdef MNNVL_SUPPORT
-  CUmemGenericAllocationHandle importHandle;
-  CUmemGenericAllocationHandle exportHandle;
-  size_t importSize, exportSize;
-#endif
-  void* remotePtr;
-  int remoteId;
-  int memRank;
-  void* bootstrap;
-};
-
-struct p2pRecvResources {
-  enum p2pType type;
-  struct ncclRecvMem* devMem;
 #ifdef MNNVL_SUPPORT
   CUmemGenericAllocationHandle importHandle;
   CUmemGenericAllocationHandle exportHandle;
@@ -196,7 +167,7 @@ static ncclResult_t allocateShareableBuffer(int device, size_t size,
 static ncclResult_t freeShareableBuffer(void *buff, size_t size, CUmemGenericAllocationHandle handle) {
   CUdeviceptr dptr = (CUdeviceptr) buff;
 
-  INFO(NCCL_P2P, "Free shareable buffer %p size %zi handle 0x%x", buff, size, handle);
+  TRACE(NCCL_P2P, "Free shareable buffer %p size %zi handle 0x%x", buff, size, handle);
 
   // Take care of the local GPU mappings we made
   CUDACHECK_DEV(cuMemUnmap(dptr, size));
@@ -221,7 +192,7 @@ static ncclResult_t importShareableBuffer(int device, size_t size,
   CUDACHECK_DEV(cuMemImportFromShareableHandle(handle, desc, CU_MEM_HANDLE_TYPE_FABRIC));
   CUDACHECK_DEV(cuMemAddressReserve(&dptr, size, /* alignment */ 0, /* addr */ 0, /* flags */ 0));
   CUDACHECK_DEV(cuMemMap(dptr, size, /* offset */ 0, *handle, /* flags */ 0));
-  INFO(NCCL_P2P, "Imported shareable buffer device %d size %zi handle 0x%x dptr %p", device, size, *handle, dptr);
+  TRACE(NCCL_P2P, "Imported shareable buffer device %d size %zi handle 0x%x dptr %p", device, size, *handle, dptr);
 
   // Allow access by the local GPU
   accessDesc.location.type = CU_MEM_LOCATION_TYPE_DEVICE;
@@ -237,7 +208,7 @@ static ncclResult_t importShareableBuffer(int device, size_t size,
 static ncclResult_t unimportShareableBuffer(void *buff, size_t size, CUmemGenericAllocationHandle handle) {
   CUdeviceptr dptr = (CUdeviceptr) buff;
 
-  INFO(NCCL_P2P, "Unimport shareable buffer %p size %zi handle 0x%x", buff, size, handle);
+  TRACE(NCCL_P2P, "Unimport shareable buffer %p size %zi handle 0x%x", buff, size, handle);
 
   CUDACHECK_DEV(cuMemUnmap(dptr, size));
   CUDACHECK_DEV(cuMemAddressFree(dptr, size));
@@ -263,9 +234,15 @@ static ncclResult_t p2pGetInfo(struct ncclTopoSystem* topo, struct ncclPeerInfo*
 }
 
 static ncclResult_t p2pMap(struct ncclPeerInfo* myInfo, struct ncclPeerInfo* peerInfo, struct p2pConnectInfo* p2pInfo, void** devMem, struct p2pResources *resources) {
-  if (p2pInfo->type == P2P_DIRECT) {
+  // MNNVL: multi-node NVLink
+  if (myInfo->hostHash != peerInfo->hostHash) {
+    // Different hosts, so assume multi-node NVLink
+    NCCLCHECK(importShareableBuffer(myInfo->cudaDev, p2pInfo->size, &p2pInfo->desc, &resources->importHandle, devMem));
+    resources->remotePtr = *devMem;
+    resources->importSize = p2pInfo->size;
+  } else if (myInfo->pidHash == peerInfo->pidHash) {
     if (peerInfo->cudaDev != myInfo->cudaDev) {
-      // Enable P2P access
+      // Same PID different GPUs, enable P2P access
       cudaError_t err = cudaDeviceEnablePeerAccess(peerInfo->cudaDev, 0);
       if (err == cudaErrorPeerAccessAlreadyEnabled) {
         cudaGetLastError();
@@ -277,14 +254,10 @@ static ncclResult_t p2pMap(struct ncclPeerInfo* myInfo, struct ncclPeerInfo* pee
     }
     *devMem = p2pInfo->directPtr;
     resources->remotePtr = NULL;
-  } else if (p2pInfo->type == P2P_IPC || p2pInfo->type == P2P_INTERMEDIATE) {
+  } else {
+    // Same node different PIDs, use CUDA IPC
     CUDACHECK(cudaIpcOpenMemHandle(devMem, p2pInfo->devIpc, cudaIpcMemLazyEnablePeerAccess));
     resources->remotePtr = *devMem;
-  } else if (p2pInfo->type == P2P_MULTINODE) {
-    // MNNVL: multi-node NVLink
-    NCCLCHECK(importShareableBuffer(myInfo->cudaDev, p2pInfo->size, &p2pInfo->desc, &resources->importHandle, devMem));
-    resources->remotePtr = *devMem;
-    resources->importSize = p2pInfo->size;
   }
   return ncclSuccess;
 }
@@ -308,44 +281,47 @@ ncclResult_t p2pSendSetup(struct ncclComm* comm, struct ncclTopoGraph* graph, st
   info.read = useRead;
   const char* useReadStr = info.read ? "/read" : "";
 
+  resources->remoteId = -1;
+  resources->bootstrap = comm->bootstrap;
+
   // MNNVL: Multi-node NVLink
   if (myInfo->hostHash != peerInfo->hostHash) {
     // Different hosts, so assume multi-node NVLink
     info.size = resources->exportSize = sendSize;
-    info.type = P2P_MULTINODE;
+    info.rank = myInfo->rank;
+    resources->type = P2P_MULTINODE;
+
     NCCLCHECK(allocateShareableBuffer(myInfo->cudaDev, sendSize, &info.desc, &resources->exportHandle, (void **)&resources->devMem));
 
-    INFO(NCCL_INIT|NCCL_P2P,"Channel %02d : %d[%d] -> %d[%d] via P2P/MNNVL",
-         channelId, myInfo->rank, myInfo->cudaDev, peerInfo->rank, peerInfo->cudaDev);
+    INFO(NCCL_INIT|NCCL_P2P,"Channel %02d : %d[%d] -> %d[%d] via P2P/MNNVL%s",
+         channelId, myInfo->rank, myInfo->cudaDev, peerInfo->rank, peerInfo->cudaDev, useReadStr);
   } else {
     if (intermediateRank == -1) {
       NCCLCHECK(ncclCudaCalloc((char**)&info.directPtr, sendSize));
-      info.type = P2P_DIRECT;
       info.rank = myInfo->rank;
       if (myInfo->pidHash == peerInfo->pidHash) {
+        resources->type = P2P_DIRECT;
         if (useRead == 0) send->conn.direct |= NCCL_DIRECT_GPU;
         INFO(NCCL_INIT|NCCL_P2P, "Channel %02d : %d[%lx] -> %d[%lx] via P2P/direct pointer%s",
              channelId, myInfo->rank, myInfo->busId, peerInfo->rank, peerInfo->busId, useReadStr);
       } else {
+        resources->type = P2P_IPC;
         CUDACHECK(cudaIpcGetMemHandle(&info.devIpc, info.directPtr));
-      info.type = P2P_IPC;
-      INFO(NCCL_INIT|NCCL_P2P,"Channel %02d : %d[%lx] -> %d[%lx] via P2P/IPC%s",
-           channelId, myInfo->rank, myInfo->busId, peerInfo->rank, peerInfo->busId, useReadStr);
+        INFO(NCCL_INIT|NCCL_P2P,"Channel %02d : %d[%lx] -> %d[%lx] via P2P/IPC%s",
+             channelId, myInfo->rank, myInfo->busId, peerInfo->rank, peerInfo->busId, useReadStr);
       }
     } else {
       NCCLCHECK(bootstrapRemAlloc(sendSize, intermediateRank, resources->bootstrap, &resources->remoteId, &info.devIpc, &info.directPtr));
-      info.type = P2P_INTERMEDIATE;
+      resources->type = P2P_INTERMEDIATE;
       info.rank = intermediateRank;
       INFO(NCCL_INIT|NCCL_P2P, "Channel %02d : %d[%lx] -> %d[%lx] via P2P/indirect/%d[%lx]%s",
            channelId, myInfo->rank, myInfo->busId, peerInfo->rank, peerInfo->busId, intermediateRank,
            comm->peerInfo[intermediateRank].busId, useReadStr);
     }
-  }
-  resources->remoteId = -1;
-  resources->bootstrap = comm->bootstrap;
-  resources->memRank = info.rank;
 
-  NCCLCHECK(p2pMap(myInfo, comm->peerInfo+info.rank, &info, (void**)&resources->devMem, resources));
+    resources->memRank = info.rank;
+    NCCLCHECK(p2pMap(myInfo, comm->peerInfo+info.rank, &info, (void**)&resources->devMem, resources));
+  }
 
   static_assert(sizeof(struct p2pConnectInfo) <= sizeof(struct ncclConnect), "p2p Connect Info is too big");
   memcpy(connectInfo, &info, sizeof(struct p2pConnectInfo));
@@ -369,37 +345,50 @@ ncclResult_t p2pRecvSetup(struct ncclComm* comm, struct ncclTopoGraph* graph, st
   struct p2pConnectInfo info;
   memset(&info, 0, sizeof(info));
   info.read = useRead;
+#ifdef ENABLE_TRACE
+  const char* useReadStr = info.read ? "/read" : "";
+#endif
+
+  resources->remoteId = -1;
+  resources->bootstrap = comm->bootstrap;
 
   // MNNVL: Multi-node NVLink support
   if (myInfo->hostHash != peerInfo->hostHash) {
     // Different hosts, so assume multi-node NVLink
     info.size = resources->exportSize = recvSize;
-    info.type = P2P_MULTINODE;
+    info.rank = myInfo->rank;
+    resources->type = P2P_MULTINODE;
 
     NCCLCHECK(allocateShareableBuffer(myInfo->cudaDev, recvSize, &info.desc, &resources->exportHandle, (void **)&resources->devMem));
-    TRACE(NCCL_INIT|NCCL_P2P,"Ring %02d : %d[%d] <- %d[%d] via P2P/MNNVL", channelId, myInfo->rank, myInfo->cudaDev, peerInfo->rank, peerInfo->cudaDev);
+    TRACE(NCCL_INIT|NCCL_P2P,"Ring %02d : %d[%d] <- %d[%d] via P2P/MNNVL%s",
+          channelId, myInfo->rank, myInfo->cudaDev, peerInfo->rank, peerInfo->cudaDev, useReadStr);
   } else {
     if (intermediateRank == -1) {
       NCCLCHECK(ncclCudaCalloc((char**)&info.directPtr, recvSize));
-      info.type = P2P_DIRECT;
       info.rank = myInfo->rank;
       if (myInfo->pidHash == peerInfo->pidHash) {
+        resources->type = P2P_DIRECT;
         if (useRead == 0) recv->conn.direct |= NCCL_DIRECT_GPU;
+        TRACE(NCCL_INIT|NCCL_P2P, "Channel %02d : %d[%lx] <- %d[%lx] via P2P/direct pointer%s",
+             channelId, myInfo->rank, myInfo->busId, peerInfo->rank, peerInfo->busId, useReadStr);
       } else {
+        resources->type = P2P_IPC;
         CUDACHECK(cudaIpcGetMemHandle(&info.devIpc, info.directPtr));
-        info.type = P2P_IPC;
+        TRACE(NCCL_INIT|NCCL_P2P,"Channel %02d : %d[%lx] <- %d[%lx] via P2P/IPC%s",
+             channelId, myInfo->rank, myInfo->busId, peerInfo->rank, peerInfo->busId, useReadStr);
       }
     } else {
       NCCLCHECK(bootstrapRemAlloc(recvSize, intermediateRank, resources->bootstrap, &resources->remoteId, &info.devIpc, &info.directPtr));
-      info.type = P2P_INTERMEDIATE;
+      resources->type = P2P_INTERMEDIATE;
       info.rank = intermediateRank;
+      TRACE(NCCL_INIT|NCCL_P2P, "Channel %02d : %d[%lx] <- %d[%lx] via P2P/indirect/%d[%lx]%s",
+           channelId, myInfo->rank, myInfo->busId, peerInfo->rank, peerInfo->busId, intermediateRank,
+           comm->peerInfo[intermediateRank].busId, useReadStr);
     }
-  }
-  resources->remoteId = -1;
-  resources->bootstrap = comm->bootstrap;
-  resources->memRank = info.rank;
+    resources->memRank = info.rank;
 
-  NCCLCHECK(p2pMap(myInfo, comm->peerInfo+info.rank, &info, (void**)&resources->devMem, resources));
+    NCCLCHECK(p2pMap(myInfo, comm->peerInfo+info.rank, &info, (void**)&resources->devMem, resources));
+  }
 
   static_assert(sizeof(struct p2pConnectInfo) <= sizeof(struct ncclConnect), "p2p Connect Info is too big");
   memcpy(connectInfo, &info, sizeof(struct p2pConnectInfo));
@@ -411,7 +400,7 @@ static ncclResult_t p2pSendConnect(struct ncclComm* comm, struct ncclConnect* co
   struct p2pResources* resources = (struct p2pResources*)send->transportResources;
   struct ncclRecvMem* remDevMem = NULL;
   struct p2pConnectInfo* info = (struct p2pConnectInfo*)connectInfo;
-  resources->type = info->type;
+
   NCCLCHECK(p2pMap(comm->peerInfo+rank, comm->peerInfo+info->rank, info, (void**)&remDevMem, resources));
 
   struct ncclSendMem* devMem = (struct ncclSendMem *) resources->devMem;
@@ -493,7 +482,6 @@ ncclResult_t p2pRecvFree(void* resources) {
     NCCLCHECK(bootstrapRemFree(recvRes->remoteId, recvRes->memRank, recvRes->bootstrap));
     recvRes->devMem = NULL;
   }
-
   CUDACHECK(cudaFree(recvRes->devMem));
   free(recvRes);
   return ncclSuccess;
