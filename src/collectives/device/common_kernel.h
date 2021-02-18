@@ -462,9 +462,9 @@ __device__ __forceinline__ void ReduceCopyMulti(const int w, const int nw, const
   while (offset < Nelem) {
     T vals[UNROLL];
     // Load and reduce
-    for (int u = 0; u < UNROLL; ++u) {
-      vals[u] = vFetch(srcs[0]+u*WARP_SIZE);
-      if (doPreOpForSrc0) FuncTraits<FUNC>().preOp(fn, vals[u]);
+    for (int u = 0; u < UNROLL; ++u) vals[u] = vFetch(srcs[0]+u*WARP_SIZE);
+    if (doPreOpForSrc0) {
+      for (int u = 0; u < UNROLL; ++u) FuncTraits<FUNC>().preOp(fn, vals[u]);
     }
 
     #pragma unroll
@@ -484,8 +484,7 @@ __device__ __forceinline__ void ReduceCopyMulti(const int w, const int nw, const
 
     if (doPostOp) {
       #pragma unroll
-      for (int u = 0; u < UNROLL; ++u)
-        vals[u] = FuncTraits<FUNC>().postOp(fn, vals[u]);
+      for (int u = 0; u < UNROLL; ++u) vals[u] = FuncTraits<FUNC>().postOp(fn, vals[u]);
     }
 
     // Store
@@ -543,8 +542,7 @@ __device__ __forceinline__ void ReduceCopy128bMulti(const int w, const int nw, c
 
     if (doPostOp) {
       #pragma unroll
-      for (int u = 0; u < UNROLL; ++u)
-        MULTI128<FUNC, T>().postOp(fn, vals[u]);
+      for (int u = 0; u < UNROLL; ++u) MULTI128<FUNC, T>().postOp(fn, vals[u]);
     }
 
     // Store
