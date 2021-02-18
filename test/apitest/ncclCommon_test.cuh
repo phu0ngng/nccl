@@ -61,7 +61,7 @@ template <typename DT>
 const std::vector<ncclRedOp_t> ncclCommon_test<DT>::RedOps = {ncclSum, ncclProd,
                                                               ncclMax, ncclMin};
 template <typename DT>
-int ncclCommon_test<DT>::N = 1024 * 1024;
+int ncclCommon_test<DT>::N = 4 * 1024 * 1024;
 template <typename DT>
 int ncclCommon_test<DT>::nVis = -1;
 template <typename DT>

@@ -201,7 +201,7 @@ ncclResult_t ncclGroupEnd() {
     if (args->funcType == ASYNC_FUNC_COLL && args->coll.comm->connect) {
       int err = pthread_join(ncclGroupThreads[i], NULL);
       if (err != 0) {
-        WARN("Error waiting for pthread_join : %s\n", strerror(errno));
+        WARN("Error waiting for pthread_join : %s", strerror(errno));
         return ncclSystemError;
       }
       NCCLCHECKGOTO(args->ret, ret, end);
@@ -258,6 +258,10 @@ sched_delta:
               ssize_t sendbytes = totSendBytes-sendOffset;
               if (recvbytes > recvChunkSize) { recvbytes = recvChunkSize; } else { recvRemaining = 0; }
               if (sendbytes > sendChunkSize) { sendbytes = sendChunkSize; } else { sendRemaining = 0; }
+              // 0-bytes send/recv are considered as syncs. Make sure we only add syncs when requested
+              // (total size == 0), otherwise set size to -1 so that the kernel skips the operation.
+              if (sendbytes == 0 && totSendBytes != 0) sendbytes = -1;
+              if (recvbytes == 0 && totRecvBytes != 0) recvbytes = -1;
               if (sendbytes >= 0 || recvbytes >= 0) {
                 NCCLCHECKGOTO(scheduleSendRecv(comm, delta, channelId,
                       recvbytes, recv ? ((char*)(recv->buff)) + recvOffset : NULL,
