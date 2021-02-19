@@ -4,14 +4,19 @@ stages:
 
 build:
   stage: build
+  variables:
+    MPI_HOME: "/opt/mpi/openmpi-1.10.7"
   script:
-    - make -j test.build MPI=1 MPI_HOME=/opt/mpi/openmpi-1.10.7/
+    - make -j test.build MPI=1 MPI_HOME=$MPI_HOME
   artifacts:
     paths:
       - build
 
 test-P100:
   stage: test
+  variables:
+    MPI_HOME: "/opt/mpi/openmpi-1.10.7"
+    LD_LIBRARY_PATH: "$MPI_HOME/lib:$PWD/build/lib:$LD_LIBRARY_PATH"
   script:
     - srun -n 1 -c 8 -pP100 ./build/test/apitest/apitest
     - NCCL_P2P_DISABLE=1 srun -n 1 -c 8 -pP100 ./build/test/apitest/apitest
