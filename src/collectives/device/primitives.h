@@ -39,7 +39,7 @@
 #define ROLE_POST_RECV 0x20
 
 // Implementation of primitive types
-template <int UNROLL, int SLICESPERCHUNK, int SLICESTEPS, typename T, int NRECV, int NSEND, int DIRECT, class FUNC>
+template<int UNROLL, int SLICESPERCHUNK, int SLICESTEPS, typename T, int NRECV, int NSEND, int DIRECT, class FUNC>
 class ncclPrimitives {
  private:
   FUNC fn;
@@ -134,7 +134,7 @@ class ncclPrimitives {
 
   template <int DIRECTRECV, int DIRECTSEND, int RECV, int SEND, int SRC, int DST>
   inline __device__ void
-  GenericOp(const T* srcPtr, T* dstPtr, int nelem, ssize_t directOffset) {
+  GenericOp(const T* srcPtr, T* dstPtr, int nelem, ssize_t directOffset, bool doPostOp) {
     int offset = 0;
     int sliceSize = stepSize*SLICESTEPS;
     int dataSize = max(DIVUP(nelem, 16*SLICESPERCHUNK)*16, sliceSize/32);
@@ -156,7 +156,7 @@ class ncclPrimitives {
               ReduceOrCopyMulti<UNROLL, FUNC, T, 1, 1, 1, (1-SEND)+NSEND>(tid, nworkers, fn, false, false, 1, srcs, nsend, dsts+1, realSize);
             }
           } else {
-            ReduceOrCopyMulti<UNROLL, FUNC, T, RECV+SRC, RECV*NRECV+SRC, SEND+DST, SEND*NSEND+DST>(tid, nworkers, fn, /*doPreOpForSrc0=*/SRC, /*doPostOp=*/DST && SRC, RECV*nrecv+SRC, srcs, SEND*nsend+DST, dsts, realSize);
+            ReduceOrCopyMulti<UNROLL, FUNC, T, RECV+SRC, RECV*NRECV+SRC, SEND+DST, SEND*NSEND+DST>(tid, nworkers, fn, /*doPreOpForSrc0=*/SRC, doPostOp, RECV*nrecv+SRC, srcs, SEND*nsend+DST, dsts, realSize);
           }
         }
       }
@@ -265,58 +265,58 @@ class ncclPrimitives {
 
   __device__ __forceinline__ void
   send(const T* src, int nelem) {
-    GenericOp<0, 0, 0, 1, 1, 0>(src, NULL, nelem, 0);
+    GenericOp<0, 0, 0, 1, 1, 0>(src, NULL, nelem, 0, /*doPostOp=*/false);
   }
   __device__ __forceinline__ void
   directSend(const T* src, ssize_t directOffset, int nelem) {
-    GenericOp<0, 1, 0, 1, 1, 0>(src, NULL, nelem, directOffset);
+    GenericOp<0, 1, 0, 1, 1, 0>(src, NULL, nelem, directOffset, /*doPostOp=*/false);
   }
 
   __device__ __forceinline__ void
-  recv(T* dst, int nelem) {
-    GenericOp<0, 0, 1, 0, 0, 1>(NULL, dst, nelem, 0);
+  recv(T* dst, int nelem, bool doPostOp=false) {
+    GenericOp<0, 0, 1, 0, 0, 1>(NULL, dst, nelem, 0, doPostOp);
   }
   __device__ __forceinline__ void
   directRecv(T* dst, ssize_t directOffset, int nelem) {
-    GenericOp<1, 0, 1, 0, 0, 1>(NULL, dst, nelem, directOffset);
+    GenericOp<1, 0, 1, 0, 0, 1>(NULL, dst, nelem, directOffset, /*doPostOp=*/false);
   }
 
   __device__ __forceinline__ void
-  copySend(const T* src, T* dst, int nelem) {
-    GenericOp<0, 0, 0, 1, 1, 1>(src, dst, nelem, 0);
+  copySend(const T* src, T* dst, int nelem, bool doPostOp=false) {
+    GenericOp<0, 0, 0, 1, 1, 1>(src, dst, nelem, 0, doPostOp);
   }
   __device__ __forceinline__ void
-  directCopySend(const T* src, T* dst, ssize_t directOffset, int nelem) {
-    GenericOp<0, 1, 0, 1, 1, 1>(src, dst, nelem, directOffset);
+  directCopySend(const T* src, T* dst, ssize_t directOffset, int nelem, bool doPostOp=false) {
+    GenericOp<0, 1, 0, 1, 1, 1>(src, dst, nelem, directOffset, doPostOp);
   }
 
   __device__ __forceinline__ void
-  recvCopySend(T* dst, int nelem) {
-    GenericOp<0, 0, 1, 1, 0, 1>(NULL, dst, nelem, 0);
+  recvCopySend(T* dst, int nelem, bool doPostOp=false) {
+    GenericOp<0, 0, 1, 1, 0, 1>(NULL, dst, nelem, 0, doPostOp);
   }
   __device__ __forceinline__ void
   directRecvCopySend(T* dst, ssize_t directOffset, int nelem) {
-    GenericOp<1, 1, 1, 1, 0, 1>(NULL, dst, nelem, directOffset);
+    GenericOp<1, 1, 1, 1, 0, 1>(NULL, dst, nelem, directOffset, /*doPostOp=*/false);
   }
 
   __device__ __forceinline__ void
-  recvReduceCopy(const T* src, T* dst, int nelem) {
-    GenericOp<0, 0, 1, 0, 1, 1>(src, dst, nelem, 0);
+  recvReduceCopy(const T* src, T* dst, int nelem, bool doPostOp=false) {
+    GenericOp<0, 0, 1, 0, 1, 1>(src, dst, nelem, 0, doPostOp);
   }
 
   __device__ __forceinline__ void
-  recvReduceSend(const T* src, int nelem) {
-    GenericOp<0, 0, 1, 1, 1, 0>(src, NULL, nelem, 0);
+  recvReduceSend(const T* src, int nelem, bool doPostOp=false) {
+    GenericOp<0, 0, 1, 1, 1, 0>(src, NULL, nelem, 0, doPostOp);
   }
 
   __device__ __forceinline__ void
-  recvReduceCopySend(const T* src, T* dst, int nelem) {
-    GenericOp<0, 0, 1, 1, 1, 1>(src, dst, nelem, 0);
+  recvReduceCopySend(const T* src, T* dst, int nelem, bool doPostOp=false) {
+    GenericOp<0, 0, 1, 1, 1, 1>(src, dst, nelem, 0, doPostOp);
   }
   __device__ __forceinline__ void
-  directRecvReduceCopySend(const T* src, T* dst, ssize_t directOffset, int nelem) {
+  directRecvReduceCopySend(const T* src, T* dst, ssize_t directOffset, int nelem, bool doPostOp=false) {
     // Direct is only for the send part
-    GenericOp<0, 1, 1, 1, 1, 1>(src, dst, nelem, directOffset);
+    GenericOp<0, 1, 1, 1, 1, 1>(src, dst, nelem, directOffset, doPostOp);
   }
 
   __device__ __forceinline__ ~ncclPrimitives() {

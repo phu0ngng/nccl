@@ -7,6 +7,7 @@
 #include "devcomm.h"
 #include "primitives.h"
 #include "collectives.h"
+#include <cassert>
 
 template<class FUNC, typename T, int UNROLL>
 class ncclFunction<ncclFuncAllReduce, NCCL_ALGO_RING, NCCL_PROTO_SIMPLE, FUNC, T, UNROLL> {
@@ -64,7 +65,7 @@ class ncclFunction<ncclFuncAllReduce, NCCL_ALGO_RING, NCCL_PROTO_SIMPLE, FUNC, T
       offset = chunkOffset + chunk * realChunkSize;
       nelem = min(realChunkSize, size-offset);
 
-      prims.directRecvReduceCopySend(thisInput+offset, thisOutput+offset, offset, nelem);
+      prims.directRecvReduceCopySend(thisInput+offset, thisOutput+offset, offset, nelem, /*doPostOp=*/true);
 
       // k-2 steps: copy to next GPU
       for (int j=1; j<nranks-1; ++j) {
@@ -116,33 +117,54 @@ class ncclFunction<ncclFuncAllReduce, NCCL_ALGO_TREE, NCCL_PROTO_SIMPLE, FUNC, T
       // Reduce : max number of recv is 3, max number of send is 1 (binary tree + local)
       ncclPrimitives<UNROLL, 1, 1, T, NCCL_MAX_DEV_ARITY, 1, 0, FUNC>
         prims(tid, nthreads, tree->down, &tree->up, NULL, stepSize, channel, comm, ncclShmem->ptrs, 0);
-      for (ssize_t gridOffset = 0; gridOffset < size; gridOffset += loopSize) {
-        // Up
-        ssize_t offset = gridOffset + bid*chunkSize;
-        int nelem = min(chunkSize, size-offset);
-        if (tree->up == -1) {
-          prims.recvReduceCopy(thisInput+offset, thisOutput+offset, nelem);
-        } else if (tree->down[0] == -1) {
+
+      if (tree->up == -1) {
+        for (ssize_t gridOffset = 0; gridOffset < size; gridOffset += loopSize) {
+          ssize_t offset = gridOffset + bid*chunkSize;
+          int nelem = min(chunkSize, size-offset);
+          prims.recvReduceCopy(thisInput+offset, thisOutput+offset, nelem, /*doPostOp=*/true);
+        }
+      }
+      else if (tree->down[0] == -1) {
+        for (ssize_t gridOffset = 0; gridOffset < size; gridOffset += loopSize) {
+          ssize_t offset = gridOffset + bid*chunkSize;
+          int nelem = min(chunkSize, size-offset);
           prims.send(thisInput+offset, nelem);
-        } else {
+        }
+      }
+      else {
+        for (ssize_t gridOffset = 0; gridOffset < size; gridOffset += loopSize) {
+          ssize_t offset = gridOffset + bid*chunkSize;
+          int nelem = min(chunkSize, size-offset);
           prims.recvReduceSend(thisInput+offset, nelem);
         }
       }
     }
 
+
     if (tid < nthreads+WARP_SIZE) {
       // Broadcast : max number of recv is 1, max number of send is 3 (binary tree + local)
       ncclPrimitives<UNROLL, 1, 1, T, 1, NCCL_MAX_DEV_ARITY, 1, FUNC>
         prims(tid, nthreads, &tree->up, tree->down, thisOutput, stepSize, channel, comm, ncclShmem->ptrs, 0);
-      for (ssize_t gridOffset = 0; gridOffset < size; gridOffset += loopSize) {
-        // Down
-        ssize_t offset = gridOffset + bid*chunkSize;
-        int nelem = min(chunkSize, size-offset);
-        if (tree->up == -1) {
+
+      if (tree->up == -1) {
+        for (ssize_t gridOffset = 0; gridOffset < size; gridOffset += loopSize) {
+          ssize_t offset = gridOffset + bid*chunkSize;
+          int nelem = min(chunkSize, size-offset);
           prims.directSend(thisOutput+offset, offset, nelem);
-        } else if (tree->down[0] == -1) {
+        }
+      }
+      else if (tree->down[0] == -1) {
+        for (ssize_t gridOffset = 0; gridOffset < size; gridOffset += loopSize) {
+          ssize_t offset = gridOffset + bid*chunkSize;
+          int nelem = min(chunkSize, size-offset);
           prims.directRecv(thisOutput+offset, offset, nelem);
-        } else {
+        }
+      }
+      else {
+        for (ssize_t gridOffset = 0; gridOffset < size; gridOffset += loopSize) {
+          ssize_t offset = gridOffset + bid*chunkSize;
+          int nelem = min(chunkSize, size-offset);
           prims.directRecvCopySend(thisOutput+offset, offset, nelem);
         }
       }
@@ -158,7 +180,7 @@ class ncclFunction<ncclFuncAllReduce, NCCL_ALGO_TREE, NCCL_PROTO_SIMPLE, FUNC, T
         for (ssize_t gridOffset = 0; gridOffset < size; gridOffset += loopSize) {
           ssize_t offset = gridOffset + bid*chunkSize;
           int nelem = min(chunkSize, size-offset);
-          prims.directRecvReduceCopySend(thisInput+offset, thisOutput+offset, offset, nelem);
+          prims.directRecvReduceCopySend(thisInput+offset, thisOutput+offset, offset, nelem, /*doPostOp=*/true);
         }
       }
     } else {
@@ -224,15 +246,26 @@ class ncclFunction<ncclFuncAllReduce, NCCL_ALGO_COLLNET, NCCL_PROTO_SIMPLE, FUNC
     if (blockIdx.x < nChannels) { // first half of the channels do reduce
       ncclPrimitives<UNROLL, 1, 1, T, 1, 1, 0, FUNC>
         prims(tid, nthreads, tree->down, &tree->up, NULL, stepSize, channel, comm, ncclShmem->ptrs, 0);
-      for (ssize_t gridOffset = 0; gridOffset < size; gridOffset += loopSize) {
-        // Up
-        ssize_t offset = gridOffset + bid*chunkSize;
-        int nelem = min(chunkSize, size-offset);
-        if (tree->up == -1) {
+
+      if (tree->up == -1) {
+        assert(0);
+        for (ssize_t gridOffset = 0; gridOffset < size; gridOffset += loopSize) {
+          ssize_t offset = gridOffset + bid*chunkSize;
+          int nelem = min(chunkSize, size-offset);
           prims.recvReduceCopy(thisInput+offset, thisOutput+offset, nelem);
-        } else if (tree->down[0] == -1) {
+        }
+      }
+      else if (tree->down[0] == -1) {
+        for (ssize_t gridOffset = 0; gridOffset < size; gridOffset += loopSize) {
+          ssize_t offset = gridOffset + bid*chunkSize;
+          int nelem = min(chunkSize, size-offset);
           prims.send(thisInput+offset, nelem);
-        } else {
+        }
+      }
+      else {
+        for (ssize_t gridOffset = 0; gridOffset < size; gridOffset += loopSize) {
+          ssize_t offset = gridOffset + bid*chunkSize;
+          int nelem = min(chunkSize, size-offset);
           prims.recvReduceSend(thisInput+offset, nelem);
         }
       }
@@ -241,15 +274,36 @@ class ncclFunction<ncclFuncAllReduce, NCCL_ALGO_COLLNET, NCCL_PROTO_SIMPLE, FUNC
     if (blockIdx.x >= nChannels) { // second half of the channels do broadcast
       ncclPrimitives<UNROLL, 1, 1, T, 1, 1, 0, FUNC>
         prims(tid, nthreads, &tree->up, tree->down, NULL, stepSize, channel, comm, ncclShmem->ptrs, 0);
-      for (ssize_t gridOffset = 0; gridOffset < size; gridOffset += loopSize) {
-        // Down
-        ssize_t offset = gridOffset + bid*chunkSize;
-        int nelem = min(chunkSize, size-offset);
-        if (tree->up == -1) {
-          prims.send(thisOutput+offset, nelem);
-        } else if (tree->down[0] == -1) {
+
+      // Compared to previous version of the code, these conditionals have been
+      // manually hoisted outside of the loop. The extra insns should be negligible
+      // while the benefits are reduced register pressure and fewer branches.
+      if (tree->up == -1) {
+        assert(0);
+        for (ssize_t gridOffset = 0; gridOffset < size; gridOffset += loopSize) {
+          ssize_t offset = gridOffset + bid*chunkSize;
+          int nelem = min(chunkSize, size-offset);
+          prims.send(thisOutput+offset, nelem); // should doPostOp=true be passed in?
+        }
+      }
+      else if (tree->up == comm->nRanks) {
+        for (ssize_t gridOffset = 0; gridOffset < size; gridOffset += loopSize) {
+          ssize_t offset = gridOffset + bid*chunkSize;
+          int nelem = min(chunkSize, size-offset);
+          prims.recvCopySend(thisOutput+offset, nelem, /*doPostOp=*/true);
+        }
+      }
+      else if (tree->down[0] == -1) {
+        for (ssize_t gridOffset = 0; gridOffset < size; gridOffset += loopSize) {
+          ssize_t offset = gridOffset + bid*chunkSize;
+          int nelem = min(chunkSize, size-offset);
           prims.recv(thisOutput+offset, nelem);
-        } else {
+        }
+      }
+      else {
+        for (ssize_t gridOffset = 0; gridOffset < size; gridOffset += loopSize) {
+          ssize_t offset = gridOffset + bid*chunkSize;
+          int nelem = min(chunkSize, size-offset);
           prims.recvCopySend(thisOutput+offset, nelem);
         }
       }
@@ -311,7 +365,7 @@ class ncclFunction<ncclFuncAllReduce, NCCL_ALGO_RING, NCCL_PROTO_LL, FUNC, T, UN
       offset = gridOffset + (chunk*nChannels+bid) * chunkSize;
       nelem = min(chunkSize, size-offset);
 
-      LLprims.recvReduceCopySend(thisInput+offset, thisOutput+offset, nelem);
+      LLprims.recvReduceCopySend(thisInput+offset, thisOutput+offset, nelem, /*doPostOp=*/true);
 
       // k-2 steps: copy to next GPU
       for (int j=1; j<nranks-1; ++j) {
@@ -361,15 +415,24 @@ class ncclFunction<ncclFuncAllReduce, NCCL_ALGO_TREE, NCCL_PROTO_LL, FUNC, T, UN
     do {
       // Reduce : max number of recv is 3, max number of send is 1 (binary tree + local)
       ncclLLPrimitives<T, FUNC, NCCL_MAX_DEV_ARITY, 1> LLprims(tid, nthreads, tree->down, &tree->up, stepLines, channel, comm);
-      for (ssize_t gridOffset = 0; gridOffset < size; gridOffset += loopSize) {
-        // Up
-        ssize_t offset = gridOffset + bid*chunkSize;
-        int nelem = min(chunkSize, size-offset);
-        if (tree->up == -1) {
-          LLprims.recvReduceCopy(thisInput+offset, thisOutput+offset, nelem);
-        } else if (tree->down[0] == -1) {
+      if (tree->up == -1) {
+        for (ssize_t gridOffset = 0; gridOffset < size; gridOffset += loopSize) {
+          ssize_t offset = gridOffset + bid*chunkSize;
+          int nelem = min(chunkSize, size-offset);
+          LLprims.recvReduceCopy(thisInput+offset, thisOutput+offset, nelem, /*doPostOp=*/true);
+        }
+      }
+      else if (tree->down[0] == -1) {
+        for (ssize_t gridOffset = 0; gridOffset < size; gridOffset += loopSize) {
+          ssize_t offset = gridOffset + bid*chunkSize;
+          int nelem = min(chunkSize, size-offset);
           LLprims.send(thisInput+offset, nelem);
-        } else {
+        }
+      }
+      else {
+        for (ssize_t gridOffset = 0; gridOffset < size; gridOffset += loopSize) {
+          ssize_t offset = gridOffset + bid*chunkSize;
+          int nelem = min(chunkSize, size-offset);
           LLprims.recvReduceSend(thisInput+offset, nelem);
         }
       }
@@ -378,15 +441,24 @@ class ncclFunction<ncclFuncAllReduce, NCCL_ALGO_TREE, NCCL_PROTO_LL, FUNC, T, UN
     do {
       // Broadcast : max number of recv is 1, max number of send is 3 (binary tree + local)
       ncclLLPrimitives<T, FUNC, 1, NCCL_MAX_DEV_ARITY> LLprims(tid, nthreads, &tree->up, tree->down, stepLines, channel, comm);
-      for (ssize_t gridOffset = 0; gridOffset < size; gridOffset += loopSize) {
-        // Down
-        ssize_t offset = gridOffset + bid*chunkSize;
-        int nelem = min(chunkSize, size-offset);
-        if (tree->up == -1) {
+      if (tree->up == -1) {
+        for (ssize_t gridOffset = 0; gridOffset < size; gridOffset += loopSize) {
+          ssize_t offset = gridOffset + bid*chunkSize;
+          int nelem = min(chunkSize, size-offset);
           LLprims.send(thisOutput+offset, nelem);
-        } else if (tree->down[0] == -1) {
+        }
+      }
+      else if (tree->down[0] == -1) {
+        for (ssize_t gridOffset = 0; gridOffset < size; gridOffset += loopSize) {
+          ssize_t offset = gridOffset + bid*chunkSize;
+          int nelem = min(chunkSize, size-offset);
           LLprims.recv(thisOutput+offset, nelem);
-        } else {
+        }
+      }
+      else {
+        for (ssize_t gridOffset = 0; gridOffset < size; gridOffset += loopSize) {
+          ssize_t offset = gridOffset + bid*chunkSize;
+          int nelem = min(chunkSize, size-offset);
           LLprims.recvCopySend(thisOutput+offset, nelem);
         }
       }
@@ -421,15 +493,24 @@ class ncclFunction<ncclFuncAllReduce, NCCL_ALGO_COLLNET, NCCL_PROTO_LL, FUNC, T,
 
     if (blockIdx.x < nChannels) { // first half of the channels do reduce
       ncclLLPrimitives<T, FUNC, 1, 1> LLprims(tid, nthreads, tree->down, &tree->up, stepLines, channel, comm);
-      for (ssize_t gridOffset = 0; gridOffset < size; gridOffset += loopSize) {
-        // Up
-        ssize_t offset = gridOffset + bid*chunkSize;
-        int nelem = min(chunkSize, size-offset);
-        if (tree->up == -1) {
+      if (tree->up == -1) {
+        for (ssize_t gridOffset = 0; gridOffset < size; gridOffset += loopSize) {
+          ssize_t offset = gridOffset + bid*chunkSize;
+          int nelem = min(chunkSize, size-offset);
           LLprims.recvReduceCopy(thisInput+offset, thisOutput+offset, nelem);
-        } else if (tree->down[0] == -1) {
+        }
+      }
+      else if (tree->down[0] == -1) {
+        for (ssize_t gridOffset = 0; gridOffset < size; gridOffset += loopSize) {
+          ssize_t offset = gridOffset + bid*chunkSize;
+          int nelem = min(chunkSize, size-offset);
           LLprims.send(thisInput+offset, nelem);
-        } else {
+        }
+      }
+      else {
+        for (ssize_t gridOffset = 0; gridOffset < size; gridOffset += loopSize) {
+          ssize_t offset = gridOffset + bid*chunkSize;
+          int nelem = min(chunkSize, size-offset);
           LLprims.recvReduceSend(thisInput+offset, nelem);
         }
       }
@@ -437,15 +518,31 @@ class ncclFunction<ncclFuncAllReduce, NCCL_ALGO_COLLNET, NCCL_PROTO_LL, FUNC, T,
 
     if (blockIdx.x >= nChannels) { // second half of the channels do broadcast
       ncclLLPrimitives<T, FUNC, 1, 1> LLprims(tid, nthreads, &tree->up, tree->down, stepLines, channel, comm);
-      for (ssize_t gridOffset = 0; gridOffset < size; gridOffset += loopSize) {
-        // Down
-        ssize_t offset = gridOffset + bid*chunkSize;
-        int nelem = min(chunkSize, size-offset);
-        if (tree->up == -1) {
+      if (tree->up == -1) {
+        for (ssize_t gridOffset = 0; gridOffset < size; gridOffset += loopSize) {
+          ssize_t offset = gridOffset + bid*chunkSize;
+          int nelem = min(chunkSize, size-offset);
           LLprims.send(thisOutput+offset, nelem);
-        } else if (tree->down[0] == -1) {
+        }
+      }
+      else if (tree->up == comm->nRanks) {
+        for (ssize_t gridOffset = 0; gridOffset < size; gridOffset += loopSize) {
+          ssize_t offset = gridOffset + bid*chunkSize;
+          int nelem = min(chunkSize, size-offset);
+          LLprims.recvCopySend(thisOutput+offset, nelem, /*doPostOp=*/true);
+        }
+      }
+      else if (tree->down[0] == -1) {
+        for (ssize_t gridOffset = 0; gridOffset < size; gridOffset += loopSize) {
+          ssize_t offset = gridOffset + bid*chunkSize;
+          int nelem = min(chunkSize, size-offset);
           LLprims.recv(thisOutput+offset, nelem);
-        } else {
+        }
+      }
+      else {
+        for (ssize_t gridOffset = 0; gridOffset < size; gridOffset += loopSize) {
+          ssize_t offset = gridOffset + bid*chunkSize;
+          int nelem = min(chunkSize, size-offset);
           LLprims.recvCopySend(thisOutput+offset, nelem);
         }
       }
@@ -509,7 +606,7 @@ class ncclFunction<ncclFuncAllReduce, NCCL_ALGO_RING, NCCL_PROTO_LL128, FUNC, T,
       offset = gridOffset + (chunk*nChannels+bid) * chunkSize;
       nelem = min(chunkSize, size-offset);
 
-      LLprims.recvReduceCopySend(thisInput+offset, thisOutput+offset, nelem);
+      LLprims.recvReduceCopySend(thisInput+offset, thisOutput+offset, nelem, /*doPostOp=*/true);
 
       // k-2 steps: copy to next GPU
       for (int j=1; j<nranks-1; ++j) {
@@ -563,32 +660,40 @@ class ncclFunction<ncclFuncAllReduce, NCCL_ALGO_TREE, NCCL_PROTO_LL128, FUNC, T,
       for (ssize_t gridOffset = 0; gridOffset < size; gridOffset += loopSize) {
         ssize_t offset = gridOffset + bid*chunkSize;
         int nelem = min(chunkSize, size-offset);
-        LLprims.recvReduceCopySend(thisInput+offset, thisOutput+offset, nelem);
+        LLprims.recvReduceCopySend(thisInput+offset, thisOutput+offset, nelem, /*doPostOp=*/true);
       }
     } else {
       if (tid < nthreadsSplit) {
         // Reduce : max number of recv is 3, max number of send is 1 (binary tree + local)
         ncclLL128Primitives<T, FUNC, NCCL_MAX_DEV_ARITY, 1> LLprims(tid, nthreadsSplit, tree->down, &tree->up, stepSize, channel, comm);
-        for (ssize_t gridOffset = 0; gridOffset < size; gridOffset += loopSize) {
-          // Up
-          ssize_t offset = gridOffset + bid*chunkSize;
-          int nelem = min(chunkSize, size-offset);
-          if (tree->down[0] == -1) {
+        if (tree->down[0] == -1) {
+          for (ssize_t gridOffset = 0; gridOffset < size; gridOffset += loopSize) {
+            ssize_t offset = gridOffset + bid*chunkSize;
+            int nelem = min(chunkSize, size-offset);
             LLprims.send(thisInput+offset, nelem);
-          } else {
+          }
+        }
+        else {
+          for (ssize_t gridOffset = 0; gridOffset < size; gridOffset += loopSize) {
+            ssize_t offset = gridOffset + bid*chunkSize;
+            int nelem = min(chunkSize, size-offset);
             LLprims.recvReduceSend(thisInput+offset, nelem);
           }
         }
       } else {
         // Broadcast : max number of recv is 1, max number of send is 3 (binary tree + local)
         ncclLL128Primitives<T, FUNC, 1, NCCL_MAX_DEV_ARITY> LLprims(tid-nthreadsSplit, nthreads-nthreadsSplit, &tree->up, tree->down, stepSize, channel, comm);
-        for (ssize_t gridOffset = 0; gridOffset < size; gridOffset += loopSize) {
-          // Down
-          ssize_t offset = gridOffset + bid*chunkSize;
-          int nelem = min(chunkSize, size-offset);
-          if (tree->down[0] == -1) {
+        if (tree->down[0] == -1) {
+          for (ssize_t gridOffset = 0; gridOffset < size; gridOffset += loopSize) {
+            ssize_t offset = gridOffset + bid*chunkSize;
+            int nelem = min(chunkSize, size-offset);
             LLprims.recv(thisOutput+offset, nelem);
-          } else {
+          }
+        }
+        else {
+          for (ssize_t gridOffset = 0; gridOffset < size; gridOffset += loopSize) {
+            ssize_t offset = gridOffset + bid*chunkSize;
+            int nelem = min(chunkSize, size-offset);
             LLprims.recvCopySend(thisOutput+offset, nelem);
           }
         }

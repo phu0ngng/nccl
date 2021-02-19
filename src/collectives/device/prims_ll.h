@@ -115,7 +115,7 @@ class ncclLLPrimitives {
   }
 
   template <int RECV, int SEND, int SRC, int DST>
-  __device__ void LLGenericOp(const T* srcPtr, T* dstPtr, int nelem) {
+  __device__ void LLGenericOp(const T* srcPtr, T* dstPtr, int nelem, bool doPostOp) {
     uint32_t nbytes = nelem < 0 ? 0 : nelem*sizeof(T);
     uint32_t npack = DIVUP(nbytes, sizeof(uint64_t));
     uint64_t* srcPack = (uint64_t*)srcPtr;
@@ -138,7 +138,7 @@ class ncclLLPrimitives {
         }
       }
 
-      if (SRC && DST) val = MULTI<FUNC, T>().postOp(fn, val);
+      if (doPostOp) val = MULTI<FUNC, T>().postOp(fn, val);
 
       // Send : inter-node, then intra-node, then local
       if (SEND) {
@@ -214,31 +214,31 @@ class ncclLLPrimitives {
   }
 
   __device__ void send(const T* src, int nelem) {
-    return LLGenericOp<0, 1, 1, 0>(src, NULL, nelem);
+    return LLGenericOp<0, 1, 1, 0>(src, NULL, nelem, /*doPostOp=*/false);
   }
 
-  __device__ void recv(T* dst, int nelem) {
-    return LLGenericOp<1, 0, 0, 1>(NULL, dst, nelem);
+  __device__ void recv(T* dst, int nelem, bool doPostOp=false) {
+    return LLGenericOp<1, 0, 0, 1>(NULL, dst, nelem, doPostOp);
   }
 
-  __device__ void recvReduceSend(const T* src, int nelem) {
-    return LLGenericOp<1, 1, 1, 0>(src, NULL, nelem);
+  __device__ void recvReduceSend(const T* src, int nelem, bool doPostOp=false) {
+    return LLGenericOp<1, 1, 1, 0>(src, NULL, nelem, doPostOp);
   }
 
-  __device__ void recvReduceCopy(const T* src, T* dst, int nelem) {
-    return LLGenericOp<1, 0, 1, 1>(src, dst, nelem);
+  __device__ void recvReduceCopy(const T* src, T* dst, int nelem, bool doPostOp=false) {
+    return LLGenericOp<1, 0, 1, 1>(src, dst, nelem, doPostOp);
   }
 
-  __device__ void copySend(const T* src, T* dst, int nelem) {
-    return LLGenericOp<0, 1, 1, 1>(src, dst, nelem);
+  __device__ void copySend(const T* src, T* dst, int nelem, bool doPostOp=false) {
+    return LLGenericOp<0, 1, 1, 1>(src, dst, nelem, doPostOp);
   }
 
-  __device__ void recvCopySend(T* dst, int nelem) {
-    return LLGenericOp<1, 1, 0, 1>(NULL, dst, nelem);
+  __device__ void recvCopySend(T* dst, int nelem, bool doPostOp=false) {
+    return LLGenericOp<1, 1, 0, 1>(NULL, dst, nelem, doPostOp);
   }
 
-  __device__ void recvReduceCopySend(const T* src, T* dst, int nelem) {
-    return LLGenericOp<1, 1, 1, 1>(src, dst, nelem);
+  __device__ void recvReduceCopySend(const T* src, T* dst, int nelem, bool doPostOp=false) {
+    return LLGenericOp<1, 1, 1, 1>(src, dst, nelem, doPostOp);
   }
 
   __device__ __forceinline__ ~ncclLLPrimitives() {

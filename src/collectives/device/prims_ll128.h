@@ -152,7 +152,7 @@ class ncclLL128Primitives {
   #define WARP_MASK 0xffffffff
 
   template <int ELEMS_PER_THREAD, int RECV, int SEND, int SRC, int DST>
-  __device__ __forceinline__ void recvReduceSendCopy(int ll128Offset) {
+  __device__ __forceinline__ void recvReduceSendCopy(int ll128Offset, bool doPostOp=false) {
     uint64_t v[ELEMS_PER_THREAD];
 
     /************* Data Loading : SHMEM -> REG **************/
@@ -214,7 +214,7 @@ class ncclLL128Primitives {
     }
     /********************** End Recv ************************/
 
-    if (SRC && DST && !FuncTraits<FUNC>::IsPostOpTrivial) {
+    if (doPostOp && !FuncTraits<FUNC>::IsPostOpTrivial) {
       #pragma unroll
       for (int u=0; u<ELEMS_PER_THREAD; u+=2) {
         v[u]   = MULTI<FUNC, T>().postOp(fn, v[u]);
@@ -257,7 +257,7 @@ class ncclLL128Primitives {
   #define ELEMINC (LL128INC-(LL128INC/NCCL_LL128_LINEELEMS))
 
   template <int RECV, int SEND, int SRC, int DST>
-  __device__ void GenericOp(const T* srcPtr, T* dstPtr, int nelem) {
+  __device__ void GenericOp(const T* srcPtr, T* dstPtr, int nelem, bool doPostOp) {
     if (nelem <= 0) {
       // Don't move any data but still increase steps and sync with prev/next
       if (SEND) waitSend(0);
@@ -288,7 +288,7 @@ class ncclLL128Primitives {
         loadSrcToShmem(done, maxOffset, (T*)(src64Ptr+elemOffset));
       }
       __syncwarp();
-      recvReduceSendCopy<NCCL_LL128_SHMEM_ELEMS_PER_THREAD, RECV, SEND, SRC, DST>(ll128Offset);
+      recvReduceSendCopy<NCCL_LL128_SHMEM_ELEMS_PER_THREAD, RECV, SEND, SRC, DST>(ll128Offset, doPostOp);
       __syncwarp();
       if (DST) {
         int done = 0;
@@ -370,31 +370,31 @@ class ncclLL128Primitives {
   }
 
   __device__ void send(const T* src, int nelem) {
-    return GenericOp<0, 1, 1, 0>(src, NULL, nelem);
+    return GenericOp<0, 1, 1, 0>(src, NULL, nelem, /*doPostOp=*/false);
   }
 
-  __device__ void recv(T* dst, int nelem) {
-    return GenericOp<1, 0, 0, 1>(NULL, dst, nelem);
+  __device__ void recv(T* dst, int nelem, bool doPostOp=false) {
+    return GenericOp<1, 0, 0, 1>(NULL, dst, nelem, doPostOp);
   }
 
-  __device__ void recvReduceSend(const T* src, int nelem) {
-    return GenericOp<1, 1, 1, 0>(src, NULL, nelem);
+  __device__ void recvReduceSend(const T* src, int nelem, bool doPostOp=false) {
+    return GenericOp<1, 1, 1, 0>(src, NULL, nelem, doPostOp);
   }
 
-  __device__ void recvReduceCopy(const T* src, T* dst, int nelem) {
-    return GenericOp<1, 0, 1, 1>(src, dst, nelem);
+  __device__ void recvReduceCopy(const T* src, T* dst, int nelem, bool doPostOp=false) {
+    return GenericOp<1, 0, 1, 1>(src, dst, nelem, doPostOp);
   }
 
-  __device__ void copySend(const T* src, T* dst, int nelem) {
-    return GenericOp<0, 1, 1, 1>(src, dst, nelem);
+  __device__ void copySend(const T* src, T* dst, int nelem, bool doPostOp=false) {
+    return GenericOp<0, 1, 1, 1>(src, dst, nelem, doPostOp);
   }
 
-  __device__ void recvCopySend(T* dst, int nelem) {
-    return GenericOp<1, 1, 0, 1>(NULL, dst, nelem);
+  __device__ void recvCopySend(T* dst, int nelem, bool doPostOp=false) {
+    return GenericOp<1, 1, 0, 1>(NULL, dst, nelem, doPostOp);
   }
 
-  __device__ void recvReduceCopySend(const T* src, T* dst, int nelem) {
-    return GenericOp<1, 1, 1, 1>(src, dst, nelem);
+  __device__ void recvReduceCopySend(const T* src, T* dst, int nelem, bool doPostOp=false) {
+    return GenericOp<1, 1, 1, 1>(src, dst, nelem, doPostOp);
   }
 
   __device__ __forceinline__ ~ncclLL128Primitives() {
