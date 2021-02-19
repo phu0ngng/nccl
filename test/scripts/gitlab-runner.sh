@@ -26,7 +26,7 @@ if [ "$run" == "0" ]; then
 fi
 
 if [ "$cmd" == "build" ]; then
-  $makeprefix make -j test.build MPI=1
+  $makeprefix make -j test.build MPI=1 MPI_HOME=$MPI_HOME
 elif [ "$cmd" == "test" ]; then
   export OPAL_PREFIX=$MPI_HOME
   export PATH=$MPI_HOME/bin:$PATH
