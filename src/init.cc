@@ -876,6 +876,9 @@ ncclResult_t ncclCommInitRankSync(ncclComm_t* newcomm, int nranks, ncclUniqueId 
   ncclResult_t res;
 
   CUDACHECK(cudaSetDevice(cudaDev));
+  // Set the maximum kernel stack size of all kernels to avoid
+  // a CUDA memory reconfig on load (c.f. NVSHMEM issue)
+  if (maxLocalSizeBytes) CUDACHECKIGNORE(cudaDeviceSetLimit(cudaLimitStackSize, maxLocalSizeBytes));
   NCCLCHECKGOTO(commAlloc(newcomm, nranks, myrank), res, cleanup);
   NCCLCHECKGOTO(initTransportsRank(*newcomm, &commId), res, cleanup);
   NCCLCHECKGOTO(devCommSetup(*newcomm), res, cleanup);
@@ -916,9 +919,6 @@ static ncclResult_t ncclCommInitRankDev(ncclComm_t* newcomm, int nranks, ncclUni
     NCCLCHECKGOTO(ncclCommInitRankSync(newcomm, nranks, commId, myrank, cudaDev), res, end);
   }
 
-  // Set the maximum kernel stack size of all kernels to avoid
-  // CUDA memory reconfig on load (NVSHMEM issue)
-  if (maxLocalSizeBytes) cudaDeviceSetLimit(cudaLimitStackSize, maxLocalSizeBytes);
 end:
   if (ncclAsyncMode()) return ncclAsyncErrCheck(res);
   else return res;
