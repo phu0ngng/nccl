@@ -1,34 +1,70 @@
 stages:
   - build
-  - test
+  - unit_tests
+  - api_tests
+  - perf_tests
 
 build:
   stage: build
+  tags:
+    - gc
   variables:
     MPI_HOME: "/opt/mpi/openmpi-1.10.7"
+    CUDA_HOME: "/usr/local/cuda-11.0"
   script:
-    - make -j test.build MPI=1 MPI_HOME=$MPI_HOME
+    - make -j test.build MPI=1 MPI_HOME=$MPI_HOME CUDA_HOME=$CUDA_HOME
   artifacts:
     paths:
       - build
 
-test-P100:
-  stage: test
+unit_tests:
+  stage: unit_tests
+  tags:
+    - gc
   variables:
-    MPI_HOME: "/opt/mpi/openmpi-1.10.7"
+    CUDA_HOME: "/usr/local/cuda-11.0"
   script:
-    - LD_LIBRARY_PATH=$MPI_HOME/lib:$PWD/build/lib:$LD_LIBRARY_PATH srun -n 1 -c 8 -pP100 ./build/test/apitest/apitest
-    - LD_LIBRARY_PATH=$MPI_HOME/lib:$PWD/build/lib:$LD_LIBRARY_PATH NCCL_P2P_DISABLE=1 srun -n 1 -c 8 -pP100 ./build/test/apitest/apitest
-    - LD_LIBRARY_PATH=$MPI_HOME/lib:$PWD/build/lib:$LD_LIBRARY_PATH NCCL_SHM_DISABLE=1 NCCL_P2P_DISABLE=1 srun -n 1 -c 8 -pP100 ./build/test/apitest/apitest
-    - LD_LIBRARY_PATH=$MPI_HOME/lib:$PWD/build/lib:$LD_LIBRARY_PATH salloc -n 8 -pP100 $MPI_HOME/bin/mpirun ./build/test/perf/all_reduce_perf -b 8 -e 1G -f 2
+    - (cd build/graph/test/unit; LD_LIBRARY_PATH=$PWD/../../lib:$CUDA_HOME/lib64 ./graph_test)
 
-test-P40:
-  stage: test
+apitest-P100:
+  stage: api_tests
+  tags:
+    - gc
+  variables:
+    CUDA_HOME: "/usr/local/cuda-11.0"
+  script:
+    - LD_LIBRARY_PATH=$PWD/build/lib:$CUDA_HOME/lib64:$LD_LIBRARY_PATH srun -n 1 -c 8 -pP100 ./build/test/apitest/apitest
+    - LD_LIBRARY_PATH=$PWD/build/lib:$CUDA_HOME/lib64:$LD_LIBRARY_PATH NCCL_P2P_DISABLE=1 srun -n 1 -c 8 -pP100 ./build/test/apitest/apitest
+    - LD_LIBRARY_PATH=$PWD/build/lib:$CUDA_HOME/lib64:$LD_LIBRARY_PATH NCCL_SHM_DISABLE=1 NCCL_P2P_DISABLE=1 srun -n 1 -c 8 -pP100 ./build/test/apitest/apitest
+
+apitest-P40:
+  stage: api_tests
+  tags:
+    - gc
+  variables:
+    CUDA_HOME: "/usr/local/cuda-11.0"
+  script:
+    - LD_LIBRARY_PATH=$PWD/build/lib:$CUDA_HOME/lib64:$LD_LIBRARY_PATH srun -n 1 -c 8 -pP40 ./build/test/apitest/apitest
+    - LD_LIBRARY_PATH=$PWD/build/lib:$CUDA_HOME/lib64:$LD_LIBRARY_PATH NCCL_P2P_DISABLE=1 srun -n 1 -c 8 -pP100 ./build/test/apitest/apitest
+    - LD_LIBRARY_PATH=$PWD/build/lib:$CUDA_HOME/lib64:$LD_LIBRARY_PATH NCCL_SHM_DISABLE=1 NCCL_P2P_DISABLE=1 srun -n 1 -c 8 -pP100 ./build/test/apitest/apitest
+
+perftest-P100:
+  stage: perf_tests
+  tags:
+    - gc
   variables:
     MPI_HOME: "/opt/mpi/openmpi-1.10.7"
+    CUDA_HOME: "/usr/local/cuda-11.0"
   script:
-    - LD_LIBRARY_PATH=$MPI_HOME/lib:$PWD/build/lib:$LD_LIBRARY_PATH srun -n 1 -c 8 -pP40 ./build/test/apitest/apitest
-    - LD_LIBRARY_PATH=$MPI_HOME/lib:$PWD/build/lib:$LD_LIBRARY_PATH NCCL_P2P_DISABLE=1 srun -n 1 -c 8 -pP100 ./build/test/apitest/apitest
-    - LD_LIBRARY_PATH=$MPI_HOME/lib:$PWD/build/lib:$LD_LIBRARY_PATH NCCL_SHM_DISABLE=1 NCCL_P2P_DISABLE=1 srun -n 1 -c 8 -pP100 ./build/test/apitest/apitest
-    - LD_LIBRARY_PATH=$MPI_HOME/lib:$PWD/build/lib:$LD_LIBRARY_PATH salloc -n 8 -pP40 $MPI_HOME/bin/mpirun ./build/test/perf/all_reduce_perf -b 8 -e 1G -f 2
+    - LD_LIBRARY_PATH=$MPI_HOME/lib:$PWD/build/lib:$CUDA_HOME/lib64:$LD_LIBRARY_PATH salloc -n 8 -pP100 $MPI_HOME/bin/mpirun ./build/test/perf/all_reduce_perf -b 8 -e 1G -f 2
+
+perftest-P40:
+  stage: perf_tests
+  tags:
+    - gc
+  variables:
+    MPI_HOME: "/opt/mpi/openmpi-1.10.7"
+    CUDA_HOME: "/usr/local/cuda-11.0"
+  script:
+    - LD_LIBRARY_PATH=$MPI_HOME/lib:$PWD/build/lib:$CUDA_HOME/lib64:$LD_LIBRARY_PATH salloc -n 8 -pP40 $MPI_HOME/bin/mpirun ./build/test/perf/all_reduce_perf -b 8 -e 1G -f 2
 
