@@ -1,10 +1,28 @@
-build-job:
+stages:
+  - build
+  - test
+
+build:
   stage: build
   script:
-    - ./test/scripts/gitlab-runner.sh build
+    - make -j test.build MPI=1 MPI_HOME=/opt/mpi/openmpi-1.10.7/
+  artifacts:
+    paths:
+      - build
 
-test-job:
+test-P100:
   stage: test
   script:
-    - ./test/scripts/gitlab-runner.sh test
+    - srun -n 1 -c 8 -pP100 ./build/test/apitest/apitest
+    - NCCL_P2P_DISABLE=1 srun -n 1 -c 8 -pP100 ./build/test/apitest/apitest
+    - NCCL_SHM_DISABLE=1 NCCL_P2P_DISABLE=1 srun -n 1 -c 8 -pP100 ./build/test/apitest/apitest
+    - salloc -n 8 -pP100 mpirun ./build/test/perf/all_reduce_perf -b 8 -e 1G -f 2
+
+test-P40:
+  stage: test
+  script:
+    - srun -n 1 -c 8 -pP40 ./build/test/apitest/apitest
+    - NCCL_P2P_DISABLE=1 srun -n 1 -c 8 -pP100 ./build/test/apitest/apitest
+    - NCCL_SHM_DISABLE=1 NCCL_P2P_DISABLE=1 srun -n 1 -c 8 -pP100 ./build/test/apitest/apitest
+    - salloc -n 8 -pP40 mpirun ./build/test/perf/all_reduce_perf -b 8 -e 1G -f 2
 
