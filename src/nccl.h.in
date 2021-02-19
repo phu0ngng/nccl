@@ -82,7 +82,7 @@ ncclResult_t pncclCommAbort(ncclComm_t comm);
 const char*  ncclGetErrorString(ncclResult_t result);
 const char* pncclGetErrorString(ncclResult_t result);
 
-/* Returns a human-readable error message when an error happened. */
+/* Returns a human-readable error message of the last that occurred. */
 const char*  ncclGetLastError();
 const char* pncclGetError();
 
