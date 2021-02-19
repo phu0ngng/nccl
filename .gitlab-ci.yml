@@ -46,6 +46,56 @@ apitest-P40:
   script:
     - ./test/scripts/gitlab-runner-apitest.sh
 
+apitest-GP100:
+  stage: api_tests
+  tags:
+    - gp100
+  variables:
+    CUDA_HOME: "/usr/local/cuda-11.0"
+    SRUN: "srun -n 1 -c 2 -pGP100"
+  script:
+    - ./test/scripts/gitlab-runner-apitest.sh
+
+apitest-M40:
+  stage: api_tests
+  tags:
+    - m40
+  variables:
+    CUDA_HOME: "/usr/local/cuda-11.0"
+    SRUN: "srun -n 1 -c 8 -pM40"
+  script:
+    - ./test/scripts/gitlab-runner-apitest.sh
+
+apitest-K40:
+  stage: api_tests
+  tags:
+    - k40
+  variables:
+    CUDA_HOME: "/usr/local/cuda-11.0"
+    SRUN: "srun -n 1 -c 8 -pK40"
+  script:
+    - ./test/scripts/gitlab-runner-apitest.sh
+
+apitest-K80:
+  stage: api_tests
+  tags:
+    - k80
+  variables:
+    CUDA_HOME: "/usr/local/cuda-11.0"
+    SRUN: "srun -n 1 -c 16 -pK80"
+  script:
+    - ./test/scripts/gitlab-runner-apitest.sh
+
+apitest-A100:
+  stage: api_tests
+  tags:
+    - a100pci
+  variables:
+    CUDA_HOME: "/usr/local/cuda-11.0"
+    SRUN: "srun -n 1 -c 8 -pA100"
+  script:
+    - ./test/scripts/gitlab-runner-apitest.sh
+
 #apitest-DGX1V:
 #  stage: api_tests
 #  tags:
@@ -75,6 +125,61 @@ perftest-P40:
     MPI_HOME: "/opt/mpi/openmpi-1.10.7"
     CUDA_HOME: "/usr/local/cuda-11.0"
     SALLOC: "salloc -n 8 -pP40"
+  script:
+    - ./test/scripts/gitlab-runner-perftest.sh
+
+perftest-GP100:
+  stage: perf_tests
+  tags:
+    - gp100
+  variables:
+    MPI_HOME: "/opt/mpi/openmpi-1.10.7"
+    CUDA_HOME: "/usr/local/cuda-11.0"
+    SALLOC: "salloc -n 2 -pGP100"
+  script:
+    - ./test/scripts/gitlab-runner-perftest.sh
+
+perftest-M40:
+  stage: perf_tests
+  tags:
+    - m40
+  variables:
+    MPI_HOME: "/opt/mpi/openmpi-1.10.7"
+    CUDA_HOME: "/usr/local/cuda-11.0"
+    SALLOC: "salloc -n 8 -pM40"
+  script:
+    - ./test/scripts/gitlab-runner-perftest.sh
+
+perftest-K80:
+  stage: perf_tests
+  tags:
+    - k80
+  variables:
+    MPI_HOME: "/opt/mpi/openmpi-1.10.7"
+    CUDA_HOME: "/usr/local/cuda-11.0"
+    SALLOC: "salloc -N 1 -n 16 -pK80"
+  script:
+    - ./test/scripts/gitlab-runner-perftest.sh
+
+perftest-K40:
+  stage: perf_tests
+  tags:
+    - k40
+  variables:
+    MPI_HOME: "/opt/mpi/openmpi-1.10.7"
+    CUDA_HOME: "/usr/local/cuda-11.0"
+    SALLOC: "salloc -n 8 -pK40"
+  script:
+    - ./test/scripts/gitlab-runner-perftest.sh
+
+perftest-A100:
+  stage: perf_tests
+  tags:
+    - a100pci
+  variables:
+    MPI_HOME: "/opt/mpi/openmpi-1.10.7"
+    CUDA_HOME: "/usr/local/cuda-11.0"
+    SALLOC: "salloc -n 8 -pA100"
   script:
     - ./test/scripts/gitlab-runner-perftest.sh
 
