@@ -20,7 +20,7 @@ test-P100:
     - LD_LIBRARY_PATH=$MPI_HOME/lib:$PWD/build/lib:$LD_LIBRARY_PATH srun -n 1 -c 8 -pP100 ./build/test/apitest/apitest
     - LD_LIBRARY_PATH=$MPI_HOME/lib:$PWD/build/lib:$LD_LIBRARY_PATH NCCL_P2P_DISABLE=1 srun -n 1 -c 8 -pP100 ./build/test/apitest/apitest
     - LD_LIBRARY_PATH=$MPI_HOME/lib:$PWD/build/lib:$LD_LIBRARY_PATH NCCL_SHM_DISABLE=1 NCCL_P2P_DISABLE=1 srun -n 1 -c 8 -pP100 ./build/test/apitest/apitest
-    - LD_LIBRARY_PATH=$MPI_HOME/lib:$PWD/build/lib:$LD_LIBRARY_PATH salloc -n 8 -pP100 mpirun ./build/test/perf/all_reduce_perf -b 8 -e 1G -f 2
+    - LD_LIBRARY_PATH=$MPI_HOME/lib:$PWD/build/lib:$LD_LIBRARY_PATH salloc -n 8 -pP100 $MPI_HOME/bin/mpirun ./build/test/perf/all_reduce_perf -b 8 -e 1G -f 2
 
 test-P40:
   stage: test
@@ -30,5 +30,5 @@ test-P40:
     - LD_LIBRARY_PATH=$MPI_HOME/lib:$PWD/build/lib:$LD_LIBRARY_PATH srun -n 1 -c 8 -pP40 ./build/test/apitest/apitest
     - LD_LIBRARY_PATH=$MPI_HOME/lib:$PWD/build/lib:$LD_LIBRARY_PATH NCCL_P2P_DISABLE=1 srun -n 1 -c 8 -pP100 ./build/test/apitest/apitest
     - LD_LIBRARY_PATH=$MPI_HOME/lib:$PWD/build/lib:$LD_LIBRARY_PATH NCCL_SHM_DISABLE=1 NCCL_P2P_DISABLE=1 srun -n 1 -c 8 -pP100 ./build/test/apitest/apitest
-    - LD_LIBRARY_PATH=$MPI_HOME/lib:$PWD/build/lib:$LD_LIBRARY_PATH salloc -n 8 -pP40 mpirun ./build/test/perf/all_reduce_perf -b 8 -e 1G -f 2
+    - LD_LIBRARY_PATH=$MPI_HOME/lib:$PWD/build/lib:$LD_LIBRARY_PATH salloc -n 8 -pP40 $MPI_HOME/bin/mpirun ./build/test/perf/all_reduce_perf -b 8 -e 1G -f 2
 
