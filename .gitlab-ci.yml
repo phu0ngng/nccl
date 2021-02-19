@@ -1,0 +1,10 @@
+build-job:
+  stage: build
+  script:
+    - ./test/scripts/gitlab-runner.sh build
+
+test-job:
+  stage: test
+  script:
+    - ./test/scripts/gitlab-runner.sh test
+
