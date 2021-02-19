@@ -64,17 +64,16 @@ static void* const ncclKerns[1+NCCL_NUM_FUNCTIONS*ncclNumOps*ncclNumTypes*NCCL_N
 };
 
 // Determine the maximum kernel stack size of all CUDA kernels
-ncclResult_t ncclKernInit(size_t *maxLocalSizeBytes) {
+size_t ncclKernMaxLocalSize() {
   int numNcclKerns = sizeof(ncclKerns)/sizeof(ncclKerns[0]);
-  cudaFuncAttributes attr;
+  cudaFuncAttributes attr = {0};
   size_t max = 0;
   for (int i = 0; i < numNcclKerns; i++) {
-    CUDACHECK(cudaFuncGetAttributes(&attr, ncclKerns[i]));
+    CUDACHECKIGNORE(cudaFuncGetAttributes(&attr, ncclKerns[i]));
     if (attr.localSizeBytes > max) max = attr.localSizeBytes;
   }
 
-  *maxLocalSizeBytes = max;
-  return ncclSuccess;
+  return max;
 }
 
 /*****************************************************************************/

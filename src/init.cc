@@ -121,7 +121,7 @@ static ncclResult_t ncclInit() {
   pthread_mutex_lock(&initLock);
   if (!initialized) {
     initEnv();
-    ncclKernInit(&maxLocalSizeBytes);
+    maxLocalSizeBytes = ncclKernMaxLocalSize();
     NCCLCHECK(initNet());
     INFO(NCCL_INIT, "Using network %s", ncclNetName());
     initialized = true;
