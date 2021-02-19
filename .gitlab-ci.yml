@@ -46,15 +46,15 @@ apitest-P40:
   script:
     - ./test/scripts/gitlab-runner-apitest.sh
 
-apitest-DGX1V:
-  stage: api_tests
-  tags:
-    - dgx-1v
-  variables:
-    CUDA_HOME: "$HOME/prom-dev/cuda-11.0"
-    SRUN: "srun -n 1 --account=sw-gpu -pbatch -t 00:05:00"
-  script:
-    - ./test/scripts/gitlab-runner-apitest.sh
+#apitest-DGX1V:
+#  stage: api_tests
+#  tags:
+#    - dgx-1v
+#  variables:
+#    CUDA_HOME: "$HOME/prom-dev/cuda-11.0"
+#    SRUN: "srun -n 1 --account=sw-gpu -pbatch -t 00:05:00"
+#  script:
+#    - ./test/scripts/gitlab-runner-apitest.sh
 
 perftest-P100:
   stage: perf_tests
@@ -78,14 +78,14 @@ perftest-P40:
   script:
     - ./test/scripts/gitlab-runner-perftest.sh
 
-perftest-DGX1V:
-  stage: perf_tests
-  tags:
-    - dgx-1v
-  variables:
-    MPI_HOME: "$HOME/prom-dev/mpi/openmpi-1.10.7"
-    CUDA_HOME: "$HOME/prom-dev/cuda-11.0"
-    SALLOC: "salloc -n 32 --account=sw-gpu -pbatch -t 00:05:00"
-  script:
-    - ./test/scripts/gitlab-runner-perftest.sh
+#perftest-DGX1V:
+#  stage: perf_tests
+#  tags:
+#    - dgx-1v
+#  variables:
+#    MPI_HOME: "$HOME/prom-dev/mpi/openmpi-1.10.7"
+#    CUDA_HOME: "$HOME/prom-dev/cuda-11.0"
+#    SALLOC: "salloc -n 32 --account=sw-gpu -pbatch -t 00:05:00"
+#  script:
+#    - ./test/scripts/gitlab-runner-perftest.sh
 
