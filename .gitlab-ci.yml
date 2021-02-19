@@ -16,6 +16,7 @@ build:
   artifacts:
     paths:
       - build
+    expire_in: 1 day
 
 unit_tests:
   stage: unit_tests
