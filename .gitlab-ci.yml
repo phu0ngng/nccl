@@ -32,10 +32,9 @@ apitest-P100:
     - gc
   variables:
     CUDA_HOME: "/usr/local/cuda-11.0"
+    SRUN: "srun -n 1 -c 8 -pP100"
   script:
-    - LD_LIBRARY_PATH=$PWD/build/lib:$CUDA_HOME/lib64:$LD_LIBRARY_PATH srun -n 1 -c 8 -pP100 ./build/test/apitest/apitest
-    - LD_LIBRARY_PATH=$PWD/build/lib:$CUDA_HOME/lib64:$LD_LIBRARY_PATH NCCL_P2P_DISABLE=1 srun -n 1 -c 8 -pP100 ./build/test/apitest/apitest
-    - LD_LIBRARY_PATH=$PWD/build/lib:$CUDA_HOME/lib64:$LD_LIBRARY_PATH NCCL_SHM_DISABLE=1 NCCL_P2P_DISABLE=1 srun -n 1 -c 8 -pP100 ./build/test/apitest/apitest
+    - ./test/scripts/gitlab-runner-apitest.sh
 
 apitest-P40:
   stage: api_tests
@@ -43,10 +42,19 @@ apitest-P40:
     - gc
   variables:
     CUDA_HOME: "/usr/local/cuda-11.0"
+    SRUN: "srun -n 1 -c 8 -pP40"
   script:
-    - LD_LIBRARY_PATH=$PWD/build/lib:$CUDA_HOME/lib64:$LD_LIBRARY_PATH srun -n 1 -c 8 -pP40 ./build/test/apitest/apitest
-    - LD_LIBRARY_PATH=$PWD/build/lib:$CUDA_HOME/lib64:$LD_LIBRARY_PATH NCCL_P2P_DISABLE=1 srun -n 1 -c 8 -pP100 ./build/test/apitest/apitest
-    - LD_LIBRARY_PATH=$PWD/build/lib:$CUDA_HOME/lib64:$LD_LIBRARY_PATH NCCL_SHM_DISABLE=1 NCCL_P2P_DISABLE=1 srun -n 1 -c 8 -pP100 ./build/test/apitest/apitest
+    - ./test/scripts/gitlab-runner-apitest.sh
+
+apitest-DGX1V:
+  stage: api_tests
+  tags:
+    - dgx-1v
+  variables:
+    CUDA_HOME: "$HOME/prom-dev/cuda-11.0"
+    SRUN: "srun -n 1 --account=sw-gpu -pbatch -t 00:05:00"
+  script:
+    - ./test/scripts/gitlab-runner-apitest.sh
 
 perftest-P100:
   stage: perf_tests
@@ -55,8 +63,9 @@ perftest-P100:
   variables:
     MPI_HOME: "/opt/mpi/openmpi-1.10.7"
     CUDA_HOME: "/usr/local/cuda-11.0"
+    SALLOC: "salloc -n 8 -pP100"
   script:
-    - LD_LIBRARY_PATH=$MPI_HOME/lib:$PWD/build/lib:$CUDA_HOME/lib64:$LD_LIBRARY_PATH salloc -n 8 -pP100 $MPI_HOME/bin/mpirun ./build/test/perf/all_reduce_perf -b 8 -e 1G -f 2
+    - ./test/scripts/gitlab-runner-perftest.sh
 
 perftest-P40:
   stage: perf_tests
@@ -65,6 +74,18 @@ perftest-P40:
   variables:
     MPI_HOME: "/opt/mpi/openmpi-1.10.7"
     CUDA_HOME: "/usr/local/cuda-11.0"
+    SALLOC: "salloc -n 8 -pP40"
   script:
-    - LD_LIBRARY_PATH=$MPI_HOME/lib:$PWD/build/lib:$CUDA_HOME/lib64:$LD_LIBRARY_PATH salloc -n 8 -pP40 $MPI_HOME/bin/mpirun ./build/test/perf/all_reduce_perf -b 8 -e 1G -f 2
+    - ./test/scripts/gitlab-runner-perftest.sh
+
+perftest-DGX1V:
+  stage: perf_tests
+  tags:
+    - dgx-1v
+  variables:
+    MPI_HOME: "$HOME/prom-dev/mpi/openmpi-1.10.7"
+    CUDA_HOME: "$HOME/prom-dev/cuda-11.0"
+    SALLOC: "salloc -n 32 --account=sw-gpu -pbatch -t 00:05:00"
+  script:
+    - ./test/scripts/gitlab-runner-perftest.sh
 
