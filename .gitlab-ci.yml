@@ -7,7 +7,7 @@ stages:
 build:
   stage: build
   tags:
-    - gc
+    - build
   variables:
     MPI_HOME: "/opt/mpi/openmpi-1.10.7"
     CUDA_HOME: "/usr/local/cuda-11.0"
@@ -20,7 +20,7 @@ build:
 unit_tests:
   stage: unit_tests
   tags:
-    - gc
+    - build
   variables:
     CUDA_HOME: "/usr/local/cuda-11.0"
   script:
@@ -29,7 +29,7 @@ unit_tests:
 apitest-P100:
   stage: api_tests
   tags:
-    - gc
+    - p100
   variables:
     CUDA_HOME: "/usr/local/cuda-11.0"
     SRUN: "srun -n 1 -c 8 -pP100"
@@ -39,7 +39,7 @@ apitest-P100:
 apitest-P40:
   stage: api_tests
   tags:
-    - gc
+    - p40
   variables:
     CUDA_HOME: "/usr/local/cuda-11.0"
     SRUN: "srun -n 1 -c 8 -pP40"
@@ -59,7 +59,7 @@ apitest-DGX1V:
 perftest-P100:
   stage: perf_tests
   tags:
-    - gc
+    - p100
   variables:
     MPI_HOME: "/opt/mpi/openmpi-1.10.7"
     CUDA_HOME: "/usr/local/cuda-11.0"
@@ -70,7 +70,7 @@ perftest-P100:
 perftest-P40:
   stage: perf_tests
   tags:
-    - gc
+    - p40
   variables:
     MPI_HOME: "/opt/mpi/openmpi-1.10.7"
     CUDA_HOME: "/usr/local/cuda-11.0"
