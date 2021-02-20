@@ -1,3 +1,6 @@
+variables:
+  NCCL_DEBUG: "WARN"
+
 stages:
   - build
   - unit_tests
@@ -193,6 +196,7 @@ perftest-multi-gc:
     MPI_HOME: "/opt/mpi/openmpi-1.10.7"
     CUDA_HOME: "/usr/local/cuda-11.0"
     SALLOC: "salloc -n 4 -n 32 -w gc[01-03,05]"
+    NCCL_IB_HCA: "mlx5_0"
   script:
     - ./test/scripts/gitlab-runner-perftest.sh
 
