@@ -2,7 +2,8 @@ stages:
   - build
   - unit_tests
   - api_tests
-  - perf_tests
+  - perf_tests_single
+  - perf_tests_multi
 
 build:
   stage: build
@@ -108,7 +109,7 @@ apitest-A100:
 #    - ./test/scripts/gitlab-runner-apitest.sh
 
 perftest-P100:
-  stage: perf_tests
+  stage: perf_tests_single
   tags:
     - p100
   variables:
@@ -119,7 +120,7 @@ perftest-P100:
     - ./test/scripts/gitlab-runner-perftest.sh
 
 perftest-P40:
-  stage: perf_tests
+  stage: perf_tests_single
   tags:
     - p40
   variables:
@@ -130,7 +131,7 @@ perftest-P40:
     - ./test/scripts/gitlab-runner-perftest.sh
 
 perftest-GP100:
-  stage: perf_tests
+  stage: perf_tests_single
   tags:
     - gp100
   variables:
@@ -141,7 +142,7 @@ perftest-GP100:
     - ./test/scripts/gitlab-runner-perftest.sh
 
 perftest-M40:
-  stage: perf_tests
+  stage: perf_tests_single
   tags:
     - m40
   variables:
@@ -152,7 +153,7 @@ perftest-M40:
     - ./test/scripts/gitlab-runner-perftest.sh
 
 perftest-K80:
-  stage: perf_tests
+  stage: perf_tests_single
   tags:
     - k80
   variables:
@@ -163,7 +164,7 @@ perftest-K80:
     - ./test/scripts/gitlab-runner-perftest.sh
 
 perftest-K40:
-  stage: perf_tests
+  stage: perf_tests_single
   tags:
     - k40
   variables:
@@ -174,7 +175,7 @@ perftest-K40:
     - ./test/scripts/gitlab-runner-perftest.sh
 
 perftest-A100:
-  stage: perf_tests
+  stage: perf_tests_single
   tags:
     - a100pci
   variables:
@@ -184,8 +185,19 @@ perftest-A100:
   script:
     - ./test/scripts/gitlab-runner-perftest.sh
 
+perftest-multi-gc:
+  stage: perf_tests_multi
+  tags:
+    - p100
+  variables:
+    MPI_HOME: "/opt/mpi/openmpi-1.10.7"
+    CUDA_HOME: "/usr/local/cuda-11.0"
+    SALLOC: "salloc -n 4 -n 32 -w gc[01-03,05]"
+  script:
+    - ./test/scripts/gitlab-runner-perftest.sh
+
 #perftest-DGX1V:
-#  stage: perf_tests
+#  stage: perf_tests_multi
 #  tags:
 #    - dgx-1v
 #  variables:
