@@ -314,7 +314,9 @@ sched_delta:
   for (int i=0; i<ncclGroupIndex; i++) {
     struct ncclAsyncArgs* args = ncclGroupArgs+i;
     if (args->funcType == ASYNC_FUNC_COLL) {
-      if (args->coll.comm->userStream == NULL)
+      if (args->coll.comm->userStream == cudaStreamDefault ||
+          args->coll.comm->userStream == cudaStreamPerThread ||
+          args->coll.comm->userStream == cudaStreamLegacy)
         CUDACHECKGOTO(cudaSetDevice(args->coll.comm->cudaDev), ret, end);
       NCCLCHECKGOTO(ncclBarrierEnqueue(args->coll.comm), ret, end);
     }
@@ -329,7 +331,9 @@ sched_delta:
   for (int i=0; i<ncclGroupIndex; i++) {
     struct ncclAsyncArgs* args = ncclGroupArgs+i;
     if (args->funcType == ASYNC_FUNC_COLL) {
-      if (args->coll.comm->userStream == NULL)
+      if (args->coll.comm->userStream == cudaStreamDefault ||
+          args->coll.comm->userStream == cudaStreamPerThread ||
+          args->coll.comm->userStream == cudaStreamLegacy)
         CUDACHECKGOTO(cudaSetDevice(args->coll.comm->cudaDev), ret, end);
       NCCLCHECKGOTO(ncclEnqueueEvents(args->coll.comm), ret, end);
     }
