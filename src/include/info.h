@@ -20,6 +20,7 @@ typedef enum {
   ncclPatternTreeUpDown,
   ncclPatternCollTreeUp,
   ncclPatternCollTreeDown,
+  ncclPatternCollTreeUpDown,
   ncclPatternAllToAll
 } ncclPattern_t;
 

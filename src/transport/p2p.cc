@@ -141,7 +141,7 @@ static ncclResult_t p2pMap(struct ncclPeerInfo* myInfo, struct ncclPeerInfo* pee
 
 /* Send: Create and return connect structures for this peer to connect to me */
 ncclResult_t p2pSendSetup(struct ncclComm* comm, struct ncclTopoGraph* graph, struct ncclPeerInfo* myInfo, struct ncclPeerInfo* peerInfo,
-    struct ncclConnect* connectInfo, struct ncclConnector* send, int channelId) {
+    struct ncclConnect* connectInfo, struct ncclConnector* send, int channelId, int connIndex) {
   struct p2pSendResources* resources;
   NCCLCHECK(ncclCalloc(&resources, 1));
   send->transportResources = resources;
@@ -149,9 +149,8 @@ ncclResult_t p2pSendSetup(struct ncclComm* comm, struct ncclTopoGraph* graph, st
   NCCLCHECK(p2pGetInfo(comm->topo, myInfo, peerInfo, &useRead, &intermediateRank));
 
   struct p2pConnectInfo info;
-  // For CollNet, we use write for reduce channels, read for broadcast channels
-  info.read = (graph->collNet == 0) ? useRead :
-              (channelId < comm->nChannels/2) ? 0 : 1;
+  // For CollNet + Ampere, we use write for scatter-reduce (conn 1), read for broadcast-gather (conn 0)
+  info.read = (connIndex == 0) ? useRead : 0;
   const char* useReadStr = info.read ? "/read" : "";
 
   int sendSize = sizeof(struct ncclSendMem);
@@ -191,7 +190,7 @@ ncclResult_t p2pSendSetup(struct ncclComm* comm, struct ncclTopoGraph* graph, st
 
 /* Create and return connect structures for this peer to connect to me */
 ncclResult_t p2pRecvSetup(struct ncclComm* comm, struct ncclTopoGraph* graph, struct ncclPeerInfo* myInfo, struct ncclPeerInfo* peerInfo,
-    struct ncclConnect* connectInfo, struct ncclConnector * recv, int channelId) {
+    struct ncclConnect* connectInfo, struct ncclConnector * recv, int channelId, int connIndex) {
   struct p2pRecvResources* resources;
   NCCLCHECK(ncclCalloc(&resources, 1));
   recv->transportResources = resources;
@@ -199,9 +198,8 @@ ncclResult_t p2pRecvSetup(struct ncclComm* comm, struct ncclTopoGraph* graph, st
   NCCLCHECK(p2pGetInfo(comm->topo, myInfo, peerInfo, &useRead, &intermediateRank));
 
   struct p2pConnectInfo info;
-  // For CollNet, we use write for reduce channels, read for broadcast channels
-  info.read = (graph->collNet == 0) ? useRead :
-              (channelId < comm->nChannels/2) ? 0 : 1;
+  // For CollNet + Ampere, we use write for scatter-reduce (conn 1), read for broadcast-gather (conn 0)
+  info.read = (connIndex == 0) ? useRead : 0;
 
   int recvSize = offsetof(struct ncclRecvMem, buff);
   // For P2P Read the SIMPLE buffer is tagged on the end of the ncclSendMem structure

@@ -214,25 +214,22 @@ ncclResult_t ncclTopoConnectCollNet(struct ncclComm* comm, struct ncclTopoGraph*
 #else
   int localRanks = comm->localRanks;
   int nHeads = collNetGraph->nChannels;
-  int *sendHeads, *recvHeads;
-  NCCLCHECK(ncclCalloc(&sendHeads, nHeads));
-  NCCLCHECK(ncclCalloc(&recvHeads, nHeads));
-  int sendIndex = collNetGraph->pattern == NCCL_TOPO_PATTERN_TREE ? 0 : 1;  // send GPU index depends on topo pattern
-  int recvIndex = 0;  // recv GPU index is always 0
+  int *heads;
+  NCCLCHECK(ncclCalloc(&heads, nHeads));
   // Find all head ranks
+  // Head index is always 0
   for (int c=0; c<nHeads; c++) {
     int* collNetIntra = collNetGraph->intra+c*localRanks;
-    sendHeads[c] = collNetIntra[sendIndex];
-    recvHeads[c] = collNetIntra[recvIndex];
+    heads[c] = collNetIntra[0];
   }
-  // Send channels
-  for (int c=0; c<comm->nChannels/2; c++) {
+  // For all channels
+  for (int c=0; c<comm->nChannels; c++) {
     struct ncclChannel* channel = comm->channels+c;
     char line[1024];
-    sprintf(line, "CollNet send channel %d rank %d ", c, rank);
+    sprintf(line, "CollNet channel %d rank %d ", c, rank);
     int nDown = 0;
     for (int i=0; i<nHeads; i++) {
-      if (rank == sendHeads[i]) { // is head
+      if (rank == heads[i]) { // is head
         channel->collTree.headRank = i; // Mark the index for deciding offset in the CUDA kernel
         channel->collTree.out = comm->nRanks; // Set root of collTree to id nranks
         int* collNetIntra = collNetGraph->intra+i*localRanks;
@@ -251,45 +248,9 @@ ncclResult_t ncclTopoConnectCollNet(struct ncclComm* comm, struct ncclTopoGraph*
     sprintf(line+strlen(line), "up ");
     for (int h=0; h<nHeads; h++) {
       int i = (h+rank%localRanks)%nHeads; // Shift by intraRank so that leaves don't send to same head simultaneously
-      if (rank == sendHeads[i]) continue;
-      channel->collTree.up[nUp++] = sendHeads[i];
-      sprintf(line+strlen(line), " %d ", sendHeads[i]);
-    }
-    channel->collTree.nHeads = nHeads;
-    channel->collTree.depth = 2;
-    sprintf(line+strlen(line), "nUp %d nHeads %d ", nUp, nHeads);
-    sprintf(line+strlen(line), "headRank %d out %d ", channel->collTree.headRank, channel->collTree.out);
-    INFO(NCCL_GRAPH, "%s", line);
-  }
-  // Recv channels
-  for (int c=0; c<comm->nChannels/2; c++) {
-    struct ncclChannel* channel = comm->channels+comm->nChannels/2+c;
-    char line[1024];
-    sprintf(line, "CollNet recv channel %d rank %d ", c+comm->nChannels/2, rank);
-    int nDown = 0;
-    for (int i=0; i<nHeads; i++) {
-      if (rank == recvHeads[i]) { // is head
-        channel->collTree.headRank = i; // Mark the index for deciding offset in the CUDA kernel
-        channel->collTree.out = comm->nRanks; // Set root of collTree to id nranks
-        int* collNetIntra = collNetGraph->intra+i*localRanks;
-        sprintf(line+strlen(line), "down ");
-        for (int r=0; r<localRanks; r++) {
-          if (collNetIntra[r] == rank) continue;
-          channel->collTree.down[nDown++] = collNetIntra[r];  // connect to all peers
-          sprintf(line+strlen(line), " %d ", collNetIntra[r]);
-        }
-        sprintf(line+strlen(line), "nDown %d ", nDown);
-        break;
-      }
-    }
-    // Connect to all heads
-    int nUp = 0;
-    sprintf(line+strlen(line), "up ");
-    for (int h=0; h<nHeads; h++) {
-      int i = (h+rank%localRanks)%nHeads; // Shift by intraRank so that leaves don't send to same head simultaneously
-      if (rank == recvHeads[i]) continue;
-      channel->collTree.up[nUp++] = recvHeads[i];
-      sprintf(line+strlen(line), " %d ", recvHeads[i]);
+      if (rank == heads[i]) continue;
+      channel->collTree.up[nUp++] = heads[i];
+      sprintf(line+strlen(line), " %d ", heads[i]);
     }
     channel->collTree.nHeads = nHeads;
     channel->collTree.depth = 2;

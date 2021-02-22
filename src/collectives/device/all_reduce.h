@@ -201,7 +201,6 @@ class ncclFunction<ncclFuncAllReduce, NCCL_ALGO_COLLNET, NCCL_PROTO_SIMPLE, FUNC
   public:
   __device__ void run(struct ncclWorkElem* args) {
     const int tid = threadIdx.x;
-    const int nthreads = args->nThreads-2*WARP_SIZE;
     const int bid = args->coll.bid;
     const int nChannels = args->coll.nChannels;
     struct ncclDevComm* comm = args->comm;
@@ -215,6 +214,7 @@ class ncclFunction<ncclFuncAllReduce, NCCL_ALGO_COLLNET, NCCL_PROTO_SIMPLE, FUNC
     T * __restrict__ thisOutput = (T*)args->recvbuff;
 
 #if CHAIN_COLLNET == 1
+    const int nthreads = args->nThreads-2*WARP_SIZE;
     const ssize_t minChunkSize = nthreads*8*sizeof(uint64_t) / sizeof(T);
     const ssize_t loopSize = nChannels*chunkSize;
     if (loopSize > size) {
@@ -256,52 +256,47 @@ class ncclFunction<ncclFuncAllReduce, NCCL_ALGO_COLLNET, NCCL_PROTO_SIMPLE, FUNC
       }
     }
 #else
-    int nthreadsSplit = nthreads/2;
-    if (nthreadsSplit >= 256) nthreadsSplit -= 64;
+    const int nthreads = args->nThreads-4*WARP_SIZE;
+    int nthreadsSplit = nthreads/4;
+    if (nthreadsSplit >= 128) nthreadsSplit -= WARP_SIZE;
     struct ncclDirect* tree = &channel->collTree;
     const ssize_t loopSize = nChannels*tree->nHeads*chunkSize;
 
-    if (blockIdx.x < nChannels) { // first half of the channels do reduce
-      if (tid < nthreadsSplit + WARP_SIZE) {
-        // Scatter
-        ncclPrimitives<UNROLL, 1, 1, T, 1, NCCL_MAX_DIRECT_ARITY, 0, FUNC>
-          prims(tid, nthreadsSplit, NULL, tree->up, NULL, stepSize, channel, comm, ncclShmem->ptrs, 4);
-        for (ssize_t gridOffset = 0; gridOffset < size; gridOffset += loopSize) {
-          ssize_t offset = gridOffset + bid*tree->nHeads*chunkSize;
-          int nelem = min((tree->nHeads-1)*chunkSize, size-offset);
-          prims.scatter(thisInput+offset, nelem, chunkSize, tree->headRank);
-        }
-      } else if (tree->out != -1) {
-        // Reduce, send to network
-        ncclPrimitives<UNROLL, 1, 1, T, NCCL_MAX_DIRECT_ARITY, 1, 0, FUNC>
-          prims(tid-nthreadsSplit-WARP_SIZE, nthreads-nthreadsSplit, tree->down, &tree->out, NULL, stepSize, channel, comm, ncclShmem->ptrs, 6);
-        for (ssize_t gridOffset = 0; gridOffset < size; gridOffset += loopSize) {
-          ssize_t offset = gridOffset + (bid*tree->nHeads+tree->headRank)*chunkSize;
-          int nelem = min(chunkSize, size-offset);
-          prims.recvReduceSend(thisInput+offset, nelem);
-        }
+    if (tid >= 2*(nthreadsSplit+WARP_SIZE) && tid < 3*(nthreadsSplit+WARP_SIZE) && tree->up[0] != -1) {
+      // Scatter
+      ncclPrimitives<UNROLL, 1, 1, T, 1, NCCL_MAX_DIRECT_ARITY, 0, FUNC>
+        prims(tid-2*(nthreadsSplit+WARP_SIZE), nthreadsSplit, NULL, tree->up, NULL, stepSize, channel, comm, ncclShmem->ptrs, 4);
+      for (ssize_t gridOffset = 0; gridOffset < size; gridOffset += loopSize) {
+        ssize_t offset = gridOffset + bid*tree->nHeads*chunkSize;
+        int nelem = min((tree->nHeads-1)*chunkSize, size-offset);
+        prims.scatter(thisInput+offset, nelem, chunkSize, tree->headRank);
       }
-    }
-
-    if (blockIdx.x >= nChannels) { // second half of the channels do broadcast
-      if (tid < nthreadsSplit + WARP_SIZE) {
-        // Gather
-        ncclPrimitives<UNROLL, 1, 1, T, NCCL_MAX_DIRECT_ARITY, 1, 1, FUNC>
-          prims(tid, nthreadsSplit, tree->up, NULL, thisOutput, stepSize, channel, comm, ncclShmem->ptrs, 0);
-        for (ssize_t gridOffset = 0; gridOffset < size; gridOffset += loopSize) {
-          ssize_t offset = gridOffset + bid*tree->nHeads*chunkSize;
-          int nelem = min((tree->nHeads-1)*chunkSize, size-offset);
-          prims.gather(thisOutput+offset, nelem, chunkSize, tree->headRank);
-        }
-      } else if (tree->out != -1) {
-        // Recv from network, broadcast
-        ncclPrimitives<UNROLL, 1, 1, T, 1, NCCL_MAX_DIRECT_ARITY, 1, FUNC>
-          prims(tid-nthreadsSplit-WARP_SIZE, nthreads-nthreadsSplit, &tree->out, tree->down, thisOutput, stepSize, channel, comm, ncclShmem->ptrs, 2);
-        for (ssize_t gridOffset = 0; gridOffset < size; gridOffset += loopSize) {
-          ssize_t offset = gridOffset + (bid*tree->nHeads+tree->headRank)*chunkSize;
-          int nelem = min(chunkSize, size-offset);
-          prims.directRecvCopySend(thisOutput+offset, offset, nelem);
-        }
+    } else if (tid >= 3*(nthreadsSplit+WARP_SIZE) && tree->out != -1) {
+      // Reduce, send to network
+      ncclPrimitives<UNROLL, 1, 1, T, NCCL_MAX_DIRECT_ARITY, 1, 0, FUNC>
+        prims(tid-3*(nthreadsSplit+WARP_SIZE), nthreads-3*nthreadsSplit, tree->down, &tree->out, NULL, stepSize, channel, comm, ncclShmem->ptrs, 6);
+      for (ssize_t gridOffset = 0; gridOffset < size; gridOffset += loopSize) {
+        ssize_t offset = gridOffset + (bid*tree->nHeads+tree->headRank)*chunkSize;
+        int nelem = min(chunkSize, size-offset);
+        prims.recvReduceSend(thisInput+offset, nelem);
+      }
+    } else if (tid < nthreadsSplit + WARP_SIZE && tree->up[0] != -1) {
+      // Gather
+      ncclPrimitives<UNROLL, 1, 1, T, NCCL_MAX_DIRECT_ARITY, 1, 1, FUNC>
+        prims(tid, nthreadsSplit, tree->up, NULL, thisOutput, stepSize, channel, comm, ncclShmem->ptrs, 0);
+      for (ssize_t gridOffset = 0; gridOffset < size; gridOffset += loopSize) {
+        ssize_t offset = gridOffset + bid*tree->nHeads*chunkSize;
+        int nelem = min((tree->nHeads-1)*chunkSize, size-offset);
+        prims.gather(thisOutput+offset, nelem, chunkSize, tree->headRank);
+      }
+    } else if (tid >= nthreadsSplit+WARP_SIZE && tid < 2*(nthreadsSplit+WARP_SIZE) && tree->out != -1) {
+      // Recv from network, broadcast
+      ncclPrimitives<UNROLL, 1, 1, T, 1, NCCL_MAX_DIRECT_ARITY, 1, FUNC>
+        prims(tid-(nthreadsSplit+WARP_SIZE), nthreadsSplit, &tree->out, tree->down, thisOutput, stepSize, channel, comm, ncclShmem->ptrs, 2);
+      for (ssize_t gridOffset = 0; gridOffset < size; gridOffset += loopSize) {
+        ssize_t offset = gridOffset + (bid*tree->nHeads+tree->headRank)*chunkSize;
+        int nelem = min(chunkSize, size-offset);
+        prims.directRecvCopySend(thisOutput+offset, offset, nelem);
       }
     }
 #endif

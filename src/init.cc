@@ -468,7 +468,7 @@ static int collNetSetup(struct ncclComm* comm, struct ncclTopoGraph* collNetGrap
   // setup
   struct ncclConnect myConnect;
   if (isMaster && ret > 0) {
-    NCCLCHECK(transportComm->setup(comm, collNetGraph, myInfo, peerInfo, &myConnect, conn, collNetGraphChannelId));
+    NCCLCHECK(transportComm->setup(comm, collNetGraph, myInfo, peerInfo, &myConnect, conn, collNetGraphChannelId, DIRECTION));
   }
   // prepare connect handles
   ncclResult_t res;
@@ -873,24 +873,19 @@ static ncclResult_t initTransportsRank(struct ncclComm* comm, ncclUniqueId* comm
     int collNetSetupFail = 0;
     // Find all head ranks
     int nHeads = collNetGraph.nChannels;
-    const int recvIndex = 0;  // recv GPU index is always 0
-    const int sendIndex = collNetGraph.pattern == NCCL_TOPO_PATTERN_TREE ? 0 : 1;  // send GPU index depends on topo pattern
-    int *sendHeads, *recvHeads;
-    NCCLCHECK(ncclCalloc(&sendHeads, nHeads));
-    NCCLCHECK(ncclCalloc(&recvHeads, nHeads));
+    int *heads;
+    NCCLCHECK(ncclCalloc(&heads, nHeads));
+    // Head GPU index is always 0
     for (int c=0; c<nHeads; c++) {
-      sendHeads[c] = collNetGraph.intra[c*comm->localRanks+sendIndex];
-      recvHeads[c] = collNetGraph.intra[c*comm->localRanks+recvIndex];
+      heads[c] = collNetGraph.intra[c*comm->localRanks+0];
     }
-    for (int c=0; c<comm->nChannels/2; c++) {
-      struct ncclChannel* channelRecv = comm->channels+comm->nChannels/2+c;
-      struct ncclChannel* channelSend = comm->channels+c;
+    for (int c=0; c<comm->nChannels; c++) {
+      struct ncclChannel* channel = comm->channels+c;
       for (int h=0; h<nHeads; h++) {
-        const int recvMaster = recvHeads[h];
-        const int sendMaster = sendHeads[h];
-        if (collNetSetup<NCCL_COLLNET_RECV>(comm, &collNetGraph, channelRecv, rank, nranks, recvMaster, sendMaster, comm->nNodes, h) != 1)
+        const int head = heads[h];
+        if (collNetSetup<NCCL_COLLNET_RECV>(comm, &collNetGraph, channel, rank, nranks, head, head, comm->nNodes, h) != 1)
           collNetSetupFail = 1;
-        else if (collNetSetup<NCCL_COLLNET_SEND>(comm, &collNetGraph, channelSend, rank, nranks, sendMaster, recvMaster, comm->nNodes, h) != 1)
+        else if (collNetSetup<NCCL_COLLNET_SEND>(comm, &collNetGraph, channel, rank, nranks, head, head, comm->nNodes, h) != 1)
           collNetSetupFail = 1;
       }
     }
@@ -898,12 +893,12 @@ static ncclResult_t initTransportsRank(struct ncclComm* comm, ncclUniqueId* comm
     NCCLCHECK(checkCollNetSetup(comm, rank, collNetSetupFail));
     if (comm->collNetSupport) {
       INFO(NCCL_INIT, "rank %d Connected inter-node CollNet", rank);
-      for (int c=0; c<comm->nChannels/2; c++) {
-        struct ncclChannel* channelRecv = comm->channels+comm->nChannels/2+c;
+      for (int c=0; c<comm->nChannels; c++) {
+        struct ncclChannel* channelRecv = comm->channels+c;
         NCCLCHECK(ncclTransportP2pConnect(comm, channelRecv, NCCL_MAX_DIRECT_ARITY, channelRecv->collTree.up, NCCL_MAX_DIRECT_ARITY, channelRecv->collTree.down, 0));
       }
       NCCLCHECK(ncclTransportP2pSetup(comm, &collNetGraph, 0));
-      for (int c=0; c<comm->nChannels/2; c++) {
+      for (int c=0; c<comm->nChannels; c++) {
         struct ncclChannel* channelSend = comm->channels+c;
         NCCLCHECK(ncclTransportP2pConnect(comm, channelSend, NCCL_MAX_DIRECT_ARITY, channelSend->collTree.down, NCCL_MAX_DIRECT_ARITY, channelSend->collTree.up, 1));
       }
