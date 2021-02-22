@@ -398,9 +398,10 @@ static ncclResult_t computeColl(struct ncclInfo* info /* input */, struct ncclWo
   } else if (info->algorithm == NCCL_ALGO_COLLNET && info->protocol == NCCL_PROTO_SIMPLE) {
     // Optimize chunkSize / nSteps
 #if CHAIN_COLLNET == 1
-    while (info->nBytes / (info->nChannels*chunkSize) < info->comm->channels[0].collTree.depth*16 && chunkSize > 131072) chunkSize /= 2;
-    while (info->nBytes / (info->nChannels*chunkSize) < info->comm->channels[0].collTree.depth*4 && chunkSize > 65536) chunkSize /= 2;
-    while (info->nBytes / (info->nChannels*chunkSize) < info->comm->channels[0].collTree.depth && chunkSize > 32768) chunkSize /= 2;
+    while (info->nBytes / (info->nChannels*chunkSize) < info->comm->channels[0].collTree.depth*16 && (info->nChannels*chunkSize) > 131072) chunkSize /= 2;
+    while (info->nBytes / (info->nChannels*chunkSize) < info->comm->channels[0].collTree.depth*4 && (info->nChannels*chunkSize) > 65536) chunkSize /= 2;
+    while (info->nBytes / (info->nChannels*chunkSize) < info->comm->channels[0].collTree.depth && (info->nChannels*chunkSize) > 32768) chunkSize /= 2;
+    while (info->nBytes / (info->nChannels*chunkSize) < 1 && chunkSize >128) chunkSize /= 2;
 #else
     while (info->nBytes / (info->nChannels*chunkSize) < info->comm->channels[0].collTree.depth*32 && chunkSize > 131072) chunkSize /= 2;
     while (info->nBytes / (info->nChannels*chunkSize) < info->comm->channels[0].collTree.depth*4 && chunkSize > 32768) chunkSize /= 2;
@@ -435,6 +436,7 @@ static ncclResult_t computeColl(struct ncclInfo* info /* input */, struct ncclWo
   proxyArgs->subs[0].nsteps = info->nstepsPerLoop * nLoops * chunkSteps;
   proxyArgs->sliceSteps = sliceSteps;
   proxyArgs->chunkSteps = chunkSteps;
+  proxyArgs->chunkSize = chunkSize;
   proxyArgs->protocol = info->protocol;
   proxyArgs->dtype = info->datatype;
   proxyArgs->redOp = info->op;
@@ -443,9 +445,9 @@ static ncclResult_t computeColl(struct ncclInfo* info /* input */, struct ncclWo
   // round up
   proxyArgs->subs[0].recvbytes = stepSize*proxyArgs->sliceSteps;
 
-  TRACE(NCCL_NET,"opCount %lx slicesteps %d spl %d cpl %d nbytes %zi -> protocol %d nchannels %d nthreads %d, nloops %d nsteps %d comm %p",
+  TRACE(NCCL_COLL,"opCount %lx slicesteps %d spl %d cpl %d nbytes %zi -> protocol %d nchannels %d nthreads %d, nloops %d nsteps %d chunksize %d comm %p",
       proxyArgs->opCount, sliceSteps, info->nstepsPerLoop, info->nchunksPerLoop, info->nBytes, info->protocol, info->nChannels, info->nThreads,
-      nLoops, proxyArgs->nsteps, info->comm);
+      nLoops, proxyArgs->subs[0].nsteps, chunkSize, info->comm);
   return ncclSuccess;
 }
 

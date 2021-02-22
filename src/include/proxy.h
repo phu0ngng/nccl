@@ -27,7 +27,8 @@ struct ncclProxySubArgs {
   // Internal state
   uint64_t base;
   uint64_t posted;
-  uint64_t received; // Only used by recv proxy to wait for flush.
+  uint64_t received;
+  uint64_t flushed;
   uint64_t transmitted;
   uint64_t done;
   uint64_t end;
@@ -41,11 +42,14 @@ struct ncclProxyArgs {
   int done;
   int sliceSteps;
   int chunkSteps;
+  int chunkSize;
   uint64_t opCount;
   int protocol;
   ncclDataType_t dtype;
   ncclRedOp_t redOp;
   int state;
+  char* sharedBuff[NCCL_STEPS];
+  int sharedSize[NCCL_STEPS];
 
   int idle;
 
@@ -99,7 +103,7 @@ ncclResult_t ncclProxyDestroy(struct ncclComm* comm);
 
 ncclResult_t ncclProxySharedBuffersInit(struct ncclComm* comm, int cuda, int* size, char** ptr);
 ncclResult_t ncclProxySharedBuffersGetP2p(struct ncclComm* comm, int cuda, int type, int channel, int slot, int index, char** ptr);
-ncclResult_t ncclProxySharedBuffersGetCollNet(struct ncclComm* comm, int cuda, int type, int channel, int slot, int index, char** ptr);
+ncclResult_t ncclProxySharedBuffersGetCollNet(struct ncclComm* comm, int cuda, int type, int slot, int index, char** ptr);
 ncclResult_t ncclProxySharedBuffersDestroy(struct ncclComm* comm);
 
 #include <unistd.h>
