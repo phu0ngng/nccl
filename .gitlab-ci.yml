@@ -1,0 +1,213 @@
+variables:
+  NCCL_DEBUG: "WARN"
+
+stages:
+  - build
+  - unit_tests
+  - api_tests
+  - perf_tests_single
+  - perf_tests_multi
+
+build:
+  stage: build
+  tags:
+    - build
+  variables:
+    MPI_HOME: "/opt/mpi/openmpi-1.10.7"
+    CUDA_HOME: "/usr/local/cuda-11.0"
+  script:
+    - make -j test.build MPI=1 MPI_HOME=$MPI_HOME CUDA_HOME=$CUDA_HOME
+  artifacts:
+    paths:
+      - build
+    expire_in: 1 day
+
+unit_tests:
+  stage: unit_tests
+  tags:
+    - build
+  variables:
+    CUDA_HOME: "/usr/local/cuda-11.0"
+  script:
+    - (cd build/test/unit; LD_LIBRARY_PATH=$PWD/../../lib:$CUDA_HOME/lib64 ./graph_test)
+
+apitest-P100:
+  stage: api_tests
+  tags:
+    - p100
+  variables:
+    CUDA_HOME: "/usr/local/cuda-11.0"
+    SRUN: "srun -n 1 -c 8 -pP100"
+  script:
+    - ./test/scripts/gitlab-runner-apitest.sh
+
+apitest-P40:
+  stage: api_tests
+  tags:
+    - p40
+  variables:
+    CUDA_HOME: "/usr/local/cuda-11.0"
+    SRUN: "srun -n 1 -c 8 -pP40"
+  script:
+    - ./test/scripts/gitlab-runner-apitest.sh
+
+apitest-GP100:
+  stage: api_tests
+  tags:
+    - gp100
+  variables:
+    CUDA_HOME: "/usr/local/cuda-11.0"
+    SRUN: "srun -n 1 -c 2 -pGP100"
+  script:
+    - ./test/scripts/gitlab-runner-apitest.sh
+
+apitest-M40:
+  stage: api_tests
+  tags:
+    - m40
+  variables:
+    CUDA_HOME: "/usr/local/cuda-11.0"
+    SRUN: "srun -n 1 -c 8 -pM40"
+  script:
+    - ./test/scripts/gitlab-runner-apitest.sh
+
+apitest-K40:
+  stage: api_tests
+  tags:
+    - k40
+  variables:
+    CUDA_HOME: "/usr/local/cuda-11.0"
+    SRUN: "srun -n 1 -c 8 -pK40"
+  script:
+    - ./test/scripts/gitlab-runner-apitest.sh
+
+apitest-K80:
+  stage: api_tests
+  tags:
+    - k80
+  variables:
+    CUDA_HOME: "/usr/local/cuda-11.0"
+    SRUN: "srun -n 1 -c 16 -pK80"
+  script:
+    - ./test/scripts/gitlab-runner-apitest.sh
+
+apitest-A100:
+  stage: api_tests
+  tags:
+    - a100pci
+  variables:
+    CUDA_HOME: "/usr/local/cuda-11.0"
+    SRUN: "srun -n 1 -c 8 -pA100"
+  script:
+    - ./test/scripts/gitlab-runner-apitest.sh
+
+#apitest-DGX1V:
+#  stage: api_tests
+#  tags:
+#    - dgx-1v
+#  variables:
+#    CUDA_HOME: "$HOME/prom-dev/cuda-11.0"
+#    SRUN: "srun -n 1 --account=sw-gpu -pbatch -t 00:05:00"
+#  script:
+#    - ./test/scripts/gitlab-runner-apitest.sh
+
+perftest-P100:
+  stage: perf_tests_single
+  tags:
+    - p100
+  variables:
+    MPI_HOME: "/opt/mpi/openmpi-1.10.7"
+    CUDA_HOME: "/usr/local/cuda-11.0"
+    SALLOC: "salloc -n 8 -pP100"
+  script:
+    - ./test/scripts/gitlab-runner-perftest.sh
+
+perftest-P40:
+  stage: perf_tests_single
+  tags:
+    - p40
+  variables:
+    MPI_HOME: "/opt/mpi/openmpi-1.10.7"
+    CUDA_HOME: "/usr/local/cuda-11.0"
+    SALLOC: "salloc -n 8 -pP40"
+  script:
+    - ./test/scripts/gitlab-runner-perftest.sh
+
+perftest-GP100:
+  stage: perf_tests_single
+  tags:
+    - gp100
+  variables:
+    MPI_HOME: "/opt/mpi/openmpi-1.10.7"
+    CUDA_HOME: "/usr/local/cuda-11.0"
+    SALLOC: "salloc -n 2 -pGP100"
+  script:
+    - ./test/scripts/gitlab-runner-perftest.sh
+
+perftest-M40:
+  stage: perf_tests_single
+  tags:
+    - m40
+  variables:
+    MPI_HOME: "/opt/mpi/openmpi-1.10.7"
+    CUDA_HOME: "/usr/local/cuda-11.0"
+    SALLOC: "salloc -n 8 -pM40"
+  script:
+    - ./test/scripts/gitlab-runner-perftest.sh
+
+perftest-K80:
+  stage: perf_tests_single
+  tags:
+    - k80
+  variables:
+    MPI_HOME: "/opt/mpi/openmpi-1.10.7"
+    CUDA_HOME: "/usr/local/cuda-11.0"
+    SALLOC: "salloc -N 1 -n 16 -pK80"
+  script:
+    - ./test/scripts/gitlab-runner-perftest.sh
+
+perftest-K40:
+  stage: perf_tests_single
+  tags:
+    - k40
+  variables:
+    MPI_HOME: "/opt/mpi/openmpi-1.10.7"
+    CUDA_HOME: "/usr/local/cuda-11.0"
+    SALLOC: "salloc -n 8 -pK40"
+  script:
+    - ./test/scripts/gitlab-runner-perftest.sh
+
+perftest-A100:
+  stage: perf_tests_single
+  tags:
+    - a100pci
+  variables:
+    MPI_HOME: "/opt/mpi/openmpi-1.10.7"
+    CUDA_HOME: "/usr/local/cuda-11.0"
+    SALLOC: "salloc -n 8 -pA100"
+  script:
+    - ./test/scripts/gitlab-runner-perftest.sh
+
+perftest-multi-gc:
+  stage: perf_tests_multi
+  tags:
+    - p100
+  variables:
+    MPI_HOME: "/opt/mpi/openmpi-1.10.7"
+    CUDA_HOME: "/usr/local/cuda-11.0"
+    SALLOC: "salloc -n 4 -n 32 -w gc[01-03,05]"
+    NCCL_IB_HCA: "mlx5_0"
+  script:
+    - ./test/scripts/gitlab-runner-perftest.sh
+
+#perftest-DGX1V:
+#  stage: perf_tests_multi
+#  tags:
+#    - dgx-1v
+#  variables:
+#    MPI_HOME: "$HOME/prom-dev/mpi/openmpi-1.10.7"
+#    CUDA_HOME: "$HOME/prom-dev/cuda-11.0"
+#    SALLOC: "salloc -n 32 --account=sw-gpu -pbatch -t 00:05:00"
+#  script:
+#    - ./test/scripts/gitlab-runner-perftest.sh
+
