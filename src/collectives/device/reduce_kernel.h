@@ -9,6 +9,7 @@
 #define NCCL_REDUCE_KERNEL_H_
 
 #include "common_kernel.h"
+#include <cstdio>
 #include <limits>
 #include <type_traits>
 
@@ -49,8 +50,8 @@ struct FuncMin {
 
 template<typename Fn>
 struct FuncTraits { // generic implementation for FuncSum,Prod,Min,Max
-  static constexpr bool IsPreOpTrivial = true;
-  static constexpr bool IsPostOpTrivial = true;
+  static constexpr bool IsPreOpIdentity = true;
+  static constexpr bool IsPostOpIdentity = true;
 
   __device__ static Fn make(int rankN) { return Fn(); }
   template<typename T>
@@ -316,8 +317,8 @@ struct FuncMin<half> {
 template<typename T>
 struct FuncAvg: FuncSum<T> {
   static_assert(!std::is_floating_point<T>::value, "Uhoh");
-  static constexpr bool IsPreOpTrivial = true;
-  static constexpr bool IsPostOpTrivial = false;
+  static constexpr bool IsPreOpIdentity = true;
+  static constexpr bool IsPostOpIdentity = false;
   int n;
 
   template<typename ...Arg>
@@ -333,8 +334,8 @@ struct FuncAvg: FuncSum<T> {
 
 template<>
 struct FuncAvg<double>: FuncSum<double> {
-  static constexpr bool IsPreOpTrivial = true;
-  static constexpr bool IsPostOpTrivial = false;
+  static constexpr bool IsPreOpIdentity = true;
+  static constexpr bool IsPostOpIdentity = false;
   double rcp;
   __device__ FuncAvg(int n) {
     rcp = __drcp_rn(double(n));
@@ -350,8 +351,8 @@ struct FuncAvg<double>: FuncSum<double> {
 
 template<>
 struct FuncAvg<float>: FuncSum<float> {
-  static constexpr bool IsPreOpTrivial = true;
-  static constexpr bool IsPostOpTrivial = false;
+  static constexpr bool IsPreOpIdentity = true;
+  static constexpr bool IsPostOpIdentity = false;
   float rcp;
   __device__ FuncAvg(int n) {
     rcp = __frcp_rn(float(n));
@@ -368,8 +369,8 @@ struct FuncAvg<float>: FuncSum<float> {
 template<>
 struct FuncAvg<half>: FuncSum<half> {
 #if __CUDA_ARCH__ >= 530 && __CUDA_ARCH__ != 610
-  static constexpr bool IsPreOpTrivial = false;
-  static constexpr bool IsPostOpTrivial = false;
+  static constexpr bool IsPreOpIdentity = false;
+  static constexpr bool IsPostOpIdentity = false;
   half2 rsqrt;
   __device__ FuncAvg(int n) {
     rsqrt.x = __float2half(__frsqrt_rn(float(n)));
@@ -389,8 +390,8 @@ struct FuncAvg<half>: FuncSum<half> {
     return __hmul2(x, rsqrt);
   }
 #else
-  static constexpr bool IsPreOpTrivial = false;
-  static constexpr bool IsPostOpTrivial = false;
+  static constexpr bool IsPreOpIdentity = false;
+  static constexpr bool IsPostOpIdentity = false;
   float rsqrt;
   __device__ FuncAvg(int n) {
     rsqrt = __frsqrt_rn(float(n));
@@ -419,8 +420,8 @@ struct FuncAvg<half>: FuncSum<half> {
 
 template<typename T>
 struct FuncTraits<FuncAvg<T>> {
-  static constexpr bool IsPreOpTrivial = FuncAvg<T>::IsPreOpTrivial;
-  static constexpr bool IsPostOpTrivial = FuncAvg<T>::IsPostOpTrivial;
+  static constexpr bool IsPreOpIdentity = FuncAvg<T>::IsPreOpIdentity;
+  static constexpr bool IsPostOpIdentity = FuncAvg<T>::IsPostOpIdentity;
 
   __device__ static FuncAvg<T> make(int rankN) {
     return FuncAvg<T>(rankN);

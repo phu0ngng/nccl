@@ -125,7 +125,7 @@ void deltaKern(void* A_, void* B_, size_t count, double* max) {
     if( delta > locmax ) {
       locmax = delta;
 #ifdef DEBUG_PRINT
-      if (delta > .1) printf("Error at %d/%ld(%p) : %f != %f\n", i, count, B+i, toFloat(A[i]), toFloat(B[i]));
+      if (delta > .1) printf("Error at %d/%ld(%p) : %f != %f\n", i, count, A+i, toFloat(A[i]), toFloat(B[i]));
 #endif
     }
   }
@@ -173,7 +173,11 @@ testResult_t CheckDelta(void* results, void* expected, size_t count, ncclDataTyp
 // For integer values, we use values between 0 and 255
 template<typename T>
 __device__ T testValue(const size_t offset, const int rep, const int rank) {
+#if DEBUG_PRINT
+  uint8_t v = rank+1;
+#else
   uint8_t v = (rep+rank+offset) % 256;
+#endif
   return (T)v;
 }
 
@@ -181,11 +185,19 @@ __device__ T testValue(const size_t offset, const int rep, const int rank) {
 // Product operation will produce NaNs.
 template<>
 __device__ double testValue<double>(const size_t offset, const int rep, const int rank) {
+#if DEBUG_PRINT
+  return 1.0+double(rank);
+#else
   return 1.0/(1.0+(double)testValue<int>(offset, rep, rank));
+#endif
 }
 template<>
 __device__ float testValue<float>(const size_t offset, const int rep, const int rank) {
+#if DEBUG_PRINT
+  return 1.0f+float(rank);
+#else
   return 1.0/(1.0+(float)testValue<int>(offset, rep, rank));
+#endif
 }
 template<>
 __device__ half testValue<half>(const size_t offset, const int rep, const int rank) {
@@ -445,8 +457,10 @@ testResult_t BenchTime(struct threadArgs* args, ncclDataType_t type, ncclRedOp_t
   }
 
   // Sync
+  #if 1
   TESTCHECK(startColl(args, type, op, root, in_place, 0));
   TESTCHECK(completeColl(args));
+  #endif
 
   Barrier(args);
   args->compThreadCountLast = *(args->compThreadCount);

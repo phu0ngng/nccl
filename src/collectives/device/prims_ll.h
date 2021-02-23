@@ -6,7 +6,8 @@
 
 template <typename T, class FUNC, int NRECV, int NSEND>
 class ncclLLPrimitives {
- private:
+private:
+  static constexpr int Input=0, Output=1;
   FUNC fn;
   const int tid;
   const int nthreads;
@@ -14,6 +15,7 @@ class ncclLLPrimitives {
   const int stepLines;
   int nrecv = 0;
   int nsend = 0;
+  T *userBufs[2];
   struct ncclConnInfo* recvConn = NULL;
   volatile uint64_t* recvConnHeadPtr = NULL;
   uint64_t recvConnHead;
@@ -28,7 +30,6 @@ class ncclLLPrimitives {
   uint64_t sendStep[NSEND];
   union ncclLLFifoLine* recvBuff[NRECV];
   union ncclLLFifoLine* sendBuff[NSEND];
-  struct ncclDevComm* comm;
 
   inline __device__ int recvOffset(int i) { return (recvStep[i]%NCCL_STEPS)*stepLines; }
   inline __device__ int sendOffset(int i) { return (sendStep[i]%NCCL_STEPS)*stepLines; }
@@ -41,24 +42,23 @@ class ncclLLPrimitives {
     asm volatile ("bar.sync 1, %0;" :: "r"(nthreads));
   }
 
-  uint32_t spins = 0;
   uint32_t abort = 0;
 
-  inline __device__ int checkAbort(int i, int send) {
+  inline __device__ int checkAbort(int &spins, int i, int send) {
     spins++;
-    if (abort == 0 && spins == SPINS_BEFORE_CHECK_ABORT) {
-      abort = *(comm->abortFlag);
+    if (abort == 0 && spins == NCCL_SPINS_BEFORE_CHECK_ABORT) {
+      abort = *(ncclShmem.comm->abortFlag);
       spins = 0;
     }
     return abort;
   }
 
   inline __device__ void waitSend(int nbytes) {
-    spins = 0;
     if (sendConnHeadPtr) {
+      int spins = 0;
       while (sendConnHeadCache + NCCL_STEPS < sendConnHead + 1) {
         sendConnHeadCache = *sendConnHeadPtr;
-        if (checkAbort(wid, 1)) break;
+        if (checkAbort(spins, wid, 1)) break;
       }
       if (sendConnFifoPtr) {
         int size = ((sendConnHead & NCCL_LL_CLEAN_MASK) == NCCL_LL_CLEAN_MASK) ? stepLines*sizeof(union ncclLLFifoLine) : nbytes;
@@ -90,10 +90,10 @@ class ncclLLPrimitives {
     union ncclLLFifoLine* src = recvPtr(i) + offset;
     uint32_t flag = recvFlag(i);
     uint32_t data1, flag1, data2, flag2;
-    spins = 0;
+    int spins = 0;
     do {
       asm volatile("ld.volatile.global.v4.u32 {%0,%1,%2,%3}, [%4];" : "=r"(data1), "=r"(flag1), "=r"(data2), "=r"(flag2) : "l"(&src->i4));
-      if (checkAbort(i, 0)) break;
+      if (checkAbort(spins, i, 0)) break;
     } while ((flag1 != flag) || (flag2 != flag));
     uint64_t val64 = data1 + (((uint64_t)data2) << 32);
     return val64;
@@ -114,12 +114,14 @@ class ncclLLPrimitives {
     memcpy((char*)dst, (char*)&val, nbytes);
   }
 
-  template <int RECV, int SEND, int SRC, int DST>
-  __device__ void LLGenericOp(const T* srcPtr, T* dstPtr, int nelem, bool doPostOp) {
+  template <int RECV, int SEND, int SrcBuf, int DstBuf>
+  __device__ void LLGenericOp(intptr_t srcIx, intptr_t dstIx, int nelem, bool postOp) {
+    constexpr int SRC = SrcBuf != -1 ? 1 : 0;
+    constexpr int DST = DstBuf != -1 ? 1 : 0;
     uint32_t nbytes = nelem < 0 ? 0 : nelem*sizeof(T);
     uint32_t npack = DIVUP(nbytes, sizeof(uint64_t));
-    uint64_t* srcPack = (uint64_t*)srcPtr;
-    uint64_t* dstPack = (uint64_t*)dstPtr;
+    uint64_t* srcPack = (uint64_t*)(SrcBuf == -1 ? nullptr : userBufs[SrcBuf] + srcIx);
+    uint64_t* dstPack = (uint64_t*)(DstBuf == -1 ? nullptr : userBufs[DstBuf] + dstIx);
     int offset = tid;
 
     // Always waitSend in case of cleanup
@@ -130,15 +132,21 @@ class ncclLLPrimitives {
     for (; offset<npack; offset+=nthreads) {
       // Recv : local, then intra-node, then inter-node
       uint64_t val;
-      if (SRC) val = MULTI<FUNC, T>().preOp(fn, readAL(srcPack+offset));
-      else     val = readLL(0, offset);
+      if (SRC) {
+        val = readAL(srcPack+offset);
+        if (SrcBuf == Input)
+          val = MULTI<FUNC, T>().preOp(fn, val);
+      }
+      else
+        val = readLL(0, offset);
+
       if (RECV) {
         for (int i=1-SRC; i<NRECV && i<nrecv; i++) {
           val = MULTI<FUNC, T>()(fn, readLL(i, offset), val);
         }
       }
 
-      if (doPostOp) val = MULTI<FUNC, T>().postOp(fn, val);
+      if (postOp) val = MULTI<FUNC, T>().postOp(fn, val);
 
       // Send : inter-node, then intra-node, then local
       if (SEND) {
@@ -201,47 +209,51 @@ class ncclLLPrimitives {
   }
 
  public:
-  __device__ __forceinline__
-  ncclLLPrimitives(const int tid, const int nthreads, int* recvPeers, int* sendPeers, int stepLines, struct ncclChannel* channel, struct ncclDevComm* comm)
-    : fn(FuncTraits<FUNC>().make(comm->nRanks)), comm(comm), tid(tid), nthreads(nthreads), wid(tid%WARP_SIZE), stepLines(stepLines) {
+  __device__  ncclLLPrimitives(
+      const int tid, const int nthreads, int const *recvPeers, int const *sendPeers,
+      int stepLines, void const *inputBuf, void *outputBuf
+    ):
+    fn(FuncTraits<FUNC>().make(ncclShmem.comm->nRanks)),
+    tid(tid), nthreads(nthreads), wid(tid%WARP_SIZE), stepLines(stepLines) {
+
+    userBufs[Input] = (T*)inputBuf;
+    userBufs[Output] = (T*)outputBuf;
     // Make sure step is updated before we read it.
     barrier();
 
+    auto *channel = ncclShmem.channel;
     for (int i=0; i<NRECV && recvPeers[i] >= 0; i++) loadRecvConn(&channel->devPeers[recvPeers[i]].recv.conn, i);
     for (int i=0; i<NSEND && sendPeers[i] >= 0; i++) loadSendConn(&channel->devPeers[sendPeers[i]].send.conn, i);
     loadRecvSync();
     loadSendSync();
   }
 
-  __device__ void send(const T* src, int nelem) {
-    return LLGenericOp<0, 1, 1, 0>(src, NULL, nelem, /*doPostOp=*/false);
+  __device__ void send(intptr_t inpIx, int eltN) {
+    return LLGenericOp<0, 1, Input, -1>(inpIx, -1, eltN, false);
+  }
+  __device__ void sendFromOutput(intptr_t outIx, int eltN) {
+    return LLGenericOp<0, 1, Output, -1>(outIx, -1, eltN, false);
+  }
+  __device__ void recv(intptr_t outIx, int eltN, bool postOp=false) {
+    return LLGenericOp<1, 0, -1, Output>(-1, outIx, eltN, postOp);
+  }
+  __device__ void recvReduceSend(intptr_t inpIx, int eltN) {
+    return LLGenericOp<1, 1, Input, -1>(inpIx, -1, eltN, false);
+  }
+  __device__ void recvReduceCopy(intptr_t inpIx, intptr_t outIx, int eltN, bool postOp=false) {
+    return LLGenericOp<1, 0, Input, Output>(inpIx, outIx, eltN, postOp);
+  }
+  __device__ void copySend(intptr_t inpIx, intptr_t outIx, int eltN, bool postOp=false) {
+    return LLGenericOp<0, 1, Input, Output>(inpIx, outIx, eltN, postOp);
+  }
+  __device__ void recvCopySend(intptr_t outIx, int eltN, bool postOp=false) {
+    return LLGenericOp<1, 1, -1, Output>(-1, outIx, eltN, postOp);
+  }
+  __device__ void recvReduceCopySend(intptr_t inpIx, intptr_t outIx, int eltN, bool postOp=false) {
+    return LLGenericOp<1, 1, Input, Output>(inpIx, outIx, eltN, postOp);
   }
 
-  __device__ void recv(T* dst, int nelem, bool doPostOp=false) {
-    return LLGenericOp<1, 0, 0, 1>(NULL, dst, nelem, doPostOp);
-  }
-
-  __device__ void recvReduceSend(const T* src, int nelem, bool doPostOp=false) {
-    return LLGenericOp<1, 1, 1, 0>(src, NULL, nelem, doPostOp);
-  }
-
-  __device__ void recvReduceCopy(const T* src, T* dst, int nelem, bool doPostOp=false) {
-    return LLGenericOp<1, 0, 1, 1>(src, dst, nelem, doPostOp);
-  }
-
-  __device__ void copySend(const T* src, T* dst, int nelem, bool doPostOp=false) {
-    return LLGenericOp<0, 1, 1, 1>(src, dst, nelem, doPostOp);
-  }
-
-  __device__ void recvCopySend(T* dst, int nelem, bool doPostOp=false) {
-    return LLGenericOp<1, 1, 0, 1>(NULL, dst, nelem, doPostOp);
-  }
-
-  __device__ void recvReduceCopySend(const T* src, T* dst, int nelem, bool doPostOp=false) {
-    return LLGenericOp<1, 1, 1, 1>(src, dst, nelem, doPostOp);
-  }
-
-  __device__ __forceinline__ ~ncclLLPrimitives() {
+  __device__ ~ncclLLPrimitives() {
     // Save steps for the next operation
     saveRecvSync();
     saveSendSync();

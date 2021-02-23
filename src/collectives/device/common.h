@@ -56,7 +56,8 @@ class ncclFunction {
   __device__ void run(struct ncclWorkElem* args) {}
 };
 
-struct ncclShmemPtrs {
+struct ncclShmemGroup {
+  ncclConnInfo *recvConns[NCCL_MAX_DEV_ARITY], *sendConns[NCCL_MAX_DEV_ARITY];
   void* srcs[NCCL_MAX_DEV_ARITY+1];
   void* dsts[NCCL_MAX_DEV_ARITY+1];
 };
@@ -64,33 +65,44 @@ struct ncclShmemPtrs {
 struct ncclShmemData {
   union {
     volatile uint64_t data[NCCL_LL128_SHMEM_SIZE];
-    struct ncclShmemPtrs ptrs[NCCL_MAX_GROUPS];
+    struct ncclShmemGroup groups[NCCL_MAX_GROUPS];
   };
+  ncclDevComm *comm;
+  ncclChannel *channel;
   struct ncclWork localWork;
 };
 
-extern __device__ struct ncclShmemData *ncclShmem;
+extern __shared__ ncclShmemData ncclShmem;
+
 template <ncclFunc_t FUNCTION, int ALGO, int PROTO, class REDOP, typename T, int UNROLL, int FINDEX>
 __device__ void ncclKernel(struct ncclWorkElem first)  {
   int tid = threadIdx.x;
   int bid = blockIdx.x;
-  __shared__ struct ncclShmemData shmem;
-  ncclShmem = &shmem;
 
   auto f = ncclFunction<FUNCTION, ALGO, PROTO, REDOP, T, UNROLL>();
 
   struct ncclDevComm* comm = first.comm;
   struct ncclChannel* channel = comm->channels+bid;
+  if (tid == 0) {
+    ncclShmem.comm = comm;
+    ncclShmem.channel = channel;
+    // Still needs a barrier to publish. This will be the first load_coll().
+  }
+
   struct ncclWorkElem* w = NULL;
 
   /* To optimize for latency, (only) the first operation is passed as argument.*/
-  if (bid == 0 && first.funcIndex != FUNC_INDEX_P2P) w = &first;
+  if (bid == 0 && first.funcIndex != FUNC_INDEX_P2P) {
+    w = &first;
+    // since we skip load_coll() we need a barrier to publish ncclTheShmem.conn|channel
+    __syncthreads();
+  }
 
   while (1) {
     if (w == NULL) {
-      w = shmem.localWork.elems;
+      w = ncclShmem.localWork.elems;
       __syncthreads();
-      load_coll(&shmem.localWork, channel->workFifo+channel->index, channel->workFifoDev+channel->index, tid, comm);
+      load_coll(&ncclShmem.localWork, channel->workFifo+channel->index, channel->workFifoDev+channel->index, tid, comm);
     }
     if (tid < w->nThreads) {
       if (w->funcIndex == FINDEX) {
