@@ -1,6 +1,3 @@
-variables:
-  NCCL_DEBUG: "WARN"
-
 stages:
   - build
   - unit_tests
@@ -36,6 +33,7 @@ apitest-P100:
   tags:
     - p100
   variables:
+    NCCL_IB_HCA: "mlx5_0"
     CUDA_HOME: "/usr/local/cuda-11.0"
     SRUN: "srun -n 1 -c 8 -pP100"
   script:
@@ -46,6 +44,7 @@ apitest-P40:
   tags:
     - p40
   variables:
+    NCCL_IB_HCA: "mlx5_0"
     CUDA_HOME: "/usr/local/cuda-11.0"
     SRUN: "srun -n 1 -c 8 -pP40"
   script:
@@ -116,6 +115,7 @@ perftest-P100:
   tags:
     - p100
   variables:
+    NCCL_DEBUG: "WARN"
     MPI_HOME: "/opt/mpi/openmpi-1.10.7"
     CUDA_HOME: "/usr/local/cuda-11.0"
     SALLOC: "salloc -n 8 -pP100"
@@ -127,6 +127,7 @@ perftest-P40:
   tags:
     - p40
   variables:
+    NCCL_DEBUG: "WARN"
     MPI_HOME: "/opt/mpi/openmpi-1.10.7"
     CUDA_HOME: "/usr/local/cuda-11.0"
     SALLOC: "salloc -n 8 -pP40"
@@ -138,6 +139,7 @@ perftest-GP100:
   tags:
     - gp100
   variables:
+    NCCL_DEBUG: "WARN"
     MPI_HOME: "/opt/mpi/openmpi-1.10.7"
     CUDA_HOME: "/usr/local/cuda-11.0"
     SALLOC: "salloc -n 2 -pGP100"
@@ -149,6 +151,7 @@ perftest-M40:
   tags:
     - m40
   variables:
+    NCCL_DEBUG: "WARN"
     MPI_HOME: "/opt/mpi/openmpi-1.10.7"
     CUDA_HOME: "/usr/local/cuda-11.0"
     SALLOC: "salloc -n 8 -pM40"
@@ -160,6 +163,7 @@ perftest-K80:
   tags:
     - k80
   variables:
+    NCCL_DEBUG: "WARN"
     MPI_HOME: "/opt/mpi/openmpi-1.10.7"
     CUDA_HOME: "/usr/local/cuda-11.0"
     SALLOC: "salloc -N 1 -n 16 -pK80"
@@ -171,6 +175,7 @@ perftest-K40:
   tags:
     - k40
   variables:
+    NCCL_DEBUG: "WARN"
     MPI_HOME: "/opt/mpi/openmpi-1.10.7"
     CUDA_HOME: "/usr/local/cuda-11.0"
     SALLOC: "salloc -n 8 -pK40"
@@ -182,6 +187,7 @@ perftest-A100:
   tags:
     - a100pci
   variables:
+    NCCL_DEBUG: "WARN"
     MPI_HOME: "/opt/mpi/openmpi-1.10.7"
     CUDA_HOME: "/usr/local/cuda-11.0"
     SALLOC: "salloc -n 8 -pA100"
@@ -193,10 +199,11 @@ perftest-multi-gc:
   tags:
     - p100
   variables:
+    NCCL_IB_HCA: "mlx5_0"
+    NCCL_DEBUG: "WARN"
     MPI_HOME: "/opt/mpi/openmpi-1.10.7"
     CUDA_HOME: "/usr/local/cuda-11.0"
     SALLOC: "salloc -n 4 -n 32 -w gc[01-03,05]"
-    NCCL_IB_HCA: "mlx5_0"
   script:
     - ./test/scripts/gitlab-runner-perftest.sh
 
