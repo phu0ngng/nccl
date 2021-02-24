@@ -18,6 +18,7 @@ build:
     paths:
       - build
     expire_in: 1 day
+  interruptible: true
 
 unit_tests:
   stage: unit_tests
@@ -27,6 +28,7 @@ unit_tests:
     CUDA_HOME: "/usr/local/cuda-11.0"
   script:
     - (cd build/test/unit; LD_LIBRARY_PATH=$PWD/../../lib:$CUDA_HOME/lib64 ./graph_test)
+  interruptible: true
 
 apitest-P100:
   stage: api_tests
@@ -38,6 +40,7 @@ apitest-P100:
     SRUN: "srun -n 1 -c 8 -pP100"
   script:
     - ./test/scripts/gitlab-runner-apitest.sh
+  interruptible: true
 
 apitest-P40:
   stage: api_tests
@@ -49,6 +52,7 @@ apitest-P40:
     SRUN: "srun -n 1 -c 8 -pP40"
   script:
     - ./test/scripts/gitlab-runner-apitest.sh
+  interruptible: true
 
 apitest-GP100:
   stage: api_tests
@@ -59,6 +63,7 @@ apitest-GP100:
     SRUN: "srun -n 1 -c 2 -pGP100"
   script:
     - ./test/scripts/gitlab-runner-apitest.sh
+  interruptible: true
 
 apitest-M40:
   stage: api_tests
@@ -69,6 +74,7 @@ apitest-M40:
     SRUN: "srun -n 1 -c 8 -pM40"
   script:
     - ./test/scripts/gitlab-runner-apitest.sh
+  interruptible: true
 
 apitest-K40:
   stage: api_tests
@@ -79,6 +85,7 @@ apitest-K40:
     SRUN: "srun -n 1 -c 8 -pK40"
   script:
     - ./test/scripts/gitlab-runner-apitest.sh
+  interruptible: true
 
 apitest-K80:
   stage: api_tests
@@ -89,6 +96,7 @@ apitest-K80:
     SRUN: "srun -n 1 -c 16 -pK80"
   script:
     - ./test/scripts/gitlab-runner-apitest.sh
+  interruptible: true
 
 apitest-A100:
   stage: api_tests
@@ -99,6 +107,7 @@ apitest-A100:
     SRUN: "srun -n 1 -c 8 -pA100"
   script:
     - ./test/scripts/gitlab-runner-apitest.sh
+  interruptible: true
 
 #apitest-DGX1V:
 #  stage: api_tests
@@ -121,6 +130,7 @@ perftest-P100:
     SALLOC: "salloc -n 8 -pP100"
   script:
     - ./test/scripts/gitlab-runner-perftest.sh
+  interruptible: true
 
 perftest-P40:
   stage: perf_tests_single
@@ -133,6 +143,7 @@ perftest-P40:
     SALLOC: "salloc -n 8 -pP40"
   script:
     - ./test/scripts/gitlab-runner-perftest.sh
+  interruptible: true
 
 perftest-GP100:
   stage: perf_tests_single
@@ -145,6 +156,7 @@ perftest-GP100:
     SALLOC: "salloc -n 2 -pGP100"
   script:
     - ./test/scripts/gitlab-runner-perftest.sh
+  interruptible: true
 
 perftest-M40:
   stage: perf_tests_single
@@ -157,6 +169,7 @@ perftest-M40:
     SALLOC: "salloc -n 8 -pM40"
   script:
     - ./test/scripts/gitlab-runner-perftest.sh
+  interruptible: true
 
 perftest-K80:
   stage: perf_tests_single
@@ -169,6 +182,7 @@ perftest-K80:
     SALLOC: "salloc -N 1 -n 16 -pK80"
   script:
     - ./test/scripts/gitlab-runner-perftest.sh
+  interruptible: true
 
 perftest-K40:
   stage: perf_tests_single
@@ -181,6 +195,7 @@ perftest-K40:
     SALLOC: "salloc -n 8 -pK40"
   script:
     - ./test/scripts/gitlab-runner-perftest.sh
+  interruptible: true
 
 perftest-A100:
   stage: perf_tests_single
@@ -193,6 +208,7 @@ perftest-A100:
     SALLOC: "salloc -n 8 -pA100"
   script:
     - ./test/scripts/gitlab-runner-perftest.sh
+  interruptible: true
 
 perftest-multi-gc:
   stage: perf_tests_multi
@@ -206,6 +222,7 @@ perftest-multi-gc:
     SALLOC: "salloc -n 4 -n 32 -w gc[01-03,05]"
   script:
     - ./test/scripts/gitlab-runner-perftest.sh
+  interruptible: true
 
 #perftest-DGX1V:
 #  stage: perf_tests_multi
