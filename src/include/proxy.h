@@ -14,8 +14,8 @@ enum ncclProxyOpState { ncclProxyOpNone, ncclProxyOpReady, ncclProxyOpProgress }
 struct ncclProxyArgs;
 typedef ncclResult_t (*proxyProgressFunc_t)(struct ncclProxyArgs*);
 
-
-#define NCCL_PROXY_MAX_SUBS NCCL_MAX_WORK_ELEMENTS
+#define NCCL_PROXY_MAX_SUBS MAXCHANNELS
+static_assert(NCCL_MAX_WORK_ELEMENTS <= MAXCHANNELS, "Not enough sub space for max work elements");
 
 struct ncclProxySubArgs {
   struct ncclChannel* channel;
