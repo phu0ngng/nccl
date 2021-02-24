@@ -196,7 +196,11 @@ ncclResult_t ncclLaunchBarrier(struct ncclComm* comm) {
   if (params->gridDim.x == 0) return ncclSuccess;
 
   // Use internal NCCL stream for CGMD/GROUP launch if required or if the user stream is NULL
-  if (comm->launchMode == ncclComm::GROUP && (comm->groupCudaStream || comm->userStream == NULL)) {
+  if (comm->launchMode == ncclComm::GROUP &&
+      (comm->groupCudaStream ||
+       comm->userStream == cudaStreamDefault ||
+       comm->userStream == cudaStreamLegacy ||
+       comm->userStream == cudaStreamPerThread)) {
     // Enqueue event in user stream
     CUDACHECK(cudaEventRecord(comm->doneEvent, comm->userStream));
     // Create dependency between user stream and internal NCCL stream

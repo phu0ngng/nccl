@@ -334,7 +334,9 @@ sched_delta:
   for (int i=0; i<ncclGroupIndex; i++) {
     struct ncclAsyncArgs* args = ncclGroupArgs+i;
     if (args->funcType == ASYNC_FUNC_COLL) {
-      if (args->coll.comm->userStream == NULL)
+      if (args->coll.comm->userStream == cudaStreamDefault ||
+          args->coll.comm->userStream == cudaStreamPerThread ||
+          args->coll.comm->userStream == cudaStreamLegacy)
         CUDACHECKGOTO(cudaSetDevice(args->coll.comm->cudaDev), ret, end);
       if (usingCudaGraphAll) {
         NCCLCHECKGOTO(ncclCudaGraphHostSetup(args->coll.comm, graphs[i]), ret, end);
@@ -354,7 +356,9 @@ sched_delta:
   for (int i=0; i<ncclGroupIndex; i++) {
     struct ncclAsyncArgs* args = ncclGroupArgs+i;
     if (args->funcType == ASYNC_FUNC_COLL) {
-      if (args->coll.comm->userStream == NULL)
+      if (args->coll.comm->userStream == cudaStreamDefault ||
+          args->coll.comm->userStream == cudaStreamPerThread ||
+          args->coll.comm->userStream == cudaStreamLegacy)
         CUDACHECKGOTO(cudaSetDevice(args->coll.comm->cudaDev), ret, end);
       NCCLCHECKGOTO(ncclRecordEvents(args->coll.comm), ret, end);
       NCCLCHECKGOTO(ncclLaunchReset(args->coll.comm, !usingCudaGraphAll), ret, end);
