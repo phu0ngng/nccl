@@ -1,0 +1,73 @@
+<!DOCTYPE html>
+<html>
+<head>
+<title>NCCL-11 : Network communication through one hop NVLink : Requirements</title>
+<link rel="stylesheet" type="text/css" href="../../html/css/doc.css">
+</head>
+<body>
+<center><h1>NCCL-11 : Network communication through one hop NVLink<br>Requirements</h1></center>
+<!-- table of contents, auto-generated -->
+$CONTENTS
+<!-- end of table of contents -->
+<h2>Project Context and Purpose</h2>
+NCCL provides fast inter-GPU communication for parallel applications.
+
+<h2>NVbugs / Jira Tickets</h2>
+<p><a href="https://jirasw.nvidia.com/browse/NCCL-1072">Jira NCCL-1072</a>
+
+<h2>User Experience</h2>
+NCCL is used through deep learning frameworks or other HPC applications to
+accelerate GPU-to-GPU communication. It is supposed to be transparent to the
+user.
+
+<h2>Assumptions, constraints and dependencies</h2>
+None/$TBD
+
+<h2>Use Cases</h2>
+<p>Most NVLink systems feature multiple NICs to achieve higher bandwidth. This
+requires to also multiply quadratically the fabric size. To allow for multi-NIC
+with a limited fabric size, some customers intend to lightly connect different
+network rails, or even not connect them at all.
+
+<p>The NCCL_CROSS_NIC parameter, when set to 0, would forbid NCCL to cross
+NICs, and allow for lightly- or non-connected rails. But that feature doesn't
+currently work for send/receive communication, and it can also cause bad
+performance on some systems which feature 1GPU:1NIC pairs. Those include
+current systems with PCI switches partitioned in half to provide high CPU-GPU
+bandwidth, as well as future systems with integrated GPU+NIC.
+
+<h2>Functional Requirements</h2>
+NCCL needs to allow communicating between a GPU and a distant NIC through an
+intermediate GPU which is close to the NIC.
+
+<h2>System Requirements</h2>
+Alltoall needs to perform at a bandwidth similar or better than when we allow
+for crossing NICs, provided the NVLink bandwidth is sufficient to handle all
+flows. It should be the case on DGX systems with NVSwitch.
+
+<h2>Interface Requirements</h2>
+No API change should be required.
+
+<h2>KPI Requirements</h2>
+Alltoall performance must be SOL.
+
+<h2>Platform Requirements</h2>
+N/A
+<h2>Security Requirements</h2>
+NCCL is a user library and benefits from the user-mode security.
+<h2>Legal and Standards Requirements</h2>
+N/A
+<h2>Telemetry Requirements</h2>
+N/A
+<h2>Backward Compatibility Requirements</h2>
+Changes do not need to be backward compatible.
+<h2>Virtualization Requirements</h2>
+N/A
+
+<h2>Signoff list</h2>
+<p><!-- Author : First Last -->
+<p><!-- Reviewer : First Last -->
+<p><!-- Reviewer : First Last  -->
+<p><!-- Product Manager : First Last -->
+
+<!-- do not end body and html, bottom will be auto-generated -->
