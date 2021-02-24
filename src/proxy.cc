@@ -310,11 +310,18 @@ static ncclResult_t ProxyAppend(struct ncclProxyState* state, struct ncclProxyAr
   int shared = args->subs[0].connector->conn.shared;
   if (proxyAppend) {
     if (shared && proxyAppend->opCount == args->opCount) {
-      assert(proxyAppend->sliceSteps == args->sliceSteps);
-      assert(proxyAppend->chunkSteps == args->chunkSteps);
-      assert(proxyAppend->protocol == args->protocol);
-      assert(proxyAppend->dtype == args->dtype);
-      assert(proxyAppend->redOp == args->redOp);
+      if ((proxyAppend->sliceSteps != args->sliceSteps) ||
+          (proxyAppend->chunkSteps != args->chunkSteps) ||
+          (proxyAppend->protocol != args->protocol) ||
+          (proxyAppend->dtype != args->dtype) ||
+          (proxyAppend->redOp != args->redOp)) {
+        WARN("Proxy append mismatch");
+        return ncclInternalError;
+      }
+      if (proxyAppend->nsubs >= NCCL_PROXY_MAX_SUBS) {
+        WARN("Proxy append out of bound");
+        return ncclInternalError;
+      }
       memcpy(proxyAppend->subs+proxyAppend->nsubs, args->subs, sizeof(struct ncclProxySubArgs));
       proxyAppend->nsubs++;
       args->next = proxyAppend->next;
