@@ -435,7 +435,7 @@ ncclResult_t ncclTopoComputePaths(struct ncclTopoSystem* system, struct ncclPeer
           struct ncclTopoNode* peerNode = system->nodes[GPU].nodes+p;
 
           // Make sure we can allocate memory on that GPU.
-          if (peerNode->gpu.compMode != 0) continue;
+          if (peerNode->gpu.compMode != NVML_COMPUTEMODE_DEFAULT) continue;
 
           // To ensure proper balancing, use only a local GPU which advertised that NIC as its preferred one.
           int netDev;

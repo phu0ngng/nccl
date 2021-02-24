@@ -591,13 +591,9 @@ ncclResult_t ncclTopoGetXmlFromGpu(struct ncclXmlNode* pciNode, nvmlDevice_t nvm
   if (dev == -1) { *gpuNodeRet = NULL; return ncclSuccess; }
 
   NCCLCHECK(xmlGetAttrIndex(gpuNode, "cmode", &index));
-  if (index == -1) {
+  if (index == -1 && nvmlDev) {
     nvmlComputeMode_t  compMode;
-    if (nvmlDev == NULL) {
-      compMode = NVML_COMPUTEMODE_EXCLUSIVE_PROCESS;
-    } else {
-      NCCLCHECK(wrapNvmlDeviceGetComputeMode(nvmlDev, &compMode));
-    }
+    NCCLCHECK(wrapNvmlDeviceGetComputeMode(nvmlDev, &compMode));
     NCCLCHECK(xmlSetAttrInt(gpuNode, "cmode", compMode));
   }
 
