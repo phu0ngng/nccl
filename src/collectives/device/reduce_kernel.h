@@ -368,52 +368,69 @@ struct FuncAvg<float>: FuncSum<float> {
 
 template<>
 struct FuncAvg<half>: FuncSum<half> {
-#if __CUDA_ARCH__ >= 530 && __CUDA_ARCH__ != 610
+  // Change these to switch between all prescale, all postscale, or both by sqrt(N).
+  // Obviously, the only invalid combination is both true. An improvement would be
+  // make this parameterized as a build time setting and passed here through
+  // preprocessor definitions.
   static constexpr bool IsPreOpIdentity = false;
   static constexpr bool IsPostOpIdentity = false;
-  half2 rsqrt;
+
+#if __CUDA_ARCH__ >= 530 && __CUDA_ARCH__ != 610
+  half2 scale;
   __device__ FuncAvg(int n) {
-    rsqrt.x = __float2half(__frsqrt_rn(float(n)));
-    rsqrt.y = rsqrt.x;
+    if (!IsPreOpIdentity && !IsPostOpIdentity)
+      scale.x = __float2half(__frsqrt_rn(float(n)));
+    else
+      scale.x = __float2half(__frcp_rn(float(n)));
+    scale.y = scale.x;
   }
   // inherits FuncSum::operator()
   __device__ half preOp(half x) const {
-    return __hmul(x, rsqrt.x);
+    return IsPreOpIdentity ? x : __hmul(x, scale.x);
   }
   __device__ half2 preOp(half2 x) const {
-    return __hmul2(x, rsqrt);
+    return IsPreOpIdentity ? x : __hmul2(x, scale);
   }
   __device__ half postOp(half x) const {
-    return __hmul(x, rsqrt.x);
+    return IsPostOpIdentity ? x : __hmul(x, scale.x);
   }
   __device__ half2 postOp(half2 x) const {
-    return __hmul2(x, rsqrt);
+    return IsPostOpIdentity ? x : __hmul2(x, scale);
   }
 #else
-  static constexpr bool IsPreOpIdentity = false;
-  static constexpr bool IsPostOpIdentity = false;
-  float rsqrt;
+  float scale;
   __device__ FuncAvg(int n) {
-    rsqrt = __frsqrt_rn(float(n));
+    if (!IsPreOpIdentity && !IsPostOpIdentity)
+      scale = __frsqrt_rn(float(n));
+    else
+      scale = __frcp_rn(float(n));
   }
   // inherits FuncSum::operator()
   __device__ half preOp(half x) const {
-    return __float2half(__half2float(x)*rsqrt);
+    return IsPreOpIdentity ? x : __float2half(__half2float(x)*scale);
   }
   __device__ half2 preOp(half2 x) const {
-    float2 a = __half22float2(x);
-    a.x *= rsqrt;
-    a.y *= rsqrt;
-    return __float22half2_rn(a);
+    if (IsPreOpIdentity)
+      return x;
+    else {
+      float2 a = __half22float2(x);
+      a.x *= scale;
+      a.y *= scale;
+      return __float22half2_rn(a);
+    }
   }
   __device__ half postOp(half x) const {
-    return __float2half(__half2float(x)*rsqrt);
+    return IsPostOpIdentity ? x : __float2half(__half2float(x)*scale);
   }
   __device__ half2 postOp(half2 x) const {
-    float2 a = __half22float2(x);
-    a.x *= rsqrt;
-    a.y *= rsqrt;
-    return __float22half2_rn(a);
+    if (IsPostOpIdentity)
+      return x;
+    else {
+      float2 a = __half22float2(x);
+      a.x *= scale;
+      a.y *= scale;
+      return __float22half2_rn(a);
+    }
   }
 #endif
 };
