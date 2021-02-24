@@ -662,8 +662,11 @@ ncclResult_t ncclTopoGetXmlFromGraphs(int ngraphs, struct ncclTopoGraph** graphs
 float speedArray[] = { 42.0, 30.0, 24.0, 21.0, 18.0, 15.0, 12.0, 10.0, 9.0, 7.0, 6.0, 5.0, 4.0, 3.0, 2.4, 1.2, 0.24, 0.12 };
 #define NSPEEDS (sizeof(speedArray)/sizeof(float))
 
+NCCL_PARAM(CrossNic, "CROSS_NIC", 2);
+
 ncclResult_t ncclTopoCompute(ncclTopoSystem* system, struct ncclTopoGraph* graph) {
   int ngpus = system->nodes[GPU].count;
+  graph->crossNic = ncclParamCrossNic();
   int crossNic = (system->nodes[NET].count > 1) && graph->crossNic ? 1 : 0;
   graph->speedIntra = graph->speedInter = 0;
   if (graph->crossNic == 2) graph->crossNic = 0;
@@ -869,15 +872,16 @@ ncclResult_t ncclTopoGetNetDev(struct ncclComm* comm, int rank, struct ncclTopoG
   } else {
     // Start with our local NIC
     NCCLCHECK(ncclTopoGetLocalNet(comm->topo, rank, dev, channelId));
-    // See whether we can use the remote rank preferred device.
-    int netDev = comm->peerInfo[peerRank].netDev;
-    int g, n;
-    // Check that device exists on our node
-    if (ncclTopoIdToIndex(comm->topo, NET, netDev, &n) == ncclSuccess) {
-      NCCLCHECK(ncclTopoRankToIndex(comm->topo, rank, &g));
-      struct ncclTopoLinkList* path = comm->topo->nodes[NET].nodes[n].paths[GPU]+g;
-      // Use it only if we have a fast access to the device
-      if (path->type <= PATH_PXN) *dev = netDev;
+    // If Cross-NIC is forbidden, see whether we can use the remote rank preferred device.
+    if (ncclParamCrossNic() == 0) {
+      int netDev = comm->peerInfo[peerRank].netDev;
+      int n;
+      // Check that device exists on our node
+      if (ncclTopoIdToIndex(comm->topo, NET, netDev, &n) != ncclSuccess) {
+        WARN("Rank %d requires NIC %d but that NIC is not available for rank %d", peerRank, netDev, rank);
+        return ncclInvalidUsage;
+      }
+      *dev = netDev;
     }
   }
   return ncclSuccess;

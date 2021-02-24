@@ -440,6 +440,7 @@ ncclResult_t ncclTopoComputePaths(struct ncclTopoSystem* system, struct ncclPeer
           // To ensure proper balancing, use only a local GPU which advertised that NIC as its preferred one.
           int netDev;
           NCCLCHECK(ncclTopoGetLocalNet(system, peerNode->gpu.rank, &netDev, 0));
+          // Make sure we can allocate memory on that GPU.
           if (netDev != netNode->id) continue;
 
           // PXN = PCI + NVLink.
