@@ -7,6 +7,7 @@
 #ifndef NCCL_PRIMITIVES_H_
 #define NCCL_PRIMITIVES_H_
 
+#include <cassert>
 #include <type_traits>
 #include "reduce_kernel.h" // for reduction funcs
 #include "common.h"
@@ -47,24 +48,26 @@ class ncclPrimitives {
   int nthreads;
   int nworkers;
   const int stepSize;
-  int nrecv = 0;
-  int nsend = 0;
+  int nrecv, nsend;
   FUNC const fn;
-  struct ncclConnInfo* conn = NULL;
-  volatile int* connSizesFifoPtr = NULL;
-  void** connPtrsFifoPtr = NULL;
-  volatile uint64_t* connHeadPtr = NULL;
-  volatile uint64_t* connTailPtr = NULL;
-  uint64_t connTailCache; // Cache last seen value
-  uint64_t connHeadCache; // Cache last seen value
+  ncclConnInfo *conn;
+  volatile int* connSizesFifoPtr = nullptr;
+  void** connPtrsFifoPtr = nullptr;
+  union {
+    volatile uint64_t* connHeadPtr;
+    volatile uint64_t* connTailPtr;
+  };
+  union {
+    uint64_t connTailCache; // Cache last seen value
+    uint64_t connHeadCache; // Cache last seen value
+  };
 
   int index; // Peer index I'm responsible for
-  int peer = -1;
   int role = 0;
   int group;
   ncclShmemGroup *shmem;
   uint64_t step;
-  T* direct = NULL;
+  T* direct = nullptr;
   T* buff;
 
   // Don't use barrier 0 as it's used by the final sync
@@ -83,6 +86,7 @@ class ncclPrimitives {
   inline __device__ int checkAbort() {
     spins++;
     if (abort == 0 && spins == NCCL_SPINS_BEFORE_CHECK_ABORT) {
+      //printf("r=%d b=%d t=%d SPUN OUT\n", ncclShmem.comm->rank, blockIdx.x, threadIdx.x);
       abort = *(ncclShmem.comm->abortFlag);
       spins = 0;
     }
@@ -134,8 +138,8 @@ class ncclPrimitives {
   inline __device__ void genericOp(
       intptr_t srcIx, intptr_t dstIx, intptr_t remoteOutIx, int nelem, bool postOp
     ) {
-    constexpr int DIRECTRECV = 0 && DIRECTRECV1;
-    constexpr int DIRECTSEND = 0 && DIRECTSEND1;
+    constexpr int DIRECTRECV = 1 && DIRECTRECV1;
+    constexpr int DIRECTSEND = 1 && DIRECTSEND1;
     constexpr int SRC = SRCBUF != -1;
     constexpr int DST = DSTBUF != -1;
     int offset = 0;
@@ -174,9 +178,9 @@ class ncclPrimitives {
     }
   }
 
-  __device__ __forceinline__ void loadRecvConn(struct ncclChannel* channel, T* directBuff) {
+  __device__ __forceinline__ void loadRecvConn(T* directBuff) {
     if (role & (ROLE_WAIT_RECV|ROLE_POST_RECV)) {
-      conn = &channel->devPeers[peer].recv.conn;
+      auto *conn = shmem->recvConns[index];
       step = conn->step;
       step = ROUNDUP(step, SLICESPERCHUNK*SLICESTEPS);
       if (role & ROLE_POST_RECV) {
@@ -187,8 +191,10 @@ class ncclPrimitives {
       if (role & ROLE_WAIT_RECV) {
         buff = (T*)conn->buffs[NCCL_PROTO_SIMPLE];
         if (DIRECT && (conn->direct & NCCL_DIRECT_GPU)) {
+          void* volatile* slot = conn->ptrExchange;
+          while (*slot != nullptr);
           direct = directBuff;
-          *conn->ptrExchange = directBuff;
+          *slot = directBuff;
         }
         connTailPtr = conn->tail;
         connTailCache = *connTailPtr;
@@ -197,9 +203,9 @@ class ncclPrimitives {
     }
   }
 
-  __device__ __forceinline__ void loadSendConn(struct ncclChannel* channel) {
+  __device__ __forceinline__ void loadSendConn() {
     if (role & (ROLE_WAIT_SEND|ROLE_POST_SEND)) {
-      conn = &channel->devPeers[peer].send.conn;
+      auto *conn = shmem->sendConns[index];
       step = conn->step;
       step = ROUNDUP(step, SLICESPERCHUNK*SLICESTEPS);
       if (role & ROLE_POST_SEND) {
@@ -222,7 +228,8 @@ class ncclPrimitives {
 
   __device__ __forceinline__ void saveSync() {
     if (role & (ROLE_POST_SEND|ROLE_POST_RECV)) {
-      conn->step = step;
+      auto *conns = (role & ROLE_POST_SEND) ? shmem->sendConns : shmem->recvConns;
+      conns[index]->step = step;
       __threadfence_system();
     }
   }
@@ -236,11 +243,20 @@ class ncclPrimitives {
     int postThreads = NSEND && nworkers >= 64 ? WARP_SIZE : 0;
     nthreads += postThreads;
 
-    // Make sure step is updated before we read it.
-    barrier();
+    barrier(); // Make sure no threads in previous class instances are looking at shared state.
 
-    for (int i=0; i<NRECV; i++) if (recvPeers[i] != -1) nrecv++;
-    for (int i=0; i<NSEND; i++) if (sendPeers[i] != -1) nsend++;
+    auto *devPeers = ncclShmem.channel->devPeers;
+    for (nrecv=0; nrecv < NRECV && recvPeers[nrecv] != -1; nrecv++) {
+      if (tid == 0)
+        shmem->recvConns[nrecv] = &devPeers[recvPeers[nrecv]].recv.conn;
+    }
+    for (nsend=0; nsend < NSEND && sendPeers[nsend] != -1; nsend++) {
+      if (tid == 0)
+        shmem->sendConns[nsend] = &devPeers[sendPeers[nsend]].send.conn;
+    }
+
+    // Publish shmem->send/recvConns. Also make sure step is updated before we read it.
+    barrier();
 
     #define SYNC_GROUP 8
     static_assert(NSEND < SYNC_GROUP && NRECV < SYNC_GROUP, "Not enough threads to cover all peers");
@@ -263,12 +279,9 @@ class ncclPrimitives {
 
     if (role & ROLE_INPUT) buff = (T*)inputBuf;
     if (role & ROLE_OUTPUT) buff = (T*)outputBuf;
-    if (role & (ROLE_WAIT_RECV|ROLE_POST_RECV)) peer = recvPeers[index];
-    if (role & (ROLE_WAIT_SEND|ROLE_POST_SEND)) peer = sendPeers[index];
 
-    auto channel = ncclShmem.channel;
-    loadRecvConn(channel, (T*)outputBuf);
-    loadSendConn(channel);
+    loadRecvConn((T*)outputBuf);
+    loadSendConn();
   }
 
   __device__ __forceinline__ void send(intptr_t inpIx, int eltN) {
