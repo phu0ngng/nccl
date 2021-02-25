@@ -403,8 +403,9 @@ static ncclResult_t computeColl(struct ncclInfo* info /* input */, struct ncclWo
     while (info->nBytes / (info->nChannels*chunkSize) < info->comm->channels[0].collTree.depth && (info->nChannels*chunkSize) > 32768) chunkSize /= 2;
     while (info->nBytes / (info->nChannels*chunkSize) < 1 && chunkSize >128) chunkSize /= 2;
 #else
-    while (info->nBytes / (info->nChannels*chunkSize) < info->comm->channels[0].collTree.depth*32 && chunkSize > 131072) chunkSize /= 2;
-    while (info->nBytes / (info->nChannels*chunkSize) < info->comm->channels[0].collTree.depth*4 && chunkSize > 32768) chunkSize /= 2;
+    while (info->nBytes / (info->nChannels*chunkSize) < info->comm->channels[0].collTree.depth*256 && chunkSize > 131072) chunkSize /= 2;
+    while (info->nBytes / (info->nChannels*chunkSize) < info->comm->channels[0].collTree.depth*32 && chunkSize > 32768) chunkSize /= 2;
+    while (info->nBytes / (info->nChannels*chunkSize) < info->comm->channels[0].collTree.depth*4 && chunkSize > 16384) chunkSize /= 2;
 #endif
     // Use lastChunkSize as chunkSize
     work->coll.lastChunkSize = chunkSize / ncclTypeSize(info->datatype);
