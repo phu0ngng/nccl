@@ -256,43 +256,48 @@ class ncclFunction<ncclFuncAllReduce, NCCL_ALGO_COLLNET, NCCL_PROTO_SIMPLE, FUNC
       }
     }
 #else
-    const int nthreads = args->nThreads-4*WARP_SIZE;
-    int nthreadsSplit = nthreads/4;
-    if (nthreadsSplit >= 128) nthreadsSplit -= WARP_SIZE;
+#define NTHREADS_SCATTER      96
+#define NTHREADS_GATHER       96
+#define NTHREADS_BCAST        96
+#define NTHREADS_REDUCE       (NCCL_SPLIT_SIMPLE_MAX_NTHREADS-NTHREADS_SCATTER-NTHREADS_GATHER-NTHREADS_BCAST)
+#define THREAD_START_BCAST    NTHREADS_GATHER
+#define THREAD_START_SCATTER  (THREAD_START_BCAST+NTHREADS_BCAST+WARP_SIZE)
+#define THREAD_START_REDUCE   (THREAD_START_SCATTER+NTHREADS_SCATTER+WARP_SIZE)
+    const int nthreads = args->nThreads-3*WARP_SIZE;
     struct ncclDirect* tree = &channel->collTree;
     const ssize_t loopSize = nChannels*tree->nHeads*chunkSize;
 
-    if (tid >= 2*(nthreadsSplit+WARP_SIZE) && tid < 3*(nthreadsSplit+WARP_SIZE) && tree->up[0] != -1) {
+    if (tid >= THREAD_START_SCATTER && tid < THREAD_START_REDUCE && tree->up[0] != -1) {
       // Scatter
-      ncclPrimitives<UNROLL, 1, 1, T, 1, NCCL_MAX_DIRECT_ARITY, 0, FUNC>
-        prims(tid-2*(nthreadsSplit+WARP_SIZE), nthreadsSplit, NULL, tree->up, NULL, stepSize, channel, comm, ncclShmem->ptrs, 4);
+      ncclPrimitives<UNROLL, 1, 1, T, 0, NCCL_MAX_DIRECT_ARITY, 0, FUNC>
+        prims(tid-THREAD_START_SCATTER, NTHREADS_SCATTER, NULL, tree->up, NULL, stepSize, channel, comm, ncclShmem->ptrs, 4);
       for (ssize_t gridOffset = 0; gridOffset < size; gridOffset += loopSize) {
         ssize_t offset = gridOffset + bid*tree->nHeads*chunkSize;
         int nelem = min((tree->nHeads-1)*chunkSize, size-offset);
         prims.scatter(thisInput+offset, nelem, chunkSize, tree->headRank);
       }
-    } else if (tid >= 3*(nthreadsSplit+WARP_SIZE) && tree->out != -1) {
+    } else if (tid >= THREAD_START_REDUCE && tree->out != -1) {
       // Reduce, send to network
       ncclPrimitives<UNROLL, 1, 1, T, NCCL_MAX_DIRECT_ARITY, 1, 0, FUNC>
-        prims(tid-3*(nthreadsSplit+WARP_SIZE), nthreads-3*nthreadsSplit, tree->down, &tree->out, NULL, stepSize, channel, comm, ncclShmem->ptrs, 6);
+        prims(tid-THREAD_START_REDUCE, NTHREADS_REDUCE, tree->down, &tree->out, NULL, stepSize, channel, comm, ncclShmem->ptrs, 6);
       for (ssize_t gridOffset = 0; gridOffset < size; gridOffset += loopSize) {
         ssize_t offset = gridOffset + (bid*tree->nHeads+tree->headRank)*chunkSize;
         int nelem = min(chunkSize, size-offset);
         prims.recvReduceSend(thisInput+offset, nelem);
       }
-    } else if (tid < nthreadsSplit + WARP_SIZE && tree->up[0] != -1) {
+    } else if (tid < THREAD_START_BCAST && tree->up[0] != -1) {
       // Gather
-      ncclPrimitives<UNROLL, 1, 1, T, NCCL_MAX_DIRECT_ARITY, 1, 1, FUNC>
-        prims(tid, nthreadsSplit, tree->up, NULL, thisOutput, stepSize, channel, comm, ncclShmem->ptrs, 0);
+      ncclPrimitives<UNROLL, 1, 1, T, NCCL_MAX_DIRECT_ARITY, 0, 0, FUNC>
+        prims(tid, NTHREADS_GATHER, tree->up, NULL, thisOutput, stepSize, channel, comm, ncclShmem->ptrs, 0);
       for (ssize_t gridOffset = 0; gridOffset < size; gridOffset += loopSize) {
         ssize_t offset = gridOffset + bid*tree->nHeads*chunkSize;
         int nelem = min((tree->nHeads-1)*chunkSize, size-offset);
         prims.gather(thisOutput+offset, nelem, chunkSize, tree->headRank);
       }
-    } else if (tid >= nthreadsSplit+WARP_SIZE && tid < 2*(nthreadsSplit+WARP_SIZE) && tree->out != -1) {
+    } else if (tid >= THREAD_START_BCAST && tid < THREAD_START_SCATTER && tree->out != -1) {
       // Recv from network, broadcast
       ncclPrimitives<UNROLL, 1, 1, T, 1, NCCL_MAX_DIRECT_ARITY, 1, FUNC>
-        prims(tid-(nthreadsSplit+WARP_SIZE), nthreadsSplit, &tree->out, tree->down, thisOutput, stepSize, channel, comm, ncclShmem->ptrs, 2);
+        prims(tid-THREAD_START_BCAST, NTHREADS_BCAST, &tree->out, tree->down, thisOutput, stepSize, channel, comm, ncclShmem->ptrs, 2);
       for (ssize_t gridOffset = 0; gridOffset < size; gridOffset += loopSize) {
         ssize_t offset = gridOffset + (bid*tree->nHeads+tree->headRank)*chunkSize;
         int nelem = min(chunkSize, size-offset);
