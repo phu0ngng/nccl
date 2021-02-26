@@ -337,6 +337,42 @@ static ncclResult_t progressOps(struct ncclProxyState* state, struct ncclProxyAr
   return ncclSuccess;
 }
 
+ncclResult_t ncclProxyAppendPosted(struct ncclProxyState* state) {
+  // Sort operations as we append them : collectives and
+  // receives first, then sends.
+  pthread_mutex_lock(&state->opsMutex);
+
+  while (state->postedOps == NULL) {
+    if (state->stop) return ncclSuccess;
+    pthread_cond_wait(&state->cond, &state->opsMutex);
+  }
+
+  ncclProxyArgs* next, *prev = NULL, *op = state->postedOps;
+  while (op) {
+    next = op->next;
+    if (op->sendbytes) {
+      if (prev) prev->next = next;
+      else state->postedOps = next;
+      op->next = NULL;
+      NCCLCHECK(ProxyAppend(state, op, op->connector->conn.shared));
+    } else prev = op;
+    op = next;
+  }
+  op = state->postedOps;
+  while (op) {
+    next = op->next;
+    op->next = NULL;
+    NCCLCHECK(ProxyAppend(state, op, op->connector->conn.shared));
+    op = next;
+  }
+  state->postedOps = state->postedOpsEnd = NULL;
+  NCCLCHECK(dumpProxyState(state));
+
+  pthread_mutex_unlock(&state->opsMutex);
+  return ncclSuccess;
+}
+
+
 void* persistentThread(void *comm_) {
   struct ncclComm* comm = (struct ncclComm*)comm_;
   struct ncclProxyState* state = &comm->proxyState;
@@ -344,67 +380,46 @@ void* persistentThread(void *comm_) {
   sprintf(threadName, "NCCLproxy %5d", comm->rank);
   nvtxNameOsThreadA(syscall(SYS_gettid), threadName);
 
-  pthread_mutex_lock(&state->opsMutex);
   struct ncclProxyArgs** opsPtr = &state->ops;
   while (1) {
     if (*comm->abortFlag) {
-      pthread_mutex_unlock(&state->opsMutex);
       return NULL;
     }
 
     while (*opsPtr == NULL) {
       if (state->stop) {
         // No more commands to process and proxy has been requested to stop
-        pthread_mutex_unlock(&state->opsMutex);
         return NULL;
       }
-      pthread_cond_wait(&state->cond, &state->opsMutex);
+      ncclResult_t ret = ncclProxyAppendPosted(state);
+      if (ret != ncclSuccess) {
+        comm->fatalError = ret;
+        INFO(NCCL_ALL,"%s:%d -> %d [Proxy Thread]", __FILE__, __LINE__, ret);
+        return NULL;
+      }
     }
     int idle = 1;
     ncclResult_t ret = progressOps(state, opsPtr, &idle, comm);
     if (ret != ncclSuccess) {
       comm->fatalError = ret;
       INFO(NCCL_ALL,"%s:%d -> %d [Proxy Thread]", __FILE__, __LINE__, ret);
-      pthread_mutex_unlock(&state->opsMutex);
       return NULL;
     }
     if (idle) {
-      pthread_mutex_unlock(&state->opsMutex);
       sched_yield(); // No request progressed. Let others run.
-      pthread_mutex_lock(&state->opsMutex);
     }
   }
 }
 
 ncclResult_t ncclProxyStart(struct ncclComm* comm) {
   struct ncclProxyState* state = &comm->proxyState;
+  if (state->nextOps == NULL) return ncclSuccess;
   pthread_mutex_lock(&state->opsMutex);
-
-  // Sort operations as we append them : collectives and
-  // receives first, then sends.
-  ncclProxyArgs* next, *prev = NULL, *op = state->nextOps;
-  while (op) {
-    next = op->next;
-    if (op->sendbytes) {
-      if (prev) prev->next = next;
-      else state->nextOps = next;
-      op->next = NULL;
-      NCCLCHECK(ProxyAppend(state, op, op->connector->conn.shared));
-    } else prev = op;
-    op = next;
-  }
-  op = state->nextOps;
-  while (op) {
-    next = op->next;
-    op->next = NULL;
-    NCCLCHECK(ProxyAppend(state, op, op->connector->conn.shared));
-    op = next;
-  }
+  if (state->postedOps) state->postedOpsEnd->next = state->nextOps;
+  else state->postedOps = state->nextOps;
+  state->postedOpsEnd = state->nextOpsEnd;
   state->nextOps = state->nextOpsEnd = NULL;
-  NCCLCHECK(dumpProxyState(state));
-
-  if (state->ops != NULL)
-    pthread_cond_signal(&state->cond);
+  pthread_cond_signal(&state->cond);
   pthread_mutex_unlock(&state->opsMutex);
   return ncclSuccess;
 }
