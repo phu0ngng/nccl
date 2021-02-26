@@ -273,7 +273,7 @@ class ncclFunction<ncclFuncAllReduce, NCCL_ALGO_COLLNET, NCCL_PROTO_SIMPLE, FUNC
         prims(tid-THREAD_START_SCATTER, NTHREADS_SCATTER, NULL, tree->up, NULL, stepSize, channel, comm, ncclShmem->ptrs, 4);
       for (ssize_t gridOffset = 0; gridOffset < size; gridOffset += loopSize) {
         ssize_t offset = gridOffset + bid*tree->nHeads*chunkSize;
-        int nelem = min((tree->nHeads-1)*chunkSize, size-offset);
+        int nelem = min(tree->nHeads*chunkSize, size-offset);
         prims.scatter(thisInput+offset, nelem, chunkSize, tree->headRank);
       }
     } else if (tid >= THREAD_START_REDUCE && tree->out != -1) {
@@ -291,7 +291,7 @@ class ncclFunction<ncclFuncAllReduce, NCCL_ALGO_COLLNET, NCCL_PROTO_SIMPLE, FUNC
         prims(tid, NTHREADS_GATHER, tree->up, NULL, thisOutput, stepSize, channel, comm, ncclShmem->ptrs, 0);
       for (ssize_t gridOffset = 0; gridOffset < size; gridOffset += loopSize) {
         ssize_t offset = gridOffset + bid*tree->nHeads*chunkSize;
-        int nelem = min((tree->nHeads-1)*chunkSize, size-offset);
+        int nelem = min(tree->nHeads*chunkSize, size-offset);
         prims.gather(thisOutput+offset, nelem, chunkSize, tree->headRank);
       }
     } else if (tid >= THREAD_START_BCAST && tid < THREAD_START_SCATTER && tree->out != -1) {

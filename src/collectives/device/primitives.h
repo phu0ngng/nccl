@@ -200,7 +200,7 @@ class ncclPrimitives {
       }
     }
     barrier();
-    if (SEND && (role & ROLE_POST_SEND) && index == 0) __threadfence_system();
+    if (SEND && (role & ROLE_POST_SEND) && totalElem > 0 && index == 0) __threadfence_system();
     __syncwarp();
     if (SEND && (role & ROLE_POST_SEND)) postSend();
     if (RECV && (role & ROLE_POST_RECV)) postRecv();
