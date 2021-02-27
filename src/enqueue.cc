@@ -776,8 +776,8 @@ ncclResult_t ncclGetCudaGraph(ncclComm_t comm, cudaGraph_t* graph, int* usingCud
 }
 
 ncclResult_t ncclCudaGraphHostSetup(ncclComm_t comm, cudaGraph_t graph) {
-  struct ncclQueueInfo* eqInfo = comm->enqueueInfo;
 #if CUDA_VERSION >= 11030
+  struct ncclQueueInfo* eqInfo = comm->enqueueInfo;
   // Create a CUDA object to wrap around the argument space
   // which CUDA graph would manage lifetime of
   cudaUserObject_t object;
