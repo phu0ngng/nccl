@@ -861,10 +861,10 @@ int main(int argc, char* argv[]) {
         timeout = strtol(optarg, NULL, 0);
         break;
       case 'G':
-#if NCCL_MAJOR > 2 || (NCCL_MAJOR >= 2 && NCCL_MINOR >= 9)
+#if (NCCL_MAJOR > 2 || (NCCL_MAJOR >= 2 && NCCL_MINOR >= 9)) && CUDA_VERSION >= 11030
         cudaGraphLaunches = strtol(optarg, NULL, 0);
 #else
-        printf("Option -G (CUDA graph) not supported before NCCL 2.9. Ignoring\n");
+        printf("Option -G (CUDA graph) not supported before NCCL 2.9 + CUDA 11.3. Ignoring\n");
 #endif
         break;
       case 'h':

@@ -58,7 +58,7 @@ void ncclCudaGraph_test<DT>::EndCaptureAndLaunch() {
 
 TYPED_TEST_CASE(ncclCudaGraph_test, testNoType);
 
-#if NCCL_MAJOR > 2 || (NCCL_MAJOR == 2 && NCCL_MINOR >=9)
+#if (NCCL_MAJOR > 2 || (NCCL_MAJOR == 2 && NCCL_MINOR >=9) && CUDA_VERSION >= 11030)
 // typical usage.
 TYPED_TEST(ncclCudaGraph_test, collective) {
     this->BeginCapture();
