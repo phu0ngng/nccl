@@ -103,26 +103,43 @@ private:
     asm volatile("st.volatile.global.v4.u32 [%0], {%1,%2,%3,%4};" :: "l"(&dst->i4), "r"((uint32_t)val), "r"(flag), "r"((uint32_t)(val >> 32)), "r"(flag));
   }
 
+  static constexpr int EltPerPack = sizeof(uint64_t)/sizeof(T);
+  union EltPack {
+    uint64_t word;
+    T elt[EltPerPack];
+  };
+
   // Using memcpy handles misaligned pointers.
-  __device__ uint64_t readAL(uint64_t* src) {
-    uint64_t val;
-    memcpy((char*)&val, (char*)src, sizeof(uint64_t));
-    return val;
+  __device__ uint64_t readAL(T *src) {
+    EltPack pack;
+    #pragma unroll EltPerPack
+    for(int i=0; i < EltPerPack; i++)
+      pack.elt[i] = src[i];
+    return pack.word;
   }
 
-  __device__ void storeAL(uint64_t* dst, uint64_t val, uint32_t nbytes) {
-    memcpy((char*)dst, (char*)&val, nbytes);
+  __device__ void storeAL(T *dst, uint64_t val, int nelem) {
+    EltPack pack;
+    pack.word = val;
+    dst[0] = pack.elt[0];
+    nelem -= 1;
+    #pragma unroll
+    for(int i=1; i < EltPerPack; i++) {
+      if (nelem > 0)
+        dst[i] = pack.elt[i];
+      nelem -= 1;
+    }
   }
 
   template <int RECV, int SEND, int SrcBuf, int DstBuf>
   __device__ void LLGenericOp(intptr_t srcIx, intptr_t dstIx, int nelem, bool postOp) {
     constexpr int SRC = SrcBuf != -1 ? 1 : 0;
     constexpr int DST = DstBuf != -1 ? 1 : 0;
-    uint32_t nbytes = nelem < 0 ? 0 : nelem*sizeof(T);
-    uint32_t npack = DIVUP(nbytes, sizeof(uint64_t));
-    uint64_t* srcPack = (uint64_t*)(SrcBuf == -1 ? nullptr : userBufs[SrcBuf] + srcIx);
-    uint64_t* dstPack = (uint64_t*)(DstBuf == -1 ? nullptr : userBufs[DstBuf] + dstIx);
+    nelem = nelem < 0 ? 0 : nelem;
+    int npack = DIVUP(nelem, EltPerPack);
     int offset = tid;
+    T *srcElts = SrcBuf == -1 ? nullptr : userBufs[SrcBuf] + srcIx + offset*EltPerPack;
+    T *dstElts = DstBuf == -1 ? nullptr : userBufs[DstBuf] + dstIx + offset*EltPerPack;
 
     // Always waitSend in case of cleanup
     if (SEND) waitSend(npack*sizeof(union ncclLLFifoLine));
@@ -133,7 +150,8 @@ private:
       // Recv : local, then intra-node, then inter-node
       uint64_t val;
       if (SRC) {
-        val = readAL(srcPack+offset);
+        val = readAL(srcElts);
+        srcElts += nthreads*EltPerPack;
         if (SrcBuf == Input)
           val = MULTI<FUNC, T>().preOp(fn, val);
       }
@@ -154,12 +172,8 @@ private:
         storeLL(sendPtr(0)+offset, val, sendFlag(0));
       }
       if (DST) {
-        if (((offset*sizeof(uint64_t)) ^ nbytes) < sizeof(uint64_t)) {
-          // Last incomplete word
-          storeAL(dstPack+offset, val, nbytes & 0x7);
-        } else {
-          storeAL(dstPack+offset, val, sizeof(uint64_t));
-        }
+        storeAL(dstElts, val, nelem - offset*EltPerPack);
+        dstElts += nthreads*EltPerPack;
       }
     }
     FOR_RECV(incRecv); if (RECV) postRecv();
