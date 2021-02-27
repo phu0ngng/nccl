@@ -756,14 +756,10 @@ template void CUDART_CB ncclEnqueueHostSetup<1>(void*);
 
 ncclResult_t ncclGetCudaGraph(ncclComm_t comm, cudaGraph_t* graph, int* usingCudaGraph) {
   *usingCudaGraph = 0;
-#if CUDA_VERSION >= 11020
+#if CUDA_VERSION >= 11030
   cudaStreamCaptureStatus captureStatus;
   unsigned long long cudaGraphId;
-#if CUDA_VERSION >= 11030
   CUDACHECK(cudaStreamGetCaptureInfo_v2(comm->userStream, &captureStatus, &cudaGraphId, graph, NULL, NULL));
-#else
-  CUDACHECK(cudaStreamGetCaptureInfo(comm->userStream, &captureStatus, &cudaGraphId));
-#endif
   if (captureStatus == cudaStreamCaptureStatusActive) {
     if (cudaGraphId != comm->lastCudaGraphId) {
       INFO(NCCL_COLL, "stream is being captured by a new graph, id %llu", cudaGraphId);
@@ -771,11 +767,6 @@ ncclResult_t ncclGetCudaGraph(ncclComm_t comm, cudaGraph_t* graph, int* usingCud
       // the first setup node in the new graph will not have a dependency
       comm->lastCudaGraphId = cudaGraphId;
       comm->lastSetupNode = NULL;
-      if (comm->cudaGraphMode == ncclComm::GRAPH_FORK) {
-        // Fork setup stream from user stream
-        CUDACHECK(cudaEventRecord(comm->userStreamDone, comm->userStream));
-        CUDACHECK(cudaStreamWaitEvent(comm->setupStream, comm->userStreamDone, 0));
-      }
     }
     if (comm->launchMode == ncclComm::GROUP) comm->launchMode = ncclComm::GROUP_GRAPH;
     *usingCudaGraph = 1;
@@ -792,31 +783,20 @@ ncclResult_t ncclCudaGraphHostSetup(ncclComm_t comm, cudaGraph_t graph) {
   cudaUserObject_t object;
   CUDACHECK(cudaUserObjectCreate(&object, eqInfo, ncclDestroyQueueInfo, 1/*initialRefcount*/, cudaUserObjectNoDestructorSync));
   CUDACHECK(cudaGraphRetainUserObject(graph, object, 1, cudaGraphUserObjectMove));
-#endif
 
   cudaHostFn_t fn = ncclEnqueueHostSetup<1>;
-  if (comm->cudaGraphMode == ncclComm::GRAPH_SYNC) {
-    // Launch onto main stream
-    CUDACHECK(cudaLaunchHostFunc(comm->userStream, fn, eqInfo));
-  } else if (comm->cudaGraphMode == ncclComm::GRAPH_FORK) {
-    // Launch onto side stream
-    CUDACHECK(cudaLaunchHostFunc(comm->setupStream, fn, eqInfo));
-    CUDACHECK(cudaEventRecord(comm->setupDone, comm->setupStream));
-    // Create dependency from host setup stream to kernel stream
-    CUDACHECK(cudaStreamWaitEvent(comm->userStream, comm->setupDone, 0));
-  }
-#if CUDA_VERSION >= 11030
-  else {  // GRAPH_ASYNC mode
-    // Add a CPU node to the graph
-    cudaGraphNode_t setupNode;
-    cudaHostNodeParams setupNodeParams = {fn, eqInfo};
-    int numDependencies = comm->lastSetupNode == NULL ? 0 : 1;
-    CUDACHECK(cudaGraphAddHostNode(&setupNode, graph, &comm->lastSetupNode, numDependencies, &setupNodeParams));
-    CUDACHECK(cudaStreamUpdateCaptureDependencies(comm->userStream, &setupNode, 1, 0)); // Flag 0 for adding node to dependency set
-    comm->lastSetupNode = setupNode;
-  }
-#endif
+  // Add a CPU node to the graph
+  cudaGraphNode_t setupNode;
+  cudaHostNodeParams setupNodeParams = {fn, eqInfo};
+  int numDependencies = comm->lastSetupNode == NULL ? 0 : 1;
+  CUDACHECK(cudaGraphAddHostNode(&setupNode, graph, &comm->lastSetupNode, numDependencies, &setupNodeParams));
+  CUDACHECK(cudaStreamUpdateCaptureDependencies(comm->userStream, &setupNode, 1, 0)); // Flag 0 for adding node to dependency set
+  comm->lastSetupNode = setupNode;
   return ncclSuccess;
+#else
+  WARN("NCCL does not support this CUDA version for CUDA graph feature");
+  return ncclInternalError;
+#endif
 }
 
 ncclResult_t ncclEnqueueCheck(struct ncclInfo* info) {

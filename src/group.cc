@@ -338,7 +338,7 @@ sched_delta:
           args->coll.comm->userStream == cudaStreamPerThread ||
           args->coll.comm->userStream == cudaStreamLegacy)
         CUDACHECKGOTO(cudaSetDevice(args->coll.comm->cudaDev), ret, end);
-      if (usingCudaGraphAll) {
+      if (usingCudaGraphAll == 1) {
         NCCLCHECKGOTO(ncclCudaGraphHostSetup(args->coll.comm, graphs[i]), ret, end);
       } else {
         ncclEnqueueHostSetup<0>(args->coll.comm->enqueueInfo);

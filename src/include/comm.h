@@ -157,11 +157,6 @@ struct ncclComm {
   struct ncclQueueInfo* enqueueInfo;
   cudaGraphNode_t lastSetupNode;
   unsigned long long lastCudaGraphId;
-  enum { GRAPH_SYNC, GRAPH_FORK, GRAPH_ASYNC } cudaGraphMode;
-  // Side stream and events used in FORK mode
-  cudaStream_t setupStream; // Stream for host setup callback
-  cudaEvent_t userStreamDone;
-  cudaEvent_t setupDone;
 };
 
 #endif
