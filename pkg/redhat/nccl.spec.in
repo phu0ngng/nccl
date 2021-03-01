@@ -65,6 +65,7 @@ rm -rf $RPM_BUILD_ROOT
 %doc LICENSE.txt
 %defattr(-,root,root,-)
 %{_includedir}/nccl.h
+%{_includedir}/nccl_net.h
 %{_libdir}/libnccl.so
 
 %files static
