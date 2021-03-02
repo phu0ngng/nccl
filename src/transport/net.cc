@@ -41,6 +41,8 @@ struct netRecvResources {
   // GDRCOPY support
   gdr_mem_desc_t gdrMemDesc;
   struct ncclRecvMem* devRecvMem;
+  gdr_mem_desc_t gdrFlushDesc;
+  int* devFlushMem;
 
   int netDev;
   int useGdr;
@@ -118,6 +120,8 @@ ncclResult_t netSendSetup(struct ncclComm* comm, struct ncclTopoGraph* graph, st
 
 // GDRCOPY support: TAIL_ENABLE When enabled locates the RX proxy tail in CUDA memory
 NCCL_PARAM(GdrCopyTailEnable, "GDRCOPY_TAIL_ENABLE", 1);
+// GDRCOPY support: FLUSH_ENABLE When enabled uses a PCI-E read to flush GDRDMA buffers
+NCCL_PARAM(GdrCopyFlushEnable, "GDRCOPY_FLUSH_ENABLE", 1);
 
 ncclResult_t netRecvSetup(struct ncclComm* comm, struct ncclTopoGraph* graph, struct ncclPeerInfo* myInfo, struct ncclPeerInfo* peerInfo, struct ncclConnect* connectInfo, struct ncclConnector* recv, int channelId) {
   struct netRecvResources* resources;
@@ -140,6 +144,10 @@ ncclResult_t netRecvSetup(struct ncclComm* comm, struct ncclTopoGraph* graph, st
   }
   else {
     recv->conn.tail = &resources->recvMem->tail;
+  }
+  // GDRCOPY support
+  if (ncclGdrCopy != NULL && ncclParamGdrCopyFlushEnable()) {
+    NCCLCHECK(ncclGdrCudaCalloc(&resources->devFlushMem, 1, &resources->gdrFlushDesc));
   }
 
   recv->conn.direct |= resources->useGdr ? NCCL_DIRECT_NIC : 0;
@@ -251,6 +259,12 @@ ncclResult_t netSendFree(void* transportResources) {
 
 ncclResult_t netRecvFree(void* transportResources) {
   struct netRecvResources* resources = (struct netRecvResources*)transportResources;
+  // GDRCOPY support
+#if defined(__x86_64__)
+  if (resources->devFlushMem) {
+    NCCLCHECK(ncclGdrCudaFree(&resources->gdrMemDesc));
+  }
+#endif
   // GDRCOPY support
   if (resources->devRecvMem) {
     NCCLCHECK(ncclGdrCudaFree(&resources->gdrMemDesc));
@@ -428,9 +442,22 @@ ncclResult_t netRecvProxy(struct ncclProxyArgs* args) {
         args->received += args->sliceSteps;
         if (size > 0 && args->protocol == NCCL_PROTO_SIMPLE && resources->useGdr) {
           // Don't pass data to the GPU yet, flush first.
-          volatile void** ptrsFifo = (volatile void**)resources->recvMem->ptrsFifo;
-          char* ptr = resources->shared ? (char*)(ptrsFifo[buffSlot]) : localBuff+buffSlot*stepSize;
-          NCCLCHECK(ncclNetIflush(resources->netRecvComm, ptr, size, mhandle, args->requests+buffSlot));
+
+          // GDRCOPY support
+          if (resources->devFlushMem) {
+#if defined (__x86_64__)
+            // Force a PCI-E read from GPU memory
+            asm volatile ("mov (%0), %%eax" :: "l"(resources->devFlushMem) : "%eax");
+#else
+	    WARN("NET: GDR Flush only supported on x86_64");
+	    return ncclInternalError;
+#endif
+            args->requests[buffSlot] = NULL;
+	  } else {
+            volatile void** ptrsFifo = (volatile void**)resources->recvMem->ptrsFifo;
+            char* ptr = resources->shared ? (char*)(ptrsFifo[buffSlot]) : localBuff+buffSlot*stepSize;
+            NCCLCHECK(ncclNetIflush(resources->netRecvComm, ptr, size, mhandle, args->requests+buffSlot));
+	  }
         } else {
           args->requests[buffSlot] = NULL;
         }
