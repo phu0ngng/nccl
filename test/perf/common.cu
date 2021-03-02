@@ -43,6 +43,7 @@ static int blocking_coll = 0;
 static int streamnull = 0;
 static int side_comp = 0;
 static int timeout = 60;
+static int report_cputime = 0;
 
 static char* replay_file = NULL;
 
@@ -444,6 +445,8 @@ testResult_t BenchTime(struct threadArgs* args, ncclDataType_t type, ncclRedOp_t
     }
     if (agg_iters>1) NCCLCHECK(ncclGroupEnd());
   }
+  auto cputime = std::chrono::high_resolution_clock::now() - start;
+  double cputimeSec = std::chrono::duration_cast<std::chrono::duration<double>>(cputime).count()/(iters*agg_iters);
   TESTCHECK(completeColl(args));
 
   int compThreadCount = (*(args->compThreadCount)) - args->compThreadCountLast;
@@ -482,7 +485,7 @@ testResult_t BenchTime(struct threadArgs* args, ncclDataType_t type, ncclRedOp_t
       Barrier(args);
   }
 
-  double timeUsec = deltaSec*1.0E6;
+  double timeUsec = (report_cputime ? cputimeSec : deltaSec)*1.0E6;
   char timeStr[10];
   if (timeUsec >= 10000.0) {
     sprintf(timeStr, "%7.0f", timeUsec);
@@ -716,12 +719,13 @@ int main(int argc, char* argv[]) {
     {"side_comp", required_argument, 0, 'k'},
     {"replay", required_argument, 0, 'l'},
     {"timeout", required_argument, 0, 'T'},
+    {"report_cputime", required_argument, 0, 'C'},
     {"help", no_argument, 0, 'h'}
   };
 
   while(1) {
     int c;
-    c = getopt_long(argc, argv, "t:g:b:e:i:f:n:m:w:s:p:c:o:d:r:z:y:k:h:l:T:", longopts, &longindex);
+    c = getopt_long(argc, argv, "t:g:b:e:i:f:n:m:w:s:p:c:o:d:r:z:y:k:h:l:T:C:", longopts, &longindex);
 
     if (c == -1)
       break;
@@ -789,6 +793,9 @@ int main(int argc, char* argv[]) {
       case 'T':
         timeout = strtol(optarg, NULL, 0);
         break;
+      case 'C':
+        report_cputime = strtol(optarg, NULL, 0);
+        break;
       case 'h':
       default:
         if (c != 'h') printf("invalid option '%c'\n", c);
@@ -812,6 +819,7 @@ int main(int argc, char* argv[]) {
             "[-k,--side_comp <0/1>] \n\t"
             "[-l,--replay <path to replay file>] \n\t"
             "[-T,--timeout <time in seconds>] \n\t"
+            "[-C,--report_cputime <0/1>] \n\t"
 	    "[-h,--help]\n",
             basename(argv[0]));
         return 0;
@@ -960,10 +968,11 @@ testResult_t run() {
     errors[t] = bw_count[t] = 0;
   }
 
+  const char* timeStr = report_cputime ? "cputime" : "time";
   PRINT("#\n");
   PRINT("# %10s  %12s  %6s  %6s  %6s           out-of-place                       in-place          \n", "", "", "", "", "");
   PRINT("# %10s  %12s  %6s  %6s  %6s  %7s  %6s  %6s  %5s  %7s  %6s  %6s  %5s\n", "size", "count", "type", "redop", "root",
-      "time", "algbw", "busbw", "error", "time", "algbw", "busbw", "error");
+      timeStr, "algbw", "busbw", "error", timeStr, "algbw", "busbw", "error");
   PRINT("# %10s  %12s  %6s  %6s  %6s  %7s  %6s  %6s  %5s  %7s  %6s  %6s  %5s\n", "(B)", "(elements)", "", "", "",
       "(us)", "(GB/s)", "(GB/s)", "", "(us)", "(GB/s)", "(GB/s)", "");
 
