@@ -263,7 +263,11 @@ ncclResult_t ncclEnqueueEvents(ncclComm_t comm) {
   // Enqueue event after NCCL kernel
   CUDACHECK(cudaEventRecord(comm->doneEvent, params->stream));
   // Use internal NCCL stream for CGMD/GROUP launch if required or if the user stream is NULL
-  if (comm->launchMode == ncclComm::GROUP && (comm->groupCudaStream || comm->userStream == NULL)) {
+  if (comm->launchMode == ncclComm::GROUP &&
+      (comm->groupCudaStream ||
+       comm->userStream == cudaStreamDefault ||
+       comm->userStream == cudaStreamLegacy ||
+       comm->userStream == cudaStreamPerThread)) {
     // Create dependency between NCCL internal stream and user stream
     CUDACHECK(cudaStreamWaitEvent(comm->userStream, comm->doneEvent, 0));
   }
