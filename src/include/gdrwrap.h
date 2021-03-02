@@ -49,7 +49,7 @@ static inline void wc_store_fence(void) { _mm_sfence(); }
 #include <gdrapi.h>
 
 static ncclResult_t wrap_gdr_symbols(void) { return ncclSuccess; }
-static gdr_t wrap_gdr_open(void) { gdr_t g = gdr_open()); return g; }
+static gdr_t wrap_gdr_open(void) { gdr_t g = gdr_open(); return g; }
 static ncclResult_t wrap_gdr_close(gdr_t g) { GDRCHECK(gdr_close(g)); return ncclSuccess; }
 static ncclResult_t wrap_gdr_pin_buffer(gdr_t g, unsigned long addr, size_t size, uint64_t p2p_token, uint32_t va_space, gdr_mh_t *handle) {
   GDRCHECK(gdr_pin_buffer(g, addr, size, p2p_token, va_space, handle));
