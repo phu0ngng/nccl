@@ -16,7 +16,7 @@ ncclResult_t ncclCpuBarrierIn(struct ncclComm* comm, int* isLast);
 ncclResult_t ncclCpuBarrierLast(struct ncclComm* comm);
 ncclResult_t ncclCpuBarrierOut(struct ncclComm* comm);
 ncclResult_t ncclLaunchBarrier(struct ncclComm* comm);
-ncclResult_t ncclLaunch(ncclComm_t comm);
+ncclResult_t ncclLaunchKernel(ncclComm_t comm);
 ncclResult_t ncclRecordEvents(struct ncclComm* comm);
 ncclResult_t ncclLaunchReset(ncclComm_t comm, int destroyInfo);
 ncclResult_t ncclSetupP2pKernel(struct ncclInfo* info);

@@ -350,7 +350,7 @@ sched_delta:
     struct ncclAsyncArgs* args = ncclGroupArgs+i;
     if (args->funcType == ASYNC_FUNC_COLL) {
       CUDACHECKGOTO(cudaSetDevice(args->coll.comm->cudaDev), ret, end);
-      NCCLCHECKGOTO(ncclLaunch(args->coll.comm), ret, end);
+      NCCLCHECKGOTO(ncclLaunchKernel(args->coll.comm), ret, end);
     }
   }
   for (int i=0; i<ncclGroupIndex; i++) {

@@ -226,7 +226,7 @@ ncclResult_t ncclLaunchBarrier(struct ncclComm* comm) {
   return ncclSuccess;
 }
 
-ncclResult_t ncclLaunch(ncclComm_t comm) {
+ncclResult_t ncclLaunchKernel(ncclComm_t comm) {
   struct cudaLaunchParams *params = comm->myParams;
   if (params->gridDim.x == 0) return ncclSuccess;
 
@@ -694,9 +694,9 @@ ncclResult_t ncclEnqueueP2pKernel(struct ncclComm* comm, struct ncclQueueElem* e
   }
 
   // store work element into FIFO
-  NCCLCHECK(enqueueP2pOp(workElem, w, segment));
   proxyArgs->segment = segment;
   NCCLCHECK(ncclProxySaveP2p(comm, proxyArgs));
+  NCCLCHECK(enqueueP2pOp(workElem, w, segment));
   return ncclSuccess;
 }
 
@@ -857,7 +857,7 @@ end:
 
     // Common part between graph mode and non-graph mode
     NCCLCHECK(ncclLaunchBarrier(comm));
-    NCCLCHECK(ncclLaunch(comm));
+    NCCLCHECK(ncclLaunchKernel(comm));
     NCCLCHECK(ncclRecordEvents(comm));
     NCCLCHECK(ncclLaunchReset(comm, !usingCudaGraph));
     return ncclSuccess;
