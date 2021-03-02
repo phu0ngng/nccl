@@ -10,6 +10,7 @@
 #include "nccl.h"
 #include "align.h"
 #include <stdint.h>
+#include "gdrwrap.h"
 
 #define NCCL_NUM_FUNCTIONS 5 // SendRecv not included for now
 typedef enum { ncclFuncBroadcast, ncclFuncReduce, ncclFuncAllGather, ncclFuncReduceScatter, ncclFuncAllReduce, ncclFuncSendRecv} ncclFunc_t;
@@ -191,6 +192,11 @@ struct ncclChannel {
       uint64_t workFifoTail; // Only used by CPU
       uint64_t lastLaunchOpCount; // Only used by CPU
       uint16_t index;        // Only used by GPU
+
+      // GDRCOPY support
+      struct ncclWork* workFifoGdr;
+      struct ncclWork* workFifoCuda;
+      gdr_mem_desc_t *gdrMemDesc;
     };
     int data[0x80];
   };

@@ -37,6 +37,11 @@ struct netRecvResources {
   void* netRecvComm;
   struct ncclSendMem* sendMem;
   struct ncclRecvMem* recvMem;
+
+  // GDRCOPY support
+  gdr_mem_desc_t gdrMemDesc;
+  struct ncclRecvMem* devRecvMem;
+
   int netDev;
   int useGdr;
   int shared;
@@ -111,6 +116,9 @@ ncclResult_t netSendSetup(struct ncclComm* comm, struct ncclTopoGraph* graph, st
   return ncclSuccess;
 }
 
+// GDRCOPY support: TAIL_ENABLE When enabled locates the RX proxy tail in CUDA memory
+NCCL_PARAM(GdrCopyTailEnable, "GDRCOPY_TAIL_ENABLE", 1);
+
 ncclResult_t netRecvSetup(struct ncclComm* comm, struct ncclTopoGraph* graph, struct ncclPeerInfo* myInfo, struct ncclPeerInfo* peerInfo, struct ncclConnect* connectInfo, struct ncclConnector* recv, int channelId) {
   struct netRecvResources* resources;
   NCCLCHECK(ncclCalloc(&resources, 1));
@@ -123,8 +131,18 @@ ncclResult_t netRecvSetup(struct ncclComm* comm, struct ncclTopoGraph* graph, st
   NCCLCHECK(ncclCudaHostCalloc(&resources->sendMem, 1));
   NCCLCHECK(ncclCudaHostCalloc(&resources->recvMem, 1));
 
+  // GDRCOPY support
+  if (ncclGdrCopy != NULL && ncclParamGdrCopyTailEnable()) {
+    NCCLCHECK(ncclGdrCudaCalloc(&resources->devRecvMem, 1, &resources->gdrMemDesc));
+
+    // The GDR mapped VA doesn't work on the SMs
+    recv->conn.tail = &((struct ncclRecvMem*) ((char *)resources->gdrMemDesc.gdrDevMem+resources->gdrMemDesc.gdrOffset))->tail;
+  }
+  else {
+    recv->conn.tail = &resources->recvMem->tail;
+  }
+
   recv->conn.direct |= resources->useGdr ? NCCL_DIRECT_NIC : 0;
-  recv->conn.tail = &resources->recvMem->tail;
   // Only fuse P2P buffers, continue to allocate dedicated buffers for ring/tree
   recv->conn.ptrsFifo = resources->shared ? resources->recvMem->ptrsFifo : NULL;
   recv->conn.head = &resources->sendMem->head;
@@ -233,6 +251,10 @@ ncclResult_t netSendFree(void* transportResources) {
 
 ncclResult_t netRecvFree(void* transportResources) {
   struct netRecvResources* resources = (struct netRecvResources*)transportResources;
+  // GDRCOPY support
+  if (resources->devRecvMem) {
+    NCCLCHECK(ncclGdrCudaFree(&resources->gdrMemDesc));
+  }
   NCCLCHECK(ncclCudaHostFree(resources->sendMem));
   NCCLCHECK(ncclCudaHostFree(resources->recvMem));
   for (int l=0; l<LOC_COUNT; l++) {
@@ -424,7 +446,14 @@ ncclResult_t netRecvProxy(struct ncclProxyArgs* args) {
       if (done) {
         args->transmitted += args->sliceSteps;
         __sync_synchronize();
-        resources->recvMem->tail = args->transmitted;
+        if (resources->devRecvMem) {
+          // GDRCOPY support: Write updated tail directly to the device memory
+          resources->devRecvMem->tail = args->transmitted;
+          wc_store_fence(); // Flush out WC write
+        }
+        else {
+          resources->recvMem->tail = args->transmitted;
+        }
         args->idle = 0;
         return ncclSuccess;
       }

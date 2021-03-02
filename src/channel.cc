@@ -6,6 +6,10 @@
 
 #include "channel.h"
 #include "param.h"
+#include "gdrwrap.h"
+
+// GDRCOPY support: FIFO_ENABLE when enabled locates a workFifo in CUDA memory
+NCCL_PARAM(GdrCopyFifoEnable, "GDRCOPY_FIFO_ENABLE", 1);
 
 ncclResult_t initChannel(struct ncclComm* comm, int channelid) {
   struct ncclChannel* channel = comm->channels+channelid;
@@ -25,6 +29,16 @@ ncclResult_t initChannel(struct ncclComm* comm, int channelid) {
   }
 
   // Per-channel operation list.
+  if (ncclGdrCopy != NULL && ncclParamGdrCopyFifoEnable()) {
+    // GDRCOPY support
+    // We allocate a workFifo in GDR mapped CUDA memory
+    // But we still allocate the Host workFifo so that we
+    // can copy the work elements to CUDA memory on kernel launch
+    NCCLCHECK(ncclCalloc(&channel->gdrMemDesc, 1));
+    NCCLCHECK(ncclGdrCudaCalloc(&channel->workFifoGdr, NCCL_MAX_OPS, channel->gdrMemDesc));
+    // This address is needed by the CUDA kernels
+    channel->workFifoCuda = (struct ncclWork *)((char *)channel->gdrMemDesc->gdrDevMem+channel->gdrMemDesc->gdrOffset);
+  }
   NCCLCHECK(ncclCudaHostCalloc(&channel->workFifo, NCCL_MAX_OPS));
   return ncclSuccess;
 }
@@ -33,6 +47,11 @@ ncclResult_t freeChannel(struct ncclChannel* channel, int nRanks) {
   if (channel->id == -1) return ncclSuccess;
   // Operation list
   NCCLCHECK(ncclCudaHostFree(channel->workFifo));
+  if (channel->workFifoCuda) {
+    // GDRCOPY support
+    NCCLCHECK(ncclGdrCudaFree(channel->gdrMemDesc));
+    free(channel->gdrMemDesc);
+  }
 
   // Free Ring index to rank tables
   free(channel->ring.userRanks);
