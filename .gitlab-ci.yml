@@ -114,7 +114,7 @@ apitest-DGX-1V:
   tags:
     - dgx-1v
   variables:
-    CUDA_HOME: "$HOME/prom-dev/cuda-11.0"
+    CUDA_HOME: "/home/sjeaugey/prom-dev/cuda-11.0"
     SRUN: "srun -n 1 --account=sw-gpu -pbatch -t 00:05:00"
   script:
     - ./test/scripts/gitlab-runner-apitest.sh
@@ -217,8 +217,8 @@ perftest-DGX-1V:
     - dgx-1v
   variables:
     NCCL_DEBUG: "WARN"
-    MPI_HOME: "$HOME/prom-dev/mpi/openmpi-1.10.7"
-    CUDA_HOME: "$HOME/prom-dev/cuda-11.0"
+    MPI_HOME: "/home/sjeaugey/prom-dev/mpi/openmpi-1.10.7"
+    CUDA_HOME: "/home/sjeaugey/prom-dev/cuda-11.0"
     SALLOC: "salloc -N 1 -n 8 --account=sw-gpu -pbatch -t 00:05:00"
   script:
     - ./test/scripts/gitlab-runner-perftest.sh
@@ -244,8 +244,8 @@ perftest-multi-prom:
     - dgx-1v
   variables:
     NCCL_DEBUG: "WARN"
-    MPI_HOME: "$HOME/prom-dev/mpi/openmpi-1.10.7"
-    CUDA_HOME: "$HOME/prom-dev/cuda-11.0"
+    MPI_HOME: "/home/sjeaugey/prom-dev/mpi/openmpi-1.10.7"
+    CUDA_HOME: "/home/sjeaugey/prom-dev/cuda-11.0"
     SALLOC: "salloc -n 32 --account=sw-gpu -pbatch -t 00:05:00"
   script:
     - ./test/scripts/gitlab-runner-perftest.sh
