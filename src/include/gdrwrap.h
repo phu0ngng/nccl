@@ -147,6 +147,36 @@ typedef struct gdr_mem_desc {
   gdr_mh_t gdrMh;
 } gdr_mem_desc_t;
 
+static gdr_t ncclGdrInit() {
+  int libMajor, libMinor, drvMajor, drvMinor;
+  gdr_t handle = NULL;
+  // Dynamically load the GDRAPI library symbols
+  if (wrap_gdr_symbols() == ncclSuccess) {
+    handle = wrap_gdr_open();
+
+    if (handle != NULL) {
+      ncclResult_t res;
+
+      // Query the version of libgdrapi
+      NCCLCHECKGOTO(wrap_gdr_runtime_get_version(&libMajor, &libMinor), res, error);
+
+      // Query the version of gdrdrv driver
+      NCCLCHECKGOTO(wrap_gdr_driver_get_version(handle, &drvMajor, &drvMinor), res, error);
+
+      // Only support GDRAPI 2.1 and later
+      if (libMajor < 2 || (libMajor == 2 && libMinor < 1) || drvMajor < 2 || (drvMajor == 2 && drvMinor < 1)) {
+        goto error;
+      }
+      else
+        INFO(NCCL_INIT, "GDRCOPY enabled library %d.%d driver %d.%d", libMajor, libMinor, drvMajor, drvMinor);
+    }
+  }
+  return handle;
+error:
+  if (handle != NULL) (void) wrap_gdr_close(handle);
+  return NULL;
+}
+
 template <typename T>
 static ncclResult_t ncclGdrCudaCalloc(T** ptr, T** devPtr, size_t nelem, void** gdrHandle) {
   gdr_info_t info;

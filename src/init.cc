@@ -49,9 +49,6 @@ NCCL_PARAM(CheckPointers, "CHECK_POINTERS", 0);
 ncclNet_t* ncclNet = NULL;
 ncclCollNet_t* ncclCollNet = NULL;
 
-// GDRCOPY support
-gdr_t ncclGdrCopy = NULL;
-
 // Returns ncclInternalError if anything fails, causing that network to be ignored.
 ncclResult_t initNet(ncclNet_t* net) {
   int ndev;
@@ -118,42 +115,13 @@ ncclResult_t initNet() {
 // GDRCOPY support: Off by default
 NCCL_PARAM(GdrCopyEnable, "GDRCOPY_ENABLE", 0);
 
+// GDRCOPY support
+gdr_t ncclGdrCopy = NULL;
+
 ncclResult_t initGdrCopy() {
   if (ncclParamGdrCopyEnable()) {
-    int libMajor, libMinor, drvMajor, drvMinor;
-
-    // Dynamically load the GDRAPI library symbols
-    if (wrap_gdr_symbols() == ncclSuccess) {
-      ncclGdrCopy = wrap_gdr_open();
-
-      if (ncclGdrCopy != NULL) {
-        ncclResult_t res;
-
-        // Query the version of libgdrapi
-        NCCLCHECKGOTO(wrap_gdr_runtime_get_version(&libMajor, &libMinor), res, error);
-
-        // Query the version of gdrdrv driver
-        NCCLCHECKGOTO(wrap_gdr_driver_get_version(ncclGdrCopy, &drvMajor, &drvMinor), res, error);
-
-        // Only support GDRAPI 2.1 and later
-        if (libMajor < 2 || (libMajor == 2 && libMinor < 1) || drvMajor < 2 || (drvMajor == 2 && drvMinor < 1)) {
-          goto error;
-        }
-        else
-          INFO(NCCL_INIT, "GDRCOPY enabled library %d.%d driver %d.%d", libMajor, libMinor, drvMajor, drvMinor);
-      }
-    }
+    ncclGdrCopy = ncclGdrInit();
   }
-
-  return ncclSuccess;
-
-error:
-  if (ncclGdrCopy != NULL) {
-    (void) wrap_gdr_close(ncclGdrCopy);
-    ncclGdrCopy = NULL;
-  }
-
-  // Ignore failures, GDRCOPY support will be disabled
   return ncclSuccess;
 }
 
