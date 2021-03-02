@@ -46,6 +46,7 @@ ln -s libnccl.so.${nccl:Major}.${nccl:Minor}.${nccl:Patch} $RPM_BUILD_ROOT/%{_li
 # devel
 install -m 755 -d $RPM_BUILD_ROOT/%{_includedir}
 install -m 644 include/nccl.h $RPM_BUILD_ROOT/%{_includedir}
+install -m 644 include/nccl_net.h $RPM_BUILD_ROOT/%{_includedir}
 ln -s libnccl.so.${nccl:Major} $RPM_BUILD_ROOT/%{_libdir}/libnccl.so
 
 # static

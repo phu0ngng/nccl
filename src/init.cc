@@ -1,5 +1,5 @@
 /*************************************************************************
- * Copyright (c) 2015-2020, NVIDIA CORPORATION. All rights reserved.
+ * Copyright (c) 2015-2021, NVIDIA CORPORATION. All rights reserved.
  *
  * See LICENSE.txt for license information
  ************************************************************************/
@@ -232,13 +232,6 @@ static ncclResult_t commFree(ncclComm_t comm) {
 
   ncclDestroyQueueInfo(comm->enqueueInfo);
 
-  // Side stream and events used in FORK mode
-  CUDACHECK(cudaStreamDestroy(comm->setupStream));
-  if (comm->setupDone != NULL)
-    CUDACHECK(cudaEventDestroy(comm->setupDone));
-  if (comm->userStreamDone != NULL)
-    CUDACHECK(cudaEventDestroy(comm->userStreamDone));
-
   // Last rank frees shared resources between threads
   int isLast;
   NCCLCHECK(ncclCpuBarrierIn(comm, &isLast));
@@ -307,22 +300,6 @@ static ncclResult_t commAlloc(ncclComm_t* comret, int ndev, int rank) {
   comm->enqueueInfo->comm = comm;
   comm->lastSetupNode = NULL;
   comm->lastCudaGraphId = -1;
-#if CUDA_VERSION >= 11030
-  comm->cudaGraphMode = ncclComm::GRAPH_ASYNC;
-#else
-  comm->cudaGraphMode = ncclComm::GRAPH_FORK;
-#endif
-  char* cgStr = getenv("NCCL_CUDA_GRAPH_MODE");
-  if (cgStr) INFO(NCCL_ENV, "NCCL_CUDA_GRAPH_MODE set by environment to %s", cgStr);
-  if (cgStr && strcmp(cgStr, "SYNC") == 0) {
-    comm->cudaGraphMode = ncclComm::GRAPH_SYNC;
-  } else if (cgStr && strcmp(cgStr, "FORK") == 0) {
-    comm->cudaGraphMode = ncclComm::GRAPH_FORK;
-  }
-  // Side stream and events in FORK mode
-  CUDACHECK(cudaStreamCreateWithFlags(&comm->setupStream, cudaStreamNonBlocking));
-  CUDACHECK(cudaEventCreateWithFlags(&comm->userStreamDone, cudaEventDisableTiming));
-  CUDACHECK(cudaEventCreateWithFlags(&comm->setupDone, cudaEventDisableTiming));
 
   static_assert(MAXCHANNELS <= sizeof(*comm->connectSend)*8, "comm->connectSend must have enough bits for all channels");
   static_assert(MAXCHANNELS <= sizeof(*comm->connectRecv)*8, "comm->connectRecv must have enough bits for all channels");
@@ -529,7 +506,7 @@ static int collNetSetup(struct ncclComm* comm, struct ncclTopoGraph* collNetGrap
 
   // send master receives connect info from peer recv master
   if (isMaster && type == 0) {
-    NCCLCHECK(bootstrapRecv(comm->bootstrap, masterPeer, &sendrecvExchange, sizeof(sendrecvExchange)));
+    NCCLCHECK(bootstrapRecv(comm->bootstrap, masterPeer, collNetGraph->id, &sendrecvExchange, sizeof(sendrecvExchange)));
     rankInCollNet = sendrecvExchange.collNetRank;
     INFO(NCCL_INIT, "CollNet [send] : rank %d collNetRank %d collNetNranks %d received connect from rank %d", rank, rankInCollNet, nMasters, masterPeer);
   }
@@ -581,7 +558,7 @@ static int collNetSetup(struct ncclComm* comm, struct ncclTopoGraph* collNetGrap
   if (isMaster && type == 1) {
     sendrecvExchange.collNetRank = rankInCollNet;
     memcpy(&sendrecvExchange.connect, masterConnects+rankInCollNet, sizeof(struct ncclConnect));
-    NCCLCHECKGOTO(bootstrapSend(comm->bootstrap, masterPeer, &sendrecvExchange, sizeof(sendrecvExchange)), res, cleanup);
+    NCCLCHECKGOTO(bootstrapSend(comm->bootstrap, masterPeer, collNetGraph->id, &sendrecvExchange, sizeof(sendrecvExchange)), res, cleanup);
     INFO(NCCL_INIT, "CollNet [recv] : rank %d collNetRank %d collNetNranks %d sent connect to rank %d", rank, rankInCollNet, nMasters, masterPeer);
   }
   if (ret > 0) {
