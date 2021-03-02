@@ -118,9 +118,6 @@ typedef struct gdr_info gdr_info_t;
 
 /* End of gdrapi.h */
 
-// Global GDR driver handle
-extern gdr_t ncclGdrCopy;
-
 ncclResult_t wrap_gdr_symbols(void);
 
 gdr_t wrap_gdr_open(void);
@@ -136,6 +133,9 @@ ncclResult_t wrap_gdr_copy_to_mapping(gdr_mh_t handle, void *map_d_ptr, const vo
 ncclResult_t wrap_gdr_copy_from_mapping(gdr_mh_t handle, void *h_ptr, const void *map_d_ptr, size_t size);
 
 #endif // GDR_DIRECT
+
+// Global GDR driver handle
+extern gdr_t ncclGdrCopy;
 
 #include "alloc.h"
 
