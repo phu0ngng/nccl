@@ -246,6 +246,9 @@ perftest-multi-prom:
     NCCL_DEBUG: "WARN"
     MPI_HOME: "/home/sjeaugey/prom-dev/mpi/openmpi-1.10.7"
     CUDA_HOME: "/home/sjeaugey/prom-dev/cuda-11.0"
+    OMPI_MCA_oob_tcp_if_include: "10.33.12.0/24"
+    OMPI_MCA_btl: "tcp,self"
+    OMPI_MCA_btl_tcp_if_include: "10.33.12.0/24"
     SALLOC: ""
   script:
     - salloc -N 4 -n 32 --account=sw-gpu -pbatch -t 00:05:00 ./test/scripts/gitlab-runner-perftest.sh
