@@ -34,10 +34,7 @@ ncclResult_t initChannel(struct ncclComm* comm, int channelid) {
     // We allocate a workFifo in GDR mapped CUDA memory
     // But we still allocate the Host workFifo so that we
     // can copy the work elements to CUDA memory on kernel launch
-    NCCLCHECK(ncclCalloc(&channel->gdrMemDesc, 1));
-    NCCLCHECK(ncclGdrCudaCalloc(&channel->workFifoGdr, NCCL_MAX_OPS, channel->gdrMemDesc));
-    // This address is needed by the CUDA kernels
-    channel->workFifoCuda = (struct ncclWork *)((char *)channel->gdrMemDesc->gdrDevMem+channel->gdrMemDesc->gdrOffset);
+    NCCLCHECK(ncclGdrCudaCalloc(&channel->workFifoGdr, &channel->workFifoCuda, NCCL_MAX_OPS, &channel->gdrMemDesc));
   }
   NCCLCHECK(ncclCudaHostCalloc(&channel->workFifo, NCCL_MAX_OPS));
   return ncclSuccess;

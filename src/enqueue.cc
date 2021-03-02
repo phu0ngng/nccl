@@ -160,7 +160,7 @@ static ncclResult_t setupLaunch(struct ncclQueueInfo* eqInfo, int usingCudaGraph
       for (int i = 0; i < nelems; i++) {
         int elem = (first+i) % NCCL_MAX_OPS;
         // Copy Host workFifo to CUDA workFifo via the GDRCOPY mapping
-        NCCLCHECK(wrap_gdr_copy_to_mapping(channel->gdrMemDesc->gdrMh, channel->workFifoGdr+elem, channel->workFifo+elem, sizeof(struct ncclWork)));
+        NCCLCHECK(ncclGdrCudaCopy(channel->gdrMemDesc, channel->workFifoGdr+elem, channel->workFifo+elem, 1));
       }
     }
   }

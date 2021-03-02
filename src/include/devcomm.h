@@ -10,7 +10,6 @@
 #include "nccl.h"
 #include "align.h"
 #include <stdint.h>
-#include "gdrwrap.h"
 
 #define NCCL_NUM_FUNCTIONS 5 // SendRecv not included for now
 typedef enum { ncclFuncBroadcast, ncclFuncReduce, ncclFuncAllGather, ncclFuncReduceScatter, ncclFuncAllReduce, ncclFuncSendRecv} ncclFunc_t;
@@ -196,7 +195,7 @@ struct ncclChannel {
       // GDRCOPY support
       struct ncclWork* workFifoGdr;
       struct ncclWork* workFifoCuda;
-      gdr_mem_desc_t *gdrMemDesc;
+      void* gdrMemDesc;
     };
     int data[0x80];
   };

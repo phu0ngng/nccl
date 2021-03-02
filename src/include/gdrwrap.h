@@ -148,7 +148,7 @@ typedef struct gdr_mem_desc {
 } gdr_mem_desc_t;
 
 template <typename T>
-static ncclResult_t ncclGdrCudaCalloc(T** ptr, size_t nelem, gdr_mem_desc_t *md) {
+static ncclResult_t ncclGdrCudaCalloc(T** ptr, T** devPtr, size_t nelem, void** gdrHandle) {
   gdr_info_t info;
   size_t mapSize;
   gdr_mh_t mh;
@@ -175,12 +175,17 @@ static ncclResult_t ncclGdrCudaCalloc(T** ptr, size_t nelem, gdr_mem_desc_t *md)
   // Will offset ever be non zero ?
   ssize_t off = info.va - alignedAddr;
 
-  *ptr = (T *)((char *)gdrMap + off);
+  gdr_mem_desc_t* md;
+  NCCLCHECK(ncclCalloc(&md, 1));
   md->gdrDevMem = devMem;
   md->gdrMap = gdrMap;
   md->gdrMapSize = mapSize;
   md->gdrOffset = off+align;
   md->gdrMh = mh;
+  *gdrHandle = md;
+
+  *ptr = (T *)((char *)gdrMap+off);
+  if (devPtr) *devPtr = (T *)(devMem+off+align);
 
   TRACE(NCCL_INIT, "GDRCOPY : allocated devMem %p gdrMap %p offset %lx mh %lx mapSize %zi at %p",
        md->gdrDevMem, md->gdrMap, md->gdrOffset, md->gdrMh.h, md->gdrMapSize, *ptr);
@@ -188,10 +193,19 @@ static ncclResult_t ncclGdrCudaCalloc(T** ptr, size_t nelem, gdr_mem_desc_t *md)
   return ncclSuccess;
 }
 
-static ncclResult_t ncclGdrCudaFree(gdr_mem_desc_t *md) {
+template <typename T>
+static ncclResult_t ncclGdrCudaCopy(void *gdrHandle, T* dst, T* src, size_t nelem) {
+  gdr_mem_desc_t *md = (gdr_mem_desc_t*)gdrHandle;
+  NCCLCHECK(wrap_gdr_copy_to_mapping(md->gdrMh, dst, src, nelem*sizeof(T)));
+  return ncclSuccess;
+}
+
+static ncclResult_t ncclGdrCudaFree(void* gdrHandle) {
+  gdr_mem_desc_t *md = (gdr_mem_desc_t*)gdrHandle;
   NCCLCHECK(wrap_gdr_unmap(ncclGdrCopy, md->gdrMh, md->gdrMap, md->gdrMapSize));
   NCCLCHECK(wrap_gdr_unpin_buffer(ncclGdrCopy, md->gdrMh));
   CUDACHECK(cudaFree(md->gdrDevMem));
+  free(md);
 
   return ncclSuccess;
 }

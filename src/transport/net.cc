@@ -8,6 +8,7 @@
 #include "net.h"
 #include "graph.h"
 #include "collectives.h"
+#include "gdrwrap.h"
 
 struct netConnectInfo {
   ncclNetHandle_t netHandle;
@@ -39,9 +40,9 @@ struct netRecvResources {
   struct ncclRecvMem* recvMem;
 
   // GDRCOPY support
-  gdr_mem_desc_t gdrMemDesc;
+  void* gdrMemDesc;
   struct ncclRecvMem* devRecvMem;
-  gdr_mem_desc_t gdrFlushDesc;
+  void* gdrFlushDesc;
   int* devFlushMem;
 
   int netDev;
@@ -137,17 +138,19 @@ ncclResult_t netRecvSetup(struct ncclComm* comm, struct ncclTopoGraph* graph, st
 
   // GDRCOPY support
   if (ncclGdrCopy != NULL && ncclParamGdrCopyTailEnable()) {
-    NCCLCHECK(ncclGdrCudaCalloc(&resources->devRecvMem, 1, &resources->gdrMemDesc));
+    struct ncclRecvMem* devCudaPtr;
+    NCCLCHECK(ncclGdrCudaCalloc(&resources->devRecvMem, &devCudaPtr, 1, &resources->gdrMemDesc));
 
     // The GDR mapped VA doesn't work on the SMs
-    recv->conn.tail = &((struct ncclRecvMem*) ((char *)resources->gdrMemDesc.gdrDevMem+resources->gdrMemDesc.gdrOffset))->tail;
+    recv->conn.tail = &((struct ncclRecvMem*)devCudaPtr)->tail;
   }
   else {
     recv->conn.tail = &resources->recvMem->tail;
   }
   // GDRCOPY support
   if (ncclGdrCopy != NULL && ncclParamGdrCopyFlushEnable()) {
-    NCCLCHECK(ncclGdrCudaCalloc(&resources->devFlushMem, 1, &resources->gdrFlushDesc));
+    int* cudaPtr;
+    NCCLCHECK(ncclGdrCudaCalloc(&resources->devFlushMem, &cudaPtr, 1, &resources->gdrFlushDesc));
   }
 
   recv->conn.direct |= resources->useGdr ? NCCL_DIRECT_NIC : 0;
@@ -262,12 +265,12 @@ ncclResult_t netRecvFree(void* transportResources) {
   // GDRCOPY support
 #if defined(__x86_64__)
   if (resources->devFlushMem) {
-    NCCLCHECK(ncclGdrCudaFree(&resources->gdrMemDesc));
+    NCCLCHECK(ncclGdrCudaFree(resources->gdrMemDesc));
   }
 #endif
   // GDRCOPY support
   if (resources->devRecvMem) {
-    NCCLCHECK(ncclGdrCudaFree(&resources->gdrMemDesc));
+    NCCLCHECK(ncclGdrCudaFree(resources->gdrMemDesc));
   }
   NCCLCHECK(ncclCudaHostFree(resources->sendMem));
   NCCLCHECK(ncclCudaHostFree(resources->recvMem));
