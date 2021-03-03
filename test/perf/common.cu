@@ -870,6 +870,7 @@ int main(int argc, char* argv[]) {
 #else
         printf("Option -G (CUDA graph) not supported before NCCL 2.9 + CUDA 11.3. Ignoring\n");
 #endif
+        break;
       case 'C':
         report_cputime = strtol(optarg, NULL, 0);
         break;
