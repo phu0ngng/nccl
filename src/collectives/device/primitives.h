@@ -177,6 +177,7 @@ class ncclPrimitives {
 
     if (tid < nworkers) {
       if (RECV && (role & ROLE_WAIT_RECV)) waitRecv<0, DIRECTRECV>(directOffset+offset);
+      // The peerElem size is not accurate; but intra-node does not rely on sizes FIFO
       if (SEND && (role & ROLE_WAIT_SEND)) waitSend<0, DIRECTSEND>(directOffset+offset, peerElem*sizeof(T));
       subBarrier();
       if (SEND) {

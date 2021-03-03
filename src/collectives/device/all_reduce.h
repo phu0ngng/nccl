@@ -283,7 +283,11 @@ class ncclFunction<ncclFuncAllReduce, NCCL_ALGO_COLLNET, NCCL_PROTO_SIMPLE, FUNC
       for (ssize_t gridOffset = 0; gridOffset < size; gridOffset += loopSize) {
         ssize_t offset = gridOffset + (bid*tree->nHeads+tree->headRank)*chunkSize;
         int nelem = min(chunkSize, size-offset);
-        prims.recvReduceSend(thisInput+offset, nelem);
+        if (tree->down[0] == -1) {
+          prims.send(thisInput+offset, nelem);
+        } else {
+          prims.recvReduceSend(thisInput+offset, nelem);
+        }
       }
     } else if (tid < THREAD_START_BCAST && tree->up[0] != -1) {
       // Gather
@@ -301,7 +305,11 @@ class ncclFunction<ncclFuncAllReduce, NCCL_ALGO_COLLNET, NCCL_PROTO_SIMPLE, FUNC
       for (ssize_t gridOffset = 0; gridOffset < size; gridOffset += loopSize) {
         ssize_t offset = gridOffset + (bid*tree->nHeads+tree->headRank)*chunkSize;
         int nelem = min(chunkSize, size-offset);
-        prims.directRecvCopySend(thisOutput+offset, offset, nelem);
+        if (tree->down[0] == -1) {
+          prims.directRecv(thisOutput+offset, offset, nelem);
+        } else {
+          prims.directRecvCopySend(thisOutput+offset, offset, nelem);
+        }
       }
     }
 #endif
