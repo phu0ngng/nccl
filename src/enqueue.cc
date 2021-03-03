@@ -150,7 +150,7 @@ static ncclResult_t setupLaunch(struct ncclQueueInfo* eqInfo, int usingCudaGraph
       if (elem->funcIndex != FUNC_INDEX_P2P) elem->active = 0;
     }
 
-    if (channel->workFifoCuda) {
+    if (channel->gdrMemDesc) {
       // GDRCOPY support
       uint64_t first = (channel->workFifoTail-channel->workCount)%NCCL_MAX_OPS;
       uint64_t nelems = channel->workCount;

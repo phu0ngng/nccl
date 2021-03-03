@@ -29,14 +29,18 @@ ncclResult_t initChannel(struct ncclComm* comm, int channelid) {
   }
 
   // Per-channel operation list.
+  NCCLCHECK(ncclCudaHostCalloc(&channel->workFifo, NCCL_MAX_OPS));
   if (ncclGdrCopy != NULL && ncclParamGdrCopyFifoEnable()) {
     // GDRCOPY support
     // We allocate a workFifo in GDR mapped CUDA memory
     // But we still allocate the Host workFifo so that we
     // can copy the work elements to CUDA memory on kernel launch
-    NCCLCHECK(ncclGdrCudaCalloc(&channel->workFifoGdr, &channel->workFifoCuda, NCCL_MAX_OPS, &channel->gdrMemDesc));
+    NCCLCHECK(ncclGdrCudaCalloc(&channel->workFifoGdr, &channel->workFifoDev, NCCL_MAX_OPS, &channel->gdrMemDesc));
+  } else {
+    // The device workFifo is the Host one
+    channel->workFifoDev = channel->workFifo;
   }
-  NCCLCHECK(ncclCudaHostCalloc(&channel->workFifo, NCCL_MAX_OPS));
+
   return ncclSuccess;
 }
 
@@ -44,7 +48,7 @@ ncclResult_t freeChannel(struct ncclChannel* channel, int nRanks) {
   if (channel->id == -1) return ncclSuccess;
   // Operation list
   NCCLCHECK(ncclCudaHostFree(channel->workFifo));
-  if (channel->workFifoCuda) {
+  if (channel->gdrMemDesc) {
     // GDRCOPY support
     NCCLCHECK(ncclGdrCudaFree(channel->gdrMemDesc));
   }

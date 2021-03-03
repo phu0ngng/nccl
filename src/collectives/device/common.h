@@ -82,7 +82,7 @@ __device__ void ncclKernel(struct ncclWorkElem first)  {
   struct ncclDevComm* comm = first.comm;
   struct ncclChannel* channel = comm->channels+bid;
   // GDRCOPY support
-  struct ncclWork *workFifo = (channel->workFifoCuda) ? channel->workFifoCuda : channel->workFifo;
+  struct ncclWork *workFifo = channel->workFifoDev;
   struct ncclWorkElem* w = NULL;
 
   /* To optimize for latency, (only) the first operation is passed as argument.*/

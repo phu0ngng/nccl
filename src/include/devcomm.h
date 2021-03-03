@@ -194,7 +194,7 @@ struct ncclChannel {
 
       // GDRCOPY support
       struct ncclWork* workFifoGdr;
-      struct ncclWork* workFifoCuda;
+      struct ncclWork* workFifoDev;
       void* gdrMemDesc;
     };
     int data[0x80];
