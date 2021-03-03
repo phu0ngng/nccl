@@ -182,7 +182,7 @@ perftest-K80:
     CUDA_HOME: "/usr/local/cuda-11.0"
     SALLOC: "salloc -N 1 -n 16 -pK80"
   script:
-    - ./test/scripts/gitlab-runner-perftest.sh
+    - ./test/scripts/gitlab-runner-perftest.sh 256M
   interruptible: true
 
 perftest-K40:
@@ -221,7 +221,7 @@ perftest-DGX-1V:
     CUDA_HOME: "/home/sjeaugey/prom-dev/cuda-11.0"
     SALLOC: ""
   script:
-    - salloc -N 1 -n 8 --account=sw-gpu -pbatch -t 00:05:00 ./test/scripts/gitlab-runner-perftest.sh
+    - salloc -N 1 -n 8 --account=sw-gpu -pbatch -t 00:05:00 ./test/scripts/gitlab-runner-perftest.sh 4G
   interruptible: true
 
 perftest-multi-gc:
@@ -235,7 +235,7 @@ perftest-multi-gc:
     CUDA_HOME: "/usr/local/cuda-11.0"
     SALLOC: "salloc -n 4 -n 32 -w gc[01-03,05]"
   script:
-    - ./test/scripts/gitlab-runner-perftest.sh
+    - ./test/scripts/gitlab-runner-perftest.sh 128M
   interruptible: true
 
 perftest-multi-prom:
@@ -251,6 +251,6 @@ perftest-multi-prom:
     OMPI_MCA_btl_tcp_if_include: "10.33.12.0/24"
     SALLOC: ""
   script:
-    - salloc -N 4 -n 32 --account=sw-gpu -pbatch -t 00:05:00 ./test/scripts/gitlab-runner-perftest.sh
+    - salloc -N 4 -n 32 --account=sw-gpu -pbatch -t 00:05:00 ./test/scripts/gitlab-runner-perftest.sh 4G
   interruptible: true
 
