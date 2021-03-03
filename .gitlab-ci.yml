@@ -95,7 +95,7 @@ apitest-K80:
     CUDA_HOME: "/usr/local/cuda-11.0"
     SRUN: "srun -n 1 -c 16 -pK80"
   script:
-    - ./test/scripts/gitlab-runner-apitest.sh
+    - ./test/scripts/gitlab-runner-apitest.sh minimal
   interruptible: true
 
 apitest-A100:
