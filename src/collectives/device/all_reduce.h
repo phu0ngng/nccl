@@ -170,7 +170,7 @@ class ncclFunction<ncclFuncAllReduce, NCCL_ALGO_TREE, NCCL_PROTO_SIMPLE, FUNC, T
         for (ssize_t gridOffset = 0; gridOffset < size; gridOffset += loopSize) {
           ssize_t offset = gridOffset + bid*chunkSize;
           int nelem = min(chunkSize, size-offset);
-          prims.directRecvReduceCopySend<Input, Output, /*DoPost=*/true>(offset, offset, offset, nelem);
+          prims.directRecvReduceCopySend(offset, offset, offset, nelem, /*doPost=*/true);
         }
       }
     } else {
