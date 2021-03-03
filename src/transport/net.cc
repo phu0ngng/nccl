@@ -265,7 +265,7 @@ ncclResult_t netRecvFree(void* transportResources) {
   // GDRCOPY support
 #if defined(__x86_64__)
   if (resources->devFlushMem) {
-    NCCLCHECK(ncclGdrCudaFree(resources->gdrMemDesc));
+    NCCLCHECK(ncclGdrCudaFree(resources->gdrFlushDesc));
   }
 #endif
   // GDRCOPY support
