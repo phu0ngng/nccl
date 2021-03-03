@@ -50,7 +50,6 @@ class ncclPrimitives {
   const int stepSize;
   int nrecv, nsend;
   FUNC const fn;
-  ncclConnInfo *conn;
   volatile int* connSizesFifoPtr = nullptr;
   void** connPtrsFifoPtr = nullptr;
   union {
