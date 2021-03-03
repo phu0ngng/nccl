@@ -41,8 +41,9 @@ static __device__ void load_parallel(void* dst, void* src, size_t size, int tid)
   int* s = (int*)src;
   for (int o = tid; o < (size/sizeof(int)); o += blockDim.x) d[o] = s[o];
 }
-static __device__ void load_coll(struct ncclWork* localWork, struct ncclWork* hostWork, int tid, struct ncclDevComm* comm) {
-  load_parallel(localWork, hostWork, sizeof(struct ncclWork), tid);
+
+static __device__ void load_coll(struct ncclWork* localWork, struct ncclWork *hostWork, struct ncclWork* workFifo, int tid, struct ncclDevComm* comm) {
+  load_parallel(localWork, workFifo, sizeof(struct ncclWork), tid);
   // Check whether the last operation was aborted and make sure all threads exit
   int abort = tid == 0 ? *(comm->abortFlag) : 0;
   exitIfAbortBarrier(abort);
@@ -89,7 +90,7 @@ __device__ void ncclKernel(struct ncclWorkElem first)  {
     if (w == NULL) {
       w = shmem.localWork.elems;
       __syncthreads();
-      load_coll(&shmem.localWork, channel->workFifo+channel->index, tid, comm);
+      load_coll(&shmem.localWork, channel->workFifo+channel->index, channel->workFifoDev+channel->index, tid, comm);
     }
     if (tid < w->nThreads) {
       if (w->funcIndex == FINDEX) {

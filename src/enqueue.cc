@@ -7,6 +7,7 @@
 #include "enqueue.h"
 #include "argcheck.h"
 #include "coll_net.h"
+#include "gdrwrap.h"
 
 // Only generate inline kernels for LL
 #define NCCL_FUNC5(func, algo, redop, dtype) \
@@ -135,19 +136,34 @@ static ncclResult_t setupLaunch(struct ncclQueueInfo* eqInfo, int usingCudaGraph
       e->p2p.nThreads = 0;
     }
     channel->workFifo[(channel->workFifoTail-1)%NCCL_MAX_OPS].elems[0].active = 2;
-  }
 
-  // Find the first operation, choose the kernel accordingly and pass it as the first argument.
-  // Note that changing cuda launch argument after capture is not supported by cudaGraph
-  struct ncclChannel* c0 = comm->channels;
-  struct ncclWork* work = c0->workFifo+((c0->workFifoTail-c0->workCount)%NCCL_MAX_OPS);
-  struct ncclWorkElem* elem = work->elems;
-  if (!usingCudaGraph) {
-    params->func = ncclKerns[elem->funcIndex];
-    memcpy(&comm->args, elem, sizeof(struct ncclWorkElem));
+    if (c == 0) {
+      // Find the first operation, choose the kernel accordingly and pass it as the first argument.
+      // Note that changing cuda launch argument after capture is not supported by cudaGraph
+      struct ncclWork* work = channel->workFifo+((channel->workFifoTail-channel->workCount)%NCCL_MAX_OPS);
+      struct ncclWorkElem* elem = work->elems;
+      if (!usingCudaGraph) {
+        params->func = ncclKerns[elem->funcIndex];
+        memcpy(&comm->args, elem, sizeof(struct ncclWorkElem));
+      }
+      // As we inline the first coll directly, we can free it immediately.
+      if (elem->funcIndex != FUNC_INDEX_P2P) elem->active = 0;
+    }
+
+    if (channel->gdrMemDesc) {
+      // GDRCOPY support
+      uint64_t first = (channel->workFifoTail-channel->workCount)%NCCL_MAX_OPS;
+      uint64_t nelems = channel->workCount;
+      TRACE(NCCL_INIT, "GDRCOPY : copy workFifo %p to %p first %ld last %ld nelems %zi",
+            channel->workFifo, channel->workFifoGdr, first, last, nelems);
+
+      for (int i = 0; i < nelems; i++) {
+        int elem = (first+i) % NCCL_MAX_OPS;
+        // Copy Host workFifo to CUDA workFifo via the GDRCOPY mapping
+        NCCLCHECK(ncclGdrCudaCopy(channel->gdrMemDesc, channel->workFifoGdr+elem, channel->workFifo+elem, 1));
+      }
+    }
   }
-  // As we inline the first coll directly, we can free it immediately.
-  if (elem->funcIndex != FUNC_INDEX_P2P) elem->active = 0;
 
   return ncclSuccess;
 }
