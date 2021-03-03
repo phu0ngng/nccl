@@ -917,7 +917,7 @@ int main(int argc, char* argv[]) {
             "[-w,--warmup_iters <warmup iteration count>] \n\t"
             "[-p,--parallel_init <0/1>] \n\t"
             "[-c,--check <0/1>] \n\t"
-            "[-o,--op <sum/prod/min/max/all>] \n\t"
+            "[-o,--op <sum/prod/min/max/avg/all>] \n\t"
             "[-d,--datatype <nccltype/all>] \n\t"
             "[-r,--root <root>] \n\t"
             "[-z,--blocking <0/1>] \n\t"
