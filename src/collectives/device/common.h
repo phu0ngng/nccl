@@ -81,8 +81,6 @@ __device__ void ncclKernel(struct ncclWorkElem first)  {
 
   struct ncclDevComm* comm = first.comm;
   struct ncclChannel* channel = comm->channels+bid;
-  // GDRCOPY support
-  struct ncclWork *workFifo = channel->workFifoDev;
   struct ncclWorkElem* w = NULL;
 
   /* To optimize for latency, (only) the first operation is passed as argument.*/
@@ -92,7 +90,7 @@ __device__ void ncclKernel(struct ncclWorkElem first)  {
     if (w == NULL) {
       w = shmem.localWork.elems;
       __syncthreads();
-      load_coll(&shmem.localWork, channel->workFifo+channel->index, workFifo+channel->index, tid, comm);
+      load_coll(&shmem.localWork, channel->workFifo+channel->index, channel->workFifoDev+channel->index, tid, comm);
     }
     if (tid < w->nThreads) {
       if (w->funcIndex == FINDEX) {
