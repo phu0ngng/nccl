@@ -148,10 +148,12 @@ ncclResult_t netRecvSetup(struct ncclComm* comm, struct ncclTopoGraph* graph, st
     recv->conn.tail = &resources->recvMem->tail;
   }
   // GDRCOPY support
+#if defined (__x86_64__)
   if (ncclGdrCopy != NULL && ncclParamGdrCopyFlushEnable()) {
     int* cudaPtr;
     NCCLCHECK(ncclGdrCudaCalloc(&resources->devFlushMem, &cudaPtr, 1, &resources->gdrFlushDesc));
   }
+#endif
 
   recv->conn.direct |= resources->useGdr ? NCCL_DIRECT_NIC : 0;
   // Only fuse P2P buffers, continue to allocate dedicated buffers for ring/tree
@@ -263,11 +265,9 @@ ncclResult_t netSendFree(void* transportResources) {
 ncclResult_t netRecvFree(void* transportResources) {
   struct netRecvResources* resources = (struct netRecvResources*)transportResources;
   // GDRCOPY support
-#if defined(__x86_64__)
   if (resources->devFlushMem) {
     NCCLCHECK(ncclGdrCudaFree(resources->gdrFlushDesc));
   }
-#endif
   // GDRCOPY support
   if (resources->devRecvMem) {
     NCCLCHECK(ncclGdrCudaFree(resources->gdrMemDesc));
@@ -452,8 +452,8 @@ ncclResult_t netRecvProxy(struct ncclProxyArgs* args) {
             // Force a PCI-E read from GPU memory
             asm volatile ("mov (%0), %%eax" :: "l"(resources->devFlushMem) : "%eax");
 #else
-	    WARN("NET: GDR Flush only supported on x86_64");
-	    return ncclInternalError;
+            WARN("NET: GDR Flush only supported on x86_64");
+            return ncclInternalError;
 #endif
             args->requests[buffSlot] = NULL;
 	  } else {
