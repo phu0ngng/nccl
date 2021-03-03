@@ -13,7 +13,7 @@ for func in all_reduce reduce reduce_scatter broadcast all_gather alltoall gathe
   $SALLOC $MPI_HOME/bin/mpirun ./build/test/perf/${func}_perf $range $opts
 done
 
-rangetype="-b 16M -e 16M"
+rangetype="-b 16M -e 16M -o all -d all"
 for func in all_reduce reduce reduce_scatter; do
   $SALLOC $MPI_HOME/bin/mpirun ./build/test/perf/all_reduce_perf $rangetype $opts
 done
