@@ -348,7 +348,8 @@ ncclResult_t ncclProxyAppendPosted(struct ncclProxyState* state) {
   }
 
   ncclProxyArgs* next, *prev = NULL, *op = state->postedOps;
-  while (op) {
+  int opCount = op->opCount;
+  while (op && op->opCount == opCount) {
     next = op->next;
     if (op->sendbytes) {
       if (prev) prev->next = next;
@@ -359,13 +360,14 @@ ncclResult_t ncclProxyAppendPosted(struct ncclProxyState* state) {
     op = next;
   }
   op = state->postedOps;
-  while (op) {
+  while (op && op->opCount == opCount) {
     next = op->next;
     op->next = NULL;
     NCCLCHECK(ProxyAppend(state, op, op->connector->conn.shared));
     op = next;
   }
-  state->postedOps = state->postedOpsEnd = NULL;
+  state->postedOps = op;
+  if (op == NULL) state->postedOpsEnd = NULL;
   NCCLCHECK(dumpProxyState(state));
 
   pthread_mutex_unlock(&state->opsMutex);
