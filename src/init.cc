@@ -119,7 +119,7 @@ NCCL_PARAM(GdrCopyEnable, "GDRCOPY_ENABLE", 0);
 gdr_t ncclGdrCopy = NULL;
 
 ncclResult_t initGdrCopy() {
-  if (ncclParamGdrCopyEnable()) {
+  if (ncclParamGdrCopyEnable() == 1) {
     ncclGdrCopy = ncclGdrInit();
   }
   return ncclSuccess;

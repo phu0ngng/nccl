@@ -30,7 +30,7 @@ ncclResult_t initChannel(struct ncclComm* comm, int channelid) {
 
   // Per-channel operation list.
   NCCLCHECK(ncclCudaHostCalloc(&channel->workFifo, NCCL_MAX_OPS));
-  if (ncclGdrCopy != NULL && ncclParamGdrCopyFifoEnable()) {
+  if (ncclGdrCopy != NULL && ncclParamGdrCopyFifoEnable() == 1) {
     // GDRCOPY support
     // We allocate a workFifo in GDR mapped CUDA memory
     // But we still allocate the Host workFifo so that we

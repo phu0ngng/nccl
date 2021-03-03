@@ -137,7 +137,7 @@ ncclResult_t netRecvSetup(struct ncclComm* comm, struct ncclTopoGraph* graph, st
   NCCLCHECK(ncclCudaHostCalloc(&resources->recvMem, 1));
 
   // GDRCOPY support
-  if (ncclGdrCopy != NULL && ncclParamGdrCopyTailEnable()) {
+  if (ncclGdrCopy != NULL && ncclParamGdrCopyTailEnable() == 1) {
     struct ncclRecvMem* devCudaPtr;
     NCCLCHECK(ncclGdrCudaCalloc(&resources->devRecvMem, &devCudaPtr, 1, &resources->gdrMemDesc));
 
@@ -149,7 +149,7 @@ ncclResult_t netRecvSetup(struct ncclComm* comm, struct ncclTopoGraph* graph, st
   }
   // GDRCOPY support
 #if defined (__x86_64__)
-  if (ncclGdrCopy != NULL && ncclParamGdrCopyFlushEnable()) {
+  if (ncclGdrCopy != NULL && ncclParamGdrCopyFlushEnable() == 1) {
     int* cudaPtr;
     NCCLCHECK(ncclGdrCudaCalloc(&resources->devFlushMem, &cudaPtr, 1, &resources->gdrFlushDesc));
   }
