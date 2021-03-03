@@ -150,7 +150,8 @@ ncclResult_t netRecvSetup(struct ncclComm* comm, struct ncclTopoGraph* graph, st
   // GDRCOPY support
 #if defined (__x86_64__)
   if (ncclGdrCopy != NULL && ncclParamGdrCopyFlushEnable()) {
-    NCCLCHECK(ncclGdrCudaCalloc(&resources->devFlushMem, nullptr, 1, &resources->gdrFlushDesc));
+    int* cudaPtr;
+    NCCLCHECK(ncclGdrCudaCalloc(&resources->devFlushMem, &cudaPtr, 1, &resources->gdrFlushDesc));
   }
 #endif
 
