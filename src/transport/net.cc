@@ -265,11 +265,11 @@ ncclResult_t netSendFree(void* transportResources) {
 ncclResult_t netRecvFree(void* transportResources) {
   struct netRecvResources* resources = (struct netRecvResources*)transportResources;
   // GDRCOPY support
-  if (resources->devFlushMem) {
+  if (resources->gdrFlushDesc) {
     NCCLCHECK(ncclGdrCudaFree(resources->gdrFlushDesc));
   }
   // GDRCOPY support
-  if (resources->devRecvMem) {
+  if (resources->gdrMemDesc) {
     NCCLCHECK(ncclGdrCudaFree(resources->gdrMemDesc));
   }
   NCCLCHECK(ncclCudaHostFree(resources->sendMem));
