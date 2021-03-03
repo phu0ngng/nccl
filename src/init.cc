@@ -388,11 +388,11 @@ ncclResult_t ncclCommSetIntra(struct ncclComm* comm, int rank, int ranks, struct
   int cgMdLaunch = 0;
 
   // Set CG Mode
-  comm->launchMode = ncclComm::GROUP;
+  comm->launchMode = ncclComm::PARALLEL;
   char* str = getenv("NCCL_LAUNCH_MODE");
   if (str) INFO(NCCL_ENV, "NCCL_LAUNCH_MODE set by environment to %s", str);
-  if (comm->intraRanks == 1 || (str && strcmp(str, "PARALLEL") == 0)) {
-    comm->launchMode = ncclComm::PARALLEL;
+  if (str && strcmp(str, "GROUP") == 0) {
+    comm->launchMode = ncclComm::GROUP;
   }
   if (comm->launchMode == ncclComm::GROUP) {
     CUDACHECK(cudaStreamCreateWithFlags(&comm->groupStream, cudaStreamNonBlocking));
@@ -969,7 +969,7 @@ static ncclResult_t commDestroy(ncclComm_t comm) {
 
   TRACE(NCCL_INIT, "Destroying comm %p rank %d abortFlag %d fatalError %d", comm, comm->rank, *comm->abortFlag, comm->fatalError);
 
-  CUDACHECK(cudaStreamSynchronize(comm->groupStream));
+  CUDACHECK(cudaEventSynchronize(comm->doneEvent));
   NCCLCHECK(ncclProxyDestroy(comm));
   NCCLCHECK(commFree(comm));
 
