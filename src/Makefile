@@ -56,8 +56,8 @@ ALWAYS_REBUILD:
 $(LIBDIR)/$(LIBTARGET) $(LIBDIR)/$(STATICLIBTARGET) : $(LIBOBJ)
 
 $(INCDIR)/nccl.h : nccl.h.in
-# NCCL_VERSION(X,Y,Z) ((X) * 1000 + (Y) * 100 + (Z))
-	@$(eval NCCL_VERSION := $(shell printf "%d%d%02d" $(NCCL_MAJOR) $(NCCL_MINOR) $(NCCL_PATCH)))
+# NCCL_VERSION(X,Y,Z) ((X) * 10000 + (Y) * 100 + (Z))
+	@$(eval NCCL_VERSION := $(shell printf "%d%02d%02d" $(NCCL_MAJOR) $(NCCL_MINOR) $(NCCL_PATCH)))
 	mkdir -p $(INCDIR)
 	@printf "Generating %-35s > %s\n" $< $@
 	sed -e "s/\$${nccl:Major}/$(NCCL_MAJOR)/g" \
