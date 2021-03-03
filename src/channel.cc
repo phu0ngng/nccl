@@ -47,7 +47,6 @@ ncclResult_t freeChannel(struct ncclChannel* channel, int nRanks) {
   if (channel->workFifoCuda) {
     // GDRCOPY support
     NCCLCHECK(ncclGdrCudaFree(channel->gdrMemDesc));
-    free(channel->gdrMemDesc);
   }
 
   // Free Ring index to rank tables
