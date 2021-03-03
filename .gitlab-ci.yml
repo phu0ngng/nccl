@@ -120,6 +120,17 @@ apitest-DGX-1V:
     - srun -n 1 --account=sw-gpu -pbatch -t 00:05:00 ./test/scripts/gitlab-runner-apitest.sh
   interruptible: true
 
+apitest-DGX-A100:
+  stage: api_tests
+  tags:
+    - dgx-a100
+  variables:
+    CUDA_HOME: "/project/nccl/toolkits/cuda-11.0.104"
+    SRUN: ""
+  script:
+    - srun -n 1 --account=nccl -J "nccl-cicd::$GITLAB_USER_LOGIN:apitest::$CI_COMMIT_BRANCH:$CI_COMMIT_SHORT_SHA" -pluna -t 00:05:00 ./test/scripts/gitlab-runner-apitest.sh
+  interruptible: true
+
 perftest-P100:
   stage: perf_tests_single
   tags:
@@ -224,6 +235,19 @@ perftest-DGX-1V:
     - salloc -N 1 -n 8 --account=sw-gpu -pbatch -t 00:05:00 ./test/scripts/gitlab-runner-perftest.sh 4G
   interruptible: true
 
+perftest-DGX-A100:
+  stage: perf_tests_single
+  tags:
+    - dgx-a100
+  variables:
+    NCCL_DEBUG: "WARN"
+    MPI_HOME: "/home/sjeaugey/install/openmpi-1.10.7"
+    CUDA_HOME: "/project/nccl/toolkits/cuda-11.0.104"
+    SALLOC: ""
+  script:
+    - salloc -N 1 -n 8 --account=nccl -pluna -J "nccl-cicd::$GITLAB_USER_LOGIN:perftest-single::$CI_COMMIT_BRANCH:$CI_COMMIT_SHORT_SHA" -t 00:05:00 ./test/scripts/gitlab-runner-perftest.sh 16G
+  interruptible: true
+
 perftest-multi-gc:
   stage: perf_tests_multi
   tags:
@@ -252,5 +276,21 @@ perftest-multi-prom:
     SALLOC: ""
   script:
     - salloc -N 4 -n 32 --account=sw-gpu -pbatch -t 00:05:00 ./test/scripts/gitlab-runner-perftest.sh 4G
+  interruptible: true
+
+perftest-multi-selene:
+  stage: perf_tests_multi
+  tags:
+    - dgx-a100
+  variables:
+    NCCL_DEBUG: "WARN"
+    MPI_HOME: "/home/sjeaugey/install/openmpi-1.10.7"
+    CUDA_HOME: "/project/nccl/toolkits/cuda-11.0.104"
+    NCCL_IB_SL: "1"
+    OMPI_MCA_btl: "^openib"
+    OMPI_MCA_btl_tcp_if_include: "enp97s0f1"
+    SALLOC: ""
+  script:
+    - salloc -N 4 -n 32 --account=nccl -pluna -J "nccl-cicd::$GITLAB_USER_LOGIN:perftest-single::$CI_COMMIT_BRANCH:$CI_COMMIT_SHORT_SHA" -t 00:05:00 ./test/scripts/gitlab-runner-perftest.sh 16G
   interruptible: true
 
