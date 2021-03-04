@@ -810,7 +810,7 @@ ncclResult_t ncclCudaGraphHostSetup(ncclComm_t comm, cudaGraph_t graph) {
   cudaHostNodeParams setupNodeParams = {fn, eqInfo};
   int numDependencies = comm->lastSetupNode == NULL ? 0 : 1;
   CUDACHECK(cudaGraphAddHostNode(&setupNode, graph, &comm->lastSetupNode, numDependencies, &setupNodeParams));
-  CUDACHECK(cudaStreamUpdateCaptureDependencies(comm->userStream, &setupNode, 1, 0)); // Flag 0 for adding node to dependency set
+  CUDACHECK(cudaStreamUpdateCaptureDependencies(comm->userStream, &setupNode, 1, cudaStreamAddCaptureDependencies));
   comm->lastSetupNode = setupNode;
   return ncclSuccess;
 #else
