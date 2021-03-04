@@ -456,11 +456,11 @@ ncclResult_t netRecvProxy(struct ncclProxyArgs* args) {
             return ncclInternalError;
 #endif
             args->requests[buffSlot] = NULL;
-	  } else {
+          } else {
             volatile void** ptrsFifo = (volatile void**)resources->recvMem->ptrsFifo;
             char* ptr = resources->shared ? (char*)(ptrsFifo[buffSlot]) : localBuff+buffSlot*stepSize;
             NCCLCHECK(ncclNetIflush(resources->netRecvComm, ptr, size, mhandle, args->requests+buffSlot));
-	  }
+          }
         } else {
           args->requests[buffSlot] = NULL;
         }
