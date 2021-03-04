@@ -984,7 +984,7 @@ static ncclResult_t commDestroy(ncclComm_t comm) {
 
   TRACE(NCCL_INIT, "Destroying comm %p rank %d abortFlag %d fatalError %d", comm, comm->rank, *comm->abortFlag, comm->fatalError);
 
-  CUDACHECK(cudaEventSynchronize(comm->doneEvent));
+  CUDACHECK(cudaStreamSynchronize(comm->groupStream));
   NCCLCHECK(ncclProxyDestroy(comm));
   NCCLCHECK(commFree(comm));
 
