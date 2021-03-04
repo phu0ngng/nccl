@@ -136,18 +136,17 @@ ncclResult_t netRecvSetup(struct ncclComm* comm, struct ncclTopoGraph* graph, st
   NCCLCHECK(ncclCudaHostCalloc(&resources->sendMem, 1));
   NCCLCHECK(ncclCudaHostCalloc(&resources->recvMem, 1));
 
-  // GDRCOPY support
+  // GDRCOPY tail support
   if (ncclGdrCopy != NULL && ncclParamGdrCopyTailEnable() == 1) {
     struct ncclRecvMem* devCudaPtr;
     NCCLCHECK(ncclGdrCudaCalloc(&resources->devRecvMem, &devCudaPtr, 1, &resources->gdrMemDesc));
-
     // The GDR mapped VA doesn't work on the SMs
     recv->conn.tail = &((struct ncclRecvMem*)devCudaPtr)->tail;
-  }
-  else {
+  } else {
     recv->conn.tail = &resources->recvMem->tail;
   }
-  // GDRCOPY support
+
+  // GDRCOPY flush support
 #if defined (__x86_64__)
   if (ncclGdrCopy != NULL && ncclParamGdrCopyFlushEnable() == 1) {
     int* cudaPtr;
@@ -480,8 +479,7 @@ ncclResult_t netRecvProxy(struct ncclProxyArgs* args) {
           // GDRCOPY support: Write updated tail directly to the device memory
           resources->devRecvMem->tail = args->transmitted;
           wc_store_fence(); // Flush out WC write
-        }
-        else {
+        } else {
           resources->recvMem->tail = args->transmitted;
         }
         args->idle = 0;
