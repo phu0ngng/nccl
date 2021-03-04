@@ -4,10 +4,7 @@ class ncclSendRecv_test : public ncclCommon_test<DT> {};
 TYPED_TEST_CASE(ncclSendRecv_test, testDataTypes);
 #if NCCL_MAJOR > 2 || (NCCL_MAJOR == 2 && NCCL_MINOR >=7)
 // typical usage.
-// DISABLED tests should work with NCCL_LAUNCH_MODE=PARALLEL
-// coop launch doesn't support incomplete sets of ranks,
-// nor different numbers of blocks.
-TYPED_TEST(ncclSendRecv_test, DISABLED_simple) {
+TYPED_TEST(ncclSendRecv_test, simple) {
     size_t size = std::min(this->N, 1024 * 1024);
     ASSERT_EQ(ncclSuccess, ncclGroupStart());
     if (this->nVis >= 2) {
@@ -82,7 +79,7 @@ TYPED_TEST(ncclSendRecv_test, alltoallv) {
     }
     ASSERT_EQ(ncclSuccess, ncclGroupEnd());
 };
-TYPED_TEST(ncclSendRecv_test, DISABLED_alltoallv_JoC) {
+TYPED_TEST(ncclSendRecv_test, alltoallv_JoC) {
    /* In BUG 3197885 this AlltoAllv pattern was found to causes hangs
     * on DGX A100 and DGX2
     */
@@ -126,7 +123,7 @@ TYPED_TEST(ncclSendRecv_test, DISABLED_alltoallv_JoC) {
     }
     ASSERT_EQ(ncclSuccess, ncclGroupEnd());
 };
-TYPED_TEST(ncclSendRecv_test, DISABLED_scatter) {
+TYPED_TEST(ncclSendRecv_test, scatter) {
     size_t size = std::min(this->N, 1024 * 1024) / this->nVis;
     ASSERT_EQ(ncclSuccess, ncclGroupStart());
     for (int i = 0; i < this->nVis; ++i) {
@@ -149,7 +146,7 @@ TYPED_TEST(ncclSendRecv_test, DISABLED_scatter) {
     }
     ASSERT_EQ(ncclSuccess, ncclGroupEnd());
 };
-TYPED_TEST(ncclSendRecv_test, DISABLED_gather) {
+TYPED_TEST(ncclSendRecv_test, gather) {
     size_t size = std::min(this->N, 1024 * 1024) / this->nVis;
     ASSERT_EQ(ncclSuccess, ncclGroupStart());
     for (int i = 0; i < this->nVis; ++i) {
@@ -172,7 +169,7 @@ TYPED_TEST(ncclSendRecv_test, DISABLED_gather) {
     }
     ASSERT_EQ(ncclSuccess, ncclGroupEnd());
 };
-TYPED_TEST(ncclSendRecv_test, DISABLED_hypercube) {
+TYPED_TEST(ncclSendRecv_test, hypercube) {
     size_t size = std::min(this->N, 1024 * 1024) / this->nVis;
     ASSERT_EQ(ncclSuccess, ncclGroupStart());
     for (int i = 0; i < this->nVis; ++i) {
@@ -200,7 +197,7 @@ TYPED_TEST(ncclSendRecv_test, send_self) {
                 this->DataType(), 0, this->comms[0], this->streams[0]));
 };
 // send to self (with a recv)
-TYPED_TEST(ncclSendRecv_test, DISABLED_sendrecv_self) {
+TYPED_TEST(ncclSendRecv_test, sendrecv_self) {
     ASSERT_EQ(ncclSuccess, ncclGroupStart());
     EXPECT_EQ(ncclSuccess,
             ncclSend(this->sendbuffs[0], std::min(this->N, 1024 * 1024),
