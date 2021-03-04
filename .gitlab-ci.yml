@@ -292,6 +292,6 @@ perftest-multi-selene:
     OMPI_MCA_btl_tcp_if_include: "enp97s0f1"
     SALLOC: ""
   script:
-    - salloc -N 4 -n 32 --account=nccl -pluna -J "nccl-cicd::$GITLAB_USER_LOGIN:perftest-multi::$CI_COMMIT_BRANCH:$CI_COMMIT_SHORT_SHA" -t 00:05:00 ./test/scripts/gitlab-runner-perftest.sh 16G
+    - salloc -N 4 -n 32 --account=nccl -pluna -J "nccl-cicd::$GITLAB_USER_LOGIN:perftest-multi::$CI_COMMIT_BRANCH:$CI_COMMIT_SHORT_SHA" -t 00:10:00 ./test/scripts/gitlab-runner-perftest.sh 16G
   interruptible: true
 
