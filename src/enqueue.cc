@@ -776,7 +776,7 @@ template void CUDART_CB ncclEnqueueHostSetup<1>(void*);
 
 ncclResult_t ncclGetCudaGraph(ncclComm_t comm, cudaGraph_t* graph, int* usingCudaGraph) {
   *usingCudaGraph = 0;
-#if CUDA_VERSION >= 11030
+#if CUDART_VERSION >= 11030
   cudaStreamCaptureStatus captureStatus;
   unsigned long long cudaGraphId;
   CUDACHECK(cudaStreamGetCaptureInfo_v2(comm->userStream, &captureStatus, &cudaGraphId, graph, NULL, NULL));
@@ -796,7 +796,7 @@ ncclResult_t ncclGetCudaGraph(ncclComm_t comm, cudaGraph_t* graph, int* usingCud
 }
 
 ncclResult_t ncclCudaGraphHostSetup(ncclComm_t comm, cudaGraph_t graph) {
-#if CUDA_VERSION >= 11030
+#if CUDART_VERSION >= 11030
   struct ncclQueueInfo* eqInfo = comm->enqueueInfo;
   // Create a CUDA object to wrap around the argument space
   // which CUDA graph would manage lifetime of
