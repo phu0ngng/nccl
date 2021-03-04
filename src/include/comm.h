@@ -7,7 +7,6 @@
 #ifndef NCCL_COMM_H_
 #define NCCL_COMM_H_
 
-#include <cuda.h>
 #include "transport.h"
 #include "p2p.h"
 
