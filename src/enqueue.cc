@@ -218,9 +218,9 @@ ncclResult_t ncclLaunchBarrier(struct ncclComm* comm) {
        comm->userStream == cudaStreamLegacy ||
        comm->userStream == cudaStreamPerThread)) {
     // Enqueue event in user stream
-    CUDACHECK(cudaEventRecord(comm->doneEvent, comm->userStream));
+    CUDACHECK(cudaEventRecord(comm->intDoneEvent, comm->userStream));
     // Create dependency between user stream and internal NCCL stream
-    CUDACHECK(cudaStreamWaitEvent(comm->groupStream, comm->doneEvent, 0));
+    CUDACHECK(cudaStreamWaitEvent(comm->groupStream, comm->intDoneEvent, 0));
     params->stream = comm->groupStream;
   } else {
     if (comm->userStream != params->stream) {
@@ -294,8 +294,9 @@ ncclResult_t ncclRecordEvents(ncclComm_t comm) {
        comm->userStream == cudaStreamDefault ||
        comm->userStream == cudaStreamLegacy ||
        comm->userStream == cudaStreamPerThread)) {
+    CUDACHECK(cudaEventRecord(comm->intDoneEvent, params->stream));
     // Create dependency between NCCL internal stream and user stream
-    CUDACHECK(cudaStreamWaitEvent(comm->userStream, comm->doneEvent, 0));
+    CUDACHECK(cudaStreamWaitEvent(comm->userStream, comm->intDoneEvent, 0));
   }
   return ncclSuccess;
 }

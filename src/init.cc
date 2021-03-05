@@ -194,6 +194,9 @@ static ncclResult_t commFree(ncclComm_t comm) {
   if (comm->doneEvent != NULL)
     CUDACHECK(cudaEventDestroy(comm->doneEvent));
 
+  if (comm->intDoneEvent != NULL)
+    CUDACHECK(cudaEventDestroy(comm->intDoneEvent));
+
   if (comm->launchMode == ncclComm::GROUP) {
     CUDACHECK(cudaStreamDestroy(comm->groupStream));
   }
@@ -233,6 +236,8 @@ static ncclResult_t commAlloc(ncclComm_t* comret, int ndev, int rank) {
   // the device we're on (failure cause #1) , better know it early.
   cudaEvent_t doneEvent;
   CUDACHECK(cudaEventCreateWithFlags(&doneEvent, cudaEventDisableTiming));
+  cudaEvent_t intDoneEvent;
+  CUDACHECK(cudaEventCreateWithFlags(&intDoneEvent, cudaEventDisableTiming));
 
   struct ncclComm* comm;
   NCCLCHECK(ncclCalloc(&comm, 1));
@@ -244,6 +249,7 @@ static ncclResult_t commAlloc(ncclComm_t* comret, int ndev, int rank) {
   TRACE(NCCL_INIT,"comm %p rank %d nranks %d cudaDev %d busId %x", comm, rank, ndev, comm->cudaDev, comm->busId);
 
   comm->doneEvent = doneEvent;
+  comm->intDoneEvent = intDoneEvent;
   comm->checkPointers = ncclParamCheckPointers() == 1 ? true : false;
 #if CUDART_VERSION >= 9020
   comm->groupCudaStream = ncclParamGroupCudaStream();
