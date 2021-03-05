@@ -134,6 +134,7 @@ struct ncclDirect {
   int out;
   int nHeads;
   int headRank;
+  int shift;
   int up[NCCL_MAX_DIRECT_ARITY];
   int down[NCCL_MAX_DIRECT_ARITY];
 };

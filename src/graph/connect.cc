@@ -32,6 +32,7 @@ ncclResult_t ncclTopoPreset(struct ncclComm* comm,
     channel->collTree.out = -1;
     channel->collTree.headRank = -1;
     channel->collTree.nHeads = 0;
+    channel->collTree.shift = 0;
     for (int i=0; i<NCCL_MAX_DIRECT_ARITY; i++) channel->collTree.up[i] = -1;
     for (int i=0; i<NCCL_MAX_DIRECT_ARITY; i++) channel->collTree.down[i] = -1;
 #endif
@@ -247,15 +248,15 @@ ncclResult_t ncclTopoConnectCollNet(struct ncclComm* comm, struct ncclTopoGraph*
     int nUp = 0;
     sprintf(line+strlen(line), "up ");
     for (int h=0; h<nHeads; h++) {
-      int i = (h+rank%localRanks)%nHeads; // Shift by intraRank so that leaves don't send to same head simultaneously
-      if (rank == heads[i]) continue;
-      channel->collTree.up[nUp++] = heads[i];
-      sprintf(line+strlen(line), " %d ", heads[i]);
+      if (rank == heads[h]) continue;
+      channel->collTree.up[nUp++] = heads[h];
+      sprintf(line+strlen(line), " %d ", heads[h]);
     }
     channel->collTree.nHeads = nHeads;
+    channel->collTree.shift = (rank%localRanks)%nHeads; // Shift by intraRank so that leaves don't send to same head simultaneously
     channel->collTree.depth = 2;
     sprintf(line+strlen(line), "nUp %d nHeads %d ", nUp, nHeads);
-    sprintf(line+strlen(line), "headRank %d out %d ", channel->collTree.headRank, channel->collTree.out);
+    sprintf(line+strlen(line), "headRank %d out %d shift %d", channel->collTree.headRank, channel->collTree.out, channel->collTree.shift);
     INFO(NCCL_GRAPH, "%s", line);
   }
 #endif

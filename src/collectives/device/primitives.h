@@ -172,31 +172,31 @@ class ncclPrimitives {
 
   template <int DIRECTRECV, int DIRECTSEND, int RECV, int SEND>
   inline __device__ void
-  ScatterGatherOp(const T* srcPtr, T* dstPtr, int totalElem, ssize_t directOffset, int peerElem, int skip) {
-    int offset = 0;
-
+  ScatterGatherOp(const T* srcPtr, T* dstPtr, int totalElem, ssize_t directOffset, int peerElem, int skip, int shift) {
     if (tid < nworkers) {
-      if (RECV && (role & ROLE_WAIT_RECV)) waitRecv<0, DIRECTRECV>(directOffset+offset);
+      if (RECV && (role & ROLE_WAIT_RECV)) waitRecv<0, DIRECTRECV>(directOffset);
       // The peerElem size is not accurate; but intra-node does not rely on sizes FIFO
-      if (SEND && (role & ROLE_WAIT_SEND)) waitSend<0, DIRECTSEND>(directOffset+offset, peerElem*sizeof(T));
+      if (SEND && (role & ROLE_WAIT_SEND)) waitSend<0, DIRECTSEND>(directOffset, peerElem*sizeof(T));
       subBarrier();
       if (SEND) {
         #pragma unroll
-        for (int i=0; i<nsend; i++) {
+        for (int j=0; j<nsend; j++) {
+          int i = (j+shift)%nsend;
+          int offset = i*peerElem;
           if (i == skip) offset += peerElem;
           const T* src0 = srcPtr + offset;
-          int realSize = max(0, min(peerElem, totalElem-offset));
+          int realSize = min(peerElem, totalElem-offset);
           if (realSize > 0) ReduceOrCopyMulti<UNROLL, FUNC, T, 1, 1, 1, 1>(tid, nworkers, 1, &src0, 1, dsts+i, realSize);
-          offset += realSize;
         }
       } else if (RECV) {
         #pragma unroll
-        for (int i=0; i<nrecv; i++) {
+        for (int j=0; j<nrecv; j++) {
+          int i = (j+shift)%nrecv;
+          int offset = i*peerElem;
           if (i == skip) offset += peerElem;
           T* dst0 = dstPtr + offset;
-          int realSize = max(0, min(peerElem, totalElem-offset));
+          int realSize = min(peerElem, totalElem-offset);
           if (realSize > 0) ReduceOrCopyMulti<UNROLL, FUNC, T, 1, 1, 1, 1>(tid, nworkers, 1, srcs+i, 1, &dst0, realSize);
-          offset += realSize;
         }
       }
     }
@@ -376,13 +376,13 @@ class ncclPrimitives {
   }
 
   __device__ __forceinline__ void
-  scatter(const T* src, int totalElem, int peerElem, int skip) {
-    ScatterGatherOp<0, 0, 0, 1>(src, NULL, totalElem, 0, peerElem, skip);
+  scatter(const T* src, int totalElem, int peerElem, int skip, int shift) {
+    ScatterGatherOp<0, 0, 0, 1>(src, NULL, totalElem, 0, peerElem, skip, shift);
   }
 
   __device__ __forceinline__ void
-  gather(T* dst, int totalElem, int peerElem, int skip) {
-    ScatterGatherOp<0, 0, 1, 0>(NULL, dst, totalElem, 0, peerElem, skip);
+  gather(T* dst, int totalElem, int peerElem, int skip, int shift) {
+    ScatterGatherOp<0, 0, 1, 0>(NULL, dst, totalElem, 0, peerElem, skip, shift);
   }
 
   __device__ __forceinline__ ~ncclPrimitives() {

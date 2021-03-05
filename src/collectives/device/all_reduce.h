@@ -274,7 +274,7 @@ class ncclFunction<ncclFuncAllReduce, NCCL_ALGO_COLLNET, NCCL_PROTO_SIMPLE, FUNC
       for (ssize_t gridOffset = 0; gridOffset < size; gridOffset += loopSize) {
         ssize_t offset = gridOffset + bid*tree->nHeads*chunkSize;
         int nelem = min(tree->nHeads*chunkSize, size-offset);
-        prims.scatter(thisInput+offset, nelem, chunkSize, tree->headRank);
+        prims.scatter(thisInput+offset, nelem, chunkSize, tree->headRank, tree->shift);
       }
     } else if (tid >= THREAD_START_REDUCE && tree->out != -1) {
       // Reduce, send to network
@@ -296,7 +296,7 @@ class ncclFunction<ncclFuncAllReduce, NCCL_ALGO_COLLNET, NCCL_PROTO_SIMPLE, FUNC
       for (ssize_t gridOffset = 0; gridOffset < size; gridOffset += loopSize) {
         ssize_t offset = gridOffset + bid*tree->nHeads*chunkSize;
         int nelem = min(tree->nHeads*chunkSize, size-offset);
-        prims.gather(thisOutput+offset, nelem, chunkSize, tree->headRank);
+        prims.gather(thisOutput+offset, nelem, chunkSize, tree->headRank, tree->shift);
       }
     } else if (tid >= THREAD_START_BCAST && tid < THREAD_START_SCATTER && tree->out != -1) {
       // Recv from network, broadcast
