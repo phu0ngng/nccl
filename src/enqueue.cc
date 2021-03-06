@@ -315,8 +315,8 @@ ncclResult_t ncclLaunchReset(ncclComm_t comm, int destroyInfo) {
   params->func = NULL;
 
   // Reset launch mode to GROUP if changed
-  if (comm->launchMode == ncclComm::GROUP_GRAPH)
-    comm->launchMode = ncclComm::GROUP;
+  if (comm->launchMode == ncclComm::GROUP_GRAPH) comm->launchMode = ncclComm::GROUP;
+  comm->usingCudaGraph = 0;
 
   return ncclSuccess;
 }
@@ -775,8 +775,8 @@ cb_end:
 template void CUDART_CB ncclEnqueueHostSetup<0>(void*);
 template void CUDART_CB ncclEnqueueHostSetup<1>(void*);
 
-ncclResult_t ncclGetCudaGraph(ncclComm_t comm, cudaGraph_t* graph, int* usingCudaGraph) {
-  *usingCudaGraph = 0;
+ncclResult_t ncclGetCudaGraph(ncclComm_t comm, cudaGraph_t* graph) {
+  comm->usingCudaGraph = 0;
 #if CUDART_VERSION >= 11030
   cudaStreamCaptureStatus captureStatus;
   unsigned long long cudaGraphId;
@@ -790,7 +790,7 @@ ncclResult_t ncclGetCudaGraph(ncclComm_t comm, cudaGraph_t* graph, int* usingCud
       comm->lastSetupNode = NULL;
     }
     if (comm->launchMode == ncclComm::GROUP) comm->launchMode = ncclComm::GROUP_GRAPH;
-    *usingCudaGraph = 1;
+    comm->usingCudaGraph = 1;
   }
 #endif
   return ncclSuccess;
@@ -861,15 +861,14 @@ end:
 
     // Check whether we are in cuda graph mode
     cudaGraph_t graph;
-    int usingCudaGraph = 0;
     ncclComm_t comm = info->comm;
-    NCCLCHECK(ncclGetCudaGraph(comm, &graph, &usingCudaGraph));
+    NCCLCHECK(ncclGetCudaGraph(comm, &graph));
 
     // Common part between graph mode and non-graph mode
     NCCLCHECK(ncclSetupCollKernel(info));
 
     // Host setup
-    if (usingCudaGraph) {
+    if (comm->usingCudaGraph) {
       NCCLCHECK(ncclCudaGraphHostSetup(comm, graph));
     } else {
       ncclEnqueueHostSetup<0>(comm->enqueueInfo);
@@ -880,7 +879,7 @@ end:
     NCCLCHECK(ncclLaunchBarrier(comm));
     NCCLCHECK(ncclLaunchKernel(comm));
     NCCLCHECK(ncclRecordEvents(comm));
-    NCCLCHECK(ncclLaunchReset(comm, !usingCudaGraph));
+    NCCLCHECK(ncclLaunchReset(comm, !comm->usingCudaGraph));
     return ncclSuccess;
   }
 }

@@ -23,7 +23,7 @@ ncclResult_t ncclSetupP2pKernel(struct ncclInfo* info);
 ncclResult_t ncclSetupAsyncKernels(struct ncclComm* comm);
 template<int USING_CUDA_GRAPH>
 void CUDART_CB ncclEnqueueHostSetup(void* arg);
-ncclResult_t ncclGetCudaGraph(ncclComm_t comm, cudaGraph_t* graph, int* usingCudaGraph);
+ncclResult_t ncclGetCudaGraph(ncclComm_t comm, cudaGraph_t* graph);
 ncclResult_t ncclCudaGraphHostSetup(ncclComm_t comm, cudaGraph_t graph);
 
 // Enqueue information (for kernel and proxy) for each operation

@@ -154,6 +154,7 @@ struct ncclComm {
   int p2pRecvCount;
 
   // Store info for cudaGraph
+  int usingCudaGraph; // Only use it during capture time, not launch time
   struct ncclQueueInfo* enqueueInfo;
   cudaGraphNode_t lastSetupNode;
   unsigned long long lastCudaGraphId;

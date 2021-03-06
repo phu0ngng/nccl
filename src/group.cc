@@ -313,11 +313,10 @@ sched_delta:
     struct ncclAsyncArgs* args = ncclGroupArgs+i;
     if (args->funcType == ASYNC_FUNC_COLL) {
       ncclComm_t comm = args->coll.comm;
-      int usingCudaGraph = 0;
-      NCCLCHECKGOTO(ncclGetCudaGraph(comm, graphs+i, &usingCudaGraph), ret, group_cleanup);
+      NCCLCHECKGOTO(ncclGetCudaGraph(comm, graphs+i), ret, group_cleanup);
       if (usingCudaGraphAll == -1) {
-        usingCudaGraphAll = usingCudaGraph;
-      } else if (usingCudaGraphAll != usingCudaGraph) {
+        usingCudaGraphAll = comm->usingCudaGraph;
+      } else if (usingCudaGraphAll != comm->usingCudaGraph) {
         WARN("Illegal to have some communicators in graph mode while others not");
         ret = ncclInvalidUsage;
         goto group_cleanup;
