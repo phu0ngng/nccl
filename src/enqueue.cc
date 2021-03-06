@@ -223,7 +223,7 @@ ncclResult_t ncclLaunchBarrier(struct ncclComm* comm) {
     CUDACHECK(cudaStreamWaitEvent(comm->groupStream, comm->intDoneEvent, 0));
     params->stream = comm->groupStream;
   } else {
-    if (comm->userStream != params->stream) {
+    if (comm->userStream != params->stream && !comm->usingCudaGraph) {
       // Stream changed from last call, create dependency against last NCCL kernel launch
       CUDACHECK(cudaStreamWaitEvent(comm->userStream, comm->doneEvent, 0));
     }
@@ -286,8 +286,8 @@ static ncclResult_t ncclLaunchProxy(struct ncclQueueInfo* eqInfo) {
 ncclResult_t ncclRecordEvents(ncclComm_t comm) {
   struct cudaLaunchParams *params = comm->myParams;
 
-  // Enqueue event after NCCL kernel
-  CUDACHECK(cudaEventRecord(comm->doneEvent, params->stream));
+  // Enqueue event after NCCL kernel (only in non-graph mode)
+  if (!comm->usingCudaGraph) CUDACHECK(cudaEventRecord(comm->doneEvent, params->stream));
   // Use internal NCCL stream for CGMD/GROUP launch if required or if the user stream is NULL
   if (comm->launchMode == ncclComm::GROUP &&
       (comm->groupCudaStream ||

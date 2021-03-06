@@ -83,7 +83,7 @@ int main(int argc, char* argv[]) {
   ncclUniqueId id;
   ncclComm_t comm;
   int8_t *sendbuff, *recvbuff;
-  cudaStream_t s;
+  cudaStream_t s, uncapStream;
 
   //get NCCL unique ID at rank 0 and broadcast it to all others
   if (myRank == 0) ncclGetUniqueId(&id);
@@ -95,9 +95,14 @@ int main(int argc, char* argv[]) {
   CUDACHECK(cudaMallocHost(&recvbuff, size * sizeof(int8_t)));
   CUDACHECK(cudaMemset(sendbuff, 1, size * sizeof(int8_t)));
   CUDACHECK(cudaStreamCreate(&s));
+  CUDACHECK(cudaStreamCreate(&uncapStream));
 
   //initializing NCCL
   NCCLCHECK(ncclCommInitRank(&comm, nRanks, id, myRank));
+
+  //communicating using NCCL
+  NCCLCHECK(ncclAllReduce((const void*)sendbuff, (void*)recvbuff, size, ncclInt8, ncclSum, comm, uncapStream));
+  CUDACHECK(cudaStreamSynchronize(uncapStream));
 
   //create cuda graph
   cudaGraph_t graph;
@@ -125,6 +130,10 @@ int main(int argc, char* argv[]) {
 
   //completing NCCL operation by synchronizing on the CUDA stream
   CUDACHECK(cudaStreamSynchronize(s));
+
+  //communicating using NCCL
+  NCCLCHECK(ncclAllReduce((const void*)sendbuff, (void*)recvbuff, size, ncclInt8, ncclSum, comm, uncapStream));
+  CUDACHECK(cudaStreamSynchronize(uncapStream));
 
   //check result
   printf("[MPI Rank %d] recvbuff[0] %d \n", myRank, recvbuff[0]);
