@@ -183,7 +183,7 @@ class ncclPrimitives {
         for (int j=0; j<nsend; j++) {
           int i = (j+shift)%nsend;
           int offset = i*peerElem;
-          if (i == skip) offset += peerElem;
+          if (skip >=0 && i >= skip) offset += peerElem;
           const T* src0 = srcPtr + offset;
           int realSize = min(peerElem, totalElem-offset);
           if (realSize > 0) ReduceOrCopyMulti<UNROLL, FUNC, T, 1, 1, 1, 1>(tid, nworkers, 1, &src0, 1, dsts+i, realSize);
@@ -193,7 +193,7 @@ class ncclPrimitives {
         for (int j=0; j<nrecv; j++) {
           int i = (j+shift)%nrecv;
           int offset = i*peerElem;
-          if (i == skip) offset += peerElem;
+          if (skip >= 0 && i >= skip) offset += peerElem;
           T* dst0 = dstPtr + offset;
           int realSize = min(peerElem, totalElem-offset);
           if (realSize > 0) ReduceOrCopyMulti<UNROLL, FUNC, T, 1, 1, 1, 1>(tid, nworkers, 1, srcs+i, 1, &dst0, realSize);
