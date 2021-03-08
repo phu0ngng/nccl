@@ -17,8 +17,7 @@
 #define NCCL_FUNC4(func, redop, type) \
   (void*)NCCL_FUNC5(func, TREE,    redop, type), \
   (void*)NCCL_FUNC5(func, RING,    redop, type), \
-  (void*)NCCL_FUNC5(func, COLLNET, redop, type), \
-  (void*)NCCL_FUNC5(func, DIRECT, redop, type)
+  (void*)NCCL_FUNC5(func, COLLNET, redop, type)
 
 // Must be consistent with ncclDataType_t
 #define NCCL_FUNCS3A(func, redop) \
@@ -314,7 +313,6 @@ static ncclResult_t getAlgoInfo(struct ncclInfo* info) {
     nt += WARP_SIZE; // Extra warp for sync
     if (info->algorithm == NCCL_ALGO_TREE) nt += WARP_SIZE;
     if (info->algorithm == NCCL_ALGO_COLLNET) nt += 2*WARP_SIZE;
-    if (info->algorithm == NCCL_ALGO_DIRECT) nt += WARP_SIZE;
   }
   info->nChannels = nc;
   info->nThreads = nt;
@@ -331,7 +329,7 @@ static ncclResult_t getPatternInfo(struct ncclInfo* info) {
     case ncclFuncAllGather:
       info->pattern = ncclPatternRing; break;
     case ncclFuncAllReduce:
-      info->pattern = info->algorithm == NCCL_ALGO_DIRECT ? ncclPatternAllToAll : info->algorithm == NCCL_ALGO_COLLNET ? ncclPatternCollTreeUpDown : info->algorithm == NCCL_ALGO_TREE ? ncclPatternTreeUpDown : ncclPatternRingTwice; break;
+      info->pattern = info->algorithm == NCCL_ALGO_COLLNET ? ncclPatternCollTreeUpDown : info->algorithm == NCCL_ALGO_TREE ? ncclPatternTreeUpDown : ncclPatternRingTwice; break;
     default:
       WARN("Unknown pattern for collective %d algorithm %d", info->coll, info->algorithm);
       return ncclInternalError;
@@ -346,7 +344,6 @@ static ncclResult_t getLoopInfo(struct ncclInfo* info) {
     case ncclPatternTreeUpDown:
     case ncclPatternPipelineFrom:
     case ncclPatternPipelineTo:
-    case ncclPatternAllToAll:
       info->nstepsPerLoop = info-> nchunksPerLoop = 1; break;
     case ncclPatternCollTreeUp:
     case ncclPatternCollTreeDown:
@@ -424,9 +421,6 @@ static ncclResult_t computeColl(struct ncclInfo* info /* input */, struct ncclWo
     while (info->nBytes / (info->nChannels*chunkSize) < nstepsLL128*16/ppn && chunkSize > 32768) chunkSize /= 2;
     // Use lastChunkSize as chunkSize
     work->coll.lastChunkSize = chunkSize*NCCL_LL128_DATAELEMS/(NCCL_LL128_LINEELEMS*ncclTypeSize(info->datatype));
-  } else if (info->algorithm == NCCL_ALGO_DIRECT) {
-    // Use lastChunkSize as chunkSize
-    work->coll.lastChunkSize = chunkSize / ncclTypeSize(info->datatype);
   }
 
   // Compute nSteps for proxies

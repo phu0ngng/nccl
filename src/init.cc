@@ -38,7 +38,7 @@ std::chrono::high_resolution_clock::time_point ncclEpoch;
 #endif
 
 const char* ncclFuncStr[NCCL_NUM_FUNCTIONS] = { "Broadcast", "Reduce", "AllGather", "ReduceScatter", "AllReduce" };
-const char* ncclAlgoStr[NCCL_NUM_ALGORITHMS] = { "Tree", "Ring", "CollNet", "Direct" };
+const char* ncclAlgoStr[NCCL_NUM_ALGORITHMS] = { "Tree", "Ring", "CollNet" };
 const char* ncclProtoStr[NCCL_NUM_PROTOCOLS] = { "LL", "LL128", "Simple" };
 
 NCCL_PARAM(GroupCudaStream, "GROUP_CUDA_STREAM", NCCL_GROUP_CUDA_STREAM);
@@ -667,15 +667,6 @@ static ncclResult_t initTransportsRank(struct ncclComm* comm, ncclUniqueId* comm
   NCCLCHECK(ncclTopoCompute(comm->topo, &collNetGraph));
   NCCLCHECK(ncclTopoPrintGraph(comm->topo, &collNetGraph));
 
-  struct ncclTopoGraph directGraph;
-  directGraph.pattern = NCCL_TOPO_PATTERN_TREE;
-  directGraph.crossNic = ncclParamCrossNic();
-  directGraph.collNet = 0;
-  directGraph.minChannels = 1;
-  directGraph.maxChannels = ringGraph.nChannels;
-  NCCLCHECK(ncclTopoCompute(comm->topo, &directGraph));
-  NCCLCHECK(ncclTopoPrintGraph(comm->topo, &directGraph));
-
   if (comm->rank == ncclParamGraphDumpFileRank()) {
     struct ncclTopoGraph* graphs[3] = { &ringGraph, &treeGraph, &collNetGraph };
     NCCLCHECK(ncclTopoDumpGraphs(comm->topo, 3, graphs));
@@ -815,23 +806,6 @@ static ncclResult_t initTransportsRank(struct ncclComm* comm, ncclUniqueId* comm
 
   NCCLCHECK(computeBuffSizes(comm));
 
-  // Create direct topology
-#ifdef NCCL_DIRECT_ONE_CHANNEL_PER_PEER
-  for (int c=0; c<comm->nChannels; c++) {
-    struct ncclChannel* channel = comm->channels+c;
-    struct ncclDirect* dTree = &channel->directTree;
-    for (int i=0; i<NCCL_MAX_DIRECT_ARITY; i++) dTree->peers[i] = -1;
-    dTree->up = (c%comm->localRanks == rank%comm->localRanks) ?
-                comm->nRanks :      // reduce/CollNet/broadcast channels
-                c%comm->localRanks; // scatter/gather channels
-    if (dTree->up == comm->nRanks) {
-      for (int r=0; r<comm->localRanks-1; r++) // FIXME: assuming intra node
-        dTree->peers[r] = (rank+r+1) % nranks;
-    }
-    dTree->depth = 1;
-  }
-#endif
-
   // Connect with prev/next for each ring
   for (int c=0; c<comm->nChannels; c++) {
     struct ncclChannel* channel = comm->channels+c;
@@ -851,22 +825,6 @@ static ncclResult_t initTransportsRank(struct ncclComm* comm, ncclUniqueId* comm
   }
   NCCLCHECKGOTO(ncclTransportP2pSetup(comm, &treeGraph, 0), ret, affinity_restore);
   INFO(NCCL_INIT, "Connected all trees");
-
-  // Connect Direct
-#ifdef NCCL_DIRECT_ONE_CHANNEL_PER_PEER
-  for (int c=0; c<comm->nChannels; c++) {
-    struct ncclChannel* channel = comm->channels+c;
-    if (comm->nRanks == 1) continue;
-    struct ncclDirect* dTree = &channel->directTree;
-    if (dTree->up == nranks) {
-      NCCLCHECKGOTO(ncclTransportP2pConnect(comm, channel, NCCL_MAX_DIRECT_ARITY, dTree->peers, NCCL_MAX_DIRECT_ARITY, dTree->peers, 0), ret, affinity_restore);
-    } else {
-      NCCLCHECKGOTO(ncclTransportP2pConnect(comm, channel, 1, &dTree->up, 1, &dTree->up, 0), ret, affinity_restore);
-    }
-  }
-  NCCLCHECKGOTO(ncclTransportP2pSetup(comm, &directGraph, 0), ret, affinity_restore);
-  INFO(NCCL_INIT, "Connected all direct trees");
-#endif
 
   // Check if we can setup CollNet
   if (comm->collNetSupport > 0) {
@@ -910,7 +868,7 @@ static ncclResult_t initTransportsRank(struct ncclComm* comm, ncclUniqueId* comm
   free(rings);
 
   // Compute time models for algorithm and protocol combinations
-  NCCLCHECK(ncclTopoTuneModel(comm, minCompCap, maxCompCap, &treeGraph, &ringGraph, &collNetGraph, &directGraph));
+  NCCLCHECK(ncclTopoTuneModel(comm, minCompCap, maxCompCap, &treeGraph, &ringGraph, &collNetGraph));
 
   // Compute nChannels per peer for p2p
   NCCLCHECK(ncclTopoComputeP2pChannels(comm));
