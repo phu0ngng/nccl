@@ -399,11 +399,9 @@ ncclResult_t ncclProxySaveColl(struct ncclProxyArgs* args, int pattern, int root
     for (int i=0; i< NCCL_MAX_TREE_ARITY; i++) NCCLCHECK(SaveProxy(proxySend, tree->down[i], args, 0));
     NCCLCHECK(SaveProxy(proxyRecv, tree->up, args, 0));
   }
-  if (pattern == ncclPatternCollTreeUp || pattern == ncclPatternCollTreeUpDown) {
+  if (pattern == ncclPatternCollTreeUpDown) {
     // CollTree up
     NCCLCHECK(SaveProxy(proxySend, channel->collTree.out, args, 1));  // For CollTree up, we are using push
-  }
-  if (pattern == ncclPatternCollTreeDown || pattern == ncclPatternCollTreeUpDown) {
     // CollTree down
     NCCLCHECK(SaveProxy(proxyRecv, channel->collTree.out, args, 0));
   }

@@ -345,8 +345,6 @@ static ncclResult_t getLoopInfo(struct ncclInfo* info) {
     case ncclPatternPipelineFrom:
     case ncclPatternPipelineTo:
       info->nstepsPerLoop = info-> nchunksPerLoop = 1; break;
-    case ncclPatternCollTreeUp:
-    case ncclPatternCollTreeDown:
     case ncclPatternCollTreeUpDown:
       info->nstepsPerLoop = 1; info->nchunksPerLoop = info->comm->channels[0].collTree.nHeads; break;
     case ncclPatternRing:
@@ -394,17 +392,10 @@ static ncclResult_t computeColl(struct ncclInfo* info /* input */, struct ncclWo
     work->coll.lastChunkSize = chunkSize / ncclTypeSize(info->datatype);
   } else if (info->algorithm == NCCL_ALGO_COLLNET && info->protocol == NCCL_PROTO_SIMPLE) {
     // Optimize chunkSize / nSteps
-#if CHAIN_COLLNET == 1
-    while (info->nBytes / (info->nChannels*chunkSize) < info->comm->channels[0].collTree.depth*16 && (info->nChannels*chunkSize) > 131072) chunkSize /= 2;
-    while (info->nBytes / (info->nChannels*chunkSize) < info->comm->channels[0].collTree.depth*4 && (info->nChannels*chunkSize) > 65536) chunkSize /= 2;
-    while (info->nBytes / (info->nChannels*chunkSize) < info->comm->channels[0].collTree.depth && (info->nChannels*chunkSize) > 32768) chunkSize /= 2;
-    while (info->nBytes / (info->nChannels*chunkSize) < 1 && chunkSize >128) chunkSize /= 2;
-#else
     while (info->nBytes / (info->nChannels*info->comm->channels[0].collTree.nHeads*chunkSize) < info->comm->channels[0].collTree.depth*32 && chunkSize > 262144) chunkSize /= 2;
     while (info->nBytes / (info->nChannels*info->comm->channels[0].collTree.nHeads*chunkSize) < info->comm->channels[0].collTree.depth*16 && chunkSize > 131072) chunkSize /= 2;
     while (info->nBytes / (info->nChannels*info->comm->channels[0].collTree.nHeads*chunkSize) < info->comm->channels[0].collTree.depth*8 && chunkSize > 32768) chunkSize /= 2;
     while (info->nBytes / (info->nChannels*info->comm->channels[0].collTree.nHeads*chunkSize) < info->comm->channels[0].collTree.depth/2 && chunkSize > 16384) chunkSize /= 2;
-#endif
     // Use lastChunkSize as chunkSize
     work->coll.lastChunkSize = chunkSize / ncclTypeSize(info->datatype);
   } else if (info->protocol == NCCL_PROTO_LL) {

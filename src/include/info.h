@@ -18,8 +18,6 @@ typedef enum {
   ncclPatternTreeUp,
   ncclPatternTreeDown,
   ncclPatternTreeUpDown,
-  ncclPatternCollTreeUp,
-  ncclPatternCollTreeDown,
   ncclPatternCollTreeUpDown
 } ncclPattern_t;
 
