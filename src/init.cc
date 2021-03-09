@@ -715,7 +715,7 @@ static ncclResult_t initTransportsRank(struct ncclComm* comm, ncclUniqueId* comm
   allGather3Data[rank].collNet.typeInter = collNetGraph.typeInter;
 
   comm->nChannels = std::min(treeGraph.nChannels, ringGraph.nChannels);
-  NCCLCHECK(ncclTopoPreset(comm, &treeGraph, &ringGraph, &collNetGraph, &allGather3Data[rank].topoRanks));
+  NCCLCHECK(ncclTopoPreset(comm, &treeGraph, &ringGraph, &allGather3Data[rank].topoRanks));
 
   NCCLCHECK(bootstrapAllGather(comm->bootstrap, allGather3Data, sizeof(*allGather3Data)));
 
@@ -771,12 +771,11 @@ static ncclResult_t initTransportsRank(struct ncclComm* comm, ncclUniqueId* comm
     for (int i=0; i<comm->nChannels; i++) memcpy(comm->channels+comm->nChannels+i, comm->channels+nChannelsOrig+i, sizeof(struct ncclChannel));
   }
 
+  if (comm->nNodes > 1 && ncclParamCollNetEnable() == 1 && collNetSupport() == 1) comm->collNetSupport = 1;
+
   int *rings;
   NCCLCHECK(ncclCalloc(&rings, nranks*MAXCHANNELS));
-  NCCLCHECK(ncclTopoPostset(comm, nodesFirstRank, nodesTreePatterns, allTopoRanks, rings));
-
-  if (comm->nNodes > 1 && ncclParamCollNetEnable() == 1 && collNetSupport() == 1) comm->collNetSupport = 1;
-  if (comm->collNetSupport == 1) NCCLCHECK(ncclTopoConnectCollNet(comm, &collNetGraph, rank));
+  NCCLCHECK(ncclTopoPostset(comm, nodesFirstRank, nodesTreePatterns, allTopoRanks, rings, &collNetGraph));
 
   free(allTopoRanks);
   free(nodesTreePatterns);

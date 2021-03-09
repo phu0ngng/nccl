@@ -14,7 +14,7 @@
 /******************************************************************/
 
 ncclResult_t ncclTopoPreset(struct ncclComm* comm,
-    struct ncclTopoGraph* treeGraph, struct ncclTopoGraph* ringGraph, struct ncclTopoGraph* collNetGraph,
+    struct ncclTopoGraph* treeGraph, struct ncclTopoGraph* ringGraph,
     struct ncclTopoRanks* topoRanks) {
   int rank = comm->rank;
   int localRanks = comm->localRanks;
@@ -164,7 +164,8 @@ static ncclResult_t connectTrees(struct ncclComm* comm, int* treeToParent, int* 
   return ncclSuccess;
 }
 
-ncclResult_t ncclTopoConnectCollNet(struct ncclComm* comm, struct ncclTopoGraph* collNetGraph, int rank) {
+static ncclResult_t connectCollNet(struct ncclComm* comm, struct ncclTopoGraph* collNetGraph) {
+  int rank = comm->rank;
   int localRanks = comm->localRanks;
   int nHeads = collNetGraph->nChannels;
   int *heads;
@@ -244,7 +245,18 @@ int ncclMaxNchannels() {
   return maxNchannels;
 }
 
-ncclResult_t ncclTopoPostset(struct ncclComm* comm, int* firstRanks, int* treePatterns, struct ncclTopoRanks** allTopoRanks, int* rings) {
+static int copyChannels(struct ncclComm* comm, int start, int end, int* ringPrev, int* ringNext) {
+  int nranks = comm->nRanks;
+  int c;
+  for (c=start; c<end; c++) {
+    memcpy(ringPrev+c*nranks, ringPrev+(c-start)*nranks, nranks*sizeof(int));
+    memcpy(ringNext+c*nranks, ringNext+(c-start)*nranks, nranks*sizeof(int));
+    memcpy(comm->channels+c, comm->channels+c-start, sizeof(struct ncclChannel));
+  }
+  return c;
+}
+
+ncclResult_t ncclTopoPostset(struct ncclComm* comm, int* firstRanks, int* treePatterns, struct ncclTopoRanks** allTopoRanks, int* rings, struct ncclTopoGraph* collNetGraph) {
   // Gather data from all ranks
   int *ringRecv, *ringSend, *ringPrev, *ringNext, *treeToParent, *treeToChild0, *treeToChild1;
   int nranks = comm->nRanks;
@@ -279,20 +291,23 @@ ncclResult_t ncclTopoPostset(struct ncclComm* comm, int* firstRanks, int* treePa
   // Duplication should be complete now
   nChannels = comm->nChannels = std::min(MAXCHANNELS,nChannels*2);
 
+  // Setup CollNet
+  if (comm->collNetSupport == 1) {
+    // Add more channels to saturate intra-node bandwidth
+    if (collNetGraph->speedIntra > collNetGraph->speedInter) {
+      int collNetNchannels = std::min(MAXCHANNELS, nChannels+nChannels/2);
+      nChannels = comm->nChannels = copyChannels(comm, nChannels, collNetNchannels, ringPrev, ringNext);
+    }
+    NCCLCHECK(connectCollNet(comm, collNetGraph));
+  }
+
   // Honor NCCL_MIN_NRINGS/NCCL_MAX_NRINGS.
   // We permit combining max, then min, to only use the first channels, then duplicate them.
   nChannels = comm->nChannels = std::min((int)ncclMaxNchannels(), nChannels);
-  int c;
-  for (c=nChannels; c<ncclMinNchannels(); c++) {
-    memcpy(ringPrev+c*nranks, ringPrev+(c-nChannels)*nranks, nranks*sizeof(int));
-    memcpy(ringNext+c*nranks, ringNext+(c-nChannels)*nranks, nranks*sizeof(int));
-    memcpy(comm->channels+c, comm->channels+c-nChannels, sizeof(struct ncclChannel));
-  }
-  nChannels = comm->nChannels = c;
+  nChannels = comm->nChannels = copyChannels(comm, nChannels, ncclMinNchannels(), ringPrev, ringNext);
 
   // Create rings array and check all is fine
   NCCLCHECK(ncclBuildRings(nChannels, rings, comm->rank, comm->nRanks, ringPrev, ringNext));
-
 
   free(ringRecv);
   free(ringSend);
