@@ -849,7 +849,7 @@ static ncclResult_t initTransportsRank(struct ncclComm* comm, ncclUniqueId* comm
     // Verify CollNet setup across ranks
     NCCLCHECK(checkCollNetSetup(comm, rank, collNetSetupFail));
     if (comm->collNetSupport) {
-      INFO(NCCL_INIT, "rank %d Connected inter-node CollNet", rank);
+      TRACE(NCCL_INIT, "rank %d Connected inter-node CollNet", rank);
       for (int c=0; c<comm->nChannels; c++) {
         struct ncclChannel* channelRecv = comm->channels+c;
         NCCLCHECK(ncclTransportP2pConnect(comm, channelRecv, NCCL_MAX_DIRECT_ARITY, channelRecv->collTree.up, NCCL_MAX_DIRECT_ARITY, channelRecv->collTree.down, 0));
@@ -860,7 +860,7 @@ static ncclResult_t initTransportsRank(struct ncclComm* comm, ncclUniqueId* comm
         NCCLCHECK(ncclTransportP2pConnect(comm, channelSend, NCCL_MAX_DIRECT_ARITY, channelSend->collTree.down, NCCL_MAX_DIRECT_ARITY, channelSend->collTree.up, 1));
       }
       NCCLCHECK(ncclTransportP2pSetup(comm, &collNetGraph, 1));
-      INFO(NCCL_INIT, "rank %d Connected intra-node CollNet", rank);
+      INFO(NCCL_INIT, "rank %d Connected CollNet", rank);
     }
   }
   TRACE(NCCL_INIT, "rank %d nranks %d - CONNECTED %d RINGS AND TREES", rank, nranks, comm->nChannels);
