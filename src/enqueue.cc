@@ -336,8 +336,11 @@ static ncclResult_t getAlgoInfo(struct ncclInfo* info) {
   int nAlgos = NCCL_NUM_ALGORITHMS;
   // Check collNet support
   int collNetTypeSupport = 0;
-  if (info->comm->collNetNchannels > 0)
-    NCCLCHECK(collNetReduceSupport(info->datatype, info->op, &collNetTypeSupport));
+  if (info->comm->collNetNchannels > 0) {
+    ncclRedOp_t netOp = info->op;
+    netOp = netOp == ncclAvg ? ncclSum : netOp;
+    NCCLCHECK(collNetReduceSupport(info->datatype, netOp, &collNetTypeSupport));
+  }
   if (collNetTypeSupport != 1) nAlgos--;
   for (int a=0; a<nAlgos; a++) {
     for (int p=0; p<NCCL_NUM_PROTOCOLS; p++) {
@@ -478,7 +481,9 @@ static ncclResult_t computeColl(struct ncclInfo* info /* input */, struct ncclWo
   proxyArgs->chunkSteps = chunkSteps;
   proxyArgs->protocol = info->protocol;
   proxyArgs->dtype = info->datatype;
-  proxyArgs->redOp = (info->algorithm == NCCL_ALGO_COLLNET) ? info->op : ncclNumOps;  // Only set redOp when using CollNet
+  proxyArgs->redOp = info->algorithm != NCCL_ALGO_COLLNET ? ncclNumOps : // Only set redOp when using CollNet
+                     info->op == ncclAvg ? ncclSum : // Network sees avg as sum
+                     info->op;
   proxyArgs->pattern = info->pattern;
   proxyArgs->root = info->root;
   // This is used by P2P to reduce the receive buffer size. We don't use it in collectives
