@@ -57,6 +57,7 @@ static int timeout = 60;
 static int cudaGraphLaunches = 0;
 static int report_cputime = 0;
 static int out_of_place = 1;
+static int unalign = 0;
 
 static char* replay_file = NULL;
 
@@ -658,6 +659,12 @@ testResult_t TimeTest(struct threadArgs* args, ncclDataType_t type, const char* 
   // Sync to avoid first-call timeout
   Barrier(args);
 
+  // Add forced misalignment
+  for (int i=0; i<args->nGpus; i++) {
+    args->sendbuffs[i] = (char*)args->sendbuffs[i] + unalign*wordSize(type);
+    args->recvbuffs[i] = (char*)args->recvbuffs[i] + unalign*wordSize(type);
+  }
+
   // Warm-up for large size
   setupArgs(args->maxbytes, type, args);
   for (int iter = 0; iter < warmup_iters; iter++) {
@@ -688,6 +695,12 @@ testResult_t TimeTest(struct threadArgs* args, ncclDataType_t type, const char* 
       }
       TESTCHECK(BenchTime(args, type, op, root, 1));
       PRINT("    %s\n", args->replayFile == NULL ? "" : args->collTest->name);
+  }
+
+  // Revert forced misalignment
+  for (int i=0; i<args->nGpus; i++) {
+    args->sendbuffs[i] = (char*)args->sendbuffs[i] - unalign*wordSize(type);
+    args->recvbuffs[i] = (char*)args->recvbuffs[i] - unalign*wordSize(type);
   }
   return testSuccess;
 }
@@ -803,6 +816,7 @@ testResult_t threadLaunch(struct testThread* thread) {
 }
 
 testResult_t AllocateBuffs(void **sendbuff, size_t sendBytes, void **recvbuff, size_t recvBytes, void **expected, size_t nbytes, int nranks) {
+    nbytes += 8*unalign; // pad with size of max datatype in case all datatypes selected
     CUDACHECK(cudaMalloc(sendbuff, nbytes));
     CUDACHECK(cudaMalloc(recvbuff, nbytes));
     if (datacheck) CUDACHECK(cudaMalloc(expected, recvBytes));
@@ -851,13 +865,14 @@ int main(int argc, char* argv[]) {
     {"cudagraph", required_argument, 0, 'G'},
     {"report_cputime", required_argument, 0, 'C'},
     {"out_of_place", required_argument, 0, 'O'},
+    {"unalign", required_argument, 0, 'u'},
     {"help", no_argument, 0, 'h'},
     {}
   };
 
   while(1) {
     int c;
-    c = getopt_long(argc, argv, "t:g:b:e:i:f:n:m:w:s:p:c:o:d:r:z:y:k:h:l:T:G:C:O:", longopts, &longindex);
+    c = getopt_long(argc, argv, "t:g:b:e:i:f:n:m:w:s:p:c:o:d:r:z:y:k:h:l:T:G:C:O:u:", longopts, &longindex);
 
     if (c == -1)
       break;
@@ -938,6 +953,9 @@ int main(int argc, char* argv[]) {
       case 'O':
         out_of_place = strtol(optarg, NULL, 0);
         break;
+      case 'u':
+        unalign = (int)strtol(optarg, NULL, 0);
+        break;
       case 'h':
       default:
         if (c != 'h') printf("invalid option '%c'\n", c);
@@ -964,6 +982,7 @@ int main(int argc, char* argv[]) {
             "[-G,--cudagraph <0/1>] \n\t"
             "[-C,--report_cputime <0/1>] \n\t"
             "[-O,--out_of_place <0/1>] \n\t"
+            "[-u,--unalign <index of first element>] \n\t"
             "[-h,--help]\n",
             basename(argv[0]));
         return 0;
@@ -1214,8 +1233,8 @@ testResult_t run() {
 
   // Free off CUDA allocated memory
   for (int i=0; i<nGpus*nThreads; i++) {
-    CUDACHECK(cudaFree(sendbuffs[i]));
-    CUDACHECK(cudaFree(recvbuffs[i]));
+    if (sendbuffs[i]) CUDACHECK(cudaFree((char*)sendbuffs[i]));
+    if (recvbuffs[i]) CUDACHECK(cudaFree((char*)recvbuffs[i]));
     if (datacheck) CUDACHECK(cudaFree(expected[i]));
   }
   CUDACHECK(cudaFreeHost(delta));
