@@ -101,7 +101,7 @@ ncclResult_t collNetSendSetup(struct ncclComm* comm, struct ncclTopoGraph* graph
   }
   NCCLCHECK(ncclCudaHostCalloc((char**)&resources->recvMem, recvSize));
 
-  INFO(NCCL_INIT|NCCL_NET,"Coll %02d : %d [send] via COLLNET/%s/%d%s", channelId, myInfo->rank, collNetName(), resources->netDev,
+  INFO(NCCL_INIT|NCCL_NET,"CollNet %02d : %d [send] via COLLNET/%s/%d%s", channelId, myInfo->rank, collNetName(), resources->netDev,
       resources->useGdr ? "/GDRDMA" : "");
   return ncclSuccess;
 }
@@ -130,7 +130,7 @@ ncclResult_t collNetRecvSetup(struct ncclComm* comm, struct ncclTopoGraph* graph
   }
   NCCLCHECK(ncclCudaHostCalloc((char**)&resources->recvMem, recvSize));
 
-  INFO(NCCL_INIT|NCCL_NET,"Coll %02d : %d [receive] via COLLNET/%s/%d%s", channelId, myInfo->rank, collNetName(), resources->netDev,
+  INFO(NCCL_INIT|NCCL_NET,"CollNet %02d : %d [receive] via COLLNET/%s/%d%s", channelId, myInfo->rank, collNetName(), resources->netDev,
       resources->useGdr ? "/GDRDMA" : "");
   struct collNetRecvConnectInfo* info = (struct collNetRecvConnectInfo*) connectInfo;
 
