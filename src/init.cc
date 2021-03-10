@@ -672,6 +672,10 @@ static ncclResult_t initTransportsRank(struct ncclComm* comm, ncclUniqueId* comm
     NCCLCHECK(ncclTopoDumpGraphs(comm->topo, 3, graphs));
   }
 
+  // Determine CollNet support
+  if (tmpNnodes > 1 && ncclParamCollNetEnable() == 1 && collNetSupport() == 1 && collNetGraph.nChannels > 0) comm->collNetSupport = 1;
+  if (intraRanks > 8) comm->collNetSupport = 0;
+
   // AllGather3 - begin
   struct ncclGraphInfo {
     int pattern;
@@ -684,7 +688,7 @@ static ncclResult_t initTransportsRank(struct ncclComm* comm, ncclUniqueId* comm
   };
 
   struct {
-    int cudaCompCap;
+    int collNetSupport;
     struct ncclGraphInfo tree;
     struct ncclGraphInfo ring;
     struct ncclGraphInfo collNet;
@@ -713,6 +717,7 @@ static ncclResult_t initTransportsRank(struct ncclComm* comm, ncclUniqueId* comm
   allGather3Data[rank].collNet.speedInter = collNetGraph.speedInter;
   allGather3Data[rank].collNet.typeIntra = collNetGraph.typeIntra;
   allGather3Data[rank].collNet.typeInter = collNetGraph.typeInter;
+  allGather3Data[rank].collNetSupport = comm->collNetSupport;
 
   comm->nChannels = std::min(treeGraph.nChannels, ringGraph.nChannels);
   NCCLCHECK(ncclTopoPreset(comm, &treeGraph, &ringGraph, &allGather3Data[rank].topoRanks));
@@ -762,6 +767,7 @@ static ncclResult_t initTransportsRank(struct ncclComm* comm, ncclUniqueId* comm
     collNetGraph.speedInter = std::min(allGather3Data[i].collNet.speedInter, collNetGraph.speedInter);
     collNetGraph.typeIntra = std::min(allGather3Data[i].collNet.typeIntra, collNetGraph.typeIntra);
     collNetGraph.typeInter = std::min(allGather3Data[i].collNet.typeInter, collNetGraph.typeInter);
+    comm->collNetSupport = std::min(allGather3Data[i].collNetSupport, comm->collNetSupport);
   }
 
   comm->nChannels = treeGraph.nChannels = ringGraph.nChannels = std::min(treeGraph.nChannels, ringGraph.nChannels);
@@ -770,8 +776,6 @@ static ncclResult_t initTransportsRank(struct ncclComm* comm, ncclUniqueId* comm
     // duplicated channels since we have removed some.
     for (int i=0; i<comm->nChannels; i++) memcpy(comm->channels+comm->nChannels+i, comm->channels+nChannelsOrig+i, sizeof(struct ncclChannel));
   }
-
-  if (comm->nNodes > 1 && ncclParamCollNetEnable() == 1 && collNetSupport() == 1 && collNetGraph.nChannels > 0) comm->collNetSupport = 1;
 
   int *rings;
   NCCLCHECK(ncclCalloc(&rings, nranks*MAXCHANNELS));
