@@ -203,7 +203,7 @@ class ncclPrimitives {
         buff = (T*)conn->buffs[NCCL_PROTO_SIMPLE];
         if (DIRECT && (conn->direct & NCCL_DIRECT_GPU)) {
           void* volatile* ptr = conn->ptrExchange;
-          while ((direct = (T*)(*ptr)) == NULL);
+          while ((direct = (T*)(*ptr)) == NULL) { if (checkAbort()) break; }
           *ptr = NULL;
         }
         connHeadPtr = conn->head;

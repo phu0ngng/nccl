@@ -12,4 +12,75 @@ GEN_DATATYPE(float, ncclFloat);
 GEN_DATATYPE(double, ncclDouble);
 GEN_DATATYPE(long long, ncclInt64);
 GEN_DATATYPE(unsigned long long, ncclUint64);
+
+int totalGpus = 0;
+ncclComm_t* commsArray = NULL;
+
+ncclComm_t* ncclCommon_getComms(int* nGpus) {
+  if (commsArray == NULL) {
+    EXPECT_EQ(cudaSuccess, cudaGetDeviceCount(&totalGpus));
+    EXPECT_NE(nullptr, commsArray = (ncclComm_t*)calloc(sizeof(ncclComm_t), totalGpus));
+    EXPECT_EQ(ncclSuccess, ncclCommInitAll(commsArray, totalGpus, NULL));
+  }
+  *nGpus = totalGpus;
+  return commsArray;
+}
+
+void** sbuffs = NULL;
+void** rbuffs;
+void** sbuffs_host;
+void** rbuffs_host;
+void** sbuffs_pinned;
+void** rbuffs_pinned;
+void** sbuffs_pinned_device;
+void** rbuffs_pinned_device;
+cudaStream_t* cuda_streams;
+
+static int maxsize = 4 * 1024 * 1024 * sizeof(uint64_t);
+
+void ncclCommon_getBuff(void*** sendbuffs, void*** recvbuffs, void*** sendbuffs_host, void*** recvbuffs_host, void*** sendbuffs_pinned, void*** recvbuffs_pinned, void*** sendbuffs_pinned_device, void*** recvbuffs_pinned_device, cudaStream_t** streams) {
+  if (sbuffs == NULL) {
+    cuda_streams = (cudaStream_t*)calloc(totalGpus, sizeof(cudaStream_t));
+    sbuffs = (void**)calloc(totalGpus, sizeof(void*));
+    rbuffs = (void**)calloc(totalGpus, sizeof(void*));
+    sbuffs_host = (void**)calloc(totalGpus, sizeof(void*));
+    rbuffs_host = (void**)calloc(totalGpus, sizeof(void*));
+    sbuffs_pinned = (void**)calloc(totalGpus, sizeof(void*));
+    rbuffs_pinned = (void**)calloc(totalGpus, sizeof(void*));
+    sbuffs_pinned_device = (void**)calloc(totalGpus, sizeof(void*));
+    rbuffs_pinned_device = (void**)calloc(totalGpus, sizeof(void*));
+    for (int i = 0; i < totalGpus; ++i) {
+        ASSERT_EQ(cudaSuccess, cudaSetDevice(i));
+        ASSERT_EQ(cudaSuccess, cudaMalloc(&sbuffs[i], maxsize));
+        ASSERT_EQ(cudaSuccess, cudaMalloc(&rbuffs[i], maxsize));
+        ASSERT_EQ(cudaSuccess, cudaMemset(sbuffs[i], 0, maxsize));
+        ASSERT_EQ(cudaSuccess, cudaMemset(rbuffs[i], 0, maxsize));
+        ASSERT_EQ(cudaSuccess, cudaStreamCreate(&cuda_streams[i])) << i;
+        sbuffs_host[i] = calloc(1, maxsize);
+        rbuffs_host[i] = calloc(1, maxsize);
+        sbuffs_pinned[i] = calloc(1, maxsize);
+        ASSERT_EQ(cudaSuccess,
+                  cudaHostRegister(sbuffs_pinned[i], maxsize,
+                                   cudaHostRegisterDefault));
+        ASSERT_EQ(cudaSuccess, cudaHostGetDevicePointer(&sbuffs_pinned_device[i], 
+				   sbuffs_pinned[i], 0));
+        rbuffs_pinned[i] = calloc(1, maxsize);
+        ASSERT_EQ(cudaSuccess,
+                  cudaHostRegister(rbuffs_pinned[i], maxsize,
+                                   cudaHostRegisterDefault));
+        ASSERT_EQ(cudaSuccess, cudaHostGetDevicePointer(&rbuffs_pinned_device[i], 
+				   rbuffs_pinned[i], 0));
+    }
+  }
+  *sendbuffs = sbuffs;
+  *recvbuffs = rbuffs;
+  *sendbuffs_host = sbuffs_host;
+  *recvbuffs_host = rbuffs_host;
+  *sendbuffs_pinned = sbuffs_pinned;
+  *recvbuffs_pinned = rbuffs_pinned;
+  *sendbuffs_pinned_device = sbuffs_pinned_device;
+  *recvbuffs_pinned_device = rbuffs_pinned_device;
+  *streams = cuda_streams;
+}
+
 #undef GEN_DATATYPE
