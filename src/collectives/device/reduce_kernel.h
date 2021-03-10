@@ -334,35 +334,35 @@ struct FuncAvg: FuncSum<T> {
 
 template<>
 struct FuncAvg<double>: FuncSum<double> {
-  static constexpr bool IsPreOpIdentity = true;
-  static constexpr bool IsPostOpIdentity = false;
+  static constexpr bool IsPreOpIdentity = false;
+  static constexpr bool IsPostOpIdentity = true;
   double rcp;
   __device__ FuncAvg(int n) {
     rcp = __drcp_rn(double(n));
   }
   // inherits FuncSum::operator()
   __device__ double preOp(double x) const {
-    return x;
+    return IsPreOpIdentity ? x : x*rcp;
   }
   __device__ double postOp(double x) const {
-    return x*rcp;
+    return IsPostOpIdentity ? x : x*rcp;
   }
 };
 
 template<>
 struct FuncAvg<float>: FuncSum<float> {
-  static constexpr bool IsPreOpIdentity = true;
-  static constexpr bool IsPostOpIdentity = false;
+  static constexpr bool IsPreOpIdentity = false;
+  static constexpr bool IsPostOpIdentity = true;
   float rcp;
   __device__ FuncAvg(int n) {
     rcp = __frcp_rn(float(n));
   }
   // inherits FuncSum::operator()
   __device__ float preOp(float x) const {
-    return x;
+    return IsPreOpIdentity ? x : x*rcp;
   }
   __device__ float postOp(float x) const {
-    return x*rcp;
+    return IsPostOpIdentity ? x : x*rcp;
   }
 };
 
@@ -373,7 +373,7 @@ struct FuncAvg<half>: FuncSum<half> {
   // make this parameterized as a build time setting and passed here through
   // preprocessor definitions.
   static constexpr bool IsPreOpIdentity = false;
-  static constexpr bool IsPostOpIdentity = false;
+  static constexpr bool IsPostOpIdentity = true;
 
 #if __CUDA_ARCH__ >= 530 && __CUDA_ARCH__ != 610
   half2 scale;
