@@ -314,6 +314,32 @@ struct FuncMin<half> {
   }
 };
 
+template<>
+struct FuncMax<float> {
+  __device__ float operator()(float x, float y) const {
+    return fmaxf(x, y);
+  }
+};
+template<>
+struct FuncMin<float> {
+  __device__ float operator()(float x, float y) const {
+    return fminf(x, y);
+  }
+};
+
+template<>
+struct FuncMax<double> {
+  __device__ double operator()(double x, double y) const {
+    return fmax(x, y);
+  }
+};
+template<>
+struct FuncMin<double> {
+  __device__ double operator()(double x, double y) const {
+    return fmin(x, y);
+  }
+};
+
 template<typename T>
 struct FuncAvg: FuncSum<T> {
   static_assert(!std::is_floating_point<T>::value, "Uhoh");
