@@ -178,7 +178,7 @@ ncclResult_t ncclTopoTuneModel(struct ncclComm* comm, int minCompCap, int maxCom
     NCCLCHECK(parseList(algoStr, ncclAlgoStr, NCCL_NUM_ALGORITHMS, algoEnable));
   }
   // Disable CollNet if it is not supported
-  if (comm->collNetSupport == 0) {
+  if (comm->collNetNchannels == 0) {
     algoEnable[NCCL_ALGO_COLLNET] = 0;
     // If user has hard set NCCL_ALGO=COLLNET, ignore it
     if (algoEnable[NCCL_ALGO_RING] == 0 && algoEnable[NCCL_ALGO_TREE] == 0) {

@@ -205,6 +205,7 @@ int main(int argc, const char* argv[]) {
     RUN("PCI-2R");
     RUN("PCI-NV");
     RUN("SKL-V100");
+    RUN("MS-1G-2N");
     RUN("T4");
 #ifdef __x86_64__
     RUN("DGX-1P");

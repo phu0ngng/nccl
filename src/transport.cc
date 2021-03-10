@@ -1,5 +1,5 @@
 /*************************************************************************
- * Copyright (c) 2016-2020, NVIDIA CORPORATION. All rights reserved.
+ * Copyright (c) 2016-2021, NVIDIA CORPORATION. All rights reserved.
  *
  * See LICENSE.txt for license information
  ************************************************************************/
@@ -61,8 +61,13 @@ void dumpData(struct ncclConnect* data, int ndata) {
 }
 
 ncclResult_t ncclTransportP2pSetup(struct ncclComm* comm, struct ncclTopoGraph* graph) {
+  // Stream used during transport setup; need for P2P pre-connect + CUDA Graph
+  cudaStream_t transportSetupStream;
+  CUDACHECK(cudaStreamCreateWithFlags(&transportSetupStream, cudaStreamNonBlocking));
+
   struct ncclConnect data[2*MAXCHANNELS];
   for (int i=1; i<comm->nRanks; i++) {
+    int bootstrapTag = (i<<8) + (graph ? graph->id+1 : 0);
     int recvPeer = (comm->rank - i + comm->nRanks) % comm->nRanks;
     int sendPeer = (comm->rank + i) % comm->nRanks;
     uint32_t recvMask = comm->connectRecv[recvPeer];
@@ -86,16 +91,16 @@ ncclResult_t ncclTransportP2pSetup(struct ncclComm* comm, struct ncclTopoGraph* 
 
     if (sendPeer == recvPeer) {
       if (recvChannels+sendChannels) {
-         NCCLCHECK(bootstrapSend(comm->bootstrap, recvPeer, data, sizeof(struct ncclConnect)*(recvChannels+sendChannels)));
-         NCCLCHECK(bootstrapRecv(comm->bootstrap, recvPeer, data, sizeof(struct ncclConnect)*(recvChannels+sendChannels)));
+         NCCLCHECK(bootstrapSend(comm->bootstrap, recvPeer, bootstrapTag, data, sizeof(struct ncclConnect)*(recvChannels+sendChannels)));
+         NCCLCHECK(bootstrapRecv(comm->bootstrap, recvPeer, bootstrapTag, data, sizeof(struct ncclConnect)*(recvChannels+sendChannels)));
          sendData = data;
          recvData = data+sendChannels;
       }
     } else {
-      if (recvChannels) NCCLCHECK(bootstrapSend(comm->bootstrap, recvPeer, recvData, sizeof(struct ncclConnect)*recvChannels));
-      if (sendChannels) NCCLCHECK(bootstrapSend(comm->bootstrap, sendPeer, sendData, sizeof(struct ncclConnect)*sendChannels));
-      if (sendChannels) NCCLCHECK(bootstrapRecv(comm->bootstrap, sendPeer, sendData, sizeof(struct ncclConnect)*sendChannels));
-      if (recvChannels) NCCLCHECK(bootstrapRecv(comm->bootstrap, recvPeer, recvData, sizeof(struct ncclConnect)*recvChannels));
+      if (recvChannels) NCCLCHECK(bootstrapSend(comm->bootstrap, recvPeer, bootstrapTag, recvData, sizeof(struct ncclConnect)*recvChannels));
+      if (sendChannels) NCCLCHECK(bootstrapSend(comm->bootstrap, sendPeer, bootstrapTag, sendData, sizeof(struct ncclConnect)*sendChannels));
+      if (sendChannels) NCCLCHECK(bootstrapRecv(comm->bootstrap, sendPeer, bootstrapTag, sendData, sizeof(struct ncclConnect)*sendChannels));
+      if (recvChannels) NCCLCHECK(bootstrapRecv(comm->bootstrap, recvPeer, bootstrapTag, recvData, sizeof(struct ncclConnect)*recvChannels));
     }
 
     for (int c=0; c<MAXCHANNELS; c++) {
@@ -103,7 +108,7 @@ ncclResult_t ncclTransportP2pSetup(struct ncclComm* comm, struct ncclTopoGraph* 
         struct ncclConnector* conn = &comm->channels[c].peers[sendPeer].send;
         NCCLCHECK(conn->transportComm->connect(comm, sendData++, 1, comm->rank, conn));
         conn->connected = 1;
-        CUDACHECK(cudaMemcpy(&comm->channels[c].devPeers[sendPeer].send, conn, sizeof(struct ncclConnector), cudaMemcpyHostToDevice));
+        CUDACHECK(cudaMemcpyAsync(&comm->channels[c].devPeers[sendPeer].send, conn, sizeof(struct ncclConnector), cudaMemcpyHostToDevice, transportSetupStream));
       }
     }
     for (int c=0; c<MAXCHANNELS; c++) {
@@ -111,11 +116,13 @@ ncclResult_t ncclTransportP2pSetup(struct ncclComm* comm, struct ncclTopoGraph* 
         struct ncclConnector* conn = &comm->channels[c].peers[recvPeer].recv;
         NCCLCHECK(conn->transportComm->connect(comm, recvData++, 1, comm->rank, conn));
         conn->connected = 1;
-        CUDACHECK(cudaMemcpy(&comm->channels[c].devPeers[recvPeer].recv, conn, sizeof(struct ncclConnector), cudaMemcpyHostToDevice));
+        CUDACHECK(cudaMemcpyAsync(&comm->channels[c].devPeers[recvPeer].recv, conn, sizeof(struct ncclConnector), cudaMemcpyHostToDevice, transportSetupStream));
       }
     }
     comm->connectRecv[recvPeer] = comm->connectSend[sendPeer] = 0;
   }
+  CUDACHECK(cudaStreamSynchronize(transportSetupStream));
+  CUDACHECK(cudaStreamDestroy(transportSetupStream));
   return ncclSuccess;
 }
 
