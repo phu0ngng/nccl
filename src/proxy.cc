@@ -435,9 +435,8 @@ ncclResult_t ncclProxyComputeP2p(struct ncclInfo* info, struct ncclProxyArgs* ar
       // Tune chunk size for the network
       if (info->recvbytes < stepSize) info->recvChunkSize /= 4;
       else if (info->recvbytes < 8*stepSize) info->recvChunkSize /= 2;
-      sub->nsteps = DIVUP(info->recvbytes, info->recvChunkSize);
-      if (sub->nsteps == 0) sub->nsteps = 1;
     }
+    sub->recvChunkSize = info->recvChunkSize;
   }
   if (info->delta > 0 && info->sendbytes >= 0) {
     int peersend = (info->comm->rank+info->delta)%info->comm->nRanks;
@@ -445,9 +444,8 @@ ncclResult_t ncclProxyComputeP2p(struct ncclInfo* info, struct ncclProxyArgs* ar
       // Tune chunk size for the network
       if (info->sendbytes < stepSize) info->sendChunkSize /= 4;
       else if (info->sendbytes < 8*stepSize) info->sendChunkSize /= 2;
-      sub->nsteps = DIVUP(info->sendbytes, info->sendChunkSize);
-      if (sub->nsteps == 0) sub->nsteps = 1;
     }
+    sub->sendChunkSize = info->sendChunkSize;
   }
   return ncclSuccess;
 }
@@ -462,12 +460,16 @@ ncclResult_t ncclProxySaveP2p(struct ncclComm* comm, struct ncclProxyArgs* args)
     int peerrecv = (comm->nRanks+comm->rank-sub->delta)%comm->nRanks;
     sub->recvbytes = recvbytesOrig;
     sub->sendbytes = 0;
+    sub->nsteps = DIVUP(sub->recvbytes, sub->recvChunkSize);
+    if (sub->nsteps == 0) sub->nsteps = 1;
     NCCLCHECK(SaveProxy(proxyRecv, peerrecv, args));
   }
   if (sub->delta > 0 && sendbytesOrig >= ssize_t(0)) {
     int peersend = (comm->rank+sub->delta)%comm->nRanks;
     sub->sendbytes = sendbytesOrig;
     sub->recvbytes = 0;
+    sub->nsteps = DIVUP(sub->sendbytes, sub->sendChunkSize);
+    if (sub->nsteps == 0) sub->nsteps = 1;
     NCCLCHECK(SaveProxy(proxySend, peersend, args));
   }
   // Reset proxy args for potentially multiple cuda graph launches

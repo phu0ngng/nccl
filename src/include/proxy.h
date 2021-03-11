@@ -23,6 +23,8 @@ struct ncclProxySubArgs {
   int nsteps;
   ssize_t sendbytes;
   ssize_t recvbytes;
+  int sendChunkSize;
+  int recvChunkSize;
   int delta;
 
   // Internal state
