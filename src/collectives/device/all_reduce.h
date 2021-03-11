@@ -220,8 +220,10 @@ class ncclFunction<ncclFuncAllReduce, NCCL_ALGO_COLLNET, NCCL_PROTO_SIMPLE, FUNC
     const int hasUp = (tree->up[0] >= 0) ? 1 : 0;
     const int nThreadsScatter = hasUp ? COLLNET_COPY_THREADS : 0;
     const int nThreadsGather = hasUp ? COLLNET_COPY_THREADS : 0;
+    // Absorb the gather threads if there is only 1 rank per node
     const int nThreadsBcast = COLLNET_COPY_THREADS + (COLLNET_COPY_THREADS - nThreadsGather);
-    const int nThreadsReduce = NCCL_SPLIT_SIMPLE_MAX_NTHREADS - nThreadsScatter - nThreadsGather - nThreadsBcast;
+    // Gather does not need sync threads, sparing one more warp
+    const int nThreadsReduce = NCCL_SIMPLE_MAX_NTHREADS + WARP_SIZE - nThreadsScatter - nThreadsGather - nThreadsBcast;
     const int tidStartBcast = nThreadsGather;
     const int tidStartScatter = tidStartBcast + nThreadsBcast + WARP_SIZE;
     const int tidStartReduce = tidStartScatter + nThreadsScatter + WARP_SIZE;
