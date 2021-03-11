@@ -1,5 +1,5 @@
 /*************************************************************************
- * Copyright (c) 2015-2020, NVIDIA CORPORATION. All rights reserved.
+ * Copyright (c) 2015-2021, NVIDIA CORPORATION. All rights reserved.
  *
  * See LICENSE.txt for license information
  ************************************************************************/
@@ -7,6 +7,7 @@
 #include "nccl.h"
 #include "channel.h"
 #include "nvmlwrap.h"
+#include "gdrwrap.h"
 #include "bootstrap.h"
 #include "transport.h"
 #include "group.h"
@@ -111,6 +112,19 @@ ncclResult_t initNet() {
   return ncclSuccess;
 }
 
+// GDRCOPY support: Off by default
+NCCL_PARAM(GdrCopyEnable, "GDRCOPY_ENABLE", 0);
+
+// GDRCOPY support
+gdr_t ncclGdrCopy = NULL;
+
+ncclResult_t initGdrCopy() {
+  if (ncclParamGdrCopyEnable() == 1) {
+    ncclGdrCopy = ncclGdrInit();
+  }
+  return ncclSuccess;
+}
+
 NCCL_PARAM(CollNetEnable, "COLLNET_ENABLE", 0);
 
 pthread_mutex_t initLock = PTHREAD_MUTEX_INITIALIZER;
@@ -120,6 +134,7 @@ static ncclResult_t ncclInit() {
   pthread_mutex_lock(&initLock);
   if (!initialized) {
     initEnv();
+    initGdrCopy();
     NCCLCHECK(initNet());
     INFO(NCCL_INIT, "Using network %s", ncclNetName());
     initialized = true;
@@ -179,9 +194,14 @@ static ncclResult_t commFree(ncclComm_t comm) {
   if (comm->doneEvent != NULL)
     CUDACHECK(cudaEventDestroy(comm->doneEvent));
 
+  if (comm->intDoneEvent != NULL)
+    CUDACHECK(cudaEventDestroy(comm->intDoneEvent));
+
   if (comm->launchMode == ncclComm::GROUP) {
     CUDACHECK(cudaStreamDestroy(comm->groupStream));
   }
+
+  ncclDestroyQueueInfo(comm->enqueueInfo);
 
   // Last rank frees shared resources between threads
   int isLast;
@@ -216,6 +236,8 @@ static ncclResult_t commAlloc(ncclComm_t* comret, int ndev, int rank) {
   // the device we're on (failure cause #1) , better know it early.
   cudaEvent_t doneEvent;
   CUDACHECK(cudaEventCreateWithFlags(&doneEvent, cudaEventDisableTiming));
+  cudaEvent_t intDoneEvent;
+  CUDACHECK(cudaEventCreateWithFlags(&intDoneEvent, cudaEventDisableTiming));
 
   struct ncclComm* comm;
   NCCLCHECK(ncclCalloc(&comm, 1));
@@ -227,6 +249,7 @@ static ncclResult_t commAlloc(ncclComm_t* comret, int ndev, int rank) {
   TRACE(NCCL_INIT,"comm %p rank %d nranks %d cudaDev %d busId %x", comm, rank, ndev, comm->cudaDev, comm->busId);
 
   comm->doneEvent = doneEvent;
+  comm->intDoneEvent = intDoneEvent;
   comm->checkPointers = ncclParamCheckPointers() == 1 ? true : false;
 #if CUDART_VERSION >= 9020
   comm->groupCudaStream = ncclParamGroupCudaStream();
@@ -246,6 +269,11 @@ static ncclResult_t commAlloc(ncclComm_t* comret, int ndev, int rank) {
   NCCLCHECK(ncclCalloc(&comm->asyncOps, NCCL_MAX_OPS));
   comm->asyncOpCount = 0;
   comm->asyncTotalSize = 0;
+
+  NCCLCHECK(ncclCalloc(&comm->enqueueInfo, 1));
+  comm->enqueueInfo->comm = comm;
+  comm->lastSetupNode = NULL;
+  comm->lastCudaGraphId = -1;
 
   static_assert(MAXCHANNELS <= sizeof(*comm->connectSend)*8, "comm->connectSend must have enough bits for all channels");
   static_assert(MAXCHANNELS <= sizeof(*comm->connectRecv)*8, "comm->connectRecv must have enough bits for all channels");
@@ -381,11 +409,11 @@ ncclResult_t ncclCommSetIntra(struct ncclComm* comm, int rank, int ranks, struct
   int cgMdLaunch = 0;
 
   // Set CG Mode
-  comm->launchMode = ncclComm::GROUP;
+  comm->launchMode = ncclComm::PARALLEL;
   char* str = getenv("NCCL_LAUNCH_MODE");
   if (str) INFO(NCCL_ENV, "NCCL_LAUNCH_MODE set by environment to %s", str);
-  if (comm->intraRanks == 1 || (str && strcmp(str, "PARALLEL") == 0)) {
-    comm->launchMode = ncclComm::PARALLEL;
+  if (str && strcmp(str, "GROUP") == 0) {
+    comm->launchMode = ncclComm::GROUP;
   }
   if (comm->launchMode == ncclComm::GROUP) {
     CUDACHECK(cudaStreamCreateWithFlags(&comm->groupStream, cudaStreamNonBlocking));
@@ -454,7 +482,7 @@ static int collNetSetup(struct ncclComm* comm, struct ncclTopoGraph* collNetGrap
 
   // send master receives connect info from peer recv master
   if (isMaster && DIRECTION == NCCL_COLLNET_SEND) {
-    NCCLCHECK(bootstrapRecv(comm->bootstrap, masterPeer, &sendrecvExchange, sizeof(sendrecvExchange)));
+    NCCLCHECK(bootstrapRecv(comm->bootstrap, masterPeer, collNetGraph->id, &sendrecvExchange, sizeof(sendrecvExchange)));
     rankInCollNet = sendrecvExchange.collNetRank;
     TRACE(NCCL_INIT, "CollNet [send] : rank %d collNetRank %d collNetNranks %d received connect from rank %d", rank, rankInCollNet, nMasters, masterPeer);
   }
@@ -507,7 +535,7 @@ static int collNetSetup(struct ncclComm* comm, struct ncclTopoGraph* collNetGrap
   if (isMaster && DIRECTION == NCCL_COLLNET_RECV) {
     sendrecvExchange.collNetRank = rankInCollNet;
     memcpy(&sendrecvExchange.connect, masterConnects+rankInCollNet, sizeof(struct ncclConnect));
-    NCCLCHECKGOTO(bootstrapSend(comm->bootstrap, masterPeer, &sendrecvExchange, sizeof(sendrecvExchange)), res, cleanup);
+    NCCLCHECKGOTO(bootstrapSend(comm->bootstrap, masterPeer, collNetGraph->id, &sendrecvExchange, sizeof(sendrecvExchange)), res, cleanup);
     TRACE(NCCL_INIT, "CollNet [recv] : rank %d collNetRank %d collNetNranks %d sent connect to rank %d", rank, rankInCollNet, nMasters, masterPeer);
   }
   if (ret > 0) {

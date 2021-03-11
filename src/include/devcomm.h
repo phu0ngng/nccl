@@ -204,6 +204,12 @@ struct ncclChannel {
       struct ncclWork* workFifo;
       int workCount;
       uint64_t workFifoTail; // Only used by CPU
+      uint16_t index;        // Only used by GPU
+
+      // GDRCOPY support
+      struct ncclWork* workFifoGdr;
+      struct ncclWork* workFifoDev;
+      void* gdrMemDesc;
     };
     int data[0x80];
   };
