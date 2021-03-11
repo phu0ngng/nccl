@@ -139,7 +139,7 @@ struct ncclComm {
   struct ncclProxyState proxyState;
 
   // Whether this communicator uses collNet
-  int collNetNchannels;
+  int collNetSupport;
 
   // Store info of async operations
   struct ncclInfo* asyncOps;

@@ -177,12 +177,63 @@ class ncclPrimitives {
     }
   }
 
-  __device__ __forceinline__ void loadRecvConn(T* directBuff) {
+  // Scatter and gather do not support DIRECT
+  template <int RECV, int SEND>
+  inline __device__ void
+  ScatterGatherOp(intptr_t inpIx, intptr_t outIx, int totalElem, int peerElem, int skip, int shift, bool postOp) {
+    int offset = 0; // slice offset
+    int sliceSize = stepSize*SLICESTEPS;
+    int dataSize = max(DIVUP(peerElem, 16*SLICESPERCHUNK)*16, sliceSize/32);  // per-peer slice size
+
+    #pragma unroll
+    for (int slice=0; slice<SLICESPERCHUNK; ++slice) {
+      int realSize = max(0, min(dataSize, peerElem-offset));
+      if (tid < nworkers) {
+        if (SEND && (role & ROLE_INPUT)) shmem->srcs[0] = buff + inpIx + offset;
+        if (RECV && (role & ROLE_OUTPUT)) shmem->dsts[0] = buff + outIx + offset;
+        if (RECV && (role & ROLE_WAIT_RECV)) waitRecv<0, 0>(0);
+        // realSize is not accurate here; but intra-node does not rely on sizes FIFO
+        if (SEND && (role & ROLE_WAIT_SEND)) waitSend<0, 0>(0, realSize*sizeof(T));
+        subBarrier();
+        if (SEND) {
+          #pragma unroll
+          for (int j=0; j<nsend; j++) {
+            int i = (j+shift)%nsend;
+            int peerOffset = i*peerElem;
+            if (skip >= 0 && i >= skip) peerOffset += peerElem;
+            const T* src0 = (T*)shmem->srcs[0] + peerOffset;
+            int realPeerSize = min(realSize, totalElem-peerOffset);
+            if (realPeerSize > 0) ReduceOrCopyMulti<UNROLL, FUNC, T, 1, 1, 1, 1>(tid, nworkers, fn, true, false, 1, &src0, 1, (T**)shmem->dsts+i, realPeerSize);
+          }
+        } else if (RECV) {
+          #pragma unroll
+          for (int j=0; j<nrecv; j++) {
+            int i = (j+shift)%nrecv;
+            int peerOffset = i*peerElem;
+            if (skip >= 0 && i >= skip) peerOffset += peerElem;
+            T* dst0 = (T*)shmem->dsts[0] + peerOffset;
+            int realPeerSize = min(realSize, totalElem-peerOffset);
+            if (realPeerSize > 0) ReduceOrCopyMulti<UNROLL, FUNC, T, 1, 1, 1, 1>(tid, nworkers, fn, false, postOp, 1, (T const**)shmem->srcs+i, 1, &dst0, realPeerSize);
+          }
+        }
+      }
+      barrier();
+      if (SEND && (role & ROLE_POST_SEND) && realSize > 0 && index == 0) __threadfence_system();
+      __syncwarp();
+      if (SEND && (role & ROLE_POST_SEND)) postSend();
+      if (RECV && (role & ROLE_POST_RECV)) postRecv();
+      offset += realSize;
+    }
+  }
+
+  __device__ __forceinline__ void loadRecvConn(ncclPeer *peer, T* directBuff) {
     if (role & (ROLE_WAIT_RECV|ROLE_POST_RECV)) {
-      auto *conn = shmem->recvConns[index];
+      // Groups 0,2 use conn 0, groups 4,6 use conn 1
+      auto *conn = &peer->recv[group/4].conn;
       step = conn->step;
       step = ROUNDUP(step, SLICESPERCHUNK*SLICESTEPS);
       if (role & ROLE_POST_RECV) {
+        shmem->recvConns[index] = conn; // POST role saves since that's who needs it in saveSync
         connHeadPtr = conn->head;
         // Return credits in case we rounded up.
         *connHeadPtr = step;
@@ -202,12 +253,14 @@ class ncclPrimitives {
     }
   }
 
-  __device__ __forceinline__ void loadSendConn() {
+  __device__ __forceinline__ void loadSendConn(ncclPeer *peer) {
     if (role & (ROLE_WAIT_SEND|ROLE_POST_SEND)) {
-      auto *conn = shmem->sendConns[index];
+      // Groups 0,2 use conn 0, groups 4,6 use conn 1
+      auto *conn = &peer->send[group/4].conn;
       step = conn->step;
       step = ROUNDUP(step, SLICESPERCHUNK*SLICESTEPS);
       if (role & ROLE_POST_SEND) {
+        shmem->sendConns[index] = conn; // POST role saves since that's who needs it in saveSync
         connTailPtr = conn->tail;
       }
       if (role & ROLE_WAIT_SEND) {
@@ -242,19 +295,11 @@ class ncclPrimitives {
     int postThreads = NSEND && nworkers >= 64 ? WARP_SIZE : 0;
     nthreads += postThreads;
 
-    barrier(); // Make sure no threads in previous class instances are looking at shared state.
+    for (nrecv=0; nrecv < NRECV && recvPeers[nrecv] != -1; nrecv++);
+    for (nsend=0; nsend < NSEND && sendPeers[nsend] != -1; nsend++);
 
-    auto *devPeers = ncclShmem.channel->devPeers;
-    for (nrecv=0; nrecv < NRECV && recvPeers[nrecv] != -1; nrecv++) {
-      if (tid == 0)
-        shmem->recvConns[nrecv] = &devPeers[recvPeers[nrecv]].recv.conn;
-    }
-    for (nsend=0; nsend < NSEND && sendPeers[nsend] != -1; nsend++) {
-      if (tid == 0)
-        shmem->sendConns[nsend] = &devPeers[sendPeers[nsend]].send.conn;
-    }
-
-    // Publish shmem->send/recvConns. Also make sure step is updated before we read it.
+    // Make sure no threads in previous class instances are looking at shared state (shmem).
+    // Also make sure step is updated before we read it.
     barrier();
 
     #define SYNC_GROUP 8
@@ -279,8 +324,8 @@ class ncclPrimitives {
     if (role & ROLE_INPUT) buff = (T*)inputBuf;
     if (role & ROLE_OUTPUT) buff = (T*)outputBuf;
 
-    loadRecvConn((T*)outputBuf);
-    loadSendConn();
+    loadRecvConn(ncclShmem.channel->devPeers + index, (T*)outputBuf);
+    loadSendConn(ncclShmem.channel->devPeers + index);
   }
 
   __device__ __forceinline__ void send(intptr_t inpIx, int eltN) {
@@ -331,6 +376,16 @@ class ncclPrimitives {
   __device__ __forceinline__ void directRecvReduceCopySend(intptr_t inpIx, intptr_t outIx, intptr_t remoteOutIx, int eltN, bool postOp=false) {
     // Direct is only for the send part
     genericOp<0, 1, 1, 1, Input, Output>(inpIx, outIx, remoteOutIx, eltN, postOp);
+  }
+
+  __device__ __forceinline__ void
+  scatter(intptr_t inpIx, int totalElem, int peerElem, int skip, int shift) {
+    ScatterGatherOp<0, 1>(inpIx, -1, totalElem, peerElem, skip, shift, /*postOp=*/false);
+  }
+
+  __device__ __forceinline__ void
+  gather(intptr_t outIx, int totalElem, int peerElem, int skip, int shift, bool postOp=false) {
+    ScatterGatherOp<1, 0>(-1, outIx, totalElem, peerElem, skip, shift, postOp);
   }
 
   __device__ __forceinline__ ~ncclPrimitives() {
