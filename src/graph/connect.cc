@@ -207,7 +207,7 @@ static ncclResult_t connectCollNet(struct ncclComm* comm, struct ncclTopoGraph* 
     }
     channel->collTree.nHeads = nHeads;
     channel->collTree.shift = (rank%localRanks)%nHeads; // Shift by intraRank so that leaves don't send to same head simultaneously
-    channel->collTree.depth = (nUp == 0) ? 1 : 2;
+    channel->collTree.depth = (nUp == 0 && nDown == 0) ? 1 : 2;
     sprintf(line+strlen(line), "nUp %d nHeads %d ", nUp, nHeads);
     sprintf(line+strlen(line), "headRank %d out %d shift %d", channel->collTree.headRank, channel->collTree.out, channel->collTree.shift);
     INFO(NCCL_GRAPH, "%s", line);
