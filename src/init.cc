@@ -674,7 +674,10 @@ static ncclResult_t initTransportsRank(struct ncclComm* comm, ncclUniqueId* comm
 
   // Determine CollNet support
   if (tmpNnodes > 1 && ncclParamCollNetEnable() == 1 && collNetSupport() == 1 && collNetGraph.nChannels > 0) comm->collNetSupport = 1;
-  if (intraRanks > 8) comm->collNetSupport = 0;
+  if (intraRanks > 8) {
+    if (comm->collNetSupport == 1) WARN("CollNet currently only supports up to 8 GPUs per node");
+    comm->collNetSupport = 0;
+  }
 
   // AllGather3 - begin
   struct ncclGraphInfo {
