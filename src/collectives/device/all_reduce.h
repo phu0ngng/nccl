@@ -218,11 +218,11 @@ class ncclFunction<ncclFuncAllReduce, NCCL_ALGO_COLLNET, NCCL_PROTO_SIMPLE, FUNC
     T * __restrict__ thisOutput = (T*)args->recvbuff;
 
     const int hasUp = (tree->up[0] >= 0) ? 1 : 0;
-    const int nThreadsScatter = hasUp ? COLLNET_COPY_THREADS : 0;
-    const int nThreadsGather = hasUp ? COLLNET_COPY_THREADS : 0;
-    // Absorb the gather threads if there is only 1 rank per node
-    const int nThreadsBcast = COLLNET_COPY_THREADS + (COLLNET_COPY_THREADS - nThreadsGather);
-    // Gather does not need sync threads, sparing one more warp
+    const int hasDn = (tree->down[0] >= 0) ? 1 : 0;
+    const int nThreadsScatter = (hasUp && hasDn) ? COLLNET_COPY_THREADS : hasUp ? 3*COLLNET_COPY_THREADS : 0;
+    const int nThreadsGather  = (hasUp && hasDn) ? COLLNET_COPY_THREADS : hasUp ? 2*COLLNET_COPY_THREADS : 0;
+    const int nThreadsBcast   = (hasUp && hasDn) ? COLLNET_COPY_THREADS : hasUp ? 0 : 2*COLLNET_COPY_THREADS;
+    // Gather does not need sync threads, sparing one more warp for reduce
     const int nThreadsReduce = NCCL_SIMPLE_MAX_NTHREADS + WARP_SIZE - nThreadsScatter - nThreadsGather - nThreadsBcast;
     const int tidStartBcast = nThreadsGather;
     const int tidStartScatter = tidStartBcast + nThreadsBcast + WARP_SIZE;
@@ -244,10 +244,10 @@ class ncclFunction<ncclFuncAllReduce, NCCL_ALGO_COLLNET, NCCL_PROTO_SIMPLE, FUNC
       for (ssize_t gridOffset = 0; gridOffset < size; gridOffset += loopSize) {
         ssize_t offset = gridOffset + (bid*tree->nHeads+tree->headRank)*chunkSize;
         int nelem = min(chunkSize, size-offset);
-        if (tree->down[0] == -1) {
-          prims.send(thisInput+offset, nelem);
-        } else {
+        if (hasDn) {
           prims.recvReduceSend(thisInput+offset, nelem);
+        } else {
+          prims.send(thisInput+offset, nelem);
         }
       }
     } else if (tid < tidStartBcast && hasUp) {
@@ -266,10 +266,10 @@ class ncclFunction<ncclFuncAllReduce, NCCL_ALGO_COLLNET, NCCL_PROTO_SIMPLE, FUNC
       for (ssize_t gridOffset = 0; gridOffset < size; gridOffset += loopSize) {
         ssize_t offset = gridOffset + (bid*tree->nHeads+tree->headRank)*chunkSize;
         int nelem = min(chunkSize, size-offset);
-        if (tree->down[0] == -1) {
-          prims.directRecv(thisOutput+offset, offset, nelem);
-        } else {
+        if (hasDn) {
           prims.directRecvCopySend(thisOutput+offset, offset, nelem);
+        } else {
+          prims.directRecv(thisOutput+offset, offset, nelem);
         }
       }
     }
