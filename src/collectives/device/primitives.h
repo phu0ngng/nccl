@@ -168,9 +168,10 @@ class ncclPrimitives {
     }
   }
 
-  template <int DIRECTRECV, int DIRECTSEND, int RECV, int SEND>
+  // Scatter and gather do not support DIRECT
+  template <int RECV, int SEND>
   inline __device__ void
-  ScatterGatherOp(const T* srcPtr, T* dstPtr, int totalElem, ssize_t directOffset, int peerElem, int skip, int shift) {
+  ScatterGatherOp(const T* srcPtr, T* dstPtr, int totalElem, int peerElem, int skip, int shift) {
     int offset = 0; // slice offset
     int sliceSize = stepSize*SLICESTEPS;
     int dataSize = max(DIVUP(peerElem, 16*SLICESPERCHUNK)*16, sliceSize/32);  // per-peer slice size
@@ -179,9 +180,9 @@ class ncclPrimitives {
     for (int slice=0; slice<SLICESPERCHUNK; ++slice) {
       int realSize = max(0, min(dataSize, peerElem-offset));
       if (tid < nworkers) {
-        if (RECV && (role & ROLE_WAIT_RECV)) waitRecv<0, DIRECTRECV>(directOffset+offset);
+        if (RECV && (role & ROLE_WAIT_RECV)) waitRecv<0, 0>(0);
         // realSize is not accurate here; but intra-node does not rely on sizes FIFO
-        if (SEND && (role & ROLE_WAIT_SEND)) waitSend<0, DIRECTSEND>(directOffset+offset, realSize*sizeof(T));
+        if (SEND && (role & ROLE_WAIT_SEND)) waitSend<0, 0>(0, realSize*sizeof(T));
         subBarrier();
         if (SEND) {
           #pragma unroll
@@ -368,12 +369,12 @@ class ncclPrimitives {
 
   __device__ __forceinline__ void
   scatter(const T* src, int totalElem, int peerElem, int skip, int shift) {
-    ScatterGatherOp<0, 0, 0, 1>(src, NULL, totalElem, 0, peerElem, skip, shift);
+    ScatterGatherOp<0, 1>(src, NULL, totalElem, peerElem, skip, shift);
   }
 
   __device__ __forceinline__ void
   gather(T* dst, int totalElem, int peerElem, int skip, int shift) {
-    ScatterGatherOp<0, 0, 1, 0>(NULL, dst, totalElem, 0, peerElem, skip, shift);
+    ScatterGatherOp<1, 0>(NULL, dst, totalElem, peerElem, skip, shift);
   }
 
   __device__ __forceinline__ ~ncclPrimitives() {

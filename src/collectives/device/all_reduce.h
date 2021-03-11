@@ -261,15 +261,15 @@ class ncclFunction<ncclFuncAllReduce, NCCL_ALGO_COLLNET, NCCL_PROTO_SIMPLE, FUNC
       }
     } else if (tid >= tidStartBcast && tid < tidStartScatter && tree->out != -1) {
       // Recv from network, broadcast
-      ncclPrimitives<UNROLL, 1, 1, T, 1, NCCL_MAX_DIRECT_ARITY, 1, FUNC>
+      ncclPrimitives<UNROLL, 1, 1, T, 1, NCCL_MAX_DIRECT_ARITY, 0, FUNC>
         prims(tid-tidStartBcast, nThreadsBcast, &tree->out, tree->down, thisOutput, stepSize, channel, comm, ncclShmem->ptrs, 2);
       for (ssize_t gridOffset = 0; gridOffset < size; gridOffset += loopSize) {
         ssize_t offset = gridOffset + (bid*tree->nHeads+tree->headRank)*chunkSize;
         int nelem = min(chunkSize, size-offset);
         if (hasDn) {
-          prims.directRecvCopySend(thisOutput+offset, offset, nelem);
+          prims.recvCopySend(thisOutput+offset, nelem);
         } else {
-          prims.directRecv(thisOutput+offset, offset, nelem);
+          prims.recv(thisOutput+offset, nelem);
         }
       }
     }
