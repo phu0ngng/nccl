@@ -56,7 +56,6 @@ class ncclFunction {
   __device__ void run(struct ncclWorkElem* args) {}
 };
 
-// FIXME
 struct ncclShmemPtrs {
   void* srcs[NCCL_MAX_DIRECT_ARITY+1];
   void* dsts[NCCL_MAX_DIRECT_ARITY+1];
