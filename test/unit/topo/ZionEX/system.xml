@@ -1,0 +1,158 @@
+<system version="1">
+  <cpu numaid="0" affinity="00000000,00000000,00ffffff,00000000,00000000,00ffffff" arch="x86_64" vendor="GenuineIntel" familyid="6" modelid="85">
+    <pci busid="0000:0d:00.0" class="0x060400" link_speed="8 GT/s" link_width="16">
+      <pci busid="0000:0f:00.0" class="0x060400" link_speed="16 GT/s" link_width="16">
+        <pci busid="0000:11:00.0" class="0x030200" link_speed="16 GT/s" link_width="16">
+          <gpu dev="0" sm="80" rank="0" gdr="0">
+            <nvlink target="0000:8b:00.0" count="4" tclass="0x030200"/>
+            <nvlink target="0000:c8:00.0" count="4" tclass="0x030200"/>
+            <nvlink target="0000:88:00.0" count="2" tclass="0x030200"/>
+            <nvlink target="0000:14:00.0" count="2" tclass="0x030200"/>
+          </gpu>
+        </pci>
+      </pci>
+      <pci busid="0000:12:00.0" class="0x060400" link_speed="16 GT/s" link_width="16">
+        <pci busid="0000:14:00.0" class="0x030200" link_speed="16 GT/s" link_width="16">
+          <gpu dev="1" sm="80" rank="1" gdr="0">
+            <nvlink target="0000:cb:00.0" count="4" tclass="0x030200"/>
+            <nvlink target="0000:88:00.0" count="4" tclass="0x030200"/>
+            <nvlink target="0000:8b:00.0" count="2" tclass="0x030200"/>
+            <nvlink target="0000:11:00.0" count="2" tclass="0x030200"/>
+          </gpu>
+        </pci>
+      </pci>
+      <pci busid="0000:16:00.0" class="0x020000" link_speed="16 GT/s" link_width="16">
+        <nic>
+          <net name="eth0" dev="0" speed="200000" port="0" guid="0x0" maxconn="65536" gdr="0"/>
+        </nic>
+      </pci>
+      <pci busid="0000:17:00.0" class="0x020000" link_speed="16 GT/s" link_width="16">
+        <nic>
+          <net name="eth1" dev="1" speed="200000" port="0" guid="0x1" maxconn="65536" gdr="0"/>
+        </nic>
+      </pci>
+    </pci>
+    <pci busid="0000:30:00.0" class="0x020000" link_speed="8 GT/s" link_width="16">
+      <nic>
+        <net name="eth2" dev="2" speed="100000" port="0" guid="0x2" maxconn="65536" gdr="0"/>
+      </nic>
+    </pci>
+  </cpu>
+  <cpu numaid="1" affinity="00000000,0000ffff,ff000000,00000000,0000ffff,ff000000" arch="x86_64" vendor="GenuineIntel" familyid="6" modelid="85">
+    <pci busid="0000:44:00.0" class="0x060400" link_speed="8 GT/s" link_width="16">
+      <pci busid="0000:46:00.0" class="0x060400" link_speed="16 GT/s" link_width="16">
+        <pci busid="0000:48:00.0" class="0x030200" link_speed="16 GT/s" link_width="16">
+          <gpu dev="2" sm="80" rank="2" gdr="0">
+            <nvlink target="0000:4b:00.0" count="4" tclass="0x030200"/>
+            <nvlink target="0000:c8:00.0" count="4" tclass="0x030200"/>
+            <nvlink target="0000:cb:00.0" count="2" tclass="0x030200"/>
+            <nvlink target="0000:8b:00.0" count="2" tclass="0x030200"/>
+          </gpu>
+        </pci>
+      </pci>
+      <pci busid="0000:49:00.0" class="0x060400" link_speed="16 GT/s" link_width="16">
+        <pci busid="0000:4b:00.0" class="0x030200" link_speed="16 GT/s" link_width="16">
+          <gpu dev="3" sm="80" rank="3" gdr="0">
+            <nvlink target="0000:cb:00.0" count="4" tclass="0x030200"/>
+            <nvlink target="0000:48:00.0" count="4" tclass="0x030200"/>
+            <nvlink target="0000:c8:00.0" count="2" tclass="0x030200"/>
+            <nvlink target="0000:88:00.0" count="2" tclass="0x030200"/>
+          </gpu>
+        </pci>
+      </pci>
+      <pci busid="0000:4d:00.0" class="0x020000" link_speed="16 GT/s" link_width="16">
+        <nic>
+          <net name="eth3" dev="3" speed="200000" port="0" guid="0x3" maxconn="65536" gdr="0"/>
+        </nic>
+      </pci>
+      <pci busid="0000:4e:00.0" class="0x020000" link_speed="16 GT/s" link_width="16">
+        <nic>
+          <net name="eth4" dev="4" speed="200000" port="0" guid="0x4" maxconn="65536" gdr="0"/>
+        </nic>
+      </pci>
+    </pci>
+    <pci busid="0000:6d:00.0" class="0x020000" link_speed="8 GT/s" link_width="16">
+      <nic>
+        <net name="eth5" dev="5" speed="100000" port="0" guid="0x5" maxconn="65536" gdr="0"/>
+      </nic>
+    </pci>
+  </cpu>
+  <cpu numaid="2" affinity="000000ff,ffff0000,00000000,000000ff,ffff0000,00000000" arch="x86_64" vendor="GenuineIntel" familyid="6" modelid="85">
+    <pci busid="0000:84:00.0" class="0x060400" link_speed="8 GT/s" link_width="16">
+      <pci busid="0000:86:00.0" class="0x060400" link_speed="16 GT/s" link_width="16">
+        <pci busid="0000:88:00.0" class="0x030200" link_speed="16 GT/s" link_width="16">
+          <gpu dev="4" sm="80" rank="4" gdr="0">
+            <nvlink target="0000:8b:00.0" count="4" tclass="0x030200"/>
+            <nvlink target="0000:14:00.0" count="4" tclass="0x030200"/>
+            <nvlink target="0000:11:00.0" count="2" tclass="0x030200"/>
+            <nvlink target="0000:4b:00.0" count="2" tclass="0x030200"/>
+          </gpu>
+        </pci>
+      </pci>
+      <pci busid="0000:89:00.0" class="0x060400" link_speed="16 GT/s" link_width="16">
+        <pci busid="0000:8b:00.0" class="0x030200" link_speed="16 GT/s" link_width="16">
+          <gpu dev="5" sm="80" rank="5" gdr="0">
+            <nvlink target="0000:11:00.0" count="4" tclass="0x030200"/>
+            <nvlink target="0000:88:00.0" count="4" tclass="0x030200"/>
+            <nvlink target="0000:14:00.0" count="2" tclass="0x030200"/>
+            <nvlink target="0000:48:00.0" count="2" tclass="0x030200"/>
+          </gpu>
+        </pci>
+      </pci>
+      <pci busid="0000:8d:00.0" class="0x020000" link_speed="16 GT/s" link_width="16">
+        <nic>
+          <net name="eth6" dev="6" speed="200000" port="0" guid="0x6" maxconn="65536" gdr="0"/>
+        </nic>
+      </pci>
+      <pci busid="0000:8e:00.0" class="0x020000" link_speed="16 GT/s" link_width="16">
+        <nic>
+          <net name="eth7" dev="7" speed="200000" port="0" guid="0x7" maxconn="65536" gdr="0"/>
+        </nic>
+      </pci>
+    </pci>
+    <pci busid="0000:ad:00.0" class="0x020000" link_speed="8 GT/s" link_width="16">
+      <nic>
+        <net name="eth8" dev="8" speed="100000" port="0" guid="0x8" maxconn="65536" gdr="0"/>
+      </nic>
+    </pci>
+  </cpu>
+  <cpu numaid="3" affinity="ffffff00,00000000,00000000,ffffff00,00000000,00000000" arch="x86_64" vendor="GenuineIntel" familyid="6" modelid="85">
+    <pci busid="0000:c4:00.0" class="0x060400" link_speed="8 GT/s" link_width="16">
+      <pci busid="0000:c6:00.0" class="0x060400" link_speed="16 GT/s" link_width="16">
+        <pci busid="0000:c8:00.0" class="0x030200" link_speed="16 GT/s" link_width="16">
+          <gpu dev="6" sm="80" rank="6" gdr="0">
+            <nvlink target="0000:48:00.0" count="4" tclass="0x030200"/>
+            <nvlink target="0000:11:00.0" count="4" tclass="0x030200"/>
+            <nvlink target="0000:4b:00.0" count="2" tclass="0x030200"/>
+            <nvlink target="0000:cb:00.0" count="2" tclass="0x030200"/>
+          </gpu>
+        </pci>
+      </pci>
+      <pci busid="0000:c9:00.0" class="0x060400" link_speed="16 GT/s" link_width="16">
+        <pci busid="0000:cb:00.0" class="0x030200" link_speed="16 GT/s" link_width="16">
+          <gpu dev="7" sm="80" rank="7" gdr="0">
+            <nvlink target="0000:14:00.0" count="4" tclass="0x030200"/>
+            <nvlink target="0000:4b:00.0" count="4" tclass="0x030200"/>
+            <nvlink target="0000:48:00.0" count="2" tclass="0x030200"/>
+            <nvlink target="0000:c8:00.0" count="2" tclass="0x030200"/>
+          </gpu>
+        </pci>
+      </pci>
+      <pci busid="0000:cd:00.0" class="0x020000" link_speed="16 GT/s" link_width="16">
+        <nic>
+          <net name="eth9" dev="9" speed="200000" port="0" guid="0x9" maxconn="65536" gdr="0"/>
+        </nic>
+      </pci>
+      <pci busid="0000:ce:00.0" class="0x020000" link_speed="16 GT/s" link_width="16">
+        <nic>
+          <net name="eth10" dev="10" speed="200000" port="0" guid="0xa" maxconn="65536" gdr="0"/>
+        </nic>
+      </pci>
+    </pci>
+    <pci busid="0000:ed:00.0" class="0x020000" link_speed="8 GT/s" link_width="16">
+      <nic>
+        <net name="eth11" dev="11" speed="1000" port="0" guid="0xb" maxconn="65536" gdr="0"/>
+      </nic>
+    </pci>
+  </cpu>
+</system>
