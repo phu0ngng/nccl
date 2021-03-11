@@ -217,7 +217,7 @@ class ncclFunction<ncclFuncAllReduce, NCCL_ALGO_COLLNET, NCCL_PROTO_SIMPLE, FUNC
     //const int nthreads = args->nThreads-3*WARP_SIZE;
     const int bid = args->coll.bid;
     const int nChannels = args->coll.nChannels;
-    const int nRanks = ncclShmem.comm->nRanks;
+    //const int nRanks = ncclShmem.comm->nRanks;
     struct ncclDirect* tree = &ncclShmem.channel->collTree;
     const int stepSize = ncclShmem.comm->buffSizes[NCCL_PROTO_SIMPLE] / (sizeof(T)*NCCL_STEPS);
     int chunkSize = args->coll.lastChunkSize;

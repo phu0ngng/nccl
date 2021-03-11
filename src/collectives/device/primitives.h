@@ -228,8 +228,9 @@ class ncclPrimitives {
 
   __device__ __forceinline__ void loadRecvConn(ncclPeer *peer, T* directBuff) {
     if (role & (ROLE_WAIT_RECV|ROLE_POST_RECV)) {
-      // Groups 0,2 use conn 0, groups 4,6 use conn 1
-      auto *conn = &peer->recv[group/4].conn;
+      // For oneshot: groups 0,2 use conn 0, groups 4,6 use conn 1
+      const int connIndex = (NSEND == NCCL_MAX_DIRECT_ARITY || NRECV == NCCL_MAX_DIRECT_ARITY) ? group/4 : 0;
+      auto *conn = &peer->recv[connIndex].conn;
       step = conn->step;
       step = ROUNDUP(step, SLICESPERCHUNK*SLICESTEPS);
       if (role & ROLE_POST_RECV) {
@@ -255,8 +256,9 @@ class ncclPrimitives {
 
   __device__ __forceinline__ void loadSendConn(ncclPeer *peer) {
     if (role & (ROLE_WAIT_SEND|ROLE_POST_SEND)) {
-      // Groups 0,2 use conn 0, groups 4,6 use conn 1
-      auto *conn = &peer->send[group/4].conn;
+      // For oneshot: groups 0,2 use conn 0, groups 4,6 use conn 1
+      const int connIndex = (NSEND == NCCL_MAX_DIRECT_ARITY || NRECV == NCCL_MAX_DIRECT_ARITY) ? group/4 : 0;
+      auto *conn = &peer->send[connIndex].conn;
       step = conn->step;
       step = ROUNDUP(step, SLICESPERCHUNK*SLICESTEPS);
       if (role & ROLE_POST_SEND) {
