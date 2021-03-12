@@ -564,7 +564,7 @@ static ncclResult_t ncclEnqueueCollKernel(ncclComm_t comm, struct ncclQueueElem*
 
     // Proxy
     proxyArgs->subs[0].channel = channel;
-    proxyArgs->opCount = channel->workFifoTail;
+    proxyArgs->opCount = comm->opCount;
 
     if (proxyArgs->subs[0].nsteps) NCCLCHECK(ncclProxySaveColl(proxyArgs, comm->nRanks));
 
@@ -574,6 +574,7 @@ static ncclResult_t ncclEnqueueCollKernel(ncclComm_t comm, struct ncclQueueElem*
     //INFO(NCCL_COLL, "Host enqueue: bid %d channel %d index %ld nThreads %d funcIndex %d count %ld nChannels %d",
     //      work->coll.bid, channelId, channel->workFifoTail, work->nThreads, work->funcIndex, work->coll.count, work->coll.nChannels);
   }
+  comm->opCount++;
   return ncclSuccess;
 }
 
