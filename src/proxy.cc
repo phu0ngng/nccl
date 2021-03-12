@@ -552,8 +552,7 @@ ncclResult_t ncclProxyAppendPosted(struct ncclProxyState* state) {
   // ProxyAppend may free fused elements. Make sure we hold the lock.
   pthread_mutex_lock(&state->poolMutex);
   ncclProxyArgs* next, *prev = NULL, *op = state->postedOps;
-  int opCount = op->opCount;
-  while (op && op->opCount == opCount) {
+  while (op) {
     next = op->next;
     if (op->subs[0].sendbytes) {
       if (prev) prev->next = next;
@@ -564,7 +563,7 @@ ncclResult_t ncclProxyAppendPosted(struct ncclProxyState* state) {
     op = next;
   }
   op = state->postedOps;
-  while (op && op->opCount == opCount) {
+  while (op) {
     next = op->next;
     op->next = NULL;
     NCCLCHECK(ProxyAppend(state, op));
