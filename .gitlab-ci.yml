@@ -37,7 +37,7 @@ apitest-P100:
   variables:
     NCCL_IB_HCA: "mlx5_0"
     CUDA_HOME: "/usr/local/cuda-11.0"
-    SRUN: "srun -n 1 -c 8 -pP100"
+    SRUN: "srun -t 00:05:00 -n 1 -c 8 -pP100"
   script:
     - ./test/scripts/gitlab-runner-apitest.sh
   interruptible: true
@@ -49,7 +49,7 @@ apitest-P40:
   variables:
     NCCL_IB_HCA: "mlx5_0"
     CUDA_HOME: "/usr/local/cuda-11.0"
-    SRUN: "srun -n 1 -c 8 -pP40"
+    SRUN: "srun -t 00:05:00 -n 1 -c 8 -pP40"
   script:
     - ./test/scripts/gitlab-runner-apitest.sh
   interruptible: true
@@ -60,7 +60,7 @@ apitest-GP100:
     - gp100
   variables:
     CUDA_HOME: "/usr/local/cuda-11.0"
-    SRUN: "srun -n 1 -c 2 -pGP100"
+    SRUN: "srun -t 00:05:00 -n 1 -c 2 -pGP100"
   script:
     - ./test/scripts/gitlab-runner-apitest.sh
   interruptible: true
@@ -71,7 +71,7 @@ apitest-M40:
     - m40
   variables:
     CUDA_HOME: "/usr/local/cuda-11.0"
-    SRUN: "srun -n 1 -c 8 -pM40"
+    SRUN: "srun -t 00:05:00 -n 1 -c 8 -pM40"
   script:
     - ./test/scripts/gitlab-runner-apitest.sh
   interruptible: true
@@ -82,7 +82,7 @@ apitest-K40:
     - k40
   variables:
     CUDA_HOME: "/usr/local/cuda-11.0"
-    SRUN: "srun -n 1 -c 8 -pK40"
+    SRUN: "srun -t 00:05:00 -n 1 -c 8 -pK40"
   script:
     - ./test/scripts/gitlab-runner-apitest.sh
   interruptible: true
@@ -93,7 +93,7 @@ apitest-K80:
     - k80
   variables:
     CUDA_HOME: "/usr/local/cuda-11.0"
-    SRUN: "srun -n 1 -c 16 -pK80"
+    SRUN: "srun -t 00:05:00 -n 1 -c 16 -pK80"
   script:
     - ./test/scripts/gitlab-runner-apitest.sh minimal
   interruptible: true
@@ -104,7 +104,7 @@ apitest-A100:
     - a100pci
   variables:
     CUDA_HOME: "/usr/local/cuda-11.0"
-    SRUN: "srun -n 1 -c 8 -pA100"
+    SRUN: "srun -t 00:05:00 -n 1 -c 8 -pA100"
   script:
     - ./test/scripts/gitlab-runner-apitest.sh
   interruptible: true
@@ -140,7 +140,7 @@ perftest-P100:
     NCCL_DEBUG: "WARN"
     MPI_HOME: "/opt/mpi/openmpi-1.10.7"
     CUDA_HOME: "/usr/local/cuda-11.0"
-    SALLOC: "salloc -n 8 -pP100"
+    SALLOC: "salloc -t 00:05:00 -n 8 -pP100"
   script:
     - ./test/scripts/gitlab-runner-perftest.sh
   interruptible: true
@@ -153,7 +153,7 @@ perftest-P40:
     NCCL_DEBUG: "WARN"
     MPI_HOME: "/opt/mpi/openmpi-1.10.7"
     CUDA_HOME: "/usr/local/cuda-11.0"
-    SALLOC: "salloc -n 8 -pP40"
+    SALLOC: "salloc -t 00:05:00 -n 8 -pP40"
   script:
     - ./test/scripts/gitlab-runner-perftest.sh
   interruptible: true
@@ -166,7 +166,7 @@ perftest-GP100:
     NCCL_DEBUG: "WARN"
     MPI_HOME: "/opt/mpi/openmpi-1.10.7"
     CUDA_HOME: "/usr/local/cuda-11.0"
-    SALLOC: "salloc -n 2 -pGP100"
+    SALLOC: "salloc -t 00:05:00 -n 2 -pGP100"
   script:
     - ./test/scripts/gitlab-runner-perftest.sh
   interruptible: true
@@ -179,7 +179,7 @@ perftest-M40:
     NCCL_DEBUG: "WARN"
     MPI_HOME: "/opt/mpi/openmpi-1.10.7"
     CUDA_HOME: "/usr/local/cuda-11.0"
-    SALLOC: "salloc -n 8 -pM40"
+    SALLOC: "salloc -t 00:05:00 -n 8 -pM40"
   script:
     - ./test/scripts/gitlab-runner-perftest.sh
   interruptible: true
@@ -192,7 +192,7 @@ perftest-K80:
     NCCL_DEBUG: "WARN"
     MPI_HOME: "/opt/mpi/openmpi-1.10.7"
     CUDA_HOME: "/usr/local/cuda-11.0"
-    SALLOC: "salloc -N 1 -n 16 -pK80"
+    SALLOC: "salloc -t 00:05:00 -N 1 -n 16 -pK80"
   script:
     - ./test/scripts/gitlab-runner-perftest.sh 256M
   interruptible: true
@@ -205,7 +205,7 @@ perftest-K40:
     NCCL_DEBUG: "WARN"
     MPI_HOME: "/opt/mpi/openmpi-1.10.7"
     CUDA_HOME: "/usr/local/cuda-11.0"
-    SALLOC: "salloc -n 8 -pK40"
+    SALLOC: "salloc -t 00:05:00 -n 8 -pK40"
   script:
     - ./test/scripts/gitlab-runner-perftest.sh
   interruptible: true
@@ -218,7 +218,7 @@ perftest-A100:
     NCCL_DEBUG: "WARN"
     MPI_HOME: "/opt/mpi/openmpi-1.10.7"
     CUDA_HOME: "/usr/local/cuda-11.0"
-    SALLOC: "salloc -n 8 -pA100"
+    SALLOC: "salloc -t 00:05:00 -n 8 -pA100"
   script:
     - ./test/scripts/gitlab-runner-perftest.sh
   interruptible: true
@@ -258,7 +258,7 @@ perftest-multi-gc:
     NCCL_DEBUG: "WARN"
     MPI_HOME: "/opt/mpi/openmpi-1.10.7"
     CUDA_HOME: "/usr/local/cuda-11.0"
-    SALLOC: "salloc -n 4 -n 32 -w gc[01-03,05]"
+    SALLOC: "salloc -t 00:05:00 -n 4 -n 32 -w gc[01-03,05]"
   script:
     - ./test/scripts/gitlab-runner-perftest.sh 128M
   interruptible: true
