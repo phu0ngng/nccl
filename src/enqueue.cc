@@ -357,10 +357,22 @@ static ncclResult_t getAlgoInfo(struct ncclInfo* info) {
   int nc = (info->nChannels > 0) ? info->nChannels : comm->nChannels;
   int nt = comm->maxThreads[info->algorithm][info->protocol];
   int threadThreshold = comm->threadThresholds[info->algorithm][info->protocol];
-  while (info->algorithm != NCCL_ALGO_COLLNET && info->nBytes < nc*nt*threadThreshold) {
-    if (nc >= 2) nc--;
-    else if ((nt % 128) == 0) nt/=2;
-    else break;
+  if (info->algorithm == NCCL_ALGO_COLLNET) {
+    int ncSwitch = 16;
+    bool flag = true;
+    while (ncSwitch >= 1 && flag) {
+      while ((flag = info->nBytes < nc*nt*info->comm->channels[0].collTree.nHeads*threadThreshold) && nc > ncSwitch) {
+        if (nc == ncSwitch+ncSwitch/2) threadThreshold /= 2;
+        nc--;
+      }
+      ncSwitch /= 2;
+    }
+  } else {
+    while (info->nBytes < nc*nt*threadThreshold) {
+      if (nc >= 2) nc--;
+      else if ((nt % 128) == 0) nt/=2;
+      else break;
+    }
   }
   if (info->protocol == NCCL_PROTO_SIMPLE) {
     nt += WARP_SIZE; // Extra warp for sync
