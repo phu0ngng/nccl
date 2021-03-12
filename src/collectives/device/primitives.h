@@ -323,11 +323,15 @@ class ncclPrimitives {
       if (index < nsend) role |= ROLE_POST_SEND;
     }
 
+    int peer = 0;
+    if (role & (ROLE_WAIT_RECV|ROLE_POST_RECV)) peer = recvPeers[index];
+    if (role & (ROLE_WAIT_SEND|ROLE_POST_SEND)) peer = sendPeers[index];
+
     if (role & ROLE_INPUT) buff = (T*)inputBuf;
     if (role & ROLE_OUTPUT) buff = (T*)outputBuf;
 
-    loadRecvConn(ncclShmem.channel->devPeers + index, (T*)outputBuf);
-    loadSendConn(ncclShmem.channel->devPeers + index);
+    loadRecvConn(ncclShmem.channel->devPeers + peer, (T*)outputBuf);
+    loadSendConn(ncclShmem.channel->devPeers + peer);
   }
 
   __device__ __forceinline__ void send(intptr_t inpIx, int eltN) {
