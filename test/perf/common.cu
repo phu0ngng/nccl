@@ -584,7 +584,7 @@ testResult_t BenchTime(struct threadArgs* args, ncclDataType_t type, ncclRedOp_t
   }
 
   double timeUsec = (report_cputime ? cputimeSec : deltaSec)*1.0E6;
-  char timeStr[10];
+  char timeStr[100];
   if (timeUsec >= 10000.0) {
     sprintf(timeStr, "%7.0f", timeUsec);
   } else if (timeUsec >= 100.0) {
@@ -658,7 +658,7 @@ testResult_t TimeTest(struct threadArgs* args, ncclDataType_t type, const char* 
   // Benchmark
   for (size_t size = args->minbytes; size<=args->maxbytes; size = ((args->stepfactor > 1) ? size*args->stepfactor : size+args->stepbytes)) {
       setupArgs(size, type, args);
-      char rootName[10];
+      char rootName[100];
       if (root == -1)
         sprintf(rootName, "%6s", "");
       else
