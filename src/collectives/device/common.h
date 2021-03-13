@@ -13,10 +13,10 @@
 
 #if __CUDA_ARCH__ >= 800
 #define COLL_UNROLL 8
-#define NCCL_MAX_DEV_ARITY (NCCL_MAX_TREE_ARITY-1)  // Using balanced tree instead of split tree
+#define NCCL_DEV_TREE_ARITY (NCCL_MAX_TREE_ARITY-1)  // Using balanced tree instead of split tree
 #else
 #define COLL_UNROLL 4
-#define NCCL_MAX_DEV_ARITY NCCL_MAX_TREE_ARITY
+#define NCCL_DEV_TREE_ARITY NCCL_MAX_TREE_ARITY
 #endif
 
 // Exit If Abort Barrier across CTA: make sure all threads exit consistently
