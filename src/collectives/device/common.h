@@ -57,7 +57,7 @@ class ncclFunction {
 };
 
 struct ncclShmemGroup {
-  ncclConnInfo *recvConns[NCCL_MAX_DEV_ARITY], *sendConns[NCCL_MAX_DEV_ARITY];
+  ncclConnInfo *recvConns[NCCL_MAX_DIRECT_ARITY], *sendConns[NCCL_MAX_DIRECT_ARITY];
   void* srcs[NCCL_MAX_DIRECT_ARITY+1];
   void* dsts[NCCL_MAX_DIRECT_ARITY+1];
 };
