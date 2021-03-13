@@ -84,8 +84,7 @@ struct ncclComm {
   cudaEvent_t intDoneEvent;
   bool checkPointers;
 
-  // Counter to make sure collectives match (needed for bcast/reduce
-  // where syncs are not symmetric).
+  // Collective operation counter
   uint64_t opCount;
 
   // Channels for collectives

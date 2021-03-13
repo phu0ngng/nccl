@@ -361,10 +361,22 @@ static ncclResult_t getAlgoInfo(struct ncclInfo* info) {
   int nc = (info->nChannels > 0) ? info->nChannels : comm->nChannels;
   int nt = comm->maxThreads[info->algorithm][info->protocol];
   int threadThreshold = comm->threadThresholds[info->algorithm][info->protocol];
-  while (info->algorithm != NCCL_ALGO_COLLNET && info->nBytes < nc*nt*threadThreshold) {
-    if (nc >= 2) nc--;
-    else if ((nt % 128) == 0) nt/=2;
-    else break;
+  if (info->algorithm == NCCL_ALGO_COLLNET) {
+    int ncSwitch = 16;
+    bool flag = true;
+    while (ncSwitch >= 1 && flag) {
+      while ((flag = info->nBytes < nc*nt*info->comm->channels[0].collTree.nHeads*threadThreshold) && nc > ncSwitch) {
+        if (nc == ncSwitch+ncSwitch/2) threadThreshold /= 2;
+        nc--;
+      }
+      ncSwitch /= 2;
+    }
+  } else {
+    while (info->nBytes < nc*nt*threadThreshold) {
+      if (nc >= 2) nc--;
+      else if ((nt % 128) == 0) nt/=2;
+      else break;
+    }
   }
   if (info->protocol == NCCL_PROTO_SIMPLE) {
     nt += WARP_SIZE; // Extra warp for sync
@@ -558,7 +570,7 @@ static ncclResult_t ncclEnqueueCollKernel(ncclComm_t comm, struct ncclQueueElem*
 
     // Proxy
     proxyArgs->subs[0].channel = channel;
-    proxyArgs->opCount = channel->workFifoTail;
+    proxyArgs->opCount = comm->opCount;
 
     if (proxyArgs->subs[0].nsteps) NCCLCHECK(ncclProxySaveColl(proxyArgs, comm->nRanks));
 
@@ -568,6 +580,7 @@ static ncclResult_t ncclEnqueueCollKernel(ncclComm_t comm, struct ncclQueueElem*
     //INFO(NCCL_COLL, "Host enqueue: bid %d channel %d index %ld nThreads %d funcIndex %d count %ld nChannels %d",
     //      work->coll.bid, channelId, channel->workFifoTail, work->nThreads, work->funcIndex, work->coll.count, work->coll.nChannels);
   }
+  comm->opCount++;
   return ncclSuccess;
 }
 
