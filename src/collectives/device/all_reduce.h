@@ -7,7 +7,6 @@
 #include "devcomm.h"
 #include "primitives.h"
 #include "collectives.h"
-#include <cassert>
 
 template<class FUNC, typename T, int UNROLL>
 class ncclFunction<ncclFuncAllReduce, NCCL_ALGO_RING, NCCL_PROTO_SIMPLE, FUNC, T, UNROLL> {
