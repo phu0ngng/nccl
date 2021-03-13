@@ -133,7 +133,7 @@ void* ncclAsyncThreadPreconnect(void* args_) {
   struct ncclAsyncArgs* args = (struct ncclAsyncArgs*)args_;
   struct ncclComm* comm = args->coll.comm;
   CUDACHECKTHREAD(cudaSetDevice(comm->cudaDev));
-  NCCLCHECKTHREAD(ncclTransportP2pSetup(comm, NULL));
+  NCCLCHECKTHREAD(ncclTransportP2pSetup(comm, NULL, 0));
   return args;
 }
 

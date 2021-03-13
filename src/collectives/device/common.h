@@ -57,8 +57,8 @@ class ncclFunction {
 };
 
 struct ncclShmemPtrs {
-  void* srcs[NCCL_MAX_DEV_ARITY+1];
-  void* dsts[NCCL_MAX_DEV_ARITY+1];
+  void* srcs[NCCL_MAX_DIRECT_ARITY+1];
+  void* dsts[NCCL_MAX_DIRECT_ARITY+1];
 };
 
 struct ncclShmemData {

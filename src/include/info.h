@@ -18,8 +18,7 @@ typedef enum {
   ncclPatternTreeUp,
   ncclPatternTreeDown,
   ncclPatternTreeUpDown,
-  ncclPatternCollTreeUp,
-  ncclPatternCollTreeDown
+  ncclPatternCollTreeUpDown
 } ncclPattern_t;
 
 // Used to pass NCCL call information between functions
@@ -49,6 +48,8 @@ struct ncclInfo {
   int nchunksPerLoop;
   ssize_t sendbytes;
   ssize_t recvbytes;
+  int recvChunkSize;
+  int sendChunkSize;
   uint32_t delta;
   int channelId;
 };

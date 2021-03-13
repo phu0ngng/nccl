@@ -363,7 +363,7 @@ testResult_t testStreamSynchronize(int ngpus, cudaStream_t* streams, ncclComm_t*
        }
      }
      auto delta = std::chrono::high_resolution_clock::now() - start;
-     if (std::chrono::duration_cast<std::chrono::seconds>(delta).count() > timeout) {
+     if (std::chrono::duration_cast<std::chrono::seconds>(delta).count() > timeout && timeout > 0) {
        for (int i=0; i<ngpus; i++)
          NCCLCHECK(ncclCommAbort(comms[i]));
        char hostname[1024];
