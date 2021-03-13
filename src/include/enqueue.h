@@ -11,6 +11,7 @@
 #include "group.h"
 #include "collectives.h"
 
+size_t ncclKernMaxLocalSize();
 ncclResult_t ncclEnqueueCheck(struct ncclInfo* info);
 ncclResult_t ncclCpuBarrierIn(struct ncclComm* comm, int* isLast);
 ncclResult_t ncclCpuBarrierLast(struct ncclComm* comm);
