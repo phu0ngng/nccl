@@ -6,9 +6,7 @@
 
 #include "comm.h"
 #include "info.h"
-#include "graph.h"
 #include "collectives.h"
-#include <assert.h>
 
 enum { proxyRecv=0, proxySend=1 };
 
