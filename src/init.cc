@@ -815,6 +815,8 @@ cleanup:
   return res;
 }
 
+volatile int ncclUnfreeze = 0;
+
 static ncclResult_t ncclCommInitRankDev(ncclComm_t* newcomm, int nranks, ncclUniqueId commId, int myrank, int cudaDev) {
   ncclResult_t res;
   char* env = getenv("NCCL_COMM_ID");
@@ -825,6 +827,30 @@ static ncclResult_t ncclCommInitRankDev(ncclComm_t* newcomm, int nranks, ncclUni
 
   NCCLCHECKGOTO(ncclInit(), res, end);
   if (myrank == 0) showVersion();
+
+  env = getenv("NCCL_FREEZE_ON_INIT");
+  if (env) {
+    static bool first = true;
+    int rank;
+    if (0==strcmp(env, "ALL") || 0==strcmp(env, "All") || 0==strcmp(env, "all"))
+      rank = -1;
+    else
+      rank = std::atoi(env);
+
+    if (first && (rank == -1 || rank == myrank)) {
+      first = false;
+      int pid = getpid();
+      char hostname[256]; gethostname(hostname, sizeof(hostname));
+      fprintf(stderr,
+        "NCCL rank %d on pid %d at %s frozen and ready for attach. Once attached "
+        "set ncclUnfreeze to a non-zero value and continue execution. Helpful commands:\n"
+        "  ssh %s\n"
+        "  cuda-gdb --pid=%d -ex 'set ncclUnfreeze=1'\n",
+        myrank, pid, hostname, hostname, pid
+      );
+      while (0 == ncclUnfreeze) sleep(1);
+    }
+  }
 
   // Make sure the CUDA runtime is initialized.
   CUDACHECKGOTO(cudaFree(NULL), res, end);

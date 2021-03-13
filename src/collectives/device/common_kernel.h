@@ -24,10 +24,19 @@ inline __device__ void loadPtr(void** ptr, T* &v) {
 
 typedef uint64_t PackType;
 
+template<typename Fn>
+struct FuncTraits /*{
+  __device__ static Fn make();
+  __device__ static T preOp(Fn, T);
+  __device__ static T postOp(Fn, T);
+}*/;
+
 // unpack x and y to elements of type T and apply FUNC to each element
 template<class FUNC, typename T>
 struct MULTI {
-  __device__ PackType operator()(const PackType x, const PackType y) const;
+  __device__ PackType operator()(FUNC fn, const PackType x, const PackType y) const;
+  __device__ PackType preOp(FUNC fn, PackType x) const;
+  __device__ PackType postOp(FUNC fn, PackType x) const;
 };
 
 template<class FUNC>
@@ -41,16 +50,38 @@ struct MULTI<FUNC, int8_t> {
     };
   };
 
-  __device__ PackType operator()(const PackType x, const PackType y) const {
+  __device__ PackType operator()(FUNC fn, const PackType x, const PackType y) const {
     converter cx, cy, cr;
     cx.storage = x;
     cy.storage = y;
 
     // for char, we do these as vector ops
-    cr.a = FUNC()(cx.a, cy.a);
-    cr.b = FUNC()(cx.b, cy.b);
+    cr.a = fn(cx.a, cy.a);
+    cr.b = fn(cx.b, cy.b);
 
     return cr.storage;
+  }
+  __device__ PackType preOp(FUNC fn, PackType x) const {
+    union {
+      PackType pack;
+      int8_t elt[8];
+    } u;
+    u.pack = x;
+    #pragma unroll
+    for (int i=0; i < 8; i++)
+      u.elt[i] = FuncTraits<FUNC>().preOp(fn, u.elt[i]);
+    return u.pack;
+  }
+  __device__ PackType postOp(FUNC fn, PackType x) const {
+    union {
+      PackType pack;
+      int8_t elt[8];
+    } u;
+    u.pack = x;
+    #pragma unroll
+    for (int i=0; i < 8; i++)
+      u.elt[i] = FuncTraits<FUNC>().postOp(fn, u.elt[i]);
+    return u.pack;
   }
 };
 
@@ -65,16 +96,38 @@ struct MULTI<FUNC, uint8_t> {
     };
   };
 
-  __device__ PackType operator()(const PackType x, const PackType y) const {
+  __device__ PackType operator()(FUNC fn, const PackType x, const PackType y) const {
     converter cx, cy, cr;
     cx.storage = x;
     cy.storage = y;
 
     // for char, we do these as vector ops
-    cr.a = FUNC()(cx.a, cy.a);
-    cr.b = FUNC()(cx.b, cy.b);
+    cr.a = fn(cx.a, cy.a);
+    cr.b = fn(cx.b, cy.b);
 
     return cr.storage;
+  }
+  __device__ PackType preOp(FUNC fn, PackType x) const {
+    union {
+      PackType pack;
+      uint8_t elt[8];
+    } u;
+    u.pack = x;
+    #pragma unroll
+    for (int i=0; i < 8; i++)
+      u.elt[i] = FuncTraits<FUNC>().preOp(fn, u.elt[i]);
+    return u.pack;
+  }
+  __device__ PackType postOp(FUNC fn, PackType x) const {
+    union {
+      PackType pack;
+      uint8_t elt[8];
+    } u;
+    u.pack = x;
+    #pragma unroll
+    for (int i=0; i < 8; i++)
+      u.elt[i] = FuncTraits<FUNC>().postOp(fn, u.elt[i]);
+    return u.pack;
   }
 };
 
@@ -89,15 +142,35 @@ struct MULTI<FUNC, int32_t> {
     };
   };
 
-  __device__ PackType operator()(const PackType x, const PackType y) const {
+  __device__ PackType operator()(FUNC fn, const PackType x, const PackType y) const {
     converter cx, cy, cr;
     cx.storage = x;
     cy.storage = y;
 
-    cr.a = FUNC()(cx.a, cy.a);
-    cr.b = FUNC()(cx.b, cy.b);
+    cr.a = fn(cx.a, cy.a);
+    cr.b = fn(cx.b, cy.b);
 
     return cr.storage;
+  }
+  __device__ PackType preOp(FUNC fn, PackType x) const {
+    union {
+      PackType pack;
+      int32_t elt[2];
+    } u;
+    u.pack = x;
+    u.elt[0] = FuncTraits<FUNC>().preOp(fn, u.elt[0]);
+    u.elt[1] = FuncTraits<FUNC>().preOp(fn, u.elt[1]);
+    return u.pack;
+  }
+  __device__ PackType postOp(FUNC fn, PackType x) const {
+    union {
+      PackType pack;
+      int32_t elt[2];
+    } u;
+    u.pack = x;
+    u.elt[0] = FuncTraits<FUNC>().postOp(fn, u.elt[0]);
+    u.elt[1] = FuncTraits<FUNC>().postOp(fn, u.elt[1]);
+    return u.pack;
   }
 };
 
@@ -112,15 +185,35 @@ struct MULTI<FUNC, uint32_t> {
     };
   };
 
-  __device__ PackType operator()(const PackType x, const PackType y) const {
+  __device__ PackType operator()(FUNC fn, const PackType x, const PackType y) const {
     converter cx, cy, cr;
     cx.storage = x;
     cy.storage = y;
 
-    cr.a = FUNC()(cx.a, cy.a);
-    cr.b = FUNC()(cx.b, cy.b);
+    cr.a = fn(cx.a, cy.a);
+    cr.b = fn(cx.b, cy.b);
 
     return cr.storage;
+  }
+  __device__ PackType preOp(FUNC fn, PackType x) const {
+    union {
+      PackType pack;
+      uint32_t elt[2];
+    } u;
+    u.pack = x;
+    u.elt[0] = FuncTraits<FUNC>().preOp(fn, u.elt[0]);
+    u.elt[1] = FuncTraits<FUNC>().preOp(fn, u.elt[1]);
+    return u.pack;
+  }
+  __device__ PackType postOp(FUNC fn, PackType x) const {
+    union {
+      PackType pack;
+      uint32_t elt[2];
+    } u;
+    u.pack = x;
+    u.elt[0] = FuncTraits<FUNC>().postOp(fn, u.elt[0]);
+    u.elt[1] = FuncTraits<FUNC>().postOp(fn, u.elt[1]);
+    return u.pack;
   }
 };
 
@@ -129,19 +222,31 @@ struct MULTI<FUNC, half> {
   static_assert(sizeof(PackType) == 4 * sizeof(half),
       "PackType must be four times the size of half.");
 
-  struct PackHalf2 {
-    half2 a, b;
+  union Converter {
+    PackType pack;
+    half2 h2[2];
   };
-
-  __device__ PackType operator()(const PackType x, const PackType y) const {
-    struct PackHalf2 cx, cy, cr;
-    cx = *(reinterpret_cast<const struct PackHalf2*>(&x));
-    cy = *(reinterpret_cast<const struct PackHalf2*>(&y));
-
-    cr.a = FUNC()(cx.a, cy.a);
-    cr.b = FUNC()(cx.b, cy.b);
-
-    return *(reinterpret_cast<PackType*>(&cr));
+  __device__ PackType operator()(FUNC fn, const PackType x, const PackType y) const {
+    Converter cx, cy, cr;
+    cx.pack = x;
+    cy.pack = y;
+    cr.h2[0] = fn(cx.h2[0], cy.h2[0]);
+    cr.h2[1] = fn(cx.h2[1], cy.h2[1]);
+    return cr.pack;
+  }
+  __device__ PackType preOp(FUNC fn, PackType x) const {
+    Converter c;
+    c.pack = x;
+    c.h2[0] = FuncTraits<FUNC>().preOp(fn, c.h2[0]);
+    c.h2[1] = FuncTraits<FUNC>().preOp(fn, c.h2[1]);
+    return c.pack;
+  }
+  __device__ PackType postOp(FUNC fn, PackType x) const {
+    Converter c;
+    c.pack = x;
+    c.h2[0] = FuncTraits<FUNC>().postOp(fn, c.h2[0]);
+    c.h2[1] = FuncTraits<FUNC>().postOp(fn, c.h2[1]);
+    return c.pack;
   }
 };
 
@@ -156,15 +261,35 @@ struct MULTI<FUNC, float> {
     };
   };
 
-  __device__ PackType operator()(const PackType x, const PackType y) const {
+  __device__ PackType operator()(FUNC fn, const PackType x, const PackType y) const {
     converter cx, cy, cr;
     cx.storage = x;
     cy.storage = y;
 
-    cr.a = FUNC()(cx.a, cy.a);
-    cr.b = FUNC()(cx.b, cy.b);
+    cr.a = fn(cx.a, cy.a);
+    cr.b = fn(cx.b, cy.b);
 
     return cr.storage;
+  }
+  __device__ PackType preOp(FUNC fn, PackType x) const {
+    union {
+      PackType pack;
+      float elt[2];
+    } u;
+    u.pack = x;
+    u.elt[0] = FuncTraits<FUNC>().preOp(fn, u.elt[0]);
+    u.elt[1] = FuncTraits<FUNC>().preOp(fn, u.elt[1]);
+    return u.pack;
+  }
+  __device__ PackType postOp(FUNC fn, PackType x) const {
+    union {
+      PackType pack;
+      float elt[2];
+    } u;
+    u.pack = x;
+    u.elt[0] = FuncTraits<FUNC>().postOp(fn, u.elt[0]);
+    u.elt[1] = FuncTraits<FUNC>().postOp(fn, u.elt[1]);
+    return u.pack;
   }
 };
 
@@ -172,9 +297,27 @@ template<class FUNC>
 struct MULTI<FUNC, double> {
   static_assert(sizeof(PackType) == sizeof(double),
       "PackType must be the same size as double.");
-  __device__ PackType operator()(const PackType x, const PackType y) const {
-    double rv = FUNC()(__longlong_as_double(x), __longlong_as_double(y));
+  __device__ PackType operator()(FUNC fn, const PackType x, const PackType y) const {
+    double rv = fn(__longlong_as_double(x), __longlong_as_double(y));
     return __double_as_longlong(rv);
+  }
+  __device__ PackType preOp(FUNC fn, PackType x) const {
+    union {
+      PackType pack;
+      double elt;
+    } u;
+    u.pack = x;
+    u.elt = FuncTraits<FUNC>().preOp(fn, u.elt);
+    return u.pack;
+  }
+  __device__ PackType postOp(FUNC fn, PackType x) const {
+    union {
+      PackType pack;
+      double elt;
+    } u;
+    u.pack = x;
+    u.elt = FuncTraits<FUNC>().postOp(fn, u.elt);
+    return u.pack;
   }
 };
 
@@ -182,9 +325,27 @@ template<class FUNC>
 struct MULTI<FUNC, uint64_t> {
   static_assert(sizeof(PackType) == sizeof(uint64_t),
       "PackType must be the same size as uint64_t.");
-  __device__ PackType operator()(const PackType x, const PackType y) const {
-    uint64_t rv = FUNC()(x, y);
+  __device__ PackType operator()(FUNC fn, const PackType x, const PackType y) const {
+    uint64_t rv = fn(x, y);
     return rv;
+  }
+  __device__ PackType preOp(FUNC fn, PackType x) const {
+    union {
+      PackType pack;
+      uint64_t elt;
+    } u;
+    u.pack = x;
+    u.elt = FuncTraits<FUNC>().preOp(fn, u.elt);
+    return u.pack;
+  }
+  __device__ PackType postOp(FUNC fn, PackType x) const {
+    union {
+      PackType pack;
+      uint64_t elt;
+    } u;
+    u.pack = x;
+    u.elt = FuncTraits<FUNC>().postOp(fn, u.elt);
+    return u.pack;
   }
 };
 
@@ -192,9 +353,27 @@ template<class FUNC>
 struct MULTI<FUNC, int64_t> {
   static_assert(sizeof(PackType) == sizeof(int64_t),
       "PackType must be the same size as int64_t.");
-  __device__ PackType operator()(const PackType x, const PackType y) const {
-    int64_t rv = FUNC()((int64_t)x, (int64_t)y);
+  __device__ PackType operator()(FUNC fn, const PackType x, const PackType y) const {
+    int64_t rv = fn((int64_t)x, (int64_t)y);
     return rv;
+  }
+  __device__ PackType preOp(FUNC fn, PackType x) const {
+    union {
+      PackType pack;
+      int64_t elt;
+    } u;
+    u.pack = x;
+    u.elt = FuncTraits<FUNC>().preOp(fn, u.elt);
+    return u.pack;
+  }
+  __device__ PackType postOp(FUNC fn, PackType x) const {
+    union {
+      PackType pack;
+      int64_t elt;
+    } u;
+    u.pack = x;
+    u.elt = FuncTraits<FUNC>().postOp(fn, u.elt);
+    return u.pack;
   }
 };
 
@@ -238,9 +417,17 @@ typedef ulong2 Pack128;
 
 template<class FUNC, typename T>
 struct MULTI128 {
-  __device__ void operator()(Pack128& x, Pack128& y) {
-    x.x = MULTI<FUNC, T>()(x.x, y.x);
-    x.y = MULTI<FUNC, T>()(x.y, y.y);
+  __device__ void operator()(FUNC fn, Pack128& x, Pack128 const& y) const {
+    x.x = MULTI<FUNC, T>()(fn, x.x, y.x);
+    x.y = MULTI<FUNC, T>()(fn, x.y, y.y);
+  }
+  __device__ void preOp(FUNC fn, Pack128 &x) const {
+    x.x = MULTI<FUNC, T>().preOp(fn, x.x);
+    x.y = MULTI<FUNC, T>().preOp(fn, x.y);
+  }
+  __device__ void postOp(FUNC fn, Pack128 &x) const {
+    x.x = MULTI<FUNC, T>().postOp(fn, x.x);
+    x.y = MULTI<FUNC, T>().postOp(fn, x.y);
   }
 };
 
@@ -253,7 +440,8 @@ inline __device__ void Store128(Pack128* p, Pack128& v) {
 
 template<class FUNC, typename T, int UNROLL, int MINSRCS, int MAXSRCS, int MINDSTS, int MAXDSTS>
 __device__ __forceinline__ void ReduceCopyMulti(const int w, const int nw, const int t,
-    int nsrcs, const T** s, int ndsts, T** d, const int elemOffset, const int Nelem) {
+    FUNC fn, bool preOpSrc0, bool postOp, int nsrcs, const T** s, int ndsts, T** d, const int elemOffset, const int Nelem
+  ) {
   const int inc = nw * UNROLL * WARP_SIZE;
   int offset = w * UNROLL * WARP_SIZE + t;
 
@@ -266,20 +454,28 @@ __device__ __forceinline__ void ReduceCopyMulti(const int w, const int nw, const
     T vals[UNROLL];
     // Load and reduce
     for (int u = 0; u < UNROLL; ++u) vals[u] = vFetch(srcs[0]+u*WARP_SIZE);
+    if (preOpSrc0) {
+      for (int u = 0; u < UNROLL; ++u) vals[u] = FuncTraits<FUNC>().preOp(fn, vals[u]);
+    }
 
     #pragma unroll
     for (int i=1; i<MINSRCS; i++) {
       T vals2[UNROLL];
       for (int u = 0; u < UNROLL; ++u) vals2[u] = vFetch(srcs[i]+u*WARP_SIZE);
-      for (int u = 0; u < UNROLL; ++u) vals[u] = FUNC()(vals[u], vals2[u]);
+      for (int u = 0; u < UNROLL; ++u) vals[u] = fn(vals[u], vals2[u]);
     }
     #pragma unroll
     for (int i=MINSRCS; i<MAXSRCS; i++) {
       if (i<nsrcs) {
         T vals2[UNROLL];
         for (int u = 0; u < UNROLL; ++u) vals2[u] = vFetch(srcs[i]+u*WARP_SIZE);
-        for (int u = 0; u < UNROLL; ++u) vals[u] = FUNC()(vals[u], vals2[u]);
+        for (int u = 0; u < UNROLL; ++u) vals[u] = fn(vals[u], vals2[u]);
       }
+    }
+
+    if (postOp) {
+      #pragma unroll
+      for (int u = 0; u < UNROLL; ++u) vals[u] = FuncTraits<FUNC>().postOp(fn, vals[u]);
     }
 
     // Store
@@ -301,7 +497,8 @@ __device__ __forceinline__ void ReduceCopyMulti(const int w, const int nw, const
 
 template<class FUNC, typename T, int UNROLL, int MINSRCS, int MAXSRCS, int MINDSTS, int MAXDSTS>
 __device__ __forceinline__ void ReduceCopy128bMulti(const int w, const int nw, const int t,
-    int nsrcs, const T** s, int ndsts, T** d, const int elemOffset, const int Npack) {
+    FUNC fn, bool preOpSrc0, bool postOp, int nsrcs, const T** s, int ndsts, T** d, const int elemOffset, const int Npack
+  ) {
   const int inc = nw * UNROLL * WARP_SIZE;
   int offset = w * UNROLL * WARP_SIZE + t;
 
@@ -314,20 +511,28 @@ __device__ __forceinline__ void ReduceCopy128bMulti(const int w, const int nw, c
     Pack128 vals[UNROLL];
     // Load and reduce
     for (int u = 0; u < UNROLL; ++u) Fetch128(vals[u], srcs[0]+u*WARP_SIZE);
+    if (preOpSrc0) {
+      for (int u = 0; u < UNROLL; ++u) MULTI128<FUNC, T>().preOp(fn, vals[u]);
+    }
 
     #pragma unroll
     for (int i=1; i<MINSRCS; i++) {
       Pack128 vals2[UNROLL];
       for (int u = 0; u < UNROLL; ++u) Fetch128(vals2[u], srcs[i]+u*WARP_SIZE);
-      for (int u = 0; u < UNROLL; ++u) MULTI128<FUNC, T>()(vals[u], vals2[u]);
+      for (int u = 0; u < UNROLL; ++u) MULTI128<FUNC, T>()(fn, vals[u], vals2[u]);
     }
     #pragma unroll
     for (int i=MINSRCS; i<MAXSRCS; i++) {
       if (i<nsrcs) {
         Pack128 vals2[UNROLL];
         for (int u = 0; u < UNROLL; ++u) Fetch128(vals2[u], srcs[i]+u*WARP_SIZE);
-        for (int u = 0; u < UNROLL; ++u) MULTI128<FUNC, T>()(vals[u], vals2[u]);
+        for (int u = 0; u < UNROLL; ++u) MULTI128<FUNC, T>()(fn, vals[u], vals2[u]);
       }
+    }
+
+    if (postOp) {
+      #pragma unroll
+      for (int u = 0; u < UNROLL; ++u) MULTI128<FUNC, T>().postOp(fn, vals[u]);
     }
 
     // Store
@@ -353,9 +558,9 @@ __device__ int ptrAlign128(T* ptr) { return (uint64_t)ptr % alignof(Pack128); }
 #define PACKELEMS (sizeof(Pack128) / sizeof(T))
 
 template<int UNROLL, class FUNC, typename T, int MINSRCS, int MAXSRCS, int MINDSTS, int MAXDSTS>
-__device__ __forceinline__ void ReduceOrCopyMulti(const int tid, const int nthreads,
-    int nsrcs, const T** srcs, int ndsts, T** dsts,
-    int N) {
+__device__ __forceinline__ void ReduceOrCopyMulti(
+    const int tid, const int nthreads, FUNC fn, bool preOpSrc0, bool postOp, int nsrcs, const T** srcs, int ndsts, T** dsts, int N
+  ) {
   int Nrem = N;
   if (Nrem <= 0) return;
 
@@ -381,7 +586,8 @@ __device__ __forceinline__ void ReduceOrCopyMulti(const int tid, const int nthre
     int Npack = (Nrem / (PACKELEMS*UNROLL*WARP_SIZE)) * (UNROLL*WARP_SIZE); // round down
     int Nelem = Npack * PACKELEMS;
 
-    ReduceCopy128bMulti<FUNC, T, UNROLL, MINSRCS, MAXSRCS, MINDSTS, MAXDSTS>(w, nw, t, nsrcs, srcs, ndsts, dsts, offset, Npack);
+    ReduceCopy128bMulti<FUNC, T, UNROLL, MINSRCS, MAXSRCS, MINDSTS, MAXDSTS>
+      (w, nw, t, fn, preOpSrc0, postOp, nsrcs, srcs, ndsts, dsts, offset, Npack);
 
     Nrem -= Nelem;
     if (Nrem == 0) return;
@@ -391,7 +597,8 @@ __device__ __forceinline__ void ReduceOrCopyMulti(const int tid, const int nthre
     Npack = Nrem / PACKELEMS;
     Nelem = Npack * PACKELEMS;
 
-    ReduceCopy128bMulti<FUNC, T, 1, MINSRCS, MAXSRCS, MINDSTS, MAXDSTS>(w, nw, t, nsrcs, srcs, ndsts, dsts, offset, Npack);
+    ReduceCopy128bMulti<FUNC, T, 1, MINSRCS, MAXSRCS, MINDSTS, MAXDSTS>
+      (w, nw, t, fn, preOpSrc0, postOp, nsrcs, srcs, ndsts, dsts, offset, Npack);
 
     Nrem -= Nelem;
     if (Nrem == 0) return;
@@ -401,14 +608,16 @@ __device__ __forceinline__ void ReduceOrCopyMulti(const int tid, const int nthre
   // unrolled, by-type (mostly for unaligned buffers)
   int Nelem = (Nrem / (UNROLL*PACKELEMS/2*WARP_SIZE)) * (UNROLL*PACKELEMS/2*WARP_SIZE); // round down
 
-  ReduceCopyMulti<FUNC, T, UNROLL*PACKELEMS/2, MINSRCS, MAXSRCS, MINDSTS, MAXDSTS>(w, nw, t, nsrcs, srcs, ndsts, dsts, offset, Nelem);
+  ReduceCopyMulti<FUNC, T, UNROLL*PACKELEMS/2, MINSRCS, MAXSRCS, MINDSTS, MAXDSTS>
+    (w, nw, t, fn, preOpSrc0, postOp, nsrcs, srcs, ndsts, dsts, offset, Nelem);
 
   Nrem -= Nelem;
   if (Nrem == 0) return;
   offset += Nelem;
 
   // no unroll, by type. Should finish what's remaining.
-  ReduceCopyMulti<FUNC, T, 1, MINSRCS, MAXSRCS, MINDSTS, MAXDSTS>(w, nw, t, nsrcs, srcs, ndsts, dsts, offset, Nrem);
+  ReduceCopyMulti<FUNC, T, 1, MINSRCS, MAXSRCS, MINDSTS, MAXDSTS>
+    (w, nw, t, fn, preOpSrc0, postOp, nsrcs, srcs, ndsts, dsts, offset, Nrem);
 }
 
 #endif // COMMON_KERNEL_H_

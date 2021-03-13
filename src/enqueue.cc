@@ -47,8 +47,10 @@
   NCCL_FUNCS3A(func, Sum), \
   NCCL_FUNCS3A(func, Sum), \
   NCCL_FUNCS3A(func, Sum), \
+  NCCL_FUNCS3A(func, Sum), \
   NCCL_FUNCS3A(func, Sum)
 #define NCCL_FUNCS2B(func) \
+  NCCL_FUNCS3B(func, Sum), \
   NCCL_FUNCS3B(func, Sum), \
   NCCL_FUNCS3B(func, Sum), \
   NCCL_FUNCS3B(func, Sum), \
@@ -333,8 +335,10 @@ static ncclResult_t getAlgoInfo(struct ncclInfo* info) {
   int nAlgos = NCCL_NUM_ALGORITHMS;
   // Check collNet support
   int collNetTypeSupport = 0;
-  if (info->comm->collNetSupport > 0)
-    NCCLCHECK(collNetReduceSupport(info->datatype, info->op, &collNetTypeSupport));
+  if (info->comm->collNetSupport > 0) {
+    ncclRedOp_t netOp = info->op == ncclAvg ? ncclSum : info->op;
+    NCCLCHECK(collNetReduceSupport(info->datatype, netOp, &collNetTypeSupport));
+  }
   for (int a=0; a<nAlgos; a++) {
     if (a == NCCL_ALGO_COLLNET && collNetTypeSupport != 1) continue;
     for (int p=0; p<NCCL_NUM_PROTOCOLS; p++) {
@@ -491,7 +495,9 @@ static ncclResult_t computeColl(struct ncclInfo* info /* input */, struct ncclWo
   proxyArgs->chunkSize = chunkSize;
   proxyArgs->protocol = info->protocol;
   proxyArgs->dtype = info->datatype;
-  proxyArgs->redOp = (info->algorithm == NCCL_ALGO_COLLNET) ? info->op : ncclNumOps;  // Only set redOp when using CollNet
+  proxyArgs->redOp = info->algorithm != NCCL_ALGO_COLLNET ? ncclNumOps : // Only set redOp when using CollNet
+                     info->op == ncclAvg ? ncclSum : // Network sees avg as sum
+                     info->op;
   proxyArgs->pattern = info->pattern;
   proxyArgs->root = info->root;
   // This is used by P2P to reduce the receive buffer size. We don't use it in collectives

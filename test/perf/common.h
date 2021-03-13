@@ -55,8 +55,8 @@ typedef enum {
   if (r!= testSuccess) {                            \
     char hostname[1024];                            \
     getHostName(hostname, 1024);                    \
-    printf(" .. %s: Test failure %s:%d\n",          \
-         hostname,                                  \
+    printf(" .. %s pid %d: Test failure %s:%d\n",   \
+         hostname, getpid(),                        \
         __FILE__,__LINE__);                         \
     return r;                                       \
   }                                                 \

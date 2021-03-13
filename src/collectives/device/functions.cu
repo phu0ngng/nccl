@@ -8,7 +8,7 @@
 #include "collectives.h"
 #include "common.h"
 
-__device__ struct ncclShmemData* ncclShmem;
+__shared__ ncclShmemData ncclShmem;
 
 #define NCCL_FUNC5(func, algo, redop, type) \
   NCCL_FUNC_NAME(func, algo, LL,     redop, type), \
@@ -47,8 +47,11 @@ __device__ struct ncclShmemData* ncclShmem;
   NCCL_FUNCS3A(func, Sum ), \
   NCCL_FUNCS3A(func, Prod), \
   NCCL_FUNCS3A(func, Max ), \
-  NCCL_FUNCS3A(func, Min )
+  NCCL_FUNCS3A(func, Min ), \
+  NCCL_FUNCS3A(func, Avg)
+
 #define NCCL_FUNCS2B(func) \
+  NCCL_FUNCS3B(func, Sum), \
   NCCL_FUNCS3B(func, Sum), \
   NCCL_FUNCS3B(func, Sum), \
   NCCL_FUNCS3B(func, Sum), \
