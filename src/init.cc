@@ -966,7 +966,7 @@ static ncclResult_t ncclCommInitRankDev(ncclComm_t* newcomm, int nranks, ncclUni
       char hostname[256]; gethostname(hostname, sizeof(hostname));
       fprintf(stderr,
         "NCCL rank %d on pid %d at %s frozen and ready for attach. Once attached "
-        "set ncclVersion to a non-zero value and continue execution. Helpful commands:\n"
+        "set ncclUnfreeze to a non-zero value and continue execution. Helpful commands:\n"
         "  ssh %s\n"
         "  cuda-gdb --pid=%d -ex 'set ncclUnfreeze=1'\n",
         myrank, pid, hostname, hostname, pid
