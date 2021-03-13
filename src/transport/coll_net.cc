@@ -340,6 +340,7 @@ ncclResult_t collNetSendProxy(struct ncclProxyArgs* args) {
       bool groupSync = (((s == 0) && ((sub+args->nsubs-1)->received == sub->received)) || (s && (sub-1)->received > sub->received));
       if (groupSync && sub->received < sub->posted && sub->received < sub->done + NCCL_STEPS) {
         int buffSlot = (sub->base+sub->received)%NCCL_STEPS;
+        int sharedBuffSlot = sub->received%NCCL_STEPS;
         volatile int* sizesFifo = resources->recvMem->sizesFifo;
         volatile uint64_t* recvTail = &resources->recvMem->tail;
         if (sizesFifo[buffSlot] != -1 && ((*recvTail > (sub->base+sub->received)) || p == NCCL_PROTO_LL)) {
@@ -347,9 +348,8 @@ ncclResult_t collNetSendProxy(struct ncclProxyArgs* args) {
           int size = sizesFifo[buffSlot];
           int ready = 1;
           if (s == 0) {
-            int sharedBuffSlot = sub->received%NCCL_STEPS;
-            NCCLCHECK(ncclProxySharedBuffersGetCollNet(sub->connector->comm, p == NCCL_PROTO_SIMPLE ? resources->useGdr : 0, 0, sharedBuffSlot, s, &args->sharedBuff[buffSlot]));
-            args->sharedSize[buffSlot] = p == NCCL_PROTO_SIMPLE ? args->chunkSize : size/2;
+            NCCLCHECK(ncclProxySharedBuffersGetCollNet(sub->connector->comm, p == NCCL_PROTO_SIMPLE ? resources->useGdr : 0, 0, sharedBuffSlot, s, &args->sharedBuff[sharedBuffSlot]));
+            args->sharedSize[sharedBuffSlot] = p == NCCL_PROTO_SIMPLE ? args->chunkSize : size/2;
           }
           if (p == NCCL_PROTO_LL) {
             char* localBuff = sub->connector->conn.buffs[p];
@@ -357,7 +357,7 @@ ncclResult_t collNetSendProxy(struct ncclProxyArgs* args) {
             int nFifoLines = size / sizeof(union ncclLLFifoLine);
             union ncclLLFifoLine* lines = (union ncclLLFifoLine*)(localBuff+buffSlot*stepSize);
             // Pack data into the shared buffer
-            uint32_t* sendBuff = (uint32_t*)(args->sharedBuff[buffSlot]+args->sharedSize[buffSlot]*s);
+            uint32_t* sendBuff = (uint32_t*)(args->sharedBuff[sharedBuffSlot]+args->sharedSize[sharedBuffSlot]*s);
             for (int i=0; i<nFifoLines; i++) {
               volatile uint32_t *f1 = &lines[i].flag1;
               volatile uint32_t *d1 = &lines[i].data1;
@@ -378,10 +378,11 @@ ncclResult_t collNetSendProxy(struct ncclProxyArgs* args) {
       }
       if ((s == args->nsubs-1) && (sub->transmitted < sub->received)) {
         int buffSlot = (sub->base+sub->transmitted)%NCCL_STEPS;
+        int sharedBuffSlot = sub->transmitted%NCCL_STEPS;
         if (reqFifo[buffSlot].recvBuff != NULL) {
-          int count = args->nsubs*args->sharedSize[buffSlot]/ncclTypeSize(args->dtype);
-          reqFifo[buffSlot].size = args->sharedSize[buffSlot];
-          NCCLCHECK(collNetIallreduce(resources->collNetComm, (void*)args->sharedBuff[buffSlot], (void*)(reqFifo[buffSlot].recvBuff), count, args->dtype, args->redOp, sendMhandle, recvMhandle, sub->requests+buffSlot));
+          int count = args->nsubs*args->sharedSize[sharedBuffSlot]/ncclTypeSize(args->dtype);
+          reqFifo[buffSlot].size = args->sharedSize[sharedBuffSlot];
+          NCCLCHECK(collNetIallreduce(resources->collNetComm, (void*)args->sharedBuff[sharedBuffSlot], (void*)(reqFifo[buffSlot].recvBuff), count, args->dtype, args->redOp, sendMhandle, recvMhandle, sub->requests+buffSlot));
           if (sub->requests[buffSlot] == NULL) continue;
 
           TRACE(NCCL_NET, "sendProxy [%d/%d] Iallreduce posted, req %p\n", sub->transmitted, buffSlot, sub->requests[buffSlot]);
@@ -446,7 +447,7 @@ ncclResult_t collNetRecvProxy(struct ncclProxyArgs* args) {
         char* ptr;
         int sharedBuffSlot = sub->posted%NCCL_STEPS;
         NCCLCHECK(ncclProxySharedBuffersGetCollNet(sub->connector->comm, p == NCCL_PROTO_SIMPLE ? resources->useGdr : 0, 1, sharedBuffSlot, s, &ptr));
-        reqFifo[buffSlot].recvBuff = args->sharedBuff[buffSlot] = ptr;
+        reqFifo[buffSlot].recvBuff = args->sharedBuff[sharedBuffSlot] = ptr;
         TRACE(NCCL_NET, "recvProxy [%d/%d] posted buffer %p", sub->posted, buffSlot, reqFifo[buffSlot].recvBuff);
         sub->posted += args->sliceSteps;
         args->idle = 0;
@@ -454,12 +455,13 @@ ncclResult_t collNetRecvProxy(struct ncclProxyArgs* args) {
       }
       if ((s == args->nsubs-1) && (sub->posted > sub->received)) {
         int buffSlot = (sub->base+sub->received)%NCCL_STEPS;
+        int sharedBuffSlot = sub->received%NCCL_STEPS;
         if (reqFifo[buffSlot].recvBuff == NULL) { // Buffer is cleared : coll is complete
-          args->sharedSize[buffSlot] = reqFifo[buffSlot].size;
+          args->sharedSize[sharedBuffSlot] = reqFifo[buffSlot].size;
           TRACE(NCCL_NET, "recvProxy [%d/%d] done, size %d", sub->received, buffSlot, reqFifo[buffSlot].size);
           sub->received += args->sliceSteps;
           if (reqFifo[buffSlot].size > 0 && p == NCCL_PROTO_SIMPLE && resources->useGdr) {
-            NCCLCHECK(collNetIflush(resources->collNetComm, args->sharedBuff[buffSlot], args->sharedSize[buffSlot]*args->nsubs, mhandle, sub->requests+buffSlot));
+            NCCLCHECK(collNetIflush(resources->collNetComm, args->sharedBuff[sharedBuffSlot], args->sharedSize[sharedBuffSlot]*args->nsubs, mhandle, sub->requests+buffSlot));
           } else {
             for (int i=0; i<args->nsubs; i++) args->subs[i].flushed += args->sliceSteps;
           }
@@ -480,7 +482,8 @@ ncclResult_t collNetRecvProxy(struct ncclProxyArgs* args) {
       }
       if (sub->flushed > sub->transmitted) {
         int buffSlot = (sub->base + sub->transmitted)%NCCL_STEPS;
-        char* ptr = args->sharedBuff[buffSlot]+s*args->sharedSize[buffSlot];
+        int sharedBuffSlot = sub->transmitted%NCCL_STEPS;
+        char* ptr = args->sharedBuff[sharedBuffSlot]+s*args->sharedSize[sharedBuffSlot];
         if (p == NCCL_PROTO_SIMPLE) {
           volatile void** ptrsFifo = (volatile void**)resources->recvMem->ptrsFifo;
           ptrsFifo[buffSlot] = ptr;
@@ -493,7 +496,7 @@ ncclResult_t collNetRecvProxy(struct ncclProxyArgs* args) {
           uint32_t flag = NCCL_LL_FLAG(sub->base + sub->transmitted + 1);
           union ncclLLFifoLine* lines = (union ncclLLFifoLine*)(localBuff+buffSlot*stepSize);
           uint32_t* recvData = (uint32_t*)ptr;
-          int nFifoLines = DIVUP(args->sharedSize[buffSlot], 2*sizeof(uint32_t));
+          int nFifoLines = DIVUP(args->sharedSize[sharedBuffSlot], 2*sizeof(uint32_t));
           for (int i=0; i<nFifoLines; i++) {
             lines[i].v[0] = ((uint64_t)flag << 32) + recvData[2*i];
             lines[i].v[1] = ((uint64_t)flag << 32) + recvData[2*i+1];
