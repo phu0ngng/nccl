@@ -9,7 +9,6 @@
 #define NCCL_REDUCE_KERNEL_H_
 
 #include "common_kernel.h"
-#include <cstdio>
 #include <limits>
 #include <type_traits>
 
