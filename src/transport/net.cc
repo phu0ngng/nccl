@@ -341,7 +341,7 @@ ncclResult_t netSendProxy(struct ncclProxyArgs* args) {
           char* buff = resources->shared ? (char*)resources->recvMem->ptrsFifo[buffSlot] : localBuff+buffSlot*stepSize;
           int ready = 1;
           if (p == NCCL_PROTO_LL128) {
-            int ready = resources->useGdr;
+            ready = resources->useGdr;
             if (!ready) {
               // When data is in sysmem, we need to wait until all flags are correct since the GPU only
               // called threadfence()
