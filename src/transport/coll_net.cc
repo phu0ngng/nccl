@@ -7,7 +7,6 @@
 #include "comm.h"
 #include "coll_net.h"
 #include "graph.h"
-#include <assert.h>
 
 struct collNetRecvConnectInfo {
   collNetHandle_t collNetHandle;
