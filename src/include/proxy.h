@@ -47,6 +47,7 @@ struct ncclProxyArgs {
   int chunkSteps;
   int chunkSize;
   uint64_t opCount;
+  uint64_t commOpCount;
   int protocol;
   ncclDataType_t dtype;
   ncclRedOp_t redOp;

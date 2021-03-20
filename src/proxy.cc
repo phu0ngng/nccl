@@ -271,6 +271,7 @@ ncclResult_t ncclProxySaveP2p(struct ncclComm* comm, struct ncclProxyArgs* args)
   struct ncclProxySubArgs* sub = args->subs;
   struct ncclChannel* channel = sub->channel;
   args->opCount = channel->workFifoTail-1;
+  args->commOpCount = comm->opCount;
   const ssize_t recvbytesOrig = sub->recvbytes;
   const ssize_t sendbytesOrig = sub->sendbytes;
   if (sub->delta > 0 && recvbytesOrig >= ssize_t(0)) {
@@ -365,8 +366,9 @@ ncclResult_t ncclProxyAppendPosted(struct ncclProxyState* state) {
 
   // ProxyAppend may free fused elements. Make sure we hold the lock.
   pthread_mutex_lock(&state->poolMutex);
-  ncclProxyArgs* next, *prev = NULL, *op = state->postedOps;
-  while (op) {
+  struct ncclProxyArgs* next, *prev = NULL, *op = state->postedOps;
+  int commOpCount = op->commOpCount;
+  while (op && op->commOpCount == commOpCount) {
     next = op->next;
     if (op->subs[0].sendbytes) {
       if (prev) prev->next = next;
@@ -377,7 +379,7 @@ ncclResult_t ncclProxyAppendPosted(struct ncclProxyState* state) {
     op = next;
   }
   op = state->postedOps;
-  while (op) {
+  while (op && op->commOpCount == commOpCount) {
     next = op->next;
     op->next = NULL;
     NCCLCHECK(ProxyAppend(state, op));
@@ -441,6 +443,7 @@ ncclResult_t ncclProxyStart(struct ncclComm* comm) {
   state->nextOps = state->nextOpsEnd = NULL;
   pthread_cond_signal(&state->cond);
   pthread_mutex_unlock(&state->opsMutex);
+  comm->opCount++;
   return ncclSuccess;
 }
 
