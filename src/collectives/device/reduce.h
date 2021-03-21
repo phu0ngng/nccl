@@ -30,16 +30,37 @@ class ncclFunction<ncclFuncReduce, NCCL_ALGO_RING, NCCL_PROTO_SIMPLE, FUNC, T, U
       ncclPrimitives<UNROLL, REDUCE_CHUNKSTEPS/REDUCE_SLICESTEPS, REDUCE_SLICESTEPS, T, 1, 1, 0, FUNC>
         prims(tid, nthreads, &ring->prev, &ring->next, stepSize, args->sendbuff, args->recvbuff);
 
-      for (ssize_t gridOffset = 0; gridOffset < size; gridOffset += loopSize) {
-        int realChunkSize = min(chunkSize, DIVUP(size-gridOffset,nChannels));
-        ALIGN_SIZE(realChunkSize, nthreads*sizeof(uint64_t)/sizeof(T));
-        ssize_t offset = gridOffset + bid*realChunkSize;
-        int nelem = min(realChunkSize, size-offset);
-        if (prevRank == root) {
+      // PREVIOUS CODE:
+      // for(gridOffset) {
+      //   if (prevRank == root) {/*prim op*/}
+      //   else if (rank == root) {/*prim op*/}
+      //   else {/*prim op*/}
+      // }
+      // By hoisting the conditionals out of the grid loop, we remove the branches
+      // and also free the registers that were holding the variables used
+      // to determine the conditionals.
+      if (prevRank == root) {
+        for (ssize_t gridOffset = 0; gridOffset < size; gridOffset += loopSize) {
+          int realChunkSize = min(chunkSize, DIVUP(size-gridOffset,nChannels));
+          ALIGN_SIZE(realChunkSize, nthreads*sizeof(uint64_t)/sizeof(T));
+          ssize_t offset = gridOffset + bid*realChunkSize;
+          int nelem = min(realChunkSize, size-offset);
           prims.send(offset, nelem);
-        } else if (rank == root) {
+        }
+      } else if (rank == root) {
+        for (ssize_t gridOffset = 0; gridOffset < size; gridOffset += loopSize) {
+          int realChunkSize = min(chunkSize, DIVUP(size-gridOffset,nChannels));
+          ALIGN_SIZE(realChunkSize, nthreads*sizeof(uint64_t)/sizeof(T));
+          ssize_t offset = gridOffset + bid*realChunkSize;
+          int nelem = min(realChunkSize, size-offset);
           prims.recvReduceCopy(offset, offset, nelem, /*postOp=*/true);
-        } else {
+        }
+      } else {
+        for (ssize_t gridOffset = 0; gridOffset < size; gridOffset += loopSize) {
+          int realChunkSize = min(chunkSize, DIVUP(size-gridOffset,nChannels));
+          ALIGN_SIZE(realChunkSize, nthreads*sizeof(uint64_t)/sizeof(T));
+          ssize_t offset = gridOffset + bid*realChunkSize;
+          int nelem = min(realChunkSize, size-offset);
           prims.recvReduceSend(offset, nelem);
         }
       }
@@ -68,18 +89,31 @@ class ncclFunction<ncclFuncReduce, NCCL_ALGO_RING, NCCL_PROTO_LL, FUNC, T, UNROL
         tid, nthreads, &ring->prev, &ring->next, stepLines, args->sendbuff, args->recvbuff
       );
 
-      for (ssize_t gridOffset = 0; gridOffset < size; gridOffset += loopSize) {
-        if (size-gridOffset < loopSize) {
-          chunkSize = args->coll.lastChunkSize;
-        }
-        ssize_t offset = gridOffset + bid*chunkSize;
-
-        int nelem = min(chunkSize, size-offset);
-        if (prevRank == root) {
+      if (prevRank == root) {
+        for (ssize_t gridOffset = 0; gridOffset < size; gridOffset += loopSize) {
+          if (size-gridOffset < loopSize) {
+            chunkSize = args->coll.lastChunkSize;
+          }
+          ssize_t offset = gridOffset + bid*chunkSize;
+          int nelem = min(chunkSize, size-offset);
           LLprims.send(offset, nelem);
-        } else if (rank == root) {
+        }
+      } else if (rank == root) {
+        for (ssize_t gridOffset = 0; gridOffset < size; gridOffset += loopSize) {
+          if (size-gridOffset < loopSize) {
+            chunkSize = args->coll.lastChunkSize;
+          }
+          ssize_t offset = gridOffset + bid*chunkSize;
+          int nelem = min(chunkSize, size-offset);
           LLprims.recvReduceCopy(offset, offset, nelem, /*postOp=*/true);
-        } else {
+        }
+      } else {
+        for (ssize_t gridOffset = 0; gridOffset < size; gridOffset += loopSize) {
+          if (size-gridOffset < loopSize) {
+            chunkSize = args->coll.lastChunkSize;
+          }
+          ssize_t offset = gridOffset + bid*chunkSize;
+          int nelem = min(chunkSize, size-offset);
           LLprims.recvReduceSend(offset, nelem);
         }
       }
@@ -110,16 +144,25 @@ class ncclFunction<ncclFuncReduce, NCCL_ALGO_RING, NCCL_PROTO_LL128, FUNC, T, UN
         tid, nthreads, &ring->prev, &ring->next, stepSize, args->sendbuff, args->recvbuff
       );
 
-      for (ssize_t gridOffset = 0; gridOffset < size; gridOffset += loopSize) {
-        chunkSize = min(DIVUP(size-gridOffset, nChannels*minChunkSize)*minChunkSize, chunkSize);
-        ssize_t offset = gridOffset + bid*chunkSize;
-
-        int nelem = min(chunkSize, size-offset);
-        if (prevRank == root) {
+      if (prevRank == root) {
+        for (ssize_t gridOffset = 0; gridOffset < size; gridOffset += loopSize) {
+          chunkSize = min(DIVUP(size-gridOffset, nChannels*minChunkSize)*minChunkSize, chunkSize);
+          ssize_t offset = gridOffset + bid*chunkSize;
+          int nelem = min(chunkSize, size-offset);
           LLprims.send(offset, nelem);
-        } else if (rank == root) {
+        }
+      } else if (rank == root) {
+        for (ssize_t gridOffset = 0; gridOffset < size; gridOffset += loopSize) {
+          chunkSize = min(DIVUP(size-gridOffset, nChannels*minChunkSize)*minChunkSize, chunkSize);
+          ssize_t offset = gridOffset + bid*chunkSize;
+          int nelem = min(chunkSize, size-offset);
           LLprims.recvReduceCopy(offset, offset, nelem, /*postOp=*/true);
-        } else {
+        }
+      } else {
+        for (ssize_t gridOffset = 0; gridOffset < size; gridOffset += loopSize) {
+          chunkSize = min(DIVUP(size-gridOffset, nChannels*minChunkSize)*minChunkSize, chunkSize);
+          ssize_t offset = gridOffset + bid*chunkSize;
+          int nelem = min(chunkSize, size-offset);
           LLprims.recvReduceSend(offset, nelem);
         }
       }
