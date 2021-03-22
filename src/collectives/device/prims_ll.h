@@ -109,25 +109,44 @@ private:
     T elt[EltPerPack];
   };
 
-  // Using memcpy handles misaligned pointers.
-  __device__ uint64_t readAL(T *src) {
-    EltPack pack;
-    #pragma unroll EltPerPack
-    for(int i=0; i < EltPerPack; i++)
-      pack.elt[i] = src[i];
-    return pack.word;
+  /* v2.9.0 and before loaded user data via memcpy() which was byte-by-byte
+   * regardless of alignment guarantees of type T. Switching to element-wise
+   * data movement of type T shows significant bw improvements for *most* types
+   * (20% on Ampere) while preserving the low latency for all types. Unfortunately,
+   * the bw of 1-byte types (int8) fair 30% worse, but at least latency is
+   * unaffected. This is why we use memcpy() when sizeof(T)==1 and element-wise
+   * otherwise. It's ugly that the "n" parameter of storeAL means bytes in the
+   * first case and elements in the second, but it seems the only way to get the
+   * best of both worlds. I have no idea what nvcc is doing, but it is
+   * incredibly sensitive on this point.
+   */
+  __device__ uint64_t readAL(T* src) {
+    if (sizeof(T) == 1) {
+      uint64_t val;
+      memcpy((char*)&val, (char*)src, sizeof(uint64_t));
+      return val;
+    }
+    else {
+      EltPack pack;
+      #pragma unroll EltPerPack
+      for(int i=0; i < EltPerPack; i++)
+        pack.elt[i] = src[i];
+      return pack.word;
+    }
   }
 
-  __device__ void storeAL(T *dst, uint64_t val, int nelem) {
-    EltPack pack;
-    pack.word = val;
-    dst[0] = pack.elt[0];
-    nelem -= 1;
-    #pragma unroll
-    for(int i=1; i < EltPerPack; i++) {
-      if (nelem > 0)
-        dst[i] = pack.elt[i];
-      nelem -= 1;
+  __device__ void storeAL(T* dst, uint64_t val, uint32_t n/*bytes or elts*/) {
+    if (sizeof(T) == 1)
+      memcpy((char*)dst, (char*)&val, /*bytes*/n);
+    else {
+      EltPack pack;
+      pack.word = val;
+      dst[0] = pack.elt[0];
+      #pragma unroll
+      for(int i=1; i < EltPerPack; i++) {
+        if (/*elts*/n > i)
+          dst[i] = pack.elt[i];
+      }
     }
   }
 
@@ -137,6 +156,7 @@ private:
     constexpr int DST = DstBuf != -1 ? 1 : 0;
     nelem = nelem < 0 ? 0 : nelem;
     int npack = DIVUP(nelem, EltPerPack);
+    int nbytes = nelem*sizeof(T);
     int offset = tid;
     T *srcElts = SrcBuf == -1 ? nullptr : userBufs[SrcBuf] + srcIx + offset*EltPerPack;
     T *dstElts = DstBuf == -1 ? nullptr : userBufs[DstBuf] + dstIx + offset*EltPerPack;
@@ -172,7 +192,17 @@ private:
         storeLL(sendPtr(0)+offset, val, sendFlag(0));
       }
       if (DST) {
-        storeAL(dstElts, val, nelem - offset*EltPerPack);
+        if (sizeof(T) == 1) { // byte-wise
+          if (((offset*sizeof(uint64_t)) ^ nbytes) < sizeof(uint64_t)) {
+            // Last incomplete word
+            storeAL(dstElts, val, nbytes & 0x7);
+          } else {
+            storeAL(dstElts, val, sizeof(uint64_t));
+          }
+        }
+        else { // element-wise
+          storeAL(dstElts, val, nelem - offset*EltPerPack);
+        }
         dstElts += nthreads*EltPerPack;
       }
     }
