@@ -317,14 +317,19 @@ ncclResult_t ncclRecordEvents(ncclComm_t comm) {
   return ncclSuccess;
 }
 
-ncclResult_t ncclLaunchReset(ncclComm_t comm, int destroyInfo) {
+ncclResult_t ncclLaunchReset(ncclComm_t comm) {
   comm->userStreamSet = false;
 
   // We are finishing capture of the current launch
-  // Recycle info space if not in CUDA graph mode
-  if (destroyInfo) ncclDestroyQueueInfo(comm->enqueueInfo);
-  NCCLCHECK(ncclCalloc(&comm->enqueueInfo, 1));
-  comm->enqueueInfo->comm = comm;
+  // But we need to keep the current enqueue info for CUDA graph
+  // Thus we need to creating a new enqueue info for the next run
+  if (comm->usingCudaGraph) {
+    NCCLCHECK(ncclCalloc(&comm->enqueueInfo, 1));
+    comm->enqueueInfo->comm = comm;
+  } else {
+    // If not in CUDA graph mode, we reuse the same info space
+    NCCLCHECK(ncclResetQueueInfo(comm->enqueueInfo));
+  }
 
   struct cudaLaunchParams *params = comm->myParams;
   params->gridDim.x = params->blockDim.x = 0;
@@ -772,7 +777,7 @@ void CUDART_CB ncclEnqueueHostSetup(void* arg) {
 
   // Iterate through the element list
   struct ncclQueueElem* eqElem = eqInfo->elemList.head;
-  while (eqElem != NULL) {
+  while (eqElem != eqInfo->elemList.tail) { // The queue always has one extra element
     if (eqElem->work.funcIndex == FUNC_INDEX_P2P) {
       NCCLCHECKGOTO(ncclEnqueueP2pKernel(comm, eqElem), ret, cb_end);
     } else {
@@ -898,7 +903,7 @@ end:
     NCCLCHECK(ncclLaunchBarrier(comm));
     NCCLCHECK(ncclLaunchKernel(comm));
     NCCLCHECK(ncclRecordEvents(comm));
-    NCCLCHECK(ncclLaunchReset(comm, !comm->usingCudaGraph));
+    NCCLCHECK(ncclLaunchReset(comm));
     return ncclSuccess;
   }
 }
