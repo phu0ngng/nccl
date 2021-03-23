@@ -33,25 +33,31 @@ struct ncclProxyPool {
 static ncclResult_t allocateArgs(struct ncclComm* comm, struct ncclProxyArgs** argsptr) {
   struct ncclProxyState* state = &comm->proxyState;
   struct ncclProxyArgs* elem;
-  pthread_mutex_lock(&state->poolMutex);
   if (state->pool == NULL) {
-    // Allocate a new pool of elements
-    struct ncclProxyPool* newPool;
-    NCCLCHECK(ncclCalloc(&newPool, 1));
-    struct ncclProxyArgs* newElems = newPool->elems;
-    // Chain newly allocated elements
-    for (int i=0; i<PROXYARGS_ALLOCATE_SIZE; i++) {
-      if (i+1 < PROXYARGS_ALLOCATE_SIZE) newElems[i].next = newElems+i+1;
+    // Check whether there are freed elements
+    if (state->poolReturned) {
+      pthread_mutex_lock(&state->poolMutex);
+      state->pool = state->poolReturned;
+      state->poolReturned = NULL;
+      pthread_mutex_unlock(&state->poolMutex);
+    } else {
+      // Allocate a new pool of elements
+      struct ncclProxyPool* newPool;
+      NCCLCHECK(ncclCalloc(&newPool, 1));
+      struct ncclProxyArgs* newElems = newPool->elems;
+      // Chain newly allocated elements
+      for (int i=0; i<PROXYARGS_ALLOCATE_SIZE; i++) {
+        if (i+1 < PROXYARGS_ALLOCATE_SIZE) newElems[i].next = newElems+i+1;
+      }
+      // Add them all to the pool list
+      state->pool = newElems;
+      // Save the pool memory block for later resource release
+      newPool->next = state->pools;
+      state->pools = newPool;
     }
-    // Add them all to the pool list
-    state->pool = newElems;
-    // Save the pool memory block for later resource release
-    newPool->next = state->pools;
-    state->pools = newPool;
   }
   elem = state->pool;
   state->pool = state->pool->next;
-  pthread_mutex_unlock(&state->poolMutex);
   elem->next = elem->nextPeer = NULL;
   *argsptr = elem;
   return ncclSuccess;
@@ -143,8 +149,8 @@ static ncclResult_t ProxyAppend(struct ncclProxyState* state, struct ncclProxyAr
       proxyAppend->nsubs++;
       args->next = proxyAppend->next;
       // Free args as we merged them
-      args->next = state->pool;
-      state->pool = args;
+      args->next = state->poolFreed;
+      state->poolFreed = args;
       DEBUG_PROXY_PRINT("Insert  %5ld (%d/%5ld/%5ld) as group with %5ld\n", OP_INDEX(args), shared, proxyAppend->opCount, args->opCount, OP_INDEX(proxyAppend));
     } else {
       proxyAppend->nextPeer = args;
@@ -320,18 +326,8 @@ static ncclResult_t removeOp(struct ncclProxyState* state, struct ncclProxyArgs*
       state->ops = next;
     }
   }
-  freeOp->next = NULL;
-  if (state->freeList) state->freeListEnd->next = freeOp;
-  else state->freeList = freeOp;
-  state->freeListEnd = freeOp;
-  state->freeListCount++;
-  if (state->freeListCount % 32 == 0) {
-    pthread_mutex_lock(&state->poolMutex);
-    state->freeListEnd->next = state->pool;
-    state->pool = state->freeList;
-    pthread_mutex_unlock(&state->poolMutex);
-    state->freeList = state->freeListEnd = NULL;
-  }
+  freeOp->next = state->poolFreed;
+  state->poolFreed = freeOp;
   DEBUG_PROXY_PRINT("Removed %5ld (%5ld)                                               : ", OP_INDEX(freeOp), OP_INDEX(*freeOp->proxyAppendPtr));
   NCCLCHECK(dumpProxyState(state));
   return ncclSuccess;
@@ -355,17 +351,27 @@ static ncclResult_t progressOps(struct ncclProxyState* state, struct ncclProxyAr
 }
 
 ncclResult_t ncclProxyAppendPosted(struct ncclProxyState* state) {
-  // Sort operations as we append them : collectives and
-  // receives first, then sends.
-  pthread_mutex_lock(&state->opsMutex);
+  // Return any freed element first
+  if (state->poolFreed) {
+    struct ncclProxyArgs* end = state->poolFreed;
+    while (end->next) end = end->next;
+    pthread_mutex_lock(&state->poolMutex);
+    end->next = state->poolReturned;
+    state->poolReturned = state->poolFreed;
+    pthread_mutex_unlock(&state->poolMutex);
+    state->poolFreed = NULL;
+  }
 
+  // Then wait until we have new work to do
+  pthread_mutex_lock(&state->opsMutex);
   while (state->postedOps == NULL) {
     if (state->stop) return ncclSuccess;
     pthread_cond_wait(&state->cond, &state->opsMutex);
   }
 
-  // ProxyAppend may free fused elements. Make sure we hold the lock.
-  pthread_mutex_lock(&state->poolMutex);
+  // Sort operations as we append them : collectives and
+  // receives first, then sends.
+
   struct ncclProxyArgs* next, *prev = NULL, *op = state->postedOps;
   int commOpCount = op->commOpCount;
   while (op && op->commOpCount == commOpCount) {
@@ -388,9 +394,18 @@ ncclResult_t ncclProxyAppendPosted(struct ncclProxyState* state) {
   state->postedOps = op;
   if (op == NULL) state->postedOpsEnd = NULL;
   NCCLCHECK(dumpProxyState(state));
-  pthread_mutex_unlock(&state->poolMutex);
-
   pthread_mutex_unlock(&state->opsMutex);
+
+  if (state->poolFreed) {
+    struct ncclProxyArgs* end = state->poolFreed;
+    while (end->next) end = end->next;
+    pthread_mutex_lock(&state->poolMutex);
+    end->next = state->poolReturned;
+    state->poolReturned = state->poolFreed;
+    pthread_mutex_unlock(&state->poolMutex);
+    state->poolFreed = NULL;
+  }
+
   return ncclSuccess;
 }
 

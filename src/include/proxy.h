@@ -81,9 +81,6 @@ struct ncclProxyState {
   pthread_cond_t cond;
   pthread_mutex_t opsMutex;
   pthread_mutex_t poolMutex;
-  struct ncclProxyArgs* freeList;
-  struct ncclProxyArgs* freeListEnd;
-  int freeListCount;
   bool stop;
   struct ncclProxySharedBuffers sharedBuffs;
   struct ncclProxyArgs* ops;           // Running operations, used by proxy thread
@@ -91,7 +88,10 @@ struct ncclProxyState {
   struct ncclProxyArgs* postedOpsEnd;
   struct ncclProxyArgs* nextOps;       // Pending operations, used by main thread (could still be cancelled)
   struct ncclProxyArgs* nextOpsEnd;
-  struct ncclProxyArgs* pool;          // Free operations, shared between proxy and main thread, locked with poolMutex
+  struct ncclProxyArgs* pool;          // Free operations for main thread
+  struct ncclProxyArgs* poolFreed;     // Freed operations by the progress thread
+  struct ncclProxyArgs* poolReturned;  // Shared between main and progress thread, lock with poolMutex
+
   struct ncclProxyPool* pools;
 };
 
