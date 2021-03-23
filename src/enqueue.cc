@@ -591,6 +591,7 @@ static ncclResult_t ncclEnqueueCollKernel(ncclComm_t comm, struct ncclQueueElem*
     // Proxy
     proxyArgs->subs[0].channel = channel;
     proxyArgs->opCount = comm->opCount;
+    proxyArgs->commOpCount = comm->opCount;
 
     if (proxyArgs->subs[0].nsteps) NCCLCHECK(ncclProxySaveColl(proxyArgs, comm->nRanks));
 
