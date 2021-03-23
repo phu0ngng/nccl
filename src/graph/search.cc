@@ -845,7 +845,7 @@ ncclResult_t ncclTopoDumpGraphs(struct ncclTopoSystem* system, int ngraphs, stru
   return ncclSuccess;
 }
 
-ncclResult_t ncclTopoGetNetDev(struct ncclTopoSystem* system, int rank, struct ncclTopoGraph* graph, int channelId, int* dev) {
+ncclResult_t ncclTopoGetNetDev(struct ncclTopoSystem* system, int rank, struct ncclTopoGraph* graph, int channelId, int rr, int* dev) {
   if (graph) {
     // Honor the net device in the graph
     int channel = channelId%graph->nChannels;
@@ -854,7 +854,7 @@ ncclResult_t ncclTopoGetNetDev(struct ncclTopoSystem* system, int rank, struct n
     *dev = graph->inter[channel*2+index];
   } else {
     int64_t id;
-    NCCLCHECK(ncclTopoGetLocalNet(system, rank, &id, channelId));
+    NCCLCHECK(ncclTopoGetLocalNet(system, rank, &id, rr));
     *dev = id;
   }
   return ncclSuccess;
