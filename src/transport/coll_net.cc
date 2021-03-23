@@ -8,7 +8,7 @@
 #include "coll_net.h"
 #include "graph.h"
 
-#define COLLNET_GROUP_NSUBS 4
+#define COLLNET_GROUP_NSUBS 8
 #define COLLNET_MAX_GROUPS (NCCL_PROXY_MAX_SUBS/COLLNET_GROUP_NSUBS)
 
 struct collNetRecvConnectInfo {
@@ -315,6 +315,8 @@ ncclResult_t collNetSendProxy(struct ncclProxyArgs* args) {
   args->idle = 1;
   if (args->state == ncclProxyOpProgress) {
     int p = args->protocol;
+    int nGroups = DIVUP(args->nsubs, COLLNET_GROUP_NSUBS);
+    int perGroupSteps = NCCL_STEPS / nGroups;
     for (int s=0; s<args->nsubs; s++) {
       struct ncclProxySubArgs* sub = args->subs+s;
       struct collNetSendResources* resources = (struct collNetSendResources*) (sub->connector->transportResources);
@@ -337,7 +339,7 @@ ncclResult_t collNetSendProxy(struct ncclProxyArgs* args) {
       }
       // Enforce sync between operations of the same group.
       bool groupSync = (((s == 0) && ((sub+args->nsubs-1)->received == sub->received)) || (s && (sub-1)->received > sub->received));
-      if (groupSync && sub->received < sub->posted && sub->received < sub->done + NCCL_STEPS) {
+      if (groupSync && sub->received < sub->posted && sub->received < sub->done + perGroupSteps) {
         int buffSlot = (sub->base+sub->received)%NCCL_STEPS;
         int sharedBuffSlot = sub->received%NCCL_STEPS;
         volatile int* sizesFifo = resources->recvMem->sizesFifo;
@@ -443,6 +445,8 @@ ncclResult_t collNetRecvProxy(struct ncclProxyArgs* args) {
   args->idle = 1;
   if (args->state == ncclProxyOpProgress) {
     int p = args->protocol;
+    int nGroups = DIVUP(args->nsubs, COLLNET_GROUP_NSUBS);
+    int perGroupSteps = NCCL_STEPS / nGroups;
     for (int s=0; s<args->nsubs; s++) {
       struct ncclProxySubArgs* sub = args->subs+s;
       struct collNetRecvResources* resources = (struct collNetRecvResources*) (sub->connector->transportResources);
@@ -450,7 +454,7 @@ ncclResult_t collNetRecvProxy(struct ncclProxyArgs* args) {
       int stepSize = sub->connector->comm->buffSizes[p] / NCCL_STEPS;
       auto reqFifo = resources->reqFifo;
       // Enforce sync between operations of the same group.
-      if (LAST_OF_GROUP(s) && (sub->posted < sub->done + NCCL_STEPS) && (sub->posted < sub->nsteps)) {
+      if (LAST_OF_GROUP(s) && (sub->posted < sub->done + perGroupSteps) && (sub->posted < sub->nsteps)) {
         int group = s / COLLNET_GROUP_NSUBS;
         int buffSlot = (sub->base+sub->posted)%NCCL_STEPS;
         char* ptr;
