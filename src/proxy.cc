@@ -485,19 +485,19 @@ ncclResult_t ncclProxySharedBuffersInit(struct ncclComm* comm, int cuda, int* si
 
 ncclResult_t ncclProxySharedBuffersGetP2p(struct ncclComm* comm, int cuda, int type, int channel, int slot, int index, char** ptr) {
   struct ncclProxySharedBuffers* state = &comm->proxyState.sharedBuffs;
-  // Use different pools for different channels and also separate send/recv.
+  // Use different pools for separate send/recv.
   char* buff = cuda ? state->cudaBuff : state->hostBuff;
   int slotSize = comm->buffSizes[NCCL_PROTO_SIMPLE]/(NCCL_STEPS*SENDRECV_SLICEFACTOR);
   int globalSlot = (((type*comm->p2pnChannels+channel)*NCCL_STEPS)+slot)*NCCL_MAX_WORK_ELEMENTS+index;
   *ptr = buff + slotSize * globalSlot;
   return ncclSuccess;
 }
-ncclResult_t ncclProxySharedBuffersGetCollNet(struct ncclComm* comm, int cuda, int type, int slot, int index, char** ptr) {
+ncclResult_t ncclProxySharedBuffersGetCollNet(struct ncclComm* comm, int cuda, int type, int slot, int channel, char** ptr) {
   struct ncclProxySharedBuffers* state = &comm->proxyState.sharedBuffs;
-  // Use different pools for different channels and also separate send/recv.
+  // Use different pools for different channels.
   char* buff = cuda ? state->cudaBuff : state->hostBuff;
   int slotSize = comm->buffSizes[NCCL_PROTO_SIMPLE]/NCCL_STEPS;
-  int globalSlot = (type*NCCL_STEPS+slot)*comm->nChannels;
+  int globalSlot = (type*NCCL_STEPS+slot)*comm->nChannels+channel;
   *ptr = buff + slotSize * globalSlot;
   return ncclSuccess;
 }
