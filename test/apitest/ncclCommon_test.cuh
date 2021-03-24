@@ -64,8 +64,8 @@ class ncclCommon_test : public ::testing::Test {
     };
 };
 template <typename DT>
-const std::vector<ncclRedOp_t> ncclCommon_test<DT>::RedOps =
-  {ncclSum, ncclProd, ncclMax, ncclMin, ncclAvg};
+const std::vector<ncclRedOp_t> ncclCommon_test<DT>::RedOps = {ncclSum, ncclProd,
+                                                              ncclMax, ncclMin};
 template <typename DT>
 int ncclCommon_test<DT>::N = 4 * 1024 * 1024;
 template <typename DT>

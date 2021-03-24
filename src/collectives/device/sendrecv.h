@@ -15,9 +15,6 @@ class ncclFunction<ncclFuncSendRecv, NCCL_ALGO_RING, NCCL_PROTO_SIMPLE, FUNC, T,
       struct ncclWorkElem* args = firstArgs;
       int tid = threadIdx.x;
       int group = 0;
-      const int rank = ncclShmem.comm->rank;
-      const int nRanks = ncclShmem.comm->nRanks;
-
       for (int s=0; s<NCCL_MAX_WORK_ELEMENTS; s++) {
         int nThreadsSegment = args->p2p.nThreads;
         if (nThreadsSegment == 0) return; // Nothing else to do
@@ -43,43 +40,47 @@ class ncclFunction<ncclFuncSendRecv, NCCL_ALGO_RING, NCCL_PROTO_SIMPLE, FUNC, T,
               for (size_t offset=0; offset<sendCount; offset += blockSize) {
                 size_t remaining = sendCount - offset;
                 if (remaining < blockSize) blockSize = remaining;
-                ReduceOrCopyMulti<UNROLL, FUNC, T, 1, 1, 1, 1>(tid, nThreads, FUNC(), false, false, 1, &sendbuff, 1, &recvbuff, blockSize);
+                ReduceOrCopyMulti<UNROLL, FUNC, T, 1, 1, 1, 1>(tid, nThreads, 1, &sendbuff, 1, &recvbuff, blockSize);
                 sendbuff += blockSize; recvbuff += blockSize;
               }
             }
           } else {
-            const int stepSize = ncclShmem.comm->buffSizes[NCCL_PROTO_SIMPLE]/(sizeof(T)*NCCL_STEPS);
+            struct ncclDevComm* comm = args->comm;
+            struct ncclChannel* channel = comm->channels+blockIdx.x;
+
+            const int stepSize = comm->buffSizes[NCCL_PROTO_SIMPLE]/(sizeof(T)*NCCL_STEPS);
+
             int nThreadsSplit = nThreads/2;
             if ((tid < nThreadsSplit) && recvCount >= 0) {
-              const int chunkSize = args->p2p.recvChunkSize/sizeof(T);
-              int peer = (rank-delta+nRanks)%nRanks;
+	      const int chunkSize = args->p2p.recvChunkSize/sizeof(T);
+              int peer = (comm->rank-delta+comm->nRanks)%comm->nRanks;
               int nt = nThreadsSplit;
-              ncclPrimitives<UNROLL, 1, 1, T, 1, 0, 1, FUNC> prims(
-                tid, nt, &peer, nullptr, stepSize, nullptr, recvbuff, groupRecv
-              );
+              ncclPrimitives<UNROLL, 1, 1, T, 1, 0, 1, FUNC>
+                prims(tid, nt, &peer, NULL, recvbuff, stepSize, channel, comm, ncclShmem->ptrs, groupRecv);
+
               if (recvCount == 0) {
-                prims.recv(0, 0);
+                prims.recv(recvbuff, 0);
               } else for (ssize_t offset = 0; offset < recvCount; offset += chunkSize) {
                 int realChunkSize = min(chunkSize, recvCount-offset);
                 ALIGN_SIZE(realChunkSize, nt*sizeof(uint64_t)/sizeof(T));
                 int nelem = min(realChunkSize, recvCount-offset);
-                prims.directRecv(offset, nelem);
+                prims.directRecv(recvbuff+offset, offset, nelem);
               }
             }
             if ((tid >= nThreadsSplit) && sendCount >= 0) {
-              const int chunkSize = args->p2p.sendChunkSize/sizeof(T);
-              int peer = (rank+delta)%nRanks;
+	      const int chunkSize = args->p2p.sendChunkSize/sizeof(T);
+              int peer = (comm->rank+delta)%comm->nRanks;
               int nt = nThreads-nThreadsSplit;
-              ncclPrimitives<UNROLL, 1, 1, T, 0, 1, 1, FUNC> prims(
-                tid-nThreadsSplit, nt, nullptr, &peer, stepSize, sendbuff, nullptr, groupSend
-              );
+              ncclPrimitives<UNROLL, 1, 1, T, 0, 1, 1, FUNC>
+                prims(tid-nThreadsSplit, nt, NULL, &peer, recvbuff, stepSize, channel, comm, ncclShmem->ptrs, groupSend);
+
               if (sendCount == 0) {
-                prims.send(0, 0);
+                prims.send(sendbuff, 0);
               } else for (ssize_t offset = 0; offset < sendCount; offset += chunkSize) {
                 int realChunkSize = min(chunkSize, sendCount-offset);
                 ALIGN_SIZE(realChunkSize, nt*sizeof(uint64_t)/sizeof(T));
                 int nelem = min(realChunkSize, sendCount-offset);
-                prims.directSend(offset, offset, nelem);
+                prims.directSend(sendbuff+offset, offset, nelem);
               }
             }
           }
