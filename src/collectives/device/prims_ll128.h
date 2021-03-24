@@ -10,9 +10,7 @@
 
 template <typename T, class FUNC, int NRECV, int NSEND>
 class ncclLL128Primitives {
-private:
-  static constexpr int Input=0, Output=1;
-  FUNC fn;
+ private:
   const int tid;
   const int nthreads;
   const int wid;
@@ -21,7 +19,6 @@ private:
   const bool flagThread;
   int nrecv = 0;
   int nsend = 0;
-  T *userBufs[2];
   struct ncclConnInfo* recvConn = NULL;
   volatile uint64_t* recvConnHeadPtr = NULL;
   uint64_t recvConnHead;
@@ -38,6 +35,7 @@ private:
   uint64_t sendStep[NSEND];
   uint64_t* recvBuff[NRECV];
   uint64_t* sendBuff[NSEND];
+  struct ncclDevComm* comm;
 
   volatile uint64_t* shmem;
 
@@ -56,23 +54,24 @@ private:
     }
   }
 
+  uint32_t spins = 0;
   uint32_t abort = 0;
 
-  inline __device__ int checkAbort(int &spins, int i, int send) {
+  inline __device__ int checkAbort(int i, int send) {
     spins++;
-    if (abort == 0 && spins == NCCL_SPINS_BEFORE_CHECK_ABORT) {
-      abort = *(ncclShmem.comm->abortFlag);
+    if (abort == 0 && spins == SPINS_BEFORE_CHECK_ABORT) {
+      abort = *(comm->abortFlag);
       spins = 0;
     }
     return abort;
   }
 
   inline __device__ void waitSend(int nbytes) {
+    spins = 0;
     if (sendConnHeadPtr) {
-      int spins = 0;
       while (sendConnHeadCache + NCCL_STEPS < sendConnHead + 1) {
         sendConnHeadCache = *sendConnHeadPtr;
-        if (checkAbort(spins, wid, 1)) break;
+        if (checkAbort(wid, 1)) break;
       }
       if (sendConnFifoPtr) {
         sendConnFifoPtr[sendStep[wid]%NCCL_STEPS] = nbytes;
@@ -151,10 +150,8 @@ private:
 
   #define WARP_MASK 0xffffffff
 
-  template <int ELEMS_PER_THREAD, int RECV, int SEND, int SrcBuf, int DstBuf>
-  __device__ __forceinline__ void recvReduceSendCopy(int ll128Offset, bool postOp) {
-    constexpr int SRC = SrcBuf != -1 ? 1 : 0;
-    constexpr int DST = DstBuf != -1 ? 1 : 0;
+  template <int ELEMS_PER_THREAD, int RECV, int SEND, int SRC, int DST>
+  __device__ __forceinline__ void recvReduceSendCopy(int ll128Offset) {
     uint64_t v[ELEMS_PER_THREAD];
 
     /************* Data Loading : SHMEM -> REG **************/
@@ -163,13 +160,7 @@ private:
       #pragma unroll
       for (int u=0; u<ELEMS_PER_THREAD; u+=2) {
         v[u] = shmem64Ptr[u*(WARP_SIZE-2)];
-        if (SrcBuf == Input)
-          v[u] = MULTI<FUNC, T>().preOp(fn, v[u]);
-        if (!flagThread) {
-          v[u+1] = shmem64Ptr[u*(WARP_SIZE-2)+1];
-          if (SrcBuf == Input)
-            v[u+1] = MULTI<FUNC, T>().preOp(fn, v[u+1]);
-        }
+        if (!flagThread) v[u+1] = shmem64Ptr[u*(WARP_SIZE-2)+1];
       }
     }
     /*********** End Data Loading : SHMEM -> REG ************/
@@ -180,7 +171,6 @@ private:
       uint64_t* ptr = recvPtr(0)+ll128Offset;
       bool needReload;
       uint64_t v0, v1;
-      int spins = 0;
       do {
         needReload = false;
         #pragma unroll
@@ -188,19 +178,18 @@ private:
           load128(ptr+u*WARP_SIZE, v0, v1);
           needReload |= flagThread && (v1 != flag);
         }
-      } while (__any_sync(WARP_MASK, needReload) && checkAbort(spins, 0, 0) == 0);
-
+      } while (__any_sync(WARP_MASK, needReload) && checkAbort(0, 0) == 0);
       #pragma unroll
       for (int u=0; u<ELEMS_PER_THREAD; u+=2) {
         load128(ptr+u*WARP_SIZE, v0, v1);
-        v[u] = SRC ? MULTI<FUNC, T>()(fn, v0, v[u]) : v0;
-        v[u+1] = SRC ? MULTI<FUNC, T>()(fn, v1, v[u+1]) : v1;
+        v[u] = SRC ? MULTI<FUNC, T>()(v0, v[u]) : v0;
+        v[u+1] = SRC ? MULTI<FUNC, T>()(v1, v[u+1]) : v1;
       }
+
       for (int i=1; i<NRECV && i<nrecv; i++) {
         uint64_t flag = recvFlag(i);
         uint64_t* ptr = recvPtr(i)+ll128Offset;
         uint64_t v0, v1;
-        spins = 0;
         do {
           needReload = false;
           #pragma unroll
@@ -208,25 +197,16 @@ private:
             load128(ptr+u*WARP_SIZE, v0, v1);
             needReload |= flagThread && (v1 != flag);
           }
-        } while (__any_sync(WARP_MASK, needReload) && checkAbort(spins, i, 0) == 0);
-
+        } while (__any_sync(WARP_MASK, needReload) && checkAbort(i, 0) == 0);
         #pragma unroll
         for (int u=0; u<ELEMS_PER_THREAD; u+=2) {
           load128(ptr+u*WARP_SIZE, v0, v1);
-          v[u] = MULTI<FUNC, T>()(fn, v0, v[u]);
-          v[u+1] = MULTI<FUNC, T>()(fn, v1, v[u+1]);
+          v[u] = MULTI<FUNC, T>()(v0, v[u]);
+          v[u+1] = MULTI<FUNC, T>()(v1, v[u+1]);
         }
       }
     }
     /********************** End Recv ************************/
-
-    if (postOp && !FuncTraits<FUNC>::IsPostOpIdentity) {
-      #pragma unroll
-      for (int u=0; u<ELEMS_PER_THREAD; u+=2) {
-        v[u]   = MULTI<FUNC, T>().postOp(fn, v[u]);
-        v[u+1] = MULTI<FUNC, T>().postOp(fn, v[u+1]);
-      }
-    }
 
     /************************ Send **************************/
     if (SEND) {
@@ -262,18 +242,8 @@ private:
   #define LL128INC (WARP_SIZE*NCCL_LL128_SHMEM_ELEMS_PER_THREAD)
   #define ELEMINC (LL128INC-(LL128INC/NCCL_LL128_LINEELEMS))
 
-  template <int RECV, int SEND, int SrcBuf, int DstBuf>
-  __device__ void GenericOp(intptr_t srcIx, intptr_t dstIx, int nelem, bool postOp) {
-    constexpr int SRC = SrcBuf != -1 ? 1 : 0;
-    constexpr int DST = DstBuf != -1 ? 1 : 0;
-    #if 0
-    static_assert(-1<=SrcBuf && SrcBuf < 2, "Uhoh");
-    static_assert(-1<=DstBuf && DstBuf < 2, "Uhoh");
-    static_assert(DstBuf!=Input, "Mistake?");
-    assert((SrcBuf==-1) == (srcIx==-1));
-    assert((DstBuf==-1) == (dstIx==-1));
-    #endif
-
+  template <int RECV, int SEND, int SRC, int DST>
+  __device__ void GenericOp(const T* srcPtr, T* dstPtr, int nelem) {
     if (nelem <= 0) {
       // Don't move any data but still increase steps and sync with prev/next
       if (SEND) waitSend(0);
@@ -282,10 +252,8 @@ private:
       return;
     }
     const int nelem64 = ((nelem*sizeof(T))/(2*sizeof(uint64_t)))*2;
-    T const *srcPtr = SrcBuf == -1 ? nullptr : userBufs[SrcBuf] + srcIx;
-    T       *dstPtr = DstBuf == -1 ? nullptr : userBufs[DstBuf] + dstIx;
-    uint64_t const *src64Ptr = (uint64_t*)srcPtr;
-    uint64_t       *dst64Ptr = (uint64_t*)dstPtr;
+    const uint64_t* src64Ptr = ((uint64_t*)srcPtr);
+    uint64_t* dst64Ptr = ((uint64_t*)dstPtr);
 
     int ll128Offset = LL128INC*warp+2*wid;
     int elemOffset = ELEMINC*warp;
@@ -299,18 +267,18 @@ private:
       const int maxOffset = min(nelem-(elemOffset*((int)(sizeof(uint64_t)/sizeof(T)))), (int)(ELEMINC*(sizeof(uint64_t)/sizeof(T))));
       if (SRC) {
         int done = 0;
-        if ((reinterpret_cast<uintptr_t>(srcPtr)&0xf) == 0) {
+        if ((((uint64_t)srcPtr)&0xf) == 0) {
           loadSrcToShmem128<NCCL_LL128_SHMEM_ELEMS_PER_THREAD>(maxOffset128-2*wid, src64Ptr+elemOffset+2*wid);
           done = maxOffset128*(sizeof(uint64_t)/sizeof(T));
         }
         loadSrcToShmem(done, maxOffset, (T*)(src64Ptr+elemOffset));
       }
       __syncwarp();
-      recvReduceSendCopy<NCCL_LL128_SHMEM_ELEMS_PER_THREAD, RECV, SEND, SrcBuf, DstBuf>(ll128Offset, postOp);
+      recvReduceSendCopy<NCCL_LL128_SHMEM_ELEMS_PER_THREAD, RECV, SEND, SRC, DST>(ll128Offset);
       __syncwarp();
       if (DST) {
         int done = 0;
-        if ((reinterpret_cast<uintptr_t>(dstPtr)&0xf) == 0) {
+        if ((((uint64_t)dstPtr)&0xf) == 0) {
           storeShmemToDst128<NCCL_LL128_SHMEM_ELEMS_PER_THREAD>(maxOffset128-2*wid, dst64Ptr+elemOffset+2*wid);
           done = maxOffset128*(sizeof(uint64_t)/sizeof(T));
         }
@@ -375,49 +343,44 @@ private:
   }
 
  public:
-  __device__ ncclLL128Primitives(
-      const int tid, const int nthreads, int const *recvPeers, int const *sendPeers,
-      int stepSize, void const *inputBuf, void *outputBuf
-    ):
-    fn(FuncTraits<FUNC>().make(ncclShmem.comm->nRanks)),
-    tid(tid), nthreads(nthreads), wid(tid%WARP_SIZE), warp(tid/WARP_SIZE),
-    flagThread((tid%8)==7), stepSize(stepSize),
-    shmem(ncclShmem.data + (threadIdx.x/WARP_SIZE)*NCCL_LL128_SHMEM_ELEMS_PER_THREAD*WARP_SIZE+2*wid) {
-
-    userBufs[Input] = (T*)inputBuf;
-    userBufs[Output] = (T*)outputBuf;
+  __device__ __forceinline__
+  ncclLL128Primitives(const int tid, const int nthreads, int* recvPeers, int* sendPeers, int stepSize, struct ncclChannel* channel, struct ncclDevComm* comm)
+    : comm(comm), tid(tid), nthreads(nthreads), wid(tid%WARP_SIZE), warp(tid/WARP_SIZE), flagThread((tid%8)==7), stepSize(stepSize), shmem(ncclShmem->data+(threadIdx.x/WARP_SIZE)*NCCL_LL128_SHMEM_ELEMS_PER_THREAD*WARP_SIZE+2*wid) {
     // Make sure step is updated before we read it.
     barrier();
-    auto *channel = ncclShmem.channel;
+
     for (int i=0; i<NRECV && recvPeers[i] >= 0; i++) loadRecvConn(&channel->devPeers[recvPeers[i]].recv->conn, i);
     for (int i=0; i<NSEND && sendPeers[i] >= 0; i++) loadSendConn(&channel->devPeers[sendPeers[i]].send->conn, i);
     loadRecvSync();
     loadSendSync();
   }
 
-  __device__ void send(intptr_t inpIx, int eltN) {
-    return GenericOp<0, 1, Input, -1>(inpIx, -1, eltN, false);
+  __device__ void send(const T* src, int nelem) {
+    return GenericOp<0, 1, 1, 0>(src, NULL, nelem);
   }
-  __device__ void sendFromOutput(intptr_t outIx, int eltN) {
-    return GenericOp<0, 1, Output, -1>(outIx, -1, eltN, false);
+
+  __device__ void recv(T* dst, int nelem) {
+    return GenericOp<1, 0, 0, 1>(NULL, dst, nelem);
   }
-  __device__ void recv(intptr_t outIx, int eltN, bool postOp=false) {
-    return GenericOp<1, 0, -1, Output>(-1, outIx, eltN, postOp);
+
+  __device__ void recvReduceSend(const T* src, int nelem) {
+    return GenericOp<1, 1, 1, 0>(src, NULL, nelem);
   }
-  __device__ void recvReduceSend(intptr_t inpIx, int eltN) {
-    return GenericOp<1, 1, Input, -1>(inpIx, -1, eltN, false);
+
+  __device__ void recvReduceCopy(const T* src, T* dst, int nelem) {
+    return GenericOp<1, 0, 1, 1>(src, dst, nelem);
   }
-  __device__ void recvReduceCopy(intptr_t inpIx, intptr_t outIx, int eltN, bool postOp=false) {
-    return GenericOp<1, 0, Input, Output>(inpIx, outIx, eltN, postOp);
+
+  __device__ void copySend(const T* src, T* dst, int nelem) {
+    return GenericOp<0, 1, 1, 1>(src, dst, nelem);
   }
-  __device__ void copySend(intptr_t inpIx, intptr_t outIx, int eltN, bool postOp=false) {
-    return GenericOp<0, 1, Input, Output>(inpIx, outIx, eltN, postOp);
+
+  __device__ void recvCopySend(T* dst, int nelem) {
+    return GenericOp<1, 1, 0, 1>(NULL, dst, nelem);
   }
-  __device__ void recvCopySend(intptr_t outIx, int eltN, bool postOp=false) {
-    return GenericOp<1, 1, -1, Output>(-1, outIx, eltN, postOp);
-  }
-  __device__ void recvReduceCopySend(intptr_t inpIx, intptr_t outIx, int eltN, bool postOp=false) {
-    return GenericOp<1, 1, Input, Output>(inpIx, outIx, eltN, postOp);
+
+  __device__ void recvReduceCopySend(const T* src, T* dst, int nelem) {
+    return GenericOp<1, 1, 1, 1>(src, dst, nelem);
   }
 
   __device__ __forceinline__ ~ncclLL128Primitives() {
