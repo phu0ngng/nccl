@@ -54,6 +54,7 @@ static ncclResult_t ncclAddQueueElem(struct ncclQueueInfo* eqInfo, struct ncclQu
   struct ncclQueueElemList* list = &eqInfo->elemList;
   if (list->tail != NULL) {
     *elemOut = list->tail;
+    memset(*elemOut, 0, sizeof(struct ncclWorkElem) + sizeof(struct ncclProxyArgs));
   } else {
     NCCLCHECK(ncclCalloc(&list->tail, 1));
     *elemOut = list->tail;
