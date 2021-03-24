@@ -360,7 +360,7 @@ sched_delta:
           args->coll.comm->userStream == cudaStreamLegacy)
         CUDACHECKGOTO(cudaSetDevice(args->coll.comm->cudaDev), ret, end);
       NCCLCHECKGOTO(ncclRecordEvents(args->coll.comm), ret, end);
-      NCCLCHECKGOTO(ncclLaunchReset(args->coll.comm, !usingCudaGraphAll), ret, end);
+      NCCLCHECKGOTO(ncclLaunchReset(args->coll.comm), ret, end);
     }
   }
 
@@ -399,7 +399,7 @@ group_cleanup:
 	pthread_mutex_unlock(&state->poolMutex);
         state->nextOps = NULL;
 
-        ncclLaunchReset(comm, 1);
+        ncclLaunchReset(comm);
       }
     }
   }

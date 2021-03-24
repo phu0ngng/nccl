@@ -84,8 +84,10 @@ struct ncclComm {
   cudaEvent_t intDoneEvent;
   bool checkPointers;
 
-  // Collective operation counter
+  // Counter for tracking CUDA launches (P2P and collectives included)
   uint64_t opCount;
+  // Collective operation counter
+  uint64_t collOpCount;
 
   // Channels for collectives
   int nChannels;
