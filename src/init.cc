@@ -79,21 +79,17 @@ ncclResult_t initNetPlugin(ncclNet_t** net, ncclCollNet_t** collnet) {
     }
     return ncclSuccess;
   }
-  ncclNet_t* extNet = (ncclNet_t*) dlsym(netPluginLib, STR(NCCL_PLUGIN_SYMBOL));
-  if (extNet == NULL) {
+  *net = (ncclNet_t*) dlsym(netPluginLib, STR(NCCL_PLUGIN_SYMBOL));
+  if (*net == NULL) {
     INFO(NCCL_INIT|NCCL_NET, "NET/Plugin: Failed to find " STR(NCCL_PLUGIN_SYMBOL) " symbol.");
-  } else if (initNet(extNet) == ncclSuccess) {
-    *net = extNet;
-    // Check for CollNet
-    ncclCollNet_t* extCollNet = (ncclCollNet_t*) dlsym(netPluginLib, STR(NCCL_COLLNET_PLUGIN_SYMBOL));
-    if (extCollNet == NULL) {
-      INFO(NCCL_INIT|NCCL_NET, "NET/Plugin: Failed to find " STR(NCCL_COLLNET_PLUGIN_SYMBOL) " symbol.");
-    } else if (initCollNet(extCollNet) == ncclSuccess) {
-      *collnet = extCollNet;
-    }
+    if (netPluginLib != NULL) dlclose(netPluginLib);
     return ncclSuccess;
   }
-  if (netPluginLib != NULL) dlclose(netPluginLib);
+  // Check for CollNet
+  *collnet = (ncclCollNet_t*) dlsym(netPluginLib, STR(NCCL_COLLNET_PLUGIN_SYMBOL));
+  if (*collnet == NULL) {
+    INFO(NCCL_INIT|NCCL_NET, "NET/Plugin: Failed to find " STR(NCCL_COLLNET_PLUGIN_SYMBOL) " symbol.");
+  }
   return ncclSuccess;
 }
 
@@ -101,13 +97,27 @@ ncclResult_t initNet() {
   // Always initialize bootstrap network
   NCCLCHECK(bootstrapNetInit());
 
-  NCCLCHECK(initNetPlugin(&ncclNet, &ncclCollNet));
-  if (ncclNet != NULL) return ncclSuccess;
-  if (initNet(&ncclNetIb) == ncclSuccess) {
-    ncclNet = &ncclNetIb;
-  } else {
-    NCCLCHECK(initNet(&ncclNetSocket));
-    ncclNet = &ncclNetSocket;
+  // Initialize main communication network
+  ncclNet_t* nets[3] = { NULL, &ncclNetIb, &ncclNetSocket };
+  ncclCollNet_t* collNets[3] = { NULL, NULL, NULL };
+  NCCLCHECK(initNetPlugin(nets+0, collNets+0));
+  char* netName = getenv("NCCL_NET");
+
+  for (int i=0; i<3; i++) {
+    if (nets[i] == NULL) continue;
+    if (netName && strcmp(netName, nets[i]->name) != 0) continue;
+    // net plugin is already initialized
+    if (initNet(nets[i]) != ncclSuccess) continue;
+    ncclNet = nets[i];
+    if (collNets[i] && initCollNet(collNets[i]) == ncclSuccess) {
+      ncclCollNet = collNets[i];
+    }
+    break;
+  }
+
+  if (ncclNet == NULL) {
+    WARN("Error: network %s not found.", netName ? netName : "");
+    return ncclInvalidUsage;
   }
   return ncclSuccess;
 }
