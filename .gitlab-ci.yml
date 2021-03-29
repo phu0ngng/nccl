@@ -109,16 +109,16 @@ apitest-A100:
     - ./test/scripts/gitlab-runner-apitest.sh
   interruptible: true
 
-apitest-DGX-1V:
-  stage: api_tests
-  tags:
-    - dgx-1v
-  variables:
-    CUDA_HOME: "/home/sjeaugey/prom-dev/cuda-11.0"
-    SRUN: ""
-  script:
-    - srun -n 1 --account=sw-gpu -pbatch -t 00:05:00 ./test/scripts/gitlab-runner-apitest.sh
-  interruptible: true
+#apitest-DGX-1V:
+#  stage: api_tests
+#  tags:
+#    - dgx-1v
+#  variables:
+#    CUDA_HOME: "/home/sjeaugey/prom-dev/cuda-11.0"
+#    SRUN: ""
+#  script:
+#    - srun -n 1 --account=sw-gpu -pbatch -t 00:05:00 ./test/scripts/gitlab-runner-apitest.sh
+#  interruptible: true
 
 apitest-DGX-A100:
   stage: api_tests
@@ -223,18 +223,18 @@ perftest-A100:
     - ./test/scripts/gitlab-runner-perftest.sh
   interruptible: true
 
-perftest-DGX-1V:
-  stage: perf_tests_single
-  tags:
-    - dgx-1v
-  variables:
-    NCCL_DEBUG: "WARN"
-    MPI_HOME: "/home/sjeaugey/prom-dev/mpi/openmpi-1.10.7"
-    CUDA_HOME: "/home/sjeaugey/prom-dev/cuda-11.0"
-    SALLOC: ""
-  script:
-    - salloc -N 1 -n 8 --account=sw-gpu -pbatch -t 00:05:00 ./test/scripts/gitlab-runner-perftest.sh 4G
-  interruptible: true
+#perftest-DGX-1V:
+#  stage: perf_tests_single
+#  tags:
+#    - dgx-1v
+#  variables:
+#    NCCL_DEBUG: "WARN"
+#    MPI_HOME: "/home/sjeaugey/prom-dev/mpi/openmpi-1.10.7"
+#    CUDA_HOME: "/home/sjeaugey/prom-dev/cuda-11.0"
+#    SALLOC: ""
+#  script:
+#    - salloc -N 1 -n 8 --account=sw-gpu -pbatch -t 00:05:00 ./test/scripts/gitlab-runner-perftest.sh 4G
+#  interruptible: true
 
 perftest-DGX-A100:
   stage: perf_tests_single
@@ -263,21 +263,21 @@ perftest-multi-gc:
     - ./test/scripts/gitlab-runner-perftest.sh 128M
   interruptible: true
 
-perftest-multi-prom:
-  stage: perf_tests_multi
-  tags:
-    - dgx-1v
-  variables:
-    NCCL_DEBUG: "WARN"
-    MPI_HOME: "/home/sjeaugey/prom-dev/mpi/openmpi-1.10.7"
-    CUDA_HOME: "/home/sjeaugey/prom-dev/cuda-11.0"
-    OMPI_MCA_oob_tcp_if_include: "10.33.12.0/24"
-    OMPI_MCA_btl: "tcp,self"
-    OMPI_MCA_btl_tcp_if_include: "10.33.12.0/24"
-    SALLOC: ""
-  script:
-    - salloc -N 4 -n 32 --account=sw-gpu -pbatch -t 00:05:00 ./test/scripts/gitlab-runner-perftest.sh 4G
-  interruptible: true
+#perftest-multi-prom:
+#  stage: perf_tests_multi
+#  tags:
+#    - dgx-1v
+#  variables:
+#    NCCL_DEBUG: "WARN"
+#    MPI_HOME: "/home/sjeaugey/prom-dev/mpi/openmpi-1.10.7"
+#    CUDA_HOME: "/home/sjeaugey/prom-dev/cuda-11.0"
+#    OMPI_MCA_oob_tcp_if_include: "10.33.12.0/24"
+#    OMPI_MCA_btl: "tcp,self"
+#    OMPI_MCA_btl_tcp_if_include: "10.33.12.0/24"
+#    SALLOC: ""
+#  script:
+#    - salloc -N 4 -n 32 --account=sw-gpu -pbatch -t 00:05:00 ./test/scripts/gitlab-runner-perftest.sh 4G
+#  interruptible: true
 
 perftest-multi-selene:
   stage: perf_tests_multi
