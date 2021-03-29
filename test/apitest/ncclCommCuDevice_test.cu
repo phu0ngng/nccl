@@ -1,19 +1,12 @@
+#include "ncclCommon_test.cuh"
 class ncclCommCuDevice_test : public ::testing::Test {
   protected:
     ncclComm_t* comms = NULL;
     int nVis = 0, device = -1;
     virtual void SetUp() {
-        ASSERT_EQ(cudaSuccess, cudaGetDeviceCount(&nVis));
-        comms = (ncclComm_t*)calloc(nVis, sizeof(ncclComm_t));
-        ASSERT_EQ(ncclSuccess, ncclCommInitAll(comms, nVis, NULL));
+        comms = ncclCommon_getComms(&nVis);
     };
     virtual void TearDown() {
-        if (comms != NULL) {
-            for (int i = 0; i < nVis; ++i) {
-                ASSERT_EQ(ncclSuccess, ncclCommDestroy(comms[i]));
-            }
-            free(comms);
-        }
     };
 };
 TEST_F(ncclCommCuDevice_test, basic) {

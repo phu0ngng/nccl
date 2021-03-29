@@ -2,106 +2,106 @@
   <graph id="0" pattern="4" crossnic="0" nchannels="8" speedintra="24" speedinter="24" typeintra="NVL" typeinter="PXB" samechannels="0">
     <channel>
       <net dev="0"/>
-      <gpu dev="1"/>
+      <gpu dev="0"/>
       <gpu dev="7"/>
       <gpu dev="6"/>
       <gpu dev="5"/>
       <gpu dev="4"/>
       <gpu dev="3"/>
       <gpu dev="2"/>
-      <gpu dev="0"/>
+      <gpu dev="1"/>
       <net dev="0"/>
     </channel>
     <channel>
       <net dev="1"/>
-      <gpu dev="0"/>
+      <gpu dev="1"/>
       <gpu dev="7"/>
       <gpu dev="6"/>
       <gpu dev="5"/>
       <gpu dev="4"/>
       <gpu dev="3"/>
       <gpu dev="2"/>
-      <gpu dev="1"/>
+      <gpu dev="0"/>
       <net dev="1"/>
     </channel>
     <channel>
       <net dev="2"/>
-      <gpu dev="3"/>
+      <gpu dev="2"/>
       <gpu dev="1"/>
       <gpu dev="0"/>
       <gpu dev="7"/>
       <gpu dev="6"/>
       <gpu dev="5"/>
       <gpu dev="4"/>
-      <gpu dev="2"/>
+      <gpu dev="3"/>
       <net dev="2"/>
     </channel>
     <channel>
       <net dev="3"/>
-      <gpu dev="2"/>
+      <gpu dev="3"/>
       <gpu dev="1"/>
       <gpu dev="0"/>
       <gpu dev="7"/>
       <gpu dev="6"/>
       <gpu dev="5"/>
       <gpu dev="4"/>
-      <gpu dev="3"/>
+      <gpu dev="2"/>
       <net dev="3"/>
     </channel>
     <channel>
       <net dev="4"/>
-      <gpu dev="5"/>
+      <gpu dev="4"/>
       <gpu dev="3"/>
       <gpu dev="2"/>
       <gpu dev="1"/>
       <gpu dev="0"/>
       <gpu dev="7"/>
       <gpu dev="6"/>
-      <gpu dev="4"/>
+      <gpu dev="5"/>
       <net dev="4"/>
     </channel>
     <channel>
       <net dev="5"/>
-      <gpu dev="4"/>
+      <gpu dev="5"/>
       <gpu dev="3"/>
       <gpu dev="2"/>
       <gpu dev="1"/>
       <gpu dev="0"/>
       <gpu dev="7"/>
       <gpu dev="6"/>
-      <gpu dev="5"/>
+      <gpu dev="4"/>
       <net dev="5"/>
     </channel>
     <channel>
       <net dev="6"/>
-      <gpu dev="7"/>
+      <gpu dev="6"/>
       <gpu dev="5"/>
       <gpu dev="4"/>
       <gpu dev="3"/>
       <gpu dev="2"/>
       <gpu dev="1"/>
       <gpu dev="0"/>
-      <gpu dev="6"/>
+      <gpu dev="7"/>
       <net dev="6"/>
     </channel>
     <channel>
       <net dev="7"/>
-      <gpu dev="6"/>
+      <gpu dev="7"/>
       <gpu dev="5"/>
       <gpu dev="4"/>
       <gpu dev="3"/>
       <gpu dev="2"/>
       <gpu dev="1"/>
       <gpu dev="0"/>
-      <gpu dev="7"/>
+      <gpu dev="6"/>
       <net dev="7"/>
     </channel>
   </graph>
   <graph id="1" pattern="1" crossnic="0" nchannels="8" speedintra="30" speedinter="24" typeintra="NVL" typeinter="PXB" samechannels="0">
     <channel>
       <net dev="0"/>
-      <gpu dev="1"/>
       <gpu dev="0"/>
+      <gpu dev="1"/>
       <gpu dev="2"/>
       <gpu dev="3"/>
       <gpu dev="4"/>
@@ -112,8 +112,8 @@
     </channel>
     <channel>
       <net dev="1"/>
-      <gpu dev="0"/>
       <gpu dev="1"/>
+      <gpu dev="0"/>
       <gpu dev="2"/>
       <gpu dev="3"/>
       <gpu dev="4"/>
@@ -124,8 +124,8 @@
     </channel>
     <channel>
       <net dev="2"/>
-      <gpu dev="3"/>
       <gpu dev="2"/>
+      <gpu dev="3"/>
       <gpu dev="4"/>
       <gpu dev="5"/>
       <gpu dev="6"/>
@@ -136,8 +136,8 @@
     </channel>
     <channel>
       <net dev="3"/>
-      <gpu dev="2"/>
       <gpu dev="3"/>
+      <gpu dev="2"/>
       <gpu dev="4"/>
       <gpu dev="5"/>
       <gpu dev="6"/>
@@ -148,8 +148,8 @@
     </channel>
     <channel>
       <net dev="4"/>
-      <gpu dev="5"/>
       <gpu dev="4"/>
+      <gpu dev="5"/>
       <gpu dev="6"/>
       <gpu dev="7"/>
       <gpu dev="0"/>
@@ -160,8 +160,8 @@
     </channel>
     <channel>
       <net dev="5"/>
-      <gpu dev="4"/>
       <gpu dev="5"/>
+      <gpu dev="4"/>
       <gpu dev="6"/>
       <gpu dev="7"/>
       <gpu dev="0"/>
@@ -172,8 +172,8 @@
     </channel>
     <channel>
       <net dev="6"/>
-      <gpu dev="7"/>
       <gpu dev="6"/>
+      <gpu dev="7"/>
       <gpu dev="0"/>
       <gpu dev="1"/>
       <gpu dev="2"/>
@@ -184,8 +184,8 @@
     </channel>
     <channel>
       <net dev="7"/>
-      <gpu dev="6"/>
       <gpu dev="7"/>
+      <gpu dev="6"/>
       <gpu dev="0"/>
       <gpu dev="1"/>
       <gpu dev="2"/>
@@ -198,6 +198,7 @@
   <graph id="2" pattern="3" crossnic="0" nchannels="8" speedintra="30" speedinter="24" typeintra="NVL" typeinter="PXB" samechannels="0">
     <channel>
       <net dev="0"/>
+      <gpu dev="0"/>
       <gpu dev="1"/>
       <gpu dev="2"/>
       <gpu dev="3"/>
@@ -205,12 +206,10 @@
       <gpu dev="5"/>
       <gpu dev="6"/>
       <gpu dev="7"/>
-      <gpu dev="0"/>
       <net dev="0"/>
     </channel>
     <channel>
       <net dev="1"/>
-      <gpu dev="0"/>
       <gpu dev="1"/>
       <gpu dev="2"/>
       <gpu dev="3"/>
@@ -218,10 +217,12 @@
       <gpu dev="5"/>
       <gpu dev="6"/>
       <gpu dev="7"/>
+      <gpu dev="0"/>
       <net dev="1"/>
     </channel>
     <channel>
       <net dev="2"/>
+      <gpu dev="2"/>
       <gpu dev="3"/>
       <gpu dev="4"/>
       <gpu dev="5"/>
@@ -229,12 +230,10 @@
       <gpu dev="7"/>
       <gpu dev="0"/>
       <gpu dev="1"/>
-      <gpu dev="2"/>
       <net dev="2"/>
     </channel>
     <channel>
       <net dev="3"/>
-      <gpu dev="2"/>
       <gpu dev="3"/>
       <gpu dev="4"/>
       <gpu dev="5"/>
@@ -242,10 +241,12 @@
       <gpu dev="7"/>
       <gpu dev="0"/>
       <gpu dev="1"/>
+      <gpu dev="2"/>
       <net dev="3"/>
     </channel>
     <channel>
       <net dev="4"/>
+      <gpu dev="4"/>
       <gpu dev="5"/>
       <gpu dev="6"/>
       <gpu dev="7"/>
@@ -253,12 +254,10 @@
       <gpu dev="1"/>
       <gpu dev="2"/>
       <gpu dev="3"/>
-      <gpu dev="4"/>
       <net dev="4"/>
     </channel>
     <channel>
       <net dev="5"/>
-      <gpu dev="4"/>
       <gpu dev="5"/>
       <gpu dev="6"/>
       <gpu dev="7"/>
@@ -266,10 +265,12 @@
       <gpu dev="1"/>
       <gpu dev="2"/>
       <gpu dev="3"/>
+      <gpu dev="4"/>
       <net dev="5"/>
     </channel>
     <channel>
       <net dev="6"/>
+      <gpu dev="6"/>
       <gpu dev="7"/>
       <gpu dev="0"/>
       <gpu dev="1"/>
@@ -277,12 +278,10 @@
       <gpu dev="3"/>
       <gpu dev="4"/>
       <gpu dev="5"/>
-      <gpu dev="6"/>
       <net dev="6"/>
     </channel>
     <channel>
       <net dev="7"/>
-      <gpu dev="6"/>
       <gpu dev="7"/>
       <gpu dev="0"/>
       <gpu dev="1"/>
@@ -290,6 +289,7 @@
       <gpu dev="3"/>
       <gpu dev="4"/>
       <gpu dev="5"/>
+      <gpu dev="6"/>
       <net dev="7"/>
     </channel>
   </graph>

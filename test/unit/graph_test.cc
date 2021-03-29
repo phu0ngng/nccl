@@ -205,6 +205,7 @@ int main(int argc, const char* argv[]) {
     RUN("PCI-2R");
     RUN("PCI-NV");
     RUN("SKL-V100");
+    RUN("MS-1G-2N");
     RUN("T4");
 #ifdef __x86_64__
     RUN("DGX-1P");
@@ -216,6 +217,7 @@ int main(int argc, const char* argv[]) {
     RUN("XMAN-3");
     RUN("Luna");
     RUN("Luna-SHARP");
+    RUN("Luna-SHARP-1PPN");
     RUN("DGX-2-Delta");
     RUN("Redstone");
     RUN("GCP-NV");
