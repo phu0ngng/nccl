@@ -12,7 +12,6 @@
 #include "bootstrap.h"
 
 #ifdef MNNVL_SUPPORT
-#include <cuda_device_runtime_api.h>
 #include "wizlet.h"
 #endif
 
