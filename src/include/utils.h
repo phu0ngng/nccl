@@ -64,7 +64,7 @@ class ncclRecyclableList {
     } else {
       NCCLCHECK(ncclCalloc(&tail, 1));
       *dataOut = &tail->data;
-      head = tail;
+      cursor = head = tail;
     }
     if (tail->next == NULL) {
       NCCLCHECK(ncclCalloc(&tail->next, 1));

@@ -177,6 +177,10 @@ static ncclResult_t commFree(ncclComm_t comm) {
     return ncclSuccess;
   free(comm->connectSend);
   free(comm->connectRecv);
+  for (int peer=0; peer<comm->nRanks; peer++) {
+    delete comm->p2pSends[peer];
+    delete comm->p2pRecvs[peer];
+  }
   free(comm->p2pSends);
   free(comm->p2pRecvs);
   free(comm->asyncOps);

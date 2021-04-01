@@ -660,7 +660,7 @@ static ncclResult_t ncclSaveP2p(struct ncclInfo* info) {
         }
       }
     }
-    NCCLCHECK(enqueueP2pInfo(comm->p2pSends+info->root, (void*)info->sendbuff, nBytes));
+    NCCLCHECK(ncclSaveP2pInfo(comm->p2pSends[info->root], (void*)info->sendbuff, nBytes));
     comm->p2pSendCount++;
   } else {
     if (peer != comm->rank) {
@@ -673,7 +673,7 @@ static ncclResult_t ncclSaveP2p(struct ncclInfo* info) {
         }
       }
     }
-    NCCLCHECK(enqueueP2pInfo(comm->p2pRecvs+info->root, info->recvbuff, nBytes));
+    NCCLCHECK(ncclSaveP2pInfo(comm->p2pRecvs[info->root], info->recvbuff, nBytes));
     comm->p2pRecvCount++;
   }
   return ncclSuccess;
