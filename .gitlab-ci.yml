@@ -243,7 +243,7 @@ perftest-DGX-A100:
   variables:
     NCCL_DEBUG: "WARN"
     MPI_HOME: "/home/sjeaugey/install/openmpi-1.10.7"
-    CUDA_HOME: "/project/share/cuda/cuda-11.3.221/"
+    CUDA_HOME: "/project/share/cuda/cuda-11.3.99/"
     SALLOC: ""
   script:
     - salloc -N 1 -n 8 --account=nccl -pluna -J "nccl-cicd::$GITLAB_USER_LOGIN:perftest-single::$CI_COMMIT_BRANCH:$CI_COMMIT_SHORT_SHA" -t 00:05:00 ./test/scripts/gitlab-runner-perftest.sh 16G
