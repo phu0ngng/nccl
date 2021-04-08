@@ -258,7 +258,7 @@ perftest-multi-gc:
     NCCL_DEBUG: "WARN"
     MPI_HOME: "/opt/mpi/openmpi-1.10.7"
     CUDA_HOME: "/usr/local/cuda-11.0"
-    SALLOC: "salloc -t 00:05:00 -n 4 -n 32 -w gc[01-03,05]"
+    SALLOC: "salloc -t 00:05:00 -N 4 -n 32 -w gc[01-03,05]"
   script:
     - ./test/scripts/gitlab-runner-perftest.sh 128M
   interruptible: true
