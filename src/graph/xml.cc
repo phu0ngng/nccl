@@ -111,6 +111,7 @@ ncclResult_t xmlGetNode(FILE* file, struct ncclXmlNode* node) {
   }
   if (c != '<') {
     WARN("XML Parse error : expecting '<', got '%c'", c);
+    while (fread(&c, 1, 1, file)) printf("%c", c);
     return ncclInternalError;
   }
   // Read XML element name
