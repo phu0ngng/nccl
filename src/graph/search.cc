@@ -792,6 +792,7 @@ search:
       goto search;
     }
     tmpGraph.typeIntra = ngpus == 1 ? PATH_LOC : PATH_NVL;
+
     if (system->nodes[NET].count > 0 && tmpGraph.typeInter < PATH_SYS && (graph->nChannels == 0 || tmpGraph.typeInter < graph->typeInter || tmpGraph.typeInter < PATH_PXB)) {
       tmpGraph.typeInter += 1;
       goto search;
@@ -799,8 +800,8 @@ search:
     tmpGraph.typeInter = PATH_PIX;
 
     // Try a simpler tree
-    if (tmpGraph.pattern == NCCL_TOPO_PATTERN_SPLIT_TREE) {
-      tmpGraph.pattern = NCCL_TOPO_PATTERN_TREE;
+    if (tmpGraph.pattern == NCCL_TOPO_PATTERN_SPLIT_TREE || tmpGraph.pattern == NCCL_TOPO_PATTERN_BALANCED_TREE) {
+      tmpGraph.pattern++;
       goto search;
     }
     tmpGraph.pattern = graph->pattern;
