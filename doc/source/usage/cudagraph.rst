@@ -4,7 +4,7 @@
 Using NCCL with CUDA Graphs
 ***************************
 
-Starting with NCCL 2.9.6, NCCL operations can be captured by CUDA Graphs.
+Starting with NCCL 2.9, NCCL operations can be captured by CUDA Graphs.
 
 CUDA Graphs provide a way to define workflows as graphs rather than single operations. They may reduce overhead by launching multiple GPU operations through a single CPU operation. More details about CUDA Graphs can be found at https://docs.nvidia.com/cuda/cuda-c-programming-guide/index.html#cuda-graphs.
 
