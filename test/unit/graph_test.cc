@@ -98,7 +98,8 @@ void checkTopo(const char* xmlTopoFile, const char* xmlGraphFile, const char* pl
   memset(&ringGraph, 0, sizeof(ringGraph));
   ringGraph.id = 0;
   ringGraph.pattern = NCCL_TOPO_PATTERN_RING;
-  ringGraph.crossNic = 2;
+  char* str = getenv("NCCL_CROSS_NIC");
+  ringGraph.crossNic = str ? atoi(str) : 2;
   ringGraph.collNet = 0;
   ringGraph.minChannels = 1;
   ringGraph.maxChannels = 16;
