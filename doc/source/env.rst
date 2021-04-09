@@ -128,26 +128,6 @@ The default is 512 for recent generation GPUs, and 256 for some older generation
 
 The values allowed are 64, 128, 256 and 512.
 
-NCCL_RINGS
-----------
-(since 2.0, removed in 2.5)
-
-The ``NCCL_RINGS`` variable overrides the rings that NCCL forms by default. Rings are sequences of ranks. They can be any permutations of ranks.
-
-NCCL filters out any rings that do not contain the number of ranks in the NCCL communicator. In general, the ring
-formation is dependent on the hardware topology connecting the GPUs in your system.
-
-Values accepted
-^^^^^^^^^^^^^^^
-A list of ranks from 0 to n-1, where n is the number of GPUs in your communicator.
-
-The ranks can be separated by any non-digit character, for example, " ", "-", except "|".
-
-Multiple rings can be specified separated by the pipe character "|".
-
-For example, if you have 4 GPUs in a communicator, you can form communication rings as such: "0 1 2 3  |  3 2 1 0".
-This will form two rings, one in each direction.
-
 NCCL_MAX_NCHANNELS
 ------------------
 (NCCL_MAX_NRINGS since 2.0.5, NCCL_MAX_NCHANNELS since 2.5.0)
@@ -176,6 +156,32 @@ The old ``NCCL_MIN_NRINGS`` variable (used until 2.4) still works as an alias in
 Values accepted
 ^^^^^^^^^^^^^^^
 The default is platform dependent. Set to an integer value, up to 12 (up to 2.2), 16 (2.3 and 2.4) or 32 (2.5 and later).
+
+NCCL_CROSS_NIC
+--------------
+The ``NCCL_CROSS_NIC`` variable controls whether NCCL should allow rings/trees to use different NICs,
+causing inter-node communication to use different NICs on different nodes.
+
+To maximize inter-node communication performance when using multiple NICs, NCCL tries to communicate
+between same NICs between nodes, to allow for network design where each NIC from each node connects to
+a different network switch (network rail), and avoid any risk of traffic flow interference.
+The ``NCCL_CROSS_NIC`` setting is therefore dependent on the network topology, and in particular
+depending on whether the network fabric is rail-optimized or not.
+
+This has no effect on systems with only one NIC.
+
+Values accepted
+^^^^^^^^^^^^^^^
+0: Always use the same NIC for the same ring/tree, to avoid crossing network rails. Suited for networks
+with per NIC switches (rails), with a slow inter-rail connection. Note there are corner cases for which
+NCCL may still cause cross-rail communication, so rails still need to be connected at the top.
+
+1: Do not attempt to use the same NIC for the same ring/tree. This is suited for networks where all NICs
+from a node are connected to the same switch, hence trying to communicate across the same NICs does not
+help avoiding flow collisions.
+
+2: (Default) Try to use the same NIC for the same ring/tree, but still allow for it if it would result
+in better performance.
 
 NCCL_CHECKS_DISABLE
 -------------------
@@ -210,11 +216,10 @@ The ``NCCL_LAUNCH_MODE`` variable controls how NCCL launches CUDA kernels.
 
 Values accepted
 ^^^^^^^^^^^^^^^
-The default value is PARALLEL for 2.9 and later.
+The default value is PARALLEL.
 
-Before 2.9, the default value is GROUP which uses cooperative groups (CUDA 9.0 and later) for processes managing more than one GPUs.
-Setting it to PARALLEL uses a launch system which can be faster but is prone to deadlocks if you are using CUDA 11.2 or older when one process
-manages multiple GPUs.
+Setting is to GROUP will use cooperative groups (CUDA 9.0 and later) for processes managing more than one GPU.
+This is deprecated in 2.9 and may be removed in future versions.
 
 NCCL_IB_DISABLE
 ---------------
