@@ -116,7 +116,7 @@ Values are integers, in bytes. The recommendation is to use powers of 2. For exa
 
 NCCL_NTHREADS
 -------------
-The ``NCCL_NTHREADS`` variable sets the number of CUDA threads per CUDA block. NCCL will launch  one block per communication ring.
+The ``NCCL_NTHREADS`` variable sets the number of CUDA threads per CUDA block. NCCL will launch one CUDA block per communication channel.
 
 Use this variable if you think your GPU clocks are low and you want to increase the number of threads.
 
@@ -124,9 +124,9 @@ You can also use this variable to reduce the number of threads to decrease the G
 
 Values accepted
 ^^^^^^^^^^^^^^^
-The default is 256.
+The default is 512 for recent generation GPUs, and 256 for some older generations.
 
-The values allowed are 64, 128 and 256.
+The values allowed are 64, 128, 256 and 512.
 
 NCCL_RINGS
 ----------
@@ -210,9 +210,10 @@ The ``NCCL_LAUNCH_MODE`` variable controls how NCCL launches CUDA kernels.
 
 Values accepted
 ^^^^^^^^^^^^^^^
-The default value is to use cooperative groups (CUDA 9.0 and later) for processes managing more than one GPU.
+The default value is PARALLEL for 2.9 and later.
 
-Setting it to PARALLEL uses the previous launch system which can be faster but is prone to deadlocks when one process
+Before 2.9, the default value is GROUP which uses cooperative groups (CUDA 9.0 and later) for processes managing more than one GPUs.
+Setting it to PARALLEL uses a launch system which can be faster but is prone to deadlocks if you are using CUDA 11.2 or older when one process
 manages multiple GPUs.
 
 NCCL_IB_DISABLE
