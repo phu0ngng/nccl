@@ -14,15 +14,18 @@ enum ncclProxyOpState { ncclProxyOpNone, ncclProxyOpReady, ncclProxyOpProgress }
 struct ncclProxyArgs;
 typedef ncclResult_t (*proxyProgressFunc_t)(struct ncclProxyArgs*);
 
-
-#define NCCL_PROXY_MAX_SUBS NCCL_MAX_WORK_ELEMENTS
+#define NCCL_PROXY_MAX_SUBS MAXCHANNELS
+static_assert(NCCL_MAX_WORK_ELEMENTS <= MAXCHANNELS, "Not enough sub space for max work elements");
 
 struct ncclProxySubArgs {
   struct ncclChannel* channel;
   struct ncclConnector* connector;
   int nsteps;
-  size_t sendbytes;
-  size_t recvbytes;
+  ssize_t sendbytes;
+  ssize_t recvbytes;
+  int sendChunkSize;
+  int recvChunkSize;
+  int delta;
 
   // Internal state
   uint64_t base;
@@ -44,9 +47,12 @@ struct ncclProxyArgs {
   int chunkSteps;
   int chunkSize;
   uint64_t opCount;
+  uint64_t commOpCount;
   int protocol;
   ncclDataType_t dtype;
   ncclRedOp_t redOp;
+  ncclPattern_t pattern;
+  int root;
   int state;
   char* sharedBuff[NCCL_STEPS];
   int sharedSize[NCCL_STEPS];
@@ -86,15 +92,17 @@ struct ncclProxyState {
   pthread_cond_t cond;
   pthread_mutex_t opsMutex;
   pthread_mutex_t poolMutex;
-  struct ncclProxyArgs* freeList;
-  struct ncclProxyArgs* freeListEnd;
-  int freeListCount;
   bool stop;
   struct ncclProxySharedBuffers sharedBuffs;
-  struct ncclProxyArgs* ops;
-  struct ncclProxyArgs* nextOps;
+  struct ncclProxyArgs* ops;           // Running operations, used by proxy thread
+  struct ncclProxyArgs* postedOps;     // Posted operations, shared between proxy and main thread, locked with opsMutex
+  struct ncclProxyArgs* postedOpsEnd;
+  struct ncclProxyArgs* nextOps;       // Pending operations, used by main thread (could still be cancelled)
   struct ncclProxyArgs* nextOpsEnd;
-  struct ncclProxyArgs* pool;
+  struct ncclProxyArgs* pool;          // Free operations for main thread
+  struct ncclProxyArgs* poolFreed;     // Freed operations by the progress thread
+  struct ncclProxyArgs* poolReturned;  // Shared between main and progress thread, lock with poolMutex
+
   struct ncclProxyPool* pools;
 };
 
@@ -106,8 +114,9 @@ enum proxyMode {
   proxyTo = 2
 };
 
-ncclResult_t ncclProxySaveColl(struct ncclProxyArgs* args, int pattern, int root, int nranks);
-ncclResult_t ncclProxySaveP2p(struct ncclInfo* info, struct ncclChannel* channel);
+ncclResult_t ncclProxySaveColl(struct ncclProxyArgs* args, int nranks);
+ncclResult_t ncclProxyComputeP2p(struct ncclInfo* info, struct ncclProxyArgs* args);
+ncclResult_t ncclProxySaveP2p(struct ncclComm* comm, struct ncclProxyArgs* args);
 ncclResult_t ncclProxyStart(struct ncclComm* comm);
 ncclResult_t ncclProxyCreate(struct ncclComm* comm);
 ncclResult_t ncclProxyDestroy(struct ncclComm* comm);

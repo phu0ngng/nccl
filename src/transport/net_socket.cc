@@ -10,9 +10,7 @@
 #include "net.h"
 #include "param.h"
 
-#include <assert.h>
 #include <pthread.h>
-#include <stdio.h>
 #include <stdlib.h>
 #include <poll.h>
 #include <limits.h>

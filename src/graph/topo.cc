@@ -679,9 +679,7 @@ ncclResult_t ncclTopoGetLocalNet(struct ncclTopoSystem* system, int rank, int* i
     return ncclSuccess;
   }
 
-  // Different GPUs on the same PCI switch with multiple NICs should start with a different NIC.
-  int devId = system->nodes[GPU].nodes[g].gpu.dev;
-  *id = nets[(devId+rr) % count];
+  *id = nets[rr%count];
   free(nets);
   return ncclSuccess;
 }

@@ -28,3 +28,4 @@ The creation of a communicator is the first step needed before launching any com
  usage/p2p
  usage/threadsafety
  usage/inplace
+ usage/cudagraph

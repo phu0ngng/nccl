@@ -101,7 +101,7 @@ struct ncclConnector {
   struct ncclProxyArgs *proxyAppend;
   struct ncclProxyArgs **proxyAppendPtr;
   struct ncclTransportComm* transportComm;
-  void* transportResources; // Host-side resources
+  void* transportResources;
   struct ncclConnInfo conn;
   struct ncclComm *comm;
 };
@@ -126,9 +126,21 @@ struct ncclTree {
   int down[NCCL_MAX_TREE_ARITY];
 };
 
+#define NCCL_MAX_DIRECT_ARITY 7
+struct ncclDirect {
+  int depth;
+  int out;
+  int nHeads;
+  int headRank;
+  int shift;
+  int up[NCCL_MAX_DIRECT_ARITY];
+  int down[NCCL_MAX_DIRECT_ARITY];
+};
+
+#define NCCL_MAX_CONNS 2
 struct ncclPeer {
-  struct ncclConnector send;
-  struct ncclConnector recv;
+  struct ncclConnector send[NCCL_MAX_CONNS];
+  struct ncclConnector recv[NCCL_MAX_CONNS];
 };
 
 struct ncclDevComm;
@@ -180,7 +192,7 @@ struct ncclChannel {
     struct {
       struct ncclRing ring;
       struct ncclTree tree;
-      struct ncclTree collTree;
+      struct ncclDirect collTree;
 
       int id;
 
@@ -192,6 +204,12 @@ struct ncclChannel {
       struct ncclWork* workFifo;
       int workCount;
       uint64_t workFifoTail; // Only used by CPU
+      uint16_t index;        // Only used by GPU
+
+      // GDRCOPY support
+      struct ncclWork* workFifoGdr;
+      struct ncclWork* workFifoDev;
+      void* gdrMemDesc;
     };
     int data[0x80];
   };

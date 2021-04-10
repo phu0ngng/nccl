@@ -173,7 +173,7 @@ void runTopo(const char* xmlTopoFile, const char* platform, int nnodes) {
   comm.nChannels = ringGraph.nChannels*2;
   comm.channels[0].tree.depth = system->nodes[GPU].count-1+log2i(nnodes);
   comm.buffSizes[NCCL_PROTO_SIMPLE] = 1 << 22;
-  comm.collNetNchannels = cNetGraph.nChannels;
+  comm.collNetSupport = (cNetGraph.nChannels == 0) ? 0 : 1;
   int compCap = system->nodes[GPU].nodes[0].gpu.cudaCompCap;
   CHECK(ncclTopoTuneModel(&comm, compCap, compCap, &treeGraph, &ringGraph, &cNetGraph));
   struct ncclInfo info;

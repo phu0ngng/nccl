@@ -98,7 +98,8 @@ void checkTopo(const char* xmlTopoFile, const char* xmlGraphFile, const char* pl
   memset(&ringGraph, 0, sizeof(ringGraph));
   ringGraph.id = 0;
   ringGraph.pattern = NCCL_TOPO_PATTERN_RING;
-  ringGraph.crossNic = 2;
+  char* str = getenv("NCCL_CROSS_NIC");
+  ringGraph.crossNic = str ? atoi(str) : 2;
   ringGraph.collNet = 0;
   ringGraph.minChannels = 1;
   ringGraph.maxChannels = 16;
@@ -217,6 +218,7 @@ int main(int argc, const char* argv[]) {
     RUN("XMAN-3");
     RUN("Luna");
     RUN("Luna-SHARP");
+    RUN("Luna-SHARP-1PPN");
     RUN("DGX-2-Delta");
     RUN("Redstone");
     RUN("Atos-A100-4G");
@@ -228,6 +230,7 @@ int main(int argc, const char* argv[]) {
     RUN("DGX-1V-1G");
     RUN("GCP-Shared-NVS");
     RUN("Dual-Delta-VM");
+    RUN("ZionEX");
 #endif
     RUN("P9-6V");
     RUN("P9-4V");
