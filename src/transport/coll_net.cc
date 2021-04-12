@@ -95,7 +95,7 @@ ncclResult_t collNetSendSetup(struct ncclComm* comm, struct ncclTopoGraph* graph
   NCCLCHECK(ncclCudaHostCalloc(&resources->sendMem, 1));
 
   int recvSize = offsetof(struct ncclRecvMem, buff);
-  // Simple uses shared buffers and we don't support LL128 
+  // Simple uses shared buffers and we don't support LL128
   recvSize += send->comm->buffSizes[NCCL_PROTO_LL];
 
   if (resources->useGdr) {
@@ -124,7 +124,7 @@ ncclResult_t collNetRecvSetup(struct ncclComm* comm, struct ncclTopoGraph* graph
   NCCLCHECK(ncclCudaHostCalloc(&resources->sendMem, 1));
 
   int recvSize = offsetof(struct ncclRecvMem, buff);
-  // Simple uses shared buffers and we don't support LL128 
+  // Simple uses shared buffers and we don't support LL128
   recvSize += recv->comm->buffSizes[NCCL_PROTO_LL];
 
   if (resources->useGdr) {
