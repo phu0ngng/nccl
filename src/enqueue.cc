@@ -291,6 +291,7 @@ static ncclResult_t ncclLaunchProxy(struct ncclQueueInfo* eqInfo) {
   for (int r=0; r<eqInfo->maxChannels; r++) {
     struct ncclChannel* channel = comm->channels+r;
     channel->workCount = 0;
+    channel->totalSize = 0;
   }
   comm->lastChannel = 0;
   NCCLCHECK(ncclProxyStart(comm));
@@ -572,14 +573,28 @@ static ncclResult_t ncclSetupCollKernel(struct ncclInfo* info) {
   return ncclSuccess;
 }
 
+static inline int findShortestChannel(ncclComm_t comm) {
+  size_t minSize = 0;
+  int minC = 0;
+  for (int c=0; c<comm->nChannels; c++) {
+    struct ncclChannel* channel = comm->channels+c;
+    if (channel->totalSize < minSize) {
+      minSize = channel->totalSize;
+      minC = c;
+    }
+  }
+  return minC;
+}
+
 // Dynamic enqueue code
 static ncclResult_t ncclEnqueueCollKernel(ncclComm_t comm, struct ncclQueueElem* eqElem) {
   struct ncclWorkElem* work = &eqElem->work;
   struct ncclProxyArgs* proxyArgs = &eqElem->proxyArgs;
 
   int nChannels = work->coll.nChannels;
+  size_t channelSize = work->coll.count*ncclTypeSize(proxyArgs->dtype)/work->coll.nChannels;
   for (int bid=0; bid<nChannels; bid++) {
-    int channelId = comm->lastChannel % comm->nChannels;
+    int channelId = findShortestChannel(comm);
     struct ncclChannel* channel = comm->channels+channelId;
 
     // Proxy
@@ -589,7 +604,7 @@ static ncclResult_t ncclEnqueueCollKernel(ncclComm_t comm, struct ncclQueueElem*
 
     if (proxyArgs->subs[0].nsteps) NCCLCHECK(ncclProxySaveColl(proxyArgs, comm->nRanks));
 
-    comm->lastChannel++;
+    channel->totalSize += channelSize;
     work->coll.bid = bid % nChannels;
     NCCLCHECK(getNextOp(channel, NULL, work));
     //INFO(NCCL_COLL, "Host enqueue: bid %d channel %d index %ld nThreads %d funcIndex %d count %ld nChannels %d",
@@ -598,9 +613,6 @@ static ncclResult_t ncclEnqueueCollKernel(ncclComm_t comm, struct ncclQueueElem*
   comm->collOpCount++;
   return ncclSuccess;
 }
-
-#define NCCL_MIN_CHANNEL_SIZE (NCCL_LL_THREAD_THRESHOLD*64)
-#define NCCL_AGG_CHANNEL_SIZE (1LL << 21) /* 2 MiB, ideal per-channel size to fully utilize bandwidth */
 
 ncclResult_t ncclSetupAsyncKernels(ncclComm_t comm) {
   if (comm->asyncOpCount == 0) {
@@ -612,7 +624,7 @@ ncclResult_t ncclSetupAsyncKernels(ncclComm_t comm) {
     NCCLCHECK(ncclSetupCollKernel(info));
   } else {
     // Aggregation
-    size_t channelSize = NCCL_AGG_CHANNEL_SIZE * comm->nRanks;  // scale channel size based on nranks as latency increases
+    size_t channelSize = comm->channelSize;
     // Reduce the per-channel size if we cannot fully utilize the channels
     while (comm->asyncTotalSize < channelSize * comm->nChannels && channelSize > NCCL_MIN_CHANNEL_SIZE) channelSize /= 2;
     int channelUsed = 0;

@@ -203,6 +203,7 @@ struct ncclChannel {
       // Operation list for aggregation
       struct ncclWork* workFifo;
       int workCount;
+      size_t totalSize;
       uint64_t workFifoTail; // Only used by CPU
       uint16_t index;        // Only used by GPU
 
