@@ -93,7 +93,7 @@ testResult_t SendRecvRunTest(struct threadArgs* args, int root, ncclDataType_t t
     run_ops = &op;
     run_opnames = &opName;
   } else {
-    op_count = ncclNumOps;
+    op_count = test_opnum;
     run_ops = test_ops;
     run_opnames = test_opnames;
   }

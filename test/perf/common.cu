@@ -13,6 +13,8 @@
 #include <libgen.h>
 #include "cuda.h"
 
+int test_ncclVersion = 0; // init'd with ncclGetVersion()
+
 #if NCCL_MAJOR >= 2
 ncclDataType_t test_types[ncclNumTypes] = {ncclInt8, ncclUint8, ncclInt32, ncclUint32, ncclInt64, ncclUint64, ncclHalf, ncclFloat, ncclDouble};
 const char *test_typenames[ncclNumTypes] = {"int8", "uint8", "int32", "uint32", "int64", "uint64", "half", "float", "double"};
@@ -20,8 +22,16 @@ const char *test_typenames[ncclNumTypes] = {"int8", "uint8", "int32", "uint32", 
 ncclDataType_t test_types[ncclNumTypes] = {ncclChar, ncclInt, ncclHalf, ncclFloat, ncclDouble, ncclInt64, ncclUint64};
 const char *test_typenames[ncclNumTypes] = {"char", "int", "half", "float", "double", "int64", "uint64"};
 #endif
+
+#if NCCL_VERSION_CODE >= NCCL_VERSION(2,10,0)
 ncclRedOp_t test_ops[ncclNumOps] = {ncclSum, ncclProd, ncclMax, ncclMin, ncclAvg};
 const char *test_opnames[ncclNumOps] = {"sum", "prod", "max", "min", "avg"};
+int test_opnum = 5;
+#else
+ncclRedOp_t test_ops[ncclNumOps] = {ncclSum, ncclProd, ncclMax, ncclMin};
+const char *test_opnames[ncclNumOps] = {"sum", "prod", "max", "min"};
+int test_opnum = 4;
+#endif
 
 thread_local int is_main_thread = 0;
 
@@ -46,6 +56,7 @@ static int side_comp = 0;
 static int timeout = 60;
 static int cudaGraphLaunches = 0;
 static int report_cputime = 0;
+static int out_of_place = 1;
 
 static char* replay_file = NULL;
 
@@ -244,12 +255,20 @@ __global__ void InitDataReduceKernel(T* data, const size_t N, const size_t offse
 }
 
 #define KERN(type, op, postop) (void*)InitDataReduceKernel<type, op<type>, postop<type> >
-#define OPS(type) \
-  KERN(type, ncclOpSum, ncclPostOpIdent), \
-  KERN(type, ncclOpProd, ncclPostOpIdent), \
-  KERN(type, ncclOpMax, ncclPostOpIdent), \
-  KERN(type, ncclOpMin, ncclPostOpIdent), \
-  KERN(type, ncclOpSum/*Avg*/, ncclPostOpDiv)
+#if NCCL_VERSION_CODE >= NCCL_VERSION(2,10,0)
+  #define OPS(type) \
+    KERN(type, ncclOpSum, ncclPostOpIdent), \
+    KERN(type, ncclOpProd, ncclPostOpIdent), \
+    KERN(type, ncclOpMax, ncclPostOpIdent), \
+    KERN(type, ncclOpMin, ncclPostOpIdent), \
+    KERN(type, ncclOpSum/*Avg*/, ncclPostOpDiv)
+#else
+  #define OPS(type) \
+    KERN(type, ncclOpSum, ncclPostOpIdent), \
+    KERN(type, ncclOpProd, ncclPostOpIdent), \
+    KERN(type, ncclOpMax, ncclPostOpIdent), \
+    KERN(type, ncclOpMin, ncclPostOpIdent)
+#endif
 
 static void* const redInitDataKerns[ncclNumOps*ncclNumTypes] = {
   OPS(int8_t), OPS(uint8_t), OPS(int32_t), OPS(uint32_t), OPS(int64_t), OPS(uint64_t), OPS(half), OPS(float), OPS(double)
@@ -374,9 +393,7 @@ testResult_t testStreamSynchronize(int ngpus, cudaStream_t* streams, ncclComm_t*
      if (cudaErr != cudaErrorNotReady) CUDACHECK(cudaErr);
 
 #if NCCL_VERSION_CODE >= NCCL_VERSION(2,4,0)
-     int version;
-     NCCLCHECK(ncclGetVersion(&version));
-     if (version >= NCCL_VERSION(2,4,0) && comms) {
+     if (test_ncclVersion >= NCCL_VERSION(2,4,0) && comms) {
        ncclResult_t ncclAsyncErr;
        NCCLCHECK(ncclCommGetAsyncError(comms[i], &ncclAsyncErr));
        if (ncclAsyncErr != ncclSuccess) {
@@ -664,7 +681,7 @@ testResult_t TimeTest(struct threadArgs* args, ncclDataType_t type, const char* 
       else
         sprintf(rootName, "%6i", root);
       PRINT("%12li  %12li  %6s  %6s  %6s", max(args->sendBytes, args->expectedBytes), args->nbytes / wordSize(type), typeName, opName, rootName);
-      if (args->replayFile != NULL) {
+      if (args->replayFile != NULL || !out_of_place) {
         PRINT("                                ");  // only do in-place for trace replay
       } else {
         TESTCHECK(BenchTime(args, type, op, root, 0));
@@ -721,9 +738,12 @@ testResult_t compThread(struct threadArgs* args) {
   void* ptrs[args->nGpus];
   int gpuids[args->nGpus];
   cudaStream_t streams[args->nGpus];
-  for (int i=0; i<args->nGpus; i++) {
+  int gpu0; {
     char* str = getenv("NCCL_TESTS_DEVICE");
-    gpuids[i] = (str ? atoi(str) : args->localRank*args->nThreads*args->nGpus + args->thread*args->nGpus) + i;
+    gpu0 = str ? atoi(str) : -1;
+  }
+  for (int i=0; i<args->nGpus; i++) {
+    gpuids[i] = (gpu0 != -1 ? gpu0 : args->localRank*args->nThreads*args->nGpus) + args->thread*args->nGpus + i;
     CUDACHECK(cudaSetDevice(gpuids[i]));
     CUDACHECK(cudaStreamCreateWithFlags(streams+i, cudaStreamNonBlocking));
     if (side_comp == 1) CUDACHECK(cudaMalloc(ptrs+i, ((uint64_t)COMP_SIZE)*NUM_BLOCKS));
@@ -795,6 +815,17 @@ int main(int argc, char* argv[]) {
   // Make sure everyline is flushed so that we see the progress of the test
   setlinebuf(stdout);
 
+  #if NCCL_VERSION_CODE >= NCCL_VERSION(2,4,0)
+    ncclGetVersion(&test_ncclVersion);
+  #else
+    test_ncclVersion = NCCL_VERSION_CODE;
+  #endif
+  //printf("# NCCL_VERSION_CODE=%d ncclGetVersion=%d\n", NCCL_VERSION_CODE, test_ncclVersion);
+  if(test_ncclVersion >= NCCL_VERSION(2,10,0))
+    test_opnum = ncclNumOps;
+  else
+    test_opnum = 4; // exclude ncclAvg
+
   // Parse args
   int longindex;
   static struct option longopts[] = {
@@ -819,12 +850,14 @@ int main(int argc, char* argv[]) {
     {"timeout", required_argument, 0, 'T'},
     {"cudagraph", required_argument, 0, 'G'},
     {"report_cputime", required_argument, 0, 'C'},
-    {"help", no_argument, 0, 'h'}
+    {"out_of_place", required_argument, 0, 'O'},
+    {"help", no_argument, 0, 'h'},
+    {}
   };
 
   while(1) {
     int c;
-    c = getopt_long(argc, argv, "t:g:b:e:i:f:n:m:w:s:p:c:o:d:r:z:y:k:h:l:T:G:C:", longopts, &longindex);
+    c = getopt_long(argc, argv, "t:g:b:e:i:f:n:m:w:s:p:c:o:d:r:z:y:k:h:l:T:G:C:O:", longopts, &longindex);
 
     if (c == -1)
       break;
@@ -902,6 +935,9 @@ int main(int argc, char* argv[]) {
       case 'C':
         report_cputime = strtol(optarg, NULL, 0);
         break;
+      case 'O':
+        out_of_place = strtol(optarg, NULL, 0);
+        break;
       case 'h':
       default:
         if (c != 'h') printf("invalid option '%c'\n", c);
@@ -927,7 +963,8 @@ int main(int argc, char* argv[]) {
             "[-T,--timeout <time in seconds>] \n\t"
             "[-G,--cudagraph <0/1>] \n\t"
             "[-C,--report_cputime <0/1>] \n\t"
-	    "[-h,--help]\n",
+            "[-O,--out_of_place <0/1>] \n\t"
+            "[-h,--help]\n",
             basename(argv[0]));
         return 0;
     }
@@ -991,9 +1028,10 @@ testResult_t run() {
   char line[MAX_LINE];
   int len = 0;
   size_t maxMem = ~0;
+  envstr = getenv("NCCL_TESTS_DEVICE");
+  int gpu0 = envstr ? atoi(envstr) : -1;
   for (int i=0; i<nThreads*nGpus; i++) {
-    envstr = getenv("NCCL_TESTS_DEVICE");
-    int cudaDev = envstr ? atoi(envstr) : localRank*nThreads*nGpus+i;
+    int cudaDev = (gpu0 != -1 ? gpu0 : localRank*nThreads*nGpus) + i;
     int rank = proc*nThreads*nGpus+i;
     cudaDeviceProp prop;
     CUDACHECK(cudaGetDeviceProperties(&prop, cudaDev));
@@ -1039,9 +1077,10 @@ testResult_t run() {
 
   ncclTestEngine.getBuffSize(&sendBytes, &recvBytes, (size_t)maxBytes, (size_t)nProcs*nGpus*nThreads);
 
+  envstr = getenv("NCCL_TESTS_DEVICE");
+  gpu0 = envstr ? atoi(envstr) : -1;
   for (int i=0; i<nGpus*nThreads; i++) {
-    envstr = getenv("NCCL_TESTS_DEVICE");
-    gpus[i] = envstr ? atoi(envstr) : localRank*nThreads*nGpus+i;
+    gpus[i] = (gpu0 != -1 ? gpu0 : localRank*nThreads*nGpus) + i;
     CUDACHECK(cudaSetDevice(gpus[i]));
     TESTCHECK(AllocateBuffs(sendbuffs+i, sendBytes, recvbuffs+i, recvBytes, expected+i, (size_t)maxBytes, nProcs*nThreads*nGpus));
     if (streamnull)
