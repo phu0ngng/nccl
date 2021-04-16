@@ -21,9 +21,10 @@ build_baseline="build-${REGRESSION_BASELINE}"
 # will use file mtime's which will have been just updated by the preceding
 # `git checkout` so will always conclude to rebuild.
 if [[ ! -e "$build_baseline"/test/perf/all_reduce_perf ]]; then
+  orig_branch=$(git rev-parse --abbrev-ref HEAD) &&
   git checkout "$REGRESSION_BASELINE" &&
   make -j src.build test.build BUILDDIR="$build_baseline" MPI=1 MPI_HOME="$MPI_HOME" CUDA_HOME="$CUDA_HOME" &&
-  git checkout "$CI_COMMIT_REF_NAME"
+  git checkout "$orig_branch"
   ok=$?
 else
   ok=0
