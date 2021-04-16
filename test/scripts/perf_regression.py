@@ -106,9 +106,14 @@ def run_perf(part_kind, args, env, key_prefix, times):
 
 def sweep(times):
   env = dict(os.environ) # copy of env
+  def csv(s):
+    return [x.strip().lower() for x in s.split(',') if x!='']
+  filter_exes = csv(env.get('NCCL_EXES',''))
+  filter_protos = csv(env.get('NCCL_PROTOS',''))
+  filter_algos = csv(env.get('NCCL_ALGOS',''))
   for trial in range(2):
     for part_kind in ['intra_proc','inter_proc']:
-      for exe in exes:
+      for exe in [x for x in exes if not filter_exes or x.lower() in filter_exes]:
         protos = ['LL','LL128','SIMPLE']
         algos = ['RING','TREE']
         if exe in ['alltoall_perf','sendrecv_perf']:
@@ -135,13 +140,13 @@ def sweep(times):
         #algos = ['TREE']
         #ops = ['-d','int8']
 
-        for proto in protos:
+        for proto in [x for x in protos if not filter_protos or x.lower() in filter_protos]:
           sizes = {
             'LL':     ['-b64',  '-e64K', '-f1024', '-n500'],
             'LL128':  ['-b256K','-e256M','-f32'],
             'SIMPLE': ['-b32M', '-e1G',  '-f32']
           }[proto]
-          for algo in algos:
+          for algo in [x for x in algos if not filter_algos or x.lower() in filter_algos]:
             for op in ops:
               env['NCCL_PROTO'] = proto
               env['NCCL_ALGO'] = algo
@@ -160,10 +165,13 @@ sweep(times)
 bads=[]
 for (oldnew,exe,part_kind,proto,algo,size,dtype,redop),t0 in times.items():
   if oldnew == 'old':
-    t1 = times['new',exe,part_kind,proto,algo,size,dtype,redop]
-    gain = 100*(t1 - t0)/t0
-    if gain >= threshold:
-      bads += [(gain,exe,part_kind,proto,algo,size,dtype,redop)]
+    try:
+      t1 = times['new',exe,part_kind,proto,algo,size,dtype,redop]
+      gain = 100*(t1 - t0)/t0
+      if gain >= threshold:
+        bads += [('+%.2f%%'%gain,exe,part_kind,proto,algo,size,dtype,redop)]
+    except KeyError:
+      bads += [('FAILED',exe,part_kind,proto,algo,size,dtype,redop)]
 bads.sort(reverse=True)
 
 time_end = time.time()
@@ -183,7 +191,7 @@ def format_bytes(n):
 if len(bads) > 0:
   print("FAILURE cases, where time increased >= %.2f%%:"%threshold)
   for gain,exe,part_kind,proto,algo,size,dtype,redop in bads:
-    print('%s %s %s %s %s %s %s : +%.2f%%'%(exe,part_kind,proto,algo,format_bytes(size),dtype,redop,gain))
+    print('%s %s %s %s %s %s %s : %s'%(exe,part_kind,proto,algo,format_bytes(size),dtype,redop,gain))
   if exit_code == 0:
     exit_code = 1
 
