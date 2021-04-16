@@ -1,5 +1,5 @@
 /*************************************************************************
- * Copyright (c) 2015-2020, NVIDIA CORPORATION. All rights reserved.
+ * Copyright (c) 2015-2021, NVIDIA CORPORATION. All rights reserved.
  *
  * See LICENSE.txt for license information
  ************************************************************************/
@@ -164,6 +164,7 @@ ncclResult_t ncclGroupEnd() {
   for (int i=0; i<ncclGroupIndex; i++) doneArray[i] = 1;
   ncclResult_t ret = ncclGroupError;
   int usingCudaGraphAll = -1;
+  cudaGraph_t* graphs = NULL;
   if (ret != ncclSuccess) goto group_cleanup;
 
   /* Launch async ncclCommInitRank */
@@ -307,7 +308,6 @@ sched_delta:
    */
 
   // Check whether we are in cuda graph mode
-  cudaGraph_t* graphs;
   NCCLCHECK(ncclCalloc(&graphs, ncclGroupIndex));
   for (int i=0; i<ncclGroupIndex; i++) {
     struct ncclAsyncArgs* args = ncclGroupArgs+i;
@@ -360,7 +360,7 @@ sched_delta:
           args->coll.comm->userStream == cudaStreamLegacy)
         CUDACHECKGOTO(cudaSetDevice(args->coll.comm->cudaDev), ret, end);
       NCCLCHECKGOTO(ncclRecordEvents(args->coll.comm), ret, end);
-      NCCLCHECKGOTO(ncclLaunchReset(args->coll.comm, !usingCudaGraphAll), ret, end);
+      NCCLCHECKGOTO(ncclLaunchReset(args->coll.comm), ret, end);
     }
   }
 
@@ -399,7 +399,7 @@ group_cleanup:
 	pthread_mutex_unlock(&state->poolMutex);
         state->nextOps = NULL;
 
-        ncclLaunchReset(comm, 1);
+        ncclLaunchReset(comm);
       }
     }
   }
@@ -407,5 +407,6 @@ end:
   ncclGroupError = ncclSuccess;
   ncclGroupIndex = 0;
   CUDACHECK(cudaSetDevice(savedDev)); // do other clean-ups first before calling cudaSetDevice, because this call can fail too
+  if (graphs) free(graphs);
   return ret;
 }

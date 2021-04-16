@@ -1,5 +1,5 @@
 /*************************************************************************
- * Copyright (c) 2016-2020, NVIDIA CORPORATION. All rights reserved.
+ * Copyright (c) 2016-2021, NVIDIA CORPORATION. All rights reserved.
  *
  * See LICENSE.txt for license information
  ************************************************************************/
@@ -673,9 +673,7 @@ ncclResult_t ncclTopoGetLocalNet(struct ncclTopoSystem* system, int rank, int64_
     }
     if (path->width == maxWidth && path->type == minType) nets[count++] = system->nodes[NET].nodes[n].id;
   }
-  // Different GPUs on the same PCI switch with multiple NICs should start with a different NIC.
-  int devId = system->nodes[GPU].nodes[g].gpu.dev;
-  *id = nets[(devId+rr) % count];
+  *id = nets[rr%count];
   free(nets);
   return ncclSuccess;
 }

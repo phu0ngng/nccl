@@ -1,5 +1,5 @@
 /*************************************************************************
- * Copyright (c) 2015-2020, NVIDIA CORPORATION. All rights reserved.
+ * Copyright (c) 2015-2021, NVIDIA CORPORATION. All rights reserved.
  *
  * See LICENSE.txt for license information
  ************************************************************************/
@@ -19,7 +19,7 @@ ncclResult_t ncclCpuBarrierOut(struct ncclComm* comm);
 ncclResult_t ncclLaunchBarrier(struct ncclComm* comm);
 ncclResult_t ncclLaunchKernel(ncclComm_t comm);
 ncclResult_t ncclRecordEvents(struct ncclComm* comm);
-ncclResult_t ncclLaunchReset(ncclComm_t comm, int destroyInfo);
+ncclResult_t ncclLaunchReset(ncclComm_t comm);
 ncclResult_t ncclSetupP2pKernel(struct ncclInfo* info);
 ncclResult_t ncclSetupAsyncKernels(struct ncclComm* comm);
 template<int USING_CUDA_GRAPH>
@@ -52,12 +52,27 @@ struct ncclQueueInfo {
 static ncclResult_t ncclAddQueueElem(struct ncclQueueInfo* eqInfo, struct ncclQueueElem** elemOut) {
   if (eqInfo == NULL) return ncclInternalError;
   struct ncclQueueElemList* list = &eqInfo->elemList;
-  struct ncclQueueElem* next;
-  NCCLCHECK(ncclCalloc(&next, 1));
-  *elemOut = next;
-  if (list->tail != NULL) list->tail->next = next;
-  list->tail = next;
-  if (list->head == NULL) list->head = next;
+  if (list->tail != NULL) {
+    *elemOut = list->tail;
+    memset(*elemOut, 0, sizeof(struct ncclWorkElem) + sizeof(struct ncclProxyArgs));
+  } else {
+    NCCLCHECK(ncclCalloc(&list->tail, 1));
+    *elemOut = list->tail;
+    list->head = list->tail;
+  }
+  if (list->tail->next == NULL) {
+    NCCLCHECK(ncclCalloc(&list->tail->next, 1));
+  }
+  list->tail = list->tail->next;
+  return ncclSuccess;
+}
+
+// Reset element queue
+static ncclResult_t ncclResetQueueInfo(struct ncclQueueInfo* eqInfo) {
+  if (eqInfo == NULL) return ncclInternalError;
+  eqInfo->maxChannels = 0;
+  eqInfo->ret = ncclSuccess;
+  eqInfo->elemList.tail = eqInfo->elemList.head;
   return ncclSuccess;
 }
 

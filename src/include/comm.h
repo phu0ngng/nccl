@@ -1,5 +1,5 @@
 /*************************************************************************
- * Copyright (c) 2015-2020, NVIDIA CORPORATION. All rights reserved.
+ * Copyright (c) 2015-2021, NVIDIA CORPORATION. All rights reserved.
  *
  * See LICENSE.txt for license information
  ************************************************************************/
@@ -84,8 +84,10 @@ struct ncclComm {
   cudaEvent_t intDoneEvent;
   bool checkPointers;
 
-  // Collective operation counter
+  // Counter for tracking CUDA launches (P2P and collectives included)
   uint64_t opCount;
+  // Collective operation counter
+  uint64_t collOpCount;
 
   // Channels for collectives
   int nChannels;

@@ -1,5 +1,5 @@
 /*************************************************************************
- * Copyright (c) 2019-2020, NVIDIA CORPORATION. All rights reserved.
+ * Copyright (c) 2019-2021, NVIDIA CORPORATION. All rights reserved.
  *
  * See LICENSE.txt for license information
  ************************************************************************/
@@ -111,6 +111,7 @@ ncclResult_t xmlGetNode(FILE* file, struct ncclXmlNode* node) {
   }
   if (c != '<') {
     WARN("XML Parse error : expecting '<', got '%c'", c);
+    while (fread(&c, 1, 1, file)) printf("%c", c);
     return ncclInternalError;
   }
   // Read XML element name

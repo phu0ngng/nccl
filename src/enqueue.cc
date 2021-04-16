@@ -1,5 +1,5 @@
 /*************************************************************************
- * Copyright (c) 2017-2020, NVIDIA CORPORATION. All rights reserved.
+ * Copyright (c) 2017-2021, NVIDIA CORPORATION. All rights reserved.
  *
  * See LICENSE.txt for license information
  ************************************************************************/
@@ -317,14 +317,19 @@ ncclResult_t ncclRecordEvents(ncclComm_t comm) {
   return ncclSuccess;
 }
 
-ncclResult_t ncclLaunchReset(ncclComm_t comm, int destroyInfo) {
+ncclResult_t ncclLaunchReset(ncclComm_t comm) {
   comm->userStreamSet = false;
 
   // We are finishing capture of the current launch
-  // Recycle info space if not in CUDA graph mode
-  if (destroyInfo) ncclDestroyQueueInfo(comm->enqueueInfo);
-  NCCLCHECK(ncclCalloc(&comm->enqueueInfo, 1));
-  comm->enqueueInfo->comm = comm;
+  // But we need to keep the current enqueue info for CUDA graph
+  // Thus we need to creating a new enqueue info for the next run
+  if (comm->usingCudaGraph) {
+    NCCLCHECK(ncclCalloc(&comm->enqueueInfo, 1));
+    comm->enqueueInfo->comm = comm;
+  } else {
+    // If not in CUDA graph mode, we reuse the same info space
+    NCCLCHECK(ncclResetQueueInfo(comm->enqueueInfo));
+  }
 
   struct cudaLaunchParams *params = comm->myParams;
   params->gridDim.x = params->blockDim.x = 0;
@@ -585,7 +590,8 @@ static ncclResult_t ncclEnqueueCollKernel(ncclComm_t comm, struct ncclQueueElem*
 
     // Proxy
     proxyArgs->subs[0].channel = channel;
-    proxyArgs->opCount = comm->opCount;
+    proxyArgs->opCount = comm->collOpCount;
+    proxyArgs->commOpCount = comm->opCount;
 
     if (proxyArgs->subs[0].nsteps) NCCLCHECK(ncclProxySaveColl(proxyArgs, comm->nRanks));
 
@@ -595,7 +601,7 @@ static ncclResult_t ncclEnqueueCollKernel(ncclComm_t comm, struct ncclQueueElem*
     //INFO(NCCL_COLL, "Host enqueue: bid %d channel %d index %ld nThreads %d funcIndex %d count %ld nChannels %d",
     //      work->coll.bid, channelId, channel->workFifoTail, work->nThreads, work->funcIndex, work->coll.count, work->coll.nChannels);
   }
-  comm->opCount++;
+  comm->collOpCount++;
   return ncclSuccess;
 }
 
@@ -772,7 +778,7 @@ void CUDART_CB ncclEnqueueHostSetup(void* arg) {
 
   // Iterate through the element list
   struct ncclQueueElem* eqElem = eqInfo->elemList.head;
-  while (eqElem != NULL) {
+  while (eqElem != eqInfo->elemList.tail) { // The queue always has one extra element
     if (eqElem->work.funcIndex == FUNC_INDEX_P2P) {
       NCCLCHECKGOTO(ncclEnqueueP2pKernel(comm, eqElem), ret, cb_end);
     } else {
@@ -898,7 +904,7 @@ end:
     NCCLCHECK(ncclLaunchBarrier(comm));
     NCCLCHECK(ncclLaunchKernel(comm));
     NCCLCHECK(ncclRecordEvents(comm));
-    NCCLCHECK(ncclLaunchReset(comm, !comm->usingCudaGraph));
+    NCCLCHECK(ncclLaunchReset(comm));
     return ncclSuccess;
   }
 }
