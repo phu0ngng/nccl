@@ -351,7 +351,7 @@ ncclResult_t ncclTopoCheckGdr(struct ncclTopoSystem* system, int64_t busId, int 
   return ncclSuccess;
 }
 
-ncclResult_t ncclTopoGetIntermediateDev(struct ncclTopoSystem* system, int rank, int netDev, int* intermediateDev) {
+ncclResult_t ncclTopoGetIntermediateRank(struct ncclTopoSystem* system, int rank, int netDev, int* intermediateRank) {
   // Get GPU and NET
   int n, g;
   NCCLCHECK(ncclTopoIdToIndex(system, NET, netDev, &n));
@@ -369,9 +369,9 @@ ncclResult_t ncclTopoGetIntermediateDev(struct ncclTopoSystem* system, int rank,
       WARN("Could not find intermediate GPU between GPU rank %d and NIC %d\n", rank, netDev);
       return ncclInternalError;
     }
-    *intermediateDev = node->gpu.dev;
+    *intermediateRank = node->gpu.rank;
   } else {
-    *intermediateDev = -1;
+    *intermediateRank = -1;
   }
   return ncclSuccess;
 }

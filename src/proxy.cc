@@ -473,8 +473,9 @@ ncclResult_t ncclProxySharedBuffersInitP2p(struct ncclComm* comm, int cuda, int 
   *size = state->size;
 
   if (cuda && state->cudaBuff == NULL) {
-    int cudaDev;
-    NCCLCHECK(ncclTopoGetIntermediateDev(comm->topo, comm->rank, netDev, &cudaDev));
+    int interRank;
+    NCCLCHECK(ncclTopoGetIntermediateRank(comm->topo, comm->rank, netDev, &interRank));
+    int cudaDev = interRank != -1 ? comm->peerInfo[interRank].cudaDev : -1;
     int saveCudaDev;
     if (cudaDev != -1) {
       cudaError_t err = cudaDeviceEnablePeerAccess(cudaDev, 0);

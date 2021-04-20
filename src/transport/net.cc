@@ -90,6 +90,7 @@ ncclResult_t netSendSetup(struct ncclComm* comm, struct ncclTopoGraph* graph, st
   resources->sendMem->head = resources->shared ? -NCCL_STEPS : 0; // Don't give any credit yet when sharing buffers
   for (int i=0; i<NCCL_STEPS; i++) send->conn.sizesFifo[i] = -1;
 
+  int pxnCudaDev = -1;
   if (resources->shared == 0) {
     int protoLoc[NCCL_NUM_PROTOCOLS];
     for (int p=0; p<NCCL_NUM_PROTOCOLS; p++) {
@@ -102,7 +103,26 @@ ncclResult_t netSendSetup(struct ncclComm* comm, struct ncclTopoGraph* graph, st
     }
 
     if (resources->buffSizes[LOC_DEVMEM]) {
+      int interRank;
+      NCCLCHECK(ncclTopoGetIntermediateRank(comm->topo, comm->rank, resources->netDev, &interRank));
+      pxnCudaDev = interRank != -1 ? comm->peerInfo[interRank].cudaDev : -1;
+      int saveCudaDev;
+      if (pxnCudaDev != -1) {
+        cudaError_t err = cudaDeviceEnablePeerAccess(pxnCudaDev, 0);
+        if (err == cudaErrorPeerAccessAlreadyEnabled) {
+          cudaGetLastError();
+        } else if (err != cudaSuccess) {
+          WARN("failed to peer with device %d: %d %s",
+              pxnCudaDev, err, cudaGetErrorString(err));
+          return ncclInternalError;
+        }
+        CUDACHECK(cudaGetDevice(&saveCudaDev));
+        CUDACHECK(cudaSetDevice(pxnCudaDev));
+      }
       NCCLCHECK(ncclCudaCalloc(resources->buffers+LOC_DEVMEM, resources->buffSizes[LOC_DEVMEM]));
+      if (pxnCudaDev != -1) {
+        CUDACHECK(cudaSetDevice(saveCudaDev));
+      }
     }
     if (resources->buffSizes[LOC_HOSTMEM]) {
       NCCLCHECK(ncclCudaHostCalloc(resources->buffers+LOC_HOSTMEM, resources->buffSizes[LOC_HOSTMEM]));
@@ -117,8 +137,8 @@ ncclResult_t netSendSetup(struct ncclComm* comm, struct ncclTopoGraph* graph, st
     }
   }
 
-  INFO(NCCL_INIT|NCCL_NET,"Channel %02d : %d[%lx] -> %d[%lx] [send] via NET/%s/%d%s%s", channelId, myInfo->rank, myInfo->busId, peerInfo->rank, peerInfo->busId, ncclNetName(), resources->netDev,
-      resources->useGdr ? "/GDRDMA" : "", resources->shared ? "/Shared" : "");
+  INFO(NCCL_INIT|NCCL_NET,"Channel %02d : %d[%lx] -> %d[%lx] [send] via NET/%s/%d%s%s/%d", channelId, myInfo->rank, myInfo->busId, peerInfo->rank, peerInfo->busId, ncclNetName(), resources->netDev,
+      resources->useGdr ? "/GDRDMA" : "", resources->shared ? "/Shared" : "", pxnCudaDev);
   return ncclSuccess;
 }
 
