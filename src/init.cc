@@ -759,6 +759,7 @@ static ncclResult_t initTransportsRank(struct ncclComm* comm, ncclUniqueId* comm
           collNetSetupFail = 1;
       }
     }
+    free(heads);
     // Verify CollNet setup across ranks
     NCCLCHECK(ncclTransportCollNetCheck(comm, collNetSetupFail));
     if (comm->collNetSupport) {
