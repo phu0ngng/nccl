@@ -447,7 +447,8 @@ ncclResult_t ncclTopoComputePaths(struct ncclTopoSystem* system, struct ncclPeer
           if (netNode->paths[GPU][p].type > PATH_PXB || peerNode->paths[GPU][g].type > PATH_NVL) continue;
 
           // We can use that GPU as relay to communicate with that NIC.
-          NCCLCHECK(addInterStep(system, GPU, p, NET, n, GPU, g));
+          // Only enabling it in the GPU->NIC direction for now to favor
+          // receiving locally and sending remotely (consistent with net.cc)
           NCCLCHECK(addInterStep(system, GPU, p, GPU, g, NET, n));
           break;
         }
