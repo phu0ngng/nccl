@@ -42,6 +42,10 @@ def subproc(args, env=None):
     return out.decode('utf-8')
 
 LD_LIBRARY_PATH = env('LD_LIBRARY_PATH', '')
+SALLOC = env('SALLOC', '')
+MPIRUN = env('MPIRUN', 'mpirun -q --oversubscribe')
+MPI_PROCS = env('MPI_PROCS', env('SLURM_NTASKS', 2))
+MPI_NODES = env('MPI_NODES', env('SLURM_NNODES', 1))
 
 def die():
   print("Usage: perf_regression.py old=<build-dir> new=<build-dir> threshold=<percent, default=5> <args-to-perf-exe>...")
@@ -60,26 +64,25 @@ if 'old' not in kwargs: die()
 build_old = kwargs['old']
 threshold = float(kwargs.get('threshold', 5))
 
-def run_perf_mpi(proc_n, args, env):
+def run_perf_mpi(args, env):
   xenv = []
   for x,y in env.items():
-    if x.startswith('NCCL_') or x.startswith('CUDA') or x in ('LD_LIBRARY_PATH',):
+    if x.startswith('NCCL_') or x in ('LD_LIBRARY_PATH','CUDA_VISIBLE_DEVICES'):
       xenv += ['-x','%s=%s'%(x,y)]
   import shlex
-  salloc = shlex.split(os.environ.get('SALLOC',''))
-  return subproc(salloc + ['mpirun','-np',proc_n] + xenv + args, env)
+  salloc = shlex.split(SALLOC)
+  mpirun = shlex.split(MPIRUN)
+  return subproc(salloc + mpirun + xenv + args, env)
 
-def run_perf(part_kind, args, env, key_prefix, times):
-  if part_kind == 'intra_proc':
-    proc_n = 1
-    args = args + ['-g2']
-  elif part_kind == 'inter_proc':
-    proc_n = 2
-    args = args + ['-g1']
+def run_perf(topo, args, env, key_prefix, times):
+  if topo == 'intra_proc':
+    args = args + ['-N',1, '-np',MPI_NODES, '-g',MPI_PROCS//MPI_NODES]
+  elif topo == 'inter_proc':
+    args = args + ['-N',MPI_PROCS//MPI_NODES, '-np',MPI_PROCS, '-g',1]
   else:
     assert 0
 
-  out = run_perf_mpi(proc_n, args + ['--out_of_place',0], env)
+  out = run_perf_mpi(args + ['--out_of_place',0], env)
 
   for ln in (out or '').split('\n'):
     ln = ln.rstrip()
@@ -111,10 +114,10 @@ def sweep(times):
   filter_exes = csv(env.get('NCCL_EXES',''))
   filter_protos = csv(env.get('NCCL_PROTOS',''))
   filter_algos = csv(env.get('NCCL_ALGOS',''))
-  filter_pairs = csv(env.get('NCCL_PROC_PAIRS',''))
-  proc_pairs = [x for x in ['intra_proc','inter_proc'] if not filter_pairs or x in filter_pairs]
+  filter_topos = csv(env.get('NCCL_PROC_TOPOS',''))
+  proc_topos = [x for x in ['intra_proc','inter_proc'] if not filter_topos or x in filter_topos]
   for trial in range(1):
-    for part_kind in proc_pairs:
+    for topo in proc_topos:
       for exe in [x for x in exes if not filter_exes or x.lower() in filter_exes]:
         protos = ['LL','LL128','SIMPLE']
         algos = ['RING','TREE']
@@ -129,11 +132,11 @@ def sweep(times):
         else:
           ops = [['-d','int8']]
 
-        if part_kind == 'intra_proc':
+        if topo == 'intra_proc':
           protos = ['SIMPLE']
           algos = ['RING']
 
-        if part_kind != 'inter_proc':
+        if topo != 'inter_proc':
           ops = [['-o','min', '-d','int8'],
                  ['-o','max', '-d','half'],
                  ['-o','sum', '-d','float'],
@@ -153,28 +156,35 @@ def sweep(times):
               env['NCCL_PROTO'] = proto
               env['NCCL_ALGO'] = algo
               # run NEW test with old libnccl
-              print('Running part=%s trial=%d proto=%s algo=%s build=%s %s'%(part_kind,trial,proto,algo,build_old,' '.join(map(str,[exe]+sizes+op+exe_args))))
+              print('Running part=%s trial=%d proto=%s algo=%s build=%s %s'%(topo,trial,proto,algo,build_old,' '.join(map(str,[exe]+sizes+op+exe_args))))
               env['LD_LIBRARY_PATH'] = build_old+'/lib:'+LD_LIBRARY_PATH
-              run_perf(part_kind, [build_new+'/test/perf/'+exe] + sizes + op + exe_args, env, ('old',exe,part_kind,proto,algo), times)
+              run_perf(topo, [build_new+'/test/perf/'+exe] + sizes + op + exe_args, env, ('old',exe,topo,proto,algo), times)
               # run new test with new libnccl
-              print('Running part=%s trial=%d proto=%s algo=%s build=%s %s'%(part_kind,trial,proto,algo,build_new,' '.join(map(str,[exe]+sizes+op+exe_args))))
+              print('Running part=%s trial=%d proto=%s algo=%s build=%s %s'%(topo,trial,proto,algo,build_new,' '.join(map(str,[exe]+sizes+op+exe_args))))
               env['LD_LIBRARY_PATH'] = build_new+'/lib:'+LD_LIBRARY_PATH
-              run_perf(part_kind, [build_new+'/test/perf/'+exe] + sizes + op + exe_args, env, ('new',exe,part_kind,proto,algo), times)
+              run_perf(topo, [build_new+'/test/perf/'+exe] + sizes + op + exe_args, env, ('new',exe,topo,proto,algo), times)
 
 times = {}
 sweep(times)
 
 bads=[]
-for (oldnew,exe,part_kind,proto,algo,size,dtype,redop),t0 in times.items():
+goods=[]
+neutrals = 0
+for (oldnew,exe,topo,proto,algo,size,dtype,redop),t0 in times.items():
   if oldnew == 'old':
     try:
-      t1 = times['new',exe,part_kind,proto,algo,size,dtype,redop]
+      t1 = times['new',exe,topo,proto,algo,size,dtype,redop]
       gain = 100*(t1 - t0)/t0
       if gain >= threshold:
-        bads += [(gain,exe,part_kind,proto,algo,size,dtype,redop)]
+        bads += [(gain,exe,topo,proto,algo,size,dtype,redop)]
+      elif gain <= -10.0:
+        goods += [(gain,exe,topo,proto,algo,size,dtype,redop)]
+      else:
+        neutrals += 1
     except KeyError:
-      bads += [('FAILED',exe,part_kind,proto,algo,size,dtype,redop)]
+      bads += [('FAILED',exe,topo,proto,algo,size,dtype,redop)]
 bads.sort(key=lambda x:(str(type(x)),x), reverse=True)
+goods.sort(key=lambda x:(str(type(x)),x), reverse=False)
 
 time_end = time.time()
 
@@ -190,14 +200,28 @@ def format_bytes(n):
   else:
     return "%.3gG"%(n/(1<<30))
 
+print("Num cases: ", len(bads)+len(goods)+neutrals)
+print("Num wins (dt <= -10%): ", len(wins))
+print("Num fails (dt >= +%.2f%%): "%threshold, len(bads))
+
 if len(bads) > 0:
-  print("FAILURE cases, where time increased >= %.2f%%:"%threshold)
-  for gain,exe,part_kind,proto,algo,size,dtype,redop in bads:
+  print()
+  print("Fail cases, where time increased >= %.2f%%:"%threshold)
+  for gain,exe,topo,proto,algo,size,dtype,redop in bads:
     gain = '+%.2f%%'%gain if type(gain) in (int,float) else gain
-    print('%s %s %s %s %s %s %s : %s'%(exe,part_kind,proto,algo,format_bytes(size),dtype,redop,gain))
+    print('  %s %s %s %s %s %s %s : %s'%(exe,topo,proto,algo,format_bytes(size),dtype,redop,gain))
   if exit_code == 0:
     exit_code = 1
 
+if len(goods) > 0:
+  print()
+  print("Win cases, where time decreased >= 10%:")
+  for gain,exe,topo,proto,algo,size,dtype,redop in goods:
+    gain = '%.2f%%'%gain if type(gain) in (int,float) else gain
+    print('  %s %s %s %s %s %s %s : %s'%(exe,topo,proto,algo,format_bytes(size),dtype,redop,gain))
+
 if exit_code == 0:
   print("SUCCESS")
+else:
+  print("FAILURE")
 exit(exit_code)

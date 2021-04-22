@@ -7,7 +7,7 @@ stages:
   - perf_regression
 
 variables:
-  REGRESSION_BASELINE: v2.9.6-1
+  NCCL_REGRESSION_BASELINE: v2.9.6-1
 
 build:
   stage: build
