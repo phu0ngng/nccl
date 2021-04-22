@@ -17,6 +17,7 @@ class ncclFunction<ncclFuncReduceScatter, NCCL_ALGO_RING, NCCL_PROTO_SIMPLE, FUN
       const int bid = args->coll.bid;
       const int nChannels = args->coll.nChannels;
       struct ncclRing* ring = &ncclShmem.channel->ring;
+      int const *ringRanks = ring->devUserRanks;
       const int stepSize = ncclShmem.comm->buffSizes[NCCL_PROTO_SIMPLE] / (sizeof(T)*NCCL_STEPS);
       const int chunkSize = stepSize * REDUCESCATTER_CHUNKSTEPS;
       const int nranks = ncclShmem.comm->nRanks;
@@ -37,21 +38,21 @@ class ncclFunction<ncclFuncReduceScatter, NCCL_ALGO_RING, NCCL_PROTO_SIMPLE, FUN
         int rankDest;
 
         // step 0: push data to next GPU
-        rankDest = ring->devUserRanks[nranks-1];
+        rankDest = ringRanks[nranks-1];
         offset = chunkOffset + rankDest * size;
 
         prims.send(offset, nelem);
 
         // k-2 steps: reduce and copy to next GPU
         for (int j=2; j<nranks; ++j) {
-          rankDest = ring->devUserRanks[nranks-j];
+          rankDest = ringRanks[nranks-j];
           offset = chunkOffset + rankDest * size;
 
           prims.recvReduceSend(offset, nelem);
         }
 
         // step k-1: reduce this buffer and data, which will produce the final result
-        rankDest = ring->devUserRanks[0];
+        rankDest = ringRanks[0];
         offset = chunkOffset + rankDest * size;
 
         prims.recvReduceCopy(offset, chunkOffset, nelem, /*postOp=*/true);
@@ -68,6 +69,7 @@ class ncclFunction<ncclFuncReduceScatter, NCCL_ALGO_RING, NCCL_PROTO_LL, FUNC, T
       const int bid = args->coll.bid;
       const int nChannels = args->coll.nChannels;
       struct ncclRing* ring = &ncclShmem.channel->ring;
+      int const *ringRanks = ring->devUserRanks;
       const int stepLines = ncclShmem.comm->buffSizes[NCCL_PROTO_LL] / (sizeof(union ncclLLFifoLine)*NCCL_STEPS);
       ssize_t chunkSize = stepLines * sizeof(uint64_t) / sizeof(T);
       const int nranks = ncclShmem.comm->nRanks;
@@ -90,14 +92,14 @@ class ncclFunction<ncclFuncReduceScatter, NCCL_ALGO_RING, NCCL_PROTO_LL, FUNC, T
         int rankDest;
 
         // step 0: push data to next GPU
-        rankDest = ring->devUserRanks[nranks-1];
+        rankDest = ringRanks[nranks-1];
         offset = chunkOffset + rankDest * size;
 
         LLprims.send(offset, nelem);
 
         // k-2 steps: reduce and copy to next GPU
         for (int j=2; j<nranks; ++j) {
-          rankDest = ring->devUserRanks[nranks-j];
+          rankDest = ringRanks[nranks-j];
           offset = chunkOffset + rankDest * size;
 
           LLprims.recvReduceSend(offset, nelem);
@@ -105,7 +107,7 @@ class ncclFunction<ncclFuncReduceScatter, NCCL_ALGO_RING, NCCL_PROTO_LL, FUNC, T
 
         // step k-1: reduce this buffer and data, which will produce the final
         // result that we store in this data
-        rankDest = ring->devUserRanks[0];
+        rankDest = ringRanks[0];
         offset = chunkOffset + rankDest * size;
 
         LLprims.recvReduceCopy(offset, chunkOffset, nelem, /*postOp=*/true);
@@ -123,6 +125,7 @@ class ncclFunction<ncclFuncReduceScatter, NCCL_ALGO_RING, NCCL_PROTO_LL128, FUNC
       const int bid = args->coll.bid;
       const int nChannels = args->coll.nChannels;
       struct ncclRing* ring = &ncclShmem.channel->ring;
+      int const *ringRanks = ring->devUserRanks;
       const int stepSize = ncclShmem.comm->buffSizes[NCCL_PROTO_LL128] / (sizeof(uint64_t)*NCCL_STEPS);
       ssize_t chunkSize = stepSize*NCCL_LL128_DATAELEMS*sizeof(uint64_t) / (NCCL_LL128_LINEELEMS*sizeof(T));
       // We should not need the final /2 but it makes performance much, much smoother. Might be a bug somewhere.
@@ -146,14 +149,14 @@ class ncclFunction<ncclFuncReduceScatter, NCCL_ALGO_RING, NCCL_PROTO_LL128, FUNC
         int rankDest;
 
         // step 0: push data to next GPU
-        rankDest = ring->devUserRanks[nranks-1];
+        rankDest = ringRanks[nranks-1];
         offset = chunkOffset + rankDest * size;
 
         LLprims.send(offset, nelem);
 
         // k-2 steps: reduce and copy to next GPU
         for (int j=2; j<nranks; ++j) {
-          rankDest = ring->devUserRanks[nranks-j];
+          rankDest = ringRanks[nranks-j];
           offset = chunkOffset + rankDest * size;
 
           LLprims.recvReduceSend(offset, nelem);
@@ -161,7 +164,7 @@ class ncclFunction<ncclFuncReduceScatter, NCCL_ALGO_RING, NCCL_PROTO_LL128, FUNC
 
         // step k-1: reduce this buffer and data, which will produce the final
         // result that we store in this data
-        rankDest = ring->devUserRanks[0];
+        rankDest = ringRanks[0];
         offset = chunkOffset + rankDest * size;
 
         LLprims.recvReduceCopy(offset, chunkOffset, nelem, /*postOp=*/true);
