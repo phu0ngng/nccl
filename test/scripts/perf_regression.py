@@ -111,8 +111,10 @@ def sweep(times):
   filter_exes = csv(env.get('NCCL_EXES',''))
   filter_protos = csv(env.get('NCCL_PROTOS',''))
   filter_algos = csv(env.get('NCCL_ALGOS',''))
-  for trial in range(2):
-    for part_kind in ['intra_proc','inter_proc']:
+  filter_pairs = csv(env.get('NCCL_PROC_PAIRS',''))
+  proc_pairs = [x for x in ['intra_proc','inter_proc'] if not filter_pairs or x in filter_pairs]
+  for trial in range(1):
+    for part_kind in proc_pairs:
       for exe in [x for x in exes if not filter_exes or x.lower() in filter_exes]:
         protos = ['LL','LL128','SIMPLE']
         algos = ['RING','TREE']
@@ -169,10 +171,10 @@ for (oldnew,exe,part_kind,proto,algo,size,dtype,redop),t0 in times.items():
       t1 = times['new',exe,part_kind,proto,algo,size,dtype,redop]
       gain = 100*(t1 - t0)/t0
       if gain >= threshold:
-        bads += [('+%.2f%%'%gain,exe,part_kind,proto,algo,size,dtype,redop)]
+        bads += [(gain,exe,part_kind,proto,algo,size,dtype,redop)]
     except KeyError:
       bads += [('FAILED',exe,part_kind,proto,algo,size,dtype,redop)]
-bads.sort(reverse=True)
+bads.sort(key=lambda x:(str(type(x)),x), reverse=True)
 
 time_end = time.time()
 
@@ -191,6 +193,7 @@ def format_bytes(n):
 if len(bads) > 0:
   print("FAILURE cases, where time increased >= %.2f%%:"%threshold)
   for gain,exe,part_kind,proto,algo,size,dtype,redop in bads:
+    gain = '+%.2f%%'%gain if type(gain) in (int,float) else gain
     print('%s %s %s %s %s %s %s : %s'%(exe,part_kind,proto,algo,format_bytes(size),dtype,redop,gain))
   if exit_code == 0:
     exit_code = 1
