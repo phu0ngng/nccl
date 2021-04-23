@@ -22,6 +22,7 @@ const char *test_typenames[ncclNumTypes] = {"char", "int", "half", "float", "dou
 ncclRedOp_t test_ops[ncclNumOps] = {ncclSum, ncclProd, ncclMax, ncclMin};
 const char *test_opnames[ncclNumOps] = {"sum", "prod", "max", "min"};
 
+int is_main_proc = 0;
 thread_local int is_main_thread = 0;
 
 // Command line parameter defaults
@@ -556,6 +557,12 @@ testResult_t BenchTime(struct threadArgs* args, ncclDataType_t type, ncclRedOp_t
   }
 
   double timeUsec = (report_cputime ? cputimeSec : deltaSec)*1.0E6;
+#ifdef MPI_SUPPORT
+  int mpiRanks;
+  MPI_Comm_size(MPI_COMM_WORLD, &mpiRanks);
+  MPI_Allreduce(MPI_IN_PLACE, &timeUsec, 1, MPI_DOUBLE, MPI_SUM, MPI_COMM_WORLD);
+  timeUsec /= mpiRanks;
+#endif
   char timeStr[10];
   if (timeUsec >= 10000.0) {
     sprintf(timeStr, "%7.0f", timeUsec);
@@ -662,7 +669,7 @@ testResult_t threadInit(struct threadArgs* args) {
   int nranks =  args->nProcs*args->nThreads*args->nGpus;
 
   //set main thread again
-  is_main_thread = (args->proc == 0 && args->thread == 0) ? 1 : 0;
+  is_main_thread = (is_main_proc && args->thread == 0) ? 1 : 0;
 
   NCCLCHECK(ncclGroupStart());
   for (int i=0; i<args->nGpus; i++) {
@@ -905,25 +912,14 @@ int main(int argc, char* argv[]) {
     }
   }
 #ifdef MPI_SUPPORT
-#ifdef MPI_COLLNET_SUPPORT
-  int threadProvided;
-  MPI_Init_thread(&argc, &argv, MPI_THREAD_MULTIPLE, &threadProvided);
-  printf("Thread provided = %d\n", threadProvided);
-#else
   MPI_Init(&argc, &argv);
-#endif
 #endif
   TESTCHECK(run());
   return 0;
 }
 
-#ifdef MPI_COLLNET_SUPPORT
-extern "C"
-void ncclCollNetMpiHook(MPI_Comm comm);
-#endif
-
 testResult_t run() {
-  int nProcs = 1, proc = 0;
+  int nProcs = 1, proc = 0, ncclProcs = 1, ncclProc = 0, color = 0;
   int localRank = 0;
   char hostname[1024];
   getHostName(hostname, 1024);
@@ -938,17 +934,19 @@ testResult_t run() {
     if (p == proc) break;
     if (hostHashs[p] == hostHashs[proc]) localRank++;
   }
-#ifdef MPI_COLLNET_SUPPORT
-  MPI_Comm master_comm;
-  int color = localRank;
-  MPI_Comm_split(MPI_COMM_WORLD, color, proc, &master_comm);
-  ncclCollNetMpiHook(master_comm);
+
+  char* str = getenv("NCCL_TESTS_SPLIT_MASK");
+  uint64_t mask = str ? strtoul(str, NULL, 16) : 0;
+  MPI_Comm mpi_comm;
+  color = proc & mask;
+  MPI_Comm_split(MPI_COMM_WORLD, color, proc, &mpi_comm);
+  MPI_Comm_size(mpi_comm, &ncclProcs);
+  MPI_Comm_rank(mpi_comm, &ncclProc);
 #endif
-#endif
-  is_main_thread = (proc == 0) ? 1 : 0;
+  is_main_thread = is_main_proc = (proc == 0) ? 1 : 0;
 
   char* envstr = getenv("NCCL_TESTS_DUMP_FILE");
-  if (envstr && is_main_thread) dump_file = fopen(envstr, "w");
+  if (envstr && is_main_proc) dump_file = fopen(envstr, "w");
 
   PRINT("# nThread %d nGpus %d minBytes %ld maxBytes %ld step: %ld(%s) warmup iters: %d iters: %d agg iters: %d validation: %d \n",
         nThreads, nGpus, minBytes, maxBytes,
@@ -969,8 +967,8 @@ testResult_t run() {
     int rank = proc*nThreads*nGpus+i;
     cudaDeviceProp prop;
     CUDACHECK(cudaGetDeviceProperties(&prop, cudaDev));
-    len += snprintf(line+len, MAX_LINE-len, "#   Rank %2d Pid %6d on %10s device %2d [0x%02x] %s\n",
-                    rank, getpid(), hostname, cudaDev, prop.pciBusID, prop.name);
+    len += snprintf(line+len, MAX_LINE-len, "#  Rank %2d Group %2d Pid %6d on %10s device %2d [0x%02x] %s\n",
+                    rank, color, getpid(), hostname, cudaDev, prop.pciBusID, prop.name);
     maxMem = std::min(maxMem, prop.totalGlobalMem);
   }
 
@@ -996,11 +994,11 @@ testResult_t run() {
   }
 
   ncclUniqueId ncclId;
-  if (proc == 0) {
+  if (ncclProc == 0) {
     NCCLCHECK(ncclGetUniqueId(&ncclId));
   }
 #ifdef MPI_SUPPORT
-  MPI_Bcast(&ncclId, sizeof(ncclId), MPI_BYTE, 0, MPI_COMM_WORLD);
+  MPI_Bcast(&ncclId, sizeof(ncclId), MPI_BYTE, 0, mpi_comm);
 #endif
   int gpus[nGpus*nThreads];
   cudaStream_t streams[nGpus*nThreads];
@@ -1031,7 +1029,7 @@ testResult_t run() {
        NCCLCHECK(ncclGroupStart());
        for (int i=0; i<nGpus*nThreads; i++) {
          CUDACHECK(cudaSetDevice(gpus[i]));
-         NCCLCHECK(ncclCommInitRank(comms+i, nProcs*nThreads*nGpus, ncclId, proc*nThreads*nGpus+i));
+         NCCLCHECK(ncclCommInitRank(comms+i, ncclProcs*nThreads*nGpus, ncclId, ncclProc*nThreads*nGpus+i));
        }
        NCCLCHECK(ncclGroupEnd());
      }
@@ -1076,8 +1074,8 @@ testResult_t run() {
     threads[t].args.stepfactor=stepFactor;
     threads[t].args.localRank = localRank;
 
-    threads[t].args.nProcs=nProcs;
-    threads[t].args.proc=proc;
+    threads[t].args.nProcs=ncclProcs;
+    threads[t].args.proc=ncclProc;
     threads[t].args.nThreads=nThreads;
     threads[t].args.thread=t;
     threads[t].args.nGpus=nGpus;
