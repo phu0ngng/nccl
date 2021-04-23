@@ -76,13 +76,15 @@ def run_perf_mpi(args, env):
 
 def run_perf(topo, args, env, key_prefix, times):
   if topo == 'intra_proc':
-    args = args + ['-N',1, '-np',MPI_NODES, '-g',MPI_PROCS//MPI_NODES]
+    mpiargs = ['-N',1, '-np',MPI_NODES]
+    args = args + ['-g',MPI_PROCS//MPI_NODES]
   elif topo == 'inter_proc':
-    args = args + ['-N',MPI_PROCS//MPI_NODES, '-np',MPI_PROCS, '-g',1]
+    mpiargs = ['-N',MPI_PROCS//MPI_NODES, '-np',MPI_PROCS]
+    args = args + ['-g',1]
   else:
     assert 0
 
-  out = run_perf_mpi(args + ['--out_of_place',0], env)
+  out = run_perf_mpi(mpiargs + args + ['--out_of_place',0], env)
 
   for ln in (out or '').split('\n'):
     ln = ln.rstrip()
@@ -168,7 +170,7 @@ times = {}
 sweep(times)
 
 bads=[]
-goods=[]
+wins=[]
 neutrals = 0
 for (oldnew,exe,topo,proto,algo,size,dtype,redop),t0 in times.items():
   if oldnew == 'old':
@@ -178,13 +180,13 @@ for (oldnew,exe,topo,proto,algo,size,dtype,redop),t0 in times.items():
       if gain >= threshold:
         bads += [(gain,exe,topo,proto,algo,size,dtype,redop)]
       elif gain <= -10.0:
-        goods += [(gain,exe,topo,proto,algo,size,dtype,redop)]
+        wins += [(gain,exe,topo,proto,algo,size,dtype,redop)]
       else:
         neutrals += 1
     except KeyError:
       bads += [('FAILED',exe,topo,proto,algo,size,dtype,redop)]
 bads.sort(key=lambda x:(str(type(x)),x), reverse=True)
-goods.sort(key=lambda x:(str(type(x)),x), reverse=False)
+wins.sort(key=lambda x:(str(type(x)),x), reverse=False)
 
 time_end = time.time()
 
@@ -200,7 +202,7 @@ def format_bytes(n):
   else:
     return "%.3gG"%(n/(1<<30))
 
-print("Num cases: ", len(bads)+len(goods)+neutrals)
+print("Num cases: ", len(bads)+len(wins)+neutrals)
 print("Num wins (dt <= -10%): ", len(wins))
 print("Num fails (dt >= +%.2f%%): "%threshold, len(bads))
 
@@ -213,10 +215,10 @@ if len(bads) > 0:
   if exit_code == 0:
     exit_code = 1
 
-if len(goods) > 0:
+if len(wins) > 0:
   print()
   print("Win cases, where time decreased >= 10%:")
-  for gain,exe,topo,proto,algo,size,dtype,redop in goods:
+  for gain,exe,topo,proto,algo,size,dtype,redop in wins:
     gain = '%.2f%%'%gain if type(gain) in (int,float) else gain
     print('  %s %s %s %s %s %s %s : %s'%(exe,topo,proto,algo,format_bytes(size),dtype,redop,gain))
 

@@ -1,10 +1,11 @@
 #!/usr/bin/env bash
+build=${1:-build}
 if [[ ! -d ./test/perf ]]; then
   >&2 echo "Script must be run from top-level nccl directory."
   exit 1
 fi
-if [[ ! -d ./build/lib ]]; then
-  >&2 echo "'./build' must contain built nccl lib and tests."
+if [[ ! -d "./$build/lib" ]]; then
+  >&2 echo "'./$build' must contain built nccl lib and tests."
   exit 1
 fi
 if [[ -z "$NCCL_REGRESSION_BASELINE" ]]; then
@@ -36,5 +37,5 @@ fi
 
 if [[ $ok == 0 ]]; then
   # run regression suite
-  ./test/scripts/perf_regression.py old="$build_baseline" new=build --check 0
+  ./test/scripts/perf_regression.py old="$build_baseline" new="$build" --check 0
 fi
