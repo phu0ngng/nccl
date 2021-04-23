@@ -175,7 +175,7 @@ TYPED_TEST(ncclSendRecv_test, hypercube) {
     for (int i = 0; i < this->nVis; ++i) {
         for (int mask=1; mask<this->nVis; mask <<= 1) {
             int p = i^mask;
-            if (p > this->nVis) continue;
+            if (p >= this->nVis) continue;
             ASSERT_EQ(ncclSuccess,
                       ncclSend(this->sendbuffs[i] + p * size, size,
                                     this->DataType(), p,
