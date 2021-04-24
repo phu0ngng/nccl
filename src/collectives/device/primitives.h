@@ -13,24 +13,6 @@
 
 #define NCCL_SPINS_BEFORE_CHECK_ABORT 1000000
 
-// Unroll unconditionally the first send/recv since nsend/nrecv should be at
-// least 1 if Send/Recv is set.
-#define FOR_SEND(func, ...) do { \
-  if (SEND) { \
-    /* Send to far first, then close */ \
-    for (int i=1; i<NSEND && i<nsend; i++) func(i, ##__VA_ARGS__); \
-    func(0, ##__VA_ARGS__); \
-  } \
-} while (0)
-
-#define FOR_RECV(func, ...) do { \
-  if (RECV) { \
-    /* Recv from close first, then far */ \
-    func(0, ##__VA_ARGS__); \
-    for (int i=1; i<NRECV && i<nrecv; i++) func(i, ##__VA_ARGS__); \
-  } \
-} while (0)
-
 // Implementation of primitive types
 template <int UNROLL, int SLICESPERCHUNK, int SLICESTEPS, typename T, int NRECV, int NSEND, int DIRECT, class FUNC>
 class ncclPrimitives {

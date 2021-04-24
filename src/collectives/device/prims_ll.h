@@ -206,8 +206,16 @@ private:
         dstElts += nthreads*EltPerPack;
       }
     }
-    FOR_RECV(incRecv); if (RECV) postRecv();
-    FOR_SEND(incSend, offset);
+
+    if (RECV) {
+      for (int i=0; i < NRECV; i++) incRecv(i);
+      postRecv();
+    }
+    if (SEND) {
+      for (int i=1; i < NSEND && i < nsend; i++)
+        incSend(i, offset);
+      incSend(0, offset);
+    }
   }
 
   __device__ __forceinline__ void loadRecvConn(struct ncclConnInfo* conn, int i) {

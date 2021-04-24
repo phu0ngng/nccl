@@ -65,7 +65,7 @@ struct ncclShmemGroup {
 
 struct ncclShmemData {
   union {
-    volatile uint64_t data[NCCL_LL128_SHMEM_SIZE];
+    uint64_t ll128warp[NCCL_LL128_MAX_NTHREADS/WARP_SIZE][NCCL_LL128_SHMEM_ELEMS_PER_THREAD*WARP_SIZE];
     struct ncclShmemGroup groups[NCCL_MAX_GROUPS];
   };
   ncclDevComm *comm;
