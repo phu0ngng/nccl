@@ -87,7 +87,7 @@ ncclResult_t collNetSendSetup(struct ncclComm* comm, struct ncclTopoGraph* graph
   send->conn.shared = 1;
   resources->comm = comm;
 
-  NCCLCHECK(ncclTopoGetNetDev(comm, myInfo->rank, graph, channelId, -1, 0, &resources->netDev));
+  NCCLCHECK(ncclTopoGetNetDev(comm, myInfo->rank, graph, channelId, -1, &resources->netDev));
   NCCLCHECK(ncclTopoCheckGdr(comm->topo, myInfo->busId, resources->netDev, 1, &resources->useGdr));
 
   send->proxyAppendPtr = comm->proxyState.sharedBuffs.proxyAppendCollNet+2*resources->netDev+1;
@@ -116,7 +116,7 @@ ncclResult_t collNetRecvSetup(struct ncclComm* comm, struct ncclTopoGraph* graph
   recv->conn.shared = 1;
   resources->comm = comm;
 
-  NCCLCHECK(ncclTopoGetNetDev(comm, myInfo->rank, graph, channelId, -1, 0, &resources->netDev));
+  NCCLCHECK(ncclTopoGetNetDev(comm, myInfo->rank, graph, channelId, -1, &resources->netDev));
   NCCLCHECK(ncclTopoCheckGdr(comm->topo, myInfo->busId, resources->netDev, 0, &resources->useGdr));
 
   recv->proxyAppendPtr = comm->proxyState.sharedBuffs.proxyAppendCollNet+2*resources->netDev;

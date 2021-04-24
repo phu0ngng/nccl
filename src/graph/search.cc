@@ -921,7 +921,7 @@ ncclResult_t ncclTopoDumpGraphs(struct ncclTopoSystem* system, int ngraphs, stru
 }
 
 #include "comm.h"
-ncclResult_t ncclTopoGetNetDev(struct ncclComm* comm, int rank, struct ncclTopoGraph* graph, int channelId, int peerRank, int rr, int* dev) {
+ncclResult_t ncclTopoGetNetDev(struct ncclComm* comm, int rank, struct ncclTopoGraph* graph, int channelId, int peerRank, int* dev) {
   if (graph) {
     // Honor the net device in the graph
     int channel = channelId%graph->nChannels;
@@ -932,7 +932,7 @@ ncclResult_t ncclTopoGetNetDev(struct ncclComm* comm, int rank, struct ncclTopoG
     return ncclInternalError;
   } else {
     // Start with our local NIC
-    NCCLCHECK(ncclTopoGetLocalNet(comm->topo, rank, dev, rr));
+    NCCLCHECK(ncclTopoGetLocalNet(comm->topo, rank, dev));
     // If Cross-NIC is forbidden, see whether we can use the remote rank preferred device.
     if (ncclParamCrossNic() == 0) {
       int netDev = comm->peerInfo[peerRank].netDev;

@@ -657,7 +657,7 @@ ncclResult_t ncclTopoGetSystem(struct ncclComm* comm, struct ncclTopoSystem** sy
   return ncclSuccess;
 }
 
-ncclResult_t ncclTopoGetLocalNet(struct ncclTopoSystem* system, int rank, int* id, int rr) {
+ncclResult_t ncclTopoGetLocalNet(struct ncclTopoSystem* system, int rank, int* id) {
   int g;
   NCCLCHECK(ncclTopoRankToIndex(system, rank, &g));
   int minType = PATH_SYS;
@@ -679,6 +679,7 @@ ncclResult_t ncclTopoGetLocalNet(struct ncclTopoSystem* system, int rank, int* i
     return ncclSuccess;
   }
 
+  int rr = system->nodes[GPU].nodes[g].gpu.dev;
   *id = nets[rr%count];
   free(nets);
   return ncclSuccess;
