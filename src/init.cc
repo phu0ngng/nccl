@@ -277,6 +277,8 @@ static ncclResult_t commAlloc(ncclComm_t* comret, int ndev, int rank) {
   comm->lastSetupNode = NULL;
   comm->lastCudaGraphId = -1;
 
+  CUDACHECK(cudaDriverGetVersion(&comm->driverVersion));
+
   static_assert(MAXCHANNELS <= sizeof(*comm->connectSend)*8, "comm->connectSend must have enough bits for all channels");
   static_assert(MAXCHANNELS <= sizeof(*comm->connectRecv)*8, "comm->connectRecv must have enough bits for all channels");
   NCCLCHECK(ncclCalloc(&comm->connectSend, comm->nRanks));
