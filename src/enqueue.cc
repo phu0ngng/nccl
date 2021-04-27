@@ -635,7 +635,7 @@ ncclResult_t ncclSetupAsyncKernels(ncclComm_t comm) {
     }
     // If we wrap around on channels, then the inlined op on channel 0 is not the last one on this channel
     // Then we need to change active from 2 to 1
-    if (channelUsed > comm->nChannels) comm->args.active = 1;
+    if (channelUsed > comm->nChannels*NCCL_MAX_WORK_ELEMENTS) comm->args.active = 1;
   }
   // Reset counters
   comm->asyncOpCount = 0;
@@ -791,7 +791,7 @@ ncclResult_t ncclEnqueueAsyncKernel(struct ncclComm* comm, struct ncclQueueElem*
   int nChannels = work->coll.nChannels;
   size_t channelSize = work->coll.count*ncclTypeSize(proxyArgs->dtype)/work->coll.nChannels;
   for (int bid=0; bid<nChannels; bid++) {
-    int channelId = findShortestChannel(comm);
+    int channelId = comm->lastChannel % comm->nChannels;
     struct ncclChannel* channel = comm->channels+channelId;
 
     // Proxy
@@ -817,6 +817,7 @@ ncclResult_t ncclEnqueueAsyncKernel(struct ncclComm* comm, struct ncclQueueElem*
     // store work element into FIFO
     NCCLCHECK(enqueueSegOp(COLL_SEGMENT, work, w, segment));
     channel->totalSize += channelSize;
+    comm->lastChannel++;
   }
   comm->collOpCount++;
   return ncclSuccess;
@@ -833,7 +834,7 @@ void CUDART_CB ncclEnqueueHostSetup(void* arg) {
   while (eqElem != eqInfo->elemList.tail) { // The queue always has one extra element
     if (eqElem->work.funcIndex == FUNC_INDEX_P2P) {
       NCCLCHECKGOTO(ncclEnqueueP2pKernel(comm, eqElem), ret, cb_end);
-    } else if (eqInfo->maxChannels > eqElem->work.coll.nChannels) {
+    } else if (eqInfo->nElems > 1) {
       // We have more than one operation, hence aggregating
       NCCLCHECKGOTO(ncclEnqueueAsyncKernel(comm, eqElem), ret, cb_end);
     } else {

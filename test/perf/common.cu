@@ -431,7 +431,7 @@ testResult_t BenchTime(struct threadArgs* args, ncclDataType_t type, ncclRedOp_t
   }
 
   // Sync
-  TESTCHECK(startColl(args, type, op, root, in_place, 0));
+  //TESTCHECK(startColl(args, type, op, root, in_place, 0));
   TESTCHECK(completeColl(args));
 
   Barrier(args);

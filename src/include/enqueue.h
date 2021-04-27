@@ -48,6 +48,7 @@ struct ncclQueueInfo {
   ncclComm_t comm;
   int maxChannels;    // Dynamic version of gridDim
   ncclResult_t ret;   // Return value of host setup call
+  int nElems;
   struct ncclQueueElemList elemList;
 };
 
@@ -67,6 +68,7 @@ static ncclResult_t ncclAddQueueElem(struct ncclQueueInfo* eqInfo, struct ncclQu
     NCCLCHECK(ncclCalloc(&list->tail->next, 1));
   }
   list->tail = list->tail->next;
+  eqInfo->nElems++;
   return ncclSuccess;
 }
 
@@ -75,6 +77,7 @@ static ncclResult_t ncclResetQueueInfo(struct ncclQueueInfo* eqInfo) {
   if (eqInfo == NULL) return ncclInternalError;
   eqInfo->maxChannels = 0;
   eqInfo->ret = ncclSuccess;
+  eqInfo->nElems = 0;
   eqInfo->elemList.tail = eqInfo->elemList.head;
   return ncclSuccess;
 }
