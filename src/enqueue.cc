@@ -133,7 +133,8 @@ static ncclResult_t setupLaunch(struct ncclQueueInfo* eqInfo, int usingCudaGraph
   // Because in cudaGraph mode the launch param needs to be determined
   // at capture time instead of launch time.
   if (!usingCudaGraph) {
-    for (int c=0; c<comm->p2pnChannels; c++) {
+    int nChannels = std::max(comm->nChannels, comm->p2pnChannels);
+    for (int c=0; c<nChannels; c++) {
       if (comm->channels[c].workCount) params->gridDim.x = c+1;
     }
     eqInfo->maxChannels = params->gridDim.x;
