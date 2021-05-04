@@ -44,7 +44,7 @@ private:
 
   uint32_t abort = 0;
 
-  inline __device__ int checkAbort(int &spins, int i, int send) {
+  inline __device__ int checkAbort(int &spins, int send) {
     spins++;
     if (abort == 0 && spins == NCCL_SPINS_BEFORE_CHECK_ABORT) {
       abort = *(ncclShmem.comm->abortFlag);
@@ -58,7 +58,7 @@ private:
       int spins = 0;
       while (sendConnHeadCache + NCCL_STEPS < sendConnHead + 1) {
         sendConnHeadCache = *sendConnHeadPtr;
-        if (checkAbort(spins, wid, 1)) break;
+        if (checkAbort(spins, 1)) break;
       }
       if (sendConnFifoPtr) {
         int size = ((sendConnHead & NCCL_LL_CLEAN_MASK) == NCCL_LL_CLEAN_MASK) ? stepLines*sizeof(union ncclLLFifoLine) : nbytes;
@@ -86,14 +86,14 @@ private:
     sendStep[i]++;
   }
 
-  __device__ uint64_t readLL(int i, int offset) {
+  __device__ uint64_t readLL(int offset, int i) {
     union ncclLLFifoLine* src = recvPtr(i) + offset;
     uint32_t flag = recvFlag(i);
     uint32_t data1, flag1, data2, flag2;
     int spins = 0;
     do {
       asm volatile("ld.volatile.global.v4.u32 {%0,%1,%2,%3}, [%4];" : "=r"(data1), "=r"(flag1), "=r"(data2), "=r"(flag2) : "l"(&src->i4));
-      if (checkAbort(spins, i, 0)) break;
+      if (checkAbort(spins, 0)) break;
     } while ((flag1 != flag) || (flag2 != flag));
     uint64_t val64 = data1 + (((uint64_t)data2) << 32);
     return val64;
@@ -103,50 +103,54 @@ private:
     asm volatile("st.volatile.global.v4.u32 [%0], {%1,%2,%3,%4};" :: "l"(&dst->i4), "r"((uint32_t)val), "r"(flag), "r"((uint32_t)(val >> 32)), "r"(flag));
   }
 
-  static constexpr int EltPerPack = sizeof(uint64_t)/sizeof(T);
-  union EltPack {
-    uint64_t word;
-    T elt[EltPerPack];
+  static constexpr int EltPerLine = sizeof(uint64_t)/sizeof(T);
+
+  struct DataLoader {
+    int misalign;
+    union {
+      uint32_t u4[sizeof(T) <= 2 ? 3 : 2];
+      uint64_t u8;
+      T elt[EltPerLine];
+    };
+
+    __device__ void loadBegin(T *src, int eltN) {
+      if (sizeof(T) <= 2) {
+        misalign = reinterpret_cast<uintptr_t>(src)%4;
+        uint32_t *p = reinterpret_cast<uint32_t*>(reinterpret_cast<uintptr_t>(src) & -uintptr_t(4));
+        u4[0] = p[0];
+        u4[1] = misalign + eltN*sizeof(T) > 4 ? p[1] : 0;
+        u4[2] = misalign + eltN*sizeof(T) > 8 ? p[2] : 0;
+      }
+      else {
+        elt[0] = src[0];
+        #pragma unroll
+        for(int i=1; i < EltPerLine; i++) {
+          if(i < eltN)
+            elt[i] = src[i];
+        }
+      }
+    }
+
+    __device__ uint64_t loadFinish() {
+      if (sizeof(T) <= 2) {
+        u4[0] = __funnelshift_r(u4[0], u4[1], 8*misalign);
+        u4[1] = __funnelshift_r(u4[1], u4[2], 8*misalign);
+      }
+      return u8;
+    }
   };
 
-  /* v2.9.0 and before loaded user data via memcpy() which was byte-by-byte
-   * regardless of alignment guarantees of type T. Switching to element-wise
-   * data movement of type T shows significant bw improvements for *most* types
-   * (20% on Ampere) while preserving the low latency for all types. Unfortunately,
-   * the bw of 1-byte types (int8) fair 30% worse, but at least latency is
-   * unaffected. This is why we use memcpy() when sizeof(T)==1 and element-wise
-   * otherwise. It's ugly that the "n" parameter of storeAL means bytes in the
-   * first case and elements in the second, but it seems the only way to get the
-   * best of both worlds. I have no idea what nvcc is doing, but it is
-   * incredibly sensitive on this point.
-   */
-  __device__ uint64_t readAL(T* src) {
-    if (sizeof(T) == 1) {
-      uint64_t val;
-      memcpy((char*)&val, (char*)src, sizeof(uint64_t));
-      return val;
-    }
-    else {
-      EltPack pack;
-      #pragma unroll EltPerPack
-      for(int i=0; i < EltPerPack; i++)
-        pack.elt[i] = src[i];
-      return pack.word;
-    }
-  }
-
-  __device__ void storeAL(T* dst, uint64_t val, uint32_t n/*bytes or elts*/) {
-    if (sizeof(T) == 1)
-      memcpy((char*)dst, (char*)&val, /*bytes*/n);
-    else {
-      EltPack pack;
-      pack.word = val;
-      dst[0] = pack.elt[0];
-      #pragma unroll
-      for(int i=1; i < EltPerPack; i++) {
-        if (/*elts*/n > i)
-          dst[i] = pack.elt[i];
-      }
+  __device__ void storeData(T *dst, uint64_t val, uint32_t eltN) {
+    union {
+      uint64_t u8;
+      T elt[EltPerLine];
+    };
+    u8 = val;
+    dst[0] = elt[0];
+    #pragma unroll
+    for(int i=1; i < EltPerLine; i++) {
+      if (i < eltN)
+        dst[i] = elt[i];
     }
   }
 
@@ -154,57 +158,60 @@ private:
   __device__ void LLGenericOp(intptr_t srcIx, intptr_t dstIx, int nelem, bool postOp) {
     constexpr int SRC = SrcBuf != -1 ? 1 : 0;
     constexpr int DST = DstBuf != -1 ? 1 : 0;
-    nelem = nelem < 0 ? 0 : nelem;
-    int npack = DIVUP(nelem, EltPerPack);
-    int nbytes = nelem*sizeof(T);
-    int offset = tid;
-    T *srcElts = SrcBuf == -1 ? nullptr : userBufs[SrcBuf] + srcIx + offset*EltPerPack;
-    T *dstElts = DstBuf == -1 ? nullptr : userBufs[DstBuf] + dstIx + offset*EltPerPack;
+    T *srcElts = SrcBuf == -1 ? nullptr : userBufs[SrcBuf] + srcIx;
+    T *dstElts = DstBuf == -1 ? nullptr : userBufs[DstBuf] + dstIx;
 
     // Always waitSend in case of cleanup
-    if (SEND) waitSend(npack*sizeof(union ncclLLFifoLine));
+    nelem = nelem < 0 ? 0 : nelem;
+    if (SEND) waitSend(((nelem + EltPerLine-1)/EltPerLine)*sizeof(ncclLLFifoLine));
 
-    // Do multiples of 64 bits
-    #pragma unroll 2
-    for (; offset<npack; offset+=nthreads) {
-      // Recv : local, then intra-node, then inter-node
-      uint64_t val;
+    nelem -= tid*EltPerLine;
+    srcElts += tid*EltPerLine;
+    dstElts += tid*EltPerLine;
+    int offset = tid;
+    int eltInLine = EltPerLine < nelem ? EltPerLine : nelem;
+    int eltPerTrip = nthreads*EltPerLine;
+
+    DataLoader preData;
+    if (SRC && nelem > 0) preData.loadBegin(srcElts, eltInLine);
+    srcElts += eltPerTrip;
+
+    while (nelem > 0) {
+      nelem -= eltPerTrip;
+      bool prefetch = nelem > 0;
+      int preOffset = offset + nthreads;
+      int preEltInLine = EltPerLine < nelem ? EltPerLine : nelem;
+
+      uint64_t data;
       if (SRC) {
-        val = readAL(srcElts);
-        srcElts += nthreads*EltPerPack;
-        if (SrcBuf == Input)
-          val = MULTI<FUNC, T>().preOp(fn, val);
+        data = preData.loadFinish();
+        if (prefetch) preData.loadBegin(srcElts, preEltInLine);
+        srcElts += eltPerTrip;
+        if (SrcBuf == Input) data = MULTI<FUNC, T>().preOp(fn, data);
       }
-      else
-        val = readLL(0, offset);
-
       if (RECV) {
-        for (int i=1-SRC; i<NRECV && i<nrecv; i++) {
-          val = MULTI<FUNC, T>()(fn, readLL(i, offset), val);
+        uint64_t peerData = readLL(offset, 0);
+        data = !SRC ? peerData : MULTI<FUNC,T>()(fn, peerData, data);
+        for (int i=1; i < NRECV && i < nrecv; i++) {
+          peerData = readLL(offset, i);
+          data = MULTI<FUNC,T>()(fn, peerData, data);
         }
       }
 
-      if (postOp) val = MULTI<FUNC, T>().postOp(fn, val);
+      if (postOp) data = MULTI<FUNC, T>().postOp(fn, data);
 
       // Send : inter-node, then intra-node, then local
       if (SEND) {
-        for (int i=1; i<NSEND && i<nsend; i++) storeLL(sendPtr(i)+offset, val, sendFlag(i));
-        storeLL(sendPtr(0)+offset, val, sendFlag(0));
+        for (int i=1; i < NSEND && i < nsend; i++)
+          storeLL(sendPtr(i)+offset, data, sendFlag(i));
+        storeLL(sendPtr(0)+offset, data, sendFlag(0));
       }
       if (DST) {
-        if (sizeof(T) == 1) { // byte-wise
-          if (((offset*sizeof(uint64_t)) ^ nbytes) < sizeof(uint64_t)) {
-            // Last incomplete word
-            storeAL(dstElts, val, nbytes & 0x7);
-          } else {
-            storeAL(dstElts, val, sizeof(uint64_t));
-          }
-        }
-        else { // element-wise
-          storeAL(dstElts, val, nelem - offset*EltPerPack);
-        }
-        dstElts += nthreads*EltPerPack;
+        storeData(dstElts, data, eltInLine);
+        dstElts += eltPerTrip;
       }
+      eltInLine = preEltInLine;
+      offset = preOffset;
     }
 
     if (RECV) {
