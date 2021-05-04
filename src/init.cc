@@ -760,23 +760,34 @@ static ncclResult_t initTransportsRank(struct ncclComm* comm, ncclUniqueId* comm
         else if (ncclTransportCollNetSetup(comm, &collNetGraph, channel, head, head, h, collNetSend) != 1)
           collNetSetupFail = 1;
       }
+      // Verify CollNet setup across ranks after trying the first channel
+      if (c == 0) {
+        NCCLCHECKGOTO(ncclTransportCollNetCheck(comm, collNetSetupFail), ret, collnet_cleanup);
+      }
     }
+    // Verify CollNet setup across ranks after trying all channels
+    NCCLCHECKGOTO(ncclTransportCollNetCheck(comm, collNetSetupFail), ret, collnet_cleanup);
+    TRACE(NCCL_INIT, "rank %d Connected inter-node CollNet", rank);
+
+    // Connect intra-node CollNet
+    for (int c=0; c<comm->nChannels; c++) {
+      struct ncclChannel* channelRecv = comm->channels+c;
+      NCCLCHECKGOTO(ncclTransportP2pConnect(comm, channelRecv, NCCL_MAX_DIRECT_ARITY, channelRecv->collTree.up, NCCL_MAX_DIRECT_ARITY, channelRecv->collTree.down, 0), ret, collnet_cleanup);
+    }
+    NCCLCHECKGOTO(ncclTransportP2pSetup(comm, &collNetGraph, 0), ret, collnet_cleanup);
+    for (int c=0; c<comm->nChannels; c++) {
+      struct ncclChannel* channelSend = comm->channels+c;
+      NCCLCHECKGOTO(ncclTransportP2pConnect(comm, channelSend, NCCL_MAX_DIRECT_ARITY, channelSend->collTree.down, NCCL_MAX_DIRECT_ARITY, channelSend->collTree.up, 1), ret, collnet_cleanup);
+    }
+    NCCLCHECKGOTO(ncclTransportP2pSetup(comm, &collNetGraph, 1), ret, collnet_cleanup);
+    INFO(NCCL_INIT, "rank %d Connected CollNet", rank);
+
+collnet_cleanup:
     free(heads);
-    // Verify CollNet setup across ranks
-    NCCLCHECK(ncclTransportCollNetCheck(comm, collNetSetupFail));
-    if (comm->collNetSupport) {
-      TRACE(NCCL_INIT, "rank %d Connected inter-node CollNet", rank);
-      for (int c=0; c<comm->nChannels; c++) {
-        struct ncclChannel* channelRecv = comm->channels+c;
-        NCCLCHECK(ncclTransportP2pConnect(comm, channelRecv, NCCL_MAX_DIRECT_ARITY, channelRecv->collTree.up, NCCL_MAX_DIRECT_ARITY, channelRecv->collTree.down, 0));
-      }
-      NCCLCHECK(ncclTransportP2pSetup(comm, &collNetGraph, 0));
-      for (int c=0; c<comm->nChannels; c++) {
-        struct ncclChannel* channelSend = comm->channels+c;
-        NCCLCHECK(ncclTransportP2pConnect(comm, channelSend, NCCL_MAX_DIRECT_ARITY, channelSend->collTree.down, NCCL_MAX_DIRECT_ARITY, channelSend->collTree.up, 1));
-      }
-      NCCLCHECK(ncclTransportP2pSetup(comm, &collNetGraph, 1));
-      INFO(NCCL_INIT, "rank %d Connected CollNet", rank);
+    if (ret != ncclSuccess) {
+      NCCLCHECK(ncclTransportCollNetFree(comm));
+      comm->collNetSupport = 0;
+      ret = ncclSuccess;
     }
   }
   TRACE(NCCL_INIT, "rank %d nranks %d - CONNECTED %d RINGS AND TREES", rank, nranks, comm->nChannels);
