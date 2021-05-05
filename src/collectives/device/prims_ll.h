@@ -92,10 +92,32 @@ private:
     uint32_t data1, flag1, data2, flag2;
     int spins = 0;
     do {
-      asm volatile("ld.volatile.global.v4.u32 {%0,%1,%2,%3}, [%4];" : "=r"(data1), "=r"(flag1), "=r"(data2), "=r"(flag2) : "l"(&src->i4));
+      asm("ld.volatile.global.v4.u32 {%0,%1,%2,%3}, [%4];" : "=r"(data1), "=r"(flag1), "=r"(data2), "=r"(flag2) : "l"(&src->i4));
       if (checkAbort(spins, 0)) break;
     } while ((flag1 != flag) || (flag2 != flag));
     uint64_t val64 = data1 + (((uint64_t)data2) << 32);
+    return val64;
+  }
+
+  template<int BeginIx>
+  __device__ void readLLBeginAll(int offset, ncclLLFifoLine(&line)[NRECV]) {
+    #pragma unroll
+    for (int i=BeginIx; i < NRECV; i++) {
+      if (i < nrecv) {
+        union ncclLLFifoLine* src = recvPtr(i) + offset;
+        asm("ld.volatile.global.v4.u32 {%0,%1,%2,%3}, [%4];" : "=r"(line[i].data1), "=r"(line[i].flag1), "=r"(line[i].data2), "=r"(line[i].flag2) : "l"(&src->i4));
+      }
+    }
+  }
+  __device__ uint64_t readLLFinish(int offset, ncclLLFifoLine(&line)[NRECV], int i) {
+    union ncclLLFifoLine* src = recvPtr(i) + offset;
+    uint32_t flag = recvFlag(i);
+    int spins = 0;
+    while (line[i].flag1 != flag || line[i].flag2 != flag) {
+      asm("ld.volatile.global.v4.u32 {%0,%1,%2,%3}, [%4];" : "=r"(line[i].data1), "=r"(line[i].flag1), "=r"(line[i].data2), "=r"(line[i].flag2) : "l"(&src->i4));
+      if (checkAbort(spins, 0)) break;
+    }
+    uint64_t val64 = line[i].data1 + (((uint64_t)line[i].data2) << 32);
     return val64;
   }
 
@@ -104,6 +126,25 @@ private:
   }
 
   static constexpr int EltPerLine = sizeof(uint64_t)/sizeof(T);
+
+  template<typename U>
+  __device__ static U load(U *src) {
+    union {
+      U elt;
+      uint16_t u2;
+      uint32_t u4;
+      uint64_t u8;
+    };
+    if(sizeof(T) == 1)
+      asm("ld.volatile.global.b8 %0,[%1];" : "=r"(u4) : "l"(src));
+    else if(sizeof(T) == 2)
+      asm("ld.volatile.global.b16 %0,[%1];" : "=h"(u2) : "l"(src));
+    else if(sizeof(T) == 4)
+      asm("ld.volatile.global.b32 %0,[%1];" : "=r"(u4) : "l"(src));
+    else
+      asm("ld.volatile.global.b64 %0,[%1];" : "=l"(u8) : "l"(src));
+    return elt;
+  }
 
   struct DataLoader {
     int misalign;
@@ -117,16 +158,15 @@ private:
       if (sizeof(T) <= 2) {
         misalign = reinterpret_cast<uintptr_t>(src)%4;
         uint32_t *p = reinterpret_cast<uint32_t*>(reinterpret_cast<uintptr_t>(src) & -uintptr_t(4));
-        u4[0] = p[0];
-        u4[1] = misalign + eltN*sizeof(T) > 4 ? p[1] : 0;
-        u4[2] = misalign + eltN*sizeof(T) > 8 ? p[2] : 0;
+        u4[0] = load(p+0);
+        u4[1] = misalign + eltN*sizeof(T) > 4 ? load(p+1) : 0;
+        u4[2] = misalign + eltN*sizeof(T) > 8 ? load(p+2) : 0;
       }
       else {
-        elt[0] = src[0];
         #pragma unroll
-        for(int i=1; i < EltPerLine; i++) {
-          if(i < eltN)
-            elt[i] = src[i];
+        for(int i=0; i < EltPerLine; i++) {
+          if(i==0 || i < eltN)
+            elt[i] = load(src + i);
         }
       }
     }
@@ -146,10 +186,9 @@ private:
       T elt[EltPerLine];
     };
     u8 = val;
-    dst[0] = elt[0];
     #pragma unroll
-    for(int i=1; i < EltPerLine; i++) {
-      if (i < eltN)
+    for(int i=0; i < EltPerLine; i++) {
+      if (i==0 || i < eltN)
         dst[i] = elt[i];
     }
   }
@@ -169,31 +208,30 @@ private:
     srcElts += tid*EltPerLine;
     dstElts += tid*EltPerLine;
     int offset = tid;
-    int eltInLine = EltPerLine < nelem ? EltPerLine : nelem;
     int eltPerTrip = nthreads*EltPerLine;
-
-    DataLoader preData;
-    if (SRC && nelem > 0) preData.loadBegin(srcElts, eltInLine);
-    srcElts += eltPerTrip;
-
     while (nelem > 0) {
-      nelem -= eltPerTrip;
-      bool prefetch = nelem > 0;
-      int preOffset = offset + nthreads;
-      int preEltInLine = EltPerLine < nelem ? EltPerLine : nelem;
+      int eltInLine = EltPerLine < nelem ? EltPerLine : nelem;
 
-      uint64_t data;
+      DataLoader dl;
+      ncclLLFifoLine line[NRECV];
+      uint64_t data, peerData;
       if (SRC) {
-        data = preData.loadFinish();
-        if (prefetch) preData.loadBegin(srcElts, preEltInLine);
+        dl.loadBegin(srcElts, eltInLine);
         srcElts += eltPerTrip;
+      }
+      if (RECV) {
+        readLLBeginAll<1>(offset, line);
+        peerData = readLL(offset, 0);
+      }
+      if (SRC) {
+        data = dl.loadFinish();
         if (SrcBuf == Input) data = MULTI<FUNC, T>().preOp(fn, data);
       }
       if (RECV) {
-        uint64_t peerData = readLL(offset, 0);
         data = !SRC ? peerData : MULTI<FUNC,T>()(fn, peerData, data);
+        #pragma unroll NRECV
         for (int i=1; i < NRECV && i < nrecv; i++) {
-          peerData = readLL(offset, i);
+          peerData = readLLFinish(offset, line, i);
           data = MULTI<FUNC,T>()(fn, peerData, data);
         }
       }
@@ -210,8 +248,8 @@ private:
         storeData(dstElts, data, eltInLine);
         dstElts += eltPerTrip;
       }
-      eltInLine = preEltInLine;
-      offset = preOffset;
+      nelem -= eltPerTrip;
+      offset += nthreads;
     }
 
     if (RECV) {
