@@ -460,6 +460,7 @@ static ncclResult_t computeBuffSizes(struct ncclComm* comm) {
 
 NCCL_PARAM(CrossNic, "CROSS_NIC", 2);
 NCCL_PARAM(GraphDumpFileRank, "GRAPH_DUMP_FILE_RANK", 0);
+NCCL_PARAM(NvbPreconnect, "NVB_PRECONNECT", 1);
 
 static ncclResult_t initTransportsRank(struct ncclComm* comm, ncclUniqueId* commId) {
   // We use 2 AllGathers
@@ -728,6 +729,7 @@ static ncclResult_t initTransportsRank(struct ncclComm* comm, ncclUniqueId* comm
     NCCLCHECKGOTO(ncclTransportP2pConnect(comm, channel, 1, &channel->ring.prev, 1, &channel->ring.next, 0), ret, affinity_restore);
   }
   NCCLCHECKGOTO(ncclTransportP2pSetup(comm, &ringGraph, 0), ret, affinity_restore);
+  free(rings);
   INFO(NCCL_INIT, "Connected all rings");
 
   // Connect Trees
@@ -780,13 +782,38 @@ static ncclResult_t initTransportsRank(struct ncclComm* comm, ncclUniqueId* comm
     }
   }
   TRACE(NCCL_INIT, "rank %d nranks %d - CONNECTED %d RINGS AND TREES", rank, nranks, comm->nChannels);
-  free(rings);
 
   // Compute time models for algorithm and protocol combinations
   NCCLCHECK(ncclTopoTuneModel(comm, minCompCap, maxCompCap, &treeGraph, &ringGraph, &collNetGraph));
 
   // Compute nChannels per peer for p2p
   NCCLCHECK(ncclTopoComputeP2pChannels(comm));
+
+  if (ncclParamNvbPreconnect()) {
+    // Connect p2p when using NVB path
+    int nvbNpeers;
+    int* nvbPeers;
+    NCCLCHECK(ncclTopoGetNvbGpus(comm->topo, comm->rank, &nvbNpeers, &nvbPeers));
+    for (int r=0; r<nvbNpeers; r++) {
+      int peer = nvbPeers[r];
+      int delta = (comm->nRanks + (comm->rank-peer)) % comm->nRanks;
+      for (int c=0; c<comm->p2pnChannelsPerPeer; c++) {
+        int channelId = (delta+comm->p2pChannels[c]) % comm->p2pnChannels;
+        if (comm->channels[channelId].peers[peer].recv[0].connected == 0) { // P2P uses only 1 connector
+          comm->connectRecv[peer] |= (1<<channelId);
+        }
+      }
+      delta = (comm->nRanks - (comm->rank-peer)) % comm->nRanks;
+      for (int c=0; c<comm->p2pnChannelsPerPeer; c++) {
+        int channelId = (delta+comm->p2pChannels[c]) % comm->p2pnChannels;
+        if (comm->channels[channelId].peers[peer].send[0].connected == 0) { // P2P uses only 1 connector
+          comm->connectSend[peer] |= (1<<channelId);
+        }
+      }
+    }
+    NCCLCHECK(ncclTransportP2pSetup(comm, NULL, 0));
+    free(nvbPeers);
+  }
 
   NCCLCHECK(ncclCommSetIntra(comm, intraRank, intraRanks, intraRank0Comm));
 

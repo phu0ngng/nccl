@@ -529,3 +529,20 @@ ncclResult_t ncclTopoComputeP2pChannels(struct ncclComm* comm) {
   INFO(NCCL_INIT, "%d coll channels, %d p2p channels, %d p2p channels per peer", comm->nChannels, comm->p2pnChannels, comm->p2pnChannelsPerPeer);
   return ncclSuccess;
 }
+
+ncclResult_t ncclTopoGetNvbGpus(struct ncclTopoSystem* system, int rank, int* nranks, int** ranks) {
+  int ngpus = system->nodes[GPU].count;
+  NCCLCHECK(ncclCalloc(ranks, ngpus));
+  int nvbGpus = 0;
+  for (int g=0; g<ngpus; g++) {
+    struct ncclTopoNode* gpu = system->nodes[GPU].nodes+g;
+    if (gpu->gpu.rank != rank) continue;
+    for (int p=0; p<ngpus; p++) {
+      if (gpu->paths[GPU][p].type == PATH_NVB) {
+        (*ranks)[nvbGpus++] = system->nodes[GPU].nodes[p].gpu.rank;
+      }
+    }
+  }
+  *nranks = nvbGpus;
+  return ncclSuccess;
+}
