@@ -29,6 +29,8 @@ static ncclResult_t getPath(struct ncclTopoSystem* system, struct ncclTopoNode* 
   return ncclInternalError;
 }
 
+NCCL_PARAM(NvbDisable, "NVB_DISABLE", 0);
+
 static ncclResult_t ncclTopoSetPaths(struct ncclTopoNode* baseNode, struct ncclTopoSystem* system) {
   if (baseNode->paths[baseNode->type] == NULL) {
     NCCLCHECK(ncclCalloc(baseNode->paths+baseNode->type, system->nodes[baseNode->type].count));
@@ -63,7 +65,7 @@ static ncclResult_t ncclTopoSetPaths(struct ncclTopoNode* baseNode, struct ncclT
 
         // allow routing through a GPU only as 1 hop
         if (node != baseNode && node->type == GPU &&
-            (link->type != LINK_NVL || remNode->type != GPU || path->count > 1)) continue;
+            (ncclParamNvbDisable() || link->type != LINK_NVL || remNode->type != GPU || path->count > 1)) continue;
 
         if ((remPath->width == 0 || remPath->count > path->count) && remPath->width < width) {
           // Find reverse link
