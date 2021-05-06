@@ -800,6 +800,14 @@ ncclResult_t ncclGetCudaGraph(ncclComm_t comm, cudaGraph_t* graph) {
 #if CUDART_VERSION >= 11030
   cudaStreamCaptureStatus captureStatus;
   unsigned long long cudaGraphId;
+  if (comm->driverVersion < 11030) {
+    CUDACHECK(cudaStreamIsCapturing(comm->userStream, &captureStatus));
+    if (captureStatus != cudaStreamCaptureStatusNone) {
+      WARN("The installed CUDA driver is older than the minimum version (R465) required for NCCL's CUDA Graphs support");
+      return ncclInvalidUsage;
+    }
+    return ncclSuccess;
+  }
   CUDACHECK(cudaStreamGetCaptureInfo_v2(comm->userStream, &captureStatus, &cudaGraphId, graph, NULL, NULL));
   if (captureStatus == cudaStreamCaptureStatusActive) {
     if (cudaGraphId != comm->lastCudaGraphId) {
