@@ -170,8 +170,8 @@ static ncclResult_t setupLaunch(struct ncclQueueInfo* eqInfo, int usingCudaGraph
       // GDRCOPY support
       uint64_t first = (channel->workFifoTail-channel->workCount)%NCCL_MAX_OPS;
       uint64_t nelems = channel->workCount;
-      TRACE(NCCL_INIT, "GDRCOPY : copy workFifo %p to %p first %ld last %ld nelems %zi",
-            channel->workFifo, channel->workFifoGdr, first, last, nelems);
+      TRACE(NCCL_INIT, "GDRCOPY : copy workFifo %p to %p first %ld nelems %zi",
+            channel->workFifo, channel->workFifoGdr, first, nelems);
 
       for (int i = 0; i < nelems; i++) {
         int elem = (first+i) % NCCL_MAX_OPS;
