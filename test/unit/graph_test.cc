@@ -94,12 +94,14 @@ void checkTopo(const char* xmlTopoFile, const char* xmlGraphFile, const char* pl
   CHECK(ncclTopoSearchInit(system));
   CHECK(ncclTopoPrint(system));
 
+  char* str = getenv("NCCL_CROSS_NIC");
+  int crossNic = str ? atoi(str) : 2;
+
   struct ncclTopoGraph ringGraph;
   memset(&ringGraph, 0, sizeof(ringGraph));
   ringGraph.id = 0;
   ringGraph.pattern = NCCL_TOPO_PATTERN_RING;
-  char* str = getenv("NCCL_CROSS_NIC");
-  ringGraph.crossNic = str ? atoi(str) : 2;
+  ringGraph.crossNic = crossNic;
   ringGraph.collNet = 0;
   ringGraph.minChannels = 1;
   ringGraph.maxChannels = 16;
@@ -108,13 +110,14 @@ void checkTopo(const char* xmlTopoFile, const char* xmlGraphFile, const char* pl
   memset(&treeGraph, 0, sizeof(treeGraph));
   treeGraph.id = 1;
   treeGraph.pattern = NCCL_TOPO_PATTERN_BALANCED_TREE;
-  treeGraph.crossNic = 2;
+  treeGraph.crossNic = crossNic;
   treeGraph.collNet = 0;
 
   struct ncclTopoGraph cNetGraph;
   memset(&cNetGraph, 0, sizeof(cNetGraph));
   cNetGraph.id = 2;
   cNetGraph.pattern = NCCL_TOPO_PATTERN_TREE;
+  cNetGraph.crossNic = crossNic;
   cNetGraph.crossNic = 2;
   cNetGraph.collNet = 1;
 
