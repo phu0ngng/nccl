@@ -112,7 +112,7 @@ apitest-A100:
 apitest-DGX-1V:
   stage: api_tests
   rules:
-    - if: '$ENABLE_DGX1 == "1"'
+    - if: '$RUN_ON_PROM == "1"'
       when: always
     - when: never
   tags:
@@ -124,17 +124,21 @@ apitest-DGX-1V:
     - srun -n 1 --account=sw-gpu -pbatch -t 00:05:00 ./test/scripts/gitlab-runner-apitest.sh
   interruptible: true
 
-#apitest-DGX-A100:
-#  stage: api_tests
-#  tags:
-#    - dgx-a100
-#  variables:
-#    CUDA_HOME: "/project/share/cuda/cuda-11.0.221/"
-#    NCCL_SOCKET_IFNAME: "ibp12s0"
-#    SRUN: ""
-#  script:
-#    - srun -n 1 --account=nccl -J "nccl-cicd::$GITLAB_USER_LOGIN:apitest::$CI_COMMIT_BRANCH:$CI_COMMIT_SHORT_SHA" -pluna -t 00:05:00 ./test/scripts/gitlab-runner-apitest.sh
-#  interruptible: true
+apitest-DGX-A100:
+  stage: api_tests
+  rules:
+    - if: '$RUN_ON_SELENE == "1"'
+      when: always
+    - when: never
+  tags:
+    - dgx-a100
+  variables:
+    CUDA_HOME: "/project/share/cuda/cuda-11.0.221/"
+    NCCL_SOCKET_IFNAME: "ibp12s0"
+    SRUN: ""
+  script:
+    - srun -n 1 --account=nccl -J "nccl-cicd::$GITLAB_USER_LOGIN:apitest::$CI_COMMIT_BRANCH:$CI_COMMIT_SHORT_SHA" -pluna -t 00:05:00 ./test/scripts/gitlab-runner-apitest.sh
+  interruptible: true
 
 perftest-P100:
   stage: perf_tests_single
@@ -227,31 +231,39 @@ perftest-A100:
     - ./test/scripts/gitlab-runner-perftest.sh
   interruptible: true
 
-#perftest-DGX-1V:
-#  stage: perf_tests_single
-#  tags:
-#    - dgx-1v
-#  variables:
-#    NCCL_DEBUG: "WARN"
-#    MPI_HOME: "/home/sjeaugey/prom-dev/mpi/openmpi-1.10.7"
-#    CUDA_HOME: "/home/sjeaugey/prom-dev/cuda-11.0"
-#    SALLOC: ""
-#  script:
-#    - salloc -N 1 -n 8 --account=sw-gpu -pbatch -t 00:05:00 ./test/scripts/gitlab-runner-perftest.sh 4G
-#  interruptible: true
+perftest-DGX-1V:
+  stage: perf_tests_single
+  rules:
+    - if: '$RUN_ON_PROM == "1"'
+      when: always
+    - when: never
+  tags:
+    - dgx-1v
+  variables:
+    NCCL_DEBUG: "WARN"
+    MPI_HOME: "/home/sjeaugey/prom-dev/mpi/openmpi-1.10.7"
+    CUDA_HOME: "/home/sjeaugey/prom-dev/cuda-11.0"
+    SALLOC: ""
+  script:
+    - salloc -N 1 -n 8 --account=sw-gpu -pbatch -t 00:05:00 ./test/scripts/gitlab-runner-perftest.sh 4G
+  interruptible: true
 
-#perftest-DGX-A100:
-#  stage: perf_tests_single
-#  tags:
-#    - dgx-a100
-#  variables:
-#    NCCL_DEBUG: "WARN"
-#    MPI_HOME: "/home/svcnccl/install/openmpi-1.10.7"
-#    CUDA_HOME: "/project/share/cuda/cuda-11.0.221/"
-#    SALLOC: ""
-#  script:
-#    - salloc -N 1 -n 8 --account=nccl -pluna -J "nccl-cicd::$GITLAB_USER_LOGIN:perftest-single::$CI_COMMIT_BRANCH:$CI_COMMIT_SHORT_SHA" -t 00:05:00 ./test/scripts/gitlab-runner-perftest.sh 16G
-#  interruptible: true
+perftest-DGX-A100:
+  stage: perf_tests_single
+  rules:
+    - if: '$RUN_ON_SELENE == "1"'
+      when: always
+    - when: never
+  tags:
+    - dgx-a100
+  variables:
+    NCCL_DEBUG: "WARN"
+    MPI_HOME: "/home/svcnccl/install/openmpi-1.10.7"
+    CUDA_HOME: "/project/share/cuda/cuda-11.0.221/"
+    SALLOC: ""
+  script:
+    - salloc -N 1 -n 8 --account=nccl -pluna -J "nccl-cicd::$GITLAB_USER_LOGIN:perftest-single::$CI_COMMIT_BRANCH:$CI_COMMIT_SHORT_SHA" -t 00:05:00 ./test/scripts/gitlab-runner-perftest.sh 16G
+  interruptible: true
 
 perftest-multi-gc:
   stage: perf_tests_multi
@@ -267,35 +279,43 @@ perftest-multi-gc:
     - ./test/scripts/gitlab-runner-perftest.sh 128M
   interruptible: true
 
-#perftest-multi-prom:
-#  stage: perf_tests_multi
-#  tags:
-#    - dgx-1v
-#  variables:
-#    NCCL_DEBUG: "WARN"
-#    MPI_HOME: "/home/sjeaugey/prom-dev/mpi/openmpi-1.10.7"
-#    CUDA_HOME: "/home/sjeaugey/prom-dev/cuda-11.0"
-#    OMPI_MCA_oob_tcp_if_include: "10.33.12.0/24"
-#    OMPI_MCA_btl: "tcp,self"
-#    OMPI_MCA_btl_tcp_if_include: "10.33.12.0/24"
-#    SALLOC: ""
-#  script:
-#    - salloc -N 4 -n 32 --account=sw-gpu -pbatch -t 00:05:00 ./test/scripts/gitlab-runner-perftest.sh 4G
-#  interruptible: true
+perftest-multi-prom:
+  stage: perf_tests_multi
+  rules:
+    - if: '$RUN_ON_PROM == "1"'
+      when: always
+    - when: never
+  tags:
+    - dgx-1v
+  variables:
+    NCCL_DEBUG: "WARN"
+    MPI_HOME: "/home/sjeaugey/prom-dev/mpi/openmpi-1.10.7"
+    CUDA_HOME: "/home/sjeaugey/prom-dev/cuda-11.0"
+    OMPI_MCA_oob_tcp_if_include: "10.33.12.0/24"
+    OMPI_MCA_btl: "tcp,self"
+    OMPI_MCA_btl_tcp_if_include: "10.33.12.0/24"
+    SALLOC: ""
+  script:
+    - salloc -N 4 -n 32 --account=sw-gpu -pbatch -t 00:05:00 ./test/scripts/gitlab-runner-perftest.sh 4G
+  interruptible: true
 
-#perftest-multi-selene:
-#  stage: perf_tests_multi
-#  tags:
-#    - dgx-a100
-#  variables:
-#    NCCL_DEBUG: "WARN"
-#    MPI_HOME: "/home/svcnccl/install/openmpi-1.10.7"
-#    CUDA_HOME: "/project/share/cuda/cuda-11.0.221/"
-#    NCCL_IB_SL: "1"
-#    OMPI_MCA_btl: "^openib"
-#    OMPI_MCA_btl_tcp_if_include: "enp97s0f1"
-#    SALLOC: ""
-#  script:
-#    - salloc -N 4 -n 32 --account=nccl -pluna -J "nccl-cicd::$GITLAB_USER_LOGIN:perftest-multi::$CI_COMMIT_BRANCH:$CI_COMMIT_SHORT_SHA" -t 00:10:00 ./test/scripts/gitlab-runner-perftest.sh 16G
-#  interruptible: true
+perftest-multi-selene:
+  stage: perf_tests_multi
+  rules:
+    - if: '$RUN_ON_SELENE == "1"'
+      when: always
+    - when: never
+  tags:
+    - dgx-a100
+  variables:
+    NCCL_DEBUG: "WARN"
+    MPI_HOME: "/home/svcnccl/install/openmpi-1.10.7"
+    CUDA_HOME: "/project/share/cuda/cuda-11.0.221/"
+    NCCL_IB_SL: "1"
+    OMPI_MCA_btl: "^openib"
+    OMPI_MCA_btl_tcp_if_include: "enp97s0f1"
+    SALLOC: ""
+  script:
+    - salloc -N 4 -n 32 --account=nccl -pluna -J "nccl-cicd::$GITLAB_USER_LOGIN:perftest-multi::$CI_COMMIT_BRANCH:$CI_COMMIT_SHORT_SHA" -t 00:10:00 ./test/scripts/gitlab-runner-perftest.sh 16G
+  interruptible: true
 
