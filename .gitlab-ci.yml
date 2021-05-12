@@ -109,16 +109,20 @@ apitest-A100:
     - ./test/scripts/gitlab-runner-apitest.sh
   interruptible: true
 
-#apitest-DGX-1V:
-#  stage: api_tests
-#  tags:
-#    - dgx-1v
-#  variables:
-#    CUDA_HOME: "/home/sjeaugey/prom-dev/cuda-11.0"
-#    SRUN: ""
-#  script:
-#    - srun -n 1 --account=sw-gpu -pbatch -t 00:05:00 ./test/scripts/gitlab-runner-apitest.sh
-#  interruptible: true
+apitest-DGX-1V:
+  stage: api_tests
+  rules:
+    - if: '$ENABLE_DGX1 == "1"'
+      when: always
+    - when: never
+  tags:
+    - dgx-1v
+  variables:
+    CUDA_HOME: "/home/sjeaugey/prom-dev/cuda-11.0"
+    SRUN: ""
+  script:
+    - srun -n 1 --account=sw-gpu -pbatch -t 00:05:00 ./test/scripts/gitlab-runner-apitest.sh
+  interruptible: true
 
 #apitest-DGX-A100:
 #  stage: api_tests
