@@ -91,11 +91,14 @@ __device__ void ncclKernel(struct ncclWorkElem first)  {
       __syncthreads();
       load_coll(&shmem.localWork, channel->workFifo+channel->index, channel->workFifoDev+channel->index, tid, comm);
     }
-    if (tid < w->nThreads) {
-      if (w->funcIndex == FINDEX) {
-        f.run(w);
-      } else {
-        ncclFuncs[w->funcIndex](w);
+    for (int s=0; s<NCCL_MAX_WORK_ELEMENTS; s++) {
+      if (w[s].coll.nChannels == 0) break;
+      if (tid < w[s].nThreads) {
+        if (w[s].funcIndex == FINDEX) {
+          f.run(w+s);
+        } else {
+          ncclFuncs[w[s].funcIndex](w+s);
+        }
       }
     }
     if (tid == 0) channel->index = (channel->index+1) % NCCL_MAX_OPS;

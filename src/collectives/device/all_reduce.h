@@ -503,77 +503,59 @@ class ncclFunction<ncclFuncAllReduce, NCCL_ALGO_TREE, NCCL_PROTO_LL128, FUNC, T,
   __device__ void run(struct ncclWorkElem* args) {
     const int tid = threadIdx.x;
     const int nthreads = args->nThreads;
+    const int bid = args->coll.bid;
+    const int nChannels = args->coll.nChannels;
     struct ncclDevComm* comm = args->comm;
     struct ncclChannel* channel = comm->channels+blockIdx.x;
     struct ncclTree* tree = &channel->tree;
     const int stepSize = comm->buffSizes[NCCL_PROTO_LL128] / (sizeof(uint64_t)*NCCL_STEPS);
     ssize_t chunkSize = args->coll.lastChunkSize;
+    const ssize_t minChunkSize = (NCCL_LL128_SHMEM_ELEMS_PER_THREAD*nthreads*NCCL_LL128_DATAELEMS*sizeof(uint64_t))/(NCCL_LL128_LINEELEMS*sizeof(T))/8;
+    const ssize_t loopSize = nChannels*chunkSize;
     int nthreadsSplit = NCCL_LL128_SPLIT(nthreads);
+    const ssize_t size = args->coll.count;
+
+    if (loopSize > size) {
+      chunkSize = DIVUP(size, nChannels*minChunkSize)*minChunkSize;
+    }
+
+    // Compute pointers
+    const T * __restrict__ thisInput = (const T*)args->sendbuff;
+    T * __restrict__ thisOutput = (T*)args->recvbuff;
 
     if (tree->up == -1) {
       // ReduceAndBroadcast : max number of recv is 3, max number of send is 3
       ncclLL128Primitives<T, FUNC, NCCL_MAX_DEV_ARITY, NCCL_MAX_DEV_ARITY> LLprims(tid, nthreads, tree->down, tree->down, stepSize, channel, comm);
-      for (int s=0; s<NCCL_MAX_WORK_ELEMENTS; s++, args++) {
-        // Compute operation fields
-        const int nChannels = args->coll.nChannels;
-        if (nChannels == 0) return; // Nothing else to do
-        const int bid = args->coll.bid;
-        const ssize_t loopSize = nChannels*chunkSize;
-        const ssize_t size = args->coll.count;
-        const T * __restrict__ thisInput = (const T*)args->sendbuff;
-        T * __restrict__ thisOutput = (T*)args->recvbuff;
-
-        for (ssize_t gridOffset = 0; gridOffset < size; gridOffset += loopSize) {
-          ssize_t offset = gridOffset + bid*chunkSize;
-          int nelem = min(chunkSize, size-offset);
-          LLprims.recvReduceCopySend(thisInput+offset, thisOutput+offset, nelem);
-        }
+      for (ssize_t gridOffset = 0; gridOffset < size; gridOffset += loopSize) {
+        ssize_t offset = gridOffset + bid*chunkSize;
+        int nelem = min(chunkSize, size-offset);
+        LLprims.recvReduceCopySend(thisInput+offset, thisOutput+offset, nelem);
       }
     } else {
       if (tid < nthreadsSplit) {
         // Reduce : max number of recv is 3, max number of send is 1 (binary tree + local)
         ncclLL128Primitives<T, FUNC, NCCL_MAX_DEV_ARITY, 1> LLprims(tid, nthreadsSplit, tree->down, &tree->up, stepSize, channel, comm);
-        for (int s=0; s<NCCL_MAX_WORK_ELEMENTS; s++, args++) {
-          // Compute operation fields
-          const int nChannels = args->coll.nChannels;
-          if (nChannels == 0) return; // Nothing else to do
-          const int bid = args->coll.bid;
-          const ssize_t loopSize = nChannels*chunkSize;
-          const ssize_t size = args->coll.count;
-          const T * __restrict__ thisInput = (const T*)args->sendbuff;
-
-          for (ssize_t gridOffset = 0; gridOffset < size; gridOffset += loopSize) {
-            // Up
-            ssize_t offset = gridOffset + bid*chunkSize;
-            int nelem = min(chunkSize, size-offset);
-            if (tree->down[0] == -1) {
-              LLprims.send(thisInput+offset, nelem);
-            } else {
-              LLprims.recvReduceSend(thisInput+offset, nelem);
-            }
+        for (ssize_t gridOffset = 0; gridOffset < size; gridOffset += loopSize) {
+          // Up
+          ssize_t offset = gridOffset + bid*chunkSize;
+          int nelem = min(chunkSize, size-offset);
+          if (tree->down[0] == -1) {
+            LLprims.send(thisInput+offset, nelem);
+          } else {
+            LLprims.recvReduceSend(thisInput+offset, nelem);
           }
         }
       } else {
         // Broadcast : max number of recv is 1, max number of send is 3 (binary tree + local)
         ncclLL128Primitives<T, FUNC, 1, NCCL_MAX_DEV_ARITY> LLprims(tid-nthreadsSplit, nthreads-nthreadsSplit, &tree->up, tree->down, stepSize, channel, comm);
-        for (int s=0; s<NCCL_MAX_WORK_ELEMENTS; s++, args++) {
-          // Compute operation fields
-          const int nChannels = args->coll.nChannels;
-          if (nChannels == 0) return; // Nothing else to do
-          const int bid = args->coll.bid;
-          const ssize_t loopSize = nChannels*chunkSize;
-          const ssize_t size = args->coll.count;
-          T * __restrict__ thisOutput = (T*)args->recvbuff;
-
-          for (ssize_t gridOffset = 0; gridOffset < size; gridOffset += loopSize) {
-            // Down
-            ssize_t offset = gridOffset + bid*chunkSize;
-            int nelem = min(chunkSize, size-offset);
-            if (tree->down[0] == -1) {
-              LLprims.recv(thisOutput+offset, nelem);
-            } else {
-              LLprims.recvCopySend(thisOutput+offset, nelem);
-            }
+        for (ssize_t gridOffset = 0; gridOffset < size; gridOffset += loopSize) {
+          // Down
+          ssize_t offset = gridOffset + bid*chunkSize;
+          int nelem = min(chunkSize, size-offset);
+          if (tree->down[0] == -1) {
+            LLprims.recv(thisOutput+offset, nelem);
+          } else {
+            LLprims.recvCopySend(thisOutput+offset, nelem);
           }
         }
       }
