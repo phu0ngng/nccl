@@ -74,8 +74,7 @@ ncclResult_t netSendSetup(struct ncclComm* comm, struct ncclTopoGraph* graph, st
   send->proxyAppendPtr = send->conn.shared ? comm->proxyState.sharedBuffs.proxyAppend+2*channelId+1 : &send->proxyAppend;
 
   // Send/Receive: Round-robin NICs based on the receiver's CUDA device
-  int nicRR = comm->peerInfo[peerInfo->rank].cudaDev;
-  NCCLCHECK(ncclTopoGetNetDev(comm, myInfo->rank, graph, channelId, peerInfo->rank, nicRR, &resources->netDev));
+  NCCLCHECK(ncclTopoGetNetDev(comm, myInfo->rank, graph, channelId, peerInfo->rank, &resources->netDev));
   NCCLCHECK(ncclTopoCheckGdr(comm->topo, myInfo->busId, resources->netDev, 1, &resources->useGdr));
 
   NCCLCHECK(ncclCudaHostCalloc(&resources->sendMem, 1));
@@ -155,8 +154,7 @@ ncclResult_t netRecvSetup(struct ncclComm* comm, struct ncclTopoGraph* graph, st
   recv->proxyAppendPtr = recv->conn.shared ? comm->proxyState.sharedBuffs.proxyAppend+2*channelId : &recv->proxyAppend;
 
   // Send/Receive: Round-robin NICs based on the receiver's CUDA device
-  int nicRR = comm->cudaDev;
-  NCCLCHECK(ncclTopoGetNetDev(comm, myInfo->rank, graph, channelId, peerInfo->rank, nicRR, &resources->netDev));
+  NCCLCHECK(ncclTopoGetNetDev(comm, myInfo->rank, graph, channelId, peerInfo->rank, &resources->netDev));
   NCCLCHECK(ncclTopoCheckGdr(comm->topo, myInfo->busId, resources->netDev, 0, &resources->useGdr));
 
   NCCLCHECK(ncclCudaHostCalloc(&resources->sendMem, 1));

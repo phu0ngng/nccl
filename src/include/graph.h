@@ -28,7 +28,7 @@ ncclResult_t ncclTopoTrimSystem(struct ncclTopoSystem* system, struct ncclComm* 
 ncclResult_t ncclTopoComputeP2pChannels(struct ncclComm* comm);
 
 // Query topology
-ncclResult_t ncclTopoGetNetDev(struct ncclComm* comm, int rank, struct ncclTopoGraph* graph, int channelId, int peerRank, int rr, int* net);
+ncclResult_t ncclTopoGetNetDev(struct ncclComm* comm, int rank, struct ncclTopoGraph* graph, int channelId, int peerRank, int* net);
 ncclResult_t ncclTopoCheckP2p(struct ncclTopoSystem* system, int64_t id1, int64_t id2, int* p2p, int *read, int* intermediateRank);
 ncclResult_t ncclTopoCheckGdr(struct ncclTopoSystem* topo, int64_t busId, int netDev, int read, int* useGdr);
 ncclResult_t ncclTopoGetIntermediateRank(struct ncclTopoSystem* system, int rank, int netDev, int* intermediateRank);
@@ -47,7 +47,7 @@ ncclResult_t ncclTopoSetAffinity(struct ncclTopoSystem* system, int rank);
 #define NCCL_TOPO_CPU_TYPE_YONGFENG 1
 ncclResult_t ncclTopoCpuType(struct ncclTopoSystem* system, int* arch, int* vendor, int* model);
 ncclResult_t ncclTopoGetNetCount(struct ncclTopoSystem* system, int* count);
-ncclResult_t ncclTopoGetLocalNet(struct ncclTopoSystem* system, int rank, int* id, int rr);
+ncclResult_t ncclTopoGetLocalNet(struct ncclTopoSystem* system, int rank, int* id);
 
 #define NCCL_TOPO_MAX_NODES 256
 
