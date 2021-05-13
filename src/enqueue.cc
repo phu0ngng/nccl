@@ -153,16 +153,11 @@ static ncclResult_t setupLaunch(struct ncclQueueInfo* eqInfo, int usingCudaGraph
     channel->workFifo[(channel->workFifoTail-1)%NCCL_MAX_OPS].elems[0].active = 2;
 
     if (c == 0) {
-      // Find the first operation, choose the kernel accordingly and pass it as the first argument.
-      // Note that changing cuda launch argument after capture is not supported by cudaGraph
+      // As we inline the first coll directly, we can free it immediately.
+      // Except P2P or aggregation cases
       struct ncclWork* work = channel->workFifo+((channel->workFifoTail-channel->workCount)%NCCL_MAX_OPS);
       struct ncclWorkElem* elem = work->elems;
-      if (!usingCudaGraph) {
-        params->func = ncclKerns[elem->funcIndex];
-        memcpy(&comm->args, elem, sizeof(struct ncclWorkElem));
-      }
-      // As we inline the first coll directly, we can free it immediately.
-      if (elem->funcIndex != FUNC_INDEX_P2P) elem->active = 0;
+      if (elem->funcIndex != FUNC_INDEX_P2P && eqInfo->nElems == 1) elem->active = 0;
     }
 
     if (channel->gdrMemDesc) {
@@ -633,9 +628,7 @@ ncclResult_t ncclSetupAsyncKernels(ncclComm_t comm) {
       channelUsed += info->nChannels;
       NCCLCHECK(ncclSetupCollKernel(info));
     }
-    // If we wrap around on channels, then the inlined op on channel 0 is not the last one on this channel
-    // Then we need to change active from 2 to 1
-    if (channelUsed > comm->nChannels*NCCL_MAX_WORK_ELEMENTS) comm->args.active = 1;
+    comm->args.active = 3;  // use 3 to mark aggregation; kernel will not use the inlined element
   }
   // Reset counters
   comm->asyncOpCount = 0;
