@@ -84,6 +84,7 @@ __device__ void ncclKernel(struct ncclWorkElem first)  {
 
   /* To optimize for latency, (only) the first operation is passed as argument.*/
   if (bid == 0 && first.funcIndex != FUNC_INDEX_P2P && first.active != 3) w = &first;
+  const int maxWorkElems = first.active == 3 ? NCCL_MAX_WORK_ELEMENTS : 1;
 
   while (1) {
     if (w == NULL) {
@@ -91,8 +92,8 @@ __device__ void ncclKernel(struct ncclWorkElem first)  {
       __syncthreads();
       load_coll(&shmem.localWork, channel->workFifo+channel->index, channel->workFifoDev+channel->index, tid, comm);
     }
-    for (int s=0; s<NCCL_MAX_WORK_ELEMENTS; s++) {
-      if (w[s].coll.nChannels == 0) break;
+    int s=0;
+    do {
       if (tid < w[s].nThreads) {
         if (w[s].funcIndex == FINDEX) {
           f.run(w+s);
@@ -100,7 +101,8 @@ __device__ void ncclKernel(struct ncclWorkElem first)  {
           ncclFuncs[w[s].funcIndex](w+s);
         }
       }
-    }
+      s++;
+    } while (s < maxWorkElems && w[s].coll.nChannels > 0);
     if (tid == 0) channel->index = (channel->index+1) % NCCL_MAX_OPS;
     if (w->active == 2) {
       return;
