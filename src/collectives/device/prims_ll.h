@@ -37,7 +37,11 @@ class ncclLLPrimitives {
   inline __device__ uint32_t sendFlag(int i) { return NCCL_LL_FLAG(sendStep[i]+1); }
 
   inline __device__ void barrier() {
-    asm volatile ("bar.sync 1, %0;" :: "r"(nthreads));
+    if (NSEND>NRECV) {
+      asm volatile ("bar.sync 1, %0;" :: "r"(nthreads));
+    } else {
+      asm volatile ("bar.sync 2, %0;" :: "r"(nthreads));
+    }
   }
 
   uint32_t spins = 0;

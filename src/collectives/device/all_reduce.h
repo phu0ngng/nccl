@@ -367,6 +367,7 @@ class ncclFunction<ncclFuncAllReduce, NCCL_ALGO_TREE, NCCL_PROTO_LL, FUNC, T, UN
     ssize_t chunkSize = stepLines * sizeof(uint64_t) / sizeof(T);
     const ssize_t minChunkSize = nthreads*sizeof(uint64_t) / sizeof(T);
     const ssize_t loopSize = nChannels*chunkSize;
+    int nthreadsSplit = NCCL_LL_SPLIT(nthreads);
     const ssize_t size = args->coll.count;
 
     if (loopSize > size) {
@@ -377,39 +378,43 @@ class ncclFunction<ncclFuncAllReduce, NCCL_ALGO_TREE, NCCL_PROTO_LL, FUNC, T, UN
     const T * __restrict__ thisInput = (const T*)args->sendbuff;
     T * __restrict__ thisOutput = (T*)args->recvbuff;
 
-    do {
-      // Reduce : max number of recv is 3, max number of send is 1 (binary tree + local)
-      ncclLLPrimitives<T, FUNC, NCCL_MAX_DEV_ARITY, 1> LLprims(tid, nthreads, tree->down, &tree->up, stepLines, channel, comm);
+    if (tree->up == -1) {
+      // ReduceAndBroadcast : max number of recv is 3, max number of send is 3
+      ncclLLPrimitives<T, FUNC, NCCL_MAX_DEV_ARITY, NCCL_MAX_DEV_ARITY> LLprims(tid, nthreads, tree->down, tree->down, stepLines, channel, comm);
       for (ssize_t gridOffset = 0; gridOffset < size; gridOffset += loopSize) {
-        // Up
         ssize_t offset = gridOffset + bid*chunkSize;
         int nelem = min(chunkSize, size-offset);
-        if (tree->up == -1) {
-          LLprims.recvReduceCopy(thisInput+offset, thisOutput+offset, nelem);
-        } else if (tree->down[0] == -1) {
-          LLprims.send(thisInput+offset, nelem);
-        } else {
-          LLprims.recvReduceSend(thisInput+offset, nelem);
+        LLprims.recvReduceCopySend(thisInput+offset, thisOutput+offset, nelem);
+      }
+    } else {
+      if (tid < nthreadsSplit) {
+        // Reduce : max number of recv is 3, max number of send is 1 (binary tree + local)
+        ncclLLPrimitives<T, FUNC, NCCL_MAX_DEV_ARITY, 1> LLprims(tid, nthreadsSplit, tree->down, &tree->up, stepLines, channel, comm);
+        for (ssize_t gridOffset = 0; gridOffset < size; gridOffset += loopSize) {
+          // Up
+          ssize_t offset = gridOffset + bid*chunkSize;
+          int nelem = min(chunkSize, size-offset);
+          if (tree->down[0] == -1) {
+            LLprims.send(thisInput+offset, nelem);
+          } else {
+            LLprims.recvReduceSend(thisInput+offset, nelem);
+          }
+        }
+      } else {
+        // Broadcast : max number of recv is 1, max number of send is 3 (binary tree + local)
+        ncclLLPrimitives<T, FUNC, 1, NCCL_MAX_DEV_ARITY> LLprims(tid-nthreadsSplit, nthreads-nthreadsSplit, &tree->up, tree->down, stepLines, channel, comm);
+        for (ssize_t gridOffset = 0; gridOffset < size; gridOffset += loopSize) {
+          // Down
+          ssize_t offset = gridOffset + bid*chunkSize;
+          int nelem = min(chunkSize, size-offset);
+          if (tree->down[0] == -1) {
+            LLprims.recv(thisOutput+offset, nelem);
+          } else {
+            LLprims.recvCopySend(thisOutput+offset, nelem);
+          }
         }
       }
-    } while(0);
-
-    do {
-      // Broadcast : max number of recv is 1, max number of send is 3 (binary tree + local)
-      ncclLLPrimitives<T, FUNC, 1, NCCL_MAX_DEV_ARITY> LLprims(tid, nthreads, &tree->up, tree->down, stepLines, channel, comm);
-      for (ssize_t gridOffset = 0; gridOffset < size; gridOffset += loopSize) {
-        // Down
-        ssize_t offset = gridOffset + bid*chunkSize;
-        int nelem = min(chunkSize, size-offset);
-        if (tree->up == -1) {
-          LLprims.send(thisOutput+offset, nelem);
-        } else if (tree->down[0] == -1) {
-          LLprims.recv(thisOutput+offset, nelem);
-        } else {
-          LLprims.recvCopySend(thisOutput+offset, nelem);
-        }
-      }
-    } while(0);
+    }
   }
 };
 
@@ -512,7 +517,7 @@ class ncclFunction<ncclFuncAllReduce, NCCL_ALGO_TREE, NCCL_PROTO_LL128, FUNC, T,
     ssize_t chunkSize = args->coll.lastChunkSize;
     const ssize_t minChunkSize = (NCCL_LL128_SHMEM_ELEMS_PER_THREAD*nthreads*NCCL_LL128_DATAELEMS*sizeof(uint64_t))/(NCCL_LL128_LINEELEMS*sizeof(T))/8;
     const ssize_t loopSize = nChannels*chunkSize;
-    int nthreadsSplit = NCCL_LL128_SPLIT(nthreads);
+    int nthreadsSplit = NCCL_LL_SPLIT(nthreads);
     const ssize_t size = args->coll.count;
 
     if (loopSize > size) {

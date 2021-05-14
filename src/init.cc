@@ -274,7 +274,7 @@ static ncclResult_t commAlloc(ncclComm_t* comret, int ndev, int rank) {
   comm->asyncOpCount = 0;
   comm->asyncTotalSize = 0;
   comm->channelSize = ncclParamAggChannelSize() != -2 ? ncclParamAggChannelSize() :
-                      NCCL_AGG_CHANNEL_SIZE * comm->nRanks;  // scale channel size based on nranks as latency increases
+                      NCCL_AGG_CHANNEL_SIZE * std::min(16, comm->nRanks);  // scale channel size based on nranks as latency increases
 
   NCCLCHECK(ncclCalloc(&comm->enqueueInfo, 1));
   comm->enqueueInfo->comm = comm;
