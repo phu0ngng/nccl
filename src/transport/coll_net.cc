@@ -550,6 +550,7 @@ ncclResult_t collNetRecvProxy(struct ncclProxyArgs* args) {
 struct ncclTransport collNetTransport = {
   "COL",
   collNetCanConnect,
+  NULL, NULL,
   { collNetSendSetup, collNetSendConnect, collNetSendFree, collNetSendProxy },
   { collNetRecvSetup, collNetRecvConnect, collNetRecvFree, collNetRecvProxy }
 };

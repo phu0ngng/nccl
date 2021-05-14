@@ -546,6 +546,7 @@ ncclResult_t netRecvProxy(struct ncclProxyArgs* args) {
 struct ncclTransport netTransport = {
   "NET",
   netCanConnect,
+  NULL, NULL,
   { netSendSetup, netSendConnect, netSendFree, netSendProxy },
   { netRecvSetup, netRecvConnect, netRecvFree, netRecvProxy }
 };

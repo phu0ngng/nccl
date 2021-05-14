@@ -8,6 +8,7 @@
 #include "core.h"
 #include "utils.h"
 #include "bootstrap.h"
+#include "transport.h"
 #include "net.h"
 #include "socket.h"
 #include <unistd.h>
@@ -221,21 +222,34 @@ struct extState {
 
 #define MAX_SEGMENTS 128
 
-static ncclResult_t remoteAlloc(void** ptr, int fd) {
-  size_t size;
-  NCCLCHECK(socketRecv(fd, &size, sizeof(size_t)));
-  cudaIpcMemHandle_t devIpc;
-  NCCLCHECK(ncclCudaCalloc((char**)ptr, size));
-  cudaError_t res = cudaIpcGetMemHandle(&devIpc, *ptr);
-  if (res != cudaSuccess) {
-    WARN("[Rem Allocator] cudaIpcGetMemHandle failed : %s", cudaGetErrorString(res));
-    cudaFree(*ptr);
-    CUDACHECK(res);
+struct bootstrapRemState {
+  int connected;
+  int fd;
+  int transport;
+  void* transportState;
+};
+
+static ncclResult_t remoteAlloc(struct bootstrapRemState* state, int fd) {
+  NCCLCHECK(socketRecv(fd, &state->transport, sizeof(size_t)));
+  if (ncclTransports[state->transport].stateAlloc == NULL) {
+    WARN("No stateAlloc function for transport %d\n", state->transport);
+    return ncclInternalError;
   }
-  // The CUDA IPC
-  NCCLCHECK(socketSend(fd, &devIpc, sizeof(cudaIpcMemHandle_t)));
-  // And the direct pointer
-  NCCLCHECK(socketSend(fd, ptr, sizeof(void*)));
+  NCCLCHECK(ncclTransports[state->transport].stateAlloc(fd, &state->transportState));
+  state->connected = 1;
+  state->fd = fd;
+  return ncclSuccess;
+}
+
+static ncclResult_t remoteFree(struct bootstrapRemState* state) {
+  if (ncclTransports[state->transport].stateFree == NULL) {
+    WARN("No stateFree function for transport %d\n", state->transport);
+    return ncclInternalError;
+  }
+  NCCLCHECK(ncclTransports[state->transport].stateFree(&state->transportState));
+  state->connected = 0;
+  close(state->fd);
+  state->fd = -1;
   return ncclSuccess;
 }
 
@@ -249,9 +263,9 @@ void* ncclRemoteMemAllocationService(void* args) {
   }
 
   // Prepare poll descriptor
-  void* segments[MAX_SEGMENTS];
+  struct bootstrapRemState states[MAX_SEGMENTS];
   struct pollfd pollfds[MAX_SEGMENTS+1];
-  for (int s=0; s<MAX_SEGMENTS; s++) segments[s] = NULL;
+  for (int s=0; s<MAX_SEGMENTS; s++) states[s].connected = 0;
   for (int s=0; s<MAX_SEGMENTS; s++) {
     pollfds[s].fd = -1;
     pollfds[s].events = POLLHUP;
@@ -267,55 +281,51 @@ void* ncclRemoteMemAllocationService(void* args) {
     }
     if (pollfds[MAX_SEGMENTS].revents) {
       int s = 0;
-      while (segments[s] != NULL && s < MAX_SEGMENTS) s++;
-      if (bootstrapNetAccept(pollfds[MAX_SEGMENTS].fd, &pollfds[s].fd) != ncclSuccess) {
-        pollfds[s].fd = -1;
-      } else {
-        if (s == MAX_SEGMENTS || (remoteAlloc(segments+s, pollfds[s].fd) != ncclSuccess)) {
-          WARN("[Rem Allocator] Allocation failed (segment %d, fd %d)", s, pollfds[s].fd);
-          close(pollfds[s].fd);
-          pollfds[s].fd = -1;
+      while (states[s].connected && s < MAX_SEGMENTS) s++;
+      int newfd;
+      if (bootstrapNetAccept(pollfds[MAX_SEGMENTS].fd, &newfd) == ncclSuccess) {
+        if (s == MAX_SEGMENTS || (remoteAlloc(states+s, newfd) != ncclSuccess)) {
+          WARN("[Rem Allocator] Allocation failed (segment %d, fd %d)", s, newfd);
+          close(newfd);
         } else {
+          pollfds[s].fd = newfd;
           nbuffers++;
         }
       }
     }
     for (int s=0; s<MAX_SEGMENTS; s++) {
       if (pollfds[s].revents & POLLHUP) {
-        if (cudaFree(segments[s]) != cudaSuccess) {
-          WARN("[Rem Allocator] cudaFree %p failed", segments[s]);
+        if (remoteFree(states+s) != ncclSuccess) {
+          WARN("[Rem Allocator] remoteFree %p failed", states+s);
         }
-        segments[s] = NULL;
-        close(pollfds[s].fd);
         pollfds[s].fd = -1;
         nbuffers--;
       }
     }
   }
   for (int s=0; s<MAX_SEGMENTS; s++) {
-    if (segments[s]) cudaFree(segments[s]);
-    close(pollfds[s].fd);
+    if (states[s].connected) remoteFree(states+s);
   }
   close(state->listenFd);
   free(state);
   return NULL;
 }
 
-ncclResult_t bootstrapRemAlloc(size_t size, int rank, void* commState, int* id, cudaIpcMemHandle_t* ipc, void** ptr) {
+ncclResult_t bootstrapAlloc(int transport, int rank, void* commState, int* id, void* req, int reqSize, void* resp, int respSize) {
   struct extState* state = (struct extState*)commState;
   int fd;
   ncclResult_t res;
   *id = -1;
   NCCLCHECK(connectAddress(&fd, state->peerAllocAddresses+rank));
-  NCCLCHECKGOTO(socketSend(fd, &size, sizeof(size_t)), res, end);
-  NCCLCHECKGOTO(socketRecv(fd, ipc, sizeof(cudaIpcMemHandle_t)), res, end);
-  NCCLCHECKGOTO(socketRecv(fd, ptr, sizeof(void*)), res, end);
+  NCCLCHECKGOTO(socketSend(fd, &transport, sizeof(int)), res, end);
+  NCCLCHECKGOTO(socketSend(fd, &req, reqSize), res, end);
+  NCCLCHECKGOTO(socketRecv(fd, &resp, respSize), res, end);
   *id = fd;
 end:
   return res;
 }
 
-ncclResult_t bootstrapRemFree(int id, int rank, void* commState) {
+ncclResult_t bootstrapFree(int id, int rank, void* commState) {
   SYSCHECK(close(id), "close");
   return ncclSuccess;
 }
