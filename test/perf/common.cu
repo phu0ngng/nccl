@@ -376,7 +376,7 @@ testResult_t testStreamSynchronize(int ngpus, cudaStream_t* streams, ncclComm_t*
   int remaining = ngpus;
   int* done = (int*)malloc(sizeof(int)*ngpus);
   memset(done, 0, sizeof(int)*ngpus);
-  auto start = std::chrono::steady_clock::now();
+  timer tim;
 
   while (remaining) {
    int idle = 1;
@@ -406,8 +406,8 @@ testResult_t testStreamSynchronize(int ngpus, cudaStream_t* streams, ncclComm_t*
          NCCLCHECK(ncclAsyncErr);
        }
      }
-     auto delta = std::chrono::steady_clock::now() - start;
-     if (std::chrono::duration_cast<std::chrono::seconds>(delta).count() > timeout && timeout > 0) {
+     double delta = tim.elapsed();
+     if (delta > timeout && timeout > 0) {
        for (int i=0; i<ngpus; i++)
          NCCLCHECK(ncclCommAbort(comms[i]));
        char hostname[1024];
@@ -493,7 +493,7 @@ testResult_t BenchTime(struct threadArgs* args, ncclDataType_t type, ncclRedOp_t
   }
 
   // Performance Benchmark
-  auto start = std::chrono::steady_clock::now();
+  timer tim;
   for (int iter = 0; iter < iters; iter++) {
     if (agg_iters>1) NCCLCHECK(ncclGroupStart());
     for (int aiter = 0; aiter < agg_iters; aiter++) {
@@ -513,7 +513,7 @@ testResult_t BenchTime(struct threadArgs* args, ncclDataType_t type, ncclRedOp_t
     }
     // Resync CPU, restart timing, launch cuda graph
     Barrier(args);
-    start = std::chrono::steady_clock::now();
+    tim.reset();
     for (int l=0; l<cudaGraphLaunches; l++) {
       for (int i=0; i<args->nGpus; i++) {
         CUDACHECK(cudaGraphLaunch(graphExec[i], args->streams[i]));
@@ -521,13 +521,11 @@ testResult_t BenchTime(struct threadArgs* args, ncclDataType_t type, ncclRedOp_t
     }
   }
 
-  auto cputime = std::chrono::steady_clock::now() - start;
-  double cputimeSec = std::chrono::duration_cast<std::chrono::duration<double>>(cputime).count()/(iters*agg_iters);
+  double cputimeSec = tim.elapsed()/(iters*agg_iters);
   TESTCHECK(completeColl(args));
 
   int compThreadCount = (*(args->compThreadCount)) - args->compThreadCountLast;
-  auto delta = std::chrono::steady_clock::now() - start;
-  double deltaSec = std::chrono::duration_cast<std::chrono::duration<double>>(delta).count();
+  double deltaSec = tim.elapsed();
   deltaSec = deltaSec/(iters*agg_iters);
   if (cudaGraphLaunches >= 1) deltaSec = deltaSec/cudaGraphLaunches;
 

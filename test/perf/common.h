@@ -8,6 +8,7 @@
 
 #include "nccl.h"
 #include <stdio.h>
+#include <cstdint>
 #include <algorithm>
 #include <curand.h>
 #ifdef MPI_SUPPORT
@@ -15,6 +16,7 @@
 #endif
 #include <pthread.h>
 #include "nccl1_compat.h"
+#include "timer.h"
 
 #define CUDACHECK(cmd) do {                         \
   cudaError_t err = cmd;                            \
@@ -144,8 +146,6 @@ struct testThread {
   struct threadArgs args;
   testResult_t ret;
 };
-
-#include <chrono>
 
 // Provided by common.cu
 extern void Barrier(struct threadArgs* args);
