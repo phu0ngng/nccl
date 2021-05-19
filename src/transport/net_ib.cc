@@ -201,7 +201,7 @@ ncclResult_t ncclIbInit(ncclDebugLogger_t logFunction) {
       }
       line[1023] = '\0';
       char addrline[SOCKET_NAME_MAXLEN+1];
-      INFO(NCCL_INIT|NCCL_NET, "NET/IB : Using%s ; OOB %s:%s", line, ncclIbIfName, socketToString(&ncclIbIfAddr.sa, addrline));
+      INFO(NCCL_INIT|NCCL_NET, "NET/IB : Using%s ; OOB %s:%s", line, ncclIbIfName, socketToString(&ncclIbIfAddr, addrline));
     }
     pthread_mutex_unlock(&ncclIbLock);
   }
@@ -277,6 +277,7 @@ struct ncclIbRequest {
   struct ncclIbVerbs* verbs;
   int events;
   int size;
+  union socketAddress *addr;
 };
 
 struct ncclIbVerbs {
@@ -305,6 +306,7 @@ struct ncclIbSendComm {
   struct ncclIbSendFifo fifo[MAX_REQUESTS];
   uint32_t fifoHead;
   int fd;
+  union socketAddress addr;
   int ready;
   struct ibv_qp* qp;
   struct ibv_mr* fifoMr;
@@ -337,6 +339,7 @@ struct ncclIbRecvComm {
   struct ncclIbVerbs verbs;
   struct ncclIbRemFifo remFifo;
   int fd;
+  union socketAddress addr;
   int ready;
   struct ibv_qp* qp;
   struct ncclIbGpuFlush gpuFlush;
@@ -441,6 +444,8 @@ ncclResult_t ncclIbConnect(int dev, void* opaqueHandle, void** sendComm) {
   NCCLCHECK(connectAddress(&comm->fd, &handle->connectAddr));
   *sendComm = comm;
 
+  comm->addr = handle->connectAddr;
+
   // IB Setup
   ibv_context* ctx = ncclIbDevs[dev].context;
   NCCLCHECK(ncclIbInitVerbs(ctx, &comm->verbs));
@@ -472,7 +477,7 @@ ncclResult_t ncclIbConnect(int dev, void* opaqueHandle, void** sendComm) {
     INFO(NCCL_NET,"NET/IB: Dev %d Port %d qpn %d mtu %d GID %ld (%lX/%lX)", dev, ib_port, qpInfo.qpn, qpInfo.mtu, ncclParamIbGidIndex(), qpInfo.spn, qpInfo.iid);
   }
 
-  NCCLCHECK(socketSend(comm->fd, &qpInfo, sizeof(qpInfo)));
+  NCCLCHECK(socketSend(comm->fd, &comm->addr, &qpInfo, sizeof(qpInfo)));
   return ncclSuccess;
 }
 
@@ -483,11 +488,10 @@ ncclResult_t ncclIbAccept(void* listenComm, void** recvComm) {
   struct ncclIbRecvComm* rComm;
   NCCLCHECK(ncclIbMalloc((void**)&rComm, sizeof(struct ncclIbRecvComm)));
 
-  struct sockaddr_in sockaddr;
-  socklen_t socklen = sizeof(struct sockaddr_in);
-  SYSCHECKVAL(accept(lComm->fd, (struct sockaddr*)&sockaddr, &socklen), "accept", rComm->fd);
+  socklen_t socklen = sizeof(union socketAddress);
+  SYSCHECKVAL(accept(lComm->fd, &rComm->addr.sa, &socklen), "accept", rComm->fd);
   struct ncclIbQpInfo remQpInfo;
-  NCCLCHECK(socketRecv(rComm->fd, &remQpInfo, sizeof(remQpInfo)));
+  NCCLCHECK(socketRecv(rComm->fd, &rComm->addr, &remQpInfo, sizeof(remQpInfo)));
 
   // IB setup
   ibv_context* ctx = ncclIbDevs[lComm->dev].context;
@@ -547,7 +551,7 @@ ncclResult_t ncclIbAccept(void* listenComm, void** recvComm) {
     .mtu=remQpInfo.mtu
   };
 
-  NCCLCHECK(socketSend(rComm->fd, &qpInfo, sizeof(qpInfo)));
+  NCCLCHECK(socketSend(rComm->fd, &rComm->addr, &qpInfo, sizeof(qpInfo)));
   *recvComm = rComm;
   return ncclSuccess;
 }
@@ -561,6 +565,7 @@ ncclResult_t ncclIbGetRequest(struct ncclIbVerbs* verbs, struct ncclIbRequest** 
       r->verbs = verbs;
       r->events = 1;
       r->size = -1;
+      r->addr = NULL;
       *req = r;
       return ncclSuccess;
     }
@@ -580,15 +585,15 @@ ncclResult_t ncclSendCheck(struct ncclIbSendComm* comm) {
 
   // Do not block on this receive, return if not ready.
   int bytes = 0;
-  NCCLCHECK(socketProgress(NCCL_SOCKET_RECV, comm->fd, &remQpInfo, sizeof(remQpInfo), &bytes));
+  NCCLCHECK(socketProgress(NCCL_SOCKET_RECV, comm->fd, &comm->addr, &remQpInfo, sizeof(remQpInfo), &bytes));
   if (bytes == 0) return ncclSuccess; // Try again later
-  NCCLCHECK(socketWait(NCCL_SOCKET_RECV, comm->fd, &remQpInfo, sizeof(remQpInfo), &bytes));
+  NCCLCHECK(socketWait(NCCL_SOCKET_RECV, comm->fd, &comm->addr, &remQpInfo, sizeof(remQpInfo), &bytes));
 
   NCCLCHECK(ncclIbRtrQp(qp, &remQpInfo));
   NCCLCHECK(ncclIbRtsQp(qp));
   comm->ready = 1;
   // Block until this is done. It *should* not block indefinitely.
-  NCCLCHECK(socketSend(comm->fd, &comm->ready, sizeof(int)));
+  NCCLCHECK(socketSend(comm->fd, &comm->addr, &comm->ready, sizeof(int)));
 
   return ncclSuccess;
 }
@@ -596,9 +601,9 @@ ncclResult_t ncclSendCheck(struct ncclIbSendComm* comm) {
 ncclResult_t ncclRecvCheck(struct ncclIbRecvComm* comm) {
   // Do not block on this receive, return if not ready.
   int bytes = 0;
-  NCCLCHECK(socketProgress(NCCL_SOCKET_RECV, comm->fd, &comm->ready, sizeof(int), &bytes));
+  NCCLCHECK(socketProgress(NCCL_SOCKET_RECV, comm->fd, &comm->addr, &comm->ready, sizeof(int), &bytes));
   if (bytes == 0) return ncclSuccess; // Try again later
-  NCCLCHECK(socketWait(NCCL_SOCKET_RECV, comm->fd, &comm->ready, sizeof(int), &bytes));
+  NCCLCHECK(socketWait(NCCL_SOCKET_RECV, comm->fd, &comm->addr, &comm->ready, sizeof(int), &bytes));
   return ncclSuccess;
 }
 
@@ -643,6 +648,7 @@ ncclResult_t ncclIbIsend(void* sendComm, void* data, int size, void* mhandle, vo
   struct ncclIbRequest* req;
   NCCLCHECK(ncclIbGetRequest(&comm->verbs, &req));
   req->size = size;
+  req->addr = &comm->addr;
 
   struct ibv_send_wr wr[2];
   memset(&wr[0], 0, sizeof(wr[0]));
@@ -665,8 +671,9 @@ ncclResult_t ncclIbIsend(void* sendComm, void* data, int size, void* mhandle, vo
   // Sanity checks to catch user collective call count/size mismatches
   // plus any potential programming errors
   if (size > slot->size || slot->size < 0 || slot->addr == 0 || slot->rkey == 0 || slot->seq != comm->fifoHead) {
-    WARN("NET/IB : collective mismatch error local size %d remote %d addr %lx rkey %x seq %x/%x",
-        size, slot->size, slot->addr, slot->rkey, slot->seq, comm->fifoHead);
+    char line[SOCKET_NAME_MAXLEN+1];
+    WARN("NET/IB : peer %s collective mismatch error local size %d remote %d addr %lx rkey %x seq %x/%x",
+         socketToString(req->addr, line), size, slot->size, slot->addr, slot->rkey, slot->seq, comm->fifoHead);
     return ncclInternalError;
   }
   wr[0].opcode = IBV_WR_RDMA_WRITE_WITH_IMM;
@@ -773,6 +780,7 @@ ncclResult_t ncclIbIrecv(void* recvComm, void* data, int size, void* mhandle, vo
   struct ncclIbRequest* req;
   NCCLCHECK(ncclIbGetRequest(&comm->verbs, &req));
   req->size = size;
+  req->addr = &comm->addr;
 
   struct ibv_recv_wr wr;
   memset(&wr, 0, sizeof(wr));
@@ -803,6 +811,7 @@ ncclResult_t ncclIbIflush(void* recvComm, void* data, int size, void* mhandle, v
 
   struct ncclIbRequest* req;
   NCCLCHECK(ncclIbGetRequest(&comm->verbs, &req));
+  req->addr = &comm->addr;
   struct ibv_mr* mr = (struct ibv_mr*)mhandle;
 
   struct ibv_send_wr wr;
@@ -843,7 +852,9 @@ ncclResult_t ncclIbTest(void* request, int* done, int* size) {
     for (int w=0; w<wrDone; w++) {
       struct ibv_wc *wc = wcs+w;
       if (wc->status != IBV_WC_SUCCESS) {
-        WARN("NET/IB : Got completion with error %d, opcode %d, len %d, vendor err %d", wc->status, wc->opcode, wc->byte_len, wc->vendor_err);
+        char line[SOCKET_NAME_MAXLEN+1];
+        WARN("NET/IB : Got completion from peer %s with error %d, opcode %d, len %d, vendor err %d",
+             socketToString(r->addr, line), wc->status, wc->opcode, wc->byte_len, wc->vendor_err);
         return ncclSystemError;
       }
 
