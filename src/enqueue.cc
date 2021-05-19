@@ -340,17 +340,22 @@ ncclResult_t ncclLaunchReset(ncclComm_t comm) {
 /* Enqueueing system : computation of kernel and proxy operations parameters */
 /*****************************************************************************/
 
-static ncclResult_t getAlgoInfo(struct ncclInfo* info) {
+static inline ncclResult_t getCollNetSupport(struct ncclInfo* info, int* collNetTypeSupport) {
+  if (info->comm->collNetSupport > 0) {
+    NCCLCHECK(collNetReduceSupport(info->datatype, info->op, collNetTypeSupport));
+  } else {
+    *collNetTypeSupport = 0;
+  }
+  return ncclSuccess;
+}
+
+static ncclResult_t getAlgoInfo(struct ncclInfo* info, int collNetTypeSupport) {
   struct ncclComm* comm = info->comm;
   float minTime = 3600000000.0; // Hopefully no operation will take an hour to complete.
   // Find algorithm / protocol.
   info->algorithm = -1;
   info->protocol = -1;
   int nAlgos = NCCL_NUM_ALGORITHMS;
-  // Check collNet support
-  int collNetTypeSupport = 0;
-  if (info->comm->collNetSupport > 0)
-    NCCLCHECK(collNetReduceSupport(info->datatype, info->op, &collNetTypeSupport));
   for (int a=0; a<nAlgos; a++) {
     if (a == NCCL_ALGO_COLLNET && collNetTypeSupport != 1) continue;
     for (int p=0; p<NCCL_NUM_PROTOCOLS; p++) {
@@ -442,8 +447,14 @@ static ncclResult_t getLoopInfo(struct ncclInfo* info) {
 static ncclResult_t computeColl(struct ncclInfo* info /* input */, struct ncclWorkElem* work, struct ncclProxyArgs* proxyArgs /* output */) {
   work->comm = info->comm->devComm;
 
+  int collNetTypeSupport = 0;
+  // Check whether algo and proto have been preset
+  if (info->nChannels > 0 && info->nThreads > 0) goto comp_next;
+  NCCLCHECK(getCollNetSupport(info, &collNetTypeSupport));
+  NCCLCHECK(getAlgoInfo(info, collNetTypeSupport));
+
+comp_next:
   // Set nstepsPerLoop and nchunksPerLoop
-  NCCLCHECK(getAlgoInfo(info));
   NCCLCHECK(getPatternInfo(info));
   NCCLCHECK(getLoopInfo(info));
 
@@ -622,10 +633,32 @@ ncclResult_t ncclSetupAsyncKernels(ncclComm_t comm) {
     // Reduce the per-channel size if we cannot fully utilize the channels
     while (comm->asyncTotalSize < channelSize * comm->nChannels && channelSize > NCCL_MIN_CHANNEL_SIZE) channelSize /= 2;
     int channelUsed = 0;
+    ncclFunc_t commonColl = ncclNumFuncs;
+    int fastPath = 1;
+    int allCollNetSupport = comm->collNetSupport;
     for (int c = 0; c < comm->asyncOpCount; c++) {
       struct ncclInfo* info = comm->asyncOps+c;
       info->nChannels = std::min((int)DIVUP(info->nBytes, channelSize), comm->nChannels); // assign number of channels
       channelUsed += info->nChannels;
+      // We can use fast path if all collectives are the same
+      if (commonColl == ncclNumFuncs) commonColl = info->coll;
+      else if (commonColl != info->coll) fastPath = 0;
+      else if (allCollNetSupport > 0) NCCLCHECK(getCollNetSupport(info, &allCollNetSupport));
+    }
+    // Compute algo, proto, nthreads for the entire kernel
+    struct ncclInfo total;
+    total.comm = comm;
+    total.coll = commonColl;
+    total.nBytes = comm->asyncTotalSize;
+    total.nChannels = std::min(channelUsed, comm->nChannels);
+    if (fastPath) NCCLCHECK(getAlgoInfo(&total, allCollNetSupport));
+    for (int c = 0; c < comm->asyncOpCount; c++) {
+      struct ncclInfo* info = comm->asyncOps+c;
+      if (fastPath) {
+        info->algorithm = total.algorithm;
+        info->protocol = total.protocol;
+        info->nThreads = total.nThreads;
+      }
       NCCLCHECK(ncclSetupCollKernel(info));
     }
     comm->args.active = 3;  // use 3 to mark aggregation; kernel will not use the inlined element
