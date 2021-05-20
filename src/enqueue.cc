@@ -580,7 +580,7 @@ static ncclResult_t ncclSetupCollKernel(struct ncclInfo* info) {
 }
 
 static inline int findShortestChannel(ncclComm_t comm) {
-  size_t minSize = 0;
+  size_t minSize = SIZE_MAX;
   int minC = 0;
   for (int c=0; c<comm->nChannels; c++) {
     struct ncclChannel* channel = comm->channels+c;
@@ -590,6 +590,16 @@ static inline int findShortestChannel(ncclComm_t comm) {
     }
   }
   return minC;
+}
+
+static inline ncclResult_t getNextChannel(ncclComm_t comm, int* nextChannel) {
+  if (comm->asyncAllocMode == ncclComm::SHORTEST_QUEUE) {
+    *nextChannel = findShortestChannel(comm);
+  } else {
+    *nextChannel = comm->lastChannel % comm->nChannels;
+    comm->lastChannel++;
+  }
+  return ncclSuccess;
 }
 
 // Dynamic enqueue code
@@ -817,7 +827,8 @@ ncclResult_t ncclEnqueueAsyncKernel(struct ncclComm* comm, struct ncclQueueElem*
   int nChannels = work->coll.nChannels;
   size_t channelSize = work->coll.count*ncclTypeSize(proxyArgs->dtype)/work->coll.nChannels;
   for (int bid=0; bid<nChannels; bid++) {
-    int channelId = comm->lastChannel % comm->nChannels;
+    int channelId;
+    NCCLCHECK(getNextChannel(comm, &channelId));
     struct ncclChannel* channel = comm->channels+channelId;
 
     // Proxy
@@ -843,7 +854,6 @@ ncclResult_t ncclEnqueueAsyncKernel(struct ncclComm* comm, struct ncclQueueElem*
     // store work element into FIFO
     NCCLCHECK(enqueueSegOp(COLL_SEGMENT, work, w, segment));
     channel->totalSize += channelSize;
-    comm->lastChannel++;
   }
   comm->collOpCount++;
   return ncclSuccess;

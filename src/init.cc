@@ -275,6 +275,12 @@ static ncclResult_t commAlloc(ncclComm_t* comret, int ndev, int rank) {
   comm->asyncTotalSize = 0;
   comm->channelSize = ncclParamAggChannelSize() != -2 ? ncclParamAggChannelSize() :
                       NCCL_AGG_CHANNEL_SIZE * std::min(16, comm->nRanks);  // scale channel size based on nranks as latency increases
+  comm->asyncAllocMode = ncclComm::SHORTEST_QUEUE;
+  char* str = getenv("NCCL_AGG_ALLOC_MODE");
+  if (str) INFO(NCCL_ENV, "NCCL_AGG_ALLOC_MODE set by environment to %s", str);
+  if (str && strcmp(str, "ROUND_ROBIN") == 0) {
+    comm->asyncAllocMode = ncclComm::ROUND_ROBIN;
+  }
 
   NCCLCHECK(ncclCalloc(&comm->enqueueInfo, 1));
   comm->enqueueInfo->comm = comm;
