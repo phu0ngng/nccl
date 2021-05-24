@@ -5,14 +5,14 @@
  ************************************************************************/
 
 #include "devcomm.h"
-#include "primitives.h"
 #include "collectives.h"
+#include "primitives.h"
+#include "prims_ll.h"
+#include "prims_ll128.h"
 
 template<class FUNC, typename T, int UNROLL>
-class ncclFunction<ncclFuncReduce, NCCL_ALGO_RING, NCCL_PROTO_SIMPLE, FUNC, T, UNROLL> {
-  public:
-    __device__ void run() {
-      ncclWorkElem *args = &ncclShmem.work.elems[0];
+struct ncclFunctionWorkElem<ncclFuncReduce, NCCL_ALGO_RING, NCCL_PROTO_SIMPLE, FUNC, T, UNROLL> {
+    __device__ void run(ncclWorkElem *args) {
       const int tid = threadIdx.x;
       const int nthreads = args->nThreads-WARP_SIZE;
       const int bid = args->coll.bid;
@@ -69,10 +69,8 @@ class ncclFunction<ncclFuncReduce, NCCL_ALGO_RING, NCCL_PROTO_SIMPLE, FUNC, T, U
 };
 
 template<class FUNC, typename T, int UNROLL>
-class ncclFunction<ncclFuncReduce, NCCL_ALGO_RING, NCCL_PROTO_LL, FUNC, T, UNROLL> {
-  public:
-    __device__ void run() {
-      ncclWorkElem *args = &ncclShmem.work.elems[0];
+struct ncclFunctionWorkElem<ncclFuncReduce, NCCL_ALGO_RING, NCCL_PROTO_LL, FUNC, T, UNROLL> {
+    __device__ void run(ncclWorkElem *args) {
       const int tid = threadIdx.x;
       const int nthreads = args->nThreads;
       const int bid = args->coll.bid;
@@ -122,12 +120,9 @@ class ncclFunction<ncclFuncReduce, NCCL_ALGO_RING, NCCL_PROTO_LL, FUNC, T, UNROL
     }
 };
 
-#include "prims_ll128.h"
 template<class FUNC, typename T, int UNROLL>
-class ncclFunction<ncclFuncReduce, NCCL_ALGO_RING, NCCL_PROTO_LL128, FUNC, T, UNROLL> {
-  public:
-    __device__ void run() {
-      ncclWorkElem *args = &ncclShmem.work.elems[0];
+struct ncclFunctionWorkElem<ncclFuncReduce, NCCL_ALGO_RING, NCCL_PROTO_LL128, FUNC, T, UNROLL> {
+    __device__ void run(ncclWorkElem *args) {
       const int tid = threadIdx.x;
       const int nthreads = args->nThreads;
       const int bid = args->coll.bid;
@@ -170,16 +165,4 @@ class ncclFunction<ncclFuncReduce, NCCL_ALGO_RING, NCCL_PROTO_LL128, FUNC, T, UN
         }
       }
     }
-};
-
-template<int PROTO, class REDOP, typename T, int UNROLL>
-class ncclFunction<ncclFuncReduce, NCCL_ALGO_TREE, PROTO, REDOP, T, UNROLL> {
-  public:
-    __device__ void run() {}
-};
-
-template<int PROTO, class REDOP, typename T, int UNROLL>
-class ncclFunction<ncclFuncReduce, NCCL_ALGO_COLLNET, PROTO, REDOP, T, UNROLL> {
-  public:
-    __device__ void run() {}
 };

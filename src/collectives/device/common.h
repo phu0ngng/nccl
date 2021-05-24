@@ -49,10 +49,23 @@ __device__ void copyToShmem(T *dst, T const *src, int n) {
   }
 }
 
-template <ncclFunc_t FUNCTION, int ALGO, int PROTO, class REDOP, typename T, int UNROLL>
-class ncclFunction {
-  public:
-  __device__ void run() {}
+template<ncclFunc_t Fn, int Algo, int Proto, typename Op, typename T, int Unroll>
+struct ncclFunctionWorkElem {
+  __device__ void run(ncclWorkElem*) {
+    // Put NOT IMPLEMENTED behavior here.
+  }
+};
+
+template<ncclFunc_t Fn, int Algo, int Proto, typename Op, typename T, int Unroll>
+struct ncclFunctionWork {
+  __device__ void run(ncclWork *w) {
+    for(int e=0; e < NCCL_MAX_WORK_ELEMENTS; e++) {
+      //if(w->elems[e].active == 0)
+      //  break;
+      ncclFunctionWorkElem<Fn,Algo,Proto,Op,T,Unroll>().run(&w->elems[e]);
+      break; // Until we have aggregation there is but one.
+    }
+  }
 };
 
 struct ncclShmemGroup {
@@ -115,7 +128,7 @@ __device__ void ncclKernel(ncclWorkElem first)  {
   SkipLoadWork:
     if (tid < ncclShmem.work.elems[0].nThreads) {
       if (ncclShmem.work.elems[0].funcIndex == FnIndex)
-        ncclFunction<Fn, Algo, Proto, Op, T, Unroll>().run();
+        ncclFunctionWork<Fn, Algo, Proto, Op, T, Unroll>().run(&ncclShmem.work);
       else
         ncclFuncs[ncclShmem.work.elems[0].funcIndex]();
     }
@@ -135,7 +148,7 @@ __global__ void NCCL_KERN_NAME(func, algo, proto, redop, type)(ncclWorkElem firs
 // Examples :     AllReduce, RING, LL,    Sum,   uint8
 #define IMPL_COLL_FUNC(func, algo, proto, redop, type) \
 __device__ void NCCL_FUNC_NAME(func, algo, proto, redop, type)() { \
-  ncclFunction<ncclFunc##func, NCCL_ALGO_##algo, NCCL_PROTO_##proto, Func##redop<type>, type, COLL_UNROLL>().run(); \
+  ncclFunctionWork<ncclFunc##func, NCCL_ALGO_##algo, NCCL_PROTO_##proto, Func##redop<type>, type, COLL_UNROLL>().run(&ncclShmem.work); \
 }
 
 // Only generate inline kernels for LL

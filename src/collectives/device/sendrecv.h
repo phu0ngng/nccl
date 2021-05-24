@@ -5,14 +5,13 @@
  ************************************************************************/
 
 #include "devcomm.h"
-#include "primitives.h"
 #include "collectives.h"
+#include "primitives.h"
 
 template<class FUNC, typename T, int UNROLL>
-class ncclFunction<ncclFuncSendRecv, NCCL_ALGO_RING, NCCL_PROTO_SIMPLE, FUNC, T, UNROLL> {
-  public:
-    __device__ void run() {
-      ncclWorkElem *args = &ncclShmem.work.elems[0];
+struct ncclFunctionWork<ncclFuncSendRecv, NCCL_ALGO_RING, NCCL_PROTO_SIMPLE, FUNC, T, UNROLL> {
+    __device__ void run(ncclWork *work) {
+      ncclWorkElem *args = work->elems;
       int tid = threadIdx.x;
       int group = 0;
       const int rank = ncclShmem.comm->rank;
