@@ -98,6 +98,7 @@ struct ncclConnInfo {
 
 struct ncclConnector {
   int connected;
+  int fd;
   struct ncclProxyArgs *proxyAppend;
   struct ncclProxyArgs **proxyAppendPtr;
   struct ncclTransportComm* transportComm;

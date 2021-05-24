@@ -93,7 +93,7 @@ ncclResult_t shmRecvSetup(struct ncclComm* comm, struct ncclTopoGraph* graph, st
 
   char shmName[MAX_SHM_NAME_LEN];
   sprintf(shmName, "nccl-shm-recv-%lx-%d-%d-%d", info.pidHash, info.id, info.sendRank, info.recvRank);
-  int shmSize = offsetof(struct ncclRecvMem, buff);
+  int shmSize = sizeof(struct ncclRecvMem);
   for (int p=0; p<NCCL_NUM_PROTOCOLS; p++) shmSize += recv->comm->buffSizes[p];
   info.shmSize = resources->shmSize = shmSize;
   TRACE(NCCL_SHM,"Open shmName %s shmSize %d", shmName, info.shmSize);
@@ -121,7 +121,7 @@ ncclResult_t shmSendConnect(struct ncclComm* comm, struct ncclConnect* connectIn
   send->transportResources = resources;
   int offset = 0;
   for (int p=0; p<NCCL_NUM_PROTOCOLS; p++) {
-    send->conn.buffs[p] = resources->devRemHostMem->buff + offset;
+    send->conn.buffs[p] = (char*)(resources->devRemHostMem+1) + offset;
     offset += send->comm->buffSizes[p];
   }
   send->conn.tail = &resources->devRemHostMem->tail;
@@ -145,23 +145,23 @@ ncclResult_t shmRecvConnect(struct ncclComm* comm, struct ncclConnect* connectIn
 
   int offset = 0;
   for (int p=0; p<NCCL_NUM_PROTOCOLS; p++) {
-    recv->conn.buffs[p] = resources->devHostMem->buff + offset;
+    recv->conn.buffs[p] = (char*)(resources->devHostMem+1) + offset;
     offset += recv->comm->buffSizes[p];
   }
   recv->conn.tail = &resources->devHostMem->tail;
   return ncclSuccess;
 }
 
-ncclResult_t shmSendFree(void* transportResources) {
-  struct shmSendResources* resources = (struct shmSendResources*)transportResources;
+ncclResult_t shmSendFree(struct ncclConnector* send) {
+  struct shmRecvResources* resources = (struct shmRecvResources*)send->transportResources;
   NCCLCHECK(shmClose(resources->hostMem, resources->devHostMem, resources->shmSize));
   NCCLCHECK(shmClose(resources->remHostMem, resources->devRemHostMem, resources->remShmSize));
   free(resources);
   return ncclSuccess;
 }
 
-ncclResult_t shmRecvFree(void* transportResources) {
-  struct shmRecvResources* resources = (struct shmRecvResources*)transportResources;
+ncclResult_t shmRecvFree(struct ncclConnector* recv) {
+  struct shmRecvResources* resources = (struct shmRecvResources*)recv->transportResources;
   NCCLCHECK(shmClose(resources->hostMem, resources->devHostMem, resources->shmSize));
   NCCLCHECK(shmClose(resources->remHostMem, resources->devRemHostMem, resources->remShmSize));
   free(resources);
@@ -170,7 +170,7 @@ ncclResult_t shmRecvFree(void* transportResources) {
 
 struct ncclTransport shmTransport = {
   "SHM",
-  shmCanConnect, NULL, NULL,
-  { shmSendSetup, shmSendConnect, shmSendFree, NULL },
-  { shmRecvSetup, shmRecvConnect, shmRecvFree, NULL }
+  shmCanConnect,
+  { shmSendSetup, shmSendConnect, shmSendFree, NULL, NULL, NULL },
+  { shmRecvSetup, shmRecvConnect, shmRecvFree, NULL, NULL, NULL }
 };

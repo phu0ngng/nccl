@@ -94,7 +94,7 @@ ncclResult_t collNetSendSetup(struct ncclComm* comm, struct ncclTopoGraph* graph
 
   NCCLCHECK(ncclCudaHostCalloc(&resources->sendMem, 1));
 
-  int recvSize = offsetof(struct ncclRecvMem, buff);
+  int recvSize = sizeof(struct ncclRecvMem);
   // Simple uses shared buffers and we don't support LL128
   recvSize += send->comm->buffSizes[NCCL_PROTO_LL];
 
@@ -123,7 +123,7 @@ ncclResult_t collNetRecvSetup(struct ncclComm* comm, struct ncclTopoGraph* graph
 
   NCCLCHECK(ncclCudaHostCalloc(&resources->sendMem, 1));
 
-  int recvSize = offsetof(struct ncclRecvMem, buff);
+  int recvSize = sizeof(struct ncclRecvMem);
   // Simple uses shared buffers and we don't support LL128
   recvSize += recv->comm->buffSizes[NCCL_PROTO_LL];
 
@@ -169,7 +169,7 @@ ncclResult_t collNetSendConnect(struct ncclComm* comm, struct ncclConnect* conne
   struct collNetSendConnectInfo* info = (struct collNetSendConnectInfo*)(connectInfos+rank);
 
   // Intermediate buffering on GPU for GPU Direct RDMA, but LL buffer is always on host
-  send->conn.buffs[NCCL_PROTO_LL] = resources->recvMem->buff;
+  send->conn.buffs[NCCL_PROTO_LL] = (char*)(resources->recvMem+1);
   send->conn.buffs[NCCL_PROTO_LL128] = send->conn.buffs[NCCL_PROTO_SIMPLE] = NULL;
   send->conn.direct |= resources->useGdr ? NCCL_DIRECT_NIC : 0;
 
@@ -213,12 +213,8 @@ ncclResult_t collNetRecvConnect(struct ncclComm* comm, struct ncclConnect* conne
   resources->collNetRank = rank;
 
   // Intermediate buffering on GPU for GPU Direct RDMA
-  struct ncclRecvMem* recvMem = resources->useGdr ? resources->devRecvMem : resources->recvMem;
-  int offset = 0;
-  for (int p=0; p<NCCL_NUM_PROTOCOLS; p++) {
-    recv->conn.buffs[p] = (p == NCCL_PROTO_LL ? resources->recvMem->buff : recvMem->buff) + offset;
-    offset += recv->comm->buffSizes[p];
-  }
+  recv->conn.buffs[NCCL_PROTO_LL] = (char*)(resources->recvMem+1);
+  recv->conn.buffs[NCCL_PROTO_LL128] = recv->conn.buffs[NCCL_PROTO_SIMPLE] = NULL;
   recv->conn.direct |= resources->useGdr ? NCCL_DIRECT_NIC : 0;
 
   // Head/Tail/Opcount are always on host
@@ -263,8 +259,8 @@ ncclResult_t collNetSharedFree(struct ncclComm* comm, int netDev) {
   return ncclSuccess;
 }
 
-ncclResult_t collNetSendFree(void* sendTransportResources) {
-  struct collNetSendResources* resources = (struct collNetSendResources*)sendTransportResources;
+ncclResult_t collNetSendFree(struct ncclConnector* send) {
+  struct collNetSendResources* resources = (struct collNetSendResources*)send->transportResources;
   NCCLCHECK(ncclCudaHostFree(resources->sendMem));
   NCCLCHECK(ncclCudaHostFree(resources->recvMem));
   if (resources->collNetComm) {
@@ -278,8 +274,8 @@ ncclResult_t collNetSendFree(void* sendTransportResources) {
   return ncclSuccess;
 }
 
-ncclResult_t collNetRecvFree(void* recvTransportResources) {
-  struct collNetRecvResources* resources = (struct collNetRecvResources*)recvTransportResources;
+ncclResult_t collNetRecvFree(struct ncclConnector* recv) {
+  struct collNetRecvResources* resources = (struct collNetRecvResources*)recv->transportResources;
   NCCLCHECK(ncclCudaHostFree(resources->sendMem));
   NCCLCHECK(ncclCudaHostFree(resources->recvMem));
   if (resources->collNetComm) {
@@ -550,7 +546,6 @@ ncclResult_t collNetRecvProxy(struct ncclProxyArgs* args) {
 struct ncclTransport collNetTransport = {
   "COL",
   collNetCanConnect,
-  NULL, NULL,
-  { collNetSendSetup, collNetSendConnect, collNetSendFree, collNetSendProxy },
-  { collNetRecvSetup, collNetRecvConnect, collNetRecvFree, collNetRecvProxy }
+  { collNetSendSetup, collNetSendConnect, collNetSendFree, NULL, NULL, collNetSendProxy },
+  { collNetRecvSetup, collNetRecvConnect, collNetRecvFree, NULL, NULL, collNetRecvProxy }
 };

@@ -44,15 +44,15 @@ struct ncclConnect {
 struct ncclTransportComm {
   ncclResult_t (*setup)(struct ncclComm* comm, struct ncclTopoGraph* graph, struct ncclPeerInfo*, struct ncclPeerInfo*, struct ncclConnect*, struct ncclConnector*, int channelId, int connIndex);
   ncclResult_t (*connect)(struct ncclComm* comm, struct ncclConnect*, int nranks, int rank, struct ncclConnector*);
-  ncclResult_t (*free)(void*);
+  ncclResult_t (*free)(struct ncclConnector*);
+  ncclResult_t (*proxyCall)(int fd, void** state, struct ncclComm* comm);
+  ncclResult_t (*proxyFree)(void* state, struct ncclComm* comm);
   ncclResult_t (*proxy)(struct ncclProxyArgs*);
 };
 
 struct ncclTransport {
   const char name[4];
   ncclResult_t (*canConnect)(int*, struct ncclTopoSystem* topo, struct ncclTopoGraph* graph, struct ncclPeerInfo*, struct ncclPeerInfo*);
-  ncclResult_t (*stateAlloc)(int fd, void** state);
-  ncclResult_t (*stateFree)(void* state);
   struct ncclTransportComm send;
   struct ncclTransportComm recv;
 };

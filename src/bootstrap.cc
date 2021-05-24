@@ -10,7 +10,6 @@
 #include "bootstrap.h"
 #include "transport.h"
 #include "net.h"
-#include "socket.h"
 #include <unistd.h>
 #include <sys/types.h>
 
@@ -199,9 +198,11 @@ struct unexConn {
 
 // Remote allocator state
 struct remAllocState {
+  struct ncclComm* comm;
   int cudaDev;
   int listenFd;
   int stop;
+  void* transportStates[NTRANSPORTS];
 };
 
 struct extState {
@@ -226,27 +227,33 @@ struct bootstrapRemState {
   int connected;
   int fd;
   int transport;
+  int send;
   void* transportState;
 };
 
-static ncclResult_t remoteAlloc(struct bootstrapRemState* state, int fd) {
-  NCCLCHECK(socketRecv(fd, &state->transport, sizeof(size_t)));
-  if (ncclTransports[state->transport].stateAlloc == NULL) {
-    WARN("No stateAlloc function for transport %d\n", state->transport);
-    return ncclInternalError;
-  }
-  NCCLCHECK(ncclTransports[state->transport].stateAlloc(fd, &state->transportState));
+static ncclResult_t proxyConnect(struct bootstrapRemState* state, struct ncclComm* comm, int fd) {
+  NCCLCHECK(socketRecv(fd, &state->transport, sizeof(int)));
+  NCCLCHECK(socketRecv(fd, &state->send, sizeof(int)));
   state->connected = 1;
   state->fd = fd;
   return ncclSuccess;
 }
 
-static ncclResult_t remoteFree(struct bootstrapRemState* state) {
-  if (ncclTransports[state->transport].stateFree == NULL) {
-    WARN("No stateFree function for transport %d\n", state->transport);
-    return ncclInternalError;
+static ncclResult_t proxyCall(struct bootstrapRemState* state, struct ncclComm* comm) {
+  if (state->send) {
+    NCCLCHECK(ncclTransports[state->transport].send.proxyCall(state->fd, &state->transportState, comm));
+  } else {
+    NCCLCHECK(ncclTransports[state->transport].recv.proxyCall(state->fd, &state->transportState, comm));
   }
-  NCCLCHECK(ncclTransports[state->transport].stateFree(&state->transportState));
+  return ncclSuccess;
+}
+
+static ncclResult_t proxyFree(struct bootstrapRemState* state, struct ncclComm* comm) {
+  if (state->send) {
+    NCCLCHECK(ncclTransports[state->transport].send.proxyFree(state->transportState, comm));
+  } else {
+    NCCLCHECK(ncclTransports[state->transport].recv.proxyFree(state->transportState, comm));
+  }
   state->connected = 0;
   close(state->fd);
   state->fd = -1;
@@ -268,7 +275,7 @@ void* ncclRemoteMemAllocationService(void* args) {
   for (int s=0; s<MAX_SEGMENTS; s++) states[s].connected = 0;
   for (int s=0; s<MAX_SEGMENTS; s++) {
     pollfds[s].fd = -1;
-    pollfds[s].events = POLLHUP;
+    pollfds[s].events = POLLHUP|POLLIN;
   }
   pollfds[MAX_SEGMENTS].fd = state->listenFd;
   pollfds[MAX_SEGMENTS].events = POLLIN;
@@ -284,7 +291,7 @@ void* ncclRemoteMemAllocationService(void* args) {
       while (states[s].connected && s < MAX_SEGMENTS) s++;
       int newfd;
       if (bootstrapNetAccept(pollfds[MAX_SEGMENTS].fd, &newfd) == ncclSuccess) {
-        if (s == MAX_SEGMENTS || (remoteAlloc(states+s, newfd) != ncclSuccess)) {
+        if (s == MAX_SEGMENTS || (proxyConnect(states+s, state->comm, newfd) != ncclSuccess)) {
           WARN("[Rem Allocator] Allocation failed (segment %d, fd %d)", s, newfd);
           close(newfd);
         } else {
@@ -294,9 +301,14 @@ void* ncclRemoteMemAllocationService(void* args) {
       }
     }
     for (int s=0; s<MAX_SEGMENTS; s++) {
+      if (pollfds[s].revents & POLLIN) {
+        if (proxyCall(states+s, state->comm) != ncclSuccess) {
+          WARN("[Rem Allocator] proxyCall %p failed", states+s);
+        }
+      }
       if (pollfds[s].revents & POLLHUP) {
-        if (remoteFree(states+s) != ncclSuccess) {
-          WARN("[Rem Allocator] remoteFree %p failed", states+s);
+        if (proxyFree(states+s, state->comm) != ncclSuccess) {
+          WARN("[Rem Allocator] proxyFree %p failed", states+s);
         }
         pollfds[s].fd = -1;
         nbuffers--;
@@ -304,38 +316,34 @@ void* ncclRemoteMemAllocationService(void* args) {
     }
   }
   for (int s=0; s<MAX_SEGMENTS; s++) {
-    if (states[s].connected) remoteFree(states+s);
+    if (states[s].connected) proxyFree(states+s, state->comm);
   }
   close(state->listenFd);
   free(state);
   return NULL;
 }
 
-ncclResult_t bootstrapAlloc(int transport, int rank, void* commState, int* id, void* req, int reqSize, void* resp, int respSize) {
+ncclResult_t bootstrapProxyConnect(void* commState, int transport, int send, int rank, int* fd) {
   struct extState* state = (struct extState*)commState;
-  int fd;
-  ncclResult_t res;
-  *id = -1;
-  NCCLCHECK(connectAddress(&fd, state->peerAllocAddresses+rank));
-  NCCLCHECKGOTO(socketSend(fd, &transport, sizeof(int)), res, end);
-  NCCLCHECKGOTO(socketSend(fd, &req, reqSize), res, end);
-  NCCLCHECKGOTO(socketRecv(fd, &resp, respSize), res, end);
-  *id = fd;
-end:
-  return res;
-}
-
-ncclResult_t bootstrapFree(int id, int rank, void* commState) {
-  SYSCHECK(close(id), "close");
+  NCCLCHECK(connectAddress(fd, state->peerAllocAddresses+rank));
+  NCCLCHECK(socketSend(*fd, &transport, sizeof(int)));
+  NCCLCHECK(socketSend(*fd, &send, sizeof(int)));
   return ncclSuccess;
 }
 
-ncclResult_t bootstrapInit(ncclUniqueId * id, int rank, int nranks, void** commState) {
+ncclResult_t bootstrapFree(int fd) {
+  SYSCHECK(close(fd), "close");
+  return ncclSuccess;
+}
+
+ncclResult_t bootstrapInit(ncclUniqueId * id, struct ncclComm* comm) {
+  int rank = comm->rank;
+  int nranks = comm->nRanks;
   struct extState* state;
   NCCLCHECK(ncclCalloc(&state, 1));
   state->rank = rank;
   state->nranks = nranks;
-  *commState = state;
+  comm->bootstrap = state;
 
   TRACE(NCCL_INIT, "rank %d nranks %d", rank, nranks);
 
@@ -386,6 +394,7 @@ ncclResult_t bootstrapInit(ncclUniqueId * id, int rank, int nranks, void** commS
   NCCLCHECK(ncclCalloc(&state->peerAllocAddresses, nranks));
   memcpy(state->peerAllocAddresses+rank, &bootstrapNetIfAddr, sizeof(union socketAddress));
   NCCLCHECK(ncclCalloc(&state->allocState, 1));
+  state->allocState->comm = comm;
   CUDACHECK(cudaGetDevice(&state->allocState->cudaDev));
   NCCLCHECK(createListenSocket(&state->allocState->listenFd, state->peerAllocAddresses+rank));
   pthread_create(&state->allocThread, NULL, ncclRemoteMemAllocationService, state->allocState);

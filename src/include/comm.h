@@ -37,10 +37,10 @@ struct ncclSendMem {
       char pad1[CACHE_LINE_SIZE-sizeof(uint64_t)];
       void* ptrExchange;
       char pad2[CACHE_LINE_SIZE-sizeof(void*)];
+      void* ptrsFifo[NCCL_STEPS];
     };
     char pad3[MEM_ALIGN];
   };
-  char buff[1]; // Actually larger than that
 };
 
 struct ncclRecvMem {
@@ -50,10 +50,10 @@ struct ncclRecvMem {
       char pad1[CACHE_LINE_SIZE-sizeof(uint64_t)];
       int sizesFifo[NCCL_STEPS];
       void* ptrsFifo[NCCL_STEPS];
+      int flush; // For GDRCopy-based flush
     };
     char pad4[MEM_ALIGN];
   };
-  char buff[1]; // Actually larger than that
 };
 
 struct ncclComm {

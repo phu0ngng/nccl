@@ -8,7 +8,6 @@
 #include "graph.h"
 #include "utils.h"
 #include "bootstrap.h"
-#include "socket.h"
 
 struct ncclP2pBuff {
   void* directPtr; 
@@ -24,7 +23,6 @@ struct p2pConnectInfo {
 struct p2pSendResources {
   struct ncclSendMem* devMem;
   void* ipcPtr;
-  int remoteId;
   int memRank;
   void* bootstrap;
 };
@@ -32,7 +30,6 @@ struct p2pSendResources {
 struct p2pRecvResources {
   struct ncclRecvMem* devMem;
   void* ipcPtr;
-  int remoteId;
   int memRank;
   void* bootstrap;
 };
@@ -109,27 +106,6 @@ ncclResult_t p2pCanConnect(int* ret, struct ncclTopoSystem* topo, struct ncclTop
   } while (0)
 
 
-static ncclResult_t p2pStateAlloc(int fd, void** state) {
-  size_t size;
-  NCCLCHECK(socketRecv(fd, &size, sizeof(size_t)));
-  struct ncclP2pBuff p2pBuff;
-  NCCLCHECK(ncclCudaCalloc((char**)&p2pBuff.directPtr, size));
-  *state = p2pBuff.directPtr;
-  cudaError_t res = cudaIpcGetMemHandle(&p2pBuff.devIpc, p2pBuff.directPtr);
-  if (res != cudaSuccess) {
-    WARN("cudaIpcGetMemHandle failed : %s", cudaGetErrorString(res));
-    cudaFree(p2pBuff.directPtr);
-    CUDACHECK(res);
-  }
-  NCCLCHECK(socketSend(fd, &p2pBuff, sizeof(p2pBuff)));
-  return ncclSuccess;
-}
-
-static ncclResult_t p2pStateFree(void* state) {
-  CUDACHECK(cudaFree(state));
-  return ncclSuccess;
-}
-
 // Setting this to non zero causes P2P to use Reads rather than Writes
 NCCL_PARAM(P2pReadEnable, "P2P_READ_ENABLE", -2);
 
@@ -185,7 +161,7 @@ ncclResult_t p2pSendSetup(struct ncclComm* comm, struct ncclTopoGraph* graph, st
   if (info.read) sendSize += send->comm->buffSizes[NCCL_PROTO_SIMPLE];
   ALIGN_SIZE(sendSize, CUDA_IPC_MIN);
 
-  resources->remoteId = -1;
+  send->fd = -1;
   resources->bootstrap = comm->bootstrap;
   if (intermediateRank == -1) {
     info.rank = myInfo->rank;
@@ -205,7 +181,10 @@ ncclResult_t p2pSendSetup(struct ncclComm* comm, struct ncclTopoGraph* graph, st
   }
   resources->memRank = info.rank;
 
-  NCCLCHECK(bootstrapAlloc(TRANSPORT_P2P, info.rank, resources->bootstrap, &resources->remoteId, &sendSize, sizeof(sendSize), &info.p2pBuff, sizeof(info.p2pBuff)));
+  NCCLCHECK(bootstrapProxyConnect(resources->bootstrap, TRANSPORT_P2P, 1, info.rank, &send->fd));
+  NCCLCHECK(socketSend(send->fd, &sendSize, sizeof(int)));
+  NCCLCHECK(socketRecv(send->fd, &info.p2pBuff, sizeof(struct ncclP2pBuff)));
+  
   NCCLCHECK(p2pMap(myInfo, comm->peerInfo+info.rank, &info.p2pBuff, (void**)&resources->devMem, &resources->ipcPtr));
 
   static_assert(sizeof(struct p2pConnectInfo) <= sizeof(struct ncclConnect), "p2p Connect Info is too big");
@@ -226,12 +205,12 @@ ncclResult_t p2pRecvSetup(struct ncclComm* comm, struct ncclTopoGraph* graph, st
   // For CollNet, we use write for scatter-reduce (conn 1), read for broadcast-gather (conn 0)
   info.read = (connIndex == 0) ? useRead : 0;
 
-  int recvSize = offsetof(struct ncclRecvMem, buff);
+  int recvSize = sizeof(struct ncclRecvMem);
   // For P2P Read the SIMPLE buffer is tagged on the end of the ncclSendMem structure
   for (int p=0; p<NCCL_NUM_PROTOCOLS; p++) if (!(info.read && p == NCCL_PROTO_SIMPLE)) recvSize += recv->comm->buffSizes[p];
   ALIGN_SIZE(recvSize, CUDA_IPC_MIN);
 
-  resources->remoteId = -1;
+  recv->fd = -1;
   resources->bootstrap = comm->bootstrap;
   if (intermediateRank == -1) {
     info.rank = myInfo->rank;
@@ -243,7 +222,10 @@ ncclResult_t p2pRecvSetup(struct ncclComm* comm, struct ncclTopoGraph* graph, st
   }
   resources->memRank = info.rank;
 
-  NCCLCHECK(bootstrapAlloc(TRANSPORT_P2P, info.rank, resources->bootstrap, &resources->remoteId, &recvSize, sizeof(recvSize), &info.p2pBuff, sizeof(info.p2pBuff)));
+  NCCLCHECK(bootstrapProxyConnect(resources->bootstrap, TRANSPORT_P2P, 0, info.rank, &recv->fd));
+  NCCLCHECK(socketSend(recv->fd, &recvSize, sizeof(int)));
+  NCCLCHECK(socketRecv(recv->fd, &info.p2pBuff, sizeof(struct ncclP2pBuff)));
+
   NCCLCHECK(p2pMap(myInfo, comm->peerInfo+info.rank, &info.p2pBuff, (void**)&resources->devMem, &resources->ipcPtr));
 
   static_assert(sizeof(struct p2pConnectInfo) <= sizeof(struct ncclConnect), "p2p Connect Info is too big");
@@ -259,14 +241,14 @@ static ncclResult_t p2pSendConnect(struct ncclComm* comm, struct ncclConnect* co
 
   NCCLCHECK(p2pMap(comm->peerInfo+rank, comm->peerInfo+info->rank, &info->p2pBuff, (void**)&remDevMem, &resources->ipcPtr));
 
-  int offset = 0;
+  char* buff = (char*)(remDevMem+1);
   for (int p=0; p<NCCL_NUM_PROTOCOLS; p++) {
     if (info->read && p == NCCL_PROTO_SIMPLE) {
       /* For P2P Read the SIMPLE buffer is local (ncclSendMem) */
-      send->conn.buffs[p] = resources->devMem->buff;
+      send->conn.buffs[p] = (char*)(resources->devMem+1);
     } else {
-      send->conn.buffs[p] = remDevMem->buff + offset;
-      offset += send->comm->buffSizes[p];
+      send->conn.buffs[p] = buff;
+      buff += send->comm->buffSizes[p];
     }
   }
   send->conn.tail = &remDevMem->tail;
@@ -283,14 +265,14 @@ ncclResult_t p2pRecvConnect(struct ncclComm* comm, struct ncclConnect* connectIn
 
   NCCLCHECK(p2pMap(comm->peerInfo+rank, comm->peerInfo+info->rank, &info->p2pBuff, (void**)&remDevMem, &resources->ipcPtr));
 
-  int offset = 0;
+  char* buff = (char*)(resources->devMem+1);
   for (int p=0; p<NCCL_NUM_PROTOCOLS; p++) {
     if (info->read && p == NCCL_PROTO_SIMPLE) {
       /* For P2P Read the SIMPLE buffer is remote (ncclSendMem) */
-      recv->conn.buffs[p] = remDevMem->buff;
+      recv->conn.buffs[p] = (char*)(remDevMem+1);
     } else {
-      recv->conn.buffs[p] = resources->devMem->buff + offset;
-      offset += recv->comm->buffSizes[p];
+      recv->conn.buffs[p] = buff;
+      buff += recv->comm->buffSizes[p];
     }
   }
   recv->conn.tail = &resources->devMem->tail;
@@ -299,35 +281,62 @@ ncclResult_t p2pRecvConnect(struct ncclComm* comm, struct ncclConnect* connectIn
   return ncclSuccess;
 }
 
-ncclResult_t p2pSendFree(void* resources) {
-  struct p2pSendResources* sendRes = (struct p2pSendResources*)resources;
-  if (sendRes->ipcPtr)
-    CUDACHECK(cudaIpcCloseMemHandle(sendRes->ipcPtr));
-  if (sendRes->remoteId != -1) {
-    NCCLCHECK(bootstrapFree(sendRes->remoteId, sendRes->memRank, sendRes->bootstrap));
-    sendRes->devMem = NULL;
+ncclResult_t p2pSendFree(struct ncclConnector* send) {
+  struct p2pSendResources* resources = (struct p2pSendResources*)send->transportResources;
+  if (resources->ipcPtr)
+    CUDACHECK(cudaIpcCloseMemHandle(resources->ipcPtr));
+  if (send->fd != -1) {
+    close(send->fd);
+    resources->devMem = NULL;
   }
-  CUDACHECK(cudaFree(sendRes->devMem));
-  free(sendRes);
+  CUDACHECK(cudaFree(resources->devMem));
+  free(resources);
   return ncclSuccess;
 }
 
-ncclResult_t p2pRecvFree(void* resources) {
-  struct p2pRecvResources* recvRes = (struct p2pRecvResources*)resources;
-  if (recvRes->ipcPtr)
-    CUDACHECK(cudaIpcCloseMemHandle(recvRes->ipcPtr));
-  if (recvRes->remoteId != -1) {
-    NCCLCHECK(bootstrapFree(recvRes->remoteId, recvRes->memRank, recvRes->bootstrap));
-    recvRes->devMem = NULL;
+ncclResult_t p2pRecvFree(struct ncclConnector* recv) {
+  struct p2pRecvResources* resources = (struct p2pRecvResources*)recv->transportResources;
+  if (resources->ipcPtr)
+    CUDACHECK(cudaIpcCloseMemHandle(resources->ipcPtr));
+  if (recv->fd != -1) {
+    close(recv->fd);
+    resources->devMem = NULL;
   }
-  CUDACHECK(cudaFree(recvRes->devMem));
-  free(recvRes);
+  CUDACHECK(cudaFree(resources->devMem));
+  free(resources);
   return ncclSuccess;
 }
+
+static ncclResult_t p2pProxyCall(int fd, void** state, struct ncclComm* comm) {
+  int size;
+  NCCLCHECK(socketRecv(fd, &size, sizeof(int)));
+  printf("Allocating %d bytes\n", size);
+  struct ncclP2pBuff* p2pBuff;
+  NCCLCHECK(ncclCalloc(&p2pBuff, 1));
+  *state = p2pBuff;
+  NCCLCHECK(ncclCudaCalloc((char**)&p2pBuff->directPtr, size));
+  cudaError_t res = cudaIpcGetMemHandle(&p2pBuff->devIpc, p2pBuff->directPtr);
+  if (res != cudaSuccess) {
+    WARN("cudaIpcGetMemHandle failed : %s", cudaGetErrorString(res));
+    cudaFree(p2pBuff->directPtr);
+    CUDACHECK(res);
+  }
+  NCCLCHECK(socketSend(fd, p2pBuff, sizeof(struct ncclP2pBuff)));
+  return ncclSuccess;
+}
+
+static ncclResult_t p2pProxyFree(void* state, struct ncclComm* comm) {
+  struct ncclP2pBuff* p2pBuff = (struct ncclP2pBuff*)state;
+  // Do not check return code as CUDA may already shutting down
+  cudaFree(p2pBuff->directPtr);
+  free(state);
+  return ncclSuccess;
+}
+
 
 struct ncclTransport p2pTransport = {
   "P2P",
-  p2pCanConnect, p2pStateAlloc, p2pStateFree,
-  { p2pSendSetup, p2pSendConnect, p2pSendFree, NULL },
-  { p2pRecvSetup, p2pRecvConnect, p2pRecvFree, NULL }
+  p2pCanConnect,
+  { p2pSendSetup, p2pSendConnect, p2pSendFree, p2pProxyCall, p2pProxyFree, NULL },
+  { p2pRecvSetup, p2pRecvConnect, p2pRecvFree, p2pProxyCall, p2pProxyFree, NULL }
 };
