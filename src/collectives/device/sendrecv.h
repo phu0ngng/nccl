@@ -11,8 +11,8 @@
 template<class FUNC, typename T, int UNROLL>
 class ncclFunction<ncclFuncSendRecv, NCCL_ALGO_RING, NCCL_PROTO_SIMPLE, FUNC, T, UNROLL> {
   public:
-    __device__ void run(struct ncclWorkElem* firstArgs) {
-      struct ncclWorkElem* args = firstArgs;
+    __device__ void run() {
+      ncclWorkElem *args = &ncclShmem.work.elems[0];
       int tid = threadIdx.x;
       int group = 0;
       const int rank = ncclShmem.comm->rank;

@@ -9,7 +9,7 @@
 
 #include "collectives.h"
 #include "devcomm.h"
-
+#include <cstdio>
 
 #if __CUDA_ARCH__ >= 800
 #define COLL_UNROLL 8
@@ -19,41 +19,40 @@
 #define NCCL_DEV_TREE_ARITY NCCL_MAX_TREE_ARITY
 #endif
 
-// Exit If Abort Barrier across CTA: make sure all threads exit consistently
-// Each thread sets a predicate to true if abort == 1
-// all CTA's threads enter the barrier and do a popc on their predicates being True
-// If any of the thread's predicate was True, all the threads call exit()
-static inline __device__ void exitIfAbortBarrier(int abort) {
+__device__ inline bool barrierReduceAny(int bit) {
   uint32_t popc;
-  asm ("{");
-  asm volatile ("   .reg .pred barr_pred;");
-  asm volatile ("   setp.eq.u32 barr_pred,%0,1;" :: "r"(abort));
-  asm volatile ("   bar.red.popc.u32 %0, 0, barr_pred;" : "=r"(popc));
-  asm ("}");
-  if (popc) { asm volatile ("exit;"); }
+  asm ("{"
+    ".reg .pred barr_pred;"
+    "setp.eq.u32 barr_pred, %1, 1;"
+    "bar.red.popc.u32 %0, 0, barr_pred;"
+  "}" : "=r"(popc) : "r"(bit));
+  return popc != 0;
 }
 
-typedef void(*ncclKern_t)(struct ncclWorkElem* args);
+typedef void(*ncclKern_t)();
 extern __device__ ncclKern_t ncclFuncs[];
 
-static __device__ void load_parallel(void* dst, void* src, size_t size, int tid) {
-  int* d = (int*)dst;
-  int* s = (int*)src;
-  for (int o = tid; o < (size/sizeof(int)); o += blockDim.x) d[o] = s[o];
-}
-
-static __device__ void load_coll(struct ncclWork* localWork, struct ncclWork *hostWork, struct ncclWork* workFifo, int tid, struct ncclDevComm* comm) {
-  load_parallel(localWork, workFifo, sizeof(struct ncclWork), tid);
-  // Check whether the last operation was aborted and make sure all threads exit
-  int abort = tid == 0 ? *(comm->abortFlag) : 0;
-  exitIfAbortBarrier(abort);
-  if (tid == 0) hostWork->elems[0].active = 0;
+template<typename T>
+__device__ void copyToShmem(T *dst, T const *src, int n) {
+  static_assert(sizeof(uint32_t) <= alignof(T), "Uhoh");
+  uint32_t *d = reinterpret_cast<uint32_t*>(dst);
+  uint32_t const *s = reinterpret_cast<uint32_t const*>(src);
+  n *= sizeof(T)/sizeof(uint32_t);
+  n -= threadIdx.x;
+  d += threadIdx.x;
+  s += threadIdx.x;
+  while (n > 0) {
+    *d = *s;
+    d += blockDim.x;
+    s += blockDim.x;
+    n -= blockDim.x;
+  }
 }
 
 template <ncclFunc_t FUNCTION, int ALGO, int PROTO, class REDOP, typename T, int UNROLL>
 class ncclFunction {
   public:
-  __device__ void run(struct ncclWorkElem* args) {}
+  __device__ void run() {}
 };
 
 struct ncclShmemGroup {
@@ -70,60 +69,63 @@ struct ncclShmemData {
   };
   ncclDevComm *comm;
   ncclChannel *channel;
-  struct ncclWork localWork;
+  ncclWork work;
 };
 
 extern __shared__ ncclShmemData ncclShmem;
 
-template <ncclFunc_t FUNCTION, int ALGO, int PROTO, class REDOP, typename T, int UNROLL, int FINDEX>
-__device__ void ncclKernel(struct ncclWorkElem first)  {
+template<ncclFunc_t Fn, int Algo, int Proto, typename Op, typename T, int Unroll, int FnIndex>
+__device__ void ncclKernel(ncclWorkElem first)  {
   int tid = threadIdx.x;
   int bid = blockIdx.x;
+  ncclDevComm *comm = first.comm;
+  ncclChannel *channel = &comm->channels[bid];
+  ncclWork *workFifoHost = channel->workFifo;
+  ncclWork *workFifoDev = channel->workFifoDev;
+  int workFifoIx = channel->index;
 
-  auto f = ncclFunction<FUNCTION, ALGO, PROTO, REDOP, T, UNROLL>();
-
-  struct ncclDevComm* comm = first.comm;
-  struct ncclChannel* channel = comm->channels+bid;
   if (tid == 0) {
     ncclShmem.comm = comm;
     ncclShmem.channel = channel;
-    // Still needs a barrier to publish. This will be the first load_coll().
+    // Still needs a barrier to publish.
   }
-
-  struct ncclWorkElem* w = NULL;
 
   /* To optimize for latency, (only) the first operation is passed as argument.*/
   if (bid == 0 && first.funcIndex != FUNC_INDEX_P2P) {
-    w = &first;
-    // since we skip load_coll() we need a barrier to publish ncclTheShmem.conn|channel
+    copyToShmem(&ncclShmem.work.elems[0], &first, 1);
     __syncthreads();
+    goto SkipLoadWork;
   }
 
-  while (1) {
-    if (w == NULL) {
-      w = ncclShmem.localWork.elems;
-      __syncthreads();
-      load_coll(&ncclShmem.localWork, channel->workFifo+channel->index, channel->workFifoDev+channel->index, tid, comm);
+  do {
+    copyToShmem(&ncclShmem.work, &workFifoDev[workFifoIx], 1);
+    { // Check whether the last operation was aborted and make sure all threads exit
+      int aborted = tid == 0 ? *(comm->abortFlag) : 0;
+      if (barrierReduceAny(aborted))
+        break;
+      if (tid == 0)
+        workFifoHost[workFifoIx].elems[0].active = 0;
     }
-    if (tid < w->nThreads) {
-      if (w->funcIndex == FINDEX) {
-        f.run(w);
-      } else {
-        ncclFuncs[w->funcIndex](w);
-      }
+    workFifoIx += 1;
+    if (workFifoIx == NCCL_MAX_OPS)
+      workFifoIx = 0;
+    if (tid == 0)
+      channel->index = workFifoIx;
+
+  SkipLoadWork:
+    if (tid < ncclShmem.work.elems[0].nThreads) {
+      if (ncclShmem.work.elems[0].funcIndex == FnIndex)
+        ncclFunction<Fn, Algo, Proto, Op, T, Unroll>().run();
+      else
+        ncclFuncs[ncclShmem.work.elems[0].funcIndex]();
     }
-    if (tid == 0) channel->index = (channel->index+1) % NCCL_MAX_OPS;
-    if (w->active == 2) {
-      return;
-    }
-    w = NULL;
-  }
+  } while(ncclShmem.work.elems[0].active != 2);
 }
 
 // Only generate kernels for SUM
 #if NCCL_OP == 0
 #define IMPL_COLL_KERN(func, algo, proto, redop, type, fIndex) \
-__global__ void NCCL_KERN_NAME(func, algo, proto, redop, type)(struct ncclWorkElem first) { \
+__global__ void NCCL_KERN_NAME(func, algo, proto, redop, type)(ncclWorkElem first) { \
   ncclKernel<ncclFunc##func, NCCL_ALGO_##algo, NCCL_PROTO_##proto, Func##redop<type>, type, COLL_UNROLL, fIndex>(first); \
 }
 #else
@@ -132,9 +134,8 @@ __global__ void NCCL_KERN_NAME(func, algo, proto, redop, type)(struct ncclWorkEl
 
 // Examples :     AllReduce, RING, LL,    Sum,   uint8
 #define IMPL_COLL_FUNC(func, algo, proto, redop, type) \
-__device__ void NCCL_FUNC_NAME(func, algo, proto, redop, type)(struct ncclWorkElem* args) { \
-  auto f = ncclFunction<ncclFunc##func, NCCL_ALGO_##algo, NCCL_PROTO_##proto, Func##redop<type>, type, COLL_UNROLL>(); \
-  f.run(args); \
+__device__ void NCCL_FUNC_NAME(func, algo, proto, redop, type)() { \
+  ncclFunction<ncclFunc##func, NCCL_ALGO_##algo, NCCL_PROTO_##proto, Func##redop<type>, type, COLL_UNROLL>().run(); \
 }
 
 // Only generate inline kernels for LL

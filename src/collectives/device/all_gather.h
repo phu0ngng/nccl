@@ -11,7 +11,8 @@
 template<class FUNC, typename T, int UNROLL>
 class ncclFunction<ncclFuncAllGather, NCCL_ALGO_RING, NCCL_PROTO_SIMPLE, FUNC, T, UNROLL> {
   public:
-    __device__ void run(struct ncclWorkElem* args) {
+    __device__ void run() {
+      ncclWorkElem *args = &ncclShmem.work.elems[0];
       const int tid = threadIdx.x;
       const int nthreads = args->nThreads-WARP_SIZE;
       const int bid = args->coll.bid;
@@ -69,7 +70,8 @@ class ncclFunction<ncclFuncAllGather, NCCL_ALGO_RING, NCCL_PROTO_SIMPLE, FUNC, T
 template<class FUNC, typename T, int UNROLL>
 class ncclFunction<ncclFuncAllGather, NCCL_ALGO_RING, NCCL_PROTO_LL, FUNC, T, UNROLL> {
   public:
-    __device__ void run(struct ncclWorkElem* args) {
+    __device__ void run() {
+      ncclWorkElem *args = &ncclShmem.work.elems[0];
       const int tid = threadIdx.x;
       const int nthreads = args->nThreads;
       const int bid = args->coll.bid;
@@ -127,7 +129,8 @@ class ncclFunction<ncclFuncAllGather, NCCL_ALGO_RING, NCCL_PROTO_LL, FUNC, T, UN
 template<class FUNC, typename T, int UNROLL>
 class ncclFunction<ncclFuncAllGather, NCCL_ALGO_RING, NCCL_PROTO_LL128, FUNC, T, UNROLL> {
   public:
-    __device__ void run(struct ncclWorkElem* args) {
+    __device__ void run() {
+      ncclWorkElem *args = &ncclShmem.work.elems[0];
       const int tid = threadIdx.x;
       const int nthreads = args->nThreads;
       const int bid = args->coll.bid;
@@ -185,12 +188,12 @@ class ncclFunction<ncclFuncAllGather, NCCL_ALGO_RING, NCCL_PROTO_LL128, FUNC, T,
 template<int PROTO, class FUNC, typename T, int UNROLL>
 class ncclFunction<ncclFuncAllGather, NCCL_ALGO_TREE, PROTO, FUNC, T, UNROLL> {
   public:
-    __device__ void run(struct ncclWorkElem* args) {}
+    __device__ void run() {}
 };
 
 template<int PROTO, class FUNC, typename T, int UNROLL>
 class ncclFunction<ncclFuncAllGather, NCCL_ALGO_COLLNET, PROTO, FUNC, T, UNROLL> {
   public:
-    __device__ void run(struct ncclWorkElem* args) {}
+    __device__ void run() {}
 };
 
