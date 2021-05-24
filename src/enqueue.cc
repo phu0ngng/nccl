@@ -349,7 +349,7 @@ static inline ncclResult_t getCollNetSupport(struct ncclInfo* info, int* collNet
   return ncclSuccess;
 }
 
-static ncclResult_t getAlgoInfo(struct ncclInfo* info, int collNetTypeSupport) {
+static ncclResult_t getAlgoInfo(struct ncclInfo* info, int collNetTypeSupport, int numPipeOps) {
   struct ncclComm* comm = info->comm;
   float minTime = 3600000000.0; // Hopefully no operation will take an hour to complete.
   // Find algorithm / protocol.
@@ -360,7 +360,7 @@ static ncclResult_t getAlgoInfo(struct ncclInfo* info, int collNetTypeSupport) {
     if (a == NCCL_ALGO_COLLNET && collNetTypeSupport != 1) continue;
     for (int p=0; p<NCCL_NUM_PROTOCOLS; p++) {
       float time;
-      NCCLCHECK(ncclTopoGetAlgoTime(info, a, p, &time));
+      NCCLCHECK(ncclTopoGetAlgoTime(info, a, p, numPipeOps, &time));
       if (time >= 0 && time < minTime) {
         info->algorithm = a;
         info->protocol = p;
@@ -451,7 +451,7 @@ static ncclResult_t computeColl(struct ncclInfo* info /* input */, struct ncclWo
   // Check whether algo and proto have been preset
   if (info->nChannels > 0 && info->nThreads > 0) goto comp_next;
   NCCLCHECK(getCollNetSupport(info, &collNetTypeSupport));
-  NCCLCHECK(getAlgoInfo(info, collNetTypeSupport));
+  NCCLCHECK(getAlgoInfo(info, collNetTypeSupport, 1));
 
 comp_next:
   // Set nstepsPerLoop and nchunksPerLoop
@@ -661,7 +661,8 @@ ncclResult_t ncclSetupAsyncKernels(ncclComm_t comm) {
     total.coll = commonColl;
     total.nBytes = comm->asyncTotalSize;
     total.nChannels = std::min(channelUsed, comm->nChannels);
-    if (fastPath) NCCLCHECK(getAlgoInfo(&total, allCollNetSupport));
+    int perChannelOps = DIVUP(channelUsed, total.nChannels);
+    if (fastPath) NCCLCHECK(getAlgoInfo(&total, allCollNetSupport, perChannelOps));
     for (int c = 0; c < comm->asyncOpCount; c++) {
       struct ncclInfo* info = comm->asyncOps+c;
       if (fastPath) {
