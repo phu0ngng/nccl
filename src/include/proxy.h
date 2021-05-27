@@ -138,4 +138,16 @@ inline void transportProxyWait(const FUNC& func) {
   }
 }
 
+#include "transport.h"
+
+struct ncclProxyServiceState {
+  struct ncclComm* comm;
+  int cudaDev;
+  int listenFd;
+  int stop;
+  void* transportStates[NTRANSPORTS];
+};
+
+extern void* ncclProxyService(void* args);
+
 #endif

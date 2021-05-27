@@ -8,10 +8,10 @@
 #include "core.h"
 #include "utils.h"
 #include "bootstrap.h"
-#include "transport.h"
 #include "net.h"
 #include <unistd.h>
 #include <sys/types.h>
+#include "proxy.h"
 
 /* Init functions */
 static char bootstrapNetIfName[MAX_IF_NAME_SIZE+1];
@@ -196,15 +196,6 @@ struct unexConn {
   struct unexConn* next;
 };
 
-// Remote allocator state
-struct remAllocState {
-  struct ncclComm* comm;
-  int cudaDev;
-  int listenFd;
-  int stop;
-  void* transportStates[NTRANSPORTS];
-};
-
 struct extState {
   int extListenFd;
   int extRingRecvFd;
@@ -217,111 +208,9 @@ struct extState {
   int nranks;
 
   // Intermediate memory allocation service
-  struct remAllocState* allocState;
-  pthread_t allocThread;
+  struct ncclProxyServiceState* proxyState;
+  pthread_t proxyThread;
 };
-
-#define MAX_SEGMENTS 128
-
-struct bootstrapRemState {
-  int connected;
-  int fd;
-  int transport;
-  int send;
-  void* transportState;
-};
-
-static ncclResult_t proxyConnect(struct bootstrapRemState* state, struct ncclComm* comm, int fd) {
-  NCCLCHECK(socketRecv(fd, &state->transport, sizeof(int)));
-  NCCLCHECK(socketRecv(fd, &state->send, sizeof(int)));
-  state->connected = 1;
-  state->fd = fd;
-  return ncclSuccess;
-}
-
-static ncclResult_t proxyCall(struct bootstrapRemState* state, struct ncclComm* comm) {
-  if (state->send) {
-    NCCLCHECK(ncclTransports[state->transport].send.proxyCall(state->fd, &state->transportState, comm));
-  } else {
-    NCCLCHECK(ncclTransports[state->transport].recv.proxyCall(state->fd, &state->transportState, comm));
-  }
-  return ncclSuccess;
-}
-
-static ncclResult_t proxyFree(struct bootstrapRemState* state, struct ncclComm* comm) {
-  if (state->send) {
-    NCCLCHECK(ncclTransports[state->transport].send.proxyFree(state->transportState, comm));
-  } else {
-    NCCLCHECK(ncclTransports[state->transport].recv.proxyFree(state->transportState, comm));
-  }
-  state->connected = 0;
-  close(state->fd);
-  state->fd = -1;
-  return ncclSuccess;
-}
-
-#include <poll.h>
-
-// Service thread to allocate memory for other GPUs, used as intermediate step.
-void* ncclRemoteMemAllocationService(void* args) {
-  struct remAllocState* state = (struct remAllocState *) args;
-  if (cudaSetDevice(state->cudaDev) != cudaSuccess) {
-    WARN("[Rem Allocator] Failed to set CUDA device %d", state->cudaDev);
-  }
-
-  // Prepare poll descriptor
-  struct bootstrapRemState states[MAX_SEGMENTS];
-  struct pollfd pollfds[MAX_SEGMENTS+1];
-  for (int s=0; s<MAX_SEGMENTS; s++) states[s].connected = 0;
-  for (int s=0; s<MAX_SEGMENTS; s++) {
-    pollfds[s].fd = -1;
-    pollfds[s].events = POLLHUP|POLLIN;
-  }
-  pollfds[MAX_SEGMENTS].fd = state->listenFd;
-  pollfds[MAX_SEGMENTS].events = POLLIN;
-
-  int nbuffers = 0;
-  while (state->stop == 0 || (state->stop == 1 && nbuffers > 0)) {
-    if (int error = poll(pollfds, MAX_SEGMENTS+1, 100/*ms*/) < 0) {
-      WARN("[Rem Allocator] Poll failed with error %d", error);
-      return NULL;
-    }
-    if (pollfds[MAX_SEGMENTS].revents) {
-      int s = 0;
-      while (states[s].connected && s < MAX_SEGMENTS) s++;
-      int newfd;
-      if (bootstrapNetAccept(pollfds[MAX_SEGMENTS].fd, &newfd) == ncclSuccess) {
-        if (s == MAX_SEGMENTS || (proxyConnect(states+s, state->comm, newfd) != ncclSuccess)) {
-          WARN("[Rem Allocator] Allocation failed (segment %d, fd %d)", s, newfd);
-          close(newfd);
-        } else {
-          pollfds[s].fd = newfd;
-          nbuffers++;
-        }
-      }
-    }
-    for (int s=0; s<MAX_SEGMENTS; s++) {
-      if (pollfds[s].revents & POLLIN) {
-        if (proxyCall(states+s, state->comm) != ncclSuccess) {
-          WARN("[Rem Allocator] proxyCall %p failed", states+s);
-        }
-      }
-      if (pollfds[s].revents & POLLHUP) {
-        if (proxyFree(states+s, state->comm) != ncclSuccess) {
-          WARN("[Rem Allocator] proxyFree %p failed", states+s);
-        }
-        pollfds[s].fd = -1;
-        nbuffers--;
-      }
-    }
-  }
-  for (int s=0; s<MAX_SEGMENTS; s++) {
-    if (states[s].connected) proxyFree(states+s, state->comm);
-  }
-  close(state->listenFd);
-  free(state);
-  return NULL;
-}
 
 ncclResult_t bootstrapProxyConnect(void* commState, int transport, int send, int rank, int* fd) {
   struct extState* state = (struct extState*)commState;
@@ -393,11 +282,11 @@ ncclResult_t bootstrapInit(ncclUniqueId * id, struct ncclComm* comm) {
   // Create the memory allocation service
   NCCLCHECK(ncclCalloc(&state->peerAllocAddresses, nranks));
   memcpy(state->peerAllocAddresses+rank, &bootstrapNetIfAddr, sizeof(union socketAddress));
-  NCCLCHECK(ncclCalloc(&state->allocState, 1));
-  state->allocState->comm = comm;
-  CUDACHECK(cudaGetDevice(&state->allocState->cudaDev));
-  NCCLCHECK(createListenSocket(&state->allocState->listenFd, state->peerAllocAddresses+rank));
-  pthread_create(&state->allocThread, NULL, ncclRemoteMemAllocationService, state->allocState);
+  NCCLCHECK(ncclCalloc(&state->proxyState, 1));
+  state->proxyState->comm = comm;
+  CUDACHECK(cudaGetDevice(&state->proxyState->cudaDev));
+  NCCLCHECK(createListenSocket(&state->proxyState->listenFd, state->peerAllocAddresses+rank));
+  pthread_create(&state->proxyThread, NULL, ncclProxyService, state->proxyState);
   NCCLCHECK(bootstrapAllGather(state, state->peerAllocAddresses, sizeof(union socketAddress)));
 
   TRACE(NCCL_INIT, "rank %d nranks %d - DONE", rank, nranks);
@@ -520,10 +409,10 @@ ncclResult_t bootstrapClose(void* commState) {
   close(state->extRingSendFd);
   close(state->extRingRecvFd);
 
-  state->allocState->stop = 1;
+  state->proxyState->stop = 1;
 
-  // Join the allocThread so we catch resource leaks as being hung here
-  // pthread_join(state->allocThread, nullptr);
+  // Join the proxyThread so we catch resource leaks as being hung here
+  // pthread_join(state->proxyThread, nullptr);
 
   free(state->peerCommAddresses);
   free(state->peerAllocAddresses);
@@ -538,7 +427,7 @@ ncclResult_t bootstrapAbort(void* commState) {
   if (state->extListenFd) close(state->extListenFd);
   if (state->extRingSendFd) close(state->extRingSendFd);
   if (state->extRingRecvFd) close(state->extRingRecvFd);
-  if (state->allocState) state->allocState->stop = 2;
+  if (state->proxyState) state->proxyState->stop = 2;
   free(state->peerCommAddresses);
   free(state->peerAllocAddresses);
   free(state);
