@@ -744,7 +744,7 @@ ncclResult_t ncclTopoGetCpuAffinity(struct ncclTopoSystem* system, int rank, cpu
     // Use a subset of the GPU affinity set
     CPU_AND(&finalMask, &mask, &cpuMask);
 
-  memcpy(&affinity, &finalMask, sizeof(cpu_set_t));
+  memcpy(affinity, &finalMask, sizeof(cpu_set_t));
 
   // If there is a non empty set, use it to set affinity
   if (CPU_COUNT(&finalMask)) {
