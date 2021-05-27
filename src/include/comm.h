@@ -72,6 +72,7 @@ struct ncclComm {
   int nRanks;  // number of GPUs in communicator
   int cudaDev; // my cuda device index
   int64_t busId;   // my PCI bus ID in int format
+  cpu_set_t cpuAffinity; // CPU affinity of the GPU
 
   int node;
   int nNodes;
@@ -159,6 +160,7 @@ struct ncclComm {
   struct ncclQueueInfo* enqueueInfo;
   cudaGraphNode_t lastSetupNode;
   unsigned long long lastCudaGraphId;
+  int driverVersion;
 };
 
 #endif

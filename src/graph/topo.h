@@ -9,7 +9,6 @@
 
 #include "graph.h"
 #include "core.h"
-#include <sched.h>
 
 #define LOC_WIDTH 5000.0
 #define SM60_NVLINK_WIDTH 18.0
