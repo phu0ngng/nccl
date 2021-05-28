@@ -276,6 +276,7 @@ perftest-DGX-A100:
 
 perftest-multi-gc:
   stage: perf_tests_multi
+  needs: [ "perftest-P100", "perftest-P40" ]
   tags:
     - p100
   variables:
