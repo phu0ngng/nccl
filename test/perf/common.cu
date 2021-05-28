@@ -186,7 +186,7 @@ testResult_t CheckDelta(void* results, void* expected, size_t count, ncclDataTyp
 // For integer values, we use values between 0 and 255
 template<typename T>
 __device__ T testValue(const size_t offset, const int rep, const int rank) {
-#if DEBUG_PRINT
+#if 0 && DEBUG_PRINT
   uint8_t v = rank+1;
 #else
   uint8_t v = (rep+rank+offset) % 256;
@@ -198,7 +198,7 @@ __device__ T testValue(const size_t offset, const int rep, const int rank) {
 // Product operation will produce NaNs.
 template<>
 __device__ double testValue<double>(const size_t offset, const int rep, const int rank) {
-#if DEBUG_PRINT
+#if 0 && DEBUG_PRINT
   return 1.0+double(rank);
 #else
   return 1.0/(1.0+(double)testValue<int>(offset, rep, rank));
@@ -206,7 +206,7 @@ __device__ double testValue<double>(const size_t offset, const int rep, const in
 }
 template<>
 __device__ float testValue<float>(const size_t offset, const int rep, const int rank) {
-#if DEBUG_PRINT
+#if 0 && DEBUG_PRINT
   return 1.0f+float(rank);
 #else
   return 1.0/(1.0+(float)testValue<int>(offset, rep, rank));
@@ -345,7 +345,7 @@ testResult_t CheckData(struct threadArgs* args, ncclDataType_t type, ncclRedOp_t
     TESTCHECK(CheckDelta(data , args->expected[i], count, type, args->delta));
     maxDelta = std::max(*(args->deltaHost), maxDelta);
 
-#ifdef DEBUG_PRINT
+#if 0 && DEBUG_PRINT
     if (rank == 0) {
        int *expectedHost = (int *)malloc(args->expectedBytes);
        int *dataHost = (int *)malloc(args->expectedBytes);
@@ -476,7 +476,7 @@ testResult_t BenchTime(struct threadArgs* args, ncclDataType_t type, ncclRedOp_t
   }
 
   // Sync
-  #if 1
+  #if 0
   TESTCHECK(startColl(args, type, op, root, in_place, 0));
   TESTCHECK(completeColl(args));
   #endif

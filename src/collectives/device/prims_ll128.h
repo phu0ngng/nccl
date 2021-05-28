@@ -8,19 +8,21 @@
 
 #define NCCL_LL128_FLAGTHREAD (NCCL_LL128_LINEELEMS-1)
 
-template <typename T, class FUNC, int NRECV, int NSEND>
-class ncclLL128Primitives {
-private:
+template<typename T, typename RedOp, typename Fan, int Direct>
+class Primitives<T, RedOp, Fan, Direct, ProtoLL128>:
+  public PrimitivesWithoutDirect<Primitives<T, RedOp, Fan, Direct, ProtoLL128>> {
+
+  static constexpr int MaxRecv = Fan::MaxRecv, MaxSend = Fan::MaxSend;
   static constexpr int Input=0, Output=1;
-  FUNC fn;
+  RedOp redOp;
   const int tid;
   const int nthreads;
   const int wid;
   const int stepSize;
   const int warp;
   const bool flagThread;
-  int nrecv = 0;
-  int nsend = 0;
+  const int group;
+  Fan fan;
   T *userBufs[2];
   struct ncclConnInfo* recvConn = NULL;
   volatile uint64_t* recvConnHeadPtr = NULL;
@@ -34,10 +36,10 @@ private:
   uint64_t sendConnHead;
   uint64_t sendConnHeadCache; // Cache last seen value
 
-  uint64_t recvStep[NRECV];
-  uint64_t sendStep[NSEND];
-  uint64_t* recvBuff[NRECV];
-  uint64_t* sendBuff[NSEND];
+  uint64_t recvStep[MaxRecv];
+  uint64_t sendStep[MaxSend];
+  uint64_t* recvBuff[MaxRecv];
+  uint64_t* sendBuff[MaxSend];
 
   inline __device__ int recvOffset(int i) { return (recvStep[i]%NCCL_STEPS)*stepSize; }
   inline __device__ int sendOffset(int i) { return (sendStep[i]%NCCL_STEPS)*stepSize; }
@@ -47,11 +49,7 @@ private:
   inline __device__ uint64_t sendFlag(int i) { return sendStep[i]+1; }
 
   inline __device__ void barrier() {
-    if (NSEND>NRECV) {
-      asm volatile ("bar.sync 1, %0;" :: "r"(nthreads));
-    } else {
-      asm volatile ("bar.sync 2, %0;" :: "r"(nthreads));
-    }
+    asm volatile ("bar.sync %1, %0;" :: "r"(nthreads), "r"(1+group));
   }
 
   uint32_t abort = 0;
@@ -59,7 +57,7 @@ private:
   inline __device__ int checkAbort(int &spins, int i, int send) {
     spins++;
     if (abort == 0 && spins == NCCL_SPINS_BEFORE_CHECK_ABORT) {
-      abort = *(ncclShmem.comm->abortFlag);
+      abort = *ncclShmem.comm.abortFlag;
       spins = 0;
     }
     return abort;
@@ -206,9 +204,9 @@ private:
       if (SrcBuf == Input) {
         #pragma unroll
         for (int u=0; u<ELEMS_PER_THREAD; u+=2) {
-          v[u] = MULTI<FUNC, T>().preOp(fn, v[u]);
+          v[u] = MULTI<RedOp, T>().preOp(redOp, v[u]);
           if (!flagThread)
-            v[u+1] = MULTI<FUNC, T>().preOp(fn, v[u+1]);
+            v[u+1] = MULTI<RedOp, T>().preOp(redOp, v[u+1]);
         }
       }
     }
@@ -219,12 +217,12 @@ private:
         uint64_t* ptr = recvPtr(0)+ll128Offset;
         #pragma unroll
         for (int u=0; u<ELEMS_PER_THREAD; u+=2) {
-          v[u] = SRC ? MULTI<FUNC, T>()(fn, vr[u], v[u]) : vr[u];
-          v[u+1] = SRC ? MULTI<FUNC, T>()(fn, vr[u+1], v[u+1]) : vr[u+1];
+          v[u] = SRC ? MULTI<RedOp, T>()(redOp, vr[u], v[u]) : vr[u];
+          v[u+1] = SRC ? MULTI<RedOp, T>()(redOp, vr[u+1], v[u+1]) : vr[u+1];
         }
       }
 
-      for (int i=1; i<NRECV && i<nrecv; i++) {
+      for (int i=1; i<MaxRecv && i<fan.nrecv(); i++) {
         uint64_t flag = recvFlag(i);
         uint64_t* ptr = recvPtr(i)+ll128Offset;
         bool needReload;
@@ -240,24 +238,24 @@ private:
 
         #pragma unroll
         for (int u=0; u<ELEMS_PER_THREAD; u+=2) {
-          v[u] = MULTI<FUNC, T>()(fn, vr[u], v[u]);
-          v[u+1] = MULTI<FUNC, T>()(fn, vr[u+1], v[u+1]);
+          v[u] = MULTI<RedOp, T>()(redOp, vr[u], v[u]);
+          v[u+1] = MULTI<RedOp, T>()(redOp, vr[u+1], v[u+1]);
         }
       }
     }
     /********************** End Recv ************************/
 
-    if (postOp && !FuncTraits<FUNC>::IsPostOpIdentity) {
+    if (postOp && !FuncTraits<RedOp>::IsPostOpIdentity) {
       #pragma unroll
       for (int u=0; u<ELEMS_PER_THREAD; u+=2) {
-        v[u]   = MULTI<FUNC, T>().postOp(fn, v[u]);
-        v[u+1] = MULTI<FUNC, T>().postOp(fn, v[u+1]);
+        v[u]   = MULTI<RedOp, T>().postOp(redOp, v[u]);
+        v[u+1] = MULTI<RedOp, T>().postOp(redOp, v[u+1]);
       }
     }
 
     /************************ Send **************************/
     if (SEND) {
-      for (int i=1; i<NSEND && i<nsend; i++) {
+      for (int i=1; i<MaxSend && i<fan.nsend(); i++) {
         uint64_t flag = sendFlag(i);
         uint64_t* ptr = sendPtr(i)+ll128Offset;
         #pragma unroll
@@ -296,7 +294,7 @@ private:
     const int nwarps = nthreads/WARP_SIZE;
     nelem = nelem < 0 ? 0 : nelem;
 
-    if (SEND) waitSend(DIVUP(nelem, DataEltPerSlice)*WireWordPerSlice*sizeof(uint64_t));
+    if (SEND) waitSend(divUp(nelem, DataEltPerSlice)*WireWordPerSlice*sizeof(uint64_t));
     barrier();
     nelem -= DataEltPerSlice*warp;
     srcPtr += DataEltPerSlice*warp;
@@ -315,9 +313,9 @@ private:
     }
 
     barrier();
-    if (SEND) for (int i=0; i < NSEND; i++) sendStep[i] += 1;
+    if (SEND) for (int i=0; i < MaxSend; i++) sendStep[i] += 1;
     if (SEND) postSend();
-    if (RECV) for (int i=0; i < NRECV; i++) recvStep[i] += 1;
+    if (RECV) for (int i=0; i < MaxRecv; i++) recvStep[i] += 1;
     if (RECV) postRecv();
   }
 
@@ -325,10 +323,9 @@ private:
     recvBuff[i] = (uint64_t*)conn->buffs[NCCL_PROTO_LL128];
     recvStep[i] = conn->step;
     if (wid == i) recvConn = conn;
-    nrecv++;
   }
   __device__ __forceinline__ void loadRecvSync() {
-    if (tid >= nthreads-WARP_SIZE && wid < nrecv) {
+    if (tid >= nthreads-WARP_SIZE && wid < fan.nrecv()) {
       recvConnHeadPtr = recvConn->head;
       recvConnHead = recvConn->step;
     }
@@ -338,16 +335,15 @@ private:
     sendBuff[i] = (uint64_t*)conn->buffs[NCCL_PROTO_LL128];
     sendStep[i] = conn->step;
     if (wid == i) sendConn = conn;
-    nsend++;
   }
   __device__ __forceinline__ void loadSendSync() {
-    if (tid < nsend) {
+    if (tid < fan.nsend()) {
       sendConnHeadPtr = sendConn->head;
       sendConnHeadCache = *sendConnHeadPtr;
       sendConnHead = sendConn->step;
       sendConnFifoPtr = sendConn->sizesFifo;
     }
-    if (tid >= nthreads-WARP_SIZE && wid<nsend) {
+    if (tid >= nthreads-WARP_SIZE && wid<fan.nsend()) {
       if (sendConn->sizesFifo) {
         sendConnTailPtr = sendConn->tail;
         sendConnTail = sendConn->step;
@@ -355,38 +351,50 @@ private:
     }
   }
 
-  __device__ __forceinline__ void saveRecvSync() {
-    if (tid >= nthreads-WARP_SIZE && wid < nrecv) {
-      recvConn->step = recvConnHead;
-      __threadfence_block();
-    }
-  }
-
-  __device__ __forceinline__ void saveSendSync() {
-    if (tid < nsend) {
-      sendConn->step = sendConnHead;
-      __threadfence_block();
-    }
-  }
-
- public:
-  __device__ ncclLL128Primitives(
+public:
+  __device__ Primitives(
       const int tid, const int nthreads, int const *recvPeers, int const *sendPeers,
-      int stepSize, void const *inputBuf, void *outputBuf
+      void const *inputBuf, void *outputBuf, int group=0
     ):
-    fn(FuncTraits<FUNC>().make(ncclShmem.comm->nRanks)),
+    redOp(FuncTraits<RedOp>().make(ncclShmem.comm.nRanks)),
     tid(tid), nthreads(nthreads), wid(tid%WARP_SIZE), warp(tid/WARP_SIZE),
-    flagThread((tid%8)==7), stepSize(stepSize) {
+    flagThread((tid%8)==7), group(group),
+    stepSize(ncclShmem.comm.buffSizes[NCCL_PROTO_LL128]/NCCL_STEPS/sizeof(uint64_t)) {
 
-    userBufs[Input] = (T*)inputBuf;
-    userBufs[Output] = (T*)outputBuf;
-    // Make sure step is updated before we read it.
-    barrier();
-    auto *channel = ncclShmem.channel;
-    for (int i=0; i<NRECV && recvPeers[i] >= 0; i++) loadRecvConn(&channel->devPeers[recvPeers[i]].recv->conn, i);
-    for (int i=0; i<NSEND && sendPeers[i] >= 0; i++) loadSendConn(&channel->devPeers[sendPeers[i]].send->conn, i);
+    auto *channel = &ncclShmem.channel;
+    int nrecv=0, nsend=0;
+    while (nrecv < MaxRecv && recvPeers[nrecv] >= 0) {
+      loadRecvConn(&channel->devPeers[recvPeers[nrecv]].recv->conn, nrecv);
+      nrecv++;
+    }
+    while (nsend < MaxSend && sendPeers[nsend] >= 0) {
+      loadSendConn(&channel->devPeers[sendPeers[nsend]].send->conn, nsend);
+      nsend++;
+    }
+    this->fan = Fan(nrecv, nsend);
     loadRecvSync();
     loadSendSync();
+    setDataPtrs(inputBuf, outputBuf);
+  }
+
+  __device__ ~Primitives() {
+    // Save steps for the next operation
+    if (tid >= nthreads-WARP_SIZE && wid < fan.nrecv())
+      recvConn->step = recvConnHead;
+    if (tid < fan.nsend())
+      sendConn->step = sendConnHead;
+    // Ensure all steps written back
+    barrier();
+  }
+
+  __device__ void setDataPtrs(void const *inputBuf, void *outputBuf) {
+    userBufs[Input] = (T*)inputBuf;
+    userBufs[Output] = (T*)outputBuf;
+  }
+
+  __device__ void moveDataPtrs(intptr_t delta) {
+    userBufs[Input] += delta;
+    userBufs[Output] += delta;
   }
 
   __device__ void send(intptr_t inpIx, int eltN) {
@@ -412,11 +420,5 @@ private:
   }
   __device__ void recvReduceCopySend(intptr_t inpIx, intptr_t outIx, int eltN, bool postOp=false) {
     return GenericOp<1, 1, Input, Output>(inpIx, outIx, eltN, postOp);
-  }
-
-  __device__ __forceinline__ ~ncclLL128Primitives() {
-    // Save steps for the next operation
-    saveRecvSync();
-    saveSendSync();
   }
 };

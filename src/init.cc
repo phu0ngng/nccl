@@ -187,8 +187,7 @@ static ncclResult_t commFree(ncclComm_t comm) {
   if (comm->bootstrap)
     NCCLCHECK(bootstrapClose(comm->bootstrap));
 
-  CUDACHECK(cudaFree(comm->hostDevComm.channels));
-  CUDACHECK(cudaFree(comm->devComm));
+  CUDACHECK(cudaFree((ncclDevCommAndChannels*)comm->devComm));
 
   for (int channel=0; channel<MAXCHANNELS; channel++)
     NCCLCHECK(freeChannel(comm->channels+channel, comm->nRanks));
@@ -223,6 +222,8 @@ static ncclResult_t commFree(ncclComm_t comm) {
   free(comm);
   return ncclSuccess;
 }
+
+NCCL_PARAM(AggChannelSize, "AGG_CHANNEL_SIZE", -2);
 
 static ncclResult_t commAlloc(ncclComm_t* comret, int ndev, int rank) {
   if (ndev < 1) {
@@ -271,6 +272,14 @@ static ncclResult_t commAlloc(ncclComm_t* comret, int ndev, int rank) {
   NCCLCHECK(ncclCalloc(&comm->asyncOps, NCCL_MAX_OPS));
   comm->asyncOpCount = 0;
   comm->asyncTotalSize = 0;
+  comm->channelSize = ncclParamAggChannelSize() != -2 ? ncclParamAggChannelSize() :
+                      NCCL_AGG_CHANNEL_SIZE * std::min(16, comm->nRanks);  // scale channel size based on nranks as latency increases
+  comm->asyncAllocMode = ncclComm::SHORTEST_QUEUE;
+  char* str = getenv("NCCL_AGG_ALLOC_MODE");
+  if (str) INFO(NCCL_ENV, "NCCL_AGG_ALLOC_MODE set by environment to %s", str);
+  if (str && strcmp(str, "ROUND_ROBIN") == 0) {
+    comm->asyncAllocMode = ncclComm::ROUND_ROBIN;
+  }
 
   NCCLCHECK(ncclCalloc(&comm->enqueueInfo, 1));
   comm->enqueueInfo->comm = comm;
@@ -296,9 +305,13 @@ static ncclResult_t commAlloc(ncclComm_t* comret, int ndev, int rank) {
 }
 
 static ncclResult_t devCommSetup(ncclComm_t comm) {
+  ncclDevCommAndChannels *devCommAndChans;
+  NCCLCHECK(ncclCudaCalloc(&devCommAndChans, 1));
+  comm->devComm = &devCommAndChans->comm;
+  comm->hostDevComm.channels = devCommAndChans->channels;
+
   // Duplicate the channels on the device
   int nChannels = std::max(comm->nChannels, comm->p2pnChannels);
-  NCCLCHECK(ncclCudaCalloc(&comm->hostDevComm.channels, nChannels));
   NCCLCHECK(ncclCudaMemcpy(comm->hostDevComm.channels, comm->channels, nChannels));
 
   // Copy userRanks and peers
@@ -307,7 +320,6 @@ static ncclResult_t devCommSetup(ncclComm_t comm) {
   }
 
   // Duplicate the dev comm on the device
-  NCCLCHECK(ncclCudaCalloc(&comm->devComm, 1));
   NCCLCHECK(ncclCudaMemcpy(comm->devComm, &comm->hostDevComm, 1));
   return ncclSuccess;
 }
@@ -562,7 +574,7 @@ static ncclResult_t initTransportsRank(struct ncclComm* comm, ncclUniqueId* comm
 
   struct ncclTopoGraph treeGraph;
   treeGraph.id = 1;
-  treeGraph.pattern = tmpNnodes <= 2 ? NCCL_TOPO_PATTERN_TREE : NCCL_TOPO_PATTERN_BALANCED_TREE;
+  treeGraph.pattern = NCCL_TOPO_PATTERN_BALANCED_TREE;
   treeGraph.crossNic = ncclParamCrossNic();
   treeGraph.collNet = 0;
   treeGraph.minChannels = 1;

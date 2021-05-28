@@ -11,6 +11,9 @@
 #include "group.h"
 #include "collectives.h"
 
+#define NCCL_MIN_CHANNEL_SIZE (NCCL_LL_THREAD_THRESHOLD*64)
+#define NCCL_AGG_CHANNEL_SIZE (1LL << 21) /* 2 MiB, ideal per-channel size to fully utilize bandwidth */
+
 size_t ncclKernMaxLocalSize();
 ncclResult_t ncclEnqueueCheck(struct ncclInfo* info);
 ncclResult_t ncclCpuBarrierIn(struct ncclComm* comm, int* isLast);
@@ -45,6 +48,7 @@ struct ncclQueueInfo {
   ncclComm_t comm;
   int maxChannels;    // Dynamic version of gridDim
   ncclResult_t ret;   // Return value of host setup call
+  int nElems;
   struct ncclQueueElemList elemList;
 };
 
@@ -64,6 +68,7 @@ static ncclResult_t ncclAddQueueElem(struct ncclQueueInfo* eqInfo, struct ncclQu
     NCCLCHECK(ncclCalloc(&list->tail->next, 1));
   }
   list->tail = list->tail->next;
+  eqInfo->nElems++;
   return ncclSuccess;
 }
 
@@ -72,6 +77,7 @@ static ncclResult_t ncclResetQueueInfo(struct ncclQueueInfo* eqInfo) {
   if (eqInfo == NULL) return ncclInternalError;
   eqInfo->maxChannels = 0;
   eqInfo->ret = ncclSuccess;
+  eqInfo->nElems = 0;
   eqInfo->elemList.tail = eqInfo->elemList.head;
   return ncclSuccess;
 }
