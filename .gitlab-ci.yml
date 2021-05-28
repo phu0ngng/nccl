@@ -290,7 +290,7 @@ perftest-multi-gc:
 
 perftest-multi-prom:
   stage: perf_tests_multi
-  needs: [ "perftest-DGX-1" ]
+  needs: [ "perftest-DGX-1V" ]
   rules:
     - if: '$RUN_ON_PROM == "1"'
       when: always
