@@ -142,6 +142,7 @@ apitest-DGX-A100:
 
 perftest-P100:
   stage: perf_tests_single
+  needs: [ "apitest-P100" ]
   tags:
     - p100
   variables:
@@ -155,6 +156,7 @@ perftest-P100:
 
 perftest-P40:
   stage: perf_tests_single
+  needs: [ "apitest-P40" ]
   tags:
     - p40
   variables:
@@ -168,6 +170,7 @@ perftest-P40:
 
 perftest-GP100:
   stage: perf_tests_single
+  needs: [ "apitest-GP100" ]
   tags:
     - gp100
   variables:
@@ -181,6 +184,7 @@ perftest-GP100:
 
 perftest-M40:
   stage: perf_tests_single
+  needs: [ "apitest-M40" ]
   tags:
     - m40
   variables:
@@ -194,6 +198,7 @@ perftest-M40:
 
 perftest-K80:
   stage: perf_tests_single
+  needs: [ "apitest-K80" ]
   tags:
     - k80
   variables:
@@ -207,6 +212,7 @@ perftest-K80:
 
 perftest-K40:
   stage: perf_tests_single
+  needs: [ "apitest-K40" ]
   tags:
     - k40
   variables:
@@ -220,6 +226,7 @@ perftest-K40:
 
 perftest-A100:
   stage: perf_tests_single
+  needs: [ "apitest-A100" ]
   tags:
     - a100pci
   variables:
@@ -233,6 +240,7 @@ perftest-A100:
 
 perftest-DGX-1V:
   stage: perf_tests_single
+  needs: [ "apitest-DGX-1V" ]
   rules:
     - if: '$RUN_ON_PROM == "1"'
       when: always
@@ -250,6 +258,7 @@ perftest-DGX-1V:
 
 perftest-DGX-A100:
   stage: perf_tests_single
+  needs: [ "apitest-DGX-A100" ]
   rules:
     - if: '$RUN_ON_SELENE == "1"'
       when: always
@@ -281,6 +290,7 @@ perftest-multi-gc:
 
 perftest-multi-prom:
   stage: perf_tests_multi
+  needs: [ "perftest-DGX-1" ]
   rules:
     - if: '$RUN_ON_PROM == "1"'
       when: always
@@ -301,6 +311,7 @@ perftest-multi-prom:
 
 perftest-multi-selene:
   stage: perf_tests_multi
+  needs: [ "perftest-DGX-A100" ]
   rules:
     - if: '$RUN_ON_SELENE == "1"'
       when: always
