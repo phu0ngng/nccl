@@ -236,6 +236,7 @@ static int ncclstringtoop (char *str) {
     return ncclSum;
 }
 
+extern int is_main_proc;
 extern thread_local int is_main_thread;
 #define PRINT if (is_main_thread) printf
 
