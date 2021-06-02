@@ -157,7 +157,7 @@ ncclResult_t ncclTopoTuneModel(struct ncclComm* comm, int minCompCap, int maxCom
             2 * ((nRanks/nNodes-1) * intraLat + log2i(nNodes) * interLat);
         } else {
           comm->latencies[coll][a][p] +=
-            2 * (nRanks/nNodes-1) * intraLat + interLat;
+            2 * intraLat + interLat;  // Oneshot CollNet has only 1 hop intra node
         }
       }
     }

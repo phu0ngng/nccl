@@ -781,10 +781,8 @@ static ncclResult_t initTransportsRank(struct ncclComm* comm, ncclUniqueId* comm
       struct ncclChannel* channel = comm->channels+c;
       for (int h=0; h<nHeads; h++) {
         const int head = heads[h];
-        if (ncclTransportCollNetSetup(comm, &collNetGraph, channel, head, head, h, collNetRecv) != 1)
-          collNetSetupFail = 1;
-        else if (ncclTransportCollNetSetup(comm, &collNetGraph, channel, head, head, h, collNetSend) != 1)
-          collNetSetupFail = 1;
+        collNetSetupFail = ncclTransportCollNetSetup(comm, &collNetGraph, channel, head, head, h, collNetRecv);
+        if (!collNetSetupFail) collNetSetupFail = ncclTransportCollNetSetup(comm, &collNetGraph, channel, head, head, h, collNetSend);
       }
       // Verify CollNet setup across ranks after trying the first channel
       if (c == 0) {
