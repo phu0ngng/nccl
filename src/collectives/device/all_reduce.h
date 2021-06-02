@@ -16,7 +16,7 @@ namespace {
     const int bid = args->coll.bid;
     const int nChannels = args->coll.nChannels;
     ncclRing *ring = &ncclShmem.channel.ring;
-    int *ringUserRanks = ring->devUserRanks;
+    int ringIx = ring->index;
     const ssize_t chunkSize = int(Proto::calcBytePerStep()/sizeof(T) * (Proto::Id == NCCL_PROTO_SIMPLE ? ALLREDUCE_CHUNKSTEPS : 1));
     const int nranks = ncclShmem.comm.nRanks;
     const ssize_t loopSize = nChannels*nranks*chunkSize;
@@ -37,7 +37,7 @@ namespace {
       ssize_t realChunkSize;
       if (Proto::Id == NCCL_PROTO_SIMPLE) {
         realChunkSize = min(chunkSize, divUp(size-gridOffset, nChannels*nranks));
-        realChunkSize = roundUp(realChunkSize, (nthreads - WARP_SIZE)*sizeof(uint64_t)/sizeof(T));
+        realChunkSize = roundUp(realChunkSize, (nthreads-WARP_SIZE)*sizeof(uint64_t)/sizeof(T));
       }
       else
         realChunkSize = min(chunkSize, divUp(size-gridOffset, nChannels*nranks*minChunkSize)*minChunkSize);
@@ -49,20 +49,23 @@ namespace {
         else
           return gridOffset + (chunk*nChannels + bid)*realChunkSize;
       };
+      auto modRanks = [&]__device__(int r)->int {
+        return r - (r >= nranks ? nranks : 0);
+      };
 
       ssize_t offset;
       int nelem;
       int chunk;
 
       // step 0: push data to next GPU
-      chunk = ringUserRanks[nranks-1];
+      chunk = modRanks(ringIx + nranks-1);
       offset = calcOffset(chunk);
       nelem = min(realChunkSize, size-offset);
       prims.send(offset, nelem);
 
       // k-2 steps: reduce and copy to next GPU
       for (int j=2; j<nranks; ++j) {
-        chunk = ringUserRanks[nranks-j];
+        chunk = modRanks(ringIx + nranks-j);
         offset = calcOffset(chunk);
         nelem = min(realChunkSize, size-offset);
         prims.recvReduceSend(offset, nelem);
@@ -70,21 +73,21 @@ namespace {
 
       // step k-1: reduce this buffer and data, which will produce the final
       // result that we store in this data and push to the next GPU
-      chunk = ringUserRanks[0];
+      chunk = ringIx + 0;
       offset = calcOffset(chunk);
       nelem = min(realChunkSize, size-offset);
       prims.directRecvReduceCopySend(offset, offset, offset, nelem, /*postOp=*/true);
 
       // k-2 steps: copy to next GPU
       for (int j=1; j<nranks-1; ++j) {
-        chunk = ringUserRanks[nranks-j];
+        chunk = modRanks(ringIx + nranks-j);
         offset = calcOffset(chunk);
         nelem = min(realChunkSize, size-offset);
         prims.directRecvCopySend(offset, offset, nelem);
       }
 
       // Make final copy from buffer to dest.
-      chunk = ringUserRanks[1];
+      chunk = modRanks(ringIx + 1);
       offset = calcOffset(chunk);
       nelem = min(realChunkSize, size-offset);
       prims.directRecv(offset, nelem);

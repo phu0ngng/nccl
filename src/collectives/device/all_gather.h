@@ -16,6 +16,7 @@ namespace {
     const int bid = args->coll.bid;
     const int nChannels = args->coll.nChannels;
     ncclRing *ring = &ncclShmem.channel.ring;
+    const int *ringRanks = ring->devUserRanks;
     const ssize_t chunkSize = int(Proto::calcBytePerStep()/sizeof(T) * (Proto::Id == NCCL_PROTO_SIMPLE ? ALLGATHER_CHUNKSTEPS : 1));
     // We should not need the final /2 but it makes performance much, much smoother. Might be a bug somewhere.
     const ssize_t minChunkSizeLL128 = int(nthreads*(Proto::calcBytePerGrain()/sizeof(T))/2);
@@ -48,7 +49,7 @@ namespace {
       int rankDest;
 
       // step 0: push data to next GPU
-      rankDest = ring->devUserRanks[0];
+      rankDest = ringRanks[0];
       offset = chunkOffset + rankDest * size;
 
       if (inputBuf + chunkOffset == outputBuf + offset) { // In place
@@ -59,14 +60,14 @@ namespace {
 
       // k-2 steps: copy to next GPU
       for (int j=1; j<nranks-1; ++j) {
-        rankDest = ring->devUserRanks[nranks-j];
+        rankDest = ringRanks[nranks-j];
         offset = chunkOffset + rankDest * size;
 
         prims.directRecvCopySend(offset, offset, nelem);
       }
 
       // Make final copy from buffer to dest.
-      rankDest = ring->devUserRanks[1];
+      rankDest = ringRanks[1];
       offset = chunkOffset + rankDest * size;
 
       // Final wait/copy.
