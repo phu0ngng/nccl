@@ -10,14 +10,13 @@
 #include "collectives.h"
 #include "devcomm.h"
 
-
 #if __CUDA_ARCH__ >= 800
 #define COLL_UNROLL 8
-#define NCCL_MAX_DEV_ARITY (NCCL_MAX_TREE_ARITY-1)  // Using balanced tree instead of split tree
 #else
 #define COLL_UNROLL 4
-#define NCCL_MAX_DEV_ARITY NCCL_MAX_TREE_ARITY
 #endif
+
+#define NCCL_MAX_DEV_ARITY (NCCL_MAX_TREE_ARITY-1)  // Using balanced tree instead of split tree
 
 // Exit If Abort Barrier across CTA: make sure all threads exit consistently
 // Each thread sets a predicate to true if abort == 1
@@ -84,7 +83,8 @@ __device__ void ncclKernel(struct ncclWorkElem first)  {
   struct ncclWorkElem* w = NULL;
 
   /* To optimize for latency, (only) the first operation is passed as argument.*/
-  if (bid == 0 && first.funcIndex != FUNC_INDEX_P2P) w = &first;
+  if (bid == 0 && first.funcIndex != FUNC_INDEX_P2P && first.active != 3) w = &first;
+  const int maxWorkElems = first.active == 3 ? NCCL_MAX_WORK_ELEMENTS : 1;
 
   while (1) {
     if (w == NULL) {
@@ -92,13 +92,17 @@ __device__ void ncclKernel(struct ncclWorkElem first)  {
       __syncthreads();
       load_coll(&shmem.localWork, channel->workFifo+channel->index, channel->workFifoDev+channel->index, tid, comm);
     }
-    if (tid < w->nThreads) {
-      if (w->funcIndex == FINDEX) {
-        f.run(w);
-      } else {
-        ncclFuncs[w->funcIndex](w);
+    int s=0;
+    do {
+      if (tid < w[s].nThreads) {
+        if (w[s].funcIndex == FINDEX) {
+          f.run(w+s);
+        } else {
+          ncclFuncs[w[s].funcIndex](w+s);
+        }
       }
-    }
+      s++;
+    } while (s < maxWorkElems && w[s].coll.nChannels > 0);
     if (tid == 0) channel->index = (channel->index+1) % NCCL_MAX_OPS;
     if (w->active == 2) {
       return;
