@@ -37,4 +37,64 @@ static long log2i(long n) {
  return l;
 }
 
+// Recyclable list that avoids frequent malloc/free
+template<typename T>
+struct ncclListElem {
+  T data;
+  struct ncclListElem* next;
+};
+
+template<typename T>
+class ncclRecyclableList {
+ private:
+  struct ncclListElem<T>* head;
+  struct ncclListElem<T>* tail;
+  struct ncclListElem<T>* cursor;
+
+ public:
+  ncclRecyclableList() {
+    tail = cursor = head = NULL;
+  }
+
+  // Get a new element from the list and return pointer
+  ncclResult_t getNewElem(T** dataOut) {
+    if (tail != NULL) {
+      *dataOut = &tail->data;
+      memset(*dataOut, 0, sizeof(T));
+    } else {
+      NCCLCHECK(ncclCalloc(&tail, 1));
+      *dataOut = &tail->data;
+      cursor = head = tail;
+    }
+    if (tail->next == NULL) {
+      NCCLCHECK(ncclCalloc(&tail->next, 1));
+    }
+    tail = tail->next;
+    return ncclSuccess;
+  }
+
+  // Get next element from the list during an iteration
+  T* getNext() {
+    // tail always points to the next element to be enqueued
+    // hence does not contain valid data
+    if (cursor == NULL || cursor == tail) return NULL;
+    T* rv = &cursor->data;
+    cursor = cursor->next;
+    return rv;
+  }
+
+  // Recycle the list without freeing the space
+  void recycle() {
+    tail = cursor = head;
+  }
+
+  ~ncclRecyclableList() {
+    while (head != NULL) {
+      struct ncclListElem<T>* temp = head;
+      head = head->next;
+      free(temp);
+    }
+  }
+};
+
 #endif
