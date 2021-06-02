@@ -366,10 +366,12 @@ static ncclResult_t createListenSocket(int *fd, union socketAddress *localAddr) 
 }
 
 static ncclResult_t connectAddress(int* fd, union socketAddress* remoteAddr) {
+  char line[SOCKET_NAME_MAXLEN+1];
   /* IPv4/IPv6 support */
   int family = remoteAddr->sa.sa_family;
   if (family != AF_INET && family != AF_INET6) {
-    WARN("Error : connecting to address with family %d is neither AF_INET(%d) nor AF_INET6(%d)", family, AF_INET, AF_INET6);
+    WARN("Net : connecting to address %s with family %d is neither AF_INET(%d) nor AF_INET6(%d)",
+         socketToString(remoteAddr, line), family, AF_INET, AF_INET6);
     return ncclInternalError;
   }
   int salen = (family == AF_INET) ? sizeof(sockaddr_in) : sizeof(sockaddr_in6);
@@ -388,7 +390,6 @@ static ncclResult_t connectAddress(int* fd, union socketAddress* remoteAddr) {
     SYSCHECK(setsockopt(*fd, SOL_SOCKET, SO_SNDBUF, (char*)&bufsize, sizeof(int)), "setsockopt");
     SYSCHECK(setsockopt(*fd, SOL_SOCKET, SO_RCVBUF, (char*)&bufsize, sizeof(int)), "setsockopt");*/
 
-  char line[SOCKET_NAME_MAXLEN+1];
   TRACE(NCCL_INIT|NCCL_NET,"Connecting to socket %s", socketToString(remoteAddr, line));
 
   int ret;
@@ -424,7 +425,7 @@ static ncclResult_t socketProgressOpt(int op, int fd, union socketAddress *addr,
     }
     if (bytes == -1) {
       if (errno != EINTR && errno != EWOULDBLOCK && errno != EAGAIN) {
-        WARN("Call to recv from %s failed : %s", socketToString(addr, line), strerror(errno));
+        WARN("Net : Call to recv from %s failed : %s", socketToString(addr, line), strerror(errno));
         return ncclSystemError;
       } else {
         bytes = 0;
