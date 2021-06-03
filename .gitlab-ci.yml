@@ -4,7 +4,7 @@ stages:
   - api_tests
   - perf_tests_single
   - perf_tests_multi
-  - perf_regression
+#  - perf_regression
 
 variables:
   NCCL_REGRESSION_BASELINE: v2.9.6-1
@@ -323,24 +323,24 @@ perftest-multi-selene:
     - salloc -N 4 -n 32 --account=nccl -pluna -J "nccl-cicd::$GITLAB_USER_LOGIN:perftest-multi::$CI_COMMIT_BRANCH:$CI_COMMIT_SHORT_SHA" -t 00:10:00 ./test/scripts/gitlab-runner-perftest.sh 16G
   interruptible: true
 
-perf_regression-multi-gc:
-  stage: perf_regression
-  when: manual
-  allow_failure: true
-  interruptible: true
-  tags:
-    - p100
-  variables:
-    NCCL_IB_HCA: "mlx5_0"
-    NCCL_DEBUG: "WARN"
-    MPI_HOME: "/opt/mpi/openmpi-1.10.7"
-    CUDA_HOME: "/usr/local/cuda-11.0"
-    SALLOC: "salloc -t 00:05:00 -N 1 -w gc01"
-  script:
-    - ./test/scripts/gitlab-runner-perf-regression.sh
-  cache:
-    key: "build-${REGRESSION_BASELINE}"
-    paths:
-      - "build-${REGRESSION_BASELINE}/lib"
-      - "build-${REGRESSION_BASELINE}/test/perf"
+#perf_regression-multi-gc:
+#  stage: perf_regression
+#  when: manual
+#  allow_failure: true
+#  interruptible: true
+#  tags:
+#    - p100
+#  variables:
+#    NCCL_IB_HCA: "mlx5_0"
+#    NCCL_DEBUG: "WARN"
+#    MPI_HOME: "/opt/mpi/openmpi-1.10.7"
+#    CUDA_HOME: "/usr/local/cuda-11.0"
+#    SALLOC: "salloc -t 00:05:00 -N 1 -w gc01"
+#  script:
+#    - ./test/scripts/gitlab-runner-perf-regression.sh
+#  cache:
+#    key: "build-${REGRESSION_BASELINE}"
+#    paths:
+#      - "build-${REGRESSION_BASELINE}/lib"
+#      - "build-${REGRESSION_BASELINE}/test/perf"
 
