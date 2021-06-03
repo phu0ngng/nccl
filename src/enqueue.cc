@@ -160,7 +160,7 @@ static ncclResult_t setupLaunch(struct ncclQueueInfo* eqInfo, int usingCudaGraph
       // Except P2P or aggregation cases
       struct ncclWork* work = channel->workFifo+((channel->workFifoTail-channel->workCount)%NCCL_MAX_OPS);
       struct ncclWorkElem* elem = work->elems;
-      if (elem->funcIndex != FUNC_INDEX_P2P && eqInfo->nElems == 1) elem->active = 0;
+      if (elem->funcIndex != FUNC_INDEX_P2P && eqInfo->elemList->count() == 1) elem->active = 0;
     }
 
     if (channel->gdrMemDesc) {
@@ -321,8 +321,7 @@ ncclResult_t ncclLaunchReset(ncclComm_t comm) {
   // But we need to keep the current enqueue info for CUDA graph
   // Thus we need to creating a new enqueue info for the next run
   if (comm->usingCudaGraph) {
-    NCCLCHECK(ncclCalloc(&comm->enqueueInfo, 1));
-    comm->enqueueInfo->comm = comm;
+    NCCLCHECK(ncclCreateQueueInfo(&comm->enqueueInfo, comm));
   } else {
     // If not in CUDA graph mode, we reuse the same info space
     NCCLCHECK(ncclResetQueueInfo(comm->enqueueInfo));
@@ -562,7 +561,7 @@ static ncclResult_t ncclSetupCollKernel(struct ncclInfo* info) {
 
   // Compute cuda kernel arg and proxy arg templates
   struct ncclQueueElem* eqElem;
-  NCCLCHECK(ncclAddQueueElem(comm->enqueueInfo, &eqElem));
+  NCCLCHECK(comm->enqueueInfo->elemList->getNewElem(&eqElem));
   struct ncclWorkElem* work = &eqElem->work;
   eqElem->proxyArgs.nsubs = 1;
   NCCLCHECK(computeColl(info, work, &eqElem->proxyArgs));
@@ -715,7 +714,7 @@ static ncclResult_t ncclSaveP2p(struct ncclInfo* info) {
         }
       }
     }
-    NCCLCHECK(enqueueP2pInfo(comm->p2pSends+info->root, (void*)info->sendbuff, nBytes));
+    NCCLCHECK(ncclSaveP2pInfo(comm->p2pSends[info->root], (void*)info->sendbuff, nBytes));
     comm->p2pSendCount++;
   } else {
     if (peer != comm->rank) {
@@ -728,7 +727,7 @@ static ncclResult_t ncclSaveP2p(struct ncclInfo* info) {
         }
       }
     }
-    NCCLCHECK(enqueueP2pInfo(comm->p2pRecvs+info->root, info->recvbuff, nBytes));
+    NCCLCHECK(ncclSaveP2pInfo(comm->p2pRecvs[info->root], info->recvbuff, nBytes));
     comm->p2pRecvCount++;
   }
   return ncclSuccess;
@@ -807,7 +806,7 @@ ncclResult_t ncclSetupP2pKernel(struct ncclInfo* info) {
   ncclComm* comm = info->comm;
   // Compute cuda kernel arg and proxy arg templates
   struct ncclQueueElem* eqElem;
-  NCCLCHECK(ncclAddQueueElem(comm->enqueueInfo, &eqElem));
+  NCCLCHECK(comm->enqueueInfo->elemList->getNewElem(&eqElem));
   // The proxy code will set and tune the send/recv chunk size, make sure to run it first.
   NCCLCHECK(ncclProxyComputeP2p(info, &eqElem->proxyArgs));
   NCCLCHECK(computeP2pWorkElem(info, &eqElem->work));
@@ -875,17 +874,17 @@ void CUDART_CB ncclEnqueueHostSetup(void* arg) {
   ncclComm_t comm = eqInfo->comm;
 
   // Iterate through the element list
-  struct ncclQueueElem* eqElem = eqInfo->elemList.head;
-  while (eqElem != eqInfo->elemList.tail) { // The queue always has one extra element
+  struct ncclQueueElem* eqElem = eqInfo->elemList->getNext();
+  while (eqElem != NULL) {
     if (eqElem->work.funcIndex == FUNC_INDEX_P2P) {
       NCCLCHECKGOTO(ncclEnqueueP2pKernel(comm, eqElem), ret, cb_end);
-    } else if (eqInfo->nElems > 1) {
+    } else if (eqInfo->elemList->count() > 1) {
       // We have more than one operation, hence aggregating
       NCCLCHECKGOTO(ncclEnqueueAsyncKernel(comm, eqElem), ret, cb_end);
     } else {
       NCCLCHECKGOTO(ncclEnqueueCollKernel(comm, eqElem), ret, cb_end);
     }
-    eqElem = eqElem->next;
+    eqElem = eqInfo->elemList->getNext();
   }
 
   NCCLCHECKGOTO(setupLaunch(eqInfo, USING_CUDA_GRAPH), ret, cb_end);

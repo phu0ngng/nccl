@@ -79,21 +79,17 @@ ncclResult_t initNetPlugin(ncclNet_t** net, ncclCollNet_t** collnet) {
     }
     return ncclSuccess;
   }
-  ncclNet_t* extNet = (ncclNet_t*) dlsym(netPluginLib, STR(NCCL_PLUGIN_SYMBOL));
-  if (extNet == NULL) {
+  *net = (ncclNet_t*) dlsym(netPluginLib, STR(NCCL_PLUGIN_SYMBOL));
+  if (*net == NULL) {
     INFO(NCCL_INIT|NCCL_NET, "NET/Plugin: Failed to find " STR(NCCL_PLUGIN_SYMBOL) " symbol.");
-  } else if (initNet(extNet) == ncclSuccess) {
-    *net = extNet;
-    // Check for CollNet
-    ncclCollNet_t* extCollNet = (ncclCollNet_t*) dlsym(netPluginLib, STR(NCCL_COLLNET_PLUGIN_SYMBOL));
-    if (extCollNet == NULL) {
-      INFO(NCCL_INIT|NCCL_NET, "NET/Plugin: Failed to find " STR(NCCL_COLLNET_PLUGIN_SYMBOL) " symbol.");
-    } else if (initCollNet(extCollNet) == ncclSuccess) {
-      *collnet = extCollNet;
-    }
+    if (netPluginLib != NULL) dlclose(netPluginLib);
     return ncclSuccess;
   }
-  if (netPluginLib != NULL) dlclose(netPluginLib);
+  // Check for CollNet
+  *collnet = (ncclCollNet_t*) dlsym(netPluginLib, STR(NCCL_COLLNET_PLUGIN_SYMBOL));
+  if (*collnet == NULL) {
+    INFO(NCCL_INIT|NCCL_NET, "NET/Plugin: Failed to find " STR(NCCL_COLLNET_PLUGIN_SYMBOL) " symbol.");
+  }
   return ncclSuccess;
 }
 
@@ -101,13 +97,27 @@ ncclResult_t initNet() {
   // Always initialize bootstrap network
   NCCLCHECK(bootstrapNetInit());
 
-  NCCLCHECK(initNetPlugin(&ncclNet, &ncclCollNet));
-  if (ncclNet != NULL) return ncclSuccess;
-  if (initNet(&ncclNetIb) == ncclSuccess) {
-    ncclNet = &ncclNetIb;
-  } else {
-    NCCLCHECK(initNet(&ncclNetSocket));
-    ncclNet = &ncclNetSocket;
+  // Initialize main communication network
+  ncclNet_t* nets[3] = { NULL, &ncclNetIb, &ncclNetSocket };
+  ncclCollNet_t* collNets[3] = { NULL, NULL, NULL };
+  NCCLCHECK(initNetPlugin(nets+0, collNets+0));
+  char* netName = getenv("NCCL_NET");
+
+  for (int i=0; i<3; i++) {
+    if (nets[i] == NULL) continue;
+    if (netName && strcmp(netName, nets[i]->name) != 0) continue;
+    // net plugin is already initialized
+    if (initNet(nets[i]) != ncclSuccess) continue;
+    ncclNet = nets[i];
+    if (collNets[i] && initCollNet(collNets[i]) == ncclSuccess) {
+      ncclCollNet = collNets[i];
+    }
+    break;
+  }
+
+  if (ncclNet == NULL) {
+    WARN("Error: network %s not found.", netName ? netName : "");
+    return ncclInvalidUsage;
   }
   return ncclSuccess;
 }
@@ -177,6 +187,10 @@ static ncclResult_t commFree(ncclComm_t comm) {
     return ncclSuccess;
   free(comm->connectSend);
   free(comm->connectRecv);
+  for (int peer=0; peer<comm->nRanks; peer++) {
+    delete comm->p2pSends[peer];
+    delete comm->p2pRecvs[peer];
+  }
   free(comm->p2pSends);
   free(comm->p2pRecvs);
   free(comm->asyncOps);
@@ -281,8 +295,7 @@ static ncclResult_t commAlloc(ncclComm_t* comret, int ndev, int rank) {
     comm->asyncAllocMode = ncclComm::ROUND_ROBIN;
   }
 
-  NCCLCHECK(ncclCalloc(&comm->enqueueInfo, 1));
-  comm->enqueueInfo->comm = comm;
+  NCCLCHECK(ncclCreateQueueInfo(&comm->enqueueInfo, comm));
   comm->lastSetupNode = NULL;
   comm->lastCudaGraphId = -1;
 
@@ -737,9 +750,12 @@ static ncclResult_t initTransportsRank(struct ncclComm* comm, ncclUniqueId* comm
 
   // Set Affinity to a CPU local the our GPU, so that all memory we allocate
   // on the host is local.
+  NCCLCHECK(ncclTopoGetCpuAffinity(comm->topo, comm->rank, &comm->cpuAffinity));
   cpu_set_t affinitySave;
-  sched_getaffinity(0, sizeof(cpu_set_t), &affinitySave);
-  NCCLCHECK(ncclTopoSetAffinity(comm->topo, comm->rank));
+  if (CPU_COUNT(&comm->cpuAffinity)) {
+    sched_getaffinity(0, sizeof(cpu_set_t), &affinitySave);
+    sched_setaffinity(0, sizeof(cpu_set_t), &comm->cpuAffinity);
+  }
   ncclResult_t ret;
 
   NCCLCHECK(computeBuffSizes(comm));
@@ -856,7 +872,7 @@ collnet_cleanup:
   // We should have allocated all buffers, collective fifos, ... we can
   // restore the affinity.
 affinity_restore:
-  sched_setaffinity(0, sizeof(cpu_set_t), &affinitySave);
+  if (CPU_COUNT(&comm->cpuAffinity)) sched_setaffinity(0, sizeof(cpu_set_t), &affinitySave);
   if (ret != ncclSuccess) return ret;
 
   TRACE(NCCL_INIT, "rank %d nranks %d - DONE", rank, nranks);
