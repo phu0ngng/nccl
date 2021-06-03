@@ -101,8 +101,7 @@ namespace {
     const int bid = args->coll.bid;
     const int nChannels = args->coll.nChannels;
     ncclTree *tree = &ncclShmem.channel.tree;
-    const int stepSize = Proto::calcBytePerStep()/sizeof(T);
-    const ssize_t chunkSize = int(
+    ssize_t chunkSize = int(
       Proto::Id == NCCL_PROTO_SIMPLE ? args->coll.lastChunkSize
                    /* LL & LL128 */  : Proto::calcBytePerStep()/sizeof(T));
     const ssize_t minChunkSize = int(

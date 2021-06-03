@@ -28,7 +28,7 @@ def subproc(args, env=None):
   env = {x:str(y) for x,y in (env or os.environ).items()}
   p = sp.Popen(args, stdout=sp.PIPE, env=env)
   try:
-    out, err = p.communicate(timeout=5*60)
+    out, err = p.communicate(timeout=10*60)
   except sp.TimeoutExpired:
     exit_code = 1
     print('** FAILED ** command (timeout > 5min):\n' + ' '.join(map(shlex.quote, args)), file=sys.stderr)
@@ -185,8 +185,8 @@ for (oldnew,exe,topo,proto,algo,size,dtype,redop),t0 in times.items():
         neutrals += 1
     except KeyError:
       bads += [('FAILED',exe,topo,proto,algo,size,dtype,redop)]
-bads.sort(key=lambda x:(str(type(x)),x), reverse=True)
-wins.sort(key=lambda x:(str(type(x)),x), reverse=False)
+bads.sort(key=lambda x:(str(type(x[0])),x[0]), reverse=True)
+wins.sort(key=lambda x:(str(type(x[0])),x[0]), reverse=False)
 
 time_end = time.time()
 

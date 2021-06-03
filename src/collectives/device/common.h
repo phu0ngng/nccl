@@ -138,12 +138,12 @@ __device__ void ncclKernel(ncclWorkElem first)  {
       if (tid == 0)
         workFifoHost[workFifoIx].elems[0].active = 0;
     }
+
+  SkipLoadWork:
     workFifoIx = (workFifoIx + 1)%NCCL_MAX_OPS;
     if (tid == 0)
       channel->index = workFifoIx; // write back to real channel, not shmem shadow
 
-  SkipLoadWork:
-    assert(ncclShmem.work.elems[0].active != 0);
     if (ncclShmem.work.elems[0].funcIndex == FnIndex)
       RunWork<Fn, T, RedOp, Algo, Proto>().run(&ncclShmem.work);
     else

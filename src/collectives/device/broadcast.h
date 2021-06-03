@@ -33,7 +33,7 @@ namespace {
       ssize_t realChunkSize;
       if (Proto::Id == NCCL_PROTO_SIMPLE) {
         realChunkSize = min(chunkSize, divUp(size-gridOffset, nChannels));
-        realChunkSize = roundUp(realChunkSize, nthreads*sizeof(uint64_t)/sizeof(T));
+        realChunkSize = roundUp(realChunkSize, (nthreads-WARP_SIZE)*sizeof(uint64_t)/sizeof(T));
       }
       else if (Proto::Id == NCCL_PROTO_LL)
         realChunkSize = size-gridOffset < loopSize ? args->coll.lastChunkSize : chunkSize;
