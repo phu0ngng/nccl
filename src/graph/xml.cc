@@ -463,7 +463,9 @@ ncclResult_t ncclTopoGetXmlFromSys(struct ncclXmlNode* pciNode, struct ncclXml* 
   const char* busId;
   NCCLCHECK(xmlGetAttr(pciNode, "busid", &busId));
   char* path = NULL;
+  ncclDebugNoWarn = NCCL_GRAPH;
   getPciPath(busId, &path);
+  ncclDebugNoWarn = 0;
 
   if (path) {
     NCCLCHECK(ncclTopoSetAttrFromSys(pciNode, path, "class", "class"));
