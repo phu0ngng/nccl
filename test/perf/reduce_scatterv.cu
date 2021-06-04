@@ -108,7 +108,7 @@ testResult_t ReduceScattervRunTest(struct threadArgs* args, int root, ncclDataTy
     run_opnames = &opName;
     op_count = 1;
   } else {
-    op_count = sizeof(test_ops)/sizeof(test_ops[0]);
+    op_count = test_opnum;
     run_ops = test_ops;
     run_opnames = test_opnames;
   }

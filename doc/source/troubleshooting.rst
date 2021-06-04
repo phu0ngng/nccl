@@ -2,7 +2,7 @@
 Troubleshooting
 ###############
 
-Ensure you are familiar with the following known issues and useful debugging strategies. 
+Ensure you are familiar with the following known issues and useful debugging strategies.
 
 ******
 Errors
@@ -15,7 +15,7 @@ Errors are grouped into different categories.
 * ncclUnhandledCudaError and ncclSystemError indicate that a call to an external library failed.
 * ncclInvalidArgument and ncclInvalidUsage indicates there was a programming error in the application using NCCL.
 
-In either case, refer to the NCCL warning message to understand how to resolve the problem. 
+In either case, refer to the NCCL warning message to understand how to resolve the problem.
 
 **********
 GPU Direct
@@ -142,8 +142,8 @@ Sharing Data
 ------------
 
 In order to share data between ranks, NCCL may require shared system memory for IPC and pinned (page-locked) system memory resources. The operating system’s limits on these resources may need to be increased accordingly. Please see your system’s documentation for details. In particular, Docker containers default to limited shared and pinned memory resources. When using NCCL inside a container, it is recommended that you increase these resources by issuing:
-        
+
     --shm-size=1g --ulimit memlock=-1
- 
+
 in the command line to nvidia-docker run.
 

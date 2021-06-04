@@ -34,41 +34,22 @@ ncclResult_t ncclCudaGraphHostSetup(ncclComm_t comm, cudaGraph_t graph);
 struct ncclQueueElem {
   struct ncclWorkElem work;
   struct ncclProxyArgs proxyArgs;
-  struct ncclQueueElem* next;
 };
 
-// Store enqueue elements in a list
-struct ncclQueueElemList {
-  struct ncclQueueElem* head;
-  struct ncclQueueElem* tail;
-};
+typedef ncclRecyclableList<struct ncclQueueElem> ncclQueueElemList;
 
 // Structure passed to CUDA graph
 struct ncclQueueInfo {
   ncclComm_t comm;
   int maxChannels;    // Dynamic version of gridDim
   ncclResult_t ret;   // Return value of host setup call
-  int nElems;
-  struct ncclQueueElemList elemList;
+  ncclQueueElemList* elemList;
 };
 
-// Get next element from enqueue list
-static ncclResult_t ncclAddQueueElem(struct ncclQueueInfo* eqInfo, struct ncclQueueElem** elemOut) {
-  if (eqInfo == NULL) return ncclInternalError;
-  struct ncclQueueElemList* list = &eqInfo->elemList;
-  if (list->tail != NULL) {
-    *elemOut = list->tail;
-    memset(*elemOut, 0, sizeof(struct ncclWorkElem) + sizeof(struct ncclProxyArgs));
-  } else {
-    NCCLCHECK(ncclCalloc(&list->tail, 1));
-    *elemOut = list->tail;
-    list->head = list->tail;
-  }
-  if (list->tail->next == NULL) {
-    NCCLCHECK(ncclCalloc(&list->tail->next, 1));
-  }
-  list->tail = list->tail->next;
-  eqInfo->nElems++;
+static ncclResult_t ncclCreateQueueInfo(struct ncclQueueInfo** eqInfo, ncclComm_t comm) {
+  NCCLCHECK(ncclCalloc(eqInfo, 1));
+  (*eqInfo)->comm = comm;
+  (*eqInfo)->elemList = new ncclQueueElemList();
   return ncclSuccess;
 }
 
@@ -77,8 +58,7 @@ static ncclResult_t ncclResetQueueInfo(struct ncclQueueInfo* eqInfo) {
   if (eqInfo == NULL) return ncclInternalError;
   eqInfo->maxChannels = 0;
   eqInfo->ret = ncclSuccess;
-  eqInfo->nElems = 0;
-  eqInfo->elemList.tail = eqInfo->elemList.head;
+  eqInfo->elemList->recycle();
   return ncclSuccess;
 }
 
@@ -87,12 +67,7 @@ static ncclResult_t ncclResetQueueInfo(struct ncclQueueInfo* eqInfo) {
 static void ncclDestroyQueueInfo(void* ptr) {
   if (ptr == NULL) return;
   struct ncclQueueInfo* eqInfo = (struct ncclQueueInfo*)ptr;
-  struct ncclQueueElem* head = eqInfo->elemList.head;
-  while (head != NULL) {
-    struct ncclQueueElem* temp = head;
-    head = head->next;
-    free(temp);
-  }
+  delete eqInfo->elemList;
   free(eqInfo);
 }
 #endif // End include guard
