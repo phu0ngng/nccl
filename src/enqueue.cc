@@ -648,7 +648,7 @@ ncclResult_t ncclSetupAsyncKernels(ncclComm_t comm) {
     int allCollNetSupport = comm->collNetSupport;
     for (int c = 0; c < comm->asyncOpCount; c++) {
       struct ncclInfo* info = comm->asyncOps+c;
-      info->nChannels = std::min((int)DIVUP(info->nBytes, channelSize), comm->nChannels); // assign number of channels
+      info->nChannels = std::min(std::max(1, (int)DIVUP(info->nBytes, channelSize)), comm->nChannels); // assign number of channels
       channelUsed += info->nChannels;
       // We can use fast path if all collectives are the same
       if (commonColl == ncclNumFuncs) commonColl = info->coll;
