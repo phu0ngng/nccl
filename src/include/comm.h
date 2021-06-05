@@ -147,7 +147,9 @@ struct ncclComm {
   struct ncclInfo* asyncOps;
   int asyncOpCount;
   size_t asyncTotalSize;
+  ssize_t channelSize;
   int lastChannel;
+  enum { ROUND_ROBIN, SHORTEST_QUEUE } asyncAllocMode;
 
   //list of async p2p operation queued in a group semantics
   ncclP2Plist** p2pSends;

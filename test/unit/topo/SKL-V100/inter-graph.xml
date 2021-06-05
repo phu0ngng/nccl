@@ -25,7 +25,7 @@
       <net dev="1"/>
     </channel>
   </graph>
-  <graph id="1" pattern="2" crossnic="0" nchannels="2" speedintra="5" speedinter="5" typeintra="SYS" typeinter="SYS" samechannels="0">
+  <graph id="1" pattern="1" crossnic="0" nchannels="2" speedintra="4" speedinter="4" typeintra="SYS" typeinter="SYS" samechannels="0">
     <channel>
       <net dev="1"/>
       <gpu dev="0"/>

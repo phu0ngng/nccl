@@ -205,7 +205,7 @@ void runTopo(const char* xmlTopoFile, const char* platform, int nnodes) {
     info.nBytes = size;
     for (int a=0; a<num_algorithms; a++) for (int p=0; p<NCCL_NUM_PROTOCOLS; p++) {
       int i = a*NCCL_NUM_PROTOCOLS+p;
-      CHECK(ncclTopoGetAlgoTime(&info, a, p, model+i));
+      CHECK(ncclTopoGetAlgoTime(&info, a, p, 1, model+i));
     }
 
     for (int i=0; i<m+1; i++) {

@@ -157,7 +157,7 @@ ncclResult_t ncclTopoTuneModel(struct ncclComm* comm, int minCompCap, int maxCom
             2 * ((nRanks/nNodes-1) * intraLat + log2i(nNodes) * interLat);
         } else {
           comm->latencies[coll][a][p] +=
-            2 * (nRanks/nNodes-1) * intraLat + interLat;
+            2 * intraLat + interLat;  // Oneshot CollNet has only 1 hop intra node
         }
       }
     }
@@ -270,7 +270,7 @@ static float treeCorrectionFactor[NCCL_NUM_PROTOCOLS][23] = {
   {  .9,  .9,  .9,  .9,  .9,  .9,  .9,  .8,  .7,  .6,  .6,  .5,  .5,  .5,  .5,  .6,  .7,  .8,  .7,  .7,  .8,  .9,  .9 }
 };
 
-ncclResult_t ncclTopoGetAlgoTime(struct ncclInfo* info, int algorithm, int protocol, float* time) {
+ncclResult_t ncclTopoGetAlgoTime(struct ncclInfo* info, int algorithm, int protocol, int numPipeOps, float* time) {
   float bw = info->comm->bandwidths[info->coll][algorithm][protocol];
   float lat = info->comm->latencies[info->coll][algorithm][protocol];
   if (bw == 0) {
@@ -281,6 +281,8 @@ ncclResult_t ncclTopoGetAlgoTime(struct ncclInfo* info, int algorithm, int proto
   if (info->nChannels != 0) bw = bw / info->comm->nChannels * info->nChannels;
   if (algorithm == NCCL_ALGO_RING && protocol == NCCL_PROTO_SIMPLE && info->comm->nNodes > 1
       && info->coll == ncclFuncAllReduce && info->nBytes >= info->comm->nRanks/16.0*65536) lat *= 1.9; // Plateau effect of ring
-  *time = lat + (info->nBytes) / (1000 * bw);
+  // Tree pipelining saves latency in aggregation cases
+  int latCount = algorithm == NCCL_ALGO_RING ? numPipeOps : DIVUP(numPipeOps, NCCL_MAX_WORK_ELEMENTS);
+  *time = lat * latCount + (info->nBytes) / (1000 * bw);
   return ncclSuccess;
 }

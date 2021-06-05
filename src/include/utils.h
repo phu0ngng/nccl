@@ -50,11 +50,15 @@ class ncclRecyclableList {
   struct ncclListElem<T>* head;
   struct ncclListElem<T>* tail;
   struct ncclListElem<T>* cursor;
+  int n;
 
  public:
   ncclRecyclableList() {
     tail = cursor = head = NULL;
+    n = 0;
   }
+
+  int count() const { return n; }
 
   // Get a new element from the list and return pointer
   ncclResult_t getNewElem(T** dataOut) {
@@ -70,6 +74,7 @@ class ncclRecyclableList {
       NCCLCHECK(ncclCalloc(&tail->next, 1));
     }
     tail = tail->next;
+    n += 1;
     return ncclSuccess;
   }
 
@@ -86,6 +91,7 @@ class ncclRecyclableList {
   // Recycle the list without freeing the space
   void recycle() {
     tail = cursor = head;
+    n = 0;
   }
 
   ~ncclRecyclableList() {

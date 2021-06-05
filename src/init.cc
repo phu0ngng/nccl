@@ -238,6 +238,8 @@ static ncclResult_t commFree(ncclComm_t comm) {
   return ncclSuccess;
 }
 
+NCCL_PARAM(AggChannelSize, "AGG_CHANNEL_SIZE", -2);
+
 static ncclResult_t commAlloc(ncclComm_t* comret, int ndev, int rank) {
   if (ndev < 1) {
     WARN("invalid device count (%d) requested", ndev);
@@ -285,6 +287,13 @@ static ncclResult_t commAlloc(ncclComm_t* comret, int ndev, int rank) {
   NCCLCHECK(ncclCalloc(&comm->asyncOps, NCCL_MAX_OPS));
   comm->asyncOpCount = 0;
   comm->asyncTotalSize = 0;
+  comm->channelSize = ncclParamAggChannelSize();
+  comm->asyncAllocMode = ncclComm::SHORTEST_QUEUE;
+  char* str = getenv("NCCL_AGG_ALLOC_MODE");
+  if (str) INFO(NCCL_ENV, "NCCL_AGG_ALLOC_MODE set by environment to %s", str);
+  if (str && strcmp(str, "ROUND_ROBIN") == 0) {
+    comm->asyncAllocMode = ncclComm::ROUND_ROBIN;
+  }
 
   NCCLCHECK(ncclCreateQueueInfo(&comm->enqueueInfo, comm));
   comm->lastSetupNode = NULL;
@@ -575,7 +584,7 @@ static ncclResult_t initTransportsRank(struct ncclComm* comm, ncclUniqueId* comm
 
   struct ncclTopoGraph treeGraph;
   treeGraph.id = 1;
-  treeGraph.pattern = tmpNnodes <= 2 ? NCCL_TOPO_PATTERN_TREE : NCCL_TOPO_PATTERN_BALANCED_TREE;
+  treeGraph.pattern = NCCL_TOPO_PATTERN_BALANCED_TREE;
   treeGraph.crossNic = ncclParamCrossNic();
   treeGraph.collNet = 0;
   treeGraph.minChannels = 1;
@@ -784,10 +793,8 @@ static ncclResult_t initTransportsRank(struct ncclComm* comm, ncclUniqueId* comm
       struct ncclChannel* channel = comm->channels+c;
       for (int h=0; h<nHeads; h++) {
         const int head = heads[h];
-        if (ncclTransportCollNetSetup(comm, &collNetGraph, channel, head, head, h, collNetRecv) != 1)
-          collNetSetupFail = 1;
-        else if (ncclTransportCollNetSetup(comm, &collNetGraph, channel, head, head, h, collNetSend) != 1)
-          collNetSetupFail = 1;
+        collNetSetupFail = ncclTransportCollNetSetup(comm, &collNetGraph, channel, head, head, h, collNetRecv);
+        if (!collNetSetupFail) collNetSetupFail = ncclTransportCollNetSetup(comm, &collNetGraph, channel, head, head, h, collNetSend);
       }
       // Verify CollNet setup across ranks after trying the first channel
       if (c == 0) {

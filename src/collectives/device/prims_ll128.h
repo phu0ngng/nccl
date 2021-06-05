@@ -96,7 +96,7 @@ class ncclLL128Primitives {
 
   template <int ELEMS_PER_THREAD>
   inline __device__ void loadSrcToShmem128(int maxOffset, const uint64_t* src64Ptr) {
-#if 0
+#if 1
     uint64_t v[ELEMS_PER_THREAD];
     #pragma unroll
     for (int u=0; u<ELEMS_PER_THREAD; u+=2) {
