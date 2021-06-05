@@ -639,7 +639,14 @@ ncclResult_t ncclSetupAsyncKernels(ncclComm_t comm) {
     NCCLCHECK(ncclSetupCollKernel(info));
   } else {
     // Aggregation
-    size_t channelSize = comm->channelSize;
+    size_t channelSize;
+    if (comm->channelSize > 0) {
+      channelSize = comm->channelSize;
+    } else if (comm->collNetSupport && comm->asyncOps[0].coll == ncclFuncAllReduce) {
+      channelSize = 256 * 1024;
+    } else {
+      channelSize = NCCL_AGG_CHANNEL_SIZE * std::min(16, comm->nRanks);  // scale channel size based on nranks as latency increases
+    }
     // Reduce the per-channel size if we cannot fully utilize the channels
     while (comm->asyncTotalSize < channelSize * comm->nChannels && channelSize > NCCL_MIN_CHANNEL_SIZE) channelSize /= 2;
     int channelUsed = 0;
