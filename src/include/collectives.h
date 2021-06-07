@@ -21,8 +21,8 @@
 
 /* Declare all collective operations */
 #define DECL5(func, algo, proto, redop, type) \
-  extern __device__ void NCCL_FUNC_NAME(func, algo, proto, redop, type)(struct ncclWorkElem* args); \
-  extern __global__ void NCCL_KERN_NAME(func, algo, proto, redop, type)(struct ncclWorkElem c); \
+  extern __device__ void NCCL_FUNC_NAME(func, algo, proto, redop, type)(); \
+  extern __global__ void NCCL_KERN_NAME(func, algo, proto, redop, type)(ncclWorkElem c); \
 
 #define DECL4(func, algo, redop, type) \
   DECL5(func, algo, SIMPLE, redop, type) \
@@ -49,7 +49,8 @@
   DECL2(func, Sum) \
   DECL2(func, Prod) \
   DECL2(func, Min) \
-  DECL2(func, Max)
+  DECL2(func, Max) \
+  DECL2(func, Avg)
 
 #define DECL_ALL \
   DECL2(Broadcast, Sum) \

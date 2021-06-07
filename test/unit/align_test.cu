@@ -58,8 +58,10 @@ __global__ void ReduceCopyMultiKernel(const T** srcs, T** dsts, int nsrcs, int n
   int n = nelem/nblocks;
   for (int i=0; i<NSRCS; i++) srcs[i] += bid*n;
   for (int i=0; i<NDSTS; i++) dsts[i] += bid*n;
-  for (int i=0; i<NREPS; i++)
-    ReduceOrCopyMulti<UNROLL, FuncSum<T>, T, NSRCS >= 2 ? 2 : 1, NSRCS, NDSTS >= 2 ? 2 : 1, NDSTS>(threadIdx.x, blockDim.x, nsrcs, srcs, ndsts, dsts, n);
+  for (int i=0; i<NREPS; i++) {
+    ReduceOrCopyMulti<UNROLL, FuncSum<T>, T, NSRCS >= 2 ? 2 : 1, NSRCS, NDSTS >= 2 ? 2 : 1, NDSTS>
+      (threadIdx.x, blockDim.x, FuncSum<T>(), false, false, nsrcs, srcs, ndsts, dsts, n);
+  }
 }
 
 #include <sys/time.h>

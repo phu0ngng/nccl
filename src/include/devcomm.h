@@ -116,6 +116,8 @@ struct ncclRing {
   // devices. Ordered from current device.
   int* userRanks;
   int* devUserRanks;
+
+  int index; // This rank's index in the ring
 };
 
 
@@ -227,6 +229,11 @@ struct ncclDevComm {
 
   // Channels, device side
   struct ncclChannel* channels;
+};
+
+struct ncclDevCommAndChannels {
+  ncclDevComm comm;
+  ncclChannel channels[MAXCHANNELS];
 };
 
 #endif

@@ -47,8 +47,10 @@
   NCCL_FUNCS3A(func, Sum), \
   NCCL_FUNCS3A(func, Sum), \
   NCCL_FUNCS3A(func, Sum), \
+  NCCL_FUNCS3A(func, Sum), \
   NCCL_FUNCS3A(func, Sum)
 #define NCCL_FUNCS2B(func) \
+  NCCL_FUNCS3B(func, Sum), \
   NCCL_FUNCS3B(func, Sum), \
   NCCL_FUNCS3B(func, Sum), \
   NCCL_FUNCS3B(func, Sum), \
@@ -342,7 +344,8 @@ ncclResult_t ncclLaunchReset(ncclComm_t comm) {
 
 static inline ncclResult_t getCollNetSupport(struct ncclInfo* info, int* collNetTypeSupport) {
   if (info->comm->collNetSupport > 0) {
-    NCCLCHECK(collNetReduceSupport(info->datatype, info->op, collNetTypeSupport));
+    ncclRedOp_t netOp = info->op == ncclAvg ? ncclSum : info->op;
+    NCCLCHECK(collNetReduceSupport(info->datatype, netOp, collNetTypeSupport));
   } else {
     *collNetTypeSupport = 0;
   }
@@ -517,7 +520,9 @@ comp_next:
   proxyArgs->chunkSize = chunkSize;
   proxyArgs->protocol = info->protocol;
   proxyArgs->dtype = info->datatype;
-  proxyArgs->redOp = (info->algorithm == NCCL_ALGO_COLLNET) ? info->op : ncclNumOps;  // Only set redOp when using CollNet
+  proxyArgs->redOp = info->algorithm != NCCL_ALGO_COLLNET ? ncclNumOps : // Only set redOp when using CollNet
+                     info->op == ncclAvg ? ncclSum : // Network sees avg as sum
+                     info->op;
   proxyArgs->pattern = info->pattern;
   proxyArgs->root = info->root;
   // This is used by P2P to reduce the receive buffer size. We don't use it in collectives
@@ -678,7 +683,7 @@ ncclResult_t ncclSetupAsyncKernels(ncclComm_t comm) {
       }
       NCCLCHECK(ncclSetupCollKernel(info));
     }
-    comm->args.active = 3;  // use 3 to mark aggregation; kernel will not use the inlined element
+    comm->args.active = 0;  // disable inline argument
   }
   // Reset counters
   comm->asyncOpCount = 0;
@@ -738,11 +743,11 @@ enum { COLL_SEGMENT=0, P2P_SEGMENT=1 };
 static int getSegment(int type, int delta, struct ncclWork* work) {
   if (type == P2P_SEGMENT) {  // P2P
     for (int s=0; s<NCCL_MAX_WORK_ELEMENTS && work->elems[s].p2p.delta != delta; s++) {
-      if (work->elems[s].p2p.nThreads == 0) return s;
+      if (work->elems[s].active == 0) return s;
     }
   } else { // aggregation
     for (int s=0; s<NCCL_MAX_WORK_ELEMENTS; s++) {
-      if (work->elems[s].coll.nChannels == 0) return s;
+      if (work->elems[s].active == 0) return s;
     }
   }
   return -1;
@@ -765,6 +770,7 @@ static ncclResult_t computeP2pWorkElem(struct ncclInfo* info /* input */, struct
 static ncclResult_t enqueueSegOp(int type, struct ncclWorkElem* elem /* input */, struct ncclWork* work, int s) {
   // Copy element into corresponding segment of ncclWork
   memcpy(work->elems+s, elem, sizeof(struct ncclWorkElem));
+  work->elems[s].active = 1;
 
   // Determine nThreads at dynamic time
   if (type == P2P_SEGMENT) {
@@ -787,7 +793,7 @@ ncclResult_t ncclEnqueueP2pKernel(struct ncclComm* comm, struct ncclQueueElem* e
   int opIndex = (channel->workFifoTail-1+NCCL_MAX_OPS)%NCCL_MAX_OPS;
   struct ncclWork* w = channel->workFifo+opIndex;
   int segment = -1;
-  if (channel->workCount && w->elems[0].funcIndex == FUNC_INDEX_P2P && w->elems[NCCL_MAX_WORK_ELEMENTS-1].p2p.nThreads == 0) {
+  if (channel->workCount && w->elems[0].funcIndex == FUNC_INDEX_P2P && w->elems[NCCL_MAX_WORK_ELEMENTS-1].active == 0) {
     // Try to pack more segments into a single operation
     segment = getSegment(P2P_SEGMENT, workElem->p2p.delta, w);
   }
@@ -822,7 +828,8 @@ ncclResult_t ncclSetupP2pKernel(struct ncclInfo* info) {
   // The CUDA kernel does not use the inlined first work element as fastpath argument
   if (params->func == NULL) {
     params->func = ncclKerns[eqElem->work.funcIndex];
-    memcpy(&comm->args, &eqElem->work, sizeof(struct ncclWorkElem));
+    comm->args.comm = eqElem->work.comm;
+    comm->args.active = 0;
   }
   return ncclSuccess;
 }
@@ -849,7 +856,7 @@ ncclResult_t ncclEnqueueAsyncKernel(struct ncclComm* comm, struct ncclQueueElem*
     int opIndex = (channel->workFifoTail-1+NCCL_MAX_OPS)%NCCL_MAX_OPS;
     struct ncclWork* w = channel->workFifo+opIndex;
     int segment = -1;
-    if (channel->workCount && w->elems[NCCL_MAX_WORK_ELEMENTS-1].coll.nChannels == 0) {
+    if (channel->workCount && w->elems[NCCL_MAX_WORK_ELEMENTS-1].active == 0) {
       // Try to pack more segments into a single operation
       segment = getSegment(COLL_SEGMENT, 0, w);
     }
