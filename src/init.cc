@@ -201,8 +201,7 @@ static ncclResult_t commFree(ncclComm_t comm) {
   if (comm->bootstrap)
     NCCLCHECK(bootstrapClose(comm->bootstrap));
 
-  CUDACHECK(cudaFree(comm->hostDevComm.channels));
-  CUDACHECK(cudaFree(comm->devComm));
+  CUDACHECK(cudaFree((ncclDevCommAndChannels*)comm->devComm));
 
   for (int channel=0; channel<MAXCHANNELS; channel++)
     NCCLCHECK(freeChannel(comm->channels+channel, comm->nRanks));
@@ -318,9 +317,13 @@ static ncclResult_t commAlloc(ncclComm_t* comret, int ndev, int rank) {
 }
 
 static ncclResult_t devCommSetup(ncclComm_t comm) {
+  ncclDevCommAndChannels *devCommAndChans;
+  NCCLCHECK(ncclCudaCalloc(&devCommAndChans, 1));
+  comm->devComm = &devCommAndChans->comm;
+  comm->hostDevComm.channels = devCommAndChans->channels;
+
   // Duplicate the channels on the device
   int nChannels = std::max(comm->nChannels, comm->p2pnChannels);
-  NCCLCHECK(ncclCudaCalloc(&comm->hostDevComm.channels, nChannels));
   NCCLCHECK(ncclCudaMemcpy(comm->hostDevComm.channels, comm->channels, nChannels));
 
   // Copy userRanks and peers
@@ -329,7 +332,6 @@ static ncclResult_t devCommSetup(ncclComm_t comm) {
   }
 
   // Duplicate the dev comm on the device
-  NCCLCHECK(ncclCudaCalloc(&comm->devComm, 1));
   NCCLCHECK(ncclCudaMemcpy(comm->devComm, &comm->hostDevComm, 1));
   return ncclSuccess;
 }
@@ -371,15 +373,15 @@ static ncclResult_t setupChannel(struct ncclComm* comm, int channelId, int rank,
   NCCLCHECK(initChannel(comm, channelId));
 
   struct ncclRing* ring = &comm->channels[channelId].ring;
-  // Reorganize ranks to start with rank.
-  int shift;
-  for (shift = 0; shift<nranks; shift++) {
-    if (ringRanks[shift] == rank) {
-      break;
-    }
+  // Find our ring-distance from rank zero and reorganize ranks to start with rank.
+  int ixZero=0, ixRank=0;
+  for (int i=0; i < nranks; i++) {
+    if (ringRanks[i] == 0) ixZero = i;
+    if (ringRanks[i] == rank) ixRank = i;
   }
+  ring->index = (ixRank-ixZero + nranks)%nranks;
   for (int i=0; i<nranks; i++) {
-    ring->userRanks[i] = ringRanks[(i+shift)%nranks];
+    ring->userRanks[i] = ringRanks[(i+ixRank)%nranks];
   }
   return ncclSuccess;
 }
