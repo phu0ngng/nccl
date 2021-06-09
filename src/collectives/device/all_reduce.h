@@ -270,10 +270,8 @@ struct RunWorkElement<ncclFuncAllReduce, T, RedOp, NCCL_ALGO_COLLNET, NCCL_PROTO
   __device__ void run(ncclWorkElem *args) {
     static constexpr int COLLNET_COPY_THREADS = 96;
     const int tid = threadIdx.x;
-    //const int nthreads = args->nThreads-3*WARP_SIZE;
     const int bid = args->coll.bid;
     const int nChannels = args->coll.nChannels;
-    //const int nRanks = ncclShmem.comm->nRanks;
     struct ncclDirect* tree = &ncclShmem.channel.collTree;
     const ssize_t chunkSize = int(args->coll.lastChunkSize);
     const ssize_t size = args->coll.count;
