@@ -98,7 +98,7 @@ testResult_t ReduceScattervRunTest(struct threadArgs* args, int root, ncclDataTy
     run_types = &type;
     run_typenames = &typeName;
   } else {
-    type_count = ncclNumTypes;
+    type_count = test_typenum;
     run_types = test_types;
     run_typenames = test_typenames;
   }

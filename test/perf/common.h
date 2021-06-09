@@ -214,6 +214,7 @@ extern const char *test_typenames[ncclNumTypes];
 extern ncclRedOp_t test_ops[ncclNumOps];
 extern const char *test_opnames[ncclNumOps];
 extern int test_opnum;
+extern int test_typenum;
 
 static int ncclstringtotype(char *str) {
     for (int t=0; t<ncclNumTypes; t++) {

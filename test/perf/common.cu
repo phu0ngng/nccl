@@ -17,7 +17,7 @@ int test_ncclVersion = 0; // init'd with ncclGetVersion()
 
 #if NCCL_MAJOR >= 2
 ncclDataType_t test_types[ncclNumTypes] = {ncclInt8, ncclUint8, ncclInt32, ncclUint32, ncclInt64, ncclUint64, ncclHalf, ncclFloat, ncclDouble,
-#if defined(__CUDA_BF16_TYPES_EXIST__)
+#if defined(__CUDA_BF16_TYPES_EXIST__) && NCCL_VERSION_CODE >= NCCL_VERSION(2,10,0)
                                            ncclBfloat16
 #endif
 };
@@ -26,9 +26,17 @@ const char *test_typenames[ncclNumTypes] = {"int8", "uint8", "int32", "uint32", 
                                             "bfloat16"
 #endif
 };
+
+#if defined(__CUDA_BF16_TYPES_EXIST__) && NCCL_VERSION_CODE >= NCCL_VERSION(2,10,0)
+int test_typenum = 10;
+#else
+int test_typenum = 9;
+#endif
+
 #else
 ncclDataType_t test_types[ncclNumTypes] = {ncclChar, ncclInt, ncclHalf, ncclFloat, ncclDouble, ncclInt64, ncclUint64};
 const char *test_typenames[ncclNumTypes] = {"char", "int", "half", "float", "double", "int64", "uint64"};
+int test_typenum = 7;
 #endif
 
 #if NCCL_VERSION_CODE >= NCCL_VERSION(2,10,0)
@@ -303,7 +311,7 @@ __global__ void InitDataReduceKernel(T* data, const size_t N, const size_t offse
 
 static void* const redInitDataKerns[ncclNumOps*ncclNumTypes] = {
   OPS(int8_t), OPS(uint8_t), OPS(int32_t), OPS(uint32_t), OPS(int64_t), OPS(uint64_t), OPS(half), OPS(float), OPS(double),
-#if defined(__CUDA_BF16_TYPES_EXIST__)
+#if defined(__CUDA_BF16_TYPES_EXIST__) && NCCL_VERSION_CODE >= NCCL_VERSION(2,10,0)
   OPS(__nv_bfloat16)
 #endif
 };
@@ -332,7 +340,7 @@ static void* const initDataKerns[ncclNumTypes] = {
   (void*)InitDataKernel<    half>,
   (void*)InitDataKernel<   float>,
   (void*)InitDataKernel<  double>,
-#if defined(__CUDA_BF16_TYPES_EXIST__)
+#if defined(__CUDA_BF16_TYPES_EXIST__) && NCCL_VERSION_CODE >= NCCL_VERSION(2,10,0)
   (void*)InitDataKernel<__nv_bfloat16>,
 #endif
 };
@@ -875,10 +883,10 @@ int main(int argc, char* argv[]) {
     test_ncclVersion = NCCL_VERSION_CODE;
   #endif
   //printf("# NCCL_VERSION_CODE=%d ncclGetVersion=%d\n", NCCL_VERSION_CODE, test_ncclVersion);
-  if(test_ncclVersion >= NCCL_VERSION(2,10,0))
-    test_opnum = ncclNumOps;
-  else
-    test_opnum = 4; // exclude ncclAvg
+  if (NCCL_VERSION_CODE >= NCCL_VERSION(2,10,0) &&  test_ncclVersion < NCCL_VERSION(2,10,0)) {
+    test_opnum -= 1; // exclude ncclAvg
+    test_typenum -= 1; // exclude bfloat16
+  }
 
   // Parse args
   int longindex;
