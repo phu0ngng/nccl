@@ -645,10 +645,12 @@ testResult_t BenchTime(struct threadArgs* args, ncclDataType_t type, ncclRedOp_t
 
   double timeUsec = (report_cputime ? cputimeSec : deltaSec)*1.0E6;
 #ifdef MPI_SUPPORT
+  /* This seems to cause a 'free invalid pointer' error, commenting out for now
   int mpiRanks;
   MPI_Comm_size(MPI_COMM_WORLD, &mpiRanks);
   MPI_Allreduce(MPI_IN_PLACE, &timeUsec, 1, MPI_DOUBLE, MPI_SUM, MPI_COMM_WORLD);
   timeUsec /= mpiRanks;
+  */
 #endif
   char timeStr[100];
   if (timeUsec >= 10000.0) {
