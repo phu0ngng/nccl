@@ -10,10 +10,6 @@
 #include "collectives.h"
 #include "devcomm.h"
 
-#include <cassert>
-#include <cstdio>
-#include <cinttypes>
-
 #if __CUDA_ARCH__ >= 800
 #define COLL_UNROLL 8
 #else
