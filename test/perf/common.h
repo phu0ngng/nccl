@@ -186,6 +186,9 @@ static size_t wordSize(ncclDataType_t type) {
 #endif
       return 1;
     case ncclHalf:
+#if defined(__CUDA_BF16_TYPES_EXIST__)
+    case ncclBfloat16:
+#endif
     //case ncclFloat16:
       return 2;
     case ncclInt:
@@ -199,7 +202,7 @@ static size_t wordSize(ncclDataType_t type) {
     case ncclInt64:
     case ncclUint64:
     case ncclDouble:
-    //case ncclFloat64: 
+    //case ncclFloat64:
       return 8;
     default: return 0;
   }

@@ -201,6 +201,8 @@ __device__ void NCCL_FUNC_NAME(func, algo, proto, redop, type)() { \
 #define IMPL_COLL2(func, redop) IMPL_COLL3(func, redop, float,    ncclFloat32)
 #elif NCCL_TYPE == 8
 #define IMPL_COLL2(func, redop) IMPL_COLL3(func, redop, double,   ncclFloat64)
+#elif NCCL_TYPE == 9 && defined(__CUDA_BF16_TYPES_EXIST__)
+#define IMPL_COLL2(func, redop) IMPL_COLL3(func, redop, __nv_bfloat16, ncclBfloat16)
 #endif
 
 // Reduction define all functions

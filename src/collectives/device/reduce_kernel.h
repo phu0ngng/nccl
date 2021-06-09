@@ -1,5 +1,5 @@
 /*************************************************************************
- * Copyright (c) 2015-2019, NVIDIA CORPORATION. All rights reserved.
+ * Copyright (c) 2015-2021, NVIDIA CORPORATION. All rights reserved.
  *
  * See LICENSE.txt for license information
  ************************************************************************/
@@ -252,6 +252,31 @@ struct FuncSum<half> {
   }
 };
 
+#if defined(__CUDA_BF16_TYPES_EXIST__)
+template<>
+struct FuncSum<__nv_bfloat16> {
+  __device__ __nv_bfloat162 operator()(const __nv_bfloat162 x, const __nv_bfloat162 y) const {
+#if __CUDA_ARCH__ >= 800
+    return __hadd2(x, y);
+#else
+    float fxl, fxh, fyl, fyh;
+    fxl = __low2float(x);
+    fxh = __high2float(x);
+    fyl = __low2float(y);
+    fyh = __high2float(y);
+    return __floats2bfloat162_rn(fxl + fyl, fxh + fyh);
+#endif
+   }
+  __device__ __nv_bfloat16 operator()(const __nv_bfloat16 x, const __nv_bfloat16 y) const {
+#if __CUDA_ARCH__ >= 800
+    return __hadd(x, y);
+#else
+    return __float2bfloat16( __bfloat162float(x) + __bfloat162float(y) );
+#endif
+  }
+};
+#endif
+
 template<>
 struct FuncProd<half> {
   __device__ half2 operator()(const half2 x, const half2 y) const {
@@ -275,6 +300,31 @@ struct FuncProd<half> {
   }
 };
 
+#if defined(__CUDA_BF16_TYPES_EXIST__)
+template<>
+struct FuncProd<__nv_bfloat16> {
+  __device__ __nv_bfloat162 operator()(const __nv_bfloat162 x, const __nv_bfloat162 y) const {
+#if __CUDA_ARCH__ >= 800
+    return __hmul2(x, y);
+#else
+    float fxl, fxh, fyl, fyh;
+    fxl = __low2float(x);
+    fxh = __high2float(x);
+    fyl = __low2float(y);
+    fyh = __high2float(y);
+    return __floats2bfloat162_rn(fxl * fyl, fxh * fyh);
+#endif
+  }
+  __device__ __nv_bfloat16 operator()(const __nv_bfloat16 x, const __nv_bfloat16 y) const {
+#if __CUDA_ARCH__ >= 800
+    return __hmul(x, y);
+#else
+    return __float2bfloat16( __bfloat162float(x) * __bfloat162float(y) );
+#endif
+  }
+};
+#endif
+
 template<>
 struct FuncMax<half> {
   __device__ half2 operator()(const half2 x, const half2 y) const {
@@ -294,6 +344,34 @@ struct FuncMax<half> {
   }
 };
 
+#if defined(__CUDA_BF16_TYPES_EXIST__)
+template<>
+struct FuncMax<__nv_bfloat16> {
+  __device__ __nv_bfloat162 operator()(const __nv_bfloat162 x, const __nv_bfloat162 y) const {
+#if __CUDA_ARCH__ >= 800
+    return __hmax2(x, y);
+#else
+    float fxl, fxh, fyl, fyh;
+    fxl = __low2float(x);
+    fxh = __high2float(x);
+    fyl = __low2float(y);
+    fyh = __high2float(y);
+    return __floats2bfloat162_rn(fmaxf(fxl, fyl), fmaxf(fxh, fyh));
+#endif
+  }
+  __device__ __nv_bfloat16 operator()(const __nv_bfloat16 x, const __nv_bfloat16 y) const {
+#if __CUDA_ARCH__ >= 800
+    return __hmax(x, y);
+#else
+    float fx, fy;
+    fx = __bfloat162float(x);
+    fy = __bfloat162float(y);
+    return __float2bfloat16(fmaxf(fx, fy));
+#endif
+  }
+};
+#endif
+
 template<>
 struct FuncMin<half> {
   __device__ half2 operator()(const half2 x, const half2 y) const {
@@ -312,6 +390,34 @@ struct FuncMin<half> {
     return __float2half(fm);
   }
 };
+
+#if defined(__CUDA_BF16_TYPES_EXIST__)
+template<>
+struct FuncMin<__nv_bfloat16> {
+   __device__ __nv_bfloat162 operator()(const __nv_bfloat162 x, const __nv_bfloat162 y) const {
+#if __CUDA_ARCH__ >= 800
+    return __hmin2(x, y);
+#else
+    float fxl, fxh, fyl, fyh;
+    fxl = __low2float(x);
+    fxh = __high2float(x);
+    fyl = __low2float(y);
+    fyh = __high2float(y);
+    return __floats2bfloat162_rn(fminf(fxl, fyl), fminf(fxh, fyh));
+#endif
+  }
+  __device__ __nv_bfloat16 operator()(const __nv_bfloat16 x, const __nv_bfloat16 y) const {
+#if __CUDA_ARCH__ >= 800
+    return __hmin(x, y);
+#else
+    float fx, fy;
+    fx = __bfloat162float(x);
+    fy = __bfloat162float(y);
+    return __float2bfloat16(fminf(fx, fy));
+#endif
+  }
+};
+#endif
 
 template<>
 struct FuncMax<float> {
@@ -459,6 +565,77 @@ struct FuncAvg<half>: FuncSum<half> {
   }
 #endif
 };
+
+#if defined(__CUDA_BF16_TYPES_EXIST__)
+template<>
+struct FuncAvg<__nv_bfloat16>: FuncSum<__nv_bfloat16> {
+  // Change these to switch between all prescale, all postscale, or both by sqrt(N).
+  // Obviously, the only invalid combination is both true. An improvement would be
+  // make this parameterized as a build time setting and passed here through
+  // preprocessor definitions.
+  static constexpr bool IsPreOpIdentity = false;
+  static constexpr bool IsPostOpIdentity = true;
+
+#if __CUDA_ARCH__ >= 800
+  __nv_bfloat162 scale;
+  __device__ FuncAvg(int n) {
+    if (!IsPreOpIdentity && !IsPostOpIdentity)
+      scale.x = __float2bfloat16(__frsqrt_rn(float(n)));
+    else
+      scale.x = __float2bfloat16(__frcp_rn(float(n)));
+    scale.y = scale.x;
+  }
+  // inherits FuncSum::operator()
+  __device__ __nv_bfloat16 preOp(__nv_bfloat16 x) const {
+    return IsPreOpIdentity ? x : __hmul(x, scale.x);
+  }
+  __device__ __nv_bfloat162 preOp(__nv_bfloat162 x) const {
+    return IsPreOpIdentity ? x : __hmul2(x, scale);
+  }
+  __device__ __nv_bfloat16 postOp(__nv_bfloat16 x) const {
+    return IsPostOpIdentity ? x : __hmul(x, scale.x);
+  }
+  __device__ __nv_bfloat162 postOp(__nv_bfloat162 x) const {
+    return IsPostOpIdentity ? x : __hmul2(x, scale);
+  }
+#else
+  float scale;
+  __device__ FuncAvg(int n) {
+    if (!IsPreOpIdentity && !IsPostOpIdentity)
+      scale = __frsqrt_rn(float(n));
+    else
+      scale = __frcp_rn(float(n));
+  }
+  // inherits FuncSum::operator()
+  __device__ __nv_bfloat16 preOp(__nv_bfloat16 x) const {
+    return IsPreOpIdentity ? x : __float2bfloat16(__bfloat162float(x)*scale);
+  }
+  __device__ __nv_bfloat162 preOp(__nv_bfloat162 x) const {
+    if (IsPreOpIdentity)
+      return x;
+    else {
+      float fxl, fxh;
+      fxl = __low2float(x);
+      fxh = __high2float(x);
+      return __floats2bfloat162_rn(fxl * scale, fxh * scale);
+    }
+  }
+  __device__ __nv_bfloat16 postOp(__nv_bfloat16 x) const {
+    return IsPostOpIdentity ? x : __float2bfloat16(__bfloat162float(x)*scale);
+  }
+  __device__ __nv_bfloat162 postOp(__nv_bfloat162 x) const {
+    if (IsPostOpIdentity)
+      return x;
+    else {
+      float fxl, fxh;
+      fxl = __low2float(x);
+      fxh = __high2float(x);
+      return __floats2bfloat162_rn(fxl * scale, fxh * scale);
+    }
+  }
+#endif
+};
+#endif
 
 template<typename T>
 struct FuncTraits<FuncAvg<T>> {

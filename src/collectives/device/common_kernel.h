@@ -1,5 +1,5 @@
 /*************************************************************************
- * Copyright (c) 2015-2020, NVIDIA CORPORATION. All rights reserved.
+ * Copyright (c) 2015-2021, NVIDIA CORPORATION. All rights reserved.
  *
  * See LICENSE.txt for license information
  ************************************************************************/
@@ -250,6 +250,41 @@ struct MULTI<FUNC, half> {
   }
 };
 
+#if defined(__CUDA_BF16_TYPES_EXIST__)
+template<class FUNC>
+struct MULTI<FUNC, __nv_bfloat16> {
+  static_assert(sizeof(PackType) == 4 * sizeof(__nv_bfloat16),
+      "PackType must be four times the size of __nv_bfloat16.");
+
+  union Converter {
+    PackType pack;
+    __nv_bfloat162 h2[2];
+  };
+  __device__ PackType operator()(FUNC fn, const PackType x, const PackType y) const {
+    Converter cx, cy, cr;
+    cx.pack = x;
+    cy.pack = y;
+    cr.h2[0] = fn(cx.h2[0], cy.h2[0]);
+    cr.h2[1] = fn(cx.h2[1], cy.h2[1]);
+    return cr.pack;
+  }
+  __device__ PackType preOp(FUNC fn, PackType x) const {
+    Converter c;
+    c.pack = x;
+    c.h2[0] = FuncTraits<FUNC>().preOp(fn, c.h2[0]);
+    c.h2[1] = FuncTraits<FUNC>().preOp(fn, c.h2[1]);
+    return c.pack;
+  }
+  __device__ PackType postOp(FUNC fn, PackType x) const {
+    Converter c;
+    c.pack = x;
+    c.h2[0] = FuncTraits<FUNC>().postOp(fn, c.h2[0]);
+    c.h2[1] = FuncTraits<FUNC>().postOp(fn, c.h2[1]);
+    return c.pack;
+  }
+};
+#endif
+
 template<class FUNC>
 struct MULTI<FUNC, float> {
   static_assert(sizeof(PackType) == 2 * sizeof(float),
@@ -410,6 +445,20 @@ half vFetch<half>(const volatile half* ptr) {
 template<> inline __device__
 void vStore<half>(volatile half* ptr, const half val) {
   ((half*)ptr)[0] = val;
+}
+#endif
+
+#if defined(__CUDA_BF16_TYPES_EXIST__)
+template<> inline __device__
+__nv_bfloat16 vFetch<__nv_bfloat16>(const volatile __nv_bfloat16* ptr) {
+  __nv_bfloat16 r;
+  r = ((__nv_bfloat16*)ptr)[0];
+  return r;
+}
+
+template<> inline __device__
+void vStore<__nv_bfloat16>(volatile __nv_bfloat16* ptr, const __nv_bfloat16 val) {
+  ((__nv_bfloat16*)ptr)[0] = val;
 }
 #endif
 

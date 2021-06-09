@@ -92,6 +92,10 @@ ncclDataType_t
 
   16-bits floating point number (half precision)
 
+ .. c:macro:: ncclBfloat16
+
+  16-bits floating point number (half precision - Ampere and later generations only)
+
  .. c:macro:: ncclHalf
 
   16-bits floating point number (half precision)
