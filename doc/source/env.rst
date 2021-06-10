@@ -497,6 +497,16 @@ Value accepted
 ^^^^^^^^^^^^^^
 Default is 0, define and set to 1 to use the CollNet plugin.
 
+NCCL_COLLNET_NODE_THRESHOLD
+-------------------
+(since 2.9.9)
+
+A threshold for number of nodes below which CollNet will not be enabled.
+
+Value accepted
+^^^^^^^^^^^^^^
+Default is 2, define and set to an integer.
+
 NCCL_TOPO_FILE
 --------------
 (since 2.6)
