@@ -279,8 +279,10 @@ template<typename T>
 __device__ T ncclPostOpDiv(T x, int n) { return x/n; }
 template<>
 __device__ half ncclPostOpDiv<half>(half x, int n) { return __float2half(__half2float(x)/n); }
+#if defined(__CUDA_BF16_TYPES_EXIST__)
 template<>
 __device__ __nv_bfloat16 ncclPostOpDiv<__nv_bfloat16>(__nv_bfloat16 x, int n) { return __float2bfloat16(__bfloat162float(x)/n); }
+#endif
 
 template<typename T, T (*Op)(T, T), T(*PostOp)(T,int)>
 __global__ void InitDataReduceKernel(T* data, const size_t N, const size_t offset, const int rep, const int nranks) {
