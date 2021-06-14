@@ -184,12 +184,13 @@ namespace {
     const ssize_t size = args->coll.count;
 
     int nthreadsSplit;
-    if (Proto::Id == NCCL_PROTO_SIMPLE)
+    if (Proto::Id == NCCL_PROTO_SIMPLE) {
       nthreadsSplit = nthreads/2;
-    else { // LL & LL128
+      if (nthreadsSplit >= 256) nthreadsSplit += 64;
+    } else { // LL & LL128
       // Receiving from up to 3 sources is more compute intensive than sending
       // to 3 dests. Use 70% for reduce and 30% for bcast.
-      nthreadsSplit = (nthreads*7/(10*32))*32;
+      nthreadsSplit = (nthreads*7/(10*WARP_SIZE))*WARP_SIZE;
     }
 
     if (loopSize > size)
