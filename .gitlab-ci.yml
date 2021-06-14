@@ -18,10 +18,10 @@ build:
     CUDA_HOME: "/usr/local/cuda-11.0"
   script:
     - make -j test.build MPI=1 MPI_HOME=$MPI_HOME CUDA_HOME=$CUDA_HOME
-  artifacts:
-    paths:
-      - build
-    expire_in: 1 day
+  #artifacts:
+  #  paths:
+  #    - build
+  #  expire_in: 1 day
   interruptible: true
 
 unit_tests:
