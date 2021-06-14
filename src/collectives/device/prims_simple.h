@@ -126,7 +126,9 @@ class Primitives<
       //   perf_orig = 2*numslices
       //   perf_new = 2+numslices
       // So the new code and old code behave the same for numslices=2, and for
-      // numslices>2 the new code is superior.
+      // numslices>2 the new code is superior. And note that in the case
+      // numslices=1, the loop is trivially unrollable (single iteration) so we
+      // don't incur that that tail branch and we still have perf_new=2.
       //
       // ORIGINAL CODE:
       //   unrolled for(slices) {
@@ -139,7 +141,12 @@ class Primitives<
       //     barrier();
       //     post();
       //   } // Since we no longer unroll, new branch added here
-      #pragma unroll 1
+      #if __CUDA_ARCH__ < 700
+        // Yeah, so all that above don't matter a lick on older hardware.
+        #pragma unroll SlicePerChunk
+      #else
+        #pragma unroll 1
+      #endif
       do {
         sliceSize = sliceSize < nelem-offset ? sliceSize : nelem-offset;
         if (Src && (flags & (SrcBuf==Input ? RoleInput : RoleOutput)))
