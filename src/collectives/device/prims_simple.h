@@ -372,18 +372,30 @@ class Primitives<
     if (flags & RoleInput) userBuff = (T*)inputBuf;
     if (flags & RoleOutput) userBuff = (T*)outputBuf;
     if (Direct && flags == (flags|RoleWaitRecv|DirectEnabled)) {
+      int spins = 0;
       void *volatile *slot = ncclShmem.groups[group].recvConns[index]->ptrExchange;
-      while (*slot != nullptr);
+      // Wait for consumer to consume previous value before trampling it.
+      while (*slot != nullptr && !checkAbort(spins)) {
+        //if (spins == 0) printf("r=%d b=%d t=%d SPUN OUT direct producer %p\n", ncclShmem.comm.rank, blockIdx.x, threadIdx.x, slot);
+      }
       directBuff = (T*)outputBuf;
-      *slot = outputBuf;
+      // Encode pointer by XOR'ing against some address they definitely wouldn't send
+      // since we want to allow them sending us nullptr while not colliding with
+      // the empty slot value.
+      *slot = reinterpret_cast<T*>(reinterpret_cast<uintptr_t>(outputBuf) ^ reinterpret_cast<uintptr_t>(slot));
+      //printf("r=%d b=%d t=%d tid=%d Direct produced %p\n", ncclShmem.comm.rank, blockIdx.x, threadIdx.x, tid, slot);
     }
     if (Direct && flags == (flags|RoleWaitSend|DirectEnabled)) {
       int spins = 0;
       void *volatile *slot = ncclShmem.groups[group].sendConns[index]->ptrExchange;
       void *ptr;
-      do ptr = *slot;
-      while (ptr == nullptr && !checkAbort(spins));
-      directBuff = (T*)ptr;
+      while (true) {
+        ptr = *slot;
+        if (ptr != nullptr || checkAbort(spins)) break;
+        //if (spins == 0) printf("r=%d b=%d t=%d SPUN OUT direct consumer %p\n", ncclShmem.comm.rank, blockIdx.x, threadIdx.x, slot);
+      }
+      directBuff = reinterpret_cast<T*>(reinterpret_cast<uintptr_t>(ptr) ^ reinterpret_cast<uintptr_t>(slot));
+      //printf("r=%d b=%d t=%d tid=%d Direct consumed %p\n", ncclShmem.comm.rank, blockIdx.x, threadIdx.x, tid, slot);
       *slot = nullptr;
     }
   }
