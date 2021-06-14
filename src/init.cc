@@ -743,7 +743,6 @@ static ncclResult_t initTransportsRank(struct ncclComm* comm, ncclUniqueId* comm
     struct ncclTree* tree = &comm->channels[c].tree;
     snprintf(line+strlen(line), 1023-strlen(line), " [%d] %d/%d/%d->%d->%d",
         c, tree->down[0], tree->down[1], tree->down[2], rank, tree->up);
-    // Added to support the TopoVisual tool https://github.com/ROCmSoftwarePlatform/rccl/tree/master/tools/TopoVisual
     INFO(NCCL_GRAPH, "Ring %02d : %d -> %d -> %d", c, comm->channels[c].ring.prev, comm->rank, comm->channels[c].ring.next);
   }
   line[1023] = '\0';
