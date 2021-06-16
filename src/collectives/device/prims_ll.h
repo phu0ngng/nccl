@@ -181,7 +181,8 @@ class Primitives<T, RedOp, Fan, Direct, ProtoLL>:
         uint32_t *p = reinterpret_cast<uint32_t*>(reinterpret_cast<uintptr_t>(src) & -uintptr_t(4));
         u4[0] = load(p+0);
         u4[1] = misalign + eltN*sizeof(T) > 4 ? load(p+1) : 0;
-        u4[2] = misalign + eltN*sizeof(T) > 8 ? load(p+2) : 0;
+        // u4[2] would be simpler, but that throws warnings on some compilers
+        u4[sizeof(T) <= 2 ? 2 : 0] = misalign + eltN*sizeof(T) > 8 ? load(p+2) : 0;
       }
       else {
         #pragma unroll
@@ -195,7 +196,8 @@ class Primitives<T, RedOp, Fan, Direct, ProtoLL>:
     __device__ uint64_t loadFinish() {
       if (sizeof(T) <= 2) {
         u4[0] = __funnelshift_r(u4[0], u4[1], 8*misalign);
-        u4[1] = __funnelshift_r(u4[1], u4[2], 8*misalign);
+        // u4[2] would be simpler, but that throws warnings on some compilers
+        u4[1] = __funnelshift_r(u4[1], u4[sizeof(T) <= 2 ? 2 : 0], 8*misalign);
       }
       return u8;
     }
