@@ -135,6 +135,29 @@ void Randomize<half>(half* const dest, const int N, const int randomSeed) {
   CUDACHECK(cudaDeviceSynchronize());
 }
 
+#if defined(__CUDA_BF16_TYPES_EXIST__)
+__global__ void bfloat16(const float * src, __nv_bfloat16* dest, int N) {
+  for(int tid = threadIdx.x + blockIdx.x*blockDim.x;
+      tid < N; tid += blockDim.x * gridDim.x)
+    dest[tid] = __float2bfloat16(src[tid]);
+}
+
+template<>
+void Randomize<__nv_bfloat16>(__nv_bfloat16* const dest, const int N, const int randomSeed) {
+  curandGenerator_t gen;
+  CURAND_CHK(curandCreateGenerator(&gen, CURAND_RNG_PSEUDO_MTGP32));
+  CURAND_CHK(curandSetPseudoRandomGeneratorSeed(gen, randomSeed));
+
+  float* temp;
+  CUDACHECK(cudaMalloc(&temp, N*sizeof(float)));
+  GenerateRandom<float>(gen, temp, N);
+  bfloat16<<<128, 512>>>(temp, dest, N);
+  CURAND_CHK(curandDestroyGenerator(gen));
+  CUDACHECK(cudaFree(temp));
+  CUDACHECK(cudaDeviceSynchronize());
+}
+#endif
+
 void makeRandom(void* ptr, int n, ncclDataType_t type, int seed) {
   if (type == ncclInt8)
     Randomize<int8_t>((int8_t*)ptr, n, seed);
@@ -154,6 +177,10 @@ void makeRandom(void* ptr, int n, ncclDataType_t type, int seed) {
     Randomize<float>((float*)ptr, n, seed);
   else if (type == ncclFloat64)
     Randomize<double>((double*)ptr, n, seed);
+#if defined(__CUDA_BF16_TYPES_EXIST__)
+  else if (type == ncclBfloat16)
+    Randomize<__nv_bfloat16>((__nv_bfloat16*)ptr, n, seed);
+#endif
 
   return;
 }
@@ -386,6 +413,9 @@ size_t wordSize(ncclDataType_t type) {
     case ncclInt8:
     case ncclUint8: return 1;
 //  case ncclHalf:
+#if defined(__CUDA_BF16_TYPES_EXIST__)
+    case ncclBfloat16:
+#endif
     case ncclFloat16: return 2;
 //  case ncclInt:
     case ncclInt32:
