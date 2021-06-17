@@ -841,8 +841,6 @@ collnet_cleanup:
 
   NCCLCHECK(ncclCommSetIntra(comm, intraRank, intraRanks, intraRank0Comm));
 
-  if (comm->nNodes) NCCLCHECK(ncclProxyCreate(comm));
-
   // We should have allocated all buffers, collective fifos, ... we can
   // restore the affinity.
 affinity_restore:
@@ -951,7 +949,6 @@ static ncclResult_t commDestroy(ncclComm_t comm) {
   TRACE(NCCL_INIT, "Destroying comm %p rank %d abortFlag %d fatalError %d", comm, comm->rank, *comm->abortFlag, comm->fatalError);
 
   CUDACHECK(cudaStreamSynchronize(comm->groupStream));
-  NCCLCHECK(ncclProxyDestroy(comm));
   NCCLCHECK(commFree(comm));
 
   if (savedDevice != commDevice)

@@ -208,7 +208,7 @@ struct extState {
   int nranks;
 
   // Intermediate memory allocation service
-  struct ncclProxyServiceState* proxyState;
+  struct ncclProxyServiceArgs* proxyArgs;
   pthread_t proxyThread;
 };
 
@@ -282,11 +282,11 @@ ncclResult_t bootstrapInit(ncclUniqueId * id, struct ncclComm* comm) {
   // Create the memory allocation service
   NCCLCHECK(ncclCalloc(&state->peerAllocAddresses, nranks));
   memcpy(state->peerAllocAddresses+rank, &bootstrapNetIfAddr, sizeof(union socketAddress));
-  NCCLCHECK(ncclCalloc(&state->proxyState, 1));
-  state->proxyState->comm = comm;
-  CUDACHECK(cudaGetDevice(&state->proxyState->cudaDev));
-  NCCLCHECK(createListenSocket(&state->proxyState->listenFd, state->peerAllocAddresses+rank));
-  pthread_create(&state->proxyThread, NULL, ncclProxyService, state->proxyState);
+  NCCLCHECK(ncclCalloc(&state->proxyArgs, 1));
+  state->proxyArgs->comm = comm;
+  CUDACHECK(cudaGetDevice(&state->proxyArgs->cudaDev));
+  NCCLCHECK(createListenSocket(&state->proxyArgs->listenFd, state->peerAllocAddresses+rank));
+  pthread_create(&state->proxyThread, NULL, ncclProxyService, state->proxyArgs);
   NCCLCHECK(bootstrapAllGather(state, state->peerAllocAddresses, sizeof(union socketAddress)));
 
   TRACE(NCCL_INIT, "rank %d nranks %d - DONE", rank, nranks);
@@ -409,7 +409,7 @@ ncclResult_t bootstrapClose(void* commState) {
   close(state->extRingSendFd);
   close(state->extRingRecvFd);
 
-  state->proxyState->stop = 1;
+  state->proxyArgs->stop = 1;
 
   // Join the proxyThread so we catch resource leaks as being hung here
   // pthread_join(state->proxyThread, nullptr);
@@ -427,7 +427,7 @@ ncclResult_t bootstrapAbort(void* commState) {
   if (state->extListenFd) close(state->extListenFd);
   if (state->extRingSendFd) close(state->extRingSendFd);
   if (state->extRingRecvFd) close(state->extRingRecvFd);
-  if (state->proxyState) state->proxyState->stop = 2;
+  if (state->proxyArgs) state->proxyArgs->stop = 2;
   free(state->peerCommAddresses);
   free(state->peerAllocAddresses);
   free(state);

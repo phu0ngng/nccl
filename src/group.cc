@@ -52,21 +52,6 @@ struct ncclAsyncArgs {
 
 thread_local struct ncclAsyncArgs ncclGroupArgs[MAX_ASYNC_OPS];
 
-#define NCCLCHECKTHREAD(a) do { \
-  if ((args->ret = (a)) != ncclSuccess) { \
-    INFO(NCCL_INIT,"%s:%d -> %d [Async thread]", __FILE__, __LINE__, args->ret); \
-    return args; \
-  } \
-} while(0)
-
-#define CUDACHECKTHREAD(a) do { \
-  if ((a) != cudaSuccess) { \
-    INFO(NCCL_INIT,"%s:%d -> %d [Async thread]", __FILE__, __LINE__, args->ret); \
-    args->ret = ncclUnhandledCudaError; \
-    return args; \
-  } \
-} while(0)
-
 void* ncclAsyncThreadMain(void* args_) {
   struct ncclAsyncArgs* args = (struct ncclAsyncArgs*)args_;
   NCCLCHECKTHREAD(args->init.func(args->init.newcomm, args->init.ndev, args->init.commId, args->init.myrank, args->init.cudaDev));

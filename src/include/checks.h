@@ -79,4 +79,20 @@
   } \
 } while (0);
 
+#define NCCLCHECKTHREAD(a) do { \
+  if ((args->ret = (a)) != ncclSuccess) { \
+    INFO(NCCL_INIT,"%s:%d -> %d [Async thread]", __FILE__, __LINE__, args->ret); \
+    return args; \
+  } \
+} while(0)
+
+#define CUDACHECKTHREAD(a) do { \
+  if ((a) != cudaSuccess) { \
+    INFO(NCCL_INIT,"%s:%d -> %d [Async thread]", __FILE__, __LINE__, args->ret); \
+    args->ret = ncclUnhandledCudaError; \
+    return args; \
+  } \
+} while(0)
+
+
 #endif

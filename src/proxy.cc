@@ -420,7 +420,7 @@ ncclResult_t ncclProxyAppendPosted(struct ncclProxyState* state) {
 }
 
 
-void* persistentThread(void *comm_) {
+void* ncclProxyProgress(void *comm_) {
   struct ncclComm* comm = (struct ncclComm*)comm_;
   struct ncclProxyState* state = &comm->proxyState;
   char threadName[16];
@@ -461,13 +461,15 @@ void* persistentThread(void *comm_) {
 ncclResult_t ncclProxyStart(struct ncclComm* comm) {
   struct ncclProxyState* state = &comm->proxyState;
   if (state->nextOps == NULL) return ncclSuccess;
-  pthread_mutex_lock(&state->opsMutex);
-  if (state->postedOps) state->postedOpsEnd->next = state->nextOps;
-  else state->postedOps = state->nextOps;
-  state->postedOpsEnd = state->nextOpsEnd;
+  struct ncclProxyArgs* op = state->nextOps;
+  while (op) {
+    if (op->nsubs != 1) return ncclInternalError;
+    NCCLCHECK(SocketSend(op->subs[0]->connector->fd, op, sizeof(struct ncclProxyArgs));
+    op = op->next;
+  }
+  state->nextOpsEnd = state->pool;
+  state->pool = state->nextOps;
   state->nextOps = state->nextOpsEnd = NULL;
-  pthread_cond_signal(&state->cond);
-  pthread_mutex_unlock(&state->opsMutex);
   comm->opCount++;
   return ncclSuccess;
 }
@@ -569,7 +571,7 @@ ncclResult_t ncclProxyCreate(struct ncclComm* comm) {
     comm->proxyState.opsMutex = PTHREAD_MUTEX_INITIALIZER;
     comm->proxyState.poolMutex = PTHREAD_MUTEX_INITIALIZER;
     comm->proxyState.ops = NULL;
-    pthread_create(&comm->proxyThread, NULL, persistentThread, comm);
+    pthread_create(&comm->proxyThread, NULL, ncclProxyProgress, comm);
   }
   return ncclSuccess;
 }
@@ -620,10 +622,17 @@ static ncclResult_t proxyConnect(struct serviceProxyState* state, struct ncclCom
 }
 
 static ncclResult_t proxyCall(struct serviceProxyState* state, struct ncclComm* comm) {
-  if (state->send) {
-    NCCLCHECK(ncclTransports[state->transport].send.proxyCall(state->fd, &state->transportState, comm));
+  if (state->connected == 3) { // Append work
+    struct ncclProxyArgs op;
+    NCCLCHECK(SocketRecv(state->fd, &op, sizeof(struct ncclProxyArgs)));
+    // TODO
   } else {
-    NCCLCHECK(ncclTransports[state->transport].recv.proxyCall(state->fd, &state->transportState, comm));
+    if (state->send) { // Setup / connect
+      NCCLCHECK(ncclTransports[state->transport].send.proxyCall(state->fd, &state->transportState, comm));
+    } else {
+      NCCLCHECK(ncclTransports[state->transport].recv.proxyCall(state->fd, &state->transportState, comm));
+    }
+    state->connected++;
   }
   return ncclSuccess;
 }
@@ -643,11 +652,15 @@ static ncclResult_t proxyFree(struct serviceProxyState* state, struct ncclComm* 
 #include <poll.h>
 
 // Service thread to allocate memory for other GPUs, used as intermediate step.
-void* ncclProxyService(void* args) {
-  struct ncclProxyServiceState* state = (struct ncclProxyServiceState *) args;
-  if (cudaSetDevice(state->cudaDev) != cudaSuccess) {
-    WARN("[Rem Allocator] Failed to set CUDA device %d", state->cudaDev);
+void* ncclProxyService(void* _args) {
+  struct ncclProxyServiceArgs* args =  (struct ncclProxyServiceArgs *) _args;
+  struct ncclComm* comm = args->comm;
+  if (cudaSetDevice(args->cudaDev) != cudaSuccess) {
+    WARN("[Proxy Service] Failed to set CUDA device %d", args->cudaDev);
   }
+  if (CPU_COUNT(&comm->cpuAffinity)) sched_setaffinity(0, sizeof(cpu_set_t), &comm->cpuAffinity);
+
+  NCCLCHECKTHREAD(ncclProxyCreate(comm));
 
   // Prepare poll descriptor
   struct serviceProxyState states[MAX_SEGMENTS];
@@ -657,13 +670,13 @@ void* ncclProxyService(void* args) {
     pollfds[s].fd = -1;
     pollfds[s].events = POLLHUP|POLLIN;
   }
-  pollfds[MAX_SEGMENTS].fd = state->listenFd;
+  pollfds[MAX_SEGMENTS].fd = args->listenFd;
   pollfds[MAX_SEGMENTS].events = POLLIN;
 
   int nbuffers = 0;
-  while (state->stop == 0 || (state->stop == 1 && nbuffers > 0)) {
+  while (args->stop == 0 || (args->stop == 1 && nbuffers > 0)) {
     if (int error = poll(pollfds, MAX_SEGMENTS+1, 100/*ms*/) < 0) {
-      WARN("[Rem Allocator] Poll failed with error %d", error);
+      WARN("[Proxy Service] Poll failed with error %d", error);
       return NULL;
     }
     if (pollfds[MAX_SEGMENTS].revents) {
@@ -675,8 +688,8 @@ void* ncclProxyService(void* args) {
       if (newfd == -1) {
         WARN("[Service thread] Accept failed %s\n", strerror(errno));
       } else {
-        if (s == MAX_SEGMENTS || (proxyConnect(states+s, state->comm, newfd) != ncclSuccess)) {
-          WARN("[Rem Allocator] Allocation failed (segment %d, fd %d)", s, newfd);
+        if (s == MAX_SEGMENTS || (proxyConnect(states+s, comm, newfd) != ncclSuccess)) {
+          WARN("[Proxy Service] Allocation failed (segment %d, fd %d)", s, newfd);
           close(newfd);
         } else {
           pollfds[s].fd = newfd;
@@ -686,13 +699,13 @@ void* ncclProxyService(void* args) {
     }
     for (int s=0; s<MAX_SEGMENTS; s++) {
       if (pollfds[s].revents & POLLIN) {
-        if (proxyCall(states+s, state->comm) != ncclSuccess) {
-          WARN("[Rem Allocator] proxyCall %p failed", states+s);
+        if (proxyCall(states+s, comm) != ncclSuccess) {
+          WARN("[Proxy Service] proxyCall %p failed", states+s);
         }
       }
       if (pollfds[s].revents & POLLHUP) {
-        if (proxyFree(states+s, state->comm) != ncclSuccess) {
-          WARN("[Rem Allocator] proxyFree %p failed", states+s);
+        if (proxyFree(states+s, comm) != ncclSuccess) {
+          WARN("[Proxy Service] proxyFree %p failed", states+s);
         }
         pollfds[s].fd = -1;
         nbuffers--;
@@ -700,9 +713,10 @@ void* ncclProxyService(void* args) {
     }
   }
   for (int s=0; s<MAX_SEGMENTS; s++) {
-    if (states[s].connected) proxyFree(states+s, state->comm);
+    if (states[s].connected) proxyFree(states+s, comm);
   }
-  close(state->listenFd);
-  free(state);
+  close(args->listenFd);
+  free(args);
+  NCCLCHECKTHREAD(ncclProxyDestroy(comm));
   return NULL;
 }
