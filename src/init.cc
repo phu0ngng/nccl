@@ -562,6 +562,7 @@ static ncclResult_t initTransportsRank(struct ncclComm* comm, ncclUniqueId* comm
     return ncclInternalError;
   }
   struct ncclComm* intraProcRank0Comm = allGather1Data[intraProcRank0].comm;
+  uint64_t intraNodeRank0pidHash = allGather1Data[intraNodeRank0].peerInfo.pidHash;
 
   free(allGather1Data);
 
@@ -873,7 +874,7 @@ collnet_cleanup:
   NCCLCHECK(ncclCommSetIntraProc(comm, intraProcRank, intraProcRanks, intraProcRank0Comm));
 
   /* Local intra-node barrier */
-  NCCLCHECK(bootstrapBarrier(comm->bootstrap, intraNodeGlobalRanks, intraNodeRank, intraNodeRanks));
+  NCCLCHECK(bootstrapBarrier(comm->bootstrap, intraNodeGlobalRanks, (int)intraNodeRank0pidHash, intraNodeRank, intraNodeRanks));
 
   if (comm->nNodes) NCCLCHECK(ncclProxyCreate(comm));
 
