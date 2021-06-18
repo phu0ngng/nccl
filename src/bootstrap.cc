@@ -429,6 +429,23 @@ ncclResult_t bootstrapSend(void* commState, int peer, int tag, void* data, int s
   return ncclSuccess;
 }
 
+ncclResult_t bootstrapBarrier(void* commState, int *ranks, int rank, int nranks) {
+  if (nranks == 1) return ncclSuccess;
+  TRACE(NCCL_INIT, "rank %d nranks %d - ENTER", rank, nranks);
+
+  int tag = 0xb0b;
+  int data[1];
+
+  for (int i=0; i<nranks; i++) {
+    if (i == rank) continue;
+    NCCLCHECK(bootstrapSend(commState, ranks[i], tag, data, sizeof(data)));
+    NCCLCHECK(bootstrapRecv(commState, ranks[i], tag, data, sizeof(data)));
+  }
+
+  TRACE(NCCL_INIT, "rank %d nranks %d - DONE", rank, nranks);
+  return ncclSuccess;
+}
+
 ncclResult_t unexpectedEnqueue(struct extState* state, int peer, int tag, int fd, union socketAddress *addr) {
   // New unex
   struct unexConn* unex;
