@@ -403,7 +403,7 @@ ncclResult_t initParams(struct ncclComm* comm) {
 }
 
 // Allocate/Set Intra Process Structures and set CG options
-ncclResult_t ncclCommSetIntra(struct ncclComm* comm, int rank, int ranks, struct ncclComm* comm0) {
+ncclResult_t ncclCommSetIntraProc(struct ncclComm* comm, int rank, int ranks, struct ncclComm* comm0) {
   comm->intraRank = rank;
   comm->intraRanks = ranks;
   comm->intraPhase = 0;
@@ -524,37 +524,45 @@ static ncclResult_t initTransportsRank(struct ncclComm* comm, ncclUniqueId* comm
   }
 
   // Compute intra ranks and minimum CUDA Compute capabilities of intra-node GPUs and all GPUs
-  int intraRank0 = -1, intraRank = -1, intraRanks = 0;
+  int intraProcRank0 = -1, intraProcRank = -1, intraProcRanks = 0;
+  int intraNodeRank0 = -1, intraNodeRank = -1, intraNodeRanks = 0;
   int myCompCap = allGather1Data[rank].cudaCompCap;
   int minCompCap = myCompCap, maxCompCap = myCompCap;
-  uint64_t otherHostHash;
-  int tmpNnodes = 1;
+  int intraNodeGlobalRanks[256];
   for (int i = 0; i < nranks; i++) {
     if (allGather1Data[i].peerInfo.hostHash == allGather1Data[rank].peerInfo.hostHash) {
+      // Rank is on same node
+      if (intraNodeRanks == 0) intraNodeRank0 = i;
+      if (i == rank) intraNodeRank = intraNodeRanks;
+      intraNodeGlobalRanks[intraNodeRanks++] = i;
       if (allGather1Data[i].peerInfo.pidHash == allGather1Data[rank].peerInfo.pidHash) {
-        if (intraRanks == 0) intraRank0 = i;
-        if (i == rank) intraRank = intraRanks;
-        intraRanks++;
-      }
-    } else {  // Determine whether number of nodes is 2 (for use in tree pattern determination)
-      if (tmpNnodes == 1) {
-        otherHostHash = allGather1Data[i].peerInfo.hostHash;
-        tmpNnodes = 2;
-      } else if (tmpNnodes == 2 && otherHostHash != allGather1Data[i].peerInfo.hostHash) {
-        tmpNnodes = 3;
+        // Rank is in same process
+        if (intraProcRanks == 0) intraProcRank0 = i;
+        if (i == rank) intraProcRank = intraProcRanks;
+        intraProcRanks++;
       }
     }
     minCompCap = std::min(allGather1Data[i].cudaCompCap, minCompCap);
     maxCompCap = std::max(allGather1Data[i].cudaCompCap, maxCompCap);
   }
-  TRACE(NCCL_INIT,"hostHash[%d] %lx intraRank %d intraRanks %d intraRank0 %d",
-        rank, allGather1Data[rank].peerInfo.hostHash, intraRank, intraRanks, intraRank0);
-  if (intraRank == -1 || intraRank0 == -1 || allGather1Data[intraRank0].comm == NULL) {
-    WARN("Failed to determine intra ranks hostHash[%d] %lx intraRank %d intraRanks %d intraRank0 %d",
-         rank, allGather1Data[rank].peerInfo.hostHash, intraRank, intraRanks, intraRank0);
+  TRACE(NCCL_INIT,"hostHash[%d] %lx intraNodeRank %d intraNodeRanks %d intraNodeRank0 %d",
+        rank, allGather1Data[rank].peerInfo.hostHash, intraNodeRank, intraNodeRanks, intraNodeRank0);
+  TRACE(NCCL_INIT,"pidHash[%d] %lx intraProcRank %d intraProcRanks %d intraProcRank0 %d",
+        rank, allGather1Data[rank].peerInfo.pidHash, intraProcRank, intraProcRanks, intraProcRank0);
+  if (intraProcRank == -1 || intraProcRank0 == -1 || allGather1Data[intraProcRank0].comm == NULL) {
+    WARN("Failed to determine intra proc ranks rank %d hostHash %lx pidHash %lx intraProcRank %d intraProcRanks %d intraProcRank0 %d",
+         rank, allGather1Data[rank].peerInfo.hostHash, allGather1Data[rank].peerInfo.pidHash,
+         intraProcRank, intraProcRanks, intraProcRank0);
     return ncclInternalError;
   }
-  struct ncclComm* intraRank0Comm = allGather1Data[intraRank0].comm;
+  if (intraNodeRank == -1 || intraNodeRank0 == -1 || intraNodeRanks == 0) {
+    WARN("Failed to determine intra node ranks rank %d hostHash %lx pidHash %lx intraNodeRank %d intraNodeRanks %d intraNodeRank0 %d",
+         rank, allGather1Data[rank].peerInfo.hostHash, allGather1Data[rank].peerInfo.pidHash,
+         intraNodeRank, intraNodeRanks, intraNodeRank0);
+    return ncclInternalError;
+  }
+  struct ncclComm* intraProcRank0Comm = allGather1Data[intraProcRank0].comm;
+  uint64_t intraNodeRank0pidHash = allGather1Data[intraNodeRank0].peerInfo.pidHash;
 
   free(allGather1Data);
 
@@ -609,8 +617,8 @@ static ncclResult_t initTransportsRank(struct ncclComm* comm, ncclUniqueId* comm
   }
 
   // Determine local CollNet support before all-gather
-  if (tmpNnodes > 1 && ncclParamCollNetEnable() == 1 && collNetSupport() == 1 && collNetGraph.nChannels > 0) comm->collNetSupport = 1;
-  if (intraRanks > 8) {
+  if (ncclParamCollNetEnable() == 1 && collNetSupport() == 1 && collNetGraph.nChannels > 0) comm->collNetSupport = 1;
+  if (intraNodeRanks > 8) {
     if (comm->collNetSupport == 1) WARN("CollNet currently only supports up to 8 GPUs per node");
     comm->collNetSupport = 0;
   }
@@ -863,7 +871,10 @@ collnet_cleanup:
     free(nvbPeers);
   }
 
-  NCCLCHECK(ncclCommSetIntra(comm, intraRank, intraRanks, intraRank0Comm));
+  NCCLCHECK(ncclCommSetIntraProc(comm, intraProcRank, intraProcRanks, intraProcRank0Comm));
+
+  /* Local intra-node barrier */
+  NCCLCHECK(bootstrapBarrier(comm->bootstrap, intraNodeGlobalRanks, (int)intraNodeRank0pidHash, intraNodeRank, intraNodeRanks));
 
   if (comm->nNodes) NCCLCHECK(ncclProxyCreate(comm));
 
