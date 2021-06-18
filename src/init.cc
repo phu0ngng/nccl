@@ -528,8 +528,6 @@ static ncclResult_t initTransportsRank(struct ncclComm* comm, ncclUniqueId* comm
   int intraNodeRank0 = -1, intraNodeRank = -1, intraNodeRanks = 0;
   int myCompCap = allGather1Data[rank].cudaCompCap;
   int minCompCap = myCompCap, maxCompCap = myCompCap;
-  uint64_t otherHostHash;
-  int tmpNnodes = 1;
   int intraNodeGlobalRanks[256];
   for (int i = 0; i < nranks; i++) {
     if (allGather1Data[i].peerInfo.hostHash == allGather1Data[rank].peerInfo.hostHash) {
@@ -542,13 +540,6 @@ static ncclResult_t initTransportsRank(struct ncclComm* comm, ncclUniqueId* comm
         if (intraProcRanks == 0) intraProcRank0 = i;
         if (i == rank) intraProcRank = intraProcRanks;
         intraProcRanks++;
-      }
-    } else {  // Determine whether number of nodes is 2 (for use in tree pattern determination)
-      if (tmpNnodes == 1) {
-        otherHostHash = allGather1Data[i].peerInfo.hostHash;
-        tmpNnodes = 2;
-      } else if (tmpNnodes == 2 && otherHostHash != allGather1Data[i].peerInfo.hostHash) {
-        tmpNnodes = 3;
       }
     }
     minCompCap = std::min(allGather1Data[i].cudaCompCap, minCompCap);
@@ -625,7 +616,7 @@ static ncclResult_t initTransportsRank(struct ncclComm* comm, ncclUniqueId* comm
   }
 
   // Determine local CollNet support before all-gather
-  if (tmpNnodes > 1 && ncclParamCollNetEnable() == 1 && collNetSupport() == 1 && collNetGraph.nChannels > 0) comm->collNetSupport = 1;
+  if (ncclParamCollNetEnable() == 1 && collNetSupport() == 1 && collNetGraph.nChannels > 0) comm->collNetSupport = 1;
   if (intraNodeRanks > 8) {
     if (comm->collNetSupport == 1) WARN("CollNet currently only supports up to 8 GPUs per node");
     comm->collNetSupport = 0;
