@@ -78,6 +78,12 @@ class ncclRecyclableList {
     return ncclSuccess;
   }
 
+  T* begin() {
+    if (head == NULL || head == tail) return NULL;
+    cursor = head->next;
+    return &head->data;
+  }
+
   // Get next element from the list during an iteration
   T* getNext() {
     // tail always points to the next element to be enqueued

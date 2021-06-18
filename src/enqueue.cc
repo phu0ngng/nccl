@@ -906,7 +906,7 @@ void CUDART_CB ncclEnqueueHostSetup(void* arg) {
   ncclComm_t comm = eqInfo->comm;
 
   // Iterate through the element list
-  struct ncclQueueElem* eqElem = eqInfo->elemList->getNext();
+  struct ncclQueueElem* eqElem = eqInfo->elemList->begin();
   while (eqElem != NULL) {
     if (eqElem->work.funcIndex == FUNC_INDEX_P2P) {
       NCCLCHECKGOTO(ncclEnqueueP2pKernel(comm, eqElem), ret, cb_end);
