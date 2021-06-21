@@ -72,7 +72,7 @@ void runTopo(const char* xmlTopoFile, const char* platform, int nnodes) {
   struct ncclXml* xmlSystem;
   INFO(NCCL_GRAPH, "Loading platform %s", platform);
   CHECK(ncclCalloc(&xmlSystem, 1));
-  CHECK(ncclTopoGetXmlFromFile(xmlTopoFile, xmlSystem));
+  CHECK(ncclTopoGetXmlFromFile(xmlTopoFile, xmlSystem, 1));
   struct ncclTopoSystem* system;
   if (xmlSystem->maxIndex == 0) {
     printf("Error : no system in %s\n", xmlTopoFile);

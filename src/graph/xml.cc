@@ -300,12 +300,15 @@ ncclResult_t ncclTopoXmlLoadSystem(FILE* file, struct ncclXml* xml, struct ncclX
   return ncclSuccess;
 }
 
-ncclResult_t ncclTopoGetXmlFromFile(const char* xmlTopoFile, struct ncclXml* xml) {
+ncclResult_t ncclTopoGetXmlFromFile(const char* xmlTopoFile, struct ncclXml* xml, int warn) {
   FILE* file = fopen(xmlTopoFile, "r");
   if (file == NULL) {
-    WARN("Could not open XML topology file %s : %s", xmlTopoFile, strerror(errno));
+    if (warn) {
+      WARN("Could not open XML topology file %s : %s", xmlTopoFile, strerror(errno));
+    }
     return ncclSuccess;
   }
+  INFO(NCCL_GRAPH, "Loading topology file %s", xmlTopoFile);
   struct xmlHandler handlers[] = { { "system", ncclTopoXmlLoadSystem } };
   xml->maxIndex = 0;
   NCCLCHECK(xmlLoadSub(file, xml, NULL, handlers, 1));
