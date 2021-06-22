@@ -316,6 +316,7 @@ The following code depicts a complete working example with multiple MPI processe
    return 0;
  }
 
+.. _Ex3:
 
 Example 3: Multiple Devices per Thread
 --------------------------------------
@@ -572,4 +573,4 @@ After ncclGroupEnd, all of the operations have been enqueued to the stream.  The
  for (int i=0; i<ngpus; i++)
    cudaStreamSynchronize(streams[i]);
 
-For a complete working example with MPI and multiple devices per MPI process, see “Example 3: Multiple Devices per Thread.”
+For a complete working example with MPI and multiple devices per MPI process, see :ref:`Example 3: Multiple Devices per Thread<Ex3>`.

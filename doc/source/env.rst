@@ -498,7 +498,7 @@ Value accepted
 Default is 0, define and set to 1 to use the CollNet plugin.
 
 NCCL_COLLNET_NODE_THRESHOLD
--------------------
+---------------------------
 (since 2.9.9)
 
 A threshold for number of nodes below which CollNet will not be enabled.
