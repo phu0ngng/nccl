@@ -69,6 +69,17 @@ apitest-GP100:
     - ./test/scripts/gitlab-runner-apitest.sh
   interruptible: true
 
+apitest-single-GP100:
+  stage: api_tests
+  tags:
+    - gp100
+  variables:
+    CUDA_HOME: "/usr/local/cuda-11.0"
+    SRUN: "srun -t 00:05:00 -n 1 -c 1 -pGP100"
+  script:
+    - ./test/scripts/gitlab-runner-apitest.sh
+  interruptible: true
+
 apitest-M40:
   stage: api_tests
   tags:
