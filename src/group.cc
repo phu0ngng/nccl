@@ -367,16 +367,6 @@ group_cleanup:
           }
           comm->p2pSendCount = comm->p2pRecvCount = 0;
         }
-        /* Free all proxy ops in state->nextOps */
-        struct ncclProxyState* state = &comm->proxyState;
-	pthread_mutex_lock(&state->poolMutex);
-	for (struct ncclProxyArgs *op = state->nextOps; op; op = op->next) {
-          op->next = state->pool;
-          state->pool = op;
-        }
-	pthread_mutex_unlock(&state->poolMutex);
-        state->nextOps = NULL;
-
         ncclLaunchReset(comm);
       }
     }

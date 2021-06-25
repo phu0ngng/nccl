@@ -12,10 +12,11 @@
 #include "nvmlwrap.h"
 #include "core.h"
 
-#define NTRANSPORTS 3
+#define NTRANSPORTS 4
 #define TRANSPORT_P2P 0
 #define TRANSPORT_SHM 1
 #define TRANSPORT_NET 2
+#define TRANSPORT_COLLNET 3
 
 #include "proxy.h"
 
@@ -46,9 +47,10 @@ struct ncclTransportComm {
   ncclResult_t (*setup)(struct ncclComm* comm, struct ncclTopoGraph* graph, struct ncclPeerInfo*, struct ncclPeerInfo*, struct ncclConnect*, struct ncclConnector*, int channelId, int connIndex);
   ncclResult_t (*connect)(struct ncclComm* comm, struct ncclConnect*, int nranks, int rank, struct ncclConnector*);
   ncclResult_t (*free)(struct ncclConnector*);
-  ncclResult_t (*proxyCall)(int fd, void** state, struct ncclComm* comm);
-  ncclResult_t (*proxyFree)(void* state, struct ncclComm* comm);
-  ncclResult_t (*proxy)(struct ncclProxyArgs*);
+  ncclResult_t (*proxySetup)(struct ncclProxyConnection* connection, struct ncclComm* comm);
+  ncclResult_t (*proxyConnect)(struct ncclProxyConnection* connection, struct ncclComm* comm);
+  ncclResult_t (*proxyFree)(struct ncclProxyConnection* connection, struct ncclComm* comm);
+  ncclResult_t (*proxyProgress)(struct ncclComm* comm, struct ncclProxyArgs*);
 };
 
 struct ncclTransport {

@@ -7,19 +7,20 @@
 #ifndef NCCL_PROXY_H_
 #define NCCL_PROXY_H_
 
+#include "socket.h"
 #include <pthread.h>
 
 enum ncclProxyOpState { ncclProxyOpNone, ncclProxyOpReady, ncclProxyOpProgress };
 
 struct ncclProxyArgs;
-typedef ncclResult_t (*proxyProgressFunc_t)(struct ncclProxyArgs*);
+typedef ncclResult_t (*proxyProgressFunc_t)(struct ncclComm*, struct ncclProxyArgs*);
 
 #define NCCL_PROXY_MAX_SUBS MAXCHANNELS
 static_assert(NCCL_MAX_WORK_ELEMENTS <= MAXCHANNELS, "Not enough sub space for max work elements");
 
 struct ncclProxySubArgs {
   struct ncclChannel* channel;
-  struct ncclConnector* connector;
+  struct ncclProxyConnection* connection;
   int nsteps;
   ssize_t sendbytes;
   ssize_t recvbytes;
@@ -71,29 +72,32 @@ struct ncclProxySharedP2p {
   int size;
   char* cudaBuff;
   char* hostBuff;
-  int interRank;
-  int remoteId;
-  void* ipcMem;
+  struct ncclProxyArgs* proxyAppend; // Separate send and recv
+  void** transportResources[NCCL_MAX_NETDEVS];
 };
 
-struct ncclProxySharedBuffers {
-  struct ncclProxySharedP2p* p2p[NCCL_MAX_NETDEVS];
-  struct ncclProxyArgs* proxyAppend[2*MAXCHANNELS]; // Separate send and recv
+struct ncclProxySharedCollNet {
+  int size;
+  char* cudaBuff;
+  char* hostBuff;
+  struct ncclProxyArgs* proxyAppend[2*NCCL_MAX_NETDEVS];
+  void* resources;
+};
 
-  int collNetSize;
-  char* collNetCudaBuff;
-  char* collNetHostBuff;
-  struct ncclProxyArgs* proxyAppendCollNet[2*NCCL_MAX_NETDEVS];
-  void* collNetResources;
+struct ncclProxyPeer {
+  struct ncclProxySharedP2p send;
+  struct ncclProxySharedP2p recv;
 };
 
 struct ncclProxyPool;
-struct ncclProxyState {
+struct ncclProxyProgressState {
+  pthread_t thread;
   pthread_cond_t cond;
   pthread_mutex_t opsMutex;
   pthread_mutex_t poolMutex;
   bool stop;
-  struct ncclProxySharedBuffers sharedBuffs;
+  struct ncclProxyPeer** localPeers;
+  struct ncclProxySharedCollNet collNet;
   struct ncclProxyArgs* ops;           // Running operations, used by proxy thread
   struct ncclProxyArgs* postedOps;     // Posted operations, shared between proxy and main thread, locked with opsMutex
   struct ncclProxyArgs* postedOpsEnd;
@@ -104,6 +108,27 @@ struct ncclProxyState {
   struct ncclProxyArgs* poolReturned;  // Shared between main and progress thread, lock with poolMutex
 
   struct ncclProxyPool* pools;
+};
+
+struct ncclProxyState {
+  // Service thread
+  pthread_t thread;
+  struct ncclSocket* listenSock;
+  int stop;
+  union ncclSocketAddress* peerAddresses;
+  struct ncclSocket* peerSocks;
+
+  // Progress thread
+  struct ncclProxyProgressState progressState;
+};
+
+struct ncclProxyConnection {
+  int send, transport, connected, shared;
+  struct ncclSocket* sock;
+  struct ncclTransportComm* tcomm;
+  struct ncclProxyArgs *proxyAppend;
+  struct ncclProxyArgs **proxyAppendPtr;
+  void* transportResources;
 };
 
 typedef ncclResult_t (*threadFunc_t)(struct ncclProxyArgs*);
@@ -118,37 +143,24 @@ ncclResult_t ncclProxySaveColl(struct ncclProxyArgs* args, int nranks);
 ncclResult_t ncclProxyComputeP2p(struct ncclInfo* info, struct ncclProxyArgs* args);
 ncclResult_t ncclProxySaveP2p(struct ncclComm* comm, struct ncclProxyArgs* args);
 ncclResult_t ncclProxyStart(struct ncclComm* comm);
-ncclResult_t ncclProxyCreate(struct ncclComm* comm);
+ncclResult_t ncclProxyInit(struct ncclComm* comm, struct ncclSocket* sock, union ncclSocketAddress* peerAddresses);
+ncclResult_t ncclProxyConnect(struct ncclComm* comm, int transport, int send, int rank, struct ncclProxyConnector* proxyConn);
+enum ncclProxyMsgType {
+  ncclProxyMsgInit = 1,
+  ncclProxyMsgSetup = 2,
+  ncclProxyMsgConnect = 3,
+  ncclProxyMsgAppend = 4,
+  ncclProxyMsgStart = 5,
+  ncclProxyMsgAbort = 6,
+  ncclProxyMsgStop = 7
+};
+ncclResult_t ncclProxyCall(struct ncclProxyConnector* proxyConn, int type, void* sendData, size_t sendSize, void* recvData, size_t recvSize);
 ncclResult_t ncclProxyDestroy(struct ncclComm* comm);
 
-ncclResult_t ncclProxySharedBuffersInitP2p(struct ncclComm* comm, int cuda, int netDev, int* size, char** ptr);
+ncclResult_t ncclProxySharedBuffersInitP2p(struct ncclComm* comm, int cuda, int localRank, int type, int* size, char** ptr);
 ncclResult_t ncclProxySharedBuffersInitCollNet(struct ncclComm* comm, int cuda, int* size, char** ptr);
-ncclResult_t ncclProxySharedBuffersGetP2p(struct ncclComm* comm, int cuda, int netDev, int type, int channel, int slot, int index, char** ptr);
-ncclResult_t ncclProxySharedBuffersGetCollNet(struct ncclComm* comm, int cuda, int type, int slot, int index, char** ptr);
-ncclResult_t ncclProxySharedBuffersDestroyP2p(struct ncclComm* comm, int netDev);
+ncclResult_t ncclProxySharedBuffersGetP2p(struct ncclComm* comm, int channel, int slot, int index, int* offset);
+ncclResult_t ncclProxySharedBuffersGetCollNet(struct ncclComm* comm, int type, int slot, int index, int* offset);
+ncclResult_t ncclProxySharedBuffersDestroyP2p(struct ncclComm* comm, int localRank, int type);
 ncclResult_t ncclProxySharedBuffersDestroyCollNet(struct ncclComm* comm);
-
-#include <unistd.h>
-
-// Spin wait until func evaluates to true
-template<typename FUNC>
-inline void transportProxyWait(const FUNC& func) {
-  while (!func()) {
-    sched_yield();
-  }
-}
-
-#include "transport.h"
-
-struct ncclProxyServiceArgs {
-  struct ncclComm* comm;
-  int cudaDev;
-  int listenFd;
-  int stop;
-  int ret;
-  void* transportStates[NTRANSPORTS];
-};
-
-extern void* ncclProxyService(void* args);
-
 #endif

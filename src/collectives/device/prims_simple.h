@@ -18,7 +18,7 @@ class Primitives<
                        RolePostSend = 0x10,
                        RolePostRecv = 0x20,
                        Aborted = 0x40,
-                       PtrsFifoEnabled = 0x80,
+                       OffsFifoEnabled = 0x80,
                        SizesFifoEnabled = 0x100,
                        DirectEnabled = 0x200,
                        ThreadsSynced = 0x400;
@@ -33,10 +33,10 @@ class Primitives<
   int group;
   uint64_t step;
   union {
-    void **connPtrsFifoPtr; // (flags & PtrsFifoEnabled)
+    T *connEltsFifo;        // !(flags & (RoleInput|RoleOutput))
     T *userBuff;            // (flags & (RoleInput|RoleOutput))
-    T *connEltsFifo;        // !(flags & (PtrsFifoEnabled|RoleInput|RoleOutput))
   };
+  int *connOffsFifoPtr; // (flags & OffsFifoEnabled)
   union {
     int volatile *connSizesFifoPtr; //  (flags & SizesFifoEnabled)
     T *directBuff;                  // !(flags & SizesFifoEnabled)
@@ -84,8 +84,8 @@ class Primitives<
 
       void **ptrs = isSendNotRecv ? (ncclShmem.groups[group].dsts + Dst)
                                   : (ncclShmem.groups[group].srcs + Src);
-      if (flags & PtrsFifoEnabled)
-        loadPtr(connPtrsFifoPtr + step%NCCL_STEPS, ptrs[index]);
+      if (flags & OffsFifoEnabled)
+        ptrs[index] = connEltsFifo + loadInt(connOffsFifoPtr + step%NCCL_STEPS)/sizeof(T);
       else if ((isSendNotRecv ? DirectSend : DirectRecv) && (flags & DirectEnabled))
         ptrs[index] = directBuff + (isSendNotRecv ? remoteOutIx : dstIx) + offset;
       else
@@ -265,12 +265,11 @@ class Primitives<
         ncclShmem.groups[group].recvConns[index] = conn; // WaitRecv role saves since that's who needs it in setDataPtrs()
         connStepPtr = conn->tail;
         connStepCache = *connStepPtr;
-        flags |= (conn->ptrsFifo != nullptr) ? PtrsFifoEnabled : 0;
+        flags |= (conn->offsFifo != nullptr) ? OffsFifoEnabled : 0;
         flags |= (Direct && (conn->direct & NCCL_DIRECT_GPU)) ? DirectEnabled : 0;
-        if (flags & PtrsFifoEnabled)
-          connPtrsFifoPtr = conn->ptrsFifo;
-        else
-          connEltsFifo = (T*)conn->buffs[NCCL_PROTO_SIMPLE];
+        if (flags & OffsFifoEnabled)
+          connOffsFifoPtr = conn->offsFifo;
+        connEltsFifo = (T*)conn->buffs[NCCL_PROTO_SIMPLE];
       }
     }
   }
@@ -291,11 +290,10 @@ class Primitives<
         ncclShmem.groups[group].sendConns[index] = conn; // WaitSend role saves since that's who needs it in setDataPtrs()
         connStepPtr = conn->head;
         connStepCache = *connStepPtr;
-        flags |= (conn->ptrsFifo != nullptr) ? PtrsFifoEnabled : 0;
-        if (flags & PtrsFifoEnabled)
-          connPtrsFifoPtr = conn->ptrsFifo;
-        else
-          connEltsFifo = (T*)conn->buffs[NCCL_PROTO_SIMPLE];
+        flags |= (conn->offsFifo != nullptr) ? OffsFifoEnabled : 0;
+        if (flags & OffsFifoEnabled)
+          connOffsFifoPtr = conn->offsFifo;
+        connEltsFifo = (T*)conn->buffs[NCCL_PROTO_SIMPLE];
 
         if (conn->sizesFifo != nullptr) {
           flags |= SizesFifoEnabled;

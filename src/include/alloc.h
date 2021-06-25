@@ -11,6 +11,7 @@
 #include "checks.h"
 #include "align.h"
 #include <sys/mman.h>
+#include <unistd.h>
 
 template <typename T>
 static ncclResult_t ncclCudaHostCalloc(T** ptr, size_t nelem) {
@@ -35,6 +36,25 @@ static ncclResult_t ncclCalloc(T** ptr, size_t nelem) {
   memset(p, 0, nelem*sizeof(T));
   *ptr = (T*)p;
   INFO(NCCL_ALLOC, "Mem Alloc Size %ld pointer %p", nelem*sizeof(T), *ptr);
+  return ncclSuccess;
+}
+
+template <typename T>
+static ncclResult_t ncclRealloc(T** ptr, size_t oldNelem, size_t nelem) {
+  if (nelem < oldNelem) return ncclInternalError;
+  if (nelem == oldNelem) return ncclSuccess;
+
+  T* oldp = *ptr;
+  T* p = (T*)malloc(nelem*sizeof(T));
+  if (p == NULL) {
+    WARN("Failed to malloc %ld bytes", nelem*sizeof(T));
+    return ncclSystemError;
+  }
+  memcpy(p, oldp, oldNelem*sizeof(T));
+  free(oldp);
+  memset(p+oldNelem, 0, (nelem-oldNelem)*sizeof(T));
+  *ptr = (T*)p;
+  INFO(NCCL_ALLOC, "Mem Realloc old size %ld, new size %ld pointer %p", oldNelem*sizeof(T), nelem*sizeof(T), *ptr);
   return ncclSuccess;
 }
 

@@ -9,6 +9,7 @@
 
 #include "nccl.h"
 #include "align.h"
+#include "socket.h"
 #include <stdint.h>
 
 #define NCCL_NUM_FUNCTIONS 5 // SendRecv not included for now
@@ -86,17 +87,21 @@ struct ncclConnInfo {
   void **ptrExchange; // Pointer exchange for direct communication
 
   int *sizesFifo;     // Sizes fifo from GPU to proxy
-  void* *ptrsFifo;      // Buffer fifo from proxy to GPU
+  int *offsFifo;      // Buffer fifo from proxy to GPU
 
   uint64_t step;      // Keep where we are
   uint64_t llLastCleaning;
 };
 
+struct ncclProxyConnector {
+  int localRank;
+  int id;
+  struct ncclComm* comm;
+};
+
 struct ncclConnector {
   int connected;
-  int fd;
-  struct ncclProxyArgs *proxyAppend;
-  struct ncclProxyArgs **proxyAppendPtr;
+  struct ncclProxyConnector proxyConn;
   struct ncclTransportComm* transportComm;
   void* transportResources;
   struct ncclConnInfo conn;

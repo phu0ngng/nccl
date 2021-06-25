@@ -206,6 +206,8 @@ static ncclResult_t commFree(ncclComm_t comm) {
   for (int channel=0; channel<MAXCHANNELS; channel++)
     NCCLCHECK(freeChannel(comm->channels+channel, comm->nRanks));
 
+  NCCLCHECK(ncclProxyDestroy(comm));
+
   if (comm->doneEvent != NULL)
     CUDACHECK(cudaEventDestroy(comm->doneEvent));
 
@@ -487,6 +489,7 @@ static ncclResult_t computeBuffSizes(struct ncclComm* comm) {
 NCCL_PARAM(GraphDumpFileRank, "GRAPH_DUMP_FILE_RANK", 0);
 NCCL_PARAM(CollNetNodeThreshold, "COLLNET_NODE_THRESHOLD", 2);
 NCCL_PARAM(NvbPreconnect, "NVB_PRECONNECT", 1);
+NCCL_PARAM(PxnPreconnect, "PXN_PRECONNECT", 1);
 
 static ncclResult_t initTransportsRank(struct ncclComm* comm, ncclUniqueId* commId) {
   // We use 2 AllGathers
@@ -862,6 +865,26 @@ collnet_cleanup:
     free(nvbPeers);
   }
 
+  if (ncclParamPxnPreconnect()) {
+    // Connect net proxies when using PXN path
+    // TODO preconnect PXN
+#if 0
+    int pxnNnets;
+    int* pxnNets;
+    NCCLCHECK(ncclTopoGetPxnNets(comm->topo, comm->rank, &pxnNnets, &pxnNets));
+    for (int n=0; n<pxnNnets; n++) {
+      int netDev = pxnNets[n];
+      int proxyRank;
+      struct ncclProxyConnector proxyConn;
+      NCCLCHECK(ncclTopoGetLocalRank(comm->topo, comm->rank, &send->proxyConn.localRank));
+      NCCLCHECK(ncclTopoGetIntermediateRank(comm->topo, comm->rank, netDev, &proxyRank));
+      NCCLCHECK(ncclProxyConnect(comm, TRANSPORT_NET, 1, proxyRank, &proxyConn));
+      NCCLCHECK(ncclProxyCall(&proxyConn, ncclProxyMsgSetup,  ...));
+    }
+    free(nvbPeers);
+#endif
+  }
+
   NCCLCHECK(ncclCommSetIntra(comm, intraRank, intraRanks, intraRank0Comm));
 
   // We should have allocated all buffers, collective fifos, ... we can
@@ -977,8 +1000,6 @@ static ncclResult_t commDestroy(ncclComm_t comm) {
   if (savedDevice != commDevice)
     CUDACHECK(cudaSetDevice(savedDevice));
 
-  TRACE(NCCL_INIT, "Destroyed comm %p rank %d", comm, comm->rank);
-
   return ncclSuccess;
 }
 
@@ -988,15 +1009,18 @@ ncclResult_t ncclCommDestroy(ncclComm_t comm) {
   if (comm == NULL)
     return ncclSuccess;
 
-  TRACE(NCCL_INIT, "comm %p rank %d nRanks %d cudaDev %d busId %lx", comm, comm->rank, comm->nRanks, comm->cudaDev, comm->busId);
+  int rank = comm->rank, nranks = comm->nRanks, cudaDev = comm->cudaDev;
+  int64_t busId = comm->busId;
+  TRACE(NCCL_INIT, "comm %p rank %d nRanks %d cudaDev %d busId %lx", comm, rank, nranks, cudaDev, busId);
 
   // Try and prevent a double free of the comm struct (user error)
-  if (comm->rank == -1 || comm->nRanks <= 0 || comm->cudaDev == -1 || comm->busId == -1) {
+  if (rank == -1 || nranks <= 0 || cudaDev == -1 || busId == -1) {
     WARN("comm %p has already been destroyed", comm);
     return ncclInvalidArgument;
   }
 
-  return commDestroy(comm);
+  INFO(NCCL_INIT,"comm %p rank %d nranks %d cudaDev %d busId %lx - Destroy COMPLETE", comm, rank, nranks, cudaDev, busId);
+  return ncclSuccess;
 }
 
 NCCL_API(ncclResult_t, ncclCommAbort, ncclComm_t comm);
@@ -1005,10 +1029,16 @@ ncclResult_t ncclCommAbort(ncclComm_t comm) {
   if (comm == NULL)
     return ncclSuccess;
 
+  int rank = comm->rank, nranks = comm->nRanks, cudaDev = comm->cudaDev;
+  int64_t busId = comm->busId;
+  TRACE(NCCL_INIT, "comm %p rank %d nRanks %d cudaDev %d busId %lx", comm, rank, nranks, cudaDev, busId);
+
   // Ask anything that might still be running on the device to quit
   *comm->abortFlag = 1;
 
-  return commDestroy(comm);
+  NCCLCHECK(commDestroy(comm));
+  INFO(NCCL_INIT,"comm %p rank %d nranks %d cudaDev %d busId %lx - Abort COMPLETE", comm, rank, nranks, cudaDev, busId);
+  return ncclSuccess;
 }
 
 NCCL_API(const char*, ncclGetErrorString, ncclResult_t code);

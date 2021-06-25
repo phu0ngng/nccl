@@ -8,6 +8,7 @@
 #define NCCL_UTILS_H_
 
 #include "nccl.h"
+#include "checks.h"
 #include <stdint.h>
 
 int ncclCudaCompCap();

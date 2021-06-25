@@ -779,3 +779,14 @@ ncclResult_t ncclTopoGetCompCap(struct ncclTopoSystem* system, int* ccMin, int* 
   if (ccMax) *ccMax = max;
   return ncclSuccess;
 }
+
+ncclResult_t ncclTopoGetLocalRank(struct ncclTopoSystem* system, int rank, int* localRank) {
+  for (int g=0; g<system->nodes[GPU].count; g++) {
+    if (system->nodes[GPU].nodes[g].gpu.rank == rank) {
+      *localRank = g;
+      return ncclSuccess;
+    }
+  }
+  WARN("Could not find local GPU with rank %d\n", rank);
+  return ncclInternalError;
+}

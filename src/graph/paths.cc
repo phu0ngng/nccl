@@ -373,7 +373,7 @@ ncclResult_t ncclTopoGetIntermediateRank(struct ncclTopoSystem* system, int rank
     }
     *intermediateRank = node->gpu.rank;
   } else {
-    *intermediateRank = -1;
+    *intermediateRank = rank;
   }
   return ncclSuccess;
 }

@@ -171,6 +171,6 @@ ncclResult_t shmRecvFree(struct ncclConnector* recv) {
 struct ncclTransport shmTransport = {
   "SHM",
   shmCanConnect,
-  { shmSendSetup, shmSendConnect, shmSendFree, NULL, NULL, NULL },
-  { shmRecvSetup, shmRecvConnect, shmRecvFree, NULL, NULL, NULL }
+  { shmSendSetup, shmSendConnect, shmSendFree, NULL, NULL, NULL, NULL },
+  { shmRecvSetup, shmRecvConnect, shmRecvFree, NULL, NULL, NULL, NULL }
 };

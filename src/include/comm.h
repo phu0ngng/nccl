@@ -37,7 +37,7 @@ struct ncclSendMem {
       char pad1[CACHE_LINE_SIZE-sizeof(uint64_t)];
       void* ptrExchange;
       char pad2[CACHE_LINE_SIZE-sizeof(void*)];
-      void* ptrsFifo[NCCL_STEPS];
+      int offsFifo[NCCL_STEPS];
     };
     char pad3[MEM_ALIGN];
   };
@@ -49,7 +49,7 @@ struct ncclRecvMem {
       uint64_t tail;
       char pad1[CACHE_LINE_SIZE-sizeof(uint64_t)];
       int sizesFifo[NCCL_STEPS];
-      void* ptrsFifo[NCCL_STEPS];
+      int offsFifo[NCCL_STEPS];
       int flush; // For GDRCopy-based flush
     };
     char pad4[MEM_ALIGN];
@@ -136,8 +136,6 @@ struct ncclComm {
   struct ncclWorkElem args;
   void* argsptr;
 
-  // Global proxy thread
-  pthread_t proxyThread;
   struct ncclProxyState proxyState;
 
   // Whether this communicator uses collNet
