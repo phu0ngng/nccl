@@ -384,6 +384,7 @@ static ncclResult_t getAlgoInfo(struct ncclInfo* info, int collNetTypeSupport, i
   // Find algorithm / protocol.
   info->algorithm = -1;
   info->protocol = -1;
+  if (comm->nRanks == 1) return ncclSuccess;
   int nAlgos = NCCL_NUM_ALGORITHMS;
   for (int a=0; a<nAlgos; a++) {
     if (a == NCCL_ALGO_COLLNET && collNetTypeSupport != 1) continue;
