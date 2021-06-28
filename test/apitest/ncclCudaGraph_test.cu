@@ -7,7 +7,8 @@ class ncclCudaGraph_test : public ncclCommon_test<DT> {
     void SetUp();
     void TearDown();
     void BeginCapture();
-    void EndCaptureAndLaunch();
+    void EndCapture();
+    void LaunchGraph();
 };
 
 template <typename DT>
@@ -41,7 +42,7 @@ void ncclCudaGraph_test<DT>::BeginCapture() {
 };
 
 template <typename DT>
-void ncclCudaGraph_test<DT>::EndCaptureAndLaunch() {
+void ncclCudaGraph_test<DT>::EndCapture() {
     // End cuda graph capture
     for (int i=0; i<this->nVis; i++) {
         ASSERT_EQ(cudaSuccess, cudaStreamEndCapture(this->streams[i], this->graphs+i));
@@ -50,6 +51,10 @@ void ncclCudaGraph_test<DT>::EndCaptureAndLaunch() {
     for (int i=0; i<this->nVis; i++) {
         ASSERT_EQ(cudaSuccess, cudaGraphInstantiate(this->graphExec+i, this->graphs[i], NULL, NULL, 0));
     }
+};
+
+template <typename DT>
+void ncclCudaGraph_test<DT>::LaunchGraph() {
     // Launch cuda graph
     for (int i=0; i<this->nVis; i++) {
         ASSERT_EQ(cudaSuccess, cudaGraphLaunch(this->graphExec[i], this->streams[i]));
@@ -72,7 +77,9 @@ TYPED_TEST(ncclCudaGraph_test, collective) {
             << "i" << i << ", " << std::endl;
     }
     ASSERT_EQ(ncclSuccess, ncclGroupEnd());
-    this->EndCaptureAndLaunch();
+    this->EndCapture();
+    this->LaunchGraph();
+    this->LaunchGraph();  // Launch graph twice to check task list persistency
 };
 
 TYPED_TEST(ncclCudaGraph_test, alltoall) {
@@ -96,7 +103,8 @@ TYPED_TEST(ncclCudaGraph_test, alltoall) {
         ASSERT_EQ(ncclSuccess, ncclGroupEnd());
     }
     ASSERT_EQ(ncclSuccess, ncclGroupEnd());
-    this->EndCaptureAndLaunch();
+    this->EndCapture();
+    this->LaunchGraph();
 };
 
 TYPED_TEST(ncclCudaGraph_test, aggregation) {
@@ -113,7 +121,8 @@ TYPED_TEST(ncclCudaGraph_test, aggregation) {
         }
     }
     ASSERT_EQ(ncclSuccess, ncclGroupEnd());
-    this->EndCaptureAndLaunch();
+    this->EndCapture();
+    this->LaunchGraph();
 };
 #endif
 // EOF
