@@ -22,7 +22,7 @@ ncclDataType_t test_types[ncclNumTypes] = {ncclInt8, ncclUint8, ncclInt32, ncclU
 #endif
 };
 const char *test_typenames[ncclNumTypes] = {"int8", "uint8", "int32", "uint32", "int64", "uint64", "half", "float", "double",
-#if defined(__CUDA_BF16_TYPES_EXIST__)
+#if defined(__CUDA_BF16_TYPES_EXIST__) && NCCL_VERSION_CODE >= NCCL_VERSION(2,10,0)
                                             "bfloat16"
 #endif
 };
@@ -75,6 +75,10 @@ static int cudaGraphLaunches = 0;
 static int report_cputime = 0;
 static int out_of_place = 1;
 static int unalign = 0;
+#ifdef MPI_SUPPORT
+// Report average iteration time: (0=RANK0,1=AVG,2=MIN,3=MAX)
+static int average = 1;
+#endif
 
 static char* replay_file = NULL;
 
@@ -408,6 +412,8 @@ testResult_t CheckData(struct threadArgs* args, ncclDataType_t type, ncclRedOp_t
          printf("%d:%d ", j, dataHost[j]);
        }
        printf("\n");
+       free(expectedHost);
+       free(dataHost);
     }
 #endif
   }
@@ -521,10 +527,8 @@ testResult_t BenchTime(struct threadArgs* args, ncclDataType_t type, ncclRedOp_t
   }
 
   // Sync
-  #if 1
   TESTCHECK(startColl(args, type, op, root, in_place, 0));
   TESTCHECK(completeColl(args));
-  #endif
 
   Barrier(args);
   args->compThreadCountLast = *(args->compThreadCount);
@@ -574,6 +578,23 @@ testResult_t BenchTime(struct threadArgs* args, ncclDataType_t type, ncclRedOp_t
   double deltaSec = tim.elapsed();
   deltaSec = deltaSec/(iters*agg_iters);
   if (cudaGraphLaunches >= 1) deltaSec = deltaSec/cudaGraphLaunches;
+#ifdef MPI_SUPPORT
+  switch (average) {
+  case 1:
+    // Calculate the average time across all ranks
+    MPI_Allreduce(MPI_IN_PLACE, &deltaSec, 1, MPI_DOUBLE, MPI_SUM, MPI_COMM_WORLD);
+    deltaSec = deltaSec/(args->nProcs*args->nThreads*args->nGpus);
+    break;
+  case 2:
+    // Obtain the minimum time across all ranks
+    MPI_Allreduce(MPI_IN_PLACE, &deltaSec, 1, MPI_DOUBLE, MPI_MIN, MPI_COMM_WORLD);
+    break;
+  case 3:
+    // Obtain the maximum time across all ranks
+    MPI_Allreduce(MPI_IN_PLACE, &deltaSec, 1, MPI_DOUBLE, MPI_MAX, MPI_COMM_WORLD);
+    break;
+  }
+#endif
 
   if (cudaGraphLaunches >= 1) {
     //destroy cuda graph
@@ -918,13 +939,14 @@ int main(int argc, char* argv[]) {
     {"report_cputime", required_argument, 0, 'C'},
     {"out_of_place", required_argument, 0, 'O'},
     {"unalign", required_argument, 0, 'u'},
+    {"average", required_argument, 0, 'a'},
     {"help", no_argument, 0, 'h'},
     {}
   };
 
   while(1) {
     int c;
-    c = getopt_long(argc, argv, "t:g:b:e:i:f:n:m:w:s:p:c:o:d:r:z:y:k:h:l:T:G:C:O:u:", longopts, &longindex);
+    c = getopt_long(argc, argv, "t:g:b:e:i:f:n:m:w:s:p:c:o:d:r:z:y:k:h:l:T:G:C:O:u:a:", longopts, &longindex);
 
     if (c == -1)
       break;
@@ -1008,6 +1030,11 @@ int main(int argc, char* argv[]) {
       case 'u':
         unalign = (int)strtol(optarg, NULL, 0);
         break;
+#ifdef MPI_SUPPORT
+      case 'a':
+        average = (int)strtol(optarg, NULL, 0);
+        break;
+#endif
       case 'h':
       default:
         if (c != 'h') printf("invalid option '%c'\n", c);
@@ -1031,10 +1058,13 @@ int main(int argc, char* argv[]) {
             "[-k,--side_comp <0/1>] \n\t"
             "[-l,--replay <path to replay file>] \n\t"
             "[-T,--timeout <time in seconds>] \n\t"
-            "[-G,--cudagraph <0/1>] \n\t"
+            "[-G,--cudagraph <num graph launches>] \n\t"
             "[-C,--report_cputime <0/1>] \n\t"
             "[-O,--out_of_place <0/1>] \n\t"
             "[-u,--unalign <index of first element>] \n\t"
+#ifdef MPI_SUPPORT
+            "[-a,--average <0/1/2/3> report average iteration time <0=RANK0/1=AVG/2=MIN/3=MAX>] \n\t"
+#endif
             "[-h,--help]\n",
             basename(argv[0]));
         return 0;
