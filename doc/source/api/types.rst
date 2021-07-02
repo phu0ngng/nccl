@@ -92,10 +92,6 @@ ncclDataType_t
 
   16-bits floating point number (half precision)
 
- .. c:macro:: ncclBfloat16
-
-  16-bits floating point number (truncated single precision, bfloat16 format)
-
  .. c:macro:: ncclHalf
 
   16-bits floating point number (half precision)
@@ -115,7 +111,11 @@ ncclDataType_t
  .. c:macro:: ncclDouble
 
   64-bits floating point number (double precision)
-	
+
+ .. c:macro:: ncclBfloat16
+
+  16-bits floating point number (truncated precision in bfloat16 format, CUDA 11 or later)
+
 
 ncclRedOp_t
 -----------
