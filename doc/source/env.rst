@@ -346,6 +346,16 @@ Define and set to 0 to disable GPU Direct RDMA.
 
 Define and set to 1 to force the usage of GPU Direct RDMA.
 
+NCCL_IB_QPS_PER_CONNECTION
+--------------------------
+(since 2.10)
+Number of IB queue pairs to use for each connection between two ranks. This can be useful on multi-level fabrics which need multiple queue pairs to have good routing entropy.
+Each message, regardless of its size, will be split in N parts and sent on each queue pair. Therefore, increasing this number can cause a latency increase as well as a bandwidth reduction.
+
+Values accepted
+^^^^^^^^^^^^^^^
+Number between 1 and 128, default is 1. Values beyond 8 usually cause degraded bandwidth.
+
 NCCL_NET_GDR_LEVEL (formerly NCCL_IB_GDR_LEVEL)
 -----------------------------------------------
 (since 2.3.4. In 2.4.0, NCCL_IB_GDR_LEVEL is renamed NCCL_NET_GDR_LEVEL)
@@ -511,7 +521,7 @@ NCCL_TOPO_FILE
 --------------
 (since 2.6)
 
-Path to an XML file to load before detecting the topology.
+Path to an XML file to load before detecting the topology. By default, NCCL will load ``/var/run/nvidia-topologyd/virtualTopology.xml`` if present.
 
 Value accepted
 ^^^^^^^^^^^^^^
