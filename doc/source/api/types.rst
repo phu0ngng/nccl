@@ -139,3 +139,7 @@ ncclRedOp_t
  .. c:macro:: ncclMax
 
  Perform a max operation
+
+ .. c:macro:: ncclAvg
+
+ Perform an average operation, i.e. a sum across all ranks, divided by the number of ranks.
