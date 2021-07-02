@@ -356,6 +356,15 @@ Values accepted
 ^^^^^^^^^^^^^^^
 Number between 1 and 128, default is 1. Values beyond 8 usually cause degraded bandwidth.
 
+NCCL_NET
+--------
+Forces NCCL to use a specific network, for example to make sure NCCL uses an external plugin and doesn't automatically fall back on the internal IB or Socket implementation.
+
+Values accepted
+^^^^^^^^^^^^^^^
+The value of NCCL_NET has to match exactly the name of the NCCL network used (case-sensitive). Internal network names are "IB" (generic IB verbs) and "Socket" (TCP/IP sockets).
+External network plugins define their own names.
+
 NCCL_NET_GDR_LEVEL (formerly NCCL_IB_GDR_LEVEL)
 -----------------------------------------------
 (since 2.3.4. In 2.4.0, NCCL_IB_GDR_LEVEL is renamed NCCL_NET_GDR_LEVEL)
