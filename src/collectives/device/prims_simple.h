@@ -310,11 +310,11 @@ class Primitives<
  public:
   __device__ Primitives(
       int tid, int nthreads, int const *recvPeers, int const *sendPeers,
-      void const *inputBuf, void *outputBuf, int group=0
+      void const *inputBuf, void *outputBuf, uint64_t redOpArg, int group=0
     ):
     tid(tid),
     stepSize(ncclShmem.comm.buffSizes[NCCL_PROTO_SIMPLE]/NCCL_STEPS/sizeof(T)),
-    redOp(FuncTraits<RedOp>::make(ncclShmem.comm.nRanks)) {
+    redOp(redOpArg) {
 
     // For send operations, we need an extra warp to overlap the threadfence and the copy
     this->nthreads = nthreads;

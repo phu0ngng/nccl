@@ -25,7 +25,7 @@ namespace {
     const ssize_t size = args->coll.count;
 
     Primitives<T, RedOp, FanSymmetric<1>, 0, Proto>
-      prims(tid, nthreads, &ring->prev, &ring->next, args->sendbuff, args->recvbuff);
+      prims(tid, nthreads, &ring->prev, &ring->next, args->sendbuff, args->recvbuff, args->coll.redOpArg);
 
     for (ssize_t gridOffset = 0; gridOffset < size; gridOffset += loopSize) {
       ssize_t realChunkSize;

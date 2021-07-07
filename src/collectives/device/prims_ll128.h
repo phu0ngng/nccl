@@ -354,9 +354,9 @@ class Primitives<T, RedOp, Fan, Direct, ProtoLL128>:
 public:
   __device__ Primitives(
       const int tid, const int nthreads, int const *recvPeers, int const *sendPeers,
-      void const *inputBuf, void *outputBuf, int group=0
+      void const *inputBuf, void *outputBuf, uint64_t redOpArg, int group=0
     ):
-    redOp(FuncTraits<RedOp>().make(ncclShmem.comm.nRanks)),
+    redOp(redOpArg),
     tid(tid), nthreads(nthreads), wid(tid%WARP_SIZE), warp(tid/WARP_SIZE),
     flagThread((tid%8)==7), group(group),
     stepSize(ncclShmem.comm.buffSizes[NCCL_PROTO_LL128]/NCCL_STEPS/sizeof(uint64_t)) {

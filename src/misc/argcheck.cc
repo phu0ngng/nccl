@@ -51,7 +51,8 @@ ncclResult_t ArgsCheck(struct ncclInfo* info) {
   }
   if (info->coll == ncclFuncAllGather || info->coll == ncclFuncReduceScatter) info->nBytes *= info->comm->nRanks; // count is per rank
 
-  if (info->op < 0 || info->op >= ncclNumOps) {
+  if (info->op < 0 || info->op > ncclMaxRedOp ||
+      (ncclNumOps <= info->op && info->comm->userRedOps[int(info->op)-int(ncclNumOps)].freeNext != -1)) {
     WARN("%s : invalid reduction operation %d", info->opName, info->op);
     return ncclInvalidArgument;
   }

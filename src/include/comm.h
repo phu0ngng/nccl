@@ -56,6 +56,14 @@ struct ncclRecvMem {
   char buff[1]; // Actually larger than that
 };
 
+struct ncclRedOpUser {
+  int freeNext; // -1=allocated, otherwise xor with (index+1) for next free index
+  struct {
+    ncclScalarResidence residence;
+    void *scalar;
+  } preMulSum;
+};
+
 struct ncclComm {
   struct ncclChannel channels[MAXCHANNELS];
 
@@ -163,6 +171,10 @@ struct ncclComm {
   cudaGraphNode_t lastSetupNode;
   unsigned long long lastCudaGraphId;
   int driverVersion;
+
+  // user-created reduction ops
+  int userRedOpFree;
+  ncclRedOpUser userRedOps[int(ncclMaxRedOp)+1 - int(ncclNumOps)];
 };
 
 #endif

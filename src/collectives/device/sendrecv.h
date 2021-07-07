@@ -57,7 +57,7 @@ struct RunWork<ncclFuncSendRecv, T, RedOp, NCCL_ALGO_RING, NCCL_PROTO_SIMPLE> {
             int const nt = nThreadsSplit;
             int const chunkSize = args->p2p.recvChunkSize/sizeof(T);
             Primitives<T, RedOp, FanAsymmetric<1, 0>, 1, Proto> prims
-              (tid-t0, nt, &peer, nullptr, nullptr, recvbuff, groupRecv);
+              (tid-t0, nt, &peer, nullptr, nullptr, recvbuff, /*redOpArg(ignored)=*/0, groupRecv);
             ssize_t offset = 0;
             do {
               int nelem = roundUp(chunkSize, nt*(sizeof(uint64_t)/sizeof(T)));
@@ -73,7 +73,7 @@ struct RunWork<ncclFuncSendRecv, T, RedOp, NCCL_ALGO_RING, NCCL_PROTO_SIMPLE> {
             int const nt = nThreadsSegment - nThreadsSplit;
             int const chunkSize = args->p2p.sendChunkSize/sizeof(T);
             Primitives<T, RedOp, FanAsymmetric<0, 1>, 1, Proto> prims
-              (tid-t0, nt, nullptr, &peer, sendbuff, nullptr, groupSend);
+              (tid-t0, nt, nullptr, &peer, sendbuff, nullptr, /*redOpArg(ignored)=*/0, groupSend);
             ssize_t offset = 0;
             do {
               int nelem = roundUp(chunkSize, nt*(sizeof(uint64_t)/sizeof(T)));

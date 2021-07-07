@@ -102,12 +102,21 @@ ncclResult_t  ncclCommUserRank(const ncclComm_t comm, int* rank);
 ncclResult_t pncclCommUserRank(const ncclComm_t comm, int* rank);
 
 /* Reduction operation selector */
+typedef enum { ncclSum_dummy        = 0,
+               ncclProd_dummy       = 1,
+               ncclMax_dummy        = 2,
+               ncclMin_dummy        = 3,
+               ncclAvg_dummy        = 4,
+               ncclNumOps_dummy     = 5 } ncclRedOp_dummy_t;
+
 typedef enum { ncclSum        = 0,
                ncclProd       = 1,
                ncclMax        = 2,
                ncclMin        = 3,
                ncclAvg        = 4,
-               ncclNumOps     = 5 } ncclRedOp_t;
+               ncclNumOps     = 5,
+               ncclMaxRedOp   = /*max(511,...)*/ 511 & 0xffffffffu>>(32-8*sizeof(ncclRedOp_dummy_t))
+             } ncclRedOp_t;
 
 /* Data types */
 typedef enum { ncclInt8       = 0, ncclChar       = 0,
@@ -126,6 +135,16 @@ typedef enum { ncclInt8       = 0, ncclChar       = 0,
                ncclNumTypes   = 9
 #endif
 } ncclDataType_t;
+
+typedef enum { ncclScalarDevice        = 0,
+               ncclScalarHostImmediate = 1
+             } ncclScalarResidence;
+
+ncclResult_t  ncclRedOpCreatePreMulSum(ncclRedOp_t *op, void *scalar, ncclScalarResidence residence, ncclComm_t comm);
+ncclResult_t pncclRedOpCreatePreMulSum(ncclRedOp_t *op, void *scalar, ncclScalarResidence residence, ncclComm_t comm);
+
+ncclResult_t ncclRedOpDestroy(ncclRedOp_t op, ncclComm_t comm);
+ncclResult_t pncclRedOpDestroy(ncclRedOp_t op, ncclComm_t comm);
 
 /*
  * Collective communication operations

@@ -26,7 +26,6 @@ typedef uint64_t PackType;
 
 template<typename Fn>
 struct FuncTraits /*{
-  __device__ static Fn make();
   __device__ static T preOp(Fn, T);
   __device__ static T postOp(Fn, T);
 }*/;
