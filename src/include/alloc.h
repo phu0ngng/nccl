@@ -11,6 +11,7 @@
 #include "checks.h"
 #include "align.h"
 #include <sys/mman.h>
+#include <unistd.h>
 
 template <typename T>
 static ncclResult_t ncclCudaHostCallocDebug(T** ptr, size_t nelem, const char *filefunc, int line) {
