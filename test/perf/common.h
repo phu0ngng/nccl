@@ -120,11 +120,10 @@ struct threadArgs {
   int sync_idx;
   volatile int* barrier;
   int barrier_idx;
+  volatile double* reduce;
   int syncRank;
   int syncNranks;
-  double* deltaThreads;
   double* deltaHost;
-  double* delta;
   int* errors;
   double* bw;
   int* bw_count;
