@@ -16,8 +16,6 @@
 #include <string.h>
 #include <pthread.h>
 
-#define gettid() (pid_t) syscall(SYS_gettid)
-
 extern int ncclDebugLevel;
 extern uint64_t ncclDebugMask;
 extern pthread_mutex_t ncclDebugOutputLock;
