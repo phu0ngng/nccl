@@ -75,10 +75,8 @@ static int cudaGraphLaunches = 0;
 static int report_cputime = 0;
 static int out_of_place = 1;
 static int unalign = 0;
-#ifdef MPI_SUPPORT
 // Report average iteration time: (0=RANK0,1=AVG,2=MIN,3=MAX)
 static int average = 1;
-#endif
 
 static char* replay_file = NULL;
 
@@ -1059,11 +1057,9 @@ int main(int argc, char* argv[]) {
       case 'u':
         unalign = (int)strtol(optarg, NULL, 0);
         break;
-#ifdef MPI_SUPPORT
       case 'a':
         average = (int)strtol(optarg, NULL, 0);
         break;
-#endif
       case 'h':
       default:
         if (c != 'h') printf("invalid option '%c'\n", c);
@@ -1091,9 +1087,7 @@ int main(int argc, char* argv[]) {
             "[-C,--report_cputime <0/1>] \n\t"
             "[-O,--out_of_place <0/1>] \n\t"
             "[-u,--unalign <index of first element>] \n\t"
-#ifdef MPI_SUPPORT
             "[-a,--average <0/1/2/3> report average iteration time <0=RANK0/1=AVG/2=MIN/3=MAX>] \n\t"
-#endif
             "[-h,--help]\n",
             basename(argv[0]));
         return 0;
