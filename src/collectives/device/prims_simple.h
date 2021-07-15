@@ -31,6 +31,7 @@ class Primitives<
   int index; // Peer index I'm responsible for
   int flags;
   int group;
+  int connIndex;
   uint64_t step;
   union {
     void **connPtrsFifoPtr; // (flags & PtrsFifoEnabled)
@@ -253,10 +254,6 @@ class Primitives<
 
   __device__ __forceinline__ void loadRecvConn(ncclPeer *peer) {
     if (flags & (RoleWaitRecv|RolePostRecv)) {
-      // For other colls: group <= 2, hence always use conn 0
-      // For P2P: Direct is set to 1, hence always use conn 0
-      // Ideally we should be accepting connIndex from the constructor!
-      const int connIndex = Direct ? 0 : group/4;
       auto *conn = &peer->recv[connIndex].conn;
       step = conn->step;
       step = roundUp(step, SlicePerChunk*StepPerSlice);
@@ -280,10 +277,6 @@ class Primitives<
 
   __device__ __forceinline__ void loadSendConn(ncclPeer *peer) {
     if (flags & (RoleWaitSend|RolePostSend)) {
-      // For other colls: group <= 2, hence always use conn 0
-      // For P2P: Direct is set to 1, hence always use conn 0
-      // Ideally we should be accepting connIndex from the constructor!
-      const int connIndex = Direct ? 0 : group/4;
       auto *conn = &peer->send[connIndex].conn;
       step = conn->step;
       step = roundUp(step, SlicePerChunk*StepPerSlice);
@@ -313,7 +306,7 @@ class Primitives<
  public:
   __device__ Primitives(
       int tid, int nthreads, int const *recvPeers, int const *sendPeers,
-      void const *inputBuf, void *outputBuf, int group=0
+      void const *inputBuf, void *outputBuf, int group=0, int connIndex=0
     ):
     tid(tid),
     stepSize(ncclShmem.comm.buffSizes[NCCL_PROTO_SIMPLE]/NCCL_STEPS/sizeof(T)),
@@ -323,6 +316,7 @@ class Primitives<
     this->nthreads = nthreads;
     this->nworkers = nthreads - (MaxSend > 0 && nthreads-WARP_SIZE >= 64 ? WARP_SIZE : 0);
     this->group = group;
+    this->connIndex = connIndex;
 
     int nrecv=0, nsend=0;
     while (nrecv < MaxRecv && recvPeers[nrecv] != -1) nrecv++;
