@@ -201,10 +201,11 @@ class Primitives<
     }
   }
 
-  // Scatter and gather do not support Direct
-  template <int Recv, int Send>
+  // Scatter do not support Direct
+  template <int DirectRecv1, int Recv, int Send>
   inline __device__ void
   ScatterGatherOp(intptr_t inpIx, intptr_t outIx, int totalElem, int peerElem, int skip, int shift, bool postOp) {
+    constexpr int DirectRecv = 1 && Direct && DirectRecv1;
     int offset = 0; // slice offset
     int sliceSize = stepSize*StepPerSlice;
     int dataSize = max(DIVUP(peerElem, 16*SlicePerChunk)*16, sliceSize/32);  // per-peer slice size
@@ -216,7 +217,7 @@ class Primitives<
         if (Send && (flags & RoleInput)) ncclShmem.groups[group].srcs[0] = userBuff + inpIx + offset;
         if (Recv && (flags & RoleOutput)) ncclShmem.groups[group].dsts[0] = userBuff + outIx + offset;
         // realSize is not accurate here; but intra-node does not rely on sizes FIFO
-        waitPeer<0, 0, Recv, Send, 0, 0>(0, 0, 0, realSize);
+        waitPeer<DirectRecv, 0, Recv, Send, 0, 0>(0, 0, 0, realSize);
         subBarrier();
         if (Send) {
           #pragma unroll
@@ -228,6 +229,8 @@ class Primitives<
             int realPeerSize = min(realSize, totalElem-peerOffset);
             if (realPeerSize > 0) ReduceOrCopyMulti<Unroll, RedOp, T, 1, 1, 1, 1>(tid, nworkers, redOp, true, false, 1, &src0, 1, (T**)ncclShmem.groups[group].dsts+i, realPeerSize);
           }
+        } else if (DirectRecv && ncclShmem.groups[group].srcs[0] == ncclShmem.groups[group].dsts[0]) {
+          // Do nothing
         } else if (Recv) {
           #pragma unroll
           for (int j=0; j<fan.nrecv(); j++) {
@@ -453,11 +456,15 @@ class Primitives<
 
   __device__ __forceinline__ void
   scatter(intptr_t inpIx, int totalElem, int peerElem, int skip, int shift) {
-    ScatterGatherOp<0, 1>(inpIx, -1, totalElem, peerElem, skip, shift, /*postOp=*/false);
+    ScatterGatherOp<0, 0, 1>(inpIx, -1, totalElem, peerElem, skip, shift, /*postOp=*/false);
   }
 
   __device__ __forceinline__ void
   gather(intptr_t outIx, int totalElem, int peerElem, int skip, int shift, bool postOp=false) {
-    ScatterGatherOp<1, 0>(-1, outIx, totalElem, peerElem, skip, shift, postOp);
+    ScatterGatherOp<0, 1, 0>(-1, outIx, totalElem, peerElem, skip, shift, postOp);
+  }
+  __device__ __forceinline__ void
+  directGather(intptr_t outIx, int totalElem, int peerElem, int skip, int shift) {
+    ScatterGatherOp<1, 1, 0>(-1, outIx, totalElem, peerElem, skip, shift, /*postOp=*/false);
   }
 };

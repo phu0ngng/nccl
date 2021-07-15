@@ -328,22 +328,22 @@ struct RunWorkElement<ncclFuncAllReduce, T, RedOp, NCCL_ALGO_COLLNET, NCCL_PROTO
       }
     } else if (tid < tidStartBcast && hasUp) {
       // Gather
-      Primitives<T, RedOp, FanAsymmetric<NCCL_MAX_DIRECT_ARITY, 0>, /*Direct=*/0, Proto>
+      Primitives<T, RedOp, FanAsymmetric<NCCL_MAX_DIRECT_ARITY, 0>, /*Direct=*/1, Proto>
         prims(tid, nThreadsGather, tree->up, NULL, args->sendbuff, args->recvbuff, 0*Proto::MaxGroupWidth);
       for (ssize_t gridOffset = 0; gridOffset < size; gridOffset += loopSize) {
         ssize_t offset = gridOffset + bid*tree->nHeads*chunkSize;
         int nelem = min(tree->nHeads*chunkSize, size-offset);
-        prims.gather(offset, nelem, chunkSize, tree->headRank, tree->shift);
+        prims.directGather(offset, nelem, chunkSize, tree->headRank, tree->shift);
       }
     } else if (tid >= tidStartBcast && tid < tidStartScatter && tree->out != -1) {
       if (hasDn) {
         // Recv from network, broadcast
-        Primitives<T, RedOp, FanAsymmetric<1, NCCL_MAX_DIRECT_ARITY>, /*Direct=*/0, Proto>
+        Primitives<T, RedOp, FanAsymmetric<1, NCCL_MAX_DIRECT_ARITY>, /*Direct=*/1, Proto>
           prims(tid-tidStartBcast, nThreadsBcast, &tree->out, tree->down, args->sendbuff, args->recvbuff, 1*Proto::MaxGroupWidth);
         for (ssize_t gridOffset = 0; gridOffset < size; gridOffset += loopSize) {
           ssize_t offset = gridOffset + (bid*tree->nHeads+tree->headRank)*chunkSize;
           int nelem = min(chunkSize, size-offset);
-          prims.recvCopySend(offset, nelem, /*postOp=*/true);
+          prims.directRecvCopySend(offset, offset, nelem /*postOp=true*/);  //FIXME: direct cannot take postOp
         }
       } else {
         // Recv from network (no post thread needed)
