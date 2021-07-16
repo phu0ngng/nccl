@@ -299,22 +299,22 @@ struct RunWorkElement<ncclFuncAllReduce, T, RedOp, NCCL_ALGO_COLLNET, NCCL_PROTO
 
     if (tid >= tidStartScatter && tid < tidStartReduce && hasUp) {
       // Scatter
-      Primitives<T, RedOp, FanAsymmetric<0, NCCL_MAX_DIRECT_ARITY>, /*Direct=*/0, Proto>
+      Primitives<T, RedOp, FanAsymmetric<0, NCCL_MAX_DIRECT_ARITY>, /*Direct=*/1, Proto>
         prims(tid-tidStartScatter, nThreadsScatter, NULL, tree->up, args->sendbuff, args->recvbuff, 2*Proto::MaxGroupWidth, 1);
       for (ssize_t gridOffset = 0; gridOffset < size; gridOffset += loopSize) {
         ssize_t offset = gridOffset + bid*tree->nHeads*chunkSize;
         int nelem = min(tree->nHeads*chunkSize, size-offset);
-        prims.scatter(offset, nelem, chunkSize, tree->headRank, tree->shift);
+        prims.directScatter(offset, nelem, chunkSize, tree->headRank, tree->shift);
       }
     } else if (tid >= tidStartReduce && tree->out != -1) {
       if (hasDn) {
         // Reduce, send to network
-        Primitives<T, RedOp, FanAsymmetric<NCCL_MAX_DIRECT_ARITY, 1>, /*Direct=*/0, Proto>
+        Primitives<T, RedOp, FanAsymmetric<NCCL_MAX_DIRECT_ARITY, 1>, /*Direct=*/1, Proto>
           prims(tid-tidStartReduce, nThreadsReduce, tree->down, &tree->out, args->sendbuff, args->recvbuff, 3*Proto::MaxGroupWidth, 1);
         for (ssize_t gridOffset = 0; gridOffset < size; gridOffset += loopSize) {
           ssize_t offset = gridOffset + (bid*tree->nHeads+tree->headRank)*chunkSize;
           int nelem = min(chunkSize, size-offset);
-          prims.recvReduceSend(offset, nelem);
+          prims.directRecvReduceSend(offset, offset, nelem);
         }
       } else {
         // Directly send to network
