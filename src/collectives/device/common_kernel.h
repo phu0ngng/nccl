@@ -486,12 +486,12 @@ inline __device__ void Store128(Pack128* p, Pack128& v) {
   asm volatile("st.volatile.global.v2.u64 [%0], {%1,%2};" :: "l"(p), "l"(v.x), "l"(v.y) : "memory");
 }
 
-template<class FUNC, typename T, int UNROLL, int MINSRCS, int MAXSRCS, int MINDSTS, int MAXDSTS>
+template<class FUNC, typename T, int UNROLL, int MINSRCS, int MAXSRCS, int MINDSTS, int MAXDSTS, typename Int>
 __device__ __forceinline__ void ReduceCopyMulti(const int w, const int nw, const int t,
-    FUNC fn, bool preOpSrc0, bool postOp, int nsrcs, const T** s, int ndsts, T** d, const int elemOffset, const int Nelem
+    FUNC fn, bool preOpSrc0, bool postOp, int nsrcs, const T** s, int ndsts, T** d, const int elemOffset, const Int Nelem
   ) {
-  const int inc = nw * UNROLL * WARP_SIZE;
-  int offset = w * UNROLL * WARP_SIZE + t;
+  const Int inc = nw * UNROLL * WARP_SIZE;
+  Int offset = w * UNROLL * WARP_SIZE + t;
 
   const T* srcs[MAXSRCS];
   for (int i=0; i<MAXSRCS; i++) srcs[i] = s[i]+elemOffset+offset;
@@ -543,12 +543,12 @@ __device__ __forceinline__ void ReduceCopyMulti(const int w, const int nw, const
   }
 }
 
-template<class FUNC, typename T, int UNROLL, int MINSRCS, int MAXSRCS, int MINDSTS, int MAXDSTS>
+template<class FUNC, typename T, int UNROLL, int MINSRCS, int MAXSRCS, int MINDSTS, int MAXDSTS, typename Int>
 __device__ __forceinline__ void ReduceCopy128bMulti(const int w, const int nw, const int t,
-    FUNC fn, bool preOpSrc0, bool postOp, int nsrcs, const T** s, int ndsts, T** d, const int elemOffset, const int Npack
+    FUNC fn, bool preOpSrc0, bool postOp, int nsrcs, const T** s, int ndsts, T** d, const int elemOffset, const Int Npack
   ) {
-  const int inc = nw * UNROLL * WARP_SIZE;
-  int offset = w * UNROLL * WARP_SIZE + t;
+  const Int inc = nw * UNROLL * WARP_SIZE;
+  Int offset = w * UNROLL * WARP_SIZE + t;
 
   const Pack128* srcs[MAXSRCS];
   for (int i=0; i<MAXSRCS; i++) srcs[i] = ((const Pack128*)(s[i]+elemOffset))+offset;
@@ -605,11 +605,11 @@ __device__ int ptrAlign128(T* ptr) { return (uint64_t)ptr % alignof(Pack128); }
 
 #define PACKELEMS (sizeof(Pack128) / sizeof(T))
 
-template<int UNROLL, class FUNC, typename T, int MINSRCS, int MAXSRCS, int MINDSTS, int MAXDSTS>
+template<int UNROLL, class FUNC, typename T, int MINSRCS, int MAXSRCS, int MINDSTS, int MAXDSTS, typename Int>
 __device__ __forceinline__ void ReduceOrCopyMulti(
-    const int tid, const int nthreads, FUNC fn, bool preOpSrc0, bool postOp, int nsrcs, const T** srcs, int ndsts, T** dsts, int N
+    const int tid, const int nthreads, FUNC fn, bool preOpSrc0, bool postOp, int nsrcs, const T** srcs, int ndsts, T** dsts, Int N
   ) {
-  int Nrem = N;
+  Int Nrem = N;
   if (Nrem <= 0) return;
 
   int w = tid / WARP_SIZE;       // Warp number
@@ -625,14 +625,14 @@ __device__ __forceinline__ void ReduceOrCopyMulti(
   for (int i=0; i<MINDSTS; i++) align |= ptrAlign128(dsts[i]);
   for (int i=MINDSTS; i<MAXDSTS && i<ndsts; i++) align |= ptrAlign128(dsts[i]);
 
-  int offset = 0;
+  Int offset = 0;
   if (align == 0) {
     // fast path: use 128b loads/stores to do the bulk of the work,
     // assuming the pointers we have are all 128-bit aligned.
 
     // main loop
-    int Npack = (Nrem / (PACKELEMS*UNROLL*WARP_SIZE)) * (UNROLL*WARP_SIZE); // round down
-    int Nelem = Npack * PACKELEMS;
+    Int Npack = (Nrem / (PACKELEMS*UNROLL*WARP_SIZE)) * (UNROLL*WARP_SIZE); // round down
+    Int Nelem = Npack * PACKELEMS;
 
     ReduceCopy128bMulti<FUNC, T, UNROLL, MINSRCS, MAXSRCS, MINDSTS, MAXDSTS>
       (w, nw, t, fn, preOpSrc0, postOp, nsrcs, srcs, ndsts, dsts, offset, Npack);
@@ -654,7 +654,7 @@ __device__ __forceinline__ void ReduceOrCopyMulti(
   }
 
   // unrolled, by-type (mostly for unaligned buffers)
-  int Nelem = (Nrem / (UNROLL*PACKELEMS/2*WARP_SIZE)) * (UNROLL*PACKELEMS/2*WARP_SIZE); // round down
+  Int Nelem = (Nrem / (UNROLL*PACKELEMS/2*WARP_SIZE)) * (UNROLL*PACKELEMS/2*WARP_SIZE); // round down
 
   ReduceCopyMulti<FUNC, T, UNROLL*PACKELEMS/2, MINSRCS, MAXSRCS, MINDSTS, MAXDSTS>
     (w, nw, t, fn, preOpSrc0, postOp, nsrcs, srcs, ndsts, dsts, offset, Nelem);

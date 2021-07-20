@@ -69,6 +69,8 @@ struct RunWorkElement {
 
 template<ncclFunc_t Fn, typename T, typename RedOp, int Algo, int Proto>
 struct RunWork {
+  // This __forceinline__ is necessary. The compiler was inserting a function call
+  // here from the LL ncclKernel.
   __device__ __forceinline__ void run(ncclWork *w) {
     int tid = threadIdx.x;
     #pragma unroll 1

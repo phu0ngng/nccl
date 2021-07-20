@@ -85,8 +85,21 @@
   NCCL_FUNCS3B(func, Sum)  /*SumPostDiv*/
 
 // Must be consistent with the ncclFuncSet enum
-static void* const ncclKerns[1+NCCL_NUM_FUNCTIONS*ncclNumDevRedOps*ncclNumTypes*NCCL_NUM_ALGORITHMS*NCCL_NUM_PROTOCOLS] = {
+static void* const ncclKerns[1+ncclNumTypes+NCCL_NUM_FUNCTIONS*ncclNumDevRedOps*ncclNumTypes*NCCL_NUM_ALGORITHMS*NCCL_NUM_PROTOCOLS] = {
   (void*)NCCL_KERN_NAME(SendRecv, RING, SIMPLE, Sum, int8_t),
+  // We don't bake special kernels for the degenerate reductions
+  /*int8*/(void*)NCCL_KERN_NAME(SendRecv, RING, SIMPLE, Sum, int8_t),
+  /*uint8*/(void*)NCCL_KERN_NAME(SendRecv, RING, SIMPLE, Sum, int8_t),
+  /*int32*/(void*)NCCL_KERN_NAME(SendRecv, RING, SIMPLE, Sum, int8_t),
+  /*uint32*/(void*)NCCL_KERN_NAME(SendRecv, RING, SIMPLE, Sum, int8_t),
+  /*int64*/(void*)NCCL_KERN_NAME(SendRecv, RING, SIMPLE, Sum, int8_t),
+  /*uint64*/(void*)NCCL_KERN_NAME(SendRecv, RING, SIMPLE, Sum, int8_t),
+  /*half*/(void*)NCCL_KERN_NAME(SendRecv, RING, SIMPLE, Sum, int8_t),
+  /*float*/(void*)NCCL_KERN_NAME(SendRecv, RING, SIMPLE, Sum, int8_t),
+  /*double*/(void*)NCCL_KERN_NAME(SendRecv, RING, SIMPLE, Sum, int8_t),
+  #if defined(__CUDA_BF16_TYPES_EXIST__)
+    /*bfloat16*/(void*)NCCL_KERN_NAME(SendRecv, RING, SIMPLE, Sum, int8_t),
+  #endif
   NCCL_FUNCS2B(Broadcast),
   NCCL_FUNCS2A(Reduce),
   NCCL_FUNCS2B(AllGather),
@@ -382,30 +395,35 @@ static inline ncclResult_t getCollNetSupport(struct ncclInfo* info, int* collNet
 
 static ncclResult_t getAlgoInfo(struct ncclInfo* info, int collNetTypeSupport, int numPipeOps) {
   struct ncclComm* comm = info->comm;
-  float minTime = 3600000000.0; // Hopefully no operation will take an hour to complete.
-  // Find algorithm / protocol.
-  info->algorithm = -1;
-  info->protocol = -1;
-  if (comm->nRanks == 1) return ncclSuccess;
-  int nAlgos = NCCL_NUM_ALGORITHMS;
-  for (int a=0; a<nAlgos; a++) {
-    if (a == NCCL_ALGO_COLLNET && collNetTypeSupport != 1) continue;
-    for (int p=0; p<NCCL_NUM_PROTOCOLS; p++) {
-      float time;
-      NCCLCHECK(ncclTopoGetAlgoTime(info, a, p, numPipeOps, &time));
-      if (time >= 0 && time < minTime) {
-        info->algorithm = a;
-        info->protocol = p;
-        minTime = time;
+  if (comm->nRanks == 1) {
+    info->algorithm = NCCL_ALGO_RING;
+    info->protocol = NCCL_PROTO_SIMPLE;
+  }
+  else {
+    float minTime = 3600000000.0; // Hopefully no operation will take an hour to complete.
+    // Find algorithm / protocol.
+    info->algorithm = -1;
+    info->protocol = -1;
+    int nAlgos = NCCL_NUM_ALGORITHMS;
+    for (int a=0; a<nAlgos; a++) {
+      if (a == NCCL_ALGO_COLLNET && collNetTypeSupport != 1) continue;
+      for (int p=0; p<NCCL_NUM_PROTOCOLS; p++) {
+        float time;
+        NCCLCHECK(ncclTopoGetAlgoTime(info, a, p, numPipeOps, &time));
+        if (time >= 0 && time < minTime) {
+          info->algorithm = a;
+          info->protocol = p;
+          minTime = time;
+        }
       }
     }
+    if (info->algorithm == -1 || info->protocol == -1) {
+      WARN("Error : no algorithm/protocol available");
+      return ncclInternalError;
+    }
+    //if (comm->rank == 0) INFO(NCCL_TUNING, "%ld Bytes -> Algo %d proto %d time %f", info->nBytes, info->algorithm, info->protocol, minTime);
+    TRACE(NCCL_COLL, "%ld Bytes -> Algo %d proto %d time %f", info->nBytes, info->algorithm, info->protocol, minTime);
   }
-  if (info->algorithm == -1 || info->protocol == -1) {
-    WARN("Error : no algorithm/protocol available");
-    return ncclInternalError;
-  }
-  //if (comm->rank == 0) INFO(NCCL_TUNING, "%ld Bytes -> Algo %d proto %d time %f", info->nBytes, info->algorithm, info->protocol, minTime);
-  TRACE(NCCL_COLL, "%ld Bytes -> Algo %d proto %d time %f", info->nBytes, info->algorithm, info->protocol, minTime);
 
   int nc = (info->nChannels > 0) ? info->nChannels : comm->nChannels;
   int nt = comm->maxThreads[info->algorithm][info->protocol];
@@ -580,6 +598,12 @@ comp_next:
   ncclDevRedOp_t devRedOp;
   NCCLCHECK(hostToDevRedOp(&devRedOp, work, info->op, info->datatype, info->comm));
 
+  if (info->comm->nRanks == 1) {
+    // degenerate reduce index
+    work->funcIndex = 1 + int(info->datatype);
+    return ncclSuccess;
+  }
+
   work->funcIndex = FUNC_INDEX(info->coll, devRedOp, info->datatype, info->algorithm, info->protocol);
 
   int stepSize   = info->comm->buffSizes[info->protocol]/NCCL_STEPS;
@@ -664,7 +688,9 @@ static ncclResult_t checkSetStream(struct ncclInfo* info) {
 // Capture time code in view of CUDA graph
 static ncclResult_t ncclSetupCollKernel(struct ncclInfo* info) {
   ncclComm_t comm = info->comm;
-  if (comm->nRanks == 1) {
+  if (comm->nRanks == 1 &&
+      // User-defined reduction ops may need alter the data even for unitary reductions
+      info->op < ncclNumOps) {
     if (info->sendbuff != info->recvbuff)
       CUDACHECK(cudaMemcpyAsync(info->recvbuff, info->sendbuff, info->nBytes, cudaMemcpyDeviceToDevice, info->stream));
     return ncclSuccess;

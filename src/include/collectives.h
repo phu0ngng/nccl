@@ -14,10 +14,13 @@ enum ncclDevRedOp_t {
 };
 
 #define FUNC_INDEX_P2P 0
-#define FUNC_INDEX(func, devredop, ncclType, al, pr) (1+(((((func)*ncclNumDevRedOps + (devredop))*ncclNumTypes) + (ncclType))*NCCL_NUM_ALGORITHMS+(al))*NCCL_NUM_PROTOCOLS+(pr))
+#define FUNC_INDEX(func, devredop, ncclType, al, pr) (1+ncclNumTypes+(((((func)*ncclNumDevRedOps + (devredop))*ncclNumTypes) + (ncclType))*NCCL_NUM_ALGORITHMS+(al))*NCCL_NUM_PROTOCOLS+(pr))
 
 #define NCCL_FUNC_NAME(func, algo, proto, devredop, type) \
   ncclFunction_##func##_##algo##_##proto##_##devredop##_##type
+
+#define NCCL_DEGENERATE_REDUCE_NAME(devredop, type) \
+  ncclFunction_DegenerateReduce_##devredop##_##type
 
 #define NCCL_KERN_NAME(func, algo, proto, devredop, type) \
   ncclKernel_##func##_##algo##_##proto##_##devredop##_##type
@@ -78,15 +81,25 @@ enum ncclDevRedOp_t {
   DECL2(func, PreMulSum, /*undefForFloat=*/0) \
   DECL2(func, SumPostDiv, /*undefForFloat=*/1)
 
-#define DECL_ALL \
-  DECL2(Broadcast, Sum, /*undefForFloat=*/0) \
-  DECL(Reduce) \
-  DECL2(AllGather, Sum, /*undefForFloat=*/0) \
-  DECL(ReduceScatter) \
-  DECL(AllReduce) \
-  DECL5(SendRecv, RING, SIMPLE, Sum, int8_t) \
+DECL2(Broadcast, Sum, /*undefForFloat=*/0)
+DECL(Reduce)
+DECL2(AllGather, Sum, /*undefForFloat=*/0)
+DECL(ReduceScatter)
+DECL(AllReduce)
+DECL5(SendRecv, RING, SIMPLE, Sum, int8_t)
 
-DECL_ALL
+extern __device__ void NCCL_DEGENERATE_REDUCE_NAME(PreMulSum, int8_t)();
+extern __device__ void NCCL_DEGENERATE_REDUCE_NAME(PreMulSum, uint8_t)();
+extern __device__ void NCCL_DEGENERATE_REDUCE_NAME(PreMulSum, int32_t)();
+extern __device__ void NCCL_DEGENERATE_REDUCE_NAME(PreMulSum, uint32_t)();
+extern __device__ void NCCL_DEGENERATE_REDUCE_NAME(PreMulSum, int64_t)();
+extern __device__ void NCCL_DEGENERATE_REDUCE_NAME(PreMulSum, uint64_t)();
+extern __device__ void NCCL_DEGENERATE_REDUCE_NAME(PreMulSum, half)();
+#if defined(__CUDA_BF16_TYPES_EXIST__)
+extern __device__ void NCCL_DEGENERATE_REDUCE_NAME(PreMulSum, __nv_bfloat16)();
+#endif
+extern __device__ void NCCL_DEGENERATE_REDUCE_NAME(PreMulSum, float)();
+extern __device__ void NCCL_DEGENERATE_REDUCE_NAME(PreMulSum, double)();
 
 // CHUNKSIZE must be a multiple of SLICESIZE
 #define ALLREDUCE_SLICESTEPS (NCCL_STEPS/4)
