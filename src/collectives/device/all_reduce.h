@@ -343,7 +343,7 @@ struct RunWorkElement<ncclFuncAllReduce, T, RedOp, NCCL_ALGO_COLLNET, NCCL_PROTO
         for (ssize_t gridOffset = 0; gridOffset < size; gridOffset += loopSize) {
           ssize_t offset = gridOffset + (bid*tree->nHeads+tree->headRank)*chunkSize;
           int nelem = min(chunkSize, size-offset);
-          prims.directRecvCopySend(offset, offset, nelem /*postOp=true*/);  //FIXME: direct cannot take postOp
+          prims.recvCopyDirectSend(offset, offset, nelem /*postOp=true*/);  //FIXME: direct cannot take postOp
         }
       } else {
         // Recv from network (no post thread needed)

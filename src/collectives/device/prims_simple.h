@@ -77,7 +77,10 @@ class Primitives<
         if (checkAbort(spins)) break;
         //if (spins == 0) printf("r=%d b=%d t=%d SPUN OUT got=%d want=%d\n", ncclShmem.comm.rank, blockIdx.x, threadIdx.x, int(connStepCache + (isSendNotRecv ? NCCL_STEPS : 0)), int(step+StepPerSlice));
       }
+    }
 
+    if (flags & ((Recv|DirectRecv)*RoleWaitRecv | Send*RoleWaitSend)) {
+      bool const isSendNotRecv = (Send && (Recv|DirectRecv)) ? (flags & RoleWaitSend) : Send;
       if (isSendNotRecv && (flags & SizesFifoEnabled))
         connSizesFifoPtr[step%NCCL_STEPS] = nelts*sizeof(T);
 
@@ -154,22 +157,29 @@ class Primitives<
           ncclShmem.groups[group].dsts[0] = userBuff + dstIx + offset;
         waitPeer<DirectRecv, DirectSend, Recv, Send, Src, Dst>(dstIx, remoteIx, offset, sliceSize);
         subBarrier();
-        if (DirectRecv && ncclShmem.groups[group].srcs[0] == ncclShmem.groups[group].dsts[0]) {
+        if (DirectRecv && DirectSend/*ncclShmem.groups[group].srcs[0] == ncclShmem.groups[group].dsts[0]*/) {
           // We can only have one direct receive. Since srcs[0] == dstPtr+offset, skip one copy
-          if (Send) {
-            // (1-Send) is only there to avoid compilation errors in case MaxSend=0 (and Send=0).
-            ReduceOrCopyMulti<Unroll, RedOp, T, 1, 1, 1, (1-Send)+MaxSend>
-              (tid, nworkers, redOp, false, false,
-               1, (T const**)ncclShmem.groups[group].srcs,
-               fan.nsend(), (T**)ncclShmem.groups[group].dsts+1,
-               sliceSize);
-          }
+          // (1-Send) is only there to avoid compilation errors in case MaxSend=0 (and Send=0).
+          ReduceOrCopyMulti<Unroll, RedOp, T, 1, 1, 1, (1-Send)+MaxSend>
+            (tid, nworkers, redOp, false, false,
+             1, (T const**)ncclShmem.groups[group].srcs,
+             fan.nsend(), (T**)ncclShmem.groups[group].dsts+1,
+             sliceSize);
+          //if (tid == 0) printf("Rank %d group %d connIndex %d tid %d in path 1\n", ncclShmem.comm.rank, group, connIndex, tid);
+        } else if (DirectRecv && Send) {
+          ReduceOrCopyMulti<Unroll, RedOp, T, 1+Src, MaxRecv+Src, 1+Dst, MaxSend+Dst>
+            (tid, nworkers, redOp, SrcBuf==Input, postOp,
+             fan.nrecv()+Src, (T const**)ncclShmem.groups[group].srcs,
+             fan.nsend()+Dst, (T**)ncclShmem.groups[group].dsts,
+             sliceSize);
+          //if (tid == 0) printf("Rank %d group %d connIndex %d tid %d in path 3\n", ncclShmem.comm.rank, group, connIndex, tid);
         } else {
           ReduceOrCopyMulti<Unroll, RedOp, T, Recv+Src, Recv*MaxRecv+Src, Send+Dst, Send*MaxSend+Dst>
             (tid, nworkers, redOp, SrcBuf==Input, postOp,
              Recv*fan.nrecv()+Src, (T const**)ncclShmem.groups[group].srcs,
              Send*fan.nsend()+Dst, (T**)ncclShmem.groups[group].dsts,
              sliceSize);
+          //if (tid == 0) printf("Rank %d group %d connIndex %d tid %d in path 2\n", ncclShmem.comm.rank, group, connIndex, tid);
         }
         barrier(); // This barrier has a counterpart in following loop
         if (Send && (flags & RolePostSend) && index == 0) __threadfence_system();
@@ -217,10 +227,11 @@ class Primitives<
         if (Send && (flags & RoleInput)) ncclShmem.groups[group].srcs[0] = userBuff + inpIx + offset;
         if (Recv && (flags & RoleOutput)) ncclShmem.groups[group].dsts[0] = userBuff + outIx + offset;
         // realSize is not accurate here; but intra-node does not rely on sizes FIFO
-        waitPeer<DirectRecv, DirectSend, Recv, Send, 0, 0>(0, 0, 0, realSize);
+        waitPeer<DirectRecv, DirectSend, Recv, Send, 0, 0>(0, Send ? inpIx : outIx, offset, realSize);
         subBarrier();
         if (DirectSend && ncclShmem.groups[group].srcs[0] == ncclShmem.groups[group].dsts[0]) {
           // Do nothing
+          //if (tid == 0) printf("Rank %d group %d connIndex %d tid %d in empty scatter\n", ncclShmem.comm.rank, group, connIndex, tid);
         } else if (Send) {
           #pragma unroll
           for (int j=0; j<fan.nsend(); j++) {
@@ -231,8 +242,10 @@ class Primitives<
             int realPeerSize = min(realSize, totalElem-peerOffset);
             if (realPeerSize > 0) ReduceOrCopyMulti<Unroll, RedOp, T, 1, 1, 1, 1>(tid, nworkers, redOp, true, false, 1, &src0, 1, (T**)ncclShmem.groups[group].dsts+i, realPeerSize);
           }
+          //if (tid == 0) printf("Rank %d group %d connIndex %d tid %d in solid scatter\n", ncclShmem.comm.rank, group, connIndex, tid);
         } else if (DirectRecv && ncclShmem.groups[group].srcs[0] == ncclShmem.groups[group].dsts[0]) {
           // Do nothing
+          //if (tid == 0) printf("Rank %d group %d connIndex %d tid %d in empty gather\n", ncclShmem.comm.rank, group, connIndex, tid);
         } else if (Recv) {
           #pragma unroll
           for (int j=0; j<fan.nrecv(); j++) {
@@ -243,11 +256,15 @@ class Primitives<
             int realPeerSize = min(realSize, totalElem-peerOffset);
             if (realPeerSize > 0) ReduceOrCopyMulti<Unroll, RedOp, T, 1, 1, 1, 1>(tid, nworkers, redOp, false, postOp, 1, (T const**)ncclShmem.groups[group].srcs+i, 1, &dst0, realPeerSize);
           }
+          //if (tid == 0) printf("Rank %d group %d connIndex %d tid %d in solid gather\n", ncclShmem.comm.rank, group, connIndex, tid);
         }
       }
       barrier();
-      if (Send && (flags & RolePostSend) && realSize > 0 && index == 0) __threadfence_system();
-      __syncwarp();
+      if (Send && (flags & RolePostSend) && realSize > 0 && index == 0 &&
+          !(DirectSend && ncclShmem.groups[group].srcs[0] == ncclShmem.groups[group].dsts[0])) {
+        __threadfence_system();
+        __syncwarp();
+      }
       postPeer<Recv, Send>();
       offset += realSize;
     }
@@ -464,6 +481,9 @@ class Primitives<
   __device__ __forceinline__ void directRecvCopySend(intptr_t outIx, intptr_t remoteOutIx, int eltN) {
     genericOp<1, 1, 1, 1, -1, Output>(-1, outIx, remoteOutIx, eltN, false);
   }
+  __device__ __forceinline__ void recvCopyDirectSend(intptr_t outIx, intptr_t remoteOutIx, int eltN) {
+    genericOp<0, 1, 1, 1, -1, Output>(-1, outIx, remoteOutIx, eltN, false);
+  }
 
   __device__ __forceinline__ void recvReduceCopy(intptr_t inpIx, intptr_t outIx, int eltN, bool postOp=false) {
     genericOp<0, 0, 1, 0, Input, Output>(inpIx, outIx, -1, eltN, postOp);
@@ -473,7 +493,7 @@ class Primitives<
     genericOp<0, 0, 1, 1, Input, -1>(inpIx, -1, -1, eltN, postOp);
   }
   __device__ __forceinline__ void directRecvReduceSend(intptr_t inpIx, intptr_t remoteInpIx, int eltN, bool postOp=false) {
-    genericOp<1, 0, 1, 1, Input, -1>(inpIx, -1, remoteInpIx, eltN, postOp);
+    genericOp<1, 0, 0, 1, Input, -1>(inpIx, -1, remoteInpIx, eltN, postOp); //FIXME: Recv = 1
   }
 
   __device__ __forceinline__ void recvReduceCopySend(intptr_t inpIx, intptr_t outIx, int eltN, bool postOp=false) {
@@ -490,7 +510,7 @@ class Primitives<
   }
   __device__ __forceinline__ void
   directScatter(intptr_t inpIx, int totalElem, int peerElem, int skip, int shift) {
-    ScatterGatherOp<0, 1, 0, 1>(inpIx, -1, totalElem, peerElem, skip, shift, /*postOp=*/false);
+    ScatterGatherOp<0, 1, 0, 0>(inpIx, -1, totalElem, peerElem, skip, shift, /*postOp=*/false); //FIXME: Send = 1
   }
 
   __device__ __forceinline__ void
