@@ -72,13 +72,14 @@ class Primitives<
     if (flags & (Recv*RoleWaitRecv | Send*RoleWaitSend)) {
       bool const isSendNotRecv = (Send && Recv) ? (flags & RoleWaitSend) : Send;
       int spins = 0;
+      //if ((flags & DirectEnabled & DirectRecv*RoleWaitRecv) && Send && !DirectSend) goto skip;
       while (connStepCache + (isSendNotRecv ? NCCL_STEPS : 0) < step + StepPerSlice) {
         connStepCache = *connStepPtr;
         if (checkAbort(spins)) break;
         //if (spins == 0) printf("r=%d b=%d t=%d SPUN OUT got=%d want=%d\n", ncclShmem.comm.rank, blockIdx.x, threadIdx.x, int(connStepCache + (isSendNotRecv ? NCCL_STEPS : 0)), int(step+StepPerSlice));
       }
     }
-
+//skip:
     if (flags & ((Recv|DirectRecv)*RoleWaitRecv | Send*RoleWaitSend)) {
       bool const isSendNotRecv = (Send && (Recv|DirectRecv)) ? (flags & RoleWaitSend) : Send;
       if (isSendNotRecv && (flags & SizesFifoEnabled))
@@ -179,7 +180,6 @@ class Primitives<
              Recv*fan.nrecv()+Src, (T const**)ncclShmem.groups[group].srcs,
              Send*fan.nsend()+Dst, (T**)ncclShmem.groups[group].dsts,
              sliceSize);
-          //if (tid == 0) printf("Rank %d group %d connIndex %d tid %d in path 2\n", ncclShmem.comm.rank, group, connIndex, tid);
         }
         barrier(); // This barrier has a counterpart in following loop
         if (Send && (flags & RolePostSend) && index == 0) __threadfence_system();
@@ -256,7 +256,6 @@ class Primitives<
             int realPeerSize = min(realSize, totalElem-peerOffset);
             if (realPeerSize > 0) ReduceOrCopyMulti<Unroll, RedOp, T, 1, 1, 1, 1>(tid, nworkers, redOp, false, postOp, 1, (T const**)ncclShmem.groups[group].srcs+i, 1, &dst0, realPeerSize);
           }
-          //if (tid == 0) printf("Rank %d group %d connIndex %d tid %d in solid gather\n", ncclShmem.comm.rank, group, connIndex, tid);
         }
       }
       barrier();
@@ -396,9 +395,9 @@ class Primitives<
       void *volatile *slot = ncclShmem.groups[group].recvConns[index]->ptrExchange;
       // Wait for consumer to consume previous value before trampling it.
       while (*slot != nullptr && !checkAbort(spins)) {
-        //if (spins % 0x10000 == 0) printf("Rank %d group %d connIndex %d tid %d spins %d recvProvider waiting for slot %p %p\n", ncclShmem.comm.rank, group, connIndex, tid, spins, slot, *slot);
       }
       directBuff = (T*)outputBuf;
+      //printf("Rank %d group %d connIndex %d tid %d spins %d recv provide slot %p %p\n", ncclShmem.comm.rank, group, connIndex, tid, spins, slot, directBuff);
       // Encode pointer by XOR'ing against some address they definitely wouldn't send
       // since we want to allow them sending us nullptr while not colliding with
       // the empty slot value.
@@ -411,10 +410,10 @@ class Primitives<
       while (true) {
         ptr = *slot;
         if (ptr != nullptr || checkAbort(spins)) break;
-        //if (spins % 0x10000 == 0) printf("Rank %d group %d connIndex %d tid %d spins %d sendAcceptor waiting for slot %p %p\n", ncclShmem.comm.rank, group, connIndex, tid, spins, slot, *slot);
       }
       directBuff = reinterpret_cast<T*>(reinterpret_cast<uintptr_t>(ptr) ^ reinterpret_cast<uintptr_t>(slot));
       *slot = nullptr;
+      //printf("Rank %d group %d connIndex %d tid %d spins %d send accept slot %p %p\n", ncclShmem.comm.rank, group, connIndex, tid, spins, slot, directBuff);
     }
     if (Direct && sendProvider) {
       int spins = 0;
