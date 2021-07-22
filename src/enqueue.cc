@@ -498,17 +498,6 @@ static ncclResult_t hostToDevRedOp(
     ncclDevRedOp_t *devOp, ncclWorkElem *work,
     ncclRedOp_t op, ncclDataType_t datatype, ncclComm *comm
   ) {
-  int ix = int(op) - int(ncclNumOps);
-
-  if (!(0 <= int(op) && int(op) <= int(ncclMaxRedOp))) {
-    WARN("Invalid ncclRedOp_t op=%d", int(op));
-    return ncclInvalidArgument;
-  }
-  if (int(op) >= int(ncclNumOps) && comm->userRedOps[ix].freeNext != -1) {
-    WARN("Invalid ncclRedOp_t op=%d", int(op));
-    return ncclInvalidArgument;
-  }
-
   union {
     int8_t i8;
     uint8_t u8;
@@ -561,7 +550,8 @@ static ncclResult_t hostToDevRedOp(
     }
     break;
   default: // user created
-    ncclRedOpUser *user = &comm->userRedOps[ix];
+    int ix = int(ncclUserRedOpMangle(comm, op)) - int(ncclNumOps);
+    ncclUserRedOp *user = &comm->userRedOps[ix];
     if (datatype != user->datatype) {
       WARN("Data type supplied to user-created ncclRedOp_t does not match type "
            "given to reduction operation");
@@ -1173,8 +1163,8 @@ ncclResult_t ncclRedOpCreatePreMulSum(ncclRedOp_t *op, void *scalar, ncclDataTyp
     // double capacity and resize
     int cap = 2*comm->userRedOpCapacity;
     if (cap < 4) cap = 4;
-    ncclRedOpUser *ops = new ncclRedOpUser[cap];
-    std::memcpy(ops, comm->userRedOps, comm->userRedOpCapacity*sizeof(ncclRedOpUser));
+    ncclUserRedOp *ops = new ncclUserRedOp[cap];
+    std::memcpy(ops, comm->userRedOps, comm->userRedOpCapacity*sizeof(ncclUserRedOp));
     for(int ix=comm->userRedOpCapacity; ix < cap; ix++)
       ops[ix].freeNext = ix + 1;
     delete[] comm->userRedOps;
@@ -1183,7 +1173,7 @@ ncclResult_t ncclRedOpCreatePreMulSum(ncclRedOp_t *op, void *scalar, ncclDataTyp
   }
   // pop from free list
   int ix = comm->userRedOpFreeHead;
-  ncclRedOpUser *user = &comm->userRedOps[ix];
+  ncclUserRedOp *user = &comm->userRedOps[ix];
   comm->userRedOpFreeHead = user->freeNext;
 
   user->freeNext = -1; // allocated
@@ -1194,23 +1184,24 @@ ncclResult_t ncclRedOpCreatePreMulSum(ncclRedOp_t *op, void *scalar, ncclDataTyp
   } else {
     user->preMulSum.scalarPtr = scalar;
   }
-  *op = ncclRedOp_t(ncclNumOps + ix);
+  *op = ncclRedOp_t(int(ncclNumOps) + ix);
+  *op = ncclUserRedOpMangle(comm, *op);
   return ncclSuccess;
 }
 
 NCCL_API(ncclResult_t, ncclRedOpDestroy, ncclRedOp_t op, ncclComm_t comm);
 ncclResult_t ncclRedOpDestroy(ncclRedOp_t op, ncclComm_t comm) {
   if (0 <= int(op) && int(op) < int(ncclNumOps)) {
-    WARN("ncclRedOpDestroy of builtin operator.");
+    WARN("ncclRedOpDestroy : operator is a NCCL builtin.");
     return ncclInvalidArgument;
   }
   if (int(op) < 0 || int(ncclMaxRedOp) < int(op)) {
-    WARN("ncclRedOpDestroy of garbage handle.");
+    WARN("ncclRedOpDestroy :  operator is garbage.");
     return ncclInvalidArgument;
   }
-  int ix = int(op) - int(ncclNumOps);
-  if (comm->userRedOps[ix].freeNext != -1) {
-    WARN("ncclRedOpDestroy of already destroyed op handle.");
+  int ix = int(ncclUserRedOpMangle(comm, op)) - int(ncclNumOps);
+  if (comm->userRedOpCapacity <= ix || comm->userRedOps[ix].freeNext != -1) {
+    WARN("ncclRedOpDestroy : operator unknown to this communicator.");
     return ncclInvalidArgument;
   }
   // push to free list
