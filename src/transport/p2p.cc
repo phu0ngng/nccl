@@ -164,7 +164,7 @@ ncclResult_t p2pSendSetup(struct ncclComm* comm, struct ncclTopoGraph* graph, st
     NCCLCHECK(ncclCudaCalloc((char**)&info.directPtr, sendSize));
     info.rank = myInfo->rank;
     if (myInfo->pidHash == peerInfo->pidHash) {
-      /*if (info.read == 0)*/ send->conn.direct |= NCCL_DIRECT_GPU; //FIXME
+      send->conn.direct |= info.read ? NCCL_DIRECT_READ : NCCL_DIRECT_WRITE;
       INFO(NCCL_INIT|NCCL_P2P, "Channel %02d : %d[%lx] -> %d[%lx] via P2P/direct pointer%s",
           channelId, myInfo->rank, myInfo->busId, peerInfo->rank, peerInfo->busId, useReadStr);
     } else {
@@ -212,7 +212,7 @@ ncclResult_t p2pRecvSetup(struct ncclComm* comm, struct ncclTopoGraph* graph, st
     NCCLCHECK(ncclCudaCalloc((char**)&info.directPtr, recvSize));
     info.rank = myInfo->rank;
     if (myInfo->pidHash == peerInfo->pidHash) {
-      /*if (info.read == 0)*/ recv->conn.direct |= NCCL_DIRECT_GPU;   //FIXME
+      recv->conn.direct |= info.read ? NCCL_DIRECT_READ : NCCL_DIRECT_WRITE;
     } else {
       CUDACHECK(cudaIpcGetMemHandle(&info.devIpc, info.directPtr));
     }

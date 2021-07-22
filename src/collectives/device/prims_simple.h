@@ -20,8 +20,9 @@ class Primitives<
                        Aborted = 0x40,
                        PtrsFifoEnabled = 0x80,
                        SizesFifoEnabled = 0x100,
-                       DirectEnabled = 0x200,
-                       ThreadsSynced = 0x400;
+                       DirectWrite = 0x200,
+                       DirectRead = 0x400,
+                       ThreadsSynced = 0x800;
   const int tid;
   int nthreads;
   int nworkers;
@@ -89,7 +90,7 @@ class Primitives<
                                   : (ncclShmem.groups[group].srcs + Src);
       if (flags & PtrsFifoEnabled)
         loadPtr(connPtrsFifoPtr + step%NCCL_STEPS, ptrs[index]);
-      else if ((isSendNotRecv ? DirectSend : DirectRecv) && (flags & DirectEnabled))
+      else if ((isSendNotRecv ? DirectSend : DirectRecv) && (flags & (DirectWrite|DirectRead)))
         ptrs[index] = directBuff + (isSendNotRecv ? remoteIx : /*dstIx*/remoteIx) + offset;
       else
         ptrs[index] = connEltsFifo + (step%NCCL_STEPS)*stepSize;
@@ -271,7 +272,7 @@ class Primitives<
 
   __device__ __forceinline__ void loadRecvConn(ncclPeer *peer) {
     if (flags & (RoleWaitRecv|RolePostRecv)) {
-      auto *conn = &peer->recv[connIndex].conn;
+      auto *conn = &peer->recv[connIndex%2].conn;
       step = conn->step;
       step = roundUp(step, SlicePerChunk*StepPerSlice);
       if (flags & RolePostRecv) {
@@ -283,7 +284,13 @@ class Primitives<
         connStepPtr = conn->tail;
         connStepCache = *connStepPtr;
         flags |= (conn->ptrsFifo != nullptr) ? PtrsFifoEnabled : 0;
-        flags |= (Direct && (conn->direct & NCCL_DIRECT_GPU)) ? DirectEnabled : 0;
+        if (Direct) {
+          flags |= (conn->direct & NCCL_DIRECT_WRITE) ? DirectWrite :
+                   (conn->direct & NCCL_DIRECT_READ)  ? DirectRead  : 0;
+          // Flip direct read/write if connIndex >= 2
+          if (connIndex >= 2 && (flags & (DirectWrite|DirectRead)))
+            flags ^= DirectWrite|DirectRead;
+        }
         if (flags & PtrsFifoEnabled)
           connPtrsFifoPtr = conn->ptrsFifo;
         else
@@ -294,7 +301,7 @@ class Primitives<
 
   __device__ __forceinline__ void loadSendConn(ncclPeer *peer) {
     if (flags & (RoleWaitSend|RolePostSend)) {
-      auto *conn = &peer->send[connIndex].conn;
+      auto *conn = &peer->send[connIndex%2].conn;
       step = conn->step;
       step = roundUp(step, SlicePerChunk*StepPerSlice);
       if (flags & RolePostSend) {
@@ -313,9 +320,13 @@ class Primitives<
         if (conn->sizesFifo != nullptr) {
           flags |= SizesFifoEnabled;
           connSizesFifoPtr = conn->sizesFifo;
+        } else if (Direct) {
+          flags |= (conn->direct & NCCL_DIRECT_WRITE) ? DirectWrite :
+                   (conn->direct & NCCL_DIRECT_READ)  ? DirectRead  : 0;
+          // Flip direct read/write if connIndex >= 2
+          if (connIndex >= 2 && (flags & (DirectWrite|DirectRead)))
+            flags ^= DirectWrite|DirectRead;
         }
-        else if (Direct && (conn->direct & NCCL_DIRECT_GPU))
-          flags |= DirectEnabled;
       }
     }
   }
@@ -386,10 +397,10 @@ class Primitives<
   __device__ void setDataPtrs(void const *inputBuf, void *outputBuf) {
     if (flags & RoleInput) userBuff = (T*)inputBuf;
     if (flags & RoleOutput) userBuff = (T*)outputBuf;
-    bool recvProvider = flags == (flags|RoleWaitRecv|DirectEnabled) && connIndex == 0;
-    bool sendAcceptor = flags == (flags|RoleWaitSend|DirectEnabled) && connIndex == 0;
-    bool sendProvider = flags == (flags|RoleWaitSend|DirectEnabled) && connIndex == 1; // sender provides direct buffer (to be fetched)
-    bool recvAcceptor = flags == (flags|RoleWaitRecv|DirectEnabled) && connIndex == 1; // receiver accepts direct buffer
+    bool recvProvider = flags == (flags|RoleWaitRecv|DirectWrite);
+    bool sendAcceptor = flags == (flags|RoleWaitSend|DirectWrite);
+    bool sendProvider = flags == (flags|RoleWaitSend|DirectRead); // sender provides direct buffer (to be fetched)
+    bool recvAcceptor = flags == (flags|RoleWaitRecv|DirectRead); // receiver accepts direct buffer
     if (Direct && recvProvider) {
       int spins = 0;
       void *volatile *slot = ncclShmem.groups[group].recvConns[index]->ptrExchange;
