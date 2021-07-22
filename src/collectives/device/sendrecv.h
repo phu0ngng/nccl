@@ -38,16 +38,7 @@ struct RunWork<ncclFuncSendRecv, T, RedOp, NCCL_ALGO_RING, NCCL_PROTO_SIMPLE> {
 
         if (delta == 0) {
           if (sendbuff != recvbuff) {
-            // local copy : ReduceOrCopyMulti takes an int as number of elements,
-            // so we split it in blocks of 1G elements.
-            int blockSize = 1<<30;
-            for (size_t offset=0; offset<sendCount; offset += blockSize) {
-              size_t remaining = sendCount - offset;
-              if (remaining < blockSize) blockSize = remaining;
-              ReduceOrCopyMulti<COLL_UNROLL, RedOp, T, 1, 1, 1, 1>(tid, nThreadsSegment, RedOp(), false, false, 1, &sendbuff, 1, &recvbuff, blockSize);
-              sendbuff += blockSize;
-              recvbuff += blockSize;
-            }
+            ReduceOrCopyMulti<COLL_UNROLL, RedOp, T, 1, 1, 1, 1>(tid, nThreadsSegment, RedOp(), false, false, 1, &sendbuff, 1, &recvbuff, sendCount);
           }
         }
         else {
