@@ -102,20 +102,18 @@ ncclResult_t  ncclCommUserRank(const ncclComm_t comm, int* rank);
 ncclResult_t pncclCommUserRank(const ncclComm_t comm, int* rank);
 
 /* Reduction operation selector */
-typedef enum { ncclSum_dummy        = 0,
-               ncclProd_dummy       = 1,
-               ncclMax_dummy        = 2,
-               ncclMin_dummy        = 3,
-               ncclAvg_dummy        = 4,
-               ncclNumOps_dummy     = 5 } ncclRedOp_dummy_t;
-
+typedef enum { ncclNumOps_dummy = 5 } ncclRedOp_dummy_t;
 typedef enum { ncclSum        = 0,
                ncclProd       = 1,
                ncclMax        = 2,
                ncclMin        = 3,
                ncclAvg        = 4,
                ncclNumOps     = 5,
-               ncclMaxRedOp   = /*max(511,...)*/ 511 & 0xffffffffu>>(32-8*sizeof(ncclRedOp_dummy_t))
+               /* We define ncclMaxRedOp to be the largest value that won't grow
+                * sizeof(ncclRedOp_t) when compared to previous NCCL versions to
+                * maintain ABI compatibility. We also have to assume the compiler will
+                * use a signed representation. */
+               ncclMaxRedOp   = 0x7fffffff>>(32-8*sizeof(ncclRedOp_dummy_t))
              } ncclRedOp_t;
 
 /* Data types */

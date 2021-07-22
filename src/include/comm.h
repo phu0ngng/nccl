@@ -57,7 +57,7 @@ struct ncclRecvMem {
 };
 
 struct ncclRedOpUser {
-  int freeNext; // -1=allocated, otherwise xor with (index+1) for next free index
+  int freeNext; // -1=allocated, otherwise index of next free entry in array
   struct {
     ncclScalarResidence residence;
     void *scalar;
@@ -173,8 +173,8 @@ struct ncclComm {
   int driverVersion;
 
   // user-created reduction ops
-  int userRedOpFree;
-  ncclRedOpUser userRedOps[int(ncclMaxRedOp)+1 - int(ncclNumOps)];
+  int userRedOpCapacity, userRedOpFreeHead;
+  ncclRedOpUser *userRedOps;
 };
 
 #endif

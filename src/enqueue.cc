@@ -1163,12 +1163,22 @@ end:
 
 NCCL_API(ncclResult_t, ncclRedOpCreatePreMulSum, ncclRedOp_t *op, void *scalar, ncclScalarResidence residence, ncclComm_t comm);
 ncclResult_t ncclRedOpCreatePreMulSum(ncclRedOp_t *op, void *scalar, ncclScalarResidence residence, ncclComm_t comm) {
-  if (comm->userRedOpFree == int(ncclMaxRedOp)+1 - int(ncclNumOps)) {
-    WARN("Creating too many ncclRedOp's. ncclMaxRedOp=%d", int(ncclMaxRedOp));
-    return ncclInvalidArgument;
+  if (comm->userRedOpFreeHead == comm->userRedOpCapacity) {
+    // double capacity and resize
+    int cap = 2*comm->userRedOpCapacity;
+    if (cap < 4) cap = 4;
+    ncclRedOpUser *ops = new ncclRedOpUser[cap];
+    std::memcpy(ops, comm->userRedOps, comm->userRedOpCapacity*sizeof(ncclRedOpUser));
+    for(int ix=comm->userRedOpCapacity; ix < cap; ix++)
+      ops[ix].freeNext = ix + 1;
+    delete[] comm->userRedOps;
+    comm->userRedOps = ops;
+    comm->userRedOpCapacity = cap;
   }
-  int ix = comm->userRedOpFree;
-  comm->userRedOpFree = comm->userRedOps[ix].freeNext ^ (ix+1);
+  // pop from free list
+  int ix = comm->userRedOpFreeHead;
+  comm->userRedOpFreeHead = comm->userRedOps[ix].freeNext;
+
   comm->userRedOps[ix].freeNext = -1; // allocated
   comm->userRedOps[ix].preMulSum.residence = residence;
   comm->userRedOps[ix].preMulSum.scalar = scalar;
@@ -1191,7 +1201,8 @@ ncclResult_t ncclRedOpDestroy(ncclRedOp_t op, ncclComm_t comm) {
     WARN("ncclRedOpDestroy of already destroyed op handle.");
     return ncclInvalidArgument;
   }
-  comm->userRedOps[ix].freeNext = comm->userRedOpFree ^ (ix+1);
-  comm->userRedOpFree = ix;
+  // push to free list
+  comm->userRedOps[ix].freeNext = comm->userRedOpFreeHead;
+  comm->userRedOpFreeHead = ix;
   return ncclSuccess;
 }
