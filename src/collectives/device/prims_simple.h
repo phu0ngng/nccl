@@ -168,12 +168,20 @@ class Primitives<
              sliceSize);
           //if (tid == 0) printf("Rank %d group %d connIndex %d tid %d in path 1\n", ncclShmem.comm.rank, group, connIndex, tid);
         } else if (DirectRecv && Send) {
+          // For reducer in CollNet to do direct fetch
           ReduceOrCopyMulti<Unroll, RedOp, T, 1+Src, MaxRecv+Src, 1+Dst, MaxSend+Dst>
             (tid, nworkers, redOp, SrcBuf==Input, postOp,
              fan.nrecv()+Src, (T const**)ncclShmem.groups[group].srcs,
              fan.nsend()+Dst, (T**)ncclShmem.groups[group].dsts,
              sliceSize);
           //if (tid == 0) printf("Rank %d group %d connIndex %d tid %d in path 3\n", ncclShmem.comm.rank, group, connIndex, tid);
+        } else if (Recv && !DirectRecv && DirectSend && SrcBuf != Input) {
+          // For broadcast in CollNet to do empty send
+          ReduceOrCopyMulti<Unroll, RedOp, T, 1, 1, 1, 1>
+            (tid, nworkers, redOp, false, postOp,
+             Recv, (T const**)ncclShmem.groups[group].srcs,
+             Dst, (T**)ncclShmem.groups[group].dsts,
+             sliceSize);
         } else {
           ReduceOrCopyMulti<Unroll, RedOp, T, Recv+Src, Recv*MaxRecv+Src, Send+Dst, Send*MaxSend+Dst>
             (tid, nworkers, redOp, SrcBuf==Input, postOp,
