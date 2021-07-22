@@ -58,9 +58,13 @@ struct ncclRecvMem {
 
 struct ncclRedOpUser {
   int freeNext; // -1=allocated, otherwise index of next free entry in array
+  ncclDataType_t datatype;
   struct {
     ncclScalarResidence residence;
-    void *scalar;
+    union {
+      uint64_t scalarBits;
+      void *scalarPtr;
+    };
   } preMulSum;
 };
 

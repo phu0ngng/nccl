@@ -496,7 +496,7 @@ static ncclResult_t getLoopInfo(struct ncclInfo* info) {
 
 static ncclResult_t hostToDevRedOp(
     ncclDevRedOp_t *devOp, ncclWorkElem *work,
-    ncclRedOp_t op, ncclDataType_t dt, ncclComm *comm
+    ncclRedOp_t op, ncclDataType_t datatype, ncclComm *comm
   ) {
   int ix = int(op) - int(ncclNumOps);
 
@@ -534,7 +534,7 @@ static ncclResult_t hostToDevRedOp(
   case ncclMax:  *devOp = ncclDevMax;  break;
   case ncclMin:  *devOp = ncclDevMin;  break;
   case ncclAvg:
-    switch ((int)dt) {
+    switch ((int)datatype) {
     case ncclInt8:  case ncclInt32:  case ncclInt64:
     case ncclUint8: case ncclUint32: case ncclUint64:
       *devOp = ncclDevSumPostDiv;
@@ -561,12 +561,18 @@ static ncclResult_t hostToDevRedOp(
     }
     break;
   default: // user created
+    ncclRedOpUser *user = &comm->userRedOps[ix];
+    if (datatype != user->datatype) {
+      WARN("Data type supplied to user-created ncclRedOp_t does not match type "
+           "given to reduction operation");
+      return ncclInvalidArgument;
+    }
     *devOp = ncclDevPreMulSum;
-    if(comm->userRedOps[ix].preMulSum.residence == ncclScalarHostImmediate) {
-      std::memcpy(&u64, comm->userRedOps[ix].preMulSum.scalar, ncclTypeSize(dt));
+    if(user->preMulSum.residence == ncclScalarHostImmediate) {
+      u64 = user->preMulSum.scalarBits;
     } else {
       work->redOpArgIsPtr = 1;
-      ptr = comm->userRedOps[ix].preMulSum.scalar;
+      ptr = user->preMulSum.scalarPtr;
     }
     break;
   }
@@ -1161,8 +1167,8 @@ end:
   }
 }
 
-NCCL_API(ncclResult_t, ncclRedOpCreatePreMulSum, ncclRedOp_t *op, void *scalar, ncclScalarResidence residence, ncclComm_t comm);
-ncclResult_t ncclRedOpCreatePreMulSum(ncclRedOp_t *op, void *scalar, ncclScalarResidence residence, ncclComm_t comm) {
+NCCL_API(ncclResult_t, ncclRedOpCreatePreMulSum, ncclRedOp_t *op, void *scalar, ncclDataType_t datatype, ncclScalarResidence residence, ncclComm_t comm);
+ncclResult_t ncclRedOpCreatePreMulSum(ncclRedOp_t *op, void *scalar, ncclDataType_t datatype, ncclScalarResidence residence, ncclComm_t comm) {
   if (comm->userRedOpFreeHead == comm->userRedOpCapacity) {
     // double capacity and resize
     int cap = 2*comm->userRedOpCapacity;
@@ -1177,11 +1183,17 @@ ncclResult_t ncclRedOpCreatePreMulSum(ncclRedOp_t *op, void *scalar, ncclScalarR
   }
   // pop from free list
   int ix = comm->userRedOpFreeHead;
-  comm->userRedOpFreeHead = comm->userRedOps[ix].freeNext;
+  ncclRedOpUser *user = &comm->userRedOps[ix];
+  comm->userRedOpFreeHead = user->freeNext;
 
-  comm->userRedOps[ix].freeNext = -1; // allocated
-  comm->userRedOps[ix].preMulSum.residence = residence;
-  comm->userRedOps[ix].preMulSum.scalar = scalar;
+  user->freeNext = -1; // allocated
+  user->datatype = datatype;
+  user->preMulSum.residence = residence;
+  if (residence == ncclScalarHostImmediate) {
+    std::memcpy(&user->preMulSum.scalarBits, scalar, ncclTypeSize(datatype));
+  } else {
+    user->preMulSum.scalarPtr = scalar;
+  }
   *op = ncclRedOp_t(ncclNumOps + ix);
   return ncclSuccess;
 }

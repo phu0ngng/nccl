@@ -186,8 +186,7 @@ static ncclResult_t commFree(ncclComm_t comm) {
   if (comm == NULL)
     return ncclSuccess;
 
-  if (comm->userRedOps)
-    delete[] comm->userRedOps;
+  delete[] comm->userRedOps;
 
   free(comm->connectSend);
   free(comm->connectRecv);

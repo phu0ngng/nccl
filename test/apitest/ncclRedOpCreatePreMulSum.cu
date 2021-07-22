@@ -24,7 +24,7 @@ TEST_F(ncclRedOpCreatePreMulSum_test, everything) {
 
   for (int i=0; i < ndev; i++) {
     ASSERT_EQ(cudaSuccess, cudaSetDevice(i));
-    ASSERT_EQ(cudaSuccess, cudaMalloc(&buf[i], 5*sizeof(float)));
+    ASSERT_EQ(cudaSuccess, cudaMalloc(&buf[i], 4*sizeof(float)));
 
     float tmp = 1.0f; // input value for allreduce
     ASSERT_EQ(cudaSuccess, cudaMemcpy(buf[i]+0, &tmp, sizeof(float), cudaMemcpyHostToDevice));
@@ -33,16 +33,14 @@ TEST_F(ncclRedOpCreatePreMulSum_test, everything) {
     tmp = 3.0f*i; // all scalars are custom to this rank (the "i")
     ASSERT_EQ(cudaSuccess, cudaMemcpy(devScalar, &tmp, sizeof(float), cudaMemcpyHostToDevice));
 
-    ASSERT_EQ(ncclSuccess, ncclRedOpCreatePreMulSum(&hostOp[i], &hostScalar, ncclScalarHostImmediate, comms[i]));
-    ASSERT_EQ(ncclSuccess, ncclRedOpCreatePreMulSum(&devOp[i], devScalar, ncclScalarDevice, comms[i]));
+    hostScalar = 4.0f*i;
+    ASSERT_EQ(ncclSuccess, ncclRedOpCreatePreMulSum(&hostOp[i], &hostScalar, ncclFloat, ncclScalarHostImmediate, comms[i]));
+    hostScalar = 123.456; // modifying scalar doesnt affect anything
+
+    ASSERT_EQ(ncclSuccess, ncclRedOpCreatePreMulSum(&devOp[i], devScalar, ncclFloat, ncclScalarDevice, comms[i]));
 
     ASSERT_EQ(ncclSuccess, ncclAllReduce(buf[i]+0, buf[i]+2, 1, ncclFloat, devOp[i], comms[i], streams[i]));
-
-    hostScalar = 4.0f*i; // can defer setting host scalar until just before allreduce
     ASSERT_EQ(ncclSuccess, ncclAllReduce(buf[i]+0, buf[i]+3, 1, ncclFloat, hostOp[i], comms[i], streams[i]));
-
-    hostScalar = 5.0f*i; // modifying scalar doesnt affect previos allreduce
-    ASSERT_EQ(ncclSuccess, ncclAllReduce(buf[i]+0, buf[i]+4, 1, ncclFloat, hostOp[i], comms[i], streams[i]));
   }
 
   for (int i=0; i < ndev; i++) {
@@ -52,11 +50,10 @@ TEST_F(ncclRedOpCreatePreMulSum_test, everything) {
 
   for (int i=0; i < ndev; i++) {
     ASSERT_EQ(cudaSuccess, cudaSetDevice(i));
-    float vals[5];
-    cudaMemcpy(vals, buf[i], 5*sizeof(float), cudaMemcpyDeviceToHost);
+    float vals[4];
+    cudaMemcpy(vals, buf[i], 4*sizeof(float), cudaMemcpyDeviceToHost);
     EXPECT_EQ(vals[2], float(3.0f*(ndev*ndev - ndev)/2));
     EXPECT_EQ(vals[3], float(4.0f*(ndev*ndev - ndev)/2));
-    EXPECT_EQ(vals[4], float(5.0f*(ndev*ndev - ndev)/2));
 
     ASSERT_EQ(ncclSuccess, cudaFree(buf[i]));
 
