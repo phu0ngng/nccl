@@ -70,19 +70,19 @@ class Primitives<
 
   template <int DirectRecv, int DirectSend, int Recv, int Send, int Src, int Dst>
   inline __device__ void waitPeer(intptr_t dstIx, intptr_t remoteIx, int offset, int nelts) {
-    if (flags & (Recv*RoleWaitRecv | Send*RoleWaitSend)) {
-      bool const isSendNotRecv = (Send && Recv) ? (flags & RoleWaitSend) : Send;
+    bool const isSendNotRecv = (Send && Recv) ? (flags & RoleWaitSend) : Send;
+    if (((flags & (Recv*RoleWaitRecv)) && !(DirectRecv && Src && (flags & DirectRead))) || // no wait when directly reading from remote input
+        ((flags & (Send*RoleWaitSend)) && !DirectSend)) { // no wait in empty send (e.g. directScatter) or direct write
       int spins = 0;
-      //if ((flags & DirectEnabled & DirectRecv*RoleWaitRecv) && Send && !DirectSend) goto skip;
       while (connStepCache + (isSendNotRecv ? NCCL_STEPS : 0) < step + StepPerSlice) {
         connStepCache = *connStepPtr;
         if (checkAbort(spins)) break;
         //if (spins == 0) printf("r=%d b=%d t=%d SPUN OUT got=%d want=%d\n", ncclShmem.comm.rank, blockIdx.x, threadIdx.x, int(connStepCache + (isSendNotRecv ? NCCL_STEPS : 0)), int(step+StepPerSlice));
       }
+      //printf("Rank %d group %d connIndex %d index %d wait for %s spins %d\n", ncclShmem.comm.rank, group, connIndex, index, isSendNotRecv ? "send" : "recv", spins);
     }
-//skip:
-    if (flags & ((Recv|DirectRecv)*RoleWaitRecv | Send*RoleWaitSend)) {
-      bool const isSendNotRecv = (Send && (Recv|DirectRecv)) ? (flags & RoleWaitSend) : Send;
+
+    if (flags & (Recv*RoleWaitRecv | Send*RoleWaitSend)) {
       if (isSendNotRecv && (flags & SizesFifoEnabled))
         connSizesFifoPtr[step%NCCL_STEPS] = nelts*sizeof(T);
 
@@ -251,9 +251,9 @@ class Primitives<
         if (Send && (flags & RoleInput)) ncclShmem.groups[group].srcs[0] = userBuff + inpIx + offset;
         if (Recv && (flags & RoleOutput)) ncclShmem.groups[group].dsts[0] = userBuff + outIx + offset;
         // realSize is not accurate here; but intra-node does not rely on sizes FIFO
-        waitPeer<DirectRecv, DirectSend, Recv, Send, 0, 0>(0, Send ? inpIx : outIx, offset, realSize);
+        waitPeer<DirectRecv, DirectSend, Recv, Send, Send, Recv>(0, Send ? inpIx : outIx, offset, realSize);
         subBarrier();
-        if (DirectSend && ncclShmem.groups[group].srcs[0] == ncclShmem.groups[group].dsts[0]) {
+        if (DirectSend && ncclShmem.groups[group].dsts[0] == nullptr) {
           // Do nothing
           //if (tid == 0) printf("Rank %d group %d connIndex %d tid %d in empty scatter\n", ncclShmem.comm.rank, group, connIndex, tid);
         } else if (Send) {
@@ -529,7 +529,7 @@ class Primitives<
     genericOp<0, 0, 1, 1, Input, -1>(inpIx, -1, -1, eltN, postOp);
   }
   __device__ __forceinline__ void directRecvReduceSend(intptr_t inpIx, intptr_t remoteInpIx, int eltN, bool postOp=false) {
-    genericOp<1, 0, 0, 1, Input, -1>(inpIx, -1, remoteInpIx, eltN, postOp); //FIXME: Recv = 1
+    genericOp<1, 0, 1, 1, Input, -1>(inpIx, -1, remoteInpIx, eltN, postOp); //FIXME: Recv = 1
   }
 
   __device__ __forceinline__ void recvReduceCopySend(intptr_t inpIx, intptr_t outIx, int eltN, bool postOp=false) {
@@ -546,7 +546,7 @@ class Primitives<
   }
   __device__ __forceinline__ void
   directScatter(intptr_t inpIx, int totalElem, int peerElem, int skip, int shift) {
-    ScatterGatherOp<0, 1, 0, 0>(inpIx, -1, totalElem, peerElem, skip, shift, /*postOp=*/false); //FIXME: Send = 1
+    ScatterGatherOp<0, 1, 0, 1>(inpIx, -1, totalElem, peerElem, skip, shift, /*postOp=*/false); //FIXME: Send = 1
   }
 
   __device__ __forceinline__ void
