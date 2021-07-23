@@ -90,10 +90,25 @@ class Primitives<
                                   : (ncclShmem.groups[group].srcs + Src);
       if (flags & PtrsFifoEnabled)
         loadPtr(connPtrsFifoPtr + step%NCCL_STEPS, ptrs[index]);
-      else if ((isSendNotRecv ? DirectSend : DirectRecv) && (flags & (DirectWrite|DirectRead)))
-        ptrs[index] = directBuff + (isSendNotRecv ? remoteIx : /*dstIx*/remoteIx) + offset;
-      else
+      else if (isSendNotRecv && DirectSend) {
+        if (flags & DirectWrite) {
+          ptrs[index] = directBuff + remoteIx + offset;
+          //printf("Rank %d group %d connIndex %d index %d direct send %p\n", ncclShmem.comm.rank, group, connIndex, index, ptrs[index]);
+        } else {
+          ptrs[index] = nullptr;
+        }
+      } else if ((!isSendNotRecv) && DirectRecv) {
+        if (flags & DirectRead) {
+          ptrs[index] = directBuff + remoteIx + offset;
+          //printf("Rank %d group %d connIndex %d index %d direct recv %p\n", ncclShmem.comm.rank, group, connIndex, index, ptrs[index]);
+        } else {
+          ptrs[index] = nullptr;
+        }
+      }
+      else {
         ptrs[index] = connEltsFifo + (step%NCCL_STEPS)*stepSize;
+        //printf("Rank %d group %d connIndex %d index %d %s %p\n", ncclShmem.comm.rank, group, connIndex, index, isSendNotRecv ? "send" : "recv", ptrs[index]);
+      }
       step += StepPerSlice;
     }
   }
@@ -176,7 +191,7 @@ class Primitives<
              fan.nsend()+Dst, (T**)ncclShmem.groups[group].dsts,
              sliceSize);
           //if (tid == 0) printf("Rank %d group %d connIndex %d tid %d in path 3\n", ncclShmem.comm.rank, group, connIndex, tid);
-        } else if (Recv && !DirectRecv && DirectSend && SrcBuf != Input) {
+        } else if (DirectSend && !DirectRecv && SrcBuf != Input && ncclShmem.groups[group].dsts[Dst] == nullptr) {
           // For broadcast in CollNet to do empty send
           ReduceOrCopyMulti<Unroll, RedOp, T, 1, 1, 1, 1>
             (tid, nworkers, redOp, false, postOp,
@@ -252,7 +267,7 @@ class Primitives<
             if (realPeerSize > 0) ReduceOrCopyMulti<Unroll, RedOp, T, 1, 1, 1, 1>(tid, nworkers, redOp, true, false, 1, &src0, 1, (T**)ncclShmem.groups[group].dsts+i, realPeerSize);
           }
           //if (tid == 0) printf("Rank %d group %d connIndex %d tid %d in solid scatter\n", ncclShmem.comm.rank, group, connIndex, tid);
-        } else if (DirectRecv && ncclShmem.groups[group].srcs[0] == ncclShmem.groups[group].dsts[0]) {
+        } else if (DirectRecv && ncclShmem.groups[group].srcs[0] == nullptr) {
           // Do nothing
           //if (tid == 0) printf("Rank %d group %d connIndex %d tid %d in empty gather\n", ncclShmem.comm.rank, group, connIndex, tid);
         } else if (Recv) {
@@ -262,8 +277,9 @@ class Primitives<
             int peerOffset = i*peerElem;
             if (skip >= 0 && i >= skip) peerOffset += peerElem;
             T* dst0 = (T*)ncclShmem.groups[group].dsts[0] + peerOffset;
+            const T* src = (const T*)ncclShmem.groups[group].srcs[i] + peerOffset;
             int realPeerSize = min(realSize, totalElem-peerOffset);
-            if (realPeerSize > 0) ReduceOrCopyMulti<Unroll, RedOp, T, 1, 1, 1, 1>(tid, nworkers, redOp, false, postOp, 1, (T const**)ncclShmem.groups[group].srcs+i, 1, &dst0, realPeerSize);
+            if (realPeerSize > 0) ReduceOrCopyMulti<Unroll, RedOp, T, 1, 1, 1, 1>(tid, nworkers, redOp, false, postOp, 1, &src, 1, &dst0, realPeerSize);
           }
         }
       }
@@ -420,7 +436,7 @@ class Primitives<
       // Encode pointer by XOR'ing against some address they definitely wouldn't send
       // since we want to allow them sending us nullptr while not colliding with
       // the empty slot value.
-      *slot = reinterpret_cast<T*>(reinterpret_cast<uintptr_t>(outputBuf) ^ reinterpret_cast<uintptr_t>(slot));
+      *slot = reinterpret_cast<T*>(reinterpret_cast<uintptr_t>(directBuff) ^ reinterpret_cast<uintptr_t>(slot));
     }
     if (Direct && sendAcceptor) {
       int spins = 0;
@@ -441,11 +457,13 @@ class Primitives<
       while (*slot != nullptr && !checkAbort(spins)) {
         //if (spins % 0x10000 == 0) printf("Rank %d group %d connIndex %d tid %d spins %d sendProvider waiting for slot %p %p\n", ncclShmem.comm.rank, group, connIndex, tid, spins, slot, *slot);
       }
-      directBuff = (T*)inputBuf;
+      // If there is no recv, then we are directly pulling from input buffer (e.g. directScatter)
+      // Otherwise, we are pulling from output buffer (e.g. recvCopyDirectSend)
+      directBuff = MaxRecv == 0 ? (T*)inputBuf : (T*)outputBuf;
       // Encode pointer by XOR'ing against some address they definitely wouldn't send
       // since we want to allow them sending us nullptr while not colliding with
       // the empty slot value.
-      *slot = reinterpret_cast<T*>(reinterpret_cast<uintptr_t>(inputBuf) ^ reinterpret_cast<uintptr_t>(slot));
+      *slot = reinterpret_cast<T*>(reinterpret_cast<uintptr_t>(directBuff) ^ reinterpret_cast<uintptr_t>(slot));
     }
     if (Direct && recvAcceptor) {
       int spins = 0;

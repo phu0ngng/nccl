@@ -287,7 +287,7 @@ struct RunWorkElement<ncclFuncAllReduce, T, RedOp, NCCL_ALGO_COLLNET, NCCL_PROTO
 #if __CUDA_ARCH__ >= 800
     const int flipDirect = size*sizeof(T)/nChannels <= 1024*1024 ? 1 : 0;
 #else
-    const int flipDirect = 0;
+    const int flipDirect = size*sizeof(T)/nChannels <= 1024*1024 ? 0 : 1;
 #endif
 
     const int hasUp = (tree->up[0] >= 0) ? 1 : 0;
