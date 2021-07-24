@@ -69,7 +69,7 @@ struct RunWorkElement {
 
 template<ncclFunc_t Fn, typename T, typename RedOp, int Algo, int Proto>
 struct RunWork {
-  __device__ void run(ncclWork *w) {
+  __device__ __forceinline__ void run(ncclWork *w) {
     int tid = threadIdx.x;
     #pragma unroll 1
     for(int e=0; e < NCCL_MAX_WORK_ELEMENTS && w->elems[e].active != 0; e++) {

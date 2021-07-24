@@ -69,7 +69,7 @@ class Primitives<
   }
 
   template <int DirectRecv, int DirectSend, int Recv, int Send, int Src, int Dst>
-  inline __device__ void waitPeer(intptr_t dstIx, intptr_t remoteOutIx, int offset, int nelts) {
+  __device__ __forceinline__ void waitPeer(intptr_t dstIx, intptr_t remoteOutIx, int offset, int nelts) {
     if (flags & (Recv*RoleWaitRecv | Send*RoleWaitSend)) {
       bool const isSendNotRecv = (Send && Recv) ? (flags & RoleWaitSend) : Send;
       int spins = 0;
@@ -103,7 +103,7 @@ class Primitives<
   }
 
   template <int DirectRecv1, int DirectSend1, int Recv, int Send, int SrcBuf, int DstBuf>
-  inline __device__ void genericOp(
+  __device__ __forceinline__ void genericOp(
       intptr_t srcIx, intptr_t dstIx, intptr_t remoteOutIx, int nelem, bool postOp
     ) {
     constexpr int DirectRecv = 1 && Direct && DirectRecv1;
@@ -203,7 +203,7 @@ class Primitives<
 
   // Scatter and gather do not support Direct
   template <int Recv, int Send>
-  inline __device__ void
+  __device__ __forceinline__ void
   ScatterGatherOp(intptr_t inpIx, intptr_t outIx, int totalElem, int peerElem, int skip, int shift, bool postOp) {
     int offset = 0; // slice offset
     int sliceSize = stepSize*StepPerSlice;
