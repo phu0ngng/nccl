@@ -528,13 +528,12 @@ static ncclResult_t initTransportsRank(struct ncclComm* comm, ncclUniqueId* comm
   int intraNodeRank0 = -1, intraNodeRank = -1, intraNodeRanks = 0;
   int myCompCap = allGather1Data[rank].cudaCompCap;
   int minCompCap = myCompCap, maxCompCap = myCompCap;
-  int intraNodeGlobalRanks[256];
   for (int i = 0; i < nranks; i++) {
     if (allGather1Data[i].peerInfo.hostHash == allGather1Data[rank].peerInfo.hostHash) {
       // Rank is on same node
       if (intraNodeRanks == 0) intraNodeRank0 = i;
       if (i == rank) intraNodeRank = intraNodeRanks;
-      intraNodeGlobalRanks[intraNodeRanks++] = i;
+      comm->intraNodeGlobalRanks[intraNodeRanks++] = i;
       if (allGather1Data[i].peerInfo.pidHash == allGather1Data[rank].peerInfo.pidHash) {
         // Rank is in same process
         if (intraProcRanks == 0) intraProcRank0 = i;
@@ -874,7 +873,7 @@ collnet_cleanup:
   NCCLCHECK(ncclCommSetIntraProc(comm, intraProcRank, intraProcRanks, intraProcRank0Comm));
 
   /* Local intra-node barrier */
-  NCCLCHECK(bootstrapBarrier(comm->bootstrap, intraNodeGlobalRanks, (int)intraNodeRank0pidHash, intraNodeRank, intraNodeRanks));
+  NCCLCHECK(bootstrapBarrier(comm->bootstrap, comm->intraNodeGlobalRanks, intraNodeRank, intraNodeRanks, (int)intraNodeRank0pidHash));
 
   if (comm->nNodes) NCCLCHECK(ncclProxyCreate(comm));
 

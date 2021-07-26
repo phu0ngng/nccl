@@ -30,6 +30,8 @@ struct cudaLaunchParams {
 #define NCCL_LL128_THREAD_THRESHOLD 8
 #define NCCL_SIMPLE_THREAD_THRESHOLD 64
 
+#define NCCL_MAX_INTRA_RANKS 32
+
 struct ncclSendMem {
   union {
     struct {
@@ -76,6 +78,9 @@ struct ncclComm {
 
   int node;
   int nNodes;
+
+  // Intra-node rank info
+  int intraNodeGlobalRanks[NCCL_MAX_INTRA_RANKS];
   int localRanks;
 
   enum { GROUP, PARALLEL, GROUP_GRAPH } launchMode;
