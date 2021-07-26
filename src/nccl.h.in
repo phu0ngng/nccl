@@ -136,10 +136,10 @@ typedef enum { ncclInt8       = 0, ncclChar       = 0,
 
 typedef enum { ncclScalarDevice        = 0,
                ncclScalarHostImmediate = 1
-             } ncclScalarResidence;
+             } ncclScalarResidence_t;
 
-ncclResult_t  ncclRedOpCreatePreMulSum(ncclRedOp_t *op, void *scalar, ncclDataType_t datatype, ncclScalarResidence residence, ncclComm_t comm);
-ncclResult_t pncclRedOpCreatePreMulSum(ncclRedOp_t *op, void *scalar, ncclDataType_t datatype, ncclScalarResidence residence, ncclComm_t comm);
+ncclResult_t  ncclRedOpCreatePreMulSum(ncclRedOp_t *op, void *scalar, ncclDataType_t datatype, ncclScalarResidence_t residence, ncclComm_t comm);
+ncclResult_t pncclRedOpCreatePreMulSum(ncclRedOp_t *op, void *scalar, ncclDataType_t datatype, ncclScalarResidence_t residence, ncclComm_t comm);
 
 ncclResult_t ncclRedOpDestroy(ncclRedOp_t op, ncclComm_t comm);
 ncclResult_t pncclRedOpDestroy(ncclRedOp_t op, ncclComm_t comm);
