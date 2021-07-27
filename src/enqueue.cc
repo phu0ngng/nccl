@@ -8,6 +8,7 @@
 #include "argcheck.h"
 #include "coll_net.h"
 #include "gdrwrap.h"
+#include "bootstrap.h"
 
 // Only generate inline kernels for LL
 #define NCCL_FUNC5(func, algo, redop, dtype) \
@@ -574,6 +575,32 @@ static ncclResult_t checkSetStream(struct ncclInfo* info) {
   return ncclSuccess;
 }
 
+struct ncclBuffRegHandle {
+  cudaIpcMemHandle_t sendBuffIpc;
+  cudaIpcMemHandle_t recvBuffIpc;
+};
+
+// Register input and output buffers
+// Exchange with ranks on the same host
+static ncclResult_t ncclRegBuffAndExchange(struct ncclInfo* info, struct ncclBuffRegInfo* regInfo) {
+  ncclComm_t comm = info->comm;
+  if (comm->localRanks == 1) return ncclSuccess;
+
+  struct ncclBuffRegHandle regHandles[NCCL_MAX_INTRA_RANKS];
+  // Get IPC handles
+  CUDACHECK(cudaIpcGetMemHandle(&regHandles[comm->intraNodeRank].sendBuffIpc, (void*)info->sendbuff));
+  CUDACHECK(cudaIpcGetMemHandle(&regHandles[comm->intraNodeRank].recvBuffIpc, (void*)info->recvbuff));
+  // Exchange handles within node
+  NCCLCHECK(bootstrapIntraNodeAllGather(comm->bootstrap, comm->intraNodeGlobalRanks, comm->intraNodeRank, comm->localRanks, regHandles, sizeof(struct ncclBuffRegHandle)));
+  // Open handles at local process
+  for (int i=0; i<comm->localRanks; i++) {
+    if (i == comm->intraNodeRank) continue;
+    CUDACHECK(cudaIpcOpenMemHandle(&regInfo[i].sendbuff, regHandles[i].sendBuffIpc, cudaIpcMemLazyEnablePeerAccess));
+    CUDACHECK(cudaIpcOpenMemHandle(&regInfo[i].recvbuff, regHandles[i].recvBuffIpc, cudaIpcMemLazyEnablePeerAccess));
+  }
+  return ncclSuccess;
+}
+
 // Compute enqueue element, save it in list
 // Compute CUDA launch parameters
 // Capture time code in view of CUDA graph
@@ -605,6 +632,13 @@ static ncclResult_t ncclSetupCollKernel(struct ncclInfo* info) {
     memcpy(&comm->args, work, sizeof(struct ncclWorkElem));
     comm->args.coll.bid = 0;  // Only inline for channel 0
     comm->args.active = 2;    // I am so far the last element; may be changed later in aggregation mode
+  }
+
+  // Register and exchange input and output buffers
+  if (comm->usingCudaGraph &&                   // only in CUDA graph mode
+      info->algorithm == NCCL_ALGO_COLLNET &&   // limited to CollNet for now
+      comm->intraRanks == 1) {                  // only in multi-process mode //FIXME
+    NCCLCHECK(ncclRegBuffAndExchange(info, eqElem->buffRegInfo))
   }
 
   return ncclSuccess;

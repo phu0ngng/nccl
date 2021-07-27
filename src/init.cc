@@ -562,6 +562,7 @@ static ncclResult_t initTransportsRank(struct ncclComm* comm, ncclUniqueId* comm
   }
   struct ncclComm* intraProcRank0Comm = allGather1Data[intraProcRank0].comm;
   uint64_t intraNodeRank0pidHash = allGather1Data[intraNodeRank0].peerInfo.pidHash;
+  comm->intraNodeRank = intraNodeRank;
 
   free(allGather1Data);
 
