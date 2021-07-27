@@ -92,17 +92,17 @@ __device__ ncclKern_t ncclFuncs[1+ncclNumTypes+NCCL_NUM_FUNCTIONS*ncclNumDevRedO
 // confuses clang. This will be fixed in the next clang release.
 #if __CUDA_ARCH__
   NCCL_FUNC_NAME(SendRecv, RING, SIMPLE, Sum, int8_t),
-  NCCL_DEGENERATE_REDUCE_NAME(PreMulSum, int8_t),
-  NCCL_DEGENERATE_REDUCE_NAME(PreMulSum, uint8_t),
-  NCCL_DEGENERATE_REDUCE_NAME(PreMulSum, int32_t),
-  NCCL_DEGENERATE_REDUCE_NAME(PreMulSum, uint32_t),
-  NCCL_DEGENERATE_REDUCE_NAME(PreMulSum, int64_t),
-  NCCL_DEGENERATE_REDUCE_NAME(PreMulSum, uint64_t),
-  NCCL_DEGENERATE_REDUCE_NAME(PreMulSum, half),
-  NCCL_DEGENERATE_REDUCE_NAME(PreMulSum, float),
-  NCCL_DEGENERATE_REDUCE_NAME(PreMulSum, double),
+  NCCL_ONERANK_REDUCE_NAME(PreMulSum, int8_t),
+  NCCL_ONERANK_REDUCE_NAME(PreMulSum, uint8_t),
+  NCCL_ONERANK_REDUCE_NAME(PreMulSum, int32_t),
+  NCCL_ONERANK_REDUCE_NAME(PreMulSum, uint32_t),
+  NCCL_ONERANK_REDUCE_NAME(PreMulSum, int64_t),
+  NCCL_ONERANK_REDUCE_NAME(PreMulSum, uint64_t),
+  NCCL_ONERANK_REDUCE_NAME(PreMulSum, half),
+  NCCL_ONERANK_REDUCE_NAME(PreMulSum, float),
+  NCCL_ONERANK_REDUCE_NAME(PreMulSum, double),
   #if defined(__CUDA_BF16_TYPES_EXIST__)
-    NCCL_DEGENERATE_REDUCE_NAME(PreMulSum, __nv_bfloat16),
+    NCCL_ONERANK_REDUCE_NAME(PreMulSum, __nv_bfloat16),
   #endif
   NCCL_FUNCS2B(Broadcast),
   NCCL_FUNCS2A(Reduce),

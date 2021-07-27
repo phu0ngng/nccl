@@ -5,7 +5,7 @@
 
 namespace {
   template<typename T, typename RedOp>
-  __device__ __forceinline__ void degenerateReduce() {
+  __device__ __forceinline__ void oneRankReduce() {
     ncclWork *w = &ncclShmem.work;
     int tid = threadIdx.x;
     int tn = blockDim.x;
@@ -36,8 +36,8 @@ namespace {
 }
 
 #define INSTANTIATE(devredop, type) \
-  __device__ void NCCL_DEGENERATE_REDUCE_NAME(devredop, type)() { \
-    degenerateReduce<type, Func##devredop<type>>(); \
+  __device__ void NCCL_ONERANK_REDUCE_NAME(devredop, type)() { \
+    oneRankReduce<type, Func##devredop<type>>(); \
   }
 
 INSTANTIATE(PreMulSum, int8_t)

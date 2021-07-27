@@ -10,7 +10,7 @@ include ../../../makefiles/version.mk
 BUILDDIR ?= $(abspath ../../../build)
 OBJDIR := $(BUILDDIR)/obj/collectives/device
 
-LIBSRCFILES := all_reduce.cu broadcast.cu reduce.cu all_gather.cu reduce_scatter.cu sendrecv.cu degenerate_reduce.cu
+LIBSRCFILES := all_reduce.cu broadcast.cu reduce.cu all_gather.cu reduce_scatter.cu sendrecv.cu onerank_reduce.cu
 
 LIBSRCFILES += functions.cu
 
@@ -36,7 +36,7 @@ $(RULESFILE) :
 
 -include $(RULESFILE)
 
-LIBOBJ     := $(GENOBJS) $(OBJDIR)/functions.o $(OBJDIR)/degenerate_reduce.o
+LIBOBJ     := $(GENOBJS) $(OBJDIR)/functions.o $(OBJDIR)/onerank_reduce.o
 
 -include $(DEPFILES)
 
@@ -63,7 +63,7 @@ $(OBJDIR)/functions.o : functions.cu $(OBJDIR)/functions.dep
 	mkdir -p `dirname $@`
 	$(NVCC) $(NVCUFLAGS) -dc $< -o $@
 
-$(OBJDIR)/degenerate_reduce.o : degenerate_reduce.cu $(OBJDIR)/degenerate_reduce.dep
+$(OBJDIR)/onerank_reduce.o : onerank_reduce.cu $(OBJDIR)/onerank_reduce.dep
 	@printf "Compiling  %-35s > %s\n" $< $@
 	mkdir -p `dirname $@`
 	$(NVCC) $(NVCUFLAGS) -dc $< -o $@

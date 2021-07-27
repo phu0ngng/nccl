@@ -87,7 +87,7 @@
 // Must be consistent with the ncclFuncSet enum
 static void* const ncclKerns[1+ncclNumTypes+NCCL_NUM_FUNCTIONS*ncclNumDevRedOps*ncclNumTypes*NCCL_NUM_ALGORITHMS*NCCL_NUM_PROTOCOLS] = {
   (void*)NCCL_KERN_NAME(SendRecv, RING, SIMPLE, Sum, int8_t),
-  // We don't bake special kernels for the degenerate reductions
+  // We don't bake special kernels for the one-rank reductions
   /*int8*/(void*)NCCL_KERN_NAME(SendRecv, RING, SIMPLE, Sum, int8_t),
   /*uint8*/(void*)NCCL_KERN_NAME(SendRecv, RING, SIMPLE, Sum, int8_t),
   /*int32*/(void*)NCCL_KERN_NAME(SendRecv, RING, SIMPLE, Sum, int8_t),
@@ -595,7 +595,7 @@ comp_next:
   NCCLCHECK(hostToDevRedOp(&devRedOp, work, info->op, info->datatype, info->comm));
 
   if (info->comm->nRanks == 1) {
-    // degenerate reduce index
+    // one-rank reduce index
     work->funcIndex = 1 + int(info->datatype);
     return ncclSuccess;
   }
