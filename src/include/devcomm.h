@@ -181,10 +181,23 @@ struct ncclWorkElem {
     uint64_t align[4];
   };
 };
-struct ncclWork {
-  struct ncclWorkElem elems[NCCL_MAX_WORK_ELEMENTS];
-};
 static_assert(sizeof(struct ncclWorkElem) == (0x10*sizeof(int)), "ncclWorkElem must have a pow2 size");
+
+struct ncclWorkRegElem {
+  struct ncclWorkElem elem;
+  void* sendbuffs[NCCL_MAX_DIRECT_ARITY+1];
+  void* recvbuffs[NCCL_MAX_DIRECT_ARITY+1];
+  struct ncclWorkElem padding;
+};
+#define NCCL_REG_ELEM_FACTOR 4
+static_assert(sizeof(struct ncclWorkRegElem) == (NCCL_REG_ELEM_FACTOR*sizeof(struct ncclWorkElem)), "ncclWorkRegElem size must be pow2 times ncclWorkElem size");
+
+struct ncclWork {
+  union {
+    struct ncclWorkElem elems[NCCL_MAX_WORK_ELEMENTS];
+    struct ncclWorkRegElem regElems[NCCL_MAX_WORK_ELEMENTS/NCCL_REG_ELEM_FACTOR];
+  };
+};
 
 struct ncclChannel {
   union {

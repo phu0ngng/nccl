@@ -593,11 +593,14 @@ static ncclResult_t ncclRegBuffAndExchange(struct ncclInfo* info, struct ncclBuf
   // Exchange handles within node
   NCCLCHECK(bootstrapIntraNodeAllGather(comm->bootstrap, comm->intraNodeGlobalRanks, comm->intraNodeRank, comm->localRanks, regHandles, sizeof(struct ncclBuffRegHandle)));
   // Open handles at local process
+  int c = 0;
   for (int i=0; i<comm->localRanks; i++) {
     if (i == comm->intraNodeRank) continue;
-    CUDACHECK(cudaIpcOpenMemHandle(&regInfo[i].sendbuff, regHandles[i].sendBuffIpc, cudaIpcMemLazyEnablePeerAccess));
-    CUDACHECK(cudaIpcOpenMemHandle(&regInfo[i].recvbuff, regHandles[i].recvBuffIpc, cudaIpcMemLazyEnablePeerAccess));
+    CUDACHECK(cudaIpcOpenMemHandle(regInfo->sendbuffs+c, regHandles[i].sendBuffIpc, cudaIpcMemLazyEnablePeerAccess));
+    CUDACHECK(cudaIpcOpenMemHandle(regInfo->recvbuffs+c, regHandles[i].recvBuffIpc, cudaIpcMemLazyEnablePeerAccess));
+    c++;
   }
+  regInfo->nBuffs = c;
   return ncclSuccess;
 }
 
@@ -638,7 +641,7 @@ static ncclResult_t ncclSetupCollKernel(struct ncclInfo* info) {
   if (comm->usingCudaGraph &&                   // only in CUDA graph mode
       info->algorithm == NCCL_ALGO_COLLNET &&   // limited to CollNet for now
       comm->intraRanks == 1) {                  // only in multi-process mode //FIXME
-    NCCLCHECK(ncclRegBuffAndExchange(info, eqElem->buffRegInfo))
+    NCCLCHECK(ncclRegBuffAndExchange(info, &eqElem->buffRegInfo));
   }
 
   return ncclSuccess;
@@ -800,13 +803,24 @@ static ncclResult_t ncclSaveP2p(struct ncclInfo* info) {
   return ncclSuccess;
 }
 
-enum { COLL_SEGMENT=0, P2P_SEGMENT=1 };
+enum { RingTree_Segment=0, P2P_Segment=1, CollNet_Segment=2 };
 static int getSegment(int type, int delta, struct ncclWork* work) {
-  if (type == P2P_SEGMENT) {  // P2P
+  // Current ncclWork is full
+  if (work->elems[NCCL_MAX_WORK_ELEMENTS-1].active != 0) return -1;
+
+  if (type == P2P_Segment) {  // P2P
+    // Do not mix P2P and collective ops
+    if (work->elems[0].funcIndex != FUNC_INDEX_P2P) return -1;
     for (int s=0; s<NCCL_MAX_WORK_ELEMENTS && work->elems[s].p2p.delta != delta; s++) {
       if (work->elems[s].active == 0) return s;
     }
-  } else { // aggregation
+  } else if (type == CollNet_Segment) { // aggregation of CollNet
+    // Do not mix CollNet with other collectives as CollNet has a different stride
+    //if (work->elems[0].funcIndex != FUNC_INDEX_P2P) return -1; //FIXME
+    for (int s=0; s<NCCL_MAX_WORK_ELEMENTS; s+=NCCL_REG_ELEM_FACTOR) {
+      if (work->elems[s].active == 0) return s;
+    }
+  } else {  // aggregation of Ring or Tree
     for (int s=0; s<NCCL_MAX_WORK_ELEMENTS; s++) {
       if (work->elems[s].active == 0) return s;
     }
@@ -828,13 +842,13 @@ static ncclResult_t computeP2pWorkElem(struct ncclInfo* info /* input */, struct
   return ncclSuccess;
 }
 
-static ncclResult_t enqueueSegOp(int type, struct ncclWorkElem* elem /* input */, struct ncclWork* work, int s) {
+static ncclResult_t enqueueSegOp(int type, struct ncclWorkElem* elem /* input */, struct ncclWork* work, int s, struct ncclBuffRegInfo* regInfo) {
   // Copy element into corresponding segment of ncclWork
   memcpy(work->elems+s, elem, sizeof(struct ncclWorkElem));
   work->elems[s].active = 1;
 
   // Determine nThreads at dynamic time
-  if (type == P2P_SEGMENT) {
+  if (type == P2P_Segment) {
     const int nsegments = s+1;
     int nThreads = 512;
     while (nsegments*nThreads > 512) nThreads /= 2;
@@ -842,6 +856,11 @@ static ncclResult_t enqueueSegOp(int type, struct ncclWorkElem* elem /* input */
     for (int i=0; i<nsegments; i++) work->elems[i].p2p.nThreads = nThreads;
   }
 
+  // Copy registered buffer addresses
+  if (regInfo->nBuffs > 0) {
+    memcpy(work->elems+s+1, regInfo->sendbuffs, sizeof(void*)*regInfo->nBuffs);
+    memcpy(work->elems+s+2, regInfo->recvbuffs, sizeof(void*)*regInfo->nBuffs);
+  }
   return ncclSuccess;
 }
 
@@ -854,9 +873,9 @@ ncclResult_t ncclEnqueueP2pKernel(struct ncclComm* comm, struct ncclQueueElem* e
   int opIndex = (channel->workFifoTail-1+NCCL_MAX_OPS)%NCCL_MAX_OPS;
   struct ncclWork* w = channel->workFifo+opIndex;
   int segment = -1;
-  if (channel->workCount && w->elems[0].funcIndex == FUNC_INDEX_P2P && w->elems[NCCL_MAX_WORK_ELEMENTS-1].active == 0) {
+  if (channel->workCount) {
     // Try to pack more segments into a single operation
-    segment = getSegment(P2P_SEGMENT, workElem->p2p.delta, w);
+    segment = getSegment(P2P_Segment, workElem->p2p.delta, w);
   }
   if (segment == -1) {
     NCCLCHECK(getNextOp(channel, &w, NULL));
@@ -865,7 +884,7 @@ ncclResult_t ncclEnqueueP2pKernel(struct ncclComm* comm, struct ncclQueueElem* e
 
   // store work element into FIFO
   NCCLCHECK(ncclProxySaveP2p(comm, proxyArgs));
-  NCCLCHECK(enqueueSegOp(P2P_SEGMENT, workElem, w, segment));
+  NCCLCHECK(enqueueSegOp(P2P_Segment, workElem, w, segment, &eqElem->buffRegInfo));
   return ncclSuccess;
 }
 
@@ -901,6 +920,8 @@ ncclResult_t ncclEnqueueAsyncKernel(struct ncclComm* comm, struct ncclQueueElem*
 
   int nChannels = work->coll.nChannels;
   size_t channelSize = work->coll.count*ncclTypeSize(proxyArgs->dtype)/work->coll.nChannels;
+  int segmentType = proxyArgs->redOp == ncclNumOps ? RingTree_Segment : CollNet_Segment;  // redOp is only set when using CollNet
+
   for (int bid=0; bid<nChannels; bid++) {
     int channelId;
     NCCLCHECK(getNextChannel(comm, &channelId));
@@ -917,9 +938,9 @@ ncclResult_t ncclEnqueueAsyncKernel(struct ncclComm* comm, struct ncclQueueElem*
     int opIndex = (channel->workFifoTail-1+NCCL_MAX_OPS)%NCCL_MAX_OPS;
     struct ncclWork* w = channel->workFifo+opIndex;
     int segment = -1;
-    if (channel->workCount && w->elems[NCCL_MAX_WORK_ELEMENTS-1].active == 0) {
+    if (channel->workCount) {
       // Try to pack more segments into a single operation
-      segment = getSegment(COLL_SEGMENT, 0, w);
+      segment = getSegment(segmentType, 0, w);
     }
     if (segment == -1) {
       NCCLCHECK(getNextOp(channel, &w, NULL));
@@ -927,7 +948,7 @@ ncclResult_t ncclEnqueueAsyncKernel(struct ncclComm* comm, struct ncclQueueElem*
     }
 
     // store work element into FIFO
-    NCCLCHECK(enqueueSegOp(COLL_SEGMENT, work, w, segment));
+    NCCLCHECK(enqueueSegOp(segmentType, work, w, segment, &eqElem->buffRegInfo));
     channel->totalSize += channelSize;
   }
   comm->collOpCount++;

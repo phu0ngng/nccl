@@ -31,15 +31,16 @@ ncclResult_t ncclGetCudaGraph(ncclComm_t comm, cudaGraph_t* graph);
 ncclResult_t ncclCudaGraphHostSetup(ncclComm_t comm, cudaGraph_t graph);
 
 struct ncclBuffRegInfo {
-  void* sendbuff;
-  void* recvbuff;
+  void* sendbuffs[NCCL_MAX_INTRA_RANKS];
+  void* recvbuffs[NCCL_MAX_INTRA_RANKS];
+  int nBuffs;
 };
 
 // Enqueue information (for kernel and proxy) for each operation
 struct ncclQueueElem {
   struct ncclWorkElem work;
   struct ncclProxyArgs proxyArgs;
-  struct ncclBuffRegInfo buffRegInfo[NCCL_MAX_INTRA_RANKS];
+  struct ncclBuffRegInfo buffRegInfo;
 };
 
 typedef ncclRecyclableList<struct ncclQueueElem> ncclQueueElemList;

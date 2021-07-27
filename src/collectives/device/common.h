@@ -67,12 +67,14 @@ struct RunWorkElement {
   }
 };
 
+__device__ constexpr int ncclWorkElemFactors[NCCL_NUM_ALGORITHMS] = {/*Tree*/1, /*Ring and P2P*/1, /*CollNet*/NCCL_REG_ELEM_FACTOR};
+
 template<ncclFunc_t Fn, typename T, typename RedOp, int Algo, int Proto>
 struct RunWork {
   __device__ void run(ncclWork *w) {
     int tid = threadIdx.x;
     #pragma unroll 1
-    for(int e=0; e < NCCL_MAX_WORK_ELEMENTS && w->elems[e].active != 0; e++) {
+    for(int e=0; e < NCCL_MAX_WORK_ELEMENTS && w->elems[e].active != 0; e+=ncclWorkElemFactors[Algo]) {
       if (tid < w->elems[e].nThreads)
         RunWorkElement<Fn, T, RedOp, Algo, Proto>().run(&w->elems[e]);
     }
@@ -114,7 +116,7 @@ __device__ void ncclKernel(ncclWorkElem first)  {
   // To optimize for latency, (only) the first operation is passed as argument.
   if (bid == 0 && first.active != 0) {
     turn = copyToShmem(&ncclShmem.work.elems[0], &first, turn);
-    if (tid == 0) ncclShmem.work.elems[1].active = 0;
+    if (tid == 0) ncclShmem.work.elems[ncclWorkElemFactors[Algo]].active = 0;
   }
   __syncthreads(); // publish ncclShmem
 
