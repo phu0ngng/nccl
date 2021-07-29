@@ -93,17 +93,21 @@ class Primitives<
       else if (isSendNotRecv && DirectSend) {
         if (flags & DirectWrite) {
           ptrs[index] = directBuff + remoteIx + offset;
-          //printf("Rank %d group %d connIndex %d index %d direct send %p\n", ncclShmem.comm.rank, group, connIndex, index, ptrs[index]);
-        } else {
+        } else if (flags & DirectRead) {  // empty send
           ptrs[index] = nullptr;
+        } else {
+          ptrs[index] = connEltsFifo + (step%NCCL_STEPS)*stepSize;
         }
-      } else if ((!isSendNotRecv) && DirectRecv) {
+        //printf("Rank %d group %d connIndex %d index %d direct send %p\n", ncclShmem.comm.rank, group, connIndex, index, ptrs[index]);
+      } else if (!isSendNotRecv && DirectRecv) {
         if (flags & DirectRead) {
           ptrs[index] = directBuff + remoteIx + offset;
-          //printf("Rank %d group %d connIndex %d index %d direct recv %p\n", ncclShmem.comm.rank, group, connIndex, index, ptrs[index]);
-        } else {
+        } else if (flags & DirectWrite) {  // empty recv
           ptrs[index] = nullptr;
+        } else {
+          ptrs[index] = connEltsFifo + (step%NCCL_STEPS)*stepSize;
         }
+        //printf("Rank %d group %d connIndex %d index %d direct recv %p\n", ncclShmem.comm.rank, group, connIndex, index, ptrs[index]);
       }
       else {
         ptrs[index] = connEltsFifo + (step%NCCL_STEPS)*stepSize;
@@ -183,14 +187,6 @@ class Primitives<
              fan.nsend(), (T**)ncclShmem.groups[group].dsts+1,
              sliceSize);
           //if (tid == 0) printf("Rank %d group %d connIndex %d tid %d in path 1\n", ncclShmem.comm.rank, group, connIndex, tid);
-        } else if (DirectRecv && Send) {
-          // For reducer in CollNet to do direct fetch
-          ReduceOrCopyMulti<Unroll, RedOp, T, 1+Src, MaxRecv+Src, 1+Dst, MaxSend+Dst>
-            (tid, nworkers, redOp, SrcBuf==Input, postOp,
-             fan.nrecv()+Src, (T const**)ncclShmem.groups[group].srcs,
-             fan.nsend()+Dst, (T**)ncclShmem.groups[group].dsts,
-             sliceSize);
-          //if (tid == 0) printf("Rank %d group %d connIndex %d tid %d in path 3\n", ncclShmem.comm.rank, group, connIndex, tid);
         } else if (DirectSend && !DirectRecv && SrcBuf != Input && ncclShmem.groups[group].dsts[Dst] == nullptr) {
           // For broadcast in CollNet to do empty send
           ReduceOrCopyMulti<Unroll, RedOp, T, 1, 1, 1, 1>
@@ -198,12 +194,14 @@ class Primitives<
              Recv, (T const**)ncclShmem.groups[group].srcs,
              Dst, (T**)ncclShmem.groups[group].dsts,
              sliceSize);
+          //if (tid == 0) printf("Rank %d group %d connIndex %d tid %d in path 3\n", ncclShmem.comm.rank, group, connIndex, tid);
         } else {
           ReduceOrCopyMulti<Unroll, RedOp, T, Recv+Src, Recv*MaxRecv+Src, Send+Dst, Send*MaxSend+Dst>
             (tid, nworkers, redOp, SrcBuf==Input, postOp,
              Recv*fan.nrecv()+Src, (T const**)ncclShmem.groups[group].srcs,
              Send*fan.nsend()+Dst, (T**)ncclShmem.groups[group].dsts,
              sliceSize);
+          //if (tid == 0) printf("Rank %d group %d connIndex %d tid %d in path 4\n", ncclShmem.comm.rank, group, connIndex, tid);
         }
         barrier(); // This barrier has a counterpart in following loop
         if (Send && (flags & RolePostSend) && index == 0) __threadfence_system();
@@ -277,7 +275,8 @@ class Primitives<
             int peerOffset = i*peerElem;
             if (skip >= 0 && i >= skip) peerOffset += peerElem;
             T* dst0 = (T*)ncclShmem.groups[group].dsts[0] + peerOffset;
-            const T* src = (const T*)ncclShmem.groups[group].srcs[i] + peerOffset;
+            const T* src = DirectRecv ? (const T*)ncclShmem.groups[group].srcs[i] + peerOffset :
+                                        (const T*)ncclShmem.groups[group].srcs[i];
             int realPeerSize = min(realSize, totalElem-peerOffset);
             if (realPeerSize > 0) ReduceOrCopyMulti<Unroll, RedOp, T, 1, 1, 1, 1>(tid, nworkers, redOp, false, postOp, 1, &src, 1, &dst0, realPeerSize);
           }
