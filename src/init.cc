@@ -67,11 +67,13 @@ ncclResult_t initCollNet(ncclCollNet_t* collnet) {
 }
 
 ncclResult_t initNetPlugin(ncclNet_t** net, ncclCollNet_t** collnet) {
-  const char* ncclNetPluginName = "libnccl-net.so";
+  char ncclNetPluginName[128];
   const char* envPluginName = getenv("NCCL_NET_PLUGIN");
   if (envPluginName) {
-    INFO(NCCL_INIT, "Plugin name set by env to %s\n", envPluginName);
-    ncclNetPluginName = envPluginName;
+    snprintf(ncclNetPluginName, 128, "libnccl-net-%s.so", envPluginName);
+    INFO(NCCL_INIT, "Plugin name set by env to %s\n", ncclNetPluginName);
+  } else {
+    sprintf(ncclNetPluginName, "libnccl-net.so");
   }
   void* netPluginLib = dlopen(ncclNetPluginName, RTLD_NOW | RTLD_LOCAL);
   if (netPluginLib == NULL) {
