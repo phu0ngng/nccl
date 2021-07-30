@@ -185,9 +185,9 @@ static_assert(sizeof(struct ncclWorkElem) == (0x10*sizeof(int)), "ncclWorkElem m
 
 struct ncclWorkRegElem {
   struct ncclWorkElem elem;
-  void* sendbuffs[NCCL_MAX_DIRECT_ARITY+1];
-  void* recvbuffs[NCCL_MAX_DIRECT_ARITY+1];
-  struct ncclWorkElem padding;
+  void* dnInputs[NCCL_MAX_DIRECT_ARITY+1];
+  void* dnOutputs[NCCL_MAX_DIRECT_ARITY+1];
+  void* upOutputs[NCCL_MAX_DIRECT_ARITY+1];
 };
 #define NCCL_REG_ELEM_FACTOR 4
 static_assert(sizeof(struct ncclWorkRegElem) == (NCCL_REG_ELEM_FACTOR*sizeof(struct ncclWorkElem)), "ncclWorkRegElem size must be pow2 times ncclWorkElem size");

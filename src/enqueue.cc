@@ -593,14 +593,12 @@ static ncclResult_t ncclRegBuffAndExchange(struct ncclInfo* info, struct ncclBuf
   // Exchange handles within node
   NCCLCHECK(bootstrapIntraNodeAllGather(comm->bootstrap, comm->intraNodeGlobalRanks, comm->intraNodeRank, comm->localRanks, regHandles, sizeof(struct ncclBuffRegHandle)));
   // Open handles at local process
-  int c = 0;
   for (int i=0; i<comm->localRanks; i++) {
     if (i == comm->intraNodeRank) continue;
-    CUDACHECK(cudaIpcOpenMemHandle(regInfo->sendbuffs+c, regHandles[i].sendBuffIpc, cudaIpcMemLazyEnablePeerAccess));
-    CUDACHECK(cudaIpcOpenMemHandle(regInfo->recvbuffs+c, regHandles[i].recvBuffIpc, cudaIpcMemLazyEnablePeerAccess));
-    c++;
+    CUDACHECK(cudaIpcOpenMemHandle(regInfo->sendbuffs+i, regHandles[i].sendBuffIpc, cudaIpcMemLazyEnablePeerAccess));
+    CUDACHECK(cudaIpcOpenMemHandle(regInfo->recvbuffs+i, regHandles[i].recvBuffIpc, cudaIpcMemLazyEnablePeerAccess));
   }
-  regInfo->nBuffs = c;
+  regInfo->nBuffs = comm->localRanks;
   return ncclSuccess;
 }
 
@@ -842,7 +840,8 @@ static ncclResult_t computeP2pWorkElem(struct ncclInfo* info /* input */, struct
   return ncclSuccess;
 }
 
-static ncclResult_t enqueueSegOp(int type, struct ncclWorkElem* elem /* input */, struct ncclWork* work, int s, struct ncclBuffRegInfo* regInfo) {
+static ncclResult_t enqueueSegOp(int type, struct ncclWorkElem* elem /* input */, struct ncclWork* work, int s,
+    struct ncclBuffRegInfo* regInfo, struct ncclChannel* channel, struct ncclComm* comm) {
   // Copy element into corresponding segment of ncclWork
   memcpy(work->elems+s, elem, sizeof(struct ncclWorkElem));
   work->elems[s].active = 1;
@@ -856,10 +855,31 @@ static ncclResult_t enqueueSegOp(int type, struct ncclWorkElem* elem /* input */
     for (int i=0; i<nsegments; i++) work->elems[i].p2p.nThreads = nThreads;
   }
 
-  // Copy registered buffer addresses
+  // Copy registered buffer addresses into ncclWork
   if (regInfo->nBuffs > 0) {
-    memcpy(work->elems+s+1, regInfo->sendbuffs, sizeof(void*)*regInfo->nBuffs);
-    memcpy(work->elems+s+2, regInfo->recvbuffs, sizeof(void*)*regInfo->nBuffs);
+    struct ncclWorkRegElem* regElem = (struct ncclWorkRegElem*)(work->elems+s);
+    // For CollNet
+    for (int i=0; i<NCCL_MAX_DIRECT_ARITY; i++) {
+      int peer = channel->collTree.down[i];
+      if (peer == -1) break;
+      int j = 0;
+      do {
+        if (comm->intraNodeGlobalRanks[j] == peer) break;
+        j++;
+      } while(j<comm->localRanks);
+      regElem->dnInputs[i] = regInfo->sendbuffs[j];
+      regElem->dnOutputs[i] = regInfo->recvbuffs[j];
+    }
+    for (int i=0; i<NCCL_MAX_DIRECT_ARITY; i++) {
+      int peer = channel->collTree.up[i];
+      if (peer == -1) break;
+      int j = 0;
+      do {
+        if (comm->intraNodeGlobalRanks[j] == peer) break;
+        j++;
+      } while(j<comm->localRanks);
+      regElem->upOutputs[i] = regInfo->recvbuffs[j];
+    }
   }
   return ncclSuccess;
 }
@@ -884,7 +904,7 @@ ncclResult_t ncclEnqueueP2pKernel(struct ncclComm* comm, struct ncclQueueElem* e
 
   // store work element into FIFO
   NCCLCHECK(ncclProxySaveP2p(comm, proxyArgs));
-  NCCLCHECK(enqueueSegOp(P2P_Segment, workElem, w, segment, &eqElem->buffRegInfo));
+  NCCLCHECK(enqueueSegOp(P2P_Segment, workElem, w, segment, &eqElem->buffRegInfo, channel, comm));
   return ncclSuccess;
 }
 
@@ -948,7 +968,7 @@ ncclResult_t ncclEnqueueAsyncKernel(struct ncclComm* comm, struct ncclQueueElem*
     }
 
     // store work element into FIFO
-    NCCLCHECK(enqueueSegOp(segmentType, work, w, segment, &eqElem->buffRegInfo));
+    NCCLCHECK(enqueueSegOp(segmentType, work, w, segment, &eqElem->buffRegInfo, channel, comm));
     channel->totalSize += channelSize;
   }
   comm->collOpCount++;
