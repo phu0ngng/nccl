@@ -187,7 +187,7 @@ static ncclResult_t setupLaunch(struct ncclQueueInfo* eqInfo, int usingCudaGraph
       // Except P2P or aggregation cases
       struct ncclWork* work = channel->workFifo+((channel->workFifoTail-channel->workCount)%NCCL_MAX_OPS);
       struct ncclWorkElem* elem = work->elems;
-      if (elem->funcIndex != FUNC_INDEX_P2P && eqInfo->elemList->count() == 1) elem->active = 0;
+      if (comm->args.active != 0) elem->active = 0;
     }
 
     if (channel->gdrMemDesc) {
@@ -599,6 +599,7 @@ static ncclResult_t ncclRegBuffAndExchange(struct ncclInfo* info, struct ncclBuf
     CUDACHECK(cudaIpcOpenMemHandle(regInfo->recvbuffs+i, regHandles[i].recvBuffIpc, cudaIpcMemLazyEnablePeerAccess));
   }
   regInfo->nBuffs = comm->localRanks;
+  TRACE(NCCL_COLL, "Rank %d exchanged %d buffers", comm->rank, regInfo->nBuffs);
   return ncclSuccess;
 }
 
@@ -640,6 +641,7 @@ static ncclResult_t ncclSetupCollKernel(struct ncclInfo* info) {
       info->algorithm == NCCL_ALGO_COLLNET &&   // limited to CollNet for now
       comm->intraRanks == 1) {                  // only in multi-process mode //FIXME
     NCCLCHECK(ncclRegBuffAndExchange(info, &eqElem->buffRegInfo));
+    comm->args.active = 0;  // disable inline argument becase we need kernel to copy the entire ncclWork from workFifo
   }
 
   return ncclSuccess;
@@ -658,41 +660,15 @@ static inline int findShortestChannel(ncclComm_t comm) {
   return minC;
 }
 
-static inline ncclResult_t getNextChannel(ncclComm_t comm, int* nextChannel) {
-  if (comm->asyncAllocMode == ncclComm::SHORTEST_QUEUE) {
-    *nextChannel = findShortestChannel(comm);
+static inline int getNextChannel(ncclComm_t comm, int aggMode) {
+  int nextChannel = 0;
+  if (aggMode && comm->asyncAllocMode == ncclComm::SHORTEST_QUEUE) {
+    nextChannel = findShortestChannel(comm);
   } else {
-    *nextChannel = comm->lastChannel % comm->nChannels;
+    nextChannel = comm->lastChannel % comm->nChannels;
     comm->lastChannel++;
   }
-  return ncclSuccess;
-}
-
-// Dynamic enqueue code
-static ncclResult_t ncclEnqueueCollKernel(ncclComm_t comm, struct ncclQueueElem* eqElem) {
-  struct ncclWorkElem* work = &eqElem->work;
-  struct ncclProxyArgs* proxyArgs = &eqElem->proxyArgs;
-
-  int nChannels = work->coll.nChannels;
-  for (int bid=0; bid<nChannels; bid++) {
-    int channelId = comm->lastChannel % comm->nChannels;
-    struct ncclChannel* channel = comm->channels+channelId;
-
-    // Proxy
-    proxyArgs->subs[0].channel = channel;
-    proxyArgs->opCount = comm->collOpCount;
-    proxyArgs->commOpCount = comm->opCount;
-
-    if (proxyArgs->subs[0].nsteps) NCCLCHECK(ncclProxySaveColl(proxyArgs, comm->nRanks));
-
-    comm->lastChannel++;
-    work->coll.bid = bid % nChannels;
-    NCCLCHECK(getNextOp(channel, NULL, work));
-    //INFO(NCCL_COLL, "Host enqueue: bid %d channel %d index %ld nThreads %d funcIndex %d count %ld nChannels %d",
-    //      work->coll.bid, channelId, channel->workFifoTail, work->nThreads, work->funcIndex, work->coll.count, work->coll.nChannels);
-  }
-  comm->collOpCount++;
-  return ncclSuccess;
+  return nextChannel;
 }
 
 ncclResult_t ncclSetupAsyncKernels(ncclComm_t comm) {
@@ -934,7 +910,9 @@ ncclResult_t ncclSetupP2pKernel(struct ncclInfo* info) {
   return ncclSuccess;
 }
 
-ncclResult_t ncclEnqueueAsyncKernel(struct ncclComm* comm, struct ncclQueueElem* eqElem) {
+// Dynamic enqueue function for collective kernels
+// Supports both aggregated and non-aggregated modes
+ncclResult_t ncclEnqueueCollKernel(struct ncclComm* comm, struct ncclQueueElem* eqElem, int aggMode) {
   struct ncclWorkElem* work = &eqElem->work;
   struct ncclProxyArgs* proxyArgs = &eqElem->proxyArgs;
 
@@ -943,8 +921,7 @@ ncclResult_t ncclEnqueueAsyncKernel(struct ncclComm* comm, struct ncclQueueElem*
   int segmentType = proxyArgs->redOp == ncclNumOps ? RingTree_Segment : CollNet_Segment;  // redOp is only set when using CollNet
 
   for (int bid=0; bid<nChannels; bid++) {
-    int channelId;
-    NCCLCHECK(getNextChannel(comm, &channelId));
+    int channelId = getNextChannel(comm, aggMode);
     struct ncclChannel* channel = comm->channels+channelId;
 
     // Proxy
@@ -953,13 +930,13 @@ ncclResult_t ncclEnqueueAsyncKernel(struct ncclComm* comm, struct ncclQueueElem*
     proxyArgs->commOpCount = comm->opCount;
     if (proxyArgs->subs[0].nsteps) NCCLCHECK(ncclProxySaveColl(proxyArgs, comm->nRanks));
 
-    // Try to reuse last work if not full yet
     work->coll.bid = bid % nChannels;
-    int opIndex = (channel->workFifoTail-1+NCCL_MAX_OPS)%NCCL_MAX_OPS;
-    struct ncclWork* w = channel->workFifo+opIndex;
+    struct ncclWork* w = NULL;
     int segment = -1;
-    if (channel->workCount) {
+    if (aggMode && channel->workCount) {
       // Try to pack more segments into a single operation
+      int opIndex = (channel->workFifoTail-1+NCCL_MAX_OPS)%NCCL_MAX_OPS;
+      w = channel->workFifo+opIndex;
       segment = getSegment(segmentType, 0, w);
     }
     if (segment == -1) {
@@ -980,17 +957,15 @@ void CUDART_CB ncclEnqueueHostSetup(void* arg) {
   ncclResult_t ret;
   struct ncclQueueInfo* eqInfo = (struct ncclQueueInfo*)arg;
   ncclComm_t comm = eqInfo->comm;
+  int aggMode = eqInfo->elemList->count() > 1 ? 1 : 0;
 
   // Iterate through the element list
   struct ncclQueueElem* eqElem = eqInfo->elemList->begin();
   while (eqElem != NULL) {
     if (eqElem->work.funcIndex == FUNC_INDEX_P2P) {
       NCCLCHECKGOTO(ncclEnqueueP2pKernel(comm, eqElem), ret, cb_end);
-    } else if (eqInfo->elemList->count() > 1) {
-      // We have more than one operation, hence aggregating
-      NCCLCHECKGOTO(ncclEnqueueAsyncKernel(comm, eqElem), ret, cb_end);
     } else {
-      NCCLCHECKGOTO(ncclEnqueueCollKernel(comm, eqElem), ret, cb_end);
+      NCCLCHECKGOTO(ncclEnqueueCollKernel(comm, eqElem, aggMode), ret, cb_end);
     }
     eqElem = eqInfo->elemList->getNext();
   }
