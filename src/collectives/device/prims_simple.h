@@ -85,7 +85,7 @@ class Primitives<
       void **ptrs = isSendNotRecv ? (ncclShmem.groups[group].dsts + Dst)
                                   : (ncclShmem.groups[group].srcs + Src);
       if (flags & OffsFifoEnabled)
-        ptrs[index] = connEltsFifo + loadInt(connOffsFifoPtr + step%NCCL_STEPS)/sizeof(T);
+        ptrs[index] = connEltsFifo + loadInt(connOffsFifoPtr + (step%NCCL_STEPS))/sizeof(T);
       else if ((isSendNotRecv ? DirectSend : DirectRecv) && (flags & DirectEnabled))
         ptrs[index] = directBuff + (isSendNotRecv ? remoteOutIx : dstIx) + offset;
       else

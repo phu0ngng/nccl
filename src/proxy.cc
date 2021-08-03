@@ -352,6 +352,35 @@ static ncclResult_t progressOps(struct ncclComm* comm, struct ncclProxyProgressS
   return ncclSuccess;
 }
 
+static ncclResult_t ncclProxyGetPostedOps(struct ncclProxyProgressState* state) {
+  pthread_mutex_lock(&state->opsMutex);
+  // Sort operations as we append them : collectives and
+  // receives first, then sends.
+
+  struct ncclProxyArgs* next, *prev = NULL, *op = state->postedOps;
+  while (op) {
+    next = op->next;
+    if (op->subs[0].sendbytes) {
+      if (prev) prev->next = next;
+      else state->postedOps = next;
+      op->next = NULL;
+      NCCLCHECK(ProxyAppend(state, op));
+    } else prev = op;
+    op = next;
+  }
+  op = state->postedOps;
+  while (op) {
+    next = op->next;
+    op->next = NULL;
+    NCCLCHECK(ProxyAppend(state, op));
+    op = next;
+  }
+  state->postedOps = op;
+  if (op == NULL) state->postedOpsEnd = NULL;
+  pthread_mutex_unlock(&state->opsMutex);
+  return ncclSuccess;
+}
+
 ncclResult_t ncclProxyAppendPosted(struct ncclProxyProgressState* state) {
   // Return any freed element first
   if (state->poolFreed) {
@@ -370,33 +399,9 @@ ncclResult_t ncclProxyAppendPosted(struct ncclProxyProgressState* state) {
     if (state->stop) return ncclSuccess;
     pthread_cond_wait(&state->cond, &state->opsMutex);
   }
-
-  // Sort operations as we append them : collectives and
-  // receives first, then sends.
-
-  struct ncclProxyArgs* next, *prev = NULL, *op = state->postedOps;
-  int commOpCount = op->commOpCount;
-  while (op && op->commOpCount == commOpCount) {
-    next = op->next;
-    if (op->subs[0].sendbytes) {
-      if (prev) prev->next = next;
-      else state->postedOps = next;
-      op->next = NULL;
-      NCCLCHECK(ProxyAppend(state, op));
-    } else prev = op;
-    op = next;
-  }
-  op = state->postedOps;
-  while (op && op->commOpCount == commOpCount) {
-    next = op->next;
-    op->next = NULL;
-    NCCLCHECK(ProxyAppend(state, op));
-    op = next;
-  }
-  state->postedOps = op;
-  if (op == NULL) state->postedOpsEnd = NULL;
-  NCCLCHECK(dumpProxyState(state));
   pthread_mutex_unlock(&state->opsMutex);
+
+  NCCLCHECK(ncclProxyGetPostedOps(state));
 
   if (state->poolFreed) {
     struct ncclProxyArgs* end = state->poolFreed;
@@ -445,6 +450,9 @@ void* ncclProxyProgress(void *comm_) {
       return NULL;
     }
     if (idle) {
+      if (state->postedOps) {
+        ncclProxyGetPostedOps(state);
+      }
       sched_yield(); // No request progressed. Let others run.
     }
   }
@@ -629,6 +637,7 @@ ncclResult_t ncclProxyConnect(struct ncclComm* comm, int transport, int send, in
   if (comm->proxyState.peerSocks == NULL) {
     NCCLCHECK(ncclCalloc(&comm->proxyState.peerSocks, comm->localRanks));
   }
+  NCCLCHECK(ncclTopoGetLocalRank(comm->topo, rank, &proxyConn->localRank));
   struct ncclSocket* sock = comm->proxyState.peerSocks+proxyConn->localRank;
   if (sock->fd == 0) {
     memcpy(&sock->addr, comm->proxyState.peerAddresses+rank, sizeof(union ncclSocketAddress));
