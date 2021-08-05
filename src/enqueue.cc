@@ -146,7 +146,6 @@ static ncclResult_t getNextOp(struct ncclChannel* channel, struct ncclWork** wor
   // Initialize with work elem if provided
   if (base) memcpy(e, base, sizeof(struct ncclWorkElem));
   e->active = 1;
-  e->index = opIndex;
   channel->workFifoTail++;
   channel->workCount++;
   if (work) *work = w;
@@ -520,6 +519,8 @@ comp_next:
     while (info->nBytes / (info->nChannels*info->comm->channels[0].collTree.nHeads*chunkSize) < info->comm->channels[0].collTree.depth*8 && chunkSize > 32768) chunkSize /= 2;
     // Use lastChunkSize as chunkSize
     work->coll.lastChunkSize = chunkSize / ncclTypeSize(info->datatype);
+    // Set direct direction for broadcast-gather (read or write)
+    work->direct = chunkSize < 131072 ? NCCL_DIRECT_WRITE : NCCL_DIRECT_READ;
   } else if (info->protocol == NCCL_PROTO_LL) {
     const ssize_t sliceSize = stepSize*sizeof(uint64_t)/sizeof(union ncclLLFifoLine);
     const ssize_t loopSize = info->nChannels*info->nchunksPerLoop*(ssize_t)sliceSize;
@@ -838,24 +839,25 @@ static ncclResult_t enqueueSegOp(int type, struct ncclWorkElem* elem /* input */
     for (int i=0; i<NCCL_MAX_DIRECT_ARITY; i++) {
       int peer = channel->collTree.down[i];
       if (peer == -1) break;
-      int j = 0;
-      do {
-        if (comm->intraNodeGlobalRanks[j] == peer) break;
-        j++;
-      } while(j<comm->localRanks);
+      int j = comm->rankToIntraNodeRank[peer];
+      if (j < 0) {
+        WARN("Invalid intra-node rank %d for peer %d", j, peer);
+        return ncclInternalError;
+      }
       regElem->dnInputs[i] = regInfo->sendbuffs[j];
       regElem->dnOutputs[i] = regInfo->recvbuffs[j];
     }
     for (int i=0; i<NCCL_MAX_DIRECT_ARITY; i++) {
       int peer = channel->collTree.up[i];
       if (peer == -1) break;
-      int j = 0;
-      do {
-        if (comm->intraNodeGlobalRanks[j] == peer) break;
-        j++;
-      } while(j<comm->localRanks);
+      int j = comm->rankToIntraNodeRank[peer];
+      if (j < 0) {
+        WARN("Invalid intra-node rank %d for peer %d", j, peer);
+        return ncclInternalError;
+      }
       regElem->upOutputs[i] = regInfo->recvbuffs[j];
     }
+    work->elems[s].regUsed = 1;
   }
   return ncclSuccess;
 }

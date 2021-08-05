@@ -309,6 +309,10 @@ static ncclResult_t commAlloc(ncclComm_t* comret, int ndev, int rank) {
   NCCLCHECK(ncclCalloc(&comm->p2pSends, comm->nRanks));
   NCCLCHECK(ncclCalloc(&comm->p2pRecvs, comm->nRanks));
 
+  // Create a map between global rank and intra-node rank
+  NCCLCHECK(ncclCalloc(&comm->rankToIntraNodeRank, comm->nRanks));
+  memset(comm->rankToIntraNodeRank, -1, comm->nRanks*sizeof(comm->rankToIntraNodeRank[0]));
+
   // Mark channels as non initialized.
   for (int c=0; c<MAXCHANNELS; c++) comm->channels[c].id = -1;
 
@@ -533,7 +537,9 @@ static ncclResult_t initTransportsRank(struct ncclComm* comm, ncclUniqueId* comm
       // Rank is on same node
       if (intraNodeRanks == 0) intraNodeRank0 = i;
       if (i == rank) intraNodeRank = intraNodeRanks;
-      comm->intraNodeGlobalRanks[intraNodeRanks++] = i;
+      comm->intraNodeGlobalRanks[intraNodeRanks] = i;
+      comm->rankToIntraNodeRank[i] = intraNodeRanks;
+      intraNodeRanks++;
       if (allGather1Data[i].peerInfo.pidHash == allGather1Data[rank].peerInfo.pidHash) {
         // Rank is in same process
         if (intraProcRanks == 0) intraProcRank0 = i;

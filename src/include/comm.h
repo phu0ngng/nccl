@@ -83,6 +83,7 @@ struct ncclComm {
   int intraNodeGlobalRanks[NCCL_MAX_INTRA_RANKS];
   int localRanks;
   int intraNodeRank;
+  int8_t* rankToIntraNodeRank;
 
   enum { GROUP, PARALLEL, GROUP_GRAPH } launchMode;
   cudaStream_t userStream;

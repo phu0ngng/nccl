@@ -75,6 +75,8 @@ static_assert(NCCL_LL_CLEAN_MASK % NCCL_STEPS == 0, "Invalid NCCL_LL_CLEAN_MASK 
 #define NCCL_DIRECT_WRITE 0x01
 #define NCCL_DIRECT_READ  0x02
 #define NCCL_DIRECT_NIC   0x04
+#define NCCL_IPC_WRITE    0x08
+#define NCCL_IPC_READ     0x10
 
 struct ncclConnInfo {
   // Regular comm mechanism
@@ -155,7 +157,8 @@ struct ncclWorkElem {
   struct ncclDevComm* comm;
   uint16_t nThreads;
   uint16_t funcIndex;
-  uint16_t index;
+  uint8_t regUsed;
+  uint8_t direct;
   uint16_t active;
 
   const void * sendbuff;
