@@ -579,6 +579,8 @@ static ncclResult_t checkSetStream(struct ncclInfo* info) {
 struct ncclBuffRegHandle {
   cudaIpcMemHandle_t sendBuffIpc;
   cudaIpcMemHandle_t recvBuffIpc;
+  ssize_t sendBuffOffset;
+  ssize_t recvBuffOffset;
 };
 
 // Register input and output buffers
@@ -589,8 +591,18 @@ static ncclResult_t ncclRegBuffAndExchange(struct ncclInfo* info, struct ncclBuf
 
   struct ncclBuffRegHandle regHandles[NCCL_MAX_INTRA_RANKS];
   // Get IPC handles
+  // Note: the handle only corresponds to the base address of the allocation
   CUDACHECK(cudaIpcGetMemHandle(&regHandles[comm->intraNodeRank].sendBuffIpc, (void*)info->sendbuff));
   CUDACHECK(cudaIpcGetMemHandle(&regHandles[comm->intraNodeRank].recvBuffIpc, (void*)info->recvbuff));
+  // Get offset of user buffer within allocation
+  void* baseAddr;
+  size_t size;
+  CUDACHECK(comm->pfnCuMemGetAddressRange(&baseAddr, &size, (void*)info->sendbuff));
+  regHandles[comm->intraNodeRank].sendBuffOffset = (char*)info->sendbuff - (char*)baseAddr;
+  CUDACHECK(comm->pfnCuMemGetAddressRange(&baseAddr, &size, (void*)info->recvbuff));
+  regHandles[comm->intraNodeRank].recvBuffOffset = (char*)info->recvbuff - (char*)baseAddr;
+  TRACE(NCCL_COLL, "Base %p size %lu offset %ld", baseAddr, size, regHandles[comm->intraNodeRank].recvBuffOffset);
+
   // Exchange handles within node
   NCCLCHECK(bootstrapIntraNodeAllGather(comm->bootstrap, comm->intraNodeGlobalRanks, comm->intraNodeRank, comm->localRanks, regHandles, sizeof(struct ncclBuffRegHandle)));
   // Open handles at local process
@@ -598,6 +610,9 @@ static ncclResult_t ncclRegBuffAndExchange(struct ncclInfo* info, struct ncclBuf
     if (i == comm->intraNodeRank) continue;
     CUDACHECK(cudaIpcOpenMemHandle(regInfo->sendbuffs+i, regHandles[i].sendBuffIpc, cudaIpcMemLazyEnablePeerAccess));
     CUDACHECK(cudaIpcOpenMemHandle(regInfo->recvbuffs+i, regHandles[i].recvBuffIpc, cudaIpcMemLazyEnablePeerAccess));
+    // Get real address of buffer
+    regInfo->sendbuffs[i] = (char*)regInfo->sendbuffs[i] + regHandles[i].sendBuffOffset;
+    regInfo->recvbuffs[i] = (char*)regInfo->recvbuffs[i] + regHandles[i].recvBuffOffset;
   }
   regInfo->nBuffs = comm->localRanks;
   TRACE(NCCL_COLL, "Rank %d exchanged %d buffers", comm->rank, regInfo->nBuffs);

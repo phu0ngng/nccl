@@ -297,6 +297,9 @@ static ncclResult_t commAlloc(ncclComm_t* comret, int ndev, int rank) {
   NCCLCHECK(ncclCreateQueueInfo(&comm->enqueueInfo, comm));
   comm->lastSetupNode = NULL;
   comm->lastCudaGraphId = -1;
+#if CUDART_VERSION >= 11030
+  CUDACHECK(cudaGetDriverEntryPoint("cuMemGetAddressRange", (void**)&comm->pfnCuMemGetAddressRange, cudaEnableDefault));
+#endif
 
   CUDACHECK(cudaDriverGetVersion(&comm->driverVersion));
 

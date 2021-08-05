@@ -58,6 +58,8 @@ struct ncclRecvMem {
   char buff[1]; // Actually larger than that
 };
 
+typedef cudaError_t(*pfn_cuMemGetAddressRange_t)(void**, size_t*, void*);
+
 struct ncclComm {
   struct ncclChannel channels[MAXCHANNELS];
 
@@ -170,6 +172,7 @@ struct ncclComm {
   cudaGraphNode_t lastSetupNode;
   unsigned long long lastCudaGraphId;
   int driverVersion;
+  pfn_cuMemGetAddressRange_t pfnCuMemGetAddressRange;
 };
 
 #endif
