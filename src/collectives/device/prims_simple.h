@@ -306,17 +306,23 @@ class Primitives<
         connStepPtr = conn->tail;
         connStepCache = *connStepPtr;
         flags |= (conn->ptrsFifo != nullptr) ? PtrsFifoEnabled : 0;
-        int directEnabled = (conn->direct & (NCCL_DIRECT_WRITE|NCCL_DIRECT_READ)) ||
-                            ((conn->direct & (NCCL_IPC_READ|NCCL_IPC_WRITE)) && e != nullptr && e->regUsed);
-        if (Direct && directEnabled) {
-          if (connIndex == 1) {
-            flags |= DirectRead;  // scatter-reduce always use direct pull
-          } else if (e != nullptr && e->direct) {
-            flags |= (e->direct & NCCL_DIRECT_WRITE) ? DirectWrite :
-                     (e->direct & NCCL_DIRECT_READ)  ? DirectRead  : 0;
-          } else {
-            flags |= (conn->direct & NCCL_DIRECT_WRITE) ? DirectWrite :
-                     (conn->direct & NCCL_DIRECT_READ)  ? DirectRead  : 0;
+        if (Direct) {
+          // User buffers have been registered
+          if ((conn->direct & (NCCL_IPC_READ|NCCL_IPC_WRITE)) && e != nullptr && e->regUsed) {
+            if (connIndex == 1) {
+              flags |= DirectRead;  // scatter-reduce always use direct pull
+            } else {
+              flags |= (e->direct & NCCL_DIRECT_WRITE) ? DirectWrite :
+                       (e->direct & NCCL_DIRECT_READ)  ? DirectRead  : 0;
+            }
+          } else if (conn->direct & (NCCL_DIRECT_WRITE|NCCL_DIRECT_READ)) {
+            if (connIndex == 1) {
+              flags |= DirectRead;  // scatter-reduce always use direct pull
+            } else {
+              // direct read not allowed in non-register case
+              // otherwise, in one-to-multi send, we could mix empty send and intermediate send
+              flags |= (conn->direct & NCCL_DIRECT_WRITE) ? DirectWrite : 0;
+            }
           }
         }
         if (flags & PtrsFifoEnabled)
@@ -345,20 +351,26 @@ class Primitives<
         else
           connEltsFifo = (T*)conn->buffs[NCCL_PROTO_SIMPLE];
 
-        int directEnabled = (conn->direct & (NCCL_DIRECT_WRITE|NCCL_DIRECT_READ)) ||
-                            ((conn->direct & (NCCL_IPC_READ|NCCL_IPC_WRITE)) && e != nullptr && e->regUsed);
         if (conn->sizesFifo != nullptr) {
           flags |= SizesFifoEnabled;
           connSizesFifoPtr = conn->sizesFifo;
-        } else if (Direct && directEnabled) {
-          if (connIndex == 1) {
-            flags |= DirectRead;  // scatter-reduce always use direct pull
-          } else if (e != nullptr && e->direct) {
-            flags |= (e->direct & NCCL_DIRECT_WRITE) ? DirectWrite :
-                     (e->direct & NCCL_DIRECT_READ)  ? DirectRead  : 0;
-          } else {
-            flags |= (conn->direct & NCCL_DIRECT_WRITE) ? DirectWrite :
-                     (conn->direct & NCCL_DIRECT_READ)  ? DirectRead  : 0;
+        } else if (Direct) {
+          // User buffers have been registered
+          if ((conn->direct & (NCCL_IPC_READ|NCCL_IPC_WRITE)) && e != nullptr && e->regUsed) {
+            if (connIndex == 1) {
+              flags |= DirectRead;  // scatter-reduce always use direct pull
+            } else {
+              flags |= (e->direct & NCCL_DIRECT_WRITE) ? DirectWrite :
+                       (e->direct & NCCL_DIRECT_READ)  ? DirectRead  : 0;
+            }
+          } else if (conn->direct & (NCCL_DIRECT_WRITE|NCCL_DIRECT_READ)) {
+            if (connIndex == 1) {
+              flags |= DirectRead;  // scatter-reduce always use direct pull
+            } else {
+              // direct read not allowed in non-register case
+              // otherwise, in one-to-multi send, we could mix empty send and intermediate send
+              flags |= (conn->direct & NCCL_DIRECT_WRITE) ? DirectWrite : 0;
+            }
           }
         }
       }
