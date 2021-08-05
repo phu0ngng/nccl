@@ -9,6 +9,7 @@
 
 #include "transport.h"
 #include "p2p.h"
+#include "collectives.h"
 
 #if CUDART_VERSION < 9000
 struct cudaLaunchParams {
@@ -59,13 +60,7 @@ struct ncclRecvMem {
 struct ncclUserRedOp {
   int freeNext; // -1=allocated, otherwise index of next free entry in array
   ncclDataType_t datatype;
-  struct {
-    ncclScalarResidence_t residence;
-    union {
-      uint64_t scalarBits;
-      void *scalarPtr;
-    };
-  } preMulSum;
+  ncclDevRedOpFull opFull;
 };
 
 struct ncclComm {

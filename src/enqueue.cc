@@ -494,82 +494,6 @@ static ncclResult_t getLoopInfo(struct ncclInfo* info) {
   return ncclSuccess;
 }
 
-static ncclResult_t hostToDevRedOp(
-    ncclDevRedOp_t *devOp, ncclWorkElem *work,
-    ncclRedOp_t op, ncclDataType_t datatype, ncclComm *comm
-  ) {
-  union {
-    int8_t i8;
-    uint8_t u8;
-    int32_t i32;
-    uint32_t u32;
-    int64_t i64;
-    uint64_t u64;
-    half f16;
-    #if defined(__CUDA_BF16_TYPES_EXIST__)
-      __nv_bfloat16 bf16;
-    #endif
-    float f32;
-    double f64;
-    void *ptr;
-  };
-  u64 = 0;
-  *devOp = ncclNumDevRedOps; // silence uninitialized warnings
-  work->redOpArgIsPtr = 0;
-
-  switch (int(op)) {
-  case ncclSum:  *devOp = ncclDevSum;  break;
-  case ncclProd: *devOp = ncclDevProd; break;
-  case ncclMax:  *devOp = ncclDevMax;  break;
-  case ncclMin:  *devOp = ncclDevMin;  break;
-  case ncclAvg:
-    switch ((int)datatype) {
-    case ncclInt8:  case ncclInt32:  case ncclInt64:
-    case ncclUint8: case ncclUint32: case ncclUint64:
-      *devOp = ncclDevSumPostDiv;
-      u64 = comm->nRanks;
-      break;
-    case ncclFloat16:
-      *devOp = ncclDevPreMulSum;
-      f16 = __double2half(1.0/comm->nRanks);
-      break;
-    #if defined(__CUDA_BF16_TYPES_EXIST__)
-    case ncclBfloat16:
-      *devOp = ncclDevPreMulSum;
-      bf16 = __double2bfloat16(1.0/comm->nRanks);
-      break;
-    #endif
-    case ncclFloat32:
-      *devOp = ncclDevPreMulSum;
-      f32 = float(1.0/comm->nRanks);
-      break;
-    case ncclFloat64:
-      *devOp = ncclDevPreMulSum;
-      f64 = 1.0/comm->nRanks;
-      break;
-    }
-    break;
-  default: // user created
-    int ix = int(ncclUserRedOpMangle(comm, op)) - int(ncclNumOps);
-    ncclUserRedOp *user = &comm->userRedOps[ix];
-    if (datatype != user->datatype) {
-      WARN("Data type supplied to user-created ncclRedOp_t does not match type "
-           "given to reduction operation");
-      return ncclInvalidArgument;
-    }
-    *devOp = ncclDevPreMulSum;
-    if(user->preMulSum.residence == ncclScalarHostImmediate) {
-      u64 = user->preMulSum.scalarBits;
-    } else {
-      work->redOpArgIsPtr = 1;
-      ptr = user->preMulSum.scalarPtr;
-    }
-    break;
-  }
-  work->coll.redOpArg = u64;
-  return ncclSuccess;
-}
-
 static ncclResult_t computeColl(struct ncclInfo* info /* input */, struct ncclWorkElem* work, struct ncclProxyArgs* proxyArgs /* output */) {
   work->comm = info->comm->devComm;
 
@@ -591,16 +515,15 @@ comp_next:
   work->coll.nChannels = info->nChannels;
   work->nThreads = info->nThreads;
 
-  ncclDevRedOp_t devRedOp;
-  NCCLCHECK(hostToDevRedOp(&devRedOp, work, info->op, info->datatype, info->comm));
-
   if (info->comm->nRanks == 1) {
     // one-rank reduce index
     work->funcIndex = 1 + int(info->datatype);
     return ncclSuccess;
   }
 
-  work->funcIndex = FUNC_INDEX(info->coll, devRedOp, info->datatype, info->algorithm, info->protocol);
+  work->coll.redOpArg = info->opFull.scalarArg;
+  work->redOpArgIsPtr = info->opFull.scalarArgIsPtr;
+  work->funcIndex = FUNC_INDEX(info->coll, info->opFull.op, info->datatype, info->algorithm, info->protocol);
 
   int stepSize   = info->comm->buffSizes[info->protocol]/NCCL_STEPS;
   int chunkSteps = (info->protocol == NCCL_PROTO_SIMPLE && info->algorithm == NCCL_ALGO_RING) ? info->chunkSteps : 1;
@@ -653,7 +576,7 @@ comp_next:
   proxyArgs->protocol = info->protocol;
   proxyArgs->dtype = info->datatype;
   proxyArgs->redOp = info->algorithm != NCCL_ALGO_COLLNET ? ncclNumOps : // Only set redOp when using CollNet
-                     devRedOp==ncclDevPreMulSum || devRedOp==ncclDevSumPostDiv ? ncclSum : // Network sees avg as sum
+                     info->opFull.op==ncclDevPreMulSum || info->opFull.op==ncclDevSumPostDiv ? ncclSum : // Network sees avg as sum
                      info->op;
   proxyArgs->pattern = info->pattern;
   proxyArgs->root = info->root;
@@ -1093,18 +1016,92 @@ ncclResult_t ncclCudaGraphHostSetup(ncclComm_t comm, cudaGraph_t graph) {
 #endif
 }
 
-ncclResult_t ncclEnqueueCheck(struct ncclInfo* info) {
-  // Launch asynchronously if needed
-  if (ncclAsyncMode()) {
-    ncclResult_t ret = ncclSuccess;
-    int savedDev = -1;
-    // Check arguments
-    NCCLCHECK(PtrCheck(info->comm, info->opName, "comm"));
-    if (info->comm->checkPointers) {
-      CUDACHECKGOTO(cudaGetDevice(&savedDev), ret, end);
-      CUDACHECKGOTO(cudaSetDevice(info->comm->cudaDev), ret, end);
+static ncclResult_t hostToDevRedOp(
+    ncclDevRedOpFull *opFull, ncclRedOp_t op, ncclDataType_t datatype, ncclComm *comm
+  ) {
+  union {
+    int8_t i8;
+    uint8_t u8;
+    int32_t i32;
+    uint32_t u32;
+    int64_t i64;
+    uint64_t u64;
+    half f16;
+    #if defined(__CUDA_BF16_TYPES_EXIST__)
+      __nv_bfloat16 bf16;
+    #endif
+    float f32;
+    double f64;
+    void *ptr;
+  };
+  u64 = 0;
+  opFull->scalarArgIsPtr = false;
+  switch (int(op)) {
+  case ncclSum:  opFull->op = ncclDevSum;  break;
+  case ncclProd: opFull->op = ncclDevProd; break;
+  case ncclMax:  opFull->op = ncclDevMax;  break;
+  case ncclMin:  opFull->op = ncclDevMin;  break;
+  case ncclAvg:
+    switch ((int)datatype) {
+    case ncclInt8:  case ncclInt32:  case ncclInt64:
+    case ncclUint8: case ncclUint32: case ncclUint64:
+      opFull->op = ncclDevSumPostDiv;
+      u64 = comm->nRanks;
+      break;
+    case ncclFloat16:
+      opFull->op = ncclDevPreMulSum;
+      f16 = __double2half(1.0/comm->nRanks);
+      break;
+    #if defined(__CUDA_BF16_TYPES_EXIST__)
+    case ncclBfloat16:
+      opFull->op = ncclDevPreMulSum;
+      bf16 = __double2bfloat16(1.0/comm->nRanks);
+      break;
+    #endif
+    case ncclFloat32:
+      opFull->op = ncclDevPreMulSum;
+      f32 = float(1.0/comm->nRanks);
+      break;
+    case ncclFloat64:
+      opFull->op = ncclDevPreMulSum;
+      f64 = 1.0/comm->nRanks;
+      break;
     }
-    NCCLCHECKGOTO(ArgsCheck(info), ret, end);
+    opFull->scalarArgIsPtr = false;
+    opFull->scalarArg = u64;
+    break;
+  default: // user created
+    int ix = int(ncclUserRedOpMangle(comm, op)) - int(ncclNumOps);
+    ncclUserRedOp *user = &comm->userRedOps[ix];
+    if (datatype != user->datatype) {
+      WARN("Data type supplied to user-created ncclRedOp_t does not match type "
+           "given to reduction operation");
+      return ncclInvalidArgument;
+    }
+    *opFull = user->opFull;
+    break;
+  }
+  return ncclSuccess;
+}
+
+ncclResult_t ncclEnqueueCheck(struct ncclInfo* info) {
+  ncclResult_t ret = ncclSuccess;
+  bool isAsync = ncclAsyncMode();
+  int savedDev = -1;
+  // Check arguments
+  NCCLCHECK(PtrCheck(info->comm, info->opName, "comm"));
+  if (isAsync && info->comm->checkPointers) {
+    CUDACHECKGOTO(cudaGetDevice(&savedDev), ret, end);
+    CUDACHECKGOTO(cudaSetDevice(info->comm->cudaDev), ret, end);
+  }
+  NCCLCHECKGOTO(ArgsCheck(info), ret, end);
+
+  // Copy reduction op state from op handle into info struct here since the
+  // op handle may be destroyed before ncclGroupEnd().
+  NCCLCHECKGOTO(hostToDevRedOp(&info->opFull, info->op, info->datatype, info->comm), ret, end);
+
+  // Launch asynchronously if needed
+  if (isAsync) {
     // Always register comm even in case of error to make sure ncclGroupEnd
     // cleans it up.
     NCCLCHECKGOTO(ncclAsyncColl(info->comm), ret, end);
@@ -1119,14 +1116,8 @@ ncclResult_t ncclEnqueueCheck(struct ncclInfo* info) {
     } else {
       NCCLCHECKGOTO(ncclSaveAsyncColl(info), ret, end);
     }
-end:
-    if (savedDev != -1) CUDACHECK(cudaSetDevice(savedDev));
-    ncclAsyncErrCheck(ret);
-    return ret;
   } else {
-    NCCLCHECK(PtrCheck(info->comm, info->opName, "comm"));
-    NCCLCHECK(ArgsCheck(info));
-    NCCLCHECK(checkSetStream(info));
+    NCCLCHECKGOTO(checkSetStream(info), ret, end);
 
     INFO(NCCL_COLL,"%s: opCount %lx sendbuff %p recvbuff %p count %zi datatype %d op %d root %d comm %p [nranks=%d] stream %p",
         info->opName, info->comm->opCount, info->sendbuff, info->recvbuff, info->count,
@@ -1135,26 +1126,29 @@ end:
     // Check whether we are in cuda graph mode
     cudaGraph_t graph;
     ncclComm_t comm = info->comm;
-    NCCLCHECK(ncclGetCudaGraph(comm, &graph));
+    NCCLCHECKGOTO(ncclGetCudaGraph(comm, &graph), ret, end);
 
     // Common part between graph mode and non-graph mode
-    NCCLCHECK(ncclSetupCollKernel(info));
+    NCCLCHECKGOTO(ncclSetupCollKernel(info), ret, end);
 
     // Host setup
     if (comm->usingCudaGraph) {
-      NCCLCHECK(ncclCudaGraphHostSetup(comm, graph));
+      NCCLCHECKGOTO(ncclCudaGraphHostSetup(comm, graph), ret, end);
     } else {
       ncclEnqueueHostSetup<0>(comm->enqueueInfo);
-      NCCLCHECK(comm->enqueueInfo->ret);
+      NCCLCHECKGOTO(comm->enqueueInfo->ret, ret, end);
     }
 
     // Common part between graph mode and non-graph mode
-    NCCLCHECK(ncclLaunchBarrier(comm));
-    NCCLCHECK(ncclLaunchKernel(comm));
-    NCCLCHECK(ncclRecordEvents(comm));
-    NCCLCHECK(ncclLaunchReset(comm));
-    return ncclSuccess;
+    NCCLCHECKGOTO(ncclLaunchBarrier(comm), ret, end);
+    NCCLCHECKGOTO(ncclLaunchKernel(comm), ret, end);
+    NCCLCHECKGOTO(ncclRecordEvents(comm), ret, end);
+    NCCLCHECKGOTO(ncclLaunchReset(comm), ret, end);
   }
+end:
+  if (isAsync && savedDev != -1) CUDACHECK(cudaSetDevice(savedDev));
+  if (isAsync) ncclAsyncErrCheck(ret);
+  return ret;
 }
 
 NCCL_API(ncclResult_t, ncclRedOpCreatePreMulSum, ncclRedOp_t *op, void *scalar, ncclDataType_t datatype, ncclScalarResidence_t residence, ncclComm_t comm);
@@ -1178,11 +1172,13 @@ ncclResult_t ncclRedOpCreatePreMulSum(ncclRedOp_t *op, void *scalar, ncclDataTyp
 
   user->freeNext = -1; // allocated
   user->datatype = datatype;
-  user->preMulSum.residence = residence;
+  user->opFull.op = ncclDevPreMulSum;
   if (residence == ncclScalarHostImmediate) {
-    std::memcpy(&user->preMulSum.scalarBits, scalar, ncclTypeSize(datatype));
+    user->opFull.scalarArgIsPtr = false;
+    std::memcpy(&user->opFull.scalarArg, scalar, ncclTypeSize(datatype));
   } else {
-    user->preMulSum.scalarPtr = scalar;
+    user->opFull.scalarArgIsPtr = true;
+    user->opFull.scalarArg = reinterpret_cast<uint64_t>(scalar);
   }
   *op = ncclRedOp_t(int(ncclNumOps) + ix);
   *op = ncclUserRedOpMangle(comm, *op);

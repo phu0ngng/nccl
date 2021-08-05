@@ -12,6 +12,11 @@ enum ncclDevRedOp_t {
   ncclDevPreMulSum, ncclDevSumPostDiv,
   ncclNumDevRedOps
 };
+struct ncclDevRedOpFull {
+  ncclDevRedOp_t op;
+  bool scalarArgIsPtr;
+  uint64_t scalarArg;
+};
 
 #define FUNC_INDEX_P2P 0
 #define FUNC_INDEX(func, devredop, ncclType, al, pr) (1+ncclNumTypes+(((((func)*ncclNumDevRedOps + (devredop))*ncclNumTypes) + (ncclType))*NCCL_NUM_ALGORITHMS+(al))*NCCL_NUM_PROTOCOLS+(pr))
