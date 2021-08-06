@@ -655,9 +655,12 @@ static ncclResult_t ncclSetupCollKernel(struct ncclInfo* info) {
   // Register and exchange input and output buffers
   if (comm->usingCudaGraph &&                   // only in CUDA graph mode
       info->algorithm == NCCL_ALGO_COLLNET &&   // limited to CollNet for now
-      comm->intraRanks == 1) {                  // only in multi-process mode //FIXME
+      comm->intraHighestTransportType == TRANSPORT_P2P && // only when all ranks can p2p each other
+      comm->intraRanks == 1) {                  // only in multi-process mode
     NCCLCHECK(ncclRegBuffAndExchange(info, &eqElem->buffRegInfo));
-    comm->args.active = 0;  // disable inline argument becase we need kernel to copy the entire ncclWork from workFifo
+    // Disable inline argument becase we need kernel to copy the entire ncclWork from workFifo
+    // because the registered addresses are in ncclWork
+    if (eqElem->buffRegInfo.nBuffs > 0) comm->args.active = 0;
   }
 
   return ncclSuccess;

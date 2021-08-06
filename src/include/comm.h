@@ -151,6 +151,7 @@ struct ncclComm {
 
   // Whether this communicator uses collNet
   int collNetSupport;
+  int intraHighestTransportType;
 
   // Store info of async operations
   struct ncclInfo* asyncOps;

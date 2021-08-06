@@ -801,6 +801,7 @@ static ncclResult_t initTransportsRank(struct ncclComm* comm, ncclUniqueId* comm
   // Check if we can setup CollNet
   if (comm->collNetSupport > 0) {
     int collNetSetupFail = 0;
+    int highestTypes[NCCL_MAX_INTRA_RANKS] = {TRANSPORT_P2P};
     // Find all head ranks
     int nHeads = collNetGraph.nChannels;
     int *heads;
@@ -826,16 +827,26 @@ static ncclResult_t initTransportsRank(struct ncclComm* comm, ncclUniqueId* comm
     TRACE(NCCL_INIT, "rank %d Connected inter-node CollNet", rank);
 
     // Connect intra-node CollNet
+    int highestTransportType0, highestTransportType1;
     for (int c=0; c<comm->nChannels; c++) {
       struct ncclChannel* channelRecv = comm->channels+c;
       NCCLCHECKGOTO(ncclTransportP2pConnect(comm, channelRecv, NCCL_MAX_DIRECT_ARITY, channelRecv->collTree.up, NCCL_MAX_DIRECT_ARITY, channelRecv->collTree.down, 0), ret, collnet_cleanup);
     }
-    NCCLCHECKGOTO(ncclTransportP2pSetup(comm, &collNetGraph, 0), ret, collnet_cleanup);
+    NCCLCHECKGOTO(ncclTransportP2pSetup(comm, &collNetGraph, 0, &highestTransportType0), ret, collnet_cleanup);
     for (int c=0; c<comm->nChannels; c++) {
       struct ncclChannel* channelSend = comm->channels+c;
       NCCLCHECKGOTO(ncclTransportP2pConnect(comm, channelSend, NCCL_MAX_DIRECT_ARITY, channelSend->collTree.down, NCCL_MAX_DIRECT_ARITY, channelSend->collTree.up, 1), ret, collnet_cleanup);
     }
-    NCCLCHECKGOTO(ncclTransportP2pSetup(comm, &collNetGraph, 1), ret, collnet_cleanup);
+    NCCLCHECKGOTO(ncclTransportP2pSetup(comm, &collNetGraph, 1, &highestTransportType1), ret, collnet_cleanup);
+
+    // Exchange highest intra-node transport type among ranks
+    // because we need to know whether all ranks can p2p each other to determine whether we can directly read/write registered user buffer
+    comm->intraHighestTransportType = highestTypes[comm->intraNodeRank] = highestTransportType0 > highestTransportType1 ? highestTransportType0 : highestTransportType1;
+    NCCLCHECK(bootstrapIntraNodeAllGather(comm->bootstrap, comm->intraNodeGlobalRanks, comm->intraNodeRank, comm->localRanks, highestTypes, sizeof(int)));
+    for (int i=0; i<comm->localRanks; i++) {
+      if (highestTypes[i] > comm->intraHighestTransportType)
+        comm->intraHighestTransportType = highestTypes[i];
+    }
     INFO(NCCL_INIT, "rank %d Connected CollNet", rank);
 
 collnet_cleanup:
