@@ -247,37 +247,44 @@ class Primitives<
       if (tid < nworkers) {
         if (Send && (flags & RoleInput)) ncclShmem.groups[group].srcs[0] = userBuff + inpIx + offset;
         if (Recv && (flags & RoleOutput)) ncclShmem.groups[group].dsts[0] = userBuff + outIx + offset;
-        // realSize is not accurate here; but intra-node does not rely on sizes FIFO
-        waitPeer<DirectRecv, DirectSend, Recv, Send, Send, Recv>(0, Send ? inpIx : outIx, offset, realSize);
-        subBarrier();
-        if (DirectSend && ncclShmem.groups[group].dsts[0] == nullptr) {
-          // Do nothing
-          //if (tid == 0) printf("Rank %d group %d connIndex %d tid %d in empty scatter\n", ncclShmem.comm.rank, group, connIndex, tid);
-        } else if (Send) {
-          #pragma unroll
-          for (int j=0; j<fan.nsend(); j++) {
-            int i = (j+shift)%fan.nsend();
-            int peerOffset = i*peerElem;
-            if (skip >= 0 && i >= skip) peerOffset += peerElem;
-            const T* src0 = (T*)ncclShmem.groups[group].srcs[0] + peerOffset;
-            int realPeerSize = min(realSize, totalElem-peerOffset);
-            if (realPeerSize > 0) ReduceOrCopyMulti<Unroll, RedOp, T, 1, 1, 1, 1>(tid, nworkers, redOp, true, false, 1, &src0, 1, (T**)ncclShmem.groups[group].dsts+i, realPeerSize);
+        if (Send) {
+          // realSize is not accurate here; but intra-node does not rely on sizes FIFO
+          waitPeer<0, DirectSend, 0, 1, 1, 0>(0, inpIx, offset, realSize);
+          subBarrier();
+          if (DirectSend && ncclShmem.groups[group].dsts[0] == nullptr) {
+            // Do nothing
+            //if (tid == 0) printf("Rank %d group %d connIndex %d tid %d in empty scatter\n", ncclShmem.comm.rank, group, connIndex, tid);
+          } else {
+            #pragma unroll
+            for (int j=0; j<fan.nsend(); j++) {
+              int i = (j+shift)%fan.nsend();
+              int peerOffset = i*peerElem;
+              if (skip >= 0 && i >= skip) peerOffset += peerElem;
+              const T* src0 = (T*)ncclShmem.groups[group].srcs[0] + peerOffset;
+              int realPeerSize = min(realSize, totalElem-peerOffset);
+              if (realPeerSize > 0) ReduceOrCopyMulti<Unroll, RedOp, T, 1, 1, 1, 1>(tid, nworkers, redOp, true, false, 1, &src0, 1, (T**)ncclShmem.groups[group].dsts+i, realPeerSize);
+            }
+            //if (tid == 0) printf("Rank %d group %d connIndex %d tid %d in solid scatter\n", ncclShmem.comm.rank, group, connIndex, tid);
           }
-          //if (tid == 0) printf("Rank %d group %d connIndex %d tid %d in solid scatter\n", ncclShmem.comm.rank, group, connIndex, tid);
-        } else if (DirectRecv && ncclShmem.groups[group].srcs[0] == nullptr) {
-          // Do nothing
-          //if (tid == 0) printf("Rank %d group %d connIndex %d tid %d in empty gather\n", ncclShmem.comm.rank, group, connIndex, tid);
         } else if (Recv) {
-          #pragma unroll
-          for (int j=0; j<fan.nrecv(); j++) {
-            int i = (j+shift)%fan.nrecv();
-            int peerOffset = i*peerElem;
-            if (skip >= 0 && i >= skip) peerOffset += peerElem;
-            T* dst0 = (T*)ncclShmem.groups[group].dsts[0] + peerOffset;
-            const T* src = DirectRecv ? (const T*)ncclShmem.groups[group].srcs[i] + peerOffset :
-                                        (const T*)ncclShmem.groups[group].srcs[i];
-            int realPeerSize = min(realSize, totalElem-peerOffset);
-            if (realPeerSize > 0) ReduceOrCopyMulti<Unroll, RedOp, T, 1, 1, 1, 1>(tid, nworkers, redOp, false, postOp, 1, &src, 1, &dst0, realPeerSize);
+          int peerOffset = index*peerElem;
+          if (skip >= 0 && index >= skip) peerOffset += peerElem;
+          // Adjust remote index with peer offset in case we are directly pulling from peer's output buffer
+          waitPeer<DirectRecv, 0, 1, 0, 0, 1>(0, outIx+peerOffset, offset, realSize);
+          subBarrier();
+          if (DirectRecv && ncclShmem.groups[group].srcs[0] == nullptr) {
+            // Do nothing
+            //if (tid == 0) printf("Rank %d group %d connIndex %d tid %d in empty gather\n", ncclShmem.comm.rank, group, connIndex, tid);
+          } else {
+            #pragma unroll
+            for (int j=0; j<fan.nrecv(); j++) {
+              int i = (j+shift)%fan.nrecv();
+              peerOffset = i*peerElem;
+              if (skip >= 0 && i >= skip) peerOffset += peerElem;
+              T* dst0 = (T*)ncclShmem.groups[group].dsts[0] + peerOffset;
+              int realPeerSize = min(realSize, totalElem-peerOffset);
+              if (realPeerSize > 0) ReduceOrCopyMulti<Unroll, RedOp, T, 1, 1, 1, 1>(tid, nworkers, redOp, false, postOp, 1, (const T**)ncclShmem.groups[group].srcs+i, 1, &dst0, realPeerSize);
+            }
           }
         }
       }
