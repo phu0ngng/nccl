@@ -608,11 +608,11 @@ static ncclResult_t ncclRegBuffAndExchange(struct ncclInfo* info, struct ncclBuf
   // Open handles at local process
   for (int i=0; i<comm->localRanks; i++) {
     if (i == comm->intraNodeRank) continue;
-    CUDACHECK(cudaIpcOpenMemHandle(regInfo->sendbuffs+i, regHandles[i].sendBuffIpc, cudaIpcMemLazyEnablePeerAccess));
-    CUDACHECK(cudaIpcOpenMemHandle(regInfo->recvbuffs+i, regHandles[i].recvBuffIpc, cudaIpcMemLazyEnablePeerAccess));
+    CUDACHECK(cudaIpcOpenMemHandle(regInfo->sendbuffsBase+i, regHandles[i].sendBuffIpc, cudaIpcMemLazyEnablePeerAccess));
+    CUDACHECK(cudaIpcOpenMemHandle(regInfo->recvbuffsBase+i, regHandles[i].recvBuffIpc, cudaIpcMemLazyEnablePeerAccess));
     // Get real address of buffer
-    regInfo->sendbuffs[i] = (char*)regInfo->sendbuffs[i] + regHandles[i].sendBuffOffset;
-    regInfo->recvbuffs[i] = (char*)regInfo->recvbuffs[i] + regHandles[i].recvBuffOffset;
+    regInfo->sendbuffs[i] = (char*)regInfo->sendbuffsBase[i] + regHandles[i].sendBuffOffset;
+    regInfo->recvbuffs[i] = (char*)regInfo->recvbuffsBase[i] + regHandles[i].recvBuffOffset;
   }
   regInfo->nBuffs = comm->localRanks;
   TRACE(NCCL_COLL, "Rank %d exchanged %d buffers", comm->rank, regInfo->nBuffs);

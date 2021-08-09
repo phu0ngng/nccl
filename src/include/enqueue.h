@@ -31,6 +31,8 @@ ncclResult_t ncclGetCudaGraph(ncclComm_t comm, cudaGraph_t* graph);
 ncclResult_t ncclCudaGraphHostSetup(ncclComm_t comm, cudaGraph_t graph);
 
 struct ncclBuffRegInfo {
+  void* sendbuffsBase[NCCL_MAX_INTRA_RANKS];
+  void* recvbuffsBase[NCCL_MAX_INTRA_RANKS];
   void* sendbuffs[NCCL_MAX_INTRA_RANKS];
   void* recvbuffs[NCCL_MAX_INTRA_RANKS];
   int nBuffs;
@@ -74,6 +76,23 @@ static ncclResult_t ncclResetQueueInfo(struct ncclQueueInfo* eqInfo) {
 static void ncclDestroyQueueInfo(void* ptr) {
   if (ptr == NULL) return;
   struct ncclQueueInfo* eqInfo = (struct ncclQueueInfo*)ptr;
+  // Close IPC mem handles for registered buffers
+  struct ncclQueueElem* eqElem = eqInfo->elemList->begin();
+  while (eqElem != NULL) {
+    for (int i=0; i<eqElem->buffRegInfo.nBuffs; i++) {
+      if (i == eqInfo->comm->intraNodeRank) continue;
+#if 0
+      // Ideally, the deregistration should happen here
+      // but currently the destroy function of CUDA objects does not allow CUDA API calls
+      CUDACHECKIGNORE(cudaIpcCloseMemHandle(eqElem->buffRegInfo.sendbuffsBase[i]));
+      CUDACHECKIGNORE(cudaIpcCloseMemHandle(eqElem->buffRegInfo.recvbuffsBase[i]));
+#else
+      // Instead, we push these pointers to a pool owned by ncclComm
+      // and close mem handle for them during ncclComm destroy
+#endif
+    }
+    eqElem = eqInfo->elemList->getNext();
+  }
   delete eqInfo->elemList;
   free(eqInfo);
 }
