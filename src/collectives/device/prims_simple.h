@@ -104,8 +104,8 @@ class Primitives<
         if (flags & DirectRead) {
           ptrs[index] = directBuff + remoteIx + offset;
           //printf("Rank %d group %d index %d direct recv %p\n", ncclShmem.comm.rank, group, index, ptrs[index]);
-        } else if (flags & DirectWrite) {  // empty recv
-          ptrs[index] = nullptr;
+        } else if (flags & DirectWrite) {
+          ptrs[index] = directBuff + dstIx + offset;  // send to next from my output buffer
         } else {
           ptrs[index] = connEltsFifo + (step%NCCL_STEPS)*stepSize;
         }
@@ -181,13 +181,15 @@ class Primitives<
         subBarrier();
         if (DirectRecv && ncclShmem.groups[group].srcs[0] == ncclShmem.groups[group].dsts[0]) {
           // We can only have one direct receive. Since srcs[0] == dstPtr+offset, skip one copy
-          // (1-Send) is only there to avoid compilation errors in case MaxSend=0 (and Send=0).
-          ReduceOrCopyMulti<Unroll, RedOp, T, 1, 1, 1, (1-Send)+MaxSend>
-            (tid, nworkers, redOp, false, false,
-             1, (T const**)ncclShmem.groups[group].srcs,
-             fan.nsend(), (T**)ncclShmem.groups[group].dsts+1,
-             sliceSize);
-          //if (tid == 0) printf("Rank %d group %d connIndex %d tid %d in path 1\n", ncclShmem.comm.rank, group, connIndex, tid);
+          if (Send) {
+            // (1-Send) is only there to avoid compilation errors in case MaxSend=0 (and Send=0).
+            ReduceOrCopyMulti<Unroll, RedOp, T, 1, 1, 1, (1-Send)+MaxSend>
+              (tid, nworkers, redOp, false, false,
+               1, (T const**)ncclShmem.groups[group].srcs,
+               fan.nsend(), (T**)ncclShmem.groups[group].dsts+1,
+               sliceSize);
+            //if (tid == 0) printf("Rank %d group %d connIndex %d tid %d in path 1\n", ncclShmem.comm.rank, group, connIndex, tid);
+          }
         } else if (DirectSend && !DirectRecv && SrcBuf != Input && ncclShmem.groups[group].dsts[Dst] == nullptr) {
           // For broadcast in CollNet to do empty send
           ReduceOrCopyMulti<Unroll, RedOp, T, 1, 1, 1, 1>
@@ -202,7 +204,7 @@ class Primitives<
              Recv*fan.nrecv()+Src, (T const**)ncclShmem.groups[group].srcs,
              Send*fan.nsend()+Dst, (T**)ncclShmem.groups[group].dsts,
              sliceSize);
-          //if (tid == 0) printf("Rank %d group %d connIndex %d tid %d in path 4\n", ncclShmem.comm.rank, group, connIndex, tid);
+          //if (tid == 0) printf("Rank %d group %d tid %d <%d %d %d %d> src[0] %p dst[0] %p\n", ncclShmem.comm.rank, group, tid, Recv, Send, Src, Dst, ncclShmem.groups[group].srcs[0], ncclShmem.groups[group].dsts[0]);
         }
         barrier(); // This barrier has a counterpart in following loop
         if (Send && (flags & RolePostSend) && index == 0) __threadfence_system();
@@ -273,9 +275,10 @@ class Primitives<
           int peerOffset = index*peerElem;
           if (skip >= 0 && index >= skip) peerOffset += peerElem;
           // Adjust remote index with peer offset in case we are directly pulling from peer's output buffer
-          waitPeer<DirectRecv, 0, 1, 0, 0, 1>(0, outIx+peerOffset, offset, realSize);
+          waitPeer<DirectRecv, 0, 1, 0, 0, 1>(outIx, outIx+peerOffset, offset, realSize);
           subBarrier();
-          if (DirectRecv && ncclShmem.groups[group].srcs[0] == nullptr) {
+          if (DirectRecv && ncclShmem.groups[group].srcs[0] == ncclShmem.groups[group].dsts[0]) {
+            // Since waitPeer sets srcs[0] to output buffer + offset, we are doing a direct-write based recv
             // Do nothing
             realSize = 0; // Skip the threadfence
             //if (tid == 0) printf("Rank %d group %d connIndex %d tid %d in empty gather\n", ncclShmem.comm.rank, group, connIndex, tid);
