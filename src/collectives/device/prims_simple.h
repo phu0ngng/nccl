@@ -94,25 +94,25 @@ class Primitives<
       else if (isSendNotRecv && DirectSend) {
         if (flags & DirectWrite) {
           ptrs[index] = directBuff + remoteIx + offset;
+          //printf("Rank %d group %d index %d direct send %p\n", ncclShmem.comm.rank, group, index, ptrs[index]);
         } else if (flags & DirectRead) {  // empty send
           ptrs[index] = nullptr;
         } else {
           ptrs[index] = connEltsFifo + (step%NCCL_STEPS)*stepSize;
         }
-        //printf("Rank %d group %d connIndex %d index %d direct send %p\n", ncclShmem.comm.rank, group, connIndex, index, ptrs[index]);
       } else if (!isSendNotRecv && DirectRecv) {
         if (flags & DirectRead) {
           ptrs[index] = directBuff + remoteIx + offset;
+          //printf("Rank %d group %d index %d direct recv %p\n", ncclShmem.comm.rank, group, index, ptrs[index]);
         } else if (flags & DirectWrite) {  // empty recv
           ptrs[index] = nullptr;
         } else {
           ptrs[index] = connEltsFifo + (step%NCCL_STEPS)*stepSize;
         }
-        //printf("Rank %d group %d connIndex %d index %d direct recv %p\n", ncclShmem.comm.rank, group, connIndex, index, ptrs[index]);
       }
       else {
         ptrs[index] = connEltsFifo + (step%NCCL_STEPS)*stepSize;
-        //printf("Rank %d group %d connIndex %d index %d %s %p\n", ncclShmem.comm.rank, group, connIndex, index, isSendNotRecv ? "send" : "recv", ptrs[index]);
+        //printf("Rank %d group %d index %d intermediate %s %p\n", ncclShmem.comm.rank, group, index, isSendNotRecv ? "send" : "recv", ptrs[index]);
       }
       step += StepPerSlice;
     }
@@ -179,7 +179,7 @@ class Primitives<
           ncclShmem.groups[group].dsts[0] = userBuff + dstIx + offset;
         waitPeer<DirectRecv, DirectSend, Recv, Send, Src, Dst>(dstIx, remoteIx, offset, sliceSize);
         subBarrier();
-        if (DirectRecv && DirectSend/*ncclShmem.groups[group].srcs[0] == ncclShmem.groups[group].dsts[0]*/) {
+        if (DirectRecv && ncclShmem.groups[group].srcs[0] == ncclShmem.groups[group].dsts[0]) {
           // We can only have one direct receive. Since srcs[0] == dstPtr+offset, skip one copy
           // (1-Send) is only there to avoid compilation errors in case MaxSend=0 (and Send=0).
           ReduceOrCopyMulti<Unroll, RedOp, T, 1, 1, 1, (1-Send)+MaxSend>
