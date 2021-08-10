@@ -807,13 +807,17 @@ static int getSegment(int type, int delta, struct ncclWork* work) {
     for (int s=0; s<NCCL_MAX_WORK_ELEMENTS && work->elems[s].p2p.delta != delta; s++) {
       if (work->elems[s].active == 0) return s;
     }
-  } else if (type == CollNet_Segment) { // aggregation of CollNet
+  } else if (type == CollNet_Segment) { // CollNet
     // Do not mix CollNet with other collectives as CollNet has a different stride
-    //if (work->elems[0].funcIndex != FUNC_INDEX_P2P) return -1; //FIXME
+    // CollNet would mark the direct field
+    if (work->elems[0].active != 0 && work->elems[0].direct == 0) return -1;
     for (int s=0; s<NCCL_MAX_WORK_ELEMENTS; s+=NCCL_REG_ELEM_FACTOR) {
       if (work->elems[s].active == 0) return s;
     }
-  } else {  // aggregation of Ring or Tree
+  } else {  // Ring or Tree
+    // Do not mix CollNet with other collectives as CollNet has a different stride
+    // CollNet would mark the direct field
+    if (work->elems[0].direct != 0) return -1;
     for (int s=0; s<NCCL_MAX_WORK_ELEMENTS; s++) {
       if (work->elems[s].active == 0) return s;
     }
