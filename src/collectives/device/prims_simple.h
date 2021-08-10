@@ -69,9 +69,11 @@ class Primitives<
 
   template <int DirectRecv, int DirectSend, int Recv, int Send, int Src, int Dst>
   inline __device__ void waitPeer(intptr_t dstIx, intptr_t remoteIx, int offset, int nelts) {
-    bool const isSendNotRecv = (Send && Recv) ? (flags & RoleWaitSend) : Send;
-    if (((flags & (Recv*RoleWaitRecv)) && !(DirectRecv && Src && (flags & DirectRead))) || // no wait when directly reading from remote input
-        ((flags & (Send*RoleWaitSend)) && !DirectSend)) { // no wait in empty send (e.g. directScatter) or direct write
+    const bool isSendNotRecv = (Send && Recv) ? (flags & RoleWaitSend) : Send;
+    const bool noRecvWait = DirectRecv && Src && (flags & DirectRead);        // no wait when directly reading from remote input
+    const bool noSendWait = DirectSend && (flags & (DirectRead|DirectWrite)); // no wait in empty send (e.g. directScatter) or direct remote write
+    if (((flags & (Recv*RoleWaitRecv)) && !noRecvWait) ||
+        ((flags & (Send*RoleWaitSend)) && !noSendWait)) {
       int spins = 0;
       while (connStepCache + (isSendNotRecv ? NCCL_STEPS : 0) < step + StepPerSlice) {
         connStepCache = *connStepPtr;
