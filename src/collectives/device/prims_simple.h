@@ -247,14 +247,14 @@ class Primitives<
     for (int slice=0; slice<SlicePerChunk; ++slice) {
       int realSize = max(0, min(dataSize, peerElem-offset));
       if (tid < nworkers) {
-        if (Send && (flags & RoleInput)) ncclShmem.groups[group].srcs[0] = userBuff + inpIx + offset;
-        if (Recv && (flags & RoleOutput)) ncclShmem.groups[group].dsts[0] = userBuff + outIx + offset;
         if (Send) {
+          if (flags & RoleInput) ncclShmem.groups[group].srcs[0] = userBuff + inpIx + offset;
           // realSize is not accurate here; but intra-node does not rely on sizes FIFO
           waitPeer<0, DirectSend, 0, 1, 1, 0>(0, inpIx, offset, realSize);
           subBarrier();
           if (DirectSend && ncclShmem.groups[group].dsts[0] == nullptr) {
             // Do nothing
+            realSize = 0; // Skip the threadfence
             //if (tid == 0) printf("Rank %d group %d connIndex %d tid %d in empty scatter\n", ncclShmem.comm.rank, group, connIndex, tid);
           } else {
             #pragma unroll
@@ -269,6 +269,7 @@ class Primitives<
             //if (tid == 0) printf("Rank %d group %d connIndex %d tid %d in solid scatter\n", ncclShmem.comm.rank, group, connIndex, tid);
           }
         } else if (Recv) {
+          if (flags & RoleOutput) ncclShmem.groups[group].dsts[0] = userBuff + outIx + offset;
           int peerOffset = index*peerElem;
           if (skip >= 0 && index >= skip) peerOffset += peerElem;
           // Adjust remote index with peer offset in case we are directly pulling from peer's output buffer
@@ -276,6 +277,7 @@ class Primitives<
           subBarrier();
           if (DirectRecv && ncclShmem.groups[group].srcs[0] == nullptr) {
             // Do nothing
+            realSize = 0; // Skip the threadfence
             //if (tid == 0) printf("Rank %d group %d connIndex %d tid %d in empty gather\n", ncclShmem.comm.rank, group, connIndex, tid);
           } else {
             #pragma unroll
@@ -291,8 +293,7 @@ class Primitives<
         }
       }
       barrier();
-      if (Send && (flags & RolePostSend) && realSize > 0 && index == 0 &&
-          !(DirectSend && ncclShmem.groups[group].srcs[0] == ncclShmem.groups[group].dsts[0])) {
+      if (Send && (flags & RolePostSend) && realSize > 0 && index == 0) {
         __threadfence_system();
         __syncwarp();
       }
