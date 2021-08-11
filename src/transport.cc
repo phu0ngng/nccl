@@ -131,14 +131,13 @@ ncclResult_t ncclTransportP2pSetup(struct ncclComm* comm, struct ncclTopoGraph* 
 extern struct ncclTransport collNetTransport;
 
 // All ranks must participate in collNetSetup call
-// return: 0 - unsupported, 1 - supported
 // We do not NCCLCHECK this call because we would fall back to P2P network in case CollNet setup fails
 int ncclTransportCollNetSetup(struct ncclComm* comm, struct ncclTopoGraph* collNetGraph, struct ncclChannel* channel, int masterRank, int masterPeer, int collNetGraphChannelId, int type) {
+  int fail = 1;
   int rank = comm->rank;
   int nranks = comm->nRanks;
   int nMasters = comm->nNodes;
   int rankInCollNet = -1;
-  int supported = 0;
   int isMaster = (rank == masterRank) ? 1 : 0;
   struct {
     int collNetRank;
@@ -148,9 +147,9 @@ int ncclTransportCollNetSetup(struct ncclComm* comm, struct ncclTopoGraph* collN
   // check if we can connect to collnet, whose root is the nranks-th rank
   struct ncclPeerInfo *myInfo = comm->peerInfo+rank, *peerInfo = comm->peerInfo+nranks;
   peerInfo->rank = nranks;
-  int ret = 1;
+  int support = 1;
   if (isMaster) {
-    NCCLCHECK(collNetTransport.canConnect(&ret, comm->topo, collNetGraph, myInfo, peerInfo));
+    NCCLCHECK(collNetTransport.canConnect(&support, comm->topo, collNetGraph, myInfo, peerInfo));
   }
 
   // send master receives connect info from peer recv master
@@ -168,7 +167,7 @@ int ncclTransportCollNetSetup(struct ncclComm* comm, struct ncclTopoGraph* collN
   conn->transportComm = transportComm;
   // setup
   struct ncclConnect myConnect;
-  if (isMaster && ret > 0) {
+  if (isMaster && support) {
     NCCLCHECK(transportComm->setup(comm, collNetGraph, myInfo, peerInfo, &myConnect, conn, collNetGraphChannelId, type));
   }
   // prepare connect handles
@@ -198,7 +197,7 @@ int ncclTransportCollNetSetup(struct ncclComm* comm, struct ncclTopoGraph* collN
     if (isMaster) memcpy(masterConnects+rankInCollNet, &(sendrecvExchange.connect), sizeof(struct ncclConnect));
   }
   // connect
-  if (isMaster && ret > 0) {
+  if (isMaster && support) {
     NCCLCHECKGOTO(transportComm->connect(comm, masterConnects, nMasters, rankInCollNet, conn), res, cleanup);
     struct ncclPeer* devRoot = channel->devPeers+nranks;
     struct ncclConnector* devConn = (type == collNetRecv) ? devRoot->recv+type : devRoot->send+type;
@@ -211,13 +210,11 @@ int ncclTransportCollNetSetup(struct ncclComm* comm, struct ncclTopoGraph* collN
     NCCLCHECKGOTO(bootstrapSend(comm->bootstrap, masterPeer, collNetGraph->id, &sendrecvExchange, sizeof(sendrecvExchange)), res, cleanup);
     TRACE(NCCL_INIT, "CollNet [recv] : rank %d collNetRank %d collNetNranks %d sent connect to rank %d", rank, rankInCollNet, nMasters, masterPeer);
   }
-  if (ret > 0) {
-    supported = 1;
-  }
+  if (support) fail = 0;
 cleanup:
   if (allConnects != NULL) free(allConnects);
   if (masterConnects != NULL) free(masterConnects);
-  return supported;
+  return fail;
 }
 
 ncclResult_t ncclTransportCollNetCheck(struct ncclComm* comm, int collNetSetupFail) {
@@ -237,17 +234,26 @@ ncclResult_t ncclTransportCollNetCheck(struct ncclComm* comm, int collNetSetupFa
   free(allGatherFailures);
   if (collNetSetupFail) {
     if (rank == 0) WARN("Cannot initialize CollNet, using point-to-point network instead");
-    // Free collNet resources
-    for (int r=0; r<comm->nChannels; r++) {
-      struct ncclChannel* channel = comm->channels+r;
-      struct ncclPeer* peer = channel->peers+nranks;
-      if (peer->send->transportResources && peer->send->transportComm) NCCLCHECK(peer->send->transportComm->free(peer->send->transportResources));
-      if (peer->recv->transportResources && peer->recv->transportComm) NCCLCHECK(peer->recv->transportComm->free(peer->recv->transportResources));
-      peer->send->transportResources = NULL; // avoid double free
-      peer->recv->transportResources = NULL; // avoid double free
+    return ncclSystemError;
+  }
+  return ncclSuccess;
+}
+
+ncclResult_t ncclTransportCollNetFree(struct ncclComm* comm) {
+  // Free collNet resources
+  for (int r=0; r<comm->nChannels; r++) {
+    struct ncclChannel* channel = comm->channels+r;
+    struct ncclPeer* peer = channel->peers+comm->nRanks;
+    for (int b=0; b<NCCL_MAX_CONNS; b++) {
+      struct ncclConnector* send = peer->send + b;
+      if (send->transportResources && send->transportComm) NCCLCHECK(send->transportComm->free(send->transportResources));
+      send->transportResources = NULL; // avoid double free
     }
-    // Set support to 0
-    comm->collNetSupport = 0;
+    for (int b=0; b<NCCL_MAX_CONNS; b++) {
+      struct ncclConnector* recv = peer->recv + b;
+      if (recv->transportResources && recv->transportComm) NCCLCHECK(recv->transportComm->free(recv->transportResources));
+      recv->transportResources = NULL; // avoid double free
+    }
   }
   return ncclSuccess;
 }

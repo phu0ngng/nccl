@@ -1,0 +1,143 @@
+<system version="1">
+  <cpu numaid="0" affinity="00000000,00000000,00ffffff,00000000,00000000,00ffffff" arch="x86_64" vendor="GenuineIntel" familyid="6" modelid="85">
+    <pci busid="0000:0d:00.0" class="0x060400" link_speed="8 GT/s" link_width="16">
+      <pci busid="0000:0f:00.0" class="0x060400" link_speed="16 GT/s" link_width="16">
+        <pci busid="0000:11:00.0" class="0x030200" link_speed="16 GT/s" link_width="16">
+          <gpu dev="0" sm="80" rank="0" gdr="1">
+            <nvlink target="0000:8b:00.0" count="4" tclass="0x030200"/>
+            <nvlink target="0000:c8:00.0" count="4" tclass="0x030200"/>
+            <nvlink target="0000:88:00.0" count="2" tclass="0x030200"/>
+            <nvlink target="0000:14:00.0" count="2" tclass="0x030200"/>
+          </gpu>
+        </pci>
+      </pci>
+      <pci busid="0000:12:00.0" class="0x060400" link_speed="16 GT/s" link_width="16">
+        <pci busid="0000:14:00.0" class="0x030200" link_speed="16 GT/s" link_width="16">
+          <gpu dev="1" sm="80" rank="1" gdr="1">
+            <nvlink target="0000:cb:00.0" count="4" tclass="0x030200"/>
+            <nvlink target="0000:88:00.0" count="4" tclass="0x030200"/>
+            <nvlink target="0000:8b:00.0" count="2" tclass="0x030200"/>
+            <nvlink target="0000:11:00.0" count="2" tclass="0x030200"/>
+          </gpu>
+        </pci>
+      </pci>
+      <pci busid="0000:16:00.0" class="0x020000" link_speed="16 GT/s" link_width="16">
+        <nic>
+          <net name="mlx5_0" dev="0" speed="200000" port="1" guid="0x2a0fd80003723f04" maxconn="262144" gdr="1"/>
+        </nic>
+      </pci>
+      <pci busid="0000:17:00.0" class="0x020000" link_speed="16 GT/s" link_width="16">
+        <nic>
+          <net name="mlx5_1" dev="1" speed="200000" port="1" guid="0x5202ac0003723f04" maxconn="262144" gdr="1"/>
+        </nic>
+      </pci>
+    </pci>
+  </cpu>
+  <cpu numaid="1" affinity="00000000,0000ffff,ff000000,00000000,0000ffff,ff000000" arch="x86_64" vendor="GenuineIntel" familyid="6" modelid="85">
+    <pci busid="0000:44:00.0" class="0x060400" link_speed="8 GT/s" link_width="16">
+      <pci busid="0000:46:00.0" class="0x060400" link_speed="16 GT/s" link_width="16">
+        <pci busid="0000:48:00.0" class="0x030200" link_speed="16 GT/s" link_width="16">
+          <gpu dev="2" sm="80" rank="2" gdr="1">
+            <nvlink target="0000:4b:00.0" count="4" tclass="0x030200"/>
+            <nvlink target="0000:c8:00.0" count="4" tclass="0x030200"/>
+            <nvlink target="0000:cb:00.0" count="2" tclass="0x030200"/>
+            <nvlink target="0000:8b:00.0" count="2" tclass="0x030200"/>
+          </gpu>
+        </pci>
+      </pci>
+      <pci busid="0000:49:00.0" class="0x060400" link_speed="16 GT/s" link_width="16">
+        <pci busid="0000:4b:00.0" class="0x030200" link_speed="16 GT/s" link_width="16">
+          <gpu dev="3" sm="80" rank="3" gdr="1">
+            <nvlink target="0000:cb:00.0" count="4" tclass="0x030200"/>
+            <nvlink target="0000:48:00.0" count="4" tclass="0x030200"/>
+            <nvlink target="0000:c8:00.0" count="2" tclass="0x030200"/>
+            <nvlink target="0000:88:00.0" count="2" tclass="0x030200"/>
+          </gpu>
+        </pci>
+      </pci>
+      <pci busid="0000:4d:00.0" class="0x020000" link_speed="16 GT/s" link_width="16">
+        <nic>
+          <net name="mlx5_3" dev="2" speed="200000" port="1" guid="0x2e0fd80003723f04" maxconn="262144" gdr="1"/>
+        </nic>
+      </pci>
+      <pci busid="0000:4e:00.0" class="0x020000" link_speed="16 GT/s" link_width="16">
+        <nic>
+          <net name="mlx5_4" dev="3" speed="200000" port="1" guid="0x2006d80003723f04" maxconn="262144" gdr="1"/>
+        </nic>
+      </pci>
+    </pci>
+  </cpu>
+  <cpu numaid="2" affinity="000000ff,ffff0000,00000000,000000ff,ffff0000,00000000" arch="x86_64" vendor="GenuineIntel" familyid="6" modelid="85">
+    <pci busid="0000:84:00.0" class="0x060400" link_speed="8 GT/s" link_width="16">
+      <pci busid="0000:86:00.0" class="0x060400" link_speed="16 GT/s" link_width="16">
+        <pci busid="0000:88:00.0" class="0x030200" link_speed="16 GT/s" link_width="16">
+          <gpu dev="4" sm="80" rank="4" gdr="1">
+            <nvlink target="0000:8b:00.0" count="4" tclass="0x030200"/>
+            <nvlink target="0000:14:00.0" count="4" tclass="0x030200"/>
+            <nvlink target="0000:11:00.0" count="2" tclass="0x030200"/>
+            <nvlink target="0000:4b:00.0" count="2" tclass="0x030200"/>
+          </gpu>
+        </pci>
+      </pci>
+      <pci busid="0000:89:00.0" class="0x060400" link_speed="16 GT/s" link_width="16">
+        <pci busid="0000:8b:00.0" class="0x030200" link_speed="16 GT/s" link_width="16">
+          <gpu dev="5" sm="80" rank="5" gdr="1">
+            <nvlink target="0000:11:00.0" count="4" tclass="0x030200"/>
+            <nvlink target="0000:88:00.0" count="4" tclass="0x030200"/>
+            <nvlink target="0000:14:00.0" count="2" tclass="0x030200"/>
+            <nvlink target="0000:48:00.0" count="2" tclass="0x030200"/>
+          </gpu>
+        </pci>
+      </pci>
+      <pci busid="0000:8d:00.0" class="0x020000" link_speed="16 GT/s" link_width="16">
+        <nic>
+          <net name="mlx5_6" dev="4" speed="200000" port="1" guid="0x2606d80003723f04" maxconn="262144" gdr="1"/>
+        </nic>
+      </pci>
+      <pci busid="0000:8e:00.0" class="0x020000" link_speed="16 GT/s" link_width="16">
+        <nic>
+          <net name="mlx5_7" dev="5" speed="200000" port="1" guid="0x2406d80003723f04" maxconn="262144" gdr="1"/>
+        </nic>
+      </pci>
+    </pci>
+  </cpu>
+  <cpu numaid="3" affinity="ffffff00,00000000,00000000,ffffff00,00000000,00000000" arch="x86_64" vendor="GenuineIntel" familyid="6" modelid="85">
+    <pci busid="0000:c4:00.0" class="0x060400" link_speed="8 GT/s" link_width="16">
+      <pci busid="0000:c6:00.0" class="0x060400" link_speed="16 GT/s" link_width="16">
+        <pci busid="0000:c8:00.0" class="0x030200" link_speed="16 GT/s" link_width="16">
+          <gpu dev="6" sm="80" rank="6" gdr="1">
+            <nvlink target="0000:48:00.0" count="4" tclass="0x030200"/>
+            <nvlink target="0000:11:00.0" count="4" tclass="0x030200"/>
+            <nvlink target="0000:4b:00.0" count="2" tclass="0x030200"/>
+            <nvlink target="0000:cb:00.0" count="2" tclass="0x030200"/>
+          </gpu>
+        </pci>
+      </pci>
+      <pci busid="0000:c9:00.0" class="0x060400" link_speed="16 GT/s" link_width="16">
+        <pci busid="0000:cb:00.0" class="0x030200" link_speed="16 GT/s" link_width="16">
+          <gpu dev="7" sm="80" rank="7" gdr="1">
+            <nvlink target="0000:14:00.0" count="4" tclass="0x030200"/>
+            <nvlink target="0000:4b:00.0" count="4" tclass="0x030200"/>
+            <nvlink target="0000:48:00.0" count="2" tclass="0x030200"/>
+            <nvlink target="0000:c8:00.0" count="2" tclass="0x030200"/>
+          </gpu>
+        </pci>
+      </pci>
+      <pci busid="0000:cd:00.0" class="0x020000" link_speed="16 GT/s" link_width="16">
+        <nic>
+          <net name="mlx5_9" dev="6" speed="200000" port="1" guid="0xfd80003723f04" maxconn="262144" gdr="1"/>
+        </nic>
+      </pci>
+      <pci busid="0000:ce:00.0" class="0x020000" link_speed="16 GT/s" link_width="16">
+        <nic>
+          <net name="mlx5_10" dev="7" speed="200000" port="1" guid="0x7002ac0003723f04" maxconn="262144" gdr="1"/>
+        </nic>
+      </pci>
+    </pci>
+    <pci busid="0000:ed:00.0" class="0x020000" link_speed="8 GT/s" link_width="16">
+      <nic>
+        <net name="mlx5_11" dev="8" speed="100000" port="1" guid="0xe61b3b0003a1420c" maxconn="262144" gdr="1"/>
+      </nic>
+    </pci>
+  </cpu>
+</system>

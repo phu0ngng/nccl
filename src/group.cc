@@ -1,5 +1,5 @@
 /*************************************************************************
- * Copyright (c) 2015-2020, NVIDIA CORPORATION. All rights reserved.
+ * Copyright (c) 2015-2021, NVIDIA CORPORATION. All rights reserved.
  *
  * See LICENSE.txt for license information
  ************************************************************************/
@@ -133,6 +133,7 @@ void* ncclAsyncThreadPreconnect(void* args_) {
   struct ncclAsyncArgs* args = (struct ncclAsyncArgs*)args_;
   struct ncclComm* comm = args->coll.comm;
   CUDACHECKTHREAD(cudaSetDevice(comm->cudaDev));
+  if (CPU_COUNT(&comm->cpuAffinity)) sched_setaffinity(0, sizeof(cpu_set_t), &comm->cpuAffinity);
   NCCLCHECKTHREAD(ncclTransportP2pSetup(comm, NULL, 0));
   return args;
 }
@@ -164,6 +165,7 @@ ncclResult_t ncclGroupEnd() {
   for (int i=0; i<ncclGroupIndex; i++) doneArray[i] = 1;
   ncclResult_t ret = ncclGroupError;
   int usingCudaGraphAll = -1;
+  cudaGraph_t* graphs = NULL;
   if (ret != ncclSuccess) goto group_cleanup;
 
   /* Launch async ncclCommInitRank */
@@ -216,8 +218,6 @@ ncclResult_t ncclGroupEnd() {
       struct ncclComm* comm = args->coll.comm;
       int rank = comm->rank;
       int nRanks = comm->nRanks;
-      struct ncclP2Plist* p2pSends = comm->p2pSends;
-      struct ncclP2Plist* p2pRecvs = comm->p2pRecvs;
 
       // Compute how much to split operations
       // Natural step size matching buffer steps.
@@ -240,8 +240,8 @@ ncclResult_t ncclGroupEnd() {
 sched_delta:
           uint32_t from = (rank+nRanks-delta)%nRanks;
           uint32_t to = (rank+delta)%nRanks;
-          struct ncclP2Pinfo* recv = p2pRecvs[from].head;
-          struct ncclP2Pinfo* send = p2pSends[to].head;
+          struct ncclP2Pinfo* recv = comm->p2pRecvs[from] ? comm->p2pRecvs[from]->getNext() : NULL;
+          struct ncclP2Pinfo* send = comm->p2pSends[to] ? comm->p2pSends[to]->getNext() : NULL;
           if (recv != NULL || send != NULL) {
             ssize_t totRecvBytes = -1, totSendBytes = -1;
             if (recv != NULL) totRecvBytes = recv->nbytes;
@@ -272,15 +272,11 @@ sched_delta:
               sendOffset += sendChunkSize;
               chunk++;
             } while (sendRemaining || recvRemaining);
-            if (recv) {
-              NCCLCHECKGOTO(dequeueP2pInfo(p2pRecvs+from), ret, group_cleanup);
-              comm->p2pRecvCount--;
-            }
-            if (send) {
-              NCCLCHECKGOTO(dequeueP2pInfo(p2pSends+to), ret, group_cleanup);
-              comm->p2pSendCount--;
-            }
+            if (recv) comm->p2pRecvCount--;
+            if (send) comm->p2pSendCount--;
           }
+          if (recv == NULL && comm->p2pRecvs[from]) comm->p2pRecvs[from]->recycle();
+          if (send == NULL && comm->p2pSends[to]) comm->p2pSends[to]->recycle();
           index++;
           if (index == 1 && deltas[1] == deltas[0]) index++;
           if (index == 2 && deltas[2] == deltas[0]) index++;
@@ -307,7 +303,6 @@ sched_delta:
    */
 
   // Check whether we are in cuda graph mode
-  cudaGraph_t* graphs;
   NCCLCHECK(ncclCalloc(&graphs, ncclGroupIndex));
   for (int i=0; i<ncclGroupIndex; i++) {
     struct ncclAsyncArgs* args = ncclGroupArgs+i;
@@ -381,11 +376,9 @@ group_cleanup:
         comm->asyncTotalSize = 0;
         // Dequeue p2p lists
         if (comm->p2pSendCount > 0 || comm->p2pRecvCount > 0) {
-          struct ncclP2Plist* p2pSends = comm->p2pSends;
-          struct ncclP2Plist* p2pRecvs = comm->p2pRecvs;
           for (int peer=0; peer<comm->nRanks; peer++) {
-            while (p2pSends[peer].head != NULL) dequeueP2pInfo(p2pSends+peer);
-            while (p2pRecvs[peer].head != NULL) dequeueP2pInfo(p2pRecvs+peer);
+            if (comm->p2pSends[peer]) comm->p2pSends[peer]->recycle();
+            if (comm->p2pRecvs[peer]) comm->p2pRecvs[peer]->recycle();
           }
           comm->p2pSendCount = comm->p2pRecvCount = 0;
         }
@@ -407,5 +400,6 @@ end:
   ncclGroupError = ncclSuccess;
   ncclGroupIndex = 0;
   CUDACHECK(cudaSetDevice(savedDev)); // do other clean-ups first before calling cudaSetDevice, because this call can fail too
+  if (graphs) free(graphs);
   return ret;
 }
