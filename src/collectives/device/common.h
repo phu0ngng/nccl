@@ -148,6 +148,14 @@ __device__ void ncclKernel(ncclWorkElem first)  {
     if (tid < NCCL_MAX_WORK_ELEMENTS) {
       ncclWorkElem *we = &ncclShmem.work.elems[tid];
       if (we->redOpArgIsPtr && we->active != 0) {
+        /* redOpArg is a pointer to the scalar value, so we'll dereference it
+         * here so that redOpArg holds the bits of the scalar going forward.
+         * The tricky thing is we don't know its type T since that's encoded in
+         * the funcIndex. Because it would be difficult to get sizeof(T) from
+         * funcIndex, we'll cheat and just dereference the largest possible size
+         * given the alignment of the pointer. We might be reading in more bytes
+         * than we need but that's harmless.
+         */
         if (we->coll.redOpArg%2 != 0)
           we->coll.redOpArg = *reinterpret_cast<uint8_t*>(we->coll.redOpArg);
         else if (we->coll.redOpArg%4 != 0)
