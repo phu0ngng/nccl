@@ -323,14 +323,16 @@ class Primitives<
           // User buffers have been registered
           if ((conn->direct & (NCCL_IPC_READ|NCCL_IPC_WRITE)) && e != nullptr && e->regUsed) {
             if (connIndex == 1) {
-              flags |= DirectRead;  // scatter-reduce always use direct pull
+              // Uncomment this line if we want to enable direct pull between scatter and reduce
+              // Currently we disable this because we cannot support a mix of direct and non-direct in case of CollNet + avg
+              //flags |= DirectRead;  // scatter-reduce use direct pull
             } else {
               flags |= (e->direct & NCCL_DIRECT_WRITE) ? DirectWrite :
                        (e->direct & NCCL_DIRECT_READ)  ? DirectRead  : 0;
             }
           } else if (conn->direct & (NCCL_DIRECT_WRITE|NCCL_DIRECT_READ)) {
             if (connIndex == 1) {
-              flags |= DirectRead;  // scatter-reduce always use direct pull
+              //flags |= DirectRead;  // scatter-reduce use direct pull
             } else {
               // direct read not allowed in non-register case
               // otherwise, in one-to-multi send, we could mix empty send and intermediate send
@@ -371,14 +373,14 @@ class Primitives<
           // User buffers have been registered
           if ((conn->direct & (NCCL_IPC_READ|NCCL_IPC_WRITE)) && e != nullptr && e->regUsed) {
             if (connIndex == 1) {
-              flags |= DirectRead;  // scatter-reduce always use direct pull
+              //flags |= DirectRead;  // scatter-reduce use direct pull
             } else {
               flags |= (e->direct & NCCL_DIRECT_WRITE) ? DirectWrite :
                        (e->direct & NCCL_DIRECT_READ)  ? DirectRead  : 0;
             }
           } else if (conn->direct & (NCCL_DIRECT_WRITE|NCCL_DIRECT_READ)) {
             if (connIndex == 1) {
-              flags |= DirectRead;  // scatter-reduce always use direct pull
+              //flags |= DirectRead;  // scatter-reduce use direct pull
             } else {
               // direct read not allowed in non-register case
               // otherwise, in one-to-multi send, we could mix empty send and intermediate send
