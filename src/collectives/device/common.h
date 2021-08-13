@@ -73,9 +73,28 @@ struct RunWork {
   // here from the LL ncclKernel.
   __device__ __forceinline__ void run(ncclWork *w) {
     int tid = threadIdx.x;
-    #pragma unroll 1
-    for(int e=0; e < NCCL_MAX_WORK_ELEMENTS && w->elems[e].active != 0; e++) {
-      if (tid < w->elems[e].nThreads)
+    /* Some invariants that must hold:
+     * 1. All elems[] have same funcIndex.
+     * 2. All elems[] have same nThreads.
+     * 3. The thread-to-group relation (as in prims group numbers) is the same
+     *    for all elems[].
+     *
+     * If (1) isn't true then we might be in the wrong function since dispatch
+     * on ncclFuncs[w->funcIndex] is how we got here.
+     *
+     * If (2) or (3) aren't true, then threads from different work elements
+     * could race for barrier resources (barrier numbers 0...15) which is fatal.
+     *
+     * IMPORTANT!!! To ensure (3), implementations of
+     * `RunWorkElement<Fn,T,RedOp,Algo,Proto>::run()` may only use the following
+     * when deciding how to map threads to groups:
+     *    Fn, T, RedOp, Algo, Proto, nThreads
+     *
+     * This last one is difficult to enforce so I hope everyone reads this.
+     */
+    if (tid < w->elems[0].nThreads) {
+      #pragma unroll 1
+      for(int e=0; e < NCCL_MAX_WORK_ELEMENTS && w->elems[e].active != 0; e++)
         RunWorkElement<Fn, T, RedOp, Algo, Proto>().run(&w->elems[e]);
     }
   }
