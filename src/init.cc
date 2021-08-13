@@ -185,6 +185,9 @@ void NCCL_NO_OPTIMIZE commPoison(ncclComm_t comm) {
 static ncclResult_t commFree(ncclComm_t comm) {
   if (comm == NULL)
     return ncclSuccess;
+
+  delete[] comm->userRedOps;
+
   free(comm->connectSend);
   free(comm->connectRecv);
   for (int peer=0; peer<comm->nRanks; peer++) {

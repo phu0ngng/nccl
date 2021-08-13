@@ -9,6 +9,7 @@
 
 #include "transport.h"
 #include "p2p.h"
+#include "collectives.h"
 
 #if CUDART_VERSION < 9000
 struct cudaLaunchParams {
@@ -54,6 +55,12 @@ struct ncclRecvMem {
     char pad4[MEM_ALIGN];
   };
   char buff[1]; // Actually larger than that
+};
+
+struct ncclUserRedOp {
+  int freeNext; // -1=allocated, otherwise index of next free entry in array
+  ncclDataType_t datatype;
+  ncclDevRedOpFull opFull;
 };
 
 struct ncclComm {
@@ -163,6 +170,28 @@ struct ncclComm {
   cudaGraphNode_t lastSetupNode;
   unsigned long long lastCudaGraphId;
   int driverVersion;
+
+  // user-created reduction ops
+  int userRedOpCapacity, userRedOpFreeHead;
+  ncclUserRedOp *userRedOps;
 };
+
+// Scrambles the bits of non-builtin values of ncclRedOp_t according to the
+// communicator memory address. Used to catch bugs so that integer handles
+// associated with this communicator won't collide with handles of other
+// communicatrs. This function is its own inverse.
+static inline ncclRedOp_t ncclUserRedOpMangle(ncclComm *comm, ncclRedOp_t op) {
+  // Preserve the built-in values.
+  if(int(op) < int(ncclNumOps))
+    return op;
+  uint64_t h = reinterpret_cast<uint64_t>(comm);
+  h ^= h >> 32;
+  h *= 0x9e3779b97f4a7c13u; // Knuth's 64-bit magical hash constant
+  h >>= 32; // h is now an excellent 32-bit hash of the comm pointer
+  h &= int(ncclMaxRedOp); // ncclMaxRedOp is a power of 2 minus 1
+  int op1 = int(h) ^ int(op);
+  // Since builtin values are preserved, we also have to preserve their preimage.
+  return op1 < int(ncclNumOps) ? op : ncclRedOp_t(op1);
+}
 
 #endif

@@ -1,0 +1,68 @@
+<!DOCTYPE html>
+<html>
+<head>
+<title>NCCL-12 : Prescale Sum : Design</title>
+<link rel="stylesheet" type="text/css" href="../../html/css/doc.css">
+</head>
+<body>
+<center><h1>NCCL-12 : Prescale Sum<br>Design</h1></center>
+<!-- table of contents, auto-generated -->
+$CONTENTS
+<!-- end of table of contents -->
+<h2>Proposed Design</h2>
+
+<p>The goal is to allow users to pre-multiply inputs to summation reductions by an arbitrary
+per-rank scalar. The API must be capable of accepting a pointer-to-scalar that lives
+either on the device or host, the important case being on the device since that
+will be the most performant. We also want to accomplish all of this without changing any existing
+NCCL function signatures.</p>
+
+<p>We accomplished all of these by introducing a "constructor" for ncclRedOp_t
+values that will take the scaling factor and return a handle-like ncclRedOp_t
+for the user to pass to collectives. When the user is done with the handle
+it can be reclaimed by NCCL with a "destroy" function.</p>
+
+<p>The new operator handles are local to the communicator they are created
+with. The benefit of this design is it allows us to allocate/deallocate handles
+using thread-unsafe code. It is permissible for the implementation to use the
+same handle integer for ops created under different communicators, but it is
+avoided by the implementation to the greatest extent possible.</p>
+
+<p>Internal changes consist of creating a new ncclDevRedOp_t to index the
+different device side kernels, and a ncclDevRedOpFull struct which holds that
+op value and the data which must be shipped up to the kernel (which is either
+a scalar immediate value or device side pointer to scalar). "src/enqueue.cc"
+contains the new API functions, and the logic for mapping ncclRedOp_t to
+ncclDevRedOpFull. ncclDevRedOp_t contains the four baked-in ops {sum,prod,min,max}
+and adds {ncclDevPreMulSum, ncclDevSumPostDiv}. ncclAvg is mapped to
+ncclDevPreMulSum for floating point types and ncclDevSumPostDiv for integral.
+ncclDevSumPostDiv is not exposed to the user so its device code is only
+instantiated for integral types.</p>
+
+<h2>Interface Architecture</h2>
+
+<p>New function ncclRedOpCreatePreMulSum(*op, *scalar, datatype, residence, comm)</p>
+<p>New function ncclRedOpDestroy(op, comm)</p>
+
+<h2>System KPIs & Metrics</h2>
+
+<p>SOL performance is that the extra multiply instructions come at
+no added cost. This was verified to be true on Luna for all cases.</p>
+
+<h2>Data Architecture</h2>
+N/A
+<h2>Security Design</h2>
+N/A
+<h2>Debugging & Troubleshooting</h2>
+None.
+<h2>Logging and Instrumentation</h2>
+None.
+<h2>Operational Considerations</h2>
+None.
+
+<h2>Signoff list</h2>
+<p><!-- Author : First Last -->
+<p><!-- Reviewer : First Last -->
+<p><!-- Reviewer : First Last -->
+
+<!-- do not end body and html, bottom will be auto-generated -->
