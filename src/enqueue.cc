@@ -607,7 +607,10 @@ static ncclResult_t ncclRegBuffAndExchange(struct ncclInfo* info, struct ncclBuf
   NCCLCHECK(bootstrapIntraNodeAllGather(comm->bootstrap, comm->intraNodeGlobalRanks, comm->intraNodeRank, comm->localRanks, regHandles, sizeof(struct ncclBuffRegHandle)));
   // Open handles at local process
   for (int i=0; i<comm->localRanks; i++) {
-    if (i == comm->intraNodeRank) continue;
+    if (i == comm->intraNodeRank) {
+      regInfo->sendbuffsBase[i] = regInfo->recvbuffsBase[i] = NULL;
+      continue;
+    }
     CUDACHECK(cudaIpcOpenMemHandle(regInfo->sendbuffsBase+i, regHandles[i].sendBuffIpc, cudaIpcMemLazyEnablePeerAccess));
     CUDACHECK(cudaIpcOpenMemHandle(regInfo->recvbuffsBase+i, regHandles[i].recvBuffIpc, cudaIpcMemLazyEnablePeerAccess));
     // Get real address of buffer
@@ -1007,6 +1010,42 @@ cb_end:
 template void CUDART_CB ncclEnqueueHostSetup<0>(void*);
 template void CUDART_CB ncclEnqueueHostSetup<1>(void*);
 
+void* graphHelperFunc(void *args) {
+  struct ncclGraphHelperResources* res = (struct ncclGraphHelperResources*)args;
+  if (res == NULL) {
+    WARN("CUDA Graph helper resource is null");
+    return NULL;
+  }
+  int dev;
+  CUDACHECKIGNORE(cudaSetDevice(res->comm->cudaDev));
+  CUDACHECKIGNORE(cudaGetDevice(&dev));
+  volatile enum helperThreadState* state = &res->threadState;
+  volatile int* ipcCount = &res->ipcCount;
+  INFO(NCCL_COLL, "CUDA Graph helper thread created for device %d", dev);
+  while (1) {
+    if (*ipcCount > 0) {
+      pthread_mutex_lock(&res->threadLock);
+      for (int i=0; i<*ipcCount; i++) {
+        if (res->ipcBases[i] == NULL) continue;
+        CUDACHECKIGNORE(cudaIpcCloseMemHandle(res->ipcBases[i]));
+        res->ipcBases[i] = NULL;
+      }
+      INFO(NCCL_COLL, "CUDA Graph helper thread closed %d IPC handles", *ipcCount);
+      *ipcCount = 0;
+      pthread_mutex_unlock(&res->threadLock);
+    }
+    pthread_mutex_lock(&res->threadLock);
+    while (*ipcCount == 0 && *state != ThreadStop) {
+      pthread_cond_wait(&res->threadCond, &res->threadLock);
+    }
+    pthread_mutex_unlock(&res->threadLock);
+    if (*state == ThreadStop) {
+      INFO(NCCL_COLL, "CUDA Graph helper thread for device %d returning", dev);
+      return NULL;
+    }
+  }
+}
+
 ncclResult_t ncclGetCudaGraph(ncclComm_t comm, cudaGraph_t* graph) {
   comm->usingCudaGraph = 0;
 #if CUDART_VERSION >= 11030
@@ -1031,6 +1070,14 @@ ncclResult_t ncclGetCudaGraph(ncclComm_t comm, cudaGraph_t* graph) {
     }
     if (comm->launchMode == ncclComm::GROUP) comm->launchMode = ncclComm::GROUP_GRAPH;
     comm->usingCudaGraph = 1;
+
+    // Create helper thread that closes IPC handles during graph destruction
+    if (!comm->graphHelperThread) {
+      pthread_mutex_init(&comm->graphHelperResources->threadLock, NULL);
+      pthread_cond_init(&comm->graphHelperResources->threadCond, NULL);
+      comm->graphHelperResources->threadState = ThreadStart;
+      pthread_create(&comm->graphHelperThread, NULL, graphHelperFunc, comm->graphHelperResources);
+    }
   }
 #endif
   return ncclSuccess;

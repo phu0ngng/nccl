@@ -60,6 +60,17 @@ struct ncclRecvMem {
 
 typedef cudaError_t(*pfn_cuMemGetAddressRange_t)(void**, size_t*, void*);
 
+enum helperThreadState {ThreadStart, ThreadStop};
+
+struct ncclGraphHelperResources {
+  ncclComm* comm;
+  pthread_mutex_t threadLock;
+  pthread_cond_t  threadCond;
+  enum helperThreadState threadState;
+  void* ipcBases[2*NCCL_MAX_INTRA_RANKS*NCCL_MAX_OPS];
+  int ipcCount;
+};
+
 struct ncclComm {
   struct ncclChannel channels[MAXCHANNELS];
 
@@ -174,6 +185,8 @@ struct ncclComm {
   unsigned long long lastCudaGraphId;
   int driverVersion;
   pfn_cuMemGetAddressRange_t pfnCuMemGetAddressRange;
+  pthread_t graphHelperThread;
+  struct ncclGraphHelperResources* graphHelperResources;
 };
 
 #endif

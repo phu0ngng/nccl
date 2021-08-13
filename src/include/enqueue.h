@@ -76,23 +76,44 @@ static ncclResult_t ncclResetQueueInfo(struct ncclQueueInfo* eqInfo) {
 static void ncclDestroyQueueInfo(void* ptr) {
   if (ptr == NULL) return;
   struct ncclQueueInfo* eqInfo = (struct ncclQueueInfo*)ptr;
+  struct ncclComm* comm = eqInfo->comm;
   // Close IPC mem handles for registered buffers
   struct ncclQueueElem* eqElem = eqInfo->elemList->begin();
+#if 0
+  // Ideally, the deregistration should happen here
+  // but currently the destroy function of CUDA objects does not allow CUDA API calls
   while (eqElem != NULL) {
     for (int i=0; i<eqElem->buffRegInfo.nBuffs; i++) {
       if (i == eqInfo->comm->intraNodeRank) continue;
-#if 0
-      // Ideally, the deregistration should happen here
-      // but currently the destroy function of CUDA objects does not allow CUDA API calls
       CUDACHECKIGNORE(cudaIpcCloseMemHandle(eqElem->buffRegInfo.sendbuffsBase[i]));
       CUDACHECKIGNORE(cudaIpcCloseMemHandle(eqElem->buffRegInfo.recvbuffsBase[i]));
-#else
-      // Instead, we push these pointers to a pool owned by ncclComm
-      // and close mem handle for them during ncclComm destroy
-#endif
     }
     eqElem = eqInfo->elemList->getNext();
   }
+#else
+  // Instead, we push these pointers to a pool owned by ncclComm
+  // and asks a helper thread to close mem handles
+  struct ncclGraphHelperResources* res = comm->graphHelperResources;
+  volatile int* ipcCount = &res->ipcCount;
+  pthread_mutex_lock(&res->threadLock);
+  while (eqElem != NULL) {
+    if (eqElem->buffRegInfo.nBuffs > 0) {
+      memcpy(res->ipcBases+(*ipcCount), eqElem->buffRegInfo.sendbuffsBase,
+          eqElem->buffRegInfo.nBuffs*sizeof(void*));
+      (*ipcCount) += eqElem->buffRegInfo.nBuffs;
+      memcpy(res->ipcBases+(*ipcCount), eqElem->buffRegInfo.recvbuffsBase,
+          eqElem->buffRegInfo.nBuffs*sizeof(void*));
+      (*ipcCount) += eqElem->buffRegInfo.nBuffs;
+    }
+    eqElem = eqInfo->elemList->getNext();
+  }
+  if (*ipcCount > 0) {
+    res->threadState = ThreadStart;
+    INFO(NCCL_COLL, "CUDA Graph destroy function signaling helper thread with %d IPC handles", *ipcCount);
+    pthread_cond_signal(&res->threadCond);
+  }
+  pthread_mutex_unlock(&res->threadLock);
+#endif
   delete eqInfo->elemList;
   free(eqInfo);
 }

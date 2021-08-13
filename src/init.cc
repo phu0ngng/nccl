@@ -298,6 +298,8 @@ static ncclResult_t commAlloc(ncclComm_t* comret, int ndev, int rank) {
   comm->lastSetupNode = NULL;
   comm->lastCudaGraphId = -1;
 #if CUDART_VERSION >= 11030
+  NCCLCHECK(ncclCalloc(&comm->graphHelperResources, 1));
+  comm->graphHelperResources->comm = comm;
   CUDACHECK(cudaGetDriverEntryPoint("cuMemGetAddressRange", (void**)&comm->pfnCuMemGetAddressRange, cudaEnableDefault));
 #endif
 
@@ -994,6 +996,18 @@ ncclResult_t ncclCommInitAll(ncclComm_t* comms, int ndev, const int* devlist) {
   return ncclSuccess;
 }
 
+static ncclResult_t ncclGraphHelperDestroy(ncclComm* comm) {
+  if (comm->graphHelperThread) {
+    auto res = comm->graphHelperResources;
+    pthread_mutex_lock(&res->threadLock);
+    res->threadState = ThreadStop;
+    pthread_cond_signal(&res->threadCond);
+    pthread_mutex_unlock(&res->threadLock);
+    pthread_join(comm->graphHelperThread, NULL);
+  }
+  return ncclSuccess;
+}
+
 static ncclResult_t commDestroy(ncclComm_t comm) {
   int savedDevice;
   CUDACHECK(cudaGetDevice(&savedDevice));
@@ -1007,6 +1021,7 @@ static ncclResult_t commDestroy(ncclComm_t comm) {
 
   CUDACHECK(cudaStreamSynchronize(comm->groupStream));
   NCCLCHECK(ncclProxyDestroy(comm));
+  NCCLCHECK(ncclGraphHelperDestroy(comm));
   NCCLCHECK(commFree(comm));
 
   if (savedDevice != commDevice)
