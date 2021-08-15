@@ -95,7 +95,7 @@ static void ncclDestroyQueueInfo(void* ptr) {
   // and asks a helper thread to close mem handles
   struct ncclGraphHelperResources* res = comm->graphHelperResources;
   volatile int* ipcCount;
-  if (res == NULL) goto skip;
+  if (res == NULL || (!comm->graphHelperThread)) goto skip;
   ipcCount = &res->ipcCount;
   pthread_mutex_lock(&res->threadLock);
   while (eqElem != NULL) {

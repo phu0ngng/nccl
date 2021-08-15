@@ -1100,7 +1100,7 @@ ncclResult_t ncclGetCudaGraph(ncclComm_t comm, cudaGraph_t* graph) {
     comm->usingCudaGraph = 1;
 
     // Create helper thread that closes IPC handles during graph destruction
-    if (!comm->graphHelperThread) {
+    if ((!comm->graphHelperThread) && comm->disableGraphHelper == 0) {
       pthread_mutex_init(&comm->graphHelperResources->threadLock, NULL);
       pthread_cond_init(&comm->graphHelperResources->threadCond, NULL);
       comm->graphHelperResources->threadState = ThreadStart;

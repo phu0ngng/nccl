@@ -194,6 +194,7 @@ struct ncclComm {
   pfn_cuMemGetAddressRange_t pfnCuMemGetAddressRange;
   pthread_t graphHelperThread;
   struct ncclGraphHelperResources* graphHelperResources;
+  int disableGraphHelper;
 
   // user-created reduction ops
   int userRedOpCapacity, userRedOpFreeHead;

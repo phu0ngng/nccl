@@ -241,6 +241,7 @@ static ncclResult_t commFree(ncclComm_t comm) {
 }
 
 NCCL_PARAM(AggChannelSize, "AGG_CHANNEL_SIZE", -2);
+NCCL_PARAM(DisableGraphHelper, "GRAPH_HELPER_DISABLE", 0);
 
 static ncclResult_t commAlloc(ncclComm_t* comret, int ndev, int rank) {
   if (ndev < 1) {
@@ -300,6 +301,7 @@ static ncclResult_t commAlloc(ncclComm_t* comret, int ndev, int rank) {
   NCCLCHECK(ncclCreateQueueInfo(&comm->enqueueInfo, comm));
   comm->lastSetupNode = NULL;
   comm->lastCudaGraphId = -1;
+  comm->disableGraphHelper = ncclParamDisableGraphHelper();
 #if CUDART_VERSION >= 11030
   NCCLCHECK(ncclCalloc(&comm->graphHelperResources, 1));
   comm->graphHelperResources->comm = comm;
