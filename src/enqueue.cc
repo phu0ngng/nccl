@@ -1016,9 +1016,8 @@ void* graphHelperFunc(void *args) {
     WARN("CUDA Graph helper resource is null");
     return NULL;
   }
-  int dev;
-  CUDACHECKIGNORE(cudaSetDevice(res->comm->cudaDev));
-  CUDACHECKIGNORE(cudaGetDevice(&dev));
+  int dev = res->comm->cudaDev;
+  CUDACHECKIGNORE(cudaSetDevice(dev));
   volatile enum helperThreadState* state = &res->threadState;
   volatile int* ipcCount = &res->ipcCount;
   INFO(NCCL_COLL, "CUDA Graph helper thread created for device %d", dev);
@@ -1030,7 +1029,7 @@ void* graphHelperFunc(void *args) {
         CUDACHECKIGNORE(cudaIpcCloseMemHandle(res->ipcBases[i]));
         res->ipcBases[i] = NULL;
       }
-      INFO(NCCL_COLL, "CUDA Graph helper thread closed %d IPC handles", *ipcCount);
+      TRACE(NCCL_COLL, "CUDA Graph helper thread closed %d IPC handles", *ipcCount);
       *ipcCount = 0;
       pthread_mutex_unlock(&res->threadLock);
     }

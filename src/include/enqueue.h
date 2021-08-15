@@ -109,7 +109,7 @@ static void ncclDestroyQueueInfo(void* ptr) {
   }
   if (*ipcCount > 0) {
     res->threadState = ThreadStart;
-    INFO(NCCL_COLL, "CUDA Graph destroy function signaling helper thread with %d IPC handles", *ipcCount);
+    TRACE(NCCL_COLL, "CUDA Graph destroy function signaling helper thread with %d IPC handles", *ipcCount);
     pthread_cond_signal(&res->threadCond);
   }
   pthread_mutex_unlock(&res->threadLock);
