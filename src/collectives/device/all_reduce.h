@@ -299,7 +299,7 @@ struct RunWorkElement<ncclFuncAllReduce, T, RedOp, NCCL_ALGO_COLLNET, NCCL_PROTO
 
     if (tid >= tidStartScatter && tid < tidStartReduce && hasUp) {
       // Scatter
-      int group = (2*Proto::MaxGroupWidth) | (1<<16);
+      uint32_t group = (2*Proto::MaxGroupWidth) | (1<<16);
       Primitives<T, RedOp, FanAsymmetric<0, NCCL_MAX_DIRECT_ARITY>, /*Direct=*/1, Proto>
         prims(tid-tidStartScatter, nThreadsScatter, NULL, tree->up, args->sendbuff, args->recvbuff, group, args);
       for (ssize_t gridOffset = 0; gridOffset < size; gridOffset += loopSize) {
@@ -308,7 +308,7 @@ struct RunWorkElement<ncclFuncAllReduce, T, RedOp, NCCL_ALGO_COLLNET, NCCL_PROTO
         prims.directScatter(offset, nelem, chunkSize, tree->headRank, tree->shift);
       }
     } else if (tid >= tidStartReduce && tree->out != -1) {
-      int group = (3*Proto::MaxGroupWidth) | (1<<16);
+      uint32_t group = (3*Proto::MaxGroupWidth) | (1<<16);
       if (hasDn) {
         // Reduce, send to network
         Primitives<T, RedOp, FanAsymmetric<NCCL_MAX_DIRECT_ARITY, 1>, /*Direct=*/1, Proto>
@@ -330,7 +330,7 @@ struct RunWorkElement<ncclFuncAllReduce, T, RedOp, NCCL_ALGO_COLLNET, NCCL_PROTO
       }
     } else if (tid < tidStartBcast && hasUp) {
       // Gather
-      int group = (0*Proto::MaxGroupWidth) | (0<<16);
+      uint32_t group = (0*Proto::MaxGroupWidth) | (0<<16);
       Primitives<T, RedOp, FanAsymmetric<NCCL_MAX_DIRECT_ARITY, 0>, /*Direct=*/1, Proto>
         prims(tid, nThreadsGather, tree->up, NULL, args->sendbuff, args->recvbuff, group, args);
       for (ssize_t gridOffset = 0; gridOffset < size; gridOffset += loopSize) {
@@ -339,7 +339,7 @@ struct RunWorkElement<ncclFuncAllReduce, T, RedOp, NCCL_ALGO_COLLNET, NCCL_PROTO
         prims.directGather(offset, nelem, chunkSize, tree->headRank, tree->shift);
       }
     } else if (tid >= tidStartBcast && tid < tidStartScatter && tree->out != -1) {
-      int group = (1*Proto::MaxGroupWidth) | (0<<16);
+      uint32_t group = (1*Proto::MaxGroupWidth) | (0<<16);
       if (hasDn) {
         // Recv from network, broadcast
         Primitives<T, RedOp, FanAsymmetric<1, NCCL_MAX_DIRECT_ARITY>, /*Direct=*/1, Proto>

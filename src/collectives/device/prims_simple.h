@@ -296,10 +296,8 @@ class Primitives<
         }
       }
       barrier();
-      if (Send && (flags & RolePostSend) && realSize > 0 && index == 0) {
-        __threadfence_system();
-        __syncwarp();
-      }
+      if (Send && (flags & RolePostSend) && realSize > 0 && index == 0) __threadfence_system();
+      __syncwarp();
       postPeer<Recv, Send>();
       offset += realSize;
     }
