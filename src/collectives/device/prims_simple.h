@@ -38,8 +38,10 @@ class Primitives<
     T *userBuff;            // (flags & (RoleInput|RoleOutput))
     T *connEltsFifo;        // !(flags & (PtrsFifoEnabled|RoleInput|RoleOutput))
   };
-  int volatile *connSizesFifoPtr; //  (flags & SizesFifoEnabled)
-  T *directBuff;                  // !(flags & SizesFifoEnabled)
+  union {
+    int volatile *connSizesFifoPtr; //  (flags & SizesFifoEnabled)
+    T *directBuff;                  // !(flags & SizesFifoEnabled)
+  };
   uint64_t volatile *connStepPtr;
   uint64_t connStepCache; // Cache last seen value of (*connStepPtr)
 
