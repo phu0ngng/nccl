@@ -67,7 +67,12 @@ struct RunWorkElement {
   }
 };
 
-__device__ constexpr int ncclWorkElemFactors[NCCL_NUM_ALGORITHMS] = {/*Tree*/1, /*Ring and P2P*/1, /*CollNet*/NCCL_REG_ELEM_FACTOR};
+#if CUDART_VERSION >= 11030
+__device__ constexpr int ncclWorkElemFactors[NCCL_NUM_ALGORITHMS] =
+#else
+static __device__ __constant__ int ncclWorkElemFactors[NCCL_NUM_ALGORITHMS] =
+#endif
+{/*Tree*/1, /*Ring and P2P*/1, /*CollNet*/NCCL_REG_ELEM_FACTOR};
 
 template<ncclFunc_t Fn, typename T, typename RedOp, int Algo, int Proto>
 struct RunWork {
