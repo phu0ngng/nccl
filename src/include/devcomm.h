@@ -159,7 +159,7 @@ struct ncclWorkElem {
   uint16_t funcIndex;
   uint8_t regUsed;
   uint8_t direct;
-  uint16_t active;
+  uint8_t active, redOpArgIsPtr;
 
   const void * sendbuff;
   void * recvbuff;
@@ -172,6 +172,7 @@ struct ncclWorkElem {
       uint32_t root;
       uint8_t bid;
       uint8_t nChannels;
+      uint64_t redOpArg;
     } coll;
     struct {
       size_t sendCount;

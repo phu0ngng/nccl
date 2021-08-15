@@ -11,81 +11,96 @@
 #include "bootstrap.h"
 
 // Only generate inline kernels for LL
-#define NCCL_FUNC5(func, algo, redop, dtype) \
-  (void*)NCCL_KERN_NAME(func, algo, LL, redop, dtype), \
-  (void*)NCCL_KERN_NAME(func, algo, LL, redop, dtype), \
-  (void*)NCCL_KERN_NAME(func, algo, LL, redop, dtype)
+#define NCCL_FUNC5(func, algo, devredop, dtype) \
+  (void*)NCCL_KERN_NAME(func, algo, LL, devredop, dtype), \
+  (void*)NCCL_KERN_NAME(func, algo, LL, devredop, dtype), \
+  (void*)NCCL_KERN_NAME(func, algo, LL, devredop, dtype)
 
-#define NCCL_FUNC4(func, redop, type) \
-  (void*)NCCL_FUNC5(func, TREE,    redop, type), \
-  (void*)NCCL_FUNC5(func, RING,    redop, type), \
-  (void*)NCCL_FUNC5(func, COLLNET, redop, type)
+#define NCCL_FUNC4(func, devredop, type) \
+  (void*)NCCL_FUNC5(func, TREE,    devredop, type), \
+  (void*)NCCL_FUNC5(func, RING,    devredop, type), \
+  (void*)NCCL_FUNC5(func, COLLNET, devredop, type)
 
 #if defined(__CUDA_BF16_TYPES_EXIST__)
 // Must be consistent with ncclDataType_t
-#define NCCL_FUNCS3A(func, redop) \
-  (void*)NCCL_FUNC4(func, redop, int8_t), \
-  (void*)NCCL_FUNC4(func, redop, uint8_t), \
-  (void*)NCCL_FUNC4(func, redop, int32_t), \
-  (void*)NCCL_FUNC4(func, redop, uint32_t), \
-  (void*)NCCL_FUNC4(func, redop, int64_t), \
-  (void*)NCCL_FUNC4(func, redop, uint64_t), \
-  (void*)NCCL_FUNC4(func, redop, half), \
-  (void*)NCCL_FUNC4(func, redop, float), \
-  (void*)NCCL_FUNC4(func, redop, double), \
-  (void*)NCCL_FUNC4(func, redop, __nv_bfloat16)
-#define NCCL_FUNCS3B(func, redop) \
-  (void*)NCCL_FUNC4(func, redop, int8_t), \
-  (void*)NCCL_FUNC4(func, redop, int8_t), \
-  (void*)NCCL_FUNC4(func, redop, int8_t), \
-  (void*)NCCL_FUNC4(func, redop, int8_t), \
-  (void*)NCCL_FUNC4(func, redop, int8_t), \
-  (void*)NCCL_FUNC4(func, redop, int8_t), \
-  (void*)NCCL_FUNC4(func, redop, int8_t), \
-  (void*)NCCL_FUNC4(func, redop, int8_t), \
-  (void*)NCCL_FUNC4(func, redop, int8_t), \
-  (void*)NCCL_FUNC4(func, redop, int8_t)
+#define NCCL_FUNCS3A(func, devredop) \
+  (void*)NCCL_FUNC4(func, devredop, int8_t), \
+  (void*)NCCL_FUNC4(func, devredop, uint8_t), \
+  (void*)NCCL_FUNC4(func, devredop, int32_t), \
+  (void*)NCCL_FUNC4(func, devredop, uint32_t), \
+  (void*)NCCL_FUNC4(func, devredop, int64_t), \
+  (void*)NCCL_FUNC4(func, devredop, uint64_t), \
+  (void*)NCCL_FUNC4(func, devredop, half), \
+  (void*)NCCL_FUNC4(func, devredop, float), \
+  (void*)NCCL_FUNC4(func, devredop, double), \
+  (void*)NCCL_FUNC4(func, devredop, __nv_bfloat16)
+#define NCCL_FUNCS3B(func, devredop) \
+  (void*)NCCL_FUNC4(func, devredop, int8_t), \
+  (void*)NCCL_FUNC4(func, devredop, int8_t), \
+  (void*)NCCL_FUNC4(func, devredop, int8_t), \
+  (void*)NCCL_FUNC4(func, devredop, int8_t), \
+  (void*)NCCL_FUNC4(func, devredop, int8_t), \
+  (void*)NCCL_FUNC4(func, devredop, int8_t), \
+  (void*)NCCL_FUNC4(func, devredop, int8_t), \
+  (void*)NCCL_FUNC4(func, devredop, int8_t), \
+  (void*)NCCL_FUNC4(func, devredop, int8_t), \
+  (void*)NCCL_FUNC4(func, devredop, int8_t)
 #else
 // Must be consistent with ncclDataType_t
-#define NCCL_FUNCS3A(func, redop) \
-  (void*)NCCL_FUNC4(func, redop, int8_t), \
-  (void*)NCCL_FUNC4(func, redop, uint8_t), \
-  (void*)NCCL_FUNC4(func, redop, int32_t), \
-  (void*)NCCL_FUNC4(func, redop, uint32_t), \
-  (void*)NCCL_FUNC4(func, redop, int64_t), \
-  (void*)NCCL_FUNC4(func, redop, uint64_t), \
-  (void*)NCCL_FUNC4(func, redop, half), \
-  (void*)NCCL_FUNC4(func, redop, float), \
-  (void*)NCCL_FUNC4(func, redop, double)
-#define NCCL_FUNCS3B(func, redop) \
-  (void*)NCCL_FUNC4(func, redop, int8_t), \
-  (void*)NCCL_FUNC4(func, redop, int8_t), \
-  (void*)NCCL_FUNC4(func, redop, int8_t), \
-  (void*)NCCL_FUNC4(func, redop, int8_t), \
-  (void*)NCCL_FUNC4(func, redop, int8_t), \
-  (void*)NCCL_FUNC4(func, redop, int8_t), \
-  (void*)NCCL_FUNC4(func, redop, int8_t), \
-  (void*)NCCL_FUNC4(func, redop, int8_t), \
-  (void*)NCCL_FUNC4(func, redop, int8_t)
+#define NCCL_FUNCS3A(func, devredop) \
+  (void*)NCCL_FUNC4(func, devredop, int8_t), \
+  (void*)NCCL_FUNC4(func, devredop, uint8_t), \
+  (void*)NCCL_FUNC4(func, devredop, int32_t), \
+  (void*)NCCL_FUNC4(func, devredop, uint32_t), \
+  (void*)NCCL_FUNC4(func, devredop, int64_t), \
+  (void*)NCCL_FUNC4(func, devredop, uint64_t), \
+  (void*)NCCL_FUNC4(func, devredop, half), \
+  (void*)NCCL_FUNC4(func, devredop, float), \
+  (void*)NCCL_FUNC4(func, devredop, double)
+#define NCCL_FUNCS3B(func, devredop) \
+  (void*)NCCL_FUNC4(func, devredop, int8_t), \
+  (void*)NCCL_FUNC4(func, devredop, int8_t), \
+  (void*)NCCL_FUNC4(func, devredop, int8_t), \
+  (void*)NCCL_FUNC4(func, devredop, int8_t), \
+  (void*)NCCL_FUNC4(func, devredop, int8_t), \
+  (void*)NCCL_FUNC4(func, devredop, int8_t), \
+  (void*)NCCL_FUNC4(func, devredop, int8_t), \
+  (void*)NCCL_FUNC4(func, devredop, int8_t), \
+  (void*)NCCL_FUNC4(func, devredop, int8_t)
 #endif
 
-// Must be consistent with ncclRedOp_t -- but we only generate kernel for sums.
+// Must be consistent with ncclDevRedOp_t -- but we only generate kernel for sums.
 #define NCCL_FUNCS2A(func) \
-  NCCL_FUNCS3A(func, Sum), \
-  NCCL_FUNCS3A(func, Sum), \
-  NCCL_FUNCS3A(func, Sum), \
-  NCCL_FUNCS3A(func, Sum), \
-  NCCL_FUNCS3A(func, Sum)
+  NCCL_FUNCS3A(func, Sum), /*Sum*/ \
+  NCCL_FUNCS3A(func, Sum), /*Prod*/ \
+  NCCL_FUNCS3A(func, Sum), /*Max*/ \
+  NCCL_FUNCS3A(func, Sum), /*Min*/ \
+  NCCL_FUNCS3A(func, Sum), /*PreMulSum*/ \
+  NCCL_FUNCS3A(func, Sum)  /*SumPostDiv*/
 #define NCCL_FUNCS2B(func) \
-  NCCL_FUNCS3B(func, Sum), \
-  NCCL_FUNCS3B(func, Sum), \
-  NCCL_FUNCS3B(func, Sum), \
-  NCCL_FUNCS3B(func, Sum), \
-  NCCL_FUNCS3B(func, Sum)
+  NCCL_FUNCS3B(func, Sum), /*Sum*/ \
+  NCCL_FUNCS3B(func, Sum), /*Prod*/ \
+  NCCL_FUNCS3B(func, Sum), /*Max*/ \
+  NCCL_FUNCS3B(func, Sum), /*Min*/ \
+  NCCL_FUNCS3B(func, Sum), /*PreMulSum*/ \
+  NCCL_FUNCS3B(func, Sum)  /*SumPostDiv*/
 
 // Must be consistent with the ncclFuncSet enum
-static void* const ncclKerns[1+NCCL_NUM_FUNCTIONS*ncclNumOps*ncclNumTypes*NCCL_NUM_ALGORITHMS*NCCL_NUM_PROTOCOLS] = {
+static void* const ncclKerns[1+ncclNumTypes+NCCL_NUM_FUNCTIONS*ncclNumDevRedOps*ncclNumTypes*NCCL_NUM_ALGORITHMS*NCCL_NUM_PROTOCOLS] = {
   (void*)NCCL_KERN_NAME(SendRecv, RING, SIMPLE, Sum, int8_t),
+  // We don't bake special kernels for the one-rank reductions
+  /*int8*/(void*)NCCL_KERN_NAME(SendRecv, RING, SIMPLE, Sum, int8_t),
+  /*uint8*/(void*)NCCL_KERN_NAME(SendRecv, RING, SIMPLE, Sum, int8_t),
+  /*int32*/(void*)NCCL_KERN_NAME(SendRecv, RING, SIMPLE, Sum, int8_t),
+  /*uint32*/(void*)NCCL_KERN_NAME(SendRecv, RING, SIMPLE, Sum, int8_t),
+  /*int64*/(void*)NCCL_KERN_NAME(SendRecv, RING, SIMPLE, Sum, int8_t),
+  /*uint64*/(void*)NCCL_KERN_NAME(SendRecv, RING, SIMPLE, Sum, int8_t),
+  /*half*/(void*)NCCL_KERN_NAME(SendRecv, RING, SIMPLE, Sum, int8_t),
+  /*float*/(void*)NCCL_KERN_NAME(SendRecv, RING, SIMPLE, Sum, int8_t),
+  /*double*/(void*)NCCL_KERN_NAME(SendRecv, RING, SIMPLE, Sum, int8_t),
+  #if defined(__CUDA_BF16_TYPES_EXIST__)
+    /*bfloat16*/(void*)NCCL_KERN_NAME(SendRecv, RING, SIMPLE, Sum, int8_t),
+  #endif
   NCCL_FUNCS2B(Broadcast),
   NCCL_FUNCS2A(Reduce),
   NCCL_FUNCS2B(AllGather),
@@ -370,7 +385,7 @@ ncclResult_t ncclLaunchReset(ncclComm_t comm) {
 
 static inline ncclResult_t getCollNetSupport(struct ncclInfo* info, int* collNetTypeSupport) {
   if (info->comm->collNetSupport > 0) {
-    ncclRedOp_t netOp = info->op == ncclAvg ? ncclSum : info->op;
+    ncclRedOp_t netOp = info->op == ncclAvg || info->op >= ncclNumOps ? ncclSum : info->op;
     NCCLCHECK(collNetReduceSupport(info->datatype, netOp, collNetTypeSupport));
   } else {
     *collNetTypeSupport = 0;
@@ -380,30 +395,35 @@ static inline ncclResult_t getCollNetSupport(struct ncclInfo* info, int* collNet
 
 static ncclResult_t getAlgoInfo(struct ncclInfo* info, int collNetTypeSupport, int numPipeOps) {
   struct ncclComm* comm = info->comm;
-  float minTime = 3600000000.0; // Hopefully no operation will take an hour to complete.
-  // Find algorithm / protocol.
-  info->algorithm = -1;
-  info->protocol = -1;
-  if (comm->nRanks == 1) return ncclSuccess;
-  int nAlgos = NCCL_NUM_ALGORITHMS;
-  for (int a=0; a<nAlgos; a++) {
-    if (a == NCCL_ALGO_COLLNET && collNetTypeSupport != 1) continue;
-    for (int p=0; p<NCCL_NUM_PROTOCOLS; p++) {
-      float time;
-      NCCLCHECK(ncclTopoGetAlgoTime(info, a, p, numPipeOps, &time));
-      if (time >= 0 && time < minTime) {
-        info->algorithm = a;
-        info->protocol = p;
-        minTime = time;
+  if (comm->nRanks == 1) {
+    info->algorithm = NCCL_ALGO_RING;
+    info->protocol = NCCL_PROTO_SIMPLE;
+  }
+  else {
+    float minTime = 3600000000.0; // Hopefully no operation will take an hour to complete.
+    // Find algorithm / protocol.
+    info->algorithm = -1;
+    info->protocol = -1;
+    int nAlgos = NCCL_NUM_ALGORITHMS;
+    for (int a=0; a<nAlgos; a++) {
+      if (a == NCCL_ALGO_COLLNET && collNetTypeSupport != 1) continue;
+      for (int p=0; p<NCCL_NUM_PROTOCOLS; p++) {
+        float time;
+        NCCLCHECK(ncclTopoGetAlgoTime(info, a, p, numPipeOps, &time));
+        if (time >= 0 && time < minTime) {
+          info->algorithm = a;
+          info->protocol = p;
+          minTime = time;
+        }
       }
     }
+    if (info->algorithm == -1 || info->protocol == -1) {
+      WARN("Error : no algorithm/protocol available");
+      return ncclInternalError;
+    }
+    //if (comm->rank == 0) INFO(NCCL_TUNING, "%ld Bytes -> Algo %d proto %d time %f", info->nBytes, info->algorithm, info->protocol, minTime);
+    TRACE(NCCL_COLL, "%ld Bytes -> Algo %d proto %d time %f", info->nBytes, info->algorithm, info->protocol, minTime);
   }
-  if (info->algorithm == -1 || info->protocol == -1) {
-    WARN("Error : no algorithm/protocol available");
-    return ncclInternalError;
-  }
-  //if (comm->rank == 0) INFO(NCCL_TUNING, "%ld Bytes -> Algo %d proto %d time %f", info->nBytes, info->algorithm, info->protocol, minTime);
-  TRACE(NCCL_COLL, "%ld Bytes -> Algo %d proto %d time %f", info->nBytes, info->algorithm, info->protocol, minTime);
 
   int nc = (info->nChannels > 0) ? info->nChannels : comm->nChannels;
   int nt = comm->maxThreads[info->algorithm][info->protocol];
@@ -495,7 +515,15 @@ comp_next:
   work->coll.nChannels = info->nChannels;
   work->nThreads = info->nThreads;
 
-  work->funcIndex = FUNC_INDEX(info->coll, info->op, info->datatype, info->algorithm, info->protocol);
+  if (info->comm->nRanks == 1) {
+    // one-rank reduce index
+    work->funcIndex = 1 + int(info->datatype);
+    return ncclSuccess;
+  }
+
+  work->coll.redOpArg = info->opFull.scalarArg;
+  work->redOpArgIsPtr = info->opFull.scalarArgIsPtr;
+  work->funcIndex = FUNC_INDEX(info->coll, info->opFull.op, info->datatype, info->algorithm, info->protocol);
 
   int stepSize   = info->comm->buffSizes[info->protocol]/NCCL_STEPS;
   int chunkSteps = (info->protocol == NCCL_PROTO_SIMPLE && info->algorithm == NCCL_ALGO_RING) ? info->chunkSteps : 1;
@@ -550,7 +578,7 @@ comp_next:
   proxyArgs->protocol = info->protocol;
   proxyArgs->dtype = info->datatype;
   proxyArgs->redOp = info->algorithm != NCCL_ALGO_COLLNET ? ncclNumOps : // Only set redOp when using CollNet
-                     info->op == ncclAvg ? ncclSum : // Network sees avg as sum
+                     info->opFull.op==ncclDevPreMulSum || info->opFull.op==ncclDevSumPostDiv ? ncclSum : // Network sees avg as sum
                      info->op;
   proxyArgs->pattern = info->pattern;
   proxyArgs->root = info->root;
@@ -627,7 +655,9 @@ static ncclResult_t ncclRegBuffAndExchange(struct ncclInfo* info, struct ncclBuf
 // Capture time code in view of CUDA graph
 static ncclResult_t ncclSetupCollKernel(struct ncclInfo* info) {
   ncclComm_t comm = info->comm;
-  if (comm->nRanks == 1) {
+  if (comm->nRanks == 1 &&
+      // User-defined reduction ops may need alter the data even for unitary reductions
+      info->op < ncclNumOps) {
     if (info->sendbuff != info->recvbuff)
       CUDACHECK(cudaMemcpyAsync(info->recvbuff, info->sendbuff, info->nBytes, cudaMemcpyDeviceToDevice, info->stream));
     return ncclSuccess;
@@ -714,29 +744,29 @@ ncclResult_t ncclSetupAsyncKernels(ncclComm_t comm) {
     // Reduce the per-channel size if we cannot fully utilize the channels
     while (comm->asyncTotalSize < channelSize * comm->nChannels && channelSize > NCCL_MIN_CHANNEL_SIZE) channelSize /= 2;
     int channelUsed = 0;
-    ncclFunc_t commonColl = ncclNumFuncs;
-    int fastPath = 1;
+    int homogeneous = 1;
     int allCollNetSupport = comm->collNetSupport;
     for (int c = 0; c < comm->asyncOpCount; c++) {
       struct ncclInfo* info = comm->asyncOps+c;
       info->nChannels = std::min(std::max(1, (int)DIVUP(info->nBytes, channelSize)), comm->nChannels); // assign number of channels
       channelUsed += info->nChannels;
       // We can use fast path if all collectives are the same
-      if (commonColl == ncclNumFuncs) commonColl = info->coll;
-      else if (commonColl != info->coll) fastPath = 0;
-      else if (allCollNetSupport > 0) NCCLCHECK(getCollNetSupport(info, &allCollNetSupport));
+      homogeneous &= info->coll == comm->asyncOps[0].coll &&
+                     info->opFull.op == comm->asyncOps[0].opFull.op &&
+                     info->datatype == comm->asyncOps[0].datatype;
+      if (allCollNetSupport > 0) NCCLCHECK(getCollNetSupport(info, &allCollNetSupport));
     }
     // Compute algo, proto, nthreads for the entire kernel
     struct ncclInfo total;
     total.comm = comm;
-    total.coll = commonColl;
+    total.coll = comm->asyncOps[0].coll;
     total.nBytes = comm->asyncTotalSize;
     total.nChannels = std::min(channelUsed, comm->nChannels);
     int perChannelOps = DIVUP(channelUsed, total.nChannels);
-    if (fastPath) NCCLCHECK(getAlgoInfo(&total, allCollNetSupport, perChannelOps));
+    if (homogeneous) NCCLCHECK(getAlgoInfo(&total, allCollNetSupport, perChannelOps));
     for (int c = 0; c < comm->asyncOpCount; c++) {
       struct ncclInfo* info = comm->asyncOps+c;
-      if (fastPath) {
+      if (homogeneous) {
         info->algorithm = total.algorithm;
         info->protocol = total.protocol;
         info->nThreads = total.nThreads;
@@ -811,16 +841,10 @@ static int getSegment(int type, int delta, struct ncclWork* work) {
       if (work->elems[s].active == 0) return s;
     }
   } else if (type == CollNet_Segment) { // CollNet
-    // Do not mix CollNet with other collectives as CollNet has a different stride
-    // CollNet would mark the direct field
-    if (work->elems[0].active != 0 && work->elems[0].direct == 0) return -1;
     for (int s=0; s<NCCL_MAX_WORK_ELEMENTS; s+=NCCL_REG_ELEM_FACTOR) {
       if (work->elems[s].active == 0) return s;
     }
   } else {  // Ring or Tree
-    // Do not mix CollNet with other collectives as CollNet has a different stride
-    // CollNet would mark the direct field
-    if (work->elems[0].direct != 0) return -1;
     for (int s=0; s<NCCL_MAX_WORK_ELEMENTS; s++) {
       if (work->elems[s].active == 0) return s;
     }
@@ -964,7 +988,12 @@ ncclResult_t ncclEnqueueCollKernel(struct ncclComm* comm, struct ncclQueueElem* 
       // Try to pack more segments into a single operation
       int opIndex = (channel->workFifoTail-1+NCCL_MAX_OPS)%NCCL_MAX_OPS;
       w = channel->workFifo+opIndex;
-      segment = getSegment(segmentType, 0, w);
+      // All elems in work must have same (funcIndex,nThreads),
+      // see "src/collectives/device/common.h"
+      if (w->elems[0].funcIndex == work->funcIndex &&
+          w->elems[0].nThreads == work->nThreads) {
+        segment = getSegment(segmentType, 0, w);
+      }
     }
     if (segment == -1) {
       NCCLCHECK(getNextOp(channel, &w, NULL));
@@ -1106,18 +1135,92 @@ ncclResult_t ncclCudaGraphHostSetup(ncclComm_t comm, cudaGraph_t graph) {
 #endif
 }
 
-ncclResult_t ncclEnqueueCheck(struct ncclInfo* info) {
-  // Launch asynchronously if needed
-  if (ncclAsyncMode()) {
-    ncclResult_t ret = ncclSuccess;
-    int savedDev = -1;
-    // Check arguments
-    NCCLCHECK(PtrCheck(info->comm, info->opName, "comm"));
-    if (info->comm->checkPointers) {
-      CUDACHECKGOTO(cudaGetDevice(&savedDev), ret, end);
-      CUDACHECKGOTO(cudaSetDevice(info->comm->cudaDev), ret, end);
+static ncclResult_t hostToDevRedOp(
+    ncclDevRedOpFull *opFull, ncclRedOp_t op, ncclDataType_t datatype, ncclComm *comm
+  ) {
+  union {
+    int8_t i8;
+    uint8_t u8;
+    int32_t i32;
+    uint32_t u32;
+    int64_t i64;
+    uint64_t u64;
+    half f16;
+    #if defined(__CUDA_BF16_TYPES_EXIST__)
+      __nv_bfloat16 bf16;
+    #endif
+    float f32;
+    double f64;
+    void *ptr;
+  };
+  u64 = 0;
+  opFull->scalarArgIsPtr = false;
+  switch (int(op)) {
+  case ncclSum:  opFull->op = ncclDevSum;  break;
+  case ncclProd: opFull->op = ncclDevProd; break;
+  case ncclMax:  opFull->op = ncclDevMax;  break;
+  case ncclMin:  opFull->op = ncclDevMin;  break;
+  case ncclAvg:
+    switch ((int)datatype) {
+    case ncclInt8:  case ncclInt32:  case ncclInt64:
+    case ncclUint8: case ncclUint32: case ncclUint64:
+      opFull->op = ncclDevSumPostDiv;
+      u64 = comm->nRanks;
+      break;
+    case ncclFloat16:
+      opFull->op = ncclDevPreMulSum;
+      f16 = __double2half(1.0/comm->nRanks);
+      break;
+    #if defined(__CUDA_BF16_TYPES_EXIST__)
+    case ncclBfloat16:
+      opFull->op = ncclDevPreMulSum;
+      bf16 = __double2bfloat16(1.0/comm->nRanks);
+      break;
+    #endif
+    case ncclFloat32:
+      opFull->op = ncclDevPreMulSum;
+      f32 = float(1.0/comm->nRanks);
+      break;
+    case ncclFloat64:
+      opFull->op = ncclDevPreMulSum;
+      f64 = 1.0/comm->nRanks;
+      break;
     }
-    NCCLCHECKGOTO(ArgsCheck(info), ret, end);
+    opFull->scalarArgIsPtr = false;
+    opFull->scalarArg = u64;
+    break;
+  default: // user created
+    int ix = int(ncclUserRedOpMangle(comm, op)) - int(ncclNumOps);
+    ncclUserRedOp *user = &comm->userRedOps[ix];
+    if (datatype != user->datatype) {
+      WARN("Data type supplied to user-created ncclRedOp_t does not match type "
+           "given to reduction operation");
+      return ncclInvalidArgument;
+    }
+    *opFull = user->opFull;
+    break;
+  }
+  return ncclSuccess;
+}
+
+ncclResult_t ncclEnqueueCheck(struct ncclInfo* info) {
+  ncclResult_t ret = ncclSuccess;
+  bool isAsync = ncclAsyncMode();
+  int savedDev = -1;
+  // Check arguments
+  NCCLCHECK(PtrCheck(info->comm, info->opName, "comm"));
+  if (isAsync && info->comm->checkPointers) {
+    CUDACHECKGOTO(cudaGetDevice(&savedDev), ret, end);
+    CUDACHECKGOTO(cudaSetDevice(info->comm->cudaDev), ret, end);
+  }
+  NCCLCHECKGOTO(ArgsCheck(info), ret, end);
+
+  // Copy reduction op state from op handle into info struct here since the
+  // op handle may be destroyed before ncclGroupEnd().
+  NCCLCHECKGOTO(hostToDevRedOp(&info->opFull, info->op, info->datatype, info->comm), ret, end);
+
+  // Launch asynchronously if needed
+  if (isAsync) {
     // Always register comm even in case of error to make sure ncclGroupEnd
     // cleans it up.
     NCCLCHECKGOTO(ncclAsyncColl(info->comm), ret, end);
@@ -1132,14 +1235,8 @@ ncclResult_t ncclEnqueueCheck(struct ncclInfo* info) {
     } else {
       NCCLCHECKGOTO(ncclSaveAsyncColl(info), ret, end);
     }
-end:
-    if (savedDev != -1) CUDACHECK(cudaSetDevice(savedDev));
-    ncclAsyncErrCheck(ret);
-    return ret;
   } else {
-    NCCLCHECK(PtrCheck(info->comm, info->opName, "comm"));
-    NCCLCHECK(ArgsCheck(info));
-    NCCLCHECK(checkSetStream(info));
+    NCCLCHECKGOTO(checkSetStream(info), ret, end);
 
     INFO(NCCL_COLL,"%s: opCount %lx sendbuff %p recvbuff %p count %zi datatype %d op %d root %d comm %p [nranks=%d] stream %p",
         info->opName, info->comm->opCount, info->sendbuff, info->recvbuff, info->count,
@@ -1148,24 +1245,82 @@ end:
     // Check whether we are in cuda graph mode
     cudaGraph_t graph;
     ncclComm_t comm = info->comm;
-    NCCLCHECK(ncclGetCudaGraph(comm, &graph));
+    NCCLCHECKGOTO(ncclGetCudaGraph(comm, &graph), ret, end);
 
     // Common part between graph mode and non-graph mode
-    NCCLCHECK(ncclSetupCollKernel(info));
+    NCCLCHECKGOTO(ncclSetupCollKernel(info), ret, end);
 
     // Host setup
     if (comm->usingCudaGraph) {
-      NCCLCHECK(ncclCudaGraphHostSetup(comm, graph));
+      NCCLCHECKGOTO(ncclCudaGraphHostSetup(comm, graph), ret, end);
     } else {
       ncclEnqueueHostSetup<0>(comm->enqueueInfo);
-      NCCLCHECK(comm->enqueueInfo->ret);
+      NCCLCHECKGOTO(comm->enqueueInfo->ret, ret, end);
     }
 
     // Common part between graph mode and non-graph mode
-    NCCLCHECK(ncclLaunchBarrier(comm));
-    NCCLCHECK(ncclLaunchKernel(comm));
-    NCCLCHECK(ncclRecordEvents(comm));
-    NCCLCHECK(ncclLaunchReset(comm));
-    return ncclSuccess;
+    NCCLCHECKGOTO(ncclLaunchBarrier(comm), ret, end);
+    NCCLCHECKGOTO(ncclLaunchKernel(comm), ret, end);
+    NCCLCHECKGOTO(ncclRecordEvents(comm), ret, end);
+    NCCLCHECKGOTO(ncclLaunchReset(comm), ret, end);
   }
+end:
+  if (isAsync && savedDev != -1) CUDACHECK(cudaSetDevice(savedDev));
+  if (isAsync) ncclAsyncErrCheck(ret);
+  return ret;
+}
+
+NCCL_API(ncclResult_t, ncclRedOpCreatePreMulSum, ncclRedOp_t *op, void *scalar, ncclDataType_t datatype, ncclScalarResidence_t residence, ncclComm_t comm);
+ncclResult_t ncclRedOpCreatePreMulSum(ncclRedOp_t *op, void *scalar, ncclDataType_t datatype, ncclScalarResidence_t residence, ncclComm_t comm) {
+  if (comm->userRedOpFreeHead == comm->userRedOpCapacity) {
+    // double capacity and resize
+    int cap = 2*comm->userRedOpCapacity;
+    if (cap < 4) cap = 4;
+    ncclUserRedOp *ops = new ncclUserRedOp[cap];
+    std::memcpy(ops, comm->userRedOps, comm->userRedOpCapacity*sizeof(ncclUserRedOp));
+    for(int ix=comm->userRedOpCapacity; ix < cap; ix++)
+      ops[ix].freeNext = ix + 1;
+    delete[] comm->userRedOps;
+    comm->userRedOps = ops;
+    comm->userRedOpCapacity = cap;
+  }
+  // pop from free list
+  int ix = comm->userRedOpFreeHead;
+  ncclUserRedOp *user = &comm->userRedOps[ix];
+  comm->userRedOpFreeHead = user->freeNext;
+
+  user->freeNext = -1; // allocated
+  user->datatype = datatype;
+  user->opFull.op = ncclDevPreMulSum;
+  if (residence == ncclScalarHostImmediate) {
+    user->opFull.scalarArgIsPtr = false;
+    std::memcpy(&user->opFull.scalarArg, scalar, ncclTypeSize(datatype));
+  } else {
+    user->opFull.scalarArgIsPtr = true;
+    user->opFull.scalarArg = reinterpret_cast<uint64_t>(scalar);
+  }
+  *op = ncclRedOp_t(int(ncclNumOps) + ix);
+  *op = ncclUserRedOpMangle(comm, *op);
+  return ncclSuccess;
+}
+
+NCCL_API(ncclResult_t, ncclRedOpDestroy, ncclRedOp_t op, ncclComm_t comm);
+ncclResult_t ncclRedOpDestroy(ncclRedOp_t op, ncclComm_t comm) {
+  if (0 <= int(op) && int(op) < int(ncclNumOps)) {
+    WARN("ncclRedOpDestroy : operator is a NCCL builtin.");
+    return ncclInvalidArgument;
+  }
+  if (int(op) < 0 || int(ncclMaxRedOp) < int(op)) {
+    WARN("ncclRedOpDestroy :  operator is garbage.");
+    return ncclInvalidArgument;
+  }
+  int ix = int(ncclUserRedOpMangle(comm, op)) - int(ncclNumOps);
+  if (comm->userRedOpCapacity <= ix || comm->userRedOps[ix].freeNext != -1) {
+    WARN("ncclRedOpDestroy : operator unknown to this communicator.");
+    return ncclInvalidArgument;
+  }
+  // push to free list
+  comm->userRedOps[ix].freeNext = comm->userRedOpFreeHead;
+  comm->userRedOpFreeHead = ix;
+  return ncclSuccess;
 }

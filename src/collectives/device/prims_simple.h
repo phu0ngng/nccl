@@ -70,7 +70,7 @@ class Primitives<
   }
 
   template <int DirectRecv, int DirectSend, int Recv, int Send, int Src, int Dst>
-  inline __device__ void waitPeer(intptr_t dstIx, intptr_t remoteIx, int offset, int nelts) {
+  __device__ __forceinline__ void waitPeer(intptr_t dstIx, intptr_t remoteIx, int offset, int nelts) {
     const bool isSendNotRecv = (Send && Recv) ? (flags & RoleWaitSend) : Send;
     const bool noRecvWait = DirectRecv && Src && (flags & DirectRead);        // no wait when directly reading from remote input
     const bool noSendWait = DirectSend && (flags & (DirectRead|DirectWrite)); // no wait in empty send (e.g. directScatter) or direct remote write
@@ -125,7 +125,7 @@ class Primitives<
   }
 
   template <int DirectRecv1, int DirectSend1, int Recv, int Send, int SrcBuf, int DstBuf>
-  inline __device__ void genericOp(
+  __device__ __forceinline__ void genericOp(
       intptr_t srcIx, intptr_t dstIx, intptr_t remoteIx, int nelem, bool postOp
     ) {
     constexpr int DirectRecv = 1 && Direct && DirectRecv1;
@@ -230,9 +230,9 @@ class Primitives<
     }
   }
 
-  // Scatter do not support Direct
+  // Scatter/Gather generic op
   template <int DirectRecv1, int DirectSend1, int Recv, int Send>
-  inline __device__ void
+  __device__ __forceinline__ void
   ScatterGatherOp(intptr_t inpIx, intptr_t outIx, int totalElem, int peerElem, int skip, int shift, bool postOp) {
     constexpr int DirectRecv = 1 && Direct && DirectRecv1;
     constexpr int DirectSend = 1 && Direct && DirectSend1;
@@ -383,11 +383,11 @@ class Primitives<
  public:
   __device__ Primitives(
       int tid, int nthreads, int const *recvPeers, int const *sendPeers,
-      void const *inputBuf, void *outputBuf, uint32_t group=0, struct ncclWorkElem* e = nullptr
+      void const *inputBuf, void *outputBuf, uint64_t redOpArg, uint32_t group=0, struct ncclWorkElem* e = nullptr
     ):
     tid(tid),
     stepSize(ncclShmem.comm.buffSizes[NCCL_PROTO_SIMPLE]/NCCL_STEPS/sizeof(T)),
-    redOp(FuncTraits<RedOp>::make(ncclShmem.comm.nRanks)) {
+    redOp(redOpArg) {
 
     // For send operations, we need an extra warp to overlap the threadfence and the copy
     this->nthreads = nthreads;
