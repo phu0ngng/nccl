@@ -94,7 +94,9 @@ static void ncclDestroyQueueInfo(void* ptr) {
   // Instead, we push these pointers to a pool owned by ncclComm
   // and asks a helper thread to close mem handles
   struct ncclGraphHelperResources* res = comm->graphHelperResources;
-  volatile int* ipcCount = &res->ipcCount;
+  volatile int* ipcCount;
+  if (res == NULL) goto skip;
+  ipcCount = &res->ipcCount;
   pthread_mutex_lock(&res->threadLock);
   while (eqElem != NULL) {
     if (eqElem->buffRegInfo.nBuffs > 0) {
@@ -114,6 +116,7 @@ static void ncclDestroyQueueInfo(void* ptr) {
   }
   pthread_mutex_unlock(&res->threadLock);
 #endif
+skip:
   delete eqInfo->elemList;
   free(eqInfo);
 }

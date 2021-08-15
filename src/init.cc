@@ -997,8 +997,8 @@ ncclResult_t ncclCommInitAll(ncclComm_t* comms, int ndev, const int* devlist) {
 }
 
 static ncclResult_t ncclGraphHelperDestroy(ncclComm* comm) {
-  if (comm->graphHelperThread) {
-    auto res = comm->graphHelperResources;
+  auto res = comm->graphHelperResources;
+  if (comm->graphHelperThread && res) {
     pthread_mutex_lock(&res->threadLock);
     res->threadState = ThreadStop;
     pthread_cond_signal(&res->threadCond);
@@ -1021,7 +1021,9 @@ static ncclResult_t commDestroy(ncclComm_t comm) {
 
   CUDACHECK(cudaStreamSynchronize(comm->groupStream));
   NCCLCHECK(ncclProxyDestroy(comm));
+#if CUDART_VERSION >= 11030
   NCCLCHECK(ncclGraphHelperDestroy(comm));
+#endif
   NCCLCHECK(commFree(comm));
 
   if (savedDevice != commDevice)
