@@ -171,7 +171,7 @@ __device__ void ncclKernel(ncclWorkElem first)  {
     if (tid == 0)
       channel->index = workFifoIx; // write back to real channel, not shmem shadow
 
-    if (tid < NCCL_MAX_WORK_ELEMENTS) {
+    if (tid < NCCL_MAX_WORK_ELEMENTS && tid % ncclWorkElemFactors[Algo] == 0) {
       ncclWorkElem *we = &ncclShmem.work.elems[tid];
       if (we->redOpArgIsPtr && we->active != 0) {
         /* redOpArg is a pointer to the scalar value, so we'll dereference it
