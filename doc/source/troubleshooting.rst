@@ -132,6 +132,27 @@ InfiniBand
 
 Before running NCCL on InfiniBand, running low-level InfiniBand tests (and in particular the ib_write_bw test) can help verify which nodes are able to communicate properly.
 
+A common issue seen with InfiniBand is the library not being able to register sufficient pinned memory. In such cases you may see an error like:
+
+.. code:: shell
+
+ NCCL WARN Call to ibv_create_qp failed
+
+or
+
+.. code:: shell
+
+ NCCL WARN Call to ibv_reg_mr failed
+
+The solution is to remove the user limits on registering pinned memory. This can be done by adding these lines:
+
+.. code:: shell
+
+ * soft memlock unlimited
+ * hard memlock unlimited
+
+To the /etc/security/limits.conf configuration file or equivalent on your Linux distribution.
+
 ************
 Known Issues
 ************

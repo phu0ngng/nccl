@@ -87,6 +87,21 @@ ncclResult_t p2pCanConnect(int* ret, struct ncclTopoSystem* topo, struct ncclTop
     *ret = 0;
     return ncclSuccess;
   }
+
+  // Check that legacy IPC support is available
+  if (p2p != 0) {
+    char *dummy;
+    cudaIpcMemHandle_t ipc;
+    NCCLCHECK(ncclCudaCalloc(&dummy, CUDA_IPC_MIN));
+    if (cudaIpcGetMemHandle(&ipc, dummy) != cudaSuccess) {
+      INFO(NCCL_INIT|NCCL_P2P,"Legacy IPC not supported on dev %d(=%lx)",
+           cudaDev1, info1->busId);
+      *ret = 0;
+    }
+    CUDACHECK(cudaFree(dummy));
+    return ncclSuccess;
+  }
+
   if (p2p == 0) {
     INFO(NCCL_INIT|NCCL_P2P,"Could not enable P2P between dev %d(=%lx) and dev %d(=%lx)",
          cudaDev1, info1->busId, cudaDev2, info2->busId);
