@@ -239,28 +239,28 @@ class Primitives<
     int offset = 0; // slice offset
     int sliceSize = stepSize*StepPerSlice;
     int dataSize = max(DIVUP(peerElem, 16*SlicePerChunk)*16, sliceSize/32);  // per-peer slice size
+    __shared__ int totalSendSize;
 
     #pragma unroll
     for (int slice=0; slice<SlicePerChunk; ++slice) {
       int realSize = max(0, min(dataSize, peerElem-offset));
+      if (tid == 0) totalSendSize = 0; // Skip the threadfence
       if (tid < nworkers) {
         if (Send) {
           if (flags & RoleInput) ncclShmem.groups[group].srcs[0] = userBuff + inpIx + offset;
           // realSize is not accurate here; but intra-node does not rely on sizes FIFO
           waitPeer<0, DirectSend, 0, 1, 1, 0>(0, inpIx, offset, realSize);
           subBarrier();
-          if (DirectSend && ncclShmem.groups[group].dsts[0] == nullptr) {
-            // Do nothing
-            realSize = 0; // Skip the threadfence
-          } else {
-            #pragma unroll
-            for (int j=0; j<fan.nsend(); j++) {
-              int i = (j+shift)%fan.nsend();
-              int peerOffset = i*peerElem;
-              if (skip >= 0 && i >= skip) peerOffset += peerElem;
-              const T* src0 = (T*)ncclShmem.groups[group].srcs[0] + peerOffset;
-              int realPeerSize = min(realSize, totalElem-peerOffset);
-              if (realPeerSize > 0) ReduceOrCopyMulti<Unroll, RedOp, T, 1, 1, 1, 1>(tid, nworkers, redOp, true, false, 1, &src0, 1, (T**)ncclShmem.groups[group].dsts+i, realPeerSize);
+          #pragma unroll
+          for (int j=0; j<fan.nsend(); j++) {
+            int i = (j+shift)%fan.nsend();
+            int peerOffset = i*peerElem;
+            if (skip >= 0 && i >= skip) peerOffset += peerElem;
+            const T* src0 = (T*)ncclShmem.groups[group].srcs[0] + peerOffset;
+            int realPeerSize = min(realSize, totalElem-peerOffset);
+            if (realPeerSize > 0 && ncclShmem.groups[group].dsts[i] != nullptr) {
+              ReduceOrCopyMulti<Unroll, RedOp, T, 1, 1, 1, 1>(tid, nworkers, redOp, true, false, 1, &src0, 1, (T**)ncclShmem.groups[group].dsts+i, realPeerSize);
+              if (tid == 0) totalSendSize += realPeerSize;
             }
           }
         } else if (Recv) {
@@ -273,7 +273,6 @@ class Primitives<
           if (DirectRecv && ncclShmem.groups[group].srcs[0] == ncclShmem.groups[group].dsts[0]) {
             // Since waitPeer sets srcs[0] to output buffer + offset, we are doing a direct-write based recv
             // Do nothing
-            realSize = 0; // Skip the threadfence
           } else {
             #pragma unroll
             for (int j=0; j<fan.nrecv(); j++) {
@@ -288,7 +287,7 @@ class Primitives<
         }
       }
       barrier();
-      if (Send && (flags & RolePostSend) && realSize > 0 && index == 0) __threadfence_system();
+      if (Send && (flags & RolePostSend) && totalSendSize > 0 && index == 0) __threadfence_system();
       __syncwarp();
       postPeer<Recv, Send>();
       offset += realSize;
