@@ -616,6 +616,7 @@ struct ncclBuffRegHandle {
 static ncclResult_t ncclRegBuffAndExchange(struct ncclInfo* info, struct ncclBuffRegInfo* regInfo) {
   ncclComm_t comm = info->comm;
   if (comm->localRanks == 1) return ncclSuccess;
+  if (comm->pfnCuMemGetAddressRange == NULL) return ncclSuccess;  // CUDA toolkit or driver version too old
 
   struct ncclBuffRegHandle regHandles[NCCL_MAX_INTRA_RANKS];
   // Get IPC handles
@@ -691,7 +692,7 @@ static ncclResult_t ncclSetupCollKernel(struct ncclInfo* info) {
       comm->intraHighestTransportType == TRANSPORT_P2P && // only when all ranks can p2p each other
       comm->intraRanks == 1) {                  // only in multi-process mode
     NCCLCHECK(ncclRegBuffAndExchange(info, &eqElem->buffRegInfo));
-    // Disable inline argument becase we need kernel to copy the entire ncclWork from workFifo
+    // Disable inline argument because we need kernel to copy the entire ncclWork from workFifo
     // because the registered addresses are in ncclWork
     if (eqElem->buffRegInfo.nBuffs > 0) comm->args.active = 0;
   }

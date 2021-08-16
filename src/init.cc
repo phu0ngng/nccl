@@ -306,6 +306,8 @@ static ncclResult_t commAlloc(ncclComm_t* comret, int ndev, int rank) {
     comm->asyncAllocMode = ncclComm::ROUND_ROBIN;
   }
 
+  CUDACHECK(cudaDriverGetVersion(&comm->driverVersion));
+
   NCCLCHECK(ncclCreateQueueInfo(&comm->enqueueInfo, comm));
   comm->lastSetupNode = NULL;
   comm->lastCudaGraphId = -1;
@@ -313,10 +315,10 @@ static ncclResult_t commAlloc(ncclComm_t* comret, int ndev, int rank) {
 #if CUDART_VERSION >= 11030
   NCCLCHECK(ncclCalloc(&comm->graphHelperResources, 1));
   comm->graphHelperResources->comm = comm;
-  CUDACHECK(cudaGetDriverEntryPoint("cuMemGetAddressRange", (void**)&comm->pfnCuMemGetAddressRange, cudaEnableDefault));
+  if (comm->driverVersion >= 11030)
+    // cudaGetDriverEntryPoint requires R465 or above (enhanced compat need)
+    CUDACHECK(cudaGetDriverEntryPoint("cuMemGetAddressRange", (void**)&comm->pfnCuMemGetAddressRange, cudaEnableDefault));
 #endif
-
-  CUDACHECK(cudaDriverGetVersion(&comm->driverVersion));
 
   static_assert(MAXCHANNELS <= sizeof(*comm->connectSend)*8, "comm->connectSend must have enough bits for all channels");
   static_assert(MAXCHANNELS <= sizeof(*comm->connectRecv)*8, "comm->connectRecv must have enough bits for all channels");
