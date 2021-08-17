@@ -181,7 +181,7 @@ class Primitives<
           // We can only have one direct receive. Since srcs[0] == dstPtr+offset, skip one copy
           if (Send) {
             // (1-Send) is only there to avoid compilation errors in case MaxSend=0 (and Send=0).
-            ReduceOrCopyMulti<Unroll, RedOp, T, 1, 1, 1, (1-Send)+MaxSend>
+            ReduceOrCopyMulti<Unroll, RedOp, T, 1, 1, 1, (1-Send)+MaxSend, 0>
               (tid, nworkers, redOp, false, false,
                1, (T const**)ncclShmem.groups[group].srcs,
                fan.nsend(), (T**)ncclShmem.groups[group].dsts+1,
@@ -189,13 +189,15 @@ class Primitives<
           }
         } else if (DirectSend && !DirectRecv && SrcBuf != Input && ncclShmem.groups[group].dsts[Dst] == nullptr) {
           // For broadcast in CollNet to do empty send
-          ReduceOrCopyMulti<Unroll, RedOp, T, 1, 1, 1, 1>
+          ReduceOrCopyMulti<Unroll, RedOp, T, 1, 1, 1, 1, 0>
             (tid, nworkers, redOp, false, postOp,
              Recv, (T const**)ncclShmem.groups[group].srcs,
              Dst, (T**)ncclShmem.groups[group].dsts,
              sliceSize);
         } else {
-          ReduceOrCopyMulti<Unroll, RedOp, T, Recv+Src, Recv*MaxRecv+Src, Send+Dst, Send*MaxSend+Dst>
+          constexpr int PreOpN = SrcBuf != Input ? 0 :
+            DirectRecv*MaxRecv == NCCL_MAX_DIRECT_ARITY ? (1+NCCL_MAX_DIRECT_ARITY) : 1;
+          ReduceOrCopyMulti<Unroll, RedOp, T, Recv+Src, Recv*MaxRecv+Src, Send+Dst, Send*MaxSend+Dst, PreOpN>
             (tid, nworkers, redOp, SrcBuf==Input, postOp,
              Recv*fan.nrecv()+Src, (T const**)ncclShmem.groups[group].srcs,
              Send*fan.nsend()+Dst, (T**)ncclShmem.groups[group].dsts,
@@ -259,7 +261,8 @@ class Primitives<
             const T* src0 = (T*)ncclShmem.groups[group].srcs[0] + peerOffset;
             int realPeerSize = min(realSize, totalElem-peerOffset);
             if (realPeerSize > 0 && ncclShmem.groups[group].dsts[i] != nullptr) {
-              ReduceOrCopyMulti<Unroll, RedOp, T, 1, 1, 1, 1>(tid, nworkers, redOp, true, false, 1, &src0, 1, (T**)ncclShmem.groups[group].dsts+i, realPeerSize);
+              // Scatter never pre-scale data of input buffers
+              ReduceOrCopyMulti<Unroll, RedOp, T, 1, 1, 1, 1, 0>(tid, nworkers, redOp, true, false, 1, &src0, 1, (T**)ncclShmem.groups[group].dsts+i, realPeerSize);
               if (tid == 0) totalSendSize += realPeerSize;
             }
           }
@@ -281,7 +284,7 @@ class Primitives<
               if (skip >= 0 && i >= skip) peerOffset += peerElem;
               T* dst0 = (T*)ncclShmem.groups[group].dsts[0] + peerOffset;
               int realPeerSize = min(realSize, totalElem-peerOffset);
-              if (realPeerSize > 0) ReduceOrCopyMulti<Unroll, RedOp, T, 1, 1, 1, 1>(tid, nworkers, redOp, false, postOp, 1, (const T**)ncclShmem.groups[group].srcs+i, 1, &dst0, realPeerSize);
+              if (realPeerSize > 0) ReduceOrCopyMulti<Unroll, RedOp, T, 1, 1, 1, 1, 0>(tid, nworkers, redOp, false, postOp, 1, (const T**)ncclShmem.groups[group].srcs+i, 1, &dst0, realPeerSize);
             }
           }
         }

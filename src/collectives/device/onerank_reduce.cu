@@ -29,7 +29,7 @@ namespace {
       i1 = i1 < eltN ? i1 : eltN;
       src += i0;
       dst += i0;
-      ReduceOrCopyMulti<COLL_UNROLL, RedOp, T, 1, 1, 1, 1>
+      ReduceOrCopyMulti<COLL_UNROLL, RedOp, T, 1, 1, 1, 1, 1>
         (tid, tn, RedOp(we->coll.redOpArg), true, true, 1, &src, 1, &dst, i1-i0);
     }
   }
