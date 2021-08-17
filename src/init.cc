@@ -227,8 +227,6 @@ static ncclResult_t commFree(ncclComm_t comm) {
     CUDACHECK(cudaStreamDestroy(comm->groupStream));
   }
 
-  ncclDestroyQueueInfo(comm->enqueueInfo);
-
   // Last rank frees shared resources between threads
   int isLast;
   NCCLCHECK(ncclCpuBarrierIn(comm, &isLast));
@@ -1020,6 +1018,10 @@ static ncclResult_t ncclGraphHelperDestroy(ncclComm* comm) {
     pthread_mutex_unlock(&res->threadLock);
     pthread_join(comm->graphHelperThread, NULL);
   }
+  if (res) {
+    free(res);
+    res = NULL;
+  }
   return ncclSuccess;
 }
 
@@ -1036,9 +1038,11 @@ static ncclResult_t commDestroy(ncclComm_t comm) {
 
   CUDACHECK(cudaStreamSynchronize(comm->groupStream));
   NCCLCHECK(ncclProxyDestroy(comm));
+  ncclDestroyQueueInfo(comm->enqueueInfo);
 #if CUDART_VERSION >= 11030
   NCCLCHECK(ncclGraphHelperDestroy(comm));
 #endif
+  INFO(NCCL_COLL, "Created %d queue info, destroyed %d", comm->nQueueInfoCreated, comm->nQueueInfoDestroyed);
   NCCLCHECK(commFree(comm));
 
   if (savedDevice != commDevice)

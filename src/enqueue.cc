@@ -695,6 +695,7 @@ static ncclResult_t ncclSetupCollKernel(struct ncclInfo* info) {
     // Disable inline argument because we need kernel to copy the entire ncclWork from workFifo
     // because the registered addresses are in ncclWork
     if (eqElem->buffRegInfo.nBuffs > 0) comm->args.active = 0;
+    comm->enqueueInfo->nRegBuffs += eqElem->buffRegInfo.nBuffs;
   }
 
   return ncclSuccess;

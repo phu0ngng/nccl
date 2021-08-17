@@ -52,6 +52,7 @@ struct ncclQueueInfo {
   ncclComm_t comm;
   int maxChannels;    // Dynamic version of gridDim
   ncclResult_t ret;   // Return value of host setup call
+  int nRegBuffs;
   ncclQueueElemList* elemList;
 };
 
@@ -59,6 +60,7 @@ static ncclResult_t ncclCreateQueueInfo(struct ncclQueueInfo** eqInfo, ncclComm_
   NCCLCHECK(ncclCalloc(eqInfo, 1));
   (*eqInfo)->comm = comm;
   (*eqInfo)->elemList = new ncclQueueElemList();
+  (*eqInfo)->comm->nQueueInfoCreated++;
   return ncclSuccess;
 }
 
@@ -67,6 +69,7 @@ static ncclResult_t ncclResetQueueInfo(struct ncclQueueInfo* eqInfo) {
   if (eqInfo == NULL) return ncclInternalError;
   eqInfo->maxChannels = 0;
   eqInfo->ret = ncclSuccess;
+  eqInfo->nRegBuffs = 0;
   eqInfo->elemList->recycle();
   return ncclSuccess;
 }
@@ -95,16 +98,15 @@ static void ncclDestroyQueueInfo(void* ptr) {
   // and asks a helper thread to close mem handles
   struct ncclGraphHelperResources* res = comm->graphHelperResources;
   volatile int* ipcCount;
-  if (res == NULL || (!comm->graphHelperThread)) goto skip;
-  ipcCount = &res->ipcCount;
+  if (res == NULL || (!comm->graphHelperThread) || eqInfo->nRegBuffs == 0) goto skip;
+
   pthread_mutex_lock(&res->threadLock);
+  ipcCount = &res->ipcCount;
   while (eqElem != NULL) {
     if (eqElem->buffRegInfo.nBuffs > 0) {
-      memcpy(res->ipcBases+(*ipcCount), eqElem->buffRegInfo.sendbuffsBase,
-          eqElem->buffRegInfo.nBuffs*sizeof(void*));
+      memcpy(res->ipcBases+(*ipcCount), eqElem->buffRegInfo.sendbuffsBase, eqElem->buffRegInfo.nBuffs*sizeof(void*));
       (*ipcCount) += eqElem->buffRegInfo.nBuffs;
-      memcpy(res->ipcBases+(*ipcCount), eqElem->buffRegInfo.recvbuffsBase,
-          eqElem->buffRegInfo.nBuffs*sizeof(void*));
+      memcpy(res->ipcBases+(*ipcCount), eqElem->buffRegInfo.recvbuffsBase, eqElem->buffRegInfo.nBuffs*sizeof(void*));
       (*ipcCount) += eqElem->buffRegInfo.nBuffs;
     }
     eqElem = eqInfo->elemList->getNext();
@@ -116,8 +118,11 @@ static void ncclDestroyQueueInfo(void* ptr) {
   }
   pthread_mutex_unlock(&res->threadLock);
 #endif
+
 skip:
   delete eqInfo->elemList;
   free(eqInfo);
+  comm->nQueueInfoDestroyed++;
+  return;
 }
 #endif // End include guard
