@@ -196,7 +196,7 @@ class Primitives<
              sliceSize);
         } else {
           constexpr int PreOpN = SrcBuf != Input ? 0 :
-            DirectRecv*MaxRecv == NCCL_MAX_DIRECT_ARITY ? (1+NCCL_MAX_DIRECT_ARITY) : 1;
+                                 DirectRecv*MaxRecv == NCCL_MAX_DIRECT_ARITY ? (1+NCCL_MAX_DIRECT_ARITY) : 1;
           ReduceOrCopyMulti<Unroll, RedOp, T, Recv+Src, Recv*MaxRecv+Src, Send+Dst, Send*MaxSend+Dst, PreOpN>
             (tid, nworkers, redOp, postOp,
              Recv*fan.nrecv()+Src, (T const**)ncclShmem.groups[group].srcs,
@@ -249,6 +249,7 @@ class Primitives<
       if (tid == 0) totalSendSize = 0; // Skip the threadfence
       if (tid < nworkers) {
         if (Send) {
+          constexpr int PreOpN = DirectSend ? 0 : 1;
           if (flags & RoleInput) ncclShmem.groups[group].srcs[0] = userBuff + inpIx + offset;
           // realSize is not accurate here; but intra-node does not rely on sizes FIFO
           waitPeer<0, DirectSend, 0, 1, 1, 0>(0, inpIx, offset, realSize);
@@ -262,7 +263,7 @@ class Primitives<
             int realPeerSize = min(realSize, totalElem-peerOffset);
             if (realPeerSize > 0 && ncclShmem.groups[group].dsts[i] != nullptr) {
               // Scatter never pre-scale data of input buffers
-              ReduceOrCopyMulti<Unroll, RedOp, T, 1, 1, 1, 1, 0>(tid, nworkers, redOp, false, 1, &src0, 1, (T**)ncclShmem.groups[group].dsts+i, realPeerSize);
+              ReduceOrCopyMulti<Unroll, RedOp, T, 1, 1, 1, 1, PreOpN>(tid, nworkers, redOp, false, 1, &src0, 1, (T**)ncclShmem.groups[group].dsts+i, realPeerSize);
               if (tid == 0) totalSendSize += realPeerSize;
             }
           }
