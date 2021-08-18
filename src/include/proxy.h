@@ -72,6 +72,7 @@ struct ncclProxySharedP2p {
   int size;
   char* cudaBuff;
   char* hostBuff;
+  cudaIpcMemHandle_t ipc;
   struct ncclProxyArgs* proxyAppend; // Separate send and recv
   void** transportResources[NCCL_MAX_NETDEVS];
 };
@@ -157,7 +158,8 @@ enum ncclProxyMsgType {
 ncclResult_t ncclProxyCall(struct ncclProxyConnector* proxyConn, int type, void* sendData, size_t sendSize, void* recvData, size_t recvSize);
 ncclResult_t ncclProxyDestroy(struct ncclComm* comm);
 
-ncclResult_t ncclProxySharedBuffersInitP2p(struct ncclComm* comm, int cuda, int localRank, int type, int* size, char** ptr);
+ncclResult_t ncclProxySharedBuffersInitP2p(struct ncclComm* comm, int cuda, int localRank, int type, int sameProcess,
+  char** gpuPtr, char** cpuPtr, int* size, cudaIpcMemHandle_t* ipc);
 ncclResult_t ncclProxySharedBuffersInitCollNet(struct ncclComm* comm, int cuda, int* size, char** ptr);
 ncclResult_t ncclProxySharedBuffersGetP2p(struct ncclComm* comm, int channel, int slot, int index, int* offset);
 ncclResult_t ncclProxySharedBuffersGetCollNet(struct ncclComm* comm, int type, int slot, int index, int* offset);

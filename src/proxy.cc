@@ -469,7 +469,12 @@ ncclResult_t ncclProxyStart(struct ncclComm* comm) {
   return ncclSuccess;
 }
 
-ncclResult_t ncclProxySharedBuffersInitP2p(struct ncclComm* comm, int cuda, int localRank, int type, int* size, char** ptr) {
+ncclResult_t ncclProxySharedBuffersInitP2p(struct ncclComm* comm, int cuda, int localRank, int type, int sameProcess,
+  char** gpuPtr, char** cpuPtr, int* size, cudaIpcMemHandle_t* ipc) {
+  if (cuda == 0 && sameProcess == 0) {
+      WARN("PXN should not use host buffers for data");
+      return ncclInternalError;
+  }
   if (comm->proxyState.progressState.localPeers == NULL) {
     NCCLCHECK(ncclCalloc(&comm->proxyState.progressState.localPeers, comm->localRanks));
   }
@@ -483,10 +488,19 @@ ncclResult_t ncclProxySharedBuffersInitP2p(struct ncclComm* comm, int cuda, int 
 
   if (cuda && state->cudaBuff == NULL) {
     NCCLCHECK(ncclCudaCalloc(&state->cudaBuff, *size));
+    if (sameProcess == 0) {
+      CUDACHECK(cudaIpcGetMemHandle(&state->ipc, state->cudaBuff));
+    }
   } else if (state->hostBuff == NULL) {
     NCCLCHECK(ncclCudaHostCalloc(&state->hostBuff, *size));
   }
-  *ptr = cuda ? state->cudaBuff : state->hostBuff;
+  *cpuPtr = cuda ? state->cudaBuff : state->hostBuff;
+  if (sameProcess) {
+    *gpuPtr = *cpuPtr;
+  } else {
+    *gpuPtr = NULL;
+    memcpy(ipc, &state->ipc, sizeof(cudaIpcMemHandle_t));
+  }
   return ncclSuccess;
 }
 

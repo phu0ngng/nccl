@@ -229,23 +229,23 @@ static ncclResult_t netCreateShm(struct connectMapMem* mem) {
 static ncclResult_t netDumpMap(struct connectMap* map) {
   printf("Dump map same process %d shared %d useGdc %d\n", map->sameProcess, map->shared, map->useGdc);
   struct connectMapMem *mem = map->mems+NCCL_NET_MAP_HOSTMEM;
-  printf("Mem 0: Host mem %s (%dB) CPU %p GPU %p\n", mem->shmPath, mem->size, mem->cpuPtr, mem->gpuPtr);
+  printf("Mem 0: Host mem %s (%x B) CPU %p GPU %p\n", mem->shmPath, mem->size, mem->cpuPtr, mem->gpuPtr);
   mem = map->mems+NCCL_NET_MAP_DEVMEM;
-  printf("Mem 1: Vid  mem CPU (%dB) %p GPU %p\n", mem->size, mem->cpuPtr, mem->gpuPtr);
+  printf("Mem 1: Vid  mem CPU (%x B) %p GPU %p\n", mem->size, mem->cpuPtr, mem->gpuPtr);
   mem = map->mems+NCCL_NET_MAP_SHARED_HOSTMEM;
-  printf("Mem 2: Shared Host mem %s (%dB) CPU %p GPU %p\n", mem->shmPath, mem->size, mem->cpuPtr, mem->gpuPtr);
+  printf("Mem 2: Shared Host mem %s (%x B) CPU %p GPU %p\n", mem->shmPath, mem->size, mem->cpuPtr, mem->gpuPtr);
   mem = map->mems+NCCL_NET_MAP_SHARED_DEVMEM;
-  printf("Mem 3: Shared Vid  (%dB) mem CPU %p GPU %p\n", mem->size, mem->cpuPtr, mem->gpuPtr);
-  printf("SendMem -> Used %d Bank %d Offset %d, cpu %p gpu %p\n",
+  printf("Mem 3: Shared Vid  (%x B) mem CPU %p GPU %p\n", mem->size, mem->cpuPtr, mem->gpuPtr);
+  printf("SendMem -> Used %d Bank %d Offset %x, cpu %p gpu %p\n",
       map->offsets.sendMem & NCCL_NET_MAP_MASK_USED ? 1 : 0,
       NCCL_NET_MAP_OFFSET_BANK(map, sendMem), map->offsets.sendMem & NCCL_NET_MAP_MASK_OFFSET,
       NCCL_NET_MAP_GET_POINTER(map, cpu, sendMem), NCCL_NET_MAP_GET_POINTER(map, gpu, sendMem));
-  printf("RecvMem -> Used %d Bank %d Offset %d, cpu %p gpu %p\n",
+  printf("RecvMem -> Used %d Bank %d Offset %x, cpu %p gpu %p\n",
       map->offsets.recvMem & NCCL_NET_MAP_MASK_USED ? 1 : 0,
       NCCL_NET_MAP_OFFSET_BANK(map, recvMem), map->offsets.recvMem & NCCL_NET_MAP_MASK_OFFSET,
       NCCL_NET_MAP_GET_POINTER(map, cpu, recvMem), NCCL_NET_MAP_GET_POINTER(map, gpu, recvMem));
   for (int p=0; p<NCCL_NUM_PROTOCOLS; p++) {
-    printf("Proto %d -> Used %d Bank %d Offset %d, cpu %p, gpu %p\n", p,
+    printf("Proto %d -> Used %d Bank %d Offset %x, cpu %p, gpu %p\n", p,
         map->offsets.buffs[p] & NCCL_NET_MAP_MASK_USED ? 1 : 0,
         NCCL_NET_MAP_OFFSET_BANK(map, buffs[p]), map->offsets.buffs[p] & NCCL_NET_MAP_MASK_OFFSET,
         NCCL_NET_MAP_GET_POINTER(map, cpu, buffs[p]), NCCL_NET_MAP_GET_POINTER(map, gpu, buffs[p]));
@@ -267,7 +267,7 @@ static ncclResult_t sendConnect(struct ncclComm* comm, struct ncclConnect* conne
       map.mems[NCCL_NET_MAP_DEVMEM].cpuPtr = NULL;
     }
   }
-  //NCCLCHECK(netDumpMap(&map));
+  NCCLCHECK(netDumpMap(&map));
 
   struct ncclSendMem *sendMem = (struct ncclSendMem*) NCCL_NET_MAP_GET_POINTER(&map, gpu, sendMem);
   send->conn.head = &sendMem->head;
@@ -299,7 +299,7 @@ static ncclResult_t recvConnect(struct ncclComm* comm, struct ncclConnect* conne
       map.mems[NCCL_NET_MAP_DEVMEM].cpuPtr = NULL;
     }
   }
-  //NCCLCHECK(netDumpMap(&map));
+  NCCLCHECK(netDumpMap(&map));
 
   struct ncclSendMem *sendMem = (struct ncclSendMem*) NCCL_NET_MAP_GET_POINTER(&map, gpu, sendMem);
   recv->conn.head = &sendMem->head;
@@ -408,10 +408,13 @@ static ncclResult_t sendProxyConnect(struct ncclProxyConnection* connection, str
     }
   } else {
     // Get shared buffers
-    NCCLCHECK(ncclProxySharedBuffersInitP2p(comm, resources->useGdr, resources->localRank, 0, resources->buffSizes+NCCL_PROTO_SIMPLE, resources->buffers+NCCL_PROTO_SIMPLE));
-    NCCL_NET_MAP_ADD_POINTER(map, 1, resources->useGdr, comm->buffSizes[NCCL_PROTO_SIMPLE], buffs[NCCL_PROTO_SIMPLE]);
-    map->mems[resources->useGdr?NCCL_NET_MAP_SHARED_DEVMEM:NCCL_NET_MAP_SHARED_HOSTMEM].cpuPtr =
-    map->mems[resources->useGdr?NCCL_NET_MAP_SHARED_DEVMEM:NCCL_NET_MAP_SHARED_HOSTMEM].gpuPtr = resources->buffers[NCCL_PROTO_SIMPLE];
+    int bank = resources->useGdr ? NCCL_NET_MAP_SHARED_DEVMEM : NCCL_NET_MAP_SHARED_HOSTMEM;
+    struct connectMapMem* mapMem = map->mems+bank;
+    NCCLCHECK(ncclProxySharedBuffersInitP2p(
+          comm, resources->useGdr, resources->localRank, 0, 1,
+          &mapMem->gpuPtr, &mapMem->cpuPtr, &mapMem->size, NULL));
+    resources->buffSizes[NCCL_PROTO_SIMPLE] = mapMem->size;
+    NCCL_NET_MAP_ADD_POINTER(map, 1, resources->useGdr, mapMem->size, buffs[NCCL_PROTO_SIMPLE]);
   }
 
   NCCL_NET_MAP_ADD_POINTER(map, 0, map->useGdc, sizeof(struct ncclSendMem), sendMem);
@@ -502,9 +505,13 @@ static ncclResult_t recvProxyConnect(struct ncclProxyConnection* connection, str
     }
   } else {
     // Get shared buffers
-    NCCLCHECK(ncclProxySharedBuffersInitP2p(comm, resources->useGdr, resources->localRank, 1, resources->buffSizes+NCCL_PROTO_SIMPLE, resources->buffers+NCCL_PROTO_SIMPLE));
-    NCCL_NET_MAP_ADD_POINTER(map, 1, resources->useGdr, comm->buffSizes[NCCL_PROTO_SIMPLE], buffs[NCCL_PROTO_SIMPLE]);
-    map->mems[2+resources->useGdr].gpuPtr = resources->buffers[NCCL_PROTO_SIMPLE];
+    int bank = resources->useGdr ? NCCL_NET_MAP_SHARED_DEVMEM : NCCL_NET_MAP_SHARED_HOSTMEM;
+    struct connectMapMem* mapMem = map->mems+bank;
+    NCCLCHECK(ncclProxySharedBuffersInitP2p(
+          comm, resources->useGdr, resources->localRank, 1, map->sameProcess,
+          &mapMem->gpuPtr, &mapMem->cpuPtr, &mapMem->size, &mapMem->ipc));
+    resources->buffSizes[NCCL_PROTO_SIMPLE] = mapMem->size;
+    NCCL_NET_MAP_ADD_POINTER(map, 1, resources->useGdr, mapMem->size, buffs[NCCL_PROTO_SIMPLE]);
   }
 
   NCCL_NET_MAP_ADD_POINTER(map, 0, 0, sizeof(struct ncclSendMem), sendMem);
