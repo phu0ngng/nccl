@@ -30,7 +30,7 @@ namespace {
       src += i0;
       dst += i0;
       ReduceOrCopyMulti<COLL_UNROLL, RedOp, T, 1, 1, 1, 1, 1>
-        (tid, tn, RedOp(we->coll.redOpArg), true, 1, &src, 1, &dst, i1-i0);
+        (tid, tn, &(we->coll.redOpArg), true, 1, &src, 1, &dst, i1-i0);
     }
   }
 }

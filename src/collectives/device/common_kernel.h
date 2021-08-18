@@ -488,7 +488,7 @@ inline __device__ void Store128(Pack128* p, Pack128& v) {
 
 template<class FUNC, typename T, int UNROLL, int MINSRCS, int MAXSRCS, int MINDSTS, int MAXDSTS, int PreOpN, typename Int>
 __device__ __forceinline__ void ReduceCopyMulti(const int w, const int nw, const int t,
-    FUNC fn, bool postOp, int nsrcs, const T** s, int ndsts, T** d, const int elemOffset, const Int Nelem
+    uint64_t* redOpArgs, bool postOp, int nsrcs, const T** s, int ndsts, T** d, const int elemOffset, const Int Nelem
   ) {
   const Int inc = nw * UNROLL * WARP_SIZE;
   Int offset = w * UNROLL * WARP_SIZE + t;
@@ -503,12 +503,14 @@ __device__ __forceinline__ void ReduceCopyMulti(const int w, const int nw, const
     // Load and reduce
     for (int u = 0; u < UNROLL; ++u) vals[u] = vFetch(srcs[0]+u*WARP_SIZE);
     if (PreOpN) {
+      FUNC fn(redOpArgs[0]);
       for (int u = 0; u < UNROLL; ++u) vals[u] = FuncTraits<FUNC>().preOp(fn, vals[u]);
     }
 
     #pragma unroll
     for (int i=1; i<MINSRCS; i++) {
       T vals2[UNROLL];
+      FUNC fn(redOpArgs[i]);
       for (int u = 0; u < UNROLL; ++u) vals2[u] = vFetch(srcs[i]+u*WARP_SIZE);
       if (i<PreOpN) {
         for (int u = 0; u < UNROLL; ++u) vals2[u] = FuncTraits<FUNC>().preOp(fn, vals2[u]);
@@ -519,6 +521,7 @@ __device__ __forceinline__ void ReduceCopyMulti(const int w, const int nw, const
     for (int i=MINSRCS; i<MAXSRCS; i++) {
       if (i<nsrcs) {
         T vals2[UNROLL];
+        FUNC fn(redOpArgs[i]);
         for (int u = 0; u < UNROLL; ++u) vals2[u] = vFetch(srcs[i]+u*WARP_SIZE);
         if (i<PreOpN) {
           for (int u = 0; u < UNROLL; ++u) vals2[u] = FuncTraits<FUNC>().preOp(fn, vals2[u]);
@@ -528,6 +531,7 @@ __device__ __forceinline__ void ReduceCopyMulti(const int w, const int nw, const
     }
 
     if (postOp) {
+      FUNC fn(redOpArgs[0]);
       #pragma unroll
       for (int u = 0; u < UNROLL; ++u) vals[u] = FuncTraits<FUNC>().postOp(fn, vals[u]);
     }
@@ -551,7 +555,7 @@ __device__ __forceinline__ void ReduceCopyMulti(const int w, const int nw, const
 
 template<class FUNC, typename T, int UNROLL, int MINSRCS, int MAXSRCS, int MINDSTS, int MAXDSTS, int PreOpN, typename Int>
 __device__ __forceinline__ void ReduceCopy128bMulti(const int w, const int nw, const int t,
-    FUNC fn, bool postOp, int nsrcs, const T** s, int ndsts, T** d, const int elemOffset, const Int Npack
+    uint64_t* redOpArgs, bool postOp, int nsrcs, const T** s, int ndsts, T** d, const int elemOffset, const Int Npack
   ) {
   const Int inc = nw * UNROLL * WARP_SIZE;
   Int offset = w * UNROLL * WARP_SIZE + t;
@@ -566,12 +570,14 @@ __device__ __forceinline__ void ReduceCopy128bMulti(const int w, const int nw, c
     // Load and reduce
     for (int u = 0; u < UNROLL; ++u) Fetch128(vals[u], srcs[0]+u*WARP_SIZE);
     if (PreOpN) {
+      FUNC fn(redOpArgs[0]);
       for (int u = 0; u < UNROLL; ++u) MULTI128<FUNC, T>().preOp(fn, vals[u]);
     }
 
     #pragma unroll
     for (int i=1; i<MINSRCS; i++) {
       Pack128 vals2[UNROLL];
+      FUNC fn(redOpArgs[i]);
       for (int u = 0; u < UNROLL; ++u) Fetch128(vals2[u], srcs[i]+u*WARP_SIZE);
       if (i<PreOpN) {
         for (int u = 0; u < UNROLL; ++u) MULTI128<FUNC, T>().preOp(fn, vals2[u]);
@@ -582,6 +588,7 @@ __device__ __forceinline__ void ReduceCopy128bMulti(const int w, const int nw, c
     for (int i=MINSRCS; i<MAXSRCS; i++) {
       if (i<nsrcs) {
         Pack128 vals2[UNROLL];
+        FUNC fn(redOpArgs[i]);
         for (int u = 0; u < UNROLL; ++u) Fetch128(vals2[u], srcs[i]+u*WARP_SIZE);
         if (i<PreOpN) {
           for (int u = 0; u < UNROLL; ++u) MULTI128<FUNC, T>().preOp(fn, vals2[u]);
@@ -591,6 +598,7 @@ __device__ __forceinline__ void ReduceCopy128bMulti(const int w, const int nw, c
     }
 
     if (postOp) {
+      FUNC fn(redOpArgs[0]);
       #pragma unroll
       for (int u = 0; u < UNROLL; ++u) MULTI128<FUNC, T>().postOp(fn, vals[u]);
     }
@@ -619,7 +627,7 @@ __device__ int ptrAlign128(T* ptr) { return (uint64_t)ptr % alignof(Pack128); }
 
 template<int UNROLL, class FUNC, typename T, int MINSRCS, int MAXSRCS, int MINDSTS, int MAXDSTS, int PreOpN, typename Int>
 __device__ __forceinline__ void ReduceOrCopyMulti(
-    const int tid, const int nthreads, FUNC fn, bool postOp, int nsrcs, const T** srcs, int ndsts, T** dsts, Int N
+    const int tid, const int nthreads, uint64_t* redOpArgs, bool postOp, int nsrcs, const T** srcs, int ndsts, T** dsts, Int N
   ) {
   Int Nrem = N;
   if (Nrem <= 0) return;
@@ -647,7 +655,7 @@ __device__ __forceinline__ void ReduceOrCopyMulti(
     Int Nelem = Npack * PACKELEMS;
 
     ReduceCopy128bMulti<FUNC, T, UNROLL, MINSRCS, MAXSRCS, MINDSTS, MAXDSTS, PreOpN>
-      (w, nw, t, fn, postOp, nsrcs, srcs, ndsts, dsts, offset, Npack);
+      (w, nw, t, redOpArgs, postOp, nsrcs, srcs, ndsts, dsts, offset, Npack);
 
     Nrem -= Nelem;
     if (Nrem == 0) return;
@@ -658,7 +666,7 @@ __device__ __forceinline__ void ReduceOrCopyMulti(
     Nelem = Npack * PACKELEMS;
 
     ReduceCopy128bMulti<FUNC, T, 1, MINSRCS, MAXSRCS, MINDSTS, MAXDSTS, PreOpN>
-      (w, nw, t, fn, postOp, nsrcs, srcs, ndsts, dsts, offset, Npack);
+      (w, nw, t, redOpArgs, postOp, nsrcs, srcs, ndsts, dsts, offset, Npack);
 
     Nrem -= Nelem;
     if (Nrem == 0) return;
@@ -669,7 +677,7 @@ __device__ __forceinline__ void ReduceOrCopyMulti(
   Int Nelem = (Nrem / (UNROLL*PACKELEMS/2*WARP_SIZE)) * (UNROLL*PACKELEMS/2*WARP_SIZE); // round down
 
   ReduceCopyMulti<FUNC, T, UNROLL*PACKELEMS/2, MINSRCS, MAXSRCS, MINDSTS, MAXDSTS, PreOpN>
-    (w, nw, t, fn, postOp, nsrcs, srcs, ndsts, dsts, offset, Nelem);
+    (w, nw, t, redOpArgs, postOp, nsrcs, srcs, ndsts, dsts, offset, Nelem);
 
   Nrem -= Nelem;
   if (Nrem == 0) return;
@@ -677,7 +685,7 @@ __device__ __forceinline__ void ReduceOrCopyMulti(
 
   // no unroll, by type. Should finish what's remaining.
   ReduceCopyMulti<FUNC, T, 1, MINSRCS, MAXSRCS, MINDSTS, MAXDSTS, PreOpN>
-    (w, nw, t, fn, postOp, nsrcs, srcs, ndsts, dsts, offset, Nrem);
+    (w, nw, t, redOpArgs, postOp, nsrcs, srcs, ndsts, dsts, offset, Nrem);
 }
 
 #endif // COMMON_KERNEL_H_

@@ -122,6 +122,7 @@ struct ncclShmemData {
     uint64_t ll128warp[NCCL_LL128_MAX_NTHREADS/WARP_SIZE][NCCL_LL128_SHMEM_ELEMS_PER_THREAD*WARP_SIZE];
     struct ncclShmemGroup groups[NCCL_MAX_GROUPS];
   };
+  uint64_t redOpArgs[NCCL_MAX_DIRECT_ARITY+1];
   ncclDevComm comm;
   ncclChannel channel;
   ncclWork work;

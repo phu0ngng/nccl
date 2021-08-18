@@ -28,7 +28,6 @@ class Primitives<
   int nworkers;
   const int stepSize;
   Fan fan;
-  RedOp const redOp;
   int index; // Peer index I'm responsible for
   int flags;
   int group;
@@ -182,7 +181,7 @@ class Primitives<
           if (Send) {
             // (1-Send) is only there to avoid compilation errors in case MaxSend=0 (and Send=0).
             ReduceOrCopyMulti<Unroll, RedOp, T, 1, 1, 1, (1-Send)+MaxSend, 0>
-              (tid, nworkers, redOp, false,
+              (tid, nworkers, nullptr, false,
                1, (T const**)ncclShmem.groups[group].srcs,
                fan.nsend(), (T**)ncclShmem.groups[group].dsts+1,
                sliceSize);
@@ -190,7 +189,7 @@ class Primitives<
         } else if (DirectSend && !DirectRecv && SrcBuf != Input && ncclShmem.groups[group].dsts[Dst] == nullptr) {
           // For broadcast in CollNet to do empty send
           ReduceOrCopyMulti<Unroll, RedOp, T, 1, 1, 1, 1, 0>
-            (tid, nworkers, redOp, postOp,
+            (tid, nworkers, ncclShmem.redOpArgs, postOp,
              Recv, (T const**)ncclShmem.groups[group].srcs,
              Dst, (T**)ncclShmem.groups[group].dsts,
              sliceSize);
@@ -198,7 +197,7 @@ class Primitives<
           constexpr int PreOpN = SrcBuf != Input ? 0 :
                                  DirectRecv*MaxRecv == NCCL_MAX_DIRECT_ARITY ? (1+NCCL_MAX_DIRECT_ARITY) : 1;
           ReduceOrCopyMulti<Unroll, RedOp, T, Recv+Src, Recv*MaxRecv+Src, Send+Dst, Send*MaxSend+Dst, PreOpN>
-            (tid, nworkers, redOp, postOp,
+            (tid, nworkers, ncclShmem.redOpArgs, postOp,
              Recv*fan.nrecv()+Src, (T const**)ncclShmem.groups[group].srcs,
              Send*fan.nsend()+Dst, (T**)ncclShmem.groups[group].dsts,
              sliceSize);
@@ -249,6 +248,7 @@ class Primitives<
       if (tid == 0) totalSendSize = 0; // Skip the threadfence
       if (tid < nworkers) {
         if (Send) {
+          // Scatter pre-scales data of input buffer only in non-Direct case
           constexpr int PreOpN = DirectSend ? 0 : 1;
           if (flags & RoleInput) ncclShmem.groups[group].srcs[0] = userBuff + inpIx + offset;
           // realSize is not accurate here; but intra-node does not rely on sizes FIFO
@@ -262,8 +262,7 @@ class Primitives<
             const T* src0 = (T*)ncclShmem.groups[group].srcs[0] + peerOffset;
             int realPeerSize = min(realSize, totalElem-peerOffset);
             if (realPeerSize > 0 && ncclShmem.groups[group].dsts[i] != nullptr) {
-              // Scatter never pre-scale data of input buffers
-              ReduceOrCopyMulti<Unroll, RedOp, T, 1, 1, 1, 1, PreOpN>(tid, nworkers, redOp, false, 1, &src0, 1, (T**)ncclShmem.groups[group].dsts+i, realPeerSize);
+              ReduceOrCopyMulti<Unroll, RedOp, T, 1, 1, 1, 1, PreOpN>(tid, nworkers, ncclShmem.redOpArgs, false, 1, &src0, 1, (T**)ncclShmem.groups[group].dsts+i, realPeerSize);
               if (tid == 0) totalSendSize += realPeerSize;
             }
           }
@@ -285,7 +284,7 @@ class Primitives<
               if (skip >= 0 && i >= skip) peerOffset += peerElem;
               T* dst0 = (T*)ncclShmem.groups[group].dsts[0] + peerOffset;
               int realPeerSize = min(realSize, totalElem-peerOffset);
-              if (realPeerSize > 0) ReduceOrCopyMulti<Unroll, RedOp, T, 1, 1, 1, 1, 0>(tid, nworkers, redOp, postOp, 1, (const T**)ncclShmem.groups[group].srcs+i, 1, &dst0, realPeerSize);
+              if (realPeerSize > 0) ReduceOrCopyMulti<Unroll, RedOp, T, 1, 1, 1, 1, 0>(tid, nworkers, ncclShmem.redOpArgs, postOp, 1, (const T**)ncclShmem.groups[group].srcs+i, 1, &dst0, realPeerSize);
             }
           }
         }
@@ -389,8 +388,7 @@ class Primitives<
       void const *inputBuf, void *outputBuf, uint64_t redOpArg, uint32_t group=0, struct ncclWorkElem* e = nullptr
     ):
     tid(tid),
-    stepSize(ncclShmem.comm.buffSizes[NCCL_PROTO_SIMPLE]/NCCL_STEPS/sizeof(T)),
-    redOp(redOpArg) {
+    stepSize(ncclShmem.comm.buffSizes[NCCL_PROTO_SIMPLE]/NCCL_STEPS/sizeof(T)) {
 
     // For send operations, we need an extra warp to overlap the threadfence and the copy
     this->nthreads = nthreads;
@@ -429,7 +427,7 @@ class Primitives<
     loadRecvConn(&ncclShmem.channel.devPeers[peer], connIndex, e);
     loadSendConn(&ncclShmem.channel.devPeers[peer], connIndex, e);
 
-    setDataPtrs(inputBuf, outputBuf, (struct ncclWorkRegElem*)e);
+    setDataPtrs(inputBuf, outputBuf, redOpArg, (struct ncclWorkRegElem*)e);
   }
 
   __device__ ~Primitives() {
@@ -446,8 +444,11 @@ class Primitives<
     barrier();
   }
 
-  __device__ void setDataPtrs(void const *inputBuf, void *outputBuf, struct ncclWorkRegElem* e) {
-    if (flags & RoleInput) userBuff = (T*)inputBuf;
+  __device__ void setDataPtrs(void const *inputBuf, void *outputBuf, uint64_t redOpArg, struct ncclWorkRegElem* e) {
+    if (flags & RoleInput) {
+      userBuff = (T*)inputBuf;
+      ncclShmem.redOpArgs[0] = redOpArg;  // scaler for local input
+    }
     if (flags & RoleOutput) userBuff = (T*)outputBuf;
     bool recvProvider = flags == (flags|RoleWaitRecv|DirectWrite);
     bool sendAcceptor = flags == (flags|RoleWaitSend|DirectWrite);
@@ -486,6 +487,9 @@ class Primitives<
       // If there is no recv, then we are directly pulling from input buffer (e.g. directScatter)
       // Otherwise, we are pulling from output buffer (e.g. recvCopyDirectSend)
       directBuff = MaxRecv == 0 ? (T*)inputBuf : (T*)outputBuf;
+      // Exchange pre-scalers for use in direct pull
+      volatile uint64_t* argSlot = ncclShmem.groups[group].sendConns[index]->redOpArgExchange;
+      *argSlot = redOpArg;
       // Encode pointer by XOR'ing against some address they definitely wouldn't send
       // since we want to allow them sending us nullptr while not colliding with
       // the empty slot value.
@@ -501,6 +505,11 @@ class Primitives<
       }
       directBuff = regUsed ? (T*)(MaxSend == 0 ? e->upOutputs[index] : e->dnInputs[index]) :
                    reinterpret_cast<T*>(reinterpret_cast<uintptr_t>(ptr) ^ reinterpret_cast<uintptr_t>(slot));
+      if (MaxSend != 0) { // reduce group rather than gather group
+        // Store scalers for remote inputs
+        volatile uint64_t* argSlot = ncclShmem.groups[group].recvConns[index]->redOpArgExchange;
+        ncclShmem.redOpArgs[1+index] = *argSlot;
+      }
       *slot = nullptr;
     }
   }
