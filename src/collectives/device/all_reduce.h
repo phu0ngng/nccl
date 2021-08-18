@@ -297,13 +297,10 @@ struct RunWorkElement<ncclFuncAllReduce, T, RedOp, NCCL_ALGO_COLLNET, NCCL_PROTO
 
     using Proto = ProtoSimple<1, 1>;
 
-    // We need to disable direct pull between scatter and reduce for CollNet + PreMulSum
-    // becuase PreMulSum currently pre-scales the local source only
-    constexpr int DirectReduce = FuncTraits<RedOp>::IsPreOpIdentity ? 1 : 0;
     if (tid >= tidStartScatter && tid < tidStartReduce && hasUp) {
       // Scatter
       int group = (2*Proto::MaxGroupWidth) | (1<<16);
-      Primitives<T, RedOp, FanAsymmetric<0, NCCL_MAX_DIRECT_ARITY>, DirectReduce, Proto>
+      Primitives<T, RedOp, FanAsymmetric<0, NCCL_MAX_DIRECT_ARITY>, /*Direct=*/1, Proto>
         prims(tid-tidStartScatter, nThreadsScatter, NULL, tree->up, args->sendbuff, args->recvbuff, args->coll.redOpArg, group, args);
       for (ssize_t gridOffset = 0; gridOffset < size; gridOffset += loopSize) {
         ssize_t offset = gridOffset + bid*tree->nHeads*chunkSize;
@@ -314,7 +311,7 @@ struct RunWorkElement<ncclFuncAllReduce, T, RedOp, NCCL_ALGO_COLLNET, NCCL_PROTO
       int group = (3*Proto::MaxGroupWidth) | (1<<16);
       if (hasDn) {
         // Reduce, send to network
-        Primitives<T, RedOp, FanAsymmetric<NCCL_MAX_DIRECT_ARITY, 1>, DirectReduce, Proto>
+        Primitives<T, RedOp, FanAsymmetric<NCCL_MAX_DIRECT_ARITY, 1>, /*Direct=*/1, Proto>
           prims(tid-tidStartReduce, nThreadsReduce, tree->down, &tree->out, args->sendbuff, args->recvbuff, args->coll.redOpArg, group, args);
         for (ssize_t gridOffset = 0; gridOffset < size; gridOffset += loopSize) {
           ssize_t offset = gridOffset + (bid*tree->nHeads+tree->headRank)*chunkSize;
