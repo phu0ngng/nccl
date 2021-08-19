@@ -305,7 +305,11 @@ struct RunWorkElement<ncclFuncAllReduce, T, RedOp, NCCL_ALGO_COLLNET, NCCL_PROTO
       for (ssize_t gridOffset = 0; gridOffset < size; gridOffset += loopSize) {
         ssize_t offset = gridOffset + bid*tree->nHeads*chunkSize;
         int nelem = min(tree->nHeads*chunkSize, size-offset);
-        prims.directScatter(offset, nelem, chunkSize, tree->headRank, tree->shift);
+        if (args->regUsed) {
+          prims.directScatter(offset, nelem, chunkSize, tree->headRank, tree->shift);
+        } else {
+          prims.scatter(offset, nelem, chunkSize, tree->headRank, tree->shift);
+        }
       }
     } else if (tid >= tidStartReduce && tree->out != -1) {
       int group = (3*Proto::MaxGroupWidth) | (1<<16);
@@ -316,7 +320,11 @@ struct RunWorkElement<ncclFuncAllReduce, T, RedOp, NCCL_ALGO_COLLNET, NCCL_PROTO
         for (ssize_t gridOffset = 0; gridOffset < size; gridOffset += loopSize) {
           ssize_t offset = gridOffset + (bid*tree->nHeads+tree->headRank)*chunkSize;
           int nelem = min(chunkSize, size-offset);
-          prims.directRecvReduceSend(offset, offset, nelem);
+          if (args->regUsed) {
+            prims.directRecvReduceSend(offset, offset, nelem);
+          } else {
+            prims.recvReduceSend(offset, nelem);
+          }
         }
       } else {
         // Directly send to network
