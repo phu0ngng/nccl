@@ -267,7 +267,7 @@ static ncclResult_t sendConnect(struct ncclComm* comm, struct ncclConnect* conne
       map.mems[NCCL_NET_MAP_DEVMEM].cpuPtr = NULL;
     }
   }
-  NCCLCHECK(netDumpMap(&map));
+  //NCCLCHECK(netDumpMap(&map));
 
   struct ncclSendMem *sendMem = (struct ncclSendMem*) NCCL_NET_MAP_GET_POINTER(&map, gpu, sendMem);
   send->conn.head = &sendMem->head;
@@ -299,7 +299,7 @@ static ncclResult_t recvConnect(struct ncclComm* comm, struct ncclConnect* conne
       map.mems[NCCL_NET_MAP_DEVMEM].cpuPtr = NULL;
     }
   }
-  NCCLCHECK(netDumpMap(&map));
+  //NCCLCHECK(netDumpMap(&map));
 
   struct ncclSendMem *sendMem = (struct ncclSendMem*) NCCL_NET_MAP_GET_POINTER(&map, gpu, sendMem);
   recv->conn.head = &sendMem->head;
@@ -323,48 +323,51 @@ static ncclResult_t recvFree(struct ncclConnector* recv) {
   return ncclSuccess;
 }
 
-static ncclResult_t sendProxySetup(struct ncclProxyConnection* connection, struct ncclComm* comm) {
-  struct setupReq req;
-  NCCLCHECK(ncclSocketRecv(connection->sock, &req, sizeof(req)));
+static ncclResult_t sendProxySetup(struct ncclProxyConnection* connection, struct ncclComm* comm, void* reqBuff, int reqSize, void* respBuff, int respSize, int* done) {
+  struct setupReq* req = (struct setupReq*) reqBuff;
+  if (reqSize != sizeof(struct setupReq)) return ncclInternalError;
 
   struct sendResources* resources;
   NCCLCHECK(ncclCalloc(&resources, 1));
   connection->transportResources = resources;
 
-  resources->rank = req.rank;
-  resources->localRank = req.localRank;
-  resources->remoteRank = req.remoteRank;
-  resources->netDev = req.netDev;
-  resources->shared = connection->shared = req.shared;
-  resources->useGdr = req.useGdr;
+  resources->rank = req->rank;
+  resources->localRank = req->localRank;
+  resources->remoteRank = req->remoteRank;
+  resources->netDev = req->netDev;
+  resources->shared = connection->shared = req->shared;
+  resources->useGdr = req->useGdr;
+
+  // We don't return any data
+  if (respSize != 0) return ncclInternalError;
+  *done = 1;
   return ncclSuccess;
 }
 
-static ncclResult_t recvProxySetup(struct ncclProxyConnection* connection, struct ncclComm* comm) {
-  struct setupReq req;
-  NCCLCHECK(ncclSocketRecv(connection->sock, &req, sizeof(req)));
+static ncclResult_t recvProxySetup(struct ncclProxyConnection* connection, struct ncclComm* comm, void* reqBuff, int reqSize, void* respBuff, int respSize, int* done) {
+  struct setupReq* req = (struct setupReq*) reqBuff;
+  if (reqSize != sizeof(struct setupReq)) return ncclInternalError;
 
   struct recvResources* resources;
   NCCLCHECK(ncclCalloc(&resources, 1));
   connection->transportResources = resources;
 
-  resources->rank = req.rank;
-  resources->localRank = req.localRank;
-  resources->remoteRank = req.remoteRank;
-  resources->netDev = req.netDev;
-  resources->shared = connection->shared = req.shared;
-  resources->useGdr = req.useGdr;
+  resources->rank = req->rank;
+  resources->localRank = req->localRank;
+  resources->remoteRank = req->remoteRank;
+  resources->netDev = req->netDev;
+  resources->shared = connection->shared = req->shared;
+  resources->useGdr = req->useGdr;
 
-  ncclNetHandle_t netHandle;
-  NCCLCHECK(ncclNetListen(req.netDev, &netHandle, &resources->netListenComm));
-  NCCLCHECK(ncclSocketSend(connection->sock, &netHandle, sizeof(ncclNetHandle_t)));
+  if (respSize != sizeof(ncclNetHandle_t)) return ncclInternalError;
+  NCCLCHECK(ncclNetListen(req->netDev, respBuff, &resources->netListenComm));
+  *done = 1;
   return ncclSuccess;
 }
 
-static ncclResult_t sendProxyConnect(struct ncclProxyConnection* connection, struct ncclComm* comm) {
+static ncclResult_t sendProxyConnect(struct ncclProxyConnection* connection, struct ncclComm* comm, void* reqBuff, int reqSize, void* respBuff, int respSize, int* done) {
   struct sendResources* resources = (struct sendResources*)(connection->transportResources);
-  ncclNetHandle_t netHandle;
-  NCCLCHECK(ncclSocketRecv(connection->sock, &netHandle, sizeof(ncclNetHandle_t)));
+  if (reqSize != sizeof(ncclNetHandle_t)) return ncclInternalError;
 
   if (resources->shared) {
     // Shared connection
@@ -382,7 +385,7 @@ static ncclResult_t sendProxyConnect(struct ncclProxyConnection* connection, str
       NCCLCHECK(ncclCalloc(p2p->transportResources+resources->netDev, comm->nRanks));
     }
     if (p2p->transportResources[resources->netDev][resources->remoteRank] == NULL) {
-      NCCLCHECK(ncclNetConnect(resources->netDev, netHandle, &resources->netSendComm));
+      NCCLCHECK(ncclNetConnect(resources->netDev, reqBuff, &resources->netSendComm));
       p2p->transportResources[resources->netDev][resources->remoteRank] = resources->netSendComm;
     } else {
       resources->netSendComm = p2p->transportResources[resources->netDev][resources->remoteRank];
@@ -390,9 +393,14 @@ static ncclResult_t sendProxyConnect(struct ncclProxyConnection* connection, str
     connection->proxyAppendPtr = &p2p->proxyAppend;
   } else {
     // Connect to remote peer
-    NCCLCHECK(ncclNetConnect(resources->netDev, netHandle, &resources->netSendComm));
+    NCCLCHECK(ncclNetConnect(resources->netDev, reqBuff, &resources->netSendComm));
     connection->proxyAppendPtr = &connection->proxyAppend;
   }
+  if (resources->netSendComm == NULL) {
+    *done = 0;
+    return ncclSuccess;
+  }
+  *done = 1;
 
   // Create structures
   struct connectMap* map = &resources->map;
@@ -454,11 +462,13 @@ static ncclResult_t sendProxyConnect(struct ncclProxyConnection* connection, str
   }
 
   //NCCLCHECK(netDumpMap(map));
-  NCCLCHECK(ncclSocketSend(connection->sock, map, sizeof(struct connectMap)));
+  if (respSize != sizeof(struct connectMap)) return ncclInternalError;
+  memcpy(respBuff, map, sizeof(struct connectMap));
   return ncclSuccess;
 }
 
-static ncclResult_t recvProxyConnect(struct ncclProxyConnection* connection, struct ncclComm* comm) {
+static ncclResult_t recvProxyConnect(struct ncclProxyConnection* connection, struct ncclComm* comm, void* reqBuff, int reqSize, void* respBuff, int respSize, int* done) {
+  if (reqSize != 0) return ncclInternalError;
   struct recvResources* resources = (struct recvResources*)(connection->transportResources);
 
   // Finish connection establishment from remote peer
@@ -489,6 +499,11 @@ static ncclResult_t recvProxyConnect(struct ncclProxyConnection* connection, str
     NCCLCHECK(ncclNetAccept(resources->netListenComm, &resources->netRecvComm));
     connection->proxyAppendPtr = &connection->proxyAppend;
   }
+  if (resources->netRecvComm == NULL) {
+    *done = 0;
+    return ncclSuccess;
+  }
+  *done = 1;
   NCCLCHECK(ncclNetCloseListen(resources->netListenComm));
 
   // Create structures
@@ -551,7 +566,8 @@ static ncclResult_t recvProxyConnect(struct ncclProxyConnection* connection, str
   }
 
   //NCCLCHECK(netDumpMap(map));
-  NCCLCHECK(ncclSocketSend(connection->sock, map, sizeof(struct connectMap)));
+  if (respSize != sizeof(struct connectMap)) return ncclInternalError;
+  memcpy(respBuff, map, sizeof(struct connectMap));
   return ncclSuccess;
 }
 

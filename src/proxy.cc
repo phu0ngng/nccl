@@ -591,6 +591,14 @@ ncclResult_t ncclProxyProgressDestroy(struct ncclComm* comm) {
   return ncclSuccess;
 }
 
+struct ncclProxyAsyncOp {
+  int type;
+  struct ncclProxyConnection* connection;
+  int reqSize, respSize;
+  char *reqBuff, *respBuff;
+  struct ncclProxyAsyncOp* next;
+};
+
 #define NCCL_PROXY_CONN_POOL_SIZE_POW2 7
 #define NCCL_PROXY_CONN_POOL_SIZE (1<<(NCCL_PROXY_CONN_POOL_SIZE_POW2))
 #define NCCL_PROXY_CONN_POOL_MASK ((NCCL_PROXY_CONN_POOL_SIZE)-1)
@@ -598,6 +606,7 @@ struct ncclProxyConnectionPool {
   struct ncclProxyConnection** pools;
   int banks;
   int offset;
+  struct ncclProxyAsyncOp* ops;
 };
 
 static ncclResult_t ncclProxyNewConnection(struct ncclProxyConnectionPool* pool, int* id) {
@@ -626,7 +635,6 @@ static ncclResult_t proxyFree(struct ncclProxyConnection* connection, struct ncc
   } else {
     NCCLCHECK(ncclTransports[connection->transport].recv.proxyFree(connection, comm));
   }
-  connection->connected = 0;
   return ncclSuccess;
 }
 
@@ -650,6 +658,7 @@ ncclResult_t ncclProxyConnect(struct ncclComm* comm, int transport, int send, in
   proxyConn->id = -1;
   if (comm->proxyState.peerSocks == NULL) {
     NCCLCHECK(ncclCalloc(&comm->proxyState.peerSocks, comm->localRanks));
+    for (int r=0; r<comm->localRanks; r++) comm->proxyState.peerSocks[r].abortFlag = comm->abortFlag;
   }
   NCCLCHECK(ncclTopoGetLocalRank(comm->topo, rank, &proxyConn->localRank));
   struct ncclSocket* sock = comm->proxyState.peerSocks+proxyConn->localRank;
@@ -662,80 +671,114 @@ ncclResult_t ncclProxyConnect(struct ncclComm* comm, int transport, int send, in
   NCCLCHECK(ncclSocketSend(sock, &transport, sizeof(int)));
   NCCLCHECK(ncclSocketSend(sock, &send, sizeof(int)));
   NCCLCHECK(ncclSocketRecv(sock, &proxyConn->id, sizeof(int)));
+  INFO(NCCL_NET, "Connection to proxy localRank %d -> id %d", proxyConn->localRank, proxyConn->id);
   proxyConn->comm = comm;
   return ncclSuccess;
 }
 
-ncclResult_t ncclProxyCall(struct ncclProxyConnector* proxyConn, int type, void* sendData, size_t sendSize, void* recvData, size_t recvSize) {
+ncclResult_t ncclProxyCall(struct ncclProxyConnector* proxyConn, int type, void* reqBuff, int reqSize, void* respBuff, int respSize) {
   if (proxyConn->comm->proxyState.peerSocks == NULL) return ncclInternalError;
   struct ncclSocket* sock = proxyConn->comm->proxyState.peerSocks+proxyConn->localRank;
   if (sock->fd == 0) return ncclInternalError;
 
   NCCLCHECK(ncclSocketSend(sock, &type, sizeof(int)));
   NCCLCHECK(ncclSocketSend(sock, &proxyConn->id, sizeof(int)));
-  if (sendSize) NCCLCHECK(ncclSocketSend(sock, sendData, sendSize));
-  if (recvSize) NCCLCHECK(ncclSocketRecv(sock, recvData, recvSize));
+  NCCLCHECK(ncclSocketSend(sock, &reqSize, sizeof(int)));
+  NCCLCHECK(ncclSocketSend(sock, &respSize, sizeof(int)));
+  if (reqSize) NCCLCHECK(ncclSocketSend(sock, reqBuff, reqSize));
+  //INFO(NCCL_NET, "Proxy Call connection %d, type %d, req %d, resp %d", proxyConn->id, type, reqSize, respSize);
+  if (respSize) NCCLCHECK(ncclSocketRecv(sock, respBuff, respSize));
   return ncclSuccess;
 }
 
-static ncclResult_t proxyCall(int type, struct ncclSocket* sock, struct ncclProxyConnectionPool* connectionPool, struct ncclComm* comm) {
-  struct ncclProxyProgressState* progressState = &comm->proxyState.progressState;
+static ncclResult_t ncclProxyAppendAsyncOp(struct ncclProxyConnectionPool* connectionPool, struct ncclProxyAsyncOp* asyncOp) {
+  asyncOp->next = connectionPool->ops;
+  connectionPool->ops = asyncOp;
+  return ncclSuccess;
+}
+
+static ncclResult_t proxyConnInit(struct ncclSocket* sock, struct ncclProxyConnectionPool* connectionPool, struct ncclComm* comm) {
   char buf[SOCKET_NAME_MAXLEN+1];
   buf[SOCKET_NAME_MAXLEN] = '\0';
   int id;
   struct ncclProxyConnection* connection;
-  switch (type) {
-    case ncclProxyMsgInit:
-      NCCLCHECK(ncclProxyNewConnection(connectionPool, &id));
-      NCCLCHECK(ncclProxyGetConnection(connectionPool, id, &connection));
-      connection->sock = sock;
-      NCCLCHECK(ncclSocketRecv(sock, &connection->transport, sizeof(int)));
-      NCCLCHECK(ncclSocketRecv(sock, &connection->send, sizeof(int)));
-      NCCLCHECK(ncclSocketSend(sock, &id, sizeof(int)));
-      connection->tcomm = connection->send ? &ncclTransports[connection->transport].send : &ncclTransports[connection->transport].recv;
-      connection->connected = 1;
-      buf[SOCKET_NAME_MAXLEN] = '\0';
-      INFO(NCCL_NET, "New proxy %s connection from %s, transport %d", connection->send ? "send":"recv", ncclSocketToString(&sock->addr, buf), connection->transport);
-      break;
-    case ncclProxyMsgSetup:
-      NCCLCHECK(ncclSocketRecv(sock, &id, sizeof(int)));
-      NCCLCHECK(ncclProxyGetConnection(connectionPool, id, &connection));
-      NCCLCHECK(connection->tcomm->proxySetup(connection, comm));
-      break;
-    case ncclProxyMsgConnect:
-      NCCLCHECK(ncclSocketRecv(sock, &id, sizeof(int)));
-      NCCLCHECK(ncclProxyGetConnection(connectionPool, id, &connection));
-      NCCLCHECK(connection->tcomm->proxyConnect(connection, comm));
-      break;
-    case ncclProxyMsgAppend:
-      do {
-        struct ncclProxyArgs* op;
-        NCCLCHECK(allocateArgs(comm, &op));
-        NCCLCHECK(ncclSocketRecv(sock, &id, sizeof(int)));
-        NCCLCHECK(ncclProxyGetConnection(connectionPool, id, &connection));
-        NCCLCHECK(ncclSocketRecv(sock, op, sizeof(struct ncclProxyArgs)));
-        op->progress = connection->tcomm->proxyProgress;
-        op->proxyAppendPtr = connection->proxyAppendPtr;
-        op->subs[0].connection = connection;
-        if (progressState->nextOps == NULL) progressState->nextOps = op;
-        else progressState->nextOpsEnd->next = op;
-        progressState->nextOpsEnd = op;
-      } while(0);
-      break;
-    case ncclProxyMsgStart:
-      NCCLCHECK(ncclProxyProgressCreate(comm));
-      if (progressState->nextOps == NULL) return ncclSuccess;
-      pthread_mutex_lock(&progressState->opsMutex);
-      if (progressState->postedOps) progressState->postedOpsEnd->next = progressState->nextOps;
-      else progressState->postedOps = progressState->nextOps;
-      progressState->postedOpsEnd = progressState->nextOpsEnd;
-      progressState->nextOps = progressState->nextOpsEnd = NULL;
-      pthread_cond_signal(&progressState->cond);
-      pthread_mutex_unlock(&progressState->opsMutex);
-      break;
-    default:
-      WARN("Unknown proxy command %d", type);
-      return ncclInternalError;
+  NCCLCHECK(ncclProxyNewConnection(connectionPool, &id));
+  NCCLCHECK(ncclProxyGetConnection(connectionPool, id, &connection));
+  connection->sock = sock;
+  NCCLCHECK(ncclSocketRecv(sock, &connection->transport, sizeof(int)));
+  NCCLCHECK(ncclSocketRecv(sock, &connection->send, sizeof(int)));
+  NCCLCHECK(ncclSocketSend(sock, &id, sizeof(int)));
+  connection->tcomm = connection->send ? &ncclTransports[connection->transport].send : &ncclTransports[connection->transport].recv;
+  buf[SOCKET_NAME_MAXLEN] = '\0';
+  INFO(NCCL_NET, "New proxy %s connection %d from %s, transport %d", connection->send ? "send":"recv", id, ncclSocketToString(&sock->addr, buf), connection->transport);
+  return ncclSuccess;
+}
+
+static ncclResult_t proxyConnSetupConnect(int type, struct ncclSocket* sock, struct ncclProxyConnectionPool* connectionPool, struct ncclComm* comm, struct ncclProxyAsyncOp* asyncOp) {
+  int id;
+  asyncOp->type = type;
+  NCCLCHECK(ncclSocketRecv(sock, &id, sizeof(int)));
+  NCCLCHECK(ncclProxyGetConnection(connectionPool, id, &asyncOp->connection));
+
+  NCCLCHECK(ncclSocketRecv(sock, &asyncOp->reqSize, sizeof(int)));
+  NCCLCHECK(ncclSocketRecv(sock, &asyncOp->respSize, sizeof(int)));
+  if (asyncOp->reqSize) {
+    NCCLCHECK(ncclCalloc(&asyncOp->reqBuff, asyncOp->reqSize));
+    NCCLCHECK(ncclSocketRecv(sock, asyncOp->reqBuff, asyncOp->reqSize));
+  }
+  if (asyncOp->respSize) NCCLCHECK(ncclCalloc(&asyncOp->respBuff, asyncOp->respSize));
+  return ncclSuccess;
+}
+static ncclResult_t proxyConnAppend(struct ncclSocket* sock, struct ncclProxyConnectionPool* connectionPool, struct ncclComm* comm) {
+  struct ncclProxyProgressState* progressState = &comm->proxyState.progressState;
+  int id;
+  int reqSize = 0, respSize = 0;
+  struct ncclProxyConnection* connection;
+  struct ncclProxyArgs* op;
+  NCCLCHECK(allocateArgs(comm, &op));
+  NCCLCHECK(ncclSocketRecv(sock, &id, sizeof(int)));
+  NCCLCHECK(ncclProxyGetConnection(connectionPool, id, &connection));
+  NCCLCHECK(ncclSocketRecv(sock, &reqSize, sizeof(int)));
+  NCCLCHECK(ncclSocketRecv(sock, &respSize, sizeof(int)));
+  if (reqSize != sizeof(struct ncclProxyArgs)) return ncclInternalError;
+  if (respSize != 0) return ncclInternalError;
+  NCCLCHECK(ncclSocketRecv(sock, op, sizeof(struct ncclProxyArgs)));
+  op->progress = connection->tcomm->proxyProgress;
+  op->proxyAppendPtr = connection->proxyAppendPtr;
+  op->subs[0].connection = connection;
+  if (progressState->nextOps == NULL) progressState->nextOps = op;
+  else progressState->nextOpsEnd->next = op;
+  progressState->nextOpsEnd = op;
+  return ncclSuccess;
+}
+static ncclResult_t proxyConnStart(struct ncclSocket* sock, struct ncclProxyConnectionPool* connectionPool, struct ncclComm* comm) {
+  struct ncclProxyProgressState* progressState = &comm->proxyState.progressState;
+  NCCLCHECK(ncclProxyProgressCreate(comm));
+  if (progressState->nextOps == NULL) return ncclSuccess;
+  pthread_mutex_lock(&progressState->opsMutex);
+  if (progressState->postedOps) progressState->postedOpsEnd->next = progressState->nextOps;
+  else progressState->postedOps = progressState->nextOps;
+  progressState->postedOpsEnd = progressState->nextOpsEnd;
+  progressState->nextOps = progressState->nextOpsEnd = NULL;
+  pthread_cond_signal(&progressState->cond);
+  pthread_mutex_unlock(&progressState->opsMutex);
+  return ncclSuccess;
+}
+
+static ncclResult_t proxyProgressAsync(struct ncclProxyAsyncOp* op, struct ncclComm* comm) {
+  int done = 1;
+  if (op->type == ncclProxyMsgSetup) {
+    NCCLCHECK(op->connection->tcomm->proxySetup(op->connection, comm, op->reqBuff, op->reqSize, op->respBuff, op->respSize, &done));
+  } else if (op->type == ncclProxyMsgConnect) {
+    NCCLCHECK(op->connection->tcomm->proxyConnect(op->connection, comm, op->reqBuff, op->reqSize, op->respBuff, op->respSize, &done));
+  } else return ncclInternalError;
+  if (done) {
+    if (op->respSize) NCCLCHECK(ncclSocketSend(op->connection->sock, op->respBuff, op->respSize));
+    if (op->reqBuff) free(op->reqBuff);
+    if (op->respBuff) free(op->respBuff);
+    op->reqBuff = NULL;
+    op->respBuff = NULL;
+    op->type = 0;
   }
   return ncclSuccess;
 }
@@ -757,13 +800,17 @@ void* ncclProxyService(void* _args) {
 
   struct pollfd pollfds[MAX_LOCAL_PEERS+1];
   struct ncclSocket socks[MAX_LOCAL_PEERS];
+  struct ncclProxyAsyncOp asyncOps[MAX_LOCAL_PEERS];
   for (int s=0; s<MAX_LOCAL_PEERS; s++) {
     socks[s].fd = pollfds[s].fd = -1;
+    socks[s].abortFlag = comm->abortFlag;
     pollfds[s].events = POLLHUP|POLLIN;
+    asyncOps[s].type = 0;
   }
   pollfds[MAX_LOCAL_PEERS].fd = comm->proxyState.listenSock->fd;
   pollfds[MAX_LOCAL_PEERS].events = POLLIN;
 
+  int maxnsocks = 0;
   int nbuffers = 0;
   int stop = 0;
   while (stop == 0 || (stop == 1 && nbuffers > 0)) {
@@ -778,6 +825,7 @@ void* ncclProxyService(void* _args) {
         WARN("[Proxy service] Too many connections (%d max)", MAX_LOCAL_PEERS);
         return NULL;
       }
+      if (maxnsocks < s+1) maxnsocks = s+1;
       if (ncclSocketAccept(socks+s, comm->proxyState.listenSock) != ncclSuccess) {
         WARN("[Service thread] Accept failed %s", strerror(errno));
       } else {
@@ -785,20 +833,32 @@ void* ncclProxyService(void* _args) {
         nbuffers++;
       }
     }
-    for (int s=0; s<MAX_LOCAL_PEERS; s++) {
+    for (int s=0; s<maxnsocks; s++) {
       if (pollfds[s].revents & POLLIN) {
         int type;
-        if (ncclSocketRecv(socks+s, &type, sizeof(int)) != ncclSuccess) {
-          WARN("[Service thread] Recv failed");
-          close(socks[s].fd);
-          socks[s].fd = pollfds[s].fd = -1;
-        } else {
-          if (type == ncclProxyMsgAbort) {
-            stop = 2;
-          } else if (type == ncclProxyMsgStop) {
-            stop = 1;
-          } else if (proxyCall(type, socks+s, &connectionPool, comm) != ncclSuccess) {
-            WARN("[Proxy Service] proxyCall failed");
+        if (asyncOps[s].type == 0) { // Complete the outstanding op before taking the next one
+          if (ncclSocketRecv(socks+s, &type, sizeof(int)) != ncclSuccess) {
+            WARN("[Service thread] Recv failed");
+            close(socks[s].fd);
+            socks[s].fd = pollfds[s].fd = -1;
+          } else {
+            ncclResult_t res = ncclSuccess;
+            if (type == ncclProxyMsgAbort) {
+              stop = 2;
+            } else if (type == ncclProxyMsgStop) {
+              stop = 1;
+            } else if (type == ncclProxyMsgInit) {
+              res = proxyConnInit(socks+s, &connectionPool, comm);
+            } else if (type == ncclProxyMsgSetup || type == ncclProxyMsgConnect) {
+              res = proxyConnSetupConnect(type, socks+s, &connectionPool, comm, asyncOps+s);
+            } else if (type == ncclProxyMsgAppend) {
+              res = proxyConnAppend(socks+s, &connectionPool, comm);
+            } else if (type == ncclProxyMsgStart) {
+              res = proxyConnStart(socks+s, &connectionPool, comm);
+            }
+            if (res != ncclSuccess) {
+              WARN("[Proxy Service] Failed to process message of type %d", type);
+            }
           }
         }
       }
@@ -808,8 +868,20 @@ void* ncclProxyService(void* _args) {
         nbuffers--;
       }
     }
+    // Progress setup/connect of multiple local ranks
+    for (int s=0; s<maxnsocks; s++) {
+      struct ncclProxyAsyncOp* op = asyncOps+s;
+      if (op->type == 0) continue;
+      if (proxyProgressAsync(op, comm) != ncclSuccess) {
+        WARN("[Proxy Service] Call to Setup/Connect failed");
+        close(socks[s].fd);
+        socks[s].fd = pollfds[s].fd = -1;
+        nbuffers--;
+        op->type = 0;
+      }
+    }
   }
-  for (int s=0; s<MAX_LOCAL_PEERS; s++) {
+  for (int s=0; s<maxnsocks; s++) {
     if (socks[s].fd != -1) close(socks[s].fd);
   }
   ncclProxyFreeConnections(&connectionPool, comm);
@@ -832,6 +904,7 @@ ncclResult_t ncclProxyDestroy(struct ncclComm* comm) {
   struct ncclProxyState* state = &comm->proxyState;
   if (state->peerAddresses) {
     struct ncclSocket sock;
+    sock.abortFlag = comm->abortFlag;
     memcpy(&sock.addr, comm->proxyState.peerAddresses+comm->rank, sizeof(union ncclSocketAddress));
     NCCLCHECK(ncclSocketConnect(&sock));
     int type = comm->abortFlag ? ncclProxyMsgAbort : ncclProxyMsgStop;

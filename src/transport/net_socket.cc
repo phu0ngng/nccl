@@ -296,43 +296,154 @@ ncclResult_t ncclSocketListen(int dev, void* opaqueHandle, void** listenComm) {
   NCCLCHECK(ncclSocketGetNsockNthread(dev, &comm->nSocks, &comm->nThreads));
   handle->nSocks = comm->nSocks;
   handle->nThreads = comm->nThreads;
+  comm->sock.asyncFlag = 1;
   *listenComm = comm;
   return ncclSuccess;
 }
+
+enum ncclNetSocketStep {
+  ncclNetSocketStartStep = 0,
+  ncclNetSocketConnectStep = 1,
+  ncclNetSocketConnectStepCheck = 2,
+  ncclNetSocketAcceptStep = 3,
+  ncclNetSocketSendStep = 4,
+  ncclNetSocketRecvStep = 5,
+};
+
+struct ncclNetSocketStage {
+  enum ncclNetSocketStep step;
+  int offset;
+  void* buffer;
+  int iteration;
+  struct ncclSocket* sock;
+  struct ncclSocketComm* comm;
+};
 
 ncclResult_t ncclSocketConnect(int dev, void* opaqueHandle, void** sendComm) {
   if (dev < 0) { // data transfer socket is based on specified dev
     return ncclInternalError;
   }
+
+  int i = 0;
+  static __thread struct ncclNetSocketStage stage = {ncclNetSocketStartStep, 0, NULL, 0, NULL, NULL};
   struct ncclSocketComm* comm;
-  NCCLCHECK(ncclSocketNewComm(&comm));
+  struct ncclSocket* sock;
+  enum ncclSocketState conState;
   struct ncclSocketHandle* handle = (struct ncclSocketHandle*) opaqueHandle;
+
+  *sendComm = NULL;
+  if (stage.step != ncclNetSocketStartStep) {
+    sock = stage.sock;
+    i = stage.iteration;
+    comm = stage.comm;
+    if (stage.step == ncclNetSocketConnectStep) goto socket_connect;
+    else if(stage.step == ncclNetSocketConnectStepCheck) goto socket_connect_check;
+    else if(stage.step == ncclNetSocketSendStep) goto socket_send;
+  }
+
+  NCCLCHECK(ncclSocketNewComm(&comm));
+  stage.comm = comm;
   comm->nSocks = handle->nSocks;
   comm->nThreads = handle->nThreads;
-  for (int i=0; i<comm->nSocks+1; i++) {
-    struct ncclSocket* sock = i == comm->nSocks ? &comm->ctrlSock : comm->socks+i;
-    memcpy(&sock->addr, &handle->connectAddr, sizeof(union ncclSocketAddress));
+  for (; i<comm->nSocks+1; i++) {
+    sock = i == comm->nSocks ? &comm->ctrlSock : comm->socks+i;
+    NCCLCHECK(ncclSocketInit(sock, &handle->connectAddr, NULL, 1));
+
+    stage.sock = sock;
+    stage.step = ncclNetSocketConnectStep;
+    stage.iteration = i;
+socket_connect:
     NCCLCHECK(ncclSocketConnect(sock));
-    NCCLCHECK(ncclSocketSend(sock, &i, sizeof(int)));
+
+    stage.step = ncclNetSocketConnectStepCheck;
+socket_connect_check:
+    NCCLCHECK(ncclGetSocketState(sock, &conState));
+    if (conState == ncclSocketConnecting) {
+      /* expect user to call again */
+      return ncclSuccess;
+    } else if (conState == ncclSocketError) {
+      return ncclSystemError;
+    }
+
+    stage.step = ncclNetSocketSendStep;
+    stage.offset = 0;
+    stage.buffer = malloc(sizeof(int));
+    memcpy(stage.buffer, &i, sizeof(int));
+socket_send:
+    NCCLCHECK(ncclSocketProgress(NCCL_SOCKET_SEND, sock, stage.buffer, sizeof(int), &stage.offset));
+    if (stage.offset != sizeof(int))
+      return ncclSuccess;
+
+    free(stage.buffer);
   }
+
+  /* connection succeeds, restore stage */
+  stage.step = ncclNetSocketStartStep;
+  stage.offset = 0;
+  stage.iteration = 0;
+  stage.sock = NULL;
+  stage.buffer = NULL;
+  stage.comm = NULL;
   *sendComm = comm;
   return ncclSuccess;
 }
 
 ncclResult_t ncclSocketAccept(void* listenComm, void** recvComm) {
+  int i = 0;
+  static __thread struct ncclNetSocketStage stage = {ncclNetSocketStartStep, 0, NULL, 0, NULL, NULL};
   struct ncclSocketListenComm* lComm = (struct ncclSocketListenComm*)listenComm;
-  struct ncclSocketComm* rComm;
+  struct ncclSocketComm* rComm = NULL;
+  struct ncclSocket* sock = NULL;
+
+  *recvComm = NULL;
+  if (stage.step != ncclNetSocketStartStep) {
+    sock = stage.sock;
+    i = stage.iteration;
+    rComm = stage.comm;
+    if (stage.step == ncclNetSocketAcceptStep) goto socket_accept;
+    else if(stage.step == ncclNetSocketRecvStep) goto socket_recv;
+  }
+
   NCCLCHECK(ncclSocketNewComm(&rComm));
+  stage.comm = rComm;
   rComm->nSocks = lComm->nSocks;
   rComm->nThreads = lComm->nThreads;
-  for (int i=0; i<rComm->nSocks+1; i++) {
-    struct ncclSocket sock;
+  lComm->sock.asyncFlag = 1;
+  for (; i<rComm->nSocks+1; i++) {
     int sendSockIdx;
-    NCCLCHECK(ncclSocketAccept(&sock, &lComm->sock));
-    NCCLCHECK(ncclSocketRecv(&sock, &sendSockIdx, sizeof(int)));
-    if (sendSockIdx == rComm->nSocks) memcpy(&rComm->ctrlSock, &sock, sizeof(struct ncclSocket));
-    else memcpy(rComm->socks+i, &sock, sizeof(struct ncclSocket));
+    ncclCalloc(&sock, 1);
+    NCCLCHECK(ncclSocketInit(sock, NULL, NULL, 1));
+    stage.sock = sock;
+    stage.step = ncclNetSocketAcceptStep;
+    stage.iteration = i;
+socket_accept:
+    NCCLCHECK(ncclSocketAccept(sock, &lComm->sock));
+    if (sock->fd == -1)
+      return ncclSuccess;
+
+    stage.step = ncclNetSocketRecvStep;
+    stage.offset = 0;
+    stage.buffer = malloc(sizeof(int));
+socket_recv:
+    NCCLCHECK(ncclSocketProgress(NCCL_SOCKET_RECV, sock, stage.buffer, sizeof(int), &stage.offset));
+    if (stage.offset != sizeof(int))
+      return ncclSuccess;
+
+    memcpy(&sendSockIdx, stage.buffer, sizeof(int));
+    if (sendSockIdx == rComm->nSocks) memcpy(&rComm->ctrlSock, sock, sizeof(struct ncclSocket));
+    else memcpy(rComm->socks+i, sock, sizeof(struct ncclSocket));
+
+    free(stage.buffer);
+    free(sock);
   }
+
+  /* connection succeeds, restore stage */
+  stage.step = ncclNetSocketStartStep;
+  stage.offset = 0;
+  stage.iteration = 0;
+  stage.sock = NULL;
+  stage.buffer = NULL;
+  stage.comm = NULL;
   *recvComm = rComm;
   return ncclSuccess;
 }

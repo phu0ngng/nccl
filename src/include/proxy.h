@@ -124,7 +124,7 @@ struct ncclProxyState {
 };
 
 struct ncclProxyConnection {
-  int send, transport, connected, shared;
+  int send, transport, shared;
   struct ncclSocket* sock;
   struct ncclTransportComm* tcomm;
   struct ncclProxyArgs *proxyAppend;
@@ -155,7 +155,7 @@ enum ncclProxyMsgType {
   ncclProxyMsgAbort = 6,
   ncclProxyMsgStop = 7
 };
-ncclResult_t ncclProxyCall(struct ncclProxyConnector* proxyConn, int type, void* sendData, size_t sendSize, void* recvData, size_t recvSize);
+ncclResult_t ncclProxyCall(struct ncclProxyConnector* proxyConn, int type, void* reqBuff, int reqSize, void* respBuff, int respSize);
 ncclResult_t ncclProxyDestroy(struct ncclComm* comm);
 
 ncclResult_t ncclProxySharedBuffersInitP2p(struct ncclComm* comm, int cuda, int localRank, int type, int sameProcess,

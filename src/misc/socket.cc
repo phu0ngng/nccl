@@ -69,7 +69,7 @@ static int findInterfaces(const char* prefixList, char* names, union ncclSocketA
     if (family != AF_INET && family != AF_INET6)
       continue;
 
-    TRACE(NCCL_INIT|NCCL_NET,"Found interface %s:%s", interface->ifa_name, ncclSocketToString(interface->ifa_addr, line));
+    TRACE(NCCL_INIT|NCCL_NET,"Found interface %s:%s", interface->ifa_name, ncclSocketToString((union ncclSocketAddress *) interface->ifa_addr, line));
 
     /* Allow the caller to force the socket family type */
     if (sock_family != -1 && family != sock_family)
@@ -178,7 +178,7 @@ int ncclFindInterfaceMatchSubnet(char* ifNames, union ncclSocketAddress* localAd
     // Store the interface name
     strncpy(ifNames+found*ifNameMaxSize, interface->ifa_name, ifNameMaxSize);
 
-    TRACE(NCCL_INIT|NCCL_NET,"NET : Found interface %s:%s in the same subnet as remote address %s", interface->ifa_name, ncclSocketToString(&(localAddrs[found].sa), line), ncclSocketToString(&(remoteAddr->sa), line_a));
+    TRACE(NCCL_INIT|NCCL_NET,"NET : Found interface %s:%s in the same subnet as remote address %s", interface->ifa_name, ncclSocketToString((union ncclSocketAddress *) &(localAddrs[found].sa), line), ncclSocketToString((union ncclSocketAddress *) &(remoteAddr->sa), line_a));
     found++;
     if (found == maxIfs) break;
   }
@@ -309,6 +309,7 @@ ncclResult_t ncclSocketListen(struct ncclSocket* sock) {
   /* IPv4/IPv6 support */
   int family = sock->addr.sa.sa_family;
   int salen = (family == AF_INET) ? sizeof(sockaddr_in) : sizeof(sockaddr_in6);
+  int flags;
 
   /* Create socket and bind it to a port */
   int fd = socket(family, SOCK_STREAM, 0);
@@ -326,6 +327,10 @@ ncclResult_t ncclSocketListen(struct ncclSocket* sock) {
     SYSCHECK(setsockopt(fd, SOL_SOCKET, SO_REUSEADDR, &opt, sizeof(opt)), "setsockopt");
 #endif
   }
+
+  /* make all new sockets non-blocking */
+  EQCHECK(flags = fcntl(fd, F_GETFL), -1);
+  SYSCHECK(fcntl(fd, F_SETFL, flags | O_NONBLOCK), "fcntl");
 
   // addr port should be 0 (Any port)
   SYSCHECK(bind(fd, &sock->addr.sa, salen), "bind");
@@ -347,6 +352,38 @@ ncclResult_t ncclSocketListen(struct ncclSocket* sock) {
   return ncclSuccess;
 }
 
+static ncclResult_t getFdState(int fd, enum ncclSocketState* state) {
+    struct pollfd pfd;
+    int timeout = 100, ret;
+    socklen_t rlen = sizeof(int);
+
+    memset(&pfd, 0, sizeof(struct pollfd));
+    pfd.fd = fd;
+    pfd.events = POLLOUT;
+    SYSCHECK(ret = poll(&pfd, 1, timeout), "poll");
+    if (ret == 0) {
+      ret = EINPROGRESS;
+    } else {
+      /* check socket status */
+      EQCHECK(ret == 1 && (pfd.revents & POLLOUT), 0);
+      SYSCHECK(getsockopt(fd, SOL_SOCKET, SO_ERROR, (void*)&ret, &rlen), "getsockopt");
+    }
+
+    if (ret == EINPROGRESS)
+      *state = ncclSocketConnecting;
+    else if (ret == 0)
+      *state = ncclSocketConnected;
+    else
+      *state = ncclSocketError;
+    return ncclSuccess;
+}
+
+ncclResult_t ncclGetSocketState(struct ncclSocket* sock, enum ncclSocketState* state) {
+    NCCLCHECK(getFdState(sock->fd, state));
+    sock->state = *state;
+    return ncclSuccess;
+}
+
 ncclResult_t ncclSocketConnect(struct ncclSocket* sock) {
   char line[SOCKET_NAME_MAXLEN+1];
   /* IPv4/IPv6 support */
@@ -357,6 +394,7 @@ ncclResult_t ncclSocketConnect(struct ncclSocket* sock) {
     return ncclInternalError;
   }
   int salen = (family == AF_INET) ? sizeof(sockaddr_in) : sizeof(sockaddr_in6);
+  int flags;
 
   /* Connect to a hostname / port */
   int fd = socket(family, SOCK_STREAM, 0);
@@ -368,6 +406,10 @@ ncclResult_t ncclSocketConnect(struct ncclSocket* sock) {
   const int one = 1;
   SYSCHECK(setsockopt(fd, IPPROTO_TCP, TCP_NODELAY, (char*)&one, sizeof(int)), "setsockopt");
 
+  /* support non-blocking socket; by default, the socket is non-blocking */
+  EQCHECK(flags = fcntl(fd, F_GETFL), -1);
+  SYSCHECK(fcntl(fd, F_SETFL, flags | O_NONBLOCK), "fcntl");
+
   /*  const int bufsize = 128*1024;
     SYSCHECK(setsockopt(fd, SOL_SOCKET, SO_SNDBUF, (char*)&bufsize, sizeof(int)), "setsockopt");
     SYSCHECK(setsockopt(fd, SOL_SOCKET, SO_RCVBUF, (char*)&bufsize, sizeof(int)), "setsockopt");*/
@@ -378,26 +420,65 @@ ncclResult_t ncclSocketConnect(struct ncclSocket* sock) {
   int timedout_retries = 0;
   int refused_retries = 0;
 retry:
-  SYSCHECKSYNC(connect(fd, &sock->addr.sa, salen), "connect", ret);
-  if (ret == 0) {
+  /* async connect; abort when error happens and abortFlag is present. */
+  ret = connect(fd, &sock->addr.sa, salen);
+
+  if (errno == EAGAIN || (errno == ECONNREFUSED && ++refused_retries < RETRY_REFUSED_TIMES) ||
+    (errno == ETIMEDOUT && ++timedout_retries < RETRY_TIMEDOUT_TIMES)) {
+    if (refused_retries % 1000 == 0) INFO(NCCL_ALL, "Call to connect returned %s, retrying", strerror(errno));
+    usleep(SLEEP_INT);
+    goto retry;
+  } else if (errno == EINPROGRESS && !sock->asyncFlag) {
+    enum ncclSocketState state;
+    do {
+      if (sock->abortFlag) NEQCHECK(*sock->abortFlag, 0);
+      NCCLCHECK(getFdState(fd, &state));
+    } while (state == ncclSocketConnecting);
+    EQCHECK(state, ncclSocketError);
+    ret = 0;
+  }
+
+  if (ret == 0 || (errno == EINPROGRESS && sock->asyncFlag)) {
     sock->fd = fd;
     return ncclSuccess;
   }
-  if ((errno == ECONNREFUSED || errno == ETIMEDOUT)) {
-    if ((errno == ECONNREFUSED && ++refused_retries < RETRY_REFUSED_TIMES) ||
-        (errno == ETIMEDOUT && ++timedout_retries < RETRY_TIMEDOUT_TIMES)) {
-      if (refused_retries % 1000 == 0) INFO(NCCL_ALL,"Call to connect returned %s, retrying", strerror(errno));
-      usleep(SLEEP_INT);
-      goto retry;
-    }
-  }
+
   WARN("Net : Connect to %s failed : %s", ncclSocketToString(&sock->addr, line), strerror(errno));
   return ncclSystemError;
 }
 
 ncclResult_t ncclSocketAccept(struct ncclSocket* sock, struct ncclSocket* listenSocket) {
   socklen_t socklen = sizeof(union ncclSocketAddress);
-  SYSCHECKVAL(accept(listenSocket->fd, &sock->addr.sa, &socklen), "accept", sock->fd);
+  int tmpFd = sock->fd = -1;
+
+  do {
+    if (listenSocket->abortFlag) NEQCHECK(*listenSocket->abortFlag, 0);
+    tmpFd = accept(listenSocket->fd, &sock->addr.sa, &socklen);
+  } while ((errno == EAGAIN || errno == EWOULDBLOCK) && tmpFd == -1 && !listenSocket->asyncFlag);
+
+  if (!listenSocket->asyncFlag) {
+    EQCHECK(tmpFd, -1);
+  } else if (tmpFd == -1 && errno != EAGAIN && errno != EWOULDBLOCK) {
+    return ncclSystemError;
+  }
+
+  sock->fd = tmpFd;
+  return ncclSuccess;
+}
+
+ncclResult_t ncclSocketInit(struct ncclSocket* sock, union ncclSocketAddress* addr, volatile uint32_t* abortFlag, int asyncFlag) {
+  if (sock == NULL)
+    return ncclSuccess;
+
+  sock->fd = -1;
+  if (addr) {
+    memcpy(&sock->addr, addr, sizeof(union ncclSocketAddress));
+  } else {
+    memset(&sock->addr, 0, sizeof(union ncclSocketAddress));
+  }
+  sock->abortFlag = abortFlag;
+  sock->asyncFlag = asyncFlag;
+  sock->state = ncclSocketStateNum;
   return ncclSuccess;
 }
 
@@ -421,6 +502,11 @@ static ncclResult_t ncclSocketProgressOpt(int op, struct ncclSocket* sock, void*
       }
     }
     (*offset) += bytes;
+    if (sock->abortFlag && *sock->abortFlag != 0) {
+      printf("Socket: abortflag %p is %d\n", sock->abortFlag, *sock->abortFlag);
+      INFO(NCCL_NET, "Socket progress: abort called");
+      return ncclSystemError;
+    }
   } while (bytes > 0 && (*offset) < size);
   return ncclSuccess;
 }
@@ -431,7 +517,7 @@ ncclResult_t ncclSocketProgress(int op, struct ncclSocket* sock, void* ptr, int 
 
 ncclResult_t ncclSocketWait(int op, struct ncclSocket* sock, void* ptr, int size, int* offset) {
   while (*offset < size)
-    NCCLCHECK(ncclSocketProgressOpt(op, sock, ptr, size, offset, 1));
+    NCCLCHECK(ncclSocketProgressOpt(op, sock, ptr, size, offset, 0));
   return ncclSuccess;
 }
 

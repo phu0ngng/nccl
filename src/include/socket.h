@@ -12,6 +12,8 @@
 #include <arpa/inet.h>
 #include <netinet/tcp.h>
 #include <netdb.h>
+#include <fcntl.h>
+#include <poll.h>
 
 #define MAX_IFS 16
 #define MAX_IF_NAME_SIZE 16
@@ -27,9 +29,19 @@ union ncclSocketAddress {
   struct sockaddr_in6 sin6;
 };
 
+enum ncclSocketState {
+  ncclSocketConnecting = 0,
+  ncclSocketConnected = 1,
+  ncclSocketError = 2,
+  ncclSocketStateNum = 3
+} ;
+
 struct ncclSocket {
   int fd;
   union ncclSocketAddress addr;
+  volatile uint32_t* abortFlag;
+  int asyncFlag;
+  enum ncclSocketState state;
 };
 
 const char *ncclSocketToString(union ncclSocketAddress *addr, char *buf);
@@ -40,6 +52,8 @@ int ncclFindInterfaces(char* ifNames, union ncclSocketAddress *ifAddrs, int ifNa
 ncclResult_t ncclSocketListen(struct ncclSocket* sock);
 // Connect to sock->addr. sock->fd is set after a successful call.
 ncclResult_t ncclSocketConnect(struct ncclSocket* sock);
+// Return socket connection state.
+ncclResult_t ncclGetSocketState(struct ncclSocket* sock, enum ncclSocketState* state);
 // Accept an incoming connection from listenSocket->fd and keep the file descriptor in sock->fd, with the remote side IP/port in sock->addr.
 ncclResult_t ncclSocketAccept(struct ncclSocket* sock, struct ncclSocket* listenSocket);
 
@@ -50,4 +64,6 @@ ncclResult_t ncclSocketProgress(int op, struct ncclSocket* sock, void* ptr, int 
 ncclResult_t ncclSocketWait(int op, struct ncclSocket* sock, void* ptr, int size, int* offset);
 ncclResult_t ncclSocketSend(struct ncclSocket* sock, void* ptr, int size);
 ncclResult_t ncclSocketRecv(struct ncclSocket* sock, void* ptr, int size);
+/* initialize a socket. */
+ncclResult_t ncclSocketInit(struct ncclSocket* sock, union ncclSocketAddress* addr = NULL, volatile uint32_t* abortFlag = NULL, int asyncFlag = 0);
 #endif

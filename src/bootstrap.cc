@@ -104,6 +104,7 @@ static void *bootstrapRoot(void* args) {
   /* Receive addresses from all ranks */
   do {
     struct ncclSocket sock;
+    sock.abortFlag = NULL;
     NCCLCHECKGOTO(ncclSocketAccept(&sock, listenSock), res, out);
     NCCLCHECKGOTO(bootstrapNetRecv(&sock, &info, sizeof(info)), res, out);
     close(sock.fd);
@@ -137,6 +138,7 @@ static void *bootstrapRoot(void* args) {
   for (int r=0; r<nranks; ++r) {
     int next = (r+1) % nranks;
     struct ncclSocket sock;
+    sock.abortFlag = NULL;
     memcpy(&sock.addr, rankAddressesRoot+r, sizeof(union ncclSocketAddress));
     NCCLCHECKGOTO(ncclSocketConnect(&sock), res, out);
     NCCLCHECKGOTO(bootstrapNetSend(&sock, rankAddresses+next, sizeof(union ncclSocketAddress)), res, out);
@@ -203,6 +205,7 @@ struct bootstrapState {
   int cudaDev;
   int rank;
   int nranks;
+  volatile uint32_t *abortFlag;
 };
 
 ncclResult_t bootstrapInit(ncclUniqueId * id, struct ncclComm* comm) {
@@ -212,6 +215,7 @@ ncclResult_t bootstrapInit(ncclUniqueId * id, struct ncclComm* comm) {
   NCCLCHECK(ncclCalloc(&state, 1));
   state->rank = rank;
   state->nranks = nranks;
+  state->abortFlag = comm->abortFlag;
   comm->bootstrap = state;
 
   TRACE(NCCL_INIT, "rank %d nranks %d", rank, nranks);
@@ -220,6 +224,7 @@ ncclResult_t bootstrapInit(ncclUniqueId * id, struct ncclComm* comm) {
   info.rank = rank;
   info.nranks = nranks;
   struct ncclSocket sock, listenSockRoot;
+  sock.abortFlag = listenSockRoot.abortFlag = comm->abortFlag;
 
   // Create socket for other ranks to contact me
   memcpy(&state->listenSock.addr, &bootstrapNetIfAddr, sizeof(union ncclSocketAddress));
@@ -266,6 +271,7 @@ ncclResult_t bootstrapInit(ncclUniqueId * id, struct ncclComm* comm) {
   NCCLCHECK(ncclCalloc(&state->peerProxyAddresses, nranks));
   struct ncclSocket* proxySocket;
   NCCLCHECK(ncclCalloc(&proxySocket, 1));
+  proxySocket->abortFlag = comm->abortFlag;
   memcpy(&proxySocket->addr, &bootstrapNetIfAddr, sizeof(union ncclSocketAddress));
   NCCLCHECK(ncclSocketListen(proxySocket));
   memcpy(state->peerProxyAddresses+rank, &proxySocket->addr, sizeof(union ncclSocketAddress));
@@ -306,6 +312,7 @@ ncclResult_t bootstrapAllGather(void* commState, void* allData, int size) {
 ncclResult_t bootstrapSend(void* commState, int peer, int tag, void* data, int size) {
   struct bootstrapState* state = (struct bootstrapState*)commState;
   struct ncclSocket sock;
+  sock.abortFlag = state->abortFlag;
   memcpy(&sock.addr, state->peerCommAddresses+peer, sizeof(union ncclSocketAddress));
   NCCLCHECK(ncclSocketConnect(&sock));
   NCCLCHECK(bootstrapNetSend(&sock, &state->rank, sizeof(int)));
@@ -360,6 +367,7 @@ ncclResult_t bootstrapRecv(void* commState, int peer, int tag, void* data, int s
   struct bootstrapState* state = (struct bootstrapState*)commState;
 
   struct ncclSocket sock;
+  sock.abortFlag = state->abortFlag;
 
   // Search unexpected connections first
   NCCLCHECK(unexpectedDequeue(state, peer, tag, &sock));

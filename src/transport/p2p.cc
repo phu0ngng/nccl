@@ -282,11 +282,11 @@ ncclResult_t p2pRecvFree(struct ncclConnector* recv) {
   return ncclSuccess;
 }
 
-static ncclResult_t p2pProxySetup(struct ncclProxyConnection* connection, struct ncclComm* comm) {
-  int size;
-  NCCLCHECK(ncclSocketRecv(connection->sock, &size, sizeof(int)));
-  struct ncclP2pBuff* p2pBuff;
-  NCCLCHECK(ncclCalloc(&p2pBuff, 1));
+static ncclResult_t p2pProxySetup(struct ncclProxyConnection* connection, struct ncclComm* comm, void* reqBuff, int reqSize, void* respBuff, int respSize, int* done) {
+  if (reqSize != sizeof(int)) return ncclInternalError;
+  int size = *((int*)reqBuff);
+  if (respSize != sizeof(struct ncclP2pBuff)) return ncclInternalError;
+  struct ncclP2pBuff* p2pBuff = (struct ncclP2pBuff*)respBuff;
   connection->transportResources = p2pBuff;
   NCCLCHECK(ncclCudaCalloc((char**)&p2pBuff->directPtr, size));
   cudaError_t res = cudaIpcGetMemHandle(&p2pBuff->devIpc, p2pBuff->directPtr);
@@ -298,7 +298,7 @@ static ncclResult_t p2pProxySetup(struct ncclProxyConnection* connection, struct
     connection->sock->fd = -1;
     CUDACHECK(res);
   }
-  NCCLCHECK(ncclSocketSend(connection->sock, p2pBuff, sizeof(struct ncclP2pBuff)));
+  *done = 1;
   return ncclSuccess;
 }
 

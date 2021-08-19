@@ -194,7 +194,7 @@ static ncclResult_t recvFree(struct ncclConnector* recv) {
   return ncclSuccess;
 }
 
-static ncclResult_t sendProxySetup(struct ncclProxyConnection* connection, struct ncclComm* comm) {
+static ncclResult_t sendProxySetup(struct ncclProxyConnection* connection, struct ncclComm* comm, void* reqBuff, int reqSize, void* respBuff, int respSize, int* done) {
   struct setupReq req;
   NCCLCHECK(ncclSocketRecv(connection->sock, &req, sizeof(req)));
 
@@ -207,7 +207,7 @@ static ncclResult_t sendProxySetup(struct ncclProxyConnection* connection, struc
   return ncclSuccess;
 }
 
-static ncclResult_t recvProxySetup(struct ncclProxyConnection* connection, struct ncclComm* comm) {
+static ncclResult_t recvProxySetup(struct ncclProxyConnection* connection, struct ncclComm* comm, void* reqBuff, int reqSize, void* respBuff, int respSize, int* done) {
   struct setupReq req;
   NCCLCHECK(ncclSocketRecv(connection->sock, &req, sizeof(req)));
 
@@ -232,14 +232,14 @@ static ncclResult_t recvProxySetup(struct ncclProxyConnection* connection, struc
   return ncclSuccess;
 }
 
-static ncclResult_t sendProxyConnect(struct ncclProxyConnection* connection, struct ncclComm* comm) {
+static ncclResult_t sendProxyConnect(struct ncclProxyConnection* connection, struct ncclComm* comm, void* reqBuff, int reqSize, void* respBuff, int respSize, int* done) {
   struct sendResources* resources = (struct sendResources*)(connection->transportResources);
   collNetHandle_t netHandle;
   NCCLCHECK(ncclSocketRecv(connection->sock, &netHandle, sizeof(collNetHandle_t)));
   return ncclSuccess;
 }
 
-static ncclResult_t recvProxyConnect(struct ncclProxyConnection* connection, struct ncclComm* comm) {
+static ncclResult_t recvProxyConnect(struct ncclProxyConnection* connection, struct ncclComm* comm, void* reqBuff, int reqSize, void* respBuff, int respSize, int* done) {
   return ncclSuccess;
 }
 
