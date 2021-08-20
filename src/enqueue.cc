@@ -514,6 +514,8 @@ comp_next:
   work->coll.count = info->count;
   work->coll.nChannels = info->nChannels;
   work->nThreads = info->nThreads;
+  work->coll.redOpArg = info->opFull.scalarArg;
+  work->redOpArgIsPtr = info->opFull.scalarArgIsPtr;
 
   if (info->comm->nRanks == 1) {
     // one-rank reduce index
@@ -521,8 +523,6 @@ comp_next:
     return ncclSuccess;
   }
 
-  work->coll.redOpArg = info->opFull.scalarArg;
-  work->redOpArgIsPtr = info->opFull.scalarArgIsPtr;
   work->funcIndex = FUNC_INDEX(info->coll, info->opFull.op, info->datatype, info->algorithm, info->protocol);
 
   int stepSize   = info->comm->buffSizes[info->protocol]/NCCL_STEPS;
