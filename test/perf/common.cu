@@ -17,15 +17,15 @@ int test_ncclVersion = 0; // init'd with ncclGetVersion()
 
 #if NCCL_MAJOR >= 2
   ncclDataType_t test_types[ncclNumTypes] = {
-    ncclInt8, ncclUint8, ncclInt32, ncclUint32, ncclInt64, ncclUint64, ncclHalf, ncclFloat, ncclDouble,
+    ncclInt8, ncclUint8, ncclInt32, ncclUint32, ncclInt64, ncclUint64, ncclHalf, ncclFloat, ncclDouble
   #if defined(__CUDA_BF16_TYPES_EXIST__) && NCCL_VERSION_CODE >= NCCL_VERSION(2,10,0)
-    ncclBfloat16
+    , ncclBfloat16
   #endif
   };
   const char *test_typenames[ncclNumTypes] = {
-    "int8", "uint8", "int32", "uint32", "int64", "uint64", "half", "float", "double",
+    "int8", "uint8", "int32", "uint32", "int64", "uint64", "half", "float", "double"
   #if defined(__CUDA_BF16_TYPES_EXIST__) && NCCL_VERSION_CODE >= NCCL_VERSION(2,10,0)
-    "bfloat16"
+    , "bfloat16"
   #endif
   };
   int test_typenum = -1;
@@ -570,7 +570,9 @@ testResult_t startColl(struct threadArgs* args, ncclDataType_t type, ncclRedOp_t
 
     if(opIndex < ncclNumOps) {
       op = opIndex;
-    } else {
+    }
+    #if NCCL_VERSION_CODE >= NCCL_VERSION(2,11,0)
+    else {
       union {
         int8_t i8; uint8_t u8; int32_t i32; uint32_t u32; int64_t i64; uint64_t u64;
         half f16; float f32; double f64;
@@ -595,15 +597,18 @@ testResult_t startColl(struct threadArgs* args, ncclDataType_t type, ncclRedOp_t
       }
       NCCLCHECK(ncclRedOpCreatePreMulSum(&op, &u64, type, ncclScalarHostImmediate, args->comms[i]));
     }
+    #endif
 
     TESTCHECK(args->collTest->runColl(
           (void*)(in_place ? recvBuff + args->sendInplaceOffset*rank : sendBuff),
           (void*)(in_place ? recvBuff + args->recvInplaceOffset*rank : recvBuff),
         count, type, op, root, args->comms[i], args->streams[i]));
 
+    #if NCCL_VERSION_CODE >= NCCL_VERSION(2,11,0)
     if(opIndex >= ncclNumOps) {
       NCCLCHECK(ncclRedOpDestroy(op, args->comms[i]));
     }
+    #endif
   }
   if (args->nGpus > 1) NCCLCHECK(ncclGroupEnd());
 
@@ -989,13 +994,13 @@ int main(int argc, char* argv[]) {
   #if NCCL_VERSION_CODE >= NCCL_VERSION(2,0,0)
     test_opnum = 4;
     test_typenum = 9;
-    if (test_ncclVersion >= NCCL_VERSION(2,10,0)) {
+    if (NCCL_VERSION_CODE >= NCCL_VERSION(2,10,0) && test_ncclVersion >= NCCL_VERSION(2,10,0)) {
       test_opnum++; // ncclAvg
       #if defined(__CUDA_BF16_TYPES_EXIST__)
         test_typenum++; // bfloat16
       #endif
     }
-    if (test_ncclVersion >= NCCL_VERSION(2,11,0)) {
+    if (NCCL_VERSION_CODE >= NCCL_VERSION(2,11,0) && test_ncclVersion >= NCCL_VERSION(2,11,0)) {
       test_opnum++; // PreMulSum
     }
   #endif
