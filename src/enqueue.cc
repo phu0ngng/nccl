@@ -514,6 +514,8 @@ comp_next:
   work->coll.count = info->count;
   work->coll.nChannels = info->nChannels;
   work->nThreads = info->nThreads;
+  work->coll.redOpArg = info->opFull.scalarArg;
+  work->redOpArgIsPtr = info->opFull.scalarArgIsPtr;
 
   if (info->comm->nRanks == 1) {
     // one-rank reduce index
@@ -521,8 +523,6 @@ comp_next:
     return ncclSuccess;
   }
 
-  work->coll.redOpArg = info->opFull.scalarArg;
-  work->redOpArgIsPtr = info->opFull.scalarArgIsPtr;
   work->funcIndex = FUNC_INDEX(info->coll, info->opFull.op, info->datatype, info->algorithm, info->protocol);
 
   int stepSize   = info->comm->buffSizes[info->protocol]/NCCL_STEPS;
@@ -695,6 +695,7 @@ static ncclResult_t ncclSetupCollKernel(struct ncclInfo* info) {
     // Disable inline argument because we need kernel to copy the entire ncclWork from workFifo
     // because the registered addresses are in ncclWork
     if (eqElem->buffRegInfo.nBuffs > 0) comm->args.active = 0;
+    comm->enqueueInfo->nRegBuffs += eqElem->buffRegInfo.nBuffs;
   }
 
   return ncclSuccess;

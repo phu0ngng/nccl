@@ -189,6 +189,8 @@ struct ncclComm {
   // Store info for cudaGraph
   int usingCudaGraph; // Only use it during capture time, not launch time
   struct ncclQueueInfo* enqueueInfo;
+  int nQueueInfoCreated;
+  int nQueueInfoDestroyed;
   cudaGraphNode_t lastSetupNode;
   unsigned long long lastCudaGraphId;
   int driverVersion;
