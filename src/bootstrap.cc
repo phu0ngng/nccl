@@ -202,7 +202,7 @@ struct unexConn {
 struct remAllocState {
   int cudaDev;
   int listenFd;
-  int stop;
+  volatile int stop;
 };
 
 struct extState {
@@ -257,7 +257,7 @@ void* ncclRemoteMemAllocationService(void* args) {
   for (int s=0; s<MAX_SEGMENTS; s++) segments[s] = NULL;
   for (int s=0; s<MAX_SEGMENTS; s++) {
     pollfds[s].fd = -1;
-    pollfds[s].events = POLLHUP;
+    pollfds[s].events = POLLIN;
   }
   pollfds[MAX_SEGMENTS].fd = state->listenFd;
   pollfds[MAX_SEGMENTS].events = POLLIN;
@@ -285,7 +285,7 @@ void* ncclRemoteMemAllocationService(void* args) {
       }
     }
     for (int s=0; s<MAX_SEGMENTS; s++) {
-      if (pollfds[s].revents & POLLHUP) {
+      if (pollfds[s].revents & (POLLIN|POLLHUP)) {
         if (cudaFree(segments[s]) != cudaSuccess) {
           WARN("[Rem Allocator] cudaFree %p failed", segments[s]);
         }

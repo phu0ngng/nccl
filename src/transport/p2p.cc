@@ -21,6 +21,7 @@ struct p2pSendResources {
   void* ipcPtr;
   int remoteId;
   int memRank;
+  void* remIpcPtr;
   void* bootstrap;
 };
 
@@ -29,6 +30,7 @@ struct p2pRecvResources {
   void* ipcPtr;
   int remoteId;
   int memRank;
+  void* remIpcPtr;
   void* bootstrap;
 };
 
@@ -252,7 +254,7 @@ static ncclResult_t p2pSendConnect(struct ncclComm* comm, struct ncclConnect* co
   struct ncclRecvMem* remDevMem;
   struct p2pConnectInfo* info = (struct p2pConnectInfo*)connectInfo;
 
-  NCCLCHECK(p2pMap(comm->peerInfo+rank, comm->peerInfo+info->rank, info, (void**)&remDevMem, &resources->ipcPtr));
+  NCCLCHECK(p2pMap(comm->peerInfo+rank, comm->peerInfo+info->rank, info, (void**)&remDevMem, &resources->remIpcPtr));
 
   int offset = 0;
   for (int p=0; p<NCCL_NUM_PROTOCOLS; p++) {
@@ -276,7 +278,7 @@ ncclResult_t p2pRecvConnect(struct ncclComm* comm, struct ncclConnect* connectIn
   struct ncclSendMem* remDevMem;
   struct p2pConnectInfo* info = (struct p2pConnectInfo*)connectInfo;
 
-  NCCLCHECK(p2pMap(comm->peerInfo+rank, comm->peerInfo+info->rank, info, (void**)&remDevMem, &resources->ipcPtr));
+  NCCLCHECK(p2pMap(comm->peerInfo+rank, comm->peerInfo+info->rank, info, (void**)&remDevMem, &resources->remIpcPtr));
 
   int offset = 0;
   for (int p=0; p<NCCL_NUM_PROTOCOLS; p++) {
@@ -298,6 +300,8 @@ ncclResult_t p2pSendFree(void* resources) {
   struct p2pSendResources* sendRes = (struct p2pSendResources*)resources;
   if (sendRes->ipcPtr)
     CUDACHECK(cudaIpcCloseMemHandle(sendRes->ipcPtr));
+  if (sendRes->remIpcPtr)
+    CUDACHECK(cudaIpcCloseMemHandle(sendRes->remIpcPtr));
   if (sendRes->remoteId != -1) {
     NCCLCHECK(bootstrapRemFree(sendRes->remoteId, sendRes->memRank, sendRes->bootstrap));
     sendRes->devMem = NULL;
@@ -311,6 +315,8 @@ ncclResult_t p2pRecvFree(void* resources) {
   struct p2pRecvResources* recvRes = (struct p2pRecvResources*)resources;
   if (recvRes->ipcPtr)
     CUDACHECK(cudaIpcCloseMemHandle(recvRes->ipcPtr));
+  if (recvRes->remIpcPtr)
+    CUDACHECK(cudaIpcCloseMemHandle(recvRes->remIpcPtr));
   if (recvRes->remoteId != -1) {
     NCCLCHECK(bootstrapRemFree(recvRes->remoteId, recvRes->memRank, recvRes->bootstrap));
     recvRes->devMem = NULL;
