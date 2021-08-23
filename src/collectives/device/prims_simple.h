@@ -482,14 +482,16 @@ class Primitives<
     if (Direct && sendProvider) {
       int spins = 0;
       void *volatile *slot = ncclShmem.groups[group].sendConns[index]->ptrExchange;
+      volatile uint64_t* argSlot0 = ncclShmem.groups[group].sendConns[index]->redOpArgExchange;
+      volatile uint64_t* argSlot1 = ncclShmem.groups[group].sendConns[index]->redOpArgExchange+1;
       // Wait for consumer to consume previous value before trampling it.
-      while (*slot != nullptr && !checkAbort(spins));
+      while ((*slot != nullptr || *argSlot0 != 0 || *argSlot1 !=0) && !checkAbort(spins));
       // If there is no recv, then we are directly pulling from input buffer (e.g. directScatter)
       // Otherwise, we are pulling from output buffer (e.g. recvCopyDirectSend)
       directBuff = MaxRecv == 0 ? (T*)inputBuf : (T*)outputBuf;
       // Exchange pre-scalers for use in direct pull
-      volatile uint64_t* argSlot = ncclShmem.groups[group].sendConns[index]->redOpArgExchange;
-      *argSlot = redOpArg;
+      *argSlot0 = uint64_t(1)<<32 | (uint32_t)redOpArg;
+      *argSlot1 = uint64_t(1)<<32 | (uint32_t)(redOpArg>>32);
       // Encode pointer by XOR'ing against some address they definitely wouldn't send
       // since we want to allow them sending us nullptr while not colliding with
       // the empty slot value.
@@ -498,6 +500,8 @@ class Primitives<
     if (Direct && recvAcceptor) {
       int spins = 0;
       void *volatile *slot = ncclShmem.groups[group].recvConns[index]->ptrExchange;
+      volatile uint64_t* argSlot0 = ncclShmem.groups[group].recvConns[index]->redOpArgExchange;
+      volatile uint64_t* argSlot1 = ncclShmem.groups[group].recvConns[index]->redOpArgExchange+1;
       void *ptr;
       while (true) {
         ptr = *slot;
@@ -507,9 +511,12 @@ class Primitives<
                    reinterpret_cast<T*>(reinterpret_cast<uintptr_t>(ptr) ^ reinterpret_cast<uintptr_t>(slot));
       if (MaxSend != 0) { // reduce group rather than gather group
         // Store scalers for remote inputs
-        volatile uint64_t* argSlot = ncclShmem.groups[group].recvConns[index]->redOpArgExchange;
-        ncclShmem.redOpArgs[1+index] = *argSlot;
+        while (*argSlot0 == 0 || *argSlot1 == 0) {
+          if (checkAbort(spins)) break;
+        }
+        ncclShmem.redOpArgs[1+index] = ((*argSlot1 & 0xffffffff)<<32) | (*argSlot0 & 0xffffffff);
       }
+      *argSlot0 = 0; *argSlot1 = 0;
       *slot = nullptr;
     }
   }
