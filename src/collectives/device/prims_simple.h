@@ -490,8 +490,8 @@ class Primitives<
       // Otherwise, we are pulling from output buffer (e.g. recvCopyDirectSend)
       directBuff = MaxRecv == 0 ? (T*)inputBuf : (T*)outputBuf;
       // Exchange pre-scalers for use in direct pull
-      *argSlot0 = uint64_t(1)<<32 | (uint32_t)redOpArg;
-      *argSlot1 = uint64_t(1)<<32 | (uint32_t)(redOpArg>>32);
+      *argSlot0 = (uint64_t(1)<<32) | (uint32_t)redOpArg;
+      *argSlot1 = (uint64_t(1)<<32) | (uint32_t)(redOpArg>>32);
       // Encode pointer by XOR'ing against some address they definitely wouldn't send
       // since we want to allow them sending us nullptr while not colliding with
       // the empty slot value.
@@ -511,10 +511,13 @@ class Primitives<
                    reinterpret_cast<T*>(reinterpret_cast<uintptr_t>(ptr) ^ reinterpret_cast<uintptr_t>(slot));
       if (MaxSend != 0) { // reduce group rather than gather group
         // Store scalers for remote inputs
-        while (*argSlot0 == 0 || *argSlot1 == 0) {
-          if (checkAbort(spins)) break;
+        uint64_t arg0, arg1;
+        while (true) {
+          arg0 = *argSlot0;
+          arg1 = *argSlot1;
+          if ((arg0 != 0 && arg1 != 0) || checkAbort(spins)) break;
         }
-        ncclShmem.redOpArgs[1+index] = ((*argSlot1 & 0xffffffff)<<32) | (*argSlot0 & 0xffffffff);
+        ncclShmem.redOpArgs[1+index] = ((arg1 & 0xffffffff)<<32) | (arg0 & 0xffffffff);
       }
       *argSlot0 = 0; *argSlot1 = 0;
       *slot = nullptr;
