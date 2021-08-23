@@ -38,7 +38,7 @@ struct RunWork<ncclFuncSendRecv, T, RedOp, NCCL_ALGO_RING, NCCL_PROTO_SIMPLE> {
 
         if (delta == 0) {
           if (sendbuff != recvbuff) {
-            ReduceOrCopyMulti<COLL_UNROLL, RedOp, T, 1, 1, 1, 1>(tid, nThreadsSegment, RedOp(), false, false, 1, &sendbuff, 1, &recvbuff, sendCount);
+            ReduceOrCopyMulti<COLL_UNROLL, RedOp, T, 1, 1, 1, 1, 0>(tid, nThreadsSegment, nullptr, false, 1, &sendbuff, 1, &recvbuff, sendCount);
           }
         }
         else {
