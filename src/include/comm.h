@@ -40,7 +40,7 @@ struct ncclSendMem {
       char pad1[CACHE_LINE_SIZE-sizeof(uint64_t)];
       void* ptrExchange;
       uint64_t redOpArgExchange[2];
-      char pad2[CACHE_LINE_SIZE-sizeof(void*)-sizeof(uint64_t)];
+      char pad2[CACHE_LINE_SIZE-sizeof(void*)-2*sizeof(uint64_t)];
     };
     char pad3[MEM_ALIGN];
   };
