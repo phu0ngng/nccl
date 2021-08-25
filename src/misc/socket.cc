@@ -503,7 +503,6 @@ static ncclResult_t ncclSocketProgressOpt(int op, struct ncclSocket* sock, void*
     }
     (*offset) += bytes;
     if (sock->abortFlag && *sock->abortFlag != 0) {
-      printf("Socket: abortflag %p is %d\n", sock->abortFlag, *sock->abortFlag);
       INFO(NCCL_NET, "Socket progress: abort called");
       return ncclSystemError;
     }
