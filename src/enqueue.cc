@@ -198,10 +198,11 @@ static ncclResult_t setupLaunch(struct ncclQueueInfo* eqInfo, int usingCudaGraph
 
     if (c == 0) {
       // As we inline the first coll directly, we can free it immediately.
-      // Except P2P or aggregation cases
+      // Except P2P or aggregation or registration cases
       struct ncclWork* work = channel->workFifo+((channel->workFifoTail-channel->workCount)%NCCL_MAX_OPS);
       struct ncclWorkElem* elem = work->elems;
-      if (comm->args.active != 0) elem->active = 0;
+      if (elem->funcIndex != FUNC_INDEX_P2P && eqInfo->elemList->count() == 1 && elem->regUsed == 0)
+        elem->active = 0;
     }
 
     if (channel->gdrMemDesc) {
