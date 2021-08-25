@@ -689,6 +689,7 @@ static ncclResult_t ncclSetupCollKernel(struct ncclInfo* info) {
 
   // Register and exchange input and output buffers
   if (comm->usingCudaGraph &&                   // only in CUDA graph mode
+      comm->disableGraphRegstr == 0 &&          // when registration is not disabled
       info->algorithm == NCCL_ALGO_COLLNET &&   // limited to CollNet for now
       comm->intraHighestTransportType == TRANSPORT_P2P && // only when all ranks can p2p each other
       comm->intraRanks == 1) {                  // only in multi-process mode
