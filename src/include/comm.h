@@ -198,7 +198,7 @@ struct ncclComm {
   pthread_t graphHelperThread;
   struct ncclGraphHelperResources* graphHelperResources;
   int disableGraphHelper;
-  int disableGraphRegstr;
+  int graphRegister;
 
   // user-created reduction ops
   int userRedOpCapacity, userRedOpFreeHead;

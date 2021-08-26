@@ -689,7 +689,7 @@ static ncclResult_t ncclSetupCollKernel(struct ncclInfo* info) {
 
   // Register and exchange input and output buffers
   if (comm->usingCudaGraph &&                   // only in CUDA graph mode
-      comm->disableGraphRegstr == 0 &&          // when registration is not disabled
+      comm->graphRegister == 1 &&               // when registration is enabled
       info->algorithm == NCCL_ALGO_COLLNET &&   // limited to CollNet for now
       comm->intraHighestTransportType == TRANSPORT_P2P && // only when all ranks can p2p each other
       comm->intraRanks == 1) {                  // only in multi-process mode
@@ -1104,7 +1104,8 @@ ncclResult_t ncclGetCudaGraph(ncclComm_t comm, cudaGraph_t* graph) {
     comm->usingCudaGraph = 1;
 
     // Create helper thread that closes IPC handles during graph destruction
-    if ((!comm->graphHelperThread) && comm->disableGraphHelper == 0) {
+    // Only create this thread when buffer registration is enabled
+    if ((!comm->graphHelperThread) && comm->graphRegister == 1 && comm->disableGraphHelper == 0) {
       pthread_mutex_init(&comm->graphHelperResources->threadLock, NULL);
       pthread_cond_init(&comm->graphHelperResources->threadCond, NULL);
       comm->graphHelperResources->threadState = ThreadStart;
