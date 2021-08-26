@@ -1019,6 +1019,7 @@ ncclResult_t ncclCommDestroy(ncclComm_t comm) {
     return ncclInvalidArgument;
   }
 
+  NCCLCHECK(commDestroy(comm));
   INFO(NCCL_INIT,"comm %p rank %d nranks %d cudaDev %d busId %lx - Destroy COMPLETE", comm, rank, nranks, cudaDev, busId);
   return ncclSuccess;
 }

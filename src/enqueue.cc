@@ -643,11 +643,10 @@ static ncclResult_t ncclEnqueueCollKernel(ncclComm_t comm, struct ncclQueueElem*
     struct ncclChannel* channel = comm->channels+channelId;
 
     // Proxy
-    proxyArgs->subs[0].channel = channel;
+    proxyArgs->subs[0].channelId = channel->id;
     proxyArgs->opCount = comm->collOpCount;
-    proxyArgs->commOpCount = comm->opCount;
 
-    if (proxyArgs->subs[0].nsteps) NCCLCHECK(ncclProxySaveColl(proxyArgs, comm->nRanks));
+    if (proxyArgs->subs[0].nsteps) NCCLCHECK(ncclProxySaveColl(comm, proxyArgs, comm->nRanks));
 
     comm->lastChannel++;
     work->coll.bid = bid % nChannels;
@@ -815,7 +814,7 @@ ncclResult_t ncclEnqueueP2pKernel(struct ncclComm* comm, struct ncclQueueElem* e
   struct ncclProxyArgs* proxyArgs = &eqElem->proxyArgs;
 
   // Try to reuse last p2p operation if not full yet
-  struct ncclChannel* channel = proxyArgs->subs[0].channel;
+  struct ncclChannel* channel = comm->channels+proxyArgs->subs[0].channelId;
   int opIndex = (channel->workFifoTail-1+NCCL_MAX_OPS)%NCCL_MAX_OPS;
   struct ncclWork* w = channel->workFifo+opIndex;
   int segment = -1;
@@ -872,10 +871,9 @@ ncclResult_t ncclEnqueueAsyncKernel(struct ncclComm* comm, struct ncclQueueElem*
     struct ncclChannel* channel = comm->channels+channelId;
 
     // Proxy
-    proxyArgs->subs[0].channel = channel;
+    proxyArgs->subs[0].channelId = channelId;
     proxyArgs->opCount = comm->collOpCount;
-    proxyArgs->commOpCount = comm->opCount;
-    if (proxyArgs->subs[0].nsteps) NCCLCHECK(ncclProxySaveColl(proxyArgs, comm->nRanks));
+    if (proxyArgs->subs[0].nsteps) NCCLCHECK(ncclProxySaveColl(comm, proxyArgs, comm->nRanks));
 
     // Try to reuse last work if not full yet
     work->coll.bid = bid % nChannels;

@@ -287,15 +287,13 @@ static ncclResult_t p2pProxySetup(struct ncclProxyConnection* connection, struct
   int size = *((int*)reqBuff);
   if (respSize != sizeof(struct ncclP2pBuff)) return ncclInternalError;
   struct ncclP2pBuff* p2pBuff = (struct ncclP2pBuff*)respBuff;
-  connection->transportResources = p2pBuff;
   NCCLCHECK(ncclCudaCalloc((char**)&p2pBuff->directPtr, size));
+  connection->transportResources = p2pBuff->directPtr;
   cudaError_t res = cudaIpcGetMemHandle(&p2pBuff->devIpc, p2pBuff->directPtr);
   if (res != cudaSuccess) {
     WARN("cudaIpcGetMemHandle failed : %s", cudaGetErrorString(res));
     cudaFree(p2pBuff->directPtr);
     free(p2pBuff);
-    close(connection->sock->fd);
-    connection->sock->fd = -1;
     CUDACHECK(res);
   }
   *done = 1;
@@ -303,10 +301,8 @@ static ncclResult_t p2pProxySetup(struct ncclProxyConnection* connection, struct
 }
 
 static ncclResult_t p2pProxyFree(struct ncclProxyConnection* connection, struct ncclComm* comm) {
-  struct ncclP2pBuff* p2pBuff = (struct ncclP2pBuff*)connection->transportResources;
   // Do not check return code as CUDA may have already shut down
-  cudaFree(p2pBuff->directPtr);
-  free(p2pBuff);
+  cudaFree(connection->transportResources);
   return ncclSuccess;
 }
 
