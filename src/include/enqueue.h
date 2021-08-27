@@ -97,23 +97,27 @@ static void ncclDestroyQueueInfo(void* ptr) {
   // Instead, we push these pointers to a pool owned by ncclComm
   // and asks a helper thread to close mem handles
   struct ncclGraphHelperResources* res = comm->graphHelperResources;
-  volatile int* ipcCount;
+  int ipcTailOld = 0;
   if (res == NULL || (!comm->graphHelperThread) || eqInfo->nRegBuffs == 0) goto skip;
 
   pthread_mutex_lock(&res->threadLock);
-  ipcCount = &res->ipcCount;
+  ipcTailOld = res->ipcTail;
   while (eqElem != NULL) {
-    if (eqElem->buffRegInfo.nBuffs > 0) {
-      memcpy(res->ipcBases+(*ipcCount), eqElem->buffRegInfo.sendbuffsBase, eqElem->buffRegInfo.nBuffs*sizeof(void*));
-      (*ipcCount) += eqElem->buffRegInfo.nBuffs;
-      memcpy(res->ipcBases+(*ipcCount), eqElem->buffRegInfo.recvbuffsBase, eqElem->buffRegInfo.nBuffs*sizeof(void*));
-      (*ipcCount) += eqElem->buffRegInfo.nBuffs;
+    for (int i=0; i<eqElem->buffRegInfo.nBuffs; i++) {
+      if (eqElem->buffRegInfo.sendbuffsBase[i] != NULL) {
+        res->ipcBases[res->ipcTail] = eqElem->buffRegInfo.sendbuffsBase[i];
+        res->ipcTail = (res->ipcTail+1)%NCCL_IPC_POOL_SIZE;
+      }
+      if (eqElem->buffRegInfo.recvbuffsBase[i] != NULL) {
+        res->ipcBases[res->ipcTail] = eqElem->buffRegInfo.recvbuffsBase[i];
+        res->ipcTail = (res->ipcTail+1)%NCCL_IPC_POOL_SIZE;
+      }
     }
     eqElem = eqInfo->elemList->getNext();
   }
-  if (*ipcCount > 0) {
+  if (res->ipcTail != ipcTailOld) {
     res->threadState = ThreadStart;
-    TRACE(NCCL_COLL, "CUDA Graph destroy function signaling helper thread with %d IPC handles", *ipcCount);
+    TRACE(NCCL_COLL, "CUDA Graph destroy function signaling helper thread with %d IPC handles", res->ipcTail-ipcTailOld);
     pthread_cond_signal(&res->threadCond);
   }
   pthread_mutex_unlock(&res->threadLock);

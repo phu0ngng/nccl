@@ -1051,23 +1051,23 @@ void* graphHelperFunc(void *args) {
   }
   int dev = res->comm->cudaDev;
   CUDACHECKIGNORE(cudaSetDevice(dev));
-  volatile enum helperThreadState* state = &res->threadState;
-  volatile int* ipcCount = &res->ipcCount;
   INFO(NCCL_COLL, "CUDA Graph helper thread created for device %d", dev);
+
+  volatile enum helperThreadState* state = &res->threadState;
+  volatile int* ipcTail = &res->ipcTail;
   while (1) {
-    if (*ipcCount > 0) {
-      pthread_mutex_lock(&res->threadLock);
-      for (int i=0; i<*ipcCount; i++) {
-        if (res->ipcBases[i] == NULL) continue;
-        CUDACHECKIGNORE(cudaIpcCloseMemHandle(res->ipcBases[i]));
-        res->ipcBases[i] = NULL;
-      }
-      TRACE(NCCL_COLL, "CUDA Graph helper thread closed %d IPC handles", *ipcCount);
-      *ipcCount = 0;
-      pthread_mutex_unlock(&res->threadLock);
+    int ipcTailMark = *ipcTail;
+    int ipcCount = 0;
+    while (res->ipcHead != ipcTailMark) {
+      if (res->ipcBases[res->ipcHead] != NULL)
+        CUDACHECKIGNORE(cudaIpcCloseMemHandle(res->ipcBases[res->ipcHead]));
+      res->ipcBases[res->ipcHead] = NULL;
+      res->ipcHead = (res->ipcHead+1)%NCCL_IPC_POOL_SIZE;
+      ipcCount++;
     }
+    TRACE(NCCL_COLL, "CUDA Graph helper thread closed %d IPC handles", ipcCount);
     pthread_mutex_lock(&res->threadLock);
-    while (*ipcCount == 0 && *state != ThreadStop) {
+    while (res->ipcHead == *ipcTail && *state != ThreadStop) {
       pthread_cond_wait(&res->threadCond, &res->threadLock);
     }
     pthread_mutex_unlock(&res->threadLock);

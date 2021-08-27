@@ -64,13 +64,16 @@ typedef cudaError_t(*pfn_cuMemGetAddressRange_t)(void**, size_t*, void*);
 
 enum helperThreadState {ThreadStart, ThreadStop};
 
+#define NCCL_IPC_POOL_SIZE (2*NCCL_MAX_INTRA_RANKS*NCCL_MAX_OPS)
+
 struct ncclGraphHelperResources {
   ncclComm* comm;
   pthread_mutex_t threadLock;
   pthread_cond_t  threadCond;
   enum helperThreadState threadState;
-  void* ipcBases[2*NCCL_MAX_INTRA_RANKS*NCCL_MAX_OPS];
-  int ipcCount;
+  void* ipcBases[NCCL_IPC_POOL_SIZE];
+  int ipcTail;
+  int ipcHead;
 };
 
 struct ncclUserRedOp {
