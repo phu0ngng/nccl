@@ -136,7 +136,7 @@ The following code depicts a complete working example with a single process that
 Example 2: One Device per Process or Thread
 -------------------------------------------
 
-When one thread or process is affected to each thread, ncclCommInitRank can be used as a collective call to create a communicator. Each thread or process will get its own object.
+When a process or host thread is responsible for at most one GPU, ncclCommInitRank can be used as a collective call to create a communicator. Each thread or process will get its own object.
 
 
 The following code is an example of a communicator creation in the context of MPI, using one device per MPI rank.
