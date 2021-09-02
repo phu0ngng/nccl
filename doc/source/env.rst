@@ -566,3 +566,16 @@ The user buffers will be automatically de-registered when the CUDA Graphs are de
 Value accepted
 ^^^^^^^^^^^^^^
 0 or 1. Default value is 0.
+
+NCCL_SET_STACK_SIZE
+-------------------
+
+(since 2.9)
+
+Set CUDA kernel stack size to the maximum stack size amongst all NCCL kernels.
+
+It may avoid a CUDA memory reconfiguration on load. Set to 1 if you experience hang due to CUDA memory reconfiguration.
+
+Value accepted
+^^^^^^^^^^^^^^
+0 or 1. Default value is 0.
