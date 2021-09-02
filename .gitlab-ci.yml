@@ -191,7 +191,7 @@ perftest-GP100:
     CUDA_HOME: "/usr/local/cuda-11.0"
     SALLOC: "salloc -t 00:05:00 -n 2 -pGP100"
   script:
-    - ./test/scripts/gitlab-runner-perftest.sh
+    - ./test/scripts/gitlab-runner-perftest.sh 1G 2
   interruptible: true
 
 perftest-M40:
