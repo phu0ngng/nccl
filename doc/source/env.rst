@@ -349,6 +349,7 @@ Define and set to 1 to force the usage of GPU Direct RDMA.
 NCCL_IB_QPS_PER_CONNECTION
 --------------------------
 (since 2.10)
+
 Number of IB queue pairs to use for each connection between two ranks. This can be useful on multi-level fabrics which need multiple queue pairs to have good routing entropy.
 Each message, regardless of its size, will be split in N parts and sent on each queue pair. Therefore, increasing this number can cause a latency increase as well as a bandwidth reduction.
 
@@ -358,6 +359,8 @@ Number between 1 and 128, default is 1. Values beyond 8 usually cause degraded b
 
 NCCL_NET
 --------
+(since 2.10)
+
 Forces NCCL to use a specific network, for example to make sure NCCL uses an external plugin and doesn't automatically fall back on the internal IB or Socket implementation.
 
 Values accepted
@@ -558,7 +561,7 @@ Effective only when:
 (iii) there is at most one GPU per process.
 
 User buffer registration may reduce the number of data copies between user buffers and the internal buffers of NCCL.
-The user buffers will be automatically de-registered when the CUDA Graphs are torn down.
+The user buffers will be automatically de-registered when the CUDA Graphs are destroyed.
 
 Value accepted
 ^^^^^^^^^^^^^^
