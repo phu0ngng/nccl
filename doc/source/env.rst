@@ -545,3 +545,21 @@ Path to an XML file to dump the topology after detection.
 Value accepted
 ^^^^^^^^^^^^^^
 A path to a file which will be created or overwritten.
+
+NCCL_GRAPH_REGISTER
+-------------------
+(since 2.11)
+
+Enable user buffer registration when NCCL calls are captured by CUDA Graphs.
+
+Effective only when:
+(i) the CollNet algorithm is being used;
+(ii) all GPUs within a node have P2P access to each other;
+(iii) there is at most one GPU per process.
+
+User buffer registration may reduce the number of data copies between user buffers and the internal buffers of NCCL.
+The user buffers will be automatically de-registered when the CUDA Graphs are torn down.
+
+Value accepted
+^^^^^^^^^^^^^^
+0 or 1. Default value is 0.
