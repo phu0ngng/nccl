@@ -28,8 +28,7 @@ for func in all_reduce reduce reduce_scatter; do
 done
 
 if [ "$collnet" == "1" ]; then
-  source $HPCX_HOME/hpcx-init.sh
-  hpcx_load
+  export LD_LIBRARY_PATH=$PLUGIN_PATH:$LD_LIBRARY_PATH
   export NCCL_COLLNET_ENABLE=1
   export NCCL_ALGO=COLLNET
   echo "=============================== all_reduce (CollNet) ================================="

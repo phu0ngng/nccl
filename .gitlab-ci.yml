@@ -289,7 +289,7 @@ perftest-multi-gc:
     NCCL_DEBUG: "WARN"
     MPI_HOME: "/opt/mpi/openmpi-1.10.7"
     CUDA_HOME: "/usr/local/cuda-11.3"
-    HPCX_HOME: "/opt/hpcx/v2.7"
+    PLUGIN_PATH: "/opt/nccl-rdma-sharp-plugins/src/.libs"
     SALLOC: "salloc -t 00:05:00 -N 4 -n 32 -w gc[01-03,05]"
   script:
     - ./test/scripts/gitlab-runner-perftest.sh 128M 0 1
@@ -327,7 +327,7 @@ perftest-multi-selene:
     NCCL_DEBUG: "WARN"
     MPI_HOME: "/home/svcnccl/install/openmpi-1.10.7"
     CUDA_HOME: "/project/share/cuda/cuda-11.0.221/"
-    HPCX_HOME: "/project/share/hpcx/hpcx-v2.9.0-gcc-MLNX_OFED_LINUX-5.2-1.0.4.0-ubuntu20.04-x86_64"
+    PLUGIN_PATH: "/project/share/hpcx/hpcx-v2.9.0-gcc-MLNX_OFED_LINUX-5.2-1.0.4.0-ubuntu20.04-x86_64/nccl_rdma_sharp_plugin/lib"
     NCCL_IB_SL: "1"
     OMPI_MCA_btl: "^openib"
     OMPI_MCA_btl_tcp_if_include: "enp97s0f1"
