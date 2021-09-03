@@ -15,7 +15,7 @@ build:
     - build
   variables:
     MPI_HOME: "/opt/mpi/openmpi-1.10.7"
-    CUDA_HOME: "/usr/local/cuda-11.0"
+    CUDA_HOME: "/usr/local/cuda-11.3"
   script:
     - make -j test.build MPI=1 MPI_HOME=$MPI_HOME CUDA_HOME=$CUDA_HOME
   artifacts:
@@ -29,7 +29,7 @@ unit_tests:
   tags:
     - build
   variables:
-    CUDA_HOME: "/usr/local/cuda-11.0"
+    CUDA_HOME: "/usr/local/cuda-11.3"
   script:
     - (cd build/test/unit; LD_LIBRARY_PATH=$PWD/../../lib:$CUDA_HOME/lib64 ./graph_test)
   interruptible: true
@@ -40,7 +40,7 @@ apitest-P100:
     - p100
   variables:
     NCCL_IB_HCA: "mlx5_0"
-    CUDA_HOME: "/usr/local/cuda-11.0"
+    CUDA_HOME: "/usr/local/cuda-11.3"
     SRUN: "srun -t 00:05:00 -n 1 -c 8 -pP100"
   script:
     - ./test/scripts/gitlab-runner-apitest.sh
@@ -52,7 +52,7 @@ apitest-P40:
     - p40
   variables:
     NCCL_IB_HCA: "mlx5_0"
-    CUDA_HOME: "/usr/local/cuda-11.0"
+    CUDA_HOME: "/usr/local/cuda-11.3"
     SRUN: "srun -t 00:05:00 -n 1 -c 8 -pP40"
   script:
     - ./test/scripts/gitlab-runner-apitest.sh
@@ -63,7 +63,7 @@ apitest-GP100:
   tags:
     - gp100
   variables:
-    CUDA_HOME: "/usr/local/cuda-11.0"
+    CUDA_HOME: "/usr/local/cuda-11.3"
     SRUN: "srun -t 00:05:00 -n 1 -c 2 -pGP100"
   script:
     - ./test/scripts/gitlab-runner-apitest.sh
@@ -74,7 +74,7 @@ apitest-single-GP100:
   tags:
     - gp100
   variables:
-    CUDA_HOME: "/usr/local/cuda-11.0"
+    CUDA_HOME: "/usr/local/cuda-11.3"
     SRUN: "srun -t 00:05:00 -n 1 -c 1 -pGP100"
   script:
     - ./test/scripts/gitlab-runner-apitest.sh
@@ -85,7 +85,7 @@ apitest-M40:
   tags:
     - m40
   variables:
-    CUDA_HOME: "/usr/local/cuda-11.0"
+    CUDA_HOME: "/usr/local/cuda-11.3"
     SRUN: "srun -t 00:05:00 -n 1 -c 8 -pM40"
   script:
     - ./test/scripts/gitlab-runner-apitest.sh
@@ -96,7 +96,7 @@ apitest-K40:
   tags:
     - k40
   variables:
-    CUDA_HOME: "/usr/local/cuda-11.0"
+    CUDA_HOME: "/usr/local/cuda-11.3"
     SRUN: "srun -t 00:05:00 -n 1 -c 8 -pK40"
   script:
     - ./test/scripts/gitlab-runner-apitest.sh
@@ -107,7 +107,7 @@ apitest-K80:
   tags:
     - k80
   variables:
-    CUDA_HOME: "/usr/local/cuda-11.0"
+    CUDA_HOME: "/usr/local/cuda-11.3"
     SRUN: "srun -t 00:05:00 -n 1 -c 16 -pK80"
   script:
     - ./test/scripts/gitlab-runner-apitest.sh minimal
@@ -118,7 +118,7 @@ apitest-A100:
   tags:
     - a100pci
   variables:
-    CUDA_HOME: "/usr/local/cuda-11.0"
+    CUDA_HOME: "/usr/local/cuda-11.3"
     SRUN: "srun -t 00:05:00 -n 1 -c 8 -pA100"
   script:
     - ./test/scripts/gitlab-runner-apitest.sh
@@ -162,7 +162,7 @@ perftest-P100:
   variables:
     NCCL_DEBUG: "WARN"
     MPI_HOME: "/opt/mpi/openmpi-1.10.7"
-    CUDA_HOME: "/usr/local/cuda-11.0"
+    CUDA_HOME: "/usr/local/cuda-11.3"
     SALLOC: "salloc -t 00:05:00 -n 8 -pP100"
   script:
     - ./test/scripts/gitlab-runner-perftest.sh
@@ -175,7 +175,7 @@ perftest-P40:
   variables:
     NCCL_DEBUG: "WARN"
     MPI_HOME: "/opt/mpi/openmpi-1.10.7"
-    CUDA_HOME: "/usr/local/cuda-11.0"
+    CUDA_HOME: "/usr/local/cuda-11.3"
     SALLOC: "salloc -t 00:05:00 -n 8 -pP40"
   script:
     - ./test/scripts/gitlab-runner-perftest.sh
@@ -188,7 +188,7 @@ perftest-GP100:
   variables:
     NCCL_DEBUG: "WARN"
     MPI_HOME: "/opt/mpi/openmpi-1.10.7"
-    CUDA_HOME: "/usr/local/cuda-11.0"
+    CUDA_HOME: "/usr/local/cuda-11.3"
     SALLOC: "salloc -t 00:05:00 -n 2 -pGP100"
   script:
     - ./test/scripts/gitlab-runner-perftest.sh 1G 2
@@ -201,7 +201,7 @@ perftest-M40:
   variables:
     NCCL_DEBUG: "WARN"
     MPI_HOME: "/opt/mpi/openmpi-1.10.7"
-    CUDA_HOME: "/usr/local/cuda-11.0"
+    CUDA_HOME: "/usr/local/cuda-11.3"
     SALLOC: "salloc -t 00:05:00 -n 8 -pM40"
   script:
     - ./test/scripts/gitlab-runner-perftest.sh
@@ -214,7 +214,7 @@ perftest-K80:
   variables:
     NCCL_DEBUG: "WARN"
     MPI_HOME: "/opt/mpi/openmpi-1.10.7"
-    CUDA_HOME: "/usr/local/cuda-11.0"
+    CUDA_HOME: "/usr/local/cuda-11.3"
     SALLOC: "salloc -t 00:05:00 -N 1 -n 16 -pK80"
   script:
     - ./test/scripts/gitlab-runner-perftest.sh 256M
@@ -227,7 +227,7 @@ perftest-K40:
   variables:
     NCCL_DEBUG: "WARN"
     MPI_HOME: "/opt/mpi/openmpi-1.10.7"
-    CUDA_HOME: "/usr/local/cuda-11.0"
+    CUDA_HOME: "/usr/local/cuda-11.3"
     SALLOC: "salloc -t 00:05:00 -n 8 -pK40"
   script:
     - ./test/scripts/gitlab-runner-perftest.sh
@@ -240,7 +240,7 @@ perftest-A100:
   variables:
     NCCL_DEBUG: "WARN"
     MPI_HOME: "/opt/mpi/openmpi-1.10.7"
-    CUDA_HOME: "/usr/local/cuda-11.0"
+    CUDA_HOME: "/usr/local/cuda-11.3"
     SALLOC: "salloc -t 00:05:00 -n 8 -pA100"
   script:
     - ./test/scripts/gitlab-runner-perftest.sh
@@ -288,7 +288,7 @@ perftest-multi-gc:
     NCCL_IB_HCA: "mlx5_0"
     NCCL_DEBUG: "WARN"
     MPI_HOME: "/opt/mpi/openmpi-1.10.7"
-    CUDA_HOME: "/usr/local/cuda-11.0"
+    CUDA_HOME: "/usr/local/cuda-11.3"
     SALLOC: "salloc -t 00:05:00 -N 4 -n 32 -w gc[01-03,05]"
   script:
     - ./test/scripts/gitlab-runner-perftest.sh 128M
@@ -345,7 +345,7 @@ perftest-multi-selene:
 #    NCCL_IB_HCA: "mlx5_0"
 #    NCCL_DEBUG: "WARN"
 #    MPI_HOME: "/opt/mpi/openmpi-1.10.7"
-#    CUDA_HOME: "/usr/local/cuda-11.0"
+#    CUDA_HOME: "/usr/local/cuda-11.3"
 #    SALLOC: "salloc -t 00:05:00 -N 1 -w gc01"
 #  script:
 #    - ./test/scripts/gitlab-runner-perf-regression.sh
