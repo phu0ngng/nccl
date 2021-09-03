@@ -4,6 +4,7 @@ class ncclCudaGraph_test : public ncclCommon_test<DT> {
   protected:
     static cudaGraph_t* graphs;
     static cudaGraphExec_t* graphExec;
+    static int driverVersion;
     void SetUp();
     void TearDown();
     void BeginCapture();
@@ -18,10 +19,14 @@ template <typename DT>
 cudaGraphExec_t* ncclCudaGraph_test<DT>::graphExec = NULL;
 
 template <typename DT>
+int ncclCudaGraph_test<DT>::driverVersion = 0;
+
+template <typename DT>
 void ncclCudaGraph_test<DT>::SetUp() {
     ncclCommon_test<DT>::SetUp();
     graphs = (cudaGraph_t*)calloc(this->nVis, sizeof(cudaGraph_t));
     graphExec = (cudaGraphExec_t*)calloc(this->nVis, sizeof(cudaGraphExec_t));
+    ASSERT_EQ(cudaSuccess, cudaDriverGetVersion(&this->driverVersion));
 };
 
 template <typename DT>
@@ -76,7 +81,11 @@ TYPED_TEST(ncclCudaGraph_test, collective) {
                                 this->comms[i], this->streams[i]))
             << "i" << i << ", " << std::endl;
     }
-    ASSERT_EQ(ncclSuccess, ncclGroupEnd());
+    if (this->driverVersion < 11030) {
+      ASSERT_EQ(ncclInvalidUsage, ncclGroupEnd());
+    } else {
+      ASSERT_EQ(ncclSuccess, ncclGroupEnd());
+    }
     this->EndCapture();
     this->LaunchGraph();
     this->LaunchGraph();  // Launch graph twice to check task list persistency
@@ -102,7 +111,11 @@ TYPED_TEST(ncclCudaGraph_test, alltoall) {
          }
         ASSERT_EQ(ncclSuccess, ncclGroupEnd());
     }
-    ASSERT_EQ(ncclSuccess, ncclGroupEnd());
+    if (this->driverVersion < 11030) {
+      ASSERT_EQ(ncclInvalidUsage, ncclGroupEnd());
+    } else {
+      ASSERT_EQ(ncclSuccess, ncclGroupEnd());
+    }
     this->EndCapture();
     this->LaunchGraph();
 };
@@ -120,7 +133,11 @@ TYPED_TEST(ncclCudaGraph_test, aggregation) {
                 << "i" << i << ", " << std::endl;
         }
     }
-    ASSERT_EQ(ncclSuccess, ncclGroupEnd());
+    if (this->driverVersion < 11030) {
+      ASSERT_EQ(ncclInvalidUsage, ncclGroupEnd());
+    } else {
+      ASSERT_EQ(ncclSuccess, ncclGroupEnd());
+    }
     this->EndCapture();
     this->LaunchGraph();
 };
