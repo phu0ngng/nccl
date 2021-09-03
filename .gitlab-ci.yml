@@ -85,7 +85,7 @@ apitest-M40:
   tags:
     - m40
   variables:
-    CUDA_HOME: "/usr/local/cuda-11.3"
+    CUDA_HOME: "/usr/local/cuda-11.0"
     SRUN: "srun -t 00:05:00 -n 1 -c 8 -pM40"
   script:
     - ./test/scripts/gitlab-runner-apitest.sh
@@ -96,7 +96,7 @@ apitest-K40:
   tags:
     - k40
   variables:
-    CUDA_HOME: "/usr/local/cuda-11.3"
+    CUDA_HOME: "/usr/local/cuda-11.0"
     SRUN: "srun -t 00:05:00 -n 1 -c 8 -pK40"
   script:
     - ./test/scripts/gitlab-runner-apitest.sh
@@ -201,7 +201,7 @@ perftest-M40:
   variables:
     NCCL_DEBUG: "WARN"
     MPI_HOME: "/opt/mpi/openmpi-1.10.7"
-    CUDA_HOME: "/usr/local/cuda-11.3"
+    CUDA_HOME: "/usr/local/cuda-11.0"
     SALLOC: "salloc -t 00:05:00 -n 8 -pM40"
   script:
     - ./test/scripts/gitlab-runner-perftest.sh
@@ -227,7 +227,7 @@ perftest-K40:
   variables:
     NCCL_DEBUG: "WARN"
     MPI_HOME: "/opt/mpi/openmpi-1.10.7"
-    CUDA_HOME: "/usr/local/cuda-11.3"
+    CUDA_HOME: "/usr/local/cuda-11.0"
     SALLOC: "salloc -t 00:05:00 -n 8 -pK40"
   script:
     - ./test/scripts/gitlab-runner-perftest.sh
