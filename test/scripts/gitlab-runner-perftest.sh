@@ -28,6 +28,7 @@ for func in all_reduce reduce reduce_scatter; do
 done
 
 if [ "$collnet" == "1" ]; then
+  export LD_LIBRARY_PATH=$SHARP_HOME/lib:$LD_LIBRARY_PATH
   export LD_LIBRARY_PATH=$PLUGIN_PATH:$LD_LIBRARY_PATH
   export NCCL_COLLNET_ENABLE=1
   export NCCL_ALGO=COLLNET
