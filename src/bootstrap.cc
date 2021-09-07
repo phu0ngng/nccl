@@ -225,6 +225,7 @@ ncclResult_t bootstrapInit(ncclUniqueId * id, struct ncclComm* comm) {
   info.nranks = nranks;
   struct ncclSocket sock, listenSockRoot;
   sock.abortFlag = listenSockRoot.abortFlag = comm->abortFlag;
+  sock.asyncFlag = listenSockRoot.asyncFlag = 0;
 
   // Create socket for other ranks to contact me
   memcpy(&state->listenSock.addr, &bootstrapNetIfAddr, sizeof(union ncclSocketAddress));
