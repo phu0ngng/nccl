@@ -549,6 +549,8 @@ Value accepted
 ^^^^^^^^^^^^^^
 A path to a file which will be created or overwritten.
 
+.. _NCCL_GRAPH_REGISTER:
+
 NCCL_GRAPH_REGISTER
 -------------------
 (since 2.11)

@@ -35,3 +35,17 @@ By default, CUDA stream capture uses the ``cudaStreamCaptureModeGlobal`` mode if
 (ii) If you are capturing NCCL P2P calls (``ncclSend`` and ``ncclRecv``) without any previous P2P calls to the same peer(s), you would also need to use the ``cudaStreamCaptureModeThreadLocal`` mode.
 
 A comparison between ``cudaStreamCaptureModeGlobal`` and ``cudaStreamCaptureModeThreadLocal`` can be found `here <https://docs.nvidia.com/cuda/cuda-runtime-api/group__CUDART__STREAM.html#group__CUDART__STREAM_1g9d0535d93a214cbf126835257b16ba85>`_.
+
+User buffer registration
+------------------------
+
+Starting with NCCL 2.11, NCCL will register user buffers to improve communication performance if the communication calls are captured by CUDA Graphs. This is enabled by the CUDA Graph feature that the same set of user input and output buffers will be used in all graph replays -- however many of them. The buffer registration allows a NCCL rank to directly access the user buffers of a different process, eliminating the need for extra copy, thus improving the communication performance and reducing memory bandwidth consumption.
+
+In 2.11, the CUDA Graph based user buffer registration is effective only when:
+(i) the CollNet algorithm is being used;
+(ii) all GPUs within a node have P2P access to each other;
+(iii) there is at most one GPU per process.
+
+Users will also need to set the environment variable ``NCCL_GRAPH_REGISTER`` to 1 to enable this feature. For more details, please see :ref:`NCCL_GRAPH_REGISTER`. If the above conditions are not true, or ``NCCL_GRAPH_REGISTER`` is not set to 1, the registration will not occur.
+
+The user buffers will be automatically de-registered when the CUDA Graphs are destroyed.
