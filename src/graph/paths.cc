@@ -378,7 +378,7 @@ ncclResult_t ncclTopoGetIntermediateRank(struct ncclTopoSystem* system, int rank
   return ncclSuccess;
 }
 
-NCCL_PARAM(PxnDisable, "PXN_DISABLE", 0);
+NCCL_PARAM(PxnDisable, "PXN_DISABLE", 1);
 
 ncclResult_t ncclTopoComputePaths(struct ncclTopoSystem* system, struct ncclPeerInfo* peerInfos) {
   // Precompute paths between GPUs/NICs.
