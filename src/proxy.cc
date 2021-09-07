@@ -757,7 +757,8 @@ void* ncclProxyService(void* _args) {
   struct ncclProxyLocalPeer peers[MAX_LOCAL_PEERS];
   for (int s=0; s<MAX_LOCAL_PEERS; s++) {
     peers[s].sock.fd = pollfds[s].fd = -1;
-    peers[s].sock.abortFlag = comm->abortFlag;
+    peers[s].sock.abortFlag = NULL;
+    peers[s].sock.asyncFlag = 0;
     pollfds[s].events = POLLHUP|POLLIN;
     peers[s].asyncOps.type = 0;
   }
@@ -861,7 +862,8 @@ ncclResult_t ncclProxyDestroy(struct ncclComm* comm) {
   struct ncclProxyState* state = &comm->proxyState;
   if (state->peerAddresses) {
     struct ncclSocket sock;
-    sock.abortFlag = comm->abortFlag;
+    sock.abortFlag = NULL;
+    sock.asyncFlag = 0;
     memcpy(&sock.addr, comm->proxyState.peerAddresses+comm->rank, sizeof(union ncclSocketAddress));
     NCCLCHECK(ncclSocketConnect(&sock));
     int type = comm->abortFlag ? ncclProxyMsgAbort : ncclProxyMsgStop;

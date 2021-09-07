@@ -272,7 +272,7 @@ ncclResult_t bootstrapInit(ncclUniqueId * id, struct ncclComm* comm) {
   NCCLCHECK(ncclCalloc(&state->peerProxyAddresses, nranks));
   struct ncclSocket* proxySocket;
   NCCLCHECK(ncclCalloc(&proxySocket, 1));
-  proxySocket->abortFlag = comm->abortFlag;
+  proxySocket->abortFlag = NULL; // proxy is aborted through a message
   memcpy(&proxySocket->addr, &bootstrapNetIfAddr, sizeof(union ncclSocketAddress));
   NCCLCHECK(ncclSocketListen(proxySocket));
   memcpy(state->peerProxyAddresses+rank, &proxySocket->addr, sizeof(union ncclSocketAddress));
