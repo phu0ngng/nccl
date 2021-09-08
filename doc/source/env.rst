@@ -368,6 +368,19 @@ Values accepted
 The value of NCCL_NET has to match exactly the name of the NCCL network used (case-sensitive). Internal network names are "IB" (generic IB verbs) and "Socket" (TCP/IP sockets).
 External network plugins define their own names.
 
+NCCL_NET_PLUGIN
+---------------
+(since 2.11)
+
+Set it to a suffix string to choose among multiple NCCL net plugins. This setting will cause NCCL to look for file “libnccl-net-<suffix>.so” instead of the default "libnccl-net.so".
+
+For example, setting ``NCCL_NET_PLUGIN=aws`` will cause NCCL to use libnccl-net-aws.so (provided that it exists on the system).  Setting ``NCCL_NET_PLUGIN=none`` will cause NCCL not to use any plugin.
+
+Values accepted
+^^^^^^^^^^^^^^^
+
+Suffix string of the plugin file name, or "none".
+
 NCCL_NET_GDR_LEVEL (formerly NCCL_IB_GDR_LEVEL)
 -----------------------------------------------
 (since 2.3.4. In 2.4.0, NCCL_IB_GDR_LEVEL is renamed NCCL_NET_GDR_LEVEL)
