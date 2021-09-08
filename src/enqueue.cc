@@ -429,7 +429,7 @@ static ncclResult_t getAlgoInfo(struct ncclInfo* info, int collNetTypeSupport, i
     if (info->algorithm == NCCL_ALGO_TREE) nt += 3*WARP_SIZE;
     if (info->algorithm == NCCL_ALGO_COLLNET) nt += 3*WARP_SIZE;
   }
-  info->nChannels = 1;//nc;
+  info->nChannels = nc;
   info->nThreads = nt;
   return ncclSuccess;
 }
