@@ -443,7 +443,7 @@ void Allreduce(struct threadArgs* args, double* value, int average) {
       MPI_Allreduce(MPI_IN_PLACE, (void*)&args->reduce[args->barrier_idx], 1, MPI_DOUBLE, op, MPI_COMM_WORLD);
     }
 #endif
-    if (average == 1) args->reduce[args->barrier_idx] /= args->nProcs*args->nThreads;
+    if (average == 1) args->reduce[args->barrier_idx] /= args->totalProcs*args->nThreads;
     args->reduce[1-args->barrier_idx] = 0;
     args->barrier[args->barrier_idx] = 0;
   } else {
@@ -756,14 +756,6 @@ testResult_t BenchTime(struct threadArgs* args, ncclDataType_t type, ncclRedOp_t
   }
 
   double timeUsec = (report_cputime ? cputimeSec : deltaSec)*1.0E6;
-#ifdef MPI_SUPPORT
-  /* This seems to cause a 'free invalid pointer' error, commenting out for now
-  int mpiRanks;
-  MPI_Comm_size(MPI_COMM_WORLD, &mpiRanks);
-  MPI_Allreduce(MPI_IN_PLACE, &timeUsec, 1, MPI_DOUBLE, MPI_SUM, MPI_COMM_WORLD);
-  timeUsec /= mpiRanks;
-  */
-#endif
   char timeStr[100];
   if (timeUsec >= 10000.0) {
     sprintf(timeStr, "%7.0f", timeUsec);
@@ -977,7 +969,7 @@ testResult_t threadLaunch(struct testThread* thread) {
   return testSuccess;
 }
 
-testResult_t AllocateBuffs(void **sendbuff, size_t sendBytes, void **recvbuff, size_t recvBytes, void **expected, size_t nbytes, int nranks) {
+testResult_t AllocateBuffs(void **sendbuff, size_t sendBytes, void **recvbuff, size_t recvBytes, void **expected, size_t nbytes) {
     nbytes += 8*unalign; // pad with size of max datatype in case all datatypes selected
     CUDACHECK(cudaMalloc(sendbuff, nbytes));
     CUDACHECK(cudaMalloc(recvbuff, nbytes));
@@ -1189,18 +1181,18 @@ int main(int argc, char* argv[]) {
 }
 
 testResult_t run() {
-  int nProcs = 1, proc = 0, ncclProcs = 1, ncclProc = 0, color = 0;
+  int totalProcs = 1, proc = 0, ncclProcs = 1, ncclProc = 0, color = 0;
   int localRank = 0;
   char hostname[1024];
   getHostName(hostname, 1024);
 
 #ifdef MPI_SUPPORT
-  MPI_Comm_size(MPI_COMM_WORLD, &nProcs);
+  MPI_Comm_size(MPI_COMM_WORLD, &totalProcs);
   MPI_Comm_rank(MPI_COMM_WORLD, &proc);
-  uint64_t hostHashs[nProcs];
+  uint64_t hostHashs[totalProcs];
   hostHashs[proc] = getHostHash(hostname);
   MPI_Allgather(MPI_IN_PLACE, 0, MPI_DATATYPE_NULL, hostHashs, sizeof(uint64_t), MPI_BYTE, MPI_COMM_WORLD);
-  for (int p=0; p<nProcs; p++) {
+  for (int p=0; p<totalProcs; p++) {
     if (p == proc) break;
     if (hostHashs[p] == hostHashs[proc]) localRank++;
   }
@@ -1244,11 +1236,11 @@ testResult_t run() {
   }
 
 #if MPI_SUPPORT
-  char *lines = (proc == 0) ? (char *)malloc(nProcs*MAX_LINE) : NULL;
+  char *lines = (proc == 0) ? (char *)malloc(totalProcs*MAX_LINE) : NULL;
   // Gather all output in rank order to root (0)
   MPI_Gather(line, MAX_LINE, MPI_BYTE, lines, MAX_LINE, MPI_BYTE, 0, MPI_COMM_WORLD);
   if (proc == 0) {
-    for (int p = 0; p < nProcs; p++)
+    for (int p = 0; p < totalProcs; p++)
       PRINT("%s", lines+MAX_LINE*p);
     free(lines);
   }
@@ -1278,14 +1270,14 @@ testResult_t run() {
   void* expected[nGpus*nThreads];
   size_t sendBytes, recvBytes;
 
-  ncclTestEngine.getBuffSize(&sendBytes, &recvBytes, (size_t)maxBytes, (size_t)nProcs*nGpus*nThreads);
+  ncclTestEngine.getBuffSize(&sendBytes, &recvBytes, (size_t)maxBytes, (size_t)ncclProcs*nGpus*nThreads);
 
   envstr = getenv("NCCL_TESTS_DEVICE");
   gpu0 = envstr ? atoi(envstr) : -1;
   for (int i=0; i<nGpus*nThreads; i++) {
     gpus[i] = (gpu0 != -1 ? gpu0 : localRank*nThreads*nGpus) + i;
     CUDACHECK(cudaSetDevice(gpus[i]));
-    TESTCHECK(AllocateBuffs(sendbuffs+i, sendBytes, recvbuffs+i, recvBytes, expected+i, (size_t)maxBytes, nProcs*nThreads*nGpus));
+    TESTCHECK(AllocateBuffs(sendbuffs+i, sendBytes, recvbuffs+i, recvBytes, expected+i, (size_t)maxBytes));
     if (streamnull)
       streams[i] = NULL;
     else
@@ -1295,7 +1287,7 @@ testResult_t run() {
   //if parallel init is not selected, use main thread to initialize NCCL
   ncclComm_t* comms = (ncclComm_t*)malloc(sizeof(ncclComm_t)*nThreads*nGpus);
   if (!parallel_init) {
-     if (nProcs == 1) {
+     if (ncclProcs == 1) {
        NCCLCHECK(ncclCommInitAll(comms, nGpus*nThreads, gpus));
      } else {
        NCCLCHECK(ncclGroupStart());
@@ -1347,6 +1339,7 @@ testResult_t run() {
     threads[t].args.stepfactor=stepFactor;
     threads[t].args.localRank = localRank;
 
+    threads[t].args.totalProcs=totalProcs;
     threads[t].args.nProcs=ncclProcs;
     threads[t].args.proc=ncclProc;
     threads[t].args.nThreads=nThreads;

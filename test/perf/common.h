@@ -98,6 +98,7 @@ struct threadArgs {
   size_t stepbytes;
   size_t stepfactor;
 
+  int totalProcs;
   int nProcs;
   int proc;
   int nThreads;
