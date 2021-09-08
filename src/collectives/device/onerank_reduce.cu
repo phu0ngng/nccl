@@ -1,3 +1,9 @@
+/*************************************************************************
+ * Copyright (c) 2021, NVIDIA CORPORATION. All rights reserved.
+ *
+ * See LICENSE.txt for license information
+ ************************************************************************/
+
 #include "devcomm.h"
 #include "collectives.h"
 #include "reduce_kernel.h"
@@ -52,4 +58,3 @@ INSTANTIATE(PreMulSum, __nv_bfloat16)
 #endif
 INSTANTIATE(PreMulSum, float)
 INSTANTIATE(PreMulSum, double)
-
