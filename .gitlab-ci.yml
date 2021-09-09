@@ -97,7 +97,7 @@ apitest-K40:
     - k40
   variables:
     CUDA_HOME: "/usr/local/cuda-11.3"
-    SRUN: "srun -t 00:05:00 -n 1 -c 8 -pK40"
+    SRUN: "srun -t 00:05:00 -n 1 -c 4 -pK40"
   script:
     - ./test/scripts/gitlab-runner-apitest.sh
   interruptible: true
@@ -291,7 +291,7 @@ perftest-multi-gc:
     CUDA_HOME: "/usr/local/cuda-11.3"
     SHARP_HOME: "/opt/hpcx/v2.7/sharp"
     PLUGIN_PATH: "/opt/nccl-rdma-sharp-plugins/src/.libs"
-    SALLOC: "salloc -t 00:05:00 -N 4 -n 32 -w gc[01-03,05]"
+    SALLOC: "salloc -t 00:05:00 -N 3 -n 24 -w gc[01-02,05]"
   script:
     - ./test/scripts/gitlab-runner-perftest.sh 128M 0 1
   interruptible: true
