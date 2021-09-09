@@ -346,6 +346,41 @@ Define and set to 0 to disable GPU Direct RDMA.
 
 Define and set to 1 to force the usage of GPU Direct RDMA.
 
+NCCL_IB_QPS_PER_CONNECTION
+--------------------------
+(since 2.10)
+
+Number of IB queue pairs to use for each connection between two ranks. This can be useful on multi-level fabrics which need multiple queue pairs to have good routing entropy.
+Each message, regardless of its size, will be split in N parts and sent on each queue pair. Therefore, increasing this number can cause a latency increase as well as a bandwidth reduction.
+
+Values accepted
+^^^^^^^^^^^^^^^
+Number between 1 and 128, default is 1. Values beyond 8 usually cause degraded bandwidth.
+
+NCCL_NET
+--------
+(since 2.10)
+
+Forces NCCL to use a specific network, for example to make sure NCCL uses an external plugin and doesn't automatically fall back on the internal IB or Socket implementation.
+
+Values accepted
+^^^^^^^^^^^^^^^
+The value of NCCL_NET has to match exactly the name of the NCCL network used (case-sensitive). Internal network names are "IB" (generic IB verbs) and "Socket" (TCP/IP sockets).
+External network plugins define their own names.
+
+NCCL_NET_PLUGIN
+---------------
+(since 2.11)
+
+Set it to a suffix string to choose among multiple NCCL net plugins. This setting will cause NCCL to look for file “libnccl-net-<suffix>.so” instead of the default "libnccl-net.so".
+
+For example, setting ``NCCL_NET_PLUGIN=aws`` will cause NCCL to use libnccl-net-aws.so (provided that it exists on the system).  Setting ``NCCL_NET_PLUGIN=none`` will cause NCCL not to use any plugin.
+
+Values accepted
+^^^^^^^^^^^^^^^
+
+Suffix string of the plugin file name, or "none".
+
 NCCL_NET_GDR_LEVEL (formerly NCCL_IB_GDR_LEVEL)
 -----------------------------------------------
 (since 2.3.4. In 2.4.0, NCCL_IB_GDR_LEVEL is renamed NCCL_NET_GDR_LEVEL)
@@ -485,7 +520,7 @@ The default value is INIT.
 
 Supported subsystem names are INIT (stands for initialization), COLL (stands for collectives), P2P (stands for
 peer-to-peer), SHM (stands for shared memory), NET (stands for network), GRAPH (stands for topology detection
-and graph search), TUNING (stands for algorithm/protocol tuning), ENV (stands for environment settings), and ALL (includes every subsystem).
+and graph search), TUNING (stands for algorithm/protocol tuning), ENV (stands for environment settings), ALLOC (stands for memory allocations), and ALL (includes every subsystem).
 
 NCCL_COLLNET_ENABLE
 -------------------
@@ -497,11 +532,21 @@ Value accepted
 ^^^^^^^^^^^^^^
 Default is 0, define and set to 1 to use the CollNet plugin.
 
+NCCL_COLLNET_NODE_THRESHOLD
+---------------------------
+(since 2.9.9)
+
+A threshold for number of nodes below which CollNet will not be enabled.
+
+Value accepted
+^^^^^^^^^^^^^^
+Default is 2, define and set to an integer.
+
 NCCL_TOPO_FILE
 --------------
 (since 2.6)
 
-Path to an XML file to load before detecting the topology.
+Path to an XML file to load before detecting the topology. By default, NCCL will load ``/var/run/nvidia-topologyd/virtualTopology.xml`` if present.
 
 Value accepted
 ^^^^^^^^^^^^^^
@@ -516,3 +561,36 @@ Path to an XML file to dump the topology after detection.
 Value accepted
 ^^^^^^^^^^^^^^
 A path to a file which will be created or overwritten.
+
+.. _NCCL_GRAPH_REGISTER:
+
+NCCL_GRAPH_REGISTER
+-------------------
+(since 2.11)
+
+Enable user buffer registration when NCCL calls are captured by CUDA Graphs.
+
+Effective only when:
+(i) the CollNet algorithm is being used;
+(ii) all GPUs within a node have P2P access to each other;
+(iii) there is at most one GPU per process.
+
+User buffer registration may reduce the number of data copies between user buffers and the internal buffers of NCCL.
+The user buffers will be automatically de-registered when the CUDA Graphs are destroyed.
+
+Value accepted
+^^^^^^^^^^^^^^
+0 or 1. Default value is 0.
+
+NCCL_SET_STACK_SIZE
+-------------------
+
+(since 2.9)
+
+Set CUDA kernel stack size to the maximum stack size amongst all NCCL kernels.
+
+It may avoid a CUDA memory reconfiguration on load. Set to 1 if you experience hang due to CUDA memory reconfiguration.
+
+Value accepted
+^^^^^^^^^^^^^^
+0 or 1. Default value is 0.

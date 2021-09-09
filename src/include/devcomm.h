@@ -12,7 +12,7 @@
 #include <stdint.h>
 
 #define NCCL_NUM_FUNCTIONS 5 // SendRecv not included for now
-typedef enum { ncclFuncBroadcast, ncclFuncReduce, ncclFuncAllGather, ncclFuncReduceScatter, ncclFuncAllReduce, ncclFuncSendRecv} ncclFunc_t;
+typedef enum { ncclFuncBroadcast, ncclFuncReduce, ncclFuncAllGather, ncclFuncReduceScatter, ncclFuncAllReduce, ncclFuncSendRecv, ncclNumFuncs} ncclFunc_t;
 extern const char* ncclFuncStr[NCCL_NUM_FUNCTIONS];
 
 #define NCCL_NUM_ALGORITHMS 3 // Tree/Ring/CollNet
@@ -69,15 +69,14 @@ static_assert(NCCL_LL_CLEAN_MASK % NCCL_STEPS == 0, "Invalid NCCL_LL_CLEAN_MASK 
 #define NCCL_LL128_MAX_NTHREADS 640
 #define NCCL_LL128_ELEMS_PER_THREAD 120
 
-// Receiving from up to 3 sources is more compute intensive than sending
-// to 3 dests. Use 70% for reduce and 30% for bcast.
-#define NCCL_LL128_SPLIT(nt) ((nt*7/(10*32))*32)
-
 #define NCCL_LL128_SHMEM_ELEMS_PER_THREAD 8
 #define NCCL_LL128_SHMEM_SIZE (NCCL_LL128_SHMEM_ELEMS_PER_THREAD*NCCL_LL128_MAX_NTHREADS)
 
-#define NCCL_DIRECT_GPU 0x01
-#define NCCL_DIRECT_NIC 0x10
+#define NCCL_DIRECT_WRITE 0x01
+#define NCCL_DIRECT_READ  0x02
+#define NCCL_DIRECT_NIC   0x04
+#define NCCL_IPC_WRITE    0x08
+#define NCCL_IPC_READ     0x10
 
 struct ncclConnInfo {
   // Regular comm mechanism
@@ -88,6 +87,7 @@ struct ncclConnInfo {
   int direct;         // Direct communication
   int shared;         // Buffers are shared
   void **ptrExchange; // Pointer exchange for direct communication
+  uint64_t* redOpArgExchange; // PreOp scaler exchange for direct pull case
 
   int *sizesFifo;     // Sizes fifo from GPU to proxy
   void* *ptrsFifo;      // Buffer fifo from proxy to GPU
@@ -116,6 +116,8 @@ struct ncclRing {
   // devices. Ordered from current device.
   int* userRanks;
   int* devUserRanks;
+
+  int index; // This rank's index in the ring
 };
 
 
@@ -156,8 +158,9 @@ struct ncclWorkElem {
   struct ncclDevComm* comm;
   uint16_t nThreads;
   uint16_t funcIndex;
-  uint16_t index;
-  uint16_t active;
+  uint8_t regUsed;
+  uint8_t direct;
+  uint8_t active, redOpArgIsPtr;
 
   const void * sendbuff;
   void * recvbuff;
@@ -170,6 +173,7 @@ struct ncclWorkElem {
       uint32_t root;
       uint8_t bid;
       uint8_t nChannels;
+      uint64_t redOpArg;
     } coll;
     struct {
       size_t sendCount;
@@ -182,10 +186,23 @@ struct ncclWorkElem {
     uint64_t align[4];
   };
 };
-struct ncclWork {
-  struct ncclWorkElem elems[NCCL_MAX_WORK_ELEMENTS];
-};
 static_assert(sizeof(struct ncclWorkElem) == (0x10*sizeof(int)), "ncclWorkElem must have a pow2 size");
+
+struct ncclWorkRegElem {
+  struct ncclWorkElem elem;
+  void* dnInputs[NCCL_MAX_DIRECT_ARITY+1];
+  void* dnOutputs[NCCL_MAX_DIRECT_ARITY+1];
+  void* upOutputs[NCCL_MAX_DIRECT_ARITY+1];
+};
+#define NCCL_REG_ELEM_FACTOR 4
+static_assert(sizeof(struct ncclWorkRegElem) == (NCCL_REG_ELEM_FACTOR*sizeof(struct ncclWorkElem)), "ncclWorkRegElem size must be pow2 times ncclWorkElem size");
+
+struct ncclWork {
+  union {
+    struct ncclWorkElem elems[NCCL_MAX_WORK_ELEMENTS];
+    struct ncclWorkRegElem regElems[NCCL_MAX_WORK_ELEMENTS/NCCL_REG_ELEM_FACTOR];
+  };
+};
 
 struct ncclChannel {
   union {
@@ -203,6 +220,7 @@ struct ncclChannel {
       // Operation list for aggregation
       struct ncclWork* workFifo;
       int workCount;
+      size_t totalSize;
       uint64_t workFifoTail; // Only used by CPU
       uint16_t index;        // Only used by GPU
 
@@ -226,6 +244,11 @@ struct ncclDevComm {
 
   // Channels, device side
   struct ncclChannel* channels;
+};
+
+struct ncclDevCommAndChannels {
+  ncclDevComm comm;
+  ncclChannel channels[MAXCHANNELS];
 };
 
 #endif

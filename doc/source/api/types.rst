@@ -111,7 +111,11 @@ ncclDataType_t
  .. c:macro:: ncclDouble
 
   64-bits floating point number (double precision)
-	
+
+ .. c:macro:: ncclBfloat16
+
+  16-bits floating point number (truncated precision in bfloat16 format, CUDA 11 or later)
+
 
 ncclRedOp_t
 -----------
@@ -135,3 +139,26 @@ ncclRedOp_t
  .. c:macro:: ncclMax
 
  Perform a max operation
+
+ .. c:macro:: ncclAvg
+
+ Perform an average operation, i.e. a sum across all ranks, divided by the number of ranks.
+
+
+ncclScalarResidence_t
+---------------------
+
+.. c:type:: ncclScalarResidence_t
+
+ Indicates where (memory space) scalar arguments reside and when they can be
+ dereferenced.
+
+ .. c:macro:: ncclScalarHostImmediate
+
+  The scalar resides in host memory and should be derefenced in the most immediate
+  way.
+
+ .. c:macro:: ncclScalarDevice
+
+  The scalar resides on device visible memory and should be dereferenced once
+  needed.
