@@ -1083,15 +1083,11 @@ ncclResult_t ncclGetCudaGraph(ncclComm_t comm, cudaGraph_t* graph) {
 #if CUDART_VERSION >= 11030
   cudaStreamCaptureStatus captureStatus;
   unsigned long long cudaGraphId;
+  ncclResult_t ret = ncclSuccess;
   if (comm->driverVersion < 11030) {
-    CUDACHECK(cudaStreamIsCapturing(comm->userStream, &captureStatus));
-    if (captureStatus != cudaStreamCaptureStatusNone) {
-      WARN("The installed CUDA driver is older than the minimum version (R465) required for NCCL's CUDA Graphs support");
-      return ncclInvalidUsage;
-    }
-    return ncclSuccess;
+    goto enh_compat_end;
   }
-  CUDACHECK(cudaStreamGetCaptureInfo_v2(comm->userStream, &captureStatus, &cudaGraphId, graph, NULL, NULL));
+  CUDACHECKGOTO(cudaStreamGetCaptureInfo_v2(comm->userStream, &captureStatus, &cudaGraphId, graph, NULL, NULL), ret, enh_compat_end);
   if (captureStatus == cudaStreamCaptureStatusActive) {
     if (cudaGraphId != comm->lastCudaGraphId) {
       INFO(NCCL_COLL, "stream is being captured by a new graph, id %llu", cudaGraphId);
@@ -1111,6 +1107,15 @@ ncclResult_t ncclGetCudaGraph(ncclComm_t comm, cudaGraph_t* graph) {
       comm->graphHelperResources->threadState = ThreadStart;
       pthread_create(&comm->graphHelperThread, NULL, graphHelperFunc, comm->graphHelperResources);
     }
+  }
+  return ncclSuccess;
+
+enh_compat_end:
+  (void)ret;
+  CUDACHECK(cudaStreamIsCapturing(comm->userStream, &captureStatus));
+  if (captureStatus != cudaStreamCaptureStatusNone) {
+    WARN("The installed CUDA driver is older than the minimum version (R465) required for NCCL's CUDA Graphs support");
+    return ncclInvalidUsage;
   }
 #endif
   return ncclSuccess;
