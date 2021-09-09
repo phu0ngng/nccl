@@ -22,5 +22,7 @@ cudaError_t cudaGraphRetainUserObject(...)           { return cudaErrorStubLibra
 cudaError_t cudaStreamUpdateCaptureDependencies(...) __attribute__((visibility("hidden"))) __attribute((weak));
 cudaError_t cudaStreamUpdateCaptureDependencies(...) { return cudaErrorStubLibrary; }
 
-}
+cudaError_t cudaGetDriverEntryPoint(...)             __attribute__((visibility("hidden"))) __attribute((weak));
+cudaError_t cudaGetDriverEntryPoint(...)             { return cudaErrorStubLibrary; }
 
+}
