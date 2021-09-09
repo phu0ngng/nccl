@@ -86,6 +86,21 @@ ncclResult_t p2pCanConnect(int* ret, struct ncclTopoSystem* topo, struct ncclTop
     *ret = 0;
     return ncclSuccess;
   }
+
+  // Check that legacy IPC support is available
+  if (p2p != 0) {
+    char *dummy;
+    cudaIpcMemHandle_t ipc;
+    NCCLCHECK(ncclCudaCalloc(&dummy, CUDA_IPC_MIN));
+    if (cudaIpcGetMemHandle(&ipc, dummy) != cudaSuccess) {
+      INFO(NCCL_INIT|NCCL_P2P,"Legacy IPC not supported on dev %d(=%lx)",
+           cudaDev1, info1->busId);
+      *ret = 0;
+    }
+    CUDACHECK(cudaFree(dummy));
+    return ncclSuccess;
+  }
+
   if (p2p == 0) {
     INFO(NCCL_INIT|NCCL_P2P,"Could not enable P2P between dev %d(=%lx) and dev %d(=%lx)",
          cudaDev1, info1->busId, cudaDev2, info2->busId);
@@ -162,10 +177,11 @@ ncclResult_t p2pSendSetup(struct ncclComm* comm, struct ncclTopoGraph* graph, st
   if (intermediateRank == -1) {
     info->rank = myInfo->rank;
     if (myInfo->pidHash == peerInfo->pidHash) {
-      if (info->read == 0) send->conn.direct |= NCCL_DIRECT_GPU;
+      send->conn.direct |= info->read ? NCCL_DIRECT_READ : NCCL_DIRECT_WRITE;
       INFO(NCCL_INIT|NCCL_P2P, "Channel %02d : %d[%lx] -> %d[%lx] via P2P/direct pointer%s",
           channelId, myInfo->rank, myInfo->busId, peerInfo->rank, peerInfo->busId, useReadStr);
     } else {
+      send->conn.direct |= info->read ? NCCL_IPC_READ : NCCL_IPC_WRITE;
       INFO(NCCL_INIT|NCCL_P2P,"Channel %02d : %d[%lx] -> %d[%lx] via P2P/IPC%s",
           channelId, myInfo->rank, myInfo->busId, peerInfo->rank, peerInfo->busId, useReadStr);
     }
@@ -205,7 +221,9 @@ ncclResult_t p2pRecvSetup(struct ncclComm* comm, struct ncclTopoGraph* graph, st
   if (intermediateRank == -1) {
     info->rank = myInfo->rank;
     if (myInfo->pidHash == peerInfo->pidHash) {
-      if (info->read == 0) recv->conn.direct |= NCCL_DIRECT_GPU;
+      recv->conn.direct |= info->read ? NCCL_DIRECT_READ : NCCL_DIRECT_WRITE;
+    } else {
+      recv->conn.direct |= info->read ? NCCL_IPC_READ : NCCL_IPC_WRITE;
     }
   } else {
     info->rank = intermediateRank;
@@ -239,6 +257,7 @@ static ncclResult_t p2pSendConnect(struct ncclComm* comm, struct ncclConnect* co
   send->conn.tail = &remDevMem->tail;
   send->conn.head = &resources->devMem->head;
   send->conn.ptrExchange = &resources->devMem->ptrExchange;
+  send->conn.redOpArgExchange = resources->devMem->redOpArgExchange;
   return ncclSuccess;
 }
 
@@ -263,6 +282,7 @@ ncclResult_t p2pRecvConnect(struct ncclComm* comm, struct ncclConnect* connectIn
   recv->conn.tail = &resources->devMem->tail;
   recv->conn.head = &remDevMem->head;
   recv->conn.ptrExchange = &remDevMem->ptrExchange;
+  recv->conn.redOpArgExchange = remDevMem->redOpArgExchange;
   return ncclSuccess;
 }
 

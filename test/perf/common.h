@@ -98,6 +98,7 @@ struct threadArgs {
   size_t stepbytes;
   size_t stepfactor;
 
+  int totalProcs;
   int nProcs;
   int proc;
   int nThreads;
@@ -120,11 +121,10 @@ struct threadArgs {
   int sync_idx;
   volatile int* barrier;
   int barrier_idx;
+  volatile double* reduce;
   int syncRank;
   int syncNranks;
-  double* deltaThreads;
   double* deltaHost;
-  double* delta;
   int* errors;
   double* bw;
   int* bw_count;
@@ -209,12 +209,13 @@ static size_t wordSize(ncclDataType_t type) {
 }
 
 extern int test_ncclVersion; // init'd with ncclGetVersion()
-extern ncclDataType_t test_types[ncclNumTypes];
-extern const char *test_typenames[ncclNumTypes];
-extern ncclRedOp_t test_ops[ncclNumOps];
-extern const char *test_opnames[ncclNumOps];
+constexpr int test_opNumMax = (int)ncclNumOps + (NCCL_VERSION_CODE >= NCCL_VERSION(2,11,0) ? 1 : 0);
 extern int test_opnum;
 extern int test_typenum;
+extern ncclDataType_t test_types[ncclNumTypes];
+extern const char *test_typenames[ncclNumTypes];
+extern ncclRedOp_t test_ops[];
+extern const char *test_opnames[];
 
 static int ncclstringtotype(char *str) {
     for (int t=0; t<ncclNumTypes; t++) {

@@ -7,6 +7,11 @@
 #ifndef XML_H_
 #define XML_H_
 
+#include "nccl.h"
+#include "debug.h"
+#include "checks.h"
+#include <stdlib.h>
+
 // A few constraints to make the implementation easy
 #define MAX_STR_LEN 255
 #define MAX_ATTR_COUNT 16
@@ -38,7 +43,7 @@ struct ncclXml {
 
 /* File functions */
 #define NCCL_TOPO_XML_VERSION 1
-ncclResult_t ncclTopoGetXmlFromFile(const char* xmlTopoFile, struct ncclXml* xml);
+ncclResult_t ncclTopoGetXmlFromFile(const char* xmlTopoFile, struct ncclXml* xml, int warn);
 ncclResult_t ncclTopoDumpXmlToFile(const char* xmlTopoFile, struct ncclXml* xml);
 #define NCCL_GRAPH_XML_VERSION 1
 ncclResult_t ncclTopoGetXmlGraphFromFile(const char* xmlGraphFile, struct ncclXml* xml);

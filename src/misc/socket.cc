@@ -178,7 +178,7 @@ int ncclFindInterfaceMatchSubnet(char* ifNames, union ncclSocketAddress* localAd
     // Store the interface name
     strncpy(ifNames+found*ifNameMaxSize, interface->ifa_name, ifNameMaxSize);
 
-    TRACE(NCCL_INIT|NCCL_NET,"NET : Found interface %s:%s in the same subnet as remote address %s", interface->ifa_name, ncclSocketToString((union ncclSocketAddress *) &(localAddrs[found].sa), line), ncclSocketToString((union ncclSocketAddress *) &(remoteAddr->sa), line_a));
+    TRACE(NCCL_INIT|NCCL_NET,"NET : Found interface %s:%s in the same subnet as remote address %s", interface->ifa_name, ncclSocketToString(localAddrs+found, line), ncclSocketToString(remoteAddr, line_a));
     found++;
     if (found == maxIfs) break;
   }

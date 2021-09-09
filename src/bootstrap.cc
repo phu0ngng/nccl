@@ -323,6 +323,43 @@ ncclResult_t bootstrapSend(void* commState, int peer, int tag, void* data, int s
   return ncclSuccess;
 }
 
+ncclResult_t bootstrapBarrier(void* commState, int *ranks, int rank, int nranks, int tag) {
+  if (nranks == 1) return ncclSuccess;
+  TRACE(NCCL_INIT, "rank %d nranks %d tag %x - ENTER", rank, nranks, tag);
+
+  /* Simple intra process barrier
+   *
+   * Based on the dissemination algorithm by Debra Hensgen, Raphael Finkel, and Udi Manbet,
+   * "Two Algorithms for Barrier Synchronization," International Journal of Parallel Programming, 17(1):1-17, 1988"
+   */
+  int data[1];
+  for (int mask=1; mask<nranks; mask<<=1) {
+    int src = (rank - mask + nranks) % nranks;
+    int dst = (rank + mask) % nranks;
+    NCCLCHECK(bootstrapSend(commState, ranks[dst], tag, data, sizeof(data)));
+    NCCLCHECK(bootstrapRecv(commState, ranks[src], tag, data, sizeof(data)));
+  }
+
+  TRACE(NCCL_INIT, "rank %d nranks %d tag %x - DONE", rank, nranks, tag);
+  return ncclSuccess;
+}
+
+ncclResult_t bootstrapIntraNodeAllGather(void* commState, int *ranks, int rank, int nranks, void* allData, int size) {
+  if (nranks == 1) return ncclSuccess;
+  char* data = (char*)allData;
+  TRACE(NCCL_INIT, "rank %d nranks %d size %d - ENTER", rank, nranks, size);
+
+  for (int i=1; i<nranks; i++) {
+    int src = (rank - i + nranks) % nranks;
+    int dst = (rank + i) % nranks;
+    NCCLCHECK(bootstrapSend(commState, ranks[dst], /*tag=*/i, data+rank*size, size));
+    NCCLCHECK(bootstrapRecv(commState, ranks[src], /*tag=*/i, data+src*size, size));
+  }
+
+  TRACE(NCCL_INIT, "rank %d nranks %d size %d - DONE", rank, nranks, size);
+  return ncclSuccess;
+}
+
 ncclResult_t unexpectedEnqueue(struct bootstrapState* state, int peer, int tag, struct ncclSocket* sock) {
   // New unex
   struct unexConn* unex;

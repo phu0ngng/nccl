@@ -20,7 +20,7 @@ STATICLIB = ${BUILDDIR}/lib/libnccl_static.a
 NVLDFLAGS += -L$(BUILDDIR)/lib $(LIBRARIES:%=-l%)
 ##
 DST_DIR := $(abspath ${BUILDDIR}/test/unit)
-CU_FILES := kernel_test.cu graph_test.cu model.cu data.cu align_test.cu
+CU_FILES := kernel_test.cu graph_test.cu model.cu data.cu align_test.cu xml_test.cu
 KCU_FILES := kernel_test.cu align_test.cu
 #ifeq ($(MPI),1)
 #CU_FILES += ncclNet_test.cu ncclNet_read_write_stress_test.cu
@@ -79,6 +79,11 @@ ${DST_DIR}/graph_test: ${DST_DIR}/graph_test.o ${STATICLIB}
 	$(NVCC) -o $@ $(NVCUFLAGS) $^ ${NVLDFLAGS}
 #
 ${DST_DIR}/model: ${DST_DIR}/model.o ${STATICLIB}
+	@printf "Linking  %-35s > %s\n" $< $@
+	@mkdir -p ${DST_DIR}
+	$(NVCC) -o $@ $(NVCUFLAGS) $^ ${NVLDFLAGS}
+#
+${DST_DIR}/xml_test: ${DST_DIR}/xml_test.o ${STATICLIB}
 	@printf "Linking  %-35s > %s\n" $< $@
 	@mkdir -p ${DST_DIR}
 	$(NVCC) -o $@ $(NVCUFLAGS) $^ ${NVLDFLAGS}

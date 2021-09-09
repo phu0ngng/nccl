@@ -300,12 +300,15 @@ ncclResult_t ncclTopoXmlLoadSystem(FILE* file, struct ncclXml* xml, struct ncclX
   return ncclSuccess;
 }
 
-ncclResult_t ncclTopoGetXmlFromFile(const char* xmlTopoFile, struct ncclXml* xml) {
+ncclResult_t ncclTopoGetXmlFromFile(const char* xmlTopoFile, struct ncclXml* xml, int warn) {
   FILE* file = fopen(xmlTopoFile, "r");
   if (file == NULL) {
-    WARN("Could not open XML topology file %s : %s", xmlTopoFile, strerror(errno));
+    if (warn) {
+      WARN("Could not open XML topology file %s : %s", xmlTopoFile, strerror(errno));
+    }
     return ncclSuccess;
   }
+  INFO(NCCL_GRAPH, "Loading topology file %s", xmlTopoFile);
   struct xmlHandler handlers[] = { { "system", ncclTopoXmlLoadSystem } };
   xml->maxIndex = 0;
   NCCLCHECK(xmlLoadSub(file, xml, NULL, handlers, 1));
@@ -629,7 +632,7 @@ ncclResult_t ncclTopoGetXmlFromGpu(struct ncclXmlNode* pciNode, nvmlDevice_t nvm
   NCCLCHECK(xmlGetAttrInt(gpuNode, "sm", &sm));
 
   struct ncclXmlNode* nvlNode = NULL;
-  NCCLCHECK(xmlGetSub(pciNode, "nvlink", &nvlNode));
+  NCCLCHECK(xmlGetSub(gpuNode, "nvlink", &nvlNode));
   if (nvlNode == NULL) {
     // NVML NVLink detection
     int maxNvLinks = (sm < 60) ? 0 : (sm < 70) ? 4 : (sm < 80) ? 6 : 12;

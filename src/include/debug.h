@@ -8,7 +8,6 @@
 #define NCCL_DEBUG_H_
 
 #include "nccl_net.h"
-
 #include <stdio.h>
 #include <chrono>
 
@@ -16,8 +15,6 @@
 #include <limits.h>
 #include <string.h>
 #include <pthread.h>
-
-#define gettid() (pid_t) syscall(SYS_gettid)
 
 extern int ncclDebugLevel;
 extern uint64_t ncclDebugMask;
