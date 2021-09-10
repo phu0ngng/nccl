@@ -293,7 +293,7 @@ perftest-multi-gc:
     PLUGIN_PATH: "/opt/nccl-rdma-sharp-plugins/src/.libs"
     SALLOC: "salloc -t 00:05:00 -N 3 -n 24 -w gc[01-02,05]"
   script:
-    - ./test/scripts/gitlab-runner-perftest.sh 128M 0 1
+    - ./test/scripts/gitlab-runner-perftest.sh 128M 0
   interruptible: true
 
 perftest-multi-prom:
@@ -335,7 +335,7 @@ perftest-multi-selene:
     OMPI_MCA_btl_tcp_if_include: "enp97s0f1"
     SALLOC: ""
   script:
-    - salloc -N 4 -n 32 --account=nccl -pluna --network sharp -J "nccl-cicd::$GITLAB_USER_LOGIN:perftest-multi::$CI_COMMIT_BRANCH:$CI_COMMIT_SHORT_SHA" -t 00:10:00 ./test/scripts/gitlab-runner-perftest.sh 16G 0 1
+    - salloc -N 4 -n 32 --account=nccl -pluna --network sharp -J "nccl-cicd::$GITLAB_USER_LOGIN:perftest-multi::$CI_COMMIT_BRANCH:$CI_COMMIT_SHORT_SHA" -t 00:10:00 ./test/scripts/gitlab-runner-perftest.sh 16G 0
   interruptible: true
 
 #perf_regression-multi-gc:
