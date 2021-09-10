@@ -156,8 +156,4 @@ enum ncclProxyMsgType {
 };
 ncclResult_t ncclProxyCall(struct ncclProxyConnector* proxyConn, int type, void* reqBuff, int reqSize, void* respBuff, int respSize);
 ncclResult_t ncclProxyDestroy(struct ncclComm* comm);
-
-ncclResult_t ncclProxySharedBuffersInitCollNet(struct ncclComm* comm, int cuda, int* size, char** ptr);
-ncclResult_t ncclProxySharedBuffersGetCollNet(struct ncclComm* comm, int type, int slot, int index, int* offset);
-ncclResult_t ncclProxySharedBuffersDestroyCollNet(struct ncclComm* comm);
 #endif

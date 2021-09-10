@@ -467,39 +467,6 @@ ncclResult_t ncclProxyStart(struct ncclComm* comm) {
   return ncclSuccess;
 }
 
-ncclResult_t ncclProxySharedBuffersInitCollNet(struct ncclComm* comm, int cuda, int* size, char** ptr) {
-  struct ncclProxySharedCollNet* state = &comm->proxyState.progressState.collNet;
-  if (state->size == 0) {
-    state->size = 2*comm->nChannels*comm->buffSizes[NCCL_PROTO_SIMPLE];
-  }
-
-  *size = state->size;
-
-  if (cuda && state->cudaBuff == NULL) {
-    NCCLCHECK(ncclCudaCalloc(&state->cudaBuff, *size));
-  } else if (state->hostBuff == NULL) {
-    NCCLCHECK(ncclCudaHostCalloc(&state->hostBuff, *size));
-  }
-  *ptr = cuda ? state->cudaBuff : state->hostBuff;
-  return ncclSuccess;
-}
-
-ncclResult_t ncclProxySharedBuffersGetCollNet(struct ncclComm* comm, int type, int slot, int channel, int* offset) {
-  // Use different pools for different channels and also separate send/recv.
-  int slotSize = comm->buffSizes[NCCL_PROTO_SIMPLE]/NCCL_STEPS;
-  int globalSlot = (type*NCCL_STEPS+slot)*comm->nChannels+channel;
-  *offset = slotSize * globalSlot;
-  return ncclSuccess;
-}
-
-ncclResult_t ncclProxySharedBuffersDestroyCollNet(struct ncclComm* comm) {
-  struct ncclProxySharedCollNet* state = &comm->proxyState.progressState.collNet;
-  if (state->size == 0) return ncclSuccess;
-  CUDACHECK(cudaFree(state->cudaBuff));
-  NCCLCHECK(ncclCudaHostFree(state->hostBuff));
-  return ncclSuccess;
-}
-
 ncclResult_t ncclProxyProgressCreate(struct ncclComm* comm) {
   struct ncclProxyProgressState* state = &comm->proxyState.progressState;
   if (!state->thread) {
@@ -530,8 +497,6 @@ ncclResult_t ncclProxyProgressDestroy(struct ncclComm* comm) {
     state->pools = next;
   }
   pthread_mutex_unlock(&state->poolMutex);
-
-  NCCLCHECK(ncclProxySharedBuffersDestroyCollNet(comm));
 
   return ncclSuccess;
 }
