@@ -619,11 +619,12 @@ static ncclResult_t ncclRegBuffAndExchange(struct ncclInfo* info, struct ncclBuf
   if (comm->localRanks == 1) return ncclSuccess;
   if (comm->pfnCuMemGetAddressRange == NULL) return ncclSuccess;  // CUDA toolkit or driver version too old
 
+  ncclResult_t ret = ncclSuccess;
   struct ncclBuffRegHandle regHandles[NCCL_MAX_INTRA_RANKS];
   // Get IPC handles
   // Note: the handle only corresponds to the base address of the allocation
-  CUDACHECK(cudaIpcGetMemHandle(&regHandles[comm->intraNodeRank].sendBuffIpc, (void*)info->sendbuff));
-  CUDACHECK(cudaIpcGetMemHandle(&regHandles[comm->intraNodeRank].recvBuffIpc, (void*)info->recvbuff));
+  CUDACHECKGOTO(cudaIpcGetMemHandle(&regHandles[comm->intraNodeRank].sendBuffIpc, (void*)info->sendbuff), ret, reg_fallback);
+  CUDACHECKGOTO(cudaIpcGetMemHandle(&regHandles[comm->intraNodeRank].recvBuffIpc, (void*)info->recvbuff), ret, reg_fallback);
   // Get offset of user buffer within allocation
   void* baseAddr;
   size_t size;
@@ -649,6 +650,12 @@ static ncclResult_t ncclRegBuffAndExchange(struct ncclInfo* info, struct ncclBuf
   }
   regInfo->nBuffs = comm->localRanks;
   TRACE(NCCL_COLL, "Rank %d exchanged %d buffers", comm->rank, regInfo->nBuffs);
+  return ncclSuccess;
+
+reg_fallback:
+  // If we cannot register specific buffer types, we just bypass this stage, and continue without failing
+  (void)ret;
+  WARN("Unable to register user buffers");
   return ncclSuccess;
 }
 
