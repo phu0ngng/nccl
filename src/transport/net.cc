@@ -391,7 +391,8 @@ static ncclResult_t sharedBuffersInit(struct ncclComm* comm, int cuda, int local
     if (sameProcess == 0) {
       CUDACHECK(cudaIpcGetMemHandle(&state->ipc, state->cudaBuff));
     }
-  } else if (state->hostBuff == NULL) {
+  }
+  if (!cuda && state->hostBuff == NULL) {
     NCCLCHECK(ncclCudaHostCalloc(&state->hostBuff, *size));
   }
   *cpuPtr = cuda ? state->cudaBuff : state->hostBuff;
@@ -659,6 +660,15 @@ static ncclResult_t recvProxyConnect(struct ncclProxyConnection* connection, str
 
 static ncclResult_t sendProxyFree(struct ncclProxyConnection* connection, struct ncclComm* comm) {
   struct sendResources* resources = (struct sendResources*)(connection->transportResources);
+  for (int p=0; p<NCCL_NUM_PROTOCOLS; p++) {
+    if (resources->buffers[p]) {
+      NCCLCHECK(ncclNetDeregMr(resources->netSendComm, resources->mhandles[p]));
+    }
+  }
+  struct connectMapMem* mems = resources->map.mems;
+  NCCLCHECK(ncclCudaHostFree(mems[NCCL_NET_MAP_HOSTMEM].cpuPtr));
+  CUDACHECK(cudaFree(mems[NCCL_NET_MAP_DEVMEM].cpuPtr));
+  if (mems[NCCL_NET_MAP_GDCMEM].cpuPtr) NCCLCHECK(ncclGdrCudaFree(resources->gdrDesc));
   if (resources->shared) NCCLCHECK(sharedBuffersDestroy(comm, resources->localRank, 0));
   free(connection->transportResources);
   return ncclSuccess;
@@ -666,6 +676,15 @@ static ncclResult_t sendProxyFree(struct ncclProxyConnection* connection, struct
 
 static ncclResult_t recvProxyFree(struct ncclProxyConnection* connection, struct ncclComm* comm) {
   struct recvResources* resources = (struct recvResources*)(connection->transportResources);
+  for (int p=0; p<NCCL_NUM_PROTOCOLS; p++) {
+    if (resources->buffers[p]) {
+      NCCLCHECK(ncclNetDeregMr(resources->netRecvComm, resources->mhandles[p]));
+    }
+  }
+  struct connectMapMem* mems = resources->map.mems;
+  NCCLCHECK(ncclCudaHostFree(mems[NCCL_NET_MAP_HOSTMEM].cpuPtr));
+  CUDACHECK(cudaFree(mems[NCCL_NET_MAP_DEVMEM].cpuPtr));
+  if (mems[NCCL_NET_MAP_GDCMEM].cpuPtr) NCCLCHECK(ncclGdrCudaFree(resources->gdrDesc));
   if (resources->shared) NCCLCHECK(sharedBuffersDestroy(comm, resources->localRank, 1));
   free(connection->transportResources);
   return ncclSuccess;

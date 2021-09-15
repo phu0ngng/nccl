@@ -285,7 +285,7 @@ static ncclResult_t sendProxySetup(struct ncclProxyConnection* connection, struc
 struct sharedResources {
   void* collNetListenComms[MAXCHANNELS];
   void* collNetComms[MAXCHANNELS];
-  int commRefCount[MAXCHANNELS];
+  int commRefCount[NCCL_MAX_NETDEVS];
 };
 
 ncclResult_t sharedListen(struct ncclComm* comm, int netDev, void* collNetHandle) {
@@ -328,7 +328,7 @@ static ncclResult_t sharedFree(struct ncclComm* comm, int netDev) {
   if (resources->commRefCount[netDev] == 0) {
     NCCLCHECK(collNetCloseColl(resources->collNetComms[netDev]));
   }
-  for (int c=0; c<MAXCHANNELS; c++) if (resources->commRefCount[c]) return ncclSuccess;
+  for (int n=0; n<NCCL_MAX_NETDEVS; n++) if (resources->commRefCount[n]) return ncclSuccess;
   comm->proxyState.progressState.collNet.resources = NULL;
   free(resources);
   return ncclSuccess;
@@ -344,7 +344,8 @@ static ncclResult_t sharedBuffersInit(struct ncclComm* comm, int cuda, char** gp
 
   if (cuda && state->cudaBuff == NULL) {
     NCCLCHECK(ncclCudaCalloc(&state->cudaBuff, *size));
-  } else if (state->hostBuff == NULL) {
+  }
+  if (!cuda && state->hostBuff == NULL) {
     NCCLCHECK(ncclCudaHostCalloc(&state->hostBuff, *size));
   }
   *gpuPtr = *cpuPtr = cuda ? state->cudaBuff : state->hostBuff;
@@ -364,6 +365,8 @@ static ncclResult_t sharedBuffersDestroy(struct ncclComm* comm) {
   if (state->size == 0) return ncclSuccess;
   CUDACHECK(cudaFree(state->cudaBuff));
   NCCLCHECK(ncclCudaHostFree(state->hostBuff));
+  // This will be called multiple times, with multiple channels and send/recv. Make sure we only do it once.
+  state->size = 0;
   return ncclSuccess;
 }
 
@@ -497,12 +500,36 @@ static ncclResult_t recvProxyConnect(struct ncclProxyConnection* connection, str
 }
 
 static ncclResult_t sendProxyFree(struct ncclProxyConnection* connection, struct ncclComm* comm) {
-  //NCCLCHECK(sharedBuffersDestroy(comm, resources->localRank, 0));
+  struct sendResources* resources = (struct sendResources*)(connection->transportResources);
+  for (int p=0; p<NCCL_NUM_PROTOCOLS; p++) {
+    if (resources->buffers[p]) {
+      NCCLCHECK(collNetDeregMr(resources->collNetComm, resources->sendMhandles[p]));
+    }
+  }
+  struct connectMapMem* mems = resources->map.mems;
+  NCCLCHECK(ncclCudaHostFree(mems[NCCL_NET_MAP_HOSTMEM].cpuPtr));
+  CUDACHECK(cudaFree(mems[NCCL_NET_MAP_DEVMEM].cpuPtr));
+  if (mems[NCCL_NET_MAP_GDCMEM].cpuPtr) NCCLCHECK(ncclGdrCudaFree(resources->gdrDesc));
+  NCCLCHECK(sharedBuffersDestroy(comm));
+  NCCLCHECK(sharedFree(comm, resources->netDev));
+  free(connection->transportResources);
   return ncclSuccess;
 }
 
 static ncclResult_t recvProxyFree(struct ncclProxyConnection* connection, struct ncclComm* comm) {
-  //NCCLCHECK(sharedBuffersDestroy(comm, resources->localRank, 0));
+  struct recvResources* resources = (struct recvResources*)(connection->transportResources);
+  for (int p=0; p<NCCL_NUM_PROTOCOLS; p++) {
+    if (resources->buffers[p]) {
+      NCCLCHECK(collNetDeregMr(resources->collNetComm, resources->mhandles[p]));
+    }
+  }
+  struct connectMapMem* mems = resources->map.mems;
+  NCCLCHECK(ncclCudaHostFree(mems[NCCL_NET_MAP_HOSTMEM].cpuPtr));
+  CUDACHECK(cudaFree(mems[NCCL_NET_MAP_DEVMEM].cpuPtr));
+  if (mems[NCCL_NET_MAP_GDCMEM].cpuPtr) NCCLCHECK(ncclGdrCudaFree(resources->gdrDesc));
+  NCCLCHECK(sharedBuffersDestroy(comm));
+  NCCLCHECK(sharedFree(comm, resources->netDev));
+  free(connection->transportResources);
   return ncclSuccess;
 }
 
