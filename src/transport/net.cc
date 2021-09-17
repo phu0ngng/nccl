@@ -666,7 +666,11 @@ static ncclResult_t sendProxyFree(struct ncclProxyConnection* connection, struct
     }
   }
   struct connectMapMem* mems = resources->map.mems;
-  NCCLCHECK(ncclCudaHostFree(mems[NCCL_NET_MAP_HOSTMEM].cpuPtr));
+  if (resources->map.sameProcess) {
+    NCCLCHECK(ncclCudaHostFree(mems[NCCL_NET_MAP_HOSTMEM].cpuPtr));
+  } else {
+    munmap(mems[NCCL_NET_MAP_HOSTMEM].cpuPtr, mems[NCCL_NET_MAP_HOSTMEM].size);
+  }
   CUDACHECK(cudaFree(mems[NCCL_NET_MAP_DEVMEM].cpuPtr));
   if (mems[NCCL_NET_MAP_GDCMEM].cpuPtr) NCCLCHECK(ncclGdrCudaFree(resources->gdrDesc));
   if (resources->shared) NCCLCHECK(sharedBuffersDestroy(comm, resources->localRank, 0));
