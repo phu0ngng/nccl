@@ -581,13 +581,13 @@ ncclResult_t ncclSocketRegMr(void* comm, void* data, int size, int type, void** 
 }
 ncclResult_t ncclSocketDeregMr(void* comm, void* mhandle) { return ncclSuccess; }
 
-ncclResult_t ncclSocketIsend(void* sendComm, void* data, int size, void* mhandle, void** request) {
+ncclResult_t ncclSocketIsend(void* sendComm, void* data, int size, int tag, void* mhandle, void** request) {
   struct ncclSocketComm* comm = (struct ncclSocketComm*)sendComm;
   NCCLCHECK(ncclSocketGetRequest(comm, NCCL_SOCKET_SEND, data, size, (struct ncclSocketRequest**)request));
   return ncclSuccess;
 }
 
-ncclResult_t ncclSocketIrecv(void* recvComm, void* data, int size, void* mhandle, void** request) {
+ncclResult_t ncclSocketIrecv(void* recvComm, void* data, int size, int tag, void* mhandle, void** request) {
   struct ncclSocketComm* comm = (struct ncclSocketComm*)recvComm;
   NCCLCHECK(ncclSocketGetRequest(comm, NCCL_SOCKET_RECV, data, size, (struct ncclSocketRequest**)request));
   return ncclSuccess;

@@ -22,8 +22,8 @@ static ncclResult_t ncclNetConnect(int dev, void* handle, void** sendComm) { NCC
 static ncclResult_t ncclNetAccept(void* listenComm, void** recvComm) { NCCLCHECK(ncclNet->accept(listenComm, recvComm)); return ncclSuccess; }
 static ncclResult_t ncclNetRegMr(void* comm, void* data, int size, int type, void** mhandle) { NCCLCHECK(ncclNet->regMr(comm, data, size, type, mhandle)); return ncclSuccess; }
 static ncclResult_t ncclNetDeregMr(void* comm, void* mhandle) { NCCLCHECK(ncclNet->deregMr(comm, mhandle)); return ncclSuccess; }
-static ncclResult_t ncclNetIsend(void* sendComm, void* data, int size, void* mhandle, void** request) { NCCLCHECK(ncclNet->isend(sendComm, data, size, mhandle, request)); return ncclSuccess; }
-static ncclResult_t ncclNetIrecv(void* recvComm, void* data, int size, void* mhandle, void** request) { NCCLCHECK(ncclNet->irecv(recvComm, data, size, mhandle, request)); return ncclSuccess; }
+static ncclResult_t ncclNetIsend(void* sendComm, void* data, int size, int tag, void* mhandle, void** request) { NCCLCHECK(ncclNet->isend(sendComm, data, size, tag, mhandle, request)); return ncclSuccess; }
+static ncclResult_t ncclNetIrecv(void* recvComm, void* data, int size, int tag, void* mhandle, void** request) { NCCLCHECK(ncclNet->irecv(recvComm, data, size, tag, mhandle, request)); return ncclSuccess; }
 static ncclResult_t ncclNetIflush(void* recvComm, void* data, int size, void* mhandle, void** request) { NCCLCHECK(ncclNet->iflush(recvComm, data, size, mhandle, request)); return ncclSuccess; }
 static ncclResult_t ncclNetTest(void* request, int* done, int* size) { NCCLCHECK(ncclNet->test(request, done, size)); return ncclSuccess; }
 static ncclResult_t ncclNetCloseSend(void* sendComm) { NCCLCHECK(ncclNet->closeSend(sendComm)); return ncclSuccess; }

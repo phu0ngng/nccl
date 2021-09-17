@@ -32,9 +32,9 @@ typedef struct {
   int speed;      // Port speed in Mbps.
   int port;       // Port number.
   int maxComms;   // Maximum number of comms we can create
-}ncclNetProperties_v4_t;
+}ncclNetProperties_v5_t;
 
-typedef ncclNetProperties_v4_t ncclNetProperties_t;
+typedef ncclNetProperties_v5_t ncclNetProperties_t;
 
 typedef struct {
   // Name of the network (mainly for logs)
@@ -44,7 +44,7 @@ typedef struct {
   // Return the number of adapters.
   ncclResult_t (*devices)(int* ndev);
   // Get various device properties.
-  ncclResult_t (*getProperties)(int dev, ncclNetProperties_v4_t* props);
+  ncclResult_t (*getProperties)(int dev, ncclNetProperties_v5_t* props);
   // Create a receiving object and provide a handle to connect to it. The
   // handle can be up to NCCL_NET_HANDLE_MAXSIZE bytes and will be exchanged
   // between ranks to create a connection.
@@ -59,10 +59,10 @@ typedef struct {
   ncclResult_t (*deregMr)(void* comm, void* mhandle);
   // Asynchronous send to a peer.
   // May return request == NULL if the call cannot be performed (or would block)
-  ncclResult_t (*isend)(void* sendComm, void* data, int size, void* mhandle, void** request);
+  ncclResult_t (*isend)(void* sendComm, void* data, int size, int tag, void* mhandle, void** request);
   // Asynchronous recv from a peer.
   // May return request == NULL if the call cannot be performed (or would block)
-  ncclResult_t (*irecv)(void* recvComm, void* data, int size, void* mhandle, void** request);
+  ncclResult_t (*irecv)(void* recvComm, void* data, int size, int tag, void* mhandle, void** request);
   // Perform a flush/fence to make sure all data received with NCCL_PTR_CUDA is
   // visible to the GPU
   ncclResult_t (*iflush)(void* recvComm, void* data, int size, void* mhandle, void** request);
@@ -73,11 +73,11 @@ typedef struct {
   ncclResult_t (*closeSend)(void* sendComm);
   ncclResult_t (*closeRecv)(void* recvComm);
   ncclResult_t (*closeListen)(void* listenComm);
-} ncclNet_v4_t;
+} ncclNet_v5_t;
 
-typedef ncclNet_v4_t ncclNet_t;
+typedef ncclNet_v5_t ncclNet_t;
 
-#define NCCL_PLUGIN_SYMBOL ncclNetPlugin_v4
+#define NCCL_PLUGIN_SYMBOL ncclNetPlugin_v5
 
 typedef struct {
   // Name of the collective network (mainly for logs)
@@ -88,7 +88,7 @@ typedef struct {
   // If ndev returns 0, all other functions might be set to NULL.
   ncclResult_t (*devices)(int* ndev);
   // Get various device properties.
-  ncclResult_t (*getProperties)(int dev, ncclNetProperties_v4_t* props);
+  ncclResult_t (*getProperties)(int dev, ncclNetProperties_v5_t* props);
   // Create a receiving object and provide a handle to connect to it. The
   // handle can be up to NCCL_NET_HANDLE_MAXSIZE bytes and will be exchanged
   // between ranks to create connections.
@@ -115,10 +115,10 @@ typedef struct {
   // Close and free collective comm objects
   ncclResult_t (*closeColl)(void* collComm);
   ncclResult_t (*closeListen)(void* listenComm);
-} ncclCollNet_v4_t;
+} ncclCollNet_v5_t;
 
-typedef ncclCollNet_v4_t ncclCollNet_t;
+typedef ncclCollNet_v5_t ncclCollNet_t;
 
-#define NCCL_COLLNET_PLUGIN_SYMBOL ncclCollNetPlugin_v4
+#define NCCL_COLLNET_PLUGIN_SYMBOL ncclCollNetPlugin_v5
 
 #endif // end include guard

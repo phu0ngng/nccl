@@ -771,7 +771,7 @@ static ncclResult_t sendProxyProgress(struct ncclComm* comm, struct ncclProxyArg
           }
           if (ready) {
             // Data is ready, try to send.
-            NCCLCHECK(ncclNetIsend(resources->netSendComm, buff, size, mhandle, sub->requests+buffSlot));
+            NCCLCHECK(ncclNetIsend(resources->netSendComm, buff, size, resources->rank, mhandle, sub->requests+buffSlot));
             if (sub->requests[buffSlot] != NULL) {
               TRACE(NCCL_NET, "sendProxy [%ld/%d] Isend posted, req %p", sub->transmitted, buffSlot, sub->requests[buffSlot]);
               sizesFifo[buffSlot] = -1;
@@ -850,7 +850,7 @@ static ncclResult_t recvProxyProgress(struct ncclComm* comm, struct ncclProxyArg
         } else {
           ptr = localBuff+buffSlot*stepSize;
         }
-        NCCLCHECK(ncclNetIrecv(resources->netRecvComm, ptr, buffSize, mhandle, sub->requests+buffSlot));
+        NCCLCHECK(ncclNetIrecv(resources->netRecvComm, ptr, buffSize, resources->remoteRank, mhandle, sub->requests+buffSlot));
         if (sub->requests[buffSlot] != NULL) {
           TRACE(NCCL_NET, "recvProxy [%ld/%d] posted recv request %p", sub->posted, buffSlot, sub->requests[buffSlot]);
           sub->posted += args->sliceSteps;

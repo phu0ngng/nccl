@@ -302,7 +302,7 @@ struct ncclIbSendFifo {
   uint32_t seq;
   uint32_t rkey;
   uint32_t ready;
-  uint64_t pad[1]; // Pad FIFO element size to be 32-bytes
+  uint64_t tag;
 };
 
 struct ncclIbSendComm {
@@ -750,7 +750,7 @@ ncclResult_t ncclIbDeregMr(void* comm, void* mhandle) {
   return ncclSuccess;
 }
 
-ncclResult_t ncclIbIsend(void* sendComm, void* data, int size, void* mhandle, void** request) {
+ncclResult_t ncclIbIsend(void* sendComm, void* data, int size, int tag, void* mhandle, void** request) {
   struct ncclIbSendComm* comm = (struct ncclIbSendComm*)sendComm;
   if (comm->ready == 0) NCCLCHECK(ncclSendCheck(comm));
   if (comm->ready == 0) { *request = NULL; return ncclSuccess; }
@@ -758,9 +758,20 @@ ncclResult_t ncclIbIsend(void* sendComm, void* data, int size, void* mhandle, vo
   struct ibv_mr* mr = (struct ibv_mr*)mhandle;
 
   // Wait for the receiver to have posted the corresponding receive
-  volatile struct ncclIbSendFifo* slot = comm->fifo + (comm->fifoHead%MAX_REQUESTS);
-  volatile uint32_t * readyPtr = &slot->ready;
-  if (*readyPtr == 0) { *request = NULL; return ncclSuccess; }
+  uint32_t fifoHead = comm->fifoHead;
+  volatile struct ncclIbSendFifo* slot;
+  while (1) {
+    slot = comm->fifo + (fifoHead%MAX_REQUESTS);
+    volatile uint32_t * readyPtr = &slot->ready;
+    if (*readyPtr == 0 ) { *request = NULL; return ncclSuccess; }
+    volatile uint64_t * tagPtr = &slot->tag;
+    if (*tagPtr == tag) break;
+    fifoHead++;
+    if (fifoHead == comm->fifoHead + MAX_REQUESTS) {
+      WARN("Error: send FIFO is full yet no tag matched");
+      return ncclInternalError;
+    }
+  }
 
   struct ncclIbRequest* req;
   NCCLCHECK(ncclIbGetRequest(&comm->verbs, &req));
@@ -799,8 +810,6 @@ ncclResult_t ncclIbIsend(void* sendComm, void* data, int size, void* mhandle, vo
   slot->ready = 0;
   slot->addr = 0ULL;
   slot->rkey = slot->size = slot->seq = 0;
-  comm->fifoHead++;
-
 
 #if USE_RDMA_WRITE
   // When using adaptive routing, send the bulk of the data first as an
@@ -843,10 +852,16 @@ ncclResult_t ncclIbIsend(void* sendComm, void* data, int size, void* mhandle, vo
   req->events = comm->nqps;
 
   *request = req;
+
+  // Shift unmatched elements in the FIFO
+  for (int s=fifoHead; s>comm->fifoHead; s--) {
+    memcpy(comm->fifo+(s%MAX_REQUESTS), comm->fifo+((s-1)%MAX_REQUESTS), sizeof(struct ncclIbSendFifo));
+  }
+  comm->fifoHead++;
   return ncclSuccess;
 }
 
-ncclResult_t ncclIbPostFifo(struct ncclIbRecvComm* comm, uint32_t rkey, uint64_t addr, int size, struct ncclIbRequest* req) {
+ncclResult_t ncclIbPostFifo(struct ncclIbRecvComm* comm, uint32_t rkey, uint64_t addr, int size, int tag, struct ncclIbRequest* req) {
   struct ibv_send_wr wr;
   memset(&wr, 0, sizeof(wr));
 
@@ -856,6 +871,7 @@ ncclResult_t ncclIbPostFifo(struct ncclIbRecvComm* comm, uint32_t rkey, uint64_t
   localElem->rkey = rkey;
   localElem->ready = 1;
   localElem->size = size; // Sanity/Debugging
+  localElem->tag = tag;
   localElem->seq = comm->remFifo.tail; // Sanity/Debugging
   wr.wr.rdma.remote_addr = comm->remFifo.addr + slot*sizeof(struct ncclIbSendFifo);
   wr.wr.rdma.rkey = comm->remFifo.rkey;
@@ -899,7 +915,7 @@ ncclResult_t ncclIbPostFifo(struct ncclIbRecvComm* comm, uint32_t rkey, uint64_t
   return ncclSuccess;
 }
 
-ncclResult_t ncclIbIrecv(void* recvComm, void* data, int size, void* mhandle, void** request) {
+ncclResult_t ncclIbIrecv(void* recvComm, void* data, int size, int tag, void* mhandle, void** request) {
   struct ncclIbRecvComm* comm = (struct ncclIbRecvComm*)recvComm;
   if (comm->ready == 0) NCCLCHECK(ncclRecvCheck(comm));
   if (comm->ready == 0) { *request = NULL; return ncclSuccess; }
@@ -928,7 +944,7 @@ ncclResult_t ncclIbIrecv(void* recvComm, void* data, int size, void* mhandle, vo
   *request = req;
 
   // Post to FIFO to notify sender
-  NCCLCHECK(ncclIbPostFifo(comm, mr->rkey, (uint64_t)data, size, req));
+  NCCLCHECK(ncclIbPostFifo(comm, mr->rkey, (uint64_t)data, size, tag, req));
   return ncclSuccess;
 }
 
