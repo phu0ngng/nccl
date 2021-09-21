@@ -168,9 +168,11 @@ struct ncclSocketListenComm {
   int fd;
   int nSocks;
   int nThreads;
+  int dev;
 };
 
 struct ncclSocketComm {
+  int dev;
   int ctrlFd;
   union socketAddress addr;
   int fds[MAX_SOCKETS];
@@ -298,6 +300,7 @@ ncclResult_t ncclSocketListen(int dev, void* opaqueHandle, void** listenComm) {
   NCCLCHECK(ncclSocketGetNsockNthread(dev, &comm->nSocks, &comm->nThreads));
   handle->nSocks = comm->nSocks;
   handle->nThreads = comm->nThreads;
+  comm->dev = dev;
   *listenComm = comm;
   return ncclSuccess;
 }
@@ -311,6 +314,7 @@ ncclResult_t ncclSocketConnect(int dev, void* opaqueHandle, void** sendComm) {
   struct ncclSocketHandle* handle = (struct ncclSocketHandle*) opaqueHandle;
   comm->nSocks = handle->nSocks;
   comm->nThreads = handle->nThreads;
+  comm->dev = dev;
   for (int i=0; i<comm->nSocks+1; i++) {
     int tmpFd, offset=0;
     NCCLCHECK(connectAddress(&tmpFd, &handle->connectAddr));
@@ -329,6 +333,7 @@ ncclResult_t ncclSocketAccept(void* listenComm, void** recvComm) {
   NCCLCHECK(ncclSocketNewComm(&rComm));
   rComm->nSocks = lComm->nSocks;
   rComm->nThreads = lComm->nThreads;
+  rComm->dev = lComm->dev;
   for (int i=0; i<rComm->nSocks+1; i++) {
     int tmpFd, sendSockIdx, offset=0;
     socklen_t socklen = sizeof(union socketAddress);
@@ -377,7 +382,7 @@ ncclResult_t ncclSocketGetTask(struct ncclSocketComm* comm, int op, void* data, 
     pthread_mutex_init(&res->threadLock, NULL);
     pthread_cond_init(&res->threadCond, NULL);
     pthread_create(comm->helperThread+tid, NULL, persistentSocketThread, res);
-    ncclSetThreadName(comm->helperThread[tid], "NCCLsocket %3u", tid);
+    ncclSetThreadName(comm->helperThread[tid], "NcclSock%s%1u %2u", op == NCCL_SOCKET_SEND ? "Snd" : "Rcv", comm->dev, tid);
   }
   struct ncclSocketTask* r = queue->tasks+queue->next;
   if (r->used == 0) {

@@ -184,9 +184,10 @@ ncclResult_t ncclIbInit(ncclDebugLogger_t logFunction) {
           strncpy(ncclIbDevs[ncclNIbDevs].devName, devices[d]->name, MAXNAMESIZE);
           NCCLCHECK(ncclIbGetPciPath(ncclIbDevs[ncclNIbDevs].devName, &ncclIbDevs[ncclNIbDevs].pciPath, &ncclIbDevs[ncclNIbDevs].realPort));
           ncclIbDevs[ncclNIbDevs].maxQp = devAttr.max_qp;
+          pthread_create(&ncclIbAsyncThread, NULL, ncclIbAsyncThreadMain, context);
+          ncclSetThreadName(ncclIbAsyncThread, "NcclIbAsync %2d", ncclNIbDevs);
           ncclNIbDevs++;
           nPorts++;
-          pthread_create(&ncclIbAsyncThread, NULL, ncclIbAsyncThreadMain, context);
         }
         if (nPorts == 0 && ncclSuccess != wrap_ibv_close_device(context)) { return ncclInternalError; }
       }
