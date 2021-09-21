@@ -377,6 +377,9 @@ ncclResult_t ncclSocketGetTask(struct ncclSocketComm* comm, int op, void* data, 
     pthread_mutex_init(&res->threadLock, NULL);
     pthread_cond_init(&res->threadCond, NULL);
     pthread_create(comm->helperThread+tid, NULL, persistentSocketThread, res);
+    char threadName[NCCL_THREAD_NAMELEN];
+    snprintf(threadName, NCCL_THREAD_NAMELEN, "NCCLsocket %3u", tid);
+    pthread_setname_np(comm->helperThread[tid], threadName);
   }
   struct ncclSocketTask* r = queue->tasks+queue->next;
   if (r->used == 0) {
@@ -508,6 +511,11 @@ ncclResult_t ncclSocketClose(void* opaqueComm) {
     for (int i=0; i<comm->nThreads; i++) {
       struct ncclSocketThreadResources* res = comm->threadResources+i;
       if (comm->helperThread[i]) {
+#ifdef ENABLE_TRACE
+        char threadName[NCCL_THREAD_NAMELEN];
+        pthread_getname_np(comm->helperThread[i], threadName, NCCL_THREAD_NAMELEN);
+        INFO(NCCL_INIT, "Socket close: %s", threadName);
+#endif
         pthread_mutex_lock(&res->threadLock);
         res->state = stop;
         pthread_cond_signal(&res->threadCond);

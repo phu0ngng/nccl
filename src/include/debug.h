@@ -16,6 +16,9 @@
 #include <string.h>
 #include <pthread.h>
 
+// Conform to pthread and NVTX standard
+#define NCCL_THREAD_NAMELEN 16
+
 extern int ncclDebugLevel;
 extern uint64_t ncclDebugMask;
 extern pthread_mutex_t ncclDebugOutputLock;

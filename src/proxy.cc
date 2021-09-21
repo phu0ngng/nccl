@@ -419,12 +419,11 @@ ncclResult_t ncclProxyAppendPosted(struct ncclProxyState* state) {
   return ncclSuccess;
 }
 
-
 void* persistentThread(void *comm_) {
   struct ncclComm* comm = (struct ncclComm*)comm_;
   struct ncclProxyState* state = &comm->proxyState;
-  char threadName[16];
-  sprintf(threadName, "NCCLproxy %5d", comm->rank);
+  char threadName[NCCL_THREAD_NAMELEN];
+  snprintf(threadName, NCCL_THREAD_NAMELEN, "NCCLproxy %5d", comm->rank);
   nvtxNameOsThreadA(syscall(SYS_gettid), threadName);
 
   struct ncclProxyArgs** opsPtr = &state->ops;
@@ -526,13 +525,21 @@ ncclResult_t ncclProxyCreate(struct ncclComm* comm) {
     comm->proxyState.poolMutex = PTHREAD_MUTEX_INITIALIZER;
     comm->proxyState.ops = NULL;
     pthread_create(&comm->proxyThread, NULL, persistentThread, comm);
+    char threadName[NCCL_THREAD_NAMELEN];
+    snprintf(threadName, NCCL_THREAD_NAMELEN, "NCCLproxy %5d", comm->rank);
+    pthread_setname_np(comm->proxyThread, threadName);
   }
   return ncclSuccess;
 }
 
 ncclResult_t ncclProxyDestroy(struct ncclComm* comm) {
-  struct ncclProxyState* state = &comm->proxyState;
+#ifdef ENABLE_TRACE
+  char threadName[NCCL_THREAD_NAMELEN];
+  pthread_getname_np(comm->proxyThread, threadName, NCCL_THREAD_NAMELEN);
+  INFO(NCCL_INIT, "Proxy destroy: %s", threadName);
+#endif
 
+  struct ncclProxyState* state = &comm->proxyState;
   // Request the proxy to stop and then wake it
   pthread_mutex_lock(&state->opsMutex);
   state->stop = true;

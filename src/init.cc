@@ -1014,6 +1014,11 @@ ncclResult_t ncclCommInitAll(ncclComm_t* comms, int ndev, const int* devlist) {
 static ncclResult_t ncclGraphHelperDestroy(ncclComm* comm) {
   auto res = comm->graphHelperResources;
   if (comm->graphHelperThread && res) {
+#ifdef ENABLE_TRACE
+    char threadName[NCCL_THREAD_NAMELEN];
+    pthread_getname_np(comm->graphHelperThread, threadName, NCCL_THREAD_NAMELEN);
+    INFO(NCCL_INIT, "Graph helper destroy: %s", threadName);
+#endif
     pthread_mutex_lock(&res->threadLock);
     res->threadState = ThreadStop;
     pthread_cond_signal(&res->threadCond);
