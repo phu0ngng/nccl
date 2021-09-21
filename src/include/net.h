@@ -33,6 +33,18 @@ static ncclResult_t ncclNetCloseListen(void* listenComm) { NCCLCHECK(ncclNet->cl
 // Test whether the current GPU support GPU Direct RDMA.
 #define GPU_BUF_SIZE (2*1024*1024)
 static ncclResult_t ncclGpuGdrSupport(int* gdrSupport) {
+#if CUDART_VERSION >= 11030
+  // In CUDA 11.3 and later we can now query the cudaDevAttrGPUDirectRDMASupported attribute
+  int driverVersion;
+  CUDACHECK(cudaDriverGetVersion(&driverVersion));
+  if (driverVersion >= 11030) {
+    int cudaDev, attr = 0;
+    CUDACHECK(cudaGetDevice(&cudaDev));
+    CUDACHECK(cudaDeviceGetAttribute(&attr, cudaDevAttrGPUDirectRDMASupported, cudaDev));
+    *gdrSupport = attr;
+    return ncclSuccess;
+  }
+#endif
   int netDevs;
   NCCLCHECK(ncclNetDevices(&netDevs));
   *gdrSupport = 0;
