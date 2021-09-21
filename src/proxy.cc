@@ -525,21 +525,14 @@ ncclResult_t ncclProxyCreate(struct ncclComm* comm) {
     comm->proxyState.poolMutex = PTHREAD_MUTEX_INITIALIZER;
     comm->proxyState.ops = NULL;
     pthread_create(&comm->proxyThread, NULL, persistentThread, comm);
-    char threadName[NCCL_THREAD_NAMELEN];
-    snprintf(threadName, NCCL_THREAD_NAMELEN, "NCCLproxy %5d", comm->rank);
-    pthread_setname_np(comm->proxyThread, threadName);
+    ncclSetThreadName(comm->proxyThread, "NCCLproxy %5d", comm->rank);
   }
   return ncclSuccess;
 }
 
 ncclResult_t ncclProxyDestroy(struct ncclComm* comm) {
-#ifdef ENABLE_TRACE
-  char threadName[NCCL_THREAD_NAMELEN];
-  pthread_getname_np(comm->proxyThread, threadName, NCCL_THREAD_NAMELEN);
-  INFO(NCCL_INIT, "Proxy destroy: %s", threadName);
-#endif
-
   struct ncclProxyState* state = &comm->proxyState;
+
   // Request the proxy to stop and then wake it
   pthread_mutex_lock(&state->opsMutex);
   state->stop = true;

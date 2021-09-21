@@ -167,7 +167,7 @@ ncclResult_t bootstrapCreateRoot(ncclUniqueId* id, bool idFromEnv) {
   NCCLCHECK(createListenSocket(&listenFd, connectAddr));
   pthread_t thread;
   pthread_create(&thread, NULL, bootstrapRoot, (void*)(uint64_t)listenFd);
-  pthread_setname_np(thread, "NCCLbootRoot");
+  ncclSetThreadName(thread, "NCCLbootRoot");
   return ncclSuccess;
 }
 
@@ -385,9 +385,7 @@ ncclResult_t bootstrapInit(ncclUniqueId * id, int rank, int nranks, void** commS
   CUDACHECK(cudaGetDevice(&state->allocState->cudaDev));
   NCCLCHECK(createListenSocket(&state->allocState->listenFd, state->peerAllocAddresses+rank));
   pthread_create(&state->allocThread, NULL, ncclRemoteMemAllocationService, state->allocState);
-  char threadName[NCCL_THREAD_NAMELEN];
-  snprintf(threadName, NCCL_THREAD_NAMELEN, "NCCLalloc %5d", rank);
-  pthread_setname_np(state->allocThread, threadName);
+  ncclSetThreadName(state->allocThread, "NCCLalloc %5d", rank);
   NCCLCHECK(bootstrapAllGather(state, state->peerAllocAddresses, sizeof(union socketAddress)));
 
   TRACE(NCCL_INIT, "rank %d nranks %d - DONE", rank, nranks);

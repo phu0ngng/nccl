@@ -40,4 +40,6 @@ extern std::chrono::high_resolution_clock::time_point ncclEpoch;
 #define TRACE(...)
 #endif
 
+void ncclSetThreadName(pthread_t thread, const char *fmt, ...);
+
 #endif

@@ -1113,9 +1113,7 @@ ncclResult_t ncclGetCudaGraph(ncclComm_t comm, cudaGraph_t* graph) {
       pthread_cond_init(&comm->graphHelperResources->threadCond, NULL);
       comm->graphHelperResources->threadState = ThreadStart;
       pthread_create(&comm->graphHelperThread, NULL, graphHelperFunc, comm->graphHelperResources);
-      char threadName[NCCL_THREAD_NAMELEN];
-      snprintf(threadName, NCCL_THREAD_NAMELEN, "NCCLgraph %5d", comm->rank);
-      pthread_setname_np(comm->graphHelperThread, threadName);
+      ncclSetThreadName(comm->graphHelperThread, "NCCLgraph %5d", comm->rank);
     }
   }
   return ncclSuccess;

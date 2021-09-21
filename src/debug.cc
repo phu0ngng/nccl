@@ -167,3 +167,16 @@ void ncclDebugLog(ncclDebugLogLevel level, unsigned long flags, const char *file
   }
   pthread_mutex_unlock(&ncclDebugLock);
 }
+
+void ncclSetThreadName(pthread_t thread, const char *fmt, ...) {
+  // pthread_setname_np is nonstandard GNU extension
+  // needs the following feature test macro
+#ifdef _GNU_SOURCE
+  char threadName[NCCL_THREAD_NAMELEN];
+  va_list vargs;
+  va_start(vargs, fmt);
+  vsnprintf(threadName, NCCL_THREAD_NAMELEN, fmt, vargs);
+  va_end(vargs);
+  pthread_setname_np(thread, threadName);
+#endif
+}
