@@ -185,7 +185,7 @@ ncclResult_t ncclIbInit(ncclDebugLogger_t logFunction) {
           NCCLCHECK(ncclIbGetPciPath(ncclIbDevs[ncclNIbDevs].devName, &ncclIbDevs[ncclNIbDevs].pciPath, &ncclIbDevs[ncclNIbDevs].realPort));
           ncclIbDevs[ncclNIbDevs].maxQp = devAttr.max_qp;
           pthread_create(&ncclIbAsyncThread, NULL, ncclIbAsyncThreadMain, context);
-          ncclSetThreadName(ncclIbAsyncThread, "NcclIbAsync %2d", ncclNIbDevs);
+          ncclSetThreadName(ncclIbAsyncThread, "NCCL IbAsync %2d", ncclNIbDevs);
           ncclNIbDevs++;
           nPorts++;
         }

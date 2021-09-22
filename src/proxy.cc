@@ -423,7 +423,7 @@ void* persistentThread(void *comm_) {
   struct ncclComm* comm = (struct ncclComm*)comm_;
   struct ncclProxyState* state = &comm->proxyState;
   char threadName[NCCL_THREAD_NAMELEN];
-  snprintf(threadName, NCCL_THREAD_NAMELEN, "NcclProgress %2d", comm->cudaDev);
+  snprintf(threadName, NCCL_THREAD_NAMELEN, "NCCL Progress%2d", comm->cudaDev);
   nvtxNameOsThreadA(syscall(SYS_gettid), threadName);
 
   struct ncclProxyArgs** opsPtr = &state->ops;
@@ -525,7 +525,7 @@ ncclResult_t ncclProxyCreate(struct ncclComm* comm) {
     comm->proxyState.poolMutex = PTHREAD_MUTEX_INITIALIZER;
     comm->proxyState.ops = NULL;
     pthread_create(&comm->proxyThread, NULL, persistentThread, comm);
-    ncclSetThreadName(comm->proxyThread, "NcclProgress %2d", comm->cudaDev);
+    ncclSetThreadName(comm->proxyThread, "NCCL Progress%2d", comm->cudaDev);
   }
   return ncclSuccess;
 }
