@@ -419,12 +419,11 @@ ncclResult_t ncclProxyAppendPosted(struct ncclProxyState* state) {
   return ncclSuccess;
 }
 
-
 void* persistentThread(void *comm_) {
   struct ncclComm* comm = (struct ncclComm*)comm_;
   struct ncclProxyState* state = &comm->proxyState;
-  char threadName[16];
-  sprintf(threadName, "NCCLproxy %5d", comm->rank);
+  char threadName[NCCL_THREAD_NAMELEN];
+  snprintf(threadName, NCCL_THREAD_NAMELEN, "NCCL Progress%2d", comm->cudaDev);
   nvtxNameOsThreadA(syscall(SYS_gettid), threadName);
 
   struct ncclProxyArgs** opsPtr = &state->ops;
@@ -526,6 +525,7 @@ ncclResult_t ncclProxyCreate(struct ncclComm* comm) {
     comm->proxyState.poolMutex = PTHREAD_MUTEX_INITIALIZER;
     comm->proxyState.ops = NULL;
     pthread_create(&comm->proxyThread, NULL, persistentThread, comm);
+    ncclSetThreadName(comm->proxyThread, "NCCL Progress%2d", comm->cudaDev);
   }
   return ncclSuccess;
 }

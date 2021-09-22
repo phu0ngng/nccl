@@ -16,6 +16,9 @@
 #include <string.h>
 #include <pthread.h>
 
+// Conform to pthread and NVTX standard
+#define NCCL_THREAD_NAMELEN 16
+
 extern int ncclDebugLevel;
 extern uint64_t ncclDebugMask;
 extern pthread_mutex_t ncclDebugOutputLock;
@@ -36,5 +39,7 @@ extern std::chrono::high_resolution_clock::time_point ncclEpoch;
 #else
 #define TRACE(...)
 #endif
+
+void ncclSetThreadName(pthread_t thread, const char *fmt, ...);
 
 #endif
