@@ -299,7 +299,6 @@ struct ncclIbListenComm {
 struct ncclIbSendFifo {
   uint64_t addr;
   int      size;
-  uint32_t seq;
   uint32_t rkey;
   uint32_t ready;
   uint64_t tag;
@@ -792,10 +791,10 @@ ncclResult_t ncclIbIsend(void* sendComm, void* data, int size, int tag, void* mh
   __sync_synchronize(); // order the readyPtr load against rkey load below
   // Sanity checks to catch user collective call count/size mismatches
   // plus any potential programming errors
-  if (size > slot->size || slot->size < 0 || slot->addr == 0 || slot->rkey == 0 || slot->seq != comm->fifoHead) {
+  if (size > slot->size || slot->size < 0 || slot->addr == 0 || slot->rkey == 0) {
     char line[SOCKET_NAME_MAXLEN+1];
-    WARN("NET/IB : peer %s collective mismatch error local size %d remote %d addr %lx rkey %x seq %x/%x",
-         ncclSocketToString(req->addr, line), size, slot->size, slot->addr, slot->rkey, slot->seq, comm->fifoHead);
+    WARN("NET/IB : peer %s collective mismatch error local size %d remote %d addr %lx rkey %x",
+         ncclSocketToString(req->addr, line), size, slot->size, slot->addr, slot->rkey);
     return ncclInternalError;
   }
   wr[0].opcode = IBV_WR_RDMA_WRITE_WITH_IMM;
@@ -805,11 +804,6 @@ ncclResult_t ncclIbIsend(void* sendComm, void* data, int size, int tag, void* mh
   wr[0].imm_data = size; // Send the message size via imm_data
   __sync_synchronize();
 #endif
-  // We must clear slot->ready, but reset other fields to aid
-  // debugging and sanity checks
-  slot->ready = 0;
-  slot->addr = 0ULL;
-  slot->rkey = slot->size = slot->seq = 0;
 
 #if USE_RDMA_WRITE
   // When using adaptive routing, send the bulk of the data first as an
@@ -857,6 +851,8 @@ ncclResult_t ncclIbIsend(void* sendComm, void* data, int size, int tag, void* mh
   for (int s=fifoHead; s>comm->fifoHead; s--) {
     memcpy(comm->fifo+(s%MAX_REQUESTS), comm->fifo+((s-1)%MAX_REQUESTS), sizeof(struct ncclIbSendFifo));
   }
+  // Clear slot->ready, as well as other fields to help debugging and sanity checks
+  memset(comm->fifo+(comm->fifoHead%MAX_REQUESTS), 0, sizeof(struct ncclIbSendFifo));
   comm->fifoHead++;
   return ncclSuccess;
 }
@@ -872,7 +868,6 @@ ncclResult_t ncclIbPostFifo(struct ncclIbRecvComm* comm, uint32_t rkey, uint64_t
   localElem->ready = 1;
   localElem->size = size; // Sanity/Debugging
   localElem->tag = tag;
-  localElem->seq = comm->remFifo.tail; // Sanity/Debugging
   wr.wr.rdma.remote_addr = comm->remFifo.addr + slot*sizeof(struct ncclIbSendFifo);
   wr.wr.rdma.rkey = comm->remFifo.rkey;
   comm->remFifo.sge.addr = (uint64_t)localElem;

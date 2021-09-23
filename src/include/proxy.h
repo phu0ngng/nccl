@@ -74,7 +74,6 @@ struct ncclProxySharedP2p {
   char* hostBuff;
   cudaIpcMemHandle_t ipc;
   struct ncclProxyArgs* proxyAppend[MAXCHANNELS]; // Separate send and recv
-  void** transportResources[NCCL_MAX_NETDEVS];
 };
 
 struct ncclProxySharedCollNet {
@@ -90,6 +89,13 @@ struct ncclProxyPeer {
   struct ncclProxySharedP2p recv;
 };
 
+struct ncclSharedNetComms {
+  void* sendComm;
+  void* recvComm;
+  int sendRefCount;
+  int recvRefCount;
+};
+
 struct ncclProxyPool;
 struct ncclProxyProgressState {
   pthread_t thread;
@@ -98,6 +104,7 @@ struct ncclProxyProgressState {
   pthread_mutex_t poolMutex;
   bool stop;
   struct ncclProxyPeer** localPeers;
+  struct ncclSharedNetComms* netComms[NCCL_MAX_NETDEVS];
   struct ncclProxySharedCollNet collNet;
   struct ncclProxyArgs* ops;           // Running operations, used by proxy thread
   struct ncclProxyArgs* postedOps;     // Posted operations, shared between proxy and main thread, locked with opsMutex
