@@ -167,8 +167,12 @@ static ncclResult_t getNextOp(struct ncclChannel* channel, struct ncclWork** wor
   return ncclSuccess;
 }
 
+// Finalize channel work FIFO states before launch
+// Called during dynamic enqueue
 static ncclResult_t setupLaunch(struct ncclQueueInfo* eqInfo, int usingCudaGraph) {
   ncclComm_t comm = eqInfo->comm;
+  // Do not use comm->myParams in this function unless in non-graph mode
+  // In graph mode, enqueue is async to capture, myParams can have been changed
   struct cudaLaunchParams* params = comm->myParams;
 
   // Only launch blocks where we have work to do.
@@ -262,6 +266,8 @@ ncclResult_t ncclCpuBarrierOut(struct ncclComm* comm) {
   return ncclSuccess;
 }
 
+// Check dependency wrt outside streams or previous launches
+// Launch kernel in GROUP mode
 ncclResult_t ncclLaunchBarrier(struct ncclComm* comm) {
   struct cudaLaunchParams* params = comm->myParams;
   if (params->gridDim.x == 0) return ncclSuccess;
@@ -297,6 +303,7 @@ ncclResult_t ncclLaunchBarrier(struct ncclComm* comm) {
   return ncclSuccess;
 }
 
+// Launch kernel in PARALLEL mode
 ncclResult_t ncclLaunchKernel(ncclComm_t comm) {
   struct cudaLaunchParams *params = comm->myParams;
   if (params->gridDim.x == 0) return ncclSuccess;
@@ -319,6 +326,7 @@ ncclResult_t ncclLaunchKernel(ncclComm_t comm) {
   return ncclSuccess;
 }
 
+// Launch network proxy
 static ncclResult_t ncclLaunchProxy(struct ncclQueueInfo* eqInfo) {
   // Start the network proxies as soon as the kernel has been launched. We can't
   // perform any CUDA call between the two or having a cudaFree between the CUDA
@@ -338,6 +346,7 @@ static ncclResult_t ncclLaunchProxy(struct ncclQueueInfo* eqInfo) {
   return ncclSuccess;
 }
 
+// Record done event for current launch
 ncclResult_t ncclRecordEvents(ncclComm_t comm) {
   struct cudaLaunchParams *params = comm->myParams;
 
@@ -356,6 +365,7 @@ ncclResult_t ncclRecordEvents(ncclComm_t comm) {
   return ncclSuccess;
 }
 
+// Reset parameter space for launch
 ncclResult_t ncclLaunchReset(ncclComm_t comm) {
   comm->userStreamSet = false;
 
@@ -369,6 +379,8 @@ ncclResult_t ncclLaunchReset(ncclComm_t comm) {
     NCCLCHECK(ncclResetQueueInfo(comm->enqueueInfo));
   }
 
+  // After capturing an op in graph mode or launching the op in non-graph mode
+  // we can reset myParams for use in next op
   struct cudaLaunchParams *params = comm->myParams;
   params->gridDim.x = params->blockDim.x = 0;
   params->func = NULL;
@@ -386,6 +398,7 @@ ncclResult_t ncclLaunchReset(ncclComm_t comm) {
 
 static inline ncclResult_t getCollNetSupport(struct ncclInfo* info, int* collNetTypeSupport) {
   if (info->comm->collNetSupport > 0) {
+    // Translate ncclAvg and PreMulSum
     ncclRedOp_t netOp = info->op == ncclAvg || info->op >= ncclNumOps ? ncclSum : info->op;
     NCCLCHECK(collNetReduceSupport(info->datatype, netOp, collNetTypeSupport));
   } else {
@@ -394,6 +407,7 @@ static inline ncclResult_t getCollNetSupport(struct ncclInfo* info, int* collNet
   return ncclSuccess;
 }
 
+// numPipeOps: number of pipelined ops. Can be greater than 1 in aggregation mode. Used to adjust latency.
 static ncclResult_t getAlgoInfo(struct ncclInfo* info, int collNetTypeSupport, int numPipeOps) {
   struct ncclComm* comm = info->comm;
   if (comm->nRanks == 1) {
@@ -430,6 +444,7 @@ static ncclResult_t getAlgoInfo(struct ncclInfo* info, int collNetTypeSupport, i
   int nt = comm->maxThreads[info->algorithm][info->protocol];
   int threadThreshold = comm->threadThresholds[info->algorithm][info->protocol];
   if (info->algorithm == NCCL_ALGO_COLLNET) {
+    // CollNet channel tuning
     int ncSwitch = 16;
     bool flag = true;
     while (ncSwitch >= 1 && flag) {
@@ -440,6 +455,7 @@ static ncclResult_t getAlgoInfo(struct ncclInfo* info, int collNetTypeSupport, i
       ncSwitch /= 2;
     }
   } else {
+    // Ring/Tree channel tuning
     while (info->nBytes < nc*nt*threadThreshold) {
       if (nc >= 2) nc--;
       else if ((nt % 128) == 0) nt/=2;
@@ -448,6 +464,7 @@ static ncclResult_t getAlgoInfo(struct ncclInfo* info, int collNetTypeSupport, i
   }
   if (info->protocol == NCCL_PROTO_SIMPLE) {
     nt += WARP_SIZE; // Extra warp for sync
+    // More threads or sync warps needed due to split thread model
     if (info->algorithm == NCCL_ALGO_TREE) nt += 3*WARP_SIZE;
     if (info->algorithm == NCCL_ALGO_COLLNET) nt += 3*WARP_SIZE;
   }
@@ -499,7 +516,8 @@ static ncclResult_t computeColl(struct ncclInfo* info /* input */, struct ncclWo
   work->comm = info->comm->devComm;
 
   int collNetTypeSupport = 0;
-  // Check whether algo and proto have been preset
+  // Check whether algo and proto have been preset (as in aggregation case)
+  // If so, skip the calculation
   if (info->nChannels > 0 && info->nThreads > 0) goto comp_next;
   NCCLCHECK(getCollNetSupport(info, &collNetTypeSupport));
   NCCLCHECK(getAlgoInfo(info, collNetTypeSupport, 1));
@@ -605,6 +623,7 @@ static ncclResult_t checkSetStream(struct ncclInfo* info) {
   return ncclSuccess;
 }
 
+// Handle structure for user buffer registration (IPC) exchange
 struct ncclBuffRegHandle {
   cudaIpcMemHandle_t sendBuffIpc;
   cudaIpcMemHandle_t recvBuffIpc;
@@ -628,6 +647,7 @@ static ncclResult_t ncclRegBuffAndExchange(struct ncclInfo* info, struct ncclBuf
   // Get offset of user buffer within allocation
   void* baseAddr;
   size_t size;
+  // Get base address
   CUDACHECK(comm->pfnCuMemGetAddressRange(&baseAddr, &size, (void*)info->sendbuff));
   regHandles[comm->intraNodeRank].sendBuffOffset = (char*)info->sendbuff - (char*)baseAddr;
   CUDACHECK(comm->pfnCuMemGetAddressRange(&baseAddr, &size, (void*)info->recvbuff));
@@ -638,16 +658,19 @@ static ncclResult_t ncclRegBuffAndExchange(struct ncclInfo* info, struct ncclBuf
   NCCLCHECK(bootstrapIntraNodeAllGather(comm->bootstrap, comm->intraNodeGlobalRanks, comm->intraNodeRank, comm->localRanks, regHandles, sizeof(struct ncclBuffRegHandle)));
   // Open handles at local process
   for (int i=0; i<comm->localRanks; i++) {
+    // Skip myself
     if (i == comm->intraNodeRank) {
       regInfo->sendbuffsBase[i] = regInfo->recvbuffsBase[i] = NULL;
       continue;
     }
+    // Get base address of mapping
     CUDACHECK(cudaIpcOpenMemHandle(regInfo->sendbuffsBase+i, regHandles[i].sendBuffIpc, cudaIpcMemLazyEnablePeerAccess));
     CUDACHECK(cudaIpcOpenMemHandle(regInfo->recvbuffsBase+i, regHandles[i].recvBuffIpc, cudaIpcMemLazyEnablePeerAccess));
-    // Get real address of buffer
+    // Get real buffer address by adding offset in the mapping
     regInfo->sendbuffs[i] = (char*)regInfo->sendbuffsBase[i] + regHandles[i].sendBuffOffset;
     regInfo->recvbuffs[i] = (char*)regInfo->recvbuffsBase[i] + regHandles[i].recvBuffOffset;
   }
+  // Marks the operation as being buffer registered
   regInfo->nBuffs = comm->localRanks;
   TRACE(NCCL_COLL, "Rank %d exchanged %d buffers", comm->rank, regInfo->nBuffs);
   return ncclSuccess;
@@ -710,6 +733,7 @@ static ncclResult_t ncclSetupCollKernel(struct ncclInfo* info) {
   return ncclSuccess;
 }
 
+// Find the channel with the least enqueued work (counted in bytes)
 static inline int findShortestChannel(ncclComm_t comm) {
   size_t minSize = SIZE_MAX;
   int minC = 0;
@@ -723,6 +747,7 @@ static inline int findShortestChannel(ncclComm_t comm) {
   return minC;
 }
 
+// Get next channel based on shortest-queue mode or round-robin mode
 static inline int getNextChannel(ncclComm_t comm, int aggMode) {
   int nextChannel = 0;
   if (aggMode && comm->asyncAllocMode == ncclComm::SHORTEST_QUEUE) {
@@ -734,6 +759,8 @@ static inline int getNextChannel(ncclComm_t comm, int aggMode) {
   return nextChannel;
 }
 
+// Setup aggregated kernels
+// Op info has been previously saved in comm->asyncOps
 ncclResult_t ncclSetupAsyncKernels(ncclComm_t comm) {
   if (comm->asyncOpCount == 0) {
     return ncclSuccess;
@@ -744,16 +771,22 @@ ncclResult_t ncclSetupAsyncKernels(ncclComm_t comm) {
     NCCLCHECK(ncclSetupCollKernel(info));
   } else {
     // Aggregation
+    // Determine a per-channel chunk size used to divide an operation into multiple channels
     size_t channelSize;
     if (comm->channelSize > 0) {
+      // Set by user
       channelSize = comm->channelSize;
     } else if (comm->collNetSupport && comm->asyncOps[0].coll == ncclFuncAllReduce) {
+      // CollNet specific size (tuned based on experiments)
       channelSize = 256 * 1024;
     } else {
-      channelSize = NCCL_AGG_CHANNEL_SIZE * std::min(16, comm->nRanks);  // scale channel size based on nranks as latency increases
+      // Latency increases as scale increases
+      // We would thus want to increase the chunk size to compensate for the lost efficiency
+      channelSize = NCCL_AGG_CHANNEL_SIZE * std::min(16, comm->nRanks);
     }
     // Reduce the per-channel size if we cannot fully utilize the channels
     while (comm->asyncTotalSize < channelSize * comm->nChannels && channelSize > NCCL_MIN_CHANNEL_SIZE) channelSize /= 2;
+    // Check whether the ops have same reduce and data types (and hence can be packed in same ncclWork)
     int channelUsed = 0;
     int homogeneous = 1;
     int allCollNetSupport = comm->collNetSupport;
@@ -768,6 +801,7 @@ ncclResult_t ncclSetupAsyncKernels(ncclComm_t comm) {
       if (allCollNetSupport > 0) NCCLCHECK(getCollNetSupport(info, &allCollNetSupport));
     }
     // Compute algo, proto, nthreads for the entire kernel
+    // Prepare a synthetic op info to calculate the collective algo
     struct ncclInfo total;
     total.comm = comm;
     total.coll = comm->asyncOps[0].coll;
@@ -775,9 +809,11 @@ ncclResult_t ncclSetupAsyncKernels(ncclComm_t comm) {
     total.nChannels = std::min(channelUsed, comm->nChannels);
     int perChannelOps = DIVUP(channelUsed, total.nChannels);
     if (homogeneous) NCCLCHECK(getAlgoInfo(&total, allCollNetSupport, perChannelOps));
+    // Set for each op
     for (int c = 0; c < comm->asyncOpCount; c++) {
       struct ncclInfo* info = comm->asyncOps+c;
       if (homogeneous) {
+        // Set fields to skip the individual computeColl in ncclSetupCollKernel
         info->algorithm = total.algorithm;
         info->protocol = total.protocol;
         info->nThreads = total.nThreads;
@@ -792,6 +828,7 @@ ncclResult_t ncclSetupAsyncKernels(ncclComm_t comm) {
   return ncclSuccess;
 }
 
+// Store aggregated operations info
 static ncclResult_t ncclSaveAsyncColl(struct ncclInfo* info) {
   ncclComm_t comm = info->comm;
   if (comm->asyncOpCount >= NCCL_MAX_OPS) {
@@ -813,6 +850,7 @@ static ncclResult_t ncclSaveP2p(struct ncclInfo* info) {
   if (info->opName[0] == 'S') { // Send
     if (peer != comm->rank) {
       int delta = (comm->nRanks - (comm->rank-peer)) % comm->nRanks;
+      // Mark channels that need pre-connect
       for (int c=0; c<comm->p2pnChannelsPerPeer; c++) {
         int channelId = (delta+comm->p2pChannels[c]) % comm->p2pnChannels;
         if (comm->channels[channelId].peers[peer].send[0].connected == 0) { // P2P uses only 1 connector
@@ -826,6 +864,7 @@ static ncclResult_t ncclSaveP2p(struct ncclInfo* info) {
   } else {
     if (peer != comm->rank) {
       int delta = (comm->nRanks + (comm->rank-peer)) % comm->nRanks;
+      // Mark channels that need pre-connect
       for (int c=0; c<comm->p2pnChannelsPerPeer; c++) {
         int channelId = (delta+comm->p2pChannels[c]) % comm->p2pnChannels;
         if (comm->channels[channelId].peers[peer].recv[0].connected == 0) { // P2P uses only 1 connector
@@ -863,6 +902,7 @@ static int getSegment(int type, int delta, struct ncclWork* work) {
   return -1;
 }
 
+// Compute kernel arguments for P2P ops
 static ncclResult_t computeP2pWorkElem(struct ncclInfo* info /* input */, struct ncclWorkElem* elem /* output */) {
   elem->comm = info->comm->devComm;
   elem->funcIndex = FUNC_INDEX_P2P;
@@ -877,6 +917,8 @@ static ncclResult_t computeP2pWorkElem(struct ncclInfo* info /* input */, struct
   return ncclSuccess;
 }
 
+// Equeue work elements into segment of ncclWork
+// Supporting both collectives (aggregated or not) and P2P
 static ncclResult_t enqueueSegOp(int type, struct ncclWorkElem* elem /* input */, struct ncclWork* work, int s,
     struct ncclBuffRegInfo* regInfo, struct ncclChannel* channel, struct ncclComm* comm) {
   // Copy element into corresponding segment of ncclWork
@@ -899,12 +941,15 @@ static ncclResult_t enqueueSegOp(int type, struct ncclWorkElem* elem /* input */
     for (int i=0; i<NCCL_MAX_DIRECT_ARITY; i++) {
       int peer = channel->collTree.down[i];
       if (peer == -1) break;
+      // Get intra-node slot
       int j = comm->rankToIntraNodeRank[peer];
       if (j < 0) {
         WARN("Invalid intra-node rank %d for peer %d", j, peer);
         return ncclInternalError;
       }
+      // Input buffer of leaf peer
       regElem->dnInputs[i] = regInfo->sendbuffs[j];
+      // Output buffer of leaf peer
       regElem->dnOutputs[i] = regInfo->recvbuffs[j];
     }
     for (int i=0; i<NCCL_MAX_DIRECT_ARITY; i++) {
@@ -915,6 +960,7 @@ static ncclResult_t enqueueSegOp(int type, struct ncclWorkElem* elem /* input */
         WARN("Invalid intra-node rank %d for peer %d", j, peer);
         return ncclInternalError;
       }
+      // Output buffer of root peer
       regElem->upOutputs[i] = regInfo->recvbuffs[j];
     }
     work->elems[s].regUsed = 1;
@@ -922,6 +968,7 @@ static ncclResult_t enqueueSegOp(int type, struct ncclWorkElem* elem /* input */
   return ncclSuccess;
 }
 
+// Enqueue P2P op
 ncclResult_t ncclEnqueueP2pKernel(struct ncclComm* comm, struct ncclQueueElem* eqElem) {
   struct ncclWorkElem* workElem = &eqElem->work;
   struct ncclProxyArgs* proxyArgs = &eqElem->proxyArgs;
@@ -946,6 +993,7 @@ ncclResult_t ncclEnqueueP2pKernel(struct ncclComm* comm, struct ncclQueueElem* e
   return ncclSuccess;
 }
 
+// Setup P2P op
 ncclResult_t ncclSetupP2pKernel(struct ncclInfo* info) {
   ncclComm* comm = info->comm;
   // Compute cuda kernel arg and proxy arg templates
@@ -954,7 +1002,7 @@ ncclResult_t ncclSetupP2pKernel(struct ncclInfo* info) {
   // The proxy code will set and tune the send/recv chunk size, make sure to run it first.
   NCCLCHECK(ncclProxyComputeP2p(info, &eqElem->proxyArgs));
   NCCLCHECK(computeP2pWorkElem(info, &eqElem->work));
-
+  // Compute grid size
   int channelId = info->channelId;
   struct cudaLaunchParams* params = comm->myParams;
   params->gridDim.x = std::max<unsigned>(params->gridDim.x, channelId+1);
@@ -1019,9 +1067,12 @@ ncclResult_t ncclEnqueueCollKernel(struct ncclComm* comm, struct ncclQueueElem* 
   return ncclSuccess;
 }
 
+// Host setup node for CUDA Graph
+// Performs the enqueue job
 template<int USING_CUDA_GRAPH>
 void CUDART_CB ncclEnqueueHostSetup(void* arg) {
   ncclResult_t ret;
+  // All work for current launch has been captured in Queue Info
   struct ncclQueueInfo* eqInfo = (struct ncclQueueInfo*)arg;
   ncclComm_t comm = eqInfo->comm;
   int aggMode = eqInfo->elemList->count() > 1 ? 1 : 0;
@@ -1050,6 +1101,8 @@ cb_end:
 template void CUDART_CB ncclEnqueueHostSetup<0>(void*);
 template void CUDART_CB ncclEnqueueHostSetup<1>(void*);
 
+// CUDA Graph helper thread
+// for de-registering user buffers
 void* graphHelperFunc(void *args) {
   struct ncclGraphHelperResources* res = (struct ncclGraphHelperResources*)args;
   if (res == NULL) {
@@ -1063,8 +1116,10 @@ void* graphHelperFunc(void *args) {
   volatile enum helperThreadState* state = &res->threadState;
   volatile int* ipcTail = &res->ipcTail;
   while (1) {
+    // Last IPC entry enqueue so far
     int ipcTailMark = *ipcTail;
     int ipcCount = 0;
+    // Close IPC till the last entry
     while (res->ipcHead != ipcTailMark) {
       if (res->ipcBases[res->ipcHead] != NULL)
         CUDACHECKIGNORE(cudaIpcCloseMemHandle(res->ipcBases[res->ipcHead]));
@@ -1074,6 +1129,7 @@ void* graphHelperFunc(void *args) {
     }
     TRACE(NCCL_COLL, "CUDA Graph helper thread closed %d IPC handles", ipcCount);
     pthread_mutex_lock(&res->threadLock);
+    // Check for exit signal
     while (res->ipcHead == *ipcTail && *state != ThreadStop) {
       pthread_cond_wait(&res->threadCond, &res->threadLock);
     }
@@ -1085,15 +1141,20 @@ void* graphHelperFunc(void *args) {
   }
 }
 
+// Check if we are in CUDA Graph capture mode
 ncclResult_t ncclGetCudaGraph(ncclComm_t comm, cudaGraph_t* graph) {
   comm->usingCudaGraph = 0;
+  // Feature requires CUDA 11.3/R465 or above
 #if CUDART_VERSION >= 11030
   cudaStreamCaptureStatus captureStatus;
   unsigned long long cudaGraphId;
   ncclResult_t ret = ncclSuccess;
   if (comm->driverVersion < 11030) {
+    // Runtime driver version older than compiler version
+    // Enhanced compat fallback
     goto enh_compat_end;
   }
+  // Get CUDA Graph handle
   CUDACHECKGOTO(cudaStreamGetCaptureInfo_v2(comm->userStream, &captureStatus, &cudaGraphId, graph, NULL, NULL), ret, enh_compat_end);
   if (captureStatus == cudaStreamCaptureStatusActive) {
     if (cudaGraphId != comm->lastCudaGraphId) {
@@ -1110,25 +1171,31 @@ ncclResult_t ncclGetCudaGraph(ncclComm_t comm, cudaGraph_t* graph) {
     // Only create this thread when buffer registration is enabled
     if ((!comm->graphHelperThread) && comm->graphRegister == 1 && comm->disableGraphHelper == 0) {
       pthread_mutex_init(&comm->graphHelperResources->threadLock, NULL);
+      // Init signaling method between Graph destroy function and helper thread
       pthread_cond_init(&comm->graphHelperResources->threadCond, NULL);
+      // Set state
       comm->graphHelperResources->threadState = ThreadStart;
+      // Create thread
       pthread_create(&comm->graphHelperThread, NULL, graphHelperFunc, comm->graphHelperResources);
+      // Name thread
       ncclSetThreadName(comm->graphHelperThread, "NCCL GrHelper%2d", comm->cudaDev);
     }
   }
   return ncclSuccess;
 
-enh_compat_end:
+enh_compat_end: // Enhanced compat fallback
   (void)ret;
   CUDACHECK(cudaStreamIsCapturing(comm->userStream, &captureStatus));
   if (captureStatus != cudaStreamCaptureStatusNone) {
     WARN("The installed CUDA driver is older than the minimum version (R465) required for NCCL's CUDA Graphs support");
     return ncclInvalidUsage;
   }
+  // If we are not in capture mode, we can ignore the driver being lower
 #endif
   return ncclSuccess;
 }
 
+// Create host setup node in CUDA Graph
 ncclResult_t ncclCudaGraphHostSetup(ncclComm_t comm, cudaGraph_t graph) {
 #if CUDART_VERSION >= 11030
   struct ncclQueueInfo* eqInfo = comm->enqueueInfo;
@@ -1136,14 +1203,17 @@ ncclResult_t ncclCudaGraphHostSetup(ncclComm_t comm, cudaGraph_t graph) {
   // which CUDA graph would manage lifetime of
   cudaUserObject_t object;
   CUDACHECK(cudaUserObjectCreate(&object, eqInfo, ncclDestroyQueueInfo, 1/*initialRefcount*/, cudaUserObjectNoDestructorSync));
+  // Hand over ownership to CUDA Graph
   CUDACHECK(cudaGraphRetainUserObject(graph, object, 1, cudaGraphUserObjectMove));
 
   cudaHostFn_t fn = ncclEnqueueHostSetup<1>;
   // Add a CPU node to the graph
   cudaGraphNode_t setupNode;
+  // Function + parameter space for that function (i.e. enqueue info)
   cudaHostNodeParams setupNodeParams = {fn, eqInfo};
   int numDependencies = comm->lastSetupNode == NULL ? 0 : 1;
   CUDACHECK(cudaGraphAddHostNode(&setupNode, graph, &comm->lastSetupNode, numDependencies, &setupNodeParams));
+  // Create dependency from last setup node in the same graph
   CUDACHECK(cudaStreamUpdateCaptureDependencies(comm->userStream, &setupNode, 1, cudaStreamAddCaptureDependencies));
   comm->lastSetupNode = setupNode;
   return ncclSuccess;
