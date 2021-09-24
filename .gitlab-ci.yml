@@ -217,7 +217,7 @@ perftest-K40:
     NCCL_DEBUG: "WARN"
     MPI_HOME: "/opt/mpi/openmpi-1.10.7"
     CUDA_HOME: "/usr/local/cuda-11.3"
-    SALLOC: "salloc -t 00:05:00 -n 8 -pK40"
+    SALLOC: "salloc -t 00:05:00 -n 4 -pK40"
   script:
     - ./test/scripts/gitlab-runner-perftest.sh
   interruptible: true
