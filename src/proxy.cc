@@ -380,13 +380,13 @@ ncclResult_t ncclProxyAppendPosted(struct ncclProxyState* state) {
   }
 
   // Sort operations as we append them : collectives and
-  // receives first, then sends.
+  // sends first, then receives
 
   struct ncclProxyArgs* next, *prev = NULL, *op = state->postedOps;
   int commOpCount = op->commOpCount;
   while (op && op->commOpCount == commOpCount) {
     next = op->next;
-    if (op->subs[0].sendbytes) {
+    if (op->subs[0].sendChunkSize) {
       if (prev) prev->next = next;
       else state->postedOps = next;
       op->next = NULL;
