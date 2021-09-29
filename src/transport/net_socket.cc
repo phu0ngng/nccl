@@ -166,11 +166,14 @@ struct ncclSocketListenComm {
   struct ncclSocket sock;
   int nSocks;
   int nThreads;
+  int dev;
 };
 
 struct ncclSocketComm {
   struct ncclSocket ctrlSock;
   struct ncclSocket socks[MAX_SOCKETS];
+  int dev;
+  int cudaDev;
   int nSocks;
   int nThreads;
   int nextSock;
@@ -297,6 +300,7 @@ ncclResult_t ncclSocketListen(int dev, void* opaqueHandle, void** listenComm) {
   handle->nSocks = comm->nSocks;
   handle->nThreads = comm->nThreads;
   comm->sock.asyncFlag = 1;
+  comm->dev = dev;
   *listenComm = comm;
   return ncclSuccess;
 }
@@ -345,6 +349,8 @@ ncclResult_t ncclSocketConnect(int dev, void* opaqueHandle, void** sendComm) {
   stage.comm = comm;
   comm->nSocks = handle->nSocks;
   comm->nThreads = handle->nThreads;
+  comm->dev = dev;
+  CUDACHECK(cudaGetDevice(&comm->cudaDev));
   for (; i<comm->nSocks+1; i++) {
     sock = i == comm->nSocks ? &comm->ctrlSock : comm->socks+i;
     NCCLCHECK(ncclSocketInit(sock, &handle->connectAddr, NULL, 1));
@@ -408,6 +414,8 @@ ncclResult_t ncclSocketAccept(void* listenComm, void** recvComm) {
   stage.comm = rComm;
   rComm->nSocks = lComm->nSocks;
   rComm->nThreads = lComm->nThreads;
+  rComm->dev = lComm->dev;
+  CUDACHECK(cudaGetDevice(&rComm->cudaDev));
   lComm->sock.asyncFlag = 1;
   for (; i<rComm->nSocks+1; i++) {
     int sendSockIdx;
@@ -483,6 +491,7 @@ ncclResult_t ncclSocketGetTask(struct ncclSocketComm* comm, int op, void* data, 
     pthread_mutex_init(&res->threadLock, NULL);
     pthread_cond_init(&res->threadCond, NULL);
     pthread_create(comm->helperThread+tid, NULL, persistentSocketThread, res);
+    ncclSetThreadName(comm->helperThread[tid], "NCCL Sock%c%1u%2u%2u", op == NCCL_SOCKET_SEND ? 'S' : 'R', comm->dev, tid, comm->cudaDev);
   }
   struct ncclSocketTask* r = queue->tasks+queue->next;
   if (r->used == 0) {

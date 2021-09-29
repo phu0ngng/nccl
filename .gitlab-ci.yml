@@ -69,17 +69,6 @@ apitest-GP100:
     - ./test/scripts/gitlab-runner-apitest.sh
   interruptible: true
 
-apitest-single-GP100:
-  stage: api_tests
-  tags:
-    - gp100
-  variables:
-    CUDA_HOME: "/usr/local/cuda-11.3"
-    SRUN: "srun -t 00:05:00 -n 1 -c 1 -pGP100"
-  script:
-    - ./test/scripts/gitlab-runner-apitest.sh
-  interruptible: true
-
 apitest-M40:
   stage: api_tests
   tags:
@@ -91,13 +80,13 @@ apitest-M40:
     - ./test/scripts/gitlab-runner-apitest.sh
   interruptible: true
 
-apitest-K40:
+apitest-single-K40:
   stage: api_tests
   tags:
     - k40
   variables:
     CUDA_HOME: "/usr/local/cuda-11.3"
-    SRUN: "srun -t 00:05:00 -n 1 -c 4 -pK40"
+    SRUN: "srun -t 00:05:00 -n 1 -c 1 -pK40"
   script:
     - ./test/scripts/gitlab-runner-apitest.sh
   interruptible: true
@@ -228,7 +217,7 @@ perftest-K40:
     NCCL_DEBUG: "WARN"
     MPI_HOME: "/opt/mpi/openmpi-1.10.7"
     CUDA_HOME: "/usr/local/cuda-11.3"
-    SALLOC: "salloc -t 00:05:00 -n 8 -pK40"
+    SALLOC: "salloc -t 00:05:00 -n 4 -pK40"
   script:
     - ./test/scripts/gitlab-runner-perftest.sh
   interruptible: true
@@ -289,11 +278,25 @@ perftest-multi-gc:
     NCCL_DEBUG: "WARN"
     MPI_HOME: "/opt/mpi/openmpi-1.10.7"
     CUDA_HOME: "/usr/local/cuda-11.3"
+    SALLOC: "salloc -t 00:05:00 -N 3 -n 24 -w gc[01-02,05]"
+  script:
+    - ./test/scripts/gitlab-runner-perftest.sh 128M 0
+  interruptible: true
+
+perftest-sharp-gc:
+  stage: perf_tests_multi
+  tags:
+    - p100
+  variables:
+    NCCL_IB_HCA: "mlx5_0"
+    NCCL_DEBUG: "WARN"
+    MPI_HOME: "/opt/mpi/openmpi-1.10.7"
+    CUDA_HOME: "/usr/local/cuda-11.3"
     SHARP_HOME: "/opt/hpcx/v2.7/sharp"
     PLUGIN_PATH: "/opt/nccl-rdma-sharp-plugins/src/.libs"
     SALLOC: "salloc -t 00:05:00 -N 3 -n 24 -w gc[01-02,05]"
   script:
-    - ./test/scripts/gitlab-runner-perftest.sh 128M 0
+    - ./test/scripts/gitlab-runner-perftest-sharp.sh 128M 0
   interruptible: true
 
 perftest-multi-prom:
@@ -328,6 +331,26 @@ perftest-multi-selene:
     NCCL_DEBUG: "WARN"
     MPI_HOME: "/home/svcnccl/install/openmpi-1.10.7"
     CUDA_HOME: "/project/share/cuda/cuda-11.0.221/"
+    NCCL_IB_SL: "1"
+    OMPI_MCA_btl: "^openib"
+    OMPI_MCA_btl_tcp_if_include: "enp97s0f1"
+    SALLOC: ""
+  script:
+    - salloc -N 4 -n 32 --account=nccl -pluna -J "nccl-cicd::$GITLAB_USER_LOGIN:perftest-multi::$CI_COMMIT_BRANCH:$CI_COMMIT_SHORT_SHA" -t 00:10:00 ./test/scripts/gitlab-runner-perftest.sh 16G 0
+  interruptible: true
+
+perftest-sharp-selene:
+  stage: perf_tests_multi
+  rules:
+    - if: '$RUN_ON_SELENE_SHARP == "1"'
+      when: always
+    - when: never
+  tags:
+    - dgx-a100
+  variables:
+    NCCL_DEBUG: "WARN"
+    MPI_HOME: "/home/svcnccl/install/openmpi-1.10.7"
+    CUDA_HOME: "/project/share/cuda/cuda-11.0.221/"
     SHARP_HOME: "/project/share/hpcx/hpcx-v2.9.0-gcc-MLNX_OFED_LINUX-5.2-1.0.4.0-ubuntu20.04-x86_64/sharp"
     PLUGIN_PATH: "/project/share/hpcx/hpcx-v2.9.0-gcc-MLNX_OFED_LINUX-5.2-1.0.4.0-ubuntu20.04-x86_64/nccl_rdma_sharp_plugin/lib"
     NCCL_IB_SL: "1"
@@ -335,7 +358,7 @@ perftest-multi-selene:
     OMPI_MCA_btl_tcp_if_include: "enp97s0f1"
     SALLOC: ""
   script:
-    - salloc -N 4 -n 32 --account=nccl -pluna --network sharp -J "nccl-cicd::$GITLAB_USER_LOGIN:perftest-multi::$CI_COMMIT_BRANCH:$CI_COMMIT_SHORT_SHA" -t 00:10:00 ./test/scripts/gitlab-runner-perftest.sh 16G 0
+    - salloc -N 4 -n 32 --account=nccl -pluna --network sharp -J "nccl-cicd::$GITLAB_USER_LOGIN:perftest-multi::$CI_COMMIT_BRANCH:$CI_COMMIT_SHORT_SHA" -t 00:10:00 ./test/scripts/gitlab-runner-perftest-sharp.sh 16G 0
   interruptible: true
 
 #perf_regression-multi-gc:

@@ -353,12 +353,12 @@ static ncclResult_t progressOps(struct ncclComm* comm, struct ncclProxyProgressS
 static ncclResult_t ncclProxyGetPostedOps(struct ncclProxyProgressState* state) {
   pthread_mutex_lock(&state->opsMutex);
   // Sort operations as we append them : collectives and
-  // receives first, then sends.
+  // sends first, then receives
 
   struct ncclProxyArgs* next, *prev = NULL, *op = state->postedOps;
   while (op) {
     next = op->next;
-    if (op->subs[0].sendbytes) {
+    if (op->subs[0].sendChunkSize) {
       if (prev) prev->next = next;
       else state->postedOps = next;
       op->next = NULL;
@@ -414,12 +414,11 @@ ncclResult_t ncclProxyAppendPosted(struct ncclProxyProgressState* state) {
   return ncclSuccess;
 }
 
-
 void* ncclProxyProgress(void *comm_) {
   struct ncclComm* comm = (struct ncclComm*)comm_;
   struct ncclProxyProgressState* state = &comm->proxyState.progressState;
-  char threadName[16];
-  sprintf(threadName, "NCCLproxy %5d", comm->rank);
+  char threadName[NCCL_THREAD_NAMELEN];
+  snprintf(threadName, NCCL_THREAD_NAMELEN, "NCCL Progress%2d", comm->cudaDev);
   nvtxNameOsThreadA(syscall(SYS_gettid), threadName);
 
   struct ncclProxyArgs** opsPtr = &state->ops;
@@ -475,6 +474,7 @@ ncclResult_t ncclProxyProgressCreate(struct ncclComm* comm) {
     state->poolMutex = PTHREAD_MUTEX_INITIALIZER;
     state->ops = NULL;
     pthread_create(&state->thread, NULL, ncclProxyProgress, comm);
+    ncclSetThreadName(state->thread, "NCCL Progress%2d", comm->cudaDev);
   }
   return ncclSuccess;
 }
@@ -821,6 +821,7 @@ ncclResult_t ncclProxyInit(struct ncclComm* comm, struct ncclSocket* sock, union
   comm->proxyState.listenSock = sock;
   comm->proxyState.peerAddresses = peerAddresses;
   pthread_create(&comm->proxyState.thread, NULL, ncclProxyService, comm);
+  ncclSetThreadName(comm->proxyState.thread, "NCCL Service %2d", comm->cudaDev);
   return ncclSuccess;
 }
 

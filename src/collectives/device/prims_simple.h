@@ -232,6 +232,8 @@ class Primitives<
   }
 
   // Scatter/Gather generic op
+  // skip: my own rank order in the buffer chunks
+  // shift: peer offset to avoid all ranks sending to or receiving from same peer
   template <int DirectRecv1, int DirectSend1, int Recv, int Send>
   __device__ __forceinline__ void
   ScatterGatherOp(intptr_t inpIx, intptr_t outIx, int totalElem, int peerElem, int skip, int shift, bool postOp) {
@@ -254,14 +256,17 @@ class Primitives<
           waitPeer<0, DirectSend, 0, 1, 1, 0>(0, inpIx, offset, realSize);
           subBarrier();
           #pragma unroll
+          // Loop over peers
           for (int j=0; j<fan.nsend(); j++) {
             int i = (j+shift)%fan.nsend();
             int peerOffset = i*peerElem;
+            // Skip the data I am responsible of reducing myself
             if (skip >= 0 && i >= skip) peerOffset += peerElem;
             const T* src0 = (T*)ncclShmem.groups[group].srcs[0] + peerOffset;
             int realPeerSize = min(realSize, totalElem-peerOffset);
             if (realPeerSize > 0 && ncclShmem.groups[group].dsts[i] != nullptr) {
               ReduceOrCopyMulti<Unroll, RedOp, T, 1, 1, 1, 1, PreOpN>(tid, nworkers, ncclShmem.redOpArgs, false, 1, &src0, 1, (T**)ncclShmem.groups[group].dsts+i, realPeerSize);
+              // Mark for threadfence at the end
               if (tid == 0) ncclShmem.groups[group].totalSendSize[slice] += realPeerSize;
             }
           }
@@ -289,6 +294,7 @@ class Primitives<
         }
       }
       barrier();
+      // If we indeed send something, threadfence
       if (Send && (flags & RolePostSend) && ncclShmem.groups[group].totalSendSize[slice] > 0 && index == 0)
         __threadfence_system();
       __syncwarp();
