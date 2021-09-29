@@ -82,6 +82,12 @@ struct ncclUserRedOp {
   ncclDevRedOpFull opFull;
 };
 
+struct ncclNodeRanks {
+  uint64_t hostHash;
+  int nranks;
+  int* ranks;
+};
+
 struct ncclComm {
   struct ncclChannel channels[MAXCHANNELS];
 
@@ -102,6 +108,7 @@ struct ncclComm {
 
   int node;
   int nNodes;
+  struct ncclNodeRanks* nodeRanks;
 
   // Intra-node rank info
   int intraNodeGlobalRanks[NCCL_MAX_INTRA_RANKS];
