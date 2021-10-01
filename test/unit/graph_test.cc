@@ -222,6 +222,10 @@ int main(int argc, const char* argv[]) {
     RUN("Luna");
     RUN("Luna-SHARP");
     RUN("Luna-SHARP-1PPN");
+    RUN("Luna-2PPN-0");
+    RUN("Luna-2PPN-1");
+    RUN("Luna-2PPN-2");
+    RUN("Luna-2PPN-3");
     RUN("DGX-2-Delta");
     RUN("Redstone");
     RUN("GCP-NV");

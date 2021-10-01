@@ -801,6 +801,14 @@ search:
       tmpGraph.typeIntra += 1;
       goto search;
     }
+
+    if (crossNic && tmpGraph.crossNic == 0) {
+      // Try again with crossNic if permitted
+      tmpGraph.crossNic = crossNic;
+      goto search;
+    }
+    tmpGraph.crossNic = 0;
+
     tmpGraph.typeIntra = ngpus == 1 ? PATH_LOC : PATH_NVL;
     if (system->nodes[NET].count > 0 && tmpGraph.typeInter < PATH_SYS && (graph->nChannels == 0 || tmpGraph.typeInter < graph->typeInter || tmpGraph.typeInter < PATH_PXB)) {
       tmpGraph.typeInter += 1;
@@ -814,13 +822,6 @@ search:
       goto search;
     }
     tmpGraph.pattern = graph->pattern;
-
-    if (crossNic && tmpGraph.crossNic == 0) {
-      // Try again with crossNic if permitted
-      tmpGraph.crossNic = crossNic;
-      goto search;
-    }
-    tmpGraph.crossNic = 0;
 
     // Decrease speed until we find a solution
     if ((speedIndex < nspeeds-1) && (graph->nChannels == 0 || (speedArray[speedIndex+1]/graph->speedInter > .49))) {
