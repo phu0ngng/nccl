@@ -295,7 +295,8 @@ static ncclResult_t commAlloc(ncclComm_t* comret, int ndev, int rank) {
   comm->hostDevComm.abortFlag = comm->abortFlag;
   *comm->abortFlag = 0;
 
-  comm->argsptr = &comm->args;
+  comm->argsptrs[0] = &comm->devComm;
+  comm->argsptrs[1] = &comm->args;
   comm->collNetSupport = 0;
 
   NCCLCHECK(ncclCalloc(&comm->asyncOps, NCCL_MAX_OPS));
@@ -422,7 +423,7 @@ void* waitForNonNullPtr(void* p) {
 
 ncclResult_t initParams(struct ncclComm* comm) {
   struct cudaLaunchParams* params = comm->myParams = comm->intraParams+comm->intraRank;
-  params->args = &comm->argsptr;
+  params->args = comm->argsptrs;
   params->stream = NULL;
   params->sharedMem = 0;
   params->blockDim.x = 0; params->blockDim.y = params->blockDim.z = 1;

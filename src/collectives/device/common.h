@@ -132,13 +132,13 @@ struct ncclShmemData {
 extern __shared__ ncclShmemData ncclShmem;
 
 template<ncclFunc_t Fn, typename T, typename RedOp, int Algo, int Proto, int FnIndex>
-__device__ void ncclKernel(ncclWorkElem first)  {
+__device__ void ncclKernel(struct ncclDevComm* comm, ncclWorkElem first)  {
   int tid = threadIdx.x;
   int bid = blockIdx.x;
 
-  int turn = copyToShmem(&ncclShmem.comm, first.comm);
+  int turn = copyToShmem(&ncclShmem.comm, comm);
   // get address of channel without incurring indirect load from ncclDevCom::channels
-  ncclChannel *channel = &((ncclDevCommAndChannels*)first.comm)->channels[bid];
+  ncclChannel *channel = &((ncclDevCommAndChannels*)comm)->channels[bid];
   turn = copyToShmem(&ncclShmem.channel, channel, turn);
 
   // To optimize for latency, (only) the first operation is passed as argument.
@@ -161,7 +161,7 @@ __device__ void ncclKernel(ncclWorkElem first)  {
   while (true) {
     copyToShmem(&ncclShmem.work, &workFifoDev[workFifoIx]); // turn no longer helps
     { // Check whether the last operation was aborted and make sure all threads exit
-      int aborted = tid == 0 ? *ncclShmem.comm.abortFlag : 0;
+      int aborted = tid == 0 ? *comm->abortFlag : 0;
       if (barrierReduceAny(aborted)) // publish ncclShmem.work
         break;
       if (tid == 0)
@@ -210,8 +210,8 @@ __device__ void ncclKernel(ncclWorkElem first)  {
 // Only generate kernels for SUM
 #if NCCL_OP == 0
 #define IMPL_COLL_KERN(func, algo, proto, devredop, type, fIndex) \
-__global__ void NCCL_KERN_NAME(func, algo, proto, devredop, type)(ncclWorkElem first) { \
-  ncclKernel<ncclFunc##func, type, Func##devredop<type>, NCCL_ALGO_##algo, NCCL_PROTO_##proto, fIndex>(first); \
+__global__ void NCCL_KERN_NAME(func, algo, proto, devredop, type)(struct ncclDevComm* comm, struct ncclWorkElem first) { \
+  ncclKernel<ncclFunc##func, type, Func##devredop<type>, NCCL_ALGO_##algo, NCCL_PROTO_##proto, fIndex>(comm, first); \
 }
 #else
 #define IMPL_COLL_KERN(func, algo, proto, devredop, type, fInded)

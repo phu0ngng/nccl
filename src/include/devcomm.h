@@ -161,7 +161,6 @@ struct ncclDevComm;
 /* Make sure to adjust padding at the end of ncclWorkElem. */
 struct ncclWorkElem {
   // Header
-  struct ncclDevComm* comm;
   uint16_t nThreads;
   uint16_t funcIndex;
   uint8_t regUsed;
@@ -191,6 +190,7 @@ struct ncclWorkElem {
     } p2p;
     uint64_t align[4];
   };
+  uint64_t pad;
 };
 static_assert(sizeof(struct ncclWorkElem) == (0x10*sizeof(int)), "ncclWorkElem must have a pow2 size");
 

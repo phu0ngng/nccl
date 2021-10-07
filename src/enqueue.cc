@@ -194,7 +194,6 @@ static ncclResult_t setupLaunch(struct ncclQueueInfo* eqInfo, int usingCudaGraph
       struct ncclWork* w;
       NCCLCHECK(getNextOp(channel, &w, NULL));
       struct ncclWorkElem* e = w->elems;
-      e->comm = comm->devComm;
       e->funcIndex = FUNC_INDEX_P2P;
       e->p2p.nThreads = 0;
     }
@@ -513,8 +512,6 @@ static ncclResult_t getLoopInfo(struct ncclInfo* info) {
 }
 
 static ncclResult_t computeColl(struct ncclInfo* info /* input */, struct ncclWorkElem* work, struct ncclProxyArgs* proxyArgs /* output */) {
-  work->comm = info->comm->devComm;
-
   int collNetTypeSupport = 0;
   // Check whether algo and proto have been preset (as in aggregation case)
   // If so, skip the calculation
@@ -904,7 +901,6 @@ static int getSegment(int type, int delta, struct ncclWork* work) {
 
 // Compute kernel arguments for P2P ops
 static ncclResult_t computeP2pWorkElem(struct ncclInfo* info /* input */, struct ncclWorkElem* elem /* output */) {
-  elem->comm = info->comm->devComm;
   elem->funcIndex = FUNC_INDEX_P2P;
   elem->nThreads = NCCL_MAX_NTHREADS;
   elem->sendbuff = info->sendbuff;
@@ -1014,7 +1010,6 @@ ncclResult_t ncclSetupP2pKernel(struct ncclInfo* info) {
   // The CUDA kernel does not use the inlined first work element as fastpath argument
   if (params->func == NULL) {
     params->func = ncclKerns[eqElem->work.funcIndex];
-    comm->args.comm = eqElem->work.comm;
     comm->args.active = 0;
   }
   return ncclSuccess;

@@ -172,7 +172,7 @@ struct ncclComm {
   int* intraCGMode; // Whether we can use CUDA9 CGMD or not
   int* intraCC; // Only to check all have the same ComputeCap and disable CGMode if not
   struct ncclWorkElem args;
-  void* argsptr;
+  void* argsptrs[2];
 
   struct ncclProxyState proxyState;
 
