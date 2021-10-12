@@ -4,13 +4,13 @@
       <net dev="1"/>
       <gpu dev="1"/>
       <gpu dev="5"/>
-      <net dev="6"/>
+      <net dev="7"/>
     </channel>
     <channel>
-      <net dev="6"/>
+      <net dev="7"/>
       <gpu dev="5"/>
       <gpu dev="1"/>
-      <net dev="0"/>
+      <net dev="1"/>
     </channel>
   </graph>
   <graph id="1" pattern="1" crossnic="0" nchannels="2" speedintra="48" speedinter="24" typeintra="NVL" typeinter="SYS" samechannels="0">
@@ -21,10 +21,10 @@
       <net dev="1"/>
     </channel>
     <channel>
-      <net dev="6"/>
+      <net dev="7"/>
       <gpu dev="5"/>
       <gpu dev="1"/>
-      <net dev="6"/>
+      <net dev="7"/>
     </channel>
   </graph>
   <graph id="2" pattern="3" crossnic="0" nchannels="0" speedintra="0" speedinter="0" typeintra="NVL" typeinter="PIX" samechannels="1"/>
