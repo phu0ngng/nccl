@@ -305,6 +305,57 @@ ncclResult_t ncclTopoCompareGraphs(struct ncclTopoGraph* graph, struct ncclTopoG
   return ncclSuccess;
 }
 
+// Build a list of the best NETs to try.
+//
+// "gpu" can be set to -1 to build a list suitable for all GPUs (search start) or to a given gpu
+//  index when trying to get back to the NIC.
+//
+// The list is built the following way:
+// 1. Select NETs starting with those close to GPU(s), based on paths[n].type.
+// 2. For each GPU, once that list of NICs with a given distance is prepared, shuffle the list
+//    based on the GPU NVML index so that e.g. GPU 1 chooses NIC 1 first instead of NIC 0 which
+//    might have been choosen by GPU 0 (case with multiple independent communicators per node)
+// 3. Then add the NETs to the final list if they were not already added by another closer GPU.
+
+ncclResult_t ncclTopoSelectNets(struct ncclTopoSystem* system, int typeInter, int gpu, int* nets, int* netCountRet) {
+  int netCount = 0;
+  int localNetCount;
+  int* localNets;
+  NCCLCHECK(ncclCalloc(&localNets, system->nodes[NET].count));
+
+  for (int t=0; t <= typeInter; t++) {
+    for (int g=0; g<system->nodes[GPU].count; g++) {
+      if (gpu != -1 && gpu != g) continue;
+      localNetCount = 0;
+      struct ncclTopoNode* gpu = system->nodes[GPU].nodes+g;
+      struct ncclTopoLinkList* paths = gpu->paths[NET];
+      for (int n=0; n<system->nodes[NET].count; n++) {
+        if (paths[n].type == t) localNets[localNetCount++] = n;
+      }
+      if (localNetCount == 0) continue;
+      // Shuffle by gpu NVML device number so that GPUs on the same PCI switch
+      // with multiple NICs don't use the same one as first choice.
+      for (int r=0; r<system->nodes[GPU].nodes[g].gpu.dev % localNetCount; r++) {
+        int net0 = localNets[0];
+        for (int i=0; i<localNetCount-1; i++) localNets[i] = localNets[i+1];
+        localNets[localNetCount-1] = net0;
+      }
+      // Append NICs to list
+      for (int i=0; i<localNetCount; i++) {
+        int n = localNets[i];
+        int found = 0;
+        while (nets[found] != n && found<netCount) found++;
+        if (found == netCount) nets[netCount++] = n;
+      }
+    }
+  }
+
+  *netCountRet = netCount;
+  free(localNets);
+
+  return ncclSuccess;
+}
+
 ncclResult_t ncclTopoSearchRecGpu(struct ncclTopoSystem* system, struct ncclTopoGraph* graph, struct ncclTopoGraph* saveGraph, struct ncclTopoNode* gpu, int step, int backToNet, int backToFirstRank, int forcedOrder, int *time) {
   if ((*time) <= 0) return ncclSuccess;
   (*time)--;
@@ -333,7 +384,12 @@ ncclResult_t ncclTopoSearchRecGpu(struct ncclTopoSystem* system, struct ncclTopo
       int startNetIndex;
       NCCLCHECK(getNetIndex(system, graph->inter[graph->nChannels*2], &startNetIndex));
       struct ncclTopoNode* startNet = system->nodes[NET].nodes+startNetIndex;
-      for (int n=0; n<system->nodes[NET].count; n++) {
+      int netcount;
+      int* nets;
+      NCCLCHECK(ncclCalloc(&nets, system->nodes[NET].count));
+      NCCLCHECK(ncclTopoSelectNets(system, graph->typeInter, g, nets, &netcount));
+      for (int i=0; i<netcount; i++) {
+        int n = nets[i];
         struct ncclTopoNode* net = system->nodes[NET].nodes+n;
         if (graph->pattern == NCCL_TOPO_PATTERN_TREE && net->id != startNet->id) continue; // Trees are symmetric
         if (graph->crossNic != 1 && (net->net.asic != startNet->net.asic || net->net.port != startNet->net.port)) continue;
@@ -393,65 +449,12 @@ ncclResult_t ncclTopoSearchRecGpu(struct ncclTopoSystem* system, struct ncclTopo
   return ncclSuccess;
 }
 
-// Select only NICs with the maximum bandwidth w.r.t. GPUs, and sort them by distance.
-ncclResult_t ncclTopoSelectNets(struct ncclTopoSystem* system, int* nets, int* netcountRet) {
-  float* maxwidths;
-  int* minhops;
-  int netcount = 0;
-  NCCLCHECK(ncclCalloc(&minhops, system->nodes[NET].count));
-  NCCLCHECK(ncclCalloc(&maxwidths, system->nodes[NET].count));
-  for (int n=0; n<system->nodes[NET].count; n++) {
-    maxwidths[n] = 0.0;
-    minhops[n] = 255;
-    struct ncclTopoNode* net = system->nodes[NET].nodes+n;
-    struct ncclTopoLinkList* paths = net->paths[GPU];
-    for (int g=0; g<system->nodes[GPU].count; g++) {
-      if (paths[g].width > maxwidths[n] || (paths[g].width == maxwidths[n] && paths[g].count < minhops[n])) {
-        maxwidths[n] = paths[g].width;
-        minhops[n] = paths[g].count;
-      }
-    }
-    if (netcount && maxwidths[nets[0]] > maxwidths[n]) continue; // Do not keep NICs with lower BW
-    if (netcount && maxwidths[nets[0]] < maxwidths[n]) netcount = 0; // Remove all NICs with lower BW
-    int index;
-    for (index = 0; index < netcount; index++) {
-      if (minhops[n] < minhops[nets[index]]) break;
-    }
-    // Insert net at index
-    // Shift all nets with higher nhops
-    for (int i = netcount; i>index; i--) nets[i] = nets[i-1];
-    // Insert this net at index
-    nets[index] = n;
-    netcount++;
-  }
-
-  *netcountRet = netcount;
-
-  // Then shuffle NICs with the same nhops based on the GPU device number, so that when we have
-  // 2 NICs and 2 GPUs and create communicators with only one GPU, we will use both NICs.
-  for (int start = 0; start < netcount;) {
-    int end = start+1;
-    while (end < netcount && minhops[nets[end]] == minhops[nets[start]]) end++;
-    // Shuffle
-    for (int r=0; r<system->nodes[GPU].nodes[0].gpu.dev % (end-start); r++) {
-      int netStart = nets[start];
-      for (int i=start; i<end-1; i++) nets[i] = nets[i+1];
-      nets[end-1] = netStart;
-    }
-    start = end;
-  }
-
-  free(minhops);
-  free(maxwidths);
-  return ncclSuccess;
-}
-
 ncclResult_t ncclTopoSearchRecNet(struct ncclTopoSystem* system, struct ncclTopoGraph* graph, struct ncclTopoGraph* saveGraph, int backToNet, int backToFirstRank, int* time) {
   const int speed = graph->speedInter;
   int* nets;
   NCCLCHECK(ncclCalloc(&nets, system->nodes[NET].count));
   int netcount;
-  NCCLCHECK(ncclTopoSelectNets(system, nets, &netcount));
+  NCCLCHECK(ncclTopoSelectNets(system, graph->typeInter, -1, nets, &netcount));
   for (int i=0; i<netcount; i++) {
     int n = nets[i];
     struct ncclTopoNode* net = system->nodes[NET].nodes+n;
