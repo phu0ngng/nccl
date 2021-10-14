@@ -245,32 +245,32 @@ ncclResult_t ncclProxyComputeP2p(struct ncclInfo* info, struct ncclProxyArgs* ar
   args->chunkSteps = 1;
   args->protocol = NCCL_PROTO_SIMPLE;
   args->dtype = info->datatype;
-  sub->delta = info->delta;
-  sub->recvbytes = info->recvbytes;
-  sub->sendbytes = info->sendbytes;
 
   int stepSize = info->comm->buffSizes[NCCL_PROTO_SIMPLE]/NCCL_STEPS/SENDRECV_SLICEFACTOR;
-  info->recvChunkSize = stepSize;
-  info->sendChunkSize = stepSize;
+  info->chunkSize = stepSize;
+  sub->peer = info->root;
+  sub->nbytes = info->count;
+  struct ncclPeer* peer = channel->peers + sub->peer;
 
-  if (info->delta > 0 && info->recvbytes >= 0) {
-    int peerrecv = (info->comm->nRanks+info->comm->rank-info->delta)%info->comm->nRanks;
-    if (channel->peers[peerrecv].recv[0].transportComm && channel->peers[peerrecv].recv[0].transportComm->proxyProgress) {
+  if (info->coll == ncclFuncSend) {
+    args->pattern = ncclPatternSend;
+    if (sub->peer != info->comm->rank && peer->send[0].transportComm && peer->send[0].transportComm->proxyProgress) {
       // Tune chunk size for the network
-      if (info->recvbytes < stepSize) info->recvChunkSize /= 4;
-      else if (info->recvbytes < 8*stepSize) info->recvChunkSize /= 2;
+      if (info->count < stepSize) info->chunkSize /= 4;
+      else if (info->count < 8*stepSize) info->chunkSize /= 2;
     }
-    sub->recvChunkSize = info->recvChunkSize;
-  }
-  if (info->delta > 0 && info->sendbytes >= 0) {
-    int peersend = (info->comm->rank+info->delta)%info->comm->nRanks;
-    if (channel->peers[peersend].send[0].transportComm && channel->peers[peersend].send[0].transportComm->proxyProgress) {
+  } else if (info->coll == ncclFuncRecv) {
+    args->pattern = ncclPatternRecv;
+    if (sub->peer != info->comm->rank && peer->recv[0].transportComm && peer->recv[0].transportComm->proxyProgress) {
       // Tune chunk size for the network
-      if (info->sendbytes < stepSize) info->sendChunkSize /= 4;
-      else if (info->sendbytes < 8*stepSize) info->sendChunkSize /= 2;
+      if (info->count < stepSize) info->chunkSize /= 4;
+      else if (info->count < 8*stepSize) info->chunkSize /= 2;
     }
-    sub->sendChunkSize = info->sendChunkSize;
+  } else {
+    WARN("P2p operation is neither send or recv");
+    return ncclInternalError;
   }
+  sub->chunkSize = info->chunkSize;
   return ncclSuccess;
 }
 
@@ -278,28 +278,16 @@ ncclResult_t ncclProxySaveP2p(struct ncclComm* comm, struct ncclProxyArgs* args)
   struct ncclProxySubArgs* sub = args->subs;
   struct ncclChannel* channel = comm->channels+sub->channelId;
   args->opCount = channel->workFifoTail-1;
-  const ssize_t recvbytesOrig = sub->recvbytes;
-  const ssize_t sendbytesOrig = sub->sendbytes;
-  if (sub->delta > 0 && recvbytesOrig >= ssize_t(0)) {
-    int peerrecv = (comm->nRanks+comm->rank-sub->delta)%comm->nRanks;
-    sub->recvbytes = recvbytesOrig;
-    sub->sendbytes = 0;
-    sub->nsteps = DIVUP(sub->recvbytes, sub->recvChunkSize);
+  if (sub->peer == comm->rank) return ncclSuccess;
+  if (args->pattern == ncclPatternRecv) {
+    sub->nsteps = DIVUP(sub->nbytes, sub->chunkSize);
     if (sub->nsteps == 0) sub->nsteps = 1;
-    NCCLCHECK(SaveProxy(channel, proxyRecv, peerrecv, args, 0));
-  }
-  if (sub->delta > 0 && sendbytesOrig >= ssize_t(0)) {
-    int peersend = (comm->rank+sub->delta)%comm->nRanks;
-    sub->sendbytes = sendbytesOrig;
-    sub->recvbytes = 0;
-    sub->nsteps = DIVUP(sub->sendbytes, sub->sendChunkSize);
+    NCCLCHECK(SaveProxy(channel, proxyRecv, sub->peer, args, 0));
+  } else if (args->pattern == ncclPatternSend) {
+    sub->nsteps = DIVUP(sub->nbytes, sub->chunkSize);
     if (sub->nsteps == 0) sub->nsteps = 1;
-    NCCLCHECK(SaveProxy(channel, proxySend, peersend, args, 0));
+    NCCLCHECK(SaveProxy(channel, proxySend, sub->peer, args, 0));
   }
-  // Reset proxy args for potentially multiple cuda graph launches
-  // It is safe as long as SaveProxy copies contents of args to op
-  sub->recvbytes = recvbytesOrig;
-  sub->sendbytes = sendbytesOrig;
   return ncclSuccess;
 }
 
@@ -358,7 +346,7 @@ static ncclResult_t ncclProxyGetPostedOps(struct ncclProxyProgressState* state) 
   struct ncclProxyArgs* next, *prev = NULL, *op = state->postedOps;
   while (op) {
     next = op->next;
-    if (op->subs[0].sendChunkSize) {
+    if (op->pattern == ncclPatternSend) {
       if (prev) prev->next = next;
       else state->postedOps = next;
       op->next = NULL;

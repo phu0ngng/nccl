@@ -40,7 +40,7 @@ struct ncclBuffRegInfo {
 
 // Enqueue information (for kernel and proxy) for each operation
 struct ncclQueueElem {
-  struct ncclWorkElem work;
+  struct ncclWork work;
   struct ncclProxyArgs proxyArgs;
   struct ncclBuffRegInfo buffRegInfo;
 };

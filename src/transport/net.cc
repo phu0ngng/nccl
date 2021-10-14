@@ -720,7 +720,7 @@ static ncclResult_t sendProxyProgress(struct ncclComm* comm, struct ncclProxyArg
       int stepSize = resources->buffSizes[p] / NCCL_STEPS;
       char* localBuff = NCCL_NET_MAP_GET_POINTER(&resources->map, cpu, buffs[p]);
       int buffSize = stepSize*args->sliceSteps;
-      if (sub->sendbytes < buffSize) buffSize = sub->sendbytes;
+      if (sub->nbytes < buffSize) buffSize = sub->nbytes;
       // Post buffers to the GPU
       if (sub->posted < sub->nsteps && sub->posted < sub->done + NCCL_STEPS) {
         int buffSlot = (sub->base+sub->posted)%NCCL_STEPS;
@@ -837,7 +837,7 @@ static ncclResult_t recvProxyProgress(struct ncclComm* comm, struct ncclProxyArg
       int stepSize = resources->buffSizes[p] / NCCL_STEPS;
       char* localBuff = NCCL_NET_MAP_GET_POINTER(&resources->map, cpu, buffs[p]);
       int buffSize = stepSize*args->sliceSteps;
-      if (sub->recvbytes < buffSize) buffSize = sub->recvbytes;
+      if (sub->nbytes < buffSize) buffSize = sub->nbytes;
 
       if ((sub->posted < sub->done + NCCL_STEPS) && (sub->posted < sub->nsteps)) {
         int buffSlot = (sub->base+sub->posted)%NCCL_STEPS;

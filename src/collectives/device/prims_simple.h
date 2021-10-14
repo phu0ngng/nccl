@@ -49,14 +49,14 @@ class Primitives<
     if (nthreads == WARP_SIZE)
       __syncwarp();
     else
-      asm volatile("bar.sync %0, %1;" :: "r"(group+1), "r"(nthreads));
+      asm volatile("bar.sync %0, %1;" :: "r"(group), "r"(nthreads));
     flags |= ThreadsSynced;
   }
   inline __device__ void subBarrier() {
     if (nworkers == nthreads)
       barrier();
     else
-      asm volatile("bar.sync %0, %1;" :: "r"(group+2), "r"(nworkers));
+      asm volatile("bar.sync %0, %1;" :: "r"(group+8), "r"(nworkers));
   }
 
   inline __device__ bool checkAbort(int &spins) {
@@ -431,7 +431,7 @@ class Primitives<
     loadRecvConn(&ncclShmem.channel.devPeers[peer], connIndex, e);
     loadSendConn(&ncclShmem.channel.devPeers[peer], connIndex, e);
 
-    setDataPtrs(inputBuf, outputBuf, redOpArg, (struct ncclWorkRegElem*)e);
+    setDataPtrs(inputBuf, outputBuf, redOpArg, (struct ncclWorkElemReg*)e);
   }
 
   __device__ ~Primitives() {
@@ -448,7 +448,7 @@ class Primitives<
     barrier();
   }
 
-  __device__ void setDataPtrs(void const *inputBuf, void *outputBuf, uint64_t redOpArg, struct ncclWorkRegElem* e) {
+  __device__ void setDataPtrs(void const *inputBuf, void *outputBuf, uint64_t redOpArg, struct ncclWorkElemReg* e) {
     if (flags & RoleInput) {
       userBuff = (T*)inputBuf;
       ncclShmem.redOpArgs[0] = redOpArg;  // scaler for local input

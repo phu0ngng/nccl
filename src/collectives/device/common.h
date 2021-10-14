@@ -23,7 +23,7 @@ __device__ inline bool barrierReduceAny(int bit) {
   asm ("{"
     ".reg .pred barr_pred;"
     "setp.eq.u32 barr_pred, %1, 1;"
-    "bar.red.popc.u32 %0, 0, barr_pred;"
+    "bar.red.popc.u32 %0, 8, barr_pred;"
   "}" : "=r"(popc) : "r"(bit));
   return popc != 0;
 }
@@ -67,41 +67,16 @@ struct RunWorkElement {
   }
 };
 
-#if CUDART_VERSION >= 11030
-__device__ constexpr int ncclWorkElemFactors[NCCL_NUM_ALGORITHMS] =
-#else
-static __device__ __constant__ int ncclWorkElemFactors[NCCL_NUM_ALGORITHMS] =
-#endif
-{/*Tree*/1, /*Ring and P2P*/1, /*CollNet*/NCCL_REG_ELEM_FACTOR};
-
 template<ncclFunc_t Fn, typename T, typename RedOp, int Algo, int Proto>
 struct RunWork {
   // This __forceinline__ is necessary. The compiler was inserting a function call
   // here from the LL ncclKernel.
   __device__ __forceinline__ void run(ncclWork *w) {
-    int tid = threadIdx.x;
-    /* Some invariants that must hold:
-     * 1. All elems[] have same funcIndex.
-     * 2. All elems[] have same nThreads.
-     * 3. The thread-to-group relation (as in prims group numbers) is the same
-     *    for all elems[].
-     *
-     * If (1) isn't true then we might be in the wrong function since dispatch
-     * on ncclFuncs[w->funcIndex] is how we got here.
-     *
-     * If (2) or (3) aren't true, then threads from different work elements
-     * could race for barrier resources (barrier numbers 0...15) which is fatal.
-     *
-     * IMPORTANT!!! To ensure (3), implementations of
-     * `RunWorkElement<Fn,T,RedOp,Algo,Proto>::run()` may only use the following
-     * when deciding how to map threads to groups:
-     *    Fn, T, RedOp, Algo, Proto, nThreads
-     *
-     * This last one is difficult to enforce so I hope everyone reads this.
-     */
-    if (tid < w->elems[0].nThreads) {
-      #pragma unroll 1
-      for(int e=0; e < NCCL_MAX_WORK_ELEMENTS && w->elems[e].active != 0; e+=ncclWorkElemFactors[Algo])
+    int wid = threadIdx.x / WARP_SIZE;
+    int inc = w->header.type == ncclWorkTypeRegColl ? sizeof(ncclWorkElemReg) / sizeof(ncclWorkElem) : 1;
+    #pragma unroll 1
+    for(int e=0; e < NCCL_MAX_WORK_ELEMENTS && w->elems[e].header.type != ncclWorkTypeUnused; e += inc) {
+      if (wid < w->header.nWarps)
         RunWorkElement<Fn, T, RedOp, Algo, Proto>().run(&w->elems[e]);
     }
   }
@@ -129,6 +104,27 @@ struct ncclShmemData {
   ncclWork work;
 };
 
+static __device__ void ncclRedopPtrDeref(struct ncclWorkElem* we) {
+  if (we->header.type != ncclWorkTypeUnused && we->redOpArgIsPtr) {
+    /* redOpArg is a pointer to the scalar value, so we'll dereference it
+     * here so that redOpArg holds the bits of the scalar going forward.
+     * The tricky thing is we don't know its type T since that's encoded in
+     * the funcIndex. Because it would be difficult to get sizeof(T) from
+     * funcIndex, we'll cheat and just dereference the largest possible size
+     * given the alignment of the pointer. We might be reading in more bytes
+     * than we need but that's harmless.
+     */
+    if (we->redOpArg%2 != 0)
+      we->redOpArg = *reinterpret_cast<uint8_t*>(we->redOpArg);
+    else if (we->redOpArg%4 != 0)
+      we->redOpArg = *reinterpret_cast<uint16_t*>(we->redOpArg);
+    else if (we->redOpArg%8 != 0)
+      we->redOpArg = *reinterpret_cast<uint32_t*>(we->redOpArg);
+    else
+      we->redOpArg = *reinterpret_cast<uint64_t*>(we->redOpArg);
+  }
+}
+
 extern __shared__ ncclShmemData ncclShmem;
 
 template<ncclFunc_t Fn, typename T, typename RedOp, int Algo, int Proto, int FnIndex>
@@ -142,12 +138,14 @@ __device__ void ncclKernel(struct ncclDevComm* comm, ncclWorkElem first)  {
   turn = copyToShmem(&ncclShmem.channel, channel, turn);
 
   // To optimize for latency, (only) the first operation is passed as argument.
-  if (bid == 0 && first.active != 0) {
+  if (bid == 0 && first.header.type != ncclWorkTypeUnused) {
+    // Initialize all shmem workElems to unused before we copy the first operation
+    // to shmem as the partial copy won't zero all the other workElems.
+    // Use P2P work elems since they are the smallest and will therefore
+    // cover other cases.
+    if (tid < NCCL_MAX_WORK_ELEMENTS_P2P)
+      ncclShmem.work.p2pElems[tid].header.type = ncclWorkTypeUnused;
     turn = copyToShmem(&ncclShmem.work.elems[0], &first, turn);
-    if (1 <= tid && tid < NCCL_MAX_WORK_ELEMENTS && tid % ncclWorkElemFactors[Algo] == 0) {
-      ncclShmem.work.elems[tid].active = 0;
-      ncclShmem.work.elems[tid].redOpArgIsPtr = 0;
-    }
   }
   __syncthreads(); // publish ncclShmem
 
@@ -155,7 +153,7 @@ __device__ void ncclKernel(struct ncclDevComm* comm, ncclWorkElem first)  {
   ncclWork *workFifoDev = ncclShmem.channel.workFifoDev;
   int workFifoIx = ncclShmem.channel.index;
 
-  if (bid == 0 && first.active != 0)
+  if (bid == 0 && first.header.type != ncclWorkTypeUnused)
     goto SkipLoadWork;
 
   while (true) {
@@ -165,7 +163,7 @@ __device__ void ncclKernel(struct ncclDevComm* comm, ncclWorkElem first)  {
       if (barrierReduceAny(aborted)) // publish ncclShmem.work
         break;
       if (tid == 0)
-        workFifoHost[workFifoIx].elems[0].active = 0;
+        workFifoHost[workFifoIx].header.type = ncclWorkTypeUnused;
     }
 
   SkipLoadWork:
@@ -173,36 +171,19 @@ __device__ void ncclKernel(struct ncclDevComm* comm, ncclWorkElem first)  {
     if (tid == 0)
       channel->index = workFifoIx; // write back to real channel, not shmem shadow
 
-    if (tid < NCCL_MAX_WORK_ELEMENTS && tid % ncclWorkElemFactors[Algo] == 0) {
-      ncclWorkElem *we = &ncclShmem.work.elems[tid];
-      if (we->redOpArgIsPtr && we->active != 0) {
-        /* redOpArg is a pointer to the scalar value, so we'll dereference it
-         * here so that redOpArg holds the bits of the scalar going forward.
-         * The tricky thing is we don't know its type T since that's encoded in
-         * the funcIndex. Because it would be difficult to get sizeof(T) from
-         * funcIndex, we'll cheat and just dereference the largest possible size
-         * given the alignment of the pointer. We might be reading in more bytes
-         * than we need but that's harmless.
-         */
-        if (we->coll.redOpArg%2 != 0)
-          we->coll.redOpArg = *reinterpret_cast<uint8_t*>(we->coll.redOpArg);
-        else if (we->coll.redOpArg%4 != 0)
-          we->coll.redOpArg = *reinterpret_cast<uint16_t*>(we->coll.redOpArg);
-        else if (we->coll.redOpArg%8 != 0)
-          we->coll.redOpArg = *reinterpret_cast<uint32_t*>(we->coll.redOpArg);
-        else
-          we->coll.redOpArg = *reinterpret_cast<uint64_t*>(we->coll.redOpArg);
-      }
+    if (ncclShmem.work.header.type == ncclWorkTypeColl) {
+      if (tid < NCCL_MAX_WORK_ELEMENTS) ncclRedopPtrDeref(&ncclShmem.work.elems[tid]);
+    } else if (ncclShmem.work.header.type == ncclWorkTypeRegColl) {
+      if (tid < NCCL_MAX_WORK_ELEMENTS_REG) ncclRedopPtrDeref(&ncclShmem.work.regElems[tid].elem);
     }
     __syncthreads();
 
-    if (ncclShmem.work.elems[0].funcIndex == FnIndex)
+    if (ncclShmem.work.header.funcIndex == FnIndex)
       RunWork<Fn, T, RedOp, Algo, Proto>().run(&ncclShmem.work);
     else
-      ncclFuncs[ncclShmem.work.elems[0].funcIndex]();
+      ncclFuncs[ncclShmem.work.header.funcIndex]();
 
-    if (ncclShmem.work.elems[0].active == 2)
-      break;
+    if (ncclShmem.work.header.isLast) break;
     __syncthreads();
   }
 }

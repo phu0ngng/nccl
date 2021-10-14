@@ -22,11 +22,9 @@ struct ncclProxySubArgs {
   int channelId;
   struct ncclProxyConnection* connection;
   int nsteps;
-  ssize_t sendbytes;
-  ssize_t recvbytes;
-  int sendChunkSize;
-  int recvChunkSize;
-  int delta;
+  ssize_t nbytes;
+  int chunkSize;
+  int peer;
 
   // Internal state
   uint64_t base;
