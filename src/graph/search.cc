@@ -415,6 +415,7 @@ ncclResult_t ncclTopoSearchRecGpu(struct ncclTopoSystem* system, struct ncclTopo
           graph->speedInter = speedInterSave;
         }
       }
+      free(nets);
     }
   } else if (step < system->nodes[GPU].count-1) {
     // Go to next GPU
