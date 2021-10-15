@@ -210,6 +210,7 @@ static ncclResult_t commFree(ncclComm_t comm) {
   ncclTopoFree(comm->topo);
   for (int n=0; n<comm->nNodes; n++) free(comm->nodeRanks[n].ranks);
   free(comm->nodeRanks);
+  free(comm->rankNodes);
 
   if (comm->bootstrap)
     NCCLCHECK(bootstrapClose(comm->bootstrap));
@@ -722,6 +723,7 @@ static ncclResult_t initTransportsRank(struct ncclComm* comm, ncclUniqueId* comm
 
   // Compute comm->nodeRanks
   NCCLCHECK(ncclCalloc(&comm->nodeRanks, comm->nNodes));
+  NCCLCHECK(ncclCalloc(&comm->rankNodes, comm->nRanks));
   int nodes = 0;
   for (int r=0; r<comm->nRanks; r++) {
     int node;
@@ -731,6 +733,7 @@ static ncclResult_t initTransportsRank(struct ncclComm* comm, ncclUniqueId* comm
       comm->nodeRanks[node].hostHash = comm->peerInfo[r].hostHash;
     }
     comm->nodeRanks[node].nranks++;
+    comm->rankNodes[r] = node;
   }
   for (int n=0; n<comm->nNodes; n++) {
     NCCLCHECK(ncclCalloc(&comm->nodeRanks[n].ranks, comm->nodeRanks[n].nranks));

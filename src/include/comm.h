@@ -109,6 +109,7 @@ struct ncclComm {
   int node;
   int nNodes;
   struct ncclNodeRanks* nodeRanks;
+  int* rankNodes;
 
   // Intra-node rank info
   int intraNodeGlobalRanks[NCCL_MAX_INTRA_RANKS];
