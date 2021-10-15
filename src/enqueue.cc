@@ -1073,6 +1073,7 @@ ncclResult_t ncclEnqueueCollKernel(struct ncclComm* comm, struct ncclQueueElem* 
 // Performs the enqueue job
 template<int USING_CUDA_GRAPH>
 void CUDART_CB ncclEnqueueHostSetup(void* arg) {
+  NVTX3_FUNC_RANGE_IN(nccl_domain);
   ncclResult_t ret;
   // All work for current launch has been captured in Queue Info
   struct ncclQueueInfo* eqInfo = (struct ncclQueueInfo*)arg;
