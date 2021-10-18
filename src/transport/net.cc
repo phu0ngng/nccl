@@ -852,7 +852,7 @@ static ncclResult_t recvProxyProgress(struct ncclComm* comm, struct ncclProxyArg
         } else {
           ptr = localBuff+buffSlot*stepSize;
         }
-        NCCLCHECK(ncclNetIrecv(resources->netRecvComm, ptr, buffSize, resources->remoteRank, mhandle, sub->requests+buffSlot));
+        NCCLCHECK(ncclNetIrecv(resources->netRecvComm, 1, (void**)&ptr, &buffSize, &resources->remoteRank, &mhandle, sub->requests+buffSlot));
         if (sub->requests[buffSlot] != NULL) {
           TRACE(NCCL_NET, "recvProxy [%ld/%d] posted recv request %p", sub->posted, buffSlot, sub->requests[buffSlot]);
           sub->posted += args->sliceSteps;

@@ -32,6 +32,7 @@ typedef struct {
   int speed;      // Port speed in Mbps.
   int port;       // Port number.
   int maxComms;   // Maximum number of comms we can create
+  int maxRecvs;   // Maximum number of grouped receives.
 }ncclNetProperties_v5_t;
 
 typedef ncclNetProperties_v5_t ncclNetProperties_t;
@@ -62,7 +63,7 @@ typedef struct {
   ncclResult_t (*isend)(void* sendComm, void* data, int size, int tag, void* mhandle, void** request);
   // Asynchronous recv from a peer.
   // May return request == NULL if the call cannot be performed (or would block)
-  ncclResult_t (*irecv)(void* recvComm, void* data, int size, int tag, void* mhandle, void** request);
+  ncclResult_t (*irecv)(void* recvComm, int n, void** data, int* sizes, int* tags, void** mhandles, void** request);
   // Perform a flush/fence to make sure all data received with NCCL_PTR_CUDA is
   // visible to the GPU
   ncclResult_t (*iflush)(void* recvComm, void* data, int size, void* mhandle, void** request);

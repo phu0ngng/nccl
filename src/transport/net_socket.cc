@@ -99,6 +99,7 @@ ncclResult_t ncclSocketGetProperties(int dev, ncclNetProperties_t* props) {
   NCCLCHECK(ncclSocketGetSpeed(props->name, &props->speed));
   props->port = 0;
   props->maxComms = 65536;
+  props->maxRecvs = 1;
   return ncclSuccess;
 }
 
@@ -596,9 +597,10 @@ ncclResult_t ncclSocketIsend(void* sendComm, void* data, int size, int tag, void
   return ncclSuccess;
 }
 
-ncclResult_t ncclSocketIrecv(void* recvComm, void* data, int size, int tag, void* mhandle, void** request) {
+ncclResult_t ncclSocketIrecv(void* recvComm, int n, void** data, int* sizes, int* tags, void** mhandles, void** request) {
   struct ncclSocketComm* comm = (struct ncclSocketComm*)recvComm;
-  NCCLCHECK(ncclSocketGetRequest(comm, NCCL_SOCKET_RECV, data, size, (struct ncclSocketRequest**)request));
+  if (n != 1) return ncclInternalError;
+  NCCLCHECK(ncclSocketGetRequest(comm, NCCL_SOCKET_RECV, data[0], sizes[0], (struct ncclSocketRequest**)request));
   return ncclSuccess;
 }
 
