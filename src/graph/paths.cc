@@ -241,6 +241,8 @@ ncclResult_t ncclGetLevel(int* level, const char* disableEnv, const char* levelE
   return ncclSuccess;
 }
 
+NCCL_PARAM(IgnoreDisabledP2p, "IGNORE_DISABLED_P2P", 0);
+
 int ncclTopoUserP2pLevel = -1;
 ncclResult_t ncclTopoCheckP2p(struct ncclTopoSystem* system, int64_t id1, int64_t id2, int* p2p, int *read, int* intermediateRank) {
   *p2p = 0;
@@ -256,13 +258,14 @@ ncclResult_t ncclTopoCheckP2p(struct ncclTopoSystem* system, int64_t id1, int64_
     return ncclSuccess;
   }
 
-
+  int intermediateIndex = -1;
   // Set intermediate GPU rank, if routing through an intermediate GPU.
   struct ncclTopoLinkList* path = gpu1->paths[GPU]+g2;
   if (path->count == 2) {
     struct ncclTopoNode* intermediateNode = path->list[0]->remNode;
     if (intermediateNode->type == GPU && intermediateRank) {
       *intermediateRank = intermediateNode->gpu.rank;
+      intermediateIndex = intermediateNode - system->nodes[GPU].nodes;
     }
   }
 
@@ -291,6 +294,38 @@ ncclResult_t ncclTopoCheckP2p(struct ncclTopoSystem* system, int64_t id1, int64_
 compare:
   // Compute the PCI distance and compare with the p2pLevel.
   if (path->type <= p2pLevel) *p2p = 1;
+
+  if (*p2p == 1) {
+    // NCCL_IGNORE_DISABLED_P2P=2 is used by unit tests that don't want to
+    // validate against NVML at all since they are pretending to be on other hw.
+    if (ncclParamIgnoreDisabledP2p() != 2) {
+      nvmlDevice_t handles[3];
+      int handleN = 0;
+      NCCLCHECK(wrapNvmlDeviceGetHandleByIndex(g1, &handles[handleN++]));
+      if (intermediateIndex != -1) {
+        NCCLCHECK(wrapNvmlDeviceGetHandleByIndex(intermediateIndex, &handles[handleN++]));
+      }
+      NCCLCHECK(wrapNvmlDeviceGetHandleByIndex(g2, &handles[handleN++]));
+      bool allGood = true;
+
+      for (int i=1; i < handleN; i++) {
+        nvmlGpuP2PStatus_t status;
+        NCCLCHECK(wrapNvmlDeviceGetP2PStatus(handles[i-1], handles[i-0], NVML_P2P_CAPS_INDEX_READ, &status));
+        allGood &= status == NVML_P2P_STATUS_OK;
+        NCCLCHECK(wrapNvmlDeviceGetP2PStatus(handles[i-1], handles[i-0], NVML_P2P_CAPS_INDEX_WRITE, &status));
+        allGood &= status == NVML_P2P_STATUS_OK;
+      }
+
+      if (!allGood) {
+        if (ncclParamIgnoreDisabledP2p()) {
+          *p2p = 0;
+        } else {
+          WARN("P2P is disabled between GPUs %d and %d. This should not be the case given their connectivity, and is probably due to a hardware issue. If you still want to proceed, you can set NCCL_IGNORE_DISABLED_P2P=1.", g1, g2);
+          return ncclUnhandledCudaError;
+        }
+      }
+    }
+  }
 
   if (path->type == PATH_NVL) {
     struct ncclTopoNode* gpu2 = system->nodes[GPU].nodes+g2;
