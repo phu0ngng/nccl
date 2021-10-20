@@ -67,17 +67,21 @@ ncclResult_t wrap_ibv_symbols(void) {
   }
 
 
-#define LOAD_SYM_VERSION(handle, symbol, funcptr, version) do {  \
+#define LOAD_SYM(handle, symbol, funcptr) do {           \
     cast = (void**)&funcptr;                             \
-    tmp = dlvsym(handle, symbol, version);               \
+    tmp = dlvsym(handle, symbol, IBVERBS_VERSION);       \
     if (tmp == NULL) {                                   \
-      WARN("dlvsym failed on %s - %s version %s", symbol, dlerror(), version);  \
+      WARN("dlvsym failed on %s - %s version %s", symbol, dlerror(), IBVERBS_VERSION);  \
       goto teardown;                                     \
     }                                                    \
     *cast = tmp;                                         \
   } while (0)
 
-#define LOAD_SYM(handle, symbol, funcptr) LOAD_SYM_VERSION(handle, symbol, funcptr, IBVERBS_VERSION)
+// Attempt to load a specific symbol version - fail silently
+#define LOAD_SYM_VERSION(handle, symbol, funcptr, version) do {  \
+    cast = (void**)&funcptr;                                     \
+    *cast = dlvsym(handle, symbol, version);                     \
+  } while (0)
 
   LOAD_SYM(ibvhandle, "ibv_get_device_list", ibv_internal_get_device_list);
   LOAD_SYM(ibvhandle, "ibv_free_device_list", ibv_internal_free_device_list);

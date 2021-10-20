@@ -643,12 +643,14 @@ ncclResult_t ncclIbRegMr(void* comm, void* data, int size, int type, void** mhan
   unsigned int flags = IBV_ACCESS_LOCAL_WRITE|IBV_ACCESS_REMOTE_WRITE|IBV_ACCESS_REMOTE_READ;
   struct ibv_mr* mr;
   if (ncclParamIbPciRelaxedOrdering()) {
-    // Try IBVERBS_1.8 API with IBV_ACCESS_RELAXED_ORDERING support
-    ncclResult_t res = wrap_ibv_reg_mr_iova2(&mr, verbs->pd, (void*)regAddr, regSize, (uintptr_t)regAddr, flags|IBV_ACCESS_RELAXED_ORDERING);
-    if (res == ncclInternalError) {
+    // Try IBVERBS_1.8 API - needed for IBV_ACCESS_RELAXED_ORDERING support
+    ncclResult_t r = wrap_ibv_reg_mr_iova2(&mr, verbs->pd, (void*)regAddr, regSize, (uintptr_t)regAddr, flags|IBV_ACCESS_RELAXED_ORDERING);
+    if (r == ncclInternalError) {
       // Fallback to old API
       NCCLCHECK(wrap_ibv_reg_mr(&mr, verbs->pd, (void*)regAddr, regSize, flags));
     }
+    else
+      NCCLCHECK(r);
   } else {
     NCCLCHECK(wrap_ibv_reg_mr(&mr, verbs->pd, (void*)regAddr, regSize, flags));
   }
