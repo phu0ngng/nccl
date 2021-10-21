@@ -61,7 +61,7 @@ NCCL_PARAM(IbUseInline, "IB_USE_INLINE", 0);
 NCCL_PARAM(IbSl, "IB_SL", 0);
 NCCL_PARAM(IbTc, "IB_TC", 0);
 NCCL_PARAM(IbArThreshold, "IB_AR_THRESHOLD", 8192);
-NCCL_PARAM(IbPciRelaxedOrdering, "IB_PCI_RELAXED_ORDERING", 1);
+NCCL_PARAM(IbPciRelaxedOrdering, "IB_PCI_RELAXED_ORDERING", 2);
 
 pthread_t ncclIbAsyncThread;
 static void* ncclIbAsyncThreadMain(void* args) {
@@ -640,20 +640,19 @@ ncclResult_t ncclIbRegMr(void* comm, void* data, int size, int type, void** mhan
   uint64_t regAddr = addr & (~(REG_ALIGN-1));
   uint64_t regSize = addr+size - regAddr;
   regSize = ((regSize + REG_ALIGN-1) / REG_ALIGN ) * REG_ALIGN;
-  unsigned int flags = IBV_ACCESS_LOCAL_WRITE|IBV_ACCESS_REMOTE_WRITE|IBV_ACCESS_REMOTE_READ;
   struct ibv_mr* mr;
-  if (ncclParamIbPciRelaxedOrdering()) {
+  int roMode = ncclParamIbPciRelaxedOrdering();
+  unsigned int flags = IBV_ACCESS_LOCAL_WRITE|IBV_ACCESS_REMOTE_WRITE|IBV_ACCESS_REMOTE_READ;
+  ncclResult_t r = ncclInternalError;
+  if (roMode == 1 || roMode == 2) {
     // Try IBVERBS_1.8 API - needed for IBV_ACCESS_RELAXED_ORDERING support
-    ncclResult_t r = wrap_ibv_reg_mr_iova2(&mr, verbs->pd, (void*)regAddr, regSize, (uintptr_t)regAddr, flags|IBV_ACCESS_RELAXED_ORDERING);
-    if (r == ncclInternalError) {
-      // Fallback to old API
-      NCCLCHECK(wrap_ibv_reg_mr(&mr, verbs->pd, (void*)regAddr, regSize, flags));
-    }
-    else
-      NCCLCHECK(r);
-  } else {
-    NCCLCHECK(wrap_ibv_reg_mr(&mr, verbs->pd, (void*)regAddr, regSize, flags));
+    r = wrap_ibv_reg_mr_iova2(&mr, verbs->pd, (void*)regAddr, regSize, (uintptr_t)regAddr, flags|IBV_ACCESS_RELAXED_ORDERING);
   }
+  // If roMode is 2 then fallback and try old API
+  if (r == ncclInternalError && (roMode == 0 || roMode == 2)) {
+    r = wrap_ibv_reg_mr(&mr, verbs->pd, (void*)regAddr, regSize, flags);
+  }
+  NCCLCHECK(r);
   *mhandle = (void*)mr;
   TRACE(NCCL_INIT,"regAddr %lx size %ld rkey %x", regAddr, regSize, mr->rkey);
   return ncclSuccess;

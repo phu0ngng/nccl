@@ -66,7 +66,6 @@ ncclResult_t wrap_ibv_symbols(void) {
     }
   }
 
-
 #define LOAD_SYM(handle, symbol, funcptr) do {           \
     cast = (void**)&funcptr;                             \
     tmp = dlvsym(handle, symbol, IBVERBS_VERSION);       \
