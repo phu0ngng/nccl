@@ -23,7 +23,7 @@ __device__ inline bool barrierReduceAny(int bit) {
   asm ("{"
     ".reg .pred barr_pred;"
     "setp.eq.u32 barr_pred, %1, 1;"
-    "bar.red.popc.u32 %0, 8, barr_pred;"
+    "bar.red.popc.u32 %0, 2, barr_pred;"
   "}" : "=r"(popc) : "r"(bit));
   return popc != 0;
 }

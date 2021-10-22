@@ -256,7 +256,9 @@ ncclResult_t ncclIbGetProperties(int dev, ncclNetProperties_t* props) {
   return ncclSuccess;
 }
 
-#define MAX_REQUESTS NCCL_NET_MAX_REQUESTS
+// We need to support NCCL_NET_MAX_REQUESTS for each concurrent receive
+#define MAX_REQUESTS NCCL_NET_MAX_REQUESTS*NCCL_NET_IB_MAX_RECVS
+static_assert(MAX_REQUESTS <= 256, "request id are encoded in wr_id and we need up to 8 requests ids per completion");
 
 #define NCCL_IB_MAX_QPS 128
 
@@ -279,17 +281,28 @@ struct ncclIbHandle {
   union ncclSocketAddress connectAddr;
 };
 
+#define NCCL_NET_IB_REQ_UNUSED 0
+#define NCCL_NET_IB_REQ_SEND 1
+#define NCCL_NET_IB_REQ_RECV 2
+#define NCCL_NET_IB_REQ_FLUSH 3
+
 struct ncclIbRequest {
-  int used;
-  int type;
   struct ncclIbVerbs* verbs;
+  int type;
   int events;
-  int size;
-  void* data;
-  uint32_t lkey;
-  int nreqs;
-  int offset;
   union ncclSocketAddress *addr;
+  int nreqs;
+  union {
+    struct {
+      int size;
+      void* data;
+      uint32_t lkey;
+      int offset;
+    } send;
+    struct {
+      int sizes[NCCL_NET_IB_MAX_RECVS];
+    } recv;
+  };
 };
 
 struct ncclIbVerbs {
@@ -316,7 +329,7 @@ struct ncclIbSendComm {
   struct ncclIbVerbs verbs;
   struct ncclIbSendFifo fifo[MAX_REQUESTS][NCCL_NET_IB_MAX_RECVS];
   uint32_t fifoHead;
-  struct ncclIbRequest fifoReqs[MAX_REQUESTS][NCCL_NET_IB_MAX_RECVS];
+  struct ncclIbRequest* fifoReqs[MAX_REQUESTS][NCCL_NET_IB_MAX_RECVS];
   struct ibv_send_wr wrs[NCCL_NET_IB_MAX_RECVS+1];
   struct ibv_sge sges[NCCL_NET_IB_MAX_RECVS];
   struct ncclSocket sock;
@@ -684,15 +697,10 @@ ib_send:
 ncclResult_t ncclIbGetRequest(struct ncclIbVerbs* verbs, struct ncclIbRequest** req) {
   for (int i=0; i<MAX_REQUESTS; i++) {
     struct ncclIbRequest* r = verbs->reqs+i;
-    if (r->used == 0) {
-      r->used = 1;
-      r->type = 0;
+    if (r->type == NCCL_NET_IB_REQ_UNUSED) {
       r->verbs = verbs;
       r->events = 1;
-      r->size = -1;
       r->addr = NULL;
-      r->offset = 0;
-      r->nreqs = 1;
       *req = r;
       return ncclSuccess;
     }
@@ -702,7 +710,7 @@ ncclResult_t ncclIbGetRequest(struct ncclIbVerbs* verbs, struct ncclIbRequest** 
   return ncclInternalError;
 }
 ncclResult_t ncclIbFreeRequest(struct ncclIbRequest* r) {
-  r->used = 0;
+  r->type = NCCL_NET_IB_REQ_UNUSED;
   return ncclSuccess;
 }
 
@@ -763,56 +771,59 @@ ncclResult_t ncclIbDeregMr(void* comm, void* mhandle) {
 }
 
 ncclResult_t ncclIbMultiSend(struct ncclIbSendComm* comm, int slot) {
-  struct ncclIbRequest* reqs = comm->fifoReqs[slot];
+  struct ncclIbRequest** reqs = comm->fifoReqs[slot];
   volatile struct ncclIbSendFifo* slots = comm->fifo[slot];
-  int nreqs = reqs[0].nreqs;
+  int nreqs = slots[0].nreqs;
 
-  // If this is a multi-recv, send only when all requests have matched.
-  for (int r=0; r<nreqs; r++) {
-    if (reqs[r].used == 0) return ncclSuccess;
-  }
+  uint64_t wr_id = 0ULL;
 
-  // All send requests ready, perform multi-send
   for (int r=0; r<nreqs; r++) {
     struct ibv_send_wr* wr = comm->wrs+r;
     memset(wr, 0, sizeof(struct ibv_send_wr));
-    wr->wr_id = (uint64_t)reqs;
 
     struct ibv_sge* sge = comm->sges+r;
-    sge->addr=(uintptr_t)reqs[r].data;
-    sge->lkey=reqs[r].lkey;
+    sge->addr=(uintptr_t)reqs[r]->send.data;
+    sge->lkey=reqs[r]->send.lkey;
 
     wr->opcode = IBV_WR_RDMA_WRITE;
     wr->send_flags = 0;
     wr->wr.rdma.remote_addr = slots[r].addr;
     wr->wr.rdma.rkey = slots[r].rkey;
-    wr->imm_data = reqs[r].size; // Send the message size via imm_data
     wr->next = wr+1;
     slots[r].nreqs = 0;
+    wr_id += (reqs[r] - comm->verbs.reqs) << (r*8);
   }
 
-  // When using adaptive routing, send the bulk of the data first as an
-  // RDMA_WRITE, then a 0-byte RDMA_WRITE_WITH_IMM to trigger a remote
-  // completion.
-  if (nreqs > 1 || reqs[0].size > ncclParamIbArThreshold()) {
-    struct ibv_send_wr* wr = comm->wrs+nreqs;
-    memcpy(wr, comm->wrs+0, sizeof(struct ibv_send_wr));
-    wr->sg_list = NULL;
-    wr->num_sge = 0;
-
-    wr->opcode = IBV_WR_RDMA_WRITE_WITH_IMM;
-    wr->next = NULL;
-    wr->send_flags = IBV_SEND_SIGNALED;
+  // Write size as immediate data. In the case of multi-send, only write
+  // 0 or 1 as size to indicate whether there was data sent or received.
+  uint64_t immData;
+  if (nreqs == 1) {
+    immData = reqs[0]->send.size;
   } else {
-    comm->wrs[0].next = NULL;
-    comm->wrs[0].opcode = IBV_WR_RDMA_WRITE_WITH_IMM;
-    comm->wrs[0].send_flags = IBV_SEND_SIGNALED;
+    uint8_t* multiImmData = (uint8_t*)&immData;
+    for (int r=0; r<nreqs; r++) {
+      multiImmData[r] = reqs[r]->send.size ? 1 : 0;
+    }
   }
+
+  struct ibv_send_wr* lastWr = comm->wrs+nreqs-1;
+  if (nreqs > 1 || reqs[0]->send.size > ncclParamIbArThreshold()) {
+    // When using adaptive routing, send the bulk of the data first as an
+    // RDMA_WRITE, then a 0-byte RDMA_WRITE_WITH_IMM to trigger a remote
+    // completion.
+    lastWr++;
+    memset(lastWr, 0, sizeof(struct ibv_send_wr));
+  }
+  lastWr->wr_id = wr_id;
+  lastWr->opcode = IBV_WR_RDMA_WRITE_WITH_IMM;
+  lastWr->imm_data = immData;
+  lastWr->next = NULL;
+  lastWr->send_flags = IBV_SEND_SIGNALED;
 
   for (int q=0; q<comm->nqps; q++) {
     for (int r=0; r<nreqs; r++) {
-      int chunkSize = std::max(8, DIVUP(reqs[r].size, comm->nqps));
-      int length = std::min(reqs[r].size-reqs[r].offset, chunkSize);
+      int chunkSize = std::max(8, DIVUP(reqs[r]->send.size, comm->nqps));
+      int length = std::min(reqs[r]->send.size-reqs[r]->send.offset, chunkSize);
       if (length <= 0) {
         comm->wrs[r].sg_list = NULL;
         comm->wrs[r].num_sge = 0;
@@ -826,8 +837,8 @@ ncclResult_t ncclIbMultiSend(struct ncclIbSendComm* comm, int slot) {
     NCCLCHECK(wrap_ibv_post_send(comm->qps[q], comm->wrs, &bad_wr));
 
     for (int r=0; r<nreqs; r++) {
-      int chunkSize = std::max(8, DIVUP(reqs[r].size, comm->nqps));
-      reqs[r].offset += chunkSize;
+      int chunkSize = std::max(8, DIVUP(reqs[r]->send.size, comm->nqps));
+      reqs[r]->send.offset += chunkSize;
       comm->sges[r].addr += chunkSize;
       comm->wrs[r].wr.rdma.remote_addr += chunkSize;
     }
@@ -849,6 +860,7 @@ ncclResult_t ncclIbIsend(void* sendComm, void* data, int size, int tag, void* mh
   volatile struct ncclIbSendFifo* slots;
   while (1) {
     int slot = fifoHead%MAX_REQUESTS;
+    struct ncclIbRequest** reqs = comm->fifoReqs[slot];
     slots = comm->fifo[slot];
     volatile uint32_t * nreqsPtr = &slots[0].nreqs;
     if (*nreqsPtr == 0 ) { *request = NULL; return ncclSuccess; }
@@ -857,35 +869,47 @@ ncclResult_t ncclIbIsend(void* sendComm, void* data, int size, int tag, void* mh
     for (int r=0; r<nreqs; r++) while(slots[r].nreqs != nreqs) sched_yield();
     __sync_synchronize(); // order the nreqsPtr load against rkey load below
     for (int r=0; r<nreqs; r++) {
-      struct ncclIbRequest* req = comm->fifoReqs[slot]+r;
       volatile uint64_t * tagPtr = &slots[r].tag;
-      if (req->used == 0 && (*tagPtr) == tag) {
+      if (reqs[r] == NULL && (*tagPtr) == tag) {
         // Sanity checks to catch user collective call count/size mismatches
         // plus any potential programming errors
         if (size > slots[r].size || slots[r].size < 0 || slots[r].addr == 0 || slots[r].rkey == 0) {
           char line[SOCKET_NAME_MAXLEN+1];
           WARN("NET/IB : peer %s collective mismatch error local size %d remote %d addr %lx rkey %x",
-              ncclSocketToString(req->addr, line), size, slots[r].size, slots[r].addr, slots[r].rkey);
+              ncclSocketToString(&comm->sock.addr, line), size, slots[r].size, slots[r].addr, slots[r].rkey);
           return ncclInternalError;
         }
-        req->used = 1;
+        struct ncclIbRequest* req;
+        NCCLCHECK(ncclIbGetRequest(&comm->verbs, &req));
+        req->type = NCCL_NET_IB_REQ_SEND;
+        req->addr = &comm->sock.addr;
         req->verbs = &comm->verbs;
-        req->size = size;
-        req->data = data;
-        req->lkey = mr->lkey;
-        req->offset = 0;
         req->nreqs = nreqs;
+        req->send.size = size;
+        req->send.data = data;
+        req->send.lkey = mr->lkey;
+        req->send.offset = 0;
         req->addr = &comm->sock.addr;
         req->events = comm->nqps;
-        *request = req;
+        *request = reqs[r] = req;
+
+        // If this is a multi-recv, send only when all requests have matched.
+        for (int r=0; r<nreqs; r++) {
+          if (reqs[r] == NULL) return ncclSuccess;
+        }
+
         NCCLCHECK(ncclIbMultiSend(comm, slot));
 
         // Shift unmatched elements in the FIFO
         for (int s=fifoHead; s>comm->fifoHead; s--) {
+          // TODO Check this path works
           memcpy(comm->fifo+(s%MAX_REQUESTS), comm->fifo+((s-1)%MAX_REQUESTS), NCCL_NET_IB_MAX_RECVS*sizeof(struct ncclIbSendFifo));
+          memcpy(comm->fifoReqs+(s%MAX_REQUESTS), comm->fifoReqs+((s-1)%MAX_REQUESTS), NCCL_NET_IB_MAX_RECVS*sizeof(struct ncclIbRequest*));
         }
+
         // Clear slot->ready, as well as other fields to help debugging and sanity checks
-        memset(comm->fifo+(comm->fifoHead%MAX_REQUESTS), 0, sizeof(struct ncclIbSendFifo));
+        memset(comm->fifo+(comm->fifoHead%MAX_REQUESTS), 0, NCCL_NET_IB_MAX_RECVS*sizeof(struct ncclIbSendFifo));
+        memset(comm->fifoReqs+(comm->fifoHead%MAX_REQUESTS), 0, NCCL_NET_IB_MAX_RECVS*sizeof(struct ncclIbRequest*));
         comm->fifoHead++;
         return ncclSuccess;
       }
@@ -946,7 +970,7 @@ ncclResult_t ncclIbPostFifo(struct ncclIbRecvComm* comm, int n, void** data, int
   //
   if (slot == 0) {
     wr.send_flags |= IBV_SEND_SIGNALED;
-    wr.wr_id = (uint64_t)req;
+    wr.wr_id = req - comm->verbs.reqs;
     req->events++;
   }
 
@@ -964,12 +988,14 @@ ncclResult_t ncclIbIrecv(void* recvComm, int n, void** data, int* sizes, int* ta
 
   struct ncclIbRequest* req;
   NCCLCHECK(ncclIbGetRequest(&comm->verbs, &req));
-  req->size = sizes[0];
+  req->type = NCCL_NET_IB_REQ_RECV;
   req->addr = &comm->sock.addr;
+  req->nreqs = n;
+  for (int i=0; i<n; i++) req->recv.sizes[i] = 0;
 
   struct ibv_recv_wr wr;
   memset(&wr, 0, sizeof(wr));
-  wr.wr_id = (uint64_t)req;
+  wr.wr_id = req - comm->verbs.reqs;
 
   wr.sg_list = NULL;
   wr.num_sge = 0;
@@ -988,20 +1014,24 @@ ncclResult_t ncclIbIrecv(void* recvComm, int n, void** data, int* sizes, int* ta
   return ncclSuccess;
 }
 
-ncclResult_t ncclIbIflush(void* recvComm, void* data, int size, void* mhandle, void** request) {
+ncclResult_t ncclIbIflush(void* recvComm, int n, void** data, int* sizes, void** mhandles, void** request) {
   struct ncclIbRecvComm* comm = (struct ncclIbRecvComm*)recvComm;
-  if (comm->gpuFlush.enabled == 0 || size == 0) return ncclSuccess;
+  int last = -1;
+  for (int i=0; i<n; i++) if (sizes[i]) last = i;    
+  if (comm->gpuFlush.enabled == 0 || last == -1) return ncclSuccess;
 
+  // Only flush once using the last non-zero receive
   struct ncclIbRequest* req;
   NCCLCHECK(ncclIbGetRequest(&comm->verbs, &req));
+  req->type = NCCL_NET_IB_REQ_FLUSH;
   req->addr = &comm->sock.addr;
-  struct ibv_mr* mr = (struct ibv_mr*)mhandle;
+  struct ibv_mr* mr = (struct ibv_mr*)mhandles[last];
 
   struct ibv_send_wr wr;
   memset(&wr, 0, sizeof(wr));
-  wr.wr_id = (uint64_t)req;
+  wr.wr_id = req - comm->verbs.reqs;
 
-  wr.wr.rdma.remote_addr = (uint64_t)data;
+  wr.wr.rdma.remote_addr = (uint64_t)data[last];
   wr.wr.rdma.rkey = mr->rkey;
   wr.sg_list = &comm->gpuFlush.sge;
   wr.num_sge = 1;
@@ -1015,14 +1045,16 @@ ncclResult_t ncclIbIflush(void* recvComm, void* data, int size, void* mhandle, v
   return ncclSuccess;
 }
 
-ncclResult_t ncclIbTest(void* request, int* done, int* size) {
+ncclResult_t ncclIbTest(void* request, int* done, int* sizes) {
   struct ncclIbRequest *r = (struct ncclIbRequest*)request;
   *done = 0;
 
   while (1) {
     if (r->events == 0) {
       *done = 1;
-      if (size) *size = r->size;
+      if (sizes && r->type == NCCL_NET_IB_REQ_RECV) {
+        for (int i=0; i<r->nreqs; i++) sizes[i] = r->recv.sizes[i];
+      }
       NCCLCHECK(ncclIbFreeRequest(r));
       return ncclSuccess;
     }
@@ -1041,15 +1073,27 @@ ncclResult_t ncclIbTest(void* request, int* done, int* size) {
         return ncclSystemError;
       }
 
-      struct ncclIbRequest* doneReq = (struct ncclIbRequest*)wc->wr_id;
-      if (doneReq) {
-        if (wc->opcode == IBV_WC_RECV_RDMA_WITH_IMM) {
-          if (doneReq->size == -1)
-            doneReq->size = wc->imm_data;
-          else
-            doneReq->size += wc->imm_data;
+      struct ncclIbRequest* req = r->verbs->reqs+(wc->wr_id & 0xff);
+      if (req->type == NCCL_NET_IB_REQ_SEND) {
+        for (int i=0; i<req->nreqs; i++) {
+          struct ncclIbRequest* sendReq = r->verbs->reqs+((wc->wr_id >> (i*8)) & 0xff);
+          if ((sendReq->events <= 0)) return ncclInternalError;
+          sendReq->events--;
         }
-        doneReq->events--;
+      } else {
+        if (req && wc->opcode == IBV_WC_RECV_RDMA_WITH_IMM) {
+          if (req->type != NCCL_NET_IB_REQ_RECV) return ncclInternalError;
+          if (req->nreqs > 1) {
+            // In the case of a multi recv, we only set sizes to 0 or 1.
+            uint8_t* sizes = (uint8_t*)&wc->imm_data;
+            for (int i=0; i<req->nreqs; i++) {
+              req->recv.sizes[i] |= sizes[i];
+            }
+          } else {
+            req->recv.sizes[0] += wc->imm_data;
+          }
+        }
+        req->events--;
       }
     }
   }

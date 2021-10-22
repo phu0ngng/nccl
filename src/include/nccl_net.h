@@ -16,7 +16,7 @@
 #define NCCL_PTR_CUDA 0x2
 
 // Maximum number of requests per comm object
-#define NCCL_NET_MAX_REQUESTS 256
+#define NCCL_NET_MAX_REQUESTS 8
 
 typedef enum {NCCL_LOG_NONE=0, NCCL_LOG_VERSION=1, NCCL_LOG_WARN=2, NCCL_LOG_INFO=3, NCCL_LOG_ABORT=4, NCCL_LOG_TRACE=5} ncclDebugLogLevel;
 typedef enum {NCCL_INIT=1, NCCL_COLL=2, NCCL_P2P=4, NCCL_SHM=8, NCCL_NET=16, NCCL_GRAPH=32, NCCL_TUNING=64, NCCL_ENV=128, NCCL_ALLOC=256, NCCL_ALL=~0} ncclDebugLogSubSys;
@@ -66,10 +66,10 @@ typedef struct {
   ncclResult_t (*irecv)(void* recvComm, int n, void** data, int* sizes, int* tags, void** mhandles, void** request);
   // Perform a flush/fence to make sure all data received with NCCL_PTR_CUDA is
   // visible to the GPU
-  ncclResult_t (*iflush)(void* recvComm, void* data, int size, void* mhandle, void** request);
+  ncclResult_t (*iflush)(void* recvComm, int n, void** data, int* sizes, void** mhandles, void** request);
   // Test whether a request is complete. If size is not NULL, it returns the
   // number of bytes sent/received.
-  ncclResult_t (*test)(void* request, int* done, int* size);
+  ncclResult_t (*test)(void* request, int* done, int* sizes);
   // Close and free send/recv comm objects
   ncclResult_t (*closeSend)(void* sendComm);
   ncclResult_t (*closeRecv)(void* recvComm);

@@ -65,7 +65,7 @@ struct RunWork<ncclFuncSendRecv, T, RedOp, NCCL_ALGO_RING, NCCL_PROTO_SIMPLE> {
 
     tid -= args->warpStart * WARP_SIZE;
     int nthreads = args->nWarps * WARP_SIZE;
-    if (tid >= nthreads) return;
+    if (tid >= nthreads || args->peer == -1) return;
     if ((group%2) == 0) {
       runRecv(tid, nthreads, group, args);
     } else {

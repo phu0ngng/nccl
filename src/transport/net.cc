@@ -773,7 +773,7 @@ static ncclResult_t sendProxyProgress(struct ncclComm* comm, struct ncclProxyArg
           }
           if (ready) {
             // Data is ready, try to send.
-            NCCLCHECK(ncclNetIsend(resources->netSendComm, buff, size, resources->rank, mhandle, sub->requests+buffSlot));
+            NCCLCHECK(ncclNetIsend(resources->netSendComm, buff, size, resources->rank*1000+resources->remoteRank, mhandle, sub->requests+buffSlot));
             if (sub->requests[buffSlot] != NULL) {
               TRACE(NCCL_NET, "sendProxy [%ld/%d] Isend posted, req %p", sub->transmitted, buffSlot, sub->requests[buffSlot]);
               sizesFifo[buffSlot] = -1;
@@ -817,58 +817,105 @@ static ncclResult_t sendProxyProgress(struct ncclComm* comm, struct ncclProxyArg
 
 static ncclResult_t recvProxyProgress(struct ncclComm* comm, struct ncclProxyArgs* args) {
   if (args->state == ncclProxyOpReady) {
+    // Initialize subs and group them by same recvComm.
+    void* recvComm;
+    int groupSize = 0;
     for (int s=0; s<args->nsubs; s++) {
       struct ncclProxySubArgs* sub = args->subs+s;
+      if (s>0) { // Find next sub with the same recvComm
+        int next;
+        for (next=s; next<args->nsubs; next++) {
+          struct recvResources* nextRes = (struct recvResources*) (args->subs[next].connection->transportResources);
+          if (nextRes->netRecvComm == recvComm) break;
+        }
+        if (next == args->nsubs) { // Not found
+          groupSize = 0;
+        } else if (s != next) { // We found a sub later with the same recvComm ; swap subs
+          struct ncclProxySubArgs temp;
+          memcpy(&temp, sub, sizeof(struct ncclProxySubArgs));
+          memcpy(sub, args->subs+next, sizeof(struct ncclProxySubArgs));
+          memcpy(args->subs+next, &temp, sizeof(struct ncclProxySubArgs));
+        }
+      }
+      groupSize++;
       struct recvResources* resources = (struct recvResources*) (sub->connection->transportResources);
+      recvComm = resources->netRecvComm;
       // Round to next multiple of sliceSteps
       sub->base = ROUNDUP(resources->step, args->chunkSteps);
       sub->posted = sub->received = sub->transmitted = sub->done = 0;
+      for (int i=0; i<groupSize; i++) sub[-i].groupSize = groupSize;
     }
     args->state = ncclProxyOpProgress;
   }
   args->idle = 1;
   if (args->state == ncclProxyOpProgress) {
     int p = args->protocol;
-    for (int s=0; s<args->nsubs; s++) {
-      struct ncclProxySubArgs* sub = args->subs+s;
-      if (sub->done == sub->nsteps) continue;
-      struct recvResources* resources = (struct recvResources*) (sub->connection->transportResources);
-      void* mhandle = resources->mhandles[p];
-      int stepSize = resources->buffSizes[p] / NCCL_STEPS;
-      char* localBuff = NCCL_NET_MAP_GET_POINTER(&resources->map, cpu, buffs[p]);
-      int buffSize = stepSize*args->sliceSteps;
-      if (sub->nbytes < buffSize) buffSize = sub->nbytes;
-
-      if ((sub->posted < sub->done + NCCL_STEPS) && (sub->posted < sub->nsteps)) {
-        int buffSlot = (sub->base+sub->posted)%NCCL_STEPS;
-        char* ptr;
-        if (resources->shared) {
-          int sharedBuffSlot = sub->posted%NCCL_STEPS;
-          int offset;
-          NCCLCHECK(sharedBuffersGet(comm, sub->channelId, sharedBuffSlot, s, &offset));
-          volatile int* offsFifo = (volatile int*)resources->recvMem->offsFifo;
-          offsFifo[buffSlot] = offset;
-          ptr = localBuff+offset;
-        } else {
-          ptr = localBuff+buffSlot*stepSize;
-        }
-        NCCLCHECK(ncclNetIrecv(resources->netRecvComm, 1, (void**)&ptr, &buffSize, &resources->remoteRank, &mhandle, sub->requests+buffSlot));
-        if (sub->requests[buffSlot] != NULL) {
-          TRACE(NCCL_NET, "recvProxy [%ld/%d] posted recv request %p", sub->posted, buffSlot, sub->requests[buffSlot]);
-          sub->posted += args->sliceSteps;
-          args->idle = 0;
-          continue;
+    for (int s=0; s<args->nsubs; s+=args->subs[s].groupSize) {
+      struct ncclProxySubArgs* subGroup = args->subs+s;
+      int subCount = 0;
+      void* ptrs[NCCL_PROXY_MAX_SUBS];
+      int sizes[NCCL_PROXY_MAX_SUBS];
+      int tags[NCCL_PROXY_MAX_SUBS];
+      void* mhandles[NCCL_PROXY_MAX_SUBS];
+      
+      for (int i=0; i<subGroup->groupSize; i++) {
+        struct ncclProxySubArgs* sub = subGroup + i;
+        if (sub->posted < sub->nsteps) {
+          if (sub->posted >= sub->done + NCCL_STEPS) { subCount = 0; break; }
+          struct recvResources* resources = (struct recvResources*) (sub->connection->transportResources);
+          int stepSize = resources->buffSizes[p] / NCCL_STEPS;
+          char* localBuff = NCCL_NET_MAP_GET_POINTER(&resources->map, cpu, buffs[p]);
+          int buffSlot = (sub->base+sub->posted)%NCCL_STEPS;
+          if (resources->shared) {
+            int sharedBuffSlot = sub->posted%NCCL_STEPS;
+            int offset;
+            NCCLCHECK(sharedBuffersGet(comm, sub->channelId, sharedBuffSlot, s+i, &offset));
+            volatile int* offsFifo = (volatile int*)resources->recvMem->offsFifo;
+            offsFifo[buffSlot] = offset;
+            ptrs[subCount] = localBuff+offset;
+          } else {
+            ptrs[subCount] = localBuff+buffSlot*stepSize;
+          }
+          sizes[subCount] = stepSize*args->sliceSteps;
+          if (sub->nbytes < sizes[subCount]) sizes[subCount] = sub->nbytes;
+          tags[subCount] = resources->remoteRank*1000 + resources->rank;
+          mhandles[subCount] = resources->mhandles[p];
+          subCount++;
         }
       }
-      if (sub->posted > sub->received) {
-        int buffSlot = (sub->base+sub->received)%NCCL_STEPS;
-        int done, size;
-        NCCLCHECK(ncclNetTest(sub->requests[buffSlot], &done, &size));
+      if (subCount) {
+        uint64_t step = subGroup->posted;
+        struct recvResources* resources = (struct recvResources*) (subGroup->connection->transportResources);
+        void** requestPtr = subGroup->requests+(step%NCCL_STEPS);
+        NCCLCHECK(ncclNetIrecv(resources->netRecvComm, subCount, ptrs, sizes, tags, mhandles, requestPtr));
+        if (*requestPtr) {
+          for (int i=0; i<subGroup->groupSize; i++) subGroup[i].posted += args->sliceSteps;
+          args->idle = 0;
+        }
+      }
+
+      if (subGroup->posted > subGroup->received) {
+        uint64_t step = subGroup->received;
+        int done;
+        int sizes[NCCL_PROXY_MAX_SUBS];
+        for (int i=0; i<NCCL_PROXY_MAX_SUBS; i++) sizes[i] = 0;
+        NCCLCHECK(ncclNetTest(subGroup->requests[step%NCCL_STEPS], &done, sizes));
         if (done) {
-          sub->received += args->sliceSteps;
-          sub->requests[buffSlot] = NULL;
-          if (size > 0 && p == NCCL_PROTO_SIMPLE && resources->useGdr) {
+          int useGdr = 0;
+          int totalSize = 0;
+          for (int i=0; i<NCCL_PROXY_MAX_SUBS; i++) totalSize += sizes[i];
+          for (int i=0; i<subGroup->groupSize; i++) {
+            struct ncclProxySubArgs* sub = subGroup + i; 
+            sub->received += args->sliceSteps;
+            if (step < sub->nsteps) {
+              struct recvResources* resources = (struct recvResources*) (sub->connection->transportResources);
+              if (resources->useGdr) useGdr = 1;
+            }
+          }
+          subGroup->requests[step%NCCL_STEPS] = NULL;
+          if (totalSize > 0 && p == NCCL_PROTO_SIMPLE && useGdr) {
             // GDRCOPY support
+            struct recvResources* resources = (struct recvResources*) (subGroup->connection->transportResources);
             if (resources->gdcFlush) {
 #if defined (__x86_64__)
               // Force a PCI-E read from GPU memory
@@ -878,40 +925,66 @@ static ncclResult_t recvProxyProgress(struct ncclComm* comm, struct ncclProxyArg
               return ncclInternalError;
 #endif
             } else {
-              char* ptr = resources->shared ? localBuff+resources->recvMem->offsFifo[buffSlot] : localBuff+buffSlot*stepSize;
-              NCCLCHECK(ncclNetIflush(resources->netRecvComm, ptr, size, mhandle, sub->requests+buffSlot));
+              int subCount = 0;
+              for (int i=0; i<subGroup->groupSize; i++) {
+                struct ncclProxySubArgs* sub = subGroup + i; 
+                if (step < sub->nsteps) {
+                  struct recvResources* resources = (struct recvResources*) (sub->connection->transportResources);
+                  int stepSize = resources->buffSizes[p] / NCCL_STEPS;
+                  char* localBuff = NCCL_NET_MAP_GET_POINTER(&resources->map, cpu, buffs[p]);
+                  int buffSlot = (sub->base+sub->posted)%NCCL_STEPS;
+                  ptrs[subCount] = resources->shared ? localBuff+resources->recvMem->offsFifo[buffSlot] : localBuff+buffSlot*stepSize;
+                  mhandles[subCount] = resources->mhandles[p];
+                  subCount++;
+                }
+              }
+              struct recvResources* resources = (struct recvResources*) (subGroup->connection->transportResources);
+              NCCLCHECK(ncclNetIflush(resources->netRecvComm, subCount, ptrs, sizes, mhandles, subGroup->requests+(step%NCCL_STEPS)));
             }
           }
           args->idle = 0;
-          continue;
         }
       }
-      if (sub->received > sub->transmitted) {
-        // Progress flush operations
-        int buffSlot = (sub->base+sub->transmitted)%NCCL_STEPS;
+
+      if (subGroup->received > subGroup->transmitted) {
+        uint64_t step = subGroup->transmitted;
         int done = 1;
-        if (sub->requests[buffSlot]) NCCLCHECK(ncclNetTest(sub->requests[buffSlot], &done, NULL));
+        void* request = subGroup->requests[step%NCCL_STEPS];
+        if (request) NCCLCHECK(ncclNetTest(request, &done, NULL));
         if (done) {
-          sub->transmitted += args->sliceSteps;
-          __sync_synchronize();
-          volatile uint64_t* recvTail = resources->gdcSync ? resources->gdcSync : &resources->recvMem->tail;
-          *recvTail = sub->base + sub->transmitted;
-          if (resources->gdcSync) wc_store_fence(); // Flush out WC write
-          args->idle = 0;
-          continue;
+          for (int i=0; i<subGroup->groupSize; i++) {
+            struct ncclProxySubArgs* sub = subGroup + i;
+            sub->transmitted += args->sliceSteps;
+            if (step < sub->nsteps) {
+              __sync_synchronize();
+              struct recvResources* resources = (struct recvResources*) (sub->connection->transportResources);
+              volatile uint64_t* recvTail = resources->gdcSync ? resources->gdcSync : &resources->recvMem->tail;
+              *recvTail = sub->base + sub->transmitted;
+              if (resources->gdcSync) wc_store_fence(); // Flush out WC write
+            }
+            args->idle = 0;
+          }
         }
       }
-      if (sub->transmitted > sub->done) {
-        volatile uint64_t* sendHead = &resources->sendMem->head;
-        uint64_t done = *sendHead;
-        while (done > sub->base + sub->done &&
-            // LL and LL128 can acknowledge 0-bytes send before they even happen. Don't go past what we transmitted.
-            sub->transmitted > sub->done) {
-          sub->done += args->sliceSteps;
-          args->idle = 0;
-          if (sub->done == sub->nsteps) {
-            resources->step = sub->base + sub->nsteps;
-            args->done++;
+
+      for (int i=0; i<subGroup->groupSize; i++) { 
+        struct ncclProxySubArgs* sub = subGroup + i;
+        if (sub->done == sub->nsteps) continue;
+        if (sub->transmitted > sub->done) {
+          struct recvResources* resources = (struct recvResources*) (sub->connection->transportResources);
+          volatile uint64_t* sendHead = &resources->sendMem->head;
+          uint64_t done = *sendHead;
+          while (done > sub->base + sub->done &&
+              // LL and LL128 can acknowledge 0-bytes send before they even happen. Don't go past what we transmitted.
+              sub->transmitted > sub->done) {
+            sub->done += args->sliceSteps;
+            args->idle = 0;
+            if (sub->done == sub->nsteps) {
+              struct recvResources* resources = (struct recvResources*) (sub->connection->transportResources);
+              resources->step = sub->base + sub->nsteps;
+              args->done++;
+              break;
+            }
           }
         }
       }

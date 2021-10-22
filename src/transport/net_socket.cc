@@ -604,7 +604,7 @@ ncclResult_t ncclSocketIrecv(void* recvComm, int n, void** data, int* sizes, int
   return ncclSuccess;
 }
 
-ncclResult_t ncclSocketIflush(void* recvComm, void* data, int size, void* mhandle, void** request) {
+ncclResult_t ncclSocketIflush(void* recvComm, int n, void** data, int* sizes, void** mhandles, void** request) {
   // We don't support CUDA pointers, so we don't need a flush operation
   return ncclInternalError;
 }

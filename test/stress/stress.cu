@@ -572,6 +572,12 @@ testResult_t threadRunTests(struct threadArgs* targs) {
     if (c->rank >= nranks || c->root >= nranks) continue;
     TESTCHECK(testFuncArray[c->func](c, targs));
   }
+  TESTCHECK(testStreamSynchronize(targs->nGpus, targs->streams, targs->comms));
+
+#ifdef MPI_SUPPORT
+  MPI_Barrier(MPI_COMM_WORLD);
+#endif
+  if (targs->proc == 0) printf("%d NCCL calls done.\n", targs->nCalls);
   return testSuccess;
 }
 void* threadLauncher(void* thread_) {
