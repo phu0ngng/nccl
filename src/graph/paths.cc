@@ -319,9 +319,11 @@ compare:
       if (!allGood) {
         if (ncclParamIgnoreDisabledP2p()) {
           *p2p = 0;
-        } else {
-          WARN("P2P is disabled between GPUs %d and %d. This should not be the case given their connectivity, and is probably due to a hardware issue. If you still want to proceed, you can set NCCL_IGNORE_DISABLED_P2P=1.", g1, g2);
+        } else if (path->type <= PATH_NVB) {
+          WARN("P2P is disabled between NVLINK connected GPUs %d and %d. This should not be the case given their connectivity, and is probably due to a hardware issue. If you still want to proceed, you can set NCCL_IGNORE_DISABLED_P2P=1.", g1, g2);
           return ncclUnhandledCudaError;
+        } else if (path->type < PATH_SYS) {
+          INFO(NCCL_INIT, "P2P is disabled between connected GPUs %d and %d. You can repress this message with NCCL_IGNORE_DISABLED_P2P=1.", g1, g2);
         }
       }
     }
