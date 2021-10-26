@@ -77,7 +77,7 @@ void checkTopo(const char* xmlTopoFile, const char* xmlGraphFile, const char* pl
   struct ncclXml* xmlSystem;
   INFO(NCCL_GRAPH, "Loading platform %s", platform);
   CHECK(ncclCalloc(&xmlSystem, 1));
-  CHECK(ncclTopoGetXmlFromFile(xmlTopoFile, xmlSystem));
+  CHECK(ncclTopoGetXmlFromFile(xmlTopoFile, xmlSystem, 1));
   struct ncclTopoSystem* system;
   if (xmlSystem->maxIndex == 0) {
     printf("Error : no system in %s\n", xmlTopoFile);
@@ -94,11 +94,14 @@ void checkTopo(const char* xmlTopoFile, const char* xmlGraphFile, const char* pl
   CHECK(ncclTopoSearchInit(system));
   CHECK(ncclTopoPrint(system));
 
+  char* str = getenv("NCCL_CROSS_NIC");
+  int crossNic = str ? atoi(str) : 2;
+
   struct ncclTopoGraph ringGraph;
   memset(&ringGraph, 0, sizeof(ringGraph));
   ringGraph.id = 0;
   ringGraph.pattern = NCCL_TOPO_PATTERN_RING;
-  ringGraph.crossNic = 2;
+  ringGraph.crossNic = crossNic;
   ringGraph.collNet = 0;
   ringGraph.minChannels = 1;
   ringGraph.maxChannels = 16;
@@ -107,13 +110,14 @@ void checkTopo(const char* xmlTopoFile, const char* xmlGraphFile, const char* pl
   memset(&treeGraph, 0, sizeof(treeGraph));
   treeGraph.id = 1;
   treeGraph.pattern = NCCL_TOPO_PATTERN_BALANCED_TREE;
-  treeGraph.crossNic = 2;
+  treeGraph.crossNic = crossNic;
   treeGraph.collNet = 0;
 
   struct ncclTopoGraph cNetGraph;
   memset(&cNetGraph, 0, sizeof(cNetGraph));
   cNetGraph.id = 2;
   cNetGraph.pattern = NCCL_TOPO_PATTERN_TREE;
+  cNetGraph.crossNic = crossNic;
   cNetGraph.crossNic = 2;
   cNetGraph.collNet = 1;
 
@@ -228,6 +232,7 @@ int main(int argc, const char* argv[]) {
     RUN("DGX-1V-1G");
     RUN("GCP-Shared-NVS");
     RUN("Dual-Delta-VM");
+    RUN("ZionEX");
 #endif
     RUN("P9-6V");
     RUN("P9-4V");

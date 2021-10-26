@@ -8,6 +8,7 @@
 
 #include "nccl.h"
 #include <stdio.h>
+#include <cstdint>
 #include <algorithm>
 #include <curand.h>
 #ifdef MPI_SUPPORT
@@ -15,6 +16,7 @@
 #endif
 #include <pthread.h>
 #include "nccl1_compat.h"
+#include "timer.h"
 
 #define CUDACHECK(cmd) do {                         \
   cudaError_t err = cmd;                            \
@@ -55,8 +57,8 @@ typedef enum {
   if (r!= testSuccess) {                            \
     char hostname[1024];                            \
     getHostName(hostname, 1024);                    \
-    printf(" .. %s: Test failure %s:%d\n",          \
-         hostname,                                  \
+    printf(" .. %s pid %d: Test failure %s:%d\n",   \
+         hostname, getpid(),                        \
         __FILE__,__LINE__);                         \
     return r;                                       \
   }                                                 \
@@ -145,8 +147,6 @@ struct testThread {
   testResult_t ret;
 };
 
-#include <chrono>
-
 // Provided by common.cu
 extern void Barrier(struct threadArgs* args);
 extern testResult_t TimeTest(struct threadArgs* args, ncclDataType_t type, const char* typeName, ncclRedOp_t op,  const char* opName, int root);
@@ -186,6 +186,9 @@ static size_t wordSize(ncclDataType_t type) {
 #endif
       return 1;
     case ncclHalf:
+#if defined(__CUDA_BF16_TYPES_EXIST__)
+    case ncclBfloat16:
+#endif
     //case ncclFloat16:
       return 2;
     case ncclInt:
@@ -199,16 +202,19 @@ static size_t wordSize(ncclDataType_t type) {
     case ncclInt64:
     case ncclUint64:
     case ncclDouble:
-    //case ncclFloat64: 
+    //case ncclFloat64:
       return 8;
     default: return 0;
   }
 }
 
+extern int test_ncclVersion; // init'd with ncclGetVersion()
 extern ncclDataType_t test_types[ncclNumTypes];
 extern const char *test_typenames[ncclNumTypes];
 extern ncclRedOp_t test_ops[ncclNumOps];
 extern const char *test_opnames[ncclNumOps];
+extern int test_opnum;
+extern int test_typenum;
 
 static int ncclstringtotype(char *str) {
     for (int t=0; t<ncclNumTypes; t++) {
@@ -224,7 +230,7 @@ static int ncclstringtotype(char *str) {
 }
 
 static int ncclstringtoop (char *str) {
-    for (int o=0; o<ncclNumOps; o++) {
+    for (int o=0; o<test_opnum; o++) {
       if (strcmp(str, test_opnames[o]) == 0) {
         return o;
       }
@@ -236,6 +242,7 @@ static int ncclstringtoop (char *str) {
     return ncclSum;
 }
 
+extern int is_main_proc;
 extern thread_local int is_main_thread;
 #define PRINT if (is_main_thread) printf
 

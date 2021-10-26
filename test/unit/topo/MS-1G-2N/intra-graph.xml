@@ -1,5 +1,5 @@
 <graphs version="1">
-  <graph id="0" pattern="4" crossnic="0" nchannels="16" speedintra="42" speedinter="42" typeintra="LOC" typeinter="PIX" samechannels="1">
+  <graph id="0" pattern="4" crossnic="0" nchannels="16" speedintra="44" speedinter="44" typeintra="LOC" typeinter="PIX" samechannels="1">
     <channel>
       <gpu dev="0"/>
     </channel>
@@ -49,7 +49,7 @@
       <gpu dev="0"/>
     </channel>
   </graph>
-  <graph id="1" pattern="3" crossnic="0" nchannels="16" speedintra="42" speedinter="42" typeintra="LOC" typeinter="PIX" samechannels="1">
+  <graph id="1" pattern="3" crossnic="0" nchannels="16" speedintra="44" speedinter="44" typeintra="LOC" typeinter="PIX" samechannels="1">
     <channel>
       <gpu dev="0"/>
     </channel>
@@ -99,7 +99,7 @@
       <gpu dev="0"/>
     </channel>
   </graph>
-  <graph id="2" pattern="3" crossnic="0" nchannels="16" speedintra="42" speedinter="42" typeintra="LOC" typeinter="PIX" samechannels="1">
+  <graph id="2" pattern="3" crossnic="0" nchannels="16" speedintra="44" speedinter="44" typeintra="LOC" typeinter="PIX" samechannels="1">
     <channel>
       <gpu dev="0"/>
     </channel>
