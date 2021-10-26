@@ -195,6 +195,7 @@ void checkPlatform(const char* platform, int* errors, int* warnings) {
 #define RUN(...) checkPlatform(__VA_ARGS__, &errors, &warnings)
 
 int main(int argc, const char* argv[]) {
+  setenv("NCCL_IGNORE_DISABLED_P2P", "2", 0); // Disable hardware health checks (NVML)
   setlinebuf(stdout);
   char* str = getenv("NCCL_GRAPH_TEST_DUMP");
   if (str) dumpDiff = atoi(str);
