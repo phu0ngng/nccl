@@ -52,6 +52,7 @@ struct userIbDev {
 struct ncclIbDev ncclIbDevs[MAX_IB_DEVS];
 struct userIbDev userIbDevs[MAX_IB_DEVS];
 pthread_mutex_t ncclIbLock = PTHREAD_MUTEX_INITIALIZER;
+static int ncclIbRelaxedOrderingEnabled = 0;
 
 NCCL_PARAM(IbGidIndex, "IB_GID_INDEX", 0);
 NCCL_PARAM(IbTimeout, "IB_TIMEOUT", 14);
@@ -113,6 +114,17 @@ static int ncclIbWidth(int width) {
 }
 static int ncclIbSpeed(int speed) {
   return ibvSpeeds[firstBitSet(speed, sizeof(ibvSpeeds)/sizeof(int)-1)];
+}
+
+// Determine whether RELAXED_ORDERING is enabled and possible
+static int ncclIbRelaxedOrderingCapable(void) {
+  int roMode = ncclParamIbPciRelaxedOrdering();
+  ncclResult_t r = ncclInternalError;
+  if (roMode == 1 || roMode == 2) {
+    // Query IBVERBS_1.8 API - needed for IBV_ACCESS_RELAXED_ORDERING support
+    r = wrap_ibv_reg_mr_iova2(NULL, NULL, NULL, 0, 0, 0);
+  }
+  return r == ncclInternalError ? 0 : 1;
 }
 
 ncclResult_t ncclIbInit(ncclDebugLogger_t logFunction) {
@@ -199,13 +211,16 @@ ncclResult_t ncclIbInit(ncclDebugLogger_t logFunction) {
     } else {
       char line[1024];
       line[0] = '\0';
+      // Determine whether RELAXED_ORDERING is enabled and possible
+      ncclIbRelaxedOrderingEnabled = ncclIbRelaxedOrderingCapable();
       for (int d=0; d<ncclNIbDevs; d++) {
         snprintf(line+strlen(line), 1023-strlen(line), " [%d]%s:%d/%s", d, ncclIbDevs[d].devName,
             ncclIbDevs[d].port, ncclIbDevs[d].link == IBV_LINK_LAYER_INFINIBAND ? "IB" : "RoCE");
       }
       line[1023] = '\0';
       char addrline[SOCKET_NAME_MAXLEN+1];
-      INFO(NCCL_INIT|NCCL_NET, "NET/IB : Using%s ; OOB %s:%s", line, ncclIbIfName, socketToString(&ncclIbIfAddr, addrline));
+      INFO(NCCL_INIT|NCCL_NET, "NET/IB : Using%s %s; OOB %s:%s", line, ncclIbRelaxedOrderingEnabled ? "[RO]" : "",
+           ncclIbIfName, socketToString(&ncclIbIfAddr, addrline));
     }
     pthread_mutex_unlock(&ncclIbLock);
   }
@@ -641,18 +656,14 @@ ncclResult_t ncclIbRegMr(void* comm, void* data, int size, int type, void** mhan
   uint64_t regSize = addr+size - regAddr;
   regSize = ((regSize + REG_ALIGN-1) / REG_ALIGN ) * REG_ALIGN;
   struct ibv_mr* mr;
-  int roMode = ncclParamIbPciRelaxedOrdering();
   unsigned int flags = IBV_ACCESS_LOCAL_WRITE|IBV_ACCESS_REMOTE_WRITE|IBV_ACCESS_REMOTE_READ;
-  ncclResult_t r = ncclInternalError;
-  if (roMode == 1 || roMode == 2) {
-    // Try IBVERBS_1.8 API - needed for IBV_ACCESS_RELAXED_ORDERING support
-    r = wrap_ibv_reg_mr_iova2(&mr, verbs->pd, (void*)regAddr, regSize, (uintptr_t)regAddr, flags|IBV_ACCESS_RELAXED_ORDERING);
+  if (ncclIbRelaxedOrderingEnabled) {
+    // Use IBVERBS_1.8 API - needed for IBV_ACCESS_RELAXED_ORDERING support
+    NCCLCHECK(wrap_ibv_reg_mr_iova2(&mr, verbs->pd, (void*)regAddr, regSize, (uintptr_t)regAddr, flags|IBV_ACCESS_RELAXED_ORDERING));
   }
-  // If roMode is 2 then fallback and try old API
-  if (r == ncclInternalError && (roMode == 0 || roMode == 2)) {
-    r = wrap_ibv_reg_mr(&mr, verbs->pd, (void*)regAddr, regSize, flags);
+  else {
+    NCCLCHECK(wrap_ibv_reg_mr(&mr, verbs->pd, (void*)regAddr, regSize, flags));
   }
-  NCCLCHECK(r);
   *mhandle = (void*)mr;
   TRACE(NCCL_INIT,"regAddr %lx size %ld rkey %x", regAddr, regSize, mr->rkey);
   return ncclSuccess;

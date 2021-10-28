@@ -274,6 +274,7 @@ ncclResult_t wrap_ibv_reg_mr_iova2(struct ibv_mr **ret, struct ibv_pd *pd, void 
   if (ibv_internal_reg_mr_iova2 == NULL) {
     return ncclInternalError;
   }
+  if (ret == NULL) { return ncclSuccess; } // Assume dummy call
   IBV_PTR_CHECK(ibv_internal_reg_mr_iova2, ibv_internal_reg_mr_iova2(pd, addr, length, iova, access), *ret, NULL, "ibv_reg_mr_iova2");
 }
 
