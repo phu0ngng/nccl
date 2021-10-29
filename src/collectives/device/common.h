@@ -9,6 +9,7 @@
 
 #include "collectives.h"
 #include "devcomm.h"
+#include "op128.h"
 
 #if __CUDA_ARCH__ >= 800
 #define COLL_UNROLL 8
@@ -26,6 +27,26 @@ __device__ inline bool barrierReduceAny(int bit) {
     "bar.red.popc.u32 %0, 2, barr_pred;"
   "}" : "=r"(popc) : "r"(bit));
   return popc != 0;
+}
+
+// Copy src to dst and fill extra size with zeroes
+template<typename Tdst, typename Tsrc>
+__device__ void copyToShmem(Tdst *dst, Tsrc const *src, int tid, int nthreads) {
+  static_assert(sizeof(Tdst)%(2*sizeof(uint64_t)) == 0 && sizeof(Tsrc)%(2*sizeof(uint64_t)) == 0,
+      "copyToShmem needs sizes which are multiple of 16B");
+  static_assert(sizeof(Tdst) >= sizeof(Tsrc), "Tdst size is too small");
+  static_assert(sizeof(Tdst) <= WARP_SIZE*2*sizeof(uint64_t), "copyToShmem limited to 512B to make sure it can always be done in one cycle");
+  uint64_t *d = reinterpret_cast<uint64_t*>(dst);
+  uint64_t const *s = reinterpret_cast<uint64_t const*>(src);
+  uint64_t *shmemPtr = shmemCvtPtr(d);
+  int offset = 2*tid;
+  uint64_t v0, v1;
+  if (offset >= sizeof(Tsrc)/sizeof(uint64_t)) {
+    v0 = v1 = 0ULL;
+  } else {
+    v0 = s[offset] ; v1 = s[offset+1];
+  }
+  if (offset < sizeof(Tdst)/sizeof(uint64_t)) storeShmem128(shmemPtr+offset, v0, v1);
 }
 
 template<typename T>
@@ -99,10 +120,12 @@ struct ncclShmemData {
     struct ncclShmemGroup groups[NCCL_MAX_GROUPS];
   };
   uint64_t redOpArgs[NCCL_MAX_DIRECT_ARITY+1];
-  ncclDevComm comm;
-  ncclChannel channel;
-  ncclWork work;
+  struct ncclDevComm comm;
+  struct ncclChannel channel;
+  uint64_t pad;
+  struct ncclWork work;
 };
+static_assert(offsetof(struct ncclShmemData, work)%16 == 0, "shmem.work needs to be 16B aligned");
 
 static __device__ void ncclRedopPtrDeref(struct ncclWorkElem* we) {
   if (we->header.type != ncclWorkTypeUnused && we->redOpArgIsPtr) {
@@ -130,6 +153,7 @@ extern __shared__ ncclShmemData ncclShmem;
 template<ncclFunc_t Fn, typename T, typename RedOp, int Algo, int Proto, int FnIndex>
 __device__ void ncclKernel(struct ncclDevComm* comm, ncclWorkElem first)  {
   int tid = threadIdx.x;
+  int nthreads = blockDim.x;
   int bid = blockIdx.x;
 
   int turn = copyToShmem(&ncclShmem.comm, comm);
@@ -139,13 +163,8 @@ __device__ void ncclKernel(struct ncclDevComm* comm, ncclWorkElem first)  {
 
   // To optimize for latency, (only) the first operation is passed as argument.
   if (bid == 0 && first.header.type != ncclWorkTypeUnused) {
-    // Initialize all shmem workElems to unused before we copy the first operation
-    // to shmem as the partial copy won't zero all the other workElems.
-    // Use P2P work elems since they are the smallest and will therefore
-    // cover other cases.
-    if (tid < NCCL_MAX_WORK_ELEMENTS_P2P)
-      ncclShmem.work.p2pElems[tid].header.type = ncclWorkTypeUnused;
-    turn = copyToShmem(&ncclShmem.work.elems[0], &first, turn);
+    // Copy first elem to work and zero out the rest
+    copyToShmem(&ncclShmem.work, &first, tid, nthreads);
   }
   __syncthreads(); // publish ncclShmem
 
@@ -157,7 +176,7 @@ __device__ void ncclKernel(struct ncclDevComm* comm, ncclWorkElem first)  {
     goto SkipLoadWork;
 
   while (true) {
-    copyToShmem(&ncclShmem.work, &workFifoDev[workFifoIx]); // turn no longer helps
+    copyToShmem(&ncclShmem.work, &workFifoDev[workFifoIx], tid, nthreads);
     { // Check whether the last operation was aborted and make sure all threads exit
       int aborted = tid == 0 ? *comm->abortFlag : 0;
       if (barrierReduceAny(aborted)) // publish ncclShmem.work
@@ -171,6 +190,7 @@ __device__ void ncclKernel(struct ncclDevComm* comm, ncclWorkElem first)  {
     if (tid == 0)
       channel->index = workFifoIx; // write back to real channel, not shmem shadow
 
+    __syncwarp();
     if (ncclShmem.work.header.type == ncclWorkTypeColl) {
       if (tid < NCCL_MAX_WORK_ELEMENTS) ncclRedopPtrDeref(&ncclShmem.work.elems[tid]);
     } else if (ncclShmem.work.header.type == ncclWorkTypeRegColl) {
