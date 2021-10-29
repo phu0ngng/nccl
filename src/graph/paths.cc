@@ -263,9 +263,9 @@ ncclResult_t ncclTopoCheckP2p(struct ncclTopoSystem* system, int64_t id1, int64_
   struct ncclTopoLinkList* path = gpu1->paths[GPU]+g2;
   if (path->count == 2) {
     struct ncclTopoNode* intermediateNode = path->list[0]->remNode;
-    if (intermediateNode->type == GPU && intermediateRank) {
-      *intermediateRank = intermediateNode->gpu.rank;
+    if (intermediateNode->type == GPU) {
       intermediateIndex = intermediateNode - system->nodes[GPU].nodes;
+      if (intermediateRank) *intermediateRank = intermediateNode->gpu.rank;
     }
   }
 
@@ -298,32 +298,35 @@ compare:
   if (*p2p == 1) {
     // NCCL_IGNORE_DISABLED_P2P=2 is used by unit tests that don't want to
     // validate against NVML at all since they are pretending to be on other hw.
-    if (ncclParamIgnoreDisabledP2p() != 2) {
+    if (g1 != g2 && ncclParamIgnoreDisabledP2p() != 2) {
       nvmlDevice_t handles[3];
-      int handleN = 0;
-      NCCLCHECK(wrapNvmlDeviceGetHandleByIndex(g1, &handles[handleN++]));
-      if (intermediateIndex != -1) {
-        NCCLCHECK(wrapNvmlDeviceGetHandleByIndex(intermediateIndex, &handles[handleN++]));
-      }
-      NCCLCHECK(wrapNvmlDeviceGetHandleByIndex(g2, &handles[handleN++]));
-      bool allGood = true;
+      int indexes[3] = {-1,-1,-1};
+      int verticeN = 0;
 
-      for (int i=1; i < handleN; i++) {
+      indexes[verticeN] = g1;
+      NCCLCHECK(wrapNvmlDeviceGetHandleByIndex(g1, &handles[verticeN++]));
+      if (intermediateIndex != -1) {
+        indexes[verticeN] = intermediateIndex;
+        NCCLCHECK(wrapNvmlDeviceGetHandleByIndex(intermediateIndex, &handles[verticeN++]));
+      }
+      indexes[verticeN] = g2;
+      NCCLCHECK(wrapNvmlDeviceGetHandleByIndex(g2, &handles[verticeN++]));
+
+      for (int i=1; i < verticeN; i++) {
         nvmlGpuP2PStatus_t status;
         NCCLCHECK(wrapNvmlDeviceGetP2PStatus(handles[i-1], handles[i-0], NVML_P2P_CAPS_INDEX_READ, &status));
-        allGood &= status == NVML_P2P_STATUS_OK;
+        bool good = status == NVML_P2P_STATUS_OK;
         NCCLCHECK(wrapNvmlDeviceGetP2PStatus(handles[i-1], handles[i-0], NVML_P2P_CAPS_INDEX_WRITE, &status));
-        allGood &= status == NVML_P2P_STATUS_OK;
-      }
-
-      if (!allGood) {
-        if (ncclParamIgnoreDisabledP2p()) {
-          *p2p = 0;
-        } else if (path->type <= PATH_NVB) {
-          WARN("P2P is disabled between NVLINK connected GPUs %d and %d. This should not be the case given their connectivity, and is probably due to a hardware issue. If you still want to proceed, you can set NCCL_IGNORE_DISABLED_P2P=1.", g1, g2);
-          return ncclUnhandledCudaError;
-        } else if (path->type < PATH_SYS) {
-          INFO(NCCL_INIT, "P2P is disabled between connected GPUs %d and %d. You can repress this message with NCCL_IGNORE_DISABLED_P2P=1.", g1, g2);
+        good &= status == NVML_P2P_STATUS_OK;
+        if (!good) {
+          if (ncclParamIgnoreDisabledP2p()) {
+            *p2p = 0;
+          } else if (path->type <= PATH_NVB) {
+            WARN("P2P is disabled between NVLINK connected GPUs %d and %d. This should not be the case given their connectivity, and is probably due to a hardware issue. If you still want to proceed, you can set NCCL_IGNORE_DISABLED_P2P=1.", indexes[i-1], indexes[i-0]);
+            return ncclUnhandledCudaError;
+          } else if (path->type < PATH_SYS) {
+            INFO(NCCL_INIT, "P2P is disabled between connected GPUs %d and %d. You can repress this message with NCCL_IGNORE_DISABLED_P2P=1.", indexes[i-1], indexes[i-0]);
+          }
         }
       }
     }
