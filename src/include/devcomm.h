@@ -98,8 +98,9 @@ struct ncclConnInfo {
 };
 
 struct ncclProxyConnector {
+  int rank;
   int localRank;
-  int id;
+  struct ncclProxyConnection* connection;
   struct ncclComm* comm;
 };
 
@@ -198,7 +199,7 @@ static_assert(NCCL_WORK_SIZE % sizeof(struct ncclWorkElem) == 0, "ncclWorkElem s
 
 struct ncclWorkElemP2p {
   struct ncclWorkElemHeader header;
-  uint32_t peer;
+  int32_t peer;
   void* buff;
   size_t count;
   int chunkSize;

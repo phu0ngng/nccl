@@ -774,6 +774,7 @@ ncclResult_t ncclIbMultiSend(struct ncclIbSendComm* comm, int slot) {
   struct ncclIbRequest** reqs = comm->fifoReqs[slot];
   volatile struct ncclIbSendFifo* slots = comm->fifo[slot];
   int nreqs = slots[0].nreqs;
+  if (nreqs > NCCL_NET_IB_MAX_RECVS) return ncclInternalError;
 
   uint64_t wr_id = 0ULL;
 

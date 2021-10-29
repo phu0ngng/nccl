@@ -18,12 +18,28 @@ typedef ncclResult_t (*proxyProgressFunc_t)(struct ncclComm*, struct ncclProxyAr
 #define NCCL_PROXY_MAX_SUBS MAXCHANNELS
 static_assert(NCCL_MAX_WORK_ELEMENTS <= MAXCHANNELS, "Not enough sub space for max work elements");
 
+struct ncclProxyOp {
+  int channelId;
+  struct ncclProxyConnection* connection;
+  int nsteps;
+  ssize_t nbytes;
+  int root;
+  int sliceSteps;
+  int chunkSteps;
+  int chunkSize;
+  uint64_t opCount;
+  int protocol;
+  ncclDataType_t dtype;
+  ncclRedOp_t redOp;
+  ncclPattern_t pattern;
+  int next;
+};
+
 struct ncclProxySubArgs {
   int channelId;
   struct ncclProxyConnection* connection;
   int nsteps;
   ssize_t nbytes;
-  int chunkSize;
   int peer;
   int groupSize; // Number of consecutive sub operations sharing the same recvComm
 
@@ -51,7 +67,6 @@ struct ncclProxyArgs {
   ncclDataType_t dtype;
   ncclRedOp_t redOp;
   ncclPattern_t pattern;
-  int root;
   int state;
   char* sharedBuff[NCCL_STEPS];
   int sharedSize[NCCL_STEPS];
@@ -59,12 +74,21 @@ struct ncclProxyArgs {
   int idle;
 
   // Element linking
-  pthread_mutex_t mutex;
   struct ncclProxyArgs* next;
   struct ncclProxyArgs* nextPeer;
   struct ncclProxyArgs** proxyAppendPtr;
 };
 #define NCCL_MAX_NETDEVS 128
+
+// Used to communicate between main thread and service thread
+struct ncclProxyOpsPool {
+  struct ncclProxyOp ops[MAXCHANNELS*NCCL_MAX_OPS];
+  int nextOps;
+  int nextOpsEnd;
+  int freeOps;
+  volatile int lock;
+};
+
 
 struct ncclProxySharedP2p {
   int refcount;
@@ -122,6 +146,7 @@ struct ncclProxyState {
   int stop;
   union ncclSocketAddress* peerAddresses;
   struct ncclSocket* peerSocks;
+  struct ncclProxyOpsPool** opsPools;
 
   // Progress thread
   struct ncclProxyProgressState progressState;
@@ -144,9 +169,9 @@ enum proxyMode {
   proxyTo = 2
 };
 
-ncclResult_t ncclProxySaveColl(struct ncclComm* comm, struct ncclProxyArgs* args, int nranks);
-ncclResult_t ncclProxyComputeP2p(struct ncclInfo* info, struct ncclProxyArgs* args);
-ncclResult_t ncclProxySaveP2p(struct ncclComm* comm, struct ncclProxyArgs* args);
+ncclResult_t ncclProxySaveColl(struct ncclComm* comm, struct ncclProxyOp* proxyOp, int nranks);
+ncclResult_t ncclProxyComputeP2p(struct ncclInfo* info, struct ncclProxyOp* proxyOp);
+ncclResult_t ncclProxySaveP2p(struct ncclComm* comm, struct ncclProxyOp* proxyOp);
 ncclResult_t ncclProxyStart(struct ncclComm* comm);
 ncclResult_t ncclProxyInit(struct ncclComm* comm, struct ncclSocket* sock, union ncclSocketAddress* peerAddresses);
 ncclResult_t ncclProxyConnect(struct ncclComm* comm, int transport, int send, int rank, struct ncclProxyConnector* proxyConn);
@@ -154,7 +179,7 @@ enum ncclProxyMsgType {
   ncclProxyMsgInit = 1,
   ncclProxyMsgSetup = 2,
   ncclProxyMsgConnect = 3,
-  ncclProxyMsgAppend = 4,
+  ncclProxyMsgOpsAlloc = 4,
   ncclProxyMsgStart = 5,
   ncclProxyMsgClose = 6,
   ncclProxyMsgAbort = 7,

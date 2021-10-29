@@ -274,8 +274,8 @@ sched_delta:
               if (recv) comm->p2pRecvCount--;
               if (send) comm->p2pSendCount--;
             }
-            if (recv == NULL && comm->p2pRecvs[recvPeer]) comm->p2pRecvs[recvPeer]->recycle();
-            if (send == NULL && comm->p2pSends[sendPeer]) comm->p2pSends[sendPeer]->recycle();
+            if (recv && comm->p2pRecvs[recvPeer]->peakNext() == NULL) comm->p2pRecvs[recvPeer]->recycle();
+            if (send && comm->p2pSends[sendPeer]->peakNext() == NULL) comm->p2pSends[sendPeer]->recycle();
           }
           index++;
           if (index == 1 && deltas[1] == deltas[0]) index++;

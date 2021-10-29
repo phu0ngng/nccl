@@ -95,6 +95,11 @@ class ncclRecyclableList {
     return rv;
   }
 
+  T* peakNext() {
+    if (cursor == NULL || cursor == tail) return NULL;
+    return &cursor->data;
+  }
+
   // Recycle the list without freeing the space
   void recycle() {
     tail = cursor = head;

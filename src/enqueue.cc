@@ -508,7 +508,7 @@ static ncclResult_t getLoopInfo(struct ncclInfo* info) {
   return ncclSuccess;
 }
 
-static ncclResult_t computeColl(struct ncclInfo* info /* input */, struct ncclWorkElem* work, struct ncclProxyArgs* proxyArgs /* output */) {
+static ncclResult_t computeColl(struct ncclInfo* info /* input */, struct ncclWorkElem* work, struct ncclProxyOp* proxyOp /* output */) {
   int collNetTypeSupport = 0;
   // Check whether algo and proto have been preset (as in aggregation case)
   // If so, skip the calculation
@@ -585,25 +585,25 @@ comp_next:
   if (info->protocol == NCCL_PROTO_LL128) chunkEffectiveSize = (chunkSize / NCCL_LL128_LINEELEMS) * NCCL_LL128_DATAELEMS;
   //if (info->comm->rank == 0) printf("Coll %d, size %ld -> %dx%d, chunkSize %d (algo %d proto%d)\n", info->coll, info->nBytes, info->nChannels, info->nThreads, chunkSize, info->algorithm, info->protocol);
   int nLoops = (int)(DIVUP(info->nBytes, (((size_t)(info->nChannels))*info->nchunksPerLoop*chunkEffectiveSize)));
-  proxyArgs->subs[0].nsteps = info->nstepsPerLoop * nLoops * chunkSteps;
-  proxyArgs->sliceSteps = sliceSteps;
-  proxyArgs->chunkSteps = chunkSteps;
-  proxyArgs->chunkSize = chunkSize;
-  proxyArgs->protocol = info->protocol;
-  proxyArgs->dtype = info->datatype;
-  proxyArgs->redOp = info->algorithm != NCCL_ALGO_COLLNET ? ncclNumOps : // Only set redOp when using CollNet
+  proxyOp->nsteps = info->nstepsPerLoop * nLoops * chunkSteps;
+  proxyOp->sliceSteps = sliceSteps;
+  proxyOp->chunkSteps = chunkSteps;
+  proxyOp->chunkSize = chunkSize;
+  proxyOp->protocol = info->protocol;
+  proxyOp->dtype = info->datatype;
+  proxyOp->redOp = info->algorithm != NCCL_ALGO_COLLNET ? ncclNumOps : // Only set redOp when using CollNet
                      info->opFull.op==ncclDevPreMulSum || info->opFull.op==ncclDevSumPostDiv ? ncclSum : // Network sees avg as sum
                      info->op;
-  proxyArgs->pattern = info->pattern;
-  proxyArgs->root = info->root;
+  proxyOp->pattern = info->pattern;
+  proxyOp->root = info->root;
   // This is used by P2P to reduce the receive buffer size. We don't use it in collectives
   // because some protocols need to transmit more than the total size, plus they sometimes
   // round up
-  proxyArgs->subs[0].nbytes = stepSize*proxyArgs->sliceSteps;
+  proxyOp->nbytes = stepSize*proxyOp->sliceSteps;
 
   TRACE(NCCL_COLL,"opCount %lx slicesteps %d spl %d cpl %d nbytes %zi -> protocol %d nchannels %d nthreads %d, nloops %d nsteps %d chunksize %d comm %p",
-      proxyArgs->opCount, sliceSteps, info->nstepsPerLoop, info->nchunksPerLoop, info->nBytes, info->protocol, info->nChannels, info->nThreads,
-      nLoops, proxyArgs->subs[0].nsteps, chunkSize, info->comm);
+      proxyOp->opCount, sliceSteps, info->nstepsPerLoop, info->nchunksPerLoop, info->nBytes, info->protocol, info->nChannels, info->nThreads,
+      nLoops, proxyOp->nsteps, chunkSize, info->comm);
   return ncclSuccess;
 }
 
@@ -694,8 +694,7 @@ static ncclResult_t ncclSetupCollKernel(struct ncclInfo* info) {
   struct ncclQueueElem* eqElem;
   NCCLCHECK(comm->enqueueInfo->elemList->getNewElem(&eqElem));
   struct ncclWork* work = &eqElem->work;
-  eqElem->proxyArgs.nsubs = 1;
-  NCCLCHECK(computeColl(info, work->elems, &eqElem->proxyArgs));
+  NCCLCHECK(computeColl(info, work->elems, &eqElem->proxyOp));
 
   // Determine grid size
   struct cudaLaunchParams* params = comm->myParams;
@@ -977,10 +976,10 @@ static ncclResult_t enqueueSegOp(enum ncclWorkElemType type, struct ncclWork* el
 // Enqueue P2P op
 ncclResult_t ncclEnqueueP2pKernel(struct ncclComm* comm, struct ncclQueueElem* eqElem) {
   struct ncclWorkElemP2p* workElem = eqElem->work.p2pElems;
-  struct ncclProxyArgs* proxyArgs = &eqElem->proxyArgs;
+  struct ncclProxyOp* proxyOp = &eqElem->proxyOp;
 
   // Try to reuse last p2p operation if not full yet
-  struct ncclChannel* channel = comm->channels+proxyArgs->subs[0].channelId;
+  struct ncclChannel* channel = comm->channels+proxyOp->channelId;
   int opIndex = (channel->workFifoTail-1+NCCL_MAX_OPS)%NCCL_MAX_OPS;
   struct ncclWork* w = channel->workFifo+opIndex;
   int segment = -1;
@@ -997,7 +996,7 @@ ncclResult_t ncclEnqueueP2pKernel(struct ncclComm* comm, struct ncclQueueElem* e
   }
 
   // store work element into FIFO
-  NCCLCHECK(ncclProxySaveP2p(comm, proxyArgs));
+  NCCLCHECK(ncclProxySaveP2p(comm, proxyOp));
   NCCLCHECK(enqueueSegOp(ncclWorkTypeP2p, &eqElem->work, w, segment, &eqElem->buffRegInfo, channel, comm));
   return ncclSuccess;
 }
@@ -1009,7 +1008,7 @@ ncclResult_t ncclSetupP2pKernel(struct ncclInfo* info) {
   struct ncclQueueElem* eqElem;
   NCCLCHECK(comm->enqueueInfo->elemList->getNewElem(&eqElem));
   // The proxy code will set and tune the send/recv chunk size, make sure to run it first.
-  NCCLCHECK(ncclProxyComputeP2p(info, &eqElem->proxyArgs));
+  NCCLCHECK(ncclProxyComputeP2p(info, &eqElem->proxyOp));
   NCCLCHECK(computeP2pWorkElem(info, eqElem->work.p2pElems));
   // Compute grid size
   int channelId = info->channelId;
@@ -1033,20 +1032,20 @@ ncclResult_t ncclSetupP2pKernel(struct ncclInfo* info) {
 ncclResult_t ncclEnqueueCollKernel(struct ncclComm* comm, struct ncclQueueElem* eqElem, int aggMode) {
   struct ncclWork* work = &eqElem->work;
   struct ncclWorkElem* elem = work->elems;
-  struct ncclProxyArgs* proxyArgs = &eqElem->proxyArgs;
+  struct ncclProxyOp* proxyOp = &eqElem->proxyOp;
 
   int nChannels = elem->nChannels;
-  size_t channelSize = elem->count*ncclTypeSize(proxyArgs->dtype)/elem->nChannels;
-  enum ncclWorkElemType workElemType = proxyArgs->redOp == ncclNumOps ? ncclWorkTypeColl : ncclWorkTypeRegColl;  // redOp is only set when using CollNet
+  size_t channelSize = elem->count*ncclTypeSize(proxyOp->dtype)/elem->nChannels;
+  enum ncclWorkElemType workElemType = proxyOp->redOp == ncclNumOps ? ncclWorkTypeColl : ncclWorkTypeRegColl;  // redOp is only set when using CollNet
 
   for (int bid=0; bid<nChannels; bid++) {
     int channelId = getNextChannel(comm, aggMode);
     struct ncclChannel* channel = comm->channels+channelId;
 
     // Proxy
-    proxyArgs->subs[0].channelId = channelId;
-    proxyArgs->opCount = comm->collOpCount;
-    if (proxyArgs->subs[0].nsteps) NCCLCHECK(ncclProxySaveColl(comm, proxyArgs, comm->nRanks));
+    proxyOp->channelId = channelId;
+    proxyOp->opCount = comm->collOpCount;
+    if (proxyOp->nsteps) NCCLCHECK(ncclProxySaveColl(comm, proxyOp, comm->nRanks));
 
     elem->bid = bid % nChannels;
     struct ncclWork* w = NULL;
