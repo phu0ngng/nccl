@@ -28,7 +28,7 @@ testResult_t ReduceScatterInitData(struct threadArgs* args, ncclDataType_t type,
     int rank = ((args->proc*args->nThreads + args->thread)*args->nGpus + i);
     CUDACHECK(cudaMemset(args->recvbuffs[i], 0, args->expectedBytes));
     void* data = in_place ? args->recvbuffs[i] : args->sendbuffs[i];
-    TESTCHECK(InitData(data, sendcount, type, rep, rank));
+    TESTCHECK(InitData(data, sendcount, 0, type, op, rep, nranks, rank));
     CUDACHECK(cudaMemcpy(args->expected[i], args->recvbuffs[i], args->expectedBytes, cudaMemcpyDefault));
     TESTCHECK(InitDataReduce(args->expected[i], recvcount, rank*recvcount, type, op, rep, nranks));
     CUDACHECK(cudaDeviceSynchronize());
