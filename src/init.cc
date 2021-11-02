@@ -206,6 +206,7 @@ static ncclResult_t commFree(ncclComm_t comm) {
   free(comm->p2pRecvs);
   free(comm->asyncOps);
 
+  free(comm->rankToIntraNodeRank);
   free(comm->peerInfo);
   ncclTopoFree(comm->topo);
 
