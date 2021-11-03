@@ -903,6 +903,7 @@ ncclResult_t ncclIbIsend(void* sendComm, void* data, int size, int tag, void* mh
 
         // Shift unmatched elements in the FIFO
         for (int s=fifoHead; s>comm->fifoHead; s--) {
+          printf("Shift %d -> %d\n", s, s-1);
           // TODO Check this path works
           memcpy(comm->fifo+(s%MAX_REQUESTS), comm->fifo+((s-1)%MAX_REQUESTS), NCCL_NET_IB_MAX_RECVS*sizeof(struct ncclIbSendFifo));
           memcpy(comm->fifoReqs+(s%MAX_REQUESTS), comm->fifoReqs+((s-1)%MAX_REQUESTS), NCCL_NET_IB_MAX_RECVS*sizeof(struct ncclIbRequest*));
