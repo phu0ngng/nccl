@@ -209,7 +209,7 @@ ncclResult_t ncclGroupEnd() {
       int nNodes = comm->nNodes;
       int myIndex = 0;
       while (comm->nodeRanks[node].ranks[myIndex] != comm->rank && myIndex < comm->nodeRanks[node].nranks) myIndex++;
-      if (myIndex == comm->nodeRanks[node].nranks) return ncclInternalError;
+      if (myIndex == comm->nodeRanks[node].nranks) { WARN("Could not find my index"); return ncclInternalError; }
 
       // Compute how much to split operations
       // Natural step size matching buffer steps.
@@ -261,6 +261,11 @@ sched_delta:
                 // (total size == 0), otherwise set size to -1.
                 if (sendbytes == 0 && totSendBytes != 0) send = NULL;
                 if (recvbytes == 0 && totRecvBytes != 0) recv = NULL;
+                if (recvPeer == comm->rank) { // Check self send/recv
+                  if (sendPeer != comm->rank) { WARN("Sendrecv schedule not aligned for self"); ret = ncclInternalError; goto group_cleanup; }
+                  if (send && recv == NULL) { WARN("Trying to send to self without a matching recv"); ret = ncclInvalidUsage; goto group_cleanup; }
+                  if (send == NULL && recv) { WARN("Trying to recv to self without a matching send"); ret = ncclInvalidUsage; goto group_cleanup; }
+                }
                 if (recv) {
                   NCCLCHECKGOTO(scheduleRecv(comm, recvPeer, channelId, recvbytes, ((char*)recv->buff)+recvOffset), ret, group_cleanup);
                 }

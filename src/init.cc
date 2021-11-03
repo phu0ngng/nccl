@@ -727,10 +727,10 @@ static ncclResult_t initTransportsRank(struct ncclComm* comm, ncclUniqueId* comm
   int nodes = 0;
   for (int r=0; r<comm->nRanks; r++) {
     int node;
-    for (node=0; node<nodes && comm->nodeRanks[node].hostHash != comm->peerInfo[r].hostHash; node++);
+    for (node=0; node<nodes && comm->nodeRanks[node].firstRank != nodesFirstRank[r]; node++);
     if (node == nodes) {
       nodes++;
-      comm->nodeRanks[node].hostHash = comm->peerInfo[r].hostHash;
+      comm->nodeRanks[node].firstRank = nodesFirstRank[r];
     }
     comm->nodeRanks[node].nranks++;
     comm->rankNodes[r] = node;
@@ -741,7 +741,7 @@ static ncclResult_t initTransportsRank(struct ncclComm* comm, ncclUniqueId* comm
   }
   for (int r=0; r<comm->nRanks; r++) {
     int node;
-    for (node=0; node<comm->nNodes && comm->nodeRanks[node].hostHash != comm->peerInfo[r].hostHash; node++);
+    for (node=0; node<comm->nNodes && comm->nodeRanks[node].firstRank != nodesFirstRank[r]; node++);
     if (node == comm->nNodes) return ncclInternalError;
     comm->nodeRanks[node].ranks[comm->nodeRanks[node].nranks++] = r;
   }

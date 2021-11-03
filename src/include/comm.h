@@ -83,7 +83,7 @@ struct ncclUserRedOp {
 };
 
 struct ncclNodeRanks {
-  uint64_t hostHash;
+  int firstRank;
   int nranks;
   int* ranks;
 };
