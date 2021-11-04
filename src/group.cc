@@ -263,7 +263,8 @@ sched_delta:
               int sendRemaining = 1, recvRemaining = 1;
               int chunk = 0;
               do {
-                int channelId = (delta+comm->p2pChannels[chunk%comm->p2pnChannelsPerPeer]) % comm->p2pnChannels;
+                // Shuffle channels with s intra-node, and delta inter-node
+                int channelId = ((delta ? delta : s)+comm->p2pChannels[chunk%comm->p2pnChannelsPerPeer]) % comm->p2pnChannels;
                 ssize_t recvbytes = totRecvBytes-recvOffset;
                 ssize_t sendbytes = totSendBytes-sendOffset;
                 if (recvbytes > recvChunkSize) { recvbytes = recvChunkSize; } else { recvRemaining = 0; }
