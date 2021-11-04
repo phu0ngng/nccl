@@ -844,12 +844,16 @@ static ncclResult_t ncclSaveP2p(struct ncclInfo* info) {
   int peer = info->root;
   ssize_t nBytes = info->count*ncclTypeSize(info->datatype);
   int peerNode = comm->rankNodes[peer];
+  int peerIndex = comm->rankIndexes[peer];
+  int peerRanks = comm->nodeRanks[peerNode].nranks;
+  int rankIndex = comm->rankIndexes[comm->rank] % peerRanks;
   if (info->coll == ncclFuncSend) {
     if (peer != comm->rank) {
+      int step = (peerRanks + peerIndex - rankIndex)%peerRanks;
       int delta = (comm->nNodes + peerNode - comm->node) % comm->nNodes;
       // Mark channels that need pre-connect
       for (int c=0; c<comm->p2pnChannelsPerPeer; c++) {
-        int channelId = (delta+comm->p2pChannels[c]) % comm->p2pnChannels;
+        int channelId = ((delta ? delta : step)+comm->p2pChannels[c]) % comm->p2pnChannels;
         if (comm->channels[channelId].peers[peer].send[0].connected == 0) { // P2P uses only 1 connector
           comm->connectSend[peer] |= (1<<channelId);
           comm->connect = 1;
@@ -860,10 +864,11 @@ static ncclResult_t ncclSaveP2p(struct ncclInfo* info) {
     comm->p2pSendCount++;
   } else {
     if (peer != comm->rank) {
+      int step = (peerRanks + rankIndex - peerIndex)%peerRanks;
       int delta = (comm->nNodes + comm->node - peerNode) % comm->nNodes;
       // Mark channels that need pre-connect
       for (int c=0; c<comm->p2pnChannelsPerPeer; c++) {
-        int channelId = (delta+comm->p2pChannels[c]) % comm->p2pnChannels;
+        int channelId = ((delta ? delta : step)+comm->p2pChannels[c]) % comm->p2pnChannels;
         if (comm->channels[channelId].peers[peer].recv[0].connected == 0) { // P2P uses only 1 connector
           comm->connectRecv[peer] |= (1<<channelId);
           comm->connect = 1;
