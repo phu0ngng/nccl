@@ -696,6 +696,7 @@ ncclResult_t ncclProxyConnect(struct ncclComm* comm, int transport, int send, in
   if (comm->proxyState.peerSocks == NULL) {
     NCCLCHECK(ncclCalloc(&comm->proxyState.peerSocks, comm->localRanks));
     NCCLCHECK(ncclCalloc(&comm->proxyState.opsPools, comm->localRanks));
+    NCCLCHECK(ncclCalloc(&comm->proxyState.sharedDevMems, comm->localRanks));
     for (int r=0; r<comm->localRanks; r++) {
       comm->proxyState.peerSocks[r].fd = -1;
       comm->proxyState.peerSocks[r].abortFlag = comm->abortFlag;
@@ -1031,6 +1032,9 @@ ncclResult_t ncclProxyDestroy(struct ncclComm* comm) {
       if (state->peerSocks[i].fd != -1) {
         if (state->opsPools[i]) {
           NCCLCHECK(ncclShmClose(state->opsPools[i], NULL, sizeof(struct ncclProxyOpsPool)));
+        }
+        if (state->sharedDevMems[i]) {
+          CUDACHECK(cudaIpcCloseMemHandle(state->sharedDevMems[i]));
         }
         int type = ncclProxyMsgClose;
         NCCLCHECK(ncclSocketSend(state->peerSocks+i, &type, sizeof(int)));

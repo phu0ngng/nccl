@@ -144,9 +144,12 @@ struct ncclProxyState {
   pthread_t thread;
   struct ncclSocket* listenSock;
   int stop;
+
+  // Used by main thread
   union ncclSocketAddress* peerAddresses;
   struct ncclSocket* peerSocks;
   struct ncclProxyOpsPool** opsPools;
+  void** sharedDevMems;
 
   // Progress thread
   struct ncclProxyProgressState progressState;

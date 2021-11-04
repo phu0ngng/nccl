@@ -250,7 +250,11 @@ static ncclResult_t sendConnect(struct ncclComm* comm, struct ncclConnect* conne
       map->mems[NCCL_NET_MAP_DEVMEM].cpuPtr = NULL;
     }
     if (map->mems[NCCL_NET_MAP_SHARED_DEVMEM].size) {
-      CUDACHECK(cudaIpcOpenMemHandle((void**)&map->mems[NCCL_NET_MAP_SHARED_DEVMEM].gpuPtr, map->mems[NCCL_NET_MAP_SHARED_DEVMEM].ipc, cudaIpcMemLazyEnablePeerAccess));
+      void** sharedDevMemPtr = comm->proxyState.sharedDevMems+send->proxyConn.localRank;
+      if (*sharedDevMemPtr == NULL) {
+        CUDACHECK(cudaIpcOpenMemHandle(sharedDevMemPtr, map->mems[NCCL_NET_MAP_SHARED_DEVMEM].ipc, cudaIpcMemLazyEnablePeerAccess));
+      }
+      map->mems[NCCL_NET_MAP_SHARED_DEVMEM].gpuPtr = (char*)(*sharedDevMemPtr);
       map->mems[NCCL_NET_MAP_SHARED_DEVMEM].cpuPtr = NULL;
     }
   }
@@ -301,9 +305,6 @@ static ncclResult_t sendFree(struct ncclConnector* send) {
     NCCLCHECK(ncclShmClose(map->mems[NCCL_NET_MAP_HOSTMEM].cpuPtr, map->mems[NCCL_NET_MAP_HOSTMEM].gpuPtr, map->mems[NCCL_NET_MAP_HOSTMEM].size));
     if (map->mems[NCCL_NET_MAP_DEVMEM].size) {
       CUDACHECK(cudaIpcCloseMemHandle(map->mems[NCCL_NET_MAP_DEVMEM].gpuPtr));
-    }
-    if (map->mems[NCCL_NET_MAP_SHARED_DEVMEM].size) {
-      CUDACHECK(cudaIpcCloseMemHandle(map->mems[NCCL_NET_MAP_SHARED_DEVMEM].gpuPtr));
     }
   }
   return ncclSuccess;
