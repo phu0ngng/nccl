@@ -706,45 +706,44 @@ static ncclResult_t initTransportsRank(struct ncclComm* comm, ncclUniqueId* comm
   int *nodesFirstRank, *nodesTreePatterns;
   NCCLCHECK(ncclCalloc(&nodesFirstRank, nranks));
   NCCLCHECK(ncclCalloc(&nodesTreePatterns, nranks));
-  for (int i=0; i<nranks; i++) {
-    int node = -1;
-    int firstRank = allGather3Data[i].topoRanks.ringRecv[0];
-    for (int n=0; n<comm->nNodes; n++) {
-      if (nodesFirstRank[n] == firstRank) node = n;
-    }
-    if (node == -1) {
-      node = comm->nNodes++;
+  for (int r=0; r<nranks; r++) {
+    int node;
+    int firstRank = allGather3Data[r].topoRanks.ringRecv[0];
+    for (node=0; node<comm->nNodes && nodesFirstRank[node] != firstRank; node++);
+    if (node == comm->nNodes) {
+      comm->nNodes++;
       nodesFirstRank[node] = firstRank;
       // Record tree pattern of each node as they can be different depending on sm arch
-      nodesTreePatterns[node] = allGather3Data[i].tree.pattern;
+      nodesTreePatterns[node] = allGather3Data[r].tree.pattern;
     }
-    if (i == comm->rank) comm->node = node;
   }
-
-  // Compute comm->nodeRanks
+  // Compute nranks for each node
   NCCLCHECK(ncclCalloc(&comm->nodeRanks, comm->nNodes));
   NCCLCHECK(ncclCalloc(&comm->rankNodes, comm->nRanks));
-  int nodes = 0;
-  for (int r=0; r<comm->nRanks; r++) {
+  NCCLCHECK(ncclCalloc(&comm->rankIndexes, comm->nRanks));
+  for (int r=0; r<nranks; r++) {
     int node;
-    for (node=0; node<nodes && comm->nodeRanks[node].firstRank != nodesFirstRank[r]; node++);
-    if (node == nodes) {
-      nodes++;
-      comm->nodeRanks[node].firstRank = nodesFirstRank[r];
-    }
+    int firstRank = allGather3Data[r].topoRanks.ringRecv[0];
+    for (node=0; node<comm->nNodes && nodesFirstRank[node] != firstRank; node++);
+    if (node == comm->nNodes) return ncclInternalError;
+    comm->rankIndexes[r] = comm->nodeRanks[node].nranks;
     comm->nodeRanks[node].nranks++;
     comm->rankNodes[r] = node;
   }
+  // Allocate ranks arrays for each node
   for (int n=0; n<comm->nNodes; n++) {
     NCCLCHECK(ncclCalloc(&comm->nodeRanks[n].ranks, comm->nodeRanks[n].nranks));
     comm->nodeRanks[n].nranks = 0;
   }
+  // And fill the ranks arrays
   for (int r=0; r<comm->nRanks; r++) {
     int node;
-    for (node=0; node<comm->nNodes && comm->nodeRanks[node].firstRank != nodesFirstRank[r]; node++);
+    int firstRank = allGather3Data[r].topoRanks.ringRecv[0];
+    for (node=0; node<comm->nNodes && nodesFirstRank[node] != firstRank; node++);
     if (node == comm->nNodes) return ncclInternalError;
     comm->nodeRanks[node].ranks[comm->nodeRanks[node].nranks++] = r;
   }
+  comm->node = comm->rankNodes[comm->rank];
 
   int nChannelsOrig = comm->nChannels;
   struct ncclTopoRanks** allTopoRanks;

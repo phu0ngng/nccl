@@ -83,7 +83,6 @@ struct ncclUserRedOp {
 };
 
 struct ncclNodeRanks {
-  int firstRank;
   int nranks;
   int* ranks;
 };
@@ -110,6 +109,7 @@ struct ncclComm {
   int nNodes;
   struct ncclNodeRanks* nodeRanks;
   int* rankNodes;
+  int* rankIndexes;
 
   // Intra-node rank info
   int intraNodeGlobalRanks[NCCL_MAX_INTRA_RANKS];

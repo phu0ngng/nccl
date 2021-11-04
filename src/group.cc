@@ -207,9 +207,7 @@ ncclResult_t ncclGroupEnd() {
       struct ncclComm* comm = args->coll.comm;
       int node = comm->node;
       int nNodes = comm->nNodes;
-      int myIndex = 0;
-      while (comm->nodeRanks[node].ranks[myIndex] != comm->rank && myIndex < comm->nodeRanks[node].nranks) myIndex++;
-      if (myIndex == comm->nodeRanks[node].nranks) { WARN("Could not find my index"); return ncclInternalError; }
+      int rankIndex = comm->rankIndexes[comm->rank];
 
       // Compute how much to split operations
       // Natural step size matching buffer steps.
@@ -234,16 +232,29 @@ sched_delta:
           uint32_t sendNode = (node+delta)%nNodes;
           int steps = std::max(comm->nodeRanks[recvNode].nranks, comm->nodeRanks[sendNode].nranks);
           for (int s=0; s<steps; s++) {
-            int recvIndex = (s+myIndex)%comm->nodeRanks[recvNode].nranks;
+            int recvIndex = (rankIndex-s+comm->nodeRanks[recvNode].nranks)%comm->nodeRanks[recvNode].nranks;
             int recvPeer = s<comm->nodeRanks[recvNode].nranks ? comm->nodeRanks[recvNode].ranks[recvIndex] : -1;
-            int sendIndex = (s+myIndex)%comm->nodeRanks[sendNode].nranks;
+            int sendIndex = (rankIndex+s)%comm->nodeRanks[sendNode].nranks;
             int sendPeer = s<comm->nodeRanks[sendNode].nranks ? comm->nodeRanks[sendNode].ranks[sendIndex] : -1;
-            struct ncclP2Pinfo* recv = comm->p2pRecvs[recvPeer] ? comm->p2pRecvs[recvPeer]->getNext() : NULL;
-            struct ncclP2Pinfo* send = comm->p2pSends[sendPeer] ? comm->p2pSends[sendPeer]->getNext() : NULL;
+            struct ncclP2Pinfo* recv = recvPeer != -1 && comm->p2pRecvs[recvPeer] ? comm->p2pRecvs[recvPeer]->getNext() : NULL;
+            struct ncclP2Pinfo* send = sendPeer != -1 && comm->p2pSends[sendPeer] ? comm->p2pSends[sendPeer]->getNext() : NULL;
             if (recv != NULL || send != NULL) {
               ssize_t totRecvBytes = -1, totSendBytes = -1;
               if (recv != NULL) totRecvBytes = recv->nbytes;
               if (send != NULL) totSendBytes = send->nbytes;
+              if (recv) comm->p2pRecvCount--;
+              if (send) comm->p2pSendCount--;
+              if (recvPeer == comm->rank) { // Check self send/recv
+                if (sendPeer != comm->rank) { WARN("Sendrecv schedule not aligned for self"); ret = ncclInternalError; goto group_cleanup; }
+                if (send && recv == NULL) { WARN("Trying to send to self without a matching recv"); ret = ncclInvalidUsage; goto group_cleanup; }
+                if (send == NULL && recv) { WARN("Trying to recv to self without a matching send"); ret = ncclInvalidUsage; goto group_cleanup; }
+              }
+              void* recvBuff = recv ? recv->buff : NULL;
+              void* sendBuff = send ? send->buff : NULL;
+              // After we recycle p2pSend/Recv, we're no longer allowed to dereference send or recv, only use them as boolean NULL/not NULL.
+              if (recv && comm->p2pRecvs[recvPeer]->peakNext() == NULL) comm->p2pRecvs[recvPeer]->recycle();
+              if (send && comm->p2pSends[sendPeer]->peakNext() == NULL) comm->p2pSends[sendPeer]->recycle();
+
               ssize_t recvChunkSize = getP2pChunkSize(totRecvBytes, nChannelsMin, nChannelsMax, stepSize, SENDRECV_SLICEFACTOR*stepSize);
               ssize_t sendChunkSize = getP2pChunkSize(totSendBytes, nChannelsMin, nChannelsMax, stepSize, SENDRECV_SLICEFACTOR*stepSize);
 
@@ -261,26 +272,17 @@ sched_delta:
                 // (total size == 0), otherwise set size to -1.
                 if (sendbytes == 0 && totSendBytes != 0) send = NULL;
                 if (recvbytes == 0 && totRecvBytes != 0) recv = NULL;
-                if (recvPeer == comm->rank) { // Check self send/recv
-                  if (sendPeer != comm->rank) { WARN("Sendrecv schedule not aligned for self"); ret = ncclInternalError; goto group_cleanup; }
-                  if (send && recv == NULL) { WARN("Trying to send to self without a matching recv"); ret = ncclInvalidUsage; goto group_cleanup; }
-                  if (send == NULL && recv) { WARN("Trying to recv to self without a matching send"); ret = ncclInvalidUsage; goto group_cleanup; }
-                }
                 if (recv) {
-                  NCCLCHECKGOTO(scheduleRecv(comm, recvPeer, channelId, recvbytes, ((char*)recv->buff)+recvOffset), ret, group_cleanup);
+                  NCCLCHECKGOTO(scheduleRecv(comm, recvPeer, channelId, recvbytes, ((char*)recvBuff)+recvOffset), ret, group_cleanup);
                 }
                 if (send) {
-                  NCCLCHECKGOTO(scheduleSend(comm, sendPeer, channelId, sendbytes, ((char*)send->buff)+sendOffset), ret, group_cleanup);
+                  NCCLCHECKGOTO(scheduleSend(comm, sendPeer, channelId, sendbytes, ((char*)sendBuff)+sendOffset), ret, group_cleanup);
                 }
                 recvOffset += recvChunkSize;
                 sendOffset += sendChunkSize;
                 chunk++;
               } while (sendRemaining || recvRemaining);
-              if (recv) comm->p2pRecvCount--;
-              if (send) comm->p2pSendCount--;
             }
-            if (recv && comm->p2pRecvs[recvPeer]->peakNext() == NULL) comm->p2pRecvs[recvPeer]->recycle();
-            if (send && comm->p2pSends[sendPeer]->peakNext() == NULL) comm->p2pSends[sendPeer]->recycle();
           }
           index++;
           if (index == 1 && deltas[1] == deltas[0]) index++;
