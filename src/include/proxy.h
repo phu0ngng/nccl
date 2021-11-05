@@ -113,10 +113,10 @@ struct ncclProxyPeer {
 };
 
 struct ncclSharedNetComms {
-  void* sendComm;
-  void* recvComm;
-  int sendRefCount;
-  int recvRefCount;
+  void* sendComm[MAXCHANNELS];
+  void* recvComm[MAXCHANNELS];
+  int sendRefCount[MAXCHANNELS];
+  int recvRefCount[MAXCHANNELS];
 };
 
 struct ncclProxyPool;
