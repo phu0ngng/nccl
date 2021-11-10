@@ -449,7 +449,7 @@ static ncclResult_t sendProxyConnect(struct ncclProxyConnection* connection, str
     struct ncclSharedNetComms* comms = progressState->netComms[resources->netDev]+resources->remoteRank;
     if (comms->sendComm[resources->channelId] == NULL) NCCLCHECK(ncclNetConnect(resources->netDev, reqBuff, comms->sendComm+resources->channelId));
     resources->netSendComm = comms->sendComm[resources->channelId];
-    if (comms->sendComm) comms->sendRefCount[resources->channelId]++;
+    if (comms->sendComm[resources->channelId]) comms->sendRefCount[resources->channelId]++;
   } else {
     // Connect to remote peer
     NCCLCHECK(ncclNetConnect(resources->netDev, reqBuff, &resources->netSendComm));
@@ -559,7 +559,7 @@ static ncclResult_t recvProxyConnect(struct ncclProxyConnection* connection, str
     struct ncclSharedNetComms* comms = progressState->netComms[resources->netDev]+remoteRank;
     if (comms->recvComm[resources->channelId] == NULL) NCCLCHECK(ncclNetAccept(resources->netListenComm, comms->recvComm+resources->channelId));
     resources->netRecvComm = comms->recvComm[resources->channelId];
-    if (comms->recvComm) comms->recvRefCount[resources->channelId]++;
+    if (comms->recvComm[resources->channelId]) comms->recvRefCount[resources->channelId]++;
   } else {
     // Connect to remote peer
     NCCLCHECK(ncclNetAccept(resources->netListenComm, &resources->netRecvComm));
@@ -758,7 +758,7 @@ static ncclResult_t sendProxyProgress(struct ncclComm* comm, struct ncclProxyArg
           }
           if (ready) {
             // Data is ready, try to send.
-            NCCLCHECK(ncclNetIsend(resources->netSendComm, buff, size, resources->rank*1000+resources->remoteRank, mhandle, sub->requests+buffSlot));
+            NCCLCHECK(ncclNetIsend(resources->netSendComm, buff, size, (resources->rank<<16)+resources->remoteRank, mhandle, sub->requests+buffSlot));
             if (sub->requests[buffSlot] != NULL) {
               TRACE(NCCL_NET, "sendProxy [%ld/%d] Isend posted, req %p", sub->transmitted, buffSlot, sub->requests[buffSlot]);
               sizesFifo[buffSlot] = -1;
@@ -863,7 +863,7 @@ static ncclResult_t recvProxyProgress(struct ncclComm* comm, struct ncclProxyArg
           }
           sizes[subCount] = stepSize*args->sliceSteps;
           if (sub->nbytes < sizes[subCount]) sizes[subCount] = sub->nbytes;
-          tags[subCount] = resources->remoteRank*1000 + resources->rank;
+          tags[subCount] = (resources->remoteRank<<16) + resources->rank;
           mhandles[subCount] = resources->mhandles[p];
           subCount++;
         }

@@ -257,7 +257,7 @@ ncclResult_t ncclIbGetProperties(int dev, ncclNetProperties_t* props) {
 }
 
 // We need to support NCCL_NET_MAX_REQUESTS for each concurrent receive
-#define MAX_REQUESTS NCCL_NET_MAX_REQUESTS*NCCL_NET_IB_MAX_RECVS
+#define MAX_REQUESTS (NCCL_NET_MAX_REQUESTS*NCCL_NET_IB_MAX_RECVS)
 static_assert(MAX_REQUESTS <= 256, "request id are encoded in wr_id and we need up to 8 requests ids per completion");
 
 #define NCCL_IB_MAX_QPS 128
@@ -322,6 +322,7 @@ struct ncclIbSendFifo {
   int      size;
   uint32_t rkey;
   uint32_t nreqs;
+  uint32_t idx;
   uint64_t tag;
 };
 
@@ -354,7 +355,7 @@ struct ncclIbGpuFlush {
 };
 
 struct ncclIbRemFifo {
-  struct ncclIbSendFifo elems[MAX_REQUESTS];
+  struct ncclIbSendFifo elems[MAX_REQUESTS][NCCL_NET_IB_MAX_RECVS];
   uint64_t addr;
   uint32_t rkey;
   uint32_t tail;
@@ -643,7 +644,7 @@ ib_recv:
   // Retain remote fifo info and prepare my RDMA ops
   rComm->remFifo.rkey = remQpInfo.fifoRkey;
   rComm->remFifo.addr = remQpInfo.fifoAddr;
-  NCCLCHECK(wrap_ibv_reg_mr(&rComm->remFifo.mr, rComm->verbs.pd, &rComm->remFifo.elems, sizeof(struct ncclIbSendFifo)*MAX_REQUESTS, IBV_ACCESS_REMOTE_WRITE|IBV_ACCESS_LOCAL_WRITE|IBV_ACCESS_REMOTE_READ));
+  NCCLCHECK(wrap_ibv_reg_mr(&rComm->remFifo.mr, rComm->verbs.pd, &rComm->remFifo.elems, sizeof(struct ncclIbSendFifo)*MAX_REQUESTS*NCCL_NET_IB_MAX_RECVS, IBV_ACCESS_REMOTE_WRITE|IBV_ACCESS_LOCAL_WRITE|IBV_ACCESS_REMOTE_READ));
   rComm->remFifo.sge.lkey = rComm->remFifo.mr->lkey;
   if (ncclParamIbUseInline()) rComm->remFifo.flags = IBV_SEND_INLINE;
 
@@ -791,7 +792,6 @@ ncclResult_t ncclIbMultiSend(struct ncclIbSendComm* comm, int slot) {
     wr->wr.rdma.remote_addr = slots[r].addr;
     wr->wr.rdma.rkey = slots[r].rkey;
     wr->next = wr+1;
-    slots[r].nreqs = 0;
     wr_id += (reqs[r] - comm->verbs.reqs) << (r*8);
   }
 
@@ -867,58 +867,57 @@ ncclResult_t ncclIbIsend(void* sendComm, void* data, int size, int tag, void* mh
     if (*nreqsPtr == 0 ) { *request = NULL; return ncclSuccess; }
     nreqs = *nreqsPtr;
     // Wait until all data has arrived
-    for (int r=0; r<nreqs; r++) while(slots[r].nreqs != nreqs) sched_yield();
+    for (int r=1; r<nreqs; r++) while(slots[r].nreqs != nreqs) sched_yield();
     __sync_synchronize(); // order the nreqsPtr load against rkey load below
     for (int r=0; r<nreqs; r++) {
       volatile uint64_t * tagPtr = &slots[r].tag;
-      if (reqs[r] == NULL && (*tagPtr) == tag) {
-        // Sanity checks to catch user collective call count/size mismatches
-        // plus any potential programming errors
-        if (size > slots[r].size || slots[r].size < 0 || slots[r].addr == 0 || slots[r].rkey == 0) {
-          char line[SOCKET_NAME_MAXLEN+1];
-          WARN("NET/IB : peer %s collective mismatch error local size %d remote %d addr %lx rkey %x",
-              ncclSocketToString(&comm->sock.addr, line), size, slots[r].size, slots[r].addr, slots[r].rkey);
-          return ncclInternalError;
-        }
-        struct ncclIbRequest* req;
-        NCCLCHECK(ncclIbGetRequest(&comm->verbs, &req));
-        req->type = NCCL_NET_IB_REQ_SEND;
-        req->addr = &comm->sock.addr;
-        req->verbs = &comm->verbs;
-        req->nreqs = nreqs;
-        req->send.size = size;
-        req->send.data = data;
-        req->send.lkey = mr->lkey;
-        req->send.offset = 0;
-        req->addr = &comm->sock.addr;
-        req->events = comm->nqps;
-        *request = reqs[r] = req;
+      if (reqs[r] != NULL || (*tagPtr) != tag) continue;
 
-        // If this is a multi-recv, send only when all requests have matched.
-        for (int r=0; r<nreqs; r++) {
-          if (reqs[r] == NULL) return ncclSuccess;
-        }
-
-        NCCLCHECK(ncclIbMultiSend(comm, slot));
-
-        // Shift unmatched elements in the FIFO
-        for (int s=fifoHead; s>comm->fifoHead; s--) {
-          printf("Shift %d -> %d\n", s, s-1);
-          // TODO Check this path works
-          memcpy(comm->fifo+(s%MAX_REQUESTS), comm->fifo+((s-1)%MAX_REQUESTS), NCCL_NET_IB_MAX_RECVS*sizeof(struct ncclIbSendFifo));
-          memcpy(comm->fifoReqs+(s%MAX_REQUESTS), comm->fifoReqs+((s-1)%MAX_REQUESTS), NCCL_NET_IB_MAX_RECVS*sizeof(struct ncclIbRequest*));
-        }
-
-        // Clear slot->ready, as well as other fields to help debugging and sanity checks
-        memset(comm->fifo+(comm->fifoHead%MAX_REQUESTS), 0, NCCL_NET_IB_MAX_RECVS*sizeof(struct ncclIbSendFifo));
-        memset(comm->fifoReqs+(comm->fifoHead%MAX_REQUESTS), 0, NCCL_NET_IB_MAX_RECVS*sizeof(struct ncclIbRequest*));
-        comm->fifoHead++;
-        return ncclSuccess;
+      // Sanity checks to catch user collective call count/size mismatches
+      // plus any potential programming errors
+      if (size > slots[r].size || slots[r].size < 0 || slots[r].addr == 0 || slots[r].rkey == 0) {
+        char line[SOCKET_NAME_MAXLEN+1];
+        WARN("NET/IB : peer %s collective mismatch error local size %d remote %d addr %lx rkey %x",
+            ncclSocketToString(&comm->sock.addr, line), size, slots[r].size, slots[r].addr, slots[r].rkey);
+        return ncclInternalError;
       }
+      struct ncclIbRequest* req;
+      NCCLCHECK(ncclIbGetRequest(&comm->verbs, &req));
+      req->type = NCCL_NET_IB_REQ_SEND;
+      req->addr = &comm->sock.addr;
+      req->verbs = &comm->verbs;
+      req->nreqs = nreqs;
+      req->send.size = size;
+      req->send.data = data;
+      req->send.lkey = mr->lkey;
+      req->send.offset = 0;
+      req->addr = &comm->sock.addr;
+      req->events = comm->nqps;
+      *request = reqs[r] = req;
+
+      // If this is a multi-recv, send only when all requests have matched.
+      for (int r=0; r<nreqs; r++) {
+        if (reqs[r] == NULL) return ncclSuccess;
+      }
+
+      NCCLCHECK(ncclIbMultiSend(comm, slot));
+
+      // Shift unmatched elements in the FIFO
+      for (int s=fifoHead; s>comm->fifoHead; s--) {
+        printf("Shift %d -> %d\n", s-1, s);
+        memcpy(comm->fifo[s%MAX_REQUESTS], comm->fifo[(s-1)%MAX_REQUESTS], NCCL_NET_IB_MAX_RECVS*sizeof(struct ncclIbSendFifo));
+        memcpy(comm->fifoReqs[s%MAX_REQUESTS], comm->fifoReqs[(s-1)%MAX_REQUESTS], NCCL_NET_IB_MAX_RECVS*sizeof(struct ncclIbRequest*));
+      }
+
+      // Clear slots[0]->nreqs, as well as other fields to help debugging and sanity checks
+      memset(comm->fifo[comm->fifoHead%MAX_REQUESTS], 0, sizeof(struct ncclIbSendFifo));
+      memset(comm->fifoReqs[comm->fifoHead%MAX_REQUESTS], 0, NCCL_NET_IB_MAX_RECVS*sizeof(struct ncclIbRequest*));
+      comm->fifoHead++;
+      return ncclSuccess;
     }
     fifoHead++;
     if (fifoHead == comm->fifoHead + MAX_REQUESTS) {
-      WARN("Error: send FIFO is full yet no tag matched");
+      WARN("Error: send FIFO is full yet no tag matched %x", tag);
       return ncclInternalError;
     }
   }
@@ -929,13 +928,14 @@ ncclResult_t ncclIbPostFifo(struct ncclIbRecvComm* comm, int n, void** data, int
   memset(&wr, 0, sizeof(wr));
 
   int slot = comm->remFifo.tail%MAX_REQUESTS;
-  struct ncclIbSendFifo* localElem = comm->remFifo.elems + slot;
+  struct ncclIbSendFifo* localElem = comm->remFifo.elems[slot];
 
   for (int i=0; i<n; i++) {
     localElem[i].addr = (uint64_t)data[i];
     struct ibv_mr* mr = (struct ibv_mr*)mhandles[i];
     localElem[i].rkey = mr->rkey;
     localElem[i].nreqs = n;
+    localElem[i].idx = comm->remFifo.tail;
     localElem[i].size = sizes[i]; // Sanity/Debugging
     localElem[i].tag = tags[i];
   }

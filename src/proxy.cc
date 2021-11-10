@@ -16,7 +16,7 @@ static bool NeedProxy(int type, int pattern, int root, struct ncclRing* ring, in
   if (pattern == ncclPatternRing || pattern == ncclPatternRingTwice) return true;
 
   /* In chains, one rank does not need a proxy. Let's figure out which one it is */
-  // Which index in the reorganized rings should we compare root against */
+  /* Which index in the reorganized rings should we compare root against */
   const int myrank = 0, nextrank = 1, prevrank = nranks-1;
   int index = pattern == ncclPatternPipelineFrom ?
       /*                            no recv /  no send    if root = */
@@ -256,11 +256,10 @@ static ncclResult_t ProxyAppend(struct ncclProxyProgressState* state, struct ncc
       }
       if (proxyAppend->state != ncclProxyOpReady) {
         WARN("Proxy append on running operation");
-        while (1);
         return ncclInternalError;
       }
       if (proxyAppend->nsubs >= NCCL_PROXY_MAX_SUBS) {
-        WARN("Proxy append out of bound");
+        WARN("Proxy append out of bounds");
         return ncclInternalError;
       }
       memcpy(proxyAppend->subs+proxyAppend->nsubs, args->subs, sizeof(struct ncclProxySubArgs));
@@ -286,7 +285,7 @@ static ncclResult_t ProxyAppend(struct ncclProxyProgressState* state, struct ncc
       struct ncclProxyArgs* last = state->ops;
       while (last->next) last = last->next;
       last->next = args;
-      DEBUG_PROXY_PRINT("Insert  %5ld (%d/%5ld) as last element\n", OP_INDEX(args),shared, args->opCount);
+      DEBUG_PROXY_PRINT("Insert  %5ld (%d/%5ld) as last element\n", OP_INDEX(args), shared, args->opCount);
     }
     *(args->proxyAppendPtr) = args;
   }
