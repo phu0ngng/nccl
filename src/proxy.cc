@@ -575,10 +575,8 @@ ncclResult_t ncclProxyStart(struct ncclComm* comm) {
     if (sock->fd == -1) continue;
     struct ncclProxyOpsPool* pool = comm->proxyState.opsPools[r];
     if (pool == NULL || pool->nextOps == -1) continue;
-
-    int msg = ncclProxyMsgStart;
-    NCCLCHECK(ncclSocketSend(sock, &msg, sizeof(int)));
-    NCCLCHECK(ncclSocketSend(sock, &pool->nextOps, sizeof(int)));
+    struct { int msg, nextOps; } startMsg = { ncclProxyMsgStart, pool->nextOps };
+    NCCLCHECK(ncclSocketSend(sock, &startMsg, sizeof(startMsg)));
     pool->nextOps = pool->nextOpsEnd = -1;
   }
   comm->opCount++;
