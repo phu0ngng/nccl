@@ -934,7 +934,7 @@ collnet_cleanup:
         }
       }
     }
-    NCCLCHECK(ncclTransportP2pSetup(comm, NULL, 0));
+    NCCLCHECK(ncclTransportP2pSetup(comm, NULL, 1));
     free(nvbPeers);
   }
 

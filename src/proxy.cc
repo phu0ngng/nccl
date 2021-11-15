@@ -342,8 +342,8 @@ static ncclResult_t SaveProxy(struct ncclChannel* channel, int type, int peer, s
   struct ncclPeer* peerComm = channel->peers+peer;
   struct ncclConnector* connector = type == proxyRecv ? peerComm->recv+connIndex : peerComm->send+connIndex;
   if (connector->transportComm == NULL) {
-    WARN("Rank %d has no transport for %s peer %d on channel %d", connector->comm->rank,
-        type == proxyRecv ? "recv" : "send", peer, channel->id);
+    WARN("Rank %d has no transport for %s peer %d on channel %d/%d", connector->comm->rank,
+        type == proxyRecv ? "recv" : "send", peer, channel->id, connIndex);
     return ncclInternalError;
   }
   if (connector->transportComm->proxyProgress == NULL) return ncclSuccess;
@@ -426,11 +426,11 @@ ncclResult_t ncclProxySaveP2p(struct ncclComm* comm, struct ncclProxyOp* op) {
   if (op->pattern == ncclPatternRecv) {
     op->nsteps = DIVUP(op->nbytes, op->chunkSize);
     if (op->nsteps == 0) op->nsteps = 1;
-    NCCLCHECK(SaveProxy(channel, proxyRecv, op->root, op, 0));
+    NCCLCHECK(SaveProxy(channel, proxyRecv, op->root, op, 1));
   } else if (op->pattern == ncclPatternSend) {
     op->nsteps = DIVUP(op->nbytes, op->chunkSize);
     if (op->nsteps == 0) op->nsteps = 1;
-    NCCLCHECK(SaveProxy(channel, proxySend, op->root, op, 0));
+    NCCLCHECK(SaveProxy(channel, proxySend, op->root, op, 1));
   }
   return ncclSuccess;
 }
