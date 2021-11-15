@@ -108,7 +108,7 @@ ${DST_DIR}/comm_leak_test: ${DST_DIR}/comm_leak_test.o
 ${DST_DIR}/comm_leak_test_multi.o: comm_leak_test_multi.cc
 	@printf "Compiling  %-35s > %s\n" $< $@
 	@mkdir -p ${DST_DIR}
-	mpicxx $(CXXFLAGS) -I$(BUILDDIR)/include/ -o $@ -c $<
+	$(MPI_HOME)/bin/mpicxx $(CXXFLAGS) -I$(BUILDDIR)/include/ -o $@ -c $<
 
 ${DST_DIR}/comm_leak_test_multi: ${DST_DIR}/comm_leak_test_multi.o
 	@printf "Linking  %-35s > %s\n" $< $@
