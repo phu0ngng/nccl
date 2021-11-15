@@ -299,24 +299,19 @@ compare:
     // NCCL_IGNORE_DISABLED_P2P=2 is used by unit tests that don't want to
     // validate against NVML at all since they are pretending to be on other hw.
     if (g1 != g2 && ncclParamIgnoreDisabledP2p() != 2) {
-      nvmlDevice_t handles[3];
       int indexes[3] = {-1,-1,-1};
       int verticeN = 0;
+      NCCLCHECK(ncclNvmlEnsureInitialized());
 
-      indexes[verticeN] = g1;
-      NCCLCHECK(wrapNvmlDeviceGetHandleByIndex(g1, &handles[verticeN++]));
-      if (intermediateIndex != -1) {
-        indexes[verticeN] = intermediateIndex;
-        NCCLCHECK(wrapNvmlDeviceGetHandleByIndex(intermediateIndex, &handles[verticeN++]));
-      }
-      indexes[verticeN] = g2;
-      NCCLCHECK(wrapNvmlDeviceGetHandleByIndex(g2, &handles[verticeN++]));
+      indexes[verticeN++] = g1;
+      if (intermediateIndex != -1) indexes[verticeN++] = intermediateIndex;
+      indexes[verticeN++] = g2;
 
       for (int i=1; i < verticeN; i++) {
         nvmlGpuP2PStatus_t status;
-        NCCLCHECK(wrapNvmlDeviceGetP2PStatus(handles[i-1], handles[i-0], NVML_P2P_CAPS_INDEX_READ, &status));
+        status = ncclNvmlDevicePairs[indexes[i-1]][indexes[i-0]].p2pStatusRead;
         bool good = status == NVML_P2P_STATUS_OK;
-        NCCLCHECK(wrapNvmlDeviceGetP2PStatus(handles[i-1], handles[i-0], NVML_P2P_CAPS_INDEX_WRITE, &status));
+        status = ncclNvmlDevicePairs[indexes[i-1]][indexes[i-0]].p2pStatusWrite;
         good &= status == NVML_P2P_STATUS_OK;
         if (!good) {
           if (ncclParamIgnoreDisabledP2p()) {
