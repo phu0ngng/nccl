@@ -22,7 +22,7 @@ nvcc -g -o comm_leak_test comm_leak_test.cu --compiler-options="-fsanitize=leak"
     cudaError_t const status = (call);        \
     if (cudaSuccess != status) {              \
       fprintf(stderr,"CUDA call='%s' failed. Error %s (%d)\n", #call, cudaGetErrorString(status), status); \
-      throw std::runtime_error("CUDA error"); \
+      exit(EXIT_FAILURE);                     \
     }                                         \
   } while (0)
 
@@ -31,16 +31,16 @@ nvcc -g -o comm_leak_test comm_leak_test.cu --compiler-options="-fsanitize=leak"
     ncclResult_t const status = (call);                                                 \
     if (ncclSuccess != status) {                                                        \
       fprintf(stderr,"NCCL calll='%s' failed. Reason:%s\n", #call, ncclGetErrorString(status)); \
-      throw std::runtime_error("NCCL error");                                           \
+      exit(EXIT_FAILURE);                                                               \
     }                                                                                   \
   } while (0)
 
 int main(int argc, char** argv)
 {
-    int num_gpus{};
-    size_t reps{3};
-    size_t warmup{1};
-    int abort{};
+    int num_gpus = 0;
+    size_t reps = 3;
+    size_t warmup = 1;
+    int abort = 0;
 
     if (argc > 1) reps = atoi(argv[1]);
     if (argc > 2) num_gpus = atoi(argv[2]);
@@ -67,14 +67,12 @@ int main(int argc, char** argv)
     }
 
     // Sample the amount of free CUDA memory on all devices
-    size_t free[MAX_GPUS];
+    size_t free1[MAX_GPUS];
     size_t total;
     for (int i = 0; i < num_gpus; i++) {
       CUDA_TRY(cudaSetDevice(i));
-      CUDA_TRY(cudaMemGetInfo(&free[i], &total));
+      CUDA_TRY(cudaMemGetInfo(&free1[i], &total));
     }
-
-    //printf("CUDA memory free %zi total %zi\n", free, total);
 
     struct timeval start;
     struct timeval end;
@@ -98,8 +96,8 @@ int main(int argc, char** argv)
     for (int i = 0; i < num_gpus; i++) {
       CUDA_TRY(cudaSetDevice(i));
       CUDA_TRY(cudaMemGetInfo(&free2[i], &total));
-      //printf("GPU %d free %zi free2 %zi leaked %zi\n", i, free[i], free2[i], free[i]-free2[i]);
-      if (free2[i] < free[i]) leaked += free[i]-free2[i];
+      //printf("GPU %d free1 %zi free2 %zi leaked %zi\n", i, free1[i], free2[i], free1[i]-free2[i]);
+      if (free2[i] < free1[i]) leaked += free1[i]-free2[i];
     }
 
     cudaDeviceReset();

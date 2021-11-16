@@ -6,7 +6,7 @@ ifeq ($(MPI),1)
 MPI_HOME ?= $(realpath $(dir $(or \
 	$(realpath /usr/include/mpi.h),\
 	$(realpath /usr/lib/openmpi/include/mpi.h)))..)
-NVLDFLAGS += -L$(MPI_HOME)/lib -lmpi -lmpi_cxx
+NVLDFLAGS += -L$(MPI_HOME)/lib -lmpi
 NVCUFLAGS += -I$(MPI_HOME)/include
 endif
 ifeq ($(MPI_IBM),1)
@@ -104,11 +104,6 @@ ${DST_DIR}/comm_leak_test: ${DST_DIR}/comm_leak_test.o
 	@printf "Linking  %-35s > %s\n" $< $@
 	@mkdir -p ${DST_DIR}
 	$(NVCC) -o $@ $(NVCUFLAGS) --compiler-options="-fsanitize=leak" $^ ${NVLDFLAGS}
-
-${DST_DIR}/comm_leak_test_multi.o: comm_leak_test_multi.cc
-	@printf "Compiling  %-35s > %s\n" $< $@
-	@mkdir -p ${DST_DIR}
-	$(MPI_HOME)/bin/mpicxx $(CXXFLAGS) -I$(BUILDDIR)/include/ -o $@ -c $<
 
 ${DST_DIR}/comm_leak_test_multi: ${DST_DIR}/comm_leak_test_multi.o
 	@printf "Linking  %-35s > %s\n" $< $@

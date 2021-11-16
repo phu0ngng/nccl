@@ -1,20 +1,11 @@
 // Multi process/node reproducer for https://nvbugs/3363300
 
-/*
-
-mpicxx -g -o comm_leak_test_multi comm_leak_test_multi.cc -I$CUDA_HOME/include -L$CUDA_HOME/lib64 -I$NCCL_HOME/include -L$NCCL_HOME/lib -lnccl -lcudart
-
-*/
-
 #include <nccl.h>
 #include <mpi.h>
 
-#include <iostream>
-#include <cassert>
-#include <stdexcept>
-
 #include <stdlib.h>
 #include <sys/time.h>
+#include <assert.h>
 
 #define MAX_GPUS (32)
 
@@ -23,7 +14,7 @@ mpicxx -g -o comm_leak_test_multi comm_leak_test_multi.cc -I$CUDA_HOME/include -
     int status = call;                       \
     if (MPI_SUCCESS != status) {             \
       fprintf(stderr,"MPI call='%s' failed. Error %d\n", #call, status); \
-      throw std::runtime_error("MPI error"); \
+      exit(EXIT_FAILURE);                    \
     }                                        \
   } while (0)
 
@@ -32,7 +23,7 @@ mpicxx -g -o comm_leak_test_multi comm_leak_test_multi.cc -I$CUDA_HOME/include -
     cudaError_t const status = (call);        \
     if (cudaSuccess != status) {              \
       fprintf(stderr,"CUDA call='%s' failed. Error %s (%d)\n", #call, cudaGetErrorString(status), status); \
-      throw std::runtime_error("CUDA error"); \
+      exit(EXIT_FAILURE);                     \
     }                                         \
   } while (0)
 
@@ -41,7 +32,7 @@ mpicxx -g -o comm_leak_test_multi comm_leak_test_multi.cc -I$CUDA_HOME/include -
     ncclResult_t const status = (call);                                                 \
     if (ncclSuccess != status) {                                                        \
       fprintf(stderr,"NCCL calll='%s' failed. Reason:%s\n", #call, ncclGetErrorString(status)); \
-      throw std::runtime_error("NCCL error");                                           \
+      exit(EXIT_FAILURE);                                                               \
     }                                                                                   \
   } while (0)
 
@@ -50,23 +41,23 @@ int main(int argc, char** argv)
     MPI_TRY(MPI_Init(&argc, &argv));
 
     // Determine COMM_WORLD rank and size
-    int comm_rank{};
-    int comm_size{};
+    int comm_rank = 0;
+    int comm_size = 0;
     MPI_TRY(MPI_Comm_rank(MPI_COMM_WORLD, &comm_rank));
     MPI_TRY(MPI_Comm_size(MPI_COMM_WORLD, &comm_size));
 
     // Determine number of ranks per node
-    int local_rank{}, local_size{};
+    int local_rank = 0, local_size = 0;
     MPI_Comm lcomm;
     MPI_Comm_split_type(MPI_COMM_WORLD, MPI_COMM_TYPE_SHARED, 0, MPI_INFO_NULL, &lcomm);
     MPI_Comm_rank(lcomm, &local_rank);
     MPI_Comm_size(lcomm, &local_size);
     MPI_Comm_free(&lcomm);
 
-    int num_gpus{1}, phys_num_gpus{};
-    size_t reps{3};
-    size_t warmup{2};
-    int abort{};
+    int num_gpus = 1, phys_num_gpus = 0;
+    size_t reps = 3;
+    size_t warmup = 2;
+    int abort = 0;
 
     if (argc > 1) reps = atoi(argv[1]);
     if (argc > 2) num_gpus = atoi(argv[2]);
@@ -87,8 +78,8 @@ int main(int argc, char** argv)
     // Allocate and destroy an initial NCCL communicator
     // before sampling the CUDA free memory
     for (size_t i = 0; i < warmup; ++i) {
-      ncclComm_t nccl_comm[MAX_GPUS]{};
-      ncclUniqueId nccl_unique_id{};
+      ncclComm_t nccl_comm[MAX_GPUS];
+      ncclUniqueId nccl_unique_id;
       if (comm_rank == 0) {
         NCCL_TRY(ncclGetUniqueId(&nccl_unique_id));
       }
@@ -109,22 +100,20 @@ int main(int argc, char** argv)
     MPI_Barrier(MPI_COMM_WORLD);
 
     // Sample the amount of free CUDA memory on all devices
-    size_t free[MAX_GPUS];
+    size_t free1[MAX_GPUS];
     size_t total;
     for (int g = 0; g < num_gpus; g++) {
       CUDA_TRY(cudaSetDevice((local_rank*num_gpus)+g));
-      CUDA_TRY(cudaMemGetInfo(&free[g], &total));
+      CUDA_TRY(cudaMemGetInfo(&free1[g], &total));
     }
-
-    //printf("CUDA memory free %zi total %zi\n", free, total);
 
     struct timeval start;
     struct timeval end;
     gettimeofday(&start, NULL);
 
     for (size_t i = 0; i < reps; ++i) {
-      ncclComm_t nccl_comm[MAX_GPUS]{};
-      ncclUniqueId nccl_unique_id{};
+      ncclComm_t nccl_comm[MAX_GPUS];
+      ncclUniqueId nccl_unique_id;
       if (comm_rank == 0) {
         NCCL_TRY(ncclGetUniqueId(&nccl_unique_id));
       }
@@ -155,8 +144,8 @@ int main(int argc, char** argv)
     for (int g = 0; g < num_gpus; g++) {
       CUDA_TRY(cudaSetDevice((local_rank*num_gpus)+g));
       CUDA_TRY(cudaMemGetInfo(&free2[g], &total));
-      //printf("rank %d GPU %d free %zi free2 %zi leaked %zi\n", comm_rank, g, free[g], free2[g], free[g]-free2[g]);
-      if (free2[g] < free[g]) leaked += free[g]-free2[g];
+      //printf("rank %d GPU %d free %zi free2 %zi leaked %zi\n", comm_rank, g, free1[g], free2[g], free1[g]-free2[g]);
+      if (free2[g] < free1[g]) leaked += free1[g]-free2[g];
     }
 
     MPI_TRY(MPI_Allreduce(MPI_IN_PLACE, &leaked, sizeof(leaked), MPI_LONG, MPI_SUM, MPI_COMM_WORLD));
