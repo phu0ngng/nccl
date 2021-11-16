@@ -242,15 +242,15 @@ static ncclResult_t ProxyAppend(struct ncclProxyProgressState* state, struct ncc
 ncclResult_t ncclLocalOpAppend(struct ncclProxyConnector* proxyConn, struct ncclProxyOp* proxyOp) {
   struct ncclProxyOps* proxyOps = proxyConn->comm->proxyState.proxyOps;
   if (proxyOps == NULL) return ncclInternalError;
+  proxyOps += proxyConn->localRank;
   // Allocate pool if needed
-  if (proxyOps[proxyConn->localRank].pool == NULL) {
+  if (proxyOps->pool == NULL) {
     char poolPath[] = "/dev/shm/nccl-XXXXXX";
     NCCLCHECK(ncclProxyCall(proxyConn, ncclProxyMsgOpsAlloc, NULL, 0, poolPath+sizeof("/dev/shm/nccl-")-1, sizeof("XXXXXX")-1));
-    NCCLCHECK(ncclShmOpen(poolPath, sizeof(struct ncclProxyOpsPool), (void**)(&proxyOps[proxyConn->localRank].pool), NULL, 0));
+    NCCLCHECK(ncclShmOpen(poolPath, sizeof(struct ncclProxyOpsPool), (void**)(&proxyOps->pool), NULL, 0));
     proxyOps->nextOps = proxyOps->nextOpsEnd = -1;
   }
-  struct ncclProxyOpsPool* pool = proxyOps[proxyConn->localRank].pool;
-  proxyOps += proxyConn->localRank;
+  struct ncclProxyOpsPool* pool = proxyOps->pool;
 
   pthread_mutex_lock(&pool->mutex);
   while (pool->freeOps == -1) {
