@@ -25,7 +25,7 @@ CC_FILES += graph_test.cc model.cc data.cc xml_test.cc comm_leak_test.cc
 KCU_FILES := kernel_test.cu align_test.cu
 ifeq ($(MPI),1)
 #CU_FILES += ncclNet_test.cu ncclNet_read_write_stress_test.cu
-CC_FILES += comm_leak_test_multi.cc
+CU_FILES += comm_leak_test_multi.cu coll_leak_test_multi.cu
 endif
 OBJ_FILES:= $(CU_FILES:%.cu=${DST_DIR}/%.o) $(CC_FILES:%.cc=${DST_DIR}/%.o)
 EXE_FILES:= $(CU_FILES:%.cu=${DST_DIR}/%) $(CC_FILES:%.cc=${DST_DIR}/%)
@@ -110,6 +110,11 @@ ${DST_DIR}/comm_leak_test: ${DST_DIR}/comm_leak_test.o
 	fi
 
 ${DST_DIR}/comm_leak_test_multi: ${DST_DIR}/comm_leak_test_multi.o
+	@printf "Linking  %-35s > %s\n" $< $@
+	@mkdir -p ${DST_DIR}
+	$(NVCC) -o $@ $(NVCUFLAGS) ${NVLDFLAGS} $^
+
+${DST_DIR}/coll_leak_test_multi: ${DST_DIR}/coll_leak_test_multi.o
 	@printf "Linking  %-35s > %s\n" $< $@
 	@mkdir -p ${DST_DIR}
 	$(NVCC) -o $@ $(NVCUFLAGS) ${NVLDFLAGS} $^
