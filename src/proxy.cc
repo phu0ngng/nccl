@@ -527,7 +527,7 @@ ncclResult_t ncclProxyStart(struct ncclComm* comm) {
     struct ncclSocket* sock = comm->proxyState.peerSocks+r;
     if (sock->fd == -1) continue;
     struct ncclProxyOps* proxyOps = comm->proxyState.proxyOps+r;
-    if (proxyOps == NULL || proxyOps->nextOps == -1) continue;
+    if (proxyOps->pool == NULL || proxyOps->nextOps == -1) continue;
     pthread_mutex_lock(&proxyOps->pool->mutex);
     if (proxyOps->pool->nextOps == -1) {
       proxyOps->pool->nextOps = proxyOps->nextOps;
@@ -556,11 +556,13 @@ ncclResult_t ncclProxyProgressDestroy(struct ncclComm* comm) {
   struct ncclProxyProgressState* state = &comm->proxyState.progressState;
 
   // Request the proxy to stop and then wake it
-  pthread_mutex_lock(&state->opsPool->mutex);
-  state->stop = true;
-  pthread_cond_signal(&state->opsPool->cond);
-  pthread_mutex_unlock(&state->opsPool->mutex);
-  if (state->thread) pthread_join(state->thread, NULL);
+  if (state->opsPool) {
+    pthread_mutex_lock(&state->opsPool->mutex);
+    state->stop = true;
+    pthread_cond_signal(&state->opsPool->cond);
+    pthread_mutex_unlock(&state->opsPool->mutex);
+    pthread_join(state->thread, NULL);
+  }
 
   // Free off any memory allocated for the proxy arg pools
   while (state->pools != NULL) {
