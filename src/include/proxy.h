@@ -83,12 +83,18 @@ struct ncclProxyArgs {
 // Used to communicate between main thread and service thread
 struct ncclProxyOpsPool {
   struct ncclProxyOp ops[MAXCHANNELS*NCCL_MAX_OPS];
-  int nextOps;
-  int nextOpsEnd;
-  int freeOps;
-  volatile int lock;
+  volatile int nextOps;
+  volatile int nextOpsEnd;
+  volatile int freeOps;
+  pthread_mutex_t mutex;
+  pthread_cond_t cond;
 };
 
+struct ncclProxyOps {
+  ncclProxyOpsPool* pool;
+  int nextOps;
+  int nextOpsEnd;
+};
 
 struct ncclProxySharedP2p {
   int refcount;
@@ -121,21 +127,17 @@ struct ncclSharedNetComms {
 
 struct ncclProxyPool;
 struct ncclProxyProgressState {
+  // Used by main threads to send work to progress thread
+  struct ncclProxyOpsPool* opsPool;
+  char opsPoolShmSuffix[6];
+
   pthread_t thread;
-  pthread_cond_t cond;
-  pthread_mutex_t opsMutex;
-  pthread_mutex_t poolMutex;
   bool stop;
   struct ncclProxyPeer** localPeers;
   struct ncclSharedNetComms* netComms[NCCL_MAX_NETDEVS];
   struct ncclProxySharedCollNet collNet;
-  struct ncclProxyArgs* ops;           // Running operations, used by proxy thread
-  struct ncclProxyArgs* postedOps;     // Posted operations, shared between proxy and main thread, locked with opsMutex
-  struct ncclProxyArgs* postedOpsEnd;
-  struct ncclProxyArgs* pool;          // Free operations for main thread
-  struct ncclProxyArgs* poolFreed;     // Freed operations by the progress thread
-  struct ncclProxyArgs* poolReturned;  // Shared between main and progress thread, lock with poolMutex
-
+  struct ncclProxyArgs* ops;
+  struct ncclProxyArgs* pool;
   struct ncclProxyPool* pools;
 };
 
@@ -148,7 +150,7 @@ struct ncclProxyState {
   // Used by main thread
   union ncclSocketAddress* peerAddresses;
   struct ncclSocket* peerSocks;
-  struct ncclProxyOpsPool** opsPools;
+  struct ncclProxyOps* proxyOps;
   void** sharedDevMems;
 
   // Progress thread
