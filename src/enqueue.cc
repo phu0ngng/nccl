@@ -854,7 +854,7 @@ static ncclResult_t ncclSaveP2p(struct ncclInfo* info) {
       // Mark channels that need pre-connect
       for (int c=0; c<comm->p2pnChannelsPerPeer; c++) {
         int channelId = ((delta ? delta : step)+comm->p2pChannels[c]) % comm->p2pnChannels;
-        if (comm->channels[channelId].peers[peer].send[1].connected == 0) { // P2P uses only 1 connector
+        if (comm->channels[channelId].peers[peer].send[0].connected == 0) { // P2P uses only 1 connector
           comm->connectSend[peer] |= (1<<channelId);
           comm->connect = 1;
         }
@@ -869,7 +869,7 @@ static ncclResult_t ncclSaveP2p(struct ncclInfo* info) {
       // Mark channels that need pre-connect
       for (int c=0; c<comm->p2pnChannelsPerPeer; c++) {
         int channelId = ((delta ? delta : step)+comm->p2pChannels[c]) % comm->p2pnChannels;
-        if (comm->channels[channelId].peers[peer].recv[1].connected == 0) { // P2P uses only 1 connector
+        if (comm->channels[channelId].peers[peer].recv[0].connected == 0) { // P2P uses only 1 connector
           comm->connectRecv[peer] |= (1<<channelId);
           comm->connect = 1;
         }
