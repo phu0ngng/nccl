@@ -41,9 +41,8 @@ struct ncclProxySubArgs {
   int nsteps;
   ssize_t nbytes;
   int peer;
-  int groupSize; // Number of consecutive sub operations sharing the same recvComm
 
-  // Internal state
+  int groupSize; // Number of consecutive sub operations sharing the same recvComm
   uint64_t base;
   uint64_t posted;
   uint64_t received;
