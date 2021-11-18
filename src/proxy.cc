@@ -32,22 +32,13 @@ struct ncclProxyPool {
   struct ncclProxyArgs elems[PROXYARGS_ALLOCATE_SIZE];
 };
 
-static ncclResult_t allocateArgs(struct ncclComm* comm, struct ncclProxyArgs** argsptr) {
-  struct ncclProxyProgressState* state = &comm->proxyState.progressState;
+static ncclResult_t allocateArgs(struct ncclProxyProgressState* state, struct ncclProxyArgs** argsptr) {
   struct ncclProxyArgs* elem;
   if (state->pool == NULL) {
     // Allocate a new pool of elements. Make sure we allocate the memory close
     // to the network thread
     struct ncclProxyPool* newPool;
-    cpu_set_t affinitySave;
-    if (CPU_COUNT(&comm->cpuAffinity)) {
-      sched_getaffinity(0, sizeof(cpu_set_t), &affinitySave);
-      sched_setaffinity(0, sizeof(cpu_set_t), &comm->cpuAffinity);
-    }
     NCCLCHECK(ncclCalloc(&newPool, 1));
-    if (CPU_COUNT(&comm->cpuAffinity)) {
-      sched_setaffinity(0, sizeof(cpu_set_t), &affinitySave);
-    }
 
     struct ncclProxyArgs* newElems = newPool->elems;
     // Chain newly allocated elements
@@ -187,42 +178,68 @@ ncclResult_t dumpProxyState(struct ncclProxyProgressState* state) {
   return ncclSuccess;
 }
 
-static ncclResult_t ProxyAppend(struct ncclProxyProgressState* state, struct ncclProxyArgs* args) {
-  struct ncclProxyArgs* proxyAppend = *args->proxyAppendPtr;
-  int shared = args->subs[0].connection->shared;
+static ncclResult_t ncclProxyOpToArgs(struct ncclProxyOp* op, struct ncclProxyArgs* args, int subIndex) {
+  if (subIndex == 0) memset(args, 0, sizeof(struct ncclProxyArgs));
+  struct ncclProxySubArgs* sub = args->subs+subIndex;
+  sub->channelId = op->channelId;
+  sub->connection = op->connection;
+  sub->nsteps = op->nsteps;
+  sub->nbytes = op->nbytes;
+  sub->peer = op->root;
+  args->nsubs = subIndex+1;
+  if (subIndex) return ncclSuccess;
+  args->done = 0;
+  args->sliceSteps = op->sliceSteps;
+  args->chunkSteps = op->chunkSteps;
+  args->chunkSize = op->chunkSize;
+  args->opCount = op->opCount;
+  args->protocol = op->protocol;
+  args->dtype = op->dtype;
+  args->redOp = op->redOp;
+  args->pattern = op->pattern;
+  args->state = ncclProxyOpReady;
+  args->progress = op->connection->tcomm->proxyProgress;
+  args->proxyAppendPtr = op->connection->proxyAppendPtr;
+  return ncclSuccess;
+}
 
-  if (proxyAppend) {
-    if (shared && proxyAppend->opCount == args->opCount) {
-      if ((proxyAppend->sliceSteps != args->sliceSteps) ||
-          (proxyAppend->chunkSteps != args->chunkSteps) ||
-          (proxyAppend->protocol != args->protocol) ||
-          (proxyAppend->dtype != args->dtype) ||
-          (proxyAppend->redOp != args->redOp)) {
+static ncclResult_t ProxyAppend(struct ncclProxyProgressState* state, struct ncclProxyOp* op) {
+  struct ncclProxyConnection* connection = op->connection;
+  int shared = connection->shared;
+  struct ncclProxyArgs* args = *connection->proxyAppendPtr;
+
+  if (args) {
+    if (shared && args->opCount == op->opCount) {
+      if ((args->sliceSteps != op->sliceSteps) ||
+          (args->chunkSteps != op->chunkSteps) ||
+          (args->protocol != op->protocol) ||
+          (args->dtype != op->dtype) ||
+          (args->redOp != op->redOp)) {
         WARN("Proxy append mismatch");
         return ncclInternalError;
       }
-      if (proxyAppend->state != ncclProxyOpReady) {
+      if (args->state != ncclProxyOpReady) {
         WARN("Proxy append on running operation");
         return ncclInternalError;
       }
-      if (proxyAppend->nsubs >= NCCL_PROXY_MAX_SUBS) {
+      if (args->nsubs >= NCCL_PROXY_MAX_SUBS) {
         WARN("Proxy append out of bounds");
         return ncclInternalError;
       }
-      memcpy(proxyAppend->subs+proxyAppend->nsubs, args->subs, sizeof(struct ncclProxySubArgs));
-      proxyAppend->nsubs++;
-      args->next = proxyAppend->next;
-      // Free args as we merged them
-      args->next = state->pool;
-      state->pool = args;
-      DEBUG_PROXY_PRINT("Insert  %5ld (%d/%5ld/%5ld) as group with %5ld\n", OP_INDEX(args), shared, proxyAppend->opCount, args->opCount, OP_INDEX(proxyAppend));
+      NCCLCHECK(ncclProxyOpToArgs(op, args, args->nsubs));
+      DEBUG_PROXY_PRINT("Insert (%d/%5ld/%5ld) as group with %5ld\n", shared, args->opCount, op->opCount, OP_INDEX(args));
     } else {
-      proxyAppend->nextPeer = args;
-      DEBUG_PROXY_PRINT("Insert  %5ld (%d/%5ld/%5ld) as nextPeer of %5ld\n", OP_INDEX(args), shared, proxyAppend->opCount, args->opCount, OP_INDEX(proxyAppend));
+      struct ncclProxyArgs* prevArgs = args;
+      NCCLCHECK(allocateArgs(state, &args));
+      NCCLCHECK(ncclProxyOpToArgs(op, args, 0));
+      prevArgs->nextPeer = args;
+      DEBUG_PROXY_PRINT("Insert  %5ld (%d/%5ld/%5ld) as nextPeer of %5ld\n", OP_INDEX(args), shared, prevArgs->opCount, args->opCount, OP_INDEX(prevArgs));
       *(args->proxyAppendPtr) = args;
     }
   } else {
     // Nothing running for that peer. Add to the list
+    NCCLCHECK(allocateArgs(state, &args));
+    NCCLCHECK(ncclProxyOpToArgs(op, args, 0));
     if (state->ops == NULL) {
       // Create the list
       DEBUG_PROXY_PRINT("Insert  %5ld (%d/%5ld) as first element\n", OP_INDEX(args), shared, args->opCount);
@@ -423,30 +440,6 @@ static ncclResult_t progressOps(struct ncclComm* comm, struct ncclProxyProgressS
   return ncclSuccess;
 }
 
-static ncclResult_t ncclProxyOpToArgs(struct ncclProxyOp* op, struct ncclProxyArgs* args) {
-  memset(args, 0, sizeof(struct ncclProxyArgs));
-  struct ncclProxySubArgs* sub = args->subs;
-  sub->channelId = op->channelId;
-  sub->connection = op->connection;
-  sub->nsteps = op->nsteps;
-  sub->nbytes = op->nbytes;
-  sub->peer = op->root;
-  args->nsubs = 1;
-  args->done = 0;
-  args->sliceSteps = op->sliceSteps;
-  args->chunkSteps = op->chunkSteps;
-  args->chunkSize = op->chunkSize;
-  args->opCount = op->opCount;
-  args->protocol = op->protocol;
-  args->dtype = op->dtype;
-  args->redOp = op->redOp;
-  args->pattern = op->pattern;
-  args->state = ncclProxyOpReady;
-  args->progress = op->connection->tcomm->proxyProgress;
-  args->proxyAppendPtr = op->connection->proxyAppendPtr;
-  return ncclSuccess;
-}
-
 static ncclResult_t ncclProxyGetPostedOps(struct ncclComm* comm, int* added) {
   struct ncclProxyProgressState* state = &comm->proxyState.progressState;
   if (state->opsPool == NULL) return ncclInternalError;
@@ -470,9 +463,7 @@ static ncclResult_t ncclProxyGetPostedOps(struct ncclComm* comm, int* added) {
     peerOp = pool->ops+opIndex;
     if (peerOp->connection == NULL) { WARN("Peer op %d has NULL connection", opIndex); return ncclInternalError; }
     struct ncclProxyArgs* args;
-    NCCLCHECK(allocateArgs(comm, &args));
-    NCCLCHECK(ncclProxyOpToArgs(peerOp, args));
-    NCCLCHECK(ProxyAppend(state, args));
+    NCCLCHECK(ProxyAppend(state, peerOp));
     (*added)++;
   }
 
