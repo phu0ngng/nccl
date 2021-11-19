@@ -295,7 +295,7 @@ perftest-multi-gc:
 
 perftest-sharp-gc:
   stage: perf_tests_multi
-  needs: [perftest-P100]
+  needs: [build, perftest-P100]
   tags:
     - p100
   variables:
@@ -312,7 +312,7 @@ perftest-sharp-gc:
 
 perftest-multi-prom:
   stage: perf_tests_multi
-  needs: [perftest-DGX-1V]
+  needs: [build, perftest-DGX-1V]
   rules:
     - if: '$RUN_ON_PROM == "1"'
       when: always
@@ -333,7 +333,7 @@ perftest-multi-prom:
 
 perftest-multi-selene:
   stage: perf_tests_multi
-  needs: [perftest-DGX-A100]
+  needs: [build, perftest-DGX-A100]
   rules:
     - if: '$RUN_ON_SELENE == "1"'
       when: always
@@ -354,7 +354,7 @@ perftest-multi-selene:
 
 perftest-sharp-selene:
   stage: perf_tests_multi
-  needs: [perftest-DGX-A100]
+  needs: [build, perftest-DGX-A100]
   rules:
     - if: '$RUN_ON_SELENE_SHARP == "1"'
       when: always
