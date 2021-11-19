@@ -303,9 +303,9 @@ compare:
       int verticeN = 0;
       NCCLCHECK(ncclNvmlEnsureInitialized());
 
-      indexes[verticeN++] = g1;
-      if (intermediateIndex != -1) indexes[verticeN++] = intermediateIndex;
-      indexes[verticeN++] = g2;
+      indexes[verticeN++] = system->nodes[GPU].nodes[g1].gpu.dev;
+      if (intermediateIndex != -1) indexes[verticeN++] = system->nodes[GPU].nodes[intermediateIndex].gpu.dev;
+      indexes[verticeN++] = system->nodes[GPU].nodes[g2].gpu.dev;
 
       for (int i=1; i < verticeN; i++) {
         nvmlGpuP2PStatus_t status;
