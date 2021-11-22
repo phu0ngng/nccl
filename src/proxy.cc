@@ -10,36 +10,6 @@
 #include "socket.h"
 #include "shm.h"
 
-#include <sys/time.h>
-#include <x86intrin.h>
-double gettime() {
-  static double freq = -1;
-  if (freq == -1) {
-    //printf("Calibrating clock, please wait ...");
-    fflush(stdout);
-    struct timeval tv;
-    gettimeofday(&tv, NULL);
-    uint64_t timeCycles = __rdtsc();
-    double time = - tv.tv_sec*1E6 - tv.tv_usec;
-    uint64_t total = 0ULL;
-    for (int i=0; i<1000; i++) total += __rdtsc();
-    gettimeofday(&tv, NULL);
-    timeCycles = __rdtsc() - timeCycles;
-    time += tv.tv_sec*1E6 + tv.tv_usec;
-    freq = timeCycles/time;
-    //printf("Time %g, rdtsc delta %ld, freq %g cycles/usec\n", time, timeCycles, freq);
-  }
-  return __rdtsc()/freq;
-}
-double proxyStartTime = 0;
-uint64_t proxyStartCount = 0;
-double proxyAppendTime = 0;
-uint64_t proxyAppendCount = 0;
-double proxyProgressAppendTime = 0;
-uint64_t proxyProgressAppendCount = 0;
-double proxyProgressTime = 0;
-uint64_t proxyProgressCount = 0;
-
 enum { proxyRecv=0, proxySend=1 };
 
 static bool NeedProxy(int type, int pattern, int root, struct ncclRing* ring, int nranks) {
@@ -237,8 +207,6 @@ static ncclResult_t ProxyAppend(struct ncclProxyProgressState* state, struct ncc
   struct ncclProxyConnection* connection = op->connection;
   int shared = connection->shared;
   struct ncclProxyArgs* args = *connection->proxyAppendPtr;
-  proxyProgressAppendCount++;
-  proxyProgressAppendTime -= gettime();
 
   if (args) {
     if (shared && args->opCount == op->opCount) {
@@ -289,9 +257,10 @@ static ncclResult_t ProxyAppend(struct ncclProxyProgressState* state, struct ncc
     }
     *(args->proxyAppendPtr) = args;
   }
-  proxyProgressAppendTime += gettime();
   return ncclSuccess;
 }
+
+#define NCCL_PROXY_POOL_ALLOC_COUNT 16
 
 ncclResult_t ncclLocalOpAppend(struct ncclProxyConnector* proxyConn, struct ncclProxyOp* proxyOp) {
   struct ncclProxyOps* proxyOps = proxyConn->comm->proxyState.proxyOps;
@@ -302,21 +271,32 @@ ncclResult_t ncclLocalOpAppend(struct ncclProxyConnector* proxyConn, struct nccl
     char poolPath[] = "/dev/shm/nccl-XXXXXX";
     NCCLCHECK(ncclProxyCall(proxyConn, ncclProxyMsgOpsAlloc, NULL, 0, poolPath+sizeof("/dev/shm/nccl-")-1, sizeof("XXXXXX")-1));
     NCCLCHECK(ncclShmOpen(poolPath, sizeof(struct ncclProxyOpsPool), (void**)(&proxyOps->pool), NULL, 0));
-    proxyOps->nextOps = proxyOps->nextOpsEnd = -1;
+    proxyOps->nextOps = proxyOps->nextOpsEnd = proxyOps->freeOp = -1;
   }
   struct ncclProxyOpsPool* pool = proxyOps->pool;
 
-  pthread_mutex_lock(&pool->mutex);
-  while (pool->freeOps == -1) {
-    pthread_mutex_unlock(&pool->mutex);
-    sched_yield();
+  // Allocate a bunch of elements at a time; use one now and keep the others in proxyOps->freeOp
+  // to reduce pressure on pool locking.
+  int opIndex = proxyOps->freeOp;
+  struct ncclProxyOp* op;
+  if (opIndex != -1) {
+    op = pool->ops+opIndex;
+    proxyOps->freeOp = op->next;
+  } else {
     pthread_mutex_lock(&pool->mutex);
+    while (pool->freeOps == -1) {
+      pthread_mutex_unlock(&pool->mutex);
+      sched_yield();
+      pthread_mutex_lock(&pool->mutex);
+    }
+    opIndex = pool->freeOps;
+    op = pool->ops+opIndex;
+    int opIdx = proxyOps->freeOp = op->next;
+    for (int i=2; i<NCCL_PROXY_POOL_ALLOC_COUNT; i++) opIdx = pool->ops[opIdx].next;
+    pool->freeOps = pool->ops[opIdx].next;
+    pool->ops[opIdx].next = -1;
+    pthread_mutex_unlock(&pool->mutex);
   }
-  int opIndex = pool->freeOps;
-  struct ncclProxyOp* op = pool->ops+opIndex;
-  pool->freeOps = op->next;
-  pthread_mutex_unlock(&pool->mutex);
-
   memcpy(op, proxyOp, sizeof(struct ncclProxyOp));
   op->next = -1;
   op->connection = proxyConn->connection;
@@ -341,10 +321,7 @@ static ncclResult_t SaveProxy(struct ncclChannel* channel, int type, int peer, s
   }
   if (connector->transportComm->proxyProgress == NULL) return ncclSuccess;
 
-  proxyAppendCount++;
-  proxyAppendTime -= gettime();
   NCCLCHECK(ncclLocalOpAppend(&connector->proxyConn, op));
-  proxyAppendTime += gettime();
   return ncclSuccess;
 }
 
@@ -538,10 +515,7 @@ void* ncclProxyProgress(void *comm_) {
 
   while (state->stop == 0 && *comm->abortFlag == 0) {
     int idle = 1;
-    proxyProgressCount++;
-    proxyProgressTime -= gettime();
     ncclResult_t ret = progressOps(comm, state, state->ops, &idle);
-    proxyProgressTime += gettime();
     if (ret != ncclSuccess) {
       comm->fatalError = ret;
       INFO(NCCL_ALL,"%s:%d -> %d [Proxy Thread]", __FILE__, __LINE__, ret);
@@ -561,25 +535,21 @@ void* ncclProxyProgress(void *comm_) {
 }
 
 ncclResult_t ncclProxyStart(struct ncclComm* comm) {
+  struct ncclProxyOps* proxyOps = comm->proxyState.proxyOps;
+  if (proxyOps == NULL) return ncclSuccess;
   for (int r=0; r<comm->localRanks; r++) {
-    if (comm->proxyState.peerSocks == NULL) continue;
-    struct ncclSocket* sock = comm->proxyState.peerSocks+r;
-    if (sock->fd == -1) continue;
-    struct ncclProxyOps* proxyOps = comm->proxyState.proxyOps+r;
-    if (proxyOps->pool == NULL || proxyOps->nextOps == -1) continue;
-    proxyStartCount++;
-    proxyStartTime -= gettime();
-    pthread_mutex_lock(&proxyOps->pool->mutex);
-    if (proxyOps->pool->nextOps == -1) {
-      proxyOps->pool->nextOps = proxyOps->nextOps;
-      pthread_cond_signal(&proxyOps->pool->cond);
+    struct ncclProxyOps* ops = proxyOps+r;
+    if (ops->pool == NULL || ops->nextOps == -1) continue;
+    pthread_mutex_lock(&ops->pool->mutex);
+    if (ops->pool->nextOps == -1) {
+      ops->pool->nextOps = ops->nextOps;
+      pthread_cond_signal(&ops->pool->cond);
     } else {
-      proxyOps->pool->ops[proxyOps->pool->nextOpsEnd].next = proxyOps->nextOps;
+      ops->pool->ops[ops->pool->nextOpsEnd].next = ops->nextOps;
     }
-    proxyOps->pool->nextOpsEnd = proxyOps->nextOpsEnd;
-    pthread_mutex_unlock(&proxyOps->pool->mutex);
-    proxyStartTime += gettime();
-    proxyOps->nextOps = proxyOps->nextOpsEnd = -1;
+    ops->pool->nextOpsEnd = ops->nextOpsEnd;
+    pthread_mutex_unlock(&ops->pool->mutex);
+    ops->nextOps = ops->nextOpsEnd = -1;
   }
   comm->opCount++;
   return ncclSuccess;
@@ -950,10 +920,6 @@ void* ncclProxyService(void* _args) {
   if (ncclProxyProgressDestroy(comm) != ncclSuccess) {
     WARN("[Proxy Service] proxyDestroy failed");
   }
-  printf("ProxyAppend Time %g, Count %ld, %g us/call\n", proxyAppendTime, proxyAppendCount, proxyAppendTime/proxyAppendCount);
-  printf("ProxyStart Time %g, Count %ld, %g us/call\n", proxyStartTime, proxyStartCount, proxyStartTime/proxyStartCount);
-  printf("ProxyProgressAppend Time %g, Count %ld, %g us/call\n", proxyProgressAppendTime, proxyProgressAppendCount, proxyProgressAppendTime/proxyProgressAppendCount);
-  printf("ProxyProgress Time %g, Count %ld, %g us/call\n", proxyProgressTime, proxyProgressCount, proxyProgressTime/proxyProgressCount);
   return NULL;
 }
 

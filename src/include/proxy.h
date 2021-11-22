@@ -92,6 +92,7 @@ struct ncclProxyOpsPool {
 
 struct ncclProxyOps {
   ncclProxyOpsPool* pool;
+  int freeOp;
   int nextOps;
   int nextOpsEnd;
 };
