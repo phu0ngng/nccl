@@ -635,8 +635,38 @@ static ncclResult_t recvProxyConnect(struct ncclProxyConnection* connection, str
   return ncclSuccess;
 }
 
-#define PROFILE_PROXY 1
+//#define PROFILE_PROXY 1
+enum ncclProxyProfileState {
+  ncclProxyProfileBegin = 0,
 
+  ncclProxyProfileSendGPUWait = 1,
+  ncclProxyProfileSendWait = 2,
+
+  ncclProxyProfileRecvWait = 1,
+  ncclProxyProfileRecvFlushWait = 2,
+  ncclProxyProfileRecvGPUWait = 3,
+
+  ncclProxyProfileEnd = 4
+};
+#ifdef PROFILE_PROXY
+static const char* profilingStateSendStr[] = { "BufferWait", "GPUWait", "SendWait", "", "End" };
+static const char* profilingStateRecvStr[] = { "BufferWait", "RecvWait", "FlushWait", "GPUWait", "End" };
+struct ncclProxyProfileEvent {
+  double timestamp[6];
+  uint64_t opCount;
+  int peer;
+  int step;
+  uint16_t channel;
+  uint8_t type; // send / recv
+  uint8_t opIndex;
+};
+
+struct ncclProxyProfileEvent* profilingEvents = NULL;
+int profilingIndex = 0;
+double profilingStart = 0;
+#define MAX_EVENTS 200000
+
+#include <unistd.h>
 #include <sys/time.h>
 #include <x86intrin.h>
 static double freq = -1;
@@ -656,44 +686,6 @@ static inline double gettime() {
   if (freq == -1) calibrate();
   return __rdtsc()/freq;
 }
-
-#define TYPE_SEND 0
-#define TYPE_RECV 1
-#define TYPE_SLEEP 2
-#define TYPE_WAKEUP 3
-#define TYPE_IDLE 4
-#define TYPE_APPEND 5
-#define TYPE_APPEND_END 6
-#ifdef PROFILE_PROXY
-enum ncclProxyProfileState {
-  ncclProxyProfileBegin = 0,
-
-  ncclProxyProfileSendGPUWait = 1,
-  ncclProxyProfileSendWait = 2,
-
-  ncclProxyProfileRecvWait = 1,
-  ncclProxyProfileRecvFlushWait = 2,
-  ncclProxyProfileRecvGPUWait = 3,
-
-  ncclProxyProfileEnd = 4
-};
-static const char* profilingStateSendStr[] = { "BufferWait", "GPUWait", "SendWait", "", "End" };
-static const char* profilingStateRecvStr[] = { "BufferWait", "RecvWait", "FlushWait", "GPUWait", "End" };
-struct ncclProxyProfileEvent {
-  double timestamp[6];
-  uint64_t opCount;
-  int peer;
-  int step;
-  uint16_t channel;
-  uint8_t type; // send / recv
-};
-
-struct ncclProxyProfileEvent* profilingEvents = NULL;
-int profilingIndex = 0;
-double profilingStart = 0;
-#define MAX_EVENTS 200000
-
-#include <unistd.h>
 ncclResult_t profilingRecord(struct ncclProxyArgs* args, int sub, int step, int state) {
   if (profilingIndex == MAX_EVENTS) return ncclSuccess;
   if (profilingEvents == NULL) {
@@ -707,8 +699,9 @@ ncclResult_t profilingRecord(struct ncclProxyArgs* args, int sub, int step, int 
     event->opCount = args->opCount;
     event->channel = args->subs[sub].channelId;
     event->peer = args->subs[sub].peer;
-    event->type = args->pattern == ncclPatternSend ? TYPE_SEND : TYPE_RECV;
+    event->type = args->pattern;
     event->step = step;
+    event->opIndex = (((uint64_t)args)/sizeof(struct ncclProxyArgs))%256;
   } else {
     event = (struct ncclProxyProfileEvent*)args->subs[sub].profilingEvents[step%NCCL_STEPS];
     if (state == ncclProxyProfileEnd) args->subs[sub].profilingEvents[step%NCCL_STEPS] = NULL;
@@ -729,12 +722,12 @@ void profilingDump() {
 
   for (int i=0; i<profilingIndex; i++) {
     struct ncclProxyProfileEvent* e = profilingEvents+i;
-    const char* typeStr = e->type == TYPE_SEND ? "Send" : "Recv";
+    const char* typeStr = e->type == ncclPatternSend ? "Send" : "Recv";
 
     int state = ncclProxyProfileBegin;
-    const char** stateStr = e->type == TYPE_SEND ? profilingStateSendStr : profilingStateRecvStr;
-    fprintf(f, "{\"name\": \"%s-%d-%d\", \"cat\": \"NET\", \"ph\": \"b\", \"id\": %d, \"pid\": %d, \"tid\": 1, \"ts\": %g },\n",
-        typeStr, e->peer, e->step, i, e->channel, e->timestamp[state]);
+    const char** stateStr = e->type == ncclPatternSend ? profilingStateSendStr : profilingStateRecvStr;
+    fprintf(f, "{\"name\": \"%s-%d-%d\", \"cat\": \"NET\", \"ph\": \"b\", \"id\": %d, \"pid\": %d, \"tid\": 1, \"ts\": %g, \"args\": { \"opCount\": %ld, \"proxyOpIndex\":%d } },\n",
+        typeStr, e->peer, e->step, i, e->channel, e->timestamp[state], e->opCount, e->opIndex);
 
     while (state<ncclProxyProfileEnd) {
       if (e->timestamp[state]) {

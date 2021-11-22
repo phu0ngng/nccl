@@ -260,12 +260,14 @@ static ncclResult_t ProxyAppend(struct ncclProxyProgressState* state, struct ncc
       }
       NCCLCHECK(ncclProxyOpToArgs(op, args, args->nsubs));
       DEBUG_PROXY_PRINT("Insert (%d/%5ld/%5ld) as group with %5ld\n", shared, args->opCount, op->opCount, OP_INDEX(args));
+      //printf("Insert (%d/%5ld/%5ld/%5d) as group with %5ld\n", shared, args->opCount, op->opCount, op->root, OP_INDEX(args));
     } else {
       struct ncclProxyArgs* prevArgs = args;
       NCCLCHECK(allocateArgs(state, &args));
       NCCLCHECK(ncclProxyOpToArgs(op, args, 0));
       prevArgs->nextPeer = args;
       DEBUG_PROXY_PRINT("Insert  %5ld (%d/%5ld/%5ld) as nextPeer of %5ld\n", OP_INDEX(args), shared, prevArgs->opCount, args->opCount, OP_INDEX(prevArgs));
+      //printf("Insert  %5ld (%d/%5ld/%5ld/%5d) as nextPeer of %5ld\n", OP_INDEX(args), shared, prevArgs->opCount, args->opCount, op->root, OP_INDEX(prevArgs));
       *(args->proxyAppendPtr) = args;
     }
   } else {
@@ -275,6 +277,7 @@ static ncclResult_t ProxyAppend(struct ncclProxyProgressState* state, struct ncc
     if (state->ops == NULL) {
       // Create the list
       DEBUG_PROXY_PRINT("Insert  %5ld (%d/%5ld) as first element\n", OP_INDEX(args), shared, args->opCount);
+      //printf("Insert  %5ld (%d/%5ld/%5d) as first element\n", OP_INDEX(args), shared, args->opCount, op->root);
       state->ops = args;
     } else {
       // Append element at the end of the list
@@ -282,6 +285,7 @@ static ncclResult_t ProxyAppend(struct ncclProxyProgressState* state, struct ncc
       while (last->next) last = last->next;
       last->next = args;
       DEBUG_PROXY_PRINT("Insert  %5ld (%d/%5ld) as last element\n", OP_INDEX(args), shared, args->opCount);
+      //printf("Insert  %5ld (%d/%5ld/%5d) as last element\n", OP_INDEX(args), shared, args->opCount, op->root);
     }
     *(args->proxyAppendPtr) = args;
   }
