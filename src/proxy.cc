@@ -56,7 +56,7 @@ static bool NeedProxy(int type, int pattern, int root, struct ncclRing* ring, in
   return (root != rank);
 }
 
-#define PROXYARGS_ALLOCATE_SIZE 128
+#define PROXYARGS_ALLOCATE_SIZE NCCL_MAX_OPS
 struct ncclProxyPool {
   struct ncclProxyPool *next;
   struct ncclProxyArgs elems[PROXYARGS_ALLOCATE_SIZE];

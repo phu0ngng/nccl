@@ -635,6 +635,132 @@ static ncclResult_t recvProxyConnect(struct ncclProxyConnection* connection, str
   return ncclSuccess;
 }
 
+#define PROFILE_PROXY 1
+
+#include <sys/time.h>
+#include <x86intrin.h>
+static double freq = -1;
+static void calibrate() {
+  struct timeval tv;
+  gettimeofday(&tv, NULL);
+  uint64_t timeCycles = __rdtsc();
+  double time = - tv.tv_sec*1E6 - tv.tv_usec;
+  uint64_t total = 0ULL;
+  for (int i=0; i<10000; i++) total += __rdtsc();
+  gettimeofday(&tv, NULL);
+  timeCycles = __rdtsc() - timeCycles;
+  time += tv.tv_sec*1E6 + tv.tv_usec;
+  freq = timeCycles/time;
+}
+static inline double gettime() {
+  if (freq == -1) calibrate();
+  return __rdtsc()/freq;
+}
+
+#define TYPE_SEND 0
+#define TYPE_RECV 1
+#define TYPE_SLEEP 2
+#define TYPE_WAKEUP 3
+#define TYPE_IDLE 4
+#define TYPE_APPEND 5
+#define TYPE_APPEND_END 6
+#ifdef PROFILE_PROXY
+enum ncclProxyProfileState {
+  ncclProxyProfileBegin = 0,
+
+  ncclProxyProfileSendGPUWait = 1,
+  ncclProxyProfileSendWait = 2,
+
+  ncclProxyProfileRecvWait = 1,
+  ncclProxyProfileRecvFlushWait = 2,
+  ncclProxyProfileRecvGPUWait = 3,
+
+  ncclProxyProfileEnd = 4
+};
+static const char* profilingStateSendStr[] = { "BufferWait", "GPUWait", "SendWait", "", "End" };
+static const char* profilingStateRecvStr[] = { "BufferWait", "RecvWait", "FlushWait", "GPUWait", "End" };
+struct ncclProxyProfileEvent {
+  double timestamp[6];
+  uint64_t opCount;
+  int peer;
+  int step;
+  uint16_t channel;
+  uint8_t type; // send / recv
+};
+
+struct ncclProxyProfileEvent* profilingEvents = NULL;
+int profilingIndex = 0;
+double profilingStart = 0;
+#define MAX_EVENTS 200000
+
+#include <unistd.h>
+ncclResult_t profilingRecord(struct ncclProxyArgs* args, int sub, int step, int state) {
+  if (profilingIndex == MAX_EVENTS) return ncclSuccess;
+  if (profilingEvents == NULL) {
+    NCCLCHECK(ncclCalloc(&profilingEvents, MAX_EVENTS));
+    profilingStart = gettime();
+  }
+  struct ncclProxyProfileEvent* event = NULL;
+  if (state == ncclProxyProfileBegin) {
+    args->subs[sub].profilingEvents[step%NCCL_STEPS] = event = profilingEvents+profilingIndex++;
+    // Proxy operation information
+    event->opCount = args->opCount;
+    event->channel = args->subs[sub].channelId;
+    event->peer = args->subs[sub].peer;
+    event->type = args->pattern == ncclPatternSend ? TYPE_SEND : TYPE_RECV;
+    event->step = step;
+  } else {
+    event = (struct ncclProxyProfileEvent*)args->subs[sub].profilingEvents[step%NCCL_STEPS];
+    if (state == ncclProxyProfileEnd) args->subs[sub].profilingEvents[step%NCCL_STEPS] = NULL;
+  }
+  // Timestamp
+  event->timestamp[state] = gettime()-profilingStart;
+  return ncclSuccess;
+}
+
+void profilingDump() {
+  static int dumpDone = 0;
+  if (dumpDone) return;
+  dumpDone = 1;
+  const char* str = getenv("NCCL_PROXY_PROFILE");
+  if (!str) { free(profilingEvents); return; }
+  FILE* f = fopen(str, "w");
+  fprintf(f, "[\n");
+
+  for (int i=0; i<profilingIndex; i++) {
+    struct ncclProxyProfileEvent* e = profilingEvents+i;
+    const char* typeStr = e->type == TYPE_SEND ? "Send" : "Recv";
+
+    int state = ncclProxyProfileBegin;
+    const char** stateStr = e->type == TYPE_SEND ? profilingStateSendStr : profilingStateRecvStr;
+    fprintf(f, "{\"name\": \"%s-%d-%d\", \"cat\": \"NET\", \"ph\": \"b\", \"id\": %d, \"pid\": %d, \"tid\": 1, \"ts\": %g },\n",
+        typeStr, e->peer, e->step, i, e->channel, e->timestamp[state]);
+
+    while (state<ncclProxyProfileEnd) {
+      if (e->timestamp[state]) {
+        const char* name = stateStr[state];
+        fprintf(f, "{\"name\": \"%s\", \"cat\": \"NET\", \"ph\": \"b\", \"id\": %d, \"pid\": %d, \"tid\": 1, \"ts\": %g },\n",
+            name, i, e->channel, e->timestamp[state]);
+        state++;
+        while (e->timestamp[state] == 0) state++;
+        fprintf(f, "{\"name\": \"%s\", \"cat\": \"NET\", \"ph\": \"e\", \"id\": %d, \"pid\": %d, \"tid\": 1, \"ts\": %g },\n",
+            name, i, e->channel, e->timestamp[state]);
+      }
+    }
+
+    fprintf(f, "{\"name\": \"%s-%d-%d\", \"cat\": \"NET\", \"ph\": \"e\", \"id\": %d, \"pid\": %d, \"tid\": 1, \"ts\": %g },\n",
+        typeStr, e->peer, e->step, i, e->channel, e->timestamp[state]);
+
+  }
+  fprintf(f, "{} ]\n");
+  fclose(f);
+  free(profilingEvents);
+}
+#else
+ncclResult_t profilingRecord(struct ncclProxyArgs* args, int sub, int step, int state) { return ncclSuccess; }
+void profilingDump() {}
+#endif
+
 static ncclResult_t sendProxyFree(struct ncclProxyConnection* connection, struct ncclComm* comm) {
   struct sendResources* resources = (struct sendResources*)(connection->transportResources);
   for (int p=0; p<NCCL_NUM_PROTOCOLS; p++) {
@@ -657,6 +783,7 @@ static ncclResult_t sendProxyFree(struct ncclProxyConnection* connection, struct
     if (comms->sendRefCount[resources->channelId] == 0) NCCLCHECK(ncclNetCloseSend(comms->sendComm[resources->channelId]));
   }
   free(connection->transportResources);
+  profilingDump();
   return ncclSuccess;
 }
 
@@ -691,6 +818,7 @@ static ncclResult_t sendProxyProgress(struct ncclComm* comm, struct ncclProxyArg
       // Round to next multiple of sliceSteps
       sub->base = ROUNDUP(resources->step, args->chunkSteps);
       sub->posted = sub->transmitted = sub->done = 0;
+      for (uint64_t step=0; step<sub->nsteps; step++) profilingRecord(args, s, step, ncclProxyProfileBegin);
     }
     args->state = ncclProxyOpProgress;
   }
@@ -720,6 +848,9 @@ static ncclResult_t sendProxyProgress(struct ncclComm* comm, struct ncclProxyArg
           *sendHead = sub->base + sub->posted - NCCL_STEPS;
           if (resources->gdcSync) wc_store_fence(); // Flush out WC write
         } else sub->posted += args->sliceSteps;
+        for (uint64_t step=sub->posted-args->sliceSteps; step<sub->posted; step++) {
+          profilingRecord(args, s, step, ncclProxyProfileSendGPUWait);
+        }
         args->idle = 0;
         continue;
       }
@@ -765,6 +896,7 @@ static ncclResult_t sendProxyProgress(struct ncclComm* comm, struct ncclProxyArg
               // Make sure size is reset to zero before we update the head.
               __sync_synchronize();
               sub->transmitted += args->sliceSteps;
+              for (uint64_t step=sub->transmitted-args->sliceSteps; step<sub->transmitted; step++) profilingRecord(args, s, step, ncclProxyProfileSendWait);
               args->idle = 0;
               continue;
             }
@@ -779,6 +911,7 @@ static ncclResult_t sendProxyProgress(struct ncclComm* comm, struct ncclProxyArg
         if (done) {
           TRACE(NCCL_NET, "sendProxy [%ld/%d] request %p done", sub->done, buffSlot, sub->requests[buffSlot]);
           sub->done += args->sliceSteps;
+          for (uint64_t step=sub->done-args->sliceSteps; step<sub->done; step++) profilingRecord(args, s, step, ncclProxyProfileEnd);
 
           if (resources->shared == 0) {
             volatile uint64_t* sendHead = resources->gdcSync ? resources->gdcSync : &resources->sendMem->head;
@@ -829,6 +962,7 @@ static ncclResult_t recvProxyProgress(struct ncclComm* comm, struct ncclProxyArg
       sub->base = ROUNDUP(resources->step, args->chunkSteps);
       sub->posted = sub->received = sub->transmitted = sub->done = 0;
       for (int i=0; i<groupSize; i++) sub[-i].groupSize = groupSize;
+      for (uint64_t step=0; step<sub->nsteps; step++) profilingRecord(args, s, step, ncclProxyProfileBegin);
     }
     args->state = ncclProxyOpProgress;
   }
@@ -874,7 +1008,11 @@ static ncclResult_t recvProxyProgress(struct ncclComm* comm, struct ncclProxyArg
         void** requestPtr = subGroup->requests+(step%NCCL_STEPS);
         NCCLCHECK(ncclNetIrecv(resources->netRecvComm, subCount, ptrs, sizes, tags, mhandles, requestPtr));
         if (*requestPtr) {
-          for (int i=0; i<subGroup->groupSize; i++) subGroup[i].posted += args->sliceSteps;
+          for (int i=0; i<subGroup->groupSize; i++) {
+            struct ncclProxySubArgs* sub = subGroup+i;
+            sub->posted += args->sliceSteps;
+            for (uint64_t step=sub->posted-args->sliceSteps; step<sub->posted; step++) profilingRecord(args, s+i, step, ncclProxyProfileRecvWait);
+          }
           args->idle = 0;
         }
       }
@@ -892,6 +1030,7 @@ static ncclResult_t recvProxyProgress(struct ncclComm* comm, struct ncclProxyArg
           for (int i=0; i<subGroup->groupSize; i++) {
             struct ncclProxySubArgs* sub = subGroup + i; 
             sub->received += args->sliceSteps;
+            for (uint64_t step=sub->received-args->sliceSteps; step<sub->received; step++) profilingRecord(args, s+i, step, ncclProxyProfileRecvFlushWait);
             if (step < sub->nsteps) {
               struct recvResources* resources = (struct recvResources*) (sub->connection->transportResources);
               if (resources->useGdr) useGdr = 1;
@@ -940,6 +1079,7 @@ static ncclResult_t recvProxyProgress(struct ncclComm* comm, struct ncclProxyArg
           for (int i=0; i<subGroup->groupSize; i++) {
             struct ncclProxySubArgs* sub = subGroup + i;
             sub->transmitted += args->sliceSteps;
+            for (uint64_t step=sub->transmitted-args->sliceSteps; step<sub->transmitted; step++) profilingRecord(args, s+i, step, ncclProxyProfileRecvGPUWait);
             if (step < sub->nsteps) {
               __sync_synchronize();
               struct recvResources* resources = (struct recvResources*) (sub->connection->transportResources);
@@ -963,6 +1103,7 @@ static ncclResult_t recvProxyProgress(struct ncclComm* comm, struct ncclProxyArg
               // LL and LL128 can acknowledge 0-bytes send before they even happen. Don't go past what we transmitted.
               sub->transmitted > sub->done) {
             sub->done += args->sliceSteps;
+            for (uint64_t step=sub->done-args->sliceSteps; step<sub->done; step++) profilingRecord(args, s+i, step, ncclProxyProfileEnd);
             args->idle = 0;
             if (sub->done == sub->nsteps) {
               struct recvResources* resources = (struct recvResources*) (sub->connection->transportResources);
