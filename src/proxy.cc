@@ -297,6 +297,7 @@ ncclResult_t ncclLocalOpAppend(struct ncclProxyConnector* proxyConn, struct nccl
     pool->ops[opIdx].next = -1;
     pthread_mutex_unlock(&pool->mutex);
   }
+  if (op->next != -1) __builtin_prefetch(pool->ops+op->next); // Prefetch next free op
   memcpy(op, proxyOp, sizeof(struct ncclProxyOp));
   op->next = -1;
   op->connection = proxyConn->connection;
