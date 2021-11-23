@@ -103,7 +103,11 @@ ${DST_DIR}/ncclNet_read_write_stress_test: ${DST_DIR}/ncclNet_read_write_stress_
 ${DST_DIR}/comm_leak_test: ${DST_DIR}/comm_leak_test.o
 	@printf "Linking  %-35s > %s\n" $< $@
 	@mkdir -p ${DST_DIR}
-	$(NVCC) -o $@ $(NVCUFLAGS) --compiler-options="-fsanitize=leak" $^ ${NVLDFLAGS}
+	@if [ "$(LSB_RELEASE)" = "Ubuntu" ]; then\
+		$(NVCC) -o $@ $(NVCUFLAGS) --compiler-options="-fsanitize=leak" $^ ${NVLDFLAGS};\
+	else\
+		$(NVCC) -o $@ $(NVCUFLAGS) $^ ${NVLDFLAGS};\
+	fi
 
 ${DST_DIR}/comm_leak_test_multi: ${DST_DIR}/comm_leak_test_multi.o
 	@printf "Linking  %-35s > %s\n" $< $@
