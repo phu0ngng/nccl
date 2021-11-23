@@ -90,7 +90,6 @@ struct ncclProxyOpsPool {
   volatile int nextOps;
   volatile int nextOpsEnd;
   volatile int freeOps[MAX_LOCAL_PEERS];
-  pthread_mutex_t allocMutex[MAX_LOCAL_PEERS];
   pthread_mutex_t mutex;
   pthread_cond_t cond;
 };

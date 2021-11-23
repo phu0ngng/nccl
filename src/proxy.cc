@@ -10,6 +10,56 @@
 #include "socket.h"
 #include "shm.h"
 
+#if 0
+#include <sys/time.h>
+#include <x86intrin.h>
+static double gettime() {
+  static double freq = -1;
+  if (freq == -1) {
+    //printf("Calibrating clock, please wait ...");
+    fflush(stdout);
+    struct timeval tv;
+    gettimeofday(&tv, NULL);
+    uint64_t timeCycles = __rdtsc();
+    double time = - tv.tv_sec*1E6 - tv.tv_usec;
+    uint64_t total = 0ULL;
+    for (int i=0; i<1000; i++) total += __rdtsc();
+    gettimeofday(&tv, NULL);
+    timeCycles = __rdtsc() - timeCycles;
+    time += tv.tv_sec*1E6 + tv.tv_usec;
+    freq = timeCycles/time;
+    //printf("Time %g, rdtsc delta %ld, freq %g cycles/usec\n", time, timeCycles, freq);
+  }
+  return __rdtsc()/freq;
+}
+static uint64_t counts[8];
+static double times[8];
+static double startTimes[8];
+#define TIME_START(index) do { \
+  counts[index]++; \
+  startTimes[index] = gettime(); \
+} while (0);
+
+#define TIME_STOP(index) do { \
+  times[index] += gettime() - startTimes[index]; \
+} while (0);
+
+#define TIME_CANCEL(index) do { \
+  counts[index]--; \
+} while (0);
+
+#define TIME_PRINT do { \
+  printf("Stats"); \
+  for (int i=0; i<8; i++) if (counts[i]) printf(" [%d] %g/%ld = %g", i, times[i], counts[i], times[i]/counts[i]); \
+  printf("\n"); \
+} while (0);
+#else
+#define TIME_START(index) while(0);
+#define TIME_STOP(index) while(0);
+#define TIME_CANCEL(index) while(0);
+#define TIME_PRINT
+#endif
+
 enum { proxyRecv=0, proxySend=1 };
 
 static bool NeedProxy(int type, int pattern, int root, struct ncclRing* ring, int nranks) {
@@ -275,23 +325,20 @@ ncclResult_t ncclLocalOpAppend(struct ncclComm* comm, struct ncclProxyConnector*
   }
   struct ncclProxyOpsPool* pool = proxyOps->pool;
 
+  TIME_START(0);
   int opIndex = proxyOps->freeOp;
   struct ncclProxyOp* op;
   if (opIndex != -1) {
     op = pool->ops+opIndex;
     proxyOps->freeOp = op->next;
   } else {
-    pthread_mutex_lock(&pool->allocMutex[comm->intraNodeRank]);
-    while (pool->freeOps[comm->intraNodeRank] == -1) {
-      pthread_mutex_unlock(&pool->allocMutex[comm->intraNodeRank]);
-      sched_yield();
-      pthread_mutex_lock(&pool->allocMutex[comm->intraNodeRank]);
-    }
-    opIndex = pool->freeOps[comm->intraNodeRank];
-    pool->freeOps[comm->intraNodeRank] = -1;
+    int freeOp;
+    while ((freeOp = pool->freeOps[comm->intraNodeRank]) == -1) sched_yield();
+    int freeOpNew;
+    while ((freeOpNew = __sync_val_compare_and_swap(pool->freeOps+comm->intraNodeRank, freeOp, -1)) != freeOp) freeOp = freeOpNew;
+    opIndex = freeOp;
     op = pool->ops+opIndex;
     proxyOps->freeOp = op->next;
-    pthread_mutex_unlock(&pool->allocMutex[comm->intraNodeRank]);
   }
   if (op->next != -1) __builtin_prefetch(pool->ops+op->next); // Prefetch next free op
   memcpy(op, proxyOp, sizeof(struct ncclProxyOp));
@@ -329,6 +376,7 @@ ncclResult_t ncclLocalOpAppend(struct ncclComm* comm, struct ncclProxyConnector*
     pthread_mutex_unlock(&proxyOps->pool->mutex);
     proxyOps->count -= toSend;
   }
+  TIME_STOP(0);
   return ncclSuccess;
 }
 
@@ -502,6 +550,7 @@ static ncclResult_t ncclProxyGetPostedOps(struct ncclComm* comm, int* added) {
     }
   }
 
+  TIME_START(2);
   int freeOp[MAX_LOCAL_PEERS];
   int freeOpEnd[MAX_LOCAL_PEERS];
   for (int i=0; i<comm->localRanks; i++) freeOp[i] = -1;
@@ -527,13 +576,25 @@ static ncclResult_t ncclProxyGetPostedOps(struct ncclComm* comm, int* added) {
   pthread_mutex_unlock(&pool->mutex);
 
   for (int i=0; i<comm->localRanks; i++) {
-    if (freeOp[i] != -1) {
-      pthread_mutex_lock(&pool->allocMutex[i]);
-      pool->ops[freeOpEnd[i]].next = pool->freeOps[i];
-      pool->freeOps[i] = freeOp[i];
-      pthread_mutex_unlock(&pool->allocMutex[i]);
+    if (freeOp[i] == -1) continue;
+    int newFree = freeOp[i];
+    int oldFree = pool->freeOps[i];
+    pool->ops[freeOpEnd[i]].next = oldFree;
+    if (oldFree == -1) {
+      // Nothing for the main thread to consume, we can set it.
+      pool->freeOps[i] = newFree;
+    } else {
+      // The main thread may recycle free ops at any time, replace the freeOps value atomically and check it worked.
+      int swap = __sync_val_compare_and_swap(pool->freeOps+i, oldFree, newFree);
+      if (swap != oldFree) {
+        if (swap != -1) return ncclInternalError;
+        // Ops were recycled while we were trying to swap, just set the value directly now.
+        pool->ops[freeOpEnd[i]].next = -1;
+        pool->freeOps[i] = newFree;
+      }
     }
   }
+  TIME_STOP(2);
   return ncclSuccess;
 }
 
@@ -576,6 +637,7 @@ void* ncclProxyProgress(void *comm_) {
 ncclResult_t ncclProxyStart(struct ncclComm* comm) {
   struct ncclProxyOps* proxyOps = comm->proxyState.proxyOps;
   if (proxyOps == NULL) return ncclSuccess;
+  TIME_START(1);
   for (int r=0; r<comm->localRanks; r++) {
     struct ncclProxyOps* ops = proxyOps+r;
     if (ops->pool == NULL || ops->nextOps == -1) continue;
@@ -592,6 +654,7 @@ ncclResult_t ncclProxyStart(struct ncclComm* comm) {
     ops->count = 0;
   }
   comm->opCount++;
+  TIME_STOP(1);
   return ncclSuccess;
 }
 
@@ -623,6 +686,7 @@ ncclResult_t ncclProxyProgressDestroy(struct ncclComm* comm) {
     state->pools = next;
   }
 
+  TIME_PRINT;
   return ncclSuccess;
 }
 
@@ -826,7 +890,6 @@ static ncclResult_t proxyOpsAlloc(struct ncclProxyLocalPeer* peer, struct ncclPr
     pthread_mutexattr_init(&mutexAttr);
     pthread_mutexattr_setpshared(&mutexAttr, PTHREAD_PROCESS_SHARED);
     pthread_mutex_init(&pool->mutex, &mutexAttr);
-    for (int r=0; r<comm->localRanks; r++) pthread_mutex_init(&pool->allocMutex[r], &mutexAttr);
     pthread_condattr_t condAttr;
     pthread_condattr_setpshared(&condAttr, PTHREAD_PROCESS_SHARED);
     pthread_cond_init(&pool->cond, &condAttr);

@@ -754,48 +754,6 @@ ncclResult_t profilingRecord(struct ncclProxyArgs* args, int sub, int step, int 
 void profilingDump() {}
 #endif
 
-#include <sys/time.h>
-#include <x86intrin.h>
-static double gettime() {
-  static double freq = -1;
-  if (freq == -1) {
-    //printf("Calibrating clock, please wait ...");
-    fflush(stdout);
-    struct timeval tv;
-    gettimeofday(&tv, NULL);
-    uint64_t timeCycles = __rdtsc();
-    double time = - tv.tv_sec*1E6 - tv.tv_usec;
-    uint64_t total = 0ULL;
-    for (int i=0; i<1000; i++) total += __rdtsc();
-    gettimeofday(&tv, NULL);
-    timeCycles = __rdtsc() - timeCycles;
-    time += tv.tv_sec*1E6 + tv.tv_usec;
-    freq = timeCycles/time;
-    //printf("Time %g, rdtsc delta %ld, freq %g cycles/usec\n", time, timeCycles, freq);
-  }
-  return __rdtsc()/freq;
-}
-static uint64_t counts[8];
-static double times[8];
-static double startTimes[8];
-#define TIME_START(index) do { \
-  counts[index]++; \
-  startTimes[index] = gettime(); \
-} while (0);
-
-#define TIME_STOP(index) do { \
-  times[index] += gettime() - startTimes[index]; \
-} while (0);
-
-#define TIME_CANCEL(index) do { \
-  counts[index]--; \
-} while (0);
-
-#define TIME_PRINT do { \
-  printf("Stats"); \
-  for (int i=0; i<8; i++) if (counts[i]) printf(" [%d] %g/%ld = %g", i, times[i], counts[i], times[i]/counts[i]); \
-  printf("\n"); \
-} while (0);
 static ncclResult_t sendProxyFree(struct ncclProxyConnection* connection, struct ncclComm* comm) {
   struct sendResources* resources = (struct sendResources*)(connection->transportResources);
   for (int p=0; p<NCCL_NUM_PROTOCOLS; p++) {
@@ -840,7 +798,6 @@ static ncclResult_t recvProxyFree(struct ncclProxyConnection* connection, struct
     if (comms->recvRefCount[resources->channelId] == 0) NCCLCHECK(ncclNetCloseRecv(comms->recvComm[resources->channelId]));
   }
   free(connection->transportResources);
-  //TIME_PRINT;
   return ncclSuccess;
 }
 
@@ -925,11 +882,8 @@ static ncclResult_t sendProxyProgress(struct ncclComm* comm, struct ncclProxyArg
           }
           if (ready) {
             // Data is ready, try to send.
-            TIME_START(0);
-            TIME_START(1);
             NCCLCHECK(ncclNetIsend(resources->netSendComm, buff, size, (resources->rank<<16)+resources->remoteRank, mhandle, sub->requests+buffSlot));
             if (sub->requests[buffSlot] != NULL) {
-              TIME_STOP(0); TIME_CANCEL(1);
               TRACE(NCCL_NET, "sendProxy [%ld/%d] Isend posted, req %p", sub->transmitted, buffSlot, sub->requests[buffSlot]);
               sizesFifo[buffSlot] = -1;
               // Make sure size is reset to zero before we update the head.
@@ -938,8 +892,6 @@ static ncclResult_t sendProxyProgress(struct ncclComm* comm, struct ncclProxyArg
               for (uint64_t step=sub->transmitted-args->sliceSteps; step<sub->transmitted; step++) profilingRecord(args, s, step, ncclProxyProfileSendWait);
               args->idle = 0;
               continue;
-            } else {
-              TIME_STOP(1); TIME_CANCEL(0);
             }
           }
         }
