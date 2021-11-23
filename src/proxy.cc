@@ -310,8 +310,6 @@ static ncclResult_t ProxyAppend(struct ncclProxyProgressState* state, struct ncc
   return ncclSuccess;
 }
 
-#define NCCL_PROXY_POOL_ALLOC_COUNT 16
-
 ncclResult_t ncclLocalOpAppend(struct ncclComm* comm, struct ncclProxyConnector* proxyConn, struct ncclProxyOp* proxyOp) {
   struct ncclProxyOps* proxyOps = proxyConn->comm->proxyState.proxyOps;
   if (proxyOps == NULL) return ncclInternalError;
@@ -553,6 +551,7 @@ static ncclResult_t ncclProxyGetPostedOps(struct ncclComm* comm, int* added) {
   int nextOps = pool->nextOps;
   pool->nextOps = pool->nextOpsEnd = -1;
   pthread_mutex_unlock(&pool->mutex);
+  if (nextOps == -1) return ncclInternalError;
 
   TIME_START(2);
   int freeOp[MAX_LOCAL_PEERS];
