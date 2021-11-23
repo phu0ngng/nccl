@@ -535,10 +535,8 @@ static ncclResult_t ncclProxyGetPostedOps(struct ncclComm* comm, int* added) {
   // to be available. Exit, continue progress, and come back later.
   if (state->ops != NULL && (pool->nextOps == -1 || pthread_mutex_trylock(&pool->mutex) != 0)) return ncclSuccess;
 
-  if (state->ops == NULL) pthread_mutex_lock(&pool->mutex);
-  // We should now have the lock either through trylock() or lock()
-
   if (state->ops == NULL) {
+    pthread_mutex_lock(&pool->mutex);
     while (pool->nextOps == -1 && !state->stop) {
       pthread_cond_wait(&pool->cond, &pool->mutex);
     }
