@@ -262,7 +262,7 @@ static ncclResult_t ProxyAppend(struct ncclProxyProgressState* state, struct ncc
 
 #define NCCL_PROXY_POOL_ALLOC_COUNT 16
 
-ncclResult_t ncclLocalOpAppend(struct ncclProxyConnector* proxyConn, struct ncclProxyOp* proxyOp) {
+ncclResult_t ncclLocalOpAppend(struct ncclComm* comm, struct ncclProxyConnector* proxyConn, struct ncclProxyOp* proxyOp) {
   struct ncclProxyOps* proxyOps = proxyConn->comm->proxyState.proxyOps;
   if (proxyOps == NULL) return ncclInternalError;
   proxyOps += proxyConn->localRank;
@@ -275,27 +275,23 @@ ncclResult_t ncclLocalOpAppend(struct ncclProxyConnector* proxyConn, struct nccl
   }
   struct ncclProxyOpsPool* pool = proxyOps->pool;
 
-  // Allocate a bunch of elements at a time; use one now and keep the others in proxyOps->freeOp
-  // to reduce pressure on pool locking.
   int opIndex = proxyOps->freeOp;
   struct ncclProxyOp* op;
   if (opIndex != -1) {
     op = pool->ops+opIndex;
     proxyOps->freeOp = op->next;
   } else {
-    pthread_mutex_lock(&pool->mutex);
-    while (pool->freeOps == -1) {
-      pthread_mutex_unlock(&pool->mutex);
+    pthread_mutex_lock(&pool->allocMutex[comm->intraNodeRank]);
+    while (pool->freeOps[comm->intraNodeRank] == -1) {
+      pthread_mutex_unlock(&pool->allocMutex[comm->intraNodeRank]);
       sched_yield();
-      pthread_mutex_lock(&pool->mutex);
+      pthread_mutex_lock(&pool->allocMutex[comm->intraNodeRank]);
     }
-    opIndex = pool->freeOps;
+    opIndex = pool->freeOps[comm->intraNodeRank];
+    pool->freeOps[comm->intraNodeRank] = -1;
     op = pool->ops+opIndex;
-    int opIdx = proxyOps->freeOp = op->next;
-    for (int i=2; i<NCCL_PROXY_POOL_ALLOC_COUNT; i++) opIdx = pool->ops[opIdx].next;
-    pool->freeOps = pool->ops[opIdx].next;
-    pool->ops[opIdx].next = -1;
-    pthread_mutex_unlock(&pool->mutex);
+    proxyOps->freeOp = op->next;
+    pthread_mutex_unlock(&pool->allocMutex[comm->intraNodeRank]);
   }
   if (op->next != -1) __builtin_prefetch(pool->ops+op->next); // Prefetch next free op
   memcpy(op, proxyOp, sizeof(struct ncclProxyOp));
@@ -306,6 +302,32 @@ ncclResult_t ncclLocalOpAppend(struct ncclProxyConnector* proxyConn, struct nccl
   } else {
     pool->ops[proxyOps->nextOpsEnd].next = opIndex;
     proxyOps->nextOpsEnd = opIndex;
+  }
+  if (++proxyOps->count == MAX_OPS_PER_PEER) {
+    // Post what we have so far to free some ops in the pool
+    // Do not post last operations as we could have more coming with the same opCount, and posting
+    // them in different batches would break proxyArgs aggregation with subs.
+    uint64_t lastOpCount = pool->ops[proxyOps->nextOpsEnd].opCount;
+    int lastOp = -1;
+    int toSend = 0;
+    for (int op= proxyOps->nextOps; pool->ops[op].opCount != lastOpCount; op=pool->ops[op].next) {
+      lastOp = op;
+      toSend++;
+    }
+    if (lastOp == -1) return ncclInternalError;
+    pthread_mutex_lock(&proxyOps->pool->mutex);
+    if (proxyOps->pool->nextOps == -1) {
+      proxyOps->pool->nextOps = proxyOps->nextOps;
+      pthread_cond_signal(&proxyOps->pool->cond);
+    } else {
+     proxyOps->pool->ops[proxyOps->pool->nextOpsEnd].next = proxyOps->nextOps;
+    }
+    proxyOps->pool->nextOpsEnd = lastOp;
+    // Cut chain at lastOp
+    proxyOps->nextOps = pool->ops[lastOp].next;
+    pool->ops[lastOp].next = -1;
+    pthread_mutex_unlock(&proxyOps->pool->mutex);
+    proxyOps->count -= toSend;
   }
   return ncclSuccess;
 }
@@ -322,7 +344,7 @@ static ncclResult_t SaveProxy(struct ncclChannel* channel, int type, int peer, s
   }
   if (connector->transportComm->proxyProgress == NULL) return ncclSuccess;
 
-  NCCLCHECK(ncclLocalOpAppend(&connector->proxyConn, op));
+  NCCLCHECK(ncclLocalOpAppend(connector->comm, &connector->proxyConn, op));
   return ncclSuccess;
 }
 
@@ -474,28 +496,44 @@ static ncclResult_t ncclProxyGetPostedOps(struct ncclComm* comm, int* added) {
     while (pool->nextOps == -1 && !state->stop) {
       pthread_cond_wait(&pool->cond, &pool->mutex);
     }
-    if (state->stop) { // We might have been waken up to stop.
+    if (state->stop) { // We might have been woken up to stop.
       pthread_mutex_unlock(&pool->mutex);
       return ncclSuccess;
     }
   }
 
-  int peerOpStart = pool->nextOps, peerOpEnd = pool->nextOpsEnd;
-  struct ncclProxyOp* peerOp;
-  for (int opIndex = peerOpStart; opIndex != -1; opIndex = peerOp->next) {
-    peerOp = pool->ops+opIndex;
-    if (peerOp->connection == NULL) return ncclInternalError;
+  int freeOp[MAX_LOCAL_PEERS];
+  int freeOpEnd[MAX_LOCAL_PEERS];
+  for (int i=0; i<comm->localRanks; i++) freeOp[i] = -1;
+
+  for (int opIndex = pool->nextOps; opIndex != -1;) {
+    struct ncclProxyOp* peerOp = pool->ops+opIndex;
+    if (peerOp->connection == NULL) { pthread_mutex_unlock(&pool->mutex); return ncclInternalError; }
     if (peerOp->next != -1) __builtin_prefetch(pool->ops+peerOp->next);
     NCCLCHECK(ProxyAppend(state, peerOp));
     (*added)++;
+    int lastOpIndex = opIndex;
+    opIndex = peerOp->next;
+    // Return op to peer pool
+    int peer = lastOpIndex / MAX_OPS_PER_PEER;
+    if (freeOp[peer] == -1) {
+      freeOpEnd[peer] = lastOpIndex;
+    } else {
+      peerOp->next = freeOp[peer];
+    }
+    freeOp[peer] = lastOpIndex;
   }
-
-  // Return peer ops list to peer pool
-  pool->ops[peerOpEnd].next = pool->freeOps;
-  pool->freeOps = peerOpStart;
   pool->nextOps = pool->nextOpsEnd = -1;
   pthread_mutex_unlock(&pool->mutex);
 
+  for (int i=0; i<comm->localRanks; i++) {
+    if (freeOp[i] != -1) {
+      pthread_mutex_lock(&pool->allocMutex[i]);
+      pool->ops[freeOpEnd[i]].next = pool->freeOps[i];
+      pool->freeOps[i] = freeOp[i];
+      pthread_mutex_unlock(&pool->allocMutex[i]);
+    }
+  }
   return ncclSuccess;
 }
 
@@ -551,6 +589,7 @@ ncclResult_t ncclProxyStart(struct ncclComm* comm) {
     ops->pool->nextOpsEnd = ops->nextOpsEnd;
     pthread_mutex_unlock(&ops->pool->mutex);
     ops->nextOps = ops->nextOpsEnd = -1;
+    ops->count = 0;
   }
   comm->opCount++;
   return ncclSuccess;
@@ -652,7 +691,6 @@ static ncclResult_t ncclProxyFreeConnections(struct ncclProxyConnectionPool* poo
   return ncclSuccess;
 }
 
-#define MAX_LOCAL_PEERS 128
 #include "transport.h"
 
 ncclResult_t ncclProxyConnect(struct ncclComm* comm, int transport, int send, int rank, struct ncclProxyConnector* proxyConn) {
@@ -777,15 +815,18 @@ static ncclResult_t proxyOpsAlloc(struct ncclProxyLocalPeer* peer, struct ncclPr
 
     // Init pool
     pool->nextOps = -1;
-    pool->freeOps = 0;
-    for (int i=0; i<MAXCHANNELS*NCCL_MAX_OPS-1; i++) pool->ops[i].next = i+1;
-    pool->ops[MAXCHANNELS*NCCL_MAX_OPS-1].next = -1;
+    for (int r=0; r<comm->localRanks; r++) {
+      pool->freeOps[r] = r*MAX_OPS_PER_PEER;
+      for (int i=0; i<MAX_OPS_PER_PEER-1; i++) pool->ops[r*MAX_OPS_PER_PEER+i].next = r*MAX_OPS_PER_PEER+i+1;
+      pool->ops[(r+1)*MAX_OPS_PER_PEER-1].next = -1;
+    }
 
     // Setup mutex/cond to work inter-process
     pthread_mutexattr_t mutexAttr;
     pthread_mutexattr_init(&mutexAttr);
     pthread_mutexattr_setpshared(&mutexAttr, PTHREAD_PROCESS_SHARED);
     pthread_mutex_init(&pool->mutex, &mutexAttr);
+    for (int r=0; r<comm->localRanks; r++) pthread_mutex_init(&pool->allocMutex[r], &mutexAttr);
     pthread_condattr_t condAttr;
     pthread_condattr_setpshared(&condAttr, PTHREAD_PROCESS_SHARED);
     pthread_cond_init(&pool->cond, &condAttr);

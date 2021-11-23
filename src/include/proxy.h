@@ -19,8 +19,8 @@ typedef ncclResult_t (*proxyProgressFunc_t)(struct ncclComm*, struct ncclProxyAr
 static_assert(NCCL_MAX_WORK_ELEMENTS <= MAXCHANNELS, "Not enough sub space for max work elements");
 
 struct ncclProxyOp {
-  int channelId;
   struct ncclProxyConnection* connection;
+  int channelId;
   int nsteps;
   ssize_t nbytes;
   int root;
@@ -28,12 +28,14 @@ struct ncclProxyOp {
   int chunkSteps;
   int chunkSize;
   uint64_t opCount;
-  int protocol;
+  uint8_t protocol;
+  ncclPattern_t pattern; // uint8_t
+  uint16_t pad;
   ncclDataType_t dtype;
   ncclRedOp_t redOp;
-  ncclPattern_t pattern;
   int next;
 };
+static_assert(sizeof(struct ncclProxyOp) == 64, "Keep ProxyOp aligned with cache lines for effective prefetch");
 
 struct ncclProxySubArgs {
   int channelId;
@@ -81,17 +83,21 @@ struct ncclProxyArgs {
 #define NCCL_MAX_NETDEVS 128
 
 // Used to communicate between main thread and service thread
+#define MAX_OPS_PER_PEER 512
+#define MAX_LOCAL_PEERS 128
 struct ncclProxyOpsPool {
-  struct ncclProxyOp ops[MAXCHANNELS*NCCL_MAX_OPS];
+  struct ncclProxyOp ops[MAX_OPS_PER_PEER*MAX_LOCAL_PEERS];
   volatile int nextOps;
   volatile int nextOpsEnd;
-  volatile int freeOps;
+  volatile int freeOps[MAX_LOCAL_PEERS];
+  pthread_mutex_t allocMutex[MAX_LOCAL_PEERS];
   pthread_mutex_t mutex;
   pthread_cond_t cond;
 };
 
 struct ncclProxyOps {
   ncclProxyOpsPool* pool;
+  int count;
   int freeOp;
   int nextOps;
   int nextOpsEnd;

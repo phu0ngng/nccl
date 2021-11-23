@@ -11,7 +11,7 @@
 #include "devcomm.h"
 #include "collectives.h"
 
-typedef enum {
+typedef enum : uint8_t {
   ncclPatternRing,
   ncclPatternRingTwice,
   ncclPatternPipelineFrom,
