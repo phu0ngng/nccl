@@ -550,12 +550,16 @@ static ncclResult_t ncclProxyGetPostedOps(struct ncclComm* comm, int* added) {
     }
   }
 
+  int nextOps = pool->nextOps;
+  pool->nextOps = pool->nextOpsEnd = -1;
+  pthread_mutex_unlock(&pool->mutex);
+
   TIME_START(2);
   int freeOp[MAX_LOCAL_PEERS];
   int freeOpEnd[MAX_LOCAL_PEERS];
   for (int i=0; i<comm->localRanks; i++) freeOp[i] = -1;
 
-  for (int opIndex = pool->nextOps; opIndex != -1;) {
+  for (int opIndex = nextOps; opIndex != -1;) {
     struct ncclProxyOp* peerOp = pool->ops+opIndex;
     if (peerOp->connection == NULL) { pthread_mutex_unlock(&pool->mutex); return ncclInternalError; }
     if (peerOp->next != -1) __builtin_prefetch(pool->ops+peerOp->next);
@@ -572,8 +576,6 @@ static ncclResult_t ncclProxyGetPostedOps(struct ncclComm* comm, int* added) {
     }
     freeOp[peer] = lastOpIndex;
   }
-  pool->nextOps = pool->nextOpsEnd = -1;
-  pthread_mutex_unlock(&pool->mutex);
 
   for (int i=0; i<comm->localRanks; i++) {
     if (freeOp[i] == -1) continue;
