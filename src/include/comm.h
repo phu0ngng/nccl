@@ -31,8 +31,6 @@ struct cudaLaunchParams {
 #define NCCL_LL128_THREAD_THRESHOLD 8
 #define NCCL_SIMPLE_THREAD_THRESHOLD 64
 
-#define NCCL_MAX_INTRA_RANKS 32
-
 struct ncclSendMem {
   union {
     struct {
@@ -64,7 +62,7 @@ typedef cudaError_t(*pfn_cuMemGetAddressRange_t)(void**, size_t*, void*);
 
 enum helperThreadState {ThreadStart, ThreadStop};
 
-#define NCCL_IPC_POOL_SIZE (2*NCCL_MAX_INTRA_RANKS*NCCL_MAX_OPS)
+#define NCCL_IPC_POOL_SIZE (2*NCCL_MAX_LOCAL_RANKS*NCCL_MAX_OPS)
 
 struct ncclGraphHelperResources {
   ncclComm* comm;
@@ -83,8 +81,8 @@ struct ncclUserRedOp {
 };
 
 struct ncclNodeRanks {
-  int nranks;
-  int* ranks;
+  int localRanks;
+  int* localRankToRank;
 };
 
 struct ncclComm {
@@ -107,15 +105,13 @@ struct ncclComm {
 
   int node;
   int nNodes;
-  struct ncclNodeRanks* nodeRanks;
-  int* rankNodes;
-  int* rankIndexes;
-
-  // Intra-node rank info
-  int intraNodeGlobalRanks[NCCL_MAX_INTRA_RANKS];
+  int localRank;
   int localRanks;
-  int intraNodeRank;
-  int8_t* rankToIntraNodeRank;
+  int* rankToNode;
+  int* rankToLocalRank;
+  int* localRankToRank;
+  // localRanks and localRanktoRank for all nodes
+  struct ncclNodeRanks* nodeRanks;
 
   enum { GROUP, PARALLEL, GROUP_GRAPH } launchMode;
   cudaStream_t userStream;

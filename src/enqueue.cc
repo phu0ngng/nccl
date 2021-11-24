@@ -634,27 +634,27 @@ static ncclResult_t ncclRegBuffAndExchange(struct ncclInfo* info, struct ncclBuf
   if (comm->pfnCuMemGetAddressRange == NULL) return ncclSuccess;  // CUDA toolkit or driver version too old
 
   ncclResult_t ret = ncclSuccess;
-  struct ncclBuffRegHandle regHandles[NCCL_MAX_INTRA_RANKS];
+  struct ncclBuffRegHandle regHandles[NCCL_MAX_LOCAL_RANKS];
   // Get IPC handles
   // Note: the handle only corresponds to the base address of the allocation
-  CUDACHECKGOTO(cudaIpcGetMemHandle(&regHandles[comm->intraNodeRank].sendBuffIpc, (void*)info->sendbuff), ret, reg_fallback);
-  CUDACHECKGOTO(cudaIpcGetMemHandle(&regHandles[comm->intraNodeRank].recvBuffIpc, (void*)info->recvbuff), ret, reg_fallback);
+  CUDACHECKGOTO(cudaIpcGetMemHandle(&regHandles[comm->localRank].sendBuffIpc, (void*)info->sendbuff), ret, reg_fallback);
+  CUDACHECKGOTO(cudaIpcGetMemHandle(&regHandles[comm->localRank].recvBuffIpc, (void*)info->recvbuff), ret, reg_fallback);
   // Get offset of user buffer within allocation
   void* baseAddr;
   size_t size;
   // Get base address
   CUDACHECK(comm->pfnCuMemGetAddressRange(&baseAddr, &size, (void*)info->sendbuff));
-  regHandles[comm->intraNodeRank].sendBuffOffset = (char*)info->sendbuff - (char*)baseAddr;
+  regHandles[comm->localRank].sendBuffOffset = (char*)info->sendbuff - (char*)baseAddr;
   CUDACHECK(comm->pfnCuMemGetAddressRange(&baseAddr, &size, (void*)info->recvbuff));
-  regHandles[comm->intraNodeRank].recvBuffOffset = (char*)info->recvbuff - (char*)baseAddr;
-  TRACE(NCCL_COLL, "Base %p size %lu offset %ld", baseAddr, size, regHandles[comm->intraNodeRank].recvBuffOffset);
+  regHandles[comm->localRank].recvBuffOffset = (char*)info->recvbuff - (char*)baseAddr;
+  TRACE(NCCL_COLL, "Base %p size %lu offset %ld", baseAddr, size, regHandles[comm->localRank].recvBuffOffset);
 
   // Exchange handles within node
-  NCCLCHECK(bootstrapIntraNodeAllGather(comm->bootstrap, comm->intraNodeGlobalRanks, comm->intraNodeRank, comm->localRanks, regHandles, sizeof(struct ncclBuffRegHandle)));
+  NCCLCHECK(bootstrapIntraNodeAllGather(comm->bootstrap, comm->localRankToRank, comm->localRank, comm->localRanks, regHandles, sizeof(struct ncclBuffRegHandle)));
   // Open handles at local process
   for (int i=0; i<comm->localRanks; i++) {
     // Skip myself
-    if (i == comm->intraNodeRank) {
+    if (i == comm->localRank) {
       regInfo->sendbuffsBase[i] = regInfo->recvbuffsBase[i] = NULL;
       continue;
     }
@@ -843,7 +843,7 @@ static ncclResult_t ncclSaveP2p(struct ncclInfo* info) {
   struct ncclComm* comm = info->comm;
   int peer = info->root;
   ssize_t nBytes = info->count*ncclTypeSize(info->datatype);
-  int peerNode = comm->rankNodes[peer];
+  int peerNode = comm->rankToNode[peer];
   //int peerIndex = comm->rankIndexes[peer];
   //int peerRanks = comm->nodeRanks[peerNode].nranks;
   //int rankIndex = comm->rankIndexes[comm->rank] % peerRanks;
@@ -956,7 +956,7 @@ static ncclResult_t enqueueSegOp(enum ncclWorkElemType type, struct ncclWork* el
     int peer = channel->collTree.down[i];
     if (peer == -1) break;
     // Get intra-node slot
-    int j = comm->rankToIntraNodeRank[peer];
+    int j = comm->rankToLocalRank[peer];
     if (j < 0) {
       WARN("Invalid intra-node rank %d for peer %d", j, peer);
       return ncclInternalError;
@@ -969,7 +969,7 @@ static ncclResult_t enqueueSegOp(enum ncclWorkElemType type, struct ncclWork* el
   for (int i=0; i<NCCL_MAX_DIRECT_ARITY; i++) {
     int peer = channel->collTree.up[i];
     if (peer == -1) break;
-    int j = comm->rankToIntraNodeRank[peer];
+    int j = comm->rankToLocalRank[peer];
     if (j < 0) {
       WARN("Invalid intra-node rank %d for peer %d", j, peer);
       return ncclInternalError;

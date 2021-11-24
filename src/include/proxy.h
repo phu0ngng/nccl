@@ -84,12 +84,12 @@ struct ncclProxyArgs {
 
 // Used to communicate between main thread and service thread
 #define MAX_OPS_PER_PEER 512
-#define MAX_LOCAL_PEERS 128
+#define NCCL_MAX_LOCAL_RANKS 64
 struct ncclProxyOpsPool {
-  struct ncclProxyOp ops[MAX_OPS_PER_PEER*MAX_LOCAL_PEERS];
+  struct ncclProxyOp ops[MAX_OPS_PER_PEER*NCCL_MAX_LOCAL_RANKS];
   volatile int nextOps;
   volatile int nextOpsEnd;
-  volatile int freeOps[MAX_LOCAL_PEERS];
+  volatile int freeOps[NCCL_MAX_LOCAL_RANKS];
   pthread_mutex_t mutex;
   pthread_cond_t cond;
 };

@@ -36,6 +36,8 @@ struct ncclPeerInfo {
   uint64_t pidHash;
   dev_t shmDev;
   int64_t busId;
+  struct ncclComm* comm;
+  int cudaCompCap;
 };
 
 #define CONNECT_SIZE 128

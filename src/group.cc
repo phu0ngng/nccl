@@ -207,7 +207,7 @@ ncclResult_t ncclGroupEnd() {
       struct ncclComm* comm = args->coll.comm;
       int node = comm->node;
       int nNodes = comm->nNodes;
-      int rankIndex = comm->rankIndexes[comm->rank];
+      int localRank = comm->localRank;
 
       // Compute how much to split operations
       // Natural step size matching buffer steps.
@@ -230,12 +230,12 @@ ncclResult_t ncclGroupEnd() {
 sched_delta:
           uint32_t recvNode = (node+nNodes-delta)%nNodes;
           uint32_t sendNode = (node+delta)%nNodes;
-          int steps = std::max(comm->nodeRanks[recvNode].nranks, comm->nodeRanks[sendNode].nranks);
+          int steps = std::max(comm->nodeRanks[recvNode].localRanks, comm->nodeRanks[sendNode].localRanks);
           for (int s=0; s<steps; s++) {
-            int recvIndex = (rankIndex-s+comm->nodeRanks[recvNode].nranks)%comm->nodeRanks[recvNode].nranks;
-            int recvPeer = s<comm->nodeRanks[recvNode].nranks ? comm->nodeRanks[recvNode].ranks[recvIndex] : -1;
-            int sendIndex = (rankIndex+s)%comm->nodeRanks[sendNode].nranks;
-            int sendPeer = s<comm->nodeRanks[sendNode].nranks ? comm->nodeRanks[sendNode].ranks[sendIndex] : -1;
+            int recvIndex = (localRank-s+comm->nodeRanks[recvNode].localRanks)%comm->nodeRanks[recvNode].localRanks;
+            int recvPeer = s<comm->nodeRanks[recvNode].localRanks ? comm->nodeRanks[recvNode].localRankToRank[recvIndex] : -1;
+            int sendIndex = (localRank+s)%comm->nodeRanks[sendNode].localRanks;
+            int sendPeer = s<comm->nodeRanks[sendNode].localRanks ? comm->nodeRanks[sendNode].localRankToRank[sendIndex] : -1;
             struct ncclP2Pinfo* recv = recvPeer != -1 && comm->p2pRecvs[recvPeer] ? comm->p2pRecvs[recvPeer]->getNext() : NULL;
             struct ncclP2Pinfo* send = sendPeer != -1 && comm->p2pSends[sendPeer] ? comm->p2pSends[sendPeer]->getNext() : NULL;
             if (recv != NULL || send != NULL) {

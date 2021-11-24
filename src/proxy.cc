@@ -331,9 +331,9 @@ ncclResult_t ncclLocalOpAppend(struct ncclComm* comm, struct ncclProxyConnector*
     proxyOps->freeOp = op->next;
   } else {
     int freeOp;
-    while ((freeOp = pool->freeOps[comm->intraNodeRank]) == -1) sched_yield();
+    while ((freeOp = pool->freeOps[comm->localRank]) == -1) sched_yield();
     int freeOpNew;
-    while ((freeOpNew = __sync_val_compare_and_swap(pool->freeOps+comm->intraNodeRank, freeOp, -1)) != freeOp) freeOp = freeOpNew;
+    while ((freeOpNew = __sync_val_compare_and_swap(pool->freeOps+comm->localRank, freeOp, -1)) != freeOp) freeOp = freeOpNew;
     opIndex = freeOp;
     op = pool->ops+opIndex;
     proxyOps->freeOp = op->next;
@@ -552,8 +552,8 @@ static ncclResult_t ncclProxyGetPostedOps(struct ncclComm* comm, int* added) {
   if (nextOps == -1) return ncclInternalError;
 
   TIME_START(2);
-  int freeOp[MAX_LOCAL_PEERS];
-  int freeOpEnd[MAX_LOCAL_PEERS];
+  int freeOp[NCCL_MAX_LOCAL_RANKS];
+  int freeOpEnd[NCCL_MAX_LOCAL_RANKS];
   for (int i=0; i<comm->localRanks; i++) freeOp[i] = -1;
 
   for (int opIndex = nextOps; opIndex != -1;) {
@@ -920,31 +920,31 @@ void* ncclProxyService(void* _args) {
   connectionPool.banks = 0;
   connectionPool.offset = NCCL_PROXY_CONN_POOL_SIZE;
 
-  struct pollfd pollfds[MAX_LOCAL_PEERS+1];
-  struct ncclProxyLocalPeer peers[MAX_LOCAL_PEERS];
-  for (int s=0; s<MAX_LOCAL_PEERS; s++) {
+  struct pollfd pollfds[NCCL_MAX_LOCAL_RANKS+1];
+  struct ncclProxyLocalPeer peers[NCCL_MAX_LOCAL_RANKS];
+  for (int s=0; s<NCCL_MAX_LOCAL_RANKS; s++) {
     peers[s].sock.fd = pollfds[s].fd = -1;
     peers[s].sock.abortFlag = NULL;
     peers[s].sock.asyncFlag = 0;
     pollfds[s].events = POLLHUP|POLLIN;
     peers[s].asyncOps.type = 0;
   }
-  pollfds[MAX_LOCAL_PEERS].fd = comm->proxyState.listenSock->fd;
-  pollfds[MAX_LOCAL_PEERS].events = POLLIN;
+  pollfds[NCCL_MAX_LOCAL_RANKS].fd = comm->proxyState.listenSock->fd;
+  pollfds[NCCL_MAX_LOCAL_RANKS].events = POLLIN;
 
   int maxnpeers = 0;
   int npeers = 0;
   int stop = 0;
   while (stop == 0 || (stop == 1 && npeers > 0)) {
-    if (int error = poll(pollfds, MAX_LOCAL_PEERS+1, 100/*ms*/) < 0) {
+    if (int error = poll(pollfds, NCCL_MAX_LOCAL_RANKS+1, 100/*ms*/) < 0) {
       WARN("[Proxy Service] Poll failed with error %d", error);
       return NULL;
     }
-    if (pollfds[MAX_LOCAL_PEERS].revents) {
+    if (pollfds[NCCL_MAX_LOCAL_RANKS].revents) {
       int s = 0;
-      while (s < MAX_LOCAL_PEERS && peers[s].sock.fd != -1) s++;
-      if (s == MAX_LOCAL_PEERS) {
-        WARN("[Proxy service] Too many connections (%d max)", MAX_LOCAL_PEERS);
+      while (s < NCCL_MAX_LOCAL_RANKS && peers[s].sock.fd != -1) s++;
+      if (s == NCCL_MAX_LOCAL_RANKS) {
+        WARN("[Proxy service] Too many connections (%d max)", NCCL_MAX_LOCAL_RANKS);
         return NULL;
       }
       if (maxnpeers < s+1) maxnpeers = s+1;

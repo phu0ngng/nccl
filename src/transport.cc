@@ -227,9 +227,9 @@ cleanup:
 
 ncclResult_t ncclTransportCollNetCheck(struct ncclComm* comm, int collNetSetupFail) {
   // AllGather collNet setup results
-  int allGatherFailures[NCCL_MAX_INTRA_RANKS] = {0};
-  allGatherFailures[comm->intraNodeRank] = collNetSetupFail;
-  NCCLCHECK(bootstrapIntraNodeAllGather(comm->bootstrap, comm->intraNodeGlobalRanks, comm->intraNodeRank, comm->localRanks, allGatherFailures, sizeof(int)));
+  int allGatherFailures[NCCL_MAX_LOCAL_RANKS] = {0};
+  allGatherFailures[comm->localRank] = collNetSetupFail;
+  NCCLCHECK(bootstrapIntraNodeAllGather(comm->bootstrap, comm->localRankToRank, comm->localRank, comm->localRanks, allGatherFailures, sizeof(int)));
   for (int i=0; i<comm->localRanks; i++) {
     if (allGatherFailures[i] != 0) {
       collNetSetupFail = 1;
@@ -237,7 +237,7 @@ ncclResult_t ncclTransportCollNetCheck(struct ncclComm* comm, int collNetSetupFa
     }
   }
   if (collNetSetupFail) {
-    if (comm->intraNodeRank == 0) WARN("Cannot initialize CollNet, using point-to-point network instead");
+    if (comm->localRank == 0) WARN("Cannot initialize CollNet, using point-to-point network instead");
     return ncclSystemError;
   }
   return ncclSuccess;
