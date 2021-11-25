@@ -1047,8 +1047,10 @@ ncclResult_t ncclIbIflush(void* recvComm, int n, void** data, int* sizes, void**
   wr.opcode = IBV_WR_RDMA_READ;
   wr.send_flags = IBV_SEND_SIGNALED;
 
+  TIME_START(4);
   struct ibv_send_wr* bad_wr;
   NCCLCHECK(wrap_ibv_post_send(comm->gpuFlush.qp, &wr, &bad_wr));
+  TIME_STOP(4);
 
   *request = req;
   return ncclSuccess;
