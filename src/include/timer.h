@@ -4,30 +4,29 @@
  * See LICENSE.txt for license information
  ************************************************************************/
 
-#ifndef TIMER_H
-#define TIMER_H
-#if 1
+#ifndef NCCL_TIMER_H_
+#define NCCL_TIMER_H_
+#include <unistd.h>
 #include <sys/time.h>
 #include <x86intrin.h>
-static double gettime() {
-  static double freq = -1;
-  if (freq == -1) {
-    //printf("Calibrating clock, please wait ...");
-    fflush(stdout);
-    struct timeval tv;
-    gettimeofday(&tv, NULL);
-    uint64_t timeCycles = __rdtsc();
-    double time = - tv.tv_sec*1E6 - tv.tv_usec;
-    uint64_t total = 0ULL;
-    for (int i=0; i<1000; i++) total += __rdtsc();
-    gettimeofday(&tv, NULL);
-    timeCycles = __rdtsc() - timeCycles;
-    time += tv.tv_sec*1E6 + tv.tv_usec;
-    freq = timeCycles/time;
-    //printf("Time %g, rdtsc delta %ld, freq %g cycles/usec\n", time, timeCycles, freq);
-  }
+static double freq = -1;
+static void calibrate() {
+  struct timeval tv;
+  gettimeofday(&tv, NULL);
+  uint64_t timeCycles = __rdtsc();
+  double time = - tv.tv_sec*1E6 - tv.tv_usec;
+  uint64_t total = 0ULL;
+  for (int i=0; i<10000; i++) total += __rdtsc();
+  gettimeofday(&tv, NULL);
+  timeCycles = __rdtsc() - timeCycles;
+  time += tv.tv_sec*1E6 + tv.tv_usec;
+  freq = timeCycles/time;
+}
+static inline double gettime() {
+  if (freq == -1) calibrate();
   return __rdtsc()/freq;
 }
+#if 0
 static uint64_t counts[8];
 static double times[8];
 static double startTimes[8];

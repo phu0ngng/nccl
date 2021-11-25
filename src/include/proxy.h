@@ -7,6 +7,8 @@
 #ifndef NCCL_PROXY_H_
 #define NCCL_PROXY_H_
 
+#include "devcomm.h"
+#include "info.h"
 #include "socket.h"
 #include <pthread.h>
 
@@ -145,6 +147,7 @@ struct ncclProxyProgressState {
   struct ncclProxyArgs* ops;
   struct ncclProxyArgs* pool;
   struct ncclProxyPool* pools;
+  int nextOps;
 };
 
 struct ncclProxyState {

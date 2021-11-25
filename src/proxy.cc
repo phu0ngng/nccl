@@ -10,6 +10,7 @@
 #include "socket.h"
 #include "shm.h"
 #include "timer.h"
+#include "profiler.h"
 
 enum { proxyRecv=0, proxySend=1 };
 
@@ -482,10 +483,15 @@ static ncclResult_t ncclProxyGetPostedOps(struct ncclComm* comm, int* added) {
   // to be available. Exit, continue progress, and come back later.
   if (state->ops != NULL && (pool->nextOps == -1 || pthread_mutex_trylock(&pool->mutex) != 0)) return ncclSuccess;
 
+  struct ncclProxyArgs profArgs; // Only used for profiling purposes
+  ncclProfilingRecord(&profArgs, 0, 0, ncclProxyProfileAppend);
   if (state->ops == NULL) {
     pthread_mutex_lock(&pool->mutex);
     while (pool->nextOps == -1 && !state->stop) {
+      struct ncclProxyArgs profArgs; // Only used for profiling purposes
+      ncclProfilingRecord(&profArgs, 0, 0, ncclProxyProfileSleep);
       pthread_cond_wait(&pool->cond, &pool->mutex);
+      ncclProfilingRecord(&profArgs, 0, 0, ncclProxyProfileWakeup);
     }
     if (state->stop) { // We might have been woken up to stop.
       pthread_mutex_unlock(&pool->mutex);
@@ -505,7 +511,7 @@ static ncclResult_t ncclProxyGetPostedOps(struct ncclComm* comm, int* added) {
 
   for (int opIndex = nextOps; opIndex != -1;) {
     struct ncclProxyOp* peerOp = pool->ops+opIndex;
-    if (peerOp->connection == NULL) { pthread_mutex_unlock(&pool->mutex); return ncclInternalError; }
+    if (peerOp->connection == NULL) return ncclInternalError;
     if (peerOp->next != -1) __builtin_prefetch(pool->ops+peerOp->next);
     NCCLCHECK(ProxyAppend(state, peerOp));
     (*added)++;
@@ -540,6 +546,8 @@ static ncclResult_t ncclProxyGetPostedOps(struct ncclComm* comm, int* added) {
       }
     }
   }
+  profArgs.opCount = *added;
+  ncclProfilingRecord(&profArgs, 0, 0, ncclProxyProfileAppendEnd);
   TIME_STOP(2);
   return ncclSuccess;
 }
@@ -559,6 +567,8 @@ void* ncclProxyProgress(void *comm_) {
   snprintf(threadName, NCCL_THREAD_NAMELEN, "NCCL Progress%2d", comm->cudaDev);
   nvtxNameOsThreadA(syscall(SYS_gettid), threadName);
 
+  int lastIdle = 0;
+  struct ncclProxyArgs profArgs; // Only used for profiling purposes
   while (state->stop == 0 && *comm->abortFlag == 0) {
     int idle = 1;
     ncclResult_t ret = progressOps(comm, state, state->ops, &idle);
@@ -567,6 +577,8 @@ void* ncclProxyProgress(void *comm_) {
       INFO(NCCL_ALL,"%s:%d -> %d [Proxy Thread]", __FILE__, __LINE__, ret);
       return NULL;
     }
+    if (lastIdle == 0 && idle == 1) ncclProfilingRecord(&profArgs, 0, 0, ncclProxyProfileIdle);
+    if (lastIdle == 1 && idle == 0) ncclProfilingRecord(&profArgs, 0, 0, ncclProxyProfileActive);
     if (idle) {
       int added = 0;
       ret = ncclProxyGetPostedOps(comm, &added);
@@ -574,8 +586,11 @@ void* ncclProxyProgress(void *comm_) {
         comm->fatalError = ret;
         INFO(NCCL_ALL,"%s:%d -> %d [Proxy Thread]", __FILE__, __LINE__, ret);
       }
-      if (added == 0) sched_yield(); // No request progressed. Let others run.
+      if (added == 0) {
+        sched_yield(); // No request progressed. Let others run.
+      }
     }
+    lastIdle = idle;
   }
   return NULL;
 }
@@ -1014,5 +1029,6 @@ ncclResult_t ncclProxyDestroy(struct ncclComm* comm) {
   }
   void* ret;
   pthread_join(state->thread, &ret);
+  ncclProfilingDump();
   return ncclSuccess;
 }
