@@ -9,56 +9,7 @@
 #include "collectives.h"
 #include "socket.h"
 #include "shm.h"
-
-#if 0
-#include <sys/time.h>
-#include <x86intrin.h>
-static double gettime() {
-  static double freq = -1;
-  if (freq == -1) {
-    //printf("Calibrating clock, please wait ...");
-    fflush(stdout);
-    struct timeval tv;
-    gettimeofday(&tv, NULL);
-    uint64_t timeCycles = __rdtsc();
-    double time = - tv.tv_sec*1E6 - tv.tv_usec;
-    uint64_t total = 0ULL;
-    for (int i=0; i<1000; i++) total += __rdtsc();
-    gettimeofday(&tv, NULL);
-    timeCycles = __rdtsc() - timeCycles;
-    time += tv.tv_sec*1E6 + tv.tv_usec;
-    freq = timeCycles/time;
-    //printf("Time %g, rdtsc delta %ld, freq %g cycles/usec\n", time, timeCycles, freq);
-  }
-  return __rdtsc()/freq;
-}
-static uint64_t counts[8];
-static double times[8];
-static double startTimes[8];
-#define TIME_START(index) do { \
-  counts[index]++; \
-  startTimes[index] = gettime(); \
-} while (0);
-
-#define TIME_STOP(index) do { \
-  times[index] += gettime() - startTimes[index]; \
-} while (0);
-
-#define TIME_CANCEL(index) do { \
-  counts[index]--; \
-} while (0);
-
-#define TIME_PRINT do { \
-  printf("Stats"); \
-  for (int i=0; i<8; i++) if (counts[i]) printf(" [%d] %g/%ld = %g", i, times[i], counts[i], times[i]/counts[i]); \
-  printf("\n"); \
-} while (0);
-#else
-#define TIME_START(index) while(0);
-#define TIME_STOP(index) while(0);
-#define TIME_CANCEL(index) while(0);
-#define TIME_PRINT
-#endif
+#include "timer.h"
 
 enum { proxyRecv=0, proxySend=1 };
 
@@ -278,14 +229,12 @@ static ncclResult_t ProxyAppend(struct ncclProxyProgressState* state, struct ncc
       }
       NCCLCHECK(ncclProxyOpToArgs(op, args, args->nsubs));
       DEBUG_PROXY_PRINT("Insert (%d/%5ld/%5ld) as group with %5ld\n", shared, args->opCount, op->opCount, OP_INDEX(args));
-      //printf("Insert (%d/%5ld/%5ld/%5d) as group with %5ld\n", shared, args->opCount, op->opCount, op->root, OP_INDEX(args));
     } else {
       struct ncclProxyArgs* prevArgs = args;
       NCCLCHECK(allocateArgs(state, &args));
       NCCLCHECK(ncclProxyOpToArgs(op, args, 0));
       prevArgs->nextPeer = args;
       DEBUG_PROXY_PRINT("Insert  %5ld (%d/%5ld/%5ld) as nextPeer of %5ld\n", OP_INDEX(args), shared, prevArgs->opCount, args->opCount, OP_INDEX(prevArgs));
-      //printf("Insert  %5ld (%d/%5ld/%5ld/%5d) as nextPeer of %5ld\n", OP_INDEX(args), shared, prevArgs->opCount, args->opCount, op->root, OP_INDEX(prevArgs));
       *(args->proxyAppendPtr) = args;
     }
   } else {
@@ -295,7 +244,6 @@ static ncclResult_t ProxyAppend(struct ncclProxyProgressState* state, struct ncc
     if (state->ops == NULL) {
       // Create the list
       DEBUG_PROXY_PRINT("Insert  %5ld (%d/%5ld) as first element\n", OP_INDEX(args), shared, args->opCount);
-      //printf("Insert  %5ld (%d/%5ld/%5d) as first element\n", OP_INDEX(args), shared, args->opCount, op->root);
       state->ops = args;
     } else {
       // Append element at the end of the list
@@ -303,7 +251,6 @@ static ncclResult_t ProxyAppend(struct ncclProxyProgressState* state, struct ncc
       while (last->next) last = last->next;
       last->next = args;
       DEBUG_PROXY_PRINT("Insert  %5ld (%d/%5ld) as last element\n", OP_INDEX(args), shared, args->opCount);
-      //printf("Insert  %5ld (%d/%5ld/%5d) as last element\n", OP_INDEX(args), shared, args->opCount, op->root);
     }
     *(args->proxyAppendPtr) = args;
   }
@@ -502,7 +449,7 @@ static ncclResult_t removeOp(struct ncclProxyProgressState* state, struct ncclPr
   }
   freeOp->next = state->pool;
   state->pool = freeOp;
-  DEBUG_PROXY_PRINT("Removed %5ld (%5ld)                                               : ", OP_INDEX(freeOp), OP_INDEX(*freeOp->proxyAppendPtr));
+  DEBUG_PROXY_PRINT("Removed %5ld (%5ld) : ", OP_INDEX(freeOp), OP_INDEX(*freeOp->proxyAppendPtr));
 #ifdef DEBUG_PROXY
   NCCLCHECK(dumpProxyState(state));
 #endif
@@ -685,7 +632,7 @@ ncclResult_t ncclProxyProgressDestroy(struct ncclComm* comm) {
     state->pools = next;
   }
 
-  TIME_PRINT;
+  TIME_PRINT("proxy");
   return ncclSuccess;
 }
 

@@ -20,6 +20,7 @@
 #include <poll.h>
 #include <sys/types.h>
 #include <unistd.h>
+#include "timer.h"
 
 #include "ibvwrap.h"
 
@@ -900,6 +901,7 @@ ncclResult_t ncclIbIsend(void* sendComm, void* data, int size, int tag, void* mh
         if (reqs[r] == NULL) return ncclSuccess;
       }
 
+      TIME_START(0);
       NCCLCHECK(ncclIbMultiSend(comm, slot));
 
       // Shift unmatched elements in the FIFO
@@ -913,6 +915,7 @@ ncclResult_t ncclIbIsend(void* sendComm, void* data, int size, int tag, void* mh
       memset(comm->fifo[comm->fifoHead%MAX_REQUESTS], 0, sizeof(struct ncclIbSendFifo));
       memset(comm->fifoReqs[comm->fifoHead%MAX_REQUESTS], 0, NCCL_NET_IB_MAX_RECVS*sizeof(struct ncclIbRequest*));
       comm->fifoHead++;
+      TIME_STOP(0);
       return ncclSuccess;
     }
     fifoHead++;
@@ -1002,17 +1005,21 @@ ncclResult_t ncclIbIrecv(void* recvComm, int n, void** data, int* sizes, int* ta
   wr.sg_list = NULL;
   wr.num_sge = 0;
 
+  TIME_START(1);
   for (int q=0; q<comm->nqps; q++) {
     struct ibv_qp* qp = comm->qps[q];
     struct ibv_recv_wr* bad_wr;
     NCCLCHECK(wrap_ibv_post_recv(qp, &wr, &bad_wr));
   }
+  TIME_STOP(1);
   req->events = comm->nqps;
 
   *request = req;
 
   // Post to FIFO to notify sender
+  TIME_START(2);
   NCCLCHECK(ncclIbPostFifo(comm, n, data, sizes, tags, mhandles, req));
+  TIME_STOP(2);
   return ncclSuccess;
 }
 
@@ -1063,7 +1070,9 @@ ncclResult_t ncclIbTest(void* request, int* done, int* sizes) {
 
     int wrDone = 0;
     struct ibv_wc wcs[4];
+    TIME_START(3);
     NCCLCHECK(wrap_ibv_poll_cq(r->verbs->cq, 4, wcs, &wrDone));
+    if (wrDone == 0) { TIME_CANCEL(3); } else { TIME_STOP(3); }
     if (wrDone == 0) return ncclSuccess;
 
     for (int w=0; w<wrDone; w++) {
@@ -1111,6 +1120,7 @@ ncclResult_t ncclIbCloseSend(void* sendComm) {
     NCCLCHECK(ncclIbDestroyVerbs(&comm->verbs));
     free(comm);
   }
+  TIME_PRINT("IB");
   return ncclSuccess;
 }
 
