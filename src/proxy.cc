@@ -181,24 +181,25 @@ ncclResult_t dumpProxyState(struct ncclProxyProgressState* state) {
 }
 
 static ncclResult_t ncclProxyOpToArgs(struct ncclProxyOp* op, struct ncclProxyArgs* args, int subIndex) {
-  if (subIndex == 0) memset(args, 0, sizeof(struct ncclProxyArgs));
   struct ncclProxySubArgs* sub = args->subs+subIndex;
-  sub->channelId = op->channelId;
+  //memset(sub, 0, sizeof(struct ncclProxySubArgs));
   sub->connection = op->connection;
+  sub->channelId = op->channelId;
   sub->nsteps = op->nsteps;
   sub->nbytes = op->nbytes;
   sub->peer = op->root;
   args->nsubs = subIndex+1;
   if (subIndex) return ncclSuccess;
+  //memset(&args->progress, 0, sizeof(struct ncclProxyArgs)-offsetof(struct ncclProxyArgs, progress));
   args->done = 0;
+  args->opCount = op->opCount;
   args->sliceSteps = op->sliceSteps;
   args->chunkSteps = op->chunkSteps;
   args->chunkSize = op->chunkSize;
-  args->opCount = op->opCount;
-  args->protocol = op->protocol;
   args->dtype = op->dtype;
   args->redOp = op->redOp;
   args->pattern = op->pattern;
+  args->protocol = op->protocol;
   args->state = ncclProxyOpReady;
   args->progress = op->connection->tcomm->proxyProgress;
   args->proxyAppendPtr = op->connection->proxyAppendPtr;
@@ -479,12 +480,13 @@ static ncclResult_t ncclProxyGetPostedOps(struct ncclComm* comm, int* added) {
   if (state->opsPool == NULL) return ncclInternalError;
   struct ncclProxyOpsPool* pool = state->opsPool;
 
+  if (state->nextOps != -1) goto process_nextops;
+
   // If we have ops to progress, no need to block waiting for something to arrive or even wait for the lock
   // to be available. Exit, continue progress, and come back later.
   if (state->ops != NULL && (pool->nextOps == -1 || pthread_mutex_trylock(&pool->mutex) != 0)) return ncclSuccess;
 
   struct ncclProxyArgs profArgs; // Only used for profiling purposes
-  ncclProfilingRecord(&profArgs, 0, 0, ncclProxyProfileAppend);
   if (state->ops == NULL) {
     pthread_mutex_lock(&pool->mutex);
     while (pool->nextOps == -1 && !state->stop) {
@@ -499,18 +501,25 @@ static ncclResult_t ncclProxyGetPostedOps(struct ncclComm* comm, int* added) {
     }
   }
 
-  int nextOps = pool->nextOps;
+  state->nextOps = pool->nextOps;
   pool->nextOps = pool->nextOpsEnd = -1;
   pthread_mutex_unlock(&pool->mutex);
-  if (nextOps == -1) return ncclInternalError;
+  if (state->nextOps == -1) return ncclInternalError;
 
+process_nextops:
+  ncclProfilingRecord(&profArgs, 0, 0, ncclProxyProfileAppend);
   TIME_START(2);
   int freeOp[NCCL_MAX_LOCAL_RANKS];
   int freeOpEnd[NCCL_MAX_LOCAL_RANKS];
-  for (int i=0; i<comm->localRanks; i++) freeOp[i] = -1;
+  uint64_t opCounts[NCCL_MAX_LOCAL_RANKS];
+  for (int i=0; i<comm->localRanks; i++) { freeOp[i] = -1; opCounts[i] = 0; }
 
-  for (int opIndex = nextOps; opIndex != -1;) {
+  for (int opIndex = state->nextOps; opIndex != -1;) {
     struct ncclProxyOp* peerOp = pool->ops+opIndex;
+    int peer = opIndex / MAX_OPS_PER_PEER;
+    // Don't add operations of the same peer with different opCounts, leave that for the next idle phase
+    if (opCounts[peer] != 0 && opCounts[peer] != peerOp->opCount) break;
+    opCounts[peer] = peerOp->opCount;
     if (peerOp->connection == NULL) return ncclInternalError;
     if (peerOp->next != -1) __builtin_prefetch(pool->ops+peerOp->next);
     NCCLCHECK(ProxyAppend(state, peerOp));
@@ -518,13 +527,13 @@ static ncclResult_t ncclProxyGetPostedOps(struct ncclComm* comm, int* added) {
     int lastOpIndex = opIndex;
     opIndex = peerOp->next;
     // Return op to peer pool
-    int peer = lastOpIndex / MAX_OPS_PER_PEER;
     if (freeOp[peer] == -1) {
       freeOpEnd[peer] = lastOpIndex;
     } else {
       peerOp->next = freeOp[peer];
     }
     freeOp[peer] = lastOpIndex;
+    state->nextOps = opIndex;
   }
 
   for (int i=0; i<comm->localRanks; i++) {
@@ -561,6 +570,7 @@ void ncclDumpProxyState(int signal) {
 void* ncclProxyProgress(void *comm_) {
   struct ncclComm* comm = (struct ncclComm*)comm_;
   struct ncclProxyProgressState* state = &comm->proxyState.progressState;
+  state->nextOps = -1;
   signal(SIGUSR1, ncclDumpProxyState);
   ncclLastProxyState = state;
   char threadName[NCCL_THREAD_NAMELEN];

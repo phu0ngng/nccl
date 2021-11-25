@@ -26,22 +26,23 @@ struct ncclProxyOp {
   int nsteps;
   ssize_t nbytes;
   int root;
+  int next;
+
+  uint64_t opCount;
   int sliceSteps;
   int chunkSteps;
   int chunkSize;
-  uint64_t opCount;
-  uint8_t protocol;
-  ncclPattern_t pattern; // uint8_t
-  uint16_t pad;
   ncclDataType_t dtype;
   ncclRedOp_t redOp;
-  int next;
+  ncclPattern_t pattern; // uint8_t
+  uint8_t protocol;
+  uint16_t pad;
 };
 static_assert(sizeof(struct ncclProxyOp) == 64, "Keep ProxyOp aligned with cache lines for effective prefetch");
 
 struct ncclProxySubArgs {
-  int channelId;
   struct ncclProxyConnection* connection;
+  int channelId;
   int nsteps;
   ssize_t nbytes;
   int peer;
@@ -59,18 +60,18 @@ struct ncclProxySubArgs {
 };
 
 struct ncclProxyArgs {
-  proxyProgressFunc_t progress;
   struct ncclProxySubArgs subs[NCCL_PROXY_MAX_SUBS];
+  proxyProgressFunc_t progress;
   int nsubs;
   int done;
+  uint64_t opCount;
   int sliceSteps;
   int chunkSteps;
   int chunkSize;
-  uint64_t opCount;
-  int protocol;
   ncclDataType_t dtype;
   ncclRedOp_t redOp;
   ncclPattern_t pattern;
+  uint8_t protocol;
   int state;
   char* sharedBuff[NCCL_STEPS];
   int sharedSize[NCCL_STEPS];
