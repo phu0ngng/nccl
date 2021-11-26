@@ -523,15 +523,11 @@ process_nextops:
   TIME_START(2);
   int freeOp[NCCL_MAX_LOCAL_RANKS];
   int freeOpEnd[NCCL_MAX_LOCAL_RANKS];
-  uint64_t opCounts[NCCL_MAX_LOCAL_RANKS];
-  for (int i=0; i<comm->localRanks; i++) { freeOp[i] = -1; opCounts[i] = 0; }
+  for (int i=0; i<comm->localRanks; i++) freeOp[i] = -1;
 
   for (int opIndex = state->nextOps; opIndex != -1;) {
     struct ncclProxyOp* peerOp = pool->ops+opIndex;
     int peer = opIndex / MAX_OPS_PER_PEER;
-    // Don't add operations of the same peer with different opCounts, leave that for the next idle phase
-    if (opCounts[peer] != 0 && opCounts[peer] != peerOp->opCount) break;
-    opCounts[peer] = peerOp->opCount;
     if (peerOp->connection == NULL) return ncclInternalError;
     if (peerOp->next != -1) __builtin_prefetch(pool->ops+peerOp->next);
     NCCLCHECK(ProxyAppend(state, peerOp));
