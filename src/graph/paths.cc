@@ -541,7 +541,7 @@ static ncclResult_t ncclTopoGetNchannels(struct ncclTopoSystem* system, int g /*
     }
   } else {
     // Remote rank, use network
-    *nChannels = 1;
+    *nChannels = 2;
   }
   return ncclSuccess;
 }
