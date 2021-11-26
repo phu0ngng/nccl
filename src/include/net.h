@@ -62,8 +62,12 @@ static ncclResult_t ncclGpuGdrSupport(int* gdrSupport) {
     ncclResult_t ret;
     ncclDebugNoWarn = NCCL_NET;
     NCCLCHECKGOTO(ncclNetListen(dev, &handle, &lComm), ret, cleanup1);
-    NCCLCHECKGOTO(ncclNetConnect(dev, &handle, &sComm), ret, cleanup2);
-    NCCLCHECKGOTO(ncclNetAccept(lComm, &rComm), ret, cleanup3);
+    while (sComm == NULL) {
+      NCCLCHECKGOTO(ncclNetConnect(dev, &handle, &sComm), ret, cleanup2);
+    }
+    while (rComm == NULL) {
+      NCCLCHECKGOTO(ncclNetAccept(lComm, &rComm), ret, cleanup3);
+    }
     CUDACHECKGOTO(cudaMalloc(&gpuPtr, GPU_BUF_SIZE), ret, cleanup4);
     if (ncclNetRegMr(sComm, gpuPtr, GPU_BUF_SIZE, NCCL_PTR_CUDA, &mHandle) == ncclSuccess) {
       NCCLCHECK(ncclNetDeregMr(sComm, mHandle));
