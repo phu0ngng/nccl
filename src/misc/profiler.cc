@@ -30,13 +30,13 @@ double profilingStart = 0;
 #define MAX_EVENTS 200000
 
 ncclResult_t ncclProfilingRecord(struct ncclProxyArgs* args, int sub, int step, int state) {
-  if (profilingIndex == MAX_EVENTS) return ncclSuccess;
   if (profilingEvents == NULL) {
     NCCLCHECK(ncclCalloc(&profilingEvents, MAX_EVENTS));
     profilingStart = gettime();
   }
   struct ncclProxyProfileEvent* event = NULL;
   if (state%8 == 0) {
+    if (profilingIndex == MAX_EVENTS) return ncclSuccess;
     args->subs[sub].profilingEvents[step%NCCL_STEPS] = event = profilingEvents+profilingIndex++;
     if (state == ncclProxyProfileBegin) {
       // Proxy operation information

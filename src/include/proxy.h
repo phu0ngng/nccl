@@ -145,7 +145,7 @@ struct ncclProxyProgressState {
   struct ncclProxyPeer** localPeers;
   struct ncclSharedNetComms* netComms[NCCL_MAX_NETDEVS];
   struct ncclProxySharedCollNet collNet;
-  struct ncclProxyArgs* ops;
+  struct ncclProxyArgs* active;
   struct ncclProxyArgs* pool;
   struct ncclProxyPool* pools;
   int nextOps;
