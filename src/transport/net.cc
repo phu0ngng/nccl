@@ -505,7 +505,7 @@ static ncclResult_t sendProxyConnect(struct ncclProxyConnection* connection, str
   } else {
     NCCLCHECK(netCreateShm(map->mems+NCCL_NET_MAP_HOSTMEM));
   }
-  if (ncclGdrCopy && ncclParamGdrCopySyncEnable()) {
+  if (ncclGdrCopy && map->sameProcess && ncclParamGdrCopySyncEnable()) {
     uint64_t *cpuPtr, *gpuPtr;
     NCCLCHECK(ncclGdrCudaCalloc(&cpuPtr, &gpuPtr, 1, &resources->gdrDesc));
 
@@ -607,7 +607,7 @@ static ncclResult_t recvProxyConnect(struct ncclProxyConnection* connection, str
   }
   NCCLCHECK(ncclCudaHostCalloc(&map->mems[NCCL_NET_MAP_HOSTMEM].cpuPtr, map->mems[NCCL_NET_MAP_HOSTMEM].size));
   map->mems[NCCL_NET_MAP_HOSTMEM].gpuPtr = map->mems[NCCL_NET_MAP_HOSTMEM].cpuPtr;
-  if (ncclGdrCopy) {
+  if (ncclGdrCopy && map->sameProcess) {
     uint64_t *cpuPtr, *gpuPtr;
     NCCLCHECK(ncclGdrCudaCalloc(&cpuPtr, &gpuPtr, 2, &resources->gdrDesc));
 
