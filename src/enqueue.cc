@@ -851,6 +851,7 @@ static ncclResult_t ncclSaveP2p(struct ncclInfo* info) {
     if (peer != comm->rank) {
       //int step = (peerRanks + peerIndex - rankIndex)%peerRanks;
       int delta = (comm->nNodes + peerNode - comm->node) % comm->nNodes;
+      if (comm->nNodes == 1) delta = (comm->nRanks + peer - comm->rank) % comm->nRanks;
       // Mark channels that need pre-connect
       for (int c=0; c<comm->p2pnChannelsPerPeer; c++) {
         //int channelId = ((delta ? delta : step)+comm->p2pChannels[c]) % comm->p2pnChannels;
@@ -867,6 +868,7 @@ static ncclResult_t ncclSaveP2p(struct ncclInfo* info) {
     if (peer != comm->rank) {
       //int step = (peerRanks + rankIndex - peerIndex)%peerRanks;
       int delta = (comm->nNodes + comm->node - peerNode) % comm->nNodes;
+      if (comm->nNodes == 1) delta = (comm->nRanks - peer + comm->rank) % comm->nRanks;
       // Mark channels that need pre-connect
       for (int c=0; c<comm->p2pnChannelsPerPeer; c++) {
         //int channelId = ((delta ? delta : step)+comm->p2pChannels[c]) % comm->p2pnChannels;

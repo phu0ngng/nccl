@@ -673,6 +673,7 @@ struct ncclProxyAsyncOp {
 
 struct ncclProxyLocalPeer {
   struct ncclSocket sock;
+  int localRank;
   struct ncclProxyAsyncOp asyncOps;
   struct ncclProxyOpsPool* pool;
 };
@@ -753,6 +754,7 @@ ncclResult_t ncclProxyConnect(struct ncclComm* comm, int transport, int send, in
   NCCLCHECK(ncclSocketSend(sock, &type, sizeof(int)));
   NCCLCHECK(ncclSocketSend(sock, &transport, sizeof(int)));
   NCCLCHECK(ncclSocketSend(sock, &send, sizeof(int)));
+  NCCLCHECK(ncclSocketSend(sock, &comm->localRank, sizeof(int)));
   NCCLCHECK(ncclSocketRecv(sock, &proxyConn->connection, sizeof(void*)));
   INFO(NCCL_NET, "Connection to proxy localRank %d -> connection %p", proxyConn->localRank, proxyConn->connection);
   proxyConn->comm = comm;
@@ -780,7 +782,7 @@ static ncclResult_t ncclProxyAppendAsyncOp(struct ncclProxyConnectionPool* conne
   return ncclSuccess;
 }
 
-static ncclResult_t proxyConnInit(struct ncclProxyLocalPeer* peer, struct ncclProxyConnectionPool* connectionPool) {
+static ncclResult_t proxyConnInit(struct ncclProxyLocalPeer* peer, struct ncclProxyConnectionPool* connectionPool, struct ncclComm* comm) {
   struct ncclSocket* sock = &peer->sock;
   char buf[SOCKET_NAME_MAXLEN+1];
   buf[SOCKET_NAME_MAXLEN] = '\0';
@@ -791,8 +793,10 @@ static ncclResult_t proxyConnInit(struct ncclProxyLocalPeer* peer, struct ncclPr
   connection->sock = sock;
   NCCLCHECK(ncclSocketRecv(sock, &connection->transport, sizeof(int)));
   NCCLCHECK(ncclSocketRecv(sock, &connection->send, sizeof(int)));
+  NCCLCHECK(ncclSocketRecv(sock, &peer->localRank, sizeof(int)));
   NCCLCHECK(ncclSocketSend(sock, &connection, sizeof(void*)));
   connection->tcomm = connection->send ? &ncclTransports[connection->transport].send : &ncclTransports[connection->transport].recv;
+  if (connection->tcomm->proxySharedInit) connection->tcomm->proxySharedInit(connection, comm, peer->localRank);
   buf[SOCKET_NAME_MAXLEN] = '\0';
   INFO(NCCL_NET, "New proxy %s connection %d from %s, transport %d", connection->send ? "send":"recv", id, ncclSocketToString(&sock->addr, buf), connection->transport);
   return ncclSuccess;
@@ -969,7 +973,7 @@ void* ncclProxyService(void* _args) {
             sock->fd = pollfds[s].fd = -1;
             npeers--;
           } else if (type == ncclProxyMsgInit) {
-            res = proxyConnInit(peers+s, &connectionPool);
+            res = proxyConnInit(peers+s, &connectionPool, comm);
           } else if (type == ncclProxyMsgSetup || type == ncclProxyMsgConnect) {
             res = proxyConnSetupConnect(type, peers+s, &connectionPool, comm);
           } else if (type == ncclProxyMsgOpsAlloc) {

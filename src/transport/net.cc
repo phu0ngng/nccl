@@ -316,6 +316,86 @@ static ncclResult_t recvFree(struct ncclConnector* recv) {
   return ncclSuccess;
 }
 
+static ncclResult_t sharedBuffersInit(struct ncclComm* comm, int cuda, int localRank, int type, int sameProcess,
+  char** gpuPtr, char** cpuPtr, int* size, cudaIpcMemHandle_t* ipc) {
+  if (cuda == 0 && sameProcess == 0) {
+      WARN("PXN should not use host buffers for data");
+      return ncclInternalError;
+  }
+  struct ncclProxyProgressState* progressState = &comm->proxyState.progressState;
+  if (progressState->localPeers == NULL) {
+    NCCLCHECK(ncclCalloc(&progressState->localPeers, comm->localRanks));
+  }
+  struct ncclProxyPeer** localPeers = progressState->localPeers;
+  if (localPeers[localRank] == NULL) {
+    NCCLCHECK(ncclCalloc(localPeers+localRank, 1));
+  }
+  struct ncclProxyPeer* peer = localPeers[localRank];
+  struct ncclProxySharedP2p* state = type == 0 ? &peer->send : &peer->recv;
+  state->refcount++;
+  if (state->size == 0) {
+    state->size = comm->p2pnChannels*NCCL_MAX_WORK_ELEMENTS*comm->buffSizes[NCCL_PROTO_SIMPLE]/SENDRECV_SLICEFACTOR;
+  }
+
+  if (size) *size = state->size;
+
+  if (cuda && state->cudaBuff == NULL) {
+    NCCLCHECK(ncclCudaCalloc(&state->cudaBuff, state->size));
+    if (sameProcess == 0) {
+      CUDACHECK(cudaIpcGetMemHandle(&state->ipc, state->cudaBuff));
+    }
+  }
+  if (!cuda && state->hostBuff == NULL) {
+    NCCLCHECK(ncclCudaHostCalloc(&state->hostBuff, state->size));
+  }
+  if (cpuPtr) *cpuPtr = cuda ? state->cudaBuff : state->hostBuff;
+  if (sameProcess) {
+    if (gpuPtr) *gpuPtr = *cpuPtr;
+  } else {
+    if (gpuPtr) *gpuPtr = NULL;
+    if (ipc) memcpy(ipc, &state->ipc, sizeof(cudaIpcMemHandle_t));
+  }
+  return ncclSuccess;
+}
+
+static ncclResult_t sharedBuffersGet(struct ncclComm* comm, int channel, int slot, int index, int* offset) {
+  // Use different pools for different channels and also separate send/recv.
+  int slotSize = comm->buffSizes[NCCL_PROTO_SIMPLE]/(NCCL_STEPS*SENDRECV_SLICEFACTOR);
+  int globalSlot = ((channel*NCCL_STEPS)+slot)*NCCL_MAX_WORK_ELEMENTS+index;
+  *offset = slotSize * globalSlot;
+  return ncclSuccess;
+}
+
+static ncclResult_t sharedBuffersDestroy(struct ncclComm* comm, int localRank, int type) {
+  if (comm->proxyState.progressState.localPeers == NULL) NCCLCHECK(ncclInternalError);
+  struct ncclProxyPeer* peer = comm->proxyState.progressState.localPeers[localRank];
+  if (peer == NULL) NCCLCHECK(ncclInternalError;)
+  struct ncclProxySharedP2p* state = type == 0 ? &peer->send : &peer->recv;
+  if (state->size == 0) NCCLCHECK(ncclInternalError);
+  state->refcount--;
+  if (state->refcount == 0) {
+    if (state->cudaBuff) CUDACHECK(cudaFree(state->cudaBuff));
+    if (state->hostBuff) NCCLCHECK(ncclCudaHostFree(state->hostBuff));
+  }
+  if (peer->send.refcount || peer->recv.refcount) return ncclSuccess;
+  free(peer);
+  comm->proxyState.progressState.localPeers[localRank] = NULL;
+  for (int r=0; r<comm->localRanks; r++) {
+    if (comm->proxyState.progressState.localPeers[r]) return ncclSuccess;
+  }
+  // All peers are freed, free array
+  free(comm->proxyState.progressState.localPeers);
+  comm->proxyState.progressState.localPeers = NULL;
+  return ncclSuccess;
+}
+
+static ncclResult_t proxySharedInit(struct ncclProxyConnection* connection, struct ncclComm* comm, int localRank) {
+  int rank = comm->localRankToRank[localRank];
+  int sameProcess = comm->peerInfo[rank].pidHash == comm->peerInfo[comm->rank].pidHash ? 1 : 0;
+  NCCLCHECK(sharedBuffersInit(comm, 1, localRank, 0, sameProcess, NULL, NULL, NULL, NULL));
+  return ncclSuccess;
+}
+
 static ncclResult_t sendProxySetup(struct ncclProxyConnection* connection, struct ncclComm* comm, void* reqBuff, int reqSize, void* respBuff, int respSize, int* done) {
   struct setupReq* req = (struct setupReq*) reqBuff;
   if (reqSize != sizeof(struct setupReq)) return ncclInternalError;
@@ -359,73 +439,6 @@ static ncclResult_t recvProxySetup(struct ncclProxyConnection* connection, struc
   *done = 1;
   return ncclSuccess;
 }
-
-static ncclResult_t sharedBuffersInit(struct ncclComm* comm, int cuda, int localRank, int type, int sameProcess,
-  char** gpuPtr, char** cpuPtr, int* size, cudaIpcMemHandle_t* ipc) {
-  if (cuda == 0 && sameProcess == 0) {
-      WARN("PXN should not use host buffers for data");
-      return ncclInternalError;
-  }
-  if (comm->proxyState.progressState.localPeers == NULL) return ncclInternalError;
-  struct ncclProxyPeer* peer = comm->proxyState.progressState.localPeers[localRank];
-  struct ncclProxySharedP2p* state = type == 0 ? &peer->send : &peer->recv;
-  state->refcount++;
-  if (state->size == 0) {
-    state->size = comm->p2pnChannels*NCCL_MAX_WORK_ELEMENTS*comm->buffSizes[NCCL_PROTO_SIMPLE]/SENDRECV_SLICEFACTOR;
-  }
-
-  *size = state->size;
-
-  if (cuda && state->cudaBuff == NULL) {
-    NCCLCHECK(ncclCudaCalloc(&state->cudaBuff, *size));
-    if (sameProcess == 0) {
-      CUDACHECK(cudaIpcGetMemHandle(&state->ipc, state->cudaBuff));
-    }
-  }
-  if (!cuda && state->hostBuff == NULL) {
-    NCCLCHECK(ncclCudaHostCalloc(&state->hostBuff, *size));
-  }
-  *cpuPtr = cuda ? state->cudaBuff : state->hostBuff;
-  if (sameProcess) {
-    *gpuPtr = *cpuPtr;
-  } else {
-    *gpuPtr = NULL;
-    memcpy(ipc, &state->ipc, sizeof(cudaIpcMemHandle_t));
-  }
-  return ncclSuccess;
-}
-
-static ncclResult_t sharedBuffersGet(struct ncclComm* comm, int channel, int slot, int index, int* offset) {
-  // Use different pools for different channels and also separate send/recv.
-  int slotSize = comm->buffSizes[NCCL_PROTO_SIMPLE]/(NCCL_STEPS*SENDRECV_SLICEFACTOR);
-  int globalSlot = ((channel*NCCL_STEPS)+slot)*NCCL_MAX_WORK_ELEMENTS+index;
-  *offset = slotSize * globalSlot;
-  return ncclSuccess;
-}
-
-static ncclResult_t sharedBuffersDestroy(struct ncclComm* comm, int localRank, int type) {
-  if (comm->proxyState.progressState.localPeers == NULL) NCCLCHECK(ncclInternalError);
-  struct ncclProxyPeer* peer = comm->proxyState.progressState.localPeers[localRank];
-  if (peer == NULL) NCCLCHECK(ncclInternalError;)
-  struct ncclProxySharedP2p* state = type == 0 ? &peer->send : &peer->recv;
-  if (state->size == 0) NCCLCHECK(ncclInternalError);
-  state->refcount--;
-  if (state->refcount == 0) {
-    if (state->cudaBuff) CUDACHECK(cudaFree(state->cudaBuff));
-    if (state->hostBuff) NCCLCHECK(ncclCudaHostFree(state->hostBuff));
-  }
-  if (peer->send.refcount || peer->recv.refcount) return ncclSuccess;
-  free(peer);
-  comm->proxyState.progressState.localPeers[localRank] = NULL;
-  for (int r=0; r<comm->localRanks; r++) {
-    if (comm->proxyState.progressState.localPeers[r]) return ncclSuccess;
-  }
-  // All peers are freed, free array
-  free(comm->proxyState.progressState.localPeers);
-  comm->proxyState.progressState.localPeers = NULL;
-  return ncclSuccess;
-}
-
 
 static ncclResult_t sendProxyConnect(struct ncclProxyConnection* connection, struct ncclComm* comm, void* reqBuff, int reqSize, void* respBuff, int respSize, int* done) {
   struct sendResources* resources = (struct sendResources*)(connection->transportResources);
@@ -638,6 +651,7 @@ static ncclResult_t recvProxyConnect(struct ncclProxyConnection* connection, str
 
 static ncclResult_t sendProxyFree(struct ncclProxyConnection* connection, struct ncclComm* comm) {
   struct sendResources* resources = (struct sendResources*)(connection->transportResources);
+  if (resources == NULL) return ncclSuccess; // NVB Preconnect
   for (int p=0; p<NCCL_NUM_PROTOCOLS; p++) {
     if (resources->buffers[p]) {
       NCCLCHECK(ncclNetDeregMr(resources->netSendComm, resources->mhandles[p]));
@@ -663,6 +677,7 @@ static ncclResult_t sendProxyFree(struct ncclProxyConnection* connection, struct
 
 static ncclResult_t recvProxyFree(struct ncclProxyConnection* connection, struct ncclComm* comm) {
   struct recvResources* resources = (struct recvResources*)(connection->transportResources);
+  if (resources == NULL) return ncclSuccess; // NVB Preconnect
   for (int p=0; p<NCCL_NUM_PROTOCOLS; p++) {
     if (resources->buffers[p]) {
       NCCLCHECK(ncclNetDeregMr(resources->netRecvComm, resources->mhandles[p]));
@@ -1013,6 +1028,6 @@ static ncclResult_t recvProxyProgress(struct ncclComm* comm, struct ncclProxyArg
 struct ncclTransport netTransport = {
   "NET",
   canConnect,
-  { sendSetup, sendConnect, sendFree, sendProxySetup, sendProxyConnect, sendProxyFree, sendProxyProgress },
-  { recvSetup, recvConnect, recvFree, recvProxySetup, recvProxyConnect, recvProxyFree, recvProxyProgress }
+  { sendSetup, sendConnect, sendFree, proxySharedInit, sendProxySetup, sendProxyConnect, sendProxyFree, sendProxyProgress },
+  { recvSetup, recvConnect, recvFree, proxySharedInit, recvProxySetup, recvProxyConnect, recvProxyFree, recvProxyProgress }
 };

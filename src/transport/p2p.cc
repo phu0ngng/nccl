@@ -335,6 +335,6 @@ static ncclResult_t p2pProxyFree(struct ncclProxyConnection* connection, struct 
 struct ncclTransport p2pTransport = {
   "P2P",
   p2pCanConnect,
-  { p2pSendSetup, p2pSendConnect, p2pSendFree, p2pProxySetup, NULL, p2pProxyFree, NULL },
-  { p2pRecvSetup, p2pRecvConnect, p2pRecvFree, p2pProxySetup, NULL, p2pProxyFree, NULL }
+  { p2pSendSetup, p2pSendConnect, p2pSendFree, NULL, p2pProxySetup, NULL, p2pProxyFree, NULL },
+  { p2pRecvSetup, p2pRecvConnect, p2pRecvFree, NULL, p2pProxySetup, NULL, p2pProxyFree, NULL }
 };

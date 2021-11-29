@@ -900,26 +900,19 @@ collnet_cleanup:
 
   if (ncclParamPxnPreconnect()) {
     // Connect net proxies when using PXN path
-    // TODO preconnect PXN
-#if 0
-    int pxnNnets;
-    int* pxnNets;
-    NCCLCHECK(ncclTopoGetPxnNets(comm->topo, comm->rank, &pxnNnets, &pxnNets));
-    for (int n=0; n<pxnNnets; n++) {
-      int netDev = pxnNets[n];
-      int proxyRank;
+    int nranks;
+    int* pxnPeers;
+    NCCLCHECK(ncclTopoGetPxnRanks(comm, &pxnPeers, &nranks));
+    for (int r=0; r<nranks; r++) {
       struct ncclProxyConnector proxyConn;
-      NCCLCHECK(ncclTopoGetLocalRank(comm->topo, comm->rank, &send->proxyConn.localRank));
-      NCCLCHECK(ncclTopoGetIntermediateRank(comm->topo, comm->rank, netDev, &proxyRank));
-      NCCLCHECK(ncclProxyConnect(comm, TRANSPORT_NET, 1, proxyRank, &proxyConn));
-      NCCLCHECK(ncclProxyCall(&proxyConn, ncclProxyMsgSetup,  ...));
+      NCCLCHECK(ncclTopoGetLocalRank(comm->topo, comm->rank, &proxyConn.localRank));
+      NCCLCHECK(ncclProxyConnect(comm, TRANSPORT_NET, 1, pxnPeers[r], &proxyConn));
     }
-    free(nvbPeers);
-#endif
+    free(pxnPeers);
   }
 
   do {
-    // Compute intra ranks
+    // Compute intra-process ranks
     int intraProcRank0 = -1, intraProcRank = -1, intraProcRanks = 0;
     for (int i = 0; i < nranks; i++) {
       if ((comm->peerInfo[i].hostHash == comm->peerInfo[rank].hostHash)
