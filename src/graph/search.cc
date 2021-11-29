@@ -942,8 +942,8 @@ ncclResult_t ncclTopoGetNetDev(struct ncclComm* comm, int rank, struct ncclTopoG
   } else {
     // Start with our local NIC
     NCCLCHECK(ncclTopoGetLocalNet(comm->topo, rank, dev));
-    // If Cross-NIC is forbidden, see whether we can use the remote rank preferred device.
-    if (ncclParamCrossNic() == 0) {
+    // Unless cross-NIC is not a problem, see whether we can use the remote rank preferred device.
+    if (ncclParamCrossNic() != 1) {
       int netDev = comm->peerInfo[peerRank].netDev;
       int n;
       // Check that device exists on our node
