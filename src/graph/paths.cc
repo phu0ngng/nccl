@@ -388,7 +388,6 @@ ncclResult_t ncclTopoGetPxnRanks(struct ncclComm* comm, int** intermediateRanks,
 
   int pxnNnets = 0;
   int* pxnNets = NULL;
-  NCCLCHECK(ncclCalloc(&pxnNets, system->nodes[NET].count));
 
   for (int rank=0; rank<comm->nRanks; rank++) {
     int netDev;
@@ -398,7 +397,7 @@ ncclResult_t ncclTopoGetPxnRanks(struct ncclComm* comm, int** intermediateRanks,
       if (pxnNets[n] == netDev) found = 1;
     }
     if (!found) {
-      pxnNets = (int*)realloc(pxnNets, pxnNnets+1);
+      NCCLCHECK(ncclRealloc(&pxnNets, pxnNnets, pxnNnets+1));
       pxnNets[pxnNnets++] = netDev;
     }
   }
@@ -420,7 +419,7 @@ ncclResult_t ncclTopoGetPxnRanks(struct ncclComm* comm, int** intermediateRanks,
       if ((*intermediateRanks)[n] == proxyRank) found = 1;
     }
     if (!found) {
-      ranks = (int*)realloc(ranks, nr+1);
+      NCCLCHECK(ncclRealloc(&ranks, nr, nr+1));
       ranks[nr++] = proxyRank;
     }
   }
