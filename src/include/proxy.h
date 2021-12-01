@@ -192,13 +192,14 @@ ncclResult_t ncclProxyInit(struct ncclComm* comm, struct ncclSocket* sock, union
 ncclResult_t ncclProxyConnect(struct ncclComm* comm, int transport, int send, int rank, struct ncclProxyConnector* proxyConn);
 enum ncclProxyMsgType {
   ncclProxyMsgInit = 1,
-  ncclProxyMsgSetup = 2,
-  ncclProxyMsgConnect = 3,
-  ncclProxyMsgOpsAlloc = 4,
-  ncclProxyMsgStart = 5,
-  ncclProxyMsgClose = 6,
-  ncclProxyMsgAbort = 7,
-  ncclProxyMsgStop = 8
+  ncclProxyMsgSharedInit = 2,
+  ncclProxyMsgSetup = 3,
+  ncclProxyMsgConnect = 4,
+  ncclProxyMsgOpsAlloc = 5,
+  ncclProxyMsgStart = 6,
+  ncclProxyMsgClose = 7,
+  ncclProxyMsgAbort = 8,
+  ncclProxyMsgStop = 9
 };
 ncclResult_t ncclProxyCall(struct ncclProxyConnector* proxyConn, int type, void* reqBuff, int reqSize, void* respBuff, int respSize);
 ncclResult_t ncclProxyDestroy(struct ncclComm* comm);

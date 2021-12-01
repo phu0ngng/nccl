@@ -796,9 +796,22 @@ static ncclResult_t proxyConnInit(struct ncclProxyLocalPeer* peer, struct ncclPr
   NCCLCHECK(ncclSocketRecv(sock, &peer->localRank, sizeof(int)));
   NCCLCHECK(ncclSocketSend(sock, &connection, sizeof(void*)));
   connection->tcomm = connection->send ? &ncclTransports[connection->transport].send : &ncclTransports[connection->transport].recv;
-  if (connection->tcomm->proxySharedInit) connection->tcomm->proxySharedInit(connection, comm, peer->localRank);
   buf[SOCKET_NAME_MAXLEN] = '\0';
   INFO(NCCL_NET, "New proxy %s connection %d from %s, transport %d", connection->send ? "send":"recv", id, ncclSocketToString(&sock->addr, buf), connection->transport);
+  return ncclSuccess;
+}
+
+static ncclResult_t proxyConnSharedInit(struct ncclProxyLocalPeer* peer, struct ncclProxyConnectionPool* connectionPool, struct ncclComm* comm) {
+  struct ncclSocket* sock = &peer->sock;
+  struct ncclProxyConnection* connection;
+  NCCLCHECK(ncclSocketRecv(sock, &connection, sizeof(void*)));
+  int reqSize, respSize;
+  NCCLCHECK(ncclSocketRecv(sock, &reqSize, sizeof(int)));
+  NCCLCHECK(ncclSocketRecv(sock, &respSize, sizeof(int)));
+  if (reqSize != sizeof(int) || respSize != 0) return ncclInternalError;
+  int nChannels;
+  NCCLCHECK(ncclSocketRecv(sock, &nChannels, sizeof(int)));
+  if (connection->tcomm->proxySharedInit) NCCLCHECK(connection->tcomm->proxySharedInit(connection, comm, peer->localRank, nChannels));
   return ncclSuccess;
 }
 
@@ -974,6 +987,8 @@ void* ncclProxyService(void* _args) {
             npeers--;
           } else if (type == ncclProxyMsgInit) {
             res = proxyConnInit(peers+s, &connectionPool, comm);
+          } else if (type == ncclProxyMsgSharedInit) {
+            res = proxyConnSharedInit(peers+s, &connectionPool, comm);
           } else if (type == ncclProxyMsgSetup || type == ncclProxyMsgConnect) {
             res = proxyConnSetupConnect(type, peers+s, &connectionPool, comm);
           } else if (type == ncclProxyMsgOpsAlloc) {
