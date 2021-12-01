@@ -388,6 +388,7 @@ ncclResult_t ncclTopoGetPxnRanks(struct ncclComm* comm, int** intermediateRanks,
 
   int pxnNnets = 0;
   int* pxnNets = NULL;
+  NCCLCHECK(ncclCalloc(&pxnNets, system->nodes[NET].count));
 
   for (int rank=0; rank<comm->nRanks; rank++) {
     int netDev;
@@ -397,7 +398,6 @@ ncclResult_t ncclTopoGetPxnRanks(struct ncclComm* comm, int** intermediateRanks,
       if (pxnNets[n] == netDev) found = 1;
     }
     if (!found) {
-      NCCLCHECK(ncclRealloc(&pxnNets, pxnNnets, pxnNnets+1));
       pxnNets[pxnNnets++] = netDev;
     }
   }
