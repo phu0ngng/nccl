@@ -515,7 +515,6 @@ static ncclResult_t computeBuffSizes(struct ncclComm* comm) {
 NCCL_PARAM(GraphDumpFileRank, "GRAPH_DUMP_FILE_RANK", 0);
 NCCL_PARAM(CollNetNodeThreshold, "COLLNET_NODE_THRESHOLD", 2);
 NCCL_PARAM(NvbPreconnect, "NVB_PRECONNECT", 1);
-NCCL_PARAM(PxnPreconnect, "PXN_PRECONNECT", 1);
 
 static ncclResult_t initTransportsRank(struct ncclComm* comm, ncclUniqueId* commId) {
   // We use 2 AllGathers
@@ -898,8 +897,8 @@ collnet_cleanup:
     free(nvbPeers);
   }
 
-  if (ncclParamPxnPreconnect()) {
-    // Connect net proxies when using PXN path
+  // Connect net proxies when using PXN path
+  if (ncclParamPxnDisable() == 0) {
     int nranks;
     int* pxnPeers;
     NCCLCHECK(ncclTopoGetPxnRanks(comm, &pxnPeers, &nranks));
@@ -938,6 +937,7 @@ collnet_cleanup:
   /* Local intra-node barrier */
   NCCLCHECK(bootstrapBarrier(comm->bootstrap, comm->localRankToRank, comm->localRank, comm->localRanks, comm->localRankToRank[0]));
 
+  NCCLCHECK(ncclProxyShmUnlink(comm));
   // We should have allocated all buffers, collective fifos, ... we can
   // restore the affinity.
 affinity_restore:

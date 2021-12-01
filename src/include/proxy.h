@@ -195,12 +195,12 @@ enum ncclProxyMsgType {
   ncclProxyMsgSharedInit = 2,
   ncclProxyMsgSetup = 3,
   ncclProxyMsgConnect = 4,
-  ncclProxyMsgOpsAlloc = 5,
-  ncclProxyMsgStart = 6,
-  ncclProxyMsgClose = 7,
-  ncclProxyMsgAbort = 8,
-  ncclProxyMsgStop = 9
+  ncclProxyMsgStart = 5,
+  ncclProxyMsgClose = 6,
+  ncclProxyMsgAbort = 7,
+  ncclProxyMsgStop = 8
 };
 ncclResult_t ncclProxyCall(struct ncclProxyConnector* proxyConn, int type, void* reqBuff, int reqSize, void* respBuff, int respSize);
 ncclResult_t ncclProxyDestroy(struct ncclComm* comm);
+ncclResult_t ncclProxyShmUnlink(struct ncclComm* comm);
 #endif

@@ -278,13 +278,6 @@ ncclResult_t ncclLocalOpAppend(struct ncclComm* comm, struct ncclProxyConnector*
   struct ncclProxyOps* proxyOps = proxyConn->comm->proxyState.proxyOps;
   if (proxyOps == NULL) return ncclInternalError;
   proxyOps += proxyConn->localRank;
-  // Allocate pool if needed
-  if (proxyOps->pool == NULL) {
-    char poolPath[] = "/dev/shm/nccl-XXXXXX";
-    NCCLCHECK(ncclProxyCall(proxyConn, ncclProxyMsgOpsAlloc, NULL, 0, poolPath+sizeof("/dev/shm/nccl-")-1, sizeof("XXXXXX")-1));
-    NCCLCHECK(ncclShmOpen(poolPath, sizeof(struct ncclProxyOpsPool), (void**)(&proxyOps->pool), NULL, 0));
-    proxyOps->nextOps = proxyOps->nextOpsEnd = proxyOps->freeOp = -1;
-  }
   struct ncclProxyOpsPool* pool = proxyOps->pool;
 
   TIME_START(0);
@@ -675,7 +668,6 @@ struct ncclProxyLocalPeer {
   struct ncclSocket sock;
   int localRank;
   struct ncclProxyAsyncOp asyncOps;
-  struct ncclProxyOpsPool* pool;
 };
 
 #define NCCL_PROXY_CONN_POOL_SIZE_POW2 7
@@ -756,6 +748,15 @@ ncclResult_t ncclProxyConnect(struct ncclComm* comm, int transport, int send, in
   NCCLCHECK(ncclSocketSend(sock, &send, sizeof(int)));
   NCCLCHECK(ncclSocketSend(sock, &comm->localRank, sizeof(int)));
   NCCLCHECK(ncclSocketRecv(sock, &proxyConn->connection, sizeof(void*)));
+  struct ncclTransportComm* tcomm = send ? &ncclTransports[transport].send : &ncclTransports[transport].recv;
+  // If we need proxy progress, map progress ops
+  if (tcomm->proxyProgress) {
+    char poolPath[] = "/dev/shm/nccl-XXXXXX";
+    NCCLCHECK(ncclSocketRecv(sock, poolPath+sizeof("/dev/shm/nccl-")-1, sizeof("XXXXXX")-1));
+    struct ncclProxyOps* proxyOps = comm->proxyState.proxyOps+proxyConn->localRank;
+    NCCLCHECK(ncclShmOpen(poolPath, sizeof(struct ncclProxyOpsPool), (void**)(&proxyOps->pool), NULL, 0));
+    proxyOps->nextOps = proxyOps->nextOpsEnd = proxyOps->freeOp = -1;
+  }
   INFO(NCCL_NET, "Connection to proxy localRank %d -> connection %p", proxyConn->localRank, proxyConn->connection);
   proxyConn->comm = comm;
   return ncclSuccess;
@@ -773,6 +774,62 @@ ncclResult_t ncclProxyCall(struct ncclProxyConnector* proxyConn, int type, void*
   if (reqSize) NCCLCHECK(ncclSocketSend(sock, reqBuff, reqSize));
   //INFO(NCCL_NET, "Proxy Call connection %p, type %d, req %d, resp %d", proxyConn->connection, type, reqSize, respSize);
   if (respSize) NCCLCHECK(ncclSocketRecv(sock, respBuff, respSize));
+  return ncclSuccess;
+}
+
+static ncclResult_t proxyProgressInit(struct ncclComm* comm) {
+  struct ncclProxyProgressState* state = &comm->proxyState.progressState;
+  if (state->opsPool == NULL) {
+    int size = sizeof(struct ncclProxyOpsPool);
+    struct ncclProxyOpsPool* pool = NULL;
+
+    char shmPath[sizeof("/dev/shm/nccl-XXXXXX")];
+    shmPath[0] = '\0';
+    NCCLCHECK(ncclShmOpen(shmPath, size, (void**)&pool, NULL, 1));
+    printf("Shm create %s\n", shmPath);
+
+    // Init pool
+    pool->nextOps = -1;
+    for (int r=0; r<comm->localRanks; r++) {
+      pool->freeOps[r] = r*MAX_OPS_PER_PEER;
+      for (int i=0; i<MAX_OPS_PER_PEER-1; i++) pool->ops[r*MAX_OPS_PER_PEER+i].next = r*MAX_OPS_PER_PEER+i+1;
+      pool->ops[(r+1)*MAX_OPS_PER_PEER-1].next = -1;
+    }
+
+    // Setup mutex/cond to work inter-process
+    pthread_mutexattr_t mutexAttr;
+    pthread_mutexattr_init(&mutexAttr);
+    pthread_mutexattr_setpshared(&mutexAttr, PTHREAD_PROCESS_SHARED);
+    pthread_mutex_init(&pool->mutex, &mutexAttr);
+    pthread_condattr_t condAttr;
+    pthread_condattr_setpshared(&condAttr, PTHREAD_PROCESS_SHARED);
+    pthread_cond_init(&pool->cond, &condAttr);
+    state->opsPool = pool;
+
+    memcpy(state->opsPoolShmSuffix, shmPath+sizeof("/dev/shm/nccl-")-1, sizeof("XXXXXX")-1);
+
+    // All ops structures are created, we can start the progress thread
+    NCCLCHECK(ncclProxyProgressCreate(comm));
+  }
+  return ncclSuccess;
+}
+
+static void proxyOpsFree(struct ncclComm* comm) {
+  struct ncclProxyProgressState* state = &comm->proxyState.progressState;
+  if (ncclShmClose(state->opsPool, NULL, sizeof(struct ncclProxyOpsPool)) != ncclSuccess) {
+    WARN("[Service thread] shm close failed");
+  }
+}
+
+ncclResult_t ncclProxyShmUnlink(struct ncclComm* comm) {
+  struct ncclProxyProgressState* state = &comm->proxyState.progressState;
+  if (state->opsPool == NULL) return ncclSuccess;
+
+  char shmPath[] = "/dev/shm/nccl-XXXXXX";
+  memcpy(shmPath+sizeof("/dev/shm/nccl-")-1, state->opsPoolShmSuffix, sizeof("XXXXXX")-1);
+  if (ncclShmUnlink(shmPath) != ncclSuccess) {
+    WARN("[Service thread] shm unlink failed");
+  }
   return ncclSuccess;
 }
 
@@ -796,6 +853,12 @@ static ncclResult_t proxyConnInit(struct ncclProxyLocalPeer* peer, struct ncclPr
   NCCLCHECK(ncclSocketRecv(sock, &peer->localRank, sizeof(int)));
   NCCLCHECK(ncclSocketSend(sock, &connection, sizeof(void*)));
   connection->tcomm = connection->send ? &ncclTransports[connection->transport].send : &ncclTransports[connection->transport].recv;
+  // If we need proxy progress, let's allocate ops and start the thread
+  if (connection->tcomm->proxyProgress) {
+    NCCLCHECK(proxyProgressInit(comm));
+    struct ncclProxyProgressState* state = &comm->proxyState.progressState;
+    NCCLCHECK(ncclSocketSend(sock, state->opsPoolShmSuffix, sizeof("XXXXXX")-1));
+  }
   buf[SOCKET_NAME_MAXLEN] = '\0';
   INFO(NCCL_NET, "New proxy %s connection %d from %s, transport %d", connection->send ? "send":"recv", id, ncclSocketToString(&sock->addr, buf), connection->transport);
   return ncclSuccess;
@@ -848,68 +911,6 @@ static ncclResult_t proxyConnSetupConnect(int type, struct ncclProxyLocalPeer* p
   if (asyncOp->respSize) NCCLCHECK(ncclCalloc(&asyncOp->respBuff, asyncOp->respSize));
   NCCLCHECK(proxyProgressAsync(asyncOp, comm));
   return ncclSuccess;
-}
-static ncclResult_t proxyOpsAlloc(struct ncclProxyLocalPeer* peer, struct ncclProxyConnectionPool* connectionPool, struct ncclComm* comm) {
-  struct ncclSocket* sock = &peer->sock;
-  struct ncclProxyConnection* connection;
-  NCCLCHECK(ncclSocketRecv(sock, &connection, sizeof(void*)));
-
-  int reqSize, respSize;
-  NCCLCHECK(ncclSocketRecv(sock, &reqSize, sizeof(int)));
-  NCCLCHECK(ncclSocketRecv(sock, &respSize, sizeof(int)));
-  if (reqSize) return ncclInternalError;
-
-  struct ncclProxyProgressState* state = &comm->proxyState.progressState;
-  if (state->opsPool == NULL) {
-    int size = sizeof(struct ncclProxyOpsPool);
-    struct ncclProxyOpsPool* pool = NULL;
-
-    char shmPath[sizeof("/dev/shm/nccl-XXXXXX")];
-    shmPath[0] = '\0';
-    NCCLCHECK(ncclShmOpen(shmPath, size, (void**)&pool, NULL, 1));
-
-    // Init pool
-    pool->nextOps = -1;
-    for (int r=0; r<comm->localRanks; r++) {
-      pool->freeOps[r] = r*MAX_OPS_PER_PEER;
-      for (int i=0; i<MAX_OPS_PER_PEER-1; i++) pool->ops[r*MAX_OPS_PER_PEER+i].next = r*MAX_OPS_PER_PEER+i+1;
-      pool->ops[(r+1)*MAX_OPS_PER_PEER-1].next = -1;
-    }
-
-    // Setup mutex/cond to work inter-process
-    pthread_mutexattr_t mutexAttr;
-    pthread_mutexattr_init(&mutexAttr);
-    pthread_mutexattr_setpshared(&mutexAttr, PTHREAD_PROCESS_SHARED);
-    pthread_mutex_init(&pool->mutex, &mutexAttr);
-    pthread_condattr_t condAttr;
-    pthread_condattr_setpshared(&condAttr, PTHREAD_PROCESS_SHARED);
-    pthread_cond_init(&pool->cond, &condAttr);
-    state->opsPool = pool;
-
-    memcpy(state->opsPoolShmSuffix, shmPath+sizeof("/dev/shm/nccl-")-1, sizeof("XXXXXX")-1);
-
-    // If we need proxy ops, we'll also need a progress thread.
-    NCCLCHECK(ncclProxyProgressCreate(comm));
-  }
-  // Just used to retain this peer has increased the refcount
-  peer->pool = state->opsPool;
-
-  if (respSize != sizeof("XXXXXX")-1) return ncclInternalError;
-  NCCLCHECK(ncclSocketSend(sock, state->opsPoolShmSuffix, sizeof("XXXXXX")-1));
-
-  return ncclSuccess;
-}
-
-void ncclProxyOpsFree(struct ncclComm* comm) {
-  struct ncclProxyProgressState* state = &comm->proxyState.progressState;
-  if (ncclShmClose(state->opsPool, NULL, sizeof(struct ncclProxyOpsPool)) != ncclSuccess) {
-    WARN("[Service thread] shm close failed");
-  }
-  char shmPath[] = "/dev/shm/nccl-XXXXXX";
-  memcpy(shmPath+sizeof("/dev/shm/nccl-")-1, state->opsPoolShmSuffix, sizeof("XXXXXX")-1);
-  if (ncclShmUnlink(shmPath) != ncclSuccess) {
-    WARN("[Service thread] shm unlink failed");
-  }
 }
 
 #include <poll.h>
@@ -992,8 +993,6 @@ void* ncclProxyService(void* _args) {
             res = proxyConnSharedInit(peers+s, &connectionPool, comm);
           } else if (type == ncclProxyMsgSetup || type == ncclProxyMsgConnect) {
             res = proxyConnSetupConnect(type, peers+s, &connectionPool, comm);
-          } else if (type == ncclProxyMsgOpsAlloc) {
-            res = proxyOpsAlloc(peers+s, &connectionPool, comm);
           }
           if (res != ncclSuccess) {
             WARN("[Proxy Service] Failed to process message of type %d, retcode %d", type, res);
@@ -1022,7 +1021,7 @@ void* ncclProxyService(void* _args) {
     WARN("[Proxy Service] proxyDestroy failed");
   }
   // Destroy ops after progress thread was destroyed: we need the mutex for wakeup.
-  ncclProxyOpsFree(comm);
+  proxyOpsFree(comm);
   return NULL;
 }
 
