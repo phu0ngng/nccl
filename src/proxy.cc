@@ -859,7 +859,8 @@ static ncclResult_t proxyOpsAlloc(struct ncclProxyLocalPeer* peer, struct ncclPr
   NCCLCHECK(ncclSocketRecv(sock, &respSize, sizeof(int)));
   if (reqSize) return ncclInternalError;
 
-  if (comm->proxyState.progressState.opsPool == NULL) {
+  struct ncclProxyProgressState* state = &comm->proxyState.progressState;
+  if (state->opsPool == NULL) {
     int size = sizeof(struct ncclProxyOpsPool);
     struct ncclProxyOpsPool* pool = NULL;
 
@@ -883,17 +884,32 @@ static ncclResult_t proxyOpsAlloc(struct ncclProxyLocalPeer* peer, struct ncclPr
     pthread_condattr_t condAttr;
     pthread_condattr_setpshared(&condAttr, PTHREAD_PROCESS_SHARED);
     pthread_cond_init(&pool->cond, &condAttr);
-    comm->proxyState.progressState.opsPool = pool;
+    state->opsPool = pool;
 
-    memcpy(comm->proxyState.progressState.opsPoolShmSuffix, shmPath+sizeof("/dev/shm/nccl-")-1, sizeof("XXXXXX")-1);
+    memcpy(state->opsPoolShmSuffix, shmPath+sizeof("/dev/shm/nccl-")-1, sizeof("XXXXXX")-1);
+
+    // If we need proxy ops, we'll also need a progress thread.
+    NCCLCHECK(ncclProxyProgressCreate(comm));
   }
+  // Just used to retain this peer has increased the refcount
+  peer->pool = state->opsPool;
 
   if (respSize != sizeof("XXXXXX")-1) return ncclInternalError;
-  NCCLCHECK(ncclSocketSend(sock, comm->proxyState.progressState.opsPoolShmSuffix, sizeof("XXXXXX")-1));
+  NCCLCHECK(ncclSocketSend(sock, state->opsPoolShmSuffix, sizeof("XXXXXX")-1));
 
-  // If we need proxy ops, we'll also need a progress thread.
-  NCCLCHECK(ncclProxyProgressCreate(comm));
   return ncclSuccess;
+}
+
+void ncclProxyOpsFree(struct ncclComm* comm) {
+  struct ncclProxyProgressState* state = &comm->proxyState.progressState;
+  if (ncclShmClose(state->opsPool, NULL, sizeof(struct ncclProxyOpsPool)) != ncclSuccess) {
+    WARN("[Service thread] shm close failed");
+  }
+  char shmPath[] = "/dev/shm/nccl-XXXXXX";
+  memcpy(shmPath+sizeof("/dev/shm/nccl-")-1, state->opsPoolShmSuffix, sizeof("XXXXXX")-1);
+  if (ncclShmUnlink(shmPath) != ncclSuccess) {
+    WARN("[Service thread] shm unlink failed");
+  }
 }
 
 #include <poll.h>
@@ -950,31 +966,18 @@ void* ncclProxyService(void* _args) {
     for (int s=0; s<maxnpeers; s++) {
       struct ncclSocket* sock = &peers[s].sock;
       struct ncclProxyAsyncOp* op = &peers[s].asyncOps;
+      int closeConn = 0;
       if (op->type != 0) {
         if (proxyProgressAsync(op, comm) != ncclSuccess) {
           WARN("[Proxy Service] Call to Setup/Connect failed");
-          close(sock->fd);
-          sock->fd = pollfds[s].fd = -1;
-          npeers--;
+          closeConn = 1;
           op->type = 0;
         }
       } else if (pollfds[s].revents & POLLIN) {
         int type;
         if (ncclSocketRecv(sock, &type, sizeof(int)) != ncclSuccess) {
           WARN("[Service thread] Recv failed");
-          if (peers[s].pool) {
-            if (ncclShmClose(peers[s].pool, NULL, sizeof(struct ncclProxyOpsPool)) != ncclSuccess) {
-              WARN("[Service thread] shm close failed");
-            }
-
-            char shmPath[sizeof("/dev/shm/nccl-XXXXXX")];
-            memcpy(shmPath+sizeof("/dev/shm/nccl-")-1, comm->proxyState.progressState.opsPoolShmSuffix, sizeof("XXXXXX")-1);
-            if (ncclShmUnlink(shmPath) != ncclSuccess) {
-              WARN("[Service thread] shm unlink failed");
-            }
-          }
-          close(sock->fd);
-          sock->fd = pollfds[s].fd = -1;
+          closeConn = 1;
         } else {
           ncclResult_t res = ncclSuccess;
           if (type == ncclProxyMsgAbort) {
@@ -982,9 +985,7 @@ void* ncclProxyService(void* _args) {
           } else if (type == ncclProxyMsgStop) {
             stop = 1;
           } else if (type == ncclProxyMsgClose) {
-            close(sock->fd);
-            sock->fd = pollfds[s].fd = -1;
-            npeers--;
+            closeConn = 1;
           } else if (type == ncclProxyMsgInit) {
             res = proxyConnInit(peers+s, &connectionPool, comm);
           } else if (type == ncclProxyMsgSharedInit) {
@@ -1002,6 +1003,9 @@ void* ncclProxyService(void* _args) {
           }
         }
       } else if (pollfds[s].revents & POLLHUP) {
+        closeConn = 1;
+      } 
+      if (closeConn) {
         close(sock->fd);
         sock->fd = pollfds[s].fd = -1;
         npeers--;
@@ -1017,6 +1021,8 @@ void* ncclProxyService(void* _args) {
   if (ncclProxyProgressDestroy(comm) != ncclSuccess) {
     WARN("[Proxy Service] proxyDestroy failed");
   }
+  // Destroy ops after progress thread was destroyed: we need the mutex for wakeup.
+  ncclProxyOpsFree(comm);
   return NULL;
 }
 
