@@ -754,8 +754,10 @@ ncclResult_t ncclProxyConnect(struct ncclComm* comm, int transport, int send, in
     char poolPath[] = "/dev/shm/nccl-XXXXXX";
     NCCLCHECK(ncclSocketRecv(sock, poolPath+sizeof("/dev/shm/nccl-")-1, sizeof("XXXXXX")-1));
     struct ncclProxyOps* proxyOps = comm->proxyState.proxyOps+proxyConn->localRank;
-    NCCLCHECK(ncclShmOpen(poolPath, sizeof(struct ncclProxyOpsPool), (void**)(&proxyOps->pool), NULL, 0));
-    proxyOps->nextOps = proxyOps->nextOpsEnd = proxyOps->freeOp = -1;
+    if (proxyOps->pool == NULL) {
+      NCCLCHECK(ncclShmOpen(poolPath, sizeof(struct ncclProxyOpsPool), (void**)(&proxyOps->pool), NULL, 0));
+      proxyOps->nextOps = proxyOps->nextOpsEnd = proxyOps->freeOp = -1;
+    }
   }
   INFO(NCCL_NET, "Connection to proxy localRank %d -> connection %p", proxyConn->localRank, proxyConn->connection);
   proxyConn->comm = comm;
@@ -786,7 +788,6 @@ static ncclResult_t proxyProgressInit(struct ncclComm* comm) {
     char shmPath[sizeof("/dev/shm/nccl-XXXXXX")];
     shmPath[0] = '\0';
     NCCLCHECK(ncclShmOpen(shmPath, size, (void**)&pool, NULL, 1));
-    printf("Shm create %s\n", shmPath);
 
     // Init pool
     pool->nextOps = -1;
