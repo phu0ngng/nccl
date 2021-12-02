@@ -97,7 +97,7 @@ static int findInterfaces(const char* prefixList, char* names, union ncclSocketA
       // Store the interface name
       strncpy(names+found*maxIfNameSize, interface->ifa_name, maxIfNameSize);
       // Store the IP address
-      int salen = (family == AF_INET) ? sizeof(sockaddr_in) : sizeof(sockaddr_in6);
+      int salen = (family == AF_INET) ? sizeof(struct sockaddr_in) : sizeof(struct sockaddr_in6);
       memcpy(addrs+found, interface->ifa_addr, salen);
       found++;
     }
@@ -172,7 +172,7 @@ int ncclFindInterfaceMatchSubnet(char* ifNames, union ncclSocketAddress* localAd
     }
 
     // Store the local IP address
-    int salen = (family == AF_INET) ? sizeof(sockaddr_in) : sizeof(sockaddr_in6);
+    int salen = (family == AF_INET) ? sizeof(struct sockaddr_in) : sizeof(struct sockaddr_in6);
     memcpy(localAddrs+found, interface->ifa_addr, salen);
 
     // Store the interface name
@@ -308,7 +308,7 @@ int ncclFindInterfaces(char* ifNames, union ncclSocketAddress *ifAddrs, int ifNa
 ncclResult_t ncclSocketListen(struct ncclSocket* sock) {
   /* IPv4/IPv6 support */
   int family = sock->addr.sa.sa_family;
-  int salen = (family == AF_INET) ? sizeof(sockaddr_in) : sizeof(sockaddr_in6);
+  int salen = (family == AF_INET) ? sizeof(struct sockaddr_in) : sizeof(struct sockaddr_in6);
   int flags;
 
   /* Create socket and bind it to a port */
@@ -393,7 +393,7 @@ ncclResult_t ncclSocketConnect(struct ncclSocket* sock) {
          ncclSocketToString(&sock->addr, line), family, AF_INET, AF_INET6);
     return ncclInternalError;
   }
-  int salen = (family == AF_INET) ? sizeof(sockaddr_in) : sizeof(sockaddr_in6);
+  int salen = (family == AF_INET) ? sizeof(struct sockaddr_in) : sizeof(struct sockaddr_in6);
   int flags;
 
   /* Connect to a hostname / port */
