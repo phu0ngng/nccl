@@ -142,53 +142,90 @@ testResult_t InitData(void* data, const size_t count, size_t offset, ncclDataTyp
   return testSuccess;
 }
 
-void Barrier(struct threadArgs* args) {
-  while (args->barrier[args->barrier_idx] != args->thread) pthread_yield();
-  args->barrier[args->barrier_idx] = args->thread + 1;
-  if (args->thread+1 == args->nThreads) {
-#ifdef MPI_SUPPORT
-    MPI_Barrier(MPI_COMM_WORLD);
-#endif
-    args->barrier[args->barrier_idx] = 0;
-  } else {
-    while (args->barrier[args->barrier_idx]) pthread_yield();
+void Barrier(struct threadArgs *args) {
+  thread_local int epoch = 0;
+  static pthread_mutex_t lock[2] = {PTHREAD_MUTEX_INITIALIZER, PTHREAD_MUTEX_INITIALIZER};
+  static pthread_cond_t cond[2] = {PTHREAD_COND_INITIALIZER, PTHREAD_COND_INITIALIZER};
+  static int counter[2] = {0, 0};
+
+  pthread_mutex_lock(&lock[epoch]);
+  if(++counter[epoch] == args->nThreads)
+    pthread_cond_broadcast(&cond[epoch]);
+
+  if(args->thread+1 == args->nThreads) {
+    while(counter[epoch] != args->nThreads)
+      pthread_cond_wait(&cond[epoch], &lock[epoch]);
+    #ifdef MPI_SUPPORT
+      MPI_Barrier(MPI_COMM_WORLD);
+    #endif
+    counter[epoch] = 0;
+    pthread_cond_broadcast(&cond[epoch]);
   }
-  args->barrier_idx=!args->barrier_idx;
+  else {
+    while(counter[epoch] != 0)
+      pthread_cond_wait(&cond[epoch], &lock[epoch]);
+  }
+  pthread_mutex_unlock(&lock[epoch]);
+  epoch ^= 1;
 }
 
-// Inter-thread/process barrier+allreduce
+// Inter-thread/process barrier+allreduce. The quality of the return value
+// for average=0 (which means broadcast from rank=0) is dubious. The returned
+// value will actually be the result of process-local broadcast from the local thread=0.
 template<typename T>
 void Allreduce(struct threadArgs* args, T* value, int average) {
-  thread_local T accum[2];
-  while (args->barrier[args->barrier_idx] != args->thread) pthread_yield();
-  T val = *value;
-  if (args->thread > 0) {
-    T val2 = accum[args->barrier_idx];
-    if (average == 1) val += val2;
-    if (average == 2) val = std::min(val, val2);
-    if (average == 3) val = std::max(val, val2);
-    if (average == 4) val += val2;
-  }
-  if (average || args->thread == 0) accum[args->barrier_idx] = val;
-  args->barrier[args->barrier_idx] = args->thread + 1;
-  if (args->thread+1 == args->nThreads) {
-#ifdef MPI_SUPPORT
-    if (average != 0) {
-      MPI_Op op = average == 1 ? MPI_SUM : average == 2 ? MPI_MIN : average == 3 ? MPI_MAX : MPI_SUM;
-      MPI_Datatype ty = std::is_same<T, double>::value ? MPI_DOUBLE :
-                        std::is_same<T, long long>::value ? MPI_LONG_LONG :
-                        MPI_Datatype();
-      MPI_Allreduce(MPI_IN_PLACE, (void*)&accum[args->barrier_idx], 1, ty, op, MPI_COMM_WORLD);
-    }
-#endif
-    if (average == 1) accum[args->barrier_idx] /= args->totalProcs*args->nThreads;
-    accum[args->barrier_idx^1] = 0;
-    args->barrier[args->barrier_idx] = 0;
+  thread_local int epoch = 0;
+  static pthread_mutex_t lock[2] = {PTHREAD_MUTEX_INITIALIZER, PTHREAD_MUTEX_INITIALIZER};
+  static pthread_cond_t cond[2] = {PTHREAD_COND_INITIALIZER, PTHREAD_COND_INITIALIZER};
+  static T accumulator[2];
+  static int counter[2] = {0, 0};
+
+  pthread_mutex_lock(&lock[epoch]);
+  if(counter[epoch] == 0) {
+    if(average != 0 || args->thread == 0) accumulator[epoch] = *value;
   } else {
-    while (args->barrier[args->barrier_idx]) pthread_yield();
+    switch(average) {
+    case /*r0*/ 0: if(args->thread == 0) accumulator[epoch] = *value; break;
+    case /*avg*/1: accumulator[epoch] += *value; break;
+    case /*min*/2: accumulator[epoch] = std::min<T>(accumulator[epoch], *value); break;
+    case /*max*/3: accumulator[epoch] = std::max<T>(accumulator[epoch], *value); break;
+    case /*sum*/4: accumulator[epoch] += *value; break;
+    }
   }
-  *value = accum[args->barrier_idx];
-  args->barrier_idx ^= 1;
+
+  if(++counter[epoch] == args->nThreads)
+    pthread_cond_broadcast(&cond[epoch]);
+
+  if(args->thread+1 == args->nThreads) {
+    while(counter[epoch] != args->nThreads)
+      pthread_cond_wait(&cond[epoch], &lock[epoch]);
+
+    #ifdef MPI_SUPPORT
+    if(average != 0) {
+      static_assert(std::is_same<T, long long>::value || std::is_same<T, double>::value, "Allreduce<T> only for T in {long long, double}");
+      MPI_Datatype ty = std::is_same<T, long long>::value ? MPI_LONG_LONG :
+                        std::is_same<T, double>::value ? MPI_DOUBLE :
+                        MPI_Datatype();
+      MPI_Op op = average == 1 ? MPI_SUM :
+                  average == 2 ? MPI_MIN :
+                  average == 3 ? MPI_MAX :
+                  average == 4 ? MPI_SUM : MPI_Op();
+      MPI_Allreduce(MPI_IN_PLACE, (void*)&accumulator[epoch], 1, ty, op, MPI_COMM_WORLD);
+    }
+    #endif
+
+    if(average == 1) accumulator[epoch] /= args->totalProcs*args->nThreads;
+    counter[epoch] = 0;
+    pthread_cond_broadcast(&cond[epoch]);
+  }
+  else {
+    while(counter[epoch] != 0)
+      pthread_cond_wait(&cond[epoch], &lock[epoch]);
+  }
+  pthread_mutex_unlock(&lock[epoch]);
+
+  *value = accumulator[epoch];
+  epoch ^= 1;
 }
 
 testResult_t CheckData(struct threadArgs* args, ncclDataType_t type, ncclRedOp_t op, int root, int in_place, int64_t *wrongElts) {
@@ -1064,9 +1101,6 @@ testResult_t run() {
   PRINT("# %10s  %12s  %8s  %6s  %6s  %7s  %6s  %6s  %5s  %7s  %6s  %6s  %5s\n", "(B)", "(elements)", "", "", "",
       "(us)", "(GB/s)", "(GB/s)", "", "(us)", "(GB/s)", "(GB/s)", "");
 
-  int* sync = (int*)calloc(2, sizeof(int));
-  int* barrier = (int*)calloc(2, sizeof(int));
-
   struct testThread threads[nThreads];
   struct testThread compThreads[nThreads];
   memset(threads, 0, sizeof(struct testThread)*nThreads);
@@ -1099,11 +1133,6 @@ testResult_t run() {
     threads[t].args.comms=comms+t*nGpus;
     threads[t].args.streams=streams+t*nGpus;
 
-    threads[t].args.barrier = (volatile int*)barrier;
-    threads[t].args.barrier_idx = 0;
-    threads[t].args.sync = (volatile int*)sync;
-    threads[t].args.sync_idx = 0;
-    threads[t].args.deltaHost = (delta + t*NUM_BLOCKS);
     threads[t].args.errors=errors+t;
     threads[t].args.bw=bw+t;
     threads[t].args.bw_count=bw_count+t;

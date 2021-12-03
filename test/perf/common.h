@@ -117,13 +117,6 @@ struct threadArgs {
 
   void** expected;
   size_t expectedBytes;
-  volatile int* sync;
-  int sync_idx;
-  volatile int* barrier;
-  int barrier_idx;
-  int syncRank;
-  int syncNranks;
-  double* deltaHost;
   int* errors;
   double* bw;
   int* bw_count;
