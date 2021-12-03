@@ -10,6 +10,8 @@
 #include "gdrwrap.h"
 #include "bootstrap.h"
 
+#include <cstring> // std::memcpy
+
 // Only generate inline kernels for LL
 #define NCCL_FUNC5(func, algo, devredop, dtype) \
   (void*)NCCL_KERN_NAME(func, algo, LL, devredop, dtype), \
@@ -1089,6 +1091,7 @@ ncclResult_t ncclEnqueueCollKernel(struct ncclComm* comm, struct ncclQueueElem* 
 // Performs the enqueue job
 template<int USING_CUDA_GRAPH>
 void CUDART_CB ncclEnqueueHostSetup(void* arg) {
+  NVTX3_FUNC_RANGE_IN(nccl_domain);
   ncclResult_t ret;
   // All work for current launch has been captured in Queue Info
   struct ncclQueueInfo* eqInfo = (struct ncclQueueInfo*)arg;

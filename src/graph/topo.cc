@@ -360,7 +360,6 @@ ncclResult_t ncclTopoAddNic(struct ncclXmlNode* xmlNic, struct ncclTopoSystem* s
 
 ncclResult_t ncclTopoAddGpu(struct ncclXmlNode* xmlGpu, struct ncclTopoSystem* system, struct ncclTopoNode* gpu) {
   NCCLCHECK(xmlGetAttrInt(xmlGpu, "sm", &gpu->gpu.cudaCompCap));
-  NCCLCHECK(xmlGetAttrIntDefault(xmlGpu, "cmode", &gpu->gpu.compMode, NVML_COMPUTEMODE_EXCLUSIVE_PROCESS));
   NCCLCHECK(xmlGetAttrInt(xmlGpu, "rank", &gpu->gpu.rank));
   NCCLCHECK(xmlGetAttrInt(xmlGpu, "dev", &gpu->gpu.dev));
   NCCLCHECK(xmlGetAttrInt(xmlGpu, "gdr", &gpu->gpu.gdrSupport));
