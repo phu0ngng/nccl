@@ -126,8 +126,8 @@ static double parsesize(const char *value) {
     return size * units;
 }
 
-testResult_t CheckDelta(void* results, void* expected, size_t count, ncclDataType_t type, int64_t *wrongEltN) {
-  ncclVerifiableVerify(results, expected, count, (int)type, wrongEltN, cudaStreamDefault);
+testResult_t CheckDelta(void* results, void* expected, size_t count, size_t offset, ncclDataType_t type, ncclRedOp_t op, uint64_t seed, int nranks, int64_t *wrongEltN) {
+  ncclVerifiableVerify(results, expected, count, (int)type, (int)op, nranks, seed, offset, wrongEltN, cudaStreamDefault);
   CUDACHECK(cudaDeviceSynchronize());
   return testSuccess;
 }
@@ -229,6 +229,7 @@ void Allreduce(struct threadArgs* args, T* value, int average) {
 }
 
 testResult_t CheckData(struct threadArgs* args, ncclDataType_t type, ncclRedOp_t op, int root, int in_place, int64_t *wrongElts) {
+  int nranks = args->nProcs*args->nGpus*args->nThreads;
   size_t count = args->expectedBytes/wordSize(type);
 
   int64_t *wrongPerGpu = nullptr;
@@ -239,11 +240,11 @@ testResult_t CheckData(struct threadArgs* args, ncclDataType_t type, ncclRedOp_t
     CUDACHECK(cudaSetDevice(args->gpus[i]));
     void *data = in_place ? ((void *)((uintptr_t)args->recvbuffs[i] + args->recvInplaceOffset*rank)) : args->recvbuffs[i];
 
-    TESTCHECK(CheckDelta(data , args->expected[i], count, type, wrongPerGpu+i));
+    TESTCHECK(CheckDelta(data, args->expected[i], count, 0, type, op, 0, nranks, wrongPerGpu+i));
 
 #if 1 && DEBUG_PRINT
     if (args->reportErrors && wrongPerGpu[i] != 0) {
-      printf("rank=%d #wrong=%d\n", rank, wrongPerGpu[i]);
+      printf("rank=%d #wrong=%d\n", rank, (int)wrongPerGpu[i]);
       char *expectedHost = (char*)malloc(args->expectedBytes);
       char *dataHost = (char*)malloc(args->expectedBytes);
       int eltsz = wordSize(type);

@@ -16,6 +16,8 @@ TEST_VERIFIABLE_SRCDIR := .
 TEST_VERIFIABLE_BUILDDIR := $(DST_DIR)
 include verifiable.mk
 
+self_test: $(DST_DIR)/self_test
+
 $(DST_DIR)/self_test: verifiable.cu verifiable.h
 	@printf "Linking  %s\n" $@
 	@mkdir -p $(DST_DIR)

@@ -1,8 +1,5 @@
 #include "verifiable.h"
-
-#if !SELF_TEST
 #include <nccl.h>
-#endif
 
 #include <cuda_runtime.h>
 #include <cuda_fp16.h>
@@ -11,6 +8,7 @@
 #include <cassert>
 #include <cstdio>
 #include <cstdint>
+#include <cmath>
 
 using std::size_t;
 using std::int8_t;
@@ -25,6 +23,14 @@ using std::uint64_t;
 ////////////////////////////////////////////////////////////////////////////////
 
 namespace {
+template<typename T>
+__device__ unsigned long long bitsOf(T x) {
+  union { unsigned long long ull; T val; } u;
+  u.ull = 0;
+  u.val = x;
+  return u.ull;
+}
+
 __host__ __device__ uint64_t mixBits(uint64_t x) {
   union { uint32_t u32[2]; uint64_t u64; };
   u64 = x;
@@ -66,16 +72,11 @@ struct IsIntegral<__nv_bfloat16>: std::false_type {};
 // that this is equivalent to the identity function.
 template<typename T>
 __host__ __device__ T inhibit(T x) {
-  union { uint64_t u64; uint32_t u32; T val; };
+  union { uint64_t u64; T val; };
+  u64 = 0;
   val = x;
-  if(sizeof(T) > sizeof(uint32_t)) {
-    u64 = u64<<55 ^ u64>>9;
-    u64 = u64<<9  ^ u64>>55;
-  }
-  else {
-    u32 = u32<<23 ^ u32>>9;
-    u32 = u32<<9  ^ u32>>23;
-  }
+  u64 *= 0x0000000100000001u;
+  u64 *= 0xffffffff00000001u;
   return val;
 }
 
@@ -343,7 +344,7 @@ namespace {
 // Returns a wildly permuted rank index. Useful when we know we want exactly N
 // random ranks to exhibit some behavior, we can just test if:
 // `shuffleRank(rank_n, rank_me, rng) < N`. Note that rank_n > 0 must be true
-// for well defined results.
+// for well defined results. This mixes the bits of rng.
 __host__ __device__ int shuffleRank(int rank_n, int rank_me, uint64_t &rng) {
   uint32_t a = uint32_t(rng);
   uint32_t b = uint32_t(rng>>32);
@@ -380,66 +381,98 @@ __host__ __device__ int shuffleRank(int rank_n, int rank_me, uint64_t &rng) {
 
 namespace {
 // Generate wild integers x and y such that if every rank submits its x into a
-// summation the result will be y with y <= y_max.
+// summation the result will be y with y <= y_max. Ranks should be shuffled
+// before calling.
 template<typename Uint>
 __host__ __device__ void genSumXY(
-    int rank_n, int rank_me, uint64_t &rng, Uint y_max, Uint &x, Uint &y
+    int rank_n, int rank_me, uint64_t &rng, Uint y_max, Uint &x, Uint &y,
+    bool avoid_y=false // if true then returned y will not equal given y
   ) {
-  // pick a random value in [y_max/2, y_max)
-  if(8*sizeof(Uint) > 32)
-    y = y_max/2 + umul64hi(rng, y_max/2);
-  else
-    y = y_max/2 + umul32hi(uint32_t(rng), y_max/2);
+  static_assert(std::is_unsigned<Uint>::value, "Type must be unsigned integral.");
 
-  rank_me = shuffleRank(rank_n, rank_me, rng);
+  { // Pick y as a random value in [y_max/2, y_max]
+    Uint d, y_min = (y_max+1)/2;
+    if(8*sizeof(Uint) > 32)
+      d = umul64hi(rng, y_max/2 + (avoid_y ? 0 : 1));
+    else
+      d = umul32hi(uint32_t(rng), y_max/2 + (avoid_y ? 0 : 1));
+    Uint y1 = (avoid_y ? y+1 : y_min) + d;
+    y = y1 - (avoid_y && (y1 < y_min || y_max < y1) ? y_max/2 : 0);
+  }
+  rng = mixBits(rng);
 
-  auto sqrtf = [](float val)->float {
-    #ifdef __CUDA_ARCH__
-      return __fsqrt_rn(val);
-    #else
-      return std::sqrt(val);
-    #endif
-  };
-  // solve for largest n such that sum[0..n) <= y
-  // using identity: sum[0..n) == n*(n-1)/2
-  float nf = sqrtf(.25f + 2*float(y));
-  nf = nf < 0.75f*float(rank_n) ? nf : 0.75f*float(rank_n); // clamp to 75% of ranks
-  int n = int(nf); // number of ranks contributing x=rank_me to sum
-  Uint x_sum; // compute summed contribution from first n ranks
-  if(y_max <= ~uint32_t(0)>>1) // usually compile time known whether we need 32 or 64 bit arithmetic
-    x_sum = Uint(uint32_t(n)*uint32_t(n-1)/2);
+  unsigned r = unsigned(rank_me);
+  unsigned rn = unsigned(rank_n);
+  // Partition our rn ranks into pn distinct subsets each of size rn/pn. If each
+  // rank submits 1+p (where p is 0-based partition index) then the sum be:
+  //   (rn/pn) * pn*(pn+1)/2
+  // So set this equal to our desired sum y and solve for pn.
+  //   (rn/pn) * pn*(pn+1)/2 = y
+  //   rn*(pn+1)/2 = y
+  //   pn = 2*(y/rn)-1
+  Uint pn = rn == 1 ? 1 : 2*(y/rn) - 1;
+  // In the case where rn is huge (compared to y) use only one partition meaning
+  // that all rn ranks will submit 1 (since p=0).
+  pn = pn == 0 ? 1 : pn;
+  // Can't have more partitions than ranks.
+  pn = rn < pn ? rn : pn;
+  // Compute sum of contribution from pn partitions where each submits p+1.
+  Uint p_sum;
+  if(y_max <= ~uint32_t(0)>>1) // compile time known
+    p_sum = Uint(uint32_t(pn)*uint32_t(pn+1)/2);
   else
-    x_sum = Uint(uint64_t(n)*uint64_t(n-1)/2);
-  x = rank_me == 0 ? y - x_sum : 0; // one rank contributes discrepancy
-  x += rank_me < n ? rank_me : 0; // n ranks contribute rank_me
+    p_sum = Uint(uint64_t(pn)*uint64_t(pn+1)/2);
+  // Let s be the number of ranks per partition. This is either rn/pn as we
+  // intended, or y/p_sum if that's smaller to prevent overshooting our target y.
+  uint32_t s = y/p_sum < rn/pn ? y/p_sum : rn/pn;
+  x = r/s < pn ? 1 + r/s : 0; //  First s*pn ranks contribute partition index +1.
+  x += r == rn-1 ? y - s*p_sum : 0; // Last rank contributes discrepancy.
 }
 }
 
 namespace {
 template<typename T>
 __host__ __device__ T genInOutFloatSum(
-    bool input_not_output, int rank_n, int rank_me, uint64_t seed, intptr_t index
+    bool input_not_output, int rank_n, int rank_me, uint64_t seed, intptr_t index,
+    bool same_sign
   ) {
   constexpr int exp_lo = 1 + FloatLayout<T>::mantissa_bits;
   constexpr int exp_hi = (1<<FloatLayout<T>::exponent_bits)-1;
   using uintmant_t = typename std::conditional<(8*sizeof(T) > 32), uint64_t, uint32_t>::type;
   constexpr uintmant_t mant_mask = (uintmant_t(1) << FloatLayout<T>::mantissa_bits)-1;
+  constexpr uintmant_t max_mant = 2*mant_mask + 1; // add implicit leading 1
   uint64_t rng = hashOf(seed, index);
 
   int y_sign = rng & 1;
-  int y_exp = exp_lo + umul32hi(uint32_t(rng>>32), exp_hi-exp_lo);
+  int x_sign = y_sign;
+  int xy_exp = exp_lo + umul32hi(uint32_t(rng>>32), exp_hi-exp_lo);
+  rng = mixBits(rng);
+  rank_me = shuffleRank(rank_n, rank_me, rng);
 
-  uintmant_t max_mant = 2*mant_mask + 1; // add implicit leading 1
-  uintmant_t x_mant=0, y_mant=0;
-  genSumXY(rank_n, rank_me, rng, max_mant, x_mant, y_mant);
-  uintmant_t ans_mant = input_not_output ? x_mant : y_mant;
+  // If we're using mixed signs then partition into evens and odds.
+  int subrank_n = same_sign ? rank_n : (rank_n+1)/2;
+  int subrank_me = same_sign ? rank_me : rank_me/2;
+  uintmant_t x0_mant, y0_mant;
+  genSumXY(subrank_n, subrank_me, rng, max_mant, x0_mant, y0_mant);
 
+  if (!same_sign && (rank_n+0)/2 != 0) {
+    uintmant_t x1_mant, y1_mant = y0_mant;
+    // Avoid generating y1_mant == y0_mant so we don't have to worry about
+    // signed zero as the result.
+    genSumXY((rank_n+0)/2, rank_me/2, rng, max_mant, x1_mant, y1_mant, /*avoid_y=*/true);
+    y_sign ^= y0_mant < y1_mant ? 1 : 0;
+    y0_mant = (y0_mant < y1_mant ? -1 : 1)*(y0_mant - y1_mant);
+    x_sign ^= rank_me%2;
+    x0_mant = rank_me%2 == 0 ? x0_mant : x1_mant;
+  }
+
+  uintmant_t ans_mant = input_not_output ? x0_mant : y0_mant;
   if(ans_mant == 0)
     return T(0.0f);
   else {
     int shift = clz64(ans_mant) - (64-FloatLayout<T>::mantissa_bits-1);
-    int ans_sign = y_sign;
-    int ans_exp = y_exp - shift;
+    int ans_sign = input_not_output ? x_sign : y_sign;
+    int ans_exp = xy_exp - shift;
     ans_mant <<= shift;
     return makeFloat<T>(ans_sign, ans_exp, ans_mant & mant_mask);
   }
@@ -455,21 +488,23 @@ __host__ __device__ T genInOutFloatPreMulSum(
   constexpr int exp_hi = (1<<FloatLayout<T>::exponent_bits)-1;
   using uintmant_t = typename std::conditional<(8*sizeof(T) > 32), uint64_t, uint32_t>::type;
   constexpr uintmant_t mant_mask = (uintmant_t(1) << FloatLayout<T>::mantissa_bits)-1;
+  constexpr uintmant_t max_mant = 2*mant_mask + 1; // add implicit leading 1
   uint64_t rng = hashOf(seed, index);
 
   int y_sign = rng & 1;
   int y_exp = exp_lo + umul32hi(uint32_t(rng>>32), exp_hi-exp_lo);
-
-  uintmant_t max_mant = 2*mant_mask + 1; // add implicit leading 1
+  rng = mixBits(rng);
+  int subrank_me0 = shuffleRank((rank_n+1)/2, rank_me/2, rng);
+  int subrank_me1 = shuffleRank((rank_n+0)/2, rank_me/2, rng);
 
   // when ncclVerifiablePremulScalar() = 1.0 (rank_me%2 == 0)
-  uintmant_t x0_mant=0, y0_mant=0;
-  genSumXY((rank_n+1)/2, rank_me/2, rng, max_mant>>1, x0_mant, y0_mant);
+  uintmant_t x0_mant, y0_mant;
+  genSumXY((rank_n+1)/2, subrank_me0, rng, max_mant>>1, x0_mant, y0_mant);
 
   // when ncclVerifiablePremulScalar() = 2.0 (rank_me%2 == 1)
   uintmant_t x1_mant=0, y1_mant=0;
   if((rank_n+0)/2 != 0)
-    genSumXY((rank_n+0)/2, rank_me/2, rng, max_mant>>2, x1_mant, y1_mant);
+    genSumXY((rank_n+0)/2, subrank_me1, rng, max_mant>>2, x1_mant, y1_mant);
 
   uintmant_t x_mant = rank_me%2 == 0 ? x0_mant : x1_mant;
   uintmant_t y_mant = y0_mant + 2*y1_mant;
@@ -501,19 +536,19 @@ __host__ __device__ T genInOutFloatProd(
   // the sum of the exponents from case (2)
 
   uint64_t rng = hashOf(seed, index);
-
   rank_me = shuffleRank(rank_n, rank_me, rng);
-  int y_sign = (rank_n/2) & 1;
-  int x_sign = rank_me & 1;
+  int y_sign = (rank_n/2)%2;
+  int x_sign = rank_me%2;
 
-  constexpr int max_exp = 1<<(FloatLayout<T>::exponent_bits-1);
-  int x_exp=0, y_exp=0;
+  constexpr unsigned max_exp = -1 + (1<<(FloatLayout<T>::exponent_bits-1));
+  unsigned x_exp=0, y_exp=0;
   genSumXY(rank_n, rank_me, rng, max_exp, x_exp, y_exp);
   x_exp += FloatLayout<T>::exponent_bias;
   y_exp += FloatLayout<T>::exponent_bias;
 
-  constexpr uint64_t mant_mask = (uint64_t(1) << FloatLayout<T>::mantissa_bits)-1;
+  constexpr uint64_t mant_mask = (uint64_t(1)<<FloatLayout<T>::mantissa_bits)-1;
   uint64_t y_mant = rng & mant_mask;
+  if (y_mant == 0) y_mant = 1;
 
   return makeFloat<T>(
     input_not_output ? x_sign : y_sign,
@@ -597,7 +632,7 @@ __host__ __device__ void genInput(
     T &ans, ReduceSum, int rank_n, int rank_me, uint64_t seed, intptr_t index,
     std::false_type /*integral*/
   ) {
-  ans = genInOutFloatSum<T>(/*input_not_output=*/true, rank_n, rank_me, seed, index);
+  ans = genInOutFloatSum<T>(/*input_not_output=*/true, rank_n, rank_me, seed, index, /*same_sign=*/false);
 }
 
 template<typename T>
@@ -605,7 +640,7 @@ __host__ __device__ void genOutput(
     T &ans, ReduceSum, int rank_n, uint64_t seed, intptr_t index,
     std::false_type /*integral*/
   ) {
-  ans = genInOutFloatSum<T>(/*input_not_output=*/false, rank_n, 0, seed, index);
+  ans = genInOutFloatSum<T>(/*input_not_output=*/false, rank_n, 0, seed, index, /*same_sign=*/false);
 }
 }
 
@@ -665,18 +700,12 @@ __host__ __device__ void genOutput(
 // Average of float
 
 namespace {
-// Averaging floats is harder to make exact because we can't control the division
-// by rank_n. But if we limit the number of non-zero values to 3 of the same
-// value, then the associativity of float addition is irrelevant.
 template<typename T>
 __host__ __device__ void genInput(
     T &ans, ReduceAvg, int rank_n, int rank_me, uint64_t seed, intptr_t index,
     std::false_type /*integral*/
   ) {
-  uint64_t rng = hashOf(seed, index);
-  T unit = castTo<T>(float(rng & 7)); // the value contributed by 3 ranks
-  int r1 = shuffleRank(rank_n, rank_me, rng);
-  ans = r1 < 3 ? unit : castTo<T>(0.0f);
+  ans = genInOutFloatSum<T>(/*input_not_output=*/true, rank_n, rank_me, seed, index, /*same_sign=*/true);
 }
 
 template<typename T>
@@ -684,17 +713,9 @@ __host__ __device__ void genOutput(
     T &ans, ReduceAvg, int rank_n, uint64_t seed, intptr_t index,
     std::false_type /*integral*/
   ) {
-  uint64_t rng = hashOf(seed, index);
-  T unit = castTo<T>(float(rng & 7));
-  // bfloat16 and half have trouble converting from double on some CUDA's, so we
-  // use float as an intermediate type selectively.
+  ans = genInOutFloatSum<T>(/*input_not_output=*/false, rank_n, 0, seed, index, /*same_sign=*/true);
   using T1 = typename std::conditional<(sizeof(T)<sizeof(double)), float, double>::type;
-  unit = ReduceProd()(unit, inhibit(castTo<T>(T1(1)/T1(rank_n))));
-  T sum = 0.0f;
-  if(0 < rank_n) sum = inhibit(ReduceSum()(sum, unit));
-  if(1 < rank_n) sum = inhibit(ReduceSum()(sum, unit));
-  if(2 < rank_n) sum = inhibit(ReduceSum()(sum, unit));
-  ans = sum;
+  ans = ReduceProd()(ans, T1(1)/T1(rank_n));
 }
 }
 
@@ -898,11 +919,69 @@ void ncclVerifiablePrepareExpected(
 
 ////////////////////////////////////////////////////////////////////////////////
 
+namespace {
+/* How we compare floating point values when exactness is impossible is interesting.
+ * First, we take note that simply reinterpreting integer bits as floating point
+ * gives us a monotonic mapping which exponentially spaces out floats. Thus
+ * consecutive integers encode consecutive floats. In general, using integer
+ * subraction on the bitpatterns of two floats gives us an integer which is the
+ * logarithm of their relative difference. But, if the floats always have similar
+ * exponents, than the integer difference is actually proportional to the
+ * relative error (this is because we are counting hops in the mantissa bits only,
+ * not the exponent bits). So a cheap way to compare if two floats are relatively
+ * close is: abs(intBits(a), intBits(b)) < tolerance. The following formula
+ * calculates such a tolerance for a summation of n floats. This formula
+ * was derived by inspecting the maximum observed integer difference over many
+ * random runs of summation. The parameter values were computed by the
+ * companion program "inexact_regress.cu".
+ */
+__host__ __device__ unsigned calcSumFloatTolerance(int rank_n, int elt_ty) {
+  float power, coef;
+  switch(elt_ty) {
+  case ncclFloat32:
+  case ncclFloat64:
+    power = .5f;
+    coef = 1.25f;
+    break;
+  case ncclFloat16:
+    power = .7f;
+    coef = 2.0f;
+    break;
+  #ifdef __CUDA_BF16_TYPES_EXIST__
+  case ncclBfloat16:
+    power = .7f;
+    coef = 1.25f;
+    break;
+  #endif
+  }
+  #if __CUDA_ARCH__
+    return 1 + unsigned(coef*powf(float(rank_n), power));
+  #else
+    return 1 + unsigned(coef*std::pow(float(rank_n), power));
+  #endif
+}
+
+template<typename T>
+__host__ __device__  uint64_t calcDelta(T a, T b) {
+  union { T t; uint8_t i1; uint16_t i2; uint32_t i4; uint64_t i8; } x, y;
+  x.t = a;
+  y.t = b;
+  switch(sizeof(T)) {
+  case 1:  return x.i1 < y.i1 ? y.i1 - x.i1 : x.i1 - y.i1;
+  case 2:  return x.i2 < y.i2 ? y.i2 - x.i2 : x.i2 - y.i2;
+  case 4:  return x.i4 < y.i4 ? y.i4 - x.i4 : x.i4 - y.i4;
+  default: return x.i8 < y.i8 ? y.i8 - x.i8 : x.i8 - y.i8;
+  }
+}
+}
+
+////////////////////////////////////////////////////////////////////////////////
+
 #if !SELF_TEST
 namespace {
 template<typename T>
-__global__ void verifyResults1(
-    T const *results, T const *expected, intptr_t elt_n, int64_t *bad_elt_n
+__global__ void verifyPrepared(
+    T const *results, T const *expected, intptr_t elt_n, unsigned tolerance, int64_t *bad_elt_n
   ) {
   intptr_t i0 = blockIdx.x*(elt_n/gridDim.x);
   i0 += blockIdx.x < elt_n%gridDim.x ? blockIdx.x : elt_n%gridDim.x;
@@ -912,38 +991,101 @@ __global__ void verifyResults1(
   int64_t bad = 0;
 
   while(i < i1) {
+    T a = results[i], b = expected[i];
+    T delta = a < b ? b - a : a - b;
+    bad += tolerance < delta ? 1 : 0;
     #if 0
-    if(results[i] != expected[i]) {
-      printf("ix=%lld got=%g exp=%g\n", (long long)i, (float)results[i], (float)expected[i]);
-    }
+      if(tolerance < delta) {
+        printf("ix=%lld got=%g exp=%g\n", (long long)i, (float)results[i], (float)expected[i]);
+      }
     #endif
-    bad += results[i] != expected[i];
     i += blockDim.x;
   }
   asm("red.global.add.u64 [%0],%1;" :: "l"(bad_elt_n), "l"(bad));
+}
+
+template<typename T, typename Uint, typename ReduceFn>
+__global__ void verifyInline2(
+    T const *results, intptr_t elt_n, ReduceFn op, int rank_n, uint64_t seed,
+    intptr_t elt_ix0, unsigned tolerance, int64_t *bad_elt_n
+  ) {
+  intptr_t i0 = blockIdx.x*(elt_n/gridDim.x);
+  i0 += blockIdx.x < elt_n%gridDim.x ? blockIdx.x : elt_n%gridDim.x;
+  intptr_t i1 = (blockIdx.x+1)*(elt_n/gridDim.x);
+  i1 += blockIdx.x+1 < elt_n%gridDim.x ? blockIdx.x+1 : elt_n%gridDim.x;
+  intptr_t i = i0 + threadIdx.x;
+  int64_t bad = 0;
+
+  while(i < i1) {
+    union { T t; Uint u; } a, b;
+    a.t = results[i];
+    b.t = genOutput<T>(op, rank_n, seed, elt_ix0+i);
+    Uint delta = a.u < b.u ? b.u - a.u : a.u - b.u;
+    bad += tolerance < delta ? 1 : 0;
+    #if 0
+      if(tolerance < delta) {
+        printf("ix=%lld got=%g exp=%g\n", (long long)i, (float)a.t, (float)b.t);
+      }
+    #endif
+    i += blockDim.x;
+  }
+  asm("red.global.add.u64 [%0],%1;" :: "l"(bad_elt_n), "l"(bad));
+}
+
+template<typename T, typename Uint>
+void verifyInline1(
+    T const *results, intptr_t elt_n, int red_op, int rank_n, uint64_t seed, intptr_t elt_ix0,
+    unsigned tolerance, int64_t *bad_elt_n, cudaStream_t stream, int block_n
+  ) {
+  #define CASE_OP(op) \
+    verifyInline2<T, Uint><<<block_n, 512, 0, stream>>> \
+      ((T const*)results, elt_n, op, rank_n, seed, elt_ix0, tolerance, bad_elt_n); \
+    break;
+  switch(red_op) {
+  case ncclSum: CASE_OP(ReduceSum())
+  case ncclMin: CASE_OP(ReduceMin())
+  case ncclMax: CASE_OP(ReduceMax())
+  case ncclProd: CASE_OP(ReduceProd())
+  case ncclAvg: CASE_OP(ReduceAvg{rank_n})
+  default: CASE_OP(ReducePreMulSum())
+  }
+  #undef CASE_OP
 }
 }
 
 void ncclVerifiableVerify(
     void const *results, void const *expected, intptr_t elt_n, int elt_ty,
+    int red_op, int rank_n, uint64_t seed, intptr_t elt_ix0,
     int64_t *bad_elt_n, cudaStream_t stream
   ) {
-  *bad_elt_n = 0;
-  int block_n = std::min<intptr_t>(32, (elt_n + 4*512-1)/(4*512));
-  #define CASE_TY(T) verifyResults1<<<block_n, 512, 0, stream>>>((T const*)results, (T const*)expected, elt_n, bad_elt_n); break;
-  switch(elt_ty) {
-  case ncclInt8: CASE_TY(uint8_t)
-  case ncclUint8: CASE_TY(uint8_t)
-  case ncclInt32: CASE_TY(uint32_t)
-  case ncclUint32: CASE_TY(uint32_t)
-  case ncclInt64: CASE_TY(uint64_t)
-  case ncclUint64: CASE_TY(uint64_t)
-  case ncclFloat16: CASE_TY(uint16_t)
+  bool floating = elt_ty == ncclFloat16 || elt_ty == ncclFloat32 || elt_ty == ncclFloat64;
   #ifdef __CUDA_BF16_TYPES_EXIST__
-  case ncclBfloat16: CASE_TY(uint16_t)
+    floating |= elt_ty == ncclBfloat16;
   #endif
-  case ncclFloat32: CASE_TY(uint32_t)
-  case ncclFloat64: CASE_TY(uint64_t)
+  unsigned tolerance = floating && red_op == ncclAvg ? calcSumFloatTolerance(rank_n, elt_ty) : 0;
+  int block_n = std::min<intptr_t>(32, (elt_n + 4*512-1)/(4*512));
+
+  *bad_elt_n = 0;
+  #define CASE_TY(T, Uint) { \
+      if(expected != nullptr) { \
+        verifyPrepared<<<block_n, 512, 0, stream>>>((Uint const*)results, (Uint const*)expected, elt_n, tolerance, bad_elt_n); \
+      } else { \
+        verifyInline1<T, Uint>((T const*)results, elt_n, red_op, rank_n, seed, elt_ix0, tolerance, bad_elt_n, stream, block_n); \
+      } \
+    } break;
+  switch(elt_ty) {
+  case ncclInt8: CASE_TY(int8_t, uint8_t)
+  case ncclUint8: CASE_TY(uint8_t, uint8_t)
+  case ncclInt32: CASE_TY(int32_t, uint32_t)
+  case ncclUint32: CASE_TY(uint32_t, uint32_t)
+  case ncclInt64: CASE_TY(int64_t, uint64_t)
+  case ncclUint64: CASE_TY(uint64_t, uint64_t)
+  case ncclFloat16: CASE_TY(half, uint16_t)
+  #ifdef __CUDA_BF16_TYPES_EXIST__
+  case ncclBfloat16: CASE_TY(__nv_bfloat16, uint16_t)
+  #endif
+  case ncclFloat32: CASE_TY(float, uint32_t)
+  case ncclFloat64: CASE_TY(double, uint64_t)
   default: assert(0);
   }
   #undef CASE_TY
@@ -955,71 +1097,68 @@ void ncclVerifiableVerify(
 #if SELF_TEST
 #include <iostream>
 
-template<typename T>
-__host__ __device__ bool equals(T a, T b) {
-  union { uint8_t u8; uint16_t u16; uint32_t u32; uint64_t u64; T t; } ua, ub;
-  ua.t = a;
-  ub.t = b;
-  switch(sizeof(T)) {
-  case 1: return ua.u8 == ub.u8;
-  case 2: return ua.u16 == ub.u16;
-  case 4: return ua.u32 == ub.u32;
-  default: return ua.u64 == ub.u64;
-  }
-}
-
 template<typename T, typename Op>
-__device__ void sweep2(char const *tyname, Op op, char const *opname, int rank_n) {
+__device__ void sweep2(int ty, char const *tyname, Op op, char const *opname, int rank_n) {
+  //if(!std::is_same<T,half>::value) return;
+  //if(!std::is_same<Op,ReduceProd>::value) return;
+  //if(rank_n!=3) return;
+
+  unsigned tolerance = !IsIntegral<T>::value && std::is_same<Op,ReduceAvg>::value ? calcSumFloatTolerance(rank_n, ty) : 0;
   uint64_t seed = 0xc8e2bed69766d533;
-  for(int ix=0; ix < 3; ix++) {
+
+  for(int ix=threadIdx.x; ix < 10000; ix+=blockDim.x) {
+    //if(ix!=387) continue;
     T y = genOutput<T>(op, rank_n, seed, ix);
     T sum;
     for(int r=0; r < rank_n; r++) {
       T x = genInput<T>(op, rank_n, r, seed, ix);
       x = op.preOp(x, r);
-      sum = r==0 ? x : op(sum, x);
+      sum = r==0 ? x : op(sum, inhibit(x));
+      //std::printf("x = %llx, sum = %llx\n", bitsOf(x), bitsOf(sum));
     }
     sum = op.postOp(sum);
-    if(!equals(sum, y)) {
+    if(tolerance < calcDelta(sum, y)) {
       std::printf(
-        "%10g != %10g  :  T=%-8s op=%-9s rank_n=%-1d ix=%-1d\n",
-        float(sum), float(y), tyname, opname, rank_n, ix
+        //"%10g != %10g  :  T=%-8s op=%-9s rank_n=%-1d ix=%-1d\n",
+        "%llx != %llx  :  T=%-8s op=%-9s rank_n=%-1d ix=%-1d\n",
+        *(long long*)&sum, *(long long*)&y, tyname, opname, rank_n, ix
       );
     }
   }
 }
 
 template<typename T>
-__device__ void sweep1(char const *tyname) {
-  for(int rank_n=2; rank_n<8; rank_n++) {
-    sweep2<T>(tyname, ReduceSum(), "sum", rank_n);
-    sweep2<T>(tyname, ReduceProd(), "prod", rank_n);
-    sweep2<T>(tyname, ReduceMin(), "min", rank_n);
-    sweep2<T>(tyname, ReduceMax(), "max", rank_n);
-    sweep2<T>(tyname, ReducePreMulSum(), "premulsum", rank_n);
-    sweep2<T>(tyname, ReduceAvg{rank_n}, "avg", rank_n);
+__device__ void sweep1(int ty, char const *tyname) {
+  for(int i=0; i < 10; i++) {
+    int rank_n = (1<<i) + i;
+    sweep2<T>(ty, tyname, ReduceSum(), "sum", rank_n);
+    sweep2<T>(ty, tyname, ReduceProd(), "prod", rank_n);
+    sweep2<T>(ty, tyname, ReduceMin(), "min", rank_n);
+    sweep2<T>(ty, tyname, ReduceMax(), "max", rank_n);
+    sweep2<T>(ty, tyname, ReducePreMulSum(), "premulsum", rank_n);
+    sweep2<T>(ty, tyname, ReduceAvg{rank_n}, "avg", rank_n);
   }
 }
 
 __global__ void sweep() {
-  sweep1<int8_t>("int8");
-  sweep1<uint8_t>("uint8");
-  sweep1<int32_t>("int32");
-  sweep1<uint32_t>("uint32");
-  sweep1<int64_t>("int64");
-  sweep1<uint64_t>("uint64");
-  sweep1<half>("half");
+  sweep1<int8_t>(ncclInt8, "int8");
+  sweep1<uint8_t>(ncclUint8, "uint8");
+  sweep1<int32_t>(ncclInt32, "int32");
+  sweep1<uint32_t>(ncclUint32, "uint32");
+  sweep1<int64_t>(ncclInt64, "int64");
+  sweep1<uint64_t>(ncclUint64, "uint64");
+  sweep1<half>(ncclFloat16, "half");
   #ifdef __CUDA_BF16_TYPES_EXIST__
-    sweep1<__nv_bfloat16>("bfloat16");
+    sweep1<__nv_bfloat16>(ncclBfloat16, "bfloat16");
   #endif
-  sweep1<float>("float");
-  sweep1<double>("double");
+  sweep1<float>(ncclFloat32, "float");
+  sweep1<double>(ncclFloat64, "double");
 }
 
 int main(int arg_n, char **args) {
   std::cerr<<"You are hoping to see no output beyond this line."<<std::endl;
   cudaSetDevice(0);
-  sweep<<<1,1>>>();
+  sweep<<<1,512>>>();
   cudaDeviceSynchronize();
   return 0;
 }

@@ -39,7 +39,7 @@ void ncclVerifiablePrepareInput(
   uint64_t seed, intptr_t elt_ix0, cudaStream_t stream
 );
 
-// Enqueue kernel to generate results of reduction.
+// Enqueue kernel to generate expected results of reduction.
 void ncclVerifiablePrepareExpected(
   void *elts, intptr_t elt_n, int elt_ty, int red_op, int rank_n,
   uint64_t seed, intptr_t elt_ix0, cudaStream_t stream
@@ -47,8 +47,13 @@ void ncclVerifiablePrepareExpected(
 
 // Enqueue kernel to verify reduced data matches expectation. The number of
 // failed elements is written to bad_elt_n which must be in cudaHost memory.
+// If `expected == nullptr` then the expected results are generated on-the-fly
+// which can be costly. Thus if you plan to run the same reduction multiple
+// times it is advantageous to precompute the expected values with
+// ncclVerifiablePrepareExpected and pass them as `expected` here.
 void ncclVerifiableVerify(
   void const *results, void const *expected, intptr_t elt_n, int elt_ty,
+  int red_op, int rank_n, uint64_t seed, intptr_t elt_ix0,
   int64_t *bad_elt_n, cudaStream_t stream
 );
 #endif
