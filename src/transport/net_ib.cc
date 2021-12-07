@@ -879,73 +879,62 @@ ncclResult_t ncclIbIsend(void* sendComm, void* data, int size, int tag, void* mh
   struct ibv_mr* mr = (struct ibv_mr*)mhandle;
 
   // Wait for the receiver to have posted the corresponding receive
-  uint32_t fifoHead = comm->fifoHead;
   int nreqs = 0;
   volatile struct ncclIbSendFifo* slots;
-  while (1) {
-    int slot = fifoHead%MAX_REQUESTS;
-    struct ncclIbRequest** reqs = comm->fifoReqs[slot];
-    slots = comm->fifo[slot];
-    volatile uint32_t * nreqsPtr = &slots[0].nreqs;
-    if (*nreqsPtr == 0 ) { *request = NULL; return ncclSuccess; }
-    nreqs = *nreqsPtr;
-    // Wait until all data has arrived
-    for (int r=1; r<nreqs; r++) while(slots[r].nreqs != nreqs) sched_yield();
-    __sync_synchronize(); // order the nreqsPtr load against rkey load below
-    for (int r=0; r<nreqs; r++) {
-      volatile uint64_t * tagPtr = &slots[r].tag;
-      if (reqs[r] != NULL || (*tagPtr) != tag) continue;
 
-      // Sanity checks to catch user collective call count/size mismatches
-      // plus any potential programming errors
-      if (size > slots[r].size || slots[r].size < 0 || slots[r].addr == 0 || slots[r].rkey == 0) {
-        char line[SOCKET_NAME_MAXLEN+1];
-        WARN("NET/IB : peer %s collective mismatch error local size %d remote %d addr %lx rkey %x",
-            ncclSocketToString(&comm->sock.addr, line), size, slots[r].size, slots[r].addr, slots[r].rkey);
-        return ncclInternalError;
-      }
-      struct ncclIbRequest* req;
-      NCCLCHECK(ncclIbGetRequest(&comm->verbs, &req));
-      req->type = NCCL_NET_IB_REQ_SEND;
-      req->addr = &comm->sock.addr;
-      req->verbs = &comm->verbs;
-      req->nreqs = nreqs;
-      req->send.size = size;
-      req->send.data = data;
-      req->send.lkey = mr->lkey;
-      req->send.offset = 0;
-      req->addr = &comm->sock.addr;
-      req->events = comm->nqps;
-      *request = reqs[r] = req;
+  int slot = (comm->fifoHead)%MAX_REQUESTS;
+  struct ncclIbRequest** reqs = comm->fifoReqs[slot];
+  slots = comm->fifo[slot];
+  volatile uint32_t * nreqsPtr = &slots[0].nreqs;
+  if (*nreqsPtr == 0 ) { *request = NULL; return ncclSuccess; }
+  nreqs = *nreqsPtr;
+  // Wait until all data has arrived
+  for (int r=1; r<nreqs; r++) while(slots[r].nreqs != nreqs) sched_yield();
+  __sync_synchronize(); // order the nreqsPtr load against rkey load below
+  for (int r=0; r<nreqs; r++) {
+    volatile uint64_t * tagPtr = &slots[r].tag;
+    if (reqs[r] != NULL || (*tagPtr) != tag) continue;
 
-      // If this is a multi-recv, send only when all requests have matched.
-      for (int r=0; r<nreqs; r++) {
-        if (reqs[r] == NULL) return ncclSuccess;
-      }
-
-      TIME_START(0);
-      NCCLCHECK(ncclIbMultiSend(comm, slot));
-
-      // Shift unmatched elements in the FIFO
-      for (int s=fifoHead; s>comm->fifoHead; s--) {
-        printf("Shift %d -> %d\n", s-1, s);
-        memcpy(comm->fifo[s%MAX_REQUESTS], comm->fifo[(s-1)%MAX_REQUESTS], NCCL_NET_IB_MAX_RECVS*sizeof(struct ncclIbSendFifo));
-        memcpy(comm->fifoReqs[s%MAX_REQUESTS], comm->fifoReqs[(s-1)%MAX_REQUESTS], NCCL_NET_IB_MAX_RECVS*sizeof(struct ncclIbRequest*));
-      }
-
-      // Clear slots[0]->nreqs, as well as other fields to help debugging and sanity checks
-      memset(comm->fifo[comm->fifoHead%MAX_REQUESTS], 0, sizeof(struct ncclIbSendFifo));
-      memset(comm->fifoReqs[comm->fifoHead%MAX_REQUESTS], 0, NCCL_NET_IB_MAX_RECVS*sizeof(struct ncclIbRequest*));
-      comm->fifoHead++;
-      TIME_STOP(0);
-      return ncclSuccess;
-    }
-    fifoHead++;
-    if (fifoHead == comm->fifoHead + MAX_REQUESTS) {
-      WARN("Error: send FIFO is full yet no tag matched %x", tag);
+    // Sanity checks to catch user collective call count/size mismatches
+    // plus any potential programming errors
+    if (size > slots[r].size || slots[r].size < 0 || slots[r].addr == 0 || slots[r].rkey == 0) {
+      char line[SOCKET_NAME_MAXLEN+1];
+      WARN("NET/IB : peer %s collective mismatch error local size %d remote %d addr %lx rkey %x",
+          ncclSocketToString(&comm->sock.addr, line), size, slots[r].size, slots[r].addr, slots[r].rkey);
       return ncclInternalError;
     }
+    struct ncclIbRequest* req;
+    NCCLCHECK(ncclIbGetRequest(&comm->verbs, &req));
+    req->type = NCCL_NET_IB_REQ_SEND;
+    req->addr = &comm->sock.addr;
+    req->verbs = &comm->verbs;
+    req->nreqs = nreqs;
+    req->send.size = size;
+    req->send.data = data;
+    req->send.lkey = mr->lkey;
+    req->send.offset = 0;
+    req->addr = &comm->sock.addr;
+    req->events = comm->nqps;
+    *request = reqs[r] = req;
+
+    // If this is a multi-recv, send only when all requests have matched.
+    for (int r=0; r<nreqs; r++) {
+      if (reqs[r] == NULL) return ncclSuccess;
+    }
+
+    TIME_START(0);
+    NCCLCHECK(ncclIbMultiSend(comm, slot));
+
+    // Clear slots[0]->nreqs, as well as other fields to help debugging and sanity checks
+    memset((void*)slots, 0, sizeof(struct ncclIbSendFifo));
+    memset(reqs, 0, NCCL_NET_IB_MAX_RECVS*sizeof(struct ncclIbRequest*));
+    comm->fifoHead++;
+    TIME_STOP(0);
+    return ncclSuccess;
   }
+
+  *request = NULL;
+  return ncclSuccess;
 }
 
 ncclResult_t ncclIbPostFifo(struct ncclIbRecvComm* comm, int n, void** data, int* sizes, int* tags, void** mhandles, struct ncclIbRequest* req) {
@@ -1012,6 +1001,7 @@ ncclResult_t ncclIbIrecv(void* recvComm, int n, void** data, int* sizes, int* ta
   struct ncclIbRecvComm* comm = (struct ncclIbRecvComm*)recvComm;
   if (comm->ready == 0) NCCLCHECK(ncclRecvCheck(comm));
   if (comm->ready == 0) { *request = NULL; return ncclSuccess; }
+  if (n > NCCL_NET_IB_MAX_RECVS) return ncclInternalError;
 
   struct ncclIbRequest* req;
   NCCLCHECK(ncclIbGetRequest(&comm->verbs, &req));
