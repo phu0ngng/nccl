@@ -421,44 +421,24 @@ ncclResult_t ncclTopoGetPxnRanks(struct ncclComm* comm, int** intermediateRanks,
   *intermediateRanks = NULL;
   if (system->nodes[NET].count == 0) return ncclSuccess;
 
-  int pxnNnets = 0;
-  int* pxnNets = NULL;
-  NCCLCHECK(ncclCalloc(&pxnNets, system->nodes[NET].count));
-
-  for (int rank=0; rank<comm->nRanks; rank++) {
-    int netDev;
-    NCCLCHECK(ncclTopoGetNetDev(comm, comm->rank, NULL, 0, rank, &netDev));
-    int found = 0;
-    for (int n=0; n<pxnNnets; n++) {
-      if (pxnNets[n] == netDev) found = 1;
-    }
-    if (!found) {
-      pxnNets[pxnNnets++] = netDev;
-    }
-  }
   int nr = 0;
   int* ranks = NULL;
-  for (int n=0; n<pxnNnets; n++) {
-    int netDev = pxnNets[n];
-    int proxyRank;
-    struct ncclProxyConnector proxyConn;
-    NCCLCHECK(ncclTopoGetIntermediateRank(comm->topo, comm->rank, netDev, &proxyRank));
+  for (int rank=0; rank<comm->nRanks; rank++) {
+    int netDev, proxyRank;
+    NCCLCHECK(ncclTopoGetNetDev(comm, comm->rank, NULL, 0, rank, &netDev, &proxyRank));
     if (proxyRank == comm->rank) continue;
     int useGdr;
     NCCLCHECK(ncclTopoCheckGdr(comm->topo, comm->busId, netDev, 1, &useGdr));
     if (useGdr == 0) continue;
-    NCCLCHECK(ncclTopoGetLocalRank(comm->topo, comm->rank, &proxyConn.localRank));
-    NCCLCHECK(ncclProxyConnect(comm, TRANSPORT_NET, 1, proxyRank, &proxyConn));
     int found = 0;
-    for (int n=0; n<*nranks; n++) {
-      if ((*intermediateRanks)[n] == proxyRank) found = 1;
+    for (int r=0; r<nr; r++) {
+      if (ranks[r] == proxyRank) found = 1;
     }
     if (!found) {
       NCCLCHECK(ncclRealloc(&ranks, nr, nr+1));
       ranks[nr++] = proxyRank;
     }
   }
-  free(pxnNets);
   *nranks = nr;
   *intermediateRanks = ranks;
   return ncclSuccess;

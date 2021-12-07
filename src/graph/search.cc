@@ -934,29 +934,64 @@ ncclResult_t ncclTopoDumpGraphs(struct ncclTopoSystem* system, int ngraphs, stru
   return ncclSuccess;
 }
 
+// 0: don't use PXN for P2P, 1: use PXN if needed, 2: use PXN as much as possible to maximize aggregation
+NCCL_PARAM(P2pPxnLevel, "P2P_PXN_LEVEL", 2);
+
 #include "comm.h"
-ncclResult_t ncclTopoGetNetDev(struct ncclComm* comm, int rank, struct ncclTopoGraph* graph, int channelId, int peerRank, int* dev) {
+ncclResult_t ncclTopoGetNetDev(struct ncclComm* comm, int rank, struct ncclTopoGraph* graph, int channelId, int peerRank, int* dev, int* proxyRank) {
   if (graph) {
     // Honor the net device in the graph
     int channel = channelId%graph->nChannels;
     int ngpus = comm->topo->nodes[GPU].count;
     int index = graph->intra[channel*ngpus] == rank ? 0 : 1;
     *dev = graph->inter[channel*2+index];
+    NCCLCHECK(ncclTopoGetIntermediateRank(comm->topo, rank, *dev, proxyRank));
   } else if (peerRank == -1) {
     return ncclInternalError;
   } else {
-    // Start with our local NIC
+    // Start with our local NIC and local Rank
     NCCLCHECK(ncclTopoGetLocalNet(comm->topo, rank, dev));
-    // Unless cross-NIC is not a problem, see whether we can use the remote rank preferred device.
-    if (ncclParamCrossNic() != 1) {
+    *proxyRank = rank;
+
+    // See whether we can use the remote rank preferred device.
+    if (ncclParamCrossNic() == 0 || ncclParamP2pPxnLevel() != 0) {
       int netDev = comm->peerInfo[peerRank].netDev;
       int n;
       // Check that device exists on our node
-      if (ncclTopoIdToIndex(comm->topo, NET, netDev, &n) != ncclSuccess) {
-        WARN("Rank %d requires NIC %d but that NIC is not available for rank %d", peerRank, netDev, rank);
-        return ncclInvalidUsage;
+      if (ncclParamCrossNic() == 0) {
+        if (ncclTopoIdToIndex(comm->topo, NET, netDev, &n) != ncclSuccess) {
+          WARN("Rank %d requires NIC %d but that NIC is not available for rank %d", peerRank, netDev, rank);
+          return ncclInvalidUsage;
+        }
+        *dev = netDev;
       }
-      *dev = netDev;
+      if (ncclParamP2pPxnLevel() == 1) {
+        int g, n;
+        NCCLCHECK(ncclTopoRankToIndex(comm->topo, rank, &g));
+        NCCLCHECK(ncclTopoIdToIndex(comm->topo, NET, netDev, &n));
+        NCCLCHECK(ncclTopoIdToIndex(comm->topo, NET, *dev, &n));
+        struct ncclTopoNode* gpu = comm->topo->nodes[GPU].nodes+g;
+        if (gpu->paths[NET][n].type <= PATH_PXB) {
+          *dev = netDev;
+        }
+      } else if (ncclParamP2pPxnLevel() == 2) {
+        // Check whether we can access it through our node-local GPU for that NIC.
+        for (int r=0; r<comm->localRanks; r++) {
+          int peerRank = comm->localRankToRank[r];
+          if (comm->peerInfo[peerRank].netDev == netDev) {
+            int g1, g2, n;
+            NCCLCHECK(ncclTopoRankToIndex(comm->topo, rank, &g1));
+            NCCLCHECK(ncclTopoRankToIndex(comm->topo, peerRank, &g2));
+            NCCLCHECK(ncclTopoIdToIndex(comm->topo, NET, netDev, &n));
+            struct ncclTopoNode* peerGpu = comm->topo->nodes[GPU].nodes+g2;
+            if (peerGpu->paths[GPU][g1].type <= PATH_NVL && peerGpu->paths[NET][n].type <= PATH_PXB) {
+              *proxyRank = peerRank;
+              *dev = netDev;
+              return ncclSuccess;
+            }
+          }
+        }
+      }
     }
   }
   return ncclSuccess;
