@@ -123,7 +123,7 @@ void* ncclAsyncThreadPreconnect(void* args_) {
   struct ncclComm* comm = args->coll.comm;
   CUDACHECKTHREAD(cudaSetDevice(comm->cudaDev));
   if (CPU_COUNT(&comm->cpuAffinity)) sched_setaffinity(0, sizeof(cpu_set_t), &comm->cpuAffinity);
-  NCCLCHECKTHREAD(ncclTransportP2pSetup(comm, NULL, 0));
+  NCCLCHECKTHREAD(ncclTransportP2pSetup(comm, NULL, 1));
   return args;
 }
 

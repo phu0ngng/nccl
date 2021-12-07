@@ -91,6 +91,7 @@ struct sendResources {
   void* gdrDesc;
   int shared;
   int channelId;
+  int connIndex;
   char* buffers[NCCL_NUM_PROTOCOLS];
   int buffSizes[NCCL_NUM_PROTOCOLS];
   void* mhandles[NCCL_NUM_PROTOCOLS];
@@ -115,6 +116,7 @@ struct recvResources {
   void* gdrDesc;
   int shared;
   int channelId;
+  int connIndex;
   char* buffers[NCCL_NUM_PROTOCOLS];
   int buffSizes[NCCL_NUM_PROTOCOLS];
   void* mhandles[NCCL_NUM_PROTOCOLS];
@@ -138,6 +140,7 @@ struct setupReq {
   int netDev;
   int useGdr;
   int channelId;
+  int connIndex;
 };
 
 /* Determine if we will use this transport for this peer and return connect
@@ -147,6 +150,7 @@ static ncclResult_t sendSetup(struct ncclComm* comm, struct ncclTopoGraph* graph
 
   send->conn.shared = req.shared = ncclParamNetSharedBuffers() != -2 ? ncclParamNetSharedBuffers() : graph ? 0 : 1;
   req.channelId = channelId;
+  req.connIndex = connIndex;
 
   NCCLCHECK(ncclTopoGetNetDev(comm, myInfo->rank, graph, channelId, peerInfo->rank, &req.netDev));
   NCCLCHECK(ncclTopoCheckGdr(comm->topo, myInfo->busId, req.netDev, 1, &req.useGdr));
@@ -161,10 +165,10 @@ static ncclResult_t sendSetup(struct ncclComm* comm, struct ncclTopoGraph* graph
   NCCLCHECK(ncclProxyCall(&send->proxyConn, ncclProxyMsgSetup, &req, sizeof(req), NULL, 0));
 
   if (proxyRank == myInfo->rank) {
-    INFO(NCCL_INIT|NCCL_NET,"Channel %02d : %d[%lx] -> %d[%lx] [send] via NET/%s/%d%s%s", channelId, myInfo->rank, myInfo->busId, peerInfo->rank, peerInfo->busId, ncclNetName(), req.netDev,
+    INFO(NCCL_INIT|NCCL_NET,"Channel %02d/%d : %d[%lx] -> %d[%lx] [send] via NET/%s/%d%s%s", channelId, connIndex, myInfo->rank, myInfo->busId, peerInfo->rank, peerInfo->busId, ncclNetName(), req.netDev,
         req.useGdr ? "/GDRDMA" : "", req.shared ? "/Shared" : "");
   } else {
-    INFO(NCCL_INIT|NCCL_NET,"Channel %02d : %d[%lx] -> %d[%lx] [send] via NET/%s/%d(%d)%s%s", channelId, myInfo->rank, myInfo->busId, peerInfo->rank, peerInfo->busId, ncclNetName(), req.netDev,
+    INFO(NCCL_INIT|NCCL_NET,"Channel %02d/%d : %d[%lx] -> %d[%lx] [send] via NET/%s/%d(%d)%s%s", channelId, connIndex, myInfo->rank, myInfo->busId, peerInfo->rank, peerInfo->busId, ncclNetName(), req.netDev,
         proxyRank, req.useGdr ? "/GDRDMA" : "", req.shared ? "/Shared" : "");
   }
   *((int*)connectInfo) = proxyRank;
@@ -182,6 +186,7 @@ static ncclResult_t recvSetup(struct ncclComm* comm, struct ncclTopoGraph* graph
 
   recv->conn.shared = req.shared = ncclParamNetSharedBuffers() != -2 ? ncclParamNetSharedBuffers() : graph ? 0 : 1;
   req.channelId = channelId;
+  req.connIndex = connIndex;
 
   // Use myInfo->rank as the receiver uses its own NIC
   NCCLCHECK(ncclTopoGetNetDev(comm, myInfo->rank, graph, channelId, myInfo->rank, &req.netDev));
@@ -194,7 +199,7 @@ static ncclResult_t recvSetup(struct ncclComm* comm, struct ncclTopoGraph* graph
   req.remoteRank = peerInfo->rank;
   NCCLCHECK(ncclProxyCall(&recv->proxyConn, ncclProxyMsgSetup, &req, sizeof(req), connectInfo, sizeof(ncclNetHandle_t)));
 
-  INFO(NCCL_INIT|NCCL_NET,"Channel %02d : %d[%lx] -> %d[%lx] [receive] via NET/%s/%d%s%s", channelId, peerInfo->rank, peerInfo->busId, myInfo->rank, myInfo->busId, ncclNetName(), req.netDev,
+  INFO(NCCL_INIT|NCCL_NET,"Channel %02d/%d : %d[%lx] -> %d[%lx] [receive] via NET/%s/%d%s%s", channelId, connIndex, peerInfo->rank, peerInfo->busId, myInfo->rank, myInfo->busId, ncclNetName(), req.netDev,
       req.useGdr ? "/GDRDMA" : "", req.shared ? "/Shared" : "");
   return ncclSuccess;
 }
@@ -411,6 +416,7 @@ static ncclResult_t sendProxySetup(struct ncclProxyConnection* connection, struc
   resources->shared = connection->shared = req->shared;
   resources->useGdr = req->useGdr;
   resources->channelId = req->channelId;
+  resources->connIndex = req->connIndex;
 
   // We don't return any data
   if (respSize != 0) return ncclInternalError;
@@ -433,6 +439,7 @@ static ncclResult_t recvProxySetup(struct ncclProxyConnection* connection, struc
   resources->shared = connection->shared = req->shared;
   resources->useGdr = req->useGdr;
   resources->channelId = req->channelId;
+  resources->connIndex = req->connIndex;
 
   if (respSize != sizeof(ncclNetHandle_t)) return ncclInternalError;
   NCCLCHECK(ncclNetListen(req->netDev, respBuff, &resources->netListenComm));
@@ -778,7 +785,7 @@ static ncclResult_t sendProxyProgress(struct ncclComm* comm, struct ncclProxyArg
           }
           if (ready) {
             // Data is ready, try to send.
-            NCCLCHECK(ncclNetIsend(resources->netSendComm, buff, size, (resources->rank<<16)+resources->remoteRank, mhandle, sub->requests+buffSlot));
+            NCCLCHECK(ncclNetIsend(resources->netSendComm, buff, size, (resources->channelId<<24)+(resources->connIndex<<20)+(resources->rank<<16)+resources->remoteRank, mhandle, sub->requests+buffSlot));
             if (sub->requests[buffSlot] != NULL) {
               TRACE(NCCL_NET, "sendProxy [%ld/%d] Isend posted, req %p", sub->transmitted, buffSlot, sub->requests[buffSlot]);
               sizesFifo[buffSlot] = -1;
@@ -886,7 +893,7 @@ static ncclResult_t recvProxyProgress(struct ncclComm* comm, struct ncclProxyArg
           }
           sizes[subCount] = stepSize*args->sliceSteps;
           if (sub->nbytes < sizes[subCount]) sizes[subCount] = sub->nbytes;
-          tags[subCount] = (resources->remoteRank<<16) + resources->rank;
+          tags[subCount] = (resources->channelId<<24)+(resources->connIndex<<20)+(resources->remoteRank<<16) + resources->rank;
           mhandles[subCount] = resources->mhandles[p];
           subCount++;
         }

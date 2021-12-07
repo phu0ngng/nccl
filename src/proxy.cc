@@ -88,7 +88,7 @@ ncclResult_t getOpIndex(struct ncclProxyArgs* op, struct ncclProxyProgressState*
 }
 
 ncclResult_t printProxyOp(struct ncclProxyArgs* op, int poolIndex, int opIndex) {
-  printf("[%d-%d| %s", poolIndex, opIndex, op->pattern == ncclPatternSend ? "Send" : op->pattern == ncclPatternRecv ? "Recv" : "Coll");
+  printf("[%d-%d|%ld| %s", poolIndex, opIndex, op->opCount, op->pattern == ncclPatternSend ? "Send" : op->pattern == ncclPatternRecv ? "Recv" : "Coll");
   for (int s=0; s<op->nsubs; s++) {
     struct ncclProxySubArgs* sub = op->subs+s;
     if (op->state == ncclProxyOpProgress) {
@@ -334,8 +334,8 @@ static ncclResult_t SaveProxy(struct ncclChannel* channel, int type, int peer, s
   struct ncclPeer* peerComm = channel->peers+peer;
   struct ncclConnector* connector = type == proxyRecv ? peerComm->recv+connIndex : peerComm->send+connIndex;
   if (connector->transportComm == NULL) {
-    WARN("Rank %d has no transport for %s peer %d on channel %d", connector->comm->rank,
-        type == proxyRecv ? "recv" : "send", peer, channel->id);
+    WARN("Rank %d has no transport for %s peer %d on channel %d/%d", connector->comm->rank,
+        type == proxyRecv ? "recv" : "send", peer, channel->id, connIndex);
     return ncclInternalError;
   }
   if (connector->transportComm->proxyProgress == NULL) return ncclSuccess;
@@ -391,14 +391,14 @@ ncclResult_t ncclProxyComputeP2p(struct ncclInfo* info, struct ncclProxyOp* op) 
 
   if (info->coll == ncclFuncSend) {
     op->pattern = ncclPatternSend;
-    if (op->root != info->comm->rank && peer->send[0].transportComm && peer->send[0].transportComm->proxyProgress) {
+    if (op->root != info->comm->rank && peer->send[1].transportComm && peer->send[1].transportComm->proxyProgress) {
       // Tune chunk size for the network
       if (info->count < stepSize) info->chunkSize /= 4;
       else if (info->count < 8*stepSize) info->chunkSize /= 2;
     }
   } else if (info->coll == ncclFuncRecv) {
     op->pattern = ncclPatternRecv;
-    if (op->root != info->comm->rank && peer->recv[0].transportComm && peer->recv[0].transportComm->proxyProgress) {
+    if (op->root != info->comm->rank && peer->recv[1].transportComm && peer->recv[1].transportComm->proxyProgress) {
       // Tune chunk size for the network
       if (info->count < stepSize) info->chunkSize /= 4;
       else if (info->count < 8*stepSize) info->chunkSize /= 2;
@@ -418,11 +418,11 @@ ncclResult_t ncclProxySaveP2p(struct ncclComm* comm, struct ncclProxyOp* op) {
   if (op->pattern == ncclPatternRecv) {
     op->nsteps = DIVUP(op->nbytes, op->chunkSize);
     if (op->nsteps == 0) op->nsteps = 1;
-    NCCLCHECK(SaveProxy(channel, proxyRecv, op->root, op, 0));
+    NCCLCHECK(SaveProxy(channel, proxyRecv, op->root, op, 1));
   } else if (op->pattern == ncclPatternSend) {
     op->nsteps = DIVUP(op->nbytes, op->chunkSize);
     if (op->nsteps == 0) op->nsteps = 1;
-    NCCLCHECK(SaveProxy(channel, proxySend, op->root, op, 0));
+    NCCLCHECK(SaveProxy(channel, proxySend, op->root, op, 1));
   }
   return ncclSuccess;
 }
