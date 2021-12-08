@@ -971,8 +971,9 @@ ncclResult_t ncclTopoGetNetDev(struct ncclComm* comm, int rank, struct ncclTopoG
         NCCLCHECK(ncclTopoIdToIndex(comm->topo, NET, netDev, &n));
         NCCLCHECK(ncclTopoIdToIndex(comm->topo, NET, *dev, &n));
         struct ncclTopoNode* gpu = comm->topo->nodes[GPU].nodes+g;
-        if (gpu->paths[NET][n].type <= PATH_PXB) {
+        if (gpu->paths[NET][n].type <= PATH_PXN) {
           *dev = netDev;
+          NCCLCHECK(ncclTopoGetIntermediateRank(comm->topo, rank, *dev, proxyRank));
         }
       } else if (ncclParamP2pPxnLevel() == 2) {
         // Check whether we can access it through our node-local GPU for that NIC.
