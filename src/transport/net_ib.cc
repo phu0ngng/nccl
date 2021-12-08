@@ -339,14 +339,14 @@ struct ncclIbSendFifo {
   int      size;
   uint32_t rkey;
   uint32_t nreqs;
-  uint32_t idx;
-  uint64_t tag;
+  uint32_t tag;
+  uint64_t idx;
 };
 
 struct ncclIbSendComm {
   struct ncclIbVerbs verbs;
   struct ncclIbSendFifo fifo[MAX_REQUESTS][NCCL_NET_IB_MAX_RECVS];
-  uint32_t fifoHead;
+  uint64_t fifoHead;
   struct ncclIbRequest* fifoReqs[MAX_REQUESTS][NCCL_NET_IB_MAX_RECVS];
   struct ibv_send_wr wrs[NCCL_NET_IB_MAX_RECVS+1];
   struct ibv_sge sges[NCCL_NET_IB_MAX_RECVS];
@@ -373,9 +373,9 @@ struct ncclIbGpuFlush {
 
 struct ncclIbRemFifo {
   struct ncclIbSendFifo elems[MAX_REQUESTS][NCCL_NET_IB_MAX_RECVS];
+  uint64_t fifoTail;
   uint64_t addr;
   uint32_t rkey;
-  uint32_t tail;
   uint32_t flags;
   struct ibv_mr* mr;
   struct ibv_sge sge;
@@ -885,15 +885,14 @@ ncclResult_t ncclIbIsend(void* sendComm, void* data, int size, int tag, void* mh
   int slot = (comm->fifoHead)%MAX_REQUESTS;
   struct ncclIbRequest** reqs = comm->fifoReqs[slot];
   slots = comm->fifo[slot];
-  volatile uint32_t * nreqsPtr = &slots[0].nreqs;
-  if (*nreqsPtr == 0 ) { *request = NULL; return ncclSuccess; }
-  nreqs = *nreqsPtr;
+  int idx = comm->fifoHead+1;
+  if (slots[0].idx != idx) { *request = NULL; return ncclSuccess; }
+  nreqs = slots[0].nreqs;
   // Wait until all data has arrived
-  for (int r=1; r<nreqs; r++) while(slots[r].nreqs != nreqs) sched_yield();
-  __sync_synchronize(); // order the nreqsPtr load against rkey load below
+  for (int r=1; r<nreqs; r++) while(slots[r].idx != idx);
+  __sync_synchronize(); // order the nreqsPtr load against tag/rkey/addr loads below
   for (int r=0; r<nreqs; r++) {
-    volatile uint64_t * tagPtr = &slots[r].tag;
-    if (reqs[r] != NULL || (*tagPtr) != tag) continue;
+    if (reqs[r] != NULL || slots[r].tag != tag) continue;
 
     // Sanity checks to catch user collective call count/size mismatches
     // plus any potential programming errors
@@ -941,7 +940,7 @@ ncclResult_t ncclIbPostFifo(struct ncclIbRecvComm* comm, int n, void** data, int
   struct ibv_send_wr wr;
   memset(&wr, 0, sizeof(wr));
 
-  int slot = comm->remFifo.tail%MAX_REQUESTS;
+  int slot = comm->remFifo.fifoTail%MAX_REQUESTS;
   struct ncclIbSendFifo* localElem = comm->remFifo.elems[slot];
 
   for (int i=0; i<n; i++) {
@@ -949,9 +948,9 @@ ncclResult_t ncclIbPostFifo(struct ncclIbRecvComm* comm, int n, void** data, int
     struct ibv_mr* mr = (struct ibv_mr*)mhandles[i];
     localElem[i].rkey = mr->rkey;
     localElem[i].nreqs = n;
-    localElem[i].idx = comm->remFifo.tail;
     localElem[i].size = sizes[i]; // Sanity/Debugging
     localElem[i].tag = tags[i];
+    localElem[i].idx = comm->remFifo.fifoTail+1;
   }
 
   wr.wr.rdma.remote_addr = comm->remFifo.addr + slot*NCCL_NET_IB_MAX_RECVS*sizeof(struct ncclIbSendFifo);
@@ -992,7 +991,7 @@ ncclResult_t ncclIbPostFifo(struct ncclIbRecvComm* comm, int n, void** data, int
 
   struct ibv_send_wr* bad_wr;
   NCCLCHECK(wrap_ibv_post_send(comm->qps[0], &wr, &bad_wr));
-  comm->remFifo.tail++;
+  comm->remFifo.fifoTail++;
 
   return ncclSuccess;
 }
