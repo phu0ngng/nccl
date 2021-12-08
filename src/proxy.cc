@@ -312,11 +312,18 @@ ncclResult_t ncclLocalOpAppend(struct ncclComm* comm, struct ncclProxyConnector*
     uint64_t lastOpCount = pool->ops[proxyOps->nextOpsEnd].opCount;
     int lastOp = -1;
     int toSend = 0;
-    for (int op= proxyOps->nextOps; pool->ops[op].opCount != lastOpCount; op=pool->ops[op].next) {
-      lastOp = op;
-      toSend++;
+    int ops = 0;
+    for (int op= proxyOps->nextOps; op != proxyOps->nextOpsEnd; op=pool->ops[op].next) {
+      ops++;
+      if (pool->ops[op].opCount != lastOpCount) {
+        lastOp = op;
+        toSend = ops;
+      }
     }
-    if (lastOp == -1) return ncclInternalError;
+    if (lastOp == -1) {
+      WARN("Unable to post incomplete proxy op chain %d..%d (opCount %ld)\n", proxyOps->nextOps, proxyOps->nextOpsEnd, lastOpCount);
+      return ncclInternalError;
+    }
     // Cut chain at lastOp
     int nextOps = proxyOps->nextOps;
     proxyOps->nextOps = pool->ops[lastOp].next;
