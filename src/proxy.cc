@@ -132,7 +132,7 @@ ncclResult_t dumpProxyState(struct ncclProxyProgressState* state) {
       if (nextOp->state & OP_SEEN) {
         WARN("List loop at element %d-%d", poolIndex, opIndex);
       }
-      printf("%c %c-> ", op->next ? '|' : ' ', nextOp->next ? '|' : '`');
+      printf("| `-> ");
       NCCLCHECK(printProxyOp(nextOp, poolIndex, opIndex));
       nextOp->state |= OP_SEEN;
       printf("\n");
