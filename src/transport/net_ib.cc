@@ -899,8 +899,8 @@ ncclResult_t ncclIbIsend(void* sendComm, void* data, int size, int tag, void* mh
     // plus any potential programming errors
     if (size > slots[r].size || slots[r].size < 0 || slots[r].addr == 0 || slots[r].rkey == 0) {
       char line[SOCKET_NAME_MAXLEN+1];
-      WARN("NET/IB : peer %s collective mismatch error local size %d remote %d addr %lx rkey %x",
-          ncclSocketToString(&comm->sock.addr, line), size, slots[r].size, slots[r].addr, slots[r].rkey);
+      WARN("NET/IB : req %d/%d tag %x peer %s collective mismatch error local size %d remote %d addr %lx rkey %x",
+          n, nreas, tag, ncclSocketToString(&comm->sock.addr, line), size, slots[r].size, slots[r].addr, slots[r].rkey);
       return ncclInternalError;
     }
     struct ncclIbRequest* req;
