@@ -886,7 +886,7 @@ static ncclResult_t proxyConnSharedInit(struct ncclProxyLocalPeer* peer, struct 
   return ncclSuccess;
 }
 
-static ncclResult_t proxyProgressAsync(struct ncclProxyAsyncOp* op, struct ncclComm* comm) {
+static ncclResult_t proxyProgressAsync(struct ncclProxyAsyncOp* op, struct ncclComm* comm, int* asyncOpCount) {
   int done = 1;
   if (op->type == ncclProxyMsgSetup) {
     NCCLCHECK(op->connection->tcomm->proxySetup(op->connection, comm, op->reqBuff, op->reqSize, op->respBuff, op->respSize, &done));
@@ -900,11 +900,12 @@ static ncclResult_t proxyProgressAsync(struct ncclProxyAsyncOp* op, struct ncclC
     op->reqBuff = NULL;
     op->respBuff = NULL;
     op->type = 0;
+    (*asyncOpCount)--;
   }
   return ncclSuccess;
 }
 
-static ncclResult_t proxyConnSetupConnect(int type, struct ncclProxyLocalPeer* peer, struct ncclProxyConnectionPool* connectionPool, struct ncclComm* comm) {
+static ncclResult_t proxyConnSetupConnect(int type, struct ncclProxyLocalPeer* peer, struct ncclProxyConnectionPool* connectionPool, struct ncclComm* comm, int* asyncOpCount) {
   struct ncclSocket* sock = &peer->sock;
   struct ncclProxyAsyncOp* asyncOp = &peer->asyncOps;
   asyncOp->type = type;
@@ -917,7 +918,8 @@ static ncclResult_t proxyConnSetupConnect(int type, struct ncclProxyLocalPeer* p
     NCCLCHECK(ncclSocketRecv(sock, asyncOp->reqBuff, asyncOp->reqSize));
   }
   if (asyncOp->respSize) NCCLCHECK(ncclCalloc(&asyncOp->respBuff, asyncOp->respSize));
-  NCCLCHECK(proxyProgressAsync(asyncOp, comm));
+  (*asyncOpCount)++;
+  NCCLCHECK(proxyProgressAsync(asyncOp, comm, asyncOpCount));
   return ncclSuccess;
 }
 
@@ -951,8 +953,9 @@ void* ncclProxyService(void* _args) {
   int maxnpeers = 0;
   int npeers = 0;
   int stop = 0;
+  int asyncOpCount = 0;
   while (stop == 0 || (stop == 1 && npeers > 0)) {
-    if (int error = poll(pollfds, NCCL_MAX_LOCAL_RANKS+1, 100/*ms*/) < 0) {
+    if (int error = poll(pollfds, NCCL_MAX_LOCAL_RANKS+1, asyncOpCount ? 0 : -1) < 0) {
       WARN("[Proxy Service] Poll failed with error %d", error);
       return NULL;
     }
@@ -977,7 +980,7 @@ void* ncclProxyService(void* _args) {
       struct ncclProxyAsyncOp* op = &peers[s].asyncOps;
       int closeConn = 0;
       if (op->type != 0) {
-        if (proxyProgressAsync(op, comm) != ncclSuccess) {
+        if (proxyProgressAsync(op, comm, &asyncOpCount) != ncclSuccess) {
           WARN("[Proxy Service] Call to Setup/Connect failed");
           closeConn = 1;
           op->type = 0;
@@ -1000,7 +1003,7 @@ void* ncclProxyService(void* _args) {
           } else if (type == ncclProxyMsgSharedInit) {
             res = proxyConnSharedInit(peers+s, &connectionPool, comm);
           } else if (type == ncclProxyMsgSetup || type == ncclProxyMsgConnect) {
-            res = proxyConnSetupConnect(type, peers+s, &connectionPool, comm);
+            res = proxyConnSetupConnect(type, peers+s, &connectionPool, comm, &asyncOpCount);
           }
           if (res != ncclSuccess) {
             WARN("[Proxy Service] Failed to process message of type %d, retcode %d", type, res);
