@@ -781,15 +781,18 @@ ncclResult_t ncclProxyCall(struct ncclProxyConnector* proxyConn, int type, void*
   if (proxyConn->comm->proxyState.peerSocks == NULL) return ncclInternalError;
   struct ncclSocket* sock = proxyConn->comm->proxyState.peerSocks+proxyConn->localRank;
   if (sock->fd == -1) return ncclInternalError;
+  ncclResult_t ret;
 
-  NCCLCHECK(ncclSocketSend(sock, &type, sizeof(int)));
-  NCCLCHECK(ncclSocketSend(sock, &proxyConn->connection, sizeof(void*)));
-  NCCLCHECK(ncclSocketSend(sock, &reqSize, sizeof(int)));
-  NCCLCHECK(ncclSocketSend(sock, &respSize, sizeof(int)));
-  if (reqSize) NCCLCHECK(ncclSocketSend(sock, reqBuff, reqSize));
-  //INFO(NCCL_NET, "Proxy Call connection %p, type %d, req %d, resp %d", proxyConn->connection, type, reqSize, respSize);
-  if (respSize) NCCLCHECK(ncclSocketRecv(sock, respBuff, respSize));
+  NCCLCHECKGOTO(ncclSocketSend(sock, &type, sizeof(int)), ret, error);
+  NCCLCHECKGOTO(ncclSocketSend(sock, &proxyConn->connection, sizeof(void*)), ret, error);
+  NCCLCHECKGOTO(ncclSocketSend(sock, &reqSize, sizeof(int)), ret, error);
+  NCCLCHECKGOTO(ncclSocketSend(sock, &respSize, sizeof(int)), ret, error);
+  if (reqSize) NCCLCHECKGOTO(ncclSocketSend(sock, reqBuff, reqSize), ret, error);
+  if (respSize) NCCLCHECKGOTO(ncclSocketRecv(sock, respBuff, respSize), ret, error);
   return ncclSuccess;
+error:
+  WARN("Proxy Call to rank %d failed (%s)", proxyConn->comm->localRankToRank[proxyConn->localRank], ncclProxyMsgTypeStr[type]);
+  return ret;
 }
 
 static ncclResult_t proxyProgressInit(struct ncclComm* comm) {
@@ -982,22 +985,21 @@ void* ncclProxyService(void* _args) {
       }
     }
     for (int s=0; s<maxnpeers; s++) {
-      struct ncclSocket* sock = &peers[s].sock;
-      struct ncclProxyAsyncOp* op = &peers[s].asyncOps;
+      struct ncclProxyLocalPeer* peer = peers+s;
+      struct ncclSocket* sock = &peer->sock;
+      struct ncclProxyAsyncOp* op = &peer->asyncOps;
       int closeConn = 0;
+      int type = 0;
+      ncclResult_t res = ncclSuccess;
       if (op->type != 0) {
-        if (proxyProgressAsync(op, comm, &asyncOpCount) != ncclSuccess) {
-          WARN("[Proxy Service] Call to Setup/Connect failed");
-          closeConn = 1;
-          op->type = 0;
-        }
+        res = proxyProgressAsync(op, comm, &asyncOpCount);
+        type = op->type;
+        if (res != ncclSuccess) op->type = 0;
       } else if (pollfds[s].revents & POLLIN) {
-        int type;
         if (ncclSocketRecv(sock, &type, sizeof(int)) != ncclSuccess) {
-          WARN("[Service thread] Recv failed");
+          WARN("[Service thread] Could not receive type");
           closeConn = 1;
         } else {
-          ncclResult_t res = ncclSuccess;
           if (type == ncclProxyMsgAbort) {
             stop = 2;
           } else if (type == ncclProxyMsgStop) {
@@ -1011,16 +1013,14 @@ void* ncclProxyService(void* _args) {
           } else if (type == ncclProxyMsgSetup || type == ncclProxyMsgConnect) {
             res = proxyConnSetupConnect(type, peers+s, &connectionPool, comm, &asyncOpCount);
           }
-          if (res != ncclSuccess) {
-            WARN("[Proxy Service] Failed to process message of type %d, retcode %d", type, res);
-            close(sock->fd);
-            sock->fd = pollfds[s].fd = -1;
-            npeers--;
-          }
         }
       } else if (pollfds[s].revents & POLLHUP) {
         closeConn = 1;
       } 
+      if (res != ncclSuccess) {
+        WARN("[Proxy Service %d] Failed to execute operation %s from rank %d, retcode %d", comm->rank, ncclProxyMsgTypeStr[type], comm->localRankToRank[peer->localRank], res);
+        closeConn = 1;
+      }
       if (closeConn) {
         close(sock->fd);
         sock->fd = pollfds[s].fd = -1;
