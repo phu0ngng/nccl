@@ -354,7 +354,7 @@ ncclResult_t ncclSocketListen(struct ncclSocket* sock) {
 
 static ncclResult_t getFdState(int fd, enum ncclSocketState* state) {
     struct pollfd pfd;
-    int timeout = 100, ret;
+    int timeout = 1, ret;
     socklen_t rlen = sizeof(int);
 
     memset(&pfd, 0, sizeof(struct pollfd));
