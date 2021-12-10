@@ -202,7 +202,6 @@ enum ncclProxyMsgType {
   ncclProxyMsgAbort = 7,
   ncclProxyMsgStop = 8
 };
-static const char* ncclProxyMsgTypeStr[] = { "Unknown", "Init", "SharedInit", "Setup", "Connect", "Start", "Close", "Abort", "Stop" };
 
 ncclResult_t ncclProxyCall(struct ncclProxyConnector* proxyConn, int type, void* reqBuff, int reqSize, void* respBuff, int respSize);
 ncclResult_t ncclProxyDestroy(struct ncclComm* comm);

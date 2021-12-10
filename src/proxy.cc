@@ -777,6 +777,7 @@ ncclResult_t ncclProxyConnect(struct ncclComm* comm, int transport, int send, in
   return ncclSuccess;
 }
 
+const char* ncclProxyMsgTypeStr[] = { "Unknown", "Init", "SharedInit", "Setup", "Connect", "Start", "Close", "Abort", "Stop" };
 ncclResult_t ncclProxyCall(struct ncclProxyConnector* proxyConn, int type, void* reqBuff, int reqSize, void* respBuff, int respSize) {
   if (proxyConn->comm->proxyState.peerSocks == NULL) return ncclInternalError;
   struct ncclSocket* sock = proxyConn->comm->proxyState.peerSocks+proxyConn->localRank;
