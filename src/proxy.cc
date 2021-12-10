@@ -381,6 +381,8 @@ ncclResult_t ncclProxySaveColl(struct ncclComm* comm, struct ncclProxyOp* op, in
   return ncclSuccess;
 }
 
+NCCL_PARAM(ChunkSize, "CHUNK_SIZE", 0);
+
 ncclResult_t ncclProxyComputeP2p(struct ncclInfo* info, struct ncclProxyOp* op) {
   memset(op, 0, sizeof(struct ncclProxyOp));
   int channelId = info->channelId;
@@ -414,6 +416,9 @@ ncclResult_t ncclProxyComputeP2p(struct ncclInfo* info, struct ncclProxyOp* op) 
   } else {
     WARN("P2p operation is neither send or recv");
     return ncclInternalError;
+  }
+  if (ncclParamChunkSize() != 0) {
+    info->chunkSize = ncclParamChunkSize();
   }
   op->chunkSize = info->chunkSize;
   return ncclSuccess;
