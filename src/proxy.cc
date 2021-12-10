@@ -9,8 +9,9 @@
 #include "collectives.h"
 #include "socket.h"
 #include "shm.h"
-#include "timer.h"
 #include "profiler.h"
+#define ENABLE_TIMER 0
+#include "timer.h"
 
 enum { proxyRecv=0, proxySend=1 };
 

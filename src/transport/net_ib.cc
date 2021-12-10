@@ -20,6 +20,7 @@
 #include <poll.h>
 #include <sys/types.h>
 #include <unistd.h>
+#define ENABLE_TIMER 0
 #include "timer.h"
 
 #include "ibvwrap.h"

@@ -26,7 +26,7 @@ static inline double gettime() {
   if (freq == -1) calibrate();
   return __rdtsc()/freq;
 }
-#if 0
+#if ENABLE_TIMER
 static uint64_t counts[8];
 static double times[8];
 static double startTimes[8];
