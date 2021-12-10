@@ -786,7 +786,7 @@ static ncclResult_t sendProxyProgress(struct ncclComm* comm, struct ncclProxyArg
           }
           if (ready) {
             // Data is ready, try to send.
-            NCCLCHECK(ncclNetIsend(resources->netSendComm, buff, size, (resources->channelId<<24)+(resources->connIndex<<20)+(resources->rank<<16)+resources->remoteRank, mhandle, sub->requests+buffSlot));
+            NCCLCHECK(ncclNetIsend(resources->netSendComm, buff, size, resources->rank, mhandle, sub->requests+buffSlot));
             if (sub->requests[buffSlot] != NULL) {
               TRACE(NCCL_NET, "sendProxy [%ld/%d] Isend posted, req %p", sub->transmitted, buffSlot, sub->requests[buffSlot]);
               sizesFifo[buffSlot] = -1;
@@ -894,7 +894,7 @@ static ncclResult_t recvProxyProgress(struct ncclComm* comm, struct ncclProxyArg
           }
           sizes[subCount] = stepSize*args->sliceSteps;
           if (sub->nbytes < sizes[subCount]) sizes[subCount] = sub->nbytes;
-          tags[subCount] = (resources->channelId<<24)+(resources->connIndex<<20)+(resources->remoteRank<<16) + resources->rank;
+          tags[subCount] = resources->remoteRank;
           mhandles[subCount] = resources->mhandles[p];
           subCount++;
         }
