@@ -674,7 +674,6 @@ struct ncclProxyAsyncOp {
   struct ncclProxyConnection* connection;
   int reqSize, respSize;
   char *reqBuff, *respBuff;
-  struct ncclProxyAsyncOp* next;
 };
 
 struct ncclProxyLocalPeer {
@@ -848,12 +847,6 @@ ncclResult_t ncclProxyShmUnlink(struct ncclComm* comm) {
   if (ncclShmUnlink(shmPath) != ncclSuccess) {
     WARN("[Service thread] shm unlink failed");
   }
-  return ncclSuccess;
-}
-
-static ncclResult_t ncclProxyAppendAsyncOp(struct ncclProxyConnectionPool* connectionPool, struct ncclProxyAsyncOp* asyncOp) {
-  asyncOp->next = connectionPool->ops;
-  connectionPool->ops = asyncOp;
   return ncclSuccess;
 }
 
