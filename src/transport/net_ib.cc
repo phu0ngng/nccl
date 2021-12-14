@@ -295,8 +295,25 @@ struct ncclIbQpInfo {
   uint64_t fifoAddr;
 };
 
+enum ncclIbCommState {
+  ncclIbCommStateStart = 0,
+  ncclIbCommStateConnect = 1,
+  ncclIbCommStateAccept = 3,
+  ncclIbCommStateSend = 4,
+  ncclIbCommStateRecv = 5,
+  ncclIbCommStateConnected = 6,
+};
+
+struct ncclIbCommStage {
+  enum ncclIbCommState state;
+  int offset;
+  void* buffer;
+  void* comm;
+};
+
 struct ncclIbHandle {
-  union ncclSocketAddress connectAddr;
+  union ncclSocketAddress connectAddr; // Filled by the target
+  struct ncclIbCommStage stage; // Used by the other side when connecting
 };
 
 #define NCCL_NET_IB_REQ_UNUSED 0
@@ -333,6 +350,7 @@ struct ncclIbVerbs {
 struct ncclIbListenComm {
   int dev;
   struct ncclSocket sock;
+  struct ncclIbCommStage stage;
 };
 
 struct ncclIbSendFifo {
@@ -477,6 +495,7 @@ ncclResult_t ncclIbListen(int dev, void* opaqueHandle, void** listenComm) {
   NCCLCHECK(ncclCalloc(&comm, 1));
   struct ncclIbHandle* handle = (struct ncclIbHandle*) opaqueHandle;
   static_assert(sizeof(struct ncclIbHandle) < NCCL_NET_HANDLE_MAXSIZE, "ncclIbHandle size too large");
+  memset(handle, 0, sizeof(struct ncclIbHandle));
   comm->dev = dev;
   NCCLCHECK(GetSocketAddr(&comm->sock.addr));
   NCCLCHECK(ncclSocketListen(&comm->sock));
@@ -485,48 +504,26 @@ ncclResult_t ncclIbListen(int dev, void* opaqueHandle, void** listenComm) {
   return ncclSuccess;
 }
 
-enum ncclNetIbStep {
-  ncclNetIbStart = 0,
-  ncclNetIbConnect = 1,
-  ncclNetIbConnectCheck = 2,
-  ncclNetIbAccept = 3,
-  ncclNetIbSend = 4,
-  ncclNetIbRecv = 5,
-};
-
-struct ncclNetIbStage {
-  enum ncclNetIbStep step;
-  int offset;
-  void* buffer;
-  union {
-    struct ncclIbSendComm* scomm;
-    struct ncclIbRecvComm* rcomm;
-  };
-};
-
 ncclResult_t ncclIbConnect(int dev, void* opaqueHandle, void** sendComm) {
-  static __thread struct ncclNetIbStage stage = {ncclNetIbStart, 0, NULL, NULL};
-  struct ncclIbSendComm* comm;
   struct ncclIbHandle* handle = (struct ncclIbHandle*) opaqueHandle;
   enum ncclSocketState conState;
+  struct ncclIbCommStage* stage = &handle->stage;
+  struct ncclIbSendComm* comm = (struct ncclIbSendComm*)stage->comm;
+  *sendComm = NULL;
 
-  /* recover the previous stage if needed */
-  if (stage.step != ncclNetIbStart) {
-    comm = stage.scomm;
-    if (stage.step == ncclNetIbConnect) goto ib_connect;
-    else if(stage.step == ncclNetIbConnectCheck) goto ib_connect_check;
-    else if(stage.step == ncclNetIbSend) goto ib_send;
+  if (stage->state == ncclIbCommStateConnect) goto ib_connect_check;
+  if (stage->state == ncclIbCommStateSend) goto ib_send;
+  if (stage->state != ncclIbCommStateStart) {
+    WARN("Error: trying to connect already connected sendComm");
+    return ncclInternalError;
   }
 
-  *sendComm = NULL;
   NCCLCHECK(ncclIbMalloc((void**)&comm, sizeof(struct ncclIbSendComm)));
   NCCLCHECK(ncclSocketInit(&comm->sock, &handle->connectAddr, NULL, 1));
-  stage.scomm = comm;
-  stage.step = ncclNetIbConnect;
-ib_connect:
+  stage->comm = comm;
+  stage->state = ncclIbCommStateConnect;
   NCCLCHECK(ncclSocketConnect(&comm->sock));
 
-  stage.step = ncclNetIbConnectCheck;
 ib_connect_check:
   /* since ncclSocketConnect is async, we must check if connection is complete */
   NCCLCHECK(ncclGetSocketState(&comm->sock, &conState));
@@ -575,21 +572,18 @@ ib_connect_check:
       INFO(NCCL_NET,"NET/IB: Dev %d Port %d qpn %d mtu %d GID %ld (%lX/%lX)", dev, ib_port, qpInfo.qpn[q], qpInfo.mtu, ncclParamIbGidIndex(), qpInfo.spn, qpInfo.iid);
   }
 
-  stage.step = ncclNetIbSend;
-  stage.offset = 0;
-  NCCLCHECK(ncclIbMalloc((void**)&stage.buffer, sizeof(qpInfo)));
-  memcpy(stage.buffer, &qpInfo, sizeof(qpInfo));
+  stage->state = ncclIbCommStateSend;
+  stage->offset = 0;
+  NCCLCHECK(ncclIbMalloc((void**)&stage->buffer, sizeof(qpInfo)));
+  memcpy(stage->buffer, &qpInfo, sizeof(qpInfo));
+
 ib_send:
-  NCCLCHECK(ncclSocketProgress(NCCL_SOCKET_SEND, &comm->sock, stage.buffer, sizeof(qpInfo), &stage.offset));
-  if (stage.offset != sizeof(qpInfo))
+  NCCLCHECK(ncclSocketProgress(NCCL_SOCKET_SEND, &comm->sock, stage->buffer, sizeof(qpInfo), &stage->offset));
+  if (stage->offset != sizeof(qpInfo))
     return ncclSuccess;
 
-  /* connection succeeds, restore stage */
-  stage.step = ncclNetIbStart;
-  stage.offset = 0;
-  stage.scomm = NULL;
-  free(stage.buffer);
-  stage.buffer = NULL;
+  free(stage->buffer);
+  stage->state = ncclIbCommStateConnected;
   *sendComm = comm;
   return ncclSuccess;
 }
@@ -597,39 +591,41 @@ ib_send:
 NCCL_PARAM(IbGdrFlushDisable, "GDR_FLUSH_DISABLE", 0);
 
 ncclResult_t ncclIbAccept(void* listenComm, void** recvComm) {
-  static __thread struct ncclNetIbStage stage = {ncclNetIbStart, 0, NULL, NULL};
   struct ncclIbListenComm* lComm = (struct ncclIbListenComm*)listenComm;
-  struct ncclIbRecvComm* rComm;
+  struct ncclIbCommStage* stage = &lComm->stage;
+  struct ncclIbRecvComm* rComm = (struct ncclIbRecvComm*)stage->comm;
+  *recvComm = NULL;
 
-  if (stage.step != ncclNetIbStart) {
-    rComm = stage.rcomm;
-    if (stage.step == ncclNetIbAccept) goto ib_accept;
-    else if(stage.step == ncclNetIbRecv) goto ib_recv;
-    else if(stage.step == ncclNetIbSend) goto ib_send;
+  if (stage->state == ncclIbCommStateAccept) goto ib_accept;
+  if (stage->state == ncclIbCommStateRecv) goto ib_recv;
+  if (stage->state == ncclIbCommStateSend) goto ib_send;
+  if (stage->state != ncclIbCommStateStart) {
+    WARN("Listencomm in unknown state %d\n", stage->state);
+    return ncclInternalError;
   }
 
-  *recvComm = NULL;
   NCCLCHECK(ncclIbMalloc((void**)&rComm, sizeof(struct ncclIbRecvComm)));
-  stage.step = ncclNetIbAccept;
-  stage.rcomm = rComm;
+  stage->comm = rComm;
+  stage->state = ncclIbCommStateAccept;
   lComm->sock.asyncFlag = 1;
   rComm->sock.asyncFlag = 1;
+
 ib_accept:
   NCCLCHECK(ncclSocketAccept(&rComm->sock, &lComm->sock));
   if (rComm->sock.fd == -1)
     return ncclSuccess;
 
   struct ncclIbQpInfo remQpInfo;
-  stage.step = ncclNetIbRecv;
-  stage.offset = 0;
-  NCCLCHECK(ncclIbMalloc((void**)&stage.buffer, sizeof(remQpInfo)));
+  stage->state = ncclIbCommStateRecv;
+  stage->offset = 0;
+  NCCLCHECK(ncclIbMalloc((void**)&stage->buffer, sizeof(remQpInfo)));
 ib_recv:
-  NCCLCHECK(ncclSocketProgress(NCCL_SOCKET_RECV, &rComm->sock, stage.buffer, sizeof(remQpInfo), &stage.offset));
-  if (stage.offset != sizeof(remQpInfo))
+  NCCLCHECK(ncclSocketProgress(NCCL_SOCKET_RECV, &rComm->sock, stage->buffer, sizeof(remQpInfo), &stage->offset));
+  if (stage->offset != sizeof(remQpInfo))
     return ncclSuccess;
 
   /* copy back the received info */
-  memcpy(&remQpInfo, stage.buffer, sizeof(remQpInfo));
+  memcpy(&remQpInfo, stage->buffer, sizeof(struct ncclIbQpInfo));
 
   // IB setup
   struct ibv_context* ctx;
@@ -692,23 +688,23 @@ ib_recv:
   qpInfo.iid=gid.global.interface_id;
   qpInfo.mtu=remQpInfo.mtu;
 
-  stage.step = ncclNetIbSend;
-  stage.offset = 0;
-  if (stage.buffer) free(stage.buffer);
-  NCCLCHECK(ncclIbMalloc((void**)&stage.buffer, sizeof(qpInfo)));
-  memcpy(stage.buffer, &qpInfo, sizeof(qpInfo));
+  stage->state = ncclIbCommStateSend;
+  stage->offset = 0;
+  if (stage->buffer) free(stage->buffer);
+  NCCLCHECK(ncclIbMalloc((void**)&stage->buffer, sizeof(struct ncclIbQpInfo)));
+  memcpy(stage->buffer, &qpInfo, sizeof(struct ncclIbQpInfo));
 ib_send:
-  NCCLCHECK(ncclSocketProgress(NCCL_SOCKET_SEND, &rComm->sock, stage.buffer, sizeof(remQpInfo), &stage.offset));
-  if (stage.offset != sizeof(remQpInfo))
-    return ncclSuccess;
+  NCCLCHECK(ncclSocketProgress(NCCL_SOCKET_SEND, &rComm->sock, stage->buffer, sizeof(struct ncclIbQpInfo), &stage->offset));
+  if (stage->offset < sizeof(struct ncclIbQpInfo)) return ncclSuccess;
 
-  /* accept new connection succeeds, restore stage */
-  stage.step = ncclNetIbStart;
-  stage.offset = 0;
-  stage.rcomm = NULL;
-  free(stage.buffer);
-  stage.buffer = NULL;
+  free(stage->buffer);
   *recvComm = rComm;
+
+  /* reset lComm stage */
+  stage->state = ncclIbCommStateStart;
+  stage->offset = 0;
+  stage->comm = NULL;
+  stage->buffer = NULL;
   return ncclSuccess;
 }
 
