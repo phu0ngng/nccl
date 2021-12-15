@@ -75,71 +75,51 @@ ncclResult_t ncclTransportP2pSetup(struct ncclComm* comm, struct ncclTopoGraph* 
   CUDACHECK(cudaStreamCreateWithFlags(&transportSetupStream, cudaStreamNonBlocking));
   int highestType = TRANSPORT_P2P;  // track highest transport type
 
-  struct ncclConnect* data;
-  NCCLCHECK(ncclCalloc(&data, comm->nRanks*2*MAXCHANNELS));
-  int* sendChannels;
-  NCCLCHECK(ncclCalloc(&sendChannels, comm->nRanks));
-  int* recvChannels;
-  NCCLCHECK(ncclCalloc(&recvChannels, comm->nRanks));
-
+  struct ncclConnect data[2*MAXCHANNELS];
   for (int i=1; i<comm->nRanks; i++) {
+    int bootstrapTag = (i<<8) + (graph ? graph->id+1 : 0);
     int recvPeer = (comm->rank - i + comm->nRanks) % comm->nRanks;
     int sendPeer = (comm->rank + i) % comm->nRanks;
     uint32_t recvMask = comm->connectRecv[recvPeer];
     uint32_t sendMask = comm->connectSend[sendPeer];
 
-    struct ncclConnect* recvData = data+2*MAXCHANNELS*i;
+    struct ncclConnect* recvData = data;
+    int sendChannels = 0, recvChannels = 0;
     int type;
     TIME_START(0);
     for (int c=0; c<MAXCHANNELS; c++) {
       if (recvMask & (1<<c)) {
-        NCCLCHECK(selectTransport<0>(comm, graph, recvData+recvChannels[i]++, c, recvPeer, connIndex, &type));
+        NCCLCHECK(selectTransport<0>(comm, graph, recvData+recvChannels++, c, recvPeer, connIndex, &type));
         if (type > highestType) highestType = type;
       }
     }
     TIME_STOP(0);
     TIME_START(1);
-    struct ncclConnect* sendData = recvData+recvChannels[i];
+    struct ncclConnect* sendData = recvData+recvChannels;
     for (int c=0; c<MAXCHANNELS; c++) {
       if (sendMask & (1<<c)) {
-        NCCLCHECK(selectTransport<1>(comm, graph, sendData+sendChannels[i]++, c, sendPeer, connIndex, &type));
+        NCCLCHECK(selectTransport<1>(comm, graph, sendData+sendChannels++, c, sendPeer, connIndex, &type));
         if (type > highestType) highestType = type;
       }
     }
     TIME_STOP(1);
-  }
-  for (int i=1; i<comm->nRanks; i++) {
-    int recvPeer = (comm->rank - i + comm->nRanks) % comm->nRanks;
-    int sendPeer = (comm->rank + i) % comm->nRanks;
-    int bootstrapTag = (i<<8) + (graph ? graph->id+1 : 0);
-    struct ncclConnect* recvData = data+2*MAXCHANNELS*i;
-    struct ncclConnect* sendData = recvData+recvChannels[i];
+
     TIME_START(2);
     if (sendPeer == recvPeer) {
-      if (recvChannels[i]+sendChannels[i]) {
-        NCCLCHECK(bootstrapSend(comm->bootstrap, recvPeer, bootstrapTag, recvData, sizeof(struct ncclConnect)*(recvChannels[i]+sendChannels[i])));
-        NCCLCHECK(bootstrapRecv(comm->bootstrap, recvPeer, bootstrapTag, recvData, sizeof(struct ncclConnect)*(recvChannels[i]+sendChannels[i])));
+      if (recvChannels+sendChannels) {
+         NCCLCHECK(bootstrapSend(comm->bootstrap, recvPeer, bootstrapTag, data, sizeof(struct ncclConnect)*(recvChannels+sendChannels)));
+         NCCLCHECK(bootstrapRecv(comm->bootstrap, recvPeer, bootstrapTag, data, sizeof(struct ncclConnect)*(recvChannels+sendChannels)));
+         sendData = data;
+         recvData = data+sendChannels;
       }
     } else {
-      if (recvChannels[i]) NCCLCHECK(bootstrapSend(comm->bootstrap, recvPeer, bootstrapTag, recvData, sizeof(struct ncclConnect)*recvChannels[i]));
-      if (sendChannels[i]) NCCLCHECK(bootstrapSend(comm->bootstrap, sendPeer, bootstrapTag, sendData, sizeof(struct ncclConnect)*sendChannels[i]));
-      if (sendChannels[i]) NCCLCHECK(bootstrapRecv(comm->bootstrap, sendPeer, bootstrapTag, sendData, sizeof(struct ncclConnect)*sendChannels[i]));
-      if (recvChannels[i]) NCCLCHECK(bootstrapRecv(comm->bootstrap, recvPeer, bootstrapTag, recvData, sizeof(struct ncclConnect)*recvChannels[i]));
+      if (recvChannels) NCCLCHECK(bootstrapSend(comm->bootstrap, recvPeer, bootstrapTag, recvData, sizeof(struct ncclConnect)*recvChannels));
+      if (sendChannels) NCCLCHECK(bootstrapSend(comm->bootstrap, sendPeer, bootstrapTag, sendData, sizeof(struct ncclConnect)*sendChannels));
+      if (sendChannels) NCCLCHECK(bootstrapRecv(comm->bootstrap, sendPeer, bootstrapTag, sendData, sizeof(struct ncclConnect)*sendChannels));
+      if (recvChannels) NCCLCHECK(bootstrapRecv(comm->bootstrap, recvPeer, bootstrapTag, recvData, sizeof(struct ncclConnect)*recvChannels));
     }
     TIME_STOP(2);
-  }
 
-  for (int i=1; i<comm->nRanks; i++) {
-    int recvPeer = (comm->rank - i + comm->nRanks) % comm->nRanks;
-    int sendPeer = (comm->rank + i) % comm->nRanks;
-    uint32_t recvMask = comm->connectRecv[recvPeer];
-    uint32_t sendMask = comm->connectSend[sendPeer];
-    struct ncclConnect* recvData = data+2*MAXCHANNELS*i;
-    struct ncclConnect* sendData = recvData+recvChannels[i];
-    if (sendPeer == recvPeer) {
-        sendData = recvData;
-        recvData = sendData+sendChannels[i];
-    }
     TIME_START(3);
     for (int c=0; c<MAXCHANNELS; c++) {
       if (sendMask & (1<<c)) {
@@ -164,9 +144,6 @@ ncclResult_t ncclTransportP2pSetup(struct ncclComm* comm, struct ncclTopoGraph* 
   }
   CUDACHECK(cudaStreamSynchronize(transportSetupStream));
   CUDACHECK(cudaStreamDestroy(transportSetupStream));
-  free(data);
-  free(sendChannels);
-  free(recvChannels);
   if (highestTransportType != NULL) *highestTransportType = highestType;
   TIME_PRINT("P2P Setup/Connect");
   return ncclSuccess;

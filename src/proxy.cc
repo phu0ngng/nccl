@@ -1022,16 +1022,16 @@ void* ncclProxyService(void* _args) {
       }
     }
   }
-  for (int s=0; s<maxnpeers; s++) {
-    if (peers[s].sock.fd != -1) close(peers[s].sock.fd);
-  }
+  // Wait for all operations to complete and stop progress thread before freeing any resource
   if (ncclProxyProgressDestroy(comm) != ncclSuccess) {
     WARN("[Proxy Service] proxyDestroy failed");
+  }
+  for (int s=0; s<maxnpeers; s++) {
+    if (peers[s].sock.fd != -1) close(peers[s].sock.fd);
   }
   ncclProxyFreeConnections(&connectionPool, comm);
   close(comm->proxyState.listenSock->fd);
   free(comm->proxyState.listenSock);
-  // Destroy ops after progress thread was destroyed: we need the mutex for wakeup.
   proxyOpsFree(comm);
   return NULL;
 }
