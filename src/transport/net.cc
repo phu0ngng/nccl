@@ -559,6 +559,42 @@ static ncclResult_t sendProxyConnect(struct ncclProxyConnection* connection, str
   return ncclSuccess;
 }
 
+static ncclResult_t recvProxySharedConnect(struct ncclComm* comm, struct recvResources* resources, int add) {
+  struct ncclSharedNetComm* sharedComm = comm->proxyState.progressState.netComms[resources->netDev][resources->proxyRank].recv+resources->channelId;
+  if (sharedComm->comm) {
+    resources->netRecvComm = sharedComm->comm;
+    sharedComm->refCount++;
+    NCCLCHECK(ncclNetCloseListen(resources->netListenComm));
+    return ncclSuccess;
+  }
+  if (add) {
+    NCCLCHECK(ncclRealloc(&sharedComm->resources, sharedComm->refCount, sharedComm->refCount+1));
+    sharedComm->resources[sharedComm->refCount] = resources;
+    sharedComm->refCount++;
+  }
+  for (int i=0; i<sharedComm->refCount; i++) {
+    struct recvResources* resources = (struct recvResources*)sharedComm->resources[i];
+    NCCLCHECK(ncclNetAccept(resources->netListenComm, &sharedComm->comm));
+    if (sharedComm->comm) goto connected;
+  }
+  return ncclSuccess;
+connected:
+  for (int i=0; i<sharedComm->refCount; i++) {
+    struct recvResources* resources = (struct recvResources*)sharedComm->resources[i];
+    resources->netRecvComm = sharedComm->comm;
+    // We skipped buffer registration waiting for the communicator. Do it now.
+    struct connectMap* map = &resources->map;
+    for (int p=0; p<NCCL_NUM_PROTOCOLS; p++) {
+      if (resources->buffers[p]) {
+        NCCLCHECK(ncclNetRegMr(resources->netRecvComm, resources->buffers[p], resources->buffSizes[p], NCCL_NET_MAP_DEV_MEM(map, buffs[p]) ? NCCL_PTR_CUDA : NCCL_PTR_HOST, &resources->mhandles[p]));
+      }
+    }
+    NCCLCHECK(ncclNetCloseListen(resources->netListenComm));
+  }
+  free(sharedComm->resources);
+  return ncclSuccess;
+}
+
 static ncclResult_t recvProxyConnect(struct ncclProxyConnection* connection, struct ncclComm* comm, void* reqBuff, int reqSize, void* respBuff, int respSize, int* done) {
   if (reqSize != sizeof(int)) return ncclInternalError;
   struct recvResources* resources = (struct recvResources*)(connection->transportResources);
@@ -583,21 +619,17 @@ static ncclResult_t recvProxyConnect(struct ncclProxyConnection* connection, str
     }
     struct ncclSharedNetComms* comms = progressState->netComms[resources->netDev]+resources->proxyRank;
     if (comms->recv == NULL) NCCLCHECK(ncclCalloc(&comms->recv, comm->p2pnChannels));
-    struct ncclSharedNetComm* sharedComm = comms->recv+resources->channelId;
-    if (sharedComm->comm == NULL) NCCLCHECK(ncclNetAccept(resources->netListenComm, &sharedComm->comm));
-    resources->netRecvComm = sharedComm->comm;
-    if (sharedComm->comm) sharedComm->refCount++;
+    NCCLCHECK(recvProxySharedConnect(comm, resources, 1));
   } else {
     // Connect to remote peer
     NCCLCHECK(ncclNetAccept(resources->netListenComm, &resources->netRecvComm));
     connection->proxyAppendPtr = &connection->proxyAppend;
-  }
-  if (resources->netRecvComm == NULL) {
-    *done = 0;
-    return ncclSuccess;
+    if (resources->netRecvComm == NULL) {
+      *done = 0;
+      return ncclSuccess;
+    }
   }
   *done = 1;
-  NCCLCHECK(ncclNetCloseListen(resources->netListenComm));
 
   // Create structures
   struct connectMap* map = &resources->map;
@@ -651,7 +683,7 @@ static ncclResult_t recvProxyConnect(struct ncclProxyConnection* connection, str
   resources->recvMem = (struct ncclRecvMem*) NCCL_NET_MAP_GET_POINTER(map, cpu, recvMem);
   for (int p=0; p<NCCL_NUM_PROTOCOLS; p++) {
     resources->buffers[p] = NCCL_NET_MAP_GET_POINTER(map, cpu, buffs[p]);
-    if (resources->buffers[p]) {
+    if (resources->buffers[p] && resources->netRecvComm) {
       NCCLCHECK(ncclNetRegMr(resources->netRecvComm, resources->buffers[p], resources->buffSizes[p], NCCL_NET_MAP_DEV_MEM(map, buffs[p]) ? NCCL_PTR_CUDA : NCCL_PTR_HOST, &resources->mhandles[p]));
     }
   }
@@ -664,7 +696,7 @@ static ncclResult_t recvProxyConnect(struct ncclProxyConnection* connection, str
 
 static ncclResult_t sendProxyFree(struct ncclProxyConnection* connection, struct ncclComm* comm) {
   struct sendResources* resources = (struct sendResources*)(connection->transportResources);
-  if (resources == NULL) return ncclSuccess; // NVB Preconnect
+  if (resources == NULL) return ncclSuccess; // PXN Preconnect
   for (int p=0; p<NCCL_NUM_PROTOCOLS; p++) {
     if (resources->buffers[p]) {
       NCCLCHECK(ncclNetDeregMr(resources->netSendComm, resources->mhandles[p]));
@@ -693,7 +725,7 @@ static ncclResult_t sendProxyFree(struct ncclProxyConnection* connection, struct
 
 static ncclResult_t recvProxyFree(struct ncclProxyConnection* connection, struct ncclComm* comm) {
   struct recvResources* resources = (struct recvResources*)(connection->transportResources);
-  if (resources == NULL) return ncclSuccess; // NVB Preconnect
+  if (resources == NULL) return ncclSuccess; // PXN Preconnect
   for (int p=0; p<NCCL_NUM_PROTOCOLS; p++) {
     if (resources->buffers[p]) {
       NCCLCHECK(ncclNetDeregMr(resources->netRecvComm, resources->mhandles[p]));
@@ -846,6 +878,10 @@ static ncclResult_t recvProxyProgress(struct ncclComm* comm, struct ncclProxyArg
     // Initialize subs and group them by same recvComm.
     void* recvComm;
     int groupSize = 0;
+    for (int s=0; s<args->nsubs; s++) {
+      struct recvResources* resources = (struct recvResources*) (args->subs[s].connection->transportResources);
+      while (resources->netRecvComm == NULL) NCCLCHECK(recvProxySharedConnect(comm, resources, 0));
+    }
     for (int s=0; s<args->nsubs; s++) {
       struct ncclProxySubArgs* sub = args->subs+s;
       if (s>0) { // Find next sub with the same recvComm
