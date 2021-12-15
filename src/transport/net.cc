@@ -109,6 +109,7 @@ struct recvResources {
   int rank;
   int localRank;
   int remoteRank;
+  int proxyRank;
   int netDev;
   int useGdr;
   uint64_t* gdcSync;
@@ -469,9 +470,11 @@ static ncclResult_t sendProxyConnect(struct ncclProxyConnection* connection, str
       NCCLCHECK(ncclCalloc(progressState->netComms+resources->netDev, comm->nRanks));
     }
     struct ncclSharedNetComms* comms = progressState->netComms[resources->netDev]+resources->remoteRank;
-    if (comms->sendComm[resources->channelId] == NULL) NCCLCHECK(ncclNetConnect(resources->netDev, reqBuff, comms->sendComm+resources->channelId));
-    resources->netSendComm = comms->sendComm[resources->channelId];
-    if (comms->sendComm[resources->channelId]) comms->sendRefCount[resources->channelId]++;
+    if (comms->send == NULL) NCCLCHECK(ncclCalloc(&comms->send, comm->p2pnChannels));
+    struct ncclSharedNetComm* sharedComm = comms->send+resources->channelId;
+    if (sharedComm->comm == NULL) NCCLCHECK(ncclNetConnect(resources->netDev, reqBuff, &sharedComm->comm));
+    resources->netSendComm = sharedComm->comm;
+    if (sharedComm->comm) sharedComm->refCount++;
   } else {
     // Connect to remote peer
     NCCLCHECK(ncclNetConnect(resources->netDev, reqBuff, &resources->netSendComm));
@@ -558,8 +561,8 @@ static ncclResult_t sendProxyConnect(struct ncclProxyConnection* connection, str
 
 static ncclResult_t recvProxyConnect(struct ncclProxyConnection* connection, struct ncclComm* comm, void* reqBuff, int reqSize, void* respBuff, int respSize, int* done) {
   if (reqSize != sizeof(int)) return ncclInternalError;
-  int remoteRank = *(int*)reqBuff;
   struct recvResources* resources = (struct recvResources*)(connection->transportResources);
+  resources->proxyRank = *(int*)reqBuff;
 
   // Finish connection establishment from remote peer
   if (resources->shared) {
@@ -578,10 +581,12 @@ static ncclResult_t recvProxyConnect(struct ncclProxyConnection* connection, str
     if (progressState->netComms[resources->netDev] == NULL) {
       NCCLCHECK(ncclCalloc(progressState->netComms+resources->netDev, comm->nRanks));
     }
-    struct ncclSharedNetComms* comms = progressState->netComms[resources->netDev]+remoteRank;
-    if (comms->recvComm[resources->channelId] == NULL) NCCLCHECK(ncclNetAccept(resources->netListenComm, comms->recvComm+resources->channelId));
-    resources->netRecvComm = comms->recvComm[resources->channelId];
-    if (comms->recvComm[resources->channelId]) comms->recvRefCount[resources->channelId]++;
+    struct ncclSharedNetComms* comms = progressState->netComms[resources->netDev]+resources->proxyRank;
+    if (comms->recv == NULL) NCCLCHECK(ncclCalloc(&comms->recv, comm->p2pnChannels));
+    struct ncclSharedNetComm* sharedComm = comms->recv+resources->channelId;
+    if (sharedComm->comm == NULL) NCCLCHECK(ncclNetAccept(resources->netListenComm, &sharedComm->comm));
+    resources->netRecvComm = sharedComm->comm;
+    if (sharedComm->comm) sharedComm->refCount++;
   } else {
     // Connect to remote peer
     NCCLCHECK(ncclNetAccept(resources->netListenComm, &resources->netRecvComm));
@@ -675,9 +680,12 @@ static ncclResult_t sendProxyFree(struct ncclProxyConnection* connection, struct
   if (mems[NCCL_NET_MAP_GDCMEM].cpuPtr) NCCLCHECK(ncclGdrCudaFree(resources->gdrDesc));
   if (resources->shared) {
     NCCLCHECK(sharedBuffersDestroy(comm, resources->localRank, 0));
-    struct ncclSharedNetComms* comms = comm->proxyState.progressState.netComms[resources->netDev]+resources->remoteRank;
-    comms->sendRefCount[resources->channelId]--;
-    if (comms->sendRefCount[resources->channelId] == 0) NCCLCHECK(ncclNetCloseSend(comms->sendComm[resources->channelId]));
+    struct ncclSharedNetComm* sharedComm = comm->proxyState.progressState.netComms[resources->netDev][resources->remoteRank].send+resources->channelId;
+    if (--sharedComm->refCount == 0) NCCLCHECK(ncclNetCloseSend(sharedComm->comm));
+    sharedComm -= resources->channelId;
+    bool freeSharedComm = true;
+    for (int c=0; c<comm->p2pnChannels; c++) freeSharedComm &= (sharedComm[c].refCount == 0);
+    if (freeSharedComm) free(sharedComm);
   }
   free(connection->transportResources);
   return ncclSuccess;
@@ -697,9 +705,12 @@ static ncclResult_t recvProxyFree(struct ncclProxyConnection* connection, struct
   if (mems[NCCL_NET_MAP_GDCMEM].cpuPtr) NCCLCHECK(ncclGdrCudaFree(resources->gdrDesc));
   if (resources->shared) {
     NCCLCHECK(sharedBuffersDestroy(comm, resources->localRank, 1));
-    struct ncclSharedNetComms* comms = comm->proxyState.progressState.netComms[resources->netDev]+resources->remoteRank;
-    comms->recvRefCount[resources->channelId]--;
-    if (comms->recvRefCount[resources->channelId] == 0) NCCLCHECK(ncclNetCloseRecv(comms->recvComm[resources->channelId]));
+    struct ncclSharedNetComm* sharedComm = comm->proxyState.progressState.netComms[resources->netDev][resources->proxyRank].recv+resources->channelId;
+    if (--sharedComm->refCount == 0) NCCLCHECK(ncclNetCloseRecv(sharedComm->comm));
+    sharedComm -= resources->channelId;
+    bool freeSharedComm = true;
+    for (int c=0; c<comm->p2pnChannels; c++) freeSharedComm &= (sharedComm[c].refCount == 0);
+    if (freeSharedComm) free(sharedComm);
   }
   free(connection->transportResources);
   return ncclSuccess;

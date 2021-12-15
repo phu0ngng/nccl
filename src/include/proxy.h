@@ -129,11 +129,15 @@ struct ncclProxyPeer {
   struct ncclProxySharedP2p recv;
 };
 
+struct ncclSharedNetComm {
+  void* comm;
+  int refCount;
+  void** resources;
+};
+
 struct ncclSharedNetComms {
-  void* sendComm[MAXCHANNELS];
-  void* recvComm[MAXCHANNELS];
-  int sendRefCount[MAXCHANNELS];
-  int recvRefCount[MAXCHANNELS];
+  struct ncclSharedNetComm* send;
+  struct ncclSharedNetComm* recv;
 };
 
 struct ncclProxyPool;
