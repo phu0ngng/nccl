@@ -819,6 +819,13 @@ search:
       tmpGraph.typeIntra += 1;
       goto search;
     }
+    tmpGraph.typeIntra = ngpus == 1 ? PATH_LOC : PATH_NVL;
+
+    if (system->nodes[NET].count > 0 && tmpGraph.typeInter < PATH_SYS && (graph->nChannels == 0 || tmpGraph.typeInter < graph->typeInter || tmpGraph.typeInter < PATH_PXN)) {
+      tmpGraph.typeInter += 1;
+      goto search;
+    }
+    tmpGraph.typeInter = PATH_PIX;
 
     if (crossNic && tmpGraph.crossNic == 0) {
       // Try again with crossNic if permitted
@@ -826,13 +833,6 @@ search:
       goto search;
     }
     tmpGraph.crossNic = 0;
-
-    tmpGraph.typeIntra = ngpus == 1 ? PATH_LOC : PATH_NVL;
-    if (system->nodes[NET].count > 0 && tmpGraph.typeInter < PATH_SYS && (graph->nChannels == 0 || tmpGraph.typeInter < graph->typeInter || tmpGraph.typeInter < PATH_PXB)) {
-      tmpGraph.typeInter += 1;
-      goto search;
-    }
-    tmpGraph.typeInter = PATH_PIX;
 
     // Try a simpler tree
     if (tmpGraph.pattern == NCCL_TOPO_PATTERN_SPLIT_TREE) {
