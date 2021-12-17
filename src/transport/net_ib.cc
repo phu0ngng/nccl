@@ -130,9 +130,9 @@ static int ncclIbRelaxedOrderingCapable(void) {
 }
 
 ncclResult_t ncclIbInit(ncclDebugLogger_t logFunction) {
+  if (ncclParamIbDisable()) return ncclInternalError;
   static int shownIbHcaEnv = 0;
   if(wrap_ibv_symbols() != ncclSuccess) { return ncclInternalError; }
-  if (ncclParamIbDisable()) return ncclInternalError;
 
   if (ncclNIbDevs == -1) {
     pthread_mutex_lock(&ncclIbLock);
