@@ -1067,7 +1067,7 @@ ncclResult_t ncclProxyDestroy(struct ncclComm* comm) {
           CUDACHECK(cudaIpcCloseMemHandle(state->sharedDevMems[i]));
         }
         int type = ncclProxyMsgClose;
-        NCCLCHECK(ncclSocketSend(state->peerSocks+i, &type, sizeof(int)));
+        if (comm->abortFlag == 0) NCCLCHECK(ncclSocketSend(state->peerSocks+i, &type, sizeof(int)));
         close(state->peerSocks[i].fd);
       }
     }
