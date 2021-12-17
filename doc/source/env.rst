@@ -357,6 +357,16 @@ Values accepted
 ^^^^^^^^^^^^^^^
 Number between 1 and 128, default is 1. Values beyond 8 usually cause degraded bandwidth.
 
+NCCL_IB_PCI_RELAXED_ORDERING
+--------------------------
+(since 2.12)
+
+Enable use of Relaxed Ordering for the IB Verbs transport. Relaxed Ordering can greatly help the performance of Infiniband networks in virtualized environments.
+
+Values accepted
+^^^^^^^^^^^^^^^
+Set to 2 to automatically use Relaxed Ordering if available. Set to 1 to force use of Relaxed Ordering and fail if not available. Set to 0 to disable use of Relaxed Ordering. Default is 2.
+
 NCCL_NET
 --------
 (since 2.10)

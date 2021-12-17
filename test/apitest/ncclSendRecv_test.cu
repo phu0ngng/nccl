@@ -230,6 +230,43 @@ TYPED_TEST(ncclSendRecv_test, multi_ops_per_pair) {
     }
     ASSERT_EQ(ncclSuccess, ncclGroupEnd());
 };
+// Test for NVB preconnect
+TYPED_TEST(ncclSendRecv_test, preconnect) {
+    size_t size = std::min(this->N, 1024 * 1024);
+    if (this->nVis >= 8) {
+      // Make sure 1<->0 and 1<->5 are already connected
+      ASSERT_EQ(ncclSuccess, ncclGroupStart());
+      ASSERT_EQ(ncclSuccess, ncclSend(this->sendbuffs[0], size, this->DataType(), 1, this->comms[0], this->streams[0])) << "i" << 0 << ", " << std::endl;
+      ASSERT_EQ(ncclSuccess, ncclRecv(this->recvbuffs[0], size, this->DataType(), 1, this->comms[0], this->streams[0])) << "i" << 0 << ", " << std::endl;
+      ASSERT_EQ(ncclSuccess, ncclSend(this->sendbuffs[1], size, this->DataType(), 0, this->comms[1], this->streams[1])) << "i" << 1 << ", " << std::endl;
+      ASSERT_EQ(ncclSuccess, ncclRecv(this->recvbuffs[1], size, this->DataType(), 0, this->comms[1], this->streams[1])) << "i" << 1 << ", " << std::endl;
+      ASSERT_EQ(ncclSuccess, ncclGroupEnd());
+      ASSERT_EQ(cudaSuccess, cudaStreamSynchronize(this->streams[0])) << std::endl;
+      ASSERT_EQ(cudaSuccess, cudaStreamSynchronize(this->streams[1])) << std::endl;
+      ASSERT_EQ(ncclSuccess, ncclGroupStart());
+      ASSERT_EQ(ncclSuccess, ncclSend(this->sendbuffs[1], size, this->DataType(), 5, this->comms[1], this->streams[1])) << "i" << 1 << ", " << std::endl;
+      ASSERT_EQ(ncclSuccess, ncclRecv(this->recvbuffs[1], size, this->DataType(), 5, this->comms[1], this->streams[1])) << "i" << 1 << ", " << std::endl;
+      ASSERT_EQ(ncclSuccess, ncclSend(this->sendbuffs[5], size, this->DataType(), 1, this->comms[5], this->streams[5])) << "i" << 5 << ", " << std::endl;
+      ASSERT_EQ(ncclSuccess, ncclRecv(this->recvbuffs[5], size, this->DataType(), 1, this->comms[5], this->streams[5])) << "i" << 5 << ", " << std::endl;
+      ASSERT_EQ(ncclSuccess, ncclGroupEnd());
+      ASSERT_EQ(cudaSuccess, cudaStreamSynchronize(this->streams[1])) << std::endl;
+      ASSERT_EQ(cudaSuccess, cudaStreamSynchronize(this->streams[5])) << std::endl;
+      // Connect 1->4. On a cubemesh, this should allocate data through 0 or 5, while 0 and 5 should have
+      // a blocking receive started which should block the remote allocation
+      ASSERT_EQ(ncclSuccess, ncclGroupStart());
+      ASSERT_EQ(ncclSuccess, ncclRecv(this->recvbuffs[0], size, this->DataType(), 1, this->comms[0], this->streams[0])) << "i" << 0 << ", " << std::endl;
+      ASSERT_EQ(ncclSuccess, ncclSend(this->sendbuffs[1], size, this->DataType(), 0, this->comms[1], this->streams[1])) << "i" << 1 << ", " << std::endl;
+      ASSERT_EQ(ncclSuccess, ncclRecv(this->recvbuffs[5], size, this->DataType(), 1, this->comms[5], this->streams[5])) << "i" << 5 << ", " << std::endl;
+      ASSERT_EQ(ncclSuccess, ncclSend(this->sendbuffs[1], size, this->DataType(), 5, this->comms[1], this->streams[1])) << "i" << 1 << ", " << std::endl;
+      ASSERT_EQ(ncclSuccess, ncclRecv(this->recvbuffs[1], size, this->DataType(), 4, this->comms[1], this->streams[1])) << "i" << 1 << ", " << std::endl;
+      ASSERT_EQ(ncclSuccess, ncclSend(this->sendbuffs[4], size, this->DataType(), 1, this->comms[4], this->streams[4])) << "i" << 4 << ", " << std::endl;
+      ASSERT_EQ(ncclSuccess, ncclGroupEnd());
+      ASSERT_EQ(cudaSuccess, cudaStreamSynchronize(this->streams[0])) << std::endl;
+      ASSERT_EQ(cudaSuccess, cudaStreamSynchronize(this->streams[1])) << std::endl;
+      ASSERT_EQ(cudaSuccess, cudaStreamSynchronize(this->streams[4])) << std::endl;
+      ASSERT_EQ(cudaSuccess, cudaStreamSynchronize(this->streams[5])) << std::endl;
+    }
+};
 // sendbuff
 TYPED_TEST(ncclSendRecv_test, sendbuf_null) {
     int i = 0;

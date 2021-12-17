@@ -208,6 +208,9 @@ static ncclResult_t commFree(ncclComm_t comm) {
 
   free(comm->peerInfo);
   ncclTopoFree(comm->topo);
+  for (int n=0; n<comm->nNodes; n++) free(comm->nodeRanks[n].localRankToRank);
+  free(comm->nodeRanks);
+  free(comm->rankToNode);
 
   if (comm->bootstrap)
     NCCLCHECK(bootstrapClose(comm->bootstrap));
@@ -216,6 +219,8 @@ static ncclResult_t commFree(ncclComm_t comm) {
 
   for (int channel=0; channel<MAXCHANNELS; channel++)
     NCCLCHECK(freeChannel(comm->channels+channel, comm->nRanks));
+
+  NCCLCHECK(ncclProxyDestroy(comm));
 
   if (comm->doneEvent != NULL)
     CUDACHECK(cudaEventDestroy(comm->doneEvent));
@@ -291,7 +296,8 @@ static ncclResult_t commAlloc(ncclComm_t* comret, int ndev, int rank) {
   comm->hostDevComm.abortFlag = comm->abortFlag;
   *comm->abortFlag = 0;
 
-  comm->argsptr = &comm->args;
+  comm->argsptrs[0] = &comm->devComm;
+  comm->argsptrs[1] = &comm->args;
   comm->collNetSupport = 0;
 
   NCCLCHECK(ncclCalloc(&comm->asyncOps, NCCL_MAX_OPS));
@@ -328,10 +334,6 @@ static ncclResult_t commAlloc(ncclComm_t* comret, int ndev, int rank) {
   comm->p2pSendCount = comm->p2pRecvCount = 0;
   NCCLCHECK(ncclCalloc(&comm->p2pSends, comm->nRanks));
   NCCLCHECK(ncclCalloc(&comm->p2pRecvs, comm->nRanks));
-
-  // Create a map between global rank and intra-node rank
-  NCCLCHECK(ncclCalloc(&comm->rankToIntraNodeRank, comm->nRanks));
-  memset(comm->rankToIntraNodeRank, -1, comm->nRanks*sizeof(comm->rankToIntraNodeRank[0]));
 
   // Mark channels as non initialized.
   for (int c=0; c<MAXCHANNELS; c++) comm->channels[c].id = -1;
@@ -389,6 +391,8 @@ static ncclResult_t fillInfo(struct ncclComm* comm, struct ncclPeerInfo* info, u
   info->busId = comm->busId;
 
   NCCLCHECK(ncclGpuGdrSupport(&info->gdrSupport));
+  info->comm = comm;
+  info->cudaCompCap = ncclCudaCompCap();
   return ncclSuccess;
 }
 
@@ -418,7 +422,7 @@ void* waitForNonNullPtr(void* p) {
 
 ncclResult_t initParams(struct ncclComm* comm) {
   struct cudaLaunchParams* params = comm->myParams = comm->intraParams+comm->intraRank;
-  params->args = &comm->argsptr;
+  params->args = comm->argsptrs;
   params->stream = NULL;
   params->sharedMem = 0;
   params->blockDim.x = 0; params->blockDim.y = params->blockDim.z = 1;
@@ -508,7 +512,6 @@ static ncclResult_t computeBuffSizes(struct ncclComm* comm) {
   return ncclSuccess;
 }
 
-NCCL_PARAM(CrossNic, "CROSS_NIC", 2);
 NCCL_PARAM(GraphDumpFileRank, "GRAPH_DUMP_FILE_RANK", 0);
 NCCL_PARAM(CollNetNodeThreshold, "COLLNET_NODE_THRESHOLD", 2);
 NCCL_PARAM(NvbPreconnect, "NVB_PRECONNECT", 1);
@@ -522,75 +525,19 @@ static ncclResult_t initTransportsRank(struct ncclComm* comm, ncclUniqueId* comm
   int nranks = comm->nRanks;
   uint64_t commHash = getHash(commId->internal, NCCL_UNIQUE_ID_BYTES);
   TRACE(NCCL_INIT, "comm %p, commHash %lx, rank %d nranks %d - BEGIN", comm, commHash, rank, nranks);
-  NCCLCHECK(bootstrapInit(commId, rank, nranks, &comm->bootstrap));
+  NCCLCHECK(bootstrapInit(commId, comm));
 
   // AllGather1 - begin
-  struct {
-    struct ncclPeerInfo peerInfo;
-    struct ncclComm* comm;
-    int cudaCompCap;
-  } *allGather1Data;
-
-  NCCLCHECK(ncclCalloc(&allGather1Data, nranks));
-  allGather1Data[rank].comm = comm;
-  allGather1Data[rank].cudaCompCap = ncclCudaCompCap();
-  struct ncclPeerInfo* myInfo = &allGather1Data[rank].peerInfo;
-  NCCLCHECK(fillInfo(comm, myInfo, commHash));
-  NCCLCHECK(bootstrapAllGather(comm->bootstrap, allGather1Data, sizeof(*allGather1Data)));
-
   NCCLCHECK(ncclCalloc(&comm->peerInfo, nranks+1)); // Extra rank to represent CollNet root
+  NCCLCHECK(fillInfo(comm, comm->peerInfo+rank, commHash));
+  NCCLCHECK(bootstrapAllGather(comm->bootstrap, comm->peerInfo, sizeof(struct ncclPeerInfo)));
+
   for (int i = 0; i < nranks; i++) {
-    memcpy(comm->peerInfo+i, &allGather1Data[i].peerInfo, sizeof(struct ncclPeerInfo));
-    if ((i != rank) && (comm->peerInfo[i].hostHash == myInfo->hostHash) && (comm->peerInfo[i].busId == myInfo->busId)) {
-      WARN("Duplicate GPU detected : rank %d and rank %d both on CUDA device %lx", rank, i, myInfo->busId);
+    if ((i != rank) && (comm->peerInfo[i].hostHash == comm->peerInfo[rank].hostHash) && (comm->peerInfo[i].busId == comm->peerInfo[rank].busId)) {
+      WARN("Duplicate GPU detected : rank %d and rank %d both on CUDA device %lx", rank, i, comm->peerInfo[rank].busId);
       return ncclInvalidUsage;
     }
   }
-
-  // Compute intra ranks and minimum CUDA Compute capabilities of intra-node GPUs and all GPUs
-  int intraProcRank0 = -1, intraProcRank = -1, intraProcRanks = 0;
-  int intraNodeRank0 = -1, intraNodeRank = -1, intraNodeRanks = 0;
-  int myCompCap = allGather1Data[rank].cudaCompCap;
-  int minCompCap = myCompCap, maxCompCap = myCompCap;
-  for (int i = 0; i < nranks; i++) {
-    if (allGather1Data[i].peerInfo.hostHash == allGather1Data[rank].peerInfo.hostHash) {
-      // Rank is on same node
-      if (intraNodeRanks == 0) intraNodeRank0 = i;
-      if (i == rank) intraNodeRank = intraNodeRanks;
-      comm->intraNodeGlobalRanks[intraNodeRanks] = i;
-      comm->rankToIntraNodeRank[i] = intraNodeRanks;
-      intraNodeRanks++;
-      if (allGather1Data[i].peerInfo.pidHash == allGather1Data[rank].peerInfo.pidHash) {
-        // Rank is in same process
-        if (intraProcRanks == 0) intraProcRank0 = i;
-        if (i == rank) intraProcRank = intraProcRanks;
-        intraProcRanks++;
-      }
-    }
-    minCompCap = std::min(allGather1Data[i].cudaCompCap, minCompCap);
-    maxCompCap = std::max(allGather1Data[i].cudaCompCap, maxCompCap);
-  }
-  TRACE(NCCL_INIT,"hostHash[%d] %lx intraNodeRank %d intraNodeRanks %d intraNodeRank0 %d",
-        rank, allGather1Data[rank].peerInfo.hostHash, intraNodeRank, intraNodeRanks, intraNodeRank0);
-  TRACE(NCCL_INIT,"pidHash[%d] %lx intraProcRank %d intraProcRanks %d intraProcRank0 %d",
-        rank, allGather1Data[rank].peerInfo.pidHash, intraProcRank, intraProcRanks, intraProcRank0);
-  if (intraProcRank == -1 || intraProcRank0 == -1 || allGather1Data[intraProcRank0].comm == NULL) {
-    WARN("Failed to determine intra proc ranks rank %d hostHash %lx pidHash %lx intraProcRank %d intraProcRanks %d intraProcRank0 %d",
-         rank, allGather1Data[rank].peerInfo.hostHash, allGather1Data[rank].peerInfo.pidHash,
-         intraProcRank, intraProcRanks, intraProcRank0);
-    return ncclInternalError;
-  }
-  if (intraNodeRank == -1 || intraNodeRank0 == -1 || intraNodeRanks == 0) {
-    WARN("Failed to determine intra node ranks rank %d hostHash %lx pidHash %lx intraNodeRank %d intraNodeRanks %d intraNodeRank0 %d",
-         rank, allGather1Data[rank].peerInfo.hostHash, allGather1Data[rank].peerInfo.pidHash,
-         intraNodeRank, intraNodeRanks, intraNodeRank0);
-    return ncclInternalError;
-  }
-  struct ncclComm* intraProcRank0Comm = allGather1Data[intraProcRank0].comm;
-  uint64_t intraNodeRank0pidHash = allGather1Data[intraNodeRank0].peerInfo.pidHash;
-  comm->intraNodeRank = intraNodeRank;
-
-  free(allGather1Data);
 
   // AllGather1 - end
 
@@ -611,7 +558,6 @@ static ncclResult_t initTransportsRank(struct ncclComm* comm, ncclUniqueId* comm
   struct ncclTopoGraph ringGraph;
   ringGraph.id = 0;
   ringGraph.pattern = NCCL_TOPO_PATTERN_RING;
-  ringGraph.crossNic = ncclParamCrossNic();
   ringGraph.collNet = 0;
   ringGraph.minChannels = 1;
   ringGraph.maxChannels = MAXCHANNELS/2;
@@ -621,7 +567,6 @@ static ncclResult_t initTransportsRank(struct ncclComm* comm, ncclUniqueId* comm
   struct ncclTopoGraph treeGraph;
   treeGraph.id = 1;
   treeGraph.pattern = NCCL_TOPO_PATTERN_BALANCED_TREE;
-  treeGraph.crossNic = ncclParamCrossNic();
   treeGraph.collNet = 0;
   treeGraph.minChannels = 1;
   treeGraph.maxChannels = ringGraph.nChannels;
@@ -632,7 +577,6 @@ static ncclResult_t initTransportsRank(struct ncclComm* comm, ncclUniqueId* comm
   collNetGraph.id = 2;
   collNetGraph.pattern = NCCL_TOPO_PATTERN_TREE;
   collNetGraph.collNet = 1;
-  collNetGraph.crossNic = ncclParamCrossNic();
   collNetGraph.minChannels = collNetGraph.maxChannels = ringGraph.nChannels;
   NCCLCHECK(ncclTopoCompute(comm->topo, &collNetGraph));
   NCCLCHECK(ncclTopoPrintGraph(comm->topo, &collNetGraph));
@@ -644,10 +588,6 @@ static ncclResult_t initTransportsRank(struct ncclComm* comm, ncclUniqueId* comm
 
   // Determine local CollNet support before all-gather
   if (ncclParamCollNetEnable() == 1 && collNetSupport() == 1 && collNetGraph.nChannels > 0) comm->collNetSupport = 1;
-  if (intraNodeRanks > 8) {
-    if (comm->collNetSupport == 1) WARN("CollNet currently only supports up to 8 GPUs per node");
-    comm->collNetSupport = 0;
-  }
 
   // AllGather3 - begin
   struct ncclGraphInfo {
@@ -661,6 +601,7 @@ static ncclResult_t initTransportsRank(struct ncclComm* comm, ncclUniqueId* comm
   };
 
   struct {
+    int netDev;
     int collNetSupport;
     struct ncclGraphInfo tree;
     struct ncclGraphInfo ring;
@@ -669,6 +610,7 @@ static ncclResult_t initTransportsRank(struct ncclComm* comm, ncclUniqueId* comm
   } *allGather3Data;
 
   NCCLCHECK(ncclCalloc(&allGather3Data, nranks));
+  NCCLCHECK(ncclTopoGetLocalNet(comm->topo, rank, &allGather3Data[rank].netDev));
   allGather3Data[rank].tree.pattern = treeGraph.pattern;
   allGather3Data[rank].tree.nChannels = treeGraph.nChannels;
   allGather3Data[rank].tree.sameChannels = treeGraph.sameChannels;
@@ -701,25 +643,56 @@ static ncclResult_t initTransportsRank(struct ncclComm* comm, ncclUniqueId* comm
   int *nodesFirstRank, *nodesTreePatterns;
   NCCLCHECK(ncclCalloc(&nodesFirstRank, nranks));
   NCCLCHECK(ncclCalloc(&nodesTreePatterns, nranks));
-  for (int i=0; i<nranks; i++) {
-    int node = -1;
-    int firstRank = allGather3Data[i].topoRanks.ringRecv[0];
-    for (int n=0; n<comm->nNodes; n++) {
-      if (nodesFirstRank[n] == firstRank) node = n;
-    }
-    if (node == -1) {
-      node = comm->nNodes++;
+  NCCLCHECK(ncclCalloc(&comm->rankToNode, comm->nRanks));
+  for (int r=0; r<nranks; r++) {
+    int node;
+    int firstRank = allGather3Data[r].topoRanks.ringRecv[0];
+    for (node=0; node<comm->nNodes && nodesFirstRank[node] != firstRank; node++);
+    if (node == comm->nNodes) {
+      comm->nNodes++;
       nodesFirstRank[node] = firstRank;
       // Record tree pattern of each node as they can be different depending on sm arch
-      nodesTreePatterns[node] = allGather3Data[i].tree.pattern;
+      nodesTreePatterns[node] = allGather3Data[r].tree.pattern;
     }
-    if (i == comm->rank) comm->node = node;
+    comm->rankToNode[r] = node;
+  }
+  // Now that we know nNodes, alloc nodeRanks and compute localRanks for each node
+  NCCLCHECK(ncclCalloc(&comm->nodeRanks, comm->nNodes));
+  NCCLCHECK(ncclCalloc(&comm->rankToLocalRank, comm->nRanks));
+  for (int r=0; r<comm->nRanks; r++) {
+    int node = comm->rankToNode[r];
+    comm->rankToLocalRank[r] = comm->nodeRanks[node].localRanks;
+    comm->nodeRanks[node].localRanks++;
+  }
+  // Allocate ranks arrays for each node
+  for (int n=0; n<comm->nNodes; n++) {
+    NCCLCHECK(ncclCalloc(&comm->nodeRanks[n].localRankToRank, comm->nodeRanks[n].localRanks));
+    comm->nodeRanks[n].localRanks = 0;
+  }
+  // And fill the ranks arrays
+  for (int r=0; r<comm->nRanks; r++) {
+    int node = comm->rankToNode[r];
+    comm->nodeRanks[node].localRankToRank[comm->nodeRanks[node].localRanks++] = r;
+  }
+  comm->node = comm->rankToNode[rank];
+  comm->localRankToRank = comm->nodeRanks[comm->node].localRankToRank;
+  comm->localRank = comm->rankToLocalRank[rank];
+  comm->localRanks = comm->nodeRanks[comm->node].localRanks;
+
+  TRACE(NCCL_INIT,"hostHash[%d] %lx localRank %d localRanks %d localRank0 %d",
+        rank, comm->peerInfo[rank].hostHash, comm->localRank, comm->localRanks, comm->localRankToRank[0]);
+  if (comm->localRank == -1 || comm->localRankToRank[0] == -1 || comm->localRanks == 0) {
+    WARN("Failed to determine local ranks rank %d hostHash %lx pidHash %lx localRank %d localRanks %d localRank0 %d",
+         rank, comm->peerInfo[rank].hostHash, comm->peerInfo[rank].pidHash,
+         comm->localRank, comm->localRanks, comm->localRankToRank[0]);
+    return ncclInternalError;
   }
 
   int nChannelsOrig = comm->nChannels;
   struct ncclTopoRanks** allTopoRanks;
   NCCLCHECK(ncclCalloc(&allTopoRanks, comm->nRanks));
   for (int i=0; i<nranks; i++) {
+    comm->peerInfo[i].netDev = allGather3Data[i].netDev;
     allTopoRanks[i] = &allGather3Data[i].topoRanks;
     // Make sure we align all ranks so that the tuning is consistent across ranks
     treeGraph.nChannels = std::min(allGather3Data[i].tree.nChannels, treeGraph.nChannels);
@@ -750,12 +723,20 @@ static ncclResult_t initTransportsRank(struct ncclComm* comm, ncclUniqueId* comm
     for (int i=0; i<comm->nChannels; i++) memcpy(comm->channels+comm->nChannels+i, comm->channels+nChannelsOrig+i, sizeof(struct ncclChannel));
   }
 
-  // Determine CollNet support after all-gather now that we know nNodes
-  int collNetNodeThreshold = ncclParamCollNetNodeThreshold();
-  if (comm->nNodes < collNetNodeThreshold) {
-    if (comm->collNetSupport == 1)
+  // Determine CollNet support after all-gather now that we know nNodes and each node localRanks
+  if (comm->collNetSupport == 1) {
+    int collNetNodeThreshold = ncclParamCollNetNodeThreshold();
+    if (comm->nNodes < collNetNodeThreshold) {
       INFO(NCCL_INIT, "Communicator has %d nodes which is less than CollNet node threshold %d, disabling CollNet", comm->nNodes, collNetNodeThreshold);
-    comm->collNetSupport = 0;
+      comm->collNetSupport = 0;
+    }
+    for (int n=0; n<comm->nNodes; n++) {
+      if (comm->nodeRanks[n].localRanks > NCCL_MAX_DIRECT_ARITY+1) {
+        WARN("CollNet currently only supports up to %d GPUs per node, disabling CollNet", NCCL_MAX_DIRECT_ARITY+1);
+        comm->collNetSupport = 0;
+        break;
+      }
+    }
   }
 
   int *rings;
@@ -818,7 +799,7 @@ static ncclResult_t initTransportsRank(struct ncclComm* comm, ncclUniqueId* comm
   // Check if we can setup CollNet
   if (comm->collNetSupport > 0) {
     int collNetSetupFail = 0;
-    int highestTypes[NCCL_MAX_INTRA_RANKS] = {TRANSPORT_P2P};
+    int highestTypes[NCCL_MAX_LOCAL_RANKS] = {TRANSPORT_P2P};
     // Find all head ranks
     int nHeads = collNetGraph.nChannels;
     int *heads;
@@ -858,8 +839,8 @@ static ncclResult_t initTransportsRank(struct ncclComm* comm, ncclUniqueId* comm
 
     // Exchange highest intra-node transport type among ranks
     // because we need to know whether all ranks can p2p each other to determine whether we can directly read/write registered user buffer
-    comm->intraHighestTransportType = highestTypes[comm->intraNodeRank] = highestTransportType0 > highestTransportType1 ? highestTransportType0 : highestTransportType1;
-    NCCLCHECK(bootstrapIntraNodeAllGather(comm->bootstrap, comm->intraNodeGlobalRanks, comm->intraNodeRank, comm->localRanks, highestTypes, sizeof(int)));
+    comm->intraHighestTransportType = highestTypes[comm->localRank] = highestTransportType0 > highestTransportType1 ? highestTransportType0 : highestTransportType1;
+    NCCLCHECK(bootstrapIntraNodeAllGather(comm->bootstrap, comm->localRankToRank, comm->localRank, comm->localRanks, highestTypes, sizeof(int)));
     for (int i=0; i<comm->localRanks; i++) {
       if (highestTypes[i] > comm->intraHighestTransportType)
         comm->intraHighestTransportType = highestTypes[i];
@@ -877,7 +858,15 @@ collnet_cleanup:
   TRACE(NCCL_INIT, "rank %d nranks %d - CONNECTED %d RINGS AND TREES", rank, nranks, comm->nChannels);
 
   // Compute time models for algorithm and protocol combinations
-  NCCLCHECK(ncclTopoTuneModel(comm, minCompCap, maxCompCap, &treeGraph, &ringGraph, &collNetGraph));
+  do {
+    int myCompCap = comm->peerInfo[rank].cudaCompCap;
+    int minCompCap = myCompCap, maxCompCap = myCompCap;
+    for (int i = 0; i < nranks; i++) {
+      minCompCap = std::min(comm->peerInfo[i].cudaCompCap, minCompCap);
+      maxCompCap = std::max(comm->peerInfo[i].cudaCompCap, maxCompCap);
+    }
+    NCCLCHECK(ncclTopoTuneModel(comm, minCompCap, maxCompCap, &treeGraph, &ringGraph, &collNetGraph));
+  } while(0);
 
   // Compute nChannels per peer for p2p
   NCCLCHECK(ncclTopoComputeP2pChannels(comm));
@@ -892,28 +881,68 @@ collnet_cleanup:
       int delta = (comm->nRanks + (comm->rank-peer)) % comm->nRanks;
       for (int c=0; c<comm->p2pnChannelsPerPeer; c++) {
         int channelId = (delta+comm->p2pChannels[c]) % comm->p2pnChannels;
-        if (comm->channels[channelId].peers[peer].recv[0].connected == 0) { // P2P uses only 1 connector
+        if (comm->channels[channelId].peers[peer].recv[1].connected == 0) { // P2P uses only 1 connector
           comm->connectRecv[peer] |= (1<<channelId);
         }
       }
       delta = (comm->nRanks - (comm->rank-peer)) % comm->nRanks;
       for (int c=0; c<comm->p2pnChannelsPerPeer; c++) {
         int channelId = (delta+comm->p2pChannels[c]) % comm->p2pnChannels;
-        if (comm->channels[channelId].peers[peer].send[0].connected == 0) { // P2P uses only 1 connector
+        if (comm->channels[channelId].peers[peer].send[1].connected == 0) { // P2P uses only 1 connector
           comm->connectSend[peer] |= (1<<channelId);
         }
       }
     }
-    NCCLCHECK(ncclTransportP2pSetup(comm, NULL, 0));
+    NCCLCHECK(ncclTransportP2pSetup(comm, NULL, 1));
     free(nvbPeers);
   }
 
-  NCCLCHECK(ncclCommSetIntraProc(comm, intraProcRank, intraProcRanks, intraProcRank0Comm));
+  // Connect to local net proxy
+  struct ncclProxyConnector proxyConn;
+  NCCLCHECK(ncclTopoGetLocalRank(comm->topo, comm->rank, &proxyConn.localRank));
+  NCCLCHECK(ncclProxyConnect(comm, TRANSPORT_NET, 1, comm->rank, &proxyConn));
+  NCCLCHECK(ncclProxyCall(&proxyConn, ncclProxyMsgSharedInit, &comm->p2pnChannels, sizeof(int), NULL, 0));
+
+  // Then to remote ones when using PXN
+  if (ncclParamPxnDisable() == 0) {
+    int nranks;
+    int* pxnPeers;
+    NCCLCHECK(ncclTopoGetPxnRanks(comm, &pxnPeers, &nranks));
+    for (int r=0; r<nranks; r++) {
+      NCCLCHECK(ncclProxyConnect(comm, TRANSPORT_NET, 1, pxnPeers[r], &proxyConn));
+      NCCLCHECK(ncclProxyCall(&proxyConn, ncclProxyMsgSharedInit, &comm->p2pnChannels, sizeof(int), NULL, 0));
+    }
+    free(pxnPeers);
+  }
+
+  do {
+    // Compute intra-process ranks
+    int intraProcRank0 = -1, intraProcRank = -1, intraProcRanks = 0;
+    for (int i = 0; i < nranks; i++) {
+      if ((comm->peerInfo[i].hostHash == comm->peerInfo[rank].hostHash)
+          && (comm->peerInfo[i].pidHash == comm->peerInfo[rank].pidHash)) {
+        // Rank is in same process
+        if (intraProcRanks == 0) intraProcRank0 = i;
+        if (i == rank) intraProcRank = intraProcRanks;
+        intraProcRanks++;
+      }
+    }
+    TRACE(NCCL_INIT,"pidHash[%d] %lx intraProcRank %d intraProcRanks %d intraProcRank0 %d",
+        rank, comm->peerInfo[rank].pidHash, intraProcRank, intraProcRanks, intraProcRank0);
+    if (intraProcRank == -1 || intraProcRank0 == -1 || comm->peerInfo[intraProcRank0].comm == NULL) {
+      WARN("Failed to determine intra proc ranks rank %d hostHash %lx pidHash %lx intraProcRank %d intraProcRanks %d intraProcRank0 %d",
+          rank, comm->peerInfo[rank].hostHash, comm->peerInfo[rank].pidHash,
+          intraProcRank, intraProcRanks, intraProcRank0);
+      return ncclInternalError;
+    }
+    NCCLCHECK(ncclCommSetIntraProc(comm, intraProcRank, intraProcRanks, comm->peerInfo[intraProcRank0].comm));
+  } while(0);
 
   /* Local intra-node barrier */
-  NCCLCHECK(bootstrapBarrier(comm->bootstrap, comm->intraNodeGlobalRanks, intraNodeRank, intraNodeRanks, (int)intraNodeRank0pidHash));
+  NCCLCHECK(bootstrapBarrier(comm->bootstrap, comm->localRankToRank, comm->localRank, comm->localRanks, comm->localRankToRank[0]));
 
-  if (comm->nNodes) NCCLCHECK(ncclProxyCreate(comm));
+  // Unlink proxy shm to make sure it will be properly cleaned up.
+  NCCLCHECK(ncclProxyShmUnlink(comm));
 
   // We should have allocated all buffers, collective fifos, ... we can
   // restore the affinity.
@@ -1039,18 +1068,17 @@ static ncclResult_t commDestroy(ncclComm_t comm) {
   TRACE(NCCL_INIT, "Destroying comm %p rank %d abortFlag %d fatalError %d", comm, comm->rank, *comm->abortFlag, comm->fatalError);
 
   CUDACHECK(cudaStreamSynchronize(comm->groupStream));
-  NCCLCHECK(ncclProxyDestroy(comm));
+
   ncclDestroyQueueInfo(comm->enqueueInfo);
 #if CUDART_VERSION >= 11030
   NCCLCHECK(ncclGraphHelperDestroy(comm));
 #endif
   INFO(NCCL_COLL, "Created %d queue info, destroyed %d", comm->nQueueInfoCreated, comm->nQueueInfoDestroyed);
+
   NCCLCHECK(commFree(comm));
 
   if (savedDevice != commDevice)
     CUDACHECK(cudaSetDevice(savedDevice));
-
-  TRACE(NCCL_INIT, "Destroyed comm %p rank %d", comm, comm->rank);
 
   return ncclSuccess;
 }
@@ -1061,15 +1089,19 @@ ncclResult_t ncclCommDestroy(ncclComm_t comm) {
   if (comm == NULL)
     return ncclSuccess;
 
-  TRACE(NCCL_INIT, "comm %p rank %d nRanks %d cudaDev %d busId %lx", comm, comm->rank, comm->nRanks, comm->cudaDev, comm->busId);
+  int rank = comm->rank, nranks = comm->nRanks, cudaDev = comm->cudaDev;
+  int64_t busId = comm->busId;
+  TRACE(NCCL_INIT, "comm %p rank %d nRanks %d cudaDev %d busId %lx", comm, rank, nranks, cudaDev, busId);
 
   // Try and prevent a double free of the comm struct (user error)
-  if (comm->rank == -1 || comm->nRanks <= 0 || comm->cudaDev == -1 || comm->busId == -1) {
+  if (rank == -1 || nranks <= 0 || cudaDev == -1 || busId == -1) {
     WARN("comm %p has already been destroyed", comm);
     return ncclInvalidArgument;
   }
 
-  return commDestroy(comm);
+  NCCLCHECK(commDestroy(comm));
+  INFO(NCCL_INIT,"comm %p rank %d nranks %d cudaDev %d busId %lx - Destroy COMPLETE", comm, rank, nranks, cudaDev, busId);
+  return ncclSuccess;
 }
 
 NCCL_API(ncclResult_t, ncclCommAbort, ncclComm_t comm);
@@ -1078,10 +1110,16 @@ ncclResult_t ncclCommAbort(ncclComm_t comm) {
   if (comm == NULL)
     return ncclSuccess;
 
+  int rank = comm->rank, nranks = comm->nRanks, cudaDev = comm->cudaDev;
+  int64_t busId = comm->busId;
+  TRACE(NCCL_INIT, "comm %p rank %d nRanks %d cudaDev %d busId %lx", comm, rank, nranks, cudaDev, busId);
+
   // Ask anything that might still be running on the device to quit
   *comm->abortFlag = 1;
 
-  return commDestroy(comm);
+  NCCLCHECK(commDestroy(comm));
+  INFO(NCCL_INIT,"comm %p rank %d nranks %d cudaDev %d busId %lx - Abort COMPLETE", comm, rank, nranks, cudaDev, busId);
+  return ncclSuccess;
 }
 
 NCCL_API(const char*, ncclGetErrorString, ncclResult_t code);

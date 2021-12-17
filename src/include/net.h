@@ -22,10 +22,10 @@ static ncclResult_t ncclNetConnect(int dev, void* handle, void** sendComm) { NCC
 static ncclResult_t ncclNetAccept(void* listenComm, void** recvComm) { NCCLCHECK(ncclNet->accept(listenComm, recvComm)); return ncclSuccess; }
 static ncclResult_t ncclNetRegMr(void* comm, void* data, int size, int type, void** mhandle) { NCCLCHECK(ncclNet->regMr(comm, data, size, type, mhandle)); return ncclSuccess; }
 static ncclResult_t ncclNetDeregMr(void* comm, void* mhandle) { NCCLCHECK(ncclNet->deregMr(comm, mhandle)); return ncclSuccess; }
-static ncclResult_t ncclNetIsend(void* sendComm, void* data, int size, void* mhandle, void** request) { NCCLCHECK(ncclNet->isend(sendComm, data, size, mhandle, request)); return ncclSuccess; }
-static ncclResult_t ncclNetIrecv(void* recvComm, void* data, int size, void* mhandle, void** request) { NCCLCHECK(ncclNet->irecv(recvComm, data, size, mhandle, request)); return ncclSuccess; }
-static ncclResult_t ncclNetIflush(void* recvComm, void* data, int size, void* mhandle, void** request) { NCCLCHECK(ncclNet->iflush(recvComm, data, size, mhandle, request)); return ncclSuccess; }
-static ncclResult_t ncclNetTest(void* request, int* done, int* size) { NCCLCHECK(ncclNet->test(request, done, size)); return ncclSuccess; }
+static ncclResult_t ncclNetIsend(void* sendComm, void* data, int size, int tag, void* mhandle, void** request) { NCCLCHECK(ncclNet->isend(sendComm, data, size, tag, mhandle, request)); return ncclSuccess; }
+static ncclResult_t ncclNetIrecv(void* recvComm, int n, void** data, int* sizes, int* tags, void** mhandles, void** request) { NCCLCHECK(ncclNet->irecv(recvComm, n, data, sizes, tags, mhandles, request)); return ncclSuccess; }
+static ncclResult_t ncclNetIflush(void* recvComm, int n, void** data, int* sizes, void** mhandles, void** request) { NCCLCHECK(ncclNet->iflush(recvComm, n, data, sizes, mhandles, request)); return ncclSuccess; }
+static ncclResult_t ncclNetTest(void* request, int* done, int* sizes) { NCCLCHECK(ncclNet->test(request, done, sizes)); return ncclSuccess; }
 static ncclResult_t ncclNetCloseSend(void* sendComm) { NCCLCHECK(ncclNet->closeSend(sendComm)); return ncclSuccess; }
 static ncclResult_t ncclNetCloseRecv(void* recvComm) { NCCLCHECK(ncclNet->closeRecv(recvComm)); return ncclSuccess; }
 static ncclResult_t ncclNetCloseListen(void* listenComm) { NCCLCHECK(ncclNet->closeListen(listenComm)); return ncclSuccess; }
@@ -33,6 +33,18 @@ static ncclResult_t ncclNetCloseListen(void* listenComm) { NCCLCHECK(ncclNet->cl
 // Test whether the current GPU support GPU Direct RDMA.
 #define GPU_BUF_SIZE (2*1024*1024)
 static ncclResult_t ncclGpuGdrSupport(int* gdrSupport) {
+#if CUDART_VERSION >= 11030
+  // In CUDA 11.3 and later we can now query the cudaDevAttrGPUDirectRDMASupported attribute
+  int driverVersion;
+  CUDACHECK(cudaDriverGetVersion(&driverVersion));
+  if (driverVersion >= 11030) {
+    int cudaDev, attr = 0;
+    CUDACHECK(cudaGetDevice(&cudaDev));
+    CUDACHECK(cudaDeviceGetAttribute(&attr, cudaDevAttrGPUDirectRDMASupported, cudaDev));
+    *gdrSupport = attr;
+    return ncclSuccess;
+  }
+#endif
   int netDevs;
   NCCLCHECK(ncclNetDevices(&netDevs));
   *gdrSupport = 0;
@@ -50,8 +62,12 @@ static ncclResult_t ncclGpuGdrSupport(int* gdrSupport) {
     ncclResult_t ret;
     ncclDebugNoWarn = NCCL_NET;
     NCCLCHECKGOTO(ncclNetListen(dev, &handle, &lComm), ret, cleanup1);
-    NCCLCHECKGOTO(ncclNetConnect(dev, &handle, &sComm), ret, cleanup2);
-    NCCLCHECKGOTO(ncclNetAccept(lComm, &rComm), ret, cleanup3);
+    while (sComm == NULL) {
+      NCCLCHECKGOTO(ncclNetConnect(dev, &handle, &sComm), ret, cleanup2);
+    }
+    while (rComm == NULL) {
+      NCCLCHECKGOTO(ncclNetAccept(lComm, &rComm), ret, cleanup3);
+    }
     CUDACHECKGOTO(cudaMalloc(&gpuPtr, GPU_BUF_SIZE), ret, cleanup4);
     if (ncclNetRegMr(sComm, gpuPtr, GPU_BUF_SIZE, NCCL_PTR_CUDA, &mHandle) == ncclSuccess) {
       NCCLCHECK(ncclNetDeregMr(sComm, mHandle));

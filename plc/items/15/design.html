@@ -1,0 +1,53 @@
+<!DOCTYPE html>
+<html>
+<head>
+<title>NCCL-15 : Network communication through one hop NVLink : Design</title>
+<link rel="stylesheet" type="text/css" href="../../html/css/doc.css">
+</head>
+<body>
+<center><h1>NCCL-15 : Network communication through one hop NVLink<br>Design</h1></center>
+<!-- table of contents, auto-generated -->
+$CONTENTS
+<!-- end of table of contents -->
+<h2>Proposed Design</h2>
+<p>We introduce a new type of path in the topology graph, PXN (PCI x NVLink),
+which goes through another GPU before reaching the NIC. These types of paths
+can be disabled with NCCL_PXN_DISABLE=1 (default 0).
+<p>Contrary to one-hop P2P, we don't use the remote
+allocator of the intermediate rank, because we cannot use GPU Direct RDMA
+on CUDA IPC mapped buffers. Hence, when connecting two ranks through PXN,
+the sender will allocate memory on the intermediate GPU. That requires the
+intermediate GPU to allow for multiple CUDA contexts, which we check
+beforehand through a call to wrapNvmlDeviceGetComputeMode and add to the
+XML data and topology graph.
+<p>The PXN paths are not computed during the original path computation as it
+was easier to do it as a post step, connecting GPU-GPU paths with GPU-NIC
+paths. This also makes it easier to disable PXN when the CUDA compute mode is
+not compatible with remote memory allocation.
+<p>We add a new field in the GPU information, netDev, which allows each rank
+to advertise to others which NIC is local. We then use that NIC in two ways:
+to help GPUs choose which intermediate local GPU they will use to reach a
+given NIC, and to choose which NIC to use when sending data to a remote rank.
+
+<h2>Interface Architecture</h2>
+<p>A new netDev field is added to the peerInfo struct.
+<h2>System KPIs & Metrics</h2>
+<p>Performance on DGX A100 has been measured at 23.6 GB/s on 8 nodes, versus
+25.3 GB/s with direct communication.
+<h2>Data Architecture</h2>
+N/A
+<h2>Security Design</h2>
+N/A
+<h2>Debugging & Troubleshooting</h2>
+None.
+<h2>Logging and Instrumentation</h2>
+None.
+<h2>Operational Considerations</h2>
+None.
+
+<h2>Signoff list</h2>
+<p>Author : Sylvain Jeaugey
+<p><!-- Reviewer : First Last -->
+<p><!-- Reviewer : First Last -->
+
+<!-- do not end body and html, bottom will be auto-generated -->

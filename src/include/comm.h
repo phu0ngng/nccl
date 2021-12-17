@@ -31,8 +31,6 @@ struct cudaLaunchParams {
 #define NCCL_LL128_THREAD_THRESHOLD 8
 #define NCCL_SIMPLE_THREAD_THRESHOLD 64
 
-#define NCCL_MAX_INTRA_RANKS 32
-
 struct ncclSendMem {
   union {
     struct {
@@ -41,10 +39,10 @@ struct ncclSendMem {
       void* ptrExchange;
       uint64_t redOpArgExchange[2];
       char pad2[CACHE_LINE_SIZE-sizeof(void*)-2*sizeof(uint64_t)];
+      int offsFifo[NCCL_STEPS];
     };
     char pad3[MEM_ALIGN];
   };
-  char buff[1]; // Actually larger than that
 };
 
 struct ncclRecvMem {
@@ -53,18 +51,18 @@ struct ncclRecvMem {
       uint64_t tail;
       char pad1[CACHE_LINE_SIZE-sizeof(uint64_t)];
       int sizesFifo[NCCL_STEPS];
-      void* ptrsFifo[NCCL_STEPS];
+      int offsFifo[NCCL_STEPS];
+      int flush; // For GDRCopy-based flush
     };
     char pad4[MEM_ALIGN];
   };
-  char buff[1]; // Actually larger than that
 };
 
 typedef cudaError_t(*pfn_cuMemGetAddressRange_t)(void**, size_t*, void*);
 
 enum helperThreadState {ThreadStart, ThreadStop};
 
-#define NCCL_IPC_POOL_SIZE (2*NCCL_MAX_INTRA_RANKS*NCCL_MAX_OPS)
+#define NCCL_IPC_POOL_SIZE (2*NCCL_MAX_LOCAL_RANKS*NCCL_MAX_OPS)
 
 struct ncclGraphHelperResources {
   ncclComm* comm;
@@ -80,6 +78,11 @@ struct ncclUserRedOp {
   int freeNext; // -1=allocated, otherwise index of next free entry in array
   ncclDataType_t datatype;
   ncclDevRedOpFull opFull;
+};
+
+struct ncclNodeRanks {
+  int localRanks;
+  int* localRankToRank;
 };
 
 struct ncclComm {
@@ -102,12 +105,13 @@ struct ncclComm {
 
   int node;
   int nNodes;
-
-  // Intra-node rank info
-  int intraNodeGlobalRanks[NCCL_MAX_INTRA_RANKS];
+  int localRank;
   int localRanks;
-  int intraNodeRank;
-  int8_t* rankToIntraNodeRank;
+  int* rankToNode;
+  int* rankToLocalRank;
+  int* localRankToRank;
+  // localRanks and localRanktoRank for all nodes
+  struct ncclNodeRanks* nodeRanks;
 
   enum { GROUP, PARALLEL, GROUP_GRAPH } launchMode;
   cudaStream_t userStream;
@@ -165,10 +169,8 @@ struct ncclComm {
   int* intraCGMode; // Whether we can use CUDA9 CGMD or not
   int* intraCC; // Only to check all have the same ComputeCap and disable CGMode if not
   struct ncclWorkElem args;
-  void* argsptr;
+  void* argsptrs[2];
 
-  // Global proxy thread
-  pthread_t proxyThread;
   struct ncclProxyState proxyState;
 
   // Whether this communicator uses collNet

@@ -23,6 +23,7 @@ CUDA_MAJOR = $(shell echo $(CUDA_VERSION) | cut -d "." -f 1)
 CUDA_MINOR = $(shell echo $(CUDA_VERSION) | cut -d "." -f 2)
 #$(info CUDA_VERSION ${CUDA_MAJOR}.${CUDA_MINOR})
 
+LSB_RELEASE=$(shell lsb_release -is)
 
 # You should define NVCC_GENCODE in your environment to the minimal set
 # of archs to reduce compile time.
@@ -39,7 +40,7 @@ CUDA11_PTX    = -gencode=arch=compute_80,code=compute_80
 
 # Include Ampere support if we're using CUDA11 or above
 ifeq ($(shell test "0$(CUDA_MAJOR)" -ge 11; echo $$?),0)
-  NVCC_GENCODE ?= $(CUDA8_GENCODE) $(CUDA9_GENCODE) $(CUDA9_PTX) $(CUDA11_GENCODE) $(CUDA11_PTX)
+  NVCC_GENCODE ?= $(CUDA8_GENCODE) $(CUDA9_GENCODE) $(CUDA11_GENCODE) $(CUDA11_PTX)
 # Include Volta support if we're using CUDA9 or above
 else ifeq ($(shell test "0$(CUDA_MAJOR)" -ge 9; echo $$?),0)
   NVCC_GENCODE ?= $(CUDA8_GENCODE) $(CUDA9_GENCODE) $(CUDA9_PTX)

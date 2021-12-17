@@ -20,13 +20,15 @@ STATICLIB = ${BUILDDIR}/lib/libnccl_static.a
 NVLDFLAGS += -L$(BUILDDIR)/lib $(LIBRARIES:%=-l%)
 ##
 DST_DIR := $(abspath ${BUILDDIR}/test/unit)
-CU_FILES := kernel_test.cu graph_test.cu model.cu data.cu align_test.cu xml_test.cu
+CU_FILES := kernel_test.cu align_test.cu
+CC_FILES += graph_test.cc model.cc data.cc xml_test.cc comm_leak_test.cc
 KCU_FILES := kernel_test.cu align_test.cu
-#ifeq ($(MPI),1)
+ifeq ($(MPI),1)
 #CU_FILES += ncclNet_test.cu ncclNet_read_write_stress_test.cu
-#endif
-OBJ_FILES:= $(CU_FILES:%.cu=${DST_DIR}/%.o)
-EXE_FILES:= $(CU_FILES:%.cu=${DST_DIR}/%)
+CU_FILES += comm_leak_test_multi.cu coll_leak_test_multi.cu
+endif
+OBJ_FILES:= $(CU_FILES:%.cu=${DST_DIR}/%.o) $(CC_FILES:%.cc=${DST_DIR}/%.o)
+EXE_FILES:= $(CU_FILES:%.cu=${DST_DIR}/%) $(CC_FILES:%.cc=${DST_DIR}/%)
 KEXE_FILES:= $(KCU_FILES:%.cu=${DST_DIR}/%)
 DEP_FILES:= $(OBJ_FILES:%.o=${DST_DIR}/%.d)
 #
@@ -94,6 +96,25 @@ ${DST_DIR}/ncclNet_test: ${DST_DIR}/ncclNet_test.o ${LIBOBJS}
 	$(NVCC) -o $@ $(NVCUFLAGS) ${NVLDFLAGS} $^
 #
 ${DST_DIR}/ncclNet_read_write_stress_test: ${DST_DIR}/ncclNet_read_write_stress_test.o ${STATICLIB}
+	@printf "Linking  %-35s > %s\n" $< $@
+	@mkdir -p ${DST_DIR}
+	$(NVCC) -o $@ $(NVCUFLAGS) ${NVLDFLAGS} $^
+
+${DST_DIR}/comm_leak_test: ${DST_DIR}/comm_leak_test.o
+	@printf "Linking  %-35s > %s\n" $< $@
+	@mkdir -p ${DST_DIR}
+	@if [ "$(LSB_RELEASE)" = "Ubuntu" ]; then\
+		$(NVCC) -o $@ $(NVCUFLAGS) --compiler-options="-fsanitize=leak" $^ ${NVLDFLAGS};\
+	else\
+		$(NVCC) -o $@ $(NVCUFLAGS) $^ ${NVLDFLAGS};\
+	fi
+
+${DST_DIR}/comm_leak_test_multi: ${DST_DIR}/comm_leak_test_multi.o
+	@printf "Linking  %-35s > %s\n" $< $@
+	@mkdir -p ${DST_DIR}
+	$(NVCC) -o $@ $(NVCUFLAGS) ${NVLDFLAGS} $^
+
+${DST_DIR}/coll_leak_test_multi: ${DST_DIR}/coll_leak_test_multi.o
 	@printf "Linking  %-35s > %s\n" $< $@
 	@mkdir -p ${DST_DIR}
 	$(NVCC) -o $@ $(NVCUFLAGS) ${NVLDFLAGS} $^

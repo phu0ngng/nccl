@@ -42,6 +42,25 @@ static ncclResult_t ncclCalloc(T** ptr, size_t nelem) {
 }
 
 template <typename T>
+static ncclResult_t ncclRealloc(T** ptr, size_t oldNelem, size_t nelem) {
+  if (nelem < oldNelem) return ncclInternalError;
+  if (nelem == oldNelem) return ncclSuccess;
+
+  T* oldp = *ptr;
+  T* p = (T*)malloc(nelem*sizeof(T));
+  if (p == NULL) {
+    WARN("Failed to malloc %ld bytes", nelem*sizeof(T));
+    return ncclSystemError;
+  }
+  memcpy(p, oldp, oldNelem*sizeof(T));
+  free(oldp);
+  memset(p+oldNelem, 0, (nelem-oldNelem)*sizeof(T));
+  *ptr = (T*)p;
+  INFO(NCCL_ALLOC, "Mem Realloc old size %ld, new size %ld pointer %p", oldNelem*sizeof(T), nelem*sizeof(T), *ptr);
+  return ncclSuccess;
+}
+
+template <typename T>
 static ncclResult_t ncclCudaCallocDebug(T** ptr, size_t nelem, const char *filefunc, int line) {
   // Need async stream for P2P pre-connect + CUDA Graph
   cudaStream_t stream;

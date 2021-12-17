@@ -146,6 +146,7 @@ apitest-DGX-A100:
 
 perftest-P100:
   stage: perf_tests_single
+  needs: [build, unit_tests, apitest-P100]
   tags:
     - p100
   variables:
@@ -159,6 +160,7 @@ perftest-P100:
 
 perftest-P40:
   stage: perf_tests_single
+  needs: [build, unit_tests, apitest-P40]
   tags:
     - p40
   variables:
@@ -172,6 +174,7 @@ perftest-P40:
 
 perftest-GP100:
   stage: perf_tests_single
+  needs: [build, unit_tests, apitest-GP100]
   tags:
     - gp100
   variables:
@@ -185,6 +188,7 @@ perftest-GP100:
 
 perftest-M40:
   stage: perf_tests_single
+  needs: [build, unit_tests, apitest-M40]
   tags:
     - m40
   variables:
@@ -198,6 +202,7 @@ perftest-M40:
 
 perftest-K80:
   stage: perf_tests_single
+  needs: [build, unit_tests, apitest-K80]
   tags:
     - k80
   variables:
@@ -211,6 +216,7 @@ perftest-K80:
 
 perftest-K40:
   stage: perf_tests_single
+  needs: [build, unit_tests, apitest-single-K40]
   tags:
     - k40
   variables:
@@ -224,6 +230,7 @@ perftest-K40:
 
 perftest-A100:
   stage: perf_tests_single
+  needs: [build, unit_tests, apitest-A100]
   tags:
     - a100pci
   variables:
@@ -237,6 +244,7 @@ perftest-A100:
 
 perftest-DGX-1V:
   stage: perf_tests_single
+  needs: [build, unit_tests, apitest-DGX-1V]
   rules:
     - if: '$RUN_ON_PROM == "1"'
       when: always
@@ -254,6 +262,7 @@ perftest-DGX-1V:
 
 perftest-DGX-A100:
   stage: perf_tests_single
+  needs: [build, unit_tests, apitest-DGX-A100]
   rules:
     - if: '$RUN_ON_SELENE == "1"'
       when: always
@@ -271,6 +280,22 @@ perftest-DGX-A100:
 
 perftest-multi-gc:
   stage: perf_tests_multi
+  needs: [build, perftest-P100]
+  tags:
+    - p100
+  variables:
+    NCCL_IB_HCA: "mlx5_0"
+    NCCL_DEBUG: "WARN"
+    MPI_HOME: "/opt/mpi/openmpi-1.10.7"
+    CUDA_HOME: "/usr/local/cuda-11.3"
+    SALLOC: "salloc -t 00:05:00 -N 3 -n 24 -w gc[01-02,05]"
+  script:
+    - ./test/scripts/gitlab-runner-perftest.sh 128M 0
+  interruptible: true
+
+perftest-sharp-gc:
+  stage: perf_tests_multi
+  needs: [build, perftest-P100]
   tags:
     - p100
   variables:
@@ -301,6 +326,7 @@ perftest-sharp-gc:
 
 perftest-multi-prom:
   stage: perf_tests_multi
+  needs: [build, perftest-DGX-1V]
   rules:
     - if: '$RUN_ON_PROM == "1"'
       when: always
@@ -321,6 +347,7 @@ perftest-multi-prom:
 
 perftest-multi-selene:
   stage: perf_tests_multi
+  needs: [build, perftest-DGX-A100]
   rules:
     - if: '$RUN_ON_SELENE == "1"'
       when: always
@@ -341,6 +368,7 @@ perftest-multi-selene:
 
 perftest-sharp-selene:
   stage: perf_tests_multi
+  needs: [build, perftest-DGX-A100]
   rules:
     - if: '$RUN_ON_SELENE_SHARP == "1"'
       when: always

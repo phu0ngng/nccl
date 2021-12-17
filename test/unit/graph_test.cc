@@ -195,6 +195,7 @@ void checkPlatform(const char* platform, int* errors, int* warnings) {
 #define RUN(...) checkPlatform(__VA_ARGS__, &errors, &warnings)
 
 int main(int argc, const char* argv[]) {
+  setenv("NCCL_IGNORE_DISABLED_P2P", "2", 0); // Disable hardware health checks (NVML)
   setlinebuf(stdout);
   char* str = getenv("NCCL_GRAPH_TEST_DUMP");
   if (str) dumpDiff = atoi(str);
@@ -222,8 +223,13 @@ int main(int argc, const char* argv[]) {
     RUN("Luna");
     RUN("Luna-SHARP");
     RUN("Luna-SHARP-1PPN");
+    RUN("Luna-2PPN-0");
+    RUN("Luna-2PPN-1");
+    RUN("Luna-2PPN-2");
+    RUN("Luna-2PPN-3");
     RUN("DGX-2-Delta");
     RUN("Redstone");
+    RUN("Atos-A100-4G");
     RUN("GCP-NV");
     RUN("AWS-NV");
     RUN("AWS-NV-EFA");
