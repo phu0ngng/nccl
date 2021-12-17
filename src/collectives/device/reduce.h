@@ -25,7 +25,7 @@ namespace {
     const int prevRank = ring->devUserRanks[nranks-1];
     const int root = args->root;
 
-    Primitives<T, RedOp, FanSymmetric<1>, 0, Proto>
+    Primitives<T, RedOp, FanSymmetric<1>, 0, Proto, 0>
       prims(tid, nthreads, &ring->prev, &ring->next, args->sendbuff, args->recvbuff, args->redOpArg);
 
     auto calcChunkSize = [&]__device__(ssize_t gridOffset)->int {

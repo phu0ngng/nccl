@@ -26,8 +26,8 @@ namespace {
 
     T *inputBuf = (T*)args->sendbuff;
     T *outputBuf = (T*)args->recvbuff;
-    Primitives<T, RedOp, FanSymmetric<1>, 1, Proto>
-      prims(tid, nthreads, &ring->prev, &ring->next, inputBuf, outputBuf, args->redOpArg);
+    Primitives<T, RedOp, FanSymmetric<1>, 1, Proto, 0> prims
+      (tid, nthreads, &ring->prev, &ring->next, inputBuf, outputBuf, args->redOpArg);
 
     for (ssize_t gridOffset = 0; gridOffset < size; gridOffset += loopSize) {
       ssize_t realChunkSize;

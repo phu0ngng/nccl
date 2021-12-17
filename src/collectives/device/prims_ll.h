@@ -4,9 +4,9 @@
  * See LICENSE.txt for license information
  ************************************************************************/
 
-template<typename T, typename RedOp, typename Fan, int Direct>
-class Primitives<T, RedOp, Fan, Direct, ProtoLL>:
-  public PrimitivesWithoutDirect<Primitives<T, RedOp, Fan, Direct, ProtoLL>> {
+template<typename T, typename RedOp, typename Fan, int Direct, int P2p>
+class Primitives<T, RedOp, Fan, Direct, ProtoLL, P2p>:
+  public PrimitivesWithoutDirect<Primitives<T, RedOp, Fan, Direct, ProtoLL, P2p>> {
 
   static constexpr int MaxRecv = Fan::MaxRecv, MaxSend = Fan::MaxSend;
   static constexpr int Input=0, Output=1;

@@ -5,9 +5,9 @@
  ************************************************************************/
 
 template<typename T, typename RedOp, typename Fan, int Direct,
-         int SlicePerChunk, int StepPerSlice, int Unroll>
+         int SlicePerChunk, int StepPerSlice, int Unroll, int P2p>
 class Primitives<
-    T, RedOp, Fan, Direct, ProtoSimple<SlicePerChunk, StepPerSlice, Unroll>
+    T, RedOp, Fan, Direct, ProtoSimple<SlicePerChunk, StepPerSlice, Unroll>, P2p
   > {
   static constexpr int MaxRecv = Fan::MaxRecv, MaxSend = Fan::MaxSend;
   static constexpr int Input=0, Output=1;
@@ -320,14 +320,14 @@ class Primitives<
         if (Direct) {
           // User buffers have been registered
           if ((conn->direct & (NCCL_IPC_READ|NCCL_IPC_WRITE)) && e != nullptr && e->regUsed) {
-            if (connIndex == 1) {
+            if (connIndex == 1 && P2p == 0) {
               flags |= DirectRead;  // scatter-reduce use direct pull
             } else {
               flags |= (e->direct & NCCL_DIRECT_WRITE) ? DirectWrite :
                        (e->direct & NCCL_DIRECT_READ)  ? DirectRead  : 0;
             }
           } else if (conn->direct & (NCCL_DIRECT_WRITE|NCCL_DIRECT_READ)) {
-            if (connIndex == 1) {
+            if (connIndex == 1 && P2p == 0) {
               flags |= DirectRead;  // scatter-reduce use direct pull
             } else {
               // direct read not allowed in non-register case
@@ -366,14 +366,14 @@ class Primitives<
         } else if (Direct) {
           // User buffers have been registered
           if ((conn->direct & (NCCL_IPC_READ|NCCL_IPC_WRITE)) && e != nullptr && e->regUsed) {
-            if (connIndex == 1) {
+            if (connIndex == 1 && P2p == 0) {
               flags |= DirectRead;  // scatter-reduce use direct pull
             } else {
               flags |= (e->direct & NCCL_DIRECT_WRITE) ? DirectWrite :
                        (e->direct & NCCL_DIRECT_READ)  ? DirectRead  : 0;
             }
           } else if (conn->direct & (NCCL_DIRECT_WRITE|NCCL_DIRECT_READ)) {
-            if (connIndex == 1) {
+            if (connIndex == 1 && P2p == 0) {
               flags |= DirectRead;  // scatter-reduce use direct pull
             } else {
               // direct read not allowed in non-register case

@@ -26,7 +26,7 @@ namespace {
 
     T *inputBuf = (T*)args->sendbuff;
     T *outputBuf = (T*)args->recvbuff;
-    Primitives<T, RedOp, FanSymmetric<1>, 0, Proto>
+    Primitives<T, RedOp, FanSymmetric<1>, 0, Proto, 0>
       prims(tid, nthreads, &ring->prev, &ring->next, inputBuf, outputBuf, args->redOpArg);
 
     for (ssize_t gridOffset = 0; gridOffset < size; gridOffset += loopSize) {

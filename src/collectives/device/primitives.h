@@ -109,7 +109,7 @@ struct FanSymmetric {
 };
 
 // The primitives class. Specialized per protocol in the other headers.
-template<typename T, typename RedOp, typename Fan, int Direct, typename Proto>
+template<typename T, typename RedOp, typename Fan, int Direct, typename Proto, int P2p>
 class Primitives;
 
 // Used by LL & LL128 to implement direct members in the naive way.
