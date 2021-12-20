@@ -7,7 +7,7 @@
 #include "comm.h"
 #include "info.h"
 #include "bootstrap.h"
-//#define ENABLE_TIMER 1
+#define ENABLE_TIMER 0
 #include "timer.h"
 
 extern struct ncclTransport p2pTransport;
