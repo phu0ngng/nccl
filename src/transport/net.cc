@@ -66,6 +66,7 @@ struct connectMapMem{
 struct connectMap {
   int sameProcess;
   int shared;
+  int cudaDev;
   // First 3 bits of offsets determine the mem bank. 001 is host mem, 011 is dev mem, 101 is shared host mem and 111 is shared dev mem.
   struct connectMapMem mems[NCCL_NET_MAP_MEMS];
   // Offsets. 3 MSBs indicate mem bank, 111 indicates NULL.
@@ -262,7 +263,18 @@ static ncclResult_t sendConnect(struct ncclComm* comm, struct ncclConnect* conne
   send->transportResources = map;
   NCCLCHECK(ncclProxyCall(&send->proxyConn, ncclProxyMsgConnect, connectInfo, sizeof(ncclNetHandle_t), map, sizeof(struct connectMap)));
 
-  if (map->sameProcess == 0) {
+  if (map->sameProcess) {
+    if (map->cudaDev != comm->cudaDev) {
+      // Enable P2P access
+      cudaError_t err = cudaDeviceEnablePeerAccess(map->cudaDev, 0);
+      if (err == cudaErrorPeerAccessAlreadyEnabled) {
+        cudaGetLastError();
+      } else if (err != cudaSuccess) {
+        WARN("failed to peer with device %d: %d %s", map->cudaDev, err, cudaGetErrorString(err));
+        return ncclInternalError;
+      }
+    }
+  } else {
     NCCLCHECK(netMapShm(map->mems+NCCL_NET_MAP_HOSTMEM));
     if (map->mems[NCCL_NET_MAP_DEVMEM].size) {
       CUDACHECK(cudaIpcOpenMemHandle((void**)&map->mems[NCCL_NET_MAP_DEVMEM].gpuPtr, map->mems[NCCL_NET_MAP_DEVMEM].ipc, cudaIpcMemLazyEnablePeerAccess));
@@ -499,6 +511,7 @@ static ncclResult_t sendProxyConnect(struct ncclProxyConnection* connection, str
   map->sameProcess =
     comm->peerInfo[resources->rank].pidHash == comm->peerInfo[comm->rank].pidHash ? 1 : 0;
   map->shared = resources->shared;
+  CUDACHECK(cudaGetDevice(&map->cudaDev));
 
   if (resources->shared == 0) { // Only allocate dedicated buffers for ring/tree, not for p2p
     for (int p=0; p<NCCL_NUM_PROTOCOLS; p++) {
