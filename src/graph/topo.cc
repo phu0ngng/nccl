@@ -681,6 +681,7 @@ ncclResult_t ncclTopoGetLocalNet(struct ncclTopoSystem* system, int rank, int* i
   }
   if (count == 0) {
     *id = -1;
+    free(nets);
     return ncclSuccess;
   }
 

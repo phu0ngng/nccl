@@ -235,7 +235,7 @@ struct ncclWork {
   };
 };
 
-static_assert(sizeof(struct ncclWork) == NCCL_WORK_SIZE);
+static_assert(sizeof(struct ncclWork) == NCCL_WORK_SIZE, "ncclWork size needs to be well aligned");
 
 struct ncclChannel {
   union {

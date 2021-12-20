@@ -183,7 +183,7 @@ int main(int argc, char** argv)
     gettimeofday(&start, NULL);
 
     for (size_t i = 0; i < reps; ++i) {
-      if (comm_rank == 0) printf("Starting rep %d/%d\n", i, reps);
+      if (comm_rank == 0) printf("Starting rep %zi/%zi\n", i, reps);
       do_test(comm_rank, local_rank, comm_size, num_gpus, size, coll_reps, abort, alltoall);
 
       MPI_Barrier(MPI_COMM_WORLD);
