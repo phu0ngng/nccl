@@ -345,6 +345,7 @@ static ncclResult_t recvFree(struct ncclConnector* recv) {
   return ncclSuccess;
 }
 
+#define NCCL_SHARED_STEPS 16
 static ncclResult_t sharedBuffersInit(struct ncclComm* comm, int cuda, int localRank, int type, int sameProcess,
     int nChannels, char** gpuPtr, char** cpuPtr, int* size, cudaIpcMemHandle_t* ipc) {
   if (cuda == 0 && sameProcess == 0) {
@@ -363,7 +364,7 @@ static ncclResult_t sharedBuffersInit(struct ncclComm* comm, int cuda, int local
   struct ncclProxySharedP2p* state = type == 0 ? &peer->send : &peer->recv;
   state->refcount++;
   if (state->size == 0) {
-    state->size = nChannels*NCCL_MAX_WORK_ELEMENTS*comm->buffSizes[NCCL_PROTO_SIMPLE]/SENDRECV_SLICEFACTOR;
+    state->size = nChannels*NCCL_SHARED_STEPS*comm->buffSizes[NCCL_PROTO_SIMPLE]/(SENDRECV_SLICEFACTOR*NCCL_STEPS);
   }
 
   if (size) *size = state->size;
@@ -387,10 +388,10 @@ static ncclResult_t sharedBuffersInit(struct ncclComm* comm, int cuda, int local
   return ncclSuccess;
 }
 
-static ncclResult_t sharedBuffersGet(struct ncclComm* comm, int channel, int slot, int index, int* offset) {
+static ncclResult_t sharedBuffersGet(struct ncclComm* comm, int channel, int slot, int* offset) {
   // Use different pools for different channels and also separate send/recv.
   int slotSize = comm->buffSizes[NCCL_PROTO_SIMPLE]/(NCCL_STEPS*SENDRECV_SLICEFACTOR);
-  int globalSlot = ((channel*NCCL_STEPS)+slot)*NCCL_MAX_WORK_ELEMENTS+index;
+  int globalSlot = (channel*NCCL_STEPS)+slot;
   *offset = slotSize * globalSlot;
   return ncclSuccess;
 }
@@ -746,6 +747,7 @@ static ncclResult_t sendProxyProgress(struct ncclComm* comm, struct ncclProxyArg
   args->idle = 1;
   if (args->state == ncclProxyOpProgress) {
     int p = args->protocol;
+    int maxDepth = std::min(NCCL_STEPS, NCCL_SHARED_STEPS/args->nsubs);
     for (int s=0; s<args->nsubs; s++) {
       struct ncclProxySubArgs* sub = args->subs+s;
       if (sub->done == sub->nsteps) continue;
@@ -756,12 +758,12 @@ static ncclResult_t sendProxyProgress(struct ncclComm* comm, struct ncclProxyArg
       int buffSize = stepSize*args->sliceSteps;
       if (sub->nbytes < buffSize) buffSize = sub->nbytes;
       // Post buffers to the GPU
-      if (sub->posted < sub->nsteps && sub->posted < sub->done + NCCL_STEPS) {
+      if (sub->posted < sub->nsteps && sub->posted < sub->done + maxDepth) {
         int buffSlot = (sub->base+sub->posted)%NCCL_STEPS;
         if (resources->shared) {
-          int sharedBuffSlot = sub->posted%NCCL_STEPS;
+          int sharedBuffSlot = sub->posted%maxDepth;
           int offset;
-          NCCLCHECK(sharedBuffersGet(comm, sub->channelId, sharedBuffSlot, s, &offset));
+          NCCLCHECK(sharedBuffersGet(comm, sub->channelId, sharedBuffSlot*args->nsubs+s, &offset));
           resources->recvMem->offsFifo[buffSlot] = offset;
           __sync_synchronize();
           volatile uint64_t* sendHead = resources->gdcSync ? resources->gdcSync : &resources->sendMem->head;
@@ -890,6 +892,7 @@ static ncclResult_t recvProxyProgress(struct ncclComm* comm, struct ncclProxyArg
   args->idle = 1;
   if (args->state == ncclProxyOpProgress) {
     int p = args->protocol;
+    int maxDepth = std::min(NCCL_STEPS, NCCL_SHARED_STEPS/args->nsubs);
     for (int s=0; s<args->nsubs; s+=args->subs[s].groupSize) {
       struct ncclProxySubArgs* subGroup = args->subs+s;
       int subCount = 0;
@@ -907,9 +910,9 @@ static ncclResult_t recvProxyProgress(struct ncclComm* comm, struct ncclProxyArg
           char* localBuff = NCCL_NET_MAP_GET_POINTER(&resources->map, cpu, buffs[p]);
           int buffSlot = (sub->base+sub->posted)%NCCL_STEPS;
           if (resources->shared) {
-            int sharedBuffSlot = sub->posted%NCCL_STEPS;
+            int sharedBuffSlot = sub->posted%maxDepth;
             int offset;
-            NCCLCHECK(sharedBuffersGet(comm, sub->channelId, sharedBuffSlot, s+i, &offset));
+            NCCLCHECK(sharedBuffersGet(comm, sub->channelId, sharedBuffSlot*args->nsubs+s+i, &offset));
             volatile int* offsFifo = (volatile int*)resources->recvMem->offsFifo;
             offsFifo[buffSlot] = offset;
             ptrs[subCount] = localBuff+offset;
