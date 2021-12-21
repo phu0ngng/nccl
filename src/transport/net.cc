@@ -364,7 +364,7 @@ static ncclResult_t sharedBuffersInit(struct ncclComm* comm, int cuda, int local
   struct ncclProxySharedP2p* state = type == 0 ? &peer->send : &peer->recv;
   state->refcount++;
   if (state->size == 0) {
-    state->size = nChannels*NCCL_SHARED_STEPS*comm->buffSizes[NCCL_PROTO_SIMPLE]/(SENDRECV_SLICEFACTOR*NCCL_STEPS);
+    state->size = nChannels*(NCCL_SHARED_STEPS/NCCL_STEPS)*comm->buffSizes[NCCL_PROTO_SIMPLE]/SENDRECV_SLICEFACTOR;
   }
 
   if (size) *size = state->size;
