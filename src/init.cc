@@ -46,90 +46,6 @@ NCCL_PARAM(GroupCudaStream, "GROUP_CUDA_STREAM", NCCL_GROUP_CUDA_STREAM);
 
 NCCL_PARAM(CheckPointers, "CHECK_POINTERS", 0);
 
-ncclNet_t* ncclNet = NULL;
-ncclCollNet_t* ncclCollNet = NULL;
-
-// Returns ncclInternalError if anything fails, causing that network to be ignored.
-ncclResult_t initNet(ncclNet_t* net) {
-  int ndev;
-  if (net->init(ncclDebugLog) != ncclSuccess) return ncclInternalError;
-  if (net->devices(&ndev) != ncclSuccess) return ncclInternalError;
-  if (ndev <= 0) return ncclSystemError;
-  return ncclSuccess;
-}
-
-ncclResult_t initCollNet(ncclCollNet_t* collnet) {
-  int ndev;
-  if (collnet->init(ncclDebugLog) != ncclSuccess) return ncclInternalError;
-  if (collnet->devices(&ndev) != ncclSuccess) return ncclInternalError;
-  if (ndev <= 0) return ncclSystemError;
-  return ncclSuccess;
-}
-
-ncclResult_t initNetPlugin(ncclNet_t** net, ncclCollNet_t** collnet) {
-  char ncclNetPluginName[128];
-  const char* envPluginName = getenv("NCCL_NET_PLUGIN");
-  if (envPluginName && strlen(envPluginName)) {
-    snprintf(ncclNetPluginName, 128, "libnccl-net-%s.so", envPluginName);
-    INFO(NCCL_INIT, "Plugin name set by env to %s\n", ncclNetPluginName);
-  } else {
-    sprintf(ncclNetPluginName, "libnccl-net.so");
-  }
-  void* netPluginLib = dlopen(ncclNetPluginName, RTLD_NOW | RTLD_LOCAL);
-  if (netPluginLib == NULL) {
-    // dlopen does not guarantee to set errno, but dlerror only gives us a
-    // string, so checking errno doesn't hurt to try to provide a better
-    // error message
-    if (errno == ENOENT) {
-      INFO(NCCL_INIT|NCCL_NET, "NET/Plugin : No plugin found (%s), using internal implementation", ncclNetPluginName);
-    } else {
-      INFO(NCCL_INIT|NCCL_NET, "NET/Plugin : Plugin load returned %d : %s.", errno, dlerror());
-    }
-    return ncclSuccess;
-  }
-  *net = (ncclNet_t*) dlsym(netPluginLib, STR(NCCL_PLUGIN_SYMBOL));
-  if (*net == NULL) {
-    INFO(NCCL_INIT|NCCL_NET, "NET/Plugin: Failed to find " STR(NCCL_PLUGIN_SYMBOL) " symbol.");
-    if (netPluginLib != NULL) dlclose(netPluginLib);
-    return ncclSuccess;
-  }
-  // Check for CollNet
-  *collnet = (ncclCollNet_t*) dlsym(netPluginLib, STR(NCCL_COLLNET_PLUGIN_SYMBOL));
-  if (*collnet == NULL) {
-    INFO(NCCL_INIT|NCCL_NET, "NET/Plugin: Failed to find " STR(NCCL_COLLNET_PLUGIN_SYMBOL) " symbol.");
-  }
-  return ncclSuccess;
-}
-
-ncclResult_t initNet() {
-  // Always initialize bootstrap network
-  NCCLCHECK(bootstrapNetInit());
-
-  // Initialize main communication network
-  ncclNet_t* nets[3] = { NULL, &ncclNetIb, &ncclNetSocket };
-  ncclCollNet_t* collNets[3] = { NULL, NULL, NULL };
-  NCCLCHECK(initNetPlugin(nets+0, collNets+0));
-  char* netName = getenv("NCCL_NET");
-
-  for (int i=0; i<3; i++) {
-    if (nets[i] == NULL) continue;
-    if (netName && strcmp(netName, nets[i]->name) != 0) continue;
-    // net plugin is already initialized
-    if (initNet(nets[i]) != ncclSuccess) continue;
-    ncclNet = nets[i];
-    if (collNets[i] && initCollNet(collNets[i]) == ncclSuccess) {
-      ncclCollNet = collNets[i];
-    }
-    break;
-  }
-
-  if (ncclNet == NULL) {
-    WARN("Error: network %s not found.", netName ? netName : "");
-    return ncclInvalidUsage;
-  }
-  return ncclSuccess;
-}
-
 // GDRCOPY support: Off by default
 NCCL_PARAM(GdrCopyEnable, "GDRCOPY_ENABLE", 0);
 
@@ -155,7 +71,7 @@ static ncclResult_t ncclInit() {
     initEnv();
     initGdrCopy();
     maxLocalSizeBytes = ncclKernMaxLocalSize();
-    NCCLCHECK(initNet());
+    NCCLCHECK(ncclNetInit());
     INFO(NCCL_INIT, "Using network %s", ncclNetName());
     initialized = true;
   }

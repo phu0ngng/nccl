@@ -9,7 +9,7 @@ include ../makefiles/version.mk
 
 ##### src files
 INCEXPORTS  := nccl.h nccl_net.h
-LIBSRCFILES := init.cc channel.cc bootstrap.cc transport.cc enqueue.cc group.cc debug.cc proxy.cc enhcompat.cc \
+LIBSRCFILES := init.cc channel.cc bootstrap.cc transport.cc enqueue.cc group.cc debug.cc proxy.cc enhcompat.cc net.cc \
 		misc/nvmlwrap.cc misc/ibvwrap.cc misc/gdrwrap.cc misc/utils.cc misc/argcheck.cc misc/socket.cc misc/shmutils.cc misc/profiler.cc \
 		transport/p2p.cc transport/shm.cc transport/net.cc transport/net_socket.cc transport/net_ib.cc transport/coll_net.cc \
                 collectives/sendrecv.cc collectives/all_reduce.cc collectives/all_gather.cc collectives/broadcast.cc collectives/reduce.cc collectives/reduce_scatter.cc \
@@ -74,14 +74,14 @@ $(LIBDIR)/$(LIBTARGET): $(LIBOBJ) $(DEVICELIB)
 	ln -sf $(LIBSONAME) $(LIBDIR)/$(LIBNAME)
 	ln -sf $(LIBTARGET) $(LIBDIR)/$(LIBSONAME)
 
+null :=
+space := $(null) #
+comma := ,
+
 $(LIBDIR)/$(STATICLIBTARGET): $(LIBOBJ) $(DEVICELIB)
 	@printf "Archiving  %-35s > %s\n" $(STATICLIBTARGET) $@
 	mkdir -p $(LIBDIR)
-	$(eval TMP := $(shell mktemp -d))
-	cp $(LIBOBJ) $(TMP)
-	cd $(TMP) && ar x $(DEVICELIB) && cd -
-	ar cr $@ $(LIBOBJ) $(TMP)/*.o
-	rm -Rf $(TMP)
+	printf "create $@\naddlib $(DEVICELIB)\naddmod $(subst $(space),$(comma),$(strip $(LIBOBJ)))\nsave\nend" | ar -M
 
 $(PKGDIR)/nccl.pc : nccl.pc.in
 	mkdir -p $(PKGDIR)
