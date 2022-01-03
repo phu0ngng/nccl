@@ -391,7 +391,7 @@ static ncclResult_t sharedBuffersInit(struct ncclComm* comm, int cuda, int local
 static ncclResult_t sharedBuffersGet(struct ncclComm* comm, int channel, int slot, int* offset) {
   // Use different pools for different channels and also separate send/recv.
   int slotSize = comm->buffSizes[NCCL_PROTO_SIMPLE]/(NCCL_STEPS*SENDRECV_SLICEFACTOR);
-  int globalSlot = (channel*NCCL_STEPS)+slot;
+  int globalSlot = (channel*NCCL_SHARED_STEPS)+slot;
   *offset = slotSize * globalSlot;
   return ncclSuccess;
 }
@@ -904,7 +904,7 @@ static ncclResult_t recvProxyProgress(struct ncclComm* comm, struct ncclProxyArg
       for (int i=0; i<subGroup->groupSize; i++) {
         struct ncclProxySubArgs* sub = subGroup + i;
         if (sub->posted < sub->nsteps) {
-          if (sub->posted >= sub->done + NCCL_STEPS) { subCount = 0; break; }
+          if (sub->posted >= sub->done + maxDepth) { subCount = 0; break; }
           struct recvResources* resources = (struct recvResources*) (sub->connection->transportResources);
           int stepSize = resources->buffSizes[p] / NCCL_STEPS;
           char* localBuff = NCCL_NET_MAP_GET_POINTER(&resources->map, cpu, buffs[p]);
