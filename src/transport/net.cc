@@ -113,6 +113,7 @@ struct recvResources {
   int proxyRank;
   int netDev;
   int useGdr;
+  int maxRecvs;
   uint64_t* gdcSync;
   uint64_t* gdcFlush;
   void* gdrDesc;
@@ -467,6 +468,9 @@ static ncclResult_t recvProxySetup(struct ncclProxyConnection* connection, struc
   resources->connIndex = req->connIndex;
 
   if (respSize != sizeof(ncclNetHandle_t)) return ncclInternalError;
+  ncclNetProperties_t props;
+  NCCLCHECK(ncclNetGetProperties(req->netDev, &props));
+  resources->maxRecvs = props.maxRecvs;
   NCCLCHECK(ncclNetListen(req->netDev, respBuff, &resources->netListenComm));
   *done = 1;
   return ncclSuccess;
@@ -861,9 +865,12 @@ static ncclResult_t recvProxyProgress(struct ncclComm* comm, struct ncclProxyArg
     // Initialize subs and group them by same recvComm.
     void* recvComm;
     int groupSize = 0;
+    int maxRecvs = 1;
     for (int s=0; s<args->nsubs; s++) {
       struct ncclProxySubArgs* sub = args->subs+s;
-      if (s>0) { // Find next sub with the same recvComm
+      if (groupSize == maxRecvs) {
+        groupSize = 0;
+      } else if (s>0) { // Find next sub with the same recvComm
         int next;
         for (next=s; next<args->nsubs; next++) {
           struct recvResources* nextRes = (struct recvResources*) (args->subs[next].connection->transportResources);
@@ -880,6 +887,7 @@ static ncclResult_t recvProxyProgress(struct ncclComm* comm, struct ncclProxyArg
       }
       groupSize++;
       struct recvResources* resources = (struct recvResources*) (sub->connection->transportResources);
+      maxRecvs = resources->maxRecvs;
       recvComm = resources->netRecvComm;
       // Round to next multiple of sliceSteps
       sub->base = ROUNDUP(resources->step, args->chunkSteps);
