@@ -20,7 +20,7 @@ static ncclCollNet_v4_t ncclCollNet_v4;
 static ncclResult_t ncclNet_v4_as_v5_getProperties(int dev, ncclNetProperties_v5_t* props) {
   ncclNetProperties_v4_t p4;
   ncclResult_t ans = ncclNet_v4.getProperties(dev, &p4);
-  if(ans != ncclSuccess) return ans;
+  if (ans != ncclSuccess) return ans;
   props->name = p4.name;
   props->pciPath = p4.pciPath;
   props->guid = p4.guid;
@@ -37,21 +37,21 @@ static ncclResult_t ncclNet_v4_as_v5_isend(void* sendComm, void* data, int size,
 }
 
 static ncclResult_t ncclNet_v4_as_v5_irecv(void* recvComm, int n, void** data, int* sizes, int* tags, void** mhandles, void** request) {
-  if(n == 0) return ncclSuccess;
-  if(n > 1) return ncclInvalidArgument;
+  if (n == 0) return ncclSuccess;
+  if (n != 1) return ncclInvalidArgument;
   return ncclNet_v4.irecv(recvComm, data[0], sizes[0], mhandles[0], request);
 }
 
 static ncclResult_t ncclNet_v4_as_v5_iflush(void* recvComm, int n, void** data, int* sizes, void** mhandles, void** request) {
-  if(n == 0) return ncclSuccess;
-  if(n > 1) return ncclInvalidArgument;
+  if (n == 0) return ncclSuccess;
+  if (n != 1) return ncclInvalidArgument;
   return ncclNet_v4.iflush(recvComm, data[0], sizes[0], mhandles[0], request);
 }
 
 static ncclResult_t ncclCollNet_v4_as_v5_getProperties(int dev, ncclNetProperties_v5_t* props) {
   ncclNetProperties_v4_t p4;
   ncclResult_t ans = ncclCollNet_v4.getProperties(dev, &p4);
-  if(ans != ncclSuccess) return ans;
+  if (ans != ncclSuccess) return ans;
   props->name = p4.name;
   props->pciPath = p4.pciPath;
   props->guid = p4.guid;
@@ -94,7 +94,7 @@ static void initPlugin(ncclNet_v5_t** net, ncclCollNet_v5_t** collnet) {
       if (netPluginLib != nullptr) dlclose(netPluginLib);
       return;
     }
-    ncclNet_v4 = *v4;
+    ncclNet_v4 = *v4; // C++ permits struct copies using operator=
     *net = &ncclNet_v4_as_v5;
     ncclNet_v4_as_v5.name = v4->name;
     ncclNet_v4_as_v5.init = v4->init;
@@ -122,7 +122,7 @@ static void initPlugin(ncclNet_v5_t** net, ncclCollNet_v5_t** collnet) {
     if (v4 == nullptr) {
       INFO(NCCL_INIT|NCCL_NET, "NET/Plugin: Failed to find ncclCollNetPlugin_v4 symbol.");
     } else {
-      ncclCollNet_v4 = *v4;
+      ncclCollNet_v4 = *v4; // C++ permits struct copies using operator=
       *collnet = &ncclCollNet_v4_as_v5;
       ncclCollNet_v4_as_v5.name = v4->name;
       ncclCollNet_v4_as_v5.init = v4->init;
@@ -163,7 +163,7 @@ ncclResult_t ncclNetInit() {
     if (nets[i]->init(ncclDebugLog) != ncclSuccess) continue;
     if (nets[i]->devices(&ndev) != ncclSuccess) continue;
     if (ndev <= 0) continue;
-    ncclNet = *nets[i];
+    ncclNet = *nets[i]; // C++ permits struct copies using operator=
     ok = true;
 
     if (collNets[i]) {
@@ -171,7 +171,7 @@ ncclResult_t ncclNetInit() {
         if (collNets[i]->init(ncclDebugLog) != ncclSuccess) break;
         if (collNets[i]->devices(&ndev) != ncclSuccess) break;
         if (ndev <= 0) break;
-        ncclCollNet = *collNets[i];
+        ncclCollNet = *collNets[i]; // C++ permits struct copies using operator=
       } while(0);
     }
     break;
