@@ -299,7 +299,6 @@ static ncclResult_t sendConnect(struct ncclComm* comm, struct ncclConnect* conne
   struct ncclRecvMem *recvMem = (struct ncclRecvMem*) NCCL_NET_MAP_GET_POINTER(map, gpu, recvMem);
   send->conn.tail = &recvMem->tail;
   send->conn.sizesFifo = recvMem->sizesFifo;
-  for (int i=0; i<NCCL_STEPS; i++) send->conn.sizesFifo[i] = -1;
   // Only fuse P2P buffers, continue to allocate dedicated buffers for ring/tree
   send->conn.offsFifo = map->shared ? recvMem->offsFifo : NULL;
 
@@ -571,6 +570,7 @@ static ncclResult_t sendProxyConnect(struct ncclProxyConnection* connection, str
 
   // Don't give credits yet in shared mode.
   resources->sendMem->head = map->shared ? -NCCL_STEPS : 0;
+  for (int i=0; i<NCCL_STEPS; i++) resources->recvMem->sizesFifo[i] = -1;
 
   for (int p=0; p<NCCL_NUM_PROTOCOLS; p++) {
     resources->buffers[p] = NCCL_NET_MAP_GET_POINTER(map, cpu, buffs[p]);
