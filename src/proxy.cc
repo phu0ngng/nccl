@@ -148,6 +148,7 @@ ncclResult_t dumpProxyState(struct ncclProxyProgressState* state) {
   }
   printf("[X]\n");
 
+# if 0
   printf("FREE OPS\n");
   op = state->pool;
   while (op) {
@@ -161,6 +162,17 @@ ncclResult_t dumpProxyState(struct ncclProxyProgressState* state) {
     op = op->next;
   }
   printf("[X]\n");
+#else
+  op = state->pool;
+  while (op) {
+    NCCLCHECK(getOpIndex(op, state, &poolIndex, &opIndex));
+    if (op->state & OP_SEEN) {
+      WARN("List loop at element %d-%d", poolIndex, opIndex);
+    }
+    op->state |= OP_SEEN;
+    op = op->next;
+  }
+#endif
 
   struct ncclProxyPool* pool = state->pools;
   poolIndex = 0;

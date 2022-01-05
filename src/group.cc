@@ -208,6 +208,7 @@ ncclResult_t ncclGroupEnd() {
       int node = comm->node;
       int nNodes = comm->nNodes;
       int localRank = comm->localRank;
+      int p2pGroupSize = NCCL_MAX_WORK_ELEMENTS_P2P/2;
 
       // Compute how much to split operations
       // Natural step size matching buffer steps.
@@ -230,12 +231,12 @@ ncclResult_t ncclGroupEnd() {
 sched_delta:
           uint32_t recvNode = (node+nNodes-delta)%nNodes;
           uint32_t sendNode = (node+delta)%nNodes;
-          int steps = std::max(comm->nodeRanks[recvNode].localRanks, comm->nodeRanks[sendNode].localRanks);
+          int steps = comm->maxLocalRanks;
           for (int s=0; s<steps; s++) {
-            int recvIndex = (localRank-s+comm->nodeRanks[recvNode].localRanks)%comm->nodeRanks[recvNode].localRanks;
-            int recvPeer = s<comm->nodeRanks[recvNode].localRanks ? comm->nodeRanks[recvNode].localRankToRank[recvIndex] : -1;
-            int sendIndex = (localRank+s)%comm->nodeRanks[sendNode].localRanks;
-            int sendPeer = s<comm->nodeRanks[sendNode].localRanks ? comm->nodeRanks[sendNode].localRankToRank[sendIndex] : -1;
+            int recvIndex = (localRank-s+steps)%steps;
+            int recvPeer = recvIndex<comm->nodeRanks[recvNode].localRanks ? comm->nodeRanks[recvNode].localRankToRank[recvIndex] : -1;
+            int sendIndex = (localRank+s)%steps;
+            int sendPeer = sendIndex<comm->nodeRanks[sendNode].localRanks ? comm->nodeRanks[sendNode].localRankToRank[sendIndex] : -1;
             struct ncclP2Pinfo* recv = recvPeer != -1 && comm->p2pRecvs[recvPeer] ? comm->p2pRecvs[recvPeer]->getNext() : NULL;
             struct ncclP2Pinfo* send = sendPeer != -1 && comm->p2pSends[sendPeer] ? comm->p2pSends[sendPeer]->getNext() : NULL;
             if (recv != NULL || send != NULL) {
@@ -263,8 +264,9 @@ sched_delta:
               int sendRemaining = 1, recvRemaining = 1;
               int chunk = 0;
               do {
-                // Shuffle channels with s intra-node, and delta inter-node
-                int shuffle = comm->nNodes > 1 ? delta : s;
+                // Shuffle channels with s intra-node, and delta inter-node. Inter-node, make sure
+                // to use multiple channels to guarantee progress on all ranks from the same node.
+                int shuffle = comm->nNodes > 1 ? delta+(s/p2pGroupSize) : s;
                 int channelId = (shuffle+comm->p2pChannels[chunk%comm->p2pnChannelsPerPeer]) % comm->p2pnChannels;
                 ssize_t recvbytes = totRecvBytes-recvOffset;
                 ssize_t sendbytes = totSendBytes-sendOffset;
