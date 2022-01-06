@@ -419,10 +419,10 @@ static ncclResult_t sharedBuffersDestroy(struct ncclComm* comm, int localRank, i
   return ncclSuccess;
 }
 
-static ncclResult_t proxySharedInit(struct ncclProxyConnection* connection, struct ncclComm* comm, int localRank, int nChannels) {
-  int rank = comm->localRankToRank[localRank];
+static ncclResult_t proxySharedInit(struct ncclProxyConnection* connection, struct ncclComm* comm, int nChannels) {
+  int rank = comm->localRankToRank[connection->localRank];
   int sameProcess = comm->peerInfo[rank].pidHash == comm->peerInfo[comm->rank].pidHash ? 1 : 0;
-  NCCLCHECK(sharedBuffersInit(comm, 1, localRank, 0, sameProcess, nChannels, NULL, NULL, NULL, NULL));
+  NCCLCHECK(sharedBuffersInit(comm, 1, connection->localRank, 0, sameProcess, nChannels, NULL, NULL, NULL, NULL));
   return ncclSuccess;
 }
 
@@ -688,7 +688,10 @@ static ncclResult_t recvProxyConnect(struct ncclProxyConnection* connection, str
 
 static ncclResult_t sendProxyFree(struct ncclProxyConnection* connection, struct ncclComm* comm) {
   struct sendResources* resources = (struct sendResources*)(connection->transportResources);
-  if (resources == NULL) return ncclSuccess; // NVB Preconnect
+  if (resources == NULL) { // NVB Preconnect
+    NCCLCHECK(sharedBuffersDestroy(comm, connection->localRank, 0));
+    return ncclSuccess;
+  }
   for (int p=0; p<NCCL_NUM_PROTOCOLS; p++) {
     if (resources->buffers[p]) {
       NCCLCHECK(ncclNetDeregMr(resources->netSendComm, resources->mhandles[p]));
@@ -714,7 +717,10 @@ static ncclResult_t sendProxyFree(struct ncclProxyConnection* connection, struct
 
 static ncclResult_t recvProxyFree(struct ncclProxyConnection* connection, struct ncclComm* comm) {
   struct recvResources* resources = (struct recvResources*)(connection->transportResources);
-  if (resources == NULL) return ncclSuccess; // NVB Preconnect
+  if (resources == NULL) { // NVB Preconnect
+    NCCLCHECK(sharedBuffersDestroy(comm, connection->localRank, 1));
+    return ncclSuccess;
+  }
   for (int p=0; p<NCCL_NUM_PROTOCOLS; p++) {
     if (resources->buffers[p]) {
       NCCLCHECK(ncclNetDeregMr(resources->netRecvComm, resources->mhandles[p]));

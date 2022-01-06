@@ -171,6 +171,7 @@ struct ncclProxyState {
 
 struct ncclProxyConnection {
   int send, transport, shared;
+  int localRank;
   struct ncclSocket* sock;
   struct ncclTransportComm* tcomm;
   struct ncclProxyArgs *proxyAppend;

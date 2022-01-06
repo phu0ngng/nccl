@@ -874,6 +874,7 @@ static ncclResult_t proxyConnInit(struct ncclProxyLocalPeer* peer, struct ncclPr
   NCCLCHECK(ncclSocketRecv(sock, &connection->transport, sizeof(int)));
   NCCLCHECK(ncclSocketRecv(sock, &connection->send, sizeof(int)));
   NCCLCHECK(ncclSocketRecv(sock, &peer->localRank, sizeof(int)));
+  connection->localRank = peer->localRank;
   NCCLCHECK(ncclSocketSend(sock, &connection, sizeof(void*)));
   connection->tcomm = connection->send ? &ncclTransports[connection->transport].send : &ncclTransports[connection->transport].recv;
   // If we need proxy progress, let's allocate ops and start the thread
@@ -897,7 +898,7 @@ static ncclResult_t proxyConnSharedInit(struct ncclProxyLocalPeer* peer, struct 
   if (reqSize != sizeof(int) || respSize != 0) return ncclInternalError;
   int nChannels;
   NCCLCHECK(ncclSocketRecv(sock, &nChannels, sizeof(int)));
-  if (connection->tcomm->proxySharedInit) NCCLCHECK(connection->tcomm->proxySharedInit(connection, comm, peer->localRank, nChannels));
+  if (connection->tcomm->proxySharedInit) NCCLCHECK(connection->tcomm->proxySharedInit(connection, comm, nChannels));
   return ncclSuccess;
 }
 
@@ -1085,6 +1086,7 @@ ncclResult_t ncclProxyDestroy(struct ncclComm* comm) {
     }
     free(state->peerSocks);
     free(state->proxyOps);
+    free(state->sharedDevMems);
   }
   void* ret;
   pthread_join(state->thread, &ret);

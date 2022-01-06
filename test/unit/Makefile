@@ -100,7 +100,7 @@ ${DST_DIR}/ncclNet_read_write_stress_test: ${DST_DIR}/ncclNet_read_write_stress_
 	@mkdir -p ${DST_DIR}
 	$(NVCC) -o $@ $(NVCUFLAGS) ${NVLDFLAGS} $^
 
-${DST_DIR}/comm_leak_test: ${DST_DIR}/comm_leak_test.o
+${DST_DIR}/comm_leak_test: ${DST_DIR}/comm_leak_test.o ${STATICLIB}
 	@printf "Linking  %-35s > %s\n" $< $@
 	@mkdir -p ${DST_DIR}
 	@if [ "$(LSB_RELEASE)" = "Ubuntu" ]; then\
@@ -109,12 +109,12 @@ ${DST_DIR}/comm_leak_test: ${DST_DIR}/comm_leak_test.o
 		$(NVCC) -o $@ $(NVCUFLAGS) $^ ${NVLDFLAGS};\
 	fi
 
-${DST_DIR}/comm_leak_test_multi: ${DST_DIR}/comm_leak_test_multi.o
+${DST_DIR}/comm_leak_test_multi: ${DST_DIR}/comm_leak_test_multi.o ${STATICLIB}
 	@printf "Linking  %-35s > %s\n" $< $@
 	@mkdir -p ${DST_DIR}
 	$(NVCC) -o $@ $(NVCUFLAGS) ${NVLDFLAGS} $^
 
-${DST_DIR}/coll_leak_test_multi: ${DST_DIR}/coll_leak_test_multi.o
+${DST_DIR}/coll_leak_test_multi: ${DST_DIR}/coll_leak_test_multi.o ${STATICLIB}
 	@printf "Linking  %-35s > %s\n" $< $@
 	@mkdir -p ${DST_DIR}
 	$(NVCC) -o $@ $(NVCUFLAGS) ${NVLDFLAGS} $^
