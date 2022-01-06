@@ -127,6 +127,7 @@ static ncclResult_t commFree(ncclComm_t comm) {
   for (int n=0; n<comm->nNodes; n++) free(comm->nodeRanks[n].localRankToRank);
   free(comm->nodeRanks);
   free(comm->rankToNode);
+  free(comm->rankToLocalRank);
 
   if (comm->bootstrap)
     NCCLCHECK(bootstrapClose(comm->bootstrap));

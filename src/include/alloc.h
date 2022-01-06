@@ -30,16 +30,18 @@ static inline ncclResult_t ncclCudaHostFree(void* ptr) {
 }
 
 template <typename T>
-static ncclResult_t ncclCalloc(T** ptr, size_t nelem) {
+static ncclResult_t ncclCallocDebug(T** ptr, size_t nelem, const char *filefunc, int line) {
   void* p = malloc(nelem*sizeof(T));
   if (p == NULL) {
     WARN("Failed to malloc %ld bytes", nelem*sizeof(T));
     return ncclSystemError;
   }
+  //INFO(NCCL_ALLOC, "%s:%d malloc Size %ld pointer %p", filefunc, line, nelem*sizeof(T), p);
   memset(p, 0, nelem*sizeof(T));
   *ptr = (T*)p;
   return ncclSuccess;
 }
+#define ncclCalloc(...) ncclCallocDebug(__VA_ARGS__, __FILE__, __LINE__)
 
 template <typename T>
 static ncclResult_t ncclRealloc(T** ptr, size_t oldNelem, size_t nelem) {
