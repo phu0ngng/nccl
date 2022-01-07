@@ -23,8 +23,6 @@ CUDA_MAJOR = $(shell echo $(CUDA_VERSION) | cut -d "." -f 1)
 CUDA_MINOR = $(shell echo $(CUDA_VERSION) | cut -d "." -f 2)
 #$(info CUDA_VERSION ${CUDA_MAJOR}.${CUDA_MINOR})
 
-LSB_RELEASE=$(shell lsb_release -is)
-
 # You should define NVCC_GENCODE in your environment to the minimal set
 # of archs to reduce compile time.
 CUDA8_GENCODE = -gencode=arch=compute_35,code=sm_35 \

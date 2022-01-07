@@ -31,6 +31,8 @@ OBJ_FILES:= $(CU_FILES:%.cu=${DST_DIR}/%.o) $(CC_FILES:%.cc=${DST_DIR}/%.o)
 EXE_FILES:= $(CU_FILES:%.cu=${DST_DIR}/%) $(CC_FILES:%.cc=${DST_DIR}/%)
 KEXE_FILES:= $(KCU_FILES:%.cu=${DST_DIR}/%)
 DEP_FILES:= $(OBJ_FILES:%.o=${DST_DIR}/%.d)
+
+LSB_RELEASE=$(shell lsb_release -is)
 #
 all:${EXE_FILES}
 	@printf "Syncing  %-35s > %s\n" topo ${DST_DIR}
