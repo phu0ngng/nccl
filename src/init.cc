@@ -471,6 +471,19 @@ static ncclResult_t initTransportsRank(struct ncclComm* comm, ncclUniqueId* comm
   // Print final topology
   NCCLCHECK(ncclTopoPrint(comm->topo));
 
+  // Set Affinity to a CPU local the our GPU, so that all memory we allocate
+  // on the host is local.
+  NCCLCHECK(ncclTopoGetCpuAffinity(comm->topo, comm->rank, &comm->cpuAffinity));
+  cpu_set_t affinitySave;
+  if (CPU_COUNT(&comm->cpuAffinity)) {
+    sched_getaffinity(0, sizeof(cpu_set_t), &affinitySave);
+    sched_setaffinity(0, sizeof(cpu_set_t), &comm->cpuAffinity);
+  }
+  ncclResult_t ret;
+
+  // Launch proxy service thread
+  NCCLCHECK(ncclProxyCreate(comm));
+
   // Get rings and trees
   struct ncclTopoGraph ringGraph;
   ringGraph.id = 0;
@@ -680,16 +693,6 @@ static ncclResult_t initTransportsRank(struct ncclComm* comm, ncclUniqueId* comm
   }
   line[1023] = '\0';
   INFO(NCCL_INIT, "Trees%s", line);
-
-  // Set Affinity to a CPU local the our GPU, so that all memory we allocate
-  // on the host is local.
-  NCCLCHECK(ncclTopoGetCpuAffinity(comm->topo, comm->rank, &comm->cpuAffinity));
-  cpu_set_t affinitySave;
-  if (CPU_COUNT(&comm->cpuAffinity)) {
-    sched_getaffinity(0, sizeof(cpu_set_t), &affinitySave);
-    sched_setaffinity(0, sizeof(cpu_set_t), &comm->cpuAffinity);
-  }
-  ncclResult_t ret;
 
   NCCLCHECK(computeBuffSizes(comm));
 

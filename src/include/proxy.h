@@ -192,6 +192,7 @@ ncclResult_t ncclProxyComputeP2p(struct ncclInfo* info, struct ncclProxyOp* prox
 ncclResult_t ncclProxySaveP2p(struct ncclComm* comm, struct ncclProxyOp* proxyOp);
 ncclResult_t ncclProxyStart(struct ncclComm* comm);
 ncclResult_t ncclProxyInit(struct ncclComm* comm, struct ncclSocket* sock, union ncclSocketAddress* peerAddresses);
+ncclResult_t ncclProxyCreate(struct ncclComm* comm);
 ncclResult_t ncclProxyConnect(struct ncclComm* comm, int transport, int send, int rank, struct ncclProxyConnector* proxyConn);
 enum ncclProxyMsgType {
   ncclProxyMsgInit = 1,

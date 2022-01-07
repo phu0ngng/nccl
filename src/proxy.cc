@@ -1052,8 +1052,12 @@ void* ncclProxyService(void* _args) {
 ncclResult_t ncclProxyInit(struct ncclComm* comm, struct ncclSocket* sock, union ncclSocketAddress* peerAddresses) {
   comm->proxyState.listenSock = sock;
   comm->proxyState.peerAddresses = peerAddresses;
-  pthread_create(&comm->proxyState.thread, NULL, ncclProxyService, comm);
   ncclSetThreadName(comm->proxyState.thread, "NCCL Service %2d", comm->cudaDev);
+  return ncclSuccess;
+}
+
+ncclResult_t ncclProxyCreate(struct ncclComm* comm) {
+  pthread_create(&comm->proxyState.thread, NULL, ncclProxyService, comm);
   return ncclSuccess;
 }
 
