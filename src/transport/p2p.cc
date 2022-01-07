@@ -9,7 +9,7 @@
 #include "utils.h"
 
 struct ncclP2pBuff {
-  void* directPtr; 
+  void* directPtr;
   cudaIpcMemHandle_t devIpc;
 };
 
@@ -201,7 +201,7 @@ ncclResult_t p2pSendSetup(struct ncclComm* comm, struct ncclTopoGraph* graph, st
 
   NCCLCHECK(ncclProxyConnect(comm, TRANSPORT_P2P, 1, info->rank, &send->proxyConn));
   NCCLCHECK(ncclProxyCall(&send->proxyConn, ncclProxyMsgSetup, &sendSize, sizeof(int), &info->p2pBuff, sizeof(struct ncclP2pBuff)));
-  
+
   NCCLCHECK(p2pMap(myInfo, comm->peerInfo+info->rank, &info->p2pBuff, (void**)&resources->devMem, &resources->sendMemIpc));
   return ncclSuccess;
 }
