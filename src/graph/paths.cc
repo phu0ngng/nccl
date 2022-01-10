@@ -415,6 +415,21 @@ ncclResult_t ncclTopoGetIntermediateRank(struct ncclTopoSystem* system, int rank
 
 NCCL_PARAM(PxnDisable, "PXN_DISABLE", 0);
 
+// Net v4 plugins don't have non-blocking connect/accept. We can't therefore use
+// remote proxies without risking deadlocks
+int ncclPxnDisable() {
+  static int pxnDisable = -1;
+  if (pxnDisable == -1) {
+    if (ncclNetVersion() == 4) {
+      INFO(NCCL_INIT, "PXN Disabled as plugin is v4");
+      pxnDisable = 1;
+    } else {
+      pxnDisable = ncclParamPxnDisable();
+    }
+  }
+  return pxnDisable;
+}
+
 ncclResult_t ncclTopoGetPxnRanks(struct ncclComm* comm, int** intermediateRanks, int* nranks) {
   struct ncclTopoSystem* system = comm->topo;
   *nranks = 0;
@@ -497,7 +512,7 @@ ncclResult_t ncclTopoComputePaths(struct ncclTopoSystem* system, struct ncclPeer
     for (int g=0; g<system->nodes[GPU].count; g++) {
       // Check whether we can access the NIC through another NVLink-connected GPU (PXN)
       struct ncclTopoNode* gpu = system->nodes[GPU].nodes+g;
-      if (ncclParamPxnDisable() != 1 && gpu->paths[NET][n].type > PATH_PXB) {
+      if (ncclPxnDisable() != 1 && gpu->paths[NET][n].type > PATH_PXB) {
         for (int p=0; p<system->nodes[GPU].count; p++) {
           if (p == g) continue;
           struct ncclTopoNode* peerNode = system->nodes[GPU].nodes+p;

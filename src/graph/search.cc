@@ -953,7 +953,7 @@ ncclResult_t ncclTopoGetNetDev(struct ncclComm* comm, int rank, struct ncclTopoG
     NCCLCHECK(ncclTopoGetLocalNet(comm->topo, rank, dev));
     *proxyRank = rank;
 
-    int pxnLevel = ncclParamPxnDisable() == 1 ? 0 : ncclParamP2pPxnLevel();
+    int pxnLevel = ncclPxnDisable() == 1 ? 0 : ncclParamP2pPxnLevel();
     // See whether we can use the remote rank preferred device.
     if (ncclParamCrossNic() == 0 || (pxnLevel != 0)) {
       int netDev = comm->peerInfo[peerRank].netDev;

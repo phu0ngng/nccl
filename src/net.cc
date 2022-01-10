@@ -253,3 +253,7 @@ cleanup1:
   }
   return ncclSuccess;
 }
+
+int ncclNetVersion() {
+  return (ncclNet == &ncclNet_v4_as_v5) ? 4 : 5;
+}

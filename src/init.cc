@@ -825,7 +825,7 @@ collnet_cleanup:
   NCCLCHECK(ncclProxyCall(&proxyConn, ncclProxyMsgSharedInit, &comm->p2pnChannels, sizeof(int), NULL, 0));
 
   // Then to remote ones when using PXN
-  if (ncclParamPxnDisable() == 0) {
+  if (ncclPxnDisable() == 0) {
     int nranks;
     int* pxnPeers;
     NCCLCHECK(ncclTopoGetPxnRanks(comm, &pxnPeers, &nranks));

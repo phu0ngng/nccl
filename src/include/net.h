@@ -15,6 +15,8 @@ extern ncclNet_t* ncclNet;
 typedef char ncclNetHandle_t[NCCL_NET_HANDLE_MAXSIZE];
 
 ncclResult_t ncclNetInit();
+int ncclNetVersion();
+
 // Translation to external API
 static const char* ncclNetName() { return ncclNet->name; }
 static ncclResult_t ncclNetDevices(int* ndev) { NCCLCHECK(ncclNet->devices(ndev)); return ncclSuccess; }
