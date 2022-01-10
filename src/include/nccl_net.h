@@ -51,8 +51,14 @@ typedef struct {
   // between ranks to create a connection.
   ncclResult_t (*listen)(int dev, void* handle, void** listenComm);
   // Connect to a handle and return a sending comm object for that peer.
+  // This call must not block for the connection to be established, and instead
+  // should return successfully with sendComm == NULL with the expectation that
+  // it will be called again until sendComm != NULL.
   ncclResult_t (*connect)(int dev, void* handle, void** sendComm);
-  // Finalize connection establishment after remote peer has called connectHandle
+  // Finalize connection establishment after remote peer has called connect.
+  // This call must not block for the connection to be established, and instead
+  // should return successfully with recvComm == NULL with the expectation that
+  // it will be called again until recvComm != NULL.
   ncclResult_t (*accept)(void* listenComm, void** recvComm);
   // Register/Deregister memory. Comm can be either a sendComm or a recvComm.
   // Type is either NCCL_PTR_HOST or NCCL_PTR_CUDA.
