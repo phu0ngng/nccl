@@ -845,19 +845,20 @@ static ncclResult_t ncclSaveP2p(struct ncclInfo* info) {
   struct ncclComm* comm = info->comm;
   int peer = info->root;
   ssize_t nBytes = info->count*ncclTypeSize(info->datatype);
+  int p2pGroupSize = NCCL_MAX_WORK_ELEMENTS_P2P/2;
   int peerNode = comm->rankToNode[peer];
-  //int peerIndex = comm->rankIndexes[peer];
-  //int peerRanks = comm->nodeRanks[peerNode].nranks;
-  //int rankIndex = comm->rankIndexes[comm->rank] % peerRanks;
+  int peerIndex = comm->rankToLocalRank[peer];
+  int nsteps = comm->maxLocalRanks;
+  int rankIndex = comm->rankToLocalRank[comm->rank];
   if (info->coll == ncclFuncSend) {
     if (peer != comm->rank) {
-      //int step = (peerRanks + peerIndex - rankIndex)%peerRanks;
+      int step = (nsteps + peerIndex - rankIndex)%nsteps;
       int delta = (comm->nNodes + peerNode - comm->node) % comm->nNodes;
       if (comm->nNodes == 1) delta = (comm->nRanks + peer - comm->rank) % comm->nRanks;
       // Mark channels that need pre-connect
       for (int c=0; c<comm->p2pnChannelsPerPeer; c++) {
-        //int channelId = ((delta ? delta : step)+comm->p2pChannels[c]) % comm->p2pnChannels;
-        int channelId = (delta+comm->p2pChannels[c]) % comm->p2pnChannels;
+        int shuffle = comm->nNodes > 1 ? delta+(step/p2pGroupSize) : step;
+        int channelId = (shuffle+comm->p2pChannels[c]) % comm->p2pnChannels;
         if (comm->channels[channelId].peers[peer].send[1].connected == 0) { // P2P uses only 1 connector
           comm->connectSend[peer] |= (1<<channelId);
           comm->connect = 1;
@@ -868,13 +869,13 @@ static ncclResult_t ncclSaveP2p(struct ncclInfo* info) {
     comm->p2pSendCount++;
   } else {
     if (peer != comm->rank) {
-      //int step = (peerRanks + rankIndex - peerIndex)%peerRanks;
+      int step = (nsteps + rankIndex - peerIndex)%nsteps;
       int delta = (comm->nNodes + comm->node - peerNode) % comm->nNodes;
       if (comm->nNodes == 1) delta = (comm->nRanks - peer + comm->rank) % comm->nRanks;
       // Mark channels that need pre-connect
       for (int c=0; c<comm->p2pnChannelsPerPeer; c++) {
-        //int channelId = ((delta ? delta : step)+comm->p2pChannels[c]) % comm->p2pnChannels;
-        int channelId = (delta+comm->p2pChannels[c]) % comm->p2pnChannels;
+        int shuffle = comm->nNodes > 1 ? delta+(step/p2pGroupSize) : step;
+        int channelId = (shuffle+comm->p2pChannels[c]) % comm->p2pnChannels;
         if (comm->channels[channelId].peers[peer].recv[1].connected == 0) { // P2P uses only 1 connector
           comm->connectRecv[peer] |= (1<<channelId);
           comm->connect = 1;
