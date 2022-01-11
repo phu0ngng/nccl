@@ -110,6 +110,9 @@ static ncclResult_t commFree(ncclComm_t comm) {
   if (comm == NULL)
     return ncclSuccess;
 
+  // First stop all threads before we free anything.
+  NCCLCHECK(ncclProxyDestroy(comm));
+
   delete[] comm->userRedOps;
 
   free(comm->connectSend);
@@ -136,8 +139,6 @@ static ncclResult_t commFree(ncclComm_t comm) {
 
   for (int channel=0; channel<MAXCHANNELS; channel++)
     NCCLCHECK(freeChannel(comm->channels+channel, comm->nRanks));
-
-  NCCLCHECK(ncclProxyDestroy(comm));
 
   if (comm->doneEvent != NULL)
     CUDACHECK(cudaEventDestroy(comm->doneEvent));
