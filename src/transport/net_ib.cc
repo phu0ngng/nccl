@@ -30,6 +30,19 @@
 static char ncclIbIfName[MAX_IF_NAME_SIZE+1];
 static union ncclSocketAddress ncclIbIfAddr;
 
+struct ncclIbMr {
+  uintptr_t addr;
+  int pages;
+  int refs;
+  ibv_mr *mr;
+};
+
+struct ncclIbMrCache {
+  pthread_mutex_t lock;
+  struct ncclIbMr *slots;
+  int capacity, population;
+};
+
 static int ncclNIbDevs = -1;
 struct ncclIbDev {
   int device;
@@ -38,10 +51,12 @@ struct ncclIbDev {
   uint8_t link;
   int speed;
   ibv_context* context;
+  ibv_pd* pd;
   char devName[MAXNAMESIZE];
   char* pciPath;
   int realPort;
   int maxQp;
+  struct ncclIbMrCache mrCache;
 };
 
 #define MAX_IB_PORT 15
@@ -188,6 +203,10 @@ ncclResult_t ncclIbInit(ncclDebugLogger_t logFunction) {
           if (! (matchIfList(devices[d]->name, port, userIfs, nUserIfs, searchExact) ^ searchNot)) {
             continue;
           }
+          if (ncclSuccess != wrap_ibv_alloc_pd(&ncclIbDevs[ncclNIbDevs].pd, context)) {
+            WARN("NET/IB : Unable to alloc pd on device %s", devices[d]->name);
+            continue;
+          }
           TRACE(NCCL_INIT|NCCL_NET,"NET/IB: [%d] %s:%d/%s ", d, devices[d]->name, port,
               portAttr.link_layer == IBV_LINK_LAYER_INFINIBAND ? "IB" : "RoCE");
           ncclIbDevs[ncclNIbDevs].device = d;
@@ -199,6 +218,11 @@ ncclResult_t ncclIbInit(ncclDebugLogger_t logFunction) {
           strncpy(ncclIbDevs[ncclNIbDevs].devName, devices[d]->name, MAXNAMESIZE);
           NCCLCHECK(ncclIbGetPciPath(ncclIbDevs[ncclNIbDevs].devName, &ncclIbDevs[ncclNIbDevs].pciPath, &ncclIbDevs[ncclNIbDevs].realPort));
           ncclIbDevs[ncclNIbDevs].maxQp = devAttr.max_qp;
+          pthread_mutex_init(&ncclIbDevs[ncclNIbDevs].mrCache.lock, NULL);
+          ncclIbDevs[ncclNIbDevs].mrCache.population = 0;
+          ncclIbDevs[ncclNIbDevs].mrCache.capacity = 32;
+          NCCLCHECK(ncclCalloc(&ncclIbDevs[ncclNIbDevs].mrCache.slots, 32));
+
           pthread_create(&ncclIbAsyncThread, NULL, ncclIbAsyncThreadMain, context);
           ncclSetThreadName(ncclIbAsyncThread, "NCCL IbAsync %2d", ncclNIbDevs);
           ncclNIbDevs++;
@@ -341,9 +365,10 @@ struct ncclIbRequest {
 };
 
 struct ncclIbVerbs {
-  struct ibv_pd* pd;
+  int dev;
+  struct ibv_pd* pd; // duplicate of ncclIbDevs[dev].pd
   struct ibv_cq* cq;
-  uint64_t pad[2];
+  uint64_t pad[1];
   struct ncclIbRequest reqs[MAX_REQUESTS];
 };
 
@@ -413,8 +438,9 @@ static_assert((offsetof(struct ncclIbRecvComm, remFifo) % 32) == 0, "ncclIbSendC
 
 NCCL_PARAM(IbQpsPerConn, "IB_QPS_PER_CONNECTION", 1);
 
-ncclResult_t ncclIbInitVerbs(struct ibv_context* ctx, struct ncclIbVerbs* verbs) {
-  NCCLCHECK(wrap_ibv_alloc_pd(&verbs->pd, ctx));
+ncclResult_t ncclIbInitVerbs(int dev, struct ibv_context* ctx, struct ncclIbVerbs* verbs) {
+  verbs->dev = dev;
+  verbs->pd = ncclIbDevs[dev].pd;
   // Recv requests can generate 2 completions (one for the post FIFO, one for the Recv).
   NCCLCHECK(wrap_ibv_create_cq(&verbs->cq, ctx, 2*MAX_REQUESTS*ncclParamIbQpsPerConn(), NULL, NULL, 0));
   return ncclSuccess;
@@ -422,7 +448,8 @@ ncclResult_t ncclIbInitVerbs(struct ibv_context* ctx, struct ncclIbVerbs* verbs)
 
 ncclResult_t ncclIbDestroyVerbs(struct ncclIbVerbs* verbs) {
   NCCLCHECK(wrap_ibv_destroy_cq(verbs->cq));
-  NCCLCHECK(wrap_ibv_dealloc_pd(verbs->pd));
+  // We are now leaking pd's
+  // NCCLCHECK(wrap_ibv_dealloc_pd(ncclIbDevs[verbs->dev].pd));
   return ncclSuccess;
 }
 
@@ -537,7 +564,7 @@ ib_connect_check:
   // IB Setup
   struct ibv_context* ctx;
   ctx = ncclIbDevs[dev].context;
-  NCCLCHECK(ncclIbInitVerbs(ctx, &comm->verbs));
+  NCCLCHECK(ncclIbInitVerbs(dev, ctx, &comm->verbs));
   uint8_t ib_port;
   ib_port = ncclIbDevs[dev].port;
   comm->nqps = ncclParamIbQpsPerConn();
@@ -638,7 +665,7 @@ ib_recv:
   NCCLCHECK(wrap_ibv_query_gid(ctx, ib_port, ncclParamIbGidIndex(), &gid));
 
   // QP Creation
-  NCCLCHECK(ncclIbInitVerbs(ctx, &rComm->verbs));
+  NCCLCHECK(ncclIbInitVerbs(lComm->dev, ctx, &rComm->verbs));
   rComm->nqps = ncclParamIbQpsPerConn();
   for (int q=0; q<rComm->nqps; q++) {
     NCCLCHECK(ncclIbCreateQp(ib_port, &rComm->verbs, IBV_ACCESS_REMOTE_WRITE, rComm->qps+q));
@@ -760,35 +787,71 @@ ncclResult_t ncclRecvCheck(struct ncclIbRecvComm* comm) {
 
 ncclResult_t ncclIbTest(void* request, int* done, int* size);
 
-#define REG_ALIGN (4096)
-
 ncclResult_t ncclIbRegMr(void* comm, void* data, int size, int type, void** mhandle) {
+  constexpr uintptr_t PageSize = 4096;
   static_assert(offsetof(struct ncclIbSendComm, verbs) == offsetof(struct ncclIbRecvComm, verbs), "Send and recv comms must have verbs at the same offset");
-  struct ncclIbVerbs* verbs = (struct ncclIbVerbs*)comm;
-  uint64_t addr = (uint64_t)data;
   assert(size > 0);
-
-  // Deregister / register
-  uint64_t regAddr = addr & (~(REG_ALIGN-1));
-  uint64_t regSize = addr+size - regAddr;
-  regSize = ((regSize + REG_ALIGN-1) / REG_ALIGN ) * REG_ALIGN;
-  struct ibv_mr* mr;
-  unsigned int flags = IBV_ACCESS_LOCAL_WRITE|IBV_ACCESS_REMOTE_WRITE|IBV_ACCESS_REMOTE_READ;
-  if (ncclIbRelaxedOrderingEnabled) {
-    // Use IBVERBS_1.8 API - needed for IBV_ACCESS_RELAXED_ORDERING support
-    NCCLCHECK(wrap_ibv_reg_mr_iova2(&mr, verbs->pd, (void*)regAddr, regSize, (uintptr_t)regAddr, flags|IBV_ACCESS_RELAXED_ORDERING));
+  struct ncclIbVerbs* verbs = (struct ncclIbVerbs*)comm;
+  struct ncclIbMrCache* cache = &ncclIbDevs[verbs->dev].mrCache;
+  uintptr_t addr = (uintptr_t)data & -PageSize;
+  int pages = ((uintptr_t)data + size - addr + PageSize-1)/PageSize;
+  ncclResult_t res;
+  pthread_mutex_lock(&cache->lock);
+  for (int slot=0; true; slot++) {
+    if (slot == cache->population) { // didn't find in cache
+      if (cache->population == cache->capacity) { // must grow cache
+        cache->capacity *= 2;
+        NCCLCHECKGOTO(ncclRealloc(&cache->slots, cache->population, cache->capacity), res, returning);
+      }
+      // Deregister / register
+      struct ibv_mr* mr;
+      unsigned int flags = IBV_ACCESS_LOCAL_WRITE|IBV_ACCESS_REMOTE_WRITE|IBV_ACCESS_REMOTE_READ;
+      if (ncclIbRelaxedOrderingEnabled) {
+        // Use IBVERBS_1.8 API - needed for IBV_ACCESS_RELAXED_ORDERING support
+        NCCLCHECKGOTO(wrap_ibv_reg_mr_iova2(&mr, verbs->pd, (void*)addr, pages*PageSize, (uintptr_t)addr, flags|IBV_ACCESS_RELAXED_ORDERING), res, returning);
+      }
+      else {
+        NCCLCHECKGOTO(wrap_ibv_reg_mr(&mr, verbs->pd, (void*)addr, pages*PageSize, flags), res, returning);
+      }
+      TRACE(NCCL_INIT,"regAddr %llx size %lld rkey %x", (unsigned long long)addr, (long long)pages*PageSize, mr->rkey);
+      cache->population += 1;
+      cache->slots[slot].addr = addr;
+      cache->slots[slot].pages = pages;
+      cache->slots[slot].refs = 1;
+      cache->slots[slot].mr = mr;
+      *mhandle = (void*)mr;
+      res = ncclSuccess;
+      goto returning;
+    }
+    else if (cache->slots[slot].addr == addr && cache->slots[slot].pages == pages) {
+      cache->slots[slot].refs += 1;
+      *mhandle = (void*)cache->slots[slot].mr;
+      res = ncclSuccess;
+      goto returning;
+    }
   }
-  else {
-    NCCLCHECK(wrap_ibv_reg_mr(&mr, verbs->pd, (void*)regAddr, regSize, flags));
-  }
-  *mhandle = (void*)mr;
-  TRACE(NCCL_INIT,"regAddr %lx size %ld rkey %x", regAddr, regSize, mr->rkey);
-  return ncclSuccess;
+returning:
+  pthread_mutex_unlock(&cache->lock);
+  return res;
 }
 
 ncclResult_t ncclIbDeregMr(void* comm, void* mhandle) {
-  NCCLCHECK(wrap_ibv_dereg_mr((struct ibv_mr*)mhandle));
-  return ncclSuccess;
+  struct ncclIbVerbs* verbs = (struct ncclIbVerbs*)comm;
+  struct ncclIbMrCache* cache = &ncclIbDevs[verbs->dev].mrCache;
+  ncclResult_t res;
+  pthread_mutex_lock(&cache->lock);
+  for (int i=0; i < cache->population; i++) {
+    if (mhandle == cache->slots[i].mr && 0 == --cache->slots[i].refs) {
+      cache->slots[i] = cache->slots[--cache->population]; // C++ permits struct assignment
+      NCCLCHECKGOTO(wrap_ibv_dereg_mr((struct ibv_mr*)mhandle), res, returning);
+      res = ncclSuccess;
+      goto returning;
+    }
+  }
+  res = ncclInvalidArgument;
+returning:
+  pthread_mutex_unlock(&cache->lock);
+  return res;
 }
 
 ncclResult_t ncclIbMultiSend(struct ncclIbSendComm* comm, int slot) {
