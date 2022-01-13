@@ -38,19 +38,20 @@ struct ncclIbMr {
 };
 
 struct ncclIbMrCache {
-  pthread_mutex_t lock;
   struct ncclIbMr *slots;
   int capacity, population;
 };
 
 static int ncclNIbDevs = -1;
 struct ncclIbDev {
+  pthread_mutex_t lock;
   int device;
   uint64_t guid;
   uint8_t port;
   uint8_t link;
   int speed;
   ibv_context* context;
+  int pdRefs;
   ibv_pd* pd;
   char devName[MAXNAMESIZE];
   char* pciPath;
@@ -203,25 +204,23 @@ ncclResult_t ncclIbInit(ncclDebugLogger_t logFunction) {
           if (! (matchIfList(devices[d]->name, port, userIfs, nUserIfs, searchExact) ^ searchNot)) {
             continue;
           }
-          if (ncclSuccess != wrap_ibv_alloc_pd(&ncclIbDevs[ncclNIbDevs].pd, context)) {
-            WARN("NET/IB : Unable to alloc pd on device %s", devices[d]->name);
-            continue;
-          }
           TRACE(NCCL_INIT|NCCL_NET,"NET/IB: [%d] %s:%d/%s ", d, devices[d]->name, port,
               portAttr.link_layer == IBV_LINK_LAYER_INFINIBAND ? "IB" : "RoCE");
+          pthread_mutex_init(&ncclIbDevs[ncclNIbDevs].lock, NULL);
           ncclIbDevs[ncclNIbDevs].device = d;
           ncclIbDevs[ncclNIbDevs].guid = devAttr.sys_image_guid;
           ncclIbDevs[ncclNIbDevs].port = port;
           ncclIbDevs[ncclNIbDevs].link = portAttr.link_layer;
           ncclIbDevs[ncclNIbDevs].speed = ncclIbSpeed(portAttr.active_speed) * ncclIbWidth(portAttr.active_width);
           ncclIbDevs[ncclNIbDevs].context = context;
+          ncclIbDevs[ncclNIbDevs].pdRefs = 0;
+          ncclIbDevs[ncclNIbDevs].pd = NULL;
           strncpy(ncclIbDevs[ncclNIbDevs].devName, devices[d]->name, MAXNAMESIZE);
           NCCLCHECK(ncclIbGetPciPath(ncclIbDevs[ncclNIbDevs].devName, &ncclIbDevs[ncclNIbDevs].pciPath, &ncclIbDevs[ncclNIbDevs].realPort));
           ncclIbDevs[ncclNIbDevs].maxQp = devAttr.max_qp;
-          pthread_mutex_init(&ncclIbDevs[ncclNIbDevs].mrCache.lock, NULL);
+          ncclIbDevs[ncclNIbDevs].mrCache.capacity = 0;
           ncclIbDevs[ncclNIbDevs].mrCache.population = 0;
-          ncclIbDevs[ncclNIbDevs].mrCache.capacity = 32;
-          NCCLCHECK(ncclCalloc(&ncclIbDevs[ncclNIbDevs].mrCache.slots, 32));
+          ncclIbDevs[ncclNIbDevs].mrCache.slots = NULL;
 
           pthread_create(&ncclIbAsyncThread, NULL, ncclIbAsyncThreadMain, context);
           ncclSetThreadName(ncclIbAsyncThread, "NCCL IbAsync %2d", ncclNIbDevs);
@@ -440,17 +439,37 @@ NCCL_PARAM(IbQpsPerConn, "IB_QPS_PER_CONNECTION", 1);
 
 ncclResult_t ncclIbInitVerbs(int dev, struct ibv_context* ctx, struct ncclIbVerbs* verbs) {
   verbs->dev = dev;
+
+  pthread_mutex_lock(&ncclIbDevs[dev].lock);
+  if (0 == ncclIbDevs[dev].pdRefs++) {
+    ncclResult_t res;
+    NCCLCHECKGOTO(wrap_ibv_alloc_pd(&ncclIbDevs[dev].pd, ctx), res, failure);
+    if (0) {
+    failure:
+      pthread_mutex_unlock(&ncclIbDevs[dev].lock);
+      return res;
+    }
+  }
   verbs->pd = ncclIbDevs[dev].pd;
+  pthread_mutex_unlock(&ncclIbDevs[dev].lock);
+
   // Recv requests can generate 2 completions (one for the post FIFO, one for the Recv).
   NCCLCHECK(wrap_ibv_create_cq(&verbs->cq, ctx, 2*MAX_REQUESTS*ncclParamIbQpsPerConn(), NULL, NULL, 0));
   return ncclSuccess;
 }
 
 ncclResult_t ncclIbDestroyVerbs(struct ncclIbVerbs* verbs) {
+  ncclResult_t res;
   NCCLCHECK(wrap_ibv_destroy_cq(verbs->cq));
-  // We are now leaking pd's
-  // NCCLCHECK(wrap_ibv_dealloc_pd(ncclIbDevs[verbs->dev].pd));
-  return ncclSuccess;
+
+  pthread_mutex_lock(&ncclIbDevs[verbs->dev].lock);
+  if (0 == --ncclIbDevs[verbs->dev].pdRefs) {
+    NCCLCHECKGOTO(wrap_ibv_dealloc_pd(ncclIbDevs[verbs->dev].pd), res, returning);
+  }
+  res = ncclSuccess;
+returning:
+  pthread_mutex_unlock(&ncclIbDevs[verbs->dev].lock);
+  return res;
 }
 
 ncclResult_t ncclIbCreateQp(uint8_t ib_port, struct ncclIbVerbs* verbs, int access_flags, struct ibv_qp** qp) {
@@ -788,19 +807,22 @@ ncclResult_t ncclRecvCheck(struct ncclIbRecvComm* comm) {
 ncclResult_t ncclIbTest(void* request, int* done, int* size);
 
 ncclResult_t ncclIbRegMr(void* comm, void* data, int size, int type, void** mhandle) {
-  constexpr uintptr_t PageSize = 4096;
   static_assert(offsetof(struct ncclIbSendComm, verbs) == offsetof(struct ncclIbRecvComm, verbs), "Send and recv comms must have verbs at the same offset");
   assert(size > 0);
+
+  static __thread uintptr_t pageSize = 0;
+  if (pageSize == 0) pageSize = sysconf(_SC_PAGESIZE);
+
   struct ncclIbVerbs* verbs = (struct ncclIbVerbs*)comm;
   struct ncclIbMrCache* cache = &ncclIbDevs[verbs->dev].mrCache;
-  uintptr_t addr = (uintptr_t)data & -PageSize;
-  int pages = ((uintptr_t)data + size - addr + PageSize-1)/PageSize;
+  uintptr_t addr = (uintptr_t)data & -pageSize;
+  int pages = ((uintptr_t)data + size - addr + pageSize-1)/pageSize;
   ncclResult_t res;
-  pthread_mutex_lock(&cache->lock);
-  for (int slot=0; true; slot++) {
+  pthread_mutex_lock(&ncclIbDevs[verbs->dev].lock);
+  for (int slot=0; /*true*/; slot++) {
     if (slot == cache->population) { // didn't find in cache
       if (cache->population == cache->capacity) { // must grow cache
-        cache->capacity *= 2;
+        cache->capacity = cache->capacity < 32 ? 32 : 2*cache->capacity;
         NCCLCHECKGOTO(ncclRealloc(&cache->slots, cache->population, cache->capacity), res, returning);
       }
       // Deregister / register
@@ -808,10 +830,10 @@ ncclResult_t ncclIbRegMr(void* comm, void* data, int size, int type, void** mhan
       unsigned int flags = IBV_ACCESS_LOCAL_WRITE|IBV_ACCESS_REMOTE_WRITE|IBV_ACCESS_REMOTE_READ;
       if (ncclIbRelaxedOrderingEnabled) {
         // Use IBVERBS_1.8 API - needed for IBV_ACCESS_RELAXED_ORDERING support
-        NCCLCHECKGOTO(wrap_ibv_reg_mr_iova2(&mr, verbs->pd, (void*)addr, pages*PageSize, (uintptr_t)addr, flags|IBV_ACCESS_RELAXED_ORDERING), res, returning);
+        NCCLCHECKGOTO(wrap_ibv_reg_mr_iova2(&mr, verbs->pd, (void*)addr, pages*pageSize, (uintptr_t)addr, flags|IBV_ACCESS_RELAXED_ORDERING), res, returning);
       }
       else {
-        NCCLCHECKGOTO(wrap_ibv_reg_mr(&mr, verbs->pd, (void*)addr, pages*PageSize, flags), res, returning);
+        NCCLCHECKGOTO(wrap_ibv_reg_mr(&mr, verbs->pd, (void*)addr, pages*pageSize, flags), res, returning);
       }
       TRACE(NCCL_INIT,"regAddr %llx size %lld rkey %x", (unsigned long long)addr, (long long)pages*PageSize, mr->rkey);
       cache->population += 1;
@@ -831,7 +853,7 @@ ncclResult_t ncclIbRegMr(void* comm, void* data, int size, int type, void** mhan
     }
   }
 returning:
-  pthread_mutex_unlock(&cache->lock);
+  pthread_mutex_unlock(&ncclIbDevs[verbs->dev].lock);
   return res;
 }
 
@@ -839,11 +861,16 @@ ncclResult_t ncclIbDeregMr(void* comm, void* mhandle) {
   struct ncclIbVerbs* verbs = (struct ncclIbVerbs*)comm;
   struct ncclIbMrCache* cache = &ncclIbDevs[verbs->dev].mrCache;
   ncclResult_t res;
-  pthread_mutex_lock(&cache->lock);
+  pthread_mutex_lock(&ncclIbDevs[verbs->dev].lock);
   for (int i=0; i < cache->population; i++) {
     if (mhandle == cache->slots[i].mr) {
       if (0 == --cache->slots[i].refs) {
-        cache->slots[i] = cache->slots[--cache->population]; // C++ permits struct assignment
+        memmove(&cache->slots[i], &cache->slots[--cache->population], sizeof(struct ncclIbMr));
+        if (cache->population == 0) {
+          free(cache->slots);
+          cache->slots = NULL;
+          cache->capacity = 0;
+        }
         NCCLCHECKGOTO(wrap_ibv_dereg_mr((struct ibv_mr*)mhandle), res, returning);
       }
       res = ncclSuccess;
@@ -853,7 +880,7 @@ ncclResult_t ncclIbDeregMr(void* comm, void* mhandle) {
   WARN("NET/IB: could not find mr %p inside cache of %d entries", mhandle, cache->population);
   res = ncclInternalError;
 returning:
-  pthread_mutex_unlock(&cache->lock);
+  pthread_mutex_unlock(&ncclIbDevs[verbs->dev].lock);
   return res;
 }
 
@@ -883,7 +910,7 @@ ncclResult_t ncclIbMultiSend(struct ncclIbSendComm* comm, int slot) {
 
   // Write size as immediate data. In the case of multi-send, only write
   // 0 or 1 as size to indicate whether there was data sent or received.
-  uint64_t immData;
+  uint64_t immData = 0;
   if (nreqs == 1) {
     immData = reqs[0]->send.size;
   } else {
