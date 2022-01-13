@@ -841,14 +841,17 @@ ncclResult_t ncclIbDeregMr(void* comm, void* mhandle) {
   ncclResult_t res;
   pthread_mutex_lock(&cache->lock);
   for (int i=0; i < cache->population; i++) {
-    if (mhandle == cache->slots[i].mr && 0 == --cache->slots[i].refs) {
-      cache->slots[i] = cache->slots[--cache->population]; // C++ permits struct assignment
-      NCCLCHECKGOTO(wrap_ibv_dereg_mr((struct ibv_mr*)mhandle), res, returning);
+    if (mhandle == cache->slots[i].mr) {
+      if (0 == --cache->slots[i].refs) {
+        cache->slots[i] = cache->slots[--cache->population]; // C++ permits struct assignment
+        NCCLCHECKGOTO(wrap_ibv_dereg_mr((struct ibv_mr*)mhandle), res, returning);
+      }
       res = ncclSuccess;
       goto returning;
     }
   }
-  res = ncclInvalidArgument;
+  WARN("NET/IB: could not find mr %p inside cache of %d entries", mhandle, cache->population);
+  res = ncclInternalError;
 returning:
   pthread_mutex_unlock(&cache->lock);
   return res;
