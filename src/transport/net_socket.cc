@@ -97,6 +97,7 @@ ncclResult_t ncclSocketGetProperties(int dev, ncclNetProperties_t* props) {
   props->guid = dev;
   props->ptrSupport = NCCL_PTR_HOST;
   NCCLCHECK(ncclSocketGetSpeed(props->name, &props->speed));
+  props->latency = 0; // Not set
   props->port = 0;
   props->maxComms = 65536;
   props->maxRecvs = 1;

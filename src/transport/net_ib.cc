@@ -291,6 +291,7 @@ ncclResult_t ncclIbGetProperties(int dev, ncclNetProperties_t* props) {
     props->ptrSupport |= NCCL_PTR_CUDA;
   }
   props->speed = ncclIbDevs[dev].speed;
+  props->latency = 0; // Not set
   props->port = ncclIbDevs[dev].port + ncclIbDevs[dev].realPort;
   props->maxComms = ncclIbDevs[dev].maxQp;
   props->maxRecvs = NCCL_NET_IB_MAX_RECVS;
