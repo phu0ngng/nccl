@@ -9,6 +9,7 @@
 #ifndef NCCL_P2P_H_
 #define NCCL_P2P_H_
 
+#if 0
 struct ncclP2Pinfo {
   void* buff;
   ssize_t nbytes;
@@ -24,4 +25,5 @@ static ncclResult_t ncclSaveP2pInfo(ncclP2Plist* &p2p, void* buff, ssize_t nByte
   next->nbytes = nBytes;
   return ncclSuccess;
 }
+#endif
 #endif

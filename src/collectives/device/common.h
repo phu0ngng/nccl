@@ -19,6 +19,32 @@
 
 #define NCCL_MAX_DEV_ARITY (NCCL_MAX_TREE_ARITY-1)  // Using balanced tree instead of split tree
 
+typedef void(*ncclKern_t)();
+extern __device__ ncclKern_t ncclFuncs[];
+
+struct ncclShmemGroup {
+  ncclConnInfo *recvConns[NCCL_MAX_DIRECT_ARITY];
+  ncclConnInfo *sendConns[NCCL_MAX_DIRECT_ARITY];
+  void* srcs[NCCL_MAX_DIRECT_ARITY+1];
+  void* dsts[NCCL_MAX_DIRECT_ARITY+1];
+  int totalSendSize[NCCL_MAX_SLICE_PER_CHUNK];
+};
+
+struct ncclShmemData {
+  union {
+    uint64_t ll128warp[NCCL_LL128_MAX_NTHREADS/WARP_SIZE][NCCL_LL128_SHMEM_ELEMS_PER_THREAD*WARP_SIZE];
+    struct ncclShmemGroup groups[NCCL_MAX_GROUPS];
+  };
+  uint64_t redOpArgs[NCCL_MAX_DIRECT_ARITY+1];
+  int channelId;
+  struct ncclDevComm comm;
+  struct ncclDevChannel channel;
+  alignas(16) struct ncclWork work;
+};
+static_assert(offsetof(struct ncclShmemData, work)%16 == 0, "shmem.work needs to be 16B aligned");
+
+extern __shared__ ncclShmemData ncclShmem;
+
 __device__ inline bool barrierReduceAny(int bit) {
   uint32_t popc;
   asm ("{"
@@ -49,34 +75,36 @@ __device__ void copyToShmem(Tdst *dst, Tsrc const *src, int tid, int nthreads) {
   if (offset < sizeof(Tdst)/sizeof(uint64_t)) storeShmem128(shmemPtr+offset, v0, v1);
 }
 
-template<typename T>
+// Copy src to dst.
+template<typename T, int alignment=alignof(T)>
 __device__ int copyToShmem(T *dst, T const *src, int turn=0) {
-  static_assert(sizeof(uint64_t) <= alignof(T), "Uhoh");
+  static_assert(alignof(T) <= alignment, "Alignment too small.");
+  static_assert(sizeof(T)%alignment == 0, "Alignment too large.");
+  static_assert(alignment==8 || alignment==16, "Invalid alignment.");
   uint64_t *d = reinterpret_cast<uint64_t*>(dst);
   uint64_t const *s = reinterpret_cast<uint64_t const*>(src);
   int t = threadIdx.x - turn;
   if (t < 0) t += blockDim.x;
-  int n = sizeof(T)/sizeof(uint64_t);
-
-  int delta = (n + WARP_SIZE-1) & -WARP_SIZE; // round up to warp lane 0
-  if (delta < blockDim.x) {
-    turn += delta;
-    if (turn >= blockDim.x) turn -= blockDim.x;
-  }
-  else
-    turn = 0;
-
+  int n = sizeof(T)/alignment;
   n -= t;
-  d += t;
-  s += t;
+  d += t*(alignment/8);
+  s += t*(alignment/8);
   #pragma unroll
-  for (int i=0; i < divUp(sizeof(T), WARP_SIZE*sizeof(uint64_t)); i++) {
+  for (int i=0; i < divUp(sizeof(T), WARP_SIZE*alignment); i++) {
     if (n > 0) {
-      *d = *s;
-      d += blockDim.x;
-      s += blockDim.x;
+      if (alignment == 8) {
+        *d = *s;
+      } else {
+        uint64_t a=0, b=0;
+        asm("ld.v2.u64 {%0,%1},[%2];" : "=l"(a),"=l"(b) : "l"(s));
+        asm volatile("st.v2.u64 [%0],{%1,%2};" :: "l"(d), "l"(a), "l"(b));
+      }
+      d += blockDim.x*(alignment/8);
+      s += blockDim.x*(alignment/8);
       n -= blockDim.x;
     }
+    turn += WARP_SIZE;
+    if (turn == blockDim.x) turn = 0;
   }
   return turn;
 }
@@ -94,41 +122,20 @@ struct RunWork {
   // here from the LL ncclKernel.
   __device__ __forceinline__ void run(ncclWork *w) {
     int wid = threadIdx.x / WARP_SIZE;
-    int inc = w->header.type == ncclWorkTypeRegColl ? sizeof(ncclWorkElemReg) / sizeof(ncclWorkElem) : 1;
+    ncclWorkElem* we = w->header.type == ncclWorkTypeRegColl ? &w->regElems[0].elem : &w->elems[0];
+    int stride = w->header.type == ncclWorkTypeRegColl ? sizeof(ncclWorkElemReg) : sizeof(ncclWorkElem);
     #pragma unroll 1
-    for(int e=0; e < NCCL_MAX_WORK_ELEMENTS && w->elems[e].header.type != ncclWorkTypeUnused; e += inc) {
-      if (wid < w->header.nWarps)
-        RunWorkElement<Fn, T, RedOp, Algo, Proto>().run(&w->elems[e]);
+    while ((char*)we + stride <= (char*)(w+1) && we->isUsed) {
+      if (wid < we->nWarps) {
+        RunWorkElement<Fn, T, RedOp, Algo, Proto>().run(we);
+      }
+      we = (ncclWorkElem*)((char*)we + stride);
     }
   }
 };
 
-typedef void(*ncclKern_t)();
-extern __device__ ncclKern_t ncclFuncs[];
-
-struct ncclShmemGroup {
-  ncclConnInfo *recvConns[NCCL_MAX_DIRECT_ARITY];
-  ncclConnInfo *sendConns[NCCL_MAX_DIRECT_ARITY];
-  void* srcs[NCCL_MAX_DIRECT_ARITY+1];
-  void* dsts[NCCL_MAX_DIRECT_ARITY+1];
-  int totalSendSize[NCCL_MAX_SLICE_PER_CHUNK];
-};
-
-struct ncclShmemData {
-  union {
-    uint64_t ll128warp[NCCL_LL128_MAX_NTHREADS/WARP_SIZE][NCCL_LL128_SHMEM_ELEMS_PER_THREAD*WARP_SIZE];
-    struct ncclShmemGroup groups[NCCL_MAX_GROUPS];
-  };
-  uint64_t redOpArgs[NCCL_MAX_DIRECT_ARITY+1];
-  struct ncclDevComm comm;
-  struct ncclChannel channel;
-  uint64_t pad;
-  struct ncclWork work;
-};
-static_assert(offsetof(struct ncclShmemData, work)%16 == 0, "shmem.work needs to be 16B aligned");
-
 static __device__ void ncclRedopPtrDeref(struct ncclWorkElem* we) {
-  if (we->header.type != ncclWorkTypeUnused && we->redOpArgIsPtr) {
+  if (we->isUsed && we->redOpArgIsPtr) {
     /* redOpArg is a pointer to the scalar value, so we'll dereference it
      * here so that redOpArg holds the bits of the scalar going forward.
      * The tricky thing is we don't know its type T since that's encoded in
@@ -148,48 +155,69 @@ static __device__ void ncclRedopPtrDeref(struct ncclWorkElem* we) {
   }
 }
 
-extern __shared__ ncclShmemData ncclShmem;
-
 template<ncclFunc_t Fn, typename T, typename RedOp, int Algo, int Proto, int FnIndex>
-__device__ void ncclKernel(struct ncclDevComm* comm, ncclWorkElem first)  {
+__device__ void ncclKernel(
+    struct ncclDevComm* comm, uint64_t channelMask,
+    uint16_t inlineFuncIx, struct ncclWorkElem inlineWorkElem,
+    struct ncclWork* workHead
+  )  {
   int tid = threadIdx.x;
   int nthreads = blockDim.x;
-  int bid = blockIdx.x;
+
+  // To map blockId to channelId, we need the n'th set bit of channelMask which
+  // is the inverse of counting the number of set bits among the the first n.
+  if (tid < WARP_SIZE) {
+    int x = tid;
+    if (channelMask & (1ull<<x)) {
+      int y = __popcll(channelMask & ((1ull<<x)-1));
+      if (blockIdx.x == y) ncclShmem.channelId = x;
+    }
+    if (32 < MAXCHANNELS) {
+      x = 32 + tid;
+      if (channelMask & (1ull<<x)) {
+        int y = __popcll(channelMask & ((1ull<<x)-1));
+        if (blockIdx.x == y) ncclShmem.channelId = x;
+      }
+    }
+  }
+  __syncthreads(); // publish ncclShmem.channelId
+  int channelId = ncclShmem.channelId;
 
   int turn = copyToShmem(&ncclShmem.comm, comm);
-  // get address of channel without incurring indirect load from ncclDevCom::channels
-  ncclChannel *channel = &((ncclDevCommAndChannels*)comm)->channels[bid];
+  // Get address of channel without incurring indirect load from ncclDevComm::channels
+  struct ncclDevChannel *channel = &((ncclDevCommAndChannels*)comm)->channels[channelId];
   turn = copyToShmem(&ncclShmem.channel, channel, turn);
 
   // To optimize for latency, (only) the first operation is passed as argument.
-  if (bid == 0 && first.header.type != ncclWorkTypeUnused) {
-    // Copy first elem to work and zero out the rest
-    copyToShmem(&ncclShmem.work, &first, tid, nthreads);
+  if (channelId == 0 && inlineWorkElem.isUsed) {
+    if (tid == nthreads-1) {
+      ncclShmem.work.header.funcIndex = inlineFuncIx;
+      ncclShmem.work.header.type = ncclWorkTypeColl;
+      ncclShmem.work.header.isLast = inlineWorkElem.isLastIfInline;
+      ncclShmem.work.header.inFifo = 0;
+    }
+    if (1 <= tid && tid < NCCL_MAX_WORK_ELEMENTS) {
+      ncclShmem.work.elems[tid].flagBits = 0; // isUsed = 0
+    }
+    copyToShmem(&ncclShmem.work.elems[0], &inlineWorkElem, turn);
   }
   __syncthreads(); // publish ncclShmem
 
-  ncclWork *workFifoHost = ncclShmem.channel.workFifo;
-  ncclWork *workFifoDev = ncclShmem.channel.workFifoDev;
-  int workFifoIx = ncclShmem.channel.index;
+  int workIxNext = blockIdx.x - inlineWorkElem.isLastIfInline;
 
-  if (bid == 0 && first.header.type != ncclWorkTypeUnused)
+  if (channelId == 0 && inlineWorkElem.isUsed)
     goto SkipLoadWork;
 
   while (true) {
-    copyToShmem(&ncclShmem.work, &workFifoDev[workFifoIx], tid, nthreads);
+    copyToShmem<ncclWork, 8>(&ncclShmem.work, workHead + workIxNext);
     { // Check whether the last operation was aborted and make sure all threads exit
       int aborted = tid == 0 ? *comm->abortFlag : 0;
       if (barrierReduceAny(aborted)) // publish ncclShmem.work
         break;
-      if (tid == 0)
-        workFifoHost[workFifoIx].header.type = ncclWorkTypeUnused;
     }
+    workIxNext = ncclShmem.work.header.workNext;
 
   SkipLoadWork:
-    workFifoIx = (workFifoIx + 1)%NCCL_MAX_OPS;
-    if (tid == 0)
-      channel->index = workFifoIx; // write back to real channel, not shmem shadow
-
     __syncwarp();
     if (ncclShmem.work.header.type == ncclWorkTypeColl) {
       if (tid < NCCL_MAX_WORK_ELEMENTS) ncclRedopPtrDeref(&ncclShmem.work.elems[tid]);
@@ -206,13 +234,22 @@ __device__ void ncclKernel(struct ncclDevComm* comm, ncclWorkElem first)  {
     if (ncclShmem.work.header.isLast) break;
     __syncthreads();
   }
+
+  if (tid == 0 && ncclShmem.work.header.inFifo) {
+    *ncclShmem.channel.workFifoDone = ncclShmem.work.header.doneAcks;
+  }
 }
 
 // Only generate kernels for SUM
 #if NCCL_OP == 0
 #define IMPL_COLL_KERN(func, algo, proto, devredop, type, fIndex) \
-__global__ void NCCL_KERN_NAME(func, algo, proto, devredop, type)(struct ncclDevComm* comm, struct ncclWorkElem first) { \
-  ncclKernel<ncclFunc##func, type, Func##devredop<type>, NCCL_ALGO_##algo, NCCL_PROTO_##proto, fIndex>(comm, first); \
+__global__ void NCCL_KERN_NAME(func, algo, proto, devredop, type)( \
+    struct ncclDevComm* comm, uint64_t channelMask, \
+    uint16_t inlineFuncIx, struct ncclWorkElem inlineWorkElem, \
+    struct ncclWork* workHead \
+  ) { \
+  ncclKernel<ncclFunc##func, type, Func##devredop<type>, NCCL_ALGO_##algo, NCCL_PROTO_##proto, fIndex> \
+    (comm, channelMask, inlineFuncIx, inlineWorkElem, workHead); \
 }
 #else
 #define IMPL_COLL_KERN(func, algo, proto, devredop, type, fInded)

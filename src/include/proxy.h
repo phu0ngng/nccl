@@ -32,11 +32,16 @@ struct ncclProxyOp {
   int sliceSteps;
   int chunkSteps;
   int chunkSize;
-  ncclDataType_t dtype;
-  ncclRedOp_t redOp;
-  ncclPattern_t pattern; // uint8_t
+  uint8_t /*ncclDataType_t*/ dtype;
+  uint8_t /*ncclDevRedOp_t*/ redOp;
+  uint8_t /*ncclPattern_t*/ pattern;
   uint8_t protocol;
-  uint16_t pad;
+
+  union {
+    uint64_t unused;
+    // For use by enqueue.cc
+    struct ncclProxyOp *enqNext;
+  };
 };
 static_assert(sizeof(struct ncclProxyOp) == 64, "Keep ProxyOp aligned with cache lines for effective prefetch");
 
@@ -68,9 +73,9 @@ struct ncclProxyArgs {
   int sliceSteps;
   int chunkSteps;
   int chunkSize;
-  ncclDataType_t dtype;
-  ncclRedOp_t redOp;
-  ncclPattern_t pattern;
+  uint8_t /*ncclDataType_t*/ dtype;
+  uint8_t /*ncclDevRedOp_t*/ redOp;
+  uint8_t /*ncclPattern_t*/ pattern;
   uint8_t protocol;
   int state;
   char* sharedBuff[NCCL_STEPS];
@@ -187,6 +192,7 @@ enum proxyMode {
   proxyTo = 2
 };
 
+ncclResult_t ncclProxySaveOp(struct ncclComm* comm, struct ncclProxyOp* proxyOp);
 ncclResult_t ncclProxySaveColl(struct ncclComm* comm, struct ncclProxyOp* proxyOp, int nranks);
 ncclResult_t ncclProxyComputeP2p(struct ncclInfo* info, struct ncclProxyOp* proxyOp);
 ncclResult_t ncclProxySaveP2p(struct ncclComm* comm, struct ncclProxyOp* proxyOp);
