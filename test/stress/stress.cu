@@ -357,7 +357,7 @@ testResult_t testStreamSynchronize(int ngpus, cudaStream_t* streams, ncclComm_t*
   return testSuccess;
 }
 
-testResult_t AllocateBuffs(void **sendbuff, void **recvbuff, void **expected, size_t nbytes, int nranks) {
+testResult_t AllocateBuffs(void **sendbuff, void **recvbuff, void **expected, size_t nbytes) {
   CUDACHECK(cudaMalloc(sendbuff, nbytes));
   CUDACHECK(cudaMalloc(recvbuff, nbytes));
   if (datacheck) CUDACHECK(cudaMalloc(expected, nbytes));
@@ -725,9 +725,9 @@ testResult_t run() {
     gpus[i] = envstr ? atoi(envstr) : localRank*nThreads*nGpus+i;
     CUDACHECK(cudaSetDevice(gpus[i]));
     size_t maxBytes;
-    int rank = proc*nThreads + i;
+    int rank = proc*nGpus*nThreads + i;
     TESTCHECK(getMaxBytes(calls, nCalls, rank, &maxBytes));
-    TESTCHECK(AllocateBuffs(sendBuffsBase+i, recvBuffsBase+i, expected+i, (size_t)maxBytes, nProcs*nThreads*nGpus));
+    TESTCHECK(AllocateBuffs(sendBuffsBase+i, recvBuffsBase+i, expected+i, maxBytes));
     CUDACHECK(cudaStreamCreateWithFlags(streams+i, cudaStreamNonBlocking));
   }
 
