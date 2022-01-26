@@ -31,6 +31,7 @@ typedef struct {
   int ptrSupport; // NCCL_PTR_HOST or NCCL_PTR_HOST|NCCL_PTR_CUDA
   int speed;      // Port speed in Mbps.
   int port;       // Port number.
+  float latency;  // Network latency
   int maxComms;   // Maximum number of comms we can create
   int maxRecvs;   // Maximum number of grouped receives.
 }ncclNetProperties_v5_t;

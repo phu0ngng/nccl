@@ -29,6 +29,7 @@ static ncclResult_t ncclNet_v4_as_v5_getProperties(int dev, ncclNetProperties_v5
   props->port = p4.port;
   props->maxComms = p4.maxComms;
   props->maxRecvs = 1;
+  props->latency = 0;
   return ncclSuccess;
 }
 
@@ -82,6 +83,7 @@ static ncclResult_t ncclCollNet_v4_as_v5_getProperties(int dev, ncclNetPropertie
   props->port = p4.port;
   props->maxComms = p4.maxComms;
   props->maxRecvs = 1;
+  props->latency = 0;
   return ncclSuccess;
 }
 

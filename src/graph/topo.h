@@ -96,6 +96,7 @@ struct ncclTopoNode {
       uint64_t asic;
       int port;
       float width;
+      float latency;
       int gdrSupport;
       int collSupport;
       int maxChannels;
