@@ -22,7 +22,6 @@ thread_local int is_main_thread = 0;
 // Command line parameter defaults
 static int nThreads = 1;
 static int nGpus = 1;
-static size_t maxBytes = 0ULL;
 static int datacheck = 1;
 static FILE* inputfile = NULL;
 static int timeout = 60;
@@ -597,7 +596,6 @@ testResult_t testLoadCalls(FILE* input, struct testCall** callsPtr, int* nCallsP
   char funcStr[128];
   char dtypeStr[128];
   char redopStr[128];
-  size_t bytes = 0ULL;
   int group = 0;
   int read = 0;
   char line[1024];
@@ -630,15 +628,24 @@ testResult_t testLoadCalls(FILE* input, struct testCall** callsPtr, int* nCallsP
     if (fields >= 6) TESTCHECK(ncclStringToOp(redopStr, &call->redop));
     if (strcmp(funcStr, "ncclGroupStart") == 0) group++;
     else if (strcmp(funcStr, "ncclGroupEnd") == 0) group--;
-    else {
-      bytes += call->count * wordSize(call->datatype);
-      maxBytes = std::max(bytes, maxBytes);
-      if (group == 0) bytes = 0;
-    }
     nCalls++;
   }
   *callsPtr = calls;
   *nCallsPtr = nCalls;
+  return testSuccess;
+}
+
+testResult_t getMaxBytes(struct testCall* calls, int nCalls, int rank, size_t* maxBytesPtr) {
+  size_t bytes = 0ULL;
+  size_t maxBytes = 0ULL;
+  for (int i=0; i<nCalls; i++) {
+    struct testCall* call = calls+i;
+    if (call->rank != -1 && call->rank != rank) continue;
+    bytes += call->count * wordSize(call->datatype);
+    maxBytes = std::max(bytes, maxBytes);
+    if (call->group == 0) bytes = 0;
+  }
+  *maxBytesPtr = maxBytes;
   return testSuccess;
 }
 
@@ -717,6 +724,9 @@ testResult_t run() {
     char* envstr = getenv("NCCL_TESTS_DEVICE");
     gpus[i] = envstr ? atoi(envstr) : localRank*nThreads*nGpus+i;
     CUDACHECK(cudaSetDevice(gpus[i]));
+    size_t maxBytes;
+    int rank = proc*nThreads + i;
+    TESTCHECK(getMaxBytes(calls, nCalls, rank, &maxBytes));
     TESTCHECK(AllocateBuffs(sendBuffsBase+i, recvBuffsBase+i, expected+i, (size_t)maxBytes, nProcs*nThreads*nGpus));
     CUDACHECK(cudaStreamCreateWithFlags(streams+i, cudaStreamNonBlocking));
   }
