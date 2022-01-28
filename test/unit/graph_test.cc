@@ -239,6 +239,7 @@ int main(int argc, const char* argv[]) {
     RUN("GCP-Shared-NVS");
     RUN("Dual-Delta-VM");
     RUN("ZionEX");
+    RUN("FB-V100");
 #endif
     RUN("P9-6V");
     RUN("P9-4V");

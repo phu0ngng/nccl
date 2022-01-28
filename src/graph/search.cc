@@ -254,10 +254,10 @@ ncclResult_t ncclTopoSearchNextGpuSort(struct ncclTopoSystem* system, struct ncc
 ncclResult_t ncclTopoSearchRec(struct ncclTopoSystem* system, struct ncclTopoGraph* graph, struct ncclTopoGraph* saveGraph, int* time);
 
 // Try to keep all searchs within one second
-#define NCCL_SEARCH_GLOBAL_TIMEOUT (3ULL<<19)
-#define NCCL_SEARCH_TIMEOUT (1<<18)
-#define NCCL_SEARCH_TIMEOUT_TREE (1<<17)
-#define NCCL_SEARCH_TIMEOUT_SAMECHANNELS (1<<10)
+#define NCCL_SEARCH_GLOBAL_TIMEOUT (1ULL<<18)
+#define NCCL_SEARCH_TIMEOUT (1<<14)
+#define NCCL_SEARCH_TIMEOUT_TREE (1<<14)
+#define NCCL_SEARCH_TIMEOUT_SAMECHANNELS (1<<8)
 
 #define FORCED_ORDER_PCI 1
 #define FORCED_ORDER_REPLAY 2
