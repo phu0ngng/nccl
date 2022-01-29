@@ -980,6 +980,12 @@ static ncclResult_t ncclGraphHelperDestroy(ncclComm* comm) {
 }
 
 static ncclResult_t commDestroy(ncclComm_t comm) {
+  // Try and prevent a double free of the comm struct (user error)
+  if (comm->rank == -1 || comm->nRanks <= 0 || comm->cudaDev == -1 || comm->busId == -1) {
+    WARN("comm %p has already been destroyed", comm);
+    return ncclInvalidArgument;
+  }
+
   int savedDevice;
   CUDACHECK(cudaGetDevice(&savedDevice));
   int commDevice = comm->cudaDev;
@@ -1015,12 +1021,6 @@ ncclResult_t ncclCommDestroy(ncclComm_t comm) {
   int rank = comm->rank, nranks = comm->nRanks, cudaDev = comm->cudaDev;
   int64_t busId = comm->busId;
   TRACE(NCCL_INIT, "comm %p rank %d nRanks %d cudaDev %d busId %lx", comm, rank, nranks, cudaDev, busId);
-
-  // Try and prevent a double free of the comm struct (user error)
-  if (rank == -1 || nranks <= 0 || cudaDev == -1 || busId == -1) {
-    WARN("comm %p has already been destroyed", comm);
-    return ncclInvalidArgument;
-  }
 
   NCCLCHECK(commDestroy(comm));
   INFO(NCCL_INIT,"comm %p rank %d nranks %d cudaDev %d busId %lx - Destroy COMPLETE", comm, rank, nranks, cudaDev, busId);
