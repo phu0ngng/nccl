@@ -990,6 +990,7 @@ void* ncclProxyService(void* _args) {
       } else {
         pollfds[s].fd = sock->fd;
         npeers++;
+        peers[s].localRank = -1;
       }
     }
     for (int s=0; s<maxnpeers; s++) {
@@ -1005,7 +1006,7 @@ void* ncclProxyService(void* _args) {
         if (res != ncclSuccess) op->type = 0;
       } else if (pollfds[s].revents & POLLIN) {
         if (ncclSocketRecv(sock, &type, sizeof(int)) != ncclSuccess) {
-          WARN("[Service thread] Could not receive type");
+          WARN("[Service thread] Could not receive type from localRank %d", peer->localRank);
           closeConn = 1;
         } else {
           if (type == ncclProxyMsgAbort) {
@@ -1020,6 +1021,9 @@ void* ncclProxyService(void* _args) {
             res = proxyConnSharedInit(peers+s, &connectionPool, comm);
           } else if (type == ncclProxyMsgSetup || type == ncclProxyMsgConnect) {
             res = proxyConnSetupConnect(type, peers+s, &connectionPool, comm, &asyncOpCount);
+          } else {
+            WARN("[Service thread] Unknown command %d from localRank %d\n", type, peer->localRank);
+            closeConn = 1;
           }
         }
       } else if (pollfds[s].revents & POLLHUP) {
@@ -1070,7 +1074,7 @@ ncclResult_t ncclProxyDestroy(struct ncclComm* comm) {
     sock.asyncFlag = 0;
     memcpy(&sock.addr, comm->proxyState.peerAddresses+comm->rank, sizeof(union ncclSocketAddress));
     NCCLCHECK(ncclSocketConnect(&sock));
-    int type = comm->abortFlag ? ncclProxyMsgAbort : ncclProxyMsgStop;
+    int type = (*comm->abortFlag) ? ncclProxyMsgAbort : ncclProxyMsgStop;
     NCCLCHECK(ncclSocketSend(&sock, &type, sizeof(int)));
     close(sock.fd);
     free(state->peerAddresses);
