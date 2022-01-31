@@ -1011,8 +1011,10 @@ void* ncclProxyService(void* _args) {
         } else {
           if (type == ncclProxyMsgAbort) {
             stop = 2;
+            closeConn = 1;
           } else if (type == ncclProxyMsgStop) {
             stop = 1;
+            closeConn = 1;
           } else if (type == ncclProxyMsgClose) {
             closeConn = 1;
           } else if (type == ncclProxyMsgInit) {
