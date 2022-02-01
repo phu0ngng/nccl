@@ -88,6 +88,7 @@ struct sendResources {
   int remoteRank;
   int netDev;
   int useGdr;
+  int maxRecvs;
   uint64_t* gdcSync;
   void* gdrDesc;
   int shared;
@@ -144,6 +145,7 @@ static ncclResult_t canConnect(int* ret, struct ncclTopoSystem* topo, struct ncc
 }
 
 NCCL_PARAM(NetSharedBuffers, "NET_SHARED_BUFFERS", -2);
+NCCL_PARAM(NetSharedComms, "NET_SHARED_COMMS", 1);
 
 struct setupReq {
   int rank;
@@ -161,7 +163,7 @@ struct setupReq {
 static ncclResult_t sendSetup(struct ncclComm* comm, struct ncclTopoGraph* graph, struct ncclPeerInfo* myInfo, struct ncclPeerInfo* peerInfo, struct ncclConnect* connectInfo, struct ncclConnector* send, int channelId, int connIndex) {
   struct setupReq req;
 
-  send->conn.shared = req.shared = ncclParamNetSharedBuffers() != -2 ? ncclParamNetSharedBuffers() : graph ? 0 : 1;
+  send->conn.shared = req.shared = graph ? 0 : ncclParamNetSharedBuffers() != -2 ? ncclParamNetSharedBuffers() : 1;
   req.channelId = channelId;
   req.connIndex = connIndex;
 
@@ -196,7 +198,7 @@ NCCL_PARAM(GdrCopyFlushEnable, "GDRCOPY_FLUSH_ENABLE", 0);
 static ncclResult_t recvSetup(struct ncclComm* comm, struct ncclTopoGraph* graph, struct ncclPeerInfo* myInfo, struct ncclPeerInfo* peerInfo, struct ncclConnect* connectInfo, struct ncclConnector* recv, int channelId, int connIndex) {
   struct setupReq req;
 
-  recv->conn.shared = req.shared = ncclParamNetSharedBuffers() != -2 ? ncclParamNetSharedBuffers() : graph ? 0 : 1;
+  recv->conn.shared = req.shared = graph ? 0 : ncclParamNetSharedBuffers() != -2 ? ncclParamNetSharedBuffers() : 1;
   req.channelId = channelId;
   req.connIndex = connIndex;
 
@@ -442,6 +444,9 @@ static ncclResult_t sendProxySetup(struct ncclProxyConnection* connection, struc
   resources->useGdr = req->useGdr;
   resources->channelId = req->channelId;
   resources->connIndex = req->connIndex;
+  ncclNetProperties_t props;
+  NCCLCHECK(ncclNetGetProperties(req->netDev, &props));
+  resources->maxRecvs = props.maxRecvs;
 
   // We don't return any data
   if (respSize != 0) return ncclInternalError;
@@ -465,11 +470,11 @@ static ncclResult_t recvProxySetup(struct ncclProxyConnection* connection, struc
   resources->useGdr = req->useGdr;
   resources->channelId = req->channelId;
   resources->connIndex = req->connIndex;
-
-  if (respSize != sizeof(ncclNetHandle_t)) return ncclInternalError;
   ncclNetProperties_t props;
   NCCLCHECK(ncclNetGetProperties(req->netDev, &props));
   resources->maxRecvs = props.maxRecvs;
+
+  if (respSize != sizeof(ncclNetHandle_t)) return ncclInternalError;
   NCCLCHECK(ncclNetListen(req->netDev, respBuff, &resources->netListenComm));
   *done = 1;
   return ncclSuccess;
@@ -489,16 +494,20 @@ static ncclResult_t sendProxyConnect(struct ncclProxyConnection* connection, str
     if (localPeers[resources->localRank] == NULL) {
       NCCLCHECK(ncclCalloc(localPeers+resources->localRank, 1));
     }
-
-    // Connect or reuse connection for a netdev/remote rank.
     connection->proxyAppendPtr = localPeers[resources->localRank]->send.proxyAppend+resources->channelId;
-    if (progressState->netComms[resources->netDev] == NULL) {
-      NCCLCHECK(ncclCalloc(progressState->netComms+resources->netDev, comm->nRanks));
+
+    if (resources->maxRecvs > 1 && ncclParamNetSharedComms()) {
+      // Connect or reuse connection for a netdev/remote rank.
+      if (progressState->netComms[resources->netDev] == NULL) {
+        NCCLCHECK(ncclCalloc(progressState->netComms+resources->netDev, comm->nRanks));
+      }
+      struct ncclSharedNetComms* comms = progressState->netComms[resources->netDev]+resources->remoteRank;
+      if (comms->sendComm[resources->channelId] == NULL) NCCLCHECK(ncclNetConnect(resources->netDev, reqBuff, comms->sendComm+resources->channelId));
+      resources->netSendComm = comms->sendComm[resources->channelId];
+      if (comms->sendComm[resources->channelId]) comms->sendRefCount[resources->channelId]++;
+    } else {
+      NCCLCHECK(ncclNetConnect(resources->netDev, reqBuff, &resources->netSendComm));
     }
-    struct ncclSharedNetComms* comms = progressState->netComms[resources->netDev]+resources->remoteRank;
-    if (comms->sendComm[resources->channelId] == NULL) NCCLCHECK(ncclNetConnect(resources->netDev, reqBuff, comms->sendComm+resources->channelId));
-    resources->netSendComm = comms->sendComm[resources->channelId];
-    if (comms->sendComm[resources->channelId]) comms->sendRefCount[resources->channelId]++;
   } else {
     // Connect to remote peer
     NCCLCHECK(ncclNetConnect(resources->netDev, reqBuff, &resources->netSendComm));
@@ -603,14 +612,18 @@ static ncclResult_t recvProxyConnect(struct ncclProxyConnection* connection, str
     }
     connection->proxyAppendPtr = localPeers[resources->localRank]->recv.proxyAppend+resources->channelId;
 
-    // Connect or reuse connection for a netdev/remote rank.
-    if (progressState->netComms[resources->netDev] == NULL) {
-      NCCLCHECK(ncclCalloc(progressState->netComms+resources->netDev, comm->nRanks));
+    if (resources->maxRecvs > 1 && ncclParamNetSharedComms()) {
+      // Connect or reuse connection for a netdev/remote rank.
+      if (progressState->netComms[resources->netDev] == NULL) {
+        NCCLCHECK(ncclCalloc(progressState->netComms+resources->netDev, comm->nRanks));
+      }
+      struct ncclSharedNetComms* comms = progressState->netComms[resources->netDev]+resources->proxyRank;
+      if (comms->recvComm[resources->channelId] == NULL) NCCLCHECK(ncclNetAccept(resources->netListenComm, comms->recvComm+resources->channelId));
+      resources->netRecvComm = comms->recvComm[resources->channelId];
+      if (comms->recvComm[resources->channelId]) comms->recvRefCount[resources->channelId]++;
+    } else {
+      NCCLCHECK(ncclNetAccept(resources->netListenComm, &resources->netRecvComm));
     }
-    struct ncclSharedNetComms* comms = progressState->netComms[resources->netDev]+resources->proxyRank;
-    if (comms->recvComm[resources->channelId] == NULL) NCCLCHECK(ncclNetAccept(resources->netListenComm, comms->recvComm+resources->channelId));
-    resources->netRecvComm = comms->recvComm[resources->channelId];
-    if (comms->recvComm[resources->channelId]) comms->recvRefCount[resources->channelId]++;
   } else {
     // Connect to remote peer
     NCCLCHECK(ncclNetAccept(resources->netListenComm, &resources->netRecvComm));
@@ -707,11 +720,17 @@ static ncclResult_t sendProxyFree(struct ncclProxyConnection* connection, struct
   if (mems[NCCL_NET_MAP_GDCMEM].cpuPtr) NCCLCHECK(ncclGdrCudaFree(resources->gdrDesc));
   if (resources->shared) {
     NCCLCHECK(sharedBuffersDestroy(comm, resources->localRank, 0));
-    struct ncclSharedNetComms* comms = comm->proxyState.progressState.netComms[resources->netDev]+resources->remoteRank;
-    comms->sendRefCount[resources->channelId]--;
-    if (comms->sendRefCount[resources->channelId] == 0) NCCLCHECK(ncclNetCloseSend(comms->sendComm[resources->channelId]));
+    if (resources->maxRecvs > 1 && ncclParamNetSharedComms()) {
+      struct ncclSharedNetComms* comms = comm->proxyState.progressState.netComms[resources->netDev]+resources->remoteRank;
+      comms->sendRefCount[resources->channelId]--;
+      if (comms->sendRefCount[resources->channelId] == 0) NCCLCHECK(ncclNetCloseSend(comms->sendComm[resources->channelId]));
+    } else {
+      NCCLCHECK(ncclNetCloseSend(resources->netSendComm));
+    }
+  } else {
+    NCCLCHECK(ncclNetCloseSend(resources->netSendComm));
   }
-  free(connection->transportResources);
+  free(resources);
   return ncclSuccess;
 }
 
@@ -732,11 +751,17 @@ static ncclResult_t recvProxyFree(struct ncclProxyConnection* connection, struct
   if (mems[NCCL_NET_MAP_GDCMEM].cpuPtr) NCCLCHECK(ncclGdrCudaFree(resources->gdrDesc));
   if (resources->shared) {
     NCCLCHECK(sharedBuffersDestroy(comm, resources->localRank, 1));
-    struct ncclSharedNetComms* comms = comm->proxyState.progressState.netComms[resources->netDev]+resources->proxyRank;
-    comms->recvRefCount[resources->channelId]--;
-    if (comms->recvRefCount[resources->channelId] == 0) NCCLCHECK(ncclNetCloseRecv(comms->recvComm[resources->channelId]));
+    if (resources->maxRecvs > 1 && ncclParamNetSharedComms()) {
+      struct ncclSharedNetComms* comms = comm->proxyState.progressState.netComms[resources->netDev]+resources->proxyRank;
+      comms->recvRefCount[resources->channelId]--;
+      if (comms->recvRefCount[resources->channelId] == 0) NCCLCHECK(ncclNetCloseRecv(comms->recvComm[resources->channelId]));
+    } else {
+      NCCLCHECK(ncclNetCloseRecv(resources->netRecvComm));
+    }
+  } else {
+    NCCLCHECK(ncclNetCloseRecv(resources->netRecvComm));
   }
-  free(connection->transportResources);
+  free(resources);
   return ncclSuccess;
 }
 
