@@ -195,6 +195,11 @@ ncclResult_t dumpProxyState(struct ncclProxyProgressState* state) {
 
 static ncclResult_t ncclProxyOpToArgs(struct ncclProxyOp* op, struct ncclProxyArgs* args, int subIndex) {
   struct ncclProxySubArgs* sub = args->subs+subIndex;
+  if (subIndex >= NCCL_PROXY_MAX_SUBS) {
+    WARN("Proxy append out of bounds");
+    return ncclInternalError;
+  }
+
   //memset(sub, 0, sizeof(struct ncclProxySubArgs));
   sub->connection = op->connection;
   sub->channelId = op->channelId;
@@ -213,10 +218,6 @@ static ncclResult_t ncclProxyOpToArgs(struct ncclProxyOp* op, struct ncclProxyAr
     }
     if (args->state != ncclProxyOpReady) {
       WARN("Proxy append on running operation");
-      return ncclInternalError;
-    }
-    if (args->nsubs >= NCCL_PROXY_MAX_SUBS) {
-      WARN("Proxy append out of bounds");
       return ncclInternalError;
     }
     return ncclSuccess;

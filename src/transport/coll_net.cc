@@ -102,12 +102,9 @@ struct sendResources {
   int useGdr;
   uint64_t* gdcSync;
   void* gdrDesc;
-  char* buffers[NCCL_NUM_PROTOCOLS];
-  int buffSizes[NCCL_NUM_PROTOCOLS];
   void* sendMhandles[NCCL_NUM_PROTOCOLS];
   void* recvMhandles[NCCL_NUM_PROTOCOLS];
   uint64_t step;
-  uint64_t llLastCleaning;
   struct reqSlot (*reqFifo)[NCCL_STEPS];
   int collNetRank;
 };
@@ -125,11 +122,8 @@ struct recvResources {
   uint64_t* gdcSync;
   uint64_t* gdcFlush;
   void* gdrDesc;
-  char* buffers[NCCL_NUM_PROTOCOLS];
-  int buffSizes[NCCL_NUM_PROTOCOLS];
   void* mhandles[NCCL_NUM_PROTOCOLS];
   uint64_t step;
-  uint64_t llLastCleaning;
   struct reqSlot reqFifo[COLLNET_MAX_GROUPS][NCCL_STEPS];
   int collNetRank;
 };
@@ -504,7 +498,7 @@ static ncclResult_t recvProxyConnect(struct ncclProxyConnection* connection, str
 static ncclResult_t sendProxyFree(struct ncclProxyConnection* connection, struct ncclComm* comm) {
   struct sendResources* resources = (struct sendResources*)(connection->transportResources);
   for (int p=0; p<NCCL_NUM_PROTOCOLS; p++) {
-    if (resources->buffers[p]) {
+    if (resources->sendMhandles[p]) {
       NCCLCHECK(collNetDeregMr(resources->collNetComm, resources->sendMhandles[p]));
     }
   }
@@ -521,7 +515,7 @@ static ncclResult_t sendProxyFree(struct ncclProxyConnection* connection, struct
 static ncclResult_t recvProxyFree(struct ncclProxyConnection* connection, struct ncclComm* comm) {
   struct recvResources* resources = (struct recvResources*)(connection->transportResources);
   for (int p=0; p<NCCL_NUM_PROTOCOLS; p++) {
-    if (resources->buffers[p]) {
+    if (resources->mhandles[p]) {
       NCCLCHECK(collNetDeregMr(resources->collNetComm, resources->mhandles[p]));
     }
   }
