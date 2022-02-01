@@ -1,11 +1,11 @@
 <!DOCTYPE html>
 <html>
 <head>
-<title>NCCL-15 : Network communication through one hop NVLink : Requirements</title>
+<title>NCCL-15 : One hop nvlink network communication : Requirements</title>
 <link rel="stylesheet" type="text/css" href="../../html/css/doc.css">
 </head>
 <body>
-<center><h1>NCCL-15 : Network communication through one hop NVLink<br>Requirements</h1></center>
+<center><h1>NCCL-15 : One hop nvlink network communication<br>Requirements</h1></center>
 <!-- table of contents, auto-generated -->
 $CONTENTS
 <!-- end of table of contents -->
@@ -21,24 +21,46 @@ accelerate GPU-to-GPU communication. It is supposed to be transparent to the
 user.
 
 <h2>Assumptions, constraints and dependencies</h2>
-None/$TBD
+None.
 
 <h2>Use Cases</h2>
-<p>Most NVLink systems feature multiple NICs to achieve higher bandwidth. This
-requires to also multiply quadratically the fabric size. To allow for multi-NIC
-with a limited fabric size, some customers intend to lightly connect different
-network rails, or even not connect them at all.
+<h3>Rail-local alltoall</h3>
+<p>When performing an alltoall operation, every GPU uses its local NIC. Therefore, only 1/8th
+of the traffic will be local to the network rail, and 7/8th will have to go to higher levels
+of the network fabric. That causes more network contention, and although adaptive routing
+aleviates that problem, not all customers use Infiniband network.
 
-<p>The NCCL_CROSS_NIC parameter, when set to 0, would forbid NCCL to cross
-NICs, and allow for lightly- or non-connected rails. But that feature doesn't
-currently work for send/receive communication, and it can also cause bad
-performance on some systems which feature 1GPU:1NIC pairs. Those include
-current systems with PCI switches partitioned in half to provide high CPU-GPU
-bandwidth, as well as future systems with integrated GPU+NIC.
+<p>Besides the potential performance improvement, using NVLink to switch to the right network
+rail and keep traffic as local as possible would also decrease load on the fabric and
+improve performance of other applications.
+
+<h3>Hopper 1:1 NIC:GPU ratio</h3>
+<p>Some platforms, including future hopper-based systems will feature a 1:1 NIC:GPU ratio. This
+is a problem for ring algorithms when running on multiple GPUs per node, since each ring needs
+to enter the node into one GPU and exit the node from another GPU. Both GPUs need to have
+optimized access to the same NIC to guarantee optimal performance and use the same NIC for
+both ingress and egress traffic for a given ring, to avoid crossing rails and keep ring
+traffic local to rails.
+
+<p>Using NVLink to copy data from the last GPU to the first one as the last hop would close the
+loop and only require one GPU to be local to a given NIC, easing constraints on NIC
+topologies.
+
+<h3>Depopulated topologies</h3>
+<p>Some systems do not want to pay the price of one NIC per GPU. To guarantee each GPU has
+direct access to a NIC, such system would need large PCI switches which would connect 1 NIC
+to e.g. 4 GPUs. Given those systems are tight on cost, that is usually not the desire.
+
+<p>To build systems with only say 2 GPUs with a NIC each and no PCI switch, we would need to
+be able to leverage NVLink to copy data to GPUs which are close to NICs.
+
+<p>This requires both sender side and receiver side to be able to use NVLink as extra hop for
+network communication. Only the sender side will be addressed in this feature, but it is a
+first step to achieve this capability.
 
 <h2>Functional Requirements</h2>
-NCCL needs to allow communicating between a GPU and a distant NIC through an
-intermediate GPU which is close to the NIC.
+<p>GPUs should be able to send data to a remote NIC using NVLink-accessible memory from another
+GPU.
 
 <h2>System Requirements</h2>
 Alltoall needs to perform at a bandwidth similar or better than when we allow
@@ -46,10 +68,11 @@ for crossing NICs, provided the NVLink bandwidth is sufficient to handle all
 flows. It should be the case on DGX systems with NVSwitch.
 
 <h2>Interface Requirements</h2>
-No API change should be required.
+No change.
 
 <h2>KPI Requirements</h2>
-Alltoall performance must be SOL.
+<p>Alltoall latency should be significantly reduced on Infiniband, at least 2x.
+<p>Alltoall bandwidth must be SOL.
 
 <h2>Platform Requirements</h2>
 N/A
@@ -65,7 +88,7 @@ Changes do not need to be backward compatible.
 N/A
 
 <h2>Signoff list</h2>
-<p><!-- Author : First Last -->
+<p>Author : Sylvain Jeaugey
 <p><!-- Reviewer : First Last -->
 <p><!-- Reviewer : First Last  -->
 <p><!-- Product Manager : First Last -->

@@ -291,6 +291,7 @@ ncclResult_t ncclIbGetProperties(int dev, ncclNetProperties_t* props) {
     props->ptrSupport |= NCCL_PTR_CUDA;
   }
   props->speed = ncclIbDevs[dev].speed;
+  props->latency = 0; // Not set
   props->port = ncclIbDevs[dev].port + ncclIbDevs[dev].realPort;
   props->maxComms = ncclIbDevs[dev].maxQp;
   props->maxRecvs = NCCL_NET_IB_MAX_RECVS;
@@ -306,6 +307,7 @@ static_assert(MAX_REQUESTS <= 256, "request id are encoded in wr_id and we need 
 struct ncclIbQpInfo {
   uint32_t lid;
   uint8_t ib_port;
+  uint8_t link_layer;
   uint32_t qpn[NCCL_IB_MAX_QPS];
 
   // For RoCE
@@ -504,7 +506,7 @@ ncclResult_t ncclIbRtrQp(struct ibv_qp* qp, uint32_t qpn, struct ncclIbQpInfo* i
   qpAttr.rq_psn = 0;
   qpAttr.max_dest_rd_atomic = 1;
   qpAttr.min_rnr_timer = 12;
-  if (info->lid == 0) {
+  if (info->link_layer == IBV_LINK_LAYER_ETHERNET) {
     qpAttr.ah_attr.is_global = 1;
     qpAttr.ah_attr.grh.dgid.global.subnet_prefix = info->spn;
     qpAttr.ah_attr.grh.dgid.global.interface_id = info->iid;
@@ -606,7 +608,8 @@ ib_connect_check:
 
   // RoCE support
   qpInfo.lid = portAttr.lid;
-  if (qpInfo.lid) { // IB
+  qpInfo.link_layer = portAttr.link_layer;
+  if (qpInfo.link_layer == IBV_LINK_LAYER_INFINIBAND) { // IB
     for (int q=0; q<comm->nqps; q++)
       INFO(NCCL_NET,"NET/IB: Dev %d Port %d qpn %d mtu %d LID %d", dev, ib_port, qpInfo.qpn[q], qpInfo.mtu, qpInfo.lid);
   } else { // RoCE
@@ -717,6 +720,7 @@ ib_recv:
     NCCLCHECK(ncclIbCreateQp(ib_port, &rComm->verbs, IBV_ACCESS_LOCAL_WRITE | IBV_ACCESS_REMOTE_READ, &rComm->gpuFlush.qp));
     struct ncclIbQpInfo localQpInfo;
     localQpInfo.lid=portAttr.lid;
+    localQpInfo.link_layer=portAttr.link_layer;
     localQpInfo.ib_port=ib_port;
     localQpInfo.spn=gid.global.subnet_prefix;
     localQpInfo.iid=gid.global.interface_id;
@@ -728,6 +732,7 @@ ib_recv:
   // Fill Handle
   struct ncclIbQpInfo qpInfo;
   qpInfo.lid=portAttr.lid;
+  qpInfo.link_layer=portAttr.link_layer;
   qpInfo.ib_port=ib_port;
   for (int q=0; q<rComm->nqps; q++) qpInfo.qpn[q]=rComm->qps[q]->qp_num;
   qpInfo.spn=gid.global.subnet_prefix;
