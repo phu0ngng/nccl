@@ -9,7 +9,6 @@
 
 #include "nccl.h"
 #include "align.h"
-#include "socket.h"
 #include <stdint.h>
 
 #define NCCL_NUM_FUNCTIONS 5 // Send/Recv not included for now

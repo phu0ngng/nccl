@@ -1005,8 +1005,12 @@ void* ncclProxyService(void* _args) {
         type = op->type;
         if (res != ncclSuccess) op->type = 0;
       } else if (pollfds[s].revents & POLLIN) {
-        if (ncclSocketRecv(sock, &type, sizeof(int)) != ncclSuccess) {
+        int closed;
+        if (ncclSocketTryRecv(sock, &type, sizeof(int), &closed) != ncclSuccess) {
           WARN("[Service thread] Could not receive type from localRank %d", peer->localRank);
+          closeConn = 1;
+        } else if (closed) {
+          INFO(NCCL_INIT|NCCL_NET, "[Service thread] Connection closed by localRank %d", peer->localRank);
           closeConn = 1;
         } else {
           if (type == ncclProxyMsgAbort) {
