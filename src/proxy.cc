@@ -678,7 +678,8 @@ ncclResult_t ncclProxyProgressDestroy(struct ncclComm* comm) {
     state->pools = next;
   }
 
-  TIME_PRINT("proxy");
+  ncclProfilingDump();
+  TIME_PRINT("Proxy");
   return ncclSuccess;
 }
 
@@ -1103,9 +1104,5 @@ ncclResult_t ncclProxyDestroy(struct ncclComm* comm) {
     free(state->proxyOps);
     free(state->sharedDevMems);
   }
-  void* ret;
-  pthread_join(state->thread, &ret);
-  ncclProfilingDump();
-  TIME_PRINT("Proxy");
   return ncclSuccess;
 }
