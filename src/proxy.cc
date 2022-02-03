@@ -821,6 +821,10 @@ static ncclResult_t proxyProgressInit(struct ncclComm* comm) {
 
     // Init pool
     pool->nextOps = -1;
+
+    // The service thread may be launched already but localRanks may not be set yet.
+    while (comm->localRanks == 0) sched_yield();
+
     for (int r=0; r<comm->localRanks; r++) {
       pool->freeOps[r] = r*MAX_OPS_PER_PEER;
       for (int i=0; i<MAX_OPS_PER_PEER-1; i++) pool->ops[r*MAX_OPS_PER_PEER+i].next = r*MAX_OPS_PER_PEER+i+1;
