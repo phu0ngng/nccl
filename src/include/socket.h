@@ -64,6 +64,7 @@ ncclResult_t ncclSocketProgress(int op, struct ncclSocket* sock, void* ptr, int 
 ncclResult_t ncclSocketWait(int op, struct ncclSocket* sock, void* ptr, int size, int* offset);
 ncclResult_t ncclSocketSend(struct ncclSocket* sock, void* ptr, int size);
 ncclResult_t ncclSocketRecv(struct ncclSocket* sock, void* ptr, int size);
+ncclResult_t ncclSocketTryRecv(struct ncclSocket* sock, void* ptr, int size, int* closed);
 /* initialize a socket. */
 ncclResult_t ncclSocketInit(struct ncclSocket* sock, union ncclSocketAddress* addr = NULL, volatile uint32_t* abortFlag = NULL, int asyncFlag = 0);
 #endif

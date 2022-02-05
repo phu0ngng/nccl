@@ -166,6 +166,7 @@ struct ncclComm {
   // Storage for deferred intra-process launch
   struct cudaLaunchParams * intraParams;
   struct cudaLaunchParams *myParams;
+  pthread_t* intraThreads;
   int* intraCudaDevs;
   int* intraCGMode; // Whether we can use CUDA9 CGMD or not
   int* intraCC; // Only to check all have the same ComputeCap and disable CGMode if not
