@@ -1,5 +1,5 @@
 /*************************************************************************
- * Copyright (c) 2016-2021, NVIDIA CORPORATION. All rights reserved.
+ * Copyright (c) 2016-2022, NVIDIA CORPORATION. All rights reserved.
  *
  * See LICENSE.txt for license information
  ************************************************************************/
@@ -8,9 +8,9 @@
 
 #define NCCL_LL128_FLAGTHREAD (NCCL_LL128_LINEELEMS-1)
 
-template<typename T, typename RedOp, typename Fan, int Direct>
-class Primitives<T, RedOp, Fan, Direct, ProtoLL128>:
-  public PrimitivesWithoutDirect<Primitives<T, RedOp, Fan, Direct, ProtoLL128>> {
+template<typename T, typename RedOp, typename Fan, int Direct, int P2p>
+class Primitives<T, RedOp, Fan, Direct, ProtoLL128, P2p>:
+  public PrimitivesWithoutDirect<Primitives<T, RedOp, Fan, Direct, ProtoLL128, P2p>> {
 
   static constexpr int MaxRecv = Fan::MaxRecv, MaxSend = Fan::MaxSend;
   static constexpr int Input=0, Output=1;
@@ -49,7 +49,7 @@ class Primitives<T, RedOp, Fan, Direct, ProtoLL128>:
   inline __device__ uint64_t sendFlag(int i) { return sendStep[i]+1; }
 
   inline __device__ void barrier() {
-    asm volatile ("bar.sync %1, %0;" :: "r"(nthreads), "r"(1+group));
+    asm volatile ("bar.sync %1, %0;" :: "r"(nthreads), "r"(15-group));
   }
 
   uint32_t abort = 0;
@@ -277,7 +277,7 @@ class Primitives<T, RedOp, Fan, Direct, ProtoLL128>:
   static constexpr int DataEltPerSlice = (WireWordPerSlice - WireWordPerSlice/NCCL_LL128_LINEELEMS)*(sizeof(uint64_t)/sizeof(T));
 
   template <int RECV, int SEND, int SrcBuf, int DstBuf>
-  __device__ void GenericOp(intptr_t srcIx, intptr_t dstIx, int nelem, bool postOp) {
+  __device__ __forceinline__ void GenericOp(intptr_t srcIx, intptr_t dstIx, int nelem, bool postOp) {
     constexpr int SRC = SrcBuf != -1 ? 1 : 0;
     constexpr int DST = DstBuf != -1 ? 1 : 0;
     static_assert(-1<=SrcBuf && SrcBuf < 2, "Uhoh");
@@ -354,9 +354,9 @@ class Primitives<T, RedOp, Fan, Direct, ProtoLL128>:
 public:
   __device__ Primitives(
       const int tid, const int nthreads, int const *recvPeers, int const *sendPeers,
-      void const *inputBuf, void *outputBuf, int group=0
+      void const *inputBuf, void *outputBuf, uint64_t redOpArg, int group=0
     ):
-    redOp(FuncTraits<RedOp>().make(ncclShmem.comm.nRanks)),
+    redOp(redOpArg),
     tid(tid), nthreads(nthreads), wid(tid%WARP_SIZE), warp(tid/WARP_SIZE),
     flagThread((tid%8)==7), group(group),
     stepSize(ncclShmem.comm.buffSizes[NCCL_PROTO_LL128]/NCCL_STEPS/sizeof(uint64_t)) {

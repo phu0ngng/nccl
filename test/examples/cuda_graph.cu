@@ -82,7 +82,7 @@ int main(int argc, char* argv[]) {
 
   ncclUniqueId id;
   ncclComm_t comm;
-  int8_t *sendbuff, *recvbuff;
+  int32_t *sendbuff, *recvbuff;
   cudaStream_t s, uncapStream;
 
   //get NCCL unique ID at rank 0 and broadcast it to all others
@@ -91,9 +91,9 @@ int main(int argc, char* argv[]) {
 
   //picking a GPU based on localRank, allocate device buffers
   CUDACHECK(cudaSetDevice(localRank));
-  CUDACHECK(cudaMallocHost(&sendbuff, size * sizeof(int8_t)));
-  CUDACHECK(cudaMallocHost(&recvbuff, size * sizeof(int8_t)));
-  CUDACHECK(cudaMemset(sendbuff, 1, size * sizeof(int8_t)));
+  CUDACHECK(cudaMallocHost(&sendbuff, size * sizeof(int32_t)));
+  CUDACHECK(cudaMallocHost(&recvbuff, size * sizeof(int32_t)));
+  CUDACHECK(cudaMemset(sendbuff, 1, size * sizeof(int32_t)));
   CUDACHECK(cudaStreamCreate(&s));
   CUDACHECK(cudaStreamCreate(&uncapStream));
 
@@ -101,7 +101,7 @@ int main(int argc, char* argv[]) {
   NCCLCHECK(ncclCommInitRank(&comm, nRanks, id, myRank));
 
   //communicating using NCCL
-  NCCLCHECK(ncclAllReduce((const void*)sendbuff, (void*)recvbuff, size, ncclInt8, ncclSum, comm, uncapStream));
+  NCCLCHECK(ncclAllReduce((const void*)sendbuff, (void*)recvbuff, size, ncclInt32, ncclSum, comm, uncapStream));
   CUDACHECK(cudaStreamSynchronize(uncapStream));
 
   //create cuda graph
@@ -109,7 +109,7 @@ int main(int argc, char* argv[]) {
   CUDACHECK(cudaStreamBeginCapture(s, cudaStreamCaptureModeGlobal));
 
   //communicating using NCCL
-  NCCLCHECK(ncclAllReduce((const void*)sendbuff, (void*)recvbuff, size, ncclInt8, ncclSum, comm, s));
+  NCCLCHECK(ncclAllReduce((const void*)sendbuff, (void*)recvbuff, size, ncclInt32, ncclSum, comm, s));
 
   CUDACHECK(cudaStreamEndCapture(s, &graph));
 
@@ -132,12 +132,14 @@ int main(int argc, char* argv[]) {
   CUDACHECK(cudaStreamSynchronize(s));
 
   //communicating using NCCL
-  NCCLCHECK(ncclAllReduce((const void*)sendbuff, (void*)recvbuff, size, ncclInt8, ncclSum, comm, uncapStream));
+  NCCLCHECK(ncclAllReduce((const void*)sendbuff, (void*)recvbuff, size, ncclInt32, ncclSum, comm, uncapStream));
   CUDACHECK(cudaStreamSynchronize(uncapStream));
 
   //check result
   printf("[MPI Rank %d] recvbuff[0] %d \n", myRank, recvbuff[0]);
-  int pass = (recvbuff[0] == nRanks) ? 1 : 0;
+  int32_t initVal = 0;
+  memset(&initVal, 1, sizeof(initVal));
+  int pass = (recvbuff[0] == nRanks*initVal) ? 1 : 0;
 
   //free device buffers
   CUDACHECK(cudaFreeHost(sendbuff));

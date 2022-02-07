@@ -1,5 +1,5 @@
 /*************************************************************************
- * Copyright (c) 2017-2019, NVIDIA CORPORATION. All rights reserved.
+ * Copyright (c) 2017-2022, NVIDIA CORPORATION. All rights reserved.
  *
  * See LICENSE.txt for license information
  ************************************************************************/
@@ -7,6 +7,7 @@
 #ifndef NCCL_PARAM_H_
 #define NCCL_PARAM_H_
 
+#include <stdio.h>
 #include <stdlib.h>
 #include <unistd.h>
 #include <sys/types.h>
@@ -37,6 +38,7 @@ static void setEnvFile(const char* fileName) {
     strncpy(envValue, line+s, 1023);
     envValue[1023]='\0';
     setenv(envVar, envValue, 0);
+    //printf("%s : %s->%s\n", fileName, envVar, envValue);
   }
   if (line) free(line);
   fclose(file);

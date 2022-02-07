@@ -4,10 +4,12 @@ class ncclCudaGraph_test : public ncclCommon_test<DT> {
   protected:
     static cudaGraph_t* graphs;
     static cudaGraphExec_t* graphExec;
+    static int driverVersion;
     void SetUp();
     void TearDown();
     void BeginCapture();
-    void EndCaptureAndLaunch();
+    void EndCapture();
+    void LaunchGraph();
 };
 
 template <typename DT>
@@ -17,10 +19,14 @@ template <typename DT>
 cudaGraphExec_t* ncclCudaGraph_test<DT>::graphExec = NULL;
 
 template <typename DT>
+int ncclCudaGraph_test<DT>::driverVersion = 0;
+
+template <typename DT>
 void ncclCudaGraph_test<DT>::SetUp() {
     ncclCommon_test<DT>::SetUp();
     graphs = (cudaGraph_t*)calloc(this->nVis, sizeof(cudaGraph_t));
     graphExec = (cudaGraphExec_t*)calloc(this->nVis, sizeof(cudaGraphExec_t));
+    ASSERT_EQ(cudaSuccess, cudaDriverGetVersion(&this->driverVersion));
 };
 
 template <typename DT>
@@ -41,7 +47,7 @@ void ncclCudaGraph_test<DT>::BeginCapture() {
 };
 
 template <typename DT>
-void ncclCudaGraph_test<DT>::EndCaptureAndLaunch() {
+void ncclCudaGraph_test<DT>::EndCapture() {
     // End cuda graph capture
     for (int i=0; i<this->nVis; i++) {
         ASSERT_EQ(cudaSuccess, cudaStreamEndCapture(this->streams[i], this->graphs+i));
@@ -50,6 +56,10 @@ void ncclCudaGraph_test<DT>::EndCaptureAndLaunch() {
     for (int i=0; i<this->nVis; i++) {
         ASSERT_EQ(cudaSuccess, cudaGraphInstantiate(this->graphExec+i, this->graphs[i], NULL, NULL, 0));
     }
+};
+
+template <typename DT>
+void ncclCudaGraph_test<DT>::LaunchGraph() {
     // Launch cuda graph
     for (int i=0; i<this->nVis; i++) {
         ASSERT_EQ(cudaSuccess, cudaGraphLaunch(this->graphExec[i], this->streams[i]));
@@ -71,8 +81,14 @@ TYPED_TEST(ncclCudaGraph_test, collective) {
                                 this->comms[i], this->streams[i]))
             << "i" << i << ", " << std::endl;
     }
-    ASSERT_EQ(ncclSuccess, ncclGroupEnd());
-    this->EndCaptureAndLaunch();
+    if (this->driverVersion < 11030) {
+      ASSERT_EQ(ncclInvalidUsage, ncclGroupEnd());
+    } else {
+      ASSERT_EQ(ncclSuccess, ncclGroupEnd());
+    }
+    this->EndCapture();
+    this->LaunchGraph();
+    this->LaunchGraph();  // Launch graph twice to check task list persistency
 };
 
 TYPED_TEST(ncclCudaGraph_test, alltoall) {
@@ -95,8 +111,13 @@ TYPED_TEST(ncclCudaGraph_test, alltoall) {
          }
         ASSERT_EQ(ncclSuccess, ncclGroupEnd());
     }
-    ASSERT_EQ(ncclSuccess, ncclGroupEnd());
-    this->EndCaptureAndLaunch();
+    if (this->driverVersion < 11030) {
+      ASSERT_EQ(ncclInvalidUsage, ncclGroupEnd());
+    } else {
+      ASSERT_EQ(ncclSuccess, ncclGroupEnd());
+    }
+    this->EndCapture();
+    this->LaunchGraph();
 };
 
 TYPED_TEST(ncclCudaGraph_test, aggregation) {
@@ -112,8 +133,13 @@ TYPED_TEST(ncclCudaGraph_test, aggregation) {
                 << "i" << i << ", " << std::endl;
         }
     }
-    ASSERT_EQ(ncclSuccess, ncclGroupEnd());
-    this->EndCaptureAndLaunch();
+    if (this->driverVersion < 11030) {
+      ASSERT_EQ(ncclInvalidUsage, ncclGroupEnd());
+    } else {
+      ASSERT_EQ(ncclSuccess, ncclGroupEnd());
+    }
+    this->EndCapture();
+    this->LaunchGraph();
 };
 #endif
 // EOF

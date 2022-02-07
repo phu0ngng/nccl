@@ -1,6 +1,10 @@
 {% extends "!layout.html" %}
-  {% block sidebartitle %} {{ super() }}
 
+{% block extrahead %}
+  <script src="//assets.adobedtm.com/5d4962a43b79/c1061d2c5e7b/launch-191c2462b890.min.js"></script>
+{% endblock %}
+
+{% block sidebartitle %} {{ super() }}
   <style>
     /* Sidebar header (and topbar for mobile) */
     .wy-side-nav-search, .wy-nav-top {
@@ -25,10 +29,9 @@
       color: rgba(0, 0, 0, 0.3)
     }
   </style>
-  {% endblock %}
+{% endblock %}
 
-  {% block footer %} {{ super() }}
-
+{% block footer %} {{ super() }}
   <style>
   a:link, a:visited {
     color: #76b900;
@@ -42,4 +45,5 @@
     border-top: solid 3px rgba(59,93,0,1);
   }
   </style>
+  <script type="text/javascript">_satellite.pageBottom();</script>
 {% endblock %}

@@ -1,5 +1,5 @@
 /*************************************************************************
- * Copyright (c) 2019-2021, NVIDIA CORPORATION. All rights reserved.
+ * Copyright (c) 2019-2022, NVIDIA CORPORATION. All rights reserved.
  *
  * See LICENSE.txt for license information
  ************************************************************************/
@@ -11,6 +11,9 @@
 #include "checks.h"
 #include "align.h"
 #include <sys/mman.h>
+#include <unistd.h>
+#include <stdlib.h>
+#include <string.h>
 
 template <typename T>
 static ncclResult_t ncclCudaHostCallocDebug(T** ptr, size_t nelem, const char *filefunc, int line) {
@@ -33,12 +36,31 @@ static ncclResult_t ncclCallocDebug(T** ptr, size_t nelem, const char *filefunc,
     WARN("Failed to malloc %ld bytes", nelem*sizeof(T));
     return ncclSystemError;
   }
+  //INFO(NCCL_ALLOC, "%s:%d malloc Size %ld pointer %p", filefunc, line, nelem*sizeof(T), p);
   memset(p, 0, nelem*sizeof(T));
   *ptr = (T*)p;
-  INFO(NCCL_ALLOC, "%s:%d Mem Alloc Size %ld pointer %p", filefunc, line, nelem*sizeof(T), *ptr);
   return ncclSuccess;
 }
 #define ncclCalloc(...) ncclCallocDebug(__VA_ARGS__, __FILE__, __LINE__)
+
+template <typename T>
+static ncclResult_t ncclRealloc(T** ptr, size_t oldNelem, size_t nelem) {
+  if (nelem < oldNelem) return ncclInternalError;
+  if (nelem == oldNelem) return ncclSuccess;
+
+  T* oldp = *ptr;
+  T* p = (T*)malloc(nelem*sizeof(T));
+  if (p == NULL) {
+    WARN("Failed to malloc %ld bytes", nelem*sizeof(T));
+    return ncclSystemError;
+  }
+  memcpy(p, oldp, oldNelem*sizeof(T));
+  free(oldp);
+  memset(p+oldNelem, 0, (nelem-oldNelem)*sizeof(T));
+  *ptr = (T*)p;
+  INFO(NCCL_ALLOC, "Mem Realloc old size %ld, new size %ld pointer %p", oldNelem*sizeof(T), nelem*sizeof(T), *ptr);
+  return ncclSuccess;
+}
 
 template <typename T>
 static ncclResult_t ncclCudaCallocDebug(T** ptr, size_t nelem, const char *filefunc, int line) {
