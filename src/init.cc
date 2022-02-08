@@ -154,8 +154,16 @@ static ncclResult_t commFree(ncclComm_t comm) {
   int isLast;
   NCCLCHECK(ncclCpuBarrierIn(comm, &isLast));
   if (isLast) {
+    // Wait for all service threads to be done. We could not
+    // do it earlier because it could have blocked and prevented
+    // other ranks in the process to call ncclCommDestroy
+    for (int i=0; i<comm->intraRanks; i++) {
+      void* ret;
+      if (comm->intraThreads[i]) pthread_join(comm->intraThreads[i], &ret);
+    }
     free(comm->intraBarrier);
     free(comm->intraParams);
+    free(comm->intraThreads);
     free(comm->intraCudaDevs);
     free(comm->intraCGMode);
     free(comm->intraCC);
@@ -362,6 +370,7 @@ ncclResult_t ncclCommSetIntraProc(struct ncclComm* comm, int rank, int ranks, st
     bar[0] = bar[1] = 0;
     comm->intraBarrier = bar;
     NCCLCHECK(ncclCalloc(&comm->intraParams, comm->intraRanks));
+    NCCLCHECK(ncclCalloc(&comm->intraThreads, comm->intraRanks));
     NCCLCHECK(ncclCalloc(&comm->intraCudaDevs, comm->intraRanks));
     int* CGMode;
     NCCLCHECK(ncclCalloc(&CGMode, 1));
@@ -374,11 +383,13 @@ ncclResult_t ncclCommSetIntraProc(struct ncclComm* comm, int rank, int ranks, st
   } else {
     comm->intraBarrier = (int*)waitForNonNullPtr(&comm0->intraBarrier);
     comm->intraParams = (struct cudaLaunchParams*)waitForNonNullPtr(&comm0->intraParams);
+    comm->intraThreads = (pthread_t*)waitForNonNullPtr(&comm0->intraThreads);
     comm->intraCudaDevs = (int*)waitForNonNullPtr(&comm0->intraCudaDevs);
     comm->intraCGMode = (int*)waitForNonNullPtr(&comm0->intraCGMode);
     comm->intraCC = (int*)waitForNonNullPtr(&comm0->intraCC);
   }
   comm->intraCudaDevs[comm->intraRank] = comm->cudaDev;
+  comm->intraThreads[comm->intraRank] = comm->proxyState.thread;
   NCCLCHECK(initParams(comm));
 
   int cgMdLaunch = 0;

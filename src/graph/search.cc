@@ -975,7 +975,6 @@ ncclResult_t ncclTopoGetNetDev(struct ncclComm* comm, int rank, struct ncclTopoG
         int g, n;
         NCCLCHECK(ncclTopoRankToIndex(comm->topo, rank, &g));
         NCCLCHECK(ncclTopoIdToIndex(comm->topo, NET, netDev, &n));
-        NCCLCHECK(ncclTopoIdToIndex(comm->topo, NET, *dev, &n));
         struct ncclTopoNode* gpu = comm->topo->nodes[GPU].nodes+g;
         if (gpu->paths[NET][n].type <= PATH_PXN) {
           *dev = netDev;

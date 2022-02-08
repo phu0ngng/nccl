@@ -678,7 +678,8 @@ ncclResult_t ncclProxyProgressDestroy(struct ncclComm* comm) {
     state->pools = next;
   }
 
-  TIME_PRINT("proxy");
+  ncclProfilingDump();
+  TIME_PRINT("Proxy");
   return ncclSuccess;
 }
 
@@ -820,6 +821,10 @@ static ncclResult_t proxyProgressInit(struct ncclComm* comm) {
 
     // Init pool
     pool->nextOps = -1;
+
+    // The service thread may be launched already but localRanks may not be set yet.
+    while (comm->localRanks == 0) sched_yield();
+
     for (int r=0; r<comm->localRanks; r++) {
       pool->freeOps[r] = r*MAX_OPS_PER_PEER;
       for (int i=0; i<MAX_OPS_PER_PEER-1; i++) pool->ops[r*MAX_OPS_PER_PEER+i].next = r*MAX_OPS_PER_PEER+i+1;
@@ -1005,8 +1010,12 @@ void* ncclProxyService(void* _args) {
         type = op->type;
         if (res != ncclSuccess) op->type = 0;
       } else if (pollfds[s].revents & POLLIN) {
-        if (ncclSocketRecv(sock, &type, sizeof(int)) != ncclSuccess) {
+        int closed;
+        if (ncclSocketTryRecv(sock, &type, sizeof(int), &closed) != ncclSuccess) {
           WARN("[Service thread] Could not receive type from localRank %d", peer->localRank);
+          closeConn = 1;
+        } else if (closed) {
+          INFO(NCCL_INIT|NCCL_NET, "[Service thread] Connection closed by localRank %d", peer->localRank);
           closeConn = 1;
         } else {
           if (type == ncclProxyMsgAbort) {
@@ -1099,9 +1108,5 @@ ncclResult_t ncclProxyDestroy(struct ncclComm* comm) {
     free(state->proxyOps);
     free(state->sharedDevMems);
   }
-  void* ret;
-  pthread_join(state->thread, &ret);
-  ncclProfilingDump();
-  TIME_PRINT("Proxy");
   return ncclSuccess;
 }
