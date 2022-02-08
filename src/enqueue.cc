@@ -633,7 +633,7 @@ struct ncclBuffRegHandle {
 static ncclResult_t ncclRegBuffAndExchange(struct ncclInfo* info, struct ncclBuffRegInfo* regInfo) {
   ncclComm_t comm = info->comm;
   if (comm->localRanks == 1) return ncclSuccess;
-  if (comm->pfnCuMemGetAddressRange == NULL) return ncclSuccess;  // CUDA toolkit or driver version too old
+  if (CUPFN(cuMemGetAddressRange) == NULL) return ncclSuccess;  // CUDA toolkit or driver version too old
 
   ncclResult_t ret = ncclSuccess;
   struct ncclBuffRegHandle regHandles[NCCL_MAX_LOCAL_RANKS];
@@ -645,9 +645,9 @@ static ncclResult_t ncclRegBuffAndExchange(struct ncclInfo* info, struct ncclBuf
   void* baseAddr;
   size_t size;
   // Get base address
-  CUDACHECK(comm->pfnCuMemGetAddressRange(&baseAddr, &size, (void*)info->sendbuff));
+  CUCHECK(cuMemGetAddressRange((CUdeviceptr *)&baseAddr, &size, (CUdeviceptr)info->sendbuff));
   regHandles[comm->localRank].sendBuffOffset = (char*)info->sendbuff - (char*)baseAddr;
-  CUDACHECK(comm->pfnCuMemGetAddressRange(&baseAddr, &size, (void*)info->recvbuff));
+  CUCHECK(cuMemGetAddressRange((CUdeviceptr *)&baseAddr, &size, (CUdeviceptr)info->recvbuff));
   regHandles[comm->localRank].recvBuffOffset = (char*)info->recvbuff - (char*)baseAddr;
   TRACE(NCCL_COLL, "Base %p size %lu offset %ld", baseAddr, size, regHandles[comm->localRank].recvBuffOffset);
 

@@ -9,7 +9,7 @@
 
 #include "debug.h"
 
-// Check CUDA calls
+// Check CUDA RT calls
 #define CUDACHECK(cmd) do {                                 \
     cudaError_t err = cmd;                                  \
     if( err != cudaSuccess ) {                              \

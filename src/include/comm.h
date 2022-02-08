@@ -11,6 +11,9 @@
 #include "p2p.h"
 #include "collectives.h"
 
+#include <cuda.h>
+#include <cudaTypedefs.h>
+
 #if CUDART_VERSION < 9000
 struct cudaLaunchParams {
   void *func;
@@ -57,8 +60,6 @@ struct ncclRecvMem {
     char pad4[MEM_ALIGN];
   };
 };
-
-typedef cudaError_t(*pfn_cuMemGetAddressRange_t)(void**, size_t*, void*);
 
 enum helperThreadState {ThreadStart, ThreadStop};
 
@@ -201,7 +202,6 @@ struct ncclComm {
   cudaGraphNode_t lastSetupNode;
   unsigned long long lastCudaGraphId;
   int driverVersion;
-  pfn_cuMemGetAddressRange_t pfnCuMemGetAddressRange;
   pthread_t graphHelperThread;
   struct ncclGraphHelperResources* graphHelperResources;
   int disableGraphHelper;

@@ -247,9 +247,6 @@ static ncclResult_t commAlloc(ncclComm_t* comret, int ndev, int rank) {
 #if CUDART_VERSION >= 11030
   NCCLCHECK(ncclCalloc(&comm->graphHelperResources, 1));
   comm->graphHelperResources->comm = comm;
-  if (comm->driverVersion >= 11030)
-    // cudaGetDriverEntryPoint requires R465 or above (enhanced compat need)
-    CUDACHECK(cudaGetDriverEntryPoint("cuMemGetAddressRange", (void**)&comm->pfnCuMemGetAddressRange, cudaEnableDefault));
 #endif
 
   static_assert(MAXCHANNELS <= sizeof(*comm->connectSend)*8, "comm->connectSend must have enough bits for all channels");
@@ -948,6 +945,10 @@ end:
 NCCL_API(ncclResult_t, ncclCommInitRank, ncclComm_t* newcomm, int nranks, ncclUniqueId commId, int myrank);
 ncclResult_t ncclCommInitRank(ncclComm_t* newcomm, int nranks, ncclUniqueId commId, int myrank) {
   NVTX3_FUNC_RANGE_IN(nccl_domain);
+
+  // Make sure the CUDA driver and dlsym hooks are initialized.
+  NCCLCHECK(cudaLibraryInit());
+
   int cudaDev;
   CUDACHECK(cudaGetDevice(&cudaDev));
   NCCLCHECK(ncclCommInitRankDev(newcomm, nranks, commId, myrank, cudaDev));
@@ -957,6 +958,10 @@ ncclResult_t ncclCommInitRank(ncclComm_t* newcomm, int nranks, ncclUniqueId comm
 NCCL_API(ncclResult_t, ncclCommInitAll, ncclComm_t* comms, int ndev, const int* devlist);
 ncclResult_t ncclCommInitAll(ncclComm_t* comms, int ndev, const int* devlist) {
   NVTX3_FUNC_RANGE_IN(nccl_domain);
+
+  // Make sure the CUDA driver and dlsym hooks are initialized.
+  NCCLCHECK(cudaLibraryInit());
+
   NCCLCHECK(PtrCheck(comms, "CommInitAll", "comms"));
   if (ndev < 0) {
     WARN("Invalid device count requested : %d", ndev);
