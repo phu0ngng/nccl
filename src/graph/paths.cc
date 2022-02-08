@@ -602,6 +602,8 @@ void ncclTopoFree(struct ncclTopoSystem* system) {
   free(system);
 }
 
+NCCL_PARAM(NChannelsPerNetPeer, "NCHANNELS_PER_NET_PEER", 2);
+
 static ncclResult_t ncclTopoGetNchannels(struct ncclTopoSystem* system, int g /*local gpu index*/, int peerRank, int* nChannels) {
   int peer;
   struct ncclTopoLinkList* path = NULL;
@@ -621,7 +623,7 @@ static ncclResult_t ncclTopoGetNchannels(struct ncclTopoSystem* system, int g /*
     }
   } else {
     // Remote rank, use network
-    *nChannels = 2;
+    *nChannels = ncclParamNChannelsPerNetPeer();
   }
   return ncclSuccess;
 }

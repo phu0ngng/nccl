@@ -122,7 +122,7 @@ apitest-DGX-1V:
   tags:
     - dgx-1v
   variables:
-    CUDA_HOME: "/home/sjeaugey/prom-dev/cuda-11.3"
+    CUDA_HOME: "/home/sjeaugey/prom-dev/cuda-11.0"
     SRUN: ""
   script:
     - srun -n 1 --account=sw-gpu -pbatch -t 00:05:00 ./test/scripts/gitlab-runner-apitest.sh
@@ -137,7 +137,7 @@ apitest-DGX-A100:
   tags:
     - dgx-a100
   variables:
-    CUDA_HOME: "/project/share/cuda/cuda-11.3.99/"
+    CUDA_HOME: "/project/share/cuda/cuda-11.0.221/"
     NCCL_SOCKET_IFNAME: "ibp12s0"
     SRUN: ""
   script:
@@ -254,7 +254,7 @@ perftest-DGX-1V:
   variables:
     NCCL_DEBUG: "WARN"
     MPI_HOME: "/home/sjeaugey/prom-dev/mpi/openmpi-1.10.7"
-    CUDA_HOME: "/home/sjeaugey/prom-dev/cuda-11.3"
+    CUDA_HOME: "/home/sjeaugey/prom-dev/cuda-11.0"
     SALLOC: ""
   script:
     - salloc -N 1 -n 8 --account=sw-gpu -pbatch -t 00:05:00 ./test/scripts/gitlab-runner-perftest.sh 4G
@@ -272,7 +272,7 @@ perftest-DGX-A100:
   variables:
     NCCL_DEBUG: "WARN"
     MPI_HOME: "/home/svcnccl/install/openmpi-1.10.7"
-    CUDA_HOME: "/project/share/cuda/cuda-11.3.99/"
+    CUDA_HOME: "/project/share/cuda/cuda-11.0.221/"
     SALLOC: ""
   script:
     - salloc -N 1 -n 8 --account=nccl -pluna -J "nccl-cicd::$GITLAB_USER_LOGIN:perftest-single::$CI_COMMIT_BRANCH:$CI_COMMIT_SHORT_SHA" -t 00:05:00 ./test/scripts/gitlab-runner-perftest.sh 16G
@@ -336,7 +336,7 @@ perftest-multi-prom:
   variables:
     NCCL_DEBUG: "WARN"
     MPI_HOME: "/home/sjeaugey/prom-dev/mpi/openmpi-1.10.7"
-    CUDA_HOME: "/home/sjeaugey/prom-dev/cuda-11.3"
+    CUDA_HOME: "/home/sjeaugey/prom-dev/cuda-11.0"
     OMPI_MCA_oob_tcp_if_include: "10.33.12.0/24"
     OMPI_MCA_btl: "tcp,self"
     OMPI_MCA_btl_tcp_if_include: "10.33.12.0/24"
@@ -357,7 +357,7 @@ perftest-multi-selene:
   variables:
     NCCL_DEBUG: "WARN"
     MPI_HOME: "/home/svcnccl/install/openmpi-1.10.7"
-    CUDA_HOME: "/project/share/cuda/cuda-11.3.99/"
+    CUDA_HOME: "/project/share/cuda/cuda-11.0.221/"
     NCCL_IB_SL: "1"
     OMPI_MCA_btl: "^openib"
     OMPI_MCA_btl_tcp_if_include: "enp97s0f1"

@@ -482,16 +482,17 @@ ncclResult_t ncclSocketInit(struct ncclSocket* sock, union ncclSocketAddress* ad
   return ncclSuccess;
 }
 
-static ncclResult_t ncclSocketProgressOpt(int op, struct ncclSocket* sock, void* ptr, int size, int* offset, int block) {
+static ncclResult_t ncclSocketProgressOpt(int op, struct ncclSocket* sock, void* ptr, int size, int* offset, int block, int* closed) {
   int bytes = 0;
+  *closed = 0;
   char* data = (char*)ptr;
   char line[SOCKET_NAME_MAXLEN+1];
   do {
     if (op == NCCL_SOCKET_RECV) bytes = recv(sock->fd, data+(*offset), size-(*offset), block ? 0 : MSG_DONTWAIT);
     if (op == NCCL_SOCKET_SEND) bytes = send(sock->fd, data+(*offset), size-(*offset), block ? 0 : MSG_DONTWAIT);
     if (op == NCCL_SOCKET_RECV && bytes == 0) {
-      WARN("Net : Connection closed by remote peer %s", ncclSocketToString(&sock->addr, line));
-      return ncclSystemError;
+      *closed = 1;
+      return ncclSuccess;
     }
     if (bytes == -1) {
       if (errno != EINTR && errno != EWOULDBLOCK && errno != EAGAIN) {
@@ -511,12 +512,19 @@ static ncclResult_t ncclSocketProgressOpt(int op, struct ncclSocket* sock, void*
 }
 
 ncclResult_t ncclSocketProgress(int op, struct ncclSocket* sock, void* ptr, int size, int* offset) {
-  return ncclSocketProgressOpt(op, sock, ptr, size, offset, 0);
+  int closed;
+  NCCLCHECK(ncclSocketProgressOpt(op, sock, ptr, size, offset, 0, &closed));
+  if (closed) {
+    char line[SOCKET_NAME_MAXLEN+1];
+    WARN("Net : Connection closed by remote peer %s", ncclSocketToString(&sock->addr, line));
+    return ncclSystemError;
+  }
+  return ncclSuccess;
 }
 
 ncclResult_t ncclSocketWait(int op, struct ncclSocket* sock, void* ptr, int size, int* offset) {
   while (*offset < size)
-    NCCLCHECK(ncclSocketProgressOpt(op, sock, ptr, size, offset, 0));
+    NCCLCHECK(ncclSocketProgress(op, sock, ptr, size, offset));
   return ncclSuccess;
 }
 
@@ -529,5 +537,16 @@ ncclResult_t ncclSocketSend(struct ncclSocket* sock, void* ptr, int size) {
 ncclResult_t ncclSocketRecv(struct ncclSocket* sock, void* ptr, int size) {
   int offset = 0;
   NCCLCHECK(ncclSocketWait(NCCL_SOCKET_RECV, sock, ptr, size, &offset));
+  return ncclSuccess;
+}
+
+// Receive or detect connection closed
+ncclResult_t ncclSocketTryRecv(struct ncclSocket* sock, void* ptr, int size, int* closed) {
+  int offset = 0;
+  *closed = 0;
+  while (offset < size) {
+    NCCLCHECK(ncclSocketProgressOpt(NCCL_SOCKET_RECV, sock, ptr, size, &offset, 0, closed));
+    if (*closed) return ncclSuccess;
+  }
   return ncclSuccess;
 }
