@@ -33,7 +33,7 @@ struct shmRecvResources {
 NCCL_PARAM(ShmDisable, "SHM_DISABLE", 0);
 
 /* Determine two peers can communicate with SHM */
-ncclResult_t shmCanConnect(int* ret, struct ncclTopoSystem* topo, struct ncclTopoGraph* graph, struct ncclPeerInfo* info1, struct ncclPeerInfo* info2) {
+static ncclResult_t shmCanConnect(int* ret, struct ncclTopoSystem* topo, struct ncclTopoGraph* graph, struct ncclPeerInfo* info1, struct ncclPeerInfo* info2) {
   *ret = 0;
 
   if (ncclParamShmDisable() == 1) return ncclSuccess;
@@ -54,7 +54,7 @@ ncclResult_t shmCanConnect(int* ret, struct ncclTopoSystem* topo, struct ncclTop
 #define MAX_SHM_NAME_LEN 1024
 
 /* Create and return connect structures for this peer to connect to me */
-ncclResult_t shmSendSetup(struct ncclComm* comm, struct ncclTopoGraph* graph, struct ncclPeerInfo* myInfo, struct ncclPeerInfo* peerInfo, struct ncclConnect* connectInfo, struct ncclConnector* send, int channelId, int connIndex) {
+static ncclResult_t shmSendSetup(struct ncclComm* comm, struct ncclTopoGraph* graph, struct ncclPeerInfo* myInfo, struct ncclPeerInfo* peerInfo, struct ncclConnect* connectInfo, struct ncclConnector* send, int channelId, int connIndex) {
   struct shmSendResources* resources;
   NCCLCHECK(ncclCalloc(&resources, 1));
   send->transportResources = resources;
@@ -73,7 +73,7 @@ ncclResult_t shmSendSetup(struct ncclComm* comm, struct ncclTopoGraph* graph, st
   return ncclSuccess;
 }
 
-ncclResult_t shmRecvSetup(struct ncclComm* comm, struct ncclTopoGraph* graph, struct ncclPeerInfo* myInfo, struct ncclPeerInfo* peerInfo, struct ncclConnect* connectInfo, struct ncclConnector* recv, int channelId, int connIndex) {
+static ncclResult_t shmRecvSetup(struct ncclComm* comm, struct ncclTopoGraph* graph, struct ncclPeerInfo* myInfo, struct ncclPeerInfo* peerInfo, struct ncclConnect* connectInfo, struct ncclConnector* recv, int channelId, int connIndex) {
   struct shmRecvResources* resources;
   NCCLCHECK(ncclCalloc(&resources, 1));
   recv->transportResources = resources;
@@ -94,7 +94,7 @@ ncclResult_t shmRecvSetup(struct ncclComm* comm, struct ncclTopoGraph* graph, st
 }
 
 /* Connect to this peer */
-ncclResult_t shmSendConnect(struct ncclComm* comm, struct ncclConnect* connectInfo, int nranks, int rank, struct ncclConnector* send) {
+static ncclResult_t shmSendConnect(struct ncclComm* comm, struct ncclConnect* connectInfo, int nranks, int rank, struct ncclConnector* send) {
   // Setup device pointers
   struct shmConnectInfo* info = (struct shmConnectInfo*)connectInfo;
   struct shmSendResources* resources = (struct shmSendResources*)send->transportResources;
@@ -107,19 +107,17 @@ ncclResult_t shmSendConnect(struct ncclComm* comm, struct ncclConnect* connectIn
   // Remove the file to ensure proper clean-up
   NCCLCHECK(ncclShmUnlink(shmPath));
 
-  send->transportResources = resources;
   int offset = 0;
   for (int p=0; p<NCCL_NUM_PROTOCOLS; p++) {
     send->conn.buffs[p] = (char*)(resources->devRemHostMem+1) + offset;
     offset += send->comm->buffSizes[p];
   }
   send->conn.tail = &resources->devRemHostMem->tail;
-
   send->conn.head = &resources->devHostMem->head;
   return ncclSuccess;
 }
 
-ncclResult_t shmRecvConnect(struct ncclComm* comm, struct ncclConnect* connectInfo, int nranks, int rank, struct ncclConnector* recv) {
+static ncclResult_t shmRecvConnect(struct ncclComm* comm, struct ncclConnect* connectInfo, int nranks, int rank, struct ncclConnector* recv) {
   // Setup device pointers
   struct shmRecvResources* resources = (struct shmRecvResources*)recv->transportResources;
   struct shmConnectInfo* info = (struct shmConnectInfo*)connectInfo;
@@ -130,18 +128,18 @@ ncclResult_t shmRecvConnect(struct ncclComm* comm, struct ncclConnect* connectIn
   TRACE(NCCL_SHM,"Open shmName %s shmSize %d", shmPath, info->shmSize);
   NCCLCHECK(ncclShmOpen(shmPath, resources->remShmSize, (void**)&resources->remHostMem, (void**)&resources->devRemHostMem, 0));
   NCCLCHECK(ncclShmUnlink(shmPath));
-  recv->conn.head = &resources->devRemHostMem->head;
 
   int offset = 0;
   for (int p=0; p<NCCL_NUM_PROTOCOLS; p++) {
     recv->conn.buffs[p] = (char*)(resources->devHostMem+1) + offset;
     offset += recv->comm->buffSizes[p];
   }
+  recv->conn.head = &resources->devRemHostMem->head;
   recv->conn.tail = &resources->devHostMem->tail;
   return ncclSuccess;
 }
 
-ncclResult_t shmSendFree(struct ncclConnector* send) {
+static ncclResult_t shmSendFree(struct ncclConnector* send) {
   struct shmRecvResources* resources = (struct shmRecvResources*)send->transportResources;
   NCCLCHECK(ncclShmClose(resources->hostMem, resources->devHostMem, resources->shmSize));
   NCCLCHECK(ncclShmClose(resources->remHostMem, resources->devRemHostMem, resources->remShmSize));
@@ -149,7 +147,7 @@ ncclResult_t shmSendFree(struct ncclConnector* send) {
   return ncclSuccess;
 }
 
-ncclResult_t shmRecvFree(struct ncclConnector* recv) {
+static ncclResult_t shmRecvFree(struct ncclConnector* recv) {
   struct shmRecvResources* resources = (struct shmRecvResources*)recv->transportResources;
   NCCLCHECK(ncclShmClose(resources->hostMem, resources->devHostMem, resources->shmSize));
   NCCLCHECK(ncclShmClose(resources->remHostMem, resources->devRemHostMem, resources->remShmSize));
