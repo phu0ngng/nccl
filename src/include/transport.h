@@ -20,7 +20,7 @@
 
 #include "proxy.h"
 
-extern struct ncclTransport ncclTransports[];
+extern struct ncclTransport* ncclTransports[];
 
 // Forward declarations
 struct ncclRing;

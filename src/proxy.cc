@@ -728,9 +728,9 @@ static ncclResult_t ncclProxyGetConnection(struct ncclProxyConnectionPool* pool,
 
 static ncclResult_t proxyFree(struct ncclProxyConnection* connection, struct ncclComm* comm) {
   if (connection->send) {
-    NCCLCHECK(ncclTransports[connection->transport].send.proxyFree(connection, comm));
+    NCCLCHECK(ncclTransports[connection->transport]->send.proxyFree(connection, comm));
   } else {
-    NCCLCHECK(ncclTransports[connection->transport].recv.proxyFree(connection, comm));
+    NCCLCHECK(ncclTransports[connection->transport]->recv.proxyFree(connection, comm));
   }
   return ncclSuccess;
 }
@@ -774,7 +774,7 @@ ncclResult_t ncclProxyConnect(struct ncclComm* comm, int transport, int send, in
   NCCLCHECK(ncclSocketSend(sock, &send, sizeof(int)));
   NCCLCHECK(ncclSocketSend(sock, &comm->localRank, sizeof(int)));
   NCCLCHECK(ncclSocketRecv(sock, &proxyConn->connection, sizeof(void*)));
-  struct ncclTransportComm* tcomm = send ? &ncclTransports[transport].send : &ncclTransports[transport].recv;
+  struct ncclTransportComm* tcomm = send ? &ncclTransports[transport]->send : &ncclTransports[transport]->recv;
   // If we need proxy progress, map progress ops
   if (tcomm->proxyProgress) {
     char poolPath[] = "/dev/shm/nccl-XXXXXX";
@@ -882,7 +882,7 @@ static ncclResult_t proxyConnInit(struct ncclProxyLocalPeer* peer, struct ncclPr
   NCCLCHECK(ncclSocketRecv(sock, &peer->localRank, sizeof(int)));
   connection->localRank = peer->localRank;
   NCCLCHECK(ncclSocketSend(sock, &connection, sizeof(void*)));
-  connection->tcomm = connection->send ? &ncclTransports[connection->transport].send : &ncclTransports[connection->transport].recv;
+  connection->tcomm = connection->send ? &ncclTransports[connection->transport]->send : &ncclTransports[connection->transport]->recv;
   // If we need proxy progress, let's allocate ops and start the thread
   if (connection->tcomm->proxyProgress) {
     NCCLCHECK(proxyProgressInit(comm));
