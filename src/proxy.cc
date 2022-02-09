@@ -596,6 +596,11 @@ void ncclDumpProxyState(int signal) {
 
 void* ncclProxyProgress(void *comm_) {
   struct ncclComm* comm = (struct ncclComm*)comm_;
+  if (cudaSetDevice(comm->cudaDev) != cudaSuccess) {
+    WARN("[Proxy Service] Failed to set CUDA device %d", comm->cudaDev);
+  }
+  if (CPU_COUNT(&comm->cpuAffinity)) sched_setaffinity(0, sizeof(cpu_set_t), &comm->cpuAffinity);
+
   struct ncclProxyProgressState* state = &comm->proxyState.progressState;
   state->nextOps = -1;
   signal(SIGUSR1, ncclDumpProxyState);

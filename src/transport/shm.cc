@@ -19,6 +19,9 @@ struct shmSendResources {
   int shmSize;
   struct ncclSendMem* hostMem;
   struct ncclSendMem* devHostMem;
+  // CE copy
+  struct ncclRecvMem* ceRecvMem;
+  char* ceDevBuff;
 };
 
 struct shmRecvResources {
@@ -28,13 +31,22 @@ struct shmRecvResources {
   int shmSize;
   struct ncclRecvMem* hostMem;
   struct ncclRecvMem* devHostMem;
+  // CE copy
+  struct ncclRecvMem* ceRecvMem;
+  char* ceDevBuff;
 };
 
 NCCL_PARAM(ShmDisable, "SHM_DISABLE", 0);
+NCCL_PARAM(ShmUseCudaMemcpy, "SHM_USE_CUDA_MEMCPY", 0);
+NCCL_PARAM(ShmMemcpyMode, "SHM_MEMCPY_MODE", 3);
+static int useMemcpySend = 0;
+static int useMemcpyRecv = 0;
+static void initCeOperation();
 
 /* Determine two peers can communicate with SHM */
 static ncclResult_t shmCanConnect(int* ret, struct ncclTopoSystem* topo, struct ncclTopoGraph* graph, struct ncclPeerInfo* info1, struct ncclPeerInfo* info2) {
   *ret = 0;
+  initCeOperation();
 
   if (ncclParamShmDisable() == 1) return ncclSuccess;
 
@@ -69,7 +81,12 @@ static ncclResult_t shmSendSetup(struct ncclComm* comm, struct ncclTopoGraph* gr
   TRACE(NCCL_SHM,"Opened shmName %s shmSize %d", shmPath, info->shmSize);
   memcpy(info->shmName, shmPath+sizeof("/dev/shm/nccl-")-1, sizeof(info->shmName));
 
-  INFO(NCCL_INIT|NCCL_SHM,"Channel %02d : %d[%lx] -> %d[%lx] via direct shared memory", channelId, myInfo->rank, myInfo->busId, peerInfo->rank, peerInfo->busId);
+  if (useMemcpySend) {
+    NCCLCHECK(ncclCudaCalloc(&resources->ceDevBuff, comm->buffSizes[NCCL_PROTO_SIMPLE]));
+    NCCLCHECK(ncclCudaHostCalloc(&resources->ceRecvMem, 1));
+  }
+
+  INFO(NCCL_INIT|NCCL_SHM,"Channel %02d : %d[%lx] -> %d[%lx] via SHM/%s/%s", channelId, myInfo->rank, myInfo->busId, peerInfo->rank, peerInfo->busId, useMemcpySend?"CE":"direct", useMemcpyRecv?"CE":"direct");
   return ncclSuccess;
 }
 
@@ -90,8 +107,26 @@ static ncclResult_t shmRecvSetup(struct ncclComm* comm, struct ncclTopoGraph* gr
   TRACE(NCCL_SHM,"Opened shmName %s shmSize %d", shmPath, info->shmSize);
   memcpy(info->shmName, shmPath+sizeof("/dev/shm/nccl-")-1, sizeof(info->shmName));
 
+  if (useMemcpyRecv) {
+    NCCLCHECK(ncclCudaCalloc(&resources->ceDevBuff, comm->buffSizes[NCCL_PROTO_SIMPLE]));
+    NCCLCHECK(ncclCudaHostCalloc(&resources->ceRecvMem, 1));
+  }
+
   return ncclSuccess;
 }
+
+struct shmProxyInfo {
+  struct ncclRecvMem* ceRecvMem;
+  char* devFifo;
+  char* shmFifo;
+  struct ncclSendMem* sendMem;
+  struct ncclRecvMem* recvMem;
+
+  // used by progress only
+  uint64_t step;
+  cudaStream_t stream;
+  cudaEvent_t events[NCCL_STEPS];
+};
 
 /* Connect to this peer */
 static ncclResult_t shmSendConnect(struct ncclComm* comm, struct ncclConnect* connectInfo, int nranks, int rank, struct ncclConnector* send) {
@@ -114,6 +149,18 @@ static ncclResult_t shmSendConnect(struct ncclComm* comm, struct ncclConnect* co
   }
   send->conn.tail = &resources->devRemHostMem->tail;
   send->conn.head = &resources->devHostMem->head;
+
+  if (useMemcpyRecv) {
+    send->conn.sizesFifo = resources->devRemHostMem->sizesFifo;
+  }
+  if (useMemcpySend) {
+    NCCLCHECK(ncclProxyConnect(comm, TRANSPORT_SHM, 1, comm->rank, &send->proxyConn));
+    struct shmProxyInfo proxyInfo = { resources->ceRecvMem, resources->ceDevBuff, send->conn.buffs[NCCL_PROTO_SIMPLE], resources->hostMem, resources->remHostMem };
+    send->conn.buffs[NCCL_PROTO_SIMPLE] = resources->ceDevBuff;
+    NCCLCHECK(ncclProxyCall(&send->proxyConn, ncclProxyMsgConnect, &proxyInfo, sizeof(struct shmProxyInfo), NULL, 0));
+    send->conn.tail = &resources->ceRecvMem->tail;
+    send->conn.sizesFifo = resources->ceRecvMem->sizesFifo;
+  }
   return ncclSuccess;
 }
 
@@ -136,6 +183,14 @@ static ncclResult_t shmRecvConnect(struct ncclComm* comm, struct ncclConnect* co
   }
   recv->conn.head = &resources->devRemHostMem->head;
   recv->conn.tail = &resources->devHostMem->tail;
+
+  if (useMemcpyRecv) {
+    NCCLCHECK(ncclProxyConnect(comm, TRANSPORT_SHM, 0, comm->rank, &recv->proxyConn));
+    struct shmProxyInfo proxyInfo = { resources->ceRecvMem, resources->ceDevBuff, recv->conn.buffs[NCCL_PROTO_SIMPLE], resources->remHostMem, resources->hostMem };
+    recv->conn.buffs[NCCL_PROTO_SIMPLE] = resources->ceDevBuff;
+    NCCLCHECK(ncclProxyCall(&recv->proxyConn, ncclProxyMsgConnect, &proxyInfo, sizeof(struct shmProxyInfo), NULL, 0));
+    recv->conn.tail = &resources->ceRecvMem->tail;
+  }
   return ncclSuccess;
 }
 
@@ -143,6 +198,10 @@ static ncclResult_t shmSendFree(struct ncclConnector* send) {
   struct shmRecvResources* resources = (struct shmRecvResources*)send->transportResources;
   NCCLCHECK(ncclShmClose(resources->hostMem, resources->devHostMem, resources->shmSize));
   NCCLCHECK(ncclShmClose(resources->remHostMem, resources->devRemHostMem, resources->remShmSize));
+  if (useMemcpySend) {
+    CUDACHECK(cudaFree(resources->ceDevBuff));
+    NCCLCHECK(ncclCudaHostFree(resources->ceRecvMem));
+  }
   free(resources);
   return ncclSuccess;
 }
@@ -151,7 +210,175 @@ static ncclResult_t shmRecvFree(struct ncclConnector* recv) {
   struct shmRecvResources* resources = (struct shmRecvResources*)recv->transportResources;
   NCCLCHECK(ncclShmClose(resources->hostMem, resources->devHostMem, resources->shmSize));
   NCCLCHECK(ncclShmClose(resources->remHostMem, resources->devRemHostMem, resources->remShmSize));
+  if (useMemcpyRecv) {
+    CUDACHECK(cudaFree(resources->ceDevBuff));
+    NCCLCHECK(ncclCudaHostFree(resources->ceRecvMem));
+  }
   free(resources);
+  return ncclSuccess;
+}
+
+static ncclResult_t shmSendProxyConnect(struct ncclProxyConnection* connection, struct ncclComm* comm, void* reqBuff, int reqSize, void* respBuff, int respSize, int* done) {
+  struct shmProxyInfo* proxyInfo;
+  NCCLCHECK(ncclCalloc(&proxyInfo, 1));
+  if (reqSize != sizeof(struct shmProxyInfo)) return ncclInternalError;
+  memcpy(proxyInfo, reqBuff, reqSize);
+  CUDACHECK(cudaStreamCreateWithFlags(&proxyInfo->stream, cudaStreamNonBlocking));
+  for (int i=0; i<NCCL_STEPS; i++) {
+    CUDACHECK(cudaEventCreate(proxyInfo->events+i));
+  }
+  connection->proxyAppendPtr = &connection->proxyAppend;
+  connection->transportResources = proxyInfo;
+  return ncclSuccess;
+}
+
+static ncclResult_t shmRecvProxyConnect(struct ncclProxyConnection* connection, struct ncclComm* comm, void* reqBuff, int reqSize, void* respBuff, int respSize, int* done) {
+  struct shmProxyInfo* proxyInfo;
+  NCCLCHECK(ncclCalloc(&proxyInfo, 1));
+  if (reqSize != sizeof(struct shmProxyInfo)) return ncclInternalError;
+  memcpy(proxyInfo, reqBuff, reqSize);
+  CUDACHECK(cudaStreamCreateWithFlags(&proxyInfo->stream, cudaStreamNonBlocking));
+  for (int i=0; i<NCCL_STEPS; i++) {
+    CUDACHECK(cudaEventCreate(proxyInfo->events+i));
+  }
+  connection->proxyAppendPtr = &connection->proxyAppend;
+  connection->transportResources = proxyInfo;
+  return ncclSuccess;
+}
+
+static ncclResult_t shmSendProxyFree(struct ncclProxyConnection* connection, struct ncclComm* comm) {
+  struct shmProxyInfo* resources = (struct shmProxyInfo*)connection->transportResources;
+  CUDACHECK(cudaStreamDestroy(resources->stream));
+  for (int i=0; i<NCCL_STEPS; i++) {
+    CUDACHECK(cudaEventDestroy(resources->events[i]));
+  }
+  free(connection->transportResources);
+  return ncclSuccess;
+}
+
+static ncclResult_t shmRecvProxyFree(struct ncclProxyConnection* connection, struct ncclComm* comm) {
+  struct shmProxyInfo* resources = (struct shmProxyInfo*)connection->transportResources;
+  CUDACHECK(cudaStreamDestroy(resources->stream));
+  for (int i=0; i<NCCL_STEPS; i++) {
+    CUDACHECK(cudaEventDestroy(resources->events[i]));
+  }
+  free(connection->transportResources);
+  return ncclSuccess;
+}
+
+static ncclResult_t shmSendProxyProgress(struct ncclComm* comm, struct ncclProxyArgs* args) {
+  if (args->state == ncclProxyOpReady) {
+    for (int s=0; s<args->nsubs; s++) {
+      struct ncclProxySubArgs* sub = args->subs+s;
+      struct shmProxyInfo* resources = (struct shmProxyInfo*) (sub->connection->transportResources);
+      // Round to next multiple of sliceSteps
+      sub->base = ROUNDUP(resources->step, args->chunkSteps);
+      sub->posted = sub->transmitted = sub->done = 0;
+    }
+    args->state = ncclProxyOpProgress;
+  }
+  args->idle = 1;
+  if (args->state == ncclProxyOpProgress) {
+    int p = args->protocol;
+    int stepSize = comm->buffSizes[p] / NCCL_STEPS;
+    for (int s=0; s<args->nsubs; s++) {
+      struct ncclProxySubArgs* sub = args->subs+s;
+      struct shmProxyInfo* resources = (struct shmProxyInfo*) (sub->connection->transportResources);
+      if (p != NCCL_PROTO_SIMPLE) { // Only Simple uses cudaMemcpy
+          resources->step = sub->base + sub->nsteps;
+          args->done++;
+          continue;
+      }
+      if (sub->transmitted < sub->done + NCCL_STEPS && sub->transmitted < sub->nsteps) {
+        int buffSlot = (sub->base+sub->transmitted)%NCCL_STEPS;
+        volatile int* sizesFifo = resources->ceRecvMem->sizesFifo;
+        volatile uint64_t* recvTail = &resources->ceRecvMem->tail;
+        // Check GPU has sent everything
+        if ((*recvTail > sub->base+sub->transmitted)) {
+          int size = sizesFifo[buffSlot];
+          CUDACHECK(cudaMemcpyAsync(resources->shmFifo+buffSlot*stepSize, resources->devFifo+buffSlot*stepSize, size, cudaMemcpyDeviceToHost, resources->stream));
+          CUDACHECK(cudaEventRecord(resources->events[buffSlot], resources->stream));
+          resources->recvMem->sizesFifo[buffSlot] = size;
+          __sync_synchronize(); // make sure sizesFifo is visible
+          sub->transmitted += args->sliceSteps;
+        }
+      }
+      if (sub->done < sub->transmitted) {
+        int buffSlot = (sub->base+sub->done)%NCCL_STEPS;
+        cudaError_t res = cudaEventQuery(resources->events[buffSlot]);
+        if (res != cudaErrorNotReady) CUDACHECK(res);
+        if (res == cudaSuccess) {
+          sub->done += args->sliceSteps;
+          // Notify SHM
+          resources->recvMem->tail = sub->base + sub->done;
+        }
+        if (sub->done == sub->nsteps) {
+          resources->step = sub->base + sub->nsteps;
+          args->done++;
+        }
+      }
+    }
+    if (args->done == args->nsubs) {
+      args->state = ncclProxyOpNone;
+    }
+  }
+  return ncclSuccess;
+}
+
+static ncclResult_t shmRecvProxyProgress(struct ncclComm* comm, struct ncclProxyArgs* args) {
+  if (args->state == ncclProxyOpReady) {
+    for (int s=0; s<args->nsubs; s++) {
+      struct ncclProxySubArgs* sub = args->subs+s;
+      struct shmProxyInfo* resources = (struct shmProxyInfo*) (sub->connection->transportResources);
+      // Round to next multiple of sliceSteps
+      sub->base = ROUNDUP(resources->step, args->chunkSteps);
+      sub->posted = sub->transmitted = sub->done = 0;
+    }
+    args->state = ncclProxyOpProgress;
+  }
+  args->idle = 1;
+  if (args->state == ncclProxyOpProgress) {
+    int p = args->protocol;
+    int stepSize = comm->buffSizes[p] / NCCL_STEPS;
+    for (int s=0; s<args->nsubs; s++) {
+      struct ncclProxySubArgs* sub = args->subs+s;
+      struct shmProxyInfo* resources = (struct shmProxyInfo*) (sub->connection->transportResources);
+      if (p != NCCL_PROTO_SIMPLE) { // Only Simple uses cudaMemcpy
+          resources->step = sub->base + sub->nsteps;
+          args->done++;
+          continue;
+      }
+      if (sub->transmitted < sub->done + NCCL_STEPS && sub->transmitted < sub->nsteps) {
+        int buffSlot = (sub->base+sub->transmitted)%NCCL_STEPS;
+        volatile int* sizesFifo = resources->recvMem->sizesFifo;
+        volatile uint64_t* recvTail = &resources->recvMem->tail;
+        // Check data is ready in SHM
+        if ((*recvTail > sub->base+sub->transmitted)) {
+          int size = sizesFifo[buffSlot];
+          CUDACHECK(cudaMemcpyAsync(resources->devFifo+buffSlot*stepSize, resources->shmFifo+buffSlot*stepSize, size, cudaMemcpyDeviceToHost, resources->stream));
+          CUDACHECK(cudaEventRecord(resources->events[buffSlot], resources->stream));
+          sub->transmitted += args->sliceSteps;
+        }
+      }
+      if (sub->done < sub->transmitted) {
+        int buffSlot = (sub->base+sub->done)%NCCL_STEPS;
+        cudaError_t res = cudaEventQuery(resources->events[buffSlot]);
+        if (res != cudaErrorNotReady) CUDACHECK(res);
+        if (res == cudaSuccess) {
+          sub->done += args->sliceSteps;
+          // Notify GPU
+          resources->ceRecvMem->tail = sub->base + sub->done;
+        }
+        if (sub->done == sub->nsteps) {
+          resources->step = sub->base + sub->nsteps;
+          args->done++;
+        }
+      }
+    }
+    if (args->done == args->nsubs) {
+      args->state = ncclProxyOpNone;
+    }
+  }
   return ncclSuccess;
 }
 
@@ -161,3 +388,22 @@ struct ncclTransport shmTransport = {
   { shmSendSetup, shmSendConnect, shmSendFree, NULL, NULL, NULL, NULL, NULL },
   { shmRecvSetup, shmRecvConnect, shmRecvFree, NULL, NULL, NULL, NULL, NULL }
 };
+
+static void initCeOperation() {
+  static int init = 0;
+  if (!init) {
+    useMemcpySend = ncclParamShmUseCudaMemcpy() && (ncclParamShmMemcpyMode() & 1);
+    useMemcpyRecv = ncclParamShmUseCudaMemcpy() && (ncclParamShmMemcpyMode() & 2);
+    if (useMemcpySend) {
+      shmTransport.send.proxyConnect = shmSendProxyConnect;
+      shmTransport.send.proxyFree = shmSendProxyFree;
+      shmTransport.send.proxyProgress = shmSendProxyProgress;
+    }
+    if (useMemcpyRecv) {
+      shmTransport.recv.proxyConnect = shmRecvProxyConnect;
+      shmTransport.recv.proxyFree = shmRecvProxyFree;
+      shmTransport.recv.proxyProgress = shmRecvProxyProgress;
+    }
+    init = 1;
+  }
+}
