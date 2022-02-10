@@ -374,10 +374,18 @@ ncclResult_t ncclTopoCheckGdr(struct ncclTopoSystem* system, int64_t busId, int 
   }
 
   // Check if we are close enough that it makes sense to enable GDR
-  int netGdrLevel = PATH_PXN;
+  int netGdrLevel = PATH_PXB;
   NCCLCHECK(ncclGetLevel(&ncclTopoUserGdrLevel, NULL, "NCCL_NET_GDR_LEVEL"));
   if (ncclTopoUserGdrLevel != -2) netGdrLevel = ncclTopoUserGdrLevel;
   int distance = gpu->paths[NET][n].type;
+  if (distance == PATH_PXN) {
+    // In case of PXN, use the intermediate GPU distance instead
+    int proxyRank, g;
+    NCCLCHECK(ncclTopoGetIntermediateRank(system, gpu->gpu.rank, netDev, &proxyRank));
+    NCCLCHECK(ncclTopoRankToIndex(system, proxyRank, &g));
+    struct ncclTopoNode* proxyGpu = system->nodes[GPU].nodes+g;
+    distance = proxyGpu->paths[NET][n].type;
+  }
   if (distance > netGdrLevel) {
     INFO(NCCL_NET,"GPU Direct RDMA Disabled for GPU %lx / HCA %d (distance %d > %d)", busId, netDev, distance, netGdrLevel);
     return ncclSuccess;
