@@ -857,7 +857,7 @@ static ncclResult_t ncclSaveP2p(struct ncclInfo* info) {
       if (comm->nNodes == 1) delta = (comm->nRanks + peer - comm->rank) % comm->nRanks;
       // Mark channels that need pre-connect
       for (int c=0; c<comm->p2pnChannelsPerPeer; c++) {
-        int shuffle = comm->nNodes > 1 ? delta+(step/p2pGroupSize) : step;
+        int shuffle = (comm->nNodes == 1 || comm->MNNVL) ? step : delta+(step/p2pGroupSize);
         int channelId = (shuffle+comm->p2pChannels[c]) % comm->p2pnChannels;
         if (comm->channels[channelId].peers[peer].send[1].connected == 0) { // P2P uses only 1 connector
           comm->connectSend[peer] |= (1<<channelId);
@@ -874,7 +874,7 @@ static ncclResult_t ncclSaveP2p(struct ncclInfo* info) {
       if (comm->nNodes == 1) delta = (comm->nRanks - peer + comm->rank) % comm->nRanks;
       // Mark channels that need pre-connect
       for (int c=0; c<comm->p2pnChannelsPerPeer; c++) {
-        int shuffle = comm->nNodes > 1 ? delta+(step/p2pGroupSize) : step;
+        int shuffle = (comm->nNodes == 1 || comm->MNNVL)? step : delta+(step/p2pGroupSize);
         int channelId = (shuffle+comm->p2pChannels[c]) % comm->p2pnChannels;
         if (comm->channels[channelId].peers[peer].recv[1].connected == 0) { // P2P uses only 1 connector
           comm->connectRecv[peer] |= (1<<channelId);

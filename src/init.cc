@@ -442,6 +442,9 @@ NCCL_PARAM(GraphDumpFileRank, "GRAPH_DUMP_FILE_RANK", 0);
 NCCL_PARAM(CollNetNodeThreshold, "COLLNET_NODE_THRESHOLD", 2);
 NCCL_PARAM(NvbPreconnect, "NVB_PRECONNECT", 1);
 
+// MNNVL: Flag to indicate that this is a Multi-node NVLink system
+NCCL_PARAM(MNNVL, "MNNVL", 1);
+
 static ncclResult_t initTransportsRank(struct ncclComm* comm, ncclUniqueId* commId) {
   // We use 2 AllGathers
   // 1. { peerInfo, comm, compCap}
@@ -467,6 +470,8 @@ static ncclResult_t initTransportsRank(struct ncclComm* comm, ncclUniqueId* comm
 
   // AllGather1 - end
 
+  // Determine whether this is a MNNVL system
+  comm->MNNVL = ncclParamMNNVL();
   // Topo detection / System graph creation
   NCCLCHECK(ncclTopoGetSystem(comm, &comm->topo));
   // Compute paths between GPUs and NICs

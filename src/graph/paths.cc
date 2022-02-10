@@ -548,9 +548,6 @@ ncclResult_t ncclTopoComputePaths(struct ncclTopoSystem* system, struct ncclPeer
   return ncclSuccess;
 }
 
-// MNNVL: Flag to indicate that this is a Multi-node NVLink system
-NCCL_PARAM(MNNVL, "MNNVL", 1);
-
 ncclResult_t ncclTopoTrimSystem(struct ncclTopoSystem* system, struct ncclComm* comm) {
   int *domains;
   int64_t *ids;
@@ -588,7 +585,7 @@ ncclResult_t ncclTopoTrimSystem(struct ncclTopoSystem* system, struct ncclComm* 
   }
 
   comm->localRanks = system->nodes[GPU].count;
-  if (system->nodes[GPU].count == comm->nRanks || ncclParamMNNVL()) {
+  if (system->nodes[GPU].count == comm->nRanks || comm->MNNVL) {
     for (int n=system->nodes[NET].count-1; n>=0; n--)
       NCCLCHECK(ncclTopoRemoveNode(system, NET, n));
   }
@@ -604,8 +601,9 @@ void ncclTopoFree(struct ncclTopoSystem* system) {
 
 NCCL_PARAM(NChannelsPerNetPeer, "NCHANNELS_PER_NET_PEER", 2);
 
-static ncclResult_t ncclTopoGetNchannels(struct ncclTopoSystem* system, int g /*local gpu index*/, int peerRank, int* nChannels) {
+static ncclResult_t ncclTopoGetNchannels(struct ncclComm* comm, int g /*local gpu index*/, int peerRank, int* nChannels) {
   int peer;
+  struct ncclTopoSystem* system = comm->topo;
   struct ncclTopoLinkList* path = NULL;
   if (ncclTopoRankToIndex(system, peerRank, &peer) == ncclSuccess) {
     // Same rank
@@ -621,6 +619,11 @@ static ncclResult_t ncclTopoGetNchannels(struct ncclTopoSystem* system, int g /*
     } else {
       *nChannels = 2;
     }
+  } else if (comm->MNNVL) {
+    // MNNVL assume all GPUs are connected via NVLink
+    path = system->nodes[GPU].nodes[g].paths[GPU]+((g+1)%system->nodes[GPU].count);
+    float nvlWidth = ncclTopoNVLinkSpeed(system->nodes[GPU].nodes[g].gpu.cudaCompCap);
+    *nChannels = 2*std::max(1, (int)(path->width / nvlWidth));
   } else {
     // Remote rank, use network
     *nChannels = ncclParamNChannelsPerNetPeer();
@@ -645,7 +648,7 @@ ncclResult_t ncclTopoComputeP2pChannels(struct ncclComm* comm) {
   for (int g=0; g<comm->topo->nodes[GPU].count; g++) {
     for (int r=0; r<comm->nRanks; r++) {
       int nChannels;
-      NCCLCHECK(ncclTopoGetNchannels(comm->topo, g, r, &nChannels));
+      NCCLCHECK(ncclTopoGetNchannels(comm, g, r, &nChannels));
       if (nChannels >= 0) minChannels = std::min(minChannels, nChannels);
     }
   }
