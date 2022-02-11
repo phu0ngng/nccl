@@ -18,6 +18,7 @@ struct p2pConnectInfo {
   int read;
   struct ncclP2pBuff p2pBuff;
 };
+static_assert(sizeof(p2pConnectInfo) <= CONNECT_SIZE, "P2P Connect info is too large");
 
 struct p2pSendResources {
   struct ncclSendMem* devMem;

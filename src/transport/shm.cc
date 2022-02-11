@@ -11,6 +11,7 @@ struct shmConnectInfo {
   char shmName[7];
   int shmSize;
 };
+static_assert(sizeof(shmConnectInfo) <= CONNECT_SIZE, "SHM Connect info is too large");
 
 struct shmSendResources {
   int remShmSize;
