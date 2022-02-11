@@ -159,23 +159,23 @@ static ncclResult_t allocateShareableBuffer(int device, size_t size,
   prop.location.id = device;
 
   // Allocate and export
-  CUDACHECK_DEV(cuMemCreate(handle, size, &prop, /* alloc_flags */ 0));
+  CUCHECK(cuMemCreate(handle, size, &prop, /* alloc_flags */ 0));
 
   TRACE(NCCL_INIT|NCCL_P2P, "Allocated shareable buffer device %d size %zi handle 0x%x", device, size, *handle);
 
-  CUDACHECK_DEV(cuMemExportToShareableHandle(desc, *handle, CU_MEM_HANDLE_TYPE_FABRIC, 0));
+  CUCHECK(cuMemExportToShareableHandle(desc, *handle, CU_MEM_HANDLE_TYPE_FABRIC, 0));
 
   TRACE(NCCL_INIT|NCCL_P2P, "Exported shareable buffer device %d size %zi handle 0x%x to desc %p", device, size, *handle, desc);
 
   CUdeviceptr dptr = 0;
 
   // In addition to allocating for export, also map for access by the local GPU
-  CUDACHECK_DEV(cuMemAddressReserve(&dptr, size, /* alignment */ 0, /* addr */ 0, /* flags */ 0));
-  CUDACHECK_DEV(cuMemMap(dptr, size, /*offset*/ 0, *handle, /* flags */ 0));
+  CUCHECK(cuMemAddressReserve(&dptr, size, /* alignment */ 0, /* addr */ 0, /* flags */ 0));
+  CUCHECK(cuMemMap(dptr, size, /*offset*/ 0, *handle, /* flags */ 0));
   accessDesc.location.type = CU_MEM_LOCATION_TYPE_DEVICE;
   accessDesc.location.id = device;
   accessDesc.flags = CU_MEM_ACCESS_FLAGS_PROT_READWRITE;
-  CUDACHECK_DEV(cuMemSetAccess(dptr, size, &accessDesc, 1));
+  CUCHECK(cuMemSetAccess(dptr, size, &accessDesc, 1));
 
   TRACE(NCCL_INIT|NCCL_P2P, "Mapped shareable buffer device %d size %zi handle 0x%x dptr %p", device, size, *handle, dptr);
 
@@ -190,11 +190,11 @@ static ncclResult_t freeShareableBuffer(void *buff, size_t size, CUmemGenericAll
   TRACE(NCCL_P2P, "Free shareable buffer %p size %zi handle 0x%x", buff, size, handle);
 
   // Take care of the local GPU mappings we made
-  CUDACHECK_DEV(cuMemUnmap(dptr, size));
-  CUDACHECK_DEV(cuMemAddressFree(dptr, size));
+  CUCHECK(cuMemUnmap(dptr, size));
+  CUCHECK(cuMemAddressFree(dptr, size));
 
   // Release the allocation
-  CUDACHECK_DEV(cuMemRelease(handle));
+  CUCHECK(cuMemRelease(handle));
 
   return ncclSuccess;
 }
@@ -209,16 +209,16 @@ static ncclResult_t importShareableBuffer(int device, size_t size,
   INFO(NCCL_P2P, "Importing shareable buffer device %d size %zi", device, size);
 
   // Import and map the remote memory descriptor to the local GPU
-  CUDACHECK_DEV(cuMemImportFromShareableHandle(handle, desc, CU_MEM_HANDLE_TYPE_FABRIC));
-  CUDACHECK_DEV(cuMemAddressReserve(&dptr, size, /* alignment */ 0, /* addr */ 0, /* flags */ 0));
-  CUDACHECK_DEV(cuMemMap(dptr, size, /* offset */ 0, *handle, /* flags */ 0));
+  CUCHECK(cuMemImportFromShareableHandle(handle, desc, CU_MEM_HANDLE_TYPE_FABRIC));
+  CUCHECK(cuMemAddressReserve(&dptr, size, /* alignment */ 0, /* addr */ 0, /* flags */ 0));
+  CUCHECK(cuMemMap(dptr, size, /* offset */ 0, *handle, /* flags */ 0));
   TRACE(NCCL_P2P, "Imported shareable buffer device %d size %zi handle 0x%x dptr %p", device, size, *handle, dptr);
 
   // Allow access by the local GPU
   accessDesc.location.type = CU_MEM_LOCATION_TYPE_DEVICE;
   accessDesc.location.id = device;
   accessDesc.flags = CU_MEM_ACCESS_FLAGS_PROT_READWRITE;
-  CUDACHECK_DEV(cuMemSetAccess(dptr, size, &accessDesc, 1));
+  CUCHECK(cuMemSetAccess(dptr, size, &accessDesc, 1));
 
   *devMemPtr = (void *)dptr;
 
@@ -230,9 +230,9 @@ static ncclResult_t unimportShareableBuffer(void *buff, size_t size, CUmemGeneri
 
   TRACE(NCCL_P2P, "Unimport shareable buffer %p size %zi handle 0x%x", buff, size, handle);
 
-  CUDACHECK_DEV(cuMemUnmap(dptr, size));
-  CUDACHECK_DEV(cuMemAddressFree(dptr, size));
-  CUDACHECK_DEV(cuMemRelease(handle));
+  CUCHECK(cuMemUnmap(dptr, size));
+  CUCHECK(cuMemAddressFree(dptr, size));
+  CUCHECK(cuMemRelease(handle));
 
   return ncclSuccess;
 }
