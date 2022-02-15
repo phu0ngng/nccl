@@ -860,7 +860,7 @@ static ncclResult_t ncclSaveP2p(struct ncclInfo* info) {
         int shuffle = comm->nNodes > 1 ? delta+(step/p2pGroupSize) : step;
         int channelId = (shuffle+comm->p2pChannels[c]) % comm->p2pnChannels;
         if (comm->channels[channelId].peers[peer].send[1].connected == 0) { // P2P uses only 1 connector
-          comm->connectSend[peer] |= (1<<channelId);
+          comm->connectSend[peer] |= (1UL<<channelId);
           comm->connect = 1;
         }
       }
@@ -877,7 +877,7 @@ static ncclResult_t ncclSaveP2p(struct ncclInfo* info) {
         int shuffle = comm->nNodes > 1 ? delta+(step/p2pGroupSize) : step;
         int channelId = (shuffle+comm->p2pChannels[c]) % comm->p2pnChannels;
         if (comm->channels[channelId].peers[peer].recv[1].connected == 0) { // P2P uses only 1 connector
-          comm->connectRecv[peer] |= (1<<channelId);
+          comm->connectRecv[peer] |= (1UL<<channelId);
           comm->connect = 1;
         }
       }
