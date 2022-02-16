@@ -13,6 +13,8 @@
 #include "shm.h"
 #include "profiler.h"
 
+static_assert(sizeof(ncclNetHandle_t) <= CONNECT_SIZE, "NET Connect info is too large");
+
 #define NCCL_NET_MAP_HOSTMEM 0
 #define NCCL_NET_MAP_DEVMEM 1
 #define NCCL_NET_MAP_SHARED_HOSTMEM 2
@@ -128,7 +130,7 @@ struct recvResources {
   uint64_t llLastCleaning;
 };
 
-NCCL_PARAM(NetDisableIntra, "NET_DISABLE_INTRA", -2);
+NCCL_PARAM(NetDisableIntra, "NET_DISABLE_INTRA", 0);
 
 /* Determine if two peers can communicate with NET */
 static ncclResult_t canConnect(int* ret, struct ncclTopoSystem* topo, struct ncclTopoGraph* graph, struct ncclPeerInfo* info1, struct ncclPeerInfo* info2) {

@@ -426,6 +426,31 @@ Values accepted
 
 Before 2.4.2, the default value is 0 for all platforms. Since 2.4.2, the default value is 1 for NVLink-based platforms and 0 otherwise.
 
+NCCL_NET_SHARED_BUFFERS
+-----------------------
+(since 2.8)
+
+Allows the usage of shared buffers for inter-node point-to-point communication.
+This will use a single large pool for all remote peers, having a constant
+memory usage instead of increasing linearly with the number of remote peers.
+
+Value accepted
+^^^^^^^^^^^^^^
+
+Default is 1 (enabled). Set to 0 to disable.
+
+NCCL_NET_SHARED_COMMS
+---------------------
+(since 2.12)
+
+Reuse the same connections in the context of PXN. This allows for message
+aggregation but can also decreate the entropy of network packets.
+
+Value accepted
+^^^^^^^^^^^^^^
+
+Default is 1 (enabled). Set to 0 to disable.
+
 NCCL_SINGLE_RING_THRESHOLD
 --------------------------
 (since 2.1, removed in 2.3)
@@ -572,6 +597,42 @@ Value accepted
 ^^^^^^^^^^^^^^
 A path to a file which will be created or overwritten.
 
+NCCL_NVB_DISABLE
+----------------
+(since 2.11)
+
+Disable intra-node communication through NVLink via an intermediate GPU.
+
+Value accepted
+^^^^^^^^^^^^^^
+Default is 0, set to 1 to disable that mechanism.
+
+NCCL_PXN_DISABLE
+----------------
+(since 2.12)
+
+Disable inter-node communication using a non-local NIC, using NVLink and
+an intermediate GPU.
+
+Value accepted
+^^^^^^^^^^^^^^
+Default is 0, set to 1 to disable that mechanism.
+
+NCCL_P2P_PXN_LEVEL
+------------------
+(since 2.12)
+
+Control in which cases PXN is used for send/receive operations.
+
+Value accepted
+^^^^^^^^^^^^^^
+
+A value of 0 will never use PXN for send/receive. A value of 1 will use PXN
+when the NIC preferred by the destination is not directly accessible. A value
+of 2 (default) will always use PXN even if the NIC is directly accessible,
+storing data on the same intermediate GPU as other GPUs in the node to maximize
+aggregation.
+
 .. _NCCL_GRAPH_REGISTER:
 
 NCCL_GRAPH_REGISTER
@@ -594,7 +655,6 @@ Value accepted
 
 NCCL_SET_STACK_SIZE
 -------------------
-
 (since 2.9)
 
 Set CUDA kernel stack size to the maximum stack size amongst all NCCL kernels.
@@ -604,3 +664,13 @@ It may avoid a CUDA memory reconfiguration on load. Set to 1 if you experience h
 Value accepted
 ^^^^^^^^^^^^^^
 0 or 1. Default value is 0.
+
+NCCL_SET_THREAD_NAME
+--------------------
+(since 2.12)
+
+Change the name of NCCL threads to ease debugging and analysis.
+
+Value accepted
+^^^^^^^^^^^^^^
+0 or 1. Default is 0.
