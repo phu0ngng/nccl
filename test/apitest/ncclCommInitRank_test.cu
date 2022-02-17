@@ -17,20 +17,12 @@ class ncclCommInitRank_test : public ::testing::Test {
     };
 };
 TEST_F(ncclCommInitRank_test, basic) {
-    ASSERT_EQ(ncclSuccess, ncclCommInitRank(&comm, ndev, commId, rank))
-        << "This test should be passed always.";
+    ASSERT_EQ(ncclSuccess, ncclCommInitRank(&comm, ndev, commId, rank));
 }
 TEST_F(ncclCommInitRank_test, comm_null) {
     ASSERT_EQ(ncclInvalidArgument, ncclCommInitRank(NULL, ndev, commId, rank));
     ASSERT_EQ(ncclSuccess, ncclCommInitRank(&comm, ndev, commId, rank));
 }
-#if 0 // don't test this.
-TEST_F(ncclCommInitRank_test, commId_uninitialized) {
-    ncclUniqueId id;
-    ASSERT_NE(ncclSuccess, ncclCommInitRank(&comm, ndev, id, rank))
-        << "should an uninitialized unique id be used?";
-}
-#endif
 TEST_F(ncclCommInitRank_test, id_dup) {
     ncclUniqueId* id1 = (ncclUniqueId*)malloc(sizeof(ncclUniqueId));
     EXPECT_EQ(ncclSuccess, ncclGetUniqueId(id1));

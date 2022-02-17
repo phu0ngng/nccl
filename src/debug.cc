@@ -1,5 +1,5 @@
 /*************************************************************************
- * Copyright (c) 2016-2021, NVIDIA CORPORATION. All rights reserved.
+ * Copyright (c) 2016-2022, NVIDIA CORPORATION. All rights reserved.
  *
  * See LICENSE.txt for license information
  ************************************************************************/
@@ -138,7 +138,7 @@ void ncclDebugLog(ncclDebugLogLevel level, unsigned long flags, const char *file
   int cudaDev;
   cudaGetDevice(&cudaDev);
   int pid = getpid();
-  int tid = gettid();
+  int tid = syscall(SYS_gettid);
 
   char buffer[1024];
   size_t len = 0;
@@ -166,4 +166,20 @@ void ncclDebugLog(ncclDebugLogLevel level, unsigned long flags, const char *file
     fflush(ncclDebugFile);
   }
   pthread_mutex_unlock(&ncclDebugLock);
+}
+
+NCCL_PARAM(SetThreadName, "SET_THREAD_NAME", 0);
+
+void ncclSetThreadName(pthread_t thread, const char *fmt, ...) {
+  // pthread_setname_np is nonstandard GNU extension
+  // needs the following feature test macro
+#ifdef _GNU_SOURCE
+  if (ncclParamSetThreadName() != 1) return;
+  char threadName[NCCL_THREAD_NAMELEN];
+  va_list vargs;
+  va_start(vargs, fmt);
+  vsnprintf(threadName, NCCL_THREAD_NAMELEN, fmt, vargs);
+  va_end(vargs);
+  pthread_setname_np(thread, threadName);
+#endif
 }
