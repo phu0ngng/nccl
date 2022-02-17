@@ -129,7 +129,7 @@ struct recvResources {
 };
 
 /* Determine if we can communicate with the peer */
-static ncclResult_t canConnect(int* ret, struct ncclTopoSystem* topo, struct ncclTopoGraph* graph, struct ncclPeerInfo* info1, struct ncclPeerInfo* info2) {
+static ncclResult_t canConnect(int* ret, struct ncclComm* comm, struct ncclTopoSystem* topo, struct ncclTopoGraph* graph, struct ncclPeerInfo* info1, struct ncclPeerInfo* info2) {
   *ret = 1;
   return ncclSuccess;
 }

@@ -65,14 +65,18 @@ static int busIdToCudaDev(int64_t busId) {
 }
 
 /* Determine if two peers can communicate through p2p */
-ncclResult_t p2pCanConnect(int* ret, struct ncclTopoSystem* topo, struct ncclTopoGraph* graph, struct ncclPeerInfo* info1, struct ncclPeerInfo* info2) {
-#ifndef MNNVL_SUPPORT
+ncclResult_t p2pCanConnect(int* ret, struct ncclComm *comm, struct ncclTopoSystem* topo, struct ncclTopoGraph* graph, struct ncclPeerInfo* info1, struct ncclPeerInfo* info2) {
+  // MNNVL: Assume all ranks are connected via NVLink
+  if (comm->MNNVL) {
+    *ret = 1;
+    return ncclSuccess;
+  }
+
   // Rule out different nodes / isolated containers
   if (info1->hostHash != info2->hostHash || info1->shmDev != info2->shmDev) {
     *ret = 0;
     return ncclSuccess;
   }
-#endif
 
   // Check topology / p2p level.
   int intermediateRank;

@@ -59,7 +59,7 @@ struct ncclTransportComm {
 
 struct ncclTransport {
   const char name[4];
-  ncclResult_t (*canConnect)(int*, struct ncclTopoSystem* topo, struct ncclTopoGraph* graph, struct ncclPeerInfo*, struct ncclPeerInfo*);
+  ncclResult_t (*canConnect)(int*, struct ncclComm* comm, struct ncclTopoSystem* topo, struct ncclTopoGraph* graph, struct ncclPeerInfo*, struct ncclPeerInfo*);
   struct ncclTransportComm send;
   struct ncclTransportComm recv;
 };

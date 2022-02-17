@@ -467,7 +467,7 @@ ncclResult_t ncclTopoGetPxnRanks(struct ncclComm* comm, int** intermediateRanks,
   return ncclSuccess;
 }
 
-ncclResult_t ncclTopoComputePaths(struct ncclTopoSystem* system, struct ncclPeerInfo* peerInfos) {
+ncclResult_t ncclTopoComputePaths(struct ncclComm* comm, struct ncclTopoSystem* system, struct ncclPeerInfo* peerInfos) {
   // Precompute paths between GPUs/NICs.
 
   // Remove everything in case we're re-computing
@@ -502,9 +502,9 @@ ncclResult_t ncclTopoComputePaths(struct ncclTopoSystem* system, struct ncclPeer
       if (p == g) continue;
       struct ncclPeerInfo* srcInfo = peerInfos+system->nodes[GPU].nodes[p].gpu.rank;
       int shm;
-      NCCLCHECK(ncclTransports[TRANSPORT_SHM].canConnect(&shm, system, NULL, srcInfo, dstInfo));
+      NCCLCHECK(ncclTransports[TRANSPORT_SHM].canConnect(&shm, comm, system, NULL, srcInfo, dstInfo));
       int p2p;
-      NCCLCHECK(ncclTransports[TRANSPORT_P2P].canConnect(&p2p, system, NULL, srcInfo, dstInfo));
+      NCCLCHECK(ncclTransports[TRANSPORT_P2P].canConnect(&p2p, comm, system, NULL, srcInfo, dstInfo));
       if (shm == 0 && p2p == 0) {
         // Mark this peer as inaccessible. We'll trim it later.
         system->nodes[GPU].nodes[p].paths[GPU][g].count = 0;
