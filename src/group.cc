@@ -8,6 +8,7 @@
 #include "debug.h"
 #include "enqueue.h"
 #include "transport.h"
+#include "graph/topo.h"
 
 #define MAX_ASYNC_OPS 128
 thread_local pthread_t ncclGroupThreads[MAX_ASYNC_OPS];
@@ -266,7 +267,7 @@ sched_delta:
               do {
                 // Shuffle channels with s intra-node, and delta inter-node. Inter-node, make sure
                 // to use multiple channels to guarantee progress on all ranks from the same node.
-                int shuffle = (comm->nNodes == 1 || comm->MNNVL) ? s : delta+(s/p2pGroupSize);
+                int shuffle = (comm->nNodes == 1 || comm->topo->MNNVL) ? s : delta+(s/p2pGroupSize);
                 int channelId = (shuffle+comm->p2pChannels[chunk%comm->p2pnChannelsPerPeer]) % comm->p2pnChannels;
                 ssize_t recvbytes = totRecvBytes-recvOffset;
                 ssize_t sendbytes = totSendBytes-sendOffset;

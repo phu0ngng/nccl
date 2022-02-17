@@ -106,7 +106,6 @@ struct ncclComm {
 
   int node;
   int nNodes;
-  int MNNVL;
   int localRank;
   int localRanks;
   int maxLocalRanks;

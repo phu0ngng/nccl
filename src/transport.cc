@@ -32,7 +32,7 @@ static ncclResult_t selectTransport(struct ncclComm* comm, struct ncclTopoGraph*
     struct ncclTransport *transport = ncclTransports+t;
     struct ncclTransportComm* transportComm = type == 1 ? &transport->send : &transport->recv;
     int ret = 0;
-    NCCLCHECK(transport->canConnect(&ret, comm, comm->topo, graph, myInfo, peerInfo));
+    NCCLCHECK(transport->canConnect(&ret, comm->topo, graph, myInfo, peerInfo));
     if (ret) {
       connector->transportComm = transportComm;
       NCCLCHECK(transportComm->setup(comm, graph, myInfo, peerInfo, connect, connector, channelId, connIndex));
@@ -170,7 +170,7 @@ int ncclTransportCollNetSetup(struct ncclComm* comm, struct ncclTopoGraph* collN
   peerInfo->rank = nranks;
   int support = 1;
   if (isMaster) {
-    NCCLCHECK(collNetTransport.canConnect(&support, comm, comm->topo, collNetGraph, myInfo, peerInfo));
+    NCCLCHECK(collNetTransport.canConnect(&support, comm->topo, collNetGraph, myInfo, peerInfo));
   }
 
   // send master receives connect info from peer recv master

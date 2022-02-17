@@ -9,9 +9,9 @@
 #include "comm.h"
 #include "graph.h"
 #include "utils.h"
-
 #ifdef MNNVL_SUPPORT
 #include "wizlet.h"
+#include "graph/topo.h"
 #endif
 
 enum p2pType { P2P_DIRECT, P2P_INTERMEDIATE, P2P_IPC, P2P_MULTINODE };
@@ -65,12 +65,14 @@ static int busIdToCudaDev(int64_t busId) {
 }
 
 /* Determine if two peers can communicate through p2p */
-ncclResult_t p2pCanConnect(int* ret, struct ncclComm *comm, struct ncclTopoSystem* topo, struct ncclTopoGraph* graph, struct ncclPeerInfo* info1, struct ncclPeerInfo* info2) {
-  // MNNVL: Assume all ranks are connected via NVLink
-  if (comm->MNNVL) {
+ncclResult_t p2pCanConnect(int* ret, struct ncclTopoSystem* topo, struct ncclTopoGraph* graph, struct ncclPeerInfo* info1, struct ncclPeerInfo* info2) {
+#ifdef MNNVL_SUPPORT
+  if (topo->MNNVL) {
+    // MNNVL: Assume all ranks are connected via NVLink
     *ret = 1;
     return ncclSuccess;
   }
+#endif
 
   // Rule out different nodes / isolated containers
   if (info1->hostHash != info2->hostHash || info1->shmDev != info2->shmDev) {
@@ -146,7 +148,7 @@ ncclResult_t p2pCanConnect(int* ret, struct ncclComm *comm, struct ncclTopoSyste
   } while (0)
 
 #ifdef MNNVL_SUPPORT
-// MNNVL: Multi-node NVLink
+// MNNVL: Multi-Node NVLink
 static ncclResult_t allocateShareableBuffer(int device, size_t size,
                                             CUmemFabricHandle *desc, CUmemGenericAllocationHandle *handle, void **devMemPtr) {
   CUmemAllocationProp prop;
@@ -258,9 +260,9 @@ static ncclResult_t p2pGetInfo(struct ncclTopoSystem* topo, struct ncclPeerInfo*
   return ncclSuccess;
 }
 
-static ncclResult_t p2pMap(struct ncclPeerInfo* myInfo, struct ncclPeerInfo* peerInfo, struct ncclP2pBuff* p2pBuff, void** devMem, struct p2pResources *resources) {
-  // MNNVL: multi-node NVLink
-  if (myInfo->hostHash != peerInfo->hostHash) {
+static ncclResult_t p2pMap(struct ncclComm *comm, struct ncclPeerInfo* myInfo, struct ncclPeerInfo* peerInfo, struct ncclP2pBuff* p2pBuff, void** devMem, struct p2pResources *resources) {
+  // MNNVL: Multi-Node NVLink
+  if (comm->topo->MNNVL > 1 || myInfo->hostHash != peerInfo->hostHash) {
     // Different hosts, so assume multi-node NVLink
     NCCLCHECK(importShareableBuffer(myInfo->cudaDev, p2pBuff->size, &p2pBuff->desc, &resources->importHandle, devMem));
     resources->remotePtr = *devMem;
@@ -308,8 +310,8 @@ ncclResult_t p2pSendSetup(struct ncclComm* comm, struct ncclTopoGraph* graph, st
   if (info->read) sendSize += send->comm->buffSizes[NCCL_PROTO_SIMPLE];
   ALIGN_SIZE(sendSize, CUDA_IPC_MIN);
 
-  // MNNVL: Multi-node NVLink
-  if (myInfo->hostHash != peerInfo->hostHash) {
+  // MNNVL: Multi-Node NVLink
+  if (comm->topo->MNNVL > 1 || myInfo->hostHash != peerInfo->hostHash) {
     // Different hosts, so assume multi-node NVLink
     info->p2pBuff.size = resources->exportSize = sendSize;
     info->rank = myInfo->rank;
@@ -346,7 +348,7 @@ ncclResult_t p2pSendSetup(struct ncclComm* comm, struct ncclTopoGraph* graph, st
   NCCLCHECK(ncclProxyConnect(comm, TRANSPORT_P2P, 1, info->rank, &send->proxyConn));
   NCCLCHECK(ncclProxyCall(&send->proxyConn, ncclProxyMsgSetup, &sendSize, sizeof(int), &info->p2pBuff, sizeof(struct ncclP2pBuff)));
 
-  NCCLCHECK(p2pMap(myInfo, comm->peerInfo+info->rank, &info->p2pBuff, (void**)&resources->devMem, resources));
+  NCCLCHECK(p2pMap(comm, myInfo, comm->peerInfo+info->rank, &info->p2pBuff, (void**)&resources->devMem, resources));
   return ncclSuccess;
 }
 
@@ -370,8 +372,8 @@ ncclResult_t p2pRecvSetup(struct ncclComm* comm, struct ncclTopoGraph* graph, st
   for (int p=0; p<NCCL_NUM_PROTOCOLS; p++) if (!(info->read && p == NCCL_PROTO_SIMPLE)) recvSize += recv->comm->buffSizes[p];
   ALIGN_SIZE(recvSize, CUDA_IPC_MIN);
 
-  // MNNVL: Multi-node NVLink support
-  if (myInfo->hostHash != peerInfo->hostHash) {
+  // MNNVL: Multi-Node NVLink support
+  if (comm->topo->MNNVL > 1 || myInfo->hostHash != peerInfo->hostHash) {
     // Different hosts, so assume multi-node NVLink
     info->p2pBuff.size = resources->exportSize = recvSize;
     info->rank = myInfo->rank;
@@ -397,7 +399,7 @@ ncclResult_t p2pRecvSetup(struct ncclComm* comm, struct ncclTopoGraph* graph, st
   NCCLCHECK(ncclProxyConnect(comm, TRANSPORT_P2P, 0, info->rank, &recv->proxyConn));
   NCCLCHECK(ncclProxyCall(&recv->proxyConn, ncclProxyMsgSetup, &recvSize, sizeof(int), &info->p2pBuff, sizeof(struct ncclP2pBuff)));
 
-  NCCLCHECK(p2pMap(myInfo, comm->peerInfo+info->rank, &info->p2pBuff, (void**)&resources->devMem, resources));
+  NCCLCHECK(p2pMap(comm, myInfo, comm->peerInfo+info->rank, &info->p2pBuff, (void**)&resources->devMem, resources));
   return ncclSuccess;
 }
 
@@ -407,7 +409,7 @@ static ncclResult_t p2pSendConnect(struct ncclComm* comm, struct ncclConnect* co
   struct ncclRecvMem* remDevMem = NULL;
   struct p2pConnectInfo* info = (struct p2pConnectInfo*)connectInfo;
 
-  NCCLCHECK(p2pMap(comm->peerInfo+rank, comm->peerInfo+info->rank, &info->p2pBuff, (void**)&remDevMem, resources));
+  NCCLCHECK(p2pMap(comm, comm->peerInfo+rank, comm->peerInfo+info->rank, &info->p2pBuff, (void**)&remDevMem, resources));
 
   char* buff = (char*)(remDevMem+1);
   for (int p=0; p<NCCL_NUM_PROTOCOLS; p++) {
@@ -432,7 +434,7 @@ ncclResult_t p2pRecvConnect(struct ncclComm* comm, struct ncclConnect* connectIn
   struct ncclSendMem* remDevMem = NULL;
   struct p2pConnectInfo* info = (struct p2pConnectInfo*)connectInfo;
 
-  NCCLCHECK(p2pMap(comm->peerInfo+rank, comm->peerInfo+info->rank, &info->p2pBuff, (void**)&remDevMem, resources));
+  NCCLCHECK(p2pMap(comm, comm->peerInfo+rank, comm->peerInfo+info->rank, &info->p2pBuff, (void**)&remDevMem, resources));
 
   char* buff = (char*)(resources->devMem+1);
   for (int p=0; p<NCCL_NUM_PROTOCOLS; p++) {
@@ -455,7 +457,7 @@ ncclResult_t p2pRecvConnect(struct ncclComm* comm, struct ncclConnect* connectIn
 
 ncclResult_t p2pSendFree(struct ncclConnector* send) {
   struct p2pResources* resources = (struct p2pResources*)send->transportResources;
-  // Multi-node NVLink
+  // Multi-Node NVLink
   if (resources->type == P2P_MULTINODE) {
     NCCLCHECK(unimportShareableBuffer(resources->remotePtr, resources->importSize, resources->importHandle));
     NCCLCHECK(freeShareableBuffer(resources->devMem, resources->exportSize, resources->exportHandle));
@@ -471,7 +473,7 @@ ncclResult_t p2pSendFree(struct ncclConnector* send) {
 
 ncclResult_t p2pRecvFree(struct ncclConnector* recv) {
   struct p2pResources* resources = (struct p2pResources*)recv->transportResources;
-  // Multi-node NVLink
+  // Multi-Node NVLink
   if (resources->type == P2P_MULTINODE) {
     NCCLCHECK(unimportShareableBuffer(resources->remotePtr, resources->importSize, resources->importHandle));
     NCCLCHECK(freeShareableBuffer(resources->devMem, resources->exportSize, resources->exportHandle));

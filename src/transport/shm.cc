@@ -34,7 +34,7 @@ struct shmRecvResources {
 NCCL_PARAM(ShmDisable, "SHM_DISABLE", 0);
 
 /* Determine two peers can communicate with SHM */
-ncclResult_t shmCanConnect(int* ret, struct ncclComm* comm, struct ncclTopoSystem* topo, struct ncclTopoGraph* graph, struct ncclPeerInfo* info1, struct ncclPeerInfo* info2) {
+ncclResult_t shmCanConnect(int* ret, struct ncclTopoSystem* topo, struct ncclTopoGraph* graph, struct ncclPeerInfo* info1, struct ncclPeerInfo* info2) {
   *ret = 0;
 
   if (ncclParamShmDisable() == 1) return ncclSuccess;
