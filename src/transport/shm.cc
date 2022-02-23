@@ -38,7 +38,7 @@ struct shmRecvResources {
 
 NCCL_PARAM(ShmDisable, "SHM_DISABLE", 0);
 NCCL_PARAM(ShmUseCudaMemcpy, "SHM_USE_CUDA_MEMCPY", 0);
-NCCL_PARAM(ShmMemcpyMode, "SHM_MEMCPY_MODE", 3);
+NCCL_PARAM(ShmMemcpyMode, "SHM_MEMCPY_MODE", 1);
 static int useMemcpySend = 0;
 static int useMemcpyRecv = 0;
 static void initCeOperation();
@@ -355,7 +355,7 @@ static ncclResult_t shmRecvProxyProgress(struct ncclComm* comm, struct ncclProxy
         // Check data is ready in SHM
         if ((*recvTail > sub->base+sub->transmitted)) {
           int size = sizesFifo[buffSlot];
-          CUDACHECK(cudaMemcpyAsync(resources->devFifo+buffSlot*stepSize, resources->shmFifo+buffSlot*stepSize, size, cudaMemcpyDeviceToHost, resources->stream));
+          CUDACHECK(cudaMemcpyAsync(resources->devFifo+buffSlot*stepSize, resources->shmFifo+buffSlot*stepSize, size, cudaMemcpyHostToDevice, resources->stream));
           CUDACHECK(cudaEventRecord(resources->events[buffSlot], resources->stream));
           sub->transmitted += args->sliceSteps;
         }
