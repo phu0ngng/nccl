@@ -125,6 +125,22 @@ error:
   return (res != ncclSuccess) ? 0 : max;
 }
 
+// Set shared memory carveout for the nccl kernels
+ncclResult_t ncclKernSetSharedMemoryCarveout(int carveOut) {
+  ncclResult_t res = ncclSuccess;
+  int numNcclKerns = sizeof(ncclKerns)/sizeof(ncclKerns[0]);
+  //cudaFuncAttributes attr = {0};
+  size_t max = 0;
+  for (int i = 0; i < numNcclKerns; i++) {
+    CUDACHECKGOTO(cudaFuncSetAttributes(ncclKerns[i], cudaFuncAttributePreferredSharedMemoryCarveout, carveOut), res, error);
+    //if (attr.localSizeBytes > max) max = attr.localSizeBytes;
+  }
+
+error:
+  return res;
+}
+
+
 /*****************************************************************************/
 /*       Launch system : synchronization and CUDA kernel launch              */
 /*****************************************************************************/
