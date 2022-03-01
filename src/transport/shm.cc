@@ -19,9 +19,6 @@ struct shmSendResources {
   int shmSize;
   struct ncclSendMem* hostMem;
   struct ncclSendMem* devHostMem;
-  // CE copy
-  struct ncclRecvMem* ceRecvMem;
-  char* ceDevBuff;
 };
 
 struct shmRecvResources {
@@ -31,9 +28,6 @@ struct shmRecvResources {
   int shmSize;
   struct ncclRecvMem* hostMem;
   struct ncclRecvMem* devHostMem;
-  // CE copy
-  struct ncclRecvMem* ceRecvMem;
-  char* ceDevBuff;
 };
 
 NCCL_PARAM(ShmDisable, "SHM_DISABLE", 0);
@@ -81,11 +75,6 @@ static ncclResult_t shmSendSetup(struct ncclComm* comm, struct ncclTopoGraph* gr
   TRACE(NCCL_SHM,"Opened shmName %s shmSize %d", shmPath, info->shmSize);
   memcpy(info->shmName, shmPath+sizeof("/dev/shm/nccl-")-1, sizeof(info->shmName));
 
-  if (useMemcpySend) {
-    NCCLCHECK(ncclCudaCalloc(&resources->ceDevBuff, comm->buffSizes[NCCL_PROTO_SIMPLE]));
-    NCCLCHECK(ncclCudaHostCalloc(&resources->ceRecvMem, 1));
-  }
-
   INFO(NCCL_INIT|NCCL_SHM,"Channel %02d : %d[%lx] -> %d[%lx] via SHM/%s/%s", channelId, myInfo->rank, myInfo->busId, peerInfo->rank, peerInfo->busId, useMemcpySend?"CE":"direct", useMemcpyRecv?"CE":"direct");
   return ncclSuccess;
 }
@@ -106,11 +95,6 @@ static ncclResult_t shmRecvSetup(struct ncclComm* comm, struct ncclTopoGraph* gr
   NCCLCHECK(ncclShmOpen(shmPath, resources->shmSize, (void**)&resources->hostMem, (void**)&resources->devHostMem, 1));
   TRACE(NCCL_SHM,"Opened shmName %s shmSize %d", shmPath, info->shmSize);
   memcpy(info->shmName, shmPath+sizeof("/dev/shm/nccl-")-1, sizeof(info->shmName));
-
-  if (useMemcpyRecv) {
-    NCCLCHECK(ncclCudaCalloc(&resources->ceDevBuff, comm->buffSizes[NCCL_PROTO_SIMPLE]));
-    NCCLCHECK(ncclCudaHostCalloc(&resources->ceRecvMem, 1));
-  }
 
   return ncclSuccess;
 }
@@ -155,11 +139,11 @@ static ncclResult_t shmSendConnect(struct ncclComm* comm, struct ncclConnect* co
   }
   if (useMemcpySend) {
     NCCLCHECK(ncclProxyConnect(comm, TRANSPORT_SHM, 1, comm->rank, &send->proxyConn));
-    struct shmProxyInfo proxyInfo = { resources->ceRecvMem, resources->ceDevBuff, send->conn.buffs[NCCL_PROTO_SIMPLE], resources->hostMem, resources->remHostMem };
-    send->conn.buffs[NCCL_PROTO_SIMPLE] = resources->ceDevBuff;
-    NCCLCHECK(ncclProxyCall(&send->proxyConn, ncclProxyMsgConnect, &proxyInfo, sizeof(struct shmProxyInfo), NULL, 0));
-    send->conn.tail = &resources->ceRecvMem->tail;
-    send->conn.sizesFifo = resources->ceRecvMem->sizesFifo;
+    struct shmProxyInfo proxyInfo = { NULL, NULL, send->conn.buffs[NCCL_PROTO_SIMPLE], resources->hostMem, resources->remHostMem };
+    NCCLCHECK(ncclProxyCall(&send->proxyConn, ncclProxyMsgConnect, &proxyInfo, sizeof(struct shmProxyInfo), &proxyInfo, sizeof(struct shmProxyInfo)));
+    send->conn.buffs[NCCL_PROTO_SIMPLE] = proxyInfo.devFifo;
+    send->conn.tail = &proxyInfo.ceRecvMem->tail;
+    send->conn.sizesFifo = proxyInfo.ceRecvMem->sizesFifo;
   }
   return ncclSuccess;
 }
@@ -186,10 +170,10 @@ static ncclResult_t shmRecvConnect(struct ncclComm* comm, struct ncclConnect* co
 
   if (useMemcpyRecv) {
     NCCLCHECK(ncclProxyConnect(comm, TRANSPORT_SHM, 0, comm->rank, &recv->proxyConn));
-    struct shmProxyInfo proxyInfo = { resources->ceRecvMem, resources->ceDevBuff, recv->conn.buffs[NCCL_PROTO_SIMPLE], resources->remHostMem, resources->hostMem };
-    recv->conn.buffs[NCCL_PROTO_SIMPLE] = resources->ceDevBuff;
-    NCCLCHECK(ncclProxyCall(&recv->proxyConn, ncclProxyMsgConnect, &proxyInfo, sizeof(struct shmProxyInfo), NULL, 0));
-    recv->conn.tail = &resources->ceRecvMem->tail;
+    struct shmProxyInfo proxyInfo = { NULL, NULL, recv->conn.buffs[NCCL_PROTO_SIMPLE], resources->remHostMem, resources->hostMem };
+    NCCLCHECK(ncclProxyCall(&recv->proxyConn, ncclProxyMsgConnect, &proxyInfo, sizeof(struct shmProxyInfo), &proxyInfo, sizeof(struct shmProxyInfo)));
+    recv->conn.buffs[NCCL_PROTO_SIMPLE] = proxyInfo.devFifo;
+    recv->conn.tail = &proxyInfo.ceRecvMem->tail;
   }
   return ncclSuccess;
 }
@@ -198,10 +182,6 @@ static ncclResult_t shmSendFree(struct ncclConnector* send) {
   struct shmRecvResources* resources = (struct shmRecvResources*)send->transportResources;
   NCCLCHECK(ncclShmClose(resources->hostMem, resources->devHostMem, resources->shmSize));
   NCCLCHECK(ncclShmClose(resources->remHostMem, resources->devRemHostMem, resources->remShmSize));
-  if (useMemcpySend) {
-    CUDACHECK(cudaFree(resources->ceDevBuff));
-    NCCLCHECK(ncclCudaHostFree(resources->ceRecvMem));
-  }
   free(resources);
   return ncclSuccess;
 }
@@ -210,10 +190,6 @@ static ncclResult_t shmRecvFree(struct ncclConnector* recv) {
   struct shmRecvResources* resources = (struct shmRecvResources*)recv->transportResources;
   NCCLCHECK(ncclShmClose(resources->hostMem, resources->devHostMem, resources->shmSize));
   NCCLCHECK(ncclShmClose(resources->remHostMem, resources->devRemHostMem, resources->remShmSize));
-  if (useMemcpyRecv) {
-    CUDACHECK(cudaFree(resources->ceDevBuff));
-    NCCLCHECK(ncclCudaHostFree(resources->ceRecvMem));
-  }
   free(resources);
   return ncclSuccess;
 }
@@ -223,12 +199,16 @@ static ncclResult_t shmSendProxyConnect(struct ncclProxyConnection* connection, 
   NCCLCHECK(ncclCalloc(&proxyInfo, 1));
   if (reqSize != sizeof(struct shmProxyInfo)) return ncclInternalError;
   memcpy(proxyInfo, reqBuff, reqSize);
+  NCCLCHECK(ncclCudaCalloc(&proxyInfo->devFifo, comm->buffSizes[NCCL_PROTO_SIMPLE]));
+  NCCLCHECK(ncclCudaHostCalloc(&proxyInfo->ceRecvMem, 1));
   CUDACHECK(cudaStreamCreateWithFlags(&proxyInfo->stream, cudaStreamNonBlocking));
   for (int i=0; i<NCCL_STEPS; i++) {
     CUDACHECK(cudaEventCreate(proxyInfo->events+i));
   }
   connection->proxyAppendPtr = &connection->proxyAppend;
   connection->transportResources = proxyInfo;
+  if (respSize != sizeof(struct shmProxyInfo)) return ncclInternalError;
+  memcpy(respBuff, proxyInfo, respSize);
   return ncclSuccess;
 }
 
@@ -237,18 +217,24 @@ static ncclResult_t shmRecvProxyConnect(struct ncclProxyConnection* connection, 
   NCCLCHECK(ncclCalloc(&proxyInfo, 1));
   if (reqSize != sizeof(struct shmProxyInfo)) return ncclInternalError;
   memcpy(proxyInfo, reqBuff, reqSize);
+  NCCLCHECK(ncclCudaCalloc(&proxyInfo->devFifo, comm->buffSizes[NCCL_PROTO_SIMPLE]));
+  NCCLCHECK(ncclCudaHostCalloc(&proxyInfo->ceRecvMem, 1));
   CUDACHECK(cudaStreamCreateWithFlags(&proxyInfo->stream, cudaStreamNonBlocking));
   for (int i=0; i<NCCL_STEPS; i++) {
     CUDACHECK(cudaEventCreate(proxyInfo->events+i));
   }
   connection->proxyAppendPtr = &connection->proxyAppend;
   connection->transportResources = proxyInfo;
+  if (respSize != sizeof(struct shmProxyInfo)) return ncclInternalError;
+  memcpy(respBuff, proxyInfo, respSize);
   return ncclSuccess;
 }
 
 static ncclResult_t shmSendProxyFree(struct ncclProxyConnection* connection, struct ncclComm* comm) {
   struct shmProxyInfo* resources = (struct shmProxyInfo*)connection->transportResources;
   CUDACHECK(cudaStreamDestroy(resources->stream));
+  CUDACHECK(cudaFree(resources->devFifo));
+  NCCLCHECK(ncclCudaHostFree(resources->ceRecvMem));
   for (int i=0; i<NCCL_STEPS; i++) {
     CUDACHECK(cudaEventDestroy(resources->events[i]));
   }
@@ -259,6 +245,8 @@ static ncclResult_t shmSendProxyFree(struct ncclProxyConnection* connection, str
 static ncclResult_t shmRecvProxyFree(struct ncclProxyConnection* connection, struct ncclComm* comm) {
   struct shmProxyInfo* resources = (struct shmProxyInfo*)connection->transportResources;
   CUDACHECK(cudaStreamDestroy(resources->stream));
+  CUDACHECK(cudaFree(resources->devFifo));
+  NCCLCHECK(ncclCudaHostFree(resources->ceRecvMem));
   for (int i=0; i<NCCL_STEPS; i++) {
     CUDACHECK(cudaEventDestroy(resources->events[i]));
   }
