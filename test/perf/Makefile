@@ -13,7 +13,7 @@ ifeq ($(MPI_IBM),1)
 NVCUFLAGS += -DMPI_SUPPORT
 NVLDFLAGS += -lmpi_ibm
 endif
-LIBRARIES += nccl
+LIBRARIES += nccl cuda
 NVLDFLAGS += -L$(NCCLDIR)/lib $(LIBRARIES:%=-l%)
 
 # Setting MEMLEAK=1 enables simply memory leak detection using clang++
