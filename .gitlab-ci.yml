@@ -295,6 +295,7 @@ perftest-multi-gc:
 
 perftest-sharp-gc:
   stage: perf_tests_multi
+  needs: [build, perftest-P100]
   tags:
     - p100
   variables:
