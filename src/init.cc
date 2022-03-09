@@ -72,7 +72,6 @@ static ncclResult_t ncclInit() {
     initEnv();
     initGdrCopy();
     maxLocalSizeBytes = ncclKernMaxLocalSize();
-    printf("L1 Shared memeory = %ld", ncclParamL1SharedMemoryCarveout());
     int carveout = ncclParamL1SharedMemoryCarveout();
     ncclKernSetSharedMemoryCarveout(&carveout);
     NCCLCHECK(ncclNetInit());

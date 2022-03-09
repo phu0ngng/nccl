@@ -133,7 +133,6 @@ ncclResult_t ncclKernSetSharedMemoryCarveout(int* carveOut) {
   size_t max = 0;
   for (int i = 0; i < numNcclKerns; i++) {
     CUDACHECKGOTO(cudaFuncSetAttribute(ncclKerns[i], cudaFuncAttributePreferredSharedMemoryCarveout, *carveOut), res, error);
-    //if (attr.localSizeBytes > max) max = attr.localSizeBytes;
   }
 
 error:
