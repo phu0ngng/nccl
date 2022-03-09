@@ -8,10 +8,4 @@
 #include "common.h"
 #include "collectives.h"
 
-//int L1CarveoutMode = 0;
-//NCCL_PARAM(L1CarveoutMode, "L1_CARVEOUT", -2);
-//if (L1CarveoutMode>=0) {
-//cudaFuncSetAttribute(IMPL_COLL_R(AllReduce), cudaFuncAttributePreferredSharedMemoryCarveout, 90);
-//}
-
 IMPL_COLL_R(AllReduce);
