@@ -29,7 +29,7 @@ struct float_traits;
 template<>
 struct float_traits<float> {
   static constexpr int mantissa_bits = 23;
-  static constexpr float loss_power = .5f;
+  static constexpr int exponent_bits = 8;
   using uint_t = uint32_t;
   __device__ static float make(double x) { return (float)x; }
   __device__ static float make(uint64_t x) { return (float)x; }
@@ -40,7 +40,7 @@ struct float_traits<float> {
 template<>
 struct float_traits<double> {
   static constexpr int mantissa_bits = 52;
-  static constexpr float loss_power = .5f;
+  static constexpr int exponent_bits = 11;
   using uint_t = uint64_t;
   __device__ static double make(double x) { return x; }
   __device__ static double make(uint64_t x) { return (double)x; }
@@ -50,8 +50,8 @@ struct float_traits<double> {
 };
 template<>
 struct float_traits<half> {
-  static constexpr int mantissa_bits = 11;
-  static constexpr float loss_power = .7f;
+  static constexpr int mantissa_bits = 10;
+  static constexpr int exponent_bits = 5;
   using uint_t = uint16_t;
   __device__ static half make(double x) { return __double2half(x); }
   __device__ static half make(uint64_t x) { return __int2half_rn(x); }
@@ -62,8 +62,8 @@ struct float_traits<half> {
 template<>
 struct float_traits<bfloat16> {
   static constexpr int mantissa_bits = 7;
+  static constexpr int exponent_bits = 8;
   using uint_t = uint16_t;
-  static constexpr float loss_power = .7f;
   __device__ static bfloat16 make(double x) { return __double2bfloat16(x); }
   __device__ static bfloat16 make(uint64_t x) { return __int2bfloat16_rn(x); }
   __device__ static double todouble(bfloat16 x) { return __bfloat162float(x); }
@@ -111,49 +111,54 @@ __global__ void kernel() {
   __shared__ F accf[samps];
   __shared__ double accd[samps];
 
-  for(int i=threadIdx.x; i < samps; i += blockDim.x) {
-    accf[i] = 0;
-    accd[i] = 0;
-  }
-  __syncthreads();
-
-  int rprev=1;
-  F scalar = traits::make(1.0/11000.0);
-  int maxerr = 0;
-  float coef = 0;
-  double avgpow = 0;
-  int avgpow_n = 0;
-  int preverr = 1;
   xoshiro256ss rng(threadIdx.x);
-
-  for(int r=2; r <= 16<<10; r++) {
-    int err = 0;
-    for(int i=threadIdx.x; i < samps; i+=blockDim.x) {
-      constexpr uint64_t m = (1ll<<traits::mantissa_bits)-1;
-      F f = traits::make(0.5 + double(rng() & m)/(m+1));
-      accf[i] = traits::add(accf[i], traits::mul(scalar, f));
-      accd[i] += traits::todouble(f);
-      int e = compare(accf[i], traits::mul(scalar, traits::make(accd[i])));
-      err = err > e ? err : e;
-    }
-    err = __reduce_max_sync(-1u, err);
-    if(threadIdx.x == 0) {
-      // err = 1 + S*sqrt(r)
-      float c = float(err-1)/powf(float(r), traits::loss_power);
-      coef = coef > c ? coef : c;
-      maxerr = maxerr > err ? maxerr : err;
-      double pow = log2f(2+maxerr)/log2f(r);
-      avgpow += pow;
-      avgpow_n++;
-      if(float(r) > rprev*1.25 && maxerr > preverr) {
-        std::printf("err=%d coef=%1.9f, pow=%1.6f up to ranks=%d\n", maxerr, coef, avgpow/avgpow_n, r);
-        preverr = maxerr;
-        rprev = r;
+  float expo_avg = 1;
+  for(int pass=0; pass < 2; pass++) {
+    F scalar = traits::make(1.0/(3.14159 + .5*threadIdx.x));
+    int err_max = 0;
+    float coef = 0;
+    double expo_sum = 0;
+    int expo_n = 0;
+    int max_ranks = std::is_same<F,float>::value ? 16<<10 : 1<<traits::mantissa_bits;
+    for(int round=0; round < 1 + (16<<10)/max_ranks; round++) {
+    //for(int round=0; round < 2; round++) {
+      for(int i=threadIdx.x; i < samps; i += blockDim.x) {
+        accf[i] = 0;
+        accd[i] = 0;
+      }
+      __syncthreads();
+      for(int r=0; r < max_ranks; r++) {
+        int err = 0;
+        for(int i=threadIdx.x; i < samps; i+=blockDim.x) {
+          constexpr uint64_t m = (1ll<<traits::mantissa_bits)-1;
+          double d = std::is_same<F,float>::value ? double(rng() & m) : 1.0;
+          F f = traits::make(d);
+          accf[i] = traits::add(accf[i], traits::mul(scalar, f));
+          accd[i] += traits::todouble(f);
+          //if(threadIdx.x==0 && std::is_same<F,half>::value) std::printf(" r=%d f=%f\n", r, traits::todouble(accf[i]));
+          int e = compare(accf[i], traits::mul(scalar, traits::make(accd[i])));
+          err = err > e ? err : e;
+        }
+        err = __reduce_max_sync(-1u, err);
+        err_max = err_max > err ? err_max : err;
+        if (r >= 2) {
+          // err = 1 + coef*pow(r,expo)
+          float c = float(err-1)/powf(float(r), expo_avg);
+          coef = coef > c ? coef : c;
+        }
+        if (r >= 2) {
+          double expo = log2f(1+err_max)/log2f(r);
+          expo_sum += expo;
+          expo_n++;
+          //if(threadIdx.x==0 && std::is_same<F,half>::value) std::printf(" r=%d err=%d errmax=%d expo=%f sum=%f n=%d\n", r, err, err_max, expo, expo_sum, expo_n);
+        }
       }
     }
+    if(pass==0)
+      expo_avg = expo_sum/expo_n;
+    else if(threadIdx.x == 0)
+      std::printf("  coef=%1.10f expo=%1.10f\n", coef, expo_avg);
   }
-  if(threadIdx.x == 0)
-    std::printf("FINAL coef=%1.10f pow=%1.10f\n", coef, avgpow/avgpow_n);
 }
 
 int main() {

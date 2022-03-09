@@ -940,17 +940,17 @@ __host__ __device__ unsigned calcSumFloatTolerance(int rank_n, int elt_ty) {
   switch(elt_ty) {
   case ncclFloat32:
   case ncclFloat64:
-    power = .5f;
+    power = .51f;
     coef = 1.25f;
     break;
   case ncclFloat16:
-    power = .7f;
-    coef = 2.0f;
+    power = .91f;
+    coef = .75f;
     break;
   #ifdef __CUDA_BF16_TYPES_EXIST__
   case ncclBfloat16:
-    power = .7f;
-    coef = 1.25f;
+    power = .91f;
+    coef = .66f;
     break;
   #endif
   }
