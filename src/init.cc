@@ -247,9 +247,13 @@ static ncclResult_t commAlloc(ncclComm_t* comret, int ndev, int rank) {
 #if CUDART_VERSION >= 11030
   NCCLCHECK(ncclCalloc(&comm->graphHelperResources, 1));
   comm->graphHelperResources->comm = comm;
-  if (comm->driverVersion >= 11030)
+  if (comm->driverVersion >= 11030) {
     // cudaGetDriverEntryPoint requires R465 or above (enhanced compat need)
     CUDACHECK(cudaGetDriverEntryPoint("cuMemGetAddressRange", (void**)&comm->pfnCuMemGetAddressRange, cudaEnableDefault));
+    CUDACHECK(cudaGetDriverEntryPoint("cuCtxCreate", (void**)&comm->pfnCuCtxCreate, cudaEnableDefault));
+    CUDACHECK(cudaGetDriverEntryPoint("cuCtxDestroy", (void**)&comm->pfnCuCtxDestroy, cudaEnableDefault));
+    CUDACHECK(cudaGetDriverEntryPoint("cuCtxSetCurrent", (void**)&comm->pfnCuCtxSetCurrent, cudaEnableDefault));
+  }
 #endif
 
   static_assert(MAXCHANNELS <= sizeof(*comm->connectSend)*8, "comm->connectSend must have enough bits for all channels");

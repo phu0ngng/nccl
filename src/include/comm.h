@@ -59,6 +59,9 @@ struct ncclRecvMem {
 };
 
 typedef cudaError_t(*pfn_cuMemGetAddressRange_t)(void**, size_t*, void*);
+typedef cudaError_t(*pfn_cuCtxCreate)(CUcontext *, unsigned int, CUdevice);
+typedef cudaError_t(*pfn_cuCtxDestroy)(CUcontext);
+typedef cudaError_t(*pfn_cuCtxSetCurrent)(CUcontext);
 
 enum helperThreadState {ThreadStart, ThreadStop};
 
@@ -202,6 +205,10 @@ struct ncclComm {
   unsigned long long lastCudaGraphId;
   int driverVersion;
   pfn_cuMemGetAddressRange_t pfnCuMemGetAddressRange;
+  pfn_cuCtxCreate pfnCuCtxCreate;
+  pfn_cuCtxDestroy pfnCuCtxDestroy;
+  pfn_cuCtxSetCurrent pfnCuCtxSetCurrent;
+
   pthread_t graphHelperThread;
   struct ncclGraphHelperResources* graphHelperResources;
   int disableGraphHelper;

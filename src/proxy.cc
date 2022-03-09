@@ -599,7 +599,7 @@ NCCL_PARAM(CreateThreadContext, "CREATE_THREAD_CONTEXT", 0);
 void* ncclProxyProgress(void *comm_) {
   struct ncclComm* comm = (struct ncclComm*)comm_;
   if (ncclParamCreateThreadContext()) {
-    if (cuCtxSetCurrent(comm->proxyState.cudaCtx) != CUDA_SUCCESS) {
+    if (comm->pfnCuCtxSetCurrent(comm->proxyState.cudaCtx) != cudaSuccess) {
       WARN("[Proxy Service] Failed to set CUDA context on device %d", comm->cudaDev);
     }
   } else if (cudaSetDevice(comm->cudaDev) != cudaSuccess) {
@@ -962,10 +962,10 @@ void* ncclProxyService(void* _args) {
   struct ncclComm* comm =  (struct ncclComm *) _args;
   if (CPU_COUNT(&comm->cpuAffinity)) sched_setaffinity(0, sizeof(cpu_set_t), &comm->cpuAffinity);
   if (ncclParamCreateThreadContext()) {
-    if (cuCtxCreate(&comm->proxyState.cudaCtx, CU_CTX_SCHED_SPIN|CU_CTX_MAP_HOST, comm->cudaDev) != CUDA_SUCCESS) {
+    if (comm->pfnCuCtxCreate(&comm->proxyState.cudaCtx, CU_CTX_SCHED_SPIN|CU_CTX_MAP_HOST, comm->cudaDev) != cudaSuccess) {
       WARN("[Proxy Service] Failed to create CUDA context on device %d", comm->cudaDev);
     } else {
-      if (cuCtxSetCurrent(comm->proxyState.cudaCtx) != CUDA_SUCCESS) {
+      if (comm->pfnCuCtxSetCurrent(comm->proxyState.cudaCtx) != cudaSuccess) {
         WARN("[Proxy Service] Failed to set CUDA context on device %d", comm->cudaDev);
       }
     }
