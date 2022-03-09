@@ -30,13 +30,16 @@ struct shmRecvResources {
   struct ncclRecvMem* devHostMem;
 };
 
+#define SHM_SEND_SIDE 1
+#define SHM_RECV_SIDE 2
 NCCL_PARAM(ShmDisable, "SHM_DISABLE", 0);
 NCCL_PARAM(ShmUseCudaMemcpy, "SHM_USE_CUDA_MEMCPY", 0);
-NCCL_PARAM(ShmMemcpyMode, "SHM_MEMCPY_MODE", 1);
+NCCL_PARAM(ShmMemcpyMode, "SHM_MEMCPY_MODE", SHM_SEND_SIDE); // 1 is sender-side, 2 is receiver-side, 3 is both
 static int useMemcpySend = 0;
 static int useMemcpyRecv = 0;
+NCCL_PARAM(ShmLocality, "SHM_LOCALITY", SHM_RECV_SIDE); // 1 is sender-size, 2 is receiver-size
+static int shmLocality = 0;
 static void initCeOperation();
-NCCL_PARAM(ShmLocality, "SHM_LOCALITY", 1); // 1 is receiver, 2 is sender
 
 /* Determine two peers can communicate with SHM */
 static ncclResult_t shmCanConnect(int* ret, struct ncclTopoSystem* topo, struct ncclTopoGraph* graph, struct ncclPeerInfo* info1, struct ncclPeerInfo* info2) {
@@ -72,7 +75,7 @@ static ncclResult_t shmSendSetup(struct ncclComm* comm, struct ncclTopoGraph* gr
   char shmPath[PATH_MAX];
   shmPath[0] = '\0';
   int shmSize = sizeof(struct ncclSendMem);
-  if (ncclParamShmLocality() == 2) {
+  if (shmLocality == SHM_SEND_SIDE) {
     for (int p=0; p<NCCL_NUM_PROTOCOLS; p++) shmSize += send->comm->buffSizes[p];
   }
   info->shmSize = resources->shmSize = shmSize;
@@ -95,7 +98,7 @@ static ncclResult_t shmRecvSetup(struct ncclComm* comm, struct ncclTopoGraph* gr
   char shmPath[PATH_MAX];
   shmPath[0] = '\0';
   int shmSize = sizeof(struct ncclRecvMem);
-  if (ncclParamShmLocality() != 2) {
+  if (shmLocality == SHM_RECV_SIDE) {
     for (int p=0; p<NCCL_NUM_PROTOCOLS; p++) shmSize += recv->comm->buffSizes[p];
   }
   info->shmSize = resources->shmSize = shmSize;
@@ -133,7 +136,7 @@ static ncclResult_t shmSendConnect(struct ncclComm* comm, struct ncclConnect* co
   // Remove the file to ensure proper clean-up
   NCCLCHECK(ncclShmUnlink(shmPath));
 
-  char* buff = ncclParamShmLocality() == 2 ? (char*)(resources->devHostMem+1) : (char*)(resources->devRemHostMem+1);
+  char* buff = shmLocality == SHM_SEND_SIDE ? (char*)(resources->devHostMem+1) : (char*)(resources->devRemHostMem+1);
   for (int p=0; p<NCCL_NUM_PROTOCOLS; p++) {
     send->conn.buffs[p] = buff;
     buff += send->comm->buffSizes[p];
@@ -167,7 +170,7 @@ static ncclResult_t shmRecvConnect(struct ncclComm* comm, struct ncclConnect* co
   NCCLCHECK(ncclShmOpen(shmPath, resources->remShmSize, (void**)&resources->remHostMem, (void**)&resources->devRemHostMem, 0));
   NCCLCHECK(ncclShmUnlink(shmPath));
 
-  char* buff = ncclParamShmLocality() != 2 ? (char*)(resources->devHostMem+1) : (char*)(resources->devRemHostMem+1);
+  char* buff = shmLocality == SHM_RECV_SIDE ? (char*)(resources->devHostMem+1) : (char*)(resources->devRemHostMem+1);
   for (int p=0; p<NCCL_NUM_PROTOCOLS; p++) {
     recv->conn.buffs[p] = buff;
     buff += recv->comm->buffSizes[p];
@@ -398,6 +401,11 @@ static void initCeOperation() {
       shmTransport.recv.proxyConnect = shmRecvProxyConnect;
       shmTransport.recv.proxyFree = shmRecvProxyFree;
       shmTransport.recv.proxyProgress = shmRecvProxyProgress;
+    }
+    shmLocality = ncclParamShmLocality();
+    if (shmLocality != SHM_SEND_SIDE && shmLocality != SHM_RECV_SIDE) {
+      WARN("Ignoring SHM locality, must be 1 (sender side) or 2 (receiver side, default)");
+      shmLocality = SHM_RECV_SIDE;
     }
     init = 1;
   }
