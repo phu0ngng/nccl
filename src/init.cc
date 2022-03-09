@@ -59,8 +59,9 @@ ncclResult_t initGdrCopy() {
   return ncclSuccess;
 }
 
-NCCL_PARAM(CollNetEnable, "COLLNET_ENABLE", 0);
+
 NCCL_PARAM(L1SharedMemoryCarveout, "L1_SHARED_MEMORY_CARVEOUT", 0);
+
 pthread_mutex_t initLock = PTHREAD_MUTEX_INITIALIZER;
 static bool initialized = false;
 static size_t maxLocalSizeBytes = 0;
@@ -532,7 +533,16 @@ static ncclResult_t initTransportsRank(struct ncclComm* comm, ncclUniqueId* comm
   }
 
   // Determine local CollNet support before all-gather
-  if (ncclParamCollNetEnable() == 1 && collNetSupport() == 1 && collNetGraph.nChannels > 0) comm->collNetSupport = 1;
+  if (collNetSupport()) {
+    char *collNetEnable = getenv("NCCL_COLLNET_ENABLE");
+    if (collNetEnable != NULL) {
+      INFO(NCCL_ALL, "NCCL_COLLNET_ENABLE set by environment to %s.", collNetEnable);
+      if (strcmp(collNetEnable, "1") == 0) {
+        comm->collNetSupport = 1;
+      }
+    }
+  }
+  if (comm->collNetSupport == 1 && collNetGraph.nChannels <= 0) comm->collNetSupport = 0;
 
   // AllGather3 - begin
   struct ncclGraphInfo {

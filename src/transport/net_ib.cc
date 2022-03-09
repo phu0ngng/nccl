@@ -939,9 +939,11 @@ ncclResult_t ncclIbMultiSend(struct ncclIbSendComm* comm, int slot) {
   lastWr->next = NULL;
   lastWr->send_flags = IBV_SEND_SIGNALED;
 
+  // Multi-QP: make sure IB writes are multiples of 128B so that LL and LL128 protocols still work
+  const int align = 128;
   for (int q=0; q<comm->nqps; q++) {
     for (int r=0; r<nreqs; r++) {
-      int chunkSize = std::max(8, DIVUP(reqs[r]->send.size, comm->nqps));
+      int chunkSize = DIVUP(DIVUP(reqs[r]->send.size, comm->nqps), align) * align;
       int length = std::min(reqs[r]->send.size-reqs[r]->send.offset, chunkSize);
       if (length <= 0) {
         comm->wrs[r].sg_list = NULL;
@@ -956,7 +958,7 @@ ncclResult_t ncclIbMultiSend(struct ncclIbSendComm* comm, int slot) {
     NCCLCHECK(wrap_ibv_post_send(comm->qps[q], comm->wrs, &bad_wr));
 
     for (int r=0; r<nreqs; r++) {
-      int chunkSize = std::max(8, DIVUP(reqs[r]->send.size, comm->nqps));
+      int chunkSize = DIVUP(DIVUP(reqs[r]->send.size, comm->nqps), align) * align;
       reqs[r]->send.offset += chunkSize;
       comm->sges[r].addr += chunkSize;
       comm->wrs[r].wr.rdma.remote_addr += chunkSize;
