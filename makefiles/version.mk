@@ -1,6 +1,6 @@
 ##### version
 NCCL_MAJOR   := 2
 NCCL_MINOR   := 12
-NCCL_PATCH   := 6azure2
-NCCL_SUFFIX  :=
+NCCL_PATCH   := 6
+NCCL_SUFFIX  := azure2
 PKG_REVISION := 1
