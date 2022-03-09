@@ -595,10 +595,22 @@ void ncclDumpProxyState(int signal) {
 }
 
 NCCL_PARAM(CreateThreadContext, "CREATE_THREAD_CONTEXT", 0);
+int ncclCreateThreadContext(struct ncclComm* comm) {
+  static int createThreadContext = -1;
+  if (createThreadContext == -1) {
+    createThreadContext = ncclParamCreateThreadContext();
+    if (createThreadContext &&
+        (comm->pfnCuCtxCreate == NULL || comm->pfnCuCtxDestroy == NULL || comm->pfnCuCtxSetCurrent == NULL)) {
+      WARN("Unable to create thread context due to old driver, disabling.");
+      createThreadContext = 0;
+    }
+  }
+  return createThreadContext;
+}
 
 void* ncclProxyProgress(void *comm_) {
   struct ncclComm* comm = (struct ncclComm*)comm_;
-  if (ncclParamCreateThreadContext()) {
+  if (ncclCreateThreadContext(comm)) {
     if (comm->pfnCuCtxSetCurrent(comm->proxyState.cudaCtx) != cudaSuccess) {
       WARN("[Proxy Service] Failed to set CUDA context on device %d", comm->cudaDev);
     }
@@ -961,7 +973,7 @@ static ncclResult_t proxyConnSetupConnect(int type, struct ncclProxyLocalPeer* p
 void* ncclProxyService(void* _args) {
   struct ncclComm* comm =  (struct ncclComm *) _args;
   if (CPU_COUNT(&comm->cpuAffinity)) sched_setaffinity(0, sizeof(cpu_set_t), &comm->cpuAffinity);
-  if (ncclParamCreateThreadContext()) {
+  if (ncclCreateThreadContext(comm)) {
     if (comm->pfnCuCtxCreate(&comm->proxyState.cudaCtx, CU_CTX_SCHED_SPIN|CU_CTX_MAP_HOST, comm->cudaDev) != cudaSuccess) {
       WARN("[Proxy Service] Failed to create CUDA context on device %d", comm->cudaDev);
     } else {
