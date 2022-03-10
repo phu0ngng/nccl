@@ -34,12 +34,16 @@ BIN_FILES += $(COLLS:%=${DST_DIR}/%_perf_mpi_collnet)
 endif
 DEP_FILES := $(OBJ_FILES:%.o=%.dep)
 
-COMMON_OBJS := ${DST_DIR}/common.o ${DST_DIR}/timer.o
-
 all: ${BIN_FILES}
 
 clean:
 	rm -rf ${DST_DIR}
+
+TEST_VERIFIABLE_SRCDIR := ../verifiable
+TEST_VERIFIABLE_BUILDDIR := $(BUILDDIR)/test/verifiable
+include ../verifiable/verifiable.mk
+
+COMMON_OBJS := ${DST_DIR}/common.o ${DST_DIR}/timer.o $(TEST_VERIFIABLE_OBJS)
 
 ifneq (clean,${MAKECMDGOALS})
 -include $(DEP_FILES)
@@ -50,7 +54,7 @@ ${DST_DIR}/%.dep: %.cu
 	> $@
 endif
 
-${DST_DIR}/%.o: %.cu
+${DST_DIR}/%.o: %.cu $(TEST_VERIFIABLE_HDRS)
 	@printf "Compiling  %-35s > %s\n" $< $@
 	@mkdir -p ${DST_DIR}
 	$(NVCC) -o $@ $(NVCUFLAGS) -c $<
