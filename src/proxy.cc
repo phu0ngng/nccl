@@ -806,6 +806,7 @@ ncclResult_t ncclProxyCall(struct ncclProxyConnector* proxyConn, int type, void*
   return ncclSuccess;
 error:
   WARN("Proxy Call to rank %d failed (%s)", proxyConn->comm->localRankToRank[proxyConn->localRank], ncclProxyMsgTypeStr[type]);
+  sock->fd = -1;
   return ret;
 }
 
