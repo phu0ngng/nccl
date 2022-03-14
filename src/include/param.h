@@ -23,7 +23,7 @@ void ncclLoadParam(char const* env, int64_t deftVal, int64_t uninitialized, int6
     if (__builtin_expect(__atomic_load_n(&cache, __ATOMIC_RELAXED) == uninitialized, false)) { \
       ncclLoadParam("NCCL_" env, deftVal, uninitialized, &cache); \
     } \
-    return __atomic_load_n(&cache, __ATOMIC_RELAXED); \
+    return cache; \
   }
 
 #endif
