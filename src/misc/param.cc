@@ -59,10 +59,10 @@ void initEnv() {
   setEnvFile(confFilePath);
 }
 
-void ncclLoadParam(char const* env, int64_t deftVal, int64_t bogus, std::atomic<int64_t>* cache) {
+void ncclLoadParam(char const* env, int64_t deftVal, int64_t uninitialized, int64_t* cache) {
   static pthread_mutex_t mutex = PTHREAD_MUTEX_INITIALIZER;
   pthread_mutex_lock(&mutex);
-  if (cache->load(std::memory_order_relaxed) == bogus) {
+  if (__atomic_load_n(cache, __ATOMIC_RELAXED) == uninitialized) {
     char* str = getenv(env);
     int64_t value = deftVal;
     if (str && strlen(str) > 0) {
@@ -75,7 +75,7 @@ void ncclLoadParam(char const* env, int64_t deftVal, int64_t bogus, std::atomic<
         INFO(NCCL_ALL,"%s set by environment to %lld.", env, (long long)value);
       }
     }
-    cache->store(value, std::memory_order_relaxed);
+    __atomic_store_n(cache, value, __ATOMIC_RELAXED);
   }
   pthread_mutex_unlock(&mutex);
 }
