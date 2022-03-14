@@ -839,7 +839,6 @@ collnet_cleanup:
 
   // Connect to local net proxy
   struct ncclProxyConnector proxyConn;
-  NCCLCHECK(ncclTopoGetLocalRank(comm->topo, comm->rank, &proxyConn.localRank));
   NCCLCHECK(ncclProxyConnect(comm, TRANSPORT_NET, 1, comm->rank, &proxyConn));
   NCCLCHECK(ncclProxyCall(&proxyConn, ncclProxyMsgSharedInit, &comm->p2pnChannels, sizeof(int), NULL, 0));
 
