@@ -43,7 +43,7 @@ struct ncclIbMrCache {
 };
 
 static int ncclNIbDevs = -1;
-struct ncclIbDev {
+struct alignas(64) ncclIbDev {
   pthread_mutex_t lock;
   int device;
   uint64_t guid;
