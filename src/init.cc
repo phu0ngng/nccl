@@ -59,6 +59,9 @@ ncclResult_t initGdrCopy() {
   return ncclSuccess;
 }
 
+
+NCCL_PARAM(L1SharedMemoryCarveout, "L1_SHARED_MEMORY_CARVEOUT", 0);
+
 pthread_mutex_t initLock = PTHREAD_MUTEX_INITIALIZER;
 static bool initialized = false;
 static size_t maxLocalSizeBytes = 0;
@@ -69,6 +72,8 @@ static ncclResult_t ncclInit() {
     initEnv();
     initGdrCopy();
     maxLocalSizeBytes = ncclKernMaxLocalSize();
+    int carveout = ncclParamL1SharedMemoryCarveout();
+    if (carveout) ncclKernSetSharedMemoryCarveout(carveout);
     NCCLCHECK(ncclNetInit());
     INFO(NCCL_INIT, "Using network %s", ncclNetName());
     initialized = true;
