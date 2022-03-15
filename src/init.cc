@@ -73,7 +73,7 @@ static ncclResult_t ncclInit() {
     initGdrCopy();
     maxLocalSizeBytes = ncclKernMaxLocalSize();
     int carveout = ncclParamL1SharedMemoryCarveout();
-    ncclKernSetSharedMemoryCarveout(&carveout);
+    if (carveout) ncclKernSetSharedMemoryCarveout(carveout);
     NCCLCHECK(ncclNetInit());
     INFO(NCCL_INIT, "Using network %s", ncclNetName());
     initialized = true;
