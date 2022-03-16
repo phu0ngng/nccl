@@ -993,13 +993,13 @@ ncclResult_t ncclIbIsend(void* sendComm, void* data, int size, int tag, void* mh
     if (reqs[r] != NULL || slots[r].tag != tag) continue;
 
     // Sanity checks to catch user collective call count/size mismatches
-    if (size > slot->size || slot->seq != comm->fifoHead) {
+    if (size > slots[r].size) {
       char line[SOCKET_NAME_MAXLEN+1];
-      WARN("NET/IB : req %d/%d tag %x peer %s collective mismatch error, local size %d remote size %d seq %x/%x",
-           r, nreqs, tag, ncclSocketToString(&comm->sock.addr, line), size, slots[r].size, comm->fifoHead);
+      WARN("NET/IB : req %d/%d tag %x peer %s collective mismatch error, local size %d remote size %d",
+           r, nreqs, tag, ncclSocketToString(&comm->sock.addr, line), size, slots[r].size);
       return ncclInvalidUsage;
     } // plus any potential programming errors
-    else if (slot->size < 0 || slot->addr == 0 || slot->rkey == 0) {
+    else if (slots[r].size < 0 || slots[r].addr == 0 || slots[r].rkey == 0) {
      char line[SOCKET_NAME_MAXLEN+1];
      WARN("NET/IB : req %d/%d tag %x peer %s posted incorrect receive info: size %d addr %lx rkey %x",
           r, nreqs, tag, ncclSocketToString(&comm->sock.addr, line), slots[r].size, slots[r].addr, slots[r].rkey);
