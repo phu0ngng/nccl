@@ -456,9 +456,14 @@ static ncclResult_t getAlgoInfo(struct ncclInfo* info, int collNetTypeSupport, i
   int threadThreshold = comm->threadThresholds[info->algorithm][info->protocol];
   if (info->algorithm == NCCL_ALGO_COLLNET) {
     // CollNet channel tuning
-    while ((info->nBytes < nc*nt*info->comm->channels[0].collTree.nHeads*threadThreshold)) {
-      if (nc >= 2) nc /= 2;
-      else break;
+    int ncSwitch = 16;
+    bool flag = true;
+    while (ncSwitch >= 1 && flag) {
+      while ((flag = info->nBytes < nc*nt*info->comm->channels[0].collTree.nHeads*threadThreshold) && nc > ncSwitch) {
+        if (nc == ncSwitch+ncSwitch/2) threadThreshold /= 2;
+        nc--;
+      }
+      ncSwitch /= 2;
     }
   } else {
     // Ring/Tree channel tuning

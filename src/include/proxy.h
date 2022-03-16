@@ -120,7 +120,7 @@ struct ncclProxySharedCollNet {
   int size;
   char* cudaBuff;
   char* hostBuff;
-  struct ncclProxyArgs* proxyAppend[2*MAXCHANNELS];
+  struct ncclProxyArgs* proxyAppend[2*NCCL_MAX_NETDEVS];
   void* resources;
 };
 
