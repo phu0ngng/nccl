@@ -77,7 +77,7 @@ void checkTopo(const char* xmlTopoFile, const char* xmlGraphFile, const char* pl
   struct ncclXml* xmlSystem;
   INFO(NCCL_GRAPH, "Loading platform %s", platform);
   CHECK(ncclCalloc(&xmlSystem, 1));
-  CHECK(ncclTopoGetXmlFromFile(xmlTopoFile, xmlSystem));
+  CHECK(ncclTopoGetXmlFromFile(xmlTopoFile, xmlSystem, 1));
   struct ncclTopoSystem* system;
   if (xmlSystem->maxIndex == 0) {
     printf("Error : no system in %s\n", xmlTopoFile);
@@ -94,11 +94,14 @@ void checkTopo(const char* xmlTopoFile, const char* xmlGraphFile, const char* pl
   CHECK(ncclTopoSearchInit(system));
   CHECK(ncclTopoPrint(system));
 
+  char* str = getenv("NCCL_CROSS_NIC");
+  int crossNic = str ? atoi(str) : 2;
+
   struct ncclTopoGraph ringGraph;
   memset(&ringGraph, 0, sizeof(ringGraph));
   ringGraph.id = 0;
   ringGraph.pattern = NCCL_TOPO_PATTERN_RING;
-  ringGraph.crossNic = 2;
+  ringGraph.crossNic = crossNic;
   ringGraph.collNet = 0;
   ringGraph.minChannels = 1;
   ringGraph.maxChannels = 16;
@@ -107,13 +110,14 @@ void checkTopo(const char* xmlTopoFile, const char* xmlGraphFile, const char* pl
   memset(&treeGraph, 0, sizeof(treeGraph));
   treeGraph.id = 1;
   treeGraph.pattern = NCCL_TOPO_PATTERN_BALANCED_TREE;
-  treeGraph.crossNic = 2;
+  treeGraph.crossNic = crossNic;
   treeGraph.collNet = 0;
 
   struct ncclTopoGraph cNetGraph;
   memset(&cNetGraph, 0, sizeof(cNetGraph));
   cNetGraph.id = 2;
   cNetGraph.pattern = NCCL_TOPO_PATTERN_TREE;
+  cNetGraph.crossNic = crossNic;
   cNetGraph.crossNic = 2;
   cNetGraph.collNet = 1;
 
@@ -191,6 +195,7 @@ void checkPlatform(const char* platform, int* errors, int* warnings) {
 #define RUN(...) checkPlatform(__VA_ARGS__, &errors, &warnings)
 
 int main(int argc, const char* argv[]) {
+  setenv("NCCL_IGNORE_DISABLED_P2P", "2", 0); // Disable hardware health checks (NVML)
   setlinebuf(stdout);
   char* str = getenv("NCCL_GRAPH_TEST_DUMP");
   if (str) dumpDiff = atoi(str);
@@ -205,6 +210,7 @@ int main(int argc, const char* argv[]) {
     RUN("PCI-2R");
     RUN("PCI-NV");
     RUN("SKL-V100");
+    RUN("MS-1G-2N");
     RUN("T4");
 #ifdef __x86_64__
     RUN("DGX-1P");
@@ -216,8 +222,14 @@ int main(int argc, const char* argv[]) {
     RUN("XMAN-3");
     RUN("Luna");
     RUN("Luna-SHARP");
+    RUN("Luna-SHARP-1PPN");
+    RUN("Luna-2PPN-0");
+    RUN("Luna-2PPN-1");
+    RUN("Luna-2PPN-2");
+    RUN("Luna-2PPN-3");
     RUN("DGX-2-Delta");
     RUN("Redstone");
+    RUN("Atos-A100-4G");
     RUN("GCP-NV");
     RUN("AWS-NV");
     RUN("AWS-NV-EFA");
@@ -226,6 +238,8 @@ int main(int argc, const char* argv[]) {
     RUN("DGX-1V-1G");
     RUN("GCP-Shared-NVS");
     RUN("Dual-Delta-VM");
+    RUN("ZionEX");
+    RUN("FB-V100");
 #endif
     RUN("P9-6V");
     RUN("P9-4V");

@@ -4,10 +4,7 @@ class ncclSendRecv_test : public ncclCommon_test<DT> {};
 TYPED_TEST_CASE(ncclSendRecv_test, testDataTypes);
 #if NCCL_MAJOR > 2 || (NCCL_MAJOR == 2 && NCCL_MINOR >=7)
 // typical usage.
-// DISABLED tests should work with NCCL_LAUNCH_MODE=PARALLEL
-// coop launch doesn't support incomplete sets of ranks,
-// nor different numbers of blocks.
-TYPED_TEST(ncclSendRecv_test, DISABLED_simple) {
+TYPED_TEST(ncclSendRecv_test, simple) {
     size_t size = std::min(this->N, 1024 * 1024);
     ASSERT_EQ(ncclSuccess, ncclGroupStart());
     if (this->nVis >= 2) {
@@ -82,7 +79,7 @@ TYPED_TEST(ncclSendRecv_test, alltoallv) {
     }
     ASSERT_EQ(ncclSuccess, ncclGroupEnd());
 };
-TYPED_TEST(ncclSendRecv_test, DISABLED_alltoallv_JoC) {
+TYPED_TEST(ncclSendRecv_test, alltoallv_JoC) {
    /* In BUG 3197885 this AlltoAllv pattern was found to causes hangs
     * on DGX A100 and DGX2
     */
@@ -126,7 +123,73 @@ TYPED_TEST(ncclSendRecv_test, DISABLED_alltoallv_JoC) {
     }
     ASSERT_EQ(ncclSuccess, ncclGroupEnd());
 };
-TYPED_TEST(ncclSendRecv_test, DISABLED_scatter) {
+TYPED_TEST(ncclSendRecv_test, alltoallv_vasp) {
+   /* In BUG 3571899 this AlltoAllv pattern was found to causes hangs
+    */
+    size_t size = this->N;
+    size_t sendCount[4] = { size, 0, 0, 0 };
+    size_t recvCount[4] = { size, size, size, size };
+    size_t maxSize = this->N;
+    for (int i = 0; i < 16; i++) {
+        ASSERT_EQ(ncclSuccess, ncclGroupStart());
+        for (int r = 0; r < std::min(4, this->nVis); ++r) {
+            size_t sendSize = std::min(maxSize, sendCount[r]);
+            ASSERT_EQ(ncclSuccess,
+                    ncclSend(this->sendbuffs[0], sendSize,
+                        this->DataType(), r,
+                        this->comms[0], this->streams[0]))
+                << "Send 0->" << r << ", " << std::endl;
+            size_t recvSize = std::min(maxSize, recvCount[r]);
+            ASSERT_EQ(ncclSuccess,
+                    ncclRecv(this->recvbuffs[0], recvSize,
+                        this->DataType(), r,
+                        this->comms[0], this->streams[0]))
+                << "Recv 0<-" << r << ", " << std::endl;
+        }
+        for (int r = 1; r < std::min(4, this->nVis); ++r) {
+            size_t sendSize = std::min(maxSize, sendCount[r]);
+            ASSERT_EQ(ncclSuccess,
+                    ncclRecv(this->recvbuffs[r], sendSize,
+                        this->DataType(), 0,
+                        this->comms[r], this->streams[r]))
+                << "Send " << r << "->0, " << std::endl;
+            size_t recvSize = std::min(maxSize, recvCount[r]);
+            ASSERT_EQ(ncclSuccess,
+                    ncclSend(this->sendbuffs[r], recvSize,
+                        this->DataType(), 0,
+                        this->comms[r], this->streams[r]))
+                << "Recv" << r << "<-0, " << std::endl;
+        }
+        ASSERT_EQ(ncclSuccess, ncclGroupEnd());
+        ASSERT_EQ(ncclSuccess, ncclGroupStart());
+        for (int r = 0; r < std::min(4, this->nVis); ++r) {
+            ASSERT_EQ(ncclSuccess,
+                    ncclSend(this->sendbuffs[0], size,
+                        this->DataType(), r,
+                        this->comms[0], this->streams[0]))
+                << "Send 0->" << r << ", " << std::endl;
+            ASSERT_EQ(ncclSuccess,
+                    ncclRecv(this->recvbuffs[0], size,
+                        this->DataType(), r,
+                        this->comms[0], this->streams[0]))
+                << "Recv 0<-" << r << ", " << std::endl;
+        }
+        for (int r = 1; r < std::min(4, this->nVis); ++r) {
+            ASSERT_EQ(ncclSuccess,
+                    ncclRecv(this->recvbuffs[r], size,
+                        this->DataType(), 0,
+                        this->comms[r], this->streams[r]))
+                << "Send " << r << "->0, " << std::endl;
+            ASSERT_EQ(ncclSuccess,
+                    ncclSend(this->sendbuffs[r], size,
+                        this->DataType(), 0,
+                        this->comms[r], this->streams[r]))
+                << "Recv" << r << "<-0, " << std::endl;
+        }
+        ASSERT_EQ(ncclSuccess, ncclGroupEnd());
+    }
+};
+TYPED_TEST(ncclSendRecv_test, scatter) {
     size_t size = std::min(this->N, 1024 * 1024) / this->nVis;
     ASSERT_EQ(ncclSuccess, ncclGroupStart());
     for (int i = 0; i < this->nVis; ++i) {
@@ -149,7 +212,7 @@ TYPED_TEST(ncclSendRecv_test, DISABLED_scatter) {
     }
     ASSERT_EQ(ncclSuccess, ncclGroupEnd());
 };
-TYPED_TEST(ncclSendRecv_test, DISABLED_gather) {
+TYPED_TEST(ncclSendRecv_test, gather) {
     size_t size = std::min(this->N, 1024 * 1024) / this->nVis;
     ASSERT_EQ(ncclSuccess, ncclGroupStart());
     for (int i = 0; i < this->nVis; ++i) {
@@ -172,13 +235,13 @@ TYPED_TEST(ncclSendRecv_test, DISABLED_gather) {
     }
     ASSERT_EQ(ncclSuccess, ncclGroupEnd());
 };
-TYPED_TEST(ncclSendRecv_test, DISABLED_hypercube) {
+TYPED_TEST(ncclSendRecv_test, hypercube) {
     size_t size = std::min(this->N, 1024 * 1024) / this->nVis;
     ASSERT_EQ(ncclSuccess, ncclGroupStart());
     for (int i = 0; i < this->nVis; ++i) {
         for (int mask=1; mask<this->nVis; mask <<= 1) {
             int p = i^mask;
-            if (p > this->nVis) continue;
+            if (p >= this->nVis) continue;
             ASSERT_EQ(ncclSuccess,
                       ncclSend(this->sendbuffs[i] + p * size, size,
                                     this->DataType(), p,
@@ -200,7 +263,7 @@ TYPED_TEST(ncclSendRecv_test, send_self) {
                 this->DataType(), 0, this->comms[0], this->streams[0]));
 };
 // send to self (with a recv)
-TYPED_TEST(ncclSendRecv_test, DISABLED_sendrecv_self) {
+TYPED_TEST(ncclSendRecv_test, sendrecv_self) {
     ASSERT_EQ(ncclSuccess, ncclGroupStart());
     EXPECT_EQ(ncclSuccess,
             ncclSend(this->sendbuffs[0], std::min(this->N, 1024 * 1024),
@@ -232,6 +295,43 @@ TYPED_TEST(ncclSendRecv_test, multi_ops_per_pair) {
          }
     }
     ASSERT_EQ(ncclSuccess, ncclGroupEnd());
+};
+// Test for NVB preconnect
+TYPED_TEST(ncclSendRecv_test, preconnect) {
+    size_t size = std::min(this->N, 1024 * 1024);
+    if (this->nVis >= 8) {
+      // Make sure 1<->0 and 1<->5 are already connected
+      ASSERT_EQ(ncclSuccess, ncclGroupStart());
+      ASSERT_EQ(ncclSuccess, ncclSend(this->sendbuffs[0], size, this->DataType(), 1, this->comms[0], this->streams[0])) << "i" << 0 << ", " << std::endl;
+      ASSERT_EQ(ncclSuccess, ncclRecv(this->recvbuffs[0], size, this->DataType(), 1, this->comms[0], this->streams[0])) << "i" << 0 << ", " << std::endl;
+      ASSERT_EQ(ncclSuccess, ncclSend(this->sendbuffs[1], size, this->DataType(), 0, this->comms[1], this->streams[1])) << "i" << 1 << ", " << std::endl;
+      ASSERT_EQ(ncclSuccess, ncclRecv(this->recvbuffs[1], size, this->DataType(), 0, this->comms[1], this->streams[1])) << "i" << 1 << ", " << std::endl;
+      ASSERT_EQ(ncclSuccess, ncclGroupEnd());
+      ASSERT_EQ(cudaSuccess, cudaStreamSynchronize(this->streams[0])) << std::endl;
+      ASSERT_EQ(cudaSuccess, cudaStreamSynchronize(this->streams[1])) << std::endl;
+      ASSERT_EQ(ncclSuccess, ncclGroupStart());
+      ASSERT_EQ(ncclSuccess, ncclSend(this->sendbuffs[1], size, this->DataType(), 5, this->comms[1], this->streams[1])) << "i" << 1 << ", " << std::endl;
+      ASSERT_EQ(ncclSuccess, ncclRecv(this->recvbuffs[1], size, this->DataType(), 5, this->comms[1], this->streams[1])) << "i" << 1 << ", " << std::endl;
+      ASSERT_EQ(ncclSuccess, ncclSend(this->sendbuffs[5], size, this->DataType(), 1, this->comms[5], this->streams[5])) << "i" << 5 << ", " << std::endl;
+      ASSERT_EQ(ncclSuccess, ncclRecv(this->recvbuffs[5], size, this->DataType(), 1, this->comms[5], this->streams[5])) << "i" << 5 << ", " << std::endl;
+      ASSERT_EQ(ncclSuccess, ncclGroupEnd());
+      ASSERT_EQ(cudaSuccess, cudaStreamSynchronize(this->streams[1])) << std::endl;
+      ASSERT_EQ(cudaSuccess, cudaStreamSynchronize(this->streams[5])) << std::endl;
+      // Connect 1->4. On a cubemesh, this should allocate data through 0 or 5, while 0 and 5 should have
+      // a blocking receive started which should block the remote allocation
+      ASSERT_EQ(ncclSuccess, ncclGroupStart());
+      ASSERT_EQ(ncclSuccess, ncclRecv(this->recvbuffs[0], size, this->DataType(), 1, this->comms[0], this->streams[0])) << "i" << 0 << ", " << std::endl;
+      ASSERT_EQ(ncclSuccess, ncclSend(this->sendbuffs[1], size, this->DataType(), 0, this->comms[1], this->streams[1])) << "i" << 1 << ", " << std::endl;
+      ASSERT_EQ(ncclSuccess, ncclRecv(this->recvbuffs[5], size, this->DataType(), 1, this->comms[5], this->streams[5])) << "i" << 5 << ", " << std::endl;
+      ASSERT_EQ(ncclSuccess, ncclSend(this->sendbuffs[1], size, this->DataType(), 5, this->comms[1], this->streams[1])) << "i" << 1 << ", " << std::endl;
+      ASSERT_EQ(ncclSuccess, ncclRecv(this->recvbuffs[1], size, this->DataType(), 4, this->comms[1], this->streams[1])) << "i" << 1 << ", " << std::endl;
+      ASSERT_EQ(ncclSuccess, ncclSend(this->sendbuffs[4], size, this->DataType(), 1, this->comms[4], this->streams[4])) << "i" << 4 << ", " << std::endl;
+      ASSERT_EQ(ncclSuccess, ncclGroupEnd());
+      ASSERT_EQ(cudaSuccess, cudaStreamSynchronize(this->streams[0])) << std::endl;
+      ASSERT_EQ(cudaSuccess, cudaStreamSynchronize(this->streams[1])) << std::endl;
+      ASSERT_EQ(cudaSuccess, cudaStreamSynchronize(this->streams[4])) << std::endl;
+      ASSERT_EQ(cudaSuccess, cudaStreamSynchronize(this->streams[5])) << std::endl;
+    }
 };
 // sendbuff
 TYPED_TEST(ncclSendRecv_test, sendbuf_null) {

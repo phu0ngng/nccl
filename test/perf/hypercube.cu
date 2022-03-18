@@ -28,9 +28,11 @@ testResult_t HyperCubeInitData(struct threadArgs* args, ncclDataType_t type, ncc
     int rank = ((args->proc*args->nThreads + args->thread)*args->nGpus + i);
     CUDACHECK(cudaMemset(args->recvbuffs[i], 0, args->expectedBytes));
     void* data = in_place ? ((char*)args->recvbuffs[i])+rank*args->sendBytes : args->sendbuffs[i];
-    TESTCHECK(InitData(data, sendcount, type, rep, rank));
+    //TESTCHECK(InitData(data, sendcount, rank*sendcount, type, ncclSum, rep, 1, 0));
+    TESTCHECK(InitData(data, sendcount, rank*sendcount, type, ncclSum, 33*rep + rank, 1, 0));
+    //TESTCHECK(InitData(args->expected[i], nranks*sendcount, 0, type, ncclSum, rep, 1, 0));
     for (int j=0; j<nranks; j++) {
-      TESTCHECK(InitData(((char*)args->expected[i])+args->sendBytes*j, sendcount, type, rep, j));
+      TESTCHECK(InitData(((char*)args->expected[i])+args->sendBytes*j, sendcount, 0, type, ncclSum, 33*rep + j, 1, 0));
     }
     CUDACHECK(cudaDeviceSynchronize());
   }
@@ -61,7 +63,7 @@ testResult_t HyperCubeRunColl(void* sendbuff, void* recvbuff, size_t count, nccl
     NCCLCHECK(ncclGroupStart());
     int s = rank & ~(mask-1);
     int r = s ^ mask;
-    NCCLCHECK(ncclSend(rbuff+s*rankSize, count*mask, type, rank^mask, comm, stream));
+    NCCLCHECK(ncclSend(sbuff+s*rankSize, count*mask, type, rank^mask, comm, stream));
     NCCLCHECK(ncclRecv(rbuff+r*rankSize, count*mask, type, rank^mask, comm, stream));
     NCCLCHECK(ncclGroupEnd());
   }
@@ -92,7 +94,7 @@ testResult_t HyperCubeRunTest(struct threadArgs* args, int root, ncclDataType_t 
     run_types = &type;
     run_typenames = &typeName;
   } else {
-    type_count = ncclNumTypes;
+    type_count = test_typenum;
     run_types = test_types;
     run_typenames = test_typenames;
   }

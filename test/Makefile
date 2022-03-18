@@ -9,6 +9,9 @@ clean: ${DIRS:%=%.clean} mpi.clean gtest.clean
 %.build:gtest
 	${MAKE} -C $* BUILDDIR=${BUILDDIR}
 
+verifiable.self_test:
+	${MAKE} -C verifiable BUILDDIR=${BUILDDIR} self_test
+
 %.clean:
 	${MAKE} -C $* clean
 

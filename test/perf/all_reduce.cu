@@ -25,7 +25,7 @@ testResult_t AllReduceInitData(struct threadArgs* args, ncclDataType_t type, ncc
     int rank = ((args->proc*args->nThreads + args->thread)*args->nGpus + i);
     CUDACHECK(cudaMemset(args->recvbuffs[i], 0, args->expectedBytes));
     void* data = in_place ? args->recvbuffs[i] : args->sendbuffs[i];
-    TESTCHECK(InitData(data, sendcount, type, rep, rank));
+    TESTCHECK(InitData(data, sendcount, 0, type, op, rep, nranks, rank));
     TESTCHECK(InitDataReduce(args->expected[i], recvcount, 0, type, op, rep, nranks));
     CUDACHECK(cudaDeviceSynchronize());
   }
@@ -70,7 +70,7 @@ testResult_t AllReduceRunTest(struct threadArgs* args, int root, ncclDataType_t 
     run_types = &type;
     run_typenames = &typeName;
   } else {
-    type_count = ncclNumTypes;
+    type_count = test_typenum;
     run_types = test_types;
     run_typenames = test_typenames;
   }
@@ -80,7 +80,7 @@ testResult_t AllReduceRunTest(struct threadArgs* args, int root, ncclDataType_t 
     run_ops = &op;
     run_opnames = &opName;
   } else {
-    op_count = ncclNumOps;
+    op_count = test_opnum;
     run_ops = test_ops;
     run_opnames = test_opnames;
   }

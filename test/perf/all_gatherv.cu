@@ -28,9 +28,9 @@ testResult_t AllGathervInitData(struct threadArgs* args, ncclDataType_t type, nc
     int rank = ((args->proc*args->nThreads + args->thread)*args->nGpus + i);
     CUDACHECK(cudaMemset(args->recvbuffs[i], 0, args->expectedBytes));
     void* data = in_place ? ((char*)args->recvbuffs[i])+rank*args->sendBytes : args->sendbuffs[i];
-    TESTCHECK(InitData(data, sendcount, type, rep, rank));
+    TESTCHECK(InitData(data, sendcount, 0, type, ncclSum, 33*rep + rank, 1, 0));
     for (int j=0; j<nranks; j++) {
-      TESTCHECK(InitData(((char*)args->expected[i])+args->sendBytes*j, sendcount, type, rep, j));
+      TESTCHECK(InitData(((char*)args->expected[i])+args->sendBytes*j, sendcount, 0, type, ncclSum, 33*rep + j, 1, 0));
     }
     CUDACHECK(cudaDeviceSynchronize());
   }
@@ -107,7 +107,7 @@ testResult_t AllGathervRunTest(struct threadArgs* args, int root, ncclDataType_t
     run_types = &type;
     run_typenames = &typeName;
   } else {
-    type_count = ncclNumTypes;
+    type_count = test_typenum;
     run_types = test_types;
     run_typenames = test_typenames;
   }

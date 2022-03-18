@@ -116,7 +116,7 @@ Values are integers, in bytes. The recommendation is to use powers of 2. For exa
 
 NCCL_NTHREADS
 -------------
-The ``NCCL_NTHREADS`` variable sets the number of CUDA threads per CUDA block. NCCL will launch  one block per communication ring.
+The ``NCCL_NTHREADS`` variable sets the number of CUDA threads per CUDA block. NCCL will launch one CUDA block per communication channel.
 
 Use this variable if you think your GPU clocks are low and you want to increase the number of threads.
 
@@ -124,29 +124,9 @@ You can also use this variable to reduce the number of threads to decrease the G
 
 Values accepted
 ^^^^^^^^^^^^^^^
-The default is 256.
+The default is 512 for recent generation GPUs, and 256 for some older generations.
 
-The values allowed are 64, 128 and 256.
-
-NCCL_RINGS
-----------
-(since 2.0, removed in 2.5)
-
-The ``NCCL_RINGS`` variable overrides the rings that NCCL forms by default. Rings are sequences of ranks. They can be any permutations of ranks.
-
-NCCL filters out any rings that do not contain the number of ranks in the NCCL communicator. In general, the ring
-formation is dependent on the hardware topology connecting the GPUs in your system.
-
-Values accepted
-^^^^^^^^^^^^^^^
-A list of ranks from 0 to n-1, where n is the number of GPUs in your communicator.
-
-The ranks can be separated by any non-digit character, for example, " ", "-", except "|".
-
-Multiple rings can be specified separated by the pipe character "|".
-
-For example, if you have 4 GPUs in a communicator, you can form communication rings as such: "0 1 2 3  |  3 2 1 0".
-This will form two rings, one in each direction.
+The values allowed are 64, 128, 256 and 512.
 
 NCCL_MAX_NCHANNELS
 ------------------
@@ -176,6 +156,32 @@ The old ``NCCL_MIN_NRINGS`` variable (used until 2.4) still works as an alias in
 Values accepted
 ^^^^^^^^^^^^^^^
 The default is platform dependent. Set to an integer value, up to 12 (up to 2.2), 16 (2.3 and 2.4) or 32 (2.5 and later).
+
+NCCL_CROSS_NIC
+--------------
+The ``NCCL_CROSS_NIC`` variable controls whether NCCL should allow rings/trees to use different NICs,
+causing inter-node communication to use different NICs on different nodes.
+
+To maximize inter-node communication performance when using multiple NICs, NCCL tries to communicate
+between same NICs between nodes, to allow for network design where each NIC from each node connects to
+a different network switch (network rail), and avoid any risk of traffic flow interference.
+The ``NCCL_CROSS_NIC`` setting is therefore dependent on the network topology, and in particular
+depending on whether the network fabric is rail-optimized or not.
+
+This has no effect on systems with only one NIC.
+
+Values accepted
+^^^^^^^^^^^^^^^
+0: Always use the same NIC for the same ring/tree, to avoid crossing network rails. Suited for networks
+with per NIC switches (rails), with a slow inter-rail connection. Note there are corner cases for which
+NCCL may still cause cross-rail communication, so rails still need to be connected at the top.
+
+1: Do not attempt to use the same NIC for the same ring/tree. This is suited for networks where all NICs
+from a node are connected to the same switch, hence trying to communicate across the same NICs does not
+help avoiding flow collisions.
+
+2: (Default) Try to use the same NIC for the same ring/tree, but still allow for it if it would result
+in better performance.
 
 NCCL_CHECKS_DISABLE
 -------------------
@@ -210,10 +216,10 @@ The ``NCCL_LAUNCH_MODE`` variable controls how NCCL launches CUDA kernels.
 
 Values accepted
 ^^^^^^^^^^^^^^^
-The default value is to use cooperative groups (CUDA 9.0 and later) for processes managing more than one GPU.
+The default value is PARALLEL.
 
-Setting it to PARALLEL uses the previous launch system which can be faster but is prone to deadlocks when one process
-manages multiple GPUs.
+Setting is to GROUP will use cooperative groups (CUDA 9.0 and later) for processes managing more than one GPU.
+This is deprecated in 2.9 and may be removed in future versions.
 
 NCCL_IB_DISABLE
 ---------------
@@ -340,6 +346,51 @@ Define and set to 0 to disable GPU Direct RDMA.
 
 Define and set to 1 to force the usage of GPU Direct RDMA.
 
+NCCL_IB_QPS_PER_CONNECTION
+--------------------------
+(since 2.10)
+
+Number of IB queue pairs to use for each connection between two ranks. This can be useful on multi-level fabrics which need multiple queue pairs to have good routing entropy.
+Each message, regardless of its size, will be split in N parts and sent on each queue pair. Therefore, increasing this number can cause a latency increase as well as a bandwidth reduction.
+
+Values accepted
+^^^^^^^^^^^^^^^
+Number between 1 and 128, default is 1. Values beyond 8 usually cause degraded bandwidth.
+
+NCCL_IB_PCI_RELAXED_ORDERING
+--------------------------
+(since 2.12)
+
+Enable use of Relaxed Ordering for the IB Verbs transport. Relaxed Ordering can greatly help the performance of Infiniband networks in virtualized environments.
+
+Values accepted
+^^^^^^^^^^^^^^^
+Set to 2 to automatically use Relaxed Ordering if available. Set to 1 to force use of Relaxed Ordering and fail if not available. Set to 0 to disable use of Relaxed Ordering. Default is 2.
+
+NCCL_NET
+--------
+(since 2.10)
+
+Forces NCCL to use a specific network, for example to make sure NCCL uses an external plugin and doesn't automatically fall back on the internal IB or Socket implementation.
+
+Values accepted
+^^^^^^^^^^^^^^^
+The value of NCCL_NET has to match exactly the name of the NCCL network used (case-sensitive). Internal network names are "IB" (generic IB verbs) and "Socket" (TCP/IP sockets).
+External network plugins define their own names.
+
+NCCL_NET_PLUGIN
+---------------
+(since 2.11)
+
+Set it to a suffix string to choose among multiple NCCL net plugins. This setting will cause NCCL to look for file “libnccl-net-<suffix>.so” instead of the default "libnccl-net.so".
+
+For example, setting ``NCCL_NET_PLUGIN=aws`` will cause NCCL to use libnccl-net-aws.so (provided that it exists on the system).  Setting ``NCCL_NET_PLUGIN=none`` will cause NCCL not to use any plugin.
+
+Values accepted
+^^^^^^^^^^^^^^^
+
+Suffix string of the plugin file name, or "none".
+
 NCCL_NET_GDR_LEVEL (formerly NCCL_IB_GDR_LEVEL)
 -----------------------------------------------
 (since 2.3.4. In 2.4.0, NCCL_IB_GDR_LEVEL is renamed NCCL_NET_GDR_LEVEL)
@@ -374,6 +425,31 @@ Values accepted
 0 or 1. Define and set to 1 to use GPU Direct RDMA to send data to the NIC directly (bypassing CPU).
 
 Before 2.4.2, the default value is 0 for all platforms. Since 2.4.2, the default value is 1 for NVLink-based platforms and 0 otherwise.
+
+NCCL_NET_SHARED_BUFFERS
+-----------------------
+(since 2.8)
+
+Allows the usage of shared buffers for inter-node point-to-point communication.
+This will use a single large pool for all remote peers, having a constant
+memory usage instead of increasing linearly with the number of remote peers.
+
+Value accepted
+^^^^^^^^^^^^^^
+
+Default is 1 (enabled). Set to 0 to disable.
+
+NCCL_NET_SHARED_COMMS
+---------------------
+(since 2.12)
+
+Reuse the same connections in the context of PXN. This allows for message
+aggregation but can also decreate the entropy of network packets.
+
+Value accepted
+^^^^^^^^^^^^^^
+
+Default is 1 (enabled). Set to 0 to disable.
 
 NCCL_SINGLE_RING_THRESHOLD
 --------------------------
@@ -479,7 +555,7 @@ The default value is INIT.
 
 Supported subsystem names are INIT (stands for initialization), COLL (stands for collectives), P2P (stands for
 peer-to-peer), SHM (stands for shared memory), NET (stands for network), GRAPH (stands for topology detection
-and graph search), TUNING (stands for algorithm/protocol tuning), ENV (stands for environment settings), and ALL (includes every subsystem).
+and graph search), TUNING (stands for algorithm/protocol tuning), ENV (stands for environment settings), ALLOC (stands for memory allocations), and ALL (includes every subsystem).
 
 NCCL_COLLNET_ENABLE
 -------------------
@@ -491,11 +567,21 @@ Value accepted
 ^^^^^^^^^^^^^^
 Default is 0, define and set to 1 to use the CollNet plugin.
 
+NCCL_COLLNET_NODE_THRESHOLD
+---------------------------
+(since 2.9.9)
+
+A threshold for number of nodes below which CollNet will not be enabled.
+
+Value accepted
+^^^^^^^^^^^^^^
+Default is 2, define and set to an integer.
+
 NCCL_TOPO_FILE
 --------------
 (since 2.6)
 
-Path to an XML file to load before detecting the topology.
+Path to an XML file to load before detecting the topology. By default, NCCL will load ``/var/run/nvidia-topologyd/virtualTopology.xml`` if present.
 
 Value accepted
 ^^^^^^^^^^^^^^
@@ -510,3 +596,81 @@ Path to an XML file to dump the topology after detection.
 Value accepted
 ^^^^^^^^^^^^^^
 A path to a file which will be created or overwritten.
+
+NCCL_NVB_DISABLE
+----------------
+(since 2.11)
+
+Disable intra-node communication through NVLink via an intermediate GPU.
+
+Value accepted
+^^^^^^^^^^^^^^
+Default is 0, set to 1 to disable that mechanism.
+
+NCCL_PXN_DISABLE
+----------------
+(since 2.12)
+
+Disable inter-node communication using a non-local NIC, using NVLink and
+an intermediate GPU.
+
+Value accepted
+^^^^^^^^^^^^^^
+Default is 0, set to 1 to disable that mechanism.
+
+NCCL_P2P_PXN_LEVEL
+------------------
+(since 2.12)
+
+Control in which cases PXN is used for send/receive operations.
+
+Value accepted
+^^^^^^^^^^^^^^
+
+A value of 0 will never use PXN for send/receive. A value of 1 will use PXN
+when the NIC preferred by the destination is not directly accessible. A value
+of 2 (default) will always use PXN even if the NIC is directly accessible,
+storing data on the same intermediate GPU as other GPUs in the node to maximize
+aggregation.
+
+.. _NCCL_GRAPH_REGISTER:
+
+NCCL_GRAPH_REGISTER
+-------------------
+(since 2.11)
+
+Enable user buffer registration when NCCL calls are captured by CUDA Graphs.
+
+Effective only when:
+(i) the CollNet algorithm is being used;
+(ii) all GPUs within a node have P2P access to each other;
+(iii) there is at most one GPU per process.
+
+User buffer registration may reduce the number of data copies between user buffers and the internal buffers of NCCL.
+The user buffers will be automatically de-registered when the CUDA Graphs are destroyed.
+
+Value accepted
+^^^^^^^^^^^^^^
+0 or 1. Default value is 0.
+
+NCCL_SET_STACK_SIZE
+-------------------
+(since 2.9)
+
+Set CUDA kernel stack size to the maximum stack size amongst all NCCL kernels.
+
+It may avoid a CUDA memory reconfiguration on load. Set to 1 if you experience hang due to CUDA memory reconfiguration.
+
+Value accepted
+^^^^^^^^^^^^^^
+0 or 1. Default value is 0.
+
+NCCL_SET_THREAD_NAME
+--------------------
+(since 2.12)
+
+Change the name of NCCL threads to ease debugging and analysis.
+
+Value accepted
+^^^^^^^^^^^^^^
+0 or 1. Default is 0.

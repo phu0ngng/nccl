@@ -11,6 +11,12 @@ void freePP(OP op, DT**& ptr, const int len) {
         ptr = NULL;
     };
 };
+
+// Persistent NCCL communicators and buffers
+ncclComm_t* ncclCommon_getComms(int* nGpus);
+
+void ncclCommon_getBuff(void*** sendbuffs, void*** recvbuffs, void*** sendbuffs_host, void*** recvbuffs_host, void*** sendbuffs_pinned, void*** recvbuffs_pinned, void*** sendbuffs_pinned_device, void*** recvbuffs_pinned_device, cudaStream_t** streams);
+
 template <typename DT>
 class ncclCommon_test : public ::testing::Test {
   public:
@@ -58,8 +64,8 @@ class ncclCommon_test : public ::testing::Test {
     };
 };
 template <typename DT>
-const std::vector<ncclRedOp_t> ncclCommon_test<DT>::RedOps = {ncclSum, ncclProd,
-                                                              ncclMax, ncclMin};
+const std::vector<ncclRedOp_t> ncclCommon_test<DT>::RedOps =
+  {ncclSum, ncclProd, ncclMax, ncclMin, ncclAvg};
 template <typename DT>
 int ncclCommon_test<DT>::N = 4 * 1024 * 1024;
 template <typename DT>
@@ -86,60 +92,21 @@ template <typename DT>
 cudaStream_t* ncclCommon_test<DT>::streams = NULL;
 template <typename DT>
 void ncclCommon_test<DT>::SetUpTestCase() {
-    ASSERT_EQ(cudaSuccess, cudaGetDeviceCount(&nVis));
-    streams = (cudaStream_t*)calloc(nVis, sizeof(cudaStream_t));
-    sendbuffs = (DT**)calloc(nVis, sizeof(DT**));
-    recvbuffs = (DT**)calloc(nVis, sizeof(DT**));
-    sendbuffs_host = (DT**)calloc(nVis, sizeof(DT**));
-    recvbuffs_host = (DT**)calloc(nVis, sizeof(DT**));
-    sendbuffs_pinned = (DT**)calloc(nVis, sizeof(DT**));
-    recvbuffs_pinned = (DT**)calloc(nVis, sizeof(DT**));
-    sendbuffs_pinned_device = (DT**)calloc(nVis, sizeof(DT**));
-    recvbuffs_pinned_device = (DT**)calloc(nVis, sizeof(DT**));
-    for (int i = 0; i < nVis; ++i) {
-        ASSERT_EQ(cudaSuccess, cudaSetDevice(i));
-        ASSERT_EQ(cudaSuccess, cudaMalloc(&sendbuffs[i], N * sizeof(DT)));
-        ASSERT_EQ(cudaSuccess, cudaMalloc(&recvbuffs[i], N * sizeof(DT)));
-        ASSERT_EQ(cudaSuccess, cudaMemset(sendbuffs[i], 0, N * sizeof(DT)));
-        ASSERT_EQ(cudaSuccess, cudaMemset(recvbuffs[i], 0, N * sizeof(DT)));
-        ASSERT_EQ(cudaSuccess, cudaStreamCreate(&streams[i])) << i;
-        sendbuffs_host[i] = (DT*)calloc(N, sizeof(DT));
-        recvbuffs_host[i] = (DT*)calloc(N, sizeof(DT));
-        sendbuffs_pinned[i] = (DT*)calloc(N, sizeof(DT));
-        ASSERT_EQ(cudaSuccess,
-                  cudaHostRegister(sendbuffs_pinned[i], N * sizeof(DT),
-                                   cudaHostRegisterDefault));
-        ASSERT_EQ(cudaSuccess, cudaHostGetDevicePointer(&sendbuffs_pinned_device[i], 
-				   sendbuffs_pinned[i], 0));
-        recvbuffs_pinned[i] = (DT*)calloc(N, sizeof(DT));
-        ASSERT_EQ(cudaSuccess,
-                  cudaHostRegister(recvbuffs_pinned[i], N * sizeof(DT),
-                                   cudaHostRegisterDefault));
-        ASSERT_EQ(cudaSuccess, cudaHostGetDevicePointer(&recvbuffs_pinned_device[i], 
-				   recvbuffs_pinned[i], 0));
-    }
-    comms = (ncclComm_t*)calloc(nVis, sizeof(ncclComm_t));
     (void) setenv("NCCL_CHECK_POINTERS", "1", 0); // API tests expect this behaviour (ncclCommInitAll)
-    ASSERT_EQ(ncclSuccess, ncclCommInitAll(comms, nVis, NULL));
+    comms = ncclCommon_getComms(&nVis);
+    ncclCommon_getBuff(
+        (void***)&sendbuffs,
+        (void***)&recvbuffs,
+        (void***)&sendbuffs_host,
+        (void***)&recvbuffs_host,
+        (void***)&sendbuffs_pinned,
+        (void***)&recvbuffs_pinned,
+        (void***)&sendbuffs_pinned_device,
+        (void***)&recvbuffs_pinned_device,
+        &streams);
 };
 template <typename DT>
 void ncclCommon_test<DT>::TearDownTestCase() {
-    EXPECT_NO_FATAL_FAILURE(
-        freePP<>([](ncclComm_t ptr) { ncclCommDestroy(ptr); }, comms, nVis));
-    auto freecuda = [](DT* ptr) { cudaFree(ptr); };
-    EXPECT_NO_FATAL_FAILURE(freePP<>(freecuda, sendbuffs, nVis));
-    EXPECT_NO_FATAL_FAILURE(freePP<>(freecuda, recvbuffs, nVis));
-    auto freePinned = [](DT* ptr) {
-        EXPECT_EQ(cudaSuccess, cudaHostUnregister(ptr));
-        free(ptr);
-    };
-    EXPECT_NO_FATAL_FAILURE(freePP<>(freePinned, sendbuffs_pinned, nVis));
-    EXPECT_NO_FATAL_FAILURE(freePP<>(freePinned, recvbuffs_pinned, nVis));
-    auto freehost = [](DT* ptr) { free(ptr); };
-    EXPECT_NO_FATAL_FAILURE(freePP<>(freehost, sendbuffs_host, nVis));
-    EXPECT_NO_FATAL_FAILURE(freePP<>(freehost, recvbuffs_host, nVis));
-    auto freeStream = [](cudaStream_t st) { cudaStreamDestroy(st); };
-    EXPECT_NO_FATAL_FAILURE(freePP<>(freeStream, streams, nVis));
 };
 typedef ::testing::Types<char, int, half, float, double, long long,
                          unsigned long long>

@@ -101,12 +101,57 @@ IP Network Interfaces
 
 NCCL auto-detects which network interfaces to use for inter-node communication. If some interfaces are in state up, however are not able to communicate between nodes, NCCL may try to use them anyway and therefore fail during the init functions or even hang.
 
-For information about how to specify which interfaces to use, see NCCL Knobs section, particularly the NCCL_SOCKET_IFNAME knob.   
+For information about how to specify which interfaces to use, see NCCL Knobs section, particularly the NCCL_SOCKET_IFNAME knob.
+
+IP Ports
+--------
+
+NCCL opens TCP ports to connect processes together and exchange connection information. To restrict the range of ports used by NCCL, one can set the net.ipv4.ip_local_port_range property of the
+linux kernel.
+
+This example shows how to restrict NCCL ports to 50000-51000:
+
+.. code:: shell
+
+ echo 50000 51000 > /proc/sys/net/ipv4/ip_local_port_range
+
+Or to make this permanent, add a line to /set/sysctl.conf:
+
+.. code:: shell
+
+ echo "net.ipv4.ip_local_port_range = 50000 51000" >> /etc/sysctl.conf
+
+Restricting the port range can be useful to open a corresponding range in the firewall, for example on Google Cloud:
+
+.. code:: shell
+
+ gcloud compute --project=myproject firewall-rules create ncclnet0-ingress --direction=INGRESS --priority=1 --network=ncclnet --action=ALLOW --rules=tcp:50000-51000,22,1024-1039 --destination-ranges=0.0.0.0/0 --target-tags=ncclnet
 
 InfiniBand
 ----------
 
 Before running NCCL on InfiniBand, running low-level InfiniBand tests (and in particular the ib_write_bw test) can help verify which nodes are able to communicate properly.
+
+A common issue seen with InfiniBand is the library not being able to register sufficient pinned memory. In such cases you may see an error like:
+
+.. code:: shell
+
+ NCCL WARN Call to ibv_create_qp failed
+
+or
+
+.. code:: shell
+
+ NCCL WARN Call to ibv_reg_mr failed
+
+The solution is to remove the user limits on registering pinned memory. This can be done by adding these lines:
+
+.. code:: shell
+
+ * soft memlock unlimited
+ * hard memlock unlimited
+
+To the /etc/security/limits.conf configuration file or equivalent on your Linux distribution.
 
 ************
 Known Issues
@@ -123,11 +168,3 @@ In order to share data between ranks, NCCL may require shared system memory for 
  
 in the command line to nvidia-docker run.
 
-Concurrency between NCCL and CUDA calls (NCCL up to 2.0.5 or CUDA 8)
---------------------------------------------------------------------
-
-NCCL uses CUDA kernels to perform inter-GPU communication. The NCCL kernels synchronize with each other, therefore, each kernel requires other kernels on other GPUs to be also executed in order to complete. The application should therefore make sure that nothing prevents the NCCL kernels from being executed concurrently on the different devices of a NCCL communicator.
-
-For example, let's say you have a process managing multiple CUDA devices, and, also features a thread which calls CUDA functions asynchronously. In this case, CUDA calls could be executed between the enqueuing of two NCCL kernels. The CUDA call may wait for the first NCCL kernel to complete and prevent the second one from being launched, causing a deadlock since the first kernel will not complete until the second one is executed.  To avoid this issue, one solution is to have a lock around the NCCL launch on multiple devices (around ncclGroupStart and ncclGroupEnd when using a single thread, around the NCCL launch when using multiple threads, using thread synchronization if necessary) and take this lock when calling CUDA from the asynchronous thread.
-
-Starting with NCCL 2.1.0, this issue is no longer present when using CUDA 9, unless Cooperative Group Launch is disabled in the NCCL_LAUNCH_MODE=PARALLEL setting.

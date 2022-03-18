@@ -39,6 +39,12 @@ all: ${BIN_FILES}
 clean:
 	rm -rf ${DST_DIR}
 
+TEST_VERIFIABLE_SRCDIR := ../verifiable
+TEST_VERIFIABLE_BUILDDIR := $(BUILDDIR)/test/verifiable
+include ../verifiable/verifiable.mk
+
+COMMON_OBJS := ${DST_DIR}/common.o ${DST_DIR}/timer.o $(TEST_VERIFIABLE_OBJS)
+
 ifneq (clean,${MAKECMDGOALS})
 -include $(DEP_FILES)
 ${DST_DIR}/%.dep: %.cu
@@ -48,10 +54,15 @@ ${DST_DIR}/%.dep: %.cu
 	> $@
 endif
 
-${DST_DIR}/%.o: %.cu
+${DST_DIR}/%.o: %.cu $(TEST_VERIFIABLE_HDRS)
 	@printf "Compiling  %-35s > %s\n" $< $@
 	@mkdir -p ${DST_DIR}
 	$(NVCC) -o $@ $(NVCUFLAGS) -c $<
+
+${DST_DIR}/timer.o: timer.cc timer.h
+	@printf "Compiling  %-35s > %s\n" $< $@
+	@mkdir -p ${DST_DIR}
+	$(CXX) $(CXXFLAGS) -o $@ -c timer.cc
 
 ${DST_DIR}/common_mpi_collnet.o:common.cu
 	@printf "Compiling  %-35s > %s\n" $< $@
@@ -68,12 +79,12 @@ ${DST_DIR}/nccl_mpi_collnet.o: ../../share/nccl_mpi_collnet.c
 	@mkdir -p ${DST_DIR}
 	mpicc -std=c99 $(CXXFLAGS) -I$(NCCLDIR)/include/ -o $@ -c $<
 
-${DST_DIR}/%_perf:${DST_DIR}/%.o ${DST_DIR}/common.o
+${DST_DIR}/%_perf:${DST_DIR}/%.o ${COMMON_OBJS}
 	@printf "Linking  %-35s > %s\n" $< $@
 	@mkdir -p ${DST_DIR}
 	$(NVCC) -o $@ $(NVCUFLAGS) $^ ${NVLDFLAGS}
 
-${DST_DIR}/replay: ${DST_DIR}/replay.o ${COLL_OBJS} ${DST_DIR}/common.o
+${DST_DIR}/replay: ${DST_DIR}/replay.o ${COLL_OBJS} ${COMMON_OBJS}
 	@printf "Linking  %-35s > %s\n" $< $@
 	@mkdir -p ${DST_DIR}
 	$(NVCC) -o $@ $(NVCUFLAGS) $^ ${NVLDFLAGS}
@@ -82,4 +93,3 @@ ${DST_DIR}/%_perf_mpi_collnet: ${DST_DIR}/%.o ${DST_DIR}/common_mpi_collnet.o ${
 	@printf "Linking  %-35s > %s\n" $< $@
 	@mkdir -p ${DST_DIR}
 	$(NVCC) -o $@ $(NVCUFLAGS) $^ ${NVLDFLAGS}
-

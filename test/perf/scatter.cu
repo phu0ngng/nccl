@@ -24,8 +24,8 @@ testResult_t ScatterInitData(struct threadArgs* args, ncclDataType_t type, ncclR
     int rank = ((args->proc*args->nThreads + args->thread)*args->nGpus + i);
     CUDACHECK(cudaMemset(args->recvbuffs[i], 0, args->expectedBytes));
     void* data = in_place ? args->recvbuffs[i] : args->sendbuffs[i];
-    if (rank == root) TESTCHECK(InitData(data, sendcount, type, rep, rank));
-    TESTCHECK(InitData(args->expected[i], recvcount, type, rep+rank*recvcount, root));
+    if (rank == root) TESTCHECK(InitData(data, sendcount, 0, type, ncclSum, rep, 1, 0));
+    TESTCHECK(InitData(args->expected[i], recvcount, rank*recvcount, type, ncclSum, rep, 1, 0));
     CUDACHECK(cudaDeviceSynchronize());
   }
   return testSuccess;
@@ -84,7 +84,7 @@ testResult_t ScatterRunTest(struct threadArgs* args, int root, ncclDataType_t ty
     run_types = &type;
     run_typenames = &typeName;
   } else {
-    type_count = ncclNumTypes;
+    type_count = test_typenum;
     run_types = test_types;
     run_typenames = test_typenames;
   }
