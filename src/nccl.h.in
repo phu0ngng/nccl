@@ -85,9 +85,11 @@ ncclResult_t pncclCommAbort(ncclComm_t comm);
 const char*  ncclGetErrorString(ncclResult_t result);
 const char* pncclGetErrorString(ncclResult_t result);
 
-/* Returns a human-readable error message of the last that occurred. */
-const char*  ncclGetLastError();
-const char* pncclGetError();
+/* Returns a human-readable message of the last error that occurred.
+ * comm is currently unused and can be set to NULL
+ */
+const char*  ncclGetLastError(ncclComm_t comm);
+const char* pncclGetError(ncclComm_t comm);
 
 /* Checks whether the comm has encountered any asynchronous errors */
 ncclResult_t  ncclCommGetAsyncError(ncclComm_t comm, ncclResult_t *asyncError);

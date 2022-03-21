@@ -30,7 +30,7 @@
   }                                                 \
 } while(0)
 
-#if NCCL_MAJOR > 2 || NCCL_MINOR > 8
+#if NCCL_VERSION_CODE >= NCCL_VERSION(2,12,10)
 #define NCCLCHECK(cmd) do {                         \
   ncclResult_t res = cmd;                           \
   if (res != ncclSuccess) {                         \
@@ -40,7 +40,7 @@
            "'%s / %s'\n",                           \
            hostname,__FILE__,__LINE__,              \
            ncclGetErrorString(res),                 \
-           ncclGetLastError());                     \
+           ncclGetLastError(NULL));                 \
     return testNcclError;                           \
   }                                                 \
 } while(0)

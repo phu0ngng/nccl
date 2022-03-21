@@ -1080,8 +1080,11 @@ const char* ncclGetErrorString(ncclResult_t code) {
   }
 }
 
-NCCL_API(const char*, ncclGetLastError);
-const char* ncclGetLastError() {
+/* Returns a human-readable message of the last error that occurred.
+ * comm is currently unused and can be set to NULL
+ */
+NCCL_API(const char*, ncclGetLastError, const ncclComm_t comm);
+const char* ncclGetLastError(ncclComm_t comm) {
   return ncclLastError;
 }
 
