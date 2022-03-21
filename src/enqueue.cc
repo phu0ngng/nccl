@@ -732,7 +732,7 @@ static ncclResult_t ncclSetupCollKernel(struct ncclInfo* info) {
   // Inline the first kernel
   if (params->func == NULL) {
     params->func = ncclKerns[work->header.funcIndex];
-    if (work->header.type == ncclWorkTypeColl) {
+    if (work->header.type == ncclWorkTypeColl || work->header.type == ncclWorkTypeRegColl) {
       // Copy the first operation to the inline argument. Type may be set later to
       // ncclWorkTypeUnused if we have more than one coll element.
       memcpy(&comm->args, work->elems, sizeof(struct ncclWorkElem));
