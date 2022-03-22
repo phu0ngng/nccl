@@ -718,6 +718,18 @@ static ncclResult_t ncclSetupCollKernel(struct ncclInfo* info) {
   params->blockDim.x = std::max<unsigned>(params->blockDim.x, info->nThreads);
   comm->enqueueInfo->maxChannels = params->gridDim.x;  // params may be varied by a second graph hence we need to capture it here
 
+  // Inline the first kernel
+  if (params->func == NULL) {
+    params->func = ncclKerns[work->header.funcIndex];
+    if (work->header.type == ncclWorkTypeColl) {
+      // Copy the first operation to the inline argument. Type may be set later to
+      // ncclWorkTypeUnused if we have more than one coll element.
+      memcpy(&comm->args, work->elems, sizeof(struct ncclWorkElem));
+      comm->args.bid = 0;    // Only inline for channel 0
+      comm->args.header.isLast = 1; // I am so far the last element
+    }
+  }
+
   // Register and exchange input and output buffers
   if (comm->usingCudaGraph &&                   // only in CUDA graph mode
       comm->graphRegister == 1 &&               // when registration is enabled
@@ -727,18 +739,9 @@ static ncclResult_t ncclSetupCollKernel(struct ncclInfo* info) {
     NCCLCHECK(ncclRegBuffAndExchange(info, &eqElem->buffRegInfo));
     comm->enqueueInfo->nRegBuffs += eqElem->buffRegInfo.nBuffs;
     work->header.type = ncclWorkTypeRegColl;
-  }
-
-  // Inline the first kernel
-  if (params->func == NULL) {
-    params->func = ncclKerns[work->header.funcIndex];
-    if (work->header.type == ncclWorkTypeColl || work->header.type == ncclWorkTypeRegColl) {
-      // Copy the first operation to the inline argument. Type may be set later to
-      // ncclWorkTypeUnused if we have more than one coll element.
-      memcpy(&comm->args, work->elems, sizeof(struct ncclWorkElem));
-      comm->args.bid = 0;    // Only inline for channel 0
-      comm->args.header.isLast = 1; // I am so far the last element
-    }
+    // Disable inline argument because we need kernel to copy the entire ncclWork from workFifo
+    // because the registered addresses are in ncclWorkElemReg
+    comm->args.header.type = ncclWorkTypeUnused;
   }
 
   return ncclSuccess;
