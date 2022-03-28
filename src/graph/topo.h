@@ -49,13 +49,28 @@ extern const char* topoNodeTypeStr[];
 #define LINK_NET 8
 extern const char* topoLinkTypeStr[];
 
+// Local (myself)
 #define PATH_LOC 0
+
+// Connection traversing NVLink
 #define PATH_NVL 1
+
+// Connected via NVBridge (Used in hypercube NVLink networks like DGX-1)
 #define PATH_NVB 2
+
+// Connection traversing at most a single PCIe bridge
 #define PATH_PIX 3
+
+// Connection traversing multiple PCIe bridges (without traversing the PCIe Host Bridge)
 #define PATH_PXB 4
+
+// PXN is the latest technology in NCCL 2.12.x where we now use the NVSwitch to aggregate A2A communication between the local ranks so that we can avoid "crossing rails" in the upper IB networking switches.
 #define PATH_PXN 5
+
+// Connection traversing PCIe as well as a PCIe Host Bridge (typically the CPU)
 #define PATH_PHB 6
+
+// Connection traversing PCIe as well as the SMP interconnect between NUMA nodes (e.g., QPI/UPI)
 #define PATH_SYS 7
 #define PATH_DIS 7
 extern const char* topoPathTypeStr[];
