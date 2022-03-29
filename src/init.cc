@@ -820,30 +820,18 @@ collnet_cleanup:
     // Connect p2p when using NVB path
     int nvbNpeers;
     int* nvbPeers;
-    int p2pGroupSize = NCCL_MAX_WORK_ELEMENTS_P2P/2;
-    int nsteps = comm->maxLocalRanks;
-    int rankIndex = comm->rankToLocalRank[comm->rank];
     NCCLCHECK(ncclTopoGetNvbGpus(comm->topo, comm->rank, &nvbNpeers, &nvbPeers));
     for (int r=0; r<nvbNpeers; r++) {
       int peer = nvbPeers[r];
-      int peerNode = comm->rankToNode[peer];
-      int peerIndex = comm->rankToLocalRank[peer];
-      int step = (nsteps + peerIndex - rankIndex)%nsteps;
-      int delta = (comm->nNodes + peerNode - comm->node) % comm->nNodes;
-      if (comm->nNodes == 1) delta = (comm->nRanks + peer - comm->rank) % comm->nRanks;
+      int channelId;
       for (int c=0; c<comm->p2pnChannelsPerPeer; c++) {
-        int shuffle = comm->nNodes > 1 ? delta+(step/p2pGroupSize) : step;
-        int channelId = (shuffle+comm->p2pChannels[c]) % comm->p2pnChannels;
+        NCCLCHECK(ncclChannelCompute(comm, peer, c, ncclFuncSend, &channelId));
         if (comm->channels[channelId].peers[peer].send[1].connected == 0) {
           comm->connectSend[peer] |= (1<<channelId);
         }
       }
-      step = (nsteps + rankIndex - peerIndex)%nsteps;
-      delta = (comm->nNodes + comm->node - peerNode) % comm->nNodes;
-      if (comm->nNodes == 1) delta = (comm->nRanks - peer + comm->rank) % comm->nRanks;
       for (int c=0; c<comm->p2pnChannelsPerPeer; c++) {
-        int shuffle = comm->nNodes > 1 ? delta+(step/p2pGroupSize) : step;
-        int channelId = (shuffle+comm->p2pChannels[c]) % comm->p2pnChannels;
+        NCCLCHECK(ncclChannelCompute(comm, peer, c, ncclFuncRecv, &channelId));
         if (comm->channels[channelId].peers[peer].recv[1].connected == 0) {
           comm->connectRecv[peer] |= (1<<channelId);
         }
