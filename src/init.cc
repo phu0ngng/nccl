@@ -838,6 +838,7 @@ collnet_cleanup:
           comm->connectSend[peer] |= (1<<channelId);
         }
       }
+      step = (nsteps + rankIndex - peerIndex)%nsteps;
       delta = (comm->nNodes + comm->node - peerNode) % comm->nNodes;
       if (comm->nNodes == 1) delta = (comm->nRanks - peer + comm->rank) % comm->nRanks;
       for (int c=0; c<comm->p2pnChannelsPerPeer; c++) {
