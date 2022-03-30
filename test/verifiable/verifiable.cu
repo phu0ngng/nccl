@@ -1,9 +1,13 @@
+#pragma nv_diag_suppress declared_but_not_referenced
+
 #include "verifiable.h"
 #include <nccl.h>
 
 #include <cuda_runtime.h>
 #include <cuda_fp16.h>
+#if CUDART_VERSION >= 11000
 #include <cuda_bf16.h>
+#endif
 
 #include <cassert>
 #include <cstdio>
@@ -83,15 +87,23 @@ __host__ __device__ T inhibit(T x) {
 ////////////////////////////////////////////////////////////////////////////////
 
 namespace {
-  template<typename Y, typename X> __host__ __device__ Y castTo(X x) { return Y(x); }
-  template<typename Y> __host__ __device__ Y castTo(float x) { return Y(x); }
-  template<typename Y> __host__ __device__ Y castTo(half x) { return Y(x); }
-  //template<> __host__ __device__ float castTo<float>(half x) { return __half2float(x); }
-  template<> __host__ __device__ half castTo<half>(float x) { return __float2half(x); }
+  template<typename Y, typename X>
+  __host__ __device__ Y castTo(X x) {
+    return Y(x);
+  }
+  template<typename Y>
+  __host__ __device__ Y castTo(float x) {
+    return Y(x);
+  }
+  template<>
+  __host__ __device__ half castTo<half>(float x) {
+    return __float2half(x);
+  }
   #ifdef __CUDA_BF16_TYPES_EXIST__
-  template<typename Y> __host__ __device__ Y castTo(__nv_bfloat16 x) { return Y(x); }
-  //template<> __host__ __device__ float castTo<float>(__nv_bfloat16 x) { return __bfloat162float(x); }
-  template<> __host__ __device__ __nv_bfloat16 castTo<__nv_bfloat16>(float x) { return __float2bfloat16(x); }
+  template<>
+  __host__ __device__ __nv_bfloat16 castTo<__nv_bfloat16>(float x) {
+    return __float2bfloat16(x);
+  }
   #endif
 }
 
@@ -110,7 +122,7 @@ struct ReduceNil {
 struct ReduceSum {
   template<typename T>
   __host__ __device__ T preOp(T x, int /*rank_me*/) const { return x; }
-  template<typename T>
+  template<typename T, typename=decltype(T()+T())>
   __host__ __device__ T operator()(T a, T b) const { return a + b; }
   __host__ __device__ half operator()(half a, half b) const {
     #if __CUDA_ARCH__ >= 530
@@ -134,7 +146,7 @@ struct ReduceSum {
 struct ReduceProd {
   template<typename T>
   __host__ __device__ T preOp(T x, int /*rank_me*/) const { return x; }
-  template<typename T>
+  template<typename T, typename=decltype(T()*T())>
   __host__ __device__ T operator()(T a, T b) const { return a * b; }
   __host__ __device__ half operator()(half a, half b) const {
     #if __CUDA_ARCH__ >= 530
@@ -158,7 +170,7 @@ struct ReduceProd {
 struct ReduceMin {
   template<typename T>
   __host__ __device__ T preOp(T x, int /*rank_me*/) const { return x; }
-  template<typename T>
+  template<typename T, typename=decltype(T()<T())>
   __host__ __device__ T operator()(T a, T b) const { return a < b ? a : b; }
   __host__ __device__ half operator()(half a, half b) const {
     #if __CUDA_ARCH__ >= 800
@@ -186,7 +198,7 @@ struct ReduceMin {
 struct ReduceMax {
   template<typename T>
   __host__ __device__ T preOp(T x, int /*rank_me*/) const { return x; }
-  template<typename T>
+  template<typename T, typename=decltype(T()>T())>
   __host__ __device__ T operator()(T a, T b) const { return a > b ? a : b; }
   __host__ __device__ half operator()(half a, half b) const {
     #if __CUDA_ARCH__ >= 800
