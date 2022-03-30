@@ -26,7 +26,7 @@ NCCL_P2P_LEVEL
 
 The ``NCCL_P2P_LEVEL`` variable allows the user to finely control when to use the peer to peer (P2P) transport between GPUs.
 The level defines the maximum distance between GPUs where NCCL will use the P2P transport.  A short string representing
-the path type (see ``nccl/src/graph/topo.h``) should be used to specify the topographical cutoff for using the P2P transport.
+the path type should be used to specify the topographical cutoff for using the P2P transport.
 
 The distances listed are in descending order of locality (AKA, NVL is the most local and performant path type.)
 
@@ -41,16 +41,17 @@ Values accepted
 
 Integer Values (Legacy)
 ^^^^^^^^^^^^^^^
-There is also an option to declare ``NCCL_P2P_LEVEL`` as an integer corresponding to the path type (again, see ``nccl/src/graph/topo.h``.)
-Integer values are discouraged due to breaking changes in path types.  At any point in a future NCCL release, there's no guarantee
-a given int will refer to the same path type.  To avoid headaches debugging invalid configurations, use string identifiers.
+There is also the option to declare ``NCCL_P2P_LEVEL`` as an integer corresponding to the path type.  These numerical values were kept for retro-compatibility, for those who used numerical values before strings were allowed.
+
+Integer values are discouraged due to breaking changes in path types - the literal values can change over time.  To avoid headaches debugging your configuration, use string identifiers.
 
 - LOC : 0
-- NVL : 1
-- PIX : 3
-- PXB : 4
-- PHB : 6
-- SYS : 7
+- PIX : 1
+- PXB : 2
+- PHB : 3
+- SYS : 4
+
+Values greater than 4 will be interepreted as SYS.  NVL is not supported using the legacy level ints.
 
 NCCL_SHM_DISABLE
 ----------------
@@ -407,8 +408,7 @@ NCCL_NET_GDR_LEVEL (formerly NCCL_IB_GDR_LEVEL)
 (since 2.3.4. In 2.4.0, NCCL_IB_GDR_LEVEL is renamed NCCL_NET_GDR_LEVEL)
 
 The ``NCCL_NET_GDR_LEVEL`` variable allows the user to finely control when to use GPU Direct RDMA between a NIC and a GPU.
-The level defines the maximum distance between the NIC and the GPU. A string representing the path type (see ``nccl/src/graph/topo.h``)
-should be used to specify the topographical cutoff for GpuDirect.
+The level defines the maximum distance between the NIC and the GPU. A string representing the path type should be used to specify the topographical cutoff for GpuDirect.
 
 The distances listed are in descending order of locality (AKA, PIX is the most local and performant path type between a GPU and NIC.)
 
@@ -423,15 +423,17 @@ Values accepted
 
 Integer Values (Legacy)
 ^^^^^^^^^^^^^^^
-There is also an option to declare ``NCCL_NET_GDR_LEVEL`` as an integer corresponding to the path type (again, see ``nccl/src/graph/topo.h``.)
-Integer values are discouraged due to breaking changes in path types.  At any point in a future NCCL release, there's no guarantee
-a given int will refer to the same path type.  To avoid headaches debugging invalid configurations, use string identifiers.
+There is also the option to declare ``NCCL_NET_GDR_LEVEL`` as an integer corresponding to the path type.  These numerical values were kept for retro-compatibility, for those who used numerical values before strings were allowed.
+
+Integer values are discouraged due to breaking changes in path types - the literal values can change over time.  To avoid headaches debugging your configuration, use string identifiers.
 
 - LOC : 0
-- PIX : 3
-- PXB : 4
-- PHB : 6
-- SYS : 7
+- PIX : 1
+- PXB : 2
+- PHB : 3
+- SYS : 4
+
+Values greater than 4 will be interepreted as SYS.
 
 NCCL_NET_GDR_READ
 -----------------
