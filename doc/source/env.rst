@@ -28,13 +28,13 @@ The ``NCCL_P2P_LEVEL`` variable allows the user to finely control when to use th
 The level defines the maximum distance between GPUs where NCCL will use the P2P transport.  A short string representing
 the path type should be used to specify the topographical cutoff for using the P2P transport.
 
-The distances listed are in descending order of locality (AKA, NVL is the most local and performant path type.)
+If this isn't specified, NCCL will attempt to optimally select a value based on the architecture and environment it's run in. 
 
 Values accepted
 ^^^^^^^^^^^^^^^
 - LOC : Never use P2P (always disabled)
 - NVL : Use P2P when GPUs are connected through NVLink
-- PIX : Use P2P when GPUs are on the same PCI switch. (default)
+- PIX : Use P2P when GPUs are on the same PCI switch.
 - PXB : Use P2P when GPUs are connected through PCI switches (potentially multiple hops).
 - PHB : Use P2P when GPUs are on the same NUMA node. Traffic will go through the CPU.
 - SYS : Use P2P betweem NUMA nodes, potentially crossing the SMP interconnect (e.g. QPI/UPI).
@@ -410,14 +410,14 @@ NCCL_NET_GDR_LEVEL (formerly NCCL_IB_GDR_LEVEL)
 The ``NCCL_NET_GDR_LEVEL`` variable allows the user to finely control when to use GPU Direct RDMA between a NIC and a GPU.
 The level defines the maximum distance between the NIC and the GPU. A string representing the path type should be used to specify the topographical cutoff for GpuDirect.
 
-The distances listed are in descending order of locality (AKA, PIX is the most local and performant path type between a GPU and NIC.)
+If this isn't specified, NCCL will attempt to optimally select a value based on the architecture and environment it's run in. 
 
 Values accepted
 ^^^^^^^^^^^^^^^
 
 - LOC  : Never use GPU Direct RDMA. (always disabled)
 - PIX  : Use GPU Direct RDMA when GPU and NIC are on the same PCI switch.
-- PXB  : (Default) Use GPU Direct RDMA when GPU and NIC are connected through PCI switches (potentially multiple hops).
+- PXB  : Use GPU Direct RDMA when GPU and NIC are connected through PCI switches (potentially multiple hops).
 - PHB  : Use GPU Direct RDMA when GPU and NIC are on the same NUMA node. Traffic will go through the CPU.
 - SYS  : Use GPU Direct RDMA even across the SMP interconnect between NUMA nodes (e.g., QPI/UPI). (always enabled)
 
