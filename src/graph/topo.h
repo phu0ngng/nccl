@@ -55,7 +55,7 @@ extern const char* topoLinkTypeStr[];
 // Connection traversing NVLink
 #define PATH_NVL 1
 
-// Connected via NVBridge (Used in hypercube NVLink networks like DGX-1)
+// Connection through NVLink using an intermediate GPU
 #define PATH_NVB 2
 
 // Connection traversing at most a single PCIe bridge
@@ -64,7 +64,7 @@ extern const char* topoLinkTypeStr[];
 // Connection traversing multiple PCIe bridges (without traversing the PCIe Host Bridge)
 #define PATH_PXB 4
 
-// PXN is the latest technology in NCCL 2.12.x where we now use the NVSwitch to aggregate A2A communication between the local ranks so that we can avoid "crossing rails" in the upper IB networking switches.
+// Connection between a GPU and a NIC using an intermediate GPU. Used to enable rail-local, aggregated network send/recv operations.
 #define PATH_PXN 5
 
 // Connection traversing PCIe as well as a PCIe Host Bridge (typically the CPU)

@@ -51,7 +51,7 @@ Integer values are discouraged due to breaking changes in path types - the liter
 - PHB : 3
 - SYS : 4
 
-Values greater than 4 will be interepreted as SYS.  NVL is not supported using the legacy level ints.
+Values greater than 4 will be interpreted as SYS.  NVL is not supported using the legacy level ints.
 
 NCCL_SHM_DISABLE
 ----------------
