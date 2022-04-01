@@ -8,6 +8,7 @@
 #include "debug.h"
 #include "enqueue.h"
 #include "transport.h"
+#include "channel.h"
 
 #define MAX_ASYNC_OPS 128
 thread_local pthread_t ncclGroupThreads[MAX_ASYNC_OPS];
@@ -101,18 +102,22 @@ ncclResult_t ncclGroupStart() {
   return ncclSuccess;
 }
 
-static ncclResult_t scheduleSend(struct ncclComm* comm, int peer, int channelId, size_t count, void* buff) {
+static ncclResult_t scheduleSend(struct ncclComm* comm, int peer, int chunk, size_t count, void* buff) {
   struct ncclInfo info = { ncclFuncSend, "Send",
     NULL, buff, count, ncclInt8, ncclSum, peer, comm, comm->userStream, /* Args */
     1, 1 };
+  int channelId;
+  NCCLCHECK(ncclChannelCompute(comm, peer, chunk, ncclFuncSend, &channelId));
   info.channelId = channelId;
   NCCLCHECK(ncclSetupP2pKernel(&info));
   return ncclSuccess;
 }
-static ncclResult_t scheduleRecv(struct ncclComm* comm, int peer, int channelId, size_t count, void* buff) {
+static ncclResult_t scheduleRecv(struct ncclComm* comm, int peer, int chunk, size_t count, void* buff) {
   struct ncclInfo info = { ncclFuncRecv, "Recv",
     NULL, buff, count, ncclInt8, ncclSum, peer, comm, comm->userStream, /* Args */
     1, 1 };
+  int channelId;
+  NCCLCHECK(ncclChannelCompute(comm, peer, chunk, ncclFuncRecv, &channelId));
   info.channelId = channelId;
   NCCLCHECK(ncclSetupP2pKernel(&info));
   return ncclSuccess;
@@ -208,7 +213,6 @@ ncclResult_t ncclGroupEnd() {
       int node = comm->node;
       int nNodes = comm->nNodes;
       int localRank = comm->localRank;
-      int p2pGroupSize = NCCL_MAX_WORK_ELEMENTS_P2P/2;
 
       // Compute how much to split operations
       // Natural step size matching buffer steps.
@@ -266,21 +270,19 @@ sched_delta:
               do {
                 // Shuffle channels with s intra-node, and delta inter-node. Inter-node, make sure
                 // to use multiple channels to guarantee progress on all ranks from the same node.
-                int shuffle = comm->nNodes > 1 ? delta+(s/p2pGroupSize) : s;
-                int channelId = (shuffle+comm->p2pChannels[chunk%comm->p2pnChannelsPerPeer]) % comm->p2pnChannels;
                 ssize_t recvbytes = totRecvBytes-recvOffset;
                 ssize_t sendbytes = totSendBytes-sendOffset;
                 if (recvbytes > recvChunkSize) { recvbytes = recvChunkSize; } else { recvRemaining = 0; }
                 if (sendbytes > sendChunkSize) { sendbytes = sendChunkSize; } else { sendRemaining = 0; }
                 // 0-bytes send/recv are considered as syncs. Make sure we only add syncs when requested
                 // (total size == 0), otherwise set size to -1.
-                if (sendbytes <= 0 && totSendBytes != 0) send = NULL;
-                if (recvbytes <= 0 && totRecvBytes != 0) recv = NULL;
+                if (sendbytes < 0 || (sendbytes == 0 && totSendBytes != 0)) send = NULL;
+                if (recvbytes < 0 || (recvbytes == 0 && totRecvBytes != 0)) recv = NULL;
                 if (recv) {
-                  NCCLCHECKGOTO(scheduleRecv(comm, recvPeer, channelId, recvbytes, ((char*)recvBuff)+recvOffset), ret, group_cleanup);
+                  NCCLCHECKGOTO(scheduleRecv(comm, recvPeer, chunk, recvbytes, ((char*)recvBuff)+recvOffset), ret, group_cleanup);
                 }
                 if (send) {
-                  NCCLCHECKGOTO(scheduleSend(comm, sendPeer, channelId, sendbytes, ((char*)sendBuff)+sendOffset), ret, group_cleanup);
+                  NCCLCHECKGOTO(scheduleSend(comm, sendPeer, chunk, sendbytes, ((char*)sendBuff)+sendOffset), ret, group_cleanup);
                 }
                 recvOffset += recvChunkSize;
                 sendOffset += sendChunkSize;

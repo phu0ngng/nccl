@@ -11,7 +11,9 @@ $CONTENTS
 <!-- end of table of contents -->
 <h2>Proposed Design</h2>
 <h3>Overview</h3>
-<p>Network connection establishment code is split in two parts:
+<p>We allow for any rank to use a network proxy from another rank in the communicator, for memory allocation (NVB), but also
+for network connection establishment and inter-node communication.
+<p>As a consequence, the network connection establishment code is split in two parts:
 <ul>
   <li> the GPU side manages all mapping of memory to the GPU setting up pointers for the GPU, ...
   <li> the CPU proxy side is handling network connection, memory allocation and associated memory setup for the NIC.
@@ -19,7 +21,7 @@ $CONTENTS
 <p>To allow any process managing a GPU to use a proxy from another process to send (and in the future receive) data,
 the communication between those two entities is made using:
 <ul>
-  <li> sockets, for most of the setup
+  <li> sockets, for most of the setup (TCP/IP, although we could use file sockets)
   <li> CUDA IPCs, shared memory, or shared pointers for memory allocation and mapping between one GPU rank and another GPU's proxy.
   <li> shared memory for proxy operation queue management, since it is in the critical path.
 </ul>
