@@ -25,21 +25,33 @@ NCCL_P2P_LEVEL
 (since 2.3.4)
 
 The ``NCCL_P2P_LEVEL`` variable allows the user to finely control when to use the peer to peer (P2P) transport between GPUs.
-The level defines the maximum distance between GPUs where NCCL will use the P2P transport.
+The level defines the maximum distance between GPUs where NCCL will use the P2P transport.  A short string representing
+the path type should be used to specify the topographical cutoff for using the P2P transport.
+
+If this isn't specified, NCCL will attempt to optimally select a value based on the architecture and environment it's run in. 
 
 Values accepted
 ^^^^^^^^^^^^^^^
-LOC or 0 : Never use P2P (always disabled)
+- LOC : Never use P2P (always disabled)
+- NVL : Use P2P when GPUs are connected through NVLink
+- PIX : Use P2P when GPUs are on the same PCI switch.
+- PXB : Use P2P when GPUs are connected through PCI switches (potentially multiple hops).
+- PHB : Use P2P when GPUs are on the same NUMA node. Traffic will go through the CPU.
+- SYS : Use P2P betweem NUMA nodes, potentially crossing the SMP interconnect (e.g. QPI/UPI).
 
-NVL : Use P2P when GPUs are connected through NVLink
+Integer Values (Legacy)
+^^^^^^^^^^^^^^^
+There is also the option to declare ``NCCL_P2P_LEVEL`` as an integer corresponding to the path type.  These numerical values were kept for retro-compatibility, for those who used numerical values before strings were allowed.
 
-PIX or 1 : Use P2P when GPUs are on the same PCI switch.
+Integer values are discouraged due to breaking changes in path types - the literal values can change over time.  To avoid headaches debugging your configuration, use string identifiers.
 
-PXB or 2 : Use P2P when GPUs are connected through PCI switches (potentially multiple hops).
+- LOC : 0
+- PIX : 1
+- PXB : 2
+- PHB : 3
+- SYS : 4
 
-PHB or 3, or 4 : Use P2P when GPUs are on the same NUMA node. Traffic will go through the CPU.
-
-SYS or 5 : Use P2P betweem NUMA nodes, potentially crossing the SMP interconnect (e.g. QPI/UPI).
+Values greater than 4 will be interpreted as SYS.  NVL is not supported using the legacy level ints.
 
 NCCL_SHM_DISABLE
 ----------------
@@ -396,23 +408,32 @@ NCCL_NET_GDR_LEVEL (formerly NCCL_IB_GDR_LEVEL)
 (since 2.3.4. In 2.4.0, NCCL_IB_GDR_LEVEL is renamed NCCL_NET_GDR_LEVEL)
 
 The ``NCCL_NET_GDR_LEVEL`` variable allows the user to finely control when to use GPU Direct RDMA between a NIC and a GPU.
-The level defines the maximum distance between the NIC and the GPU.
+The level defines the maximum distance between the NIC and the GPU. A string representing the path type should be used to specify the topographical cutoff for GpuDirect.
+
+If this isn't specified, NCCL will attempt to optimally select a value based on the architecture and environment it's run in. 
 
 Values accepted
 ^^^^^^^^^^^^^^^
-0 : Never use GPU Direct RDMA. (always disabled)
 
-1 : Use GPU Direct RDMA when GPU and NIC are on the same PCI switch.
+- LOC  : Never use GPU Direct RDMA. (always disabled)
+- PIX  : Use GPU Direct RDMA when GPU and NIC are on the same PCI switch.
+- PXB  : Use GPU Direct RDMA when GPU and NIC are connected through PCI switches (potentially multiple hops).
+- PHB  : Use GPU Direct RDMA when GPU and NIC are on the same NUMA node. Traffic will go through the CPU.
+- SYS  : Use GPU Direct RDMA even across the SMP interconnect between NUMA nodes (e.g., QPI/UPI). (always enabled)
 
-2 : Use GPU Direct RDMA when GPU and NIC are connected through PCI switches (potentially multiple hops).
+Integer Values (Legacy)
+^^^^^^^^^^^^^^^
+There is also the option to declare ``NCCL_NET_GDR_LEVEL`` as an integer corresponding to the path type.  These numerical values were kept for retro-compatibility, for those who used numerical values before strings were allowed.
 
-3 : Use GPU Direct RDMA when GPU and NIC are on the same PCI root complex, potentially going through the CPU.
+Integer values are discouraged due to breaking changes in path types - the literal values can change over time.  To avoid headaches debugging your configuration, use string identifiers.
 
-4 : (Since 2.4.7) Use GPU Direct RDMA even across PCI root complexes, as long as GPU and NIC are within the same NUMA node. (Before 2.4.7) Use GPU Direct RDMA even across PCI root complexes, regardless of whether GPU and NIC are within the same NUMA node (always enabled).
+- LOC : 0
+- PIX : 1
+- PXB : 2
+- PHB : 3
+- SYS : 4
 
-5 : Use GPU Direct RDMA even across the SMP interconnect between NUMA nodes (e.g., QPI/UPI). (always enabled)
-
-The default value is 2.
+Values greater than 4 will be interepreted as SYS.
 
 NCCL_NET_GDR_READ
 -----------------
