@@ -190,7 +190,7 @@ struct ncclWorkElem {
   union {
     uint8_t flagBits;
     struct {
-      uint8_t isUsed:1, isLastIfInline:1, redOpArgIsPtr:1, regUsed:1;
+      uint8_t isUsed:1, redOpArgIsPtr:1, regUsed:1;
     };
   };
   uint8_t nWarps;

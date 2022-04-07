@@ -155,13 +155,6 @@ static void appendWorkElemColl(
   ) {
   struct ncclKernelPlan::Channel* chan = &plan->channels[channelId];
   struct ncclWorkList* q = ncclIntruQueueTail(&chan->workQueue);
-  if (q == nullptr && channelId == 0 && !plan->inlineWorkElem.isUsed) {
-    plan->inlineFuncIx = funcIndex;
-    plan->inlineWorkElem = *elem; // C++ struct assignment
-    plan->inlineWorkElem.bid = bid;
-    plan->inlineWorkElem.isUsed = 1;
-    return;
-  }
   if (q && funcIndex == q->work.header.funcIndex
         && elem->nWarps == q->work.elems[0].nWarps
         && chan->nWorkElem < NCCL_MAX_WORK_ELEMENTS) {
@@ -369,15 +362,12 @@ static void finishPlan(struct ncclKernelPlan* plan) {
   int channelUbound = 0;
   int channelCount = 0;
   uint64_t channelMask = 0;
-  plan->inlineWorkElem.isLastIfInline = plan->inlineWorkElem.isUsed &&ncclIntruQueueEmpty(&plan->channels[0].workQueue);
   for (int c=0; c < MAXCHANNELS; c++) {
     struct ncclWorkList* tail = ncclIntruQueueTail(&plan->channels[c].workQueue);
-    if ((c == 0 && plan->inlineWorkElem.isUsed) || tail != nullptr) {
+    if (tail != nullptr) {
       channelUbound = c+1;
       channelCount += 1;
       channelMask |= 1ull<<c;
-    }
-    if (tail != nullptr) {
       tail->work.header.isLast = 1;
       finishWork(&tail->work);
     }
@@ -611,7 +601,7 @@ static ncclResult_t uploadWork(struct ncclComm* comm, struct ncclKernelPlan* pla
     waitWorkFifoAvailable(comm, ixSent + nWork);
   }
   uint32_t ixHead = ixSent;
-  ixSent += plan->channelCount - plan->inlineWorkElem.isLastIfInline;
+  ixSent += plan->channelCount;
   int channelsWithWork = 0; // number of channels below `c` with work structs.
   for (int c=0; c < channelUbound; c++) {
     struct ncclWorkList* q = ncclIntruQueueHead(&plan->channels[c].workQueue);
@@ -802,8 +792,7 @@ ncclResult_t ncclLaunchKernel(struct ncclComm* comm, struct ncclKernelPlan* plan
   struct ncclTasks* tasks = &comm->tasks;
   dim3 grid = {(unsigned)plan->channelCount, 1, 1};
   dim3 block = {(unsigned)plan->threadPerBlock, 1, 1};
-  void *args[5] = {&comm->devComm, &plan->channelMask, &plan->inlineFuncIx,
-                   &plan->inlineWorkElem, &plan->workHead};
+  void *args[3] = {&comm->devComm, &plan->channelMask, &plan->workHead};
   NCCLCHECK(ncclStrongStreamLaunchKernel(
     tasks->capturingGraph, &comm->deviceStream, plan->kernelFn, grid, block, args, 0
   ));

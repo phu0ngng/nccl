@@ -525,7 +525,7 @@ T* ncclIntruQueueMpscDequeueAll(ncclIntruQueueMpsc<T,next>* me, bool waitSome) {
     while (true) {
       x1 = __atomic_load_n(&(x->*next), __ATOMIC_RELAXED);
       if (x1 != nullptr) break;
-      if (++spins == 1*1000) { spins = 0; sched_yield(); }
+      if (++spins == 1024) { spins = 1024-1; sched_yield(); }
     }
     x = x1;
   }
@@ -535,7 +535,7 @@ T* ncclIntruQueueMpscDequeueAll(ncclIntruQueueMpsc<T,next>* me, bool waitSome) {
 template<typename T, T *T::*next>
 T* ncclIntruQueueMpscAbandon(ncclIntruQueueMpsc<T,next>* me) {
   uintptr_t expected = 0x0;
-  if (__atomic_compare_exchange_n(&me->tail, &expected, /*desired=*/0x2, /*weak=*/true, __ATOMIC_ACQ_REL)) {
+  if (__atomic_compare_exchange_n(&me->tail, &expected, /*desired=*/0x2, /*weak=*/true, __ATOMIC_RELAXED, __ATOMIC_RELAXED)) {
     return nullptr;
   } else {
     int spins = 0;
@@ -543,7 +543,7 @@ T* ncclIntruQueueMpscAbandon(ncclIntruQueueMpsc<T,next>* me) {
     while (true) {
       head = __atomic_load_n(&me->head, __ATOMIC_RELAXED);
       if (head != nullptr) break;
-      if (++spins == 1*1000) { spins = 0; sched_yield(); }
+      if (++spins == 1024) { spins = 1024-1; sched_yield(); }
     }
     __atomic_store_n(&me->head, nullptr, __ATOMIC_RELAXED);
     uintptr_t utail = __atomic_exchange_n(&me->tail, 0x2, __ATOMIC_ACQ_REL);
@@ -555,7 +555,7 @@ T* ncclIntruQueueMpscAbandon(ncclIntruQueueMpsc<T,next>* me) {
       while (true) {
         x1 = __atomic_load_n(&(x->*next), __ATOMIC_RELAXED);
         if (x1 != nullptr) break;
-        if (++spins == 1*1000) { spins = 0; sched_yield(); }
+        if (++spins == 1024) { spins = 1024-1; sched_yield(); }
       }
       x = x1;
     }

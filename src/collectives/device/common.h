@@ -157,9 +157,7 @@ static __device__ void ncclRedopPtrDeref(struct ncclWorkElem* we) {
 
 template<ncclFunc_t Fn, typename T, typename RedOp, int Algo, int Proto, int FnIndex>
 __device__ void ncclKernel(
-    struct ncclDevComm* comm, uint64_t channelMask,
-    uint16_t inlineFuncIx, struct ncclWorkElem inlineWorkElem,
-    struct ncclWork* workHead
+    struct ncclDevComm* comm, uint64_t channelMask, struct ncclWork* workHead
   )  {
   int tid = threadIdx.x;
   int nthreads = blockDim.x;
@@ -187,27 +185,9 @@ __device__ void ncclKernel(
   // Get address of channel without incurring indirect load from ncclDevComm::channels
   struct ncclDevChannel *channel = &((ncclDevCommAndChannels*)comm)->channels[channelId];
   turn = copyToShmem(&ncclShmem.channel, channel, turn);
-
-  // To optimize for latency, (only) the first operation is passed as argument.
-  if (channelId == 0 && inlineWorkElem.isUsed) {
-    if (tid == nthreads-1) {
-      ncclShmem.work.header.funcIndex = inlineFuncIx;
-      ncclShmem.work.header.type = ncclWorkTypeColl;
-      ncclShmem.work.header.isLast = inlineWorkElem.isLastIfInline;
-      ncclShmem.work.header.inFifo = 0;
-    }
-    if (1 <= tid && tid < NCCL_MAX_WORK_ELEMENTS) {
-      ncclShmem.work.elems[tid].flagBits = 0; // isUsed = 0
-    }
-    copyToShmem(&ncclShmem.work.elems[0], &inlineWorkElem, turn);
-  }
   __syncthreads(); // publish ncclShmem
 
-  int workIxNext = blockIdx.x - inlineWorkElem.isLastIfInline;
-
-  if (channelId == 0 && inlineWorkElem.isUsed)
-    goto SkipLoadWork;
-
+  int workIxNext = blockIdx.x;
   while (true) {
     copyToShmem<ncclWork, 8>(&ncclShmem.work, workHead + workIxNext);
     { // Check whether the last operation was aborted and make sure all threads exit
@@ -244,12 +224,10 @@ __device__ void ncclKernel(
 #if NCCL_OP == 0
 #define IMPL_COLL_KERN(func, algo, proto, devredop, type, fIndex) \
 __global__ void NCCL_KERN_NAME(func, algo, proto, devredop, type)( \
-    struct ncclDevComm* comm, uint64_t channelMask, \
-    uint16_t inlineFuncIx, struct ncclWorkElem inlineWorkElem, \
-    struct ncclWork* workHead \
+    struct ncclDevComm* comm, uint64_t channelMask, struct ncclWork* workHead \
   ) { \
   ncclKernel<ncclFunc##func, type, Func##devredop<type>, NCCL_ALGO_##algo, NCCL_PROTO_##proto, fIndex> \
-    (comm, channelMask, inlineFuncIx, inlineWorkElem, workHead); \
+    (comm, channelMask, workHead); \
 }
 #else
 #define IMPL_COLL_KERN(func, algo, proto, devredop, type, fInded)

@@ -130,8 +130,6 @@ struct ncclKernelPlan {
   int channelCount; // number of channels present
   uint64_t channelMask; // which channels are present, channelCount == popcount(channelMask)
   int threadPerBlock;
-  uint16_t inlineFuncIx;
-  struct ncclWorkElem inlineWorkElem;
   // workHeap fields are null until uploadWorkFifo() or preparePersistentKernel()
   struct ncclWork* workHead;
 
