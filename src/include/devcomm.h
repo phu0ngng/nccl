@@ -252,6 +252,7 @@ struct ncclWork {
   };
 };
 static_assert(sizeof(struct ncclWork) == NCCL_WORK_SIZE, "Sanity check: sizeof(struct ncclWork) == NCCL_WORK_SIZE");
+static_assert(sizeof(struct ncclWork)%16 == 0, "Sanity check: sizeof(struct ncclWork)%16 == 0");
 
 struct ncclDevChannelPeer {
   // Stripped version of ncclChannelPeer where we only keep the ncclConnInfo
@@ -260,7 +261,7 @@ struct ncclDevChannelPeer {
   struct ncclConnInfo recv[NCCL_MAX_CONNS];
 };
 
-struct ncclDevChannel {
+struct alignas(16) ncclDevChannel {
   struct ncclDevChannelPeer *peers;
   struct ncclRing ring;
   struct ncclTree tree;
@@ -284,7 +285,7 @@ struct ncclDevComm {
   struct ncclDevChannel* channels/*[MAXCHANNELS]*/;
 };
 
-struct ncclDevCommAndChannels {
+struct alignas(16) ncclDevCommAndChannels {
   struct ncclDevComm comm;
   struct ncclDevChannel channels[MAXCHANNELS];
 };
