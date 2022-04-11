@@ -488,7 +488,8 @@ static ncclResult_t scheduleP2pTasksToPlan(
             NCCLCHECK(addP2pToPlan(comm, plan, nWorkBudget, /*isSendNotRecv=*/false, recvPeer, chunk, recvPtr, recvChunkBytes));
             recvPtr += recvChunkBytes;
             recvBytes -= recvChunkBytes;
-            if (recvBytes == 0) {
+            if (recvBytes <= 0) {
+              recvBytes = 0; // in case still -1
               ncclIntruQueueDequeue(&peers[recvPeer].recvQueue);
               tasks->nTasksP2p -= 1;
             } else {
@@ -502,7 +503,8 @@ static ncclResult_t scheduleP2pTasksToPlan(
             NCCLCHECK(addP2pToPlan(comm, plan, nWorkBudget, /*isSendNotRecv=*/true, sendPeer, chunk, sendPtr, sendChunkBytes));
             sendPtr += sendChunkBytes;
             sendBytes -= sendChunkBytes;
-            if (sendBytes == 0) {
+            if (sendBytes <= 0) {
+              sendBytes = 0; // in case still -1
               ncclIntruQueueDequeue(&peers[sendPeer].sendQueue);
               tasks->nTasksP2p -= 1;
             } else {
