@@ -288,37 +288,11 @@ static ncclResult_t commAlloc(ncclComm_t* comret, int ndev, int rank) {
 
   ncclMemoryPoolConstruct(&comm->memPool_ncclKernelPlan);
   ncclMemoryPoolConstruct(&comm->memPool_ncclProxyOp);
+  ncclMemoryPoolConstruct(&comm->memPool_ncclPointerList);
 
   comm->groupNext = reinterpret_cast<struct ncclComm*>(0x1);
   comm->preconnectNext = reinterpret_cast<struct ncclComm*>(0x1);
   comm->channelSize = ncclParamAggChannelSize();
-  #if 0
-  NCCLCHECK(ncclCalloc(&comm->asyncOps, NCCL_MAX_OPS));
-  comm->asyncOpCount = 0;
-  comm->asyncTotalSize = 0;
-  comm->asyncAllocMode = ncclComm::SHORTEST_QUEUE;
-  char* str = getenv("NCCL_AGG_ALLOC_MODE");
-  if (str) INFO(NCCL_ENV, "NCCL_AGG_ALLOC_MODE set by environment to %s", str);
-  if (str && strcmp(str, "ROUND_ROBIN") == 0) {
-    comm->asyncAllocMode = ncclComm::ROUND_ROBIN;
-  }
-  CUDACHECK(cudaDriverGetVersion(&comm->driverVersion));
-  #endif
-
-  #if 0
-  NCCLCHECK(ncclCreateQueueInfo(&comm->enqueueInfo, comm));
-  comm->lastSetupNode = NULL;
-  comm->lastCudaGraphId = -1;
-  comm->disableGraphHelper = ncclParamDisableGraphHelper();
-  comm->graphRegister = ncclParamGraphRegister();
-#if CUDART_VERSION >= 11030
-  NCCLCHECK(ncclCalloc(&comm->graphHelperResources, 1));
-  comm->graphHelperResources->comm = comm;
-  if (comm->driverVersion >= 11030)
-    // cudaGetDriverEntryPoint requires R465 or above (enhanced compat need)
-    CUDACHECK(cudaGetDriverEntryPoint("cuMemGetAddressRange", (void**)&comm->pfnCuMemGetAddressRange, cudaEnableDefault));
-#endif
-  #endif
 
   static_assert(MAXCHANNELS <= sizeof(*comm->connectSend)*8, "comm->connectSend must have enough bits for all channels");
   static_assert(MAXCHANNELS <= sizeof(*comm->connectRecv)*8, "comm->connectRecv must have enough bits for all channels");
@@ -1111,24 +1085,6 @@ ncclResult_t ncclCommInitAll(ncclComm_t* comms, int ndev, const int* devlist) {
   return ncclSuccess;
 }
 
-#if 0
-static ncclResult_t ncclGraphHelperDestroy(ncclComm* comm) {
-  auto res = comm->graphHelperResources;
-  if (comm->graphHelperThread && res) {
-    pthread_mutex_lock(&res->threadLock);
-    res->threadState = ThreadStop;
-    pthread_cond_signal(&res->threadCond);
-    pthread_mutex_unlock(&res->threadLock);
-    pthread_join(comm->graphHelperThread, NULL);
-  }
-  if (res) {
-    free(res);
-    res = NULL;
-  }
-  return ncclSuccess;
-}
-#endif
-
 static ncclResult_t commDestroy(ncclComm_t comm) {
   // Try and prevent a double free of the comm struct (user error)
   if (comm->rank == -1 || comm->nRanks <= 0 || comm->cudaDev == -1 || comm->busId == -1) {
@@ -1149,14 +1105,6 @@ static ncclResult_t commDestroy(ncclComm_t comm) {
   NCCLCHECK(ncclStrongStreamSynchronize(&comm->hostStream));
   NCCLCHECK(ncclStrongStreamSynchronize(&comm->deviceStream));
   NCCLCHECK(ncclCommPollCallbacks(comm));
-
-  #if 0
-  ncclDestroyQueueInfo(comm->enqueueInfo);
-#if CUDART_VERSION >= 11030
-  NCCLCHECK(ncclGraphHelperDestroy(comm));
-#endif
-  INFO(NCCL_COLL, "Created %d queue info, destroyed %d", comm->nQueueInfoCreated, comm->nQueueInfoDestroyed);
-  #endif
 
   NCCLCHECK(commFree(comm));
 

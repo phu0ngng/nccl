@@ -115,6 +115,11 @@ struct ncclWorkList {
   struct ncclWork work;
 };
 
+struct ncclPointerList {
+  struct ncclPointerList* next;
+  void *ptr;
+};
+
 struct ncclKernelPlan {
   // A kernel plan is also a callback that reclaims itself. Hence this must
   // be the first member.
@@ -134,6 +139,8 @@ struct ncclKernelPlan {
   struct ncclWork* workHead;
 
   int collOpCount; // zero based for this plan
+
+  struct ncclIntruQueue<struct ncclPointerList, &ncclPointerList::next> ipcMemQueue;
 
   struct Channel {
     int nWork;
@@ -248,7 +255,7 @@ struct ncclComm {
   // pools backed by comm->memPermanent
   struct ncclMemoryPool memPool_ncclProxyOp;
   struct ncclMemoryPool memPool_ncclKernelPlan;
-
+  struct ncclMemoryPool memPool_ncclPointerList;
   // Next comm in this thread's active ncclGroup[Start|End](). Holds "0x1" when
   // this comm is not yet in a group.
   struct ncclComm* groupNext;
@@ -256,22 +263,6 @@ struct ncclComm {
   struct ncclComm* preconnectNext;
   int persistentRefs; // number of persistent plan-lists capturing this comm
   struct ncclTasks tasks;
-
-  #if 0
-  // Store info for cudaGraph
-  int usingCudaGraph; // Only use it during capture time, not launch time
-  struct ncclQueueInfo* enqueueInfo;
-  int nQueueInfoCreated;
-  int nQueueInfoDestroyed;
-  cudaGraphNode_t lastSetupNode;
-  unsigned long long lastCudaGraphId;
-  int driverVersion;
-  pfn_cuMemGetAddressRange_t pfnCuMemGetAddressRange;
-  pthread_t graphHelperThread;
-  struct ncclGraphHelperResources* graphHelperResources;
-  int disableGraphHelper;
-  int graphRegister;
-  #endif
 
   // user-created reduction ops
   int userRedOpCapacity, userRedOpFreeHead;

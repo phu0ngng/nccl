@@ -487,24 +487,6 @@ ncclResult_t ncclProxyComputeP2p(struct ncclInfo* info, struct ncclProxyOp* op) 
   return ncclSuccess;
 }
 
-#if 0
-ncclResult_t ncclProxySaveP2p(struct ncclComm* comm, struct ncclProxyOp* op) {
-  struct ncclChannel* channel = comm->channels+op->channelId;
-  op->opCount = channel->workFifoTail-1;
-  if (op->root == comm->rank) return ncclSuccess;
-  if (op->pattern == ncclPatternRecv) {
-    op->nsteps = DIVUP(op->nbytes, op->chunkSize);
-    if (op->nsteps == 0) op->nsteps = 1;
-    NCCLCHECK(SaveProxy(channel, proxyRecv, op->root, op, 1));
-  } else if (op->pattern == ncclPatternSend) {
-    op->nsteps = DIVUP(op->nbytes, op->chunkSize);
-    if (op->nsteps == 0) op->nsteps = 1;
-    NCCLCHECK(SaveProxy(channel, proxySend, op->root, op, 1));
-  }
-  return ncclSuccess;
-}
-#endif
-
 static ncclResult_t removeOp(struct ncclProxyProgressState* state, struct ncclProxyArgs** opPtr, struct ncclProxyArgs** prevOpPtr) {
   struct ncclProxyArgs* freeOp = *opPtr;
   struct ncclProxyArgs* next = freeOp->next;

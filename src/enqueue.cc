@@ -15,6 +15,8 @@
 
 static void* const ncclKernelGeneric = (void*)NCCL_KERN_NAME(SendRecv, RING, SIMPLE, Sum, int8_t);
 
+extern uint64_t ncclParamGraphRegister();
+
 // Only generate inline kernels for LL
 #define NCCL_FUNC5(func, algo, devredop, dtype) \
   nullptr, /* (void*)NCCL_KERN_NAME(func, algo, LL, devredop, dtype), */ \
@@ -261,11 +263,10 @@ static void appendWorkElemP2p(
 
 // Put coll workelem & proxyOp in plan assuming nWorkBudget permits, so please
 // ensure *nWorkBudget >= nBids upon entry.
-template<typename WorkElemType>
 static void addCollToPlan(
     struct ncclComm* comm, struct ncclKernelPlan* plan, int* nWorkBudget, int funcIndex,
-    WorkElemType const* workElem, struct ncclProxyOp const* proxyOp,
-    int nBid, size_t bytes
+    struct ncclWorkElem const* workElem, struct ncclProxyOp const* proxyOp,
+    int nBid, size_t bytes, bool regBufUsed, void* regBufSend[], void* regBufRecv[]
   ) {
   struct ncclKernelPlan::Channel *chans = plan->channels;
   int nCollChannels = comm->nChannels;
@@ -306,11 +307,36 @@ static void addCollToPlan(
   for (int bid=0; bid < nBid; bid++) {
     int c = least[bid];
     chans[c].collBytes += bytes;
-    // add work elem
+
+    // Add work elem
     *nWorkBudget += chans[c].nWork;
-    appendWorkElemColl(comm, plan, c, funcIndex, workElem, bid);
+    if (!regBufUsed) {
+      appendWorkElemColl(comm, plan, c, funcIndex, workElem, bid);
+    } else {
+      // Buffer registration in play which could only for CollNet at the moment.
+      struct ncclChannel* channel = &comm->channels[c];
+      struct ncclWorkElemReg workElemReg;
+      workElemReg.elem = *workElem; // C++ struct assignment
+      workElemReg.elem.regUsed = 1;
+      for (int i=0; i < NCCL_MAX_DIRECT_ARITY; i++) {
+        int peer = channel->collTree.down[i];
+        if (peer == -1) break;
+        int j = comm->rankToLocalRank[peer]; // Get intra-node slot
+        workElemReg.dnInputs[i] = regBufSend[j]; // Input buffer of leaf peer
+        workElemReg.dnOutputs[i] = regBufRecv[j]; // Output buffer of leaf peer
+      }
+      for (int i=0; i < NCCL_MAX_DIRECT_ARITY; i++) {
+        int peer = channel->collTree.up[i];
+        if (peer == -1) break;
+        int j = comm->rankToLocalRank[peer];
+        // Output buffer of root peer
+        workElemReg.upOutputs[i] = regBufRecv[j];
+      }
+      appendWorkElemColl(comm, plan, c, funcIndex, &workElemReg, bid);
+    }
     *nWorkBudget -= chans[c].nWork; // subtract delta of chans[c].nWork
-    // add proxy task
+
+    // Add proxy task
     struct ncclProxyOp* op = ncclMemoryPoolAlloc<struct ncclProxyOp>(&comm->memPool_ncclProxyOp, &comm->memPermanent);
     *op = *proxyOp; // C++ struct assignment
     op->channelId = c;
@@ -380,6 +406,71 @@ static void finishPlan(struct ncclKernelPlan* plan) {
   plan->threadPerBlock = std::max(plan->threadPerBlock, 3*WARP_SIZE);
 }
 
+static ncclResult_t registerIntraNodeBuffers(
+    struct ncclComm* comm, struct ncclKernelPlan* plan, struct ncclInfo* info,
+    bool* outRegBufUsed,
+    void* outRegBufSend[NCCL_MAX_LOCAL_RANKS],
+    void* outRegBufRecv[NCCL_MAX_LOCAL_RANKS]
+  ) {
+  *outRegBufUsed = false;
+  ncclResult_t result = ncclSuccess;
+  int localRank = comm->localRank;
+
+  thread_local int driverVersion = -1;
+  thread_local cudaError_t(*pfn_cuMemGetAddressRange)(void**, size_t*, void*) = nullptr;
+
+  if (driverVersion < 0) {
+    CUDACHECK(cudaDriverGetVersion(&driverVersion));
+  }
+  if (driverVersion < 11030) return ncclSuccess;
+  if (pfn_cuMemGetAddressRange == nullptr) {
+    // cudaGetDriverEntryPoint requires R465 or above (enhanced compat need)
+    CUDACHECKGOTO(cudaGetDriverEntryPoint("cuMemGetAddressRange", (void**)&pfn_cuMemGetAddressRange, cudaEnableDefault), result, fallback);
+  }
+
+  struct HandlePair {
+    cudaIpcMemHandle_t ipc[2]; // {send, recv}
+    size_t offset[2]; // {send, recv}
+  };
+  struct HandlePair handles[NCCL_MAX_LOCAL_RANKS];
+
+  CUDACHECKGOTO(cudaIpcGetMemHandle(&handles[localRank].ipc[0], (void*)info->sendbuff), result, fallback);
+  CUDACHECKGOTO(cudaIpcGetMemHandle(&handles[localRank].ipc[1], (void*)info->recvbuff), result, fallback);
+
+  void *baseSend, *baseRecv;
+  size_t size;
+  CUDACHECK(pfn_cuMemGetAddressRange(&baseSend, &size, (void*)info->sendbuff));
+  handles[localRank].offset[0] = (char*)info->sendbuff - (char*)baseSend;
+  CUDACHECK(pfn_cuMemGetAddressRange(&baseRecv, &size, (void*)info->recvbuff));
+  handles[localRank].offset[1] = (char*)info->recvbuff - (char*)baseRecv;
+
+  NCCLCHECK(bootstrapIntraNodeAllGather(comm->bootstrap, comm->localRankToRank, comm->localRank, comm->localRanks, handles, sizeof(struct HandlePair)));
+
+  // Open handles locally
+  for (int i=0; i < comm->localRanks; i++) {
+    if (i == localRank) { // Skip self
+      outRegBufSend[i] = nullptr;
+      outRegBufRecv[i] = nullptr;
+    } else {
+      for (int sr=0; sr < 2; sr++) {
+        // Get base address of mapping
+        void* base;
+        CUDACHECK(cudaIpcOpenMemHandle(&base, handles[i].ipc[sr], cudaIpcMemLazyEnablePeerAccess));
+        // Get real buffer address by adding offset in the mapping
+        (sr==0 ? outRegBufSend : outRegBufRecv)[i] = (char*)base + handles[i].offset[sr];
+        // Enqueue reminder to close memory handle
+        struct ncclPointerList* q = ncclMemoryPoolAlloc<struct ncclPointerList>(&comm->memPool_ncclPointerList, &comm->memPermanent);
+        q->ptr = base;
+        ncclIntruQueueEnqueue(&plan->ipcMemQueue, q);
+      }
+    }
+  }
+  *outRegBufUsed = true;
+
+fallback:
+  return result;
+}
+
 static ncclResult_t scheduleCollTasksToPlan(
     struct ncclComm* comm, struct ncclKernelPlan* plan, int* nWorkBudget
   ) {
@@ -407,7 +498,18 @@ static ncclResult_t scheduleCollTasksToPlan(
 
     if (*nWorkBudget < info.nChannels) break; // Ensure room for addCollToPlan()
 
-    addCollToPlan(comm, plan, nWorkBudget, workFuncIndex, &workElem, &proxyOp, info.nChannels, info.nBytes);
+    bool regBufUsed = false;
+    void* regBufSend[NCCL_MAX_LOCAL_RANKS];
+    void* regBufRecv[NCCL_MAX_LOCAL_RANKS];
+    if (plan->persistent && ncclParamGraphRegister() &&
+        info.algorithm == NCCL_ALGO_COLLNET &&   // limited to CollNet for now
+        comm->intraHighestTransportType == TRANSPORT_P2P && // only when all ranks can p2p each other
+        comm->intraRanks < comm->localRanks) { // only with inter-process & intra-node peers
+      NCCLCHECK(registerIntraNodeBuffers(comm, plan, &info, &regBufUsed, regBufSend, regBufRecv));
+    }
+
+    addCollToPlan(comm, plan, nWorkBudget, workFuncIndex, &workElem, &proxyOp,
+      info.nChannels, info.nBytes, regBufUsed, regBufSend, regBufRecv);
     tasks->nTasksColl -= 1;
     ncclIntruQueueDequeue(&tasks->collQueue);
 
@@ -697,6 +799,11 @@ static ncclResult_t reclaimPlans(struct ncclComm* comm, struct ncclCommCallback*
     struct ncclKernelPlan *next = plan->next;
     if (plan->persistent) {
       NCCLCHECK(ncclCudaFree(plan->workHead));
+      while (!ncclIntruQueueEmpty(&plan->ipcMemQueue)) {
+        struct ncclPointerList* q = ncclIntruQueueDequeue(&plan->ipcMemQueue);
+        CUDACHECKIGNORE(cudaIpcCloseMemHandle(q->ptr));
+        ncclMemoryPoolFree(&comm->memPool_ncclPointerList, q);
+      }
     }
     ncclMemoryPoolTakeAll(&comm->memPool_ncclProxyOp, &plan->memPool_ncclProxyOp);
     ncclMemoryPoolFree(&comm->memPool_ncclKernelPlan, plan);
@@ -1048,95 +1155,9 @@ comp_next:
 }
 
 #if 0
-// Handle structure for user buffer registration (IPC) exchange
-struct ncclBuffRegHandle {
-  cudaIpcMemHandle_t sendBuffIpc;
-  cudaIpcMemHandle_t recvBuffIpc;
-  ssize_t sendBuffOffset;
-  ssize_t recvBuffOffset;
-};
+// TODO: Remove this once we're sure the benefits of the aggregate mode tuning
+// below have been recaptured in the refactoring.
 
-// Register input and output buffers
-// Exchange with ranks on the same host
-static ncclResult_t ncclRegBuffAndExchange(struct ncclInfo* info, struct ncclBuffRegInfo* regInfo) {
-  ncclComm_t comm = info->comm;
-  if (comm->localRanks == 1) return ncclSuccess;
-  if (comm->pfnCuMemGetAddressRange == NULL) return ncclSuccess;  // CUDA toolkit or driver version too old
-
-  ncclResult_t ret = ncclSuccess;
-  struct ncclBuffRegHandle regHandles[NCCL_MAX_LOCAL_RANKS];
-  // Get IPC handles
-  // Note: the handle only corresponds to the base address of the allocation
-  CUDACHECKGOTO(cudaIpcGetMemHandle(&regHandles[comm->localRank].sendBuffIpc, (void*)info->sendbuff), ret, reg_fallback);
-  CUDACHECKGOTO(cudaIpcGetMemHandle(&regHandles[comm->localRank].recvBuffIpc, (void*)info->recvbuff), ret, reg_fallback);
-  // Get offset of user buffer within allocation
-  void* baseAddr;
-  size_t size;
-  // Get base address
-  CUDACHECK(comm->pfnCuMemGetAddressRange(&baseAddr, &size, (void*)info->sendbuff));
-  regHandles[comm->localRank].sendBuffOffset = (char*)info->sendbuff - (char*)baseAddr;
-  CUDACHECK(comm->pfnCuMemGetAddressRange(&baseAddr, &size, (void*)info->recvbuff));
-  regHandles[comm->localRank].recvBuffOffset = (char*)info->recvbuff - (char*)baseAddr;
-  TRACE(NCCL_COLL, "Base %p size %lu offset %ld", baseAddr, size, regHandles[comm->localRank].recvBuffOffset);
-
-  // Exchange handles within node
-  NCCLCHECK(bootstrapIntraNodeAllGather(comm->bootstrap, comm->localRankToRank, comm->localRank, comm->localRanks, regHandles, sizeof(struct ncclBuffRegHandle)));
-  // Open handles at local process
-  for (int i=0; i<comm->localRanks; i++) {
-    // Skip myself
-    if (i == comm->localRank) {
-      regInfo->sendbuffsBase[i] = regInfo->recvbuffsBase[i] = NULL;
-      continue;
-    }
-    // Get base address of mapping
-    CUDACHECK(cudaIpcOpenMemHandle(regInfo->sendbuffsBase+i, regHandles[i].sendBuffIpc, cudaIpcMemLazyEnablePeerAccess));
-    CUDACHECK(cudaIpcOpenMemHandle(regInfo->recvbuffsBase+i, regHandles[i].recvBuffIpc, cudaIpcMemLazyEnablePeerAccess));
-    // Get real buffer address by adding offset in the mapping
-    regInfo->sendbuffs[i] = (char*)regInfo->sendbuffsBase[i] + regHandles[i].sendBuffOffset;
-    regInfo->recvbuffs[i] = (char*)regInfo->recvbuffsBase[i] + regHandles[i].recvBuffOffset;
-  }
-  // Marks the operation as being buffer registered
-  regInfo->nBuffs = comm->localRanks;
-  TRACE(NCCL_COLL, "Rank %d exchanged %d buffers", comm->rank, regInfo->nBuffs);
-  return ncclSuccess;
-
-reg_fallback:
-  // If we cannot register specific buffer types, we just bypass this stage, and continue without failing
-  (void)ret;
-  WARN("Unable to register user buffers");
-  return ncclSuccess;
-}
-#endif
-
-#if 0
-// Find the channel with the least enqueued work (counted in bytes)
-static inline int findShortestChannel(ncclComm_t comm) {
-  size_t minSize = SIZE_MAX;
-  int minC = 0;
-  for (int c=0; c<comm->nChannels; c++) {
-    struct ncclChannel* channel = comm->channels+c;
-    if (channel->totalSize < minSize) {
-      minSize = channel->totalSize;
-      minC = c;
-    }
-  }
-  return minC;
-}
-
-// Get next channel based on shortest-queue mode or round-robin mode
-static inline int getNextChannel(ncclComm_t comm, int aggMode) {
-  int nextChannel = 0;
-  if (aggMode && comm->asyncAllocMode == ncclComm::SHORTEST_QUEUE) {
-    nextChannel = findShortestChannel(comm);
-  } else {
-    nextChannel = comm->lastChannel % comm->nChannels;
-    comm->lastChannel++;
-  }
-  return nextChannel;
-}
-#endif
-
-#if 0
 // Setup aggregated kernels
 // Op info has been previously saved in comm->asyncOps
 ncclResult_t ncclSetupAsyncKernels(ncclComm_t comm) {
@@ -1204,196 +1225,6 @@ ncclResult_t ncclSetupAsyncKernels(ncclComm_t comm) {
   comm->asyncOpCount = 0;
   comm->asyncTotalSize = 0;
   return ncclSuccess;
-}
-#endif
-
-#if 0
-static ncclResult_t scheduleSend(struct ncclComm* comm, int peer, int chunk, size_t count, void* buff) {
-  struct ncclInfo info = { ncclFuncSend, "Send",
-    NULL, buff, count, ncclInt8, ncclSum, peer, comm, comm->userStream, /* Args */
-    1, 1 };
-  int channelId;
-  NCCLCHECK(ncclChannelCompute(comm, peer, chunk, ncclFuncSend, &channelId));
-  info.channelId = channelId;
-  NCCLCHECK(ncclSetupP2pKernel(&info));
-  return ncclSuccess;
-}
-static ncclResult_t scheduleRecv(struct ncclComm* comm, int peer, int chunk, size_t count, void* buff) {
-  struct ncclInfo info = { ncclFuncRecv, "Recv",
-    NULL, buff, count, ncclInt8, ncclSum, peer, comm, comm->userStream, /* Args */
-    1, 1 };
-  int channelId;
-  NCCLCHECK(ncclChannelCompute(comm, peer, chunk, ncclFuncRecv, &channelId));
-  info.channelId = channelId;
-  NCCLCHECK(ncclSetupP2pKernel(&info));
-  return ncclSuccess;
-}
-// Save p2p operations in comm->p2pSends and p2pRecvs. Operations will be posted to channels
-// during ncclGroupEnd()
-static ncclResult_t ncclSaveP2p(struct ncclInfo* info) {
-  struct ncclComm* comm = info->comm;
-  int peer = info->root;
-  ssize_t nBytes = info->count*ncclTypeSize(info->datatype);
-  if (info->coll == ncclFuncSend) {
-    if (peer != comm->rank) {
-      // Mark channels that need pre-connect
-      for (int c=0; c<comm->p2pnChannelsPerPeer; c++) {
-        int channelId;
-        NCCLCHECK(ncclChannelCompute(comm, peer, c, info->coll, &channelId));
-        if (comm->channels[channelId].peers[peer].send[1].connected == 0) { // P2P uses only 1 connector
-          comm->connectSend[peer] |= (1<<channelId);
-          comm->connect = 1;
-        }
-      }
-    }
-    NCCLCHECK(ncclSaveP2pInfo(comm->p2pSends[info->root], info->recvbuff, nBytes));
-    comm->p2pSendCount++;
-  } else {
-    if (peer != comm->rank) {
-      // Mark channels that need pre-connect
-      for (int c=0; c<comm->p2pnChannelsPerPeer; c++) {
-        int channelId;
-        NCCLCHECK(ncclChannelCompute(comm, peer, c, info->coll, &channelId));
-        if (comm->channels[channelId].peers[peer].recv[1].connected == 0) { // P2P uses only 1 connector
-          comm->connectRecv[peer] |= (1<<channelId);
-          comm->connect = 1;
-        }
-      }
-    }
-    NCCLCHECK(ncclSaveP2pInfo(comm->p2pRecvs[info->root], info->recvbuff, nBytes));
-    comm->p2pRecvCount++;
-  }
-  return ncclSuccess;
-}
-#endif
-
-#if 0
-// CUDA Graph helper thread
-// for de-registering user buffers
-void* graphHelperFunc(void *args) {
-  struct ncclGraphHelperResources* res = (struct ncclGraphHelperResources*)args;
-  if (res == NULL) {
-    WARN("CUDA Graph helper resource is null");
-    return NULL;
-  }
-  int dev = res->comm->cudaDev;
-  CUDACHECKIGNORE(cudaSetDevice(dev));
-  INFO(NCCL_COLL, "CUDA Graph helper thread created for device %d", dev);
-
-  volatile enum helperThreadState* state = &res->threadState;
-  volatile int* ipcTail = &res->ipcTail;
-  while (1) {
-    // Last IPC entry enqueue so far
-    int ipcTailMark = *ipcTail;
-    int ipcCount = 0;
-    // Close IPC till the last entry
-    while (res->ipcHead != ipcTailMark) {
-      if (res->ipcBases[res->ipcHead] != NULL)
-        CUDACHECKIGNORE(cudaIpcCloseMemHandle(res->ipcBases[res->ipcHead]));
-      res->ipcBases[res->ipcHead] = NULL;
-      res->ipcHead = (res->ipcHead+1)%NCCL_IPC_POOL_SIZE;
-      ipcCount++;
-    }
-    TRACE(NCCL_COLL, "CUDA Graph helper thread closed %d IPC handles", ipcCount);
-    pthread_mutex_lock(&res->threadLock);
-    // Check for exit signal
-    while (res->ipcHead == *ipcTail && *state != ThreadStop) {
-      pthread_cond_wait(&res->threadCond, &res->threadLock);
-    }
-    pthread_mutex_unlock(&res->threadLock);
-    if (*state == ThreadStop) {
-      INFO(NCCL_COLL, "CUDA Graph helper thread for device %d returning", dev);
-      return NULL;
-    }
-  }
-}
-#endif
-
-#if 0
-// Check if we are in CUDA Graph capture mode
-ncclResult_t ncclGetCudaGraph(ncclComm_t comm, cudaGraph_t* graph) {
-  comm->usingCudaGraph = 0;
-  // Feature requires CUDA 11.3/R465 or above
-#if CUDART_VERSION >= 11030
-  cudaStreamCaptureStatus captureStatus;
-  unsigned long long cudaGraphId;
-  ncclResult_t ret = ncclSuccess;
-  int driverVersion;
-  CUDACHECK(cudaDriverGetVersion(&driverVersion)); // cache this?
-  if (driverVersion < 11030) {
-    // Runtime driver version older than compiler version
-    // Enhanced compat fallback
-    goto enh_compat_end;
-  }
-  // Get CUDA Graph handle
-  CUDACHECKGOTO(cudaStreamGetCaptureInfo_v2(comm->userStream, &captureStatus, &cudaGraphId, graph, NULL, NULL), ret, enh_compat_end);
-  if (captureStatus == cudaStreamCaptureStatusActive) {
-    if (cudaGraphId != comm->lastCudaGraphId) {
-      INFO(NCCL_COLL, "stream is being captured by a new graph, id %llu", cudaGraphId);
-      // We are in a new graph, hence need to forget the last setup node so that
-      // the first setup node in the new graph will not have a dependency
-      comm->lastCudaGraphId = cudaGraphId;
-      comm->lastSetupNode = NULL;
-    }
-    if (comm->launchMode == ncclComm::GROUP) comm->launchMode = ncclComm::GROUP_GRAPH;
-    comm->usingCudaGraph = 1;
-
-    // Create helper thread that closes IPC handles during graph destruction
-    // Only create this thread when buffer registration is enabled
-    if ((!comm->graphHelperThread) && comm->graphRegister == 1 && comm->disableGraphHelper == 0) {
-      pthread_mutex_init(&comm->graphHelperResources->threadLock, NULL);
-      // Init signaling method between Graph destroy function and helper thread
-      pthread_cond_init(&comm->graphHelperResources->threadCond, NULL);
-      // Set state
-      comm->graphHelperResources->threadState = ThreadStart;
-      // Create thread
-      pthread_create(&comm->graphHelperThread, NULL, graphHelperFunc, comm->graphHelperResources);
-      // Name thread
-      ncclSetThreadName(comm->graphHelperThread, "NCCL GrHelper%2d", comm->cudaDev);
-    }
-  }
-  return ncclSuccess;
-
-enh_compat_end: // Enhanced compat fallback
-  (void)ret;
-  CUDACHECK(cudaStreamIsCapturing(comm->userStream, &captureStatus));
-  if (captureStatus != cudaStreamCaptureStatusNone) {
-    WARN("The installed CUDA driver is older than the minimum version (R465) required for NCCL's CUDA Graphs support");
-    return ncclInvalidUsage;
-  }
-  // If we are not in capture mode, we can ignore the driver being lower
-#endif
-  return ncclSuccess;
-}
-#endif
-
-#if 0
-// Create host setup node in CUDA Graph
-ncclResult_t ncclCudaGraphHostSetup(ncclComm_t comm, cudaGraph_t graph) {
-#if CUDART_VERSION >= 11030
-  struct ncclQueueInfo* eqInfo = comm->enqueueInfo;
-  // Create a CUDA object to wrap around the argument space
-  // which CUDA graph would manage lifetime of
-  cudaUserObject_t object;
-  CUDACHECK(cudaUserObjectCreate(&object, eqInfo, ncclDestroyQueueInfo, 1/*initialRefcount*/, cudaUserObjectNoDestructorSync));
-  // Hand over ownership to CUDA Graph
-  CUDACHECK(cudaGraphRetainUserObject(graph, object, 1, cudaGraphUserObjectMove));
-
-  cudaHostFn_t fn = ncclEnqueueHostSetup<1>;
-  // Add a CPU node to the graph
-  cudaGraphNode_t setupNode;
-  // Function + parameter space for that function (i.e. enqueue info)
-  cudaHostNodeParams setupNodeParams = {fn, eqInfo};
-  int numDependencies = comm->lastSetupNode == NULL ? 0 : 1;
-  CUDACHECK(cudaGraphAddHostNode(&setupNode, graph, &comm->lastSetupNode, numDependencies, &setupNodeParams));
-  // Create dependency from last setup node in the same graph
-  CUDACHECK(cudaStreamUpdateCaptureDependencies(comm->userStream, &setupNode, 1, cudaStreamAddCaptureDependencies));
-  comm->lastSetupNode = setupNode;
-  return ncclSuccess;
-#else
-  WARN("NCCL does not support this CUDA version for CUDA graph feature");
-  return ncclInternalError;
-#endif
 }
 #endif
 

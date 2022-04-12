@@ -157,12 +157,6 @@ struct ncclDevComm;
 /* Make sure to adjust padding at the end of ncclWorkElem. */
 #define NCCL_WORK_SIZE 512
 
-/*enum ncclWorkElemType : uint8_t {
-   ncclWorkTypeUnused=0,
-   ncclWorkTypeColl=1,
-   ncclWorkTypeP2p=2,
-   ncclWorkTypeRegColl=3
-};*/
 enum ncclWorkType : uint8_t {
    ncclWorkTypeUnused=0,
    ncclWorkTypeColl=1,
