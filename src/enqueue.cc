@@ -731,7 +731,7 @@ static ncclResult_t uploadWork(struct ncclComm* comm, struct ncclKernelPlan* pla
   if (!persistent) {
     comm->workFifoSent = ixSent;
     if (comm->workFifoHeapGdrHandle != nullptr) wc_store_fence();
-    plan->workHead = &workHeap[ixHead & ixMask];
+    plan->workHead = &comm->devWorkFifoHeap[ixHead & ixMask];
   } else {
     NCCLCHECK(ncclCudaMalloc(&plan->workHead, nWork));
     NCCLCHECK(ncclCudaMemcpy(plan->workHead, workHeap, nWork));

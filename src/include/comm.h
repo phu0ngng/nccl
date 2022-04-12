@@ -222,6 +222,7 @@ struct ncclComm {
   // Operation pool.
   int workFifoDepth; // size of workFifoHeap[], power of 2
   struct ncclWork* workFifoHeap;
+  struct ncclWork* devWorkFifoHeap;
   void* workFifoHeapGdrHandle;
 
   // Work completion notificaion

@@ -333,15 +333,16 @@ static ncclResult_t devCommSetup(ncclComm_t comm) {
 
   if (ncclGdrCopy != NULL && ncclParamGdrCopyFifoEnable() == 1) {
     // The workFifoHeap lives in GDR mapped CUDA memory.
-    NCCLCHECK(ncclGdrCudaCalloc(&comm->workFifoHeap, &tmpCommAndChans.comm.workFifoHeap, comm->workFifoDepth, &comm->workFifoHeapGdrHandle));
+    NCCLCHECK(ncclGdrCudaCalloc(&comm->workFifoHeap, &comm->devWorkFifoHeap, comm->workFifoDepth, &comm->workFifoHeapGdrHandle));
     ncclCommPushCudaGdrFree(comm, comm->workFifoHeapGdrHandle);
   } else {
     // The workFifoHeap lives in cudaHost memory.
     comm->workFifoHeapGdrHandle = nullptr;
     NCCLCHECK(ncclCudaHostCalloc(&comm->workFifoHeap, comm->workFifoDepth));
     ncclCommPushCudaHostFree(comm, comm->workFifoHeap);
-    tmpCommAndChans.comm.workFifoHeap = comm->workFifoHeap;
+    comm->devWorkFifoHeap = comm->workFifoHeap;
   }
+  tmpCommAndChans.comm.workFifoHeap = comm->devWorkFifoHeap;
 
   NCCLCHECK(ncclCudaHostCalloc(&comm->workFifoDone, MAXCHANNELS));
   ncclCommPushCudaHostFree(comm, comm->workFifoDone);
