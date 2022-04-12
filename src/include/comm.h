@@ -186,7 +186,6 @@ struct ncclComm {
   // localRanks and localRanktoRank for all nodes
   struct ncclNodeRanks* nodeRanks;
 
-  enum { GROUP, PARALLEL, GROUP_GRAPH } launchMode;
   bool checkPointers;
 
   // Counter for tracking CUDA launches (P2P and collectives included)
