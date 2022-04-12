@@ -749,7 +749,7 @@ static ncclResult_t uploadProxyOps(struct ncclComm* comm, struct ncclKernelPlan*
     while (q != nullptr) {
       struct ncclProxyOp* qNext = q->enqNext;
       // Ignoring the bottom tag bit, opCount's are zero-based within plan so
-      // translate them to the end of history.
+      // translate them to the tip of history.
       if (q->opCount & 1) { // p2p
         nextP2pOpCount = p2pOpCount + (q->opCount>>1);
         q->opCount = (p2pOpCount<<1) + q->opCount;
@@ -770,7 +770,7 @@ static ncclResult_t uploadProxyOps(struct ncclComm* comm, struct ncclKernelPlan*
   return ncclSuccess;
 }
 
-static ncclResult_t hostStreamKernelTask(struct ncclComm* comm, struct ncclKernelPlan* plan) {
+static ncclResult_t hostStreamPlanTask(struct ncclComm* comm, struct ncclKernelPlan* plan) {
   NCCLCHECK(uploadProxyOps(comm, plan));
   NCCLCHECK(ncclProxyStart(comm));
   if (!plan->persistent) {
@@ -780,42 +780,38 @@ static ncclResult_t hostStreamKernelTask(struct ncclComm* comm, struct ncclKerne
   return ncclSuccess;
 }
 
-static void CUDART_CB hostStreamCallback(void *planHead) {
-  struct ncclKernelPlan* plan = (struct ncclKernelPlan*)planHead;
-  struct ncclComm* comm = plan->comm;
-  do {
-    ncclResult_t result = hostStreamKernelTask(comm, plan);
-    if (result != ncclSuccess) {
-      WARN("hostStreamKernelTask() failed : %s\n", ncclGetErrorString(result));
-    }
-    plan = plan->next;
-  } while (plan != nullptr);
+static void CUDART_CB hostStreamPlanCallback(void *plan_) {
+  struct ncclKernelPlan* plan = (struct ncclKernelPlan*)plan_;
+  ncclResult_t result = hostStreamPlanTask(plan->comm, plan);
+  if (result != ncclSuccess) {
+    WARN("hostStreamPlanCallback() failed : %s\n", ncclGetErrorString(result));
+  }
 }
 
-static ncclResult_t reclaimPlans(struct ncclComm* comm, struct ncclCommCallback* me) {
+static ncclResult_t reclaimPlan(struct ncclComm* comm, struct ncclCommCallback* me) {
   struct ncclKernelPlan* plan = (struct ncclKernelPlan*)me; // cast from first member `reclaim`
-  if (plan->persistent) comm->persistentRefs -= 1;
-  while (plan != nullptr) {
-    struct ncclKernelPlan *next = plan->next;
-    if (plan->persistent) {
-      NCCLCHECK(ncclCudaFree(plan->workHead));
-      while (!ncclIntruQueueEmpty(&plan->ipcMemQueue)) {
-        struct ncclPointerList* q = ncclIntruQueueDequeue(&plan->ipcMemQueue);
-        CUDACHECKIGNORE(cudaIpcCloseMemHandle(q->ptr));
-        ncclMemoryPoolFree(&comm->memPool_ncclPointerList, q);
-      }
+  if (plan->persistent) {
+    comm->persistentRefs -= 1;
+    NCCLCHECK(ncclCudaFree(plan->workHead));
+    while (!ncclIntruQueueEmpty(&plan->ipcMemQueue)) {
+      struct ncclPointerList* q = ncclIntruQueueDequeue(&plan->ipcMemQueue);
+      CUDACHECKIGNORE(cudaIpcCloseMemHandle(q->ptr));
+      ncclMemoryPoolFree(&comm->memPool_ncclPointerList, q);
     }
-    ncclMemoryPoolTakeAll(&comm->memPool_ncclProxyOp, &plan->memPool_ncclProxyOp);
-    ncclMemoryPoolFree(&comm->memPool_ncclKernelPlan, plan);
-    plan = next;
   }
+  ncclMemoryPoolTakeAll(&comm->memPool_ncclProxyOp, &plan->memPool_ncclProxyOp);
+  ncclMemoryPoolFree(&comm->memPool_ncclKernelPlan, plan);
   return ncclSuccess;
 }
 
 static void persistentDestructor(void* plans_) {
-  struct ncclKernelPlan* plans = (struct ncclKernelPlan*)plans_;
-  struct ncclComm* comm = plans->comm;
-  ncclIntruQueueMpscEnqueue(&comm->callbackQueue, &plans->reclaimer);
+  struct ncclKernelPlan* plan = (struct ncclKernelPlan*)plans_;
+  struct ncclComm* comm = plan->comm;
+  while (plan != nullptr) {
+    struct ncclKernelPlan* next = plan->next;
+    ncclIntruQueueMpscEnqueue(&comm->callbackQueue, &plan->reclaimer);
+    plan = next;
+  }
 }
 
 ncclResult_t ncclLaunchPrepare(struct ncclComm* comm) {
@@ -825,6 +821,7 @@ ncclResult_t ncclLaunchPrepare(struct ncclComm* comm) {
 
   struct ncclTasks* tasks = &comm->tasks;
   bool persistent = ncclCudaGraphValid(tasks->capturingGraph);
+  int nPlans = 0;
 
   if (tasks->nTasksColl + tasks->nTasksP2p != 0) {
     // We already have one frame present which holds all of our tasks (which we
@@ -834,8 +831,9 @@ ncclResult_t ncclLaunchPrepare(struct ncclComm* comm) {
     do {
       struct ncclKernelPlan* plan = ncclMemoryPoolAlloc<struct ncclKernelPlan>(&comm->memPool_ncclKernelPlan, &comm->memPermanent);
       ncclIntruQueueEnqueue(&comm->planQueue, plan);
+      nPlans += 1;
       plan->comm = comm;
-      plan->reclaimer.fn = reclaimPlans;
+      plan->reclaimer.fn = reclaimPlan;
       plan->persistent = persistent;
 
       // Non-persistent kernels fill up at most half of our fifo per kernel.
@@ -876,12 +874,14 @@ ncclResult_t ncclLaunchPrepare(struct ncclComm* comm) {
 
     if (persistent || comm->persistentRefs != 0) {
       NCCLCHECK(ncclStrongStreamAcquire(tasks->capturingGraph, &comm->hostStream));
-      NCCLCHECK(ncclStrongStreamLaunchHost(tasks->capturingGraph, &comm->hostStream, hostStreamCallback, planHead));
+      for (struct ncclKernelPlan* plan=planHead; plan != nullptr; plan = plan->next) {
+        NCCLCHECK(ncclStrongStreamLaunchHost(tasks->capturingGraph, &comm->hostStream, hostStreamPlanCallback, plan));
+      }
       NCCLCHECK(ncclStrongStreamRelease(tasks->capturingGraph, &comm->hostStream));
     }
 
     if (persistent) {
-      comm->persistentRefs += 1;
+      comm->persistentRefs += nPlans;
       NCCLCHECK(ncclCudaGraphAddDestructor(tasks->capturingGraph, persistentDestructor, (void*)planHead));
     }
   }
@@ -909,10 +909,10 @@ ncclResult_t ncclLaunchKernel(struct ncclComm* comm, struct ncclKernelPlan* plan
 }
 
 ncclResult_t ncclLaunchKernelAfter_NoCuda(struct ncclComm* comm, struct ncclKernelPlan* plan) {
-  if (comm->persistentRefs == 0) {
+  if (comm->persistentRefs == 0) { // implies !plan->persistent
     // If this isn't being captured and there aren't any CUDA graphs alive
     // then we don't need to do our proxyOp pushing on the host stream.
-    NCCLCHECK(hostStreamKernelTask(comm, plan));
+    NCCLCHECK(hostStreamPlanTask(comm, plan));
   }
   return ncclSuccess;
 }
