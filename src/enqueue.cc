@@ -364,7 +364,6 @@ static ncclResult_t addP2pToPlan(
 
   struct ncclProxyOp* proxyOp = ncclMemoryPoolAlloc<struct ncclProxyOp>(&comm->memPool_ncclProxyOp, &comm->memPermanent);
   NCCLCHECK(ncclProxyComputeP2p(&info, proxyOp));
-  proxyOp->opCount = uint64_t(plan->channels[channelId].nWork)<<1 | 1;
   ncclIntruQueueEnqueue(&plan->channels[channelId].proxyOpQueue, proxyOp);
 
   struct ncclWorkElemP2p elem = {0};
@@ -381,6 +380,7 @@ static ncclResult_t addP2pToPlan(
   appendWorkElemP2p(comm, plan, channelId, &elem);
   *nWorkBudget -= plan->channels[channelId].nWork;
 
+  proxyOp->opCount = uint64_t(plan->channels[channelId].nWork)<<1 | 1;
   return ncclSuccess;
 }
 
