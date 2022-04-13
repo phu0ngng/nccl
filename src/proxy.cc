@@ -960,12 +960,10 @@ void* ncclProxyService(void* _args) {
 
   struct pollfd pollfds[NCCL_MAX_LOCAL_RANKS+1];
   struct ncclProxyLocalPeer peers[NCCL_MAX_LOCAL_RANKS];
+  memset(&peers, 0, sizeof(struct ncclProxyLocalPeer)*NCCL_MAX_LOCAL_RANKS);
   for (int s=0; s<NCCL_MAX_LOCAL_RANKS; s++) {
     peers[s].sock.fd = pollfds[s].fd = -1;
-    peers[s].sock.abortFlag = NULL;
-    peers[s].sock.asyncFlag = 0;
     pollfds[s].events = POLLHUP|POLLIN;
-    peers[s].asyncOps.type = 0;
   }
   pollfds[NCCL_MAX_LOCAL_RANKS].fd = comm->proxyState.listenSock->fd;
   pollfds[NCCL_MAX_LOCAL_RANKS].events = POLLIN;

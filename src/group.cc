@@ -107,7 +107,7 @@ static ncclResult_t scheduleSend(struct ncclComm* comm, int peer, int chunk, siz
     NULL, buff, count, ncclInt8, ncclSum, peer, comm, comm->userStream, /* Args */
     1, 1 };
   int channelId;
-  NCCLCHECK(ncclChannelCompute(comm, peer, chunk, ncclFuncSend, &channelId));
+  NCCLCHECK(ncclChannelCompute(comm, peer, chunk%comm->p2pnChannelsPerPeer, ncclFuncSend, &channelId));
   info.channelId = channelId;
   NCCLCHECK(ncclSetupP2pKernel(&info));
   return ncclSuccess;
@@ -117,7 +117,7 @@ static ncclResult_t scheduleRecv(struct ncclComm* comm, int peer, int chunk, siz
     NULL, buff, count, ncclInt8, ncclSum, peer, comm, comm->userStream, /* Args */
     1, 1 };
   int channelId;
-  NCCLCHECK(ncclChannelCompute(comm, peer, chunk, ncclFuncRecv, &channelId));
+  NCCLCHECK(ncclChannelCompute(comm, peer, chunk%comm->p2pnChannelsPerPeer, ncclFuncRecv, &channelId));
   info.channelId = channelId;
   NCCLCHECK(ncclSetupP2pKernel(&info));
   return ncclSuccess;

@@ -228,6 +228,9 @@ ncclResult_t ncclGetLevel(int* level, const char* disableEnv, const char* levelE
           }
         }
         // Old style numbering
+        // levelsOldToNew to is an array with each index corresponding to the
+        // "old level" int, and each value mapping to the correct value defined in topo.h
+        // maxOldLevel is a quick check to handle out of bounds (based on the length of levelsOldToNew)
         if (l == -1 && str[0] >= '0' && str[0] <= '9') {
           int oldLevel = strtol(str, NULL, 0);
           const int maxOldLevel = sizeof(levelsOldToNew)/sizeof(int) - 1;
