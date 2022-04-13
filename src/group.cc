@@ -24,6 +24,7 @@ ncclResult_t ncclAsyncLaunch(
   ) {
   if (0 == ncclGroupDepth) {
     ncclResult_t res = func(job);
+    if (res != ncclSuccess && undo) undo(job);
     if (destructor) destructor(job);
     return res;
   } else {
