@@ -187,7 +187,7 @@ ncclResult_t ncclGroupEndInternal() {
         WARN("Error waiting for pthread_join : %s", strerror(errno));
         ret = ncclSystemError;
       }
-      ncclGroupErrCheck(job->result);
+      if (ret == ncclSuccess && job->result != ncclSuccess) ret = job->result;
       job = job->next;
     } while (job != nullptr);
 
