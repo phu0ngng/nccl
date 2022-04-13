@@ -380,6 +380,8 @@ static ncclResult_t addP2pToPlan(
   appendWorkElemP2p(comm, plan, channelId, &elem);
   *nWorkBudget -= plan->channels[channelId].nWork;
 
+  // Calculate the opCount after appendWorkElemP2p since it will always return
+  // with channel->nWork equal to one plus the work index this p2p settled in.
   proxyOp->opCount = uint64_t(plan->channels[channelId].nWork)<<1 | 1;
   return ncclSuccess;
 }
@@ -741,7 +743,8 @@ static ncclResult_t uploadWork(struct ncclComm* comm, struct ncclKernelPlan* pla
 
 static ncclResult_t uploadProxyOps(struct ncclComm* comm, struct ncclKernelPlan* plan) {
   uint64_t collOpCount = comm->collOpCount;
-  uint64_t nextCollOpCount = collOpCount;
+  // Advance comm's collOpCount by number of colls in this plan.
+  comm->collOpCount = collOpCount + plan->collOpCount;
   for (int c=0; c < plan->channelUbound; c++) {
     struct ncclProxyOp* q = ncclIntruQueueHead(&plan->channels[c].proxyOpQueue);
     uint64_t p2pOpCount = comm->channels[c].p2pOpCount;
@@ -749,12 +752,14 @@ static ncclResult_t uploadProxyOps(struct ncclComm* comm, struct ncclKernelPlan*
     while (q != nullptr) {
       struct ncclProxyOp* qNext = q->enqNext;
       // Ignoring the bottom tag bit, opCount's are zero-based within plan so
-      // translate them to the tip of history.
+      // translate them to the tip of the comm's history.
       if (q->opCount & 1) { // p2p
+        // p2pOpCount is monotonic increasing within a plan's channel so just
+        // remember last value to compute max.
         nextP2pOpCount = p2pOpCount + (q->opCount>>1);
+        nextP2pOpCount += 1; // +1 to ensure next plan doesn't collide
         q->opCount = (p2pOpCount<<1) + q->opCount;
       } else { // coll
-        nextCollOpCount = std::max(nextCollOpCount, collOpCount + (q->opCount>>1));
         q->opCount = (collOpCount<<1) + q->opCount;
       }
       NCCLCHECK(ncclProxySaveOp(comm, q)); // May overwrite enqNext.
@@ -764,9 +769,9 @@ static ncclResult_t uploadProxyOps(struct ncclComm* comm, struct ncclKernelPlan*
       }
       q = qNext;
     }
+    // Advance channel's p2pOpCount by number of p2p's in this plan channel.
     comm->channels[c].p2pOpCount = nextP2pOpCount;
   }
-  comm->collOpCount = nextCollOpCount;
   return ncclSuccess;
 }
 
