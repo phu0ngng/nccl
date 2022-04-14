@@ -204,10 +204,10 @@ static void appendWorkElemColl(
 }
 
 static void finishWorkP2p(struct ncclWork* work) {
-  int nElem;
-  for (int i=0; i < NCCL_MAX_WORK_ELEMENTS_P2P; i++) {
-    if (work->p2pElems[i].p2pType)
-      nElem = i+1;
+  int nElem = 0;
+  for (int e=0; e < NCCL_MAX_WORK_ELEMENTS_P2P; e++) {
+    if (work->p2pElems[e].p2pType != ncclWorkP2pTypeUnused)
+      nElem = e+1;
   }
   int nGroup = 1;
   while (nGroup < nElem) nGroup *= 2;
@@ -1376,7 +1376,7 @@ static ncclResult_t taskAppend(struct ncclComm* comm, struct ncclInfo const* inf
       if (l == nullptr) { // Got to the end, this must be a new stream.
         struct ncclCudaGraph graph;
         NCCLCHECK(ncclCudaGetCapturingGraph(&graph, info->stream))
-        if (tasks->streams != nullptr && ncclCudaGraphSame(tasks->capturingGraph, graph)) {
+        if (tasks->streams != nullptr && !ncclCudaGraphSame(tasks->capturingGraph, graph)) {
           WARN("Streams given to a communicator within a NCCL group must either be all uncaptured or all captured by the same graph.");
           return ncclInvalidUsage;
         }

@@ -64,11 +64,11 @@ struct RunWork<ncclFuncSendRecv, T, RedOp, NCCL_ALGO_RING, NCCL_PROTO_SIMPLE> {
     #define NWARPS (NCCL_MAX_NTHREADS/WARP_SIZE)
     int group = ngroups-1- (NWARPS-1-wid) * ngroups / NWARPS;
     args += group;
-    if (work->header.type == ncclWorkTypeUnused) return;
-
     tid -= args->warpStart * WARP_SIZE;
     int nthreads = args->nWarps * WARP_SIZE;
     group |= 1<<16; // Used to select connIndex 1
+
+    if (args->p2pType == ncclWorkP2pTypeUnused) return;
     if (tid >= nthreads || args->peer == -1) return;
     if ((group%2) == 0) {
       runRecv(tid, nthreads, group, args);
