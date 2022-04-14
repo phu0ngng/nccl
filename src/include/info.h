@@ -82,6 +82,7 @@ struct ncclTaskP2p {
   ncclTaskP2p *next;
   void *buff;
   size_t bytes;
+  int chunk;
 };
 
 struct ncclCudaStreamList {

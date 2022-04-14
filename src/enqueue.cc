@@ -577,46 +577,48 @@ static ncclResult_t scheduleP2pTasksToPlan(
       if (send != nullptr || recv != nullptr) {
         char* recvPtr = recv ? (char*)recv->buff : nullptr;
         char* sendPtr = send ? (char*)send->buff : nullptr;
-        // Zero size send/recv are syncs, encode here with -1.
-        ssize_t recvBytes = recv ? (recv->bytes ? recv->bytes : -1) : 0;
-        ssize_t sendBytes = send ? (send->bytes ? send->bytes : -1) : 0;
+        ssize_t recvBytes = recv ? recv->bytes : 0;
+        ssize_t sendBytes = send ? send->bytes : 0;
         ssize_t recvChunkBytesMax = calcP2pChunkSize(recvBytes, nChannelsMin, nChannelsMax, stepSize, SENDRECV_SLICEFACTOR*stepSize);
         ssize_t sendChunkBytesMax = calcP2pChunkSize(sendBytes, nChannelsMin, nChannelsMax, stepSize, SENDRECV_SLICEFACTOR*stepSize);
-        int chunk = 0;
+        // Zero size send/recv are syncs, encode here with -1.
+        recvBytes = recv && recvBytes == 0 ? -1 : recvBytes;
+        sendBytes = send && sendBytes == 0 ? -1 : sendBytes;
+        // Advance to current chunk. Syncs will always have chunk=0 so no effect on the -1.
+        if (recv) recvPtr   += recv->chunk*recvChunkBytesMax;
+        if (recv) recvBytes -= recv->chunk*recvChunkBytesMax;
+        if (send) sendPtr   += send->chunk*sendChunkBytesMax;
+        if (send) sendBytes -= send->chunk*sendChunkBytesMax;
+
         do {
-          ssize_t recvChunkBytes = std::min(recvBytes, recvChunkBytesMax);
+          ssize_t recvChunkBytes = std::min(recvBytes, recvChunkBytesMax); // -1 preserved
           ssize_t sendChunkBytes = std::min(sendBytes, sendChunkBytesMax);
           if (recvChunkBytes != 0) {
             if (recvChunkBytes == -1) recvChunkBytes = 0;
             if (*nWorkBudget < 1) return ncclSuccess; // ensure room in budget
-            NCCLCHECK(addP2pToPlan(comm, plan, nWorkBudget, /*isSendNotRecv=*/false, recvPeer, chunk, recvPtr, recvChunkBytes));
+            NCCLCHECK(addP2pToPlan(comm, plan, nWorkBudget, /*isSendNotRecv=*/false, recvPeer, recv->chunk, recvPtr, recvChunkBytes));
             recvPtr += recvChunkBytes;
             recvBytes -= recvChunkBytes;
+            recv->chunk += 1;
             if (recvBytes <= 0) {
               recvBytes = 0; // in case still -1
               ncclIntruQueueDequeue(&peers[recvPeer].recvQueue);
               tasks->nTasksP2p -= 1;
-            } else {
-              recv->buff = recvPtr;
-              recv->bytes = recvBytes;
             }
           }
           if (sendChunkBytes != 0) {
             if (sendChunkBytes == -1) sendChunkBytes = 0;
             if (*nWorkBudget < 1) return ncclSuccess; // ensure room in budget
-            NCCLCHECK(addP2pToPlan(comm, plan, nWorkBudget, /*isSendNotRecv=*/true, sendPeer, chunk, sendPtr, sendChunkBytes));
+            NCCLCHECK(addP2pToPlan(comm, plan, nWorkBudget, /*isSendNotRecv=*/true, sendPeer, send->chunk, sendPtr, sendChunkBytes));
             sendPtr += sendChunkBytes;
             sendBytes -= sendChunkBytes;
+            send->chunk += 1;
             if (sendBytes <= 0) {
               sendBytes = 0; // in case still -1
               ncclIntruQueueDequeue(&peers[sendPeer].sendQueue);
               tasks->nTasksP2p -= 1;
-            } else {
-              send->buff = sendPtr;
-              send->bytes = sendBytes;
             }
           }
-          chunk++;
         } while (sendBytes != 0 || recvBytes != 0);
       }
     }
@@ -1311,6 +1313,7 @@ static ncclResult_t taskAppend(struct ncclComm* comm, struct ncclInfo const* inf
     struct ncclTaskP2p* p2p = ncclMemoryStackAlloc<struct ncclTaskP2p>(&comm->memScoped);
     p2p->buff = (void*)info->recvbuff;
     p2p->bytes = nBytes;
+    p2p->chunk = 0;
     ncclIntruQueueEnqueue(
       isSendNotRecv ? &tasks->peers[peer].sendQueue : &tasks->peers[peer].recvQueue,
       p2p);
