@@ -845,7 +845,7 @@ ncclResult_t ncclLaunchPrepare(struct ncclComm* comm) {
 
       // Non-persistent kernels fill up at most half of our fifo per kernel.
       int nWorkBudget = plan->persistent ? INT_MAX : comm->workFifoDepth/2;
-      int nTasksTotal = tasks->nTasksColl + tasks->nTasksP2p;
+      int nWorkBudgetOld = nWorkBudget;
 
       // Drain coll tasks first. This is essential since we partition tasks based
       // on the work budget and p2p work isn't collective. If we were to drain p2p
@@ -858,7 +858,7 @@ ncclResult_t ncclLaunchPrepare(struct ncclComm* comm) {
       if (tasks->nTasksColl == 0 && tasks->nTasksP2p != 0) {
         NCCLCHECK(scheduleP2pTasksToPlan(comm, plan, &nWorkBudget));
       }
-      if (nTasksTotal == tasks->nTasksColl + tasks->nTasksP2p) {
+      if (nWorkBudget == nWorkBudgetOld) {
         // We weren't able to fit any tasks into our budget which means now we're
         // stuck in an infinite loop. We defer this check until here, instead of
         // doing it in comm init, to permit testing with insanely shallow queues

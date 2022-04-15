@@ -82,6 +82,8 @@ struct ncclTaskP2p {
   ncclTaskP2p *next;
   void *buff;
   size_t bytes;
+  // Stateful chunk index. If a p2p gets "cut" over two plans this keeps track
+  // of where it left off.
   int chunk;
 };
 
