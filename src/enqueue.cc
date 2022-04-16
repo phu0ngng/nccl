@@ -739,6 +739,7 @@ static ncclResult_t uploadWork(struct ncclComm* comm, struct ncclKernelPlan* pla
   } else {
     NCCLCHECK(ncclCudaMalloc(&plan->workHead, nWork));
     NCCLCHECK(ncclCudaMemcpy(plan->workHead, workHeap, nWork));
+    printf("r=%d graph work @ %p n=%d\n", comm->rank, plan->workHead, nWork);
   }
   return ncclSuccess;
 }
