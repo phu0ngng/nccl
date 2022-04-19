@@ -1064,13 +1064,13 @@ void* ncclProxyService(void* _args) {
 ncclResult_t ncclProxyInit(struct ncclComm* comm, struct ncclSocket* sock, union ncclSocketAddress* peerAddresses) {
   comm->proxyState.listenSock = sock;
   comm->proxyState.peerAddresses = peerAddresses;
-  ncclSetThreadName(comm->proxyState.thread, "NCCL Service %2d", comm->cudaDev);
   return ncclSuccess;
 }
 
 ncclResult_t ncclProxyCreate(struct ncclComm* comm) {
   // comm->proxyState.thread is pthread_join()'d by commFree() in init.cc
   pthread_create(&comm->proxyState.thread, NULL, ncclProxyService, comm);
+  ncclSetThreadName(comm->proxyState.thread, "NCCL Service %2d", comm->cudaDev);
   return ncclSuccess;
 }
 
