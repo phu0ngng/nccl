@@ -899,7 +899,6 @@ ncclResult_t ncclLaunchPrepare(struct ncclComm* comm) {
   if (false) {
   failure:
     ncclMemoryStackPop(&comm->memScoped); // deallocate ncclWork's
-    // We are leaking the ncclKernelPlan's and ncclProxyOp's.
   }
   return result;
 }

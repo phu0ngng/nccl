@@ -212,6 +212,24 @@ ncclResult_t ncclGroupEndInternal() {
       struct ncclComm* next = comm->groupNext;
       ncclGroupCommLeave(comm); // overwrites comm->groupNext
       comm->preconnectNext = reinterpret_cast<struct ncclComm*>(0x1);
+      comm->unlaunchedPlansHead = nullptr;
+      // Reclaim abandoned kernel plan memory. Note ncclWork structs were already
+      // reclaimed by a `ncclMemoryStackPop(&comm->memScoped)` during `ncclGroupCommLeave()`.
+      while (!ncclIntruQueueEmpty(&comm->planQueue)) {
+        struct ncclKernelPlan* plan = ncclIntruQueueDequeue(&comm->planQueue);
+        // Persistent plans will be reclaimed via the callbackQueue when the
+        // graph drops its UserObject reference.
+        if (!plan->persistent) {
+          for (int c=0; c < MAXCHANNELS; c++) {
+            while (!ncclIntruQueueEmpty(&plan->channels[c].proxyOpQueue)) {
+              struct ncclProxyOp* pxop = ncclIntruQueueDequeue(&plan->channels[c].proxyOpQueue);
+              ncclMemoryPoolFree(&comm->memPool_ncclProxyOp, pxop);
+            }
+          }
+          ncclMemoryPoolFree(&comm->memPool_ncclKernelPlan, plan);
+        }
+      }
+      // Reset comm->tasks to empty.
       comm->tasks.nTasksColl = 0;
       comm->tasks.nTasksP2p = 0;
       comm->tasks.streams = nullptr;

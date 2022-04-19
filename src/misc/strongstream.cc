@@ -163,7 +163,10 @@ ncclResult_t ncclStrongStreamLaunchKernel(
   ) {
   #if CUDART_VERSION >= 11030
     if (graph.graph == nullptr) {
-      CUDACHECK(cudaLaunchKernel(fn, grid, block, args, sharedMemBytes, ss->stream));
+      cudaError_t e = cudaLaunchKernel(fn, grid, block, args, sharedMemBytes, ss->stream);
+      if (e != cudaSuccess) printf("kernel=%p\n", fn);
+      CUDACHECK(e);
+      //CUDACHECK(cudaLaunchKernel(fn, grid, block, args, sharedMemBytes, ss->stream));
     } else {
       cudaGraphNode_t tip = ss->node;
       cudaKernelNodeParams p;
