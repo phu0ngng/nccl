@@ -359,7 +359,7 @@ static ncclResult_t addP2pToPlan(
   };
 
   int channelId;
-  NCCLCHECK(ncclChannelCompute(comm, peer, chunk, info.coll, &channelId));
+  NCCLCHECK(ncclChannelCompute(comm, peer, chunk%comm->p2pnChannelsPerPeer, info.coll, &channelId));
   info.channelId = channelId;
 
   struct ncclProxyOp* proxyOp = ncclMemoryPoolAlloc<struct ncclProxyOp>(&comm->memPool_ncclProxyOp, &comm->memPermanent);
@@ -1321,11 +1321,13 @@ static ncclResult_t taskAppend(struct ncclComm* comm, struct ncclInfo const* inf
 
     // Mark channels that need pre-connect
     if (comm->rank != peer) {
+      int channelBaseId;
+      NCCLCHECK(ncclChannelComputeBase(comm, peer, info->coll, &channelBaseId));
       if (!(isSendNotRecv ? tasks->peers[peer].sendSeen : tasks->peers[peer].recvSeen)) {
         (isSendNotRecv ? tasks->peers[peer].sendSeen : tasks->peers[peer].recvSeen) = true;
         for (int c=0; c < comm->p2pnChannelsPerPeer; c++) {
           int channelId;
-          NCCLCHECK(ncclChannelCompute(comm, peer, c, info->coll, &channelId));
+          NCCLCHECK(ncclChannelComputeFromBase(comm, channelBaseId, c, &channelId));
           if (isSendNotRecv) {
             if (comm->channels[channelId].peers[peer].send[1].connected == 0) { // P2P uses only 1 connector
               comm->connectSend[peer] |= (1<<channelId);
