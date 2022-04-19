@@ -19,7 +19,7 @@ size_t ncclKernMaxLocalSize();
 ncclResult_t ncclKernSetSharedMemoryCarveout(int carveOut);
 ncclResult_t ncclEnqueueCheck(struct ncclInfo* info);
 ncclResult_t ncclLaunchPrepare(struct ncclComm* comm);
-ncclResult_t ncclLaunchKernelBefore_NoCuda(struct ncclComm* comm, struct ncclKernelPlan* plan);
+ncclResult_t ncclLaunchKernelBefore_NoUncapturedCuda(struct ncclComm* comm, struct ncclKernelPlan* plan);
 ncclResult_t ncclLaunchKernel(struct ncclComm* comm, struct ncclKernelPlan* plan);
 ncclResult_t ncclLaunchKernelAfter_NoCuda(struct ncclComm* comm, struct ncclKernelPlan* plan);
 ncclResult_t ncclLaunchFinish(struct ncclComm* comm);

@@ -739,7 +739,6 @@ static ncclResult_t uploadWork(struct ncclComm* comm, struct ncclKernelPlan* pla
   } else {
     NCCLCHECK(ncclCudaMalloc(&plan->workHead, nWork));
     NCCLCHECK(ncclCudaMemcpy(plan->workHead, workHeap, nWork));
-    printf("r=%d graph work @ %p n=%d\n", comm->rank, plan->workHead, nWork);
   }
   return ncclSuccess;
 }
@@ -897,7 +896,7 @@ ncclResult_t ncclLaunchPrepare(struct ncclComm* comm) {
   return ncclSuccess;
 }
 
-ncclResult_t ncclLaunchKernelBefore_NoCuda(struct ncclComm* comm, struct ncclKernelPlan* plan) {
+ncclResult_t ncclLaunchKernelBefore_NoUncapturedCuda(struct ncclComm* comm, struct ncclKernelPlan* plan) {
   // This code is called after we've checked in to the intra-process barrier
   // but before launching the kernel. We are not allowed to call CUDA unless the
   // kernel launch is captured.
