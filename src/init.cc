@@ -245,7 +245,6 @@ static ncclResult_t commFree(ncclComm_t comm) {
 
 NCCL_PARAM(AggChannelSize, "AGG_CHANNEL_SIZE", -2);
 NCCL_PARAM(DisableGraphHelper, "GRAPH_HELPER_DISABLE", 0);
-NCCL_PARAM(GraphRegister, "GRAPH_REGISTER", 0);
 // GDRCOPY support: FIFO_ENABLE when enabled locates a workFifo in CUDA memory
 NCCL_PARAM(GdrCopyFifoEnable, "GDRCOPY_FIFO_ENABLE", 1);
 NCCL_PARAM(WorkFifoDepth, "WORK_FIFO_DEPTH", 64<<10);

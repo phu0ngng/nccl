@@ -15,8 +15,6 @@
 
 static void* const ncclKernelGeneric = (void*)NCCL_KERN_NAME(SendRecv, RING, SIMPLE, Sum, int8_t);
 
-extern uint64_t ncclParamGraphRegister();
-
 // Only generate inline kernels for LL
 #define NCCL_FUNC5(func, algo, devredop, dtype) \
   nullptr, /* (void*)NCCL_KERN_NAME(func, algo, LL, devredop, dtype), */ \
@@ -472,6 +470,8 @@ static ncclResult_t registerIntraNodeBuffers(
 fallback:
   return result;
 }
+
+NCCL_PARAM(GraphRegister, "GRAPH_REGISTER", 0);
 
 static ncclResult_t scheduleCollTasksToPlan(
     struct ncclComm* comm, struct ncclKernelPlan* plan, int* nWorkBudget
