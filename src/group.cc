@@ -210,7 +210,7 @@ ncclResult_t ncclGroupEndInternal() {
     struct ncclComm* comm = ncclGroupCommHead;
     while (comm != nullptr) {
       struct ncclComm* next = comm->groupNext;
-      ncclGroupCommLeave(comm);
+      ncclGroupCommLeave(comm); // overwrites comm->groupNext
       comm->preconnectNext = reinterpret_cast<struct ncclComm*>(0x1);
       comm->tasks.nTasksColl = 0;
       comm->tasks.nTasksP2p = 0;

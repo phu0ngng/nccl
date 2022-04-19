@@ -567,11 +567,11 @@ static ncclResult_t scheduleP2pTasksToPlan(
         }
         if (send && recv == nullptr) {
           WARN("Trying to send to self without a matching recv");
-          return ncclInternalError;
+          return ncclInvalidUsage;
         }
         if (send == nullptr && recv) {
           WARN("Trying to recv to self without a matching send");
-          return ncclInternalError;
+          return ncclInvalidUsage;
         }
       }
       if (send != nullptr || recv != nullptr) {
@@ -822,19 +822,21 @@ static void persistentDestructor(void* plans_) {
 }
 
 ncclResult_t ncclLaunchPrepare(struct ncclComm* comm) {
-  // Poll for callbacks sent to us from other threads. Typically these free
-  // resources from to our memory pools.
-  NCCLCHECK(ncclCommPollCallbacks(comm));
-
+  ncclResult_t result = ncclSuccess;
   struct ncclTasks* tasks = &comm->tasks;
   bool persistent = ncclCudaGraphValid(tasks->capturingGraph);
   int nPlans = 0;
 
+  // Poll for callbacks sent to us from other threads. Typically these free
+  // resources from to our memory pools.
+  NCCLCHECK(ncclCommPollCallbacks(comm));
+
+  // We already have one frame present which holds all of our tasks (which we
+  // are about to schedule). Now push an additional frame for allocating
+  // work structs (see appendWorkElem() variants all use scoped allocation).
+  ncclMemoryStackPush(&comm->memScoped);
+
   if (tasks->nTasksColl + tasks->nTasksP2p != 0) {
-    // We already have one frame present which holds all of our tasks (which we
-    // are about to schedule). Now push an additional frame for allocating
-    // work structs (see appendWorkElem() variants all use scoped allocation).
-    ncclMemoryStackPush(&comm->memScoped);
     do {
       struct ncclKernelPlan* plan = ncclMemoryPoolAlloc<struct ncclKernelPlan>(&comm->memPool_ncclKernelPlan, &comm->memPermanent);
       ncclIntruQueueEnqueue(&comm->planQueue, plan);
@@ -852,11 +854,11 @@ ncclResult_t ncclLaunchPrepare(struct ncclComm* comm) {
       // first, the place where we cut the kernel could vary by rank which would
       // cause the "shortest channel first" channel picker to have divergent results.
       if (tasks->nTasksColl != 0) {
-        NCCLCHECK(scheduleCollTasksToPlan(comm, plan, &nWorkBudget));
+        NCCLCHECKGOTO(scheduleCollTasksToPlan(comm, plan, &nWorkBudget), result, failure);
       }
       // And only drain p2p tasks once colls are depleted.
       if (tasks->nTasksColl == 0 && tasks->nTasksP2p != 0) {
-        NCCLCHECK(scheduleP2pTasksToPlan(comm, plan, &nWorkBudget));
+        NCCLCHECKGOTO(scheduleP2pTasksToPlan(comm, plan, &nWorkBudget), result, failure);
       }
       if (nWorkBudget == nWorkBudgetOld) {
         // We weren't able to fit any tasks into our budget which means now we're
@@ -864,7 +866,8 @@ ncclResult_t ncclLaunchPrepare(struct ncclComm* comm) {
         // doing it in comm init, to permit testing with insanely shallow queues
         // for cases where that's expected to still work (e.g. few channels).
         WARN("'NCCL_WORK_FIFO_DEPTH=%d' is too small. Minimum value is %d", comm->workFifoDepth, 2*MAXCHANNELS);
-        return ncclInvalidUsage;
+        result = ncclInvalidUsage;
+        goto failure;
       }
       finishPlan(plan);
     } while (tasks->nTasksColl + tasks->nTasksP2p != 0);
@@ -872,28 +875,33 @@ ncclResult_t ncclLaunchPrepare(struct ncclComm* comm) {
     struct ncclKernelPlan* planHead = ncclIntruQueueHead(&comm->planQueue);
     comm->unlaunchedPlansHead = planHead;
 
-    NCCLCHECK(ncclStrongStreamAcquire(tasks->capturingGraph, &comm->deviceStream));
+    NCCLCHECKGOTO(ncclStrongStreamAcquire(tasks->capturingGraph, &comm->deviceStream), result, failure);
 
     // Create dependency for nccl device work on user streams.
     for (struct ncclCudaStreamList* l=tasks->streams; l != nullptr; l = l->next) {
-      NCCLCHECK(ncclStrongStreamWaitStream(tasks->capturingGraph, &comm->deviceStream, l->stream));
+      NCCLCHECKGOTO(ncclStrongStreamWaitStream(tasks->capturingGraph, &comm->deviceStream, l->stream), result, failure);
     }
 
     if (persistent || comm->persistentRefs != 0) {
-      NCCLCHECK(ncclStrongStreamAcquire(tasks->capturingGraph, &comm->hostStream));
+      NCCLCHECKGOTO(ncclStrongStreamAcquire(tasks->capturingGraph, &comm->hostStream), result, failure);
       for (struct ncclKernelPlan* plan=planHead; plan != nullptr; plan = plan->next) {
-        NCCLCHECK(ncclStrongStreamLaunchHost(tasks->capturingGraph, &comm->hostStream, hostStreamPlanCallback, plan));
+        NCCLCHECKGOTO(ncclStrongStreamLaunchHost(tasks->capturingGraph, &comm->hostStream, hostStreamPlanCallback, plan), result, failure);
       }
-      NCCLCHECK(ncclStrongStreamRelease(tasks->capturingGraph, &comm->hostStream));
+      NCCLCHECKGOTO(ncclStrongStreamRelease(tasks->capturingGraph, &comm->hostStream), result, failure);
     }
 
     if (persistent) {
       comm->persistentRefs += nPlans;
-      NCCLCHECK(ncclCudaGraphAddDestructor(tasks->capturingGraph, persistentDestructor, (void*)planHead));
+      NCCLCHECKGOTO(ncclCudaGraphAddDestructor(tasks->capturingGraph, persistentDestructor, (void*)planHead), result, failure);
     }
   }
 
-  return ncclSuccess;
+  if (false) {
+  failure:
+    ncclMemoryStackPop(&comm->memScoped); // deallocate ncclWork's
+    // We are leaking the ncclKernelPlan's and ncclProxyOp's.
+  }
+  return result;
 }
 
 ncclResult_t ncclLaunchKernelBefore_NoUncapturedCuda(struct ncclComm* comm, struct ncclKernelPlan* plan) {
@@ -925,21 +933,30 @@ ncclResult_t ncclLaunchKernelAfter_NoCuda(struct ncclComm* comm, struct ncclKern
 }
 
 ncclResult_t ncclLaunchFinish(struct ncclComm* comm) {
+  ncclResult_t result = ncclSuccess;
   struct ncclTasks* tasks = &comm->tasks;
-  // Create dependency for user streams on nccl device work.
-  for (struct ncclCudaStreamList* l=comm->tasks.streams; l != nullptr; l = l->next) {
-    NCCLCHECK(ncclStrongStreamWaitStream(tasks->capturingGraph, l->stream, &comm->deviceStream));
-  }
+
+  // Deallocate ncclWork's. This frame exists so long as ncclLaunchPrepare
+  // succeeded, and if it ncclLaunchPrepare didn't succeed we wouldn't be here.
+  ncclMemoryStackPop(&comm->memScoped);
+
   if (!ncclIntruQueueEmpty(&comm->planQueue)) {
-    NCCLCHECK(ncclStrongStreamRelease(tasks->capturingGraph, &comm->deviceStream));
     // Reset queue to empty without destroying plans since those will be sent
     // back to us for reclaiming via callbackQueue.
     ncclIntruQueueConstruct(&comm->planQueue);
-    // Deallocate ncclWork's
-    ncclMemoryStackPop(&comm->memScoped);
+    // Close strong stream "transaction" encompassing cuda launches
+    NCCLCHECKGOTO(ncclStrongStreamRelease(tasks->capturingGraph, &comm->deviceStream), result, resume1);
+  resume1:
+    // Create dependency for user streams on nccl device work.
+    struct ncclCudaStreamList* sl = tasks->streams;
+    tasks->streams = nullptr; // reset streams to empty
+    while (sl != nullptr) {
+      NCCLCHECKGOTO(ncclStrongStreamWaitStream(tasks->capturingGraph, sl->stream, &comm->deviceStream), result, resume2);
+    resume2:
+      sl = sl->next;
+    }
   }
-  tasks->streams = nullptr;
-  return ncclSuccess;
+  return result;
 }
 
 /*****************************************************************************/
