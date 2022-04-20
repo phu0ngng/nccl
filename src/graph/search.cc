@@ -961,7 +961,11 @@ ncclResult_t ncclTopoGetNetDev(struct ncclComm* comm, int rank, struct ncclTopoG
     int pxnLevel = ncclPxnDisable() == 1 ? 0 : ncclParamP2pPxnLevel();
     // See whether we can use the remote rank preferred device.
     if (ncclParamCrossNic() == 0 || (pxnLevel != 0)) {
-      int netDev = comm->peerInfo[peerRank].netDev;
+      // Find local NIC number close to local cudaDev
+      int cudaDev = comm->peerInfo[peerRank].cudaDev;
+      int localRank;
+      if (ncclTopoDevToRank(comm->topo, cudaDev, &localRank) != ncclSuccess) return ncclSuccess;
+      int netDev = comm->peerInfo[localRank].netDev;
       int n;
       // Check that device exists on our node
       if (ncclParamCrossNic() == 0) {
