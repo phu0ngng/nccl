@@ -179,7 +179,6 @@ static ncclResult_t ncclTopoRankToIndex(struct ncclTopoSystem* system, int rank,
       return ncclSuccess;
     }
   }
-  WARN("Internal Error: could not find GPU with rank %d\n", rank);
   return ncclInternalError;
 }
 
