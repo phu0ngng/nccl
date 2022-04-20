@@ -167,6 +167,7 @@ static ncclResult_t ncclTopoIdToIndex(struct ncclTopoSystem* system, int type, i
       return ncclSuccess;
     }
   }
+  WARN("Internal Error: could not find %s with id %lx\n", topoNodeTypeStr[type], id);
   return ncclInternalError;
 }
 
@@ -178,6 +179,7 @@ static ncclResult_t ncclTopoRankToIndex(struct ncclTopoSystem* system, int rank,
       return ncclSuccess;
     }
   }
+  WARN("Internal Error: could not find GPU with rank %d\n", rank);
   return ncclInternalError;
 }
 
