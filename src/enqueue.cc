@@ -9,6 +9,7 @@
 #include "coll_net.h"
 #include "gdrwrap.h"
 #include "bootstrap.h"
+#include "channel.h"
 #include "graph/topo.h"
 
 #include <cstring> // std::memcpy
@@ -125,6 +126,19 @@ size_t ncclKernMaxLocalSize() {
 error:
   return (res != ncclSuccess) ? 0 : max;
 }
+
+// Set shared memory carveout for the nccl kernels
+ncclResult_t ncclKernSetSharedMemoryCarveout(int carveOut) {
+  ncclResult_t res = ncclSuccess;
+  int numNcclKerns = sizeof(ncclKerns)/sizeof(ncclKerns[0]);
+  for (int i = 0; i < numNcclKerns; i++) {
+    CUDACHECKGOTO(cudaFuncSetAttribute(ncclKerns[i], cudaFuncAttributePreferredSharedMemoryCarveout, carveOut), res, error);
+  }
+
+error:
+  return res;
+}
+
 
 /*****************************************************************************/
 /*       Launch system : synchronization and CUDA kernel launch              */
@@ -706,17 +720,6 @@ static ncclResult_t ncclSetupCollKernel(struct ncclInfo* info) {
   params->blockDim.x = std::max<unsigned>(params->blockDim.x, info->nThreads);
   comm->enqueueInfo->maxChannels = params->gridDim.x;  // params may be varied by a second graph hence we need to capture it here
 
-  // Register and exchange input and output buffers
-  if (comm->usingCudaGraph &&                   // only in CUDA graph mode
-      comm->graphRegister == 1 &&               // when registration is enabled
-      info->algorithm == NCCL_ALGO_COLLNET &&   // limited to CollNet for now
-      comm->intraHighestTransportType == TRANSPORT_P2P && // only when all ranks can p2p each other
-      comm->intraRanks == 1) {                  // only in multi-process mode
-    NCCLCHECK(ncclRegBuffAndExchange(info, &eqElem->buffRegInfo));
-    comm->enqueueInfo->nRegBuffs += eqElem->buffRegInfo.nBuffs;
-    work->header.type = ncclWorkTypeRegColl;
-  }
-
   // Inline the first kernel
   if (params->func == NULL) {
     params->func = ncclKerns[work->header.funcIndex];
@@ -727,6 +730,20 @@ static ncclResult_t ncclSetupCollKernel(struct ncclInfo* info) {
       comm->args.bid = 0;    // Only inline for channel 0
       comm->args.header.isLast = 1; // I am so far the last element
     }
+  }
+
+  // Register and exchange input and output buffers
+  if (comm->usingCudaGraph &&                   // only in CUDA graph mode
+      comm->graphRegister == 1 &&               // when registration is enabled
+      info->algorithm == NCCL_ALGO_COLLNET &&   // limited to CollNet for now
+      comm->intraHighestTransportType == TRANSPORT_P2P && // only when all ranks can p2p each other
+      comm->intraRanks == 1) {                  // only in multi-process mode
+    NCCLCHECK(ncclRegBuffAndExchange(info, &eqElem->buffRegInfo));
+    comm->enqueueInfo->nRegBuffs += eqElem->buffRegInfo.nBuffs;
+    work->header.type = ncclWorkTypeRegColl;
+    // Disable inline argument because we need kernel to copy the entire ncclWork from workFifo
+    // because the registered addresses are in ncclWorkElemReg
+    comm->args.header.type = ncclWorkTypeUnused;
   }
 
   return ncclSuccess;
@@ -846,20 +863,14 @@ static ncclResult_t ncclSaveP2p(struct ncclInfo* info) {
   struct ncclComm* comm = info->comm;
   int peer = info->root;
   ssize_t nBytes = info->count*ncclTypeSize(info->datatype);
-  int p2pGroupSize = NCCL_MAX_WORK_ELEMENTS_P2P/2;
-  int peerNode = comm->rankToNode[peer];
-  int peerIndex = comm->rankToLocalRank[peer];
-  int nsteps = comm->maxLocalRanks;
-  int rankIndex = comm->rankToLocalRank[comm->rank];
+  int channelBaseId;
+  NCCLCHECK(ncclChannelComputeBase(comm, peer, info->coll, &channelBaseId));
   if (info->coll == ncclFuncSend) {
     if (peer != comm->rank) {
-      int step = (nsteps + peerIndex - rankIndex)%nsteps;
-      int delta = (comm->nNodes + peerNode - comm->node) % comm->nNodes;
-      if (comm->nNodes == 1) delta = (comm->nRanks + peer - comm->rank) % comm->nRanks;
       // Mark channels that need pre-connect
       for (int c=0; c<comm->p2pnChannelsPerPeer; c++) {
-        int shuffle = (comm->nNodes == 1 || comm->topo->MNNVL) ? step : delta+(step/p2pGroupSize);
-        int channelId = (shuffle+comm->p2pChannels[c]) % comm->p2pnChannels;
+        int channelId;
+        NCCLCHECK(ncclChannelComputeFromBase(comm, channelBaseId, c, &channelId));
         if (comm->channels[channelId].peers[peer].send[1].connected == 0) { // P2P uses only 1 connector
           comm->connectSend[peer] |= (1<<channelId);
           comm->connect = 1;
@@ -870,13 +881,10 @@ static ncclResult_t ncclSaveP2p(struct ncclInfo* info) {
     comm->p2pSendCount++;
   } else {
     if (peer != comm->rank) {
-      int step = (nsteps + rankIndex - peerIndex)%nsteps;
-      int delta = (comm->nNodes + comm->node - peerNode) % comm->nNodes;
-      if (comm->nNodes == 1) delta = (comm->nRanks - peer + comm->rank) % comm->nRanks;
       // Mark channels that need pre-connect
       for (int c=0; c<comm->p2pnChannelsPerPeer; c++) {
-        int shuffle = (comm->nNodes == 1 || comm->topo->MNNVL) ? step : delta+(step/p2pGroupSize);
-        int channelId = (shuffle+comm->p2pChannels[c]) % comm->p2pnChannels;
+        int channelId;
+        NCCLCHECK(ncclChannelComputeFromBase(comm, channelBaseId, c, &channelId));
         if (comm->channels[channelId].peers[peer].recv[1].connected == 0) { // P2P uses only 1 connector
           comm->connectRecv[peer] |= (1<<channelId);
           comm->connect = 1;

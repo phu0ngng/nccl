@@ -166,6 +166,7 @@ ncclResult_t bootstrapCreateRoot(ncclUniqueId* id, bool idFromEnv) {
   pthread_t thread;
   pthread_create(&thread, NULL, bootstrapRoot, (void*)listenSock);
   ncclSetThreadName(thread, "NCCL BootstrapR");
+  pthread_detach(thread); // will not be pthread_join()'d
   return ncclSuccess;
 }
 

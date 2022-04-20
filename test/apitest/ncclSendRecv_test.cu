@@ -123,6 +123,72 @@ TYPED_TEST(ncclSendRecv_test, alltoallv_JoC) {
     }
     ASSERT_EQ(ncclSuccess, ncclGroupEnd());
 };
+TYPED_TEST(ncclSendRecv_test, alltoallv_vasp) {
+   /* In BUG 3571899 this AlltoAllv pattern was found to causes hangs
+    */
+    size_t size = this->N;
+    size_t sendCount[4] = { size, 0, 0, 0 };
+    size_t recvCount[4] = { size, size, size, size };
+    size_t maxSize = this->N;
+    for (int i = 0; i < 16; i++) {
+        ASSERT_EQ(ncclSuccess, ncclGroupStart());
+        for (int r = 0; r < std::min(4, this->nVis); ++r) {
+            size_t sendSize = std::min(maxSize, sendCount[r]);
+            ASSERT_EQ(ncclSuccess,
+                    ncclSend(this->sendbuffs[0], sendSize,
+                        this->DataType(), r,
+                        this->comms[0], this->streams[0]))
+                << "Send 0->" << r << ", " << std::endl;
+            size_t recvSize = std::min(maxSize, recvCount[r]);
+            ASSERT_EQ(ncclSuccess,
+                    ncclRecv(this->recvbuffs[0], recvSize,
+                        this->DataType(), r,
+                        this->comms[0], this->streams[0]))
+                << "Recv 0<-" << r << ", " << std::endl;
+        }
+        for (int r = 1; r < std::min(4, this->nVis); ++r) {
+            size_t sendSize = std::min(maxSize, sendCount[r]);
+            ASSERT_EQ(ncclSuccess,
+                    ncclRecv(this->recvbuffs[r], sendSize,
+                        this->DataType(), 0,
+                        this->comms[r], this->streams[r]))
+                << "Send " << r << "->0, " << std::endl;
+            size_t recvSize = std::min(maxSize, recvCount[r]);
+            ASSERT_EQ(ncclSuccess,
+                    ncclSend(this->sendbuffs[r], recvSize,
+                        this->DataType(), 0,
+                        this->comms[r], this->streams[r]))
+                << "Recv" << r << "<-0, " << std::endl;
+        }
+        ASSERT_EQ(ncclSuccess, ncclGroupEnd());
+        ASSERT_EQ(ncclSuccess, ncclGroupStart());
+        for (int r = 0; r < std::min(4, this->nVis); ++r) {
+            ASSERT_EQ(ncclSuccess,
+                    ncclSend(this->sendbuffs[0], size,
+                        this->DataType(), r,
+                        this->comms[0], this->streams[0]))
+                << "Send 0->" << r << ", " << std::endl;
+            ASSERT_EQ(ncclSuccess,
+                    ncclRecv(this->recvbuffs[0], size,
+                        this->DataType(), r,
+                        this->comms[0], this->streams[0]))
+                << "Recv 0<-" << r << ", " << std::endl;
+        }
+        for (int r = 1; r < std::min(4, this->nVis); ++r) {
+            ASSERT_EQ(ncclSuccess,
+                    ncclRecv(this->recvbuffs[r], size,
+                        this->DataType(), 0,
+                        this->comms[r], this->streams[r]))
+                << "Send " << r << "->0, " << std::endl;
+            ASSERT_EQ(ncclSuccess,
+                    ncclSend(this->sendbuffs[r], size,
+                        this->DataType(), 0,
+                        this->comms[r], this->streams[r]))
+                << "Recv" << r << "<-0, " << std::endl;
+        }
+        ASSERT_EQ(ncclSuccess, ncclGroupEnd());
+    }
+};
 TYPED_TEST(ncclSendRecv_test, scatter) {
     size_t size = std::min(this->N, 1024 * 1024) / this->nVis;
     ASSERT_EQ(ncclSuccess, ncclGroupStart());

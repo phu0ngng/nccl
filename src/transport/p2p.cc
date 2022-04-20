@@ -248,6 +248,7 @@ static ncclResult_t unimportShareableBuffer(void *buff, size_t size, CUmemGeneri
 
 // Setting this to non zero causes P2P to use Reads rather than Writes
 NCCL_PARAM(P2pReadEnable, "P2P_READ_ENABLE", -2);
+NCCL_PARAM(P2pDirectDisable, "P2P_DIRECT_DISABLE", 0);
 
 static ncclResult_t p2pGetInfo(struct ncclTopoSystem* topo, struct ncclPeerInfo* info1, struct ncclPeerInfo* info2, int* read, int* intermediateRank) {
   int p2p;
@@ -328,7 +329,7 @@ ncclResult_t p2pSendSetup(struct ncclComm* comm, struct ncclTopoGraph* graph, st
     info->rank = myInfo->rank;
     if (myInfo->pidHash == peerInfo->pidHash) {
       resources->type = P2P_DIRECT;
-      send->conn.direct |= info->read ? NCCL_DIRECT_READ : NCCL_DIRECT_WRITE;
+      if (ncclParamP2pDirectDisable() == 0) send->conn.direct |= info->read ? NCCL_DIRECT_READ : NCCL_DIRECT_WRITE;
       INFO(NCCL_INIT|NCCL_P2P, "Channel %02d : %d[%lx] -> %d[%lx] via P2P/direct pointer%s",
            channelId, myInfo->rank, myInfo->busId, peerInfo->rank, peerInfo->busId, useReadStr);
     } else {
@@ -388,7 +389,7 @@ ncclResult_t p2pRecvSetup(struct ncclComm* comm, struct ncclTopoGraph* graph, st
   if (intermediateRank == -1) {
     info->rank = myInfo->rank;
     if (myInfo->pidHash == peerInfo->pidHash) {
-      recv->conn.direct |= info->read ? NCCL_DIRECT_READ : NCCL_DIRECT_WRITE;
+      if (ncclParamP2pDirectDisable() == 0) recv->conn.direct |= info->read ? NCCL_DIRECT_READ : NCCL_DIRECT_WRITE;
     } else {
       recv->conn.direct |= info->read ? NCCL_IPC_READ : NCCL_IPC_WRITE;
     }

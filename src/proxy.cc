@@ -806,6 +806,7 @@ ncclResult_t ncclProxyCall(struct ncclProxyConnector* proxyConn, int type, void*
   return ncclSuccess;
 error:
   WARN("Proxy Call to rank %d failed (%s)", proxyConn->comm->localRankToRank[proxyConn->localRank], ncclProxyMsgTypeStr[type]);
+  sock->fd = -1;
   return ret;
 }
 
@@ -870,8 +871,6 @@ ncclResult_t ncclProxyShmUnlink(struct ncclComm* comm) {
 
 static ncclResult_t proxyConnInit(struct ncclProxyLocalPeer* peer, struct ncclProxyConnectionPool* connectionPool, struct ncclComm* comm) {
   struct ncclSocket* sock = &peer->sock;
-  char buf[SOCKET_NAME_MAXLEN+1];
-  buf[SOCKET_NAME_MAXLEN] = '\0';
   int id;
   struct ncclProxyConnection* connection;
   NCCLCHECK(ncclProxyNewConnection(connectionPool, &id));
@@ -889,8 +888,7 @@ static ncclResult_t proxyConnInit(struct ncclProxyLocalPeer* peer, struct ncclPr
     struct ncclProxyProgressState* state = &comm->proxyState.progressState;
     NCCLCHECK(ncclSocketSend(sock, state->opsPoolShmSuffix, sizeof("XXXXXX")-1));
   }
-  buf[SOCKET_NAME_MAXLEN] = '\0';
-  INFO(NCCL_NET, "New proxy %s connection %d from %s, transport %d", connection->send ? "send":"recv", id, ncclSocketToString(&sock->addr, buf), connection->transport);
+  INFO(NCCL_NET, "New proxy %s connection %d from local rank %d, transport %d", connection->send ? "send":"recv", id, connection->localRank, connection->transport);
   return ncclSuccess;
 }
 
@@ -962,12 +960,10 @@ void* ncclProxyService(void* _args) {
 
   struct pollfd pollfds[NCCL_MAX_LOCAL_RANKS+1];
   struct ncclProxyLocalPeer peers[NCCL_MAX_LOCAL_RANKS];
+  memset(&peers, 0, sizeof(struct ncclProxyLocalPeer)*NCCL_MAX_LOCAL_RANKS);
   for (int s=0; s<NCCL_MAX_LOCAL_RANKS; s++) {
     peers[s].sock.fd = pollfds[s].fd = -1;
-    peers[s].sock.abortFlag = NULL;
-    peers[s].sock.asyncFlag = 0;
     pollfds[s].events = POLLHUP|POLLIN;
-    peers[s].asyncOps.type = 0;
   }
   pollfds[NCCL_MAX_LOCAL_RANKS].fd = comm->proxyState.listenSock->fd;
   pollfds[NCCL_MAX_LOCAL_RANKS].events = POLLIN;
@@ -1068,12 +1064,13 @@ void* ncclProxyService(void* _args) {
 ncclResult_t ncclProxyInit(struct ncclComm* comm, struct ncclSocket* sock, union ncclSocketAddress* peerAddresses) {
   comm->proxyState.listenSock = sock;
   comm->proxyState.peerAddresses = peerAddresses;
-  ncclSetThreadName(comm->proxyState.thread, "NCCL Service %2d", comm->cudaDev);
   return ncclSuccess;
 }
 
 ncclResult_t ncclProxyCreate(struct ncclComm* comm) {
+  // comm->proxyState.thread is pthread_join()'d by commFree() in init.cc
   pthread_create(&comm->proxyState.thread, NULL, ncclProxyService, comm);
+  ncclSetThreadName(comm->proxyState.thread, "NCCL Service %2d", comm->cudaDev);
   return ncclSuccess;
 }
 
