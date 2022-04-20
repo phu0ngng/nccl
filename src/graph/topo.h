@@ -167,6 +167,7 @@ static ncclResult_t ncclTopoIdToIndex(struct ncclTopoSystem* system, int type, i
       return ncclSuccess;
     }
   }
+  WARN("Internal Error: could not find %s with id %lx\n", topoNodeTypeStr[type], id);
   return ncclInternalError;
 }
 
