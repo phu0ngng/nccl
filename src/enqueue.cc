@@ -334,12 +334,15 @@ static void addCollToPlan(
     }
     *nWorkBudget -= chans[c].nWork; // subtract delta of chans[c].nWork
 
-    // Add proxy task
-    struct ncclProxyOp* op = ncclMemoryPoolAlloc<struct ncclProxyOp>(&comm->memPool_ncclProxyOp, &comm->memPermanent);
-    *op = *proxyOp; // C++ struct assignment
-    op->channelId = c;
-    op->opCount = opCount;
-    ncclIntruQueueEnqueue(&chans[c].proxyOpQueue, op);
+    // Add proxy task. Empty collectives do not make it to the proxy thread
+    // since they don't imply synchronization for the user like p2p.
+    if (proxyOp->nsteps != 0) {
+      struct ncclProxyOp* op = ncclMemoryPoolAlloc<struct ncclProxyOp>(&comm->memPool_ncclProxyOp, &comm->memPermanent);
+      *op = *proxyOp; // C++ struct assignment
+      op->channelId = c;
+      op->opCount = opCount;
+      ncclIntruQueueEnqueue(&chans[c].proxyOpQueue, op);
+    }
   }
 }
 
