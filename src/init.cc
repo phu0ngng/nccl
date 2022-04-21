@@ -1075,6 +1075,7 @@ const char* ncclGetErrorString(ncclResult_t code) {
     case ncclInternalError          : return "internal error";
     case ncclInvalidArgument        : return "invalid argument";
     case ncclInvalidUsage           : return "invalid usage";
+    case ncclRemoteError            : return "remote process exited or there was a network error";
     default                         : return "unknown result code";
   }
 }

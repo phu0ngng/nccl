@@ -359,7 +359,7 @@ socket_connect_check:
       /* expect user to call again */
       return ncclSuccess;
     } else if (conState == ncclSocketError) {
-      return ncclSystemError;
+      return ncclRemoteError;
     }
     stage->state = ncclSocketCommStateSend;
 
