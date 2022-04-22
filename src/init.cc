@@ -554,7 +554,6 @@ static ncclResult_t initTransportsRank(struct ncclComm* comm, ncclUniqueId* comm
   };
 
   struct {
-    uint64_t globalId;
     int netDev;
     int collNetSupport;
     struct ncclGraphInfo tree;
@@ -564,9 +563,6 @@ static ncclResult_t initTransportsRank(struct ncclComm* comm, ncclUniqueId* comm
   } *allGather3Data;
 
   NCCLCHECK(ncclCalloc(&allGather3Data, nranks));
-
-  static uint64_t globalIdBumper = 0;
-  allGather3Data[rank].globalId = __atomic_fetch_add(&globalIdBumper, 1, __ATOMIC_RELAXED);
 
   NCCLCHECK(ncclTopoGetLocalNet(comm->topo, rank, &allGather3Data[rank].netDev));
   allGather3Data[rank].tree.pattern = treeGraph.pattern;
@@ -597,14 +593,12 @@ static ncclResult_t initTransportsRank(struct ncclComm* comm, ncclUniqueId* comm
 
   NCCLCHECK(bootstrapAllGather(comm->bootstrap, allGather3Data, sizeof(*allGather3Data)));
 
-  // Determine globalId, nNodes, firstRanks, ...
+  // Determine nNodes, firstRanks, ...
   int *nodesFirstRank, *nodesTreePatterns;
   NCCLCHECK(ncclCalloc(&nodesFirstRank, nranks));
   NCCLCHECK(ncclCalloc(&nodesTreePatterns, nranks));
   NCCLCHECK(ncclCalloc(&comm->rankToNode, comm->nRanks));
-  comm->globalId = 0;
   for (int r=0; r<nranks; r++) {
-    comm->globalId = std::max(comm->globalId, allGather3Data[r].globalId);
     int node;
     int firstRank = allGather3Data[r].topoRanks.ringRecv[0];
     for (node=0; node<comm->nNodes && nodesFirstRank[node] != firstRank; node++);
