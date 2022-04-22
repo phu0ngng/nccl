@@ -140,6 +140,8 @@ static void initPlugin(ncclNet_v5_t** net, ncclCollNet_v5_t** collnet) {
     }
     *net = &ncclNet_v4_as_v5;
     ncclNet_v4_as_v5.init = ncclNet_v4_as_v5_init;
+    // Set the name right away to allow for NCCL_NET=... to work
+    ncclNet_v4_as_v5.name = ncclNet_v4->name;
   }
 
   // Check for CollNet
