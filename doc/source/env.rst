@@ -695,3 +695,26 @@ Change the name of NCCL threads to ease debugging and analysis.
 Value accepted
 ^^^^^^^^^^^^^^
 0 or 1. Default is 0.
+
+NCCL_GRAPH_MIXING_SUPPORT
+-------------------------
+(since 2.13)
+
+Enable/disable support for co-occurring outstanding NCCL launches from multiple
+CUDA graphs or a CUDA graph and non-captured NCCL calls. With support disabled,
+correctness is only guarnateed if the communicator always avoids boths of the
+following cases:
+
+1. Has outstanding parallel graph launches, where parallel means on different
+streams without dependencies that would otherwise serializing their execution.
+
+2. An outstanding graph launch followed by a non-captured launch. Stream
+dependencies are irrelevant.
+
+The ability to disable support is motivated by observed hangs in the CUDA
+launches when support is enabled and multiple ranks have work launched via
+cudaGraphLaunch from the same thread.
+
+Value accepted
+^^^^^^^^^^^^^^
+0 or 1. Default is 1.
