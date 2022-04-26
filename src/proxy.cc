@@ -352,7 +352,7 @@ ncclResult_t ncclLocalOpAppend(struct ncclComm* comm, struct ncclProxyConnector*
 static ncclResult_t SaveProxy(struct ncclChannel* channel, int type, int peer, struct ncclProxyOp* op, int connIndex) {
   if (peer < 0) return ncclSuccess;
 
-  struct ncclPeer* peerComm = channel->peers+peer;
+  struct ncclChannelPeer* peerComm = channel->peers+peer;
   struct ncclConnector* connector = type == proxyRecv ? peerComm->recv+connIndex : peerComm->send+connIndex;
   if (connector->transportComm == NULL) {
     WARN("Rank %d has no transport for %s peer %d on channel %d/%d", connector->comm->rank,
@@ -362,6 +362,56 @@ static ncclResult_t SaveProxy(struct ncclChannel* channel, int type, int peer, s
   if (connector->transportComm->proxyProgress == NULL) return ncclSuccess;
 
   NCCLCHECK(ncclLocalOpAppend(connector->comm, &connector->proxyConn, op));
+  return ncclSuccess;
+}
+
+ncclResult_t ncclProxySaveOp(struct ncclComm* comm, struct ncclProxyOp* op) {
+  struct ncclChannel* channel = &comm->channels[op->channelId];
+  switch (op->pattern) {
+  case ncclPatternRing:
+  case ncclPatternRingTwice:
+  case ncclPatternPipelineFrom:
+  case ncclPatternPipelineTo: {
+      struct ncclRing* ring = &channel->ring;
+      if (NeedProxy(proxyRecv, op->pattern, op->root, ring, comm->nRanks)) {
+        NCCLCHECK(SaveProxy(channel, proxyRecv, ring->prev, op, 0));
+      }
+      if (NeedProxy(proxySend, op->pattern, op->root, ring, comm->nRanks)) {
+        NCCLCHECK(SaveProxy(channel, proxySend, ring->next, op, 0));
+      }
+    } break;
+  case ncclPatternTreeUp:
+  case ncclPatternTreeDown:
+  case ncclPatternTreeUpDown: {
+      if (op->pattern != ncclPatternTreeDown) { // Tree up
+        struct ncclTree* tree = &channel->tree;
+        for (int i=0; i<NCCL_MAX_TREE_ARITY; i++) {
+          NCCLCHECK(SaveProxy(channel, proxyRecv, tree->down[i], op, 0));
+        }
+        NCCLCHECK(SaveProxy(channel, proxySend, tree->up, op, 0));
+      }
+      if (op->pattern != ncclPatternTreeUp) { // Tree down
+        struct ncclTree* tree = &channel->tree;
+        for (int i=0; i< NCCL_MAX_TREE_ARITY; i++) {
+          NCCLCHECK(SaveProxy(channel, proxySend, tree->down[i], op, 0));
+        }
+        NCCLCHECK(SaveProxy(channel, proxyRecv, tree->up, op, 0));
+      }
+    } break;
+  case ncclPatternCollTreeUpDown: {
+      // CollTree up
+      NCCLCHECK(SaveProxy(channel, proxySend, channel->collTree.out, op, 1));  // For CollTree up, we are using push
+      // CollTree down
+      NCCLCHECK(SaveProxy(channel, proxyRecv, channel->collTree.out, op, 0));
+    } break;
+  case ncclPatternSend:
+  case ncclPatternRecv: {
+      if (op->root == comm->rank) return ncclSuccess;
+      op->nsteps = DIVUP(op->nbytes, op->chunkSize);
+      if (op->nsteps == 0) op->nsteps = 1;
+      NCCLCHECK(SaveProxy(channel, op->pattern == ncclPatternSend ? proxySend : proxyRecv, op->root, op, 1));
+    } break;
+  }
   return ncclSuccess;
 }
 
@@ -406,11 +456,12 @@ ncclResult_t ncclProxyComputeP2p(struct ncclInfo* info, struct ncclProxyOp* op) 
   op->protocol = NCCL_PROTO_SIMPLE;
   op->dtype = info->datatype;
 
-  int stepSize = info->comm->buffSizes[NCCL_PROTO_SIMPLE]/NCCL_STEPS/SENDRECV_SLICEFACTOR;
+  int stepSize = info->comm->buffSizes[NCCL_PROTO_SIMPLE]/NCCL_STEPS;
+  if (info->comm->nNodes > 1) stepSize /= SENDRECV_SLICEFACTOR;
   info->chunkSize = stepSize;
   op->root = info->root;
   op->nbytes = info->count;
-  struct ncclPeer* peer = channel->peers + op->root;
+  struct ncclChannelPeer* peer = channel->peers + op->root;
 
   if (info->coll == ncclFuncSend) {
     op->pattern = ncclPatternSend;
@@ -434,22 +485,6 @@ ncclResult_t ncclProxyComputeP2p(struct ncclInfo* info, struct ncclProxyOp* op) 
     info->chunkSize = ncclParamChunkSize();
   }
   op->chunkSize = info->chunkSize;
-  return ncclSuccess;
-}
-
-ncclResult_t ncclProxySaveP2p(struct ncclComm* comm, struct ncclProxyOp* op) {
-  struct ncclChannel* channel = comm->channels+op->channelId;
-  op->opCount = channel->workFifoTail-1;
-  if (op->root == comm->rank) return ncclSuccess;
-  if (op->pattern == ncclPatternRecv) {
-    op->nsteps = DIVUP(op->nbytes, op->chunkSize);
-    if (op->nsteps == 0) op->nsteps = 1;
-    NCCLCHECK(SaveProxy(channel, proxyRecv, op->root, op, 1));
-  } else if (op->pattern == ncclPatternSend) {
-    op->nsteps = DIVUP(op->nbytes, op->chunkSize);
-    if (op->nsteps == 0) op->nsteps = 1;
-    NCCLCHECK(SaveProxy(channel, proxySend, op->root, op, 1));
-  }
   return ncclSuccess;
 }
 
