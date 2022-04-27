@@ -74,8 +74,10 @@ static ncclResult_t ncclInit() {
     maxLocalSizeBytes = ncclKernMaxLocalSize();
     int carveout = ncclParamL1SharedMemoryCarveout();
     if (carveout) ncclKernSetSharedMemoryCarveout(carveout);
-    NCCLCHECK(ncclNetInit());
-    INFO(NCCL_INIT, "Using network %s", ncclNetName());
+    // Always initialize bootstrap network
+    NCCLCHECK(bootstrapNetInit());
+    NCCLCHECK(ncclNetPluginInit());
+
     initialized = true;
   }
   pthread_mutex_unlock(&initLock);
@@ -268,6 +270,9 @@ static ncclResult_t commAlloc(ncclComm_t* comret, int ndev, int rank) {
   comm->rank = rank;
   comm->nRanks = ndev;
 
+  NCCLCHECK(ncclNetInit(comm));
+  INFO(NCCL_INIT, "Using network %s", ncclNetName(comm));
+
   // Try to create a CUDA object right away. If there is something wrong with
   // the device we're on (failure cause #1) , better know it early.
   NCCLCHECK(ncclStrongStreamConstruct(&comm->deviceStream));
@@ -395,7 +400,7 @@ static ncclResult_t fillInfo(struct ncclComm* comm, struct ncclPeerInfo* info, u
 
   info->busId = comm->busId;
 
-  NCCLCHECK(ncclGpuGdrSupport(&info->gdrSupport));
+  NCCLCHECK(ncclGpuGdrSupport(comm, &info->gdrSupport));
   info->comm = comm;
   info->cudaCompCap = ncclCudaCompCap();
   return ncclSuccess;
@@ -474,11 +479,11 @@ static ncclResult_t initTransportsRank(struct ncclComm* comm, ncclUniqueId* comm
   // Topo detection / System graph creation
   NCCLCHECK(ncclTopoGetSystem(comm, &comm->topo));
   // Compute paths between GPUs and NICs
-  NCCLCHECK(ncclTopoComputePaths(comm->topo, comm->peerInfo));
+  NCCLCHECK(ncclTopoComputePaths(comm->topo, comm));
   // Remove inaccessible GPUs and unused NICs
   NCCLCHECK(ncclTopoTrimSystem(comm->topo, comm));
   // Recompute paths after trimming
-  NCCLCHECK(ncclTopoComputePaths(comm->topo, comm->peerInfo));
+  NCCLCHECK(ncclTopoComputePaths(comm->topo, comm));
   // Init search
   NCCLCHECK(ncclTopoSearchInit(comm->topo));
   // Print final topology
@@ -530,7 +535,7 @@ static ncclResult_t initTransportsRank(struct ncclComm* comm, ncclUniqueId* comm
   }
 
   // Determine local CollNet support before all-gather
-  if (collNetSupport()) {
+  if (collNetSupport(comm)) {
     char *collNetEnable = getenv("NCCL_COLLNET_ENABLE");
     if (collNetEnable != NULL) {
       INFO(NCCL_ALL, "NCCL_COLLNET_ENABLE set by environment to %s.", collNetEnable);
@@ -892,7 +897,7 @@ collnet_cleanup:
   NCCLCHECK(ncclProxyCall(&proxyConn, ncclProxyMsgSharedInit, &comm->p2pnChannels, sizeof(int), NULL, 0));
 
   // Then to remote ones when using PXN
-  if (ncclPxnDisable() == 0) {
+  if (ncclPxnDisable(comm) == 0) {
     int nranks;
     int* pxnPeers;
     NCCLCHECK(ncclTopoGetPxnRanks(comm, &pxnPeers, &nranks));

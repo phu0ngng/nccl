@@ -163,6 +163,8 @@ struct ncclComm {
   struct ncclPeerInfo* peerInfo;
   struct ncclTopoSystem* topo;
 
+  ncclNet_t* ncclNet;
+  ncclCollNet_t* ncclCollNet;
   void* bootstrap;
   // Bitmasks for ncclTransportP2pSetup
   uint32_t* connectSend;
