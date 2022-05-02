@@ -969,7 +969,7 @@ static inline ncclResult_t getCollNetSupport(struct ncclInfo* info, int* collNet
   if (info->comm->collNetSupport > 0) {
     // Translate ncclAvg and PreMulSum
     ncclRedOp_t netOp = info->op == ncclAvg || info->op >= ncclNumOps ? ncclSum : info->op;
-    NCCLCHECK(collNetReduceSupport(info->datatype, netOp, collNetTypeSupport));
+    NCCLCHECK(collNetReduceSupport(info->comm, info->datatype, netOp, collNetTypeSupport));
   } else {
     *collNetTypeSupport = 0;
   }

@@ -9,9 +9,6 @@
 //#include <sys/stat.h>
 //#include <unistd.h>
 
-ncclNet_t *ncclNet;
-ncclCollNet_t *ncclCollNet;
-
 static ncclNet_v5_t ncclNet_v4_as_v5;
 static ncclNet_v4_t *ncclNet_v4;
 static ncclCollNet_v5_t ncclCollNet_v4_as_v5;
@@ -107,7 +104,17 @@ static ncclResult_t ncclCollNet_v4_as_v5_init(ncclDebugLogger_t logfn) {
   return ncclSuccess;
 }
 
-static void initPlugin(ncclNet_v5_t** net, ncclCollNet_v5_t** collnet) {
+ncclNet_t* ncclNets[3] = { nullptr, &ncclNetIb, &ncclNetSocket };
+ncclCollNet_t* ncclCollNets[3] = { nullptr, nullptr, nullptr };
+enum ncclNetState {
+  ncclNetStateInit = 0,
+  ncclNetStateEnabled = 1,
+  ncclNetStateDisabled = 2
+};
+enum ncclNetState ncclNetStates[3] = { ncclNetStateInit, ncclNetStateInit, ncclNetStateInit };
+enum ncclNetState ncclCollNetStates[3] = { ncclNetStateInit, ncclNetStateInit, ncclNetStateInit };
+
+ncclResult_t ncclNetPluginInit() {
   char ncclNetPluginName[128];
   const char* envPluginName = getenv("NCCL_NET_PLUGIN");
   if (envPluginName && strlen(envPluginName)) {
@@ -126,69 +133,86 @@ static void initPlugin(ncclNet_v5_t** net, ncclCollNet_v5_t** collnet) {
     } else {
       INFO(NCCL_INIT|NCCL_NET, "NET/Plugin : Plugin load returned %d : %s.", errno, dlerror());
     }
-    return;
+    return ncclSuccess;
   }
 
-  *net = (ncclNet_v5_t*)dlsym(netPluginLib, "ncclNetPlugin_v5");
-  if (*net == nullptr) {
-    INFO(NCCL_INIT|NCCL_NET, "NET/Plugin: Failed to find ncclNetPlugin_v5 symbol.");
+  ncclNets[0] = (ncclNet_v5_t*)dlsym(netPluginLib, "ncclNetPlugin_v5");
+  if (ncclNets[0] == nullptr) {
     ncclNet_v4 = (ncclNet_v4_t*)dlsym(netPluginLib, "ncclNetPlugin_v4");
     if (ncclNet_v4 == nullptr) {
-      INFO(NCCL_INIT|NCCL_NET, "NET/Plugin: Failed to find ncclNetPlugin_v4 symbol.");
+      INFO(NCCL_INIT|NCCL_NET, "NET/Plugin: Failed to find ncclNetPlugin symbol (v4 or v5).");
       if (netPluginLib != nullptr) dlclose(netPluginLib);
-      return;
+      return ncclSuccess;
     }
-    *net = &ncclNet_v4_as_v5;
+    ncclNets[0] = &ncclNet_v4_as_v5;
     ncclNet_v4_as_v5.init = ncclNet_v4_as_v5_init;
     // Set the name right away to allow for NCCL_NET=... to work
     ncclNet_v4_as_v5.name = ncclNet_v4->name;
+    INFO(NCCL_INIT|NCCL_NET, "NET/Plugin: Loaded net plugin %s (v4)", ncclNets[0]->name);
+  } else {
+    INFO(NCCL_INIT|NCCL_NET, "NET/Plugin: Loaded net plugin %s (v5)", ncclNets[0]->name);
   }
 
   // Check for CollNet
-  *collnet = (ncclCollNet_v5_t*)dlsym(netPluginLib, "ncclCollNetPlugin_v5");
-  if (*collnet == nullptr) {
-    INFO(NCCL_INIT|NCCL_NET, "NET/Plugin: Failed to find ncclCollNetPlugin_v5 symbol.");
+  ncclCollNets[0] = (ncclCollNet_v5_t*)dlsym(netPluginLib, "ncclCollNetPlugin_v5");
+  if (ncclCollNets[0] == nullptr) {
     ncclCollNet_v4 = (ncclCollNet_v4_t*)dlsym(netPluginLib, "ncclCollNetPlugin_v4");
     if (ncclCollNet_v4 == nullptr) {
-      INFO(NCCL_INIT|NCCL_NET, "NET/Plugin: Failed to find ncclCollNetPlugin_v4 symbol.");
+      INFO(NCCL_INIT|NCCL_NET, "NET/Plugin: Failed to find ncclCollNetPlugin symbol (v4 or v5).");
     } else {
-      *collnet = &ncclCollNet_v4_as_v5;
+      ncclCollNets[0] = &ncclCollNet_v4_as_v5;
       ncclCollNet_v4_as_v5.init = ncclCollNet_v4_as_v5_init;
+      ncclCollNet_v4_as_v5.name = ncclCollNet_v4->name;
+      INFO(NCCL_INIT|NCCL_NET, "NET/Plugin: Loaded coll plugin %s (v4)", ncclCollNets[0]->name);
     }
+  } else {
+    INFO(NCCL_INIT|NCCL_NET, "NET/Plugin: Loaded coll plugin %s (v5)", ncclCollNets[0]->name);
   }
-  return;
+  return ncclSuccess;
 }
 
-ncclResult_t ncclNetInit() {
-  // Always initialize bootstrap network
-  NCCLCHECK(bootstrapNetInit());
+static ncclResult_t netGetState(int i, enum ncclNetState* state) {
+  if (ncclNetStates[i] == ncclNetStateInit) {
+    int ndev;
+    if (ncclNets[i]->init(ncclDebugLog) != ncclSuccess) ncclNetStates[i] = ncclNetStateDisabled;
+    else if (ncclNets[i]->devices(&ndev) != ncclSuccess || ndev <= 0) ncclNetStates[i] = ncclNetStateDisabled;
+    else ncclNetStates[i] = ncclNetStateEnabled;
+  }
+  *state = ncclNetStates[i];
+  return ncclSuccess;
+}
 
+static ncclResult_t collNetGetState(int i, enum ncclNetState* state) {
+  if (ncclCollNetStates[i] == ncclNetStateInit) {
+    int ndev;
+    if (ncclCollNets[i]->init(ncclDebugLog) != ncclSuccess) ncclCollNetStates[i] = ncclNetStateDisabled;
+    else if (ncclCollNets[i]->devices(&ndev) != ncclSuccess || ndev <= 0) ncclCollNetStates[i] = ncclNetStateDisabled;
+    else ncclCollNetStates[i] = ncclNetStateEnabled;
+  }
+  *state = ncclCollNetStates[i];
+  return ncclSuccess;
+}
+
+ncclResult_t ncclNetInit(struct ncclComm* comm) {
   // Initialize main communication network
-  ncclNet_t* nets[3] = { nullptr, &ncclNetIb, &ncclNetSocket };
-  ncclCollNet_t* collNets[3] = { nullptr, nullptr, nullptr };
-  initPlugin(&nets[0], &collNets[0]);
   char* netName = getenv("NCCL_NET");
   bool ok = false;
 
   for (int i=0; i<3; i++) {
-    if (nets[i] == nullptr) continue;
-    if (netName && strcmp(netName, nets[i]->name) != 0) continue;
+    if (ncclNets[i] == nullptr) continue;
+    enum ncclNetState state;
+    NCCLCHECK(netGetState(i, &state));
+    if (state != ncclNetStateEnabled) continue;
+    if (netName && strcmp(netName, ncclNets[i]->name) != 0) continue;
 
-    // net plugin is already initialized
-    int ndev;
-    if (nets[i]->init(ncclDebugLog) != ncclSuccess) continue;
-    if (nets[i]->devices(&ndev) != ncclSuccess) continue;
-    if (ndev <= 0) continue;
-    ncclNet = nets[i];
+    comm->ncclNet = ncclNets[i];
     ok = true;
 
-    if (collNets[i]) {
-      do {
-        if (collNets[i]->init(ncclDebugLog) != ncclSuccess) break;
-        if (collNets[i]->devices(&ndev) != ncclSuccess) break;
-        if (ndev <= 0) break;
-        ncclCollNet = collNets[i];
-      } while(0);
+    if (ncclCollNets[i]) {
+      NCCLCHECK(collNetGetState(i, &state));
+      if (state == ncclNetStateEnabled) {
+        comm->ncclCollNet = ncclCollNets[i];
+      }
     }
     break;
   }
@@ -200,7 +224,7 @@ ncclResult_t ncclNetInit() {
   return ncclSuccess;
 }
 
-ncclResult_t ncclGpuGdrSupport(int* gdrSupport) {
+ncclResult_t ncclGpuGdrSupport(struct ncclComm* comm, int* gdrSupport) {
   constexpr int GPU_BUF_SIZE = 2*1024*1024;
 #if CUDART_VERSION >= 11030
   // In CUDA 11.3 and later we can now query the cudaDevAttrGPUDirectRDMASupported attribute
@@ -215,12 +239,12 @@ ncclResult_t ncclGpuGdrSupport(int* gdrSupport) {
   }
 #endif
   int netDevs;
-  NCCLCHECK(ncclNetDevices(&netDevs));
+  NCCLCHECK(ncclNetDevices(comm, &netDevs));
   *gdrSupport = 0;
   for (int dev=0; dev<netDevs; dev++) {
     // Find a net device which is GDR-capable
     ncclNetProperties_t props;
-    NCCLCHECK(ncclNetGetProperties(dev, &props));
+    NCCLCHECK(ncclNetGetProperties(comm, dev, &props));
     if ((props.ptrSupport & NCCL_PTR_CUDA) == 0) continue;
 
     // Allocate memory on the GPU and try to register it on the NIC.
@@ -230,34 +254,34 @@ ncclResult_t ncclGpuGdrSupport(int* gdrSupport) {
     void* mHandle = NULL;
     ncclResult_t ret;
     ncclDebugNoWarn = NCCL_NET;
-    NCCLCHECKGOTO(ncclNetListen(dev, &handle, &lComm), ret, cleanup1);
+    NCCLCHECKGOTO(ncclNetListen(comm, dev, &handle, &lComm), ret, cleanup1);
     while (sComm == NULL) {
-      NCCLCHECKGOTO(ncclNetConnect(dev, &handle, &sComm), ret, cleanup2);
+      NCCLCHECKGOTO(ncclNetConnect(comm, dev, &handle, &sComm), ret, cleanup2);
     }
     while (rComm == NULL) {
-      NCCLCHECKGOTO(ncclNetAccept(lComm, &rComm), ret, cleanup3);
+      NCCLCHECKGOTO(ncclNetAccept(comm, lComm, &rComm), ret, cleanup3);
     }
     CUDACHECKGOTO(cudaMalloc(&gpuPtr, GPU_BUF_SIZE), ret, cleanup4);
-    if (ncclNetRegMr(sComm, gpuPtr, GPU_BUF_SIZE, NCCL_PTR_CUDA, &mHandle) == ncclSuccess) {
-      NCCLCHECK(ncclNetDeregMr(sComm, mHandle));
-      NCCLCHECK(ncclNetRegMr(rComm, gpuPtr, GPU_BUF_SIZE, NCCL_PTR_CUDA, &mHandle));
-      NCCLCHECK(ncclNetDeregMr(rComm, mHandle));
+    if (ncclNetRegMr(comm, sComm, gpuPtr, GPU_BUF_SIZE, NCCL_PTR_CUDA, &mHandle) == ncclSuccess) {
+      NCCLCHECK(ncclNetDeregMr(comm, sComm, mHandle));
+      NCCLCHECK(ncclNetRegMr(comm, rComm, gpuPtr, GPU_BUF_SIZE, NCCL_PTR_CUDA, &mHandle));
+      NCCLCHECK(ncclNetDeregMr(comm, rComm, mHandle));
       *gdrSupport = 1;
     }
     ncclDebugNoWarn = 0;
     CUDACHECK(cudaFree(gpuPtr));
 cleanup4:
-    NCCLCHECK(ncclNetCloseRecv(rComm));
+    NCCLCHECK(ncclNetCloseRecv(comm, rComm));
 cleanup3:
-    NCCLCHECK(ncclNetCloseSend(sComm));
+    NCCLCHECK(ncclNetCloseSend(comm, sComm));
 cleanup2:
-    NCCLCHECK(ncclNetCloseListen(lComm));
+    NCCLCHECK(ncclNetCloseListen(comm, lComm));
 cleanup1:
     break;
   }
   return ncclSuccess;
 }
 
-int ncclNetVersion() {
-  return (ncclNet == &ncclNet_v4_as_v5) ? 4 : 5;
+int ncclNetVersion(struct ncclComm* comm) {
+  return (comm->ncclNet == &ncclNet_v4_as_v5) ? 4 : 5;
 }
