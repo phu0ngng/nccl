@@ -53,6 +53,14 @@ Integer values are discouraged due to breaking changes in path types - the liter
 
 Values greater than 4 will be interpreted as SYS.  NVL is not supported using the legacy level ints.
 
+NCCL_P2P_DIRECT_DISABLE
+-----------------------
+The ``NCCL_P2P_DIRECT_DISABLE`` variable forbids NCCL to directly access user buffers through P2P between GPUs of the same process. This is useful when user buffers are allocated with APIs which do not automatically make them accessible to other GPUs managed by the same process and with P2P access.
+
+Values accepted
+^^^^^^^^^^^^^^^
+Define and set to 1 to disable direct user buffer access across GPUs.
+
 NCCL_SHM_DISABLE
 ----------------
 The ``NCCL_SHM_DISABLE`` variable disables the Shared Memory (SHM) transports. SHM is used between devices when peer-to-peer cannot happen, therefore, host memory is used.  NCCL will use network (i.e. InfiniBand or IP sockets) to communicate between the CPU sockets when SHM is disabled.
