@@ -465,14 +465,14 @@ ncclResult_t ncclProxyComputeP2p(struct ncclInfo* info, struct ncclProxyOp* op) 
 
   if (info->coll == ncclFuncSend) {
     op->pattern = ncclPatternSend;
-    if (op->root != info->comm->rank && peer->send[1].transportComm && peer->send[1].transportComm->proxyProgress) {
+    if (op->root != info->comm->rank && peer->send[1].transportComm == &netTransport.send) {
       // Tune chunk size for the network
       if (info->count < stepSize) info->chunkSize /= 4;
       else if (info->count < 8*stepSize) info->chunkSize /= 2;
     }
   } else if (info->coll == ncclFuncRecv) {
     op->pattern = ncclPatternRecv;
-    if (op->root != info->comm->rank && peer->recv[1].transportComm && peer->recv[1].transportComm->proxyProgress) {
+    if (op->root != info->comm->rank && peer->recv[1].transportComm == &netTransport.recv) {
       // Tune chunk size for the network
       if (info->count < stepSize) info->chunkSize /= 4;
       else if (info->count < 8*stepSize) info->chunkSize /= 2;
@@ -629,8 +629,58 @@ void ncclDumpProxyState(int signal) {
   dumpProxyState(ncclLastProxyState);
 }
 
+NCCL_PARAM(CreateThreadContext, "CREATE_THREAD_CONTEXT", 0);
+ncclResult_t ncclSetThreadContext(struct ncclComm* comm) {
+  static int createThreadContext = -1;
+
+  static cudaError_t(*pfn_cuCtxCreate)(CUcontext *, unsigned int, CUdevice) = nullptr;
+  static cudaError_t(*pfn_cuCtxDestroy)(CUcontext) = nullptr;
+  static cudaError_t(*pfn_cuCtxSetCurrent)(CUcontext) = nullptr;
+
+  if (createThreadContext == -1) {
+    createThreadContext = ncclParamCreateThreadContext();
+    if (createThreadContext) {
+      int driverVersion;
+      CUDACHECK(cudaDriverGetVersion(&driverVersion));
+      if (driverVersion >= 11030) {
+        // cudaGetDriverEntryPoint requires R465 or above (enhanced compat need)
+        CUDACHECK(cudaGetDriverEntryPoint("cuCtxCreate", (void**)&pfn_cuCtxCreate, cudaEnableDefault));
+        CUDACHECK(cudaGetDriverEntryPoint("cuCtxDestroy", (void**)&pfn_cuCtxDestroy, cudaEnableDefault));
+        CUDACHECK(cudaGetDriverEntryPoint("cuCtxSetCurrent", (void**)&pfn_cuCtxSetCurrent, cudaEnableDefault));
+      }
+      if (pfn_cuCtxCreate == nullptr || pfn_cuCtxDestroy == nullptr || pfn_cuCtxSetCurrent == nullptr) {
+        WARN("Unable to create thread context due to old driver, disabling.");
+        createThreadContext = 0;
+      }
+    }
+  }
+  if (createThreadContext) {
+    if (comm->proxyState.cudaCtx == NULL) {
+      if (pfn_cuCtxCreate(&comm->proxyState.cudaCtx,
+            CU_CTX_SCHED_SPIN|CU_CTX_MAP_HOST, comm->cudaDev) != cudaSuccess) {
+        WARN("Failed to create CUDA context on device %d", comm->cudaDev);
+        createThreadContext = 0;
+        return ncclSuccess;
+      }
+    } else {
+      if (pfn_cuCtxSetCurrent(comm->proxyState.cudaCtx) != cudaSuccess) {
+        WARN("Failed to set CUDA context on device %d", comm->cudaDev);
+        return ncclUnhandledCudaError;
+      }
+    }
+  }
+  return ncclSuccess;
+}
+
 void* ncclProxyProgress(void *comm_) {
   struct ncclComm* comm = (struct ncclComm*)comm_;
+  if (ncclSetThreadContext(comm) != ncclSuccess) {
+    WARN("[Proxy Progress] Failed to set CUDA context on device %d", comm->cudaDev);
+  } else if (cudaSetDevice(comm->cudaDev) != cudaSuccess) {
+    WARN("[Proxy Progress] Failed to set CUDA device %d", comm->cudaDev);
+  }
+  if (CPU_COUNT(&comm->cpuAffinity)) sched_setaffinity(0, sizeof(cpu_set_t), &comm->cpuAffinity);
+
   struct ncclProxyProgressState* state = &comm->proxyState.progressState;
   state->nextOps = -1;
   signal(SIGUSR1, ncclDumpProxyState);
@@ -763,9 +813,9 @@ static ncclResult_t ncclProxyGetConnection(struct ncclProxyConnectionPool* pool,
 
 static ncclResult_t proxyFree(struct ncclProxyConnection* connection, struct ncclComm* comm) {
   if (connection->send) {
-    NCCLCHECK(ncclTransports[connection->transport].send.proxyFree(connection, comm));
+    NCCLCHECK(ncclTransports[connection->transport]->send.proxyFree(connection, comm));
   } else {
-    NCCLCHECK(ncclTransports[connection->transport].recv.proxyFree(connection, comm));
+    NCCLCHECK(ncclTransports[connection->transport]->recv.proxyFree(connection, comm));
   }
   return ncclSuccess;
 }
@@ -809,7 +859,7 @@ ncclResult_t ncclProxyConnect(struct ncclComm* comm, int transport, int send, in
   NCCLCHECK(ncclSocketSend(sock, &send, sizeof(int)));
   NCCLCHECK(ncclSocketSend(sock, &comm->localRank, sizeof(int)));
   NCCLCHECK(ncclSocketRecv(sock, &proxyConn->connection, sizeof(void*)));
-  struct ncclTransportComm* tcomm = send ? &ncclTransports[transport].send : &ncclTransports[transport].recv;
+  struct ncclTransportComm* tcomm = send ? &ncclTransports[transport]->send : &ncclTransports[transport]->recv;
   // If we need proxy progress, map progress ops
   if (tcomm->proxyProgress) {
     char poolPath[] = "/dev/shm/nccl-XXXXXX";
@@ -916,7 +966,7 @@ static ncclResult_t proxyConnInit(struct ncclProxyLocalPeer* peer, struct ncclPr
   NCCLCHECK(ncclSocketRecv(sock, &peer->localRank, sizeof(int)));
   connection->localRank = peer->localRank;
   NCCLCHECK(ncclSocketSend(sock, &connection, sizeof(void*)));
-  connection->tcomm = connection->send ? &ncclTransports[connection->transport].send : &ncclTransports[connection->transport].recv;
+  connection->tcomm = connection->send ? &ncclTransports[connection->transport]->send : &ncclTransports[connection->transport]->recv;
   // If we need proxy progress, let's allocate ops and start the thread
   if (connection->tcomm->proxyProgress) {
     NCCLCHECK(proxyProgressInit(comm));
@@ -982,7 +1032,10 @@ static ncclResult_t proxyConnSetupConnect(int type, struct ncclProxyLocalPeer* p
 
 void* ncclProxyService(void* _args) {
   struct ncclComm* comm =  (struct ncclComm *) _args;
-  if (cudaSetDevice(comm->cudaDev) != cudaSuccess) {
+  if (CPU_COUNT(&comm->cpuAffinity)) sched_setaffinity(0, sizeof(cpu_set_t), &comm->cpuAffinity);
+  if (ncclSetThreadContext(comm) != ncclSuccess) {
+    WARN("[Proxy Service] Failed to set CUDA context on device %d", comm->cudaDev);
+  } else if (cudaSetDevice(comm->cudaDev) != cudaSuccess) {
     WARN("[Proxy Service] Failed to set CUDA device %d", comm->cudaDev);
   }
   if (CPU_COUNT(&comm->cpuAffinity)) sched_setaffinity(0, sizeof(cpu_set_t), &comm->cpuAffinity);

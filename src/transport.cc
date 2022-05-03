@@ -10,16 +10,11 @@
 #define ENABLE_TIMER 0
 #include "timer.h"
 
-extern struct ncclTransport p2pTransport;
-extern struct ncclTransport shmTransport;
-extern struct ncclTransport netTransport;
-extern struct ncclTransport collNetTransport;
-
-struct ncclTransport ncclTransports[NTRANSPORTS] = {
-  p2pTransport,
-  shmTransport,
-  netTransport,
-  collNetTransport
+struct ncclTransport* ncclTransports[NTRANSPORTS] = {
+  &p2pTransport,
+  &shmTransport,
+  &netTransport,
+  &collNetTransport
 };
 
 template <int type>
@@ -29,7 +24,7 @@ static ncclResult_t selectTransport(struct ncclComm* comm, struct ncclTopoGraph*
   struct ncclConnector* connector = (type == 1) ? comm->channels[channelId].peers[peer].send + connIndex :
                                                   comm->channels[channelId].peers[peer].recv + connIndex;
   for (int t=0; t<NTRANSPORTS; t++) {
-    struct ncclTransport *transport = ncclTransports+t;
+    struct ncclTransport *transport = ncclTransports[t];
     struct ncclTransportComm* transportComm = type == 1 ? &transport->send : &transport->recv;
     int ret = 0;
     NCCLCHECK(transport->canConnect(&ret, comm->topo, graph, myInfo, peerInfo));
