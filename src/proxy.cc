@@ -633,9 +633,9 @@ NCCL_PARAM(CreateThreadContext, "CREATE_THREAD_CONTEXT", 0);
 ncclResult_t ncclSetThreadContext(struct ncclComm* comm) {
   static int createThreadContext = -1;
 
-  static cudaError_t(*pfn_cuCtxCreate)(CUcontext *, unsigned int, CUdevice) = nullptr;
-  static cudaError_t(*pfn_cuCtxDestroy)(CUcontext) = nullptr;
-  static cudaError_t(*pfn_cuCtxSetCurrent)(CUcontext) = nullptr;
+  static cudaError_t(*pfn_cuCtxCreate)(void**, unsigned int, int) = nullptr;
+  static cudaError_t(*pfn_cuCtxDestroy)(void*) = nullptr;
+  static cudaError_t(*pfn_cuCtxSetCurrent)(void*) = nullptr;
 
   if (createThreadContext == -1) {
     createThreadContext = ncclParamCreateThreadContext();
@@ -657,7 +657,7 @@ ncclResult_t ncclSetThreadContext(struct ncclComm* comm) {
   if (createThreadContext) {
     if (comm->proxyState.cudaCtx == NULL) {
       if (pfn_cuCtxCreate(&comm->proxyState.cudaCtx,
-            CU_CTX_SCHED_SPIN|CU_CTX_MAP_HOST, comm->cudaDev) != cudaSuccess) {
+            0x01/*CU_CTX_SCHED_SPIN*/|0x08/*CU_CTX_MAP_HOST*/, comm->cudaDev) != cudaSuccess) {
         WARN("Failed to create CUDA context on device %d", comm->cudaDev);
         createThreadContext = 0;
         return ncclSuccess;

@@ -11,7 +11,6 @@
 #include "info.h"
 #include "socket.h"
 #include <pthread.h>
-#include <cuda.h>
 
 enum ncclProxyOpState { ncclProxyOpNone, ncclProxyOpReady, ncclProxyOpProgress };
 
@@ -164,7 +163,7 @@ struct ncclProxyState {
   pthread_t thread;
   struct ncclSocket* listenSock;
   int stop;
-  CUcontext cudaCtx;
+  void* cudaCtx;
 
   // Used by main thread
   union ncclSocketAddress* peerAddresses;
