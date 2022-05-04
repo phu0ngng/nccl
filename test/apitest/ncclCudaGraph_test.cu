@@ -6,6 +6,7 @@ class ncclCudaGraph_test : public ncclCommon_test<DT> {
     static cudaGraphExec_t *graphExec[2];
     static cudaStream_t *graphStreams[2];
     static int driverVersion;
+    static ncclResult_t expected;
     void SetUp();
     void TearDown();
     void BeginCapture(int graph=0);
@@ -24,6 +25,8 @@ cudaStream_t* ncclCudaGraph_test<DT>::graphStreams[2] = {nullptr, nullptr};
 
 template <typename DT>
 int ncclCudaGraph_test<DT>::driverVersion = 0;
+template <typename DT>
+ncclResult_t ncclCudaGraph_test<DT>::expected = ncclSuccess;
 
 template <typename DT>
 void ncclCudaGraph_test<DT>::SetUp() {
@@ -42,6 +45,7 @@ void ncclCudaGraph_test<DT>::SetUp() {
         }
     }
     ASSERT_EQ(cudaSuccess, cudaDriverGetVersion(&this->driverVersion));
+    expected = this->driverVersion < 11030 ? ncclInvalidUsage : ncclSuccess;
 };
 
 template <typename DT>
@@ -96,18 +100,14 @@ TYPED_TEST(ncclCudaGraph_test, collective) {
     this->BeginCapture();
     ASSERT_EQ(ncclSuccess, ncclGroupStart());
     for (int i = 0; i < this->nVis; ++i) {
-        ASSERT_EQ(ncclSuccess,
+        ASSERT_EQ(this->expected,
                   ncclAllReduce(this->sendbuffs[i], this->recvbuffs[i],
                                 std::min(this->N, 1024 * 1024),
                                 this->DataType(), ncclSum,
                                 this->comms[i], this->streams[i]))
             << "i" << i << ", " << std::endl;
     }
-    if (this->driverVersion < 11030) {
-      ASSERT_EQ(ncclInvalidUsage, ncclGroupEnd());
-    } else {
-      ASSERT_EQ(ncclSuccess, ncclGroupEnd());
-    }
+    ASSERT_EQ(this->expected, ncclGroupEnd());
     this->EndCapture();
     this->LaunchGraph();
     this->LaunchGraph();  // Launch graph twice to check task list persistency
@@ -120,12 +120,12 @@ TYPED_TEST(ncclCudaGraph_test, alltoall) {
     for (int i = 0; i < this->nVis; ++i) {
         ASSERT_EQ(ncclSuccess, ncclGroupStart());
         for (int p = 0; p < this->nVis; ++p) {
-            ASSERT_EQ(ncclSuccess,
+            ASSERT_EQ(this->expected,
                       ncclSend(this->sendbuffs[i] + p * size, size,
                                     this->DataType(), p,
                                     this->comms[i], this->streams[i]))
                 << "i" << i << ", " << std::endl;
-            ASSERT_EQ(ncclSuccess,
+            ASSERT_EQ(this->expected,
                       ncclRecv(this->recvbuffs[i] + p * size, size,
                                     this->DataType(), p,
                                     this->comms[i], this->streams[i]))
@@ -133,11 +133,7 @@ TYPED_TEST(ncclCudaGraph_test, alltoall) {
          }
         ASSERT_EQ(ncclSuccess, ncclGroupEnd());
     }
-    if (this->driverVersion < 11030) {
-      ASSERT_EQ(ncclInvalidUsage, ncclGroupEnd());
-    } else {
-      ASSERT_EQ(ncclSuccess, ncclGroupEnd());
-    }
+    ASSERT_EQ(this->expected, ncclGroupEnd());
     this->EndCapture();
     this->LaunchGraph();
 };
@@ -147,7 +143,7 @@ TYPED_TEST(ncclCudaGraph_test, aggregation) {
     ASSERT_EQ(ncclSuccess, ncclGroupStart());
     for (int j = 0; j < 2; ++j) {
         for (int i = 0; i < this->nVis; ++i) {
-            ASSERT_EQ(ncclSuccess,
+            ASSERT_EQ(this->expected,
                       ncclAllReduce(this->sendbuffs[i], this->recvbuffs[i],
                                     std::min(this->N, 1024 * 1024),
                                     this->DataType(), ncclSum,
@@ -155,11 +151,7 @@ TYPED_TEST(ncclCudaGraph_test, aggregation) {
                 << "i" << i << ", " << std::endl;
         }
     }
-    if (this->driverVersion < 11030) {
-      ASSERT_EQ(ncclInvalidUsage, ncclGroupEnd());
-    } else {
-      ASSERT_EQ(ncclSuccess, ncclGroupEnd());
-    }
+    ASSERT_EQ(this->expected, ncclGroupEnd());
     this->EndCapture();
     this->LaunchGraph();
 };
@@ -170,7 +162,7 @@ TYPED_TEST(ncclCudaGraph_test, many_graph_many_stream) {
         ASSERT_EQ(ncclSuccess, ncclGroupStart());
         for (int j = 0; j < 2; ++j) {
             for (int i = 0; i < this->nVis; ++i) {
-                ASSERT_EQ(ncclSuccess,
+                ASSERT_EQ(this->expected,
                           ncclAllReduce(this->sendbuffs[i], this->recvbuffs[i],
                                         std::min(this->N, 1024 * 1024),
                                         this->DataType(), ncclSum,
@@ -178,10 +170,7 @@ TYPED_TEST(ncclCudaGraph_test, many_graph_many_stream) {
                     << "i" << i << ", " << std::endl;
             }
         }
-        ASSERT_EQ(
-            this->driverVersion >= 11030 ? ncclSuccess : ncclInvalidUsage,
-            ncclGroupEnd()
-        );
+        ASSERT_EQ(this->expected, ncclGroupEnd());
         this->EndCapture(g);
     }
     for (int g=0; g < 2; g++) {
@@ -194,7 +183,7 @@ TYPED_TEST(ncclCudaGraph_test, graph_nongraph) {
     ASSERT_EQ(ncclSuccess, ncclGroupStart());
     for (int j = 0; j < 2; ++j) {
         for (int i = 0; i < this->nVis; ++i) {
-            ASSERT_EQ(ncclSuccess,
+            ASSERT_EQ(this->expected,
                       ncclAllReduce(this->sendbuffs[i], this->recvbuffs[i],
                                     std::min(this->N, 1024 * 1024),
                                     this->DataType(), ncclSum,
@@ -202,10 +191,7 @@ TYPED_TEST(ncclCudaGraph_test, graph_nongraph) {
                 << "i" << i << ", " << std::endl;
         }
     }
-    ASSERT_EQ(
-        this->driverVersion >= 11030 ? ncclSuccess : ncclInvalidUsage,
-        ncclGroupEnd()
-    );
+    ASSERT_EQ(this->expected,ncclGroupEnd());
     this->EndCapture();
     this->LaunchGraph();
 
