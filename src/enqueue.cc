@@ -259,9 +259,20 @@ static void appendWorkElemP2p(
   ncclIntruQueueEnqueue(&chan->workQueue, q);
 }
 
+static ncclResult_t addProxyOpIfNeeded(struct ncclComm* comm, struct ncclKernelPlan* plan, struct ncclProxyOp* op) {
+  bool needed = true;
+  NCCLCHECK(ncclProxySaveOp(comm, op, &needed));
+  if (needed) {
+    struct ncclProxyOp* q = ncclMemoryPoolAlloc<struct ncclProxyOp>(&comm->memPool_ncclProxyOp, &comm->memPermanent);
+    *q = *op; // C++ struct assignment
+    ncclIntruQueueEnqueue(&plan->channels[op->channelId].proxyOpQueue, q);
+  }
+  return ncclSuccess;
+}
+
 // Put coll workelem & proxyOp in plan assuming nWorkBudget permits, so please
 // ensure *nWorkBudget >= nBids upon entry.
-static void addCollToPlan(
+static ncclResult_t addCollToPlan(
     struct ncclComm* comm, struct ncclKernelPlan* plan, int* nWorkBudget, int funcIndex,
     struct ncclWorkElem const* workElem, struct ncclProxyOp const* proxyOp,
     int nBid, size_t bytes, bool regBufUsed, void* regBufSend[], void* regBufRecv[]
@@ -337,13 +348,13 @@ static void addCollToPlan(
     // Add proxy task. Empty collectives do not make it to the proxy thread
     // since they don't imply synchronization for the user like p2p.
     if (proxyOp->nsteps != 0) {
-      struct ncclProxyOp* op = ncclMemoryPoolAlloc<struct ncclProxyOp>(&comm->memPool_ncclProxyOp, &comm->memPermanent);
-      *op = *proxyOp; // C++ struct assignment
-      op->channelId = c;
-      op->opCount = opCount;
-      ncclIntruQueueEnqueue(&chans[c].proxyOpQueue, op);
+      struct ncclProxyOp tmp = *proxyOp; // C++ struct assignment
+      tmp.channelId = c;
+      tmp.opCount = opCount;
+      NCCLCHECK(addProxyOpIfNeeded(comm, plan, &tmp));
     }
   }
+  return ncclSuccess;
 }
 
 // Put p2p op in plan assuming there is space in nWorkBudget, so you must
@@ -363,9 +374,8 @@ static ncclResult_t addP2pToPlan(
   NCCLCHECK(ncclChannelCompute(comm, peer, chunk%comm->p2pnChannelsPerPeer, info.coll, &channelId));
   info.channelId = channelId;
 
-  struct ncclProxyOp* proxyOp = ncclMemoryPoolAlloc<struct ncclProxyOp>(&comm->memPool_ncclProxyOp, &comm->memPermanent);
-  NCCLCHECK(ncclProxyComputeP2p(&info, proxyOp));
-  ncclIntruQueueEnqueue(&plan->channels[channelId].proxyOpQueue, proxyOp);
+  struct ncclProxyOp proxyOp = {};
+  NCCLCHECK(ncclProxyComputeP2p(&info, &proxyOp));
 
   struct ncclWorkElemP2p elem = {0};
   elem.peer = peer;
@@ -383,7 +393,8 @@ static ncclResult_t addP2pToPlan(
 
   // Calculate the opCount after appendWorkElemP2p since it will always return
   // with channel->nWork equal to one plus the work index this p2p settled in.
-  proxyOp->opCount = uint64_t(plan->channels[channelId].nWork)<<1 | 1;
+  proxyOp.opCount = uint64_t(plan->channels[channelId].nWork)<<1 | 1;
+  NCCLCHECK(addProxyOpIfNeeded(comm, plan, &proxyOp));
   return ncclSuccess;
 }
 
@@ -391,6 +402,7 @@ static void finishPlan(struct ncclKernelPlan* plan) {
   int channelUbound = 0;
   int channelCount = 0;
   uint64_t channelMask = 0;
+  bool hasProxyOps = false;
   for (int c=0; c < MAXCHANNELS; c++) {
     struct ncclWorkList* tail = ncclIntruQueueTail(&plan->channels[c].workQueue);
     if (tail != nullptr) {
@@ -400,10 +412,12 @@ static void finishPlan(struct ncclKernelPlan* plan) {
       tail->work.header.isLast = 1;
       finishWork(&tail->work);
     }
+    hasProxyOps |= !ncclIntruQueueEmpty(&plan->channels[c].proxyOpQueue);
   }
   plan->channelUbound = channelUbound;
   plan->channelCount = channelCount;
   plan->channelMask = channelMask;
+  plan->hasProxyOps = hasProxyOps;
   if (plan->kernelFn == nullptr)
     plan->kernelFn = ncclKernelGeneric;
   plan->threadPerBlock = std::max(plan->threadPerBlock, 3*WARP_SIZE);
@@ -513,8 +527,8 @@ static ncclResult_t scheduleCollTasksToPlan(
       NCCLCHECK(registerIntraNodeBuffers(comm, plan, &info, &regBufUsed, regBufSend, regBufRecv));
     }
 
-    addCollToPlan(comm, plan, nWorkBudget, workFuncIndex, &workElem, &proxyOp,
-      info.nChannels, info.nBytes, regBufUsed, regBufSend, regBufRecv);
+    NCCLCHECK(addCollToPlan(comm, plan, nWorkBudget, workFuncIndex, &workElem, &proxyOp,
+      info.nChannels, info.nBytes, regBufUsed, regBufSend, regBufRecv));
     tasks->nTasksColl -= 1;
     ncclIntruQueueDequeue(&tasks->collQueue);
 
@@ -767,7 +781,7 @@ static ncclResult_t uploadProxyOps(struct ncclComm* comm, struct ncclKernelPlan*
       } else { // coll
         q->opCount = (collOpCount<<1) + q->opCount;
       }
-      NCCLCHECK(ncclProxySaveOp(comm, q)); // May overwrite enqNext.
+      NCCLCHECK(ncclProxySaveOp(comm, q, nullptr)); // May overwrite enqNext.
       if (!plan->persistent) {
         // Non-persistent kernels have their memory reclaimed after upload.
         ncclMemoryPoolFree(&plan->memPool_ncclProxyOp, q);
@@ -886,11 +900,19 @@ ncclResult_t ncclLaunchPrepare(struct ncclComm* comm) {
     }
 
     if (persistent || comm->persistentRefs != 0) {
-      NCCLCHECKGOTO(ncclStrongStreamAcquire(tasks->capturingGraph, &comm->hostStream), result, failure);
+      bool acquired = false;
       for (struct ncclKernelPlan* plan=planHead; plan != nullptr; plan = plan->next) {
-        NCCLCHECKGOTO(ncclStrongStreamLaunchHost(tasks->capturingGraph, &comm->hostStream, hostStreamPlanCallback, plan), result, failure);
+        if (plan->hasProxyOps) {
+          if (!acquired) {
+            acquired = true;
+            NCCLCHECKGOTO(ncclStrongStreamAcquire(tasks->capturingGraph, &comm->hostStream), result, failure);
+          }
+          NCCLCHECKGOTO(ncclStrongStreamLaunchHost(tasks->capturingGraph, &comm->hostStream, hostStreamPlanCallback, plan), result, failure);
+        }
       }
-      NCCLCHECKGOTO(ncclStrongStreamRelease(tasks->capturingGraph, &comm->hostStream), result, failure);
+      if (acquired) {
+        NCCLCHECKGOTO(ncclStrongStreamRelease(tasks->capturingGraph, &comm->hostStream), result, failure);
+      }
     }
 
     if (persistent) {
