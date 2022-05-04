@@ -132,7 +132,7 @@ static ncclResult_t doLaunches(struct ncclComm* head) {
           NCCLCHECKGOTO(ncclLaunchFinish(comm), result, failure);
         }
         comm = next;
-      } while (comm != nullptr);
+      } while (comm != cliqueNextHead);
       if (!moreRounds) break;
     }
     cliqueHead = cliqueNextHead;
