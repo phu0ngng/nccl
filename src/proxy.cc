@@ -415,35 +415,6 @@ ncclResult_t ncclProxySaveOp(struct ncclComm* comm, struct ncclProxyOp* op) {
   return ncclSuccess;
 }
 
-ncclResult_t ncclProxySaveColl(struct ncclComm* comm, struct ncclProxyOp* op, int nranks) {
-  struct ncclChannel* channel = comm->channels+op->channelId;
-  int pattern = op->pattern;
-  if (pattern == ncclPatternRing || pattern == ncclPatternRingTwice || pattern == ncclPatternPipelineFrom || pattern == ncclPatternPipelineTo) {
-    struct ncclRing* ring = &channel->ring;
-    if (NeedProxy(proxyRecv, pattern, op->root, ring, nranks)) NCCLCHECK(SaveProxy(channel, proxyRecv, ring->prev, op, 0));
-    if (NeedProxy(proxySend, pattern, op->root, ring, nranks)) NCCLCHECK(SaveProxy(channel, proxySend, ring->next, op, 0));
-  }
-  if (pattern == ncclPatternTreeUp || pattern == ncclPatternTreeUpDown) {
-    // Tree up
-    struct ncclTree* tree = &channel->tree;
-    for (int i=0; i<NCCL_MAX_TREE_ARITY; i++) NCCLCHECK(SaveProxy(channel, proxyRecv, tree->down[i], op, 0));
-    NCCLCHECK(SaveProxy(channel, proxySend, tree->up, op, 0));
-  }
-  if (pattern == ncclPatternTreeDown || pattern == ncclPatternTreeUpDown) {
-    // Tree down
-    struct ncclTree* tree = &channel->tree;
-    for (int i=0; i< NCCL_MAX_TREE_ARITY; i++) NCCLCHECK(SaveProxy(channel, proxySend, tree->down[i], op, 0));
-    NCCLCHECK(SaveProxy(channel, proxyRecv, tree->up, op, 0));
-  }
-  if (pattern == ncclPatternCollTreeUpDown) {
-    // CollTree up
-    NCCLCHECK(SaveProxy(channel, proxySend, channel->collTree.out, op, 1));  // For CollTree up, we are using push
-    // CollTree down
-    NCCLCHECK(SaveProxy(channel, proxyRecv, channel->collTree.out, op, 0));
-  }
-  return ncclSuccess;
-}
-
 NCCL_PARAM(ChunkSize, "CHUNK_SIZE", 0);
 
 ncclResult_t ncclProxyComputeP2p(struct ncclInfo* info, struct ncclProxyOp* op) {
