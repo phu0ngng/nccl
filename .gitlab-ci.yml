@@ -23,7 +23,7 @@ test-gitlab-runner:
     NCCL_SOCKET_IFNAME: "ibp12s0"
     SRUN: ""
   script:
-    - gitlab-runner --version
+    - echo "$USER" && gitlab-runner --version
   interruptible: true
 
 build:
