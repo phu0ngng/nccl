@@ -10,6 +10,22 @@ variables:
   MULTI_PERFTEST_NODE_COUNT: 4
 #  NCCL_REGRESSION_BASELINE: v2.9.9-1
 
+test-gitlab-runner:
+  stage: build
+  rules:
+    - if: '$RUN_ON_SELENE == "1"'
+      when: always
+    - when: never
+  tags:
+    - nccl-selene
+  variables:
+    CUDA_HOME: "/project/share/cuda/cuda-11.0.221/"
+    NCCL_SOCKET_IFNAME: "ibp12s0"
+    SRUN: ""
+  script:
+    - gitlab-runner --version
+  interruptible: true
+
 build:
   stage: build
   tags:
