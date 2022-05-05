@@ -6,7 +6,8 @@ stages:
   - perf_tests_multi
 #  - perf_regression
 
-#variables:
+variables:
+  MULTI_PERFTEST_NODE_COUNT: 2
 #  NCCL_REGRESSION_BASELINE: v2.9.9-1
 
 build:
@@ -128,14 +129,14 @@ apitest-DGX-1V:
     - srun -n 1 --account=sw-gpu -pbatch -t 00:05:00 ./test/scripts/gitlab-runner-apitest.sh
   interruptible: true
 
-apitest-nccl-selene-ssh:
+apitest-DGX-A100:
   stage: api_tests
   rules:
     - if: '$RUN_ON_SELENE == "1"'
       when: always
     - when: never
   tags:
-    - nccl-selene-ssh
+    - nccl-selene
   variables:
     CUDA_HOME: "/project/share/cuda/cuda-11.0.221/"
     NCCL_SOCKET_IFNAME: "ibp12s0"
@@ -260,15 +261,15 @@ perftest-DGX-1V:
     - salloc -N 1 -n 8 --account=sw-gpu -pbatch -t 00:05:00 ./test/scripts/gitlab-runner-perftest.sh 4G
   interruptible: true
 
-perftest-nccl-selene-ssh:
+perftest-DGX-A100:
   stage: perf_tests_single
-  needs: [build, unit_tests, apitest-nccl-selene-ssh]
+  needs: [build, unit_tests, apitest-DGX-A100]
   rules:
     - if: '$RUN_ON_SELENE == "1"'
       when: always
     - when: never
   tags:
-    - nccl-selene-ssh
+    - nccl-selene
   variables:
     NCCL_DEBUG: "WARN"
     MPI_HOME: "/home/svcnccl/install/openmpi-1.10.7"
@@ -310,36 +311,36 @@ perftest-sharp-gc:
     - ./test/scripts/gitlab-runner-perftest-sharp.sh 128M 0
   interruptible: true
 
-perftest-multi-prom:
-  stage: perf_tests_multi
-  needs: [build, perftest-DGX-1V]
-  rules:
-    - if: '$RUN_ON_PROM == "1"'
-      when: always
-    - when: never
-  tags:
-    - dgx-1v
-  variables:
-    NCCL_DEBUG: "WARN"
-    MPI_HOME: "/home/sjeaugey/prom-dev/mpi/openmpi-1.10.7"
-    CUDA_HOME: "/home/sjeaugey/prom-dev/cuda-11.0"
-    OMPI_MCA_oob_tcp_if_include: "10.33.12.0/24"
-    OMPI_MCA_btl: "tcp,self"
-    OMPI_MCA_btl_tcp_if_include: "10.33.12.0/24"
-    SALLOC: ""
-  script:
-    - salloc -N 4 -n 32 --account=sw-gpu -pbatch -t 00:05:00 ./test/scripts/gitlab-runner-perftest.sh 4G
-  interruptible: true
+# perftest-multi-prom:
+#   stage: perf_tests_multi
+#   needs: [build, perftest-DGX-1V]
+#   rules:
+#     - if: '$RUN_ON_PROM == "1"'
+#       when: always
+#     - when: never
+#   tags:
+#     - dgx-1v
+#   variables:
+#     NCCL_DEBUG: "WARN"
+#     MPI_HOME: "/home/sjeaugey/prom-dev/mpi/openmpi-1.10.7"
+#     CUDA_HOME: "/home/sjeaugey/prom-dev/cuda-11.0"
+#     OMPI_MCA_oob_tcp_if_include: "10.33.12.0/24"
+#     OMPI_MCA_btl: "tcp,self"
+#     OMPI_MCA_btl_tcp_if_include: "10.33.12.0/24"
+#     SALLOC: ""
+#   script:
+#     - salloc -N 4 -n 32 --account=sw-gpu -pbatch -t 00:05:00 ./test/scripts/gitlab-runner-perftest.sh 4G
+#   interruptible: true
 
 perftest-multi-selene:
   stage: perf_tests_multi
-  needs: [build, perftest-nccl-selene-ssh]
+  needs: [build, perftest-DGX-A100]
   rules:
     - if: '$RUN_ON_SELENE == "1"'
       when: always
     - when: never
   tags:
-    - nccl-selene-ssh
+    - nccl-selene
   variables:
     NCCL_DEBUG: "WARN"
     MPI_HOME: "/home/svcnccl/install/openmpi-1.10.7"
@@ -349,18 +350,18 @@ perftest-multi-selene:
     OMPI_MCA_btl_tcp_if_include: "enp97s0f1"
     SALLOC: ""
   script:
-    - salloc -N 4 -n 32 --account=nccl -pluna -J "nccl-cicd::$GITLAB_USER_LOGIN:perftest-multi::$CI_COMMIT_BRANCH:$CI_COMMIT_SHORT_SHA" -t 00:10:00 ./test/scripts/gitlab-runner-perftest.sh 16G 0
+    - salloc -N $MULTI_PERFTEST_NODE_COUNT -n $($MULTI_PERFTEST_NODE_COUNT * 8) --account=nccl -pluna -J "nccl-cicd::$GITLAB_USER_LOGIN:perftest-multi::$CI_COMMIT_BRANCH:$CI_COMMIT_SHORT_SHA" -t 00:10:00 ./test/scripts/gitlab-runner-perftest.sh 16G 0
   interruptible: true
 
 perftest-sharp-selene:
   stage: perf_tests_multi
-  needs: [build, perftest-nccl-selene-ssh]
+  needs: [build, perftest-DGX-A100]
   rules:
     - if: '$RUN_ON_SELENE_SHARP == "1"'
       when: always
     - when: never
   tags:
-    - nccl-selene-ssh
+    - nccl-selene
   variables:
     NCCL_DEBUG: "WARN"
     MPI_HOME: "/home/svcnccl/install/openmpi-1.10.7"
@@ -372,7 +373,30 @@ perftest-sharp-selene:
     OMPI_MCA_btl_tcp_if_include: "enp97s0f1"
     SALLOC: ""
   script:
-    - salloc -N 4 -n 32 --account=nccl -pluna --network sharp -J "nccl-cicd::$GITLAB_USER_LOGIN:perftest-multi::$CI_COMMIT_BRANCH:$CI_COMMIT_SHORT_SHA" -t 00:10:00 ./test/scripts/gitlab-runner-perftest-sharp.sh 16G 0
+    - salloc -N $MULTI_PERFTEST_NODE_COUNT -n $($MULTI_PERFTEST_NODE_COUNT * 8) --account=nccl -pluna --network sharp -J "nccl-cicd::$GITLAB_USER_LOGIN:perftest-multi::$CI_COMMIT_BRANCH:$CI_COMMIT_SHORT_SHA" -t 00:10:00 ./test/scripts/gitlab-runner-perftest-sharp.sh 16G 0
+  interruptible: true
+
+perftest-sharp-selene:
+  stage: perf_tests_multi
+  needs: [build, perftest-DGX-A100]
+  rules:
+    - if: '$RUN_ON_SELENE_SHARP == "1"'
+      when: always
+    - when: never
+  tags:
+    - nccl-selene
+  variables:
+    NCCL_DEBUG: "WARN"
+    MPI_HOME: "/home/svcnccl/install/openmpi-1.10.7"
+    CUDA_HOME: "/project/share/cuda/cuda-11.0.221/"
+    SHARP_HOME: "/project/share/hpcx/hpcx-v2.9.0-gcc-MLNX_OFED_LINUX-5.2-1.0.4.0-ubuntu20.04-x86_64/sharp"
+    PLUGIN_PATH: "/project/share/hpcx/hpcx-v2.9.0-gcc-MLNX_OFED_LINUX-5.2-1.0.4.0-ubuntu20.04-x86_64/nccl_rdma_sharp_plugin/lib"
+    NCCL_IB_SL: "1"
+    OMPI_MCA_btl: "^openib"
+    OMPI_MCA_btl_tcp_if_include: "enp97s0f1"
+    SALLOC: ""
+  script:
+    - salloc -N $MULTI_PERFTEST_NODE_COUNT -n $($MULTI_PERFTEST_NODE_COUNT * 8) --account=nccl -pluna --network sharp -J "nccl-cicd::$GITLAB_USER_LOGIN:perftest-multi::$CI_COMMIT_BRANCH:$CI_COMMIT_SHORT_SHA" -t 00:10:00 ./test/scripts/gitlab-runner-perftest-sharp.sh 16G 0
   interruptible: true
 
 #perf_regression-multi-gc:
