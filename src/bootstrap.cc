@@ -105,6 +105,7 @@ static void *bootstrapRoot(void* args) {
   do {
     struct ncclSocket sock;
     sock.abortFlag = NULL;
+    /* bootstrap root thread always uses blocking ncclSocketAccept. */
     NCCLCHECKGOTO(ncclSocketAccept(&sock, listenSock), res, out);
     NCCLCHECKGOTO(bootstrapNetRecv(&sock, &info, sizeof(info)), res, out);
     close(sock.fd);

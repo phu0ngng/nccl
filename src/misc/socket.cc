@@ -332,9 +332,10 @@ ncclResult_t ncclSocketListen(struct ncclSocket* sock) {
 #endif
   }
 
-  /* make all new sockets non-blocking */
-  EQCHECK(flags = fcntl(fd, F_GETFL), -1);
-  SYSCHECK(fcntl(fd, F_SETFL, flags | O_NONBLOCK), "fcntl");
+  if (sock->asyncFlag) {
+    EQCHECK(flags = fcntl(fd, F_GETFL), -1);
+    SYSCHECK(fcntl(fd, F_SETFL, flags | O_NONBLOCK), "fcntl");
+  }
 
   // addr port should be 0 (Any port)
   SYSCHECK(bind(fd, &sock->addr.sa, salen), "bind");
