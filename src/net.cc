@@ -104,6 +104,7 @@ static ncclResult_t ncclCollNet_v4_as_v5_init(ncclDebugLogger_t logfn) {
   return ncclSuccess;
 }
 
+static pthread_mutex_t netLock = PTHREAD_MUTEX_INITIALIZER;
 ncclNet_t* ncclNets[3] = { nullptr, &ncclNetIb, &ncclNetSocket };
 ncclCollNet_t* ncclCollNets[3] = { nullptr, nullptr, nullptr };
 enum ncclNetState {
@@ -172,6 +173,7 @@ ncclResult_t ncclNetPluginInit() {
 }
 
 static ncclResult_t netGetState(int i, enum ncclNetState* state) {
+  pthread_mutex_lock(&netLock);
   if (ncclNetStates[i] == ncclNetStateInit) {
     int ndev;
     if (ncclNets[i]->init(ncclDebugLog) != ncclSuccess) ncclNetStates[i] = ncclNetStateDisabled;
@@ -179,6 +181,7 @@ static ncclResult_t netGetState(int i, enum ncclNetState* state) {
     else ncclNetStates[i] = ncclNetStateEnabled;
   }
   *state = ncclNetStates[i];
+  pthread_mutex_unlock(&netLock);
   return ncclSuccess;
 }
 
