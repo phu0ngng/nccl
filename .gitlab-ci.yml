@@ -128,14 +128,14 @@ apitest-DGX-1V:
     - srun -n 1 --account=sw-gpu -pbatch -t 00:05:00 ./test/scripts/gitlab-runner-apitest.sh
   interruptible: true
 
-apitest-DGX-A100:
+apitest-nccl-selene-ssh:
   stage: api_tests
   rules:
     - if: '$RUN_ON_SELENE == "1"'
       when: always
     - when: never
   tags:
-    - dgx-a100
+    - nccl-selene-ssh
   variables:
     CUDA_HOME: "/project/share/cuda/cuda-11.0.221/"
     NCCL_SOCKET_IFNAME: "ibp12s0"
@@ -260,15 +260,15 @@ perftest-DGX-1V:
     - salloc -N 1 -n 8 --account=sw-gpu -pbatch -t 00:05:00 ./test/scripts/gitlab-runner-perftest.sh 4G
   interruptible: true
 
-perftest-DGX-A100:
+perftest-nccl-selene-ssh:
   stage: perf_tests_single
-  needs: [build, unit_tests, apitest-DGX-A100]
+  needs: [build, unit_tests, apitest-nccl-selene-ssh]
   rules:
     - if: '$RUN_ON_SELENE == "1"'
       when: always
     - when: never
   tags:
-    - dgx-a100
+    - nccl-selene-ssh
   variables:
     NCCL_DEBUG: "WARN"
     MPI_HOME: "/home/svcnccl/install/openmpi-1.10.7"
@@ -333,13 +333,13 @@ perftest-multi-prom:
 
 perftest-multi-selene:
   stage: perf_tests_multi
-  needs: [build, perftest-DGX-A100]
+  needs: [build, perftest-nccl-selene-ssh]
   rules:
     - if: '$RUN_ON_SELENE == "1"'
       when: always
     - when: never
   tags:
-    - dgx-a100
+    - nccl-selene-ssh
   variables:
     NCCL_DEBUG: "WARN"
     MPI_HOME: "/home/svcnccl/install/openmpi-1.10.7"
@@ -354,13 +354,13 @@ perftest-multi-selene:
 
 perftest-sharp-selene:
   stage: perf_tests_multi
-  needs: [build, perftest-DGX-A100]
+  needs: [build, perftest-nccl-selene-ssh]
   rules:
     - if: '$RUN_ON_SELENE_SHARP == "1"'
       when: always
     - when: never
   tags:
-    - dgx-a100
+    - nccl-selene-ssh
   variables:
     NCCL_DEBUG: "WARN"
     MPI_HOME: "/home/svcnccl/install/openmpi-1.10.7"
