@@ -142,7 +142,7 @@ apitest-DGX-A100:
     NCCL_SOCKET_IFNAME: "ibp12s0"
     SRUN: ""
   script:
-    - srun -n 1 --account=nccl -J "nccl-cicd::$GITLAB_USER_LOGIN:apitest::$CI_COMMIT_BRANCH:$CI_COMMIT_SHORT_SHA" -pluna -t 00:05:00 ./test/scripts/gitlab-runner-apitest.sh
+    - echo pwd && echo ls && srun -n 1 --account=nccl -J "nccl-cicd::$GITLAB_USER_LOGIN:apitest::$CI_COMMIT_BRANCH:$CI_COMMIT_SHORT_SHA" -pluna -t 00:05:00 ./test/scripts/gitlab-runner-apitest.sh
   interruptible: true
 
 perftest-P100:
