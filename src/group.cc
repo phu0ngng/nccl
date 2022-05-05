@@ -211,7 +211,16 @@ ncclResult_t ncclGroupEndInternal() {
     while (comm != nullptr) {
       struct ncclComm* next = comm->groupNext;
       ncclGroupCommLeave(comm); // overwrites comm->groupNext
+      // We don't know if preconnect succeeded or happened at all, so clear
+      // the flags that let `taskAppend()` skip over checking if preconnect
+      // is needed.
       comm->preconnectNext = reinterpret_cast<struct ncclComm*>(0x1);
+      for (int i=0; i < comm->nRanks; i++) {
+        comm->tasks.peers[i].sendSeen = false;
+        comm->tasks.peers[i].recvSeen = false;
+        comm->connectSend[i] = 0;
+        comm->connectRecv[i] = 0;
+      }
       comm->unlaunchedPlansHead = nullptr;
       // Reclaim abandoned kernel plan memory. Note ncclWork structs were already
       // reclaimed by a `ncclMemoryStackPop(&comm->memScoped)` during `ncclGroupCommLeave()`.
