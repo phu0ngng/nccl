@@ -399,6 +399,40 @@ ncclResult_t ncclTopoCheckGdr(struct ncclTopoSystem* system, int64_t busId, int 
   return ncclSuccess;
 }
 
+NCCL_PARAM(NetDisableIntra, "NET_DISABLE_INTRA", 0);
+
+// Check whether going through the network would be faster than going through P2P/SHM.
+ncclResult_t ncclTopoCheckNet(struct ncclTopoSystem* system, int64_t id1, int64_t id2, int* net) {
+  if (ncclParamNetDisableIntra() == 1) {
+    *net = 0;
+    return ncclSuccess;
+  }
+  *net = 1;
+  // First check the current GPU-to-GPU speed.
+  int g1, g2;
+  if (ncclTopoIdToIndex(system, GPU, id1, &g1) != ncclSuccess ||
+      ncclTopoIdToIndex(system, GPU, id2, &g2) != ncclSuccess) {
+    return ncclSuccess;
+  }
+
+  struct ncclTopoNode* gpu1 = system->nodes[GPU].nodes+g1;
+  struct ncclTopoNode* gpu2 = system->nodes[GPU].nodes+g2;
+  float speed = gpu1->paths[GPU][g2].width;
+
+  // Now check the speed each GPU can access the network through PXB or better
+  float netSpeed1 = 0, netSpeed2 = 0;
+  for (int n=0; n<system->nodes[NET].count; n++) {
+    struct ncclTopoLinkList* path = gpu1->paths[NET]+n;
+    if (path->type <= PATH_PXB && path->width > netSpeed1) netSpeed1 = path->width;
+    path = gpu2->paths[NET]+n;
+    if (path->type <= PATH_PXB && path->width > netSpeed2) netSpeed2 = path->width;
+  }
+
+  if (netSpeed1 > speed && netSpeed2 > speed) return ncclSuccess;
+  *net = 0;
+  return ncclSuccess;
+}
+
 ncclResult_t ncclTopoGetIntermediateRank(struct ncclTopoSystem* system, int rank, int netDev, int* intermediateRank) {
   // Get GPU and NET
   int n, g;
@@ -476,17 +510,23 @@ ncclResult_t ncclTopoComputePaths(struct ncclTopoSystem* system, struct ncclComm
   // Remove everything in case we're re-computing
   for (int t=0; t<NCCL_TOPO_NODE_TYPES; t++) ncclTopoRemovePathType(system, t);
 
-  // Set direct paths from/to CPUs. We need them in many cases.
+  // Set direct paths to CPUs. We need them in many cases.
   for (int c=0; c<system->nodes[CPU].count; c++) {
     NCCLCHECK(ncclTopoSetPaths(system->nodes[CPU].nodes+c, system));
   }
 
-  // Set direct paths from/to GPUs.
+  // Set direct paths to GPUs.
   for (int g=0; g<system->nodes[GPU].count; g++) {
-    // Compute paths to GPU g
     NCCLCHECK(ncclTopoSetPaths(system->nodes[GPU].nodes+g, system));
+  }
 
-    // Update path when we don't want to / can't use GPU Direct P2P
+  // Set direct paths to NICs.
+  for (int n=0; n<system->nodes[NET].count; n++) {
+    NCCLCHECK(ncclTopoSetPaths(system->nodes[NET].nodes+n, system));
+  }
+
+  // Update path for GPUs when we don't want to / can't use GPU Direct P2P
+  for (int g=0; g<system->nodes[GPU].count; g++) {
     for (int p=0; p<system->nodes[GPU].count; p++) {
       int p2p;
       NCCLCHECK(ncclTopoCheckP2p(system, system->nodes[GPU].nodes[p].id, system->nodes[GPU].nodes[g].id, &p2p, NULL, NULL));
@@ -499,31 +539,32 @@ ncclResult_t ncclTopoComputePaths(struct ncclTopoSystem* system, struct ncclComm
     }
 
     if (comm == NULL) continue;
-    // Remove GPUs we can't talk to because of containers.
+    // Remove GPUs we can't (or don't want to) communicate with through P2P or SHM
     struct ncclPeerInfo* dstInfo = comm->peerInfo+system->nodes[GPU].nodes[g].gpu.rank;
     for (int p=0; p<system->nodes[GPU].count; p++) {
       if (p == g) continue;
       struct ncclPeerInfo* srcInfo = comm->peerInfo+system->nodes[GPU].nodes[p].gpu.rank;
-      int shm;
-      NCCLCHECK(ncclTransports[TRANSPORT_SHM]->canConnect(&shm, system, NULL, srcInfo, dstInfo));
       int p2p;
       NCCLCHECK(ncclTransports[TRANSPORT_P2P]->canConnect(&p2p, system, NULL, srcInfo, dstInfo));
-      if (shm == 0 && p2p == 0) {
-        // Mark this peer as inaccessible. We'll trim it later.
-        system->nodes[GPU].nodes[p].paths[GPU][g].count = 0;
+      if (p2p == 0) {
+        int shm;
+        NCCLCHECK(ncclTransports[TRANSPORT_SHM]->canConnect(&shm, system, NULL, srcInfo, dstInfo));
+        if (shm == 0) {
+          // Mark this peer as inaccessible. We'll trim it later.
+          system->nodes[GPU].nodes[p].paths[GPU][g].count = 0;
+        }
       }
     }
   }
 
-  // Set direct paths from/to NICs.
+  // Update paths for NICs (no GPU Direct, PXN, ...)
   for (int n=0; n<system->nodes[NET].count; n++) {
     struct ncclTopoNode* netNode = system->nodes[NET].nodes+n;
-    NCCLCHECK(ncclTopoSetPaths(netNode, system));
 
     for (int g=0; g<system->nodes[GPU].count; g++) {
       // Check whether we can access the NIC through another NVLink-connected GPU (PXN)
       struct ncclTopoNode* gpu = system->nodes[GPU].nodes+g;
-      if (ncclPxnDisable(comm) != 1 && gpu->paths[NET][n].type > PATH_PXB) {
+      if (ncclPxnDisable(comm) != 1) {
         int pxnGpu = -1;
 
         for (int p=0; p<system->nodes[GPU].count; p++) {
@@ -531,7 +572,12 @@ ncclResult_t ncclTopoComputePaths(struct ncclTopoSystem* system, struct ncclComm
 
           // PXN = PCI + NVLink.
           struct ncclTopoNode* peerNode = system->nodes[GPU].nodes+p;
-          if (peerNode->paths[NET][n].type > PATH_PXB || peerNode->paths[GPU][g].type > PATH_NVL) continue;
+          // Only use PXN for NIC n if remote GPU p ...
+          if (peerNode->paths[NET][n].type > PATH_PXB || // Is connected to the NIC through PCI
+              peerNode->paths[GPU][g].type > PATH_NVL || // Is connected to us through NVLink
+              (peerNode->paths[NET][n].width <= gpu->paths[NET][n].width && // Has either higher BW to that NIC
+               gpu->paths[NET][n].type <= PATH_PXB))                        //     or avoids going through a CPU
+            continue;
 
           pxnGpu = p;
 
