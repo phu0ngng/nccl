@@ -49,6 +49,7 @@ NCCL_API(ncclResult_t, ncclGroupStart);
 ncclResult_t ncclGroupStart() {
   NVTX3_FUNC_RANGE_IN(nccl_domain);
   NCCLCHECK(ncclGroupStartInternal());
+  TRACE_CALL("ncclGroupStart()");
   return ncclSuccess;
 }
 
@@ -56,6 +57,7 @@ NCCL_API(ncclResult_t, ncclGroupEnd);
 ncclResult_t ncclGroupEnd() {
   NVTX3_FUNC_RANGE_IN(nccl_domain);
   NCCLCHECK(ncclGroupEndInternal());
+  TRACE_CALL("ncclGroupEnd()");
   return ncclSuccess;
 }
 
@@ -256,7 +258,7 @@ ncclResult_t ncclGroupEndInternal() {
     if (ret != ncclSuccess && jobsDone && job->undo) job->undo(job);
     if (job->destructor) job->destructor((void*)job);
   }
-
+end:
   ncclGroupError = ncclSuccess;
   ncclGroupCommHead = nullptr;
   ncclGroupCommPreconnectHead = nullptr;

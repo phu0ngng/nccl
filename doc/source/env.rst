@@ -121,6 +121,8 @@ WARN - Prints an explicit error message whenever any NCCL call errors out.
 
 INFO - Prints debug information
 
+TRACE - Prints replayable trace information on every call.
+
 NCCL_BUFFSIZE
 -------------
 The ``NCCL_BUFFSIZE`` variable controls the size of the buffer used by NCCL when communicating data between pairs of GPUs.
@@ -559,7 +561,7 @@ NCCL_DEBUG_FILE
 
 The ``NCCL_DEBUG_FILE`` variable directs the NCCL debug logging output to a file.
 The filename format can be set to *filename.%h.%p* where *%h* is replaced with the
-hostname and *%p* is replaced with the process PID.
+hostname and *%p* is replaced with the process PID. This does not accept home directory (~), please convert to a relative or absolute path first.
 
 Values accepted
 ^^^^^^^^^^^^^^^

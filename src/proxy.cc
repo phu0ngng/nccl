@@ -13,6 +13,8 @@
 #define ENABLE_TIMER 0
 #include "timer.h"
 
+#include <sys/syscall.h>
+
 enum { proxyRecv=0, proxySend=1 };
 
 static bool NeedProxy(int type, int pattern, int root, struct ncclRing* ring, int nranks) {
