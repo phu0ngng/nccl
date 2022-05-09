@@ -144,7 +144,7 @@ apitest-DGX-1V:
     CUDA_HOME: "/home/bewilliams/cuda/cuda/cuda-11.3"
     SRUN: ""
   script:
-    - srun -n 1 --account=sw_gpucomms_nccl -p ci_dgx1_m3 -t 00:05:00 ./test/scripts/gitlab-runner-apitest.sh
+    - srun -n 1 --account=sw_gpucomms_nccl --nv-meta ml-model.nccl-perf -p ci_dgx1_m3 -t 00:05:00 ./test/scripts/gitlab-runner-apitest.sh
   interruptible: true
 
 apitest-DGX-2:
@@ -159,7 +159,7 @@ apitest-DGX-2:
     CUDA_HOME: "/home/bewilliams/cuda/cuda/cuda-11.3"
     SRUN: ""
   script:
-    - srun -n 1 --account=sw_gpucomms_nccl -p ci_dgx2h_m2 -t 00:05:00 ./test/scripts/gitlab-runner-apitest.sh
+    - srun -n 1 --account=sw_gpucomms_nccl --nv-meta ml-model.nccl-perf -p ci_dgx2h_m2 -t 00:05:00 ./test/scripts/gitlab-runner-apitest.sh
   interruptible: true
 
 #apitest-DGX-A100:
@@ -297,7 +297,7 @@ perftest-DGX-1V:
     CUDA_HOME: "/home/bewilliams/cuda/cuda/cuda-11.3"
     SALLOC: ""
   script:
-    - srun -N 1 -n 8 --account=sw_gpucomms_nccl -p ci_dgx1_m3 -t 00:05:00 ./test/scripts/gitlab-runner-perftest.sh 4G
+    - srun -N 1 -n 8 --account=sw_gpucomms_nccl --nv-meta ml-model.nccl-perf -p ci_dgx1_m3 -t 00:05:00 ./test/scripts/gitlab-runner-perftest.sh 4G
   interruptible: true
 
 perftest-DGX-2:
@@ -314,7 +314,7 @@ perftest-DGX-2:
     CUDA_HOME: "/home/bewilliams/cuda/cuda/cuda-11.3"
     SALLOC: ""
   script:
-    - srun -N 1 -n 16 --account=sw_gpucomms_nccl -p ci_dgx2_m2 -t 00:05:00 ./test/scripts/gitlab-runner-perftest.sh 4G
+    - srun -N 1 -n 16 --account=sw_gpucomms_nccl --nv-meta ml-model.nccl-perf -p ci_dgx2_m2 -t 00:05:00 ./test/scripts/gitlab-runner-perftest.sh 4G
   interruptible: true
 
 # perftest-DGX-A100:
