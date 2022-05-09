@@ -140,14 +140,16 @@ apitest-DGX-A100:
   only:
     - schedules
     - merge_requests
+  rules:
+    - if: '$RUN_ON_SELENE == "1"'
+      when: always
+    - when: never
   script:
-# Hack - Using gitlab built-in rules engine causes issues with merge request pipelines
-    - if [ $RUN_ON_SELENE -lt 1 ]; then exit 0; fi && srun -n 1 --account=nccl -J "nccl-cicd::$GITLAB_USER_LOGIN:apitest::$CI_COMMIT_BRANCH:$CI_COMMIT_SHORT_SHA" -pluna -t 00:05:00 ./test/scripts/gitlab-runner-apitest.sh
+    - srun -n 1 --account=nccl -J "nccl-cicd::$GITLAB_USER_LOGIN:apitest::$CI_COMMIT_BRANCH:$CI_COMMIT_SHORT_SHA" -pluna -t 00:05:00 ./test/scripts/gitlab-runner-apitest.sh
   interruptible: true
 
 perftest-P100:
   stage: perf_tests_single
-  needs: [build, unit_tests, apitest-P100]
   tags:
     - p100
   variables:
@@ -161,7 +163,6 @@ perftest-P100:
 
 perftest-P40:
   stage: perf_tests_single
-  needs: [build, unit_tests, apitest-P40]
   tags:
     - p40
   variables:
@@ -175,7 +176,6 @@ perftest-P40:
 
 perftest-GP100:
   stage: perf_tests_single
-  needs: [build, unit_tests, apitest-GP100]
   tags:
     - gp100
   variables:
@@ -189,7 +189,6 @@ perftest-GP100:
 
 perftest-M40:
   stage: perf_tests_single
-  needs: [build, unit_tests, apitest-M40]
   tags:
     - m40
   variables:
@@ -203,7 +202,6 @@ perftest-M40:
 
 perftest-K80:
   stage: perf_tests_single
-  needs: [build, unit_tests, apitest-K80]
   tags:
     - k80
   variables:
@@ -217,7 +215,6 @@ perftest-K80:
 
 perftest-K40:
   stage: perf_tests_single
-  needs: [build, unit_tests, apitest-single-K40]
   tags:
     - k40
   variables:
@@ -231,7 +228,6 @@ perftest-K40:
 
 perftest-A100:
   stage: perf_tests_single
-  needs: [build, unit_tests, apitest-A100]
   tags:
     - a100pci
   variables:
@@ -245,7 +241,6 @@ perftest-A100:
 
 perftest-DGX-1V:
   stage: perf_tests_single
-  needs: [build, unit_tests, apitest-DGX-1V]
   rules:
     - if: '$RUN_ON_PROM == "1"'
       when: always
@@ -263,7 +258,6 @@ perftest-DGX-1V:
 
 perftest-DGX-A100:
   stage: perf_tests_single
-  needs: [build, unit_tests, apitest-DGX-A100]
   tags:
     - nccl-selene
   variables:
@@ -274,14 +268,16 @@ perftest-DGX-A100:
   only:
     - schedules
     - merge_requests
+  rules:
+    - if: '$RUN_ON_SELENE == "1"'
+      when: always
+    - when: never
   script:
-# Hack - Using gitlab built-in rules engine causes issues with merge request pipelines
-    -  if [ $RUN_ON_SELENE -lt 1 ]; then exit 0; fi && salloc -N 1 -n 8 --account=nccl -pluna -J "nccl-cicd::$GITLAB_USER_LOGIN:perftest-single::$CI_COMMIT_BRANCH:$CI_COMMIT_SHORT_SHA" -t 00:05:00 ./test/scripts/gitlab-runner-perftest.sh 16G
+    -  salloc -N 1 -n 8 --account=nccl -pluna -J "nccl-cicd::$GITLAB_USER_LOGIN:perftest-single::$CI_COMMIT_BRANCH:$CI_COMMIT_SHORT_SHA" -t 00:05:00 ./test/scripts/gitlab-runner-perftest.sh 16G
   interruptible: true
 
 perftest-multi-gc:
   stage: perf_tests_multi
-  needs: [build, perftest-P100]
   tags:
     - p100
   variables:
@@ -296,7 +292,6 @@ perftest-multi-gc:
 
 perftest-sharp-gc:
   stage: perf_tests_multi
-  needs: [build, perftest-P100]
   tags:
     - p100
   variables:
@@ -334,7 +329,6 @@ perftest-sharp-gc:
 
 perftest-multi-selene:
   stage: perf_tests_multi
-  needs: [build, perftest-DGX-A100]
   tags:
     - nccl-selene
   variables:
@@ -345,17 +339,19 @@ perftest-multi-selene:
     OMPI_MCA_btl: "^openib"
     OMPI_MCA_btl_tcp_if_include: "enp97s0f1"
     SALLOC: ""
+  rules:
+    - if: '$RUN_ON_SELENE == "1"'
+      when: always
+    - when: never
   only:
     - schedules
     - merge_requests
   script:
-# Hack - Using gitlab built-in rules engine causes issues with merge request pipelines
-    - if [ $RUN_ON_SELENE -lt 1 ]; then exit 0; fi && let NUM_PROCESSES=$MULTI_PERFTEST_NODE_COUNT*8 && salloc -N $MULTI_PERFTEST_NODE_COUNT -n $NUM_PROCESSES --account=nccl -pluna -J "nccl-cicd::$GITLAB_USER_LOGIN:perftest-multi::$CI_COMMIT_BRANCH:$CI_COMMIT_SHORT_SHA" -t 00:10:00 ./test/scripts/gitlab-runner-perftest.sh 16G 0
+    - let NUM_PROCESSES=$MULTI_PERFTEST_NODE_COUNT*8 && salloc -N $MULTI_PERFTEST_NODE_COUNT -n $NUM_PROCESSES --account=nccl -pluna -J "nccl-cicd::$GITLAB_USER_LOGIN:perftest-multi::$CI_COMMIT_BRANCH:$CI_COMMIT_SHORT_SHA" -t 00:10:00 ./test/scripts/gitlab-runner-perftest.sh 16G 0
   interruptible: true
 
 perftest-sharp-selene:
   stage: perf_tests_multi
-  needs: [build, perftest-DGX-A100]
   tags:
     - nccl-selene
   variables:
@@ -368,17 +364,19 @@ perftest-sharp-selene:
     OMPI_MCA_btl: "^openib"
     OMPI_MCA_btl_tcp_if_include: "enp97s0f1"
     SALLOC: ""
+  rules:
+    - if: '$RUN_ON_SELENE_SHARP == "1"'
+      when: always
+    - when: never
   only:
     - schedules
     - merge_requests
   script:
-# Hack - Using gitlab built-in rules engine causes issues with merge request pipelines
-    - if [ $RUN_ON_SELENE_SHARP -lt 1 ]; then exit 0; fi && let NUM_PROCESSES=$MULTI_PERFTEST_NODE_COUNT*8 && salloc -N $MULTI_PERFTEST_NODE_COUNT -n $NUM_PROCESSES --account=nccl -pluna --network sharp -J "nccl-cicd::$GITLAB_USER_LOGIN:perftest-multi::$CI_COMMIT_BRANCH:$CI_COMMIT_SHORT_SHA" -t 00:10:00 ./test/scripts/gitlab-runner-perftest-sharp.sh 16G 0
+    - let NUM_PROCESSES=$MULTI_PERFTEST_NODE_COUNT*8 && salloc -N $MULTI_PERFTEST_NODE_COUNT -n $NUM_PROCESSES --account=nccl -pluna --network sharp -J "nccl-cicd::$GITLAB_USER_LOGIN:perftest-multi::$CI_COMMIT_BRANCH:$CI_COMMIT_SHORT_SHA" -t 00:10:00 ./test/scripts/gitlab-runner-perftest-sharp.sh 16G 0
   interruptible: true
 
 perftest-sharp-selene:
   stage: perf_tests_multi
-  needs: [build, perftest-DGX-A100]
   tags:
     - nccl-selene
   variables:
@@ -391,12 +389,15 @@ perftest-sharp-selene:
     OMPI_MCA_btl: "^openib"
     OMPI_MCA_btl_tcp_if_include: "enp97s0f1"
     SALLOC: ""
+  rules:
+    - if: '$RUN_ON_SELENE_SHARP == "1"'
+      when: always
+    - when: never
   only:
     - schedules
     - merge_requests
   script:
-# Hack - Using gitlab built-in rules engine causes issues with merge request pipelines
-    - if [ $RUN_ON_SELENE_SHARP -lt 1 ]; then exit 0; fi && let NUM_PROCESSES=$MULTI_PERFTEST_NODE_COUNT*8 && salloc -N $MULTI_PERFTEST_NODE_COUNT -n $NUM_PROCESSES --account=nccl -pluna --network sharp -J "nccl-cicd::$GITLAB_USER_LOGIN:perftest-multi::$CI_COMMIT_BRANCH:$CI_COMMIT_SHORT_SHA" -t 00:10:00 ./test/scripts/gitlab-runner-perftest-sharp.sh 16G 0
+    - let NUM_PROCESSES=$MULTI_PERFTEST_NODE_COUNT*8 && salloc -N $MULTI_PERFTEST_NODE_COUNT -n $NUM_PROCESSES --account=nccl -pluna --network sharp -J "nccl-cicd::$GITLAB_USER_LOGIN:perftest-multi::$CI_COMMIT_BRANCH:$CI_COMMIT_SHORT_SHA" -t 00:10:00 ./test/scripts/gitlab-runner-perftest-sharp.sh 16G 0
   interruptible: true
 
 #perf_regression-multi-gc:
