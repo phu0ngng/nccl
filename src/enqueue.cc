@@ -17,9 +17,9 @@ static void* const ncclKernelGeneric = (void*)NCCL_KERN_NAME(SendRecv, RING, SIM
 
 // Only generate inline kernels for LL
 #define NCCL_FUNC5(func, algo, devredop, dtype) \
-  nullptr, /* (void*)NCCL_KERN_NAME(func, algo, LL, devredop, dtype), */ \
-  (void*)NCCL_KERN_NAME(func, algo, LL, devredop, dtype), \
-  nullptr /*(void*)NCCL_KERN_NAME(func, algo, LL, devredop, dtype)*/
+  /*LL    */(void*)NCCL_KERN_NAME(func, algo, LL, devredop, dtype), \
+  /*LL128 */nullptr /*(void*)NCCL_KERN_NAME(func, algo, LL, devredop, dtype)*/, \
+  /*SIMPLE*/nullptr /*(void*)NCCL_KERN_NAME(func, algo, LL, devredop, dtype)*/
 
 #define NCCL_FUNC4(func, devredop, type) \
   (void*)NCCL_FUNC5(func, TREE,    devredop, type), \
