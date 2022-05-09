@@ -12,6 +12,7 @@
 #include "channel.h"
 
 #include <cstring> // std::memcpy
+#include <cinttypes> // PRIx64
 
 static void* const ncclKernelGeneric = (void*)NCCL_KERN_NAME(SendRecv, RING, SIMPLE, Sum, int8_t);
 
@@ -1452,6 +1453,7 @@ ncclResult_t ncclEnqueueCheck(struct ncclInfo* info) {
   INFO(NCCL_COLL,"%s: opCount %lx sendbuff %p recvbuff %p count %zi datatype %d op %d root %d comm %p [nranks=%d] stream %p",
         info->opName, info->comm->opCount, info->sendbuff, info->recvbuff, info->count,
         info->datatype, info->op, info->root, info->comm, info->comm->nRanks, info->stream);
+  TRACE_CALL("nccl%s(%" PRIx64 ",%" PRIx64 ",%zi,%d,%d,%d,%p,%p)", info->opName, info->sendbuff, info->recvbuff, info->count, info->datatype, info->op, info->root, info->comm, info->stream);
 
   ncclGroupCommJoin(info->comm);
   NCCLCHECKGOTO(taskAppend(info->comm, info), ret, end1);
@@ -1495,6 +1497,7 @@ ncclResult_t ncclRedOpCreatePreMulSum(ncclRedOp_t *op, void *scalar, ncclDataTyp
   }
   *op = ncclRedOp_t(int(ncclNumOps) + ix);
   *op = ncclUserRedOpMangle(comm, *op);
+  TRACE_CALL("ncclRedOpCreatePreMulSum(%d,%p,%d,%d,%p)", *op, scalar, datatype, residence, comm);
   return ncclSuccess;
 }
 
@@ -1516,5 +1519,6 @@ ncclResult_t ncclRedOpDestroy(ncclRedOp_t op, ncclComm_t comm) {
   // push to free list
   comm->userRedOps[ix].freeNext = comm->userRedOpFreeHead;
   comm->userRedOpFreeHead = ix;
+  TRACE_CALL("ncclRedOpDestroy(%d,%p)", op, comm);
   return ncclSuccess;
 }

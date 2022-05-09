@@ -13,6 +13,7 @@
 #include <cstdio>
 #include <cstdint>
 #include <cmath>
+#include <unistd.h>
 
 using std::size_t;
 using std::int8_t;
@@ -804,7 +805,9 @@ __global__ void prepareInput2(
   while(i < i1) {
     elts[i] = genInput<T>(op, rank_n, rank_me, seed, elt_ix0+i);
     #if 0
-    printf("seed=0x%llx r=%d ix=%lld x=%g elts=%p\n", (long long)seed, int(rank_me), (long long)i, (float)elts[i], elts);
+    T output = genOutput<T>(op, rank_n, seed, elt_ix0+i);
+    printf("prepareInput2 T=%d seed=0x%llx r=%d ix=%lld x=%g output=%g elts=%p\n",
+      std::is_same<T,int>::value, (long long)seed, int(rank_me), (long long)i, (float)elts[i], (float)output, elts);
     #endif
     i += blockDim.x;
   }
@@ -875,7 +878,8 @@ __global__ void prepareExpected2(
   while(i < i1) {
     elts[i] = genOutput<T>(op, rank_n, seed, elt_ix0+i);
     #if 0
-    printf("seed=0x%llx ix=%lld x=%g elts=%p\n", (long long)seed, (long long)(elt_ix0+i), (float)elts[i], elts);
+    printf("prepareExpected2 seed=0x%llx ix=%lld x=%g elts=%p\n",
+      (long long)seed, (long long)(elt_ix0+i), (float)elts[i], elts);
     #endif
     i += blockDim.x;
   }
@@ -1008,12 +1012,12 @@ __global__ void verifyPrepared(
     bad += tolerance < delta ? 1 : 0;
     #if 0
       if(tolerance < delta) {
-        printf("ix=%lld got=%g exp=%g\n", (long long)i, (float)results[i], (float)expected[i]);
+        printf("verifyPrepared ix=%lld got=%g exp=%g\n", (long long)i, (float)results[i], (float)expected[i]);
       }
     #endif
     i += blockDim.x;
   }
-  asm("red.global.add.u64 [%0],%1;" :: "l"(bad_elt_n), "l"(bad));
+  asm volatile("red.global.add.u64 [%0],%1;" :: "l"(bad_elt_n), "l"(bad));
 }
 
 template<typename T, typename Uint, typename ReduceFn>
@@ -1035,13 +1039,18 @@ __global__ void verifyInline2(
     Uint delta = a.u < b.u ? b.u - a.u : a.u - b.u;
     bad += tolerance < delta ? 1 : 0;
     #if 0
+      T input = genInput<T>(op, rank_n, 0, seed, elt_ix0+i);
       if(tolerance < delta) {
-        printf("ix=%lld got=%g exp=%g\n", (long long)i, (float)a.t, (float)b.t);
+        printf("verifyInline2 fail T=%d ix=%lld got=%g exp=%g input=%g\n",
+          std::is_same<T,int>::value, (long long)i, (float)a.t, (float)b.t, (float)input);
+      } else {
+        printf("verifyInline2 pass T=%d ix=%lld got=%g exp=%g input=%g\n",
+          std::is_same<T,int>::value, (long long)i, (float)a.t, (float)b.t, (float)input);
       }
     #endif
     i += blockDim.x;
   }
-  asm("red.global.add.u64 [%0],%1;" :: "l"(bad_elt_n), "l"(bad));
+  asm volatile("red.global.add.u64 [%0],%1;" :: "l"(bad_elt_n), "l"(bad));
 }
 
 template<typename T, typename Uint>
@@ -1050,6 +1059,10 @@ void verifyInline1(
     unsigned tolerance, int64_t *bad_elt_n, cudaStream_t stream, int block_n
   ) {
   #define CASE_OP(op) \
+    if(rank_n == 1) \
+    verifyInline2<T, Uint><<<block_n, 512, 0, stream>>> \
+      ((T const*)results, elt_n, ReduceNil(), rank_n, seed, elt_ix0, tolerance, bad_elt_n); \
+    else \
     verifyInline2<T, Uint><<<block_n, 512, 0, stream>>> \
       ((T const*)results, elt_n, op, rank_n, seed, elt_ix0, tolerance, bad_elt_n); \
     break;

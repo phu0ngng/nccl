@@ -182,10 +182,11 @@ __device__ void ncclKernel(
     }
     __syncthreads();
 
-    if (ncclShmem.work.header.funcIndex == FnIndex)
+    if (ncclShmem.work.header.funcIndex == FnIndex) {
       RunWork<Fn, T, RedOp, Algo, Proto>().run(&ncclShmem.work);
-    else
+    } else {
       ncclFuncs[ncclShmem.work.header.funcIndex]();
+    }
 
     int workIxNext = ncclShmem.work.header.workNext;
     __syncthreads();

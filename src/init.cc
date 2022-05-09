@@ -28,10 +28,6 @@
 #define STR2(v) #v
 #define STR(v) STR2(v)
 
-#ifdef ENABLE_TRACE
-std::chrono::high_resolution_clock::time_point ncclEpoch;
-#endif
-
 #if CUDART_VERSION >= 9020
 #define NCCL_GROUP_CUDA_STREAM 0 // CGMD: CUDA 9.2,10.X Don't need to use an internal CUDA stream
 #else
@@ -45,6 +41,17 @@ const char* ncclProtoStr[NCCL_NUM_PROTOCOLS] = { "LL", "LL128", "Simple" };
 NCCL_PARAM(GroupCudaStream, "GROUP_CUDA_STREAM", NCCL_GROUP_CUDA_STREAM);
 
 NCCL_PARAM(CheckPointers, "CHECK_POINTERS", 0);
+
+static uint64_t hashUniqueId(ncclUniqueId const &id) {
+  char const *bytes = (char const*)&id;
+  uint64_t h = 0xdeadbeef;
+  for(int i=0; i < (int)sizeof(ncclUniqueId); i++) {
+    h ^= h >> 32;
+    h *= 0x8db3db47fa2994ad;
+    h += bytes[i];
+  }
+  return h;
+}
 
 // GDRCOPY support: Off by default
 NCCL_PARAM(GdrCopyEnable, "GDRCOPY_ENABLE", 0);
@@ -95,7 +102,9 @@ NCCL_API(ncclResult_t, ncclGetUniqueId, ncclUniqueId* out);
 ncclResult_t ncclGetUniqueId(ncclUniqueId* out) {
   NCCLCHECK(ncclInit());
   NCCLCHECK(PtrCheck(out, "GetUniqueId", "out"));
-  return bootstrapGetUniqueId(out);
+  ncclResult_t res = bootstrapGetUniqueId(out);
+  TRACE_CALL("ncclGetUniqueId(0x%llx)", (unsigned long long)hashUniqueId(*out));
+  return res;
 }
 
 // Prevent compiler from optimizing out these operations
@@ -1007,7 +1016,7 @@ static ncclResult_t ncclCommInitRankFunc(struct ncclAsyncJob* job_) {
   NCCLCHECKGOTO(devCommSetup(*newcomm), res, cleanup);
 
   INFO(NCCL_INIT,"comm %p rank %d nranks %d cudaDev %d busId %lx - Init COMPLETE", *newcomm, myrank, nranks, (*newcomm)->cudaDev, (*newcomm)->busId);
-
+  TRACE_CALL("ncclCommInitRank(%p,%d,0x%llx,%d,%d)", *newcomm, nranks, (unsigned long long)hashUniqueId(commId), myrank, (*newcomm)->cudaDev);
   return ncclSuccess;
 cleanup:
   if ((*newcomm) && (*newcomm)->bootstrap) bootstrapAbort((*newcomm)->bootstrap);
