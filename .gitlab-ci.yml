@@ -156,7 +156,7 @@ apitest-DGX-A100:
   tags:
     - nccl-selene
   variables:
-    CUDA_HOME: "/project/share/cuda/cuda-11.3.0/"
+    CUDA_HOME: "/project/share/cuda/cuda-11.5.1/"
     NCCL_SOCKET_IFNAME: "ibp12s0"
     SRUN: ""
   script:
@@ -296,7 +296,7 @@ perftest-DGX-A100:
   variables:
     NCCL_DEBUG: "WARN"
     MPI_HOME: "/home/svcnccl/install/openmpi-1.10.7"
-    CUDA_HOME: "/project/share/cuda/cuda-11.3.0/"
+    CUDA_HOME: "/project/share/cuda/cuda-11.5.1/"
     SALLOC: ""
   script:
     -  salloc -N 1 -n 8 --account=nccl -pluna -J "nccl-cicd::$GITLAB_USER_LOGIN:perftest-single::$CI_COMMIT_BRANCH:$CI_COMMIT_SHORT_SHA" -t 00:05:00 ./test/scripts/gitlab-runner-perftest.sh 16G
@@ -368,7 +368,7 @@ perftest-multi-selene:
   variables:
     NCCL_DEBUG: "WARN"
     MPI_HOME: "/home/svcnccl/install/openmpi-1.10.7"
-    CUDA_HOME: "/project/share/cuda/cuda-11.3.0/"
+    CUDA_HOME: "/project/share/cuda/cuda-11.5.1/"
     NCCL_IB_SL: "1"
     OMPI_MCA_btl: "^openib"
     OMPI_MCA_btl_tcp_if_include: "enp97s0f1"
@@ -388,7 +388,7 @@ perftest-sharp-selene:
   variables:
     NCCL_DEBUG: "WARN"
     MPI_HOME: "/home/svcnccl/install/openmpi-1.10.7"
-    CUDA_HOME: "/project/share/cuda/cuda-11.3.0/"
+    CUDA_HOME: "/project/share/cuda/cuda-11.5.1/"
     SHARP_HOME: "/project/share/hpcx/hpcx-v2.9.0-gcc-MLNX_OFED_LINUX-5.2-1.0.4.0-ubuntu20.04-x86_64/sharp"
     PLUGIN_PATH: "/project/share/hpcx/hpcx-v2.9.0-gcc-MLNX_OFED_LINUX-5.2-1.0.4.0-ubuntu20.04-x86_64/nccl_rdma_sharp_plugin/lib"
     NCCL_IB_SL: "1"
@@ -410,7 +410,7 @@ perftest-sharp-selene:
   variables:
     NCCL_DEBUG: "WARN"
     MPI_HOME: "/home/svcnccl/install/openmpi-1.10.7"
-    CUDA_HOME: "/project/share/cuda/cuda-11.3.0/"
+    CUDA_HOME: "/project/share/cuda/cuda-11.5.1/"
     SHARP_HOME: "/project/share/hpcx/hpcx-v2.9.0-gcc-MLNX_OFED_LINUX-5.2-1.0.4.0-ubuntu20.04-x86_64/sharp"
     PLUGIN_PATH: "/project/share/hpcx/hpcx-v2.9.0-gcc-MLNX_OFED_LINUX-5.2-1.0.4.0-ubuntu20.04-x86_64/nccl_rdma_sharp_plugin/lib"
     NCCL_IB_SL: "1"
