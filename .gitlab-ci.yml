@@ -138,12 +138,8 @@ apitest-DGX-A100:
     NCCL_SOCKET_IFNAME: "ibp12s0"
     SRUN: ""
   rules:
-    - if: $CI_PIPELINE_SOURCE == 'merge_request_event'
+    - if: ($CI_PIPELINE_SOURCE == 'merge_request_event' || $CI_PIPELINE_SOURCE == 'schedule') && $RUN_ON_SELENE == "1"
       when: always
-    - if: $CI_PIPELINE_SOURCE == 'schedule'
-      when: always
-    - if: '$RUN_ON_SELENE == "0"'
-      when: never
     - when: never
   script:
     - srun -n 1 --account=nccl -J "nccl-cicd::$GITLAB_USER_LOGIN:apitest::$CI_COMMIT_BRANCH:$CI_COMMIT_SHORT_SHA" -pluna -t 00:05:00 ./test/scripts/gitlab-runner-apitest.sh
@@ -267,12 +263,8 @@ perftest-DGX-A100:
     CUDA_HOME: "/project/share/cuda/cuda-11.3.0/"
     SALLOC: ""
   rules:
-    - if: $CI_PIPELINE_SOURCE == 'merge_request_event'
+    - if: ($CI_PIPELINE_SOURCE == 'merge_request_event' || $CI_PIPELINE_SOURCE == 'schedule') && $RUN_ON_SELENE == "1"
       when: always
-    - if: $CI_PIPELINE_SOURCE == 'schedule'
-      when: always
-    - if: '$RUN_ON_SELENE == "0"'
-      when: never
     - when: never
   script:
     -  salloc -N 1 -n 8 --account=nccl -pluna -J "nccl-cicd::$GITLAB_USER_LOGIN:perftest-single::$CI_COMMIT_BRANCH:$CI_COMMIT_SHORT_SHA" -t 00:05:00 ./test/scripts/gitlab-runner-perftest.sh 16G
@@ -342,12 +334,8 @@ perftest-multi-selene:
     OMPI_MCA_btl_tcp_if_include: "enp97s0f1"
     SALLOC: ""
   rules:
-    - if: $CI_PIPELINE_SOURCE == 'merge_request_event'
+    - if: ($CI_PIPELINE_SOURCE == 'merge_request_event' || $CI_PIPELINE_SOURCE == 'schedule') && $RUN_ON_SELENE == "1"
       when: always
-    - if: $CI_PIPELINE_SOURCE == 'schedule'
-      when: always
-    - if: '$RUN_ON_SELENE == "0"'
-      when: never
     - when: never
   script:
     - let NUM_PROCESSES=$MULTI_PERFTEST_NODE_COUNT*8 && salloc -N $MULTI_PERFTEST_NODE_COUNT -n $NUM_PROCESSES --account=nccl -pluna -J "nccl-cicd::$GITLAB_USER_LOGIN:perftest-multi::$CI_COMMIT_BRANCH:$CI_COMMIT_SHORT_SHA" -t 00:10:00 ./test/scripts/gitlab-runner-perftest.sh 16G 0
@@ -368,12 +356,8 @@ perftest-sharp-selene:
     OMPI_MCA_btl_tcp_if_include: "enp97s0f1"
     SALLOC: ""
   rules:
-    - if: $CI_PIPELINE_SOURCE == 'merge_request_event'
+    - if: ($CI_PIPELINE_SOURCE == 'merge_request_event' || $CI_PIPELINE_SOURCE == 'schedule') && $RUN_ON_SELENE_SHARP == "1"
       when: always
-    - if: $CI_PIPELINE_SOURCE == 'schedule'
-      when: always
-    - if: '$RUN_ON_SELENE_SHARP == "0"'
-      when: never
     - when: never
   script:
     - let NUM_PROCESSES=$MULTI_PERFTEST_NODE_COUNT*8 && salloc -N $MULTI_PERFTEST_NODE_COUNT -n $NUM_PROCESSES --account=nccl -pluna --network sharp -J "nccl-cicd::$GITLAB_USER_LOGIN:perftest-multi::$CI_COMMIT_BRANCH:$CI_COMMIT_SHORT_SHA" -t 00:10:00 ./test/scripts/gitlab-runner-perftest-sharp.sh 16G 0
@@ -394,12 +378,8 @@ perftest-sharp-selene:
     OMPI_MCA_btl_tcp_if_include: "enp97s0f1"
     SALLOC: ""
   rules:
-    - if: $CI_PIPELINE_SOURCE == 'merge_request_event'
+    - if: ($CI_PIPELINE_SOURCE == 'merge_request_event' || $CI_PIPELINE_SOURCE == 'schedule') && $RUN_ON_SELENE_SHARP == "1"
       when: always
-    - if: $CI_PIPELINE_SOURCE == 'schedule'
-      when: always
-    - if: '$RUN_ON_SELENE_SHARP == "0"'
-      when: never
     - when: never
   script:
     - let NUM_PROCESSES=$MULTI_PERFTEST_NODE_COUNT*8 && salloc -N $MULTI_PERFTEST_NODE_COUNT -n $NUM_PROCESSES --account=nccl -pluna --network sharp -J "nccl-cicd::$GITLAB_USER_LOGIN:perftest-multi::$CI_COMMIT_BRANCH:$CI_COMMIT_SHORT_SHA" -t 00:10:00 ./test/scripts/gitlab-runner-perftest-sharp.sh 16G 0
