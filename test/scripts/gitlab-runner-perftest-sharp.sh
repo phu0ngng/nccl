@@ -23,7 +23,6 @@ failure_count = 0
 
 echo "=============================== all_reduce (CollNet) ================================="
 $SALLOC $MPI_HOME/bin/mpirun ./build/test/perf/all_reduce_perf $range $opts
-status = $?
-[ $status -neq 0 ] && failure_count=$($failure_count + 1)
+[ $? -neq 0 ] && failure_count=$($failure_count + 1)
 
 exit $failure_count

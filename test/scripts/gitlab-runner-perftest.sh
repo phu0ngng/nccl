@@ -19,16 +19,14 @@ failure_count = 0
 for func in all_reduce reduce reduce_scatter broadcast all_gather alltoall gather scatter sendrecv hypercube; do
   echo "=============================== $func (all sizes) ================================="
   $SALLOC $MPI_HOME/bin/mpirun ./build/test/perf/${func}_perf $range $opts
-  status = $?
-  [ $status -neq 0 ] && failure_count=$($failure_count + 1)
+  [ $? -neq 0 ] && failure_count=$($failure_count + 1)
 done
 
 rangetype="-b 16M -e 16M -o all -d all"
 for func in all_reduce reduce reduce_scatter; do
   echo "=============================== $func (all ops/dtype)  ================================="
   $SALLOC $MPI_HOME/bin/mpirun ./build/test/perf/all_reduce_perf $rangetype $opts
-  status = $?
-  [ $status -neq 0 ] && failure_count=$($failure_count + 1)
+  [ $? -neq 0 ] && failure_count=$($failure_count + 1)
 done
 
 exit $failure_count
