@@ -31,8 +31,7 @@ unit_tests:
   stage: unit_tests
   rules:
     - when: always
-  needs:
-
+  needs: [build]
   tags:
     - build
   variables:
@@ -300,7 +299,7 @@ perftest-DGX-A100:
     - if: ($CI_PIPELINE_SOURCE == 'merge_request_event' || $CI_PIPELINE_SOURCE == 'schedule') && $RUN_ON_SELENE == "1"
       when: always
     - when: never
-  needs: [build, apitest-DGX-A100]
+  needs: [build, unit_tests, apitest-DGX-A100]
   tags:
     - nccl-selene
   variables:
@@ -316,7 +315,7 @@ perftest-multi-gc:
   stage: perf_tests_multi
   rules:
     - when: always
-  needs: [build, perftest-P100]
+  needs: [build, unit_tests, perftest-P100]
   tags:
     - p100
   variables:
@@ -333,7 +332,7 @@ perftest-sharp-gc:
   stage: perf_tests_multi
   rules:
     - when: always
-  needs: [build, perftest-P100]
+  needs: [build, unit_tests, perftest-P100]
   tags:
     - p100
   variables:
@@ -375,7 +374,7 @@ perftest-multi-selene:
     - if: ($CI_PIPELINE_SOURCE == 'merge_request_event' || $CI_PIPELINE_SOURCE == 'schedule') && $RUN_ON_SELENE == "1"
       when: always
     - when: never
-  needs: [build, perftest-DGX-A100]
+  needs: [build, unit_tests, perftest-DGX-A100]
   tags:
     - nccl-selene
   variables:
@@ -396,7 +395,7 @@ perftest-sharp-selene:
     - if: ($CI_PIPELINE_SOURCE == 'merge_request_event' || $CI_PIPELINE_SOURCE == 'schedule') && $RUN_ON_SELENE_SHARP == "1"
       when: always
     - when: never
-  needs: [build, perftest-DGX-A100]
+  needs: [build, unit_tests, perftest-DGX-A100]
   tags:
     - nccl-selene
   variables:
@@ -410,7 +409,7 @@ perftest-sharp-selene:
     OMPI_MCA_btl_tcp_if_include: "enp97s0f1"
     SALLOC: ""
   script:
-    - let NUM_PROCESSES=$MULTI_PERFTEST_NODE_COUNT*8 && salloc -N $MULTI_PERFTEST_NODE_COUNT -n $NUM_PROCESSES --account=nccl -pluna --network sharp -J "nccl-cicd::$GITLAB_USER_LOGIN:perftest-multi::$CI_COMMIT_BRANCH:$CI_COMMIT_SHORT_SHA" -t 00:10:00 ./test/scripts/gitlab-runner-perftest-sharp.sh 16G 0
+    - let NUM_PROCESSES=$MULTI_PERFTEST_NODE_COUNT*8 && salloc -N $MULTI_PERFTEST_NODE_COUNT -n $NUM_PROCESSES --account=nccl -pluna --over-commit --network=sharp --constraint=nccl -J "nccl-cicd::$GITLAB_USER_LOGIN:perftest-multi::$CI_COMMIT_BRANCH:$CI_COMMIT_SHORT_SHA" -t 00:10:00 ./test/scripts/gitlab-runner-perftest-sharp.sh 16G 0
   interruptible: true
 
 #perf_regression-multi-gc:
