@@ -712,11 +712,11 @@ NCCL_GRAPH_MIXING_SUPPORT
 
 Enable/disable support for co-occurring outstanding NCCL launches from multiple
 CUDA graphs or a CUDA graph and non-captured NCCL calls. With support disabled,
-correctness is only guarnateed if the communicator always avoids boths of the
+correctness is only guarnateed if the communicator always avoids both of the
 following cases:
 
 1. Has outstanding parallel graph launches, where parallel means on different
-streams without dependencies that would otherwise serializing their execution.
+streams without dependencies that would otherwise serialize their execution.
 
 2. An outstanding graph launch followed by a non-captured launch. Stream
 dependencies are irrelevant.
