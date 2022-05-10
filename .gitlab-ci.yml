@@ -155,7 +155,7 @@ apitest-DGX-A100:
       when: always
     - when: never
   tags:
-    - nccl-selene
+    - dgx-a100
   variables:
     CUDA_HOME: "/project/share/cuda/cuda-11.5.1/"
     NCCL_SOCKET_IFNAME: "ibp12s0"
@@ -301,7 +301,7 @@ perftest-DGX-A100:
     - when: never
   needs: [build, unit_tests, apitest-DGX-A100]
   tags:
-    - nccl-selene
+    - dgx-a100
   variables:
     NCCL_DEBUG: "WARN"
     MPI_HOME: "/home/svcnccl/install/openmpi-1.10.7"
@@ -376,7 +376,7 @@ perftest-multi-selene:
     - when: never
   needs: [build, unit_tests, perftest-DGX-A100]
   tags:
-    - nccl-selene
+    - dgx-a100
   variables:
     NCCL_DEBUG: "WARN"
     MPI_HOME: "/home/svcnccl/install/openmpi-1.10.7"
@@ -397,7 +397,7 @@ perftest-sharp-selene:
     - when: never
   needs: [build, unit_tests, perftest-DGX-A100]
   tags:
-    - nccl-selene
+    - dgx-a100
   variables:
     NCCL_DEBUG: "WARN"
     MPI_HOME: "/home/svcnccl/install/openmpi-1.10.7"
