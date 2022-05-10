@@ -300,7 +300,7 @@ perftest-DGX-A100:
     - if: ($CI_PIPELINE_SOURCE == 'merge_request_event' || $CI_PIPELINE_SOURCE == 'schedule') && $RUN_ON_SELENE == "1"
       when: always
     - when: never
-  needs: [apitest-DGX-A100]
+  needs: [build, apitest-DGX-A100]
   tags:
     - nccl-selene
   variables:
@@ -375,7 +375,7 @@ perftest-multi-selene:
     - if: ($CI_PIPELINE_SOURCE == 'merge_request_event' || $CI_PIPELINE_SOURCE == 'schedule') && $RUN_ON_SELENE == "1"
       when: always
     - when: never
-  needs: [perftest-DGX-A100]
+  needs: [build, perftest-DGX-A100]
   tags:
     - nccl-selene
   variables:
@@ -396,7 +396,7 @@ perftest-sharp-selene:
     - if: ($CI_PIPELINE_SOURCE == 'merge_request_event' || $CI_PIPELINE_SOURCE == 'schedule') && $RUN_ON_SELENE_SHARP == "1"
       when: always
     - when: never
-  needs: [perftest-DGX-A100]
+  needs: [build, perftest-DGX-A100]
   tags:
     - nccl-selene
   variables:
