@@ -258,7 +258,7 @@ ncclResult_t ncclGroupEndInternal() {
     if (ret != ncclSuccess && jobsDone && job->undo) job->undo(job);
     if (job->destructor) job->destructor((void*)job);
   }
-end:
+
   ncclGroupError = ncclSuccess;
   ncclGroupCommHead = nullptr;
   ncclGroupCommPreconnectHead = nullptr;
