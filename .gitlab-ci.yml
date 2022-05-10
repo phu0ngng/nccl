@@ -144,7 +144,7 @@ apitest-DGX-1V:
     CUDA_HOME: "/home/bewilliams/cuda/cuda/cuda-11.3"
     SRUN: ""
   script:
-    - srun -n 1 --account=sw_gpucomms_nvshmem --nv-meta ml-model.nccl-perf -p batch_short_dgx1_m3 -t 00:05:00 ./test/scripts/gitlab-runner-apitest.sh
+    - echo "$(pwd)" && srun -n 1 --account=sw_gpucomms_nvshmem --nv-meta ml-model.nccl-perf -p batch_short_dgx1_m3 -t 00:05:00 ./test/scripts/gitlab-runner-apitest.sh
   interruptible: true
 
 apitest-DGX-2:
