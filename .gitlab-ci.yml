@@ -144,7 +144,6 @@ apitest-DGX-1V:
     CUDA_HOME: "/home/bewilliams/cuda/cuda/cuda-11.3"
     SRUN: ""
   script:
-    # TODO - Gain access to ci_dgx1_m3
     - srun -n 1 --account=sw_gpucomms_nvshmem --nv-meta ml-model.nccl-perf -p batch_short_dgx1_m3 -t 00:05:00 ./test/scripts/gitlab-runner-apitest.sh
   interruptible: true
 
@@ -160,7 +159,6 @@ apitest-DGX-2:
     CUDA_HOME: "/home/bewilliams/cuda/cuda/cuda-11.3"
     SRUN: ""
   script:
-    # TODO - Gain access to ci_dgx2h_m2
     - srun -n 1 --account=sw_gpucomms_nvshmem --nv-meta ml-model.nccl-perf -p batch_short_dgx2h_m2 -t 00:05:00 ./test/scripts/gitlab-runner-apitest.sh
   interruptible: true
 
@@ -299,7 +297,6 @@ perftest-DGX-1V:
     CUDA_HOME: "/home/bewilliams/cuda/cuda/cuda-11.3"
     SALLOC: ""
   script:
-    # TODO - Gain access to ci
     - srun -N 1 -n 8 --account=sw_gpucomms_nvshmem --nv-meta ml-model.nccl-perf -p batch_short_dgx1_m3 -t 00:05:00 ./test/scripts/gitlab-runner-perftest.sh 4G
   interruptible: true
 
@@ -317,7 +314,6 @@ perftest-DGX-2:
     CUDA_HOME: "/home/bewilliams/cuda/cuda/cuda-11.3"
     SALLOC: ""
   script:
-    # TODO - Gain access to ci
     - srun -N 1 -n 16 --account=sw_gpucomms_nvshmem --nv-meta ml-model.nccl-perf -p batch_short_dgx2_m2 -t 00:05:00 ./test/scripts/gitlab-runner-perftest.sh 4G
   interruptible: true
 
