@@ -31,6 +31,8 @@ unit_tests:
   stage: unit_tests
   rules:
     - when: always
+  needs:
+
   tags:
     - build
   variables:
@@ -93,7 +95,7 @@ apitest-M40:
     - ./test/scripts/gitlab-runner-apitest.sh
   interruptible: true
 
-apitest-single-K40:
+apitest-K40:
   stage: api_tests
   rules:
     - when: always
@@ -167,6 +169,7 @@ perftest-P100:
   stage: perf_tests_single
   rules:
     - when: always
+  needs: [build, unit_tests, apitest-P100]
   tags:
     - p100
   variables:
@@ -182,6 +185,7 @@ perftest-P40:
   stage: perf_tests_single
   rules:
     - when: always
+  needs: [build, unit_tests, apitest-P40]
   tags:
     - p40
   variables:
@@ -197,6 +201,7 @@ perftest-GP100:
   stage: perf_tests_single
   rules:
     - when: always
+  needs: [build, unit_tests, apitest-GP100]
   tags:
     - gp100
   variables:
@@ -212,6 +217,7 @@ perftest-M40:
   stage: perf_tests_single
   rules:
     - when: always
+  needs: [build, unit_tests, apitest-M40]
   tags:
     - m40
   variables:
@@ -227,6 +233,7 @@ perftest-K80:
   stage: perf_tests_single
   rules:
     - when: always
+  needs: [build, unit_tests, apitest-K80]
   tags:
     - k80
   variables:
@@ -242,6 +249,7 @@ perftest-K40:
   stage: perf_tests_single
   rules:
     - when: always
+  needs: [build, unit_tests, apitest-K40]
   tags:
     - k40
   variables:
@@ -257,6 +265,7 @@ perftest-A100:
   stage: perf_tests_single
   rules:
     - when: always
+  needs: [build, unit_tests, apitest-A100]
   tags:
     - a100pci
   variables:
@@ -291,6 +300,7 @@ perftest-DGX-A100:
     - if: ($CI_PIPELINE_SOURCE == 'merge_request_event' || $CI_PIPELINE_SOURCE == 'schedule') && $RUN_ON_SELENE == "1"
       when: always
     - when: never
+  needs: [apitest-DGX-A100]
   tags:
     - nccl-selene
   variables:
@@ -306,6 +316,7 @@ perftest-multi-gc:
   stage: perf_tests_multi
   rules:
     - when: always
+  needs: [build, perftest-P100]
   tags:
     - p100
   variables:
@@ -322,6 +333,7 @@ perftest-sharp-gc:
   stage: perf_tests_multi
   rules:
     - when: always
+  needs: [build, perftest-P100]
   tags:
     - p100
   variables:
@@ -363,6 +375,7 @@ perftest-multi-selene:
     - if: ($CI_PIPELINE_SOURCE == 'merge_request_event' || $CI_PIPELINE_SOURCE == 'schedule') && $RUN_ON_SELENE == "1"
       when: always
     - when: never
+  needs: [perftest-DGX-A100]
   tags:
     - nccl-selene
   variables:
@@ -383,28 +396,7 @@ perftest-sharp-selene:
     - if: ($CI_PIPELINE_SOURCE == 'merge_request_event' || $CI_PIPELINE_SOURCE == 'schedule') && $RUN_ON_SELENE_SHARP == "1"
       when: always
     - when: never
-  tags:
-    - nccl-selene
-  variables:
-    NCCL_DEBUG: "WARN"
-    MPI_HOME: "/home/svcnccl/install/openmpi-1.10.7"
-    CUDA_HOME: "/project/share/cuda/cuda-11.5.1/"
-    SHARP_HOME: "/project/share/hpcx/hpcx-v2.9.0-gcc-MLNX_OFED_LINUX-5.2-1.0.4.0-ubuntu20.04-x86_64/sharp"
-    PLUGIN_PATH: "/project/share/hpcx/hpcx-v2.9.0-gcc-MLNX_OFED_LINUX-5.2-1.0.4.0-ubuntu20.04-x86_64/nccl_rdma_sharp_plugin/lib"
-    NCCL_IB_SL: "1"
-    OMPI_MCA_btl: "^openib"
-    OMPI_MCA_btl_tcp_if_include: "enp97s0f1"
-    SALLOC: ""
-  script:
-    - let NUM_PROCESSES=$MULTI_PERFTEST_NODE_COUNT*8 && salloc -N $MULTI_PERFTEST_NODE_COUNT -n $NUM_PROCESSES --account=nccl -pluna --network sharp -J "nccl-cicd::$GITLAB_USER_LOGIN:perftest-multi::$CI_COMMIT_BRANCH:$CI_COMMIT_SHORT_SHA" -t 00:10:00 ./test/scripts/gitlab-runner-perftest-sharp.sh 16G 0
-  interruptible: true
-
-perftest-sharp-selene:
-  stage: perf_tests_multi
-  rules:
-    - if: ($CI_PIPELINE_SOURCE == 'merge_request_event' || $CI_PIPELINE_SOURCE == 'schedule') && $RUN_ON_SELENE_SHARP == "1"
-      when: always
-    - when: never
+  needs: [perftest-DGX-A100]
   tags:
     - nccl-selene
   variables:
