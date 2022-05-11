@@ -651,9 +651,10 @@ ncclResult_t ncclTopoGetXmlFromGpu(struct ncclXmlNode* pciNode, nvmlDevice_t nvm
         if ((ncclNvmlDeviceGetFieldValues(nvmlDev, 1, &fv) == ncclSuccess) && (fv.nvmlReturn == NVML_SUCCESS))
           isActive = (nvmlEnableState_t) fv.value.uiVal;
       } else /* FALLTHRU to GetNvLinkState if before SM90 */
-#else
-        ncclNvmlDeviceGetNvLinkState(nvmlDev, l, &isActive);
 #endif
+      {
+        (void) ncclNvmlDeviceGetNvLinkState(nvmlDev, l, &isActive);
+      }
       if (isActive != NVML_FEATURE_ENABLED) continue;
 
       // Try to figure out what's on the other side of the NVLink
