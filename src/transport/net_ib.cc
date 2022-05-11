@@ -580,7 +580,7 @@ ib_connect_check:
     /* expect user to call again */
     return ncclSuccess;
   } else if (conState == ncclSocketError) {
-    return ncclSystemError;
+    return ncclRemoteError;
   }
 
   // IB Setup
@@ -1197,7 +1197,7 @@ ncclResult_t ncclIbTest(void* request, int* done, int* sizes) {
         char line[SOCKET_NAME_MAXLEN+1];
         WARN("NET/IB : Got completion from peer %s with error %d, opcode %d, len %d, vendor err %d",
              ncclSocketToString(r->addr, line), wc->status, wc->opcode, wc->byte_len, wc->vendor_err);
-        return ncclSystemError;
+        return ncclRemoteError;
       }
 
       struct ncclIbRequest* req = r->verbs->reqs+(wc->wr_id & 0xff);

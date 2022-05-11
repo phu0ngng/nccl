@@ -13,6 +13,8 @@
 #define ENABLE_TIMER 0
 #include "timer.h"
 
+#include <sys/syscall.h>
+
 enum { proxyRecv=0, proxySend=1 };
 
 static bool NeedProxy(int type, int pattern, int root, struct ncclRing* ring, int nranks) {
@@ -349,7 +351,7 @@ ncclResult_t ncclLocalOpAppend(struct ncclComm* comm, struct ncclProxyConnector*
   return ncclSuccess;
 }
 
-static ncclResult_t SaveProxy(struct ncclChannel* channel, int type, int peer, struct ncclProxyOp* op, int connIndex) {
+static ncclResult_t SaveProxy(struct ncclChannel* channel, int type, int peer, struct ncclProxyOp* op, int connIndex, bool* justInquire) {
   if (peer < 0) return ncclSuccess;
 
   struct ncclChannelPeer* peerComm = channel->peers+peer;
@@ -361,12 +363,18 @@ static ncclResult_t SaveProxy(struct ncclChannel* channel, int type, int peer, s
   }
   if (connector->transportComm->proxyProgress == NULL) return ncclSuccess;
 
-  NCCLCHECK(ncclLocalOpAppend(connector->comm, &connector->proxyConn, op));
+  if (justInquire) *justInquire = true;
+  else {
+    NCCLCHECK(ncclLocalOpAppend(connector->comm, &connector->proxyConn, op));
+  }
   return ncclSuccess;
 }
 
-ncclResult_t ncclProxySaveOp(struct ncclComm* comm, struct ncclProxyOp* op) {
+// justInquire != nullptr means don't actually do anything, just assertain need of
+// ncclProxySaveOp for this op.
+ncclResult_t ncclProxySaveOp(struct ncclComm* comm, struct ncclProxyOp* op, bool* justInquire) {
   struct ncclChannel* channel = &comm->channels[op->channelId];
+  if (justInquire) *justInquire = false;
   switch (op->pattern) {
   case ncclPatternRing:
   case ncclPatternRingTwice:
@@ -374,10 +382,10 @@ ncclResult_t ncclProxySaveOp(struct ncclComm* comm, struct ncclProxyOp* op) {
   case ncclPatternPipelineTo: {
       struct ncclRing* ring = &channel->ring;
       if (NeedProxy(proxyRecv, op->pattern, op->root, ring, comm->nRanks)) {
-        NCCLCHECK(SaveProxy(channel, proxyRecv, ring->prev, op, 0));
+        NCCLCHECK(SaveProxy(channel, proxyRecv, ring->prev, op, 0, justInquire));
       }
       if (NeedProxy(proxySend, op->pattern, op->root, ring, comm->nRanks)) {
-        NCCLCHECK(SaveProxy(channel, proxySend, ring->next, op, 0));
+        NCCLCHECK(SaveProxy(channel, proxySend, ring->next, op, 0, justInquire));
       }
     } break;
   case ncclPatternTreeUp:
@@ -386,30 +394,30 @@ ncclResult_t ncclProxySaveOp(struct ncclComm* comm, struct ncclProxyOp* op) {
       if (op->pattern != ncclPatternTreeDown) { // Tree up
         struct ncclTree* tree = &channel->tree;
         for (int i=0; i<NCCL_MAX_TREE_ARITY; i++) {
-          NCCLCHECK(SaveProxy(channel, proxyRecv, tree->down[i], op, 0));
+          NCCLCHECK(SaveProxy(channel, proxyRecv, tree->down[i], op, 0, justInquire));
         }
-        NCCLCHECK(SaveProxy(channel, proxySend, tree->up, op, 0));
+        NCCLCHECK(SaveProxy(channel, proxySend, tree->up, op, 0, justInquire));
       }
       if (op->pattern != ncclPatternTreeUp) { // Tree down
         struct ncclTree* tree = &channel->tree;
         for (int i=0; i< NCCL_MAX_TREE_ARITY; i++) {
-          NCCLCHECK(SaveProxy(channel, proxySend, tree->down[i], op, 0));
+          NCCLCHECK(SaveProxy(channel, proxySend, tree->down[i], op, 0, justInquire));
         }
-        NCCLCHECK(SaveProxy(channel, proxyRecv, tree->up, op, 0));
+        NCCLCHECK(SaveProxy(channel, proxyRecv, tree->up, op, 0, justInquire));
       }
     } break;
   case ncclPatternCollTreeUpDown: {
       // CollTree up
-      NCCLCHECK(SaveProxy(channel, proxySend, channel->collTree.out, op, 1));  // For CollTree up, we are using push
+      NCCLCHECK(SaveProxy(channel, proxySend, channel->collTree.out, op, 1, justInquire));  // For CollTree up, we are using push
       // CollTree down
-      NCCLCHECK(SaveProxy(channel, proxyRecv, channel->collTree.out, op, 0));
+      NCCLCHECK(SaveProxy(channel, proxyRecv, channel->collTree.out, op, 0, justInquire));
     } break;
   case ncclPatternSend:
   case ncclPatternRecv: {
       if (op->root == comm->rank) return ncclSuccess;
       op->nsteps = DIVUP(op->nbytes, op->chunkSize);
       if (op->nsteps == 0) op->nsteps = 1;
-      NCCLCHECK(SaveProxy(channel, op->pattern == ncclPatternSend ? proxySend : proxyRecv, op->root, op, 1));
+      NCCLCHECK(SaveProxy(channel, op->pattern == ncclPatternSend ? proxySend : proxyRecv, op->root, op, 1, justInquire));
     } break;
   }
   return ncclSuccess;

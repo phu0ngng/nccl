@@ -10,6 +10,7 @@ mpicc -g -o coll_leak_test_multi coll_leak_test_multi.cc -I$CUDA_HOME/include -L
 #include <mpi.h>
 
 #include <stdlib.h>
+#include <stdio.h>
 #include <sys/time.h>
 #include <assert.h>
 
