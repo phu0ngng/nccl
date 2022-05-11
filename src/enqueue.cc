@@ -157,7 +157,26 @@ ncclResult_t ncclLaunchCooperativeKernelMultiDevice(struct cudaLaunchParams *par
   for (int i = 0; i < numDevices; i++) {
     struct cudaLaunchParams* params = paramsList+i;
     CUDACHECK(cudaSetDevice(cudaDevs[i]));
+#if CUDART_VERSION >= 11080
+    cudaLaunchConfig_t launchConfig = {0};
+    cudaLaunchAttribute launchAttrs[2];
+    unsigned int clusterSizeForExLaunch = 1;
+
+    launchAttrs[0].id = cudaLaunchAttributeClusterDimension;
+    launchAttrs[0].val.clusterDim = {clusterSizeForExLaunch, 1, 1};
+    launchAttrs[1].id = cudaLaunchAttributeClusterSchedulingPolicyPreference;
+    launchAttrs[1].val.clusterSchedulingPolicyPreference = cudaClusterSchedulingPolicyLoadBalancing;
+
+    launchConfig.gridDim = params->gridDim;
+    launchConfig.blockDim = params->blockDim;
+    launchConfig.attrs = launchAttrs;
+    launchConfig.numAttrs = 2;
+    launchConfig.stream = params->stream;
+
+    CUDACHECK(cudaLaunchKernelExC(&launchConfig, params->func, params->args));
+#else
     CUDACHECK(cudaLaunchKernel(params->func, params->gridDim, params->blockDim, params->args, params->sharedMem, params->stream));
+#endif
   }
   CUDACHECK(cudaSetDevice(savedDev));
   return ncclSuccess;
