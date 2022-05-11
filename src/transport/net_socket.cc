@@ -616,6 +616,7 @@ ncclNet_t ncclNetSocket = {
   ncclSocketConnect,
   ncclSocketAccept,
   ncclSocketRegMr,
+  NULL, // No DMA-BUF support
   ncclSocketDeregMr,
   ncclSocketIsend,
   ncclSocketIrecv,

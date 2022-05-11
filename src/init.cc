@@ -261,6 +261,24 @@ NCCL_PARAM(GdrCopyFifoEnable, "GDRCOPY_FIFO_ENABLE", 1);
 NCCL_PARAM(WorkFifoDepth, "WORK_FIFO_DEPTH", 64<<10);
 enum ncclLaunchMode ncclParamLaunchMode;
 
+NCCL_PARAM(DmaBufEnable, "DMABUF_ENABLE", 1);
+
+// Detect DMA-BUF support
+static ncclResult_t dmaBufSupported(struct ncclComm* comm) {
+  if (ncclParamDmaBufEnable() == 0 || comm->ncclNet->regMrDmaBuf == NULL) return ncclInternalError;
+#if CUDA_VERSION >= 11070
+  int flag = 0;
+  CUdevice dev;
+  CUCHECK(cuDeviceGet(&dev, comm->cudaDev));
+  // Query device to see if DMA-BUF support is available
+  (void) pfn_cuDeviceGetAttribute(&flag, CU_DEVICE_ATTRIBUTE_DMA_BUF_SUPPORTED, dev);
+  if (flag == 0) return ncclInternalError;
+  INFO(NCCL_INIT, "DMA-BUF is available on GPU device %d", comm->cudaDev);
+  return ncclSuccess;
+#endif
+  return ncclInternalError;
+}
+
 static ncclResult_t commAlloc(ncclComm_t* comret, int ndev, int rank) {
   if (ndev < 1) {
     WARN("invalid device count (%d) requested", ndev);
@@ -292,6 +310,7 @@ static ncclResult_t commAlloc(ncclComm_t* comret, int ndev, int rank) {
   TRACE(NCCL_INIT,"comm %p rank %d nranks %d cudaDev %d busId %lx", comm, rank, ndev, comm->cudaDev, comm->busId);
 
   comm->checkPointers = ncclParamCheckPointers() == 1 ? true : false;
+  comm->dmaBufSupport = (dmaBufSupported(comm) == ncclSuccess) ? true : false;
   comm->fatalError = ncclSuccess;
 
   NCCLCHECK(ncclCudaHostCalloc((uint32_t**)&comm->abortFlag, 1));
@@ -1067,6 +1086,10 @@ end:
 NCCL_API(ncclResult_t, ncclCommInitRank, ncclComm_t* newcomm, int nranks, ncclUniqueId commId, int myrank);
 ncclResult_t ncclCommInitRank(ncclComm_t* newcomm, int nranks, ncclUniqueId commId, int myrank) {
   NVTX3_FUNC_RANGE_IN(nccl_domain);
+
+  // Make sure the CUDA driver and dlsym hooks are initialized.
+  NCCLCHECK(cudaLibraryInit());
+
   int cudaDev;
   CUDACHECK(cudaGetDevice(&cudaDev));
   NCCLCHECK(ncclCommInitRankDev(newcomm, nranks, commId, myrank, cudaDev));
@@ -1076,6 +1099,10 @@ ncclResult_t ncclCommInitRank(ncclComm_t* newcomm, int nranks, ncclUniqueId comm
 NCCL_API(ncclResult_t, ncclCommInitAll, ncclComm_t* comms, int ndev, const int* devlist);
 ncclResult_t ncclCommInitAll(ncclComm_t* comms, int ndev, const int* devlist) {
   NVTX3_FUNC_RANGE_IN(nccl_domain);
+
+  // Make sure the CUDA driver and dlsym hooks are initialized.
+  NCCLCHECK(cudaLibraryInit());
+
   NCCLCHECK(PtrCheck(comms, "CommInitAll", "comms"));
   if (ndev < 0) {
     WARN("Invalid device count requested : %d", ndev);

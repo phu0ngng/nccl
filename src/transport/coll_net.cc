@@ -447,9 +447,22 @@ static ncclResult_t sendProxyConnect(struct ncclProxyConnection* connection, str
   NCCLCHECK(sharedBuffersInit(comm, resources->useGdr, &mapMem->gpuPtr, &mapMem->cpuPtr, &mapMem->size));
   NCCL_NET_MAP_ADD_POINTER(map, 1, resources->useGdr, mapMem->size, buffs[NCCL_PROTO_SIMPLE]);
 
-  NCCLCHECK(collNetRegMr(comm, resources->collNetComm, mapMem->cpuPtr, mapMem->size,
-        resources->useGdr ? NCCL_PTR_CUDA : NCCL_PTR_HOST,
-        &resources->sendMhandles[NCCL_PROTO_SIMPLE]));
+#if CUDA_VERSION >= 11070
+  /* DMA-BUF support */
+  if (resources->useGdr && comm->dmaBufSupport) {
+    int dmabuf_fd;
+    CUCHECK(cuMemGetHandleForAddressRange((void *)&dmabuf_fd, (CUdeviceptr)mapMem->cpuPtr, mapMem->size, CU_MEM_RANGE_HANDLE_TYPE_DMA_BUF_FD, 0));
+    NCCLCHECK(collNetRegMrDmaBuf(comm, resources->collNetComm, mapMem->cpuPtr, mapMem->size,
+                                 NCCL_PTR_CUDA, 0ULL, dmabuf_fd,
+                                 &resources->sendMhandles[NCCL_PROTO_SIMPLE]));
+    (void)close(dmabuf_fd);
+  } else // FALL-THROUGH to nv_peermem GDR path
+#endif
+  {
+    NCCLCHECK(collNetRegMr(comm, resources->collNetComm, mapMem->cpuPtr, mapMem->size,
+                           resources->useGdr ? NCCL_PTR_CUDA : NCCL_PTR_HOST,
+                           &resources->sendMhandles[NCCL_PROTO_SIMPLE]));
+  }
 
   *((struct connectMap**)respBuff) = &resources->map;
   return ncclSuccess;
@@ -503,9 +516,22 @@ static ncclResult_t recvProxyConnect(struct ncclProxyConnection* connection, str
   NCCLCHECK(sharedBuffersInit(comm, resources->useGdr, &mapMem->gpuPtr, &mapMem->cpuPtr, &mapMem->size));
   NCCL_NET_MAP_ADD_POINTER(map, 1, resources->useGdr, mapMem->size, buffs[NCCL_PROTO_SIMPLE]);
 
-  NCCLCHECK(collNetRegMr(comm, resources->collNetComm, mapMem->cpuPtr, mapMem->size,
-        resources->useGdr ? NCCL_PTR_CUDA : NCCL_PTR_HOST,
-        &resources->mhandles[NCCL_PROTO_SIMPLE]));
+#if CUDA_VERSION >= 11070
+  /* DMA-BUF support */
+  if (resources->useGdr && comm->dmaBufSupport) {
+    int dmabuf_fd;
+    CUCHECK(cuMemGetHandleForAddressRange((void *)&dmabuf_fd, (CUdeviceptr)mapMem->cpuPtr, mapMem->size, CU_MEM_RANGE_HANDLE_TYPE_DMA_BUF_FD, 0));
+    NCCLCHECK(collNetRegMrDmaBuf(comm, resources->collNetComm, mapMem->cpuPtr, mapMem->size,
+                                 NCCL_PTR_CUDA, 0ULL, dmabuf_fd,
+                                 &resources->mhandles[NCCL_PROTO_SIMPLE]));
+    (void)close(dmabuf_fd);
+  } else // FALL-THROUGH to nv_peermem GDR path
+#endif
+  {
+    NCCLCHECK(collNetRegMr(comm, resources->collNetComm, mapMem->cpuPtr, mapMem->size,
+                           resources->useGdr ? NCCL_PTR_CUDA : NCCL_PTR_HOST,
+                           &resources->mhandles[NCCL_PROTO_SIMPLE]));
+  }
 
   // Pass info to send side
   info->reqFifo = resources->reqFifo;
