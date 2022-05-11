@@ -12,7 +12,6 @@
 #include "comm.h"
 #include "checks.h"
 
-extern ncclNet_t* ncclNet;
 typedef char ncclNetHandle_t[NCCL_NET_HANDLE_MAXSIZE];
 
 ncclResult_t ncclNetPluginInit();
@@ -27,6 +26,8 @@ static ncclResult_t ncclNetListen(struct ncclComm* comm, int dev, void* handle, 
 static ncclResult_t ncclNetConnect(struct ncclComm* comm, int dev, void* handle, void** sendComm) { NCCLCHECK(comm->ncclNet->connect(dev, handle, sendComm)); return ncclSuccess; }
 static ncclResult_t ncclNetAccept(struct ncclComm* comm, void* listenComm, void** recvComm) { NCCLCHECK(comm->ncclNet->accept(listenComm, recvComm)); return ncclSuccess; }
 static ncclResult_t ncclNetRegMr(struct ncclComm* comm, void* netComm, void* data, int size, int type, void** mhandle) { NCCLCHECK(comm->ncclNet->regMr(netComm, data, size, type, mhandle)); return ncclSuccess; }
+/* DMA-BUF support */
+static ncclResult_t ncclNetRegMrDmaBuf(struct ncclComm* comm, void* netComm, void* data, size_t size, int type, uint64_t offset, int fd, void** mhandle) { NCCLCHECK(comm->ncclNet->regMrDmaBuf(netComm, data, size, type, offset, fd, mhandle)); return ncclSuccess; }
 static ncclResult_t ncclNetDeregMr(struct ncclComm* comm, void* netComm, void* mhandle) { NCCLCHECK(comm->ncclNet->deregMr(netComm, mhandle)); return ncclSuccess; }
 static ncclResult_t ncclNetIsend(struct ncclComm* comm, void* sendComm, void* data, int size, int tag, void* mhandle, void** request) { NCCLCHECK(comm->ncclNet->isend(sendComm, data, size, tag, mhandle, request)); return ncclSuccess; }
 static ncclResult_t ncclNetIrecv(struct ncclComm* comm, void* recvComm, int n, void** data, int* sizes, int* tags, void** mhandles, void** request) { NCCLCHECK(comm->ncclNet->irecv(recvComm, n, data, sizes, tags, mhandles, request)); return ncclSuccess; }

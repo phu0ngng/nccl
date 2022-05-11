@@ -13,6 +13,9 @@
 #include "proxy.h"
 #include "strongstream.h"
 
+#include <cuda.h>
+#include <cudaTypedefs.h>
+
 #if CUDART_VERSION < 9000
 struct cudaLaunchParams {
   void *func;
@@ -187,6 +190,7 @@ struct ncclComm {
   struct ncclNodeRanks* nodeRanks;
 
   bool checkPointers;
+  bool dmaBufSupport;
 
   // Counter for tracking CUDA launches (P2P and collectives included)
   uint64_t opCount;
