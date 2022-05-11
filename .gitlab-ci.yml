@@ -79,7 +79,7 @@ build:
 #   script:
 #     - ./test/scripts/gitlab-runner-apitest.sh
 #   interruptible: true
-# 
+#  
 # apitest-M40:
 #   stage: api_tests
 #   rules:
