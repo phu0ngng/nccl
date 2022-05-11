@@ -1345,6 +1345,9 @@ static ncclResult_t hostToDevRedOp(
   return ncclSuccess;
 }
 
+// Converts `info` to a task and adds it to `comm->tasks`. The exception is with
+// single rank communicators, collectives are issued as `ncclMemcpyAsync`s and
+// thus don't need a task.
 static ncclResult_t taskAppend(struct ncclComm* comm, struct ncclInfo const* info) {
   ncclTasks *tasks = &comm->tasks;
   if (info->coll == ncclFuncSend || info->coll == ncclFuncRecv) {
@@ -1352,6 +1355,8 @@ static ncclResult_t taskAppend(struct ncclComm* comm, struct ncclInfo const* inf
     ssize_t nBytes = info->count*ncclTypeSize(info->datatype);
     bool isSendNotRecv = info->coll == ncclFuncSend;
 
+    // Must be in thread local group before tasks can be alloc'd in `comm->memScoped`.
+    ncclGroupCommJoin(info->comm);
     struct ncclTaskP2p* p2p = ncclMemoryStackAlloc<struct ncclTaskP2p>(&comm->memScoped);
     p2p->buff = (void*)info->recvbuff;
     p2p->bytes = nBytes;
@@ -1398,6 +1403,8 @@ static ncclResult_t taskAppend(struct ncclComm* comm, struct ncclInfo const* inf
       }
       return ncclSuccess;
     } else {
+      // Must be in thread local group before tasks can be alloc'd in `comm->memScoped`.
+      ncclGroupCommJoin(info->comm);
       struct ncclTaskColl* t = ncclMemoryStackAlloc<struct ncclTaskColl>(&comm->memScoped);
       t->func = info->coll;
       t->sendbuff = info->sendbuff;
@@ -1455,7 +1462,6 @@ ncclResult_t ncclEnqueueCheck(struct ncclInfo* info) {
         info->datatype, info->op, info->root, info->comm, info->comm->nRanks, info->stream);
   TRACE_CALL("nccl%s(%" PRIx64 ",%" PRIx64 ",%zi,%d,%d,%d,%p,%p)", info->opName, reinterpret_cast<int64_t>(info->sendbuff), reinterpret_cast<int64_t>(info->recvbuff), info->count, info->datatype, info->op, info->root, info->comm, info->stream);
 
-  ncclGroupCommJoin(info->comm);
   NCCLCHECKGOTO(taskAppend(info->comm, info), ret, end1);
 
 end1:
