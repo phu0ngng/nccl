@@ -141,7 +141,7 @@ apitest-DGX-1V:
   tags:
     - dgx-1
   variables:
-    CUDA_HOME: "/home/bewilliams/cuda/cuda/cuda-11.3"
+    CUDA_HOME: "/home/svc_nvshmem_ci/cuda/cuda-11.3.66"
     SRUN: ""
   script:
     - echo "$(pwd)" && srun -n 1 -c 8 --account=sw_gpucomms_nvshmem --nv-meta ml-model.nccl-perf -p batch_short_dgx1_m3 -t 00:05:00 ./test/scripts/gitlab-runner-apitest.sh
@@ -156,7 +156,7 @@ apitest-DGX-2:
   tags:
     - dgx-2
   variables:
-    CUDA_HOME: "/home/bewilliams/cuda/cuda/cuda-11.3"
+    CUDA_HOME: "/home/svc_nvshmem_ci/cuda/cuda-11.3.66"
     SRUN: ""
   script:
     - srun -n 1 -c 16 --account=sw_gpucomms_nvshmem --nv-meta ml-model.nccl-perf -p batch_short_dgx2h_m2 -t 00:05:00 ./test/scripts/gitlab-runner-apitest.sh
@@ -293,8 +293,8 @@ perftest-DGX-1V:
     - dgx-1
   variables:
     NCCL_DEBUG: "WARN"
-    MPI_HOME: "/home/bewilliams/mpi/openmpi-1.10.7"
-    CUDA_HOME: "/home/bewilliams/cuda/cuda/cuda-11.3"
+    MPI_HOME: "/home/svc_nvshmem_ci/mpi/openmpi-1.10.7"
+    CUDA_HOME: "/home/svc_nvshmem_ci/cuda/cuda-11.3.66"
     SALLOC: ""
   script:
     - srun -N 1 -n 8 --account=sw_gpucomms_nvshmem --nv-meta ml-model.nccl-perf -p batch_short_dgx1_m3 -t 00:05:00 ./test/scripts/gitlab-runner-perftest.sh 4G
@@ -310,8 +310,8 @@ perftest-DGX-2:
     - dgx-2
   variables:
     NCCL_DEBUG: "WARN"
-    MPI_HOME: "/home/bewilliams/mpi/openmpi-1.10.7"
-    CUDA_HOME: "/home/bewilliams/cuda/cuda/cuda-11.3"
+    MPI_HOME: "/home/svc_nvshmem_ci/mpi/openmpi-1.10.7"
+    CUDA_HOME: "/home/svc_nvshmem_ci/cuda/cuda-11.3.66"
     SALLOC: ""
   script:
     - srun -N 1 -n 16 --account=sw_gpucomms_nvshmem --nv-meta ml-model.nccl-perf -p batch_short_dgx2_m2 -t 00:05:00 ./test/scripts/gitlab-runner-perftest.sh 4G
