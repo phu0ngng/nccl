@@ -139,12 +139,12 @@ apitest-DGX-1V:
       when: always
     - when: never
   tags:
-    - nccl-draco
+    - dgx-1
   variables:
     CUDA_HOME: "/home/bewilliams/cuda/cuda/cuda-11.3"
     SRUN: ""
   script:
-    - echo "$(pwd)" && srun -n 1 --account=sw_gpucomms_nvshmem --nv-meta ml-model.nccl-perf -p batch_short_dgx1_m3 -t 00:05:00 ./test/scripts/gitlab-runner-apitest.sh
+    - echo "$(pwd)" && srun -n 1 -c 8 --account=sw_gpucomms_nvshmem --nv-meta ml-model.nccl-perf -p batch_short_dgx1_m3 -t 00:05:00 ./test/scripts/gitlab-runner-apitest.sh
   interruptible: true
 
 apitest-DGX-2:
@@ -154,12 +154,12 @@ apitest-DGX-2:
       when: always
     - when: never
   tags:
-    - nccl-draco
+    - dgx-2
   variables:
     CUDA_HOME: "/home/bewilliams/cuda/cuda/cuda-11.3"
     SRUN: ""
   script:
-    - srun -n 1 --account=sw_gpucomms_nvshmem --nv-meta ml-model.nccl-perf -p batch_short_dgx2h_m2 -t 00:05:00 ./test/scripts/gitlab-runner-apitest.sh
+    - srun -n 1 -c 16 --account=sw_gpucomms_nvshmem --nv-meta ml-model.nccl-perf -p batch_short_dgx2h_m2 -t 00:05:00 ./test/scripts/gitlab-runner-apitest.sh
   interruptible: true
 
 #apitest-DGX-A100:
@@ -290,7 +290,7 @@ perftest-DGX-1V:
       when: always
     - when: never
   tags:
-    - nccl-draco
+    - dgx-1
   variables:
     NCCL_DEBUG: "WARN"
     MPI_HOME: "/home/bewilliams/mpi/openmpi-1.10.7"
@@ -307,7 +307,7 @@ perftest-DGX-2:
       when: always
     - when: never
   tags:
-    - nccl-draco
+    - dgx-2
   variables:
     NCCL_DEBUG: "WARN"
     MPI_HOME: "/home/bewilliams/mpi/openmpi-1.10.7"
