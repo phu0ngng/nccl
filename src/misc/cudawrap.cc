@@ -124,6 +124,20 @@ ncclResult_t cudaLibraryInit(void) {
     goto error;
   }
 
+  res = pfn_cuDriverGetVersion(&cudaDriverVersion);
+  if (res != 0) {
+    WARN("cuDriverGetVersion failed with %d", res);
+    goto error;
+  }
+
+  INFO(NCCL_INIT, "cudaDriverVersion %d", cudaDriverVersion);
+
+  if (cudaDriverVersion < CUDA_DRIVER_MIN_VERSION) {
+    // WARN("CUDA Driver version found is %d. Minimum requirement is %d", cudaDriverVersion, CUDA_DRIVER_MIN_VERSION);
+    // Silently ignore version check mismatch for backwards compatibility
+    return ncclSuccess;
+  }
+
   pfn_cuGetProcAddress = (PFN_cuGetProcAddress) dlsym(cudaLib, "cuGetProcAddress");
   if (pfn_cuGetProcAddress == NULL) {
     WARN("Failed to load CUDA missing symbol cuGetProcAddress");
@@ -136,20 +150,6 @@ ncclResult_t cudaLibraryInit(void) {
    * without making any relevant change
    */
   pfn_cuInit(0);
-
-  res = pfn_cuDriverGetVersion(&cudaDriverVersion);
-  if (res != 0) {
-    WARN("cuDriverGetVersion failed with %d", res);
-    goto error;
-  }
-
-#if 0
-  if (cudaDriverVersion < CUDA_DRIVER_MIN_VERSION) {
-    WARN("CUDA Driver version found is %d. Minimum requirement is %d",
-         cudaDriverVersion, CUDA_DRIVER_MIN_VERSION);
-    goto error;
-  }
-#endif
 
   if (cudaPfnFuncLoader()) {
     WARN("CUDA some PFN functions not found in the library");
