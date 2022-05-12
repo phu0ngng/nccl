@@ -41,7 +41,7 @@ DECLARE_CUDA_PFN(cuGetProcAddress);
 
 static enum { cudaUninitialized, cudaInitializing, cudaInitialized, cudaError } cudaState = cudaUninitialized;
 
-#define CUDA_DRIVER_MIN_VERSION 11040
+#define CUDA_DRIVER_MIN_VERSION 11030
 
 static void *cudaLib;
 static int cudaDriverVersion;
@@ -150,11 +150,13 @@ ncclResult_t cudaLibraryInit(void) {
     goto error;
   }
 
+#if 0
   if (cudaDriverVersion < CUDA_DRIVER_MIN_VERSION) {
     WARN("CUDA Driver version found is %d. Minimum requirement is %d",
          cudaDriverVersion, CUDA_DRIVER_MIN_VERSION);
     goto error;
   }
+#endif
 
   if (cudaPfnFuncLoader()) {
     WARN("CUDA some PFN functions not found in the library");
