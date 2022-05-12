@@ -434,7 +434,17 @@ static ncclResult_t registerIntraNodeBuffers(
   ncclResult_t result = ncclSuccess;
   int localRank = comm->localRank;
 
-  if (CUPFN(cuMemGetAddressRange) == nullptr) return ncclSuccess;
+  thread_local int driverVersion = -1;
+  thread_local cudaError_t(*pfn_cuMemGetAddressRange)(void**, size_t*, void*) = nullptr;
+
+  if (driverVersion < 0) {
+    CUDACHECK(cudaDriverGetVersion(&driverVersion));
+  }
+  if (driverVersion < 11030) return ncclSuccess;
+  if (pfn_cuMemGetAddressRange == nullptr) {
+    // cudaGetDriverEntryPoint requires R465 or above (enhanced compat need)
+    CUDACHECKGOTO(cudaGetDriverEntryPoint("cuMemGetAddressRange", (void**)&pfn_cuMemGetAddressRange, cudaEnableDefault), result, fallback);
+  }
 
   struct HandlePair {
     cudaIpcMemHandle_t ipc[2]; // {send, recv}
@@ -447,9 +457,9 @@ static ncclResult_t registerIntraNodeBuffers(
 
   void *baseSend, *baseRecv;
   size_t size;
-  CUCHECK(cuMemGetAddressRange((CUdeviceptr*)&baseSend, &size, (CUdeviceptr)info->sendbuff));
+  CUDACHECK(pfn_cuMemGetAddressRange(&baseSend, &size, (void*)info->sendbuff));
   handles[localRank].offset[0] = (char*)info->sendbuff - (char*)baseSend;
-  CUCHECK(cuMemGetAddressRange((CUdeviceptr*)&baseRecv, &size, (CUdeviceptr)info->recvbuff));
+  CUDACHECK(pfn_cuMemGetAddressRange(&baseRecv, &size, (void*)info->recvbuff));
   handles[localRank].offset[1] = (char*)info->recvbuff - (char*)baseRecv;
 
   NCCLCHECK(bootstrapIntraNodeAllGather(comm->bootstrap, comm->localRankToRank, comm->localRank, comm->localRanks, handles, sizeof(struct HandlePair)));

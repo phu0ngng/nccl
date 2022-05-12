@@ -10,8 +10,6 @@
 #include <cuda.h>
 #include <cudaTypedefs.h>
 
-#define CUPFN(fn) pfn_##fn
-
 // Check CUDA PFN driver calls
 #define CUCHECK(cmd) do {				      \
     if ((void *)pfn_##cmd == NULL) return ncclInternalError;  \
@@ -60,9 +58,6 @@
 #define DECLARE_CUDA_PFN_EXTERN(symbol) extern PFN_##symbol pfn_##symbol
 
 /* CUDA Driver functions loaded with cuGetProcAddress for versioning */
-DECLARE_CUDA_PFN_EXTERN(cuCtxCreate);
-DECLARE_CUDA_PFN_EXTERN(cuCtxDestroy);
-DECLARE_CUDA_PFN_EXTERN(cuCtxSetCurrent);
 DECLARE_CUDA_PFN_EXTERN(cuDeviceGet);
 DECLARE_CUDA_PFN_EXTERN(cuDeviceGetAttribute);
 DECLARE_CUDA_PFN_EXTERN(cuGetErrorString);

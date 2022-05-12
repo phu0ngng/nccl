@@ -13,9 +13,6 @@
 #define DECLARE_CUDA_PFN(symbol) PFN_##symbol pfn_##symbol
 
 /* CUDA Driver functions loaded with cuGetProcAddress for versioning */
-DECLARE_CUDA_PFN(cuCtxCreate);
-DECLARE_CUDA_PFN(cuCtxDestroy);
-DECLARE_CUDA_PFN(cuCtxSetCurrent);
 DECLARE_CUDA_PFN(cuDeviceGet);
 DECLARE_CUDA_PFN(cuDeviceGetAttribute);
 DECLARE_CUDA_PFN(cuGetErrorString);
@@ -64,10 +61,6 @@ static int cudaPfnFuncLoader(void) {
   LOAD_SYM(cuGetErrorName, 0);
   LOAD_SYM(cuDeviceGet, 0);
   LOAD_SYM(cuDeviceGetAttribute, 0);
-
-  LOAD_SYM(cuCtxCreate, 1);
-  LOAD_SYM(cuCtxDestroy, 1);
-  LOAD_SYM(cuCtxSetCurrent, 1);
 
   LOAD_SYM(cuMemCreate, 1);
   LOAD_SYM(cuMemRelease, 1);

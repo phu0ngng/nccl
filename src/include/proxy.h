@@ -163,7 +163,7 @@ struct ncclProxyState {
   pthread_t thread;
   struct ncclSocket* listenSock;
   int stop;
-  CUcontext cudaCtx;
+  void* cudaCtx;
 
   // Used by main thread
   union ncclSocketAddress* peerAddresses;
