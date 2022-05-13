@@ -190,6 +190,7 @@ TYPED_TEST(ncclAllReduce_test, DISABLED_stream_wrong) {
                             this->DataType(), this->RedOps[0],
                             this->comms[i], this->streams[j]));
 };
+
 // Aggregation
 // Only for 2.2 or higher
 #if NCCL_MAJOR > 2 || (NCCL_MAJOR == 2 && NCCL_MINOR >=2)
@@ -242,4 +243,58 @@ TYPED_TEST(ncclAllReduce_test, aggregate_ll_singleRing_multiRing) {
     ASSERT_EQ(ncclSuccess, ncclGroupEnd());
 };
 #endif
+
+TYPED_TEST(ncclAllReduce_test, multi_net) {
+    ncclUniqueId commIdIB;
+    ASSERT_EQ(ncclSuccess, ncclGetUniqueId(&commIdIB));
+    ncclComm_t* commIB = (ncclComm_t*)calloc(sizeof(ncclComm_t), this->nVis);
+    (void) setenv("NCCL_NET", "IB", 1);
+    if (ncclCommInitAll(commIB, this->nVis, NULL) != ncclSuccess) {
+        std::cout << "ncclGroupEnd() failed when trying to init IB communicators. Skipping test." << std::endl;
+        (void) unsetenv("NCCL_NET");
+        // This platform doesn't have IB network, so mark the test as skipped here
+        free(commIB);
+        return;
+    }
+    
+    ncclUniqueId commIdSocket;
+    ASSERT_EQ(ncclSuccess, ncclGetUniqueId(&commIdSocket));
+    ncclComm_t* commSocket = (ncclComm_t*)calloc(sizeof(ncclComm_t), this->nVis);
+    (void) setenv("NCCL_NET", "Socket", 1);
+    ASSERT_EQ(ncclSuccess, ncclCommInitAll(commSocket, this->nVis, NULL));
+
+    ASSERT_EQ(ncclSuccess, ncclGroupStart());
+    for (int i = 0; i < this->nVis; ++i) {
+        ASSERT_EQ(ncclSuccess,
+                    ncclAllReduce(this->sendbuffs[i], this->recvbuffs[i],
+                                std::min(this->N, 1024 * 1024),
+                                this->DataType(), ncclSum,
+                                commIB[i], this->streams[i]))
+            << "IB op: " << ncclSum << ", "
+            << "i" << i << ", " << std::endl;
+    }
+    ASSERT_EQ(ncclSuccess, ncclGroupEnd());
+
+    ASSERT_EQ(ncclSuccess, ncclGroupStart());
+    for (int i = 0; i < this->nVis; ++i) {
+        ASSERT_EQ(ncclSuccess,
+                    ncclAllReduce(this->sendbuffs[i], this->recvbuffs[i],
+                                std::min(this->N, 1024 * 1024),
+                                this->DataType(), ncclSum,
+                                commSocket[i], this->streams[i]))
+            << "Socket op: " << ncclSum << ", "
+            << "i" << i << ", " << std::endl;
+    }
+    ASSERT_EQ(ncclSuccess, ncclGroupEnd());
+
+    for (int i = 0; i < this->nVis; ++i) {
+        ASSERT_EQ(ncclSuccess, ncclCommDestroy(commIB[i]));
+        ASSERT_EQ(ncclSuccess, ncclCommDestroy(commSocket[i]));
+    }
+
+    free(commIB);
+    free(commSocket);
+    (void) unsetenv("NCCL_NET");
+};
+
 // EOF

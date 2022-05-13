@@ -13,6 +13,9 @@
 #include "proxy.h"
 #include "strongstream.h"
 
+#include <cuda.h>
+#include <cudaTypedefs.h>
+
 #if CUDART_VERSION < 9000
 struct cudaLaunchParams {
   void *func;
@@ -132,6 +135,7 @@ struct ncclKernelPlan {
   int channelUbound; // only channels c < channelUbound are present
   int channelCount; // number of channels present
   uint64_t channelMask; // which channels are present, channelCount == popcount(channelMask)
+  bool hasProxyOps; // does any channel have a non-empty proxyOpQueue
   int threadPerBlock;
   // workHeap fields are null until uploadWorkFifo() or preparePersistentKernel()
   struct ncclWork* workHead;
@@ -186,6 +190,7 @@ struct ncclComm {
   struct ncclNodeRanks* nodeRanks;
 
   bool checkPointers;
+  bool dmaBufSupport;
 
   // Counter for tracking CUDA launches (P2P and collectives included)
   uint64_t opCount;

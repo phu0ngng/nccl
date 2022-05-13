@@ -121,6 +121,8 @@ WARN - Prints an explicit error message whenever any NCCL call errors out.
 
 INFO - Prints debug information
 
+TRACE - Prints replayable trace information on every call.
+
 NCCL_BUFFSIZE
 -------------
 The ``NCCL_BUFFSIZE`` variable controls the size of the buffer used by NCCL when communicating data between pairs of GPUs.
@@ -559,7 +561,7 @@ NCCL_DEBUG_FILE
 
 The ``NCCL_DEBUG_FILE`` variable directs the NCCL debug logging output to a file.
 The filename format can be set to *filename.%h.%p* where *%h* is replaced with the
-hostname and *%p* is replaced with the process PID.
+hostname and *%p* is replaced with the process PID. This does not accept home directory (~), please convert to a relative or absolute path first.
 
 Values accepted
 ^^^^^^^^^^^^^^^
@@ -710,11 +712,11 @@ NCCL_GRAPH_MIXING_SUPPORT
 
 Enable/disable support for co-occurring outstanding NCCL launches from multiple
 CUDA graphs or a CUDA graph and non-captured NCCL calls. With support disabled,
-correctness is only guarnateed if the communicator always avoids boths of the
+correctness is only guarnateed if the communicator always avoids both of the
 following cases:
 
 1. Has outstanding parallel graph launches, where parallel means on different
-streams without dependencies that would otherwise serializing their execution.
+streams without dependencies that would otherwise serialize their execution.
 
 2. An outstanding graph launch followed by a non-captured launch. Stream
 dependencies are irrelevant.

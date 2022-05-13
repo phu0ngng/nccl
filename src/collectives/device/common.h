@@ -169,6 +169,11 @@ __device__ void ncclKernel(
   __syncthreads(); // publish ncclShmem
 
   while (true) {
+    // Notify host that all fifo reads are complete.
+    if (tid == 0 && ncclShmem.work.header.isLast && ncclShmem.work.header.inFifo) {
+      *ncclShmem.channel.workFifoDone = ncclShmem.work.header.doneAcks;
+    }
+
     __syncwarp();
     if (ncclShmem.work.header.type == ncclWorkTypeColl) {
       if (tid < NCCL_MAX_WORK_ELEMENTS) ncclRedopPtrDeref(&ncclShmem.work.elems[tid]);
@@ -177,10 +182,11 @@ __device__ void ncclKernel(
     }
     __syncthreads();
 
-    if (ncclShmem.work.header.funcIndex == FnIndex)
+    if (ncclShmem.work.header.funcIndex == FnIndex) {
       RunWork<Fn, T, RedOp, Algo, Proto>().run(&ncclShmem.work);
-    else
+    } else {
       ncclFuncs[ncclShmem.work.header.funcIndex]();
+    }
 
     int workIxNext = ncclShmem.work.header.workNext;
     __syncthreads();
@@ -193,10 +199,6 @@ __device__ void ncclKernel(
       if (barrierReduceAny(aborted)) // publish ncclShmem.work
         break;
     }
-  }
-
-  if (tid == 0 && ncclShmem.work.header.inFifo) {
-    *ncclShmem.channel.workFifoDone = ncclShmem.work.header.doneAcks;
   }
 }
 

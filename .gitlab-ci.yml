@@ -31,6 +31,7 @@ unit_tests:
   stage: unit_tests
   rules:
     - when: always
+  needs: [build]
   tags:
     - build
   variables:
@@ -93,7 +94,7 @@ apitest-M40:
     - ./test/scripts/gitlab-runner-apitest.sh
   interruptible: true
 
-apitest-single-K40:
+apitest-K40:
   stage: api_tests
   rules:
     - when: always
@@ -169,7 +170,7 @@ apitest-DGX-A100:
       when: always
     - when: never
   tags:
-    - nccl-selene
+    - dgx-a100
   variables:
     CUDA_HOME: "/project/share/cuda/cuda-11.5.1/"
     NCCL_SOCKET_IFNAME: "ibp12s0"
@@ -182,6 +183,7 @@ perftest-P100:
   stage: perf_tests_single
   rules:
     - when: always
+  needs: [build, unit_tests, apitest-P100]
   tags:
     - p100
   variables:
@@ -197,6 +199,7 @@ perftest-P40:
   stage: perf_tests_single
   rules:
     - when: always
+  needs: [build, unit_tests, apitest-P40]
   tags:
     - p40
   variables:
@@ -212,6 +215,7 @@ perftest-GP100:
   stage: perf_tests_single
   rules:
     - when: always
+  needs: [build, unit_tests, apitest-GP100]
   tags:
     - gp100
   variables:
@@ -227,6 +231,7 @@ perftest-M40:
   stage: perf_tests_single
   rules:
     - when: always
+  needs: [build, unit_tests, apitest-M40]
   tags:
     - m40
   variables:
@@ -242,6 +247,7 @@ perftest-K80:
   stage: perf_tests_single
   rules:
     - when: always
+  needs: [build, unit_tests, apitest-K80]
   tags:
     - k80
   variables:
@@ -257,6 +263,7 @@ perftest-K40:
   stage: perf_tests_single
   rules:
     - when: always
+  needs: [build, unit_tests, apitest-K40]
   tags:
     - k40
   variables:
@@ -272,6 +279,7 @@ perftest-A100:
   stage: perf_tests_single
   rules:
     - when: always
+  needs: [build, unit_tests, apitest-A100]
   tags:
     - a100pci
   variables:
@@ -323,8 +331,9 @@ perftest-DGX-A100:
     - if: ($CI_PIPELINE_SOURCE == 'merge_request_event' || $CI_PIPELINE_SOURCE == 'schedule') && $RUN_ON_SELENE == "1"
       when: always
     - when: never
+  needs: [build, unit_tests, apitest-DGX-A100]
   tags:
-    - nccl-selene
+    - dgx-a100
   variables:
     NCCL_DEBUG: "WARN"
     MPI_HOME: "/home/svcnccl/install/openmpi-1.10.7"
@@ -338,6 +347,7 @@ perftest-multi-gc:
   stage: perf_tests_multi
   rules:
     - when: always
+  needs: [build, unit_tests, perftest-P100]
   tags:
     - p100
   variables:
@@ -354,6 +364,7 @@ perftest-sharp-gc:
   stage: perf_tests_multi
   rules:
     - when: always
+  needs: [build, unit_tests, perftest-P100]
   tags:
     - p100
   variables:
@@ -374,6 +385,7 @@ perftest-multi-dgx-2:
     - if: ($CI_PIPELINE_SOURCE == 'merge_request_event' || $CI_PIPELINE_SOURCE == 'schedule') && $RUN_ON_DRACO == "1"
       when: always
     - when: never
+  needs: [build, unit_tests, perftest-DGX-A100]
   tags:
     - dgx-2
   variables:
@@ -394,8 +406,9 @@ perftest-multi-selene:
     - if: ($CI_PIPELINE_SOURCE == 'merge_request_event' || $CI_PIPELINE_SOURCE == 'schedule') && $RUN_ON_SELENE == "1"
       when: always
     - when: never
+  needs: [build, unit_tests, perftest-DGX-A100]
   tags:
-    - nccl-selene
+    - dgx-a100
   variables:
     NCCL_DEBUG: "WARN"
     MPI_HOME: "/home/svcnccl/install/openmpi-1.10.7"
@@ -415,7 +428,7 @@ perftest-sharp-selene:
       when: always
     - when: never
   tags:
-    - nccl-selene
+    - dgx-a100
   variables:
     NCCL_DEBUG: "WARN"
     MPI_HOME: "/home/svcnccl/install/openmpi-1.10.7"
