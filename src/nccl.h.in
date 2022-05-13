@@ -82,9 +82,15 @@ ncclResult_t pncclCommDestroy(ncclComm_t comm);
 ncclResult_t  ncclCommAbort(ncclComm_t comm);
 ncclResult_t pncclCommAbort(ncclComm_t comm);
 
-/* Returns a human-readable error message. */
+/* Returns a string for each error code. */
 const char*  ncclGetErrorString(ncclResult_t result);
 const char* pncclGetErrorString(ncclResult_t result);
+
+/* Returns a human-readable message of the last error that occurred.
+ * comm is currently unused and can be set to NULL
+ */
+const char*  ncclGetLastError(ncclComm_t comm);
+const char* pncclGetError(ncclComm_t comm);
 
 /* Checks whether the comm has encountered any asynchronous errors */
 ncclResult_t  ncclCommGetAsyncError(ncclComm_t comm, ncclResult_t *asyncError);

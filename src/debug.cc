@@ -12,6 +12,7 @@
 
 int ncclDebugLevel = -1;
 thread_local int ncclDebugNoWarn = 0;
+char ncclLastError[1024] = ""; // Global string for the last error in human readable form
 uint64_t ncclDebugMask = NCCL_INIT; // Default debug sub-system mask is INIT
 FILE *ncclDebugFile = stdout;
 pthread_mutex_t ncclDebugLock = PTHREAD_MUTEX_INITIALIZER;
@@ -142,6 +143,15 @@ void ncclDebugLog(ncclDebugLogLevel level, unsigned long flags, const char *file
     initialized = true;
   }
   if (ncclDebugNoWarn != 0 && level == NCCL_LOG_WARN) { level = NCCL_LOG_INFO; flags = ncclDebugNoWarn; }
+  // Save the last error (WARN) as a human readable string
+  if (level == NCCL_LOG_WARN) {
+    pthread_mutex_lock(&ncclDebugLock);
+    va_list vargs;
+    va_start(vargs, fmt);
+    (void) vsnprintf(ncclLastError, sizeof(ncclLastError), fmt, vargs);
+    va_end(vargs);
+    pthread_mutex_unlock(&ncclDebugLock);
+  }
   if (ncclDebugLevel < level || ((flags & ncclDebugMask) == 0)) return;
 
   int cudaDev;

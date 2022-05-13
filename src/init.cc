@@ -1196,6 +1196,14 @@ const char* ncclGetErrorString(ncclResult_t code) {
   }
 }
 
+/* Returns a human-readable message of the last error that occurred.
+ * comm is currently unused and can be set to NULL
+ */
+NCCL_API(const char*, ncclGetLastError, const ncclComm_t comm);
+const char* ncclGetLastError(ncclComm_t comm) {
+  return ncclLastError;
+}
+
 NCCL_API(ncclResult_t, ncclCommGetAsyncError, ncclComm_t comm, ncclResult_t *asyncError);
 ncclResult_t ncclCommGetAsyncError(ncclComm_t comm, ncclResult_t *asyncError) {
   NCCLCHECK(PtrCheck(comm, "ncclGetAsyncError", "comm"));

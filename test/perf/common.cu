@@ -1209,6 +1209,8 @@ testResult_t run() {
     fclose(dump_file);
   }
 
+  PRINT("%s\n", ncclGetLastError(NULL));
+
   // 'cuda-memcheck --leak-check full' requires this
   cudaDeviceReset();
 
