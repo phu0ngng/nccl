@@ -144,7 +144,7 @@ apitest-DGX-1V:
     CUDA_HOME: "/home/svc_nvshmem_ci/cuda/cuda-11.3.66"
     SRUN: ""
   script:
-    - echo "$(pwd)" && srun -n 1 -c 8 --account=sw_gpucomms_nvshmem --nv-meta ml-model.nccl-perf -p batch_short_dgx1_m3 -t 00:05:00 ./test/scripts/gitlab-runner-apitest.sh
+    - srun -n 1 -c 8 --account=sw_gpucomms_nvshmem --nv-meta ml-model.nccl-perf -p batch_short_dgx1_m3 -t 00:05:00 ./test/scripts/gitlab-runner-apitest.sh
   interruptible: true
 
 apitest-DGX-2:
@@ -175,7 +175,7 @@ apitest-DGX-A100:
     NCCL_SOCKET_IFNAME: "ibp12s0"
     SRUN: ""
   script:
-    - srun -n 1 --account=nccl -J "nccl-cicd::$GITLAB_USER_LOGIN:apitest::$CI_COMMIT_BRANCH:$CI_COMMIT_SHORT_SHA" -pluna -t 00:05:00 ./test/scripts/gitlab-runner-apitest.sh
+    - srun -n 1 -c 8 --account=nccl -J "nccl-cicd::$GITLAB_USER_LOGIN:apitest::$CI_COMMIT_BRANCH:$CI_COMMIT_SHORT_SHA" -pluna -t 00:05:00 ./test/scripts/gitlab-runner-apitest.sh
   interruptible: true
 
 perftest-P100:
