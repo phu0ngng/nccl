@@ -12,7 +12,6 @@
 
 // Check CUDA PFN driver calls
 #define CUCHECK(cmd) do {				      \
-    if ((void *)pfn_##cmd == NULL) return ncclInternalError;  \
     CUresult err = pfn_##cmd;				      \
     if( err != CUDA_SUCCESS ) {				      \
       const char *errStr;				      \
@@ -23,7 +22,6 @@
 } while(false)
 
 #define CUCHECKGOTO(cmd, res, label) do {		      \
-    if ((void *)pfn_##cmd == NULL) return ncclInternalError;  \
     CUresult err = pfn_##cmd;				      \
     if( err != CUDA_SUCCESS ) {				      \
       const char *errStr;				      \
@@ -36,7 +34,6 @@
 
 // Report failure but clear error and continue
 #define CUCHECKIGNORE(cmd) do {						\
-    if ((void *)pfn_##cmd == NULL) return ncclInternalError;		\
     CUresult err = pfn_##cmd;						\
     if( err != CUDA_SUCCESS ) {						\
       const char *errStr;						\
@@ -46,7 +43,6 @@
 } while(false)
 
 #define CUCHECKTHREAD(cmd, args) do {					\
-    if (pfn_##cmd == NULL) return ncclInternalError;			\
     CUresult err = pfn_##cmd;						\
     if (err != CUDA_SUCCESS) {						\
       INFO(NCCL_INIT,"%s:%d -> %d [Async thread]", __FILE__, __LINE__, err); \
