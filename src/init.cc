@@ -1090,8 +1090,8 @@ NCCL_API(ncclResult_t, ncclCommInitRank, ncclComm_t* newcomm, int nranks, ncclUn
 ncclResult_t ncclCommInitRank(ncclComm_t* newcomm, int nranks, ncclUniqueId commId, int myrank) {
   NVTX3_FUNC_RANGE_IN(nccl_domain);
 
-  // Make sure the CUDA driver and dlsym hooks are initialized.
-  NCCLCHECK(cudaLibraryInit());
+  // Load the CUDA driver and dlsym hooks (can fail on old drivers)
+  (void) cudaLibraryInit();
 
   int cudaDev;
   CUDACHECK(cudaGetDevice(&cudaDev));
@@ -1103,8 +1103,8 @@ NCCL_API(ncclResult_t, ncclCommInitAll, ncclComm_t* comms, int ndev, const int* 
 ncclResult_t ncclCommInitAll(ncclComm_t* comms, int ndev, const int* devlist) {
   NVTX3_FUNC_RANGE_IN(nccl_domain);
 
-  // Make sure the CUDA driver and dlsym hooks are initialized.
-  NCCLCHECK(cudaLibraryInit());
+  // Load the CUDA driver and dlsym hooks (can fail on old drivers)
+  (void) cudaLibraryInit();
 
   NCCLCHECK(PtrCheck(comms, "CommInitAll", "comms"));
   if (ndev < 0) {

@@ -135,8 +135,7 @@ ncclResult_t cudaLibraryInit(void) {
   if (cudaDriverVersion < CUDA_DRIVER_MIN_VERSION) {
     // WARN("CUDA Driver version found is %d. Minimum requirement is %d", cudaDriverVersion, CUDA_DRIVER_MIN_VERSION);
     // Silently ignore version check mismatch for backwards compatibility
-    cudaState = cudaError;
-    return ncclSuccess;
+    goto error;
   }
 
   pfn_cuGetProcAddress = (PFN_cuGetProcAddress) dlsym(cudaLib, "cuGetProcAddress");
