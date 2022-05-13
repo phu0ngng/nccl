@@ -139,7 +139,7 @@ apitest-DGX-1V:
       when: always
     - when: never
   tags:
-    - dgx-1
+    - dgx-1v
   variables:
     CUDA_HOME: "/home/svc_nvshmem_ci/cuda/cuda-11.3.66"
     SRUN: ""
@@ -290,7 +290,7 @@ perftest-DGX-1V:
       when: always
     - when: never
   tags:
-    - dgx-1
+    - dgx-1v
   variables:
     NCCL_DEBUG: "WARN"
     MPI_HOME: "/home/svc_nvshmem_ci/mpi/openmpi-1.10.7"
