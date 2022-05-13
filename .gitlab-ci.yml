@@ -135,7 +135,7 @@ apitest-A100:
 apitest-DGX-1V:
   stage: api_tests
   rules:
-    - if: $RUN_ON_DRACO == "1"
+    - if: ($CI_PIPELINE_SOURCE == 'merge_request_event' || $CI_PIPELINE_SOURCE == 'schedule') && $RUN_ON_DRACO == "1"
       when: always
     - when: never
   tags:
@@ -150,7 +150,7 @@ apitest-DGX-1V:
 apitest-DGX-2:
   stage: api_tests
   rules:
-    - if: $RUN_ON_DRACO == "1"
+    - if: ($CI_PIPELINE_SOURCE == 'merge_request_event' || $CI_PIPELINE_SOURCE == 'schedule') && $RUN_ON_DRACO == "1"
       when: always
     - when: never
   tags:
