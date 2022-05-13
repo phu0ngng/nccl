@@ -322,7 +322,7 @@ perftest-DGX-2:
     CUDA_HOME: "/home/svc_nvshmem_ci/cuda/cuda-11.3.66"
     SALLOC: ""
   script:
-    - srun -N 1 -n 16 --account=sw_gpucomms_nvshmem --nv-meta ml-model.nccl-perf -p batch_short_dgx2_m2 -t 00:05:00 ./test/scripts/gitlab-runner-perftest.sh 4G
+    - srun -N 1 -n 16 --account=sw_gpucomms_nvshmem --nv-meta ml-model.nccl-perf -p batch_short_dgx2h_m2 -t 00:05:00 ./test/scripts/gitlab-runner-perftest.sh 4G
   interruptible: true
 
 perftest-DGX-A100:
@@ -397,7 +397,7 @@ perftest-multi-dgx-2:
     OMPI_MCA_btl_tcp_if_include: "10.33.12.0/24"
     SALLOC: ""
   script:
-    - let NUM_PROCESSES=$MULTI_PERFTEST_NODE_COUNT*16 && salloc -N $MULTI_PERFTEST_NODE_COUNT -n $NUM_PROCESSES --account=sw_gpucomms_nvshmem --nv-meta ml-model.nccl-perf -p batch_short_dgx2_m2 -t 00:10:00 ./test/scripts/gitlab-runner-perftest.sh 4G
+    - let NUM_PROCESSES=$MULTI_PERFTEST_NODE_COUNT*16 && salloc -N $MULTI_PERFTEST_NODE_COUNT -n $NUM_PROCESSES --account=sw_gpucomms_nvshmem --nv-meta ml-model.nccl-perf -p batch_short_dgx2h_m2 -t 00:10:00 ./test/scripts/gitlab-runner-perftest.sh 4G
   interruptible: true
 
 perftest-multi-selene:
