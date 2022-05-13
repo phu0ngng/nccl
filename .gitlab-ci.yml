@@ -143,6 +143,8 @@ apitest-DGX-1V:
     - dgx-1v
   variables:
     CUDA_HOME: "/home/svc_nvshmem_ci/cuda/cuda-11.3.66"
+    NCCL_DEBUG: "TRACE"
+    NCCL_DEBUG_SUBSYS: "CALL"
     SRUN: ""
   script:
     - srun -n 1 -c 8 --account=sw_gpucomms_nvshmem --nv-meta ml-model.nccl-perf -p batch_short_dgx1_m3 -t 00:05:00 ./test/scripts/gitlab-runner-apitest.sh
@@ -158,6 +160,8 @@ apitest-DGX-2:
     - dgx-2
   variables:
     CUDA_HOME: "/home/svc_nvshmem_ci/cuda/cuda-11.3.66"
+    NCCL_DEBUG: "TRACE"
+    NCCL_DEBUG_SUBSYS: "CALL"
     SRUN: ""
   script:
     - srun -n 1 -c 16 --account=sw_gpucomms_nvshmem --nv-meta ml-model.nccl-perf -p batch_short_dgx2h_m2 -t 00:05:00 ./test/scripts/gitlab-runner-apitest.sh
