@@ -308,7 +308,7 @@ perftest-DGX-1V:
     PARTITION_LIST: "batch_short_dgx1_m3,backfill_dgx1_m2,backfill_dgx1_m3,interactive_dgx1_m3,interactive_dgx1_m2,batch_short_dgx1_m2"
     SALLOC: ""
   script:
-    - srun -N 1 -n 8 -G 8 --account=sw_gpucomms_nvshmem --nv-meta ml-model.nccl-perf -p $PARTITION_LIST -t 00:10:00 ./test/scripts/gitlab-runner-perftest.sh 1G
+    - srun -N 1 -n 8 -G 8 --account=sw_gpucomms_nvshmem --nv-meta ml-model.nccl-perf -p $PARTITION_LIST -t 00:10:00 ./test/scripts/gitlab-runner-perftest.sh 256M
   interruptible: true
 
 perftest-DGX-2:
@@ -389,15 +389,16 @@ perftest-multi-dgx-2:
     - if: ($CI_PIPELINE_SOURCE == 'merge_request_event' || $CI_PIPELINE_SOURCE == 'schedule') && $RUN_ON_DRACO == "1"
       when: always
     - when: never
-  needs: [build, unit_tests, perftest-DGX-A100]
+  needs: [build, unit_tests, perftest-DGX-2]
   tags:
     - dgx-2
   variables:
-    NCCL_DEBUG: "WARN"
     MPI_HOME: "/home/svc_nvshmem_ci/mpi/openmpi-1.10.7"
     CUDA_HOME: "/home/svc_nvshmem_ci/cuda/cuda-11.3.66"
     PARTITION_LIST: "backfill_dgx2h_m2,interactive_dgx2h_m2,batch_short_dgx2h_m2,batch_dgx2h_m2,backfill_dgx2h_m2"
     OMPI_MCA_btl: "tcp,self"
+    UCX_TLS: "tcp"
+    MPI_PARAMS: "-oversubscribe -x LD_LIBRARY_PATH --map-by ppr:16:node -x NCCL_DEBUG -x NCCL_DEBUG_SUBSYS -x NCCL_IB_HCA=mlx5_2,mlx5_3,mlx5_4,mlx5_5,mlx5_8,mlx5_9,mlx5_10,mlx5_11"
     SALLOC: ""
   script:
     - let NUM_PROCESSES=$MULTI_PERFTEST_NODE_COUNT*16 && salloc -N $MULTI_PERFTEST_NODE_COUNT -n $NUM_PROCESSES -G $NUM_PROCESSES --account=sw_gpucomms_nvshmem --nv-meta ml-model.nccl-perf -p $PARTITION_LIST -t 00:10:00 ./test/scripts/gitlab-runner-perftest.sh 1G
