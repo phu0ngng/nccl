@@ -146,7 +146,7 @@ apitest-DGX-1V:
     PARTITION_LIST: "batch_short_dgx1_m3,backfill_dgx1_m2,backfill_dgx1_m3,interactive_dgx1_m3,interactive_dgx1_m2,batch_short_dgx1_m2"
     SRUN: ""
   script:
-    - srun -n 1 -G 8 -c 8 --account=sw_gpucomms_nvshmem --nv-meta ml-model.nccl-perf -p $PARTITION_LIST -t 00:05:00 ./test/scripts/gitlab-runner-apitest.sh
+    - srun -n 1 -G 8 -c 8 --account=sw_gpucomms_nvshmem --nv-meta ml-model.nccl-perf -p $PARTITION_LIST -t 00:10:00 ./test/scripts/gitlab-runner-apitest.sh
   interruptible: true
 
 apitest-DGX-2:
@@ -162,7 +162,7 @@ apitest-DGX-2:
     PARTITION_LIST: "backfill_dgx2h_m2,interactive_dgx2h_m2,batch_short_dgx2h_m2,batch_dgx2h_m2,backfill_dgx2h_m2"
     SRUN: ""
   script:
-    - srun -n 1 -G 16 -c 16 --account=sw_gpucomms_nvshmem --nv-meta ml-model.nccl-perf -p $PARTITION_LIST -t 00:05:00 ./test/scripts/gitlab-runner-apitest.sh
+    - srun -n 1 -G 16 -c 16 --account=sw_gpucomms_nvshmem --nv-meta ml-model.nccl-perf -p $PARTITION_LIST -t 00:10:00 ./test/scripts/gitlab-runner-apitest.sh
   interruptible: true
 
 apitest-DGX-A100:
@@ -308,7 +308,7 @@ perftest-DGX-1V:
     PARTITION_LIST: "batch_short_dgx1_m3,backfill_dgx1_m2,backfill_dgx1_m3,interactive_dgx1_m3,interactive_dgx1_m2,batch_short_dgx1_m2"
     SALLOC: ""
   script:
-    - srun -N 1 -n 8 -G 8 --account=sw_gpucomms_nvshmem --nv-meta ml-model.nccl-perf -p $PARTITION_LIST -t 00:05:00 ./test/scripts/gitlab-runner-perftest.sh 4G
+    - srun -N 1 -n 8 -G 8 --account=sw_gpucomms_nvshmem --nv-meta ml-model.nccl-perf -p $PARTITION_LIST -t 00:10:00 ./test/scripts/gitlab-runner-perftest.sh 1G
   interruptible: true
 
 perftest-DGX-2:
@@ -326,7 +326,7 @@ perftest-DGX-2:
     PARTITION_LIST: "backfill_dgx2h_m2,interactive_dgx2h_m2,batch_short_dgx2h_m2,batch_dgx2h_m2,backfill_dgx2h_m2"
     SALLOC: ""
   script:
-    - srun -N 1 -n 16 -G 16 --account=sw_gpucomms_nvshmem --nv-meta ml-model.nccl-perf -p $PARTITION_LIST -t 00:05:00 ./test/scripts/gitlab-runner-perftest.sh 4G
+    - srun -N 1 -n 16 -G 16 --account=sw_gpucomms_nvshmem --nv-meta ml-model.nccl-perf -p $PARTITION_LIST -t 00:10:00 ./test/scripts/gitlab-runner-perftest.sh 1G
   interruptible: true
 
 perftest-DGX-A100:
@@ -397,12 +397,10 @@ perftest-multi-dgx-2:
     MPI_HOME: "/home/svc_nvshmem_ci/mpi/openmpi-1.10.7"
     CUDA_HOME: "/home/svc_nvshmem_ci/cuda/cuda-11.3.66"
     PARTITION_LIST: "backfill_dgx2h_m2,interactive_dgx2h_m2,batch_short_dgx2h_m2,batch_dgx2h_m2,backfill_dgx2h_m2"
-    OMPI_MCA_oob_tcp_if_include: "10.33.12.0/24"
     OMPI_MCA_btl: "tcp,self"
-    OMPI_MCA_btl_tcp_if_include: "10.33.12.0/24"
     SALLOC: ""
   script:
-    - let NUM_PROCESSES=$MULTI_PERFTEST_NODE_COUNT*16 && salloc -N $MULTI_PERFTEST_NODE_COUNT -n $NUM_PROCESSES -G $NUM_PROCESSES --account=sw_gpucomms_nvshmem --nv-meta ml-model.nccl-perf -p $PARTITION_LIST -t 00:10:00 ./test/scripts/gitlab-runner-perftest.sh 4G
+    - let NUM_PROCESSES=$MULTI_PERFTEST_NODE_COUNT*16 && salloc -N $MULTI_PERFTEST_NODE_COUNT -n $NUM_PROCESSES -G $NUM_PROCESSES --account=sw_gpucomms_nvshmem --nv-meta ml-model.nccl-perf -p $PARTITION_LIST -t 00:10:00 ./test/scripts/gitlab-runner-perftest.sh 1G
   interruptible: true
 
 perftest-multi-selene:
