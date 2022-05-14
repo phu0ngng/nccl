@@ -359,7 +359,7 @@ socket_connect_check:
       /* expect user to call again */
       return ncclSuccess;
     } else if (conState == ncclSocketError) {
-      return ncclSystemError;
+      return ncclRemoteError;
     }
     stage->state = ncclSocketCommStateSend;
 
@@ -616,6 +616,7 @@ ncclNet_t ncclNetSocket = {
   ncclSocketConnect,
   ncclSocketAccept,
   ncclSocketRegMr,
+  NULL, // No DMA-BUF support
   ncclSocketDeregMr,
   ncclSocketIsend,
   ncclSocketIrecv,

@@ -448,7 +448,7 @@ retry:
   }
 
   WARN("Net : Connect to %s failed : %s", ncclSocketToString(&sock->addr, line), strerror(errno));
-  return ncclSystemError;
+  return ncclRemoteError;
 }
 
 ncclResult_t ncclSocketAccept(struct ncclSocket* sock, struct ncclSocket* listenSocket) {
@@ -501,7 +501,7 @@ static ncclResult_t ncclSocketProgressOpt(int op, struct ncclSocket* sock, void*
     if (bytes == -1) {
       if (errno != EINTR && errno != EWOULDBLOCK && errno != EAGAIN) {
         WARN("Net : Call to recv from %s failed : %s", ncclSocketToString(&sock->addr, line), strerror(errno));
-        return ncclSystemError;
+        return ncclRemoteError;
       } else {
         bytes = 0;
       }
@@ -521,7 +521,7 @@ ncclResult_t ncclSocketProgress(int op, struct ncclSocket* sock, void* ptr, int 
   if (closed) {
     char line[SOCKET_NAME_MAXLEN+1];
     WARN("Net : Connection closed by remote peer %s", ncclSocketToString(&sock->addr, line, 0));
-    return ncclSystemError;
+    return ncclRemoteError;
   }
   return ncclSuccess;
 }

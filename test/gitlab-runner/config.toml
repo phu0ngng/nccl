@@ -1,0 +1,24 @@
+# This is a copy of the gitlab runner configuration sitting on bewilliams@gpu-comms-nvshmem-jenkins-01:/home/bewilliams/.gitlab-runner/config.toml
+# The token has been removed for security's sake
+# This is reference for our selene runner settings
+
+concurrent = 1
+check_interval = 0
+
+[session_server]
+  session_timeout = 1800
+
+[[runners]]
+  name = "gpu-comms-nvshmem-jenkins-01-nccl-selene"
+  url = "https://gitlab-master.nvidia.com/"
+  token = ""
+  executor = "custom"
+  builds_dir = "/lustre/fsw/nccl/svc-nccl-ci"
+  cache_dir = "/home/svcnccl/cache"
+  [runners.custom_build_dir]
+  [runners.cache]
+    [runners.cache.s3]
+    [runners.cache.gcs]
+    [runners.cache.azure]
+  [runners.custom]
+    run_exec = "/home/bewilliams/run_exec_wrapper_selene.sh"

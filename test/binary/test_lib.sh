@@ -17,7 +17,15 @@ stripldd() {
   done
 }
 
-libs="linux-vdso.so librt.so libdl.so libstdc++.so libm.so libgcc_s.so libc.so ld-linux-x86-64.so libpthread.so"
+libs="linux-vdso.so libstdc++.so libm.so libgcc_s.so libc.so ld-linux-x86-64.so"
+# Glibc 2.34 now integrates libpthread, librt and libdl. Do not check them on recent distros.
+glibc_version=`ldd --version | head -1 | tr -s ' ' '\n' | tail -1`
+glibc_version_major=`echo $glibc_version | cut -d '.' -f 1`
+glibc_version_minor=`echo $glibc_version | cut -d '.' -f 2`
+if [ "$glibc_version_major" -lt "2" -o "$glibc_version_minor" -lt "34" ]; then
+  libs="$libs librt.so libdl.so libpthread.so"
+fi
+
 lddlibs=`ldd $lib | stripldd`
 
 for lddlib in $lddlibs; do
