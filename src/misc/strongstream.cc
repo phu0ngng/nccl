@@ -191,7 +191,7 @@ ncclResult_t ncclStrongStreamWaitStream(
         b->eventIsLagging = 0;
         CUDACHECK(cudaEventRecord(b->event, b->stream));
       }
-      CUDACHECK(cudaStreamWaitEvent(a->stream, b->event));
+      CUDACHECK(cudaStreamWaitEvent(a->stream, b->event, 0));
       a->eventIsLagging = 1;
     } else {
       cudaGraphNode_t pair[2] = {a->node, b->node};
@@ -200,7 +200,7 @@ ncclResult_t ncclStrongStreamWaitStream(
   #else
     cudaEvent_t scratch = ncclCudaScratchEvent();
     CUDACHECK(cudaEventRecord(scratch, b->stream));
-    CUDACHECK(cudaStreamWaitEvent(a->stream, scratch));
+    CUDACHECK(cudaStreamWaitEvent(a->stream, scratch, 0));
   #endif
   return ncclSuccess;
 }
@@ -211,7 +211,7 @@ ncclResult_t ncclStrongStreamWaitStream(
   #if CUDART_VERSION >= 11030
     if (graph.graph == nullptr) {
       CUDACHECK(cudaEventRecord(a->event, b));
-      CUDACHECK(cudaStreamWaitEvent(a->stream, a->event));
+      CUDACHECK(cudaStreamWaitEvent(a->stream, a->event, 0));
       // We used a->event to record b so it no longer reflects anything about a.
       a->eventIsLagging = 1;
     } else {
@@ -240,7 +240,7 @@ ncclResult_t ncclStrongStreamWaitStream(
   #else
     cudaEvent_t scratch = ncclCudaScratchEvent();
     CUDACHECK(cudaEventRecord(scratch, b));
-    CUDACHECK(cudaStreamWaitEvent(a->stream, scratch));
+    CUDACHECK(cudaStreamWaitEvent(a->stream, scratch, 0));
   #endif
   return ncclSuccess;
 }
@@ -254,21 +254,21 @@ ncclResult_t ncclStrongStreamWaitStream(
         b->eventIsLagging = 0;
         CUDACHECK(cudaEventRecord(b->event, b->stream));
       }
-      CUDACHECK(cudaStreamWaitEvent(a, b->event));
+      CUDACHECK(cudaStreamWaitEvent(a, b->event, 0));
     } else {
       CUDACHECK(cudaStreamUpdateCaptureDependencies(a, &b->node, 1, cudaStreamAddCaptureDependencies));
     }
   #else
     cudaEvent_t scratch = ncclCudaScratchEvent();
     CUDACHECK(cudaEventRecord(scratch, b->stream));
-    CUDACHECK(cudaStreamWaitEvent(a, scratch));
+    CUDACHECK(cudaStreamWaitEvent(a, scratch, 0));
   #endif
   return ncclSuccess;
 }
 
 ncclResult_t ncclStrongStreamSynchronize(struct ncclStrongStream* ss) {
   #if CUDART_VERSION >= 11030
-    CUDACHECK(cudaStreamWaitEvent(ss->stream, ss->event));
+    CUDACHECK(cudaStreamWaitEvent(ss->stream, ss->event, 0));
   #endif
   CUDACHECK(cudaStreamSynchronize(ss->stream));
   return ncclSuccess;
