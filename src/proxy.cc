@@ -610,26 +610,13 @@ void ncclDumpProxyState(int signal) {
 
 NCCL_PARAM(CreateThreadContext, "CREATE_THREAD_CONTEXT", 0);
 ncclResult_t ncclSetThreadContext(struct ncclComm* comm) {
+#if CUDART_VERSION >= 11030
   static int createThreadContext = -1;
-
-  static cudaError_t(*pfn_cuCtxCreate)(void**, unsigned int, int) = nullptr;
-  static cudaError_t(*pfn_cuCtxDestroy)(void*) = nullptr;
-  static cudaError_t(*pfn_cuCtxSetCurrent)(void*) = nullptr;
 
   if (createThreadContext == -1) {
     createThreadContext = ncclParamCreateThreadContext();
     if (createThreadContext) {
-      int driverVersion;
-      CUDACHECK(cudaDriverGetVersion(&driverVersion));
-#if CUDART_VERSION >= 11030
-      if (driverVersion >= 11030) {
-        // cudaGetDriverEntryPoint requires R465 or above (enhanced compat need)
-        CUDACHECK(cudaGetDriverEntryPoint("cuCtxCreate", (void**)&pfn_cuCtxCreate, cudaEnableDefault));
-        CUDACHECK(cudaGetDriverEntryPoint("cuCtxDestroy", (void**)&pfn_cuCtxDestroy, cudaEnableDefault));
-        CUDACHECK(cudaGetDriverEntryPoint("cuCtxSetCurrent", (void**)&pfn_cuCtxSetCurrent, cudaEnableDefault));
-      }
-#endif
-      if (pfn_cuCtxCreate == nullptr || pfn_cuCtxDestroy == nullptr || pfn_cuCtxSetCurrent == nullptr) {
+      if (CUPFN(cuCtxCreate_v3020) == nullptr || CUPFN(cuCtxDestroy) == nullptr || CUPFN(cuCtxSetCurrent) == nullptr) {
         WARN("Unable to create thread context due to old driver, disabling.");
         createThreadContext = 0;
       }
@@ -637,19 +624,20 @@ ncclResult_t ncclSetThreadContext(struct ncclComm* comm) {
   }
   if (createThreadContext) {
     if (comm->proxyState.cudaCtx == NULL) {
-      if (pfn_cuCtxCreate(&comm->proxyState.cudaCtx,
-            0x01/*CU_CTX_SCHED_SPIN*/|0x08/*CU_CTX_MAP_HOST*/, comm->cudaDev) != cudaSuccess) {
+      if (CUPFN(cuCtxCreate_v3020(&comm->proxyState.cudaCtx,
+                                  CU_CTX_SCHED_SPIN|CU_CTX_MAP_HOST, comm->cudaDev)) != CUDA_SUCCESS) {
         WARN("Failed to create CUDA context on device %d", comm->cudaDev);
         createThreadContext = 0;
         return ncclSuccess;
       }
     } else {
-      if (pfn_cuCtxSetCurrent(comm->proxyState.cudaCtx) != cudaSuccess) {
+      if (CUPFN(cuCtxSetCurrent(comm->proxyState.cudaCtx)) != CUDA_SUCCESS) {
         WARN("Failed to set CUDA context on device %d", comm->cudaDev);
         return ncclUnhandledCudaError;
       }
     }
   }
+#endif
   return ncclSuccess;
 }
 

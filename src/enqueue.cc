@@ -10,6 +10,7 @@
 #include "gdrwrap.h"
 #include "bootstrap.h"
 #include "channel.h"
+#include "cudawrap.h"
 
 #include <cstring> // std::memcpy
 #include <cinttypes> // PRIx64
@@ -432,21 +433,11 @@ static ncclResult_t registerIntraNodeBuffers(
   ) {
   *outRegBufUsed = false;
   ncclResult_t result = ncclSuccess;
-  int localRank = comm->localRank;
-
-  thread_local cudaError_t(*pfn_cuMemGetAddressRange)(void**, size_t*, void*) = nullptr;
 
 #if CUDART_VERSION >= 11030
-  thread_local int driverVersion = -1;
-  if (driverVersion < 0) {
-    CUDACHECK(cudaDriverGetVersion(&driverVersion));
-  }
-  if (driverVersion >= 11030 && pfn_cuMemGetAddressRange == nullptr) {
-    // cudaGetDriverEntryPoint requires R465 or above (enhanced compat need)
-    CUDACHECKGOTO(cudaGetDriverEntryPoint("cuMemGetAddressRange", (void**)&pfn_cuMemGetAddressRange, cudaEnableDefault), result, fallback);
-  }
-#endif
-  if (pfn_cuMemGetAddressRange == nullptr) return ncclSuccess;
+  int localRank = comm->localRank;
+
+  if (CUPFN(cuMemGetAddressRange) == nullptr) return ncclSuccess;
 
   struct HandlePair {
     cudaIpcMemHandle_t ipc[2]; // {send, recv}
@@ -459,9 +450,9 @@ static ncclResult_t registerIntraNodeBuffers(
 
   void *baseSend, *baseRecv;
   size_t size;
-  CUDACHECK(pfn_cuMemGetAddressRange(&baseSend, &size, (void*)info->sendbuff));
+  CUCHECK(cuMemGetAddressRange((CUdeviceptr *)&baseSend, &size, (CUdeviceptr)info->sendbuff));
   handles[localRank].offset[0] = (char*)info->sendbuff - (char*)baseSend;
-  CUDACHECK(pfn_cuMemGetAddressRange(&baseRecv, &size, (void*)info->recvbuff));
+  CUCHECK(cuMemGetAddressRange((CUdeviceptr *)&baseRecv, &size, (CUdeviceptr)info->recvbuff));
   handles[localRank].offset[1] = (char*)info->recvbuff - (char*)baseRecv;
 
   NCCLCHECK(bootstrapIntraNodeAllGather(comm->bootstrap, comm->localRankToRank, comm->localRank, comm->localRanks, handles, sizeof(struct HandlePair)));
@@ -488,6 +479,7 @@ static ncclResult_t registerIntraNodeBuffers(
   *outRegBufUsed = true;
 
 fallback:
+#endif
   return result;
 }
 

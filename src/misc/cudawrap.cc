@@ -10,7 +10,7 @@
 
 #include <dlfcn.h>
 
-#define DECLARE_CUDA_PFN(symbol) PFN_##symbol pfn_##symbol
+#define DECLARE_CUDA_PFN(symbol) PFN_##symbol pfn_##symbol = nullptr
 
 #if CUDART_VERSION >= 11030
 /* CUDA Driver functions loaded with cuGetProcAddress for versioning */
@@ -18,17 +18,14 @@ DECLARE_CUDA_PFN(cuDeviceGet);
 DECLARE_CUDA_PFN(cuDeviceGetAttribute);
 DECLARE_CUDA_PFN(cuGetErrorString);
 DECLARE_CUDA_PFN(cuGetErrorName);
-DECLARE_CUDA_PFN(cuMemAddressFree);
-DECLARE_CUDA_PFN(cuMemAddressReserve);
-DECLARE_CUDA_PFN(cuMemCreate);
-DECLARE_CUDA_PFN(cuMemRelease);
+/* enqueue.cc */
 DECLARE_CUDA_PFN(cuMemGetAddressRange);
-DECLARE_CUDA_PFN(cuMemExportToShareableHandle);
-DECLARE_CUDA_PFN(cuMemImportFromShareableHandle);
-DECLARE_CUDA_PFN(cuMemSetAccess);
-DECLARE_CUDA_PFN(cuMemMap);
-DECLARE_CUDA_PFN(cuMemUnmap);
+/* proxy.cc */
+DECLARE_CUDA_PFN(cuCtxCreate_v3020);
+DECLARE_CUDA_PFN(cuCtxDestroy);
+DECLARE_CUDA_PFN(cuCtxSetCurrent);
 #if CUDA_VERSION >= 11070
+/* transport/collNet.cc/net.cc*/
 DECLARE_CUDA_PFN(cuMemGetHandleForAddressRange); // DMA-BUF support
 #endif
 #endif
@@ -64,17 +61,10 @@ static int cudaPfnFuncLoader(void) {
   LOAD_SYM(cuGetErrorName, 0);
   LOAD_SYM(cuDeviceGet, 0);
   LOAD_SYM(cuDeviceGetAttribute, 0);
-
-  LOAD_SYM(cuMemCreate, 1);
-  LOAD_SYM(cuMemRelease, 1);
-  LOAD_SYM(cuMemAddressFree, 1);
-  LOAD_SYM(cuMemAddressReserve, 1);
   LOAD_SYM(cuMemGetAddressRange, 1);
-  LOAD_SYM(cuMemExportToShareableHandle, 1);
-  LOAD_SYM(cuMemImportFromShareableHandle, 1);
-  LOAD_SYM(cuMemSetAccess, 1);
-  LOAD_SYM(cuMemMap, 1);
-  LOAD_SYM(cuMemUnmap, 1);
+  LOAD_SYM(cuCtxCreate_v3020, 1);
+  LOAD_SYM(cuCtxDestroy, 1);
+  LOAD_SYM(cuCtxSetCurrent, 1);
 #if CUDA_VERSION >= 11070
   LOAD_SYM(cuMemGetHandleForAddressRange, 1); // DMA-BUF support
 #endif
