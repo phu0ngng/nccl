@@ -8,7 +8,14 @@
 #define NCCL_CUDAWRAP_H_
 
 #include <cuda.h>
+
+#if CUDART_VERSION >= 11030
 #include <cudaTypedefs.h>
+#else
+typedef CUresult (CUDAAPI *PFN_cuInit)(unsigned int Flags);
+typedef CUresult (CUDAAPI *PFN_cuDriverGetVersion)(int *driverVersion);
+typedef CUresult (CUDAAPI *PFN_cuGetProcAddress)(const char *symbol, void **pfn, int driverVersion, cuuint64_t flags);
+#endif
 
 // Check CUDA PFN driver calls
 #define CUCHECK(cmd) do {				      \
@@ -53,6 +60,7 @@
 
 #define DECLARE_CUDA_PFN_EXTERN(symbol) extern PFN_##symbol pfn_##symbol
 
+#if CUDART_VERSION >= 11030
 /* CUDA Driver functions loaded with cuGetProcAddress for versioning */
 DECLARE_CUDA_PFN_EXTERN(cuDeviceGet);
 DECLARE_CUDA_PFN_EXTERN(cuDeviceGetAttribute);
@@ -70,6 +78,7 @@ DECLARE_CUDA_PFN_EXTERN(cuMemMap);
 DECLARE_CUDA_PFN_EXTERN(cuMemUnmap);
 #if CUDA_VERSION >= 11070
 DECLARE_CUDA_PFN_EXTERN(cuMemGetHandleForAddressRange); // DMA-BUF support
+#endif
 #endif
 
 /* CUDA Driver functions loaded with dlsym() */

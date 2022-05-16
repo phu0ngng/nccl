@@ -12,6 +12,7 @@
 
 #define DECLARE_CUDA_PFN(symbol) PFN_##symbol pfn_##symbol
 
+#if CUDART_VERSION >= 11030
 /* CUDA Driver functions loaded with cuGetProcAddress for versioning */
 DECLARE_CUDA_PFN(cuDeviceGet);
 DECLARE_CUDA_PFN(cuDeviceGetAttribute);
@@ -30,6 +31,7 @@ DECLARE_CUDA_PFN(cuMemUnmap);
 #if CUDA_VERSION >= 11070
 DECLARE_CUDA_PFN(cuMemGetHandleForAddressRange); // DMA-BUF support
 #endif
+#endif
 
 /* CUDA Driver functions loaded with dlsym() */
 DECLARE_CUDA_PFN(cuInit);
@@ -43,6 +45,7 @@ static enum { cudaUninitialized, cudaInitializing, cudaInitialized, cudaError } 
 static void *cudaLib;
 static int cudaDriverVersion;
 
+#if CUDART_VERSION >= 11030
 /*
   Load the CUDA symbols
  */
@@ -77,6 +80,7 @@ static int cudaPfnFuncLoader(void) {
 #endif
   return ncclSuccess;
 }
+#endif
 
 ncclResult_t cudaLibraryInit(void) {
   CUresult res;
@@ -151,10 +155,12 @@ ncclResult_t cudaLibraryInit(void) {
    */
   pfn_cuInit(0);
 
+#if CUDART_VERSION >= 11030
   if (cudaPfnFuncLoader()) {
     WARN("CUDA some PFN functions not found in the library");
     goto error;
   }
+#endif
 
   cudaState = cudaInitialized;
   return ncclSuccess;

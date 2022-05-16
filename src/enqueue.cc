@@ -434,17 +434,19 @@ static ncclResult_t registerIntraNodeBuffers(
   ncclResult_t result = ncclSuccess;
   int localRank = comm->localRank;
 
-  thread_local int driverVersion = -1;
   thread_local cudaError_t(*pfn_cuMemGetAddressRange)(void**, size_t*, void*) = nullptr;
 
+#if CUDART_VERSION >= 11030
+  thread_local int driverVersion = -1;
   if (driverVersion < 0) {
     CUDACHECK(cudaDriverGetVersion(&driverVersion));
   }
-  if (driverVersion < 11030) return ncclSuccess;
-  if (pfn_cuMemGetAddressRange == nullptr) {
+  if (driverVersion >= 11030 && pfn_cuMemGetAddressRange == nullptr) {
     // cudaGetDriverEntryPoint requires R465 or above (enhanced compat need)
     CUDACHECKGOTO(cudaGetDriverEntryPoint("cuMemGetAddressRange", (void**)&pfn_cuMemGetAddressRange, cudaEnableDefault), result, fallback);
   }
+#endif
+  if (pfn_cuMemGetAddressRange == nullptr) return ncclSuccess;
 
   struct HandlePair {
     cudaIpcMemHandle_t ipc[2]; // {send, recv}

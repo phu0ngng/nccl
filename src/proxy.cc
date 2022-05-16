@@ -621,12 +621,14 @@ ncclResult_t ncclSetThreadContext(struct ncclComm* comm) {
     if (createThreadContext) {
       int driverVersion;
       CUDACHECK(cudaDriverGetVersion(&driverVersion));
+#if CUDART_VERSION >= 11030
       if (driverVersion >= 11030) {
         // cudaGetDriverEntryPoint requires R465 or above (enhanced compat need)
         CUDACHECK(cudaGetDriverEntryPoint("cuCtxCreate", (void**)&pfn_cuCtxCreate, cudaEnableDefault));
         CUDACHECK(cudaGetDriverEntryPoint("cuCtxDestroy", (void**)&pfn_cuCtxDestroy, cudaEnableDefault));
         CUDACHECK(cudaGetDriverEntryPoint("cuCtxSetCurrent", (void**)&pfn_cuCtxSetCurrent, cudaEnableDefault));
       }
+#endif
       if (pfn_cuCtxCreate == nullptr || pfn_cuCtxDestroy == nullptr || pfn_cuCtxSetCurrent == nullptr) {
         WARN("Unable to create thread context due to old driver, disabling.");
         createThreadContext = 0;
