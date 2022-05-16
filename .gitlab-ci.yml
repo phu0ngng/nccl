@@ -128,7 +128,7 @@ apitest-A100:
     - a100pci
   variables:
     CUDA_HOME: "/usr/local/cuda-11.3"
-    SRUN: "srun -t 00:05:00 -n 1 -c 8 -pA100"
+    SRUN: "srun -t 00:10:00 -n 1 -c 8 -pA100"
   script:
     - ./test/scripts/gitlab-runner-apitest.sh
   interruptible: true
