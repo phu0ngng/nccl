@@ -124,8 +124,8 @@ ncclResult_t ncclStrongStreamSynchronize(struct ncclStrongStream* ss);
 
 struct ncclStrongStream {
   cudaStream_t stream;
-  #if CUDART_VERSION >= 11030
   cudaEvent_t event;
+  #if CUDART_VERSION >= 11030
   cudaGraphNode_t node; // null if never captured, otherwise never null again
   uint64_t graphId:63, eventIsLagging:1;
   #endif
@@ -137,15 +137,6 @@ inline bool ncclStrongStreamEverCaptured(struct ncclStrongStream* ss) {
   #else
     return false;
   #endif
-}
-
-inline cudaEvent_t ncclCudaScratchEvent() {
-  thread_local cudaEvent_t event = 0x0;
-  if (event == 0x0) {
-    event = reinterpret_cast<cudaEvent_t>(0x1);
-    CUDACHECKIGNORE(cudaEventCreateWithFlags(&event, cudaEventDisableTiming));
-  }
-  return event;
 }
 
 #endif
