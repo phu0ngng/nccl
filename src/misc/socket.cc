@@ -410,10 +410,12 @@ ncclResult_t ncclSocketConnect(struct ncclSocket* sock) {
 
   const int one = 1;
   SYSCHECK(setsockopt(fd, IPPROTO_TCP, TCP_NODELAY, (char*)&one, sizeof(int)), "setsockopt");
-
+  
   /* support non-blocking socket; by default, the socket is non-blocking */
-  EQCHECK(flags = fcntl(fd, F_GETFL), -1);
-  SYSCHECK(fcntl(fd, F_SETFL, flags | O_NONBLOCK), "fcntl");
+  if (sock->asyncFlag) {
+    EQCHECK(flags = fcntl(fd, F_GETFL), -1);
+    SYSCHECK(fcntl(fd, F_SETFL, flags | O_NONBLOCK), "fcntl");
+  }
 
   /*  const int bufsize = 128*1024;
     SYSCHECK(setsockopt(fd, SOL_SOCKET, SO_SNDBUF, (char*)&bufsize, sizeof(int)), "setsockopt");
@@ -443,7 +445,10 @@ retry:
     ret = 0;
   }
 
-  if (ret == 0 || (errno == EINPROGRESS && sock->asyncFlag)) {
+  /* If connect() fails with errno == EAGAIN/EINPROGRESS/ETIMEDOUT, we may want to try connect again.
+   * However, it can return EISCONN instead of success which indicates connection is built up in
+   * background already. No need to call connect() again. */
+  if (ret == 0 || (errno == EINPROGRESS && sock->asyncFlag) || errno == EISCONN) {
     sock->fd = fd;
     return ncclSuccess;
   }

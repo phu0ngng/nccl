@@ -140,6 +140,7 @@ static void *bootstrapRoot(void* args) {
     int next = (r+1) % nranks;
     struct ncclSocket sock;
     sock.abortFlag = NULL;
+    sock.asyncFlag = 0;
     memcpy(&sock.addr, rankAddressesRoot+r, sizeof(union ncclSocketAddress));
     NCCLCHECKGOTO(ncclSocketConnect(&sock), res, out);
     NCCLCHECKGOTO(bootstrapNetSend(&sock, rankAddresses+next, sizeof(union ncclSocketAddress)), res, out);
@@ -317,6 +318,7 @@ ncclResult_t bootstrapSend(void* commState, int peer, int tag, void* data, int s
   struct bootstrapState* state = (struct bootstrapState*)commState;
   struct ncclSocket sock;
   sock.abortFlag = state->abortFlag;
+  sock.asyncFlag = 0;
   memcpy(&sock.addr, state->peerCommAddresses+peer, sizeof(union ncclSocketAddress));
   NCCLCHECK(ncclSocketConnect(&sock));
   NCCLCHECK(bootstrapNetSend(&sock, &state->rank, sizeof(int)));
