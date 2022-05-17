@@ -18,6 +18,13 @@ export LD_LIBRARY_PATH=$PLUGIN_PATH:$LD_LIBRARY_PATH
 export NCCL_COLLNET_ENABLE=1
 export NCCL_ALGO=COLLNET
 
+echo "Using CUDA_HOME=$CUDA_HOME"
+echo "Using MPI_HOME=$MPI_HOME"
+echo "Using NCCL_HOME=$PWD/build"
+echo "Using SHARP_HOME=$SHARP_HOME"
+echo "Using PLUGIN_PATH=$PLUGIN_PATH"
+echo "Using LD_LIBRARY_PATH=$LD_LIBRARY_PATH"
+
 # We need to catch failures manually and then throw at the end to get gitlab to detect a failure
 failure_count=0
 
