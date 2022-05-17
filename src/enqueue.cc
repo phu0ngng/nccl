@@ -157,26 +157,7 @@ ncclResult_t ncclLaunchCooperativeKernelMultiDevice(struct cudaLaunchParams *par
   for (int i = 0; i < numDevices; i++) {
     struct cudaLaunchParams* params = paramsList+i;
     CUDACHECK(cudaSetDevice(cudaDevs[i]));
-#if CUDART_VERSION >= 11080
-    cudaLaunchConfig_t launchConfig = {0};
-    cudaLaunchAttribute launchAttrs[2];
-    unsigned int clusterSizeForExLaunch = 1;
-
-    launchAttrs[0].id = cudaLaunchAttributeClusterDimension;
-    launchAttrs[0].val.clusterDim = {clusterSizeForExLaunch, 1, 1};
-    launchAttrs[1].id = cudaLaunchAttributeClusterSchedulingPolicyPreference;
-    launchAttrs[1].val.clusterSchedulingPolicyPreference = cudaClusterSchedulingPolicyLoadBalancing;
-
-    launchConfig.gridDim = params->gridDim;
-    launchConfig.blockDim = params->blockDim;
-    launchConfig.attrs = launchAttrs;
-    launchConfig.numAttrs = 2;
-    launchConfig.stream = params->stream;
-
-    CUDACHECK(cudaLaunchKernelExC(&launchConfig, params->func, params->args));
-#else
     CUDACHECK(cudaLaunchKernel(params->func, params->gridDim, params->blockDim, params->args, params->sharedMem, params->stream));
-#endif
   }
   CUDACHECK(cudaSetDevice(savedDev));
   return ncclSuccess;
@@ -334,6 +315,9 @@ ncclResult_t ncclLaunchBarrier(struct ncclComm* comm) {
   return ncclSuccess;
 }
 
+#define NCCL_MAX_CGA_CLUSTER_SIZE 8
+NCCL_PARAM(CGAClusterSize, "CGA_CLUSTER_SIZE", 1);
+
 // Launch kernel in PARALLEL mode
 ncclResult_t ncclLaunchKernel(ncclComm_t comm) {
   struct cudaLaunchParams *params = comm->myParams;
@@ -351,7 +335,47 @@ ncclResult_t ncclLaunchKernel(ncclComm_t comm) {
   if (comm->launchMode == ncclComm::GROUP) {
     NCCLCHECK(ncclCpuBarrierOut(comm));
   } else {
-    CUDACHECK(cudaLaunchKernel(params->func, params->gridDim, params->blockDim, params->args, params->sharedMem, params->stream));
+#if CUDART_VERSION >= 11080
+    int driverVersion;
+    CUDACHECK(cudaDriverGetVersion(&driverVersion));
+    if (driverVersion >= 11080) {
+      cudaLaunchConfig_t launchConfig = {0};
+      cudaLaunchAttribute launchAttrs[2];
+      /* Cooperative Group Array (CGA)
+       * On sm90 and later we have an extra level of hierarchy where we
+       * can group together several blocks within the Grid, called
+       * Thread Block Clusters.
+       * Clusters enable multiple thread blocks running concurrently
+       * across multiple SMs to synchronize and collaboratively fetch
+       * and exchange data. A cluster of blocks are guaranteed to be
+       * concurrently scheduled onto a group of SMs.
+       * The maximum value is 8 and it must be divisible into the grid dimensions
+       */
+      unsigned int clusterSize = ncclParamCGAClusterSize();
+      if (clusterSize > NCCL_MAX_CGA_CLUSTER_SIZE) {
+        WARN("Max CGA cluster size is %d. Limiting to NCCL_CGA_CLUSTER_SIZE to %d.",
+             NCCL_MAX_CGA_CLUSTER_SIZE, NCCL_MAX_CGA_CLUSTER_SIZE);
+        clusterSize = NCCL_MAX_CGA_CLUSTER_SIZE;
+      }
+      // Grid dimension must be divisible by clusterSize
+      if (params->gridDim.x % clusterSize) clusterSize = 1;
+      launchAttrs[0].id = cudaLaunchAttributeClusterDimension;
+      launchAttrs[0].val.clusterDim = {clusterSize, 1, 1};
+      launchAttrs[1].id = cudaLaunchAttributeClusterSchedulingPolicyPreference;
+      launchAttrs[1].val.clusterSchedulingPolicyPreference = cudaClusterSchedulingPolicySpread;
+
+      launchConfig.gridDim = params->gridDim;
+      launchConfig.blockDim = params->blockDim;
+      launchConfig.attrs = launchAttrs;
+      launchConfig.numAttrs = sizeof(launchAttrs)/sizeof(launchAttrs[0]);
+      launchConfig.stream = params->stream;
+
+      CUDACHECK(cudaLaunchKernelExC(&launchConfig, params->func, params->args));
+    } else /* FALLTHRU to standard kernel launch */
+#endif
+    {
+      CUDACHECK(cudaLaunchKernel(params->func, params->gridDim, params->blockDim, params->args, params->sharedMem, params->stream));
+    }
   }
 
   return ncclSuccess;
