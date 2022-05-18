@@ -1,6 +1,45 @@
 #include "ncclCommon_test.cuh"
+
+struct MultiNetComms {
+    ncclComm_t* commsIB; 
+    ncclComm_t* commsSocket;
+    bool testMultiNet;
+};
+
 template <typename DT>
-class ncclAllReduce_test : public ncclCommon_test<DT> {};
+class ncclAllReduce_test : public ncclCommon_test<DT> {
+    public:
+        static MultiNetComms* multiNetComms;
+
+    public:
+        static MultiNetComms* ncclAllReduce_GetMultiNetComms() {
+            if (multiNetComms == NULL) {
+                multiNetComms = new MultiNetComms;
+                ncclUniqueId commIdIB;
+                // ASSERT_EQ(ncclSuccess, ncclGetUniqueId(&commIdIB));
+                multiNetComms->commsIB = (ncclComm_t*)calloc(sizeof(ncclComm_t), this->nVis);
+                (void) setenv("NCCL_NET", "IB", 1);
+                if (ncclCommInitAll(multiNetComms->commsIB, this->nVis, NULL) != ncclSuccess) {
+                    std::cout << "ncclGroupEnd() failed when trying to init IB communicators. Skipping test." << std::endl;
+                    // This platform doesn't have IB network, so mark the test as skipped here
+                    multiNetComms->testMultiNet = false;
+                } else {
+                    multiNetComms->testMultiNet = true;
+
+                    ncclUniqueId commIdSocket;
+                    // ASSERT_EQ(ncclSuccess, ncclGetUniqueId(&commIdSocket));
+                    multiNetComms->commsSocket = (ncclComm_t*)calloc(sizeof(ncclComm_t), this->nVis);
+                    (void) setenv("NCCL_NET", "Socket", 1);
+                    // ASSERT_EQ(ncclSuccess, ncclCommInitAll(multiNetComms->commsSocket, this->nVis, NULL));
+                }
+
+                (void) unsetenv("NCCL_NET");
+            }
+
+            return multiNetComms;
+        };
+};
+
 TYPED_TEST_CASE(ncclAllReduce_test, testDataTypes);
 // typical usage.
 TYPED_TEST(ncclAllReduce_test, basic) {
@@ -245,23 +284,11 @@ TYPED_TEST(ncclAllReduce_test, aggregate_ll_singleRing_multiRing) {
 #endif
 
 TYPED_TEST(ncclAllReduce_test, multi_net) {
-    ncclUniqueId commIdIB;
-    ASSERT_EQ(ncclSuccess, ncclGetUniqueId(&commIdIB));
-    ncclComm_t* commIB = (ncclComm_t*)calloc(sizeof(ncclComm_t), this->nVis);
-    (void) setenv("NCCL_NET", "IB", 1);
-    if (ncclCommInitAll(commIB, this->nVis, NULL) != ncclSuccess) {
-        std::cout << "ncclGroupEnd() failed when trying to init IB communicators. Skipping test." << std::endl;
-        (void) unsetenv("NCCL_NET");
-        // This platform doesn't have IB network, so mark the test as skipped here
-        free(commIB);
+    MultiNetComms* mnet = ncclAllReduce_test::ncclAllReduce_GetMultiNetComms();
+    if (!mnet->testMultiNet) {
+        std::cout << "Skipping test." << std::endl;
         return;
     }
-    
-    ncclUniqueId commIdSocket;
-    ASSERT_EQ(ncclSuccess, ncclGetUniqueId(&commIdSocket));
-    ncclComm_t* commSocket = (ncclComm_t*)calloc(sizeof(ncclComm_t), this->nVis);
-    (void) setenv("NCCL_NET", "Socket", 1);
-    ASSERT_EQ(ncclSuccess, ncclCommInitAll(commSocket, this->nVis, NULL));
 
     ASSERT_EQ(ncclSuccess, ncclGroupStart());
     for (int i = 0; i < this->nVis; ++i) {
@@ -269,7 +296,7 @@ TYPED_TEST(ncclAllReduce_test, multi_net) {
                     ncclAllReduce(this->sendbuffs[i], this->recvbuffs[i],
                                 std::min(this->N, 1024 * 1024),
                                 this->DataType(), ncclSum,
-                                commIB[i], this->streams[i]))
+                                mnet->commsIB[i], this->streams[i]))
             << "IB op: " << ncclSum << ", "
             << "i" << i << ", " << std::endl;
     }
@@ -281,20 +308,11 @@ TYPED_TEST(ncclAllReduce_test, multi_net) {
                     ncclAllReduce(this->sendbuffs[i], this->recvbuffs[i],
                                 std::min(this->N, 1024 * 1024),
                                 this->DataType(), ncclSum,
-                                commSocket[i], this->streams[i]))
+                                mnet->commsSocket[i], this->streams[i]))
             << "Socket op: " << ncclSum << ", "
             << "i" << i << ", " << std::endl;
     }
     ASSERT_EQ(ncclSuccess, ncclGroupEnd());
-
-    for (int i = 0; i < this->nVis; ++i) {
-        ASSERT_EQ(ncclSuccess, ncclCommDestroy(commIB[i]));
-        ASSERT_EQ(ncclSuccess, ncclCommDestroy(commSocket[i]));
-    }
-
-    free(commIB);
-    free(commSocket);
-    (void) unsetenv("NCCL_NET");
 };
 
 // EOF

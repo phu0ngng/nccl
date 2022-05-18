@@ -35,8 +35,8 @@ class ncclCommon_test : public ::testing::Test {
     //
   protected:
     int root = -1;
-    void SetUp(){};
-    void TearDown() {
+    virtual void SetUp(){};
+    virtual void TearDown() {
         int done[nVis];
         int total = 0;
         for (int i = 0; i < this->nVis; ++i)
