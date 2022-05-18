@@ -8,6 +8,7 @@ stages:
 
 variables:
   MULTI_PERFTEST_NODE_COUNT: 4
+  CUDA_VERSION: "11.7"
 #  NCCL_REGRESSION_BASELINE: v2.9.9-1
 
 build:
@@ -18,8 +19,9 @@ build:
     - build
   variables:
     MPI_HOME: "/opt/mpi/openmpi-1.10.7"
-    CUDA_HOME: "/usr/local/cuda-11.3"
+    CUDA_HOME: "/usr/local/cuda-${CUDA_VERSION}"
   script:
+    - echo "Using CUDA_HOME=$CUDA_HOME, MPI_HOME=$MPI_HOME"
     - make -j test.build MPI=1 MPI_HOME=$MPI_HOME CUDA_HOME=$CUDA_HOME
   artifacts:
     paths:
@@ -35,7 +37,7 @@ unit_tests:
   tags:
     - build
   variables:
-    CUDA_HOME: "/usr/local/cuda-11.3"
+    CUDA_HOME: "/usr/local/cuda-${CUDA_VERSION}"
   script:
     - (cd build/test/unit; LD_LIBRARY_PATH=$PWD/../../lib:$CUDA_HOME/lib64 ./graph_test)
   interruptible: true
@@ -48,7 +50,7 @@ apitest-P100:
     - p100
   variables:
     NCCL_IB_HCA: "mlx5_0"
-    CUDA_HOME: "/usr/local/cuda-11.3"
+    CUDA_HOME: "/usr/local/cuda-${CUDA_VERSION}"
     SRUN: "srun -t 00:05:00 -n 1 -c 8 -pP100"
   script:
     - ./test/scripts/gitlab-runner-apitest.sh
@@ -62,7 +64,7 @@ apitest-P40:
     - p40
   variables:
     NCCL_IB_HCA: "mlx5_0"
-    CUDA_HOME: "/usr/local/cuda-11.3"
+    CUDA_HOME: "/usr/local/cuda-${CUDA_VERSION}"
     SRUN: "srun -t 00:05:00 -n 1 -c 8 -pP40"
   script:
     - ./test/scripts/gitlab-runner-apitest.sh
@@ -75,7 +77,7 @@ apitest-GP100:
   tags:
     - gp100
   variables:
-    CUDA_HOME: "/usr/local/cuda-11.3"
+    CUDA_HOME: "/usr/local/cuda-${CUDA_VERSION}"
     SRUN: "srun -t 00:05:00 -n 1 -c 8 -pGP100"
   script:
     - ./test/scripts/gitlab-runner-apitest.sh
@@ -101,7 +103,7 @@ apitest-K40:
   tags:
     - k40
   variables:
-    CUDA_HOME: "/usr/local/cuda-11.3"
+    CUDA_HOME: "/usr/local/cuda-${CUDA_VERSION}"
     SRUN: "srun -t 00:05:00 -n 1 -c 1 -pK40"
   script:
     - ./test/scripts/gitlab-runner-apitest.sh
@@ -127,8 +129,8 @@ apitest-A100:
   tags:
     - a100pci
   variables:
-    CUDA_HOME: "/usr/local/cuda-11.3"
-    SRUN: "srun -t 00:05:00 -n 1 -c 8 -pA100"
+    CUDA_HOME: "/usr/local/cuda-${CUDA_VERSION}"
+    SRUN: "srun -t 00:10:00 -n 1 -c 8 -pA100"
   script:
     - ./test/scripts/gitlab-runner-apitest.sh
   interruptible: true
@@ -157,7 +159,7 @@ apitest-DGX-A100:
   tags:
     - dgx-a100
   variables:
-    CUDA_HOME: "/project/share/cuda/cuda-11.5.1/"
+    CUDA_HOME: "/project/share/cuda/cuda-11.5.1"
     NCCL_SOCKET_IFNAME: "ibp12s0"
     SRUN: ""
   script:
@@ -174,7 +176,7 @@ perftest-P100:
   variables:
     NCCL_DEBUG: "WARN"
     MPI_HOME: "/opt/mpi/openmpi-1.10.7"
-    CUDA_HOME: "/usr/local/cuda-11.3"
+    CUDA_HOME: "/usr/local/cuda-${CUDA_VERSION}"
     SALLOC: "salloc -t 00:05:00 -n 8 -pP100"
   script:
     - ./test/scripts/gitlab-runner-perftest.sh
@@ -190,7 +192,7 @@ perftest-P40:
   variables:
     NCCL_DEBUG: "WARN"
     MPI_HOME: "/opt/mpi/openmpi-1.10.7"
-    CUDA_HOME: "/usr/local/cuda-11.3"
+    CUDA_HOME: "/usr/local/cuda-${CUDA_VERSION}"
     SALLOC: "salloc -t 00:05:00 -n 8 -pP40"
   script:
     - ./test/scripts/gitlab-runner-perftest.sh
@@ -206,7 +208,7 @@ perftest-GP100:
   variables:
     NCCL_DEBUG: "WARN"
     MPI_HOME: "/opt/mpi/openmpi-1.10.7"
-    CUDA_HOME: "/usr/local/cuda-11.3"
+    CUDA_HOME: "/usr/local/cuda-${CUDA_VERSION}"
     SALLOC: "salloc -t 00:05:00 -n 8 -pGP100"
   script:
     - ./test/scripts/gitlab-runner-perftest.sh 1G 2
@@ -222,7 +224,7 @@ perftest-M40:
   variables:
     NCCL_DEBUG: "WARN"
     MPI_HOME: "/opt/mpi/openmpi-1.10.7"
-    CUDA_HOME: "/usr/local/cuda-11.3"
+    CUDA_HOME: "/usr/local/cuda-${CUDA_VERSION}"
     SALLOC: "salloc -t 00:05:00 -n 4 -pM40"
   script:
     - ./test/scripts/gitlab-runner-perftest.sh
@@ -238,7 +240,7 @@ perftest-K80:
   variables:
     NCCL_DEBUG: "WARN"
     MPI_HOME: "/opt/mpi/openmpi-1.10.7"
-    CUDA_HOME: "/usr/local/cuda-11.3"
+    CUDA_HOME: "/usr/local/cuda-${CUDA_VERSION}"
     SALLOC: "salloc -t 00:05:00 -N 1 -n 16 -pK80"
   script:
     - ./test/scripts/gitlab-runner-perftest.sh 256M
@@ -254,7 +256,7 @@ perftest-K40:
   variables:
     NCCL_DEBUG: "WARN"
     MPI_HOME: "/opt/mpi/openmpi-1.10.7"
-    CUDA_HOME: "/usr/local/cuda-11.3"
+    CUDA_HOME: "/usr/local/cuda-${CUDA_VERSION}"
     SALLOC: "salloc -t 00:05:00 -n 4 -pK40"
   script:
     - ./test/scripts/gitlab-runner-perftest.sh
@@ -270,7 +272,7 @@ perftest-A100:
   variables:
     NCCL_DEBUG: "WARN"
     MPI_HOME: "/opt/mpi/openmpi-1.10.7"
-    CUDA_HOME: "/usr/local/cuda-11.3"
+    CUDA_HOME: "/usr/local/cuda-${CUDA_VERSION}"
     SALLOC: "salloc -t 00:05:00 -n 8 -pA100"
   script:
     - ./test/scripts/gitlab-runner-perftest.sh
@@ -296,7 +298,7 @@ perftest-DGX-1V:
 perftest-DGX-A100:
   stage: perf_tests_single
   rules:
-    - if: ($CI_PIPELINE_SOURCE == 'merge_request_event' || $CI_PIPELINE_SOURCE == 'schedule') && $RUN_ON_SELENE == "1"
+    - if: ($CI_PIPELINE_SOURCE == 'merge_request_event' || $CI_PIPELINE_SOURCE == 'schedule') && $RUN_ON_SELENE == "1" && $CUDA_VERSION != "10.2"
       when: always
     - when: never
   needs: [build, unit_tests, apitest-DGX-A100]
@@ -322,7 +324,7 @@ perftest-multi-gc:
     NCCL_IB_HCA: "mlx5_0"
     NCCL_DEBUG: "WARN"
     MPI_HOME: "/opt/mpi/openmpi-1.10.7"
-    CUDA_HOME: "/usr/local/cuda-11.3"
+    CUDA_HOME: "/usr/local/cuda-${CUDA_VERSION}"
     SALLOC: "salloc -t 00:05:00 -N 3 -n 24 -w gc[01-02,05]"
   script:
     - ./test/scripts/gitlab-runner-perftest.sh 128M 0
@@ -339,7 +341,7 @@ perftest-sharp-gc:
     NCCL_IB_HCA: "mlx5_0"
     NCCL_DEBUG: "WARN"
     MPI_HOME: "/opt/mpi/openmpi-1.10.7"
-    CUDA_HOME: "/usr/local/cuda-11.3"
+    CUDA_HOME: "/usr/local/cuda-${CUDA_VERSION}"
     SHARP_HOME: "/opt/hpcx/v2.7/sharp"
     PLUGIN_PATH: "/opt/nccl-rdma-sharp-plugins/src/.libs"
     SALLOC: "salloc -t 00:05:00 -N 3 -n 24 -w gc[01-02,05]"
@@ -371,7 +373,7 @@ perftest-sharp-gc:
 perftest-multi-selene:
   stage: perf_tests_multi
   rules:
-    - if: ($CI_PIPELINE_SOURCE == 'merge_request_event' || $CI_PIPELINE_SOURCE == 'schedule') && $RUN_ON_SELENE == "1"
+    - if: ($CI_PIPELINE_SOURCE == 'merge_request_event' || $CI_PIPELINE_SOURCE == 'schedule') && $RUN_ON_SELENE == "1" && $CUDA_VERSION != "10.2"
       when: always
     - when: never
   needs: [build, unit_tests, perftest-DGX-A100]
@@ -392,7 +394,7 @@ perftest-multi-selene:
 perftest-sharp-selene:
   stage: perf_tests_multi
   rules:
-    - if: ($CI_PIPELINE_SOURCE == 'merge_request_event' || $CI_PIPELINE_SOURCE == 'schedule') && $RUN_ON_SELENE_SHARP == "1"
+    - if: ($CI_PIPELINE_SOURCE == 'merge_request_event' || $CI_PIPELINE_SOURCE == 'schedule') && $RUN_ON_SELENE_SHARP == "1" && $CUDA_VERSION != "10.2"
       when: always
     - when: never
   needs: [build, unit_tests, perftest-DGX-A100]

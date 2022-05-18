@@ -17,6 +17,11 @@ range="-b 8 -e $max -f 2"
 failure_count=0
 failure_names=()
 
+echo "Using CUDA_HOME=$CUDA_HOME"
+echo "Using MPI_HOME=$MPI_HOME"
+echo "Using NCCL_HOME=$PWD/build"
+echo "Using LD_LIBRARY_PATH=$LD_LIBRARY_PATH"
+
 for func in all_reduce reduce reduce_scatter broadcast all_gather alltoall gather scatter sendrecv hypercube; do
   echo "=============================== $func (all sizes) ================================="
   $SALLOC $MPI_HOME/bin/mpirun ./build/test/perf/${func}_perf $range $opts

@@ -13,9 +13,6 @@
 #include "proxy.h"
 #include "strongstream.h"
 
-#include <cuda.h>
-#include <cudaTypedefs.h>
-
 #if CUDART_VERSION < 9000
 struct cudaLaunchParams {
   void *func;
