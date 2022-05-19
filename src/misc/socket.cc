@@ -374,7 +374,7 @@ static ncclResult_t getFdState(int fd, enum ncclSocketState* state) {
       SYSCHECK(getsockopt(fd, SOL_SOCKET, SO_ERROR, (void*)&ret, &rlen), "getsockopt");
     }
 
-    if (ret == EINPROGRESS)
+    if (ret == EINPROGRESS || ret == ECONNREFUSED)
       *state = ncclSocketConnecting;
     else if (ret == 0)
       *state = ncclSocketConnected;
@@ -427,28 +427,20 @@ ncclResult_t ncclSocketConnect(struct ncclSocket* sock) {
   int timedout_retries = 0;
   int refused_retries = 0;
 retry:
-  /* async connect; abort when error happens and abortFlag is present. */
+  /* blocking/non-blocking connect() is determined by asyncFlag. */
   ret = connect(fd, &sock->addr.sa, salen);
 
-  if (errno == EAGAIN || (errno == ECONNREFUSED && ++refused_retries < RETRY_REFUSED_TIMES) ||
-    (errno == ETIMEDOUT && ++timedout_retries < RETRY_TIMEDOUT_TIMES)) {
+  if (!sock->asyncFlag && (errno == EAGAIN || (errno == ECONNREFUSED && ++refused_retries < RETRY_REFUSED_TIMES) ||
+    (errno == ETIMEDOUT && ++timedout_retries < RETRY_TIMEDOUT_TIMES))) {
     if (refused_retries % 1000 == 0) INFO(NCCL_ALL, "Call to connect returned %s, retrying", strerror(errno));
     usleep(SLEEP_INT);
     goto retry;
-  } else if (errno == EINPROGRESS && !sock->asyncFlag) {
-    enum ncclSocketState state;
-    do {
-      if (sock->abortFlag) NEQCHECK(*sock->abortFlag, 0);
-      NCCLCHECK(getFdState(fd, &state));
-    } while (state == ncclSocketConnecting);
-    EQCHECK(state, ncclSocketError);
-    ret = 0;
   }
 
   /* If connect() fails with errno == EAGAIN/EINPROGRESS/ETIMEDOUT, we may want to try connect again.
    * However, it can return EISCONN instead of success which indicates connection is built up in
    * background already. No need to call connect() again. */
-  if (ret == 0 || (errno == EINPROGRESS && sock->asyncFlag) || errno == EISCONN) {
+  if (ret == 0 || ((errno == EINPROGRESS || errno == ECONNREFUSED) && sock->asyncFlag) || errno == EISCONN) {
     sock->fd = fd;
     return ncclSuccess;
   }
