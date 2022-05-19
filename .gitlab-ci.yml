@@ -387,6 +387,8 @@ build:
 
 perftest-multi-dgx-2:
   stage: perf_tests_multi
+  rules:
+    - when: always
   # rules:
   #   - if: ($CI_PIPELINE_SOURCE == 'merge_request_event' || $CI_PIPELINE_SOURCE == 'schedule') && $RUN_ON_DRACO == "1"
   #     when: always
