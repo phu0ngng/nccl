@@ -453,10 +453,7 @@ ncclResult_t ncclSocketAccept(struct ncclSocket* sock, struct ncclSocket* listen
   socklen_t socklen = sizeof(union ncclSocketAddress);
   int tmpFd = sock->fd = -1;
 
-  do {
-    if (listenSocket->abortFlag) NEQCHECK(*listenSocket->abortFlag, 0);
-    tmpFd = accept(listenSocket->fd, &sock->addr.sa, &socklen);
-  } while ((errno == EAGAIN || errno == EWOULDBLOCK) && tmpFd == -1 && !listenSocket->asyncFlag);
+  tmpFd = accept(listenSocket->fd, &sock->addr.sa, &socklen);
 
   if (!listenSocket->asyncFlag) {
     EQCHECK(tmpFd, -1);
