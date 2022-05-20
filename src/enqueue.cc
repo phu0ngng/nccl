@@ -558,6 +558,7 @@ static ncclResult_t scheduleP2pTasksToPlan(
   // Compute how much to split operations
   // Natural step size matching buffer steps.
   ssize_t stepSize = comm->buffSizes[NCCL_PROTO_SIMPLE]/NCCL_STEPS;
+  if (comm->nNodes > 1) stepSize /= SENDRECV_SLICEFACTOR;
   // Try to use all channels
   int nChannelsMax = comm->p2pnChannelsPerPeer;
   int nChannelsMin = nChannelsMax;
@@ -591,8 +592,10 @@ static ncclResult_t scheduleP2pTasksToPlan(
         char* sendPtr = send ? (char*)send->buff : nullptr;
         ssize_t recvBytes = recv ? recv->bytes : 0;
         ssize_t sendBytes = send ? send->bytes : 0;
-        ssize_t recvChunkBytesMax = calcP2pChunkSize(recvBytes, nChannelsMin, nChannelsMax, stepSize/8, stepSize*32);
-        ssize_t sendChunkBytesMax = calcP2pChunkSize(sendBytes, nChannelsMin, nChannelsMax, stepSize/8, stepSize*32);
+        ssize_t minSize = stepSize/8;
+        ssize_t maxSize = comm->nNodes > 1 ? stepSize : stepSize*32;
+        ssize_t recvChunkBytesMax = calcP2pChunkSize(recvBytes, nChannelsMin, nChannelsMax, minSize, maxSize);
+        ssize_t sendChunkBytesMax = calcP2pChunkSize(sendBytes, nChannelsMin, nChannelsMax, minSize, maxSize);
         // Zero size send/recv are syncs, encode here with -1.
         recvBytes = recv && recvBytes == 0 ? -1 : recvBytes;
         sendBytes = send && sendBytes == 0 ? -1 : sendBytes;
