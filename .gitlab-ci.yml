@@ -6,6 +6,10 @@ stages:
   - perf_tests_multi
 #  - perf_regression
 
+workflow:
+  rules:
+    - if: $CI_PIPELINE_SOURCE == 'merge_request_event' || $CI_PIPELINE_SOURCE == 'schedule'
+
 variables:
   MULTI_PERFTEST_NODE_COUNT: 4
   CUDA_VERSION: "11.7"
@@ -22,7 +26,7 @@ build:
     CUDA_HOME: "/usr/local/cuda-${CUDA_VERSION}"
   script:
     - echo "Using CUDA_HOME=$CUDA_HOME, MPI_HOME=$MPI_HOME"
-    - make -j test.build MPI=1 MPI_HOME=$MPI_HOME CUDA_HOME=$CUDA_HOME
+    - make -j 16 test.build MPI=1 MPI_HOME=$MPI_HOME CUDA_HOME=$CUDA_HOME
   artifacts:
     paths:
       - build
