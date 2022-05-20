@@ -190,6 +190,39 @@ TYPED_TEST(ncclReduceScatter_test, DISABLED_stream_wrong) {
                                 this->DataType(), this->RedOps[0],
                                 this->comms[i], this->streams[j]));
 };
+
+TYPED_TEST(ncclReduceScatter_test, multi_net) {
+    if (this->commsIB != NULL) {
+        for (ncclRedOp_t op : this->RedOps) {
+            ASSERT_EQ(ncclSuccess, ncclGroupStart());
+            for (int i = 0; i < this->nVis; ++i) {
+                ASSERT_EQ(ncclSuccess,
+                        ncclReduceScatter(this->sendbuffs[i], this->recvbuffs[i],
+                                            std::min(this->N/this->nVis, 1024 * 1024),
+                                            this->DataType(), op,
+                                            this->commsIB[i], this->streams[i]))
+                    << "IB op: " << op << ", "
+                    << "i" << i << ", " << std::endl;
+            }
+            ASSERT_EQ(ncclSuccess, ncclGroupEnd());
+
+            ASSERT_EQ(ncclSuccess, ncclGroupStart());
+            for (int i = 0; i < this->nVis; ++i) {
+                ASSERT_EQ(ncclSuccess,
+                        ncclReduceScatter(this->sendbuffs[i], this->recvbuffs[i],
+                                            std::min(this->N/this->nVis, 1024 * 1024),
+                                            this->DataType(), op,
+                                            this->commsSockets[i], this->streams[i]))
+                    << "Sockets op: " << op << ", "
+                    << "i" << i << ", " << std::endl;
+            }
+            ASSERT_EQ(ncclSuccess, ncclGroupEnd());
+        }
+    } else {
+        std::cout << "multi_net disabled" << std::endl;
+    }
+};
+
 // Aggregation
 // Only for 2.2 or higher
 #if NCCL_MAJOR > 2 || (NCCL_MAJOR == 2 && NCCL_MINOR >=2)

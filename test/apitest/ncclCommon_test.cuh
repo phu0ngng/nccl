@@ -15,6 +15,12 @@ void freePP(OP op, DT**& ptr, const int len) {
 // Persistent NCCL communicators and buffers
 ncclComm_t* ncclCommon_getComms(int* nGpus);
 
+// Persistent NCCL IB communicators and buffers
+ncclComm_t* ncclCommon_getIBComms(int nGpus);
+
+// Persistent NCCL Sockets communicators and buffers
+ncclComm_t* ncclCommon_getSocketsComms(int nGpus);
+
 void ncclCommon_getBuff(void*** sendbuffs, void*** recvbuffs, void*** sendbuffs_host, void*** recvbuffs_host, void*** sendbuffs_pinned, void*** recvbuffs_pinned, void*** sendbuffs_pinned_device, void*** recvbuffs_pinned_device, cudaStream_t** streams);
 
 template <typename DT>
@@ -23,6 +29,8 @@ class ncclCommon_test : public ::testing::Test {
     static int N;
     static int nVis;
     static ncclComm_t* comms;
+    static ncclComm_t* commsIB;
+    static ncclComm_t* commsSockets;
     static DT **sendbuffs, **recvbuffs, //
         **sendbuffs_host, **recvbuffs_host, //
         **sendbuffs_pinned, **recvbuffs_pinned,
@@ -73,6 +81,10 @@ int ncclCommon_test<DT>::nVis = -1;
 template <typename DT>
 ncclComm_t* ncclCommon_test<DT>::comms = NULL;
 template <typename DT>
+ncclComm_t* ncclCommon_test<DT>::commsIB = NULL;
+template <typename DT>
+ncclComm_t* ncclCommon_test<DT>::commsSockets = NULL;
+template <typename DT>
 DT** ncclCommon_test<DT>::sendbuffs = NULL;
 template <typename DT>
 DT** ncclCommon_test<DT>::recvbuffs = NULL;
@@ -94,6 +106,11 @@ template <typename DT>
 void ncclCommon_test<DT>::SetUpTestCase() {
     (void) setenv("NCCL_CHECK_POINTERS", "1", 0); // API tests expect this behaviour (ncclCommInitAll)
     comms = ncclCommon_getComms(&nVis);
+    commsIB = ncclCommon_getIBComms(nVis);
+    if (commsIB != NULL) {
+        commsSockets = ncclCommon_getSocketsComms(nVis);
+    }
+
     ncclCommon_getBuff(
         (void***)&sendbuffs,
         (void***)&recvbuffs,

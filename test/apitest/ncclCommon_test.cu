@@ -15,6 +15,9 @@ GEN_DATATYPE(unsigned long long, ncclUint64);
 
 int totalGpus = 0;
 ncclComm_t* commsArray = NULL;
+ncclComm_t* commsIBArray = NULL;
+ncclComm_t* commsSocketsArray = NULL;
+bool initialized = false;
 
 ncclComm_t* ncclCommon_getComms(int* nGpus) {
   if (commsArray == NULL) {
@@ -24,6 +27,34 @@ ncclComm_t* ncclCommon_getComms(int* nGpus) {
   }
   *nGpus = totalGpus;
   return commsArray;
+}
+
+ncclComm_t* ncclCommon_getIBComms(int nGpus) {
+  if (commsIBArray == NULL && !initialized) {
+    initialized = true;
+    EXPECT_NE(nullptr, commsIBArray = (ncclComm_t*)calloc(sizeof(ncclComm_t), nGpus));
+    (void) setenv("NCCL_NET", "IB", 1);
+    if (ncclCommInitAll(commsIBArray, nGpus, NULL) != ncclSuccess) {
+        std::cerr << "ncclGroupEnd() failed when trying to init IB communicators. Skipping multi_net tests." << std::endl;
+        // This platform doesn't have IB network, so mark the test as skipped here
+        free(commsIBArray);
+        commsIBArray = NULL;
+    }
+  }
+
+  (void) unsetenv("NCCL_NET");
+  return commsIBArray;
+}
+
+ncclComm_t* ncclCommon_getSocketsComms(int nGpus) {
+  if (commsSocketsArray == NULL) {
+    EXPECT_NE(nullptr, commsSocketsArray = (ncclComm_t*)calloc(sizeof(ncclComm_t), nGpus));
+    (void) setenv("NCCL_NET", "Socket", 1);
+    EXPECT_EQ(ncclSuccess, ncclCommInitAll(commsSocketsArray, nGpus, NULL));
+  }
+
+  (void) unsetenv("NCCL_NET");
+  return commsSocketsArray;
 }
 
 void** sbuffs = NULL;
