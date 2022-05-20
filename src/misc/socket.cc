@@ -432,7 +432,7 @@ retry:
 
   if (!sock->asyncFlag && (errno == EAGAIN || (errno == ECONNREFUSED && ++refused_retries < RETRY_REFUSED_TIMES) ||
     (errno == ETIMEDOUT && ++timedout_retries < RETRY_TIMEDOUT_TIMES))) {
-    if (refused_retries % 1000 == 0) INFO(NCCL_ALL, "Call to connect returned %s, retrying", strerror(errno));
+    if (errno == ECONNREFUSED && refused_retries % 1000 == 0) INFO(NCCL_ALL, "Call to connect returned %s, retrying", strerror(errno));
     usleep(SLEEP_INT);
     goto retry;
   }
