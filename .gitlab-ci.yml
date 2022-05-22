@@ -6,9 +6,13 @@ stages:
   - perf_tests_multi
 #  - perf_regression
 
+# Run our CI on:
+# - Every commit to master
+# - Every commit to a merge request
+# - Schedules (nightlies and weeklies)
 workflow:
   rules:
-    - if: $CI_PIPELINE_SOURCE == 'merge_request_event' || $CI_PIPELINE_SOURCE == 'schedule'
+    - if: $CI_PIPELINE_SOURCE == 'merge_request_event' || $CI_PIPELINE_SOURCE == 'schedule' || $CI_COMMIT_BRANCH == $CI_DEFAULT_BRANCH
 
 variables:
   MULTI_PERFTEST_NODE_COUNT: 4
@@ -26,7 +30,7 @@ build:
     CUDA_HOME: "/usr/local/cuda-${CUDA_VERSION}"
   script:
     - echo "Using CUDA_HOME=$CUDA_HOME, MPI_HOME=$MPI_HOME"
-    - make -j 16 test.build MPI=1 MPI_HOME=$MPI_HOME CUDA_HOME=$CUDA_HOME
+    - make -j test.build MPI=1 MPI_HOME=$MPI_HOME CUDA_HOME=$CUDA_HOME
   artifacts:
     paths:
       - build
@@ -116,7 +120,8 @@ apitest-K40:
 apitest-K80:
   stage: api_tests
   rules:
-    - when: always
+    - if: $CUDA_VERSION == '10.2' || $CUDA_VERSION == '11.3'
+      when: always
   tags:
     - k80
   variables:
@@ -157,7 +162,7 @@ apitest-DGX-1V:
 apitest-DGX-A100:
   stage: api_tests
   rules:
-    - if: ($CI_PIPELINE_SOURCE == 'merge_request_event' || $CI_PIPELINE_SOURCE == 'schedule') && $RUN_ON_SELENE == "1"
+    - if: $RUN_ON_SELENE == "1" && $CUDA_VERSION != "10.2"
       when: always
     - when: never
   tags:
@@ -229,7 +234,7 @@ perftest-M40:
     NCCL_DEBUG: "WARN"
     MPI_HOME: "/opt/mpi/openmpi-1.10.7"
     CUDA_HOME: "/usr/local/cuda-${CUDA_VERSION}"
-    SALLOC: "salloc -t 00:05:00 -n 4 -pM40"
+    SALLOC: "salloc -t 00:10:00 -n 4 -pM40"
   script:
     - ./test/scripts/gitlab-runner-perftest.sh
   interruptible: true
@@ -237,7 +242,8 @@ perftest-M40:
 perftest-K80:
   stage: perf_tests_single
   rules:
-    - when: always
+    - if: $CUDA_VERSION == '10.2' || $CUDA_VERSION == '11.3'
+      when: always
   needs: [build, unit_tests, apitest-K80]
   tags:
     - k80
@@ -261,7 +267,7 @@ perftest-K40:
     NCCL_DEBUG: "WARN"
     MPI_HOME: "/opt/mpi/openmpi-1.10.7"
     CUDA_HOME: "/usr/local/cuda-${CUDA_VERSION}"
-    SALLOC: "salloc -t 00:05:00 -n 4 -pK40"
+    SALLOC: "salloc -t 00:10:00 -n 4 -pK40"
   script:
     - ./test/scripts/gitlab-runner-perftest.sh
   interruptible: true
@@ -302,7 +308,7 @@ perftest-DGX-1V:
 perftest-DGX-A100:
   stage: perf_tests_single
   rules:
-    - if: ($CI_PIPELINE_SOURCE == 'merge_request_event' || $CI_PIPELINE_SOURCE == 'schedule') && $RUN_ON_SELENE == "1" && $CUDA_VERSION != "10.2"
+    - if: $RUN_ON_SELENE == "1" && $CUDA_VERSION != "10.2"
       when: always
     - when: never
   needs: [build, unit_tests, apitest-DGX-A100]
@@ -377,7 +383,7 @@ perftest-sharp-gc:
 perftest-multi-selene:
   stage: perf_tests_multi
   rules:
-    - if: ($CI_PIPELINE_SOURCE == 'merge_request_event' || $CI_PIPELINE_SOURCE == 'schedule') && $RUN_ON_SELENE == "1" && $CUDA_VERSION != "10.2"
+    - if: $RUN_ON_SELENE == "1" && $CUDA_VERSION != "10.2"
       when: always
     - when: never
   needs: [build, unit_tests, perftest-DGX-A100]
@@ -398,7 +404,7 @@ perftest-multi-selene:
 perftest-sharp-selene:
   stage: perf_tests_multi
   rules:
-    - if: ($CI_PIPELINE_SOURCE == 'merge_request_event' || $CI_PIPELINE_SOURCE == 'schedule') && $RUN_ON_SELENE_SHARP == "1" && $CUDA_VERSION != "10.2"
+    - if: $RUN_ON_SELENE_SHARP == "1" && $CUDA_VERSION != "10.2"
       when: always
     - when: never
   needs: [build, unit_tests, perftest-DGX-A100]
