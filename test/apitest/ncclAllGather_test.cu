@@ -174,7 +174,7 @@ TYPED_TEST(ncclAllGather_test, multi_net) {
         for (int i = 0; i < this->nVis; ++i) {
             ASSERT_EQ(ncclSuccess,
                         ncclAllGather(this->sendbuffs[i], this->recvbuffs[i],
-                                    std::min(this->N, 1024 * 1024),
+                                    std::min(this->N/this->nVis, 1024 * 1024),
                                     this->DataType(),
                                     this->commsIB[i], this->streams[i]))
                 << ", IB i" << i << ", " << std::endl;
@@ -185,7 +185,7 @@ TYPED_TEST(ncclAllGather_test, multi_net) {
         for (int i = 0; i < this->nVis; ++i) {
             ASSERT_EQ(ncclSuccess,
                         ncclAllGather(this->sendbuffs[i], this->recvbuffs[i],
-                                    std::min(this->N, 1024 * 1024),
+                                    std::min(this->N/this->nVis, 1024 * 1024),
                                     this->DataType(),
                                     this->commsSockets[i], this->streams[i]))
                 << ",  Sockets i" << i << ", " << std::endl;
