@@ -12,7 +12,7 @@ stages:
 # - Schedules (nightlies and weeklies)
 workflow:
   rules:
-    - if: $CI_PIPELINE_SOURCE == 'merge_request_event' || $CI_PIPELINE_SOURCE == 'schedule' || $CI_COMMIT_BRANCH == $CI_DEFAULT_BRANCH
+    - if: $CI_PIPELINE_SOURCE == 'merge_request_event' || $CI_PIPELINE_SOURCE == 'schedule' || $CI_PIPELINE_SOURCE == 'web' || $CI_COMMIT_BRANCH == $CI_DEFAULT_BRANCH
 
 variables:
   MULTI_PERFTEST_NODE_COUNT: 4
