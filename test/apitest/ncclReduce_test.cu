@@ -249,6 +249,43 @@ TYPED_TEST(ncclReduce_test, DISABLED_stream_wrong) {
                          this->DataType(), this->RedOps[0], root,
                          this->comms[i], this->streams[j]));
 };
+
+TYPED_TEST(ncclReduce_test, multi_net) {
+    if (this->commsIB != NULL) {
+        for (ncclRedOp_t op : this->RedOps) {
+            for (int root = 0; root < this->nVis; ++root) {
+                ASSERT_EQ(ncclSuccess, ncclGroupStart());
+                for (int i = 0; i < this->nVis; ++i) {
+                    ASSERT_EQ(ncclSuccess,
+                            ncclReduce(this->sendbuffs[i], i == root ? this->recvbuffs[i] : NULL,
+                                        std::min(this->N, 1024 * 1024),
+                                        this->DataType(), op, root,
+                                        this->commsIB[i], this->streams[i]))
+                        << "IB op: " << op << ", "
+                        << "root: " << root << ", "
+                        << "i" << i << ", " << std::endl;
+                }
+                ASSERT_EQ(ncclSuccess, ncclGroupEnd());
+
+                ASSERT_EQ(ncclSuccess, ncclGroupStart());
+                for (int i = 0; i < this->nVis; ++i) {
+                    ASSERT_EQ(ncclSuccess,
+                            ncclReduce(this->sendbuffs[i], i == root ? this->recvbuffs[i] : NULL,
+                                        std::min(this->N, 1024 * 1024),
+                                        this->DataType(), op, root,
+                                        this->commsSockets[i], this->streams[i]))
+                        << "Sockets op: " << op << ", "
+                        << "root: " << root << ", "
+                        << "i" << i << ", " << std::endl;
+                }
+                ASSERT_EQ(ncclSuccess, ncclGroupEnd());
+            }
+        }
+    } else {
+        std::cout << "multi_net disabled" << std::endl;
+    }
+};
+
 // Aggregation
 // Only for 2.2 or higher
 #if NCCL_MAJOR > 2 || (NCCL_MAJOR == 2 && NCCL_MINOR >=2)

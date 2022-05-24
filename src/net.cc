@@ -325,10 +325,10 @@ ncclResult_t ncclGpuGdrSupport(struct ncclComm* comm, int* gdrSupport) {
     ncclDebugNoWarn = NCCL_NET;
     NCCLCHECKGOTO(ncclNetListen(comm, dev, &handle, &lComm), ret, cleanup1);
     while (sComm == NULL) {
-      NCCLCHECKGOTO(ncclNetConnect(comm, dev, &handle, &sComm), ret, cleanup2);
+      NCCLWAITGOTO(ncclNetConnect(comm, dev, &handle, &sComm), sComm != NULL, comm->abortFlag, ret, cleanup2);
     }
     while (rComm == NULL) {
-      NCCLCHECKGOTO(ncclNetAccept(comm, lComm, &rComm), ret, cleanup3);
+      NCCLWAITGOTO(ncclNetAccept(comm, lComm, &rComm), rComm != NULL, comm->abortFlag, ret, cleanup3);
     }
     CUDACHECKGOTO(cudaMalloc(&gpuPtr, GPU_BUF_SIZE), ret, cleanup4);
     if (ncclNetRegMr(comm, sComm, gpuPtr, GPU_BUF_SIZE, NCCL_PTR_CUDA, &mHandle) == ncclSuccess) {

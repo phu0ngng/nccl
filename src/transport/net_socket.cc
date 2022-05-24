@@ -311,6 +311,7 @@ ncclResult_t ncclSocketListen(int dev, void* opaqueHandle, void** listenComm) {
   struct ncclSocketListenComm* comm;
   NCCLCHECK(ncclSocketNewListenComm(&comm));
   NCCLCHECK(GetSocketAddr(dev, &comm->sock.addr));
+  comm->sock.asyncFlag = 1;
   NCCLCHECK(ncclSocketListen(&comm->sock));
   memcpy(&handle->connectAddr, &comm->sock.addr, sizeof(union ncclSocketAddress));
   NCCLCHECK(ncclSocketGetNsockNthread(dev, &comm->nSocks, &comm->nThreads));

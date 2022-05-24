@@ -135,7 +135,7 @@ void ncclDebugInit() {
 void ncclDebugLog(ncclDebugLogLevel level, unsigned long flags, const char *filefunc, int line, const char *fmt, ...) {
   if (!initialized) {
     ncclDebugInit();
-    char hostname[512];
+    char hostname[256];
     getHostName(hostname, sizeof(hostname), '.');
     int pid = getpid();
     int tid = syscall(SYS_gettid);

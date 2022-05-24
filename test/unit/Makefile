@@ -21,7 +21,7 @@ NVLDFLAGS += -L$(BUILDDIR)/lib $(LIBRARIES:%=-l%)
 ##
 DST_DIR := $(abspath ${BUILDDIR}/test/unit)
 CU_FILES := kernel_test.cu align_test.cu
-CC_FILES += graph_test.cc model.cc data.cc xml_test.cc comm_leak_test.cc
+CC_FILES += graph_test.cc model.cc data.cc xml_test.cc comm_leak_test.cc channel_test.cc
 KCU_FILES := kernel_test.cu align_test.cu
 ifeq ($(MPI),1)
 #CU_FILES += ncclNet_test.cu ncclNet_read_write_stress_test.cu
@@ -120,3 +120,8 @@ ${DST_DIR}/coll_leak_test_multi: ${DST_DIR}/coll_leak_test_multi.o
 	@printf "Linking  %-35s > %s\n" $< $@
 	@mkdir -p ${DST_DIR}
 	$(NVCC) -o $@ $(NVCUFLAGS) ${NVLDFLAGS} $^
+
+${DST_DIR}/channel_test: ${DST_DIR}/channel_test.o
+	@printf "Linking  %-35s > %s\n" $< $@
+	@mkdir -p ${DST_DIR}
+	$(NVCC) -o $@ $(NVCUFLAGS) ${NVLDFLAGS} $^ -ldl
