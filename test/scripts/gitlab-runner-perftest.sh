@@ -17,6 +17,7 @@ range="-b 8 -e $max -f 2"
 failure_count=0
 failure_names=()
 
+echo "HOSTNAME=$HOSTNAME"
 echo "Using CUDA_HOME=$CUDA_HOME"
 echo "Using MPI_HOME=$MPI_HOME"
 echo "Using NCCL_HOME=$PWD/build"

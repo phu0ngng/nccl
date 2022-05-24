@@ -5,6 +5,7 @@ export LD_LIBRARY_PATH=$PWD/build/lib:$CUDA_HOME/lib64:$LD_LIBRARY_PATH
 failure_count=0
 failure_names=()
 
+echo "HOSTNAME=$HOSTNAME"
 echo "Using CUDA_HOME=$CUDA_HOME"
 echo "Using NCCL_HOME=$PWD/build"
 echo "Using LD_LIBRARY_PATH=$LD_LIBRARY_PATH"
