@@ -401,9 +401,9 @@ perftest-multi-dgx-2:
     CUDA_HOME: "/home/svc_nvshmem_ci/cuda/cuda-11.3.66"
     PARTITION_LIST: "backfill_dgx2h_m2,batch_short_dgx2h_m2,batch_dgx2h_m2,backfill_dgx2h_m2"
     UCX_TLS: "tcp"
-    MPI_PARAMS: "-oversubscribe -x LD_LIBRARY_PATH -x NCCL_DEBUG=INFO -x NCCL_DEBUG_SUBSYS=ENV -x NCCL_IB_HCA=mlx5_2,mlx5_3,mlx5_4,mlx5_5,mlx5_8,mlx5_9,mlx5_10,mlx5_11 -x NCCL_IBEXT_DISABLE=1" # --map-by ppr:16:node
+    MPI_PARAMS: "-mca btl tcp,self -mca btl_tcp_if_include enp134s0f0np0 -x LD_LIBRARY_PATH -x NCCL_DEBUG=INFO -x NCCL_DEBUG_SUBSYS=ENV -x NCCL_IB_HCA=mlx5_2,mlx5_3,mlx5_4,mlx5_5,mlx5_8,mlx5_9,mlx5_10,mlx5_11 -x NCCL_IBEXT_DISABLE=1"
     SALLOC: "" # Needs to be empty for CI runner scripts performing cluster jobs
-    DRACO_SALLOC: "--threads-per-core 2 --account=sw_gpucomms_nvshmem --nv-meta ml-model.nccl-perf --exclusive --mem=0 --account=sw_gpucomms_nvshmem -t 00:10:00 --comment=sysctl-sys.kernel.numa_balancing=0,transparent_hugepage_defrag=never,transparent_hugepage=never"
+    DRACO_SALLOC: "--exclusive --gpus-per-node=16 --ntasks-per-node=16 --account=sw_gpucomms_nvshmem --nv-meta ml-model.nccl-perf --exclusive -t 00:10:00"
   script:
     - let NUM_PROCESSES=$MULTI_PERFTEST_NODE_COUNT*16 && salloc $DRACO_SALLOC -N $MULTI_PERFTEST_NODE_COUNT -n $NUM_PROCESSES -G $NUM_PROCESSES -p $PARTITION_LIST ./test/scripts/gitlab-runner-perftest.sh 1G
   interruptible: true
