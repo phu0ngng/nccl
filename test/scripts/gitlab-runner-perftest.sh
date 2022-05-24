@@ -17,10 +17,11 @@ range="-b 8 -e $max -f 2"
 failure_count=0
 failure_names=()
 
-echo "SALLOC: $SALLOC"
-echo "MPI_HOME: $MPI_HOME"
-echo "MPI_PARAMS: $MPI_PARAMS"
-echo "UCX_TLS: $UCX_TLS"
+echo "Using CUDA_HOME=$CUDA_HOME"
+echo "Using MPI_HOME=$MPI_HOME"
+echo "Using NCCL_HOME=$PWD/build"
+echo "Using UCX_TLS: $UCX_TLS"
+echo "Using LD_LIBRARY_PATH=$LD_LIBRARY_PATH"
 
 for func in all_reduce reduce reduce_scatter broadcast all_gather alltoall gather scatter sendrecv hypercube; do
   echo "=============================== $func (all sizes) ================================="

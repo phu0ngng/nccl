@@ -572,6 +572,7 @@ ncclResult_t ncclIbListen(int dev, void* opaqueHandle, void** listenComm) {
   static_assert(sizeof(struct ncclIbHandle) < NCCL_NET_HANDLE_MAXSIZE, "ncclIbHandle size too large");
   memset(handle, 0, sizeof(struct ncclIbHandle));
   comm->dev = dev;
+  comm->sock.asyncFlag = 1; /* nonblocking socket is required by network communication. */
   NCCLCHECK(GetSocketAddr(&comm->sock.addr));
   NCCLCHECK(ncclSocketListen(&comm->sock));
   memcpy(&handle->connectAddr, &comm->sock.addr, sizeof(union ncclSocketAddress));
@@ -684,7 +685,6 @@ ncclResult_t ncclIbAccept(void* listenComm, void** recvComm) {
   stage->comm = rComm;
   stage->state = ncclIbCommStateAccept;
   lComm->sock.asyncFlag = 1;
-  rComm->sock.asyncFlag = 1;
 
 ib_accept:
   NCCLCHECK(ncclSocketAccept(&rComm->sock, &lComm->sock));

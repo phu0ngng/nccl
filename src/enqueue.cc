@@ -10,6 +10,7 @@
 #include "gdrwrap.h"
 #include "bootstrap.h"
 #include "channel.h"
+#include "cudawrap.h"
 
 #include <cstring> // std::memcpy
 #include <cinttypes> // PRIx64
@@ -432,19 +433,11 @@ static ncclResult_t registerIntraNodeBuffers(
   ) {
   *outRegBufUsed = false;
   ncclResult_t result = ncclSuccess;
+
+#if CUDART_VERSION >= 11030
   int localRank = comm->localRank;
 
-  thread_local int driverVersion = -1;
-  thread_local cudaError_t(*pfn_cuMemGetAddressRange)(void**, size_t*, void*) = nullptr;
-
-  if (driverVersion < 0) {
-    CUDACHECK(cudaDriverGetVersion(&driverVersion));
-  }
-  if (driverVersion < 11030) return ncclSuccess;
-  if (pfn_cuMemGetAddressRange == nullptr) {
-    // cudaGetDriverEntryPoint requires R465 or above (enhanced compat need)
-    CUDACHECKGOTO(cudaGetDriverEntryPoint("cuMemGetAddressRange", (void**)&pfn_cuMemGetAddressRange, cudaEnableDefault), result, fallback);
-  }
+  if (CUPFN(cuMemGetAddressRange) == nullptr) return ncclSuccess;
 
   struct HandlePair {
     cudaIpcMemHandle_t ipc[2]; // {send, recv}
@@ -457,9 +450,9 @@ static ncclResult_t registerIntraNodeBuffers(
 
   void *baseSend, *baseRecv;
   size_t size;
-  CUDACHECK(pfn_cuMemGetAddressRange(&baseSend, &size, (void*)info->sendbuff));
+  CUCHECK(cuMemGetAddressRange((CUdeviceptr *)&baseSend, &size, (CUdeviceptr)info->sendbuff));
   handles[localRank].offset[0] = (char*)info->sendbuff - (char*)baseSend;
-  CUDACHECK(pfn_cuMemGetAddressRange(&baseRecv, &size, (void*)info->recvbuff));
+  CUCHECK(cuMemGetAddressRange((CUdeviceptr *)&baseRecv, &size, (CUdeviceptr)info->recvbuff));
   handles[localRank].offset[1] = (char*)info->recvbuff - (char*)baseRecv;
 
   NCCLCHECK(bootstrapIntraNodeAllGather(comm->bootstrap, comm->localRankToRank, comm->localRank, comm->localRanks, handles, sizeof(struct HandlePair)));
@@ -486,6 +479,7 @@ static ncclResult_t registerIntraNodeBuffers(
   *outRegBufUsed = true;
 
 fallback:
+#endif
   return result;
 }
 
@@ -564,6 +558,7 @@ static ncclResult_t scheduleP2pTasksToPlan(
   // Compute how much to split operations
   // Natural step size matching buffer steps.
   ssize_t stepSize = comm->buffSizes[NCCL_PROTO_SIMPLE]/NCCL_STEPS;
+  if (comm->nNodes > 1) stepSize /= SENDRECV_SLICEFACTOR;
   // Try to use all channels
   int nChannelsMax = comm->p2pnChannelsPerPeer;
   int nChannelsMin = nChannelsMax;
@@ -597,8 +592,10 @@ static ncclResult_t scheduleP2pTasksToPlan(
         char* sendPtr = send ? (char*)send->buff : nullptr;
         ssize_t recvBytes = recv ? recv->bytes : 0;
         ssize_t sendBytes = send ? send->bytes : 0;
-        ssize_t recvChunkBytesMax = calcP2pChunkSize(recvBytes, nChannelsMin, nChannelsMax, stepSize/8, stepSize*32);
-        ssize_t sendChunkBytesMax = calcP2pChunkSize(sendBytes, nChannelsMin, nChannelsMax, stepSize/8, stepSize*32);
+        ssize_t minSize = stepSize/8;
+        ssize_t maxSize = comm->nNodes > 1 ? stepSize : stepSize*32;
+        ssize_t recvChunkBytesMax = calcP2pChunkSize(recvBytes, nChannelsMin, nChannelsMax, minSize, maxSize);
+        ssize_t sendChunkBytesMax = calcP2pChunkSize(sendBytes, nChannelsMin, nChannelsMax, minSize, maxSize);
         // Zero size send/recv are syncs, encode here with -1.
         recvBytes = recv && recvBytes == 0 ? -1 : recvBytes;
         sendBytes = send && sendBytes == 0 ? -1 : sendBytes;
