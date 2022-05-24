@@ -201,7 +201,7 @@ static ncclResult_t commFree(ncclComm_t comm) {
 
   NCCLCHECK(ncclStrongStreamDestruct(&comm->hostStream));
   NCCLCHECK(ncclStrongStreamDestruct(&comm->deviceStream));
-
+  
   NCCLCHECK(ncclCudaHostFree((void *)comm->abortFlag));
 
   struct ncclDestructor* dtor = comm->destructorHead;
@@ -292,7 +292,6 @@ static ncclResult_t commAlloc(ncclComm_t* comret, int ndev, int rank) {
 
   comm->checkPointers = ncclParamCheckPointers() == 1 ? true : false;
   comm->dmaBufSupport = (dmaBufSupported(comm) == ncclSuccess) ? true : false;
-  comm->fatalError = ncclSuccess;
 
   NCCLCHECK(ncclCudaHostCalloc((uint32_t**)&comm->abortFlag, 1));
   *comm->abortFlag = 0;
@@ -1132,6 +1131,16 @@ ncclResult_t ncclCommInitAll(ncclComm_t* comms, int ndev, const int* devlist) {
   return ncclSuccess;
 }
 
+ncclResult_t ncclCommSetAsyncError(ncclComm_t comm, ncclResult_t nextState) {
+  if (nextState < 0 || nextState >= ncclNumResults || comm == NULL) {
+    WARN("ncclCommSetAsyncError: error comm %p sets state %d", comm, nextState);
+    return ncclInvalidArgument;
+  }
+
+  __atomic_store_n(&comm->asyncResult, nextState, __ATOMIC_RELEASE);
+  return ncclSuccess;
+}
+
 static ncclResult_t commDestroy(ncclComm_t comm) {
   // Try and prevent a double free of the comm struct (user error)
   if (comm->rank == -1 || comm->nRanks <= 0 || comm->cudaDev == -1 || comm->busId == -1) {
@@ -1147,7 +1156,7 @@ static ncclResult_t commDestroy(ncclComm_t comm) {
     CUDACHECK(cudaSetDevice(commDevice));
   }
 
-  TRACE(NCCL_INIT, "Destroying comm %p rank %d abortFlag %d fatalError %d", comm, comm->rank, *comm->abortFlag, comm->fatalError);
+  TRACE(NCCL_INIT, "Destroying comm %p rank %d abortFlag %d asyncResult %d", comm, comm->rank, *comm->abortFlag, comm->asyncResult);
 
   NCCLCHECK(ncclStrongStreamSynchronize(&comm->hostStream));
   NCCLCHECK(ncclStrongStreamSynchronize(&comm->deviceStream));
@@ -1226,7 +1235,8 @@ NCCL_API(ncclResult_t, ncclCommGetAsyncError, ncclComm_t comm, ncclResult_t *asy
 ncclResult_t ncclCommGetAsyncError(ncclComm_t comm, ncclResult_t *asyncError) {
   NCCLCHECK(PtrCheck(comm, "ncclGetAsyncError", "comm"));
   NCCLCHECK(PtrCheck(asyncError, "ncclGetAsyncError", "asyncError"));
-  *asyncError = comm->fatalError;
+
+  *asyncError = __atomic_load_n(&comm->asyncResult, __ATOMIC_ACQUIRE);
   return ncclSuccess;
 }
 

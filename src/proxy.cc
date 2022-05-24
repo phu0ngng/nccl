@@ -680,7 +680,7 @@ void* ncclProxyProgress(void *comm_) {
     int idle = 1;
     ncclResult_t ret = progressOps(comm, state, state->active, &idle);
     if (ret != ncclSuccess) {
-      comm->fatalError = ret;
+      (void) ncclCommSetAsyncError(comm, ret);
       INFO(NCCL_ALL,"%s:%d -> %d [Proxy Thread]", __FILE__, __LINE__, ret);
       return NULL;
     }
@@ -692,7 +692,7 @@ void* ncclProxyProgress(void *comm_) {
       ret = ncclProxyGetPostedOps(comm, &added);
       if (added) { TIME_STOP(3); } else { TIME_CANCEL(3); }
       if (ret != ncclSuccess) {
-        comm->fatalError = ret;
+        (void) ncclCommSetAsyncError(comm, ret);
         INFO(NCCL_ALL,"%s:%d -> %d [Proxy Thread]", __FILE__, __LINE__, ret);
       }
       if (added == 0) {

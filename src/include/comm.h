@@ -215,8 +215,9 @@ struct ncclComm {
   float bandwidths[NCCL_NUM_FUNCTIONS][NCCL_NUM_ALGORITHMS][NCCL_NUM_PROTOCOLS];
   int maxThreads[NCCL_NUM_ALGORITHMS][NCCL_NUM_PROTOCOLS];
 
-  // Whether there has been a fatal error in this communicator.
-  ncclResult_t fatalError;
+  /* This attribute can indicate the states of communicators and return code of 
+   * asynchronous NCCL operations. */
+  ncclResult_t asyncResult;
 
   // Flag to ask NCCL kernels to abort
   volatile uint32_t *abortFlag;
@@ -361,4 +362,5 @@ static inline ncclRedOp_t ncclUserRedOpMangle(ncclComm *comm, ncclRedOp_t op) {
   return op1 < int(ncclNumOps) ? op : ncclRedOp_t(op1);
 }
 
+ncclResult_t ncclCommSetAsyncError(ncclComm_t comm, ncclResult_t nextState);
 #endif
