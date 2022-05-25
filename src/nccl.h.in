@@ -77,8 +77,8 @@ ncclResult_t pncclGetUniqueId(ncclUniqueId* uniqueId);
 
 /* Create a new communicator (multi thread/process version) with a configuration 
  * set by users. */
-ncclResult_t  ncclCommInitRankConfig(ncclComm_t* comm, int nranks, ncclUniqueId commId, int rank, ncclConfig_t *config);
-ncclResult_t pncclCommInitRankConfig(ncclComm_t* comm, int nranks, ncclUniqueId commId, int rank, ncclConfig_t *config);
+ncclResult_t  ncclCommInitRankConfig(ncclComm_t* comm, int nranks, ncclUniqueId commId, int rank, ncclConfig_t* config);
+ncclResult_t pncclCommInitRankConfig(ncclComm_t* comm, int nranks, ncclUniqueId commId, int rank, ncclConfig_t* config);
 
 /* Creates a new communicator (multi thread/process version).
  * rank must be between 0 and nranks-1 and unique within a communicator clique.

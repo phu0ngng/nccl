@@ -442,9 +442,9 @@ ncclResult_t bootstrapClose(void* commState) {
     WARN("Unexpected connections are not empty");
     return ncclInternalError;
   }
-  close(state->listenSock.fd);
-  close(state->ringSendSocket.fd);
-  close(state->ringRecvSocket.fd);
+  if (state->listenSock.fd >= 0) close(state->listenSock.fd);
+  if (state->ringSendSocket.fd >= 0) close(state->ringSendSocket.fd);
+  if (state->ringRecvSocket.fd >= 0) close(state->ringRecvSocket.fd);
 
   free(state->peerCommAddresses);
   free(state);

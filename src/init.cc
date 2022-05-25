@@ -41,6 +41,7 @@ const char* ncclProtoStr[NCCL_NUM_PROTOCOLS] = { "LL", "LL128", "Simple" };
 NCCL_PARAM(GroupCudaStream, "GROUP_CUDA_STREAM", NCCL_GROUP_CUDA_STREAM);
 
 NCCL_PARAM(CheckPointers, "CHECK_POINTERS", 0);
+NCCL_PARAM(CommBlocking, "COMM_BLOCKING", -1);
 
 static uint64_t hashUniqueId(ncclUniqueId const &id) {
   char const *bytes = (char const*)&id;
@@ -199,8 +200,10 @@ static ncclResult_t commFree(ncclComm_t comm) {
   for (int channel=0; channel<MAXCHANNELS; channel++)
     NCCLCHECK(freeChannel(comm->channels+channel, comm->nRanks));
 
-  NCCLCHECK(ncclStrongStreamDestruct(&comm->hostStream));
-  NCCLCHECK(ncclStrongStreamDestruct(&comm->deviceStream));
+  if (comm->initState == ncclSuccess) {
+    NCCLCHECK(ncclStrongStreamDestruct(&comm->hostStream));
+    NCCLCHECK(ncclStrongStreamDestruct(&comm->deviceStream)); 
+  }
 
   NCCLCHECK(ncclCudaHostFree((void *)comm->abortFlag));
 
@@ -260,6 +263,26 @@ static ncclResult_t dmaBufSupported(struct ncclComm* comm) {
   return ncclInternalError;
 }
 
+ncclResult_t ncclCommEnsureReady(ncclComm_t comm) {
+  /* comm must be ready, or error will be reported */
+  ncclResult_t ret = ncclSuccess;
+  
+  if (*comm->abortFlag) {
+    ncclGroupJobAbort();
+  } else {
+    NCCLCHECK(ncclCommGetAsyncError(comm, &ret));
+    if (ret != ncclSuccess) {
+      /* if ret is not ncclInProgress, we just keep it. */
+      WARN("Attempt to use communicator before the previous operation returned ncclSuccess\n");
+      if (ret == ncclInProgress) ret = ncclInvalidArgument;
+      goto exit;
+    }
+  }
+
+exit:
+  return ret;
+}
+
 static ncclResult_t commAlloc(ncclComm_t* comret, int ndev, int rank) {
   if (ndev < 1) {
     WARN("invalid device count (%d) requested", ndev);
@@ -271,7 +294,19 @@ static ncclResult_t commAlloc(ncclComm_t* comret, int ndev, int rank) {
   }
 
   struct ncclComm* comm;
-  NCCLCHECK(ncclCalloc(&comm, 1));
+  /* Cuurently we calloc comm in ncclCommInitRankDev for async function support.
+   * This 'if' structure is designed to consider the case where commAlloc is called
+   * in other cases except ncclCommInitRankDev. */
+  if (*comret == NULL) {
+    /* user requests a new communicator */
+    NCCLCHECK(ncclCalloc(&comm, 1));
+    NCCLCHECK(ncclCudaHostCalloc((uint32_t**)&comm->abortFlag, 1));
+    NCCLCHECK(ncclCommSetAsyncError(comm, ncclInProgress));
+  } else {
+    /* We already allocated a communicator in ncclCommInitRankDev. */
+    comm = *comret;
+  }
+  
   ncclMemoryStackConstruct(&comm->memPermanent);
   ncclMemoryStackConstruct(&comm->memScoped);
   comm->destructorHead = nullptr;
@@ -292,9 +327,6 @@ static ncclResult_t commAlloc(ncclComm_t* comret, int ndev, int rank) {
 
   comm->checkPointers = ncclParamCheckPointers() == 1 ? true : false;
   comm->dmaBufSupport = (dmaBufSupported(comm) == ncclSuccess) ? true : false;
-
-  NCCLCHECK(ncclCudaHostCalloc((uint32_t**)&comm->abortFlag, 1));
-  *comm->abortFlag = 0;
 
   comm->collNetSupport = 0;
 
@@ -1027,6 +1059,7 @@ struct ncclCommInitRankAsyncJob {
 static ncclResult_t ncclCommInitRankFunc(struct ncclAsyncJob* job_) {
   struct ncclCommInitRankAsyncJob* job = (struct ncclCommInitRankAsyncJob*)job_;
   ncclComm_t* newcomm = job->newcomm;
+  ncclComm_t comm = *newcomm;
   int nranks = job->nranks;
   ncclUniqueId commId = job->commId; // C++ struct assignment
   int myrank = job->myrank;
@@ -1040,18 +1073,38 @@ static ncclResult_t ncclCommInitRankFunc(struct ncclAsyncJob* job_) {
     TRACE(NCCL_INIT, "Setting cudaLimitStackSize to %zi", maxLocalSizeBytes);
     CUDACHECKIGNORE(cudaDeviceSetLimit(cudaLimitStackSize, maxLocalSizeBytes));
   }
-  *newcomm = NULL;
   NCCLCHECKGOTO(commAlloc(newcomm, nranks, myrank), res, cleanup);
   NCCLCHECKGOTO(initTransportsRank(*newcomm, &commId), res, cleanup);
   NCCLCHECKGOTO(devCommSetup(*newcomm), res, cleanup);
+
+  // update communicator state
+  comm->initState = ncclSuccess;
 
   INFO(NCCL_INIT,"comm %p rank %d nranks %d cudaDev %d busId %lx - Init COMPLETE", *newcomm, myrank, nranks, (*newcomm)->cudaDev, (*newcomm)->busId);
   TRACE_CALL("ncclCommInitRank(%p,%d,0x%llx,%d,%d)", *newcomm, nranks, (unsigned long long)hashUniqueId(commId), myrank, (*newcomm)->cudaDev);
   return ncclSuccess;
 cleanup:
-  if ((*newcomm) && (*newcomm)->bootstrap) bootstrapAbort((*newcomm)->bootstrap);
-  *newcomm = NULL;
+  comm->initState = res;
   return res;
+}
+
+static ncclResult_t parseCommConfig(ncclComm_t comm, ncclConfig_t *config) {
+  ncclResult_t ret = ncclSuccess;
+
+  /* first set configuration */
+  if (config) {
+    comm->blocking = config->blocking;
+  } else {
+    /* default setting of communicator */
+    comm->blocking = 1;
+  }
+
+  /* check setting */
+  if (comm->blocking != 0 && comm->blocking != 1) {
+    WARN("Invalid communicator blocking attribute value %d", comm->blocking);
+  }
+
+  return ret;
 }
 
 static void ncclCommInitRankUndo(struct ncclAsyncJob* job_) {
@@ -1062,6 +1115,8 @@ static void ncclCommInitRankUndo(struct ncclAsyncJob* job_) {
 
 static ncclResult_t ncclCommInitRankDev(ncclComm_t* newcomm, int nranks, ncclUniqueId commId, int myrank, int cudaDev, ncclConfig_t *config) {
   ncclResult_t res;
+  ncclComm_t comm = NULL;
+  struct ncclCommInitRankAsyncJob *job = NULL;
   char* env = getenv("NCCL_COMM_ID");
   if (env && myrank == 0) {
     INFO(NCCL_ENV, "NCCL_COMM_ID set by environment to %s", env);
@@ -1081,15 +1136,21 @@ static ncclResult_t ncclCommInitRankDev(ncclComm_t* newcomm, int nranks, ncclUni
     goto end;
   }
 
-  struct ncclCommInitRankAsyncJob *job;
+  NCCLCHECKGOTO(ncclCalloc(&comm, 1), res, end);
+  NCCLCHECKGOTO(ncclCudaHostCalloc((uint32_t**)&comm->abortFlag, 1), res, end);
+  // set up comm state and abortFlag only
+  *comm->abortFlag = 0;
+  NCCLCHECKGOTO(parseCommConfig(comm, config), res, end);
+  *newcomm = comm;
+
   NCCLCHECKGOTO(ncclCalloc(&job, 1), res, end);
   job->newcomm = newcomm;
   job->nranks = nranks;
   job->commId = commId; // C++ struct assignment
   job->myrank = myrank;
   job->cudaDev = cudaDev;
-  NCCLCHECKGOTO(ncclAsyncLaunch(&job->base, ncclCommInitRankFunc, ncclCommInitRankUndo, free), res, end);
-
+  NCCLCHECKGOTO(ncclAsyncLaunch(&job->base, ncclCommInitRankFunc, NULL, free, comm), res, end);
+    
 end:
   return ncclGroupErrCheck(res);
 }
@@ -1110,25 +1171,54 @@ ncclResult_t ncclCommInitRank(ncclComm_t* newcomm, int nranks, ncclUniqueId comm
 NCCL_API(ncclResult_t, ncclCommInitAll, ncclComm_t* comms, int ndev, const int* devlist);
 ncclResult_t ncclCommInitAll(ncclComm_t* comms, int ndev, const int* devlist) {
   NVTX3_FUNC_RANGE_IN(nccl_domain);
-
+  ncclResult_t ret = ncclSuccess;
+  int totalnDev;
+  int *gpuFlags = NULL;
   // Load the CUDA driver and dlsym hooks (can fail on old drivers)
   (void) cudaLibraryInit();
 
-  NCCLCHECK(PtrCheck(comms, "CommInitAll", "comms"));
+  NCCLCHECKGOTO(PtrCheck(comms, "CommInitAll", "comms"), ret, fail);
   if (ndev < 0) {
     WARN("Invalid device count requested : %d", ndev);
-    return ncclInvalidArgument;
+    ret = ncclInvalidArgument;
+    goto fail;
+  }
+
+  CUDACHECKGOTO(cudaGetDeviceCount(&totalnDev), ret, fail);
+  if (devlist) {
+    NCCLCHECKGOTO(ncclCalloc(&gpuFlags, totalnDev), ret, fail);
+    for (int i = 0; i < ndev; ++i) {
+      /* invalid device check. */
+      if (devlist[i] < 0 || devlist[i] >= totalnDev) {
+        ret = ncclUnhandledCudaError;
+        goto fail;
+      }
+
+      /* duplicate device check. */
+      if (gpuFlags[devlist[i]] != 0) {
+        ret = ncclInvalidUsage;
+        goto fail;
+      }
+
+      gpuFlags[devlist[i]] = 1;
+    }
+    free(gpuFlags);
   }
 
   ncclUniqueId uniqueId;
-  NCCLCHECK(ncclGetUniqueId(&uniqueId));
-  NCCLCHECK(ncclGroupStart());
+  NCCLCHECKGOTO(ncclGetUniqueId(&uniqueId), ret, fail);
+  NCCLCHECKGOTO(ncclGroupStart(), ret, fail);
   for (int i=0; i<ndev; i++) {
     // Ignore return codes .. we need to call ncclGroupEnd to clean up anyway
     ncclCommInitRankDev(comms+i, ndev, uniqueId, i, devlist ? devlist[i] : i, NULL);
   }
-  NCCLCHECK(ncclGroupEnd());
-  return ncclSuccess;
+  NCCLCHECKGOTO(ncclGroupEnd(), ret, fail);
+
+exit:
+  return ret;
+fail:
+  if (gpuFlags) free(gpuFlags);
+  goto exit;
 }
 
 ncclResult_t ncclCommSetAsyncError(ncclComm_t comm, ncclResult_t nextState) {
@@ -1145,12 +1235,44 @@ NCCL_API(ncclResult_t, ncclCommInitRankConfig, ncclComm_t* comm, int nranks, ncc
 ncclResult_t ncclCommInitRankConfig(ncclComm_t *newcomm, int nranks, ncclUniqueId commId, int myrank, ncclConfig_t *config) {
   NVTX3_FUNC_RANGE_IN(nccl_domain);
   int cudaDev;
-  
-  (void) cudaLibraryInit();
-  CUDACHECK(cudaGetDevice(&cudaDev));
-  NCCLCHECK(ncclCommInitRankDev(newcomm, nranks, commId, myrank, cudaDev, config));
+  ncclResult_t ret = ncclSuccess;
+  ncclConfig_t internalConfig = NCCL_CONFIG_INITIALIZER;
+  ncclConfig_t *internalConfigPtr;
+  size_t realSize;
+  int blockingEnv;
 
-  return ncclSuccess;
+  NCCLCHECK(ncclGroupStartInternal());
+  internalConfigPtr = &internalConfig;
+  if (config) {
+    memcpy((void*)&realSize, (void*)config, sizeof(size_t));
+    realSize = realSize > sizeof(ncclConfig_t) ? sizeof(ncclConfig_t) : realSize;
+    memcpy((void*)internalConfigPtr, (void*)config, realSize);
+    if (internalConfigPtr->magic != 0xcafebeef) {
+      WARN("ncclConfig_t argument not initialized via NCCL_CONFIG_INITIALIZER");
+      ret = ncclInvalidArgument;
+      goto exit;
+    }
+  }
+
+  /* overwrite configuration from env variable. */
+  blockingEnv = ncclParamCommBlocking();
+  if (blockingEnv != 0 && blockingEnv != 1 && blockingEnv != -1) {
+    WARN("Invalid NCCL_COMM_BLOCKING value %d", blockingEnv);
+  }
+  if (blockingEnv != -1) internalConfigPtr->blocking = blockingEnv;
+
+  (void) cudaLibraryInit();
+  CUDACHECKGOTO(cudaGetDevice(&cudaDev), ret, exit);
+  NCCLCHECKGOTO(ncclCommInitRankDev(newcomm, nranks, commId, myrank, cudaDev, internalConfigPtr), ret, fail);
+
+exit:
+  ncclGroupErrCheck(ret);
+  NCCLCHECK(ncclGroupEndInternal());
+  if (newcomm && *newcomm && !(*newcomm)->blocking) (void) ncclCommGetAsyncError(*newcomm, &ret);
+  return ret;
+fail:
+  if (newcomm && *newcomm && !(*newcomm)->blocking) (void) ncclCommSetAsyncError(*newcomm, ret);
+  goto exit;
 }
 
 static ncclResult_t commDestroy(ncclComm_t comm) {
@@ -1198,6 +1320,9 @@ ncclResult_t ncclCommDestroy(ncclComm_t comm) {
   int64_t busId = comm->busId;
   TRACE(NCCL_INIT, "comm %p rank %d nRanks %d cudaDev %d busId %lx", comm, rank, nranks, cudaDev, busId);
 
+  /* init thread must be joined before we destory the comm. */
+  NCCLCHECK(ncclCommEnsureReady(comm));
+
   NCCLCHECK(commDestroy(comm));
   INFO(NCCL_INIT,"comm %p rank %d nranks %d cudaDev %d busId %lx - Destroy COMPLETE", comm, rank, nranks, cudaDev, busId);
   return ncclSuccess;
@@ -1215,6 +1340,9 @@ ncclResult_t ncclCommAbort(ncclComm_t comm) {
 
   // Ask anything that might still be running on the device to quit
   *comm->abortFlag = 1;
+  /* init thread must be joined before we destory the comm, 
+   * and we should ignore the init error here. */
+  ncclCommEnsureReady(comm);
 
   NCCLCHECK(commDestroy(comm));
   INFO(NCCL_INIT,"comm %p rank %d nranks %d cudaDev %d busId %lx - Abort COMPLETE", comm, rank, nranks, cudaDev, busId);
@@ -1255,8 +1383,13 @@ ncclResult_t ncclCommGetAsyncError(ncclComm_t comm, ncclResult_t *asyncError) {
 NCCL_API(ncclResult_t, ncclCommCount, const ncclComm_t comm, int* count);
 ncclResult_t ncclCommCount(const ncclComm_t comm, int* count) {
   NVTX3_FUNC_RANGE_IN(nccl_domain);
+
   NCCLCHECK(PtrCheck(comm, "CommCount", "comm"));
   NCCLCHECK(PtrCheck(count, "CommCount", "count"));
+
+  /* init thread must be joined before we access the attributes of comm. */
+  NCCLCHECK(ncclCommEnsureReady(comm));
+
   *count = comm->nRanks;
   return ncclSuccess;
 }
@@ -1264,8 +1397,12 @@ ncclResult_t ncclCommCount(const ncclComm_t comm, int* count) {
 NCCL_API(ncclResult_t, ncclCommCuDevice, const ncclComm_t comm, int* devid);
 ncclResult_t ncclCommCuDevice(const ncclComm_t comm, int* devid) {
   NVTX3_FUNC_RANGE_IN(nccl_domain);
+
   NCCLCHECK(PtrCheck(comm, "CommCuDevice", "comm"));
   NCCLCHECK(PtrCheck(devid, "CommCuDevice", "devid"));
+
+  NCCLCHECK(ncclCommEnsureReady(comm));
+
   *devid = comm->cudaDev;
   return ncclSuccess;
 }
@@ -1273,8 +1410,12 @@ ncclResult_t ncclCommCuDevice(const ncclComm_t comm, int* devid) {
 NCCL_API(ncclResult_t, ncclCommUserRank, const ncclComm_t comm, int* rank);
 ncclResult_t ncclCommUserRank(const ncclComm_t comm, int* rank) {
   NVTX3_FUNC_RANGE_IN(nccl_domain);
+
   NCCLCHECK(PtrCheck(comm, "CommUserRank", "comm"));
   NCCLCHECK(PtrCheck(rank, "CommUserRank", "rank"));
+  
+  NCCLCHECK(ncclCommEnsureReady(comm));
+
   *rank = comm->rank;
   return ncclSuccess;
 }

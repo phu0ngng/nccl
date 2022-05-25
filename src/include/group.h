@@ -13,7 +13,8 @@
 ncclResult_t ncclGroupErrCheck(ncclResult_t ret);
 void ncclGroupCommJoin(struct ncclComm* comm);
 void ncclGroupCommPreconnect(struct ncclComm* comm);
-void ncclGroupCommLeave(struct ncclComm* comm);
+ncclResult_t ncclGroupCommLeave(struct ncclComm* comm);
+void ncclGroupJobAbort();
 
 typedef ncclResult_t(*ncclInitFunc_t)(ncclComm_t* newcomm, int ndev, ncclUniqueId commId, int myrank, int cudaDev);
 
@@ -26,17 +27,31 @@ struct ncclAsyncJob {
   ncclResult_t(*func)(struct ncclAsyncJob*);
   void(*undo)(struct ncclAsyncJob*);
   void(*destructor)(void*);
+  bool doneFlag;
+  volatile uint32_t *abortFlag; /* point to comm abortFlag */
+  ncclComm_t comm;
 };
 
 ncclResult_t ncclAsyncLaunch(
   struct ncclAsyncJob* job,
   ncclResult_t(*func)(struct ncclAsyncJob*),
   void(*undo)(struct ncclAsyncJob*),
-  void(*destructor)(void*)
+  void(*destructor)(void*), ncclComm_t comm
 );
+
+struct ncclGroupJob {
+  struct ncclAsyncJob base;
+  struct ncclComm **groupCommHeadPtr;
+  struct ncclComm **groupCommPreconnectHeadPtr;
+  ncclResult_t *groupErrorPtr;
+  volatile bool *abortFlagPtr;
+  struct ncclIntruQueue<struct ncclAsyncJob, &ncclAsyncJob::next> *asyncJobsPtr;
+  bool doneFlag;
+};
 
 ncclResult_t ncclGroupStartInternal();
 ncclResult_t ncclGroupEndInternal();
+ncclResult_t ncclAsyncJobComplete(struct ncclAsyncJob* job);
 
 ////////////////////////////////////////////////////////////////////////////////
 
@@ -44,6 +59,7 @@ extern __thread int ncclGroupDepth; // depth of ncclGroupStart nesting
 extern __thread ncclResult_t ncclGroupError;
 extern __thread struct ncclComm* ncclGroupCommHead;
 extern __thread struct ncclComm* ncclGroupCommPreconnectHead;
+extern __thread int ncclGroupBlocking;
 
 inline ncclResult_t ncclGroupStartInternal() {
   ncclGroupDepth++;
@@ -52,7 +68,7 @@ inline ncclResult_t ncclGroupStartInternal() {
 
 inline ncclResult_t ncclGroupErrCheck(ncclResult_t ret) {
   if (ncclGroupDepth > 0) {
-    if (ncclGroupError == ncclSuccess || ret != ncclSuccess) ncclGroupError = ret;
+    if (ret != ncclSuccess && ret != ncclInProgress) ncclGroupError = ret;
   }
   return ret;
 }
@@ -83,9 +99,10 @@ inline void ncclGroupCommPreconnect(struct ncclComm* comm) {
 }
 
 // Comm has left group
-inline void ncclGroupCommLeave(struct ncclComm* comm) {
+inline ncclResult_t ncclGroupCommLeave(struct ncclComm* comm) {
   comm->groupNext = reinterpret_cast<struct ncclComm*>(0x1);
   ncclMemoryStackPop(&comm->memScoped);
+  return ncclSuccess;
 }
 
 #endif

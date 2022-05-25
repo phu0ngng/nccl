@@ -1466,7 +1466,11 @@ ncclResult_t ncclEnqueueCheck(struct ncclInfo* info) {
   NCCLCHECK(ncclGroupStartInternal());
   ncclResult_t ret = ncclSuccess;
   int devOld = -1;
+
   NCCLCHECKGOTO(PtrCheck(info->comm, info->opName, "comm"), ret, end0);
+  // Check whether communicator is ready to communicate  
+  NCCLCHECKGOTO(ncclCommEnsureReady(info->comm), ret, end0);
+
   if (info->comm->checkPointers) {
     CUDACHECKGOTO(cudaGetDevice(&devOld), ret, end0);
     CUDACHECKGOTO(cudaSetDevice(info->comm->cudaDev), ret, end0);
@@ -1490,6 +1494,10 @@ end0:
 
 NCCL_API(ncclResult_t, ncclRedOpCreatePreMulSum, ncclRedOp_t *op, void *scalar, ncclDataType_t datatype, ncclScalarResidence_t residence, ncclComm_t comm);
 ncclResult_t ncclRedOpCreatePreMulSum(ncclRedOp_t *op, void *scalar, ncclDataType_t datatype, ncclScalarResidence_t residence, ncclComm_t comm) {
+  NCCLCHECK(PtrCheck(comm, "ncclRedOpCreatePreMulSum", "comm"));
+  /* join init thread before creating PreMulSum op. */
+  NCCLCHECK(ncclCommEnsureReady(comm));
+
   if (comm->userRedOpFreeHead == comm->userRedOpCapacity) {
     // double capacity and resize
     int cap = 2*comm->userRedOpCapacity;

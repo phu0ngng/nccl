@@ -285,6 +285,8 @@ struct ncclComm {
 
   // communicator mode
   int blocking;
+  // initState is to more conveniently reclaim resources when errors happen.
+  ncclResult_t initState;
 };
 
 enum ncclLaunchMode {
@@ -365,5 +367,7 @@ static inline ncclRedOp_t ncclUserRedOpMangle(ncclComm *comm, ncclRedOp_t op) {
   return op1 < int(ncclNumOps) ? op : ncclRedOp_t(op1);
 }
 
+ncclResult_t ncclCommEnsureReady(ncclComm_t comm);
 ncclResult_t ncclCommSetAsyncError(ncclComm_t comm, ncclResult_t nextState);
+
 #endif
