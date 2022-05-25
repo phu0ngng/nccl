@@ -322,7 +322,7 @@ perftest-DGX-1V:
     PARTITION_LIST: "batch_short_dgx1_m3,backfill_dgx1_m2,backfill_dgx1_m3,batch_short_dgx1_m2"
     SALLOC: "" # Needs to be empty for CI runner scripts performing cluster jobs
   script:
-    - srun -N 1 -n 8 -G 8 --account=sw_gpucomms_nvshmem --nv-meta ml-model.nccl-perf -p $PARTITION_LIST -t 00:05:00 ./test/scripts/gitlab-runner-perftest.sh 256M
+    - salloc --gpus-per-node=8 --ntasks-per-node=8 -N 1 --account=sw_gpucomms_nvshmem --nv-meta ml-model.nccl-perf -p $PARTITION_LIST -t 00:05:00 ./test/scripts/gitlab-runner-perftest.sh 2G
   interruptible: true
 
 perftest-DGX-2:
@@ -340,7 +340,7 @@ perftest-DGX-2:
     PARTITION_LIST: "backfill_dgx2h_m2,batch_short_dgx2h_m2,batch_dgx2h_m2,backfill_dgx2h_m2"
     SALLOC: "" # Needs to be empty for CI runner scripts performing cluster jobs
   script:
-    - srun -N 1 -n 16 -G 16 --account=sw_gpucomms_nvshmem --nv-meta ml-model.nccl-perf -p $PARTITION_LIST -t 00:10:00 ./test/scripts/gitlab-runner-perftest.sh 256M
+    - salloc -N 1 --gpus-per-node=16 --ntasks-per-node=16 --account=sw_gpucomms_nvshmem --nv-meta ml-model.nccl-perf -p $PARTITION_LIST -t 00:10:00 ./test/scripts/gitlab-runner-perftest.sh 1G
   interruptible: true
 
 perftest-DGX-A100:
