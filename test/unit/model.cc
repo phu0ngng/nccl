@@ -320,6 +320,7 @@ void runPlatform(const char* platform) {
 
 int main(int argc, char* argv[]) {
   setlinebuf(stdout);
+  setenv("NCCL_IGNORE_DISABLED_P2P", "2", 1);
 
   // Parse args
   int longindex;
