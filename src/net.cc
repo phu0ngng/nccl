@@ -272,7 +272,7 @@ ncclResult_t ncclNetInit(struct ncclComm* comm) {
     enum ncclNetState state;
     NCCLCHECK(netGetState(i, &state));
     if (state != ncclNetStateEnabled) continue;
-    if (netName && strcmp(netName, ncclNets[i]->name) != 0) continue;
+    if (netName && strcasecmp(netName, ncclNets[i]->name) != 0) continue;
 
     comm->ncclNet = ncclNets[i];
     ok = true;

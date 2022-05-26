@@ -977,7 +977,7 @@ collnet_cleanup:
   if (comm->intraRank == 0) { // Load ncclParamLaunchMode
     char* str = getenv("NCCL_LAUNCH_MODE");
     enum ncclLaunchMode mode, modeOld;
-    if (str && strcmp(str, "GROUP") == 0) {
+    if (str && strcasecmp(str, "GROUP") == 0) {
       mode = ncclLaunchModeGroup;
     } else {
       mode = ncclLaunchModeParallel;
