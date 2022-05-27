@@ -154,7 +154,7 @@ apitest-DGX-1V:
     - dgx-1v
   variables:
     CUDA_HOME: "/home/svc_nvshmem_ci/cuda/cuda-11.3.66"
-    PARTITION_LIST: "batch_short_dgx1_m3,backfill_dgx1_m2,backfill_dgx1_m3,batch_short_dgx1_m2"
+    PARTITION_LIST: "batch_short_dgx1_m3,batch_short_dgx1_m2"
     SRUN: "" # Needs to be empty for CI runner scripts performing cluster jobs
     SRUN_PARAMS: "--exclusive -N 1 -n 1 -G 8 -c 8 --account=sw_gpucomms_nvshmem --nv-meta ml-model.nccl-perf -t 00:10:00"
   script:
@@ -171,7 +171,7 @@ apitest-DGX-2:
     - dgx-2
   variables:
     CUDA_HOME: "/home/svc_nvshmem_ci/cuda/cuda-11.3.66"
-    PARTITION_LIST: "backfill_dgx2h_m2,batch_short_dgx2h_m2,batch_dgx2h_m2,backfill_dgx2h_m2"
+    PARTITION_LIST: "batch_short_dgx2h_m2"
     SRUN: "" # Needs to be empty for CI runner scripts performing cluster jobs
     SRUN_PARAMS: "--exclusive --mem=0 -N 1 -n 1 -G 16 -c 16 --account=sw_gpucomms_nvshmem --nv-meta ml-model.nccl-perf -t 00:10:00"
   script:
@@ -319,7 +319,7 @@ perftest-DGX-1V:
     NCCL_DEBUG: "WARN"
     MPI_HOME: "/home/svc_nvshmem_ci/mpi/openmpi-1.10.7"
     CUDA_HOME: "/home/svc_nvshmem_ci/cuda/cuda-11.3.66"
-    PARTITION_LIST: "batch_short_dgx1_m3,backfill_dgx1_m2,backfill_dgx1_m3,batch_short_dgx1_m2"
+    PARTITION_LIST: "batch_short_dgx1_m3,batch_short_dgx1_m2"
     SALLOC: "" # Needs to be empty for CI runner scripts performing cluster jobs
   script:
     - salloc --gpus-per-node=8 --ntasks-per-node=8 -N 1 --account=sw_gpucomms_nvshmem --nv-meta ml-model.nccl-perf -p $PARTITION_LIST -t 00:05:00 ./test/scripts/gitlab-runner-perftest.sh 2G
@@ -337,7 +337,7 @@ perftest-DGX-2:
     NCCL_DEBUG: "WARN"
     MPI_HOME: "/home/svc_nvshmem_ci/mpi/openmpi-1.10.7"
     CUDA_HOME: "/home/svc_nvshmem_ci/cuda/cuda-11.3.66"
-    PARTITION_LIST: "backfill_dgx2h_m2,batch_short_dgx2h_m2,batch_dgx2h_m2,backfill_dgx2h_m2"
+    PARTITION_LIST: "batch_short_dgx2h_m2"
     SALLOC: "" # Needs to be empty for CI runner scripts performing cluster jobs
   script:
     - salloc -N 1 --gpus-per-node=16 --ntasks-per-node=16 --account=sw_gpucomms_nvshmem --nv-meta ml-model.nccl-perf -p $PARTITION_LIST -t 00:10:00 ./test/scripts/gitlab-runner-perftest.sh 1G
@@ -397,6 +397,29 @@ perftest-sharp-gc:
     - ./test/scripts/gitlab-runner-perftest-sharp.sh 128M 0
   interruptible: true
 
+perftest-multi-DGX-1V:
+  stage: perf_tests_multi
+  rules:
+    - when: always
+  rules:
+    - if: $RUN_ON_DRACO == "1"
+      when: always
+    - when: never
+  needs: [build, unit_tests, perftest-DGX-1]
+  tags:
+    - dgx-1v
+  variables:
+    MPI_HOME: "/home/svc_nvshmem_ci/mpi/openmpi-1.10.7"
+    CUDA_HOME: "/home/svc_nvshmem_ci/cuda/cuda-11.3.66"
+    PARTITION_LIST: "batch_short_dgx2h_m2"
+    UCX_TLS: "tcp"
+    MPI_PARAMS: "-mca btl tcp,self -mca btl_tcp_if_include enp134s0f0np0 -x LD_LIBRARY_PATH -x NCCL_DEBUG=INFO -x NCCL_DEBUG_SUBSYS=ENV -x NCCL_IBEXT_DISABLE=1"
+    SALLOC: "" # Needs to be empty for CI runner scripts performing cluster jobs
+    DRACO_SALLOC: "--exclusive --gpus-per-node=8 --ntasks-per-node=8 --account=sw_gpucomms_nvshmem --nv-meta ml-model.nccl-perf --exclusive -t 00:10:00"
+  script:
+    - let NUM_PROCESSES=$MULTI_PERFTEST_NODE_COUNT*8 && salloc $DRACO_SALLOC -N $MULTI_PERFTEST_NODE_COUNT -n $NUM_PROCESSES -G $NUM_PROCESSES -p $PARTITION_LIST ./test/scripts/gitlab-runner-perftest.sh 1G
+  interruptible: true
+
 perftest-multi-dgx-2:
   stage: perf_tests_multi
   rules:
@@ -411,9 +434,9 @@ perftest-multi-dgx-2:
   variables:
     MPI_HOME: "/home/svc_nvshmem_ci/mpi/openmpi-1.10.7"
     CUDA_HOME: "/home/svc_nvshmem_ci/cuda/cuda-11.3.66"
-    PARTITION_LIST: "backfill_dgx2h_m2,batch_short_dgx2h_m2,batch_dgx2h_m2,backfill_dgx2h_m2"
+    PARTITION_LIST: "batch_short_dgx2h_m2"
     UCX_TLS: "tcp"
-    MPI_PARAMS: "-mca btl tcp,self -mca btl_tcp_if_include enp134s0f0np0 -x LD_LIBRARY_PATH -x NCCL_DEBUG=INFO -x NCCL_DEBUG_SUBSYS=ENV -x NCCL_IB_HCA=mlx5_2,mlx5_3,mlx5_4,mlx5_5,mlx5_8,mlx5_9,mlx5_10,mlx5_11 -x NCCL_IBEXT_DISABLE=1"
+    MPI_PARAMS: "-mca btl tcp,self -mca btl_tcp_if_include enp134s0f0np0 -x LD_LIBRARY_PATH -x NCCL_DEBUG=INFO -x NCCL_DEBUG_SUBSYS=ENV -x NCCL_IBEXT_DISABLE=1"
     SALLOC: "" # Needs to be empty for CI runner scripts performing cluster jobs
     DRACO_SALLOC: "--exclusive --gpus-per-node=16 --ntasks-per-node=16 --account=sw_gpucomms_nvshmem --nv-meta ml-model.nccl-perf --exclusive -t 00:10:00"
   script:
@@ -460,7 +483,7 @@ perftest-sharp-selene:
     OMPI_MCA_btl_tcp_if_include: "enp97s0f1"
     SALLOC: "" # Needs to be empty for CI runner scripts performing cluster jobs
   script:
-    - let NUM_PROCESSES=$MULTI_PERFTEST_NODE_COUNT*8 && salloc -N $MULTI_PERFTEST_NODE_COUNT -n $NUM_PROCESSES --account=nccl -pluna --network sharp -J "nccl-cicd::$GITLAB_USER_LOGIN:perftest-multi::$CI_COMMIT_BRANCH:$CI_COMMIT_SHORT_SHA" -t 00:10:00 ./test/scripts/gitlab-runner-perftest-sharp.sh 16G 0
+    - let NUM_PROCESSES=$MULTI_PERFTEST_NODE_COUNT*8 && salloc -N $MULTI_PERFTEST_NODE_COUNT -n $NUM_PROCESSES --account=nccl -pluna --network=sharp --constraint=nccl -J "nccl-cicd::$GITLAB_USER_LOGIN:perftest-multi::$CI_COMMIT_BRANCH:$CI_COMMIT_SHORT_SHA" -t 00:10:00 ./test/scripts/gitlab-runner-perftest-sharp.sh 16G 0
   interruptible: true
 
 #perf_regression-multi-gc:
