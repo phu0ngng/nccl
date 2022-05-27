@@ -405,7 +405,7 @@ perftest-multi-DGX-1V:
     - if: $RUN_ON_DRACO == "1"
       when: always
     - when: never
-  needs: [build, unit_tests, perftest-DGX-1]
+  needs: [build, unit_tests, perftest-DGX-1V]
   tags:
     - dgx-1v
   variables:
