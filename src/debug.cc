@@ -11,8 +11,8 @@
 #include <sys/syscall.h>
 
 int ncclDebugLevel = -1;
-int pid = -1;
-char hostname[1024];
+static int pid = -1;
+static char hostname[1024];
 thread_local int ncclDebugNoWarn = 0;
 char ncclLastError[1024] = ""; // Global string for the last error in human readable form
 uint64_t ncclDebugMask = NCCL_INIT; // Default debug sub-system mask is INIT
