@@ -278,6 +278,8 @@ struct ncclComm {
   struct ncclKernelPlan* unlaunchedPlansHead;
 };
 
+extern bool ncclMainExited;
+
 enum ncclLaunchMode {
   ncclLaunchModeInvalid=0,
   ncclLaunchModeParallel,
