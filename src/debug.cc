@@ -69,11 +69,11 @@ void ncclDebugInit() {
       subsys = strtok(NULL, ",");
     }
     free(ncclDebugSubsys);
-
-    // Cache pid and hostname
-    getHostName(hostname, 1024, '.');
-    pid = getpid();
   }
+
+  // Cache pid and hostname
+  getHostName(hostname, 1024, '.');
+  pid = getpid();
 
   /* Parse and expand the NCCL_DEBUG_FILE path and
    * then create the debug file. But don't bother unless the
