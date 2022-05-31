@@ -157,7 +157,7 @@ TYPED_TEST(ncclCudaGraph_test, aggregation) {
     this->LaunchGraph();
 };
 
-TYPED_TEST(ncclCudaGraph_test, many_graph_many_stream) {
+TYPED_TEST(ncclCudaGraph_test, DISABLED_many_graph_many_stream) {
     for (int g=0; g < 2; g++) {
         this->BeginCapture(g);
         ASSERT_EQ(ncclSuccess, ncclGroupStart());
