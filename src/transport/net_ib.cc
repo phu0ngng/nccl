@@ -1252,7 +1252,6 @@ ncclResult_t ncclIbTest(void* request, int* done, int* sizes) {
           if (req->type != NCCL_NET_IB_REQ_RECV) return ncclInternalError;
           if (req->nreqs > 1) {
             // In the case of a multi recv, we only set sizes to 0 or 1.
-            uint8_t* sizes = (uint8_t*)&wc->imm_data;
             for (int i=0; i<req->nreqs; i++) {
               req->recv.sizes[i] = (wc->imm_data >> i) & 0x1;
             }
