@@ -1120,39 +1120,43 @@ static ncclResult_t ncclCommInitRankDev(ncclComm_t* newcomm, int nranks, ncclUni
   char* env = getenv("NCCL_COMM_ID");
   if (env && myrank == 0) {
     INFO(NCCL_ENV, "NCCL_COMM_ID set by environment to %s", env);
-    NCCLCHECKGOTO(bootstrapCreateRoot(&commId, true), res, end);
+    NCCLCHECKGOTO(bootstrapCreateRoot(&commId, true), res, fail);
   }
 
-  NCCLCHECKGOTO(ncclInit(), res, end);
+  NCCLCHECKGOTO(ncclInit(), res, fail);
   if (myrank == 0) showVersion();
 
   // Make sure the CUDA runtime is initialized.
-  CUDACHECKGOTO(cudaFree(NULL), res, end);
+  CUDACHECKGOTO(cudaFree(NULL), res, fail);
 
-  NCCLCHECKGOTO(PtrCheck(newcomm, "CommInitRank", "newcomm"), res, end);
+  NCCLCHECKGOTO(PtrCheck(newcomm, "CommInitRank", "newcomm"), res, fail);
   if (nranks < 1 || myrank < 0 || myrank >= nranks) {
     WARN("Invalid rank requested : %d/%d", myrank, nranks);
     res = ncclInvalidArgument;
-    goto end;
+    goto fail;
   }
 
-  NCCLCHECKGOTO(ncclCalloc(&comm, 1), res, end);
-  NCCLCHECKGOTO(ncclCudaHostCalloc((uint32_t**)&comm->abortFlag, 1), res, end);
+  NCCLCHECKGOTO(ncclCalloc(&comm, 1), res, fail);
+  NCCLCHECKGOTO(ncclCudaHostCalloc((uint32_t**)&comm->abortFlag, 1), res, fail);
   // set up comm state and abortFlag only
   *comm->abortFlag = 0;
-  NCCLCHECKGOTO(parseCommConfig(comm, config), res, end);
+  NCCLCHECKGOTO(parseCommConfig(comm, config), res, fail);
+  /* start with ncclInternalError and will be changed to ncclSuccess if init succeeds. */
+  comm->initState = ncclInternalError;
   *newcomm = comm;
 
-  NCCLCHECKGOTO(ncclCalloc(&job, 1), res, end);
+  NCCLCHECKGOTO(ncclCalloc(&job, 1), res, fail);
   job->newcomm = newcomm;
   job->nranks = nranks;
   job->commId = commId; // C++ struct assignment
   job->myrank = myrank;
   job->cudaDev = cudaDev;
-  NCCLCHECKGOTO(ncclAsyncLaunch(&job->base, ncclCommInitRankFunc, NULL, free, comm), res, end);
-    
-end:
+  NCCLCHECKGOTO(ncclAsyncLaunch(&job->base, ncclCommInitRankFunc, NULL, free, comm), res, fail);
+
+exit:
   return ncclGroupErrCheck(res);
+fail:
+  goto exit;
 }
 
 NCCL_API(ncclResult_t, ncclCommInitRank, ncclComm_t* newcomm, int nranks, ncclUniqueId commId, int myrank);

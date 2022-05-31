@@ -1485,7 +1485,7 @@ ncclResult_t ncclEnqueueCheck(struct ncclInfo* info) {
   NCCLCHECKGOTO(taskAppend(info->comm, info), ret, end1);
 
 end1:
-  if (devOld != -1) CUDACHECKGOTO(cudaSetDevice(devOld), ret, end0);
+  if (devOld != -1) CUDACHECK(cudaSetDevice(devOld));
 end0:
   ncclGroupErrCheck(ret);
   NCCLCHECK(ncclGroupEndInternal());
