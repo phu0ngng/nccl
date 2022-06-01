@@ -27,13 +27,4 @@ The following sample code shows how to capture computational kernels and NCCL op
 
 Starting with NCCL 2.11, when NCCL communication is captured and the CollNet algorithm is used, NCCL allows for further performance improvement via user buffer registration. For details, please environment variable :ref:`NCCL_GRAPH_REGISTER`.
 
-Capture modes
--------------
-
-By default, CUDA stream capture uses the ``cudaStreamCaptureModeGlobal`` mode if no flag is given to the ``cudaStreamBeginCapture`` call. This mode is compatible with NCCL except two scenarios:
-
-(i) If you are using NCCL in multi-thread mode, i.e. a process has multiple threads each of which is attached to a different GPU, then you would need to add the ``cudaStreamCaptureModeThreadLocal`` flag to the ``cudaStreamBeginCapture`` call.
-
-(ii) If you are capturing NCCL P2P calls (``ncclSend`` and ``ncclRecv``) without any previous P2P calls to the same peer(s), you would also need to use the ``cudaStreamCaptureModeThreadLocal`` mode.
-
-A comparison between ``cudaStreamCaptureModeGlobal`` and ``cudaStreamCaptureModeThreadLocal`` can be found `here <https://docs.nvidia.com/cuda/cuda-runtime-api/group__CUDART__STREAM.html#group__CUDART__STREAM_1g9d0535d93a214cbf126835257b16ba85>`_.
+Having multiple outstanding NCCL operations that are any combination of graph-captured or non-captured is supported. There is a caveat that the mechanism NCCL uses internally to accomplish this has been seen to cause CUDA to deadlock when the graphs of multiple communicators are cudaGraphLaunch()'d from the same thread. To disable this mechansim see the environment variable :ref:`NCCL_GRAPH_MIXING_SUPPORT`.
