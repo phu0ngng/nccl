@@ -47,6 +47,11 @@ ncclResult_t
    (``5``)
    The call to NCCL is incorrect. This is usually reflecting a programming error.
 
+ .. c:macro:: ncclRemoteError
+
+   (``6``)
+   A call failed possibly due to a network error or a remote process exiting prematurely.
+
  Whenever a function returns an error (not ncclSuccess), NCCL should print a more detailed message when the environment variable :ref:`NCCL_DEBUG` is set to "WARN".
 
 ncclDataType_t

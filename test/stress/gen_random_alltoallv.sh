@@ -16,7 +16,11 @@ get_random_type() {
 echo "ncclGroupStart"
 for source in `seq 0 $ngpus`; do
   for destination in `seq $source $ngpus`; do
-     size=`awk "BEGIN{print $RANDOM * 2 ^ ($RANDOM%12+1)}"`
+     if [ `expr $RANDOM % 2` == "0" ]; then
+       size=0
+     else
+       size=`awk "BEGIN{print $RANDOM * 2 ^ ($RANDOM%12+1)}"`
+     fi
      datatype=`get_random_type`
      echo "ncclSend $source $size $destination $datatype"
      echo "ncclRecv $destination $size $source $datatype"

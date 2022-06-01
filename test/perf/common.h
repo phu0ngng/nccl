@@ -30,6 +30,21 @@
   }                                                 \
 } while(0)
 
+#if NCCL_VERSION_CODE >= NCCL_VERSION(2,12,10)
+#define NCCLCHECK(cmd) do {                         \
+  ncclResult_t res = cmd;                           \
+  if (res != ncclSuccess) {                         \
+    char hostname[1024];                            \
+    getHostName(hostname, 1024);                    \
+    printf("%s: Test NCCL failure %s:%d "           \
+           "'%s / %s'\n",                           \
+           hostname,__FILE__,__LINE__,              \
+           ncclGetErrorString(res),                 \
+           ncclGetLastError(NULL));                 \
+    return testNcclError;                           \
+  }                                                 \
+} while(0)
+#else
 #define NCCLCHECK(cmd) do {                         \
   ncclResult_t res = cmd;                           \
   if (res != ncclSuccess) {                         \
@@ -41,6 +56,7 @@
     return testNcclError;                           \
   }                                                 \
 } while(0)
+#endif
 
 typedef enum {
   testSuccess = 0,

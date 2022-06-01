@@ -4,6 +4,15 @@ Communicator Creation and Management Functions
 
 The following functions are public APIs exposed by NCCL to create and manage the collective communication operations.
 
+ncclGetLastError
+----------------
+
+.. c:function:: const char* ncclGetLastError(ncclComm_t comm)
+Returns a human-readable string of the last error that occurred in NCCL.
+Note: The error is not cleared by calling this function.
+The *comm* argument is currently unused and can be set to NULL.
+
+
 ncclGetVersion
 --------------
 

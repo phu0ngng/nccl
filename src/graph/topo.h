@@ -167,7 +167,6 @@ static ncclResult_t ncclTopoIdToIndex(struct ncclTopoSystem* system, int type, i
       return ncclSuccess;
     }
   }
-  WARN("Internal Error: could not find %s with id %lx\n", topoNodeTypeStr[type], id);
   return ncclInternalError;
 }
 
@@ -176,6 +175,17 @@ static ncclResult_t ncclTopoRankToIndex(struct ncclTopoSystem* system, int rank,
   for (int i=0; i<system->nodes[GPU].count; i++) {
     if (system->nodes[GPU].nodes[i].gpu.rank == rank) {
       *index = i;
+      return ncclSuccess;
+    }
+  }
+  return ncclInternalError;
+}
+
+static ncclResult_t ncclTopoDevToRank(struct ncclTopoSystem* system, int dev, int* rank) {
+  *rank = -1;
+  for (int i=0; i<system->nodes[GPU].count; i++) {
+    if (system->nodes[GPU].nodes[i].gpu.dev == dev) {
+      *rank = system->nodes[GPU].nodes[i].gpu.rank;
       return ncclSuccess;
     }
   }

@@ -53,6 +53,14 @@ Integer values are discouraged due to breaking changes in path types - the liter
 
 Values greater than 4 will be interpreted as SYS.  NVL is not supported using the legacy level ints.
 
+NCCL_P2P_DIRECT_DISABLE
+-----------------------
+The ``NCCL_P2P_DIRECT_DISABLE`` variable forbids NCCL to directly access user buffers through P2P between GPUs of the same process. This is useful when user buffers are allocated with APIs which do not automatically make them accessible to other GPUs managed by the same process and with P2P access.
+
+Values accepted
+^^^^^^^^^^^^^^^
+Define and set to 1 to disable direct user buffer access across GPUs.
+
 NCCL_SHM_DISABLE
 ----------------
 The ``NCCL_SHM_DISABLE`` variable disables the Shared Memory (SHM) transports. SHM is used between devices when peer-to-peer cannot happen, therefore, host memory is used.  NCCL will use network (i.e. InfiniBand or IP sockets) to communicate between the CPU sockets when SHM is disabled.
@@ -112,6 +120,8 @@ VERSION - Prints the NCCL version at the start of the program.
 WARN - Prints an explicit error message whenever any NCCL call errors out.
 
 INFO - Prints debug information
+
+TRACE - Prints replayable trace information on every call.
 
 NCCL_BUFFSIZE
 -------------
@@ -551,7 +561,7 @@ NCCL_DEBUG_FILE
 
 The ``NCCL_DEBUG_FILE`` variable directs the NCCL debug logging output to a file.
 The filename format can be set to *filename.%h.%p* where *%h* is replaced with the
-hostname and *%p* is replaced with the process PID.
+hostname and *%p* is replaced with the process PID. This does not accept home directory (~), please convert to a relative or absolute path first.
 
 Values accepted
 ^^^^^^^^^^^^^^^
@@ -695,3 +705,26 @@ Change the name of NCCL threads to ease debugging and analysis.
 Value accepted
 ^^^^^^^^^^^^^^
 0 or 1. Default is 0.
+
+NCCL_GRAPH_MIXING_SUPPORT
+-------------------------
+(since 2.13)
+
+Enable/disable support for co-occurring outstanding NCCL launches from multiple
+CUDA graphs or a CUDA graph and non-captured NCCL calls. With support disabled,
+correctness is only guarnateed if the communicator always avoids both of the
+following cases:
+
+1. Has outstanding parallel graph launches, where parallel means on different
+streams without dependencies that would otherwise serialize their execution.
+
+2. An outstanding graph launch followed by a non-captured launch. Stream
+dependencies are irrelevant.
+
+The ability to disable support is motivated by observed hangs in the CUDA
+launches when support is enabled and multiple ranks have work launched via
+cudaGraphLaunch from the same thread.
+
+Value accepted
+^^^^^^^^^^^^^^
+0 or 1. Default is 1.
