@@ -1045,7 +1045,7 @@ void* ncclProxyService(void* _args) {
   int npeers = 0;
   int stop = 0;
   int asyncOpCount = 0;
-  while (stop == 0 || (stop == 1 && npeers > 0)) {
+  while ((stop == 0 || (stop == 1 && npeers > 0)) && *comm->abortFlag == 0) {
     /* never let proxy service thread blocks in poll, or it cannot receive abortFlag. */
     if (int error = poll(pollfds, NCCL_MAX_LOCAL_RANKS+1, asyncOpCount ? 0 : 500) < 0) {
       WARN("[Proxy Service] Poll failed with error %d", error);
@@ -1088,10 +1088,7 @@ void* ncclProxyService(void* _args) {
           INFO(NCCL_INIT|NCCL_NET, "[Service thread] Connection closed by localRank %d", peer->localRank);
           closeConn = 1;
         } else {
-          if (type == ncclProxyMsgAbort) {
-            stop = 2;
-            closeConn = 1;
-          } else if (type == ncclProxyMsgStop) {
+          if (type == ncclProxyMsgStop) {
             stop = 1;
             closeConn = 1;
           } else if (type == ncclProxyMsgClose) {
@@ -1121,6 +1118,10 @@ void* ncclProxyService(void* _args) {
       }
     }
   }
+  /* wait until main thread flush all NCCL operations. */
+  while (*comm->abortFlag != 0 && __atomic_load_n(&comm->proxyState.safeAbortFlag, __ATOMIC_ACQUIRE) == 0)
+    usleep(1000);
+
   // Wait for all operations to complete and stop progress thread before freeing any resource
   if (ncclProxyProgressDestroy(comm) != ncclSuccess) {
     WARN("[Proxy Service] proxyDestroy failed");
@@ -1153,14 +1154,20 @@ ncclResult_t ncclProxyDestroy(struct ncclComm* comm) {
 
   if (state == NULL) return ncclSuccess;
   if (state->peerAddresses) {
-    struct ncclSocket sock;
-    sock.abortFlag = NULL;
-    sock.asyncFlag = 0;
-    memcpy(&sock.addr, comm->proxyState.peerAddresses+comm->rank, sizeof(union ncclSocketAddress));
-    NCCLCHECK(ncclSocketConnect(&sock));
-    int type = (*comm->abortFlag) ? ncclProxyMsgAbort : ncclProxyMsgStop;
-    NCCLCHECK(ncclSocketSend(&sock, &type, sizeof(int)));
-    close(sock.fd);
+    if (*comm->abortFlag == 0) {
+      struct ncclSocket sock;
+      sock.abortFlag = NULL;
+      sock.asyncFlag = 0;
+      memcpy(&sock.addr, comm->proxyState.peerAddresses+comm->rank, sizeof(union ncclSocketAddress));
+      NCCLCHECK(ncclSocketConnect(&sock));
+      int type = ncclProxyMsgStop;
+      NCCLCHECK(ncclSocketSend(&sock, &type, sizeof(int)));
+      close(sock.fd);
+    } else {
+      /* when abortFlag is set, all socket related communications are no longer reliable. We need to 
+       * set a flag to let proxy thread exit. */
+      __atomic_store_n(&state->safeAbortFlag, 1, __ATOMIC_RELEASE);
+    }
     free(state->peerAddresses);
   }
   if (state->peerSocks) {

@@ -205,8 +205,6 @@ static ncclResult_t commFree(ncclComm_t comm) {
     NCCLCHECK(ncclStrongStreamDestruct(&comm->deviceStream)); 
   }
 
-  NCCLCHECK(ncclCudaHostFree((void *)comm->abortFlag));
-
   struct ncclDestructor* dtor = comm->destructorHead;
   while (dtor != nullptr) {
     NCCLCHECK(dtor->fn(dtor));
@@ -218,18 +216,27 @@ static ncclResult_t commFree(ncclComm_t comm) {
 
   commPoison(comm); // Important that this does not interfere with anything used below.
 
-  struct ncclComm* intraComm0 = comm->intraComm0;
-  if (intraComm0 && 0 == ncclAtomicRefCountDecrement(&intraComm0->intraRefs)) {
-    // Wait for all service threads to be done. We could not
-    // do it earlier because it could have blocked and prevented
-    // other ranks in the process to call ncclCommDestroy
-    comm = intraComm0;
-    while (comm != nullptr) {
-      if (comm->proxyState.thread) pthread_join(comm->proxyState.thread, nullptr);
-      struct ncclComm* next = comm->intraNext;
-      free(comm);
-      comm = next;
+  if (comm->initState == ncclSuccess) {
+    struct ncclComm* intraComm0 = comm->intraComm0;
+    if (0 == ncclAtomicRefCountDecrement(&intraComm0->intraRefs)) {
+      // Wait for all service threads to be done. We could not
+      // do it earlier because it could have blocked and prevented
+      // other ranks in the process to call ncclCommDestroy
+      comm = intraComm0;
+      while (comm != nullptr) {
+        if (comm->proxyState.thread) pthread_join(comm->proxyState.thread, nullptr);
+        struct ncclComm* next = comm->intraNext;
+        free(comm);
+        comm = next;
+      }
     }
+  } else if (comm->proxyState.thread) {
+    pthread_join(comm->proxyState.thread, nullptr);
+    ncclCudaHostFree((void *)comm->abortFlag);
+    free(comm);
+  } else {
+    ncclCudaHostFree((void *)comm->abortFlag);
+    free(comm);
   }
 
   return ncclSuccess;
@@ -1056,6 +1063,11 @@ struct ncclCommInitRankAsyncJob {
   int cudaDev;
 };
 
+struct ncclCommFinalizeAsyncJob {
+  struct ncclAsyncJob base;
+  ncclComm_t comm;
+};
+
 static ncclResult_t ncclCommInitRankFunc(struct ncclAsyncJob* job_) {
   struct ncclCommInitRankAsyncJob* job = (struct ncclCommInitRankAsyncJob*)job_;
   ncclComm_t* newcomm = job->newcomm;
@@ -1279,39 +1291,176 @@ fail:
   goto exit;
 }
 
-static ncclResult_t commDestroy(ncclComm_t comm) {
-  // Try and prevent a double free of the comm struct (user error)
-  if (comm->rank == -1 || comm->nRanks <= 0 || comm->cudaDev == -1 || comm->busId == -1) {
-    WARN("comm %p has already been destroyed", comm);
-    return ncclInvalidArgument;
-  }
-
+static ncclResult_t commDestroySync(struct ncclAsyncJob* job_) {
+  struct ncclCommFinalizeAsyncJob* job = (struct ncclCommFinalizeAsyncJob*) job_;
+  ncclComm_t comm = job->comm;
   int savedDevice;
   CUDACHECK(cudaGetDevice(&savedDevice));
   int commDevice = comm->cudaDev;
+  ncclResult_t ret;
 
+  CUDACHECKGOTO(cudaGetDevice(&savedDevice), ret, fail);
   if (savedDevice != commDevice) {
-    CUDACHECK(cudaSetDevice(commDevice));
+    CUDACHECKGOTO(cudaSetDevice(commDevice), ret, fail);
   }
 
   TRACE(NCCL_INIT, "Destroying comm %p rank %d abortFlag %d asyncResult %d", comm, comm->rank, *comm->abortFlag, comm->asyncResult);
 
-  NCCLCHECK(ncclStrongStreamSynchronize(&comm->hostStream));
-  NCCLCHECK(ncclStrongStreamSynchronize(&comm->deviceStream));
-
-  // Make sure we poll callbacks at least once.
-  NCCLCHECK(ncclCommPollCallbacks(comm, /*waitSome=*/false));
+  if (comm->initState == ncclSuccess) {
+    NCCLCHECKGOTO(ncclStrongStreamSynchronize(&comm->hostStream), ret, fail);
+    NCCLCHECKGOTO(ncclStrongStreamSynchronize(&comm->deviceStream), ret, fail);
+  }
+  NCCLCHECKGOTO(ncclCommPollCallbacks(comm, false), ret, fail);
   // And keep polling until all graphs referencing us die.
   while (comm->persistentRefs != 0) {
-    NCCLCHECK(ncclCommPollCallbacks(comm, /*waitSome=*/true));
+    NCCLCHECKGOTO(ncclCommPollCallbacks(comm, /*waitSome=*/true), ret, fail);
+  }
+
+  if (savedDevice != commDevice) {
+    CUDACHECKGOTO(cudaSetDevice(savedDevice), ret, fail);
+  }
+
+exit:
+  return ret;
+fail:
+  goto exit;
+}
+
+static ncclResult_t commCleanup(ncclComm_t comm) {
+  int savedDevice;
+  int commDevice = comm->cudaDev;
+
+  CUDACHECK(cudaGetDevice(&savedDevice));
+  if (savedDevice != commDevice) {
+    CUDACHECK(cudaSetDevice(commDevice));
   }
 
   NCCLCHECK(commFree(comm));
 
-  if (savedDevice != commDevice)
+  if (savedDevice != commDevice) {
     CUDACHECK(cudaSetDevice(savedDevice));
+  }
 
   return ncclSuccess;
+}
+
+static ncclResult_t commFinalize(ncclComm_t comm, bool userCalled) {
+  ncclResult_t ret = ncclSuccess;
+  struct ncclCommFinalizeAsyncJob *job = NULL;
+
+  comm->finalizeCalled = true;
+  /* launch async thread to finalize comm. */
+  NCCLCHECKGOTO(ncclCalloc(&job, 1), ret, fail);
+  job->comm = comm;
+
+  if (userCalled) {
+    NCCLCHECKGOTO(ncclAsyncLaunch(&job->base, commDestroySync, NULL, free, comm), ret, fail);
+  } else {
+    NCCLCHECKGOTO(commDestroySync(&job->base), ret, fail);
+    free(job);
+  }
+
+exit:
+  return ncclGroupErrCheck(ret);
+fail:
+  if (job) free(job);
+  goto exit;
+}
+
+NCCL_API(ncclResult_t, ncclCommFinalize, ncclComm_t comm);
+ncclResult_t ncclCommFinalize(ncclComm_t comm) {
+  NVTX3_FUNC_RANGE_IN(nccl_domain);
+  ncclResult_t ret = ncclSuccess;
+
+  NCCLCHECK(ncclGroupStartInternal());
+  if (comm == NULL) goto exit;
+
+  /* wait comm ready before finalize. */
+  NCCLCHECKGOTO(ncclCommEnsureReady(comm), ret, fail);
+
+  /* prevent double finalize. */
+  if (comm->finalizeCalled) {
+    ret = ncclInvalidArgument;
+    goto fail;
+  }
+
+  /* finalize comm. */
+  ret = commFinalize(comm, true);
+
+exit:
+  ncclGroupErrCheck(ret);
+  NCCLCHECK(ncclGroupEndInternal());
+  if (comm && !comm->blocking) { NCCLCHECK(ncclCommGetAsyncError(comm, &ret)) };
+  return ret;
+fail:
+  if (comm && !comm->blocking) (void) ncclCommSetAsyncError(comm, ret);
+  goto exit;
+}
+
+static ncclResult_t commReclaim(ncclComm_t comm) {
+  ncclResult_t ret = ncclSuccess;
+  ncclResult_t state;
+  int curRank; /* Debug info */
+
+  NCCLCHECKGOTO(ncclCommGetAsyncError(comm, &state), ret, fail);
+  TRACE(NCCL_INIT, "commReclaim: reclaim comm %p rank %d state %d", comm, comm->rank, state);
+  if (state == ncclSuccess && *comm->abortFlag == 0 && comm->finalizeCalled == false) {
+    /* user does not call ncclCommFinalize and this is a normal comm destroy. ncclCommDestroy 
+     * should be nonblocking until last call of ncclCommDestroy. */
+    NCCLCHECKGOTO(commFinalize(comm, false), ret, fail);
+  } 
+
+  if (comm->initState != ncclSuccess) {
+    /* if init errors happen, no finalize thread should have been launched. Main thread can reclaim 
+     * everything since no NCCL kernel was issued. */
+    struct ncclCommFinalizeAsyncJob job;
+
+    job.comm = comm;
+    curRank = comm->rank;
+    /* comm aborts, commDestroySync should not be blocked. */
+    if ((ret = commDestroySync((struct ncclAsyncJob*) &job)) != ncclSuccess) {
+      WARN("commReclaim: comm %p (rank = %d) in abort, error %d", comm, curRank, ret);
+    }
+
+    if ((ret = commCleanup(comm)) != ncclSuccess) {
+      WARN("commReclaim: cleanup comm %p rank %d failed in destroy/abort, error %d", comm, curRank, ret);
+    }
+  } else {
+    int curRankCnt;
+    int intraRanks = comm->intraRanks;
+    ncclComm_t intracomm0 = comm->intraComm0;
+    int *finalizeRankCnt = &intracomm0->finalizeRankCnt;
+
+    assert(intracomm0 != NULL && finalizeRankCnt != NULL);
+    curRankCnt = __atomic_add_fetch(finalizeRankCnt, 1, __ATOMIC_ACQ_REL);
+    if (curRankCnt == intraRanks) {
+      ncclComm_t curIntraComm;
+      ncclComm_t nextIntraComm = intracomm0;
+
+      while (nextIntraComm) { 
+        curIntraComm = nextIntraComm;
+        curRank = curIntraComm->rank;
+        nextIntraComm = nextIntraComm->intraNext;
+
+        if (comm->finalizeCalled == false) {
+          struct ncclCommFinalizeAsyncJob job;
+          job.comm = curIntraComm;
+          /* every comm aborts, commDestroySync should not be blocked. */
+          if ((ret = commDestroySync((struct ncclAsyncJob*) &job)) != ncclSuccess)
+            WARN("commReclaim: comm %p (rank = %d) in abort, error %d", curIntraComm, curRank, ret);
+        }
+        
+        if ((ret = commCleanup(curIntraComm)) != ncclSuccess) {
+          WARN("commReclaim: cleanup comm %p rank %d failed in destroy/abort, error %d", curIntraComm, curRank, ret);
+        }
+      }
+    }
+  }
+  
+exit:
+  return ret;
+fail:
+  goto exit;
 }
 
 NCCL_API(ncclResult_t, ncclCommDestroy, ncclComm_t comm);
@@ -1323,12 +1472,18 @@ ncclResult_t ncclCommDestroy(ncclComm_t comm) {
   int rank = comm->rank, nranks = comm->nRanks, cudaDev = comm->cudaDev;
   int64_t busId = comm->busId;
   TRACE(NCCL_INIT, "comm %p rank %d nRanks %d cudaDev %d busId %lx", comm, rank, nranks, cudaDev, busId);
-
+  // Try and prevent a double free of the comm struct (user error)
+  if (comm->rank == -1 || comm->nRanks == -1 || comm->cudaDev == -1 || comm->busId == -1) {
+    WARN("comm %p has already been destroyed", comm);
+    return ncclInvalidArgument;
+  }
+  
   /* init thread must be joined before we destory the comm. */
   NCCLCHECK(ncclCommEnsureReady(comm));
-
-  NCCLCHECK(commDestroy(comm));
+  
+  NCCLCHECK(commReclaim(comm));
   INFO(NCCL_INIT,"comm %p rank %d nranks %d cudaDev %d busId %lx - Destroy COMPLETE", comm, rank, nranks, cudaDev, busId);
+
   return ncclSuccess;
 }
 
@@ -1348,8 +1503,9 @@ ncclResult_t ncclCommAbort(ncclComm_t comm) {
    * and we should ignore the init error here. */
   ncclCommEnsureReady(comm);
 
-  NCCLCHECK(commDestroy(comm));
+  (void) commReclaim(comm);
   INFO(NCCL_INIT,"comm %p rank %d nranks %d cudaDev %d busId %lx - Abort COMPLETE", comm, rank, nranks, cudaDev, busId);
+
   return ncclSuccess;
 }
 

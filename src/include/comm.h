@@ -287,6 +287,10 @@ struct ncclComm {
   int blocking;
   // initState is to more conveniently reclaim resources when errors happen.
   ncclResult_t initState;
+  // flag to indicate if ncclCommFinalize() is called 
+  bool finalizeCalled;
+  // shared structures for finalization
+  int finalizeRankCnt;
 };
 
 enum ncclLaunchMode {

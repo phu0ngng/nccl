@@ -98,8 +98,15 @@ ncclResult_t pncclCommInitRank(ncclComm_t* comm, int nranks, ncclUniqueId commId
 ncclResult_t  ncclCommInitAll(ncclComm_t* comm, int ndev, const int* devlist);
 ncclResult_t pncclCommInitAll(ncclComm_t* comm, int ndev, const int* devlist);
 
-/* Frees resources associated with communicator object, but waits for any operations
- * that might still be running on the device. */
+/* Finalize a communicator. ncclCommFinalize flushes all issued communications, 
+ * and marks communicator state as ncclInProgress. The state will change to ncclSuccess 
+ * when the communicator is globally quiescent and related resources are freed; then, 
+ * calling ncclCommDestroy can locally free the rest of the resources (e.g. communicator 
+ * itself) without blocking. */
+ncclResult_t  ncclCommFinalize(ncclComm_t comm);
+ncclResult_t pncclCommFinalize(ncclComm_t comm);
+
+/* Frees local resources associated with communicator object. */
 ncclResult_t  ncclCommDestroy(ncclComm_t comm);
 ncclResult_t pncclCommDestroy(ncclComm_t comm);
 
