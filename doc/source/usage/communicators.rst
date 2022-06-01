@@ -190,7 +190,7 @@ cudaStreamSynchronize.
     }
 
     // We might want to let other threads (including NCCL threads) use the CPU.
-    pthread_yield();
+    sched_yield();
    }
  }
 
