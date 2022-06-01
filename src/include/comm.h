@@ -278,6 +278,11 @@ struct ncclComm {
   struct ncclKernelPlan* unlaunchedPlansHead;
 };
 
+// Set to true during an `atexit()` handler. We use this to intentionally leak
+// unfreed CUDA resources when cleaning up after return of `main()` to avoid
+// CUDA calls after CUDA runtime teardown.
+extern bool ncclMainExited;
+
 enum ncclLaunchMode {
   ncclLaunchModeInvalid=0,
   ncclLaunchModeParallel,
