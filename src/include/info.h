@@ -99,6 +99,7 @@ struct ncclTasks {
     struct ncclIntruQueue<struct ncclTaskP2p, &ncclTaskP2p::next> recvQueue;
   };
   struct ncclIntruQueue<ncclTaskColl, &ncclTaskColl::next> collQueue;
+  size_t collBytesTotal;
   struct Peer* peers/*[nRanks]*/;
   int *p2pSendOrder/*[nRanks]*/, *p2pRecvOrder/*[nRanks]*/;
   int nTasksColl, nTasksP2p;
