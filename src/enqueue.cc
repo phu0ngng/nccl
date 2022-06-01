@@ -316,7 +316,7 @@ ncclResult_t ncclLaunchBarrier(struct ncclComm* comm) {
 }
 
 #define NCCL_MAX_CGA_CLUSTER_SIZE 8
-NCCL_PARAM(CGAClusterSize, "CGA_CLUSTER_SIZE", 1);
+NCCL_PARAM(CGAClusterSize, "CGA_CLUSTER_SIZE", 0);
 
 // Launch kernel in PARALLEL mode
 ncclResult_t ncclLaunchKernel(ncclComm_t comm) {
@@ -336,9 +336,17 @@ ncclResult_t ncclLaunchKernel(ncclComm_t comm) {
     NCCLCHECK(ncclCpuBarrierOut(comm));
   } else {
 #if CUDART_VERSION >= 11080
-    int driverVersion;
-    CUDACHECK(cudaDriverGetVersion(&driverVersion));
-    if (driverVersion >= 11080) {
+    unsigned int clusterSize = ncclParamCGAClusterSize();
+    if (clusterSize > NCCL_MAX_CGA_CLUSTER_SIZE) {
+      static bool warned = false;
+      if (warned == false) {
+        WARN("NCCL_CGA_CLUSTER_SIZE value %d is too big. Limiting value to %d.",
+             clusterSize, NCCL_MAX_CGA_CLUSTER_SIZE);
+        warned = true;
+      }
+      clusterSize = NCCL_MAX_CGA_CLUSTER_SIZE;
+    }
+    if (clusterSize && comm->driverVersion >= 11080) {
       cudaLaunchConfig_t launchConfig = {0};
       cudaLaunchAttribute launchAttrs[2];
       /* Cooperative Group Array (CGA)
@@ -351,12 +359,6 @@ ncclResult_t ncclLaunchKernel(ncclComm_t comm) {
        * concurrently scheduled onto a group of SMs.
        * The maximum value is 8 and it must be divisible into the grid dimensions
        */
-      unsigned int clusterSize = ncclParamCGAClusterSize();
-      if (clusterSize > NCCL_MAX_CGA_CLUSTER_SIZE) {
-        WARN("Max CGA cluster size is %d. Limiting to NCCL_CGA_CLUSTER_SIZE to %d.",
-             NCCL_MAX_CGA_CLUSTER_SIZE, NCCL_MAX_CGA_CLUSTER_SIZE);
-        clusterSize = NCCL_MAX_CGA_CLUSTER_SIZE;
-      }
       // Grid dimension must be divisible by clusterSize
       if (params->gridDim.x % clusterSize) clusterSize = 1;
       launchAttrs[0].id = cudaLaunchAttributeClusterDimension;
