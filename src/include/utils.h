@@ -12,6 +12,7 @@
 #include "checks.h"
 #include <stdint.h>
 #include <time.h>
+#include <sched.h>
 #include <new>
 
 int ncclCudaCompCap();

@@ -244,7 +244,7 @@ testResult_t InitData(void* data, const size_t count, ncclDataType_t type, const
 
 void Barrier(struct threadArgs* args)
 {
-  while (args->barrier[args->barrier_idx] != args->thread) pthread_yield();
+  while (args->barrier[args->barrier_idx] != args->thread) sched_yield();
 
   args->barrier[args->barrier_idx] = args->thread + 1;
 
@@ -254,7 +254,7 @@ void Barrier(struct threadArgs* args)
 #endif
     args->barrier[args->barrier_idx] = 0;
   } else {
-    while (args->barrier[args->barrier_idx]) pthread_yield();
+    while (args->barrier[args->barrier_idx]) sched_yield();
   }
 
   args->barrier_idx=!args->barrier_idx;
@@ -351,7 +351,7 @@ testResult_t testStreamSynchronize(int ngpus, cudaStream_t* streams, ncclComm_t*
    }
 
    // We might want to let other threads (including NCCL threads) use the CPU.
-   if (idle) pthread_yield();
+   if (idle) sched_yield();
   }
   free(done);
   return testSuccess;

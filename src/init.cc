@@ -72,10 +72,18 @@ NCCL_PARAM(L1SharedMemoryCarveout, "L1_SHARED_MEMORY_CARVEOUT", 0);
 pthread_mutex_t initLock = PTHREAD_MUTEX_INITIALIZER;
 static bool initialized = false;
 static size_t maxLocalSizeBytes = 0;
+
+bool ncclMainExited = false;
+
+static void atexitHandler() {
+  ncclMainExited = true;
+}
+
 static ncclResult_t ncclInit() {
-  if (initialized) return ncclSuccess;
+  if (__atomic_load_n(&initialized, __ATOMIC_ACQUIRE)) return ncclSuccess;
   pthread_mutex_lock(&initLock);
   if (!initialized) {
+    atexit(atexitHandler);
     initEnv();
     initGdrCopy();
     maxLocalSizeBytes = ncclKernMaxLocalSize();
@@ -85,7 +93,7 @@ static ncclResult_t ncclInit() {
     NCCLCHECK(bootstrapNetInit());
     NCCLCHECK(ncclNetPluginInit());
 
-    initialized = true;
+    __atomic_store_n(&initialized, true, __ATOMIC_RELEASE);
   }
   pthread_mutex_unlock(&initLock);
   return ncclSuccess;
@@ -977,7 +985,7 @@ collnet_cleanup:
   if (comm->intraRank == 0) { // Load ncclParamLaunchMode
     char* str = getenv("NCCL_LAUNCH_MODE");
     enum ncclLaunchMode mode, modeOld;
-    if (str && strcmp(str, "GROUP") == 0) {
+    if (str && strcasecmp(str, "GROUP") == 0) {
       mode = ncclLaunchModeGroup;
     } else {
       mode = ncclLaunchModeParallel;

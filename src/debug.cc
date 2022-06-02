@@ -11,6 +11,8 @@
 #include <sys/syscall.h>
 
 int ncclDebugLevel = -1;
+static int pid = -1;
+static char hostname[1024];
 thread_local int ncclDebugNoWarn = 0;
 char ncclLastError[1024] = ""; // Global string for the last error in human readable form
 uint64_t ncclDebugMask = NCCL_INIT; // Default debug sub-system mask is INIT
@@ -18,26 +20,12 @@ FILE *ncclDebugFile = stdout;
 pthread_mutex_t ncclDebugLock = PTHREAD_MUTEX_INITIALIZER;
 std::chrono::steady_clock::time_point ncclEpoch;
 
-static thread_local bool initialized = false;
-static thread_local char hostPidTid[512];
+static __thread int tid = -1;
 
 void ncclDebugInit() {
   pthread_mutex_lock(&ncclDebugLock);
   if (ncclDebugLevel != -1) { pthread_mutex_unlock(&ncclDebugLock); return; }
   const char* nccl_debug = getenv("NCCL_DEBUG");
-  if (nccl_debug == NULL) {
-    ncclDebugLevel = NCCL_LOG_NONE;
-  } else if (strcasecmp(nccl_debug, "VERSION") == 0) {
-    ncclDebugLevel = NCCL_LOG_VERSION;
-  } else if (strcasecmp(nccl_debug, "WARN") == 0) {
-    ncclDebugLevel = NCCL_LOG_WARN;
-  } else if (strcasecmp(nccl_debug, "INFO") == 0) {
-    ncclDebugLevel = NCCL_LOG_INFO;
-  } else if (strcasecmp(nccl_debug, "ABORT") == 0) {
-    ncclDebugLevel = NCCL_LOG_ABORT;
-  } else if (strcasecmp(nccl_debug, "TRACE") == 0) {
-    ncclDebugLevel = NCCL_LOG_TRACE;
-  }
 
   /* Parse the NCCL_DEBUG_SUBSYS env var
    * This can be a comma separated list such as INIT,COLL
@@ -83,6 +71,10 @@ void ncclDebugInit() {
     free(ncclDebugSubsys);
   }
 
+  // Cache pid and hostname
+  getHostName(hostname, 1024, '.');
+  pid = getpid();
+
   /* Parse and expand the NCCL_DEBUG_FILE path and
    * then create the debug file. But don't bother unless the
    * NCCL_DEBUG level is > VERSION
@@ -102,12 +94,10 @@ void ncclDebugInit() {
           *dfn++ = '%';
           break;
         case 'h': // %h = hostname
-          char hostname[1024];
-          getHostName(hostname, 1024, '.');
           dfn += snprintf(dfn, PATH_MAX, "%s", hostname);
           break;
         case 'p': // %p = pid
-          dfn += snprintf(dfn, PATH_MAX, "%d", getpid());
+          dfn += snprintf(dfn, PATH_MAX, "%d", pid);
           break;
         default: // Echo everything we don't understand
           *dfn++ = '%';
@@ -124,7 +114,24 @@ void ncclDebugInit() {
       }
     }
   }
+
+  int tempNcclDebugLevel = -1;
+  if (nccl_debug == NULL) {
+    tempNcclDebugLevel = NCCL_LOG_NONE;
+  } else if (strcasecmp(nccl_debug, "VERSION") == 0) {
+    tempNcclDebugLevel = NCCL_LOG_VERSION;
+  } else if (strcasecmp(nccl_debug, "WARN") == 0) {
+    tempNcclDebugLevel = NCCL_LOG_WARN;
+  } else if (strcasecmp(nccl_debug, "INFO") == 0) {
+    tempNcclDebugLevel = NCCL_LOG_INFO;
+  } else if (strcasecmp(nccl_debug, "ABORT") == 0) {
+    tempNcclDebugLevel = NCCL_LOG_ABORT;
+  } else if (strcasecmp(nccl_debug, "TRACE") == 0) {
+    tempNcclDebugLevel = NCCL_LOG_TRACE;
+  }
+
   ncclEpoch = std::chrono::steady_clock::now();
+  __atomic_store_n(&ncclDebugLevel, tempNcclDebugLevel, __ATOMIC_RELEASE);
   pthread_mutex_unlock(&ncclDebugLock);
 }
 
@@ -133,16 +140,9 @@ void ncclDebugInit() {
  * they can share the debugging mechanisms and output files
  */
 void ncclDebugLog(ncclDebugLogLevel level, unsigned long flags, const char *filefunc, int line, const char *fmt, ...) {
-  if (!initialized) {
-    ncclDebugInit();
-    char hostname[256];
-    getHostName(hostname, sizeof(hostname), '.');
-    int pid = getpid();
-    int tid = syscall(SYS_gettid);
-    snprintf(hostPidTid, sizeof(hostPidTid), "%s:%d:%d", hostname, pid, tid);
-    initialized = true;
-  }
+  if (__atomic_load_n(&ncclDebugLevel, __ATOMIC_ACQUIRE) == -1) ncclDebugInit();
   if (ncclDebugNoWarn != 0 && level == NCCL_LOG_WARN) { level = NCCL_LOG_INFO; flags = ncclDebugNoWarn; }
+
   // Save the last error (WARN) as a human readable string
   if (level == NCCL_LOG_WARN) {
     pthread_mutex_lock(&ncclDebugLock);
@@ -154,6 +154,10 @@ void ncclDebugLog(ncclDebugLogLevel level, unsigned long flags, const char *file
   }
   if (ncclDebugLevel < level || ((flags & ncclDebugMask) == 0)) return;
 
+  if (tid == -1) {
+    tid = syscall(SYS_gettid);
+  }
+
   int cudaDev;
   if (!(level == NCCL_LOG_TRACE && flags == NCCL_CALL)) {
     cudaGetDevice(&cudaDev);
@@ -162,17 +166,17 @@ void ncclDebugLog(ncclDebugLogLevel level, unsigned long flags, const char *file
   char buffer[1024];
   size_t len = 0;
   if (level == NCCL_LOG_WARN) {
-    len = snprintf(buffer, sizeof(buffer), "\n%s [%d] %s:%d NCCL WARN ",
-                   hostPidTid, cudaDev, filefunc, line);
+    len = snprintf(buffer, sizeof(buffer), "\n%s:%d:%d [%d] %s:%d NCCL WARN ",
+                   hostname, pid, tid, cudaDev, filefunc, line);
   } else if (level == NCCL_LOG_INFO) {
-    len = snprintf(buffer, sizeof(buffer), "%s [%d] NCCL INFO ", hostPidTid, cudaDev);
+    len = snprintf(buffer, sizeof(buffer), "%s:%d:%d [%d] NCCL INFO ", hostname, pid, tid, cudaDev);
   } else if (level == NCCL_LOG_TRACE && flags == NCCL_CALL) {
-    len = snprintf(buffer, sizeof(buffer), "%s NCCL CALL ", hostPidTid);
+    len = snprintf(buffer, sizeof(buffer), "%s:%d:%d NCCL CALL ", hostname, pid, tid);
   } else if (level == NCCL_LOG_TRACE) {
     auto delta = std::chrono::steady_clock::now() - ncclEpoch;
     double timestamp = std::chrono::duration_cast<std::chrono::duration<double>>(delta).count()*1000;
-    len = snprintf(buffer, sizeof(buffer), "%s [%d] %f %s:%d NCCL TRACE ",
-                   hostPidTid, cudaDev, timestamp, filefunc, line);
+    len = snprintf(buffer, sizeof(buffer), "%s:%d:%d [%d] %f %s:%d NCCL TRACE ",
+                   hostname, pid, tid, cudaDev, timestamp, filefunc, line);
   }
 
   if (len) {

@@ -303,7 +303,7 @@ static ncclResult_t addCollToPlan(
   for (int c=nBid; c < nCollChannels; c++) {
     if (chans[c].collBytes < maxBytesInLeast) {
       least[maxIndexInLeast] = c;
-      maxBytesInLeast = chans[0].collBytes;
+      maxBytesInLeast = chans[least[0]].collBytes;
       maxIndexInLeast = 0;
       for (int b=1; b < nBid; b++) {
         if (maxBytesInLeast < chans[least[b]].collBytes) {
@@ -315,6 +315,7 @@ static ncclResult_t addCollToPlan(
   }
 
   uint64_t opCount = uint64_t(plan->collOpCount++)<<1 | 0;
+  bytes /= nBid;
   for (int bid=0; bid < nBid; bid++) {
     int c = least[bid];
     chans[c].collBytes += bytes;
@@ -485,51 +486,119 @@ fallback:
 
 NCCL_PARAM(GraphRegister, "GRAPH_REGISTER", 0);
 
+static ncclResult_t getCollNetSupport(struct ncclInfo* info, int* collNetTypeSupport);
+static ncclResult_t getAlgoInfo(struct ncclInfo* info, int collNetTypeSupport, int numPipeOps);
+
 static ncclResult_t scheduleCollTasksToPlan(
     struct ncclComm* comm, struct ncclKernelPlan* plan, int* nWorkBudget
   ) {
   struct ncclTasks* tasks = &comm->tasks;
+
+  size_t bytePerChannel[/*collNetSupport*/2];
+  if (comm->channelSize > 0) {
+    // Set by user
+    bytePerChannel[/*collNetSupport=*/0] = comm->channelSize;
+    bytePerChannel[/*collNetSupport=*/1] = comm->channelSize;
+  } else {
+    // Latency increases as scale increases
+    // We would thus want to increase the chunk size to compensate for the lost efficiency
+    bytePerChannel[/*collNetSupport=*/0] = NCCL_AGG_CHANNEL_SIZE * std::min(16, comm->nRanks);
+    bytePerChannel[/*collNetSupport=*/1] = 256<<10; // Hand-tuned
+  }
+
+  for (int collNetSupport=0; collNetSupport < 2; collNetSupport++) {
+    while (tasks->collBytesTotal < bytePerChannel[collNetSupport]*comm->nChannels &&
+           bytePerChannel[collNetSupport] > NCCL_MIN_CHANNEL_SIZE) {
+      // Reduce per-channel size so we utilize all channels.
+      bytePerChannel[collNetSupport] /= 2;
+    }
+  }
+
   while (tasks->nTasksColl != 0) {
-    struct ncclTaskColl* coll = ncclIntruQueueHead(&tasks->collQueue);
-    struct ncclInfo info = {};
-    info.comm = comm;
-    info.coll = coll->func;
-    info.sendbuff = coll->sendbuff;
-    info.recvbuff = coll->recvbuff;
-    info.count = coll->count;
-    info.root = coll->root;
-    info.datatype = coll->datatype;
-    info.opFull = coll->op; // C++ struct assignment
-    info.op = (ncclRedOp_t)(int)coll->op.op;
-    info.chunkSteps = coll->chunkSteps;
-    info.sliceSteps = coll->sliceSteps;
-    NCCLCHECK(ncclInfoSetDerived(&info, comm->nRanks));
+    struct ncclTaskColl* head = ncclIntruQueueHead(&tasks->collQueue);
+    struct ncclInfo aggInfo = {};
+    aggInfo.comm = comm;
+    aggInfo.coll = head->func;
+    aggInfo.datatype = head->datatype;
+    aggInfo.opFull = head->op;
+    aggInfo.op = (ncclRedOp_t)(int)head->op.op;
+    aggInfo.count = head->count;
+    int nAggChannels = 0;
+    int nAggOps = 1;
+    struct ncclTaskColl* aggEnd = head->next;
+    int collNetSupport = 0;
+    NCCLCHECK(getCollNetSupport(&aggInfo, &collNetSupport));
 
-    int workFuncIndex;
-    struct ncclWorkElem workElem = {};
-    struct ncclProxyOp proxyOp = {};
-    NCCLCHECK(computeColl(&info, &workFuncIndex, &workElem, &proxyOp));
-
-    if (*nWorkBudget < info.nChannels) break; // Ensure room for addCollToPlan()
-
-    bool regBufUsed = false;
-    void* regBufSend[NCCL_MAX_LOCAL_RANKS];
-    void* regBufRecv[NCCL_MAX_LOCAL_RANKS];
-    if (plan->persistent && ncclParamGraphRegister() &&
-        info.algorithm == NCCL_ALGO_COLLNET &&   // limited to CollNet for now
-        comm->intraHighestTransportType == TRANSPORT_P2P && // only when all ranks can p2p each other
-        comm->intraRanks < comm->localRanks) { // only with inter-process & intra-node peers
-      NCCLCHECK(registerIntraNodeBuffers(comm, plan, &info, &regBufUsed, regBufSend, regBufRecv));
+    // Find a range of ops that can be aggregated together.
+    while (aggEnd != nullptr &&
+           aggEnd->func == aggInfo.coll &&
+           aggEnd->datatype == aggInfo.datatype &&
+           aggEnd->op.op == aggInfo.opFull.op) {
+      aggInfo.count += aggEnd->count;
+      int nc = DIVUP(aggEnd->count*ncclTypeSize(aggInfo.datatype), bytePerChannel[collNetSupport]);
+      nc = std::max(1, std::min(nc, comm->nChannels));
+      nAggChannels += nc;
+      nAggOps++;
+      aggEnd = aggEnd->next;
     }
 
-    NCCLCHECK(addCollToPlan(comm, plan, nWorkBudget, workFuncIndex, &workElem, &proxyOp,
-      info.nChannels, info.nBytes, regBufUsed, regBufSend, regBufRecv));
-    tasks->nTasksColl -= 1;
-    ncclIntruQueueDequeue(&tasks->collQueue);
+    if (nAggOps > 1) {
+      NCCLCHECK(ncclInfoSetDerived(&aggInfo, comm->nRanks));
+      aggInfo.nChannels = std::min(comm->nChannels, nAggChannels);
+      int opPerChannel = DIVUP(nAggChannels, aggInfo.nChannels);
+      NCCLCHECK(getAlgoInfo(&aggInfo, collNetSupport, opPerChannel));
+    }
 
-    plan->threadPerBlock = std::max(plan->threadPerBlock, info.nThreads);
-    if (ncclKerns[workFuncIndex] != nullptr)
-      plan->kernelFn = ncclKerns[workFuncIndex];
+    while (head != aggEnd) {
+      struct ncclInfo info = {};
+      info.comm = comm;
+      info.coll = head->func;
+      info.sendbuff = head->sendbuff;
+      info.recvbuff = head->recvbuff;
+      info.count = head->count;
+      info.root = head->root;
+      info.datatype = head->datatype;
+      info.opFull = head->op; // C++ struct assignment
+      info.op = (ncclRedOp_t)(int)head->op.op;
+      info.chunkSteps = head->chunkSteps;
+      info.sliceSteps = head->sliceSteps;
+      NCCLCHECK(ncclInfoSetDerived(&info, comm->nRanks));
+      if (nAggOps > 1) {
+        info.nChannels = DIVUP(info.nBytes, bytePerChannel[collNetSupport]);
+        info.nChannels = std::max(1, std::min(info.nChannels, comm->nChannels));
+        info.algorithm = aggInfo.algorithm;
+        info.protocol = aggInfo.protocol;
+        info.nThreads = aggInfo.nThreads;
+      }
+
+      int workFuncIndex;
+      struct ncclWorkElem workElem = {};
+      struct ncclProxyOp proxyOp = {};
+      NCCLCHECK(computeColl(&info, &workFuncIndex, &workElem, &proxyOp));
+
+      if (*nWorkBudget < info.nChannels) return ncclSuccess; // Ensure room for addCollToPlan()
+
+      bool regBufUsed = false;
+      void* regBufSend[NCCL_MAX_LOCAL_RANKS];
+      void* regBufRecv[NCCL_MAX_LOCAL_RANKS];
+      if (plan->persistent && ncclParamGraphRegister() &&
+          info.algorithm == NCCL_ALGO_COLLNET &&   // limited to CollNet for now
+          comm->intraHighestTransportType == TRANSPORT_P2P && // only when all ranks can p2p each other
+          comm->intraRanks < comm->localRanks) { // only with inter-process & intra-node peers
+        NCCLCHECK(registerIntraNodeBuffers(comm, plan, &info, &regBufUsed, regBufSend, regBufRecv));
+      }
+
+      NCCLCHECK(addCollToPlan(comm, plan, nWorkBudget, workFuncIndex, &workElem, &proxyOp,
+        info.nChannels, info.nBytes, regBufUsed, regBufSend, regBufRecv));
+      tasks->nTasksColl -= 1;
+      tasks->collBytesTotal -= info.nBytes;
+      ncclIntruQueueDequeue(&tasks->collQueue);
+      head = ncclIntruQueueHead(&tasks->collQueue);
+
+      plan->threadPerBlock = std::max(plan->threadPerBlock, info.nThreads);
+      if (ncclKerns[workFuncIndex] != nullptr)
+        plan->kernelFn = ncclKerns[workFuncIndex];
+    }
   }
   return ncclSuccess;
 }
@@ -814,10 +883,10 @@ static ncclResult_t reclaimPlan(struct ncclComm* comm, struct ncclCommCallback* 
   struct ncclKernelPlan* plan = (struct ncclKernelPlan*)me; // cast from first member `reclaim`
   if (plan->persistent) {
     comm->persistentRefs -= 1;
-    NCCLCHECK(ncclCudaFree(plan->workHead));
+    if (!ncclMainExited) NCCLCHECK(ncclCudaFree(plan->workHead));
     while (!ncclIntruQueueEmpty(&plan->ipcMemQueue)) {
       struct ncclPointerList* q = ncclIntruQueueDequeue(&plan->ipcMemQueue);
-      CUDACHECKIGNORE(cudaIpcCloseMemHandle(q->ptr));
+      if (!ncclMainExited) CUDACHECKIGNORE(cudaIpcCloseMemHandle(q->ptr));
       ncclMemoryPoolFree(&comm->memPool_ncclPointerList, q);
     }
   }
@@ -957,6 +1026,7 @@ ncclResult_t ncclLaunchKernelAfter_NoCuda(struct ncclComm* comm, struct ncclKern
 ncclResult_t ncclLaunchFinish(struct ncclComm* comm) {
   ncclResult_t result = ncclSuccess;
   struct ncclTasks* tasks = &comm->tasks;
+  tasks->collBytesTotal = 0; // Just in case subtraction during scheduleCollTasksToPlan() doesn't get to 0
 
   // Deallocate ncclWork's. This frame exists so long as ncclLaunchPrepare
   // succeeded, and if it ncclLaunchPrepare didn't succeed we wouldn't be here.
@@ -1200,80 +1270,6 @@ comp_next:
   return ncclSuccess;
 }
 
-#if 0
-// TODO: Remove this once we're sure the benefits of the aggregate mode tuning
-// below have been recaptured in the refactoring.
-
-// Setup aggregated kernels
-// Op info has been previously saved in comm->asyncOps
-ncclResult_t ncclSetupAsyncKernels(ncclComm_t comm) {
-  if (comm->asyncOpCount == 0) {
-    return ncclSuccess;
-  } else if (comm->asyncOpCount == 1) {
-    // No aggregation
-    struct ncclInfo* info = comm->asyncOps;
-    info->nChannels = 0;
-    NCCLCHECK(ncclSetupCollKernel(info));
-  } else {
-    // Aggregation
-    // Determine a per-channel chunk size used to divide an operation into multiple channels
-    size_t channelSize;
-    if (comm->channelSize > 0) {
-      // Set by user
-      channelSize = comm->channelSize;
-    } else if (comm->collNetSupport && comm->asyncOps[0].coll == ncclFuncAllReduce) {
-      // CollNet specific size (tuned based on experiments)
-      channelSize = 256 * 1024;
-    } else {
-      // Latency increases as scale increases
-      // We would thus want to increase the chunk size to compensate for the lost efficiency
-      channelSize = NCCL_AGG_CHANNEL_SIZE * std::min(16, comm->nRanks);
-    }
-    // Reduce the per-channel size if we cannot fully utilize the channels
-    while (comm->asyncTotalSize < channelSize * comm->nChannels && channelSize > NCCL_MIN_CHANNEL_SIZE) channelSize /= 2;
-    // Check whether the ops have same reduce and data types (and hence can be packed in same ncclWork)
-    int channelUsed = 0;
-    int homogeneous = 1;
-    int allCollNetSupport = comm->collNetSupport;
-    for (int c = 0; c < comm->asyncOpCount; c++) {
-      struct ncclInfo* info = comm->asyncOps+c;
-      info->nChannels = std::min(std::max(1, (int)DIVUP(info->nBytes, channelSize)), comm->nChannels); // assign number of channels
-      channelUsed += info->nChannels;
-      // We can use fast path if all collectives are the same
-      homogeneous &= info->coll == comm->asyncOps[0].coll &&
-                     info->opFull.op == comm->asyncOps[0].opFull.op &&
-                     info->datatype == comm->asyncOps[0].datatype;
-      if (allCollNetSupport > 0) NCCLCHECK(getCollNetSupport(info, &allCollNetSupport));
-    }
-    // Compute algo, proto, nthreads for the entire kernel
-    // Prepare a synthetic op info to calculate the collective algo
-    struct ncclInfo total;
-    total.comm = comm;
-    total.coll = comm->asyncOps[0].coll;
-    total.nBytes = comm->asyncTotalSize;
-    total.nChannels = std::min(channelUsed, comm->nChannels);
-    int perChannelOps = DIVUP(channelUsed, total.nChannels);
-    if (homogeneous) NCCLCHECK(getAlgoInfo(&total, allCollNetSupport, perChannelOps));
-    // Set for each op
-    for (int c = 0; c < comm->asyncOpCount; c++) {
-      struct ncclInfo* info = comm->asyncOps+c;
-      if (homogeneous) {
-        // Set fields to skip the individual computeColl in ncclSetupCollKernel
-        info->algorithm = total.algorithm;
-        info->protocol = total.protocol;
-        info->nThreads = total.nThreads;
-      }
-      NCCLCHECK(ncclSetupCollKernel(info));
-    }
-    comm->args.header.type = ncclWorkTypeUnused;  // disable inline argument
-  }
-  // Reset counters
-  comm->asyncOpCount = 0;
-  comm->asyncTotalSize = 0;
-  return ncclSuccess;
-}
-#endif
-
 static ncclResult_t hostToDevRedOp(
     ncclDevRedOpFull *opFull, ncclRedOp_t op, ncclDataType_t datatype, ncclComm *comm
   ) {
@@ -1413,6 +1409,7 @@ static ncclResult_t taskAppend(struct ncclComm* comm, struct ncclInfo const* inf
       t->chunkSteps = info->chunkSteps;
       t->sliceSteps = info->sliceSteps;
       ncclIntruQueueEnqueue(&tasks->collQueue, t);
+      tasks->collBytesTotal += t->count*ncclTypeSize(t->datatype);
       tasks->nTasksColl += 1;
     }
   }

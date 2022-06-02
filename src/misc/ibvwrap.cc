@@ -51,7 +51,7 @@ ncclResult_t wrap_ibv_symbols(void) {
 
   if (__sync_bool_compare_and_swap(&ibvState, ibvUninitialized, ibvInitializing) == false) {
     // Another thread raced in front of us. Wait for it to be done.
-    while (ibvState == ibvInitializing) pthread_yield();
+    while (ibvState == ibvInitializing) sched_yield();
     return (ibvState == ibvInitialized) ? ncclSuccess : ncclSystemError;
   }
 
