@@ -184,9 +184,12 @@ static ncclResult_t commFree(ncclComm_t comm) {
   free(comm->connectRecv);
 
   free(comm->peerInfo);
-  ncclTopoFree(comm->topo);
-  for (int n=0; n<comm->nNodes; n++) free(comm->nodeRanks[n].localRankToRank);
-  free(comm->nodeRanks);
+  if (comm->topo)
+    ncclTopoFree(comm->topo);
+  if (comm->nodeRanks) {
+    for (int n=0; n<comm->nNodes; n++) free(comm->nodeRanks[n].localRankToRank);
+    free(comm->nodeRanks);
+  }
   free(comm->rankToNode);
   free(comm->rankToLocalRank);
 
@@ -213,7 +216,7 @@ static ncclResult_t commFree(ncclComm_t comm) {
   commPoison(comm); // Important that this does not interfere with anything used below.
 
   struct ncclComm* intraComm0 = comm->intraComm0;
-  if (0 == ncclAtomicRefCountDecrement(&intraComm0->intraRefs)) {
+  if (intraComm0 && 0 == ncclAtomicRefCountDecrement(&intraComm0->intraRefs)) {
     // Wait for all service threads to be done. We could not
     // do it earlier because it could have blocked and prevented
     // other ranks in the process to call ncclCommDestroy

@@ -1149,6 +1149,8 @@ ncclResult_t ncclProxyCreate(struct ncclComm* comm) {
 
 ncclResult_t ncclProxyDestroy(struct ncclComm* comm) {
   struct ncclProxyState* state = &comm->proxyState;
+
+  if (state == NULL) return ncclSuccess;
   if (state->peerAddresses) {
     struct ncclSocket sock;
     sock.abortFlag = NULL;
