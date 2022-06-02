@@ -52,6 +52,11 @@ ncclResult_t
    (``6``)
    A call failed possibly due to a network error or a remote process exiting prematurely.
 
+ .. c:macro:: ncclInProgress
+
+   (``7``)
+   A NCCL operation on the communicator is being enqueued and is being progressed in the background.
+
  Whenever a function returns an error (not ncclSuccess), NCCL should print a more detailed message when the environment variable :ref:`NCCL_DEBUG` is set to "WARN".
 
 ncclDataType_t
@@ -167,3 +172,20 @@ ncclScalarResidence_t
 
   The scalar resides on device visible memory and should be dereferenced once
   needed.
+
+ncclConfig_t
+---------------------
+
+.. c:type:: ncclConfig_t
+
+ A structure-based configuration users can set to initialize a communicator; a 
+ new created configuration must be initialized by NCCL_CONFIG_INITIALIZER.
+ 
+ .. c:macro:: NCCL_CONFIG_INITIALIZER
+
+  A configuration macro initializer which must be assigned to new created configuration.
+
+ .. c:macro:: blocking
+
+  This attribute can be set as integer 0 or 1 to indicate nonblocking or blocking 
+  communicator behavior correspondingly. Blocking is default value.

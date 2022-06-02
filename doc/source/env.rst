@@ -783,3 +783,14 @@ Intranode P2P transfers always have dedicated LL buffers allocated.  If running 
 Values accepted
 ^^^^^^^^^^^^^^^
 0 or 1. Default value is 0.
+
+NCCL_COMM_BLOCKING
+-----------------------
+(since 2.14)
+
+The ``NCCL_COMM_BLOCKING`` enables blocking or nonblocking communicators globally. If not set, communicator behavior 
+will be determined by the setting of the configuration parameter passed to the ncclCommInitRankConfig() function.
+
+Values accepted
+^^^^^^^^^^^^^^^
+0 or 1. 0 indicates a non-blocking communicator, and 1 indicates blocking communicator.
