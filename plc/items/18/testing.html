@@ -1,0 +1,72 @@
+<!DOCTYPE html>
+<html>
+<head>
+<title>NCCL-18 : Fault Tolerance NCCL : Testing</title>
+<link rel="stylesheet" type="text/css" href="../../html/css/doc.css">
+</head>
+<body>
+<center><h1>NCCL-18 : Fault Tolerance NCCL<br>Testing</h1></center>
+<!-- table of contents, auto-generated -->
+$CONTENTS
+<!-- end of table of contents -->
+<h2>Objectives and Timeline</h2>
+<h3>Code Coverage Goal Defined</h3>
+None.
+<h3>KPI Coverage Goals Defined (performance, stress, stability, throughput, latency)</h3>
+No change.
+<h3>Requirement Coverage Goal Defined</h3>
+Add ncclCommGetState(), ncclCommStateCallback(), ncclCommInitRankConfig(),  and ncclCommFinalize() API tests and fault tolerance 
+functionality tests.
+<h3>Quality Thresholds Defined</h3>
+No error.
+<h3>Test Timeline</h3>
+
+<h3>SW Verification and Test Plan</h3>
+
+<h2>Test plan</h2>
+<h3>Requirements Tests</h3>
+One test is added to unit test:
+<pre>ft_test</pre>
+Four tests are added to api test:
+<pre>ncclCommGetAsyncError_test</pre>,
+<pre>ncclCommInitRankConfig_test </pre>,
+<pre>ncclConfig_test </pre>,
+<pre>ncclCommFinalize_test</pre>,
+<pre>ncclCommDestroy_test</pre>
+<h3>Interface Tests</h3>
+ncclCommGetAsyncError_test tests include parameters checking test, basic API usage test such as querying state after calling 
+ncclCommInitRankConfig() or ncclCommFinalize().
+ncclCommFinalize_test tests include parameters checking test, user-called finalize and wait test, user-called finalize test,
+no-user-called finalize test, one gpu per thread finalize test, grouped-finalize test, double finalize test.
+<h3>Fault-injection Tests</h3>
+In ft_test, there are four stages to run and it will sleep 500ms, 1s, 4s and 8s respectively for each stage after calling
+ncclCommInitRankConfig(). First three stages we assume fatal fault happens so that after return from sleep, we just call 
+ncclCommAbort() and restart NCCL. Last stage assumes no error happens and will wait until all communicators successfully 
+initialize; then, it issues ncclAllReduce(), checks results, calls ncclCommFinalize() and ncclCommDestroy(). If all operations 
+succeed, the ft_test succeeds.
+<h3>Resource Usage Tests</h3>
+None.
+<h3>Design Coverage Testing</h3>
+None.
+<h3>Boundary Tests</h3>
+None.
+<h3>Certification Tests</h3>
+None.
+<h3>Stress Tests</h3>
+In ncclCommGetAsyncError_test, 10 iterations are run for each test.
+<h3>Stability Tests</h3>
+None.
+<h3>Perf and Power KPI Tests</h3>
+None.
+<h3>Usability & OOBE Tests</h3>
+None.
+<h3>Manufacturing Diagnostic(Factory) Tests</h3>
+None.
+
+<h2>Signoff list</h2>
+<p> Author : Kaiming Ouyang
+<!-- Reviewer : First Last -->
+<!-- Reviewer : First Last -->
+<!-- QA : First Last -->
+
+<!-- do not end body and html, bottom will be auto-generated -->
