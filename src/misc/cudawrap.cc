@@ -82,7 +82,7 @@ ncclResult_t cudaLibraryInit(void) {
 
   if (__sync_bool_compare_and_swap(&cudaState, cudaUninitialized, cudaInitializing) == false) {
     // Another thread raced in front of us. Wait for it to be done.
-    while (cudaState == cudaInitializing) pthread_yield();
+    while (cudaState == cudaInitializing) sched_yield();
     return (cudaState == cudaInitialized) ? ncclSuccess : ncclSystemError;
   }
 

@@ -37,7 +37,7 @@ Values accepted
 - PIX : Use P2P when GPUs are on the same PCI switch.
 - PXB : Use P2P when GPUs are connected through PCI switches (potentially multiple hops).
 - PHB : Use P2P when GPUs are on the same NUMA node. Traffic will go through the CPU.
-- SYS : Use P2P betweem NUMA nodes, potentially crossing the SMP interconnect (e.g. QPI/UPI).
+- SYS : Use P2P between NUMA nodes, potentially crossing the SMP interconnect (e.g. QPI/UPI).
 
 Integer Values (Legacy)
 ^^^^^^^^^^^^^^^
@@ -345,7 +345,7 @@ NCCL_IB_AR_THRESHOLD
 --------------------
 (since 2.6)
 
-Threshold after which we send Infiniband data in a separate message which can
+Threshold after which we send InfiniBand data in a separate message which can
 leverage adaptive routing.
 
 Values accepted
@@ -383,7 +383,7 @@ NCCL_IB_PCI_RELAXED_ORDERING
 --------------------------
 (since 2.12)
 
-Enable use of Relaxed Ordering for the IB Verbs transport. Relaxed Ordering can greatly help the performance of Infiniband networks in virtualized environments.
+Enable use of Relaxed Ordering for the IB Verbs transport. Relaxed Ordering can greatly help the performance of InfiniBand networks in virtualized environments.
 
 Values accepted
 ^^^^^^^^^^^^^^^
@@ -443,7 +443,7 @@ Integer values are discouraged due to breaking changes in path types - the liter
 - PHB : 3
 - SYS : 4
 
-Values greater than 4 will be interepreted as SYS.
+Values greater than 4 will be interpreted as SYS.
 
 NCCL_NET_GDR_READ
 -----------------
@@ -475,7 +475,7 @@ NCCL_NET_SHARED_COMMS
 (since 2.12)
 
 Reuse the same connections in the context of PXN. This allows for message
-aggregation but can also decreate the entropy of network packets.
+aggregation but can also decrease the entropy of network packets.
 
 Value accepted
 ^^^^^^^^^^^^^^
@@ -712,7 +712,7 @@ NCCL_GRAPH_MIXING_SUPPORT
 
 Enable/disable support for co-occurring outstanding NCCL launches from multiple
 CUDA graphs or a CUDA graph and non-captured NCCL calls. With support disabled,
-correctness is only guarnateed if the communicator always avoids both of the
+correctness is only guaranteed if the communicator always avoids both of the
 following cases:
 
 1. Has outstanding parallel graph launches, where parallel means on different
@@ -728,3 +728,16 @@ cudaGraphLaunch from the same thread.
 Value accepted
 ^^^^^^^^^^^^^^
 0 or 1. Default is 1.
+
+NCCL_DMABUF_ENABLE
+------------------
+(since 2.13)
+
+Enable GPU Direct RDMA buffer registration using the Linux dma-buf subsystem
+
+The Linux dma-buf subsystem allows GPU Direct RDMA capable NICs to read and write CUDA buffers directly without CPU involvement.
+This feature is enabled by default, but will be disabled if the Linux kernel or CUDA/NIC driver do not support it.
+
+Value accepted
+^^^^^^^^^^^^^^
+0 or 1. Default value is 1.

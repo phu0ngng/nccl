@@ -245,6 +245,7 @@ ncclResult_t ncclGroupEndInternal() {
       comm->tasks.nTasksP2p = 0;
       comm->tasks.streams = nullptr;
       ncclIntruQueueConstruct(&comm->tasks.collQueue);
+      comm->tasks.collBytesTotal = 0;
       for (int i=0; i < comm->nRanks; i++) {
         ncclIntruQueueConstruct(&comm->tasks.peers[i].sendQueue);
         ncclIntruQueueConstruct(&comm->tasks.peers[i].recvQueue);
