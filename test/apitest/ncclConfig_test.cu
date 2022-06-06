@@ -1,10 +1,9 @@
 #include "ncclCommon_test.cuh"
 
-class ncclCommDestroy_test : public ::testing::Test {
+class ncclConfig_test : public ::testing::Test {
   public:
     int nVis;
     void SetUp() {
-        (void) setenv("NCCL_CHECK_POINTERS", "1", 0);
         ASSERT_EQ(cudaSuccess, cudaGetDeviceCount(&nVis));
     }
 
@@ -25,7 +24,7 @@ class ncclCommDestroy_test : public ::testing::Test {
     }
 };
 
-TEST_F(ncclCommDestroy_test, basic) {
+TEST_F(ncclConfig_test, basic) {
     ncclUniqueId id;
     ncclComm_t* comms;
     ncclConfig_t config = NCCL_CONFIG_INITIALIZER;
@@ -45,66 +44,41 @@ TEST_F(ncclCommDestroy_test, basic) {
     for (int i = 0; i < nVis; ++i)
         ASSERT_EQ(ncclSuccess, ncclCommDestroy(comms[i]));
     free(comms);
-
-    SUCCEED();
 }
 
-TEST_F(ncclCommDestroy_test, null) {
-    ASSERT_EQ(ncclSuccess, ncclCommDestroy(NULL));
-    SUCCEED();
-}
-
-TEST_F(ncclCommDestroy_test, group_destroy_nonblocking) {
-    ncclComm_t* comms = NULL;
-    int nVis;
+TEST_F(ncclConfig_test, blocking) {
     ncclUniqueId id;
+    ncclComm_t* comms;
     ncclConfig_t config = NCCL_CONFIG_INITIALIZER;
-
-    config.blocking = 0;
-    ASSERT_EQ(cudaSuccess, cudaGetDeviceCount(&nVis));
-    ASSERT_NE(nullptr, comms = (ncclComm_t*)calloc(sizeof(ncclComm_t), nVis));
+    
+    comms = (ncclComm_t*)calloc(nVis, sizeof(ncclComm_t));
     ASSERT_EQ(ncclSuccess, ncclGetUniqueId(&id));
     ASSERT_EQ(ncclSuccess, ncclGroupStart());
     for (int i = 0; i < nVis; ++i) {
         ASSERT_EQ(cudaSuccess, cudaSetDevice(i));
-        (void) ncclCommInitRankConfig(&comms[i], nVis, id, i, &config);
-    }
-    ASSERT_EQ(ncclInProgress, ncclGroupEnd());
-
-    waitCommsReady(comms, nVis);
-
-    ASSERT_EQ(ncclSuccess, ncclGroupStart());
-    for (int i = 0; i < nVis; ++i) {
-        ASSERT_EQ(ncclSuccess, ncclCommDestroy(comms[i]));
+        ASSERT_EQ(ncclSuccess, ncclCommInitRankConfig(&comms[i], nVis, id, i, &config));
     }
     ASSERT_EQ(ncclSuccess, ncclGroupEnd());
-    free(comms);
 
-    SUCCEED();
+    for (int i = 0; i < nVis; ++i)
+        ASSERT_EQ(ncclSuccess, ncclCommDestroy(comms[i]));
+    free(comms);
 }
 
-TEST_F(ncclCommDestroy_test, group_destroy_blocking) {
-    ncclComm_t* comms = NULL;
-    int nVis;
+TEST_F(ncclConfig_test, config_null) {
     ncclUniqueId id;
-    ncclConfig_t config = NCCL_CONFIG_INITIALIZER;
+    ncclComm_t* comms;
 
-    ASSERT_EQ(cudaSuccess, cudaGetDeviceCount(&nVis));
-    ASSERT_NE(nullptr, comms = (ncclComm_t*)calloc(sizeof(ncclComm_t), nVis));
+    comms = (ncclComm_t*)calloc(nVis, sizeof(ncclComm_t));
     ASSERT_EQ(ncclSuccess, ncclGetUniqueId(&id));
     ASSERT_EQ(ncclSuccess, ncclGroupStart());
     for (int i = 0; i < nVis; ++i) {
         ASSERT_EQ(cudaSuccess, cudaSetDevice(i));
-        (void) ncclCommInitRankConfig(&comms[i], nVis, id, i, &config);
+        ASSERT_EQ(ncclSuccess, ncclCommInitRankConfig(&comms[i], nVis, id, i, NULL));
     }
     ASSERT_EQ(ncclSuccess, ncclGroupEnd());
 
-    ASSERT_EQ(ncclSuccess, ncclGroupStart());
-    for (int i = 0; i < nVis; ++i) {
+    for (int i = 0; i < nVis; ++i)
         ASSERT_EQ(ncclSuccess, ncclCommDestroy(comms[i]));
-    }
-    ASSERT_EQ(ncclSuccess, ncclGroupEnd());
     free(comms);
-
-    SUCCEED();
 }

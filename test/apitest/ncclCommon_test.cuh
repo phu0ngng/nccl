@@ -40,7 +40,6 @@ class ncclCommon_test : public ::testing::Test {
     static void SetUpTestCase();
     static void TearDownTestCase();
     static const std::vector<ncclRedOp_t> RedOps;
-    //
   protected:
     int root = -1;
     void SetUp(){};
