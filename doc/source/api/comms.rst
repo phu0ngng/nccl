@@ -8,6 +8,7 @@ ncclGetLastError
 ----------------
 
 .. c:function:: const char* ncclGetLastError(ncclComm_t comm)
+
 Returns a human-readable string of the last error that occurred in NCCL.
 Note: The error is not cleared by calling this function.
 The *comm* argument is currently unused and can be set to NULL.
