@@ -828,8 +828,7 @@ ncclResult_t ncclProxyConnect(struct ncclComm* comm, int transport, int send, in
     NCCLCHECK(ncclCalloc(&comm->proxyState.proxyOps, comm->localRanks));
     NCCLCHECK(ncclCalloc(&comm->proxyState.sharedDevMems, comm->localRanks));
     for (int r=0; r<comm->localRanks; r++) {
-      comm->proxyState.peerSocks[r].fd = -1;
-      comm->proxyState.peerSocks[r].abortFlag = comm->abortFlag;
+      NCCLCHECK(ncclSocketInit(&comm->proxyState.peerSocks[r], NULL, comm->abortFlag, 0));
     }
   }
   NCCLCHECK(ncclTopoGetLocalRank(comm->topo, rank, &proxyConn->localRank));
@@ -1035,7 +1034,8 @@ void* ncclProxyService(void* _args) {
   struct ncclProxyLocalPeer peers[NCCL_MAX_LOCAL_RANKS];
   memset(&peers, 0, sizeof(struct ncclProxyLocalPeer)*NCCL_MAX_LOCAL_RANKS);
   for (int s=0; s<NCCL_MAX_LOCAL_RANKS; s++) {
-    peers[s].sock.fd = pollfds[s].fd = -1;
+    ncclSocketInit(&peers[s].sock, NULL, comm->abortFlag, 0);
+    pollfds[s].fd = -1;
     pollfds[s].events = POLLHUP|POLLIN;
   }
   pollfds[NCCL_MAX_LOCAL_RANKS].fd = comm->proxyState.listenSock->fd;
