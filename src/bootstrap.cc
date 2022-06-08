@@ -13,6 +13,11 @@
 #include <sys/types.h>
 #include "proxy.h"
 
+struct bootstrapRootArgs {
+  ncclSocket_t listenSock;
+  uint64_t magic;
+};
+
 /* Init functions */
 static char bootstrapNetIfName[MAX_IF_NAME_SIZE+1];
 static union ncclSocketAddress bootstrapNetIfAddr;
@@ -26,7 +31,7 @@ ncclResult_t bootstrapNetInit() {
       char* env = getenv("NCCL_COMM_ID");
       if (env) {
         union ncclSocketAddress remoteAddr;
-        if (ncclGetSocketAddrFromString(&remoteAddr, env) != ncclSuccess) {
+        if (ncclSocketGetAddrFromString(&remoteAddr, env) != ncclSuccess) {
           WARN("Invalid NCCL_COMM_ID, please use format: <ipv4>:<port> or [<ipv6>]:<port> or <hostname>:<port>");
           return ncclInvalidArgument;
         }
@@ -56,12 +61,12 @@ ncclResult_t bootstrapNetInit() {
 enum bootstrapInterface_t { findSubnetIf = -1, dontCareIf = -2 };
 
 // Additional sync functions
-static ncclResult_t bootstrapNetSend(struct ncclSocket* sock, void* data, int size) {
+static ncclResult_t bootstrapNetSend(ncclSocket_t sock, void* data, int size) {
   NCCLCHECK(ncclSocketSend(sock, &size, sizeof(int)));
   NCCLCHECK(ncclSocketSend(sock, data, size));
   return ncclSuccess;
 }
-static ncclResult_t bootstrapNetRecv(struct ncclSocket* sock, void* data, int size) {
+static ncclResult_t bootstrapNetRecv(ncclSocket_t sock, void* data, int size) {
   int recvSize;
   NCCLCHECK(ncclSocketRecv(sock, &recvSize, sizeof(int)));
   if (recvSize > size) {
@@ -89,8 +94,10 @@ static ncclResult_t setFilesLimit() {
   return ncclSuccess;
 }
 
-static void *bootstrapRoot(void* args) {
-  struct ncclSocket* listenSock = (struct ncclSocket*)args;
+static void *bootstrapRoot(void* rargs) {
+  struct bootstrapRootArgs* args = (struct bootstrapRootArgs*)rargs;
+  ncclSocket_t listenSock = args->listenSock;
+  uint64_t magic = args->magic;
   ncclResult_t res = ncclSuccess;
   int nranks = 0, c = 0;
   struct extInfo info;
@@ -103,12 +110,11 @@ static void *bootstrapRoot(void* args) {
   TRACE(NCCL_INIT, "BEGIN");
   /* Receive addresses from all ranks */
   do {
-    struct ncclSocket sock;
-    /* bootstrap root thread always uses blocking ncclSocketAccept. */
-    NCCLCHECKGOTO(ncclSocketInit(&sock, NULL, NULL, 0), res, out);
-    NCCLCHECKGOTO(ncclSocketAccept(&sock, listenSock), res, out);
-    NCCLCHECKGOTO(bootstrapNetRecv(&sock, &info, sizeof(info)), res, out);
-    close(sock.fd);
+    ncclSocket_t sock;
+    NCCLCHECKGOTO(ncclSocketInit(&sock), res, out);
+    NCCLCHECKGOTO(ncclSocketAccept(sock, listenSock), res, out);
+    NCCLCHECKGOTO(bootstrapNetRecv(sock, &info, sizeof(info)), res, out);
+    NCCLCHECKGOTO(ncclSocketClose(sock), res, out);
 
     if (c == 0) {
       nranks = info.nranks;
@@ -138,55 +144,57 @@ static void *bootstrapRoot(void* args) {
   // Send the connect handle for the next rank in the AllGather ring
   for (int r=0; r<nranks; ++r) {
     int next = (r+1) % nranks;
-    struct ncclSocket sock;
-    sock.abortFlag = NULL;
-    sock.asyncFlag = 0;
-    memcpy(&sock.addr, rankAddressesRoot+r, sizeof(union ncclSocketAddress));
-    NCCLCHECKGOTO(ncclSocketConnect(&sock), res, out);
-    NCCLCHECKGOTO(bootstrapNetSend(&sock, rankAddresses+next, sizeof(union ncclSocketAddress)), res, out);
-    close(sock.fd);
+    ncclSocket_t sock;
+    NCCLCHECKGOTO(ncclSocketInit(&sock, rankAddressesRoot+r, magic, ncclSocketTypeBootstrap), res, out);
+    NCCLCHECKGOTO(ncclSocketConnect(sock), res, out);
+    NCCLCHECKGOTO(bootstrapNetSend(sock, rankAddresses+next, sizeof(union ncclSocketAddress)), res, out);
+    NCCLCHECKGOTO(ncclSocketClose(sock), res, out);
   }
   TRACE(NCCL_INIT, "SENT OUT ALL %d HANDLES", nranks);
 
 out:
-  close(listenSock->fd);
-  free(listenSock);
+  if (listenSock != NCCL_NULL_SOCKET) ncclSocketClose(listenSock);
   if (rankAddresses) free(rankAddresses);
   if (rankAddressesRoot) free(rankAddressesRoot);
   if (zero) free(zero);
+  free(rargs);
 
   TRACE(NCCL_INIT, "DONE");
   return NULL;
 }
 
-ncclResult_t bootstrapCreateRoot(ncclUniqueId* id, bool idFromEnv) {
-  struct ncclSocket* listenSock;
-  NCCLCHECK(ncclCalloc(&listenSock, 1));
-  memcpy(&listenSock->addr, id, sizeof(union ncclSocketAddress));
-  NCCLCHECK(ncclSocketListen(listenSock));
-  memcpy(id, &listenSock->addr, sizeof(union ncclSocketAddress));
+ncclResult_t bootstrapCreateRoot(struct ncclBootstrapHandle* handle, bool idFromEnv) {
+  ncclSocket_t listenSock;
+  struct bootstrapRootArgs* args;
   pthread_t thread;
-  pthread_create(&thread, NULL, bootstrapRoot, (void*)listenSock);
+
+  NCCLCHECK(ncclSocketInit(&listenSock, &handle->addr, handle->magic, ncclSocketTypeBootstrap, NULL, 0));
+  NCCLCHECK(ncclSocketListen(listenSock));
+  NCCLCHECK(ncclSocketGetAddr(listenSock, &handle->addr));
+
+  NCCLCHECK(ncclCalloc(&args, 1));
+  args->listenSock = listenSock;
+  args->magic = handle->magic;
+  NEQCHECK(pthread_create(&thread, NULL, bootstrapRoot, (void*)args), 0);
   ncclSetThreadName(thread, "NCCL BootstrapR");
-  pthread_detach(thread); // will not be pthread_join()'d
+  NEQCHECK(pthread_detach(thread), 0); // will not be pthread_join()'d
   return ncclSuccess;
 }
 
-ncclResult_t bootstrapGetUniqueId(ncclUniqueId* id) {
-  static_assert(sizeof(union ncclSocketAddress) < sizeof(ncclUniqueId), "NetId does not fit inside ncclUniqueId");
-  memset(id, 0, sizeof(ncclUniqueId));
-  union ncclSocketAddress* connectAddr = (union ncclSocketAddress*) id;
+ncclResult_t bootstrapGetUniqueId(struct ncclBootstrapHandle* handle) {
+  memset(handle, 0, sizeof(ncclBootstrapHandle));
+  handle->magic = rand();
 
   char* env = getenv("NCCL_COMM_ID");
   if (env) {
     INFO(NCCL_ENV, "NCCL_COMM_ID set by environment to %s", env);
-    if (ncclGetSocketAddrFromString(connectAddr, env) != ncclSuccess) {
+    if (ncclSocketGetAddrFromString(&handle->addr, env) != ncclSuccess) {
       WARN("Invalid NCCL_COMM_ID, please use format: <ipv4>:<port> or [<ipv6>]:<port> or <hostname>:<port>");
       return ncclInvalidArgument;
     }
   } else {
-    memcpy(id, &bootstrapNetIfAddr, sizeof(union ncclSocketAddress));
-    NCCLCHECK(bootstrapCreateRoot(id, false));
+    memcpy(&handle->addr, &bootstrapNetIfAddr, sizeof(union ncclSocketAddress));
+    NCCLCHECK(bootstrapCreateRoot(handle, false));
   }
 
   return ncclSuccess;
@@ -195,52 +203,53 @@ ncclResult_t bootstrapGetUniqueId(ncclUniqueId* id) {
 struct unexConn {
   int peer;
   int tag;
-  struct ncclSocket sock;
+  ncclSocket_t sock;
   struct unexConn* next;
 };
 
 struct bootstrapState {
-  struct ncclSocket listenSock;
-  struct ncclSocket ringRecvSocket;
-  struct ncclSocket ringSendSocket;
+  ncclSocket_t listenSock;
+  ncclSocket_t ringRecvSocket;
+  ncclSocket_t ringSendSocket;
   union ncclSocketAddress* peerCommAddresses;
   union ncclSocketAddress* peerProxyAddresses;
   struct unexConn* unexpectedConnections;
   int cudaDev;
   int rank;
   int nranks;
+  uint64_t magic;
   volatile uint32_t *abortFlag;
 };
 
-ncclResult_t bootstrapInit(ncclUniqueId * id, struct ncclComm* comm) {
+ncclResult_t bootstrapInit(struct ncclBootstrapHandle* handle, struct ncclComm* comm) {
   int rank = comm->rank;
   int nranks = comm->nRanks;
   struct bootstrapState* state;
+  ncclSocket_t proxySocket;
+  ncclSocketAddress nextAddr;
+  ncclSocket_t sock, listenSockRoot;
+  struct extInfo info = { 0 };
+
   NCCLCHECK(ncclCalloc(&state, 1));
   state->rank = rank;
   state->nranks = nranks;
   state->abortFlag = comm->abortFlag;
   comm->bootstrap = state;
+  comm->magic = state->magic = handle->magic;
 
   TRACE(NCCL_INIT, "rank %d nranks %d", rank, nranks);
 
-  struct extInfo info = { 0 };
   info.rank = rank;
   info.nranks = nranks;
-  struct ncclSocket sock, listenSockRoot;
-
-  NCCLCHECK(ncclSocketInit(&sock, (union ncclSocketAddress*) id, comm->abortFlag, 0));
-  NCCLCHECK(ncclSocketInit(&listenSockRoot, &bootstrapNetIfAddr, comm->abortFlag, 0));
-  NCCLCHECK(ncclSocketInit(&state->listenSock, &bootstrapNetIfAddr, comm->abortFlag, 0));
-  NCCLCHECK(ncclSocketInit(&state->ringSendSocket, NULL, comm->abortFlag, 0));
-  NCCLCHECK(ncclSocketInit(&state->ringRecvSocket, NULL, comm->abortFlag, 0));
   // Create socket for other ranks to contact me
-  NCCLCHECK(ncclSocketListen(&state->listenSock));
-  memcpy(&info.extAddressListen, &state->listenSock.addr, sizeof(union ncclSocketAddress));
+  NCCLCHECK(ncclSocketInit(&state->listenSock, &bootstrapNetIfAddr, comm->magic, ncclSocketTypeBootstrap, comm->abortFlag));
+  NCCLCHECK(ncclSocketListen(state->listenSock));
+  NCCLCHECK(ncclSocketGetAddr(state->listenSock, &info.extAddressListen));
 
   // Create socket for root to contact me
-  NCCLCHECK(ncclSocketListen(&listenSockRoot));
-  memcpy(&info.extAddressListenRoot, &listenSockRoot.addr, sizeof(union ncclSocketAddress));
+  NCCLCHECK(ncclSocketInit(&listenSockRoot, &bootstrapNetIfAddr, comm->magic, ncclSocketTypeBootstrap, comm->abortFlag));
+  NCCLCHECK(ncclSocketListen(listenSockRoot));
+  NCCLCHECK(ncclSocketGetAddr(listenSockRoot, &info.extAddressListenRoot));
 
   // stagger connection times to avoid an overload of the root
   if (nranks > 128) {
@@ -253,32 +262,36 @@ ncclResult_t bootstrapInit(ncclUniqueId * id, struct ncclComm* comm) {
   }
 
   // send info on my listening socket to root
-  NCCLCHECK(ncclSocketConnect(&sock));
-  NCCLCHECK(bootstrapNetSend(&sock, &info, sizeof(info)));
-  close(sock.fd);
+  NCCLCHECK(ncclSocketInit(&sock, &handle->addr, comm->magic, ncclSocketTypeBootstrap, comm->abortFlag));
+  NCCLCHECK(ncclSocketConnect(sock));
+  NCCLCHECK(bootstrapNetSend(sock, &info, sizeof(info)));
+  NCCLCHECK(ncclSocketClose(sock));
 
   // get info on my "next" rank in the bootstrap ring from root
-  NCCLCHECK(ncclSocketAccept(&sock, &listenSockRoot));
-  NCCLCHECK(bootstrapNetRecv(&sock, &state->ringSendSocket.addr, sizeof(union ncclSocketAddress)));
-  close(sock.fd);
-  close(listenSockRoot.fd);
+  NCCLCHECK(ncclSocketInit(&sock));
+  NCCLCHECK(ncclSocketAccept(sock, listenSockRoot));
+  NCCLCHECK(bootstrapNetRecv(sock, &nextAddr, sizeof(union ncclSocketAddress)));
+  NCCLCHECK(ncclSocketClose(sock));
+  NCCLCHECK(ncclSocketClose(listenSockRoot));
 
-  NCCLCHECK(ncclSocketConnect(&state->ringSendSocket));
+  NCCLCHECK(ncclSocketInit(&state->ringSendSocket, &nextAddr, comm->magic, ncclSocketTypeBootstrap, comm->abortFlag));
+  NCCLCHECK(ncclSocketConnect(state->ringSendSocket));
   // Accept the connect request from the previous rank in the AllGather ring
-  NCCLCHECK(ncclSocketAccept(&state->ringRecvSocket, &state->listenSock));
+  NCCLCHECK(ncclSocketInit(&state->ringRecvSocket));
+  NCCLCHECK(ncclSocketAccept(state->ringRecvSocket, state->listenSock));
 
   // AllGather all listen handlers
   NCCLCHECK(ncclCalloc(&state->peerCommAddresses, nranks));
-  memcpy(state->peerCommAddresses+rank, &state->listenSock.addr, sizeof(union ncclSocketAddress));
+  NCCLCHECK(ncclSocketGetAddr(state->listenSock, state->peerCommAddresses+rank));
   NCCLCHECK(bootstrapAllGather(state, state->peerCommAddresses, sizeof(union ncclSocketAddress)));
 
   // Create the service proxy
   NCCLCHECK(ncclCalloc(&state->peerProxyAddresses, nranks));
-  struct ncclSocket* proxySocket;
-  NCCLCHECK(ncclCalloc(&proxySocket, 1));
-  NCCLCHECK(ncclSocketInit(proxySocket, &bootstrapNetIfAddr, NULL, 0));
+
+  // proxy is aborted through a message; don't set abortFlag
+  NCCLCHECK(ncclSocketInit(&proxySocket, &bootstrapNetIfAddr, comm->magic, ncclSocketTypeProxy));
   NCCLCHECK(ncclSocketListen(proxySocket));
-  memcpy(state->peerProxyAddresses+rank, &proxySocket->addr, sizeof(union ncclSocketAddress));
+  NCCLCHECK(ncclSocketGetAddr(proxySocket, state->peerProxyAddresses+rank));
   NCCLCHECK(bootstrapAllGather(state, state->peerProxyAddresses, sizeof(union ncclSocketAddress)));
   NCCLCHECK(ncclProxyInit(comm, proxySocket, state->peerProxyAddresses));
 
@@ -304,9 +317,9 @@ ncclResult_t bootstrapAllGather(void* commState, void* allData, int size) {
     size_t sslice = (rank - i + nranks) % nranks;
 
     // Send slice to the right
-    NCCLCHECK(bootstrapNetSend(&state->ringSendSocket, data+sslice*size, size));
+    NCCLCHECK(bootstrapNetSend(state->ringSendSocket, data+sslice*size, size));
     // Recv slice from the left
-    NCCLCHECK(bootstrapNetRecv(&state->ringRecvSocket, data+rslice*size, size));
+    NCCLCHECK(bootstrapNetRecv(state->ringRecvSocket, data+rslice*size, size));
   }
 
   TRACE(NCCL_INIT, "rank %d nranks %d size %d - DONE", rank, nranks, size);
@@ -316,17 +329,16 @@ ncclResult_t bootstrapAllGather(void* commState, void* allData, int size) {
 ncclResult_t bootstrapSend(void* commState, int peer, int tag, void* data, int size) {
   ncclResult_t ret = ncclSuccess;
   struct bootstrapState* state = (struct bootstrapState*)commState;
-  struct ncclSocket sock;
+  ncclSocket_t sock = NCCL_NULL_SOCKET;
 
-  sock.fd = -1;
-  NCCLCHECKGOTO(ncclSocketInit(&sock, state->peerCommAddresses+peer, state->abortFlag, 0), ret, fail);
-  NCCLCHECKGOTO(ncclSocketConnect(&sock), ret, fail);
-  NCCLCHECKGOTO(bootstrapNetSend(&sock, &state->rank, sizeof(int)), ret, fail);
-  NCCLCHECKGOTO(bootstrapNetSend(&sock, &tag, sizeof(int)), ret, fail);
-  NCCLCHECKGOTO(bootstrapNetSend(&sock, data, size), ret, fail);
+  NCCLCHECKGOTO(ncclSocketInit(&sock, state->peerCommAddresses+peer, state->magic, ncclSocketTypeBootstrap, state->abortFlag), ret, fail);
+  NCCLCHECKGOTO(ncclSocketConnect(sock), ret, fail);
+  NCCLCHECKGOTO(bootstrapNetSend(sock, &state->rank, sizeof(int)), ret, fail);
+  NCCLCHECKGOTO(bootstrapNetSend(sock, &tag, sizeof(int)), ret, fail);
+  NCCLCHECKGOTO(bootstrapNetSend(sock, data, size), ret, fail);
 
 exit:
-  if (sock.fd >= 0) close(sock.fd);
+  NCCLCHECK(ncclSocketClose(sock));
   return ret;
 fail:
   goto exit;
@@ -369,13 +381,13 @@ ncclResult_t bootstrapIntraNodeAllGather(void* commState, int *ranks, int rank, 
   return ncclSuccess;
 }
 
-ncclResult_t unexpectedEnqueue(struct bootstrapState* state, int peer, int tag, struct ncclSocket* sock) {
+ncclResult_t unexpectedEnqueue(struct bootstrapState* state, int peer, int tag, ncclSocket_t sock) {
   // New unex
   struct unexConn* unex;
   NCCLCHECK(ncclCalloc(&unex, 1));
   unex->peer = peer;
   unex->tag = tag;
-  memcpy(&unex->sock, sock, sizeof(struct ncclSocket));
+  memcpy(&unex->sock, &sock, sizeof(ncclSocket_t));
 
   // Enqueue
   struct unexConn* list = state->unexpectedConnections;
@@ -388,9 +400,10 @@ ncclResult_t unexpectedEnqueue(struct bootstrapState* state, int peer, int tag, 
   return ncclSuccess;
 }
 
-ncclResult_t unexpectedDequeue(struct bootstrapState* state, int peer, int tag, struct ncclSocket* sock) {
+ncclResult_t unexpectedDequeue(struct bootstrapState* state, int peer, int tag, ncclSocket_t* sock, int* found) {
   struct unexConn* elem = state->unexpectedConnections;
   struct unexConn* prev = NULL;
+  *found = 0;
   while (elem) {
     if (elem->peer == peer && elem->tag == tag) {
       if (prev == NULL) {
@@ -398,14 +411,14 @@ ncclResult_t unexpectedDequeue(struct bootstrapState* state, int peer, int tag, 
       } else {
         prev->next = elem->next;
       }
-      memcpy(sock, &elem->sock, sizeof(struct ncclSocket));
+      memcpy(sock, &elem->sock, sizeof(ncclSocket_t));
       free(elem);
+      *found = 1;
       return ncclSuccess;
     }
     prev = elem;
     elem = elem->next;
   }
-  sock->fd = -1;
   return ncclSuccess;
 }
 
@@ -425,32 +438,32 @@ static void unexpectedFree(struct bootstrapState* state) {
 ncclResult_t bootstrapRecv(void* commState, int peer, int tag, void* data, int size) {
   ncclResult_t ret = ncclSuccess;
   struct bootstrapState* state = (struct bootstrapState*)commState;
-  struct ncclSocket sock;
+  ncclSocket_t sock = NCCL_NULL_SOCKET;
   int newPeer, newTag;
 
-  sock.fd = -1;
   // Search unexpected connections first
-  NCCLCHECKGOTO(unexpectedDequeue(state, peer, tag, &sock), ret, fail);
-  if (sock.fd != -1) {
-    NCCLCHECKGOTO(bootstrapNetRecv(&sock, ((char*)data), size), ret, fail);
+  int found;
+  NCCLCHECKGOTO(unexpectedDequeue(state, peer, tag, &sock, &found), ret, fail);
+  if (found) {
+    NCCLCHECKGOTO(bootstrapNetRecv(sock, ((char*)data), size), ret, fail);
     goto exit;
   }
 
   // Then look for new connections
-  NCCLCHECKGOTO(ncclSocketInit(&sock, NULL, state->listenSock.abortFlag, 0), ret, fail);
   while (1) {
-    NCCLCHECKGOTO(ncclSocketAccept(&sock, &state->listenSock), ret, fail);
-    NCCLCHECKGOTO(bootstrapNetRecv(&sock, &newPeer, sizeof(int)), ret, fail);
-    NCCLCHECKGOTO(bootstrapNetRecv(&sock, &newTag, sizeof(int)), ret, fail);
+    NCCLCHECKGOTO(ncclSocketInit(&sock), ret, fail);
+    NCCLCHECKGOTO(ncclSocketAccept(sock, state->listenSock), ret, fail);
+    NCCLCHECKGOTO(bootstrapNetRecv(sock, &newPeer, sizeof(int)), ret, fail);
+    NCCLCHECKGOTO(bootstrapNetRecv(sock, &newTag, sizeof(int)), ret, fail);
     if (newPeer == peer && newTag == tag) {
-      NCCLCHECKGOTO(bootstrapNetRecv(&sock, ((char*)data), size), ret, fail);
+      NCCLCHECKGOTO(bootstrapNetRecv(sock, ((char*)data), size), ret, fail);
       goto exit;
     }
     // Unexpected connection. Save for later.
-    NCCLCHECKGOTO(unexpectedEnqueue(state, newPeer, newTag, &sock), ret, fail);
+    NCCLCHECKGOTO(unexpectedEnqueue(state, newPeer, newTag, sock), ret, fail);
   }
 exit:
-  if (sock.fd >= 0) close(sock.fd);
+  NCCLCHECK(ncclSocketClose(sock));
   return ret;
 fail:
   goto exit;
@@ -465,9 +478,10 @@ ncclResult_t bootstrapClose(void* commState) {
       return ncclInternalError;
     }
   }
-  if (state->listenSock.fd >= 0) close(state->listenSock.fd);
-  if (state->ringSendSocket.fd >= 0) close(state->ringSendSocket.fd);
-  if (state->ringRecvSocket.fd >= 0) close(state->ringRecvSocket.fd);
+
+  NCCLCHECK(ncclSocketClose(state->listenSock));
+  NCCLCHECK(ncclSocketClose(state->ringSendSocket));
+  NCCLCHECK(ncclSocketClose(state->ringRecvSocket));
 
   free(state->peerCommAddresses);
   free(state);
@@ -478,9 +492,9 @@ ncclResult_t bootstrapClose(void* commState) {
 ncclResult_t bootstrapAbort(void* commState) {
   struct bootstrapState* state = (struct bootstrapState*)commState;
   if (commState == NULL) return ncclSuccess;
-  if (state->listenSock.fd) close(state->listenSock.fd);
-  if (state->ringSendSocket.fd) close(state->ringSendSocket.fd);
-  if (state->ringRecvSocket.fd) close(state->ringRecvSocket.fd);
+  NCCLCHECK(ncclSocketClose(state->listenSock));
+  NCCLCHECK(ncclSocketClose(state->ringSendSocket));
+  NCCLCHECK(ncclSocketClose(state->ringRecvSocket));
   free(state->peerCommAddresses);
   free(state->peerProxyAddresses);
   free(state);

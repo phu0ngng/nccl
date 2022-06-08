@@ -106,7 +106,7 @@ NCCL_API(ncclResult_t, ncclGetUniqueId, ncclUniqueId* out);
 ncclResult_t ncclGetUniqueId(ncclUniqueId* out) {
   NCCLCHECK(ncclInit());
   NCCLCHECK(PtrCheck(out, "GetUniqueId", "out"));
-  ncclResult_t res = bootstrapGetUniqueId(out);
+  ncclResult_t res = bootstrapGetUniqueId((struct ncclBootstrapHandle*)out);
   TRACE_CALL("ncclGetUniqueId(0x%llx)", (unsigned long long)hashUniqueId(*out));
   return res;
 }
@@ -641,7 +641,7 @@ static ncclResult_t initTransportsRank(struct ncclComm* comm, ncclUniqueId* comm
   int* pxnPeers = NULL;
   
   TRACE(NCCL_INIT, "comm %p, commHash %lx, rank %d nranks %d - BEGIN", comm, commHash, rank, nranks);
-  NCCLCHECKGOTO(bootstrapInit(commId, comm), ret, fail);
+  NCCLCHECKGOTO(bootstrapInit((struct ncclBootstrapHandle*)commId, comm), ret, fail);
 
   // AllGather1 - begin
   NCCLCHECKGOTO(ncclCalloc(&comm->peerInfo, nranks+1), ret, fail); // Extra rank to represent CollNet root
@@ -1149,7 +1149,7 @@ static ncclResult_t ncclCommInitRankDev(ncclComm_t* newcomm, int nranks, ncclUni
   char* env = getenv("NCCL_COMM_ID");
   if (env && myrank == 0) {
     INFO(NCCL_ENV, "NCCL_COMM_ID set by environment to %s", env);
-    NCCLCHECKGOTO(bootstrapCreateRoot(&commId, true), res, fail);
+    NCCLCHECKGOTO(bootstrapCreateRoot((struct ncclBootstrapHandle*)&commId, true), res, fail);
   }
 
   NCCLCHECKGOTO(ncclInit(), res, fail);
