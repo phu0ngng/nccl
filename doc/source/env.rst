@@ -40,7 +40,7 @@ Values accepted
 - SYS : Use P2P between NUMA nodes, potentially crossing the SMP interconnect (e.g. QPI/UPI).
 
 Integer Values (Legacy)
-^^^^^^^^^^^^^^^
+^^^^^^^^^^^^^^^^^^^^^^^
 There is also the option to declare ``NCCL_P2P_LEVEL`` as an integer corresponding to the path type.  These numerical values were kept for retro-compatibility, for those who used numerical values before strings were allowed.
 
 Integer values are discouraged due to breaking changes in path types - the literal values can change over time.  To avoid headaches debugging your configuration, use string identifiers.
@@ -380,7 +380,7 @@ Values accepted
 Number between 1 and 128, default is 1. Values beyond 8 usually cause degraded bandwidth.
 
 NCCL_IB_PCI_RELAXED_ORDERING
---------------------------
+----------------------------
 (since 2.12)
 
 Enable use of Relaxed Ordering for the IB Verbs transport. Relaxed Ordering can greatly help the performance of InfiniBand networks in virtualized environments.
@@ -432,7 +432,7 @@ Values accepted
 - SYS  : Use GPU Direct RDMA even across the SMP interconnect between NUMA nodes (e.g., QPI/UPI). (always enabled)
 
 Integer Values (Legacy)
-^^^^^^^^^^^^^^^
+^^^^^^^^^^^^^^^^^^^^^^^
 There is also the option to declare ``NCCL_NET_GDR_LEVEL`` as an integer corresponding to the path type.  These numerical values were kept for retro-compatibility, for those who used numerical values before strings were allowed.
 
 Integer values are discouraged due to breaking changes in path types - the literal values can change over time.  To avoid headaches debugging your configuration, use string identifiers.
@@ -705,6 +705,8 @@ Change the name of NCCL threads to ease debugging and analysis.
 Value accepted
 ^^^^^^^^^^^^^^
 0 or 1. Default is 0.
+
+.. _NCCL_GRAPH_MIXING_SUPPORT:
 
 NCCL_GRAPH_MIXING_SUPPORT
 -------------------------
