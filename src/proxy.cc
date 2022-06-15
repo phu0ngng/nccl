@@ -406,11 +406,13 @@ ncclResult_t ncclProxySaveOp(struct ncclComm* comm, struct ncclProxyOp* op, bool
         NCCLCHECK(SaveProxy(channel, proxyRecv, tree->up, op, 0, justInquire));
       }
     } break;
-  case ncclPatternCollTreeUpDown: {
-      // CollTree up
-      NCCLCHECK(SaveProxy(channel, proxySend, channel->collTree.out, op, 1, justInquire));  // For CollTree up, we are using push
-      // CollTree down
-      NCCLCHECK(SaveProxy(channel, proxyRecv, channel->collTree.out, op, 0, justInquire));
+  case ncclPatternCollnetChain: {
+      NCCLCHECK(SaveProxy(channel, proxySend, channel->collnetChain.up, op, 1, justInquire));
+      NCCLCHECK(SaveProxy(channel, proxyRecv, channel->collnetChain.up, op, 0, justInquire));
+    } break;
+  case ncclPatternCollnetDirect: {
+      NCCLCHECK(SaveProxy(channel, proxySend, channel->collnetDirect.out, op, 1, justInquire));
+      NCCLCHECK(SaveProxy(channel, proxyRecv, channel->collnetDirect.out, op, 0, justInquire));
     } break;
   case ncclPatternSend:
   case ncclPatternRecv: {

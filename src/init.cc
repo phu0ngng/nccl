@@ -35,7 +35,7 @@
 #endif
 
 const char* ncclFuncStr[NCCL_NUM_FUNCTIONS] = { "Broadcast", "Reduce", "AllGather", "ReduceScatter", "AllReduce" };
-const char* ncclAlgoStr[NCCL_NUM_ALGORITHMS] = { "Tree", "Ring", "CollNet" };
+const char* ncclAlgoStr[NCCL_NUM_ALGORITHMS] = { "Tree", "Ring", "CollNetDirect", "CollNetChain" };
 const char* ncclProtoStr[NCCL_NUM_PROTOCOLS] = { "LL", "LL128", "Simple" };
 
 NCCL_PARAM(GroupCudaStream, "GROUP_CUDA_STREAM", NCCL_GROUP_CUDA_STREAM);
@@ -397,7 +397,8 @@ static ncclResult_t devCommSetup(ncclComm_t comm) {
     tmpCommAndChans.channels[c].ring = comm->channels[c].ring;
     tmpCommAndChans.channels[c].ring.userRanks = comm->channels[c].devRingUserRanks;
     tmpCommAndChans.channels[c].tree = comm->channels[c].tree;
-    tmpCommAndChans.channels[c].collTree = comm->channels[c].collTree;
+    tmpCommAndChans.channels[c].collnetChain = comm->channels[c].collnetChain;
+    tmpCommAndChans.channels[c].collnetDirect = comm->channels[c].collnetDirect;
     tmpCommAndChans.channels[c].workFifoDone = &comm->workFifoDone[c];
 
     if (comm->channels[c].ring.userRanks != nullptr) {
@@ -812,16 +813,38 @@ static ncclResult_t initTransportsRank(struct ncclComm* comm, ncclUniqueId* comm
     NCCLCHECKGOTO(ncclTransportCollNetCheck(comm, collNetSetupFail), ret, collnet_cleanup);
     TRACE(NCCL_INIT, "rank %d Connected inter-node CollNet", rank);
 
-    // Connect intra-node CollNet
+    char line[1024];
+    line[0]='\0';
+    for (int c=0; c<comm->nChannels; c++) {
+      struct ncclTree* chain = &comm->channels[c].collnetChain;
+      snprintf(line+strlen(line), 1023-strlen(line), " [%d] %d->%d->%d",
+          c, chain->down[0], rank, chain->up);
+    }
+    line[1023] = '\0';
+    INFO(NCCL_INIT, "Collnet Chains %s", line);
+    // Connect Collnet + chain
+    for (int c=0; c<comm->nChannels; c++) {
+      struct ncclChannel* channel = comm->channels+c;
+      NCCLCHECKGOTO(ncclTransportP2pConnect(comm, c, 1, &channel->collnetChain.up, 1, channel->collnetChain.down, 0), ret, collnet_cleanup);
+    }
+    NCCLCHECKGOTO(ncclTransportP2pSetup(comm, &collNetGraph, 0), ret, collnet_cleanup);
+    for (int c=0; c<comm->nChannels; c++) {
+      struct ncclChannel* channel = comm->channels+c;
+      NCCLCHECKGOTO(ncclTransportP2pConnect(comm, c, 1, channel->collnetChain.down, 1, &channel->collnetChain.up, 1), ret, collnet_cleanup);
+    }
+    NCCLCHECKGOTO(ncclTransportP2pSetup(comm, &collNetGraph, 1), ret, collnet_cleanup);
+    INFO(NCCL_INIT, "Connected collnet + chain");
+
+    // Connect intra-node CollNet + Direct
     int highestTransportType0, highestTransportType1;
     for (int c=0; c<comm->nChannels; c++) {
       struct ncclChannel* channelRecv = comm->channels+c;
-      NCCLCHECKGOTO(ncclTransportP2pConnect(comm, c, NCCL_MAX_DIRECT_ARITY, channelRecv->collTree.up, NCCL_MAX_DIRECT_ARITY, channelRecv->collTree.down, 0), ret, collnet_cleanup);
+      NCCLCHECKGOTO(ncclTransportP2pConnect(comm, c, NCCL_MAX_DIRECT_ARITY, channelRecv->collnetDirect.up, NCCL_MAX_DIRECT_ARITY, channelRecv->collnetDirect.down, 0), ret, collnet_cleanup);
     }
     NCCLCHECKGOTO(ncclTransportP2pSetup(comm, &collNetGraph, 0, &highestTransportType0), ret, collnet_cleanup);
     for (int c=0; c<comm->nChannels; c++) {
       struct ncclChannel* channelSend = comm->channels+c;
-      NCCLCHECKGOTO(ncclTransportP2pConnect(comm, c, NCCL_MAX_DIRECT_ARITY, channelSend->collTree.down, NCCL_MAX_DIRECT_ARITY, channelSend->collTree.up, 1), ret, collnet_cleanup);
+      NCCLCHECKGOTO(ncclTransportP2pConnect(comm, c, NCCL_MAX_DIRECT_ARITY, channelSend->collnetDirect.down, NCCL_MAX_DIRECT_ARITY, channelSend->collnetDirect.up, 1), ret, collnet_cleanup);
     }
     NCCLCHECKGOTO(ncclTransportP2pSetup(comm, &collNetGraph, 1, &highestTransportType1), ret, collnet_cleanup);
 

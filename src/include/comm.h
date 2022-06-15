@@ -102,7 +102,8 @@ struct ncclChannel {
   struct ncclRing ring;
   int* devRingUserRanks;
   struct ncclTree tree;
-  struct ncclDirect collTree;
+  struct ncclTree collnetChain;
+  struct ncclDirect collnetDirect;
   int id; // index of this channel
   uint32_t workFifoSent; // last used work index+1
   uint64_t p2pOpCount;
