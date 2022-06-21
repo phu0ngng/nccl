@@ -386,21 +386,33 @@ struct RunWorkElement<ncclFuncAllReduce, T, RedOp, NCCL_ALGO_COLLNET_CHAIN, NCCL
     int nthreadsSplit = nthreads/2;
     if (nthreadsSplit >= 256) nthreadsSplit += 64;
 
+    int group, send, recv, groupTid, groupNthreads;
     using Proto = ProtoSimple<1, 1>;
+    if (tid < nthreadsSplit) {
+      group = (0*Proto::MaxGroupWidth) | (1<<16);
+      recv = tree->down[0];
+      send = tree->up;
+      groupTid = tid;
+      groupNthreads = nthreadsSplit;
+    } else {
+      group = (1*Proto::MaxGroupWidth);
+      recv = tree->up;
+      send = tree->down[0];
+      groupTid = tid - nthreadsSplit;
+      groupNthreads = nthreads-nthreadsSplit;
+    }
+
+    Primitives<T, RedOp, FanSymmetric<1>, /*Direct=*/1, Proto, 0>
+      prims(groupTid, groupNthreads, &recv, &send, args->sendbuff, args->recvbuff, args->redOpArg, group);
 
     if (tid < nthreadsSplit) {
-      int group = (0*Proto::MaxGroupWidth) | (1<<16);
-      // Reduce up.
-      Primitives<T, RedOp, FanSymmetric<1>, /*Direct=*/0, Proto, 0>
-        prims(tid, nthreadsSplit, tree->down, &tree->up, args->sendbuff, args->recvbuff, args->redOpArg, group);
-      if (tree->down[0] == -1) {
+      if (recv == -1) {
         for (ssize_t gridOffset = 0; gridOffset < size; gridOffset += loopSize) {
           ssize_t offset = gridOffset + bid*int(chunkSize);
           int nelem = min(chunkSize, size-offset);
           prims.send(offset, nelem);
         }
-      }
-      else {
+      } else {
         for (ssize_t gridOffset = 0; gridOffset < size; gridOffset += loopSize) {
           ssize_t offset = gridOffset + bid*int(chunkSize);
           int nelem = min(chunkSize, size-offset);
@@ -409,18 +421,13 @@ struct RunWorkElement<ncclFuncAllReduce, T, RedOp, NCCL_ALGO_COLLNET_CHAIN, NCCL
       }
     }
     else {
-      int group = (1*Proto::MaxGroupWidth);
-      // Broadcast down.
-      Primitives<T, RedOp, FanSymmetric<1>, /*Direct=*/1, Proto, 0>
-        prims(tid-nthreadsSplit, nthreads-nthreadsSplit, &tree->up, tree->down, args->sendbuff, args->recvbuff, args->redOpArg, group);
-      if (tree->down[0] == -1) {
+      if (send == -1) {
         for (ssize_t gridOffset = 0; gridOffset < size; gridOffset += loopSize) {
           ssize_t offset = gridOffset + bid*int(chunkSize);
           int nelem = min(chunkSize, size-offset);
           prims.directRecv(offset, nelem);
         }
-      }
-      else {
+      } else {
         for (ssize_t gridOffset = 0; gridOffset < size; gridOffset += loopSize) {
           ssize_t offset = gridOffset + bid*int(chunkSize);
           int nelem = min(chunkSize, size-offset);
