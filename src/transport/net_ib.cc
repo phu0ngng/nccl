@@ -73,7 +73,7 @@ pthread_mutex_t ncclIbLock = PTHREAD_MUTEX_INITIALIZER;
 static int ncclIbRelaxedOrderingEnabled = 0;
 
 NCCL_PARAM(IbGidIndex, "IB_GID_INDEX", 0);
-NCCL_PARAM(IbTimeout, "IB_TIMEOUT", 14);
+NCCL_PARAM(IbTimeout, "IB_TIMEOUT", 18);
 NCCL_PARAM(IbRetryCnt, "IB_RETRY_CNT", 7);
 NCCL_PARAM(IbPkey, "IB_PKEY", 0);
 NCCL_PARAM(IbUseInline, "IB_USE_INLINE", 0);
