@@ -319,18 +319,18 @@ class Primitives<T, RedOp, Fan, Direct, ProtoLL, P2p>:
       void const *inputBuf, void *outputBuf, uint64_t redOpArg, int group=0
     ):
     redOp(redOpArg),
-    tid(tid), nthreads(nthreads), wid(tid%WARP_SIZE), group(group),
+    tid(tid), nthreads(nthreads), wid(tid%WARP_SIZE), group(group&(uint16_t)0xFFFF),
     stepLines(ncclShmem.comm.buffSizes[NCCL_PROTO_LL]/NCCL_STEPS/sizeof(ncclLLFifoLine)) {
-
+    int connIndex = group >> 16;
     auto *channel = &ncclShmem.channel;
     // If we are going to support oneshot collNet + LL, then we would need to add connector index here
     int nrecv=0, nsend=0;
     while (nrecv < MaxRecv && recvPeers[nrecv] >= 0) {
-      loadRecvConn(&channel->peers[recvPeers[nrecv]].recv[0], nrecv);
+      loadRecvConn(&channel->peers[recvPeers[nrecv]].recv[connIndex], nrecv);
       nrecv++;
     }
     while (nsend < MaxSend && sendPeers[nsend] >= 0) {
-      loadSendConn(&channel->peers[sendPeers[nsend]].send[0], nsend);
+      loadSendConn(&channel->peers[sendPeers[nsend]].send[connIndex], nsend);
       nsend++;
     }
     this->fan = Fan(nrecv, nsend);
