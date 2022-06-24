@@ -358,17 +358,17 @@ public:
     ):
     redOp(redOpArg),
     tid(tid), nthreads(nthreads), wid(tid%WARP_SIZE), warp(tid/WARP_SIZE),
-    flagThread((tid%8)==7), group(group),
+    flagThread((tid%8)==7), group(group&(uint16_t)0xFFFF),
     stepSize(ncclShmem.comm.buffSizes[NCCL_PROTO_LL128]/NCCL_STEPS/sizeof(uint64_t)) {
-
+    int connIndex = group >> 16;
     auto *channel = &ncclShmem.channel;
     int nrecv=0, nsend=0;
     while (nrecv < MaxRecv && recvPeers[nrecv] >= 0) {
-      loadRecvConn(&channel->peers[recvPeers[nrecv]].recv[0], nrecv);
+      loadRecvConn(&channel->peers[recvPeers[nrecv]].recv[connIndex], nrecv);
       nrecv++;
     }
     while (nsend < MaxSend && sendPeers[nsend] >= 0) {
-      loadSendConn(&channel->peers[sendPeers[nsend]].send[0], nsend);
+      loadSendConn(&channel->peers[sendPeers[nsend]].send[connIndex], nsend);
       nsend++;
     }
     this->fan = Fan(nrecv, nsend);
