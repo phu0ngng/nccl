@@ -743,3 +743,13 @@ This feature is enabled by default, but will be disabled if the Linux kernel or 
 Value accepted
 ^^^^^^^^^^^^^^
 0 or 1. Default value is 1.
+
+NCCL_P2P_LL_THRESHOLD
+-----------------------
+(since 2.14)
+
+The ``NCCL_P2P_LL_THRESHOLD`` is the maximum message size that NCCL will use LL for P2P operations.
+
+Values accepted
+^^^^^^^^^^^^^^^
+Decimal number. Default is 16384.
