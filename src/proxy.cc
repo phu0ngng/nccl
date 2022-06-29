@@ -425,17 +425,17 @@ ncclResult_t ncclProxySaveOp(struct ncclComm* comm, struct ncclProxyOp* op, bool
 
 NCCL_PARAM(ChunkSize, "CHUNK_SIZE", 0);
 
-ncclResult_t ncclProxyComputeP2p(struct ncclInfo* info, struct ncclProxyOp* op) {
+ncclResult_t ncclProxyComputeP2p(struct ncclInfo* info, struct ncclProxyOp* op, int proto) {
   memset(op, 0, sizeof(struct ncclProxyOp));
   int channelId = info->channelId;
   struct ncclChannel* channel = info->comm->channels+channelId;
   op->channelId = channelId;
   op->sliceSteps = 1;
   op->chunkSteps = 1;
-  op->protocol = NCCL_PROTO_SIMPLE;
   op->dtype = info->datatype;
+  op->protocol = proto;
 
-  int stepSize = info->comm->buffSizes[NCCL_PROTO_SIMPLE]/NCCL_STEPS;
+  int stepSize = info->comm->buffSizes[op->protocol]/NCCL_STEPS;
   if (info->comm->nNodes > 1) stepSize /= SENDRECV_SLICEFACTOR;
   info->chunkSize = stepSize;
   op->root = info->root;
