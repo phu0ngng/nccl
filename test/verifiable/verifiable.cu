@@ -9,6 +9,25 @@
 #include <cuda_bf16.h>
 #endif
 
+#if NCCL_VERSION_CODE >= NCCL_VERSION(2,10,0) && defined(__CUDA_BF16_TYPES_EXIST__)
+  #define HAVE_ncclBfloat16 1
+#else
+  #define HAVE_ncclBfloat16 0
+#endif
+
+#if NCCL_VERSION_CODE >= NCCL_VERSION(2,10,0)
+  #define HAVE_ncclAvg 1
+#else
+  #define HAVE_ncclAvg 0
+#endif
+
+#if NCCL_VERSION_CODE >= NCCL_VERSION(2,11,0)
+  #define HAVE_ncclPreMulSum 1
+#else
+  #define HAVE_ncclPreMulSum 0
+#endif
+
+#include <algorithm>
 #include <cassert>
 #include <cstdio>
 #include <cstdint>
@@ -828,7 +847,7 @@ void prepareInput1(
   case ncclInt64: CASE_TY(int64_t)
   case ncclUint64: CASE_TY(uint64_t)
   case ncclFloat16: CASE_TY(half)
-  #ifdef __CUDA_BF16_TYPES_EXIST__
+  #if HAVE_ncclBfloat16
   case ncclBfloat16: CASE_TY(__nv_bfloat16)
   #endif
   case ncclFloat32: CASE_TY(float)
@@ -854,8 +873,12 @@ void ncclVerifiablePrepareInput(
   case ncclMin: CASE_OP(ReduceMin())
   case ncclMax: CASE_OP(ReduceMax())
   case ncclProd: CASE_OP(ReduceProd())
+  #if HAVE_ncclAvg
   case ncclAvg: CASE_OP(ReduceAvg{rank_n})
+  #endif
+  #if HAVE_ncclPreMulSum
   default: CASE_OP(ReducePreMulSum())
+  #endif
   }
   #undef CASE_OP
 }
@@ -900,7 +923,7 @@ void prepareExpected1(
   case ncclInt64: CASE_TY(int64_t)
   case ncclUint64: CASE_TY(uint64_t)
   case ncclFloat16: CASE_TY(half)
-  #ifdef __CUDA_BF16_TYPES_EXIST__
+  #if HAVE_ncclBfloat16
   case ncclBfloat16: CASE_TY(__nv_bfloat16)
   #endif
   case ncclFloat32: CASE_TY(float)
@@ -926,8 +949,12 @@ void ncclVerifiablePrepareExpected(
   case ncclMin: CASE_OP(ReduceMin())
   case ncclMax: CASE_OP(ReduceMax())
   case ncclProd: CASE_OP(ReduceProd())
+  #if HAVE_ncclAvg
   case ncclAvg: CASE_OP(ReduceAvg{rank_n})
+  #endif
+  #if HAVE_ncclPreMulSum
   default: CASE_OP(ReducePreMulSum())
+  #endif
   }
   #undef CASE_OP
 }
@@ -963,7 +990,7 @@ __host__ __device__ unsigned calcSumFloatTolerance(int rank_n, int elt_ty) {
     power = .91f;
     coef = .75f;
     break;
-  #ifdef __CUDA_BF16_TYPES_EXIST__
+  #if HAVE_ncclBfloat16
   case ncclBfloat16:
     power = .91f;
     coef = .66f;
@@ -1071,8 +1098,12 @@ void verifyInline1(
   case ncclMin: CASE_OP(ReduceMin())
   case ncclMax: CASE_OP(ReduceMax())
   case ncclProd: CASE_OP(ReduceProd())
+  #if HAVE_ncclAvg
   case ncclAvg: CASE_OP(ReduceAvg{rank_n})
+  #endif
+  #if HAVE_ncclPreMulSum
   default: CASE_OP(ReducePreMulSum())
+  #endif
   }
   #undef CASE_OP
 }
@@ -1084,10 +1115,16 @@ void ncclVerifiableVerify(
     int64_t *bad_elt_n, cudaStream_t stream
   ) {
   bool floating = elt_ty == ncclFloat16 || elt_ty == ncclFloat32 || elt_ty == ncclFloat64;
-  #ifdef __CUDA_BF16_TYPES_EXIST__
+  #if HAVE_ncclBfloat16
     floating |= elt_ty == ncclBfloat16;
   #endif
-  unsigned tolerance = floating && red_op == ncclAvg ? calcSumFloatTolerance(rank_n, elt_ty) : 0;
+
+  unsigned tolerance = 0;
+  #if HAVE_ncclAvg
+  if (floating && red_op == ncclAvg)
+    tolerance = calcSumFloatTolerance(rank_n, elt_ty);
+  #endif
+
   int block_n = std::min<intptr_t>(32, (elt_n + 4*512-1)/(4*512));
 
   *bad_elt_n = 0;
@@ -1106,7 +1143,7 @@ void ncclVerifiableVerify(
   case ncclInt64: CASE_TY(int64_t, uint64_t)
   case ncclUint64: CASE_TY(uint64_t, uint64_t)
   case ncclFloat16: CASE_TY(half, uint16_t)
-  #ifdef __CUDA_BF16_TYPES_EXIST__
+  #if HAVE_ncclBfloat16
   case ncclBfloat16: CASE_TY(__nv_bfloat16, uint16_t)
   #endif
   case ncclFloat32: CASE_TY(float, uint32_t)
@@ -1173,7 +1210,7 @@ __global__ void sweep() {
   sweep1<int64_t>(ncclInt64, "int64");
   sweep1<uint64_t>(ncclUint64, "uint64");
   sweep1<half>(ncclFloat16, "half");
-  #ifdef __CUDA_BF16_TYPES_EXIST__
+  #if HAVE_ncclBfloat16
     sweep1<__nv_bfloat16>(ncclBfloat16, "bfloat16");
   #endif
   sweep1<float>(ncclFloat32, "float");
