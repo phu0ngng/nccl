@@ -52,6 +52,11 @@ int test_ncclVersion = 0; // init'd with ncclGetVersion()
   int test_opnum = 4;
 #endif
 
+// For libnccl's < 2.13
+extern "C" __attribute__((weak)) char const* ncclGetLastError(ncclComm_t comm) {
+  return "";
+}
+
 int is_main_proc = 0;
 thread_local int is_main_thread = 0;
 
