@@ -282,6 +282,9 @@ struct ncclComm {
   struct ncclIntruQueue<struct ncclKernelPlan, &ncclKernelPlan::next> planQueue;
   // First of the unlaunched kernels in `planQueue`
   struct ncclKernelPlan* unlaunchedPlansHead;
+
+  // communicator mode
+  int blocking;
 };
 
 enum ncclLaunchMode {

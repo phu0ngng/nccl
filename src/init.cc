@@ -201,7 +201,7 @@ static ncclResult_t commFree(ncclComm_t comm) {
 
   NCCLCHECK(ncclStrongStreamDestruct(&comm->hostStream));
   NCCLCHECK(ncclStrongStreamDestruct(&comm->deviceStream));
-  
+
   NCCLCHECK(ncclCudaHostFree((void *)comm->abortFlag));
 
   struct ncclDestructor* dtor = comm->destructorHead;
@@ -1060,7 +1060,7 @@ static void ncclCommInitRankUndo(struct ncclAsyncJob* job_) {
   *job->newcomm = nullptr;
 }
 
-static ncclResult_t ncclCommInitRankDev(ncclComm_t* newcomm, int nranks, ncclUniqueId commId, int myrank, int cudaDev) {
+static ncclResult_t ncclCommInitRankDev(ncclComm_t* newcomm, int nranks, ncclUniqueId commId, int myrank, int cudaDev, ncclConfig_t *config) {
   ncclResult_t res;
   char* env = getenv("NCCL_COMM_ID");
   if (env && myrank == 0) {
@@ -1103,7 +1103,7 @@ ncclResult_t ncclCommInitRank(ncclComm_t* newcomm, int nranks, ncclUniqueId comm
 
   int cudaDev;
   CUDACHECK(cudaGetDevice(&cudaDev));
-  NCCLCHECK(ncclCommInitRankDev(newcomm, nranks, commId, myrank, cudaDev));
+  NCCLCHECK(ncclCommInitRankDev(newcomm, nranks, commId, myrank, cudaDev, NULL));
   return ncclSuccess;
 }
 
@@ -1125,7 +1125,7 @@ ncclResult_t ncclCommInitAll(ncclComm_t* comms, int ndev, const int* devlist) {
   NCCLCHECK(ncclGroupStart());
   for (int i=0; i<ndev; i++) {
     // Ignore return codes .. we need to call ncclGroupEnd to clean up anyway
-    ncclCommInitRankDev(comms+i, ndev, uniqueId, i, devlist ? devlist[i] : i);
+    ncclCommInitRankDev(comms+i, ndev, uniqueId, i, devlist ? devlist[i] : i, NULL);
   }
   NCCLCHECK(ncclGroupEnd());
   return ncclSuccess;
@@ -1138,6 +1138,18 @@ ncclResult_t ncclCommSetAsyncError(ncclComm_t comm, ncclResult_t nextState) {
   }
 
   __atomic_store_n(&comm->asyncResult, nextState, __ATOMIC_RELEASE);
+  return ncclSuccess;
+}
+
+NCCL_API(ncclResult_t, ncclCommInitRankConfig, ncclComm_t* comm, int nranks, ncclUniqueId commId, int myrank, ncclConfig_t *config);
+ncclResult_t ncclCommInitRankConfig(ncclComm_t *newcomm, int nranks, ncclUniqueId commId, int myrank, ncclConfig_t *config) {
+  NVTX3_FUNC_RANGE_IN(nccl_domain);
+  int cudaDev;
+  
+  (void) cudaLibraryInit();
+  CUDACHECK(cudaGetDevice(&cudaDev));
+  NCCLCHECK(ncclCommInitRankDev(newcomm, nranks, commId, myrank, cudaDev, config));
+
   return ncclSuccess;
 }
 
