@@ -72,8 +72,8 @@ struct ncclTopoGraph {
   int maxChannels;
   // Output
   int nChannels;
-  float speedIntra;
-  float speedInter;
+  float bwIntra;
+  float bwInter;
   float latencyInter;
   int typeIntra;
   int typeInter;
