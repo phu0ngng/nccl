@@ -203,6 +203,7 @@ struct ncclComm {
 
   // Buffer sizes
   int buffSizes[NCCL_NUM_PROTOCOLS];
+  int p2pNetChunkSize;
 
   // Algorithm/Protocols thresholds
   ssize_t threadThresholds[NCCL_NUM_ALGORITHMS][NCCL_NUM_PROTOCOLS];

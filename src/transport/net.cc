@@ -368,7 +368,7 @@ static ncclResult_t sharedBuffersInit(struct ncclComm* comm, int cuda, int local
   struct ncclProxySharedP2p* state = type == 0 ? &peer->send : &peer->recv;
   state->refcount++;
   if (state->size == 0) {
-    state->size = nChannels*(NCCL_SHARED_STEPS/NCCL_STEPS)*comm->buffSizes[NCCL_PROTO_SIMPLE]/SENDRECV_SLICEFACTOR;
+    state->size = nChannels*NCCL_SHARED_STEPS*comm->p2pNetChunkSize;
   }
 
   if (size) *size = state->size;
@@ -394,9 +394,8 @@ static ncclResult_t sharedBuffersInit(struct ncclComm* comm, int cuda, int local
 
 static ncclResult_t sharedBuffersGet(struct ncclComm* comm, int channel, int slot, int* offset) {
   // Use different pools for different channels and also separate send/recv.
-  int slotSize = comm->buffSizes[NCCL_PROTO_SIMPLE]/(NCCL_STEPS*SENDRECV_SLICEFACTOR);
   int globalSlot = (channel*NCCL_SHARED_STEPS)+slot;
-  *offset = slotSize * globalSlot;
+  *offset = comm->p2pNetChunkSize * globalSlot;
   return ncclSuccess;
 }
 

@@ -436,7 +436,7 @@ ncclResult_t ncclProxyComputeP2p(struct ncclInfo* info, struct ncclProxyOp* op, 
   op->protocol = proto;
 
   int stepSize = info->comm->buffSizes[op->protocol]/NCCL_STEPS;
-  if (info->comm->nNodes > 1) stepSize /= SENDRECV_SLICEFACTOR;
+  if (info->comm->nNodes > 1) stepSize = info->comm->p2pNetChunkSize;
   info->chunkSize = stepSize;
   op->root = info->root;
   op->nbytes = info->count;
