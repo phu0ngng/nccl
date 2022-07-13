@@ -145,6 +145,7 @@ static void initOnceFunc() {
   return;
 error:
   initResult = ncclSystemError;
+  return;
 }
 
 ncclResult_t cudaLibraryInit() {
