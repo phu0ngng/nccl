@@ -130,19 +130,13 @@ struct recvResources {
   uint64_t llLastCleaning;
 };
 
-NCCL_PARAM(NetDisableIntra, "NET_DISABLE_INTRA", 0);
-
 /* Determine if two peers can communicate with NET */
 static ncclResult_t canConnect(int* ret, struct ncclTopoSystem* topo, struct ncclTopoGraph* graph, struct ncclPeerInfo* info1, struct ncclPeerInfo* info2) {
-  // Same host?
-  if (info1->hostHash == info2->hostHash) {
-    // User disabled NET for intra-node?
-    if (ncclParamNetDisableIntra() == 1) {
-      *ret = 0;
-      return ncclSuccess;
-    }
-  }
   *ret = 1;
+  if (info1->hostHash == info2->hostHash) {
+    // If on the same host, check intra-node net is not disabled.
+    NCCLCHECK(ncclTopoCheckNet(topo, info1->busId, info2->busId, ret));
+  }
   return ncclSuccess;
 }
 
