@@ -279,11 +279,6 @@ struct ncclComm {
   struct ncclKernelPlan* unlaunchedPlansHead;
 };
 
-// Set to true during an `atexit()` handler. We use this to intentionally leak
-// unfreed CUDA resources when cleaning up after return of `main()` to avoid
-// CUDA calls after CUDA runtime teardown.
-extern bool ncclMainExited;
-
 enum ncclLaunchMode {
   ncclLaunchModeInvalid=0,
   ncclLaunchModeParallel,
@@ -296,13 +291,16 @@ void ncclCommPushCudaFree(struct ncclComm* comm, void* buf);
 void ncclCommPushCudaHostFree(struct ncclComm* comm, void* buf);
 void ncclCommPushCudaGdrFree(struct ncclComm* comm, void* handle);
 
-inline ncclResult_t ncclCommPollCallbacks(struct ncclComm* comm) {
-  struct ncclCommCallback* cb = ncclIntruQueueMpscDequeueAll(&comm->callbackQueue, /*waitSome=*/false);
+inline ncclResult_t ncclCommPollCallbacks(struct ncclComm* comm, bool waitSome) {
+  ncclResult_t result = ncclSuccess;
+  struct ncclCommCallback* cb = ncclIntruQueueMpscDequeueAll(&comm->callbackQueue, waitSome);
   while (cb != nullptr) {
     struct ncclCommCallback* next = cb->next;
-    NCCLCHECK(cb->fn(comm, cb)); // may reclaim memory of cb
+    ncclResult_t res1 = cb->fn(comm, cb); // may reclaim memory of cb
+    if (res1 != ncclSuccess) result = res1;
     cb = next;
   }
+  NCCLCHECK(result);
   return ncclSuccess;
 }
 

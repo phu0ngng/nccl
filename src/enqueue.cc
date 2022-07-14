@@ -891,10 +891,10 @@ static ncclResult_t reclaimPlan(struct ncclComm* comm, struct ncclCommCallback* 
   struct ncclKernelPlan* plan = (struct ncclKernelPlan*)me; // cast from first member `reclaim`
   if (plan->persistent) {
     comm->persistentRefs -= 1;
-    if (!ncclMainExited) NCCLCHECK(ncclCudaFree(plan->workHead));
+    NCCLCHECK(ncclCudaFree(plan->workHead));
     while (!ncclIntruQueueEmpty(&plan->ipcMemQueue)) {
       struct ncclPointerList* q = ncclIntruQueueDequeue(&plan->ipcMemQueue);
-      if (!ncclMainExited) CUDACHECKIGNORE(cudaIpcCloseMemHandle(q->ptr));
+      CUDACHECKIGNORE(cudaIpcCloseMemHandle(q->ptr));
       ncclMemoryPoolFree(&comm->memPool_ncclPointerList, q);
     }
   }
@@ -921,7 +921,7 @@ ncclResult_t ncclLaunchPrepare(struct ncclComm* comm) {
 
   // Poll for callbacks sent to us from other threads. Typically these free
   // resources from to our memory pools.
-  NCCLCHECK(ncclCommPollCallbacks(comm));
+  NCCLCHECK(ncclCommPollCallbacks(comm, /*waitSome=*/false));
 
   // We already have one frame present which holds all of our tasks (which we
   // are about to schedule). Now push an additional frame for allocating
