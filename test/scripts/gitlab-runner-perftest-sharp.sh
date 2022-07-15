@@ -29,7 +29,7 @@ echo "Using LD_LIBRARY_PATH=$LD_LIBRARY_PATH"
 # We need to catch failures manually and then throw at the end to get gitlab to detect a failure
 failure_count=0
 
-echo "=============================== all_reduce (CollNet) ================================="
+echo "=============================== all_reduce (CollNet) - $(date +\"%T\") ================================="
 $SALLOC $MPI_HOME/bin/mpirun ./build/test/perf/all_reduce_perf $range $opts
 [ $? -ne 0 ] && let failure_count=$failure_count+1
 
