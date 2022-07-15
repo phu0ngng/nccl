@@ -641,6 +641,9 @@ ncclResult_t ncclSetThreadContext(struct ncclComm* comm) {
   return ncclSuccess;
 }
 
+// Set to SIGUSR1 or SIGUSR2 to help debug proxy state during hangs
+NCCL_PARAM(ProxyDumpSignal, "PROXY_DUMP_SIGNAL", -1);
+
 void* ncclProxyProgress(void *comm_) {
   struct ncclComm* comm = (struct ncclComm*)comm_;
   if (ncclSetThreadContext(comm) != ncclSuccess) {
@@ -652,7 +655,8 @@ void* ncclProxyProgress(void *comm_) {
 
   struct ncclProxyProgressState* state = &comm->proxyState.progressState;
   state->nextOps = -1;
-  signal(SIGUSR1, ncclDumpProxyState);
+  const int sig = ncclParamProxyDumpSignal();
+  if (sig != -1) signal(sig, ncclDumpProxyState);
   ncclLastProxyState = state;
   char threadName[NCCL_THREAD_NAMELEN];
   snprintf(threadName, NCCL_THREAD_NAMELEN, "NCCL Progress%2d", comm->cudaDev);
