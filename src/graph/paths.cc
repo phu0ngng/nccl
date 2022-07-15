@@ -417,15 +417,15 @@ ncclResult_t ncclTopoCheckNet(struct ncclTopoSystem* system, int64_t id1, int64_
 
   struct ncclTopoNode* gpu1 = system->nodes[GPU].nodes+g1;
   struct ncclTopoNode* gpu2 = system->nodes[GPU].nodes+g2;
-  float speed = gpu1->paths[GPU][g2].width;
+  float speed = gpu1->paths[GPU][g2].bw;
 
   // Now check the speed each GPU can access the network through PXB or better
   float netSpeed1 = 0, netSpeed2 = 0;
   for (int n=0; n<system->nodes[NET].count; n++) {
     struct ncclTopoLinkList* path = gpu1->paths[NET]+n;
-    if (path->type <= PATH_PXB && path->width > netSpeed1) netSpeed1 = path->width;
+    if (path->type <= PATH_PXB && path->bw > netSpeed1) netSpeed1 = path->bw;
     path = gpu2->paths[NET]+n;
-    if (path->type <= PATH_PXB && path->width > netSpeed2) netSpeed2 = path->width;
+    if (path->type <= PATH_PXB && path->bw > netSpeed2) netSpeed2 = path->bw;
   }
 
   if (netSpeed1 > speed && netSpeed2 > speed) return ncclSuccess;
@@ -575,7 +575,7 @@ ncclResult_t ncclTopoComputePaths(struct ncclTopoSystem* system, struct ncclComm
           // Only use PXN for NIC n if remote GPU p ...
           if (peerNode->paths[NET][n].type > PATH_PXB || // Is connected to the NIC through PCI
               peerNode->paths[GPU][g].type > PATH_NVL || // Is connected to us through NVLink
-              (peerNode->paths[NET][n].width <= gpu->paths[NET][n].width && // Has either higher BW to that NIC
+              (peerNode->paths[NET][n].bw <= gpu->paths[NET][n].bw && // Has either higher BW to that NIC
                gpu->paths[NET][n].type <= PATH_PXB))                        //     or avoids going through a CPU
             continue;
 
