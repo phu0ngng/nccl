@@ -1519,6 +1519,7 @@ const char* ncclGetErrorString(ncclResult_t code) {
     case ncclInvalidArgument        : return "invalid argument";
     case ncclInvalidUsage           : return "invalid usage";
     case ncclRemoteError            : return "remote process exited or there was a network error";
+    case ncclInProgress             : return "NCCL operation in progress";
     default                         : return "unknown result code";
   }
 }
