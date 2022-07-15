@@ -616,7 +616,7 @@ ncclResult_t ncclSetThreadContext(struct ncclComm* comm) {
   if (createThreadContext == -1) {
     createThreadContext = ncclParamCreateThreadContext();
     if (createThreadContext) {
-      if (CUPFN(cuCtxCreate_v3020) == nullptr || CUPFN(cuCtxDestroy) == nullptr || CUPFN(cuCtxSetCurrent) == nullptr) {
+      if (CUPFN(cuCtxCreate) == nullptr || CUPFN(cuCtxDestroy) == nullptr || CUPFN(cuCtxSetCurrent) == nullptr) {
         WARN("Unable to create thread context due to old driver, disabling.");
         createThreadContext = 0;
       }
@@ -624,7 +624,7 @@ ncclResult_t ncclSetThreadContext(struct ncclComm* comm) {
   }
   if (createThreadContext) {
     if (comm->proxyState.cudaCtx == NULL) {
-      if (CUPFN(cuCtxCreate_v3020(&comm->proxyState.cudaCtx,
+      if (CUPFN(cuCtxCreate(&comm->proxyState.cudaCtx,
                                   CU_CTX_SCHED_SPIN|CU_CTX_MAP_HOST, comm->cudaDev)) != CUDA_SUCCESS) {
         WARN("Failed to create CUDA context on device %d", comm->cudaDev);
         createThreadContext = 0;
