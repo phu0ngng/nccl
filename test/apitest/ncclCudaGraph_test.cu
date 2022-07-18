@@ -40,6 +40,7 @@ void ncclCudaGraph_test<DT>::SetUp() {
         for (int s=0; s < this->nVis; s++) {
             if (g == 0) graphStreams[g][s] = this->streams[s];
             else {
+                ASSERT_EQ(cudaSuccess, cudaSetDevice(s));
                 ASSERT_EQ(cudaSuccess, cudaStreamCreateWithFlags(&graphStreams[g][s], cudaStreamNonBlocking));
             }
         }
@@ -69,6 +70,7 @@ template <typename DT>
 void ncclCudaGraph_test<DT>::BeginCapture(int graph) {
     // Begin cuda graph capture
     for (int i=0; i<this->nVis; i++) {
+        ASSERT_EQ(cudaSuccess, cudaSetDevice(i));
         ASSERT_EQ(cudaSuccess, cudaStreamBeginCapture(this->graphStreams[graph][i], cudaStreamCaptureModeThreadLocal));
     }
 };
@@ -77,10 +79,12 @@ template <typename DT>
 void ncclCudaGraph_test<DT>::EndCapture(int graph) {
     // End cuda graph capture
     for (int i=0; i<this->nVis; i++) {
+        ASSERT_EQ(cudaSuccess, cudaSetDevice(i));
         ASSERT_EQ(cudaSuccess, cudaStreamEndCapture(this->graphStreams[graph][i], this->graphs[graph]+i));
     }
     // Instantiate cuda graph
     for (int i=0; i<this->nVis; i++) {
+        ASSERT_EQ(cudaSuccess, cudaSetDevice(i));
         ASSERT_EQ(cudaSuccess, cudaGraphInstantiate(this->graphExec[graph]+i, this->graphs[graph][i], NULL, NULL, 0));
     }
 };
@@ -89,6 +93,7 @@ template <typename DT>
 void ncclCudaGraph_test<DT>::LaunchGraph(int graph) {
     // Launch cuda graph
     for (int i=0; i<this->nVis; i++) {
+        ASSERT_EQ(cudaSuccess, cudaSetDevice(i));
         ASSERT_EQ(cudaSuccess, cudaGraphLaunch(this->graphExec[graph][i], this->graphStreams[graph][i]));
     }
 };
@@ -157,7 +162,7 @@ TYPED_TEST(ncclCudaGraph_test, aggregation) {
     this->LaunchGraph();
 };
 
-TYPED_TEST(ncclCudaGraph_test, DISABLED_many_graph_many_stream) {
+TYPED_TEST(ncclCudaGraph_test, many_graph_many_stream) {
     for (int g=0; g < 2; g++) {
         this->BeginCapture(g);
         ASSERT_EQ(ncclSuccess, ncclGroupStart());

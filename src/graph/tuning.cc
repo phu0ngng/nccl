@@ -75,7 +75,7 @@ static const double llMaxBws[2][3] = { /* Volta-N1/Intel-N2/Intel-N4) */ {39.0, 
 static const double perChMaxTreeBws[2][3] = { /* Volta (N1/N2/N4) */ {26.5, 18.5, 10.0}, /* Ampere (N1/N2/N4) */ {24.0, 23.6, 17.8} };
 
 ncclResult_t ncclTopoTuneModel(struct ncclComm* comm, int minCompCap, int maxCompCap, struct ncclTopoGraph* treeGraph, struct ncclTopoGraph* ringGraph, struct ncclTopoGraph* collNetGraph) {
-  int simpleDefaultThreads = (ringGraph->speedIntra*ringGraph->nChannels <= PCI_WIDTH) ? 256 : NCCL_SIMPLE_MAX_NTHREADS;
+  int simpleDefaultThreads = (ringGraph->bwIntra*ringGraph->nChannels <= PCI_BW) ? 256 : NCCL_SIMPLE_MAX_NTHREADS;
   comm->maxThreads[NCCL_ALGO_RING][NCCL_PROTO_SIMPLE] =
     getNthreads("NCCL_NTHREADS", ncclParamNthreads(), 2*WARP_SIZE, NCCL_SIMPLE_MAX_NTHREADS, simpleDefaultThreads);
   comm->maxThreads[NCCL_ALGO_TREE][NCCL_PROTO_SIMPLE] =
@@ -119,8 +119,8 @@ ncclResult_t ncclTopoTuneModel(struct ncclComm* comm, int minCompCap, int maxCom
       if (coll != ncclFuncAllReduce && a != NCCL_ALGO_RING) continue;
 
       for (int p=0; p<NCCL_NUM_PROTOCOLS; p++) {
-        float speed = nNodes <= 2 || a == NCCL_ALGO_COLLNET ? graphs[a]->speedIntra : graphs[a]->speedInter;
-        float busBw = graphs[a]->nChannels * speed;
+        float bw = nNodes <= 2 || a == NCCL_ALGO_COLLNET ? graphs[a]->bwIntra : graphs[a]->bwInter;
+        float busBw = graphs[a]->nChannels * bw;
 
         // Various model refinements
         if (compCap80) busBw = std::min(busBw, 235.0f);

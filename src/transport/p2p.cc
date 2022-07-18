@@ -107,6 +107,14 @@ ncclResult_t p2pCanConnect(int* ret, struct ncclTopoSystem* topo, struct ncclTop
     return ncclSuccess;
   }
 
+  // Check if NET would work better
+  int useNet = 0;
+  NCCLCHECK(ncclTopoCheckNet(topo, info1->busId, info2->busId, &useNet));
+  if (useNet) {
+    *ret = 0;
+    return ncclSuccess;
+  }
+
   // Convert the peer's busId into a local cudaDev index (cf. CUDA_VISIBLE_DEVICES)
   int cudaDev1 = busIdToCudaDev(info1->busId);
   int cudaDev2 = busIdToCudaDev(info2->busId);

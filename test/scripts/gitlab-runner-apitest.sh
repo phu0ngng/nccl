@@ -10,17 +10,17 @@ echo "Using CUDA_HOME=$CUDA_HOME"
 echo "Using NCCL_HOME=$PWD/build"
 echo "Using LD_LIBRARY_PATH=$LD_LIBRARY_PATH"
 
-echo "=============================== API TESTS Default ================================="
+echo "=============================== API TESTS Default - $(date +\"%T\") ================================="
 $SRUN ./build/test/apitest/apitest
 [ $? -ne 0 ] && let failure_count=$failure_count+1 && failure_names+=("API TESTS Default")
 
 if [ "$1" == "minimal" ]; then exit $failure_count; fi
 
-echo "=============================== API TESTS No P2P  ================================="
+echo "=============================== API TESTS No P2P- $(date +\"%T\")  ================================="
 NCCL_P2P_DISABLE=1 $SRUN ./build/test/apitest/apitest
 [ $? -ne 0 ] && let failure_count=$failure_count+1 && failure_names+=("API TESTS No P2P")
 
-echo "=============================== API TESTS Network ================================="
+echo "=============================== API TESTS Network- $(date +\"%T\") ================================="
 NCCL_SHM_DISABLE=1 NCCL_P2P_DISABLE=1 $SRUN ./build/test/apitest/apitest
 [ $? -ne 0 ] && let failure_count=$failure_count+1 && failure_names+=("API TESTS Network")
 

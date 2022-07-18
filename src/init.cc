@@ -471,6 +471,8 @@ NCCL_PARAM(BuffSize, "BUFFSIZE", -2);
 NCCL_PARAM(LlBuffSize, "LL_BUFFSIZE", -2);
 NCCL_PARAM(Ll128BuffSize, "LL128_BUFFSIZE", -2);
 
+NCCL_PARAM(P2pNetChunkSize, "P2P_NET_CHUNKSIZE", (1 << 17)); /* 128 kB */
+
 static ncclResult_t computeBuffSizes(struct ncclComm* comm) {
   int cpuArch, cpuVendor, cpuModel;
   NCCLCHECK(ncclTopoCpuType(comm->topo, &cpuArch, &cpuVendor, &cpuModel));
@@ -483,6 +485,8 @@ static ncclResult_t computeBuffSizes(struct ncclComm* comm) {
   for (int p=0; p<NCCL_NUM_PROTOCOLS; p++) {
     comm->buffSizes[p] = envs[p] != -2 ? envs[p] : defaults[p];
   }
+
+  comm->p2pNetChunkSize = ncclParamP2pNetChunkSize();
   return ncclSuccess;
 }
 
@@ -590,8 +594,8 @@ static ncclResult_t initTransportsRank(struct ncclComm* comm, ncclUniqueId* comm
     int pattern;
     int nChannels;
     int sameChannels;
-    float speedIntra;
-    float speedInter;
+    float bwIntra;
+    float bwInter;
     int typeIntra;
     int typeInter;
   };
@@ -611,22 +615,22 @@ static ncclResult_t initTransportsRank(struct ncclComm* comm, ncclUniqueId* comm
   allGather3Data[rank].tree.pattern = treeGraph.pattern;
   allGather3Data[rank].tree.nChannels = treeGraph.nChannels;
   allGather3Data[rank].tree.sameChannels = treeGraph.sameChannels;
-  allGather3Data[rank].tree.speedIntra = treeGraph.speedIntra;
-  allGather3Data[rank].tree.speedInter = treeGraph.speedInter;
+  allGather3Data[rank].tree.bwIntra = treeGraph.bwIntra;
+  allGather3Data[rank].tree.bwInter = treeGraph.bwInter;
   allGather3Data[rank].tree.typeIntra = treeGraph.typeIntra;
   allGather3Data[rank].tree.typeInter = treeGraph.typeInter;
   allGather3Data[rank].ring.pattern = ringGraph.pattern;
   allGather3Data[rank].ring.nChannels = ringGraph.nChannels;
   allGather3Data[rank].ring.sameChannels = ringGraph.sameChannels;
-  allGather3Data[rank].ring.speedIntra = ringGraph.speedIntra;
-  allGather3Data[rank].ring.speedInter = ringGraph.speedInter;
+  allGather3Data[rank].ring.bwIntra = ringGraph.bwIntra;
+  allGather3Data[rank].ring.bwInter = ringGraph.bwInter;
   allGather3Data[rank].ring.typeIntra = ringGraph.typeIntra;
   allGather3Data[rank].ring.typeInter = ringGraph.typeInter;
   allGather3Data[rank].collNet.pattern = collNetGraph.pattern;
   allGather3Data[rank].collNet.nChannels = collNetGraph.nChannels;
   allGather3Data[rank].collNet.sameChannels = collNetGraph.sameChannels;
-  allGather3Data[rank].collNet.speedIntra = collNetGraph.speedIntra;
-  allGather3Data[rank].collNet.speedInter = collNetGraph.speedInter;
+  allGather3Data[rank].collNet.bwIntra = collNetGraph.bwIntra;
+  allGather3Data[rank].collNet.bwInter = collNetGraph.bwInter;
   allGather3Data[rank].collNet.typeIntra = collNetGraph.typeIntra;
   allGather3Data[rank].collNet.typeInter = collNetGraph.typeInter;
   allGather3Data[rank].collNetSupport = comm->collNetSupport;
@@ -695,20 +699,20 @@ static ncclResult_t initTransportsRank(struct ncclComm* comm, ncclUniqueId* comm
     // Make sure we align all ranks so that the tuning is consistent across ranks
     treeGraph.nChannels = std::min(allGather3Data[i].tree.nChannels, treeGraph.nChannels);
     treeGraph.sameChannels = std::min(allGather3Data[i].tree.sameChannels, treeGraph.sameChannels);
-    treeGraph.speedIntra = std::min(allGather3Data[i].tree.speedIntra, treeGraph.speedIntra);
-    treeGraph.speedInter = std::min(allGather3Data[i].tree.speedInter, treeGraph.speedInter);
+    treeGraph.bwIntra = std::min(allGather3Data[i].tree.bwIntra, treeGraph.bwIntra);
+    treeGraph.bwInter = std::min(allGather3Data[i].tree.bwInter, treeGraph.bwInter);
     treeGraph.typeIntra = std::max(allGather3Data[i].tree.typeIntra, treeGraph.typeIntra);
     treeGraph.typeInter = std::max(allGather3Data[i].tree.typeInter, treeGraph.typeInter);
     ringGraph.nChannels = std::min(allGather3Data[i].ring.nChannels, ringGraph.nChannels);
     ringGraph.sameChannels = std::min(allGather3Data[i].ring.sameChannels, ringGraph.sameChannels);
-    ringGraph.speedIntra = std::min(allGather3Data[i].ring.speedIntra, ringGraph.speedIntra);
-    ringGraph.speedInter = std::min(allGather3Data[i].ring.speedInter, ringGraph.speedInter);
+    ringGraph.bwIntra = std::min(allGather3Data[i].ring.bwIntra, ringGraph.bwIntra);
+    ringGraph.bwInter = std::min(allGather3Data[i].ring.bwInter, ringGraph.bwInter);
     ringGraph.typeIntra = std::max(allGather3Data[i].ring.typeIntra, ringGraph.typeIntra);
     ringGraph.typeInter = std::max(allGather3Data[i].ring.typeInter, ringGraph.typeInter);
     collNetGraph.nChannels = std::min(allGather3Data[i].collNet.nChannels, collNetGraph.nChannels);
     collNetGraph.sameChannels = std::min(allGather3Data[i].collNet.sameChannels, collNetGraph.sameChannels);
-    collNetGraph.speedIntra = std::min(allGather3Data[i].collNet.speedIntra, collNetGraph.speedIntra);
-    collNetGraph.speedInter = std::min(allGather3Data[i].collNet.speedInter, collNetGraph.speedInter);
+    collNetGraph.bwIntra = std::min(allGather3Data[i].collNet.bwIntra, collNetGraph.bwIntra);
+    collNetGraph.bwInter = std::min(allGather3Data[i].collNet.bwInter, collNetGraph.bwInter);
     collNetGraph.typeIntra = std::max(allGather3Data[i].collNet.typeIntra, collNetGraph.typeIntra);
     collNetGraph.typeInter = std::max(allGather3Data[i].collNet.typeInter, collNetGraph.typeInter);
     comm->collNetSupport = std::min(allGather3Data[i].collNetSupport, comm->collNetSupport);
