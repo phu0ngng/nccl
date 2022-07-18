@@ -11,8 +11,6 @@
 #include <dlfcn.h>
 #include "core.h"
 
-static enum { ibvUninitialized, ibvInitializing, ibvInitialized, ibvError } ibvState = ibvUninitialized;
-
 /*Function Pointers*/
 int (*ibv_internal_fork_init)(void);
 struct ibv_device** (*ibv_internal_get_device_list)(int *num_devices);
@@ -43,18 +41,10 @@ const char * (*ibv_internal_event_type_str)(enum ibv_event_type event);
 // IBVERBS Library versioning
 #define IBVERBS_VERSION "IBVERBS_1.1"
 
-ncclResult_t wrap_ibv_symbols(void) {
-  if (ibvState == ibvInitialized)
-    return ncclSuccess;
-  if (ibvState == ibvError)
-    return ncclSystemError;
+static pthread_once_t initOnceControl = PTHREAD_ONCE_INIT;
+static ncclResult_t initResult;
 
-  if (__sync_bool_compare_and_swap(&ibvState, ibvUninitialized, ibvInitializing) == false) {
-    // Another thread raced in front of us. Wait for it to be done.
-    while (ibvState == ibvInitializing) sched_yield();
-    return (ibvState == ibvInitialized) ? ncclSuccess : ncclSystemError;
-  }
-
+static void initOnceFunc(void) {
   static void* ibvhandle = NULL;
   void* tmp;
   void** cast;
@@ -111,8 +101,8 @@ ncclResult_t wrap_ibv_symbols(void) {
   LOAD_SYM(ibvhandle, "ibv_fork_init", ibv_internal_fork_init);
   LOAD_SYM(ibvhandle, "ibv_event_type_str", ibv_internal_event_type_str);
 
-  ibvState = ibvInitialized;
-  return ncclSuccess;
+  initResult = ncclSuccess;
+  return;
 
 teardown:
   ibv_internal_get_device_list = NULL;
@@ -141,8 +131,13 @@ teardown:
   ibv_internal_event_type_str = NULL;
 
   if (ibvhandle != NULL) dlclose(ibvhandle);
-  ibvState = ibvError;
-  return ncclSystemError;
+  initResult = ncclSystemError;
+  return;
+}
+
+ncclResult_t wrap_ibv_symbols(void) {
+  pthread_once(&initOnceControl, initOnceFunc);
+  return initResult;
 }
 
 #define IBV_PTR_CHECK_ERRNO(name_internal, call, retval, error_retval, name) \

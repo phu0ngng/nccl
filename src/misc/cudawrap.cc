@@ -35,8 +35,6 @@ DECLARE_CUDA_PFN(cuInit, 2000);
 DECLARE_CUDA_PFN(cuDriverGetVersion, 2020);
 DECLARE_CUDA_PFN(cuGetProcAddress, 11030);
 
-static enum { cudaUninitialized, cudaInitializing, cudaInitialized, cudaError } cudaState = cudaUninitialized;
-
 #define CUDA_DRIVER_MIN_VERSION 11030
 
 static void *cudaLib;
@@ -46,7 +44,7 @@ static int cudaDriverVersion;
 /*
   Load the CUDA symbols
  */
-static int cudaPfnFuncLoader(void) {
+static ncclResult_t cudaPfnFuncLoader(void) {
   CUresult res;
 
 #define LOAD_SYM(symbol, version, ignore) do {                           \
@@ -72,20 +70,11 @@ static int cudaPfnFuncLoader(void) {
 }
 #endif
 
-ncclResult_t cudaLibraryInit(void) {
+static pthread_once_t initOnceControl = PTHREAD_ONCE_INIT;
+static ncclResult_t initResult;
+
+static void initOnceFunc() {
   CUresult res;
-
-  if (cudaState == cudaInitialized)
-    return ncclSuccess;
-  if (cudaState == cudaError)
-    return ncclSystemError;
-
-  if (__sync_bool_compare_and_swap(&cudaState, cudaUninitialized, cudaInitializing) == false) {
-    // Another thread raced in front of us. Wait for it to be done.
-    while (cudaState == cudaInitializing) sched_yield();
-    return (cudaState == cudaInitialized) ? ncclSuccess : ncclSystemError;
-  }
-
   /*
    * Load CUDA driver library
    */
@@ -145,19 +134,21 @@ ncclResult_t cudaLibraryInit(void) {
    */
   pfn_cuInit(0);
 
-#if CUDART_VERSION >= 11030
+  #if CUDART_VERSION >= 11030
   if (cudaPfnFuncLoader()) {
     WARN("CUDA some PFN functions not found in the library");
     goto error;
   }
-#endif
+  #endif
 
-  cudaState = cudaInitialized;
-  return ncclSuccess;
-
+  initResult = ncclSuccess;
+  return;
 error:
-  cudaState = cudaError;
-  return ncclSystemError;
+  initResult = ncclSystemError;
+  return;
 }
 
-
+ncclResult_t cudaLibraryInit() {
+  pthread_once(&initOnceControl, initOnceFunc);
+  return initResult;
+}
