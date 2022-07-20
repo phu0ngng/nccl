@@ -261,12 +261,6 @@ static ncclResult_t groupLaunch(struct ncclAsyncJob *job_) {
 
   if (groupCommHeadMain != nullptr) {
     NCCLCHECKGOTO(doLaunches(groupCommHeadMain), ret, failure);
-    do {
-      struct ncclComm* comm = groupCommHeadMain;
-      struct ncclComm* next = comm->groupNext;
-      NCCLCHECKGOTO(ncclGroupCommLeave(comm), ret, failure);
-      groupCommHeadMain = next;
-    } while (groupCommHeadMain != nullptr);
   }
 
   if (false) {
@@ -274,7 +268,6 @@ static ncclResult_t groupLaunch(struct ncclAsyncJob *job_) {
     struct ncclComm* comm = groupCommHeadMain;
     while (comm != nullptr) {
       struct ncclComm* next = comm->groupNext;
-      (void)ncclGroupCommLeave(comm); // overwrites comm->groupNext
       // We don't know if preconnect succeeded or happened at all, so clear
       // the flags that let `taskAppend()` skip over checking if preconnect
       // is needed.
@@ -312,6 +305,7 @@ static ncclResult_t groupLaunch(struct ncclAsyncJob *job_) {
         ncclIntruQueueConstruct(&comm->tasks.peers[i].sendQueue);
         ncclIntruQueueConstruct(&comm->tasks.peers[i].recvQueue);
       }
+
       comm = next;
     }
   }
@@ -325,6 +319,16 @@ static ncclResult_t groupLaunch(struct ncclAsyncJob *job_) {
       (void) ncclCommSetAsyncError(job->comm, ret);
     if (ret != ncclSuccess && jobsDone && job->undo) job->undo(job);
     if (job->destructor) job->destructor((void*)job);
+  }
+
+  while (groupCommHeadMain != nullptr) {
+    struct ncclComm* comm = groupCommHeadMain;
+    struct ncclComm* next = comm->groupNext;
+    (void) ncclGroupCommLeave(comm);
+    if (!comm->blocking) {
+      (void) ncclCommSetAsyncError(comm, ret);
+    }
+    groupCommHeadMain = next;
   }
 
   *gjob->groupErrorPtr = ncclSuccess;
@@ -356,17 +360,25 @@ ncclResult_t ncclGroupEndInternal() {
     ncclGroupJobMainPtr = &ncclGroupJobMain;
     /* make sure ncclGroupBlocking has been set. */
     assert(ncclGroupBlocking == 0 || ncclGroupBlocking == 1);
-    if (ncclGroupBlocking == 0) {
+    if (ncclGroupBlocking == 0 && (ncclGroupCommPreconnectHead != nullptr || !ncclIntruQueueEmpty(&ncclAsyncJobs))) {
       /* nonblocking group */
       if (!ncclIntruQueueEmpty(&ncclAsyncJobs)) {
-        ncclAsyncJob *job = ncclIntruQueueHead(&ncclAsyncJobs);
+        ncclAsyncJob* job = ncclIntruQueueHead(&ncclAsyncJobs);
         do {
-            NCCLCHECKGOTO(ncclCommSetAsyncError(job->comm, ncclInProgress), ret, fail);
-            job = job->next;
+          NCCLCHECKGOTO(ncclCommSetAsyncError(job->comm, ncclInProgress), ret, fail);
+          job = job->next;
         } while (job);
       }
+
+      if (ncclGroupCommHead) {
+        ncclComm_t comm = ncclGroupCommHead;
+        do {
+          NCCLCHECKGOTO(ncclCommSetAsyncError(comm, ncclInProgress), ret, fail);
+          comm = comm->groupNext;
+        } while (comm);
+      }
       ncclGroupJobMainPtr->base.func = groupLaunch;
-      SYSCHECKGOTO(pthread_create(&ncclGroupJobMainPtr->base.thread, NULL, ncclAsyncJobMain, (void*) &ncclGroupJobMainPtr->base), ret, fail);
+      SYSCHECKGOTO(pthread_create(&ncclGroupJobMainPtr->base.thread, NULL, ncclAsyncJobMain, (void*)&ncclGroupJobMainPtr->base), ret, fail);
       ret = ncclInProgress;
     } else {
       /* blocking group */

@@ -88,6 +88,8 @@ inline void ncclGroupCommJoin(struct ncclComm* comm) {
     // this comm is allocated there.
     ncclMemoryStackPush(&comm->memScoped);
   }
+
+  ncclGroupBlocking = comm->blocking;
 }
 
 // Add comm to this thread's group needing preconnect
