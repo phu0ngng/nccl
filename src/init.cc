@@ -73,17 +73,10 @@ pthread_mutex_t initLock = PTHREAD_MUTEX_INITIALIZER;
 static bool initialized = false;
 static size_t maxLocalSizeBytes = 0;
 
-bool ncclMainExited = false;
-
-static void atexitHandler() {
-  ncclMainExited = true;
-}
-
 static ncclResult_t ncclInit() {
   if (__atomic_load_n(&initialized, __ATOMIC_ACQUIRE)) return ncclSuccess;
   pthread_mutex_lock(&initLock);
   if (!initialized) {
-    atexit(atexitHandler);
     initEnv();
     initGdrCopy();
     maxLocalSizeBytes = ncclKernMaxLocalSize();
@@ -178,46 +171,11 @@ void ncclCommPushCudaGdrFree(struct ncclComm* comm, void* handle) {
   comm->destructorHead = dtor;
 }
 
-void commZombieCleanup(struct ncclComm* comm) {
-  ncclMemoryStackDestruct(&comm->memScoped);
-  ncclMemoryStackDestruct(&comm->memPermanent);
-
-  struct ncclComm* intraComm0 = comm->intraComm0;
-  if (0 == ncclAtomicRefCountDecrement(&intraComm0->intraRefs)) {
-    // Wait for all service threads to be done. We could not
-    // do it earlier because it could have blocked and prevented
-    // other ranks in the process to call ncclCommDestroy
-    comm = intraComm0;
-    while (comm != nullptr) {
-      if (comm->proxyState.thread) pthread_join(comm->proxyState.thread, nullptr);
-      struct ncclComm* next = comm->intraNext;
-      free(comm);
-      comm = next;
-    }
-  }
-}
-
-static void* commZombieMain(void* arg) {
-  ncclResult_t result = ncclSuccess;
-  struct ncclComm* comm = (struct ncclComm*)arg;
-  while (comm->persistentRefs != 0) {
-    struct ncclCommCallback* cb = ncclIntruQueueMpscDequeueAll(&comm->callbackQueue, /*waitSome=*/true);
-    while (cb != nullptr) {
-      struct ncclCommCallback* next = cb->next;
-      NCCLCHECKGOTO(cb->fn(comm, cb), result, ignore); // may reclaim memory of cb
-    ignore:
-      cb = next;
-    }
-  }
-  commZombieCleanup(comm);
-  return arg;
-}
-
 static ncclResult_t commFree(ncclComm_t comm) {
   if (comm == NULL)
     return ncclSuccess;
 
-  // First stop all threads before we free anything.
+  // Stop all threads before we free anything.
   NCCLCHECK(ncclProxyDestroy(comm));
 
   delete[] comm->userRedOps;
@@ -249,16 +207,25 @@ static ncclResult_t commFree(ncclComm_t comm) {
     dtor = dtor->next;
   }
 
+  ncclMemoryStackDestruct(&comm->memScoped);
+  ncclMemoryStackDestruct(&comm->memPermanent);
+
   commPoison(comm); // Important that this does not interfere with anything used below.
 
-  if (comm->persistentRefs == 0) {
-    commZombieCleanup(comm);
-  } else {
-    // Spawn a thread to listen for remaining messages from graph cleanup.
-    pthread_t zombie;
-    pthread_create(&zombie, nullptr, commZombieMain, comm);
-    pthread_detach(zombie);
+  struct ncclComm* intraComm0 = comm->intraComm0;
+  if (0 == ncclAtomicRefCountDecrement(&intraComm0->intraRefs)) {
+    // Wait for all service threads to be done. We could not
+    // do it earlier because it could have blocked and prevented
+    // other ranks in the process to call ncclCommDestroy
+    comm = intraComm0;
+    while (comm != nullptr) {
+      if (comm->proxyState.thread) pthread_join(comm->proxyState.thread, nullptr);
+      struct ncclComm* next = comm->intraNext;
+      free(comm);
+      comm = next;
+    }
   }
+
   return ncclSuccess;
 }
 
@@ -1154,7 +1121,13 @@ static ncclResult_t commDestroy(ncclComm_t comm) {
 
   NCCLCHECK(ncclStrongStreamSynchronize(&comm->hostStream));
   NCCLCHECK(ncclStrongStreamSynchronize(&comm->deviceStream));
-  NCCLCHECK(ncclCommPollCallbacks(comm));
+
+  // Make sure we poll callbacks at least once.
+  NCCLCHECK(ncclCommPollCallbacks(comm, /*waitSome=*/false));
+  // And keep polling until all graphs referencing us die.
+  while (comm->persistentRefs != 0) {
+    NCCLCHECK(ncclCommPollCallbacks(comm, /*waitSome=*/true));
+  }
 
   NCCLCHECK(commFree(comm));
 
