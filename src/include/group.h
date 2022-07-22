@@ -20,6 +20,12 @@ typedef ncclResult_t(*ncclInitFunc_t)(ncclComm_t* newcomm, int ndev, ncclUniqueI
 
 ncclResult_t ncclAsyncInit(ncclInitFunc_t func, ncclComm_t* newcomm, int ndev, ncclUniqueId commId, int myrank, int cudaDev);
 
+typedef enum ncclGroupJobState {
+  ncclGroupJobRunning = 0,
+  ncclGroupJobDone    = 1,
+  ncclGroupJobJoined  = 2,
+} ncclGroupJobState_t;
+
 struct ncclAsyncJob {
   struct ncclAsyncJob* next;
   pthread_t thread;
@@ -27,7 +33,7 @@ struct ncclAsyncJob {
   ncclResult_t(*func)(struct ncclAsyncJob*);
   void(*undo)(struct ncclAsyncJob*);
   void(*destructor)(void*);
-  bool doneFlag;
+  ncclGroupJobState_t state;
   volatile uint32_t *abortFlag; /* point to comm abortFlag */
   ncclComm_t comm;
 };
