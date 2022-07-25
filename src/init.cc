@@ -87,6 +87,8 @@ static ncclResult_t ncclInit() {
     NCCLCHECK(bootstrapNetInit());
     NCCLCHECK(ncclNetPluginInit());
 
+    initNvtxRegisteredEnums();
+
     __atomic_store_n(&initialized, true, __ATOMIC_RELEASE);
   }
   pthread_mutex_unlock(&initLock);
@@ -1166,25 +1168,44 @@ fail:
   goto exit;
 }
 
+struct NvtxParamsCommInitRank
+{
+  int rank;
+  int nranks;
+  int cudaDev;
+};
+constexpr nvtxPayloadSchemaEntry_t CommInitRankSchema[] = {
+  {0, NVTX_PAYLOAD_ENTRY_TYPE_INT, "Rank"},
+  {0, NVTX_PAYLOAD_ENTRY_TYPE_INT, "No. of ranks", nullptr, 0, offsetof(NvtxParamsCommInitRank, nranks)},
+  {0, NVTX_PAYLOAD_ENTRY_TYPE_INT, "CUDA device", nullptr, 0, offsetof(NvtxParamsCommInitRank, cudaDev)},
+};
+
 NCCL_API(ncclResult_t, ncclCommInitRank, ncclComm_t* newcomm, int nranks, ncclUniqueId commId, int myrank);
 ncclResult_t ncclCommInitRank(ncclComm_t* newcomm, int nranks, ncclUniqueId commId, int myrank) {
-  NVTX3_FUNC_RANGE_IN(nccl_domain);
-
   // Load the CUDA driver and dlsym hooks (can fail on old drivers)
   (void)ncclCudaLibraryInit();
 
   int cudaDev;
   CUDACHECK(cudaGetDevice(&cudaDev));
+
+  NvtxParamsCommInitRank payload{myrank, nranks, cudaDev};
+  NVTX3_FUNC_WITH_PARAMS(CommInitRank, CommInitRankSchema, payload)
+
   NCCLCHECK(ncclCommInitRankDev(newcomm, nranks, commId, myrank, cudaDev, NULL));
   return ncclSuccess;
 }
 
 NCCL_API(ncclResult_t, ncclCommInitAll, ncclComm_t* comms, int ndev, const int* devlist);
 ncclResult_t ncclCommInitAll(ncclComm_t* comms, int ndev, const int* devlist) {
-  NVTX3_FUNC_RANGE_IN(nccl_domain);
   ncclResult_t ret = ncclSuccess;
   int totalnDev;
   int *gpuFlags = NULL;
+
+  constexpr nvtxPayloadSchemaEntry_t CommInitAllSchema[] = {
+    {0, NVTX_PAYLOAD_ENTRY_TYPE_INT, "No. of devices"}
+  };
+  NVTX3_FUNC_WITH_PARAMS(CommInitAll, CommInitAllSchema, ndev)
+
   // Load the CUDA driver and dlsym hooks (can fail on old drivers)
   (void)ncclCudaLibraryInit();
 
@@ -1467,11 +1488,16 @@ fail:
 
 NCCL_API(ncclResult_t, ncclCommDestroy, ncclComm_t comm);
 ncclResult_t ncclCommDestroy(ncclComm_t comm) {
-  NVTX3_FUNC_RANGE_IN(nccl_domain);
-  if (comm == NULL)
+  if (comm == NULL) {
+    NVTX3_FUNC_RANGE_IN(nccl_domain);
     return ncclSuccess;
+  }
 
   int rank = comm->rank, nranks = comm->nRanks, cudaDev = comm->cudaDev;
+
+  NvtxParamsCommInitRank payload{rank, nranks, cudaDev};
+  NVTX3_FUNC_WITH_PARAMS(CommDestroy, CommInitRankSchema, payload)
+
   int64_t busId = comm->busId;
   TRACE(NCCL_INIT, "comm %p rank %d nRanks %d cudaDev %d busId %lx", comm, rank, nranks, cudaDev, busId);
   // Try and prevent a double free of the comm struct (user error)
@@ -1491,11 +1517,16 @@ ncclResult_t ncclCommDestroy(ncclComm_t comm) {
 
 NCCL_API(ncclResult_t, ncclCommAbort, ncclComm_t comm);
 ncclResult_t ncclCommAbort(ncclComm_t comm) {
-  NVTX3_FUNC_RANGE_IN(nccl_domain);
-  if (comm == NULL)
+  if (comm == NULL) {
+    NVTX3_FUNC_RANGE_IN(nccl_domain);
     return ncclSuccess;
+  }
 
   int rank = comm->rank, nranks = comm->nRanks, cudaDev = comm->cudaDev;
+
+  NvtxParamsCommInitRank payload{rank, nranks, cudaDev};
+  NVTX3_FUNC_WITH_PARAMS(CommAbort, CommInitRankSchema, payload)
+
   int64_t busId = comm->busId;
   TRACE(NCCL_INIT, "comm %p rank %d nRanks %d cudaDev %d busId %lx", comm, rank, nranks, cudaDev, busId);
 
