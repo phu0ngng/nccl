@@ -415,8 +415,6 @@ ncclResult_t ncclProxySaveOp(struct ncclComm* comm, struct ncclProxyOp* op, bool
   case ncclPatternSend:
   case ncclPatternRecv: {
       if (op->root == comm->rank) return ncclSuccess;
-      op->nsteps = DIVUP(op->nbytes, op->chunkSize);
-      if (op->nsteps == 0) op->nsteps = 1;
       NCCLCHECK(SaveProxy(channel, op->pattern == ncclPatternSend ? proxySend : proxyRecv, op->root, op, 1, justInquire));
     } break;
   }
@@ -425,7 +423,7 @@ ncclResult_t ncclProxySaveOp(struct ncclComm* comm, struct ncclProxyOp* op, bool
 
 NCCL_PARAM(ChunkSize, "CHUNK_SIZE", 0);
 
-ncclResult_t ncclProxyComputeP2p(struct ncclInfo* info, struct ncclProxyOp* op, int proto) {
+ncclResult_t ncclProxyComputeP2p(struct ncclInfo* info, struct ncclProxyOp* op) {
   memset(op, 0, sizeof(struct ncclProxyOp));
   int channelId = info->channelId;
   struct ncclChannel* channel = info->comm->channels+channelId;
@@ -433,15 +431,16 @@ ncclResult_t ncclProxyComputeP2p(struct ncclInfo* info, struct ncclProxyOp* op, 
   op->sliceSteps = 1;
   op->chunkSteps = 1;
   op->dtype = info->datatype;
-  op->protocol = proto;
+  op->protocol = info->protocol;
 
   int stepSize = info->comm->buffSizes[op->protocol]/NCCL_STEPS;
-  if (info->comm->nNodes > 1) stepSize = info->comm->p2pNetChunkSize;
+
+  // If nNodes > 1 and we're using Simple, reduce the stepSize to increase shared buffer utilization
+  if (info->comm->nNodes > 1 && op->protocol == NCCL_PROTO_SIMPLE) stepSize = info->comm->p2pNetChunkSize;
   info->chunkSize = stepSize;
   op->root = info->root;
-  op->nbytes = info->count;
-  struct ncclChannelPeer* peer = channel->peers + op->root;
 
+  struct ncclChannelPeer* peer = channel->peers + op->root;
   if (info->coll == ncclFuncSend) {
     op->pattern = ncclPatternSend;
     if (op->root != info->comm->rank && peer->send[1].transportComm == &netTransport.send) {
@@ -464,6 +463,17 @@ ncclResult_t ncclProxyComputeP2p(struct ncclInfo* info, struct ncclProxyOp* op, 
     info->chunkSize = ncclParamChunkSize();
   }
   op->chunkSize = info->chunkSize;
+
+  // Compute nSteps for proxies
+  int chunkEffectiveSize = op->chunkSize;
+  if (op->protocol == NCCL_PROTO_LL) {
+    chunkEffectiveSize /= 2;
+  }
+  
+  op->nbytes = stepSize;
+  op->nsteps = DIVUP(info->count, chunkEffectiveSize);
+  if (op->nsteps == 0) op->nsteps = 1;
+
   return ncclSuccess;
 }
 
