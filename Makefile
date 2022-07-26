@@ -24,9 +24,6 @@ ${BUILDDIR}/%.txt: %.txt
 src.%:
 	${MAKE} -C src $* BUILDDIR=${ABSBUILDDIR}
 
-test.replay:
-	${MAKE} -C test/replay $* BUILDDIR=${ABSBUILDDIR}
-
 test.%:
 	${MAKE} -C test $* BUILDDIR=${ABSBUILDDIR}
 
