@@ -4,6 +4,7 @@ stages:
   - api_tests
   - perf_tests_single
   - perf_tests_multi
+  - replay_tests
 #  - perf_regression
 
 # Run our CI on:
@@ -490,6 +491,23 @@ perftest-sharp-selene:
     SALLOC: "" # Needs to be empty for CI runner scripts performing cluster jobs
   script:
     - let NUM_PROCESSES=$MULTI_PERFTEST_NODE_COUNT*8 && salloc -N $MULTI_PERFTEST_NODE_COUNT -n $NUM_PROCESSES --account=nccl -pluna --network=sharp --constraint=nccl -J "nccl-cicd::$GITLAB_USER_LOGIN:perftest-multi::$CI_COMMIT_BRANCH:$CI_COMMIT_SHORT_SHA" -t 00:10:00 ./test/scripts/gitlab-runner-perftest-sharp.sh 16G 0
+  interruptible: true
+
+replay-multi-gc:
+  stage: replay_tests
+  rules:
+    - when: always
+  needs: [build, unit_tests, perftest-multi-gc]
+  tags:
+    - p100
+  variables:
+    NCCL_IB_HCA: "mlx5_0"
+    NCCL_DEBUG: "WARN"
+    MPI_HOME: "/opt/mpi/openmpi-1.10.7"
+    CUDA_HOME: "/usr/local/cuda-${CUDA_VERSION}"
+    SALLOC: "salloc -t 00:05:00 -N 2 -n 8 -w gc[01-02]"
+  script:
+    - ./test/scripts/gitlab-runner-replay-test.sh test/replay/traces/resnet_2x4_trace.txt
   interruptible: true
 
 #perf_regression-multi-gc:
