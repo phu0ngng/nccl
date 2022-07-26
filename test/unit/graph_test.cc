@@ -30,8 +30,8 @@ int dumpDiff = 1;
 
 void compareGraphs(struct ncclTopoGraph* ref, struct ncclTopoGraph* out, int ngpus, int inter, int* errors, int* warnings) {
   if (memcmp(ref, out, sizeof(struct ncclTopoGraph)) != 0) {
-    if (ref->nChannels*ref->speedInter > out->nChannels*out->speedInter ||
-        ref->nChannels*ref->speedIntra > out->nChannels*out->speedIntra) (*errors)++;
+    if (ref->nChannels*ref->bwInter > out->nChannels*out->bwInter ||
+        ref->nChannels*ref->bwIntra > out->nChannels*out->bwIntra) (*errors)++;
     else (*warnings)++;
 
     if (dumpDiff) {
@@ -49,9 +49,9 @@ void compareGraphs(struct ncclTopoGraph* ref, struct ncclTopoGraph* out, int ngp
       line[0] = '\0';
       sprintf(line+strlen(line), "                        Properties : ");
       while (strlen(line) < margin) sprintf(line+strlen(line), " ");
-      sprintf(line+strlen(line), "%7s %2dx%4.1f/%4.1f %3s/%3s P%1d C%1d S%1d", graphNames[ref->id], ref->nChannels, ref->speedIntra, ref->speedInter, topoPathTypeStr[ref->typeIntra], topoPathTypeStr[ref->typeInter], ref->pattern, ref->crossNic, ref->sameChannels);
+      sprintf(line+strlen(line), "%7s %2dx%4.1f/%4.1f %3s/%3s P%1d C%1d S%1d", graphNames[ref->id], ref->nChannels, ref->bwIntra, ref->bwInter, topoPathTypeStr[ref->typeIntra], topoPathTypeStr[ref->typeInter], ref->pattern, ref->crossNic, ref->sameChannels);
       while (strlen(line) < margin+width) sprintf(line+strlen(line), " ");
-      sprintf(line+strlen(line), "%7s %2dx%4.1f/%4.1f %3s/%3s P%1d C%1d S%1d", graphNames[out->id], out->nChannels, out->speedIntra, out->speedInter, topoPathTypeStr[out->typeIntra], topoPathTypeStr[out->typeInter], out->pattern, out->crossNic, out->sameChannels);
+      sprintf(line+strlen(line), "%7s %2dx%4.1f/%4.1f %3s/%3s P%1d C%1d S%1d", graphNames[out->id], out->nChannels, out->bwIntra, out->bwInter, topoPathTypeStr[out->typeIntra], topoPathTypeStr[out->typeInter], out->pattern, out->crossNic, out->sameChannels);
       printf("%s\n", line);
 
       line[0] = '\0';
@@ -160,9 +160,9 @@ void checkTopo(const char* xmlTopoFile, const char* xmlGraphFile, const char* pl
   }
 
   printf(" %15s/%s  %2dx%4.1f/%4.1f | %2dx%4.1f/%4.1f | %2dx%4.1f/%4.1f", platform, inter ? "Inter":"Intra",
-      ringGraph.nChannels, ringGraph.speedIntra, ringGraph.speedInter,
-      treeGraph.nChannels, treeGraph.speedIntra, treeGraph.speedInter,
-      cNetGraph.nChannels, cNetGraph.speedIntra, cNetGraph.speedInter);
+      ringGraph.nChannels, ringGraph.bwIntra, ringGraph.bwInter,
+      treeGraph.nChannels, treeGraph.bwIntra, treeGraph.bwInter,
+      cNetGraph.nChannels, cNetGraph.bwIntra, cNetGraph.bwInter);
 
   if (err || warn || incompleteRef) {
     char dumpFile[PATH_MAX];

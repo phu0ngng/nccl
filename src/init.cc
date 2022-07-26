@@ -73,17 +73,10 @@ pthread_mutex_t initLock = PTHREAD_MUTEX_INITIALIZER;
 static bool initialized = false;
 static size_t maxLocalSizeBytes = 0;
 
-bool ncclMainExited = false;
-
-static void atexitHandler() {
-  ncclMainExited = true;
-}
-
 static ncclResult_t ncclInit() {
   if (__atomic_load_n(&initialized, __ATOMIC_ACQUIRE)) return ncclSuccess;
   pthread_mutex_lock(&initLock);
   if (!initialized) {
-    atexit(atexitHandler);
     initEnv();
     initGdrCopy();
     maxLocalSizeBytes = ncclKernMaxLocalSize();
@@ -178,46 +171,11 @@ void ncclCommPushCudaGdrFree(struct ncclComm* comm, void* handle) {
   comm->destructorHead = dtor;
 }
 
-void commZombieCleanup(struct ncclComm* comm) {
-  ncclMemoryStackDestruct(&comm->memScoped);
-  ncclMemoryStackDestruct(&comm->memPermanent);
-
-  struct ncclComm* intraComm0 = comm->intraComm0;
-  if (0 == ncclAtomicRefCountDecrement(&intraComm0->intraRefs)) {
-    // Wait for all service threads to be done. We could not
-    // do it earlier because it could have blocked and prevented
-    // other ranks in the process to call ncclCommDestroy
-    comm = intraComm0;
-    while (comm != nullptr) {
-      if (comm->proxyState.thread) pthread_join(comm->proxyState.thread, nullptr);
-      struct ncclComm* next = comm->intraNext;
-      free(comm);
-      comm = next;
-    }
-  }
-}
-
-static void* commZombieMain(void* arg) {
-  ncclResult_t result = ncclSuccess;
-  struct ncclComm* comm = (struct ncclComm*)arg;
-  while (comm->persistentRefs != 0) {
-    struct ncclCommCallback* cb = ncclIntruQueueMpscDequeueAll(&comm->callbackQueue, /*waitSome=*/true);
-    while (cb != nullptr) {
-      struct ncclCommCallback* next = cb->next;
-      NCCLCHECKGOTO(cb->fn(comm, cb), result, ignore); // may reclaim memory of cb
-    ignore:
-      cb = next;
-    }
-  }
-  commZombieCleanup(comm);
-  return arg;
-}
-
 static ncclResult_t commFree(ncclComm_t comm) {
   if (comm == NULL)
     return ncclSuccess;
 
-  // First stop all threads before we free anything.
+  // Stop all threads before we free anything.
   NCCLCHECK(ncclProxyDestroy(comm));
 
   delete[] comm->userRedOps;
@@ -249,16 +207,25 @@ static ncclResult_t commFree(ncclComm_t comm) {
     dtor = dtor->next;
   }
 
+  ncclMemoryStackDestruct(&comm->memScoped);
+  ncclMemoryStackDestruct(&comm->memPermanent);
+
   commPoison(comm); // Important that this does not interfere with anything used below.
 
-  if (comm->persistentRefs == 0) {
-    commZombieCleanup(comm);
-  } else {
-    // Spawn a thread to listen for remaining messages from graph cleanup.
-    pthread_t zombie;
-    pthread_create(&zombie, nullptr, commZombieMain, comm);
-    pthread_detach(zombie);
+  struct ncclComm* intraComm0 = comm->intraComm0;
+  if (0 == ncclAtomicRefCountDecrement(&intraComm0->intraRefs)) {
+    // Wait for all service threads to be done. We could not
+    // do it earlier because it could have blocked and prevented
+    // other ranks in the process to call ncclCommDestroy
+    comm = intraComm0;
+    while (comm != nullptr) {
+      if (comm->proxyState.thread) pthread_join(comm->proxyState.thread, nullptr);
+      struct ncclComm* next = comm->intraNext;
+      free(comm);
+      comm = next;
+    }
   }
+
   return ncclSuccess;
 }
 
@@ -472,6 +439,8 @@ NCCL_PARAM(BuffSize, "BUFFSIZE", -2);
 NCCL_PARAM(LlBuffSize, "LL_BUFFSIZE", -2);
 NCCL_PARAM(Ll128BuffSize, "LL128_BUFFSIZE", -2);
 
+NCCL_PARAM(P2pNetChunkSize, "P2P_NET_CHUNKSIZE", (1 << 17)); /* 128 kB */
+
 static ncclResult_t computeBuffSizes(struct ncclComm* comm) {
   int cpuArch, cpuVendor, cpuModel;
   NCCLCHECK(ncclTopoCpuType(comm->topo, &cpuArch, &cpuVendor, &cpuModel));
@@ -484,12 +453,15 @@ static ncclResult_t computeBuffSizes(struct ncclComm* comm) {
   for (int p=0; p<NCCL_NUM_PROTOCOLS; p++) {
     comm->buffSizes[p] = envs[p] != -2 ? envs[p] : defaults[p];
   }
+
+  comm->p2pNetChunkSize = ncclParamP2pNetChunkSize();
   return ncclSuccess;
 }
 
 NCCL_PARAM(GraphDumpFileRank, "GRAPH_DUMP_FILE_RANK", 0);
 NCCL_PARAM(CollNetNodeThreshold, "COLLNET_NODE_THRESHOLD", 2);
 NCCL_PARAM(NvbPreconnect, "NVB_PRECONNECT", 1);
+NCCL_PARAM(AllocP2pNetLLBuffers, "NCCL_ALLOC_P2P_NET_LL_BUFFERS", 0);
 
 static ncclResult_t initTransportsRank(struct ncclComm* comm, ncclUniqueId* commId) {
   // We use 2 AllGathers
@@ -569,6 +541,9 @@ static ncclResult_t initTransportsRank(struct ncclComm* comm, ncclUniqueId* comm
   NCCLCHECK(ncclTopoCompute(comm->topo, &collNetGraph));
   NCCLCHECK(ncclTopoPrintGraph(comm->topo, &collNetGraph));
 
+  // Initialize num P2P LL buffers for this communicator
+  comm->allocP2pNetLLBuffers = ncclParamAllocP2pNetLLBuffers() == 1;
+
   if (comm->rank == ncclParamGraphDumpFileRank()) {
     struct ncclTopoGraph* graphs[3] = { &ringGraph, &treeGraph, &collNetGraph };
     NCCLCHECK(ncclTopoDumpGraphs(comm->topo, 3, graphs));
@@ -591,8 +566,8 @@ static ncclResult_t initTransportsRank(struct ncclComm* comm, ncclUniqueId* comm
     int pattern;
     int nChannels;
     int sameChannels;
-    float speedIntra;
-    float speedInter;
+    float bwIntra;
+    float bwInter;
     int typeIntra;
     int typeInter;
   };
@@ -612,22 +587,22 @@ static ncclResult_t initTransportsRank(struct ncclComm* comm, ncclUniqueId* comm
   allGather3Data[rank].tree.pattern = treeGraph.pattern;
   allGather3Data[rank].tree.nChannels = treeGraph.nChannels;
   allGather3Data[rank].tree.sameChannels = treeGraph.sameChannels;
-  allGather3Data[rank].tree.speedIntra = treeGraph.speedIntra;
-  allGather3Data[rank].tree.speedInter = treeGraph.speedInter;
+  allGather3Data[rank].tree.bwIntra = treeGraph.bwIntra;
+  allGather3Data[rank].tree.bwInter = treeGraph.bwInter;
   allGather3Data[rank].tree.typeIntra = treeGraph.typeIntra;
   allGather3Data[rank].tree.typeInter = treeGraph.typeInter;
   allGather3Data[rank].ring.pattern = ringGraph.pattern;
   allGather3Data[rank].ring.nChannels = ringGraph.nChannels;
   allGather3Data[rank].ring.sameChannels = ringGraph.sameChannels;
-  allGather3Data[rank].ring.speedIntra = ringGraph.speedIntra;
-  allGather3Data[rank].ring.speedInter = ringGraph.speedInter;
+  allGather3Data[rank].ring.bwIntra = ringGraph.bwIntra;
+  allGather3Data[rank].ring.bwInter = ringGraph.bwInter;
   allGather3Data[rank].ring.typeIntra = ringGraph.typeIntra;
   allGather3Data[rank].ring.typeInter = ringGraph.typeInter;
   allGather3Data[rank].collNet.pattern = collNetGraph.pattern;
   allGather3Data[rank].collNet.nChannels = collNetGraph.nChannels;
   allGather3Data[rank].collNet.sameChannels = collNetGraph.sameChannels;
-  allGather3Data[rank].collNet.speedIntra = collNetGraph.speedIntra;
-  allGather3Data[rank].collNet.speedInter = collNetGraph.speedInter;
+  allGather3Data[rank].collNet.bwIntra = collNetGraph.bwIntra;
+  allGather3Data[rank].collNet.bwInter = collNetGraph.bwInter;
   allGather3Data[rank].collNet.typeIntra = collNetGraph.typeIntra;
   allGather3Data[rank].collNet.typeInter = collNetGraph.typeInter;
   allGather3Data[rank].collNetSupport = comm->collNetSupport;
@@ -696,20 +671,20 @@ static ncclResult_t initTransportsRank(struct ncclComm* comm, ncclUniqueId* comm
     // Make sure we align all ranks so that the tuning is consistent across ranks
     treeGraph.nChannels = std::min(allGather3Data[i].tree.nChannels, treeGraph.nChannels);
     treeGraph.sameChannels = std::min(allGather3Data[i].tree.sameChannels, treeGraph.sameChannels);
-    treeGraph.speedIntra = std::min(allGather3Data[i].tree.speedIntra, treeGraph.speedIntra);
-    treeGraph.speedInter = std::min(allGather3Data[i].tree.speedInter, treeGraph.speedInter);
+    treeGraph.bwIntra = std::min(allGather3Data[i].tree.bwIntra, treeGraph.bwIntra);
+    treeGraph.bwInter = std::min(allGather3Data[i].tree.bwInter, treeGraph.bwInter);
     treeGraph.typeIntra = std::max(allGather3Data[i].tree.typeIntra, treeGraph.typeIntra);
     treeGraph.typeInter = std::max(allGather3Data[i].tree.typeInter, treeGraph.typeInter);
     ringGraph.nChannels = std::min(allGather3Data[i].ring.nChannels, ringGraph.nChannels);
     ringGraph.sameChannels = std::min(allGather3Data[i].ring.sameChannels, ringGraph.sameChannels);
-    ringGraph.speedIntra = std::min(allGather3Data[i].ring.speedIntra, ringGraph.speedIntra);
-    ringGraph.speedInter = std::min(allGather3Data[i].ring.speedInter, ringGraph.speedInter);
+    ringGraph.bwIntra = std::min(allGather3Data[i].ring.bwIntra, ringGraph.bwIntra);
+    ringGraph.bwInter = std::min(allGather3Data[i].ring.bwInter, ringGraph.bwInter);
     ringGraph.typeIntra = std::max(allGather3Data[i].ring.typeIntra, ringGraph.typeIntra);
     ringGraph.typeInter = std::max(allGather3Data[i].ring.typeInter, ringGraph.typeInter);
     collNetGraph.nChannels = std::min(allGather3Data[i].collNet.nChannels, collNetGraph.nChannels);
     collNetGraph.sameChannels = std::min(allGather3Data[i].collNet.sameChannels, collNetGraph.sameChannels);
-    collNetGraph.speedIntra = std::min(allGather3Data[i].collNet.speedIntra, collNetGraph.speedIntra);
-    collNetGraph.speedInter = std::min(allGather3Data[i].collNet.speedInter, collNetGraph.speedInter);
+    collNetGraph.bwIntra = std::min(allGather3Data[i].collNet.bwIntra, collNetGraph.bwIntra);
+    collNetGraph.bwInter = std::min(allGather3Data[i].collNet.bwInter, collNetGraph.bwInter);
     collNetGraph.typeIntra = std::max(allGather3Data[i].collNet.typeIntra, collNetGraph.typeIntra);
     collNetGraph.typeInter = std::max(allGather3Data[i].collNet.typeInter, collNetGraph.typeInter);
     comm->collNetSupport = std::min(allGather3Data[i].collNetSupport, comm->collNetSupport);
@@ -1173,7 +1148,13 @@ static ncclResult_t commDestroy(ncclComm_t comm) {
 
   NCCLCHECK(ncclStrongStreamSynchronize(&comm->hostStream));
   NCCLCHECK(ncclStrongStreamSynchronize(&comm->deviceStream));
-  NCCLCHECK(ncclCommPollCallbacks(comm));
+
+  // Make sure we poll callbacks at least once.
+  NCCLCHECK(ncclCommPollCallbacks(comm, /*waitSome=*/false));
+  // And keep polling until all graphs referencing us die.
+  while (comm->persistentRefs != 0) {
+    NCCLCHECK(ncclCommPollCallbacks(comm, /*waitSome=*/true));
+  }
 
   NCCLCHECK(commFree(comm));
 

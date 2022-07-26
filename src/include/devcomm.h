@@ -206,7 +206,9 @@ struct ncclWorkElem {
 static_assert(NCCL_MAX_WORK_ELEMENTS == 9, "Sanity check: NCCL_MAX_WORK_ELEMENTS == 9");
 
 struct ncclWorkElemP2p {
-  int32_t peer;
+  int peer : 30;
+  int proto : 2;
+
   enum ncclWorkP2PType p2pType;
   uint8_t nWarps;
   uint8_t warpStart;

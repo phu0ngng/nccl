@@ -1,0 +1,74 @@
+<!DOCTYPE html>
+<html>
+<head>
+<title>NCCL-17 : Enqueue Refactor for CUDA Graphs : Requirements</title>
+<link rel="stylesheet" type="text/css" href="../../html/css/doc.css">
+</head>
+<body>
+<center><h1>NCCL-17 : Enqueue Refactor for CUDA Graphs<br>Requirements</h1></center>
+<!-- table of contents, auto-generated -->
+$CONTENTS
+<!-- end of table of contents -->
+<h2>Project Context and Purpose</h2>
+
+<p>The launch system needed a rewrite to support CUDA graphs in the following
+ways:</p>
+
+<ul>
+  <li>Bugfix: support mixing of outstanding graph captured NCCL ops with
+  uncaptured ops.</li>
+
+  <li>Bugfix: support mixing of outstanding graph captured ops of multiple
+  graphs on multiple streams.</li>
+
+  <li>Perf boost: Allocating persistent device memory associated with a graph
+  to hold ncclWork structs so that the work need not be uploaded through the
+  host memory fifo each time.</li>
+
+  <li>Perf boost: Eliminate the host callback graph nodes when possible.</li>
+</ul>
+
+
+<h2>NVbugs / Jira Tickets</h2>
+<p><a href="https://nvbugs/3609057">NVbug 3609057 : [NCCL][PyTorch] all_gather hangs when CUDA Graphs is used together with eager execution</a></p>
+
+<h2>User Experience</h2>
+None.
+
+<h2>Assumptions, constraints and dependencies</h2>
+
+<h2>Use Cases</h2>
+
+<h2>Functional Requirements</h2>
+None
+
+<h2>System Requirements</h2>
+None
+
+<h2>Interface Requirements</h2>
+No new API
+
+<h2>KPI Requirements</h2>
+<p>Intra-node CUDA graph performance better or equal to intra-node without
+graph.</p>
+
+<h2>Platform Requirements</h2>
+N/A
+<h2>Security Requirements</h2>
+NCCL is a user library and benefits from the user-mode security.
+<h2>Legal and Standards Requirements</h2>
+N/A
+<h2>Telemetry Requirements</h2>
+N/A
+<h2>Backward Compatibility Requirements</h2>
+Changes do not need to be backward compatible.
+<h2>Virtualization Requirements</h2>
+N/A
+
+<h2>Signoff list</h2>
+<p><!-- Author : First Last -->
+<p><!-- Reviewer : First Last -->
+<p><!-- Reviewer : First Last  -->
+<p><!-- Product Manager : First Last -->
+
+<!-- do not end body and html, bottom will be auto-generated -->

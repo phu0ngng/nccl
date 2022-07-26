@@ -361,6 +361,8 @@ static ncclResult_t addCollToPlan(
   return ncclSuccess;
 }
 
+NCCL_PARAM(P2pLLThreshold, "P2P_LL_THRESHOLD", 16384);
+
 // Put p2p op in plan assuming there is space in nWorkBudget, so you must
 // ensure *nWorkBudget >= 1 upon entry.
 static ncclResult_t addP2pToPlan(
@@ -378,10 +380,16 @@ static ncclResult_t addP2pToPlan(
   NCCLCHECK(ncclChannelCompute(comm, peer, chunk%comm->p2pnChannelsPerPeer, info.coll, &channelId));
   info.channelId = channelId;
 
+  // 1 is connIndex
+  struct ncclConnInfo* conn = isSendNotRecv ?
+    &comm->channels[channelId].peers[peer].send[1].conn : &comm->channels[channelId].peers[peer].recv[1].conn;
+  info.protocol = ((conn->buffs[NCCL_PROTO_LL] != nullptr) && bytes <= ncclParamP2pLLThreshold()) ? NCCL_PROTO_LL : NCCL_PROTO_SIMPLE;
+
   struct ncclProxyOp proxyOp = {};
   NCCLCHECK(ncclProxyComputeP2p(&info, &proxyOp));
 
   struct ncclWorkElemP2p elem = {0};
+  elem.proto = info.protocol;
   elem.peer = peer;
   elem.nWarps = NCCL_MAX_NTHREADS/WARP_SIZE;
   elem.p2pType = isSendNotRecv ? ncclWorkP2pTypeSend : ncclWorkP2pTypeRecv;
@@ -628,7 +636,7 @@ static ncclResult_t scheduleP2pTasksToPlan(
   // Compute how much to split operations
   // Natural step size matching buffer steps.
   ssize_t stepSize = comm->buffSizes[NCCL_PROTO_SIMPLE]/NCCL_STEPS;
-  if (comm->nNodes > 1) stepSize /= SENDRECV_SLICEFACTOR;
+  if (comm->nNodes > 1) stepSize = comm->p2pNetChunkSize;
   // Try to use all channels
   int nChannelsMax = comm->p2pnChannelsPerPeer;
   int nChannelsMin = nChannelsMax;
@@ -884,10 +892,10 @@ static ncclResult_t reclaimPlan(struct ncclComm* comm, struct ncclCommCallback* 
   struct ncclKernelPlan* plan = (struct ncclKernelPlan*)me; // cast from first member `reclaim`
   if (plan->persistent) {
     comm->persistentRefs -= 1;
-    if (!ncclMainExited) NCCLCHECK(ncclCudaFree(plan->workHead));
+    NCCLCHECK(ncclCudaFree(plan->workHead));
     while (!ncclIntruQueueEmpty(&plan->ipcMemQueue)) {
       struct ncclPointerList* q = ncclIntruQueueDequeue(&plan->ipcMemQueue);
-      if (!ncclMainExited) CUDACHECKIGNORE(cudaIpcCloseMemHandle(q->ptr));
+      CUDACHECKIGNORE(cudaIpcCloseMemHandle(q->ptr));
       ncclMemoryPoolFree(&comm->memPool_ncclPointerList, q);
     }
   }
@@ -914,7 +922,7 @@ ncclResult_t ncclLaunchPrepare(struct ncclComm* comm) {
 
   // Poll for callbacks sent to us from other threads. Typically these free
   // resources from to our memory pools.
-  NCCLCHECK(ncclCommPollCallbacks(comm));
+  NCCLCHECK(ncclCommPollCallbacks(comm, /*waitSome=*/false));
 
   // We already have one frame present which holds all of our tasks (which we
   // are about to schedule). Now push an additional frame for allocating

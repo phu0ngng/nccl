@@ -417,8 +417,6 @@ ncclResult_t ncclProxySaveOp(struct ncclComm* comm, struct ncclProxyOp* op, bool
   case ncclPatternSend:
   case ncclPatternRecv: {
       if (op->root == comm->rank) return ncclSuccess;
-      op->nsteps = DIVUP(op->nbytes, op->chunkSize);
-      if (op->nsteps == 0) op->nsteps = 1;
       NCCLCHECK(SaveProxy(channel, op->pattern == ncclPatternSend ? proxySend : proxyRecv, op->root, op, 1, justInquire));
     } break;
   }
@@ -434,16 +432,17 @@ ncclResult_t ncclProxyComputeP2p(struct ncclInfo* info, struct ncclProxyOp* op) 
   op->channelId = channelId;
   op->sliceSteps = 1;
   op->chunkSteps = 1;
-  op->protocol = NCCL_PROTO_SIMPLE;
   op->dtype = info->datatype;
+  op->protocol = info->protocol;
 
-  int stepSize = info->comm->buffSizes[NCCL_PROTO_SIMPLE]/NCCL_STEPS;
-  if (info->comm->nNodes > 1) stepSize /= SENDRECV_SLICEFACTOR;
+  int stepSize = info->comm->buffSizes[op->protocol]/NCCL_STEPS;
+
+  // If nNodes > 1 and we're using Simple, reduce the stepSize to increase shared buffer utilization
+  if (info->comm->nNodes > 1 && op->protocol == NCCL_PROTO_SIMPLE) stepSize = info->comm->p2pNetChunkSize;
   info->chunkSize = stepSize;
   op->root = info->root;
-  op->nbytes = info->count;
-  struct ncclChannelPeer* peer = channel->peers + op->root;
 
+  struct ncclChannelPeer* peer = channel->peers + op->root;
   if (info->coll == ncclFuncSend) {
     op->pattern = ncclPatternSend;
     if (op->root != info->comm->rank && peer->send[1].transportComm == &netTransport.send) {
@@ -466,6 +465,17 @@ ncclResult_t ncclProxyComputeP2p(struct ncclInfo* info, struct ncclProxyOp* op) 
     info->chunkSize = ncclParamChunkSize();
   }
   op->chunkSize = info->chunkSize;
+
+  // Compute nSteps for proxies
+  int chunkEffectiveSize = op->chunkSize;
+  if (op->protocol == NCCL_PROTO_LL) {
+    chunkEffectiveSize /= 2;
+  }
+  
+  op->nbytes = stepSize;
+  op->nsteps = DIVUP(info->count, chunkEffectiveSize);
+  if (op->nsteps == 0) op->nsteps = 1;
+
   return ncclSuccess;
 }
 
@@ -618,7 +628,7 @@ ncclResult_t ncclSetThreadContext(struct ncclComm* comm) {
   if (createThreadContext == -1) {
     createThreadContext = ncclParamCreateThreadContext();
     if (createThreadContext) {
-      if (CUPFN(cuCtxCreate_v3020) == nullptr || CUPFN(cuCtxDestroy) == nullptr || CUPFN(cuCtxSetCurrent) == nullptr) {
+      if (CUPFN(cuCtxCreate) == nullptr || CUPFN(cuCtxDestroy) == nullptr || CUPFN(cuCtxSetCurrent) == nullptr) {
         WARN("Unable to create thread context due to old driver, disabling.");
         createThreadContext = 0;
       }
@@ -626,7 +636,7 @@ ncclResult_t ncclSetThreadContext(struct ncclComm* comm) {
   }
   if (createThreadContext) {
     if (comm->proxyState.cudaCtx == NULL) {
-      if (CUPFN(cuCtxCreate_v3020(&comm->proxyState.cudaCtx,
+      if (CUPFN(cuCtxCreate(&comm->proxyState.cudaCtx,
                                   CU_CTX_SCHED_SPIN|CU_CTX_MAP_HOST, comm->cudaDev)) != CUDA_SUCCESS) {
         WARN("Failed to create CUDA context on device %d", comm->cudaDev);
         createThreadContext = 0;
@@ -643,6 +653,9 @@ ncclResult_t ncclSetThreadContext(struct ncclComm* comm) {
   return ncclSuccess;
 }
 
+// Set to SIGUSR1 or SIGUSR2 to help debug proxy state during hangs
+NCCL_PARAM(ProxyDumpSignal, "PROXY_DUMP_SIGNAL", -1);
+
 void* ncclProxyProgress(void *comm_) {
   struct ncclComm* comm = (struct ncclComm*)comm_;
   if (ncclSetThreadContext(comm) != ncclSuccess) {
@@ -654,7 +667,8 @@ void* ncclProxyProgress(void *comm_) {
 
   struct ncclProxyProgressState* state = &comm->proxyState.progressState;
   state->nextOps = -1;
-  signal(SIGUSR1, ncclDumpProxyState);
+  const int sig = ncclParamProxyDumpSignal();
+  if (sig != -1) signal(sig, ncclDumpProxyState);
   ncclLastProxyState = state;
   char threadName[NCCL_THREAD_NAMELEN];
   snprintf(threadName, NCCL_THREAD_NAMELEN, "NCCL Progress%2d", comm->cudaDev);
