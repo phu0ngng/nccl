@@ -21,7 +21,8 @@ struct RunWork<ncclFuncSendRecv, T, RedOp, NCCL_ALGO_RING, NCCL_PROTO_SIMPLE> {
         ReduceOrCopyMulti<COLL_UNROLL, RedOp, T, 1, 1, 1, 1, 0>(tid, nthreads, nullptr, false, 1, (const T**)&buff, 1, (T**)&recvBuff, count);
       }
     } else {
-      int const chunkSize = args->chunkSize/sizeof(T);
+      int chunkSize = args->chunkSize/sizeof(T);
+      if (args->proto == NCCL_PROTO_LL) chunkSize /= 2;
       int const peer = args->peer;
       Primitives<T, RedOp, FanAsymmetric<0, 1>, 1, Proto, 1> prims
         (tid, nthreads, nullptr, &peer, buff, nullptr, /*redOpArg(ignored)=*/0, group);
@@ -39,7 +40,8 @@ struct RunWork<ncclFuncSendRecv, T, RedOp, NCCL_ALGO_RING, NCCL_PROTO_SIMPLE> {
     if (args->peer != ncclShmem.comm.rank) {
       void* buff = reinterpret_cast<void*>(uintptr_t(args->buffHi32)<<32 | args->buffLo32);
       ssize_t count = reinterpret_cast<size_t>(size_t(args->countHi32)<<32 | args->countLo32);
-      int const chunkSize = args->chunkSize/sizeof(T);
+      int chunkSize = args->chunkSize/sizeof(T);
+      if (args->proto == NCCL_PROTO_LL) chunkSize /= 2; // This is to account for chunkEffectiveSize
       int const peer = args->peer;
       Primitives<T, RedOp, FanAsymmetric<1, 0>, 1, Proto, 1> prims
         (tid, nthreads, &peer, nullptr, nullptr, buff, /*redOpArg(ignored)=*/0, group);
