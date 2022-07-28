@@ -90,6 +90,7 @@ struct sendResources {
   int remoteRank;
   int netDev;
   int useGdr;
+  int useDmaBuf;
   int maxRecvs;
   uint64_t* gdcSync;
   void* gdrDesc;
@@ -116,6 +117,7 @@ struct recvResources {
   int proxyRank;
   int netDev;
   int useGdr;
+  int useDmaBuf;
   int maxRecvs;
   uint64_t* gdcSync;
   uint64_t* gdcFlush;
@@ -441,6 +443,8 @@ static ncclResult_t sendProxySetup(struct ncclProxyConnection* connection, struc
   resources->connIndex = req->connIndex;
   ncclNetProperties_t props;
   NCCLCHECK(ncclNetGetProperties(comm, req->netDev, &props));
+  /* DMA-BUF support */
+  resources->useDmaBuf = resources->useGdr && comm->dmaBufSupport && (props.ptrSupport & NCCL_PTR_DMABUF);
   resources->maxRecvs = props.maxRecvs;
 
   // We don't return any data
@@ -467,6 +471,8 @@ static ncclResult_t recvProxySetup(struct ncclProxyConnection* connection, struc
   resources->connIndex = req->connIndex;
   ncclNetProperties_t props;
   NCCLCHECK(ncclNetGetProperties(comm, req->netDev, &props));
+  /* DMA-BUF support */
+  resources->useDmaBuf = resources->useGdr && comm->dmaBufSupport && (props.ptrSupport & NCCL_PTR_DMABUF);
   resources->maxRecvs = props.maxRecvs;
 
   if (respSize != sizeof(ncclNetHandle_t)) return ncclInternalError;
@@ -588,7 +594,7 @@ static ncclResult_t sendProxyConnect(struct ncclProxyConnection* connection, str
 #if CUDA_VERSION >= 11070
       /* DMA-BUF support */
       int type = NCCL_NET_MAP_DEV_MEM(map, buffs[p]) ? NCCL_PTR_CUDA : NCCL_PTR_HOST;
-      if (type == NCCL_PTR_CUDA && comm->dmaBufSupport) {
+      if (type == NCCL_PTR_CUDA && resources->useDmaBuf) {
         int dmabuf_fd;
         CUCHECK(cuMemGetHandleForAddressRange((void *)&dmabuf_fd, (CUdeviceptr)resources->buffers[p], resources->buffSizes[p], CU_MEM_RANGE_HANDLE_TYPE_DMA_BUF_FD, 0));
         NCCLCHECK(ncclNetRegMrDmaBuf(comm, resources->netSendComm, resources->buffers[p], resources->buffSizes[p], type, 0ULL, dmabuf_fd, &resources->mhandles[p]));
@@ -710,7 +716,7 @@ static ncclResult_t recvProxyConnect(struct ncclProxyConnection* connection, str
 #if CUDA_VERSION >= 11070
       /* DMA-BUF support */
       int type = NCCL_NET_MAP_DEV_MEM(map, buffs[p]) ? NCCL_PTR_CUDA : NCCL_PTR_HOST;
-      if (type == NCCL_PTR_CUDA && comm->dmaBufSupport) {
+      if (type == NCCL_PTR_CUDA && resources->useDmaBuf) {
         int dmabuf_fd;
         CUCHECK(cuMemGetHandleForAddressRange((void *)&dmabuf_fd, (CUdeviceptr)resources->buffers[p], resources->buffSizes[p], CU_MEM_RANGE_HANDLE_TYPE_DMA_BUF_FD, 0));
         NCCLCHECK(ncclNetRegMrDmaBuf(comm, resources->netRecvComm, resources->buffers[p], resources->buffSizes[p], type, 0ULL, dmabuf_fd, &resources->mhandles[p]));
