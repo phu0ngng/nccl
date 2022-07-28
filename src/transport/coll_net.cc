@@ -100,6 +100,7 @@ struct sendResources {
   int nranks;
   int netDev;
   int useGdr;
+  int useDmaBuf;
   uint64_t* gdcSync;
   void* gdrDesc;
   void* sendMhandles[NCCL_NUM_PROTOCOLS];
@@ -119,6 +120,7 @@ struct recvResources {
   int nranks;
   int netDev;
   int useGdr;
+  int useDmaBuf;
   uint64_t* gdcSync;
   uint64_t* gdcFlush;
   void* gdrDesc;
@@ -281,6 +283,10 @@ static ncclResult_t sendProxySetup(struct ncclProxyConnection* connection, struc
 
   resources->netDev = req->netDev;
   resources->useGdr = req->useGdr;
+  ncclNetProperties_t props;
+  NCCLCHECK(collNetGetProperties(comm, req->netDev, &props));
+  /* DMA-BUF support */
+  resources->useDmaBuf = resources->useGdr && comm->dmaBufSupport && (props.ptrSupport & NCCL_PTR_DMABUF);
   return ncclSuccess;
 }
 
@@ -386,6 +392,10 @@ static ncclResult_t recvProxySetup(struct ncclProxyConnection* connection, struc
 
   resources->netDev = req->netDev;
   resources->useGdr = req->useGdr;
+  ncclNetProperties_t props;
+  NCCLCHECK(collNetGetProperties(comm, req->netDev, &props));
+  /* DMA-BUF support */
+  resources->useDmaBuf = resources->useGdr && comm->dmaBufSupport && (props.ptrSupport & NCCL_PTR_DMABUF);
 
   collNetHandle_t* netHandle = (collNetHandle_t*) respBuff;
   if (respSize != sizeof(collNetHandle_t)) return ncclInternalError;
@@ -449,7 +459,7 @@ static ncclResult_t sendProxyConnect(struct ncclProxyConnection* connection, str
 
 #if CUDA_VERSION >= 11070
   /* DMA-BUF support */
-  if (resources->useGdr && comm->dmaBufSupport) {
+  if (resources->useGdr && resources->useDmaBuf) {
     int dmabuf_fd;
     CUCHECK(cuMemGetHandleForAddressRange((void *)&dmabuf_fd, (CUdeviceptr)mapMem->cpuPtr, mapMem->size, CU_MEM_RANGE_HANDLE_TYPE_DMA_BUF_FD, 0));
     NCCLCHECK(collNetRegMrDmaBuf(comm, resources->collNetComm, mapMem->cpuPtr, mapMem->size,
@@ -518,7 +528,7 @@ static ncclResult_t recvProxyConnect(struct ncclProxyConnection* connection, str
 
 #if CUDA_VERSION >= 11070
   /* DMA-BUF support */
-  if (resources->useGdr && comm->dmaBufSupport) {
+  if (resources->useGdr && resources->useDmaBuf) {
     int dmabuf_fd;
     CUCHECK(cuMemGetHandleForAddressRange((void *)&dmabuf_fd, (CUdeviceptr)mapMem->cpuPtr, mapMem->size, CU_MEM_RANGE_HANDLE_TYPE_DMA_BUF_FD, 0));
     NCCLCHECK(collNetRegMrDmaBuf(comm, resources->collNetComm, mapMem->cpuPtr, mapMem->size,
