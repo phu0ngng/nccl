@@ -51,7 +51,8 @@ struct ncclDevRedOpFull {
 #define DECL3(func, devredop, type, undef) \
   DECL4(func, RING,    devredop, type, undef) \
   DECL4(func, TREE,    devredop, type, undef) \
-  DECL4(func, COLLNET, devredop, type, undef)
+  DECL4(func, COLLNET_DIRECT, devredop, type, undef) \
+  DECL4(func, COLLNET_CHAIN, devredop, type, undef)
 
 #if defined(__CUDA_BF16_TYPES_EXIST__)
 #define DECL2(func, devredop, undefForFloat) \
@@ -117,7 +118,6 @@ extern __device__ void NCCL_ONERANK_REDUCE_NAME(PreMulSum, double)();
 #define BROADCAST_CHUNKSTEPS 1
 #define REDUCE_SLICESTEPS 1
 #define REDUCE_CHUNKSTEPS 1
-#define SENDRECV_SLICEFACTOR 4
 #define NCCL_MAX_SLICE_PER_CHUNK 2  // max value for CHUNKSTEPS/SLICESTEPS, must accord with above
 
 #endif

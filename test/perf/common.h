@@ -18,6 +18,9 @@
 #include "nccl1_compat.h"
 #include "timer.h"
 
+// For nccl.h < 2.13 since we define a weak fallback
+extern "C" char const* ncclGetLastError(ncclComm_t comm);
+
 #define CUDACHECK(cmd) do {                         \
   cudaError_t err = cmd;                            \
   if( err != cudaSuccess ) {                        \

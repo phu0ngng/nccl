@@ -40,7 +40,6 @@ class ncclCommon_test : public ::testing::Test {
     static void SetUpTestCase();
     static void TearDownTestCase();
     static const std::vector<ncclRedOp_t> RedOps;
-    //
   protected:
     int root = -1;
     void SetUp(){};
@@ -54,11 +53,6 @@ class ncclCommon_test : public ::testing::Test {
                 EXPECT_EQ(cudaSuccess, cudaSetDevice(i));
                 if (done[i])
                     continue;
-                ncclResult_t ncclAsyncErr;
-                EXPECT_EQ(ncclSuccess, ncclCommGetAsyncError(comms[i], &ncclAsyncErr))
-                    << "Rank : " << i << ", " << std::endl;
-                EXPECT_EQ(ncclSuccess, ncclAsyncErr)
-                    << "Rank : " << i << ". Error: " << ncclAsyncErr << std::endl;
                 cudaError_t cudaErr = cudaStreamQuery(this->streams[i]);
                 if (cudaErr != cudaErrorNotReady) {
                     EXPECT_EQ(cudaSuccess, cudaErr)

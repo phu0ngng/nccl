@@ -16,7 +16,8 @@ range="-b 8 -e $max -f 2"
 export LD_LIBRARY_PATH=$SHARP_HOME/lib:$LD_LIBRARY_PATH
 export LD_LIBRARY_PATH=$PLUGIN_PATH:$LD_LIBRARY_PATH
 export NCCL_COLLNET_ENABLE=1
-export NCCL_ALGO=COLLNET
+# Deprecate this - now replaced by COLLNET_DIRECT|COLLNET_CHAIN
+#export NCCL_ALGO=COLLNET
 
 echo "HOSTNAME=$HOSTNAME"
 echo "Using CUDA_HOME=$CUDA_HOME"
@@ -29,7 +30,7 @@ echo "Using LD_LIBRARY_PATH=$LD_LIBRARY_PATH"
 # We need to catch failures manually and then throw at the end to get gitlab to detect a failure
 failure_count=0
 
-echo "=============================== all_reduce (CollNet) ================================="
+echo "=============================== all_reduce (CollNet) - $(date +\"%T\") ================================="
 $SALLOC $MPI_HOME/bin/mpirun ./build/test/perf/all_reduce_perf $range $opts
 [ $? -ne 0 ] && let failure_count=$failure_count+1
 

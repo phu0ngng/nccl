@@ -345,7 +345,7 @@ struct SequenceControl {
     }
 
     this->thread_seq += 1;
-    this->cvar.notify_one();
+    this->cvar.notify_all();
     return locked;
   }
 };
@@ -382,7 +382,7 @@ struct VirtualComm {
 };
 
 SharedTable<VirtualComm> vcomm_table;
-
+SharedTable<SequenceControl> rank_group_seq_table;
 
 namespace CudaHelp {
 //private:
@@ -957,6 +957,9 @@ void VirtualThreads::killAll() {
 void VirtualThreads::postBatchMessage(int vtid, Mailbox::Message *m) {
   State *&st = state_by_vtid[vtid];
   if(st == nullptr) {
+    if (opt_verbose) {
+      fprintf(stderr, "[%u] Creating new thread for vtid=%d\n", getpid(), vtid);
+    }
     st = new State;
     st->vtid = vtid;
     st->worker = std::thread(workerMain, st);
@@ -1020,13 +1023,15 @@ void wrap_ncclGroupStart(size_t line_number) {
   inside_nccl_group++;
 
   if (opt_verbose) {
-    fprintf(stderr, "[%u] ncclGroupStart() line_number=%zu.\n", getpid(), line_number);
+    fprintf(stderr, "[%u] ncclGroupStart() line_number=%zu inside_nccl_group=%d .\n", getpid(), line_number, inside_nccl_group);
   }
 }
 
 void wrap_ncclGroupEnd(size_t line_number) {
   ncclGroupEnd();
+  if (opt_verbose) fprintf(stderr, "[%u] wrap_ncclGroupEnd() line_number=%zu inside_nccl_group=%d\n", getpid(), line_number, inside_nccl_group - 1);
   if(0 == --inside_nccl_group) {
+    if (opt_verbose) fprintf(stderr, "[%u] ncclGroupEnd() line_number=%zu\n", getpid(), line_number);
     for(auto &fn: after_group_fns) fn();
     after_group_fns.clear();
   } else if (inside_nccl_group < 0) {
@@ -1068,6 +1073,13 @@ struct CallHeader {
 };
 struct CallGetUniqueId {
   uint64_t vunique;
+};
+struct CallNcclGroupEnd {
+  int group_seq;
+};
+
+struct CallNcclGroupStart {
+  int group_seq;
 };
 
 struct CallCommInitRank {
@@ -1135,6 +1147,12 @@ void invokeCall(CallHeader const &hdr, CallCommInitRank const &body) {
     vuid_cvar.wait(locked, [&]()->bool {
       if(vuid_table.count(body.vunique) != 0) {
         uid = vuid_table[body.vunique];
+
+        if (opt_verbose) {
+          fprintf(stderr, "[%u] CallCommInitRank found UniqueId vunique=0x%lx src_line_number=%lu comm_rank_n=%u comm_rank_me=%u vcomm=0x%lx\n",
+            getpid(), body.vunique, hdr.line_number, body.comm_rank_n, body.comm_rank_me, body.vcomm);
+        }
+
         return true;
       }
 
@@ -1176,16 +1194,18 @@ void invokeCall(CallHeader const &hdr, CallCommInitRank const &body) {
   });
 }
 
-void invokeCall(CallHeader const &hdr) {
-  switch(hdr.code) {
-  case CallCode::group_start:
-    wrap_ncclGroupStart(hdr.line_number);
-    break;
-  case CallCode::group_end:
-    wrap_ncclGroupEnd(hdr.line_number);
-    break;
-  }
+void invokeCall(CallHeader const &hdr, CallNcclGroupStart const &body) {
+  if (opt_verbose) fprintf(stderr, "[%u] Waiting to unlock groupStart for mpi_rank_me=%d group_seq=%d\n", getpid(), mpi_rank_me, body.group_seq);
+  std::unique_lock<std::mutex> vc_locked = rank_group_seq_table[mpi_rank_me].lock(body.group_seq);
+  wrap_ncclGroupStart(hdr.line_number);
 }
+
+void invokeCall(CallHeader const &hdr, CallNcclGroupEnd const &body) {
+  if (opt_verbose) fprintf(stderr, "[%u] Waiting to unlock groupEnd for mpi_rank_me=%d group_seq=%d\n", getpid(), mpi_rank_me, body.group_seq);
+  std::unique_lock<std::mutex> vc_locked = rank_group_seq_table[mpi_rank_me].lock(body.group_seq);
+  wrap_ncclGroupEnd(hdr.line_number);
+}
+
 
 void invokeCall(CallHeader const &hdr, CallRedOpCreatePreMulSum const &body) {
   VirtualComm *vc = &vcomm_table[body.vcomm];
@@ -1446,8 +1466,8 @@ void invokeCall(CallHeader const &hdr, CallDataOp const &body) {
 
     if (opt_verbose)
     {
-      fprintf(stderr, "[%u] id=%u fifo_idx=%u after_ncclGroup 1. ops_in_flight=%u\n",
-        getpid(), my_op_id, fifo_idx, my_ops->load(std::memory_order_relaxed));
+      fprintf(stderr, "[%u] id=%u fifo_idx=%u nccl%s after_ncclGroup 1. ops_in_flight=%u\n",
+        getpid(), my_op_id, fifo_idx, call_name, my_ops->load(std::memory_order_relaxed));
     }
 
     // Cleanup 
@@ -1457,8 +1477,8 @@ void invokeCall(CallHeader const &hdr, CallDataOp const &body) {
 
       if (opt_verbose)
       {
-        fprintf(stderr, "[%u] after_ncclGroup 2 id=%u fifo_idx=%u ops_in_flight=%u sptr=0x%lx dptr=0x%lx\n",
-          getpid(), my_op_id, fifo_idx, my_ops->load(std::memory_order_relaxed), (intptr_t) sptr, (intptr_t) dptr);
+        fprintf(stderr, "[%u] nccl%s after_ncclGroup 2 id=%u fifo_idx=%u ops_in_flight=%u sptr=0x%lx dptr=0x%lx\n",
+          getpid(), call_name, my_op_id, fifo_idx, my_ops->load(std::memory_order_relaxed), (intptr_t) sptr, (intptr_t) dptr);
       }
 
       if(sptr != nullptr) {
@@ -1466,8 +1486,8 @@ void invokeCall(CallHeader const &hdr, CallDataOp const &body) {
 
           if (opt_verbose)
           {
-            fprintf(stderr, "[%u] after_ncclGroup 3 id=%u fifo_idx=%u. deallocated sptr\n",
-              getpid(), my_op_id, fifo_idx);
+            fprintf(stderr, "[%u] nccl%s after_ncclGroup 3 id=%u fifo_idx=%u. deallocated sptr\n",
+              getpid(), call_name, my_op_id, fifo_idx);
           }
         }
     });
@@ -1477,7 +1497,7 @@ void invokeCall(CallHeader const &hdr, CallDataOp const &body) {
 
       if (opt_verbose)
       {
-        fprintf(stderr, "[%u] after_ncclGroup 4 id=%u. Waiting on stream_nccl=%p\n", getpid(), my_op_id, stream_nccl);
+        fprintf(stderr, "[%u] nccl%s after_ncclGroup 4 id=%u. Waiting on stream_nccl=%p\n", getpid(), call_name, my_op_id, stream_nccl);
       }
       CudaHelp::streamWaitOnStream(device, stream_verify, device, stream_nccl);
 
@@ -1549,8 +1569,11 @@ void playTrace(ByteBuffer& trace) {
           vcomm_to_meta[body.vcomm].rank_me = body.comm_rank_me;
         } break;
       case CallCode::group_start:
+        { auto &body = cur.template pop<CallNcclGroupStart>();
+        } break;
       case CallCode::group_end:
-        break;
+        { auto &body = cur.template pop<CallNcclGroupEnd>();
+        } break;
       case CallCode::redop_create_premulsum:
         { auto &body = cur.template pop<CallRedOpCreatePreMulSum>();
           body.vcomm_seq = vcomm_to_meta[body.vcomm].seq_bumper++;
@@ -1599,9 +1622,12 @@ void playTrace(ByteBuffer& trace) {
           vthreads.postBatch(hdr.vtid, [=]() { invokeCall(hdr, body); });
         } break;
       case CallCode::group_start:
+        { CallNcclGroupStart const &body = cur.template pop<CallNcclGroupStart>();
+          vthreads.postBatch(hdr.vtid, [=]() { invokeCall(hdr, body); });
+        } break;
       case CallCode::group_end:
-        {
-          vthreads.postBatch(hdr.vtid, [=]() { invokeCall(hdr); });
+        { CallNcclGroupEnd const &body = cur.template pop<CallNcclGroupEnd>();
+          vthreads.postBatch(hdr.vtid, [=]() { invokeCall(hdr, body); });
         } break;
       case CallCode::redop_create_premulsum:
         { CallRedOpCreatePreMulSum const &body = cur.template pop<CallRedOpCreatePreMulSum>();
@@ -1708,12 +1734,13 @@ void playTrace(ByteBuffer& trace) {
 
   // Synchronize with all threads by telling them to send us a message
   // to decrement countdown.
-  int countdown = vthreads.postAll([&]() {
+  int countdown = 0; // Avoid compiler warning #549-D
+  countdown = vthreads.postAll([&]() {
     main_mailbox.post([&]() {
       countdown -= 1;
     });
   });
-  while(countdown != 0)
+  while (countdown != 0)
     main_mailbox.poll(/*wait=*/true);
 
   // synchronize all streams
@@ -1873,6 +1900,9 @@ ByteBuffer loadDebugCallTrace(std::string const &path) {
   if(mpi_rank_me == 0) {
     std::unique_ptr<ByteBuffer[]> rank_bufs(new ByteBuffer[mpi_rank_n]);
 
+    // Track the per-rank program order submission of ncclGroupEnd()
+    std::vector<int> rank_group_seqs(mpi_rank_n, 0);
+
     struct VHostState {
       int phost = -1;
       int vpids = 0;
@@ -1914,7 +1944,7 @@ ByteBuffer loadDebugCallTrace(std::string const &path) {
       int got = -1;
       char const *line_ptr = line.c_str();
       int ok = std::sscanf(line_ptr, "%[^:]:%d:%d NCCL CALL %n", vhost_name, &vpid, &vtid, &got);
-      if(ok != 3 || got == -1) {
+      if(ok != 3 || got == -1 || line_ptr[0] == '#') {
         if (opt_verbose) {
           fprintf(stderr, "Couldn't parse line: %s\n", line_ptr);
         }
@@ -1991,15 +2021,24 @@ ByteBuffer loadDebugCallTrace(std::string const &path) {
         }
       }
 
-      if(0 == std::strcmp(line_ptr, "ncclGroupStart()")) {
-        hdr.code = CallCode::group_start;
-        rank_bufs[rank].append(hdr);
-        continue;
+      { CallNcclGroupStart call;
+        if(0 == std::strcmp(line_ptr, "ncclGroupStart()")) {
+          hdr.code = CallCode::group_start;
+          rank_bufs[rank].append(hdr);
+          call.group_seq = rank_group_seqs[rank]++;
+          rank_bufs[rank].append(call);
+          continue;
+        }
       }
-      if(0 == std::strcmp(line_ptr, "ncclGroupEnd()")) {
-        hdr.code = CallCode::group_end;
-        rank_bufs[rank].append(hdr);
-        continue;
+
+      { CallNcclGroupEnd call;
+        if(0 == std::strcmp(line_ptr, "ncclGroupEnd()")) {
+          hdr.code = CallCode::group_end;
+          rank_bufs[rank].append(hdr);
+          call.group_seq = rank_group_seqs[rank]++;
+          rank_bufs[rank].append(call);
+          continue;
+        }
       }
 
       { CallRedOpCreatePreMulSum call;
@@ -2247,7 +2286,7 @@ int main(int arg_n, char **args) {
 
   // Gather op count from all ranks to rank 0
   if(mpi_rank_me == 0) {
-    std::cout<<(failure.load() ? "FAILURE" : "SUCCESS")<<std::endl;
+    std::cout<<(failure.load() ? "FAILURE" : "SUCCESS") <<std::endl;
     for (size_t i = 0; i < durations.size(); i++)
     {
       std::cout << "[" << i << "] Time elapsed: " << durations[i].count() << " s" << std::endl;

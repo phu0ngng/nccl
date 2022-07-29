@@ -8,8 +8,8 @@ They can also be set statically in /etc/nccl.conf (for an administrator to set s
 
 .. code:: C
 
- NCCL_SOCKET_IFNAME=eth0
  NCCL_DEBUG=WARN
+ NCCL_SOCKET_IFNAME==ens1f0
 
 NCCL_P2P_DISABLE
 ----------------
@@ -40,7 +40,7 @@ Values accepted
 - SYS : Use P2P between NUMA nodes, potentially crossing the SMP interconnect (e.g. QPI/UPI).
 
 Integer Values (Legacy)
-^^^^^^^^^^^^^^^
+^^^^^^^^^^^^^^^^^^^^^^^
 There is also the option to declare ``NCCL_P2P_LEVEL`` as an integer corresponding to the path type.  These numerical values were kept for retro-compatibility, for those who used numerical values before strings were allowed.
 
 Integer values are discouraged due to breaking changes in path types - the literal values can change over time.  To avoid headaches debugging your configuration, use string identifiers.
@@ -76,11 +76,23 @@ The ``NCCL_SOCKET_IFNAME`` variable specifies which IP interface to use for comm
 
 Values accepted
 ^^^^^^^^^^^^^^^
-Define to a list of prefixes to filter interfaces to be used by NCCL. For example, eth,ib would only select interfaces
-starting with eth or ib. Using the ^ symbol, NCCL will exclude interfaces starting with any prefix in that list. For
-example, ^eth,ib would select interfaces not starting with eth or ib.
+Define to a list of prefixes to filter interfaces to be used by NCCL.
 
-Note:  By default, the loopback interface (lo) and docker interfaces (docker*) would not be selected unless there are no other interfaces available. If you prefer to use lo or docker* over other interfaces, you would need to explicitly select them using ``NCCL_SOCKET_IFNAME``.
+Using the ``^`` symbol, NCCL will exclude interfaces starting with any prefix in that list.
+
+To match (or not) an exact interface name instead of a prefix, prefix the string with the ``=`` character.
+
+Examples:
+
+``eth`` : Use all interfaces starting with ``eth``, e.g. ``eth0``, ``eth1``, ...
+
+``=eth0`` : Use only interface ``eth0``
+
+``^docker`` : Do not use any interface starting with ``docker``
+
+``^=docker0`` : Do not use interface ``docker0``.
+
+Note: By default, the loopback interface (``lo``) and docker interfaces (``docker*``) would not be selected unless there are no other interfaces available. If you prefer to use ``lo`` or ``docker*`` over other interfaces, you would need to explicitly select them using ``NCCL_SOCKET_IFNAME``. The default algorithm will also favor interfaces starting with ``ib`` over others. Setting ``NCCL_SOCKET_IFNAME`` will bypass the automatic interface selection algorithm and may use all interfaces matching the manual selection.
 
 NCCL_SOCKET_NTHREADS
 --------------------
@@ -261,15 +273,22 @@ Values accepted
 ^^^^^^^^^^^^^^^
 Define to be a list of prefixes to filter interfaces to be used by NCCL.
 
-Using the ^ symbol, NCCL will exclude interfaces starting with any prefix in that list of prefix.
-Specific ports can also be specified using ":".
+Using the ``^`` symbol, NCCL will exclude interfaces starting with any prefix in that list.
+
+Specific ports can also be specified using ``:``.
+
+To match (or not) an exact interface name instead of a prefix, prefix the string with the ``=`` character.
 
 Examples:
-mlx5 : Use all ports of all cards starting with mlx5.
 
-mlx5_0:1,mlx5_1:1 : Use ports 1 of cards mlx5_0 and mlx5_1.
+``mlx5`` : Use all ports of all cards starting with ``mlx5``
 
-^mlx5_1:2 : Do not use port 2 of card mlx5_1.
+``=mlx5_0:1,mlx5_1:1`` : Use ports 1 of cards ``mlx5_0`` and ``mlx5_1``.
+
+``^=mlx5_1`` : Do not use card ``mlx5_1``.
+
+Note: using ``mlx5_1`` without a preceding ``=`` will select ``mlx5_1`` as well as ``mlx5_10`` to ``mlx5_19``, if they exist.
+It is therefore always recommended to add the ``=`` prefix to ensure an exact match.
 
 NCCL_IB_TIMEOUT
 ---------------
@@ -380,7 +399,7 @@ Values accepted
 Number between 1 and 128, default is 1. Values beyond 8 usually cause degraded bandwidth.
 
 NCCL_IB_PCI_RELAXED_ORDERING
---------------------------
+----------------------------
 (since 2.12)
 
 Enable use of Relaxed Ordering for the IB Verbs transport. Relaxed Ordering can greatly help the performance of InfiniBand networks in virtualized environments.
@@ -432,7 +451,7 @@ Values accepted
 - SYS  : Use GPU Direct RDMA even across the SMP interconnect between NUMA nodes (e.g., QPI/UPI). (always enabled)
 
 Integer Values (Legacy)
-^^^^^^^^^^^^^^^
+^^^^^^^^^^^^^^^^^^^^^^^
 There is also the option to declare ``NCCL_NET_GDR_LEVEL`` as an integer corresponding to the path type.  These numerical values were kept for retro-compatibility, for those who used numerical values before strings were allowed.
 
 Integer values are discouraged due to breaking changes in path types - the literal values can change over time.  To avoid headaches debugging your configuration, use string identifiers.
@@ -706,6 +725,8 @@ Value accepted
 ^^^^^^^^^^^^^^
 0 or 1. Default is 0.
 
+.. _NCCL_GRAPH_MIXING_SUPPORT:
+
 NCCL_GRAPH_MIXING_SUPPORT
 -------------------------
 (since 2.13)
@@ -741,3 +762,35 @@ This feature is enabled by default, but will be disabled if the Linux kernel or 
 Value accepted
 ^^^^^^^^^^^^^^
 0 or 1. Default value is 1.
+
+NCCL_P2P_LL_THRESHOLD
+-----------------------
+(since 2.14)
+
+The ``NCCL_P2P_LL_THRESHOLD`` is the maximum message size that NCCL will use LL for P2P operations.
+
+Values accepted
+^^^^^^^^^^^^^^^
+Decimal number. Default is 16384.
+
+NCCL_ALLOC_P2P_NET_LL_BUFFERS
+-----------------------
+(since 2.14)
+
+``NCCL_ALLOC_P2P_NET_LL_BUFFERS`` instructs communicators to allocate dedicated LL buffers for all P2P network connections.  This enables all ranks to use LL for latency-bound send and receive operations below ``NCCL_P2P_LL_THRESHOLD`` sizes.
+Intranode P2P transfers always have dedicated LL buffers allocated.  If running all-to-all workloads with high numbers of ranks, this will result in a high scaling memory overhead.
+
+Values accepted
+^^^^^^^^^^^^^^^
+0 or 1. Default value is 0.
+
+NCCL_COMM_BLOCKING
+-----------------------
+(since 2.14)
+
+The ``NCCL_COMM_BLOCKING`` enables blocking or nonblocking communicators globally. If not set, communicator behavior 
+will be determined by the setting of the configuration parameter passed to the ncclCommInitRankConfig() function.
+
+Values accepted
+^^^^^^^^^^^^^^^
+0 or 1. 0 indicates a non-blocking communicator, and 1 indicates blocking communicator.
