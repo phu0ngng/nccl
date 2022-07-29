@@ -18,9 +18,11 @@ SRCINC = -I$(BUILDDIR)/include/ -I../include -I../../src/include -I ../../src/co
 LIBRARIES += nccl_static
 STATICLIB = ${BUILDDIR}/lib/libnccl_static.a
 NVLDFLAGS += -L$(BUILDDIR)/lib $(LIBRARIES:%=-l%)
+DLIB = ${BUILDDIR}/lib/libnccl.so
+DLIBFLAGS = -L$(BUILDDIR)/lib -lnccl -lcudart
 ##
 DST_DIR := $(abspath ${BUILDDIR}/test/unit)
-CU_FILES := kernel_test.cu align_test.cu
+CU_FILES := kernel_test.cu align_test.cu ft_test.cu
 CC_FILES += graph_test.cc model.cc data.cc xml_test.cc comm_leak_test.cc channel_test.cc
 KCU_FILES := kernel_test.cu align_test.cu
 ifeq ($(MPI),1)
@@ -76,6 +78,11 @@ ${DST_DIR}/align_test: ${DST_DIR}/align_test.o
 #	@printf "Compiling   %-35s > %s\n" $< $@
 #	@mkdir -p ${DST_DIR}
 #	mpicc -std=c99 $(CXXFLAGS) -I$(BUILDDIR)/include/ -o $@ -c $<
+#
+${DST_DIR}/ft_test: ${DST_DIR}/ft_test.o ${DLIB}
+	@printf "Linking  %-35s > %s\n" $< $@
+	@mkdir -p ${DST_DIR}
+	$(NVCC) -o $@ $(NVCUFLAGS) $^ ${DLIBFLAGS}
 #
 ${DST_DIR}/graph_test: ${DST_DIR}/graph_test.o ${STATICLIB}
 	@printf "Linking  %-35s > %s\n" $< $@

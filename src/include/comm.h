@@ -215,8 +215,9 @@ struct ncclComm {
   float bandwidths[NCCL_NUM_FUNCTIONS][NCCL_NUM_ALGORITHMS][NCCL_NUM_PROTOCOLS];
   int maxThreads[NCCL_NUM_ALGORITHMS][NCCL_NUM_PROTOCOLS];
 
-  // Whether there has been a fatal error in this communicator.
-  ncclResult_t fatalError;
+  /* This attribute can indicate the states of communicators and return code of 
+   * asynchronous NCCL operations. */
+  ncclResult_t asyncResult;
 
   // Flag to ask NCCL kernels to abort
   volatile uint32_t *abortFlag;
@@ -281,6 +282,15 @@ struct ncclComm {
   struct ncclIntruQueue<struct ncclKernelPlan, &ncclKernelPlan::next> planQueue;
   // First of the unlaunched kernels in `planQueue`
   struct ncclKernelPlan* unlaunchedPlansHead;
+
+  // communicator mode
+  int blocking;
+  // initState is to more conveniently reclaim resources when errors happen.
+  ncclResult_t initState;
+  // flag to indicate if ncclCommFinalize() is called 
+  bool finalizeCalled;
+  // shared structures for finalization
+  int finalizeRankCnt;
 };
 
 enum ncclLaunchMode {
@@ -360,5 +370,8 @@ static inline ncclRedOp_t ncclUserRedOpMangle(ncclComm *comm, ncclRedOp_t op) {
   // Since builtin values are preserved, we also have to preserve their preimage.
   return op1 < int(ncclNumOps) ? op : ncclRedOp_t(op1);
 }
+
+ncclResult_t ncclCommEnsureReady(ncclComm_t comm);
+ncclResult_t ncclCommSetAsyncError(ncclComm_t comm, ncclResult_t nextState);
 
 #endif

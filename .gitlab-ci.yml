@@ -46,9 +46,10 @@ unit_tests:
   tags:
     - build
   variables:
+    NCCL_IB_HCA: "mlx5_0"
     CUDA_HOME: "/usr/local/cuda-${CUDA_VERSION}"
   script:
-    - (cd build/test/unit; LD_LIBRARY_PATH=$PWD/../../lib:$CUDA_HOME/lib64 ./graph_test)
+    - srun -t 00:10:00 -n 1 -c 8 -pGP100 ./test/scripts/gitlab-runner-unit.sh
   interruptible: true
 
 apitest-P100:

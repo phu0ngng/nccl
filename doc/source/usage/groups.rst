@@ -102,3 +102,43 @@ Related links:
 
 * :c:func:`ncclGroupStart`
 * :c:func:`ncclGroupEnd`
+
+Nonblocking Group Operation
+-------------------------------------
+
+If a communicator is marked as nonblocking through ncclCommInitRankConfig, the group functions become asynchronous 
+correspondingly. In this case, if users issue multiple NCCL operations in one group, returning from ncclGroupEnd() might 
+not mean the NCCL communication kernels have been issued to CUDA streams. If ncclGroupEnd() returns ncclSuccess, it means 
+NCCL kernels have been issued to streams; if it returns ncclInProgress, it means NCCL kernels are being issued to streams 
+in the background. It is users' responsibility to make sure the state of the communicator changes into ncclSuccess 
+before calling related CUDA calls (e.g. cudaStreamSynchronize):
+
+.. code:: C
+
+ ncclGroupStart();
+   for (int g=0; g<ngpus; g++) {
+     ncclAllReduce(sendbuffs[g]+offsets[i], recvbuffs[g]+offsets[i], counts[i], datatype[i], comms[g], streams[g]);
+   }
+ ret = ncclGroupEnd();
+ if (ret == ncclInProgress) {
+    for (int g=0; g<ngpus; g++) {
+      do {
+        ncclCommGetAsyncError(comms[g], &state);
+      } while (state == ncclInProgress);
+    }
+ } else if (ret == ncclSuccess) {
+    /* Successfully issued */
+    printf("NCCL kernel issue succeeded\n");
+ } else {
+    /* Errors happen */
+    reportErrorAndRestart();
+ }
+ 
+ for (int g=0; g<ngpus; g++) {
+   cudaStreamSynchronize(streams[g]);
+ }
+
+Related links:
+
+* :c:func:`ncclCommInitRankConfig`
+* :c:func:`ncclCommGetAsyncError`

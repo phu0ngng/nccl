@@ -1466,30 +1466,43 @@ ncclResult_t ncclEnqueueCheck(struct ncclInfo* info) {
   NCCLCHECK(ncclGroupStartInternal());
   ncclResult_t ret = ncclSuccess;
   int devOld = -1;
-  NCCLCHECKGOTO(PtrCheck(info->comm, info->opName, "comm"), ret, end0);
+
+  NCCLCHECKGOTO(PtrCheck(info->comm, info->opName, "comm"), ret, fail);
+  // Check whether communicator is ready to communicate  
+  NCCLCHECKGOTO(ncclCommEnsureReady(info->comm), ret, fail);
+
   if (info->comm->checkPointers) {
-    CUDACHECKGOTO(cudaGetDevice(&devOld), ret, end0);
-    CUDACHECKGOTO(cudaSetDevice(info->comm->cudaDev), ret, end0);
+    CUDACHECKGOTO(cudaGetDevice(&devOld), ret, fail);
+    CUDACHECKGOTO(cudaSetDevice(info->comm->cudaDev), ret, fail);
   }
-  NCCLCHECKGOTO(ArgsCheck(info), ret, end1);
+  NCCLCHECKGOTO(ArgsCheck(info), ret, fail);
 
   INFO(NCCL_COLL,"%s: opCount %lx sendbuff %p recvbuff %p count %zi datatype %d op %d root %d comm %p [nranks=%d] stream %p",
         info->opName, info->comm->opCount, info->sendbuff, info->recvbuff, info->count,
         info->datatype, info->op, info->root, info->comm, info->comm->nRanks, info->stream);
   TRACE_CALL("nccl%s(%" PRIx64 ",%" PRIx64 ",%zi,%d,%d,%d,%p,%p)", info->opName, reinterpret_cast<int64_t>(info->sendbuff), reinterpret_cast<int64_t>(info->recvbuff), info->count, info->datatype, info->op, info->root, info->comm, info->stream);
 
-  NCCLCHECKGOTO(taskAppend(info->comm, info), ret, end1);
-
-end1:
-  if (devOld != -1) CUDACHECKGOTO(cudaSetDevice(devOld), ret, end0);
-end0:
+  NCCLCHECKGOTO(taskAppend(info->comm, info), ret, fail);
+    
+exit:
+  if (devOld != -1) CUDACHECK(cudaSetDevice(devOld));
   ncclGroupErrCheck(ret);
   NCCLCHECK(ncclGroupEndInternal());
+  /* if depth is 1, ncclGroupEndInternal() will trigger group ops. The state can change
+   * so we have to check state here. */
+  if (info->comm && !info->comm->blocking) { NCCLCHECK(ncclCommGetAsyncError(info->comm, &ret)) };
   return ret;
+fail:
+  if (info->comm && !info->comm->blocking) (void) ncclCommSetAsyncError(info->comm, ret);
+  goto exit;
 }
 
 NCCL_API(ncclResult_t, ncclRedOpCreatePreMulSum, ncclRedOp_t *op, void *scalar, ncclDataType_t datatype, ncclScalarResidence_t residence, ncclComm_t comm);
 ncclResult_t ncclRedOpCreatePreMulSum(ncclRedOp_t *op, void *scalar, ncclDataType_t datatype, ncclScalarResidence_t residence, ncclComm_t comm) {
+  NCCLCHECK(PtrCheck(comm, "ncclRedOpCreatePreMulSum", "comm"));
+  /* join init thread before creating PreMulSum op. */
+  NCCLCHECK(ncclCommEnsureReady(comm));
+
   if (comm->userRedOpFreeHead == comm->userRedOpCapacity) {
     // double capacity and resize
     int cap = 2*comm->userRedOpCapacity;
