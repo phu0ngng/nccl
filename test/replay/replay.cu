@@ -759,7 +759,7 @@ void CudaHelp::streamWaitOnStream(int device_a, cudaStream_t stream_a, int devic
   CUDA_CHECK(cudaEventRecord(e, stream_b));
   if(device_a != device_b)
     CUDA_CHECK(cudaSetDevice(device_a));
-  CUDA_CHECK(cudaStreamWaitEvent(stream_a, e));
+  CUDA_CHECK(cudaStreamWaitEvent(stream_a, e, 0U));
   CUDA_CHECK(cudaEventDestroy(e));
 }
 
