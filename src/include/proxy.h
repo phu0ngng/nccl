@@ -184,6 +184,7 @@ struct ncclProxyConnection {
   struct ncclProxyArgs *proxyAppend;
   struct ncclProxyArgs **proxyAppendPtr;
   void* transportResources;
+  bool initFlag;
 };
 
 typedef ncclResult_t (*threadFunc_t)(struct ncclProxyArgs*);

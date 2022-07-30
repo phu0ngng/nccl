@@ -555,35 +555,41 @@ static ncclResult_t recvProxyConnect(struct ncclProxyConnection* connection, str
 
 static ncclResult_t sendProxyFree(struct ncclProxyConnection* connection, struct ncclComm* comm) {
   struct sendResources* resources = (struct sendResources*)(connection->transportResources);
-  for (int p=0; p<NCCL_NUM_PROTOCOLS; p++) {
-    if (resources->sendMhandles[p]) {
-      NCCLCHECK(collNetDeregMr(comm, resources->collNetComm, resources->sendMhandles[p]));
+
+  if (resources) {
+    for (int p = 0; p < NCCL_NUM_PROTOCOLS; p++) {
+      if (resources->sendMhandles[p]) {
+        NCCLCHECK(collNetDeregMr(comm, resources->collNetComm, resources->sendMhandles[p]));
+      }
     }
+    struct connectMapMem* mems = resources->map.mems;
+    NCCLCHECK(ncclCudaHostFree(mems[NCCL_NET_MAP_HOSTMEM].cpuPtr));
+    CUDACHECK(cudaFree(mems[NCCL_NET_MAP_DEVMEM].cpuPtr));
+    if (mems[NCCL_NET_MAP_GDCMEM].cpuPtr) NCCLCHECK(ncclGdrCudaFree(resources->gdrDesc));
+    NCCLCHECK(sharedBuffersDestroy(comm));
+    NCCLCHECK(sharedFree(comm, resources->netDev));
+    free(connection->transportResources);
   }
-  struct connectMapMem* mems = resources->map.mems;
-  NCCLCHECK(ncclCudaHostFree(mems[NCCL_NET_MAP_HOSTMEM].cpuPtr));
-  CUDACHECK(cudaFree(mems[NCCL_NET_MAP_DEVMEM].cpuPtr));
-  if (mems[NCCL_NET_MAP_GDCMEM].cpuPtr) NCCLCHECK(ncclGdrCudaFree(resources->gdrDesc));
-  NCCLCHECK(sharedBuffersDestroy(comm));
-  NCCLCHECK(sharedFree(comm, resources->netDev));
-  free(connection->transportResources);
   return ncclSuccess;
 }
 
 static ncclResult_t recvProxyFree(struct ncclProxyConnection* connection, struct ncclComm* comm) {
   struct recvResources* resources = (struct recvResources*)(connection->transportResources);
-  for (int p=0; p<NCCL_NUM_PROTOCOLS; p++) {
-    if (resources->mhandles[p]) {
-      NCCLCHECK(collNetDeregMr(comm, resources->collNetComm, resources->mhandles[p]));
+
+  if (resources) {
+    for (int p=0; p<NCCL_NUM_PROTOCOLS; p++) {
+      if (resources->mhandles[p]) {
+        NCCLCHECK(collNetDeregMr(comm, resources->collNetComm, resources->mhandles[p]));
+      }
     }
+    struct connectMapMem* mems = resources->map.mems;
+    NCCLCHECK(ncclCudaHostFree(mems[NCCL_NET_MAP_HOSTMEM].cpuPtr));
+    CUDACHECK(cudaFree(mems[NCCL_NET_MAP_DEVMEM].cpuPtr));
+    if (mems[NCCL_NET_MAP_GDCMEM].cpuPtr) NCCLCHECK(ncclGdrCudaFree(resources->gdrDesc));
+    NCCLCHECK(sharedBuffersDestroy(comm));
+    NCCLCHECK(sharedFree(comm, resources->netDev));
+    free(connection->transportResources);
   }
-  struct connectMapMem* mems = resources->map.mems;
-  NCCLCHECK(ncclCudaHostFree(mems[NCCL_NET_MAP_HOSTMEM].cpuPtr));
-  CUDACHECK(cudaFree(mems[NCCL_NET_MAP_DEVMEM].cpuPtr));
-  if (mems[NCCL_NET_MAP_GDCMEM].cpuPtr) NCCLCHECK(ncclGdrCudaFree(resources->gdrDesc));
-  NCCLCHECK(sharedBuffersDestroy(comm));
-  NCCLCHECK(sharedFree(comm, resources->netDev));
-  free(connection->transportResources);
   return ncclSuccess;
 }
 
