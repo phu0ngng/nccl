@@ -46,7 +46,7 @@ void AllGatherGetBw(size_t count, int typesize, double sec, double* algBw, doubl
 }
 
 testResult_t AllGatherRunColl(void* sendbuff, void* recvbuff, size_t count, ncclDataType_t type, ncclRedOp_t op, int root, ncclComm_t comm, cudaStream_t stream) {
-  NCCLCHECK(ncclAllGather(sendbuff, recvbuff, count, type, comm, stream));
+  NCCLCHECK_COMM_WAIT(ncclAllGather(sendbuff, recvbuff, count, type, comm, stream), comm);
   return testSuccess;
 }
 

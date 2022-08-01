@@ -55,11 +55,10 @@ testResult_t GatherRunColl(void* sendbuff, void* recvbuff, size_t count, ncclDat
   NCCLCHECK(ncclSend(sendbuff, count, type, root, comm, stream));
   if (rank == root) {
     for (int r=0; r<nRanks; r++) {
-      NCCLCHECK(ncclRecv(((char*)recvbuff)+r*rankOffset, count, type, r, comm, stream));
+      NCCLCHECK(ncclRecv(((char*)recvbuff) + r * rankOffset, count, type, r, comm, stream));
     }
   }
-  NCCLCHECK(ncclGroupEnd());
-
+  NCCLCHECK_COMM_WAIT(ncclGroupEnd(), comm);
   return testSuccess;
 }
 

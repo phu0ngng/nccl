@@ -74,7 +74,7 @@ testResult_t ncclAllGatherv(void* sendbuff, void* recvbuff, size_t count, ncclDa
     }
 #endif
   }
-  NCCLCHECK(ncclGroupEnd());
+  NCCLCHECK_COMM_WAIT(ncclGroupEnd(), comm);
   return testSuccess;
 }
 
