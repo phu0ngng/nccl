@@ -309,7 +309,7 @@ static ncclResult_t groupLaunch(struct ncclAsyncJob *job_) {
         ncclGroupJobState_t state = __atomic_load_n(&job->state, __ATOMIC_ACQUIRE);
         if (state == ncclGroupJobRunning) {
           jobsDone = false;
-        } else if (state == ncclGroupJobDone){
+        } else if (state == ncclGroupJobDone) {
           if (pthread_join(job->thread, nullptr) != 0) {
             WARN("Error waiting for pthread_join : %s", strerror(errno));
             ret = ncclSystemError;

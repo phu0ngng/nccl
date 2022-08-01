@@ -798,9 +798,13 @@ static ncclResult_t ncclProxyGetConnection(struct ncclProxyConnectionPool* pool,
 
 static ncclResult_t proxyFree(struct ncclProxyConnection* connection, struct ncclComm* comm) {
   if (connection->send) {
-    NCCLCHECK(ncclTransports[connection->transport]->send.proxyFree(connection, comm));
+    if (ncclTransports[connection->transport]->send.proxyFree) {
+      NCCLCHECK(ncclTransports[connection->transport]->send.proxyFree(connection, comm));
+    }
   } else {
-    NCCLCHECK(ncclTransports[connection->transport]->recv.proxyFree(connection, comm));
+    if (ncclTransports[connection->transport]->recv.proxyFree) {
+      NCCLCHECK(ncclTransports[connection->transport]->recv.proxyFree(connection, comm));
+    }
   }
   return ncclSuccess;
 }
@@ -809,7 +813,10 @@ static ncclResult_t ncclProxyFreeConnections(struct ncclProxyConnectionPool* poo
   for (int b=0; b<pool->banks; b++) {
     int max = b == pool->banks-1 ? pool->offset : NCCL_PROXY_CONN_POOL_SIZE;
     for (int i=0; i<max; i++) {
-      NCCLCHECK(proxyFree(pool->pools[b]+i, comm));
+      ncclProxyConnection *connection = pool->pools[b]+i;
+      if (connection->initFlag == true) {
+        NCCLCHECK(proxyFree(connection, comm));
+      }
     }
     free(pool->pools[b]);
   }
@@ -921,8 +928,10 @@ static ncclResult_t proxyProgressInit(struct ncclComm* comm) {
 
 static void proxyOpsFree(struct ncclComm* comm) {
   struct ncclProxyProgressState* state = &comm->proxyState.progressState;
-  if (ncclShmClose(state->opsPool, NULL, sizeof(struct ncclProxyOpsPool)) != ncclSuccess) {
-    WARN("[Service thread] shm close failed");
+  if (state->opsPool) {
+    if (ncclShmClose(state->opsPool, NULL, sizeof(struct ncclProxyOpsPool)) != ncclSuccess) {
+      WARN("[Service thread] shm close failed");
+    }
   }
 }
 
@@ -958,6 +967,7 @@ static ncclResult_t proxyConnInit(struct ncclProxyLocalPeer* peer, struct ncclPr
     NCCLCHECK(ncclSocketSend(sock, state->opsPoolShmSuffix, sizeof("XXXXXX")-1));
   }
   INFO(NCCL_NET, "New proxy %s connection %d from local rank %d, transport %d", connection->send ? "send":"recv", id, connection->localRank, connection->transport);
+  __atomic_store_n(&connection->initFlag, true, __ATOMIC_RELEASE);
   return ncclSuccess;
 }
 
