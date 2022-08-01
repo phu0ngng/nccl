@@ -472,14 +472,16 @@ static ncclResult_t p2pSendProxyConnect(struct ncclProxyConnection* connection, 
 static ncclResult_t p2pSendProxyFree(struct ncclProxyConnection* connection, struct ncclComm* comm) {
   if (useMemcpy) {
     struct p2pProxyInfo* proxyInfo = (struct p2pProxyInfo*)connection->transportResources;
-    NCCLCHECK(ncclShmClose(proxyInfo->shm, proxyInfo->devShm, proxyInfo->shmSize));
-    NCCLCHECK(ncclCudaHostFree(proxyInfo->ceRecvMem));
-    CUDACHECK(cudaFree(proxyInfo->ceDevBuff));
-    CUDACHECK(cudaStreamDestroy(proxyInfo->stream));
-    for (int i=0; i<NCCL_STEPS; i++) {
-      CUDACHECK(cudaEventDestroy(proxyInfo->events[i]));
+    if (proxyInfo) {
+      NCCLCHECK(ncclShmClose(proxyInfo->shm, proxyInfo->devShm, proxyInfo->shmSize));
+      NCCLCHECK(ncclCudaHostFree(proxyInfo->ceRecvMem));
+      CUDACHECK(cudaFree(proxyInfo->ceDevBuff));
+      CUDACHECK(cudaStreamDestroy(proxyInfo->stream));
+      for (int i=0; i<NCCL_STEPS; i++) {
+        CUDACHECK(cudaEventDestroy(proxyInfo->events[i]));
+      }
+      free(proxyInfo);
     }
-    free(proxyInfo);
   } else {
     // Do not check return code as CUDA may have already shut down
     cudaFree(connection->transportResources);
