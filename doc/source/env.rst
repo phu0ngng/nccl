@@ -788,9 +788,9 @@ NCCL_COMM_BLOCKING
 -----------------------
 (since 2.14)
 
-The ``NCCL_COMM_BLOCKING`` enables blocking or nonblocking communicators globally. If not set, communicator behavior 
+The ``NCCL_COMM_BLOCKING`` forces blocking communicators globally. If not set or set as 0, communicator behavior 
 will be determined by the setting of the configuration parameter passed to the ncclCommInitRankConfig() function.
 
 Values accepted
 ^^^^^^^^^^^^^^^
-0 or 1. 0 indicates a non-blocking communicator, and 1 indicates blocking communicator.
+0 or 1. 1 indicates blocking communicators; 0 has no effect on communicators.

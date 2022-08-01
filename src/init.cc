@@ -41,7 +41,7 @@ const char* ncclProtoStr[NCCL_NUM_PROTOCOLS] = { "LL", "LL128", "Simple" };
 NCCL_PARAM(GroupCudaStream, "GROUP_CUDA_STREAM", NCCL_GROUP_CUDA_STREAM);
 
 NCCL_PARAM(CheckPointers, "CHECK_POINTERS", 0);
-NCCL_PARAM(CommBlocking, "COMM_BLOCKING", -1);
+NCCL_PARAM(CommBlocking, "COMM_BLOCKING", 0);
 
 static uint64_t hashUniqueId(ncclUniqueId const &id) {
   char const *bytes = (char const*)&id;
@@ -1111,11 +1111,6 @@ static ncclResult_t parseCommConfig(ncclComm_t comm, ncclConfig_t *config) {
     comm->blocking = 1;
   }
 
-  /* check setting */
-  if (comm->blocking != 0 && comm->blocking != 1) {
-    WARN("Invalid communicator blocking attribute value %d", comm->blocking);
-  }
-
   return ret;
 }
 
@@ -1270,12 +1265,19 @@ ncclResult_t ncclCommInitRankConfig(ncclComm_t *newcomm, int nranks, ncclUniqueI
     }
   }
 
+  /* check input config attributes */
+  if (internalConfigPtr->blocking != 0 && internalConfigPtr->blocking != 1) {
+    WARN("Invalid config blocking attribute value %d", internalConfigPtr->blocking);
+    ret = ncclInvalidArgument;
+    goto exit;
+  }
+
   /* overwrite configuration from env variable. */
   blockingEnv = ncclParamCommBlocking();
-  if (blockingEnv != 0 && blockingEnv != 1 && blockingEnv != -1) {
+  if (blockingEnv != 0 && blockingEnv != 1) {
     WARN("Invalid NCCL_COMM_BLOCKING value %d", blockingEnv);
   }
-  if (blockingEnv != -1) internalConfigPtr->blocking = blockingEnv;
+  if (blockingEnv == 1) internalConfigPtr->blocking = blockingEnv;
 
   (void) cudaLibraryInit();
   CUDACHECKGOTO(cudaGetDevice(&cudaDev), ret, exit);
