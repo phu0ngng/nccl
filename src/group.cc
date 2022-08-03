@@ -265,7 +265,7 @@ static void groupCleanup(struct ncclComm** groupCommHeadPtr, struct ncclComm** g
 
 static ncclResult_t groupLaunch(struct ncclAsyncJob *job_) {
   int savedDev;
-  ncclResult_t ret;
+  ncclResult_t ret = ncclSuccess;
   bool jobsDone = false;
   bool errorJobAbortFlag = false;
   struct ncclGroupJob *gjob = (struct ncclGroupJob*) job_;
