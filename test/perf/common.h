@@ -148,6 +148,8 @@ struct threadArgs {
   char* replayFile;
 
   struct testColl* collTest;
+  int sleepId;
+  void** hostbuffs;
 };
 
 typedef testResult_t (*threadFunc_t)(struct threadArgs* args);
@@ -323,5 +325,8 @@ static testResult_t waitCommStateBatch(ncclComm_t * comms, int num) {
   NCCLCHECK(cmd);                                           \
 } while(0)
 #endif
+
+testResult_t faultToleranceTests(int nThreads, int nGpus, int ncclProc, int ncclProcs, int localRank);
+testResult_t threadLaunch(struct testThread* thread);
 
 #endif
