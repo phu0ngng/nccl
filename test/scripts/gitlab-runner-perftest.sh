@@ -12,6 +12,7 @@ if [ "$graph" == "" ]; then graph=0; fi
 
 opts="-n 5 -w 1 -G $graph"
 range="-b 8 -e $max -f 2"
+enable_ft="-B 0 -F 1"
 
 # We need to catch failures manually and then throw at the end to get gitlab to detect a failure
 failure_count=0
@@ -36,6 +37,11 @@ for func in all_reduce reduce reduce_scatter; do
   $SALLOC $MPI_HOME/bin/mpirun $MPI_PARAMS ./build/test/perf/all_reduce_perf $rangetype $opts
   [ $? -ne 0 ] && let failure_count=$failure_count+1 && failure_names+=("$func (all ops/dtype)")
 done
+
+export NCCL_DEBUG="" # disable WARN information
+echo "=============================== all_reduce (FT tests) - $(date +\"%T\") ================================="
+$SALLOC $MPI_HOME/bin/mpirun $MPI_PARAMS ./build/test/perf/all_reduce_perf $range $opts $enable_ft
+[ $? -ne 0 ] && let failure_count=$failure_count+1 && failure_names+=("$func (all sizes)")
 
 for str in "${failure_names[@]}"
 do
