@@ -82,10 +82,12 @@ ncclResult_t ncclShmUnlink(const char* shmPath) {
 }
 
 ncclResult_t ncclShmClose(void* shmPtr, void* devShmPtr, const int shmSize) {
-  if (devShmPtr) CUDACHECK(cudaHostUnregister(shmPtr));
-  if (munmap(shmPtr, shmSize) != 0) {
-    WARN("munmap of shared memory failed");
-    return ncclSystemError;
+  if (shmPtr) {
+    if (devShmPtr) CUDACHECK(cudaHostUnregister(shmPtr));
+    if (munmap(shmPtr, shmSize) != 0) {
+      WARN("munmap of shared memory failed");
+      return ncclSystemError;
+    }
   }
   return ncclSuccess;
 }
