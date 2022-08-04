@@ -5,8 +5,12 @@ class ncclCommGetAsyncError_test : public ::testing::Test {
     ncclComm_t localComm;
     int nVis;
     int iteration = 1;
+    /* used to test both ncclSuccess and ncclInProgress since NCCL functions with nonblocking
+     * communicators can return either of them. */
+    int expectMask;
     void SetUp() {
         (void) setenv("NCCL_CHECK_POINTERS", "1", 0);
+        expectMask = (1 << ncclSuccess) | (1 << ncclInProgress);
         ASSERT_EQ(cudaSuccess, cudaGetDeviceCount(&nVis));
     }
 
@@ -42,7 +46,7 @@ TEST_F(ncclCommGetAsyncError_test, basic) {
             ASSERT_EQ(cudaSuccess, cudaSetDevice(i));
             (void) ncclCommInitRankConfig(&comms[i], nVis, id, i, &config);
         }
-        ASSERT_EQ(ncclInProgress, ncclGroupEnd());
+        ASSERT_NE(0, expectMask & (1 << ncclGroupEnd()));
 
         waitCommsReady(comms, nVis);
         
@@ -54,7 +58,7 @@ TEST_F(ncclCommGetAsyncError_test, basic) {
         ASSERT_EQ(ncclSuccess, ncclGroupStart());
         for (int i = 0; i < nVis; ++i)
             (void) ncclCommFinalize(comms[i]);
-        ASSERT_EQ(ncclInProgress, ncclGroupEnd());
+        ASSERT_NE(0, expectMask & (1 << ncclGroupEnd()));
 
         waitCommsReady(comms, nVis);
 
@@ -86,7 +90,7 @@ TEST_F(ncclCommGetAsyncError_test, null_state) {
         ASSERT_EQ(cudaSuccess, cudaSetDevice(i));
         (void) ncclCommInitRankConfig(&comms[i], nVis, id, i, &config);
     }
-    ASSERT_EQ(ncclInProgress, ncclGroupEnd());
+    ASSERT_NE(0, expectMask & (1 << ncclGroupEnd()));
 
     waitCommsReady(comms, nVis);
     

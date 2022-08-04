@@ -7,9 +7,11 @@ class ncclCommInitRankConfig_test : public ::testing::Test {
     ncclUniqueId commId;
     const int rank0 = 0;
     ncclConfig_t config = NCCL_CONFIG_INITIALIZER;
+    int expectMask;
 
     virtual void SetUp() {
         (void) setenv("NCCL_CHECK_POINTERS", "1", 0);
+        expectMask = (1 << ncclSuccess) | (1 << ncclInProgress);
         ASSERT_EQ(ncclSuccess, ncclGetUniqueId(&commId));
         EXPECT_EQ(cudaSuccess, cudaGetDeviceCount(&ndev));
         EXPECT_NE(nullptr, comms = (ncclComm_t*) calloc(ndev, sizeof(ncclComm_t)));
@@ -48,7 +50,7 @@ TEST_F(ncclCommInitRankConfig_test, basic) {
         ASSERT_EQ(cudaSuccess, cudaSetDevice(i));
         (void) ncclCommInitRankConfig(&comms[i], ndev, commId, i, &config);
     }
-    ASSERT_EQ(ncclInProgress, ncclGroupEnd());
+    ASSERT_NE(0, expectMask & (1 << ncclGroupEnd()));
     waitCommsReady(comms, ndev);
 }
 
@@ -68,7 +70,7 @@ TEST_F(ncclCommInitRankConfig_test, attr_null) {
 
 TEST_F(ncclCommInitRankConfig_test, with_config) {
     ASSERT_EQ(cudaSuccess, cudaSetDevice(0));
-    ASSERT_EQ(ncclInProgress, ncclCommInitRankConfig(&comms[0], 1, commId, rank0, &config));
+    ASSERT_NE(0, expectMask & (1 << ncclCommInitRankConfig(&comms[0], 1, commId, rank0, &config)));
     waitCommsReady(comms, 1);
 }
 
