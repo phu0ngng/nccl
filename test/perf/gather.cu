@@ -102,7 +102,7 @@ testResult_t GatherRunTest(struct threadArgs* args, int root, ncclDataType_t typ
 
   for (int i=0; i<type_count; i++) {
     for (int j=begin_root; j<=end_root; j++) {
-      TESTCHECK(TimeTest(args, run_types[i], run_typenames[i], (ncclRedOp_t)0, "", j));
+      TESTCHECK(TimeTest(args, run_types[i], run_typenames[i], (ncclRedOp_t)0, "none", j));
     }
   }
   return testSuccess;

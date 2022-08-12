@@ -627,10 +627,7 @@ testResult_t TimeTest(struct threadArgs* args, ncclDataType_t type, const char* 
   for (size_t size = args->minbytes; size<=args->maxbytes; size = ((args->stepfactor > 1) ? size*args->stepfactor : size+args->stepbytes)) {
       setupArgs(size, type, args);
       char rootName[100];
-      if (root == -1)
-        sprintf(rootName, "%6s", "");
-      else
-        sprintf(rootName, "%6i", root);
+      sprintf(rootName, "%6i", root);
       PRINT("%12li  %12li  %8s  %6s  %6s", max(args->sendBytes, args->expectedBytes), args->nbytes / wordSize(type), typeName, opName, rootName);
       if (args->replayFile != NULL || !out_of_place) {
         PRINT("                                ");  // only do in-place for trace replay
