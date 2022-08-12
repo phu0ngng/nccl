@@ -765,8 +765,7 @@ static void waitWorkFifoAvailable(struct ncclComm* comm, uint32_t desiredSent) {
 
       // See if that was enough.
       if (!rollingLess32(comm->workFifoAckdMin + comm->workFifoDepth, desiredSent)) break;
-      // Nope. Maintain vigorous spin for first 5us, then start yielding.
-      if (clockNano()-t0 >= 5*1000) sched_yield();
+      sched_yield();
     }
   }
 }
