@@ -1,17 +1,21 @@
 #!/bin/bash
-ref=$1
-baseline_build_dir="build-${ref}"
 
-shift
+
 threshold=$1
 if [ "$threshold" == "" ]; then threshold=10; fi
+
+shift
+
+ref=$1
+if [ "$ref" == "" ]; then ref="$REGRESSION_BASELINE"; fi
+baseline_build_dir="build-${ref}"
 
 failure_count=0
 failure_names=()
 
 # Check if the baseline build is cached
 if [[ ! -e "$baseline_build_dir"/test/perf/all_reduce_perf ]]; then
-  let failure_count=$failure_count+1 && failure_names+=("Can't find $ref")
+  let failure_count=$failure_count+1 && failure_names+=("Can't find ref: $ref")
 fi
 
 # Only run comparison if the baseline exists and we are back in the dev branch
