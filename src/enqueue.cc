@@ -17,103 +17,75 @@
 
 static void* const ncclKernelGeneric = (void*)NCCL_KERN_NAME(SendRecv, RING, SIMPLE, Sum, int8_t);
 
+struct ncclKernelMatch {
+  void* kernelFn;
+  bool specialized;
+};
+
 // Only generate inline kernels for LL
-#define NCCL_FUNC5(func, algo, devredop, dtype) \
-  /*LL    */(void*)NCCL_KERN_NAME(func, algo, LL, devredop, dtype), \
-  /*LL128 */nullptr /*(void*)NCCL_KERN_NAME(func, algo, LL, devredop, dtype)*/, \
-  /*SIMPLE*/nullptr /*(void*)NCCL_KERN_NAME(func, algo, LL, devredop, dtype)*/
+#define NCCL_FUNC5(func, algo, devredop, dtype, specialized) \
+  /*LL    */{(void*)NCCL_KERN_NAME(func, algo, LL, devredop, dtype), true && specialized}, \
+  /*LL128 */{(void*)NCCL_KERN_NAME(func, algo, LL, devredop, dtype), false && specialized}, \
+  /*SIMPLE*/{(void*)NCCL_KERN_NAME(func, algo, LL, devredop, dtype), false && specialized}
 
-#define NCCL_FUNC4(func, devredop, type) \
-  (void*)NCCL_FUNC5(func, TREE,    devredop, type), \
-  (void*)NCCL_FUNC5(func, RING,    devredop, type), \
-  (void*)NCCL_FUNC5(func, COLLNET_DIRECT, devredop, type), \
-  (void*)NCCL_FUNC5(func, COLLNET_CHAIN, devredop, type)
+#define NCCL_FUNC4(func, devredop, type, specialized) \
+  NCCL_FUNC5(func, TREE,           devredop, type, specialized), \
+  NCCL_FUNC5(func, RING,           devredop, type, specialized), \
+  NCCL_FUNC5(func, COLLNET_DIRECT, devredop, type, specialized), \
+  NCCL_FUNC5(func, COLLNET_CHAIN,  devredop, type, specialized)
 
-#if defined(__CUDA_BF16_TYPES_EXIST__)
-// Must be consistent with ncclDataType_t
-#define NCCL_FUNCS3A(func, devredop) \
-  (void*)NCCL_FUNC4(func, devredop, int8_t), \
-  (void*)NCCL_FUNC4(func, devredop, uint8_t), \
-  (void*)NCCL_FUNC4(func, devredop, int32_t), \
-  (void*)NCCL_FUNC4(func, devredop, uint32_t), \
-  (void*)NCCL_FUNC4(func, devredop, int64_t), \
-  (void*)NCCL_FUNC4(func, devredop, uint64_t), \
-  (void*)NCCL_FUNC4(func, devredop, half), \
-  (void*)NCCL_FUNC4(func, devredop, float), \
-  (void*)NCCL_FUNC4(func, devredop, double), \
-  (void*)NCCL_FUNC4(func, devredop, __nv_bfloat16)
-#define NCCL_FUNCS3B(func, devredop) \
-  (void*)NCCL_FUNC4(func, devredop, int8_t), \
-  (void*)NCCL_FUNC4(func, devredop, int8_t), \
-  (void*)NCCL_FUNC4(func, devredop, int8_t), \
-  (void*)NCCL_FUNC4(func, devredop, int8_t), \
-  (void*)NCCL_FUNC4(func, devredop, int8_t), \
-  (void*)NCCL_FUNC4(func, devredop, int8_t), \
-  (void*)NCCL_FUNC4(func, devredop, int8_t), \
-  (void*)NCCL_FUNC4(func, devredop, int8_t), \
-  (void*)NCCL_FUNC4(func, devredop, int8_t), \
-  (void*)NCCL_FUNC4(func, devredop, int8_t)
+#ifdef __CUDA_BF16_TYPES_EXIST__
+  #define HAVE_BFLOAT16 1
 #else
-// Must be consistent with ncclDataType_t
-#define NCCL_FUNCS3A(func, devredop) \
-  (void*)NCCL_FUNC4(func, devredop, int8_t), \
-  (void*)NCCL_FUNC4(func, devredop, uint8_t), \
-  (void*)NCCL_FUNC4(func, devredop, int32_t), \
-  (void*)NCCL_FUNC4(func, devredop, uint32_t), \
-  (void*)NCCL_FUNC4(func, devredop, int64_t), \
-  (void*)NCCL_FUNC4(func, devredop, uint64_t), \
-  (void*)NCCL_FUNC4(func, devredop, half), \
-  (void*)NCCL_FUNC4(func, devredop, float), \
-  (void*)NCCL_FUNC4(func, devredop, double)
-#define NCCL_FUNCS3B(func, devredop) \
-  (void*)NCCL_FUNC4(func, devredop, int8_t), \
-  (void*)NCCL_FUNC4(func, devredop, int8_t), \
-  (void*)NCCL_FUNC4(func, devredop, int8_t), \
-  (void*)NCCL_FUNC4(func, devredop, int8_t), \
-  (void*)NCCL_FUNC4(func, devredop, int8_t), \
-  (void*)NCCL_FUNC4(func, devredop, int8_t), \
-  (void*)NCCL_FUNC4(func, devredop, int8_t), \
-  (void*)NCCL_FUNC4(func, devredop, int8_t), \
-  (void*)NCCL_FUNC4(func, devredop, int8_t)
+  #define HAVE_BFLOAT16 0
 #endif
 
+// Must be consistent with ncclDataType_t
+#define NCCL_FUNCS3(func, devredop, reduction, specialized) \
+  NCCL_FUNC4(func, devredop, MACRO_IF(reduction, int8_t, int8_t), specialized), \
+  NCCL_FUNC4(func, devredop, MACRO_IF(reduction, uint8_t, int8_t), specialized), \
+  NCCL_FUNC4(func, devredop, MACRO_IF(reduction, int32_t, int8_t), specialized), \
+  NCCL_FUNC4(func, devredop, MACRO_IF(reduction, uint32_t, int8_t), specialized), \
+  NCCL_FUNC4(func, devredop, MACRO_IF(reduction, int64_t, int8_t), specialized), \
+  NCCL_FUNC4(func, devredop, MACRO_IF(reduction, uint64_t, int8_t), specialized), \
+  NCCL_FUNC4(func, devredop, MACRO_IF(reduction, half, int8_t), specialized), \
+  NCCL_FUNC4(func, devredop, MACRO_IF(reduction, float, int8_t), specialized), \
+  NCCL_FUNC4(func, devredop, MACRO_IF(reduction, double, int8_t), specialized) \
+  MACRO_IF(HAVE_BFLOAT16, \
+    SINGLE_ARG(, NCCL_FUNC4(func, devredop, MACRO_IF(reduction, __nv_bfloat16, int8_t), specialized)), \
+    /*nothing*/ \
+  )
+
 // Must be consistent with ncclDevRedOp_t -- but we only generate kernel for sums.
-#define NCCL_FUNCS2A(func) \
-  NCCL_FUNCS3A(func, Sum), /*Sum*/ \
-  NCCL_FUNCS3A(func, Sum), /*Prod*/ \
-  NCCL_FUNCS3A(func, Sum), /*Max*/ \
-  NCCL_FUNCS3A(func, Sum), /*Min*/ \
-  NCCL_FUNCS3A(func, Sum), /*PreMulSum*/ \
-  NCCL_FUNCS3A(func, Sum)  /*SumPostDiv*/
-#define NCCL_FUNCS2B(func) \
-  NCCL_FUNCS3B(func, Sum), /*Sum*/ \
-  NCCL_FUNCS3B(func, Sum), /*Prod*/ \
-  NCCL_FUNCS3B(func, Sum), /*Max*/ \
-  NCCL_FUNCS3B(func, Sum), /*Min*/ \
-  NCCL_FUNCS3B(func, Sum), /*PreMulSum*/ \
-  NCCL_FUNCS3B(func, Sum)  /*SumPostDiv*/
+#define NCCL_FUNCS2(func, reduction) \
+  NCCL_FUNCS3(func, Sum, reduction, /*specialized=*/1), /*Sum*/ \
+  NCCL_FUNCS3(func, Sum, reduction, /*specialized=*/0), /*Prod*/ \
+  NCCL_FUNCS3(func, Sum, reduction, /*specialized=*/0), /*Max*/ \
+  NCCL_FUNCS3(func, Sum, reduction, /*specialized=*/0), /*Min*/ \
+  NCCL_FUNCS3(func, Sum, reduction, /*specialized=*/0), /*PreMulSum*/ \
+  NCCL_FUNCS3(func, Sum, reduction, /*specialized=*/0)  /*SumPostDiv*/
 
 // Must be consistent with the ncclFuncSet enum
-static void* const ncclKerns[1+ncclNumTypes+NCCL_NUM_FUNCTIONS*ncclNumDevRedOps*ncclNumTypes*NCCL_NUM_ALGORITHMS*NCCL_NUM_PROTOCOLS] = {
-  (void*)NCCL_KERN_NAME(SendRecv, RING, SIMPLE, Sum, int8_t),
+static const ncclKernelMatch ncclKerns[1+ncclNumTypes+NCCL_NUM_FUNCTIONS*ncclNumDevRedOps*ncclNumTypes*NCCL_NUM_ALGORITHMS*NCCL_NUM_PROTOCOLS] = {
+  {(void*)NCCL_KERN_NAME(SendRecv, RING, SIMPLE, Sum, int8_t), true},
   // We don't bake special kernels for the one-rank reductions
-  /*int8*/(void*)NCCL_KERN_NAME(SendRecv, RING, SIMPLE, Sum, int8_t),
-  /*uint8*/(void*)NCCL_KERN_NAME(SendRecv, RING, SIMPLE, Sum, int8_t),
-  /*int32*/(void*)NCCL_KERN_NAME(SendRecv, RING, SIMPLE, Sum, int8_t),
-  /*uint32*/(void*)NCCL_KERN_NAME(SendRecv, RING, SIMPLE, Sum, int8_t),
-  /*int64*/(void*)NCCL_KERN_NAME(SendRecv, RING, SIMPLE, Sum, int8_t),
-  /*uint64*/(void*)NCCL_KERN_NAME(SendRecv, RING, SIMPLE, Sum, int8_t),
-  /*half*/(void*)NCCL_KERN_NAME(SendRecv, RING, SIMPLE, Sum, int8_t),
-  /*float*/(void*)NCCL_KERN_NAME(SendRecv, RING, SIMPLE, Sum, int8_t),
-  /*double*/(void*)NCCL_KERN_NAME(SendRecv, RING, SIMPLE, Sum, int8_t),
-  #if defined(__CUDA_BF16_TYPES_EXIST__)
-    /*bfloat16*/(void*)NCCL_KERN_NAME(SendRecv, RING, SIMPLE, Sum, int8_t),
+  {/*int8*/(void*)NCCL_KERN_NAME(SendRecv, RING, SIMPLE, Sum, int8_t), false},
+  {/*uint8*/(void*)NCCL_KERN_NAME(SendRecv, RING, SIMPLE, Sum, int8_t), false},
+  {/*int32*/(void*)NCCL_KERN_NAME(SendRecv, RING, SIMPLE, Sum, int8_t), false},
+  {/*uint32*/(void*)NCCL_KERN_NAME(SendRecv, RING, SIMPLE, Sum, int8_t), false},
+  {/*int64*/(void*)NCCL_KERN_NAME(SendRecv, RING, SIMPLE, Sum, int8_t), false},
+  {/*uint64*/(void*)NCCL_KERN_NAME(SendRecv, RING, SIMPLE, Sum, int8_t), false},
+  {/*half*/(void*)NCCL_KERN_NAME(SendRecv, RING, SIMPLE, Sum, int8_t), false},
+  {/*float*/(void*)NCCL_KERN_NAME(SendRecv, RING, SIMPLE, Sum, int8_t), false},
+  {/*double*/(void*)NCCL_KERN_NAME(SendRecv, RING, SIMPLE, Sum, int8_t), false},
+  #if HAVE_BFLOAT16
+    {/*bfloat16*/(void*)NCCL_KERN_NAME(SendRecv, RING, SIMPLE, Sum, int8_t), false},
   #endif
-  NCCL_FUNCS2B(Broadcast),
-  NCCL_FUNCS2A(Reduce),
-  NCCL_FUNCS2B(AllGather),
-  NCCL_FUNCS2A(ReduceScatter),
-  NCCL_FUNCS2A(AllReduce)
+  NCCL_FUNCS2(Broadcast, /*reduction=*/0),
+  NCCL_FUNCS2(Reduce, /*reduction=*/1),
+  NCCL_FUNCS2(AllGather, /*reduction=*/0),
+  NCCL_FUNCS2(ReduceScatter, /*reduction=*/1),
+  NCCL_FUNCS2(AllReduce, /*reduction=*/1)
 };
 
 static ncclResult_t computeColl(struct ncclInfo* info /* input */, int* workFuncIndex, struct ncclWorkElem* work, struct ncclProxyOp* proxyOp /* output */);
@@ -125,10 +97,8 @@ size_t ncclKernMaxLocalSize() {
   cudaFuncAttributes attr = {0};
   size_t max = 0;
   for (int i = 0; i < numNcclKerns; i++) {
-    if (ncclKerns[i] != nullptr) {
-      CUDACHECKGOTO(cudaFuncGetAttributes(&attr, ncclKerns[i]), res, error);
-      if (attr.localSizeBytes > max) max = attr.localSizeBytes;
-    }
+    CUDACHECKGOTO(cudaFuncGetAttributes(&attr, ncclKerns[i].kernelFn), res, error);
+    if (attr.localSizeBytes > max) max = attr.localSizeBytes;
   }
 
 error:
@@ -140,7 +110,7 @@ ncclResult_t ncclKernSetSharedMemoryCarveout(int carveOut) {
   ncclResult_t res = ncclSuccess;
   int numNcclKerns = sizeof(ncclKerns)/sizeof(ncclKerns[0]);
   for (int i = 0; i < numNcclKerns; i++) {
-    CUDACHECKGOTO(cudaFuncSetAttribute(ncclKerns[i], cudaFuncAttributePreferredSharedMemoryCarveout, carveOut), res, error);
+    CUDACHECKGOTO(cudaFuncSetAttribute(ncclKerns[i].kernelFn, cudaFuncAttributePreferredSharedMemoryCarveout, carveOut), res, error);
   }
 
 error:
@@ -430,8 +400,6 @@ static void finishPlan(struct ncclKernelPlan* plan) {
   plan->channelCount = channelCount;
   plan->channelMask = channelMask;
   plan->hasProxyOps = hasProxyOps;
-  if (plan->kernelFn == nullptr)
-    plan->kernelFn = ncclKernelGeneric;
   plan->threadPerBlock = std::max(plan->threadPerBlock, 3*WARP_SIZE);
 }
 
@@ -605,8 +573,10 @@ static ncclResult_t scheduleCollTasksToPlan(
       head = ncclIntruQueueHead(&tasks->collQueue);
 
       plan->threadPerBlock = std::max(plan->threadPerBlock, info.nThreads);
-      if (ncclKerns[workFuncIndex] != nullptr)
-        plan->kernelFn = ncclKerns[workFuncIndex];
+      if (!plan->kernelSpecialized) {
+        plan->kernelFn = ncclKerns[workFuncIndex].kernelFn;
+        plan->kernelSpecialized = ncclKerns[workFuncIndex].specialized;
+      }
     }
   }
   return ncclSuccess;
@@ -632,6 +602,10 @@ static ncclResult_t scheduleP2pTasksToPlan(
   int const *recvOrder = tasks->p2pRecvOrder;
 
   plan->threadPerBlock = std::max(plan->threadPerBlock, NCCL_MAX_NTHREADS);
+  if (!plan->kernelSpecialized) {
+    plan->kernelFn = ncclKerns[FUNC_INDEX_P2P].kernelFn;
+    plan->kernelSpecialized = ncclKerns[FUNC_INDEX_P2P].specialized;
+  }
 
   // Compute how much to split operations
   // Natural step size matching buffer steps.
@@ -1467,7 +1441,7 @@ ncclResult_t ncclEnqueueCheck(struct ncclInfo* info) {
   int devOld = -1;
 
   NCCLCHECKGOTO(PtrCheck(info->comm, info->opName, "comm"), ret, fail);
-  // Check whether communicator is ready to communicate  
+  // Check whether communicator is ready to communicate
   NCCLCHECKGOTO(ncclCommEnsureReady(info->comm), ret, fail);
 
   if (info->comm->checkPointers) {
@@ -1482,7 +1456,7 @@ ncclResult_t ncclEnqueueCheck(struct ncclInfo* info) {
   TRACE_CALL("nccl%s(%" PRIx64 ",%" PRIx64 ",%zi,%d,%d,%d,%p,%p)", info->opName, reinterpret_cast<int64_t>(info->sendbuff), reinterpret_cast<int64_t>(info->recvbuff), info->count, info->datatype, info->op, info->root, info->comm, info->stream);
 
   NCCLCHECKGOTO(taskAppend(info->comm, info), ret, fail);
-    
+
 exit:
   if (devOld != -1) CUDACHECK(cudaSetDevice(devOld));
   ncclGroupErrCheck(ret);

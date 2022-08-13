@@ -38,8 +38,9 @@ struct ncclDevRedOpFull {
   extern __device__ void NCCL_FUNC_NAME(func, algo, proto, devredop, type)(); \
   extern __global__ void NCCL_KERN_NAME(func, algo, proto, devredop, type)(struct ncclDevComm* comm, uint64_t channelMask, struct ncclWork* workHead); \
 
+#define SINGLE_ARG(...) __VA_ARGS__
 #define CONCAT(a,b) a##b
-#define MACRO_IF(cond, t, f) CONCAT(MACRO_IF_, cond)(t, f)
+#define MACRO_IF(cond, t, f) CONCAT(MACRO_IF_, cond)(SINGLE_ARG(t), SINGLE_ARG(f))
 #define MACRO_IF_0(t, f) f
 #define MACRO_IF_1(t, f) t
 

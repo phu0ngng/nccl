@@ -129,6 +129,7 @@ struct ncclKernelPlan {
   struct ncclKernelPlan* next;
 
   bool persistent; // aka captured in a graph
+  bool kernelSpecialized;
   void *kernelFn;
   int channelUbound; // only channels c < channelUbound are present
   int channelCount; // number of channels present
