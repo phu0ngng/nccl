@@ -928,10 +928,8 @@ static ncclResult_t proxyProgressInit(struct ncclComm* comm) {
 
 static void proxyOpsFree(struct ncclComm* comm) {
   struct ncclProxyProgressState* state = &comm->proxyState.progressState;
-  if (state->opsPool) {
-    if (ncclShmClose(state->opsPool, NULL, sizeof(struct ncclProxyOpsPool)) != ncclSuccess) {
-      WARN("[Service thread] shm close failed");
-    }
+  if (ncclShmClose(state->opsPool, NULL, sizeof(struct ncclProxyOpsPool)) != ncclSuccess) {
+    WARN("[Service thread] shm close failed");
   }
 }
 

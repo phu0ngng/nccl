@@ -42,13 +42,14 @@ void BroadcastGetBw(size_t count, int typesize, double sec, double* algBw, doubl
 testResult_t BroadcastRunColl(void* sendbuff, void* recvbuff, size_t count, ncclDataType_t type, ncclRedOp_t op, int root, ncclComm_t comm, cudaStream_t stream) {
   int rank;
   NCCLCHECK(ncclCommUserRank(comm, &rank));
+
 #if NCCL_MAJOR >= 2 && NCCL_MINOR >= 2
-  NCCLCHECK(ncclBroadcast(sendbuff, recvbuff, count, type, root, comm, stream));
+  NCCLCHECK_COMM_WAIT(ncclBroadcast(sendbuff, recvbuff, count, type, root, comm, stream), comm);
 #else
   if (rank == root) {
-      NCCLCHECK(ncclBcast(sendbuff, count, type, root, comm, stream));
+    NCCLCHECK_COMM_WAIT(ncclBcast(sendbuff, count, type, root, comm, stream), comm);
   } else {
-      NCCLCHECK(ncclBcast(recvbuff, count, type, root, comm, stream));
+    NCCLCHECK_COMM_WAIT(ncclBcast(recvbuff, count, type, root, comm, stream), comm);
   }
 #endif
   return testSuccess;
@@ -93,7 +94,7 @@ testResult_t BroadcastRunTest(struct threadArgs* args, int root, ncclDataType_t 
 
   for (int i=0; i<type_count; i++) {
     for (int j=begin_root; j<=end_root; j++) {
-      TESTCHECK(TimeTest(args, run_types[i], run_typenames[i], (ncclRedOp_t)0, "", j));
+      TESTCHECK(TimeTest(args, run_types[i], run_typenames[i], (ncclRedOp_t)0, "none", j));
     }
   }
   return testSuccess;

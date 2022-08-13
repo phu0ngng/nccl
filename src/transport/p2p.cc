@@ -382,20 +382,24 @@ ncclResult_t p2pRecvConnect(struct ncclComm* comm, struct ncclConnect* connectIn
 
 ncclResult_t p2pSendFree(struct ncclConnector* send) {
   struct p2pSendResources* resources = (struct p2pSendResources*)send->transportResources;
-  if (resources->sendMemIpc) CUDACHECK(cudaIpcCloseMemHandle(resources->sendMemIpc));
-  if (resources->recvMemIpc) CUDACHECK(cudaIpcCloseMemHandle(resources->recvMemIpc));
-  free(resources);
+  if (resources) {
+    if (resources->sendMemIpc) CUDACHECK(cudaIpcCloseMemHandle(resources->sendMemIpc));
+    if (resources->recvMemIpc) CUDACHECK(cudaIpcCloseMemHandle(resources->recvMemIpc));
+    free(resources);
+  }
   return ncclSuccess;
 }
 
 ncclResult_t p2pRecvFree(struct ncclConnector* recv) {
   struct p2pRecvResources* resources = (struct p2pRecvResources*)recv->transportResources;
-  if (resources->sendMemIpc) CUDACHECK(cudaIpcCloseMemHandle(resources->sendMemIpc));
-  if (resources->recvMemIpc) CUDACHECK(cudaIpcCloseMemHandle(resources->recvMemIpc));
-  if (useMemcpy) {
-    NCCLCHECK(ncclShmClose(resources->shm, resources->devShm, resources->shmSize));
+  if (resources) {
+    if (resources->sendMemIpc) CUDACHECK(cudaIpcCloseMemHandle(resources->sendMemIpc));
+    if (resources->recvMemIpc) CUDACHECK(cudaIpcCloseMemHandle(resources->recvMemIpc));
+    if (useMemcpy) {
+      NCCLCHECK(ncclShmClose(resources->shm, resources->devShm, resources->shmSize));
+    }
+    free(resources);
   }
-  free(resources);
   return ncclSuccess;
 }
 

@@ -193,7 +193,8 @@ class Primitives<T, RedOp, Fan, Direct, ProtoLL128, P2p>:
           load128(ptr+u*WARP_SIZE, vr[u], vr[u+1]);
           needReload |= flagThread && (vr[u+1] != flag);
         }
-      } while (__any_sync(WARP_MASK, needReload) && checkAbort(spins, 0, 0) == 0);
+        needReload &= (0 == checkAbort(spins, 0, 0));
+      } while (__any_sync(WARP_MASK, needReload));
     }
 
     /************* Finish register load **************/
@@ -234,7 +235,8 @@ class Primitives<T, RedOp, Fan, Direct, ProtoLL128, P2p>:
             load128(ptr+u*WARP_SIZE, vr[u], vr[u+1]);
             needReload |= flagThread && (vr[u+1] != flag);
           }
-        } while (__any_sync(WARP_MASK, needReload) && checkAbort(spins, i, 0) == 0);
+          needReload &= (0 == checkAbort(spins, i, 0));
+        } while (__any_sync(WARP_MASK, needReload));
 
         #pragma unroll
         for (int u=0; u<ELEMS_PER_THREAD; u+=2) {

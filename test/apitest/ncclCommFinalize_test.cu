@@ -14,10 +14,11 @@ class ncclCommFinalize_test : public ::testing::Test {
   protected:
     int nVis;
     int iteration;
-
+    int expectMask;
     virtual void SetUp() {
         (void) setenv("NCCL_CHECK_POINTERS", "1", 0);
         iteration = 1;
+        expectMask = (1 << ncclSuccess) | (1 << ncclInProgress);
         ASSERT_EQ(cudaSuccess, cudaGetDeviceCount(&nVis));
     }
     virtual void TearDown() {}
@@ -43,7 +44,7 @@ static void oneGPUPerThreadExe(int rank, int nVis, int iteration, volatile ncclU
                                pthread_barrier_t* barrierPtr, volatile int* abortFlagPtr) {
     ncclUniqueId lid;
     ncclConfig_t config = NCCL_CONFIG_INITIALIZER;
-
+    int expectMask = (1 << ncclSuccess) | (1 << ncclInProgress);
     config.blocking = 0;
     ASSERT_EQ(cudaSuccess, cudaSetDevice(rank));
 
@@ -63,10 +64,10 @@ static void oneGPUPerThreadExe(int rank, int nVis, int iteration, volatile ncclU
             memcpy((void*) &lid, (const void*) gidPtr, sizeof(ncclUniqueId));
         }
 
-        ASSERT_EQ(ncclInProgress, ncclCommInitRankConfig(&comm, nVis, lid, rank, &config));
+        ASSERT_NE(0, expectMask & (1 << ncclCommInitRankConfig(&comm, nVis, lid, rank, &config)));
         waitCommsReady(&comm, 1);
 
-        ASSERT_EQ(ncclInProgress, ncclCommFinalize(comm));
+        ASSERT_NE(0, expectMask & (1 << ncclCommFinalize(comm)));
         waitCommsReady(&comm, 1);
 
         ASSERT_EQ(ncclSuccess, ncclCommDestroy(comm));
@@ -97,14 +98,14 @@ TEST_F(ncclCommFinalize_test, user_finalize_wait) {
             ASSERT_EQ(cudaSuccess, cudaSetDevice(i));
             (void) ncclCommInitRankConfig(&comms[i], nVis, id, i, &config);
         }
-        ASSERT_EQ(ncclInProgress, ncclGroupEnd());
+        ASSERT_NE(0, expectMask & (1 << ncclGroupEnd()));
         
         waitCommsReady(comms, nVis);
 
         ASSERT_EQ(ncclSuccess, ncclGroupStart());
         for (int i = 0; i < nVis; ++i)
             (void) ncclCommFinalize(comms[i]);
-        ASSERT_EQ(ncclInProgress, ncclGroupEnd());
+        ASSERT_NE(0, expectMask & (1 << ncclGroupEnd()));
 
         waitCommsReady(comms, nVis);
 
@@ -131,14 +132,14 @@ TEST_F(ncclCommFinalize_test, user_finalize) {
             ASSERT_EQ(cudaSuccess, cudaSetDevice(i));
             (void) ncclCommInitRankConfig(&comms[i], nVis, id, i, &config);
         }
-        ASSERT_EQ(ncclInProgress, ncclGroupEnd());
+        ASSERT_NE(0, expectMask & (1 << ncclGroupEnd()));
 
         waitCommsReady(comms, nVis);
         
         ASSERT_EQ(ncclSuccess, ncclGroupStart());
         for (int i = 0; i < nVis; ++i)
             (void) ncclCommFinalize(comms[i]);
-        ASSERT_EQ(ncclInProgress, ncclGroupEnd());
+        ASSERT_NE(0, expectMask & (1 << ncclGroupEnd()));
 
         waitCommsReady(comms, nVis);
 
@@ -165,7 +166,7 @@ TEST_F(ncclCommFinalize_test, user_no_finalize) {
             ASSERT_EQ(cudaSuccess, cudaSetDevice(i));
             (void) ncclCommInitRankConfig(&comms[i], nVis, id, i, &config);
         }
-        ASSERT_EQ(ncclInProgress, ncclGroupEnd());
+        ASSERT_NE(0, expectMask & (1 << ncclGroupEnd()));
 
         waitCommsReady(comms, nVis);
 
@@ -232,14 +233,14 @@ TEST_F(ncclCommFinalize_test, group_finalize) {
         ASSERT_EQ(cudaSuccess, cudaSetDevice(i));
         (void) ncclCommInitRankConfig(&comms[i], nVis, id, i, &config);
     }
-    ASSERT_EQ(ncclInProgress, ncclGroupEnd());
+    ASSERT_NE(0, expectMask & (1 << ncclGroupEnd()));
 
     waitCommsReady(comms, nVis);
 
     ASSERT_EQ(ncclSuccess, ncclGroupStart());
     for (int i = 0; i < nVis; ++i)
         (void) ncclCommFinalize(comms[i]);
-    ASSERT_EQ(ncclInProgress, ncclGroupEnd());
+    ASSERT_NE(0, expectMask & (1 << ncclGroupEnd()));
 
     waitCommsReady(comms, nVis);
 
@@ -263,14 +264,14 @@ TEST_F(ncclCommFinalize_test, double_finalize) {
         ASSERT_EQ(cudaSuccess, cudaSetDevice(i));
         (void) ncclCommInitRankConfig(&comms[i], nVis, id, i, &config);
     }
-    ASSERT_EQ(ncclInProgress, ncclGroupEnd());
+    ASSERT_NE(0, expectMask & (1 << ncclGroupEnd()));
     
     waitCommsReady(comms, nVis);
 
     ASSERT_EQ(ncclSuccess, ncclGroupStart());
     for (int i = 0; i < nVis; ++i)
         (void) ncclCommFinalize(comms[i]);
-    ASSERT_EQ(ncclInProgress, ncclGroupEnd());
+    ASSERT_NE(0, expectMask & (1 << ncclGroupEnd()));
 
     waitCommsReady(comms, nVis);
 

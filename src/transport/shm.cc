@@ -195,17 +195,21 @@ static ncclResult_t shmRecvConnect(struct ncclComm* comm, struct ncclConnect* co
 
 static ncclResult_t shmSendFree(struct ncclConnector* send) {
   struct shmRecvResources* resources = (struct shmRecvResources*)send->transportResources;
-  NCCLCHECK(ncclShmClose(resources->hostMem, resources->devHostMem, resources->shmSize));
-  NCCLCHECK(ncclShmClose(resources->remHostMem, resources->devRemHostMem, resources->remShmSize));
-  free(resources);
+  if (resources) {
+    NCCLCHECK(ncclShmClose(resources->hostMem, resources->devHostMem, resources->shmSize));
+    NCCLCHECK(ncclShmClose(resources->remHostMem, resources->devRemHostMem, resources->remShmSize));
+    free(resources);
+  }
   return ncclSuccess;
 }
 
 static ncclResult_t shmRecvFree(struct ncclConnector* recv) {
   struct shmRecvResources* resources = (struct shmRecvResources*)recv->transportResources;
-  NCCLCHECK(ncclShmClose(resources->hostMem, resources->devHostMem, resources->shmSize));
-  NCCLCHECK(ncclShmClose(resources->remHostMem, resources->devRemHostMem, resources->remShmSize));
-  free(resources);
+  if (resources) {
+    NCCLCHECK(ncclShmClose(resources->hostMem, resources->devHostMem, resources->shmSize));
+    NCCLCHECK(ncclShmClose(resources->remHostMem, resources->devRemHostMem, resources->remShmSize));
+    free(resources);
+  }
   return ncclSuccess;
 }
 

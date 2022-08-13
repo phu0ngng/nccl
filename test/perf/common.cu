@@ -85,6 +85,8 @@ static int out_of_place = 1;
 static int unalign = 0;
 // Report average iteration time: (0=RANK0,1=AVG,2=MIN,3=MAX)
 static int average = 1;
+static int commblocking = 1;
+static int ft_test = 0;
 
 static char* replay_file = NULL;
 
@@ -397,8 +399,8 @@ testResult_t startColl(struct threadArgs* args, ncclDataType_t type, ncclRedOp_t
     }
     #endif
   }
-  if (args->nGpus > 1) NCCLCHECK(ncclGroupEnd());
-
+  if (args->nGpus > 1) NCCLCHECK_COMM_WAITBATCH(ncclGroupEnd(), args->comms, args->nGpus);
+  
   if (blocking_coll) {
     // Complete op before returning
     TESTCHECK(testStreamSynchronize(args->nGpus, args->streams, args->comms));
@@ -627,10 +629,7 @@ testResult_t TimeTest(struct threadArgs* args, ncclDataType_t type, const char* 
   for (size_t size = args->minbytes; size<=args->maxbytes; size = ((args->stepfactor > 1) ? size*args->stepfactor : size+args->stepbytes)) {
       setupArgs(size, type, args);
       char rootName[100];
-      if (root == -1)
-        sprintf(rootName, "%6s", "");
-      else
-        sprintf(rootName, "%6i", root);
+      sprintf(rootName, "%6i", root);
       PRINT("%12li  %12li  %8s  %6s  %6s", max(args->sendBytes, args->expectedBytes), args->nbytes / wordSize(type), typeName, opName, rootName);
       if (args->replayFile != NULL || !out_of_place) {
         PRINT("                                ");  // only do in-place for trace replay
@@ -666,13 +665,25 @@ testResult_t threadInit(struct threadArgs* args) {
   //set main thread again
   is_main_thread = (is_main_proc && args->thread == 0) ? 1 : 0;
 
+#if NCCL_VERSION_CODE >= NCCL_VERSION(2,14,0)
+  ncclConfig_t config = NCCL_CONFIG_INITIALIZER;
+  config.blocking = commblocking;
   NCCLCHECK(ncclGroupStart());
-  for (int i=0; i<args->nGpus; i++) {
-    int rank = args->proc*args->nThreads*args->nGpus + args->thread*args->nGpus + i;
+  for (int i = 0; i < args->nGpus; i++) {
+    int rank = args->proc * args->nThreads * args->nGpus + args->thread * args->nGpus + i;
     CUDACHECK(cudaSetDevice(args->gpus[i]));
-    NCCLCHECK(ncclCommInitRank(args->comms+i, nranks, args->ncclId, rank));
+    NCCLCHECK(ncclCommInitRankConfig(args->comms + i, nranks, args->ncclId, rank, &config));
+  }
+  NCCLCHECK_COMM_WAITBATCH(ncclGroupEnd(), args->comms, args->nGpus);
+#else
+  NCCLCHECK(ncclGroupStart());
+  for (int i = 0; i < args->nGpus; i++) {
+    int rank = args->proc * args->nThreads * args->nGpus + args->thread * args->nGpus + i;
+    CUDACHECK(cudaSetDevice(args->gpus[i]));
+    NCCLCHECK(ncclCommInitRank(args->comms + i, nranks, args->ncclId, rank));
   }
   NCCLCHECK(ncclGroupEnd());
+#endif
 
   TESTCHECK(threadRunTests(args));
 
@@ -821,13 +832,15 @@ int main(int argc, char* argv[]) {
     {"out_of_place", required_argument, 0, 'O'},
     {"unalign", required_argument, 0, 'u'},
     {"average", required_argument, 0, 'a'},
+    {"commblocking", required_argument, 0, 'B'},
+    {"ft_test", required_argument, 0, 'F'},
     {"help", no_argument, 0, 'h'},
     {}
   };
 
   while(1) {
     int c;
-    c = getopt_long(argc, argv, "t:g:b:e:i:f:n:m:w:s:p:c:o:d:r:z:y:k:h:l:T:G:C:O:u:a:", longopts, &longindex);
+    c = getopt_long(argc, argv, "t:g:b:e:i:f:n:m:w:s:p:c:o:d:r:z:y:k:h:l:T:G:C:O:u:a:B:F:", longopts, &longindex);
 
     if (c == -1)
       break;
@@ -924,6 +937,11 @@ int main(int argc, char* argv[]) {
       case 'a':
         average = (int)strtol(optarg, NULL, 0);
         break;
+      case 'B':
+        commblocking = (int)strtol(optarg, NULL, 0);
+      case 'F':
+        ft_test = (int)strtol(optarg, NULL, 0);
+        break;
       case 'h':
       default:
         if (c != 'h') printf("invalid option '%c'\n", c);
@@ -952,6 +970,8 @@ int main(int argc, char* argv[]) {
             "[-O,--out_of_place <0/1>] \n\t"
             "[-u,--unalign <index of first element>] \n\t"
             "[-a,--average <0/1/2/3> report average iteration time <0=RANK0/1=AVG/2=MIN/3=MAX>] \n\t"
+            "[-B,--commblocking <0/1> enable blocking communicator (default: 1)] \n\t"
+            "[-F,--ft_test <0/1> enable fault tolerance test (default: 0)] \n\t"
             "[-h,--help]\n",
             basename(argv[0]));
         return 0;
@@ -1062,6 +1082,12 @@ testResult_t run() {
 
   ncclTestEngine.getBuffSize(&sendBytes, &recvBytes, (size_t)maxBytes, (size_t)ncclProcs*nGpus*nThreads);
 
+  /* only when communicators are nonblocking and ft test is enabled, we 
+   * perform fault tolerance tests. */
+  if (ft_test && commblocking == 0) {
+    TESTCHECK(faultToleranceTests(nThreads, nGpus, ncclProc, ncclProcs, localRank));
+  }
+
   envstr = getenv("NCCL_TESTS_DEVICE");
   gpu0 = envstr ? atoi(envstr) : -1;
   for (int i=0; i<nGpus*nThreads; i++) {
@@ -1077,16 +1103,27 @@ testResult_t run() {
   //if parallel init is not selected, use main thread to initialize NCCL
   ncclComm_t* comms = (ncclComm_t*)malloc(sizeof(ncclComm_t)*nThreads*nGpus);
   if (!parallel_init) {
-     if (ncclProcs == 1) {
-       NCCLCHECK(ncclCommInitAll(comms, nGpus*nThreads, gpus));
-     } else {
-       NCCLCHECK(ncclGroupStart());
-       for (int i=0; i<nGpus*nThreads; i++) {
-         CUDACHECK(cudaSetDevice(gpus[i]));
-         NCCLCHECK(ncclCommInitRank(comms+i, ncclProcs*nThreads*nGpus, ncclId, ncclProc*nThreads*nGpus+i));
-       }
-       NCCLCHECK(ncclGroupEnd());
-     }
+#if NCCL_VERSION_CODE >= NCCL_VERSION(2,14,0)
+    ncclConfig_t config = NCCL_CONFIG_INITIALIZER;
+    config.blocking = commblocking;
+    NCCLCHECK(ncclGroupStart());
+    for (int i = 0; i < nGpus * nThreads; ++i) {
+      CUDACHECK(cudaSetDevice(gpus[i]));
+      NCCLCHECK(ncclCommInitRankConfig(comms + i, ncclProcs * nThreads * nGpus, ncclId, ncclProc * nThreads * nGpus + i, &config));
+    }
+    NCCLCHECK_COMM_WAITBATCH(ncclGroupEnd(), comms, nGpus * nThreads);
+#else
+    if (ncclProcs == 1) {
+      NCCLCHECK(ncclCommInitAll(comms, nGpus * nThreads, gpus));
+    } else {
+      NCCLCHECK(ncclGroupStart());
+      for (int i = 0; i < nGpus * nThreads; i++) {
+        CUDACHECK(cudaSetDevice(gpus[i]));
+        NCCLCHECK(ncclCommInitRank(comms + i, ncclProcs * nThreads * nGpus, ncclId, ncclProc * nThreads * nGpus + i));
+      }
+      NCCLCHECK(ncclGroupEnd());
+    }
+#endif
   }
 
   int errors[nThreads];

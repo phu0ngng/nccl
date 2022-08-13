@@ -3,8 +3,10 @@
 class ncclCommDestroy_test : public ::testing::Test {
   public:
     int nVis;
+    int expectMask;
     void SetUp() {
         (void) setenv("NCCL_CHECK_POINTERS", "1", 0);
+        expectMask = (1 << ncclSuccess) | (1 << ncclInProgress);
         ASSERT_EQ(cudaSuccess, cudaGetDeviceCount(&nVis));
     }
 
@@ -38,7 +40,7 @@ TEST_F(ncclCommDestroy_test, basic) {
         ASSERT_EQ(cudaSuccess, cudaSetDevice(i));
         (void) ncclCommInitRankConfig(&comms[i], nVis, id, i, &config);
     }
-    ASSERT_EQ(ncclInProgress, ncclGroupEnd());
+    ASSERT_NE(0, expectMask & (1 << ncclGroupEnd()));
 
     waitCommsReady(comms, nVis);
 
@@ -69,7 +71,7 @@ TEST_F(ncclCommDestroy_test, group_destroy_nonblocking) {
         ASSERT_EQ(cudaSuccess, cudaSetDevice(i));
         (void) ncclCommInitRankConfig(&comms[i], nVis, id, i, &config);
     }
-    ASSERT_EQ(ncclInProgress, ncclGroupEnd());
+    ASSERT_NE(0, expectMask & (1 << ncclGroupEnd()));
 
     waitCommsReady(comms, nVis);
 

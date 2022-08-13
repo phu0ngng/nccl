@@ -54,7 +54,7 @@ testResult_t SendRecvRunColl(void* sendbuff, void* recvbuff, size_t count, ncclD
   NCCLCHECK(ncclGroupStart());
   NCCLCHECK(ncclSend(sendbuff, count, type, sendPeer, comm, stream));
   NCCLCHECK(ncclRecv(recvbuff, count, type, recvPeer, comm, stream));
-  NCCLCHECK(ncclGroupEnd());
+  NCCLCHECK_COMM_WAIT(ncclGroupEnd(), comm);
   return testSuccess;
 }
 

@@ -332,12 +332,15 @@ static ncclResult_t recvConnect(struct ncclComm* comm, struct ncclConnect* conne
 
 static ncclResult_t sendFree(struct ncclConnector* send) {
   struct connectMap* map = (struct connectMap*)(send->transportResources);
-  if (map->sameProcess == 0) {
-    NCCLCHECK(ncclShmClose(map->mems[NCCL_NET_MAP_HOSTMEM].cpuPtr, map->mems[NCCL_NET_MAP_HOSTMEM].gpuPtr, map->mems[NCCL_NET_MAP_HOSTMEM].size));
-    if (map->mems[NCCL_NET_MAP_DEVMEM].size) {
-      CUDACHECK(cudaIpcCloseMemHandle(map->mems[NCCL_NET_MAP_DEVMEM].gpuPtr));
+  if (map) {
+    if (map->sameProcess == 0) {
+      NCCLCHECK(ncclShmClose(map->mems[NCCL_NET_MAP_HOSTMEM].cpuPtr, map->mems[NCCL_NET_MAP_HOSTMEM].gpuPtr, map->mems[NCCL_NET_MAP_HOSTMEM].size));
+      if (map->mems[NCCL_NET_MAP_DEVMEM].size) {
+        CUDACHECK(cudaIpcCloseMemHandle(map->mems[NCCL_NET_MAP_DEVMEM].gpuPtr));
+      }
     }
   }
+
   return ncclSuccess;
 }
 

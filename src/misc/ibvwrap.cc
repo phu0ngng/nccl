@@ -285,6 +285,7 @@ ncclResult_t wrap_ibv_reg_dmabuf_mr(struct ibv_mr **ret, struct ibv_pd *pd, uint
 
 struct ibv_mr * wrap_direct_ibv_reg_dmabuf_mr(struct ibv_pd *pd, uint64_t offset, size_t length, uint64_t iova, int fd, int access) {
   if (ibv_internal_reg_dmabuf_mr == NULL) {
+    errno = EOPNOTSUPP; // ncclIbDmaBufSupport() requires this errno being set
     return NULL;
   }
   return ibv_internal_reg_dmabuf_mr(pd, offset, length, iova, fd, access);
