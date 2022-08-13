@@ -289,8 +289,7 @@ static testResult_t waitCommStateBatch(ncclComm_t * comms, int num) {
   ncclResult_t res = cmd;                             \
   if (res == ncclInProgress) {                        \
     TESTCHECK(waitCommState(comm));                   \
-  }                                                   \
-  if (res != ncclSuccess) {                           \
+  } else if (res != ncclSuccess) {                    \
     char hostname[1024];                              \
     getHostName(hostname, 1024);                      \
     printf("%s: Test NCCL failure %s:%d '%s'\n",      \
@@ -304,8 +303,7 @@ static testResult_t waitCommStateBatch(ncclComm_t * comms, int num) {
   ncclResult_t res = cmd;                                     \
   if (res == ncclInProgress) {                                \
     TESTCHECK(waitCommStateBatch(comms, num));                \
-  }                                                           \
-  if (res != ncclSuccess) {                                   \
+  } else if (res != ncclSuccess) {                            \
     char hostname[1024];                                      \
     getHostName(hostname, 1024);                              \
     printf("%s: Test NCCL failure %s:%d '%s'\n",              \
