@@ -63,7 +63,7 @@ testResult_t HyperCubeRunColl(void* sendbuff, void* recvbuff, size_t count, nccl
     int r = s ^ mask;
     NCCLCHECK(ncclSend(rbuff+s*rankSize, count*mask, type, rank^mask, comm, stream));
     NCCLCHECK(ncclRecv(rbuff+r*rankSize, count*mask, type, rank^mask, comm, stream));
-    NCCLCHECK(ncclGroupEnd());
+    NCCLCHECK_COMM_WAIT(ncclGroupEnd(), comm);
   }
   return testSuccess;
 }

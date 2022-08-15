@@ -772,3 +772,25 @@ The ``NCCL_P2P_LL_THRESHOLD`` is the maximum message size that NCCL will use LL 
 Values accepted
 ^^^^^^^^^^^^^^^
 Decimal number. Default is 16384.
+
+NCCL_ALLOC_P2P_NET_LL_BUFFERS
+-----------------------
+(since 2.14)
+
+``NCCL_ALLOC_P2P_NET_LL_BUFFERS`` instructs communicators to allocate dedicated LL buffers for all P2P network connections.  This enables all ranks to use LL for latency-bound send and receive operations below ``NCCL_P2P_LL_THRESHOLD`` sizes.
+Intranode P2P transfers always have dedicated LL buffers allocated.  If running all-to-all workloads with high numbers of ranks, this will result in a high scaling memory overhead.
+
+Values accepted
+^^^^^^^^^^^^^^^
+0 or 1. Default value is 0.
+
+NCCL_COMM_BLOCKING
+-----------------------
+(since 2.14)
+
+The ``NCCL_COMM_BLOCKING`` forces blocking communicators globally. If not set or set as 0, communicator behavior 
+will be determined by the setting of the configuration parameter passed to the ncclCommInitRankConfig() function.
+
+Values accepted
+^^^^^^^^^^^^^^^
+0 or 1. 1 indicates blocking communicators; 0 has no effect on communicators.

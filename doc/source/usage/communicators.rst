@@ -61,14 +61,48 @@ Launching multiple communication operations (on different streams) might work pr
 could break at any time if NCCL were to use more CUDA blocks per operation, or if some calls used inside NCCL
 collectives were to perform a device synchronization (e.g. allocate some CUDA memory dynamically).
 
+Finalizing a communicator
+-------------------------
+
+ncclCommFinalize will transition a communicator from the *ncclSuccess* state to the *ncclInProgress* state, start 
+completing all operations in the background and synchronize with other ranks which may be using resources for their 
+communications with other ranks.
+All uncompleted operations and network-related resources associated to a communicator will be flushed and freed with 
+ncclCommFinalize. 
+Once all NCCL operations are complete, the communicator will transition to the *ncclSuccess* state. Users can 
+query that state with ncclCommGetAsyncError.
+If a communicator is marked as nonblocking, this operation is nonblocking; otherwise, it is blocking.
+
+Related link: :c:func:`ncclCommFinalize`
+
 Destroying a communicator
 -------------------------
 
-Resources associated to a communicator can be destroyed with ncclCommDestroy. This operation will wait for operations
-to complete but will not synchronize with other ranks. There is therefore no need to use group semantics with
-ncclCommDestroy.
+Once a communicator has been finalized, the next step is to free all resources, including the communicator itself.
+Local resources associated to a communicator can be destroyed with ncclCommDestroy. If the state of a communicator 
+become *ncclSuccess* before calling ncclCommDestroy, ncclCommDestroy call will guarantee nonblocking; on the contrary, 
+ncclCommDestroy might be blocked. 
+In all cases, ncclCommDestroy call will free resources of the communicator and return, and
+the communicator should not longer be accessed after ncclCommDestroy returns. 
 
 Related link: :c:func:`ncclCommDestroy`
+
+Query communicator state
+------------------------
+
+After calling ncclCommInitRankConfig with nonblocking setting, the communicator becomes valid and users can query the 
+state until it becomes *ncclSuccess*. The simple example code is shown as follows:
+
+.. code:: C
+
+  ncclConfig_t config = NCCL_CONFIG_INITIALIZER;
+  config.blocking = 0;
+  CHECK(ncclCommInitRankConfig(&comm, nranks, id, rank, &config));
+  do {
+    CHECK(ncclCommGetAsyncError(comm, &state));
+  } while(state == ncclSuccess);
+
+Related link: :c:func:`ncclCommGetAsyncError`
 
 *************************************
 Error handling and communicator abort
@@ -198,3 +232,45 @@ Related links:
 
  * :c:func:`ncclCommGetAsyncError`
  * :c:func:`ncclCommAbort`
+
+*************************************
+Fault Tolerance 
+*************************************
+
+NCCL provides a set of features to allow applications to recover from fatal errors such as network failure, 
+node failure, or process failure. When such an error happens, the application should be able to call ncclCommAbort 
+on the communicator to free all resources, then recreate a new communicator to continue.
+All NCCL calls can be non-blocking to ensure ncclCommAbort can be called at any point, during initialization, 
+communication or when finalizing the communicator. 
+Users can implement methods to decide when and whether to abort the communicators and restart the NCCL operation.
+Here is an example showing how to initialize a communicator in a non-blocking manner, allowing for abort at any point:
+
+.. code:: C
+  bool globalFlag;
+  bool abortFlag = false;
+  ncclConfig_t config = NCCL_CONFIG_INITIALIZER;
+  config.blocking = 0;
+  CHECK(ncclCommInitRankConfig(&comm, nRanks, id, myRank, &config));
+  do {
+    CHECK(ncclCommGetAsyncError(comm, &state));
+  } while(state == ncclInProgress && initTimeout() != true);
+
+  if (initTimeout() == true || state != ncclSuccess) {
+    abortFlag = true;
+  }
+  
+  /* sync global error. */
+  reportErrorGlobally(abortFlag, &globalFlag);
+
+  if (globalFlag) {
+    /* time is out or initialization fails, just abort and restart. */
+    ncclCommAbort(comm);
+    /* restart NCCL; this is a user implemented function, it might include 
+     * resource clean and ncclCommInitRankConfig() to create new communicators. */
+    restartNCCL(&comm);
+  }
+  /* application workload. */
+
+*initTimeout* function is just an example and provided by users to determine what is the longest time the application should wait for 
+NCCL initialization; likewise, users can apply other methods to detect errors besides timeout function. Similar methods can be applied 
+to NCCL finalization as well. 

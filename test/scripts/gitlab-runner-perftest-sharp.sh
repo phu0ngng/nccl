@@ -12,11 +12,13 @@ if [ "$graph" == "" ]; then graph=0; fi
 
 opts="-n 5 -w 1 -G $graph"
 range="-b 8 -e $max -f 2"
+enable_ft="-B 0 -F 1"
 
 export LD_LIBRARY_PATH=$SHARP_HOME/lib:$LD_LIBRARY_PATH
 export LD_LIBRARY_PATH=$PLUGIN_PATH:$LD_LIBRARY_PATH
 export NCCL_COLLNET_ENABLE=1
-export NCCL_ALGO=COLLNET
+# Deprecate this - now replaced by COLLNET_DIRECT|COLLNET_CHAIN
+#export NCCL_ALGO=COLLNET
 
 echo "HOSTNAME=$HOSTNAME"
 echo "Using CUDA_HOME=$CUDA_HOME"
@@ -31,6 +33,11 @@ failure_count=0
 
 echo "=============================== all_reduce (CollNet) - $(date +\"%T\") ================================="
 $SALLOC $MPI_HOME/bin/mpirun ./build/test/perf/all_reduce_perf $range $opts
+[ $? -ne 0 ] && let failure_count=$failure_count+1
+
+export NCCL_DEBUG="" # disable WARN information
+echo "=============================== all_reduce (FT CollNet tests) - $(date +\"%T\") ========================"
+$SALLOC $MPI_HOME/bin/mpirun $MPI_PARAMS ./build/test/perf/all_reduce_perf $range $opts $enable_ft
 [ $? -ne 0 ] && let failure_count=$failure_count+1
 
 exit $failure_count

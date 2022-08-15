@@ -683,7 +683,7 @@ ncclResult_t ncclIbAccept(void* listenComm, void** recvComm) {
   NCCLCHECK(ncclIbMalloc((void**)&rComm, sizeof(struct ncclIbRecvComm)));
   stage->comm = rComm;
   stage->state = ncclIbCommStateAccept;
-  lComm->sock.asyncFlag = 1;
+  NCCLCHECK(ncclSocketInit(&rComm->sock, NULL, lComm->sock.abortFlag, 1));
 
 ib_accept:
   NCCLCHECK(ncclSocketAccept(&rComm->sock, &lComm->sock));

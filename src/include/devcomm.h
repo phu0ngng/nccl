@@ -15,10 +15,11 @@
 typedef enum { ncclFuncBroadcast, ncclFuncReduce, ncclFuncAllGather, ncclFuncReduceScatter, ncclFuncAllReduce, ncclFuncSendRecv, ncclFuncSend, ncclFuncRecv, ncclNumFuncs} ncclFunc_t;
 extern const char* ncclFuncStr[NCCL_NUM_FUNCTIONS];
 
-#define NCCL_NUM_ALGORITHMS 3 // Tree/Ring/CollNet
+#define NCCL_NUM_ALGORITHMS 4 // Tree/Ring/CollNet*
 #define NCCL_ALGO_TREE 0
 #define NCCL_ALGO_RING 1
-#define NCCL_ALGO_COLLNET 2
+#define NCCL_ALGO_COLLNET_DIRECT 2
+#define NCCL_ALGO_COLLNET_CHAIN 3
 extern const char* ncclAlgoStr[NCCL_NUM_ALGORITHMS];
 
 #define NCCL_NUM_PROTOCOLS 3 // Simple/LL/LL128
@@ -261,7 +262,8 @@ struct alignas(16) ncclDevChannel {
   struct ncclDevChannelPeer *peers;
   struct ncclRing ring;
   struct ncclTree tree;
-  struct ncclDirect collTree;
+  struct ncclTree collnetChain;
+  struct ncclDirect collnetDirect;
   uint32_t* workFifoDone; // Location of done counter, device writes index+1 of last work processed
 };
 

@@ -790,6 +790,11 @@ ncclResult_t ncclTopoGetNetCount(struct ncclTopoSystem* system, int* count) {
   return ncclSuccess;
 }
 
+ncclResult_t ncclTopoGetNvsCount(struct ncclTopoSystem* system, int* count) {
+  *count = system->nodes[NVS].count;
+  return ncclSuccess;
+}
+
 ncclResult_t ncclTopoGetCompCap(struct ncclTopoSystem* system, int* ccMin, int* ccMax) {
   if (system->nodes[GPU].count == 0) return ncclInternalError;
   int min, max;

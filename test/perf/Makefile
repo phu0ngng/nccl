@@ -43,7 +43,7 @@ TEST_VERIFIABLE_SRCDIR := ../verifiable
 TEST_VERIFIABLE_BUILDDIR := $(BUILDDIR)/test/verifiable
 include ../verifiable/verifiable.mk
 
-COMMON_OBJS := ${DST_DIR}/common.o ${DST_DIR}/timer.o $(TEST_VERIFIABLE_OBJS)
+COMMON_OBJS := ${DST_DIR}/common.o ${DST_DIR}/timer.o ${DST_DIR}/ft_test.o $(TEST_VERIFIABLE_OBJS)
 
 ifneq (clean,${MAKECMDGOALS})
 -include $(DEP_FILES)
