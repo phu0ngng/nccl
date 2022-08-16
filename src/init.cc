@@ -202,7 +202,7 @@ static ncclResult_t commFree(ncclComm_t comm) {
 
   if (comm->initState == ncclSuccess) {
     NCCLCHECK(ncclStrongStreamDestruct(&comm->hostStream));
-    NCCLCHECK(ncclStrongStreamDestruct(&comm->deviceStream)); 
+    NCCLCHECK(ncclStrongStreamDestruct(&comm->deviceStream));
   }
 
   struct ncclDestructor* dtor = comm->destructorHead;
@@ -273,7 +273,7 @@ static ncclResult_t dmaBufSupported(struct ncclComm* comm) {
 ncclResult_t ncclCommEnsureReady(ncclComm_t comm) {
   /* comm must be ready, or error will be reported */
   ncclResult_t ret = ncclSuccess;
-  
+
   if (*comm->abortFlag) {
     ncclGroupJobAbort();
   } else {
@@ -313,7 +313,7 @@ static ncclResult_t commAlloc(ncclComm_t* comret, int ndev, int rank) {
     /* We already allocated a communicator in ncclCommInitRankDev. */
     comm = *comret;
   }
-  
+
   ncclMemoryStackConstruct(&comm->memPermanent);
   ncclMemoryStackConstruct(&comm->memScoped);
   comm->destructorHead = nullptr;
@@ -1407,13 +1407,13 @@ static ncclResult_t commReclaim(ncclComm_t comm) {
   NCCLCHECKGOTO(ncclCommGetAsyncError(comm, &state), ret, fail);
   TRACE(NCCL_INIT, "commReclaim: reclaim comm %p rank %d state %d", comm, comm->rank, state);
   if (state == ncclSuccess && *comm->abortFlag == 0 && comm->finalizeCalled == false) {
-    /* user does not call ncclCommFinalize and this is a normal comm destroy. ncclCommDestroy 
+    /* user does not call ncclCommFinalize and this is a normal comm destroy. ncclCommDestroy
      * should be nonblocking until last call of ncclCommDestroy. */
     NCCLCHECKGOTO(commFinalize(comm, false), ret, fail);
-  } 
+  }
 
   if (comm->initState != ncclSuccess) {
-    /* if init errors happen, no finalize thread should have been launched. Main thread can reclaim 
+    /* if init errors happen, no finalize thread should have been launched. Main thread can reclaim
      * everything since no NCCL kernel was issued. */
     struct ncclCommFinalizeAsyncJob job;
 
@@ -1439,7 +1439,7 @@ static ncclResult_t commReclaim(ncclComm_t comm) {
       ncclComm_t curIntraComm;
       ncclComm_t nextIntraComm = intracomm0;
 
-      while (nextIntraComm) { 
+      while (nextIntraComm) {
         curIntraComm = nextIntraComm;
         curRank = curIntraComm->rank;
         nextIntraComm = nextIntraComm->intraNext;
@@ -1451,14 +1451,14 @@ static ncclResult_t commReclaim(ncclComm_t comm) {
           if ((ret = commDestroySync((struct ncclAsyncJob*) &job)) != ncclSuccess)
             WARN("commReclaim: comm %p (rank = %d) in abort, error %d", curIntraComm, curRank, ret);
         }
-        
+
         if ((ret = commCleanup(curIntraComm)) != ncclSuccess) {
           WARN("commReclaim: cleanup comm %p rank %d failed in destroy/abort, error %d", curIntraComm, curRank, ret);
         }
       }
     }
   }
-  
+
 exit:
   return ret;
 fail:
@@ -1479,10 +1479,10 @@ ncclResult_t ncclCommDestroy(ncclComm_t comm) {
     WARN("comm %p has already been destroyed", comm);
     return ncclInvalidArgument;
   }
-  
-  /* init thread must be joined before we destory the comm. */
+
+  /* init thread must be joined before we destroy the comm. */
   NCCLCHECK(ncclCommEnsureReady(comm));
-  
+
   NCCLCHECK(commReclaim(comm));
   INFO(NCCL_INIT,"comm %p rank %d nranks %d cudaDev %d busId %lx - Destroy COMPLETE", comm, rank, nranks, cudaDev, busId);
 
@@ -1501,7 +1501,7 @@ ncclResult_t ncclCommAbort(ncclComm_t comm) {
 
   // Ask anything that might still be running on the device to quit
   *comm->abortFlag = 1;
-  /* init thread must be joined before we destory the comm, 
+  /* init thread must be joined before we destroy the comm,
    * and we should ignore the init error here. */
   ncclCommEnsureReady(comm);
 
@@ -1576,7 +1576,7 @@ ncclResult_t ncclCommUserRank(const ncclComm_t comm, int* rank) {
 
   NCCLCHECK(PtrCheck(comm, "CommUserRank", "comm"));
   NCCLCHECK(PtrCheck(rank, "CommUserRank", "rank"));
-  
+
   NCCLCHECK(ncclCommEnsureReady(comm));
 
   *rank = comm->rank;

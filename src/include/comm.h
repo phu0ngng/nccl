@@ -216,7 +216,7 @@ struct ncclComm {
   float bandwidths[NCCL_NUM_FUNCTIONS][NCCL_NUM_ALGORITHMS][NCCL_NUM_PROTOCOLS];
   int maxThreads[NCCL_NUM_ALGORITHMS][NCCL_NUM_PROTOCOLS];
 
-  /* This attribute can indicate the states of communicators and return code of 
+  /* This attribute can indicate the states of communicators and return code of
    * asynchronous NCCL operations. */
   ncclResult_t asyncResult;
 
@@ -288,7 +288,7 @@ struct ncclComm {
   int blocking;
   // initState is to more conveniently reclaim resources when errors happen.
   ncclResult_t initState;
-  // flag to indicate if ncclCommFinalize() is called 
+  // flag to indicate if ncclCommFinalize() is called
   bool finalizeCalled;
   // shared structures for finalization
   int finalizeRankCnt;
