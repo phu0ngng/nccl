@@ -266,7 +266,7 @@ static ncclResult_t shmSendProxyFree(struct ncclProxyConnection* connection, str
 
 static ncclResult_t shmRecvProxyFree(struct ncclProxyConnection* connection, struct ncclComm* comm) {
   struct shmProxyInfo* resources = (struct shmProxyInfo*)connection->transportResources;
-  
+
   if (resources) {
     CUDACHECK(cudaStreamDestroy(resources->stream));
     CUDACHECK(cudaFree(resources->devFifo));

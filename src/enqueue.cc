@@ -706,7 +706,6 @@ static inline uint32_t rollingMin32(uint32_t a, uint32_t b) {
 // Spin until its safe to increase comm->workFifoSent to desiredSent.
 static void waitWorkFifoAvailable(struct ncclComm* comm, uint32_t desiredSent) {
   if (__builtin_expect(rollingLess32(comm->workFifoAckdMin + comm->workFifoDepth, desiredSent), false)) {
-    uint64_t t0 = clockNano();
     while (1) {
       // We have to poll for notifications from device.
       uint32_t* doneLive = comm->workFifoDone;

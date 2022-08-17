@@ -471,7 +471,7 @@ ncclResult_t ncclProxyComputeP2p(struct ncclInfo* info, struct ncclProxyOp* op) 
   if (op->protocol == NCCL_PROTO_LL) {
     chunkEffectiveSize /= 2;
   }
-  
+
   op->nbytes = stepSize;
   op->nsteps = DIVUP(info->count, chunkEffectiveSize);
   if (op->nsteps == 0) op->nsteps = 1;
@@ -1172,7 +1172,7 @@ ncclResult_t ncclProxyDestroy(struct ncclComm* comm) {
       NCCLCHECK(ncclSocketSend(&sock, &type, sizeof(int)));
       close(sock.fd);
     } else {
-      /* when abortFlag is set, all socket related communications are no longer reliable. We need to 
+      /* when abortFlag is set, all socket related communications are no longer reliable. We need to
        * set a flag to let proxy thread exit. */
       __atomic_store_n(&state->safeAbortFlag, 1, __ATOMIC_RELEASE);
     }
