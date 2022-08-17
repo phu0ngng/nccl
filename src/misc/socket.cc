@@ -332,7 +332,7 @@ ncclResult_t ncclSocketListen(struct ncclSocket* sock) {
 #endif
   }
 
-  /* The socket is set non-blocking for OS level, but asyncFlag is used to control 
+  /* The socket is set non-blocking for OS level, but asyncFlag is used to control
    * blocking and non-blocking behavior in user level. */
   EQCHECK(flags = fcntl(fd, F_GETFL), -1);
   SYSCHECK(fcntl(fd, F_SETFL, flags | O_NONBLOCK), "fcntl");
@@ -411,7 +411,7 @@ ncclResult_t ncclSocketConnect(struct ncclSocket* sock) {
   const int one = 1;
   SYSCHECK(setsockopt(fd, IPPROTO_TCP, TCP_NODELAY, (char*)&one, sizeof(int)), "setsockopt");
   
-  /* The socket is set non-blocking for OS level, but asyncFlag is used to control 
+  /* The socket is set non-blocking for OS level, but asyncFlag is used to control
    * blocking and non-blocking behavior in user level. */
   EQCHECK(flags = fcntl(fd, F_GETFL), -1);
   SYSCHECK(fcntl(fd, F_SETFL, flags | O_NONBLOCK), "fcntl");
@@ -431,7 +431,7 @@ retry:
 
   if (!sock->asyncFlag) {
     /* blocking socket, need retry if connect fails. */
-    if (errno == EINPROGRESS || errno == EAGAIN || errno == EALREADY || 
+    if (errno == EINPROGRESS || errno == EAGAIN || errno == EALREADY ||
     (errno == ECONNREFUSED && ++refused_retries < RETRY_REFUSED_TIMES) ||
     (errno == ETIMEDOUT && ++timedout_retries < RETRY_TIMEDOUT_TIMES)) {
       /* check abortFlag as long as we have chance to retry. */
@@ -452,7 +452,7 @@ retry:
     sock->fd = fd;
     return ncclSuccess;
   }
-  
+
   WARN("Net : Connect to %s failed : %s", ncclSocketToString(&sock->addr, line), strerror(errno));
   return ncclRemoteError;
 }

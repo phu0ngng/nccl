@@ -94,7 +94,7 @@ ncclResult_t ncclGroupStart() {
   }
   NCCLCHECK(ncclGroupStartInternal());
   TRACE_CALL("ncclGroupStart()");
-  
+
 exit:
   return ret;
 }
@@ -332,7 +332,7 @@ static ncclResult_t groupLaunch(struct ncclAsyncJob *job_) {
         job = job->next;
       } while (job != nullptr);
     } while (jobsDone == false);
-    
+
     if (ret != ncclSuccess) goto fail;
   }
 
@@ -342,7 +342,7 @@ static ncclResult_t groupLaunch(struct ncclAsyncJob *job_) {
 
   /* this atomic must happen before cleanup and setting state of communicators */
   __atomic_store_n(&gjob->doneFlag, true, __ATOMIC_RELEASE);
-  
+
   while (!ncclIntruQueueEmpty(asyncJobsMain)) {
     struct ncclAsyncJob* job = ncclIntruQueueDequeue(asyncJobsMain);
     if (job->comm && !job->comm->blocking)
@@ -364,7 +364,7 @@ static ncclResult_t groupLaunch(struct ncclAsyncJob *job_) {
   *gjob->groupCommHeadPtr = nullptr;
   *gjob->groupCommPreconnectHeadPtr = nullptr;
 
-  CUDACHECK(cudaSetDevice(savedDev)); 
+  CUDACHECK(cudaSetDevice(savedDev));
 
 exit:
   return ret;
@@ -385,7 +385,7 @@ ncclResult_t ncclGroupEndInternal() {
   if ((--ncclGroupDepth) > 0) goto exit;
 
   if ((ret = ncclGroupError) != ncclSuccess) goto fail;
-  
+
   if (ncclGroupCommHead != nullptr || !ncclIntruQueueEmpty(&ncclAsyncJobs) || ncclGroupCommPreconnectHead != nullptr) {
     ncclGroupJobMain.groupCommHeadPtr = &ncclGroupCommHead;
     ncclGroupJobMain.groupCommPreconnectHeadPtr = &ncclGroupCommPreconnectHead;
