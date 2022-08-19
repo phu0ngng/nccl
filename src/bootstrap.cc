@@ -403,6 +403,18 @@ ncclResult_t unexpectedDequeue(struct bootstrapState* state, int peer, int tag, 
   return ncclSuccess;
 }
 
+static void unexpectedFree(struct bootstrapState* state) {
+  struct unexConn* elem = state->unexpectedConnections;
+  struct unexConn* prev = NULL;
+
+  while (elem) {
+    prev = elem;
+    elem = elem->next;
+    free(prev);
+  }
+  return;
+}
+
 // We can't know who we'll receive from, so we need to receive everything at once
 ncclResult_t bootstrapRecv(void* commState, int peer, int tag, void* data, int size) {
   struct bootstrapState* state = (struct bootstrapState*)commState;
@@ -436,8 +448,11 @@ ncclResult_t bootstrapRecv(void* commState, int peer, int tag, void* data, int s
 ncclResult_t bootstrapClose(void* commState) {
   struct bootstrapState* state = (struct bootstrapState*)commState;
   if (state->unexpectedConnections != NULL) {
-    WARN("Unexpected connections are not empty");
-    return ncclInternalError;
+    unexpectedFree(state);
+    if (*state->abortFlag == 0) {
+      WARN("Unexpected connections are not empty");
+      return ncclInternalError;
+    }
   }
   if (state->listenSock.fd >= 0) close(state->listenSock.fd);
   if (state->ringSendSocket.fd >= 0) close(state->ringSendSocket.fd);
