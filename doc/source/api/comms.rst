@@ -65,11 +65,10 @@ ncclCommInitRankConfig
 .. c:function:: ncclResult_t ncclCommInitRankConfig(ncclComm_t* comm, int nranks, ncclUniqueId commId, int rank, ncclConfig_t* config)
 
 This function works the same way as *ncclCommInitRank* but accepts a configuration argument of extra attributes for
-the communicator. If users pass a configuration with nonblocking setting, *ncclCommInitRankConfig* is
-a nonblocking function; returning from it will change the state into *ncclInProgress*, and the communicator
-is under initialization in the background. User must guarantee the state is *ncclSuccess* before calling NCCL
-operations (such as *ncclAllreduce* and *ncclCommFinalize*) by querying the state with *ncclCommGetAsyncError*.
-If config is passed as NULL, all behaviors of the communicator will be set to default.
+the communicator. If config is passed as NULL, the communicator will have the default behavior, as if ncclCommInitRank
+was called.
+
+See the :ref:`init-rank-config` section for details on configuration options.
 
 ncclCommFinalize
 ----------------

@@ -4,25 +4,25 @@
 Creating a Communicator
 ***********************
 
-When creating a communicator, a unique rank between 0 and n-1 has to be assigned to each of the n CUDA devices which are
-part of the communicator. Using the same CUDA device multiple times as different ranks of the same NCCL communicator is
-not supported and may lead to hangs.
+When creating a communicator, a unique rank between 0 and n-1 has to be assigned to each of the n CUDA devices which
+are part of the communicator. Using the same CUDA device multiple times as different ranks of the same NCCL
+communicator is not supported and may lead to hangs.
 
-Given a static mapping of ranks to CUDA devices, the ncclCommInitRank and ncclCommInitAll functions will create
-communicator objects, each communicator object being associated to a fixed rank. Those objects will then be used to
-launch communication operations.
+Given a static mapping of ranks to CUDA devices, the :c:func:`ncclCommInitRank`, :c:func:`ncclCommInitRankConfig` and
+:c:func:`ncclCommInitAll` functions will create communicator objects, each communicator object being associated to a
+fixed rank and CUDA device. Those objects will then be used to launch communication operations.
 
-Note: Before calling ncclCommInitRank, you need to first create a unique object which will be used by all processes and
-threads to synchronize and understand they are part of the same communicator. This is done by calling the
-ncclGetUniqueId function.
+Before calling :c:func:`ncclCommInitRank`, you need to first create a unique object which will be used by all processes
+and threads to synchronize and understand they are part of the same communicator. This is done by calling the
+:c:func:`ncclGetUniqueId` function.
 
-The ncclGetUniqueId function returns an ID which has to be broadcast to all participating threads and processes using
-any CPU communication system, for example, passing the ID pointer to multiple threads, or broadcasting it to other
-processes using MPI or another parallel environment using, for example, sockets.
+The :c:func:`ncclGetUniqueId` function returns an ID which has to be broadcast to all participating threads and
+processes using any CPU communication system, for example, passing the ID pointer to multiple threads, or broadcasting
+it to other processes using MPI or another parallel environment using, for example, sockets.
 
 You can also call the ncclCommInitAll operation to create n communicator objects at once within a single process. As it
-is limited to a single process, this function does not permit inter-node communication. ncclCommInitAll is equivalent to
-calling a combination of ncclGetUniqueId and ncclCommInitRank.
+is limited to a single process, this function does not permit inter-node communication. ncclCommInitAll is equivalent
+to calling a combination of ncclGetUniqueId and ncclCommInitRank.
 
 The following sample code is a simplified implementation of ncclCommInitAll.  
 
@@ -44,6 +44,32 @@ Related links:
  * :c:func:`ncclCommInitAll`
  * :c:func:`ncclGetUniqueId`
  * :c:func:`ncclCommInitRank`
+
+.. _init-rank-config:
+
+Creating a communication with options
+-------------------------------------
+
+The :c:func:`ncclCommInitRankConfig` function allows to create a NCCL communication with specific options.
+
+Currently, NCCL supports only one option, "blocking", which can be set to 0 to ask NCCL to never block in any NCCL
+call, returning *ncclInProgress* if necessary, which then needs to be handled by the application.
+
+After calling ncclCommInitRankConfig with blocking set to 0, a communicator is returned to the user, who can query the
+status of the init operation using :c:func:`ncclCommGetAsyncError`. The operation is complete when the return code is
+*ncclSuccess*. A simple example code is shown below:
+
+.. code:: C
+
+  ncclConfig_t config = NCCL_CONFIG_INITIALIZER;
+  config.blocking = 0;
+  CHECK(ncclCommInitRankConfig(&comm, nranks, id, rank, &config));
+  do {
+    CHECK(ncclCommGetAsyncError(comm, &state));
+    // Handle outside events, timeouts, progress, ...
+  } while(state == ncclSuccess);
+
+Related link: :c:func:`ncclCommGetAsyncError`
 
 Using multiple NCCL communicators concurrently
 ----------------------------------------------
@@ -86,23 +112,6 @@ In all cases, ncclCommDestroy call will free resources of the communicator and r
 the communicator should not longer be accessed after ncclCommDestroy returns. 
 
 Related link: :c:func:`ncclCommDestroy`
-
-Query communicator state
-------------------------
-
-After calling ncclCommInitRankConfig with nonblocking setting, the communicator becomes valid and users can query the 
-state until it becomes *ncclSuccess*. The simple example code is shown as follows:
-
-.. code:: C
-
-  ncclConfig_t config = NCCL_CONFIG_INITIALIZER;
-  config.blocking = 0;
-  CHECK(ncclCommInitRankConfig(&comm, nranks, id, rank, &config));
-  do {
-    CHECK(ncclCommGetAsyncError(comm, &state));
-  } while(state == ncclSuccess);
-
-Related link: :c:func:`ncclCommGetAsyncError`
 
 *************************************
 Error handling and communicator abort
@@ -155,6 +164,11 @@ in the following sections.
      - Fix in the application (4)
      - Communicator abort (5)
      - Global (6)
+   * - ncclInProgress
+     - The NCCL call is still in progress
+     - Poll for completion using ncclCommGetAsyncError
+     - None
+     - None
 
 
 (1) ncclUnhandledCudaError and ncclSystemError indicate that a call NCCL made to an external component failed,
@@ -237,11 +251,11 @@ Related links:
 Fault Tolerance 
 ***************
 
-NCCL provides a set of features to allow applications to recover from fatal errors such as network failure, 
-node failure, or process failure. When such an error happens, the application should be able to call ncclCommAbort 
+NCCL provides a set of features to allow applications to recover from fatal errors such as network failure,
+node failure, or process failure. When such an error happens, the application should be able to call ncclCommAbort
 on the communicator to free all resources, then recreate a new communicator to continue.
-All NCCL calls can be non-blocking to ensure ncclCommAbort can be called at any point, during initialization, 
-communication or when finalizing the communicator. 
+All NCCL calls can be non-blocking to ensure ncclCommAbort can be called at any point, during initialization,
+communication or when finalizing the communicator.
 Users can implement methods to decide when and whether to abort the communicators and restart the NCCL operation.
 Here is an example showing how to initialize a communicator in a non-blocking manner, allowing for abort at any point:
 
