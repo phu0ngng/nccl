@@ -60,14 +60,14 @@ Returns an array of *ndev* newly initialized communicators in *comms*.
 the first *ndev* CUDA devices are used, in order.
 
 ncclCommInitRankConfig
-----------------
+----------------------
 
 .. c:function:: ncclResult_t ncclCommInitRankConfig(ncclComm_t* comm, int nranks, ncclUniqueId commId, int rank, ncclConfig_t* config)
 
-This function works the same way as *ncclCommInitRank* but accepts a configuration argument of extra attributes for 
-the communicator. If users pass a configuration with nonblocking setting, *ncclCommInitRankConfig* is 
-a nonblocking function; returning from it will change the state into *ncclInProgress*, and the communicator 
-is under initialization in the background. User must guarantee the state is *ncclSuccess* before calling NCCL 
+This function works the same way as *ncclCommInitRank* but accepts a configuration argument of extra attributes for
+the communicator. If users pass a configuration with nonblocking setting, *ncclCommInitRankConfig* is
+a nonblocking function; returning from it will change the state into *ncclInProgress*, and the communicator
+is under initialization in the background. User must guarantee the state is *ncclSuccess* before calling NCCL
 operations (such as *ncclAllreduce* and *ncclCommFinalize*) by querying the state with *ncclCommGetAsyncError*.
 If config is passed as NULL, all behaviors of the communicator will be set to default.
 
@@ -97,7 +97,7 @@ In all cases, the communicators should no longer be accessed after ncclCommDestr
 user call *ncclCommFinalize* and then *ncclCommDestroy*.
 
 ncclCommAbort
----------------
+-------------
 
 .. c:function:: ncclResult_t ncclCommAbort(ncclComm_t comm)
 
@@ -110,16 +110,16 @@ ncclCommGetAsyncError
 .. c:function:: ncclResult_t ncclCommGetAsyncError(ncclComm_t comm, ncclResult_t* asyncError)
 
 Queries the progress and potential errors of asynchronous NCCL operations.
-Operations which do not require a stream argument (e.g. ncclCommFinalize) can be considered complete as soon 
-as the function returns *ncclSuccess*; operations with a stream argument (e.g. ncclAllReduce) will return 
-*ncclSuccess* as soon as the operation is posted on the stream but may also report errors through 
-ncclCommGetAsyncError() until they are completed. If return code of any NCCL functions is *ncclInProgress*, 
-it means the operation is in the process of being enqueued in the background, and users must query the states 
-of the communicators until the all states become *ncclSuccess* before calling next NCCL function. Before the 
+Operations which do not require a stream argument (e.g. ncclCommFinalize) can be considered complete as soon
+as the function returns *ncclSuccess*; operations with a stream argument (e.g. ncclAllReduce) will return
+*ncclSuccess* as soon as the operation is posted on the stream but may also report errors through
+ncclCommGetAsyncError() until they are completed. If return code of any NCCL functions is *ncclInProgress*,
+it means the operation is in the process of being enqueued in the background, and users must query the states
+of the communicators until the all states become *ncclSuccess* before calling next NCCL function. Before the
 states change into *ncclSuccess*, users are not allowed to issue CUDA kernel to the streams being used by NCCL.
 If there has been an error on the communicator, user should destroy the communicator with :c:func:`ncclCommAbort`.
-If an error occurs on the communicator, nothing can be assumed about the completion or correctness
-of operations enqueued on that communicator.
+If an error occurs on the communicator, nothing can be assumed about the completion or correctness of operations
+enqueued on that communicator.
 
 ncclCommCount
 -------------

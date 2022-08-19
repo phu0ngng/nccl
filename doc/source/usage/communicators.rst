@@ -233,9 +233,9 @@ Related links:
  * :c:func:`ncclCommGetAsyncError`
  * :c:func:`ncclCommAbort`
 
-*************************************
+***************
 Fault Tolerance 
-*************************************
+***************
 
 NCCL provides a set of features to allow applications to recover from fatal errors such as network failure, 
 node failure, or process failure. When such an error happens, the application should be able to call ncclCommAbort 
@@ -246,6 +246,7 @@ Users can implement methods to decide when and whether to abort the communicator
 Here is an example showing how to initialize a communicator in a non-blocking manner, allowing for abort at any point:
 
 .. code:: C
+
   bool globalFlag;
   bool abortFlag = false;
   ncclConfig_t config = NCCL_CONFIG_INITIALIZER;
