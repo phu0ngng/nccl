@@ -156,7 +156,7 @@ apitest-DGX-1V:
   tags:
     - dgx-1v
   variables:
-    CUDA_HOME: "/home/svc_nvshmem_ci/cuda/cuda-11.3.66"
+    CUDA_HOME: "/gpfs/fs1/projects/sw_gpucomms/users/svc_nvshmem_ci/cuda/cuda-${CUDA_VERSION}"
     PARTITION_LIST: "batch_short_dgx1_m3,batch_short_dgx1_m2"
     SRUN: "" # Needs to be empty for CI runner scripts performing cluster jobs
     SRUN_PARAMS: "--exclusive -N 1 -n 1 -G 8 -c 8 --account=sw_gpucomms_nvshmem --nv-meta ml-model.nccl-perf -t 00:10:00"
@@ -173,7 +173,7 @@ apitest-DGX-2:
   tags:
     - dgx-2
   variables:
-    CUDA_HOME: "/home/svc_nvshmem_ci/cuda/cuda-11.3.66"
+    CUDA_HOME: "/gpfs/fs1/projects/sw_gpucomms/users/svc_nvshmem_ci/cuda/cuda-${CUDA_VERSION}"
     PARTITION_LIST: "batch_short_dgx2h_m2"
     SRUN: "" # Needs to be empty for CI runner scripts performing cluster jobs
     SRUN_PARAMS: "--exclusive --mem=0 -N 1 -n 1 -G 16 -c 16 --account=sw_gpucomms_nvshmem --nv-meta ml-model.nccl-perf -t 00:10:00"
@@ -321,7 +321,7 @@ perftest-DGX-1V:
   variables:
     NCCL_DEBUG: "WARN"
     MPI_HOME: "/home/svc_nvshmem_ci/mpi/openmpi-1.10.7"
-    CUDA_HOME: "/home/svc_nvshmem_ci/cuda/cuda-11.3.66"
+    CUDA_HOME: "/gpfs/fs1/projects/sw_gpucomms/users/svc_nvshmem_ci/cuda/cuda-${CUDA_VERSION}"
     PARTITION_LIST: "batch_short_dgx1_m3,batch_short_dgx1_m2"
     SALLOC: "" # Needs to be empty for CI runner scripts performing cluster jobs
   script:
@@ -339,7 +339,7 @@ perftest-DGX-2:
   variables:
     NCCL_DEBUG: "WARN"
     MPI_HOME: "/home/svc_nvshmem_ci/mpi/openmpi-1.10.7"
-    CUDA_HOME: "/home/svc_nvshmem_ci/cuda/cuda-11.3.66"
+    CUDA_HOME: "/gpfs/fs1/projects/sw_gpucomms/users/svc_nvshmem_ci/cuda/cuda-${CUDA_VERSION}"
     PARTITION_LIST: "batch_short_dgx2h_m2"
     SALLOC: "" # Needs to be empty for CI runner scripts performing cluster jobs
   script:
@@ -414,7 +414,7 @@ perftest-multi-DGX-1V:
     - dgx-1v
   variables:
     MPI_HOME: "/home/svc_nvshmem_ci/mpi/openmpi-1.10.7"
-    CUDA_HOME: "/home/svc_nvshmem_ci/cuda/cuda-11.3.66"
+    CUDA_HOME: "/gpfs/fs1/projects/sw_gpucomms/users/svc_nvshmem_ci/cuda/cuda-${CUDA_VERSION}"
     PARTITION_LIST: "batch_short_dgx1_m3"
     UCX_TLS: "tcp"
     NCCL_DEBUG: "INFO"
@@ -440,7 +440,7 @@ perftest-multi-dgx-2:
     - dgx-2
   variables:
     MPI_HOME: "/home/svc_nvshmem_ci/mpi/openmpi-1.10.7"
-    CUDA_HOME: "/home/svc_nvshmem_ci/cuda/cuda-11.3.66"
+    CUDA_HOME: "/gpfs/fs1/projects/sw_gpucomms/users/svc_nvshmem_ci/cuda/cuda-${CUDA_VERSION}"
     PARTITION_LIST: "batch_short_dgx2h_m2"
     UCX_TLS: "tcp"
     NCCL_DEBUG_SUBSYS: "ENV" 
