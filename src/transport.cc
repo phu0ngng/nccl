@@ -137,7 +137,7 @@ ncclResult_t ncclTransportP2pSetup(struct ncclComm* comm, struct ncclTopoGraph* 
       }
     }
     TIME_STOP(4);
-    comm->connectRecv[recvPeer] = comm->connectSend[sendPeer] = 0;
+    comm->connectRecv[recvPeer] = comm->connectSend[sendPeer] = 0UL;
   }
   CUDACHECK(cudaStreamSynchronize(transportSetupStream));
   CUDACHECK(cudaStreamDestroy(transportSetupStream));

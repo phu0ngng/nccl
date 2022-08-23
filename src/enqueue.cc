@@ -1364,12 +1364,12 @@ static ncclResult_t taskAppend(struct ncclComm* comm, struct ncclInfo const* inf
           NCCLCHECK(ncclChannelComputeFromBase(comm, channelBaseId, c, &channelId));
           if (isSendNotRecv) {
             if (comm->channels[channelId].peers[peer].send[1].connected == 0) { // P2P uses only 1 connector
-              comm->connectSend[peer] |= (1<<channelId);
+              comm->connectSend[peer] |= (1UL<<channelId);
               ncclGroupCommPreconnect(comm);
             }
           } else {
             if (comm->channels[channelId].peers[peer].recv[1].connected == 0) { // P2P uses only 1 connector
-              comm->connectRecv[peer] |= (1<<channelId);
+              comm->connectRecv[peer] |= (1UL<<channelId);
               ncclGroupCommPreconnect(comm);
             }
           }

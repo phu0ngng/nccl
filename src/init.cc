@@ -955,13 +955,13 @@ collnet_cleanup:
       for (int c=0; c<comm->p2pnChannelsPerPeer; c++) {
         NCCLCHECK(ncclChannelCompute(comm, peer, c, ncclFuncSend, &channelId));
         if (comm->channels[channelId].peers[peer].send[1].connected == 0) {
-          comm->connectSend[peer] |= (1<<channelId);
+          comm->connectSend[peer] |= (1UL<<channelId);
         }
       }
       for (int c=0; c<comm->p2pnChannelsPerPeer; c++) {
         NCCLCHECK(ncclChannelCompute(comm, peer, c, ncclFuncRecv, &channelId));
         if (comm->channels[channelId].peers[peer].recv[1].connected == 0) {
-          comm->connectRecv[peer] |= (1<<channelId);
+          comm->connectRecv[peer] |= (1UL<<channelId);
         }
       }
     }
