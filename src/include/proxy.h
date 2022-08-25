@@ -11,6 +11,7 @@
 #include "info.h"
 #include "socket.h"
 #include <pthread.h>
+#include "shm.h"
 
 enum ncclProxyOpState { ncclProxyOpNone, ncclProxyOpReady, ncclProxyOpProgress };
 
@@ -106,6 +107,7 @@ struct ncclProxyOpsPool {
 
 struct ncclProxyOps {
   ncclProxyOpsPool* pool;
+  ncclShmHandle_t handle;
   int count;
   int freeOp;
   int nextOps;
@@ -145,6 +147,7 @@ struct ncclProxyPool;
 struct ncclProxyProgressState {
   // Used by main threads to send work to progress thread
   struct ncclProxyOpsPool* opsPool;
+  ncclShmHandle_t handle;
   char opsPoolShmSuffix[6];
 
   pthread_t thread;

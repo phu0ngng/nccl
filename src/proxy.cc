@@ -864,7 +864,7 @@ ncclResult_t ncclProxyConnect(struct ncclComm* comm, int transport, int send, in
     NCCLCHECK(ncclSocketRecv(sock, poolPath+sizeof("/dev/shm/nccl-")-1, sizeof("XXXXXX")-1));
     struct ncclProxyOps* proxyOps = comm->proxyState.proxyOps+proxyConn->localRank;
     if (proxyOps->pool == NULL) {
-      NCCLCHECK(ncclShmOpen(poolPath, sizeof(struct ncclProxyOpsPool), (void**)(&proxyOps->pool), NULL, 0));
+      NCCLCHECK(ncclShmOpen(poolPath, sizeof(struct ncclProxyOpsPool), (void**)(&proxyOps->pool), NULL, -1, &proxyOps->handle));
       proxyOps->nextOps = proxyOps->nextOpsEnd = proxyOps->freeOp = -1;
     }
   }
@@ -899,15 +899,14 @@ static ncclResult_t proxyProgressInit(struct ncclComm* comm) {
     int size = sizeof(struct ncclProxyOpsPool);
     struct ncclProxyOpsPool* pool = NULL;
 
-    char shmPath[sizeof("/dev/shm/nccl-XXXXXX")];
-    shmPath[0] = '\0';
-    NCCLCHECK(ncclShmOpen(shmPath, size, (void**)&pool, NULL, 1));
-
-    // Init pool
-    pool->nextOps = -1;
-
     // The service thread may be launched already but localRanks may not be set yet.
     while (comm->localRanks == 0) sched_yield();
+    
+    char shmPath[sizeof("/dev/shm/nccl-XXXXXX")];
+    shmPath[0] = '\0';
+    NCCLCHECK(ncclShmOpen(shmPath, size, (void**)&pool, NULL, comm->localRanks + 1, &state->handle));
+    // Init pool
+    pool->nextOps = -1;
 
     for (int r=0; r<comm->localRanks; r++) {
       pool->freeOps[r] = r*MAX_OPS_PER_PEER;
@@ -935,7 +934,7 @@ static ncclResult_t proxyProgressInit(struct ncclComm* comm) {
 
 static void proxyOpsFree(struct ncclComm* comm) {
   struct ncclProxyProgressState* state = &comm->proxyState.progressState;
-  if (ncclShmClose(state->opsPool, NULL, sizeof(struct ncclProxyOpsPool)) != ncclSuccess) {
+  if (ncclShmClose(state->handle) != ncclSuccess) {
     WARN("[Service thread] shm close failed");
   }
 }
@@ -944,10 +943,8 @@ ncclResult_t ncclProxyShmUnlink(struct ncclComm* comm) {
   struct ncclProxyProgressState* state = &comm->proxyState.progressState;
   if (state->opsPool == NULL) return ncclSuccess;
 
-  char shmPath[] = "/dev/shm/nccl-XXXXXX";
-  memcpy(shmPath+sizeof("/dev/shm/nccl-")-1, state->opsPoolShmSuffix, sizeof("XXXXXX")-1);
-  if (ncclShmUnlink(shmPath) != ncclSuccess) {
-    WARN("[Service thread] shm unlink failed");
+  if (ncclShmUnlink(state->handle) != ncclSuccess) {
+    WARN("[Service thread] proxy ops shm unlink failed");
   }
   return ncclSuccess;
 }
@@ -1189,7 +1186,7 @@ ncclResult_t ncclProxyDestroy(struct ncclComm* comm) {
     for (int i=0; i<comm->localRanks; i++) {
       if (state->peerSocks[i].fd != -1) {
         if (state->proxyOps[i].pool) {
-          NCCLCHECK(ncclShmClose(state->proxyOps[i].pool, NULL, sizeof(struct ncclProxyOpsPool)));
+          NCCLCHECK(ncclShmClose(state->proxyOps[i].handle));
         }
         if (state->sharedDevMems[i]) {
           CUDACHECK(cudaIpcCloseMemHandle(state->sharedDevMems[i]));
