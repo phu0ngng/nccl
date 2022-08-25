@@ -763,6 +763,18 @@ Value accepted
 ^^^^^^^^^^^^^^
 0 or 1. Default value is 1.
 
+NCCL_P2P_NET_CHUNKSIZE
+----------------------
+(since 2.14)
+
+The ``NCCL_P2P_NET_CHUNKSIZE`` controls the size of messages sent through the network for ncclSend/ncclRecv operations.
+
+Values accepted
+^^^^^^^^^^^^^^^
+The default is 131072 (128 K).
+
+Values are integers, in bytes. The recommendation is to use powers of 2, hence 262144 would be the next value.
+
 NCCL_P2P_LL_THRESHOLD
 ---------------------
 (since 2.14)
