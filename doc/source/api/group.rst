@@ -26,5 +26,3 @@ ncclGroupEnd
  have been enqueued to the provided streams, but are not necessary complete. 
  
  When used with the ncclCommInitRank call, the ncclGroupEnd call waits for all communicators to be initialized.
-
- Note: There is a maximum of 2048 NCCL operations that can be inserted between the ncclGroupStart and ncclGroupEnd calls. If this limit is exceeded, then a warning message will be emitted and the NCCL operation will return a failure code.

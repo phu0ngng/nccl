@@ -55,11 +55,10 @@ testResult_t GatherRunColl(void* sendbuff, void* recvbuff, size_t count, ncclDat
   NCCLCHECK(ncclSend(sendbuff, count, type, root, comm, stream));
   if (rank == root) {
     for (int r=0; r<nRanks; r++) {
-      NCCLCHECK(ncclRecv(((char*)recvbuff)+r*rankOffset, count, type, r, comm, stream));
+      NCCLCHECK(ncclRecv(((char*)recvbuff) + r * rankOffset, count, type, r, comm, stream));
     }
   }
-  NCCLCHECK(ncclGroupEnd());
-
+  NCCLCHECK_COMM_WAIT(ncclGroupEnd(), comm);
   return testSuccess;
 }
 
@@ -102,7 +101,7 @@ testResult_t GatherRunTest(struct threadArgs* args, int root, ncclDataType_t typ
 
   for (int i=0; i<type_count; i++) {
     for (int j=begin_root; j<=end_root; j++) {
-      TESTCHECK(TimeTest(args, run_types[i], run_typenames[i], (ncclRedOp_t)0, "", j));
+      TESTCHECK(TimeTest(args, run_types[i], run_typenames[i], (ncclRedOp_t)0, "none", j));
     }
   }
   return testSuccess;

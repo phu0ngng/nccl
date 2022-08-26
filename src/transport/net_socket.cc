@@ -311,12 +311,12 @@ ncclResult_t ncclSocketListen(int dev, void* opaqueHandle, void** listenComm) {
   struct ncclSocketListenComm* comm;
   NCCLCHECK(ncclSocketNewListenComm(&comm));
   NCCLCHECK(GetSocketAddr(dev, &comm->sock.addr));
+  comm->sock.asyncFlag = 1;
   NCCLCHECK(ncclSocketListen(&comm->sock));
   memcpy(&handle->connectAddr, &comm->sock.addr, sizeof(union ncclSocketAddress));
   NCCLCHECK(ncclSocketGetNsockNthread(dev, &comm->nSocks, &comm->nThreads));
   handle->nSocks = comm->nSocks;
   handle->nThreads = comm->nThreads;
-  comm->sock.asyncFlag = 1;
   comm->dev = dev;
   *listenComm = comm;
   return ncclSuccess;
@@ -359,7 +359,7 @@ socket_connect_check:
       /* expect user to call again */
       return ncclSuccess;
     } else if (conState == ncclSocketError) {
-      return ncclSystemError;
+      return ncclRemoteError;
     }
     stage->state = ncclSocketCommStateSend;
 
@@ -393,7 +393,7 @@ ncclResult_t ncclSocketAccept(void* listenComm, void** recvComm) {
   for (; i<rComm->nSocks+1; i++) {
     uint8_t sendSockIdx;
     ncclCalloc(&sock, 1);
-    NCCLCHECK(ncclSocketInit(sock, NULL, NULL, 1));
+    NCCLCHECK(ncclSocketInit(sock, NULL, lComm->sock.abortFlag, 1));
     stage->sock = sock;
     stage->state = ncclSocketCommStateAccept;
     stage->iteration = i;
@@ -616,6 +616,7 @@ ncclNet_t ncclNetSocket = {
   ncclSocketConnect,
   ncclSocketAccept,
   ncclSocketRegMr,
+  NULL, // No DMA-BUF support
   ncclSocketDeregMr,
   ncclSocketIsend,
   ncclSocketIrecv,

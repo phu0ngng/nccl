@@ -28,7 +28,7 @@ OBJ_FILES := $(SRC_FILES:%.cu=${DST_DIR}/%.o)
 COLLS := all_reduce all_gather broadcast reduce_scatter reduce alltoall gather scatter sendrecv hypercube
 EXTRA_COLLS := all_gatherv reduce_scatterv
 COLL_OBJS := $(COLLS:%=${DST_DIR}/%.o)
-BIN_FILES := $(COLLS:%=${DST_DIR}/%_perf) $(EXTRA_COLLS:%=${DST_DIR}/%_perf) ${DST_DIR}/replay
+BIN_FILES := $(COLLS:%=${DST_DIR}/%_perf) $(EXTRA_COLLS:%=${DST_DIR}/%_perf) ${DST_DIR}/replay-coll
 ifeq ($(MPI_COLLNET), 1)
 BIN_FILES += $(COLLS:%=${DST_DIR}/%_perf_mpi_collnet)
 endif
@@ -43,7 +43,7 @@ TEST_VERIFIABLE_SRCDIR := ../verifiable
 TEST_VERIFIABLE_BUILDDIR := $(BUILDDIR)/test/verifiable
 include ../verifiable/verifiable.mk
 
-COMMON_OBJS := ${DST_DIR}/common.o ${DST_DIR}/timer.o $(TEST_VERIFIABLE_OBJS)
+COMMON_OBJS := ${DST_DIR}/common.o ${DST_DIR}/timer.o ${DST_DIR}/ft_test.o $(TEST_VERIFIABLE_OBJS)
 
 ifneq (clean,${MAKECMDGOALS})
 -include $(DEP_FILES)
@@ -84,7 +84,7 @@ ${DST_DIR}/%_perf:${DST_DIR}/%.o ${COMMON_OBJS}
 	@mkdir -p ${DST_DIR}
 	$(NVCC) -o $@ $(NVCUFLAGS) $^ ${NVLDFLAGS}
 
-${DST_DIR}/replay: ${DST_DIR}/replay.o ${COLL_OBJS} ${COMMON_OBJS}
+${DST_DIR}/replay-coll: ${DST_DIR}/replay-coll.o ${COLL_OBJS} ${COMMON_OBJS}
 	@printf "Linking  %-35s > %s\n" $< $@
 	@mkdir -p ${DST_DIR}
 	$(NVCC) -o $@ $(NVCUFLAGS) $^ ${NVLDFLAGS}

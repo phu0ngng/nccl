@@ -230,6 +230,39 @@ TYPED_TEST(ncclBroadcast_test, DISABLED_stream_wrong) {
                             this->DataType(), root,
                             this->comms[i], this->streams[j]));
 };
+
+TYPED_TEST(ncclBroadcast_test, multi_net) {
+    if (this->commsIB != NULL) {
+        for (int root = 0; root < this->nVis; ++root) {
+            ASSERT_EQ(ncclSuccess, ncclGroupStart());
+            for (int i = 0; i < this->nVis; ++i) {
+                ASSERT_EQ(ncclSuccess,
+                        ncclBroadcast(this->sendbuffs[i], this->recvbuffs[i],
+                                    std::min(this->N, 1024 * 1024),
+                                    this->DataType(), root,
+                                    this->commsIB[i], this->streams[i]))
+                    << " IB root: " << root << ", "
+                    << "i" << i << ", " << std::endl;
+            }
+            ASSERT_EQ(ncclSuccess, ncclGroupEnd());
+
+            ASSERT_EQ(ncclSuccess, ncclGroupStart());
+            for (int i = 0; i < this->nVis; ++i) {
+                ASSERT_EQ(ncclSuccess,
+                        ncclBroadcast(this->sendbuffs[i], this->recvbuffs[i],
+                                    std::min(this->N, 1024 * 1024),
+                                    this->DataType(), root,
+                                    this->commsSockets[i], this->streams[i]))
+                    << " Sockets root: " << root << ", "
+                    << "i" << i << ", " << std::endl;
+            }
+            ASSERT_EQ(ncclSuccess, ncclGroupEnd());
+        }
+    } else {
+        std::cout << "multi_net disabled" << std::endl;
+    }
+};
+
 // Aggregation
 // Only for 2.2 or higher
 #if NCCL_MAJOR > 2 || (NCCL_MAJOR == 2 && NCCL_MINOR >=2)

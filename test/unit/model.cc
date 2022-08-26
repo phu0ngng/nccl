@@ -140,7 +140,7 @@ void runTopo(const char* xmlTopoFile, const char* platform, int nnodes) {
   treeGraph.nChannels = ringGraph.nChannels = std::min(treeGraph.nChannels, ringGraph.nChannels);
 
   int num_algorithms = NCCL_NUM_ALGORITHMS;
-  if (cNetGraph.nChannels == 0) num_algorithms--;
+  if (cNetGraph.nChannels == 0) num_algorithms-=2;
 
   // Last column is used for min/best/default.
   const int m = num_algorithms*NCCL_NUM_PROTOCOLS;
@@ -320,6 +320,7 @@ void runPlatform(const char* platform) {
 
 int main(int argc, char* argv[]) {
   setlinebuf(stdout);
+  setenv("NCCL_IGNORE_DISABLED_P2P", "2", 1);
 
   // Parse args
   int longindex;

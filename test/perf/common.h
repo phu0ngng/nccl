@@ -18,6 +18,9 @@
 #include "nccl1_compat.h"
 #include "timer.h"
 
+// For nccl.h < 2.13 since we define a weak fallback
+extern "C" char const* ncclGetLastError(ncclComm_t comm);
+
 #define CUDACHECK(cmd) do {                         \
   cudaError_t err = cmd;                            \
   if( err != cudaSuccess ) {                        \
@@ -30,6 +33,21 @@
   }                                                 \
 } while(0)
 
+#if NCCL_VERSION_CODE >= NCCL_VERSION(2,12,10)
+#define NCCLCHECK(cmd) do {                         \
+  ncclResult_t res = cmd;                           \
+  if (res != ncclSuccess) {                         \
+    char hostname[1024];                            \
+    getHostName(hostname, 1024);                    \
+    printf("%s: Test NCCL failure %s:%d "           \
+           "'%s / %s'\n",                           \
+           hostname,__FILE__,__LINE__,              \
+           ncclGetErrorString(res),                 \
+           ncclGetLastError(NULL));                 \
+    return testNcclError;                           \
+  }                                                 \
+} while(0)
+#else
 #define NCCLCHECK(cmd) do {                         \
   ncclResult_t res = cmd;                           \
   if (res != ncclSuccess) {                         \
@@ -41,6 +59,7 @@
     return testNcclError;                           \
   }                                                 \
 } while(0)
+#endif
 
 typedef enum {
   testSuccess = 0,
@@ -129,6 +148,8 @@ struct threadArgs {
   char* replayFile;
 
   struct testColl* collTest;
+  int sleepId;
+  void** hostbuffs;
 };
 
 typedef testResult_t (*threadFunc_t)(struct threadArgs* args);
@@ -238,5 +259,72 @@ static int ncclstringtoop (char *str) {
 extern int is_main_proc;
 extern thread_local int is_main_thread;
 #define PRINT if (is_main_thread) printf
+
+/* If NCCL version is not smaller than 2.14.0, we support nonblocking
+ * communicator where the state of a communicator can be ncclInProgress.
+ * We define NCCLCHECK_COMM_WAIT and NCCLCHECK_COMM_WAITBATCH macro for 
+ * convenience to wait on inprogress communicators. */
+#if NCCL_VERSION_CODE >= NCCL_VERSION(2,14,0)
+static testResult_t waitCommState(ncclComm_t comm) {
+  ncclResult_t state;
+  do {
+    NCCLCHECK(ncclCommGetAsyncError(comm, &state));
+  } while (state == ncclInProgress);
+  if (state != ncclSuccess) return testNcclError;
+  return testSuccess;
+}
+
+static testResult_t waitCommStateBatch(ncclComm_t * comms, int num) {
+  ncclResult_t state;
+  for (int idx = 0; idx < num; ++idx) {
+    do {
+      NCCLCHECK(ncclCommGetAsyncError(comms[idx], &state));
+    } while (state == ncclInProgress);
+    if (state != ncclSuccess) return testNcclError;
+  }
+  return testSuccess;
+}
+
+#define NCCLCHECK_COMM_WAIT(cmd, comm) do {           \
+  ncclResult_t res = cmd;                             \
+  if (res == ncclInProgress) {                        \
+    TESTCHECK(waitCommState(comm));                   \
+  } else if (res != ncclSuccess) {                    \
+    char hostname[1024];                              \
+    getHostName(hostname, 1024);                      \
+    printf("%s: Test NCCL failure %s:%d '%s'\n",      \
+         hostname,                                    \
+        __FILE__,__LINE__,ncclGetErrorString(res));   \
+    return testNcclError;                             \
+  }                                                   \
+} while(0)
+
+#define NCCLCHECK_COMM_WAITBATCH(cmd, comms, num) do {        \
+  ncclResult_t res = cmd;                                     \
+  if (res == ncclInProgress) {                                \
+    TESTCHECK(waitCommStateBatch(comms, num));                \
+  } else if (res != ncclSuccess) {                            \
+    char hostname[1024];                                      \
+    getHostName(hostname, 1024);                              \
+    printf("%s: Test NCCL failure %s:%d '%s'\n",              \
+         hostname,                                            \
+        __FILE__,__LINE__,ncclGetErrorString(res));           \
+    return testNcclError;                                     \
+  }                                                           \
+} while(0)
+
+#else /* #if NCCL_VERSION_CODE >= NCCL_VERSION(2,14,0) */
+
+#define NCCLCHECK_COMM_WAIT(cmd, comm) do {           \
+  NCCLCHECK(cmd);                                     \
+} while(0)
+
+#define NCCLCHECK_COMM_WAITBATCH(cmd, comms, num) do {      \
+  NCCLCHECK(cmd);                                           \
+} while(0)
+#endif
+
+testResult_t faultToleranceTests(int nThreads, int nGpus, int ncclProc, int ncclProcs, int localRank);
+testResult_t threadLaunch(struct testThread* thread);
 
 #endif

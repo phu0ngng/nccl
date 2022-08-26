@@ -63,7 +63,8 @@ testResult_t ncclReduceScatterv(void* sendbuff, void* recvbuff, size_t count, nc
     void* sendbuffOffset = ((char*)sendbuff)+i*count*wordSize(type);
     NCCLCHECK(ncclReduce(sendbuffOffset, recvbuff, rankCount, type, op, i, comm, stream));
   }
-  NCCLCHECK(ncclGroupEnd());
+
+  NCCLCHECK_COMM_WAIT(ncclGroupEnd(), comm);
   return testSuccess;
 }
 

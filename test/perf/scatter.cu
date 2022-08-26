@@ -50,12 +50,11 @@ testResult_t ScatterRunColl(void* sendbuff, void* recvbuff, size_t count, ncclDa
   NCCLCHECK(ncclGroupStart());
   if (rank == root) {
     for (int r=0; r<nRanks; r++) {
-      NCCLCHECK(ncclSend(((char*)sendbuff)+r*rankOffset, count, type, r, comm, stream));
+      NCCLCHECK(ncclSend(((char*)sendbuff) + r * rankOffset, count, type, r, comm, stream));
     }
   }
   NCCLCHECK(ncclRecv(recvbuff, count, type, root, comm, stream));
-  NCCLCHECK(ncclGroupEnd());
-
+  NCCLCHECK_COMM_WAIT(ncclGroupEnd(), comm);
   return testSuccess;
 }
 
@@ -98,7 +97,7 @@ testResult_t ScatterRunTest(struct threadArgs* args, int root, ncclDataType_t ty
 
   for (int i=0; i<type_count; i++) {
     for (int j=begin_root; j<=end_root; j++) {
-      TESTCHECK(TimeTest(args, run_types[i], run_typenames[i], (ncclRedOp_t)0, "", j));
+      TESTCHECK(TimeTest(args, run_types[i], run_typenames[i], (ncclRedOp_t)0, "none", j));
     }
   }
   return testSuccess;

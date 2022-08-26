@@ -35,7 +35,7 @@ tar --exclude fortran \
     --exclude plc \
     --exclude build \
     --exclude ".git*" \
-    --exclude share \
+    --exclude share/nccl* \
     --exclude ompi \
     --exclude ext-net \
     --exclude pkg/srctxz \
