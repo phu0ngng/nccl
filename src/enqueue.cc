@@ -1429,6 +1429,7 @@ static ncclResult_t taskAppend(struct ncclComm* comm, struct ncclInfo const* inf
       }
       if (l->stream == info->stream)
         break; // Already seen stream.
+      l = l->next;
     }
   }
   return ncclSuccess;
