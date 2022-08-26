@@ -890,7 +890,7 @@ done:
     graph->nChannels = 1;
   }
 
-  if (graph->bwIntra >= 25.0) {
+  if (graph->bwIntra >= 25.0 && ccMin <= 80 || graph->bwIntra >= 44.0) {
     int dupChannels = std::min(graph->nChannels*2, graph->maxChannels);
     memcpy(graph->intra+graph->nChannels*ngpus, graph->intra, (dupChannels-graph->nChannels)*ngpus*sizeof(int));
     memcpy(graph->inter+graph->nChannels*2,graph->inter, (dupChannels-graph->nChannels)*2*sizeof(int));
