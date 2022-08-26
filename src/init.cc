@@ -475,6 +475,7 @@ static ncclResult_t setupChannel(struct ncclComm* comm, int channelId, int rank,
 #define DEFAULT_LL_BUFFSIZE (NCCL_LL_LINES_PER_THREAD*NCCL_LL_MAX_NTHREADS*NCCL_STEPS*sizeof(union ncclLLFifoLine))
 #define DEFAULT_LL128_BUFFSIZE (NCCL_LL128_ELEMS_PER_THREAD*NCCL_LL128_MAX_NTHREADS*NCCL_STEPS*sizeof(uint64_t))
 #define DEFAULT_BUFFSIZE (1 << 22) /* 4MiB */
+#define DEFAULT_BUFFSIZE_INTRA_SM90 (1 << 20) /* 1MiB */
 #define DEFAULT_BUFFSIZE_ARM (1 << 20) /* 1MiB */
 NCCL_PARAM(BuffSize, "BUFFSIZE", -2);
 NCCL_PARAM(LlBuffSize, "LL_BUFFSIZE", -2);
@@ -482,7 +483,7 @@ NCCL_PARAM(Ll128BuffSize, "LL128_BUFFSIZE", -2);
 
 NCCL_PARAM(P2pNetChunkSize, "P2P_NET_CHUNKSIZE", (1 << 17)); /* 128 kB */
 
-static ncclResult_t computeBuffSizes(struct ncclComm* comm) {
+static ncclResult_t computeBuffSizes(struct ncclComm* comm, int minCompCap) {
   int cpuArch, cpuVendor, cpuModel;
   NCCLCHECK(ncclTopoCpuType(comm->topo, &cpuArch, &cpuVendor, &cpuModel));
 
@@ -494,6 +495,7 @@ static ncclResult_t computeBuffSizes(struct ncclComm* comm) {
   for (int p=0; p<NCCL_NUM_PROTOCOLS; p++) {
     comm->buffSizes[p] = envs[p] != -2 ? envs[p] : defaults[p];
   }
+  if (comm->nNodes == 1 && minCompCap == 90 && envs[NCCL_PROTO_SIMPLE] == -2) comm->buffSizes[NCCL_PROTO_SIMPLE] = DEFAULT_BUFFSIZE_INTRA_SM90;
 
   comm->p2pNetChunkSize = ncclParamP2pNetChunkSize();
   return ncclSuccess;
@@ -703,6 +705,13 @@ static ncclResult_t initTransportsRank(struct ncclComm* comm, ncclUniqueId* comm
     return ncclInternalError;
   }
 
+  int myCompCap = comm->peerInfo[rank].cudaCompCap;
+  int minCompCap = myCompCap, maxCompCap = myCompCap;
+  for (int i = 0; i < nranks; i++) {
+    minCompCap = std::min(comm->peerInfo[i].cudaCompCap, minCompCap);
+    maxCompCap = std::max(comm->peerInfo[i].cudaCompCap, maxCompCap);
+  }
+
   int nChannelsOrig = comm->nChannels;
   struct ncclTopoRanks** allTopoRanks;
   NCCLCHECK(ncclCalloc(&allTopoRanks, comm->nRanks));
@@ -778,7 +787,7 @@ static ncclResult_t initTransportsRank(struct ncclComm* comm, ncclUniqueId* comm
   line[1023] = '\0';
   INFO(NCCL_INIT, "Trees%s", line);
 
-  NCCLCHECK(computeBuffSizes(comm));
+  NCCLCHECK(computeBuffSizes(comm, minCompCap));
 
   // Connect with prev/next for each ring
   for (int c=0; c<comm->nChannels; c++) {
@@ -885,15 +894,7 @@ collnet_cleanup:
   TRACE(NCCL_INIT, "rank %d nranks %d - CONNECTED %d RINGS AND TREES", rank, nranks, comm->nChannels);
 
   // Compute time models for algorithm and protocol combinations
-  do {
-    int myCompCap = comm->peerInfo[rank].cudaCompCap;
-    int minCompCap = myCompCap, maxCompCap = myCompCap;
-    for (int i = 0; i < nranks; i++) {
-      minCompCap = std::min(comm->peerInfo[i].cudaCompCap, minCompCap);
-      maxCompCap = std::max(comm->peerInfo[i].cudaCompCap, maxCompCap);
-    }
-    NCCLCHECK(ncclTopoTuneModel(comm, minCompCap, maxCompCap, &treeGraph, &ringGraph, &collNetGraph));
-  } while(0);
+  NCCLCHECK(ncclTopoTuneModel(comm, minCompCap, maxCompCap, &treeGraph, &ringGraph, &collNetGraph));
 
   // Compute nChannels per peer for p2p
   NCCLCHECK(ncclTopoComputeP2pChannels(comm));
