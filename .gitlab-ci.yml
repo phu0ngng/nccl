@@ -101,7 +101,7 @@ apitest-M40:
   tags:
     - m40
   variables:
-    CUDA_HOME: "/usr/local/cuda-11.3"
+    CUDA_HOME: "/usr/local/cuda-${CUDA_VERSION}"
     SRUN: "srun -t 00:10:00 -n 1 -c 4 -pM40"
   script:
     - ./test/scripts/gitlab-runner-apitest.sh
@@ -128,7 +128,7 @@ apitest-K80:
   tags:
     - k80
   variables:
-    CUDA_HOME: "/usr/local/cuda-11.3"
+    CUDA_HOME: "/usr/local/cuda-${CUDA_VERSION}"
     SRUN: "srun -t 00:10:00 -n 1 -c 16 -pK80"
   script:
     - ./test/scripts/gitlab-runner-apitest.sh minimal
