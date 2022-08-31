@@ -87,6 +87,7 @@ static int unalign = 0;
 static int average = 1;
 static int commblocking = 1;
 static int ft_test = 0;
+static char* ft_list = NULL;
 
 static char* replay_file = NULL;
 
@@ -834,13 +835,14 @@ int main(int argc, char* argv[]) {
     {"average", required_argument, 0, 'a'},
     {"commblocking", required_argument, 0, 'B'},
     {"ft_test", required_argument, 0, 'F'},
+    {"ft_list", required_argument, 0, 'L'},
     {"help", no_argument, 0, 'h'},
     {}
   };
 
   while(1) {
     int c;
-    c = getopt_long(argc, argv, "t:g:b:e:i:f:n:m:w:s:p:c:o:d:r:z:y:k:h:l:T:G:C:O:u:a:B:F:", longopts, &longindex);
+    c = getopt_long(argc, argv, "t:g:b:e:i:f:n:m:w:s:p:c:o:d:r:z:y:k:h:l:T:G:C:O:u:a:B:F:L:", longopts, &longindex);
 
     if (c == -1)
       break;
@@ -942,6 +944,9 @@ int main(int argc, char* argv[]) {
       case 'F':
         ft_test = (int)strtol(optarg, NULL, 0);
         break;
+      case 'L':
+        ft_list = optarg;
+        break;
       case 'h':
       default:
         if (c != 'h') printf("invalid option '%c'\n", c);
@@ -972,6 +977,7 @@ int main(int argc, char* argv[]) {
             "[-a,--average <0/1/2/3> report average iteration time <0=RANK0/1=AVG/2=MIN/3=MAX>] \n\t"
             "[-B,--commblocking <0/1> enable blocking communicator (default: 1)] \n\t"
             "[-F,--ft_test <0/1> enable fault tolerance test (default: 0)] \n\t"
+            "[-L,--ft_list <init/allreduce/alltoall/finalize/all> only enable specified fault tolerance test (default: all)] \n\t"
             "[-h,--help]\n",
             basename(argv[0]));
         return 0;
@@ -1085,7 +1091,7 @@ testResult_t run() {
   /* only when communicators are nonblocking and ft test is enabled, we 
    * perform fault tolerance tests. */
   if (ft_test && commblocking == 0) {
-    TESTCHECK(faultToleranceTests(nThreads, nGpus, ncclProc, ncclProcs, localRank));
+    TESTCHECK(faultToleranceTests(nThreads, nGpus, ncclProc, ncclProcs, localRank, ft_list));
   }
 
   envstr = getenv("NCCL_TESTS_DEVICE");
