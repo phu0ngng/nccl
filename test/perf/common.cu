@@ -13,6 +13,7 @@
 #include <signal.h>
 #include <libgen.h>
 #include "cuda.h"
+#include <limits.h>
 
 #include "../verifiable/verifiable.h"
 
@@ -88,6 +89,7 @@ static int average = 1;
 static int commblocking = 1;
 static int ft_test = 0;
 static char* ft_list = NULL;
+static size_t tbytes = SIZE_MAX;
 
 static char* replay_file = NULL;
 
@@ -417,13 +419,27 @@ testResult_t completeColl(struct threadArgs* args) {
   return testSuccess;
 }
 
+static testResult_t getIteration(size_t nbytes, int* itersPtr) {
+  if (tbytes == SIZE_MAX) {
+    *itersPtr = iters;
+  } else {
+    if (nbytes == 0)
+      *itersPtr = iters;
+    else
+      *itersPtr = max(min((size_t)iters, tbytes / nbytes), 1UL); 
+  }
+  return testSuccess;
+}
+
 testResult_t BenchTime(struct threadArgs* args, ncclDataType_t type, ncclRedOp_t op, int root, int in_place) {
+  int actualIters;
   size_t count = args->nbytes / wordSize(type);
   if (datacheck) {
     // Initialize sendbuffs, recvbuffs and expected
     TESTCHECK(args->collTest->initData(args, type, op, root, 99, in_place));
   }
 
+  TESTCHECK(getIteration(args->nbytes, &actualIters));
   // Sync
 #if 0
   TESTCHECK(startColl(args, type, op, root, in_place, 0));
@@ -448,7 +464,7 @@ testResult_t BenchTime(struct threadArgs* args, ncclDataType_t type, ncclRedOp_t
 
   // Performance Benchmark
   timer tim;
-  for (int iter = 0; iter < iters; iter++) {
+  for (int iter = 0; iter < actualIters; iter++) {
     if (agg_iters>1) NCCLCHECK(ncclGroupStart());
     for (int aiter = 0; aiter < agg_iters; aiter++) {
       TESTCHECK(startColl(args, type, op, root, in_place, iter*agg_iters+aiter));
@@ -475,12 +491,12 @@ testResult_t BenchTime(struct threadArgs* args, ncclDataType_t type, ncclRedOp_t
     }
   }
 
-  double cputimeSec = tim.elapsed()/(iters*agg_iters);
+  double cputimeSec = tim.elapsed()/(actualIters*agg_iters);
   TESTCHECK(completeColl(args));
 
   int compThreadCount = (*(args->compThreadCount)) - args->compThreadCountLast;
   double deltaSec = tim.elapsed();
-  deltaSec = deltaSec/(iters*agg_iters);
+  deltaSec = deltaSec/(actualIters*agg_iters);
   if (cudaGraphLaunches >= 1) deltaSec = deltaSec/cudaGraphLaunches;
   Allreduce(args, &deltaSec, average);
 
@@ -560,15 +576,15 @@ testResult_t BenchTime(struct threadArgs* args, ncclDataType_t type, ncclRedOp_t
 
   if (datacheck) {
      if (side_comp == 1) {
-       PRINT("  %7s  %6.2f  %6.2f  %5g %6.2f", timeStr, algBw, busBw, (double)wrongElts, sideBw);
+       PRINT("  %7s  %6.2f  %6.2f  %5g %6.2f %5d", timeStr, algBw, busBw, (double)wrongElts, sideBw, actualIters);
      } else {
-       PRINT("  %7s  %6.2f  %6.2f  %5g", timeStr, algBw, busBw, (double)wrongElts);
+       PRINT("  %7s  %6.2f  %6.2f  %5g %5d", timeStr, algBw, busBw, (double)wrongElts, actualIters);
      }
   } else {
      if (side_comp == 1) {
-       PRINT("  %7s  %6.2f  %6.2f    N/A %6.2f", timeStr, algBw, busBw, sideBw);
+       PRINT("  %7s  %6.2f  %6.2f    N/A %6.2f  %5d", timeStr, algBw, busBw, sideBw, actualIters);
      } else {
-       PRINT("  %7s  %6.2f  %6.2f    N/A", timeStr, algBw, busBw);
+       PRINT("  %7s  %6.2f  %6.2f    N/A  %5d", timeStr, algBw, busBw, actualIters);
      }
   }
   if (dump_file) {
@@ -836,13 +852,14 @@ int main(int argc, char* argv[]) {
     {"commblocking", required_argument, 0, 'B'},
     {"ft_test", required_argument, 0, 'F'},
     {"ft_list", required_argument, 0, 'L'},
+    {"tbytes", required_argument, 0, 's'},
     {"help", no_argument, 0, 'h'},
     {}
   };
 
   while(1) {
     int c;
-    c = getopt_long(argc, argv, "t:g:b:e:i:f:n:m:w:s:p:c:o:d:r:z:y:k:h:l:T:G:C:O:u:a:B:F:L:", longopts, &longindex);
+    c = getopt_long(argc, argv, "t:g:b:e:i:f:n:m:w:s:p:c:o:d:r:z:y:k:h:l:T:G:C:O:u:a:B:F:L:s:", longopts, &longindex);
 
     if (c == -1)
       break;
@@ -947,6 +964,14 @@ int main(int argc, char* argv[]) {
       case 'L':
         ft_list = optarg;
         break;
+      case 's':
+        parsed = parsesize(optarg);
+        if (parsed < 0) {
+          fprintf(stderr, "invalid size specified for 'tbytes'\n");
+          return -1;
+        }
+        tbytes = (size_t)parsed;
+        break;
       case 'h':
       default:
         if (c != 'h') printf("invalid option '%c'\n", c);
@@ -978,6 +1003,7 @@ int main(int argc, char* argv[]) {
             "[-B,--commblocking <0/1> enable blocking communicator (default: 1)] \n\t"
             "[-F,--ft_test <0/1> enable fault tolerance test (default: 0)] \n\t"
             "[-L,--ft_list <init/allreduce/alltoall/finalize/all> only enable specified fault tolerance test (default: all)] \n\t"
+            "[-s,--tbytes total bytes allowed to transmit (default: unlimited); tbytes would limit #iterations] \n\t"
             "[-h,--help]\n",
             basename(argv[0]));
         return 0;
@@ -1145,10 +1171,10 @@ testResult_t run() {
   const char* timeStr = report_cputime ? "cputime" : "time";
   PRINT("#\n");
   PRINT("# %10s  %12s  %8s  %6s  %6s           out-of-place                       in-place          \n", "", "", "", "", "");
-  PRINT("# %10s  %12s  %8s  %6s  %6s  %7s  %6s  %6s %6s  %7s  %6s  %6s %6s\n", "size", "count", "type", "redop", "root",
-      timeStr, "algbw", "busbw", "#wrong", timeStr, "algbw", "busbw", "#wrong");
-  PRINT("# %10s  %12s  %8s  %6s  %6s  %7s  %6s  %6s  %5s  %7s  %6s  %6s  %5s\n", "(B)", "(elements)", "", "", "",
-      "(us)", "(GB/s)", "(GB/s)", "", "(us)", "(GB/s)", "(GB/s)", "");
+  PRINT("# %10s  %12s  %8s  %6s  %6s  %7s  %6s  %6s %6s %6s %7s  %6s  %6s %6s %6s\n", "size", "count", "type", "redop", "root",
+      timeStr, "algbw", "busbw", "#wrong", "#iters", timeStr, "algbw", "busbw", "#wrong", "#iters");
+  PRINT("# %10s  %12s  %8s  %6s  %6s  %7s  %6s  %6s  %5s %5s %7s  %6s  %6s  %5s %5s\n", "(B)", "(elements)", "", "", "",
+      "(us)", "(GB/s)", "(GB/s)", "", "", "(us)", "(GB/s)", "(GB/s)", "", "");
 
   struct testThread threads[nThreads];
   struct testThread compThreads[nThreads];

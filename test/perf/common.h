@@ -324,7 +324,7 @@ static testResult_t waitCommStateBatch(ncclComm_t * comms, int num) {
 } while(0)
 #endif
 
-testResult_t faultToleranceTests(int nThreads, int nGpus, int ncclProc, int ncclProcs, int localRank);
+testResult_t faultToleranceTests(int nThreads, int nGpus, int ncclProc, int ncclProcs, int localRank, const char* ft_list);
 testResult_t threadLaunch(struct testThread* thread);
 
 #endif
