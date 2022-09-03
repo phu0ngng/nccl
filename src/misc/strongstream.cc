@@ -5,6 +5,7 @@
  ************************************************************************/
 
 #include "strongstream.h"
+#include "cudawrap.h"
 #include "checks.h"
 #include "param.h"
 
@@ -14,10 +15,8 @@ ncclResult_t ncclCudaGetCapturingGraph(
     struct ncclCudaGraph* graph, cudaStream_t stream
   ) {
   #if CUDART_VERSION >= 11030
-    thread_local int driver = -1;
-    if (driver == -1) {
-      CUDACHECK(cudaDriverGetVersion(&driver));
-    }
+    int driver;
+    NCCLCHECK(ncclCudaDriverVersion(&driver));
     if (driver < 11030) {
       cudaStreamCaptureStatus status;
       unsigned long long gid;
@@ -157,60 +156,13 @@ ncclResult_t ncclStrongStreamLaunchHost(
   return ncclSuccess;
 }
 
-#if CUDART_VERSION >= 11080
-#define NCCL_MAX_CGA_CLUSTER_SIZE 8
-NCCL_PARAM(CGAClusterSize, "CGA_CLUSTER_SIZE", 0);
-#endif
-
 ncclResult_t ncclStrongStreamLaunchKernel(
     struct ncclCudaGraph graph, struct ncclStrongStream* ss,
     void* fn, dim3 grid, dim3 block, void* args[], size_t sharedMemBytes
   ) {
   #if CUDART_VERSION >= 11030
     if (graph.graph == nullptr) {
-  #if CUDART_VERSION >= 11080
-      unsigned int clusterSize = ncclParamCGAClusterSize();
-      if (clusterSize > NCCL_MAX_CGA_CLUSTER_SIZE) {
-        static bool warned = false;
-        if (warned == false) {
-          WARN("NCCL_CGA_CLUSTER_SIZE value %d is too big. Limiting value to %d.",
-               clusterSize, NCCL_MAX_CGA_CLUSTER_SIZE);
-          warned = true;
-        }
-        clusterSize = NCCL_MAX_CGA_CLUSTER_SIZE;
-      }
-      static int driverVersion = -1;
-      if (driverVersion == -1) CUDACHECK(cudaDriverGetVersion(&driverVersion));
-      if (clusterSize && driverVersion >= 11080) {
-        cudaLaunchConfig_t launchConfig = {0};
-        cudaLaunchAttribute launchAttrs[2];
-        /* Cooperative Group Array (CGA)
-         * On sm90 and later we have an extra level of hierarchy where we
-         * can group together several blocks within the Grid, called
-         * Thread Block Clusters.
-         * Clusters enable multiple thread blocks running concurrently
-         * across multiple SMs to synchronize and collaboratively fetch
-         * and exchange data. A cluster of blocks are guaranteed to be
-         * concurrently scheduled onto a group of SMs.
-         * The maximum value is 8 and it must be divisible into the grid dimensions
-         */
-        // Grid dimension must be divisible by clusterSize
-        if (grid.x % clusterSize) clusterSize = 1;
-        launchAttrs[0].id = cudaLaunchAttributeClusterDimension;
-        launchAttrs[0].val.clusterDim = {clusterSize, 1, 1};
-        launchAttrs[1].id = cudaLaunchAttributeClusterSchedulingPolicyPreference;
-        launchAttrs[1].val.clusterSchedulingPolicyPreference = cudaClusterSchedulingPolicySpread;
-
-        launchConfig.gridDim = grid;
-        launchConfig.blockDim = block;
-        launchConfig.attrs = launchAttrs;
-        launchConfig.numAttrs = sizeof(launchAttrs)/sizeof(launchAttrs[0]);
-        launchConfig.stream = ss->stream;
-
-        CUDACHECK(cudaLaunchKernelExC(&launchConfig, fn, args));
-      } else /* FALLTHRU to standard kernel launch */
-  #endif /* CUDART_VERSION >= 11080 */
-        CUDACHECK(cudaLaunchKernel(fn, grid, block, args, sharedMemBytes, ss->stream));
+      CUDACHECK(cudaLaunchKernel(fn, grid, block, args, sharedMemBytes, ss->stream));
     } else {
       cudaGraphNode_t tip = ss->node;
       cudaKernelNodeParams p;
@@ -239,11 +191,11 @@ ncclResult_t ncclStrongStreamWaitStream(
         CUDACHECK(cudaEventRecord(b->event, b->stream));
       }
       CUDACHECK(cudaStreamWaitEvent(a->stream, b->event, 0));
-      a->eventIsLagging = 1;
     } else {
       cudaGraphNode_t pair[2] = {a->node, b->node};
       CUDACHECK(cudaGraphAddEmptyNode(&a->node, graph.graph, pair, 2));
     }
+    a->eventIsLagging = 1;
   #else
     CUDACHECK(cudaEventRecord(b->event, b->stream));
     CUDACHECK(cudaStreamWaitEvent(a->stream, b->event, 0));
@@ -279,9 +231,8 @@ ncclResult_t ncclStrongStreamWaitStream(
         }
         cudaGraphNode_t pair[2] = {a->node, tie};
         CUDACHECK(cudaGraphAddEmptyNode(&a->node, graph.graph, pair, 2));
+        a->eventIsLagging = 1;
       }
-      // a->eventIsLagging doesn't change since we are just updating the
-      // dependencies of a->node.
     }
   #else
     CUDACHECK(cudaEventRecord(a->event, b));
