@@ -74,6 +74,51 @@ code is shown below:
 
 Related link: :c:func:`ncclCommGetAsyncError`
 
+Creating more communicators
+---------------------------
+
+The ncclCommSplit function can be used to create a communicators based on existing one. This allows to split an existing
+communicator into multiple sub-partitions, duplicate an existing communicator, or even create a single communicator with
+less ranks.
+
+The ncclCommSplit function needs to be called by all ranks in the original communicator. If some ranks will not be part
+of any sub-group, they still need to call ncclCommSplit with color being NCCL_SPLIT_NOCOLOR.
+
+Newly created communicators will inherit the parent communicator configuration (e.g. non-blocking).
+If the parent communicator operates in non-blocking mode, a ncclCommSplit operation may be stopped by calling ncclCommAbort
+on the parent communicator, then on any new communicator returned. This is because a hang could happen during
+operations on any of the two communicators.
+
+The following code duplicates an existing communicator:
+
+.. code:: C
+
+ int rank;
+ ncclCommUserRank(comm, &rank);
+ ncclCommSplit(comm, 0, rank, &newcomm, NULL);
+
+This splits a communicator in two halves:
+
+.. code:: C
+
+ int rank, nranks;
+ ncclCommUserRank(comm, &rank);
+ ncclCommCount(comm, &nranks);
+ ncclCommSplit(comm, rank/(nranks/2), rank%(nranks/2), &newcomm, NULL);
+
+This creates a communicator with only the first 2 ranks:
+
+.. code:: C
+
+ int rank;
+ ncclCommUserRank(comm, &rank);
+ ncclCommSplit(comm, rank<2 ? 0 : NCCL_SPLIT_NOCOLOR, rank, &newcomm, NULL);
+
+
+Related links:
+
+ * :c:func:`ncclCommSplit`
+
 Using multiple NCCL communicators concurrently
 ----------------------------------------------
 

@@ -174,6 +174,7 @@ struct ncclComm {
 
   uint64_t magic; // Magic number for all network communication. Not a security key -- only goal is to detect mismatches.
 
+  uint64_t commHash;
   int rank;    // my rank in the communicator
   int nRanks;  // number of GPUs in communicator
   int cudaDev; // my cuda device index
@@ -229,6 +230,7 @@ struct ncclComm {
 
   // Flag to ask NCCL kernels to abort
   volatile uint32_t *abortFlag;
+  uint32_t *abortFlagRefCount;
 
   // Device side of the communicator (for cudaFree's)
   struct ncclDevComm* devComm; // actually = &ncclDevCommAndChannels::comm

@@ -234,6 +234,7 @@ ncclResult_t bootstrapInit(struct ncclBootstrapHandle* handle, struct ncclComm* 
   struct ncclSocket sock, listenSockRoot;
   struct extInfo info = { 0 };
 
+  if (comm->bootstrap) return ncclSuccess;// Already initialized, probably a comm created with ncclCommSplit
   NCCLCHECK(ncclCalloc(&state, 1));
   state->rank = rank;
   state->nranks = nranks;
@@ -303,6 +304,104 @@ ncclResult_t bootstrapInit(struct ncclBootstrapHandle* handle, struct ncclComm* 
   TRACE(NCCL_INIT, "rank %d nranks %d - DONE", rank, nranks);
 
   return ncclSuccess;
+}
+
+int compKeys(int* keys, int rank1, int rank2) {
+  int key1 = keys[rank1], key2 = keys[rank2];
+  if (key1 < key2) return 1;
+  if (key1 > key2) return -1;
+  // key1 == key2
+  if (rank1 < rank2) return 1;
+  if (rank1 > rank2) return -1;
+  // rank1 == rank2
+  return 0;
+}
+
+ncclResult_t bootstrapSplit(struct ncclComm* comm, struct ncclComm* parent, int color, int key, int* nranksRet, int* rankRet) {
+  ncclResult_t ret = ncclSuccess;
+  int rank = 0;
+  int nranks = 0;
+  int* colors = NULL;
+  int* keys = NULL;
+  int prev = -1, next = -1, first = -1, last = -1;
+  ncclSocketAddress listenAddr, tmpAddr;
+  struct ncclSocket* proxySocket;
+  struct bootstrapState* state;
+
+  NCCLCHECKGOTO(ncclCalloc(&colors, parent->nRanks), ret, fail);
+  NCCLCHECKGOTO(ncclCalloc(&keys, parent->nRanks), ret, fail);
+
+  // Compute nRanks, my rank and the ranks (of the original comm) before and after me
+  colors[parent->rank] = color;
+  keys[parent->rank] = key;
+  NCCLCHECKGOTO(bootstrapAllGather(parent->bootstrap, colors, sizeof(int)), ret, fail);
+  NCCLCHECKGOTO(bootstrapAllGather(parent->bootstrap, keys, sizeof(int)), ret, fail);
+
+  // Negative color does not create a new comm. Return now.
+  if (color == NCCL_SPLIT_NOCOLOR) goto exit;
+  
+  NCCLCHECKGOTO(ncclCalloc(&state, 1), ret, fail);
+  state->abortFlag = comm->abortFlag;
+  comm->bootstrap = state;
+
+  for (int i=0; i<parent->nRanks; i++) {
+    if (colors[i] != color) continue;
+    nranks++;
+    if (first == -1 || compKeys(keys, first, i) == -1) first = i;
+    if (last == -1 || compKeys(keys, last, i) == 1) last = i;
+    if (compKeys(keys, parent->rank, i) == -1) {
+      // rank is before me in the comm
+      rank++;
+      if ((prev == -1) || compKeys(keys, prev, i) == 1) prev = i;
+    } else if (i != parent->rank) {
+      if ((next == -1) || compKeys(keys, next, i) == -1) next = i;
+    }
+  }
+  if (prev == -1) prev = last;
+  if (next == -1) next = first;
+  *nranksRet = state->nranks = nranks;
+  *rankRet = state->rank = rank;
+
+  // Setup my sockets for the allgather ring and other p2p connections
+  NCCLCHECKGOTO(ncclSocketInit(&state->listenSock, &bootstrapNetIfAddr, comm->magic, ncclSocketTypeBootstrap, comm->abortFlag, 0), ret, fail);
+  NCCLCHECKGOTO(ncclSocketInit(&state->ringRecvSocket, NULL, comm->magic, ncclSocketTypeBootstrap, comm->abortFlag, 0), ret, fail);
+
+  // Create socket for other ranks to contact me
+  NCCLCHECKGOTO(ncclSocketListen(&state->listenSock), ret, fail);
+
+  // Get addr from next rank
+  NCCLCHECKGOTO(ncclSocketGetAddr(&state->listenSock, &listenAddr), ret, fail);
+  NCCLCHECKGOTO(bootstrapSend(parent->bootstrap, prev, -2, &listenAddr, sizeof(union ncclSocketAddress)), ret, fail);
+  NCCLCHECKGOTO(bootstrapRecv(parent->bootstrap, next, -2, &tmpAddr, sizeof(union ncclSocketAddress)), ret, fail);
+
+  NCCLCHECKGOTO(ncclSocketInit(&state->ringSendSocket, &tmpAddr, comm->magic, ncclSocketTypeBootstrap, comm->abortFlag, 0), ret, fail);
+  NCCLCHECKGOTO(ncclSocketConnect(&state->ringSendSocket), ret, fail);
+  // Accept the connect request from the previous rank in the AllGather ring
+  NCCLCHECKGOTO(ncclSocketAccept(&state->ringRecvSocket, &state->listenSock), ret, fail);
+
+  // AllGather all listen handlers
+  NCCLCHECKGOTO(ncclCalloc(&state->peerCommAddresses, nranks), ret, fail);
+  memcpy(state->peerCommAddresses+rank, &listenAddr, sizeof(union ncclSocketAddress));
+  NCCLCHECKGOTO(bootstrapAllGather(state, state->peerCommAddresses, sizeof(union ncclSocketAddress)), ret, fail);
+
+  // Create the service proxy
+  NCCLCHECKGOTO(ncclCalloc(&state->peerProxyAddresses, nranks), ret, fail);
+  NCCLCHECKGOTO(ncclCalloc(&proxySocket, 1), ret, fail);
+  NCCLCHECKGOTO(ncclSocketInit(proxySocket, &bootstrapNetIfAddr, comm->magic, ncclSocketTypeProxy, comm->abortFlag, 0), ret, fail);
+  NCCLCHECKGOTO(ncclSocketListen(proxySocket), ret, fail);
+  NCCLCHECKGOTO(ncclSocketGetAddr(proxySocket, &tmpAddr), ret, fail);
+  memcpy(state->peerProxyAddresses+rank, &tmpAddr, sizeof(union ncclSocketAddress));
+  NCCLCHECKGOTO(bootstrapAllGather(state, state->peerProxyAddresses, sizeof(union ncclSocketAddress)), ret, fail);
+  NCCLCHECKGOTO(ncclProxyInit(comm, proxySocket, state->peerProxyAddresses), ret, fail);
+
+  INFO(NCCL_INIT, "bootstrapSplit: rank %d nranks %d color %d key %d prev %d next %d - DONE", rank, nranks, color, key, prev, next);
+
+exit:
+  if (colors) free(colors);
+  if (keys) free(keys);
+  return ncclSuccess;
+fail:
+  goto exit;
 }
 
 ncclResult_t bootstrapAllGather(void* commState, void* allData, int size) {
