@@ -1010,6 +1010,11 @@ ncclResult_t ncclLaunchKernelBefore_NoUncapturedCuda(struct ncclComm* comm, stru
 NCCL_PARAM(CGAClusterSize, "CGA_CLUSTER_SIZE", 0);
 #endif
 
+#if CUDART_VERSION >= 12000
+// NCCL uses the "Remote" Mem Sync domain by default
+NCCL_PARAM(MemSyncDomain, "MEM_SYNC_DOMAIN", cudaLaunchMemSyncDomainRemote);
+#endif
+
 ncclResult_t ncclLaunchKernel(struct ncclComm* comm, struct ncclKernelPlan* plan) {
   struct ncclTasks* tasks = &comm->tasks;
   void *fn = plan->kernelFn;
@@ -1034,9 +1039,10 @@ ncclResult_t ncclLaunchKernel(struct ncclComm* comm, struct ncclKernelPlan* plan
     clusterSize = NCCL_MAX_CGA_CLUSTER_SIZE;
   }
 
-  if (clusterSize && driverVersion >= 11080) {
+  if (clusterSize || driverVersion >= 11080) {
     cudaLaunchConfig_t launchConfig = {0};
-    cudaLaunchAttribute launchAttrs[2];
+    cudaLaunchAttribute launchAttrs[3];
+    int attrs = 0;
     /* Cooperative Group Array (CGA)
      * On sm90 and later we have an extra level of hierarchy where we
      * can group together several blocks within the Grid, called
@@ -1047,17 +1053,23 @@ ncclResult_t ncclLaunchKernel(struct ncclComm* comm, struct ncclKernelPlan* plan
      * concurrently scheduled onto a group of SMs.
      * The maximum value is 8 and it must be divisible into the grid dimensions
      */
-    // Grid dimension must be divisible by clusterSize
-    if (grid.x % clusterSize) clusterSize = 1;
-    launchAttrs[0].id = cudaLaunchAttributeClusterDimension;
-    launchAttrs[0].val.clusterDim = {clusterSize, 1, 1};
-    launchAttrs[1].id = cudaLaunchAttributeClusterSchedulingPolicyPreference;
-    launchAttrs[1].val.clusterSchedulingPolicyPreference = cudaClusterSchedulingPolicySpread;
-
+    if (clusterSize) {
+      // Grid dimension must be divisible by clusterSize
+      if (grid.x % clusterSize) clusterSize = 1;
+      launchAttrs[attrs].id = cudaLaunchAttributeClusterDimension;
+      launchAttrs[attrs++].val.clusterDim = {clusterSize, 1, 1};
+      launchAttrs[attrs].id = cudaLaunchAttributeClusterSchedulingPolicyPreference;
+      launchAttrs[attrs++].val.clusterSchedulingPolicyPreference = cudaClusterSchedulingPolicySpread;
+    }
+#if CUDART_VERSION >= 12000
+    // Set the NCCL Mem Sync domain on CUDA 12.0 and later
+    launchAttrs[attrs].id = cudaLaunchAttributeMemSyncDomain;
+    launchAttrs[attrs++].val.memSyncDomain = (cudaLaunchMemSyncDomain) ncclParamMemSyncDomain();
+#endif
     launchConfig.gridDim = grid;
     launchConfig.blockDim = block;
     launchConfig.attrs = launchAttrs;
-    launchConfig.numAttrs = sizeof(launchAttrs)/sizeof(launchAttrs[0]);
+    launchConfig.numAttrs = attrs;
     launchConfig.stream = launchStream;
 
     CUDACHECK(cudaLaunchKernelExC(&launchConfig, fn, args));
