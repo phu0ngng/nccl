@@ -532,6 +532,8 @@ static ncclResult_t progressOps(struct ncclComm* comm, struct ncclProxyProgressS
   return ncclSuccess;
 }
 
+NCCL_PARAM(ProxyAppendBatchSize, "PROXY_APPEND_BATCH_SIZE", 16);
+
 static ncclResult_t ncclProxyGetPostedOps(struct ncclComm* comm, int* added) {
   struct ncclProxyProgressState* state = &comm->proxyState.progressState;
   if (state->opsPool == NULL) return ncclInternalError;
@@ -570,9 +572,16 @@ process_nextops:
   int freeOpEnd[NCCL_MAX_LOCAL_RANKS];
   for (int i=0; i<comm->localRanks; i++) freeOp[i] = -1;
 
+  uint64_t lastOpCount = 0;
+  int lastPeer = -1;
+  int count = 0;
   for (int opIndex = state->nextOps; opIndex != -1;) {
     struct ncclProxyOp* peerOp = pool->ops+opIndex;
     int peer = opIndex / MAX_OPS_PER_PEER;
+    if ((lastOpCount && peerOp->opCount != lastOpCount) || ((lastPeer != -1) && peer != lastPeer)) count++;
+    if (count == ncclParamProxyAppendBatchSize()+1) break;
+    lastOpCount = peerOp->opCount;
+    lastPeer = peer;
     if (peerOp->connection == NULL) return ncclInternalError;
     if (peerOp->next != -1) __builtin_prefetch(pool->ops+peerOp->next);
     NCCLCHECK(ProxyAppend(state, peerOp));
@@ -686,18 +695,16 @@ void* ncclProxyProgress(void *comm_) {
     }
     if (lastIdle == 0 && idle == 1) ncclProfilingRecord(&profArgs, 0, 0, ncclProxyProfileIdle);
     if (lastIdle == 1 && idle == 0) ncclProfilingRecord(&profArgs, 0, 0, ncclProxyProfileActive);
-    if (idle) {
-      int added = 0;
-      TIME_START(3);
-      ret = ncclProxyGetPostedOps(comm, &added);
-      if (added) { TIME_STOP(3); } else { TIME_CANCEL(3); }
-      if (ret != ncclSuccess) {
-        (void) ncclCommSetAsyncError(comm, ret);
-        INFO(NCCL_ALL,"%s:%d -> %d [Proxy Thread]", __FILE__, __LINE__, ret);
-      }
-      if (added == 0) {
-        sched_yield(); // No request progressed. Let others run.
-      }
+    int added = 0;
+    TIME_START(3);
+    ret = ncclProxyGetPostedOps(comm, &added);
+    if (added) { TIME_STOP(3); } else { TIME_CANCEL(3); }
+    if (ret != ncclSuccess) {
+      (void) ncclCommSetAsyncError(comm, ret);
+      INFO(NCCL_ALL,"%s:%d -> %d [Proxy Thread]", __FILE__, __LINE__, ret);
+    }
+    if (added == 0) {
+      sched_yield(); // No request progressed. Let others run.
     }
     lastIdle = idle;
   }
