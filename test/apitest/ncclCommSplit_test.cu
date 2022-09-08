@@ -51,13 +51,15 @@ TEST_F(ncclCommSplit_test, same_key) {
     for (int i=0; i<nVis; i++) ASSERT_NE((long)comms2[i], NULL);
 }
 TEST_F(ncclCommSplit_test, half) {
-    ASSERT_EQ(ncclSuccess, ncclGroupStart());
     int split = nVis/2;
-    for (int i=0; i<nVis; i++) {
-        ASSERT_EQ(ncclSuccess, ncclCommSplit(comms[i], i/(split), i%split, &comms2[i], NULL));
+    if (split > 0) {
+        ASSERT_EQ(ncclSuccess, ncclGroupStart());
+        for (int i=0; i<nVis; i++) {
+            ASSERT_EQ(ncclSuccess, ncclCommSplit(comms[i], i/(split), i%split, &comms2[i], NULL));
+        }
+        ASSERT_EQ(ncclSuccess, ncclGroupEnd());
+        for (int i=0; i<nVis; i++) ASSERT_NE((long)comms2[i], NULL);
     }
-    ASSERT_EQ(ncclSuccess, ncclGroupEnd());
-    for (int i=0; i<nVis; i++) ASSERT_NE((long)comms2[i], NULL);
 }
 TEST_F(ncclCommSplit_test, reverse) {
     ASSERT_EQ(ncclSuccess, ncclGroupStart());
