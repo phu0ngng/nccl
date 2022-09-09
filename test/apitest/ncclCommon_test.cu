@@ -17,6 +17,8 @@ int totalGpus = 0;
 ncclComm_t* commsArray = NULL;
 ncclComm_t* commsIBArray = NULL;
 ncclComm_t* commsSocketsArray = NULL;
+ncclComm_t* srCommsArray = NULL;
+bool srCommsInit = false;
 bool initialized = false;
 
 ncclComm_t* ncclCommon_getComms(int* nGpus) {
@@ -27,6 +29,28 @@ ncclComm_t* ncclCommon_getComms(int* nGpus) {
   }
   *nGpus = totalGpus;
   return commsArray;
+}
+
+ncclComm_t* ncclCommon_getsrComms(int* nGpus) {
+  if (srCommsArray == NULL && !srCommsInit) {
+    srCommsInit = true;
+    EXPECT_EQ(cudaSuccess, cudaGetDeviceCount(&totalGpus));
+    EXPECT_NE(nullptr, srCommsArray = (ncclComm_t*)calloc(sizeof(ncclComm_t), totalGpus));
+    EXPECT_EQ(ncclSuccess, ncclCommInitAll(srCommsArray, totalGpus, NULL));
+  }
+  *nGpus = totalGpus;
+  return srCommsArray;
+}
+
+void ncclCommon_destroysrComms() {
+  if (srCommsArray != NULL) {
+    for (int i = 0; i < totalGpus; ++i) {
+      EXPECT_EQ(ncclSuccess, ncclCommDestroy(srCommsArray[i]));  
+    }
+    free(srCommsArray);
+    srCommsArray = NULL;
+  }
+  return;
 }
 
 ncclComm_t* ncclCommon_getIBComms(int nGpus) {
