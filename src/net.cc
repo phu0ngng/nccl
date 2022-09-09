@@ -302,14 +302,18 @@ ncclResult_t ncclGpuGdrSupport(struct ncclComm* comm, int* gdrSupport) {
     return ncclSuccess;
   }
 #endif
-  int netDevs;
-  NCCLCHECK(ncclNetDevices(comm, &netDevs));
-  *gdrSupport = 0;
-  for (int dev=0; dev<netDevs; dev++) {
-    // Find a net device which is GDR-capable
-    ncclNetProperties_t props;
-    NCCLCHECK(ncclNetGetProperties(comm, dev, &props));
-    if ((props.ptrSupport & NCCL_PTR_CUDA) == 0) continue;
+  static int gdrSupportMatrix[32] = {
+	  -1, -1, -1, -1, -1, -1, -1, -1, -1, -1, -1, -1, -1, -1, -1, -1,
+	  -1, -1, -1, -1, -1, -1, -1, -1, -1, -1, -1, -1, -1, -1, -1, -1 };
+  if (gdrSupportMatrix[comm->cudaDev] == -1) {
+    int netDevs;
+    NCCLCHECK(ncclNetDevices(comm, &netDevs));
+    gdrSupportMatrix[comm->cudaDev] = 0;
+    for (int dev=0; dev<netDevs; dev++) {
+      // Find a net device which is GDR-capable
+      ncclNetProperties_t props;
+      NCCLCHECK(ncclNetGetProperties(comm, dev, &props));
+      if ((props.ptrSupport & NCCL_PTR_CUDA) == 0) continue;
 
     // Allocate memory on the GPU and try to register it on the NIC.
     void *lComm = NULL, *sComm = NULL, *rComm = NULL;
@@ -343,7 +347,7 @@ ncclResult_t ncclGpuGdrSupport(struct ncclComm* comm, int* gdrSupport) {
       NCCLCHECK(ncclNetDeregMr(comm, sComm, mHandle));
       NCCLCHECK(ncclNetRegMr(comm, rComm, gpuPtr, GPU_BUF_SIZE, NCCL_PTR_CUDA, &mHandle));
       NCCLCHECK(ncclNetDeregMr(comm, rComm, mHandle));
-      *gdrSupport = 1;
+      gdrSupportMatrix[comm->cudaDev] = 1;
     }
     ncclDebugNoWarn = 0;
     CUDACHECK(cudaFree(gpuPtr));
@@ -354,8 +358,10 @@ cleanup2:
       NCCLCHECK(ncclNetCloseSend(comm, sComm));
     NCCLCHECK(ncclNetCloseListen(comm, lComm));
 cleanup1:
-    break;
+      break;
+    }
   }
+  *gdrSupport = gdrSupportMatrix[comm->cudaDev];
   return ncclSuccess;
 }
 
