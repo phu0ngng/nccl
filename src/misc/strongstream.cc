@@ -14,27 +14,32 @@
 ncclResult_t ncclCudaGetCapturingGraph(
     struct ncclCudaGraph* graph, cudaStream_t stream
   ) {
-  #if CUDART_VERSION >= 11030
+  #if CUDART_VERSION >= 10000 // cudaStreamGetCaptureInfo
     int driver;
     NCCLCHECK(ncclCudaDriverVersion(&driver));
-    if (driver < 11030) {
+    if (CUDART_VERSION < 11030 || driver < 11030) {
       cudaStreamCaptureStatus status;
       unsigned long long gid;
-      graph->graph = nullptr;
       CUDACHECK(cudaStreamGetCaptureInfo(stream, &status, &gid));
+      #if CUDART_VERSION >= 11030
+        graph->graph = nullptr;
+        graph->graphId = ULLONG_MAX;
+      #endif
       if (status != cudaStreamCaptureStatusNone) {
-        WARN("The installed CUDA driver is older than the minimum version (R465) required for NCCL's CUDA Graphs support");
+        WARN("NCCL cannot be captured in a graph if either it wasn't built with CUDA runtime >= 11.3 or if the installed CUDA driver < R465.");
         return ncclInvalidUsage;
       }
     } else {
-      cudaStreamCaptureStatus status;
-      unsigned long long gid;
-      CUDACHECK(cudaStreamGetCaptureInfo_v2(stream, &status, &gid, &graph->graph, nullptr, nullptr));
-      if (status != cudaStreamCaptureStatusActive) {
-        graph->graph = nullptr;
-        gid = ULLONG_MAX;
-      }
-      graph->graphId = gid;
+      #if CUDART_VERSION >= 11030
+        cudaStreamCaptureStatus status;
+        unsigned long long gid;
+        CUDACHECK(cudaStreamGetCaptureInfo_v2(stream, &status, &gid, &graph->graph, nullptr, nullptr));
+        if (status != cudaStreamCaptureStatusActive) {
+          graph->graph = nullptr;
+          gid = ULLONG_MAX;
+        }
+        graph->graphId = gid;
+      #endif
     }
   #endif
   return ncclSuccess;
