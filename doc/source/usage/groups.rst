@@ -78,16 +78,7 @@ In the following example, we launch one broadcast and two allReduce operations t
  ncclAllReduce(sendbuff3, recvbuff3, count3, datatype, comm, stream);
  ncclGroupEnd();
 
-It is not permitted to use different streams for a given NCCL communicator. This sequence is erroneous:
-
-.. code:: C
-
- ncclGroupStart();
- ncclAllReduce(sendbuff1, recvbuff1, count1, comm, stream1);
- ncclAllReduce(sendbuff2, recvbuff2, count2, comm, stream2);
- ncclGroupEnd();
-
-It is, however, permitted to combine aggregation with multi-GPU launch and use different communicators in a group launch
+It is permitted to combine aggregation with multi-GPU launch and use different communicators in a group launch
 as shown in the Management Of Multiple GPUs From One Thread topic.  When combining multi-GPU launch and aggregation,
 ncclGroupStart and ncclGroupEnd can be either used once or at each level. The following example groups the allReduce
 operations from different layers and on multiple CUDA devices :
@@ -105,13 +96,49 @@ operations from different layers and on multiple CUDA devices :
  ncclGroupEnd();
 
 Note: The NCCL operation will only be started as a whole during the last call to ncclGroupEnd. The ncclGroupStart and
-ncclGroupEnd calls within the for loop are not necessary and do nothing. Also, a given communicator comms[g] is always
-used with the same stream streams[g].
-
-Also note, that there is a maximum of 2048 NCCL operations that can be inserted between the ncclGroupStart and ncclGroupEnd calls.
-If this limit is exceeded, then a warning message will be emitted and the NCCL operation will return a failure code.
+ncclGroupEnd calls within the for loop are not necessary and do nothing.
 
 Related links:
 
 * :c:func:`ncclGroupStart`
 * :c:func:`ncclGroupEnd`
+
+Nonblocking Group Operation
+-------------------------------------
+
+If a communicator is marked as nonblocking through ncclCommInitRankConfig, the group functions become asynchronous 
+correspondingly. In this case, if users issue multiple NCCL operations in one group, returning from ncclGroupEnd() might 
+not mean the NCCL communication kernels have been issued to CUDA streams. If ncclGroupEnd() returns ncclSuccess, it means 
+NCCL kernels have been issued to streams; if it returns ncclInProgress, it means NCCL kernels are being issued to streams 
+in the background. It is users' responsibility to make sure the state of the communicator changes into ncclSuccess 
+before calling related CUDA calls (e.g. cudaStreamSynchronize):
+
+.. code:: C
+
+ ncclGroupStart();
+   for (int g=0; g<ngpus; g++) {
+     ncclAllReduce(sendbuffs[g]+offsets[i], recvbuffs[g]+offsets[i], counts[i], datatype[i], comms[g], streams[g]);
+   }
+ ret = ncclGroupEnd();
+ if (ret == ncclInProgress) {
+    for (int g=0; g<ngpus; g++) {
+      do {
+        ncclCommGetAsyncError(comms[g], &state);
+      } while (state == ncclInProgress);
+    }
+ } else if (ret == ncclSuccess) {
+    /* Successfully issued */
+    printf("NCCL kernel issue succeeded\n");
+ } else {
+    /* Errors happen */
+    reportErrorAndRestart();
+ }
+ 
+ for (int g=0; g<ngpus; g++) {
+   cudaStreamSynchronize(streams[g]);
+ }
+
+Related links:
+
+* :c:func:`ncclCommInitRankConfig`
+* :c:func:`ncclCommGetAsyncError`

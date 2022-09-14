@@ -190,6 +190,7 @@ TYPED_TEST(ncclAllReduce_test, DISABLED_stream_wrong) {
                             this->DataType(), this->RedOps[0],
                             this->comms[i], this->streams[j]));
 };
+
 // Aggregation
 // Only for 2.2 or higher
 #if NCCL_MAJOR > 2 || (NCCL_MAJOR == 2 && NCCL_MINOR >=2)
@@ -242,4 +243,35 @@ TYPED_TEST(ncclAllReduce_test, aggregate_ll_singleRing_multiRing) {
     ASSERT_EQ(ncclSuccess, ncclGroupEnd());
 };
 #endif
+
+TYPED_TEST(ncclAllReduce_test, multi_net) {
+    if (this->commsIB != NULL) {
+        ASSERT_EQ(ncclSuccess, ncclGroupStart());
+        for (int i = 0; i < this->nVis; ++i) {
+            ASSERT_EQ(ncclSuccess,
+                        ncclAllReduce(this->sendbuffs[i], this->recvbuffs[i],
+                                    std::min(this->N, 1024 * 1024),
+                                    this->DataType(), ncclSum,
+                                    this->commsIB[i], this->streams[i]))
+                << " IB op: " << ncclSum << ", "
+                << "i" << i << ", " << std::endl;
+        }
+        ASSERT_EQ(ncclSuccess, ncclGroupEnd());
+
+        ASSERT_EQ(ncclSuccess, ncclGroupStart());
+        for (int i = 0; i < this->nVis; ++i) {
+            ASSERT_EQ(ncclSuccess,
+                        ncclAllReduce(this->sendbuffs[i], this->recvbuffs[i],
+                                    std::min(this->N, 1024 * 1024),
+                                    this->DataType(), ncclSum,
+                                    this->commsSockets[i], this->streams[i]))
+                << " Socket op: " << ncclSum << ", "
+                << "i" << i << ", " << std::endl;
+        }
+        ASSERT_EQ(ncclSuccess, ncclGroupEnd());
+    } else {
+        std::cout << "multi_net disabled" << std::endl;
+    }
+};
+
 // EOF

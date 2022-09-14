@@ -1,5 +1,5 @@
 /*************************************************************************
- * Copyright (c) 2021, NVIDIA CORPORATION. All rights reserved.
+ * Copyright (c) 2022, NVIDIA CORPORATION. All rights reserved.
  *
  * See LICENSE.txt for license information
  ************************************************************************/
@@ -8,12 +8,18 @@
 #define NCCL_CUDAWRAP_H_
 
 #include <cuda.h>
+#include <cuda_runtime.h>
+#include "checks.h"
+
+#if CUDART_VERSION >= 11030
 #include <cudaTypedefs.h>
+#else
+typedef CUresult (CUDAAPI *PFN_cuInit_v2000)(unsigned int Flags);
+typedef CUresult (CUDAAPI *PFN_cuDriverGetVersion_v2020)(int *driverVersion);
+typedef CUresult (CUDAAPI *PFN_cuGetProcAddress_v11030)(const char *symbol, void **pfn, int driverVersion, cuuint64_t flags);
+#endif
 
-#define CUPFN(cmd) pfn_##cmd
-
-// Map cu API call to pfn_cu API call
-#define CUWRAP(cmd) ((void *)pfn_##cmd != NULL ? (pfn_##cmd) : CUDA_SUCCESS)
+#define CUPFN(symbol) pfn_##symbol
 
 // Check CUDA PFN driver calls
 #define CUCHECK(cmd) do {				      \
@@ -56,28 +62,51 @@
     }									\
 } while(0)
 
-#define DECLARE_CUDA_PFN_EXTERN(symbol) extern PFN_##symbol pfn_##symbol
+#define DECLARE_CUDA_PFN_EXTERN(symbol,version) extern PFN_##symbol##_v##version pfn_##symbol
 
+#if CUDART_VERSION >= 11030
 /* CUDA Driver functions loaded with cuGetProcAddress for versioning */
-DECLARE_CUDA_PFN_EXTERN(cuGetErrorString);
-DECLARE_CUDA_PFN_EXTERN(cuGetErrorName);
-DECLARE_CUDA_PFN_EXTERN(cuMemAddressFree);
-DECLARE_CUDA_PFN_EXTERN(cuMemAddressReserve);
-DECLARE_CUDA_PFN_EXTERN(cuMemCreate);
-DECLARE_CUDA_PFN_EXTERN(cuMemRelease);
-DECLARE_CUDA_PFN_EXTERN(cuMemGetAddressRange);
-DECLARE_CUDA_PFN_EXTERN(cuMemExportToShareableHandle);
-DECLARE_CUDA_PFN_EXTERN(cuMemImportFromShareableHandle);
-DECLARE_CUDA_PFN_EXTERN(cuMemSetAccess);
-DECLARE_CUDA_PFN_EXTERN(cuMemMap);
-DECLARE_CUDA_PFN_EXTERN(cuMemUnmap);
+DECLARE_CUDA_PFN_EXTERN(cuDeviceGet, 2000);
+DECLARE_CUDA_PFN_EXTERN(cuDeviceGetAttribute, 2000);
+DECLARE_CUDA_PFN_EXTERN(cuGetErrorString, 6000);
+DECLARE_CUDA_PFN_EXTERN(cuGetErrorName, 6000);
+DECLARE_CUDA_PFN_EXTERN(cuMemGetAddressRange, 3020);
+DECLARE_CUDA_PFN_EXTERN(cuCtxCreate, 3020);
+DECLARE_CUDA_PFN_EXTERN(cuCtxDestroy, 4000);
+DECLARE_CUDA_PFN_EXTERN(cuCtxSetCurrent, 4000);
+// cuMem API support
+DECLARE_CUDA_PFN_EXTERN(cuMemAddressReserve, 10020);
+DECLARE_CUDA_PFN_EXTERN(cuMemAddressFree, 10020);
+DECLARE_CUDA_PFN_EXTERN(cuMemCreate, 10020);
+DECLARE_CUDA_PFN_EXTERN(cuMemExportToShareableHandle, 10020);
+DECLARE_CUDA_PFN_EXTERN(cuMemImportFromShareableHandle, 10020);
+DECLARE_CUDA_PFN_EXTERN(cuMemMap, 10020);
+DECLARE_CUDA_PFN_EXTERN(cuMemRelease, 10020);
+DECLARE_CUDA_PFN_EXTERN(cuMemSetAccess, 10020);
+DECLARE_CUDA_PFN_EXTERN(cuMemUnmap, 10020);
+#if CUDA_VERSION >= 11070
+DECLARE_CUDA_PFN_EXTERN(cuMemGetHandleForAddressRange, 11070); // DMA-BUF support
+#endif
+#endif
 
 /* CUDA Driver functions loaded with dlsym() */
-DECLARE_CUDA_PFN_EXTERN(cuInit);
-DECLARE_CUDA_PFN_EXTERN(cuDriverGetVersion);
-DECLARE_CUDA_PFN_EXTERN(cuGetProcAddress);
+DECLARE_CUDA_PFN_EXTERN(cuInit, 2000);
+DECLARE_CUDA_PFN_EXTERN(cuDriverGetVersion, 2020);
+DECLARE_CUDA_PFN_EXTERN(cuGetProcAddress, 11030);
 
 
-ncclResult_t cudaLibraryInit(void);
+ncclResult_t ncclCudaLibraryInit(void);
+
+extern int ncclCudaDriverVersionCache;
+
+inline ncclResult_t ncclCudaDriverVersion(int* driver) {
+  int version = __atomic_load_n(&ncclCudaDriverVersionCache, __ATOMIC_RELAXED);
+  if (version == -1) {
+    CUDACHECK(cudaDriverGetVersion(&version));
+    __atomic_store_n(&ncclCudaDriverVersionCache, version, __ATOMIC_RELAXED);
+  }
+  *driver = version;
+  return ncclSuccess;
+}
 
 #endif

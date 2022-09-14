@@ -244,7 +244,7 @@ testResult_t InitData(void* data, const size_t count, ncclDataType_t type, const
 
 void Barrier(struct threadArgs* args)
 {
-  while (args->barrier[args->barrier_idx] != args->thread) pthread_yield();
+  while (args->barrier[args->barrier_idx] != args->thread) sched_yield();
 
   args->barrier[args->barrier_idx] = args->thread + 1;
 
@@ -254,7 +254,7 @@ void Barrier(struct threadArgs* args)
 #endif
     args->barrier[args->barrier_idx] = 0;
   } else {
-    while (args->barrier[args->barrier_idx]) pthread_yield();
+    while (args->barrier[args->barrier_idx]) sched_yield();
   }
 
   args->barrier_idx=!args->barrier_idx;
@@ -351,7 +351,7 @@ testResult_t testStreamSynchronize(int ngpus, cudaStream_t* streams, ncclComm_t*
    }
 
    // We might want to let other threads (including NCCL threads) use the CPU.
-   if (idle) pthread_yield();
+   if (idle) sched_yield();
   }
   free(done);
   return testSuccess;
@@ -553,6 +553,8 @@ static testResult_t recv(struct testCall* args, struct threadArgs* targs) {
   return testSuccess;
 }
 
+enum testFuncs { testFuncAllReduce = 0, testFuncAllGather = 1, testFuncReduceScatter = 2, testFuncBroadcast = 3, testFuncReduce = 4,
+	testFuncGroupStart = 5, testFuncGroupEnd = 6, testFuncSend = 7, testFuncRecv = 8 };
 testFunc_t testFuncArray[] = { allReduce, allGather, reduceScatter, broadcast, reduce, groupStart, groupEnd, send, recv };
 const char *testFuncNames[] = { "ncclAllReduce", "ncclAllGather", "ncclReduceScatter", "ncclBroadcast", "ncclReduce", "ncclGroupStart", "ncclGroupEnd", "ncclSend", "ncclRecv" };
 const char *testTypeNames[ncclNumTypes] = {"ncclInt8", "ncclUint8", "ncclInt32", "ncclUint32", "ncclInt64", "ncclUint64", "ncclHalf", "ncclFloat", "ncclDouble"};
@@ -635,13 +637,15 @@ testResult_t testLoadCalls(FILE* input, struct testCall** callsPtr, int* nCallsP
   return testSuccess;
 }
 
-testResult_t getMaxBytes(struct testCall* calls, int nCalls, int rank, size_t* maxBytesPtr) {
+testResult_t getMaxBytes(struct testCall* calls, int nCalls, int rank, int nranks, size_t* maxBytesPtr) {
   size_t bytes = 0ULL;
   size_t maxBytes = 0ULL;
   for (int i=0; i<nCalls; i++) {
     struct testCall* call = calls+i;
     if (call->rank != -1 && call->rank != rank) continue;
-    bytes += call->count * wordSize(call->datatype);
+    size_t count = call->count;
+    if (call->func == testFuncReduceScatter || call->func == testFuncAllGather) count *= nranks;
+    bytes += count * wordSize(call->datatype);
     maxBytes = std::max(bytes, maxBytes);
     if (call->group == 0) bytes = 0;
   }
@@ -726,7 +730,8 @@ testResult_t run() {
     CUDACHECK(cudaSetDevice(gpus[i]));
     size_t maxBytes;
     int rank = proc*nGpus*nThreads + i;
-    TESTCHECK(getMaxBytes(calls, nCalls, rank, &maxBytes));
+    int nranks = nProcs*nGpus*nThreads;
+    TESTCHECK(getMaxBytes(calls, nCalls, rank, nranks, &maxBytes));
     TESTCHECK(AllocateBuffs(sendBuffsBase+i, recvBuffsBase+i, expected+i, maxBytes));
     CUDACHECK(cudaStreamCreateWithFlags(streams+i, cudaStreamNonBlocking));
   }

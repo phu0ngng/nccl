@@ -11,8 +11,6 @@
 #include <dlfcn.h>
 #include "core.h"
 
-static enum { ibvUninitialized, ibvInitializing, ibvInitialized, ibvError } ibvState = ibvUninitialized;
-
 /*Function Pointers*/
 int (*ibv_internal_fork_init)(void);
 struct ibv_device** (*ibv_internal_get_device_list)(int *num_devices);
@@ -30,6 +28,8 @@ struct ibv_pd * (*ibv_internal_alloc_pd)(struct ibv_context *context);
 int (*ibv_internal_dealloc_pd)(struct ibv_pd *pd);
 struct ibv_mr * (*ibv_internal_reg_mr)(struct ibv_pd *pd, void *addr, size_t length, int access);
 struct ibv_mr * (*ibv_internal_reg_mr_iova2)(struct ibv_pd *pd, void *addr, size_t length, uint64_t iova, int access);
+/* DMA-BUF support */
+struct ibv_mr * (*ibv_internal_reg_dmabuf_mr)(struct ibv_pd *pd, uint64_t offset, size_t length, uint64_t iova, int fd, int access);
 int (*ibv_internal_dereg_mr)(struct ibv_mr *mr);
 struct ibv_cq * (*ibv_internal_create_cq)(struct ibv_context *context, int cqe, void *cq_context, struct ibv_comp_channel *channel, int comp_vector);
 int (*ibv_internal_destroy_cq)(struct ibv_cq *cq);
@@ -41,18 +41,10 @@ const char * (*ibv_internal_event_type_str)(enum ibv_event_type event);
 // IBVERBS Library versioning
 #define IBVERBS_VERSION "IBVERBS_1.1"
 
-ncclResult_t wrap_ibv_symbols(void) {
-  if (ibvState == ibvInitialized)
-    return ncclSuccess;
-  if (ibvState == ibvError)
-    return ncclSystemError;
+static pthread_once_t initOnceControl = PTHREAD_ONCE_INIT;
+static ncclResult_t initResult;
 
-  if (__sync_bool_compare_and_swap(&ibvState, ibvUninitialized, ibvInitializing) == false) {
-    // Another thread raced in front of us. Wait for it to be done.
-    while (ibvState == ibvInitializing) pthread_yield();
-    return (ibvState == ibvInitialized) ? ncclSuccess : ncclSystemError;
-  }
-
+static void initOnceFunc(void) {
   static void* ibvhandle = NULL;
   void* tmp;
   void** cast;
@@ -98,6 +90,8 @@ ncclResult_t wrap_ibv_symbols(void) {
   LOAD_SYM(ibvhandle, "ibv_reg_mr", ibv_internal_reg_mr);
   // Cherry-pick the ibv_reg_mr_iova2 API from IBVERBS 1.8
   LOAD_SYM_VERSION(ibvhandle, "ibv_reg_mr_iova2", ibv_internal_reg_mr_iova2, "IBVERBS_1.8");
+  // Cherry-pick the ibv_reg_dmabuf_mr API from IBVERBS 1.12
+  LOAD_SYM_VERSION(ibvhandle, "ibv_reg_dmabuf_mr", ibv_internal_reg_dmabuf_mr, "IBVERBS_1.12");
   LOAD_SYM(ibvhandle, "ibv_dereg_mr", ibv_internal_dereg_mr);
   LOAD_SYM(ibvhandle, "ibv_create_cq", ibv_internal_create_cq);
   LOAD_SYM(ibvhandle, "ibv_destroy_cq", ibv_internal_destroy_cq);
@@ -107,8 +101,8 @@ ncclResult_t wrap_ibv_symbols(void) {
   LOAD_SYM(ibvhandle, "ibv_fork_init", ibv_internal_fork_init);
   LOAD_SYM(ibvhandle, "ibv_event_type_str", ibv_internal_event_type_str);
 
-  ibvState = ibvInitialized;
-  return ncclSuccess;
+  initResult = ncclSuccess;
+  return;
 
 teardown:
   ibv_internal_get_device_list = NULL;
@@ -126,6 +120,7 @@ teardown:
   ibv_internal_dealloc_pd = NULL;
   ibv_internal_reg_mr = NULL;
   ibv_internal_reg_mr_iova2 = NULL;
+  ibv_internal_reg_dmabuf_mr = NULL;
   ibv_internal_dereg_mr = NULL;
   ibv_internal_create_cq = NULL;
   ibv_internal_destroy_cq = NULL;
@@ -136,8 +131,13 @@ teardown:
   ibv_internal_event_type_str = NULL;
 
   if (ibvhandle != NULL) dlclose(ibvhandle);
-  ibvState = ibvError;
-  return ncclSystemError;
+  initResult = ncclSystemError;
+  return;
+}
+
+ncclResult_t wrap_ibv_symbols(void) {
+  pthread_once(&initOnceControl, initOnceFunc);
+  return initResult;
 }
 
 #define IBV_PTR_CHECK_ERRNO(name_internal, call, retval, error_retval, name) \
@@ -251,7 +251,7 @@ ncclResult_t wrap_ibv_query_qp(struct ibv_qp *qp, struct ibv_qp_attr *attr, int 
 }
 
 ncclResult_t wrap_ibv_alloc_pd(struct ibv_pd **ret, struct ibv_context *context) {
-  IBV_PTR_CHECK(ibv_internal_alloc_pd, ibv_internal_alloc_pd(context), *ret, NULL, "ibv_alloc_pd");
+  IBV_PTR_CHECK_ERRNO(ibv_internal_alloc_pd, ibv_internal_alloc_pd(context), *ret, NULL, "ibv_alloc_pd");
 }
 
 ncclResult_t wrap_ibv_dealloc_pd(struct ibv_pd *pd) { /*returns 0 on success, or the value of errno on failure (which indicates the failure reason)*/
@@ -259,7 +259,7 @@ ncclResult_t wrap_ibv_dealloc_pd(struct ibv_pd *pd) { /*returns 0 on success, or
 }
 
 ncclResult_t wrap_ibv_reg_mr(struct ibv_mr **ret, struct ibv_pd *pd, void *addr, size_t length, int access) {
-  IBV_PTR_CHECK(ibv_internal_reg_mr, ibv_internal_reg_mr(pd, addr, length, access), *ret, NULL, "ibv_reg_mr");
+  IBV_PTR_CHECK_ERRNO(ibv_internal_reg_mr, ibv_internal_reg_mr(pd, addr, length, access), *ret, NULL, "ibv_reg_mr");
 }
 
 struct ibv_mr * wrap_direct_ibv_reg_mr(struct ibv_pd *pd, void *addr, size_t length, int access) {
@@ -275,7 +275,20 @@ ncclResult_t wrap_ibv_reg_mr_iova2(struct ibv_mr **ret, struct ibv_pd *pd, void 
     return ncclInternalError;
   }
   if (ret == NULL) { return ncclSuccess; } // Assume dummy call
-  IBV_PTR_CHECK(ibv_internal_reg_mr_iova2, ibv_internal_reg_mr_iova2(pd, addr, length, iova, access), *ret, NULL, "ibv_reg_mr_iova2");
+  IBV_PTR_CHECK_ERRNO(ibv_internal_reg_mr_iova2, ibv_internal_reg_mr_iova2(pd, addr, length, iova, access), *ret, NULL, "ibv_reg_mr_iova2");
+}
+
+/* DMA-BUF support */
+ncclResult_t wrap_ibv_reg_dmabuf_mr(struct ibv_mr **ret, struct ibv_pd *pd, uint64_t offset, size_t length, uint64_t iova, int fd, int access) {
+  IBV_PTR_CHECK_ERRNO(ibv_internal_reg_dmabuf_mr, ibv_internal_reg_dmabuf_mr(pd, offset, length, iova, fd, access), *ret, NULL, "ibv_reg_dmabuf_mr");
+}
+
+struct ibv_mr * wrap_direct_ibv_reg_dmabuf_mr(struct ibv_pd *pd, uint64_t offset, size_t length, uint64_t iova, int fd, int access) {
+  if (ibv_internal_reg_dmabuf_mr == NULL) {
+    errno = EOPNOTSUPP; // ncclIbDmaBufSupport() requires this errno being set
+    return NULL;
+  }
+  return ibv_internal_reg_dmabuf_mr(pd, offset, length, iova, fd, access);
 }
 
 ncclResult_t wrap_ibv_dereg_mr(struct ibv_mr *mr) { /*returns 0 on success, or the value of errno on failure (which indicates the failure reason)*/
@@ -283,7 +296,7 @@ ncclResult_t wrap_ibv_dereg_mr(struct ibv_mr *mr) { /*returns 0 on success, or t
 }
 
 ncclResult_t wrap_ibv_create_cq(struct ibv_cq **ret, struct ibv_context *context, int cqe, void *cq_context, struct ibv_comp_channel *channel, int comp_vector) {
-  IBV_PTR_CHECK(ibv_internal_create_cq, ibv_internal_create_cq(context, cqe, cq_context, channel, comp_vector), *ret, NULL, "ibv_create_cq");
+  IBV_PTR_CHECK_ERRNO(ibv_internal_create_cq, ibv_internal_create_cq(context, cqe, cq_context, channel, comp_vector), *ret, NULL, "ibv_create_cq");
 }
 
 ncclResult_t wrap_ibv_destroy_cq(struct ibv_cq *cq) {
@@ -295,7 +308,7 @@ ncclResult_t wrap_ibv_destroy_qp(struct ibv_qp *qp) {
 }
 
 ncclResult_t wrap_ibv_create_qp(struct ibv_qp **ret, struct ibv_pd *pd, struct ibv_qp_init_attr *qp_init_attr) {
-  IBV_PTR_CHECK(ibv_internal_create_qp, ibv_internal_create_qp(pd, qp_init_attr), *ret, NULL, "ibv_create_qp");
+  IBV_PTR_CHECK_ERRNO(ibv_internal_create_qp, ibv_internal_create_qp(pd, qp_init_attr), *ret, NULL, "ibv_create_qp");
 }
 
 ncclResult_t wrap_ibv_modify_qp(struct ibv_qp *qp, struct ibv_qp_attr *attr, int attr_mask) { /*returns 0 on success, or the value of errno on failure (which indicates the failure reason)*/

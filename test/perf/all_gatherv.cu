@@ -74,7 +74,7 @@ testResult_t ncclAllGatherv(void* sendbuff, void* recvbuff, size_t count, ncclDa
     }
 #endif
   }
-  NCCLCHECK(ncclGroupEnd());
+  NCCLCHECK_COMM_WAIT(ncclGroupEnd(), comm);
   return testSuccess;
 }
 
@@ -113,7 +113,7 @@ testResult_t AllGathervRunTest(struct threadArgs* args, int root, ncclDataType_t
   }
 
   for (int i=0; i<type_count; i++) {
-    TESTCHECK(TimeTest(args, run_types[i], run_typenames[i], (ncclRedOp_t)0, "", 0));
+    TESTCHECK(TimeTest(args, run_types[i], run_typenames[i], (ncclRedOp_t)0, "none", 0));
   }
   return testSuccess;
 }
