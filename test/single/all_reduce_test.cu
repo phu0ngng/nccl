@@ -12,7 +12,6 @@
 
 #include "nccl.h"
 #include "test_utilities.h"
-#include <nvToolsExt.h>
 
 int csv = false;
 int errors = 0;
@@ -57,7 +56,6 @@ void RunTest(T** sendbuff, T** recvbuff, const int N, const ncclDataType_t type,
         OperationName(op).c_str());
 
     // do out-of-place reduction first
-    nvtxRangePushA("out of place");
     // init values
     for (int i = 0; i < nDev; ++i) {
       CUDACHECK(cudaSetDevice(dList[i]));
@@ -84,9 +82,7 @@ void RunTest(T** sendbuff, T** recvbuff, const int N, const ncclDataType_t type,
     }
 
     auto stop = std::chrono::high_resolution_clock::now();
-    nvtxRangePop();
 
-    nvtxRangePushA("out of place bookkeeping");
     double elapsedSec =
         std::chrono::duration_cast<std::chrono::duration<double>>(
             stop - start).count(); // / 100.0;
@@ -106,8 +102,6 @@ void RunTest(T** sendbuff, T** recvbuff, const int N, const ncclDataType_t type,
     if (maxDelta > deltaMaxValue(type, is_reduction)) errors++;
     avg_bw += busbw;
     avg_count++;
-
-    nvtxRangePop();
   }
 
 
@@ -115,7 +109,6 @@ void RunTest(T** sendbuff, T** recvbuff, const int N, const ncclDataType_t type,
   {
     int n = N;
     // now do in-place reduction
-    nvtxRangePushA("in place");
     // init values
     for (int i = 0; i < nDev; ++i) {
       CUDACHECK(cudaSetDevice(dList[i]));
@@ -142,9 +135,7 @@ void RunTest(T** sendbuff, T** recvbuff, const int N, const ncclDataType_t type,
     }
 
     auto stop = std::chrono::high_resolution_clock::now();
-    nvtxRangePop();
 
-    nvtxRangePushA("in place bookkeeping");
     double elapsedSec =
         std::chrono::duration_cast<std::chrono::duration<double>>(
             stop - start).count(); // / 100.0;
@@ -164,8 +155,6 @@ void RunTest(T** sendbuff, T** recvbuff, const int N, const ncclDataType_t type,
     if (maxDelta > deltaMaxValue(type, is_reduction)) errors++;
     avg_bw += busbw;
     avg_count++;
-
-    nvtxRangePop();
   }
 
   for (int i = 0; i < nDev; ++i) {
