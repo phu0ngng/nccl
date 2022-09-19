@@ -58,7 +58,7 @@ AC_DEFUN([MCA_ompi_coll_nccl_CONFIG],[
     AC_PATH_PROG(mca_ompi_coll_nccl_nvcc, [nvcc], [notfound], [$PATH:$mca_ompi_coll_nccl_cuda_dir/bin])
 
 
-    coll_nccl_LIBS="-lnccl -lcudart -lcuda -lcurand -lnvToolsExt"
+    coll_nccl_LIBS="-lnccl -lcudart -lcuda -lcurand"
     coll_nccl_LDFLAGS="-L$mca_ompi_coll_nccl_dir/lib -L$mca_ompi_coll_nccl_cuda_dir/lib64"
     coll_nccl_CPPFLAGS="-I$mca_ompi_coll_nccl_dir/include"
     coll_nccl_NVCC="$mca_ompi_coll_nccl_nvcc"
