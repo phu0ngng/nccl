@@ -574,7 +574,7 @@ testResult_t BenchTime(struct threadArgs* args, ncclDataType_t type, ncclRedOp_t
   }
   double sideBw = ((double)compThreadCount)*COMP_SIZE*NUM_BLOCKS/(1000*timeUsec);
 
-  if (datacheck) {
+  if (args->reportErrors) {
      if (side_comp == 1) {
        PRINT("  %7s  %6.2f  %6.2f  %5g %6.2f %5d", timeStr, algBw, busBw, (double)wrongElts, sideBw, actualIters);
      } else {
@@ -1212,7 +1212,7 @@ testResult_t run() {
     threads[t].args.bw=bw+t;
     threads[t].args.bw_count=bw_count+t;
 
-    threads[t].args.reportErrors = 1;
+    threads[t].args.reportErrors = datacheck;
 
     threads[t].args.replayFile = replay_file;
 
