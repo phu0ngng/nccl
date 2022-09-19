@@ -5,7 +5,7 @@ include ../../makefiles/common.mk
 BUILDDIR := $(abspath ../../build)
 NVCUFLAGS += -I$(BUILDDIR)/include/ -I../include
 
-LIBRARIES += curand nccl
+LIBRARIES += curand nccl nvToolsExt
 NVLDFLAGS += -L$(BUILDDIR)/lib $(LIBRARIES:%=-l%)
 
 DST_DIR := $(BUILDDIR)/test/single
