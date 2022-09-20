@@ -10,7 +10,6 @@
 #include <stdio.h>
 #include <cstdint>
 #include <algorithm>
-#include <curand.h>
 #ifdef MPI_SUPPORT
 #include "mpi.h"
 #endif

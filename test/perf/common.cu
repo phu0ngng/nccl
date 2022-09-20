@@ -449,6 +449,7 @@ testResult_t BenchTime(struct threadArgs* args, ncclDataType_t type, ncclRedOp_t
   Barrier(args);
   args->compThreadCountLast = *(args->compThreadCount);
 
+#if CUDART_VERSION >= 11030
   cudaGraph_t graphs[args->nGpus];
   cudaGraphExec_t graphExec[args->nGpus];
   if (cudaGraphLaunches >= 1) {
@@ -461,6 +462,7 @@ testResult_t BenchTime(struct threadArgs* args, ncclDataType_t type, ncclRedOp_t
       CUDACHECK(cudaStreamBeginCapture(args->streams[i], cudaStreamCaptureModeThreadLocal));
     }
   }
+#endif
 
   // Performance Benchmark
   timer tim;
@@ -472,6 +474,7 @@ testResult_t BenchTime(struct threadArgs* args, ncclDataType_t type, ncclRedOp_t
     if (agg_iters>1) NCCLCHECK(ncclGroupEnd());
   }
 
+#if CUDART_VERSION >= 11030
   if (cudaGraphLaunches >= 1) {
     // End cuda graph capture
     for (int i=0; i<args->nGpus; i++) {
@@ -490,6 +493,7 @@ testResult_t BenchTime(struct threadArgs* args, ncclDataType_t type, ncclRedOp_t
       }
     }
   }
+#endif
 
   double cputimeSec = tim.elapsed()/(actualIters*agg_iters);
   TESTCHECK(completeColl(args));
@@ -500,6 +504,7 @@ testResult_t BenchTime(struct threadArgs* args, ncclDataType_t type, ncclRedOp_t
   if (cudaGraphLaunches >= 1) deltaSec = deltaSec/cudaGraphLaunches;
   Allreduce(args, &deltaSec, average);
 
+#if CUDART_VERSION >= 11030
   if (cudaGraphLaunches >= 1) {
     //destroy cuda graph
     for (int i=0; i<args->nGpus; i++) {
@@ -507,6 +512,7 @@ testResult_t BenchTime(struct threadArgs* args, ncclDataType_t type, ncclRedOp_t
       CUDACHECK(cudaGraphDestroy(graphs[i]));
     }
   }
+#endif
 
   double algBw, busBw;
   args->collTest->getBw(count, wordSize(type), deltaSec, &algBw, &busBw, args->nProcs*args->nThreads*args->nGpus);
@@ -520,16 +526,19 @@ testResult_t BenchTime(struct threadArgs* args, ncclDataType_t type, ncclRedOp_t
       // Initialize sendbuffs, recvbuffs and expected
       TESTCHECK(args->collTest->initData(args, type, op, root, rep, in_place));
 
+#if CUDART_VERSION >= 11030
       if (cudaGraphLaunches >= 1) {
         // Begin cuda graph capture for data check
         for (int i=0; i<args->nGpus; i++) {
           CUDACHECK(cudaStreamBeginCapture(args->streams[i], args->nThreads > 1 ? cudaStreamCaptureModeThreadLocal : cudaStreamCaptureModeGlobal));
         }
       }
+#endif
 
       //test validation in single itertion, should ideally be included into the multi-iteration run
       TESTCHECK(startColl(args, type, op, root, in_place, 0));
 
+#if CUDART_VERSION >= 11030
       if (cudaGraphLaunches >= 1) {
         // End cuda graph capture
         for (int i=0; i<args->nGpus; i++) {
@@ -544,9 +553,11 @@ testResult_t BenchTime(struct threadArgs* args, ncclDataType_t type, ncclRedOp_t
           CUDACHECK(cudaGraphLaunch(graphExec[i], args->streams[i]));
         }
       }
+#endif
 
       TESTCHECK(completeColl(args));
 
+#if CUDART_VERSION >= 11030
       if (cudaGraphLaunches >= 1) {
         //destroy cuda graph
         for (int i=0; i<args->nGpus; i++) {
@@ -554,6 +565,7 @@ testResult_t BenchTime(struct threadArgs* args, ncclDataType_t type, ncclRedOp_t
           CUDACHECK(cudaGraphDestroy(graphs[i]));
         }
       }
+#endif
 
       TESTCHECK(CheckData(args, type, op, root, in_place, &wrongElts));
 
@@ -987,7 +999,11 @@ int main(int argc, char* argv[]) {
             "[-w,--warmup_iters <warmup iteration count>] \n\t"
             "[-p,--parallel_init <0/1>] \n\t"
             "[-c,--check <0/1>] \n\t"
+#if NCCL_VERSION_CODE >= NCCL_VERSION(2,11,0)
             "[-o,--op <sum/prod/min/max/avg/all>] \n\t"
+#else
+            "[-o,--op <sum/prod/min/max/all>] \n\t"
+#endif
             "[-d,--datatype <nccltype/all>] \n\t"
             "[-r,--root <root>] \n\t"
             "[-z,--blocking <0/1>] \n\t"
@@ -1005,7 +1021,7 @@ int main(int argc, char* argv[]) {
             "[-L,--ft_list <init/allreduce/alltoall/finalize/all> only enable specified fault tolerance test (default: all)] \n\t"
             "[-s,--tbytes total bytes allowed to transmit (default: unlimited); tbytes would limit #iterations] \n\t"
             "[-h,--help]\n",
-            basename(argv[0]));
+          basename(argv[0]));
         return 0;
     }
   }
@@ -1039,8 +1055,8 @@ testResult_t run() {
     if (hostHashs[p] == hostHashs[proc]) localRank++;
   }
 
-  char* str = getenv("NCCL_TESTS_SPLIT_MASK");
-  uint64_t mask = str ? strtoul(str, NULL, 16) : 0;
+  char* envstr = getenv("NCCL_TESTS_SPLIT_MASK");
+  uint64_t mask = envstr ? strtoul(envstr, NULL, 16) : 0;
   MPI_Comm mpi_comm;
   color = proc & mask;
   MPI_Comm_split(MPI_COMM_WORLD, color, proc, &mpi_comm);
@@ -1049,7 +1065,7 @@ testResult_t run() {
 #endif
   is_main_thread = is_main_proc = (proc == 0) ? 1 : 0;
 
-  char* envstr = getenv("NCCL_TESTS_DUMP_FILE");
+  envstr = getenv("NCCL_TESTS_DUMP_FILE");
   if (envstr && is_main_proc) dump_file = fopen(envstr, "w");
 
   PRINT("# nThread %d nGpus %d minBytes %ld maxBytes %ld step: %ld(%s) warmup iters: %d iters: %d agg iters: %d validation: %d graph: %d\n",
