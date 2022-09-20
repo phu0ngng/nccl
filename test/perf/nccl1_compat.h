@@ -6,10 +6,10 @@
 
 #ifndef NCCL1_COMPAT_H
 #define NCCL1_COMPAT_H
-#define NCCL_MAJOR 1
-#define NCCL_MINOR 0
 
 #ifndef NCCL_MAJOR // NCCL 1.x
+#define NCCL_MAJOR 1
+#define NCCL_MINOR 0
 #define ncclNumOps nccl_NUM_OPS
 #define ncclNumTypes nccl_NUM_TYPES
 
