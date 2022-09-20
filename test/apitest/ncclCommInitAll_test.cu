@@ -1,8 +1,11 @@
+#include "ncclCommon_test.cuh"
+
 class ncclCommInitAll_test : public ::testing::Test {
   protected:
     ncclComm_t* comms = NULL;
     int nVis = 0;
     virtual void SetUp() {
+        ncclCommon_destroysrComms();
         (void) setenv("NCCL_CHECK_POINTERS", "1", 0); // API tests expect this behaviour (ncclCommInitAll)
         ASSERT_EQ(cudaSuccess, cudaGetDeviceCount(&nVis));
         comms = (ncclComm_t*)calloc(nVis, sizeof(ncclComm_t));

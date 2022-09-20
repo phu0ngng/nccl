@@ -1,5 +1,8 @@
+#include "ncclCommon_test.cuh"
+
 TEST(ncclGetUniqueId, basic) {
     ncclUniqueId id;
+    ncclCommon_destroysrComms();
     EXPECT_EQ(ncclSuccess, ncclGetUniqueId(&id));
     // Free resources
     ncclComm_t comm;

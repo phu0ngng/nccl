@@ -21,6 +21,10 @@ ncclComm_t* ncclCommon_getIBComms(int nGpus);
 // Persistent NCCL Sockets communicators and buffers
 ncclComm_t* ncclCommon_getSocketsComms(int nGpus);
 
+// Persistent NCCL send/recv communicators
+ncclComm_t* ncclCommon_getsrComms(int* nGpus);
+void ncclCommon_destroysrComms();
+
 void ncclCommon_getBuff(void*** sendbuffs, void*** recvbuffs, void*** sendbuffs_host, void*** recvbuffs_host, void*** sendbuffs_pinned, void*** recvbuffs_pinned, void*** sendbuffs_pinned_device, void*** recvbuffs_pinned_device, cudaStream_t** streams);
 
 template <typename DT>
