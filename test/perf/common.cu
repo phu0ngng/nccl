@@ -426,20 +426,18 @@ static testResult_t getIteration(size_t nbytes, int* itersPtr) {
     if (nbytes == 0)
       *itersPtr = iters;
     else
-      *itersPtr = max(min((size_t)iters, tbytes / nbytes), 1UL); 
+      *itersPtr = max(min((size_t)iters, tbytes / nbytes), 1UL);
   }
   return testSuccess;
 }
 
-testResult_t BenchTime(struct threadArgs* args, ncclDataType_t type, ncclRedOp_t op, int root, int in_place) {
-  int actualIters;
+testResult_t BenchTime(struct threadArgs* args, ncclDataType_t type, ncclRedOp_t op, int root, int in_place, int actualIters) {
   size_t count = args->nbytes / wordSize(type);
   if (datacheck) {
     // Initialize sendbuffs, recvbuffs and expected
     TESTCHECK(args->collTest->initData(args, type, op, root, 99, in_place));
   }
 
-  TESTCHECK(getIteration(args->nbytes, &actualIters));
   // Sync
 #if 0
   TESTCHECK(startColl(args, type, op, root, in_place, 0));
@@ -588,15 +586,15 @@ testResult_t BenchTime(struct threadArgs* args, ncclDataType_t type, ncclRedOp_t
 
   if (args->reportErrors) {
      if (side_comp == 1) {
-       PRINT("  %7s  %6.2f  %6.2f  %5g %6.2f %5d", timeStr, algBw, busBw, (double)wrongElts, sideBw, actualIters);
+       PRINT("  %7s  %6.2f  %6.2f  %5g %6.2f", timeStr, algBw, busBw, (double)wrongElts, sideBw);
      } else {
-       PRINT("  %7s  %6.2f  %6.2f  %5g %5d", timeStr, algBw, busBw, (double)wrongElts, actualIters);
+       PRINT("  %7s  %6.2f  %6.2f  %5g", timeStr, algBw, busBw, (double)wrongElts);
      }
   } else {
      if (side_comp == 1) {
-       PRINT("  %7s  %6.2f  %6.2f    N/A %6.2f  %5d", timeStr, algBw, busBw, sideBw, actualIters);
+       PRINT("  %7s  %6.2f  %6.2f    N/A %6.2f", timeStr, algBw, busBw, sideBw);
      } else {
-       PRINT("  %7s  %6.2f  %6.2f    N/A  %5d", timeStr, algBw, busBw, actualIters);
+       PRINT("  %7s  %6.2f  %6.2f    N/A", timeStr, algBw, busBw);
      }
   }
   if (dump_file) {
@@ -657,15 +655,18 @@ testResult_t TimeTest(struct threadArgs* args, ncclDataType_t type, const char* 
   // Benchmark
   for (size_t size = args->minbytes; size<=args->maxbytes; size = ((args->stepfactor > 1) ? size*args->stepfactor : size+args->stepbytes)) {
       setupArgs(size, type, args);
+      int actualIters;
+      TESTCHECK(getIteration(args->nbytes, &actualIters));
       char rootName[100];
       sprintf(rootName, "%6i", root);
       PRINT("%12li  %12li  %8s  %6s  %6s", max(args->sendBytes, args->expectedBytes), args->nbytes / wordSize(type), typeName, opName, rootName);
       if (args->replayFile != NULL || !out_of_place) {
         PRINT("                                ");  // only do in-place for trace replay
       } else {
-        TESTCHECK(BenchTime(args, type, op, root, 0));
+        TESTCHECK(BenchTime(args, type, op, root, 0, actualIters));
       }
-      TESTCHECK(BenchTime(args, type, op, root, 1));
+      TESTCHECK(BenchTime(args, type, op, root, 1, actualIters));
+      PRINT("  %5d", actualIters);
       PRINT("    %s\n", args->replayFile == NULL ? "" : args->collTest->name);
   }
 
@@ -1187,10 +1188,10 @@ testResult_t run() {
   const char* timeStr = report_cputime ? "cputime" : "time";
   PRINT("#\n");
   PRINT("# %10s  %12s  %8s  %6s  %6s           out-of-place                       in-place          \n", "", "", "", "", "");
-  PRINT("# %10s  %12s  %8s  %6s  %6s  %7s  %6s  %6s %6s %6s %7s  %6s  %6s %6s %6s\n", "size", "count", "type", "redop", "root",
-      timeStr, "algbw", "busbw", "#wrong", "#iters", timeStr, "algbw", "busbw", "#wrong", "#iters");
-  PRINT("# %10s  %12s  %8s  %6s  %6s  %7s  %6s  %6s  %5s %5s %7s  %6s  %6s  %5s %5s\n", "(B)", "(elements)", "", "", "",
-      "(us)", "(GB/s)", "(GB/s)", "", "", "(us)", "(GB/s)", "(GB/s)", "", "");
+  PRINT("# %10s  %12s  %8s  %6s  %6s  %7s  %6s  %6s %6s  %7s  %6s  %6s %6s %6s\n", "size", "count", "type", "redop", "root",
+      timeStr, "algbw", "busbw", "#wrong", timeStr, "algbw", "busbw", "#wrong", "#iters");
+  PRINT("# %10s  %12s  %8s  %6s  %6s  %7s  %6s  %6s  %5s  %7s  %6s  %6s  %5s  %5s\n", "(B)", "(elements)", "", "", "",
+      "(us)", "(GB/s)", "(GB/s)", "", "(us)", "(GB/s)", "(GB/s)", "", "");
 
   struct testThread threads[nThreads];
   struct testThread compThreads[nThreads];
