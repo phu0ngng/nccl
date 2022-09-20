@@ -1,11 +1,13 @@
 /*************************************************************************
- * Copyright (c) 2017, NVIDIA CORPORATION. All rights reserved.
+ * Copyright (c) 2017-2019, NVIDIA CORPORATION. All rights reserved.
  *
  * See LICENSE.txt for license information
  ************************************************************************/
 
 #ifndef NCCL1_COMPAT_H
 #define NCCL1_COMPAT_H
+#define NCCL_MAJOR 1
+#define NCCL_MINOR 0
 
 #ifndef NCCL_MAJOR // NCCL 1.x
 #define ncclNumOps nccl_NUM_OPS
