@@ -403,7 +403,7 @@ testResult_t startColl(struct threadArgs* args, ncclDataType_t type, ncclRedOp_t
     #endif
   }
   if (args->nGpus > 1) NCCLCHECK_COMM_WAITBATCH(ncclGroupEnd(), args->comms, args->nGpus);
-  
+
   if (blocking_coll) {
     // Complete op before returning
     TESTCHECK(testStreamSynchronize(args->nGpus, args->streams, args->comms));
@@ -1114,7 +1114,7 @@ testResult_t run() {
 
   ncclTestEngine.getBuffSize(&sendBytes, &recvBytes, (size_t)maxBytes, (size_t)ncclProcs*nGpus*nThreads);
 
-  /* only when communicators are nonblocking and ft test is enabled, we 
+  /* only when communicators are nonblocking and ft test is enabled, we
    * perform fault tolerance tests. */
   if (ft_test && commblocking == 0) {
     TESTCHECK(faultToleranceTests(nThreads, nGpus, ncclProc, ncclProcs, localRank, ft_list));
