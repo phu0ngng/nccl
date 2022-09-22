@@ -1056,8 +1056,8 @@ testResult_t run() {
     if (hostHashs[p] == hostHashs[proc]) localRank++;
   }
 
-  char* envstr = getenv("NCCL_TESTS_SPLIT_MASK");
-  uint64_t mask = envstr ? strtoul(envstr, NULL, 16) : 0;
+  char* str = getenv("NCCL_TESTS_SPLIT_MASK");
+  uint64_t mask = str ? strtoul(str, NULL, 16) : 0;
   MPI_Comm mpi_comm;
   color = proc & mask;
   MPI_Comm_split(MPI_COMM_WORLD, color, proc, &mpi_comm);
@@ -1066,7 +1066,7 @@ testResult_t run() {
 #endif
   is_main_thread = is_main_proc = (proc == 0) ? 1 : 0;
 
-  envstr = getenv("NCCL_TESTS_DUMP_FILE");
+  char* envstr = getenv("NCCL_TESTS_DUMP_FILE");
   if (envstr && is_main_proc) dump_file = fopen(envstr, "w");
 
   PRINT("# nThread %d nGpus %d minBytes %ld maxBytes %ld step: %ld(%s) warmup iters: %d iters: %d agg iters: %d validation: %d graph: %d\n",
