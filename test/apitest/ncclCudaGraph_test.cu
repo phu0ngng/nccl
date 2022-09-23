@@ -71,7 +71,7 @@ void ncclCudaGraph_test<DT>::BeginCapture(int graph) {
     // Begin cuda graph capture
     for (int i=0; i<this->nVis; i++) {
         ASSERT_EQ(cudaSuccess, cudaSetDevice(i));
-        ASSERT_EQ(cudaSuccess, cudaStreamBeginCapture(this->graphStreams[graph][i], cudaStreamCaptureModeThreadLocal));
+        ASSERT_EQ(cudaSuccess, cudaStreamBeginCapture(this->graphStreams[graph][i], cudaStreamCaptureModeRelaxed));
     }
 };
 
@@ -182,6 +182,28 @@ TYPED_TEST(ncclCudaGraph_test, many_graph_many_stream) {
     for (int g=0; g < 2; g++) {
         this->LaunchGraph(g);
     }
+};
+
+TYPED_TEST(ncclCudaGraph_test, many_graph_many_stream_interleaved) {
+    for (int g=0; g < 2; g++) {
+        this->BeginCapture(g);
+    }
+    for (int j = 0; j < 2; ++j) {
+        for (int g=0; g < 2; g++) {
+            ASSERT_EQ(ncclSuccess, ncclGroupStart());
+            for (int i = 0; i < this->nVis; ++i) {
+                ASSERT_NE(0, this->expectMask &
+                             1<<ncclAllReduce(this->sendbuffs[i], this->recvbuffs[i],
+                                              std::min(this->N, 1024 * 1024),
+                                              this->DataType(), ncclSum,
+                                              this->comms[i], this->graphStreams[g][i]))
+                    << "i" << i << ", " << std::endl;
+            }
+            ASSERT_NE(0, this->expectMask & 1<<ncclGroupEnd());
+        }
+    }
+    for (int g=0; g < 2; g++) this->EndCapture(g);
+    for (int g=0; g < 2; g++) this->LaunchGraph(g);
 };
 
 TYPED_TEST(ncclCudaGraph_test, graph_nongraph) {

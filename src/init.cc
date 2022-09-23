@@ -368,7 +368,7 @@ static ncclResult_t devCommSetup(ncclComm_t comm) {
   struct ncclDevCommAndChannels *devCommAndChans = NULL;
 
   NCCLCHECKGOTO(ncclStrongStreamAcquireUncaptured(&comm->deviceStream), ret, fail);
-  NCCLCHECKGOTO(ncclCudaCallocAsync(&devCommAndChans, 1, comm->deviceStream.stream), ret, fail);
+  NCCLCHECKGOTO(ncclCudaCallocAsync(&devCommAndChans, 1, comm->deviceStream.cudaStream), ret, fail);
   ncclCommPushCudaFree(comm, devCommAndChans);
   comm->devComm = &devCommAndChans->comm;
   tmpCommAndChans.comm.rank = comm->rank;
@@ -414,13 +414,13 @@ static ncclResult_t devCommSetup(ncclComm_t comm) {
     tmpCommAndChans.channels[c].workFifoDone = &comm->workFifoDone[c];
 
     if (comm->channels[c].ring.userRanks != nullptr) {
-      NCCLCHECKGOTO(ncclCudaMemcpyAsync(tmpCommAndChans.channels[c].ring.userRanks, comm->channels[c].ring.userRanks, nRanks, comm->deviceStream.stream), ret, fail);
+      NCCLCHECKGOTO(ncclCudaMemcpyAsync(tmpCommAndChans.channels[c].ring.userRanks, comm->channels[c].ring.userRanks, nRanks, comm->deviceStream.cudaStream), ret, fail);
     }
   }
 
-  NCCLCHECKGOTO(ncclCudaMemcpyAsync(devCommAndChans, &tmpCommAndChans, 1, comm->deviceStream.stream), ret, fail);
+  NCCLCHECKGOTO(ncclCudaMemcpyAsync(devCommAndChans, &tmpCommAndChans, 1, comm->deviceStream.cudaStream), ret, fail);
 exit:
-  CUDACHECK(cudaStreamSynchronize(comm->deviceStream.stream));
+  CUDACHECK(cudaStreamSynchronize(comm->deviceStream.cudaStream));
   NCCLCHECK(ncclStrongStreamRelease(ncclCudaGraphNone(), &comm->deviceStream));
   return ret;
 fail:
@@ -1108,8 +1108,8 @@ static ncclResult_t ncclCommInitRankFunc(struct ncclAsyncJob* job_) {
     TRACE(NCCL_INIT, "Setting cudaLimitStackSize to %zi", maxLocalSizeBytes);
     CUDACHECKIGNORE(cudaDeviceSetLimit(cudaLimitStackSize, maxLocalSizeBytes));
   }
-  NCCLCHECKGOTO(commAlloc(newcomm, nranks, myrank), res, fail);
-  NCCLCHECKGOTO(initTransportsRank(*newcomm, &commId), res, fail);
+  NCCLCHECKGOTO(commAlloc(newcomm, nranks, myrank), res, cleanup);
+  NCCLCHECKGOTO(initTransportsRank(*newcomm, &commId), res, cleanup);
 
   // update communicator state
   comm->initState = ncclSuccess;

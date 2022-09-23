@@ -1001,6 +1001,8 @@ int main(int argc, char* argv[]) {
             "[-p,--parallel_init <0/1>] \n\t"
             "[-c,--check <0/1>] \n\t"
 #if NCCL_VERSION_CODE >= NCCL_VERSION(2,11,0)
+            "[-o,--op <sum/prod/min/max/avg/mulsum/all>] \n\t"
+#elif NCCL_VERSION_CODE >= NCCL_VERSION(2,10,0)
             "[-o,--op <sum/prod/min/max/avg/all>] \n\t"
 #else
             "[-o,--op <sum/prod/min/max/all>] \n\t"
