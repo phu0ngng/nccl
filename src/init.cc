@@ -1049,6 +1049,10 @@ static ncclResult_t initTransportsRank(struct ncclComm* comm, ncclUniqueId* comm
     }
   }
 
+  // Call devCommSetup before the last barrier, making sure we don't have a thread running in front and starting to
+  // launch NCCL kernels before all cuda mem allocation is complete. That could cause a deadlock.
+  NCCLCHECKGOTO(devCommSetup(comm), ret, fail);
+
   /* Local intra-node barrier */
   NCCLCHECKGOTO(bootstrapBarrier(comm->bootstrap, comm->localRankToRank, comm->localRank, comm->localRanks, comm->localRankToRank[0]), ret, fail);
 
@@ -1106,7 +1110,6 @@ static ncclResult_t ncclCommInitRankFunc(struct ncclAsyncJob* job_) {
   }
   NCCLCHECKGOTO(commAlloc(newcomm, nranks, myrank), res, fail);
   NCCLCHECKGOTO(initTransportsRank(*newcomm, &commId), res, fail);
-  NCCLCHECKGOTO(devCommSetup(*newcomm), res, fail);
 
   // update communicator state
   comm->initState = ncclSuccess;
