@@ -901,7 +901,7 @@ static ncclResult_t proxyProgressInit(struct ncclComm* comm) {
 
     // The service thread may be launched already but localRanks may not be set yet.
     while (comm->localRanks == 0) sched_yield();
-    
+
     char shmPath[sizeof("/dev/shm/nccl-XXXXXX")];
     shmPath[0] = '\0';
     NCCLCHECK(ncclShmOpen(shmPath, size, (void**)&pool, NULL, comm->localRanks + 1, &state->handle));

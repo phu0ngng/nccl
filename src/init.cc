@@ -366,7 +366,7 @@ static ncclResult_t devCommSetup(ncclComm_t comm) {
   int nRanks = comm->nRanks;
   struct ncclDevCommAndChannels tmpCommAndChans;
   struct ncclDevCommAndChannels *devCommAndChans = NULL;
-  
+
   NCCLCHECKGOTO(ncclStrongStreamAcquireUncaptured(&comm->deviceStream), ret, fail);
   NCCLCHECKGOTO(ncclCudaCallocAsync(&devCommAndChans, 1, comm->deviceStream.stream), ret, fail);
   ncclCommPushCudaFree(comm, devCommAndChans);
