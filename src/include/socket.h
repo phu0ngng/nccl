@@ -21,6 +21,7 @@
 #define RETRY_REFUSED_TIMES   2e4 // connection refused retry times before reporting a timeout (20 sec)
 #define RETRY_TIMEDOUT_TIMES    3 // connection timed out retry times (each one can take 20s)
 #define SOCKET_NAME_MAXLEN (NI_MAXHOST+NI_MAXSERV)
+#define NCCL_SOCKET_MAGIC 0x564ab9f2fc4b9d6cULL
 
 /* Common socket address storage structure for IPv4/IPv6 */
 union ncclSocketAddress {
@@ -60,7 +61,7 @@ int ncclFindInterfaceMatchSubnet(char* ifNames, union ncclSocketAddress* localAd
 int ncclFindInterfaces(char* ifNames, union ncclSocketAddress *ifAddrs, int ifNameMaxSize, int maxIfs);
 
 // Initialize a socket
-ncclResult_t ncclSocketInit(ncclSocket_t* usock, union ncclSocketAddress* addr = NULL, uint64_t magic = 0x0UL, enum ncclSocketType type = ncclSocketTypeUnknown, volatile uint32_t* abortFlag = NULL, int asyncFlag = 0);
+ncclResult_t ncclSocketInit(ncclSocket_t* usock, union ncclSocketAddress* addr = NULL, uint64_t magic = NCCL_SOCKET_MAGIC, enum ncclSocketType type = ncclSocketTypeUnknown, volatile uint32_t* abortFlag = NULL, int asyncFlag = 0);
 // Create a listening socket. sock->addr can be pre-filled with IP & port info. sock->fd is set after a successful call
 ncclResult_t ncclSocketListen(ncclSocket_t usock);
 ncclResult_t ncclSocketGetAddr(ncclSocket_t usock, union ncclSocketAddress* addr);

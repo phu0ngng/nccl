@@ -442,7 +442,7 @@ static ncclResult_t socketFinalizeAccept(struct socketInternal* sock) {
   if (received == 0) return ncclSuccess;
   NCCLCHECK(socketWait(NCCL_SOCKET_RECV, sock, &magic, sizeof(magic), &received));
   if (magic != sock->magic) {
-    WARN("socketFinalizeAccept: wrong magic %lx != %lx\n", magic, sock->magic);
+    WARN("socketFinalizeAccept: wrong magic %llx != %llx\n", magic, sock->magic);
     close(sock->fd);
     sock->fd = -1;
     // Ignore spurious connection and accept again

@@ -88,7 +88,6 @@ static ncclResult_t ncclInit() {
     NCCLCHECK(ncclNetPluginInit());
 
     initNvtxRegisteredEnums();
-
     __atomic_store_n(&initialized, true, __ATOMIC_RELEASE);
   }
   pthread_mutex_unlock(&initLock);

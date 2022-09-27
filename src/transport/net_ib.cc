@@ -567,7 +567,7 @@ ncclResult_t ncclIbListen(int dev, void* opaqueHandle, void** listenComm) {
   static_assert(sizeof(struct ncclIbHandle) < NCCL_NET_HANDLE_MAXSIZE, "ncclIbHandle size too large");
   memset(handle, 0, sizeof(struct ncclIbHandle));
   comm->dev = dev;
-  handle->magic = rand();
+  handle->magic = NCCL_SOCKET_MAGIC;
   NCCLCHECK(ncclSocketInit(&comm->sock, &ncclIbIfAddr, handle->magic, ncclSocketTypeNetIb, NULL, 1));
   NCCLCHECK(ncclSocketListen(comm->sock));
   NCCLCHECK(ncclSocketGetAddr(comm->sock, &handle->connectAddr));

@@ -183,7 +183,7 @@ ncclResult_t bootstrapCreateRoot(struct ncclBootstrapHandle* handle, bool idFrom
 
 ncclResult_t bootstrapGetUniqueId(struct ncclBootstrapHandle* handle) {
   memset(handle, 0, sizeof(ncclBootstrapHandle));
-  handle->magic = rand();
+  NCCLCHECK(getRandomData(&handle->magic, sizeof(handle->magic)));
 
   char* env = getenv("NCCL_COMM_ID");
   if (env) {

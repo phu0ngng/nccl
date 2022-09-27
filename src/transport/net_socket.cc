@@ -289,7 +289,7 @@ ncclResult_t ncclNetSocketListen(int dev, void* opaqueHandle, void** listenComm)
   static_assert(sizeof(struct ncclNetSocketHandle) <= NCCL_NET_HANDLE_MAXSIZE, "ncclNetSocketHandle size too large");
   struct ncclNetSocketListenComm* comm;
   NCCLCHECK(ncclCalloc(&comm, 1));
-  handle->magic = rand();
+  handle->magic = NCCL_SOCKET_MAGIC;
   NCCLCHECK(ncclSocketInit(&comm->sock, &ncclNetSocketDevs[dev].addr, handle->magic, ncclSocketTypeNetSocket, NULL, 1));
   NCCLCHECK(ncclSocketListen(comm->sock));
   NCCLCHECK(ncclSocketGetAddr(comm->sock, &handle->connectAddr));
