@@ -232,7 +232,9 @@ static testResult_t distributeFTAlltoAllTest(struct threadArgs* args) {
     NCCLCHECK(ncclCommInitRankConfig(&comms[j], totalGpus, args->ncclId, rank, &config));
   }
   NCCLCHECK_COMM_WAITBATCH(ncclGroupEnd(), comms, nGpus);
-
+#ifdef MPI_SUPPORT
+  MPI_Barrier(MPI_COMM_WORLD);
+#endif
   count = size / totalGpus;
   NCCLCHECK(ncclGroupStart());
   for (int j = 0; j < nGpus; ++j) {
@@ -352,13 +354,11 @@ testResult_t faultToleranceTests(int nThreads, int nGpus, int ncclProc, int nccl
     char* token;
     int len = strlen(ft_list);
 
-    printf("ft_list len %d, %s\n", len, ft_list);
     tmp_list = (char*)malloc(len + 1);
     memcpy(tmp_list, ft_list, len + 1);
     memset(test_list, 0, sizeof(int) * FT_TEST_NUM);
     token = strtok(tmp_list, ",/:|");
     while (token != NULL) {
-      printf("token %s\n", token);
       if (strcmp(token, "init") == 0) {
         test_list[FT_TEST_INIT] = 1;
       } else if (strcmp(token, "allreduce") == 0) {
