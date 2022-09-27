@@ -546,9 +546,9 @@ The ``NCCL_ALGO`` variable defines which algorithms NCCL will use.
 
 Values accepted
 ^^^^^^^^^^^^^^^
-Coma-separated list of algorithms (not case sensitive) among: Tree, Ring, Collnet. To specify algorithms to exclude (instead of include), start the list with ^.
+Coma-separated list of algorithms (not case sensitive) among: Tree, Ring, Collnet (up to 2.13), CollnetDirect (2.14+) and CollnetChain (2.14+). To specify algorithms to exclude (instead of include), start the list with ^.
 
-The default is ``Tree,Ring,Collnet``.
+The default is ``Tree,Ring,CollnetDirect,CollnetChain``.
 
 NCCL_PROTO
 ----------
