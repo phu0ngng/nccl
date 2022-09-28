@@ -164,14 +164,14 @@ struct ncclProxyProgressState {
 struct ncclProxyState {
   // Service thread
   pthread_t thread;
-  ncclSocket_t listenSock;
+  struct ncclSocket* listenSock;
   int stop;
   CUcontext cudaCtx;
   int safeAbortFlag;
 
   // Used by main thread
   union ncclSocketAddress* peerAddresses;
-  ncclSocket_t* peerSocks;
+  struct ncclSocket* peerSocks;
   struct ncclProxyOps* proxyOps;
   void** sharedDevMems;
 
@@ -182,7 +182,7 @@ struct ncclProxyState {
 struct ncclProxyConnection {
   int send, transport, shared;
   int localRank;
-  ncclSocket_t sock;
+  struct ncclSocket* sock;
   struct ncclTransportComm* tcomm;
   struct ncclProxyArgs *proxyAppend;
   struct ncclProxyArgs **proxyAppendPtr;
@@ -201,7 +201,7 @@ enum proxyMode {
 ncclResult_t ncclProxySaveOp(struct ncclComm* comm, struct ncclProxyOp* proxyOp, bool *justInquire);
 ncclResult_t ncclProxyComputeP2p(struct ncclInfo* info, struct ncclProxyOp* proxyOp);
 ncclResult_t ncclProxyStart(struct ncclComm* comm);
-ncclResult_t ncclProxyInit(struct ncclComm* comm, ncclSocket_t sock, union ncclSocketAddress* peerAddresses);
+ncclResult_t ncclProxyInit(struct ncclComm* comm, struct ncclSocket* sock, union ncclSocketAddress* peerAddresses);
 ncclResult_t ncclProxyCreate(struct ncclComm* comm);
 ncclResult_t ncclProxyConnect(struct ncclComm* comm, int transport, int send, int rank, struct ncclProxyConnector* proxyConn);
 enum ncclProxyMsgType {

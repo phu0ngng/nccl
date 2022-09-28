@@ -12,21 +12,7 @@
 #include <ifaddrs.h>
 #include <net/if.h>
 
-struct socketInternal {
-  int fd;
-  int acceptFd;
-  int timedOutRetries;
-  int refusedRetries;
-  union ncclSocketAddress addr;
-  volatile uint32_t* abortFlag;
-  int asyncFlag;
-  enum ncclSocketState state;
-  int salen;
-  uint64_t magic;
-  enum ncclSocketType type;
-};
-
-static ncclResult_t socketProgressOpt(int op, struct socketInternal* sock, void* ptr, int size, int* offset, int block, int* closed) {
+static ncclResult_t socketProgressOpt(int op, struct ncclSocket* sock, void* ptr, int size, int* offset, int block, int* closed) {
   int bytes = 0;
   *closed = 0;
   char* data = (char*)ptr;
@@ -55,7 +41,7 @@ static ncclResult_t socketProgressOpt(int op, struct socketInternal* sock, void*
   return ncclSuccess;
 }
 
-static ncclResult_t socketProgress(int op, struct socketInternal* sock, void* ptr, int size, int* offset) {
+static ncclResult_t socketProgress(int op, struct ncclSocket* sock, void* ptr, int size, int* offset) {
   int closed;
   NCCLCHECK(socketProgressOpt(op, sock, ptr, size, offset, 0, &closed));
   if (closed) {
@@ -66,7 +52,7 @@ static ncclResult_t socketProgress(int op, struct socketInternal* sock, void* pt
   return ncclSuccess;
 }
 
-static ncclResult_t socketWait(int op, struct socketInternal* sock, void* ptr, int size, int* offset) {
+static ncclResult_t socketWait(int op, struct ncclSocket* sock, void* ptr, int size, int* offset) {
   while (*offset < size)
     NCCLCHECK(socketProgress(op, sock, ptr, size, offset));
   return ncclSuccess;
@@ -369,10 +355,8 @@ int ncclFindInterfaces(char* ifNames, union ncclSocketAddress *ifAddrs, int ifNa
   return nIfs;
 }
 
-ncclResult_t ncclSocketListen(ncclSocket_t usock) {
-  struct socketInternal* sock = (struct socketInternal*)usock;
-
-  if (usock == NCCL_NULL_SOCKET) {
+ncclResult_t ncclSocketListen(struct ncclSocket* sock) {
+  if (sock == NULL) {
     WARN("ncclSocketListen: pass NULL socket\n");
     return ncclInvalidArgument;
   }
@@ -411,9 +395,8 @@ ncclResult_t ncclSocketListen(ncclSocket_t usock) {
   return ncclSuccess;
 }
 
-ncclResult_t ncclSocketGetAddr(ncclSocket_t usock, union ncclSocketAddress* addr) {
-  struct socketInternal* sock = (struct socketInternal*)usock;
-  if (usock == NCCL_NULL_SOCKET) {
+ncclResult_t ncclSocketGetAddr(struct ncclSocket* sock, union ncclSocketAddress* addr) {
+  if (sock == NULL) {
     WARN("ncclSocketGetAddr: pass NULL socket\n");
     return ncclInvalidArgument;
   }
@@ -422,7 +405,7 @@ ncclResult_t ncclSocketGetAddr(ncclSocket_t usock, union ncclSocketAddress* addr
   return ncclSuccess;
 }
 
-static ncclResult_t socketTryAccept(struct socketInternal* sock) {
+static ncclResult_t socketTryAccept(struct ncclSocket* sock) {
   socklen_t socklen = sizeof(union ncclSocketAddress);
   sock->fd = accept(sock->acceptFd, &sock->addr.sa, &socklen);
   if (sock->fd != -1) {
@@ -434,7 +417,7 @@ static ncclResult_t socketTryAccept(struct socketInternal* sock) {
   return ncclSuccess;
 }
 
-static ncclResult_t socketFinalizeAccept(struct socketInternal* sock) {
+static ncclResult_t socketFinalizeAccept(struct ncclSocket* sock) {
   uint64_t magic;
   enum ncclSocketType type;
   int received = 0;
@@ -464,7 +447,7 @@ static ncclResult_t socketFinalizeAccept(struct socketInternal* sock) {
   return ncclSuccess;
 }
 
-static ncclResult_t socketStartConnect(struct socketInternal* sock) {
+static ncclResult_t socketStartConnect(struct ncclSocket* sock) {
   /* blocking/non-blocking connect() is determined by asyncFlag. */
   int ret = connect(sock->fd, &sock->addr.sa, sock->salen);
 
@@ -499,7 +482,7 @@ static ncclResult_t socketStartConnect(struct socketInternal* sock) {
   }
 }
 
-static ncclResult_t socketPollConnect(struct socketInternal* sock) {
+static ncclResult_t socketPollConnect(struct ncclSocket* sock) {
   struct pollfd pfd;
   int timeout = 1, ret;
   socklen_t rlen = sizeof(int);
@@ -540,10 +523,8 @@ static ncclResult_t socketPollConnect(struct socketInternal* sock) {
   return ncclSuccess;
 }
 
-ncclResult_t ncclSocketPollConnect(ncclSocket_t usock) {
-  struct socketInternal* sock = (struct socketInternal*)usock;
-
-  if (usock == NCCL_NULL_SOCKET) {
+ncclResult_t ncclSocketPollConnect(struct ncclSocket* sock) {
+  if (sock == NULL) {
     WARN("ncclSocketPollConnect: pass NULL socket\n");
     return ncclInvalidArgument;
   }
@@ -551,7 +532,7 @@ ncclResult_t ncclSocketPollConnect(ncclSocket_t usock) {
   return ncclSuccess;
 }
 
-static ncclResult_t socketFinalizeConnect(struct socketInternal* sock) {
+static ncclResult_t socketFinalizeConnect(struct ncclSocket* sock) {
   int sent = 0;
   NCCLCHECK(socketProgress(NCCL_SOCKET_SEND, sock, &sock->magic, sizeof(sock->magic), &sent));
   if (sent == 0) return ncclSuccess;
@@ -562,7 +543,7 @@ static ncclResult_t socketFinalizeConnect(struct socketInternal* sock) {
   return ncclSuccess;
 }
 
-static ncclResult_t socketProgressState(struct socketInternal* sock) {
+static ncclResult_t socketProgressState(struct ncclSocket* sock) {
   if (sock->state == ncclSocketStateAccepting) {
     NCCLCHECK(socketTryAccept(sock));
   }
@@ -581,10 +562,8 @@ static ncclResult_t socketProgressState(struct socketInternal* sock) {
   return ncclSuccess;
 }
 
-ncclResult_t ncclSocketReady(ncclSocket_t usock, int *running) {
-  struct socketInternal* sock = (struct socketInternal*)usock;
-
-  if (usock == NCCL_NULL_SOCKET) {
+ncclResult_t ncclSocketReady(struct ncclSocket* sock, int *running) {
+  if (sock == NULL) {
     *running = 0;
     return ncclSuccess;
   }
@@ -600,15 +579,14 @@ ncclResult_t ncclSocketReady(ncclSocket_t usock, int *running) {
   return ncclSuccess;
 }
 
-ncclResult_t ncclSocketConnect(ncclSocket_t usock) {
+ncclResult_t ncclSocketConnect(struct ncclSocket* sock) {
 #ifdef ENABLE_TRACE
   char line[SOCKET_NAME_MAXLEN+1];
 #endif
-  struct socketInternal* sock = (struct socketInternal*)usock;
   const int one = 1;
 
-  if (usock == NCCL_NULL_SOCKET) {
-    WARN("ncclSocketConnect: pass NCCL_NULL_SOCKET socket\n");
+  if (sock == NULL) {
+    WARN("ncclSocketConnect: pass NULL socket\n");
     return ncclInvalidArgument;
   }
   if (sock->fd == -1) {
@@ -650,13 +628,11 @@ ncclResult_t ncclSocketConnect(ncclSocket_t usock) {
   }
 }
 
-ncclResult_t ncclSocketAccept(ncclSocket_t usock, ncclSocket_t ulistenSock) {
+ncclResult_t ncclSocketAccept(struct ncclSocket* sock, struct ncclSocket* listenSock) {
   ncclResult_t ret = ncclSuccess;
-  struct socketInternal* sock = (struct socketInternal*)usock;
-  struct socketInternal* listenSock = (struct socketInternal*)ulistenSock;
 
-  if (ulistenSock == NCCL_NULL_SOCKET || usock == NCCL_NULL_SOCKET) {
-    WARN("ncclSocketAccept: pass NCCL_NULL_SOCKET socket\n");
+  if (listenSock == NULL || sock == NULL) {
+    WARN("ncclSocketAccept: pass NULL socket\n");
     ret = ncclInvalidArgument;
     goto exit;
   }
@@ -670,7 +646,7 @@ ncclResult_t ncclSocketAccept(ncclSocket_t usock, ncclSocket_t ulistenSock) {
   }
 
   if (sock->acceptFd == -1) {
-    memcpy(sock, listenSock, sizeof(struct socketInternal));
+    memcpy(sock, listenSock, sizeof(struct ncclSocket));
     sock->acceptFd = listenSock->fd;
     sock->state = ncclSocketStateAccepting;
   }
@@ -703,13 +679,10 @@ exit:
   return ret;
 }
 
-ncclResult_t ncclSocketInit(ncclSocket_t* usock, union ncclSocketAddress* addr, uint64_t magic, enum ncclSocketType type, volatile uint32_t* abortFlag, int asyncFlag) {
+ncclResult_t ncclSocketInit(struct ncclSocket* sock, union ncclSocketAddress* addr, uint64_t magic, enum ncclSocketType type, volatile uint32_t* abortFlag, int asyncFlag) {
   ncclResult_t ret = ncclSuccess;
-  struct socketInternal* sock = NCCL_NULL_SOCKET;
 
-  if (usock == NULL) goto exit;
-
-  sock = (struct socketInternal*)malloc(sizeof(struct socketInternal));
+  if (sock == NULL) goto exit;
   sock->timedOutRetries = 0;
   sock->refusedRetries = 0;
   sock->abortFlag = abortFlag;
@@ -752,40 +725,34 @@ ncclResult_t ncclSocketInit(ncclSocket_t* usock, union ncclSocketAddress* addr, 
     SYSCHECKGOTO(fcntl(sock->fd, F_SETFL, flags | O_NONBLOCK), ret, fail);
   }
 
-  *usock = (ncclSocket_t)sock;
 exit:
   return ret;
 fail:
-  if (sock) free(sock);
-  if (usock) *usock = NCCL_NULL_SOCKET;
   goto exit;
 }
 
-ncclResult_t ncclSocketProgress(int op, ncclSocket_t usock, void* ptr, int size, int* offset) {
-  struct socketInternal* sock = (struct socketInternal*)usock;
-  if (usock == NCCL_NULL_SOCKET) {
-    WARN("ncclSocketProgress: pass NCCL_NULL_SOCKET socket\n");
+ncclResult_t ncclSocketProgress(int op, struct ncclSocket* sock, void* ptr, int size, int* offset) {
+  if (sock == NULL) {
+    WARN("ncclSocketProgress: pass NULL socket\n");
     return ncclInvalidArgument;
   }
   NCCLCHECK(socketProgress(op, sock, ptr, size, offset));
   return ncclSuccess;
 }
 
-ncclResult_t ncclSocketWait(int op, ncclSocket_t usock, void* ptr, int size, int* offset) {
-  struct socketInternal* sock = (struct socketInternal*)usock;
-  if (usock == NCCL_NULL_SOCKET) {
-    WARN("ncclSocketWait: pass NCCL_NULL_SOCKET socket\n");
+ncclResult_t ncclSocketWait(int op, struct ncclSocket* sock, void* ptr, int size, int* offset) {
+  if (sock == NULL) {
+    WARN("ncclSocketWait: pass NULL socket\n");
     return ncclInvalidArgument;
   }
   NCCLCHECK(socketWait(op, sock, ptr, size, offset));
   return ncclSuccess;
 }
 
-ncclResult_t ncclSocketSend(ncclSocket_t usock, void* ptr, int size) {
+ncclResult_t ncclSocketSend(struct ncclSocket* sock, void* ptr, int size) {
   int offset = 0;
-  struct socketInternal* sock = (struct socketInternal*)usock;
-  if (usock == NCCL_NULL_SOCKET) {
-    WARN("ncclSocketSend: pass NCCL_NULL_SOCKET socket\n");
+  if (sock == NULL) {
+    WARN("ncclSocketSend: pass NULL socket\n");
     return ncclInvalidArgument;
   }
   if (sock->state != ncclSocketStateReady) {
@@ -796,11 +763,10 @@ ncclResult_t ncclSocketSend(ncclSocket_t usock, void* ptr, int size) {
   return ncclSuccess;
 }
 
-ncclResult_t ncclSocketRecv(ncclSocket_t usock, void* ptr, int size) {
+ncclResult_t ncclSocketRecv(struct ncclSocket* sock, void* ptr, int size) {
   int offset = 0;
-  struct socketInternal* sock = (struct socketInternal*)usock;
-  if (usock == NCCL_NULL_SOCKET) {
-    WARN("ncclSocketRecv: pass NCCL_NULL_SOCKET socket\n");
+  if (sock == NULL) {
+    WARN("ncclSocketRecv: pass NULL socket\n");
     return ncclInvalidArgument;
   }
   if (sock->state != ncclSocketStateReady) {
@@ -812,11 +778,10 @@ ncclResult_t ncclSocketRecv(ncclSocket_t usock, void* ptr, int size) {
 }
 
 // Receive or detect connection closed
-ncclResult_t ncclSocketTryRecv(ncclSocket_t usock, void* ptr, int size, int* closed) {
+ncclResult_t ncclSocketTryRecv(struct ncclSocket* sock, void* ptr, int size, int* closed) {
   int offset = 0;
-  struct socketInternal* sock = (struct socketInternal*)usock;
-  if (usock == NCCL_NULL_SOCKET) {
-    WARN("ncclSocketTryRecv: pass NCCL_NULL_SOCKET socket\n");
+  if (sock == NULL) {
+    WARN("ncclSocketTryRecv: pass NULL socket\n");
     return ncclInvalidArgument;
   }
   *closed = 0;
@@ -827,22 +792,29 @@ ncclResult_t ncclSocketTryRecv(ncclSocket_t usock, void* ptr, int size, int* clo
   return ncclSuccess;
 }
 
-ncclResult_t ncclSocketClose(ncclSocket_t usock) {
-  struct socketInternal* sock = (struct socketInternal*)usock;
-  if (usock != NCCL_NULL_SOCKET) {
+ncclResult_t ncclSocketClose(struct ncclSocket* sock) {
+  if (sock != NULL) {
     if (sock->fd >= 0) close(sock->fd);
     sock->state = ncclSocketStateClosed;
-    free(sock);
+    sock->fd = -1;
   }
   return ncclSuccess;
 }
 
-ncclResult_t ncclSocketGetFd(ncclSocket_t usock, int* fd) {
-  struct socketInternal* sock = (struct socketInternal*)usock;
-  if (usock == NCCL_NULL_SOCKET) {
-    WARN("ncclSocketGetFd: pass NCCL_NULL_SOCKET socket\n");
+ncclResult_t ncclSocketGetFd(struct ncclSocket* sock, int* fd) {
+  if (sock == NULL) {
+    WARN("ncclSocketGetFd: pass NULL socket\n");
     return ncclInvalidArgument;
   }
   if (fd) *fd = sock->fd;
+  return ncclSuccess;
+}
+
+ncclResult_t ncclSocketSetFd(int fd, struct ncclSocket* sock) {
+  if (sock == NULL) {
+    WARN("ncclSocketGetFd: pass NULL socket\n");
+    return ncclInvalidArgument;
+  }
+  sock->fd = fd;
   return ncclSuccess;
 }

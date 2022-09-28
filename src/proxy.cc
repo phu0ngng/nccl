@@ -768,7 +768,7 @@ struct ncclProxyAsyncOp {
 };
 
 struct ncclProxyLocalPeer {
-  ncclSocket_t sock;
+  struct ncclSocket sock;
   int localRank;
   struct ncclProxyAsyncOp asyncOps;
 };
@@ -834,6 +834,10 @@ static ncclResult_t ncclProxyFreeConnections(struct ncclProxyConnectionPool* poo
 #include "transport.h"
 
 ncclResult_t ncclProxyConnect(struct ncclComm* comm, int transport, int send, int rank, struct ncclProxyConnector* proxyConn) {
+  struct ncclSocket* sock;
+  int ready;
+  int type = ncclProxyMsgInit;
+
   // Keep one connection per mlocal rank
   proxyConn->connection = NULL;
   proxyConn->rank = rank;
@@ -842,19 +846,17 @@ ncclResult_t ncclProxyConnect(struct ncclComm* comm, int transport, int send, in
     NCCLCHECK(ncclCalloc(&comm->proxyState.proxyOps, comm->localRanks));
     NCCLCHECK(ncclCalloc(&comm->proxyState.sharedDevMems, comm->localRanks));
     for (int i = 0; i < comm->localRanks; ++i) {
-      comm->proxyState.peerSocks[i] = NCCL_NULL_SOCKET;
+      NCCLCHECK(ncclSocketSetFd(-1, &comm->proxyState.peerSocks[i]));
     }
   }
+
   NCCLCHECK(ncclTopoGetLocalRank(comm->topo, rank, &proxyConn->localRank));
-  ncclSocket_t sock;
-  int ready;
-  NCCLCHECK(ncclSocketReady(comm->proxyState.peerSocks[proxyConn->localRank], &ready));
+  sock = comm->proxyState.peerSocks + proxyConn->localRank;
+  NCCLCHECK(ncclSocketReady(sock, &ready));
   if (!ready) {
-    NCCLCHECK(ncclSocketInit(&comm->proxyState.peerSocks[proxyConn->localRank], comm->proxyState.peerAddresses+rank, comm->magic, ncclSocketTypeProxy, comm->abortFlag));
-    NCCLCHECK(ncclSocketConnect(comm->proxyState.peerSocks[proxyConn->localRank]));
+    NCCLCHECK(ncclSocketInit(sock, comm->proxyState.peerAddresses+rank, comm->magic, ncclSocketTypeProxy, comm->abortFlag));
+    NCCLCHECK(ncclSocketConnect(sock));
   }
-  sock = comm->proxyState.peerSocks[proxyConn->localRank];
-  int type = ncclProxyMsgInit;
   NCCLCHECK(ncclSocketSend(sock, &type, sizeof(int)));
   NCCLCHECK(ncclSocketSend(sock, &transport, sizeof(int)));
   NCCLCHECK(ncclSocketSend(sock, &send, sizeof(int)));
@@ -878,12 +880,12 @@ ncclResult_t ncclProxyConnect(struct ncclComm* comm, int transport, int send, in
 
 const char* ncclProxyMsgTypeStr[] = { "Unknown", "Init", "SharedInit", "Setup", "Connect", "Start", "Close", "Abort", "Stop" };
 ncclResult_t ncclProxyCall(struct ncclProxyConnector* proxyConn, int type, void* reqBuff, int reqSize, void* respBuff, int respSize) {
-  ncclSocket_t sock;
+  struct ncclSocket* sock;
   ncclResult_t ret = ncclSuccess;
 
   if (proxyConn->comm->proxyState.peerSocks == NULL) return ncclInternalError;
-  sock = proxyConn->comm->proxyState.peerSocks[proxyConn->localRank];
-  if (sock == NCCL_NULL_SOCKET) return ncclInternalError;
+  sock = proxyConn->comm->proxyState.peerSocks + proxyConn->localRank;
+  if (sock == NULL) return ncclInternalError;
   NCCLCHECKGOTO(ncclSocketSend(sock, &type, sizeof(int)), ret, error);
   NCCLCHECKGOTO(ncclSocketSend(sock, &proxyConn->connection, sizeof(void*)), ret, error);
   NCCLCHECKGOTO(ncclSocketSend(sock, &reqSize, sizeof(int)), ret, error);
@@ -953,7 +955,7 @@ ncclResult_t ncclProxyShmUnlink(struct ncclComm* comm) {
 }
 
 static ncclResult_t proxyConnInit(struct ncclProxyLocalPeer* peer, struct ncclProxyConnectionPool* connectionPool, struct ncclComm* comm) {
-  ncclSocket_t sock = peer->sock;
+  struct ncclSocket* sock = &peer->sock;
   int id;
   struct ncclProxyConnection* connection;
   NCCLCHECK(ncclProxyNewConnection(connectionPool, &id));
@@ -977,7 +979,7 @@ static ncclResult_t proxyConnInit(struct ncclProxyLocalPeer* peer, struct ncclPr
 }
 
 static ncclResult_t proxyConnSharedInit(struct ncclProxyLocalPeer* peer, struct ncclProxyConnectionPool* connectionPool, struct ncclComm* comm) {
-  ncclSocket_t sock = peer->sock;
+  struct ncclSocket* sock = &peer->sock;
   struct ncclProxyConnection* connection;
   NCCLCHECK(ncclSocketRecv(sock, &connection, sizeof(void*)));
   int reqSize, respSize;
@@ -1010,7 +1012,7 @@ static ncclResult_t proxyProgressAsync(struct ncclProxyAsyncOp* op, struct ncclC
 }
 
 static ncclResult_t proxyConnSetupConnect(int type, struct ncclProxyLocalPeer* peer, struct ncclProxyConnectionPool* connectionPool, struct ncclComm* comm, int* asyncOpCount) {
-  ncclSocket_t sock = peer->sock;
+  struct ncclSocket* sock = &peer->sock;
   struct ncclProxyAsyncOp* asyncOp = &peer->asyncOps;
   asyncOp->type = type;
   NCCLCHECK(ncclSocketRecv(sock, &asyncOp->connection, sizeof(void*)));
@@ -1049,7 +1051,6 @@ void* ncclProxyService(void* _args) {
   struct ncclProxyLocalPeer peers[NCCL_MAX_LOCAL_RANKS];
   memset(&peers, 0, sizeof(struct ncclProxyLocalPeer)*NCCL_MAX_LOCAL_RANKS);
   for (int s=0; s<NCCL_MAX_LOCAL_RANKS; s++) {
-    peers[s].sock = NCCL_NULL_SOCKET;
     pollfds[s].fd = -1;
     pollfds[s].events = POLLHUP|POLLIN;
   }
@@ -1071,7 +1072,7 @@ void* ncclProxyService(void* _args) {
     }
     if (pollfds[NCCL_MAX_LOCAL_RANKS].revents) {
       int s = 0;
-      while (s < NCCL_MAX_LOCAL_RANKS && peers[s].sock != NCCL_NULL_SOCKET) s++;
+      while (s < NCCL_MAX_LOCAL_RANKS && pollfds[s].fd >= 0) s++;
       if (s == NCCL_MAX_LOCAL_RANKS) {
         WARN("[Proxy service] Too many connections (%d max)", NCCL_MAX_LOCAL_RANKS);
         return NULL;
@@ -1081,10 +1082,10 @@ void* ncclProxyService(void* _args) {
         WARN("[Service thread] Initialize peers[%d].sock fails\n", s);
         return NULL;
       }
-      if (ncclSocketAccept(peers[s].sock, comm->proxyState.listenSock) != ncclSuccess) {
+      if (ncclSocketAccept(&peers[s].sock, comm->proxyState.listenSock) != ncclSuccess) {
         WARN("[Service thread] Accept failed %s", strerror(errno));
       } else {
-        if (ncclSocketGetFd(peers[s].sock, &pollfds[s].fd) != ncclSuccess) {
+        if (ncclSocketGetFd(&peers[s].sock, &pollfds[s].fd) != ncclSuccess) {
           WARN("[Service thread] Get peers[%d].sock fd fails\n", s);
           return NULL;
         }
@@ -1094,7 +1095,7 @@ void* ncclProxyService(void* _args) {
     }
     for (int s=0; s<maxnpeers; s++) {
       struct ncclProxyLocalPeer* peer = peers+s;
-      ncclSocket_t sock = peer->sock;
+      struct ncclSocket* sock = &peer->sock;
       struct ncclProxyAsyncOp* op = &peer->asyncOps;
       int closeConn = 0;
       int type = 0;
@@ -1137,7 +1138,6 @@ void* ncclProxyService(void* _args) {
       }
       if (closeConn) {
         ncclSocketClose(sock);
-        peers[s].sock = NCCL_NULL_SOCKET;
         pollfds[s].fd = -1;
         npeers--;
       }
@@ -1152,7 +1152,7 @@ void* ncclProxyService(void* _args) {
     WARN("[Proxy Service] proxyDestroy failed");
   }
   for (int s=0; s<maxnpeers; s++) {
-    ncclSocketClose(peers[s].sock);
+    ncclSocketClose(&peers[s].sock);
   }
   ncclProxyFreeConnections(&connectionPool, comm);
   ncclSocketClose(comm->proxyState.listenSock);
@@ -1160,7 +1160,7 @@ void* ncclProxyService(void* _args) {
   return NULL;
 }
 
-ncclResult_t ncclProxyInit(struct ncclComm* comm, ncclSocket_t sock, union ncclSocketAddress* peerAddresses) {
+ncclResult_t ncclProxyInit(struct ncclComm* comm, struct ncclSocket* sock, union ncclSocketAddress* peerAddresses) {
   comm->proxyState.listenSock = sock;
   comm->proxyState.peerAddresses = peerAddresses;
   return ncclSuccess;
@@ -1179,12 +1179,12 @@ ncclResult_t ncclProxyDestroy(struct ncclComm* comm) {
   if (state == NULL) return ncclSuccess;
   if (state->peerAddresses) {
     if (*comm->abortFlag == 0) {
-      ncclSocket_t sock;
+      struct ncclSocket sock;
       int type = ncclProxyMsgStop;
       NCCLCHECK(ncclSocketInit(&sock, comm->proxyState.peerAddresses + comm->rank, comm->magic, ncclSocketTypeProxy, comm->abortFlag));
-      NCCLCHECK(ncclSocketConnect(sock));
-      NCCLCHECK(ncclSocketSend(sock, &type, sizeof(int)));
-      NCCLCHECK(ncclSocketClose(sock));
+      NCCLCHECK(ncclSocketConnect(&sock));
+      NCCLCHECK(ncclSocketSend(&sock, &type, sizeof(int)));
+      NCCLCHECK(ncclSocketClose(&sock));
     } else {
       /* when abortFlag is set, all socket related communications are no longer reliable. We need to
        * set a flag to let proxy thread exit. */
@@ -1195,7 +1195,9 @@ ncclResult_t ncclProxyDestroy(struct ncclComm* comm) {
 
   if (state->peerSocks) {
     for (int i=0; i<comm->localRanks; i++) {
-      if (state->peerSocks[i] != NCCL_NULL_SOCKET) {
+      int fd;
+      NCCLCHECK(ncclSocketGetFd(state->peerSocks + i, &fd));
+      if (fd >= 0) {
         if (state->proxyOps[i].pool) {
           NCCLCHECK(ncclShmClose(state->proxyOps[i].handle));
         }
@@ -1203,8 +1205,8 @@ ncclResult_t ncclProxyDestroy(struct ncclComm* comm) {
           CUDACHECK(cudaIpcCloseMemHandle(state->sharedDevMems[i]));
         }
         int type = ncclProxyMsgClose;
-        if (*comm->abortFlag == 0) NCCLCHECK(ncclSocketSend(state->peerSocks[i], &type, sizeof(int)));
-        ncclSocketClose(state->peerSocks[i]);
+        if (*comm->abortFlag == 0) NCCLCHECK(ncclSocketSend(state->peerSocks + i, &type, sizeof(int)));
+        NCCLCHECK(ncclSocketClose(state->peerSocks + i));
       }
     }
     free(state->peerSocks);

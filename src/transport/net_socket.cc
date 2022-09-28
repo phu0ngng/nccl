@@ -125,7 +125,7 @@ enum ncclNetSocketCommState {
 struct ncclNetSocketCommStage {
   enum ncclNetSocketCommState state;
   uint8_t iteration;
-  ncclSocket_t sock;
+  struct ncclSocket* sock;
   struct ncclNetSocketComm* comm;
 };
 
@@ -141,7 +141,7 @@ struct ncclNetSocketTask {
   int op;
   void* data;
   int size;
-  ncclSocket_t sock;
+  struct ncclSocket* sock;
   int offset;
   int used;
   ncclResult_t result;
@@ -151,7 +151,7 @@ struct ncclNetSocketRequest {
   int op;
   void* data;
   int size;
-  ncclSocket_t ctrlSock;
+  struct ncclSocket* ctrlSock;
   int offset;
   int used;
   struct ncclNetSocketComm* comm;
@@ -174,7 +174,7 @@ struct ncclNetSocketThreadResources {
 };
 
 struct ncclNetSocketListenComm {
-  ncclSocket_t sock;
+  struct ncclSocket sock;
   struct ncclNetSocketCommStage stage;
   int nSocks;
   int nThreads;
@@ -182,8 +182,8 @@ struct ncclNetSocketListenComm {
 };
 
 struct ncclNetSocketComm {
-  ncclSocket_t ctrlSock;
-  ncclSocket_t socks[MAX_SOCKETS];
+  struct ncclSocket ctrlSock;
+  struct ncclSocket socks[MAX_SOCKETS];
   int dev;
   int cudaDev;
   int nSocks;
@@ -291,8 +291,8 @@ ncclResult_t ncclNetSocketListen(int dev, void* opaqueHandle, void** listenComm)
   NCCLCHECK(ncclCalloc(&comm, 1));
   handle->magic = NCCL_SOCKET_MAGIC;
   NCCLCHECK(ncclSocketInit(&comm->sock, &ncclNetSocketDevs[dev].addr, handle->magic, ncclSocketTypeNetSocket, NULL, 1));
-  NCCLCHECK(ncclSocketListen(comm->sock));
-  NCCLCHECK(ncclSocketGetAddr(comm->sock, &handle->connectAddr));
+  NCCLCHECK(ncclSocketListen(&comm->sock));
+  NCCLCHECK(ncclSocketGetAddr(&comm->sock, &handle->connectAddr));
   NCCLCHECK(ncclNetSocketGetNsockNthread(dev, &comm->nSocks, &comm->nThreads));
   handle->nSocks = comm->nSocks;
   handle->nThreads = comm->nThreads;
@@ -311,8 +311,7 @@ ncclResult_t ncclNetSocketConnect(int dev, void* opaqueHandle, void** sendComm) 
   struct ncclNetSocketCommStage* stage = &handle->stage;
   struct ncclNetSocketComm* comm = stage->comm;
   uint8_t i = stage->iteration;
-  ncclSocket_t sock = stage->sock;
-  ncclSocket_t* sockPtr = NULL;
+  struct ncclSocket* sock = stage->sock;
   *sendComm = NULL;
 
   if (stage->state == ncclNetSocketCommStateConnect) goto socket_connect_check;
@@ -325,10 +324,9 @@ ncclResult_t ncclNetSocketConnect(int dev, void* opaqueHandle, void** sendComm) 
   comm->dev = dev;
   CUDACHECK(cudaGetDevice(&comm->cudaDev));
   for (; i<comm->nSocks+1; i++) {
-    sockPtr = (i == comm->nSocks) ? &comm->ctrlSock : comm->socks+i;
-    NCCLCHECK(ncclSocketInit(sockPtr, &handle->connectAddr, handle->magic, ncclSocketTypeNetSocket, NULL, 1));
+    sock = (i == comm->nSocks) ? &comm->ctrlSock : comm->socks+i;
+    NCCLCHECK(ncclSocketInit(sock, &handle->connectAddr, handle->magic, ncclSocketTypeNetSocket, NULL, 1));
 
-    sock = *sockPtr;
     stage->sock = sock;
     stage->state = ncclNetSocketCommStateConnect;
     stage->iteration = i;
@@ -353,6 +351,7 @@ ncclResult_t ncclNetSocketAccept(void* listenComm, void** recvComm) {
   struct ncclNetSocketCommStage* stage = &lComm->stage;
   struct ncclNetSocketComm* rComm = stage->comm;
   uint8_t i = stage->iteration;
+  struct ncclSocket* sock = stage->sock;
   int ready;
 
   *recvComm = NULL;
@@ -367,34 +366,36 @@ ncclResult_t ncclNetSocketAccept(void* listenComm, void** recvComm) {
   CUDACHECK(cudaGetDevice(&rComm->cudaDev));
   for (; i<rComm->nSocks+1; i++) {
     uint8_t sendSockIdx;
-    NCCLCHECK(ncclSocketInit(&stage->sock));
+
+    NCCLCHECK(ncclCalloc(&sock, 1));
+    NCCLCHECK(ncclSocketInit(sock));
+    stage->sock = sock;
     stage->state = ncclNetSocketCommStateAccept;
     stage->iteration = i;
-    NCCLCHECK(ncclSocketAccept(stage->sock, lComm->sock));
+    NCCLCHECK(ncclSocketAccept(sock, &lComm->sock));
 
 socket_accept_check:
-    NCCLCHECK(ncclSocketReady(stage->sock, &ready));
+    NCCLCHECK(ncclSocketReady(sock, &ready));
     if (!ready) return ncclSuccess;
 
     stage->state = ncclNetSocketCommStateRecv;
 socket_recv:
     int done = 0;
-    NCCLCHECK(ncclSocketProgress(NCCL_SOCKET_RECV, stage->sock, &sendSockIdx, sizeof(uint8_t), &done));
+    NCCLCHECK(ncclSocketProgress(NCCL_SOCKET_RECV, sock, &sendSockIdx, sizeof(uint8_t), &done));
     if (done == 0) return ncclSuccess;
 
     if (sendSockIdx == rComm->nSocks)
-      rComm->ctrlSock = stage->sock;
+      memcpy(&rComm->ctrlSock, sock, sizeof(struct ncclSocket));
     else
-      rComm->socks[sendSockIdx] = stage->sock;
-    /* reset stage->sock for next iteration */
-    stage->sock = NCCL_NULL_SOCKET;
+      memcpy(rComm->socks+sendSockIdx, sock, sizeof(struct ncclSocket));
+    free(sock);
   }
   *recvComm = rComm;
 
   /* reset lComm state */
   stage->state = ncclNetSocketCommStateStart;
   stage->iteration = 0;
-  stage->sock = NCCL_NULL_SOCKET;
+  stage->sock = NULL;
   stage->comm = NULL;
   return ncclSuccess;
 }
@@ -406,7 +407,7 @@ ncclResult_t ncclNetSocketGetRequest(struct ncclNetSocketComm* comm, int op, voi
       r->op = op;
       r->data = data;
       r->size = size;
-      r->ctrlSock = comm->ctrlSock;
+      r->ctrlSock = &comm->ctrlSock;
       r->used = 1;
       r->comm = comm;
       r->nSubs = 0;
@@ -441,7 +442,7 @@ ncclResult_t ncclNetSocketGetTask(struct ncclNetSocketComm* comm, int op, void* 
     r->op = op;
     r->data = data;
     r->size = size;
-    r->sock = comm->socks[comm->nextSock];
+    r->sock = comm->socks + comm->nextSock;
     r->offset = 0;
     r->result = ncclSuccess;
     comm->nextSock = (comm->nextSock + 1) % comm->nSocks;
@@ -558,8 +559,8 @@ ncclResult_t ncclNetSocketCloseListen(void* opaqueComm) {
   struct ncclNetSocketListenComm* comm = (struct ncclNetSocketListenComm*)opaqueComm;
   if (comm) {
     int ready;
-    NCCLCHECK(ncclSocketReady(comm->sock, &ready));
-    if (ready) NCCLCHECK(ncclSocketClose(comm->sock));
+    NCCLCHECK(ncclSocketReady(&comm->sock, &ready));
+    if (ready) NCCLCHECK(ncclSocketClose(&comm->sock));
     free(comm);
   }
   return ncclSuccess;
@@ -580,11 +581,11 @@ ncclResult_t ncclNetSocketClose(void* opaqueComm) {
       free(res->threadTaskQueue.tasks);
     }
     int ready;
-    NCCLCHECK(ncclSocketReady(comm->ctrlSock, &ready));
-    if (ready) NCCLCHECK(ncclSocketClose(comm->ctrlSock));
+    NCCLCHECK(ncclSocketReady(&comm->ctrlSock, &ready));
+    if (ready) NCCLCHECK(ncclSocketClose(&comm->ctrlSock));
     for (int i=0; i<comm->nSocks; i++) {
-      NCCLCHECK(ncclSocketReady(comm->socks[i], &ready));
-      if (ready) NCCLCHECK(ncclSocketClose(comm->socks[i]));
+      NCCLCHECK(ncclSocketReady(&comm->socks[i], &ready));
+      if (ready) NCCLCHECK(ncclSocketClose(&comm->socks[i]));
     }
     free(comm);
   }
