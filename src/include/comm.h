@@ -255,6 +255,9 @@ struct ncclComm {
   int collNetSupport;
   int intraHighestTransportType;
 
+  // MC support
+  void* mcResources;
+
   size_t channelSize; // User requested work size (bytes) for channel partitions
 
   // Internal streams
