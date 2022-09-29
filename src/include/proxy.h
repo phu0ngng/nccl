@@ -10,6 +10,7 @@
 #include "devcomm.h"
 #include "info.h"
 #include "socket.h"
+#include "ipcsocket.h"
 #include <pthread.h>
 #include "shm.h"
 
@@ -174,6 +175,7 @@ struct ncclProxyState {
   struct ncclSocket* peerSocks;
   struct ncclProxyOps* proxyOps;
   void** sharedDevMems;
+  struct ncclIpcSocket peerIpcSock; // cuMem API support
 
   // Progress thread
   struct ncclProxyProgressState progressState;
@@ -212,7 +214,8 @@ enum ncclProxyMsgType {
   ncclProxyMsgStart = 5,
   ncclProxyMsgClose = 6,
   ncclProxyMsgAbort = 7,
-  ncclProxyMsgStop = 8
+  ncclProxyMsgStop = 8,
+  ncclProxyMsgConvertFd = 9 // cuMem API support
 };
 
 ncclResult_t ncclProxyCall(struct ncclProxyConnector* proxyConn, int type, void* reqBuff, int reqSize, void* respBuff, int respSize);
