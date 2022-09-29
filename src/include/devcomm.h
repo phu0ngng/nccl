@@ -15,11 +15,12 @@
 typedef enum { ncclFuncBroadcast, ncclFuncReduce, ncclFuncAllGather, ncclFuncReduceScatter, ncclFuncAllReduce, ncclFuncSendRecv, ncclFuncSend, ncclFuncRecv, ncclNumFuncs} ncclFunc_t;
 extern const char* ncclFuncStr[NCCL_NUM_FUNCTIONS];
 
-#define NCCL_NUM_ALGORITHMS 4 // Tree/Ring/CollNet*
+#define NCCL_NUM_ALGORITHMS 5 // Tree/Ring/CollNet*
 #define NCCL_ALGO_TREE 0
 #define NCCL_ALGO_RING 1
 #define NCCL_ALGO_COLLNET_DIRECT 2
 #define NCCL_ALGO_COLLNET_CHAIN 3
+#define NCCL_ALGO_MC 4
 extern const char* ncclAlgoStr[NCCL_NUM_ALGORITHMS];
 
 #define NCCL_NUM_PROTOCOLS 3 // Simple/LL/LL128
@@ -138,9 +139,9 @@ struct ncclTree {
 struct ncclDirect {
   int depth;
   int out;
-  int nHeads;
-  int headRank;
-  int shift;
+  int nHeads;   // Number of parallel N<->1<->net operations we'll do in parallel; size of up/down
+  int headRank; // Index in 0..nHeads-1 I am the head rank of. -1 if I'm not a head rank (no local NIC)
+  int shift;    // Shuffling of send/recv for scatter/gather operations, basically localRank%nHeads
   int up[NCCL_MAX_DIRECT_ARITY];
   int down[NCCL_MAX_DIRECT_ARITY];
 };
@@ -264,6 +265,7 @@ struct alignas(16) ncclDevChannel {
   struct ncclTree tree;
   struct ncclTree collnetChain;
   struct ncclDirect collnetDirect;
+  struct ncclDirect mc;
   uint32_t* workFifoDone; // Location of done counter, device writes index+1 of last work processed
 };
 

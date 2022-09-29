@@ -61,11 +61,13 @@ ncclResult_t mcGroupDisconnect(mcGroup_t group) {
 
 ncclResult_t mcGroupBindMem(mcGroup_t group, char** mem, size_t size) {
   // TODO: Alloc `mem` of size `size` and bind it to the mem handle
+  NCCLCHECK(ncclCudaCalloc(mem, size));
   return ncclSuccess;
 }
 
 ncclResult_t mcGroupUnbindMem(mcGroup_t group, char* mem) {
   // TODO: Alloc `mem` of size `size` and bind it to the mem handle
+  NCCLCHECK(ncclCudaFree(mem));
   return ncclSuccess;
 }
 
@@ -92,22 +94,40 @@ ncclResult_t ncclMcSetup(struct ncclComm* comm) {
   NCCLCHECKGOTO(ncclCalloc(&resources->mcMems, comm->localRanks), res, cleanup);
   NCCLCHECKGOTO(mcGroupCreate(mcHandles+comm->localRank*MC_HANDLE_SIZE, resources->mcGroups+comm->localRank), res, cleanup);
   NCCLCHECKGOTO(bootstrapIntraNodeAllGather(comm->bootstrap, comm->localRankToRank, comm->localRank, comm->localRanks, mcHandles, MC_HANDLE_SIZE), res, cleanup);
+
+  for (int c=0; c<comm->nChannels; c++) {
+    struct ncclChannel* channel = comm->channels+c;
+    channel->mc.nHeads = comm->localRanks;
+    for (int i=0; i<NCCL_MAX_DIRECT_ARITY; i++) channel->mc.down[i] = channel->mc.up[i] = -1;
+    channel->mc.down[0] = comm->nRanks+1+comm->localRank;
+    channel->mc.out = -1;       // Network not yet implemented.
+    channel->mc.headRank = -1;  // Network not yet implemented.
+    channel->mc.shift = 0; // We don't need to shuffle communication, we're not doing an alltoall
+    channel->mc.depth = 0;
+  }
+
   for (int r=0; r<comm->localRanks; r++) {
     if (r != comm->localRank) NCCLCHECKGOTO(mcGroupConnect(mcHandles+r*MC_HANDLE_SIZE, resources->mcGroups+r), res, cleanup);
     NCCLCHECKGOTO(mcGroupBindMem(resources->mcGroups[r], resources->mcMems+r, mcTotalSize), res, cleanup);
+    int mcPeer = comm->nRanks+1+r;
     for (int c=0; c<comm->nChannels; c++) {
+      struct ncclChannel* channel = comm->channels+c;
+      channel->mc.up[r] = mcPeer;
+
       char* mem = resources->mcMems[r] + c*(buffSize+memSize);
-      struct ncclChannelPeer* peer = comm->channels[c].peers+comm->nRanks+1+r;
+      struct ncclChannelPeer* peer = channel->peers+mcPeer;
 
-      peer->send->transportComm = &mcTransport.send;
-      peer->send->conn.buffs[NCCL_PROTO_SIMPLE] = mem;
-      peer->send->conn.head = (uint64_t*)(mem+buffSize);
-      peer->send->conn.tail = (uint64_t*)(mem+buffSize+sizeof(uint64_t));
+      peer->send[0].transportComm = &mcTransport.send;
+      peer->send[0].conn.buffs[NCCL_PROTO_SIMPLE] = mem;
+      peer->send[0].conn.head = (uint64_t*)(mem+buffSize);
+      peer->send[0].conn.tail = (uint64_t*)(mem+buffSize+sizeof(uint64_t));
 
-      peer->recv->transportComm = &mcTransport.recv;
-      peer->recv->conn.buffs[NCCL_PROTO_SIMPLE] = mem;
-      peer->recv->conn.head = (uint64_t*)(mem+buffSize);
-      peer->recv->conn.tail = (uint64_t*)(mem+buffSize+sizeof(uint64_t));
+      peer->recv[0].transportComm = &mcTransport.recv;
+      peer->recv[0].conn.buffs[NCCL_PROTO_SIMPLE] = mem;
+      peer->recv[0].conn.head = (uint64_t*)(mem+buffSize);
+      peer->recv[0].conn.tail = (uint64_t*)(mem+buffSize+sizeof(uint64_t));
+      CUDACHECKGOTO(cudaMemcpyAsync(&comm->channels[c].devPeers[mcPeer].send[0], &peer->send[0].conn, sizeof(struct ncclConnInfo), cudaMemcpyHostToDevice, comm->hostStream.cudaStream), res, cleanup);
+      CUDACHECKGOTO(cudaMemcpyAsync(&comm->channels[c].devPeers[mcPeer].recv[0], &peer->recv[0].conn, sizeof(struct ncclConnInfo), cudaMemcpyHostToDevice, comm->hostStream.cudaStream), res, cleanup);
     }
   }
 cleanup:
