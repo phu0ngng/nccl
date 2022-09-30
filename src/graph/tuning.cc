@@ -214,9 +214,7 @@ ncclResult_t ncclTopoTuneModel(struct ncclComm* comm, int minCompCap, int maxCom
   }
 
   // Disable MC if not supported
-  int nvsCount = 0;
-  NCCLCHECK(ncclTopoGetNvsCount(comm->topo, &nvsCount));
-  //if (nvsCount == 0 || minCompCap < 90 || comm->localRanks <= 2) algoEnable[NCCL_ALGO_MC] = 0;
+  if (comm->mcSupport == 0 || comm->localRanks <= 2) algoEnable[NCCL_ALGO_MC] = 0;
 
   // Disable CollNet if it is not supported
   if (comm->collNetSupport == 0) {
@@ -229,6 +227,8 @@ ncclResult_t ncclTopoTuneModel(struct ncclComm* comm, int minCompCap, int maxCom
     }
   } else {
     // Disable CollNet+Direct if not on an NVSwitch system
+    int nvsCount = 0;
+    NCCLCHECK(ncclTopoGetNvsCount(comm->topo, &nvsCount));
     if (nvsCount == 0) algoEnable[NCCL_ALGO_COLLNET_DIRECT] = 0;
   }
 

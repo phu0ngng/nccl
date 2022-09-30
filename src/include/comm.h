@@ -257,6 +257,7 @@ struct ncclComm {
   int intraHighestTransportType;
 
   // MC support
+  int mcSupport;
   void* mcResources;
 
   size_t channelSize; // User requested work size (bytes) for channel partitions

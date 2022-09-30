@@ -18,6 +18,7 @@ DECLARE_CUDA_PFN(cuDeviceGet, 2000);
 DECLARE_CUDA_PFN(cuDeviceGetAttribute, 2000);
 DECLARE_CUDA_PFN(cuGetErrorString, 6000);
 DECLARE_CUDA_PFN(cuGetErrorName, 6000);
+DECLARE_CUDA_PFN(cuGetExportTable, 3000);
 /* enqueue.cc */
 DECLARE_CUDA_PFN(cuMemGetAddressRange, 3020);
 /* proxy.cc */
@@ -31,6 +32,7 @@ DECLARE_CUDA_PFN(cuCtxGetDevice, 2000);
 DECLARE_CUDA_PFN(cuMemAddressReserve, 10020);
 DECLARE_CUDA_PFN(cuMemAddressFree, 10020);
 DECLARE_CUDA_PFN(cuMemCreate, 10020);
+DECLARE_CUDA_PFN(cuMemGetAllocationGranularity, 10020);
 DECLARE_CUDA_PFN(cuMemExportToShareableHandle, 10020);
 DECLARE_CUDA_PFN(cuMemImportFromShareableHandle, 10020);
 DECLARE_CUDA_PFN(cuMemMap, 10020);
@@ -73,6 +75,7 @@ static ncclResult_t cudaPfnFuncLoader(void) {
   LOAD_SYM(cuGetErrorName, 6000, 0);
   LOAD_SYM(cuDeviceGet, 2000, 0);
   LOAD_SYM(cuDeviceGetAttribute, 2000, 0);
+  LOAD_SYM(cuGetExportTable, 3000, 0);
   LOAD_SYM(cuMemGetAddressRange, 3020, 1);
   LOAD_SYM(cuCtxCreate, 3020, 1);
   LOAD_SYM(cuCtxDestroy, 4000, 1);
@@ -84,6 +87,7 @@ static ncclResult_t cudaPfnFuncLoader(void) {
   LOAD_SYM(cuMemAddressReserve, 10020, 1);
   LOAD_SYM(cuMemAddressFree, 10020, 1);
   LOAD_SYM(cuMemCreate, 10020, 1);
+  LOAD_SYM(cuMemGetAllocationGranularity, 10020, 1);
   LOAD_SYM(cuMemExportToShareableHandle, 10020, 1);
   LOAD_SYM(cuMemImportFromShareableHandle, 10020, 1);
   LOAD_SYM(cuMemMap, 10020, 1);
