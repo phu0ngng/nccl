@@ -28,7 +28,6 @@ DECLARE_CUDA_PFN(cuCtxGetCurrent, 4000);
 DECLARE_CUDA_PFN(cuCtxSetCurrent, 4000);
 DECLARE_CUDA_PFN(cuCtxGetDevice, 2000);
 /* cuMem API support */
-#if CUDA_VERSION >= 11030
 DECLARE_CUDA_PFN(cuMemAddressReserve, 10020);
 DECLARE_CUDA_PFN(cuMemAddressFree, 10020);
 DECLARE_CUDA_PFN(cuMemCreate, 10020);
@@ -39,7 +38,6 @@ DECLARE_CUDA_PFN(cuMemMap, 10020);
 DECLARE_CUDA_PFN(cuMemRelease, 10020);
 DECLARE_CUDA_PFN(cuMemSetAccess, 10020);
 DECLARE_CUDA_PFN(cuMemUnmap, 10020);
-#endif
 #if CUDA_VERSION >= 11070
 /* transport/collNet.cc/net.cc*/
 DECLARE_CUDA_PFN(cuMemGetHandleForAddressRange, 11070); // DMA-BUF support
