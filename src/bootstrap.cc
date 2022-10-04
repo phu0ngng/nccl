@@ -314,16 +314,22 @@ ncclResult_t bootstrapAllGather(void* commState, void* allData, int size) {
 }
 
 ncclResult_t bootstrapSend(void* commState, int peer, int tag, void* data, int size) {
+  ncclResult_t ret = ncclSuccess;
   struct bootstrapState* state = (struct bootstrapState*)commState;
   struct ncclSocket sock;
 
-  NCCLCHECK(ncclSocketInit(&sock, state->peerCommAddresses+peer, state->abortFlag, 1));
-  NCCLCHECK(ncclSocketConnect(&sock));
-  NCCLCHECK(bootstrapNetSend(&sock, &state->rank, sizeof(int)));
-  NCCLCHECK(bootstrapNetSend(&sock, &tag, sizeof(int)));
-  NCCLCHECK(bootstrapNetSend(&sock, data, size));
-  close(sock.fd);
-  return ncclSuccess;
+  sock.fd = -1;
+  NCCLCHECKGOTO(ncclSocketInit(&sock, state->peerCommAddresses+peer, state->abortFlag, 0), ret, fail);
+  NCCLCHECKGOTO(ncclSocketConnect(&sock), ret, fail);
+  NCCLCHECKGOTO(bootstrapNetSend(&sock, &state->rank, sizeof(int)), ret, fail);
+  NCCLCHECKGOTO(bootstrapNetSend(&sock, &tag, sizeof(int)), ret, fail);
+  NCCLCHECKGOTO(bootstrapNetSend(&sock, data, size), ret, fail);
+
+exit:
+  if (sock.fd >= 0) close(sock.fd);
+  return ret;
+fail:
+  goto exit;
 }
 
 ncclResult_t bootstrapBarrier(void* commState, int *ranks, int rank, int nranks, int tag) {
@@ -435,32 +441,37 @@ static void unexpectedFree(struct bootstrapState* state) {
 
 // We can't know who we'll receive from, so we need to receive everything at once
 ncclResult_t bootstrapRecv(void* commState, int peer, int tag, void* data, int size) {
+  ncclResult_t ret = ncclSuccess;
   struct bootstrapState* state = (struct bootstrapState*)commState;
   struct ncclSocket sock;
+  int newPeer, newTag;
 
+  sock.fd = -1;
   // Search unexpected connections first
-  NCCLCHECK(unexpectedDequeue(state, peer, tag, &sock));
+  NCCLCHECKGOTO(unexpectedDequeue(state, peer, tag, &sock), ret, fail);
   if (sock.fd != -1) {
-    NCCLCHECK(bootstrapNetRecv(&sock, ((char*)data), size));
-    close(sock.fd);
-    return ncclSuccess;
+    NCCLCHECKGOTO(bootstrapNetRecv(&sock, ((char*)data), size), ret, fail);
+    goto exit;
   }
 
   // Then look for new connections
-  NCCLCHECK(ncclSocketInit(&sock, NULL, state->listenSock.abortFlag, 0));
+  NCCLCHECKGOTO(ncclSocketInit(&sock, NULL, state->listenSock.abortFlag, 0), ret, fail);
   while (1) {
-    NCCLCHECK(ncclSocketAccept(&sock, &state->listenSock));
-    int newPeer, newTag;
-    NCCLCHECK(bootstrapNetRecv(&sock, &newPeer, sizeof(int)));
-    NCCLCHECK(bootstrapNetRecv(&sock, &newTag, sizeof(int)));
+    NCCLCHECKGOTO(ncclSocketAccept(&sock, &state->listenSock), ret, fail);
+    NCCLCHECKGOTO(bootstrapNetRecv(&sock, &newPeer, sizeof(int)), ret, fail);
+    NCCLCHECKGOTO(bootstrapNetRecv(&sock, &newTag, sizeof(int)), ret, fail);
     if (newPeer == peer && newTag == tag) {
-      NCCLCHECK(bootstrapNetRecv(&sock, ((char*)data), size));
-      close(sock.fd);
-      return ncclSuccess;
+      NCCLCHECKGOTO(bootstrapNetRecv(&sock, ((char*)data), size), ret, fail);
+      goto exit;
     }
     // Unexpected connection. Save for later.
-    NCCLCHECK(unexpectedEnqueue(state, newPeer, newTag, &sock));
+    NCCLCHECKGOTO(unexpectedEnqueue(state, newPeer, newTag, &sock), ret, fail);
   }
+exit:
+  if (sock.fd >= 0) close(sock.fd);
+  return ret;
+fail:
+  goto exit;
 }
 
 ncclResult_t bootstrapClose(void* commState) {

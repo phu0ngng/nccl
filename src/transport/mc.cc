@@ -46,6 +46,7 @@ static const CUetblMulticast *etblMulticast = NULL;
 
 static ncclResult_t ncclMcInitEtbl(struct ncclComm* comm) {
   comm->mcSupport = 0;
+  if (ncclCudaLibraryInit() != ncclSuccess) return ncclSuccess;
   if (pfn_cuGetExportTable((const void **)&etblMulticast, &CU_ETID_Multicast) != CUDA_SUCCESS)
     return ncclSuccess;
 
