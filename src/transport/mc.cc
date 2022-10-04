@@ -7,6 +7,10 @@
 #include "comm.h"
 #include "graph.h"
 #include "utils.h"
+#include "proxy.h"
+
+//#define MC_CU_MEM_HANDLE_TYPE CU_MEM_HANDLE_TYPE_POSIX_FILE_DESCRIPTOR
+#define MC_CU_MEM_HANDLE_TYPE CU_MEM_HANDLE_TYPE_NONE
 
 /* Determine if two peers can communicate through mc */
 ncclResult_t mcCanConnect(int* ret, struct ncclTopoSystem* topo, struct ncclTopoGraph* graph, struct ncclPeerInfo* info1, struct ncclPeerInfo* info2) {
@@ -67,27 +71,34 @@ struct mcResources {
   CUmemAccessDesc accessDesc;
   size_t size;
   size_t granularity;
-  CUmemGenericAllocationHandle* mcHandles; // Multicast handles of each head rank
-  char* mcBuff; // Multicast region mapped
-  CUmemGenericAllocationHandle* buffHandles; // Handles for my buffers for each MC
-  char** buffs; // Buffers for each MC
+  CUmemGenericAllocationHandle mcHandle; // Multicast handle for MC buffer
+  char* mcBase; // Multicast MC buffer base address
+  char* mcBuff; // My Multicast MC buffer address
+  CUmemGenericAllocationHandle ucHandle; // Unicast Handle for MC buffer
+  char* ucBase; // Unicast MC buffer base address
+  char* ucBuff; // My Unicast MC buffer address
 };
 
 
-ncclResult_t mcGetProperties(struct mcResources* resources, size_t size) {
+ncclResult_t mcGetProperties(struct ncclComm *comm, struct mcResources* resources, size_t size) {
   int dev;
   CUCHECK(cuCtxGetDevice(&dev));
 
   CUmemAllocationProp* prop = &resources->properties;
+  memset(prop, 0, sizeof(*prop));
   prop->type = CU_MEM_ALLOCATION_TYPE_PINNED;
   prop->location.type = CU_MEM_LOCATION_TYPE_DEVICE;
   prop->location.id = dev;
-  prop->requestedHandleTypes = CU_MEM_HANDLE_TYPE_POSIX_FILE_DESCRIPTOR;
+  prop->requestedHandleTypes = MC_CU_MEM_HANDLE_TYPE;
 
   CUCHECK(cuMemGetAllocationGranularity(&resources->granularity, prop, CU_MEM_ALLOC_GRANULARITY_RECOMMENDED));
+
+  resources->granularity = 512ULL*1024ULL*1024ULL; // HACK until 3418538 fixed
+
   ALIGN_SIZE(size, resources->granularity);
   resources->size = size;
 
+  memset(&resources->accessDesc, 0, sizeof(resources->accessDesc));
   resources->accessDesc.flags = CU_MEM_ACCESS_FLAGS_PROT_READWRITE;
   resources->accessDesc.location.type = CU_MEM_LOCATION_TYPE_DEVICE;
   resources->accessDesc.location.id = dev;
@@ -95,21 +106,29 @@ ncclResult_t mcGetProperties(struct mcResources* resources, size_t size) {
   return ncclSuccess;
 }
 
-ncclResult_t mcGroupCreate(struct mcResources* resources, int rank, unsigned int nranks, char* shareableHandle) {
+ncclResult_t mcGroupCreate(struct ncclComm *comm, struct mcResources* resources, int rank, unsigned int nranks, char* shareableHandle) {
   size_t size = resources->size;
+
   // Create MC group
-  multicastObjectProp prop = { .size = resources->size, .numDevices = nranks };
-  CUCHECK(cuMemMulticastCreate(resources->mcHandles+rank, &prop));
+  multicastObjectProp prop = { 0 };
+  prop.size = size;
+  prop.numDevices = nranks;
+  prop.requestedHandleTypes = MC_CU_MEM_HANDLE_TYPE;
+  prop.flags = 0;
 
-  // Get a handle to pass to other ranks
-  CUCHECK(cuMemExportToShareableHandle(shareableHandle, resources->mcHandles[rank], CU_MEM_HANDLE_TYPE_POSIX_FILE_DESCRIPTOR, 0));
+  INFO(NCCL_MC, "MC Creating group nranks %d size %zi on rank %d", nranks, size, rank);
+  CUCHECK(cuMemMulticastCreate(&resources->mcHandle, &prop));
 
-  // Map the MC locally
-  CUdeviceptr ptr;
-  CUCHECK(cuMemAddressReserve(&ptr, size, resources->granularity, 0, 0));
-  CUCHECK(cuMemMap(ptr, size, 0, resources->mcHandles[rank], 0));
-  CUCHECK(cuMemSetAccess(ptr, size, &resources->accessDesc, 1));
-  resources->mcBuff = (char*)ptr;
+  if (MC_CU_MEM_HANDLE_TYPE != CU_MEM_HANDLE_TYPE_NONE) {
+    // Get a handle to pass to other ranks
+    CUCHECK(cuMemExportToShareableHandle(shareableHandle, resources->mcHandle, MC_CU_MEM_HANDLE_TYPE, 0));
+  }
+  else {
+    memcpy(shareableHandle, &resources->mcHandle, sizeof(resources->mcHandle));
+  }
+
+  INFO(NCCL_MC, "MC Created group %llx nranks %d size %zi on rank %d", resources->mcHandle, nranks, size, rank);
+
   return ncclSuccess;
 }
 
@@ -118,9 +137,31 @@ ncclResult_t mcGroupDestroy(mcHandle_t handle) {
   return ncclSuccess;
 }
 
-ncclResult_t mcGroupConnect(struct mcResources* resources, int rank, char* shareableHandle) {
-  CUCHECK(cuMemImportFromShareableHandle(resources->mcHandles+rank,
-        (void *)shareableHandle, CU_MEM_HANDLE_TYPE_POSIX_FILE_DESCRIPTOR));
+ncclResult_t mcGroupConnect(struct ncclComm *comm, struct mcResources* resources, int rank, char* shareableHandle) {
+  CUmemAllocationHandleType type = MC_CU_MEM_HANDLE_TYPE;
+
+  INFO(NCCL_MC, "Importing MC shareableHandle %p from rank %d", shareableHandle, rank);
+
+  // Import and map the remote memory descriptor to the local GPU
+  if (type == CU_MEM_HANDLE_TYPE_POSIX_FILE_DESCRIPTOR) {
+    // cuMem UDS support
+    int fd = *(int *)shareableHandle;
+    TRACE(NCCL_MC, "MC rank %d Importing shareable handle from rank %d fd %d", comm->localRank, rank, fd);
+    // cuMem API support
+    struct ncclProxyConnector proxyConn;
+    NCCLCHECK(ncclProxyConnect(comm, TRANSPORT_P2P, 1, rank, &proxyConn));
+    INFO(NCCL_MC, "MC rank %d request conversion of fd %d from rank %d", comm->localRank, fd, rank);
+    NCCLCHECK(ncclProxyCall(&proxyConn, ncclProxyMsgConvertFd, shareableHandle, sizeof(int), &fd, sizeof(int)));
+    fd = *(int *)shareableHandle;
+    INFO(NCCL_MC, "MC rank %d received converted fd %d from rank %d", comm->localRank, fd, rank);
+    CUCHECK(cuMemImportFromShareableHandle(&resources->mcHandle, (void *)(uintptr_t)fd, type));
+  } else {
+    if (MC_CU_MEM_HANDLE_TYPE != CU_MEM_HANDLE_TYPE_NONE) {
+      CUCHECK(cuMemImportFromShareableHandle(&resources->mcHandle, (void *)shareableHandle, type));
+    } else {
+      memcpy(&resources->mcHandle, shareableHandle, sizeof(resources->mcHandle));
+    }
+  }
   return ncclSuccess;
 }
 
@@ -129,18 +170,45 @@ ncclResult_t mcGroupDisconnect(mcHandle_t handle) {
   return ncclSuccess;
 }
 
-ncclResult_t mcGroupBindMem(struct mcResources* resources, int rank) {
-  // Alloc mem
+ncclResult_t mcGroupBindMem(struct ncclComm *comm, struct mcResources* resources, int rank, size_t mcPerRankSize) {
   size_t size = resources->size;
-  CUdeviceptr ptr;
-  CUCHECK(cuMemCreate(resources->buffHandles+rank, size, &resources->properties, 0));
-  CUCHECK(cuMemAddressReserve(&ptr, size, resources->granularity, 0, 0));
-  CUCHECK(cuMemMap(ptr, size, 0, resources->buffHandles[rank], 0));
-  CUCHECK(cuMemSetAccess(ptr, size, &resources->accessDesc, 1));
-  resources->buffs[rank] = (char*)ptr;
+  CUdeviceptr ptr = 0;
 
-  // Bind to MC
-  CUCHECK(cuMemMulticastBindMem(resources->mcHandles[rank], 0, resources->buffHandles[rank], 0, resources->size, 0));
+  INFO(NCCL_MC, "MC BindMem comm %p rank %d mcPerRankSize %zi", comm, rank, mcPerRankSize);
+
+  // Map a VA for UC memory
+  CUCHECK(cuMemAddressReserve(&ptr, size, resources->granularity, 0U, 0));
+
+  // Alloc local physical mem for this MC group
+  CUCHECK(cuMemCreate(&resources->ucHandle, size, &resources->properties, 0));
+  CUCHECK(cuMemMap(ptr, size, 0, resources->ucHandle, 0));
+  CUCHECK(cuMemSetAccess(ptr, size, &resources->accessDesc, 1));
+  resources->ucBase = (char*)ptr;
+  resources->ucBuff = (char*)ptr + rank*mcPerRankSize;
+  INFO(NCCL_MC, "MC Mapped UC at %p at %p rank %d", resources->ucBase, resources->ucBuff, rank);
+
+  // Bind physical memory to the MC group
+  INFO(NCCL_MC, "MC Binding local mem %p handle %llx size %zi to MC handle %llx for rank %d", (void*)ptr, resources->ucHandle, size, resources->mcHandle, rank);
+  CUCHECK(cuMemMulticastBindMem(resources->mcHandle, 0, resources->ucHandle, 0, size, 0));
+
+  // Create a VA for the MC
+  CUCHECK(cuMemAddressReserve(&ptr, size, resources->granularity, 0U, 0));
+  // Map the VA locally
+  CUCHECK(cuMemMap(ptr, size, 0, resources->mcHandle, 0));
+  resources->mcBase = (char*)ptr;
+  resources->mcBuff = (char*)ptr + rank*mcPerRankSize;
+  INFO(NCCL_MC, "MC Mapped MC at %p at %p rank %d", resources->mcBase, resources->mcBuff, rank);
+
+  return ncclSuccess;
+}
+
+ncclResult_t mcGroupAccessMem(struct ncclComm *comm, struct mcResources* resources) {
+  // Having completed the BindMem we can now call SetAccess
+  // NB: It will block until all ranks have bound to the Group
+  INFO(NCCL_MC, "MC SetAccess MC %p size %zi", resources->mcBase, resources->size);
+  CUCHECK(cuMemSetAccess((CUdeviceptr)resources->mcBase, resources->size, &resources->accessDesc, 1));
+  INFO(NCCL_MC, "MC SetAccess MC %p size %zi - DONE", resources->mcBase, resources->size);
+
   return ncclSuccess;
 }
 
@@ -156,7 +224,7 @@ NCCL_PARAM(McBuffSize, "MC_BUFFSIZE", (1UL<<22));
 
 ncclResult_t ncclMcSetup(struct ncclComm* comm) {
   NCCLCHECK(ncclMcInitEtbl(comm));
-  if (comm->mcSupport == 0) return ncclSuccess;
+  if (comm->mcSupport == 0 || comm->localRanks <= 1) return ncclSuccess;
 
   int rank = comm->localRank, nranks = comm->localRanks;
   ncclResult_t res = ncclSuccess;
@@ -164,20 +232,55 @@ ncclResult_t ncclMcSetup(struct ncclComm* comm) {
   NCCLCHECK(ncclCalloc(&resources, 1));
   comm->mcResources = resources;
 
-  int buffSize = ncclParamMcBuffSize();
-  int memSize = 2*sizeof(uint64_t);
+  size_t buffSize = ncclParamMcBuffSize();
+  size_t memSize = 2*sizeof(uint64_t);
   ALIGN_SIZE(buffSize, MC_MEM_ALIGN_SIZE);
   ALIGN_SIZE(memSize, MC_MEM_ALIGN_SIZE);
-  int mcTotalSize = comm->nChannels*(buffSize+memSize);
+  size_t mcPerRankSize = comm->nChannels*(buffSize+memSize);
+  size_t mcTotalSize = mcPerRankSize*nranks;
 
-  char* mcShareableHandles = NULL;
-  NCCLCHECKGOTO(ncclCalloc(&mcShareableHandles, nranks*MC_HANDLE_SIZE), res, cleanup);
-  NCCLCHECKGOTO(ncclCalloc(&resources->mcHandles, nranks), res, cleanup);
-  NCCLCHECKGOTO(ncclCalloc(&resources->buffHandles, nranks), res, cleanup);
-  NCCLCHECKGOTO(ncclCalloc(&resources->buffs, nranks), res, cleanup);
-  NCCLCHECKGOTO(mcGetProperties(resources, mcTotalSize), res, cleanup);
-  NCCLCHECKGOTO(mcGroupCreate(resources, rank, nranks, mcShareableHandles+rank), res, cleanup);
-  NCCLCHECKGOTO(bootstrapIntraNodeAllGather(comm->bootstrap, comm->localRankToRank, rank, nranks, mcShareableHandles, MC_HANDLE_SIZE), res, cleanup);
+  INFO(NCCL_INIT|NCCL_MC, "MC comm %p rank %d nranks %d buffSize %zi memSize %zi mcPerRankSize %zi mcTotalSize %zi",
+       comm, rank, nranks, buffSize, memSize, mcPerRankSize, mcTotalSize);
+
+  char* mcShareableHandle = NULL;
+  NCCLCHECKGOTO(ncclCalloc(&mcShareableHandle, MC_HANDLE_SIZE), res, cleanup);
+  NCCLCHECKGOTO(mcGetProperties(comm, resources, mcTotalSize), res, cleanup);
+  if (rank == 0) {
+    NCCLCHECKGOTO(mcGroupCreate(comm, resources, rank, nranks, mcShareableHandle), res, cleanup);
+    NCCLCHECKGOTO(bootstrapIntraNodeBroadcast(comm->bootstrap, comm->localRankToRank, rank, nranks, 0, mcShareableHandle, MC_HANDLE_SIZE), res, cleanup);
+  } else {
+    NCCLCHECKGOTO(bootstrapIntraNodeBroadcast(comm->bootstrap, comm->localRankToRank, rank, nranks, 0, mcShareableHandle, MC_HANDLE_SIZE), res, cleanup);
+    NCCLCHECKGOTO(mcGroupConnect(comm, resources, 0, mcShareableHandle), res, cleanup);
+  }
+
+  NCCLCHECKGOTO(mcGroupBindMem(comm, resources, rank, mcPerRankSize), res, cleanup);
+  // Local intra-node barrier to ensure everyone has bound their memory to the group
+  NCCLCHECKGOTO(bootstrapBarrier(comm->bootstrap, comm->localRankToRank, comm->localRank, comm->localRanks, comm->localRankToRank[0]), res, cleanup);
+  NCCLCHECKGOTO(mcGroupAccessMem(comm, resources), res, cleanup);
+
+#if 0
+  {
+    uint64_t dummy[1024];
+
+    for (int i=0; i < sizeof(dummy)/sizeof(dummy[0]); i++) {
+      dummy[i] = 0xdeadbabefeedface ^ i;
+      dummy[i] ^= (rank << 28);
+    }
+
+    printf("MC: rank %d Writing %zi bytes to %p\n", rank, sizeof(dummy), resources->mcBuff);
+    cudaMemcpy(resources->mcBuff, dummy, sizeof(dummy), cudaMemcpyHostToDevice);
+
+    CUDACHECK(cudaDeviceSynchronize());
+    NCCLCHECKGOTO(bootstrapBarrier(comm->bootstrap, comm->localRankToRank, comm->localRank, comm->localRanks, comm->localRankToRank[0]), res, cleanup);
+
+    for (int r = 0; r < nranks; r++) {
+      char *buf = resources->ucBase + r*mcPerRankSize;
+      cudaMemcpy(&dummy[0], buf, sizeof(dummy), cudaMemcpyDeviceToHost);
+      printf("MC: rank %d.%d UC data %p %lx %lx %lx %lx\n", rank, r, buf, dummy[0], dummy[1], dummy[2], dummy[3]);
+      printf("MC: rank %d.%d UC data %p %lx %lx %lx %lx\n", rank, r, buf, dummy[1020], dummy[1021], dummy[1022], dummy[1023]);
+    }
+  }
+#endif
 
   for (int c=0; c<comm->nChannels; c++) {
     struct ncclChannel* channel = comm->channels+c;
@@ -191,14 +294,12 @@ ncclResult_t ncclMcSetup(struct ncclComm* comm) {
   }
 
   for (int r=0; r<nranks; r++) {
-    if (r != rank) NCCLCHECKGOTO(mcGroupConnect(resources, r, mcShareableHandles+r*MC_HANDLE_SIZE), res, cleanup);
-    NCCLCHECKGOTO(mcGroupBindMem(resources, r), res, cleanup);
     int mcPeer = comm->nRanks+1+r;
     for (int c=0; c<comm->nChannels; c++) {
       struct ncclChannel* channel = comm->channels+c;
       channel->mc.up[r] = mcPeer;
 
-      char* mem = resources->buffs[r] + c*(buffSize+memSize);
+      char* mem = resources->ucBuff + c*(buffSize+memSize);
       struct ncclChannelPeer* peer = channel->peers+mcPeer;
 
       peer->send[0].transportComm = &mcTransport.send;
@@ -215,21 +316,16 @@ ncclResult_t ncclMcSetup(struct ncclComm* comm) {
     }
   }
 cleanup:
-  free(mcShareableHandles);
+  free(mcShareableHandle);
   return res;
 }
 
 ncclResult_t ncclMcFree(struct ncclComm* comm) {
   struct mcResources* resources = (struct mcResources*)comm->mcResources;
   if (resources == NULL) return ncclSuccess;
-  for (int r=0; r<comm->localRanks; r++) {
-    if (resources->buffs[r]) NCCLCHECK(mcGroupUnbindMem(resources->mcHandles[r], resources->buffs[r]));
-    NCCLCHECK(mcGroupDisconnect(resources->mcHandles[r]));
-  }
-  NCCLCHECK(mcGroupDestroy(resources->mcHandles[comm->localRank]));
-  free(resources->mcHandles);
-  free(resources->buffHandles);
-  free(resources->buffs);
+  NCCLCHECK(mcGroupUnbindMem(resources->mcHandle, resources->ucBase));
+  NCCLCHECK(mcGroupDisconnect(resources->mcHandle));
+  if (comm->localRank == 0) NCCLCHECK(mcGroupDestroy(resources->mcHandle));
   free(resources);
   comm->mcResources = NULL;
   return ncclSuccess;
