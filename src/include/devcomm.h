@@ -79,6 +79,7 @@ static_assert(NCCL_LL_CLEAN_MASK % NCCL_STEPS == 0, "Invalid NCCL_LL_CLEAN_MASK 
 #define NCCL_DIRECT_NIC   0x04
 #define NCCL_IPC_WRITE    0x08
 #define NCCL_IPC_READ     0x10
+#define NCCL_MC_MIN_POLL  0x20
 
 struct ncclConnInfo {
   // Regular comm mechanism
@@ -86,7 +87,7 @@ struct ncclConnInfo {
   uint64_t *tail;     // Local for recv, remote for send
   uint64_t *head;     // Local for send, remote for recv
 
-  int direct;         // Direct communication
+  int flags;          // Direct communication / other flags
   int shared;         // Buffers are shared
   void **ptrExchange; // Pointer exchange for direct communication
   uint64_t* redOpArgExchange; // PreOp scaler exchange for direct pull case

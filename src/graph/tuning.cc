@@ -214,7 +214,7 @@ ncclResult_t ncclTopoTuneModel(struct ncclComm* comm, int minCompCap, int maxCom
   }
 
   // Disable MC if not supported
-  if (comm->mcSupport == 0 || comm->localRanks <= 2) algoEnable[NCCL_ALGO_MC] = 0;
+  if (comm->mcSupport == 0 /* || comm->localRanks <= 2*/) algoEnable[NCCL_ALGO_MC] = 0;
 
   // Disable CollNet if it is not supported
   if (comm->collNetSupport == 0) {
