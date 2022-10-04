@@ -384,7 +384,7 @@ struct RunWorkElement<ncclFuncAllReduce, T, RedOp, NCCL_ALGO_MC, NCCL_PROTO_SIMP
 
     const int nThreadsScatter = 256;
     const int nThreadsGather  = 256;
-    const int nThreadsReduce = 32;
+    const int nThreadsReduce = 64;
     const int nThreadsBcast   = 0; // No network support for now, reduce does bcast as well
     const int tidEndScatter = nThreadsScatter;
     const int tidEndGather = tidEndScatter + nThreadsGather;

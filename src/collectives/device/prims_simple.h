@@ -85,6 +85,7 @@ class Primitives<
         if (checkAbort(spins)) break;
         //if (spins == 0) printf("r=%d b=%d t=%d SPUN OUT got=%d want=%d\n", ncclShmem.comm.rank, blockIdx.x, threadIdx.x, int(connStepCache + (isSendNotRecv ? NCCL_STEPS : 0)), int(step+StepPerSlice));
       }
+      printf("[%d/%d] waited for peer %d %s, got %ld / %ld-%d at %p\n", ncclShmem.comm.rank, blockIdx.x, index, isSendNotRecv ? "S" : "R", connStepCache, step + StepPerSlice, (isSendNotRecv ? NCCL_STEPS : 0), connStepPtr);
     }
 
     if (flags & (Recv*RoleWaitRecv | Send*RoleWaitSend)) {
@@ -123,6 +124,7 @@ class Primitives<
   inline __device__ void postPeer() {
     if (flags & (Recv*RolePostRecv | Send*RolePostSend)) {
       step += StepPerSlice;
+      printf("[%d] Posting peer %s step %ld to %p\n", ncclShmem.comm.rank, flags & Send*RolePostSend ? "S" : "R", step, connStepPtr);
       *connStepPtr = step;
     }
   }

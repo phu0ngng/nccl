@@ -233,7 +233,7 @@ ncclResult_t ncclMcSetup(struct ncclComm* comm) {
   NCCLCHECK(ncclCalloc(&resources, 1));
   comm->mcResources = resources;
 
-  size_t buffSize = ncclParamMcBuffSize();
+  size_t buffSize = comm->mcBuffSize = ncclParamMcBuffSize();
   size_t memSize = 2*sizeof(uint64_t);
   ALIGN_SIZE(buffSize, MC_MEM_ALIGN_SIZE);
   ALIGN_SIZE(memSize, MC_MEM_ALIGN_SIZE);
@@ -287,7 +287,7 @@ ncclResult_t ncclMcSetup(struct ncclComm* comm) {
     struct ncclChannel* channel = comm->channels+c;
     channel->mc.nHeads = nranks;
     for (int i=0; i<NCCL_MAX_DIRECT_ARITY; i++) channel->mc.down[i] = channel->mc.up[i] = -1;
-    channel->mc.down[0] = comm->nRanks+1+nranks;
+    channel->mc.down[0] = comm->nRanks+1+comm->localRank;
     channel->mc.out = -1;       // Network not yet implemented.
     channel->mc.headRank = -1;  // Network not yet implemented.
     channel->mc.shift = 0; // We don't need to shuffle communication, we're not doing an alltoall
@@ -328,12 +328,14 @@ ncclResult_t ncclMcSetup(struct ncclComm* comm) {
       peer->send[1].conn.buffs[NCCL_PROTO_SIMPLE] = mem;
       peer->send[1].conn.head = (uint64_t*)(mem+buffSize);
       peer->send[1].conn.tail = (uint64_t*)(mem+buffSize+sizeof(uint64_t));
-      peer->recv[1].conn.flags |= NCCL_MC_MIN_POLL;
+      peer->send[1].conn.flags |= NCCL_MC_MIN_POLL;
       printf("[%d] Bcast MC Peer %d Channel %d UC buffer %p head %p tail %p MC buffer %p head %p tail %p\n", comm->rank, mcPeer, c, peer->recv[0].conn.buffs[NCCL_PROTO_SIMPLE], peer->recv[0].conn.head, peer->recv[0].conn.tail, peer->send[1].conn.buffs[NCCL_PROTO_SIMPLE], peer->send[1].conn.head, peer->send[1].conn.tail);
 
 
       CUDACHECKGOTO(cudaMemcpyAsync(&comm->channels[c].devPeers[mcPeer].send[0], &peer->send[0].conn, sizeof(struct ncclConnInfo), cudaMemcpyHostToDevice, comm->hostStream.cudaStream), res, cleanup);
       CUDACHECKGOTO(cudaMemcpyAsync(&comm->channels[c].devPeers[mcPeer].recv[0], &peer->recv[0].conn, sizeof(struct ncclConnInfo), cudaMemcpyHostToDevice, comm->hostStream.cudaStream), res, cleanup);
+      CUDACHECKGOTO(cudaMemcpyAsync(&comm->channels[c].devPeers[mcPeer].send[1], &peer->send[1].conn, sizeof(struct ncclConnInfo), cudaMemcpyHostToDevice, comm->hostStream.cudaStream), res, cleanup);
+      CUDACHECKGOTO(cudaMemcpyAsync(&comm->channels[c].devPeers[mcPeer].recv[1], &peer->recv[1].conn, sizeof(struct ncclConnInfo), cudaMemcpyHostToDevice, comm->hostStream.cudaStream), res, cleanup);
     }
   }
 cleanup:
