@@ -9,8 +9,13 @@
 #include "utils.h"
 #include "proxy.h"
 
-//#define MC_CU_MEM_HANDLE_TYPE CU_MEM_HANDLE_TYPE_POSIX_FILE_DESCRIPTOR
+#define USE_POSIX_FD 0
+
+#if USE_POSIX_FD
+#define MC_CU_MEM_HANDLE_TYPE CU_MEM_HANDLE_TYPE_POSIX_FILE_DESCRIPTOR
+#else
 #define MC_CU_MEM_HANDLE_TYPE CU_MEM_HANDLE_TYPE_NONE
+#endif
 
 /* Determine if two peers can communicate through mc */
 ncclResult_t mcCanConnect(int* ret, struct ncclTopoSystem* topo, struct ncclTopoGraph* graph, struct ncclPeerInfo* info1, struct ncclPeerInfo* info2) {
@@ -49,6 +54,17 @@ static ncclResult_t ncclMcInitEtbl(struct ncclComm* comm) {
   if (ncclCudaLibraryInit() != ncclSuccess) return ncclSuccess;
   if (pfn_cuGetExportTable((const void **)&etblMulticast, &CU_ETID_Multicast) != CUDA_SUCCESS)
     return ncclSuccess;
+
+#if USE_POSIX_FD
+  {
+    // Check for WAR for 3818216
+    char *env;
+    if ((env = getenv("CUDA_e0371668")) == NULL || atoi(env) != 1) {
+      WARN("Need to 'export CUDA_e0371668=1' in the environment for MC support");
+      return ncclSuccess;
+    }
+  }
+#endif
 
   if (etblMulticast == NULL ||
       pfn_cuMemMulticastCreate == NULL ||
@@ -151,7 +167,6 @@ ncclResult_t mcGroupConnect(struct ncclComm *comm, struct mcResources* resources
     NCCLCHECK(ncclProxyConnect(comm, TRANSPORT_P2P, 1, rank, &proxyConn));
     INFO(NCCL_MC, "MC rank %d request conversion of fd %d from rank %d", comm->localRank, fd, rank);
     NCCLCHECK(ncclProxyCall(&proxyConn, ncclProxyMsgConvertFd, shareableHandle, sizeof(int), &fd, sizeof(int)));
-    fd = *(int *)shareableHandle;
     INFO(NCCL_MC, "MC rank %d received converted fd %d from rank %d", comm->localRank, fd, rank);
     CUCHECK(cuMemImportFromShareableHandle(&resources->mcHandle, (void *)(uintptr_t)fd, type));
   } else {
