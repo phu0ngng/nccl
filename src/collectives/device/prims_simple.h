@@ -45,7 +45,7 @@ class Primitives<
     int volatile *connSizesFifoPtr; //  (flags & SizesFifoEnabled)
     T *directBuff;                  // !(flags & SizesFifoEnabled)
   };
-  uint64_t volatile *connStepPtr;
+  uint64_t *connStepPtr;
   uint64_t connStepCache; // Cache last seen value of (*connStepPtr)
 
   // Don't use barrier 0 as it's used by the final sync
@@ -72,6 +72,13 @@ class Primitives<
     return flags & Aborted;
   }
 
+  inline __device__ uint64_t loadStepValue(uint64_t* addr) {
+    uint64_t v;
+    if (flags & McMinPolling)  v = __nv_ptx_builtin_ocg_ld_mc_min_u64((uint64_t)addr);
+    else asm volatile("ld.volatile.global.u64 %0, [%1];": "=l"(v) : "l"(addr));
+    return v;
+  }
+
   template <int DirectRecv, int DirectSend, int Recv, int Send, int Src, int Dst>
   __device__ __forceinline__ void waitPeer(intptr_t dstIx, intptr_t remoteIx, int offset, int nelts) {
     const bool isSendNotRecv = (Send && Recv) ? (flags & RoleWaitSend) : Send;
@@ -81,11 +88,10 @@ class Primitives<
         ((flags & (Send*RoleWaitSend)) && !noSendWait)) {
       int spins = 0;
       while (connStepCache + (isSendNotRecv ? NCCL_STEPS : 0) < step + StepPerSlice) {
-        connStepCache = (flags & McMinPolling) ? __nv_ptx_builtin_ocg_ld_mc_min_u64((uint64_t)connStepPtr) : *connStepPtr;
+        connStepCache = loadStepValue(connStepPtr);
         if (checkAbort(spins)) break;
         //if (spins == 0) printf("r=%d b=%d t=%d SPUN OUT got=%d want=%d\n", ncclShmem.comm.rank, blockIdx.x, threadIdx.x, int(connStepCache + (isSendNotRecv ? NCCL_STEPS : 0)), int(step+StepPerSlice));
       }
-      printf("[%d/%d] waited for peer %d %s, got %ld / %ld-%d at %p\n", ncclShmem.comm.rank, blockIdx.x, index, isSendNotRecv ? "S" : "R", connStepCache, step + StepPerSlice, (isSendNotRecv ? NCCL_STEPS : 0), connStepPtr);
     }
 
     if (flags & (Recv*RoleWaitRecv | Send*RoleWaitSend)) {
@@ -124,7 +130,6 @@ class Primitives<
   inline __device__ void postPeer() {
     if (flags & (Recv*RolePostRecv | Send*RolePostSend)) {
       step += StepPerSlice;
-      printf("[%d] Posting peer %s step %ld to %p\n", ncclShmem.comm.rank, flags & Send*RolePostSend ? "S" : "R", step, connStepPtr);
       *connStepPtr = step;
     }
   }
@@ -321,7 +326,7 @@ class Primitives<
       if (flags & RoleWaitRecv) {
         ncclShmem.groups[group].recvConns[index] = conn; // WaitRecv role saves since that's who needs it in setDataPtrs()
         connStepPtr = conn->tail;
-        connStepCache = *connStepPtr;
+        connStepCache = loadStepValue(connStepPtr);
         flags |= (conn->offsFifo != nullptr) ? OffsFifoEnabled : 0;
         flags |= (conn->flags & NCCL_MC_MIN_POLL) ? McMinPolling : 0;
         if (Direct) {
@@ -361,7 +366,7 @@ class Primitives<
       if (flags & RoleWaitSend) {
         ncclShmem.groups[group].sendConns[index] = conn; // WaitSend role saves since that's who needs it in setDataPtrs()
         connStepPtr = conn->head;
-        connStepCache = *connStepPtr;
+        connStepCache = loadStepValue(connStepPtr);
         flags |= (conn->offsFifo != nullptr) ? OffsFifoEnabled : 0;
         flags |= (conn->flags & NCCL_MC_MIN_POLL) ? McMinPolling : 0;
         if (flags & OffsFifoEnabled)

@@ -73,11 +73,9 @@ struct mcResources {
   size_t size;
   size_t granularity;
   CUmemGenericAllocationHandle mcHandle; // Multicast handle for MC buffer
-  char* mcBase; // Multicast MC buffer base address
-  char* mcBuff; // My Multicast MC buffer address
+  char* mcBuff; // Multicast MC buffer address
   CUmemGenericAllocationHandle ucHandle; // Unicast Handle for MC buffer
-  char* ucBase; // Unicast MC buffer base address
-  char* ucBuff; // My Unicast MC buffer address
+  char* ucBuff; // Unicast MC buffer address
 };
 
 
@@ -184,9 +182,9 @@ ncclResult_t mcGroupBindMem(struct ncclComm *comm, struct mcResources* resources
   CUCHECK(cuMemCreate(&resources->ucHandle, size, &resources->properties, 0));
   CUCHECK(cuMemMap(ptr, size, 0, resources->ucHandle, 0));
   CUCHECK(cuMemSetAccess(ptr, size, &resources->accessDesc, 1));
-  resources->ucBase = (char*)ptr;
-  resources->ucBuff = (char*)ptr + rank*mcPerRankSize;
-  INFO(NCCL_MC, "MC Mapped UC at %p at %p rank %d", resources->ucBase, resources->ucBuff, rank);
+  CUDACHECK(cudaMemset((void*)ptr, 0, size));
+  resources->ucBuff = (char*)ptr;
+  INFO(NCCL_MC, "MC Mapped UC at %p rank %d", resources->ucBuff, rank);
 
   // Bind physical memory to the MC group
   INFO(NCCL_MC, "MC Binding local mem %p handle %llx size %zi to MC handle %llx for rank %d", (void*)ptr, resources->ucHandle, size, resources->mcHandle, rank);
@@ -196,19 +194,17 @@ ncclResult_t mcGroupBindMem(struct ncclComm *comm, struct mcResources* resources
   CUCHECK(cuMemAddressReserve(&ptr, size, resources->granularity, 0U, 0));
   // Map the VA locally
   CUCHECK(cuMemMap(ptr, size, 0, resources->mcHandle, 0));
-  resources->mcBase = (char*)ptr;
-  resources->mcBuff = (char*)ptr + rank*mcPerRankSize;
-  INFO(NCCL_MC, "MC Mapped MC at %p at %p rank %d", resources->mcBase, resources->mcBuff, rank);
-
+  resources->mcBuff = (char*)ptr;
+  INFO(NCCL_MC, "MC Mapped MC at %p rank %d", resources->mcBuff, rank);
   return ncclSuccess;
 }
 
 ncclResult_t mcGroupAccessMem(struct ncclComm *comm, struct mcResources* resources) {
   // Having completed the BindMem we can now call SetAccess
   // NB: It will block until all ranks have bound to the Group
-  INFO(NCCL_MC, "MC SetAccess MC %p size %zi", resources->mcBase, resources->size);
-  CUCHECK(cuMemSetAccess((CUdeviceptr)resources->mcBase, resources->size, &resources->accessDesc, 1));
-  INFO(NCCL_MC, "MC SetAccess MC %p size %zi - DONE", resources->mcBase, resources->size);
+  INFO(NCCL_MC, "MC SetAccess MC %p size %zi", resources->mcBuff, resources->size);
+  CUCHECK(cuMemSetAccess((CUdeviceptr)resources->mcBuff, resources->size, &resources->accessDesc, 1));
+  INFO(NCCL_MC, "MC SetAccess MC %p size %zi - DONE", resources->mcBuff, resources->size);
 
   return ncclSuccess;
 }
@@ -275,7 +271,7 @@ ncclResult_t ncclMcSetup(struct ncclComm* comm) {
     NCCLCHECKGOTO(bootstrapBarrier(comm->bootstrap, comm->localRankToRank, comm->localRank, comm->localRanks, comm->localRankToRank[0]), res, cleanup);
 
     for (int r = 0; r < nranks; r++) {
-      char *buf = resources->ucBase + r*mcPerRankSize;
+      char *buf = resources->ucBuff + r*mcPerRankSize;
       cudaMemcpy(&dummy[0], buf, sizeof(dummy), cudaMemcpyDeviceToHost);
       printf("MC: rank %d.%d UC data %p %lx %lx %lx %lx\n", rank, r, buf, dummy[0], dummy[1], dummy[2], dummy[3]);
       printf("MC: rank %d.%d UC data %p %lx %lx %lx %lx\n", rank, r, buf, dummy[1020], dummy[1021], dummy[1022], dummy[1023]);
@@ -315,7 +311,6 @@ ncclResult_t ncclMcSetup(struct ncclComm* comm) {
       peer->recv[1].conn.head = (uint64_t*)(mem+buffSize);
       peer->recv[1].conn.tail = (uint64_t*)(mem+buffSize+sizeof(uint64_t));
       peer->recv[1].conn.flags |= NCCL_MC_MIN_POLL;
-      printf("[%d] Reduce MC Peer %d Channel %d UC buffer %p head %p tail %p MC buffer %p head %p tail %p\n", comm->rank, mcPeer, c, peer->send[0].conn.buffs[NCCL_PROTO_SIMPLE], peer->send[0].conn.head, peer->send[0].conn.tail, peer->recv[1].conn.buffs[NCCL_PROTO_SIMPLE], peer->recv[1].conn.head, peer->recv[1].conn.tail);
 
       // Broadcast MC -> UC
       mem = resources->ucBuff + ((r*2+1)*comm->nChannels+c)*(buffSize+memSize);
@@ -329,8 +324,6 @@ ncclResult_t ncclMcSetup(struct ncclComm* comm) {
       peer->send[1].conn.head = (uint64_t*)(mem+buffSize);
       peer->send[1].conn.tail = (uint64_t*)(mem+buffSize+sizeof(uint64_t));
       peer->send[1].conn.flags |= NCCL_MC_MIN_POLL;
-      printf("[%d] Bcast MC Peer %d Channel %d UC buffer %p head %p tail %p MC buffer %p head %p tail %p\n", comm->rank, mcPeer, c, peer->recv[0].conn.buffs[NCCL_PROTO_SIMPLE], peer->recv[0].conn.head, peer->recv[0].conn.tail, peer->send[1].conn.buffs[NCCL_PROTO_SIMPLE], peer->send[1].conn.head, peer->send[1].conn.tail);
-
 
       CUDACHECKGOTO(cudaMemcpyAsync(&comm->channels[c].devPeers[mcPeer].send[0], &peer->send[0].conn, sizeof(struct ncclConnInfo), cudaMemcpyHostToDevice, comm->hostStream.cudaStream), res, cleanup);
       CUDACHECKGOTO(cudaMemcpyAsync(&comm->channels[c].devPeers[mcPeer].recv[0], &peer->recv[0].conn, sizeof(struct ncclConnInfo), cudaMemcpyHostToDevice, comm->hostStream.cudaStream), res, cleanup);
@@ -346,7 +339,7 @@ cleanup:
 ncclResult_t ncclMcFree(struct ncclComm* comm) {
   struct mcResources* resources = (struct mcResources*)comm->mcResources;
   if (resources == NULL) return ncclSuccess;
-  NCCLCHECK(mcGroupUnbindMem(resources->mcHandle, resources->ucBase));
+  NCCLCHECK(mcGroupUnbindMem(resources->mcHandle, resources->ucBuff));
   NCCLCHECK(mcGroupDisconnect(resources->mcHandle));
   if (comm->localRank == 0) NCCLCHECK(mcGroupDestroy(resources->mcHandle));
   free(resources);
