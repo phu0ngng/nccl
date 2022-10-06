@@ -17,19 +17,26 @@ import sys
 import csv
 
 def help():
-  print("Usage: make_csv.py file=<Perf Data Filename> verbose=<True/False, default=False>")
+  print("Usage: make_csv.py file=<Perf Data Filename> capture=<latency/bw, default=latency> verbose=<True/False, default=False>")
   exit(1)
 
 if '-h' in sys.argv or '--help' in sys.argv[1:]:
   help()
 
-kwnames = ['file','verbose']
+kwnames = ['file','verbose','capture']
 kwargs = {x[:x.index('=')]:x[x.index('=')+1:] for x in sys.argv[1:] if '=' in x and x[:x.index('=')] in kwnames}
 
 if 'file' not in kwargs: help()
 file = kwargs['file']
 csv_file = file.replace(":","_") + ".csv" # Replace : with _ for Windows filename compatability (: requried for selene job name)
 verbose = bool(kwargs.get('verbose', False))
+capture = kwargs.get('capture', 'latency')
+inp_field_index=9 # Time (latency)
+oop_field_index=5 # Time (latency)
+if capture == 'bw':
+    inp_field_index=11 # Bus BW
+    oop_field_index=7  # Bus BW
+
 exit_code = 0
 keys = {}
 
@@ -88,8 +95,8 @@ def parse_nccl(cases):
         # redop = field(ln,3)
         key = size # (size,dtype,redop)
         keys[key] = 1
-        cases[test_case]["oop_times"][key] = (float(field(ln,5))) # out-of-place time
-        cases[test_case]["inp_times"][key] = (float(field(ln,9))) # in-place time
+        cases[test_case]["oop_times"][key] = (float(field(ln,oop_field_index))) # out-of-place time
+        cases[test_case]["inp_times"][key] = (float(field(ln,inp_field_index))) # in-place time
       except:
         pass
 
