@@ -104,7 +104,7 @@ struct ncclChannel {
   struct ncclTree tree;
   struct ncclTree collnetChain;
   struct ncclDirect collnetDirect;
-  struct ncclDirect mc;
+  struct ncclMc mc;
   int id; // index of this channel
   uint32_t workFifoSent; // last used work index+1
   uint64_t p2pOpCount;

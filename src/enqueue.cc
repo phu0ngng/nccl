@@ -1313,7 +1313,7 @@ comp_next:
     while (info->nBytes / (info->nChannels*chunkSize) < info->comm->channels[0].collnetChain.depth && chunkSize > 32768) chunkSize /= 2;
     work->lastChunkSize = chunkSize / ncclTypeSize(info->datatype);
   } else if (info->algorithm == NCCL_ALGO_MC) {
-    work->lastChunkSize = info->comm->mcBuffSize / NCCL_STEPS / ncclTypeSize(info->datatype);
+    work->lastChunkSize = (info->comm->mcBuffSize / NCCL_STEPS) / ncclTypeSize(info->datatype);
   } else if (info->protocol == NCCL_PROTO_LL) {
     const ssize_t sliceSize = stepSize*sizeof(uint64_t)/sizeof(union ncclLLFifoLine);
     const ssize_t loopSize = info->nChannels*info->nchunksPerLoop*(ssize_t)sliceSize;

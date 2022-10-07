@@ -282,12 +282,10 @@ ncclResult_t ncclMcSetup(struct ncclComm* comm) {
   for (int c=0; c<comm->nChannels; c++) {
     struct ncclChannel* channel = comm->channels+c;
     channel->mc.nHeads = nranks;
-    for (int i=0; i<NCCL_MAX_DIRECT_ARITY; i++) channel->mc.down[i] = channel->mc.up[i] = -1;
-    channel->mc.down[0] = comm->nRanks+1+comm->localRank;
+    for (int i=0; i<NCCL_MAX_MC_ARITY; i++) channel->mc.up[i] = -1;
+    channel->mc.down = comm->nRanks+1+comm->localRank;
     channel->mc.out = -1;       // Network not yet implemented.
-    channel->mc.headRank = -1;  // Network not yet implemented.
-    channel->mc.shift = 0; // We don't need to shuffle communication, we're not doing an alltoall
-    channel->mc.depth = 0;
+    channel->mc.headRank = comm->localRank;  // Network not yet implemented.
   }
 
   for (int r=0; r<nranks; r++) {
@@ -329,6 +327,13 @@ ncclResult_t ncclMcSetup(struct ncclComm* comm) {
       CUDACHECKGOTO(cudaMemcpyAsync(&comm->channels[c].devPeers[mcPeer].recv[0], &peer->recv[0].conn, sizeof(struct ncclConnInfo), cudaMemcpyHostToDevice, comm->hostStream.cudaStream), res, cleanup);
       CUDACHECKGOTO(cudaMemcpyAsync(&comm->channels[c].devPeers[mcPeer].send[1], &peer->send[1].conn, sizeof(struct ncclConnInfo), cudaMemcpyHostToDevice, comm->hostStream.cudaStream), res, cleanup);
       CUDACHECKGOTO(cudaMemcpyAsync(&comm->channels[c].devPeers[mcPeer].recv[1], &peer->recv[1].conn, sizeof(struct ncclConnInfo), cudaMemcpyHostToDevice, comm->hostStream.cudaStream), res, cleanup);
+
+      /*INFO(NCCL_INIT|NCCL_MC, "Peer %d Channel %d MC buff %p/%p UC Buff %p/%p",
+          mcPeer, c,
+          resources->mcBuff + (r*2*comm->nChannels+c)*(buffSize+memSize),
+          resources->mcBuff + ((r*2+1)*comm->nChannels+c)*(buffSize+memSize),
+          resources->ucBuff + (r*2*comm->nChannels+c)*(buffSize+memSize),
+          resources->ucBuff + ((r*2+1)*comm->nChannels+c)*(buffSize+memSize));*/
     }
   }
 cleanup:

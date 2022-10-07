@@ -6,6 +6,7 @@
 
 // Temporary define
 extern "C" __device__ uint64_t __nv_ptx_builtin_ocg_ld_mc_min_u64(uint64_t addr);
+extern "C" __device__ uint64_t __nv_ptx_builtin_ocg_ld_mc_add_u64(uint64_t addr);
 
 template<typename T, typename RedOp, typename Fan, int Direct,
          int SlicePerChunk, int StepPerSlice, int Unroll, int P2p>
@@ -26,7 +27,8 @@ class Primitives<
                        DirectWrite = 0x200,
                        DirectRead = 0x400,
                        ThreadsSynced = 0x800,
-                       McMinPolling = 0x1000;
+                       McMinPolling = 0x1000,
+                       McRecv = 0x2000;
   const int tid;
   int nthreads;
   int nworkers;
@@ -187,7 +189,15 @@ class Primitives<
           ncclShmem.groups[group].dsts[0] = userBuff + dstIx + offset;
         waitPeer<DirectRecv, DirectSend, Recv, Send, Src, Dst>(dstIx, remoteIx, offset, sliceSize);
         subBarrier();
-        if (DirectRecv && ncclShmem.groups[group].srcs[0] == ncclShmem.groups[group].dsts[0]) {
+	if (ncclShmem.groups[group].mcRecv) {
+          int n = sliceSize*sizeof(T)/sizeof(uint64_t);
+          uint64_t* src = (uint64_t*)ncclShmem.groups[group].srcs[0];
+          uint64_t* dst = (uint64_t*)ncclShmem.groups[group].dsts[0];
+          for (int offset=tid; offset<n; offset += nworkers) {
+            dst[offset] = __nv_ptx_builtin_ocg_ld_mc_add_u64((uint64_t)(src+offset));
+          }
+          // ReduceOrCopyMultiMC(...);
+	} else if (DirectRecv && ncclShmem.groups[group].srcs[0] == ncclShmem.groups[group].dsts[0]) {
           // We can only have one direct receive. Since srcs[0] == dstPtr+offset, skip one copy
           if (Send) {
             // (1-Send) is only there to avoid compilation errors in case MaxSend=0 (and Send=0).
@@ -328,7 +338,14 @@ class Primitives<
         connStepPtr = conn->tail;
         connStepCache = loadStepValue(connStepPtr);
         flags |= (conn->offsFifo != nullptr) ? OffsFifoEnabled : 0;
-        flags |= (conn->flags & NCCL_MC_MIN_POLL) ? McMinPolling : 0;
+        if ((index == 0) && (flags & RoleWaitRecv)) {
+          if (conn->flags & NCCL_MC_MIN_POLL) {
+            flags |= McMinPolling;
+            ncclShmem.groups[group].mcRecv = 1;
+          } else {
+            ncclShmem.groups[group].mcRecv = 0;
+          }
+        }
         if (Direct) {
           // User buffers have been registered
           if ((conn->flags & (NCCL_IPC_READ|NCCL_IPC_WRITE)) && e != nullptr && e->regUsed) {
@@ -419,7 +436,7 @@ class Primitives<
     this->fan = Fan(nrecv, nsend);
 
     constexpr int ThreadPerSync = 8;
-    static_assert(MaxSend < ThreadPerSync && MaxRecv < ThreadPerSync, "Not enough threads to cover all peers");
+    static_assert(MaxSend <= ThreadPerSync && MaxRecv <= ThreadPerSync, "Not enough threads to cover all peers");
 
     int g = tid / ThreadPerSync;
     int ng = nthreads / ThreadPerSync;
@@ -573,6 +590,9 @@ class Primitives<
     genericOp<0, 1, 0, 1, Input, Output>(inpIx, outIx, remoteOutIx, eltN, postOp);
   }
 
+  __device__ __forceinline__ void recvSend(int eltN, bool postOp=false) {
+    genericOp<0, 0, 1, 1, -1, -1>(-1, -1, -1, eltN, postOp);
+  }
   __device__ __forceinline__ void recvCopySend(intptr_t outIx, int eltN, bool postOp=false) {
     genericOp<0, 0, 1, 1, -1, Output>(-1, outIx, -1, eltN, postOp);
   }

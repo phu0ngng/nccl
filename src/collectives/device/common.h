@@ -28,6 +28,7 @@ struct ncclShmemGroup {
   void* srcs[NCCL_MAX_DIRECT_ARITY+1];
   void* dsts[NCCL_MAX_DIRECT_ARITY+1];
   int totalSendSize[NCCL_MAX_SLICE_PER_CHUNK];
+  int mcRecv;
 };
 
 struct ncclShmemData {

@@ -147,6 +147,15 @@ struct ncclDirect {
   int down[NCCL_MAX_DIRECT_ARITY];
 };
 
+#define NCCL_MAX_MC_ARITY 8
+struct ncclMc {
+  int out;
+  int nHeads;   // Number of parallel N<->1<->net operations we'll do in parallel; size of up/down
+  int headRank; // Index in 0..nHeads-1 I am the head rank of. -1 if I'm not a head rank (no local NIC)
+  int up[NCCL_MAX_MC_ARITY];
+  int down;
+};
+
 #define NCCL_MAX_CONNS 2
 struct ncclChannelPeer {
   struct ncclConnector send[NCCL_MAX_CONNS];
@@ -266,7 +275,7 @@ struct alignas(16) ncclDevChannel {
   struct ncclTree tree;
   struct ncclTree collnetChain;
   struct ncclDirect collnetDirect;
-  struct ncclDirect mc;
+  struct ncclMc mc;
   uint32_t* workFifoDone; // Location of done counter, device writes index+1 of last work processed
 };
 
