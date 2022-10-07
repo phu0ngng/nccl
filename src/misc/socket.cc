@@ -357,11 +357,11 @@ int ncclFindInterfaces(char* ifNames, union ncclSocketAddress *ifAddrs, int ifNa
 
 ncclResult_t ncclSocketListen(struct ncclSocket* sock) {
   if (sock == NULL) {
-    WARN("ncclSocketListen: pass NULL socket\n");
+    WARN("ncclSocketListen: pass NULL socket");
     return ncclInvalidArgument;
   }
   if (sock->fd == -1) {
-    WARN("ncclSocketListen: file descriptor is -1\n");
+    WARN("ncclSocketListen: file descriptor is -1");
     return ncclInvalidArgument;
   }
 
@@ -397,7 +397,7 @@ ncclResult_t ncclSocketListen(struct ncclSocket* sock) {
 
 ncclResult_t ncclSocketGetAddr(struct ncclSocket* sock, union ncclSocketAddress* addr) {
   if (sock == NULL) {
-    WARN("ncclSocketGetAddr: pass NULL socket\n");
+    WARN("ncclSocketGetAddr: pass NULL socket");
     return ncclInvalidArgument;
   }
   if (sock->state != ncclSocketStateReady) return ncclInternalError;
@@ -411,7 +411,7 @@ static ncclResult_t socketTryAccept(struct ncclSocket* sock) {
   if (sock->fd != -1) {
     sock->state = ncclSocketStateAccepted;
   } else if (errno != EAGAIN && errno != EWOULDBLOCK) {
-    WARN("socketTryAccept: get errno %d that is not EAGAIN or EWOULDBLOCK\n", errno);
+    WARN("socketTryAccept: get errno %d that is not EAGAIN or EWOULDBLOCK", errno);
     return ncclSystemError;
   }
   return ncclSuccess;
@@ -425,7 +425,7 @@ static ncclResult_t socketFinalizeAccept(struct ncclSocket* sock) {
   if (received == 0) return ncclSuccess;
   NCCLCHECK(socketWait(NCCL_SOCKET_RECV, sock, &magic, sizeof(magic), &received));
   if (magic != sock->magic) {
-    WARN("socketFinalizeAccept: wrong magic %llx != %llx\n", magic, sock->magic);
+    WARN("socketFinalizeAccept: wrong magic %lx != %lx", magic, sock->magic);
     close(sock->fd);
     sock->fd = -1;
     // Ignore spurious connection and accept again
@@ -435,7 +435,7 @@ static ncclResult_t socketFinalizeAccept(struct ncclSocket* sock) {
     received = 0;
     NCCLCHECK(socketWait(NCCL_SOCKET_RECV, sock, &type, sizeof(type), &received));
     if (type != sock->type) {
-      WARN("socketFinalizeAccept: wrong type %d != %d\n", type, sock->type);
+      WARN("socketFinalizeAccept: wrong type %d != %d", type, sock->type);
       sock->state = ncclSocketStateError;
       close(sock->fd);
       sock->fd = -1;
@@ -525,7 +525,7 @@ static ncclResult_t socketPollConnect(struct ncclSocket* sock) {
 
 ncclResult_t ncclSocketPollConnect(struct ncclSocket* sock) {
   if (sock == NULL) {
-    WARN("ncclSocketPollConnect: pass NULL socket\n");
+    WARN("ncclSocketPollConnect: pass NULL socket");
     return ncclInvalidArgument;
   }
   NCCLCHECK(socketPollConnect(sock));
@@ -568,7 +568,7 @@ ncclResult_t ncclSocketReady(struct ncclSocket* sock, int *running) {
     return ncclSuccess;
   }
   if (sock->state == ncclSocketStateError || sock->state == ncclSocketStateClosed) {
-    WARN("ncclSocketReady: unexpected socket state %d\n", sock->state);
+    WARN("ncclSocketReady: unexpected socket state %d", sock->state);
     return ncclRemoteError;
   }
   *running = (sock->state == ncclSocketStateReady) ? 1 : 0;
@@ -586,16 +586,16 @@ ncclResult_t ncclSocketConnect(struct ncclSocket* sock) {
   const int one = 1;
 
   if (sock == NULL) {
-    WARN("ncclSocketConnect: pass NULL socket\n");
+    WARN("ncclSocketConnect: pass NULL socket");
     return ncclInvalidArgument;
   }
   if (sock->fd == -1) {
-    WARN("ncclSocketConnect: file descriptor is -1\n");
+    WARN("ncclSocketConnect: file descriptor is -1");
     return ncclInvalidArgument;
   }
 
   if (sock->state != ncclSocketStateInitialized) {
-    WARN("ncclSocketConnect: wrong socket state %d\n", sock->state);
+    WARN("ncclSocketConnect: wrong socket state %d", sock->state);
     if (sock->state == ncclSocketStateError) return ncclRemoteError;
     return ncclInternalError;
   }
@@ -623,7 +623,7 @@ ncclResult_t ncclSocketConnect(struct ncclSocket* sock) {
     case ncclSocketStateError:
       return ncclSystemError;
     default:
-      WARN("ncclSocketConnect: wrong socket state %d\n", sock->state);
+      WARN("ncclSocketConnect: wrong socket state %d", sock->state);
       return ncclInternalError;
   }
 }
@@ -632,12 +632,12 @@ ncclResult_t ncclSocketAccept(struct ncclSocket* sock, struct ncclSocket* listen
   ncclResult_t ret = ncclSuccess;
 
   if (listenSock == NULL || sock == NULL) {
-    WARN("ncclSocketAccept: pass NULL socket\n");
+    WARN("ncclSocketAccept: pass NULL socket");
     ret = ncclInvalidArgument;
     goto exit;
   }
   if (listenSock->state != ncclSocketStateReady) {
-    WARN("ncclSocketAccept: wrong socket state %d\n", listenSock->state);
+    WARN("ncclSocketAccept: wrong socket state %d", listenSock->state);
     if (listenSock->state == ncclSocketStateError)
       ret = ncclSystemError;
     else
@@ -670,7 +670,7 @@ ncclResult_t ncclSocketAccept(struct ncclSocket* sock, struct ncclSocket* listen
       ret = ncclSystemError;
       break;
     default:
-      WARN("ncclSocketAccept: wrong socket state %d\n", sock->state);
+      WARN("ncclSocketAccept: wrong socket state %d", sock->state);
       ret = ncclInternalError;
       break;
   }
@@ -733,7 +733,7 @@ fail:
 
 ncclResult_t ncclSocketProgress(int op, struct ncclSocket* sock, void* ptr, int size, int* offset) {
   if (sock == NULL) {
-    WARN("ncclSocketProgress: pass NULL socket\n");
+    WARN("ncclSocketProgress: pass NULL socket");
     return ncclInvalidArgument;
   }
   NCCLCHECK(socketProgress(op, sock, ptr, size, offset));
@@ -742,7 +742,7 @@ ncclResult_t ncclSocketProgress(int op, struct ncclSocket* sock, void* ptr, int 
 
 ncclResult_t ncclSocketWait(int op, struct ncclSocket* sock, void* ptr, int size, int* offset) {
   if (sock == NULL) {
-    WARN("ncclSocketWait: pass NULL socket\n");
+    WARN("ncclSocketWait: pass NULL socket");
     return ncclInvalidArgument;
   }
   NCCLCHECK(socketWait(op, sock, ptr, size, offset));
@@ -752,11 +752,11 @@ ncclResult_t ncclSocketWait(int op, struct ncclSocket* sock, void* ptr, int size
 ncclResult_t ncclSocketSend(struct ncclSocket* sock, void* ptr, int size) {
   int offset = 0;
   if (sock == NULL) {
-    WARN("ncclSocketSend: pass NULL socket\n");
+    WARN("ncclSocketSend: pass NULL socket");
     return ncclInvalidArgument;
   }
   if (sock->state != ncclSocketStateReady) {
-    WARN("ncclSocketSend: socket state (%d) is not ready\n", sock->state);
+    WARN("ncclSocketSend: socket state (%d) is not ready", sock->state);
     return ncclInternalError;
   }
   NCCLCHECK(socketWait(NCCL_SOCKET_SEND, sock, ptr, size, &offset));
@@ -766,11 +766,11 @@ ncclResult_t ncclSocketSend(struct ncclSocket* sock, void* ptr, int size) {
 ncclResult_t ncclSocketRecv(struct ncclSocket* sock, void* ptr, int size) {
   int offset = 0;
   if (sock == NULL) {
-    WARN("ncclSocketRecv: pass NULL socket\n");
+    WARN("ncclSocketRecv: pass NULL socket");
     return ncclInvalidArgument;
   }
   if (sock->state != ncclSocketStateReady) {
-    WARN("ncclSocketRecv: socket state (%d) is not ready\n", sock->state);
+    WARN("ncclSocketRecv: socket state (%d) is not ready", sock->state);
     return ncclInternalError;
   }
   NCCLCHECK(socketWait(NCCL_SOCKET_RECV, sock, ptr, size, &offset));
@@ -781,7 +781,7 @@ ncclResult_t ncclSocketRecv(struct ncclSocket* sock, void* ptr, int size) {
 ncclResult_t ncclSocketTryRecv(struct ncclSocket* sock, void* ptr, int size, int* closed) {
   int offset = 0;
   if (sock == NULL) {
-    WARN("ncclSocketTryRecv: pass NULL socket\n");
+    WARN("ncclSocketTryRecv: pass NULL socket");
     return ncclInvalidArgument;
   }
   *closed = 0;
@@ -803,7 +803,7 @@ ncclResult_t ncclSocketClose(struct ncclSocket* sock) {
 
 ncclResult_t ncclSocketGetFd(struct ncclSocket* sock, int* fd) {
   if (sock == NULL) {
-    WARN("ncclSocketGetFd: pass NULL socket\n");
+    WARN("ncclSocketGetFd: pass NULL socket");
     return ncclInvalidArgument;
   }
   if (fd) *fd = sock->fd;
@@ -812,7 +812,7 @@ ncclResult_t ncclSocketGetFd(struct ncclSocket* sock, int* fd) {
 
 ncclResult_t ncclSocketSetFd(int fd, struct ncclSocket* sock) {
   if (sock == NULL) {
-    WARN("ncclSocketGetFd: pass NULL socket\n");
+    WARN("ncclSocketGetFd: pass NULL socket");
     return ncclInvalidArgument;
   }
   sock->fd = fd;
