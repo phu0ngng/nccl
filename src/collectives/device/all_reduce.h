@@ -382,6 +382,7 @@ struct RunWorkElement<ncclFuncAllReduce, T, RedOp, NCCL_ALGO_MC, NCCL_PROTO_SIMP
     const ssize_t size = args->count;
     const ssize_t loopSize = nChannels*mc->nHeads*chunkSize;
 
+
     const int nThreadsScatter = 128;
     const int nThreadsGather  = 128;
     const int nThreadsReduce = 384;

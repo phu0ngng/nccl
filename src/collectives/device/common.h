@@ -23,10 +23,10 @@ typedef void(*ncclKern_t)();
 extern __device__ ncclKern_t ncclFuncs[];
 
 struct ncclShmemGroup {
-  ncclConnInfo *recvConns[NCCL_MAX_DIRECT_ARITY];
-  ncclConnInfo *sendConns[NCCL_MAX_DIRECT_ARITY];
-  void* srcs[NCCL_MAX_DIRECT_ARITY+1];
-  void* dsts[NCCL_MAX_DIRECT_ARITY+1];
+  ncclConnInfo *recvConns[NCCL_MAX_MC_ARITY];
+  ncclConnInfo *sendConns[NCCL_MAX_MC_ARITY];
+  void* srcs[NCCL_MAX_MC_ARITY+1];
+  void* dsts[NCCL_MAX_MC_ARITY+1];
   int totalSendSize[NCCL_MAX_SLICE_PER_CHUNK];
   int mcRecv;
 };
@@ -36,7 +36,7 @@ struct ncclShmemData {
     uint64_t ll128warp[NCCL_LL128_MAX_NTHREADS/WARP_SIZE][NCCL_LL128_SHMEM_ELEMS_PER_THREAD*WARP_SIZE];
     struct ncclShmemGroup groups[NCCL_MAX_GROUPS];
   };
-  uint64_t redOpArgs[NCCL_MAX_DIRECT_ARITY+1];
+  uint64_t redOpArgs[NCCL_MAX_MC_ARITY+1];
   int channelId;
   alignas(16) struct ncclDevComm comm;
   alignas(16) struct ncclDevChannel channel;
