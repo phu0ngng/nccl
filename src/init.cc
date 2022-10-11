@@ -118,7 +118,7 @@ ncclResult_t ncclGetUniqueId(ncclUniqueId* out) {
 #endif
 
 void NCCL_NO_OPTIMIZE commPoison(ncclComm_t comm) {
-  // Important that this does not trash intraComm0 & intraRefs.
+  // Important that this does not trash intraComm0.
   comm->rank = comm->cudaDev = comm->busId = comm->nRanks = -1;
 }
 
@@ -174,11 +174,9 @@ void ncclCommPushCudaGdrFree(struct ncclComm* comm, void* handle) {
 }
 
 static ncclResult_t commFree(ncclComm_t comm) {
+  /* commFree() should not involve any sync among ranks. */
   if (comm == NULL)
     return ncclSuccess;
-
-  // Stop all threads before we free anything.
-  NCCLCHECK(ncclProxyDestroy(comm));
 
   delete[] comm->userRedOps;
 
@@ -215,30 +213,16 @@ static ncclResult_t commFree(ncclComm_t comm) {
   ncclMemoryStackDestruct(&comm->memScoped);
   ncclMemoryStackDestruct(&comm->memPermanent);
 
-  commPoison(comm); // Important that this does not interfere with anything used below.
-
-  if (comm->initState == ncclSuccess) {
-    struct ncclComm* intraComm0 = comm->intraComm0;
-    if (0 == ncclAtomicRefCountDecrement(&intraComm0->intraRefs)) {
-      // Wait for all service threads to be done. We could not
-      // do it earlier because it could have blocked and prevented
-      // other ranks in the process to call ncclCommDestroy
-      comm = intraComm0;
-      while (comm != nullptr) {
-        if (comm->proxyState.thread) pthread_join(comm->proxyState.thread, nullptr);
-        struct ncclComm* next = comm->intraNext;
-        free(comm);
-        comm = next;
-      }
-    }
-  } else if (comm->proxyState.thread) {
+  /* in commReclaim, we have guaranteed only last rank which calls ncclCommDestroy() will
+   * free all intra-process communicators; therefore, we only need to focus on local
+   * resource cleanup in commFree(). */
+  if (comm->proxyState.thread)
     pthread_join(comm->proxyState.thread, nullptr);
-    ncclCudaHostFree((void *)comm->abortFlag);
-    free(comm);
-  } else {
-    ncclCudaHostFree((void *)comm->abortFlag);
-    free(comm);
-  }
+
+  ncclCudaHostFree((void *)comm->abortFlag);
+
+  commPoison(comm); // poison comm before free to avoid comm reuse.
+  free(comm);
 
   return ncclSuccess;
 }
@@ -1024,7 +1008,6 @@ static ncclResult_t initTransportsRank(struct ncclComm* comm, ncclUniqueId* comm
     struct ncclComm* comm0 = comm->peerInfo[intraProcRank0].comm;
     assert(intraProcRank==0 ? comm==comm0 : true);
     comm->intraComm0 = comm0;
-    comm->intraRefs = intraProcRank==0 ? intraProcRanks : 0;
     comm->intraRank = intraProcRank;
     comm->intraRanks = intraProcRanks;
     comm->intraBarrierPhase = 0;
@@ -1340,9 +1323,8 @@ static ncclResult_t commDestroySync(struct ncclAsyncJob* job_) {
   struct ncclCommFinalizeAsyncJob* job = (struct ncclCommFinalizeAsyncJob*) job_;
   ncclComm_t comm = job->comm;
   int savedDevice;
-  CUDACHECK(cudaGetDevice(&savedDevice));
   int commDevice = comm->cudaDev;
-  ncclResult_t ret;
+  ncclResult_t ret = ncclSuccess;
 
   CUDACHECKGOTO(cudaGetDevice(&savedDevice), ret, fail);
   if (savedDevice != commDevice) {
@@ -1365,6 +1347,7 @@ static ncclResult_t commDestroySync(struct ncclAsyncJob* job_) {
     CUDACHECKGOTO(cudaSetDevice(savedDevice), ret, fail);
   }
 
+  comm->finalizeCalled = true;
 exit:
   return ret;
 fail:
@@ -1393,7 +1376,6 @@ static ncclResult_t commFinalize(ncclComm_t comm, bool userCalled) {
   ncclResult_t ret = ncclSuccess;
   struct ncclCommFinalizeAsyncJob *job = NULL;
 
-  comm->finalizeCalled = true;
   /* launch async thread to finalize comm. */
   NCCLCHECKGOTO(ncclCalloc(&job, 1), ret, fail);
   job->comm = comm;
@@ -1467,6 +1449,10 @@ static ncclResult_t commReclaim(ncclComm_t comm) {
       WARN("commReclaim: comm %p (rank = %d) in abort, error %d", comm, curRank, ret);
     }
 
+    if ((ret = ncclProxyDestroy(comm)) != ncclSuccess) {
+      WARN("commReclaim: comm %p (rank = %d) destroys proxy resource error %d", comm, curRank, ret);
+    }
+
     if ((ret = commCleanup(comm)) != ncclSuccess) {
       WARN("commReclaim: cleanup comm %p rank %d failed in destroy/abort, error %d", comm, curRank, ret);
     }
@@ -1482,18 +1468,33 @@ static ncclResult_t commReclaim(ncclComm_t comm) {
       ncclComm_t curIntraComm;
       ncclComm_t nextIntraComm = intracomm0;
 
+      /* this is  the last call to ncclCommDestroy/Abort, we need to make sure all comms
+       * in the process have been finalized before we free local resources. */
       while (nextIntraComm) {
         curIntraComm = nextIntraComm;
         curRank = curIntraComm->rank;
         nextIntraComm = nextIntraComm->intraNext;
 
-        if (comm->finalizeCalled == false) {
+        if (curIntraComm->finalizeCalled == false) {
           struct ncclCommFinalizeAsyncJob job;
           job.comm = curIntraComm;
           /* every comm aborts, commDestroySync should not be blocked. */
           if ((ret = commDestroySync((struct ncclAsyncJob*) &job)) != ncclSuccess)
             WARN("commReclaim: comm %p (rank = %d) in abort, error %d", curIntraComm, curRank, ret);
         }
+
+        /* free intraprocess proxy resources. */
+        if ((ret = ncclProxyDestroy(curIntraComm)) != ncclSuccess) {
+          WARN("commReclaim: comm %p (rank = %d) destroys proxy resource error %d", curIntraComm, curRank, ret);
+        }
+      }
+
+      /* free local resources. */
+      nextIntraComm = intracomm0;
+      while (nextIntraComm) {
+        curIntraComm = nextIntraComm;
+        curRank = curIntraComm->rank;
+        nextIntraComm = nextIntraComm->intraNext;
 
         if ((ret = commCleanup(curIntraComm)) != ncclSuccess) {
           WARN("commReclaim: cleanup comm %p rank %d failed in destroy/abort, error %d", curIntraComm, curRank, ret);

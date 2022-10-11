@@ -242,7 +242,6 @@ struct ncclComm {
   // Intra-process sync
   struct ncclComm* intraComm0; // leader of intra-process comms (self possible)
   struct ncclComm* intraNext; // next of intra-process comms, intraComm0 is head
-  int intraRefs; // reference count from intra-process comms (zero if not leader else intraRanks)
   int intraRank;
   int intraRanks;
   uint32_t intraBarrierPhase;
