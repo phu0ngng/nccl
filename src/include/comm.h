@@ -259,7 +259,6 @@ struct ncclComm {
   // MC support
   int mcSupport;
   void* mcResources;
-  int mcBuffSize;
 
   size_t channelSize; // User requested work size (bytes) for channel partitions
 
