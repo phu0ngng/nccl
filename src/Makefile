@@ -63,7 +63,7 @@ ALWAYS_REBUILD:
 -include $(DEPFILES)
 $(LIBDIR)/$(LIBTARGET) $(LIBDIR)/$(STATICLIBTARGET) : $(LIBOBJ)
 
-$(INCDIR)/nccl.h : nccl.h.in
+$(INCDIR)/nccl.h : nccl.h.in ../makefiles/version.mk
 # NCCL_VERSION(X,Y,Z) ((X) * 10000 + (Y) * 100 + (Z))
 	@$(eval NCCL_VERSION := $(shell printf "%d%02d%02d" $(NCCL_MAJOR) $(NCCL_MINOR) $(NCCL_PATCH)))
 	mkdir -p $(INCDIR)
