@@ -1001,10 +1001,14 @@ static ncclResult_t proxyProgressAsync(struct ncclProxyAsyncOp* op, struct ncclC
   } else return ncclInternalError;
   if (done) {
     if (op->respSize) NCCLCHECK(ncclSocketSend(op->connection->sock, op->respBuff, op->respSize));
-    if (op->reqBuff) free(op->reqBuff);
-    if (op->respBuff) free(op->respBuff);
-    op->reqBuff = NULL;
-    op->respBuff = NULL;
+    if (op->reqBuff) {
+      free(op->reqBuff);
+      op->reqBuff = NULL;
+    }
+    if (op->respBuff) {
+      free(op->respBuff);
+      op->respBuff = NULL;
+    }
     op->type = 0;
     (*asyncOpCount)--;
   }
