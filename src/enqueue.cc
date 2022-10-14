@@ -1093,14 +1093,18 @@ ncclResult_t ncclLaunchFinish(struct ncclComm* comm) {
     // back to us for reclaiming via callbackQueue.
     ncclIntruQueueConstruct(&comm->planQueue);
     cudaStream_t launchStream = tasks->streams->stream; // First user stream gets launch
-    // Create dependency for deviceStream on launchStream.
-    NCCLCHECKGOTO(ncclStrongStreamWaitStream(tasks->capturingGraph, &comm->deviceStream, launchStream), result, resume1);
+    // Create dependency for deviceStream on launchStream. We know that deviceStream
+    // hasn't been modified since launchStream waited on it (in ncclLaunchPrepare),
+    // so we can say that launchStream subsumes it.
+    NCCLCHECKGOTO(ncclStrongStreamWaitStream(tasks->capturingGraph, &comm->deviceStream, launchStream, /*b_subsumes_a=*/true), result, resume1);
   resume1:
-    // Create dependency for other user streams (skip launch stream).
+    // Create dependency for other user streams (skip launch stream) on deviceStream.
+    // Again, the user streams haven't been touched since deviceStream waited on them
+    // so we can say they are subsumed by deviceStream.
     struct ncclCudaStreamList* sl = tasks->streams->next;
     tasks->streams = nullptr; // Reset comm->tasks.streams to empty.
     while (sl != nullptr) {
-      NCCLCHECKGOTO(ncclStrongStreamWaitStream(tasks->capturingGraph, sl->stream, &comm->deviceStream), result, resume2);
+      NCCLCHECKGOTO(ncclStrongStreamWaitStream(tasks->capturingGraph, sl->stream, &comm->deviceStream, /*b_subsumes_a=*/true), result, resume2);
     resume2:
       sl = sl->next;
     }
