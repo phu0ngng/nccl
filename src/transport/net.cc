@@ -523,6 +523,7 @@ static ncclResult_t sendProxyConnect(struct ncclProxyConnection* connection, str
     NCCLCHECK(ncclNetConnect(comm, resources->netDev, reqBuff, &resources->netSendComm));
     connection->proxyAppendPtr = &connection->proxyAppend;
   }
+  if (*comm->abortFlag != 0) return ncclInternalError;
   if (resources->netSendComm == NULL) {
     *done = 0;
     return ncclSuccess;
@@ -657,6 +658,7 @@ static ncclResult_t recvProxyConnect(struct ncclProxyConnection* connection, str
     NCCLCHECK(ncclNetAccept(comm, resources->netListenComm, &resources->netRecvComm));
     connection->proxyAppendPtr = &connection->proxyAppend;
   }
+  if (*comm->abortFlag != 0) return ncclInternalError;
   if (resources->netRecvComm == NULL) {
     *done = 0;
     return ncclSuccess;
