@@ -67,7 +67,7 @@ status of the init operation using :c:func:`ncclCommGetAsyncError`. The operatio
   do {
     CHECK(ncclCommGetAsyncError(comm, &state));
     // Handle outside events, timeouts, progress, ...
-  } while(state == ncclSuccess);
+  } while(state == ncclInProgress);
 
 Related link: :c:func:`ncclCommGetAsyncError`
 
