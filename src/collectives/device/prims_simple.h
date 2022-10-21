@@ -76,7 +76,7 @@ class Primitives<
 
   inline __device__ uint64_t loadStepValue(uint64_t* addr) {
     uint64_t v;
-    if (flags & McMinPolling)  v = __nv_ptx_builtin_ocg_ld_mc_min_u64((uint64_t)addr);
+    if (flags & McMinPolling) v = __nv_ptx_builtin_ocg_ld_mc_min_u64((uint64_t)addr);
     else asm volatile("ld.volatile.global.u64 %0, [%1];": "=l"(v) : "l"(addr));
     return v;
   }
@@ -257,7 +257,7 @@ class Primitives<
   // shift: peer offset to avoid all ranks sending to or receiving from same peer
   template <int DirectRecv1, int DirectSend1, int Recv, int Send>
   __device__ __forceinline__ void
-  ScatterGatherOp(intptr_t inpIx, intptr_t outIx, int totalElem, int peerElem, int skip, int shift, bool postOp) {
+  ScatterGatherOp(intptr_t inpIx, intptr_t outIx, int totalElem, int peerElem, int peerOffset, int skip, int shift, bool postOp) {
     constexpr int DirectRecv = 1 && Direct && DirectRecv1;
     constexpr int DirectSend = 1 && Direct && DirectSend1;
     int offset = 0; // slice offset
@@ -280,11 +280,11 @@ class Primitives<
           // Loop over peers
           for (int j=0; j<fan.nsend(); j++) {
             int i = (j+shift)%fan.nsend();
-            int peerOffset = i*peerElem;
+            int pOffset = i*peerOffset;
             // Skip the data I am responsible of reducing myself
-            if (skip >= 0 && i >= skip) peerOffset += peerElem;
-            const T* src0 = (T*)ncclShmem.groups[group].srcs[0] + peerOffset;
-            int realPeerSize = min(realSize, totalElem-peerOffset);
+            if (skip >= 0 && i >= skip) pOffset += peerElem;
+            const T* src0 = (T*)ncclShmem.groups[group].srcs[0] + pOffset;
+            int realPeerSize = min(realSize, totalElem-pOffset);
             if (realPeerSize > 0 && ncclShmem.groups[group].dsts[i] != nullptr) {
               ReduceOrCopyMulti<Unroll, RedOp, T, 1, 1, 1, 1, PreOpN>(tid, nworkers, ncclShmem.redOpArgs, false, 1, &src0, 1, (T**)ncclShmem.groups[group].dsts+i, realPeerSize);
               // Mark for threadfence at the end
@@ -293,10 +293,10 @@ class Primitives<
           }
         } else if (Recv) {
           if (flags & RoleOutput) ncclShmem.groups[group].dsts[0] = userBuff + outIx + offset;
-          int peerOffset = index*peerElem;
-          if (skip >= 0 && index >= skip) peerOffset += peerElem;
+          int pOffset = index*peerOffset;
+          if (skip >= 0 && index >= skip) pOffset += peerElem;
           // Adjust remote index with peer offset in case we are directly pulling from peer's output buffer
-          waitPeer<DirectRecv, 0, 1, 0, 0, 1>(outIx, outIx+peerOffset, offset, realSize);
+          waitPeer<DirectRecv, 0, 1, 0, 0, 1>(outIx, outIx+pOffset, offset, realSize);
           subBarrier();
           if (DirectRecv && ncclShmem.groups[group].srcs[0] == ncclShmem.groups[group].dsts[0]) {
             // Since waitPeer sets srcs[0] to output buffer + offset, we are doing a direct-write based recv
@@ -305,10 +305,10 @@ class Primitives<
             #pragma unroll
             for (int j=0; j<fan.nrecv(); j++) {
               int i = (j+shift)%fan.nrecv();
-              peerOffset = i*peerElem;
-              if (skip >= 0 && i >= skip) peerOffset += peerElem;
-              T* dst0 = (T*)ncclShmem.groups[group].dsts[0] + peerOffset;
-              int realPeerSize = min(realSize, totalElem-peerOffset);
+              pOffset = i*peerOffset;
+              if (skip >= 0 && i >= skip) pOffset += peerElem;
+              T* dst0 = (T*)ncclShmem.groups[group].dsts[0] + pOffset;
+              int realPeerSize = min(realSize, totalElem-pOffset);
               if (realPeerSize > 0) ReduceOrCopyMulti<Unroll, RedOp, T, 1, 1, 1, 1, 0>(tid, nworkers, ncclShmem.redOpArgs, postOp, 1, (const T**)ncclShmem.groups[group].srcs+i, 1, &dst0, realPeerSize);
             }
           }
@@ -335,9 +335,6 @@ class Primitives<
       }
       if (flags & RoleWaitRecv) {
         ncclShmem.groups[group].recvConns[index] = conn; // WaitRecv role saves since that's who needs it in setDataPtrs()
-        connStepPtr = conn->tail;
-        connStepCache = loadStepValue(connStepPtr);
-        flags |= (conn->offsFifo != nullptr) ? OffsFifoEnabled : 0;
         if ((index == 0) && (flags & RoleWaitRecv)) {
           if (conn->flags & NCCL_MC_MIN_POLL) {
             flags |= McMinPolling;
@@ -346,6 +343,9 @@ class Primitives<
             ncclShmem.groups[group].mcRecv = 0;
           }
         }
+        connStepPtr = conn->tail;
+        connStepCache = loadStepValue(connStepPtr);
+        flags |= (conn->offsFifo != nullptr) ? OffsFifoEnabled : 0;
         if (Direct) {
           // User buffers have been registered
           if ((conn->flags & (NCCL_IPC_READ|NCCL_IPC_WRITE)) && e != nullptr && e->regUsed) {
@@ -382,10 +382,10 @@ class Primitives<
       }
       if (flags & RoleWaitSend) {
         ncclShmem.groups[group].sendConns[index] = conn; // WaitSend role saves since that's who needs it in setDataPtrs()
+        flags |= (conn->flags & NCCL_MC_MIN_POLL) ? McMinPolling : 0;
         connStepPtr = conn->head;
         connStepCache = loadStepValue(connStepPtr);
         flags |= (conn->offsFifo != nullptr) ? OffsFifoEnabled : 0;
-        flags |= (conn->flags & NCCL_MC_MIN_POLL) ? McMinPolling : 0;
         if (flags & OffsFifoEnabled)
           connOffsFifoPtr = conn->offsFifo;
         connEltsFifo = (T*)conn->buffs[NCCL_PROTO_SIMPLE];
@@ -623,20 +623,20 @@ class Primitives<
   }
 
   __device__ __forceinline__ void
-  scatter(intptr_t inpIx, int totalElem, int peerElem, int skip, int shift) {
-    ScatterGatherOp<0, 0, 0, 1>(inpIx, -1, totalElem, peerElem, skip, shift, /*postOp=*/false);
+  scatter(intptr_t inpIx, int totalElem, int peerElem, int peerOffset, int skip, int shift) {
+    ScatterGatherOp<0, 0, 0, 1>(inpIx, -1, totalElem, peerElem, peerOffset, skip, shift, /*postOp=*/false);
   }
   __device__ __forceinline__ void
-  directScatter(intptr_t inpIx, int totalElem, int peerElem, int skip, int shift) {
-    ScatterGatherOp<0, 1, 0, 1>(inpIx, -1, totalElem, peerElem, skip, shift, /*postOp=*/false);
+  directScatter(intptr_t inpIx, int totalElem, int peerElem, int peerOffset, int skip, int shift) {
+    ScatterGatherOp<0, 1, 0, 1>(inpIx, -1, totalElem, peerElem, peerOffset, skip, shift, /*postOp=*/false);
   }
 
   __device__ __forceinline__ void
-  gather(intptr_t outIx, int totalElem, int peerElem, int skip, int shift, bool postOp=false) {
-    ScatterGatherOp<0, 0, 1, 0>(-1, outIx, totalElem, peerElem, skip, shift, postOp);
+  gather(intptr_t outIx, int totalElem, int peerElem, int peerOffset, int skip, int shift, bool postOp=false) {
+    ScatterGatherOp<0, 0, 1, 0>(-1, outIx, totalElem, peerElem, peerOffset, skip, shift, postOp);
   }
   __device__ __forceinline__ void
-  directGather(intptr_t outIx, int totalElem, int peerElem, int skip, int shift) {
-    ScatterGatherOp<1, 0, 1, 0>(-1, outIx, totalElem, peerElem, skip, shift, /*postOp=*/false);
+  directGather(intptr_t outIx, int totalElem, int peerElem, int peerOffset, int skip, int shift) {
+    ScatterGatherOp<1, 0, 1, 0>(-1, outIx, totalElem, peerElem, peerOffset, skip, shift, /*postOp=*/false);
   }
 };

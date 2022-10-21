@@ -49,11 +49,20 @@ struct ncclTransport mcTransport = {
 
 static const CUetblMulticast *etblMulticast = NULL;
 
+pthread_mutex_t mcInitLock = PTHREAD_MUTEX_INITIALIZER;
+
 static ncclResult_t ncclMcInitEtbl(struct ncclComm* comm) {
   comm->mcSupport = 0;
-  if (ncclCudaLibraryInit() != ncclSuccess) return ncclSuccess;
-  if (pfn_cuGetExportTable((const void **)&etblMulticast, &CU_ETID_Multicast) != CUDA_SUCCESS)
-    return ncclSuccess;
+
+  pthread_mutex_lock(&mcInitLock);
+  if (etblMulticast == NULL) {
+    if (ncclCudaLibraryInit() != ncclSuccess) return ncclSuccess;
+    if (pfn_cuGetExportTable((const void **)&etblMulticast, &CU_ETID_Multicast) != CUDA_SUCCESS) {
+      pthread_mutex_unlock(&mcInitLock);
+      return ncclSuccess;
+    }
+  }
+  pthread_mutex_unlock(&mcInitLock);
 
 #if USE_POSIX_FD
   {
