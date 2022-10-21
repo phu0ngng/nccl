@@ -176,7 +176,7 @@ class Primitives<
       //     post();
       //   } // Since we no longer unroll, new branch added here
       #if __CUDA_ARCH__ < 700
-        // Yeah, so all that above don't matter a lick on older hardware.
+        // Above doesn't matter on older hardware.
         #pragma unroll SlicePerChunk
       #else
         #pragma unroll 1
@@ -200,27 +200,26 @@ class Primitives<
 	} else if (DirectRecv && ncclShmem.groups[group].srcs[0] == ncclShmem.groups[group].dsts[0]) {
           // We can only have one direct receive. Since srcs[0] == dstPtr+offset, skip one copy
           if (Send) {
-            // (1-Send) is only there to avoid compilation errors in case MaxSend=0 (and Send=0).
-            ReduceOrCopyMulti<Unroll, RedOp, T, 1, 1, 1, (1-Send)+MaxSend, 0>
-              (tid, nworkers, nullptr, false,
-               1, (T const**)ncclShmem.groups[group].srcs,
-               fan.nsend(), (T**)ncclShmem.groups[group].dsts+1,
+            ReduceOrCopyMulti<Unroll, RedOp, T, 1, 1, 1, MaxSend, /*PreOpSrcs*/0>
+              (tid, nworkers, /*redArg*/0, /*preOpArgs*/nullptr, /*postOp*/false,
+               1, ncclShmem.groups[group].srcs,
+               fan.nsend(), ncclShmem.groups[group].dsts+1,
                sliceSize);
           }
         } else if (DirectSend && !DirectRecv && SrcBuf != Input && ncclShmem.groups[group].dsts[Dst] == nullptr) {
           // For broadcast in CollNet to do empty send
-          ReduceOrCopyMulti<Unroll, RedOp, T, 1, 1, 1, 1, 0>
-            (tid, nworkers, ncclShmem.redOpArgs, postOp,
-             Recv, (T const**)ncclShmem.groups[group].srcs,
-             Dst, (T**)ncclShmem.groups[group].dsts,
+          ReduceOrCopyMulti<Unroll, RedOp, T, 1, 1, 1, 1, /*PreOpSrcs*/0>
+            (tid, nworkers, ncclShmem.redOpArgs[0],  nullptr, postOp,
+             Recv, ncclShmem.groups[group].srcs,
+             Dst, ncclShmem.groups[group].dsts,
              sliceSize);
         } else {
-          constexpr int PreOpN = SrcBuf != Input ? 0 :
-                                 DirectRecv*MaxRecv == NCCL_MAX_DIRECT_ARITY ? (1+NCCL_MAX_DIRECT_ARITY) : 1;
-          ReduceOrCopyMulti<Unroll, RedOp, T, Recv+Src, Recv*MaxRecv+Src, Send+Dst, Send*MaxSend+Dst, PreOpN>
-            (tid, nworkers, ncclShmem.redOpArgs, postOp,
-             Recv*fan.nrecv()+Src, (T const**)ncclShmem.groups[group].srcs,
-             Send*fan.nsend()+Dst, (T**)ncclShmem.groups[group].dsts,
+          constexpr int PreOpSrcs = SrcBuf != Input ? 0 :
+                                    DirectRecv*MaxRecv == NCCL_MAX_DIRECT_ARITY ? (1+NCCL_MAX_DIRECT_ARITY) : 1;
+          ReduceOrCopyMulti<Unroll, RedOp, T, Recv+Src, Recv*MaxRecv+Src, Send+Dst, Send*MaxSend+Dst, PreOpSrcs>
+            (tid, nworkers, ncclShmem.redOpArgs[0], ncclShmem.redOpArgs, postOp,
+             Recv*fan.nrecv()+Src, ncclShmem.groups[group].srcs,
+             Send*fan.nsend()+Dst, ncclShmem.groups[group].dsts,
              sliceSize);
         }
         barrier(); // This barrier has a counterpart in following loop
@@ -270,7 +269,7 @@ class Primitives<
       if (tid < nworkers) {
         if (Send) {
           // Scatter pre-scales data of input buffer only in non-Direct case
-          constexpr int PreOpN = DirectSend ? 0 : 1;
+          constexpr int PreOpSrcs = DirectSend ? 0 : 1;
           if (flags & RoleInput) ncclShmem.groups[group].srcs[0] = userBuff + inpIx + offset;
           if (tid == 0) ncclShmem.groups[group].totalSendSize[slice] = 0; // Skip the threadfence
           // realSize is not accurate here; but intra-node does not rely on sizes FIFO
@@ -286,7 +285,7 @@ class Primitives<
             const T* src0 = (T*)ncclShmem.groups[group].srcs[0] + pOffset;
             int realPeerSize = min(realSize, totalElem-pOffset);
             if (realPeerSize > 0 && ncclShmem.groups[group].dsts[i] != nullptr) {
-              ReduceOrCopyMulti<Unroll, RedOp, T, 1, 1, 1, 1, PreOpN>(tid, nworkers, ncclShmem.redOpArgs, false, 1, &src0, 1, (T**)ncclShmem.groups[group].dsts+i, realPeerSize);
+              ReduceOrCopyMulti<Unroll, RedOp, T, 1, 1, 1, 1, PreOpSrcs>(tid, nworkers, ncclShmem.redOpArgs[0], ncclShmem.redOpArgs, false, 1, &src0, 1, ncclShmem.groups[group].dsts+i, realPeerSize);
               // Mark for threadfence at the end
               if (tid == 0) ncclShmem.groups[group].totalSendSize[slice] += realPeerSize;
             }
@@ -309,7 +308,7 @@ class Primitives<
               if (skip >= 0 && i >= skip) pOffset += peerElem;
               T* dst0 = (T*)ncclShmem.groups[group].dsts[0] + pOffset;
               int realPeerSize = min(realSize, totalElem-pOffset);
-              if (realPeerSize > 0) ReduceOrCopyMulti<Unroll, RedOp, T, 1, 1, 1, 1, 0>(tid, nworkers, ncclShmem.redOpArgs, postOp, 1, (const T**)ncclShmem.groups[group].srcs+i, 1, &dst0, realPeerSize);
+              if (realPeerSize > 0) ReduceOrCopyMulti<Unroll, RedOp, T, 1, 1, 1, 1, /*PreOpSrcs=*/0>(tid, nworkers, ncclShmem.redOpArgs, postOp, 1, (const T**)ncclShmem.groups[group].srcs+i, 1, &dst0, realPeerSize);
             }
           }
         }

@@ -206,9 +206,9 @@ class Primitives<T, RedOp, Fan, Direct, ProtoLL128, P2p>:
       if (SrcBuf == Input) {
         #pragma unroll
         for (int u=0; u<ELEMS_PER_THREAD; u+=2) {
-          v[u] = MULTI<RedOp, T>().preOp(redOp, v[u]);
+          v[u] = applyPreOp(redOp, v[u]);
           if (!flagThread)
-            v[u+1] = MULTI<RedOp, T>().preOp(redOp, v[u+1]);
+            v[u+1] = applyPreOp(redOp, v[u+1]);
         }
       }
     }
@@ -218,8 +218,8 @@ class Primitives<T, RedOp, Fan, Direct, ProtoLL128, P2p>:
       { // Consume data from first recv
         #pragma unroll
         for (int u=0; u<ELEMS_PER_THREAD; u+=2) {
-          v[u] = SRC ? MULTI<RedOp, T>()(redOp, vr[u], v[u]) : vr[u];
-          v[u+1] = SRC ? MULTI<RedOp, T>()(redOp, vr[u+1], v[u+1]) : vr[u+1];
+          v[u]   = SRC ? applyReduce(redOp, vr[u], v[u]) : vr[u];
+          v[u+1] = SRC ? applyReduce(redOp, vr[u+1], v[u+1]) : vr[u+1];
         }
       }
 
@@ -240,18 +240,18 @@ class Primitives<T, RedOp, Fan, Direct, ProtoLL128, P2p>:
 
         #pragma unroll
         for (int u=0; u<ELEMS_PER_THREAD; u+=2) {
-          v[u] = MULTI<RedOp, T>()(redOp, vr[u], v[u]);
-          v[u+1] = MULTI<RedOp, T>()(redOp, vr[u+1], v[u+1]);
+          v[u]   = applyReduce(redOp, vr[u], v[u]);
+          v[u+1] = applyReduce(redOp, vr[u+1], v[u+1]);
         }
       }
     }
     /********************** End Recv ************************/
 
-    if (postOp && !FuncTraits<RedOp>::IsPostOpIdentity) {
+    if (postOp) {
       #pragma unroll
       for (int u=0; u<ELEMS_PER_THREAD; u+=2) {
-        v[u]   = MULTI<RedOp, T>().postOp(redOp, v[u]);
-        v[u+1] = MULTI<RedOp, T>().postOp(redOp, v[u+1]);
+        v[u]   = applyPostOp(redOp, v[u]);
+        v[u+1] = applyPostOp(redOp, v[u+1]);
       }
     }
 
