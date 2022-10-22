@@ -423,6 +423,7 @@ struct ncclIbSendComm {
   struct ibv_qp* qps[NCCL_IB_MAX_QPS];
   int nqps;
   struct ibv_mr* fifoMr;
+  uint8_t link_layer;
 };
 // The SendFifo needs to be 32-byte aligned and each element needs
 // to be a 32-byte multiple, so that an entry does not get split and
@@ -626,7 +627,7 @@ ib_connect_check:
 
   // RoCE support
   qpInfo.lid = portAttr.lid;
-  qpInfo.link_layer = portAttr.link_layer;
+  comm->link_layer = qpInfo.link_layer = portAttr.link_layer;
   if (qpInfo.link_layer == IBV_LINK_LAYER_INFINIBAND) { // IB
     for (int q=0; q<comm->nqps; q++)
       INFO(NCCL_NET,"NET/IB: Dev %d Port %d qpn %d mtu %d LID %d", dev, ib_port, qpInfo.qpn[q], qpInfo.mtu, qpInfo.lid);
@@ -958,8 +959,8 @@ ncclResult_t ncclIbMultiSend(struct ncclIbSendComm* comm, int slot) {
   }
 
   struct ibv_send_wr* lastWr = comm->wrs+nreqs-1;
-  if (nreqs > 1 || reqs[0]->send.size > ncclParamIbArThreshold()) {
-    // When using adaptive routing, send the bulk of the data first as an
+  if (nreqs > 1 || (comm->link_layer == IBV_LINK_LAYER_INFINIBAND && reqs[0]->send.size > ncclParamIbArThreshold())) {
+    // When using IB adaptive routing, send the bulk of the data first as an
     // RDMA_WRITE, then a 0-byte RDMA_WRITE_WITH_IMM to trigger a remote
     // completion.
     lastWr++;
