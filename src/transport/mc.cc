@@ -9,7 +9,7 @@
 #include "utils.h"
 #include "proxy.h"
 
-#define USE_POSIX_FD 0
+#define USE_POSIX_FD 1
 
 #if USE_POSIX_FD
 #define MC_CU_MEM_HANDLE_TYPE CU_MEM_HANDLE_TYPE_POSIX_FILE_DESCRIPTOR
