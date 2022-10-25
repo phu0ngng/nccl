@@ -47,7 +47,7 @@ class Primitives<T, RedOp, Fan, Direct, ProtoLL, P2p>:
     if (nthreads == WARP_SIZE)
       __syncwarp();
     else
-      asm volatile ("bar.sync %1, %0;" :: "r"(nthreads), "r"(15-group));
+      asm volatile ("barrier.sync %1, %0;" :: "r"(nthreads), "r"(15-group));
   }
 
   uint32_t abort = 0;
