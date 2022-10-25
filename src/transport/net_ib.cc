@@ -57,6 +57,7 @@ struct alignas(64) ncclIbDev {
   int realPort;
   int maxQp;
   struct ncclIbMrCache mrCache;
+  int ar; // ADAPTIVE_ROUTING
 };
 
 #define MAX_IB_PORT 15
@@ -80,6 +81,7 @@ NCCL_PARAM(IbSl, "IB_SL", 0);
 NCCL_PARAM(IbTc, "IB_TC", 0);
 NCCL_PARAM(IbArThreshold, "IB_AR_THRESHOLD", 8192);
 NCCL_PARAM(IbPciRelaxedOrdering, "IB_PCI_RELAXED_ORDERING", 2);
+NCCL_PARAM(IbAdaptiveRouting, "IB_ADAPTIVE_ROUTING", -2);
 
 pthread_t ncclIbAsyncThread;
 static void* ncclIbAsyncThreadMain(void* args) {
@@ -220,6 +222,11 @@ ncclResult_t ncclIbInit(ncclDebugLogger_t logFunction) {
           ncclIbDevs[ncclNIbDevs].mrCache.capacity = 0;
           ncclIbDevs[ncclNIbDevs].mrCache.population = 0;
           ncclIbDevs[ncclNIbDevs].mrCache.slots = NULL;
+
+          // Enable ADAPTIVE_ROUTING by default on IB networks
+          // But allow it to be overloaded by an env parameter
+          ncclIbDevs[ncclNIbDevs].ar = (portAttr.link_layer == IBV_LINK_LAYER_INFINIBAND) ? 1 : 0;
+          if (ncclParamIbAdaptiveRouting() != -2) ncclIbDevs[ncclNIbDevs].ar = ncclParamIbAdaptiveRouting();
 
           pthread_create(&ncclIbAsyncThread, NULL, ncclIbAsyncThreadMain, context);
           ncclSetThreadName(ncclIbAsyncThread, "NCCL IbAsync %2d", ncclNIbDevs);
@@ -423,7 +430,7 @@ struct ncclIbSendComm {
   struct ibv_qp* qps[NCCL_IB_MAX_QPS];
   int nqps;
   struct ibv_mr* fifoMr;
-  uint8_t link_layer;
+  int ar;
 };
 // The SendFifo needs to be 32-byte aligned and each element needs
 // to be a 32-byte multiple, so that an entry does not get split and
@@ -611,6 +618,7 @@ ib_connect_check:
   for (int q=0; q<comm->nqps; q++) {
     NCCLCHECK(ncclIbCreateQp(ib_port, &comm->verbs, IBV_ACCESS_REMOTE_WRITE, comm->qps+q));
   }
+  comm->ar = ncclIbDevs[dev].ar; // ADAPTIVE_ROUTING
 
   // Send my QP Info to receiver through the socket. Hope this won't block.
   struct ibv_port_attr portAttr;
@@ -627,7 +635,7 @@ ib_connect_check:
 
   // RoCE support
   qpInfo.lid = portAttr.lid;
-  comm->link_layer = qpInfo.link_layer = portAttr.link_layer;
+  qpInfo.link_layer = portAttr.link_layer;
   if (qpInfo.link_layer == IBV_LINK_LAYER_INFINIBAND) { // IB
     for (int q=0; q<comm->nqps; q++)
       INFO(NCCL_NET,"NET/IB: Dev %d Port %d qpn %d mtu %d LID %d", dev, ib_port, qpInfo.qpn[q], qpInfo.mtu, qpInfo.lid);
@@ -959,8 +967,8 @@ ncclResult_t ncclIbMultiSend(struct ncclIbSendComm* comm, int slot) {
   }
 
   struct ibv_send_wr* lastWr = comm->wrs+nreqs-1;
-  if (nreqs > 1 || (comm->link_layer == IBV_LINK_LAYER_INFINIBAND && reqs[0]->send.size > ncclParamIbArThreshold())) {
-    // When using IB adaptive routing, send the bulk of the data first as an
+  if (nreqs > 1 || (comm->ar && reqs[0]->send.size > ncclParamIbArThreshold())) {
+    // When using ADAPTIVE_ROUTING, send the bulk of the data first as an
     // RDMA_WRITE, then a 0-byte RDMA_WRITE_WITH_IMM to trigger a remote
     // completion.
     lastWr++;
