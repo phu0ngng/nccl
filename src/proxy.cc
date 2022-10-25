@@ -1001,10 +1001,14 @@ static ncclResult_t proxyProgressAsync(struct ncclProxyAsyncOp* op, struct ncclC
   } else return ncclInternalError;
   if (done) {
     if (op->respSize) NCCLCHECK(ncclSocketSend(op->connection->sock, op->respBuff, op->respSize));
-    if (op->reqBuff) free(op->reqBuff);
-    if (op->respBuff) free(op->respBuff);
-    op->reqBuff = NULL;
-    op->respBuff = NULL;
+    if (op->reqBuff) {
+      free(op->reqBuff);
+      op->reqBuff = NULL;
+    }
+    if (op->respBuff) {
+      free(op->respBuff);
+      op->respBuff = NULL;
+    }
     op->type = 0;
     (*asyncOpCount)--;
   }
@@ -1064,7 +1068,11 @@ void* ncclProxyService(void* _args) {
   int npeers = 0;
   int stop = 0;
   int asyncOpCount = 0;
-  while ((stop == 0 || (stop == 1 && npeers > 0)) && *comm->abortFlag == 0) {
+  while (stop == 0 || (stop == 1 && npeers > 0)) {
+    /* Even if local comm aborts, we cannot let proxy thread exit if we still have peer
+     * connections. Need to wait until all other related comms call abort and safely exit
+     * together, or we could face segmentation fault. */
+    if (*comm->abortFlag != 0) stop = 1;
     /* never let proxy service thread blocks in poll, or it cannot receive abortFlag. */
     if (poll(pollfds, NCCL_MAX_LOCAL_RANKS+1, asyncOpCount ? 0 : 500) < 0) {
       WARN("[Proxy Service] Poll failed: %s\n", strerror(errno));
@@ -1100,10 +1108,11 @@ void* ncclProxyService(void* _args) {
       int closeConn = 0;
       int type = 0;
       ncclResult_t res = ncclSuccess;
+
       if (op->type != 0) {
         res = proxyProgressAsync(op, comm, &asyncOpCount);
         type = op->type;
-        if (res != ncclSuccess) op->type = 0;
+        if (res != ncclSuccess) closeConn = 1;
       } else if (pollfds[s].revents & POLLIN) {
         int closed;
         if (ncclSocketTryRecv(sock, &type, sizeof(int), &closed) != ncclSuccess) {
@@ -1138,14 +1147,20 @@ void* ncclProxyService(void* _args) {
       }
       if (closeConn) {
         ncclSocketClose(sock);
+        if (op->reqBuff) {
+          free(op->reqBuff);
+          op->reqBuff = NULL;
+        }
+        if (op->respBuff) {
+          free(op->respBuff);
+          op->respBuff = NULL;
+        }
+        op->type = 0;
         pollfds[s].fd = -1;
         npeers--;
       }
     }
   }
-  /* wait until main thread flush all NCCL operations. */
-  while (*comm->abortFlag != 0 && __atomic_load_n(&comm->proxyState.safeAbortFlag, __ATOMIC_ACQUIRE) == 0)
-    usleep(1000);
 
   // Wait for all operations to complete and stop progress thread before freeing any resource
   if (ncclProxyProgressDestroy(comm) != ncclSuccess) {
@@ -1185,10 +1200,6 @@ ncclResult_t ncclProxyDestroy(struct ncclComm* comm) {
       NCCLCHECK(ncclSocketConnect(&sock));
       NCCLCHECK(ncclSocketSend(&sock, &type, sizeof(int)));
       NCCLCHECK(ncclSocketClose(&sock));
-    } else {
-      /* when abortFlag is set, all socket related communications are no longer reliable. We need to
-       * set a flag to let proxy thread exit. */
-      __atomic_store_n(&state->safeAbortFlag, 1, __ATOMIC_RELEASE);
     }
     free(state->peerAddresses);
   }
