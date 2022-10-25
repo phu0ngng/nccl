@@ -1,13 +1,20 @@
 #!/bin/bash
 ref=$1
+if [ "$ref" == "" ]; then ref="$REGRESSION_BASELINE"; fi
 baseline_build_dir="build-${ref}"
 
 shift
+
 orig_branch=$1
 if [ "$orig_branch" == "" ]; then orig_branch=$CI_COMMIT_SHORT_SHA; fi
 
 failure_count=0
 failure_names=()
+
+echo "CI_MERGE_REQUEST_DIFF_BASE_SHA=$CI_MERGE_REQUEST_DIFF_BASE_SHA"
+echo "REGRESSION_BASELINE=$REGRESSION_BASELINE"
+echo "ref=$ref"
+echo "baseline_build_dir=$baseline_build_dir"
 
 # Build the baseline version if necessary. We manually check since the makefile
 # will use file mtime's which will have been just updated by the preceding
