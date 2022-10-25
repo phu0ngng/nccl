@@ -8,8 +8,8 @@
 #ifndef NCCL_REDUCE_KERNEL_H_
 #define NCCL_REDUCE_KERNEL_H_
 
-#include "common_kernel.h"
 #include "op128.h"
+#include "mc_builtins.h"
 #include <limits>
 #include <type_traits>
 
@@ -55,6 +55,11 @@ struct Apply_PostOp/*{
   static constexpr bool IsIdentity;
   static BytePack<EltPerPack*sizeof(T)> postOp(Fn fn, BytePack<EltPerPack*sizeof(T)> a);
 }*/;
+template<typename Fn>
+struct Apply_LoadMC/*{
+  static constexpr int PackSize; // 0 if not implemented
+  static BytePack<PackSize> load(Fn fn, uintptr_t addr);
+}*/;
 
 ////////////////////////////////////////////////////////////////////////////////
 // Public API for calling the trait classes. These take the data elements as a
@@ -69,6 +74,7 @@ __device__ __forceinline__ Pack applyReduce(Fn fn, Pack a, Pack b) {
       ::reduce(fn, toPack(a), toPack(b))
   );
 }
+
 template<typename Fn, typename Pack>
 __device__ __forceinline__ Pack applyPreOp(Fn fn, Pack a) {
   return fromPack<Pack>(
@@ -76,12 +82,18 @@ __device__ __forceinline__ Pack applyPreOp(Fn fn, Pack a) {
       ::preOp(fn, toPack(a))
   );
 }
+
 template<typename Fn, typename Pack>
 __device__ __forceinline__ Pack applyPostOp(Fn fn, Pack a) {
   return fromPack<Pack>(
     Apply_PostOp<Fn, sizeof(Pack)/sizeof(typename Fn::EltType)>
       ::postOp(fn, toPack(a))
   );
+}
+
+template<typename Fn>
+__device__ __forceinline__ BytePack<Apply_LoadMC<Fn>::PackSize> applyLoadMC(Fn fn, uintptr_t addr) {
+  return Apply_LoadMC<Fn>::load(fn, addr);
 }
 
 ////////////////////////////////////////////////////////////////////////////////
@@ -139,9 +151,9 @@ struct Apply_Reduce<FuncSum<uint8_t>, /*EltPerPack=*/4> {
   __device__ static BytePack<4> reduce(FuncSum<uint8_t> fn, BytePack<4> a, BytePack<4> b) {
     constexpr uint32_t lo = 0x00ff00ff;
     constexpr uint32_t hi = ~lo;
-    uint32_t x = a.u32[0];
-    uint32_t y = b.u32[0];
-    a.u32[0] = (((x&lo) + (y&lo))&lo) + (((x&hi) + (y&hi))&hi);
+    uint32_t x = a.u32;
+    uint32_t y = b.u32;
+    a.u32 = (((x&lo) + (y&lo))&lo) + (((x&hi) + (y&hi))&hi);
     return a;
   }
 };
@@ -157,7 +169,7 @@ struct Apply_Reduce<FuncSum<int8_t>, /*EltPerPack=*/4> {
   struct Apply_Reduce<FuncMin<uint8_t>, /*EltPerPack=*/4> {
     __device__ static BytePack<4> reduce(FuncMin<uint8_t> fn, BytePack<4> a, BytePack<4> b) {
       uint32_t z=0;
-      asm("vmin4.u32.u32.u32 %0, %1, %2, %3;" : "=r"(a.u32[0]) : "r"(a.u32[0]), "r"(b.u32[0]), "r"(z));
+      asm("vmin4.u32.u32.u32 %0, %1, %2, %3;" : "=r"(a.u32) : "r"(a.u32), "r"(b.u32), "r"(z));
       return a;
     }
   };
@@ -165,7 +177,7 @@ struct Apply_Reduce<FuncSum<int8_t>, /*EltPerPack=*/4> {
   struct Apply_Reduce<FuncMin<int8_t>, /*EltPerPack=*/4> {
     __device__ static BytePack<4> reduce(FuncMin<int8_t> fn, BytePack<4> a, BytePack<4> b) {
       int32_t z=0;
-      asm("vmin4.s32.s32.s32 %0, %1, %2, %3;" : "=r"(a.u32[0]) : "r"(a.u32[0]), "r"(b.u32[0]), "r"(z));
+      asm("vmin4.s32.s32.s32 %0, %1, %2, %3;" : "=r"(a.u32) : "r"(a.u32), "r"(b.u32), "r"(z));
       return a;
     }
   };
@@ -173,7 +185,7 @@ struct Apply_Reduce<FuncSum<int8_t>, /*EltPerPack=*/4> {
   struct Apply_Reduce<FuncMax<uint8_t>, /*EltPerPack=*/4> {
     __device__ static BytePack<4> reduce(FuncMax<uint8_t> fn, BytePack<4> a, BytePack<4> b) {
       uint32_t z=0;
-      asm("vmax4.u32.u32.u32 %0, %1, %2, %3;" : "=r"(a.u32[0]) : "r"(a.u32[0]), "r"(b.u32[0]), "r"(z));
+      asm("vmax4.u32.u32.u32 %0, %1, %2, %3;" : "=r"(a.u32) : "r"(a.u32), "r"(b.u32), "r"(z));
       return a;
     }
   };
@@ -181,7 +193,7 @@ struct Apply_Reduce<FuncSum<int8_t>, /*EltPerPack=*/4> {
   struct Apply_Reduce<FuncMax<int8_t>, /*EltPerPack=*/4> {
     __device__ static BytePack<4> reduce(FuncMax<int8_t> fn, BytePack<4> a, BytePack<4> b) {
       int32_t z=0;
-      asm("vmax4.s32.s32.s32 %0, %1, %2, %3;" : "=r"(a.u32[0]) : "r"(a.u32[0]), "r"(b.u32[0]), "r"(z));
+      asm("vmax4.s32.s32.s32 %0, %1, %2, %3;" : "=r"(a.u32) : "r"(a.u32), "r"(b.u32), "r"(z));
       return a;
     }
   };
@@ -490,5 +502,72 @@ struct Apply_PostOp<FuncSumPostDiv<T>, /*EltPerPack=*/1> {
     return toPack<T>(fromPack<T>(a) / fn.divisor);
   }
 };
+
+////////////////////////////////////////////////////////////////////////////////
+// Apply_LoadMC
+
+template<typename Fn>
+struct Apply_LoadMC {
+  static constexpr int PackSize = 0; // Indicates not implemented
+};
+
+#define DEFINE_Apply_LoadMC(Fn, T, EltPerPack, builtin) \
+  template<> \
+  struct Apply_LoadMC<Fn<T>> { \
+    static constexpr int PackSize = EltPerPack*sizeof(T); \
+    __device__ static BytePack<PackSize> load(Fn<T> fn, uintptr_t addr) { \
+      return toPack(builtin(addr)); \
+    } \
+  };
+
+#if __CUDA_ARCH__ >= 900
+  DEFINE_Apply_LoadMC(FuncSum, uint32_t, 1, __nv_ptx_builtin_ocg_ld_mc_add_u32)
+  DEFINE_Apply_LoadMC(FuncMin, uint32_t, 1, __nv_ptx_builtin_ocg_ld_mc_min_u32)
+  DEFINE_Apply_LoadMC(FuncMax, uint32_t, 1, __nv_ptx_builtin_ocg_ld_mc_max_u32)
+
+  DEFINE_Apply_LoadMC(FuncSum, int32_t, 1, __nv_ptx_builtin_ocg_ld_mc_add_s32)
+  DEFINE_Apply_LoadMC(FuncMin, int32_t, 1, __nv_ptx_builtin_ocg_ld_mc_min_s32)
+  DEFINE_Apply_LoadMC(FuncMax, int32_t, 1, __nv_ptx_builtin_ocg_ld_mc_max_s32)
+
+  DEFINE_Apply_LoadMC(FuncSum, uint64_t, 1, __nv_ptx_builtin_ocg_ld_mc_add_u64)
+  DEFINE_Apply_LoadMC(FuncMin, uint64_t, 1, __nv_ptx_builtin_ocg_ld_mc_min_u64)
+  DEFINE_Apply_LoadMC(FuncMax, uint64_t, 1, __nv_ptx_builtin_ocg_ld_mc_max_u64)
+
+  DEFINE_Apply_LoadMC(FuncSum, int64_t, 1, __nv_ptx_builtin_ocg_ld_mc_add_u64)
+  DEFINE_Apply_LoadMC(FuncMin, int64_t, 1, __nv_ptx_builtin_ocg_ld_mc_min_s64)
+  DEFINE_Apply_LoadMC(FuncMax, int64_t, 1, __nv_ptx_builtin_ocg_ld_mc_max_s64)
+
+  //DEFINE_Apply_LoadMC(FuncSum, float, 1, __nv_ptx_builtin_ocg_ld_mc_add_f32)
+  //DEFINE_Apply_LoadMC(FuncSum, float, 2, __nv_ptx_builtin_ocg_ld_mc_add_f32x2)
+  DEFINE_Apply_LoadMC(FuncSum, float, 4, __nv_ptx_builtin_ocg_ld_mc_add_f32x4)
+
+  DEFINE_Apply_LoadMC(FuncSum, double, 1, __nv_ptx_builtin_ocg_ld_mc_add_f64)
+
+  //DEFINE_Apply_LoadMC(FuncSum, half, 2, __nv_ptx_builtin_ocg_ld_mc_add_f16x2)
+  //DEFINE_Apply_LoadMC(FuncSum, half, 4, __nv_ptx_builtin_ocg_ld_mc_add_f16x4)
+  DEFINE_Apply_LoadMC(FuncSum, half, 8, __nv_ptx_builtin_ocg_ld_mc_add_f16x8)
+
+  //DEFINE_Apply_LoadMC(FuncMin, half, 2, __nv_ptx_builtin_ocg_ld_mc_min_f16x2)
+  //DEFINE_Apply_LoadMC(FuncMin, half, 4, __nv_ptx_builtin_ocg_ld_mc_min_f16x4)
+  DEFINE_Apply_LoadMC(FuncMin, half, 8, __nv_ptx_builtin_ocg_ld_mc_min_f16x8)
+
+  //DEFINE_Apply_LoadMC(FuncMax, half, 2, __nv_ptx_builtin_ocg_ld_mc_max_f16x2)
+  //DEFINE_Apply_LoadMC(FuncMax, half, 4, __nv_ptx_builtin_ocg_ld_mc_max_f16x4)
+  DEFINE_Apply_LoadMC(FuncMax, half, 8, __nv_ptx_builtin_ocg_ld_mc_max_f16x8)
+
+  #if defined(__CUDA_BF16_TYPES_EXIST__)
+    //DEFINE_Apply_LoadMC(FuncSum, __nv_bfloat16, 2, __nv_ptx_builtin_ocg_ld_mc_add_bf16x2)
+    //DEFINE_Apply_LoadMC(FuncSum, __nv_bfloat16, 4, __nv_ptx_builtin_ocg_ld_mc_add_bf16x4)
+    DEFINE_Apply_LoadMC(FuncSum, __nv_bfloat16, 8, __nv_ptx_builtin_ocg_ld_mc_add_bf16x8)
+
+    //DEFINE_Apply_LoadMC(FuncMin, __nv_bfloat16, 2, __nv_ptx_builtin_ocg_ld_mc_min_bf16x2)
+    //DEFINE_Apply_LoadMC(FuncMin, __nv_bfloat16, 4, __nv_ptx_builtin_ocg_ld_mc_min_bf16x4)
+    DEFINE_Apply_LoadMC(FuncMin, __nv_bfloat16, 8, __nv_ptx_builtin_ocg_ld_mc_min_bf16x8)
+
+    //DEFINE_Apply_LoadMC(FuncMax, __nv_bfloat16, 2, __nv_ptx_builtin_ocg_ld_mc_max_bf16x2)
+    //DEFINE_Apply_LoadMC(FuncMax, __nv_bfloat16, 4, __nv_ptx_builtin_ocg_ld_mc_max_bf16x4)
+    DEFINE_Apply_LoadMC(FuncMax, __nv_bfloat16, 8, __nv_ptx_builtin_ocg_ld_mc_max_bf16x8)
+  #endif
+#endif
 
 #endif // REDUCE_KERNEL_H_

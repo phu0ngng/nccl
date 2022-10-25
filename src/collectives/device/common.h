@@ -231,7 +231,7 @@ __device__ void NCCL_FUNC_NAME(func, algo, proto, devredop, type)() { \
   IMPL_COLL4(func, RING,    devredop, type, ncclType) \
   IMPL_COLL4(func, COLLNET_DIRECT, devredop, type, ncclType) \
   IMPL_COLL4(func, COLLNET_CHAIN, devredop, type, ncclType) \
-  IMPL_COLL4(func, MC,      devredop, type, ncclType)
+  IMPL_COLL4(func, MC, devredop, type, ncclType)
 
 #if NCCL_TYPE == 0
 #define IMPL_COLL2(func, devredop) IMPL_COLL3(func, devredop, int8_t,   ncclInt8)
@@ -286,5 +286,7 @@ __device__ void NCCL_FUNC_NAME(func, algo, proto, devredop, type)() { \
 #define IMPL_COLL_C(func)
 #define IMPL_COLL_P(func)
 #endif
+
+#define NCCL_MC_ENABLED (__CUDA_ARCH__ >= 900 && NCCL_MC_SUPPORTS(NCCL_TYPE, NCCL_OP))
 
 #endif

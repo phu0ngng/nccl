@@ -1171,6 +1171,8 @@ static ncclResult_t getAlgoInfo(struct ncclInfo* info, int collNetTypeSupport, i
     int nAlgos = NCCL_NUM_ALGORITHMS;
     for (int a=0; a<nAlgos; a++) {
       if ((a == NCCL_ALGO_COLLNET_DIRECT || a == NCCL_ALGO_COLLNET_CHAIN) && collNetTypeSupport != 1) continue;
+      if (a == NCCL_ALGO_MC && !NCCL_MC_SUPPORTS(info->datatype, info->opFull.op)) continue;
+
       for (int p=0; p<NCCL_NUM_PROTOCOLS; p++) {
         float time;
         NCCLCHECK(ncclTopoGetAlgoTime(info, a, p, numPipeOps, &time));

@@ -9,6 +9,7 @@
 
 #include "devcomm.h"
 #include "op128.h"
+#include "reduce_kernel.h"
 #include <cstdio>
 #include <cstdint>
 
@@ -170,14 +171,14 @@ __device__ __forceinline__ void ReduceOrCopyMulti(
   int lane = thread%WARP_SIZE;
 
   // Check that all is 16B aligned. If not don't use 16B load/stores.
-  int allAligned = 1;
-  if (lane < nSrcs) allAligned &= 0 == cvta_to_global(srcPtrs[lane])%16;
-  if (lane < nDsts) allAligned &= 0 == cvta_to_global(dstPtrs[lane])%16;
-  allAligned = __all_sync(~0u, allAligned);
+  int aligned = 1;
+  if (lane < nSrcs) aligned &= 0 == cvta_to_global(srcPtrs[lane])%16;
+  if (lane < nDsts) aligned &= 0 == cvta_to_global(dstPtrs[lane])%16;
+  aligned = __all_sync(~0u, aligned);
 
   IntBytes nBytesBehind = 0;
   IntBytes nBytesAhead = nElts*sizeof(T);
-  if (allAligned) {
+  if (aligned) {
     ReduceCopyPacks<RedFn, T, Unroll, /*BytePerPack=*/16,
       MinSrcs, MaxSrcs, MinDsts, MaxDsts, PreOpSrcs>
       (nThreads, /*&*/thread, redArg, preOpArgs, postOp,
@@ -203,4 +204,143 @@ __device__ __forceinline__ void ReduceOrCopyMulti(
      nSrcs, srcPtrs, nDsts, dstPtrs, /*&*/nBytesBehind, /*&*/nBytesAhead);
 }
 
+template<typename RedFn, typename T, int Unroll, int BytePerPack,
+         bool SrcAligned, // is srcAddr aligned to BytePerPack
+         bool DstAligned, // are dstAddr and nBytesAhead both aligned to BytePerPack
+         bool Partial, // is this a possibly partial hunk
+         typename IntBytes>
+__device__ __forceinline__ void copyGlobalMC_WarpUnrolled(
+    int lane, RedFn redFn, bool postOp, uintptr_t srcAddr, uintptr_t dstAddr,
+    IntBytes nBytesAhead, uint32_t scratchAddr
+  ) {
+  int srcMisalign = SrcAligned ? 0 : srcAddr%BytePerPack;
+  srcAddr -= srcMisalign;
+
+  BytePack<BytePerPack> reg[Unroll];
+  int offset = lane*BytePerPack;
+  #pragma unroll Unroll
+  for (int u=0; u < Unroll; u++) {
+    bool predicate = !Partial || (offset < srcMisalign + nBytesAhead);
+    if (predicate) reg[u] = applyLoadMC(redFn, srcAddr+offset);
+    if (predicate && postOp) reg[u] = applyPostOp(redFn, reg[u]);
+    offset += WARP_SIZE*BytePerPack;
+  }
+
+  if (SrcAligned && DstAligned) {
+    offset = lane*BytePerPack;
+    #pragma unroll Unroll
+    for (int u=0; u < Unroll; u++) {
+      bool predicate = !Partial || offset < nBytesAhead;
+      st_global<BytePerPack>(predicate, dstAddr+offset, reg[u]);
+      offset += WARP_SIZE*BytePerPack;
+    }
+  } else {
+    __syncwarp();
+    offset = lane*BytePerPack;
+    #pragma unroll Unroll
+    for (int u=0; u < Unroll; u++) {
+      bool predicate = !Partial || (offset < srcMisalign + nBytesAhead);
+      st_shared<BytePerPack>(predicate, scratchAddr+offset, reg[u]);
+      offset += WARP_SIZE*BytePerPack;
+    }
+    __syncwarp();
+    if (!SrcAligned) {
+      // Ignore the beginning of the first pack corresponding to bytes overread
+      // due to misalignment.
+      nBytesAhead = min(nBytesAhead, Unroll*WARP_SIZE*BytePerPack - srcMisalign);
+    }
+    copyGlobalShared_WarpUnrolled<sizeof(T), /*MaxBytes=*/Unroll*WARP_SIZE*BytePerPack>
+      (lane, dstAddr, scratchAddr+srcMisalign, nBytesAhead);
+  }
+}
+
+// copyGlobalMC_IfEnabled has two overloads: the enabled case whose first arg
+// has type `std::true_type` and the disabled case with first arg `std::false_type`.
+// This is to guard the template instantiations of Apply_LoadMC on types/ops where
+// they aren't supported. A nicer approach is to use C++17's "if constexpr".
+template<typename RedFn, typename IntBytes>
+__device__ __forceinline__ void copyGlobalMC_IfEnabled(
+    std::false_type enabled/*=false*/,
+    int thread, int nThreads, uint64_t redArg, bool postOp,
+    void *srcPtr, void *dstPtr, IntBytes nElts, uint32_t warpScratchAddr
+  ) {
+  // nop
+}
+
+template<typename RedFn, typename IntBytes>
+__device__ __forceinline__ void copyGlobalMC_IfEnabled(
+    std::true_type enabled/*=true*/,
+    int thread, int nThreads, uint64_t redArg, bool postOp,
+    void *srcPtr, void *dstPtr, IntBytes nElts, uint32_t warpScratchAddr
+  ) {
+  constexpr int BytePerPack = Apply_LoadMC<RedFn>::PackSize;
+  using T = typename RedFn::EltType;
+  constexpr int Unroll = NCCL_MC_UNROLL;
+  constexpr int BytePerHunk = Unroll*WARP_SIZE*BytePerPack;
+  int nWarps = nThreads/WARP_SIZE;
+  int warp = thread/WARP_SIZE;
+  int lane = thread%WARP_SIZE;
+  RedFn redFn(redArg);
+
+  uintptr_t srcAddr = cvta_to_global(srcPtr);
+  uintptr_t dstAddr = cvta_to_global(dstPtr);
+  IntBytes warpBytesAhead = nElts*sizeof(T);
+
+  // First handle misalignment of srcAddr.
+  if ((BytePerPack != sizeof(T)) && (srcAddr%BytePerPack != 0)) {
+    // If srcAddr isn't pack aligned then the first hunk processed will be short
+    // the same number of bytes as srcAddr's misalignment.
+    if (warp == 0) {
+      copyGlobalMC_WarpUnrolled
+        <RedFn, T, Unroll, BytePerPack, /*SrcAligned=*/false, /*DstAligned=*/false, /*Partial=*/true>
+          (lane, redFn, postOp, srcAddr, dstAddr, warpBytesAhead, warpScratchAddr);
+      warp = nWarps;
+    }
+    warp -= 1; // Rotate warp numbers for load balancing
+    int advanced = BytePerHunk-(srcAddr%BytePerPack);
+    srcAddr += advanced; // srcAddr is now pack aligned
+    dstAddr += advanced;
+    warpBytesAhead -= advanced;
+  }
+
+  warpBytesAhead -= warp*BytePerHunk;
+  srcAddr += warp*BytePerHunk;
+  dstAddr += warp*BytePerHunk;
+  // Now that srcAddr is pack aligned detect if dstAddr is pack aligned.
+  if ((BytePerPack == sizeof(T)) || (dstAddr%BytePerPack == 0)) {
+    while (BytePerHunk <= warpBytesAhead) {
+      copyGlobalMC_WarpUnrolled
+        <RedFn, T, Unroll, BytePerPack, /*SrcAligned=*/true, /*DstAligned=*/true, /*Partial=*/false>
+          (lane, redFn, postOp, srcAddr, dstAddr, warpBytesAhead, warpScratchAddr);
+      srcAddr += nWarps*BytePerHunk;
+      dstAddr += nWarps*BytePerHunk;
+      warpBytesAhead -= nWarps*BytePerHunk;
+    }
+    if (0 < warpBytesAhead) {
+      copyGlobalMC_WarpUnrolled
+        <RedFn, T, Unroll, BytePerPack, /*SrcAligned=*/true, /*DstAligned=*/BytePerPack == sizeof(T), /*Partial=*/true>
+          (lane, redFn, postOp, srcAddr, dstAddr, warpBytesAhead, warpScratchAddr);
+    }
+  } else {
+    while (0 < warpBytesAhead) {
+      copyGlobalMC_WarpUnrolled
+        <RedFn, T, Unroll, BytePerPack, /*SrcAligned=*/true, /*DstAligned=*/false, /*Partial=*/true>
+          (lane, redFn, postOp, srcAddr, dstAddr, warpBytesAhead, warpScratchAddr);
+      srcAddr += nWarps*BytePerHunk;
+      dstAddr += nWarps*BytePerHunk;
+      warpBytesAhead -= nWarps*BytePerHunk;
+    }
+  }
+}
+
+template<typename RedFn, typename IntBytes>
+__device__ __forceinline__ void copyGlobalMC(
+    int thread, int nThreads, uint64_t redArg, bool postOp,
+    void *srcPtr, void *dstPtr, IntBytes nElts, uint32_t warpScratchAddr
+  ) {
+  constexpr bool Enabled = Apply_LoadMC<RedFn>::PackSize != 0;
+  copyGlobalMC_IfEnabled<RedFn>(
+    /*enabled=*/std::integral_constant<bool, Enabled>(),
+    thread, nThreads, redArg, postOp, srcPtr, dstPtr, nElts, warpScratchAddr);
+}
 #endif // COMMON_KERNEL_H_

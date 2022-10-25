@@ -6,7 +6,7 @@
 
 #include "devcomm.h"
 #include "collectives.h"
-#include "reduce_kernel.h"
+#include "common_kernel.h"
 #include "common.h"
 
 namespace {

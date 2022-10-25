@@ -306,13 +306,20 @@ struct alignas(16) ncclDevCommAndChannels {
   #define NCCL_CUDA_ARCH 0
 #endif
 
+#define NCCL_MC_UNROLL 12
+
 __host__ __device__ constexpr int ncclCollUnroll(int cudaArch = NCCL_CUDA_ARCH) {
   return cudaArch >= 800 ? 8 : 4;
 }
 
 __host__ __device__ constexpr int max_constexpr(int a, int b) { return a > b ? a : b; }
+__host__ __device__ constexpr int max_constexpr(int a, int b, int c) {
+  return max_constexpr(max_constexpr(a, b), c);
+}
+
 __host__ __device__ constexpr int ncclShmemDynamicWarpSize(int cudaArch = NCCL_CUDA_ARCH) {
   return (max_constexpr(
+      /*MC*/(WARP_SIZE*(cudaArch >= 900 ? NCCL_MC_UNROLL : 0) + 1)*16,
       /*simple*/(ncclCollUnroll(cudaArch)*WARP_SIZE + 1)*16,
       /*ll128 */(NCCL_LL128_SHMEM_ELEMS_PER_THREAD*WARP_SIZE)*sizeof(uint64_t)
     ) + 15) & -16; // pad to 16 bytes

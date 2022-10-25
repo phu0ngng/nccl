@@ -122,4 +122,13 @@ extern __device__ void NCCL_ONERANK_REDUCE_NAME(PreMulSum, double)();
 #define REDUCE_CHUNKSTEPS 1
 #define NCCL_MAX_SLICE_PER_CHUNK 2  // max value for CHUNKSTEPS/SLICESTEPS, must accord with above
 
+// We can't use the enum identifiers like ncclSum, ncclFloat, etc since this
+// macro will be used in preprocessor conditionals where enums have no meaning.
+#define NCCL_MC_SUPPORTS(/*ncclDataType_t*/ type, /*ncclDevRedOp_t*/ red) \
+  (((type==2 || type==3) && (red==0 || red==2 || red==3)) || \
+   ((type==4 || type==5) && (red==0 || red==2 || red==3)) || \
+   ((type==6 || type==9) && (red==0 || red==2 || red==3)) || \
+   (type==7 && red==0) || \
+   (type==8 && red==0))
+
 #endif

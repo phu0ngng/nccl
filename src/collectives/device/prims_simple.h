@@ -9,9 +9,9 @@ extern "C" __device__ uint64_t __nv_ptx_builtin_ocg_ld_mc_min_u64(uint64_t addr)
 extern "C" __device__ uint64_t __nv_ptx_builtin_ocg_ld_mc_add_u64(uint64_t addr);
 
 template<typename T, typename RedOp, typename Fan, int Direct,
-         int SlicePerChunk, int StepPerSlice, int Unroll, int P2p>
+         int SlicePerChunk, int StepPerSlice, int Unroll, int P2p, bool MC>
 class Primitives<
-    T, RedOp, Fan, Direct, ProtoSimple<SlicePerChunk, StepPerSlice, Unroll>, P2p
+    T, RedOp, Fan, Direct, ProtoSimple<SlicePerChunk, StepPerSlice, Unroll, MC>, P2p
   > {
   static constexpr int MaxRecv = Fan::MaxRecv, MaxSend = Fan::MaxSend;
   static constexpr int Input=0, Output=1;
@@ -29,7 +29,7 @@ class Primitives<
                        ThreadsSynced = 0x800,
                        McMinPolling = 0x1000,
                        McRecv = 0x2000;
-  const int tid;
+  const int tid, tidInBlock;
   int nthreads;
   int nworkers;
   const int stepSize;
@@ -76,7 +76,7 @@ class Primitives<
 
   inline __device__ uint64_t loadStepValue(uint64_t* addr) {
     uint64_t v;
-    if (flags & McMinPolling) v = __nv_ptx_builtin_ocg_ld_mc_min_u64((uint64_t)addr);
+    if (MC && (flags & McMinPolling)) v = __nv_ptx_builtin_ocg_ld_mc_min_u64((uint64_t)addr);
     else asm volatile("ld.volatile.global.u64 %0, [%1];": "=l"(v) : "l"(addr));
     return v;
   }
@@ -189,15 +189,12 @@ class Primitives<
           ncclShmem.groups[group].dsts[0] = userBuff + dstIx + offset;
         waitPeer<DirectRecv, DirectSend, Recv, Send, Src, Dst>(dstIx, remoteIx, offset, sliceSize);
         subBarrier();
-	if (ncclShmem.groups[group].mcRecv) {
-          int n = sliceSize*sizeof(T)/sizeof(uint64_t);
-          uint64_t* src = (uint64_t*)ncclShmem.groups[group].srcs[0];
-          uint64_t* dst = (uint64_t*)ncclShmem.groups[group].dsts[0];
-          for (int offset=tid; offset<n; offset += nworkers) {
-            dst[offset] = __nv_ptx_builtin_ocg_ld_mc_add_u64((uint64_t)(src+offset));
-          }
-          // ReduceOrCopyMultiMC(...);
-	} else if (DirectRecv && ncclShmem.groups[group].srcs[0] == ncclShmem.groups[group].dsts[0]) {
+        if (MC && ncclShmem.groups[group].mcRecv) {
+          void* src = ncclShmem.groups[group].srcs[0];
+          void* dst = ncclShmem.groups[group].dsts[0];
+          copyGlobalMC<RedOp>(tid, nworkers, ncclShmem.redOpArgs[0], postOp, src, dst, sliceSize,
+          cvta_to_shared(shmemForWarp(tidInBlock/WARP_SIZE)));
+        } else if (DirectRecv && ncclShmem.groups[group].srcs[0] == ncclShmem.groups[group].dsts[0]) {
           // We can only have one direct receive. Since srcs[0] == dstPtr+offset, skip one copy
           if (Send) {
             ReduceOrCopyMulti<Unroll, RedOp, T, 1, 1, 1, MaxSend, /*PreOpSrcs*/0>
@@ -282,7 +279,7 @@ class Primitives<
             int pOffset = i*peerOffset;
             // Skip the data I am responsible of reducing myself
             if (skip >= 0 && i >= skip) pOffset += peerElem;
-            const T* src0 = (T*)ncclShmem.groups[group].srcs[0] + pOffset;
+            void* src0 = (T*)ncclShmem.groups[group].srcs[0] + pOffset;
             int realPeerSize = min(realSize, totalElem-pOffset);
             if (realPeerSize > 0 && ncclShmem.groups[group].dsts[i] != nullptr) {
               ReduceOrCopyMulti<Unroll, RedOp, T, 1, 1, 1, 1, PreOpSrcs>(tid, nworkers, ncclShmem.redOpArgs[0], ncclShmem.redOpArgs, false, 1, &src0, 1, ncclShmem.groups[group].dsts+i, realPeerSize);
@@ -306,9 +303,9 @@ class Primitives<
               int i = (j+shift)%fan.nrecv();
               pOffset = i*peerOffset;
               if (skip >= 0 && i >= skip) pOffset += peerElem;
-              T* dst0 = (T*)ncclShmem.groups[group].dsts[0] + pOffset;
+              void* dst0 = (T*)ncclShmem.groups[group].dsts[0] + pOffset;
               int realPeerSize = min(realSize, totalElem-pOffset);
-              if (realPeerSize > 0) ReduceOrCopyMulti<Unroll, RedOp, T, 1, 1, 1, 1, /*PreOpSrcs=*/0>(tid, nworkers, ncclShmem.redOpArgs, postOp, 1, (const T**)ncclShmem.groups[group].srcs+i, 1, &dst0, realPeerSize);
+              if (realPeerSize > 0) ReduceOrCopyMulti<Unroll, RedOp, T, 1, 1, 1, 1, /*PreOpSrcs=*/0>(tid, nworkers, ncclShmem.redOpArgs[0], ncclShmem.redOpArgs, postOp, 1, ncclShmem.groups[group].srcs+i, 1, &dst0, realPeerSize);
             }
           }
         }
@@ -420,7 +417,7 @@ class Primitives<
       int tid, int nthreads, int const *recvPeers, int const *sendPeers,
       void const *inputBuf, void *outputBuf, uint64_t redOpArg, uint32_t group=0, struct ncclWorkElem* e = nullptr
     ):
-    tid(tid),
+    tid(tid), tidInBlock(threadIdx.x),
     stepSize(ncclShmem.comm.buffSizes[NCCL_PROTO_SIMPLE]/NCCL_STEPS/sizeof(T)) {
 
     // For send operations, we need an extra warp to overlap the threadfence and the copy

@@ -374,6 +374,7 @@ struct RunWorkElement<ncclFuncAllReduce, T, RedOp, NCCL_ALGO_COLLNET_DIRECT, NCC
 template<typename T, typename RedOp>
 struct RunWorkElement<ncclFuncAllReduce, T, RedOp, NCCL_ALGO_MC, NCCL_PROTO_SIMPLE> {
   __device__ __forceinline__ void run(ncclWorkElem *args) {
+  #if NCCL_MC_ENABLED
     const int tid = threadIdx.x;
     const int bid = args->bid;
     const int nChannels = args->nChannels;
@@ -382,17 +383,16 @@ struct RunWorkElement<ncclFuncAllReduce, T, RedOp, NCCL_ALGO_MC, NCCL_PROTO_SIMP
     const ssize_t size = args->count;
     const ssize_t loopSize = nChannels*mc->nHeads*chunkSize;
 
-
-    const int nThreadsScatter = 128;
-    const int nThreadsGather  = 128;
-    const int nThreadsReduce = 384;
+    const int nThreadsScatter = 9*WARP_SIZE;
+    const int nThreadsGather  = 9*WARP_SIZE;
+    const int nThreadsReduce = 2*WARP_SIZE;
     const int nThreadsBcast   = 0; // No network support for now, reduce does bcast as well
     const int tidEndScatter = nThreadsScatter;
     const int tidEndGather = tidEndScatter + nThreadsGather;
     const int tidEndReduce = tidEndGather + nThreadsReduce;
     const int tidEndBcast = tidEndReduce + nThreadsBcast;
 
-    using Proto = ProtoSimple<1, 1>;
+    using Proto = ProtoSimple<1, 1, COLL_UNROLL, /*MC=*/true>;
 
     if (tid < tidEndScatter) {
       // Scatter
@@ -425,6 +425,7 @@ struct RunWorkElement<ncclFuncAllReduce, T, RedOp, NCCL_ALGO_MC, NCCL_PROTO_SIMP
         prims.recvSend(nelem);
       }
     }
+  #endif // NCCL_MC_ENABLED
   }
 };
 
