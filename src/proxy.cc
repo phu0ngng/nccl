@@ -1112,6 +1112,7 @@ void* ncclProxyService(void* _args) {
       int type = 0;
       ncclResult_t res = ncclSuccess;
 
+      if (pollfds[s].fd == -1) continue;
       if (op->type != 0) {
         res = proxyProgressAsync(op, comm, &asyncOpCount);
         type = op->type;
