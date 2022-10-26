@@ -11,14 +11,14 @@ if [ "$iterations" == "" ]; then iterations=5; fi
 
 shift
 
-ref=$1
-if [ "$ref" == "" ]; then ref="$REGRESSION_BASELINE"; fi
-baseline_build_dir="build-${ref}"
+check_cpu_overhead=$1
+if [ "$check_cpu_overhead" == "" ]; then check_cpu_overhead=0; fi
 
 shift
 
-check_cpu_overhead=$1
-if [ "$check_cpu_overhead" == "" ]; then check_cpu_overhead=0; fi
+ref=$1
+if [ "$ref" == "" ]; then ref="$REGRESSION_BASELINE"; fi
+baseline_build_dir="build-${ref}"
 
 failure_count=0
 failure_names=()

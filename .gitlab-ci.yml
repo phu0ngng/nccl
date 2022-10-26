@@ -516,7 +516,7 @@ perf-regression-single-DGX-A100:
     GPU_APPLICATION_CLOCK: 1410
   script:
     - ./test/scripts/gitlab-runner-build-baseline.sh $CI_MERGE_REQUEST_DIFF_BASE_SHA
-    - salloc -N 1 -n 8 --account=nccl -pluna -J "nccl-cicd::$GITLAB_USER_LOGIN:perftest-single-regression::$CI_COMMIT_BRANCH:$CI_COMMIT_SHORT_SHA" -t 00:30:00 ./test/scripts/gitlab-runner-compare-perf.sh $REGRESSION_THRESHOLD $REGRESSION_ITERATIONS $CI_MERGE_REQUEST_DIFF_BASE_SHA $REGRESSION_CHECK_CPU_OVERHEAD
+    - salloc -N 1 -n 8 --account=nccl -pluna -J "nccl-cicd::$GITLAB_USER_LOGIN:perftest-single-regression::$CI_COMMIT_BRANCH:$CI_COMMIT_SHORT_SHA" -t 00:30:00 ./test/scripts/gitlab-runner-compare-perf.sh $REGRESSION_THRESHOLD $REGRESSION_ITERATIONS $REGRESSION_CHECK_CPU_OVERHEAD $CI_MERGE_REQUEST_DIFF_BASE_SHA
   cache:
     key: "build-${REGRESSION_BASELINE}"
     paths:
@@ -551,7 +551,7 @@ perf-regression-multi-DGX-A100:
     GPU_APPLICATION_CLOCK: 1410
   script:
     - ./test/scripts/gitlab-runner-build-baseline.sh $CI_MERGE_REQUEST_DIFF_BASE_SHA
-    - let NUM_PROCESSES=$MULTI_PERFTEST_NODE_COUNT*8 && salloc -N $MULTI_PERFTEST_NODE_COUNT -n $NUM_PROCESSES --account=nccl -pluna -J "nccl-cicd::$GITLAB_USER_LOGIN:perftest-multi-regression::$CI_COMMIT_BRANCH:$CI_COMMIT_SHORT_SHA" -t 02:00:00 ./test/scripts/gitlab-runner-compare-perf.sh $REGRESSION_THRESHOLD $REGRESSION_ITERATIONS $CI_MERGE_REQUEST_DIFF_BASE_SHA $REGRESSION_CHECK_CPU_OVERHEAD
+    - let NUM_PROCESSES=$MULTI_PERFTEST_NODE_COUNT*8 && salloc -N $MULTI_PERFTEST_NODE_COUNT -n $NUM_PROCESSES --account=nccl -pluna -J "nccl-cicd::$GITLAB_USER_LOGIN:perftest-multi-regression::$CI_COMMIT_BRANCH:$CI_COMMIT_SHORT_SHA" -t 02:00:00 ./test/scripts/gitlab-runner-compare-perf.sh $REGRESSION_THRESHOLD $REGRESSION_ITERATIONS $REGRESSION_CHECK_CPU_OVERHEAD $CI_MERGE_REQUEST_DIFF_BASE_SHA
   cache:
     key: "build-${REGRESSION_BASELINE}"
     paths:
