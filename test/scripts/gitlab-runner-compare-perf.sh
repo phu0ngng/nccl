@@ -47,6 +47,9 @@ if [[ $failure_count -eq 0 ]]; then
   rm -rf $cpu_baseline_perf_files_dir
   mkdir $cpu_baseline_perf_files_dir
 
+  dev_branch_info=$(git show --oneline -s)
+  baseline_branch_info=$(git log --format=%B -n 1 $ref)
+
   export OPAL_PREFIX=$MPI_HOME
   LD_LIBRARY_PATH_BASE=$MPI_HOME/lib:$CUDA_HOME/lib64:$LD_LIBRARY_PATH
   LD_LIBRARY_NEW=$PWD/build/lib:$LD_LIBRARY_PATH_BASE
@@ -88,7 +91,8 @@ if [[ $failure_count -eq 0 ]]; then
   echo "Using LD_LIBRARY_OLD=$LD_LIBRARY_OLD"
   echo "Using baseline ref=$ref (non-MR REGRESSION_BASELINE=$REGRESSION_BASELINE)"
   # Print out commit message
-  echo "Baseline commit message=$(git log --format=%B -n 1 $ref)"
+  echo "Baseline commit message=$baseline_branch_info"
+  echo "Dev branch commit message=$dev_branch_info"
   echo "Using threshold=$threshold"
   let cpu_threshold=threshold*2
   echo "Using cpu_threshold=$cpu_threshold"
@@ -157,7 +161,7 @@ if [[ $failure_count -eq 0 ]]; then
 
   # Outer loop, appending iterations to files
   # Double iterations for CPU overhead tests
-  if "$check_cpu_overhead" != "0"; then
+  if ["$check_cpu_overhead" != "0"]; then
     echo "Running CPU overhead regression checks - $(date +%T)"
     let iterations=$iterations*2
     for i in $(seq 1 $iterations)
@@ -210,7 +214,7 @@ do
   echo "Failed check: $str"
 done
 
-echo "$failure_count regressions detected"
+echo "$failure_count regressions detected comparing dev branch $dev_branch_info ($CI_COMMIT_SHORT_SHA) and baseline $baseline_branch_info ($ref)"
 
 end=$(date +%s)
 let seconds=$end-$start
