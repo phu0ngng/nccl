@@ -178,6 +178,15 @@ struct ncclProxyState {
   struct ncclProxyProgressState progressState;
 };
 
+enum proxyConnectState {
+  connUninitialized     = 0,
+  connInitialized       = 1,
+  connSharedInitialized = 2,
+  connSetupDone         = 3,
+  connConnected         = 4,
+  numConnStates         = 5
+};
+
 struct ncclProxyConnection {
   int send, transport, shared;
   int localRank;
@@ -186,7 +195,7 @@ struct ncclProxyConnection {
   struct ncclProxyArgs *proxyAppend;
   struct ncclProxyArgs **proxyAppendPtr;
   void* transportResources;
-  bool initFlag;
+  proxyConnectState state;
 };
 
 typedef ncclResult_t (*threadFunc_t)(struct ncclProxyArgs*);

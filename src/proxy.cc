@@ -820,7 +820,7 @@ static ncclResult_t ncclProxyFreeConnections(struct ncclProxyConnectionPool* poo
     int max = b == pool->banks-1 ? pool->offset : NCCL_PROXY_CONN_POOL_SIZE;
     for (int i=0; i<max; i++) {
       ncclProxyConnection *connection = pool->pools[b]+i;
-      if (connection->initFlag == true) {
+      if (connection->state != connUninitialized) {
         NCCLCHECK(proxyFree(connection, comm));
       }
     }
@@ -973,7 +973,7 @@ static ncclResult_t proxyConnInit(struct ncclProxyLocalPeer* peer, struct ncclPr
     NCCLCHECK(ncclSocketSend(sock, state->opsPoolShmSuffix, sizeof("XXXXXX")-1));
   }
   INFO(NCCL_NET, "New proxy %s connection %d from local rank %d, transport %d", connection->send ? "send":"recv", id, connection->localRank, connection->transport);
-  __atomic_store_n(&connection->initFlag, true, __ATOMIC_RELEASE);
+  __atomic_store_n(&connection->state, connInitialized, __ATOMIC_RELEASE);
   return ncclSuccess;
 }
 
@@ -988,6 +988,7 @@ static ncclResult_t proxyConnSharedInit(struct ncclProxyLocalPeer* peer, struct 
   int nChannels;
   NCCLCHECK(ncclSocketRecv(sock, &nChannels, sizeof(int)));
   if (connection->tcomm->proxySharedInit) NCCLCHECK(connection->tcomm->proxySharedInit(connection, comm, nChannels));
+  __atomic_store_n(&connection->state, connSharedInitialized, __ATOMIC_RELEASE);
   return ncclSuccess;
 }
 
@@ -999,6 +1000,10 @@ static ncclResult_t proxyProgressAsync(struct ncclProxyAsyncOp* op, struct ncclC
     NCCLCHECK(op->connection->tcomm->proxyConnect(op->connection, comm, op->reqBuff, op->reqSize, op->respBuff, op->respSize, &done));
   } else return ncclInternalError;
   if (done) {
+    if (op->type == ncclProxyMsgSetup)
+      __atomic_store_n(&op->connection->state, connSetupDone, __ATOMIC_RELEASE);
+    else if (op->type == ncclProxyMsgConnect)
+      __atomic_store_n(&op->connection->state, connConnected, __ATOMIC_RELEASE);
     if (op->respSize) NCCLCHECK(ncclSocketSend(op->connection->sock, op->respBuff, op->respSize));
     if (op->reqBuff) {
       free(op->reqBuff);
