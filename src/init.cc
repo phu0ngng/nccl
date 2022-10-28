@@ -178,6 +178,12 @@ static ncclResult_t commFree(ncclComm_t comm) {
   if (comm == NULL)
     return ncclSuccess;
 
+  /* in commReclaim, we have guaranteed only last rank which calls ncclCommDestroy() will
+   * free all intra-process communicators; therefore, we only need to focus on local
+   * resource cleanup in commFree(). */
+  if (comm->proxyState.thread)
+    pthread_join(comm->proxyState.thread, nullptr);
+
   delete[] comm->userRedOps;
 
   free(comm->connectSend);
@@ -212,12 +218,6 @@ static ncclResult_t commFree(ncclComm_t comm) {
 
   ncclMemoryStackDestruct(&comm->memScoped);
   ncclMemoryStackDestruct(&comm->memPermanent);
-
-  /* in commReclaim, we have guaranteed only last rank which calls ncclCommDestroy() will
-   * free all intra-process communicators; therefore, we only need to focus on local
-   * resource cleanup in commFree(). */
-  if (comm->proxyState.thread)
-    pthread_join(comm->proxyState.thread, nullptr);
 
   ncclCudaHostFree((void *)comm->abortFlag);
 
