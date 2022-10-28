@@ -1015,7 +1015,10 @@ static ncclResult_t proxyProgressAsync(struct ncclProxyAsyncOp* op, struct ncclC
     }
     op->type = 0;
     (*asyncOpCount)--;
+  } else if (*comm->abortFlag != 0) {
+    return ncclInternalError;
   }
+  
   return ncclSuccess;
 }
 
