@@ -179,6 +179,7 @@ struct ncclComm {
   int cudaDev; // my cuda device index
   int64_t busId;   // my PCI bus ID in int format
   cpu_set_t cpuAffinity; // CPU affinity of the GPU
+  int cudaArch; // matches __CUDA_ARCH__ of device
 
   int node;
   int nNodes;

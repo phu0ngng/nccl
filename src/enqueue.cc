@@ -91,33 +91,45 @@ static const ncclKernelMatch ncclKerns[1+ncclNumTypes+NCCL_NUM_FUNCTIONS*ncclNum
 
 static ncclResult_t computeColl(struct ncclInfo* info /* input */, int* workFuncIndex, struct ncclWorkElem* work, struct ncclProxyOp* proxyOp /* output */);
 
-// Determine the maximum kernel stack size of all CUDA kernels
-size_t ncclKernMaxLocalSize() {
-  ncclResult_t res = ncclSuccess;
-  int numNcclKerns = sizeof(ncclKerns)/sizeof(ncclKerns[0]);
-  cudaFuncAttributes attr = {0};
-  size_t max = 0;
-  for (int i = 0; i < numNcclKerns; i++) {
-    CUDACHECKGOTO(cudaFuncGetAttributes(&attr, ncclKerns[i].kernelFn), res, error);
-    if (attr.localSizeBytes > max) max = attr.localSizeBytes;
+NCCL_PARAM(L1SharedMemoryCarveout, "L1_SHARED_MEMORY_CARVEOUT", 0);
+
+// Returns maximum kernel stack size of all CUDA kernels
+ncclResult_t ncclInitKernelsForDevice(int cudaArch, size_t* maxStackSize) {
+  constexpr int KernelCount = sizeof(ncclKerns)/sizeof(ncclKerns[0]);
+  ncclResult_t result = ncclSuccess;
+
+  if (maxStackSize) *maxStackSize = 0;
+  int carveout = ncclParamL1SharedMemoryCarveout();
+
+  // Keep track if we already visited a function pointer.
+  void* lru[2] = {nullptr, nullptr};
+  for (int i=0; i < KernelCount; i++) {
+    void* fn = ncclKerns[i].kernelFn;
+    if (fn == lru[0] || fn == lru[1]) goto next_kernel;
+    lru[1] = lru[0];
+    lru[0] = fn;
+
+    if (maxStackSize) {
+      cudaFuncAttributes attr = {0};
+      CUDACHECKGOTO(cudaFuncGetAttributes(&attr, fn), result, ignore0);
+      if (attr.localSizeBytes > *maxStackSize) *maxStackSize = attr.localSizeBytes;
+    ignore0:;
+    }
+
+    if (carveout) {
+      CUDACHECKGOTO(cudaFuncSetAttribute(fn,
+        cudaFuncAttributePreferredSharedMemoryCarveout, carveout),
+        result, ignore1);
+    ignore1:;
+    }
+
+    CUDACHECKGOTO(cudaFuncSetAttribute(fn,
+      cudaFuncAttributeMaxDynamicSharedMemorySize, ncclShmemDynamicSize(cudaArch)),
+      result, next_kernel);
+  next_kernel:;
   }
-
-error:
-  return (res != ncclSuccess) ? 0 : max;
+  return result;
 }
-
-// Set shared memory carveout for the nccl kernels
-ncclResult_t ncclKernSetSharedMemoryCarveout(int carveOut) {
-  ncclResult_t res = ncclSuccess;
-  int numNcclKerns = sizeof(ncclKerns)/sizeof(ncclKerns[0]);
-  for (int i = 0; i < numNcclKerns; i++) {
-    CUDACHECKGOTO(cudaFuncSetAttribute(ncclKerns[i].kernelFn, cudaFuncAttributePreferredSharedMemoryCarveout, carveOut), res, error);
-  }
-
-error:
-  return res;
-}
-
 
 /*****************************************************************************/
 /*       Launch system : synchronization and CUDA kernel launch              */
@@ -1022,6 +1034,7 @@ ncclResult_t ncclLaunchKernel(struct ncclComm* comm, struct ncclKernelPlan* plan
   cudaStream_t launchStream = tasks->streams->stream;
   dim3 grid = {(unsigned)plan->channelCount, 1, 1};
   dim3 block = {(unsigned)plan->threadPerBlock, 1, 1};
+  size_t smem = ncclShmemDynamicSize(comm->cudaArch);
   void *args[3] = {&comm->devComm, &plan->channelMask, &plan->workHead};
 
   #if CUDART_VERSION >= 11080
@@ -1069,6 +1082,7 @@ ncclResult_t ncclLaunchKernel(struct ncclComm* comm, struct ncclKernelPlan* plan
 #endif
     launchConfig.gridDim = grid;
     launchConfig.blockDim = block;
+    launchConfig.dynamicSmemBytes = smem;
     launchConfig.attrs = launchAttrs;
     launchConfig.numAttrs = attrs;
     launchConfig.stream = launchStream;
@@ -1078,7 +1092,7 @@ ncclResult_t ncclLaunchKernel(struct ncclComm* comm, struct ncclKernelPlan* plan
   }
   #endif
   // Standard kernel launch
-  CUDACHECK(cudaLaunchKernel(fn, grid, block, args, 0, launchStream));
+  CUDACHECK(cudaLaunchKernel(fn, grid, block, args, smem, launchStream));
   return ncclSuccess;
 }
 
