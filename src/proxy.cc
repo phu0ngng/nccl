@@ -1004,7 +1004,11 @@ static ncclResult_t proxyProgressAsync(struct ncclProxyAsyncOp* op, struct ncclC
       __atomic_store_n(&op->connection->state, connSetupDone, __ATOMIC_RELEASE);
     else if (op->type == ncclProxyMsgConnect)
       __atomic_store_n(&op->connection->state, connConnected, __ATOMIC_RELEASE);
-    if (op->respSize) NCCLCHECK(ncclSocketSend(op->connection->sock, op->respBuff, op->respSize));
+    /* if setup or connect is done, we should not return any error at this point since 
+     * ncclSocketSend might already send the respBuff to the requester. If we still choose
+     * to abort and close the connection, it can cause segfault if the requester is using
+     * the respBuff. */
+    if (op->respSize) ncclSocketSend(op->connection->sock, op->respBuff, op->respSize);
     if (op->reqBuff) {
       free(op->reqBuff);
       op->reqBuff = NULL;
