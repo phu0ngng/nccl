@@ -67,12 +67,8 @@ ncclResult_t initGdrCopy() {
   return ncclSuccess;
 }
 
-
-NCCL_PARAM(L1SharedMemoryCarveout, "L1_SHARED_MEMORY_CARVEOUT", 0);
-
 pthread_mutex_t initLock = PTHREAD_MUTEX_INITIALIZER;
 static bool initialized = false;
-static size_t maxLocalSizeBytes = 0;
 
 static ncclResult_t ncclInit() {
   if (__atomic_load_n(&initialized, __ATOMIC_ACQUIRE)) return ncclSuccess;
@@ -80,9 +76,6 @@ static ncclResult_t ncclInit() {
   if (!initialized) {
     initEnv();
     initGdrCopy();
-    maxLocalSizeBytes = ncclKernMaxLocalSize();
-    int carveout = ncclParamL1SharedMemoryCarveout();
-    if (carveout) ncclKernSetSharedMemoryCarveout(carveout);
     // Always initialize bootstrap network
     NCCLCHECK(bootstrapNetInit());
     NCCLCHECK(ncclNetPluginInit());
@@ -1087,9 +1080,16 @@ static ncclResult_t ncclCommInitRankFunc(struct ncclAsyncJob* job_) {
   ncclUniqueId commId = job->commId; // C++ struct assignment
   int myrank = job->myrank;
   int cudaDev = job->cudaDev;
+  int archMajor, archMinor;
+  size_t maxLocalSizeBytes = 0;
   ncclResult_t res = ncclSuccess;
 
   CUDACHECKGOTO(cudaSetDevice(cudaDev), res, fail);
+  CUDACHECK(cudaDeviceGetAttribute(&archMajor, cudaDevAttrComputeCapabilityMajor, cudaDev));
+  CUDACHECK(cudaDeviceGetAttribute(&archMinor, cudaDevAttrComputeCapabilityMinor, cudaDev));
+  comm->cudaArch = 100*archMajor + 10*archMinor;
+
+  NCCLCHECK(ncclInitKernelsForDevice(comm->cudaArch, &maxLocalSizeBytes));
   // Set the maximum kernel stack size of all kernels to avoid
   // a CUDA memory reconfig on load (c.f. NVSHMEM issue)
   if (maxLocalSizeBytes > 0 && ncclParamSetStackSize() == 1) {
