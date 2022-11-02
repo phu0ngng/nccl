@@ -161,7 +161,7 @@ if [[ $failure_count -eq 0 ]]; then
 
   # Outer loop, appending iterations to files
   # Double iterations for CPU overhead tests
-  if ["$check_cpu_overhead" != "0"]; then
+  if [[ "$check_cpu_overhead" != "0" ]]; then
     echo "Running CPU overhead regression checks - $(date +%T)"
     let iterations=$iterations*2
     for i in $(seq 1 $iterations)

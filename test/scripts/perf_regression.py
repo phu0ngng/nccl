@@ -87,8 +87,11 @@ def compare_times(placeness, bads, wins, neutrals, new_times, old_times, rmad_th
         t0_stats["rmad"]   = 0
 
       gain = 100*(t1_stats["median"] - t0_stats["median"])/t0_stats["median"]
-      if t1_stats["rmad"] > rmad_threshold or t0_stats["rmad"] > rmad_threshold:
-        print("WARNING: High variance in perf output detected. New rmad=" + format_float(t1_stats["rmad"]) + ", Baseline rmad=" + format_float(t0_stats["rmad"]) + ", rmad_threshold=" + format_float(rmad_threshold))
+      if t1_stats["rmad"] > rmad_threshold:
+        print("WARNING: High variance for " + placeness + " detected. New rmad=" + format_float(t1_stats["rmad"]) + ", rmad_threshold=" + format_float(rmad_threshold))
+
+      if t0_stats["rmad"] > rmad_threshold:
+        print("WARNING: High variance for " + placeness + " detected. Baseline rmad=" + format_float(t0_stats["rmad"]) + ", rmad_threshold=" + format_float(rmad_threshold))
 
       if gain >= threshold:
         bads += [(placeness, gain,size,dtype,redop,t0_stats,t1_stats)]
