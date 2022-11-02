@@ -437,8 +437,7 @@ ncclResult_t ncclProxyComputeP2p(struct ncclInfo* info, struct ncclProxyOp* op) 
 
   int stepSize = info->comm->buffSizes[op->protocol]/NCCL_STEPS;
 
-  // If nNodes > 1 and we're using Simple, reduce the stepSize to increase shared buffer utilization
-  if (info->comm->nNodes > 1 && op->protocol == NCCL_PROTO_SIMPLE) stepSize = info->comm->p2pNetChunkSize;
+  if (op->protocol == NCCL_PROTO_SIMPLE) stepSize = info->comm->p2pChunkSize;
   info->chunkSize = stepSize;
   op->root = info->root;
 

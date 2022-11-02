@@ -87,8 +87,11 @@ def compare_times(placeness, bads, wins, neutrals, new_times, old_times, rmad_th
         t0_stats["rmad"]   = 0
 
       gain = 100*(t1_stats["median"] - t0_stats["median"])/t0_stats["median"]
-      if t1_stats["rmad"] > rmad_threshold or t0_stats["rmad"] > rmad_threshold:
-        print("WARNING: High variance in perf output detected. New rmad=" + format_float(t1_stats["rmad"]) + ", Baseline rmad=" + format_float(t0_stats["rmad"]) + ", rmad_threshold=" + format_float(rmad_threshold))
+      if t1_stats["rmad"] > rmad_threshold:
+        print("WARNING: High variance for " + placeness + " detected. New rmad=" + format_float(t1_stats["rmad"]) + ", rmad_threshold=" + format_float(rmad_threshold))
+
+      if t0_stats["rmad"] > rmad_threshold:
+        print("WARNING: High variance for " + placeness + " detected. Baseline rmad=" + format_float(t0_stats["rmad"]) + ", rmad_threshold=" + format_float(rmad_threshold))
 
       if gain >= threshold:
         bads += [(placeness, gain,size,dtype,redop,t0_stats,t1_stats)]
@@ -176,13 +179,14 @@ def print_stats(t0_stats, t1_stats):
   line = '{:>20}: {:>9} {:>9}'.format("Average", format_float(t0_stats["avg"]),format_float(t1_stats["avg"]))
   print(line)
 
-print("Num cases: ", len(bads)+len(wins)+len(neutrals))
-print("Num wins (dt <= -%.2f%%): "%threshold, len(wins))
-print("Num fails (dt >= +%.2f%%): "%threshold, len(bads))
+if verbose:
+  print("Num cases: ", len(bads)+len(wins)+len(neutrals))
+  print("Num wins (dt <= -%.2f%%): "%threshold, len(wins))
+  print("Num fails (dt >= +%.2f%%): "%threshold, len(bads))
 
 if len(bads) > 0:
   print()
-  print("Fail cases, where avg time increased >= %.2f%%:"%threshold)
+  print("Fail cases, where median time increased >= %.2f%%:"%threshold)
   for placeness,gain,size,dtype,redop,t0_stats,t1_stats in bads:
     gain = '+%.2f%%'%gain if type(gain) in (int,float) else gain
     line = '{:>6} {:>6}  {:>12} {:>6} : {:>6} (old: {:>6}) (new: {:>6})'.format(format_bytes(size),dtype,placeness,redop,gain,format_float(t0_stats["median"]),format_float(t1_stats["median"]))
@@ -193,7 +197,7 @@ if len(bads) > 0:
 
 if len(wins) > 0:
   print()
-  print("Win cases, where avg time decreased >= %.2f%%:"%threshold)
+  print("Win cases, where median time decreased >= %.2f%%:"%threshold)
   for placeness,gain,size,dtype,redop,t0_stats,t1_stats in wins:
     gain = '%.2f%%'%gain if type(gain) in (int,float) else gain
     line = '{:>6} {:>6}  {:>12} {:>6} : {:>6} (old: {:>6}) (new: {:>6})'.format(format_bytes(size),dtype,placeness,redop,gain,format_float(t0_stats["median"]),format_float(t1_stats["median"]))
@@ -203,7 +207,7 @@ if len(wins) > 0:
 
 if len(neutrals) > 0 and verbose:
   print()
-  print("Neutral cases, where avg time stayed +- %.2f%%:"%threshold)
+  print("Neutral cases, where median time stayed +- %.2f%%:"%threshold)
   for placeness,gain,size,dtype,redop,t0_stats,t1_stats in neutrals:
     gain = '%.2f%%'%gain if type(gain) in (int,float) else gain
     line = '{:>6} {:>6}  {:>12} {:>6} : {:>6} (old: {:>6}) (new: {:>6})'.format(format_bytes(size),dtype,placeness,redop,gain,format_float(t0_stats["median"]),format_float(t1_stats["median"]))

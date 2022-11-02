@@ -471,6 +471,8 @@ NCCL_PARAM(LlBuffSize, "LL_BUFFSIZE", -2);
 NCCL_PARAM(Ll128BuffSize, "LL128_BUFFSIZE", -2);
 
 NCCL_PARAM(P2pNetChunkSize, "P2P_NET_CHUNKSIZE", (1 << 17)); /* 128 kB */
+NCCL_PARAM(P2pPciChunkSize, "P2P_PCI_CHUNKSIZE", (1 << 17)); /* 128 kB */
+NCCL_PARAM(P2pNvlChunkSize, "P2P_NVL_CHUNKSIZE", (1 << 19)); /* 512 kB */
 
 static ncclResult_t computeBuffSizes(struct ncclComm* comm) {
   int cpuArch, cpuVendor, cpuModel;
@@ -485,7 +487,10 @@ static ncclResult_t computeBuffSizes(struct ncclComm* comm) {
     comm->buffSizes[p] = envs[p] != -2 ? envs[p] : defaults[p];
   }
 
-  comm->p2pNetChunkSize = ncclParamP2pNetChunkSize();
+  if (comm->nNodes > 1) comm->p2pChunkSize = ncclParamP2pNetChunkSize();
+  else if (ncclTopoPathAllNVLink(comm->topo)) comm->p2pChunkSize = ncclParamP2pNvlChunkSize();
+  else comm->p2pChunkSize = ncclParamP2pPciChunkSize();
+  INFO(NCCL_INIT, "P2P Chunksize set to %d", comm->p2pChunkSize);
   return ncclSuccess;
 }
 

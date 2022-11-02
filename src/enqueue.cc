@@ -609,8 +609,7 @@ static ncclResult_t scheduleP2pTasksToPlan(
 
   // Compute how much to split operations
   // Natural step size matching buffer steps.
-  ssize_t stepSize = comm->buffSizes[NCCL_PROTO_SIMPLE]/NCCL_STEPS;
-  if (comm->nNodes > 1) stepSize = comm->p2pNetChunkSize;
+  ssize_t stepSize = comm->p2pChunkSize;
   // Try to use all channels
   int nChannelsMax = comm->p2pnChannelsPerPeer;
   int nChannelsMin = nChannelsMax;
