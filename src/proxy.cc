@@ -684,7 +684,7 @@ void* ncclProxyProgress(void *comm_) {
 
   int lastIdle = 0;
   struct ncclProxyArgs profArgs; // Only used for profiling purposes
-  while (state->stop == 0 && *comm->abortFlag == 0) {
+  while ((state->stop == false || (state->stop == true && state->active)) && *comm->abortFlag == 0) {
     int idle = 1;
     ncclResult_t ret = progressOps(comm, state, state->active, &idle);
     if (ret != ncclSuccess) {
@@ -696,7 +696,8 @@ void* ncclProxyProgress(void *comm_) {
     if (lastIdle == 1 && idle == 0) ncclProfilingRecord(&profArgs, 0, 0, ncclProxyProfileActive);
     int added = 0;
     TIME_START(3);
-    ret = ncclProxyGetPostedOps(comm, &added);
+    if (state->stop == false)
+      ret = ncclProxyGetPostedOps(comm, &added);
     if (added) { TIME_STOP(3); } else { TIME_CANCEL(3); }
     if (ret != ncclSuccess) {
       (void) ncclCommSetAsyncError(comm, ret);
