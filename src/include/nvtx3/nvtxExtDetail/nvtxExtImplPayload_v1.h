@@ -59,16 +59,19 @@ NVTX_LINKONCE_DEFINE_FUNCTION void NVTX_EXT_PAYLOAD_VERSIONED_ID(nvtxExtPayloadI
 #define NVTX_EXT_FN_IMPL(ret_val, fn_name, signature, arg_names) \
 typedef ret_val ( * fn_name##_impl_fntype )signature; \
 NVTX_LINKONCE_DEFINE_FUNCTION ret_val fn_name signature { \
-    while (1) { \
-        intptr_t slot = NVTX_EXT_PAYLOAD_VERSIONED_ID(nvtxExtPayloadSlots)[NVTX3EXT_CBID_##fn_name + 1]; \
-        if (slot & ~NVTX_EXTENSION_DISABLED) { \
+    intptr_t slot = NVTX_EXT_PAYLOAD_VERSIONED_ID(nvtxExtPayloadSlots)[NVTX3EXT_CBID_##fn_name + 1]; \
+    if (slot != NVTX_EXTENSION_DISABLED) { \
+        if (slot) { \
             return (*(fn_name##_impl_fntype)slot) arg_names; \
-        } else if (slot == NVTX_EXTENSION_DISABLED) { \
-            return ((ret_val)(intptr_t)-1); \
         } else { \
             NVTX_EXT_PAYLOAD_VERSIONED_ID(nvtxExtPayloadInitOnce)(); \
+            slot = NVTX_EXT_PAYLOAD_VERSIONED_ID(nvtxExtPayloadSlots)[NVTX3EXT_CBID_##fn_name + 1]; \
+            if (slot != NVTX_EXTENSION_DISABLED && slot) { \
+                return (*(fn_name##_impl_fntype)slot) arg_names; \
+            } \
         } \
     } \
+    return ((ret_val)(intptr_t)-1); \
 }
 
 NVTX_EXT_FN_IMPL(uint64_t, nvtxPayloadSchemaRegister, (nvtxDomainHandle_t domain, const nvtxPayloadSchemaAttr_t* attr), (domain, attr))
