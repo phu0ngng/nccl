@@ -16,6 +16,7 @@ workflow:
     - if: $CI_PIPELINE_SOURCE == 'merge_request_event' || $CI_PIPELINE_SOURCE == 'schedule' || $CI_PIPELINE_SOURCE == 'web' || $CI_COMMIT_BRANCH == $CI_DEFAULT_BRANCH
 
 variables:
+  RUN_MULTI_REGRESSION: "0" # Set to 1 to run multinode regression pipeline
   MULTI_PERFTEST_NODE_COUNT: 4
   CUDA_VERSION: "11.7"
   REGRESSION_BASELINE: "v2.15.5-1" # Compare to stable branch (Update git tag as necessary)
@@ -504,7 +505,7 @@ perftest-sharp-selene:
 perf-regression-single-DGX-A100:
   stage: perf_regression
   rules:
-    - if: $RUN_ON_SELENE == "1" && $CUDA_VERSION != "10.2"
+    - if: $RUN_ON_SELENE == "1" && $CUDA_VERSION != "10.2" && $CI_PIPELINE_SOURCE == 'merge_request_event'
       when: always
     - when: never
   needs: [build, unit_tests, perftest-DGX-A100]
@@ -533,7 +534,7 @@ perf-regression-single-DGX-A100:
 perf-regression-multi-DGX-A100:
   stage: perf_regression
   rules:
-    - if: $RUN_ON_SELENE == "1" && $CUDA_VERSION != "10.2" && $CI_PIPELINE_SOURCE != "merge_request_event"
+    - if: $RUN_ON_SELENE == "1" && $CUDA_VERSION != "10.2" && $CI_PIPELINE_SOURCE != "merge_request_event" && $RUN_MULTI_REGRESSION == "1"
       when: always
     - when: never
     - if: $REGRESSION_BASELINE == ""
