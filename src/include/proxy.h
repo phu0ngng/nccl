@@ -168,7 +168,6 @@ struct ncclProxyState {
   struct ncclSocket* listenSock;
   int stop;
   CUcontext cudaCtx;
-  int safeAbortFlag;
 
   // Used by main thread
   union ncclSocketAddress* peerAddresses;

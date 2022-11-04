@@ -372,7 +372,7 @@ static ncclResult_t sharedBuffersInit(struct ncclComm* comm, int cuda, int local
   struct ncclProxySharedP2p* state = type == 0 ? &peer->send : &peer->recv;
   state->refcount++;
   if (state->size == 0) {
-    state->size = nChannels*NCCL_SHARED_STEPS*comm->p2pNetChunkSize;
+    state->size = nChannels*NCCL_SHARED_STEPS*comm->p2pChunkSize;
   }
 
   if (size) *size = state->size;
@@ -399,7 +399,7 @@ static ncclResult_t sharedBuffersInit(struct ncclComm* comm, int cuda, int local
 static ncclResult_t sharedBuffersGet(struct ncclComm* comm, int channel, int slot, int* offset) {
   // Use different pools for different channels and also separate send/recv.
   int globalSlot = (channel*NCCL_SHARED_STEPS)+slot;
-  *offset = comm->p2pNetChunkSize * globalSlot;
+  *offset = comm->p2pChunkSize * globalSlot;
   return ncclSuccess;
 }
 
@@ -523,6 +523,7 @@ static ncclResult_t sendProxyConnect(struct ncclProxyConnection* connection, str
     NCCLCHECK(ncclNetConnect(comm, resources->netDev, reqBuff, &resources->netSendComm));
     connection->proxyAppendPtr = &connection->proxyAppend;
   }
+  if (*comm->abortFlag != 0) return ncclInternalError;
   if (resources->netSendComm == NULL) {
     *done = 0;
     return ncclSuccess;
@@ -657,6 +658,7 @@ static ncclResult_t recvProxyConnect(struct ncclProxyConnection* connection, str
     NCCLCHECK(ncclNetAccept(comm, resources->netListenComm, &resources->netRecvComm));
     connection->proxyAppendPtr = &connection->proxyAppend;
   }
+  if (*comm->abortFlag != 0) return ncclInternalError;
   if (resources->netRecvComm == NULL) {
     *done = 0;
     return ncclSuccess;

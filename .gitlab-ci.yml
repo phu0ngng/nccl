@@ -4,7 +4,7 @@ stages:
   - api_tests
   - perf_tests_single
   - perf_tests_multi
-#  - perf_regression
+  - perf_regression
   - replay_tests
 
 # Run our CI on:
@@ -16,10 +16,15 @@ workflow:
     - if: $CI_PIPELINE_SOURCE == 'merge_request_event' || $CI_PIPELINE_SOURCE == 'schedule' || $CI_PIPELINE_SOURCE == 'web' || $CI_COMMIT_BRANCH == $CI_DEFAULT_BRANCH
 
 variables:
+  RUN_MULTI_REGRESSION: "0" # Set to 1 to run multinode regression pipeline
   MULTI_PERFTEST_NODE_COUNT: 4
   CUDA_VERSION: "11.7"
-  REGRESSION_BASELINE: "v2.14.1-2" # Compare to stable branch (Update git tag as necessary)
-  REGRESSION_THRESHOLD: 10 # What percent difference should we use to compare?
+  REGRESSION_BASELINE: "v2.15.5-1" # Compare to stable branch (Update git tag as necessary)
+  REGRESSION_THRESHOLD: 7 # What percent difference should we use to compare?
+  REGRESSION_ITERATIONS: 5 # How many iterations should we run latency and overhead tests?
+  REGRESSION_CHECK_CPU_OVERHEAD: 0 # Should we run CPU overhead tests in the perf regression?
+  MULTI_REGRESSION_SALLOC_TIME: 45 # How many minutes to salloc for multinode regression. This can be tuned for multinode pipelines
+  SINGLE_REGRESSION_SALLOC_TIME: 30 # How many minutes to salloc for multinode regression. This can be tuned for multinode pipelines
 
 build:
   stage: build
@@ -497,68 +502,69 @@ perftest-sharp-selene:
     - let NUM_PROCESSES=$MULTI_PERFTEST_NODE_COUNT*8 && salloc -N $MULTI_PERFTEST_NODE_COUNT -n $NUM_PROCESSES --account=nccl -pluna --network=sharp --constraint=nccl -J "nccl-cicd::$GITLAB_USER_LOGIN:perftest-multi::$CI_COMMIT_BRANCH:$CI_COMMIT_SHORT_SHA" -t 00:10:00 ./test/scripts/gitlab-runner-perftest-sharp.sh 16G 0
   interruptible: true
 
-# Disabled - Too much noise / too long runtime
-# perf-regression-single-DGX-A100:
-#   stage: perf_regression
-#   rules:
-#     - if: $RUN_ON_SELENE == "1" && $CUDA_VERSION != "10.2"
-#       when: always
-#     - when: never
-#   needs: [build, unit_tests, perftest-DGX-A100]
-#   tags:
-#     - dgx-a100
-#   variables:
-#     NCCL_DEBUG: "WARN"
-#     MPI_HOME: "/home/svcnccl/install/openmpi-1.10.7"
-#     CUDA_HOME: "/project/share/cuda/cuda-11.5.1/"
-#     NVCC_GENCODE: " -gencode=arch=compute_80,code=sm_80"
-#   script:
-#     - ./test/scripts/gitlab-runner-build-baseline.sh $REGRESSION_BASELINE
-#     - salloc -N 1 -n 8 --account=nccl -pluna -J "nccl-cicd::$GITLAB_USER_LOGIN:perftest-single-regression::$CI_COMMIT_BRANCH:$CI_COMMIT_SHORT_SHA" -t 00:30:00 ./test/scripts/gitlab-runner-compare-perf.sh $REGRESSION_THRESHOLD $CI_MERGE_REQUEST_DIFF_BASE_SHA
-#   cache:
-#     key: "build-${REGRESSION_BASELINE}"
-#     paths:
-#       - "build-${REGRESSION_BASELINE}/lib"
-#       - "build-${REGRESSION_BASELINE}/test/perf"
-#     key: "build-${CI_MERGE_REQUEST_DIFF_BASE_SHA}"
-#     paths:
-#       - "build-${CI_MERGE_REQUEST_DIFF_BASE_SHA}/lib"
-#       - "build-${CI_MERGE_REQUEST_DIFF_BASE_SHA}/test/perf"
-#   interruptible: true
+perf-regression-single-DGX-A100:
+  stage: perf_regression
+  rules:
+    - if: $RUN_ON_SELENE == "1" && $CUDA_VERSION != "10.2" && $CI_PIPELINE_SOURCE == 'merge_request_event'
+      when: always
+    - when: never
+  needs: [build, unit_tests, perftest-DGX-A100]
+  tags:
+    - dgx-a100
+  variables:
+    NCCL_DEBUG: "WARN"
+    MPI_HOME: "/home/svcnccl/install/openmpi-1.10.7"
+    CUDA_HOME: "/project/share/cuda/cuda-11.5.1/"
+    NVCC_GENCODE: " -gencode=arch=compute_80,code=sm_80"
+    GPU_APPLICATION_CLOCK: 1410
+  script:
+    - ./test/scripts/gitlab-runner-build-baseline.sh $CI_MERGE_REQUEST_DIFF_BASE_SHA
+    - salloc -N 1 -n 8 --account=nccl -pluna -J "nccl-cicd::$GITLAB_USER_LOGIN:perftest-single-regression::$CI_COMMIT_BRANCH:$CI_COMMIT_SHORT_SHA" -t $SINGLE_REGRESSION_SALLOC_TIME ./test/scripts/gitlab-runner-compare-perf.sh $REGRESSION_THRESHOLD $REGRESSION_ITERATIONS $REGRESSION_CHECK_CPU_OVERHEAD $CI_MERGE_REQUEST_DIFF_BASE_SHA
+  cache:
+    key: "build-${REGRESSION_BASELINE}"
+    paths:
+      - "build-${REGRESSION_BASELINE}/lib"
+      - "build-${REGRESSION_BASELINE}/test/perf"
+    key: "build-${CI_MERGE_REQUEST_DIFF_BASE_SHA}"
+    paths:
+      - "build-${CI_MERGE_REQUEST_DIFF_BASE_SHA}/lib"
+      - "build-${CI_MERGE_REQUEST_DIFF_BASE_SHA}/test/perf"
+  interruptible: true
 
-# perf-regression-multi-DGX-A100:
-#   stage: perf_regression
-#   rules:
-#     - if: $RUN_ON_SELENE == "1" && $CUDA_VERSION != "10.2"
-#       when: always
-#     - when: never
-#     - if: $REGRESSION_BASELINE == ""
-#       variables:
-#         REGRESSION_BASELINE: "${REGRESSION_BASELINE_TAG}"
-#   needs: [build, unit_tests, perftest-DGX-A100]
-#   tags:
-#     - dgx-a100
-#   variables:
-#     NCCL_DEBUG: "WARN"
-#     MPI_HOME: "/home/svcnccl/install/openmpi-1.10.7"
-#     CUDA_HOME: "/project/share/cuda/cuda-11.5.1/"
-#     NVCC_GENCODE: " -gencode=arch=compute_80,code=sm_80"
-#     NCCL_IB_SL: "1"
-#     OMPI_MCA_btl: "^openib"
-#     OMPI_MCA_btl_tcp_if_include: "enp97s0f1"
-#   script:
-#     - ./test/scripts/gitlab-runner-build-baseline.sh $REGRESSION_BASELINE
-#     - let NUM_PROCESSES=$MULTI_PERFTEST_NODE_COUNT*8 && salloc -N $MULTI_PERFTEST_NODE_COUNT -n $NUM_PROCESSES --account=nccl -pluna -J "nccl-cicd::$GITLAB_USER_LOGIN:perftest-multi-regression::$CI_COMMIT_BRANCH:$CI_COMMIT_SHORT_SHA" -t 01:00:00 ./test/scripts/gitlab-runner-compare-perf.sh $REGRESSION_THRESHOLD $CI_MERGE_REQUEST_DIFF_BASE_SHA
-#   cache:
-#     key: "build-${REGRESSION_BASELINE}"
-#     paths:
-#       - "build-${REGRESSION_BASELINE}/lib"
-#       - "build-${REGRESSION_BASELINE}/test/perf"
-#     key: "build-${CI_MERGE_REQUEST_DIFF_BASE_SHA}"
-#     paths:
-#       - "build-${CI_MERGE_REQUEST_DIFF_BASE_SHA}/lib"
-#       - "build-${CI_MERGE_REQUEST_DIFF_BASE_SHA}/test/perf"
-#   interruptible: true
+perf-regression-multi-DGX-A100:
+  stage: perf_regression
+  rules:
+    - if: $RUN_ON_SELENE == "1" && $CUDA_VERSION != "10.2" && $CI_PIPELINE_SOURCE != "merge_request_event" && $RUN_MULTI_REGRESSION == "1"
+      when: always
+    - when: never
+    - if: $REGRESSION_BASELINE == ""
+      variables:
+        REGRESSION_BASELINE: "${REGRESSION_BASELINE_TAG}"
+  needs: [build, unit_tests, perftest-DGX-A100]
+  tags:
+    - dgx-a100
+  variables:
+    NCCL_DEBUG: "WARN"
+    MPI_HOME: "/home/svcnccl/install/openmpi-1.10.7"
+    CUDA_HOME: "/project/share/cuda/cuda-11.5.1/"
+    NVCC_GENCODE: " -gencode=arch=compute_80,code=sm_80"
+    NCCL_IB_SL: "1"
+    OMPI_MCA_btl: "^openib"
+    OMPI_MCA_btl_tcp_if_include: "enp97s0f1"
+    GPU_APPLICATION_CLOCK: 1410
+  script:
+    - ./test/scripts/gitlab-runner-build-baseline.sh $CI_MERGE_REQUEST_DIFF_BASE_SHA
+    - let NUM_PROCESSES=$MULTI_PERFTEST_NODE_COUNT*8 && salloc -N $MULTI_PERFTEST_NODE_COUNT -n $NUM_PROCESSES --account=nccl -pluna -J "nccl-cicd::$GITLAB_USER_LOGIN:perftest-multi-regression::$CI_COMMIT_BRANCH:$CI_COMMIT_SHORT_SHA" -t $MULTI_REGRESSION_SALLOC_TIME ./test/scripts/gitlab-runner-compare-perf.sh $REGRESSION_THRESHOLD $REGRESSION_ITERATIONS $REGRESSION_CHECK_CPU_OVERHEAD $CI_MERGE_REQUEST_DIFF_BASE_SHA
+  cache:
+    key: "build-${REGRESSION_BASELINE}"
+    paths:
+      - "build-${REGRESSION_BASELINE}/lib"
+      - "build-${REGRESSION_BASELINE}/test/perf"
+    key: "build-${CI_MERGE_REQUEST_DIFF_BASE_SHA}"
+    paths:
+      - "build-${CI_MERGE_REQUEST_DIFF_BASE_SHA}/lib"
+      - "build-${CI_MERGE_REQUEST_DIFF_BASE_SHA}/test/perf"
+  interruptible: true
 
 replay-multi-gc:
   stage: replay_tests

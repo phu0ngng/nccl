@@ -10,7 +10,7 @@ VERBOSE ?= 0
 KEEP ?= 0
 DEBUG ?= 0
 TRACE ?= 0
-PROFAPI ?= 0
+PROFAPI ?= 1
 NVTX ?= 1
 
 NVCC = $(CUDA_HOME)/bin/nvcc

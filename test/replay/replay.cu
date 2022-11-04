@@ -62,6 +62,7 @@ int mpi_rank_n = 0, mpi_rank_me = -1;
 
 bool opt_verbose = false;
 bool opt_progress_thread = false;
+bool opt_force_fit = false;
 bool opt_force_size_one = false;
 bool opt_disable_check = false;
 
@@ -81,7 +82,7 @@ size_t data_op_call_count;
 
 void signalHandler( int signum ) {
    std::cerr << "[" << getpid() << "] Interrupt signal (" << signum << ") received.\n";
-   exit(signum);  
+   exit(signum);
 }
 
 uint64_t hashOf(std::string const &s) {
@@ -565,7 +566,7 @@ void* CudaHelp::allocate(int device, size_t size, uintptr_t align_like, uint32_t
       // Assert that this is impossible to replay
       std::fprintf(stderr, "[%u] INVALID MEMORY SIZE. id=%u Attempting to alloc arena_size=0x%lx, dev->total_memory=0x%lx dev->free_memory=0x%lx. Make sure that the trace is being played back on a system with equivalent memory.\n",
         getpid(), op_id, arena_size, dev->total_memory, dev->free_memory);
-      exit(-1);
+      std::terminate();
     } else if (arena_size > dev->free_memory) {
       // If we don't have enough free space, and we can't allocate this size because of arena allocation fragmentation
       if (size > max_arena_size) {
@@ -574,14 +575,14 @@ void* CudaHelp::allocate(int device, size_t size, uintptr_t align_like, uint32_t
 
         arena_counter = 0;
         for(auto &xy: dev->arenas) {
-          
+
           uintptr_t arena_lo = xy.first;
           uintptr_t arena_hi = xy.second.hi;
           std::vector<AddressSpan> &objs = xy.second.objs;
-      
+
           std::fprintf(stderr, "  [%u] arena[%u] arena_size=0x%lx arena_lo=0x%lx arena_hi=0x%lx\n",
             getpid(), arena_counter, arena_hi - arena_lo, arena_lo, arena_hi);
-      
+
           for(auto o = objs.begin(); o != objs.end(); ++o) {
               std::fprintf(stderr, "    [%u] arena[%u] obj[%zu] size=0x%lx lo=0x%lx hi=0x%lx\n",
                 getpid(), arena_counter, o - objs.begin(), o->hi - o->lo, o->lo, o->hi);
@@ -589,7 +590,7 @@ void* CudaHelp::allocate(int device, size_t size, uintptr_t align_like, uint32_t
           arena_counter++;
         }
 
-        exit(-1);
+        std::terminate();
       } else {
         dev->dealloc_cvar.wait(locked);
       }
@@ -641,7 +642,7 @@ void CudaHelp::deallocate(int device, void *p, uint32_t op_id) {
 
   // Find the first arena which has hi > p
   uint32_t arena_num = 0;
-  auto a = dev->arenas.begin(); 
+  auto a = dev->arenas.begin();
   while(a->second.hi <= lo) {
     ++a;
     arena_num++;
@@ -1038,7 +1039,7 @@ void wrap_ncclGroupEnd(size_t line_number) {
     after_group_fns.clear();
   } else if (inside_nccl_group < 0) {
     fprintf(stderr, "[%u] ncclGroupEnd() was invoked without an associated ncclGroupStart(). line_number=%zu. Make sure there is a new line between every collective trace (this sometimes happens when catting two logs together.)\n", getpid(), line_number);
-    exit(-1);
+    std::terminate();
   }
 }
 
@@ -1472,7 +1473,7 @@ void invokeCall(CallHeader const &hdr, CallDataOp const &body) {
         getpid(), my_op_id, fifo_idx, call_name, my_ops->load(std::memory_order_relaxed));
     }
 
-    // Cleanup 
+    // Cleanup
     CudaHelp::streamCallback(device, stream_nccl, [=]() {
       my_ops->fetch_add(-1);
       global_ops_completed.fetch_add(1);
@@ -1698,7 +1699,7 @@ void playTrace(ByteBuffer& trace) {
 
     // The purpose of this allreduce is to serve as a makeshift asynchronous broadcast.
     // When a rank creates a UniqueId, it must be disseminated to any other rank which needs it to create a communicator
-    // 
+    //
     MPI_Allreduce(&vuid_in, &vuid_out, sizeof(vuid_in), MPI_BYTE, vuid_choose_op, MPI_COMM_WORLD);
     // Inspect output of allreduce
     if(vuid_out.first > 1) { // A unique id has been disseminated
@@ -1804,7 +1805,7 @@ void preCheck(std::unordered_map<uint64_t, std::shared_ptr<GlobalCommMap>>& vuni
       if (it->second.size() != collective_count) {
         fprintf(stderr, "TRACE PREPROCESSING ERROR - Missing collectives. rank %u has %zu collectives. rank %u has %zu collectives.\n",
           first_rank, collective_count, it->first, it->second.size());
-          exit(-1);
+          std::terminate();
       }
 
       data_ops_it_vector.push_back(it->second.begin());
@@ -1842,7 +1843,7 @@ void preCheck(std::unordered_map<uint64_t, std::shared_ptr<GlobalCommMap>>& vuni
           if (!matching_redops) {
             auto op1 = globalMap->vredops[first_rank].find(op.red_op);
             auto op2 = globalMap->vredops[temp_rank].find(temp_op.red_op);
-            matching_redops = op1 != globalMap->vredops[first_rank].end() && 
+            matching_redops = op1 != globalMap->vredops[first_rank].end() &&
                                 op2 != globalMap->vredops[temp_rank].end();
             if (!matching_redops) {
               fprintf(stderr, "WARNING - Found non-matching redops without vredop mappings\n");
@@ -1855,7 +1856,7 @@ void preCheck(std::unordered_map<uint64_t, std::shared_ptr<GlobalCommMap>>& vuni
 
           if (op.elt_n != temp_op.elt_n ||
               op.elt_ty != temp_op.elt_ty ||
-              op.root != temp_op.root || 
+              op.root != temp_op.root ||
               !matching_redops ||
               hdr.code != temp_hdr.code) {
 
@@ -1871,7 +1872,7 @@ void preCheck(std::unordered_map<uint64_t, std::shared_ptr<GlobalCommMap>>& vuni
             fprintf(stderr, "Collective 2:\n");
             fprintf(stderr, "  nccl%s. i=%zu rank=%u src_line_number=%lu elt_n=%lu elt_ty=%u red_op=%u root=%u code=%u\n",
                 temp_coll_name.c_str(), i, temp_rank, temp_hdr.line_number, temp_op.elt_n, temp_op.elt_ty, temp_op.red_op, temp_op.root, (uint32_t) temp_hdr.code);
-            exit(-1);
+            std::terminate();
           }
         } else {
             fprintf(stderr, "TRACE PREPROCESSING ERROR - Missing collectives. Ran out of data ops entries\n");
@@ -1880,7 +1881,7 @@ void preCheck(std::unordered_map<uint64_t, std::shared_ptr<GlobalCommMap>>& vuni
             fprintf(stderr, "  nccl%s. i=%zu src_line_number=%lu elt_n=%lu elt_ty=%u red_op=%u root=%u code=%u\n",
                 coll_name.c_str(), 0L, hdr.line_number, op.elt_n, op.elt_ty, op.red_op, op.root, (uint32_t) hdr.code);
             fprintf(stderr, "Expected %zu more nccl%s collectives.\n", globalMap->data_ops_map.size() - i, coll_name.c_str());
-            exit(-1);
+            std::terminate();
         }
       }
 
@@ -1904,6 +1905,9 @@ ByteBuffer loadDebugCallTrace(std::string const &path) {
 
     // Track the per-rank program order submission of ncclGroupEnd()
     std::vector<int> rank_group_seqs(mpi_rank_n, 0);
+
+    // This is a map for mapping virtual rank to physical rank in a force-fit run
+    std::unordered_map<int, int> force_fit_rank_map;
 
     struct VHostState {
       int phost = -1;
@@ -1929,7 +1933,7 @@ ByteBuffer loadDebugCallTrace(std::string const &path) {
       file.open(path);
       if(!file.good()) {
         std::cerr<<"Invalid path to trace file: "<<path<<std::endl;
-        std::exit(-1);
+        std::terminate();
       }
       input = &file;
     }
@@ -1939,6 +1943,7 @@ ByteBuffer loadDebugCallTrace(std::string const &path) {
     std::string line;
     size_t line_counter = 0;
 
+    // Parse the rest of the file
     while(std::getline(*input, line)) {
       line_counter++;
       char vhost_name[512];
@@ -1955,19 +1960,26 @@ ByteBuffer loadDebugCallTrace(std::string const &path) {
       line_ptr += got;
 
       uint64_t vhost = hashOf(vhost_name);
-      VHostState &vhost_st = vhosts[vhost];
-      if(vhost_st.phost == -1) {
-        vhost_st.vhost_name = vhost_name;
-
-        vhost_st.phost = vhosts.size()-1;
-
-        if(vhost_st.phost >= phost_n) {
-          fprintf(stderr, "Not enough physical hosts (%d) to accommodate virtual hosts (%d).\n", phost_n, vhost_st.phost);
-          fprintf(stderr, "vhost_name=%s phost=%d\n", vhost_name, vhost_st.phost);
-          std::cerr << "line " << line_counter << ": " << line << std::endl;
-          std::terminate();
+      if (vhosts.find(vhost) == vhosts.end()) {
+       if (vhosts.size() == phost_n) {
+          // We've ran out of phosts to fit vhosts
+          if (opt_force_fit) {
+            if (opt_verbose) fprintf(stderr, "Not enough physical hosts (%d) to accommodate virtual host %s. Skipping trace line to force fit.\n",
+                                        phost_n, vhost_name);
+            continue;
+          } else {
+            fprintf(stderr, "Not enough physical hosts (%d) to accommodate virtual host %s.\n", phost_n, vhost_name);
+            std::cerr << "line " << line_counter << ": " << line << std::endl;
+            std::terminate();
+          }
+        } else {
+          // Create new vhost struct
+          vhosts[vhost].vhost_name = vhost_name;
+          vhosts[vhost].phost      = vhosts.size()-1;
         }
       }
+
+      VHostState &vhost_st = vhosts[vhost];
 
       int rank;
       if(vhost_st.vpid_to_rank.count(vpid) == 0) {
@@ -2000,6 +2012,20 @@ ByteBuffer loadDebugCallTrace(std::string const &path) {
         if(5 == std::sscanf(line_ptr, "ncclCommInitRank(%" PRIx64 ",%d,%" PRIx64 ",%d,%d)",
             &call.vcomm, &call.comm_rank_n, &call.vunique, &call.comm_rank_me, &call.device)) {
           hdr.code = CallCode::comm_rank_init;
+
+          if (opt_force_fit) {
+            if (opt_verbose) {
+              fprintf(stderr, "Force fitting virtual_rank=%d to physical_rank=%d",
+                rank, call.comm_rank_me);
+              std::cerr << "line " << line_counter << ": " << line << std::endl;
+            }
+            // Map this relationship
+            force_fit_rank_map[call.comm_rank_me] = rank;
+
+            call.comm_rank_me = rank;
+            call.comm_rank_n  = mpi_rank_n;
+          }
+
           rank_bufs[rank].append(hdr);
           rank_bufs[rank].append(call);
 
@@ -2077,6 +2103,27 @@ ByteBuffer loadDebugCallTrace(std::string const &path) {
           coll_name, &call.sptr, &call.dptr, &call.elt_n, (int*) &call.elt_ty, &call.red_op, &call.root, &call.vcomm, &call.vstream
         );
 
+          if (opt_force_fit && call.root != 0) {
+            // If we are forcing fit,
+            if (force_fit_rank_map.find(call.root) != force_fit_rank_map.end()) {
+              int proot = force_fit_rank_map.at(call.root);
+
+              if (opt_verbose) {
+                fprintf(stderr, "Force fitting virtual_rank call.root=%d to physical_rank=%d",
+                  call.root, proot);
+                std::cerr << "line " << line_counter << ": " << line << std::endl;
+              }
+              call.root = proot;
+            } else {
+              if (opt_verbose) {
+                fprintf(stderr, "Skipping CallDataOp: call.root=%d isn't mapped in the available set of vroots",
+                  call.root);
+                std::cerr << "line " << line_counter << ": " << line << std::endl;
+                continue;
+              }
+            }
+          }
+
         // Debug
         if (opt_force_size_one) {
           call.elt_n = 1;
@@ -2124,6 +2171,9 @@ ByteBuffer loadDebugCallTrace(std::string const &path) {
       preCheck(vuniqueToGlobalMap);
     }
 
+    printf("[%u] Rank %d done pre-processing trace. Dispersing to %d ranks on %zu physical hosts\n",
+      getpid(), mpi_rank_me, mpi_rank_n, vhosts.size());
+
     std::unique_ptr<long long[]> log_sizes(new long long[mpi_rank_n]);
     for(int r=0; r < mpi_rank_n; r++)
       log_sizes[r] = rank_bufs[r].size();
@@ -2150,6 +2200,8 @@ ByteBuffer loadDebugCallTrace(std::string const &path) {
     ByteBuffer recs;
     recs.reserve(recs_size);
     MPI_Recv(recs.bytes(), recs_size, MPI_BYTE, 0, 0, MPI_COMM_WORLD, MPI_STATUS_IGNORE);
+    printf("[%u] Rank %d received %llu bytes of call traces.\n",
+      getpid(), mpi_rank_me, recs_size);
     return recs;
   }
 }
@@ -2157,8 +2209,8 @@ ByteBuffer loadDebugCallTrace(std::string const &path) {
 
 int main(int arg_n, char **args) {
 
-  // register signal SIGINT and signal handler  
-  signal(SIGSEGV, signalHandler);  
+  // register signal SIGINT and signal handler
+  signal(SIGSEGV, signalHandler);
 
   MPI_Init(&arg_n, &args);
   MPI_Comm_size(MPI_COMM_WORLD, &mpi_rank_n);
@@ -2196,7 +2248,9 @@ int main(int arg_n, char **args) {
       opt_force_size_one = true;
     } else if (arg == "-d") {
       opt_disable_check = true;
-    } else {
+    } else if (arg == "-x") {
+      opt_force_fit = true;
+    }  else {
       opt_viable = true;
       opt_trace_path = arg;
     }
@@ -2211,6 +2265,12 @@ int main(int arg_n, char **args) {
         "  -p           Print progress on rank 0 thread.\n"
         "  -d           Disable pre-checking of trace. Allows running of malformed traces\n"
         "  -f           Force all data operations to replay with element count of 1.\n"
+        "  -x           Force fit the replay traffic into the physical host and rank count.\n"
+        "               This is useful for reproducing performance issues from very large jobs without having to handcraft a minimal trace.\n"
+        "               -x will apply the following filters to the replay log:\n"
+        "                 Only traces from the first N hosts in the log will be replayed, where N is the physical host count of the replay job.\n"
+        "                 The virtual rank specified in ncclCommInitRank() will be mapped to the physical mpi rank of a given process\n"
+        "                 The root of collective operations will either be 0 if originally 0, or assigned to the mapped physical rank\n"
         "  <path>, -    Path to file containing NCCL log. If NCCL log is split over\n"
         "               multiple files then you must concatenate them manually.\n"
         "               \"-\" indicates stdin.\n"
@@ -2280,7 +2340,7 @@ int main(int arg_n, char **args) {
   std::vector<std::chrono::duration<double>> durations(mpi_rank_n);
   std::vector<size_t> call_counts(mpi_rank_n);
   std::chrono::duration<double> diff = end - start;
-  
+
   // If we're waiting on the rank 0 progress thread to join, don't proceed
   MPI_Barrier(MPI_COMM_WORLD);
   MPI_Gather(&diff, sizeof(diff), MPI_CHAR, &durations[0], sizeof(diff), MPI_CHAR, 0, MPI_COMM_WORLD);

@@ -172,6 +172,8 @@ struct ncclComm {
   uint64_t* connectSend;
   uint64_t* connectRecv;
 
+  uint64_t magic; // Magic number for all network communication. Not a security key -- only goal is to detect mismatches.
+
   int rank;    // my rank in the communicator
   int nRanks;  // number of GPUs in communicator
   int cudaDev; // my cuda device index
@@ -209,7 +211,7 @@ struct ncclComm {
 
   // Buffer sizes
   int buffSizes[NCCL_NUM_PROTOCOLS];
-  int p2pNetChunkSize;
+  int p2pChunkSize;
 
   // Algorithm/Protocols thresholds
   ssize_t threadThresholds[NCCL_NUM_ALGORITHMS][NCCL_NUM_PROTOCOLS];
@@ -241,7 +243,6 @@ struct ncclComm {
   // Intra-process sync
   struct ncclComm* intraComm0; // leader of intra-process comms (self possible)
   struct ncclComm* intraNext; // next of intra-process comms, intraComm0 is head
-  int intraRefs; // reference count from intra-process comms (zero if not leader else intraRanks)
   int intraRank;
   int intraRanks;
   uint32_t intraBarrierPhase;

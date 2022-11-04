@@ -240,6 +240,8 @@ int main(int argc, const char* argv[]) {
     RUN("Dual-Delta-VM");
     RUN("ZionEX");
     RUN("FB-V100");
+    RUN("Viking");
+    RUN("Scout");
 #endif
     RUN("P9-6V");
     RUN("P9-4V");

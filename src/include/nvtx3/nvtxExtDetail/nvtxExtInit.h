@@ -286,7 +286,6 @@ NVTX_LINKONCE_DEFINE_FUNCTION void NVTX_VERSIONED_IDENTIFIER(nvtxExtInitOnce) (
     NVTX_INFO( "%s\n", __FUNCTION__ );
 
     if( *moduleState == NVTX_EXTENSION_LOADED) {
-        fprintf(stderr, "Module loaded\n");
         return;
     }
 

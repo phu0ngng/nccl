@@ -9,11 +9,10 @@ Collective operations have to be called for each rank (hence CUDA device) to for
 AllReduce
 ---------
 
-The AllReduce operation is performing reductions on data (for example, sum, max) across devices and writing the result in the receive buffers of every rank.
+The AllReduce operation is performing reductions on data (for example, sum, min, max) across devices and writing the result in the receive buffers of every rank.
 
-The AllReduce operation is rank-agnostic. Any reordering of the ranks will not affect the outcome of the operations.
-
-AllReduce starts with independent arrays Vk of N values on each of K ranks and ends with identical arrays S of N values, where S[i] = V0[i]+V1[i]+…+Vk-1[i], for each rank k.
+In an allreduce operation between k ranks and performing a sum, each rank will provide an array Vk of N values, and receive an identical arrays S of N values,
+where S[i] = V0[i]+V1[i]+…+Vk-1[i].
 
 .. figure:: images/allreduce.png
  :align: center
@@ -61,14 +60,14 @@ Related links: :c:func:`ncclReduce`.
 AllGather
 ---------
 
-In the AllGather operation, each of the K processors aggregates N values from every processor into an output of dimension K*N. The output is ordered by rank index.
+The AllGather operation gathers N values from k ranks into an output of size k*N, and distributes that result to all ranks.
+
+The output is ordered by rank index. The AllGather operation is therefore impacted by a different rank or device mapping.
 
 .. figure:: images/allgather.png
  :align: center
  
  AllGather operation: each rank receives the aggregation of data from all ranks in the order of the ranks. 
-
-The AllGather operation is impacted by a different rank or device mapping since the ranks determine the data layout.
 
 Note: Executing ReduceScatter, followed by AllGather, is equivalent to the AllReduce operation.
 
@@ -79,13 +78,15 @@ Related links: :c:func:`ncclAllGather`.
 ReduceScatter
 -------------
 
-The ReduceScatter operation performs the same operation as the Reduce operation, except the result is scattered in equal blocks among ranks, each rank getting a chunk of data based on its rank index.
+The ReduceScatter operation performs the same operation as the Reduce operation, except the result is scattered in equal blocks between ranks,
+each rank getting a chunk of data based on its rank index.
+
+The ReduceScatter operation is impacted by a different rank or device mapping since the ranks determine the data layout.
 
 .. figure:: images/reducescatter.png
  :align: center
 
  Reduce-Scatter operation: input values are reduced across ranks, with each rank receiving a subpart of the result.
 
-The ReduceScatter operation is impacted by a different rank or device mapping since the ranks determine the data layout.
 
 Related links: :c:func:`ncclReduceScatter`
