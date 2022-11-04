@@ -306,24 +306,57 @@ struct alignas(16) ncclDevCommAndChannels {
   #define NCCL_CUDA_ARCH 0
 #endif
 
-#define NCCL_MC_UNROLL 12
+template<typename T>
+__host__ __device__ constexpr T min_constexpr(T a) { return a; }
+template<typename T, typename ...Ts>
+__host__ __device__ constexpr T min_constexpr(T a, T b, Ts ...c) {
+  return min_constexpr<T>((a < b ? a : b), c...);
+}
+
+template<typename T>
+__host__ __device__ constexpr T max_constexpr(T a) { return a; }
+template<typename T, typename ...Ts>
+__host__ __device__ constexpr T max_constexpr(T a, T b, Ts ...c) {
+  return max_constexpr<T>((a > b ? a : b), c...);
+}
+
+// Calculate the unroll factor given:
+// * bytePerPack: number of bytes accessed per instruction
+// * insns: max permissible unroll value
+// * bytes: desired number of in-flight bytes per iteration ( = unroll*bytePerPack)
+__host__ __device__ constexpr int ncclCalcUnroll(int bytePerPack, int insns, int bytes) {
+  return min_constexpr(insns, (bytes + bytePerPack-1)/bytePerPack);
+}
+
+// Note that all unroll value logic should depend on a given cudaArch argument
+// and not __CUDA_ARCH__ since these need to be host-side executable where the
+// arch value is strictly runtime only. By defaulting to NCCL_CUDA_ARCH, device
+// side code can elide passing the arch for brevity.
 
 __host__ __device__ constexpr int ncclCollUnroll(int cudaArch = NCCL_CUDA_ARCH) {
+  // Our collective unroll should move to the same bytes&insns model as MC.
   return cudaArch >= 800 ? 8 : 4;
 }
 
-__host__ __device__ constexpr int max_constexpr(int a, int b) { return a > b ? a : b; }
-__host__ __device__ constexpr int max_constexpr(int a, int b, int c) {
-  return max_constexpr(max_constexpr(a, b), c);
+__host__ __device__ constexpr int ncclMCUnrollBytes(int cudaArch = NCCL_CUDA_ARCH) { return 4*16; }
+__host__ __device__ constexpr int ncclMCUnrollInsns(int cudaArch = NCCL_CUDA_ARCH) { return 16; }
+
+__host__ __device__ constexpr int ncclMCUnroll(int bytePerPack, int cudaArch = NCCL_CUDA_ARCH) {
+  return ncclCalcUnroll(bytePerPack, ncclMCUnrollInsns(cudaArch), ncclMCUnrollBytes(cudaArch));
 }
 
+// The amount of dynamic shmem per warp
 __host__ __device__ constexpr int ncclShmemDynamicWarpSize(int cudaArch = NCCL_CUDA_ARCH) {
-  return (max_constexpr(
-      /*MC*/(WARP_SIZE*(cudaArch >= 900 ? NCCL_MC_UNROLL : 0) + 1)*16,
-      /*simple*/(ncclCollUnroll(cudaArch)*WARP_SIZE + 1)*16,
-      /*ll128 */(NCCL_LL128_SHMEM_ELEMS_PER_THREAD*WARP_SIZE)*sizeof(uint64_t)
+  return (max_constexpr<int>(
+      /*LL    */0,
+      /*LL128 */(NCCL_LL128_SHMEM_ELEMS_PER_THREAD*WARP_SIZE)*sizeof(uint64_t),
+      /*SIMPLE*/0,
+      // MC needs an extra 16B to read unaligned data.
+      /*MC    */WARP_SIZE*(cudaArch >= 900 ? ncclMCUnrollBytes(cudaArch) : 0) + 16
     ) + 15) & -16; // pad to 16 bytes
 }
+
+// The amount of dynamic shmem per block
 __host__ __device__ constexpr int ncclShmemDynamicSize(int cudaArch = NCCL_CUDA_ARCH) {
   return ncclShmemDynamicWarpSize(cudaArch)*(NCCL_MAX_NTHREADS/WARP_SIZE);
 }
