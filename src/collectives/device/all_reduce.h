@@ -384,8 +384,8 @@ struct RunWorkElement<ncclFuncAllReduce, T, RedOp, NCCL_ALGO_MC, NCCL_PROTO_SIMP
     const ssize_t loopSize = nChannels*mc->nHeads*chunkSize;
 
     const int nThreadsScatter = 9*WARP_SIZE;
-    const int nThreadsGather  = 9*WARP_SIZE;
-    const int nThreadsReduce = 2*WARP_SIZE;
+    const int nThreadsGather  = 8*WARP_SIZE;
+    const int nThreadsReduce = 3*WARP_SIZE;
     const int nThreadsBcast   = 0; // No network support for now, reduce does bcast as well
     const int tidEndScatter = nThreadsScatter;
     const int tidEndGather = tidEndScatter + nThreadsGather;
