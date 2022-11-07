@@ -523,7 +523,7 @@ static ncclResult_t sendProxyConnect(struct ncclProxyConnection* connection, str
     NCCLCHECK(ncclNetConnect(comm, resources->netDev, reqBuff, &resources->netSendComm));
     connection->proxyAppendPtr = &connection->proxyAppend;
   }
-  if (*comm->abortFlag != 0) return ncclInternalError;
+
   if (resources->netSendComm == NULL) {
     *done = 0;
     return ncclSuccess;
@@ -658,7 +658,7 @@ static ncclResult_t recvProxyConnect(struct ncclProxyConnection* connection, str
     NCCLCHECK(ncclNetAccept(comm, resources->netListenComm, &resources->netRecvComm));
     connection->proxyAppendPtr = &connection->proxyAppend;
   }
-  if (*comm->abortFlag != 0) return ncclInternalError;
+
   if (resources->netRecvComm == NULL) {
     *done = 0;
     return ncclSuccess;
@@ -748,67 +748,75 @@ static ncclResult_t recvProxyConnect(struct ncclProxyConnection* connection, str
 
 static ncclResult_t sendProxyFree(struct ncclProxyConnection* connection, struct ncclComm* comm) {
   struct sendResources* resources = (struct sendResources*)(connection->transportResources);
-  if (resources == NULL) { // NVB Preconnect
+  if (connection->state == connSharedInitialized) { // NVB Preconnect
     NCCLCHECK(sharedBuffersDestroy(comm, connection->localRank, 0));
     return ncclSuccess;
   }
-  for (int p=0; p<NCCL_NUM_PROTOCOLS; p++) {
-    if (resources->buffers[p]) {
-      NCCLCHECK(ncclNetDeregMr(comm, resources->netSendComm, resources->mhandles[p]));
+
+  if (connection->state == connConnected) {
+    for (int p=0; p<NCCL_NUM_PROTOCOLS; p++) {
+      if (resources->buffers[p]) {
+        NCCLCHECK(ncclNetDeregMr(comm, resources->netSendComm, resources->mhandles[p]));
+      }
     }
-  }
-  struct connectMapMem* mems = resources->map.mems;
-  if (resources->map.sameProcess) {
-    NCCLCHECK(ncclCudaHostFree(mems[NCCL_NET_MAP_HOSTMEM].cpuPtr));
-  } else {
-    NCCLCHECK(ncclShmClose(mems[NCCL_NET_MAP_HOSTMEM].handle));
-  }
-  CUDACHECK(cudaFree(mems[NCCL_NET_MAP_DEVMEM].cpuPtr));
-  if (mems[NCCL_NET_MAP_GDCMEM].cpuPtr) NCCLCHECK(ncclGdrCudaFree(resources->gdrDesc));
-  if (resources->shared) {
-    NCCLCHECK(sharedBuffersDestroy(comm, resources->localRank, 0));
-    if (resources->maxRecvs > 1 && ncclParamNetSharedComms()) {
-      struct ncclSharedNetComms* comms = comm->proxyState.progressState.netComms[resources->netDev]+resources->remoteRank;
-      comms->sendRefCount[resources->channelId]--;
-      if (comms->sendRefCount[resources->channelId] == 0) NCCLCHECK(ncclNetCloseSend(comm, comms->sendComm[resources->channelId]));
+    struct connectMapMem* mems = resources->map.mems;
+    if (resources->map.sameProcess) {
+      NCCLCHECK(ncclCudaHostFree(mems[NCCL_NET_MAP_HOSTMEM].cpuPtr));
+    } else {
+      NCCLCHECK(ncclShmClose(mems[NCCL_NET_MAP_HOSTMEM].handle));
+    }
+    CUDACHECK(cudaFree(mems[NCCL_NET_MAP_DEVMEM].cpuPtr));
+    if (mems[NCCL_NET_MAP_GDCMEM].cpuPtr) NCCLCHECK(ncclGdrCudaFree(resources->gdrDesc));
+    if (resources->shared) {
+      NCCLCHECK(sharedBuffersDestroy(comm, resources->localRank, 0));
+      if (resources->maxRecvs > 1 && ncclParamNetSharedComms()) {
+        struct ncclSharedNetComms* comms = comm->proxyState.progressState.netComms[resources->netDev]+resources->remoteRank;
+        comms->sendRefCount[resources->channelId]--;
+        if (comms->sendRefCount[resources->channelId] == 0) NCCLCHECK(ncclNetCloseSend(comm, comms->sendComm[resources->channelId]));
+      } else {
+        NCCLCHECK(ncclNetCloseSend(comm, resources->netSendComm));
+      }
     } else {
       NCCLCHECK(ncclNetCloseSend(comm, resources->netSendComm));
     }
-  } else {
-    NCCLCHECK(ncclNetCloseSend(comm, resources->netSendComm));
   }
-  free(resources);
+  
+  if (connection->state == connSetupDone) free(resources);
   return ncclSuccess;
 }
 
 static ncclResult_t recvProxyFree(struct ncclProxyConnection* connection, struct ncclComm* comm) {
   struct recvResources* resources = (struct recvResources*)(connection->transportResources);
-  if (resources == NULL) { // NVB Preconnect
+  if (connection->state == connSharedInitialized) { // NVB Preconnect
     NCCLCHECK(sharedBuffersDestroy(comm, connection->localRank, 1));
     return ncclSuccess;
   }
-  for (int p=0; p<NCCL_NUM_PROTOCOLS; p++) {
-    if (resources->buffers[p]) {
-      NCCLCHECK(ncclNetDeregMr(comm, resources->netRecvComm, resources->mhandles[p]));
+
+  if (connection->state == connConnected) {
+    for (int p=0; p<NCCL_NUM_PROTOCOLS; p++) {
+      if (resources->buffers[p]) {
+        NCCLCHECK(ncclNetDeregMr(comm, resources->netRecvComm, resources->mhandles[p]));
+      }
     }
-  }
-  struct connectMapMem* mems = resources->map.mems;
-  NCCLCHECK(ncclCudaHostFree(mems[NCCL_NET_MAP_HOSTMEM].cpuPtr));
-  CUDACHECK(cudaFree(mems[NCCL_NET_MAP_DEVMEM].cpuPtr));
-  if (mems[NCCL_NET_MAP_GDCMEM].cpuPtr) NCCLCHECK(ncclGdrCudaFree(resources->gdrDesc));
-  if (resources->shared) {
-    NCCLCHECK(sharedBuffersDestroy(comm, resources->localRank, 1));
-    if (resources->maxRecvs > 1 && ncclParamNetSharedComms()) {
-      struct ncclSharedNetComms* comms = comm->proxyState.progressState.netComms[resources->netDev]+resources->proxyRank;
-      comms->recvRefCount[resources->channelId]--;
-      if (comms->recvRefCount[resources->channelId] == 0) NCCLCHECK(ncclNetCloseRecv(comm, comms->recvComm[resources->channelId]));
+    struct connectMapMem* mems = resources->map.mems;
+    NCCLCHECK(ncclCudaHostFree(mems[NCCL_NET_MAP_HOSTMEM].cpuPtr));
+    CUDACHECK(cudaFree(mems[NCCL_NET_MAP_DEVMEM].cpuPtr));
+    if (mems[NCCL_NET_MAP_GDCMEM].cpuPtr) NCCLCHECK(ncclGdrCudaFree(resources->gdrDesc));
+    if (resources->shared) {
+      NCCLCHECK(sharedBuffersDestroy(comm, resources->localRank, 1));
+      if (resources->maxRecvs > 1 && ncclParamNetSharedComms()) {
+        struct ncclSharedNetComms* comms = comm->proxyState.progressState.netComms[resources->netDev]+resources->proxyRank;
+        comms->recvRefCount[resources->channelId]--;
+        if (comms->recvRefCount[resources->channelId] == 0) NCCLCHECK(ncclNetCloseRecv(comm, comms->recvComm[resources->channelId]));
+      } else {
+        NCCLCHECK(ncclNetCloseRecv(comm, resources->netRecvComm));
+      }
     } else {
       NCCLCHECK(ncclNetCloseRecv(comm, resources->netRecvComm));
     }
-  } else {
-    NCCLCHECK(ncclNetCloseRecv(comm, resources->netRecvComm));
   }
-  free(resources);
+  
+  if (connection->state == connSetupDone) free(resources);
   return ncclSuccess;
 }
 
