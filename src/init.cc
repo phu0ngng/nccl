@@ -315,7 +315,8 @@ static ncclResult_t commAlloc(ncclComm_t* comret, int ndev, int rank) {
 
   cudaGetDevice(&comm->cudaDev);
   NCCLCHECK(getBusId(comm->cudaDev, &comm->busId));
-  TRACE(NCCL_INIT,"comm %p rank %d nranks %d cudaDev %d busId %lx", comm, rank, ndev, comm->cudaDev, comm->busId);
+  comm->compCap = ncclCudaCompCap();
+  TRACE(NCCL_INIT,"comm %p rank %d nranks %d cudaDev %d busId %lx compCap %d", comm, rank, ndev, comm->cudaDev, comm->busId, comm->compCap);
 
   comm->checkPointers = ncclParamCheckPointers() == 1 ? true : false;
   comm->dmaBufSupport = (dmaBufSupported(comm) == ncclSuccess) ? true : false;
