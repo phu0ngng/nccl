@@ -97,6 +97,7 @@ struct mcResources {
   CUmemAccessDesc accessDesc;
   size_t size;
   size_t granularity;
+  size_t sizeWAR; // For 3418538 WAR
   CUmemGenericAllocationHandle mcHandle; // Multicast handle for MC buffer
   char* mcBuff; // Multicast MC buffer address
   CUmemGenericAllocationHandle ucHandle; // Unicast Handle for MC buffer
@@ -117,10 +118,10 @@ ncclResult_t mcGetProperties(struct ncclComm *comm, struct mcResources* resource
 
   CUCHECK(cuMemGetAllocationGranularity(&resources->granularity, prop, CU_MEM_ALLOC_GRANULARITY_RECOMMENDED));
 
-  resources->granularity = 512ULL*1024ULL*1024ULL; // HACK until 3418538 fixed
-
   ALIGN_SIZE(size, resources->granularity);
   resources->size = size;
+  ALIGN_SIZE(size, 512ULL*1024*1024); // Align up until 3418538 fixed
+  resources->sizeWAR = size;
 
   memset(&resources->accessDesc, 0, sizeof(resources->accessDesc));
   resources->accessDesc.flags = CU_MEM_ACCESS_FLAGS_PROT_READWRITE;
@@ -131,7 +132,7 @@ ncclResult_t mcGetProperties(struct ncclComm *comm, struct mcResources* resource
 }
 
 ncclResult_t mcGroupCreate(struct ncclComm *comm, struct mcResources* resources, int rank, unsigned int nranks, char* shareableHandle) {
-  size_t size = resources->size;
+  size_t size = resources->sizeWAR;
 
   // Create MC group
   multicastObjectProp prop = { 0 };
@@ -193,11 +194,9 @@ ncclResult_t mcGroupDisconnect(mcHandle_t handle) {
   return ncclSuccess;
 }
 
-ncclResult_t mcGroupBindMem(struct ncclComm *comm, struct mcResources* resources, int rank, size_t mcPerRankSize) {
+ncclResult_t mcGroupBindMem(struct ncclComm *comm, struct mcResources* resources) {
   size_t size = resources->size;
   CUdeviceptr ptr = 0;
-
-  INFO(NCCL_MC, "MC BindMem comm %p rank %d mcPerRankSize %zi", comm, rank, mcPerRankSize);
 
   // Map a VA for UC memory
   CUCHECK(cuMemAddressReserve(&ptr, size, resources->granularity, 0U, 0));
@@ -208,27 +207,31 @@ ncclResult_t mcGroupBindMem(struct ncclComm *comm, struct mcResources* resources
   CUCHECK(cuMemSetAccess(ptr, size, &resources->accessDesc, 1));
   CUDACHECK(cudaMemset((void*)ptr, 0, size));
   resources->ucBuff = (char*)ptr;
-  INFO(NCCL_MC, "MC Mapped UC at %p rank %d", resources->ucBuff, rank);
+  INFO(NCCL_MC, "MC Mapped UC at %p size %zi", resources->ucBuff, size);
 
   // Bind physical memory to the MC group
-  INFO(NCCL_MC, "MC Binding local mem %p handle %llx size %zi to MC handle %llx for rank %d", (void*)ptr, resources->ucHandle, size, resources->mcHandle, rank);
+  INFO(NCCL_MC, "MC Bind mem %p UC handle %llx MC handle %llx size %zi", (void*)ptr, resources->ucHandle, resources->mcHandle, size);
   CUCHECK(cuMemMulticastBindMem(resources->mcHandle, 0, resources->ucHandle, 0, size, 0));
+
+  return ncclSuccess;
+}
+
+ncclResult_t mcGroupMapMem(struct ncclComm *comm, struct mcResources* resources) {
+  size_t size = resources->sizeWAR;
+  CUdeviceptr ptr = 0;
 
   // Create a VA for the MC
   CUCHECK(cuMemAddressReserve(&ptr, size, resources->granularity, 0U, 0));
   // Map the VA locally
   CUCHECK(cuMemMap(ptr, size, 0, resources->mcHandle, 0));
   resources->mcBuff = (char*)ptr;
-  INFO(NCCL_MC, "MC Mapped MC at %p rank %d", resources->mcBuff, rank);
-  return ncclSuccess;
-}
+  INFO(NCCL_MC, "MC Mapped MC at %p size %zi", resources->mcBuff, size);
 
-ncclResult_t mcGroupAccessMem(struct ncclComm *comm, struct mcResources* resources) {
   // Having completed the BindMem we can now call SetAccess
   // NB: It will block until all ranks have bound to the Group
-  INFO(NCCL_MC, "MC SetAccess MC %p size %zi", resources->mcBuff, resources->size);
-  CUCHECK(cuMemSetAccess((CUdeviceptr)resources->mcBuff, resources->size, &resources->accessDesc, 1));
-  INFO(NCCL_MC, "MC SetAccess MC %p size %zi - DONE", resources->mcBuff, resources->size);
+  INFO(NCCL_MC, "MC SetAccess MC %p size %zi", resources->mcBuff, size);
+  CUCHECK(cuMemSetAccess((CUdeviceptr)resources->mcBuff, size, &resources->accessDesc, 1));
+  INFO(NCCL_MC, "MC SetAccess MC %p size %zi - DONE", resources->mcBuff, size);
 
   return ncclSuccess;
 }
@@ -271,10 +274,10 @@ ncclResult_t ncclMcSetup(struct ncclComm* comm) {
     NCCLCHECKGOTO(mcGroupConnect(comm, resources, 0, mcShareableHandle), res, cleanup);
   }
 
-  NCCLCHECKGOTO(mcGroupBindMem(comm, resources, rank, mcPerRankSize), res, cleanup);
+  NCCLCHECKGOTO(mcGroupBindMem(comm, resources), res, cleanup);
   // Local intra-node barrier to ensure everyone has bound their memory to the group
   NCCLCHECKGOTO(bootstrapBarrier(comm->bootstrap, comm->localRankToRank, comm->localRank, comm->localRanks, comm->localRankToRank[0]), res, cleanup);
-  NCCLCHECKGOTO(mcGroupAccessMem(comm, resources), res, cleanup);
+  NCCLCHECKGOTO(mcGroupMapMem(comm, resources), res, cleanup);
 
 #if 0
   {
