@@ -44,7 +44,7 @@ build:
     expire_in: 1 day
   interruptible: true
 
-unit_tests:
+unit_tests-A100:
   stage: unit_tests
   rules:
     - when: always
@@ -55,7 +55,49 @@ unit_tests:
     NCCL_IB_HCA: "mlx5_0"
     CUDA_HOME: "/usr/local/cuda-${CUDA_VERSION}"
   script:
-    - srun -t 00:10:00 -n 1 -c 8 -pGP100 ./test/scripts/gitlab-runner-unit.sh
+    - srun --exclusive -t 00:10:00 -n 1 -c 8 -pA100 ./test/scripts/gitlab-runner-unit.sh
+  interruptible: true
+
+unit_tests-P100:
+  stage: unit_tests
+  rules:
+    - when: always
+  needs: [build]
+  tags:
+    - build
+  variables:
+    NCCL_IB_HCA: "mlx5_0"
+    CUDA_HOME: "/usr/local/cuda-${CUDA_VERSION}"
+  script:
+    - srun --exclusive -t 00:10:00 -n 1 -c 8 -pP100 ./test/scripts/gitlab-runner-unit.sh
+  interruptible: true
+
+unit_tests-M40:
+  stage: unit_tests
+  rules:
+    - when: always
+  needs: [build]
+  tags:
+    - build
+  variables:
+    NCCL_IB_HCA: "mlx5_0"
+    CUDA_HOME: "/usr/local/cuda-${CUDA_VERSION}"
+  script:
+    - srun --exclusive -t 00:10:00 -n 1 -c 8 -pM40 ./test/scripts/gitlab-runner-unit.sh
+  interruptible: true
+
+unit_tests-K80:
+  stage: unit_tests
+  rules:
+    - when: always
+  needs: [build]
+  tags:
+    - build
+  variables:
+    NCCL_IB_HCA: "mlx5_0"
+    CUDA_HOME: "/usr/local/cuda-${CUDA_VERSION}"
+  script:
+    - srun --exclusive -t 00:10:00 -n 1 -c 8 -pK80 ./test/scripts/gitlab-runner-unit.sh
   interruptible: true
 
 apitest-P100:
@@ -67,7 +109,7 @@ apitest-P100:
   variables:
     NCCL_IB_HCA: "mlx5_0"
     CUDA_HOME: "/usr/local/cuda-${CUDA_VERSION}"
-    SRUN: "srun -t 00:10:00 -n 1 -c 8 -pP100"
+    SRUN: "srun --exclusive -t 00:10:00 -n 1 -c 8 -pP100"
   script:
     - ./test/scripts/gitlab-runner-apitest.sh
   interruptible: true
@@ -81,7 +123,7 @@ apitest-P40:
   variables:
     NCCL_IB_HCA: "mlx5_0"
     CUDA_HOME: "/usr/local/cuda-${CUDA_VERSION}"
-    SRUN: "srun -t 00:10:00 -n 1 -c 8 -pP40"
+    SRUN: "srun --exclusive -t 00:10:00 -n 1 -c 8 -pP40"
   script:
     - ./test/scripts/gitlab-runner-apitest.sh
   interruptible: true
@@ -94,7 +136,7 @@ apitest-GP100:
     - gp100
   variables:
     CUDA_HOME: "/usr/local/cuda-${CUDA_VERSION}"
-    SRUN: "srun -t 00:10:00 -n 1 -c 8 -pGP100"
+    SRUN: "srun --exclusive -t 00:10:00 -n 1 -c 8 -pGP100"
   script:
     - ./test/scripts/gitlab-runner-apitest.sh
   interruptible: true
@@ -107,7 +149,7 @@ apitest-M40:
     - m40
   variables:
     CUDA_HOME: "/usr/local/cuda-${CUDA_VERSION}"
-    SRUN: "srun -t 00:10:00 -n 1 -c 4 -pM40"
+    SRUN: "srun --exclusive -t 00:10:00 -n 1 -c 4 -pM40"
   script:
     - ./test/scripts/gitlab-runner-apitest.sh
   interruptible: true
@@ -120,7 +162,7 @@ apitest-K40:
     - k40
   variables:
     CUDA_HOME: "/usr/local/cuda-${CUDA_VERSION}"
-    SRUN: "srun -t 00:10:00 -n 1 -c 1 -pK40"
+    SRUN: "srun --exclusive -t 00:10:00 -n 1 -c 1 -pK40"
   script:
     - ./test/scripts/gitlab-runner-apitest.sh
   interruptible: true
@@ -134,7 +176,7 @@ apitest-K80:
     - k80
   variables:
     CUDA_HOME: "/usr/local/cuda-${CUDA_VERSION}"
-    SRUN: "srun -t 00:10:00 -n 1 -c 16 -pK80"
+    SRUN: "srun --exclusive -t 00:10:00 -n 1 -c 16 -pK80"
   script:
     - ./test/scripts/gitlab-runner-apitest.sh minimal
   interruptible: true
@@ -147,7 +189,7 @@ apitest-A100:
     - a100pci
   variables:
     CUDA_HOME: "/usr/local/cuda-${CUDA_VERSION}"
-    SRUN: "srun -t 00:10:00 -n 1 -c 8 -pA100"
+    SRUN: "srun --exclusive -t 00:10:00 -n 1 -c 8 -pA100"
   script:
     - ./test/scripts/gitlab-runner-apitest.sh
   interruptible: true
@@ -206,14 +248,14 @@ perftest-P100:
   stage: perf_tests_single
   rules:
     - when: always
-  needs: [build, unit_tests, apitest-P100]
+  needs: [build, apitest-P100]
   tags:
     - p100
   variables:
     NCCL_DEBUG: "WARN"
     MPI_HOME: "/opt/mpi/openmpi-1.10.7"
     CUDA_HOME: "/usr/local/cuda-${CUDA_VERSION}"
-    SALLOC: "salloc -t 00:10:00 -n 8 -pP100"
+    SALLOC: "salloc --exclusive -t 00:10:00 -n 8 -pP100"
   script:
     - ./test/scripts/gitlab-runner-perftest.sh
   interruptible: true
@@ -222,14 +264,14 @@ perftest-P40:
   stage: perf_tests_single
   rules:
     - when: always
-  needs: [build, unit_tests, apitest-P40]
+  needs: [build, apitest-P40]
   tags:
     - p40
   variables:
     NCCL_DEBUG: "WARN"
     MPI_HOME: "/opt/mpi/openmpi-1.10.7"
     CUDA_HOME: "/usr/local/cuda-${CUDA_VERSION}"
-    SALLOC: "salloc -t 00:10:00 -n 8 -pP40"
+    SALLOC: "salloc --exclusive -t 00:10:00 -n 8 -pP40"
   script:
     - ./test/scripts/gitlab-runner-perftest.sh
   interruptible: true
@@ -238,14 +280,14 @@ perftest-GP100:
   stage: perf_tests_single
   rules:
     - when: always
-  needs: [build, unit_tests, apitest-GP100]
+  needs: [build, apitest-GP100]
   tags:
     - gp100
   variables:
     NCCL_DEBUG: "WARN"
     MPI_HOME: "/opt/mpi/openmpi-1.10.7"
     CUDA_HOME: "/usr/local/cuda-${CUDA_VERSION}"
-    SALLOC: "salloc -t 00:10:00 -n 8 -pGP100"
+    SALLOC: "salloc --exclusive -t 00:10:00 -n 8 -pGP100"
   script:
     - ./test/scripts/gitlab-runner-perftest.sh 1G 2
   interruptible: true
@@ -254,14 +296,14 @@ perftest-M40:
   stage: perf_tests_single
   rules:
     - when: always
-  needs: [build, unit_tests, apitest-M40]
+  needs: [build, apitest-M40]
   tags:
     - m40
   variables:
     NCCL_DEBUG: "WARN"
     MPI_HOME: "/opt/mpi/openmpi-1.10.7"
     CUDA_HOME: "/usr/local/cuda-${CUDA_VERSION}"
-    SALLOC: "salloc -t 00:10:00 -n 4 -pM40"
+    SALLOC: "salloc --exclusive -t 00:10:00 -n 4 -pM40"
   script:
     - ./test/scripts/gitlab-runner-perftest.sh 1G 0
   interruptible: true
@@ -271,14 +313,14 @@ perftest-K80:
   rules:
     - if: $CUDA_VERSION == '10.2' || $CUDA_VERSION == '11.3'
       when: always
-  needs: [build, unit_tests, apitest-K80]
+  needs: [build, apitest-K80]
   tags:
     - k80
   variables:
     NCCL_DEBUG: "WARN"
     MPI_HOME: "/opt/mpi/openmpi-1.10.7"
     CUDA_HOME: "/usr/local/cuda-${CUDA_VERSION}"
-    SALLOC: "salloc -t 00:10:00 -N 1 -n 16 -pK80"
+    SALLOC: "salloc --exclusive -t 00:10:00 -N 1 -n 16 -pK80"
   script:
     - ./test/scripts/gitlab-runner-perftest.sh 256M 0
   interruptible: true
@@ -287,14 +329,14 @@ perftest-K40:
   stage: perf_tests_single
   rules:
     - when: always
-  needs: [build, unit_tests, apitest-K40]
+  needs: [build, apitest-K40]
   tags:
     - k40
   variables:
     NCCL_DEBUG: "WARN"
     MPI_HOME: "/opt/mpi/openmpi-1.10.7"
     CUDA_HOME: "/usr/local/cuda-${CUDA_VERSION}"
-    SALLOC: "salloc -t 00:10:00 -n 4 -pK40"
+    SALLOC: "salloc --exclusive -t 00:10:00 -n 4 -pK40"
   script:
     - ./test/scripts/gitlab-runner-perftest.sh 1G 0
   interruptible: true
@@ -303,14 +345,14 @@ perftest-A100:
   stage: perf_tests_single
   rules:
     - when: always
-  needs: [build, unit_tests, apitest-A100]
+  needs: [build, apitest-A100]
   tags:
     - a100pci
   variables:
     NCCL_DEBUG: "WARN"
     MPI_HOME: "/opt/mpi/openmpi-1.10.7"
     CUDA_HOME: "/usr/local/cuda-${CUDA_VERSION}"
-    SALLOC: "salloc -t 00:10:00 -n 8 -pA100"
+    SALLOC: "salloc --exclusive -t 00:10:00 -n 8 -pA100"
   script:
     - ./test/scripts/gitlab-runner-perftest.sh 1G 0
   interruptible: true
@@ -357,7 +399,7 @@ perftest-DGX-A100:
     - if: $RUN_ON_SELENE == "1" && $CUDA_VERSION != "10.2"
       when: always
     - when: never
-  needs: [build, unit_tests, apitest-DGX-A100]
+  needs: [build, apitest-DGX-A100]
   tags:
     - dgx-a100
   variables:
@@ -373,7 +415,7 @@ perftest-multi-gc:
   stage: perf_tests_multi
   rules:
     - when: always
-  needs: [build, unit_tests, perftest-P100]
+  needs: [build, perftest-P100]
   tags:
     - p100
   variables:
@@ -382,7 +424,7 @@ perftest-multi-gc:
     MPI_HOME: "/opt/mpi/openmpi-1.10.7"
     CUDA_HOME: "/usr/local/cuda-${CUDA_VERSION}"
     NCCL_ALLOC_P2P_NET_LL_BUFFERS: "1" # Add coverage of dedicated P2P LL buffers on constrained rank count
-    SALLOC: "salloc -t 00:10:00 -N 3 -n 24 -w gc[01-02,05]"
+    SALLOC: "salloc --exclusive -t 00:10:00 -N 3 -n 24 -w gc[01-02,05]"
   script:
     - ./test/scripts/gitlab-runner-perftest.sh 128M 0
   interruptible: true
@@ -391,7 +433,7 @@ perftest-sharp-gc:
   stage: perf_tests_multi
   rules:
     - when: always
-  needs: [build, unit_tests, perftest-P100]
+  needs: [build, perftest-P100]
   tags:
     - p100
   variables:
@@ -401,7 +443,7 @@ perftest-sharp-gc:
     CUDA_HOME: "/usr/local/cuda-${CUDA_VERSION}"
     SHARP_HOME: "/opt/hpcx/v2.7/sharp"
     PLUGIN_PATH: "/opt/nccl-rdma-sharp-plugins/src/.libs"
-    SALLOC: "salloc -t 00:10:00 -N 3 -n 24 -w gc[01-02,05]"
+    SALLOC: "salloc --exclusive -t 00:10:00 -N 3 -n 24 -w gc[01-02,05]"
   script:
     - ./test/scripts/gitlab-runner-perftest-sharp.sh 128M 0
   interruptible: true
@@ -414,7 +456,7 @@ perftest-multi-DGX-1V:
     - if: $RUN_ON_DRACO == "1"
       when: always
     - when: never
-  needs: [build, unit_tests, perftest-DGX-1V]
+  needs: [build, perftest-DGX-1V]
   tags:
     - dgx-1v
   variables:
@@ -465,7 +507,7 @@ perftest-multi-selene:
     - if: $RUN_ON_SELENE == "1" && $CUDA_VERSION != "10.2"
       when: always
     - when: never
-  needs: [build, unit_tests, perftest-DGX-A100]
+  needs: [build, perftest-DGX-A100]
   tags:
     - dgx-a100
   variables:
@@ -508,7 +550,7 @@ perf-regression-single-DGX-A100:
     - if: $RUN_ON_SELENE == "1" && $CUDA_VERSION != "10.2" && $CI_PIPELINE_SOURCE == 'merge_request_event'
       when: always
     - when: never
-  needs: [build, unit_tests, perftest-DGX-A100]
+  needs: [build, perftest-DGX-A100]
   tags:
     - dgx-a100
   variables:
@@ -540,7 +582,7 @@ perf-regression-multi-DGX-A100:
     - if: $REGRESSION_BASELINE == ""
       variables:
         REGRESSION_BASELINE: "${REGRESSION_BASELINE_TAG}"
-  needs: [build, unit_tests, perftest-DGX-A100]
+  needs: [build, perftest-DGX-A100]
   tags:
     - dgx-a100
   variables:
@@ -570,7 +612,7 @@ replay-multi-gc:
   stage: replay_tests
   rules:
     - when: always
-  needs: [build, unit_tests, perftest-multi-gc]
+  needs: [build, perftest-multi-gc]
   tags:
     - p100
   variables:
@@ -578,7 +620,7 @@ replay-multi-gc:
     NCCL_DEBUG: "WARN"
     MPI_HOME: "/opt/mpi/openmpi-1.10.7"
     CUDA_HOME: "/usr/local/cuda-${CUDA_VERSION}"
-    SALLOC: "salloc -t 00:05:00 -N 2 -n 8 -w gc[01-02]"
+    SALLOC: "salloc --exclusive -t 00:05:00 -N 2 -n 8 -w gc[01-02]"
   script:
     - ./test/scripts/gitlab-runner-replay-test.sh test/replay/traces/resnet_2x4_trace.txt
   interruptible: true
