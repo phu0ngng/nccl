@@ -49,14 +49,14 @@ class Primitives<
     if (nthreads == WARP_SIZE)
       __syncwarp();
     else
-      asm volatile("barrier.sync %0, %1;" :: "r"(15-group), "r"(nthreads));
+      asm volatile("bar.sync %0, %1;" :: "r"(15-group), "r"(nthreads));
     flags |= ThreadsSynced;
   }
   inline __device__ void subBarrier() {
     if (nworkers == nthreads)
       barrier();
     else
-      asm volatile("barrier.sync %0, %1;" :: "r"(8-group), "r"(nworkers));
+      asm volatile("bar.sync %0, %1;" :: "r"(8-group), "r"(nworkers));
   }
 
   inline __device__ bool checkAbort(int &spins) {
