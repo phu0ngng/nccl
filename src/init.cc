@@ -646,6 +646,41 @@ static ncclResult_t initTransportsRank(struct ncclComm* comm, ncclUniqueId* comm
   }
   // AllGather1 - end
 
+  do {
+    // Compute intra-process ranks
+    int intraProcRank0 = -1, intraProcRank = -1, intraProcRanks = 0;
+    for (int i = 0; i < nranks; i++) {
+      if ((comm->peerInfo[i].hostHash == comm->peerInfo[rank].hostHash)
+          && (comm->peerInfo[i].pidHash == comm->peerInfo[rank].pidHash)) {
+        // Rank is in same process
+        if (intraProcRanks == 0) intraProcRank0 = i;
+        if (i == rank) intraProcRank = intraProcRanks;
+        intraProcRanks++;
+        if (intraProcRank0 == rank && rank != i) {
+          comm->peerInfo[i].comm->intraNext = comm->intraNext;
+          comm->intraNext = comm->peerInfo[i].comm;
+        }
+      }
+    }
+    TRACE(NCCL_INIT,"pidHash[%d] %lx intraProcRank %d intraProcRanks %d intraProcRank0 %d",
+        rank, comm->peerInfo[rank].pidHash, intraProcRank, intraProcRanks, intraProcRank0);
+    if (intraProcRank == -1 || intraProcRank0 == -1 || comm->peerInfo[intraProcRank0].comm == NULL) {
+      WARN("Failed to determine intra proc ranks rank %d hostHash %lx pidHash %lx intraProcRank %d intraProcRanks %d intraProcRank0 %d",
+          rank, comm->peerInfo[rank].hostHash, comm->peerInfo[rank].pidHash,
+          intraProcRank, intraProcRanks, intraProcRank0);
+      ret = ncclInternalError;
+      goto fail;
+    }
+    struct ncclComm* comm0 = comm->peerInfo[intraProcRank0].comm;
+    assert(intraProcRank==0 ? comm==comm0 : true);
+    comm->intraComm0 = comm0;
+    comm->intraRank = intraProcRank;
+    comm->intraRanks = intraProcRanks;
+    comm->intraBarrierPhase = 0;
+    comm->intraBarrierCounter = 0;
+    comm->intraBarrierGate = 0;
+  } while(0);
+
   // Topo detection / System graph creation
   NCCLCHECKGOTO(ncclTopoGetSystem(comm, &comm->topo), ret, fail);
   // Compute paths between GPUs and NICs
@@ -985,41 +1020,6 @@ static ncclResult_t initTransportsRank(struct ncclComm* comm, ncclUniqueId* comm
       NCCLCHECKGOTO(ncclProxyCall(&proxyConn, ncclProxyMsgSharedInit, &comm->p2pnChannels, sizeof(int), NULL, 0), ret, fail);
     }
   }
-
-  do {
-    // Compute intra-process ranks
-    int intraProcRank0 = -1, intraProcRank = -1, intraProcRanks = 0;
-    for (int i = 0; i < nranks; i++) {
-      if ((comm->peerInfo[i].hostHash == comm->peerInfo[rank].hostHash)
-          && (comm->peerInfo[i].pidHash == comm->peerInfo[rank].pidHash)) {
-        // Rank is in same process
-        if (intraProcRanks == 0) intraProcRank0 = i;
-        if (i == rank) intraProcRank = intraProcRanks;
-        intraProcRanks++;
-        if (intraProcRank0 == rank && rank != i) {
-          comm->peerInfo[i].comm->intraNext = comm->intraNext;
-          comm->intraNext = comm->peerInfo[i].comm;
-        }
-      }
-    }
-    TRACE(NCCL_INIT,"pidHash[%d] %lx intraProcRank %d intraProcRanks %d intraProcRank0 %d",
-        rank, comm->peerInfo[rank].pidHash, intraProcRank, intraProcRanks, intraProcRank0);
-    if (intraProcRank == -1 || intraProcRank0 == -1 || comm->peerInfo[intraProcRank0].comm == NULL) {
-      WARN("Failed to determine intra proc ranks rank %d hostHash %lx pidHash %lx intraProcRank %d intraProcRanks %d intraProcRank0 %d",
-          rank, comm->peerInfo[rank].hostHash, comm->peerInfo[rank].pidHash,
-          intraProcRank, intraProcRanks, intraProcRank0);
-      ret = ncclInternalError;
-      goto fail;
-    }
-    struct ncclComm* comm0 = comm->peerInfo[intraProcRank0].comm;
-    assert(intraProcRank==0 ? comm==comm0 : true);
-    comm->intraComm0 = comm0;
-    comm->intraRank = intraProcRank;
-    comm->intraRanks = intraProcRanks;
-    comm->intraBarrierPhase = 0;
-    comm->intraBarrierCounter = 0;
-    comm->intraBarrierGate = 0;
-  } while(0);
 
   if (comm->intraRank == 0) { // Load ncclParamLaunchMode
     char* str = getenv("NCCL_LAUNCH_MODE");
