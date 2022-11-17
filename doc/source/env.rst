@@ -408,6 +408,28 @@ Values accepted
 ^^^^^^^^^^^^^^^
 Set to 2 to automatically use Relaxed Ordering if available. Set to 1 to force use of Relaxed Ordering and fail if not available. Set to 0 to disable use of Relaxed Ordering. Default is 2.
 
+NCCL_IB_ADAPTIVE_ROUTING
+------------------------
+(since 2.16)
+
+Enable use of Adaptive Routing capable data transfers for the IB Verbs transport. Adaptive routing can improve the performance of communications at scale. A system defined Adaptive Routing enabled SL has to be selected accordingly (cf. ``NCCL_IB_SL``).
+
+Values accepted
+^^^^^^^^^^^^^^^
+Enabled (1) by default on IB networks. Disabled (0) by default on RoCE networks. Set to 1 to force use of Adaptive Routing capable data transmission.
+
+
+NCCL_MEM_SYNC_DOMAIN
+--------------------
+(since 2.16)
+
+Sets the default Memory Sync Domain for NCCL kernels (CUDA 12.0 & sm90 and later). Memory Sync Domains can help eliminate interference between the NCCL kernels and the application compute kernels, when they use different domains.
+
+Values accepted
+^^^^^^^^^^^^^^^
+Default value is ``cudaLaunchMemSyncDomainRemote`` (1). Currently supported values are 0 and 1.
+
+
 NCCL_NET
 --------
 (since 2.10)
