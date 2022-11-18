@@ -1488,6 +1488,24 @@ static ncclResult_t commReclaim(ncclComm_t comm) {
           if ((ret = commDestroySync((struct ncclAsyncJob*) &job)) != ncclSuccess)
             WARN("commReclaim: comm %p (rank = %d) in abort, error %d", curIntraComm, curRank, ret);
         }
+      }
+
+      /* ncclProxyDestroy() loop must be put after commDestroySync() loop. Namely, you cannot do:
+       *  while(...) {
+       *     commDestroySync(...);
+       *     ncclProxyDestroy(...);
+       *  }
+       * Considering one process multi-gpu case, we must guarantee all kernels are complete before 
+       * we free proxy resources; otherwise, we will face invalid memory issues where proxy connection 
+       * and related intermediate memory from one rank are freed but other ranks are still using it. 
+       * This is not a problem for multi-process case, since intermediate memory is opened by CUDA IPC 
+       * or mmap where memory free is guarded by CUDA driver and operating system, so we will not have 
+       * invalid memory access issue. */
+      nextIntraComm = intracomm0;
+      while (nextIntraComm) {
+        curIntraComm = nextIntraComm;
+        curRank = curIntraComm->rank;
+        nextIntraComm = nextIntraComm->intraNext;
 
         /* free intraprocess proxy resources. */
         if ((ret = ncclProxyDestroy(curIntraComm)) != ncclSuccess) {
