@@ -22,10 +22,10 @@ When NCCL is initialized, it will look for a `libnccl-net.so` library and dynami
 then look for symbols inside the library.
 
 The `NCCL_NET_PLUGIN` environment variable allows multiple plugins to coexist. If set, NCCL
-will look for a library with a name of `libnccl-net-<name>.so`. It is therefore advised to
-name the library following that pattern, with a symlink pointing `libnccl-net.so` to
-`libnccl-net-<name>.so`. That way, if there are multiple plugins in the path, setting
-`NCCL_NET_PLUGIN` will allow users to select the right plugin.
+will look for a library with a name of `libnccl-net-${NCCL_NET_PLUGIN}.so`. It is therefore
+advised to name the library following that pattern, with a symlink pointing `libnccl-net.so`
+to `libnccl-net-${NCCL_NET_PLUGIN}.so`. That way, if there are multiple plugins in the path,
+setting `NCCL_NET_PLUGIN` will allow users to select the right plugin.
 
 ## Struct versioning
 
@@ -209,15 +209,15 @@ set to `NCCL_PTR_HOST|NCCL_PTR_CUDA`, otherwise it should be set to `NCCL_PTR_HO
 supports `dmabuf`, it should set `ptrSupport` to `NCCL_PTR_HOST|NCCL_PTR_CUDA|NCCL_PTR_DMABUF` and
 provide a `regMrDmaBuf` function.
 
-The `speed` field indicates the speed of the network port in Gbps. This is important to ensure
-proper optimization of flows within the node.
+The `speed` field indicates the speed of the network port in Mbps (10^6 bits per second). This is
+important to ensure proper optimization of flows within the node.
 
 The `port` field indicates the port number. This is important again for topology detection and flow
 optimization within the node when a NIC with a single PCI connection is connected to the fabric
 with multiple ports.
 
-The `latency` field indicates the network latency. This can be useful to improve the NCCL tuning and
-make sure NCCL switches from tree to ring at the right size.
+The `latency` field indicates the network latency in microseconds. This can be useful to improve
+the NCCL tuning and make sure NCCL switches from tree to ring at the right size.
 
 The `maxComms` field indicates the maximum number of connections we can create.
 
@@ -301,7 +301,7 @@ free resources. This function is used to deregister handles returned by both `re
 Data will be sent through the connection using `isend`, passing the `sendComm` previously
 created by `connect`, and the buffer described by `data`, `size`, and `mhandle`. A `tag` must be
 used if the network supports multi-receive operations (see `irecv`) to distinguish between
-different sends matchin the same multi-receive. Otherwise it can be set to 0.
+different sends matching the same multi-receive. Otherwise it can be set to 0.
 
 The `isend` operation returns a handle in the `request` argument for further calls to `test`. If
 the `isend` operation cannot be initiated, `request` can be set to `NULL` and NCCL will call
