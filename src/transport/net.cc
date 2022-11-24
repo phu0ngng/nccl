@@ -344,12 +344,14 @@ static ncclResult_t sendFree(struct ncclConnector* send) {
         CUDACHECK(cudaIpcCloseMemHandle(map->mems[NCCL_NET_MAP_DEVMEM].gpuPtr));
       }
     }
+    free(map);
   }
 
   return ncclSuccess;
 }
 
 static ncclResult_t recvFree(struct ncclConnector* recv) {
+  if (recv->transportResources) free(recv->transportResources);
   return ncclSuccess;
 }
 
@@ -781,7 +783,7 @@ static ncclResult_t sendProxyFree(struct ncclProxyConnection* connection, struct
     }
   }
   
-  if (connection->state == connSetupDone) free(resources);
+  if (resources) free(resources);
   return ncclSuccess;
 }
 
@@ -816,7 +818,7 @@ static ncclResult_t recvProxyFree(struct ncclProxyConnection* connection, struct
     }
   }
   
-  if (connection->state == connSetupDone) free(resources);
+  if (resources) free(resources);
   return ncclSuccess;
 }
 
