@@ -1618,6 +1618,11 @@ ncclResult_t ncclRedOpDestroy(ncclRedOp_t op, ncclComm_t comm) {
     WARN("ncclRedOpDestroy :  operator is garbage.");
     return ncclInvalidArgument;
   }
+  if (comm == NULL) {
+    WARN("ncclRedOpDestroy : invalid communicator passed.");
+    return ncclInvalidArgument;
+  }
+
   int ix = int(ncclUserRedOpMangle(comm, op)) - int(ncclNumOps);
   if (comm->userRedOpCapacity <= ix || comm->userRedOps[ix].freeNext != -1) {
     WARN("ncclRedOpDestroy : operator unknown to this communicator.");
