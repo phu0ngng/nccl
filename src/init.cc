@@ -600,7 +600,7 @@ static ncclResult_t initTransportsRank(struct ncclComm* comm, ncclUniqueId* comm
   struct ncclTopoGraph ringGraph;
   struct ncclTopoGraph treeGraph;
   struct ncclTopoGraph collNetGraph;
-  
+
   struct graphInfo {
     int pattern;
     int nChannels;
@@ -628,7 +628,7 @@ static ncclResult_t initTransportsRank(struct ncclComm* comm, ncclUniqueId* comm
   int* nvbPeers = NULL;
   struct ncclProxyConnector proxyConn;
   int* pxnPeers = NULL;
-  
+
   TRACE(NCCL_INIT, "comm %p, commHash %lx, rank %d nranks %d - BEGIN", comm, commHash, rank, nranks);
   NCCLCHECKGOTO(bootstrapInit((struct ncclBootstrapHandle*)commId, comm), ret, fail);
 
@@ -1495,11 +1495,11 @@ static ncclResult_t commReclaim(ncclComm_t comm) {
        *     commDestroySync(...);
        *     ncclProxyDestroy(...);
        *  }
-       * Considering one process multi-gpu case, we must guarantee all kernels are complete before 
-       * we free proxy resources; otherwise, we will face invalid memory issues where proxy connection 
-       * and related intermediate memory from one rank are freed but other ranks are still using it. 
-       * This is not a problem for multi-process case, since intermediate memory is opened by CUDA IPC 
-       * or mmap where memory free is guarded by CUDA driver and operating system, so we will not have 
+       * Considering one process multi-gpu case, we must guarantee all kernels are complete before
+       * we free proxy resources; otherwise, we will face invalid memory issues where proxy connection
+       * and related intermediate memory from one rank are freed but other ranks are still using it.
+       * This is not a problem for multi-process case, since intermediate memory is opened by CUDA IPC
+       * or mmap where memory free is guarded by CUDA driver and operating system, so we will not have
        * invalid memory access issue. */
       nextIntraComm = intracomm0;
       while (nextIntraComm) {

@@ -782,7 +782,7 @@ static ncclResult_t sendProxyFree(struct ncclProxyConnection* connection, struct
       NCCLCHECK(ncclNetCloseSend(comm, resources->netSendComm));
     }
   }
-  
+
   if (resources) free(resources);
   return ncclSuccess;
 }

@@ -49,7 +49,7 @@ inline uint64_t clockNano() {
   return uint64_t(ts.tv_sec)*1000*1000*1000 + ts.tv_nsec;
 }
 
-/* get any bytes of random data from /dev/urandom, return 0 if it succeeds; else 
+/* get any bytes of random data from /dev/urandom, return 0 if it succeeds; else
  * return -1 */
 inline ncclResult_t getRandomData(void* buffer, size_t bytes) {
   ncclResult_t ret = ncclSuccess;

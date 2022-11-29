@@ -153,7 +153,7 @@ static void *bootstrapRoot(void* rargs) {
   TRACE(NCCL_INIT, "SENT OUT ALL %d HANDLES", nranks);
 
 out:
-  if (listenSock != NULL) { 
+  if (listenSock != NULL) {
     ncclSocketClose(listenSock);
     free(listenSock);
   }
@@ -445,7 +445,7 @@ ncclResult_t bootstrapRecv(void* commState, int peer, int tag, void* data, int s
   struct bootstrapState* state = (struct bootstrapState*)commState;
   struct ncclSocket sock;
   int newPeer, newTag;
-  
+
   // Search unexpected connections first
   int found;
   NCCLCHECK(unexpectedDequeue(state, peer, tag, &sock, &found));
