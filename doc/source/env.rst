@@ -828,3 +828,15 @@ will be determined by the setting of the configuration parameter passed to the n
 Values accepted
 ^^^^^^^^^^^^^^^
 0 or 1. 1 indicates blocking communicators; 0 has no effect on communicators.
+
+NCCL_CGA_CLUSTER_SIZE
+---------------------
+(since 2.16)
+
+Set CUDA Cooperative Group Array (CGA) cluster size. On sm90 and later we have an extra level of hierarchy where we
+can group together several blocks within the Grid, called Thread Block Clusters. Setting this to non-zero will cause
+NCCL to launch the communication kernels with the Cluster Dimension attribute set accordingly.
+
+Values accepted
+^^^^^^^^^^^^^^^
+0 to 8. Default value is 4 on sm90. 0 for older architectures.

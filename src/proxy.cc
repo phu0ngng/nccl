@@ -663,6 +663,7 @@ ncclResult_t ncclSetThreadContext(struct ncclComm* comm) {
 
 // Set to SIGUSR1 or SIGUSR2 to help debug proxy state during hangs
 NCCL_PARAM(ProxyDumpSignal, "PROXY_DUMP_SIGNAL", -1);
+NCCL_PARAM(ProgressAppendOpFreq, "PROGRESS_APPENDOP_FREQ", 8);
 
 void* ncclProxyProgress(void *comm_) {
   struct ncclComm* comm = (struct ncclComm*)comm_;
@@ -683,6 +684,12 @@ void* ncclProxyProgress(void *comm_) {
   nvtxNameOsThreadA(syscall(SYS_gettid), threadName);
 
   int lastIdle = 0;
+  /* Too frequent call of ncclProxyGetPostedOps() will result in perf regression for small message 
+   * communication. proxyOpAppendCounter is a counter that helps us decide if we need to append proxy ops.
+   * After each progress, proxyOpAppendCounter will increase by 1 and compare with environment variable 
+   * ncclParamProgressAppendOpFreq(). If they are equal, we will append proxy ops. This will decrease the 
+   * frequency of calling ncclProxyGetPostedOps() and reduce the perf impact. */
+  int proxyOpAppendCounter = 0;
   struct ncclProxyArgs profArgs; // Only used for profiling purposes
   while ((state->stop == false || (state->stop == true && state->active)) && *comm->abortFlag == 0) {
     int idle = 1;
@@ -694,17 +701,20 @@ void* ncclProxyProgress(void *comm_) {
     }
     if (lastIdle == 0 && idle == 1) ncclProfilingRecord(&profArgs, 0, 0, ncclProxyProfileIdle);
     if (lastIdle == 1 && idle == 0) ncclProfilingRecord(&profArgs, 0, 0, ncclProxyProfileActive);
-    int added = 0;
-    TIME_START(3);
-    if (state->stop == false)
-      ret = ncclProxyGetPostedOps(comm, &added);
-    if (added) { TIME_STOP(3); } else { TIME_CANCEL(3); }
-    if (ret != ncclSuccess) {
-      (void) ncclCommSetAsyncError(comm, ret);
-      INFO(NCCL_ALL,"%s:%d -> %d [Proxy Thread]", __FILE__, __LINE__, ret);
-    }
-    if (added == 0) {
-      sched_yield(); // No request progressed. Let others run.
+    if (idle || (++proxyOpAppendCounter == ncclParamProgressAppendOpFreq())) {
+      int added = 0;
+      proxyOpAppendCounter = 0;
+      TIME_START(3);
+      if (state->stop == false)
+        ret = ncclProxyGetPostedOps(comm, &added);
+      if (added) { TIME_STOP(3); } else { TIME_CANCEL(3); }
+      if (ret != ncclSuccess) {
+        (void) ncclCommSetAsyncError(comm, ret);
+        INFO(NCCL_ALL,"%s:%d -> %d [Proxy Thread]", __FILE__, __LINE__, ret);
+      }
+      if (added == 0) {
+        sched_yield(); // No request progressed. Let others run.
+      }
     }
     lastIdle = idle;
   }
@@ -1005,7 +1015,7 @@ static ncclResult_t proxyProgressAsync(struct ncclProxyAsyncOp* op, struct ncclC
       __atomic_store_n(&op->connection->state, connSetupDone, __ATOMIC_RELEASE);
     else if (op->type == ncclProxyMsgConnect)
       __atomic_store_n(&op->connection->state, connConnected, __ATOMIC_RELEASE);
-    /* if setup or connect is done, we should not return any error at this point since 
+    /* if setup or connect is done, we should not return any error at this point since
      * ncclSocketSend might already send the respBuff to the requester. If we still choose
      * to abort and close the connection, it can cause segfault if the requester is using
      * the respBuff. */
@@ -1023,7 +1033,7 @@ static ncclResult_t proxyProgressAsync(struct ncclProxyAsyncOp* op, struct ncclC
   } else if (*comm->abortFlag != 0) {
     return ncclInternalError;
   }
-  
+
   return ncclSuccess;
 }
 
