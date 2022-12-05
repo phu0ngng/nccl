@@ -1067,6 +1067,9 @@ fail:
 
 NCCL_PARAM(SetStackSize, "SET_STACK_SIZE", 0);
 NCCL_PARAM(CGAClusterSize, "CGA_CLUSTER_SIZE", NCCL_CONFIG_UNDEF_INT);
+// Match config max/minCTAs
+NCCL_PARAM(MaxCTAs, "MAX_CTAS", NCCL_CONFIG_UNDEF_INT);
+NCCL_PARAM(MinCTAs, "MIN_CTAS", NCCL_CONFIG_UNDEF_INT);
 #define NCCL_MAX_CGA_CLUSTER_SIZE 8
 
 struct ncclCommInitRankAsyncJob {
@@ -1122,14 +1125,20 @@ static ncclResult_t parseCommConfig(ncclComm_t comm, ncclConfig_t *config) {
   /* config must not be NULL in this function */
   int blockingEnv;
   int cgaClusterSizeEnv;
+  int minCTAsEnv;
+  int maxCTAsEnv;
 
   /* default config value can be tuned on different platform. */
   if (config->blocking == NCCL_CONFIG_UNDEF_INT) config->blocking = 1;
   if (config->cgaClusterSize == NCCL_CONFIG_UNDEF_INT) config->cgaClusterSize = 4;
+  if (config->minCTAs == NCCL_CONFIG_UNDEF_INT) config->minCTAs = 1;
+  if (config->maxCTAs == NCCL_CONFIG_UNDEF_INT) config->maxCTAs = MAXCHANNELS;
 
   /* assign config to communicator */
   comm->blocking = config->blocking;
   comm->cgaClusterSize = config->cgaClusterSize;
+  comm->minCTAs = config->minCTAs;
+  comm->maxCTAs = config->maxCTAs;
 
   /* override configuration from env variable. */
   blockingEnv = ncclParamCommBlocking();
@@ -1144,7 +1153,37 @@ static ncclResult_t parseCommConfig(ncclComm_t comm, ncclConfig_t *config) {
     comm->cgaClusterSize = NCCL_MAX_CGA_CLUSTER_SIZE;
   }
 
+  minCTAsEnv = ncclParamMinCTAs();
+  if (minCTAsEnv != NCCL_CONFIG_UNDEF_INT) {
+    comm->minCTAs = minCTAsEnv;
+  }
+
+  maxCTAsEnv = ncclParamMaxCTAs();
+  if (maxCTAsEnv != NCCL_CONFIG_UNDEF_INT) {
+    comm->maxCTAs = maxCTAsEnv;
+  }
+
+  /* cap channels if needed */
+  if (comm->minCTAs > MAXCHANNELS) {
+    WARN("minCTAs %d is larger than #channels upper limit %d\n", comm->minCTAs, MAXCHANNELS);
+    comm->minCTAs = MAXCHANNELS;
+  }
+
+  if (comm->maxCTAs > MAXCHANNELS) {
+    WARN("maxCTAs %d is larger than #channels upper limit %d\n", comm->maxCTAs, MAXCHANNELS);
+    comm->maxCTAs = MAXCHANNELS;
+  }
+
+  if (comm->minCTAs > comm->maxCTAs) {
+    WARN("minCTAs %d is larger than maxCTAs %d\n", comm->minCTAs, comm->maxCTAs);
+    ret = ncclInvalidArgument;
+    goto fail;
+  }
+
+exit:
   return ret;
+fail:
+  goto exit;
 }
 
 static void ncclCommInitRankUndo(struct ncclAsyncJob* job_) {
@@ -1330,6 +1369,16 @@ ncclResult_t ncclCommInitRankConfig(ncclComm_t *newcomm, int nranks, ncclUniqueI
   
   if (internalConfigPtr->cgaClusterSize != NCCL_CONFIG_UNDEF_INT && internalConfigPtr->cgaClusterSize < 0) {
     WARN("Invalid config cgaClusterSize attribute value %d", internalConfigPtr->cgaClusterSize);
+    ret = ncclInvalidArgument;
+    goto fail;
+  }
+
+  if ((internalConfigPtr->minCTAs != NCCL_CONFIG_UNDEF_INT &&
+    internalConfigPtr->minCTAs <= 0) ||
+    (internalConfigPtr->maxCTAs != NCCL_CONFIG_UNDEF_INT &&
+      internalConfigPtr->maxCTAs <= 0) ||
+    (internalConfigPtr->minCTAs > internalConfigPtr->maxCTAs)) {
+    WARN("Invalid config min/max channels attribute value %d/%d", internalConfigPtr->minCTAs, internalConfigPtr->maxCTAs);
     ret = ncclInvalidArgument;
     goto fail;
   }
