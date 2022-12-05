@@ -41,7 +41,7 @@ const char* ncclProtoStr[NCCL_NUM_PROTOCOLS] = { "LL", "LL128", "Simple" };
 NCCL_PARAM(GroupCudaStream, "GROUP_CUDA_STREAM", NCCL_GROUP_CUDA_STREAM);
 
 NCCL_PARAM(CheckPointers, "CHECK_POINTERS", 0);
-NCCL_PARAM(CommBlocking, "COMM_BLOCKING", 0);
+NCCL_PARAM(CommBlocking, "COMM_BLOCKING", NCCL_CONFIG_UNDEF_INT);
 
 static uint64_t hashUniqueId(ncclUniqueId const &id) {
   char const *bytes = (char const*)&id;
@@ -1066,6 +1066,8 @@ fail:
 }
 
 NCCL_PARAM(SetStackSize, "SET_STACK_SIZE", 0);
+NCCL_PARAM(CGAClusterSize, "CGA_CLUSTER_SIZE", NCCL_CONFIG_UNDEF_INT);
+#define NCCL_MAX_CGA_CLUSTER_SIZE 8
 
 struct ncclCommInitRankAsyncJob {
   struct ncclAsyncJob base;
@@ -1118,7 +1120,30 @@ fail:
 static ncclResult_t parseCommConfig(ncclComm_t comm, ncclConfig_t *config) {
   ncclResult_t ret = ncclSuccess;
   /* config must not be NULL in this function */
+  int blockingEnv;
+  int cgaClusterSizeEnv;
+
+  /* default config value can be tuned on different platform. */
+  if (config->blocking == NCCL_CONFIG_UNDEF_INT) config->blocking = 1;
+  if (config->cgaClusterSize == NCCL_CONFIG_UNDEF_INT) config->cgaClusterSize = 4;
+
+  /* assign config to communicator */
   comm->blocking = config->blocking;
+  comm->cgaClusterSize = config->cgaClusterSize;
+
+  /* override configuration from env variable. */
+  blockingEnv = ncclParamCommBlocking();
+  if (blockingEnv == 0 || blockingEnv == 1)
+    comm->blocking = blockingEnv;
+
+  cgaClusterSizeEnv = ncclParamCGAClusterSize();
+  if (0 <= cgaClusterSizeEnv && cgaClusterSizeEnv <= NCCL_MAX_CGA_CLUSTER_SIZE) {
+    comm->cgaClusterSize = cgaClusterSizeEnv;
+  } else if (cgaClusterSizeEnv > NCCL_MAX_CGA_CLUSTER_SIZE) {
+    WARN("NCCL_CGA_CLUSTER_SIZE value %d is too big. Limiting value to %d.", cgaClusterSizeEnv, NCCL_MAX_CGA_CLUSTER_SIZE);
+    comm->cgaClusterSize = NCCL_MAX_CGA_CLUSTER_SIZE;
+  }
+
   return ret;
 }
 
@@ -1282,7 +1307,6 @@ ncclResult_t ncclCommInitRankConfig(ncclComm_t *newcomm, int nranks, ncclUniqueI
   ncclConfig_t internalConfig = NCCL_CONFIG_INITIALIZER;
   ncclConfig_t *internalConfigPtr;
   size_t realSize;
-  int blockingEnv;
 
   NCCLCHECK(ncclGroupStartInternal());
   internalConfigPtr = &internalConfig;
@@ -1293,26 +1317,25 @@ ncclResult_t ncclCommInitRankConfig(ncclComm_t *newcomm, int nranks, ncclUniqueI
     if (internalConfigPtr->magic != 0xcafebeef) {
       WARN("ncclConfig_t argument not initialized via NCCL_CONFIG_INITIALIZER");
       ret = ncclInvalidArgument;
-      goto exit;
+      goto fail;
     }
   }
 
-  /* check input config attributes */
-  if (internalConfigPtr->blocking != 0 && internalConfigPtr->blocking != 1) {
+  /* check input config attributes, -1 means user-undefined and we should use default value from NCCL. */
+  if (internalConfigPtr->blocking != NCCL_CONFIG_UNDEF_INT && internalConfigPtr->blocking != 0 && internalConfigPtr->blocking != 1) {
     WARN("Invalid config blocking attribute value %d", internalConfigPtr->blocking);
     ret = ncclInvalidArgument;
-    goto exit;
+    goto fail;
   }
-
-  /* overwrite configuration from env variable. */
-  blockingEnv = ncclParamCommBlocking();
-  if (blockingEnv != 0 && blockingEnv != 1) {
-    WARN("Invalid NCCL_COMM_BLOCKING value %d", blockingEnv);
+  
+  if (internalConfigPtr->cgaClusterSize != NCCL_CONFIG_UNDEF_INT && internalConfigPtr->cgaClusterSize < 0) {
+    WARN("Invalid config cgaClusterSize attribute value %d", internalConfigPtr->cgaClusterSize);
+    ret = ncclInvalidArgument;
+    goto fail;
   }
-  if (blockingEnv == 1) internalConfigPtr->blocking = blockingEnv;
 
   (void)ncclCudaLibraryInit();
-  CUDACHECKGOTO(cudaGetDevice(&cudaDev), ret, exit);
+  CUDACHECKGOTO(cudaGetDevice(&cudaDev), ret, fail);
   NCCLCHECKGOTO(ncclCommInitRankDev(newcomm, nranks, commId, myrank, cudaDev, internalConfigPtr), ret, fail);
 
 exit:
