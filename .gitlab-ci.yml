@@ -620,7 +620,10 @@ replay-multi-gc:
     NCCL_DEBUG: "WARN"
     MPI_HOME: "/opt/mpi/openmpi-1.10.7"
     CUDA_HOME: "/usr/local/cuda-${CUDA_VERSION}"
-    SALLOC: "salloc --exclusive -t 00:05:00 -N 2 -n 8 -w gc[01-02]"
+    SALLOC_RESNET: "salloc --exclusive -t 00:05:00 -N 2 -n 8 -w gc[01-02]"
+    SALLOC_SELF_MULTI: "salloc --exclusive -t 00:05:00 -N 2 -n 16 -w gc[01-02]"
+    SALLOC_SELF_SINGLE: "salloc --exclusive -t 00:05:00 -N 1 -n 8 -pP100"
   script:
-    - ./test/scripts/gitlab-runner-replay-test.sh test/replay/traces/resnet_2x4_trace.txt
+    - SALLOC=$SALLOC_RESNET ./test/scripts/gitlab-runner-replay-test.sh test/replay/traces/resnet_2x4_trace.txt
+    - ./test/scripts/gitlab-runner-replay-self-test.sh
   interruptible: true

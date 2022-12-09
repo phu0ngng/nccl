@@ -602,7 +602,7 @@ NCCL_DEBUG_FILE
 
 The ``NCCL_DEBUG_FILE`` variable directs the NCCL debug logging output to a file.
 The filename format can be set to *filename.%h.%p* where *%h* is replaced with the
-hostname and *%p* is replaced with the process PID. This does not accept home directory (~), please convert to a relative or absolute path first.
+hostname and *%p* is replaced with the process PID. This does not accept the ``~`` character as part of the path, please convert to a relative path first.
 
 Values accepted
 ^^^^^^^^^^^^^^^
