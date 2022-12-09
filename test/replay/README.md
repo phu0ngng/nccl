@@ -4,7 +4,7 @@
 Build NCCL + tests with MPI:
 `make -j test.build MPI=1`
 
-NOTE - The replay tool depends on MPI for bootstrapping and initialization.
+The replay tool depends on MPI for bootstrapping and initialization.
 
 ## Generating a trace
 Set the following environment variables before running your NCCL application to generate the proper trace file per-rank:
@@ -40,12 +40,12 @@ Each call inside the trace has all the context the replay tool needs to correctl
 `element_datatype` is of type `ncclDataType_t`, and `reduction_operation` is of type `ncclRedOp_t` except in case of custom reduction operations.
 
 ## Replaying a trace
-First, you must concatenate the per-rank trace files into a single trace file as an input.
+First, you must concatenate the per-rank trace files into a single file.
 
 ### Example
 ``cat all_reduce* > full_all_reduce_trace.txt``
 
-Then, run the replay tool pointing to your file using the same node count and ranks per-node:
+Then run the replay tool pointing to your file using the same node count and ranks per-node:
 
 ### Example
 ``salloc -N1 -n8 -pP100 mpirun ./build/test/replay/replay full_all_reduce_trace.txt``
@@ -63,17 +63,17 @@ This will spin up a thread that prints out the replay progress every second. I f
 ### Force fit trace
 ``-x``
 
-This will take a trace recorded on a large node count and attempt to convert it to the supplied dimensions of your MPI run.  This will work well for collectives - it simply scales down nranks of each communicator and converts the root of collectives to a valid rank if applicable.  For point-to-point communications, it will skip replaying any P2P operations whose peer rank is out of the bounds of this replay.
+This will take a trace recorded on a large node count and attempts to convert it to the supplied dimensions of your MPI run.  This will work well for collectives - it simply scales down nranks of each communicator and converts the root of collectives to a valid rank if applicable.  For point-to-point communications, it will skip replaying any P2P operations whose peer rank is out of the bounds of this replay. Note that you must have the same number of ranks per-node for this to work.
 
 ### Force one-sized data ops
 ``-f``
 
-This converts nelems of each NCCL data operation to either 1 or nranks, depending on which is the minimum valid size.
+This converts nelems of each NCCL data operation to either 1 or nranks, depending on which is the minimum valid size. This could be used to measure latency or quickly test a communications pattern.
 
 ### Disable trace pre-check
 ``-d``
 
-The replay tool pre-processes and validates traces before dissemenating and processing work. It checks that ranks specified are in-bounds and that every rank in a communicator group has a matching collective call.  If this isn't the case, the replay tool will simply throw an error and refuse to run.  This option allows the user to force skip this step if they still want to run their trace.
+The replay tool pre-processes and validates traces before dissemenating and processing work. It checks that ranks specified are in-bounds and that every rank in a communicator group has a matching collective call.  If this isn't the case, the replay tool will simply throw an error and refuse to run.  This option allows the user to force skip this step if they still want to try to run their trace.
 
 ## Ordering
 
