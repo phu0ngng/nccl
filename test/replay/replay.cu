@@ -1543,7 +1543,7 @@ void invokeCall(CallHeader const &hdr, CallDataOp const &body) {
 
 void playTrace(ByteBuffer& trace, std::chrono::duration<double>* duration) {
   // Used to measure runtime after dissemination
-  std::chrono::time_point<std::chrono::system_clock> start;
+  std::chrono::time_point<std::chrono::steady_clock> start;
   int vuid_countdown = 0;
 
   // Counter of data op collectives
@@ -1736,7 +1736,7 @@ void playTrace(ByteBuffer& trace, std::chrono::duration<double>* duration) {
     }
   }
 
-  start = std::chrono::system_clock::now();
+  start = std::chrono::steady_clock::now();
 
   // Synchronize with all threads by telling them to send us a message
   // to decrement countdown.
@@ -1751,7 +1751,7 @@ void playTrace(ByteBuffer& trace, std::chrono::duration<double>* duration) {
 
   // synchronize all streams
   CudaHelp::synchronize();
-  *duration = std::chrono::system_clock::now() - start;
+  *duration = std::chrono::steady_clock::now() - start;
 }
 
 // Helper to translate callcodes to strings
