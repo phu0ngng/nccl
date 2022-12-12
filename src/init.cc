@@ -1117,15 +1117,8 @@ fail:
 
 static ncclResult_t parseCommConfig(ncclComm_t comm, ncclConfig_t *config) {
   ncclResult_t ret = ncclSuccess;
-
-  /* first set configuration */
-  if (config) {
-    comm->blocking = config->blocking;
-  } else {
-    /* default setting of communicator */
-    comm->blocking = 1;
-  }
-
+  /* config must not be NULL in this function */
+  comm->blocking = config->blocking;
   return ret;
 }
 
@@ -1152,6 +1145,7 @@ static ncclResult_t ncclCommInitRankDev(ncclComm_t* newcomm, int nranks, ncclUni
   CUDACHECKGOTO(cudaFree(NULL), res, fail);
 
   NCCLCHECKGOTO(PtrCheck(newcomm, "CommInitRank", "newcomm"), res, fail);
+  NCCLCHECKGOTO(PtrCheck(config, "CommInitRank", "config"), res, fail);
   if (nranks < 1 || myrank < 0 || myrank >= nranks) {
     WARN("Invalid rank requested : %d/%d", myrank, nranks);
     res = ncclInvalidArgument;
@@ -1202,12 +1196,13 @@ ncclResult_t ncclCommInitRank(ncclComm_t* newcomm, int nranks, ncclUniqueId comm
   (void)ncclCudaLibraryInit();
 
   int cudaDev;
+  ncclConfig_t config = NCCL_CONFIG_INITIALIZER;
   CUDACHECK(cudaGetDevice(&cudaDev));
 
   NvtxParamsCommInitRank payload{myrank, nranks, cudaDev};
   NVTX3_FUNC_WITH_PARAMS(CommInitRank, CommInitRankSchema, payload)
 
-  NCCLCHECK(ncclCommInitRankDev(newcomm, nranks, commId, myrank, cudaDev, NULL));
+  NCCLCHECK(ncclCommInitRankDev(newcomm, nranks, commId, myrank, cudaDev, &config));
   return ncclSuccess;
 }
 
@@ -1216,6 +1211,7 @@ ncclResult_t ncclCommInitAll(ncclComm_t* comms, int ndev, const int* devlist) {
   ncclResult_t ret = ncclSuccess;
   int totalnDev;
   int *gpuFlags = NULL;
+  ncclConfig_t config = NCCL_CONFIG_INITIALIZER;
 
   constexpr nvtxPayloadSchemaEntry_t CommInitAllSchema[] = {
     {0, NVTX_PAYLOAD_ENTRY_TYPE_INT, "No. of devices"}
@@ -1259,7 +1255,7 @@ ncclResult_t ncclCommInitAll(ncclComm_t* comms, int ndev, const int* devlist) {
   NCCLCHECKGOTO(ncclGroupStart(), ret, fail);
   for (int i=0; i<ndev; i++) {
     // Ignore return codes .. we need to call ncclGroupEnd to clean up anyway
-    ncclCommInitRankDev(comms+i, ndev, uniqueId, i, devlist ? devlist[i] : i, NULL);
+    ncclCommInitRankDev(comms+i, ndev, uniqueId, i, devlist ? devlist[i] : i, &config);
   }
   NCCLCHECKGOTO(ncclGroupEnd(), ret, fail);
 
