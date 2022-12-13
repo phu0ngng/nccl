@@ -161,6 +161,31 @@ struct ncclProxyProgressState {
   int nextOps;
 };
 
+// Expected proxy response fifo
+struct ncclExpectedProxyResponse {
+  void*    opId;
+  int      respSize;
+  bool     done;
+  void*    respBuff;
+  struct   ncclExpectedProxyResponse* next;
+};
+
+struct ncclProxyAsyncOp {
+  int type;
+  struct ncclProxyConnection* connection;
+  int reqSize, respSize;
+  char *reqBuff, *respBuff;
+  void* opId;
+  ncclProxyAsyncOp* next;
+};
+
+struct ncclProxyLocalPeer {
+  struct ncclSocket sock;
+  int localRank;
+  ncclProxyAsyncOp* asyncOps;
+  int asyncOpCounter;
+};
+
 struct ncclProxyState {
   // Service thread
   pthread_t thread;
@@ -176,6 +201,9 @@ struct ncclProxyState {
 
   // Progress thread
   struct ncclProxyProgressState progressState;
+
+  // Queue of expected responses from the proxy
+  struct ncclExpectedProxyResponse* expectedResponses;
 };
 
 enum proxyConnectState {
@@ -223,7 +251,15 @@ enum ncclProxyMsgType {
   ncclProxyMsgStop = 8
 };
 
-ncclResult_t ncclProxyCall(struct ncclProxyConnector* proxyConn, int type, void* reqBuff, int reqSize, void* respBuff, int respSize);
+// This function is called by a client of the proxy that needs to invoke any of the non-progress proxyOp types
+// Call this function on the client, supplying a locally unique opId. Then, poll on the return value of
+// ncclPollProxyResponse(), supplying the same opId to confirm the operation has completed
+ncclResult_t ncclProxyCallAsync(struct ncclProxyConnector* proxyConn, int type, void* reqBuff, int reqSize, int respSize, void* opId);
+
+// This function will internally call ncclProxyCallAsync() and spin until ncclPollProxyResponse() confirms the result is received
+ncclResult_t ncclProxyCallBlocking(struct ncclProxyConnector* proxyConn, int type, void* reqBuff, int reqSize, void* respBuff, int respSize);
+ncclResult_t ncclPollProxyResponse(struct ncclProxyConnector* proxyConn, void* respBuff, void* opId);
+
 ncclResult_t ncclProxyDestroy(struct ncclComm* comm);
 ncclResult_t ncclProxyShmUnlink(struct ncclComm* comm);
 #endif
