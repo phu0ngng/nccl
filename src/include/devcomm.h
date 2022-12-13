@@ -100,10 +100,10 @@ struct ncclConnInfo {
 };
 
 struct ncclProxyConnector {
-  int rank;
-  int localRank;
+  int tpRank;
+  int tpLocalRank;
+  int sameProcess;
   struct ncclProxyConnection* connection;
-  struct ncclComm* comm;
 };
 
 struct ncclConnector {
@@ -112,7 +112,6 @@ struct ncclConnector {
   struct ncclTransportComm* transportComm;
   void* transportResources;
   struct ncclConnInfo conn;
-  struct ncclComm *comm;
 };
 
 struct ncclRing {
@@ -160,6 +159,7 @@ struct ncclNvls {
 struct ncclChannelPeer {
   struct ncclConnector send[NCCL_MAX_CONNS];
   struct ncclConnector recv[NCCL_MAX_CONNS];
+  int refCount;
 };
 
 struct ncclDevComm;
@@ -270,7 +270,7 @@ struct ncclDevChannelPeer {
 };
 
 struct alignas(16) ncclDevChannel {
-  struct ncclDevChannelPeer *peers;
+  struct ncclDevChannelPeer** peers;
   struct ncclRing ring;
   struct ncclTree tree;
   struct ncclTree collnetChain;

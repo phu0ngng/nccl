@@ -123,7 +123,7 @@ ncclResult_t nvlsGroupConnect(struct ncclComm *comm, struct nvlsResources* resou
     struct ncclProxyConnector proxyConn;
     NCCLCHECK(ncclProxyConnect(comm, TRANSPORT_P2P, 1, rank, &proxyConn));
     TRACE(NCCL_NVLS, "NVLS rank %d request conversion of fd %d from rank %d", comm->localRank, fd, rank);
-    NCCLCHECK(ncclProxyClientConvertFdBlocking(&proxyConn, fd, (int *)shareableHandle));
+    NCCLCHECK(ncclProxyClientConvertFdBlocking(comm, &proxyConn, fd, (int *)shareableHandle));
     fd = *(int *)shareableHandle;
     TRACE(NCCL_NVLS, "NVLS rank %d received converted fd %d from rank %d", comm->localRank, fd, rank);
     CUCHECK(cuMemImportFromShareableHandle(&resources->mcHandle, (void *)(uintptr_t)fd, type));
@@ -316,7 +316,7 @@ ncclResult_t ncclNvlsSetup(struct ncclComm* comm) {
       channel->nvls.up[r] = nvlsPeer;
 
       char* mem = NULL;
-      struct ncclChannelPeer* peer = channel->peers+nvlsPeer;
+      struct ncclChannelPeer* peer = channel->peers[nvlsPeer];
 
       // Reduce UC -> MC
       mem = resources->ucBuff + (r*2*nChannels+c)*(buffSize+memSize);
@@ -343,12 +343,13 @@ ncclResult_t ncclNvlsSetup(struct ncclComm* comm) {
       peer->send[1].conn.head = (uint64_t*)(mem+buffSize);
       peer->send[1].conn.tail = (uint64_t*)(mem+buffSize+memSize/2);
       peer->send[1].conn.flags |= NCCL_NVLS_MIN_POLL;
-
-      CUDACHECKGOTO(cudaMemcpyAsync(&comm->channels[c].devPeers[nvlsPeer].send[0], &peer->send[0].conn, sizeof(struct ncclConnInfo), cudaMemcpyHostToDevice, comm->hostStream.cudaStream), res, cleanup);
-      CUDACHECKGOTO(cudaMemcpyAsync(&comm->channels[c].devPeers[nvlsPeer].recv[0], &peer->recv[0].conn, sizeof(struct ncclConnInfo), cudaMemcpyHostToDevice, comm->hostStream.cudaStream), res, cleanup);
-      CUDACHECKGOTO(cudaMemcpyAsync(&comm->channels[c].devPeers[nvlsPeer].send[1], &peer->send[1].conn, sizeof(struct ncclConnInfo), cudaMemcpyHostToDevice, comm->hostStream.cudaStream), res, cleanup);
-      CUDACHECKGOTO(cudaMemcpyAsync(&comm->channels[c].devPeers[nvlsPeer].recv[1], &peer->recv[1].conn, sizeof(struct ncclConnInfo), cudaMemcpyHostToDevice, comm->hostStream.cudaStream), res, cleanup);
-
+      
+      struct ncclDevChannelPeer* addr;
+      CUDACHECKGOTO(cudaMemcpyAsync(&addr, comm->channels[c].devPeers + nvlsPeer, sizeof(struct ncclDevChannelPeer*), cudaMemcpyDeviceToHost, comm->sharedRes->hostStream.cudaStream), res, cleanup);
+      CUDACHECKGOTO(cudaMemcpyAsync(&addr->send[0], &peer->send[0].conn, sizeof(struct ncclConnInfo), cudaMemcpyHostToDevice, comm->sharedRes->hostStream.cudaStream), res, cleanup);
+      CUDACHECKGOTO(cudaMemcpyAsync(&addr->recv[0], &peer->recv[0].conn, sizeof(struct ncclConnInfo), cudaMemcpyHostToDevice, comm->sharedRes->hostStream.cudaStream), res, cleanup);
+      CUDACHECKGOTO(cudaMemcpyAsync(&addr->send[1], &peer->send[1].conn, sizeof(struct ncclConnInfo), cudaMemcpyHostToDevice, comm->sharedRes->hostStream.cudaStream), res, cleanup);
+      CUDACHECKGOTO(cudaMemcpyAsync(&addr->recv[1], &peer->recv[1].conn, sizeof(struct ncclConnInfo), cudaMemcpyHostToDevice, comm->sharedRes->hostStream.cudaStream), res, cleanup);
       /*INFO(NCCL_INIT|NCCL_NVLS, "Peer %d Channel %d MC buff %p/%p UC Buff %p/%p",
           nvlsPeer, c,
           resources->mcBuff + (r*2*nChannels+c)*(buffSize+memSize),

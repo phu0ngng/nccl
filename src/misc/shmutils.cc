@@ -93,10 +93,6 @@ ncclResult_t ncclShmOpen(char* shmPath, size_t shmSize, void** shmPtr, void** de
         WARN("unlink shared memory %s failed, error: %s", shmPath, strerror(errno));
       }
     }
-
-    if (refcount != -1) {
-      WARN("attaching memory should only reduce refcount by 1 but %d is passed", refcount);
-    }
   }
 
   if (devShmPtr) {

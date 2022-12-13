@@ -96,18 +96,49 @@ struct ncclCommCallback {
   ncclResult_t(*fn)(struct ncclComm* comm, struct ncclCommCallback* cb);
 };
 
+struct ncclSharedResources {
+  int refCount;
+  struct ncclComm* owner; /* comm which creates this shared res. */
+  struct ncclChannelPeer* peers[MAXCHANNELS];
+  struct ncclDevChannelPeer* devPeers[MAXCHANNELS];
+  /* P2P operation counter, one per channel */
+  uint64_t p2pOpCount[MAXCHANNELS];
+  /* Collective operation counter */
+  uint64_t collOpCount;
+  int tpNRanks;
+  int tpNLocalRanks;
+  int tpNChannels;
+  int tpP2pNChannels;
+  int tpP2pChunkSize;
+  uint64_t magic;
+
+  // top parent rank to localRank translation table
+  int* tpRankToLocalRank;
+  // Internal streams
+  struct ncclStrongStream deviceStream, hostStream;
+
+  // proxy related shared res
+  struct ncclProxyState* proxyState;
+};
+
 struct ncclChannel {
-  struct ncclChannelPeer* peers;
-  struct ncclDevChannelPeer* devPeers;
+  struct ncclChannelPeer** peers;
+  struct ncclDevChannelPeer** devPeers;
   struct ncclRing ring;
   int* devRingUserRanks;
   struct ncclTree tree;
+
+  struct ncclChannelPeer* collNetPeers;
+  struct ncclDevChannelPeer* collNetDevPeers;
   struct ncclTree collnetChain;
   struct ncclDirect collnetDirect;
+
+  struct ncclChannelPeer* nvlsPeers;
+  struct ncclDevChannelPeer* nvlsDevPeers;
   struct ncclNvls nvls;
+
   int id; // index of this channel
   uint32_t workFifoSent; // last used work index+1
-  uint64_t p2pOpCount;
 };
 
 struct ncclWorkList {
@@ -161,12 +192,18 @@ struct ncclComm {
   // List of destructors to run when comm is destructed
   struct ncclDestructor* destructorHead;
 
+  struct ncclSharedResources* sharedRes;
+  /* map to top parent ranks. */
+  int* topParentRanks;
+  int* topParentLocalRanks;
   struct ncclChannel channels[MAXCHANNELS];
   struct ncclPeerInfo* peerInfo;
   struct ncclTopoSystem* topo;
 
   ncclNet_t* ncclNet;
   ncclCollNet_t* ncclCollNet;
+  /* collNet proxy progress resource private to comm. */
+  struct ncclProxySharedCollNet collNetSharedRes;
   void* bootstrap;
   // Bitmasks for ncclTransportP2pSetup
   uint64_t* connectSend;
@@ -200,8 +237,6 @@ struct ncclComm {
 
   // Counter for tracking CUDA launches (P2P and collectives included)
   uint64_t opCount;
-  // Collective operation counter
-  uint64_t collOpCount;
 
   // Channels for collectives
   int nChannels;
@@ -257,8 +292,7 @@ struct ncclComm {
   char intraPad2[64 - sizeof(uint64_t)];
   uint64_t intraBarrierGate; // only used if this is intraComm0
 
-  struct ncclProxyState proxyState;
-
+  struct ncclProxyState* proxyState;
   // Whether this communicator uses collNet
   int collNetSupport;
   int intraHighestTransportType;
@@ -268,9 +302,6 @@ struct ncclComm {
   void* nvlsResources;
 
   size_t channelSize; // User requested work size (bytes) for channel partitions
-
-  // Internal streams
-  struct ncclStrongStream deviceStream, hostStream;
 
   // pools backed by comm->memPermanent
   struct ncclMemoryPool memPool_ncclProxyOp;
