@@ -674,8 +674,6 @@ void CudaHelp::deallocate(int device, void *p, uint32_t op_id) {
           getpid(), obj_num, arena_num, op_id, dev->arenas.size(), obj_size, (intptr_t) p, arena_size, allocated_arena_size_pre, allocated_arena_size_post);
       }
 
-      assert(allocated_arena_size_pre != allocated_arena_size_post);
-
       removed = true;
       break;
     }
@@ -1433,6 +1431,7 @@ void invokeCall(CallHeader const &hdr, CallDataOp const &body) {
       body.elt_n,
       (ncclDataType_t)body.elt_ty, body.root, vc->comm, stream_nccl));
     verify_elt_n = 0; // no validation on send side
+    verify_elt_ix0 = vc->p2p_send_seqs[body.root];
     vc->p2p_send_seqs[body.root] += body.elt_n;
     break;
   case CallCode::recv:
@@ -1455,8 +1454,8 @@ void invokeCall(CallHeader const &hdr, CallDataOp const &body) {
 
   if (opt_verbose)
   {
-    fprintf(stderr, "[%u] id=%u fifo_idx=%u invokeCall: Posted nccl%s. device=%d ops_in_flight=%u src_line_number=%lu vcomm=0x%lx vcomm_seq=%d\n",
-      getpid(), my_op_id, fifo_idx, call_name, device, vc->nccl_ops_in_flight.load(std::memory_order_relaxed), hdr.line_number, body.vcomm, body.vcomm_seq);
+    fprintf(stderr, "[%u] id=%u fifo_idx=%u invokeCall: Posted nccl%s. device=%d ops_in_flight=%u src_line_number=%lu vcomm=0x%lx vcomm_seq=%d verify_elt_ix0=%lu\n",
+      getpid(), my_op_id, fifo_idx, call_name, device, vc->nccl_ops_in_flight.load(std::memory_order_relaxed), hdr.line_number, body.vcomm, body.vcomm_seq, verify_elt_ix0);
   }
 
   // Store a pointer to this vcomm nccl_ops_in_flight for bookkeeping
@@ -1524,9 +1523,9 @@ void invokeCall(CallHeader const &hdr, CallDataOp const &body) {
           std::fprintf(stderr,
             "[%d/%d] Corrupt elements %.2f%%\n"
             " call: nccl%s(elts=%p, eltn=%lld, type=%d, op=%d, root=%d)\n"
-            " seed: 0x%lx\n",
+            " seed: 0x%lx verify_elt_ix0=%lu\n",
             rank_me, rank_n, 100*double(bads)/verify_elt_n,
-            call_name, (void*)dptr, (long long)verify_elt_n, body.elt_ty, (int)red_op, body.root, (long)seed
+            call_name, (void*)dptr, (long long)verify_elt_n, body.elt_ty, (int)red_op, body.root, (long)seed, verify_elt_ix0
           );
           failure.store(1);
         }
@@ -1542,7 +1541,9 @@ void invokeCall(CallHeader const &hdr, CallDataOp const &body) {
   });
 }
 
-void playTrace(ByteBuffer& trace) {
+void playTrace(ByteBuffer& trace, std::chrono::duration<double>* duration) {
+  // Used to measure runtime after dissemination
+  std::chrono::time_point<std::chrono::steady_clock> start;
   int vuid_countdown = 0;
 
   // Counter of data op collectives
@@ -1735,6 +1736,8 @@ void playTrace(ByteBuffer& trace) {
     }
   }
 
+  start = std::chrono::steady_clock::now();
+
   // Synchronize with all threads by telling them to send us a message
   // to decrement countdown.
   int countdown = 0; // Avoid compiler warning #549-D
@@ -1748,6 +1751,7 @@ void playTrace(ByteBuffer& trace) {
 
   // synchronize all streams
   CudaHelp::synchronize();
+  *duration = std::chrono::steady_clock::now() - start;
 }
 
 // Helper to translate callcodes to strings
@@ -2104,7 +2108,7 @@ ByteBuffer loadDebugCallTrace(std::string const &path) {
         );
 
           if (opt_force_fit && call.root != 0) {
-            // If we are forcing fit, 
+            // If we are forcing fit
             if (force_fit_rank_map.find(call.root) != force_fit_rank_map.end()) {
               int proot = force_fit_rank_map.at(call.root);
 
@@ -2154,6 +2158,11 @@ ByteBuffer loadDebugCallTrace(std::string const &path) {
           // Map this call per-global communicator / rank for trace pre-checking
           // Don't check sends and receives for now
           if (hdr.code != CallCode::send && hdr.code != CallCode::recv) {
+            auto it = vcommToGlobalMap.find(call.vcomm);
+            if (it == vcommToGlobalMap.end()) {
+              fprintf(stderr, "ERROR: Couldn't find entry for call.vcomm=0x%" PRIx64 " in vcommToGlobalMap\nMake sure your application has called ncclCommInitRank() on this communicator before using it in a collective\n", call.vcomm);
+              assert(0);
+            }
             vcommToGlobalMap.at(call.vcomm)->data_ops_map[rank].push_back({hdr, call});
           }
 
@@ -2271,6 +2280,7 @@ int main(int arg_n, char **args) {
         "                 Only traces from the first N hosts in the log will be replayed, where N is the physical host count of the replay job.\n"
         "                 The virtual rank specified in ncclCommInitRank() will be mapped to the physical mpi rank of a given process\n"
         "                 The root of collective operations will either be 0 if originally 0, or assigned to the mapped physical rank\n"
+        "                 This may produce unreliable results for peer-to-peer (ncclSend and ncclRecv)"
         "  <path>, -    Path to file containing NCCL log. If NCCL log is split over\n"
         "               multiple files then you must concatenate them manually.\n"
         "               \"-\" indicates stdin.\n"
@@ -2331,19 +2341,17 @@ int main(int arg_n, char **args) {
     failure.store(1);
   }
 
-  auto start = std::chrono::system_clock::now();
-  playTrace(trace);
-  auto end = std::chrono::system_clock::now();
+  std::chrono::duration<double> duration;
+  playTrace(trace, &duration);
 
   // Get end time
   // Gather elapsed time and call counts from all ranks to rank 0
   std::vector<std::chrono::duration<double>> durations(mpi_rank_n);
   std::vector<size_t> call_counts(mpi_rank_n);
-  std::chrono::duration<double> diff = end - start;
-  
+
   // If we're waiting on the rank 0 progress thread to join, don't proceed
   MPI_Barrier(MPI_COMM_WORLD);
-  MPI_Gather(&diff, sizeof(diff), MPI_CHAR, &durations[0], sizeof(diff), MPI_CHAR, 0, MPI_COMM_WORLD);
+  MPI_Gather(&duration, sizeof(duration), MPI_CHAR, &durations[0], sizeof(duration), MPI_CHAR, 0, MPI_COMM_WORLD);
   MPI_Gather(&data_op_call_count, sizeof(data_op_call_count), MPI_CHAR, &call_counts[0], sizeof(data_op_call_count), MPI_CHAR, 0, MPI_COMM_WORLD);
 
   // Gather op count from all ranks to rank 0
