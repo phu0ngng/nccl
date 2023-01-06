@@ -684,10 +684,10 @@ void* ncclProxyProgress(void *comm_) {
   nvtxNameOsThreadA(syscall(SYS_gettid), threadName);
 
   int lastIdle = 0;
-  /* Too frequent call of ncclProxyGetPostedOps() will result in perf regression for small message 
+  /* Too frequent call of ncclProxyGetPostedOps() will result in perf regression for small message
    * communication. proxyOpAppendCounter is a counter that helps us decide if we need to append proxy ops.
-   * After each progress, proxyOpAppendCounter will increase by 1 and compare with environment variable 
-   * ncclParamProgressAppendOpFreq(). If they are equal, we will append proxy ops. This will decrease the 
+   * After each progress, proxyOpAppendCounter will increase by 1 and compare with environment variable
+   * ncclParamProgressAppendOpFreq(). If they are equal, we will append proxy ops. This will decrease the
    * frequency of calling ncclProxyGetPostedOps() and reduce the perf impact. */
   int proxyOpAppendCounter = 0;
   struct ncclProxyArgs profArgs; // Only used for profiling purposes

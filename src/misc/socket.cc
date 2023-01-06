@@ -491,7 +491,7 @@ static ncclResult_t socketPollConnect(struct ncclSocket* sock) {
   pfd.fd = sock->fd;
   pfd.events = POLLOUT;
   ret = poll(&pfd, 1, timeout);
-  
+
   if (ret == 0 || (ret < 0 && errno == EINTR)) {
     return ncclSuccess;
   } else if (ret < 0) {
