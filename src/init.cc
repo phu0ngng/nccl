@@ -1176,7 +1176,6 @@ static ncclResult_t ncclCommInitRankDev(ncclComm_t* newcomm, int nranks, ncclUni
 exit:
   return ncclGroupErrCheck(res);
 fail:
-  if (job) free(job);
   if (comm) {
     if (comm->abortFlag) ncclCudaHostFree((void *)comm->abortFlag);
     free(comm);
@@ -1401,7 +1400,6 @@ static ncclResult_t commFinalize(ncclComm_t comm, bool userCalled) {
 exit:
   return ncclGroupErrCheck(ret);
 fail:
-  if (job) free(job);
   goto exit;
 }
 
@@ -1448,26 +1446,7 @@ static ncclResult_t commReclaim(ncclComm_t comm) {
     NCCLCHECKGOTO(commFinalize(comm, false), ret, fail);
   }
 
-  if (comm->intraComm0 == NULL) {
-    /* if init errors happen and comm->intraComm0 == NULL, no proxy connection is built up, and no finalize thread
-     * have been launched. Main thread can reclaim everything since no NCCL kernel was issued. */
-    struct ncclCommFinalizeAsyncJob job;
-
-    job.comm = comm;
-    curRank = comm->rank;
-    /* comm aborts, commDestroySync should not be blocked. */
-    if ((ret = commDestroySync((struct ncclAsyncJob*) &job)) != ncclSuccess) {
-      WARN("commReclaim: comm %p (rank = %d) in abort, error %d", comm, curRank, ret);
-    }
-
-    if ((ret = ncclProxyDestroy(comm)) != ncclSuccess) {
-      WARN("commReclaim: comm %p (rank = %d) destroys proxy resource error %d", comm, curRank, ret);
-    }
-
-    if ((ret = commCleanup(comm)) != ncclSuccess) {
-      WARN("commReclaim: cleanup comm %p rank %d failed in destroy/abort, error %d", comm, curRank, ret);
-    }
-  } else {
+  if (comm->intraComm0 != NULL) {
     int curRankCnt;
     int intraRanks = comm->intraRanks;
     ncclComm_t intracomm0 = comm->intraComm0;
