@@ -59,6 +59,7 @@ typedef struct ncclConfig_v21700 {
   int cgaClusterSize;
   int minCTAs;
   int maxCTAs;
+  const char *netName;
 } ncclConfig_t;
 
 /* Config initializer must be assigned to initialize config structure when it is created.
@@ -70,7 +71,8 @@ typedef struct ncclConfig_v21700 {
   NCCL_CONFIG_UNDEF_INT,                    /* blocking */              \
   NCCL_CONFIG_UNDEF_INT,                    /* cgaClusterSize */        \
   NCCL_CONFIG_UNDEF_INT,                    /* minCTAs */               \
-  NCCL_CONFIG_UNDEF_INT                     /* maxCTAs */               \
+  NCCL_CONFIG_UNDEF_INT,                    /* maxCTAs */               \
+  NCCL_CONFIG_UNDEF_PTR                     /* netName */               \
 }
 
 /* Return the NCCL_VERSION_CODE of the NCCL library in the supplied integer.

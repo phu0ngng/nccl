@@ -220,6 +220,7 @@ static ncclResult_t commFree(ncclComm_t comm) {
   ncclMemoryStackDestruct(&comm->memPermanent);
 
   ncclCudaHostFree((void *)comm->abortFlag);
+  free(comm->netName);
 
   commPoison(comm); // poison comm before free to avoid comm reuse.
   free(comm);
@@ -1127,12 +1128,17 @@ static ncclResult_t parseCommConfig(ncclComm_t comm, ncclConfig_t *config) {
   int cgaClusterSizeEnv;
   int minCTAsEnv;
   int maxCTAsEnv;
+  const char *envNetName, *tmpNetName;
 
   /* default config value can be tuned on different platform. */
   if (config->blocking == NCCL_CONFIG_UNDEF_INT) config->blocking = 1;
   if (config->cgaClusterSize == NCCL_CONFIG_UNDEF_INT) config->cgaClusterSize = 4;
   if (config->minCTAs == NCCL_CONFIG_UNDEF_INT) config->minCTAs = 1;
   if (config->maxCTAs == NCCL_CONFIG_UNDEF_INT) config->maxCTAs = MAXCHANNELS;
+  if (config->netName == NCCL_CONFIG_UNDEF_PTR)
+    tmpNetName = NULL;
+  else
+    tmpNetName = config->netName;
 
   /* assign config to communicator */
   comm->blocking = config->blocking;
@@ -1178,6 +1184,17 @@ static ncclResult_t parseCommConfig(ncclComm_t comm, ncclConfig_t *config) {
     WARN("minCTAs %d is larger than maxCTAs %d\n", comm->minCTAs, comm->maxCTAs);
     ret = ncclInvalidArgument;
     goto fail;
+  }
+  
+  envNetName = getenv("NCCL_NET");
+  if (envNetName)
+    tmpNetName = envNetName;
+  if (tmpNetName != NULL) {
+    int netNameLen = strlen(tmpNetName) + 1;
+    comm->netName = (char*)malloc(netNameLen);
+    memcpy(comm->netName, tmpNetName, netNameLen);
+  } else {
+    comm->netName = NULL;
   }
 
 exit:

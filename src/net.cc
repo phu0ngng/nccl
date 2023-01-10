@@ -264,9 +264,10 @@ static ncclResult_t collNetGetState(int i, enum ncclNetState* state) {
 
 ncclResult_t ncclNetInit(struct ncclComm* comm) {
   // Initialize main communication network
-  char* netName = getenv("NCCL_NET");
+  char* netName;
   bool ok = false;
 
+  netName = comm->netName;
   for (int i=0; i<3; i++) {
     if (ncclNets[i] == nullptr) continue;
     enum ncclNetState state;
