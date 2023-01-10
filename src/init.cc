@@ -1175,7 +1175,6 @@ static ncclResult_t ncclCommInitRankDev(ncclComm_t* newcomm, int nranks, ncclUni
 exit:
   return ncclGroupErrCheck(res);
 fail:
-  if (job) free(job);
   if (comm) {
     if (comm->abortFlag) ncclCudaHostFree((void *)comm->abortFlag);
     free(comm);
@@ -1400,7 +1399,6 @@ static ncclResult_t commFinalize(ncclComm_t comm, bool userCalled) {
 exit:
   return ncclGroupErrCheck(ret);
 fail:
-  if (job) free(job);
   goto exit;
 }
 
