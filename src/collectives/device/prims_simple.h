@@ -82,7 +82,7 @@ class Primitives<
   }
 
   template <int DirectRecv, int DirectSend, int Recv, int Send, int Src, int Dst>
-  __device__ __forceinline__ void waitPeer(intptr_t dstIx, intptr_t remoteIx, int offset, int nelts) {
+  __device__ __forceinline__ void waitPeer(intptr_t srcIx, intptr_t dstIx, int offset, int nelts) {
     const bool isSendNotRecv = (Send && Recv) ? (flags & RoleWaitSend) : Send;
     const bool noRecvWait = DirectRecv && Src && (flags & DirectRead);        // no wait when directly reading from remote input
     const bool noSendWait = DirectSend && (flags & (DirectRead|DirectWrite)); // no wait in empty send (e.g. directScatter) or direct remote write
@@ -106,7 +106,7 @@ class Primitives<
         ptrs[index] = connEltsFifo + loadInt(connOffsFifoPtr + (step%NCCL_STEPS))/sizeof(T);
       else if (isSendNotRecv && DirectSend) {
         if (flags & DirectWrite) {
-          ptrs[index] = directBuff + remoteIx + offset;
+          ptrs[index] = directBuff + dstIx + offset;
         } else if (flags & DirectRead) {  // empty send
           ptrs[index] = nullptr;
         } else {
@@ -114,7 +114,7 @@ class Primitives<
         }
       } else if (!isSendNotRecv && DirectRecv) {
         if (flags & DirectRead) {
-          ptrs[index] = directBuff + remoteIx + offset;
+          ptrs[index] = directBuff + srcIx + offset;
         } else if (flags & DirectWrite) {
           ptrs[index] = directBuff + dstIx + offset;  // send to next from my output buffer
         } else {
@@ -138,7 +138,7 @@ class Primitives<
 
   template <int DirectRecv1, int DirectSend1, int Recv, int Send, int SrcBuf, int DstBuf>
   __device__ __forceinline__ void genericOp(
-      intptr_t srcIx, intptr_t dstIx, intptr_t remoteIx, int nelem, bool postOp
+      intptr_t srcIx, intptr_t dstIx, int nelem, bool postOp
     ) {
     constexpr int DirectRecv = 1 && Direct && DirectRecv1;
     constexpr int DirectSend = 1 && Direct && DirectSend1;
@@ -187,7 +187,7 @@ class Primitives<
           ncclShmem.groups[group].srcs[0] = userBuff + srcIx + offset;
         if (Dst && (flags & (DstBuf==Input ? RoleInput : RoleOutput)))
           ncclShmem.groups[group].dsts[0] = userBuff + dstIx + offset;
-        waitPeer<DirectRecv, DirectSend, Recv, Send, Src, Dst>(dstIx, remoteIx, offset, sliceSize);
+        waitPeer<DirectRecv, DirectSend, Recv, Send, Src, Dst>(srcIx, dstIx, offset, sliceSize);
         subBarrier();
         if (MC && ncclShmem.groups[group].mcRecv) {
           void* src = ncclShmem.groups[group].srcs[0];
@@ -560,62 +560,62 @@ class Primitives<
   }
 
   __device__ __forceinline__ void send(intptr_t inpIx, int eltN) {
-    genericOp<0, 0, 0, 1, Input, -1>(inpIx, -1, -1, eltN, false);
+    genericOp<0, 0, 0, 1, Input, -1>(inpIx, -1, eltN, false);
   }
   __device__ __forceinline__ void sendFromOutput(intptr_t outIx, int eltN) {
-    genericOp<0, 0, 0, 1, Output, -1>(outIx, -1, -1, eltN, false);
+    genericOp<0, 0, 0, 1, Output, -1>(outIx, -1, eltN, false);
   }
-  __device__ __forceinline__ void directSend(intptr_t inpIx, intptr_t remoteOutIx, int eltN) {
-    genericOp<0, 1, 0, 1, Input, -1>(inpIx, -1, remoteOutIx, eltN, false);
+  __device__ __forceinline__ void directSend(intptr_t inpIx, intptr_t outIx, int eltN) {
+    genericOp<0, 1, 0, 1, Input, -1>(inpIx, outIx, eltN, false);
   }
-  __device__ __forceinline__ void directSendFromOutput(intptr_t outIx, intptr_t remoteOutIx, int eltN) {
-    genericOp<0, 1, 0, 1, Output, -1>(outIx, -1, remoteOutIx, eltN, false);
+  __device__ __forceinline__ void directSendFromOutput(intptr_t outIx, int eltN) {
+    genericOp<0, 1, 0, 1, Output, -1>(outIx, outIx, eltN, false);
   }
 
   __device__ __forceinline__ void recv(intptr_t outIx, int eltN, bool postOp=false) {
-    genericOp<0, 0, 1, 0, -1, Output>(-1, outIx, -1, eltN, postOp);
+    genericOp<0, 0, 1, 0, -1, Output>(-1, outIx, eltN, postOp);
   }
   __device__ __forceinline__ void directRecv(intptr_t outIx, int eltN) {
-    genericOp<1, 0, 1, 0, -1, Output>(-1, outIx, -1, eltN, /*postOp=*/false);
+    genericOp<1, 0, 1, 0, -1, Output>(-1, outIx, eltN, /*postOp=*/false);
   }
 
   __device__ __forceinline__ void copySend(intptr_t inpIx, intptr_t outIx, int eltN, bool postOp=false) {
-    genericOp<0, 0, 0, 1, Input, Output>(inpIx, outIx, -1, eltN, postOp);
+    genericOp<0, 0, 0, 1, Input, Output>(inpIx, outIx, eltN, postOp);
   }
-  __device__ __forceinline__ void directCopySend(intptr_t inpIx, intptr_t outIx, intptr_t remoteOutIx, int eltN, bool postOp=false) {
-    genericOp<0, 1, 0, 1, Input, Output>(inpIx, outIx, remoteOutIx, eltN, postOp);
+  __device__ __forceinline__ void directCopySend(intptr_t inpIx, intptr_t outIx, int eltN, bool postOp=false) {
+    genericOp<0, 1, 0, 1, Input, Output>(inpIx, outIx, eltN, postOp);
   }
 
   __device__ __forceinline__ void recvSend(int eltN, bool postOp=false) {
     genericOp<0, 0, 1, 1, -1, -1>(-1, -1, -1, eltN, postOp);
   }
   __device__ __forceinline__ void recvCopySend(intptr_t outIx, int eltN, bool postOp=false) {
-    genericOp<0, 0, 1, 1, -1, Output>(-1, outIx, -1, eltN, postOp);
+    genericOp<0, 0, 1, 1, -1, Output>(-1, outIx, eltN, postOp);
   }
-  __device__ __forceinline__ void directRecvCopySend(intptr_t outIx, intptr_t remoteOutIx, int eltN) {
-    genericOp<1, 1, 1, 1, -1, Output>(-1, outIx, remoteOutIx, eltN, false);
+  __device__ __forceinline__ void directRecvCopySend(intptr_t outIx, int eltN) {
+    genericOp<1, 1, 1, 1, -1, Output>(-1, outIx, eltN, false);
   }
-  __device__ __forceinline__ void recvCopyDirectSend(intptr_t outIx, intptr_t remoteOutIx, int eltN, bool postOp=false) {
-    genericOp<0, 1, 1, 1, -1, Output>(-1, outIx, remoteOutIx, eltN, postOp);
+  __device__ __forceinline__ void recvCopyDirectSend(intptr_t outIx, int eltN, bool postOp=false) {
+    genericOp<0, 1, 1, 1, -1, Output>(-1, outIx, eltN, postOp);
   }
 
   __device__ __forceinline__ void recvReduceCopy(intptr_t inpIx, intptr_t outIx, int eltN, bool postOp=false) {
-    genericOp<0, 0, 1, 0, Input, Output>(inpIx, outIx, -1, eltN, postOp);
+    genericOp<0, 0, 1, 0, Input, Output>(inpIx, outIx, eltN, postOp);
   }
 
   __device__ __forceinline__ void recvReduceSend(intptr_t inpIx, int eltN, bool postOp=false) {
-    genericOp<0, 0, 1, 1, Input, -1>(inpIx, -1, -1, eltN, postOp);
+    genericOp<0, 0, 1, 1, Input, -1>(inpIx, -1, eltN, postOp);
   }
-  __device__ __forceinline__ void directRecvReduceSend(intptr_t inpIx, intptr_t remoteInpIx, int eltN, bool postOp=false) {
-    genericOp<1, 0, 1, 1, Input, -1>(inpIx, -1, remoteInpIx, eltN, postOp);
+  __device__ __forceinline__ void directRecvReduceSend(intptr_t inpIx, int eltN, bool postOp=false) {
+    genericOp<1, 0, 1, 1, Input, -1>(inpIx, -1, eltN, postOp);
   }
 
   __device__ __forceinline__ void recvReduceCopySend(intptr_t inpIx, intptr_t outIx, int eltN, bool postOp=false) {
-    genericOp<0, 0, 1, 1, Input, Output>(inpIx, outIx, -1, eltN, postOp);
+    genericOp<0, 0, 1, 1, Input, Output>(inpIx, outIx, eltN, postOp);
   }
-  __device__ __forceinline__ void directRecvReduceCopySend(intptr_t inpIx, intptr_t outIx, intptr_t remoteOutIx, int eltN, bool postOp=false) {
+  __device__ __forceinline__ void directRecvReduceCopySend(intptr_t inpIx, intptr_t outIx, int eltN, bool postOp=false) {
     // Direct is only for the send part
-    genericOp<0, 1, 1, 1, Input, Output>(inpIx, outIx, remoteOutIx, eltN, postOp);
+    genericOp<0, 1, 1, 1, Input, Output>(inpIx, outIx, eltN, postOp);
   }
 
   __device__ __forceinline__ void

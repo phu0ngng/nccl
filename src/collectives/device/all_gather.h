@@ -55,7 +55,7 @@ namespace {
       if (inputBuf + chunkOffset == outputBuf + offset) { // In place
         prims.directSend(chunkOffset, offset, nelem);
       } else {
-        prims.directCopySend(chunkOffset, offset, offset, nelem);
+        prims.directCopySend(chunkOffset, offset, nelem);
       }
 
       // k-2 steps: copy to next GPU
@@ -63,7 +63,7 @@ namespace {
         rankDest = ringRanks[nranks-j];
         offset = chunkOffset + rankDest * size;
 
-        prims.directRecvCopySend(offset, offset, nelem);
+        prims.directRecvCopySend(offset, nelem);
       }
 
       // Make final copy from buffer to dest.
