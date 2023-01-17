@@ -20,7 +20,8 @@ __shared__ ncclShmemData ncclShmem;
   NCCL_FUNC5(func, RING,    devredop, type, nullify), \
   NCCL_FUNC5(func, COLLNET_DIRECT, devredop, type, nullify), \
   NCCL_FUNC5(func, COLLNET_CHAIN,  devredop, type, nullify), \
-  NCCL_FUNC5(func, MC,             devredop, type, nullify)
+  NCCL_FUNC5(func, MC,             devredop, type, nullify), \
+  NCCL_FUNC5(func, MC_RING,        devredop, type, nullify)
 
 #if defined(__CUDA_BF16_TYPES_EXIST__)
 // Must be consistent with ncclDataType_t

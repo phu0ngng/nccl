@@ -362,6 +362,7 @@ ncclResult_t ncclMcSetup(struct ncclComm* comm) {
           resources->ucBuff + ((r*2+1)*comm->nChannels+c)*(buffSize+memSize));*/
     }
   }
+
 cleanup:
   free(mcShareableHandle);
   return res;

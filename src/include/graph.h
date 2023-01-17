@@ -66,6 +66,7 @@ ncclResult_t ncclTopoSearchInit(struct ncclTopoSystem* system);
 #define NCCL_TOPO_PATTERN_SPLIT_TREE 2      // Spread NIC traffic between two GPUs (Tree parent on first GPU, tree children on the second GPU)
 #define NCCL_TOPO_PATTERN_TREE 3            // All NIC traffic going to/from the same GPU
 #define NCCL_TOPO_PATTERN_RING 4            // Ring
+#define NCCL_TOPO_PATTERN_MC 5              // MC+SHARP and MC+Ring
 struct ncclTopoGraph {
   // Input / output
   int id; // ring : 0, tree : 1, collnet : 2
@@ -99,16 +100,15 @@ struct ncclTopoRanks {
   int treeToParent[MAXCHANNELS];
   int treeToChild0[MAXCHANNELS];
   int treeToChild1[MAXCHANNELS];
+  int mcRing[MAXCHANNELS];
 };
 
-ncclResult_t ncclTopoPreset(struct ncclComm* comm,
-    struct ncclTopoGraph* treeGraph, struct ncclTopoGraph* ringGraph, struct ncclTopoGraph* collNetGraph,
-    struct ncclTopoRanks* topoRanks);
+ncclResult_t ncclTopoPreset(struct ncclComm* comm, struct ncclTopoGraph** graphs, struct ncclTopoRanks* topoRanks);
 
 ncclResult_t ncclTopoPostset(struct ncclComm* comm, int* firstRanks, int* treePatterns,
     struct ncclTopoRanks** allTopoRanks, int* rings, struct ncclTopoGraph* collNetGraph);
 
-ncclResult_t ncclTopoTuneModel(struct ncclComm* comm, int minCompCap, int maxCompCap, struct ncclTopoGraph* treeGraph, struct ncclTopoGraph* ringGraph, struct ncclTopoGraph* collNetGraph);
+ncclResult_t ncclTopoTuneModel(struct ncclComm* comm, int minCompCap, int maxCompCap, struct ncclTopoGraph** graphs);
 #include "info.h"
 ncclResult_t ncclTopoGetAlgoTime(struct ncclInfo* info, int algorithm, int protocol, int numPipeOps, float* time);
 

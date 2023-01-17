@@ -106,6 +106,10 @@ static ncclResult_t ncclTopoFollowPath(struct ncclTopoSystem* system, struct ncc
   if (type1 == -1) return ncclSuccess;
   struct ncclTopoNode* node1 = system->nodes[type1].nodes+index1;
   struct ncclTopoLinkList* path = node1->paths[type2]+index2;
+  if (path == NULL) {
+    WARN("No path computed to go from %s/%d to %s/%d", topoNodeTypeStr[type1], index1, topoNodeTypeStr[type2], index2);
+    return ncclInternalError;
+  }
   if (path->count == 0 ) return ncclSuccess;
 
   // Now check link type
@@ -290,6 +294,39 @@ ncclResult_t ncclTopoSearchTryGpu(struct ncclTopoSystem* system, struct ncclTopo
   return ncclSuccess;
 }
 
+ncclResult_t ncclTopoSearchTryMc(struct ncclTopoSystem* system, struct ncclTopoGraph* graph, struct ncclTopoGraph* saveGraph, int g, int ngpus, int *time) {
+  struct ncclTopoNode* nvs;
+  struct ncclTopoNode* gpu;
+  int d0=0; // See if there is enough bandwidth for NVS->GPU traffic
+  do {
+    NCCLCHECK(ncclTopoFollowPath(system, graph, NVS, 0, GPU, d0, d0 == g ? 2 : 1, &gpu));
+    d0++;
+  } while (gpu && d0 < system->nodes[GPU].count);
+  if (gpu == NULL) {
+    d0--;
+  } else {
+    int d1=0; // See if there is enough bandwidth for GPU->NVS traffic
+    do {
+      NCCLCHECK(ncclTopoFollowPath(system, graph, GPU, d1, NVS, 0, d1 == g ? 2 : 1, &nvs));
+      d1++;
+    } while (nvs && d1 < system->nodes[GPU].count);
+    if (nvs == NULL) {
+      d1--;
+    } else { // Both direstions worked. Move on to the next path.
+      NCCLCHECK(ncclTopoSearchRecGpu(system, graph, saveGraph, NULL, ngpus, -1, -1, 0, time));
+    }
+    while (d1) {
+      d1--;
+      NCCLCHECK(ncclTopoFollowPath(system, graph, GPU, d1, NVS, 0, d1 == g ? -2 : -1, &nvs));
+    }
+  }
+  while (d0) {
+    d0--;
+    NCCLCHECK(ncclTopoFollowPath(system, graph, NVS, 0, GPU, d0, d0 == g ? -2 : -1, &gpu));
+  }
+  return ncclSuccess;
+}
+
 ncclResult_t ncclTopoCompareGraphs(struct ncclTopoGraph* graph, struct ncclTopoGraph* refGraph, int* copy) {
   // 1. Constraint to get the same nChannels between Rings and Trees
   if (graph->nChannels < graph->minChannels) return ncclSuccess;
@@ -417,6 +454,8 @@ ncclResult_t ncclTopoSearchRecGpu(struct ncclTopoSystem* system, struct ncclTopo
       }
       free(nets);
     }
+  } else if (graph->pattern == NCCL_TOPO_PATTERN_MC) {
+    NCCLCHECK(ncclTopoSearchTryMc(system, graph, saveGraph, g, ngpus, time));
   } else if (step < system->nodes[GPU].count-1) {
     // Go to next GPU
     int next[NCCL_TOPO_MAX_NODES];
@@ -582,6 +621,8 @@ ncclResult_t ncclTopoSearchRec(struct ncclTopoSystem* system, struct ncclTopoGra
     if (graph->sameChannels == 0 || graph->nChannels == 0) {
       // Finally, try all other possibilities unless we are forced to use the same channels
       for (int g=0; g<system->nodes[GPU].count; g++) {
+        // Force intra-node MC algorithm to pull evenly from all GPUs.
+        if (graph->pattern == NCCL_TOPO_PATTERN_MC && g != graph->nChannels%system->nodes[GPU].count) continue;
         NCCLCHECK(ncclTopoSearchTryGpu(system, graph, saveGraph, 0, backToNet, backToFirstRank, 0, time, -1, -1, g));
       }
     }
@@ -743,7 +784,8 @@ ncclResult_t ncclTopoCompute(ncclTopoSystem* system, struct ncclTopoGraph* graph
   graph->typeIntra = ngpus == 1 ? PATH_LOC : PATH_NVL;
   graph->typeInter = PATH_PIX;
   graph->nChannels = 0;
-  graph->sameChannels = 1;
+  int trySameChannels = graph->pattern == NCCL_TOPO_PATTERN_MC ? 0 : 1;
+  graph->sameChannels = trySameChannels;
 
   char* str = getenv("NCCL_GRAPH_FILE");
   if (str) {
@@ -758,11 +800,11 @@ ncclResult_t ncclTopoCompute(ncclTopoSystem* system, struct ncclTopoGraph* graph
     if (graph->nChannels > 0) return ncclSuccess;
   }
 
-  if (ngpus == 1) if (graph->pattern != NCCL_TOPO_PATTERN_RING) graph->pattern = NCCL_TOPO_PATTERN_TREE;
-
-  // SPLIT_TREE works better on older archs.
   int ccMin;
   NCCLCHECK(ncclTopoGetCompCap(system, &ccMin, NULL));
+  if (graph->pattern == NCCL_TOPO_PATTERN_MC && (system->nodes[NVS].count == 0 || ccMin < 90)) return ncclSuccess;
+
+  if (ngpus == 1) if (graph->pattern != NCCL_TOPO_PATTERN_RING) graph->pattern = NCCL_TOPO_PATTERN_TREE;
 
   struct ncclTopoGraph tmpGraph;
   memcpy(&tmpGraph, graph, sizeof(struct ncclTopoGraph));
@@ -813,7 +855,7 @@ search:
       tmpGraph.sameChannels = 0;
       goto search;
     }
-    tmpGraph.sameChannels = 1;
+    tmpGraph.sameChannels = trySameChannels;
 
     if (time != -1) globalTimeout += time;
     else globalTimeout = NCCL_SEARCH_GLOBAL_TIMEOUT;
@@ -881,7 +923,7 @@ done:
     memcpy(&tmpGraph, graph, sizeof(tmpGraph));
   }
 
-  if (graph->nChannels == 0 && graph->collNet == 0) {
+  if (graph->nChannels == 0 && graph->collNet == 0 && graph->pattern != NCCL_TOPO_PATTERN_MC) {
     WARN("Could not find a path for pattern %d, falling back to simple order", graph->pattern);
     for (int i=0; i<ngpus; i++) graph->intra[i] = system->nodes[GPU].nodes[i].gpu.rank;
     graph->inter[0] = graph->inter[1] = 0;

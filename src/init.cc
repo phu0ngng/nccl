@@ -595,6 +595,8 @@ static ncclResult_t initTransportsRank(struct ncclComm* comm, ncclUniqueId* comm
   struct ncclTopoGraph ringGraph;
   struct ncclTopoGraph treeGraph;
   struct ncclTopoGraph collNetGraph;
+  struct ncclTopoGraph mcGraph;
+  struct ncclTopoGraph* graphs[] = { &treeGraph, &ringGraph, &collNetGraph, &collNetGraph, &mcGraph, &mcGraph };
 
   struct graphInfo {
     int pattern;
@@ -609,9 +611,8 @@ static ncclResult_t initTransportsRank(struct ncclComm* comm, ncclUniqueId* comm
   struct allGatherInfo {
     int netDev;
     int collNetSupport;
-    struct graphInfo tree;
-    struct graphInfo ring;
-    struct graphInfo collNet;
+    int mcSupport;
+    struct graphInfo graphInfo[NCCL_NUM_ALGORITHMS];
     struct ncclTopoRanks topoRanks;
   };
 
@@ -689,12 +690,19 @@ static ncclResult_t initTransportsRank(struct ncclComm* comm, ncclUniqueId* comm
   NCCLCHECKGOTO(ncclTopoCompute(comm->topo, &collNetGraph), ret, fail);
   NCCLCHECKGOTO(ncclTopoPrintGraph(comm->topo, &collNetGraph), ret, fail);
 
+  mcGraph.id = 3;
+  mcGraph.pattern = NCCL_TOPO_PATTERN_MC;
+  mcGraph.collNet = 1;
+  mcGraph.minChannels = mcGraph.maxChannels = ringGraph.nChannels;
+  NCCLCHECKGOTO(ncclTopoCompute(comm->topo, &mcGraph), ret, fail);
+  NCCLCHECKGOTO(ncclTopoPrintGraph(comm->topo, &mcGraph), ret, fail);
+
   // Initialize num P2P LL buffers for this communicator
   comm->allocP2pNetLLBuffers = ncclParamAllocP2pNetLLBuffers() == 1;
 
   if (comm->rank == ncclParamGraphDumpFileRank()) {
-    struct ncclTopoGraph* graphs[3] = { &ringGraph, &treeGraph, &collNetGraph };
-    NCCLCHECKGOTO(ncclTopoDumpGraphs(comm->topo, 3, graphs), ret, fail);
+    struct ncclTopoGraph* graphs[4] = { &ringGraph, &treeGraph, &collNetGraph, &mcGraph };
+    NCCLCHECKGOTO(ncclTopoDumpGraphs(comm->topo, 4, graphs), ret, fail);
   }
 
   // Determine local CollNet support before all-gather
@@ -712,31 +720,21 @@ static ncclResult_t initTransportsRank(struct ncclComm* comm, ncclUniqueId* comm
   // AllGather3 - begin
   NCCLCHECKGOTO(ncclCalloc(&allGather3Data, nranks), ret, fail);
   NCCLCHECKGOTO(ncclTopoGetLocalNet(comm->topo, rank, &allGather3Data[rank].netDev), ret, fail);
-  allGather3Data[rank].tree.pattern = treeGraph.pattern;
-  allGather3Data[rank].tree.nChannels = treeGraph.nChannels;
-  allGather3Data[rank].tree.sameChannels = treeGraph.sameChannels;
-  allGather3Data[rank].tree.bwIntra = treeGraph.bwIntra;
-  allGather3Data[rank].tree.bwInter = treeGraph.bwInter;
-  allGather3Data[rank].tree.typeIntra = treeGraph.typeIntra;
-  allGather3Data[rank].tree.typeInter = treeGraph.typeInter;
-  allGather3Data[rank].ring.pattern = ringGraph.pattern;
-  allGather3Data[rank].ring.nChannels = ringGraph.nChannels;
-  allGather3Data[rank].ring.sameChannels = ringGraph.sameChannels;
-  allGather3Data[rank].ring.bwIntra = ringGraph.bwIntra;
-  allGather3Data[rank].ring.bwInter = ringGraph.bwInter;
-  allGather3Data[rank].ring.typeIntra = ringGraph.typeIntra;
-  allGather3Data[rank].ring.typeInter = ringGraph.typeInter;
-  allGather3Data[rank].collNet.pattern = collNetGraph.pattern;
-  allGather3Data[rank].collNet.nChannels = collNetGraph.nChannels;
-  allGather3Data[rank].collNet.sameChannels = collNetGraph.sameChannels;
-  allGather3Data[rank].collNet.bwIntra = collNetGraph.bwIntra;
-  allGather3Data[rank].collNet.bwInter = collNetGraph.bwInter;
-  allGather3Data[rank].collNet.typeIntra = collNetGraph.typeIntra;
-  allGather3Data[rank].collNet.typeInter = collNetGraph.typeInter;
+
+  for (int a=0; a<NCCL_NUM_ALGORITHMS; a++) {
+    allGather3Data[rank].graphInfo[a].pattern = graphs[a]->pattern;
+    allGather3Data[rank].graphInfo[a].nChannels = graphs[a]->nChannels;
+    allGather3Data[rank].graphInfo[a].sameChannels = graphs[a]->sameChannels;
+    allGather3Data[rank].graphInfo[a].bwIntra = graphs[a]->bwIntra;
+    allGather3Data[rank].graphInfo[a].bwInter = graphs[a]->bwInter;
+    allGather3Data[rank].graphInfo[a].typeIntra = graphs[a]->typeIntra;
+    allGather3Data[rank].graphInfo[a].typeInter = graphs[a]->typeInter;
+  }
   allGather3Data[rank].collNetSupport = comm->collNetSupport;
+  allGather3Data[rank].mcSupport = comm->mcSupport;
 
   comm->nChannels = std::min(treeGraph.nChannels, ringGraph.nChannels);
-  NCCLCHECKGOTO(ncclTopoPreset(comm, &treeGraph, &ringGraph, &collNetGraph, &allGather3Data[rank].topoRanks), ret, fail);
+  NCCLCHECKGOTO(ncclTopoPreset(comm, graphs, &allGather3Data[rank].topoRanks), ret, fail);
 
   NCCLCHECKGOTO(bootstrapAllGather(comm->bootstrap, allGather3Data, sizeof(*allGather3Data)), ret, fail);
 
@@ -752,7 +750,7 @@ static ncclResult_t initTransportsRank(struct ncclComm* comm, ncclUniqueId* comm
       comm->nNodes++;
       nodesFirstRank[node] = firstRank;
       // Record tree pattern of each node as they can be different depending on sm arch
-      nodesTreePatterns[node] = allGather3Data[r].tree.pattern;
+      nodesTreePatterns[node] = allGather3Data[r].graphInfo[NCCL_ALGO_TREE].pattern;
     }
     comm->rankToNode[r] = node;
   }
@@ -796,25 +794,16 @@ static ncclResult_t initTransportsRank(struct ncclComm* comm, ncclUniqueId* comm
     comm->peerInfo[i].netDev = allGather3Data[i].netDev;
     allTopoRanks[i] = &allGather3Data[i].topoRanks;
     // Make sure we align all ranks so that the tuning is consistent across ranks
-    treeGraph.nChannels = std::min(allGather3Data[i].tree.nChannels, treeGraph.nChannels);
-    treeGraph.sameChannels = std::min(allGather3Data[i].tree.sameChannels, treeGraph.sameChannels);
-    treeGraph.bwIntra = std::min(allGather3Data[i].tree.bwIntra, treeGraph.bwIntra);
-    treeGraph.bwInter = std::min(allGather3Data[i].tree.bwInter, treeGraph.bwInter);
-    treeGraph.typeIntra = std::max(allGather3Data[i].tree.typeIntra, treeGraph.typeIntra);
-    treeGraph.typeInter = std::max(allGather3Data[i].tree.typeInter, treeGraph.typeInter);
-    ringGraph.nChannels = std::min(allGather3Data[i].ring.nChannels, ringGraph.nChannels);
-    ringGraph.sameChannels = std::min(allGather3Data[i].ring.sameChannels, ringGraph.sameChannels);
-    ringGraph.bwIntra = std::min(allGather3Data[i].ring.bwIntra, ringGraph.bwIntra);
-    ringGraph.bwInter = std::min(allGather3Data[i].ring.bwInter, ringGraph.bwInter);
-    ringGraph.typeIntra = std::max(allGather3Data[i].ring.typeIntra, ringGraph.typeIntra);
-    ringGraph.typeInter = std::max(allGather3Data[i].ring.typeInter, ringGraph.typeInter);
-    collNetGraph.nChannels = std::min(allGather3Data[i].collNet.nChannels, collNetGraph.nChannels);
-    collNetGraph.sameChannels = std::min(allGather3Data[i].collNet.sameChannels, collNetGraph.sameChannels);
-    collNetGraph.bwIntra = std::min(allGather3Data[i].collNet.bwIntra, collNetGraph.bwIntra);
-    collNetGraph.bwInter = std::min(allGather3Data[i].collNet.bwInter, collNetGraph.bwInter);
-    collNetGraph.typeIntra = std::max(allGather3Data[i].collNet.typeIntra, collNetGraph.typeIntra);
-    collNetGraph.typeInter = std::max(allGather3Data[i].collNet.typeInter, collNetGraph.typeInter);
+    for (int a=0; a<NCCL_NUM_ALGORITHMS; a++) {
+      graphs[a]->nChannels = std::min(allGather3Data[i].graphInfo[a].nChannels, graphs[a]->nChannels);
+      graphs[a]->sameChannels = std::min(allGather3Data[i].graphInfo[a].sameChannels, graphs[a]->sameChannels);
+      graphs[a]->bwIntra = std::min(allGather3Data[i].graphInfo[a].bwIntra, graphs[a]->bwIntra);
+      graphs[a]->bwInter = std::min(allGather3Data[i].graphInfo[a].bwInter, graphs[a]->bwInter);
+      graphs[a]->typeIntra = std::max(allGather3Data[i].graphInfo[a].typeIntra, graphs[a]->typeIntra);
+      graphs[a]->typeInter = std::max(allGather3Data[i].graphInfo[a].typeInter, graphs[a]->typeInter);
+    }
     comm->collNetSupport = std::min(allGather3Data[i].collNetSupport, comm->collNetSupport);
+    comm->mcSupport = std::min(allGather3Data[i].mcSupport, comm->mcSupport);
   }
 
   comm->nChannels = treeGraph.nChannels = ringGraph.nChannels = std::min(treeGraph.nChannels, ringGraph.nChannels);
@@ -894,7 +883,7 @@ static ncclResult_t initTransportsRank(struct ncclComm* comm, ncclUniqueId* comm
       minCompCap = std::min(comm->peerInfo[i].cudaCompCap, minCompCap);
       maxCompCap = std::max(comm->peerInfo[i].cudaCompCap, maxCompCap);
     }
-    NCCLCHECKGOTO(ncclTopoTuneModel(comm, minCompCap, maxCompCap, &treeGraph, &ringGraph, &collNetGraph), ret, fail);
+    NCCLCHECKGOTO(ncclTopoTuneModel(comm, minCompCap, maxCompCap, graphs), ret, fail);
   } while(0);
 
   // Compute nChannels per peer for p2p

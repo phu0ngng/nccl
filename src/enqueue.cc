@@ -33,7 +33,8 @@ struct ncclKernelMatch {
   NCCL_FUNC5(func, RING,           devredop, type, specialized), \
   NCCL_FUNC5(func, COLLNET_DIRECT, devredop, type, specialized), \
   NCCL_FUNC5(func, COLLNET_CHAIN,  devredop, type, specialized), \
-  NCCL_FUNC5(func, MC,             devredop, type, specialized)
+  NCCL_FUNC5(func, MC,             devredop, type, specialized), \
+  NCCL_FUNC5(func, MC_RING,        devredop, type, specialized)
 
 #ifdef __CUDA_BF16_TYPES_EXIST__
   #define HAVE_BFLOAT16 1
