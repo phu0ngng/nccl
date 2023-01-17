@@ -310,6 +310,8 @@ ncclResult_t ncclMcSetup(struct ncclComm* comm) {
     channel->mc.down = comm->nRanks+1+comm->localRank;
     channel->mc.out = -1;       // Network not yet implemented.
     channel->mc.headRank = comm->localRank;  // Network not yet implemented.
+    channel->mc.node = comm->node;
+    channel->mc.nNodes = comm->nNodes;
   }
 
   for (int r=0; r<nranks; r++) {

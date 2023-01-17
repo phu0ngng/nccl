@@ -64,15 +64,15 @@ static float hwLat [3][NCCL_NUM_ALGORITHMS][NCCL_NUM_PROTOCOLS] =
 { /* NVLINK */
   { /* Tree (LL/LL128/Simple)*/ { .52, 1.25, 28 }, /* Ring (LL/LL128/Simple)*/ { .47, 1.9, 3.4 },
     /* CollNetDirect (Simple)*/ { 0, 0, 8.0 }, /* CollNetChain (Simple)*/ { 0, 0, 8.0 },
-    /* MC */ { 0, 0, 8.0 } },
+    /* MC */ { 0, 0, 8.0 }, /* MCRing */ { 0, 0, 8.0 } },
   /* PCI */
   { /* Tree (LL/LL128/Simple)*/ { 1.0, 1.9, 28 }, /* Ring (LL/LL128/Simple)*/ { 1.0, 2.5, 5.7 },
     /* CollNetDirect (Simple)*/ { 0, 0, 8.0 }, /* CollNetChain (Simple)*/ { 0, 0, 8.0 },
-    /* MC */ { 0, 0, 8.0 } },
+    /* MC */ { 0, 0, 8.0 }, /* MCRing */ { 0, 0, 8.0 } },
   /* NET */
   { /* Tree (LL/LL128/Simple)*/ { 5.0, 8.5, 28 }, /* Ring (LL/LL128/Simple)*/ { 2.7, 4.0, 9.6 },
     /* CollNetDirect (Simple)*/ { 0, 0, 10.7 }, /* CollNetChain (Simple)*/ { 0, 0, 10.7 },
-    /* MC */ { 0, 0, 10.7 } }
+    /* MC */ { 0, 0, 10.7 }, /* MCRing */ { 0, 0, 8.0 } }
 };
 
 /* Array indexes used below */
@@ -102,7 +102,8 @@ ncclResult_t ncclTopoTuneModel(struct ncclComm* comm, int minCompCap, int maxCom
     getNthreads("NCCL_NTHREADS", ncclParamNthreads(), 2*WARP_SIZE, NCCL_SIMPLE_MAX_NTHREADS, NCCL_SIMPLE_MAX_NTHREADS);
   comm->maxThreads[NCCL_ALGO_COLLNET_DIRECT][NCCL_PROTO_SIMPLE] =
     comm->maxThreads[NCCL_ALGO_COLLNET_CHAIN][NCCL_PROTO_SIMPLE] =
-    comm->maxThreads[NCCL_ALGO_MC][NCCL_PROTO_SIMPLE] = NCCL_SIMPLE_MAX_NTHREADS;
+    comm->maxThreads[NCCL_ALGO_MC][NCCL_PROTO_SIMPLE] =
+    comm->maxThreads[NCCL_ALGO_MC_RING][NCCL_PROTO_SIMPLE] = NCCL_SIMPLE_MAX_NTHREADS;
   comm->maxThreads[NCCL_ALGO_RING][NCCL_PROTO_LL] = comm->maxThreads[NCCL_ALGO_TREE][NCCL_PROTO_LL] =
     getNthreads("NCCL_NTHREADS", ncclParamNthreads(), 2*WARP_SIZE, NCCL_LL_MAX_NTHREADS, NCCL_LL_MAX_NTHREADS);
   comm->maxThreads[NCCL_ALGO_RING][NCCL_PROTO_LL128] = comm->maxThreads[NCCL_ALGO_TREE][NCCL_PROTO_LL128] =
@@ -144,7 +145,7 @@ ncclResult_t ncclTopoTuneModel(struct ncclComm* comm, int minCompCap, int maxCom
       if (coll == ncclFuncAllGather && a != NCCL_ALGO_RING && a != NCCL_ALGO_MC) continue;
 
       for (int p=0; p<NCCL_NUM_PROTOCOLS; p++) {
-        if (a == NCCL_ALGO_MC && p != NCCL_PROTO_SIMPLE) continue;
+        if ((a == NCCL_ALGO_MC || a == NCCL_ALGO_MR_RING) && p != NCCL_PROTO_SIMPLE) continue;
         int collnet = (a == NCCL_ALGO_COLLNET_DIRECT || a == NCCL_ALGO_COLLNET_CHAIN) ? 1 : 0;
         float bw = nNodes <= 2 || collnet ? graphs[a]->bwIntra : graphs[a]->bwInter;
         float busBw = graphs[a]->nChannels * bw;
@@ -170,6 +171,7 @@ ncclResult_t ncclTopoTuneModel(struct ncclComm* comm, int minCompCap, int maxCom
         float ratio;
         if (a == NCCL_ALGO_RING) ratio = (1.0 * nRanks) / nsteps;
         else if (a == NCCL_ALGO_MC) ratio = 1;
+        else if (a == NCCL_ALGO_MC_RING) ratio = 1;
         else ratio = .5;
         comm->bandwidths[coll][a][p] = busBw * ratio;
 
@@ -220,7 +222,7 @@ ncclResult_t ncclTopoTuneModel(struct ncclComm* comm, int minCompCap, int maxCom
   }
 
   // Disable MC if not supported
-  if (comm->mcSupport == 0 /* || comm->localRanks <= 2*/) algoEnable[NCCL_ALGO_MC] = 0;
+  if (comm->mcSupport == 0 /* || comm->localRanks <= 2*/) algoEnable[NCCL_ALGO_MC] = algoEnable[NCCL_ALGO_MC_RING] = 0;
 
   // Disable CollNet if it is not supported
   if (comm->collNetSupport == 0) {

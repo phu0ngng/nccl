@@ -586,6 +586,17 @@ class Primitives<
       userBuff += delta;
   }
 
+  template <int InpMask, int OutMask>
+  __device__ __forceinline__ void maskRecvSend(intptr_t inpIx, intptr_t outIx, int eltN) {
+    static constexpr int Src = InpMask&0x1 ? Input : 0;
+    static constexpr int Dst = OutMask&0x1 ? Output : 0;
+    static constexpr int RecvMask = InpMask >> 1;
+    static constexpr int SendMask = OutMask >> 1;
+    if (SendMask == 0) genericOp<0, 0, 1, 0, Src, Dst, RecvMask, 0>(inpIx, outIx, eltN, false);
+    else if (RecvMask == 0) genericOp<0, 0, 0, 1, Src, Dst, 0, SendMask>(inpIx, outIx, eltN, false);
+    else genericOp<0, 0, 1, Src, Dst, 1, RecvMask, SendMask>(inpIx, outIx, eltN, false);
+  }
+
   __device__ __forceinline__ void send(intptr_t inpIx, int eltN) {
     genericOp<0, 0, 0, 1, Input, -1, 0, 0>(inpIx, -1, eltN, false);
   }
