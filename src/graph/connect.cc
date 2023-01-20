@@ -36,6 +36,7 @@ ncclResult_t ncclTopoPreset(struct ncclComm* comm, struct ncclTopoGraph** graphs
     int* ringIntra = graphs[NCCL_ALGO_RING]->intra+c*localRanks;
     int* treeIntra = graphs[NCCL_ALGO_TREE]->intra+c*localRanks;
     int* collNetIntra = graphs[NCCL_ALGO_COLLNET_CHAIN]->intra+c*localRanks;
+    int* mcIntra = graphs[NCCL_ALGO_MC]->intra+c*localRanks;
 
     for (int i=0; i<localRanks; i++) {
       if (ringIntra[i] == rank) {
@@ -62,6 +63,7 @@ ncclResult_t ncclTopoPreset(struct ncclComm* comm, struct ncclTopoGraph** graphs
     }
     topoRanks->ringPrev[c] = channel->ring.prev;
     topoRanks->ringNext[c] = channel->ring.next;
+    topoRanks->mcRing[c] = mcIntra[0];
   }
   // Duplicate channels rings/trees
   struct ncclChannel* channel0 = comm->channels;
@@ -224,8 +226,27 @@ static ncclResult_t connectCollNet(struct ncclComm* comm, struct ncclTopoGraph* 
 }
 
 static ncclResult_t connectMcRings(struct ncclComm* comm, int* mcRing) {
-  //int netCount = 0;
-  //int nets[MAXCHANNELS];
+  int prevNode = (comm->node - 1 + comm->nNodes) % comm->nNodes;
+  int nextNode = (comm->node + 1) % comm->nNodes;
+  int* ring = NULL;
+  int prevRank = -1;
+  int nextRank = -1;
+  // Find the ring where I'm the head rank and retain prev/next
+  for (int c=0; c<comm->nChannels; c++) {
+    ring = mcRing+c*comm->nNodes;
+    if (ring[comm->node] == comm->rank) {
+      prevRank = ring[prevNode];
+      nextRank = ring[nextNode];
+      break;
+    }
+  }
+  // Set prev/next in all channels (MC compute channels work 
+  // orthogonally to MC search channels).
+  for (int c=0; c<comm->nChannels; c++) {
+    struct ncclChannel* channel = comm->channels+c;
+    channel->mc.ringPrev = prevNode;
+    channel->mc.ringNext = nextNode;
+  }
   return ncclSuccess;
 }
 

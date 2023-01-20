@@ -871,7 +871,17 @@ static ncclResult_t initTransportsRank(struct ncclComm* comm, ncclUniqueId* comm
   // Check if we can setup CollNet
   if (comm->collNetSupport > 0) collNetTrySetup(comm, &collNetGraph);
 
+  // Setup MC
   NCCLCHECKGOTO(ncclMcSetup(comm), ret, fail);
+  // And MC rings if needed
+  if (comm->mcSupport && comm->localRanks > 1) {
+    for (int c=0; c<comm->nChannels; c++) {
+      struct ncclChannel* channel = comm->channels+c;
+      NCCLCHECKGOTO(ncclTransportP2pConnect(comm, c, 1, &channel->mc.ringPrev, 1, &channel->mc.ringNext, 0), ret, fail);
+    }
+    NCCLCHECKGOTO(ncclTransportP2pSetup(comm, &mcGraph, 0), ret, fail);
+    INFO(NCCL_INIT, "Connected MC rings");
+  }
 
   TRACE(NCCL_INIT, "rank %d nranks %d - CONNECTED %d RINGS AND TREES", rank, nranks, comm->nChannels);
 
