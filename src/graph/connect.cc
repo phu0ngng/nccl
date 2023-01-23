@@ -129,46 +129,40 @@ static ncclResult_t setTreeDown(struct ncclTree* tree, int* indexes, int d) {
 
 static ncclResult_t connectTrees(struct ncclComm* comm, int* treeToParent, int* treeToChild0, int* treeToChild1, int* treePatterns) {
   const int nChannels = comm->nChannels, nNodes = comm->nNodes, node = comm->node;
-  int* ranksToParent, *ranksToChild0, *ranksToChild1;
-  NCCLCHECK(ncclCalloc(&ranksToParent, nNodes));
-  NCCLCHECK(ncclCalloc(&ranksToChild0, nNodes));
-  NCCLCHECK(ncclCalloc(&ranksToChild1, nNodes));
 
   // Compute tree depth. Not an exact value but a good approximation in most
   // cases
   int depth = comm->nRanks/nNodes - 1 + log2i(nNodes);
 
   int t0u, t0d0, t0d1, t0ChildType, t1u, t1d0, t1d1, t1ChildType;
+  int* ttp, *ttc0, *ttc1;
   NCCLCHECK(ncclGetDtree(nNodes, node, &t0u, &t0d0, &t0d1, &t0ChildType, &t1u, &t1d0, &t1d1, &t1ChildType));
   for (int c=0; c<nChannels; c++) {
      struct ncclChannel* channel0 = comm->channels+c;
      struct ncclChannel* channel1 = channel0+nChannels;
-     NCCLCHECK(getIndexes(treeToParent+c*comm->nNodes, ranksToParent, nNodes));
-     NCCLCHECK(getIndexes(treeToChild0+c*comm->nNodes, ranksToChild0, nNodes));
-     NCCLCHECK(getIndexes(treeToChild1+c*comm->nNodes, ranksToChild1, nNodes));
-     if (comm->rank == ranksToParent[node]) {
-       NCCLCHECK(setTreeUp(&channel0->tree, t0ChildType == 0 ? ranksToChild0 : ranksToChild1, t0u));
-       NCCLCHECK(setTreeUp(&channel1->tree, t1ChildType == 0 ? ranksToChild0 : ranksToChild1, t1u));
+     ttp = treeToParent+c*comm->nNodes;
+     ttc0 = treeToChild0+c*comm->nNodes;
+     ttc1 = treeToChild1+c*comm->nNodes;
+     if (comm->rank == ttp[node]) {
+       NCCLCHECK(setTreeUp(&channel0->tree, t0ChildType == 0 ? ttc0 : ttc1, t0u));
+       NCCLCHECK(setTreeUp(&channel1->tree, t1ChildType == 0 ? ttc0 : ttc1, t1u));
      }
-     if (comm->rank == ranksToChild0[node]) {
-       NCCLCHECK(setTreeDown(&channel0->tree, ranksToParent, t0d0));
-       NCCLCHECK(setTreeDown(&channel1->tree, ranksToParent, t1d0));
+     if (comm->rank == ttc0[node]) {
+       NCCLCHECK(setTreeDown(&channel0->tree, ttp, t0d0));
+       NCCLCHECK(setTreeDown(&channel1->tree, ttp, t1d0));
      }
-     if (comm->rank == ranksToChild1[node]) {
-       NCCLCHECK(setTreeDown(&channel0->tree, ranksToParent, t0d1));
-       NCCLCHECK(setTreeDown(&channel1->tree, ranksToParent, t1d1));
+     if (comm->rank == ttc1[node]) {
+       NCCLCHECK(setTreeDown(&channel0->tree, ttp, t0d1));
+       NCCLCHECK(setTreeDown(&channel1->tree, ttp, t1d1));
      }
-     if (comm->rank == ranksToParent[node] ||
-         comm->rank == ranksToChild0[node] ||
-         comm->rank == ranksToChild1[node]) {
+     if (comm->rank == ttp[node] ||
+         comm->rank == ttc0[node] ||
+         comm->rank == ttc1[node]) {
        INFO(NCCL_GRAPH, "Tree %d : %d -> %d -> %d/%d/%d", c,           channel0->tree.up, comm->rank, channel0->tree.down[0], channel0->tree.down[1], channel0->tree.down[2]);
        INFO(NCCL_GRAPH, "Tree %d : %d -> %d -> %d/%d/%d", c+nChannels, channel1->tree.up, comm->rank, channel1->tree.down[0], channel1->tree.down[1], channel1->tree.down[2]);
      }
      channel0->tree.depth = channel1->tree.depth = depth;
   }
-  free(ranksToParent);
-  free(ranksToChild0);
-  free(ranksToChild1);
   return ncclSuccess;
 }
 
@@ -244,8 +238,8 @@ static ncclResult_t connectMcRings(struct ncclComm* comm, int* mcRing) {
   // orthogonally to MC search channels).
   for (int c=0; c<comm->nChannels; c++) {
     struct ncclChannel* channel = comm->channels+c;
-    channel->mc.ringPrev = prevNode;
-    channel->mc.ringNext = nextNode;
+    channel->mc.ringPrev = prevRank;
+    channel->mc.ringNext = nextRank;
   }
   return ncclSuccess;
 }
@@ -299,8 +293,8 @@ ncclResult_t ncclTopoPostset(struct ncclComm* comm, int* firstRanks, int* treePa
   int nChannels = comm->nChannels;
   NCCLCHECK(ncclCalloc(&ringRecv, nNodes*MAXCHANNELS));
   NCCLCHECK(ncclCalloc(&ringSend, nNodes*MAXCHANNELS));
-  NCCLCHECK(ncclCalloc(&ringPrev, nNodes*MAXCHANNELS));
-  NCCLCHECK(ncclCalloc(&ringNext, nNodes*MAXCHANNELS));
+  NCCLCHECK(ncclCalloc(&ringPrev, nranks*MAXCHANNELS));
+  NCCLCHECK(ncclCalloc(&ringNext, nranks*MAXCHANNELS));
   NCCLCHECK(ncclCalloc(&treeToParent, nNodes*MAXCHANNELS));
   NCCLCHECK(ncclCalloc(&treeToChild0, nNodes*MAXCHANNELS));
   NCCLCHECK(ncclCalloc(&treeToChild1, nNodes*MAXCHANNELS));

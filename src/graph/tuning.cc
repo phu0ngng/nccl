@@ -262,28 +262,38 @@ ncclResult_t ncclTopoTuneModel(struct ncclComm* comm, int minCompCap, int maxCom
 
   if (comm->rank == 0) {
     char line[1024];
-    sprintf(line, "Latency/AlgBw |");
-    for (int a=0; a<NCCL_NUM_ALGORITHMS; a++) {
-      for (int p=0; p<NCCL_NUM_PROTOCOLS; p++) {
-        sprintf(line+strlen(line), " %7s/%6s |", ncclAlgoStr[a], ncclProtoStr[p]);
+    for (int block=0; block<2; block++) {
+      sprintf(line, "  Algorithm   |");
+      for (int ba=0; ba<NCCL_NUM_ALGORITHMS/2; ba++) {
+	int a = block*NCCL_NUM_ALGORITHMS/2+ba;
+        sprintf(line+strlen(line), " %14s   %14s   %14s |", "", ncclAlgoStr[a], "");
       }
-    }
-    INFO(NCCL_TUNING, "%s", line);
-    sprintf(line, " Max NThreads |");
-    for (int a=0; a<NCCL_NUM_ALGORITHMS; a++) {
-      for (int p=0; p<NCCL_NUM_PROTOCOLS; p++) {
-        sprintf(line+strlen(line), " %14d |", comm->maxThreads[a][p]);
-      }
-    }
-    INFO(NCCL_TUNING, "%s", line);
-    for (int c=0; c<NCCL_NUM_FUNCTIONS; c++) {
-      sprintf(line, "%13s |", ncclFuncStr[c]);
-      for (int a=0; a<NCCL_NUM_ALGORITHMS; a++) {
+      INFO(NCCL_TUNING, "%s", line);
+      sprintf(line, "  Protocol    |");
+      for (int ba=0; ba<NCCL_NUM_ALGORITHMS/2; ba++) {
         for (int p=0; p<NCCL_NUM_PROTOCOLS; p++) {
-          sprintf(line+strlen(line), "%8.1f/%6.1f |", comm->latencies[c][a][p], comm->bandwidths[c][a][p]);
+          sprintf(line+strlen(line), " %14s |", ncclProtoStr[p]);
         }
       }
       INFO(NCCL_TUNING, "%s", line);
+      sprintf(line, " Max NThreads |");
+      for (int ba=0; ba<NCCL_NUM_ALGORITHMS/2; ba++) {
+	int a = block*NCCL_NUM_ALGORITHMS/2+ba;
+        for (int p=0; p<NCCL_NUM_PROTOCOLS; p++) {
+          sprintf(line+strlen(line), " %14d |", comm->maxThreads[a][p]);
+        }
+      }
+      INFO(NCCL_TUNING, "%s", line);
+      for (int c=0; c<NCCL_NUM_FUNCTIONS; c++) {
+        sprintf(line, "%13s |", ncclFuncStr[c]);
+        for (int ba=0; ba<NCCL_NUM_ALGORITHMS/2; ba++) {
+	  int a = block*NCCL_NUM_ALGORITHMS/2+ba;
+          for (int p=0; p<NCCL_NUM_PROTOCOLS; p++) {
+            sprintf(line+strlen(line), "%8.1f/%6.1f |", comm->latencies[c][a][p], comm->bandwidths[c][a][p]);
+          }
+        }
+        INFO(NCCL_TUNING, "%s", line);
+      }
     }
   }
 

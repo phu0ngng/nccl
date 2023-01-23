@@ -386,11 +386,11 @@ struct RunWorkElement<ncclFuncAllReduce, T, RedOp, NCCL_ALGO_MC, NCCL_PROTO_SIMP
     const int nThreadsScatter = 9*WARP_SIZE;
     const int nThreadsGather  = 8*WARP_SIZE;
     const int nThreadsReduce = 3*WARP_SIZE;
-    const int nThreadsBcast   = 0; // No network support for now, reduce does bcast as well
+    //const int nThreadsBcast   = 0; // No network support for now, reduce does bcast as well
     const int tidEndScatter = nThreadsScatter;
     const int tidEndGather = tidEndScatter + nThreadsGather;
     const int tidEndReduce = tidEndGather + nThreadsReduce;
-    const int tidEndBcast = tidEndReduce + nThreadsBcast;
+    //const int tidEndBcast = tidEndReduce + nThreadsBcast;
 
     using Proto = ProtoSimple<1, 1, COLL_UNROLL, /*MC=*/true>;
 
@@ -444,11 +444,11 @@ struct RunWorkElement<ncclFuncAllReduce, T, RedOp, NCCL_ALGO_MC_RING, NCCL_PROTO
     const int nThreadsScatter = 9*WARP_SIZE;
     const int nThreadsGather  = 8*WARP_SIZE;
     const int nThreadsReduce = 3*WARP_SIZE;
-    const int nThreadsBcast   = 0; // No network support for now, reduce does bcast as well
+    //const int nThreadsBcast   = 0; // No network support for now, reduce does bcast as well
     const int tidEndScatter = nThreadsScatter;
     const int tidEndGather = tidEndScatter + nThreadsGather;
     const int tidEndReduce = tidEndGather + nThreadsReduce;
-    const int tidEndBcast = tidEndReduce + nThreadsBcast;
+    //const int tidEndBcast = tidEndReduce + nThreadsBcast;
 
     using Proto = ProtoSimple<1, 1, COLL_UNROLL, /*MC=*/true>;
 
@@ -472,8 +472,6 @@ struct RunWorkElement<ncclFuncAllReduce, T, RedOp, NCCL_ALGO_MC_RING, NCCL_PROTO
       Primitives<T, RedOp, FanAsymmetric<NCCL_MAX_MC_ARITY, 0>, /*Direct=*/0, Proto, 0>
         prims(tid-tidEndScatter, nThreadsGather, mc->up, NULL, args->sendbuff, args->recvbuff, args->redOpArg, group, args);
       for (ssize_t gridOffset = bid*mc->nHeads*chunkSize*mc->nNodes; gridOffset < size; gridOffset += loopSize) {
-        int nelem = min(mc->nHeads*chunkSize, size-offset);
-        prims.gather(offset, nelem, chunkSize, chunkSize, -1, 0);
         int ringIndex = (mc->node+mc->nNodes-1)%mc->nNodes; // Skip the n-1 first steps
         for (int i=0; i<mc->nNodes; i++) {
           int offset = gridOffset + ringIndex*chunkSize*mc->nHeads;
@@ -485,38 +483,38 @@ struct RunWorkElement<ncclFuncAllReduce, T, RedOp, NCCL_ALGO_MC_RING, NCCL_PROTO
     } else if (tid < tidEndReduce) {
       int group = (3*Proto::MaxGroupWidth) | (1<<16);
       // Reduce, broadcast through MC
-      static constexpr int BuffMask = 0x1; // By convention -- not used here.
+      //static constexpr int BuffMask = 0x1; // By convention -- not used here.
       static constexpr int McMask = 0x2; // First peer in peer list
       static constexpr int RingMask = 0x4; // Second peer in peer list
-      const int recvPeers = { mc->down, mc->ringPrev };
-      const int sendPeers = { mc->down, mc->ringNext };
+      const int recvPeers[2] = { mc->down, mc->ringPrev };
+      const int sendPeers[2] = { mc->down, mc->ringNext };
       Primitives<T, RedOp, FanSymmetric<2>, /*Direct=*/0, Proto, 0>
         prims(tid-tidEndGather, nThreadsReduce, recvPeers, sendPeers, args->sendbuff, args->recvbuff, args->redOpArg, group, args);
-      for (ssize_t gridOffset = (bid*mc->nHeads*mc->nNodes+mc->headNode)*chunkSize; gridOffset < size; gridOffset += loopSize) {
+      for (ssize_t gridOffset = (bid*mc->nHeads*mc->nNodes+mc->headRank)*chunkSize; gridOffset < size; gridOffset += loopSize) {
         int ringIndex = mc->node;
         ssize_t offset = gridOffset + ringIndex*chunkSize*mc->nHeads;
         int nelem = min(chunkSize, size-offset);
-        prims.maskRecvSend<McMask, RingMask>(nelem);
+        prims.template maskRecvSend<McMask, RingMask>(offset, offset, nelem);
         ringIndex = (ringIndex-1+mc->nNodes)%mc->nNodes;
         for (int i=0; i<mc->nNodes-2; i++) {
           offset = gridOffset + ringIndex*chunkSize*mc->nHeads;
           nelem = min(chunkSize, size-offset);
-          prims.maskRecvSend<McMask|RingMask, RingMask>(nelem);
+          prims.template maskRecvSend<McMask|RingMask, RingMask>(offset, offset, nelem);
           ringIndex = (ringIndex-1+mc->nNodes)%mc->nNodes;
         }
         offset = gridOffset + ringIndex*chunkSize*mc->nHeads;
         nelem = min(chunkSize, size-offset);
-        prims.maskRecvSend<McMask|RingMask, McMask|RingMask>(nelem);
+        prims.template maskRecvSend<McMask|RingMask, McMask|RingMask>(offset, offset, nelem);
         ringIndex = (ringIndex-1+mc->nNodes)%mc->nNodes;
         for (int i=0; i<mc->nNodes-2; i++) {
           offset = gridOffset + ringIndex*chunkSize*mc->nHeads;
           nelem = min(chunkSize, size-offset);
-          prims.maskRecvSend<RingMask, McMask|RingMask>(nelem);
+          prims.template maskRecvSend<RingMask, McMask|RingMask>(offset, offset, nelem);
           ringIndex = (ringIndex-1+mc->nNodes)%mc->nNodes;
         }
         offset = gridOffset + ringIndex*chunkSize*mc->nHeads;
         nelem = min(chunkSize, size-offset);
-        prims.maskRecvSend<RingMask, McMask>(nelem);
+        prims.template maskRecvSend<RingMask, McMask>(offset, offset, nelem);
       }
     }
   #endif // NCCL_MC_ENABLED
