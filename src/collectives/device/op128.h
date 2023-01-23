@@ -68,15 +68,11 @@ inline __device__ void loadShmemMisaligned128(T *ptr, uint64_t &v0, uint64_t &v1
 
 template<typename T>
 __device__ __forceinline__ uint32_t cvta_to_shared(T* ptr) {
-  uintptr_t ans;
-  asm("cvta.to.shared.u64 %0, %1;" : "=l"(ans) : "l"(ptr));
-  return uint32_t(ans);
+  return (uint32_t)__cvta_generic_to_shared(ptr);
 }
 template<typename T>
 __device__ __forceinline__ uintptr_t cvta_to_global(T* ptr) {
-  uintptr_t ans;
-  asm("cvta.to.global.u64 %0, %1;" : "=l"(ans) : "l"(ptr));
-  return ans;
+  return (uintptr_t)__cvta_generic_to_global(ptr);
 }
 
 template<typename T>
@@ -241,8 +237,10 @@ __device__ __forceinline__ void copyGlobalShared_WarpUnrolled(
     bool hasFront = lane*EltSize < nFrontBytes;
     bool hasBack = backLane*EltSize < nBackBytes;
     int offset = hasFront ? lane*EltSize : (nBytes - (backLane+1)*EltSize);
-    BytePack<EltSize> tmp = ld_shared<EltSize>(hasFront|hasBack, srcAddr+offset);
-    st_global<EltSize>(hasFront|hasBack, dstAddr+offset, tmp);
+    if (hasFront | hasBack) {
+      BytePack<EltSize> tmp = ld_shared<EltSize>(srcAddr+offset);
+      st_global<EltSize>(dstAddr+offset, tmp);
+    }
   }
 
   srcAddr += nFrontBytes;
@@ -250,25 +248,25 @@ __device__ __forceinline__ void copyGlobalShared_WarpUnrolled(
   srcAddr += -srcMisalign + lane*16;
   dstAddr += nFrontBytes + lane*16;
   nMiddleBytes -= lane*16;
-  #pragma unroll (MaxBytes + 15)/16
-  for (int u=0; u < (MaxBytes + 15)/16; u++) {
+  #pragma unroll
+  for (int u=0; u < divUp(MaxBytes, WARP_SIZE*16); u++) {
+    if (nMiddleBytes <= 0) break;
     union {
-      BytePack<4> b4[5];
+      BytePack<4> b4[4];
       BytePack<16> b16;
     };
-    bool predicate = nMiddleBytes > 0;
-    b4[0] = ld_shared<4>(predicate, srcAddr + 0*4);
-    b4[1] = ld_shared<4>(predicate, srcAddr + 1*4);
-    b4[2] = ld_shared<4>(predicate, srcAddr + 2*4);
-    b4[3] = ld_shared<4>(predicate, srcAddr + 3*4);
-    b4[4] = ld_shared<4>(predicate && (srcMisalign != 0), srcAddr + 4*4);
-
-    b4[0].u32 = __funnelshift_r(b4[0].u32, b4[1].u32, srcMisalign*8);
-    b4[1].u32 = __funnelshift_r(b4[1].u32, b4[2].u32, srcMisalign*8);
-    b4[2].u32 = __funnelshift_r(b4[2].u32, b4[3].u32, srcMisalign*8);
-    b4[3].u32 = __funnelshift_r(b4[3].u32, b4[4].u32, srcMisalign*8);
-
-    st_global<16>(predicate, dstAddr, b16);
+    b4[0] = ld_shared<4>(srcAddr + 0*4);
+    b4[1] = ld_shared<4>(srcAddr + 1*4);
+    b4[2] = ld_shared<4>(srcAddr + 2*4);
+    b4[3] = ld_shared<4>(srcAddr + 3*4);
+    if (srcMisalign != 0) {
+      BytePack<4> b4_4 = ld_shared<4>(srcAddr + 4*4);
+      b4[0].u32 = __funnelshift_r(b4[0].u32, b4[1].u32, srcMisalign*8);
+      b4[1].u32 = __funnelshift_r(b4[1].u32, b4[2].u32, srcMisalign*8);
+      b4[2].u32 = __funnelshift_r(b4[2].u32, b4[3].u32, srcMisalign*8);
+      b4[3].u32 = __funnelshift_r(b4[3].u32, b4_4.u32, srcMisalign*8);
+    }
+    st_global<16>(dstAddr, b16);
 
     srcAddr += WARP_SIZE*16;
     dstAddr += WARP_SIZE*16;

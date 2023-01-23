@@ -220,9 +220,10 @@ __device__ __forceinline__ void copyGlobalMC_WarpUnrolled(
   int offset = lane*BytePerPack;
   #pragma unroll Unroll
   for (int u=0; u < Unroll; u++) {
-    bool predicate = !Partial || (offset < srcMisalign + nBytesAhead);
-    if (predicate) reg[u] = applyLoadMC(redFn, srcAddr+offset);
-    if (predicate && postOp) reg[u] = applyPostOp(redFn, reg[u]);
+    if (!Partial || (offset < srcMisalign + nBytesAhead)) {
+      reg[u] = applyLoadMC(redFn, srcAddr+offset);
+      if (postOp) reg[u] = applyPostOp(redFn, reg[u]);
+    }
     offset += WARP_SIZE*BytePerPack;
   }
 
@@ -230,8 +231,9 @@ __device__ __forceinline__ void copyGlobalMC_WarpUnrolled(
     offset = lane*BytePerPack;
     #pragma unroll Unroll
     for (int u=0; u < Unroll; u++) {
-      bool predicate = !Partial || offset < nBytesAhead;
-      st_global<BytePerPack>(predicate, dstAddr+offset, reg[u]);
+      if (!Partial || offset < nBytesAhead) {
+        st_global<BytePerPack>(dstAddr+offset, reg[u]);
+      }
       offset += WARP_SIZE*BytePerPack;
     }
   } else {
@@ -239,8 +241,9 @@ __device__ __forceinline__ void copyGlobalMC_WarpUnrolled(
     offset = lane*BytePerPack;
     #pragma unroll Unroll
     for (int u=0; u < Unroll; u++) {
-      bool predicate = !Partial || (offset < srcMisalign + nBytesAhead);
-      st_shared<BytePerPack>(predicate, scratchAddr+offset, reg[u]);
+      if (!Partial || (offset < srcMisalign + nBytesAhead)) {
+        st_shared<BytePerPack>(scratchAddr+offset, reg[u]);
+      }
       offset += WARP_SIZE*BytePerPack;
     }
     __syncwarp();
@@ -286,14 +289,27 @@ __device__ __forceinline__ void copyGlobalMC_IfEnabled(
   uintptr_t dstAddr = cvta_to_global(dstPtr);
   IntBytes warpBytesAhead = nElts*sizeof(T);
 
+  bool partialHunkIsFront;
+  if (false) {
+    // We have to handle a partial hunk possibly at the front and back of the
+    // buffer. We generate the code once here since its a lot of instructions,
+    // and then simulate function calls with gotos.
+  PartialHunk:
+    copyGlobalMC_WarpUnrolled
+      <RedFn, T, Unroll, BytePerPack, /*SrcAligned=*/false, /*DstAligned=*/false, /*Partial=*/true>
+        (lane, redFn, postOp, srcAddr, dstAddr, warpBytesAhead, warpScratchAddr);
+    if (partialHunkIsFront) goto PartialHunkFrontReturn;
+    goto PartialHunkBackReturn;
+  }
+
   // First handle misalignment of srcAddr.
   if ((BytePerPack != sizeof(T)) && (srcAddr%BytePerPack != 0)) {
     // If srcAddr isn't pack aligned then the first hunk processed will be short
     // the same number of bytes as srcAddr's misalignment.
     if (warp == 0) {
-      copyGlobalMC_WarpUnrolled
-        <RedFn, T, Unroll, BytePerPack, /*SrcAligned=*/false, /*DstAligned=*/false, /*Partial=*/true>
-          (lane, redFn, postOp, srcAddr, dstAddr, warpBytesAhead, warpScratchAddr);
+      partialHunkIsFront = true;
+      goto PartialHunk;
+    PartialHunkFrontReturn:
       warp = nWarps;
     }
     warp -= 1; // Rotate warp numbers for load balancing
@@ -316,20 +332,21 @@ __device__ __forceinline__ void copyGlobalMC_IfEnabled(
       dstAddr += nWarps*BytePerHunk;
       warpBytesAhead -= nWarps*BytePerHunk;
     }
-    if (0 < warpBytesAhead) {
-      copyGlobalMC_WarpUnrolled
-        <RedFn, T, Unroll, BytePerPack, /*SrcAligned=*/true, /*DstAligned=*/BytePerPack == sizeof(T), /*Partial=*/true>
-          (lane, redFn, postOp, srcAddr, dstAddr, warpBytesAhead, warpScratchAddr);
-    }
   } else {
-    while (0 < warpBytesAhead) {
+    while (BytePerHunk <= warpBytesAhead) {
       copyGlobalMC_WarpUnrolled
-        <RedFn, T, Unroll, BytePerPack, /*SrcAligned=*/true, /*DstAligned=*/false, /*Partial=*/true>
+        <RedFn, T, Unroll, BytePerPack, /*SrcAligned=*/true, /*DstAligned=*/false, /*Partial=*/false>
           (lane, redFn, postOp, srcAddr, dstAddr, warpBytesAhead, warpScratchAddr);
       srcAddr += nWarps*BytePerHunk;
       dstAddr += nWarps*BytePerHunk;
       warpBytesAhead -= nWarps*BytePerHunk;
     }
+  }
+
+  if (0 < warpBytesAhead) {
+    partialHunkIsFront = false;
+    goto PartialHunk;
+  PartialHunkBackReturn:;
   }
 }
 
