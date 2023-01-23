@@ -397,7 +397,7 @@ ncclResult_t bootstrapIntraNodeBroadcast(void* commState, int *ranks, int rank, 
     }
   }
   else {
-    NCCLCHECK(bootstrapRecv(commState, ranks[root], /*tag=*/rank, bcastData, size));
+    NCCLCHECK(bootstrapRecv(commState, ranks[root], /*tag=*/ranks[rank], bcastData, size));
   }
 
   TRACE(NCCL_INIT, "rank %d nranks %d root %d size %d - DONE", rank, nranks, root, size);

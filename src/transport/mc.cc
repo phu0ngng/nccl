@@ -246,10 +246,12 @@ ncclResult_t mcGroupUnbindMem(mcHandle_t handle, char* mem) {
 #define MC_MEM_ALIGN_SIZE (1 << 21)
 
 ncclResult_t ncclMcSetup(struct ncclComm* comm) {
-  NCCLCHECK(ncclMcInitEtbl(comm));
-  if (comm->mcSupport == 0 || comm->localRanks <= 1) return ncclSuccess;
+  int nHeads = comm->channels[0].mc.nHeads;
+  int headRank = comm->channels[0].mc.headRank;
 
-  int rank = comm->localRank, nranks = comm->localRanks;
+  NCCLCHECK(ncclMcInitEtbl(comm));
+  if (comm->mcSupport == 0 || comm->localRanks <= 1 || nHeads == 0) return ncclSuccess;
+
   ncclResult_t res = ncclSuccess;
   struct mcResources* resources;
   NCCLCHECK(ncclCalloc(&resources, 1));
@@ -258,20 +260,20 @@ ncclResult_t ncclMcSetup(struct ncclComm* comm) {
   size_t buffSize = comm->buffSizes[NCCL_PROTO_SIMPLE];
   size_t memSize = MC_MEM_ALIGN_SIZE;
   size_t mcPerRankSize = comm->nChannels*2*(buffSize+memSize);
-  size_t mcTotalSize = mcPerRankSize*nranks;
+  size_t mcTotalSize = mcPerRankSize*nHeads;
 
-  INFO(NCCL_INIT|NCCL_MC, "MC comm %p rank %d nranks %d buffSize %zi memSize %zi mcPerRankSize %zi mcTotalSize %zi",
-       comm, rank, nranks, buffSize, memSize, mcPerRankSize, mcTotalSize);
+  INFO(NCCL_INIT|NCCL_MC, "MC comm %p headRank %d nHeads %d buffSize %zi memSize %zi mcPerRankSize %zi mcTotalSize %zi",
+       comm, headRank, nHeads, buffSize, memSize, mcPerRankSize, mcTotalSize);
 
   char* mcShareableHandle = NULL;
   NCCLCHECKGOTO(ncclCalloc(&mcShareableHandle, MC_HANDLE_SIZE), res, cleanup);
   NCCLCHECKGOTO(mcGetProperties(comm, resources, mcTotalSize), res, cleanup);
-  if (rank == 0) {
-    NCCLCHECKGOTO(mcGroupCreate(comm, resources, rank, nranks, mcShareableHandle), res, cleanup);
-    NCCLCHECKGOTO(bootstrapIntraNodeBroadcast(comm->bootstrap, comm->localRankToRank, rank, nranks, 0, mcShareableHandle, MC_HANDLE_SIZE), res, cleanup);
+  if (comm->localRank == 0) {
+    NCCLCHECKGOTO(mcGroupCreate(comm, resources, comm->localRank, comm->localRanks, mcShareableHandle), res, cleanup);
+    NCCLCHECKGOTO(bootstrapIntraNodeBroadcast(comm->bootstrap, comm->localRankToRank, comm->localRank, comm->localRanks, 0, mcShareableHandle, MC_HANDLE_SIZE), res, cleanup);
   } else {
-    NCCLCHECKGOTO(bootstrapIntraNodeBroadcast(comm->bootstrap, comm->localRankToRank, rank, nranks, 0, mcShareableHandle, MC_HANDLE_SIZE), res, cleanup);
-    NCCLCHECKGOTO(mcGroupConnect(comm, resources, 0, mcShareableHandle), res, cleanup);
+    NCCLCHECKGOTO(bootstrapIntraNodeBroadcast(comm->bootstrap, comm->localRankToRank, comm->localRank, comm->localRanks, 0, mcShareableHandle, MC_HANDLE_SIZE), res, cleanup);
+    NCCLCHECKGOTO(mcGroupConnect(comm, resources, comm->localRankToRank[0], mcShareableHandle), res, cleanup);
   }
 
   NCCLCHECKGOTO(mcGroupBindMem(comm, resources), res, cleanup);
@@ -285,51 +287,39 @@ ncclResult_t ncclMcSetup(struct ncclComm* comm) {
 
     for (int i=0; i < sizeof(dummy)/sizeof(dummy[0]); i++) {
       dummy[i] = 0xdeadbabefeedface ^ i;
-      dummy[i] ^= (rank << 28);
+      dummy[i] ^= (headRank << 28);
     }
 
-    printf("MC: rank %d Writing %zi bytes to %p\n", rank, sizeof(dummy), resources->mcBuff);
+    printf("MC: headRank %d Writing %zi bytes to %p\n", headRank, sizeof(dummy), resources->mcBuff);
     cudaMemcpy(resources->mcBuff, dummy, sizeof(dummy), cudaMemcpyHostToDevice);
 
     CUDACHECK(cudaDeviceSynchronize());
     NCCLCHECKGOTO(bootstrapBarrier(comm->bootstrap, comm->localRankToRank, comm->localRank, comm->localRanks, comm->localRankToRank[0]), res, cleanup);
 
-    for (int r = 0; r < nranks; r++) {
-      char *buf = resources->ucBuff + r*mcPerRankSize;
+    for (int h = 0; h < nHeads; h++) {
+      char *buf = resources->ucBuff + h*mcPerRankSize;
       cudaMemcpy(&dummy[0], buf, sizeof(dummy), cudaMemcpyDeviceToHost);
-      printf("MC: rank %d.%d UC data %p %lx %lx %lx %lx\n", rank, r, buf, dummy[0], dummy[1], dummy[2], dummy[3]);
-      printf("MC: rank %d.%d UC data %p %lx %lx %lx %lx\n", rank, r, buf, dummy[1020], dummy[1021], dummy[1022], dummy[1023]);
+      printf("MC: headRank %d.%d UC data %p %lx %lx %lx %lx\n", headRank, h, buf, dummy[0], dummy[1], dummy[2], dummy[3]);
+      printf("MC: headRank %d.%d UC data %p %lx %lx %lx %lx\n", headRank, h, buf, dummy[1020], dummy[1021], dummy[1022], dummy[1023]);
     }
   }
 #endif
 
-  for (int c=0; c<comm->nChannels; c++) {
-    struct ncclChannel* channel = comm->channels+c;
-    channel->mc.nHeads = nranks;
-    for (int i=0; i<NCCL_MAX_MC_ARITY; i++) channel->mc.up[i] = -1;
-    channel->mc.down = comm->nRanks+1+comm->localRank;
-    channel->mc.out = -1;       // Network not yet implemented.
-    channel->mc.headRank = comm->localRank;  // Network not yet implemented.
-    channel->mc.node = comm->node;
-    channel->mc.nNodes = comm->nNodes;
-  }
-
-  for (int r=0; r<nranks; r++) {
-    int mcPeer = comm->nRanks+1+r;
+  for (int h=0; h<nHeads; h++) {
+    int mcPeer = comm->nRanks+1+h;
     for (int c=0; c<comm->nChannels; c++) {
       struct ncclChannel* channel = comm->channels+c;
-      channel->mc.up[r] = mcPeer;
 
       char* mem = NULL;
       struct ncclChannelPeer* peer = channel->peers+mcPeer;
 
       // Reduce UC -> MC
-      mem = resources->ucBuff + (r*2*comm->nChannels+c)*(buffSize+memSize);
+      mem = resources->ucBuff + (h*2*comm->nChannels+c)*(buffSize+memSize);
       peer->send[0].transportComm = &mcTransport.send;
       peer->send[0].conn.buffs[NCCL_PROTO_SIMPLE] = mem;
       peer->send[0].conn.head = (uint64_t*)(mem+buffSize);
       peer->send[0].conn.tail = (uint64_t*)(mem+buffSize+memSize/2);
-      mem = resources->mcBuff + (r*2*comm->nChannels+c)*(buffSize+memSize);
+      mem = resources->mcBuff + (h*2*comm->nChannels+c)*(buffSize+memSize);
       peer->recv[1].transportComm = &mcTransport.recv;
       peer->recv[1].conn.buffs[NCCL_PROTO_SIMPLE] = mem;
       peer->recv[1].conn.head = (uint64_t*)(mem+buffSize);
@@ -337,12 +327,12 @@ ncclResult_t ncclMcSetup(struct ncclComm* comm) {
       peer->recv[1].conn.flags |= NCCL_MC_MIN_POLL;
 
       // Broadcast MC -> UC
-      mem = resources->ucBuff + ((r*2+1)*comm->nChannels+c)*(buffSize+memSize);
+      mem = resources->ucBuff + ((h*2+1)*comm->nChannels+c)*(buffSize+memSize);
       peer->recv[0].transportComm = &mcTransport.recv;
       peer->recv[0].conn.buffs[NCCL_PROTO_SIMPLE] = mem;
       peer->recv[0].conn.head = (uint64_t*)(mem+buffSize);
       peer->recv[0].conn.tail = (uint64_t*)(mem+buffSize+memSize/2);
-      mem = resources->mcBuff + ((r*2+1)*comm->nChannels+c)*(buffSize+memSize);
+      mem = resources->mcBuff + ((h*2+1)*comm->nChannels+c)*(buffSize+memSize);
       peer->send[1].transportComm = &mcTransport.send;
       peer->send[1].conn.buffs[NCCL_PROTO_SIMPLE] = mem;
       peer->send[1].conn.head = (uint64_t*)(mem+buffSize);
@@ -356,10 +346,10 @@ ncclResult_t ncclMcSetup(struct ncclComm* comm) {
 
       /*INFO(NCCL_INIT|NCCL_MC, "Peer %d Channel %d MC buff %p/%p UC Buff %p/%p",
           mcPeer, c,
-          resources->mcBuff + (r*2*comm->nChannels+c)*(buffSize+memSize),
-          resources->mcBuff + ((r*2+1)*comm->nChannels+c)*(buffSize+memSize),
-          resources->ucBuff + (r*2*comm->nChannels+c)*(buffSize+memSize),
-          resources->ucBuff + ((r*2+1)*comm->nChannels+c)*(buffSize+memSize));*/
+          resources->mcBuff + (h*2*comm->nChannels+c)*(buffSize+memSize),
+          resources->mcBuff + ((h*2+1)*comm->nChannels+c)*(buffSize+memSize),
+          resources->ucBuff + (h*2*comm->nChannels+c)*(buffSize+memSize),
+          resources->ucBuff + ((h*2+1)*comm->nChannels+c)*(buffSize+memSize));*/
     }
   }
 

@@ -609,7 +609,12 @@ ncclResult_t ncclTopoSearchRec(struct ncclTopoSystem* system, struct ncclTopoGra
     ncclTopoSearchRecNet(system, graph, saveGraph, backToNet, backToFirstRank, time);
   } else {
     // Intra-node only.
-    if (graph->nChannels == 0) {
+    if (graph->pattern == NCCL_TOPO_PATTERN_MC) {
+      // Force intra-node MC algorithm to pull evenly from all GPUs.
+      int g = graph->nChannels;
+      if (g == system->nodes[GPU].count) return ncclSuccess;
+      NCCLCHECK(ncclTopoSearchTryGpu(system, graph, saveGraph, 0, backToNet, backToFirstRank, 0, time, -1, -1, g));
+    } else if (graph->nChannels == 0) {
       // Try PCI order first
       NCCLCHECK(ncclTopoSearchTryGpu(system, graph, saveGraph, 0, backToNet, backToFirstRank, FORCED_ORDER_PCI, time, -1, -1, 0));
     } else {
@@ -621,8 +626,6 @@ ncclResult_t ncclTopoSearchRec(struct ncclTopoSystem* system, struct ncclTopoGra
     if (graph->sameChannels == 0 || graph->nChannels == 0) {
       // Finally, try all other possibilities unless we are forced to use the same channels
       for (int g=0; g<system->nodes[GPU].count; g++) {
-        // Force intra-node MC algorithm to pull evenly from all GPUs.
-        if (graph->pattern == NCCL_TOPO_PATTERN_MC && g != graph->nChannels%system->nodes[GPU].count) continue;
         NCCLCHECK(ncclTopoSearchTryGpu(system, graph, saveGraph, 0, backToNet, backToFirstRank, 0, time, -1, -1, g));
       }
     }
@@ -777,7 +780,10 @@ NCCL_PARAM(CrossNic, "CROSS_NIC", 2);
 ncclResult_t ncclTopoCompute(ncclTopoSystem* system, struct ncclTopoGraph* graph) {
   int ngpus = system->nodes[GPU].count;
   graph->crossNic = ncclParamCrossNic();
-  int crossNic = (system->nodes[NET].count > 1) && graph->crossNic ? 1 : 0;
+  int crossNic = (system->nodes[NET].count > 1) && graph->crossNic &&
+	 (graph->pattern == NCCL_TOPO_PATTERN_RING ||
+	  graph->pattern == NCCL_TOPO_PATTERN_BALANCED_TREE ||
+	  graph->pattern == NCCL_TOPO_PATTERN_SPLIT_TREE) ? 1 : 0;
   graph->bwIntra = graph->bwInter = 0;
   graph->latencyInter = 0;
   if (graph->crossNic == 2) graph->crossNic = 0;
@@ -932,7 +938,7 @@ done:
     graph->nChannels = 1;
   }
 
-  if (graph->bwIntra >= 25.0) {
+  if (graph->bwIntra >= 25.0 && graph->pattern != NCCL_TOPO_PATTERN_MC) {
     int dupChannels = std::min(graph->nChannels*2, graph->maxChannels);
     memcpy(graph->intra+graph->nChannels*ngpus, graph->intra, (dupChannels-graph->nChannels)*ngpus*sizeof(int));
     memcpy(graph->inter+graph->nChannels*2,graph->inter, (dupChannels-graph->nChannels)*2*sizeof(int));

@@ -692,8 +692,9 @@ static ncclResult_t initTransportsRank(struct ncclComm* comm, ncclUniqueId* comm
 
   mcGraph.id = 3;
   mcGraph.pattern = NCCL_TOPO_PATTERN_MC;
-  mcGraph.collNet = 1;
-  mcGraph.minChannels = mcGraph.maxChannels = ringGraph.nChannels;
+  mcGraph.collNet = 0;
+  mcGraph.minChannels = 1;
+  mcGraph.maxChannels = MAXCHANNELS;
   NCCLCHECKGOTO(ncclTopoCompute(comm->topo, &mcGraph), ret, fail);
   NCCLCHECKGOTO(ncclTopoPrintGraph(comm->topo, &mcGraph), ret, fail);
 
@@ -830,7 +831,7 @@ static ncclResult_t initTransportsRank(struct ncclComm* comm, ncclUniqueId* comm
   }
 
   NCCLCHECKGOTO(ncclCalloc(&rings, nranks*MAXCHANNELS), ret, fail);
-  NCCLCHECKGOTO(ncclTopoPostset(comm, nodesFirstRank, nodesTreePatterns, allTopoRanks, rings, &collNetGraph), ret, fail);
+  NCCLCHECKGOTO(ncclTopoPostset(comm, nodesFirstRank, nodesTreePatterns, allTopoRanks, rings, &collNetGraph, &mcGraph), ret, fail);
   // AllGather3 - end
 
   TRACE(NCCL_INIT, "rank %d nranks %d - BUILT %d TREES/RINGS", rank, nranks, comm->nChannels);
