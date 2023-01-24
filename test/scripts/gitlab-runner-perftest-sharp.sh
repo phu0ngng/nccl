@@ -14,7 +14,7 @@ opts="-n 5 -w 1 -G $graph"
 range="-b 8 -e $max -f 2"
 
 export LD_LIBRARY_PATH=$SHARP_HOME/lib:$LD_LIBRARY_PATH
-export LD_LIBRARY_PATH=$PLUGIN_PATH:$LD_LIBRARY_PATH
+export LD_LIBRARY_PATH=$UCX_LIB_PATH:$PLUGIN_PATH:$LD_LIBRARY_PATH
 export NCCL_COLLNET_ENABLE=1
 # Deprecate this - now replaced by COLLNET_DIRECT|COLLNET_CHAIN
 #export NCCL_ALGO=COLLNET
@@ -23,6 +23,7 @@ echo "HOSTNAME=$HOSTNAME"
 echo "Using CUDA_HOME=$CUDA_HOME"
 echo "Using MPI_HOME=$MPI_HOME"
 echo "Using NCCL_HOME=$PWD/build"
+echo "Using UCX_LIB_PATH=$UCX_LIB_PATH"
 echo "Using SHARP_HOME=$SHARP_HOME"
 echo "Using PLUGIN_PATH=$PLUGIN_PATH"
 echo "Using LD_LIBRARY_PATH=$LD_LIBRARY_PATH"
