@@ -294,7 +294,7 @@ ncclResult_t bootstrapInit(struct ncclBootstrapHandle* handle, struct ncclComm* 
 
   // proxy is aborted through a message; don't set abortFlag
   NCCLCHECK(ncclCalloc(&proxySocket, 1));
-  NCCLCHECK(ncclSocketInit(proxySocket, &bootstrapNetIfAddr, comm->magic, ncclSocketTypeProxy));
+  NCCLCHECK(ncclSocketInit(proxySocket, &bootstrapNetIfAddr, comm->magic, ncclSocketTypeProxy, comm->abortFlag));
   NCCLCHECK(ncclSocketListen(proxySocket));
   NCCLCHECK(ncclSocketGetAddr(proxySocket, state->peerProxyAddresses+rank));
   NCCLCHECK(bootstrapAllGather(state, state->peerProxyAddresses, sizeof(union ncclSocketAddress)));

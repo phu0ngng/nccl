@@ -1020,7 +1020,8 @@ ncclResult_t ncclLaunchKernelBefore_NoUncapturedCuda(struct ncclComm* comm, stru
 
 #if CUDART_VERSION >= 11080
 #define NCCL_MAX_CGA_CLUSTER_SIZE 8
-NCCL_PARAM(CGAClusterSize, "CGA_CLUSTER_SIZE", 0);
+#define NCCL_CGA_CLUSTER_SIZE_SM90 4
+NCCL_PARAM(CGAClusterSize, "CGA_CLUSTER_SIZE", -2);
 #endif
 
 #if CUDART_VERSION >= 12000
@@ -1040,20 +1041,22 @@ ncclResult_t ncclLaunchKernel(struct ncclComm* comm, struct ncclKernelPlan* plan
   #if CUDART_VERSION >= 11080
   int driverVersion;
   NCCLCHECK(ncclCudaDriverVersion(&driverVersion));
-
-  unsigned int clusterSize = 0;
-  clusterSize = ncclParamCGAClusterSize();
-  if (clusterSize > NCCL_MAX_CGA_CLUSTER_SIZE) {
-    static bool warned = false;
-    if (warned == false) {
-      WARN("NCCL_CGA_CLUSTER_SIZE value %d is too big. Limiting value to %d.",
-           clusterSize, NCCL_MAX_CGA_CLUSTER_SIZE);
-      warned = true;
+  if (driverVersion >= 11080) {
+    int compCap = comm->compCap;
+    unsigned int clusterSize = (compCap == 90) ? NCCL_CGA_CLUSTER_SIZE_SM90 : 0;
+    if (ncclParamCGAClusterSize() != -2) {
+      clusterSize = ncclParamCGAClusterSize();
+      if (clusterSize > NCCL_MAX_CGA_CLUSTER_SIZE) {
+        static bool warned = false;
+        if (warned == false) {
+          WARN("NCCL_CGA_CLUSTER_SIZE value %d is too big. Limiting value to %d.",
+               clusterSize, NCCL_MAX_CGA_CLUSTER_SIZE);
+          warned = true;
+        }
+        clusterSize = NCCL_MAX_CGA_CLUSTER_SIZE;
+      }
     }
-    clusterSize = NCCL_MAX_CGA_CLUSTER_SIZE;
-  }
 
-  if (clusterSize || driverVersion >= 11080) {
     cudaLaunchConfig_t launchConfig = {0};
     cudaLaunchAttribute launchAttrs[3];
     int attrs = 0;
@@ -1075,11 +1078,13 @@ ncclResult_t ncclLaunchKernel(struct ncclComm* comm, struct ncclKernelPlan* plan
       launchAttrs[attrs].id = cudaLaunchAttributeClusterSchedulingPolicyPreference;
       launchAttrs[attrs++].val.clusterSchedulingPolicyPreference = cudaClusterSchedulingPolicySpread;
     }
-#if CUDART_VERSION >= 12000
-    // Set the NCCL Mem Sync domain on CUDA 12.0 and later
-    launchAttrs[attrs].id = cudaLaunchAttributeMemSyncDomain;
-    launchAttrs[attrs++].val.memSyncDomain = (cudaLaunchMemSyncDomain) ncclParamMemSyncDomain();
-#endif
+    #if CUDART_VERSION >= 12000
+    if (compCap >= 90 && driverVersion >= 12000) {
+      // Set the NCCL Mem Sync domain on CUDA 12.0 and later (sm90)
+      launchAttrs[attrs].id = cudaLaunchAttributeMemSyncDomain;
+      launchAttrs[attrs++].val.memSyncDomain = (cudaLaunchMemSyncDomain) ncclParamMemSyncDomain();
+    }
+    #endif
     launchConfig.gridDim = grid;
     launchConfig.blockDim = block;
     launchConfig.dynamicSmemBytes = smem;
@@ -1640,6 +1645,11 @@ ncclResult_t ncclRedOpDestroy(ncclRedOp_t op, ncclComm_t comm) {
     WARN("ncclRedOpDestroy :  operator is garbage.");
     return ncclInvalidArgument;
   }
+  if (comm == NULL) {
+    WARN("ncclRedOpDestroy : invalid communicator passed.");
+    return ncclInvalidArgument;
+  }
+
   int ix = int(ncclUserRedOpMangle(comm, op)) - int(ncclNumOps);
   if (comm->userRedOpCapacity <= ix || comm->userRedOps[ix].freeNext != -1) {
     WARN("ncclRedOpDestroy : operator unknown to this communicator.");

@@ -54,7 +54,7 @@ ncclResult_t ncclShmOpen(char* shmPath, size_t shmSize, void** shmPtr, void** de
   const size_t realShmSize = shmSize + refSize;
 
   *handle = *shmPtr = NULL; /* assume shmPtr and handle always set correctly by users. */
-  EQCHECKGOTO(tmphandle = (struct shmHandleInternal*)malloc(sizeof(struct shmHandleInternal)), NULL, ret, fail);
+  EQCHECKGOTO(tmphandle = (struct shmHandleInternal*)calloc(1, sizeof(struct shmHandleInternal)), NULL, ret, fail);
   if (create) {
     /* refcount > 0 means the caller tries to allocate a shared memory. This shared memory segment will have
      * refcount references; when the peer attaches, it should pass -1 to reduce one reference count. When it
@@ -71,14 +71,14 @@ ncclResult_t ncclShmOpen(char* shmPath, size_t shmSize, void** shmPtr, void** de
       ret = ncclSystemError;
       goto fail;
     }
-    INFO(NCCL_ALLOC, "Allocated %ld bytes of shared memory in %s\n", realShmSize, shmPath);
+    INFO(NCCL_ALLOC, "Allocated %ld bytes of shared memory in %s", realShmSize, shmPath);
   } else {
     SYSCHECKGOTO(fd = open(shmPath, O_RDWR, S_IRUSR | S_IWUSR), ret, fail);
   }
 
   hptr = (char*)mmap(NULL, realShmSize, PROT_READ | PROT_WRITE, MAP_SHARED, fd, 0);
-  if (hptr == NULL) {
-    WARN("Could not map %s\n", shmPath);
+  if (hptr == MAP_FAILED) {
+    WARN("Could not map %s size %zi, error: %s", shmPath, realShmSize, strerror(errno));
     ret = ncclSystemError;
     goto fail;
   }

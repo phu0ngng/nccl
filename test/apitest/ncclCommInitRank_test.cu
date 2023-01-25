@@ -2,7 +2,7 @@
 
 class ncclCommInitRank_test : public ::testing::Test {
   protected:
-    ncclComm_t comm = NULL;
+    ncclComm_t comm = NCCL_COMM_NULL;
     int ndev = 1;
     ncclUniqueId commId;
     int rank = 0;
@@ -13,7 +13,7 @@ class ncclCommInitRank_test : public ::testing::Test {
         ASSERT_EQ(ncclSuccess, ncclGetUniqueId(&commId));
     };
     virtual void TearDown() {
-        if (comm == NULL) {
+        if (comm == NCCL_COMM_NULL) {
           // This is needed to free resources allocated to the Id
           ASSERT_EQ(ncclSuccess, ncclCommInitRank(&comm, 1, commId, 0));
         }

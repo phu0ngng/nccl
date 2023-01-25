@@ -171,6 +171,12 @@ static ncclResult_t commFree(ncclComm_t comm) {
   if (comm == NULL)
     return ncclSuccess;
 
+  /* in commReclaim, we have guaranteed only last rank which calls ncclCommDestroy() will
+   * free all intra-process communicators; therefore, we only need to focus on local
+   * resource cleanup in commFree(). */
+  if (comm->proxyState.thread)
+    pthread_join(comm->proxyState.thread, nullptr);
+
   delete[] comm->userRedOps;
 
   free(comm->connectSend);
@@ -207,12 +213,6 @@ static ncclResult_t commFree(ncclComm_t comm) {
 
   ncclMemoryStackDestruct(&comm->memScoped);
   ncclMemoryStackDestruct(&comm->memPermanent);
-
-  /* in commReclaim, we have guaranteed only last rank which calls ncclCommDestroy() will
-   * free all intra-process communicators; therefore, we only need to focus on local
-   * resource cleanup in commFree(). */
-  if (comm->proxyState.thread)
-    pthread_join(comm->proxyState.thread, nullptr);
 
   ncclCudaHostFree((void *)comm->abortFlag);
 
@@ -310,7 +310,8 @@ static ncclResult_t commAlloc(ncclComm_t* comret, int ndev, int rank) {
 
   cudaGetDevice(&comm->cudaDev);
   NCCLCHECK(getBusId(comm->cudaDev, &comm->busId));
-  TRACE(NCCL_INIT,"comm %p rank %d nranks %d cudaDev %d busId %lx", comm, rank, ndev, comm->cudaDev, comm->busId);
+  comm->compCap = ncclCudaCompCap();
+  TRACE(NCCL_INIT,"comm %p rank %d nranks %d cudaDev %d busId %lx compCap %d", comm, rank, ndev, comm->cudaDev, comm->busId, comm->compCap);
 
   comm->checkPointers = ncclParamCheckPointers() == 1 ? true : false;
   comm->dmaBufSupport = (dmaBufSupported(comm) == ncclSuccess) ? true : false;
@@ -493,7 +494,7 @@ static ncclResult_t computeBuffSizes(struct ncclComm* comm) {
 NCCL_PARAM(GraphDumpFileRank, "GRAPH_DUMP_FILE_RANK", 0);
 NCCL_PARAM(CollNetNodeThreshold, "COLLNET_NODE_THRESHOLD", 2);
 NCCL_PARAM(NvbPreconnect, "NVB_PRECONNECT", 1);
-NCCL_PARAM(AllocP2pNetLLBuffers, "NCCL_ALLOC_P2P_NET_LL_BUFFERS", 0);
+NCCL_PARAM(AllocP2pNetLLBuffers, "ALLOC_P2P_NET_LL_BUFFERS", 0);
 
 static ncclResult_t collNetTrySetup(ncclComm_t comm, struct ncclTopoGraph* collNetGraph) {
   ncclResult_t ret = ncclSuccess;
@@ -640,6 +641,41 @@ static ncclResult_t initTransportsRank(struct ncclComm* comm, ncclUniqueId* comm
     }
   }
   // AllGather1 - end
+
+  do {
+    // Compute intra-process ranks
+    int intraProcRank0 = -1, intraProcRank = -1, intraProcRanks = 0;
+    for (int i = 0; i < nranks; i++) {
+      if ((comm->peerInfo[i].hostHash == comm->peerInfo[rank].hostHash)
+          && (comm->peerInfo[i].pidHash == comm->peerInfo[rank].pidHash)) {
+        // Rank is in same process
+        if (intraProcRanks == 0) intraProcRank0 = i;
+        if (i == rank) intraProcRank = intraProcRanks;
+        intraProcRanks++;
+        if (intraProcRank0 == rank && rank != i) {
+          comm->peerInfo[i].comm->intraNext = comm->intraNext;
+          comm->intraNext = comm->peerInfo[i].comm;
+        }
+      }
+    }
+    TRACE(NCCL_INIT,"pidHash[%d] %lx intraProcRank %d intraProcRanks %d intraProcRank0 %d",
+        rank, comm->peerInfo[rank].pidHash, intraProcRank, intraProcRanks, intraProcRank0);
+    if (intraProcRank == -1 || intraProcRank0 == -1 || comm->peerInfo[intraProcRank0].comm == NULL) {
+      WARN("Failed to determine intra proc ranks rank %d hostHash %lx pidHash %lx intraProcRank %d intraProcRanks %d intraProcRank0 %d",
+          rank, comm->peerInfo[rank].hostHash, comm->peerInfo[rank].pidHash,
+          intraProcRank, intraProcRanks, intraProcRank0);
+      ret = ncclInternalError;
+      goto fail;
+    }
+    struct ncclComm* comm0 = comm->peerInfo[intraProcRank0].comm;
+    assert(intraProcRank==0 ? comm==comm0 : true);
+    comm->intraComm0 = comm0;
+    comm->intraRank = intraProcRank;
+    comm->intraRanks = intraProcRanks;
+    comm->intraBarrierPhase = 0;
+    comm->intraBarrierCounter = 0;
+    comm->intraBarrierGate = 0;
+  } while(0);
 
   // Topo detection / System graph creation
   NCCLCHECKGOTO(ncclTopoGetSystem(comm, &comm->topo), ret, fail);
@@ -966,12 +1002,13 @@ static ncclResult_t initTransportsRank(struct ncclComm* comm, ncclUniqueId* comm
         }
       }
     }
+
     NCCLCHECKGOTO(ncclTransportP2pSetup(comm, NULL, 1), ret, fail);
   }
 
   // Connect to local net proxy
   NCCLCHECKGOTO(ncclProxyConnect(comm, TRANSPORT_NET, 1, comm->rank, &proxyConn), ret, fail);
-  NCCLCHECKGOTO(ncclProxyCall(&proxyConn, ncclProxyMsgSharedInit, &comm->p2pnChannels, sizeof(int), NULL, 0), ret, fail);
+  NCCLCHECKGOTO(ncclProxyCallBlocking(&proxyConn, ncclProxyMsgSharedInit, &comm->p2pnChannels, sizeof(int), NULL, 0), ret, fail);
 
   // Then to remote ones when using PXN
   if (ncclPxnDisable(comm) == 0) {
@@ -979,44 +1016,9 @@ static ncclResult_t initTransportsRank(struct ncclComm* comm, ncclUniqueId* comm
     NCCLCHECKGOTO(ncclTopoGetPxnRanks(comm, &pxnPeers, &nranks), ret, fail);
     for (int r=0; r<nranks; r++) {
       NCCLCHECKGOTO(ncclProxyConnect(comm, TRANSPORT_NET, 1, pxnPeers[r], &proxyConn), ret, fail);
-      NCCLCHECKGOTO(ncclProxyCall(&proxyConn, ncclProxyMsgSharedInit, &comm->p2pnChannels, sizeof(int), NULL, 0), ret, fail);
+      NCCLCHECKGOTO(ncclProxyCallBlocking(&proxyConn, ncclProxyMsgSharedInit, &comm->p2pnChannels, sizeof(int), NULL, 0), ret, fail);
     }
   }
-
-  do {
-    // Compute intra-process ranks
-    int intraProcRank0 = -1, intraProcRank = -1, intraProcRanks = 0;
-    for (int i = 0; i < nranks; i++) {
-      if ((comm->peerInfo[i].hostHash == comm->peerInfo[rank].hostHash)
-          && (comm->peerInfo[i].pidHash == comm->peerInfo[rank].pidHash)) {
-        // Rank is in same process
-        if (intraProcRanks == 0) intraProcRank0 = i;
-        if (i == rank) intraProcRank = intraProcRanks;
-        intraProcRanks++;
-        if (intraProcRank0 == rank && rank != i) {
-          comm->peerInfo[i].comm->intraNext = comm->intraNext;
-          comm->intraNext = comm->peerInfo[i].comm;
-        }
-      }
-    }
-    TRACE(NCCL_INIT,"pidHash[%d] %lx intraProcRank %d intraProcRanks %d intraProcRank0 %d",
-        rank, comm->peerInfo[rank].pidHash, intraProcRank, intraProcRanks, intraProcRank0);
-    if (intraProcRank == -1 || intraProcRank0 == -1 || comm->peerInfo[intraProcRank0].comm == NULL) {
-      WARN("Failed to determine intra proc ranks rank %d hostHash %lx pidHash %lx intraProcRank %d intraProcRanks %d intraProcRank0 %d",
-          rank, comm->peerInfo[rank].hostHash, comm->peerInfo[rank].pidHash,
-          intraProcRank, intraProcRanks, intraProcRank0);
-      ret = ncclInternalError;
-      goto fail;
-    }
-    struct ncclComm* comm0 = comm->peerInfo[intraProcRank0].comm;
-    assert(intraProcRank==0 ? comm==comm0 : true);
-    comm->intraComm0 = comm0;
-    comm->intraRank = intraProcRank;
-    comm->intraRanks = intraProcRanks;
-    comm->intraBarrierPhase = 0;
-    comm->intraBarrierCounter = 0;
-    comm->intraBarrierGate = 0;
-  } while(0);
 
   if (comm->intraRank == 0) { // Load ncclParamLaunchMode
     char* str = getenv("NCCL_LAUNCH_MODE");
@@ -1106,6 +1108,10 @@ static ncclResult_t ncclCommInitRankFunc(struct ncclAsyncJob* job_) {
   // update communicator state
   comm->initState = ncclSuccess;
 
+  // Trace this call for replay tool
+  TRACE_CALL("ncclCommInitRank(%p, %d, 0x%llx, %d, %d)",
+    *newcomm, nranks, (unsigned long long)hashUniqueId(commId), myrank, (*newcomm)->cudaDev);
+
   INFO(NCCL_INIT,"comm %p rank %d nranks %d cudaDev %d busId %lx commId 0x%llx - Init COMPLETE", *newcomm, myrank, nranks, (*newcomm)->cudaDev, (*newcomm)->busId, (unsigned long long)hashUniqueId(commId));
 exit:
   return res;
@@ -1175,7 +1181,6 @@ static ncclResult_t ncclCommInitRankDev(ncclComm_t* newcomm, int nranks, ncclUni
 exit:
   return ncclGroupErrCheck(res);
 fail:
-  if (job) free(job);
   if (comm) {
     if (comm->abortFlag) ncclCudaHostFree((void *)comm->abortFlag);
     free(comm);
@@ -1400,7 +1405,6 @@ static ncclResult_t commFinalize(ncclComm_t comm, bool userCalled) {
 exit:
   return ncclGroupErrCheck(ret);
 fail:
-  if (job) free(job);
   goto exit;
 }
 
@@ -1447,26 +1451,7 @@ static ncclResult_t commReclaim(ncclComm_t comm) {
     NCCLCHECKGOTO(commFinalize(comm, false), ret, fail);
   }
 
-  if (comm->initState != ncclSuccess) {
-    /* if init errors happen, no finalize thread should have been launched. Main thread can reclaim
-     * everything since no NCCL kernel was issued. */
-    struct ncclCommFinalizeAsyncJob job;
-
-    job.comm = comm;
-    curRank = comm->rank;
-    /* comm aborts, commDestroySync should not be blocked. */
-    if ((ret = commDestroySync((struct ncclAsyncJob*) &job)) != ncclSuccess) {
-      WARN("commReclaim: comm %p (rank = %d) in abort, error %d", comm, curRank, ret);
-    }
-
-    if ((ret = ncclProxyDestroy(comm)) != ncclSuccess) {
-      WARN("commReclaim: comm %p (rank = %d) destroys proxy resource error %d", comm, curRank, ret);
-    }
-
-    if ((ret = commCleanup(comm)) != ncclSuccess) {
-      WARN("commReclaim: cleanup comm %p rank %d failed in destroy/abort, error %d", comm, curRank, ret);
-    }
-  } else {
+  if (comm->intraComm0 != NULL) {
     int curRankCnt;
     int intraRanks = comm->intraRanks;
     ncclComm_t intracomm0 = comm->intraComm0;
@@ -1492,6 +1477,24 @@ static ncclResult_t commReclaim(ncclComm_t comm) {
           if ((ret = commDestroySync((struct ncclAsyncJob*) &job)) != ncclSuccess)
             WARN("commReclaim: comm %p (rank = %d) in abort, error %d", curIntraComm, curRank, ret);
         }
+      }
+
+      /* ncclProxyDestroy() loop must be put after commDestroySync() loop. Namely, you cannot do:
+       *  while(...) {
+       *     commDestroySync(...);
+       *     ncclProxyDestroy(...);
+       *  }
+       * Considering one process multi-gpu case, we must guarantee all kernels are complete before
+       * we free proxy resources; otherwise, we will face invalid memory issues where proxy connection
+       * and related intermediate memory from one rank are freed but other ranks are still using it.
+       * This is not a problem for multi-process case, since intermediate memory is opened by CUDA IPC
+       * or mmap where memory free is guarded by CUDA driver and operating system, so we will not have
+       * invalid memory access issue. */
+      nextIntraComm = intracomm0;
+      while (nextIntraComm) {
+        curIntraComm = nextIntraComm;
+        curRank = curIntraComm->rank;
+        nextIntraComm = nextIntraComm->intraNext;
 
         /* free intraprocess proxy resources. */
         if ((ret = ncclProxyDestroy(curIntraComm)) != ncclSuccess) {
