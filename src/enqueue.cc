@@ -964,7 +964,7 @@ ncclResult_t ncclLaunchPrepare(struct ncclComm* comm) {
     }
     NCCLCHECKGOTO(ncclStrongStreamWaitStream(tasks->capturingGraph, launchStream, &comm->deviceStream), result, failure);
 
-    if (persistent || comm->persistentRefs != 0) {
+    if (persistent || comm->persistentRefs != 0 || ncclCudaLaunchBlocking) {
       // We have to launch host tasks to push proxy args. We are careful to only
       // do this if necessary since host tasks impose a high performance cost in CUDA.
       bool acquired = false;
@@ -1087,7 +1087,7 @@ ncclResult_t ncclLaunchKernel(struct ncclComm* comm, struct ncclKernelPlan* plan
 }
 
 ncclResult_t ncclLaunchKernelAfter_NoCuda(struct ncclComm* comm, struct ncclKernelPlan* plan) {
-  if (comm->persistentRefs == 0) { // implies !plan->persistent
+  if (!(plan->persistent || comm->persistentRefs != 0 || ncclCudaLaunchBlocking)) {
     // If this isn't being captured and there aren't any CUDA graphs alive
     // then we don't need to do our proxyOp pushing on the host stream.
     NCCLCHECK(hostStreamPlanTask(comm, plan));
