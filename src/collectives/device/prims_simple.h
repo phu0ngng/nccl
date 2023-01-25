@@ -4,10 +4,6 @@
  * See LICENSE.txt for license information
  ************************************************************************/
 
-// Temporary define
-extern "C" __device__ uint64_t __nv_ptx_builtin_ocg_ld_mc_min_u64(uint64_t addr);
-extern "C" __device__ uint64_t __nv_ptx_builtin_ocg_ld_mc_add_u64(uint64_t addr);
-
 template<typename T, typename RedOp, typename Fan, int Direct,
          int SlicePerChunk, int StepPerSlice, int Unroll, int P2p, bool MC>
 class Primitives<
@@ -77,11 +73,15 @@ class Primitives<
     return flags & Aborted;
   }
 
-  inline __device__ uint64_t loadStepValue(uint64_t* addr) {
-    uint64_t v;
-    if (MC && (flags & McMinPolling)) v = __nv_ptx_builtin_ocg_ld_mc_min_u64((uint64_t)addr);
-    else asm volatile("ld.volatile.global.u64 %0, [%1];": "=l"(v) : "l"(addr));
-    return v;
+  inline __device__ uint64_t loadStepValue(uint64_t* ptr) {
+    uintptr_t addr = cvta_to_global(ptr);
+    uint64_t ans;
+    if (MC && (flags & McMinPolling)) {
+      asm("multimem.ld_reduce.global.min.u64 %0, [%1];" : "=l"(ans) : "l"(addr));
+    } else {
+      asm("ld.volatile.global.u64 %0, [%1];": "=l"(ans) : "l"(addr));
+    }
+    return ans;
   }
 
   template <int DirectRecv, int DirectSend, int Recv, int Send, int Src, int Dst>
@@ -198,7 +198,7 @@ class Primitives<
         if (MC && ncclShmem.groups[group].mcRecv) {
           void* src = ncclShmem.groups[group].srcs[0];
           void* dst = ncclShmem.groups[group].dsts[0];
-          copyGlobalMC<RedOp>(tid, nworkers, ncclShmem.redOpArgs[0], postOp, src, dst, workSize,
+          copyMultimemMultimem<RedOp>(tid, nworkers, ncclShmem.redOpArgs[0], postOp, src, dst, workSize,
           cvta_to_shared(shmemForWarp(tidInBlock/WARP_SIZE)));
         } else if (DirectRecv && ncclShmem.groups[group].srcs[0] == ncclShmem.groups[group].dsts[0]) {
           // We can only have one direct receive. Since srcs[0] == dstPtr+offset, skip one copy
