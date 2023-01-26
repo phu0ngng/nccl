@@ -288,8 +288,9 @@ ncclResult_t ncclMcSetup(struct ncclComm* comm) {
       dummy[i] ^= (rank << 28);
     }
 
-    printf("MC: rank %d Writing %zi bytes to %p\n", rank, sizeof(dummy), resources->mcBuff);
-    cudaMemcpy(resources->mcBuff, dummy, sizeof(dummy), cudaMemcpyHostToDevice);
+    char *buf = resources->mcBuff + rank*mcPerRankSize;
+    printf("MC: rank %d Writing %zi bytes to %p\n", rank, sizeof(dummy), buf);
+    cudaMemcpy(buf, dummy, sizeof(dummy), cudaMemcpyHostToDevice);
 
     CUDACHECK(cudaDeviceSynchronize());
     NCCLCHECKGOTO(bootstrapBarrier(comm->bootstrap, comm->localRankToRank, comm->localRank, comm->localRanks, comm->localRankToRank[0]), res, cleanup);
