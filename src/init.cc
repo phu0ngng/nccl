@@ -1926,6 +1926,7 @@ ncclResult_t ncclCommSplit(ncclComm_t comm, int color, int key, ncclComm_t *newc
   struct ncclComm* childComm = NULL;
   ncclResult_t res = ncclSuccess;
 
+  NCCLCHECK(ncclGroupStartInternal());
   NCCLCHECKGOTO(PtrCheck(comm, "CommSplit", "comm"), res, fail);
   NCCLCHECKGOTO(PtrCheck(newcomm, "CommSplit", "newcomm"), res, fail);
 
@@ -1957,7 +1958,9 @@ ncclResult_t ncclCommSplit(ncclComm_t comm, int color, int key, ncclComm_t *newc
   NCCLCHECKGOTO(ncclAsyncLaunch(&job->base, ncclCommInitRankFunc, NULL, free, comm), res, fail);
 
 exit:
-  return ncclGroupErrCheck(res);
+  ncclGroupErrCheck(res);
+  NCCLCHECK(ncclGroupEndInternal());
+  return res;
 fail:
   if (childComm) free(childComm);
   if (newcomm) *newcomm = NULL;
