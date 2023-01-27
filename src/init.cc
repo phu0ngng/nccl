@@ -1128,23 +1128,61 @@ static ncclResult_t parseCommConfig(ncclComm_t comm, ncclConfig_t *config) {
   int cgaClusterSizeEnv;
   int minCTAsEnv;
   int maxCTAsEnv;
-  const char *envNetName, *tmpNetName;
+  const char *envNetName, *tmpNetName;  
+  ncclConfig_t internalConfig = NCCL_CONFIG_INITIALIZER;
+  ncclConfig_t *internalConfigPtr;
+  size_t realSize;
+
+  internalConfigPtr = &internalConfig;
+  if (config) {
+    memcpy((void*)&realSize, (void*)config, sizeof(size_t));
+    realSize = realSize > sizeof(ncclConfig_t) ? sizeof(ncclConfig_t) : realSize;
+    memcpy((void*)internalConfigPtr, (void*)config, realSize);
+    if (internalConfigPtr->magic != 0xcafebeef) {
+      WARN("ncclConfig_t argument not initialized via NCCL_CONFIG_INITIALIZER");
+      ret = ncclInvalidArgument;
+      goto fail;
+    }
+  }
+
+  /* check input config attributes, -1 means user-undefined and we should use default value from NCCL. */
+  if (internalConfigPtr->blocking != NCCL_CONFIG_UNDEF_INT && internalConfigPtr->blocking != 0 && internalConfigPtr->blocking != 1) {
+    WARN("Invalid config blocking attribute value %d", internalConfigPtr->blocking);
+    ret = ncclInvalidArgument;
+    goto fail;
+  }
+  
+  if (internalConfigPtr->cgaClusterSize != NCCL_CONFIG_UNDEF_INT && internalConfigPtr->cgaClusterSize < 0) {
+    WARN("Invalid config cgaClusterSize attribute value %d", internalConfigPtr->cgaClusterSize);
+    ret = ncclInvalidArgument;
+    goto fail;
+  }
+
+  if ((internalConfigPtr->minCTAs != NCCL_CONFIG_UNDEF_INT &&
+    internalConfigPtr->minCTAs <= 0) ||
+    (internalConfigPtr->maxCTAs != NCCL_CONFIG_UNDEF_INT &&
+      internalConfigPtr->maxCTAs <= 0) ||
+    (internalConfigPtr->minCTAs > internalConfigPtr->maxCTAs)) {
+    WARN("Invalid config min/max channels attribute value %d/%d", internalConfigPtr->minCTAs, internalConfigPtr->maxCTAs);
+    ret = ncclInvalidArgument;
+    goto fail;
+  }
 
   /* default config value can be tuned on different platform. */
-  if (config->blocking == NCCL_CONFIG_UNDEF_INT) config->blocking = 1;
-  if (config->cgaClusterSize == NCCL_CONFIG_UNDEF_INT) config->cgaClusterSize = 4;
-  if (config->minCTAs == NCCL_CONFIG_UNDEF_INT) config->minCTAs = 1;
-  if (config->maxCTAs == NCCL_CONFIG_UNDEF_INT) config->maxCTAs = MAXCHANNELS;
-  if (config->netName == NCCL_CONFIG_UNDEF_PTR)
+  if (internalConfigPtr->blocking == NCCL_CONFIG_UNDEF_INT) internalConfigPtr->blocking = 1;
+  if (internalConfigPtr->cgaClusterSize == NCCL_CONFIG_UNDEF_INT) internalConfigPtr->cgaClusterSize = 4;
+  if (internalConfigPtr->minCTAs == NCCL_CONFIG_UNDEF_INT) internalConfigPtr->minCTAs = 1;
+  if (internalConfigPtr->maxCTAs == NCCL_CONFIG_UNDEF_INT) internalConfigPtr->maxCTAs = MAXCHANNELS;
+  if (internalConfigPtr->netName == NCCL_CONFIG_UNDEF_PTR)
     tmpNetName = NULL;
   else
-    tmpNetName = config->netName;
+    tmpNetName = internalConfigPtr->netName;
 
   /* assign config to communicator */
-  comm->blocking = config->blocking;
-  comm->cgaClusterSize = config->cgaClusterSize;
-  comm->minCTAs = config->minCTAs;
-  comm->maxCTAs = config->maxCTAs;
+  comm->blocking = internalConfigPtr->blocking;
+  comm->cgaClusterSize = internalConfigPtr->cgaClusterSize;
+  comm->minCTAs = internalConfigPtr->minCTAs;
+  comm->maxCTAs = internalConfigPtr->maxCTAs;
 
   /* override configuration from env variable. */
   blockingEnv = ncclParamCommBlocking();
@@ -1196,6 +1234,8 @@ static ncclResult_t parseCommConfig(ncclComm_t comm, ncclConfig_t *config) {
   } else {
     comm->netName = NULL;
   }
+
+  INFO(NCCL_INIT, "parseCommConfig: blocking %d, minCTAs %d, maxCTAs %d, cgaClusterSize %d, netName %s DONE\n", comm->blocking, comm->minCTAs, comm->maxCTAs, comm->cgaClusterSize, comm->netName);
 
 exit:
   return ret;
@@ -1361,47 +1401,16 @@ ncclResult_t ncclCommInitRankConfig(ncclComm_t *newcomm, int nranks, ncclUniqueI
   int cudaDev;
   ncclResult_t ret = ncclSuccess;
   ncclConfig_t internalConfig = NCCL_CONFIG_INITIALIZER;
-  ncclConfig_t *internalConfigPtr;
-  size_t realSize;
-
+  ncclConfig_t *internalConfigPtr = NULL;
   NCCLCHECK(ncclGroupStartInternal());
-  internalConfigPtr = &internalConfig;
-  if (config) {
-    memcpy((void*)&realSize, (void*)config, sizeof(size_t));
-    realSize = realSize > sizeof(ncclConfig_t) ? sizeof(ncclConfig_t) : realSize;
-    memcpy((void*)internalConfigPtr, (void*)config, realSize);
-    if (internalConfigPtr->magic != 0xcafebeef) {
-      WARN("ncclConfig_t argument not initialized via NCCL_CONFIG_INITIALIZER");
-      ret = ncclInvalidArgument;
-      goto fail;
-    }
-  }
-
-  /* check input config attributes, -1 means user-undefined and we should use default value from NCCL. */
-  if (internalConfigPtr->blocking != NCCL_CONFIG_UNDEF_INT && internalConfigPtr->blocking != 0 && internalConfigPtr->blocking != 1) {
-    WARN("Invalid config blocking attribute value %d", internalConfigPtr->blocking);
-    ret = ncclInvalidArgument;
-    goto fail;
-  }
-  
-  if (internalConfigPtr->cgaClusterSize != NCCL_CONFIG_UNDEF_INT && internalConfigPtr->cgaClusterSize < 0) {
-    WARN("Invalid config cgaClusterSize attribute value %d", internalConfigPtr->cgaClusterSize);
-    ret = ncclInvalidArgument;
-    goto fail;
-  }
-
-  if ((internalConfigPtr->minCTAs != NCCL_CONFIG_UNDEF_INT &&
-    internalConfigPtr->minCTAs <= 0) ||
-    (internalConfigPtr->maxCTAs != NCCL_CONFIG_UNDEF_INT &&
-      internalConfigPtr->maxCTAs <= 0) ||
-    (internalConfigPtr->minCTAs > internalConfigPtr->maxCTAs)) {
-    WARN("Invalid config min/max channels attribute value %d/%d", internalConfigPtr->minCTAs, internalConfigPtr->maxCTAs);
-    ret = ncclInvalidArgument;
-    goto fail;
-  }
 
   (void)ncclCudaLibraryInit();
   CUDACHECKGOTO(cudaGetDevice(&cudaDev), ret, fail);
+
+  if (config == NULL) 
+    internalConfigPtr = &internalConfig;
+  else
+    internalConfigPtr = config;
   NCCLCHECKGOTO(ncclCommInitRankDev(newcomm, nranks, commId, myrank, cudaDev, internalConfigPtr), ret, fail);
 
 exit:
