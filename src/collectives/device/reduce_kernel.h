@@ -540,7 +540,7 @@ struct Apply_LoadMultimem {
     } \
   };
 
-#if __CUDA_ARCH__ >= 900
+#if __CUDA_ARCH__ >= 900 && CUDART_VERSION >= 12010
   DEFINE_Apply_LoadMultimem(FuncSum, uint32_t, add, u32, r, u32)
   DEFINE_Apply_LoadMultimem(FuncMin, uint32_t, min, u32, r, u32)
   DEFINE_Apply_LoadMultimem(FuncMax, uint32_t, max, u32, r, u32)
