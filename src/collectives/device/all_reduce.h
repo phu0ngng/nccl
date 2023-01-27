@@ -389,11 +389,9 @@ struct RunWorkElement<ncclFuncAllReduce, T, RedOp, NCCL_ALGO_MC, NCCL_PROTO_SIMP
     const int nThreadsScatter = copyWarps*WARP_SIZE;
     const int nThreadsGather  = (copyWarps-1)*WARP_SIZE;
     const int nThreadsReduce = (reduceWarps+1)*WARP_SIZE;
-    const int nThreadsBcast   = 0; // No network support for now, reduce does bcast as well
     const int tidEndScatter = nThreadsScatter;
     const int tidEndGather = tidEndScatter + nThreadsGather;
     const int tidEndReduce = tidEndGather + nThreadsReduce;
-    const int tidEndBcast = tidEndReduce + nThreadsBcast;
 
     using Proto = ProtoSimple<1, 1, COLL_UNROLL, /*MC=*/true>;
 
