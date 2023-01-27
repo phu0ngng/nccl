@@ -936,6 +936,8 @@ static ncclResult_t initTransportsRank(struct ncclComm* comm, ncclUniqueId* comm
   // Compute nChannels per peer for p2p
   NCCLCHECKGOTO(ncclTopoComputeP2pChannels(comm), ret, fail);
 
+  INFO(NCCL_INIT, "%d coll channels, %d mc channels, %d p2p channels, %d p2p channels per peer", comm->nChannels, comm->mcChannels, comm->p2pnChannels, comm->p2pnChannelsPerPeer);
+
   do { // Setup p2p structures in comm->tasks
     struct ncclTasks* tasks = &comm->tasks;
     int nRanks = comm->nRanks;

@@ -203,6 +203,7 @@ struct ncclComm {
 
   // Channels for collectives
   int nChannels;
+  int mcChannels;
   // Channels (per peer) for p2p
   int p2pnChannels;
   int p2pnChannelsPerPeer;

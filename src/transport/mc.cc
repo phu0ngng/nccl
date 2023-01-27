@@ -245,10 +245,13 @@ ncclResult_t mcGroupUnbindMem(mcHandle_t handle, char* mem) {
 
 #define MC_MEM_ALIGN_SIZE (1 << 21)
 
+NCCL_PARAM(McChannels, "MC_NCHANNELS", 16);
+
 ncclResult_t ncclMcSetup(struct ncclComm* comm) {
   NCCLCHECK(ncclMcInitEtbl(comm));
   if (comm->mcSupport == 0 || comm->localRanks <= 1) return ncclSuccess;
 
+  int nChannels = comm->mcChannels = ncclParamMcChannels();
   int rank = comm->localRank, nranks = comm->localRanks;
   ncclResult_t res = ncclSuccess;
   struct mcResources* resources;
@@ -257,7 +260,7 @@ ncclResult_t ncclMcSetup(struct ncclComm* comm) {
 
   size_t buffSize = comm->buffSizes[NCCL_PROTO_SIMPLE];
   size_t memSize = MC_MEM_ALIGN_SIZE;
-  size_t mcPerRankSize = comm->nChannels*2*(buffSize+memSize);
+  size_t mcPerRankSize = nChannels*2*(buffSize+memSize);
   size_t mcTotalSize = mcPerRankSize*nranks;
 
   INFO(NCCL_INIT|NCCL_MC, "MC comm %p rank %d nranks %d buffSize %zi memSize %zi mcPerRankSize %zi mcTotalSize %zi",
@@ -304,7 +307,7 @@ ncclResult_t ncclMcSetup(struct ncclComm* comm) {
   }
 #endif
 
-  for (int c=0; c<comm->nChannels; c++) {
+  for (int c=0; c<nChannels; c++) {
     struct ncclChannel* channel = comm->channels+c;
     channel->mc.nHeads = nranks;
     for (int i=0; i<NCCL_MAX_MC_ARITY; i++) channel->mc.up[i] = -1;
@@ -315,7 +318,7 @@ ncclResult_t ncclMcSetup(struct ncclComm* comm) {
 
   for (int r=0; r<nranks; r++) {
     int mcPeer = comm->nRanks+1+r;
-    for (int c=0; c<comm->nChannels; c++) {
+    for (int c=0; c<nChannels; c++) {
       struct ncclChannel* channel = comm->channels+c;
       channel->mc.up[r] = mcPeer;
 
@@ -323,12 +326,12 @@ ncclResult_t ncclMcSetup(struct ncclComm* comm) {
       struct ncclChannelPeer* peer = channel->peers+mcPeer;
 
       // Reduce UC -> MC
-      mem = resources->ucBuff + (r*2*comm->nChannels+c)*(buffSize+memSize);
+      mem = resources->ucBuff + (r*2*nChannels+c)*(buffSize+memSize);
       peer->send[0].transportComm = &mcTransport.send;
       peer->send[0].conn.buffs[NCCL_PROTO_SIMPLE] = mem;
       peer->send[0].conn.head = (uint64_t*)(mem+buffSize);
       peer->send[0].conn.tail = (uint64_t*)(mem+buffSize+memSize/2);
-      mem = resources->mcBuff + (r*2*comm->nChannels+c)*(buffSize+memSize);
+      mem = resources->mcBuff + (r*2*nChannels+c)*(buffSize+memSize);
       peer->recv[1].transportComm = &mcTransport.recv;
       peer->recv[1].conn.buffs[NCCL_PROTO_SIMPLE] = mem;
       peer->recv[1].conn.head = (uint64_t*)(mem+buffSize);
@@ -336,12 +339,12 @@ ncclResult_t ncclMcSetup(struct ncclComm* comm) {
       peer->recv[1].conn.flags |= NCCL_MC_MIN_POLL;
 
       // Broadcast MC -> UC
-      mem = resources->ucBuff + ((r*2+1)*comm->nChannels+c)*(buffSize+memSize);
+      mem = resources->ucBuff + ((r*2+1)*nChannels+c)*(buffSize+memSize);
       peer->recv[0].transportComm = &mcTransport.recv;
       peer->recv[0].conn.buffs[NCCL_PROTO_SIMPLE] = mem;
       peer->recv[0].conn.head = (uint64_t*)(mem+buffSize);
       peer->recv[0].conn.tail = (uint64_t*)(mem+buffSize+memSize/2);
-      mem = resources->mcBuff + ((r*2+1)*comm->nChannels+c)*(buffSize+memSize);
+      mem = resources->mcBuff + ((r*2+1)*nChannels+c)*(buffSize+memSize);
       peer->send[1].transportComm = &mcTransport.send;
       peer->send[1].conn.buffs[NCCL_PROTO_SIMPLE] = mem;
       peer->send[1].conn.head = (uint64_t*)(mem+buffSize);
@@ -355,10 +358,10 @@ ncclResult_t ncclMcSetup(struct ncclComm* comm) {
 
       /*INFO(NCCL_INIT|NCCL_MC, "Peer %d Channel %d MC buff %p/%p UC Buff %p/%p",
           mcPeer, c,
-          resources->mcBuff + (r*2*comm->nChannels+c)*(buffSize+memSize),
-          resources->mcBuff + ((r*2+1)*comm->nChannels+c)*(buffSize+memSize),
-          resources->ucBuff + (r*2*comm->nChannels+c)*(buffSize+memSize),
-          resources->ucBuff + ((r*2+1)*comm->nChannels+c)*(buffSize+memSize));*/
+          resources->mcBuff + (r*2*nChannels+c)*(buffSize+memSize),
+          resources->mcBuff + ((r*2+1)*nChannels+c)*(buffSize+memSize),
+          resources->ucBuff + (r*2*nChannels+c)*(buffSize+memSize),
+          resources->ucBuff + ((r*2+1)*nChannels+c)*(buffSize+memSize));*/
     }
   }
 cleanup:

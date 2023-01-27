@@ -1161,8 +1161,6 @@ static inline ncclResult_t getCollNetSupport(struct ncclInfo* info, int* collNet
   return ncclSuccess;
 }
 
-NCCL_PARAM(McMaxChannels, "MC_MAX_NCHANNELS", 16);
-
 // numPipeOps: number of pipelined ops. Can be greater than 1 in aggregation mode. Used to adjust latency.
 static ncclResult_t getAlgoInfo(struct ncclInfo* info, int collNetTypeSupport, int numPipeOps) {
   struct ncclComm* comm = info->comm;
@@ -1214,7 +1212,7 @@ static ncclResult_t getAlgoInfo(struct ncclInfo* info, int collNetTypeSupport, i
     }
   } else if (info->algorithm == NCCL_ALGO_MC) {
     // MC should not need more than 16 channels to get peak BW.
-    nc = std::min(nc, (int)ncclParamMcMaxChannels());
+    nc = comm->mcChannels;
   } else {
     // Ring/Tree channel tuning
     while (info->nBytes < nc*nt*threadThreshold) {
