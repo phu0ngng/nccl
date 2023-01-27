@@ -511,10 +511,13 @@ struct Apply_LoadMultimem {
   static constexpr int PackSize = 0; // Indicates not implemented
 };
 
+#define PTX_REG_SIZE_l 8
+#define PTX_REG_SIZE_r 4
+#define PTX_REG_SIZE_h 2
 #define DEFINE_Apply_LoadMultimem(Fn, T, op, ptx_ty, reg_ty, pack_field) \
   template<> \
   struct Apply_LoadMultimem<Fn<T>> { \
-    static constexpr int PackSize = 1*sizeof(T); \
+    static constexpr int PackSize = 1*(PTX_REG_SIZE_##reg_ty); \
     __device__ static BytePack<PackSize> load(Fn<T> fn, uintptr_t addr) { \
       BytePack<PackSize> ans; \
       asm("multimem.ld_reduce.global." #op "." #ptx_ty " %0, [%1];" \
@@ -523,11 +526,10 @@ struct Apply_LoadMultimem {
       return ans; \
     } \
   };
-
 #define DEFINE_Apply_LoadMultimem_v4(Fn, T, op, ptx_ty, reg_ty, pack_field) \
   template<> \
   struct Apply_LoadMultimem<Fn<T>> { \
-    static constexpr int PackSize = 4*sizeof(T); \
+    static constexpr int PackSize = 4*(PTX_REG_SIZE_##reg_ty); \
     __device__ static BytePack<PackSize> load(Fn<T> fn, uintptr_t addr) { \
       BytePack<PackSize> ans; \
       asm("multimem.ld_reduce.global." #op ".v4." #ptx_ty " {%0,%1,%2,%3}, [%4];" \
@@ -569,5 +571,11 @@ struct Apply_LoadMultimem {
     DEFINE_Apply_LoadMultimem_v4(FuncMax, __nv_bfloat16, max, bf16x2, r, u32)
   #endif
 #endif
+
+#undef DEFINE_Apply_LoadMultimem
+#undef DEFINE_Apply_LoadMultimem_v4
+#undef PTX_REG_SIZE_l
+#undef PTX_REG_SIZE_r
+#undef PTX_REG_SIZE_h
 
 #endif // REDUCE_KERNEL_H_

@@ -204,6 +204,11 @@ __device__ __forceinline__ void ReduceOrCopyMulti(
      nSrcs, srcPtrs, nDsts, dstPtrs, /*&*/nBytesBehind, /*&*/nBytesAhead);
 }
 
+// Copies from srcAddr to dstAddr using multimem load/store. The amount copied
+// will be at most Unroll*BytePerPack*WARP_SIZE. If Partial=1, then the amount
+// will be the min() of that and nBytesAhead. If srcAddr is not BytePerPack
+// aligned then the amount copied will be less by (srcAddr%BytePerPack) since
+// we begin loads at the first pack containing the first element.
 template<typename RedFn, typename T, int Unroll, int BytePerPack,
          bool SrcAligned, // is srcAddr aligned to BytePerPack
          bool DstAligned, // are dstAddr and nBytesAhead both aligned to BytePerPack
@@ -302,7 +307,7 @@ __device__ __forceinline__ void copyMultimemMultimem_IfEnabled(
       warp = nWarps;
     }
     warp -= 1; // Rotate warp numbers for load balancing
-    int advanced = BytePerHunk-(srcAddr%BytePerPack);
+    int advanced = BytePerHunk-(srcAddr%BytePerPack); // since copyMultimemMultimem_WarpUnrolled shorts by the misalignment
     srcAddr += advanced; // srcAddr is now pack aligned
     dstAddr += advanced;
     warpBytesAhead -= advanced;
