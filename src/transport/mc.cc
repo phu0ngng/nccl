@@ -9,6 +9,8 @@
 #include "utils.h"
 #include "proxy.h"
 
+#if CUDART_VERSION >= 12010
+
 #define USE_POSIX_FD 1
 
 #if USE_POSIX_FD
@@ -38,55 +40,6 @@ struct ncclTransport mcTransport = {
   { NULL, NULL, mcSendFree, NULL, NULL, NULL, NULL, NULL },
   { NULL, NULL, mcRecvFree, NULL, NULL, NULL, NULL, NULL }
 };
-
-#define CU_INIT_UUID_STATIC
-#include <cuda_etbl/multicast.h>
-#undef CU_INIT_UUID_STATIC
-
-#define pfn_cuMemDeviceSupportsMulticast etblMulticast->DeviceSupportsMulticast
-#define pfn_cuMemMulticastCreate etblMulticast->MulticastCreate
-#define pfn_cuMemMulticastBindMem etblMulticast->MulticastBindMem
-
-static const CUetblMulticast *etblMulticast = NULL;
-
-pthread_mutex_t mcInitLock = PTHREAD_MUTEX_INITIALIZER;
-
-static ncclResult_t ncclMcInitEtbl(struct ncclComm* comm) {
-  comm->mcSupport = 0;
-
-  pthread_mutex_lock(&mcInitLock);
-  if (etblMulticast == NULL) {
-    if (ncclCudaLibraryInit() != ncclSuccess) return ncclSuccess;
-    if (pfn_cuGetExportTable((const void **)&etblMulticast, &CU_ETID_Multicast) != CUDA_SUCCESS) {
-      pthread_mutex_unlock(&mcInitLock);
-      return ncclSuccess;
-    }
-  }
-  pthread_mutex_unlock(&mcInitLock);
-
-#if USE_POSIX_FD
-  {
-    // Check for WAR for 3818216
-    char *env;
-    if ((env = getenv("CUDA_e0371668")) == NULL || atoi(env) != 1) {
-      WARN("Need to 'export CUDA_e0371668=1' in the environment for MC support");
-      return ncclSuccess;
-    }
-  }
-#endif
-
-  if (etblMulticast == NULL ||
-      pfn_cuMemMulticastCreate == NULL ||
-      pfn_cuMemMulticastBindMem == NULL ||
-      pfn_cuMemDeviceSupportsMulticast == NULL)
-    return ncclSuccess;
-
-  int dev;
-  CUCHECK(cuCtxGetDevice(&dev));
-  CUCHECK(cuMemDeviceSupportsMulticast(&comm->mcSupport, dev));
-  INFO(NCCL_INIT, "MC ETBL functions loaded, MC support %savailable", comm->mcSupport ? "" : "not ");
-  return ncclSuccess;
-}
 
 #define MC_HANDLE_SIZE 64
 
@@ -135,14 +88,14 @@ ncclResult_t mcGroupCreate(struct ncclComm *comm, struct mcResources* resources,
   size_t size = resources->sizeWAR;
 
   // Create MC group
-  multicastObjectProp prop = { 0 };
-  prop.size = size;
-  prop.numDevices = nranks;
-  prop.requestedHandleTypes = MC_CU_MEM_HANDLE_TYPE;
-  prop.flags = 0;
+  CUmulticastObjectProp mcProp = { 0 };
+  mcProp.size = size;
+  mcProp.numDevices = nranks;
+  mcProp.handleTypes = MC_CU_MEM_HANDLE_TYPE;
+  mcProp.flags = 0;
 
   INFO(NCCL_MC, "MC Creating group nranks %d size %zi on rank %d", nranks, size, rank);
-  CUCHECK(cuMemMulticastCreate(&resources->mcHandle, &prop));
+  CUCHECK(cuMulticastCreate(&resources->mcHandle, &mcProp));
 
   if (MC_CU_MEM_HANDLE_TYPE != CU_MEM_HANDLE_TYPE_NONE) {
     // Get a handle to pass to other ranks
@@ -157,6 +110,12 @@ ncclResult_t mcGroupCreate(struct ncclComm *comm, struct mcResources* resources,
   return ncclSuccess;
 }
 
+ncclResult_t mcGroupAddDevice(struct ncclComm *comm, struct mcResources* resources, int dev) {
+  INFO(NCCL_MC, "MC group %llx adding dev %d", resources->mcHandle, dev);
+  CUCHECK(cuMulticastAddDevice(resources->mcHandle, dev));
+  return ncclSuccess;
+}
+
 ncclResult_t mcGroupDestroy(mcHandle_t handle) {
   // TODO: Destroy an MC group
   return ncclSuccess;
@@ -165,7 +124,7 @@ ncclResult_t mcGroupDestroy(mcHandle_t handle) {
 ncclResult_t mcGroupConnect(struct ncclComm *comm, struct mcResources* resources, int rank, char* shareableHandle) {
   CUmemAllocationHandleType type = MC_CU_MEM_HANDLE_TYPE;
 
-  INFO(NCCL_MC, "Importing MC shareableHandle %p from rank %d", shareableHandle, rank);
+  INFO(NCCL_MC, "MC importing shareableHandle %p from rank %d", shareableHandle, rank);
 
   // Import and map the remote memory descriptor to the local GPU
   if (type == CU_MEM_HANDLE_TYPE_POSIX_FILE_DESCRIPTOR) {
@@ -211,7 +170,7 @@ ncclResult_t mcGroupBindMem(struct ncclComm *comm, struct mcResources* resources
 
   // Bind physical memory to the MC group
   INFO(NCCL_MC, "MC Bind mem %p UC handle %llx MC handle %llx size %zi", (void*)ptr, resources->ucHandle, resources->mcHandle, size);
-  CUCHECK(cuMemMulticastBindMem(resources->mcHandle, 0, resources->ucHandle, 0, size, 0));
+  CUCHECK(cuMulticastBindMem(resources->mcHandle, 0/*mcOffset*/, resources->ucHandle, 0/*memOffset*/, size, 0/*flags*/));
 
   return ncclSuccess;
 }
@@ -247,9 +206,18 @@ ncclResult_t mcGroupUnbindMem(mcHandle_t handle, char* mem) {
 
 NCCL_PARAM(McChannels, "MC_NCHANNELS", 16);
 
+NCCL_PARAM(McEnable, "MULTICAST_ENABLE", 1);
+
 ncclResult_t ncclMcSetup(struct ncclComm* comm) {
-  NCCLCHECK(ncclMcInitEtbl(comm));
-  if (comm->mcSupport == 0 || comm->localRanks <= 1) return ncclSuccess;
+  if (!ncclParamMcEnable() || comm->localRanks <= 1) return ncclSuccess;
+  int dev;
+  CUCHECK(cuCtxGetDevice(&dev));
+  comm->mcSupport = 0;
+  if (pfn_cuMulticastCreate != NULL) {
+    CUCHECK(cuDeviceGetAttribute(&comm->mcSupport, CU_DEVICE_ATTRIBUTE_MULTICAST_SUPPORTED, dev));
+  }
+  INFO(NCCL_INIT, "MC multicast support is %savailable on dev %d", comm->mcSupport ? "" : "not ", dev);
+  if (comm->mcSupport == 0) return ncclSuccess;
 
   int nChannels = comm->mcChannels = ncclParamMcChannels();
   int rank = comm->localRank, nranks = comm->localRanks;
@@ -277,6 +245,7 @@ ncclResult_t ncclMcSetup(struct ncclComm* comm) {
     NCCLCHECKGOTO(mcGroupConnect(comm, resources, 0, mcShareableHandle), res, cleanup);
   }
 
+  NCCLCHECKGOTO(mcGroupAddDevice(comm, resources, dev), res, cleanup);
   NCCLCHECKGOTO(mcGroupBindMem(comm, resources), res, cleanup);
   // Local intra-node barrier to ensure everyone has bound their memory to the group
   NCCLCHECKGOTO(bootstrapBarrier(comm->bootstrap, comm->localRankToRank, comm->localRank, comm->localRanks, comm->localRankToRank[0]), res, cleanup);
@@ -292,7 +261,7 @@ ncclResult_t ncclMcSetup(struct ncclComm* comm) {
     }
 
     char *buf = resources->mcBuff + rank*mcPerRankSize;
-    printf("MC: rank %d Writing %zi bytes to %p\n", rank, sizeof(dummy), buf);
+    printf("MC rank %d Writing %zi bytes to %p\n", rank, sizeof(dummy), buf);
     cudaMemcpy(buf, dummy, sizeof(dummy), cudaMemcpyHostToDevice);
 
     CUDACHECK(cudaDeviceSynchronize());
@@ -301,11 +270,10 @@ ncclResult_t ncclMcSetup(struct ncclComm* comm) {
     for (int r = 0; r < nranks; r++) {
       char *buf = resources->ucBuff + r*mcPerRankSize;
       cudaMemcpy(&dummy[0], buf, sizeof(dummy), cudaMemcpyDeviceToHost);
-      printf("MC: rank %d.%d UC data %p %lx %lx %lx %lx\n", rank, r, buf, dummy[0], dummy[1], dummy[2], dummy[3]);
-      printf("MC: rank %d.%d UC data %p %lx %lx %lx %lx\n", rank, r, buf, dummy[1020], dummy[1021], dummy[1022], dummy[1023]);
+      printf("MC rank %d.%d UC data %p %lx %lx %lx %lx\n", rank, r, buf, dummy[0], dummy[1], dummy[2], dummy[3]);
+      printf("MC rank %d.%d UC data %p %lx %lx %lx %lx\n", rank, r, buf, dummy[1020], dummy[1021], dummy[1022], dummy[1023]);
     }
   }
-#endif
 
   for (int c=0; c<nChannels; c++) {
     struct ncclChannel* channel = comm->channels+c;
@@ -364,7 +332,13 @@ ncclResult_t ncclMcSetup(struct ncclComm* comm) {
           resources->ucBuff + ((r*2+1)*nChannels+c)*(buffSize+memSize));*/
     }
   }
+#endif
+
+  free(mcShareableHandle);
+  return res;
+
 cleanup:
+  comm->mcSupport = 0;
   free(mcShareableHandle);
   return res;
 }
@@ -379,3 +353,5 @@ ncclResult_t ncclMcFree(struct ncclComm* comm) {
   comm->mcResources = NULL;
   return ncclSuccess;
 }
+
+#endif /* CUDA_VERSION >= 12010 */
