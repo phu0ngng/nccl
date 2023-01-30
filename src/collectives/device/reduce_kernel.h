@@ -511,71 +511,82 @@ struct Apply_LoadMultimem {
   static constexpr int PackSize = 0; // Indicates not implemented
 };
 
-#define PTX_REG_SIZE_l 8
-#define PTX_REG_SIZE_r 4
-#define PTX_REG_SIZE_h 2
-#define DEFINE_Apply_LoadMultimem(Fn, T, op, ptx_ty, reg_ty, pack_field) \
+#define SIZEOF_BytePack_field_u16 2
+#define PTX_REG_BytePack_field_u16 "h"
+
+#define SIZEOF_BytePack_field_u32 4
+#define PTX_REG_BytePack_field_u32 "r"
+
+#define SIZEOF_BytePack_field_u64 8
+#define PTX_REG_BytePack_field_u64 "l"
+
+#define DEFINE_Apply_LoadMultimem(Fn, T, op, ptx_ty, pack_field) \
   template<> \
   struct Apply_LoadMultimem<Fn<T>> { \
-    static constexpr int PackSize = 1*(PTX_REG_SIZE_##reg_ty); \
+    static constexpr int PackSize = 1*(SIZEOF_BytePack_field_##pack_field); \
     __device__ static BytePack<PackSize> load(Fn<T> fn, uintptr_t addr) { \
       BytePack<PackSize> ans; \
       asm("multimem.ld_reduce.global." #op "." #ptx_ty " %0, [%1];" \
-        : "="#reg_ty(ans.pack_field) \
+        : "=" PTX_REG_BytePack_field_##pack_field(ans.pack_field) \
         : "l"(addr)); \
       return ans; \
     } \
   };
-#define DEFINE_Apply_LoadMultimem_v4(Fn, T, op, ptx_ty, reg_ty, pack_field) \
+#define DEFINE_Apply_LoadMultimem_v4(Fn, T, op, ptx_ty, pack_field) \
   template<> \
   struct Apply_LoadMultimem<Fn<T>> { \
-    static constexpr int PackSize = 4*(PTX_REG_SIZE_##reg_ty); \
+    static constexpr int PackSize = 4*(SIZEOF_BytePack_field_##pack_field); \
     __device__ static BytePack<PackSize> load(Fn<T> fn, uintptr_t addr) { \
       BytePack<PackSize> ans; \
       asm("multimem.ld_reduce.global." #op ".v4." #ptx_ty " {%0,%1,%2,%3}, [%4];" \
-        : "="#reg_ty(ans.pack_field[0]), "="#reg_ty(ans.pack_field[1]), \
-          "="#reg_ty(ans.pack_field[2]), "="#reg_ty(ans.pack_field[3]) \
+        : "=" PTX_REG_BytePack_field_##pack_field(ans.pack_field[0]), \
+          "=" PTX_REG_BytePack_field_##pack_field(ans.pack_field[1]), \
+          "=" PTX_REG_BytePack_field_##pack_field(ans.pack_field[2]), \
+          "=" PTX_REG_BytePack_field_##pack_field(ans.pack_field[3]) \
         : "l"(addr)); \
       return ans; \
     } \
   };
 
 #if __CUDA_ARCH__ >= 900 && CUDART_VERSION >= 12010
-  DEFINE_Apply_LoadMultimem(FuncSum, uint32_t, add, u32, r, u32)
-  DEFINE_Apply_LoadMultimem(FuncMin, uint32_t, min, u32, r, u32)
-  DEFINE_Apply_LoadMultimem(FuncMax, uint32_t, max, u32, r, u32)
+  DEFINE_Apply_LoadMultimem(FuncSum, uint32_t, add, u32, u32)
+  DEFINE_Apply_LoadMultimem(FuncMin, uint32_t, min, u32, u32)
+  DEFINE_Apply_LoadMultimem(FuncMax, uint32_t, max, u32, u32)
 
-  DEFINE_Apply_LoadMultimem(FuncSum, int32_t, add, s32, r, u32)
-  DEFINE_Apply_LoadMultimem(FuncMin, int32_t, min, s32, r, u32)
-  DEFINE_Apply_LoadMultimem(FuncMax, int32_t, max, s32, r, u32)
+  DEFINE_Apply_LoadMultimem(FuncSum, int32_t, add, s32, u32)
+  DEFINE_Apply_LoadMultimem(FuncMin, int32_t, min, s32, u32)
+  DEFINE_Apply_LoadMultimem(FuncMax, int32_t, max, s32, u32)
 
-  DEFINE_Apply_LoadMultimem(FuncSum, uint64_t, add, u64, l, u64)
-  DEFINE_Apply_LoadMultimem(FuncMin, uint64_t, min, u64, l, u64)
-  DEFINE_Apply_LoadMultimem(FuncMax, uint64_t, max, u64, l, u64)
+  DEFINE_Apply_LoadMultimem(FuncSum, uint64_t, add, u64, u64)
+  DEFINE_Apply_LoadMultimem(FuncMin, uint64_t, min, u64, u64)
+  DEFINE_Apply_LoadMultimem(FuncMax, uint64_t, max, u64, u64)
 
-  DEFINE_Apply_LoadMultimem(FuncSum, int64_t, add, u64, l, u64)
-  DEFINE_Apply_LoadMultimem(FuncMin, int64_t, min, s64, l, u64)
-  DEFINE_Apply_LoadMultimem(FuncMax, int64_t, max, s64, l, u64)
+  DEFINE_Apply_LoadMultimem(FuncSum, int64_t, add, u64, u64)
+  DEFINE_Apply_LoadMultimem(FuncMin, int64_t, min, s64, u64)
+  DEFINE_Apply_LoadMultimem(FuncMax, int64_t, max, s64, u64)
 
-  DEFINE_Apply_LoadMultimem_v4(FuncSum, float, add, f32, r, u32)
+  DEFINE_Apply_LoadMultimem_v4(FuncSum, float, add, f32, u32)
 
-  DEFINE_Apply_LoadMultimem(FuncSum, double, add, f64, l, u64)
+  DEFINE_Apply_LoadMultimem(FuncSum, double, add, f64, u64)
 
-  DEFINE_Apply_LoadMultimem_v4(FuncSum, half, add, f16x2, r, u32)
-  DEFINE_Apply_LoadMultimem_v4(FuncMin, half, min, f16x2, r, u32)
-  DEFINE_Apply_LoadMultimem_v4(FuncMax, half, max, f16x2, r, u32)
+  DEFINE_Apply_LoadMultimem_v4(FuncSum, half, add, f16x2, u32)
+  DEFINE_Apply_LoadMultimem_v4(FuncMin, half, min, f16x2, u32)
+  DEFINE_Apply_LoadMultimem_v4(FuncMax, half, max, f16x2, u32)
 
   #if defined(__CUDA_BF16_TYPES_EXIST__)
-    DEFINE_Apply_LoadMultimem_v4(FuncSum, __nv_bfloat16, add, bf16x2, r, u32)
-    DEFINE_Apply_LoadMultimem_v4(FuncMin, __nv_bfloat16, min, bf16x2, r, u32)
-    DEFINE_Apply_LoadMultimem_v4(FuncMax, __nv_bfloat16, max, bf16x2, r, u32)
+    DEFINE_Apply_LoadMultimem_v4(FuncSum, __nv_bfloat16, add, bf16x2, u32)
+    DEFINE_Apply_LoadMultimem_v4(FuncMin, __nv_bfloat16, min, bf16x2, u32)
+    DEFINE_Apply_LoadMultimem_v4(FuncMax, __nv_bfloat16, max, bf16x2, u32)
   #endif
 #endif
 
 #undef DEFINE_Apply_LoadMultimem
 #undef DEFINE_Apply_LoadMultimem_v4
-#undef PTX_REG_SIZE_l
-#undef PTX_REG_SIZE_r
-#undef PTX_REG_SIZE_h
+#undef SIZEOF_BytePack_field_u64
+#undef PTX_REG_BytePack_field_u64
+#undef SIZEOF_BytePack_field_u32
+#undef PTX_REG_BytePack_field_u32
+#undef SIZEOF_BytePack_field_u16
+#undef PTX_REG_BytePack_field_u16
 
 #endif // REDUCE_KERNEL_H_
