@@ -279,7 +279,7 @@ testResult_t CheckData(struct threadArgs* args, ncclDataType_t type, ncclRedOp_t
 
   *wrongElts = 0;
   for (int i=0; i < args->nGpus; i++) *wrongElts += wrongPerGpu[i];
-  cudaFree(wrongPerGpu);
+  cudaFreeHost(wrongPerGpu);
 
   if (args->reportErrors && *wrongElts) args->errors[0]++;
   return testSuccess;
@@ -805,6 +805,9 @@ testResult_t AllocateBuffs(void **sendbuff, size_t sendBytes, void **recvbuff, s
     CUDACHECK(cudaMalloc(sendbuff, nbytes));
     CUDACHECK(cudaMalloc(recvbuff, nbytes));
     if (datacheck) CUDACHECK(cudaMalloc(expected, recvBytes));
+    CUDACHECK(cudaMemset(*sendbuff, 0, nbytes));
+    CUDACHECK(cudaMemset(*recvbuff, 0, nbytes));
+    if (datacheck) CUDACHECK(cudaMemset(*expected, 0, recvBytes));
     return testSuccess;
 }
 

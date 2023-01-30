@@ -176,7 +176,7 @@ ncclResult_t mcGroupConnect(struct ncclComm *comm, struct mcResources* resources
     struct ncclProxyConnector proxyConn;
     NCCLCHECK(ncclProxyConnect(comm, TRANSPORT_P2P, 1, rank, &proxyConn));
     INFO(NCCL_MC, "MC rank %d request conversion of fd %d from rank %d", comm->localRank, fd, rank);
-    NCCLCHECK(ncclProxyCall(&proxyConn, ncclProxyMsgConvertFd, shareableHandle, sizeof(int), &fd, sizeof(int)));
+    NCCLCHECK(ncclProxyCallBlocking(&proxyConn, ncclProxyMsgConvertFd, shareableHandle, sizeof(int), &fd, sizeof(int)));
     INFO(NCCL_MC, "MC rank %d received converted fd %d from rank %d", comm->localRank, fd, rank);
     CUCHECK(cuMemImportFromShareableHandle(&resources->mcHandle, (void *)(uintptr_t)fd, type));
   } else {
@@ -245,6 +245,8 @@ ncclResult_t mcGroupUnbindMem(mcHandle_t handle, char* mem) {
 
 #define MC_MEM_ALIGN_SIZE (1 << 21)
 
+NCCL_PARAM(McChannels, "MC_NCHANNELS", 16);
+
 ncclResult_t ncclMcSetup(struct ncclComm* comm) {
   int nHeads = comm->channels[0].mc.nHeads;
   int headRank = comm->channels[0].mc.headRank;
@@ -252,6 +254,8 @@ ncclResult_t ncclMcSetup(struct ncclComm* comm) {
   NCCLCHECK(ncclMcInitEtbl(comm));
   if (comm->mcSupport == 0 || comm->localRanks <= 1 || nHeads == 0) return ncclSuccess;
 
+  int nChannels = comm->mcChannels = ncclParamMcChannels();
+  int rank = comm->localRank, nranks = comm->localRanks;
   ncclResult_t res = ncclSuccess;
   struct mcResources* resources;
   NCCLCHECK(ncclCalloc(&resources, 1));
@@ -259,7 +263,7 @@ ncclResult_t ncclMcSetup(struct ncclComm* comm) {
 
   size_t buffSize = comm->buffSizes[NCCL_PROTO_SIMPLE];
   size_t memSize = MC_MEM_ALIGN_SIZE;
-  size_t mcPerRankSize = comm->nChannels*2*(buffSize+memSize);
+  size_t mcPerRankSize = nChannels*2*(buffSize+memSize);
   size_t mcTotalSize = mcPerRankSize*nHeads;
 
   INFO(NCCL_INIT|NCCL_MC, "MC comm %p headRank %d nHeads %d buffSize %zi memSize %zi mcPerRankSize %zi mcTotalSize %zi",
@@ -307,19 +311,19 @@ ncclResult_t ncclMcSetup(struct ncclComm* comm) {
 
   for (int h=0; h<nHeads; h++) {
     int mcPeer = comm->nRanks+1+h;
-    for (int c=0; c<comm->nChannels; c++) {
+    for (int c=0; c<nChannels; c++) {
       struct ncclChannel* channel = comm->channels+c;
 
       char* mem = NULL;
       struct ncclChannelPeer* peer = channel->peers+mcPeer;
 
       // Reduce UC -> MC
-      mem = resources->ucBuff + (h*2*comm->nChannels+c)*(buffSize+memSize);
+      mem = resources->ucBuff + (h*2*nChannels+c)*(buffSize+memSize);
       peer->send[0].transportComm = &mcTransport.send;
       peer->send[0].conn.buffs[NCCL_PROTO_SIMPLE] = mem;
       peer->send[0].conn.head = (uint64_t*)(mem+buffSize);
       peer->send[0].conn.tail = (uint64_t*)(mem+buffSize+memSize/2);
-      mem = resources->mcBuff + (h*2*comm->nChannels+c)*(buffSize+memSize);
+      mem = resources->mcBuff + (h*2*nChannels+c)*(buffSize+memSize);
       peer->recv[1].transportComm = &mcTransport.recv;
       peer->recv[1].conn.buffs[NCCL_PROTO_SIMPLE] = mem;
       peer->recv[1].conn.head = (uint64_t*)(mem+buffSize);
@@ -327,12 +331,12 @@ ncclResult_t ncclMcSetup(struct ncclComm* comm) {
       peer->recv[1].conn.flags |= NCCL_MC_MIN_POLL;
 
       // Broadcast MC -> UC
-      mem = resources->ucBuff + ((h*2+1)*comm->nChannels+c)*(buffSize+memSize);
+      mem = resources->ucBuff + ((h*2+1)*nChannels+c)*(buffSize+memSize);
       peer->recv[0].transportComm = &mcTransport.recv;
       peer->recv[0].conn.buffs[NCCL_PROTO_SIMPLE] = mem;
       peer->recv[0].conn.head = (uint64_t*)(mem+buffSize);
       peer->recv[0].conn.tail = (uint64_t*)(mem+buffSize+memSize/2);
-      mem = resources->mcBuff + ((h*2+1)*comm->nChannels+c)*(buffSize+memSize);
+      mem = resources->mcBuff + ((h*2+1)*nChannels+c)*(buffSize+memSize);
       peer->send[1].transportComm = &mcTransport.send;
       peer->send[1].conn.buffs[NCCL_PROTO_SIMPLE] = mem;
       peer->send[1].conn.head = (uint64_t*)(mem+buffSize);
@@ -346,10 +350,10 @@ ncclResult_t ncclMcSetup(struct ncclComm* comm) {
 
       /*INFO(NCCL_INIT|NCCL_MC, "Peer %d Channel %d MC buff %p/%p UC Buff %p/%p",
           mcPeer, c,
-          resources->mcBuff + (h*2*comm->nChannels+c)*(buffSize+memSize),
-          resources->mcBuff + ((h*2+1)*comm->nChannels+c)*(buffSize+memSize),
-          resources->ucBuff + (h*2*comm->nChannels+c)*(buffSize+memSize),
-          resources->ucBuff + ((h*2+1)*comm->nChannels+c)*(buffSize+memSize));*/
+          resources->mcBuff + (h*2*nChannels+c)*(buffSize+memSize),
+          resources->mcBuff + ((h*2+1)*nChannels+c)*(buffSize+memSize),
+          resources->ucBuff + (h*2*nChannels+c)*(buffSize+memSize),
+          resources->ucBuff + ((h*2+1)*nChannels+c)*(buffSize+memSize));*/
     }
   }
 

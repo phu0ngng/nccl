@@ -55,20 +55,23 @@ class Primitives<
     if (nthreads == WARP_SIZE)
       __syncwarp();
     else
-      asm volatile("barrier.sync %0, %1;" :: "r"(15-group), "r"(nthreads));
+      asm volatile("bar.sync %0, %1;" :: "r"(15-group), "r"(nthreads));
     flags |= ThreadsSynced;
   }
   inline __device__ void subBarrier() {
     if (nworkers == nthreads)
       barrier();
     else
-      asm volatile("barrier.sync %0, %1;" :: "r"(8-group), "r"(nworkers));
+      asm volatile("bar.sync %0, %1;" :: "r"(8-group), "r"(nworkers));
   }
 
   inline __device__ bool checkAbort(int &spins) {
     spins++;
     if (!(flags & Aborted) && spins == NCCL_SPINS_BEFORE_CHECK_ABORT) {
-      flags |= *ncclShmem.comm.abortFlag ? Aborted : 0;
+      if (*ncclShmem.comm.abortFlag) {
+        flags |= Aborted;
+        ncclShmem.aborted = 1;
+      }
       spins = 0;
     }
     return flags & Aborted;
@@ -218,10 +221,13 @@ class Primitives<
         subBarrier();
         const int nSendPeers = SendMask ? __popc(SendMask) : Send*fan.nsend();
         const int nRecvPeers = RecvMask ? __popc(RecvMask) : Recv*fan.nrecv();
+        /* if user abort the kernel, we don't need to actually perform copy/reduce; just set size
+         * to 0 to avoid unnecessary workload. */
+        int workSize = ncclShmem.aborted ? 0 : sliceSize;
         if (MC && ncclShmem.groups[group].mcRecv) {
           void* src = ncclShmem.groups[group].srcs[0];
           void* dst = ncclShmem.groups[group].dsts[0];
-          copyGlobalMC<RedOp>(tid, nworkers, ncclShmem.redOpArgs[0], postOp, src, dst, sliceSize,
+          copyGlobalMC<RedOp>(tid, nworkers, ncclShmem.redOpArgs[0], postOp, src, dst, workSize,
           cvta_to_shared(shmemForWarp(tidInBlock/WARP_SIZE)));
         } else if (DirectRecv && ncclShmem.groups[group].srcs[0] == ncclShmem.groups[group].dsts[0]) {
           // We can only have one direct receive. Since srcs[0] == dstPtr+offset, skip one copy
@@ -230,7 +236,7 @@ class Primitives<
               (tid, nworkers, /*redArg*/0, /*preOpArgs*/nullptr, /*postOp*/false,
                1, ncclShmem.groups[group].srcs,
                nSendPeers, ncclShmem.groups[group].dsts+1,
-               sliceSize);
+               workSize);
           }
         } else if (DirectSend && !DirectRecv && SrcBuf != Input && ncclShmem.groups[group].dsts[Dst] == nullptr) {
           // For broadcast in CollNet to do empty send
@@ -238,7 +244,7 @@ class Primitives<
             (tid, nworkers, ncclShmem.redOpArgs[0],  nullptr, postOp,
              Recv, ncclShmem.groups[group].srcs,
              Dst, ncclShmem.groups[group].dsts,
-             sliceSize);
+             workSize);
         } else {
           constexpr int PreOpSrcs = SrcBuf != Input ? 0 :
                                     DirectRecv*MaxRecv == NCCL_MAX_DIRECT_ARITY ? (1+NCCL_MAX_DIRECT_ARITY) : 1;

@@ -1,0 +1,20 @@
+#!/bin/bash
+#
+# Copyright (c) 2017-2019, NVIDIA CORPORATION. All rights reserved.
+#
+# See LICENSE.txt for license information
+#
+
+# To run from $BUILDDIR/
+
+BUILDDIR=`basename $PWD`
+
+cd ..
+NCCL_MAJOR=${nccl:Major}
+NCCL_MINOR=${nccl:Minor}
+NCCL_PATCH=${nccl:Patch}
+PKG_ARCH=${pkg:Arch}
+
+NCCLNAME="nccl-linux-${PKG_ARCH}-${NCCL_MAJOR}.${NCCL_MINOR}.${NCCL_PATCH}"
+
+tar --exclude pkgconfig --transform "s/^$BUILDDIR/nccl/" --transform "s/LICENSE.txt/LICENSE/" -zcf $NCCLNAME.tar.gz --owner=0 --group=0 $BUILDDIR/include $BUILDDIR/lib $BUILDDIR/*.txt

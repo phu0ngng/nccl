@@ -382,15 +382,16 @@ struct RunWorkElement<ncclFuncAllReduce, T, RedOp, NCCL_ALGO_MC, NCCL_PROTO_SIMP
     const ssize_t chunkSize = int(args->lastChunkSize);
     const ssize_t size = args->count;
     const ssize_t loopSize = nChannels*mc->nHeads*chunkSize;
+    const int nranks = ncclShmem.comm.nRanks;
+    const int reduceWarps = nranks <= 6 ? 6 : 4;
+    const int copyWarps = ((NCCL_MAX_NTHREADS/WARP_SIZE) - reduceWarps)/2;
 
     const int nThreadsScatter = 9*WARP_SIZE;
     const int nThreadsGather  = 8*WARP_SIZE;
     const int nThreadsReduce = mc->headRank == -1 ? 0 : 3*WARP_SIZE;
-    //const int nThreadsBcast   = 0; // No network support for now, reduce does bcast as well
     const int tidEndScatter = nThreadsScatter;
     const int tidEndGather = tidEndScatter + nThreadsGather;
     const int tidEndReduce = tidEndGather + nThreadsReduce;
-    //const int tidEndBcast = tidEndReduce + nThreadsBcast;
 
     using Proto = ProtoSimple<1, 1, COLL_UNROLL, /*MC=*/true>;
 

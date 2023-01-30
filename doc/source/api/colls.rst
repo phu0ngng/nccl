@@ -59,11 +59,11 @@ ncclAllGather
  
  Gather ``sendcount`` values from all GPUs into ``recvbuff``, receiving data from rank ``i`` at offset ``i*sendcount``. 
  
- Note : This assumes the receive count is equal to ``nranks*sendcount``, which means that ``recvbuff`` should have a size of at least ``nranks*sendcount`` elements.
+ Note: This assumes the receive count is equal to ``nranks*sendcount``, which means that ``recvbuff`` should have a size of at least ``nranks*sendcount`` elements.
  
  In-place operation will happen if ``sendbuff == recvbuff + rank * sendcount``.
 
-Related links: :ref:`allgather`.
+Related links: :ref:`allgather`, :ref:`in-place-operations`.
 
 ncclReduceScatter
 -----------------
@@ -75,4 +75,6 @@ ncclReduceScatter
  
  Note:  This assumes the send count is equal to ``nranks*recvcount``, which means that ``sendbuff`` should have a size of at least ``nranks*recvcount`` elements.
 
-Related links: :ref:`reducescatter`.
+ In-place operation will happen if ``recvbuff == sendbuff + rank * recvcount``.
+
+Related links: :ref:`reducescatter`, :ref:`in-place-operations`.
