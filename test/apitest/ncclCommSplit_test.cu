@@ -32,6 +32,22 @@ class ncclCommSplit_test : public ::testing::Test {
             comms2 = NULL;
         }
     };
+
+    void waitCommsReady(ncclComm_t *comms, int nranks) {
+        int complete;
+        ncclResult_t state;
+        do {
+            complete = 1;
+            for (int i = 0; i < nranks; ++i) {
+                ASSERT_EQ(ncclSuccess, ncclCommGetAsyncError(comms[i], &state));
+                if (state == ncclInProgress) {
+                    complete = 0;
+                    break;
+                }
+            }
+            usleep(10);
+        } while(!complete);
+    }
 };
 #if NCCL_MAJOR > 2 || (NCCL_MAJOR == 2 && NCCL_MINOR >=16)
 TEST_F(ncclCommSplit_test, comm_dup) {
@@ -82,6 +98,166 @@ TEST_F(ncclCommSplit_test, comm_partial) {
             ASSERT_EQ((long)comms2[i], NULL);
         }
     }
+}
+
+#define NUM_SLEEP_CASES 4
+TEST_F(ncclCommSplit_test, abort) {
+    ncclComm_t* localComms = NULL;
+    ncclComm_t* childComms = NULL;
+    ncclUniqueId id;
+    int expectMask = (1 << ncclSuccess) | (1 << ncclInProgress);
+    ncclConfig_t config = NCCL_CONFIG_INITIALIZER;
+    int sleepTimes[NUM_SLEEP_CASES] = {10, 100, 1000, 10000}; /* sleep in us */ 
+
+    config.blocking = 0;
+    ASSERT_NE(nullptr, localComms = (ncclComm_t*)calloc(sizeof(ncclComm_t), nVis));
+    ASSERT_NE(nullptr, childComms = (ncclComm_t*)calloc(sizeof(ncclComm_t), nVis));
+
+    for (int s = 0; s < NUM_SLEEP_CASES + 1; s++) {
+        ASSERT_EQ(ncclSuccess, ncclGetUniqueId(&id));
+        ASSERT_EQ(ncclSuccess, ncclGroupStart());
+        for (int i = 0; i < nVis; ++i) {
+            ASSERT_EQ(cudaSuccess, cudaSetDevice(i));
+            (void) ncclCommInitRankConfig(&localComms[i], nVis, id, i, &config);
+        }
+        ASSERT_NE(0, expectMask & (1 << ncclGroupEnd()));
+
+        waitCommsReady(localComms, nVis);
+
+        ASSERT_EQ(ncclSuccess, ncclGroupStart());
+        for (int i = 0; i < nVis; ++i) {
+            ASSERT_EQ(ncclSuccess, ncclCommSplit(localComms[i], 0, nVis - i, &childComms[i], NULL));
+        }
+        ASSERT_NE(0, expectMask & (1 << ncclGroupEnd()));
+        
+        if (s == NUM_SLEEP_CASES) {
+            waitCommsReady(localComms, nVis);
+            for (int i = 0; i < nVis; ++i) {
+                ASSERT_EQ(ncclSuccess, ncclCommDestroy(localComms[i]));
+            }
+            for (int i = 0; i < nVis; ++i) {
+                ASSERT_EQ(ncclSuccess, ncclCommDestroy(childComms[i]));
+            }
+        } else {
+            usleep(sleepTimes[s]);
+            for (int i = 0; i < nVis; ++i) {
+                ASSERT_EQ(ncclSuccess, ncclCommAbort(localComms[i]));
+            }
+            for (int i = 0; i < nVis; ++i) {
+                ASSERT_EQ(ncclSuccess, ncclCommAbort(childComms[i]));
+            }
+        }
+    }
+    
+    free(localComms);
+    free(childComms);
+}
+
+TEST_F(ncclCommSplit_test, abort_res_share_env) {
+    ncclComm_t* localComms = NULL;
+    ncclComm_t* childComms = NULL;
+    ncclUniqueId id;
+    int expectMask = (1 << ncclSuccess) | (1 << ncclInProgress);
+    ncclConfig_t config = NCCL_CONFIG_INITIALIZER;
+    int sleepTimes[NUM_SLEEP_CASES] = {10, 100, 1000, 10000}; /* sleep in us */ 
+
+    config.blocking = 0;
+    (void) setenv("NCCL_COMM_SPLIT_SHARE_RESOURCES", "1", 1);
+    ASSERT_NE(nullptr, localComms = (ncclComm_t*)calloc(sizeof(ncclComm_t), nVis));
+    ASSERT_NE(nullptr, childComms = (ncclComm_t*)calloc(sizeof(ncclComm_t), nVis));
+
+    for (int s = 0; s < NUM_SLEEP_CASES + 1; s++) {
+        ASSERT_EQ(ncclSuccess, ncclGetUniqueId(&id));
+        ASSERT_EQ(ncclSuccess, ncclGroupStart());
+        for (int i = 0; i < nVis; ++i) {
+            ASSERT_EQ(cudaSuccess, cudaSetDevice(i));
+            (void) ncclCommInitRankConfig(&localComms[i], nVis, id, i, &config);
+        }
+        ASSERT_NE(0, expectMask & (1 << ncclGroupEnd()));
+
+        waitCommsReady(localComms, nVis);
+
+        ASSERT_EQ(ncclSuccess, ncclGroupStart());
+        for (int i = 0; i < nVis; ++i) {
+            ASSERT_EQ(ncclSuccess, ncclCommSplit(localComms[i], 0, nVis - i, &childComms[i], NULL));
+        }
+        ASSERT_NE(0, expectMask & (1 << ncclGroupEnd()));
+        
+        if (s == NUM_SLEEP_CASES) {
+            waitCommsReady(localComms, nVis);
+            for (int i = 0; i < nVis; ++i) {
+                ASSERT_EQ(ncclSuccess, ncclCommDestroy(localComms[i]));
+            }
+            for (int i = 0; i < nVis; ++i) {
+                ASSERT_EQ(ncclSuccess, ncclCommDestroy(childComms[i]));
+            }
+        } else {
+            usleep(sleepTimes[s]);
+            for (int i = 0; i < nVis; ++i) {
+                ASSERT_EQ(ncclSuccess, ncclCommAbort(localComms[i]));
+            }
+            for (int i = 0; i < nVis; ++i) {
+                ASSERT_EQ(ncclSuccess, ncclCommAbort(childComms[i]));
+            }
+        }
+    }
+    
+    free(localComms);
+    free(childComms);
+    (void) setenv("NCCL_COMM_SPLIT_SHARE_RESOURCES", "0", 1);
+}
+
+TEST_F(ncclCommSplit_test, abort_res_share_config) {
+    ncclComm_t* localComms = NULL;
+    ncclComm_t* childComms = NULL;
+    ncclUniqueId id;
+    int expectMask = (1 << ncclSuccess) | (1 << ncclInProgress);
+    ncclConfig_t config = NCCL_CONFIG_INITIALIZER;
+    int sleepTimes[NUM_SLEEP_CASES] = {10, 100, 1000, 10000}; /* sleep in us */ 
+
+    config.blocking = 0;
+    config.splitShare = 1;
+    ASSERT_NE(nullptr, localComms = (ncclComm_t*)calloc(sizeof(ncclComm_t), nVis));
+    ASSERT_NE(nullptr, childComms = (ncclComm_t*)calloc(sizeof(ncclComm_t), nVis));
+
+    for (int s = 0; s < NUM_SLEEP_CASES + 1; s++) {
+        ASSERT_EQ(ncclSuccess, ncclGetUniqueId(&id));
+        ASSERT_EQ(ncclSuccess, ncclGroupStart());
+        for (int i = 0; i < nVis; ++i) {
+            ASSERT_EQ(cudaSuccess, cudaSetDevice(i));
+            (void) ncclCommInitRankConfig(&localComms[i], nVis, id, i, &config);
+        }
+        ASSERT_NE(0, expectMask & (1 << ncclGroupEnd()));
+
+        waitCommsReady(localComms, nVis);
+
+        ASSERT_EQ(ncclSuccess, ncclGroupStart());
+        for (int i = 0; i < nVis; ++i) {
+            ASSERT_EQ(ncclSuccess, ncclCommSplit(localComms[i], 0, nVis - i, &childComms[i], NULL));
+        }
+        ASSERT_NE(0, expectMask & (1 << ncclGroupEnd()));
+        
+        if (s == NUM_SLEEP_CASES) {
+            waitCommsReady(localComms, nVis);
+            for (int i = 0; i < nVis; ++i) {
+                ASSERT_EQ(ncclSuccess, ncclCommDestroy(localComms[i]));
+            }
+            for (int i = 0; i < nVis; ++i) {
+                ASSERT_EQ(ncclSuccess, ncclCommDestroy(childComms[i]));
+            }
+        } else {
+            usleep(sleepTimes[s]);
+            for (int i = 0; i < nVis; ++i) {
+                ASSERT_EQ(ncclSuccess, ncclCommAbort(localComms[i]));
+            }
+            for (int i = 0; i < nVis; ++i) {
+                ASSERT_EQ(ncclSuccess, ncclCommAbort(childComms[i]));
+            }
+        }
+    }
+    
+    free(localComms);
+    free(childComms);
 }
 #endif
 // EOF
