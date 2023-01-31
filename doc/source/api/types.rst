@@ -173,6 +173,8 @@ ncclScalarResidence_t
   The scalar resides on device visible memory and should be dereferenced once
   needed.
 
+.. _ncclconfig:
+
 ncclConfig_t
 ---------------------
 
@@ -187,5 +189,27 @@ ncclConfig_t
 
  .. c:macro:: blocking
 
-  This attribute can be set as integer 0 or 1 to indicate nonblocking or blocking 
+  This attribute can be set as integer 0 or 1 to indicate nonblocking or blocking
   communicator behavior correspondingly. Blocking is default value.
+
+ .. c:macro:: cgaClusterSize
+
+  Set Cooperative Group Array (CGA) size of kernels launched by NCCL.
+  This attribute can be set between 0 to 8, and default value is 4 since sm90 architecture
+  and 0 for older architectures.
+
+ .. c:macro:: minCTAs
+
+  Set the minimal number of CTAs NCCL should use for each kernel.
+  Set to a positive integer value, up to 32. The default value is 1.
+
+ .. c:macro:: maxCTAs
+
+  Set the maximal number of CTAs NCCL should use for each kernel.   
+  Set to a positive integer value, up to 32. The default value is 32.
+
+ .. c:macro:: netName
+  Specify the network module name NCCL should use for network communication. The value of netName must match
+  exactly the name of the network module (case-sensitive). NCCL internal network module names are "IB"
+  (generic IB verbs) and "Socket" (TCP/IP sockets). External network plugins define their own names.
+  Default value is undefined, and NCCL will choose the network module automatically.

@@ -223,7 +223,7 @@ apitest-DGX-2:
     CUDA_HOME: "/gpfs/fs1/projects/sw_gpucomms/users/svc_nvshmem_ci/cuda/cuda-${CUDA_VERSION}"
     PARTITION_LIST: "batch_short_dgx2h_m2"
     SRUN: "" # Needs to be empty for CI runner scripts performing cluster jobs
-    SRUN_PARAMS: "--exclusive --mem=0 -N 1 -n 1 -G 16 -c 16 --account=sw_gpucomms_nvshmem --nv-meta ml-model.nccl-perf -t 00:10:00"
+    SRUN_PARAMS: "--exclusive --mem=0 -N 1 -n 1 -G 16 -c 16 --account=sw_gpucomms_nvshmem --nv-meta ml-model.nccl-perf -t 00:20:00"
   script:
     - srun $SRUN_PARAMS -p $PARTITION_LIST ./test/scripts/gitlab-runner-apitest.sh minimal
   interruptible: true

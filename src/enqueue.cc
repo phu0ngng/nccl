@@ -1005,12 +1005,6 @@ ncclResult_t ncclLaunchKernelBefore_NoUncapturedCuda(struct ncclComm* comm, stru
   return ncclSuccess;
 }
 
-#if CUDART_VERSION >= 11080
-#define NCCL_MAX_CGA_CLUSTER_SIZE 8
-#define NCCL_CGA_CLUSTER_SIZE_SM90 4
-NCCL_PARAM(CGAClusterSize, "CGA_CLUSTER_SIZE", -2);
-#endif
-
 #if CUDART_VERSION >= 12000
 // NCCL uses the "Remote" Mem Sync domain by default
 NCCL_PARAM(MemSyncDomain, "MEM_SYNC_DOMAIN", cudaLaunchMemSyncDomainRemote);
@@ -1029,19 +1023,7 @@ ncclResult_t ncclLaunchKernel(struct ncclComm* comm, struct ncclKernelPlan* plan
   NCCLCHECK(ncclCudaDriverVersion(&driverVersion));
   if (driverVersion >= 11080) {
     int compCap = comm->compCap;
-    unsigned int clusterSize = (compCap == 90) ? NCCL_CGA_CLUSTER_SIZE_SM90 : 0;
-    if (ncclParamCGAClusterSize() != -2) {
-      clusterSize = ncclParamCGAClusterSize();
-      if (clusterSize > NCCL_MAX_CGA_CLUSTER_SIZE) {
-        static bool warned = false;
-        if (warned == false) {
-          WARN("NCCL_CGA_CLUSTER_SIZE value %d is too big. Limiting value to %d.",
-               clusterSize, NCCL_MAX_CGA_CLUSTER_SIZE);
-          warned = true;
-        }
-        clusterSize = NCCL_MAX_CGA_CLUSTER_SIZE;
-      }
-    }
+    unsigned int clusterSize = (compCap == 90) ? comm->cgaClusterSize : 0;
 
     cudaLaunchConfig_t launchConfig = {0};
     cudaLaunchAttribute launchAttrs[3];
