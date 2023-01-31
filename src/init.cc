@@ -912,11 +912,12 @@ static ncclResult_t initTransportsRank(struct ncclComm* comm, ncclUniqueId* comm
   NCCLCHECKGOTO(ncclMcSetup(comm), ret, fail);
   // And MC rings if needed
   if (comm->mcSupport && comm->localRanks > 1) {
-    for (int c=0; c<comm->nChannels; c++) {
+    for (int c=0; c<comm->mcChannels; c++) {
       struct ncclChannel* channel = comm->channels+c;
+      printf("MC RING %d : %d -> %d -> %d\n", c, channel->mc.ringPrev, comm->rank, channel->mc.ringNext);
       NCCLCHECKGOTO(ncclTransportP2pConnect(comm, c, 1, &channel->mc.ringPrev, 1, &channel->mc.ringNext, 0), ret, fail);
-    }
     NCCLCHECKGOTO(ncclTransportP2pSetup(comm, &mcGraph, 0), ret, fail);
+    }
     INFO(NCCL_INIT, "Connected MC rings");
   }
 

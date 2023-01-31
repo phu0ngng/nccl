@@ -242,10 +242,9 @@ ncclResult_t mcGroupUnbindMem(mcHandle_t handle, char* mem) {
 }
 
 #include "bootstrap.h"
+#include "channel.h"
 
 #define MC_MEM_ALIGN_SIZE (1 << 21)
-
-NCCL_PARAM(McChannels, "MC_NCHANNELS", 16);
 
 ncclResult_t ncclMcSetup(struct ncclComm* comm) {
   int nHeads = comm->channels[0].mc.nHeads;
@@ -254,8 +253,10 @@ ncclResult_t ncclMcSetup(struct ncclComm* comm) {
   NCCLCHECK(ncclMcInitEtbl(comm));
   if (comm->mcSupport == 0 || comm->localRanks <= 1 || nHeads == 0) return ncclSuccess;
 
-  int nChannels = comm->mcChannels = ncclParamMcChannels();
-  int rank = comm->localRank, nranks = comm->localRanks;
+  int nChannels = comm->mcChannels;
+  for (int c=0; c<nChannels; c++) {
+    NCCLCHECK(initChannel(comm, c));
+  }
   ncclResult_t res = ncclSuccess;
   struct mcResources* resources;
   NCCLCHECK(ncclCalloc(&resources, 1));
@@ -348,12 +349,12 @@ ncclResult_t ncclMcSetup(struct ncclComm* comm) {
       CUDACHECKGOTO(cudaMemcpyAsync(&comm->channels[c].devPeers[mcPeer].send[1], &peer->send[1].conn, sizeof(struct ncclConnInfo), cudaMemcpyHostToDevice, comm->hostStream.cudaStream), res, cleanup);
       CUDACHECKGOTO(cudaMemcpyAsync(&comm->channels[c].devPeers[mcPeer].recv[1], &peer->recv[1].conn, sizeof(struct ncclConnInfo), cudaMemcpyHostToDevice, comm->hostStream.cudaStream), res, cleanup);
 
-      /*INFO(NCCL_INIT|NCCL_MC, "Peer %d Channel %d MC buff %p/%p UC Buff %p/%p",
+      INFO(NCCL_INIT|NCCL_MC, "Peer %d Channel %d MC buff %p/%p UC Buff %p/%p",
           mcPeer, c,
           resources->mcBuff + (h*2*nChannels+c)*(buffSize+memSize),
           resources->mcBuff + ((h*2+1)*nChannels+c)*(buffSize+memSize),
           resources->ucBuff + (h*2*nChannels+c)*(buffSize+memSize),
-          resources->ucBuff + ((h*2+1)*nChannels+c)*(buffSize+memSize));*/
+          resources->ucBuff + ((h*2+1)*nChannels+c)*(buffSize+memSize));
     }
   }
 

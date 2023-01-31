@@ -219,15 +219,20 @@ static ncclResult_t connectCollNet(struct ncclComm* comm, struct ncclTopoGraph* 
   return ncclSuccess;
 }
 
+NCCL_PARAM(McChannels, "MC_NCHANNELS", 16);
+
 static ncclResult_t connectMcRings(struct ncclComm* comm, int* mcRing, struct ncclTopoGraph* mcGraph) {
   int nHeads = mcGraph->nChannels;
+  printf("Connect MC Rings %d heads\n", nHeads);
   int heads[MAXCHANNELS];
   int headRank = -1;
   for (int h=0; h<nHeads; h++) {
     heads[h] = mcGraph->intra[h*comm->localRanks];
     if (heads[h] == comm->rank) headRank = h;
   }
-  for (int c=0; c<comm->nChannels*2; c++) {
+
+  comm->mcChannels = ncclParamMcChannels();
+  for (int c=0; c<comm->mcChannels; c++) {
     struct ncclChannel* channel = comm->channels+c;
     channel->mc.nHeads = nHeads;
     for (int h=0; h<nHeads; h++) channel->mc.up[h] = comm->nRanks+1+h;
@@ -267,7 +272,7 @@ static ncclResult_t connectMcRings(struct ncclComm* comm, int* mcRing, struct nc
   }
   // Set prev/next in all channels (MC compute channels work 
   // orthogonally to MC search channels).
-  for (int c=0; c<comm->nChannels*2; c++) {
+  for (int c=0; c<comm->mcChannels; c++) {
     struct ncclChannel* channel = comm->channels+c;
     channel->mc.ringPrev = prevRank;
     channel->mc.ringNext = nextRank;

@@ -1212,7 +1212,7 @@ static ncclResult_t getAlgoInfo(struct ncclInfo* info, int collNetTypeSupport, i
       }
       ncSwitch /= 2;
     }
-  } else if (info->algorithm == NCCL_ALGO_MC) {
+  } else if (info->algorithm == NCCL_ALGO_MC || info->algorithm == NCCL_ALGO_MC_RING) {
     // MC should not need more than 16 channels to get peak BW.
     nc = comm->mcChannels;
   } else {
@@ -1249,7 +1249,8 @@ static ncclResult_t getPatternInfo(struct ncclInfo* info) {
       info->pattern = ncclPatternRing; break;
     case ncclFuncAllReduce:
       info->pattern =
-        info->algorithm == NCCL_ALGO_COLLNET_MC ? ncclPatternCollnetDirect :
+        info->algorithm == NCCL_ALGO_MC ? ncclPatternCollnetDirect :
+        info->algorithm == NCCL_ALGO_MC_RING ? ncclPatternRingTwiceNode :
         info->algorithm == NCCL_ALGO_COLLNET_DIRECT ? ncclPatternCollnetDirect :
         info->algorithm == NCCL_ALGO_COLLNET_CHAIN ? ncclPatternCollnetChain :
         info->algorithm == NCCL_ALGO_TREE ? ncclPatternTreeUpDown :
@@ -1276,6 +1277,8 @@ static ncclResult_t getLoopInfo(struct ncclInfo* info) {
       info->nstepsPerLoop = info->comm->nRanks-1; info->nchunksPerLoop = info->comm->nRanks; break;
     case ncclPatternRingTwice:
       info->nstepsPerLoop = 2*(info->comm->nRanks-1); info->nchunksPerLoop = info->comm->nRanks; break;
+    case ncclPatternRingTwiceNode:
+      info->nstepsPerLoop = 2*(info->comm->nNodes-1); info->nchunksPerLoop = info->comm->nNodes; break;
     default:
       WARN("Unknown pattern %d", info->pattern);
       return ncclInternalError;
