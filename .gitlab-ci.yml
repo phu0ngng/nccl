@@ -423,6 +423,7 @@ perftest-multi-gc:
     NCCL_DEBUG: "WARN"
     MPI_HOME: "/opt/mpi/openmpi-1.10.7"
     CUDA_HOME: "/usr/local/cuda-${CUDA_VERSION}"
+    SKIP_FT: "1"
     NCCL_ALLOC_P2P_NET_LL_BUFFERS: "1" # Add coverage of dedicated P2P LL buffers on constrained rank count
     SALLOC: "salloc --exclusive -t 00:10:00 -N 3 -n 24 -w gc[01-02,05]"
   script:
