@@ -9,6 +9,9 @@
 #include "common.h"
 
 __shared__ ncclShmemData ncclShmem;
+#if __CUDA_ARCH__ < 700
+  __shared__ ulong2 ncclShmemPerWarp[ncclShmemScratchWarpSize()/sizeof(ulong2)];
+#endif
 
 #define NCCL_FUNC5(func, algo, devredop, type, nullify) \
   MACRO_IF(nullify, nullptr, NCCL_FUNC_NAME(func, algo, LL,     devredop, type)), \

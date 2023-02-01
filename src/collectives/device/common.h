@@ -11,12 +11,7 @@
 #include "devcomm.h"
 #include "op128.h"
 
-#if __CUDA_ARCH__ >= 800
-#define COLL_UNROLL 8
-#else
-#define COLL_UNROLL 4
-#endif
-
+#define COLL_UNROLL (ncclCollUnroll())
 #define NCCL_MAX_DEV_ARITY (NCCL_MAX_TREE_ARITY-1)  // Using balanced tree instead of split tree
 
 typedef void(*ncclKern_t)();
@@ -31,10 +26,7 @@ struct ncclShmemGroup {
 };
 
 struct ncclShmemData {
-  union {
-    uint64_t ll128warp[NCCL_LL128_MAX_NTHREADS/WARP_SIZE][NCCL_LL128_SHMEM_ELEMS_PER_THREAD*WARP_SIZE];
-    struct ncclShmemGroup groups[NCCL_MAX_GROUPS];
-  };
+  struct ncclShmemGroup groups[NCCL_MAX_GROUPS];
   uint64_t redOpArgs[NCCL_MAX_DIRECT_ARITY+1];
   int channelId;
   int aborted;
@@ -45,6 +37,15 @@ struct ncclShmemData {
 static_assert(offsetof(struct ncclShmemData, work)%16 == 0, "shmem.work needs to be 16B aligned");
 
 extern __shared__ ncclShmemData ncclShmem;
+#if __CUDA_ARCH__ >= 700
+  extern __shared__ ulong2 ncclShmemPerWarp[];
+#else
+  extern __shared__ ulong2 ncclShmemPerWarp[ncclShmemScratchWarpSize()/sizeof(ulong2)];
+#endif
+
+__device__ inline void* ncclScratchForWarp(int warp) {
+  return (char*)ncclShmemPerWarp + warp*ncclShmemScratchWarpSize();
+}
 
 __device__ inline bool barrierReduceAny(int bit) {
   uint32_t popc;
