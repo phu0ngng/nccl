@@ -372,4 +372,18 @@ ncclResult_t ncclMcFree(struct ncclComm* comm) {
   return ncclSuccess;
 }
 
+#else
+
+/*
+ * Pre CUDA 12.1 stubs
+ */
+
+ncclResult_t ncclMcSetup(struct ncclComm* comm) {
+  return ncclInternalError;
+}
+
+ncclResult_t ncclMcFree(struct ncclComm* comm) {
+  return ncclInternalError;
+}
+
 #endif /* CUDA_VERSION >= 12010 */
