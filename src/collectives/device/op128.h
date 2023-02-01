@@ -68,15 +68,11 @@ inline __device__ void loadShmemMisaligned128(T *ptr, uint64_t &v0, uint64_t &v1
 
 template<typename T>
 __device__ __forceinline__ uint32_t cvta_to_shared(T* ptr) {
-  uintptr_t ans;
-  asm("cvta.to.shared.u64 %0, %1;" : "=l"(ans) : "l"(ptr));
-  return uint32_t(ans);
+  return (uint32_t)__cvta_generic_to_shared(ptr);
 }
 template<typename T>
 __device__ __forceinline__ uintptr_t cvta_to_global(T* ptr) {
-  uintptr_t ans;
-  asm("cvta.to.global.u64 %0, %1;" : "=l"(ans) : "l"(ptr));
-  return ans;
+  return (uintptr_t)__cvta_generic_to_global(ptr);
 }
 
 template<typename T>
@@ -156,7 +152,7 @@ template<int Size> __device__ void st_shared(bool predicate, uint32_t addr, Byte
   template<> \
   __device__ __forceinline__ BytePack<bytes> ld_##space<bytes>(addr_cxx_ty addr) { \
     data_cxx_ty tmp; \
-    asm("ld."#space"."#data_ptx_ty" %0, [%1];" : "="#data_reg_ty(tmp) : #addr_reg_ty(addr)); \
+    asm("ld." #space "." #data_ptx_ty " %0, [%1];" : "="#data_reg_ty(tmp) : #addr_reg_ty(addr)); \
     BytePack<bytes> ans; \
     ans.native = tmp; \
     return ans; \
@@ -164,7 +160,7 @@ template<int Size> __device__ void st_shared(bool predicate, uint32_t addr, Byte
   template<> \
   __device__ __forceinline__ BytePack<bytes> ld_##space<bytes>(bool predicate, addr_cxx_ty addr) { \
     data_cxx_ty tmp; \
-    asm("{ .reg .pred p; setp.ne.s32 p, %1, 0; @p ld."#space"."#data_ptx_ty" %0, [%2]; }" \
+    asm("{ .reg .pred p; setp.ne.s32 p, %1, 0; @p ld." #space "." #data_ptx_ty" %0, [%2]; }" \
         : "="#data_reg_ty(tmp) \
         : "r"((int)predicate), #addr_reg_ty(addr)); \
     BytePack<bytes> ans; \
@@ -174,14 +170,15 @@ template<int Size> __device__ void st_shared(bool predicate, uint32_t addr, Byte
   template<> \
   __device__ __forceinline__ void st_##space<bytes>(addr_cxx_ty addr, BytePack<bytes> value) { \
     data_cxx_ty tmp = value.native; \
-    asm("st."#space"."#data_ptx_ty" [%0], %1;" :: #addr_reg_ty(addr), #data_reg_ty(tmp) : "memory"); \
+    asm volatile("st." #space "." #data_ptx_ty " [%0], %1;" :: #addr_reg_ty(addr), #data_reg_ty(tmp) : "memory"); \
   } \
   template<> \
   __device__ __forceinline__ void st_##space<bytes>(bool predicate, addr_cxx_ty addr, BytePack<bytes> value) { \
     data_cxx_ty tmp = value.native; \
-    asm("{ .reg .pred p; setp.ne.s32 p, %0, 0; @p st."#space"."#data_ptx_ty" [%1], %2; }" \
-        :: "r"((int)predicate), #addr_reg_ty(addr), #data_reg_ty(tmp) \
-        : "memory"); \
+    asm volatile( \
+      "{ .reg .pred p; setp.ne.s32 p, %0, 0; @p st." #space "." #data_ptx_ty " [%1], %2; }" \
+      :: "r"((int)predicate), #addr_reg_ty(addr), #data_reg_ty(tmp) \
+      : "memory"); \
   }
 // Single-byte types use 4-byte registers since there is no 1-byte register
 // character for asm blocks. See https://docs.nvidia.com/cuda/inline-ptx-assembly/index.html#constraints
@@ -199,24 +196,24 @@ DEFINE_ld_st(8, uint64_t, b64, l, shared, uint32_t, r)
   template<> \
   __device__ __forceinline__ BytePack<16> ld_##space<16>(addr_cxx_ty addr) { \
     BytePack<16> ans; \
-    asm("ld."#space".v2.b64 {%0,%1}, [%2];" : "=l"(ans.u64[0]), "=l"(ans.u64[1]) : #addr_reg_ty(addr)); \
+    asm("ld." #space ".v2.b64 {%0,%1}, [%2];" : "=l"(ans.u64[0]), "=l"(ans.u64[1]) : #addr_reg_ty(addr)); \
     return ans; \
   } \
   template<> \
   __device__ __forceinline__ BytePack<16> ld_##space<16>(bool predicate, addr_cxx_ty addr) { \
     BytePack<16> ans; \
-    asm("{ .reg .pred p; setp.ne.s32 p, %2, 0; @p ld."#space".v2.b64 {%0,%1} [%3]; }" \
+    asm("{ .reg .pred p; setp.ne.s32 p, %2, 0; @p ld." #space ".v2.b64 {%0,%1} [%3]; }" \
         : "=l"(ans.u64[0]), "=l"(ans.u64[1]) \
         : "r"((int)predicate), #addr_reg_ty(addr)); \
     return ans; \
   } \
   template<> \
   __device__ __forceinline__ void st_##space<16>(addr_cxx_ty addr, BytePack<16> value) { \
-    asm("st."#space".v2.b64 [%0], {%1,%2};" :: #addr_reg_ty(addr), "l"(value.u64[0]), "l"(value.u64[1]) : "memory"); \
+    asm("st." #space ".v2.b64 [%0], {%1,%2};" :: #addr_reg_ty(addr), "l"(value.u64[0]), "l"(value.u64[1]) : "memory"); \
   } \
   template<> \
   __device__ __forceinline__ void st_##space<16>(bool predicate, addr_cxx_ty addr, BytePack<16> value) { \
-    asm("{ .reg .pred p; setp.ne.s32 p, %0, 0; @p st."#space".v2.b64 [%1], {%2,%3}; }" \
+    asm("{ .reg .pred p; setp.ne.s32 p, %0, 0; @p st." #space ".v2.b64 [%1], {%2,%3}; }" \
         :: "r"((int)predicate), #addr_reg_ty(addr), "l"(value.u64[0]), "l"(value.u64[1]) \
         : "memory"); \
   }
@@ -224,10 +221,35 @@ DEFINE_ld_st_16(global, uintptr_t, l)
 DEFINE_ld_st_16(shared, uint32_t, r)
 #undef DEFINE_ld_st_16
 
-// Warp-uniform memory copy from shared address (not generic) to global address.
+template<int Size>
+__device__ __forceinline__ void multimem_st_global(uintptr_t addr, BytePack<Size> val);
+
+#if __CUDA_ARCH__ >= 900
+template<>
+__device__ __forceinline__ void multimem_st_global<4>(uintptr_t addr, BytePack<4> val) {
+  asm volatile("multimem.st.global.b32 [%0], %1;" :: "l"(addr), "r"(val.u32) : "memory");
+}
+template<>
+__device__ __forceinline__ void multimem_st_global<8>(uintptr_t addr, BytePack<8> val) {
+  asm volatile("multimem.st.global.b64 [%0], %1;" :: "l"(addr), "l"(val.u64) : "memory");
+}
+template<>
+__device__ __forceinline__ void multimem_st_global<16>(uintptr_t addr, BytePack<16> val) {
+  asm volatile("multimem.st.global.v4.f32 [%0], {%1,%2,%3,%4};"
+    :: "l"(addr), "r"(val.u32[0]), "r"(val.u32[1]), "r"(val.u32[2]), "r"(val.u32[3])
+    : "memory");
+}
+#else
+template<int Size>
+__device__ __forceinline__ void multimem_st_global(uintptr_t addr, BytePack<Size> val) {
+  // nop
+}
+#endif
+
+// Warp-uniform memory copy from shared address (not generic) to global memory.
 // The number of bytes copied is `min(MaxBytes, nBytesAhead)`, a negative value
 // is interpeted as zero. EltSize is the guaranteed alignment of the addresses and sizes.
-template<int EltSize, int MaxBytes, typename IntBytes>
+template<int EltSize, int MaxBytes, bool Multimem, typename IntBytes>
 __device__ __forceinline__ void copyGlobalShared_WarpUnrolled(
     int lane, uintptr_t dstAddr, uint32_t srcAddr, IntBytes nBytesAhead
   ) {
@@ -241,8 +263,11 @@ __device__ __forceinline__ void copyGlobalShared_WarpUnrolled(
     bool hasFront = lane*EltSize < nFrontBytes;
     bool hasBack = backLane*EltSize < nBackBytes;
     int offset = hasFront ? lane*EltSize : (nBytes - (backLane+1)*EltSize);
-    BytePack<EltSize> tmp = ld_shared<EltSize>(hasFront|hasBack, srcAddr+offset);
-    st_global<EltSize>(hasFront|hasBack, dstAddr+offset, tmp);
+    if (hasFront | hasBack) {
+      BytePack<EltSize> tmp = ld_shared<EltSize>(srcAddr+offset);
+      // Can't use multimem_st since it doesn't support EltSize==2
+      st_global<EltSize>(dstAddr+offset, tmp);
+    }
   }
 
   srcAddr += nFrontBytes;
@@ -250,29 +275,31 @@ __device__ __forceinline__ void copyGlobalShared_WarpUnrolled(
   srcAddr += -srcMisalign + lane*16;
   dstAddr += nFrontBytes + lane*16;
   nMiddleBytes -= lane*16;
-  #pragma unroll (MaxBytes + 15)/16
-  for (int u=0; u < (MaxBytes + 15)/16; u++) {
+  #pragma unroll
+  for (int u=0; u < divUp(MaxBytes, WARP_SIZE*16); u++) {
+    if (nMiddleBytes <= 0) break;
     union {
-      BytePack<4> b4[5];
+      BytePack<4> b4[4];
       BytePack<16> b16;
     };
-    bool predicate = nMiddleBytes > 0;
-    b4[0] = ld_shared<4>(predicate, srcAddr + 0*4);
-    b4[1] = ld_shared<4>(predicate, srcAddr + 1*4);
-    b4[2] = ld_shared<4>(predicate, srcAddr + 2*4);
-    b4[3] = ld_shared<4>(predicate, srcAddr + 3*4);
-    b4[4] = ld_shared<4>(predicate && (srcMisalign != 0), srcAddr + 4*4);
-
-    b4[0].u32 = __funnelshift_r(b4[0].u32, b4[1].u32, srcMisalign*8);
-    b4[1].u32 = __funnelshift_r(b4[1].u32, b4[2].u32, srcMisalign*8);
-    b4[2].u32 = __funnelshift_r(b4[2].u32, b4[3].u32, srcMisalign*8);
-    b4[3].u32 = __funnelshift_r(b4[3].u32, b4[4].u32, srcMisalign*8);
-
-    st_global<16>(predicate, dstAddr, b16);
+    b4[0] = ld_shared<4>(srcAddr + 0*4);
+    b4[1] = ld_shared<4>(srcAddr + 1*4);
+    b4[2] = ld_shared<4>(srcAddr + 2*4);
+    b4[3] = ld_shared<4>(srcAddr + 3*4);
+    if (srcMisalign != 0) {
+      BytePack<4> b4_4 = ld_shared<4>(srcAddr + 4*4);
+      b4[0].u32 = __funnelshift_r(b4[0].u32, b4[1].u32, srcMisalign*8);
+      b4[1].u32 = __funnelshift_r(b4[1].u32, b4[2].u32, srcMisalign*8);
+      b4[2].u32 = __funnelshift_r(b4[2].u32, b4[3].u32, srcMisalign*8);
+      b4[3].u32 = __funnelshift_r(b4[3].u32, b4_4.u32, srcMisalign*8);
+    }
+    if (Multimem) multimem_st_global<16>(dstAddr, b16);
+    else          st_global<16>(dstAddr, b16);
 
     srcAddr += WARP_SIZE*16;
     dstAddr += WARP_SIZE*16;
     nMiddleBytes -= WARP_SIZE*16;
   }
 }
+
 #endif
