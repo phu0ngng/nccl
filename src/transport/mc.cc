@@ -43,11 +43,10 @@ struct ncclTransport mcTransport = {
 
 #define MC_HANDLE_SIZE 64
 
-typedef CUmemGenericAllocationHandle mcHandle_t; //TODO
-
 struct mcResources {
   CUmemAllocationProp properties;
   CUmemAccessDesc accessDesc;
+  int dev;
   size_t size;
   size_t granularity;
   size_t sizeWAR; // For 3418538 WAR
@@ -113,11 +112,18 @@ ncclResult_t mcGroupCreate(struct ncclComm *comm, struct mcResources* resources,
 ncclResult_t mcGroupAddDevice(struct ncclComm *comm, struct mcResources* resources, int dev) {
   INFO(NCCL_MC, "MC group %llx adding dev %d", resources->mcHandle, dev);
   CUCHECK(cuMulticastAddDevice(resources->mcHandle, dev));
+  resources->dev = dev;
   return ncclSuccess;
 }
 
-ncclResult_t mcGroupDestroy(mcHandle_t handle) {
-  // TODO: Destroy an MC group
+ncclResult_t mcGroupUnbind(struct ncclComm *comm, struct mcResources* resources) {
+  int dev = resources->dev;
+  size_t size = resources->sizeWAR;
+  INFO(NCCL_MC, "MC Unbind MC handle %llx size %zi dev %d", resources->mcHandle, size, dev);
+
+  // Unbind physical memory from group for the given device
+  CUCHECK(cuMulticastUnbind(resources->mcHandle, dev, 0/*mcOffset*/, size));
+
   return ncclSuccess;
 }
 
@@ -148,11 +154,6 @@ ncclResult_t mcGroupConnect(struct ncclComm *comm, struct mcResources* resources
   return ncclSuccess;
 }
 
-ncclResult_t mcGroupDisconnect(mcHandle_t handle) {
-  // TODO: Disconnect to an MC group created by another rank
-  return ncclSuccess;
-}
-
 ncclResult_t mcGroupBindMem(struct ncclComm *comm, struct mcResources* resources) {
   size_t size = resources->size;
   CUdeviceptr ptr = 0;
@@ -169,7 +170,8 @@ ncclResult_t mcGroupBindMem(struct ncclComm *comm, struct mcResources* resources
   INFO(NCCL_MC, "MC Mapped UC at %p size %zi", resources->ucBuff, size);
 
   // Bind physical memory to the MC group
-  INFO(NCCL_MC, "MC Bind mem %p UC handle %llx MC handle %llx size %zi", (void*)ptr, resources->ucHandle, resources->mcHandle, size);
+  // NB: It will block until all ranks have been added to the Group
+  INFO(NCCL_MC, "MC Bind mem %p UC handle 0x%llx MC handle 0x%llx size %zi", (void*)ptr, resources->ucHandle, resources->mcHandle, size);
   CUCHECK(cuMulticastBindMem(resources->mcHandle, 0/*mcOffset*/, resources->ucHandle, 0/*memOffset*/, size, 0/*flags*/));
 
   return ncclSuccess;
@@ -190,13 +192,30 @@ ncclResult_t mcGroupMapMem(struct ncclComm *comm, struct mcResources* resources)
   // NB: It will block until all ranks have bound to the Group
   INFO(NCCL_MC, "MC SetAccess MC %p size %zi", resources->mcBuff, size);
   CUCHECK(cuMemSetAccess((CUdeviceptr)resources->mcBuff, size, &resources->accessDesc, 1));
-  INFO(NCCL_MC, "MC SetAccess MC %p size %zi - DONE", resources->mcBuff, size);
 
   return ncclSuccess;
 }
 
-ncclResult_t mcGroupUnbindMem(mcHandle_t handle, char* mem) {
-  // TODO: Free `mem` and unbind it from the mem handle
+ncclResult_t mcGroupUnmapMem(struct ncclComm *comm, struct mcResources* resources) {
+  size_t size;
+  CUdeviceptr ptr;
+  INFO(NCCL_MC, "MC Unmap mem UC handle 0x%llx(%p) MC handle 0x%llx(%p)",
+       resources->ucHandle, resources->ucBuff, resources->mcHandle, resources->mcBuff);
+
+  // Release the UC memory and mapping
+  ptr = (CUdeviceptr)resources->ucBuff;
+  size = resources->size;
+  CUCHECK(cuMemUnmap(ptr, size));
+  CUCHECK(cuMemAddressFree(ptr, size));
+  CUCHECK(cuMemRelease(resources->ucHandle));
+
+  // Release the MC memory and mapping
+  ptr = (CUdeviceptr)resources->mcBuff;
+  size = resources->sizeWAR;
+  CUCHECK(cuMemUnmap(ptr, size));
+  CUCHECK(cuMemAddressFree(ptr, size));
+  CUCHECK(cuMemRelease(resources->mcHandle));
+
   return ncclSuccess;
 }
 
@@ -346,9 +365,8 @@ cleanup:
 ncclResult_t ncclMcFree(struct ncclComm* comm) {
   struct mcResources* resources = (struct mcResources*)comm->mcResources;
   if (resources == NULL) return ncclSuccess;
-  NCCLCHECK(mcGroupUnbindMem(resources->mcHandle, resources->ucBuff));
-  NCCLCHECK(mcGroupDisconnect(resources->mcHandle));
-  if (comm->localRank == 0) NCCLCHECK(mcGroupDestroy(resources->mcHandle));
+  NCCLCHECK(mcGroupUnbind(comm, resources));
+  NCCLCHECK(mcGroupUnmapMem(comm, resources));
   free(resources);
   comm->mcResources = NULL;
   return ncclSuccess;
