@@ -91,6 +91,15 @@ DECLARE_CUDA_PFN_EXTERN(cuMemUnmap, 10020);
 #if CUDA_VERSION >= 11070
 DECLARE_CUDA_PFN_EXTERN(cuMemGetHandleForAddressRange, 11070); // DMA-BUF support
 #endif
+#if CUDA_VERSION >= 12010
+/* NVSwitch Multicast support */
+DECLARE_CUDA_PFN_EXTERN(cuMulticastAddDevice, 12010);
+DECLARE_CUDA_PFN_EXTERN(cuMulticastBindMem, 12010);
+DECLARE_CUDA_PFN_EXTERN(cuMulticastBindAddr, 12010);
+DECLARE_CUDA_PFN_EXTERN(cuMulticastCreate, 12010);
+DECLARE_CUDA_PFN_EXTERN(cuMulticastGetGranularity, 12010);
+DECLARE_CUDA_PFN_EXTERN(cuMulticastUnbind, 12010);
+#endif
 #endif
 
 /* CUDA Driver functions loaded with dlsym() */

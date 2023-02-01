@@ -42,6 +42,15 @@ DECLARE_CUDA_PFN(cuMemUnmap, 10020);
 /* transport/collNet.cc/net.cc*/
 DECLARE_CUDA_PFN(cuMemGetHandleForAddressRange, 11070); // DMA-BUF support
 #endif
+#if CUDA_VERSION >= 12010
+/* NVSwitch Multicast support */
+DECLARE_CUDA_PFN(cuMulticastAddDevice, 12010);
+DECLARE_CUDA_PFN(cuMulticastBindMem, 12010);
+DECLARE_CUDA_PFN(cuMulticastBindAddr, 12010);
+DECLARE_CUDA_PFN(cuMulticastCreate, 12010);
+DECLARE_CUDA_PFN(cuMulticastGetGranularity, 12010);
+DECLARE_CUDA_PFN(cuMulticastUnbind, 12010);
+#endif
 #endif
 
 /* CUDA Driver functions loaded with dlsym() */
@@ -95,6 +104,15 @@ static ncclResult_t cudaPfnFuncLoader(void) {
 #endif
 #if CUDA_VERSION >= 11070
   LOAD_SYM(cuMemGetHandleForAddressRange, 11070, 1); // DMA-BUF support
+#endif
+#if CUDA_VERSION >= 12010
+/* NVSwitch Multicast support */
+  LOAD_SYM(cuMulticastAddDevice, 12010, 1);
+  LOAD_SYM(cuMulticastBindMem, 12010, 1);
+  LOAD_SYM(cuMulticastBindAddr, 12010, 1);
+  LOAD_SYM(cuMulticastCreate, 12010, 1);
+  LOAD_SYM(cuMulticastGetGranularity, 12010, 1);
+  LOAD_SYM(cuMulticastUnbind, 12010, 1);
 #endif
   return ncclSuccess;
 }
