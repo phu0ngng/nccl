@@ -107,7 +107,6 @@ struct RunWorkElement<ncclFuncAllGather, T, RedOp, NCCL_ALGO_MC, NCCL_PROTO_SIMP
     struct ncclMc* mc = &ncclShmem.channel.mc;
     const ssize_t chunkSize = int(args->lastChunkSize);
     const ssize_t size = args->count;
-    const int nranks = ncclShmem.comm.nRanks;
     const ssize_t loopSize = nChannels*chunkSize;
 
     const int nThreadsGather = 128;
