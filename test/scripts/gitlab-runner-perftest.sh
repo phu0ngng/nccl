@@ -39,12 +39,9 @@ for func in all_reduce reduce reduce_scatter; do
 done
 
 export NCCL_DEBUG="" # disable WARN information
-if [ -z "$SKIP_FT" ];
-then
-  echo "=============================== all_reduce (FT tests) - $(date +\"%T\") ================================="
-  $SALLOC $MPI_HOME/bin/mpirun $MPI_PARAMS ./build/test/perf/all_reduce_perf $range $opts $enable_ft
-  [ $? -ne 0 ] && let failure_count=$failure_count+1 && failure_names+=("$func (all sizes)")
-done
+echo "=============================== all_reduce (FT tests) - $(date +\"%T\") ================================="
+$SALLOC $MPI_HOME/bin/mpirun $MPI_PARAMS ./build/test/perf/all_reduce_perf $range $opts $enable_ft
+[ $? -ne 0 ] && let failure_count=$failure_count+1 && failure_names+=("$func (all sizes)")
 
 for str in "${failure_names[@]}"
 do
