@@ -295,6 +295,11 @@ struct ncclComm {
 
   // communicator mode
   int blocking;
+  // CGA cluster size
+  int cgaClusterSize;
+  int minCTAs, maxCTAs;
+  // network interface name
+  char *netName;
   // initState is to more conveniently reclaim resources when errors happen.
   ncclResult_t initState;
   // flag to indicate if ncclCommFinalize() is called

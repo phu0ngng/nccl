@@ -62,6 +62,7 @@ DECLARE_CUDA_PFN(cuGetProcAddress, 11030);
 
 static void *cudaLib;
 int ncclCudaDriverVersionCache = -1;
+bool ncclCudaLaunchBlocking = false;
 
 #if CUDART_VERSION >= 11030
 /*
@@ -122,6 +123,11 @@ static pthread_once_t initOnceControl = PTHREAD_ONCE_INIT;
 static ncclResult_t initResult;
 
 static void initOnceFunc() {
+  do {
+    char* val = getenv("CUDA_LAUNCH_BLOCKING");
+    ncclCudaLaunchBlocking = val!=nullptr && val[0]!=0 && !(val[0]=='0' && val[1]==0);
+  } while (0);
+
   CUresult res;
   /*
    * Load CUDA driver library

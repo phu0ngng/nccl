@@ -196,6 +196,10 @@ class Primitives<T, RedOp, Fan, Direct, ProtoLL128, P2p>:
         }
         needReload &= (0 == checkAbort(spins, 0, 0));
       } while (__any_sync(WARP_MASK, needReload));
+
+      #pragma unroll
+      for (int u=0; u<ELEMS_PER_THREAD; u+=2)
+        load128(ptr+u*WARP_SIZE, vr[u], vr[u+1]);
     }
 
     /************* Finish register load **************/
@@ -237,6 +241,10 @@ class Primitives<T, RedOp, Fan, Direct, ProtoLL128, P2p>:
           }
           needReload &= (0 == checkAbort(spins, i, 0));
         } while (__any_sync(WARP_MASK, needReload));
+
+        #pragma unroll
+        for (int u=0; u<ELEMS_PER_THREAD; u+=2)
+          load128(ptr+u*WARP_SIZE, vr[u], vr[u+1]);
 
         #pragma unroll
         for (int u=0; u<ELEMS_PER_THREAD; u+=2) {
@@ -282,14 +290,6 @@ class Primitives<T, RedOp, Fan, Direct, ProtoLL128, P2p>:
   __device__ __forceinline__ void GenericOp(intptr_t srcIx, intptr_t dstIx, int nelem, bool postOp) {
     constexpr int SRC = SrcBuf != -1 ? 1 : 0;
     constexpr int DST = DstBuf != -1 ? 1 : 0;
-    static_assert(-1<=SrcBuf && SrcBuf < 2, "Uhoh");
-    static_assert(-1<=DstBuf && DstBuf < 2, "Uhoh");
-    static_assert(DstBuf!=Input, "Mistake?");
-    #if 0
-    assert((SrcBuf==-1) == (srcIx==-1));
-    assert((DstBuf==-1) == (dstIx==-1));
-    #endif
-
     T const *srcPtr = SrcBuf == -1 ? nullptr : userBufs[SrcBuf] + srcIx;
     T       *dstPtr = DstBuf == -1 ? nullptr : userBufs[DstBuf] + dstIx;
     int wireOffset = WireWordPerSlice*warp + 2*wid;

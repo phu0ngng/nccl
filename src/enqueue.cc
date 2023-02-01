@@ -977,7 +977,7 @@ ncclResult_t ncclLaunchPrepare(struct ncclComm* comm) {
     }
     NCCLCHECKGOTO(ncclStrongStreamWaitStream(tasks->capturingGraph, launchStream, &comm->deviceStream), result, failure);
 
-    if (persistent || comm->persistentRefs != 0) {
+    if (persistent || comm->persistentRefs != 0 || ncclCudaLaunchBlocking) {
       // We have to launch host tasks to push proxy args. We are careful to only
       // do this if necessary since host tasks impose a high performance cost in CUDA.
       bool acquired = false;
@@ -1018,12 +1018,6 @@ ncclResult_t ncclLaunchKernelBefore_NoUncapturedCuda(struct ncclComm* comm, stru
   return ncclSuccess;
 }
 
-#if CUDART_VERSION >= 11080
-#define NCCL_MAX_CGA_CLUSTER_SIZE 8
-#define NCCL_CGA_CLUSTER_SIZE_SM90 4
-NCCL_PARAM(CGAClusterSize, "CGA_CLUSTER_SIZE", -2);
-#endif
-
 #if CUDART_VERSION >= 12000
 // NCCL uses the "Remote" Mem Sync domain by default
 NCCL_PARAM(MemSyncDomain, "MEM_SYNC_DOMAIN", cudaLaunchMemSyncDomainRemote);
@@ -1043,19 +1037,7 @@ ncclResult_t ncclLaunchKernel(struct ncclComm* comm, struct ncclKernelPlan* plan
   NCCLCHECK(ncclCudaDriverVersion(&driverVersion));
   if (driverVersion >= 11080) {
     int compCap = comm->compCap;
-    unsigned int clusterSize = (compCap == 90) ? NCCL_CGA_CLUSTER_SIZE_SM90 : 0;
-    if (ncclParamCGAClusterSize() != -2) {
-      clusterSize = ncclParamCGAClusterSize();
-      if (clusterSize > NCCL_MAX_CGA_CLUSTER_SIZE) {
-        static bool warned = false;
-        if (warned == false) {
-          WARN("NCCL_CGA_CLUSTER_SIZE value %d is too big. Limiting value to %d.",
-               clusterSize, NCCL_MAX_CGA_CLUSTER_SIZE);
-          warned = true;
-        }
-        clusterSize = NCCL_MAX_CGA_CLUSTER_SIZE;
-      }
-    }
+    unsigned int clusterSize = (compCap == 90) ? comm->cgaClusterSize : 0;
 
     cudaLaunchConfig_t launchConfig = {0};
     cudaLaunchAttribute launchAttrs[3];
@@ -1102,7 +1084,7 @@ ncclResult_t ncclLaunchKernel(struct ncclComm* comm, struct ncclKernelPlan* plan
 }
 
 ncclResult_t ncclLaunchKernelAfter_NoCuda(struct ncclComm* comm, struct ncclKernelPlan* plan) {
-  if (comm->persistentRefs == 0) { // implies !plan->persistent
+  if (!(plan->persistent || comm->persistentRefs != 0 || ncclCudaLaunchBlocking)) {
     // If this isn't being captured and there aren't any CUDA graphs alive
     // then we don't need to do our proxyOp pushing on the host stream.
     NCCLCHECK(hostStreamPlanTask(comm, plan));

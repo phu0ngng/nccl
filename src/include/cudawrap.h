@@ -111,6 +111,7 @@ DECLARE_CUDA_PFN_EXTERN(cuGetProcAddress, 11030);
 ncclResult_t ncclCudaLibraryInit(void);
 
 extern int ncclCudaDriverVersionCache;
+extern bool ncclCudaLaunchBlocking; // initialized by ncclCudaLibraryInit()
 
 inline ncclResult_t ncclCudaDriverVersion(int* driver) {
   int version = __atomic_load_n(&ncclCudaDriverVersionCache, __ATOMIC_RELAXED);
@@ -121,5 +122,4 @@ inline ncclResult_t ncclCudaDriverVersion(int* driver) {
   *driver = version;
   return ncclSuccess;
 }
-
 #endif
