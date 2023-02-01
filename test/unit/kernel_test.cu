@@ -1,6 +1,7 @@
-#include "stdio.h"
+#include <stdio.h>
 #include "nccl.h"
 
+#include "devcomm.h"
 #include "reduce_kernel.h"
 #include "common_kernel.h"
 
