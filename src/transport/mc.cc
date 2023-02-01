@@ -274,6 +274,7 @@ ncclResult_t ncclMcSetup(struct ncclComm* comm) {
       printf("MC rank %d.%d UC data %p %lx %lx %lx %lx\n", rank, r, buf, dummy[1020], dummy[1021], dummy[1022], dummy[1023]);
     }
   }
+#endif
 
   for (int c=0; c<nChannels; c++) {
     struct ncclChannel* channel = comm->channels+c;
@@ -332,7 +333,6 @@ ncclResult_t ncclMcSetup(struct ncclComm* comm) {
           resources->ucBuff + ((r*2+1)*nChannels+c)*(buffSize+memSize));*/
     }
   }
-#endif
 
   free(mcShareableHandle);
   return res;
