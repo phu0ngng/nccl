@@ -199,7 +199,7 @@ class Primitives<
           void* src = ncclShmem.groups[group].srcs[0];
           void* dst = ncclShmem.groups[group].dsts[0];
           copyMultimemMultimem<RedOp>(tid, nworkers, ncclShmem.redOpArgs[0], postOp, src, dst, workSize,
-          cvta_to_shared(shmemForWarp(tidInBlock/WARP_SIZE)));
+          cvta_to_shared(ncclScratchForWarp(tidInBlock/WARP_SIZE)));
         } else if (DirectRecv && ncclShmem.groups[group].srcs[0] == ncclShmem.groups[group].dsts[0]) {
           // We can only have one direct receive. Since srcs[0] == dstPtr+offset, skip one copy
           if (Send) {

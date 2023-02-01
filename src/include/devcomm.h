@@ -346,11 +346,11 @@ __host__ __device__ constexpr int ncclMCUnroll(int bytePerPack, int cudaArch = N
 }
 
 // The amount of dynamic shmem per warp
-__host__ __device__ constexpr int ncclShmemDynamicWarpSize(int cudaArch = NCCL_CUDA_ARCH) {
+__host__ __device__ constexpr int ncclShmemScratchWarpSize(int cudaArch = NCCL_CUDA_ARCH) {
   return (max_constexpr<int>(
       /*LL    */0,
       /*LL128 */(NCCL_LL128_SHMEM_ELEMS_PER_THREAD*WARP_SIZE)*sizeof(uint64_t),
-      /*SIMPLE*/0,
+      /*SIMPLE*/(ncclCollUnroll(cudaArch)*WARP_SIZE + 1)*16,
       // MC needs an extra 16B to read unaligned data.
       /*MC    */WARP_SIZE*(cudaArch >= 900 ? ncclMCUnrollBytes(cudaArch) : 0) + 16
     ) + 15) & -16; // pad to 16 bytes
@@ -358,7 +358,7 @@ __host__ __device__ constexpr int ncclShmemDynamicWarpSize(int cudaArch = NCCL_C
 
 // The amount of dynamic shmem per block
 __host__ __device__ constexpr int ncclShmemDynamicSize(int cudaArch = NCCL_CUDA_ARCH) {
-  return ncclShmemDynamicWarpSize(cudaArch)*(NCCL_MAX_NTHREADS/WARP_SIZE);
+  return ncclShmemScratchWarpSize(cudaArch)*(NCCL_MAX_NTHREADS/WARP_SIZE);
 }
 
 #endif

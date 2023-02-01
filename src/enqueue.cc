@@ -123,9 +123,11 @@ ncclResult_t ncclInitKernelsForDevice(int cudaArch, size_t* maxStackSize) {
     ignore1:;
     }
 
-    CUDACHECKGOTO(cudaFuncSetAttribute(fn,
-      cudaFuncAttributeMaxDynamicSharedMemorySize, ncclShmemDynamicSize(cudaArch)),
-      result, next_kernel);
+    if (ncclShmemDynamicSize(cudaArch) != 0) {
+      CUDACHECKGOTO(cudaFuncSetAttribute(fn,
+        cudaFuncAttributeMaxDynamicSharedMemorySize, ncclShmemDynamicSize(cudaArch)),
+        result, next_kernel);
+    }
   next_kernel:;
   }
   return result;

@@ -38,10 +38,14 @@ struct ncclShmemData {
 static_assert(offsetof(struct ncclShmemData, work)%16 == 0, "shmem.work needs to be 16B aligned");
 
 extern __shared__ ncclShmemData ncclShmem;
-extern __shared__ ulong2 ncclShmemDynamic[];
+#if __CUDA_ARCH__ >= 700
+  extern __shared__ ulong2 ncclShmemPerWarp[];
+#else
+  extern __shared__ ulong2 ncclShmemPerWarp[ncclShmemScratchWarpSize()/sizeof(ulong2)];
+#endif
 
-__device__ inline void* shmemForWarp(int warp) {
-  return (char*)ncclShmemDynamic + warp*ncclShmemDynamicWarpSize();
+__device__ inline void* ncclScratchForWarp(int warp) {
+  return (char*)ncclShmemPerWarp + warp*ncclShmemScratchWarpSize();
 }
 
 __device__ inline bool barrierReduceAny(int bit) {
