@@ -17,6 +17,10 @@ class ncclCommInitRankConfig_test : public ::testing::Test {
         EXPECT_EQ(cudaSuccess, cudaGetDeviceCount(&ndev));
         EXPECT_NE(nullptr, comms = (ncclComm_t*) calloc(ndev, sizeof(ncclComm_t)));
         config.blocking = 0;
+        config.minCTAs = 2;
+        config.maxCTAs = 4;
+        config.cgaClusterSize = 0;
+        config.netName = "Socket";
     }
 
     virtual void TearDown() {

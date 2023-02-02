@@ -1121,6 +1121,13 @@ fail:
   goto exit;
 }
 
+#define NCCL_CONFIG_DEFAULT(config, field, undef, defvalue, fieldStr, format) \
+  if (config->field == undef) { \
+    config->field = defvalue; \
+  } else { \
+    INFO(NCCL_ENV, "Comm config " fieldStr " set to " format, config->field); \
+  }
+
 static ncclResult_t parseCommConfig(ncclComm_t comm, ncclConfig_t *config) {
   ncclResult_t ret = ncclSuccess;
   /* config must not be NULL in this function */
@@ -1169,14 +1176,13 @@ static ncclResult_t parseCommConfig(ncclComm_t comm, ncclConfig_t *config) {
   }
 
   /* default config value can be tuned on different platform. */
-  if (internalConfigPtr->blocking == NCCL_CONFIG_UNDEF_INT) internalConfigPtr->blocking = 1;
-  if (internalConfigPtr->cgaClusterSize == NCCL_CONFIG_UNDEF_INT) internalConfigPtr->cgaClusterSize = 4;
-  if (internalConfigPtr->minCTAs == NCCL_CONFIG_UNDEF_INT) internalConfigPtr->minCTAs = 1;
-  if (internalConfigPtr->maxCTAs == NCCL_CONFIG_UNDEF_INT) internalConfigPtr->maxCTAs = MAXCHANNELS;
-  if (internalConfigPtr->netName == NCCL_CONFIG_UNDEF_PTR)
-    tmpNetName = NULL;
-  else
-    tmpNetName = internalConfigPtr->netName;
+  NCCL_CONFIG_DEFAULT(internalConfigPtr, blocking, NCCL_CONFIG_UNDEF_INT, 1, "Blocking", "%d");
+  NCCL_CONFIG_DEFAULT(internalConfigPtr, cgaClusterSize, NCCL_CONFIG_UNDEF_INT, 4, "CGA cluster size", "%d");
+  NCCL_CONFIG_DEFAULT(internalConfigPtr, minCTAs, NCCL_CONFIG_UNDEF_INT, 1, "Min CTAs", "%d");
+  NCCL_CONFIG_DEFAULT(internalConfigPtr, maxCTAs, NCCL_CONFIG_UNDEF_INT, MAXCHANNELS, "Max CTAs", "%d");
+  NCCL_CONFIG_DEFAULT(internalConfigPtr, netName, NCCL_CONFIG_UNDEF_PTR, NULL, "Net name", "%s");
+
+  tmpNetName = internalConfigPtr->netName;
 
   /* assign config to communicator */
   comm->blocking = internalConfigPtr->blocking;
@@ -1234,8 +1240,6 @@ static ncclResult_t parseCommConfig(ncclComm_t comm, ncclConfig_t *config) {
   } else {
     comm->netName = NULL;
   }
-
-  INFO(NCCL_INIT, "parseCommConfig: blocking %d, minCTAs %d, maxCTAs %d, cgaClusterSize %d, netName %s DONE\n", comm->blocking, comm->minCTAs, comm->maxCTAs, comm->cgaClusterSize, comm->netName);
 
 exit:
   return ret;
