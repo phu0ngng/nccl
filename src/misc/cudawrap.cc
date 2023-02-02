@@ -18,7 +18,6 @@ DECLARE_CUDA_PFN(cuDeviceGet, 2000);
 DECLARE_CUDA_PFN(cuDeviceGetAttribute, 2000);
 DECLARE_CUDA_PFN(cuGetErrorString, 6000);
 DECLARE_CUDA_PFN(cuGetErrorName, 6000);
-DECLARE_CUDA_PFN(cuGetExportTable, 3000);
 /* enqueue.cc */
 DECLARE_CUDA_PFN(cuMemGetAddressRange, 3020);
 /* proxy.cc */
@@ -83,7 +82,6 @@ static ncclResult_t cudaPfnFuncLoader(void) {
   LOAD_SYM(cuGetErrorName, 6000, 0);
   LOAD_SYM(cuDeviceGet, 2000, 0);
   LOAD_SYM(cuDeviceGetAttribute, 2000, 0);
-  LOAD_SYM(cuGetExportTable, 3000, 0);
   LOAD_SYM(cuMemGetAddressRange, 3020, 1);
   LOAD_SYM(cuCtxCreate, 3020, 1);
   LOAD_SYM(cuCtxDestroy, 4000, 1);
