@@ -224,9 +224,9 @@ ncclResult_t mcGroupUnmapMem(struct ncclComm *comm, struct mcResources* resource
 
 #define MC_MEM_ALIGN_SIZE (1 << 21)
 
-NCCL_PARAM(McChannels, "MC_NCHANNELS", 16);
+NCCL_PARAM(McChannels, "NVLSHARP_NCHANNELS", 16);
 
-NCCL_PARAM(McEnable, "MC_ENABLE", 1);
+NCCL_PARAM(McEnable, "NVLSHARP_ENABLE", 1);
 
 ncclResult_t ncclMcSetup(struct ncclComm* comm) {
   if (!ncclParamMcEnable() || comm->localRanks <= 1 || comm->nNodes>1) return ncclSuccess;
