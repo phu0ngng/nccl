@@ -220,6 +220,7 @@ ncclResult_t mcGroupUnmapMem(struct ncclComm *comm, struct mcResources* resource
 }
 
 #include "bootstrap.h"
+#include "channel.h"
 
 #define MC_MEM_ALIGN_SIZE (1 << 21)
 
@@ -228,7 +229,7 @@ NCCL_PARAM(McChannels, "MC_NCHANNELS", 16);
 NCCL_PARAM(McEnable, "MULTICAST_ENABLE", 1);
 
 ncclResult_t ncclMcSetup(struct ncclComm* comm) {
-  if (!ncclParamMcEnable() || comm->localRanks <= 1) return ncclSuccess;
+  if (!ncclParamMcEnable() || comm->localRanks <= 1 || comm->nNodes>1) return ncclSuccess;
   int dev;
   CUCHECK(cuCtxGetDevice(&dev));
   comm->mcSupport = 0;
@@ -240,6 +241,10 @@ ncclResult_t ncclMcSetup(struct ncclComm* comm) {
 
   int nChannels = comm->mcChannels = ncclParamMcChannels();
   int rank = comm->localRank, nranks = comm->localRanks;
+
+  for (int c=0; c<nChannels; c++) {
+    NCCLCHECK(initChannel(comm, c));
+  }
   ncclResult_t res = ncclSuccess;
   struct mcResources* resources;
   NCCLCHECK(ncclCalloc(&resources, 1));

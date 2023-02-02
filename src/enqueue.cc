@@ -1230,6 +1230,7 @@ static ncclResult_t getPatternInfo(struct ncclInfo* info) {
       info->pattern = ncclPatternRing; break;
     case ncclFuncAllReduce:
       info->pattern =
+        info->algorithm == NCCL_ALGO_MC ? ncclPatternMc :
         info->algorithm == NCCL_ALGO_COLLNET_DIRECT ? ncclPatternCollnetDirect :
         info->algorithm == NCCL_ALGO_COLLNET_CHAIN ? ncclPatternCollnetChain :
         info->algorithm == NCCL_ALGO_TREE ? ncclPatternTreeUpDown :
@@ -1249,6 +1250,7 @@ static ncclResult_t getLoopInfo(struct ncclInfo* info) {
     case ncclPatternPipelineFrom:
     case ncclPatternPipelineTo:
     case ncclPatternCollnetChain:
+    case ncclPatternMc:
       info->nstepsPerLoop = info-> nchunksPerLoop = 1; break;
     case ncclPatternCollnetDirect:
       info->nstepsPerLoop = 1; info->nchunksPerLoop = info->comm->channels[0].collnetDirect.nHeads; break;
