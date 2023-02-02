@@ -226,7 +226,7 @@ ncclResult_t mcGroupUnmapMem(struct ncclComm *comm, struct mcResources* resource
 
 NCCL_PARAM(McChannels, "MC_NCHANNELS", 16);
 
-NCCL_PARAM(McEnable, "MULTICAST_ENABLE", 1);
+NCCL_PARAM(McEnable, "MC_ENABLE", 1);
 
 ncclResult_t ncclMcSetup(struct ncclComm* comm) {
   if (!ncclParamMcEnable() || comm->localRanks <= 1 || comm->nNodes>1) return ncclSuccess;
@@ -276,31 +276,6 @@ ncclResult_t ncclMcSetup(struct ncclComm* comm) {
   // Local intra-node barrier to ensure everyone has bound their memory to the group
   NCCLCHECKGOTO(bootstrapBarrier(comm->bootstrap, comm->localRankToRank, comm->localRank, comm->localRanks, comm->localRankToRank[0]), res, cleanup);
   NCCLCHECKGOTO(mcGroupMapMem(comm, resources), res, cleanup);
-
-#if 0
-  {
-    uint64_t dummy[1024];
-
-    for (int i=0; i < sizeof(dummy)/sizeof(dummy[0]); i++) {
-      dummy[i] = 0xdeadbabefeedface ^ i;
-      dummy[i] ^= (rank << 28);
-    }
-
-    char *buf = resources->mcBuff + rank*mcPerRankSize;
-    printf("MC rank %d Writing %zi bytes to %p\n", rank, sizeof(dummy), buf);
-    cudaMemcpy(buf, dummy, sizeof(dummy), cudaMemcpyHostToDevice);
-
-    CUDACHECK(cudaDeviceSynchronize());
-    NCCLCHECKGOTO(bootstrapBarrier(comm->bootstrap, comm->localRankToRank, comm->localRank, comm->localRanks, comm->localRankToRank[0]), res, cleanup);
-
-    for (int r = 0; r < nranks; r++) {
-      char *buf = resources->ucBuff + r*mcPerRankSize;
-      cudaMemcpy(&dummy[0], buf, sizeof(dummy), cudaMemcpyDeviceToHost);
-      printf("MC rank %d.%d UC data %p %lx %lx %lx %lx\n", rank, r, buf, dummy[0], dummy[1], dummy[2], dummy[3]);
-      printf("MC rank %d.%d UC data %p %lx %lx %lx %lx\n", rank, r, buf, dummy[1020], dummy[1021], dummy[1022], dummy[1023]);
-    }
-  }
-#endif
 
   for (int c=0; c<nChannels; c++) {
     struct ncclChannel* channel = comm->channels+c;
