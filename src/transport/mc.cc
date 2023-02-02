@@ -230,10 +230,12 @@ NCCL_PARAM(McEnable, "MULTICAST_ENABLE", 1);
 
 ncclResult_t ncclMcSetup(struct ncclComm* comm) {
   if (!ncclParamMcEnable() || comm->localRanks <= 1 || comm->nNodes>1) return ncclSuccess;
-  int dev;
+  int dev, driverVersion;
   CUCHECK(cuCtxGetDevice(&dev));
+  CUDACHECK(cudaDriverGetVersion(&driverVersion));
   comm->mcSupport = 0;
-  if (pfn_cuMulticastCreate != NULL) {
+  // MC Multicast support requires CUDA12.1 UMD + KMD
+  if (pfn_cuMulticastCreate != NULL && driverVersion >= 12010) {
     CUCHECK(cuDeviceGetAttribute(&comm->mcSupport, CU_DEVICE_ATTRIBUTE_MULTICAST_SUPPORTED, dev));
   }
   INFO(NCCL_INIT, "MC multicast support is %savailable on dev %d", comm->mcSupport ? "" : "not ", dev);
@@ -384,11 +386,11 @@ ncclResult_t ncclMcFree(struct ncclComm* comm) {
  */
 
 ncclResult_t ncclMcSetup(struct ncclComm* comm) {
-  return ncclInternalError;
+  return ncclSuccess;
 }
 
 ncclResult_t ncclMcFree(struct ncclComm* comm) {
-  return ncclInternalError;
+  return ncclSuccess;
 }
 
 #endif /* CUDA_VERSION >= 12010 */

@@ -919,10 +919,7 @@ static ncclResult_t initTransportsRank(struct ncclComm* comm, ncclUniqueId* comm
   // Check if we can setup CollNet
   if (comm->collNetSupport > 0) collNetTrySetup(comm, &collNetGraph);
 
-  // MC Multicast support requires CUDA12.1 KMD
-  int driverVersion;
-  CUDACHECK(cudaDriverGetVersion(&driverVersion));
-  if (driverVersion >= 12010) NCCLCHECKGOTO(ncclMcSetup(comm), ret, fail);
+  NCCLCHECKGOTO(ncclMcSetup(comm), ret, fail);
 
   TRACE(NCCL_INIT, "rank %d nranks %d - CONNECTED %d RINGS AND TREES", rank, nranks, comm->nChannels);
 
