@@ -224,7 +224,7 @@ DEFINE_ld_st_16(shared, uint32_t, r)
 template<int Size>
 __device__ __forceinline__ void multimem_st_global(uintptr_t addr, BytePack<Size> val);
 
-#if __CUDA_ARCH__ >= 900
+#if __CUDA_ARCH__ >= 900 && CUDART_VERSION >= 12010
 template<>
 __device__ __forceinline__ void multimem_st_global<4>(uintptr_t addr, BytePack<4> val) {
   asm volatile("multimem.st.global.b32 [%0], %1;" :: "l"(addr), "r"(val.u32) : "memory");
