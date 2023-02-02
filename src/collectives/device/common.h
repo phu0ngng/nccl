@@ -39,9 +39,9 @@ static_assert(offsetof(struct ncclShmemData, work)%16 == 0, "shmem.work needs to
 
 extern __shared__ ncclShmemData ncclShmem;
 #if __CUDA_ARCH__ >= 700
-  extern __shared__ ulong2 ncclShmemPerWarp[];
+  extern __shared__ ulong2 ncclShmemPerWarp[/*ncclShmemDynamicSize()/sizeof(ulong2)*/];
 #else
-  extern __shared__ ulong2 ncclShmemPerWarp[ncclShmemScratchWarpSize()/sizeof(ulong2)];
+  extern __shared__ ulong2 ncclShmemPerWarp[ncclShmemScratchWarpSize()*(NCCL_MAX_NTHREADS/WARP_SIZE)/sizeof(ulong2)];
 #endif
 
 __device__ inline void* ncclScratchForWarp(int warp) {
