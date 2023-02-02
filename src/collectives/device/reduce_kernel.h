@@ -9,7 +9,6 @@
 #define NCCL_REDUCE_KERNEL_H_
 
 #include "op128.h"
-#include "mc_builtins.h"
 #include <limits>
 #include <type_traits>
 
