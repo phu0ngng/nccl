@@ -77,7 +77,9 @@ class Primitives<
     uintptr_t addr = cvta_to_global(ptr);
     uint64_t ans;
     if (MC && (flags & McMinPolling)) {
-      asm("multimem.ld_reduce.global.min.u64 %0, [%1];" : "=l"(ans) : "l"(addr));
+      #if __CUDA_ARCH__ >= 900 && CUDART_VERSION >= 12010
+        asm("multimem.ld_reduce.global.min.u64 %0, [%1];" : "=l"(ans) : "l"(addr));
+      #endif
     } else {
       asm("ld.volatile.global.u64 %0, [%1];": "=l"(ans) : "l"(addr));
     }
