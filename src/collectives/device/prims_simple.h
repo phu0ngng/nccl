@@ -52,14 +52,14 @@ class Primitives<
     if (nthreads == WARP_SIZE) __syncwarp();
     else {
       int bar = 15-group;
-      asm("bar.sync %0, %1;" :: "r"(bar), "r"(nthreads) : "memory");
+      asm volatile("bar.sync %0, %1;" :: "r"(bar), "r"(nthreads) : "memory");
     }
   }
   __device__ void subBarrier() {
     if (nworkers == WARP_SIZE) __syncwarp();
     else {
       int bar = (nworkers==nthreads ? 15 : 8) - group;
-      asm("bar.sync %0, %1;" :: "r"(bar), "r"(nworkers) : "memory");
+      asm volatile("bar.sync %0, %1;" :: "r"(bar), "r"(nworkers) : "memory");
     }
   }
 
@@ -69,11 +69,12 @@ class Primitives<
       return __any_sync(~0u, vote);
     } else {
       int ans, bar = 15-group;
-      asm("{ .reg .pred p;"
-          "  setp.ne.s32 p, %1, 0;"
-          "  bar.red.or.pred p, %2, %3, p; "
-          "  selp.s32 %0, 1, 0, p; }"
-          : "=r"(ans) : "r"(vote), "r"(bar), "r"(nthreads) : "memory");
+      asm volatile(
+        "{ .reg .pred p;"
+        "  setp.ne.s32 p, %1, 0;"
+        "  bar.red.or.pred p, %2, %3, p; "
+        "  selp.s32 %0, 1, 0, p; }"
+        : "=r"(ans) : "r"(vote), "r"(bar), "r"(nthreads) : "memory");
       return ans != 0;
     }
   }
@@ -82,11 +83,12 @@ class Primitives<
       return __any_sync(~0u, vote);
     } else {
       int ans, bar = (nworkers==nthreads ? 15 : 8) - group;
-      asm("{ .reg .pred p;"
-          "  setp.ne.s32 p, %1, 0;"
-          "  bar.red.or.pred p, %2, %3, p; "
-          "  selp.s32 %0, 1, 0, p; }"
-          : "=r"(ans) : "r"(vote), "r"(bar), "r"(nworkers) : "memory");
+      asm volatile(
+        "{ .reg .pred p;"
+        "  setp.ne.s32 p, %1, 0;"
+        "  bar.red.or.pred p, %2, %3, p; "
+        "  selp.s32 %0, 1, 0, p; }"
+        : "=r"(ans) : "r"(vote), "r"(bar), "r"(nworkers) : "memory");
       return ans != 0;
     }
   }
@@ -109,6 +111,8 @@ class Primitives<
     if (MC && (flags & McMinPolling)) {
       #if __CUDA_ARCH__ >= 900 && CUDART_VERSION >= 12010
         asm("multimem.ld_reduce.global.min.u64 %0, [%1];" : "=l"(ans) : "l"(addr));
+      #else
+        __trap();
       #endif
     } else {
       asm("ld.volatile.global.u64 %0, [%1];": "=l"(ans) : "l"(addr));
