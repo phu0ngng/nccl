@@ -47,18 +47,48 @@ class Primitives<
   uint64_t connStepCache; // Cache last seen value of (*connStepPtr)
 
   // Don't use barrier 0 as it's used by the final sync
-  inline __device__ void barrier() {
-    if (nthreads == WARP_SIZE)
-      __syncwarp();
-    else
-      asm volatile("bar.sync %0, %1;" :: "r"(15-group), "r"(nthreads));
+  __device__ void barrier() {
     flags |= ThreadsSynced;
+    if (nthreads == WARP_SIZE) __syncwarp();
+    else {
+      int bar = 15-group;
+      asm("bar.sync %0, %1;" :: "r"(bar), "r"(nthreads) : "memory");
+    }
   }
-  inline __device__ void subBarrier() {
-    if (nworkers == nthreads)
-      barrier();
-    else
-      asm volatile("bar.sync %0, %1;" :: "r"(8-group), "r"(nworkers));
+  __device__ void subBarrier() {
+    if (nworkers == WARP_SIZE) __syncwarp();
+    else {
+      int bar = (nworkers==nthreads ? 15 : 8) - group;
+      asm("bar.sync %0, %1;" :: "r"(bar), "r"(nworkers) : "memory");
+    }
+  }
+
+  __device__ bool barrierAny(int vote) {
+    flags |= ThreadsSynced;
+    if (nthreads == WARP_SIZE) {
+      return __any_sync(~0u, vote);
+    } else {
+      int ans, bar = 15-group;
+      asm("{ .reg .pred p;"
+          "  setp.ne.s32 p, %1, 0;"
+          "  bar.red.or.pred p, %2, %3, p; "
+          "  selp.s32 %0, 1, 0, p; }"
+          : "=r"(ans) : "r"(vote), "r"(bar), "r"(nthreads) : "memory");
+      return ans != 0;
+    }
+  }
+  __device__ bool subBarrierAny(int vote) {
+    if (nworkers == WARP_SIZE) {
+      return __any_sync(~0u, vote);
+    } else {
+      int ans, bar = (nworkers==nthreads ? 15 : 8) - group;
+      asm("{ .reg .pred p;"
+          "  setp.ne.s32 p, %1, 0;"
+          "  bar.red.or.pred p, %2, %3, p; "
+          "  selp.s32 %0, 1, 0, p; }"
+          : "=r"(ans) : "r"(vote), "r"(bar), "r"(nworkers) : "memory");
+      return ans != 0;
+    }
   }
 
   inline __device__ bool checkAbort(int &spins) {
@@ -271,12 +301,12 @@ class Primitives<
     #pragma unroll
     for (int slice=0; slice<SlicePerChunk; ++slice) {
       int realSize = max(0, min(dataSize, peerElem-offset));
+      bool fenceNeeded = false;
       if (tid < nworkers) {
         if (Send) {
           // Scatter pre-scales data of input buffer only in non-Direct case
           constexpr int PreOpSrcs = DirectSend ? 0 : 1;
           if (flags & RoleInput) ncclShmem.groups[group].srcs[0] = userBuff + inpIx + offset;
-          if (tid == 0) ncclShmem.groups[group].totalSendSize[slice] = 0; // Skip the threadfence
           // realSize is not accurate here; but intra-node does not rely on sizes FIFO
           waitPeer<0, DirectSend, 0, 1, 1, 0>(0, inpIx, offset, realSize);
           subBarrier();
@@ -292,7 +322,7 @@ class Primitives<
             if (realPeerSize > 0 && ncclShmem.groups[group].dsts[i] != nullptr) {
               ReduceOrCopyMulti<Unroll, RedOp, T, 1, 1, 1, 1, PreOpSrcs>(tid, nworkers, ncclShmem.redOpArgs[0], ncclShmem.redOpArgs, false, 1, &src0, 1, ncclShmem.groups[group].dsts+i, realPeerSize);
               // Mark for threadfence at the end
-              if (tid == 0) ncclShmem.groups[group].totalSendSize[slice] += realPeerSize;
+              fenceNeeded |= true;
             }
           }
         } else if (Recv) {
@@ -318,9 +348,9 @@ class Primitives<
           }
         }
       }
-      barrier();
+      fenceNeeded = barrierAny(fenceNeeded);
       // If we indeed send something, threadfence
-      if (Send && (flags & RolePostSend) && ncclShmem.groups[group].totalSendSize[slice] > 0 && index == 0)
+      if (Send && (flags & RolePostSend) && fenceNeeded && index == 0)
         __threadfence_system();
       __syncwarp();
       postPeer<Recv, Send>();
