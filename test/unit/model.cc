@@ -112,7 +112,7 @@ void runTopo(const char* xmlTopoFile, const char* platform, int nnodes) {
   struct ncclTopoGraph treeGraph;
   memset(&treeGraph, 0, sizeof(treeGraph));
   treeGraph.id = 1;
-  treeGraph.pattern = NCCL_TOPO_PATTERN_SPLIT_TREE;
+  treeGraph.pattern = NCCL_TOPO_PATTERN_BALANCED_TREE;
   treeGraph.crossNic = 2;
   treeGraph.collNet = 0;
 
@@ -175,6 +175,7 @@ void runTopo(const char* xmlTopoFile, const char* platform, int nnodes) {
   comm.buffSizes[NCCL_PROTO_SIMPLE] = 1 << 22;
   comm.collNetSupport = (cNetGraph.nChannels == 0) ? 0 : 1;
   int compCap = system->nodes[GPU].nodes[0].gpu.cudaCompCap;
+  comm.minCompCap = compCap;
   CHECK(ncclTopoTuneModel(&comm, compCap, compCap, &treeGraph, &ringGraph, &cNetGraph));
   struct ncclInfo info;
   info.comm = &comm;

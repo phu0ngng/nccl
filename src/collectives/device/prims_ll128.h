@@ -82,7 +82,14 @@ class Primitives<T, RedOp, Fan, Direct, ProtoLL128, P2p>:
     if (recvConnHeadPtr) *recvConnHeadPtr = recvConnHead += 1;
   }
   inline __device__ void postSend() {
-    if (sendConnTailPtr) { __threadfence(); *sendConnTailPtr = sendConnTail += 1; }
+    if (sendConnTailPtr) {
+#if __CUDA_ARCH__ >= 900
+      __threadfence_system();
+#else
+      __threadfence();
+#endif
+      *sendConnTailPtr = sendConnTail += 1;
+    }
   }
 
   template<int WordPerThread>
