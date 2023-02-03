@@ -112,7 +112,7 @@ void runTopo(const char* xmlTopoFile, const char* platform, int nnodes) {
   struct ncclTopoGraph treeGraph;
   memset(&treeGraph, 0, sizeof(treeGraph));
   treeGraph.id = 1;
-  treeGraph.pattern = NCCL_TOPO_PATTERN_SPLIT_TREE;
+  treeGraph.pattern = NCCL_TOPO_PATTERN_BALANCED_TREE;
   treeGraph.crossNic = 2;
   treeGraph.collNet = 0;
 
