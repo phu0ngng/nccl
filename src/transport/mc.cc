@@ -44,12 +44,11 @@ struct ncclTransport mcTransport = {
 #define MC_HANDLE_SIZE 64
 
 struct mcResources {
-  CUmemAllocationProp properties;
+  CUmulticastObjectProp properties;
   CUmemAccessDesc accessDesc;
   int dev;
   size_t size;
   size_t granularity;
-  size_t sizeWAR; // For 3418538 WAR
   CUmemGenericAllocationHandle mcHandle; // Multicast handle for MC buffer
   char* mcBuff; // Multicast MC buffer address
   CUmemGenericAllocationHandle ucHandle; // Unicast Handle for MC buffer
@@ -57,44 +56,37 @@ struct mcResources {
 };
 
 
-ncclResult_t mcGetProperties(struct ncclComm *comm, struct mcResources* resources, size_t size) {
-  int dev;
-  CUCHECK(cuCtxGetDevice(&dev));
-
-  CUmemAllocationProp* prop = &resources->properties;
+ncclResult_t mcGetProperties(struct ncclComm *comm, struct mcResources* resources, int dev, int nranks, size_t size) {
+  CUmulticastObjectProp* prop = &resources->properties;
   memset(prop, 0, sizeof(*prop));
-  prop->type = CU_MEM_ALLOCATION_TYPE_PINNED;
-  prop->location.type = CU_MEM_LOCATION_TYPE_DEVICE;
-  prop->location.id = dev;
-  prop->requestedHandleTypes = MC_CU_MEM_HANDLE_TYPE;
+  prop->size = size;
+  prop->numDevices = nranks;
+  prop->handleTypes = MC_CU_MEM_HANDLE_TYPE;
+  prop->flags = 0;
 
-  CUCHECK(cuMemGetAllocationGranularity(&resources->granularity, prop, CU_MEM_ALLOC_GRANULARITY_RECOMMENDED));
+  // Could be changed to CU_MULTICAST_GRANULARITY_MINIMUM when 3418538 resolved
+  CUCHECK(cuMulticastGetGranularity(&resources->granularity, prop, CU_MULTICAST_GRANULARITY_RECOMMENDED));
 
   ALIGN_SIZE(size, resources->granularity);
-  resources->size = size;
-  ALIGN_SIZE(size, 512ULL*1024*1024); // Align up until 3418538 fixed
-  resources->sizeWAR = size;
+  prop->size = resources->size = size;
 
   memset(&resources->accessDesc, 0, sizeof(resources->accessDesc));
   resources->accessDesc.flags = CU_MEM_ACCESS_FLAGS_PROT_READWRITE;
   resources->accessDesc.location.type = CU_MEM_LOCATION_TYPE_DEVICE;
   resources->accessDesc.location.id = dev;
+  resources->dev = dev;
 
   return ncclSuccess;
 }
 
 ncclResult_t mcGroupCreate(struct ncclComm *comm, struct mcResources* resources, int rank, unsigned int nranks, char* shareableHandle) {
-  size_t size = resources->sizeWAR;
+  size_t size = resources->size;
 
   // Create MC group
-  CUmulticastObjectProp mcProp = { 0 };
-  mcProp.size = size;
-  mcProp.numDevices = nranks;
-  mcProp.handleTypes = MC_CU_MEM_HANDLE_TYPE;
-  mcProp.flags = 0;
+  CUmulticastObjectProp* prop = &resources->properties;
 
   INFO(NCCL_MC, "MC Creating group nranks %d size %zi on rank %d", nranks, size, rank);
-  CUCHECK(cuMulticastCreate(&resources->mcHandle, &mcProp));
+  CUCHECK(cuMulticastCreate(&resources->mcHandle, prop));
 
   if (MC_CU_MEM_HANDLE_TYPE != CU_MEM_HANDLE_TYPE_NONE) {
     // Get a handle to pass to other ranks
@@ -109,16 +101,15 @@ ncclResult_t mcGroupCreate(struct ncclComm *comm, struct mcResources* resources,
   return ncclSuccess;
 }
 
-ncclResult_t mcGroupAddDevice(struct ncclComm *comm, struct mcResources* resources, int dev) {
-  INFO(NCCL_MC, "MC group %llx adding dev %d", resources->mcHandle, dev);
-  CUCHECK(cuMulticastAddDevice(resources->mcHandle, dev));
-  resources->dev = dev;
+ncclResult_t mcGroupAddDevice(struct ncclComm *comm, struct mcResources* resources) {
+  INFO(NCCL_MC, "MC group %llx adding dev %d", resources->mcHandle, resources->dev);
+  CUCHECK(cuMulticastAddDevice(resources->mcHandle, resources->dev));
   return ncclSuccess;
 }
 
 ncclResult_t mcGroupUnbind(struct ncclComm *comm, struct mcResources* resources) {
   int dev = resources->dev;
-  size_t size = resources->sizeWAR;
+  size_t size = resources->size;
   INFO(NCCL_MC, "MC Unbind MC handle %llx size %zi dev %d", resources->mcHandle, size, dev);
 
   // Unbind physical memory from group for the given device
@@ -156,13 +147,22 @@ ncclResult_t mcGroupConnect(struct ncclComm *comm, struct mcResources* resources
 
 ncclResult_t mcGroupBindMem(struct ncclComm *comm, struct mcResources* resources) {
   size_t size = resources->size;
+  size_t granularity;
   CUdeviceptr ptr = 0;
+  CUmemAllocationProp prop;
+
+  memset(&prop, 0, sizeof(prop));
+  prop.type = CU_MEM_ALLOCATION_TYPE_PINNED;
+  prop.location.type = CU_MEM_LOCATION_TYPE_DEVICE;
+  prop.location.id = resources->dev;
+  prop.requestedHandleTypes = MC_CU_MEM_HANDLE_TYPE;
+  CUCHECK(cuMemGetAllocationGranularity(&granularity, &prop, CU_MEM_ALLOC_GRANULARITY_RECOMMENDED));
 
   // Map a VA for UC memory
-  CUCHECK(cuMemAddressReserve(&ptr, size, resources->granularity, 0U, 0));
+  CUCHECK(cuMemAddressReserve(&ptr, size, granularity, 0U, 0));
 
   // Alloc local physical mem for this MC group
-  CUCHECK(cuMemCreate(&resources->ucHandle, size, &resources->properties, 0));
+  CUCHECK(cuMemCreate(&resources->ucHandle, size, &prop, 0));
   CUCHECK(cuMemMap(ptr, size, 0, resources->ucHandle, 0));
   CUCHECK(cuMemSetAccess(ptr, size, &resources->accessDesc, 1));
   CUDACHECK(cudaMemset((void*)ptr, 0, size));
@@ -178,7 +178,7 @@ ncclResult_t mcGroupBindMem(struct ncclComm *comm, struct mcResources* resources
 }
 
 ncclResult_t mcGroupMapMem(struct ncclComm *comm, struct mcResources* resources) {
-  size_t size = resources->sizeWAR;
+  size_t size = resources->size;
   CUdeviceptr ptr = 0;
 
   // Create a VA for the MC
@@ -211,7 +211,7 @@ ncclResult_t mcGroupUnmapMem(struct ncclComm *comm, struct mcResources* resource
 
   // Release the MC memory and mapping
   ptr = (CUdeviceptr)resources->mcBuff;
-  size = resources->sizeWAR;
+  size = resources->size;
   CUCHECK(cuMemUnmap(ptr, size));
   CUCHECK(cuMemAddressFree(ptr, size));
   CUCHECK(cuMemRelease(resources->mcHandle));
@@ -262,7 +262,7 @@ ncclResult_t ncclMcSetup(struct ncclComm* comm) {
 
   char* mcShareableHandle = NULL;
   NCCLCHECKGOTO(ncclCalloc(&mcShareableHandle, MC_HANDLE_SIZE), res, cleanup);
-  NCCLCHECKGOTO(mcGetProperties(comm, resources, mcTotalSize), res, cleanup);
+  NCCLCHECKGOTO(mcGetProperties(comm, resources, dev, nranks, mcTotalSize), res, cleanup);
   if (rank == 0) {
     NCCLCHECKGOTO(mcGroupCreate(comm, resources, rank, nranks, mcShareableHandle), res, cleanup);
     NCCLCHECKGOTO(bootstrapIntraNodeBroadcast(comm->bootstrap, comm->localRankToRank, rank, nranks, 0, mcShareableHandle, MC_HANDLE_SIZE), res, cleanup);
@@ -271,7 +271,7 @@ ncclResult_t ncclMcSetup(struct ncclComm* comm) {
     NCCLCHECKGOTO(mcGroupConnect(comm, resources, 0, mcShareableHandle), res, cleanup);
   }
 
-  NCCLCHECKGOTO(mcGroupAddDevice(comm, resources, dev), res, cleanup);
+  NCCLCHECKGOTO(mcGroupAddDevice(comm, resources), res, cleanup);
   NCCLCHECKGOTO(mcGroupBindMem(comm, resources), res, cleanup);
   // Local intra-node barrier to ensure everyone has bound their memory to the group
   NCCLCHECKGOTO(bootstrapBarrier(comm->bootstrap, comm->localRankToRank, comm->localRank, comm->localRanks, comm->localRankToRank[0]), res, cleanup);
