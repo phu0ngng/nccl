@@ -20,15 +20,16 @@
 ncclResult_t ncclIpcSocketInit(ncclIpcSocket *handle, int rank, uint64_t pidHash) {
   int sock = -1;
   struct sockaddr_un cliaddr;
-  char temp[NCCL_IPC_SOCKNAME_LEN];
+  char temp[NCCL_IPC_SOCKNAME_LEN] = "";
 
-  if (!handle) {
+  if (handle == NULL) {
     return ncclInternalError;
   }
 
+  handle->socket = -1;
+  handle->socketName[0] = '\0';
   if ((sock = socket(AF_UNIX, SOCK_DGRAM, 0)) < 0) {
     WARN("UDS: Socket creation error : %d", errno);
-    free(handle);
     return ncclSystemError;
   }
 
@@ -45,17 +46,18 @@ ncclResult_t ncclIpcSocketInit(ncclIpcSocket *handle, int rank, uint64_t pidHash
   unlink(temp);
 #endif
 
-  TRACE(NCCL_INIT|NCCL_P2P, "UDS: Creating socket %s", temp);
+  TRACE(NCCL_INIT, "UDS: Creating socket %s", temp);
 
   strncpy(cliaddr.sun_path, temp, len);
 #ifdef USE_ABSTRACT_SOCKET
   cliaddr.sun_path[0] = '\0'; // Linux abstract socket trick
 #endif
   if (bind(sock, (struct sockaddr *)&cliaddr, sizeof(cliaddr)) < 0) {
-    WARN("UDS: Binding to socket %s failed : %d", temp, errno);
-    free(handle);
-    close(sock);
-    return ncclSystemError;
+    if (errno != EADDRINUSE) {
+      WARN("UDS: Binding to socket %s failed : %d", temp, errno);
+      close(sock);
+      return ncclSystemError;
+    }
   }
 
   handle->socket = sock;
@@ -65,11 +67,14 @@ ncclResult_t ncclIpcSocketInit(ncclIpcSocket *handle, int rank, uint64_t pidHash
 }
 
 ncclResult_t ncclIpcSocketDestroy(ncclIpcSocket *handle) {
-  if (!handle) {
+  if (handle == NULL) {
     return ncclInternalError;
   }
+  if (handle->socket <= 0) {
+    return ncclSuccess;
+  }
 #ifndef USE_ABSTRACT_SOCKET
-  if (handle->socketName) {
+  if (handle->socketName[0] != '\0') {
     unlink(handle->socketName);
   }
 #endif

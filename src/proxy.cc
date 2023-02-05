@@ -994,7 +994,7 @@ ncclResult_t ncclProxyConnect(struct ncclComm* comm, int transport, int send, in
     for (int i = 0; i < comm->localRanks; ++i) {
       NCCLCHECK(ncclSocketSetFd(-1, &comm->proxyState.peerSocks[i]));
     }
-    // cuMem API support
+    // NVLS requires UDS support
     // Allocate a UDS for ConvertFd responses
     NCCLCHECK(ncclIpcSocketInit(&comm->proxyState.peerIpcSock, comm->localRank, getPidHash()));
   }
@@ -1554,7 +1554,7 @@ ncclResult_t ncclProxyDestroy(struct ncclComm* comm) {
         NCCLCHECK(ncclSocketClose(state->peerSocks + i));
       }
     }
-    // cuMem API support
+    // Cleanup UDS support
     NCCLCHECK(ncclIpcSocketDestroy(&state->peerIpcSock))
     free(state->peerSocks);
     free(state->proxyOps);
