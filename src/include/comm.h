@@ -104,7 +104,7 @@ struct ncclChannel {
   struct ncclTree tree;
   struct ncclTree collnetChain;
   struct ncclDirect collnetDirect;
-  struct ncclMc mc;
+  struct ncclNvls nvls;
   int id; // index of this channel
   uint32_t workFifoSent; // last used work index+1
   uint64_t p2pOpCount;
@@ -204,7 +204,7 @@ struct ncclComm {
 
   // Channels for collectives
   int nChannels;
-  int mcChannels;
+  int nvlsChannels;
   // Channels (per peer) for p2p
   int p2pnChannels;
   int p2pnChannelsPerPeer;
@@ -261,9 +261,9 @@ struct ncclComm {
   int collNetSupport;
   int intraHighestTransportType;
 
-  // MC support
-  int mcSupport;
-  void* mcResources;
+  // NVLink SHARP (NVLS) support
+  int nvlsSupport;
+  void* nvlsResources;
 
   size_t channelSize; // User requested work size (bytes) for channel partitions
 

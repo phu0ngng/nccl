@@ -284,7 +284,7 @@ __device__ __forceinline__ void copyMultimemMultimem_IfEnabled(
   ) {
   constexpr int BytePerPack = Apply_LoadMultimem<RedFn>::PackSize;
   using T = typename RedFn::EltType;
-  constexpr int Unroll = ncclMCUnroll(BytePerPack);
+  constexpr int Unroll = ncclNvlsUnroll(BytePerPack);
   constexpr int BytePerHunk = Unroll*WARP_SIZE*BytePerPack;
   int nWarps = nThreads/WARP_SIZE;
   int warp = thread/WARP_SIZE;

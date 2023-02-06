@@ -54,7 +54,7 @@ struct ncclDevRedOpFull {
   DECL4(func, TREE,    devredop, type, undef) \
   DECL4(func, COLLNET_DIRECT, devredop, type, undef) \
   DECL4(func, COLLNET_CHAIN, devredop, type, undef) \
-  DECL4(func, MC,      devredop, type, undef)
+  DECL4(func, NVLS,    devredop, type, undef)
 
 #if defined(__CUDA_BF16_TYPES_EXIST__)
 #define DECL2(func, devredop, undefForFloat) \
@@ -124,7 +124,7 @@ extern __device__ void NCCL_ONERANK_REDUCE_NAME(PreMulSum, double)();
 
 // We can't use the enum identifiers like ncclSum, ncclFloat, etc since this
 // macro will be used in preprocessor conditionals where enums have no meaning.
-#define NCCL_MC_SUPPORTS(/*ncclDataType_t*/ type, /*ncclDevRedOp_t*/ red) \
+#define NCCL_NVLS_SUPPORTS(/*ncclDataType_t*/ type, /*ncclDevRedOp_t*/ red) \
   (((type==2 || type==3) && (red==0 || red==2 || red==3)) || \
    ((type==4 || type==5) && (red==0 || red==2 || red==3)) || \
    ((type==6 || type==9) && (red==0 || red==2 || red==3)) || \

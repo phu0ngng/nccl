@@ -33,7 +33,7 @@ struct ncclKernelMatch {
   NCCL_FUNC5(func, RING,           devredop, type, specialized), \
   NCCL_FUNC5(func, COLLNET_DIRECT, devredop, type, specialized), \
   NCCL_FUNC5(func, COLLNET_CHAIN,  devredop, type, specialized), \
-  NCCL_FUNC5(func, MC,             devredop, type, specialized)
+  NCCL_FUNC5(func, NVLS,           devredop, type, specialized)
 
 #ifdef __CUDA_BF16_TYPES_EXIST__
   #define HAVE_BFLOAT16 1
@@ -1160,7 +1160,7 @@ static ncclResult_t getAlgoInfo(struct ncclInfo* info, int collNetTypeSupport, i
     int nAlgos = NCCL_NUM_ALGORITHMS;
     for (int a=0; a<nAlgos; a++) {
       if ((a == NCCL_ALGO_COLLNET_DIRECT || a == NCCL_ALGO_COLLNET_CHAIN) && collNetTypeSupport != 1) continue;
-      if (a == NCCL_ALGO_MC && !NCCL_MC_SUPPORTS(info->datatype, info->opFull.op)) continue;
+      if (a == NCCL_ALGO_NVLS && !NCCL_NVLS_SUPPORTS(info->datatype, info->opFull.op)) continue;
 
       for (int p=0; p<NCCL_NUM_PROTOCOLS; p++) {
         float time;
@@ -1194,9 +1194,9 @@ static ncclResult_t getAlgoInfo(struct ncclInfo* info, int collNetTypeSupport, i
       }
       ncSwitch /= 2;
     }
-  } else if (info->algorithm == NCCL_ALGO_MC) {
-    // MC should not need more than 16 channels to get peak BW.
-    nc = comm->mcChannels;
+  } else if (info->algorithm == NCCL_ALGO_NVLS) {
+    // NVLS should not need more than 16 channels to get peak BW.
+    nc = comm->nvlsChannels;
   } else {
     // Ring/Tree channel tuning
     while (info->nBytes < nc*nt*threadThreshold) {
@@ -1211,7 +1211,7 @@ static ncclResult_t getAlgoInfo(struct ncclInfo* info, int collNetTypeSupport, i
     if (info->algorithm == NCCL_ALGO_TREE) nt += 3*WARP_SIZE;
     if (info->algorithm == NCCL_ALGO_COLLNET_DIRECT) nt += 3*WARP_SIZE;
     if (info->algorithm == NCCL_ALGO_COLLNET_CHAIN) nt += 3*WARP_SIZE;
-    if (info->algorithm == NCCL_ALGO_MC) nt = NCCL_MAX_NTHREADS;
+    if (info->algorithm == NCCL_ALGO_NVLS) nt = NCCL_MAX_NTHREADS;
   }
   nt = nt/WARP_SIZE < 3 ? 3*WARP_SIZE : nt;
   info->nChannels = nc;
@@ -1230,7 +1230,7 @@ static ncclResult_t getPatternInfo(struct ncclInfo* info) {
       info->pattern = ncclPatternRing; break;
     case ncclFuncAllReduce:
       info->pattern =
-        info->algorithm == NCCL_ALGO_MC ? ncclPatternMc :
+        info->algorithm == NCCL_ALGO_NVLS ? ncclPatternNvls :
         info->algorithm == NCCL_ALGO_COLLNET_DIRECT ? ncclPatternCollnetDirect :
         info->algorithm == NCCL_ALGO_COLLNET_CHAIN ? ncclPatternCollnetChain :
         info->algorithm == NCCL_ALGO_TREE ? ncclPatternTreeUpDown :
@@ -1250,7 +1250,7 @@ static ncclResult_t getLoopInfo(struct ncclInfo* info) {
     case ncclPatternPipelineFrom:
     case ncclPatternPipelineTo:
     case ncclPatternCollnetChain:
-    case ncclPatternMc:
+    case ncclPatternNvls:
       info->nstepsPerLoop = info-> nchunksPerLoop = 1; break;
     case ncclPatternCollnetDirect:
       info->nstepsPerLoop = 1; info->nchunksPerLoop = info->comm->channels[0].collnetDirect.nHeads; break;
@@ -1326,10 +1326,10 @@ comp_next:
     while (info->nBytes / (info->nChannels*chunkSize) < info->comm->channels[0].collnetChain.depth*8 && chunkSize > 65536) chunkSize /= 2;
     while (info->nBytes / (info->nChannels*chunkSize) < info->comm->channels[0].collnetChain.depth && chunkSize > 32768) chunkSize /= 2;
     work->lastChunkSize = chunkSize / ncclTypeSize(info->datatype);
-  } else if (info->algorithm == NCCL_ALGO_MC) {
+  } else if (info->algorithm == NCCL_ALGO_NVLS) {
     if (chunkSize > 131072) chunkSize = 131072;
     // Use uint64_t so that concurrentOps*chunkSize*X does not overflow
-    uint64_t concurrentOps = info->nChannels*info->comm->channels[0].mc.nHeads;
+    uint64_t concurrentOps = info->nChannels*info->comm->channels[0].nvls.nHeads;
     if ((info->nBytes < (32 * (concurrentOps*chunkSize))) && (chunkSize > 65536)) chunkSize = 65536;
     if ((info->nBytes < (8 * (concurrentOps*chunkSize))) && (chunkSize > 32768)) chunkSize = 32768;
     if ((info->nBytes < (2 * (concurrentOps*chunkSize))) && (chunkSize > 16384)) chunkSize = 16384;

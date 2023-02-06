@@ -89,12 +89,12 @@ struct RunWorkElement<ncclFuncReduceScatter, T, RedOp, NCCL_ALGO_RING, NCCL_PROT
 };
 
 template<typename T, typename RedOp>
-struct RunWorkElement<ncclFuncReduceScatter, T, RedOp, NCCL_ALGO_MC, NCCL_PROTO_SIMPLE> {
+struct RunWorkElement<ncclFuncReduceScatter, T, RedOp, NCCL_ALGO_NVLS, NCCL_PROTO_SIMPLE> {
   __device__ __forceinline__ void run(ncclWorkElem *args) {
     const int tid = threadIdx.x;
     const int bid = args->bid;
     const int nChannels = args->nChannels;
-    struct ncclMc* mc = &ncclShmem.channel.mc;
+    struct ncclNvls* nvls = &ncclShmem.channel.nvls;
     const ssize_t chunkSize = int(args->lastChunkSize);
     const ssize_t size = args->count;
     const ssize_t loopSize = nChannels*chunkSize;
@@ -109,18 +109,18 @@ struct RunWorkElement<ncclFuncReduceScatter, T, RedOp, NCCL_ALGO_MC, NCCL_PROTO_
     if (tid < tidEndScatter) {
       // Scatter
       int group = (0*Proto::MaxGroupWidth) | (0<<16);
-      Primitives<T, RedOp, FanAsymmetric<0, NCCL_MAX_MC_ARITY>, /*Direct=*/0, Proto, 0>
-        prims(tid, nThreadsScatter, NULL, mc->up, args->sendbuff, NULL, args->redOpArg, group, args);
+      Primitives<T, RedOp, FanAsymmetric<0, NCCL_MAX_NVLS_ARITY>, /*Direct=*/0, Proto, 0>
+        prims(tid, nThreadsScatter, NULL, nvls->up, args->sendbuff, NULL, args->redOpArg, group, args);
       for (ssize_t gridOffset = 0; gridOffset < size; gridOffset += loopSize) {
         ssize_t offset = gridOffset + bid*chunkSize;
         int nelem = min(chunkSize, size-offset);
-        prims.scatter(offset, mc->nHeads*size, nelem, size, -1, 0);
+        prims.scatter(offset, nvls->nHeads*size, nelem, size, -1, 0);
       }
     } else if (tid < tidEndReduce) {
       int group = (3*Proto::MaxGroupWidth) | (1<<16);
       // Reduce through MC
       Primitives<T, RedOp, FanAsymmetric<1, 0>, /*Direct=*/0, Proto, 0>
-        prims(tid-tidEndScatter, nThreadsReduce, &mc->down, NULL, NULL, args->recvbuff, args->redOpArg, group, args);
+        prims(tid-tidEndScatter, nThreadsReduce, &nvls->down, NULL, NULL, args->recvbuff, args->redOpArg, group, args);
       for (ssize_t gridOffset = 0; gridOffset < size; gridOffset += loopSize) {
         ssize_t offset = gridOffset + bid*chunkSize;
         int nelem = min(chunkSize, size-offset);

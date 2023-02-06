@@ -5,9 +5,9 @@
  ************************************************************************/
 
 template<typename T, typename RedOp, typename Fan, int Direct,
-         int SlicePerChunk, int StepPerSlice, int Unroll, int P2p, bool MC>
+         int SlicePerChunk, int StepPerSlice, int Unroll, int P2p, bool NVLS>
 class Primitives<
-    T, RedOp, Fan, Direct, ProtoSimple<SlicePerChunk, StepPerSlice, Unroll, MC>, P2p
+    T, RedOp, Fan, Direct, ProtoSimple<SlicePerChunk, StepPerSlice, Unroll, NVLS>, P2p
   > {
   static constexpr int MaxRecv = Fan::MaxRecv, MaxSend = Fan::MaxSend;
   static constexpr int Input=0, Output=1;
@@ -23,8 +23,8 @@ class Primitives<
                        DirectWrite = 0x200,
                        DirectRead = 0x400,
                        ThreadsSynced = 0x800,
-                       McMinPolling = 0x1000,
-                       McRecv = 0x2000;
+                       NvlsMinPolling = 0x1000,
+                       NvlsRecv = 0x2000;
   const int tid, tidInBlock;
   int nthreads;
   int nworkers;
@@ -109,7 +109,7 @@ class Primitives<
     uintptr_t addr = cvta_to_global(ptr);
     uint64_t ans;
     #if __CUDA_ARCH__ >= 900 && CUDART_VERSION >= 12010
-    if (MC && (flags & McMinPolling)) {
+    if (NVLS && (flags & NvlsMinPolling)) {
       asm("multimem.ld_reduce.acquire.sys.global.min.u64 %0, [%1];" : "=l"(ans) : "l"(addr));
       return ans;
     }
@@ -229,7 +229,7 @@ class Primitives<
         /* if user abort the kernel, we don't need to actually perform copy/reduce; just set size
          * to 0 to avoid unnecessary workload. */
         int workSize = ncclShmem.aborted ? 0 : sliceSize;
-        if (MC && ncclShmem.groups[group].mcRecv) {
+        if (NVLS && ncclShmem.groups[group].nvlsRecv) {
           void* src = ncclShmem.groups[group].srcs[0];
           void* dst = ncclShmem.groups[group].dsts[0];
           copyMultimemMultimem<RedOp>(tid, nworkers, ncclShmem.redOpArgs[0], postOp, src, dst, workSize,
@@ -372,11 +372,11 @@ class Primitives<
       if (flags & RoleWaitRecv) {
         ncclShmem.groups[group].recvConns[index] = conn; // WaitRecv role saves since that's who needs it in setDataPtrs()
         if ((index == 0) && (flags & RoleWaitRecv)) {
-          if (conn->flags & NCCL_MC_MIN_POLL) {
-            flags |= McMinPolling;
-            ncclShmem.groups[group].mcRecv = 1;
+          if (conn->flags & NCCL_NVLS_MIN_POLL) {
+            flags |= NvlsMinPolling;
+            ncclShmem.groups[group].nvlsRecv = 1;
           } else {
-            ncclShmem.groups[group].mcRecv = 0;
+            ncclShmem.groups[group].nvlsRecv = 0;
           }
         }
         connStepPtr = conn->tail;
@@ -418,7 +418,7 @@ class Primitives<
       }
       if (flags & RoleWaitSend) {
         ncclShmem.groups[group].sendConns[index] = conn; // WaitSend role saves since that's who needs it in setDataPtrs()
-        flags |= (conn->flags & NCCL_MC_MIN_POLL) ? McMinPolling : 0;
+        flags |= (conn->flags & NCCL_NVLS_MIN_POLL) ? NvlsMinPolling : 0;
         connStepPtr = conn->head;
         connStepCache = loadStepValue(connStepPtr);
         flags |= (conn->offsFifo != nullptr) ? OffsFifoEnabled : 0;

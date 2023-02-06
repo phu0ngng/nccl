@@ -13,7 +13,7 @@ ncclResult_t initChannel(struct ncclComm* comm, int channelId) {
   if (channel->id != -1) return ncclSuccess;
 
   int nRanks = comm->nRanks;
-  int nPeers = nRanks + 1 /* Collnet */ + comm->localRanks /* MC */;
+  int nPeers = nRanks + 1 /* Collnet */ + comm->localRanks /* NVLS */;
   channel->id = channelId;
   channel->workFifoSent = 0;
 

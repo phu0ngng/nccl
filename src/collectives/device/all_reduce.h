@@ -372,16 +372,16 @@ struct RunWorkElement<ncclFuncAllReduce, T, RedOp, NCCL_ALGO_COLLNET_DIRECT, NCC
 };
 
 template<typename T, typename RedOp>
-struct RunWorkElement<ncclFuncAllReduce, T, RedOp, NCCL_ALGO_MC, NCCL_PROTO_SIMPLE> {
+struct RunWorkElement<ncclFuncAllReduce, T, RedOp, NCCL_ALGO_NVLS, NCCL_PROTO_SIMPLE> {
   __device__ __forceinline__ void run(ncclWorkElem *args) {
-  #if NCCL_MC_ENABLED
+  #if NCCL_NVLS_ENABLED
     const int tid = threadIdx.x;
     const int bid = args->bid;
     const int nChannels = args->nChannels;
-    struct ncclMc* mc = &ncclShmem.channel.mc;
+    struct ncclNvls* nvls = &ncclShmem.channel.nvls;
     const ssize_t chunkSize = int(args->lastChunkSize);
     const ssize_t size = args->count;
-    const ssize_t loopSize = nChannels*mc->nHeads*chunkSize;
+    const ssize_t loopSize = nChannels*nvls->nHeads*chunkSize;
     const int nranks = ncclShmem.comm.nRanks;
     const int reduceWarps = nranks <= 6 ? 6 : 4;
     const int copyWarps = ((NCCL_MAX_NTHREADS/WARP_SIZE) - reduceWarps)/2;
@@ -393,40 +393,40 @@ struct RunWorkElement<ncclFuncAllReduce, T, RedOp, NCCL_ALGO_MC, NCCL_PROTO_SIMP
     const int tidEndGather = tidEndScatter + nThreadsGather;
     const int tidEndReduce = tidEndGather + nThreadsReduce;
 
-    using Proto = ProtoSimple<1, 1, COLL_UNROLL, /*MC=*/true>;
+    using Proto = ProtoSimple<1, 1, COLL_UNROLL, /*NVLS=*/true>;
 
     if (tid < tidEndScatter) {
       // Scatter
       int group = (0*Proto::MaxGroupWidth) | (0<<16);
-      Primitives<T, RedOp, FanAsymmetric<0, NCCL_MAX_MC_ARITY>, /*Direct=*/0, Proto, 0>
-        prims(tid, nThreadsScatter, NULL, mc->up, args->sendbuff, args->recvbuff, args->redOpArg, group, args);
+      Primitives<T, RedOp, FanAsymmetric<0, NCCL_MAX_NVLS_ARITY>, /*Direct=*/0, Proto, 0>
+        prims(tid, nThreadsScatter, NULL, nvls->up, args->sendbuff, args->recvbuff, args->redOpArg, group, args);
       for (ssize_t gridOffset = 0; gridOffset < size; gridOffset += loopSize) {
-        ssize_t offset = gridOffset + bid*mc->nHeads*chunkSize;
-        int nelem = min(mc->nHeads*chunkSize, size-offset);
+        ssize_t offset = gridOffset + bid*nvls->nHeads*chunkSize;
+        int nelem = min(nvls->nHeads*chunkSize, size-offset);
         prims.scatter(offset, nelem, chunkSize, chunkSize, -1, 0);
       }
     } else if (tid < tidEndGather) {
       // Gather
       int group = (2*Proto::MaxGroupWidth) | (0<<16);
-      Primitives<T, RedOp, FanAsymmetric<NCCL_MAX_MC_ARITY, 0>, /*Direct=*/0, Proto, 0>
-        prims(tid-tidEndScatter, nThreadsGather, mc->up, NULL, args->sendbuff, args->recvbuff, args->redOpArg, group, args);
+      Primitives<T, RedOp, FanAsymmetric<NCCL_MAX_NVLS_ARITY, 0>, /*Direct=*/0, Proto, 0>
+        prims(tid-tidEndScatter, nThreadsGather, nvls->up, NULL, args->sendbuff, args->recvbuff, args->redOpArg, group, args);
       for (ssize_t gridOffset = 0; gridOffset < size; gridOffset += loopSize) {
-        ssize_t offset = gridOffset + bid*mc->nHeads*chunkSize;
-        int nelem = min(mc->nHeads*chunkSize, size-offset);
+        ssize_t offset = gridOffset + bid*nvls->nHeads*chunkSize;
+        int nelem = min(nvls->nHeads*chunkSize, size-offset);
         prims.gather(offset, nelem, chunkSize, chunkSize, -1, 0);
       }
     } else if (tid < tidEndReduce) {
       int group = (3*Proto::MaxGroupWidth) | (1<<16);
-      // Reduce, broadcast through MC
+      // Reduce, broadcast through NVLS
       Primitives<T, RedOp, FanSymmetric<1>, /*Direct=*/0, Proto, 0>
-        prims(tid-tidEndGather, nThreadsReduce, &mc->down, &mc->down, args->sendbuff, args->recvbuff, args->redOpArg, group, args);
+        prims(tid-tidEndGather, nThreadsReduce, &nvls->down, &nvls->down, args->sendbuff, args->recvbuff, args->redOpArg, group, args);
       for (ssize_t gridOffset = 0; gridOffset < size; gridOffset += loopSize) {
-        ssize_t offset = gridOffset + (bid*mc->nHeads+mc->headRank)*chunkSize;
+        ssize_t offset = gridOffset + (bid*nvls->nHeads+nvls->headRank)*chunkSize;
         int nelem = min(chunkSize, size-offset);
         prims.recvSend(nelem);
       }
     }
-  #endif // NCCL_MC_ENABLED
+  #endif // NCCL_NVLS_ENABLED
   }
 };
 
