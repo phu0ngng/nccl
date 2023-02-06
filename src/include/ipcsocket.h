@@ -27,13 +27,13 @@ struct ncclIpcSocket {
     char socketName[NCCL_IPC_SOCKNAME_LEN];
 };
 
-ncclResult_t ncclIpcSocketInit(struct ncclIpcSocket *handle, int rank, uint64_t pidHash);
+ncclResult_t ncclIpcSocketInit(struct ncclIpcSocket *handle, int rank, uint64_t hash);
 
 ncclResult_t ncclIpcSocketDestroy(struct ncclIpcSocket *handle);
 
 ncclResult_t ncclIpcSocketRecvFd(struct ncclIpcSocket *handle, int *fd);
 
-ncclResult_t ncclIpcSocketSendFd(struct ncclIpcSocket *handle, const int fd, int rank, uint64_t pidHash);
+ncclResult_t ncclIpcSocketSendFd(struct ncclIpcSocket *handle, const int fd, int rank, uint64_t hash);
 ncclResult_t ncclIpcSocketCloseFd(int fd);
 
 #endif /* NCCL_IPCSOCKET_H */

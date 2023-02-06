@@ -17,7 +17,7 @@
 /*
  * Create a Unix Domain Socket
  */
-ncclResult_t ncclIpcSocketInit(ncclIpcSocket *handle, int rank, uint64_t pidHash) {
+ncclResult_t ncclIpcSocketInit(ncclIpcSocket *handle, int rank, uint64_t hash) {
   int sock = -1;
   struct sockaddr_un cliaddr;
   char temp[NCCL_IPC_SOCKNAME_LEN] = "";
@@ -37,7 +37,7 @@ ncclResult_t ncclIpcSocketInit(ncclIpcSocket *handle, int rank, uint64_t pidHash
   cliaddr.sun_family = AF_UNIX;
 
   // Create unique name for the socket.
-  int len = snprintf(temp, NCCL_IPC_SOCKNAME_LEN, NCCL_IPC_SOCKNAME_STR, rank, pidHash);
+  int len = snprintf(temp, NCCL_IPC_SOCKNAME_LEN, NCCL_IPC_SOCKNAME_STR, rank, hash);
   if (len > (sizeof(cliaddr.sun_path) - 1)) {
     WARN("UDS: Cannot bind provided name to socket. Name too large");
     return ncclInternalError;
@@ -53,11 +53,9 @@ ncclResult_t ncclIpcSocketInit(ncclIpcSocket *handle, int rank, uint64_t pidHash
   cliaddr.sun_path[0] = '\0'; // Linux abstract socket trick
 #endif
   if (bind(sock, (struct sockaddr *)&cliaddr, sizeof(cliaddr)) < 0) {
-    if (errno != EADDRINUSE) {
-      WARN("UDS: Binding to socket %s failed : %d", temp, errno);
-      close(sock);
-      return ncclSystemError;
-    }
+    WARN("UDS: Binding to socket %s failed : %d", temp, errno);
+    close(sock);
+    return ncclSystemError;
   }
 
   handle->socket = sock;
@@ -127,7 +125,7 @@ ncclResult_t ncclIpcSocketRecvFd(ncclIpcSocket *handle, int *recvFd) {
   return ncclSuccess;
 }
 
-ncclResult_t ncclIpcSocketSendFd(ncclIpcSocket *handle, const int sendFd, int rank, uint64_t pidHash) {
+ncclResult_t ncclIpcSocketSendFd(ncclIpcSocket *handle, const int sendFd, int rank, uint64_t hash) {
   struct msghdr msg;
   struct iovec iov[1];
   char temp[NCCL_IPC_SOCKNAME_LEN];
@@ -144,14 +142,14 @@ ncclResult_t ncclIpcSocketSendFd(ncclIpcSocket *handle, const int sendFd, int ra
   bzero(&cliaddr, sizeof(cliaddr));
   cliaddr.sun_family = AF_UNIX;
 
-  int len = snprintf(temp, NCCL_IPC_SOCKNAME_LEN, NCCL_IPC_SOCKNAME_STR, rank, pidHash);
+  int len = snprintf(temp, NCCL_IPC_SOCKNAME_LEN, NCCL_IPC_SOCKNAME_STR, rank, hash);
   if (len > (sizeof(cliaddr.sun_path) - 1)) {
     WARN("UDS: Cannot connect to provided name for socket. Name too large");
     return ncclInternalError;
   }
   strncpy(cliaddr.sun_path, temp, len);
 
-  TRACE(NCCL_INIT|NCCL_P2P, "UDS: Sending fd %d to UDS socket %s", sendFd, temp);
+  TRACE(NCCL_INIT, "UDS: Sending fd %d to UDS socket %s", sendFd, temp);
 
 #ifdef USE_ABSTRACT_SOCKET
   cliaddr.sun_path[0] = '\0'; // Linux abstract socket trick
