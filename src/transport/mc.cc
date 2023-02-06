@@ -241,7 +241,7 @@ ncclResult_t ncclMcSetup(struct ncclComm* comm) {
   INFO(NCCL_INIT, "MC multicast support is %savailable on dev %d", comm->mcSupport ? "" : "not ", dev);
   if (comm->mcSupport == 0) return ncclSuccess;
 
-  int nChannels = comm->mcChannels = ncclParamMcChannels();
+  int nChannels = comm->mcChannels = std::max(comm->minCTAs, std::min(comm->maxCTAs, ncclParamMcChannels()));
   int rank = comm->localRank, nranks = comm->localRanks;
 
   for (int c=0; c<nChannels; c++) {
