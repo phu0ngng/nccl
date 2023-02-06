@@ -1045,7 +1045,7 @@ ncclResult_t ncclProxyCallAsync(struct ncclProxyConnector* proxyConn, int type, 
   if (type == ncclProxyMsgConvertFd) {
     // cuMem API support
     // Create a UDS socket to receive the converted fd
-    NCCLCHECK(ncclIpcSocketInit(&ipcSock, comm->localRank, (uint64_t)proxyConn->connection));
+    NCCLCHECK(ncclIpcSocketInit(&ipcSock, comm->localRank, (uint64_t)proxyConn->connection, comm->abortFlag));
   }
 
   NCCLCHECKGOTO(ncclSocketSend(sock, &type, sizeof(int)), ret, error);
@@ -1281,7 +1281,7 @@ static ncclResult_t proxyConvertFd(struct ncclProxyLocalPeer* peer, struct ncclC
 
   INFO(NCCL_NET, "UDS: proxyConvertFd received fd %d peer %d connection %lx", fd, peer->localRank, connection);
   // Send back the converted fd using UDS
-  NCCLCHECK(ncclIpcSocketInit(&ipcSock, comm->localRank, connection^1));
+  NCCLCHECK(ncclIpcSocketInit(&ipcSock, comm->localRank, connection^1, comm->abortFlag));
   NCCLCHECK(ncclIpcSocketSendFd(&ipcSock, fd, peer->localRank, connection));
   NCCLCHECK(ncclIpcSocketDestroy(&ipcSock));
   return ncclSuccess;

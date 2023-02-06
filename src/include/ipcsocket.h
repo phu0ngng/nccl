@@ -23,11 +23,12 @@
 #define NCCL_IPC_SOCKNAME_LEN 64
 
 struct ncclIpcSocket {
-    int socket;
-    char socketName[NCCL_IPC_SOCKNAME_LEN];
+  int fd;
+  char socketName[NCCL_IPC_SOCKNAME_LEN];
+  volatile uint32_t* abortFlag;
 };
 
-ncclResult_t ncclIpcSocketInit(struct ncclIpcSocket *handle, int rank, uint64_t hash);
+ncclResult_t ncclIpcSocketInit(struct ncclIpcSocket *handle, int rank, uint64_t hash, volatile uint32_t* abortFlag);
 
 ncclResult_t ncclIpcSocketDestroy(struct ncclIpcSocket *handle);
 
