@@ -1064,7 +1064,7 @@ ncclResult_t ncclProxyCallAsync(struct ncclProxyConnector* proxyConn, int type, 
     assert(recvFd != -1);
     respData = &recvFd;
     respDataSize = sizeof(recvFd);
-    NCCLCHECK(ncclIpcSocketDestroy(&ipcSock));
+    NCCLCHECK(ncclIpcSocketClose(&ipcSock));
   } else {
     // Send opId to proxy
     NCCLCHECKGOTO(ncclSocketSend(sock, &opId, sizeof(opId)), ret, error);
@@ -1074,7 +1074,7 @@ ncclResult_t ncclProxyCallAsync(struct ncclProxyConnector* proxyConn, int type, 
 
   return ncclSuccess;
 error:
-  NCCLCHECK(ncclIpcSocketDestroy(&ipcSock));
+  NCCLCHECK(ncclIpcSocketClose(&ipcSock));
   WARN("Proxy Call to rank %d failed (%s)", comm->localRankToRank[proxyConn->localRank], ncclProxyMsgTypeStr[type]);
   return ret;
 }
@@ -1283,7 +1283,7 @@ static ncclResult_t proxyConvertFd(struct ncclProxyLocalPeer* peer, struct ncclC
   // Send back the converted fd using UDS
   NCCLCHECK(ncclIpcSocketInit(&ipcSock, comm->localRank, connection^1, comm->abortFlag));
   NCCLCHECK(ncclIpcSocketSendFd(&ipcSock, fd, peer->localRank, connection));
-  NCCLCHECK(ncclIpcSocketDestroy(&ipcSock));
+  NCCLCHECK(ncclIpcSocketClose(&ipcSock));
   return ncclSuccess;
 }
 

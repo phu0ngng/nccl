@@ -73,7 +73,7 @@ ncclResult_t ncclIpcSocketInit(ncclIpcSocket *handle, int rank, uint64_t hash, v
   return ncclSuccess;
 }
 
-ncclResult_t ncclIpcSocketDestroy(ncclIpcSocket *handle) {
+ncclResult_t ncclIpcSocketClose(ncclIpcSocket *handle) {
   if (handle == NULL) {
     return ncclInternalError;
   }
@@ -114,7 +114,7 @@ ncclResult_t ncclIpcSocketRecvFd(ncclIpcSocket *handle, int *recvFd) {
   msg.msg_iovlen = 1;
 
   while ((ret = recvmsg(handle->fd, &msg, 0)) <= 0) {
-    if (errno != EAGAIN && errno != EINTR) {
+    if (errno != EAGAIN && errno != EWOULDBLOCK && errno != EINTR) {
       WARN("UDS: Receiving data over socket failed : %d", errno);
       return ncclSystemError;
     }
@@ -187,10 +187,13 @@ ncclResult_t ncclIpcSocketSendFd(ncclIpcSocket *handle, const int sendFd, int ra
   msg.msg_iovlen = 1;
   msg.msg_flags = 0;
 
-  ssize_t sendResult = sendmsg(handle->fd, &msg, 0);
-  if (sendResult <= 0) {
-    WARN("UDS: Sending data over socket %s failed : %d", temp, errno);
-    return ncclSystemError;
+  ssize_t sendResult;
+  while ((sendResult = sendmsg(handle->fd, &msg, 0)) <= 0) {
+    if (errno != EAGAIN && errno != EWOULDBLOCK && errno != EINTR) {
+      WARN("UDS: Sending data over socket %s failed : %d", temp, errno);
+      return ncclSystemError;
+    }
+    if (handle->abortFlag && *handle->abortFlag) return ncclInternalError;
   }
 
   return ncclSuccess;
