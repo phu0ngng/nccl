@@ -28,12 +28,14 @@ inline __device__ int loadInt(int* ptr) {
 template<typename RedFn, typename T, int Unroll, int BytePerPack,
          int MinSrcs, int MaxSrcs, int MinDsts, int MaxDsts, int PreOpSrcs,
          typename IntBytes>
-__device__ __forceinline__ void ReduceCopyPacks(
+__device__ __forceinline__ void reduceCopyPacks(
     int nThreads, int &thread,
     uint64_t redArg, uint64_t *preOpArgs, bool postOp,
     int nSrcs, void **srcPtrs, int nDsts, void **dstPtrs,
     IntBytes &nBytesBehind, IntBytes &nBytesAhead
   ) {
+  static_assert(std::is_signed<IntBytes>::value, "IntBytes must be a signed integral type.");
+
   // A hunk is the amount of contiguous data a warp consumes per loop iteration
   // assuming all threads partake.
   constexpr int BytePerHunk = Unroll*WARP_SIZE*BytePerPack;
@@ -45,11 +47,11 @@ __device__ __forceinline__ void ReduceCopyPacks(
   IntBytes threadBytesBehind = nBytesBehind + (warp*BytePerHunk + lane*BytePerPack);
   IntBytes threadBytesAhead = nBytesAhead - (warp*BytePerHunk + lane*BytePerPack);
   // Number of hunks to be consumed over all warps.
-  int nHunksAhead = nBytesAhead/BytePerHunk;
+  IntBytes nHunksAhead = nBytesAhead/BytePerHunk;
   // Advance collective position.
   nBytesBehind += nHunksAhead*BytePerHunk;
   nBytesAhead -= nHunksAhead*BytePerHunk;
-  if (Unroll == 1 && BytePerPack <= nBytesAhead) {
+  if (Unroll==1 && BytePerPack <= nBytesAhead) {
     // Only Unroll=1 can do partial hunks (where not all threads partake).
     nHunksAhead += 1;
     nBytesBehind += nBytesAhead - (nBytesAhead%BytePerPack);
@@ -67,7 +69,9 @@ __device__ __forceinline__ void ReduceCopyPacks(
   for (int d=0; d < MinDsts; d++)
     minDsts[d] = cvta_to_global(dstPtrs[d]) + threadBytesBehind;
 
-  while (Unroll == 1 ? (BytePerPack <= threadBytesAhead) : (0 < nHunksAhead)) {
+  // We dictate loop termination condition according to whether partial hunks
+  // can be handled or not.
+  while (Unroll==1 ? (BytePerPack <= threadBytesAhead) : (0 < nHunksAhead)) {
     BytePack<BytePerPack> acc[Unroll];
 
     { RedFn preFn(0 < PreOpSrcs ? preOpArgs[0] : 0);
@@ -150,7 +154,7 @@ __device__ __forceinline__ void ReduceCopyPacks(
   // The last loop iteration could have been partial, i.e. not taken by all
   // threads. The threads that weren't included need an extra subtraction to
   // make the value warp uniform.
-  if (nHunksAhead > 0) nHunksAhead -= nWarps;
+  if (Unroll==1 && nHunksAhead > 0) nHunksAhead -= nWarps;
   // Rotate warps so the warp which got the least work here will be warp 0.
   // This effectively assigns: warp = (warp-nHunks+nWarps)%nWarps;
   warp = -nHunksAhead;
@@ -179,26 +183,26 @@ __device__ __forceinline__ void ReduceOrCopyMulti(
   IntBytes nBytesBehind = 0;
   IntBytes nBytesAhead = nElts*sizeof(T);
   if (aligned) {
-    ReduceCopyPacks<RedFn, T, Unroll, /*BytePerPack=*/16,
+    reduceCopyPacks<RedFn, T, Unroll, /*BytePerPack=*/16,
       MinSrcs, MaxSrcs, MinDsts, MaxDsts, PreOpSrcs>
       (nThreads, /*&*/thread, redArg, preOpArgs, postOp,
        nSrcs, srcPtrs, nDsts, dstPtrs, /*&*/nBytesBehind, /*&*/nBytesAhead);
     if (nBytesAhead == 0) return;
 
-    ReduceCopyPacks<RedFn, T, /*Unroll=*/1, /*BytePerPack=*/16,
+    reduceCopyPacks<RedFn, T, /*Unroll=*/1, /*BytePerPack=*/16,
       MinSrcs, MaxSrcs, MinDsts, MaxDsts, PreOpSrcs>
       (nThreads, /*&*/thread, redArg, preOpArgs, postOp,
        nSrcs, srcPtrs, nDsts, dstPtrs, /*&*/nBytesBehind, /*&*/nBytesAhead);
     if (nBytesAhead == 0) return;
   }
 
-  ReduceCopyPacks<RedFn, T, Unroll*(16/sizeof(T))/2, /*BytePerPack=*/sizeof(T),
+  reduceCopyPacks<RedFn, T, Unroll*(16/sizeof(T))/2, /*BytePerPack=*/sizeof(T),
     MinSrcs, MaxSrcs, MinDsts, MaxDsts, PreOpSrcs>
     (nThreads, /*&*/thread, redArg, preOpArgs, postOp,
      nSrcs, srcPtrs, nDsts, dstPtrs, /*&*/nBytesBehind, /*&*/nBytesAhead);
   if (nBytesAhead == 0) return;
 
-  ReduceCopyPacks<RedFn, T, /*Unroll=*/1, /*BytePerPack=*/sizeof(T),
+  reduceCopyPacks<RedFn, T, /*Unroll=*/1, /*BytePerPack=*/sizeof(T),
     MinSrcs, MaxSrcs, MinDsts, MaxDsts, PreOpSrcs>
     (nThreads, /*&*/thread, redArg, preOpArgs, postOp,
      nSrcs, srcPtrs, nDsts, dstPtrs, /*&*/nBytesBehind, /*&*/nBytesAhead);
@@ -282,6 +286,8 @@ __device__ __forceinline__ void copyMultimemMultimem_IfEnabled(
     int thread, int nThreads, uint64_t redArg, bool postOp,
     void *srcPtr, void *dstPtr, IntBytes nElts, uint32_t warpScratchAddr
   ) {
+  static_assert(std::is_signed<IntBytes>::value, "IntBytes must be a signed integral type.");
+
   constexpr int BytePerPack = Apply_LoadMultimem<RedFn>::PackSize;
   using T = typename RedFn::EltType;
   constexpr int Unroll = ncclNvlsUnroll(BytePerPack);
