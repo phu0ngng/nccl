@@ -11,9 +11,10 @@ stages:
 # - Every commit to master
 # - Every commit to a merge request
 # - Schedules (nightlies and weeklies)
+# - Merge requests without "Draft:" in the title
 workflow:
   rules:
-    - if: $CI_PIPELINE_SOURCE == 'merge_request_event' || $CI_PIPELINE_SOURCE == 'schedule' || $CI_PIPELINE_SOURCE == 'web' || $CI_COMMIT_BRANCH == $CI_DEFAULT_BRANCH
+    - if: $CI_MERGE_REQUEST_TITLE !~ /^Draft:/ && ($CI_PIPELINE_SOURCE == 'merge_request_event' || $CI_PIPELINE_SOURCE == 'schedule' || $CI_PIPELINE_SOURCE == 'web' || $CI_COMMIT_BRANCH == $CI_DEFAULT_BRANCH)
 
 variables:
   RUN_MULTI_REGRESSION: "0" # Set to 1 to run multinode regression pipeline
