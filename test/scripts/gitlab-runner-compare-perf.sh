@@ -174,7 +174,7 @@ if [[ $failure_count -eq 0 ]]; then
         export LD_LIBRARY_PATH=$LD_LIBRARY_NEW
         $MPI_HOME/bin/mpirun --bind-to numa -q ./build/test/perf/${func}_perf $opts >> "$cpu_perf_files_dir/${func}_perf_cpu_overhead $opts.txt"
         [ $? -ne 0 ] && let failure_count=$failure_count+1 && failure_names+=("New ${func}_cpu_perf_overhead failed to run") && echo "New ${func}_perf_cpu_overhead failed to run"
-  
+
         export LD_LIBRARY_PATH=$LD_LIBRARY_OLD
         $MPI_HOME/bin/mpirun --bind-to numa -q ./build/test/perf/${func}_perf $opts >> "$cpu_baseline_perf_files_dir/${func}_perf_cpu_overhead $opts.txt"
         [ $? -ne 0 ] && let failure_count=$failure_count+1 && failure_names+=("Baseline ${func}_cpu_perf_overhead failed to run") && echo "Baseline ${func}_perf_cpu_overhead failed to run"

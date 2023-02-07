@@ -10,6 +10,7 @@
 #include "devcomm.h"
 #include "info.h"
 #include "socket.h"
+#include "ipcsocket.h"
 #include <pthread.h>
 #include "shm.h"
 
@@ -248,7 +249,8 @@ enum ncclProxyMsgType {
   ncclProxyMsgStart = 5,
   ncclProxyMsgClose = 6,
   ncclProxyMsgAbort = 7,
-  ncclProxyMsgStop = 8
+  ncclProxyMsgStop = 8,
+  ncclProxyMsgConvertFd = 9 // cuMem API support
 };
 
 // This function is called by a client of the proxy that needs to invoke any of the non-progress proxyOp types
