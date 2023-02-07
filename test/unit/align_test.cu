@@ -1,6 +1,7 @@
-#include "stdio.h"
+#include <stdio.h>
 #include "nccl.h"
 
+#include "devcomm.h"
 #include "reduce_kernel.h"
 #include "common_kernel.h"
 
@@ -60,7 +61,7 @@ __global__ void ReduceCopyMultiKernel(const T** srcs, T** dsts, int nsrcs, int n
   for (int i=0; i<NDSTS; i++) dsts[i] += bid*n;
   for (int i=0; i<NREPS; i++) {
     ReduceOrCopyMulti<UNROLL, FuncSum<T>, T, NSRCS >= 2 ? 2 : 1, NSRCS, NDSTS >= 2 ? 2 : 1, NDSTS, 0>
-      (threadIdx.x, blockDim.x, NULL, false, nsrcs, srcs, ndsts, dsts, n);
+      (threadIdx.x, blockDim.x, 0, NULL, false, nsrcs, (void**)srcs, ndsts, (void**)dsts, n);
   }
 }
 
