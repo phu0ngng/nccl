@@ -126,7 +126,7 @@ void runTopo(const char* xmlTopoFile, const char* platform, int nnodes) {
   /* Compute */
   CHECK(ncclTopoCompute(system, &ringGraph));
   CHECK(ncclTopoPrintGraph(system, &ringGraph));
-  treeGraph.minChannels = 1;
+  treeGraph.minChannels = ringGraph.nChannels;
   treeGraph.maxChannels = ringGraph.nChannels;
   CHECK(ncclTopoCompute(system, &treeGraph));
   CHECK(ncclTopoPrintGraph(system, &treeGraph));

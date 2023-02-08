@@ -150,8 +150,6 @@ ncclResult_t ncclTopoTuneModel(struct ncclComm* comm, int minCompCap, int maxCom
         float busBw = graphs[a]->nChannels * bw;
 
         // Various model refinements
-        if (compCapIndex == AMPERE_COMPCAP_IDX) busBw = std::min(busBw, 235.0f);
-        if (compCapIndex == HOPPER_COMPCAP_IDX) busBw = std::min(busBw, 370.0f);
         if (a == NCCL_ALGO_RING && p == NCCL_PROTO_LL) { busBw = std::min(llMaxBw, busBw * ((nNodes > 1 || coll == ncclFuncAllReduce || coll == ncclFuncReduce) ? 1.0/4.0 : 1.0/3.0)); }
         if (a == NCCL_ALGO_RING && p == NCCL_PROTO_LL128) busBw = std::min(busBw * (ppn < 2 ? 0.7 : 0.92 /*120.0/128.0*/), ll128MaxBwPerCh[compCapIndex]*graphs[a]->nChannels);
         if (a == NCCL_ALGO_TREE) busBw = std::min(busBw*.92, graphs[a]->nChannels*perChMaxTreeBw);
@@ -165,7 +163,7 @@ ncclResult_t ncclTopoTuneModel(struct ncclComm* comm, int minCompCap, int maxCom
           factor -= (factor-1)/2;
           busBw /= factor;
         }
-        if (a == NCCL_ALGO_COLLNET_CHAIN && p == NCCL_PROTO_SIMPLE) busBw *= .75;
+        if (a == NCCL_ALGO_COLLNET_DIRECT && p == NCCL_PROTO_SIMPLE && minCompCap >= 90) busBw *= .85;
 
         // Convert bus BW to algorithm BW
         float ratio;
