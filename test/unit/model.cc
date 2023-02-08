@@ -139,17 +139,28 @@ void runTopo(const char* xmlTopoFile, const char* platform, int nnodes) {
 
   treeGraph.nChannels = ringGraph.nChannels = std::min(treeGraph.nChannels, ringGraph.nChannels);
 
+  int collNetSupport = (cNetGraph.nChannels == 0) ? 0 : 1;
   int num_algorithms = NCCL_NUM_ALGORITHMS;
-  if (cNetGraph.nChannels == 0) num_algorithms-=2;
+  int num_protocols = NCCL_NUM_PROTOCOLS;
+  int first_algo = NCCL_ALGO_TREE;
+  int first_proto = NCCL_PROTO_LL;
+  if (!collNetSupport) {
+    num_algorithms = 2; // TREE/RING
+  } else {
+    num_algorithms = 4; // TREE/RING/COLLNETx2
+  }
+  int last_algo = first_algo+num_algorithms;
+  int last_proto = first_proto+num_protocols;
 
   // Last column is used for min/best/default.
-  const int m = num_algorithms*NCCL_NUM_PROTOCOLS;
+  const int m = num_algorithms*num_protocols;
   const int M = NCCL_NUM_ALGORITHMS*NCCL_NUM_PROTOCOLS;
 
   int fds[M+1];
   char path[1024];
-  for (int a=0; a<num_algorithms; a++) for (int p=0; p<NCCL_NUM_PROTOCOLS; p++) {
-    int i = a*NCCL_NUM_PROTOCOLS+p;
+  for (int i=0; i<M+1; i++) fds[i] = -1;
+  for (int a=first_algo; a<last_algo; a++) for (int p=first_proto; p<last_proto; p++) {
+    int i = (a-first_algo)*num_protocols+(p-first_proto);
     sprintf(path, "topo/%s/data/%d/%d/%s/%s/%s/time.txt", platform, ngpus, nnodes, ncclFuncStr[function], ncclAlgoStr[a], ncclProtoStr[p]);
     fds[i] = open(path, O_RDONLY);
   }
@@ -173,7 +184,7 @@ void runTopo(const char* xmlTopoFile, const char* platform, int nnodes) {
   comm.nChannels = ringGraph.nChannels*2;
   comm.channels[0].tree.depth = system->nodes[GPU].count-1+log2i(nnodes);
   comm.buffSizes[NCCL_PROTO_SIMPLE] = 1 << 22;
-  comm.collNetSupport = (cNetGraph.nChannels == 0) ? 0 : 1;
+  comm.collNetSupport = collNetSupport;
   int compCap = system->nodes[GPU].nodes[0].gpu.cudaCompCap;
   comm.minCompCap = compCap;
   CHECK(ncclTopoTuneModel(&comm, compCap, compCap, &treeGraph, &ringGraph, &cNetGraph));
@@ -185,17 +196,35 @@ void runTopo(const char* xmlTopoFile, const char* platform, int nnodes) {
 
   if (!compactMode) {
     printf("%s/%dx%d, %s\n", platform, nnodes, ngpus, ncclFuncStr[function]);
-    printf("-----------+"); for (int i=0; i<m; i++) printf("---------------------+"); printf("-------------------------------+"); printf("\n");
+    printf("-----------+");
+    for (int a=first_algo; a<last_algo; a++) for (int p=first_proto; p<last_proto; p++) {
+      if ((a == NCCL_ALGO_COLLNET_DIRECT || a == NCCL_ALGO_COLLNET_CHAIN) && p != NCCL_PROTO_SIMPLE) continue;
+      printf("---------------------+");
+    }
+    printf("-------------------------------+"); printf("\n");
     printf("     Size  |");
-    for (int a=0; a<num_algorithms; a++) for (int p=0; p<NCCL_NUM_PROTOCOLS; p++) {
-      printf(" %6s  / %6s    |", ncclAlgoStr[a], ncclProtoStr[p]);
+    for (int a=first_algo; a<last_algo; a++) for (int p=first_proto; p<last_proto; p++) {
+      if ((a == NCCL_ALGO_COLLNET_DIRECT || a == NCCL_ALGO_COLLNET_CHAIN) && p != NCCL_PROTO_SIMPLE) continue;
+      if (strlen(ncclAlgoStr[a]) <= 12)
+        printf(" %12s/%-6s |", ncclAlgoStr[a], ncclProtoStr[p]);
+      else
+        printf(" %.12s/%-6s |", ncclAlgoStr[a], ncclProtoStr[p]);
     }
     printf("%19s            |\n", "Default");
     printf("           |");
-    for (int i=0; i<m; i++) printf("%9s  %9s |", "data", (i == m) ? "best" : "model");
+    for (int a=first_algo; a<last_algo; a++) for (int p=first_proto; p<last_proto; p++) {
+      if ((a == NCCL_ALGO_COLLNET_DIRECT || a == NCCL_ALGO_COLLNET_CHAIN) && p != NCCL_PROTO_SIMPLE) continue;
+      int i = (a-first_algo)*num_protocols+(p-first_proto);
+      printf("%9s  %9s |", "data", (i == m) ? "best" : "model");
+    }
     printf("%9s  %9s %9s |", "best", "dryrun", "data");
     printf("\n");
-    printf("-----------+"); for (int i=0; i<m; i++) printf("---------------------+"); printf("-------------------------------+"); printf("\n");
+    printf("-----------+");
+    for (int a=first_algo; a<last_algo; a++) for (int p=first_proto; p<last_proto; p++) {
+      if ((a == NCCL_ALGO_COLLNET_DIRECT || a == NCCL_ALGO_COLLNET_CHAIN) && p != NCCL_PROTO_SIMPLE) continue;
+      printf("---------------------+");
+    }
+    printf("-------------------------------+"); printf("\n");
   } else {
     printf("%10s/%5dx%5d |", platform, nnodes, ngpus);
   }
@@ -204,8 +233,9 @@ void runTopo(const char* xmlTopoFile, const char* platform, int nnodes) {
     float model[M];
     float data[M+1];
     info.nBytes = size;
-    for (int a=0; a<num_algorithms; a++) for (int p=0; p<NCCL_NUM_PROTOCOLS; p++) {
-      int i = a*NCCL_NUM_PROTOCOLS+p;
+    for (int a=first_algo; a<last_algo; a++) for (int p=first_proto; p<last_proto; p++) {
+      if ((a == NCCL_ALGO_COLLNET_DIRECT || a == NCCL_ALGO_COLLNET_CHAIN) && p != NCCL_PROTO_SIMPLE) continue;
+      int i = (a-first_algo)*num_protocols+(p-first_proto);
       CHECK(ncclTopoGetAlgoTime(&info, a, p, 1, model+i));
     }
 
@@ -231,7 +261,9 @@ void runTopo(const char* xmlTopoFile, const char* platform, int nnodes) {
     float dryrun = -1.0;
     float bestdata = -1.0;
     float bestmodel = -1.0;
-    for (int i=0; i<m; i++) {
+    for (int a=first_algo; a<last_algo; a++) for (int p=first_proto; p<last_proto; p++) {
+      if ((a == NCCL_ALGO_COLLNET_DIRECT || a == NCCL_ALGO_COLLNET_CHAIN) && p != NCCL_PROTO_SIMPLE) continue;
+      int i = (a-first_algo)*num_protocols+(p-first_proto);
       // Find best data
       if (data[i] > 0 && (bestdata < 0 || data[i] < bestdata)) bestdata = data[i];
 
@@ -245,7 +277,9 @@ void runTopo(const char* xmlTopoFile, const char* platform, int nnodes) {
     // Display each protocol/algorithm
     if (!compactMode) {
       printf("%10ld |", size);
-      for (int i=0; i<m; i++) {
+      for (int a=first_algo; a<last_algo; a++) for (int p=first_proto; p<last_proto; p++) {
+        if ((a == NCCL_ALGO_COLLNET_DIRECT || a == NCCL_ALGO_COLLNET_CHAIN) && p != NCCL_PROTO_SIMPLE) continue;
+        int i = (a-first_algo)*num_protocols+(p-first_proto);
         float ref = data[i];
         float value = model[i];
         int bold = value == bestmodel ? 7 : 0;
@@ -297,7 +331,12 @@ void runTopo(const char* xmlTopoFile, const char* platform, int nnodes) {
     }
   }
   if (!compactMode) {
-    printf("-----------+"); for (int i=0; i<m; i++) printf("---------------------+"); printf("-------------------------------+"); printf("\n");
+    printf("-----------+");
+    for (int a=first_algo; a<last_algo; a++) for (int p=first_proto; p<last_proto; p++) {
+      if ((a == NCCL_ALGO_COLLNET_DIRECT || a == NCCL_ALGO_COLLNET_CHAIN) && p != NCCL_PROTO_SIMPLE) continue;
+      printf("---------------------+");
+    }
+    printf("-------------------------------+"); printf("\n");
   } else {
     printf("%c[00m| %.1f %%\n", 0x1b, 100.0*score/npoints);
   }
