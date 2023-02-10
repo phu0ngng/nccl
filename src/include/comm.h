@@ -294,13 +294,7 @@ struct ncclComm {
   // First of the unlaunched kernels in `planQueue`
   struct ncclKernelPlan* unlaunchedPlansHead;
 
-  // communicator mode
-  int blocking;
-  // CGA cluster size
-  int cgaClusterSize;
-  int minCTAs, maxCTAs;
-  // network interface name
-  char *netName;
+  ncclConfig_t config;
   // initState is to more conveniently reclaim resources when errors happen.
   ncclResult_t initState;
   // flag to indicate if ncclCommFinalize() is called

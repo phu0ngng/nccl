@@ -265,7 +265,7 @@ ncclResult_t ncclNvlsSetup(struct ncclComm* comm) {
   INFO(NCCL_INIT, "NVLS multicast support is %savailable on dev %d", comm->nvlsSupport ? "" : "not ", dev);
   if (comm->nvlsSupport == 0) return ncclSuccess;
 
-  int nChannels = comm->nvlsChannels = std::max(comm->minCTAs, std::min(comm->maxCTAs, (int)ncclParamNvlsChannels()));
+  int nChannels = comm->nvlsChannels = std::max(comm->config.minCTAs, std::min(comm->config.maxCTAs, (int)ncclParamNvlsChannels()));
   int rank = comm->localRank, nranks = comm->localRanks;
 
   for (int c=0; c<nChannels; c++) {

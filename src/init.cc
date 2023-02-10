@@ -215,7 +215,7 @@ static ncclResult_t commFree(ncclComm_t comm) {
   ncclMemoryStackDestruct(&comm->memPermanent);
 
   ncclCudaHostFree((void *)comm->abortFlag);
-  free(comm->netName);
+  free((void*)comm->config.netName);
 
   commPoison(comm); // poison comm before free to avoid comm reuse.
   free(comm);
@@ -1205,47 +1205,47 @@ static ncclResult_t parseCommConfig(ncclComm_t comm, ncclConfig_t *config) {
   tmpNetName = internalConfigPtr->netName;
 
   /* assign config to communicator */
-  comm->blocking = internalConfigPtr->blocking;
-  comm->cgaClusterSize = internalConfigPtr->cgaClusterSize;
-  comm->minCTAs = internalConfigPtr->minCTAs;
-  comm->maxCTAs = internalConfigPtr->maxCTAs;
+  comm->config.blocking = internalConfigPtr->blocking;
+  comm->config.cgaClusterSize = internalConfigPtr->cgaClusterSize;
+  comm->config.minCTAs = internalConfigPtr->minCTAs;
+  comm->config.maxCTAs = internalConfigPtr->maxCTAs;
 
   /* override configuration from env variable. */
   blockingEnv = ncclParamCommBlocking();
   if (blockingEnv == 0 || blockingEnv == 1)
-    comm->blocking = blockingEnv;
+    comm->config.blocking = blockingEnv;
 
   cgaClusterSizeEnv = ncclParamCGAClusterSize();
   if (0 <= cgaClusterSizeEnv && cgaClusterSizeEnv <= NCCL_MAX_CGA_CLUSTER_SIZE) {
-    comm->cgaClusterSize = cgaClusterSizeEnv;
+    comm->config.cgaClusterSize = cgaClusterSizeEnv;
   } else if (cgaClusterSizeEnv > NCCL_MAX_CGA_CLUSTER_SIZE) {
     WARN("NCCL_CGA_CLUSTER_SIZE value %d is too big. Limiting value to %d.", cgaClusterSizeEnv, NCCL_MAX_CGA_CLUSTER_SIZE);
-    comm->cgaClusterSize = NCCL_MAX_CGA_CLUSTER_SIZE;
+    comm->config.cgaClusterSize = NCCL_MAX_CGA_CLUSTER_SIZE;
   }
 
   minCTAsEnv = ncclParamMinCTAs();
   if (minCTAsEnv != NCCL_CONFIG_UNDEF_INT) {
-    comm->minCTAs = minCTAsEnv;
+    comm->config.minCTAs = minCTAsEnv;
   }
 
   maxCTAsEnv = ncclParamMaxCTAs();
   if (maxCTAsEnv != NCCL_CONFIG_UNDEF_INT) {
-    comm->maxCTAs = maxCTAsEnv;
+    comm->config.maxCTAs = maxCTAsEnv;
   }
 
   /* cap channels if needed */
-  if (comm->minCTAs > MAXCHANNELS) {
-    WARN("minCTAs %d is larger than #channels upper limit %d", comm->minCTAs, MAXCHANNELS);
-    comm->minCTAs = MAXCHANNELS;
+  if (comm->config.minCTAs > MAXCHANNELS) {
+    WARN("minCTAs %d is larger than #channels upper limit %d", comm->config.minCTAs, MAXCHANNELS);
+    comm->config.minCTAs = MAXCHANNELS;
   }
 
-  if (comm->maxCTAs > MAXCHANNELS) {
-    WARN("maxCTAs %d is larger than #channels upper limit %d", comm->maxCTAs, MAXCHANNELS);
-    comm->maxCTAs = MAXCHANNELS;
+  if (comm->config.maxCTAs > MAXCHANNELS) {
+    WARN("maxCTAs %d is larger than #channels upper limit %d", comm->config.maxCTAs, MAXCHANNELS);
+    comm->config.maxCTAs = MAXCHANNELS;
   }
 
-  if (comm->minCTAs > comm->maxCTAs) {
-    WARN("minCTAs %d is larger than maxCTAs %d", comm->minCTAs, comm->maxCTAs);
+  if (comm->config.minCTAs > comm->config.maxCTAs) {
+    WARN("minCTAs %d is larger than maxCTAs %d", comm->config.minCTAs, comm->config.maxCTAs);
     ret = ncclInvalidArgument;
     goto fail;
   }
@@ -1255,10 +1255,10 @@ static ncclResult_t parseCommConfig(ncclComm_t comm, ncclConfig_t *config) {
     tmpNetName = envNetName;
   if (tmpNetName != NULL) {
     int netNameLen = strlen(tmpNetName) + 1;
-    comm->netName = (char*)malloc(netNameLen);
-    memcpy(comm->netName, tmpNetName, netNameLen);
+    comm->config.netName = (char*)malloc(netNameLen);
+    memcpy((void*)comm->config.netName, tmpNetName, netNameLen);
   } else {
-    comm->netName = NULL;
+    comm->config.netName = NULL;
   }
 
 exit:
@@ -1440,10 +1440,10 @@ ncclResult_t ncclCommInitRankConfig(ncclComm_t *newcomm, int nranks, ncclUniqueI
 exit:
   ncclGroupErrCheck(ret);
   NCCLCHECK(ncclGroupEndInternal());
-  if (newcomm && *newcomm && !(*newcomm)->blocking) (void) ncclCommGetAsyncError(*newcomm, &ret);
+  if (newcomm && *newcomm && !(*newcomm)->config.blocking) (void) ncclCommGetAsyncError(*newcomm, &ret);
   return ret;
 fail:
-  if (newcomm && *newcomm && !(*newcomm)->blocking) (void) ncclCommSetAsyncError(*newcomm, ret);
+  if (newcomm && *newcomm && !(*newcomm)->config.blocking) (void) ncclCommSetAsyncError(*newcomm, ret);
   goto exit;
 }
 
@@ -1544,10 +1544,10 @@ ncclResult_t ncclCommFinalize(ncclComm_t comm) {
 exit:
   ncclGroupErrCheck(ret);
   NCCLCHECK(ncclGroupEndInternal());
-  if (comm && !comm->blocking) { NCCLCHECK(ncclCommGetAsyncError(comm, &ret)) };
+  if (comm && !comm->config.blocking) { NCCLCHECK(ncclCommGetAsyncError(comm, &ret)) };
   return ret;
 fail:
-  if (comm && !comm->blocking) (void) ncclCommSetAsyncError(comm, ret);
+  if (comm && !comm->config.blocking) (void) ncclCommSetAsyncError(comm, ret);
   goto exit;
 }
 
