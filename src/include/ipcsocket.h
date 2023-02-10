@@ -1,5 +1,5 @@
 /*
- * Copyright (c) 2016-2022, NVIDIA CORPORATION. All rights reserved.
+ * Copyright (c) 2016-2023, NVIDIA CORPORATION. All rights reserved.
  *
  * See COPYRIGHT for license information
  */
@@ -23,17 +23,15 @@
 #define NCCL_IPC_SOCKNAME_LEN 64
 
 struct ncclIpcSocket {
-    int socket;
-    char socketName[NCCL_IPC_SOCKNAME_LEN];
+  int fd;
+  char socketName[NCCL_IPC_SOCKNAME_LEN];
+  volatile uint32_t* abortFlag;
 };
 
-ncclResult_t ncclIpcSocketInit(struct ncclIpcSocket *handle, int rank, uint64_t pidHash);
-
-ncclResult_t ncclIpcSocketDestroy(struct ncclIpcSocket *handle);
+ncclResult_t ncclIpcSocketInit(struct ncclIpcSocket *handle, int rank, uint64_t hash, volatile uint32_t* abortFlag);
+ncclResult_t ncclIpcSocketClose(struct ncclIpcSocket *handle);
 
 ncclResult_t ncclIpcSocketRecvFd(struct ncclIpcSocket *handle, int *fd);
-
-ncclResult_t ncclIpcSocketSendFd(struct ncclIpcSocket *handle, const int fd, int rank, uint64_t pidHash);
-ncclResult_t ncclIpcSocketCloseFd(int fd);
+ncclResult_t ncclIpcSocketSendFd(struct ncclIpcSocket *handle, const int fd, int rank, uint64_t hash);
 
 #endif /* NCCL_IPCSOCKET_H */

@@ -712,6 +712,7 @@ static int nextPow2(int v) {
 }
 
 ncclResult_t ncclTopoComputeP2pChannels(struct ncclComm* comm) {
+  /* here we already honor comm->max/minCTAs for p2pnChannels. */
   comm->p2pnChannels = std::min(comm->nChannels, (int)ncclParamMaxP2pNChannels());
   comm->p2pnChannels = std::max(comm->p2pnChannels, (int)ncclParamMinP2pNChannels());
   int minChannels = comm->p2pnChannels;

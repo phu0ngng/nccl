@@ -176,14 +176,8 @@ ncclResult_t ncclNetPluginInit() {
   }
   void* netPluginLib = dlopen(ncclNetPluginName, RTLD_NOW | RTLD_LOCAL);
   if (netPluginLib == nullptr) {
-    // dlopen does not guarantee to set errno, but dlerror only gives us a
-    // string, so checking errno doesn't hurt to try to provide a better
-    // error message
-    if (errno == ENOENT) {
-      INFO(NCCL_INIT|NCCL_NET, "NET/Plugin : No plugin found (%s), using internal implementation", ncclNetPluginName);
-    } else {
-      INFO(NCCL_INIT|NCCL_NET, "NET/Plugin : Plugin load returned %d : %s.", errno, dlerror());
-    }
+    INFO(NCCL_INIT|NCCL_NET, "NET/Plugin : Plugin load (%s) returned %d : %s", ncclNetPluginName, errno, dlerror());
+    INFO(NCCL_INIT|NCCL_NET, "NET/Plugin : No plugin found, using internal implementation");
     return ncclSuccess;
   }
 
@@ -264,9 +258,10 @@ static ncclResult_t collNetGetState(int i, enum ncclNetState* state) {
 
 ncclResult_t ncclNetInit(struct ncclComm* comm) {
   // Initialize main communication network
-  char* netName = getenv("NCCL_NET");
+  char* netName;
   bool ok = false;
 
+  netName = comm->netName;
   for (int i=0; i<3; i++) {
     if (ncclNets[i] == nullptr) continue;
     enum ncclNetState state;

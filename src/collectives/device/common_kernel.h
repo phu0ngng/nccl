@@ -28,12 +28,14 @@ inline __device__ int loadInt(int* ptr) {
 template<typename RedFn, typename T, int Unroll, int BytePerPack,
          int MinSrcs, int MaxSrcs, int MinDsts, int MaxDsts, int PreOpSrcs,
          typename IntBytes>
-__device__ __forceinline__ void ReduceCopyPacks(
+__device__ __forceinline__ void reduceCopyPacks(
     int nThreads, int &thread,
     uint64_t redArg, uint64_t *preOpArgs, bool postOp,
     int nSrcs, void **srcPtrs, int nDsts, void **dstPtrs,
     IntBytes &nBytesBehind, IntBytes &nBytesAhead
   ) {
+  static_assert(std::is_signed<IntBytes>::value, "IntBytes must be a signed integral type.");
+
   // A hunk is the amount of contiguous data a warp consumes per loop iteration
   // assuming all threads partake.
   constexpr int BytePerHunk = Unroll*WARP_SIZE*BytePerPack;
@@ -45,11 +47,11 @@ __device__ __forceinline__ void ReduceCopyPacks(
   IntBytes threadBytesBehind = nBytesBehind + (warp*BytePerHunk + lane*BytePerPack);
   IntBytes threadBytesAhead = nBytesAhead - (warp*BytePerHunk + lane*BytePerPack);
   // Number of hunks to be consumed over all warps.
-  int nHunksAhead = nBytesAhead/BytePerHunk;
+  IntBytes nHunksAhead = nBytesAhead/BytePerHunk;
   // Advance collective position.
   nBytesBehind += nHunksAhead*BytePerHunk;
   nBytesAhead -= nHunksAhead*BytePerHunk;
-  if (Unroll == 1 && BytePerPack <= nBytesAhead) {
+  if (Unroll==1 && BytePerPack <= nBytesAhead) {
     // Only Unroll=1 can do partial hunks (where not all threads partake).
     nHunksAhead += 1;
     nBytesBehind += nBytesAhead - (nBytesAhead%BytePerPack);
@@ -67,7 +69,9 @@ __device__ __forceinline__ void ReduceCopyPacks(
   for (int d=0; d < MinDsts; d++)
     minDsts[d] = cvta_to_global(dstPtrs[d]) + threadBytesBehind;
 
-  while (Unroll == 1 ? (BytePerPack <= threadBytesAhead) : (0 < nHunksAhead)) {
+  // We dictate loop termination condition according to whether partial hunks
+  // can be handled or not.
+  while (Unroll==1 ? (BytePerPack <= threadBytesAhead) : (0 < nHunksAhead)) {
     BytePack<BytePerPack> acc[Unroll];
 
     { RedFn preFn(0 < PreOpSrcs ? preOpArgs[0] : 0);
@@ -150,7 +154,7 @@ __device__ __forceinline__ void ReduceCopyPacks(
   // The last loop iteration could have been partial, i.e. not taken by all
   // threads. The threads that weren't included need an extra subtraction to
   // make the value warp uniform.
-  if (nHunksAhead > 0) nHunksAhead -= nWarps;
+  if (Unroll==1 && nHunksAhead > 0) nHunksAhead -= nWarps;
   // Rotate warps so the warp which got the least work here will be warp 0.
   // This effectively assigns: warp = (warp-nHunks+nWarps)%nWarps;
   warp = -nHunksAhead;
@@ -179,37 +183,42 @@ __device__ __forceinline__ void ReduceOrCopyMulti(
   IntBytes nBytesBehind = 0;
   IntBytes nBytesAhead = nElts*sizeof(T);
   if (aligned) {
-    ReduceCopyPacks<RedFn, T, Unroll, /*BytePerPack=*/16,
+    reduceCopyPacks<RedFn, T, Unroll, /*BytePerPack=*/16,
       MinSrcs, MaxSrcs, MinDsts, MaxDsts, PreOpSrcs>
       (nThreads, /*&*/thread, redArg, preOpArgs, postOp,
        nSrcs, srcPtrs, nDsts, dstPtrs, /*&*/nBytesBehind, /*&*/nBytesAhead);
     if (nBytesAhead == 0) return;
 
-    ReduceCopyPacks<RedFn, T, /*Unroll=*/1, /*BytePerPack=*/16,
+    reduceCopyPacks<RedFn, T, /*Unroll=*/1, /*BytePerPack=*/16,
       MinSrcs, MaxSrcs, MinDsts, MaxDsts, PreOpSrcs>
       (nThreads, /*&*/thread, redArg, preOpArgs, postOp,
        nSrcs, srcPtrs, nDsts, dstPtrs, /*&*/nBytesBehind, /*&*/nBytesAhead);
     if (nBytesAhead == 0) return;
   }
 
-  ReduceCopyPacks<RedFn, T, Unroll*(16/sizeof(T))/2, /*BytePerPack=*/sizeof(T),
+  reduceCopyPacks<RedFn, T, Unroll*(16/sizeof(T))/2, /*BytePerPack=*/sizeof(T),
     MinSrcs, MaxSrcs, MinDsts, MaxDsts, PreOpSrcs>
     (nThreads, /*&*/thread, redArg, preOpArgs, postOp,
      nSrcs, srcPtrs, nDsts, dstPtrs, /*&*/nBytesBehind, /*&*/nBytesAhead);
   if (nBytesAhead == 0) return;
 
-  ReduceCopyPacks<RedFn, T, /*Unroll=*/1, /*BytePerPack=*/sizeof(T),
+  reduceCopyPacks<RedFn, T, /*Unroll=*/1, /*BytePerPack=*/sizeof(T),
     MinSrcs, MaxSrcs, MinDsts, MaxDsts, PreOpSrcs>
     (nThreads, /*&*/thread, redArg, preOpArgs, postOp,
      nSrcs, srcPtrs, nDsts, dstPtrs, /*&*/nBytesBehind, /*&*/nBytesAhead);
 }
 
+// Copies from srcAddr to dstAddr using multimem load/store. The amount copied
+// will be at most Unroll*BytePerPack*WARP_SIZE. If Partial=1, then the amount
+// will be the min() of that and nBytesAhead. If srcAddr is not BytePerPack
+// aligned then the amount copied will be less by (srcAddr%BytePerPack) since
+// we begin loads at the first pack containing the first element.
 template<typename RedFn, typename T, int Unroll, int BytePerPack,
          bool SrcAligned, // is srcAddr aligned to BytePerPack
          bool DstAligned, // are dstAddr and nBytesAhead both aligned to BytePerPack
          bool Partial, // is this a possibly partial hunk
          typename IntBytes>
-__device__ __forceinline__ void copyGlobalMC_WarpUnrolled(
+__device__ __forceinline__ void copyMultimemMultimem_WarpUnrolled(
     int lane, RedFn redFn, bool postOp, uintptr_t srcAddr, uintptr_t dstAddr,
     IntBytes nBytesAhead, uint32_t scratchAddr
   ) {
@@ -220,9 +229,10 @@ __device__ __forceinline__ void copyGlobalMC_WarpUnrolled(
   int offset = lane*BytePerPack;
   #pragma unroll Unroll
   for (int u=0; u < Unroll; u++) {
-    bool predicate = !Partial || (offset < srcMisalign + nBytesAhead);
-    if (predicate) reg[u] = applyLoadMC(redFn, srcAddr+offset);
-    if (predicate && postOp) reg[u] = applyPostOp(redFn, reg[u]);
+    if (!Partial || (offset < srcMisalign + nBytesAhead)) {
+      reg[u] = applyLoadMultimem(redFn, srcAddr+offset);
+      if (postOp) reg[u] = applyPostOp(redFn, reg[u]);
+    }
     offset += WARP_SIZE*BytePerPack;
   }
 
@@ -230,8 +240,9 @@ __device__ __forceinline__ void copyGlobalMC_WarpUnrolled(
     offset = lane*BytePerPack;
     #pragma unroll Unroll
     for (int u=0; u < Unroll; u++) {
-      bool predicate = !Partial || offset < nBytesAhead;
-      st_global<BytePerPack>(predicate, dstAddr+offset, reg[u]);
+      if (!Partial || offset < nBytesAhead) {
+        multimem_st_global<BytePerPack>(dstAddr+offset, reg[u]);
+      }
       offset += WARP_SIZE*BytePerPack;
     }
   } else {
@@ -239,8 +250,9 @@ __device__ __forceinline__ void copyGlobalMC_WarpUnrolled(
     offset = lane*BytePerPack;
     #pragma unroll Unroll
     for (int u=0; u < Unroll; u++) {
-      bool predicate = !Partial || (offset < srcMisalign + nBytesAhead);
-      st_shared<BytePerPack>(predicate, scratchAddr+offset, reg[u]);
+      if (!Partial || (offset < srcMisalign + nBytesAhead)) {
+        st_shared<BytePerPack>(scratchAddr+offset, reg[u]);
+      }
       offset += WARP_SIZE*BytePerPack;
     }
     __syncwarp();
@@ -249,17 +261,18 @@ __device__ __forceinline__ void copyGlobalMC_WarpUnrolled(
       // due to misalignment.
       nBytesAhead = min(nBytesAhead, Unroll*WARP_SIZE*BytePerPack - srcMisalign);
     }
-    copyGlobalShared_WarpUnrolled<sizeof(T), /*MaxBytes=*/Unroll*WARP_SIZE*BytePerPack>
-      (lane, dstAddr, scratchAddr+srcMisalign, nBytesAhead);
+    copyGlobalShared_WarpUnrolled
+      <sizeof(T), /*MaxBytes=*/Unroll*WARP_SIZE*BytePerPack, /*Multimem=*/1>
+        (lane, dstAddr, scratchAddr+srcMisalign, nBytesAhead);
   }
 }
 
-// copyGlobalMC_IfEnabled has two overloads: the enabled case whose first arg
+// copyMultimemMultimem_IfEnabled has two overloads: the enabled case whose first arg
 // has type `std::true_type` and the disabled case with first arg `std::false_type`.
-// This is to guard the template instantiations of Apply_LoadMC on types/ops where
+// This is to guard the template instantiations of Apply_LoadMultimem on types/ops where
 // they aren't supported. A nicer approach is to use C++17's "if constexpr".
 template<typename RedFn, typename IntBytes>
-__device__ __forceinline__ void copyGlobalMC_IfEnabled(
+__device__ __forceinline__ void copyMultimemMultimem_IfEnabled(
     std::false_type enabled/*=false*/,
     int thread, int nThreads, uint64_t redArg, bool postOp,
     void *srcPtr, void *dstPtr, IntBytes nElts, uint32_t warpScratchAddr
@@ -268,14 +281,16 @@ __device__ __forceinline__ void copyGlobalMC_IfEnabled(
 }
 
 template<typename RedFn, typename IntBytes>
-__device__ __forceinline__ void copyGlobalMC_IfEnabled(
+__device__ __forceinline__ void copyMultimemMultimem_IfEnabled(
     std::true_type enabled/*=true*/,
     int thread, int nThreads, uint64_t redArg, bool postOp,
     void *srcPtr, void *dstPtr, IntBytes nElts, uint32_t warpScratchAddr
   ) {
-  constexpr int BytePerPack = Apply_LoadMC<RedFn>::PackSize;
+  static_assert(std::is_signed<IntBytes>::value, "IntBytes must be a signed integral type.");
+
+  constexpr int BytePerPack = Apply_LoadMultimem<RedFn>::PackSize;
   using T = typename RedFn::EltType;
-  constexpr int Unroll = ncclMCUnroll(BytePerPack);
+  constexpr int Unroll = ncclNvlsUnroll(BytePerPack);
   constexpr int BytePerHunk = Unroll*WARP_SIZE*BytePerPack;
   int nWarps = nThreads/WARP_SIZE;
   int warp = thread/WARP_SIZE;
@@ -285,19 +300,20 @@ __device__ __forceinline__ void copyGlobalMC_IfEnabled(
   uintptr_t srcAddr = cvta_to_global(srcPtr);
   uintptr_t dstAddr = cvta_to_global(dstPtr);
   IntBytes warpBytesAhead = nElts*sizeof(T);
+  bool partialHunkIsFront;
 
   // First handle misalignment of srcAddr.
   if ((BytePerPack != sizeof(T)) && (srcAddr%BytePerPack != 0)) {
     // If srcAddr isn't pack aligned then the first hunk processed will be short
     // the same number of bytes as srcAddr's misalignment.
     if (warp == 0) {
-      copyGlobalMC_WarpUnrolled
-        <RedFn, T, Unroll, BytePerPack, /*SrcAligned=*/false, /*DstAligned=*/false, /*Partial=*/true>
-          (lane, redFn, postOp, srcAddr, dstAddr, warpBytesAhead, warpScratchAddr);
+      partialHunkIsFront = true;
+      goto PartialHunk; // "call" PartialHunk()
+    PartialHunkFrontReturn:
       warp = nWarps;
     }
     warp -= 1; // Rotate warp numbers for load balancing
-    int advanced = BytePerHunk-(srcAddr%BytePerPack);
+    int advanced = BytePerHunk-(srcAddr%BytePerPack); // since copyMultimemMultimem_WarpUnrolled shorts by the misalignment
     srcAddr += advanced; // srcAddr is now pack aligned
     dstAddr += advanced;
     warpBytesAhead -= advanced;
@@ -309,37 +325,49 @@ __device__ __forceinline__ void copyGlobalMC_IfEnabled(
   // Now that srcAddr is pack aligned detect if dstAddr is pack aligned.
   if ((BytePerPack == sizeof(T)) || (dstAddr%BytePerPack == 0)) {
     while (BytePerHunk <= warpBytesAhead) {
-      copyGlobalMC_WarpUnrolled
+      copyMultimemMultimem_WarpUnrolled
         <RedFn, T, Unroll, BytePerPack, /*SrcAligned=*/true, /*DstAligned=*/true, /*Partial=*/false>
           (lane, redFn, postOp, srcAddr, dstAddr, warpBytesAhead, warpScratchAddr);
       srcAddr += nWarps*BytePerHunk;
       dstAddr += nWarps*BytePerHunk;
       warpBytesAhead -= nWarps*BytePerHunk;
     }
-    if (0 < warpBytesAhead) {
-      copyGlobalMC_WarpUnrolled
-        <RedFn, T, Unroll, BytePerPack, /*SrcAligned=*/true, /*DstAligned=*/BytePerPack == sizeof(T), /*Partial=*/true>
-          (lane, redFn, postOp, srcAddr, dstAddr, warpBytesAhead, warpScratchAddr);
-    }
   } else {
-    while (0 < warpBytesAhead) {
-      copyGlobalMC_WarpUnrolled
-        <RedFn, T, Unroll, BytePerPack, /*SrcAligned=*/true, /*DstAligned=*/false, /*Partial=*/true>
+    while (BytePerHunk <= warpBytesAhead) {
+      copyMultimemMultimem_WarpUnrolled
+        <RedFn, T, Unroll, BytePerPack, /*SrcAligned=*/true, /*DstAligned=*/false, /*Partial=*/false>
           (lane, redFn, postOp, srcAddr, dstAddr, warpBytesAhead, warpScratchAddr);
       srcAddr += nWarps*BytePerHunk;
       dstAddr += nWarps*BytePerHunk;
       warpBytesAhead -= nWarps*BytePerHunk;
     }
   }
+
+  if (0 < warpBytesAhead) {
+    partialHunkIsFront = false;
+    goto PartialHunk; // "call" PartialHunk()
+  PartialHunkBackReturn:;
+  }
+  return;
+
+PartialHunk:
+  // We have to handle a partial hunk possibly at the front and back of the
+  // buffer. We generate the code once here since its a lot of instructions,
+  // and then simulate function calls with gotos.
+  copyMultimemMultimem_WarpUnrolled
+    <RedFn, T, Unroll, BytePerPack, /*SrcAligned=*/false, /*DstAligned=*/false, /*Partial=*/true>
+      (lane, redFn, postOp, srcAddr, dstAddr, warpBytesAhead, warpScratchAddr);
+  if (partialHunkIsFront) goto PartialHunkFrontReturn;
+  goto PartialHunkBackReturn;
 }
 
 template<typename RedFn, typename IntBytes>
-__device__ __forceinline__ void copyGlobalMC(
+__device__ __forceinline__ void copyMultimemMultimem(
     int thread, int nThreads, uint64_t redArg, bool postOp,
     void *srcPtr, void *dstPtr, IntBytes nElts, uint32_t warpScratchAddr
   ) {
-  constexpr bool Enabled = Apply_LoadMC<RedFn>::PackSize != 0;
-  copyGlobalMC_IfEnabled<RedFn>(
+  constexpr bool Enabled = Apply_LoadMultimem<RedFn>::PackSize != 0;
+  copyMultimemMultimem_IfEnabled<RedFn>(
     /*enabled=*/std::integral_constant<bool, Enabled>(),
     thread, nThreads, redArg, postOp, srcPtr, dstPtr, nElts, warpScratchAddr);
 }

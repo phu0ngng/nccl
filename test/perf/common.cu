@@ -86,7 +86,7 @@ static int out_of_place = 1;
 static int unalign = 0;
 // Report average iteration time: (0=RANK0,1=AVG,2=MIN,3=MAX)
 static int average = 1;
-static int commblocking = 1;
+static int commblocking = NCCL_CONFIG_UNDEF_INT;
 static int ft_test = 0;
 static char* ft_list = NULL;
 static size_t tbytes = SIZE_MAX;

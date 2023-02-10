@@ -20,8 +20,8 @@ extern const char* ncclFuncStr[NCCL_NUM_FUNCTIONS];
 #define NCCL_ALGO_RING 1
 #define NCCL_ALGO_COLLNET_DIRECT 2
 #define NCCL_ALGO_COLLNET_CHAIN 3
-#define NCCL_ALGO_MC 4
-#define NCCL_ALGO_MC_RING 5
+#define NCCL_ALGO_NVLS 4
+#define NCCL_ALGO_NVLS_RING 5
 extern const char* ncclAlgoStr[NCCL_NUM_ALGORITHMS];
 
 #define NCCL_NUM_PROTOCOLS 3 // Simple/LL/LL128
@@ -80,7 +80,7 @@ static_assert(NCCL_LL_CLEAN_MASK % NCCL_STEPS == 0, "Invalid NCCL_LL_CLEAN_MASK 
 #define NCCL_DIRECT_NIC   0x04
 #define NCCL_IPC_WRITE    0x08
 #define NCCL_IPC_READ     0x10
-#define NCCL_MC_MIN_POLL  0x20
+#define NCCL_NVLS_MIN_POLL 0x20
 
 struct ncclConnInfo {
   // Regular comm mechanism
@@ -148,12 +148,12 @@ struct ncclDirect {
   int down[NCCL_MAX_DIRECT_ARITY];
 };
 
-#define NCCL_MAX_MC_ARITY 8
-struct ncclMc {
+#define NCCL_MAX_NVLS_ARITY 8
+struct ncclNvls {
   int out;
   int nHeads;   // Number of parallel N<->1<->net operations we'll do in parallel; size of up/down
   int headRank; // Index in 0..nHeads-1 I am the head rank of. -1 if I'm not a head rank (no local NIC)
-  int up[NCCL_MAX_MC_ARITY];
+  int up[NCCL_MAX_NVLS_ARITY];
   int down;
   int ringPrev;
   int ringNext;
@@ -280,7 +280,7 @@ struct alignas(16) ncclDevChannel {
   struct ncclTree tree;
   struct ncclTree collnetChain;
   struct ncclDirect collnetDirect;
-  struct ncclMc mc;
+  struct ncclNvls nvls;
   uint32_t* workFifoDone; // Location of done counter, device writes index+1 of last work processed
 };
 
@@ -339,31 +339,31 @@ __host__ __device__ constexpr int ncclCalcUnroll(int bytePerPack, int insns, int
 // side code can elide passing the arch for brevity.
 
 __host__ __device__ constexpr int ncclCollUnroll(int cudaArch = NCCL_CUDA_ARCH) {
-  // Our collective unroll should move to the same bytes&insns model as MC.
+  // Our collective unroll should move to the same bytes&insns model as NVLS.
   return cudaArch >= 800 ? 8 : 4;
 }
 
-__host__ __device__ constexpr int ncclMCUnrollBytes(int cudaArch = NCCL_CUDA_ARCH) { return 4*16; }
-__host__ __device__ constexpr int ncclMCUnrollInsns(int cudaArch = NCCL_CUDA_ARCH) { return 16; }
+__host__ __device__ constexpr int ncclNvlsUnrollBytes(int cudaArch = NCCL_CUDA_ARCH) { return 4*16; }
+__host__ __device__ constexpr int ncclNvlsUnrollInsns(int cudaArch = NCCL_CUDA_ARCH) { return 16; }
 
-__host__ __device__ constexpr int ncclMCUnroll(int bytePerPack, int cudaArch = NCCL_CUDA_ARCH) {
-  return ncclCalcUnroll(bytePerPack, ncclMCUnrollInsns(cudaArch), ncclMCUnrollBytes(cudaArch));
+__host__ __device__ constexpr int ncclNvlsUnroll(int bytePerPack, int cudaArch = NCCL_CUDA_ARCH) {
+  return ncclCalcUnroll(bytePerPack, ncclNvlsUnrollInsns(cudaArch), ncclNvlsUnrollBytes(cudaArch));
 }
 
 // The amount of dynamic shmem per warp
-__host__ __device__ constexpr int ncclShmemDynamicWarpSize(int cudaArch = NCCL_CUDA_ARCH) {
+__host__ __device__ constexpr int ncclShmemScratchWarpSize(int cudaArch = NCCL_CUDA_ARCH) {
   return (max_constexpr<int>(
       /*LL    */0,
       /*LL128 */(NCCL_LL128_SHMEM_ELEMS_PER_THREAD*WARP_SIZE)*sizeof(uint64_t),
-      /*SIMPLE*/0,
-      // MC needs an extra 16B to read unaligned data.
-      /*MC    */WARP_SIZE*(cudaArch >= 900 ? ncclMCUnrollBytes(cudaArch) : 0) + 16
+      /*SIMPLE*/(ncclCollUnroll(cudaArch)*WARP_SIZE + 1)*16,
+      // NVLS needs an extra 16B to read unaligned data.
+      /*NVLS  */WARP_SIZE*(cudaArch >= 900 ? ncclNvlsUnrollBytes(cudaArch) : 0) + 16
     ) + 15) & -16; // pad to 16 bytes
 }
 
 // The amount of dynamic shmem per block
 __host__ __device__ constexpr int ncclShmemDynamicSize(int cudaArch = NCCL_CUDA_ARCH) {
-  return ncclShmemDynamicWarpSize(cudaArch)*(NCCL_MAX_NTHREADS/WARP_SIZE);
+  return cudaArch < 700 ? 0 : ncclShmemScratchWarpSize(cudaArch)*(NCCL_MAX_NTHREADS/WARP_SIZE);
 }
 
 #endif

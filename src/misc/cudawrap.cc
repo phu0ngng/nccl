@@ -18,7 +18,6 @@ DECLARE_CUDA_PFN(cuDeviceGet, 2000);
 DECLARE_CUDA_PFN(cuDeviceGetAttribute, 2000);
 DECLARE_CUDA_PFN(cuGetErrorString, 6000);
 DECLARE_CUDA_PFN(cuGetErrorName, 6000);
-DECLARE_CUDA_PFN(cuGetExportTable, 3000);
 /* enqueue.cc */
 DECLARE_CUDA_PFN(cuMemGetAddressRange, 3020);
 /* proxy.cc */
@@ -42,6 +41,15 @@ DECLARE_CUDA_PFN(cuMemUnmap, 10020);
 /* transport/collNet.cc/net.cc*/
 DECLARE_CUDA_PFN(cuMemGetHandleForAddressRange, 11070); // DMA-BUF support
 #endif
+#if CUDA_VERSION >= 12010
+/* NVSwitch Multicast support */
+DECLARE_CUDA_PFN(cuMulticastAddDevice, 12010);
+DECLARE_CUDA_PFN(cuMulticastBindMem, 12010);
+DECLARE_CUDA_PFN(cuMulticastBindAddr, 12010);
+DECLARE_CUDA_PFN(cuMulticastCreate, 12010);
+DECLARE_CUDA_PFN(cuMulticastGetGranularity, 12010);
+DECLARE_CUDA_PFN(cuMulticastUnbind, 12010);
+#endif
 #endif
 
 /* CUDA Driver functions loaded with dlsym() */
@@ -53,6 +61,7 @@ DECLARE_CUDA_PFN(cuGetProcAddress, 11030);
 
 static void *cudaLib;
 int ncclCudaDriverVersionCache = -1;
+bool ncclCudaLaunchBlocking = false;
 
 #if CUDART_VERSION >= 11030
 /*
@@ -73,7 +82,6 @@ static ncclResult_t cudaPfnFuncLoader(void) {
   LOAD_SYM(cuGetErrorName, 6000, 0);
   LOAD_SYM(cuDeviceGet, 2000, 0);
   LOAD_SYM(cuDeviceGetAttribute, 2000, 0);
-  LOAD_SYM(cuGetExportTable, 3000, 0);
   LOAD_SYM(cuMemGetAddressRange, 3020, 1);
   LOAD_SYM(cuCtxCreate, 3020, 1);
   LOAD_SYM(cuCtxDestroy, 4000, 1);
@@ -96,6 +104,15 @@ static ncclResult_t cudaPfnFuncLoader(void) {
 #if CUDA_VERSION >= 11070
   LOAD_SYM(cuMemGetHandleForAddressRange, 11070, 1); // DMA-BUF support
 #endif
+#if CUDA_VERSION >= 12010
+/* NVSwitch Multicast support */
+  LOAD_SYM(cuMulticastAddDevice, 12010, 1);
+  LOAD_SYM(cuMulticastBindMem, 12010, 1);
+  LOAD_SYM(cuMulticastBindAddr, 12010, 1);
+  LOAD_SYM(cuMulticastCreate, 12010, 1);
+  LOAD_SYM(cuMulticastGetGranularity, 12010, 1);
+  LOAD_SYM(cuMulticastUnbind, 12010, 1);
+#endif
   return ncclSuccess;
 }
 #endif
@@ -104,6 +121,11 @@ static pthread_once_t initOnceControl = PTHREAD_ONCE_INIT;
 static ncclResult_t initResult;
 
 static void initOnceFunc() {
+  do {
+    char* val = getenv("CUDA_LAUNCH_BLOCKING");
+    ncclCudaLaunchBlocking = val!=nullptr && val[0]!=0 && !(val[0]=='0' && val[1]==0);
+  } while (0);
+
   CUresult res;
   /*
    * Load CUDA driver library

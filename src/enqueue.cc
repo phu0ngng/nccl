@@ -33,8 +33,8 @@ struct ncclKernelMatch {
   NCCL_FUNC5(func, RING,           devredop, type, specialized), \
   NCCL_FUNC5(func, COLLNET_DIRECT, devredop, type, specialized), \
   NCCL_FUNC5(func, COLLNET_CHAIN,  devredop, type, specialized), \
-  NCCL_FUNC5(func, MC,             devredop, type, specialized), \
-  NCCL_FUNC5(func, MC_RING,        devredop, type, specialized)
+  NCCL_FUNC5(func, NVLS,           devredop, type, specialized), \
+  NCCL_FUNC5(func, NVLS_RING,      devredop, type, specialized)
 
 #ifdef __CUDA_BF16_TYPES_EXIST__
   #define HAVE_BFLOAT16 1
@@ -124,9 +124,11 @@ ncclResult_t ncclInitKernelsForDevice(int cudaArch, size_t* maxStackSize) {
     ignore1:;
     }
 
-    CUDACHECKGOTO(cudaFuncSetAttribute(fn,
-      cudaFuncAttributeMaxDynamicSharedMemorySize, ncclShmemDynamicSize(cudaArch)),
-      result, next_kernel);
+    if (ncclShmemDynamicSize(cudaArch) != 0) {
+      CUDACHECKGOTO(cudaFuncSetAttribute(fn,
+        cudaFuncAttributeMaxDynamicSharedMemorySize, ncclShmemDynamicSize(cudaArch)),
+        result, next_kernel);
+    }
   next_kernel:;
   }
   return result;
@@ -978,7 +980,7 @@ ncclResult_t ncclLaunchPrepare(struct ncclComm* comm) {
     }
     NCCLCHECKGOTO(ncclStrongStreamWaitStream(tasks->capturingGraph, launchStream, &comm->deviceStream), result, failure);
 
-    if (persistent || comm->persistentRefs != 0) {
+    if (persistent || comm->persistentRefs != 0 || ncclCudaLaunchBlocking) {
       // We have to launch host tasks to push proxy args. We are careful to only
       // do this if necessary since host tasks impose a high performance cost in CUDA.
       bool acquired = false;
@@ -1019,12 +1021,6 @@ ncclResult_t ncclLaunchKernelBefore_NoUncapturedCuda(struct ncclComm* comm, stru
   return ncclSuccess;
 }
 
-#if CUDART_VERSION >= 11080
-#define NCCL_MAX_CGA_CLUSTER_SIZE 8
-#define NCCL_CGA_CLUSTER_SIZE_SM90 4
-NCCL_PARAM(CGAClusterSize, "CGA_CLUSTER_SIZE", -2);
-#endif
-
 #if CUDART_VERSION >= 12000
 // NCCL uses the "Remote" Mem Sync domain by default
 NCCL_PARAM(MemSyncDomain, "MEM_SYNC_DOMAIN", cudaLaunchMemSyncDomainRemote);
@@ -1044,19 +1040,7 @@ ncclResult_t ncclLaunchKernel(struct ncclComm* comm, struct ncclKernelPlan* plan
   NCCLCHECK(ncclCudaDriverVersion(&driverVersion));
   if (driverVersion >= 11080) {
     int compCap = comm->compCap;
-    unsigned int clusterSize = (compCap == 90) ? NCCL_CGA_CLUSTER_SIZE_SM90 : 0;
-    if (ncclParamCGAClusterSize() != -2) {
-      clusterSize = ncclParamCGAClusterSize();
-      if (clusterSize > NCCL_MAX_CGA_CLUSTER_SIZE) {
-        static bool warned = false;
-        if (warned == false) {
-          WARN("NCCL_CGA_CLUSTER_SIZE value %d is too big. Limiting value to %d.",
-               clusterSize, NCCL_MAX_CGA_CLUSTER_SIZE);
-          warned = true;
-        }
-        clusterSize = NCCL_MAX_CGA_CLUSTER_SIZE;
-      }
-    }
+    unsigned int clusterSize = (compCap == 90) ? comm->cgaClusterSize : 0;
 
     cudaLaunchConfig_t launchConfig = {0};
     cudaLaunchAttribute launchAttrs[3];
@@ -1103,7 +1087,7 @@ ncclResult_t ncclLaunchKernel(struct ncclComm* comm, struct ncclKernelPlan* plan
 }
 
 ncclResult_t ncclLaunchKernelAfter_NoCuda(struct ncclComm* comm, struct ncclKernelPlan* plan) {
-  if (comm->persistentRefs == 0) { // implies !plan->persistent
+  if (!(plan->persistent || comm->persistentRefs != 0 || ncclCudaLaunchBlocking)) {
     // If this isn't being captured and there aren't any CUDA graphs alive
     // then we don't need to do our proxyOp pushing on the host stream.
     NCCLCHECK(hostStreamPlanTask(comm, plan));
@@ -1177,8 +1161,8 @@ static ncclResult_t getAlgoInfo(struct ncclInfo* info, int collNetTypeSupport, i
     int nAlgos = NCCL_NUM_ALGORITHMS;
     for (int a=0; a<nAlgos; a++) {
       if ((a == NCCL_ALGO_COLLNET_DIRECT || a == NCCL_ALGO_COLLNET_CHAIN) && collNetTypeSupport != 1) continue;
-      if (a == NCCL_ALGO_MC && !NCCL_MC_SUPPORTS(info->datatype, info->opFull.op)) continue;
-      if (a == NCCL_ALGO_MC_RING && !NCCL_MC_SUPPORTS(info->datatype, info->opFull.op)) continue;
+      if (a == NCCL_ALGO_NVLS && !NCCL_NVLS_SUPPORTS(info->datatype, info->opFull.op)) continue;
+      if (a == NCCL_ALGO_NVLS_RING && !NCCL_NVLS_SUPPORTS(info->datatype, info->opFull.op)) continue;
 
       for (int p=0; p<NCCL_NUM_PROTOCOLS; p++) {
         float time;
@@ -1212,9 +1196,9 @@ static ncclResult_t getAlgoInfo(struct ncclInfo* info, int collNetTypeSupport, i
       }
       ncSwitch /= 2;
     }
-  } else if (info->algorithm == NCCL_ALGO_MC || info->algorithm == NCCL_ALGO_MC_RING) {
-    // MC should not need more than 16 channels to get peak BW.
-    nc = comm->mcChannels;
+  } else if (info->algorithm == NCCL_ALGO_NVLS || info->algorithm == NCCL_ALGO_NVLS_RING) {
+    // NVLS should not need more than 16 channels to get peak BW.
+    nc = comm->nvlsChannels;
   } else {
     // Ring/Tree channel tuning
     while (info->nBytes < nc*nt*threadThreshold) {
@@ -1229,8 +1213,8 @@ static ncclResult_t getAlgoInfo(struct ncclInfo* info, int collNetTypeSupport, i
     if (info->algorithm == NCCL_ALGO_TREE) nt += 3*WARP_SIZE;
     if (info->algorithm == NCCL_ALGO_COLLNET_DIRECT) nt += 3*WARP_SIZE;
     if (info->algorithm == NCCL_ALGO_COLLNET_CHAIN) nt += 3*WARP_SIZE;
-    if (info->algorithm == NCCL_ALGO_MC) nt = NCCL_MAX_NTHREADS;
-    if (info->algorithm == NCCL_ALGO_MC_RING) nt = NCCL_MAX_NTHREADS;
+    if (info->algorithm == NCCL_ALGO_NVLS) nt = NCCL_MAX_NTHREADS;
+    if (info->algorithm == NCCL_ALGO_NVLS_RING) nt = NCCL_MAX_NTHREADS;
   }
   nt = nt/WARP_SIZE < 3 ? 3*WARP_SIZE : nt;
   info->nChannels = nc;
@@ -1249,8 +1233,8 @@ static ncclResult_t getPatternInfo(struct ncclInfo* info) {
       info->pattern = ncclPatternRing; break;
     case ncclFuncAllReduce:
       info->pattern =
-        info->algorithm == NCCL_ALGO_MC ? ncclPatternCollnetDirect :
-        info->algorithm == NCCL_ALGO_MC_RING ? ncclPatternRingTwiceNode :
+        info->algorithm == NCCL_ALGO_NVLS ? ncclPatternNvls :
+        info->algorithm == NCCL_ALGO_NVLS_RING ? ncclPatternRingTwiceNode :
         info->algorithm == NCCL_ALGO_COLLNET_DIRECT ? ncclPatternCollnetDirect :
         info->algorithm == NCCL_ALGO_COLLNET_CHAIN ? ncclPatternCollnetChain :
         info->algorithm == NCCL_ALGO_TREE ? ncclPatternTreeUpDown :
@@ -1270,6 +1254,7 @@ static ncclResult_t getLoopInfo(struct ncclInfo* info) {
     case ncclPatternPipelineFrom:
     case ncclPatternPipelineTo:
     case ncclPatternCollnetChain:
+    case ncclPatternNvls:
       info->nstepsPerLoop = info-> nchunksPerLoop = 1; break;
     case ncclPatternCollnetDirect:
       info->nstepsPerLoop = 1; info->nchunksPerLoop = info->comm->channels[0].collnetDirect.nHeads; break;
@@ -1347,10 +1332,10 @@ comp_next:
     while (info->nBytes / (info->nChannels*chunkSize) < info->comm->channels[0].collnetChain.depth*8 && chunkSize > 65536) chunkSize /= 2;
     while (info->nBytes / (info->nChannels*chunkSize) < info->comm->channels[0].collnetChain.depth && chunkSize > 32768) chunkSize /= 2;
     work->lastChunkSize = chunkSize / ncclTypeSize(info->datatype);
-  } else if (info->algorithm == NCCL_ALGO_MC || info->algorithm == NCCL_ALGO_MC_RING) {
+  } else if (info->algorithm == NCCL_ALGO_NVLS || info->algorithm == NCCL_ALGO_NVLS_RING) {
     if (chunkSize > 131072) chunkSize = 131072;
     // Use uint64_t so that concurrentOps*chunkSize*X does not overflow
-    uint64_t concurrentOps = info->nChannels*info->comm->channels[0].mc.nHeads;
+    uint64_t concurrentOps = info->nChannels*info->comm->channels[0].nvls.nHeads;
     if ((info->nBytes < (32 * (concurrentOps*chunkSize))) && (chunkSize > 65536)) chunkSize = 65536;
     if ((info->nBytes < (8 * (concurrentOps*chunkSize))) && (chunkSize > 32768)) chunkSize = 32768;
     if ((info->nBytes < (2 * (concurrentOps*chunkSize))) && (chunkSize > 16384)) chunkSize = 16384;

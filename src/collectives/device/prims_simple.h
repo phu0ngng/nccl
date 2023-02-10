@@ -4,14 +4,10 @@
  * See LICENSE.txt for license information
  ************************************************************************/
 
-// Temporary define
-extern "C" __device__ uint64_t __nv_ptx_builtin_ocg_ld_mc_min_u64(uint64_t addr);
-extern "C" __device__ uint64_t __nv_ptx_builtin_ocg_ld_mc_add_u64(uint64_t addr);
-
 template<typename T, typename RedOp, typename Fan, int Direct,
-         int SlicePerChunk, int StepPerSlice, int Unroll, int P2p, bool MC>
+         int SlicePerChunk, int StepPerSlice, int Unroll, int P2p, bool NVLS>
 class Primitives<
-    T, RedOp, Fan, Direct, ProtoSimple<SlicePerChunk, StepPerSlice, Unroll, MC>, P2p
+    T, RedOp, Fan, Direct, ProtoSimple<SlicePerChunk, StepPerSlice, Unroll, NVLS>, P2p
   > {
   static constexpr int MaxRecv = Fan::MaxRecv, MaxSend = Fan::MaxSend;
   static constexpr int Input=0, Output=1;
@@ -27,8 +23,8 @@ class Primitives<
                        DirectWrite = 0x200,
                        DirectRead = 0x400,
                        ThreadsSynced = 0x800,
-                       McMinPolling = 0x1000,
-                       McRecv = 0x2000;
+                       NvlsMinPolling = 0x1000,
+                       NvlsRecv = 0x2000;
   const int tid, tidInBlock;
   int nthreads;
   int nworkers;
@@ -51,18 +47,50 @@ class Primitives<
   uint64_t connStepCache; // Cache last seen value of (*connStepPtr)
 
   // Don't use barrier 0 as it's used by the final sync
-  inline __device__ void barrier() {
-    if (nthreads == WARP_SIZE)
-      __syncwarp();
-    else
-      asm volatile("bar.sync %0, %1;" :: "r"(15-group), "r"(nthreads));
+  __device__ void barrier() {
     flags |= ThreadsSynced;
+    if (nthreads == WARP_SIZE) __syncwarp();
+    else {
+      int bar = 15-group;
+      asm volatile("bar.sync %0, %1;" :: "r"(bar), "r"(nthreads) : "memory");
+    }
   }
-  inline __device__ void subBarrier() {
-    if (nworkers == nthreads)
-      barrier();
-    else
-      asm volatile("bar.sync %0, %1;" :: "r"(8-group), "r"(nworkers));
+  __device__ void subBarrier() {
+    if (nworkers == WARP_SIZE) __syncwarp();
+    else {
+      int bar = (nworkers==nthreads ? 15 : 8) - group;
+      asm volatile("bar.sync %0, %1;" :: "r"(bar), "r"(nworkers) : "memory");
+    }
+  }
+
+  __device__ bool barrierAny(int vote) {
+    flags |= ThreadsSynced;
+    if (nthreads == WARP_SIZE) {
+      return __any_sync(~0u, vote);
+    } else {
+      int ans, bar = 15-group;
+      asm volatile(
+        "{ .reg .pred p;"
+        "  setp.ne.s32 p, %1, 0;"
+        "  bar.red.or.pred p, %2, %3, p; "
+        "  selp.s32 %0, 1, 0, p; }"
+        : "=r"(ans) : "r"(vote), "r"(bar), "r"(nthreads) : "memory");
+      return ans != 0;
+    }
+  }
+  __device__ bool subBarrierAny(int vote) {
+    if (nworkers == WARP_SIZE) {
+      return __any_sync(~0u, vote);
+    } else {
+      int ans, bar = (nworkers==nthreads ? 15 : 8) - group;
+      asm volatile(
+        "{ .reg .pred p;"
+        "  setp.ne.s32 p, %1, 0;"
+        "  bar.red.or.pred p, %2, %3, p; "
+        "  selp.s32 %0, 1, 0, p; }"
+        : "=r"(ans) : "r"(vote), "r"(bar), "r"(nworkers) : "memory");
+      return ans != 0;
+    }
   }
 
   inline __device__ bool checkAbort(int &spins) {
@@ -77,11 +105,17 @@ class Primitives<
     return flags & Aborted;
   }
 
-  inline __device__ uint64_t loadStepValue(uint64_t* addr) {
-    uint64_t v;
-    if (MC && (flags & McMinPolling)) v = __nv_ptx_builtin_ocg_ld_mc_min_u64((uint64_t)addr);
-    else asm volatile("ld.volatile.global.u64 %0, [%1];": "=l"(v) : "l"(addr));
-    return v;
+  inline __device__ uint64_t loadStepValue(uint64_t* ptr) {
+    uintptr_t addr = cvta_to_global(ptr);
+    uint64_t ans;
+    #if __CUDA_ARCH__ >= 900 && CUDART_VERSION >= 12010
+    if (NVLS && (flags & NvlsMinPolling)) {
+      asm("multimem.ld_reduce.acquire.sys.global.min.u64 %0, [%1];" : "=l"(ans) : "l"(addr));
+      return ans;
+    }
+    #endif
+    asm("ld.volatile.global.u64 %0, [%1];": "=l"(ans) : "l"(addr));
+    return ans;
   }
 
   template<int Enable, int Role, int Mask>
@@ -224,11 +258,11 @@ class Primitives<
         /* if user abort the kernel, we don't need to actually perform copy/reduce; just set size
          * to 0 to avoid unnecessary workload. */
         int workSize = ncclShmem.aborted ? 0 : sliceSize;
-        if (MC && ncclShmem.groups[group].mcRecv) {
+        if (NVLS && ncclShmem.groups[group].nvlsRecv) {
           void* src = ncclShmem.groups[group].srcs[0];
           void* dst = ncclShmem.groups[group].dsts[0];
-          copyGlobalMC<RedOp>(tid, nworkers, ncclShmem.redOpArgs[0], postOp, src, dst, workSize,
-          cvta_to_shared(shmemForWarp(tidInBlock/WARP_SIZE)));
+          copyMultimemMultimem<RedOp>(tid, nworkers, ncclShmem.redOpArgs[0], postOp, src, dst, workSize,
+          cvta_to_shared(ncclScratchForWarp(tidInBlock/WARP_SIZE)));
         } else if (DirectRecv && ncclShmem.groups[group].srcs[0] == ncclShmem.groups[group].dsts[0]) {
           // We can only have one direct receive. Since srcs[0] == dstPtr+offset, skip one copy
           if (Send) {
@@ -252,7 +286,7 @@ class Primitives<
             (tid, nworkers, ncclShmem.redOpArgs[0], ncclShmem.redOpArgs, postOp,
              nRecvPeers+Src, ncclShmem.groups[group].srcs,
              nSendPeers+Dst, ncclShmem.groups[group].dsts,
-             sliceSize);
+             workSize);
         }
         barrier(); // This barrier has a counterpart in following loop
         postPeer<Recv, Send, RecvMask, SendMask>();
@@ -296,12 +330,12 @@ class Primitives<
     #pragma unroll
     for (int slice=0; slice<SlicePerChunk; ++slice) {
       int realSize = max(0, min(dataSize, peerElem-offset));
+      bool fenceNeeded = false;
       if (tid < nworkers) {
         if (Send) {
           // Scatter pre-scales data of input buffer only in non-Direct case
           constexpr int PreOpSrcs = DirectSend ? 0 : 1;
           if (flags & RoleInput) ncclShmem.groups[group].srcs[0] = userBuff + inpIx + offset;
-          if (tid == 0) ncclShmem.groups[group].totalSendSize[slice] = 0; // Skip the threadfence
           // realSize is not accurate here; but intra-node does not rely on sizes FIFO
           waitPeer<0, DirectSend, 0, 1, 1, 0, 0, 0>(0, inpIx, offset, realSize);
           subBarrier();
@@ -317,7 +351,7 @@ class Primitives<
             if (realPeerSize > 0 && ncclShmem.groups[group].dsts[i] != nullptr) {
               ReduceOrCopyMulti<Unroll, RedOp, T, 1, 1, 1, 1, PreOpSrcs>(tid, nworkers, ncclShmem.redOpArgs[0], ncclShmem.redOpArgs, false, 1, &src0, 1, ncclShmem.groups[group].dsts+i, realPeerSize);
               // Mark for threadfence at the end
-              if (tid == 0) ncclShmem.groups[group].totalSendSize[slice] += realPeerSize;
+              fenceNeeded |= true;
             }
           }
         } else if (Recv) {
@@ -343,9 +377,9 @@ class Primitives<
           }
         }
       }
-      barrier();
+      fenceNeeded = barrierAny(fenceNeeded);
       // If we indeed send something, threadfence
-      if (Send && (flags & RolePostSend) && ncclShmem.groups[group].totalSendSize[slice] > 0 && index == 0)
+      if (Send && (flags & RolePostSend) && fenceNeeded && index == 0)
         __threadfence_system();
       __syncwarp();
       postPeer<Recv, Send, 0, 0>();
@@ -365,11 +399,11 @@ class Primitives<
       if (flags & RoleWaitRecv) {
         ncclShmem.groups[group].recvConns[index] = conn; // WaitRecv role saves since that's who needs it in setDataPtrs()
         if ((index == 0) && (flags & RoleWaitRecv)) {
-          if (conn->flags & NCCL_MC_MIN_POLL) {
-            flags |= McMinPolling;
-            ncclShmem.groups[group].mcRecv = 1;
+          if (conn->flags & NCCL_NVLS_MIN_POLL) {
+            flags |= NvlsMinPolling;
+            ncclShmem.groups[group].nvlsRecv = 1;
           } else {
-            ncclShmem.groups[group].mcRecv = 0;
+            ncclShmem.groups[group].nvlsRecv = 0;
           }
         }
         connStepPtr = conn->tail;
@@ -411,7 +445,7 @@ class Primitives<
       }
       if (flags & RoleWaitSend) {
         ncclShmem.groups[group].sendConns[index] = conn; // WaitSend role saves since that's who needs it in setDataPtrs()
-        flags |= (conn->flags & NCCL_MC_MIN_POLL) ? McMinPolling : 0;
+        flags |= (conn->flags & NCCL_NVLS_MIN_POLL) ? NvlsMinPolling : 0;
         connStepPtr = conn->head;
         connStepCache = loadStepValue(connStepPtr);
         flags |= (conn->offsFifo != nullptr) ? OffsFifoEnabled : 0;

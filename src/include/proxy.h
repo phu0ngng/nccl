@@ -183,7 +183,6 @@ struct ncclProxyAsyncOp {
 struct ncclProxyLocalPeer {
   struct ncclSocket sock;
   int localRank;
-  uint64_t pidHash;
   ncclProxyAsyncOp* asyncOps;
   int asyncOpCounter;
 };
@@ -200,7 +199,6 @@ struct ncclProxyState {
   struct ncclSocket* peerSocks;
   struct ncclProxyOps* proxyOps;
   void** sharedDevMems;
-  struct ncclIpcSocket peerIpcSock; // cuMem API support
 
   // Progress thread
   struct ncclProxyProgressState progressState;

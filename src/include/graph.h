@@ -66,7 +66,7 @@ ncclResult_t ncclTopoSearchInit(struct ncclTopoSystem* system);
 #define NCCL_TOPO_PATTERN_SPLIT_TREE 2      // Spread NIC traffic between two GPUs (Tree parent on first GPU, tree children on the second GPU)
 #define NCCL_TOPO_PATTERN_TREE 3            // All NIC traffic going to/from the same GPU
 #define NCCL_TOPO_PATTERN_RING 4            // Ring
-#define NCCL_TOPO_PATTERN_MC 5              // MC+SHARP and MC+Ring
+#define NCCL_TOPO_PATTERN_NVLS 5            // NVLS+SHARP and NVLS+Ring
 struct ncclTopoGraph {
   // Input / output
   int id; // ring : 0, tree : 1, collnet : 2
@@ -100,7 +100,7 @@ struct ncclTopoRanks {
   int treeToParent[MAXCHANNELS];
   int treeToChild0[MAXCHANNELS];
   int treeToChild1[MAXCHANNELS];
-  int mcRing[MAXCHANNELS];
+  int nvlsRing[MAXCHANNELS];
 };
 
 ncclResult_t ncclTopoPreset(struct ncclComm* comm, struct ncclTopoGraph** graphs, struct ncclTopoRanks* topoRanks);

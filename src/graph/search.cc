@@ -294,7 +294,7 @@ ncclResult_t ncclTopoSearchTryGpu(struct ncclTopoSystem* system, struct ncclTopo
   return ncclSuccess;
 }
 
-ncclResult_t ncclTopoSearchTryMc(struct ncclTopoSystem* system, struct ncclTopoGraph* graph, struct ncclTopoGraph* saveGraph, int g, int ngpus, int *time) {
+ncclResult_t ncclTopoSearchTryNvls(struct ncclTopoSystem* system, struct ncclTopoGraph* graph, struct ncclTopoGraph* saveGraph, int g, int ngpus, int *time) {
   struct ncclTopoNode* nvs;
   struct ncclTopoNode* gpu;
   int d0=0; // See if there is enough bandwidth for NVS->GPU traffic
@@ -454,8 +454,8 @@ ncclResult_t ncclTopoSearchRecGpu(struct ncclTopoSystem* system, struct ncclTopo
       }
       free(nets);
     }
-  } else if (graph->pattern == NCCL_TOPO_PATTERN_MC) {
-    NCCLCHECK(ncclTopoSearchTryMc(system, graph, saveGraph, g, ngpus, time));
+  } else if (graph->pattern == NCCL_TOPO_PATTERN_NVLS) {
+    NCCLCHECK(ncclTopoSearchTryNvls(system, graph, saveGraph, g, ngpus, time));
   } else if (step < system->nodes[GPU].count-1) {
     // Go to next GPU
     int next[NCCL_TOPO_MAX_NODES];
@@ -609,8 +609,8 @@ ncclResult_t ncclTopoSearchRec(struct ncclTopoSystem* system, struct ncclTopoGra
     ncclTopoSearchRecNet(system, graph, saveGraph, backToNet, backToFirstRank, time);
   } else {
     // Intra-node only.
-    if (graph->pattern == NCCL_TOPO_PATTERN_MC) {
-      // Force intra-node MC algorithm to pull evenly from all GPUs.
+    if (graph->pattern == NCCL_TOPO_PATTERN_NVLS) {
+      // Force intra-node NVLS algorithm to pull evenly from all GPUs.
       int g = graph->nChannels;
       if (g == system->nodes[GPU].count) return ncclSuccess;
       NCCLCHECK(ncclTopoSearchTryGpu(system, graph, saveGraph, 0, backToNet, backToFirstRank, 0, time, -1, -1, g));
@@ -795,7 +795,7 @@ ncclResult_t ncclTopoCompute(ncclTopoSystem* system, struct ncclTopoGraph* graph
   graph->typeIntra = ngpus == 1 ? PATH_LOC : PATH_NVL;
   graph->typeInter = PATH_PIX;
   graph->nChannels = 0;
-  int trySameChannels = graph->pattern == NCCL_TOPO_PATTERN_MC ? 0 : 1;
+  int trySameChannels = graph->pattern == NCCL_TOPO_PATTERN_NVLS ? 0 : 1;
   graph->sameChannels = trySameChannels;
 
   char* str = getenv("NCCL_GRAPH_FILE");
@@ -813,7 +813,7 @@ ncclResult_t ncclTopoCompute(ncclTopoSystem* system, struct ncclTopoGraph* graph
 
   int ccMin;
   NCCLCHECK(ncclTopoGetCompCap(system, &ccMin, NULL));
-  if (graph->pattern == NCCL_TOPO_PATTERN_MC && (system->nodes[NVS].count == 0 || ccMin < 90)) return ncclSuccess;
+  if (graph->pattern == NCCL_TOPO_PATTERN_NVLS && (system->nodes[NVS].count == 0 || ccMin < 90)) return ncclSuccess;
 
   if (ngpus == 1) if (graph->pattern != NCCL_TOPO_PATTERN_RING) graph->pattern = NCCL_TOPO_PATTERN_TREE;
 
@@ -934,7 +934,7 @@ done:
     memcpy(&tmpGraph, graph, sizeof(tmpGraph));
   }
 
-  if (graph->nChannels == 0 && graph->collNet == 0 && graph->pattern != NCCL_TOPO_PATTERN_MC) {
+  if (graph->nChannels == 0 && graph->collNet == 0 && graph->pattern != NCCL_TOPO_PATTERN_NVLS) {
     WARN("Could not find a path for pattern %d, falling back to simple order", graph->pattern);
     for (int i=0; i<ngpus; i++) graph->intra[i] = system->nodes[GPU].nodes[i].gpu.rank;
     graph->inter[0] = graph->inter[1] = 0;
@@ -943,7 +943,7 @@ done:
     graph->nChannels = 1;
   }
 
-  if (graph->pattern != NCCL_TOPO_PATTERN_MC && ((ccMin <= 80 && graph->bwIntra >= 25.0) || (ccMin <= 90 && graph->bwIntra >= 50.0))) {
+  if (graph->pattern != NCCL_TOPO_PATTERN_NVLS && ((ccMin <= 80 && graph->bwIntra >= 25.0) || (ccMin <= 90 && graph->bwIntra >= 50.0))) {
     int dupChannels = std::min(graph->nChannels*2, graph->maxChannels);
     memcpy(graph->intra+graph->nChannels*ngpus, graph->intra, (dupChannels-graph->nChannels)*ngpus*sizeof(int));
     memcpy(graph->inter+graph->nChannels*2,graph->inter, (dupChannels-graph->nChannels)*2*sizeof(int));

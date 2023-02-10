@@ -35,13 +35,13 @@
 #endif
 
 const char* ncclFuncStr[NCCL_NUM_FUNCTIONS] = { "Broadcast", "Reduce", "AllGather", "ReduceScatter", "AllReduce" };
-const char* ncclAlgoStr[NCCL_NUM_ALGORITHMS] = { "Tree", "Ring", "CollNetDirect", "CollNetChain", "MC", "MCRing" };
+const char* ncclAlgoStr[NCCL_NUM_ALGORITHMS] = { "Tree", "Ring", "CollNetDirect", "CollNetChain", "NVLS", "NVLSRing" };
 const char* ncclProtoStr[NCCL_NUM_PROTOCOLS] = { "LL", "LL128", "Simple" };
 
 NCCL_PARAM(GroupCudaStream, "GROUP_CUDA_STREAM", NCCL_GROUP_CUDA_STREAM);
 
 NCCL_PARAM(CheckPointers, "CHECK_POINTERS", 0);
-NCCL_PARAM(CommBlocking, "COMM_BLOCKING", 0);
+NCCL_PARAM(CommBlocking, "COMM_BLOCKING", NCCL_CONFIG_UNDEF_INT);
 
 static uint64_t hashUniqueId(ncclUniqueId const &id) {
   char const *bytes = (char const*)&id;
@@ -203,7 +203,7 @@ static ncclResult_t commFree(ncclComm_t comm) {
     NCCLCHECK(ncclStrongStreamDestruct(&comm->deviceStream));
   }
 
-  NCCLCHECK(ncclMcFree(comm));
+  if (comm->nvlsSupport) NCCLCHECK(ncclNvlsFree(comm));
 
   struct ncclDestructor* dtor = comm->destructorHead;
   while (dtor != nullptr) {
@@ -215,6 +215,7 @@ static ncclResult_t commFree(ncclComm_t comm) {
   ncclMemoryStackDestruct(&comm->memPermanent);
 
   ncclCudaHostFree((void *)comm->abortFlag);
+  free(comm->netName);
 
   commPoison(comm); // poison comm before free to avoid comm reuse.
   free(comm);
@@ -390,7 +391,7 @@ static ncclResult_t devCommSetup(ncclComm_t comm) {
     tmpCommAndChans.channels[c].tree = comm->channels[c].tree;
     tmpCommAndChans.channels[c].collnetChain = comm->channels[c].collnetChain;
     tmpCommAndChans.channels[c].collnetDirect = comm->channels[c].collnetDirect;
-    tmpCommAndChans.channels[c].mc = comm->channels[c].mc;
+    tmpCommAndChans.channels[c].nvls = comm->channels[c].nvls;
     tmpCommAndChans.channels[c].workFifoDone = &comm->workFifoDone[c];
 
     if (comm->channels[c].ring.userRanks != nullptr) {
@@ -596,8 +597,8 @@ static ncclResult_t initTransportsRank(struct ncclComm* comm, ncclUniqueId* comm
   struct ncclTopoGraph ringGraph;
   struct ncclTopoGraph treeGraph;
   struct ncclTopoGraph collNetGraph;
-  struct ncclTopoGraph mcGraph;
-  struct ncclTopoGraph* graphs[] = { &treeGraph, &ringGraph, &collNetGraph, &collNetGraph, &mcGraph, &mcGraph };
+  struct ncclTopoGraph nvlsGraph;
+  struct ncclTopoGraph* graphs[] = { &treeGraph, &ringGraph, &collNetGraph, &collNetGraph, &nvlsGraph, &nvlsGraph };
 
   struct graphInfo {
     int pattern;
@@ -612,7 +613,7 @@ static ncclResult_t initTransportsRank(struct ncclComm* comm, ncclUniqueId* comm
   struct allGatherInfo {
     int netDev;
     int collNetSupport;
-    int mcSupport;
+    int nvlsSupport;
     struct graphInfo graphInfo[NCCL_NUM_ALGORITHMS];
     struct ncclTopoRanks topoRanks;
   };
@@ -726,19 +727,19 @@ static ncclResult_t initTransportsRank(struct ncclComm* comm, ncclUniqueId* comm
   NCCLCHECKGOTO(ncclTopoCompute(comm->topo, &collNetGraph), ret, fail);
   NCCLCHECKGOTO(ncclTopoPrintGraph(comm->topo, &collNetGraph), ret, fail);
 
-  mcGraph.id = 3;
-  mcGraph.pattern = NCCL_TOPO_PATTERN_MC;
-  mcGraph.collNet = 0;
-  mcGraph.minChannels = 1;
-  mcGraph.maxChannels = MAXCHANNELS;
-  NCCLCHECKGOTO(ncclTopoCompute(comm->topo, &mcGraph), ret, fail);
-  NCCLCHECKGOTO(ncclTopoPrintGraph(comm->topo, &mcGraph), ret, fail);
+  nvlsGraph.id = 3;
+  nvlsGraph.pattern = NCCL_TOPO_PATTERN_NVLS;
+  nvlsGraph.collNet = 0;
+  nvlsGraph.minChannels = 1;
+  nvlsGraph.maxChannels = MAXCHANNELS;
+  NCCLCHECKGOTO(ncclTopoCompute(comm->topo, &nvlsGraph), ret, fail);
+  NCCLCHECKGOTO(ncclTopoPrintGraph(comm->topo, &nvlsGraph), ret, fail);
 
   // Initialize num P2P LL buffers for this communicator
   comm->allocP2pNetLLBuffers = ncclParamAllocP2pNetLLBuffers() == 1;
 
   if (comm->rank == ncclParamGraphDumpFileRank()) {
-    struct ncclTopoGraph* graphs[4] = { &ringGraph, &treeGraph, &collNetGraph, &mcGraph };
+    struct ncclTopoGraph* graphs[4] = { &ringGraph, &treeGraph, &collNetGraph, &nvlsGraph };
     NCCLCHECKGOTO(ncclTopoDumpGraphs(comm->topo, 4, graphs), ret, fail);
   }
 
@@ -768,7 +769,7 @@ static ncclResult_t initTransportsRank(struct ncclComm* comm, ncclUniqueId* comm
     allGather3Data[rank].graphInfo[a].typeInter = graphs[a]->typeInter;
   }
   allGather3Data[rank].collNetSupport = comm->collNetSupport;
-  allGather3Data[rank].mcSupport = comm->mcSupport;
+  allGather3Data[rank].nvlsSupport = comm->nvlsSupport;
 
   comm->nChannels = std::min(treeGraph.nChannels, ringGraph.nChannels);
   NCCLCHECKGOTO(ncclTopoPreset(comm, graphs, &allGather3Data[rank].topoRanks), ret, fail);
@@ -840,7 +841,7 @@ static ncclResult_t initTransportsRank(struct ncclComm* comm, ncclUniqueId* comm
       graphs[a]->typeInter = std::max(allGather3Data[i].graphInfo[a].typeInter, graphs[a]->typeInter);
     }
     comm->collNetSupport = std::min(allGather3Data[i].collNetSupport, comm->collNetSupport);
-    comm->mcSupport = std::min(allGather3Data[i].mcSupport, comm->mcSupport);
+    comm->nvlsSupport = std::min(allGather3Data[i].nvlsSupport, comm->nvlsSupport);
   }
 
   comm->nChannels = treeGraph.nChannels = ringGraph.nChannels = std::min(treeGraph.nChannels, ringGraph.nChannels);
@@ -867,7 +868,7 @@ static ncclResult_t initTransportsRank(struct ncclComm* comm, ncclUniqueId* comm
   }
 
   NCCLCHECKGOTO(ncclCalloc(&rings, nranks*MAXCHANNELS), ret, fail);
-  NCCLCHECKGOTO(ncclTopoPostset(comm, nodesFirstRank, nodesTreePatterns, allTopoRanks, rings, &collNetGraph, &mcGraph), ret, fail);
+  NCCLCHECKGOTO(ncclTopoPostset(comm, nodesFirstRank, nodesTreePatterns, allTopoRanks, rings, &collNetGraph, &nvlsGraph), ret, fail);
   // AllGather3 - end
 
   TRACE(NCCL_INIT, "rank %d nranks %d - BUILT %d TREES/RINGS", rank, nranks, comm->nChannels);
@@ -909,16 +910,16 @@ static ncclResult_t initTransportsRank(struct ncclComm* comm, ncclUniqueId* comm
   if (comm->collNetSupport > 0) collNetTrySetup(comm, &collNetGraph);
 
   // Setup MC
-  NCCLCHECKGOTO(ncclMcSetup(comm), ret, fail);
+  NCCLCHECKGOTO(ncclNvlsSetup(comm), ret, fail);
   // And MC rings if needed
-  if (comm->mcSupport && comm->localRanks > 1) {
-    for (int c=0; c<comm->mcChannels; c++) {
+  if (comm->nvlsSupport && comm->localRanks > 1) {
+    for (int c=0; c<comm->nvlsChannels; c++) {
       struct ncclChannel* channel = comm->channels+c;
-      printf("MC RING %d : %d -> %d -> %d\n", c, channel->mc.ringPrev, comm->rank, channel->mc.ringNext);
-      NCCLCHECKGOTO(ncclTransportP2pConnect(comm, c, 1, &channel->mc.ringPrev, 1, &channel->mc.ringNext, 0), ret, fail);
-    NCCLCHECKGOTO(ncclTransportP2pSetup(comm, &mcGraph, 0), ret, fail);
+      printf("NVLS RING %d : %d -> %d -> %d\n", c, channel->nvls.ringPrev, comm->rank, channel->nvls.ringNext);
+      NCCLCHECKGOTO(ncclTransportP2pConnect(comm, c, 1, &channel->nvls.ringPrev, 1, &channel->nvls.ringNext, 0), ret, fail);
+    NCCLCHECKGOTO(ncclTransportP2pSetup(comm, &nvlsGraph, 0), ret, fail);
     }
-    INFO(NCCL_INIT, "Connected MC rings");
+    INFO(NCCL_INIT, "Connected NVLS rings");
   }
 
   TRACE(NCCL_INIT, "rank %d nranks %d - CONNECTED %d RINGS AND TREES", rank, nranks, comm->nChannels);
@@ -928,7 +929,7 @@ static ncclResult_t initTransportsRank(struct ncclComm* comm, ncclUniqueId* comm
     int myCompCap = comm->peerInfo[rank].cudaCompCap;
     int minCompCap = myCompCap, maxCompCap = myCompCap;
     for (int i = 0; i < nranks; i++) {
-      minCompCap = std::min(comm->peerInfo[i].cudaCompCap, minCompCap);
+      comm->minCompCap = minCompCap = std::min(comm->peerInfo[i].cudaCompCap, minCompCap);
       maxCompCap = std::max(comm->peerInfo[i].cudaCompCap, maxCompCap);
     }
     NCCLCHECKGOTO(ncclTopoTuneModel(comm, minCompCap, maxCompCap, graphs), ret, fail);
@@ -937,7 +938,7 @@ static ncclResult_t initTransportsRank(struct ncclComm* comm, ncclUniqueId* comm
   // Compute nChannels per peer for p2p
   NCCLCHECKGOTO(ncclTopoComputeP2pChannels(comm), ret, fail);
 
-  INFO(NCCL_INIT, "%d coll channels, %d mc channels, %d p2p channels, %d p2p channels per peer", comm->nChannels, comm->mcChannels, comm->p2pnChannels, comm->p2pnChannelsPerPeer);
+  INFO(NCCL_INIT, "%d coll channels, %d nvls channels, %d p2p channels, %d p2p channels per peer", comm->nChannels, comm->nvlsChannels, comm->p2pnChannels, comm->p2pnChannelsPerPeer);
 
   do { // Setup p2p structures in comm->tasks
     struct ncclTasks* tasks = &comm->tasks;
@@ -1067,6 +1068,11 @@ fail:
 }
 
 NCCL_PARAM(SetStackSize, "SET_STACK_SIZE", 0);
+NCCL_PARAM(CGAClusterSize, "CGA_CLUSTER_SIZE", NCCL_CONFIG_UNDEF_INT);
+// Match config max/minCTAs
+NCCL_PARAM(MaxCTAs, "MAX_CTAS", NCCL_CONFIG_UNDEF_INT);
+NCCL_PARAM(MinCTAs, "MIN_CTAS", NCCL_CONFIG_UNDEF_INT);
+#define NCCL_MAX_CGA_CLUSTER_SIZE 8
 
 struct ncclCommInitRankAsyncJob {
   struct ncclAsyncJob base;
@@ -1123,18 +1129,130 @@ fail:
   goto exit;
 }
 
-static ncclResult_t parseCommConfig(ncclComm_t comm, ncclConfig_t *config) {
-  ncclResult_t ret = ncclSuccess;
-
-  /* first set configuration */
-  if (config) {
-    comm->blocking = config->blocking;
-  } else {
-    /* default setting of communicator */
-    comm->blocking = 1;
+#define NCCL_CONFIG_DEFAULT(config, field, undef, defvalue, fieldStr, format) \
+  if (config->field == undef) { \
+    config->field = defvalue; \
+  } else { \
+    INFO(NCCL_ENV, "Comm config " fieldStr " set to " format, config->field); \
   }
 
+static ncclResult_t parseCommConfig(ncclComm_t comm, ncclConfig_t *config) {
+  ncclResult_t ret = ncclSuccess;
+  /* config must not be NULL in this function */
+  int blockingEnv;
+  int cgaClusterSizeEnv;
+  int minCTAsEnv;
+  int maxCTAsEnv;
+  const char *envNetName, *tmpNetName;  
+  ncclConfig_t internalConfig = NCCL_CONFIG_INITIALIZER;
+  ncclConfig_t *internalConfigPtr;
+  size_t realSize;
+
+  internalConfigPtr = &internalConfig;
+  if (config) {
+    memcpy((void*)&realSize, (void*)config, sizeof(size_t));
+    realSize = realSize > sizeof(ncclConfig_t) ? sizeof(ncclConfig_t) : realSize;
+    memcpy((void*)internalConfigPtr, (void*)config, realSize);
+    if (internalConfigPtr->magic != 0xcafebeef) {
+      WARN("ncclConfig_t argument not initialized via NCCL_CONFIG_INITIALIZER");
+      ret = ncclInvalidArgument;
+      goto fail;
+    }
+  }
+
+  /* check input config attributes, -1 means user-undefined and we should use default value from NCCL. */
+  if (internalConfigPtr->blocking != NCCL_CONFIG_UNDEF_INT && internalConfigPtr->blocking != 0 && internalConfigPtr->blocking != 1) {
+    WARN("Invalid config blocking attribute value %d", internalConfigPtr->blocking);
+    ret = ncclInvalidArgument;
+    goto fail;
+  }
+  
+  if (internalConfigPtr->cgaClusterSize != NCCL_CONFIG_UNDEF_INT && internalConfigPtr->cgaClusterSize < 0) {
+    WARN("Invalid config cgaClusterSize attribute value %d", internalConfigPtr->cgaClusterSize);
+    ret = ncclInvalidArgument;
+    goto fail;
+  }
+
+  if ((internalConfigPtr->minCTAs != NCCL_CONFIG_UNDEF_INT &&
+    internalConfigPtr->minCTAs <= 0) ||
+    (internalConfigPtr->maxCTAs != NCCL_CONFIG_UNDEF_INT &&
+      internalConfigPtr->maxCTAs <= 0) ||
+    (internalConfigPtr->minCTAs > internalConfigPtr->maxCTAs)) {
+    WARN("Invalid config min/max channels attribute value %d/%d", internalConfigPtr->minCTAs, internalConfigPtr->maxCTAs);
+    ret = ncclInvalidArgument;
+    goto fail;
+  }
+
+  /* default config value can be tuned on different platform. */
+  NCCL_CONFIG_DEFAULT(internalConfigPtr, blocking, NCCL_CONFIG_UNDEF_INT, 1, "Blocking", "%d");
+  NCCL_CONFIG_DEFAULT(internalConfigPtr, cgaClusterSize, NCCL_CONFIG_UNDEF_INT, 4, "CGA cluster size", "%d");
+  NCCL_CONFIG_DEFAULT(internalConfigPtr, minCTAs, NCCL_CONFIG_UNDEF_INT, 1, "Min CTAs", "%d");
+  NCCL_CONFIG_DEFAULT(internalConfigPtr, maxCTAs, NCCL_CONFIG_UNDEF_INT, MAXCHANNELS, "Max CTAs", "%d");
+  NCCL_CONFIG_DEFAULT(internalConfigPtr, netName, NCCL_CONFIG_UNDEF_PTR, NULL, "Net name", "%s");
+
+  tmpNetName = internalConfigPtr->netName;
+
+  /* assign config to communicator */
+  comm->blocking = internalConfigPtr->blocking;
+  comm->cgaClusterSize = internalConfigPtr->cgaClusterSize;
+  comm->minCTAs = internalConfigPtr->minCTAs;
+  comm->maxCTAs = internalConfigPtr->maxCTAs;
+
+  /* override configuration from env variable. */
+  blockingEnv = ncclParamCommBlocking();
+  if (blockingEnv == 0 || blockingEnv == 1)
+    comm->blocking = blockingEnv;
+
+  cgaClusterSizeEnv = ncclParamCGAClusterSize();
+  if (0 <= cgaClusterSizeEnv && cgaClusterSizeEnv <= NCCL_MAX_CGA_CLUSTER_SIZE) {
+    comm->cgaClusterSize = cgaClusterSizeEnv;
+  } else if (cgaClusterSizeEnv > NCCL_MAX_CGA_CLUSTER_SIZE) {
+    WARN("NCCL_CGA_CLUSTER_SIZE value %d is too big. Limiting value to %d.", cgaClusterSizeEnv, NCCL_MAX_CGA_CLUSTER_SIZE);
+    comm->cgaClusterSize = NCCL_MAX_CGA_CLUSTER_SIZE;
+  }
+
+  minCTAsEnv = ncclParamMinCTAs();
+  if (minCTAsEnv != NCCL_CONFIG_UNDEF_INT) {
+    comm->minCTAs = minCTAsEnv;
+  }
+
+  maxCTAsEnv = ncclParamMaxCTAs();
+  if (maxCTAsEnv != NCCL_CONFIG_UNDEF_INT) {
+    comm->maxCTAs = maxCTAsEnv;
+  }
+
+  /* cap channels if needed */
+  if (comm->minCTAs > MAXCHANNELS) {
+    WARN("minCTAs %d is larger than #channels upper limit %d\n", comm->minCTAs, MAXCHANNELS);
+    comm->minCTAs = MAXCHANNELS;
+  }
+
+  if (comm->maxCTAs > MAXCHANNELS) {
+    WARN("maxCTAs %d is larger than #channels upper limit %d\n", comm->maxCTAs, MAXCHANNELS);
+    comm->maxCTAs = MAXCHANNELS;
+  }
+
+  if (comm->minCTAs > comm->maxCTAs) {
+    WARN("minCTAs %d is larger than maxCTAs %d\n", comm->minCTAs, comm->maxCTAs);
+    ret = ncclInvalidArgument;
+    goto fail;
+  }
+  
+  envNetName = getenv("NCCL_NET");
+  if (envNetName)
+    tmpNetName = envNetName;
+  if (tmpNetName != NULL) {
+    int netNameLen = strlen(tmpNetName) + 1;
+    comm->netName = (char*)malloc(netNameLen);
+    memcpy(comm->netName, tmpNetName, netNameLen);
+  } else {
+    comm->netName = NULL;
+  }
+
+exit:
   return ret;
+fail:
+  goto exit;
 }
 
 static void ncclCommInitRankUndo(struct ncclAsyncJob* job_) {
@@ -1160,6 +1278,7 @@ static ncclResult_t ncclCommInitRankDev(ncclComm_t* newcomm, int nranks, ncclUni
   CUDACHECKGOTO(cudaFree(NULL), res, fail);
 
   NCCLCHECKGOTO(PtrCheck(newcomm, "CommInitRank", "newcomm"), res, fail);
+  NCCLCHECKGOTO(PtrCheck(config, "CommInitRank", "config"), res, fail);
   if (nranks < 1 || myrank < 0 || myrank >= nranks) {
     WARN("Invalid rank requested : %d/%d", myrank, nranks);
     res = ncclInvalidArgument;
@@ -1210,12 +1329,13 @@ ncclResult_t ncclCommInitRank(ncclComm_t* newcomm, int nranks, ncclUniqueId comm
   (void)ncclCudaLibraryInit();
 
   int cudaDev;
+  ncclConfig_t config = NCCL_CONFIG_INITIALIZER;
   CUDACHECK(cudaGetDevice(&cudaDev));
 
   NvtxParamsCommInitRank payload{myrank, nranks, cudaDev};
   NVTX3_FUNC_WITH_PARAMS(CommInitRank, CommInitRankSchema, payload)
 
-  NCCLCHECK(ncclCommInitRankDev(newcomm, nranks, commId, myrank, cudaDev, NULL));
+  NCCLCHECK(ncclCommInitRankDev(newcomm, nranks, commId, myrank, cudaDev, &config));
   return ncclSuccess;
 }
 
@@ -1224,6 +1344,7 @@ ncclResult_t ncclCommInitAll(ncclComm_t* comms, int ndev, const int* devlist) {
   ncclResult_t ret = ncclSuccess;
   int totalnDev;
   int *gpuFlags = NULL;
+  ncclConfig_t config = NCCL_CONFIG_INITIALIZER;
 
   constexpr nvtxPayloadSchemaEntry_t CommInitAllSchema[] = {
     {0, NVTX_PAYLOAD_ENTRY_TYPE_INT, "No. of devices"}
@@ -1267,7 +1388,7 @@ ncclResult_t ncclCommInitAll(ncclComm_t* comms, int ndev, const int* devlist) {
   NCCLCHECKGOTO(ncclGroupStart(), ret, fail);
   for (int i=0; i<ndev; i++) {
     // Ignore return codes .. we need to call ncclGroupEnd to clean up anyway
-    ncclCommInitRankDev(comms+i, ndev, uniqueId, i, devlist ? devlist[i] : i, NULL);
+    ncclCommInitRankDev(comms+i, ndev, uniqueId, i, devlist ? devlist[i] : i, &config);
   }
   NCCLCHECKGOTO(ncclGroupEnd(), ret, fail);
 
@@ -1292,39 +1413,16 @@ ncclResult_t ncclCommInitRankConfig(ncclComm_t *newcomm, int nranks, ncclUniqueI
   int cudaDev;
   ncclResult_t ret = ncclSuccess;
   ncclConfig_t internalConfig = NCCL_CONFIG_INITIALIZER;
-  ncclConfig_t *internalConfigPtr;
-  size_t realSize;
-  int blockingEnv;
-
+  ncclConfig_t *internalConfigPtr = NULL;
   NCCLCHECK(ncclGroupStartInternal());
-  internalConfigPtr = &internalConfig;
-  if (config) {
-    memcpy((void*)&realSize, (void*)config, sizeof(size_t));
-    realSize = realSize > sizeof(ncclConfig_t) ? sizeof(ncclConfig_t) : realSize;
-    memcpy((void*)internalConfigPtr, (void*)config, realSize);
-    if (internalConfigPtr->magic != 0xcafebeef) {
-      WARN("ncclConfig_t argument not initialized via NCCL_CONFIG_INITIALIZER");
-      ret = ncclInvalidArgument;
-      goto exit;
-    }
-  }
-
-  /* check input config attributes */
-  if (internalConfigPtr->blocking != 0 && internalConfigPtr->blocking != 1) {
-    WARN("Invalid config blocking attribute value %d", internalConfigPtr->blocking);
-    ret = ncclInvalidArgument;
-    goto exit;
-  }
-
-  /* overwrite configuration from env variable. */
-  blockingEnv = ncclParamCommBlocking();
-  if (blockingEnv != 0 && blockingEnv != 1) {
-    WARN("Invalid NCCL_COMM_BLOCKING value %d", blockingEnv);
-  }
-  if (blockingEnv == 1) internalConfigPtr->blocking = blockingEnv;
 
   (void)ncclCudaLibraryInit();
-  CUDACHECKGOTO(cudaGetDevice(&cudaDev), ret, exit);
+  CUDACHECKGOTO(cudaGetDevice(&cudaDev), ret, fail);
+
+  if (config == NULL) 
+    internalConfigPtr = &internalConfig;
+  else
+    internalConfigPtr = config;
   NCCLCHECKGOTO(ncclCommInitRankDev(newcomm, nranks, commId, myrank, cudaDev, internalConfigPtr), ret, fail);
 
 exit:
