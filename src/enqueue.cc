@@ -264,10 +264,9 @@ static ncclResult_t addProxyOpIfNeeded(struct ncclComm* comm, struct ncclKernelP
 static ncclResult_t addCollToPlan(
     struct ncclComm* comm, struct ncclKernelPlan* plan, int* nWorkBudget, int funcIndex,
     struct ncclWorkElem const* workElem, struct ncclProxyOp const* proxyOp,
-    int nBid, size_t bytes, bool regBufUsed, void* regBufSend[], void* regBufRecv[]
+    int nCollChannels, int nBid, size_t bytes, bool regBufUsed, void* regBufSend[], void* regBufRecv[]
   ) {
   struct ncclKernelPlan::Channel *chans = plan->channels;
-  int nCollChannels = comm->nChannels;
 
   // Choose the `nBid` least loaded channels to do the work. This ensures
   // all bids go to different channels in case they need to synchronize.
@@ -284,9 +283,7 @@ static ncclResult_t addCollToPlan(
     }
   }
   // Sort in the rest of the channels. If a channel has less work than the max
-  // member of least[], replace that member and compute the new max. The optimal
-  // algorithm uses a max-heap, but for our small sizes I suspect the better
-  // asymptotic complexity would be swamped by the increased instruction complexity.
+  // member of least[], replace that member and compute the new max.
   for (int c=nBid; c < nCollChannels; c++) {
     if (chans[c].collBytes < maxBytesInLeast) {
       least[maxIndexInLeast] = c;
@@ -557,8 +554,9 @@ static ncclResult_t scheduleCollTasksToPlan(
       info.sliceSteps = head->sliceSteps;
       NCCLCHECK(ncclInfoSetDerived(&info, comm->nRanks));
       if (nAggOps > 1) {
+        int maxChannels = aggInfo.algorithm == NCCL_ALGO_NVLS ? comm->nvlsChannels : comm->nChannels;
         info.nChannels = DIVUP(info.nBytes, bytePerChannel[collNetSupport]);
-        info.nChannels = std::max(1, std::min(info.nChannels, comm->nChannels));
+        info.nChannels = std::max(1, std::min(info.nChannels, maxChannels));
         info.algorithm = aggInfo.algorithm;
         info.protocol = aggInfo.protocol;
         info.nThreads = aggInfo.nThreads;
@@ -581,8 +579,9 @@ static ncclResult_t scheduleCollTasksToPlan(
         NCCLCHECK(registerIntraNodeBuffers(comm, plan, &info, &regBufUsed, regBufSend, regBufRecv));
       }
 
+      int maxChannels = info.algorithm == NCCL_ALGO_NVLS ? comm->nvlsChannels : comm->nChannels;
       NCCLCHECK(addCollToPlan(comm, plan, nWorkBudget, workFuncIndex, &workElem, &proxyOp,
-        info.nChannels, info.nBytes, regBufUsed, regBufSend, regBufRecv));
+        maxChannels, info.nChannels, info.nBytes, regBufUsed, regBufSend, regBufRecv));
       tasks->nTasksColl -= 1;
       tasks->collBytesTotal -= info.nBytes;
       ncclIntruQueueDequeue(&tasks->collQueue);
