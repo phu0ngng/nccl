@@ -139,13 +139,11 @@ __device__ __forceinline__ T fromPack(BytePack<sizeof(T)> pack)  {
 }
 
 template<int Size> __device__ BytePack<Size> ld_global(uintptr_t addr);
-template<int Size> __device__ BytePack<Size> ld_global(bool predicate, uintptr_t addr);
+template<int Size> __device__ BytePack<Size> ld_volatile_global(uintptr_t addr);
 template<int Size> __device__ BytePack<Size> ld_shared(uint32_t addr);
-template<int Size> __device__ BytePack<Size> ld_shared(bool predicate, uint32_t addr);
+template<int Size> __device__ BytePack<Size> ld_volatile_shared(uint32_t addr);
 template<int Size> __device__ void st_global(uintptr_t addr, BytePack<Size> value);
-template<int Size> __device__ void st_global(bool predicate, uintptr_t addr, BytePack<Size> value);
 template<int Size> __device__ void st_shared(uint32_t addr, BytePack<Size> value);
-template<int Size> __device__ void st_shared(bool predicate, uint32_t addr, BytePack<Size> value);
 
 // Used to define implementations for above prototypes.
 #define DEFINE_ld_st(bytes, data_cxx_ty, data_ptx_ty, data_reg_ty, space, addr_cxx_ty, addr_reg_ty) \
@@ -158,11 +156,9 @@ template<int Size> __device__ void st_shared(bool predicate, uint32_t addr, Byte
     return ans; \
   } \
   template<> \
-  __device__ __forceinline__ BytePack<bytes> ld_##space<bytes>(bool predicate, addr_cxx_ty addr) { \
+  __device__ __forceinline__ BytePack<bytes> ld_volatile_##space<bytes>(addr_cxx_ty addr) { \
     data_cxx_ty tmp; \
-    asm("{ .reg .pred p; setp.ne.s32 p, %1, 0; @p ld." #space "." #data_ptx_ty" %0, [%2]; }" \
-        : "="#data_reg_ty(tmp) \
-        : "r"((int)predicate), #addr_reg_ty(addr)); \
+    asm("ld.volatile." #space "." #data_ptx_ty " %0, [%1];" : "="#data_reg_ty(tmp) : #addr_reg_ty(addr)); \
     BytePack<bytes> ans; \
     ans.native = tmp; \
     return ans; \
@@ -171,14 +167,6 @@ template<int Size> __device__ void st_shared(bool predicate, uint32_t addr, Byte
   __device__ __forceinline__ void st_##space<bytes>(addr_cxx_ty addr, BytePack<bytes> value) { \
     data_cxx_ty tmp = value.native; \
     asm volatile("st." #space "." #data_ptx_ty " [%0], %1;" :: #addr_reg_ty(addr), #data_reg_ty(tmp) : "memory"); \
-  } \
-  template<> \
-  __device__ __forceinline__ void st_##space<bytes>(bool predicate, addr_cxx_ty addr, BytePack<bytes> value) { \
-    data_cxx_ty tmp = value.native; \
-    asm volatile( \
-      "{ .reg .pred p; setp.ne.s32 p, %0, 0; @p st." #space "." #data_ptx_ty " [%1], %2; }" \
-      :: "r"((int)predicate), #addr_reg_ty(addr), #data_reg_ty(tmp) \
-      : "memory"); \
   }
 // Single-byte types use 4-byte registers since there is no 1-byte register
 // character for asm blocks. See https://docs.nvidia.com/cuda/inline-ptx-assembly/index.html#constraints
@@ -200,22 +188,14 @@ DEFINE_ld_st(8, uint64_t, b64, l, shared, uint32_t, r)
     return ans; \
   } \
   template<> \
-  __device__ __forceinline__ BytePack<16> ld_##space<16>(bool predicate, addr_cxx_ty addr) { \
+  __device__ __forceinline__ BytePack<16> ld_volatile_##space<16>(addr_cxx_ty addr) { \
     BytePack<16> ans; \
-    asm("{ .reg .pred p; setp.ne.s32 p, %2, 0; @p ld." #space ".v2.b64 {%0,%1} [%3]; }" \
-        : "=l"(ans.u64[0]), "=l"(ans.u64[1]) \
-        : "r"((int)predicate), #addr_reg_ty(addr)); \
+    asm("ld.volatile." #space ".v2.b64 {%0,%1}, [%2];" : "=l"(ans.u64[0]), "=l"(ans.u64[1]) : #addr_reg_ty(addr)); \
     return ans; \
   } \
   template<> \
   __device__ __forceinline__ void st_##space<16>(addr_cxx_ty addr, BytePack<16> value) { \
     asm("st." #space ".v2.b64 [%0], {%1,%2};" :: #addr_reg_ty(addr), "l"(value.u64[0]), "l"(value.u64[1]) : "memory"); \
-  } \
-  template<> \
-  __device__ __forceinline__ void st_##space<16>(bool predicate, addr_cxx_ty addr, BytePack<16> value) { \
-    asm("{ .reg .pred p; setp.ne.s32 p, %0, 0; @p st." #space ".v2.b64 [%1], {%2,%3}; }" \
-        :: "r"((int)predicate), #addr_reg_ty(addr), "l"(value.u64[0]), "l"(value.u64[1]) \
-        : "memory"); \
   }
 DEFINE_ld_st_16(global, uintptr_t, l)
 DEFINE_ld_st_16(shared, uint32_t, r)

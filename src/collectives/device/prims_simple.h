@@ -114,6 +114,8 @@ class Primitives<
       return ans;
     }
     #endif
+    // volatile is faster than acquire but not as correct. Make sure ReduceOrCopyMulti
+    // loads data using volatile so it doesn't see stale data in L1.
     asm("ld.volatile.global.u64 %0, [%1];": "=l"(ans) : "l"(addr));
     return ans;
   }
@@ -166,10 +168,13 @@ class Primitives<
   }
 
   template<int Recv, int Send>
-  inline __device__ void postPeer() {
+  inline __device__ void postPeer(bool dataStored) {
     if (flags & (Recv*RolePostRecv | Send*RolePostSend)) {
       step += StepPerSlice;
-      *connStepPtr = step;
+      if ((flags & (Send*RolePostSend)) && dataStored) {
+        asm volatile("fence.acq_rel.sys;" ::: "memory");
+      }
+      asm volatile("st.relaxed.sys.u64 [%0], %1;" :: "l"(connStepPtr), "l"(step) : "memory");
     }
   }
 
@@ -260,9 +265,7 @@ class Primitives<
              workSize);
         }
         barrier(); // This barrier has a counterpart in following loop
-        if (Send && (flags & RolePostSend) && index == 0) __threadfence_system();
-        __syncwarp();
-        postPeer<Recv, Send>();
+        postPeer<Recv, Send>(0 < sliceSize);
         offset += sliceSize;
         slice += 1;
       } while (slice < SlicePerChunk && offset < nelem);
@@ -280,9 +283,7 @@ class Primitives<
         waitPeer<DirectRecv, DirectSend, Recv, Send, Src, Dst>(0, 0, 0, 0);
       }
       barrier(); // Has couterpart in preceding worker-only loop.
-      if (Send && (flags & RolePostSend) && sliceSize > 0 && index == 0) __threadfence_system();
-      __syncwarp();
-      postPeer<Recv, Send>();
+      postPeer<Recv, Send>(0 < sliceSize);
       offset += sliceSize;
       slice += 1;
     }
@@ -351,11 +352,7 @@ class Primitives<
         }
       }
       fenceNeeded = barrierAny(fenceNeeded);
-      // If we indeed send something, threadfence
-      if (Send && (flags & RolePostSend) && fenceNeeded && index == 0)
-        __threadfence_system();
-      __syncwarp();
-      postPeer<Recv, Send>();
+      postPeer<Recv, Send>(fenceNeeded);
       offset += realSize;
     }
   }
