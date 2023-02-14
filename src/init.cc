@@ -1142,7 +1142,7 @@ static ncclResult_t parseCommConfig(ncclComm_t comm, ncclConfig_t *config) {
   int cgaClusterSizeEnv;
   int minCTAsEnv;
   int maxCTAsEnv;
-  const char *envNetName, *tmpNetName;  
+  const char *envNetName, *tmpNetName;
   ncclConfig_t defaultConfig = NCCL_CONFIG_INITIALIZER;
   ncclConfig_t internalConfig = NCCL_CONFIG_INITIALIZER;
   ncclConfig_t *internalConfigPtr;
@@ -1178,7 +1178,7 @@ static ncclResult_t parseCommConfig(ncclComm_t comm, ncclConfig_t *config) {
     ret = ncclInvalidArgument;
     goto fail;
   }
-  
+
   if (internalConfigPtr->cgaClusterSize != NCCL_CONFIG_UNDEF_INT && internalConfigPtr->cgaClusterSize < 0) {
     WARN("Invalid config cgaClusterSize attribute value %d", internalConfigPtr->cgaClusterSize);
     ret = ncclInvalidArgument;
@@ -1249,7 +1249,7 @@ static ncclResult_t parseCommConfig(ncclComm_t comm, ncclConfig_t *config) {
     ret = ncclInvalidArgument;
     goto fail;
   }
-  
+
   envNetName = getenv("NCCL_NET");
   if (envNetName)
     tmpNetName = envNetName;
@@ -1431,7 +1431,7 @@ ncclResult_t ncclCommInitRankConfig(ncclComm_t *newcomm, int nranks, ncclUniqueI
   (void)ncclCudaLibraryInit();
   CUDACHECKGOTO(cudaGetDevice(&cudaDev), ret, fail);
 
-  if (config == NULL) 
+  if (config == NULL)
     internalConfigPtr = &internalConfig;
   else
     internalConfigPtr = config;
