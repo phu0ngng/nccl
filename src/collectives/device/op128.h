@@ -88,6 +88,9 @@ __device__ __forceinline__ T* cvta_from_global(uintptr_t gptr) {
   return ans;
 }
 
+////////////////////////////////////////////////////////////////////////////////
+// BytePack<Size>: struct of bytes.
+
 template<int Size>
 union BytePack;
 template<>
@@ -137,6 +140,9 @@ __device__ __forceinline__ T fromPack(BytePack<sizeof(T)> pack)  {
   p = pack;
   return v;
 }
+
+////////////////////////////////////////////////////////////////////////////////
+// Load/store of BytePack<?> using integral addresses.
 
 template<int Size> __device__ BytePack<Size> ld_global(uintptr_t addr);
 template<int Size> __device__ BytePack<Size> ld_volatile_global(uintptr_t addr);
@@ -200,6 +206,69 @@ DEFINE_ld_st(8, uint64_t, b64, l, shared, uint32_t, r)
 DEFINE_ld_st_16(global, uintptr_t, l)
 DEFINE_ld_st_16(shared, uint32_t, r)
 #undef DEFINE_ld_st_16
+
+////////////////////////////////////////////////////////////////////////////////
+// Atomic load/store using c++ pointers.
+
+__device__ __forceinline__ uint64_t ld_volatile_global(uint64_t *ptr) {
+  uint64_t ans;
+  asm("ld.volatile.global.u64 %0, [%1];" : "=l"(ans) : "l"(cvta_to_global(ptr)));
+  return ans;
+}
+__device__ __forceinline__ uint64_t ld_relaxed_sys_global(uint64_t *ptr) {
+  uint64_t ans;
+  #if __CUDA_ARCH__ >= 700
+    asm("ld.relaxed.sys.global.u64 %0, [%1];" : "=l"(ans) : "l"(cvta_to_global(ptr)));
+  #else
+    asm("ld.volatile.global.u64 %0, [%1];" : "=l"(ans) : "l"(cvta_to_global(ptr)));
+  #endif
+  return ans;
+}
+__device__ __forceinline__ uint64_t ld_acquire_sys_global(uint64_t *ptr) {
+  uint64_t ans;
+  #if __CUDA_ARCH__ >= 700
+    asm("ld.acquire.sys.global.u64 %0, [%1];" : "=l"(ans) : "l"(cvta_to_global(ptr)));
+  #else
+    asm("ld.volatile.sys.global.u64 %0, [%1]; membar.gl;" : "=l"(ans) : "l"(cvta_to_global(ptr)));
+  #endif
+  return ans;
+}
+
+__device__ __forceinline__ void st_volatile_global(uint64_t *ptr, uint64_t val) {
+  asm volatile("st.volatile.global.u64 [%0], %1;" :: "l"(cvta_to_global(ptr)), "l"(val) : "memory");
+}
+__device__ __forceinline__ void st_relaxed_sys_global(uint64_t *ptr, uint64_t val) {
+  #if __CUDA_ARCH__ >= 700
+    asm volatile("st.relaxed.sys.global.u64 [%0], %1;" :: "l"(cvta_to_global(ptr)), "l"(val) : "memory");
+  #else
+    asm volatile("st.volatile.global.u64 [%0], %1;" :: "l"(cvta_to_global(ptr)), "l"(val) : "memory");
+  #endif
+}
+__device__ __forceinline__ void st_release_sys_global(uint64_t *ptr, uint64_t val) {
+  #if __CUDA_ARCH__ >= 700
+    asm volatile("st.release.sys.global.u64 [%0], %1;" :: "l"(cvta_to_global(ptr)), "l"(val) : "memory");
+  #else
+    asm volatile("membar.sys; st.volatile.global.u64 [%0], %1;" :: "l"(cvta_to_global(ptr)), "l"(val) : "memory");
+  #endif
+}
+
+__device__ __forceinline__ void fence_acq_rel_sys() {
+  #if __CUDA_ARCH__ >= 700
+    asm volatile("fence.acq_rel.sys;" ::: "memory");
+  #else
+    asm volatile("membar.sys;" ::: "memory");
+  #endif
+}
+__device__ __forceinline__ void fence_acq_rel_gpu() {
+  #if __CUDA_ARCH__ >= 700
+    asm volatile("fence.acq_rel.gpu;" ::: "memory");
+  #else
+    asm volatile("membar.gl;" ::: "memory");
+  #endif
+}
+
+////////////////////////////////////////////////////////////////////////////////
+// Multimem stores of BytePack<?>.
 
 template<int Size>
 __device__ __forceinline__ void multimem_st_global(uintptr_t addr, BytePack<Size> val);

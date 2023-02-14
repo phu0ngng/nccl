@@ -106,18 +106,16 @@ class Primitives<
   }
 
   inline __device__ uint64_t loadStepValue(uint64_t* ptr) {
-    uintptr_t addr = cvta_to_global(ptr);
-    uint64_t ans;
     #if __CUDA_ARCH__ >= 900 && CUDART_VERSION >= 12010
     if (NVLS && (flags & NvlsMinPolling)) {
-      asm("multimem.ld_reduce.acquire.sys.global.min.u64 %0, [%1];" : "=l"(ans) : "l"(addr));
+      uint64_t ans;
+      asm("multimem.ld_reduce.acquire.sys.global.min.u64 %0, [%1];" : "=l"(ans) : "l"(cvta_to_global(ptr)));
       return ans;
     }
     #endif
     // volatile is faster than acquire but not as correct. Make sure ReduceOrCopyMulti
     // loads data using volatile so it doesn't see stale data in L1.
-    asm("ld.volatile.global.u64 %0, [%1];": "=l"(ans) : "l"(addr));
-    return ans;
+    return ld_volatile_global(ptr);
   }
 
   template <int DirectRecv, int DirectSend, int Recv, int Send, int Src, int Dst>
@@ -171,10 +169,8 @@ class Primitives<
   inline __device__ void postPeer(bool dataStored) {
     if (flags & (Recv*RolePostRecv | Send*RolePostSend)) {
       step += StepPerSlice;
-      if ((flags & (Send*RolePostSend)) && dataStored) {
-        asm volatile("fence.acq_rel.sys;" ::: "memory");
-      }
-      asm volatile("st.relaxed.sys.u64 [%0], %1;" :: "l"(connStepPtr), "l"(step) : "memory");
+      if (Send && (flags & RolePostSend) && dataStored) fence_acq_rel_sys();
+      st_relaxed_sys_global(connStepPtr, step);
     }
   }
 
