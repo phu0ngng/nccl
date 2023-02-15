@@ -90,6 +90,7 @@ static int commblocking = NCCL_CONFIG_UNDEF_INT;
 static int ft_test = 0;
 static char* ft_list = NULL;
 static size_t tbytes = SIZE_MAX;
+static int split_share = 0;
 
 static char* replay_file = NULL;
 
@@ -869,13 +870,14 @@ int main(int argc, char* argv[]) {
     {"ft_test", required_argument, 0, 'F'},
     {"ft_list", required_argument, 0, 'L'},
     {"tbytes", required_argument, 0, 's'},
+    {"split_share", required_argument, 0, 'S'},
     {"help", no_argument, 0, 'h'},
     {}
   };
 
   while(1) {
     int c;
-    c = getopt_long(argc, argv, "t:g:b:e:i:f:n:m:w:s:p:c:o:d:r:z:y:k:h:l:T:G:C:O:u:a:B:F:L:s:", longopts, &longindex);
+    c = getopt_long(argc, argv, "t:g:b:e:i:f:n:m:w:s:p:c:o:d:r:z:y:k:h:l:T:G:C:O:u:a:B:F:L:s:S:", longopts, &longindex);
 
     if (c == -1)
       break;
@@ -988,6 +990,9 @@ int main(int argc, char* argv[]) {
         }
         tbytes = (size_t)parsed;
         break;
+      case 'S':
+        split_share = (int)strtol(optarg, NULL, 0);;
+        break;
       case 'h':
       default:
         if (c != 'h') printf("invalid option '%c'\n", c);
@@ -1026,6 +1031,7 @@ int main(int argc, char* argv[]) {
             "[-F,--ft_test <0/1> enable fault tolerance test (default: 0)] \n\t"
             "[-L,--ft_list <init/allreduce/alltoall/finalize/all> only enable specified fault tolerance test (default: all)] \n\t"
             "[-s,--tbytes total bytes allowed to transmit (default: unlimited); tbytes would limit #iterations] \n\t"
+            "[-S,--split_share <0/1> \n\t"
             "[-h,--help]\n",
           basename(argv[0]));
         return 0;
@@ -1120,13 +1126,6 @@ testResult_t run() {
     if (proc == 0) printf("#\n# Reducing maxBytes to %ld due to memory limitation\n", maxBytes);
   }
 
-  ncclUniqueId ncclId;
-  if (ncclProc == 0) {
-    NCCLCHECK(ncclGetUniqueId(&ncclId));
-  }
-#ifdef MPI_SUPPORT
-  MPI_Bcast(&ncclId, sizeof(ncclId), MPI_BYTE, 0, mpi_comm);
-#endif
   int gpus[nGpus*nThreads];
   cudaStream_t streams[nGpus*nThreads];
   void* sendbuffs[nGpus*nThreads];
@@ -1154,9 +1153,50 @@ testResult_t run() {
       CUDACHECK(cudaStreamCreateWithFlags(streams+i, cudaStreamNonBlocking));
   }
 
+  ncclUniqueId ncclId;
+
   //if parallel init is not selected, use main thread to initialize NCCL
-  ncclComm_t* comms = (ncclComm_t*)malloc(sizeof(ncclComm_t)*nThreads*nGpus);
+  ncclComm_t* globalComms = NULL, *comms = (ncclComm_t*)malloc(sizeof(ncclComm_t)*nThreads*nGpus);
   if (!parallel_init) {
+#if NCCL_VERSION_CODE >= NCCL_VERSION(2,17,0)
+    if (proc == 0) {
+      NCCLCHECK(ncclGetUniqueId(&ncclId));
+    }
+#ifdef MPI_SUPPORT
+    MPI_Bcast(&ncclId, sizeof(ncclId), MPI_BYTE, 0, MPI_COMM_WORLD);
+#endif
+    globalComms = (ncclComm_t*)malloc(sizeof(ncclComm_t)*nThreads*nGpus);
+    ncclConfig_t config = NCCL_CONFIG_INITIALIZER;
+    config.blocking = commblocking;
+    config.splitShare = split_share;
+    NCCLCHECK(ncclGroupStart());
+    for (int i = 0; i < nGpus * nThreads; ++i) {
+      CUDACHECK(cudaSetDevice(gpus[i]));
+      NCCLCHECK(ncclCommInitRankConfig(globalComms + i, totalProcs * nThreads * nGpus, ncclId, proc * nThreads * nGpus + i, &config));
+    }
+    NCCLCHECK_COMM_WAITBATCH(ncclGroupEnd(), globalComms, nGpus * nThreads);
+    
+    NCCLCHECK(ncclGroupStart());
+    for (int i = 0; i < nGpus * nThreads; ++i) {
+      NCCLCHECK(ncclCommSplit(globalComms[i], color, proc, comms + i, NULL));
+    }
+    NCCLCHECK_COMM_WAITBATCH(ncclGroupEnd(), globalComms, nGpus * nThreads);
+
+    NCCLCHECK(ncclGroupStart());
+    for (int i = 0; i < nGpus * nThreads; ++i) {
+      NCCLCHECK(ncclCommFinalize(globalComms[i]));
+    }
+    NCCLCHECK_COMM_WAITBATCH(ncclGroupEnd(), globalComms, nGpus * nThreads);
+    
+    for (int i = 0; i < nGpus * nThreads; ++i)
+      NCCLCHECK(ncclCommDestroy(globalComms[i]));
+#else /* NCCL_VERSION_CODE >= NCCL_VERSION(2,17,0) */
+    if (ncclProc == 0) {
+      NCCLCHECK(ncclGetUniqueId(&ncclId));
+    }
+#ifdef MPI_SUPPORT
+    MPI_Bcast(&ncclId, sizeof(ncclId), MPI_BYTE, 0, mpi_comm);
+#endif
 #if NCCL_VERSION_CODE >= NCCL_VERSION(2,14,0)
     ncclConfig_t config = NCCL_CONFIG_INITIALIZER;
     config.blocking = commblocking;
@@ -1166,7 +1206,7 @@ testResult_t run() {
       NCCLCHECK(ncclCommInitRankConfig(comms + i, ncclProcs * nThreads * nGpus, ncclId, ncclProc * nThreads * nGpus + i, &config));
     }
     NCCLCHECK_COMM_WAITBATCH(ncclGroupEnd(), comms, nGpus * nThreads);
-#else
+#else /* NCCL_VERSION_CODE >= NCCL_VERSION(2,14,0) */
     if (ncclProcs == 1) {
       NCCLCHECK(ncclCommInitAll(comms, nGpus * nThreads, gpus));
     } else {
@@ -1177,7 +1217,8 @@ testResult_t run() {
       }
       NCCLCHECK(ncclGroupEnd());
     }
-#endif
+#endif /* NCCL_VERSION_CODE >= NCCL_VERSION(2,14,0) */
+#endif /* NCCL_VERSION_CODE >= NCCL_VERSION(2,17,0) */
   }
 
   int errors[nThreads];
@@ -1277,6 +1318,7 @@ testResult_t run() {
     for(int i=0; i<nGpus*nThreads; ++i)
       NCCLCHECK(ncclCommDestroy(comms[i]));
     free(comms);
+    free(globalComms);
   }
 
   // Free off CUDA allocated memory

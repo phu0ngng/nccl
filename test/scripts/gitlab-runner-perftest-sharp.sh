@@ -12,6 +12,7 @@ if [ "$graph" == "" ]; then graph=0; fi
 
 opts="-n 5 -w 1 -G $graph"
 range="-b 8 -e $max -f 2"
+enable_split_share="-S 1"
 
 export LD_LIBRARY_PATH=$SHARP_HOME/lib:$LD_LIBRARY_PATH
 export LD_LIBRARY_PATH=$HPCX_UCX_LIB:$PLUGIN_PATH:$LD_LIBRARY_PATH
@@ -34,5 +35,11 @@ failure_count=0
 echo "=============================== all_reduce (CollNet) - $(date +\"%T\") ================================="
 $SALLOC $MPI_HOME/bin/mpirun ./build/test/perf/all_reduce_perf $range $opts
 [ $? -ne 0 ] && let failure_count=$failure_count+1
+
+export NCCL_TESTS_SPLIT_MASK="0x1"
+echo "=============================== all_reduce (Split Share CollNet) - $(date +\"%T\") ====================="
+$SALLOC $MPI_HOME/bin/mpirun ./build/test/perf/all_reduce_perf $range $opts $enable_split_share
+[ $? -ne 0 ] && let failure_count=$failure_count+1
+unset NCCL_TESTS_SPLIT_MASK
 
 exit $failure_count
