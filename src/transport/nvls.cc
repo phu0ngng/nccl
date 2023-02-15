@@ -230,12 +230,14 @@ NCCL_PARAM(NvlsEnable, "NVLS_ENABLE", 1);
 
 ncclResult_t ncclNvlsSetup(struct ncclComm* comm) {
   if (!ncclParamNvlsEnable() || comm->localRanks <= 1 || comm->nNodes>1) return ncclSuccess;
-  int dev, driverVersion;
-  CUCHECK(cuCtxGetDevice(&dev));
+  CUdevice dev;
+  int driverVersion;
+  if (CUPFN(cuDeviceGet) == NULL) return ncclSuccess;
+  CUCHECK(cuDeviceGet(&dev, comm->cudaDev));
   CUDACHECK(cudaDriverGetVersion(&driverVersion));
   comm->nvlsSupport = 0;
   // NVLS Multicast support requires CUDA12.1 UMD + KMD
-  if (pfn_cuMulticastCreate != NULL && driverVersion >= 12010) {
+  if (CUPFN(cuMulticastCreate) != NULL && driverVersion >= 12010) {
     CUCHECK(cuDeviceGetAttribute(&comm->nvlsSupport, CU_DEVICE_ATTRIBUTE_MULTICAST_SUPPORTED, dev));
   }
   INFO(NCCL_INIT, "NVLS multicast support is %savailable on dev %d", comm->nvlsSupport ? "" : "not ", dev);

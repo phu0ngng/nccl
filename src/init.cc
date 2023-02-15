@@ -239,8 +239,8 @@ static ncclResult_t dmaBufSupported(struct ncclComm* comm) {
   int flag = 0;
   CUdevice dev;
   int cudaDriverVersion;
-  CUCHECK(cuDriverGetVersion(&cudaDriverVersion));
-  if (cudaDriverVersion < 11070) return ncclInternalError;
+  CUDACHECK(cudaDriverGetVersion(&cudaDriverVersion));
+  if (CUPFN(cuDeviceGet) == NULL || cudaDriverVersion < 11070) return ncclInternalError;
   CUCHECK(cuDeviceGet(&dev, comm->cudaDev));
   // Query device to see if DMA-BUF support is available
   (void) CUPFN(cuDeviceGetAttribute(&flag, CU_DEVICE_ATTRIBUTE_DMA_BUF_SUPPORTED, dev));
