@@ -261,7 +261,7 @@ ncclResult_t ncclCommEnsureReady(ncclComm_t comm) {
     NCCLCHECK(ncclCommGetAsyncError(comm, &ret));
     if (ret != ncclSuccess) {
       /* if ret is not ncclInProgress, we just keep it. */
-      WARN("Attempt to use communicator before the previous operation returned ncclSuccess\n");
+      WARN("Attempt to use communicator before the previous operation returned ncclSuccess");
       if (ret == ncclInProgress) ret = ncclInvalidArgument;
       goto exit;
     }
@@ -1235,17 +1235,17 @@ static ncclResult_t parseCommConfig(ncclComm_t comm, ncclConfig_t *config) {
 
   /* cap channels if needed */
   if (comm->minCTAs > MAXCHANNELS) {
-    WARN("minCTAs %d is larger than #channels upper limit %d\n", comm->minCTAs, MAXCHANNELS);
+    WARN("minCTAs %d is larger than #channels upper limit %d", comm->minCTAs, MAXCHANNELS);
     comm->minCTAs = MAXCHANNELS;
   }
 
   if (comm->maxCTAs > MAXCHANNELS) {
-    WARN("maxCTAs %d is larger than #channels upper limit %d\n", comm->maxCTAs, MAXCHANNELS);
+    WARN("maxCTAs %d is larger than #channels upper limit %d", comm->maxCTAs, MAXCHANNELS);
     comm->maxCTAs = MAXCHANNELS;
   }
 
   if (comm->minCTAs > comm->maxCTAs) {
-    WARN("minCTAs %d is larger than maxCTAs %d\n", comm->minCTAs, comm->maxCTAs);
+    WARN("minCTAs %d is larger than maxCTAs %d", comm->minCTAs, comm->maxCTAs);
     ret = ncclInvalidArgument;
     goto fail;
   }
