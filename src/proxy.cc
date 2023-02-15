@@ -236,7 +236,7 @@ ncclResult_t getOpIndex(struct ncclProxyArgs* op, struct ncclProxyProgressState*
     pool = pool->next;
     p++;
   }
-  WARN("Could not find pool of op %p\n", op);
+  WARN("Could not find pool of op %p", op);
   return ncclInternalError;
 }
 
@@ -290,7 +290,7 @@ ncclResult_t dumpProxyState(struct ncclProxyProgressState* state) {
       nextOp->state |= OP_SEEN;
       printf("\n");
       if (nextOp->next) {
-        WARN("Inactive op has next set!\n");
+        WARN("Inactive op has next set!");
       }
       nextOp = nextOp->nextPeer;
     }
@@ -487,7 +487,7 @@ ncclResult_t ncclLocalOpAppend(struct ncclComm* comm, struct ncclProxyConnector*
       }
     }
     if (lastOp == -1) {
-      WARN("Unable to post incomplete proxy op chain %d..%d (opCount %ld)\n", proxyOps->nextOps, proxyOps->nextOpsEnd, lastOpCount);
+      WARN("Unable to post incomplete proxy op chain %d..%d (opCount %ld)", proxyOps->nextOps, proxyOps->nextOpsEnd, lastOpCount);
       return ncclInternalError;
     }
     // Cut chain at lastOp
@@ -1381,7 +1381,7 @@ void* ncclProxyService(void* _args) {
     pollfds[s].events = POLLHUP|POLLIN;
   }
   if (ncclSocketGetFd(comm->proxyState.listenSock, &pollfds[NCCL_MAX_LOCAL_RANKS].fd) != ncclSuccess) {
-    WARN("[Proxy Service] Get listenSock fd fails\n");
+    WARN("[Proxy Service] Get listenSock fd fails");
     return NULL;
   };
   pollfds[NCCL_MAX_LOCAL_RANKS].events = POLLIN;
@@ -1413,14 +1413,14 @@ void* ncclProxyService(void* _args) {
       }
       if (maxnpeers < s+1) maxnpeers = s+1;
       if (ncclSocketInit(&peers[s].sock) != ncclSuccess) {
-        WARN("[Service thread] Initialize peers[%d].sock fails\n", s);
+        WARN("[Service thread] Initialize peers[%d].sock fails", s);
         return NULL;
       }
       if (ncclSocketAccept(&peers[s].sock, comm->proxyState.listenSock) != ncclSuccess) {
         WARN("[Service thread] Accept failed %s", strerror(errno));
       } else {
         if (ncclSocketGetFd(&peers[s].sock, &pollfds[s].fd) != ncclSuccess) {
-          WARN("[Service thread] Get peers[%d].sock fd fails\n", s);
+          WARN("[Service thread] Get peers[%d].sock fd fails", s);
           return NULL;
         }
         npeers++;
@@ -1476,7 +1476,7 @@ void* ncclProxyService(void* _args) {
           } else if (type == ncclProxyMsgConvertFd) {
             res = proxyConvertFd(peers+s, comm); // cuMem API support
           } else {
-            WARN("[Service thread] Unknown command %d from localRank %d\n", type, peer->localRank);
+            WARN("[Service thread] Unknown command %d from localRank %d", type, peer->localRank);
             closeConn = 1;
           }
 
