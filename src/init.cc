@@ -1143,6 +1143,7 @@ static ncclResult_t parseCommConfig(ncclComm_t comm, ncclConfig_t *config) {
   int minCTAsEnv;
   int maxCTAsEnv;
   const char *envNetName, *tmpNetName;  
+  ncclConfig_t defaultConfig = NCCL_CONFIG_INITIALIZER;
   ncclConfig_t internalConfig = NCCL_CONFIG_INITIALIZER;
   ncclConfig_t *internalConfigPtr;
   size_t realSize;
@@ -1156,6 +1157,18 @@ static ncclResult_t parseCommConfig(ncclComm_t comm, ncclConfig_t *config) {
       WARN("ncclConfig_t argument not initialized via NCCL_CONFIG_INITIALIZER");
       ret = ncclInvalidArgument;
       goto fail;
+    }
+
+    /* check version. */
+    if (internalConfigPtr->version < NCCL_VERSION(2, 14, 0)) {
+      internalConfigPtr->blocking = defaultConfig.blocking;
+    }
+
+    if (internalConfigPtr->version < NCCL_VERSION(2, 17, 0)) {
+      internalConfigPtr->cgaClusterSize = defaultConfig.cgaClusterSize;
+      internalConfigPtr->minCTAs = defaultConfig.minCTAs;
+      internalConfigPtr->maxCTAs = defaultConfig.maxCTAs;
+      internalConfigPtr->netName = defaultConfig.netName;
     }
   }
 
