@@ -812,7 +812,7 @@ __host__ __device__ T genOutput(
 #if !SELF_TEST
 namespace {
 template<typename T, typename ReduceFn>
-__global__ void prepareInput2(
+__global__ void __launch_bounds__(512, 1) prepareInput2(
     T *elts, intptr_t elt_n, ReduceFn op, int rank_n, int rank_me,
     uint64_t seed, intptr_t elt_ix0
   ) {
@@ -833,40 +833,45 @@ __global__ void prepareInput2(
 }
 
 template<typename ReduceOp>
-void prepareInput1(
+cudaError_t prepareInput1(
     void *elts, intptr_t elt_n, int elt_ty, ReduceOp op, int rank_n, int rank_me,
     uint64_t seed, intptr_t elt_ix0, cudaStream_t stream
   ) {
-  int block_n = std::min<intptr_t>(32, (elt_n + 4*512-1)/(4*512));
-  #define CASE_TY(T) prepareInput2<<<block_n, 512, 0, stream>>>((T*)elts, elt_n, op, rank_n, rank_me, seed, elt_ix0); break;
+  void const *fn = nullptr;
   switch(elt_ty) {
-  case ncclInt8: CASE_TY(int8_t)
-  case ncclUint8: CASE_TY(uint8_t)
-  case ncclInt32: CASE_TY(int32_t)
-  case ncclUint32: CASE_TY(uint32_t)
-  case ncclInt64: CASE_TY(int64_t)
-  case ncclUint64: CASE_TY(uint64_t)
-  case ncclFloat16: CASE_TY(half)
+  case ncclInt8: fn = (void const*)&prepareInput2<int8_t, ReduceOp>; break;
+  case ncclUint8: fn = (void const*)&prepareInput2<uint8_t, ReduceOp>; break;
+  case ncclInt32: fn = (void const*)&prepareInput2<int32_t, ReduceOp>; break;
+  case ncclUint32: fn = (void const*)&prepareInput2<uint32_t, ReduceOp>; break;
+  case ncclInt64: fn = (void const*)&prepareInput2<int64_t, ReduceOp>; break;
+  case ncclUint64: fn = (void const*)&prepareInput2<uint64_t, ReduceOp>; break;
+  case ncclFloat16: fn = (void const*)&prepareInput2<half, ReduceOp>; break;
   #if HAVE_ncclBfloat16
-  case ncclBfloat16: CASE_TY(__nv_bfloat16)
+  case ncclBfloat16: fn = (void const*)&prepareInput2<__nv_bfloat16, ReduceOp>; break;
   #endif
-  case ncclFloat32: CASE_TY(float)
-  case ncclFloat64: CASE_TY(double)
-  default: assert(0);
+  case ncclFloat32: fn = (void const*)&prepareInput2<float, ReduceOp>; break;
+  case ncclFloat64: fn = (void const*)&prepareInput2<double, ReduceOp>; break;
+  default: assert(0); return cudaErrorInvalidValue;
   }
   #undef CASE_TY
+  dim3 grid = {1, 1, 1};
+  grid.x = (unsigned int)std::min<intptr_t>(32, (elt_n + 4*512-1)/(4*512));
+  dim3 block = {512, 1, 1};
+  void *args[7] = {&elts, &elt_n, &op, &rank_n, &rank_me, &seed, &elt_ix0};
+  if (grid.x == 0) return cudaSuccess;
+  return cudaLaunchKernel(fn, grid, block, args, 0, stream);
 }
 }
 
-void ncclVerifiablePrepareInput(
+cudaError_t ncclVerifiablePrepareInput(
     void *elts, intptr_t elt_n, int elt_ty, int red_op, int rank_n, int rank_me,
     uint64_t seed, intptr_t elt_ix0, cudaStream_t stream
   ) {
   #define CASE_OP(op) \
     if(rank_n == 1) \
-      prepareInput1(elts, elt_n, elt_ty, ReduceNil(), rank_n, rank_me, seed, elt_ix0, stream); \
+      return prepareInput1(elts, elt_n, elt_ty, ReduceNil(), rank_n, rank_me, seed, elt_ix0, stream); \
     else \
-      prepareInput1(elts, elt_n, elt_ty, op, rank_n, rank_me, seed, elt_ix0, stream); \
+      return prepareInput1(elts, elt_n, elt_ty, op, rank_n, rank_me, seed, elt_ix0, stream); \
     break;
   switch(red_op) {
   case ncclSum: CASE_OP(ReduceSum())
@@ -889,7 +894,7 @@ void ncclVerifiablePrepareInput(
 #if !SELF_TEST
 namespace {
 template<typename T, typename ReduceFn>
-__global__ void prepareExpected2(
+__global__ void __launch_bounds__(512, 1) prepareExpected2(
     T *elts, intptr_t elt_n, ReduceFn op, int rank_n,
     uint64_t seed, intptr_t elt_ix0
   ) {
@@ -909,40 +914,45 @@ __global__ void prepareExpected2(
 }
 
 template<typename ReduceOp>
-void prepareExpected1(
+cudaError_t prepareExpected1(
     void *elts, intptr_t elt_n, int elt_ty, ReduceOp op, int rank_n,
     uint64_t seed, intptr_t elt_ix0, cudaStream_t stream
   ) {
-  int block_n = std::min<intptr_t>(32, (elt_n + 4*512-1)/(4*512));
-  #define CASE_TY(T) prepareExpected2<<<block_n, 512, 0, stream>>>((T*)elts, elt_n, op, rank_n, seed, elt_ix0); break;
+  void const *fn = nullptr;
   switch(elt_ty) {
-  case ncclInt8: CASE_TY(int8_t)
-  case ncclUint8: CASE_TY(uint8_t)
-  case ncclInt32: CASE_TY(int32_t)
-  case ncclUint32: CASE_TY(uint32_t)
-  case ncclInt64: CASE_TY(int64_t)
-  case ncclUint64: CASE_TY(uint64_t)
-  case ncclFloat16: CASE_TY(half)
+  case ncclInt8: fn = (void const*)&prepareExpected2<int8_t, ReduceOp>; break;
+  case ncclUint8: fn = (void const*)&prepareExpected2<uint8_t, ReduceOp>; break;
+  case ncclInt32: fn = (void const*)&prepareExpected2<int32_t, ReduceOp>; break;
+  case ncclUint32: fn = (void const*)&prepareExpected2<uint32_t, ReduceOp>; break;
+  case ncclInt64: fn = (void const*)&prepareExpected2<int64_t, ReduceOp>; break;
+  case ncclUint64: fn = (void const*)&prepareExpected2<uint64_t, ReduceOp>; break;
+  case ncclFloat16: fn = (void const*)&prepareExpected2<half, ReduceOp>; break;
   #if HAVE_ncclBfloat16
-  case ncclBfloat16: CASE_TY(__nv_bfloat16)
+  case ncclBfloat16: fn = (void const*)&prepareExpected2<__nv_bfloat16, ReduceOp>; break;
   #endif
-  case ncclFloat32: CASE_TY(float)
-  case ncclFloat64: CASE_TY(double)
-  default: assert(0);
+  case ncclFloat32: fn = (void const*)&prepareExpected2<float, ReduceOp>; break;
+  case ncclFloat64: fn = (void const*)&prepareExpected2<double, ReduceOp>; break;
+  default: assert(0); return cudaErrorInvalidValue;
   }
   #undef CASE_TY
+  dim3 grid = {1, 1, 1};
+  grid.x = (unsigned int)std::min<intptr_t>(32, (elt_n + 4*512-1)/(4*512));
+  dim3 block = {512, 1, 1};
+  void *args[6] = {&elts, &elt_n, &op, &rank_n, &seed, &elt_ix0};
+  if (grid.x == 0) return cudaSuccess;
+  return cudaLaunchKernel(fn, grid, block, args, 0, stream);
 }
 }
 
-void ncclVerifiablePrepareExpected(
+cudaError_t ncclVerifiablePrepareExpected(
     void *elts, intptr_t elt_n, int elt_ty, int red_op, int rank_n,
     uint64_t seed, intptr_t elt_ix0, cudaStream_t stream
   ) {
   #define CASE_OP(op) \
     if(rank_n == 1) \
-      prepareExpected1(elts, elt_n, elt_ty, ReduceNil(), rank_n, seed, elt_ix0, stream); \
+      return prepareExpected1(elts, elt_n, elt_ty, ReduceNil(), rank_n, seed, elt_ix0, stream); \
     else \
-      prepareExpected1(elts, elt_n, elt_ty, op, rank_n, seed, elt_ix0, stream); \
+      return prepareExpected1(elts, elt_n, elt_ty, op, rank_n, seed, elt_ix0, stream); \
     break;
   switch(red_op) {
   case ncclSum: CASE_OP(ReduceSum())
@@ -1023,7 +1033,7 @@ __host__ __device__  uint64_t calcDelta(T a, T b) {
 #if !SELF_TEST
 namespace {
 template<typename T>
-__global__ void verifyPrepared(
+__global__ void __launch_bounds__(512, 1) verifyPrepared(
     T const *results, T const *expected, intptr_t elt_n, unsigned tolerance, int64_t *bad_elt_n
   ) {
   intptr_t i0 = blockIdx.x*(elt_n/gridDim.x);
@@ -1047,8 +1057,26 @@ __global__ void verifyPrepared(
   asm volatile("red.global.add.u64 [%0],%1;" :: "l"(bad_elt_n), "l"(bad));
 }
 
+cudaError_t verifyPrepared1(int bytePerElt,
+    void const *results, void const *expected, intptr_t elt_n, unsigned tolerance, int64_t *bad_elt_n, cudaStream_t stream, int block_n
+  ) {
+  void const *fn = nullptr;
+  switch(bytePerElt) {
+  case 1: fn = (void const*)&verifyPrepared<uint8_t>; break;
+  case 2: fn = (void const*)&verifyPrepared<uint16_t>; break;
+  case 4: fn = (void const*)&verifyPrepared<uint32_t>; break;
+  case 8: fn = (void const*)&verifyPrepared<uint64_t>; break;
+  default: assert(0); return cudaErrorInvalidValue;
+  }
+  dim3 grid = {(unsigned int)block_n, 1, 1};
+  dim3 block = {512, 1, 1};
+  void *args[5] = {&results, &expected, &elt_n, &tolerance, &bad_elt_n};
+  if (grid.x == 0) return cudaSuccess;
+  return cudaLaunchKernel(fn, grid, block, args, 0, stream);
+}
+
 template<typename T, typename Uint, typename ReduceFn>
-__global__ void verifyInline2(
+__global__ void __launch_bounds__(512, 1) verifyInline2(
     T const *results, intptr_t elt_n, ReduceFn op, int rank_n, uint64_t seed,
     intptr_t elt_ix0, unsigned tolerance, int64_t *bad_elt_n
   ) {
@@ -1081,35 +1109,48 @@ __global__ void verifyInline2(
 }
 
 template<typename T, typename Uint>
-void verifyInline1(
+cudaError_t verifyInline1(
     T const *results, intptr_t elt_n, int red_op, int rank_n, uint64_t seed, intptr_t elt_ix0,
     unsigned tolerance, int64_t *bad_elt_n, cudaStream_t stream, int block_n
   ) {
+  void const *fn = nullptr;
+  ReduceNil opnil;
+  ReduceSum opsum;
+  ReduceMin opmin;
+  ReduceMax opmax;
+  ReduceProd opprod;
+  ReduceAvg opavg{rank_n};
+  ReducePreMulSum oppremulsum;
+  void *args[8] = {&results, &elt_n, nullptr, &rank_n, &seed, &elt_ix0, &tolerance, &bad_elt_n};
   #define CASE_OP(op) \
-    if(rank_n == 1) \
-    verifyInline2<T, Uint><<<block_n, 512, 0, stream>>> \
-      ((T const*)results, elt_n, ReduceNil(), rank_n, seed, elt_ix0, tolerance, bad_elt_n); \
-    else \
-    verifyInline2<T, Uint><<<block_n, 512, 0, stream>>> \
-      ((T const*)results, elt_n, op, rank_n, seed, elt_ix0, tolerance, bad_elt_n); \
-    break;
+    if(rank_n == 1) { \
+      fn = (void const*)&verifyInline2<T, Uint, ReduceNil>; \
+      args[2] = &opnil; \
+    } else { \
+      fn = (void const*)&verifyInline2<T, Uint, decltype(op)>; \
+      args[2] = &op; \
+    } break;
   switch(red_op) {
-  case ncclSum: CASE_OP(ReduceSum())
-  case ncclMin: CASE_OP(ReduceMin())
-  case ncclMax: CASE_OP(ReduceMax())
-  case ncclProd: CASE_OP(ReduceProd())
+  case ncclSum: CASE_OP(opsum)
+  case ncclMin: CASE_OP(opmin)
+  case ncclMax: CASE_OP(opmax)
+  case ncclProd: CASE_OP(opprod)
   #if HAVE_ncclAvg
-  case ncclAvg: CASE_OP(ReduceAvg{rank_n})
+  case ncclAvg: CASE_OP(opavg)
   #endif
   #if HAVE_ncclPreMulSum
-  default: CASE_OP(ReducePreMulSum())
+  default: CASE_OP(oppremulsum)
   #endif
   }
   #undef CASE_OP
+  dim3 grid = {(unsigned int)block_n, 1, 1};
+  dim3 block = {512, 1, 1};
+  if (grid.x == 0) return cudaSuccess;
+  return cudaLaunchKernel(fn, grid, block, args, 0, stream);
 }
 }
 
-void ncclVerifiableVerify(
+cudaError_t ncclVerifiableVerify(
     void const *results, void const *expected, intptr_t elt_n, int elt_ty,
     int red_op, int rank_n, uint64_t seed, intptr_t elt_ix0,
     int64_t *bad_elt_n, cudaStream_t stream
@@ -1130,9 +1171,9 @@ void ncclVerifiableVerify(
   *bad_elt_n = 0;
   #define CASE_TY(T, Uint) { \
       if(expected != nullptr) { \
-        verifyPrepared<<<block_n, 512, 0, stream>>>((Uint const*)results, (Uint const*)expected, elt_n, tolerance, bad_elt_n); \
+        return verifyPrepared1(sizeof(T), results, expected, elt_n, tolerance, bad_elt_n, stream, block_n); \
       } else { \
-        verifyInline1<T, Uint>((T const*)results, elt_n, red_op, rank_n, seed, elt_ix0, tolerance, bad_elt_n, stream, block_n); \
+        return verifyInline1<T, Uint>((T const*)results, elt_n, red_op, rank_n, seed, elt_ix0, tolerance, bad_elt_n, stream, block_n); \
       } \
     } break;
   switch(elt_ty) {
@@ -1148,7 +1189,7 @@ void ncclVerifiableVerify(
   #endif
   case ncclFloat32: CASE_TY(float, uint32_t)
   case ncclFloat64: CASE_TY(double, uint64_t)
-  default: assert(0);
+  default: assert(0); return cudaErrorInvalidValue;
   }
   #undef CASE_TY
 }
@@ -1202,7 +1243,7 @@ __device__ void sweep1(int ty, char const *tyname) {
   }
 }
 
-__global__ void sweep() {
+__global__ void __launch_bounds__(512, 1) sweep() {
   sweep1<int8_t>(ncclInt8, "int8");
   sweep1<uint8_t>(ncclUint8, "uint8");
   sweep1<int32_t>(ncclInt32, "int32");
