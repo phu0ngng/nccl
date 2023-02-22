@@ -301,4 +301,36 @@ TYPED_TEST(ncclAllReduce_test, multi_split) {
     }
     free(comms2);
 };
+
+TYPED_TEST(ncclAllReduce_test, multi_split_share) {
+    ncclComm_t* comms2 = NULL;
+    ncclComm_t* localComms = NULL;
+
+    localComms = ncclCommon_getSplitShareComms();
+    comms2 = (ncclComm_t*)calloc(this->nVis, sizeof(ncclComm_t));
+
+    ASSERT_EQ(ncclSuccess, ncclGroupStart());
+    for (int i=0; i<this->nVis; i++) {
+      ASSERT_EQ(ncclSuccess, ncclCommSplit(localComms[i], i/2, i%2, &comms2[i], NULL));
+    }
+    ASSERT_EQ(ncclSuccess, ncclGroupEnd());
+
+    for (ncclRedOp_t op : this->RedOps) {
+        ASSERT_EQ(ncclSuccess, ncclGroupStart());
+        for (int i = 0; i < this->nVis; ++i) {
+            ASSERT_EQ(ncclSuccess,
+                      ncclAllReduce(this->sendbuffs[i], this->recvbuffs[i],
+                                    std::min(this->N, 1024 * 1024),
+                                    this->DataType(), op,
+                                    comms2[i], this->streams[i]))
+                << "op: " << op << ", "
+                << "i" << i << ", " << std::endl;
+        }
+        ASSERT_EQ(ncclSuccess, ncclGroupEnd());
+    }
+    for (int i=0; i<this->nVis; i++) {
+      ASSERT_EQ(ncclSuccess, ncclCommDestroy(comms2[i]));
+    }
+    free(comms2);
+};
 // EOF

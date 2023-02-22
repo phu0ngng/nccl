@@ -315,5 +315,36 @@ TYPED_TEST(ncclBroadcast_test, aggregate_exchange_loops) {
     }
     ASSERT_EQ(ncclSuccess, ncclGroupEnd());
 };
+
+TYPED_TEST(ncclBroadcast_test, multi_split_share) {
+    ncclComm_t* localComms = NULL;
+    ncclComm_t* comms2;
+
+    localComms = ncclCommon_getSplitShareComms();
+    comms2 = (ncclComm_t*)calloc(this->nVis, sizeof(ncclComm_t));
+
+    ASSERT_EQ(ncclSuccess, ncclGroupStart());
+    for (int i=0; i<this->nVis; i++) {
+      ASSERT_EQ(ncclSuccess, ncclCommSplit(localComms[i], i/2, i%2, &comms2[i], NULL));
+    }
+    ASSERT_EQ(ncclSuccess, ncclGroupEnd());
+
+    ASSERT_EQ(ncclSuccess, ncclGroupStart());
+    for (int i = 0; i < this->nVis; ++i) {
+        ASSERT_EQ(ncclSuccess,
+                    ncclBroadcast(this->sendbuffs[i], this->recvbuffs[i],
+                            std::min(this->N, 1024 * 1024),
+                            this->DataType(), 0,
+                            comms2[i], this->streams[i]))
+            << "root: " << 0 << ", "
+            << "i" << i << ", " << std::endl;
+    }
+    ASSERT_EQ(ncclSuccess, ncclGroupEnd());
+
+    for (int i=0; i<this->nVis; i++) {
+      ASSERT_EQ(ncclSuccess, ncclCommDestroy(comms2[i]));
+    }
+    free(comms2);
+};
 #endif
 // EOF

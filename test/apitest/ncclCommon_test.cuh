@@ -12,6 +12,9 @@ void freePP(OP op, DT**& ptr, const int len) {
     };
 };
 
+// Persistent NCCL communicators for shared comm split
+ncclComm_t* ncclCommon_getSplitShareComms();
+
 // Persistent NCCL communicators and buffers
 ncclComm_t* ncclCommon_getComms(int* nGpus);
 
