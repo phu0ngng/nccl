@@ -861,3 +861,13 @@ Set the minimal number of CTAs the NCCL should use. Setting this environment var
 Values accepted
 ^^^^^^^^^^^^^^^
 Set to a positive integer value up to 32. Default value is undefined.
+
+NCCL_NVLS_ENABLE
+----------------
+(since 2.17)
+
+Enable the use of NVLink SHARP (NVLS). NVLink SHARP is available in third-generation NVSwitch systems with Hopper and later GPU architectures, allowing collectives such as ``ncclAllReduce`` to be offloaded to the NVSwitch domain.
+
+Values accepted
+^^^^^^^^^^^^^^^
+Default is 1, define and set to 0 to disable use of NVLink SHARP. NVLS will be disabled automatically on systems which do not support the feature.
