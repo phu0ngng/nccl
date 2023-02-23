@@ -646,11 +646,11 @@ ncclResult_t ncclTopoGetSystem(struct ncclComm* comm, struct ncclTopoSystem** sy
     }
   }
   if (netDevCount == 0) {
-    NCCLCHECK(ncclNetDevices(comm, &netDevCount));
+    NCCLCHECK(comm->ncclNet->devices(&netDevCount));
   }
   for (int n=0; n<netDevCount; n++) {
     ncclNetProperties_t props;
-    NCCLCHECK(ncclNetGetProperties(comm, n, &props));
+    NCCLCHECK(comm->ncclNet->getProperties(n, &props));
     struct ncclXmlNode* netNode;
     NCCLCHECK(ncclTopoFillNet(xml, props.pciPath, props.name, &netNode));
     NCCLCHECK(xmlSetAttrInt(netNode, "keep", 1));

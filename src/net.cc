@@ -307,12 +307,12 @@ ncclResult_t ncclGpuGdrSupport(struct ncclComm* comm, int* gdrSupport) {
 	  -1, -1, -1, -1, -1, -1, -1, -1, -1, -1, -1, -1, -1, -1, -1, -1 };
   if (gdrSupportMatrix[comm->cudaDev] == -1) {
     int netDevs;
-    NCCLCHECK(ncclNetDevices(comm, &netDevs));
+    NCCLCHECK(comm->ncclNet->devices(&netDevs));
     gdrSupportMatrix[comm->cudaDev] = 0;
     for (int dev=0; dev<netDevs; dev++) {
       // Find a net device which is GDR-capable
       ncclNetProperties_t props;
-      NCCLCHECK(ncclNetGetProperties(comm, dev, &props));
+      NCCLCHECK(comm->ncclNet->getProperties(dev, &props));
       if ((props.ptrSupport & NCCL_PTR_CUDA) == 0) continue;
 
     // Allocate memory on the GPU and try to register it on the NIC.
@@ -322,7 +322,7 @@ ncclResult_t ncclGpuGdrSupport(struct ncclComm* comm, int* gdrSupport) {
     void* mHandle = NULL;
     ncclResult_t ret;
     ncclDebugNoWarn = NCCL_NET;
-    NCCLCHECKGOTO(ncclNetListen(comm, dev, &handle, &lComm), ret, cleanup1);
+    NCCLCHECKGOTO(comm->ncclNet->listen(dev, &handle, &lComm), ret, cleanup1);
 
     bool connected;
     connected = false;
@@ -334,29 +334,29 @@ ncclResult_t ncclGpuGdrSupport(struct ncclComm* comm, int* gdrSupport) {
       }
 
       if (sComm == NULL)
-        NCCLCHECKGOTO(ncclNetConnect(comm, dev, &handle, &sComm), ret, cleanup2);
+        NCCLCHECKGOTO(comm->ncclNet->connect(dev, &handle, &sComm), ret, cleanup2);
 
       if (rComm == NULL)
-        NCCLCHECKGOTO(ncclNetAccept(comm, lComm, &rComm), ret, cleanup2);
+        NCCLCHECKGOTO(comm->ncclNet->accept(lComm, &rComm), ret, cleanup2);
 
       connected = (rComm != NULL) && (sComm != NULL);
     }
 
     CUDACHECKGOTO(cudaMalloc(&gpuPtr, GPU_BUF_SIZE), ret, cleanup2);
-    if (ncclNetRegMr(comm, sComm, gpuPtr, GPU_BUF_SIZE, NCCL_PTR_CUDA, &mHandle) == ncclSuccess) {
-      NCCLCHECK(ncclNetDeregMr(comm, sComm, mHandle));
-      NCCLCHECK(ncclNetRegMr(comm, rComm, gpuPtr, GPU_BUF_SIZE, NCCL_PTR_CUDA, &mHandle));
-      NCCLCHECK(ncclNetDeregMr(comm, rComm, mHandle));
+    if (comm->ncclNet->regMr(sComm, gpuPtr, GPU_BUF_SIZE, NCCL_PTR_CUDA, &mHandle) == ncclSuccess) {
+      NCCLCHECK(comm->ncclNet->deregMr(sComm, mHandle));
+      NCCLCHECK(comm->ncclNet->regMr(rComm, gpuPtr, GPU_BUF_SIZE, NCCL_PTR_CUDA, &mHandle));
+      NCCLCHECK(comm->ncclNet->deregMr(rComm, mHandle));
       gdrSupportMatrix[comm->cudaDev] = 1;
     }
     ncclDebugNoWarn = 0;
     CUDACHECK(cudaFree(gpuPtr));
 cleanup2:
     if (rComm != NULL)
-      NCCLCHECK(ncclNetCloseRecv(comm, rComm));
+      NCCLCHECK(comm->ncclNet->closeRecv(rComm));
     if (sComm != NULL)
-      NCCLCHECK(ncclNetCloseSend(comm, sComm));
-    NCCLCHECK(ncclNetCloseListen(comm, lComm));
+      NCCLCHECK(comm->ncclNet->closeSend(sComm));
+    NCCLCHECK(comm->ncclNet->closeListen(lComm));
 cleanup1:
       break;
     }

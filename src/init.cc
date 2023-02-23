@@ -305,11 +305,11 @@ static ncclResult_t commAlloc(struct ncclComm* comm, struct ncclComm* parent, in
   comm->nRanks = ndev;
 
   NCCLCHECK(ncclNetInit(comm));
-  INFO(NCCL_INIT, "Using network %s", ncclNetName(comm));
+  INFO(NCCL_INIT, "Using network %s", comm->ncclNet->name);
 
   if (parent && parent->config.splitShare) {
     if (parent->ncclNet != comm->ncclNet) {
-      WARN("Split shares resources, but parent comm netName %s is different from child comm netName %s", ncclNetName(parent), ncclNetName(comm));
+      WARN("Split shares resources, but parent comm netName %s is different from child comm netName %s", parent->ncclNet->name, comm->ncclNet->name);
       return ncclInvalidUsage;
     }
   }
