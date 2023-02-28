@@ -133,7 +133,8 @@ ncclResult_t nvlsGroupConnect(struct ncclComm *comm, struct nvlsResources* resou
     struct ncclProxyConnector proxyConn;
     NCCLCHECK(ncclProxyConnect(comm, TRANSPORT_P2P, 1, rank, &proxyConn));
     TRACE(NCCL_NVLS, "NVLS rank %d request conversion of fd %d from rank %d", comm->localRank, fd, rank);
-    NCCLCHECK(ncclProxyClientConvertFdBlocking(&proxyConn, fd, shareableHandle));
+    NCCLCHECK(ncclProxyClientConvertFdBlocking(&proxyConn, fd, (int *)shareableHandle));
+    fd = *(int *)shareableHandle;
     TRACE(NCCL_NVLS, "NVLS rank %d received converted fd %d from rank %d", comm->localRank, fd, rank);
     CUCHECK(cuMemImportFromShareableHandle(&resources->mcHandle, (void *)(uintptr_t)fd, type));
   } else {
