@@ -39,6 +39,9 @@
 
 int main(int argc, char** argv)
 {
+    // Make sure everyline is flushed so that we see the progress of the test
+    setlinebuf(stdout);
+
     MPI_TRY(MPI_Init(&argc, &argv));
 
     // Determine COMM_WORLD rank and size
