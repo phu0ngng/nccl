@@ -262,6 +262,8 @@ ncclResult_t ncclProxyCallAsync(struct ncclProxyConnector* proxyConn, int type, 
 ncclResult_t ncclProxyCallBlocking(struct ncclProxyConnector* proxyConn, int type, void* reqBuff, int reqSize, void* respBuff, int respSize);
 ncclResult_t ncclPollProxyResponse(struct ncclProxyConnector* proxyConn, void* respBuff, void* opId);
 
+ncclResult_t ncclProxyClientConvertFdBlocking(struct ncclProxyConnector* proxyConn, int fd, int* convertedFd);
+
 ncclResult_t ncclProxyDestroy(struct ncclComm* comm);
 ncclResult_t ncclProxyShmUnlink(struct ncclComm* comm);
 #endif
