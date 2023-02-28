@@ -52,10 +52,10 @@ Creating a communication with options
 
 The :c:func:`ncclCommInitRankConfig` function allows to create a NCCL communication with specific options.
 
-The config parameters NCCL supports are listed here :ref:`ncclconfig`. 
+The config parameters NCCL supports are listed here :ref:`ncclconfig`.
 
-For example, "blocking" can be set to 0 to ask NCCL to never block in any NCCL call, and at the same time 
-other config parameters can be set as well to more precisely define communicator behavior. A simple example 
+For example, "blocking" can be set to 0 to ask NCCL to never block in any NCCL call, and at the same time
+other config parameters can be set as well to more precisely define communicator behavior. A simple example
 code is shown below:
 
 .. code:: C
