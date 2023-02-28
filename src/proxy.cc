@@ -1512,6 +1512,7 @@ void* ncclProxyService(void* _args) {
   }
   ncclProxyFreeConnections(&connectionPool, comm);
   ncclSocketClose(comm->proxyState.listenSock);
+  free(comm->proxyState.listenSock);
   proxyOpsFree(comm);
   return NULL;
 }
