@@ -280,13 +280,13 @@ static ncclResult_t importShareableBuffer(struct ncclComm* comm, int rank, size_
   if (type == CU_MEM_HANDLE_TYPE_POSIX_FILE_DESCRIPTOR) {
     // cuMem UDS support
     struct ncclProxyConnector proxyConn;
-    int *p2pDesc = &ipcDesc->desc.data;
+    int fd = *(int *)&ipcDesc->desc;
     if (rank != comm->rank) {
       NCCLCHECK(ncclProxyConnect(comm, TRANSPORT_P2P, 1, rank, &proxyConn));
-      NCCLCHECK(ncclProxyCallBlocking(&proxyConn, ncclProxyMsgConvertFd, p2pDesc, sizeof(int), p2pDesc, sizeof(int)));
-      TRACE(NCCL_NET, "received converted shareable fd %d from rank %d", *p2pDesc, rank);
+      NCCLCHECK(ncclProxyClientConvertFdBlocking(&proxyConn, fd, (int *)&ipcDesc->desc));
+      fd = *(int *)&ipcDesc->desc;
+      TRACE(NCCL_NET, "received converted shareable fd %d from rank %d", fd, rank);
     }
-    int fd = *p2pDesc;
     CUCHECK(cuMemImportFromShareableHandle(&handle, (void *)(uintptr_t)fd, type));
   } else {
     CUCHECK(cuMemImportFromShareableHandle(&handle, &ipcDesc->desc, type));
