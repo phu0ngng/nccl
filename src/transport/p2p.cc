@@ -317,9 +317,10 @@ static ncclResult_t p2pMap(struct ncclComm *comm, struct ncclPeerInfo* myInfo, s
     if (ncclCuMemEnable()) {
       // cuMem API support
       struct ncclProxyConnector proxyConn;
+      int fd = *(int *)&p2pBuff->desc;
       NCCLCHECK(ncclProxyConnect(comm, TRANSPORT_P2P, 1, peerInfo->rank, &proxyConn));
-      TRACE(NCCL_P2P, "p2pMap rank %d request conversion of fd %d from rank %d", myInfo->rank, *(int *)&p2pBuff->desc, peerInfo->rank);
-      NCCLCHECK(ncclProxyCallBlocking(&proxyConn, ncclProxyMsgConvertFd, &p2pBuff->desc, sizeof(int), &p2pBuff->desc, sizeof(int)));
+      TRACE(NCCL_P2P, "p2pMap rank %d request conversion of fd %d from rank %d", myInfo->rank, fd, peerInfo->rank);
+      NCCLCHECK(ncclProxyClientConvertFdBlocking(&proxyConn, fd, (int *)&p2pBuff->desc));
       TRACE(NCCL_P2P, "p2pMap rank %d received converted fd %d from rank %d", myInfo->rank, *(int *)&p2pBuff->desc, peerInfo->rank);
       NCCLCHECK(importShareableBuffer(myInfo->cudaDev, p2pBuff->size, &p2pBuff->desc, devMem));
       resources->remotePtr = *devMem;
