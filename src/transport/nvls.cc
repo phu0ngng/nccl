@@ -55,6 +55,7 @@ struct nvlsResources {
   char* mcBuff; // Multicast NVLS buffer address
   CUmemGenericAllocationHandle ucHandle; // Unicast Handle for NVLS buffer
   char* ucBuff; // Unicast NVLS buffer address
+  char shareableHandle[NVLS_HANDLE_SIZE];
 };
 
 
@@ -109,17 +110,6 @@ ncclResult_t nvlsGroupAddDevice(struct ncclComm *comm, struct nvlsResources* res
   return ncclSuccess;
 }
 
-ncclResult_t nvlsGroupUnbind(struct ncclComm *comm, struct nvlsResources* resources) {
-  int dev = resources->dev;
-  size_t size = resources->size;
-  INFO(NCCL_NVLS, "NVLS Unbind MC handle %llx size %zi dev %d", resources->mcHandle, size, dev);
-
-  // Unbind physical memory from group for the given device
-  CUCHECK(cuMulticastUnbind(resources->mcHandle, dev, 0/*mcOffset*/, size));
-
-  return ncclSuccess;
-}
-
 ncclResult_t nvlsGroupConnect(struct ncclComm *comm, struct nvlsResources* resources, int rank, char* shareableHandle) {
   CUmemAllocationHandleType type = NVLS_CU_MEM_HANDLE_TYPE;
 
@@ -144,6 +134,19 @@ ncclResult_t nvlsGroupConnect(struct ncclComm *comm, struct nvlsResources* resou
       memcpy(&resources->mcHandle, shareableHandle, sizeof(resources->mcHandle));
     }
   }
+  return ncclSuccess;
+}
+
+ncclResult_t nvlsGroupDisconnect(struct ncclComm *comm, struct nvlsResources* resources) {
+  CUmemAllocationHandleType type = NVLS_CU_MEM_HANDLE_TYPE;
+
+  // Import and map the remote memory descriptor to the local GPU
+  if (type == CU_MEM_HANDLE_TYPE_POSIX_FILE_DESCRIPTOR) {
+    // cuMem UDS support
+    int fd = *(int *)resources->shareableHandle;
+    (void) close(fd);
+  }
+
   return ncclSuccess;
 }
 
@@ -175,6 +178,20 @@ ncclResult_t nvlsGroupBindMem(struct ncclComm *comm, struct nvlsResources* resou
   // NB: It will block until all ranks have been added to the Group
   INFO(NCCL_NVLS, "NVLS Bind mem %p UC handle 0x%llx MC handle 0x%llx size %zi", (void*)ptr, resources->ucHandle, resources->mcHandle, size);
   CUCHECK(cuMulticastBindMem(resources->mcHandle, 0/*mcOffset*/, resources->ucHandle, 0/*memOffset*/, size, 0/*flags*/));
+
+  return ncclSuccess;
+}
+
+ncclResult_t nvlsGroupUnbind(struct ncclComm *comm, struct nvlsResources* resources) {
+  int dev = resources->dev;
+  size_t size = resources->size;
+  INFO(NCCL_NVLS, "NVLS Unbind MC handle %llx size %zi dev %d", resources->mcHandle, size, dev);
+
+  // Unbind physical memory from group for the given device
+  CUCHECK(cuMulticastUnbind(resources->mcHandle, dev, 0/*mcOffset*/, size));
+
+  // Release the MC group resources
+  NCCLCHECK(nvlsGroupDisconnect(comm, resources));
 
   return ncclSuccess;
 }
@@ -263,15 +280,14 @@ ncclResult_t ncclNvlsSetup(struct ncclComm* comm) {
   INFO(NCCL_INIT|NCCL_NVLS, "NVLS comm %p rank %d nranks %d buffSize %zi memSize %zi nvlsPerRankSize %zi nvlsTotalSize %zi",
        comm, rank, nranks, buffSize, memSize, nvlsPerRankSize, nvlsTotalSize);
 
-  char* nvlsShareableHandle = NULL;
-  NCCLCHECKGOTO(ncclCalloc(&nvlsShareableHandle, NVLS_HANDLE_SIZE), res, cleanup);
+  char *shareableHandle = resources->shareableHandle;
   NCCLCHECKGOTO(nvlsGetProperties(comm, resources, dev, nranks, nvlsTotalSize), res, cleanup);
   if (rank == 0) {
-    NCCLCHECKGOTO(nvlsGroupCreate(comm, resources, rank, nranks, nvlsShareableHandle), res, cleanup);
-    NCCLCHECKGOTO(bootstrapIntraNodeBroadcast(comm->bootstrap, comm->localRankToRank, rank, nranks, 0, nvlsShareableHandle, NVLS_HANDLE_SIZE), res, cleanup);
+    NCCLCHECKGOTO(nvlsGroupCreate(comm, resources, rank, nranks, shareableHandle), res, cleanup);
+    NCCLCHECKGOTO(bootstrapIntraNodeBroadcast(comm->bootstrap, comm->localRankToRank, rank, nranks, 0, shareableHandle, NVLS_HANDLE_SIZE), res, cleanup);
   } else {
-    NCCLCHECKGOTO(bootstrapIntraNodeBroadcast(comm->bootstrap, comm->localRankToRank, rank, nranks, 0, nvlsShareableHandle, NVLS_HANDLE_SIZE), res, cleanup);
-    NCCLCHECKGOTO(nvlsGroupConnect(comm, resources, 0, nvlsShareableHandle), res, cleanup);
+    NCCLCHECKGOTO(bootstrapIntraNodeBroadcast(comm->bootstrap, comm->localRankToRank, rank, nranks, 0, shareableHandle, NVLS_HANDLE_SIZE), res, cleanup);
+    NCCLCHECKGOTO(nvlsGroupConnect(comm, resources, 0, shareableHandle), res, cleanup);
   }
 
   NCCLCHECKGOTO(nvlsGroupAddDevice(comm, resources), res, cleanup);
@@ -338,12 +354,10 @@ ncclResult_t ncclNvlsSetup(struct ncclComm* comm) {
     }
   }
 
-  free(nvlsShareableHandle);
   return res;
 
 cleanup:
   comm->nvlsSupport = 0;
-  free(nvlsShareableHandle);
   return res;
 }
 
