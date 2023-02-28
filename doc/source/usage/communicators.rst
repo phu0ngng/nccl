@@ -52,17 +52,20 @@ Creating a communication with options
 
 The :c:func:`ncclCommInitRankConfig` function allows to create a NCCL communication with specific options.
 
-Currently, NCCL supports only one option, "blocking", which can be set to 0 to ask NCCL to never block in any NCCL
-call, returning *ncclInProgress* if necessary, which then needs to be handled by the application.
+The config parameters NCCL supports are listed here :ref:`ncclconfig`. 
 
-After calling ncclCommInitRankConfig with blocking set to 0, a communicator is returned to the user, who can query the
-status of the init operation using :c:func:`ncclCommGetAsyncError`. The operation is complete when the return code is
-*ncclSuccess*. A simple example code is shown below:
+For example, "blocking" can be set to 0 to ask NCCL to never block in any NCCL call, and at the same time 
+other config parameters can be set as well to more precisely define communicator behavior. A simple example 
+code is shown below:
 
 .. code:: C
 
   ncclConfig_t config = NCCL_CONFIG_INITIALIZER;
   config.blocking = 0;
+  config.minCTAs = 4;
+  config.maxCTAs = 16;
+  config.cgaClusterSize = 2;
+  config.netName = "Socket";
   CHECK(ncclCommInitRankConfig(&comm, nranks, id, rank, &config));
   do {
     CHECK(ncclCommGetAsyncError(comm, &state));
