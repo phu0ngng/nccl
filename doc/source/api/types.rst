@@ -205,7 +205,7 @@ ncclConfig_t
 
  .. c:macro:: maxCTAs
 
-  Set the maximal number of CTAs NCCL should use for each kernel.   
+  Set the maximal number of CTAs NCCL should use for each kernel.
   Set to a positive integer value, up to 32. The default value is 32.
 
  .. c:macro:: netName

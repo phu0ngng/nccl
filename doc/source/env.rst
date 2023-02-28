@@ -833,9 +833,9 @@ NCCL_CGA_CLUSTER_SIZE
 
 Set CUDA Cooperative Group Array (CGA) cluster size. On sm90 and later we have an extra level of hierarchy where we
 can group together several blocks within the Grid, called Thread Block Clusters. Setting this to non-zero will cause
-NCCL to launch the communication kernels with the Cluster Dimension attribute set accordingly. Setting this environment 
-variable will override the ``cgaClusterSize`` configuration in all communicators (see :ref:`ncclconfig`); if not set 
-(undefined), CGA cluster size will be determined by the configuration; if not passing configuration, NCCL will 
+NCCL to launch the communication kernels with the Cluster Dimension attribute set accordingly. Setting this environment
+variable will override the ``cgaClusterSize`` configuration in all communicators (see :ref:`ncclconfig`); if not set
+(undefined), CGA cluster size will be determined by the configuration; if not passing configuration, NCCL will
 automatically choose the best value.
 
 Values accepted
@@ -850,7 +850,7 @@ Set the maximal number of CTAs the NCCL should use. Setting this environment var
 
 Values accepted
 ^^^^^^^^^^^^^^^
-Set to a positive integer value up to 32. Default value is undefined. 
+Set to a positive integer value up to 32. Default value is undefined.
 
 NCCL_MIN_CTAS
 -------------
