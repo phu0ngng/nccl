@@ -131,7 +131,7 @@ void ncclCommPushFree(struct ncclComm* comm, void* obj) {
 }
 
 static ncclResult_t ncclDestructorFnCudaFree(struct ncclDestructor* dtor) {
-  CUDACHECK(cudaFree(dtor->obj));
+  NCCLCHECK(ncclCudaFree(dtor->obj));
   return ncclSuccess;
 }
 void ncclCommPushCudaFree(struct ncclComm* comm, void* obj) {

@@ -346,7 +346,7 @@ ncclResult_t ncclGpuGdrSupport(struct ncclComm* comm, int* gdrSupport) {
       *gdrSupport = 1;
     }
     ncclDebugNoWarn = 0;
-    CUDACHECK(cudaFree(gpuPtr));
+    NCCLCHECK(ncclCudaFree(gpuPtr));
 cleanup2:
     if (rComm != NULL)
       NCCLCHECK(ncclNetCloseRecv(comm, rComm));

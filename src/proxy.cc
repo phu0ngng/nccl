@@ -991,7 +991,7 @@ ncclResult_t ncclProxyConnect(struct ncclComm* comm, int transport, int send, in
   struct ncclSocket* sock;
   int ready;
 
-  // Keep one connection per mlocal rank
+  // Keep one connection per local rank
   proxyConn->connection = NULL;
   proxyConn->rank = rank;
   proxyConn->comm = comm;
@@ -1564,7 +1564,11 @@ ncclResult_t ncclProxyDestroy(struct ncclComm* comm) {
           NCCLCHECK(ncclShmClose(state->proxyOps[i].handle));
         }
         if (state->sharedDevMems[i]) {
-          CUDACHECK(cudaIpcCloseMemHandle(state->sharedDevMems[i]));
+          if (ncclCuMemEnable()) {
+            NCCLCHECK(ncclCuMemFree(state->sharedDevMems[i]));
+          } else {
+            CUDACHECK(cudaIpcCloseMemHandle(state->sharedDevMems[i]));
+          }
         }
         int type = ncclProxyMsgClose;
         if (*comm->abortFlag == 0) NCCLCHECK(ncclSocketSend(state->peerSocks + i, &type, sizeof(int)));
