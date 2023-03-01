@@ -39,6 +39,9 @@
 
 int main(int argc, char** argv)
 {
+    // Make sure everyline is flushed so that we see the progress of the test
+    setlinebuf(stdout);
+
     MPI_TRY(MPI_Init(&argc, &argv));
 
     // Determine COMM_WORLD rank and size
@@ -120,6 +123,14 @@ int main(int argc, char** argv)
       }
       MPI_TRY(MPI_Bcast(&nccl_unique_id, sizeof(ncclUniqueId), MPI_BYTE, 0, MPI_COMM_WORLD));
       MPI_Barrier(MPI_COMM_WORLD);
+
+      if (comm_rank == 0 && (i % 10) == 0) {
+        struct timeval now;
+        double elapsed;
+        gettimeofday(&now, NULL);
+        elapsed = (now.tv_sec-start.tv_sec)*1.0 + (now.tv_usec-start.tv_usec)*1.0E-6;
+        printf("Doing iteration %zi elapsed time %gs\n", i, elapsed);
+      }
 
       NCCL_TRY(ncclGroupStart());
       for (int g = 0; g < num_gpus; g++) {

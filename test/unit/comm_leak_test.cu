@@ -42,6 +42,9 @@ int main(int argc, char** argv)
     size_t warmup = 1;
     int abort = 0;
 
+    // Make sure everyline is flushed so that we see the progress of the test
+    setlinebuf(stdout);
+
     if (argc > 1) reps = atoi(argv[1]);
     if (argc > 2) num_gpus = atoi(argv[2]);
     if (argc > 3) warmup = atoi(argv[3]);
@@ -80,6 +83,13 @@ int main(int argc, char** argv)
 
     for (size_t i = 0; i < reps; ++i) {
       ncclComm_t nccl_comm[MAX_GPUS];
+      if ((i % 10) == 0) {
+        struct timeval now;
+        double elapsed;
+        gettimeofday(&now, NULL);
+        elapsed = (now.tv_sec-start.tv_sec)*1.0 + (now.tv_usec-start.tv_usec)*1.0E-6;
+        printf("Doing iteration %zi elapsed time %gs\n", i, elapsed);
+      }
       NCCL_TRY(ncclCommInitAll(nccl_comm, num_gpus, dev_list));
       for (int g = 0; g < num_gpus; g++)
         NCCL_TRY(abort ? ncclCommAbort(nccl_comm[g]) : ncclCommDestroy(nccl_comm[g]));
