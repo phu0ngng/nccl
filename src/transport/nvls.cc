@@ -230,7 +230,7 @@ ncclResult_t ncclNvlsSetup(struct ncclComm* comm) {
   int nHeads = comm->channels[0].nvls.nHeads;
   int headRank = comm->channels[0].nvls.headRank;
 
-  if (!ncclParamNvlsEnable() || comm->localRanks <= 1 || comm->nHeads == 0) return ncclSuccess;
+  if (!ncclParamNvlsEnable() || comm->localRanks <= 1 || nHeads == 0) return ncclSuccess;
   int dev, driverVersion;
   CUCHECK(cuCtxGetDevice(&dev));
   CUDACHECK(cudaDriverGetVersion(&driverVersion));
@@ -261,7 +261,7 @@ ncclResult_t ncclNvlsSetup(struct ncclComm* comm) {
 
   char* nvlsShareableHandle = NULL;
   NCCLCHECKGOTO(ncclCalloc(&nvlsShareableHandle, NVLS_HANDLE_SIZE), res, cleanup);
-  NCCLCHECKGOTO(nvlsGetProperties(comm, resources, dev, nranks, nvlsTotalSize), res, cleanup);
+  NCCLCHECKGOTO(nvlsGetProperties(comm, resources, dev, comm->localRanks, nvlsTotalSize), res, cleanup);
   if (comm->localRank == 0) {
     NCCLCHECKGOTO(nvlsGroupCreate(comm, resources, comm->localRank, comm->localRanks, nvlsShareableHandle), res, cleanup);
     NCCLCHECKGOTO(bootstrapIntraNodeBroadcast(comm->bootstrap, comm->localRankToRank, comm->localRank, comm->localRanks, 0, nvlsShareableHandle, NVLS_HANDLE_SIZE), res, cleanup);
