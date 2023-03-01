@@ -54,7 +54,7 @@ def compare_times(placeness, bads, wins, neutrals, new_times, old_times, rmad_th
 
       # t1 and t0 are arrays of times (in microseconds) that should be of equal length
       if len(t0) != len(t1):
-        print("Mismatched number of runs. len(baselines): " + len(t0) + " != len(new): " + len(t1))
+        print("Mismatched number of runs. len(baselines): " + str(len(t0)) + " != len(new): " + str(len(t1)))
         exit_code = 1
         return
 
