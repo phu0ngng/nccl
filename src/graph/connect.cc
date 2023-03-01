@@ -223,7 +223,6 @@ NCCL_PARAM(NvlsChannels, "NVLS_NCHANNELS", 16);
 
 static ncclResult_t connectNvlsRings(struct ncclComm* comm, int* nvlsRing, struct ncclTopoGraph* nvlsGraph) {
   int nHeads = nvlsGraph->nChannels;
-  printf("Connect NVLS Rings %d heads\n", nHeads);
   int heads[MAXCHANNELS];
   int headRank = -1;
   for (int h=0; h<nHeads; h++) {

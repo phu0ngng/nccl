@@ -118,10 +118,9 @@ class Primitives<
     return ld_volatile_global(ptr);
   }
 
-  template<int Enable, int Role, int Mask>
+  template<int Mask>
   inline __device__ int getIndex(int ix) {
     if (Mask == 0) return ix;
-    if (flags & (Enable*Role) == 0) return ix;
     ix = 0;
     for (int mask=1; mask<=Mask; mask <<= 1) {
       if (mask == (1 << index)) {
@@ -138,10 +137,11 @@ class Primitives<
     const bool isSendNotRecv = (Send && Recv) ? (flags & RoleWaitSend) : Send;
     const bool noRecvWait = DirectRecv && Src && (flags & DirectRead);        // no wait when directly reading from remote input
     const bool noSendWait = DirectSend && (flags & (DirectRead|DirectWrite)); // no wait in empty send (e.g. directScatter) or direct remote write
-    int ix = index;
-    ix = getIndex<Send, RoleWaitSend, SendMask>(ix);
-    ix = getIndex<Recv, RoleWaitRecv, RecvMask>(ix);
+    int ix = -1;
+    if (flags & Recv*RoleWaitRecv) ix = getIndex<RecvMask>(index);
+    if (flags & Send*RoleWaitSend) ix = getIndex<SendMask>(index);
     if (ix == -1) return;
+    if (NVLS && ncclShmem.groups[group].nvlsRecv) printf("[%d] Index %d Flags %x Send %d/%x/%x Recv %d/%x/%x ix %d\n", threadIdx.x, index, flags, Send, RoleWaitSend, SendMask, Recv, RoleWaitRecv, RecvMask, ix);
 
     if (((flags & (Recv*RoleWaitRecv)) && !noRecvWait) ||
         ((flags & (Send*RoleWaitSend)) && !noSendWait)) {
@@ -187,9 +187,9 @@ class Primitives<
 
   template<int Recv, int Send, int RecvMask, int SendMask>
   inline __device__ void postPeer(bool dataStored) {
-    int ix = index;
-    ix = getIndex<Send, RoleWaitSend, SendMask>(ix);
-    ix = getIndex<Recv, RoleWaitRecv, RecvMask>(ix);
+    int ix = -1;
+    if (flags & Recv*RolePostRecv) ix = getIndex<RecvMask>(index);
+    if (flags & Send*RolePostSend) ix = getIndex<SendMask>(index);
 
     if (Send && (flags & RolePostSend) && ix == 0) __threadfence_system();
     __syncwarp();
@@ -623,13 +623,13 @@ class Primitives<
 
   template <int InpMask, int OutMask>
   __device__ __forceinline__ void maskRecvSend(intptr_t inpIx, intptr_t outIx, int eltN) {
-    static constexpr int Src = (InpMask&0x1) ? Input : 0;
-    static constexpr int Dst = (OutMask&0x1) ? Output : 0;
+    static constexpr int SrcBuf = (InpMask&0x1) ? Input : -1;
+    static constexpr int DstBuf = (OutMask&0x1) ? Output : -1;
     static constexpr int RecvMask = InpMask >> 1;
     static constexpr int SendMask = OutMask >> 1;
-    if (SendMask == 0) genericOp<0, 0, 1, 0, Src, Dst, RecvMask, 0>(inpIx, outIx, eltN, false);
-    else if (RecvMask == 0) genericOp<0, 0, 0, 1, Src, Dst, 0, SendMask>(inpIx, outIx, eltN, false);
-    else genericOp<0, 0, 1, 1, Src, Dst, RecvMask, SendMask>(inpIx, outIx, eltN, false);
+    if (SendMask == 0) genericOp<0, 0, 1, 0, SrcBuf, DstBuf, RecvMask, 0>(inpIx, outIx, eltN, false);
+    else if (RecvMask == 0) genericOp<0, 0, 0, 1, SrcBuf, DstBuf, 0, SendMask>(inpIx, outIx, eltN, false);
+    else genericOp<0, 0, 1, 1, SrcBuf, DstBuf, RecvMask, SendMask>(inpIx, outIx, eltN, false);
   }
 
   __device__ __forceinline__ void send(intptr_t inpIx, int eltN) {
