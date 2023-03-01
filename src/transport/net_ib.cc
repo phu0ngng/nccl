@@ -717,7 +717,7 @@ ncclResult_t ncclIbAccept(void* listenComm, void** recvComm) {
   if (stage->state == ncclIbCommStateSend) goto ib_send;
   if (stage->state == ncclIbCommStatePendingReady) goto ib_recv_ready;
   if (stage->state != ncclIbCommStateStart) {
-    WARN("Listencomm in unknown state %d\n", stage->state);
+    WARN("Listencomm in unknown state %d", stage->state);
     return ncclInternalError;
   }
 

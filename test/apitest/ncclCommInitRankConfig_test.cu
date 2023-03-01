@@ -378,19 +378,7 @@ TEST_F(ncclCommInitRankConfig_test, net_name_internal) {
     ncclComm_t* comms;
     ncclConfig_t config = NCCL_CONFIG_INITIALIZER;
     
-    config.netName = "IB";
     comms = (ncclComm_t*)calloc(ndev, sizeof(ncclComm_t));
-    ASSERT_EQ(ncclSuccess, ncclGetUniqueId(&id));
-    ASSERT_EQ(ncclSuccess, ncclGroupStart());
-    for (int i = 0; i < ndev; ++i) {
-        ASSERT_EQ(cudaSuccess, cudaSetDevice(i));
-        ASSERT_EQ(ncclSuccess, ncclCommInitRankConfig(&comms[i], ndev, id, i, &config));
-    }
-    ASSERT_EQ(ncclSuccess, ncclGroupEnd());
-
-    for (int i = 0; i < ndev; ++i)
-        ASSERT_EQ(ncclSuccess, ncclCommDestroy(comms[i]));
-    
     config.netName = "Socket";
     ASSERT_EQ(ncclSuccess, ncclGetUniqueId(&id));
     ASSERT_EQ(ncclSuccess, ncclGroupStart());

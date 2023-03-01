@@ -205,11 +205,11 @@ ncclConfig_t
 
  .. c:macro:: maxCTAs
 
-  Set the maximal number of CTAs NCCL should use for each kernel.   
+  Set the maximal number of CTAs NCCL should use for each kernel.
   Set to a positive integer value, up to 32. The default value is 32.
 
  .. c:macro:: netName
   Specify the network module name NCCL should use for network communication. The value of netName must match
-  exactly the name of the network module (case-sensitive). NCCL internal network module names are "IB"
+  exactly the name of the network module (case-insensitive). NCCL internal network module names are "IB"
   (generic IB verbs) and "Socket" (TCP/IP sockets). External network plugins define their own names.
   Default value is undefined, and NCCL will choose the network module automatically.

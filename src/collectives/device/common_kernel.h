@@ -77,7 +77,8 @@ __device__ __forceinline__ void reduceCopyPacks(
     { RedFn preFn(0 < PreOpSrcs ? preOpArgs[0] : 0);
       #pragma unroll Unroll
       for (int u=0; u < Unroll; u++) {
-        acc[u] = ld_global<BytePerPack>(minSrcs[0]);
+        // Use volatile loads in case credits are polled for with volatile (instead of acquire).
+        acc[u] = ld_volatile_global<BytePerPack>(minSrcs[0]);
         minSrcs[0] += WARP_SIZE*BytePerPack;
         if (0 < PreOpSrcs) acc[u] = applyPreOp(preFn, acc[u]);
       }
@@ -89,7 +90,8 @@ __device__ __forceinline__ void reduceCopyPacks(
       RedFn preFn(s < PreOpSrcs ? preOpArgs[s] : 0);
       #pragma unroll Unroll
       for (int u=0; u < Unroll; u++) {
-        tmp[u] = ld_global<BytePerPack>(minSrcs[s]);
+        // Use volatile loads in case credits are polled for with volatile (instead of acquire).
+        tmp[u] = ld_volatile_global<BytePerPack>(minSrcs[s]);
         minSrcs[s] += WARP_SIZE*BytePerPack;
       }
       #pragma unroll Unroll
@@ -105,7 +107,8 @@ __device__ __forceinline__ void reduceCopyPacks(
       RedFn preFn(s < PreOpSrcs ? preOpArgs[s] : 0);
       #pragma unroll Unroll
       for (int u=0; u < Unroll; u++) {
-        tmp[u] = ld_global<BytePerPack>(src);
+        // Use volatile loads in case credits are polled for with volatile (instead of acquire).
+        tmp[u] = ld_volatile_global<BytePerPack>(src);
         src += WARP_SIZE*BytePerPack;
       }
       #pragma unroll Unroll

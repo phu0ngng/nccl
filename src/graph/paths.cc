@@ -461,7 +461,7 @@ ncclResult_t ncclTopoGetIntermediateRank(struct ncclTopoSystem* system, int rank
       type = node->type;
     }
     if (type != GPU) {
-      WARN("Could not find intermediate GPU between GPU rank %d and NIC %d\n", rank, netDev);
+      WARN("Could not find intermediate GPU between GPU rank %d and NIC %d", rank, netDev);
       return ncclInternalError;
     }
     *intermediateRank = node->gpu.rank;

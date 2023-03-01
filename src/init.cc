@@ -239,8 +239,8 @@ static ncclResult_t dmaBufSupported(struct ncclComm* comm) {
   int flag = 0;
   CUdevice dev;
   int cudaDriverVersion;
-  CUCHECK(cuDriverGetVersion(&cudaDriverVersion));
-  if (cudaDriverVersion < 11070) return ncclInternalError;
+  CUDACHECK(cudaDriverGetVersion(&cudaDriverVersion));
+  if (CUPFN(cuDeviceGet) == NULL || cudaDriverVersion < 11070) return ncclInternalError;
   CUCHECK(cuDeviceGet(&dev, comm->cudaDev));
   // Query device to see if DMA-BUF support is available
   (void) CUPFN(cuDeviceGetAttribute(&flag, CU_DEVICE_ATTRIBUTE_DMA_BUF_SUPPORTED, dev));
@@ -261,7 +261,7 @@ ncclResult_t ncclCommEnsureReady(ncclComm_t comm) {
     NCCLCHECK(ncclCommGetAsyncError(comm, &ret));
     if (ret != ncclSuccess) {
       /* if ret is not ncclInProgress, we just keep it. */
-      WARN("Attempt to use communicator before the previous operation returned ncclSuccess\n");
+      WARN("Attempt to use communicator before the previous operation returned ncclSuccess");
       if (ret == ncclInProgress) ret = ncclInvalidArgument;
       goto exit;
     }
@@ -518,8 +518,8 @@ static ncclResult_t collNetTrySetup(ncclComm_t comm, struct ncclTopoGraph* collN
     struct ncclChannel* channel = comm->channels + c;
     for (int h = 0; h < nHeads; h++) {
       const int head = heads[h];
-      collNetSetupFail = ncclTransportCollNetSetup(comm, collNetGraph, channel, head, head, h, collNetRecv);
-      if (!collNetSetupFail) collNetSetupFail = ncclTransportCollNetSetup(comm, collNetGraph, channel, head, head, h, collNetSend);
+      collNetSetupFail |= ncclTransportCollNetSetup(comm, collNetGraph, channel, head, head, h, collNetRecv);
+      if (!collNetSetupFail) collNetSetupFail |= ncclTransportCollNetSetup(comm, collNetGraph, channel, head, head, h, collNetSend);
     }
     // Verify CollNet setup across ranks after trying the first channel
     if (c == 0) {
@@ -1143,7 +1143,8 @@ static ncclResult_t parseCommConfig(ncclComm_t comm, ncclConfig_t *config) {
   int cgaClusterSizeEnv;
   int minCTAsEnv;
   int maxCTAsEnv;
-  const char *envNetName, *tmpNetName;  
+  const char *envNetName, *tmpNetName;
+  ncclConfig_t defaultConfig = NCCL_CONFIG_INITIALIZER;
   ncclConfig_t internalConfig = NCCL_CONFIG_INITIALIZER;
   ncclConfig_t *internalConfigPtr;
   size_t realSize;
@@ -1158,6 +1159,18 @@ static ncclResult_t parseCommConfig(ncclComm_t comm, ncclConfig_t *config) {
       ret = ncclInvalidArgument;
       goto fail;
     }
+
+    /* check version. */
+    if (internalConfigPtr->version < NCCL_VERSION(2, 14, 0)) {
+      internalConfigPtr->blocking = defaultConfig.blocking;
+    }
+
+    if (internalConfigPtr->version < NCCL_VERSION(2, 17, 0)) {
+      internalConfigPtr->cgaClusterSize = defaultConfig.cgaClusterSize;
+      internalConfigPtr->minCTAs = defaultConfig.minCTAs;
+      internalConfigPtr->maxCTAs = defaultConfig.maxCTAs;
+      internalConfigPtr->netName = defaultConfig.netName;
+    }
   }
 
   /* check input config attributes, -1 means user-undefined and we should use default value from NCCL. */
@@ -1166,7 +1179,7 @@ static ncclResult_t parseCommConfig(ncclComm_t comm, ncclConfig_t *config) {
     ret = ncclInvalidArgument;
     goto fail;
   }
-  
+
   if (internalConfigPtr->cgaClusterSize != NCCL_CONFIG_UNDEF_INT && internalConfigPtr->cgaClusterSize < 0) {
     WARN("Invalid config cgaClusterSize attribute value %d", internalConfigPtr->cgaClusterSize);
     ret = ncclInvalidArgument;
@@ -1223,21 +1236,21 @@ static ncclResult_t parseCommConfig(ncclComm_t comm, ncclConfig_t *config) {
 
   /* cap channels if needed */
   if (comm->minCTAs > MAXCHANNELS) {
-    WARN("minCTAs %d is larger than #channels upper limit %d\n", comm->minCTAs, MAXCHANNELS);
+    WARN("minCTAs %d is larger than #channels upper limit %d", comm->minCTAs, MAXCHANNELS);
     comm->minCTAs = MAXCHANNELS;
   }
 
   if (comm->maxCTAs > MAXCHANNELS) {
-    WARN("maxCTAs %d is larger than #channels upper limit %d\n", comm->maxCTAs, MAXCHANNELS);
+    WARN("maxCTAs %d is larger than #channels upper limit %d", comm->maxCTAs, MAXCHANNELS);
     comm->maxCTAs = MAXCHANNELS;
   }
 
   if (comm->minCTAs > comm->maxCTAs) {
-    WARN("minCTAs %d is larger than maxCTAs %d\n", comm->minCTAs, comm->maxCTAs);
+    WARN("minCTAs %d is larger than maxCTAs %d", comm->minCTAs, comm->maxCTAs);
     ret = ncclInvalidArgument;
     goto fail;
   }
-  
+
   envNetName = getenv("NCCL_NET");
   if (envNetName)
     tmpNetName = envNetName;
@@ -1419,7 +1432,7 @@ ncclResult_t ncclCommInitRankConfig(ncclComm_t *newcomm, int nranks, ncclUniqueI
   (void)ncclCudaLibraryInit();
   CUDACHECKGOTO(cudaGetDevice(&cudaDev), ret, fail);
 
-  if (config == NULL) 
+  if (config == NULL)
     internalConfigPtr = &internalConfig;
   else
     internalConfigPtr = config;

@@ -871,7 +871,7 @@ static void CUDART_CB hostStreamPlanCallback(void *plan_) {
   struct ncclKernelPlan* plan = (struct ncclKernelPlan*)plan_;
   ncclResult_t result = hostStreamPlanTask(plan->comm, plan);
   if (result != ncclSuccess) {
-    WARN("hostStreamPlanCallback() failed : %s\n", ncclGetErrorString(result));
+    WARN("hostStreamPlanCallback() failed : %s", ncclGetErrorString(result));
   }
 }
 

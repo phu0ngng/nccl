@@ -106,16 +106,16 @@ class Primitives<
   }
 
   inline __device__ uint64_t loadStepValue(uint64_t* ptr) {
-    uintptr_t addr = cvta_to_global(ptr);
-    uint64_t ans;
     #if __CUDA_ARCH__ >= 900 && CUDART_VERSION >= 12010
     if (NVLS && (flags & NvlsMinPolling)) {
-      asm("multimem.ld_reduce.acquire.sys.global.min.u64 %0, [%1];" : "=l"(ans) : "l"(addr));
+      uint64_t ans;
+      asm("multimem.ld_reduce.acquire.sys.global.min.u64 %0, [%1];" : "=l"(ans) : "l"(cvta_to_global(ptr)));
       return ans;
     }
     #endif
-    asm("ld.volatile.global.u64 %0, [%1];": "=l"(ans) : "l"(addr));
-    return ans;
+    // volatile is faster than acquire but not as correct. Make sure ReduceOrCopyMulti
+    // loads data using volatile so it doesn't see stale data in L1.
+    return ld_volatile_global(ptr);
   }
 
   template<int Enable, int Role, int Mask>
@@ -186,7 +186,7 @@ class Primitives<
   }
 
   template<int Recv, int Send, int RecvMask, int SendMask>
-  inline __device__ void postPeer() {
+  inline __device__ void postPeer(bool dataStored) {
     int ix = index;
     ix = getIndex<Send, RoleWaitSend, SendMask>(ix);
     ix = getIndex<Recv, RoleWaitRecv, RecvMask>(ix);
@@ -196,7 +196,8 @@ class Primitives<
     if (ix == -1) return;
     if (flags & (Recv*RolePostRecv | Send*RolePostSend)) {
       step += StepPerSlice;
-      *connStepPtr = step;
+      if (Send && (flags & RolePostSend) && dataStored) fence_acq_rel_sys();
+      st_relaxed_sys_global(connStepPtr, step);
     }
   }
 
@@ -289,7 +290,7 @@ class Primitives<
              workSize);
         }
         barrier(); // This barrier has a counterpart in following loop
-        postPeer<Recv, Send, RecvMask, SendMask>();
+        postPeer<Recv, Send, RecvMask, SendMask>(0 < sliceSize);
         offset += sliceSize;
         slice += 1;
       } while (slice < SlicePerChunk && offset < nelem);
@@ -307,9 +308,7 @@ class Primitives<
         waitPeer<DirectRecv, DirectSend, Recv, Send, Src, Dst, RecvMask, SendMask>(0, 0, 0, 0);
       }
       barrier(); // Has couterpart in preceding worker-only loop.
-      if (Send && (flags & RolePostSend) && sliceSize > 0 && index == 0) __threadfence_system();
-      __syncwarp();
-      postPeer<Recv, Send, RecvMask, SendMask>();
+      postPeer<Recv, Send, RecvMask, SendMask>(0 < sliceSize);
       offset += sliceSize;
       slice += 1;
     }
@@ -378,11 +377,7 @@ class Primitives<
         }
       }
       fenceNeeded = barrierAny(fenceNeeded);
-      // If we indeed send something, threadfence
-      if (Send && (flags & RolePostSend) && fenceNeeded && index == 0)
-        __threadfence_system();
-      __syncwarp();
-      postPeer<Recv, Send, 0, 0>();
+      postPeer<Recv, Send, 0, 0>(fenceNeeded);
       offset += realSize;
     }
   }

@@ -137,9 +137,10 @@ static void initOnceFunc() {
   else
     snprintf(path, 1024, "%s%s", ncclCudaPath, "libcuda.so");
 
+  (void) dlerror(); // Clear any previous errors
   cudaLib = dlopen(path, RTLD_LAZY);
   if (cudaLib == NULL) {
-    WARN("Failed to find CUDA library (NCCL_CUDA_PATH='%s') : %s", ncclCudaPath ? ncclCudaPath : "", dlerror());
+    WARN("Failed to find CUDA library %s (NCCL_CUDA_PATH='%s') : %s", path, ncclCudaPath ? ncclCudaPath : "", dlerror());
     goto error;
   }
 
