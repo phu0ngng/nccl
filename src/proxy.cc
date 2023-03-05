@@ -65,6 +65,7 @@ static ncclResult_t expectedProxyResponseStore(struct ncclProxyState* state, voi
       }
 
       memcpy(elem->respBuff, respBuff, respSize);
+      free(respBuff);
       elem->done = true;
       return ncclSuccess;
     }
@@ -1141,6 +1142,11 @@ ncclResult_t ncclPollProxyResponse(struct ncclProxyConnector* proxyConn, void* r
 
     // If there's a respSize to recv
     if (respSize > 0) {
+      if (recvOpId != opId) {
+        // Unexpected response, need to buffer the socket data
+        respBuff = malloc(respSize);
+      }
+      assert(respBuff != NULL);
       NCCLCHECK(ncclSocketRecv(sock, respBuff, respSize));
     }
 
@@ -1149,7 +1155,7 @@ ncclResult_t ncclPollProxyResponse(struct ncclProxyConnector* proxyConn, void* r
       NCCLCHECK(expectedProxyResponseRemove(&comm->proxyState, recvOpId));
       return ncclSuccess;
     } else {
-      INFO(NCCL_PROXY, "Queuing opId=%p", recvOpId);
+      INFO(NCCL_PROXY, "Queuing opId=%p respBuff=%p respSize=%d", recvOpId, respBuff, respSize);
       // Store the result and mark response as completed
       NCCLCHECK(expectedProxyResponseStore(&comm->proxyState, recvOpId, respBuff, respSize));
       return ncclInProgress;
