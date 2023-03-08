@@ -347,7 +347,8 @@ ncclResult_t p2pSendSetup(struct ncclComm* comm, struct ncclTopoGraph* graph, st
     info->rank = myInfo->rank;
     if (myInfo->pidHash == peerInfo->pidHash && useMemcpy == 0) {
       resources->type = P2P_DIRECT;
-      if (ncclParamP2pDirectDisable() == 0) send->conn.flags |= info->read ? NCCL_DIRECT_READ : NCCL_DIRECT_WRITE;
+      // Cannot use P2P_DIRECT when using the cuMem API
+      if (ncclParamP2pDirectDisable() == 0 && !ncclCuMemEnable()) send->conn.flags |= info->read ? NCCL_DIRECT_READ : NCCL_DIRECT_WRITE;
       INFO(NCCL_INIT|NCCL_P2P, "Channel %02d/%01d : %d[%lx] -> %d[%lx] via P2P/direct pointer%s",
           channelId, connIndex, myInfo->rank, myInfo->busId, peerInfo->rank, peerInfo->busId, useReadStr);
     } else {
@@ -409,7 +410,8 @@ ncclResult_t p2pRecvSetup(struct ncclComm* comm, struct ncclTopoGraph* graph, st
     info->rank = myInfo->rank;
     if (myInfo->pidHash == peerInfo->pidHash && useMemcpy == 0) {
       resources->type = P2P_DIRECT;
-      if (ncclParamP2pDirectDisable() == 0) recv->conn.flags |= info->read ? NCCL_DIRECT_READ : NCCL_DIRECT_WRITE;
+      // Cannot use P2P_DIRECT when using the cuMem API
+      if (ncclParamP2pDirectDisable() == 0 && !ncclCuMemEnable()) recv->conn.flags |= info->read ? NCCL_DIRECT_READ : NCCL_DIRECT_WRITE;
     } else {
       if (ncclCuMemEnable()) {
         // cuMem API support
