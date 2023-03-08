@@ -13,6 +13,17 @@
 
 typedef struct {
   int data; // Currently only support an fd based descriptor
-} ncclP2pDesc;
+} ncclCuDesc;
+
+typedef union {
+  // Legacy CUDA IPC
+  cudaIpcMemHandle_t devIpc;
+  // cuMem API support
+  ncclCuDesc cuDesc;
+} ncclIpcDesc;
+
+ncclResult_t ncclP2pAllocateShareableBuffer(size_t size, ncclIpcDesc *ipcDesc, void **ptr);
+ncclResult_t ncclP2pFreeShareableBuffer(ncclIpcDesc *ipcDesc);
+ncclResult_t ncclP2pImportShareableBuffer(struct ncclComm *comm, int peer, size_t size, ncclIpcDesc *ipcDesc, void **devMemPtr);
 
 #endif

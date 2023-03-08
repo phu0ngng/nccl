@@ -1049,11 +1049,13 @@ ncclResult_t ncclProxyClientConvertFdBlocking(struct ncclProxyConnector* proxyCo
   void* opId = malloc(1);
   // Create a UDS socket to receive the converted fd
   NCCLCHECK(ncclIpcSocketInit(&ipcSock, comm->localRank, (uint64_t)proxyConn->connection, comm->abortFlag));
+
+  // Request the conversion of the fd over sockets
   NCCLCHECKGOTO(ncclProxyCallAsync(proxyConn, ncclProxyMsgConvertFd, &fd, sizeof(int), 0, opId), ret, error);
 
   // Receive converted fd over UDS
   NCCLCHECK(ncclIpcSocketRecvFd(&ipcSock, convertedFd));
-  TRACE(NCCL_PROXY, "UDS: ConvertFd rank %d returned %p %d", proxyConn->localRank, convertedFd, *convertedFd);
+  TRACE(NCCL_PROXY, "UDS ConvertFd rank %d returned %p %d", proxyConn->localRank, convertedFd, *convertedFd);
   assert(*convertedFd != -1);
   NCCLCHECK(ncclIpcSocketClose(&ipcSock));
 
@@ -1268,7 +1270,7 @@ static ncclResult_t proxyConvertFd(struct ncclProxyLocalPeer* peer, ncclProxyCon
   struct ncclIpcSocket ipcSock = { 0 };
   uint64_t hash = (uint64_t) connection;
 
-  INFO(NCCL_PROXY, "UDS: proxyConvertFd received fd %d peer %d connection (hash) %lx", fd, peer->localRank, hash);
+  INFO(NCCL_PROXY, "UDS proxyConvertFd received fd %d peer %d connection (hash) %lx", fd, peer->localRank, hash);
   // Send back the converted fd using UDS
   NCCLCHECK(ncclIpcSocketInit(&ipcSock, comm->localRank, hash^1, comm->abortFlag));
   NCCLCHECK(ncclIpcSocketSendFd(&ipcSock, fd, peer->localRank, hash));

@@ -11,14 +11,8 @@
 
 #include <dlfcn.h>
 
-#if CUDART_VERSION >= 11030
-#define CUMEM_ENABLE 1
-#else
-#define CUMEM_ENABLE 0
-#endif
-
 // This env var (NCCL_CUMEM_ENABLE) toggles cuMem API usage
-NCCL_PARAM(CuMemEnable, "CUMEM_ENABLE", CUMEM_ENABLE);
+NCCL_PARAM(CuMemEnable, "CUMEM_ENABLE", 1);
 
 int ncclCuMemEnable() {
   return (ncclParamCuMemEnable() && CUPFN(cuMemCreate) != NULL);

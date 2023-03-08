@@ -122,9 +122,7 @@ struct ncclProxySharedP2p {
   char* cudaBuff;
   char* hostBuff;
   // CUDA IPC
-  cudaIpcMemHandle_t ipc;
-  // cuMem API support
-  ncclP2pDesc desc;
+  ncclIpcDesc ipcDesc;
   struct ncclProxyArgs* proxyAppend[MAXCHANNELS]; // Separate send and recv
 };
 
@@ -255,7 +253,7 @@ enum ncclProxyMsgType {
   ncclProxyMsgClose = 6,
   ncclProxyMsgAbort = 7,
   ncclProxyMsgStop = 8,
-  ncclProxyMsgConvertFd = 9 // cuMem API support (UDS)
+  ncclProxyMsgConvertFd = 9, // cuMem API support (UDS)
 };
 
 // This function is called by a client of the proxy that needs to invoke any of the non-progress proxyOp types
@@ -271,4 +269,5 @@ ncclResult_t ncclProxyClientConvertFdBlocking(struct ncclProxyConnector* proxyCo
 
 ncclResult_t ncclProxyDestroy(struct ncclComm* comm);
 ncclResult_t ncclProxyShmUnlink(struct ncclComm* comm);
+
 #endif
