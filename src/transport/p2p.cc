@@ -661,10 +661,12 @@ static ncclResult_t p2pSendProxyFree(struct ncclProxyConnection* connection, str
 static ncclResult_t p2pRecvProxyFree(struct ncclProxyConnection* connection, struct ncclComm* comm) {
   if (ncclCuMemEnable()) {
     struct p2pCuMemProxyInfo *proxyInfo = (struct p2pCuMemProxyInfo *) connection->transportResources;
-    struct ncclP2pBuff *p2pBuff = &proxyInfo->p2pBuff;
-    ncclP2pFreeShareableBuffer(&p2pBuff->ipcDesc);
-    ncclCudaFree(p2pBuff->directPtr);
-    free(proxyInfo);
+    if (proxyInfo) {
+      struct ncclP2pBuff *p2pBuff = &proxyInfo->p2pBuff;
+      ncclP2pFreeShareableBuffer(&p2pBuff->ipcDesc);
+      ncclCudaFree(p2pBuff->directPtr);
+      free(proxyInfo);
+    }
   } else {
     // Do not check return code as CUDA may have already shut down
     ncclCudaFree(connection->transportResources);
