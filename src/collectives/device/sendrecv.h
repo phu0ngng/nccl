@@ -18,7 +18,7 @@ struct RunWork<ncclFuncSendRecv, T, RedOp, NCCL_ALGO_RING, NCCL_PROTO_SIMPLE> {
       struct ncclWorkElemP2p* recvArgs = args-1;
       void* recvBuff = reinterpret_cast<void*>(uintptr_t(recvArgs->buffHi32)<<32 | recvArgs->buffLo32);
       if (buff != recvBuff) {
-        ReduceOrCopyMulti<COLL_UNROLL, RedOp, T, 1, 1, 1, 1, /*PreOpSrcs=*/0>
+        reduceCopy<COLL_UNROLL, RedOp, T, 0,1,1, 0,1,1, /*PreOpSrcs=*/0>
           (tid, nthreads, 0, nullptr, false, 1, &buff, 1, &recvBuff, count);
       }
     } else {

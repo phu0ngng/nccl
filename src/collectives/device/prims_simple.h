@@ -113,7 +113,7 @@ class Primitives<
       return ans;
     }
     #endif
-    // volatile is faster than acquire but not as correct. Make sure ReduceOrCopyMulti
+    // volatile is faster than acquire but not as correct. Make sure reduceCopy
     // loads data using volatile so it doesn't see stale data in L1.
     return ld_volatile_global(ptr);
   }
@@ -260,14 +260,15 @@ class Primitives<
          * to 0 to avoid unnecessary workload. */
         int workSize = ncclShmem.aborted ? 0 : sliceSize;
         if (NVLS && ncclShmem.groups[group].nvlsRecv) {
-          void* src = ncclShmem.groups[group].srcs[0];
-          void* dst = ncclShmem.groups[group].dsts[0];
-          copyMultimemMultimem<RedOp>(tid, nworkers, ncclShmem.redOpArgs[0], postOp, src, dst, workSize,
-          cvta_to_shared(ncclScratchForWarp(tidInBlock/WARP_SIZE)));
+          reduceCopy<Unroll, RedOp, T, /*{Multimem,Min,Max}Srcs=*/1,1,1, /*{Multimem,Min,Max}Dsts=*/1,1,1, /*PreOpSrcs=*/0>
+            (tid, nworkers, ncclShmem.redOpArgs[0], ncclShmem.redOpArgs, postOp,
+             Recv*fan.nrecv()+Src, ncclShmem.groups[group].srcs,
+             Send*fan.nsend()+Dst, ncclShmem.groups[group].dsts,
+             workSize);
         } else if (DirectRecv && ncclShmem.groups[group].srcs[0] == ncclShmem.groups[group].dsts[0]) {
           // We can only have one direct receive. Since srcs[0] == dstPtr+offset, skip one copy
           if (Send) {
-            ReduceOrCopyMulti<Unroll, RedOp, T, 1, 1, 1, MaxSend, /*PreOpSrcs*/0>
+            reduceCopy<Unroll, RedOp, T, 0, 1, 1, 0, 1, MaxSend, /*PreOpSrcs*/0>
               (tid, nworkers, /*redArg*/0, /*preOpArgs*/nullptr, /*postOp*/false,
                1, ncclShmem.groups[group].srcs,
                nSendPeers, ncclShmem.groups[group].dsts+1,
@@ -275,7 +276,7 @@ class Primitives<
           }
         } else if (DirectSend && !DirectRecv && SrcBuf != Input && ncclShmem.groups[group].dsts[Dst] == nullptr) {
           // For broadcast in CollNet to do empty send
-          ReduceOrCopyMulti<Unroll, RedOp, T, 1, 1, 1, 1, /*PreOpSrcs*/0>
+          reduceCopy<Unroll, RedOp, T, 0, 1, 1, 0, 1, 1, /*PreOpSrcs*/0>
             (tid, nworkers, ncclShmem.redOpArgs[0],  nullptr, postOp,
              Recv, ncclShmem.groups[group].srcs,
              Dst, ncclShmem.groups[group].dsts,
@@ -283,7 +284,7 @@ class Primitives<
         } else {
           constexpr int PreOpSrcs = SrcBuf != Input ? 0 :
                                     DirectRecv*MaxRecv == NCCL_MAX_DIRECT_ARITY ? (1+NCCL_MAX_DIRECT_ARITY) : 1;
-          ReduceOrCopyMulti<Unroll, RedOp, T, Recv+Src, Recv*MaxRecv+Src, Send+Dst, Send*MaxSend+Dst, PreOpSrcs>
+          reduceCopy<Unroll, RedOp, T, 0, Recv+Src, Recv*MaxRecv+Src, 0, Send+Dst, Send*MaxSend+Dst, PreOpSrcs>
             (tid, nworkers, ncclShmem.redOpArgs[0], ncclShmem.redOpArgs, postOp,
              nRecvPeers+Src, ncclShmem.groups[group].srcs,
              nSendPeers+Dst, ncclShmem.groups[group].dsts,
@@ -348,7 +349,7 @@ class Primitives<
             void* src0 = (T*)ncclShmem.groups[group].srcs[0] + pOffset;
             int realPeerSize = min(realSize, totalElem-pOffset);
             if (realPeerSize > 0 && ncclShmem.groups[group].dsts[i] != nullptr) {
-              ReduceOrCopyMulti<Unroll, RedOp, T, 1, 1, 1, 1, PreOpSrcs>(tid, nworkers, ncclShmem.redOpArgs[0], ncclShmem.redOpArgs, false, 1, &src0, 1, ncclShmem.groups[group].dsts+i, realPeerSize);
+              reduceCopy<Unroll, RedOp, T, 0,1,1, 0,1,1, PreOpSrcs>(tid, nworkers, ncclShmem.redOpArgs[0], ncclShmem.redOpArgs, false, 1, &src0, 1, ncclShmem.groups[group].dsts+i, realPeerSize);
               // Mark for threadfence at the end
               fenceNeeded |= true;
             }
@@ -371,7 +372,7 @@ class Primitives<
               if (skip >= 0 && i >= skip) pOffset += peerElem;
               void* dst0 = (T*)ncclShmem.groups[group].dsts[0] + pOffset;
               int realPeerSize = min(realSize, totalElem-pOffset);
-              if (realPeerSize > 0) ReduceOrCopyMulti<Unroll, RedOp, T, 1, 1, 1, 1, /*PreOpSrcs=*/0>(tid, nworkers, ncclShmem.redOpArgs[0], ncclShmem.redOpArgs, postOp, 1, ncclShmem.groups[group].srcs+i, 1, &dst0, realPeerSize);
+              if (realPeerSize > 0) reduceCopy<Unroll, RedOp, T, 0,1,1, 0,1,1, /*PreOpSrcs=*/0>(tid, nworkers, ncclShmem.redOpArgs[0], ncclShmem.redOpArgs, postOp, 1, ncclShmem.groups[group].srcs+i, 1, &dst0, realPeerSize);
             }
           }
         }
