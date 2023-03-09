@@ -17,7 +17,6 @@
 typedef enum : uint8_t {
   ncclPatternRing,
   ncclPatternRingTwice,
-  ncclPatternRingTwiceNode,
   ncclPatternPipelineFrom,
   ncclPatternPipelineTo,
   ncclPatternTreeUp,
@@ -26,6 +25,7 @@ typedef enum : uint8_t {
   ncclPatternCollnetChain,
   ncclPatternCollnetDirect,
   ncclPatternNvls,
+  ncclPatternNvlsRing,
   ncclPatternSend,
   ncclPatternRecv
 } ncclPattern_t;

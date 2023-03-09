@@ -916,8 +916,8 @@ static ncclResult_t initTransportsRank(struct ncclComm* comm, ncclUniqueId* comm
     for (int c=0; c<comm->nvlsChannels; c++) {
       struct ncclChannel* channel = comm->channels+c;
       NCCLCHECKGOTO(ncclTransportP2pConnect(comm, c, 1, &channel->nvls.ringPrev, 1, &channel->nvls.ringNext, 0), ret, fail);
-    NCCLCHECKGOTO(ncclTransportP2pSetup(comm, &nvlsGraph, 0), ret, fail);
     }
+    NCCLCHECKGOTO(ncclTransportP2pSetup(comm, &nvlsGraph, 0), ret, fail);
     INFO(NCCL_INIT, "Connected NVLS rings");
   }
 

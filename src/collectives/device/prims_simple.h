@@ -141,7 +141,6 @@ class Primitives<
     if (flags & Recv*RoleWaitRecv) ix = getIndex<RecvMask>(index);
     if (flags & Send*RoleWaitSend) ix = getIndex<SendMask>(index);
     if (ix == -1) return;
-    if (NVLS && ncclShmem.groups[group].nvlsRecv) printf("[%d] Index %d Flags %x Send %d/%x/%x Recv %d/%x/%x ix %d\n", threadIdx.x, index, flags, Send, RoleWaitSend, SendMask, Recv, RoleWaitRecv, RecvMask, ix);
 
     if (((flags & (Recv*RoleWaitRecv)) && !noRecvWait) ||
         ((flags & (Send*RoleWaitSend)) && !noSendWait)) {
@@ -149,7 +148,7 @@ class Primitives<
       while (connStepCache + (isSendNotRecv ? NCCL_STEPS : 0) < step + StepPerSlice) {
         connStepCache = loadStepValue(connStepPtr);
         if (checkAbort(spins)) break;
-        //if (spins == 0) printf("r=%d b=%d t=%d SPUN OUT got=%d want=%d\n", ncclShmem.comm.rank, blockIdx.x, threadIdx.x, int(connStepCache + (isSendNotRecv ? NCCL_STEPS : 0)), int(step+StepPerSlice));
+        //if (spins == 0) printf("r=%d b=%d t=%d SPUN OUT %p got=%d want=%d\n", ncclShmem.comm.rank, blockIdx.x, threadIdx.x, connStepPtr, int(connStepCache + (isSendNotRecv ? NCCL_STEPS : 0)), int(step+StepPerSlice));
       }
     }
 
@@ -260,10 +259,10 @@ class Primitives<
          * to 0 to avoid unnecessary workload. */
         int workSize = ncclShmem.aborted ? 0 : sliceSize;
         if (NVLS && ncclShmem.groups[group].nvlsRecv) {
-          reduceCopy<Unroll, RedOp, T, /*{Multimem,Min,Max}Srcs=*/1,1,1, /*{Multimem,Min,Max}Dsts=*/1,1,1, /*PreOpSrcs=*/0>
+          reduceCopy<Unroll, RedOp, T, RecvMask & 0x1,1,2, SendMask & 0x1,1,2, /*PreOpSrcs=*/0>
             (tid, nworkers, ncclShmem.redOpArgs[0], ncclShmem.redOpArgs, postOp,
-             Recv*fan.nrecv()+Src, ncclShmem.groups[group].srcs,
-             Send*fan.nsend()+Dst, ncclShmem.groups[group].dsts,
+             nRecvPeers, ncclShmem.groups[group].srcs,
+             nSendPeers, ncclShmem.groups[group].dsts,
              workSize);
         } else if (DirectRecv && ncclShmem.groups[group].srcs[0] == ncclShmem.groups[group].dsts[0]) {
           // We can only have one direct receive. Since srcs[0] == dstPtr+offset, skip one copy
@@ -397,9 +396,6 @@ class Primitives<
         if ((index == 0) && (flags & RoleWaitRecv)) {
           if (conn->flags & NCCL_NVLS_MIN_POLL) {
             flags |= NvlsMinPolling;
-            ncclShmem.groups[group].nvlsRecv = 1;
-          } else {
-            ncclShmem.groups[group].nvlsRecv = 0;
           }
         }
         connStepPtr = conn->tail;
@@ -628,9 +624,7 @@ class Primitives<
     static constexpr int DstBuf = (OutMask&0x1) ? Output : -1;
     static constexpr int RecvMask = InpMask >> 1;
     static constexpr int SendMask = OutMask >> 1;
-    if (SendMask == 0) genericOp<0, 0, 1, 0, SrcBuf, DstBuf, RecvMask, 0>(inpIx, outIx, eltN, false);
-    else if (RecvMask == 0) genericOp<0, 0, 0, 1, SrcBuf, DstBuf, 0, SendMask>(inpIx, outIx, eltN, false);
-    else genericOp<0, 0, 1, 1, SrcBuf, DstBuf, RecvMask, SendMask>(inpIx, outIx, eltN, false);
+    genericOp<0, 0, 1, 1, SrcBuf, DstBuf, RecvMask, SendMask>(inpIx, outIx, eltN, false);
   }
 
   __device__ __forceinline__ void send(intptr_t inpIx, int eltN) {
