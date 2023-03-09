@@ -16,18 +16,25 @@ void ScatterGetCollByteCount(size_t *sendcount, size_t *recvcount, size_t *param
 }
 
 testResult_t ScatterInitData(struct threadArgs* args, ncclDataType_t type, ncclRedOp_t op, int root, int rep, int in_place) {
-  size_t sendcount = args->sendBytes / wordSize(type);
-  size_t recvcount = args->expectedBytes / wordSize(type);
+  size_t sendcount;
+  size_t recvcount;
+  int rank;
+  void* data;
 
-  for (int i=0; i<args->nGpus; i++) {
-    CUDACHECK(cudaSetDevice(args->gpus[i]));
-    int rank = ((args->proc*args->nThreads + args->thread)*args->nGpus + i);
-    CUDACHECK(cudaMemset(args->recvbuffs[i], 0, args->expectedBytes));
-    void* data = in_place ? args->recvbuffs[i] : args->sendbuffs[i];
-    if (rank == root) TESTCHECK(InitData(data, sendcount, 0, type, ncclSum, rep, 1, 0));
-    TESTCHECK(InitData(args->expected[i], recvcount, rank*recvcount, type, ncclSum, rep, 1, 0));
-    CUDACHECK(cudaDeviceSynchronize());
+  for (int id = 0; id < args->splitCommNum; ++id) {
+    for (int i = 0; i < args->nGpus; i++) {
+      CUDACHECK(cudaSetDevice(args->gpus[i]));
+      sendcount = args->sendBytes[id][i] / wordSize(type);
+      recvcount = args->expectedBytes[id][i] / wordSize(type);
+      NCCLCHECK(ncclCommUserRank(args->comms[id][i], &rank));
+      CUDACHECK(cudaMemset(args->recvbuffs[id][i], 0, args->expectedBytes[id][i]));
+      data = in_place ? args->recvbuffs[id][i] : args->sendbuffs[id][i];
+      if (rank == root) TESTCHECK(InitData(data, sendcount, 0, type, ncclSum, rep, 1, 0));
+      TESTCHECK(InitData(args->expected[id][i], recvcount, rank * recvcount, type, ncclSum, rep, 1, 0));
+      CUDACHECK(cudaDeviceSynchronize());
+    }
   }
+  
   return testSuccess;
 }
 

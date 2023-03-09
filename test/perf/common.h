@@ -110,13 +110,14 @@ struct testEngine {
 extern struct testEngine ncclTestEngine;
 
 struct threadArgs {
-  size_t nbytes;
+  size_t** nbytes;
   size_t minbytes;
   size_t maxbytes;
   size_t stepbytes;
   size_t stepfactor;
 
   int totalProcs;
+  int globalProc;
   int nProcs;
   int proc;
   int nThreads;
@@ -124,17 +125,18 @@ struct threadArgs {
   int nGpus;
   int* gpus;
   int localRank;
-  void** sendbuffs;
-  size_t sendBytes;
-  size_t sendInplaceOffset;
-  void** recvbuffs;
-  size_t recvInplaceOffset;
+  int splitCommNum;
+  void*** sendbuffs;
+  size_t** sendBytes;
+  size_t** sendInplaceOffset;
+  void*** recvbuffs;
+  size_t** recvInplaceOffset;
   ncclUniqueId ncclId;
-  ncclComm_t* comms;
+  ncclComm_t** comms;
   cudaStream_t* streams;
 
-  void** expected;
-  size_t expectedBytes;
+  void*** expected;
+  size_t** expectedBytes;
   int* errors;
   double* bw;
   int* bw_count;

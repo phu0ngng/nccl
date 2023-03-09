@@ -16,22 +16,27 @@ void GatherGetCollByteCount(size_t *sendcount, size_t *recvcount, size_t *paramc
 }
 
 testResult_t GatherInitData(struct threadArgs* args, ncclDataType_t type, ncclRedOp_t op, int root, int rep, int in_place) {
-  size_t sendcount = args->sendBytes / wordSize(type);
-  size_t recvcount = args->expectedBytes / wordSize(type);
-  int nranks = args->nProcs*args->nThreads*args->nGpus;
+  size_t sendcount;
+  int nranks, rank;
+  void* data;
 
-  for (int i=0; i<args->nGpus; i++) {
-    CUDACHECK(cudaSetDevice(args->gpus[i]));
-    int rank = ((args->proc*args->nThreads + args->thread)*args->nGpus + i);
-    CUDACHECK(cudaMemset(args->recvbuffs[i], 0, args->expectedBytes));
-    void* data = in_place ? ((char*)args->recvbuffs[i])+rank*args->sendBytes : args->sendbuffs[i];
-    TESTCHECK(InitData(data, sendcount, rank*sendcount, type, ncclSum, rep, 1, 0));
-    CUDACHECK(cudaMemcpy(args->expected[i], args->recvbuffs[i], args->expectedBytes, cudaMemcpyDefault));
-    if (rank == root) {
-      TESTCHECK(InitData(args->expected[i], nranks*sendcount, 0, type, ncclSum, rep, 1, 0));
+  for (int id = 0; id < args->splitCommNum; ++id) {
+    for (int i = 0; i < args->nGpus; i++) {
+      CUDACHECK(cudaSetDevice(args->gpus[i]));
+      sendcount = args->sendBytes[id][i] / wordSize(type);
+      NCCLCHECK(ncclCommUserRank(args->comms[id][i], &rank));
+      NCCLCHECK(ncclCommCount(args->comms[id][i], &nranks));
+      CUDACHECK(cudaMemset(args->recvbuffs[id][i], 0, args->expectedBytes[id][i]));
+      data = in_place ? ((char*)args->recvbuffs[id][i]) + rank * args->sendBytes[id][i] : args->sendbuffs[id][i];
+      TESTCHECK(InitData(data, sendcount, rank * sendcount, type, ncclSum, rep, 1, 0));
+      CUDACHECK(cudaMemcpy(args->expected[id][i], args->recvbuffs[id][i], args->expectedBytes[id][i], cudaMemcpyDefault));
+      if (rank == root) {
+        TESTCHECK(InitData(args->expected[id][i], nranks * sendcount, 0, type, ncclSum, rep, 1, 0));
+      }
+      CUDACHECK(cudaDeviceSynchronize());
     }
-    CUDACHECK(cudaDeviceSynchronize());
   }
+  
   return testSuccess;
 }
 
