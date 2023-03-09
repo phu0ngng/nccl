@@ -31,7 +31,10 @@ int dumpDiff = 1;
 void compareGraphs(struct ncclTopoGraph* ref, struct ncclTopoGraph* out, int ngpus, int inter, int* errors, int* warnings) {
   if (memcmp(ref, out, sizeof(struct ncclTopoGraph)) != 0) {
     if (ref->nChannels*ref->bwInter > out->nChannels*out->bwInter ||
-        ref->nChannels*ref->bwIntra > out->nChannels*out->bwIntra) (*errors)++;
+        ref->nChannels*ref->bwIntra > out->nChannels*out->bwIntra ||
+        ref->crossNic < out->crossNic ||
+        ref->typeIntra < out->typeIntra ||
+        ref->typeInter < out->typeInter) (*errors)++;
     else (*warnings)++;
 
     if (dumpDiff) {
@@ -131,7 +134,7 @@ void checkTopo(const char* xmlTopoFile, const char* xmlGraphFile, const char* pl
   /* Compute */
   uint64_t computeTime = getTime();
   CHECK(ncclTopoCompute(system, &ringGraph));
-  treeGraph.minChannels = 1;
+  treeGraph.minChannels = ringGraph.nChannels;
   treeGraph.maxChannels = ringGraph.nChannels;
   CHECK(ncclTopoCompute(system, &treeGraph));
   cNetGraph.minChannels = 1;
@@ -256,6 +259,7 @@ int main(int argc, const char* argv[]) {
     RUN("ZionEX");
     RUN("FB-V100");
     RUN("Viking");
+    RUN("Viking-SHARP");
     RUN("Scout");
 #endif
     RUN("P9-6V");
