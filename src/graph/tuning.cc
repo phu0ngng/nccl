@@ -53,16 +53,19 @@ ncclResult_t parseList(const char* str, const char* elems[], int nelems, int* li
 
 // Latencies in us, Bandwidths in GB/s
 // Tree { LL, LL128, Simple } , Ring { LL, LL128, Simple }
-static const float baseLat  [NCCL_NUM_ALGORITHMS][NCCL_NUM_PROTOCOLS] = { { 4.4, 4.4,  0 }, { 3.6, 10.0, 8.4 }, { 4.4, 4.4,  0 }, { 4.4, 4.4,  0 }, { 0, 0, 40.0 }};
+static const float baseLat  [NCCL_NUM_ALGORITHMS][NCCL_NUM_PROTOCOLS] = {
+ { 6.8, 14.0,  0 }, { 6.6, 14.0, 8.4 }, { 6.8, 14.0,  0 }, { 6.8, 14.0,  0 }, { 0, 0, 40.0 }
+};
 
 // NVLink, PCI, Network
 #define NCCL_HW_NVLINK 0
 #define NCCL_HW_PCI 1
 #define NCCL_HW_NET 2
 // Tree/Simple is the latency a 256kB chunk, which is ~ base lat + 256k/12GB/s (+ 256k/12GB/s for the network).
+// Ring/LL128 reflects the latency for the second plateau, not the base latency.
 static float hwLat [3][NCCL_NUM_ALGORITHMS][NCCL_NUM_PROTOCOLS] =
 { /* NVLINK */
-  { /* Tree (LL/LL128/Simple)*/ { .52, 1.25, 28 }, /* Ring (LL/LL128/Simple)*/ { .47, 1.9, 3.4 },
+  { /* Tree (LL/LL128/Simple)*/ { .6, 1.25, 28 }, /* Ring (LL/LL128/Simple)*/ { .6, 1.9, 3.4 },
     /* CollNetDirect (Simple)*/ { 0, 0, 8.0 }, /* CollNetChain (Simple)*/ { 0, 0, 8.0 },
     /* NVLS */ { 0, 0, 0 } },
   /* PCI */
@@ -70,7 +73,7 @@ static float hwLat [3][NCCL_NUM_ALGORITHMS][NCCL_NUM_PROTOCOLS] =
     /* CollNetDirect (Simple)*/ { 0, 0, 8.0 }, /* CollNetChain (Simple)*/ { 0, 0, 8.0 },
     /* NVLS */ { 0, 0, 0 } },
   /* NET */
-  { /* Tree (LL/LL128/Simple)*/ { 5.0, 8.5, 28 }, /* Ring (LL/LL128/Simple)*/ { 2.7, 4.0, 9.6 },
+  { /* Tree (LL/LL128/Simple)*/ { 5.0, 8.5, 28 }, /* Ring (LL/LL128/Simple)*/ { 2.7, 4.0, 14.0 },
     /* CollNetDirect (Simple)*/ { 0, 0, 10.7 }, /* CollNetChain (Simple)*/ { 0, 0, 10.7 },
     /* NVLS */ { 0, 0, 0 } }
 };
@@ -93,6 +96,19 @@ static const double perChMaxTreeBws[3][3] = {
   /* Ampere (N1/N2/N4) */ {24.0, 23.6, 17.8},
   /* Hopper (N1/N2/N4) */ {38.7, 41.4, 33.0},
 };
+
+
+// Network post overhead in ns (1000 = 1 us)
+NCCL_PARAM(NetOverhead, "NET_OVERHEAD", -2);
+
+static float getNetOverhead(struct ncclComm* comm) {
+  if (ncclParamNetOverhead() != -2) return ncclParamNetOverhead() * .001;
+  int cpuArch, cpuVendor, cpuModel;
+  NCCLCHECK(ncclTopoCpuType(comm->topo, &cpuArch, &cpuVendor, &cpuModel));
+  if (cpuArch == NCCL_TOPO_CPU_ARCH_X86 && cpuVendor == NCCL_TOPO_CPU_VENDOR_INTEL) return 1.0;
+  if (cpuArch == NCCL_TOPO_CPU_ARCH_X86 && cpuVendor == NCCL_TOPO_CPU_VENDOR_AMD) return 2.0;
+  else return 1.0;
+}
 
 ncclResult_t ncclTopoTuneModel(struct ncclComm* comm, int minCompCap, int maxCompCap, struct ncclTopoGraph* treeGraph, struct ncclTopoGraph* ringGraph, struct ncclTopoGraph* collNetGraph) {
   int simpleDefaultThreads = (ringGraph->bwIntra*ringGraph->nChannels <= PCI_BW) ? 256 : NCCL_SIMPLE_MAX_NTHREADS;
@@ -176,9 +192,10 @@ ncclResult_t ncclTopoTuneModel(struct ncclComm* comm, int minCompCap, int maxCom
 
         comm->latencies[coll][a][p] = baseLat[a][p];
         float intraLat = hwLat[intraHw[a]][a][p];
-        float interLat = graphs[a]->latencyInter ? graphs[a]->latencyInter : hwLat[NCCL_HW_NET][a][p];
+        float interLat = hwLat[NCCL_HW_NET][a][p] + graphs[a]->latencyInter;
+        // Also add the flush extra latency
+        if (p == NCCL_PROTO_SIMPLE) interLat += graphs[a]->latencyInter;
 
-        if (nNodes > 1 && p == NCCL_PROTO_LL) intraLat *= 1.8;
         if (a == NCCL_ALGO_RING) {
           float lat = hwLat[hw[a]][a][p];
           if ((coll == ncclFuncReduce || coll == ncclFuncBroadcast)) {
@@ -189,6 +206,13 @@ ncclResult_t ncclTopoTuneModel(struct ncclComm* comm, int minCompCap, int maxCom
               comm->latencies[coll][a][p] += nsteps*lat;
             }
           } else {
+            // Inter-node rings still have to launch nsteps * net overhead.
+            float netOverhead = 0.0;
+            if (nNodes > 1) {
+              netOverhead = getNetOverhead(comm);
+              if (p == NCCL_PROTO_SIMPLE) netOverhead *= 3;
+            }
+            intraLat = std::max(intraLat, netOverhead);
             comm->latencies[coll][a][p] += (nsteps-nInterSteps)*intraLat + nInterSteps*interLat;
           }
         } else if (a == NCCL_ALGO_TREE) {
@@ -340,8 +364,8 @@ ncclResult_t ncclTopoGetAlgoTime(struct ncclInfo* info, int algorithm, int proto
   if (algorithm == NCCL_ALGO_TREE && logSize < 23) bw *= treeCorrectionFactor[protocol][logSize];
   if (info->nChannels != 0) bw = bw / info->comm->nChannels * info->nChannels;
   if (algorithm == NCCL_ALGO_RING && protocol == NCCL_PROTO_SIMPLE && info->comm->nNodes > 1
-      && info->coll == ncclFuncAllReduce && info->nBytes >= info->comm->nRanks/16.0*65536) {
-    lat *= info->comm->minCompCap < 90 ? 1.9 : 1.5; // Plateau effect of ring
+      && info->coll == ncclFuncAllReduce && info->nBytes/(info->comm->nChannels*info->comm->nRanks) >= 64) {
+    lat *= info->comm->minCompCap < 80 ? 1.9 : 1.4; // Plateau effect of ring
   }
   // Tree pipelining saves latency in aggregation cases
   int latCount = algorithm == NCCL_ALGO_RING ? numPipeOps : DIVUP(numPipeOps, NCCL_MAX_WORK_ELEMENTS);
