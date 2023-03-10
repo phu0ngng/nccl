@@ -396,6 +396,9 @@ class Primitives<
         if ((index == 0) && (flags & RoleWaitRecv)) {
           if (conn->flags & NCCL_NVLS_MIN_POLL) {
             flags |= NvlsMinPolling;
+            ncclShmem.groups[group].nvlsRecv = 1;
+          } else {
+            ncclShmem.groups[group].nvlsRecv = 0;
           }
         }
         connStepPtr = conn->tail;
