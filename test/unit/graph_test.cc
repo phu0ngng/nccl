@@ -141,7 +141,7 @@ void checkTopo(const char* xmlTopoFile, const char* xmlGraphFile, const char* pl
   cNetGraph.maxChannels = ringGraph.nChannels;
   CHECK(ncclTopoCompute(system, &cNetGraph));
   nvlsGraph.minChannels = 1;
-  nvlsGraph.maxChannels = ringGraph.nChannels;
+  nvlsGraph.maxChannels = MAXCHANNELS;
   CHECK(ncclTopoCompute(system, &nvlsGraph));
   computeTime = getTime() - computeTime;
 

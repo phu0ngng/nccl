@@ -116,7 +116,7 @@ static ncclResult_t ncclTopoFollowPath(struct ncclTopoSystem* system, struct ncc
 
   // Now check link type
   *node = NULL;
-  int intra = type1 == GPU && type2 == GPU;
+  int intra = (type1 == GPU || type1 == NVS) && (type2 == GPU || type2 == NVS);
   float bw = intra ? graph->bwIntra : graph->bwInter;
   int type = intra ? graph->typeIntra : graph->typeInter;
 
@@ -314,7 +314,7 @@ ncclResult_t ncclTopoSearchTryNvls(struct ncclTopoSystem* system, struct ncclTop
     } while (nvs && d1 < system->nodes[GPU].count);
     if (nvs == NULL) {
       d1--;
-    } else { // Both direstions worked. Move on to the next path.
+    } else { // Both directions worked. Move on to the next path.
       NCCLCHECK(ncclTopoSearchRecGpu(system, graph, saveGraph, NULL, ngpus, -1, -1, 0, time));
     }
     while (d1) {
@@ -616,9 +616,9 @@ ncclResult_t ncclTopoSearchRec(struct ncclTopoSystem* system, struct ncclTopoGra
     // Intra-node only.
     if (graph->pattern == NCCL_TOPO_PATTERN_NVLS) {
       // Force intra-node NVLS algorithm to pull evenly from all GPUs.
-      int g = graph->nChannels;
-      if (g == system->nodes[GPU].count) return ncclSuccess;
+      int g = graph->nChannels % system->nodes[GPU].count;
       NCCLCHECK(ncclTopoSearchTryGpu(system, graph, saveGraph, 0, backToNet, backToFirstRank, 0, time, -1, -1, g));
+      return ncclSuccess;
     } else if (graph->nChannels == 0) {
       // Try PCI order first
       NCCLCHECK(ncclTopoSearchTryGpu(system, graph, saveGraph, 0, backToNet, backToFirstRank, FORCED_ORDER_PCI, time, -1, -1, 0));
@@ -781,7 +781,7 @@ float speedArrayInter[] = { 48.0, 30.0, 28.0, 24.0, 20.0, 18.0, 15.0, 12.0, 10.0
 #define NSPEEDSINTER (sizeof(speedArrayInter)/sizeof(float))
 
 float sm90SpeedArrayIntra[] = { 60.0, 30.0, 24.0, 20.0, 15.0, 12.0, 6.0, 3.0 };
-float sm90SpeedArrayInter[] = { 48.0, 45.0, 42.0, 30.0, 24.0, 15.0, 12.0, 6.0, 3.0, 2.4, 1.2, 0.24, 0.12 };
+float sm90SpeedArrayInter[] = { 48.0, 45.0, 42.0, 40.0, 30.0, 24.0, 15.0, 12.0, 6.0, 3.0, 2.4, 1.2, 0.24, 0.12 };
 #define NSPEEDSINTRA_SM90 (sizeof(sm90SpeedArrayIntra)/sizeof(float))
 #define NSPEEDSINTER_SM90 (sizeof(sm90SpeedArrayInter)/sizeof(float))
 
@@ -835,7 +835,9 @@ ncclResult_t ncclTopoCompute(ncclTopoSystem* system, struct ncclTopoGraph* graph
   }
   int pass = 1;
   int speedIndex = 0;
-  while (speedArray[speedIndex] > system->maxBw && speedIndex < nspeeds-1) speedIndex++;
+  float maxBw = system->maxBw;
+  if (system->nodes[NET].count == 0 && graph->pattern == NCCL_TOPO_PATTERN_NVLS) maxBw /= ngpus; // We want all GPUs to pull the same BW
+  while (speedArray[speedIndex] > maxBw && speedIndex < nspeeds-1) speedIndex++;
   tmpGraph.bwIntra = tmpGraph.bwInter = speedArray[speedIndex];
   int64_t globalTimeout = NCCL_SEARCH_GLOBAL_TIMEOUT;
 
@@ -908,7 +910,7 @@ search:
       goto search;
     }
     speedIndex = 0;
-    while (speedArray[speedIndex] > system->maxBw && speedIndex < nspeeds-1) speedIndex++;
+    while (speedArray[speedIndex] > maxBw && speedIndex < nspeeds-1) speedIndex++;
     tmpGraph.bwIntra = tmpGraph.bwInter = speedArray[speedIndex];
 
   }
