@@ -56,7 +56,10 @@ static_assert(sizeof(p2pConnectInfo) <= CONNECT_SIZE, "P2P Connect info is too l
 
 struct p2pResources {
   enum p2pType type;
-  struct ncclSendMem* devMem;
+  union {
+    struct ncclSendMem* sendDevMem;
+    struct ncclRecvMem* recvDevMem;
+  };
   void* sendMemIpc;
   void* recvMemIpc;
   // CE memcpy support
@@ -380,7 +383,7 @@ ncclResult_t p2pSendSetup(struct ncclComm* comm, struct ncclTopoGraph* graph, st
     memcpy(info->shmName, resources->proxyInfo.shmName, sizeof(info->shmName));
   } else {
     NCCLCHECK(ncclProxyCallBlocking(&send->proxyConn, ncclProxyMsgSetup, &sendSize, sizeof(int), &info->p2pBuff, sizeof(struct ncclP2pBuff)));
-    NCCLCHECK(p2pMap(comm, myInfo, comm->peerInfo+info->rank, &info->p2pBuff, (void**)&resources->devMem, &resources->sendMemIpc));
+    NCCLCHECK(p2pMap(comm, myInfo, comm->peerInfo+info->rank, &info->p2pBuff, (void**)&resources->sendDevMem, &resources->sendMemIpc));
   }
 
   return ncclSuccess;
@@ -432,7 +435,7 @@ ncclResult_t p2pRecvSetup(struct ncclComm* comm, struct ncclTopoGraph* graph, st
   NCCLCHECK(ncclProxyConnect(comm, TRANSPORT_P2P, 0, info->rank, &recv->proxyConn));
   NCCLCHECK(ncclProxyCallBlocking(&recv->proxyConn, ncclProxyMsgSetup, &recvSize, sizeof(int), &info->p2pBuff, sizeof(struct ncclP2pBuff)));
 
-  NCCLCHECK(p2pMap(comm, myInfo, comm->peerInfo+info->rank, &info->p2pBuff, (void**)&resources->devMem, &resources->recvMemIpc));
+  NCCLCHECK(p2pMap(comm, myInfo, comm->peerInfo+info->rank, &info->p2pBuff, (void**)&resources->recvDevMem, &resources->recvMemIpc));
   return ncclSuccess;
 }
 
@@ -448,8 +451,8 @@ static ncclResult_t p2pSendConnect(struct ncclComm* comm, struct ncclConnect* co
   for (int p=0; p<NCCL_NUM_PROTOCOLS; p++) {
     if (info->read && p == NCCL_PROTO_SIMPLE) {
       /* For P2P Read the SIMPLE buffer is local (ncclSendMem) */
-      if (resources->devMem == NULL) return ncclInternalError; // We should not use read + memcpy
-      send->conn.buffs[p] = (char*)(resources->devMem+1);
+      if (resources->sendDevMem == NULL) return ncclInternalError; // We should not use read + memcpy
+      send->conn.buffs[p] = (char*)(resources->sendDevMem+1);
     } else {
       send->conn.buffs[p] = buff;
       buff += send->comm->buffSizes[p];
@@ -465,9 +468,9 @@ static ncclResult_t p2pSendConnect(struct ncclComm* comm, struct ncclConnect* co
     send->conn.buffs[NCCL_PROTO_SIMPLE] = resources->proxyInfo.ceDevBuff;
   } else {
     send->conn.tail = &remDevMem->tail;
-    send->conn.head = &resources->devMem->head;
-    send->conn.ptrExchange = &resources->devMem->ptrExchange;
-    send->conn.redOpArgExchange = resources->devMem->redOpArgExchange;
+    send->conn.head = &resources->sendDevMem->head;
+    send->conn.ptrExchange = &resources->sendDevMem->ptrExchange;
+    send->conn.redOpArgExchange = resources->sendDevMem->redOpArgExchange;
   }
   return ncclSuccess;
 }
@@ -492,14 +495,14 @@ ncclResult_t p2pRecvConnect(struct ncclComm* comm, struct ncclConnect* connectIn
   } else {
     NCCLCHECK(p2pMap(comm, comm->peerInfo+rank, comm->peerInfo+info->rank, &info->p2pBuff, (void**)&remDevMem, &resources->sendMemIpc));
 
-    struct ncclRecvMem* devMem = (struct ncclRecvMem *) resources->devMem;
+    struct ncclRecvMem* devMem = resources->recvDevMem;
     recv->conn.tail = &devMem->tail;
     recv->conn.head = &remDevMem->head;
     recv->conn.ptrExchange = &remDevMem->ptrExchange;
     recv->conn.redOpArgExchange = remDevMem->redOpArgExchange;
   }
 
-  char* buff = (char*)(resources->devMem+1);
+  char* buff = (char*)(resources->recvDevMem+1);
   for (int p=0; p<NCCL_NUM_PROTOCOLS; p++) {
     if (info->read && p == NCCL_PROTO_SIMPLE) {
       if (remDevMem == NULL) return ncclInternalError; // We should not use read + memcpy
