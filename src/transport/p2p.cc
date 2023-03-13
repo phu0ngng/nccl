@@ -294,9 +294,9 @@ static ncclResult_t p2pMap(struct ncclComm *comm, struct ncclPeerInfo* myInfo, s
       if (err == cudaErrorPeerAccessAlreadyEnabled) {
         cudaGetLastError();
       } else if (err != cudaSuccess) {
-          WARN("failed to peer with device %d(=%lx): %d %s",
-               peerInfo->cudaDev, peerInfo->busId, err, cudaGetErrorString(err));
-          return ncclInternalError;
+        WARN("failed to peer with device %d(=%lx): %d %s",
+            peerInfo->cudaDev, peerInfo->busId, err, cudaGetErrorString(err));
+        return ncclInternalError;
       }
     }
     *devMem = p2pBuff->directPtr;
