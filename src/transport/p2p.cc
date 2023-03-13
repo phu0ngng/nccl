@@ -188,8 +188,6 @@ ncclResult_t p2pCanConnect(int* ret, struct ncclTopoSystem* topo, struct ncclTop
 
 // cuMem API support
 ncclResult_t ncclP2pAllocateShareableBuffer(size_t size, ncclIpcDesc *ipcDesc, void **ptr) {
-  INFO(NCCL_P2P|NCCL_ALLOC, "Allocate shareable buffer size %zi ipcDesc %p", size, ipcDesc);
-
   if (ncclCuMemEnable()) {
     // cuMem API support
     CUmemAllocationHandleType type = NCCL_P2P_HANDLE_TYPE;
@@ -207,6 +205,7 @@ ncclResult_t ncclP2pAllocateShareableBuffer(size_t size, ncclIpcDesc *ipcDesc, v
       CUDACHECK(res);
     }
   }
+  INFO(NCCL_P2P|NCCL_ALLOC, "Allocated shareable buffer %p size %zi ipcDesc %p", *ptr, size, ipcDesc);
 
   return ncclSuccess;
 }
@@ -287,37 +286,24 @@ static ncclResult_t p2pGetInfo(struct ncclTopoSystem* topo, struct ncclPeerInfo*
 }
 
 static ncclResult_t p2pMap(struct ncclComm *comm, struct ncclPeerInfo* myInfo, struct ncclPeerInfo* peerInfo, struct ncclP2pBuff* p2pBuff, void** devMem, void** ipcPtr) {
-  if (myInfo->pidHash == peerInfo->pidHash) {
+  if (!ncclCuMemEnable() && myInfo->pidHash == peerInfo->pidHash) {
     if (peerInfo->cudaDev != myInfo->cudaDev) {
       // Same PID different GPUs, enable P2P access
-      if (ncclCuMemEnable()) {
-        // cuMem API support
-        CUmemAccessDesc accessDesc = {};
-        accessDesc.location.type = CU_MEM_LOCATION_TYPE_DEVICE;
-        accessDesc.location.id = peerInfo->cudaDev;
-        accessDesc.flags = CU_MEM_ACCESS_FLAGS_PROT_READWRITE;
-        CUCHECK(cuMemSetAccess((CUdeviceptr)p2pBuff->directPtr, p2pBuff->size, &accessDesc, 1));
-        TRACE(NCCL_P2P, "Set Access for %p size %zi dev %d", p2pBuff->directPtr, p2pBuff->size, accessDesc.location.id);
-        accessDesc.location.id = myInfo->cudaDev;
-        CUCHECK(cuMemSetAccess((CUdeviceptr)p2pBuff->directPtr, p2pBuff->size, &accessDesc, 1));
-        TRACE(NCCL_P2P, "Set Access for %p size %zi dev %d", p2pBuff->directPtr, p2pBuff->size, accessDesc.location.id);
-      } else {
-        // Legacy CUDA IPC
-        cudaError_t err = cudaDeviceEnablePeerAccess(peerInfo->cudaDev, 0);
-        if (err == cudaErrorPeerAccessAlreadyEnabled) {
-          cudaGetLastError();
-        } else if (err != cudaSuccess) {
+      // Legacy CUDA IPC
+      cudaError_t err = cudaDeviceEnablePeerAccess(peerInfo->cudaDev, 0);
+      if (err == cudaErrorPeerAccessAlreadyEnabled) {
+        cudaGetLastError();
+      } else if (err != cudaSuccess) {
           WARN("failed to peer with device %d(=%lx): %d %s",
                peerInfo->cudaDev, peerInfo->busId, err, cudaGetErrorString(err));
           return ncclInternalError;
-        }
       }
     }
     *devMem = p2pBuff->directPtr;
     *ipcPtr = NULL;
   }
   else {
-    // Same node different PIDs
+    // Same node different PIDs or cuMEM API enabled
     NCCLCHECK(ncclP2pImportShareableBuffer(comm, peerInfo->rank, p2pBuff->size, &p2pBuff->ipcDesc, devMem));
     *ipcPtr = *devMem;
   }
@@ -348,10 +334,9 @@ ncclResult_t p2pSendSetup(struct ncclComm* comm, struct ncclTopoGraph* graph, st
 
   if (intermediateRank == -1) {
     info->rank = myInfo->rank;
-    if (myInfo->pidHash == peerInfo->pidHash && useMemcpy == 0) {
+    if (myInfo->pidHash == peerInfo->pidHash && ncclParamP2pDirectDisable() == 0 && useMemcpy == 0 && !ncclCuMemEnable()) {
       resources->type = P2P_DIRECT;
-      // Cannot use P2P_DIRECT when using the cuMem API
-      if (ncclParamP2pDirectDisable() == 0 && !ncclCuMemEnable()) send->conn.flags |= info->read ? NCCL_DIRECT_READ : NCCL_DIRECT_WRITE;
+      send->conn.flags |= info->read ? NCCL_DIRECT_READ : NCCL_DIRECT_WRITE;
       INFO(NCCL_INIT|NCCL_P2P, "Channel %02d/%01d : %d[%lx] -> %d[%lx] via P2P/direct pointer%s",
           channelId, connIndex, myInfo->rank, myInfo->busId, peerInfo->rank, peerInfo->busId, useReadStr);
     } else {
@@ -411,10 +396,9 @@ ncclResult_t p2pRecvSetup(struct ncclComm* comm, struct ncclTopoGraph* graph, st
 
   if (intermediateRank == -1) {
     info->rank = myInfo->rank;
-    if (myInfo->pidHash == peerInfo->pidHash && useMemcpy == 0) {
+    if (myInfo->pidHash == peerInfo->pidHash && ncclParamP2pDirectDisable() == 0 && useMemcpy == 0 && !ncclCuMemEnable()) {
       resources->type = P2P_DIRECT;
-      // Cannot use P2P_DIRECT when using the cuMem API
-      if (ncclParamP2pDirectDisable() == 0 && !ncclCuMemEnable()) recv->conn.flags |= info->read ? NCCL_DIRECT_READ : NCCL_DIRECT_WRITE;
+      recv->conn.flags |= info->read ? NCCL_DIRECT_READ : NCCL_DIRECT_WRITE;
     } else {
       if (ncclCuMemEnable()) {
         // cuMem API support
