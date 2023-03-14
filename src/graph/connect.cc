@@ -179,7 +179,8 @@ static ncclResult_t connectCollNet(struct ncclComm* comm, struct ncclTopoGraph* 
     heads[c] = collNetIntra[0];
   }
   // For all channels
-  for (int c=0; c<comm->nChannels; c++) {
+  int collNetChannels = std::max(comm->nChannels, comm->nvlsChannels);
+  for (int c=0; c<collNetChannels; c++) {
     struct ncclChannel* channel = comm->channels+c;
     char line[1024];
     sprintf(line, "CollNet channel %d rank %d ", c, rank);
@@ -188,6 +189,7 @@ static ncclResult_t connectCollNet(struct ncclComm* comm, struct ncclTopoGraph* 
       if (rank == heads[i]) { // is head
         channel->collnetDirect.headRank = i; // Mark the index for deciding offset in the CUDA kernel
         channel->collnetDirect.out = comm->nRanks; // Set root of collnetDirect to id nranks
+        channel->nvls.out = comm->nRanks; // Set root of collnetDirect to id nranks
         int* collNetIntra = collNetGraph->intra+i*localRanks;
         sprintf(line+strlen(line), "down ");
         for (int r=0; r<localRanks; r++) {

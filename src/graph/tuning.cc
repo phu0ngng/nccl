@@ -220,12 +220,13 @@ ncclResult_t ncclTopoTuneModel(struct ncclComm* comm, int minCompCap, int maxCom
   }
 
   // Disable NVLink SHARP if not supported
-  if (comm->nvlsSupport == 0 /* || comm->localRanks <= 2*/) algoEnable[NCCL_ALGO_NVLS] = algoEnable[NCCL_ALGO_NVLS_RING] = 0;
+  if (comm->nvlsSupport == 0 || comm->localRanks <= 2) algoEnable[NCCL_ALGO_NVLS] = algoEnable[NCCL_ALGO_NVLS_RING] = 0;
 
   // Disable CollNet if it is not supported
   if (comm->collNetSupport == 0) {
     algoEnable[NCCL_ALGO_COLLNET_DIRECT] = 0;
     algoEnable[NCCL_ALGO_COLLNET_CHAIN] = 0;
+    if (comm->nNodes > 1) algoEnable[NCCL_ALGO_NVLS] = 0;
     // If user has hard set NCCL_ALGO=COLLNET, ignore it
     if (algoEnable[NCCL_ALGO_RING] == 0 && algoEnable[NCCL_ALGO_TREE] == 0) {
       algoEnable[NCCL_ALGO_RING] = algoEnable[NCCL_ALGO_TREE] = 1;
