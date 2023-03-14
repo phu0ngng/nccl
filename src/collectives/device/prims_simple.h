@@ -258,7 +258,7 @@ class Primitives<
         /* if user abort the kernel, we don't need to actually perform copy/reduce; just set size
          * to 0 to avoid unnecessary workload. */
         int workSize = ncclShmem.aborted ? 0 : sliceSize;
-        if (NVLS && ncclShmem.groups[group].nvlsRecv) {
+        if (NVLS && ncclShmem.groups[group].nvls) {
           reduceCopy<Unroll, RedOp, T, RecvMask & 0x1,1,2, SendMask & 0x1,1,2, /*PreOpSrcs=*/0>
             (tid, nworkers, ncclShmem.redOpArgs[0], ncclShmem.redOpArgs, postOp,
              nRecvPeers, ncclShmem.groups[group].srcs,
@@ -396,9 +396,9 @@ class Primitives<
         if ((index == 0) && (flags & RoleWaitRecv)) {
           if (conn->flags & NCCL_NVLS_MIN_POLL) {
             flags |= NvlsMinPolling;
-            ncclShmem.groups[group].nvlsRecv = 1;
+            ncclShmem.groups[group].nvls = 1;
           } else {
-            ncclShmem.groups[group].nvlsRecv = 0;
+            ncclShmem.groups[group].nvls = 0;
           }
         }
         connStepPtr = conn->tail;

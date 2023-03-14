@@ -450,7 +450,6 @@ struct RunWorkElement<ncclFuncAllReduce, T, RedOp, NCCL_ALGO_NVLS_RING, NCCL_PRO
     const int tidEndReduce = tidEndGather + nThreadsReduce;
 
     using Proto = ProtoSimple<1, 1, COLL_UNROLL, /*NVLS=*/true>;
-    //if (tid == 0) printf("NVLS heads %d headRank %d nodes %d chunksize %ld\n", nvls->nHeads, nvls->headRank, nvls->nNodes, chunkSize);
 
     if (tid < tidEndScatter) {
       // Scatter
@@ -462,8 +461,7 @@ struct RunWorkElement<ncclFuncAllReduce, T, RedOp, NCCL_ALGO_NVLS_RING, NCCL_PRO
         int ringIndex = nvls->node;
         for (int i=0; i<nvls->nNodes; i++) {
           ssize_t offset = headOffset + ringIndex*chunkSize*nvls->nHeads;
-          int nelem = min(chunkSize, size-offset);
-	  //if (nelem > 0 && tid == 0) printf("[%d/%d] Scatter off %lx nelem %x chunkSize %lx loopSize %lx\n", blockIdx.x, threadIdx.x, offset, nelem, chunkSize, loopSize);
+          int nelem = min(nvls->nHeads*chunkSize, size-offset);
           prims.scatter(offset, nelem, chunkSize, chunkSize, -1, 0);
           ringIndex = (ringIndex-1+nvls->nNodes)%nvls->nNodes;
         }
@@ -478,8 +476,7 @@ struct RunWorkElement<ncclFuncAllReduce, T, RedOp, NCCL_ALGO_NVLS_RING, NCCL_PRO
         int ringIndex = (nvls->node+nvls->nNodes-1)%nvls->nNodes; // Skip the n-1 first steps
         for (int i=0; i<nvls->nNodes; i++) {
           ssize_t offset = headOffset + ringIndex*chunkSize*nvls->nHeads;
-          int nelem = min(chunkSize, size-offset);
-	  //if (nelem > 0 && tid == tidEndScatter) printf("[%d/%d] Gather off %lx nelem %x chunkSize %lx loopSize %lx\n", blockIdx.x, threadIdx.x, offset, nelem, chunkSize, loopSize);
+          int nelem = min(nvls->nHeads*chunkSize, size-offset);
           prims.gather(offset, nelem, chunkSize, chunkSize, -1, 0);
           ringIndex = (ringIndex-1+nvls->nNodes)%nvls->nNodes;
         }
@@ -499,31 +496,26 @@ struct RunWorkElement<ncclFuncAllReduce, T, RedOp, NCCL_ALGO_NVLS_RING, NCCL_PRO
         int ringIndex = nvls->node;
         ssize_t offset = headOffset + ringIndex*chunkSize*nvls->nHeads;
         int nelem = min(chunkSize, size-offset);
-	//if (nelem > 0 && tid == tidEndGather) printf("[%d/%d] First step off %lx nelem %x, ring next %d loopSize %lx\n", blockIdx.x, threadIdx.x, offset, nelem, nvls->ringNext, loopSize);
         prims.template maskRecvSend<NvlsMask, RingMask>(offset, offset, nelem);
         ringIndex = (ringIndex-1+nvls->nNodes)%nvls->nNodes;
         for (int i=0; i<nvls->nNodes-2; i++) {
           offset = headOffset + ringIndex*chunkSize*nvls->nHeads;
           nelem = min(chunkSize, size-offset);
-          //if (nelem > 0 && tid == tidEndGather) printf("[%d/%d] Loop 1 step off %lx nelem %x\n", blockIdx.x, threadIdx.x, offset, nelem);
           prims.template maskRecvSend<NvlsMask|RingMask, RingMask>(offset, offset, nelem);
           ringIndex = (ringIndex-1+nvls->nNodes)%nvls->nNodes;
         }
         offset = headOffset + ringIndex*chunkSize*nvls->nHeads;
         nelem = min(chunkSize, size-offset);
-        //if (nelem > 0 && tid == tidEndGather) printf("[%d/%d] 2nd step off %lx nelem %x ring prev/next %d/%d\n", blockIdx.x, threadIdx.x, offset, nelem, nvls->ringPrev, nvls->ringNext);
         prims.template maskRecvSend<NvlsMask|RingMask, NvlsMask|RingMask>(offset, offset, nelem);
         ringIndex = (ringIndex-1+nvls->nNodes)%nvls->nNodes;
         for (int i=0; i<nvls->nNodes-2; i++) {
           offset = headOffset + ringIndex*chunkSize*nvls->nHeads;
           nelem = min(chunkSize, size-offset);
-          //if (nelem > 0 && tid == tidEndGather) printf("[%d/%d] Loop 2 step off %lx nelem %x\n", blockIdx.x, threadIdx.x, offset, nelem);
           prims.template maskRecvSend<RingMask, NvlsMask|RingMask>(offset, offset, nelem);
           ringIndex = (ringIndex-1+nvls->nNodes)%nvls->nNodes;
         }
         offset = headOffset + ringIndex*chunkSize*nvls->nHeads;
         nelem = min(chunkSize, size-offset);
-        //if (nelem > 0 && tid == tidEndGather) printf("[%d/%d] End step off %lx nelem %x\n", blockIdx.x, threadIdx.x, offset, nelem);
         prims.template maskRecvSend<RingMask, NvlsMask>(offset, offset, nelem);
       }
     }

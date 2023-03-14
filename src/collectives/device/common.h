@@ -22,8 +22,7 @@ struct ncclShmemGroup {
   ncclConnInfo *sendConns[NCCL_MAX_NVLS_ARITY];
   void* srcs[NCCL_MAX_NVLS_ARITY+1];
   void* dsts[NCCL_MAX_NVLS_ARITY+1];
-  int nvlsRecv;
-  int nvlsSend;
+  int nvls;
 };
 
 struct ncclShmemData {
