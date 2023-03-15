@@ -371,6 +371,10 @@ struct RunWorkElement<ncclFuncAllReduce, T, RedOp, NCCL_ALGO_COLLNET_DIRECT, NCC
   }
 };
 
+#define BUFF_MASK 0x1 // By convention -- not used here.
+#define NVLS_MASK 0x2 // First peer in peer list
+#define RING_MASK 0x4 // Second peer in peer list
+
 template<typename T, typename RedOp>
 struct RunWorkElement<ncclFuncAllReduce, T, RedOp, NCCL_ALGO_NVLS, NCCL_PROTO_SIMPLE> {
   __device__ __forceinline__ void run(ncclWorkElem *args) {
@@ -428,7 +432,7 @@ struct RunWorkElement<ncclFuncAllReduce, T, RedOp, NCCL_ALGO_NVLS, NCCL_PROTO_SI
         for (ssize_t gridOffset = 0; gridOffset < size; gridOffset += loopSize) {
           ssize_t offset = gridOffset + (bid*nvls->nHeads+nvls->headRank)*chunkSize;
           int nelem = min(chunkSize, size-offset);
-          prims.recvSend(nelem);
+          prims.template maskRecvSend<NVLS_MASK, NVLS_MASK>(offset, offset, nelem);
         }
       } else {
         int group = (2*Proto::MaxGroupWidth) | (0<<16);
@@ -438,7 +442,7 @@ struct RunWorkElement<ncclFuncAllReduce, T, RedOp, NCCL_ALGO_NVLS, NCCL_PROTO_SI
         for (ssize_t gridOffset = 0; gridOffset < size; gridOffset += loopSize) {
           ssize_t offset = gridOffset + (bid*nvls->nHeads+nvls->headRank)*chunkSize;
           int nelem = min(chunkSize, size-offset);
-          prims.recvSend(nelem);
+          prims.template maskRecvSend<NVLS_MASK, NVLS_MASK>(offset, offset, nelem);
         }
       }
     } else if (tid < tidEndBcast) {
@@ -449,7 +453,7 @@ struct RunWorkElement<ncclFuncAllReduce, T, RedOp, NCCL_ALGO_NVLS, NCCL_PROTO_SI
       for (ssize_t gridOffset = 0; gridOffset < size; gridOffset += loopSize) {
         ssize_t offset = gridOffset + (bid*nvls->nHeads+nvls->headRank)*chunkSize;
         int nelem = min(chunkSize, size-offset);
-        prims.recvSend(nelem);
+        prims.template maskRecvSend<NVLS_MASK, NVLS_MASK>(offset, offset, nelem);
       }
     }
   #endif // NCCL_NVLS_ENABLED
@@ -510,9 +514,6 @@ struct RunWorkElement<ncclFuncAllReduce, T, RedOp, NCCL_ALGO_NVLS_RING, NCCL_PRO
     } else if (tid < tidEndReduce && nvls->headRank != -1) {
       int group = (2*Proto::MaxGroupWidth) | (0<<16);
       // Reduce, broadcast through NVLS
-      //static constexpr int BuffMask = 0x1; // By convention -- not used here.
-      static constexpr int NvlsMask = 0x2; // First peer in peer list
-      static constexpr int RingMask = 0x4; // Second peer in peer list
       const int recvPeers[2] = { nvls->down, nvls->ringPrev };
       const int sendPeers[2] = { nvls->down, nvls->ringNext };
       Primitives<T, RedOp, FanSymmetric<2>, /*Direct=*/0, Proto, 0>
@@ -522,27 +523,27 @@ struct RunWorkElement<ncclFuncAllReduce, T, RedOp, NCCL_ALGO_NVLS_RING, NCCL_PRO
         int ringIndex = nvls->node;
         ssize_t offset = headOffset + ringIndex*chunkSize*nvls->nHeads;
         int nelem = min(chunkSize, size-offset);
-        prims.template maskRecvSend<NvlsMask, RingMask>(offset, offset, nelem);
+        prims.template maskRecvSend<NVLS_MASK, RING_MASK>(offset, offset, nelem);
         ringIndex = (ringIndex-1+nvls->nNodes)%nvls->nNodes;
         for (int i=0; i<nvls->nNodes-2; i++) {
           offset = headOffset + ringIndex*chunkSize*nvls->nHeads;
           nelem = min(chunkSize, size-offset);
-          prims.template maskRecvSend<NvlsMask|RingMask, RingMask>(offset, offset, nelem);
+          prims.template maskRecvSend<NVLS_MASK|RING_MASK, RING_MASK>(offset, offset, nelem);
           ringIndex = (ringIndex-1+nvls->nNodes)%nvls->nNodes;
         }
         offset = headOffset + ringIndex*chunkSize*nvls->nHeads;
         nelem = min(chunkSize, size-offset);
-        prims.template maskRecvSend<NvlsMask|RingMask, NvlsMask|RingMask>(offset, offset, nelem);
+        prims.template maskRecvSend<NVLS_MASK|RING_MASK, NVLS_MASK|RING_MASK>(offset, offset, nelem);
         ringIndex = (ringIndex-1+nvls->nNodes)%nvls->nNodes;
         for (int i=0; i<nvls->nNodes-2; i++) {
           offset = headOffset + ringIndex*chunkSize*nvls->nHeads;
           nelem = min(chunkSize, size-offset);
-          prims.template maskRecvSend<RingMask, NvlsMask|RingMask>(offset, offset, nelem);
+          prims.template maskRecvSend<RING_MASK, NVLS_MASK|RING_MASK>(offset, offset, nelem);
           ringIndex = (ringIndex-1+nvls->nNodes)%nvls->nNodes;
         }
         offset = headOffset + ringIndex*chunkSize*nvls->nHeads;
         nelem = min(chunkSize, size-offset);
-        prims.template maskRecvSend<RingMask, NvlsMask>(offset, offset, nelem);
+        prims.template maskRecvSend<RING_MASK, NVLS_MASK>(offset, offset, nelem);
       }
     }
   #endif // NCCL_NVLS_ENABLED
