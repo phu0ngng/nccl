@@ -5,9 +5,9 @@
  ************************************************************************/
 
 template<typename T, typename RedOp, typename Fan, int Direct,
-         int SlicePerChunk, int StepPerSlice, int Unroll, int P2p, bool NVLS>
+         int SlicePerChunk, int StepPerSlice, int Unroll, int P2p, int NVLS_SENDMASK, int NVLS_RECVMASK>
 class Primitives<
-    T, RedOp, Fan, Direct, ProtoSimple<SlicePerChunk, StepPerSlice, Unroll, NVLS>, P2p
+    T, RedOp, Fan, Direct, ProtoSimple<SlicePerChunk, StepPerSlice, Unroll, NVLS_SENDMASK, NVLS_RECVMASK>, P2p
   > {
   static constexpr int MaxRecv = Fan::MaxRecv, MaxSend = Fan::MaxSend;
   static constexpr int Input=0, Output=1;
@@ -23,8 +23,7 @@ class Primitives<
                        DirectWrite = 0x200,
                        DirectRead = 0x400,
                        ThreadsSynced = 0x800,
-                       NvlsMinPolling = 0x1000,
-                       NvlsRecv = 0x2000;
+                       NvlsMinPolling = 0x1000;
   const int tid, tidInBlock;
   int nthreads;
   int nworkers;
@@ -107,7 +106,7 @@ class Primitives<
 
   inline __device__ uint64_t loadStepValue(uint64_t* ptr) {
     #if __CUDA_ARCH__ >= 900 && CUDART_VERSION >= 12010
-    if (NVLS && (flags & NvlsMinPolling)) {
+    if (flags & NvlsMinPolling) {
       uint64_t ans;
       asm("multimem.ld_reduce.acquire.sys.global.min.u64 %0, [%1];" : "=l"(ans) : "l"(cvta_to_global(ptr)));
       return ans;
@@ -258,13 +257,7 @@ class Primitives<
         /* if user abort the kernel, we don't need to actually perform copy/reduce; just set size
          * to 0 to avoid unnecessary workload. */
         int workSize = ncclShmem.aborted ? 0 : sliceSize;
-        if (NVLS && ncclShmem.groups[group].nvls) {
-          reduceCopy<Unroll, RedOp, T, RecvMask & 0x1,1,2, SendMask & 0x1,1,2, /*PreOpSrcs=*/0>
-            (tid, nworkers, ncclShmem.redOpArgs[0], ncclShmem.redOpArgs, postOp,
-             nRecvPeers, ncclShmem.groups[group].srcs,
-             nSendPeers, ncclShmem.groups[group].dsts,
-             workSize);
-        } else if (DirectRecv && ncclShmem.groups[group].srcs[0] == ncclShmem.groups[group].dsts[0]) {
+        if (DirectRecv && ncclShmem.groups[group].srcs[0] == ncclShmem.groups[group].dsts[0]) {
           // We can only have one direct receive. Since srcs[0] == dstPtr+offset, skip one copy
           if (Send) {
             reduceCopy<Unroll, RedOp, T, 0, 1, 1, 0, 1, MaxSend, /*PreOpSrcs*/0>
@@ -283,7 +276,7 @@ class Primitives<
         } else {
           constexpr int PreOpSrcs = SrcBuf != Input ? 0 :
                                     DirectRecv*MaxRecv == NCCL_MAX_DIRECT_ARITY ? (1+NCCL_MAX_DIRECT_ARITY) : 1;
-          reduceCopy<Unroll, RedOp, T, 0, Recv+Src, Recv*MaxRecv+Src, 0, Send+Dst, Send*MaxSend+Dst, PreOpSrcs>
+          reduceCopy<Unroll, RedOp, T, RecvMask&NVLS_RECVMASK, Recv+Src, Recv*MaxRecv+Src, SendMask&NVLS_SENDMASK, Send+Dst, Send*MaxSend+Dst, PreOpSrcs>
             (tid, nworkers, ncclShmem.redOpArgs[0], ncclShmem.redOpArgs, postOp,
              nRecvPeers+Src, ncclShmem.groups[group].srcs,
              nSendPeers+Dst, ncclShmem.groups[group].dsts,
@@ -393,14 +386,7 @@ class Primitives<
       }
       if (flags & RoleWaitRecv) {
         ncclShmem.groups[group].recvConns[index] = conn; // WaitRecv role saves since that's who needs it in setDataPtrs()
-        if ((index == 0) && (flags & RoleWaitRecv)) {
-          if (conn->flags & NCCL_NVLS_MIN_POLL) {
-            flags |= NvlsMinPolling;
-            ncclShmem.groups[group].nvls = 1;
-          } else {
-            ncclShmem.groups[group].nvls = 0;
-          }
-        }
+        flags |= (conn->flags & NCCL_NVLS_MIN_POLL) ? NvlsMinPolling : 0;
         connStepPtr = conn->tail;
         connStepCache = loadStepValue(connStepPtr);
         flags |= (conn->offsFifo != nullptr) ? OffsFifoEnabled : 0;
@@ -621,13 +607,9 @@ class Primitives<
       userBuff += delta;
   }
 
-  template <int InpMask, int OutMask>
-  __device__ __forceinline__ void maskRecvSend(intptr_t inpIx, intptr_t outIx, int eltN) {
-    static constexpr int SrcBuf = (InpMask&0x1) ? Input : -1;
-    static constexpr int DstBuf = (OutMask&0x1) ? Output : -1;
-    static constexpr int RecvMask = InpMask >> 1;
-    static constexpr int SendMask = OutMask >> 1;
-    genericOp<0, 0, 1, 1, SrcBuf, DstBuf, RecvMask, SendMask>(inpIx, outIx, eltN, false);
+  template <int RecvMask, int SendMask>
+  __device__ __forceinline__ void maskRecvSend(int eltN) {
+    genericOp<0, 0, 1, 1, -1, -1, RecvMask, SendMask>(0, 0, eltN, false);
   }
 
   __device__ __forceinline__ void send(intptr_t inpIx, int eltN) {

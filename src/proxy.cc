@@ -561,6 +561,10 @@ ncclResult_t ncclProxySaveOp(struct ncclComm* comm, struct ncclProxyOp* op, bool
       NCCLCHECK(SaveProxy(channel, proxySend, channel->collnetDirect.out, op, 1, justInquire));
       NCCLCHECK(SaveProxy(channel, proxyRecv, channel->collnetDirect.out, op, 0, justInquire));
     } break;
+  case ncclPatternNvls: {
+      NCCLCHECK(SaveProxy(channel, proxySend, channel->nvls.out, op, 1, justInquire));
+      NCCLCHECK(SaveProxy(channel, proxyRecv, channel->nvls.out, op, 0, justInquire));
+    } break;
   case ncclPatternNvlsRing: {
       struct ncclNvls* nvls = &channel->nvls;
       NCCLCHECK(SaveProxy(channel, proxyRecv, nvls->ringPrev, op, 0, justInquire));
