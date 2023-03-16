@@ -426,7 +426,7 @@ struct RunWorkElement<ncclFuncAllReduce, T, RedOp, NCCL_ALGO_NVLS, NCCL_PROTO_SI
         int nelem = min(nvls->nHeads*chunkSize, size-offset);
         prims.gather(offset, nelem, chunkSize, chunkSize, -1, 0);
       }
-    } else if (tid < tidEndReduce) {
+    } else if (tid < tidEndReduce && nvls->headRank != -1) {
       if (!hasOut) {
         // Reduce, broadcast through NVLS
         using Proto = ProtoSimple<1, 1, COLL_UNROLL, NVLS_MASK, NVLS_MASK>;
@@ -450,7 +450,7 @@ struct RunWorkElement<ncclFuncAllReduce, T, RedOp, NCCL_ALGO_NVLS, NCCL_PROTO_SI
           prims.template maskRecvSend<NVLS_MASK, 0>(nelem);
         }
       }
-    } else if (tid < tidEndBcast) {
+    } else if (tid < tidEndBcast && nvls->headRank != -1) {
       // Recv from network, broadcast
       using Proto = ProtoSimple<1, 1, COLL_UNROLL, 0, NVLS_MASK>;
       Primitives<T, RedOp, FanSymmetric<1>, /*Direct=*/0, Proto, 0>

@@ -5,9 +5,9 @@
  ************************************************************************/
 
 template<typename T, typename RedOp, typename Fan, int Direct,
-         int SlicePerChunk, int StepPerSlice, int Unroll, int P2p, int NVLS_SENDMASK, int NVLS_RECVMASK>
+         int SlicePerChunk, int StepPerSlice, int Unroll, int P2p, int NVLS_RECVMASK, int NVLS_SENDMASK>
 class Primitives<
-    T, RedOp, Fan, Direct, ProtoSimple<SlicePerChunk, StepPerSlice, Unroll, NVLS_SENDMASK, NVLS_RECVMASK>, P2p
+    T, RedOp, Fan, Direct, ProtoSimple<SlicePerChunk, StepPerSlice, Unroll, NVLS_RECVMASK, NVLS_SENDMASK>, P2p
   > {
   static constexpr int MaxRecv = Fan::MaxRecv, MaxSend = Fan::MaxSend;
   static constexpr int Input=0, Output=1;

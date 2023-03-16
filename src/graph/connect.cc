@@ -217,7 +217,7 @@ static ncclResult_t connectCollNet(struct ncclComm* comm, struct ncclTopoGraph* 
   }
   for (int c=0; c<comm->nvlsChannels; c++) {
     struct ncclChannel* channel = comm->channels+c;
-    channel->nvls.out = comm->nRanks;
+    if (channel->nvls.headRank != -1) channel->nvls.out = comm->nRanks;
   }
   free(heads);
   return ncclSuccess;
