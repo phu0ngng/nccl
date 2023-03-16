@@ -216,7 +216,8 @@ namespace {
        * but the ctor above for tree roots would be DirectRecv=0 DirectSend=1.
        */
       Primitives<T, RedOp, FanAsymmetric<NCCL_MAX_DEV_ARITY, 1>, /*Direct=*/1, Proto, 0>
-        prims(tid, nthreadsSplit, tree->down, &tree->up, args->sendbuff, args->recvbuff, args->redOpArg, 0*Proto::MaxGroupWidth);
+        prims(tid, nthreadsSplit, tree->down, &tree->up, args->sendbuff, args->recvbuff,
+            args->redOpArg, 0*Proto::MaxGroupWidth);
       if (tree->down[0] == -1) {
         for (ssize_t gridOffset = 0; gridOffset < size; gridOffset += loopSize) {
           ssize_t offset = gridOffset + bid*int(chunkSize);
@@ -235,7 +236,8 @@ namespace {
     else {
       // Broadcast down. Max number of recv is 1, max number of send is 3 (binary tree + local)
       Primitives<T, RedOp, FanAsymmetric<1, NCCL_MAX_DEV_ARITY>, /*Direct=*/1, Proto, 0>
-        prims(tid-nthreadsSplit, nthreads-nthreadsSplit, &tree->up, tree->down, args->sendbuff, args->recvbuff, args->redOpArg, 1*Proto::MaxGroupWidth);
+        prims(tid-nthreadsSplit, nthreads-nthreadsSplit, &tree->up, tree->down, args->sendbuff, args->recvbuff,
+            args->redOpArg, 1*Proto::MaxGroupWidth);
       if (tree->down[0] == -1) {
         for (ssize_t gridOffset = 0; gridOffset < size; gridOffset += loopSize) {
           ssize_t offset = gridOffset + bid*int(chunkSize);
@@ -299,9 +301,9 @@ struct RunWorkElement<ncclFuncAllReduce, T, RedOp, NCCL_ALGO_COLLNET_DIRECT, NCC
 
     if (tid >= tidStartScatter && tid < tidStartReduce && hasUp) {
       // Scatter
-      int group = (2*Proto::MaxGroupWidth) | (1<<16);
       Primitives<T, RedOp, FanAsymmetric<0, NCCL_MAX_DIRECT_ARITY>, /*Direct=*/1, Proto, 0>
-        prims(tid-tidStartScatter, nThreadsScatter, NULL, direct->up, args->sendbuff, args->recvbuff, args->redOpArg, group, args);
+        prims(tid-tidStartScatter, nThreadsScatter, NULL, direct->up, args->sendbuff, args->recvbuff,
+           args->redOpArg, 2*Proto::MaxGroupWidth, 1, 1, args);
       for (ssize_t gridOffset = 0; gridOffset < size; gridOffset += loopSize) {
         ssize_t offset = gridOffset + bid*direct->nHeads*chunkSize;
         int nelem = min(direct->nHeads*chunkSize, size-offset);
@@ -312,11 +314,11 @@ struct RunWorkElement<ncclFuncAllReduce, T, RedOp, NCCL_ALGO_COLLNET_DIRECT, NCC
         }
       }
     } else if (tid >= tidStartReduce && direct->out != -1) {
-      int group = (3*Proto::MaxGroupWidth) | (1<<16);
       if (hasDn) {
         // Reduce, send to network
         Primitives<T, RedOp, FanAsymmetric<NCCL_MAX_DIRECT_ARITY, 1>, /*Direct=*/1, Proto, 0>
-          prims(tid-tidStartReduce, nThreadsReduce, direct->down, &direct->out, args->sendbuff, args->recvbuff, args->redOpArg, group, args);
+          prims(tid-tidStartReduce, nThreadsReduce, direct->down, &direct->out, args->sendbuff, args->recvbuff,
+             args->redOpArg, 3*Proto::MaxGroupWidth, 1, 1, args);
         for (ssize_t gridOffset = 0; gridOffset < size; gridOffset += loopSize) {
           ssize_t offset = gridOffset + (bid*direct->nHeads+direct->headRank)*chunkSize;
           int nelem = min(chunkSize, size-offset);
@@ -329,7 +331,8 @@ struct RunWorkElement<ncclFuncAllReduce, T, RedOp, NCCL_ALGO_COLLNET_DIRECT, NCC
       } else {
         // Directly send to network
         Primitives<T, RedOp, FanAsymmetric<0, 1>, /*Direct=*/0, Proto, 0>
-          prims(tid-tidStartReduce, nThreadsReduce, nullptr, &direct->out, args->sendbuff, args->recvbuff, args->redOpArg, group);
+          prims(tid-tidStartReduce, nThreadsReduce, nullptr, &direct->out, args->sendbuff, args->recvbuff,
+             args->redOpArg, 3*Proto::MaxGroupWidth, 1, 1);
         for (ssize_t gridOffset = 0; gridOffset < size; gridOffset += loopSize) {
           ssize_t offset = gridOffset + (bid*direct->nHeads+direct->headRank)*chunkSize;
           int nelem = min(chunkSize, size-offset);
@@ -338,20 +341,20 @@ struct RunWorkElement<ncclFuncAllReduce, T, RedOp, NCCL_ALGO_COLLNET_DIRECT, NCC
       }
     } else if (tid < tidStartBcast && hasUp) {
       // Gather
-      int group = (0*Proto::MaxGroupWidth) | (0<<16);
       Primitives<T, RedOp, FanAsymmetric<NCCL_MAX_DIRECT_ARITY, 0>, /*Direct=*/1, Proto, 0>
-        prims(tid, nThreadsGather, direct->up, NULL, args->sendbuff, args->recvbuff, args->redOpArg, group, args);
+        prims(tid, nThreadsGather, direct->up, NULL, args->sendbuff, args->recvbuff,
+           args->redOpArg, 0*Proto::MaxGroupWidth, 0, 0, args);
       for (ssize_t gridOffset = 0; gridOffset < size; gridOffset += loopSize) {
         ssize_t offset = gridOffset + bid*direct->nHeads*chunkSize;
         int nelem = min(direct->nHeads*chunkSize, size-offset);
         prims.directGather(offset, nelem, chunkSize, chunkSize, direct->headRank, direct->shift);
       }
     } else if (tid >= tidStartBcast && tid < tidStartScatter && direct->out != -1) {
-      int group = (1*Proto::MaxGroupWidth) | (0<<16);
       if (hasDn) {
         // Recv from network, broadcast
         Primitives<T, RedOp, FanAsymmetric<1, NCCL_MAX_DIRECT_ARITY>, /*Direct=*/1, Proto, 0>
-          prims(tid-tidStartBcast, nThreadsBcast, &direct->out, direct->down, args->sendbuff, args->recvbuff, args->redOpArg, group, args);
+          prims(tid-tidStartBcast, nThreadsBcast, &direct->out, direct->down, args->sendbuff, args->recvbuff,
+             args->redOpArg, 1*Proto::MaxGroupWidth, 0, 0, args);
         for (ssize_t gridOffset = 0; gridOffset < size; gridOffset += loopSize) {
           ssize_t offset = gridOffset + (bid*direct->nHeads+direct->headRank)*chunkSize;
           int nelem = min(chunkSize, size-offset);
@@ -360,7 +363,8 @@ struct RunWorkElement<ncclFuncAllReduce, T, RedOp, NCCL_ALGO_COLLNET_DIRECT, NCC
       } else {
         // Recv from network (no post thread needed)
         Primitives<T, RedOp, FanAsymmetric<1, 0>, /*Direct=*/0, Proto, 0>
-          prims(tid-tidStartBcast, nThreadsBcast, &direct->out, nullptr, args->sendbuff, args->recvbuff, args->redOpArg, group);
+          prims(tid-tidStartBcast, nThreadsBcast, &direct->out, nullptr, args->sendbuff, args->recvbuff,
+             args->redOpArg, 1*Proto::MaxGroupWidth, 0, 0);
         for (ssize_t gridOffset = 0; gridOffset < size; gridOffset += loopSize) {
           ssize_t offset = gridOffset + (bid*direct->nHeads+direct->headRank)*chunkSize;
           int nelem = min(chunkSize, size-offset);
@@ -403,9 +407,9 @@ struct RunWorkElement<ncclFuncAllReduce, T, RedOp, NCCL_ALGO_NVLS, NCCL_PROTO_SI
     if (tid < tidEndScatter) {
       // Scatter
       using Proto = ProtoSimple<1, 1, COLL_UNROLL>;
-      int group = (0*Proto::MaxGroupWidth) | (1<<16);
       Primitives<T, RedOp, FanAsymmetric<0, NCCL_MAX_NVLS_ARITY>, /*Direct=*/0, Proto, 0>
-        prims(tid, nThreadsScatter, NULL, nvls->up, args->sendbuff, NULL, args->redOpArg, group, args);
+        prims(tid, nThreadsScatter, NULL, nvls->up, args->sendbuff, NULL,
+           args->redOpArg, 0*Proto::MaxGroupWidth, 1, 1);
       for (ssize_t gridOffset = 0; gridOffset < size; gridOffset += loopSize) {
         ssize_t offset = gridOffset + bid*nvls->nHeads*chunkSize;
         int nelem = min(nvls->nHeads*chunkSize, size-offset);
@@ -414,9 +418,9 @@ struct RunWorkElement<ncclFuncAllReduce, T, RedOp, NCCL_ALGO_NVLS, NCCL_PROTO_SI
     } else if (tid < tidEndGather) {
       // Gather
       using Proto = ProtoSimple<1, 1, COLL_UNROLL>;
-      int group = (1*Proto::MaxGroupWidth) | (1<<16);
       Primitives<T, RedOp, FanAsymmetric<NCCL_MAX_NVLS_ARITY, 0>, /*Direct=*/0, Proto, 0>
-        prims(tid-tidEndScatter, nThreadsGather, nvls->up, NULL, NULL, args->recvbuff, args->redOpArg, group, args);
+        prims(tid-tidEndScatter, nThreadsGather, nvls->up, NULL, NULL, args->recvbuff,
+           args->redOpArg, 1*Proto::MaxGroupWidth, 1, 1);
       for (ssize_t gridOffset = 0; gridOffset < size; gridOffset += loopSize) {
         ssize_t offset = gridOffset + bid*nvls->nHeads*chunkSize;
         int nelem = min(nvls->nHeads*chunkSize, size-offset);
@@ -426,9 +430,9 @@ struct RunWorkElement<ncclFuncAllReduce, T, RedOp, NCCL_ALGO_NVLS, NCCL_PROTO_SI
       if (!hasOut) {
         // Reduce, broadcast through NVLS
         using Proto = ProtoSimple<1, 1, COLL_UNROLL, NVLS_MASK, NVLS_MASK>;
-        int group = (2*Proto::MaxGroupWidth) | (0<<16);
         Primitives<T, RedOp, FanSymmetric<1>, /*Direct=*/0, Proto, 0>
-          prims(tid-tidEndGather, nThreadsReduce, &nvls->down, &nvls->down, NULL, NULL, args->redOpArg, group, args);
+          prims(tid-tidEndGather, nThreadsReduce, &nvls->down, &nvls->down, NULL, NULL,
+             args->redOpArg, 2*Proto::MaxGroupWidth, 0, 0);
         for (ssize_t gridOffset = 0; gridOffset < size; gridOffset += loopSize) {
           ssize_t offset = gridOffset + (bid*nvls->nHeads+nvls->headRank)*chunkSize;
           int nelem = min(chunkSize, size-offset);
@@ -437,9 +441,9 @@ struct RunWorkElement<ncclFuncAllReduce, T, RedOp, NCCL_ALGO_NVLS, NCCL_PROTO_SI
       } else {
         // Reduce, send to network
         using Proto = ProtoSimple<1, 1, COLL_UNROLL, NVLS_MASK, 0>;
-        int group = (2*Proto::MaxGroupWidth) | (0<<16);
         Primitives<T, RedOp, FanSymmetric<1>, /*Direct=*/0, Proto, 0>
-          prims(tid-tidEndGather, nThreadsReduce, &nvls->down, &nvls->out, NULL, NULL, args->redOpArg, group, args);
+          prims(tid-tidEndGather, nThreadsReduce, &nvls->down, &nvls->out, NULL, NULL,
+             args->redOpArg, 2*Proto::MaxGroupWidth, 0, 1);
         for (ssize_t gridOffset = 0; gridOffset < size; gridOffset += loopSize) {
           ssize_t offset = gridOffset + (bid*nvls->nHeads+nvls->headRank)*chunkSize;
           int nelem = min(chunkSize, size-offset);
@@ -449,9 +453,9 @@ struct RunWorkElement<ncclFuncAllReduce, T, RedOp, NCCL_ALGO_NVLS, NCCL_PROTO_SI
     } else if (tid < tidEndBcast) {
       // Recv from network, broadcast
       using Proto = ProtoSimple<1, 1, COLL_UNROLL, 0, NVLS_MASK>;
-      int group = (3*Proto::MaxGroupWidth) | (0<<16);
       Primitives<T, RedOp, FanSymmetric<1>, /*Direct=*/0, Proto, 0>
-        prims(tid-tidEndReduce, nThreadsBcast, &nvls->out, &nvls->down, NULL, NULL, args->redOpArg, group, args);
+        prims(tid-tidEndReduce, nThreadsBcast, &nvls->out, &nvls->down, NULL, NULL,
+           args->redOpArg, 3*Proto::MaxGroupWidth, 0, 0);
       for (ssize_t gridOffset = 0; gridOffset < size; gridOffset += loopSize) {
         ssize_t offset = gridOffset + (bid*nvls->nHeads+nvls->headRank)*chunkSize;
         int nelem = min(chunkSize, size-offset);
@@ -484,9 +488,9 @@ struct RunWorkElement<ncclFuncAllReduce, T, RedOp, NCCL_ALGO_NVLS_RING, NCCL_PRO
     if (tid < tidEndScatter) {
       // Scatter
       using Proto = ProtoSimple<1, 1, COLL_UNROLL>;
-      int group = (0*Proto::MaxGroupWidth) | (1<<16);
       Primitives<T, RedOp, FanAsymmetric<0, NCCL_MAX_NVLS_ARITY>, /*Direct=*/0, Proto, 0>
-        prims(tid, nThreadsScatter, NULL, nvls->up, args->sendbuff, NULL, args->redOpArg, group, args);
+        prims(tid, nThreadsScatter, NULL, nvls->up, args->sendbuff, NULL,
+           args->redOpArg, 0*Proto::MaxGroupWidth, 1, 1);
       for (ssize_t gridOffset = 0; gridOffset < size; gridOffset += loopSize) {
         int headOffset = gridOffset + bid*nvls->nHeads*chunkSize*nvls->nNodes;
         int ringIndex = nvls->node;
@@ -500,9 +504,9 @@ struct RunWorkElement<ncclFuncAllReduce, T, RedOp, NCCL_ALGO_NVLS_RING, NCCL_PRO
     } else if (tid < tidEndGather) {
       // Gather
       using Proto = ProtoSimple<1, 1, COLL_UNROLL>;
-      int group = (1*Proto::MaxGroupWidth) | (1<<16);
       Primitives<T, RedOp, FanAsymmetric<NCCL_MAX_NVLS_ARITY, 0>, /*Direct=*/0, Proto, 0>
-        prims(tid-tidEndScatter, nThreadsGather, nvls->up, NULL, NULL, args->recvbuff, args->redOpArg, group, args);
+        prims(tid-tidEndScatter, nThreadsGather, nvls->up, NULL, NULL, args->recvbuff,
+           args->redOpArg, 1*Proto::MaxGroupWidth, 1, 1);
       for (ssize_t gridOffset = 0; gridOffset < size; gridOffset += loopSize) {
         int headOffset = gridOffset + bid*nvls->nHeads*chunkSize*nvls->nNodes;
         int ringIndex = (nvls->node+nvls->nNodes-1)%nvls->nNodes; // Skip the n-1 first steps
@@ -515,12 +519,12 @@ struct RunWorkElement<ncclFuncAllReduce, T, RedOp, NCCL_ALGO_NVLS_RING, NCCL_PRO
       }
     } else if (tid < tidEndReduce && nvls->headRank != -1) {
       using Proto = ProtoSimple<1, 1, COLL_UNROLL, NVLS_MASK, NVLS_MASK>;
-      int group = (2*Proto::MaxGroupWidth) | (0<<16);
       // Reduce, broadcast through NVLS
       const int recvPeers[2] = { nvls->down, nvls->ringPrev };
       const int sendPeers[2] = { nvls->down, nvls->ringNext };
       Primitives<T, RedOp, FanSymmetric<2>, /*Direct=*/0, Proto, 0>
-        prims(tid-tidEndGather, nThreadsReduce, recvPeers, sendPeers, NULL, NULL, args->redOpArg, group, args);
+        prims(tid-tidEndGather, nThreadsReduce, recvPeers, sendPeers, NULL, NULL,
+            args->redOpArg, 2*Proto::MaxGroupWidth, 0, 0);
       for (ssize_t gridOffset = 0; gridOffset < size; gridOffset += loopSize) {
         ssize_t headOffset = gridOffset + (bid*nvls->nHeads*nvls->nNodes+nvls->headRank)*chunkSize;
         int ringIndex = nvls->node;
@@ -568,16 +572,20 @@ struct RunWorkElement<ncclFuncAllReduce, T, RedOp, NCCL_ALGO_COLLNET_CHAIN, NCCL
     int nthreadsSplit = nthreads/2;
     if (nthreadsSplit >= 256) nthreadsSplit += 64;
 
-    int group, send, recv, groupTid, groupNthreads;
+    int group, connIndex, send, recv, groupTid, groupNthreads;
     using Proto = ProtoSimple<1, 1>;
     if (tid < nthreadsSplit) {
-      group = (0*Proto::MaxGroupWidth) | (1<<16);
+      // Reduce up the chain
+      group = 0;
+      connIndex = 1;
       recv = tree->down[0];
       send = tree->up;
       groupTid = tid;
       groupNthreads = nthreadsSplit;
     } else {
-      group = (1*Proto::MaxGroupWidth);
+      // Broadcast down the chain
+      group = 1;
+      connIndex = 0;
       recv = tree->up;
       send = tree->down[0];
       groupTid = tid - nthreadsSplit;
@@ -585,7 +593,8 @@ struct RunWorkElement<ncclFuncAllReduce, T, RedOp, NCCL_ALGO_COLLNET_CHAIN, NCCL
     }
 
     Primitives<T, RedOp, FanSymmetric<1>, /*Direct=*/1, Proto, 0>
-      prims(groupTid, groupNthreads, &recv, &send, args->sendbuff, args->recvbuff, args->redOpArg, group);
+      prims(groupTid, groupNthreads, &recv, &send, args->sendbuff, args->recvbuff,
+          args->redOpArg, group*Proto::MaxGroupWidth, connIndex, connIndex);
 
     if (tid < nthreadsSplit) {
       if (recv == -1) {

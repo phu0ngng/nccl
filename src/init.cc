@@ -507,6 +507,7 @@ static ncclResult_t collNetTrySetup(ncclComm_t comm, struct ncclTopoGraph* collN
   int nHeads = collNetGraph->nChannels;
   int highestTransportType0, highestTransportType1;
   char line[1024];
+  int collNetChannels = comm->nChannels;//std::max(comm->nChannels, comm->nvlsChannels);
 
   NCCLCHECKGOTO(ncclCalloc(&heads, nHeads), ret, fail);
   // Head GPU index is always 0
@@ -514,7 +515,7 @@ static ncclResult_t collNetTrySetup(ncclComm_t comm, struct ncclTopoGraph* collN
     heads[c] = collNetGraph->intra[c * comm->localRanks + 0];
   }
 
-  for (int c = 0; c < comm->nChannels; c++) {
+  for (int c = 0; c < collNetChannels; c++) {
     struct ncclChannel* channel = comm->channels + c;
     for (int h = 0; h < nHeads; h++) {
       const int head = heads[h];

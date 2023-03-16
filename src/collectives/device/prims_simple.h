@@ -25,7 +25,7 @@ class Primitives<
                        ThreadsSynced = 0x800,
                        NvlsMinPolling = 0x1000;
   const int tid, tidInBlock;
-  int nthreads;
+  const int nthreads;
   int nworkers;
   const int stepSize;
   Fan fan;
@@ -463,16 +463,14 @@ class Primitives<
  public:
   __device__ Primitives(
       int tid, int nthreads, int const *recvPeers, int const *sendPeers,
-      void const *inputBuf, void *outputBuf, uint64_t redOpArg, uint32_t group=0, struct ncclWorkElem* e = nullptr
+      void const *inputBuf, void *outputBuf, uint64_t redOpArg, uint8_t group=0,
+      uint8_t connIndexRecv = 0, uint8_t connIndexSend = 0, struct ncclWorkElem* e = nullptr
     ):
-    tid(tid), tidInBlock(threadIdx.x),
+    tid(tid), nthreads(nthreads), tidInBlock(threadIdx.x), group(group),
     stepSize(ncclShmem.comm.buffSizes[NCCL_PROTO_SIMPLE]/NCCL_STEPS/sizeof(T)) {
 
     // For send operations, we need an extra warp to overlap the threadfence and the copy
-    this->nthreads = nthreads;
     this->nworkers = nthreads - (MaxSend > 0 && nthreads-WARP_SIZE >= 64 ? WARP_SIZE : 0);
-    this->group = group & (uint16_t)0xFFFF;
-    int connIndex = group >> 16;
 
     int nrecv=0, nsend=0;
     while (nrecv < MaxRecv && recvPeers[nrecv] != -1) nrecv++;
@@ -502,8 +500,8 @@ class Primitives<
     if (flags & (RoleWaitRecv|RolePostRecv)) peer = recvPeers[index];
     if (flags & (RoleWaitSend|RolePostSend)) peer = sendPeers[index];
 
-    loadRecvConn(&ncclShmem.channel.peers[peer], connIndex, e);
-    loadSendConn(&ncclShmem.channel.peers[peer], connIndex, e);
+    loadRecvConn(&ncclShmem.channel.peers[peer], connIndexRecv, e);
+    loadSendConn(&ncclShmem.channel.peers[peer], connIndexSend, e);
 
     setDataPtrs(inputBuf, outputBuf, redOpArg, (struct ncclWorkElemReg*)e);
   }

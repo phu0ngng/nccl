@@ -40,9 +40,6 @@ struct ProtoSimple {
   }
   // Group width is how many consecutive group values a subchannel occupies.
   static constexpr int MaxGroupWidth = 2;
-  __device__ static int calcGroupWidth(bool send, int nthreads) {
-    return send && nthreads-WARP_SIZE >= 64 ? 2 : 1;
-  }
 };
 
 struct ProtoLL {
@@ -58,9 +55,6 @@ struct ProtoLL {
   }
   // Group width is how many consecutive group values a subchannel occupies.
   static constexpr int MaxGroupWidth = 1;
-  __device__ static int calcGroupWidth(bool send, int nthreads) {
-    return 1;
-  }
 };
 
 struct ProtoLL128 {
@@ -76,9 +70,6 @@ struct ProtoLL128 {
   }
   // Group width is how many consecutive group values a subchannel occupies.
   static constexpr int MaxGroupWidth = 1;
-  __device__ static int calcGroupWidth(bool send, int nthreads) {
-    return 1;
-  }
 };
 
 /* Fan (as in fan-in & fan-out) classes hold recv and send counts. The template
