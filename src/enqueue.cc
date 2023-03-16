@@ -1254,7 +1254,7 @@ static ncclResult_t getLoopInfo(struct ncclInfo* info) {
     case ncclPatternPipelineFrom:
     case ncclPatternPipelineTo:
     case ncclPatternCollnetChain:
-      info->nstepsPerLoop = 1 = info->nchunksPerLoop = 1; break;
+      info->nstepsPerLoop = info->nchunksPerLoop = 1; break;
     case ncclPatternNvls:
       info->nstepsPerLoop = 1; info->nchunksPerLoop = info->comm->channels[0].nvls.nHeads; break;
     case ncclPatternCollnetDirect:
