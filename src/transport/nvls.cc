@@ -242,7 +242,7 @@ ncclResult_t nvlsGroupUnmapMem(struct ncclComm *comm, struct nvlsResources* reso
 
 #define NVLS_MEM_ALIGN_SIZE (1 << 21)
 
-NCCL_PARAM(NvlsEnable, "NVLS_ENABLE", 1);
+NCCL_PARAM(NvlsEnable, "NVLS_ENABLE", 2);
 
 ncclResult_t ncclNvlsSetup(struct ncclComm* comm) {
   int nHeads = comm->channels[0].nvls.nHeads;
@@ -254,10 +254,14 @@ ncclResult_t ncclNvlsSetup(struct ncclComm* comm) {
   if (CUPFN(cuDeviceGet) == NULL) return ncclSuccess;
   CUCHECK(cuCtxGetDevice(&dev));
   CUDACHECK(cudaDriverGetVersion(&driverVersion));
-  comm->nvlsSupport = 0;
-  // NVLS Multicast support requires CUDA12.1 UMD + KMD
-  if (CUPFN(cuMulticastCreate) != NULL && driverVersion >= 12010) {
-    CUCHECK(cuDeviceGetAttribute(&comm->nvlsSupport, CU_DEVICE_ATTRIBUTE_MULTICAST_SUPPORTED, dev));
+  if (ncclParamNvlsEnable() == 2) {
+    comm->nvlsSupport = 0;
+    // NVLS Multicast support requires CUDA12.1 UMD + KMD
+    if (CUPFN(cuMulticastCreate) != NULL /*&& driverVersion >= 12010 */) {
+      CUCHECK(cuDeviceGetAttribute(&comm->nvlsSupport, CU_DEVICE_ATTRIBUTE_MULTICAST_SUPPORTED, dev));
+    }
+  } else {
+    comm->nvlsSupport = 1;
   }
   INFO(NCCL_INIT, "NVLS multicast support is %savailable on dev %d", comm->nvlsSupport ? "" : "not ", dev);
   if (comm->nvlsSupport == 0) return ncclSuccess;
