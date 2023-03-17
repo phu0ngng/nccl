@@ -493,7 +493,7 @@ struct RunWorkElement<ncclFuncAllReduce, T, RedOp, NCCL_ALGO_NVLS_RING, NCCL_PRO
         prims(tid, nThreadsScatter, NULL, nvls->up, args->sendbuff, NULL,
            args->redOpArg, 0*Proto::MaxGroupWidth, 1, 1);
       for (ssize_t gridOffset = 0; gridOffset < size; gridOffset += loopSize) {
-        int headOffset = gridOffset + bid*nvls->nHeads*chunkSize*nvls->nNodes;
+        ssize_t headOffset = gridOffset + bid*nvls->nHeads*chunkSize*nvls->nNodes;
         int ringIndex = nvls->node;
         for (int i=0; i<nvls->nNodes; i++) {
           ssize_t offset = headOffset + ringIndex*chunkSize*nvls->nHeads;
@@ -509,7 +509,7 @@ struct RunWorkElement<ncclFuncAllReduce, T, RedOp, NCCL_ALGO_NVLS_RING, NCCL_PRO
         prims(tid-tidEndScatter, nThreadsGather, nvls->up, NULL, NULL, args->recvbuff,
            args->redOpArg, 1*Proto::MaxGroupWidth, 1, 1);
       for (ssize_t gridOffset = 0; gridOffset < size; gridOffset += loopSize) {
-        int headOffset = gridOffset + bid*nvls->nHeads*chunkSize*nvls->nNodes;
+        ssize_t headOffset = gridOffset + bid*nvls->nHeads*chunkSize*nvls->nNodes;
         int ringIndex = (nvls->node+nvls->nNodes-1)%nvls->nNodes; // Skip the n-1 first steps
         for (int i=0; i<nvls->nNodes; i++) {
           ssize_t offset = headOffset + ringIndex*chunkSize*nvls->nHeads;
