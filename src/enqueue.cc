@@ -1208,13 +1208,9 @@ static ncclResult_t getAlgoInfo(struct ncclInfo* info, int collNetTypeSupport, i
     }
   }
   if (info->protocol == NCCL_PROTO_SIMPLE) {
-    nt += WARP_SIZE; // Extra warp for sync
+    if (info->algorithm == NCCL_ALGO_RING) nt += WARP_SIZE; // Extra warp for sync
     // More threads or sync warps needed due to split thread model
-    if (info->algorithm == NCCL_ALGO_TREE) nt += 3*WARP_SIZE;
-    if (info->algorithm == NCCL_ALGO_COLLNET_DIRECT) nt += 3*WARP_SIZE;
-    if (info->algorithm == NCCL_ALGO_COLLNET_CHAIN) nt += 3*WARP_SIZE;
-    if (info->algorithm == NCCL_ALGO_NVLS) nt = NCCL_MAX_NTHREADS;
-    if (info->algorithm == NCCL_ALGO_NVLS_RING) nt = NCCL_MAX_NTHREADS;
+    if (info->algorithm == NCCL_ALGO_TREE) nt += 4*WARP_SIZE;
   }
   nt = nt/WARP_SIZE < 3 ? 3*WARP_SIZE : nt;
   info->nChannels = nc;
