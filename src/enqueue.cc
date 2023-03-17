@@ -1334,7 +1334,8 @@ comp_next:
     while (info->nBytes / (info->nChannels*chunkSize) < info->comm->channels[0].collnetChain.depth && chunkSize > 32768) chunkSize /= 2;
     work->lastChunkSize = chunkSize / ncclTypeSize(info->datatype);
   } else if (info->algorithm == NCCL_ALGO_NVLS) {
-    if (chunkSize > 131072) chunkSize = 131072;
+    int maxChunkSize = info->comm->nNodes == 1 ? 131072 : 65536;
+    if (chunkSize > maxChunkSize) chunkSize = maxChunkSize;
     // Use uint64_t so that concurrentOps*chunkSize*X does not overflow
     uint64_t concurrentOps = info->nChannels*info->comm->channels[0].nvls.nHeads;
     if ((info->nBytes < (32 * (concurrentOps*chunkSize))) && (chunkSize > 65536)) chunkSize = 65536;
