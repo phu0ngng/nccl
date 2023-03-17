@@ -248,7 +248,10 @@ ncclResult_t ncclNvlsSetup(struct ncclComm* comm) {
   int nHeads = comm->channels[0].nvls.nHeads;
   int headRank = comm->channels[0].nvls.headRank;
 
-  if (!ncclParamNvlsEnable() || comm->localRanks <= 1 || nHeads == 0) return ncclSuccess;
+  if (!ncclParamNvlsEnable() || comm->localRanks <= 1 || nHeads == 0) {
+    comm->nvlsChannels = 0;
+    return ncclSuccess;
+  }
   CUdevice dev;
   int driverVersion;
   if (CUPFN(cuDeviceGet) == NULL) return ncclSuccess;
@@ -264,7 +267,10 @@ ncclResult_t ncclNvlsSetup(struct ncclComm* comm) {
     comm->nvlsSupport = 1;
   }
   INFO(NCCL_INIT, "NVLS multicast support is %savailable on dev %d", comm->nvlsSupport ? "" : "not ", dev);
-  if (comm->nvlsSupport == 0) return ncclSuccess;
+  if (comm->nvlsSupport == 0) {
+    comm->nvlsChannels = 0;
+    return ncclSuccess;
+  }
 
   int nChannels = comm->nvlsChannels;
   for (int c=0; c<nChannels; c++) {
