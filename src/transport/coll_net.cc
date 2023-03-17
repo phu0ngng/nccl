@@ -352,7 +352,7 @@ static ncclResult_t sharedFree(struct ncclComm* comm, int netDev) {
 static ncclResult_t sharedBuffersInit(struct ncclComm* comm, int cuda, char** gpuPtr, char** cpuPtr, int* size) {
   struct ncclProxySharedCollNet* state = &comm->proxyState.progressState.collNet;
   if (state->size == 0) {
-    state->size = 2*comm->nChannels*comm->buffSizes[NCCL_PROTO_SIMPLE];
+    state->size = 2*comm->collNetChannels*comm->buffSizes[NCCL_PROTO_SIMPLE];
   }
 
   *size = state->size;
@@ -370,7 +370,7 @@ static ncclResult_t sharedBuffersInit(struct ncclComm* comm, int cuda, char** gp
 static ncclResult_t sharedBuffersGet(struct ncclComm* comm, int type, int slot, int channel, int* offset) {
   // Use different pools for different channels and also separate send/recv.
   int slotSize = comm->buffSizes[NCCL_PROTO_SIMPLE]/NCCL_STEPS;
-  int globalSlot = (type*NCCL_STEPS+slot)*comm->nChannels+channel;
+  int globalSlot = (type*NCCL_STEPS+slot)*comm->collNetChannels+channel;
   *offset = slotSize * globalSlot;
   return ncclSuccess;
 }

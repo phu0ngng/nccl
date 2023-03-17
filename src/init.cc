@@ -507,7 +507,7 @@ static ncclResult_t collNetTrySetup(ncclComm_t comm, struct ncclTopoGraph* collN
   int nHeads = collNetGraph->nChannels;
   int highestTransportType0, highestTransportType1;
   char line[1024];
-  int collNetChannels = comm->nChannels;//std::max(comm->nChannels, comm->nvlsChannels);
+  comm->collNetChannels = std::max(comm->nChannels, comm->nvlsChannels);
 
   NCCLCHECKGOTO(ncclCalloc(&heads, nHeads), ret, fail);
   // Head GPU index is always 0
@@ -515,7 +515,7 @@ static ncclResult_t collNetTrySetup(ncclComm_t comm, struct ncclTopoGraph* collN
     heads[c] = collNetGraph->intra[c * comm->localRanks + 0];
   }
 
-  for (int c = 0; c < collNetChannels; c++) {
+  for (int c = 0; c < comm->collNetChannels; c++) {
     struct ncclChannel* channel = comm->channels + c;
     for (int h = 0; h < nHeads; h++) {
       const int head = heads[h];
@@ -907,12 +907,9 @@ static ncclResult_t initTransportsRank(struct ncclComm* comm, ncclUniqueId* comm
   NCCLCHECKGOTO(ncclTransportP2pSetup(comm, &treeGraph, 0), ret, fail);
   INFO(NCCL_INIT, "Connected all trees");
 
-  // Check if we can setup CollNet
-  if (comm->collNetSupport > 0) collNetTrySetup(comm, &collNetGraph);
-
-  // Setup MC
+  // Setup NVLS
   NCCLCHECKGOTO(ncclNvlsSetup(comm), ret, fail);
-  // And MC rings if needed
+  // And NVLS rings if needed
   if (comm->nvlsSupport && comm->localRanks > 1) {
     for (int c=0; c<comm->nvlsChannels; c++) {
       struct ncclChannel* channel = comm->channels+c;
@@ -921,6 +918,9 @@ static ncclResult_t initTransportsRank(struct ncclComm* comm, ncclUniqueId* comm
     NCCLCHECKGOTO(ncclTransportP2pSetup(comm, &nvlsGraph, 0), ret, fail);
     INFO(NCCL_INIT, "Connected NVLS rings");
   }
+
+  // Check if we can setup CollNet
+  if (comm->collNetSupport > 0) collNetTrySetup(comm, &collNetGraph);
 
   TRACE(NCCL_INIT, "rank %d nranks %d - CONNECTED %d RINGS AND TREES", rank, nranks, comm->nChannels);
 
