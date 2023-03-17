@@ -391,13 +391,14 @@ struct RunWorkElement<ncclFuncAllReduce, T, RedOp, NCCL_ALGO_NVLS, NCCL_PROTO_SI
     const ssize_t loopSize = nChannels*nvls->nHeads*chunkSize;
     const int nranks = ncclShmem.comm.nRanks;
     const bool hasOut = nvls->out != -1;
-    const int reduceWarps = hasOut ? 4 : nranks <= 6 ? 6 : 4;
-    const int bcastWarps = hasOut ? 4 : 0;
-    const int copyWarps = ((NCCL_MAX_NTHREADS/WARP_SIZE) - reduceWarps - bcastWarps)/2;
+    const int reduceWarps = hasOut ? 3 : nranks <= 6 ? 7 : 5;
+    const int bcastWarps = hasOut ? 2 : 0;
+    const int scatterWarps = ((NCCL_MAX_NTHREADS/WARP_SIZE) - reduceWarps - bcastWarps + 1)/2;
+    const int gatherWarps = ((NCCL_MAX_NTHREADS/WARP_SIZE) - reduceWarps - bcastWarps)/2;
 
-    const int nThreadsScatter = copyWarps*WARP_SIZE;
-    const int nThreadsGather  = (copyWarps-1)*WARP_SIZE;
-    const int nThreadsReduce = (reduceWarps+1)*WARP_SIZE;
+    const int nThreadsScatter = scatterWarps*WARP_SIZE;
+    const int nThreadsGather  = gatherWarps*WARP_SIZE;
+    const int nThreadsReduce = reduceWarps*WARP_SIZE;
     const int nThreadsBcast  = (bcastWarps)*WARP_SIZE;
     const int tidEndScatter = nThreadsScatter;
     const int tidEndGather = tidEndScatter + nThreadsGather;
