@@ -1260,7 +1260,11 @@ static ncclResult_t getLoopInfo(struct ncclInfo* info) {
     case ncclPatternRingTwice:
       info->nstepsPerLoop = 2*(info->comm->nRanks-1); info->nchunksPerLoop = info->comm->nRanks; break;
     case ncclPatternNvlsRing:
+#if 1
+      info->nstepsPerLoop = 1; info->nchunksPerLoop = info->comm->channels[0].nvls.nHeads; break;
+#else
       info->nstepsPerLoop = 2*(info->comm->nNodes-1); info->nchunksPerLoop = info->comm->nNodes*info->comm->channels[0].nvls.nHeads; break;
+#endif
     default:
       WARN("Unknown pattern %d", info->pattern);
       return ncclInternalError;

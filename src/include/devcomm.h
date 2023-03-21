@@ -157,6 +157,10 @@ struct ncclNvls {
   int down;
   int ringPrev;
   int ringNext;
+  int tree0Up;
+  int tree1Up;
+  int tree0Down[3];
+  int tree1Down[3];
   int node;
   int nNodes;
 };

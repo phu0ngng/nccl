@@ -917,6 +917,16 @@ static ncclResult_t initTransportsRank(struct ncclComm* comm, ncclUniqueId* comm
     }
     NCCLCHECKGOTO(ncclTransportP2pSetup(comm, &nvlsGraph, 0), ret, fail);
     INFO(NCCL_INIT, "Connected NVLS rings");
+
+    for (int c=0; c<comm->nvlsChannels; c++) {
+      struct ncclChannel* channel = comm->channels+c;
+      int treeUp = c % 2 == 0 ? channel->nvls.tree0Up : channel->nvls.tree1Up;
+      int* treeDown = c % 2 == 0 ? channel->nvls.tree0Down : channel->nvls.tree1Down;
+      NCCLCHECKGOTO(ncclTransportP2pConnect(comm, c, 2, treeDown, 1, &treeUp, 0), ret, fail);
+      NCCLCHECKGOTO(ncclTransportP2pConnect(comm, c, 1, &treeUp, 2, treeDown, 0), ret, fail);
+    }
+    NCCLCHECKGOTO(ncclTransportP2pSetup(comm, &nvlsGraph, 0), ret, fail);
+    INFO(NCCL_INIT, "Connected NVLS tree");
   }
 
   // Check if we can setup CollNet

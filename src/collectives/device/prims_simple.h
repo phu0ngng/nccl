@@ -276,7 +276,9 @@ class Primitives<
         } else {
           constexpr int PreOpSrcs = SrcBuf != Input ? 0 :
                                     DirectRecv*MaxRecv == NCCL_MAX_DIRECT_ARITY ? (1+NCCL_MAX_DIRECT_ARITY) : 1;
-          reduceCopy<Unroll, RedOp, T, RecvMask&NVLS_RECVMASK, Recv+Src, Recv*MaxRecv+Src, SendMask&NVLS_SENDMASK, Send+Dst, Send*MaxSend+Dst, PreOpSrcs>
+          reduceCopy<Unroll, RedOp, T,
+            RecvMask ? RecvMask&NVLS_RECVMASK : NVLS_RECVMASK, Recv+Src, Recv*MaxRecv+Src,
+            SendMask ? SendMask&NVLS_SENDMASK : NVLS_SENDMASK, Send+Dst, Send*MaxSend+Dst, PreOpSrcs>
             (tid, nworkers, ncclShmem.redOpArgs[0], ncclShmem.redOpArgs, postOp,
              nRecvPeers+Src, ncclShmem.groups[group].srcs,
              nSendPeers+Dst, ncclShmem.groups[group].dsts,
