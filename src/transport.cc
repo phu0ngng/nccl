@@ -313,15 +313,19 @@ ncclResult_t ncclTransportCollNetFree(struct ncclComm* comm) {
   for (int r=0; r<comm->nChannels; r++) {
     struct ncclChannel* channel = comm->channels+r;
     struct ncclChannelPeer* peer = channel->peers[comm->nRanks];
-    for (int b=0; b<NCCL_MAX_CONNS; b++) {
-      struct ncclConnector* send = peer->send + b;
-      if (send->transportResources && send->transportComm) NCCLCHECK(send->transportComm->free(send));
-      send->transportResources = NULL; // avoid double free
-    }
-    for (int b=0; b<NCCL_MAX_CONNS; b++) {
-      struct ncclConnector* recv = peer->recv + b;
-      if (recv->transportResources && recv->transportComm) NCCLCHECK(recv->transportComm->free(recv));
-      recv->transportResources = NULL; // avoid double free
+    if (peer) {
+      if (__atomic_sub_fetch(&peer->refCount, 1, __ATOMIC_RELAXED) == 0) {
+        for (int b=0; b<NCCL_MAX_CONNS; b++) {
+          struct ncclConnector* send = peer->send + b;
+          if (send->transportResources && send->transportComm) NCCLCHECK(send->transportComm->free(send));
+          send->transportResources = NULL; // avoid double free
+        }
+        for (int b=0; b<NCCL_MAX_CONNS; b++) {
+          struct ncclConnector* recv = peer->recv + b;
+          if (recv->transportResources && recv->transportComm) NCCLCHECK(recv->transportComm->free(recv));
+          recv->transportResources = NULL; // avoid double free
+        }
+      }
     }
   }
   return ncclSuccess;

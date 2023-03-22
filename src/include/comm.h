@@ -117,7 +117,7 @@ struct ncclSharedResources {
   // Internal streams
   struct ncclStrongStream deviceStream, hostStream;
 
-  // proxy related shared res
+  /* proxy related shared res */
   struct ncclProxyState* proxyState;
 };
 
@@ -128,17 +128,19 @@ struct ncclChannel {
   int* devRingUserRanks;
   struct ncclTree tree;
 
-  struct ncclChannelPeer* collNetPeers;
-  struct ncclDevChannelPeer* collNetDevPeers;
   struct ncclTree collnetChain;
   struct ncclDirect collnetDirect;
 
-  struct ncclChannelPeer* nvlsPeers;
-  struct ncclDevChannelPeer* nvlsDevPeers;
   struct ncclNvls nvls;
 
   int id; // index of this channel
   uint32_t workFifoSent; // last used work index+1
+
+  /* comm split sharable resources */
+  struct ncclChannelPeer* collnetPeers;
+  struct ncclDevChannelPeer* collnetDevPeers;
+  struct ncclChannelPeer* nvlsPeers;
+  struct ncclDevChannelPeer* nvlsDevPeers;
 };
 
 struct ncclWorkList {
@@ -202,8 +204,6 @@ struct ncclComm {
 
   ncclNet_t* ncclNet;
   ncclCollNet_t* ncclCollNet;
-  /* collNet proxy progress resource private to comm. */
-  struct ncclProxySharedCollNet collNetSharedRes;
   void* bootstrap;
   // Bitmasks for ncclTransportP2pSetup
   uint64_t* connectSend;
@@ -296,10 +296,15 @@ struct ncclComm {
   // Whether this communicator uses collNet
   int collNetSupport;
   int intraHighestTransportType;
+  int* collNetHeads;
+  int collNetHeadsNum;
+  /* sharable collNet proxy progress resource. */
+  struct ncclCollNetSharedRes* collNetSharedRes;
 
   // NVLink SHARP (NVLS) support
   int nvlsSupport;
-  void* nvlsResources;
+  /* sharable NVLS resource. */
+  struct ncclNvlsSharedRes* nvlsResources;
 
   size_t channelSize; // User requested work size (bytes) for channel partitions
 

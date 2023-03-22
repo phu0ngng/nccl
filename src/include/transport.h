@@ -50,6 +50,34 @@ struct ncclConnect {
   char data[CONNECT_SIZE];
 };
 
+#define NVLS_HANDLE_SIZE 64
+
+struct ncclNvlsSharedRes {
+  int refCount;
+  CUmulticastObjectProp properties;
+  CUmemAccessDesc accessDesc;
+  int dev;
+  size_t size;
+  size_t granularity;
+  CUmemGenericAllocationHandle mcHandle; // Multicast handle for NVLS buffer
+  char* mcBuff; // Multicast NVLS buffer address
+  CUmemGenericAllocationHandle ucHandle; // Unicast Handle for NVLS buffer
+  char* ucBuff; // Unicast NVLS buffer address
+  char shareableHandle[NVLS_HANDLE_SIZE];
+  int nChannels;
+};
+
+struct ncclCollNetSharedRes {
+  int refCount;
+  int size;
+  char* cudaBuff;
+  char* hostBuff;
+  struct ncclProxyArgs* proxyAppend[2*NCCL_MAX_NETDEVS];
+  void* resources;
+  int nChannels;
+  size_t buffSize;
+};
+
 struct ncclTransportComm {
   ncclResult_t (*setup)(struct ncclComm* comm, struct ncclTopoGraph* graph, struct ncclPeerInfo*, struct ncclPeerInfo*, struct ncclConnect*, struct ncclConnector*, int channelId, int connIndex);
   ncclResult_t (*connect)(struct ncclComm* comm, struct ncclConnect*, int nranks, int rank, struct ncclConnector*);
@@ -71,7 +99,7 @@ struct ncclTransport {
 ncclResult_t ncclTransportP2pConnect(struct ncclComm* comm, int channelId, int nrecv, int* peerRecv, int nsend, int* peerSend, int connIndex);
 ncclResult_t ncclTransportP2pSetup(struct ncclComm* comm, struct ncclTopoGraph* graph, int connIndex, int* highestTransportType=NULL);
 
-ncclResult_t ncclNvlsSetup(struct ncclComm* comm);
+ncclResult_t ncclNvlsSetup(struct ncclComm* comm, struct ncclComm* parent);
 ncclResult_t ncclNvlsFree(struct ncclComm* comm);
 
 enum { collNetRecv=0, collNetSend=1 };

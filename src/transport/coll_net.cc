@@ -141,7 +141,7 @@ struct setupReq {
   int netDev;
   int useGdr;
   int needFlush;
-  struct ncclProxySharedCollNet* collNet;
+  struct ncclCollNetSharedRes* collNet;
 };
 
 
@@ -160,7 +160,8 @@ static ncclResult_t sendSetup(struct ncclComm* comm, struct ncclTopoGraph* graph
   NCCLCHECK(ncclTopoGetLocalRank(comm->topo, myInfo->rank, &send->proxyConn.tpLocalRank));
   tpProxyRank = comm->topParentRanks[myInfo->rank];
   NCCLCHECK(ncclProxyConnect(comm, TRANSPORT_COLLNET, 1, tpProxyRank, &send->proxyConn));
-  req.collNet = &comm->collNetSharedRes;
+  __atomic_add_fetch(&comm->collNetSharedRes->refCount, 1, __ATOMIC_RELAXED);
+  req.collNet = comm->collNetSharedRes;
   NCCLCHECK(ncclProxyCallBlocking(comm, &send->proxyConn, ncclProxyMsgSetup, &req, sizeof(req), NULL, 0));
 
   INFO(NCCL_INIT|NCCL_NET,"CollNet %02d/%1d : %d [send] via COLLNET/%s/%d%s", channelId, connIndex, myInfo->rank, collNetName(comm), req.netDev,
@@ -180,8 +181,8 @@ static ncclResult_t recvSetup(struct ncclComm* comm, struct ncclTopoGraph* graph
   tpProxyRank = comm->topParentRanks[myInfo->rank];
   NCCLCHECK(ncclProxyConnect(comm, TRANSPORT_COLLNET, 0, tpProxyRank, &recv->proxyConn));
   struct collNetRecvConnectInfo* info = (struct collNetRecvConnectInfo*) connectInfo;
-  /* collNet is private to communicator, should not be shared among split comms. */
-  req.collNet = &comm->collNetSharedRes;
+  __atomic_add_fetch(&comm->collNetSharedRes->refCount, 1, __ATOMIC_RELAXED);
+  req.collNet = comm->collNetSharedRes;
   NCCLCHECK(ncclProxyCallBlocking(comm, &recv->proxyConn, ncclProxyMsgSetup, &req, sizeof(req), &info->collNetHandle, sizeof(collNetHandle_t)));
 
   INFO(NCCL_INIT|NCCL_NET,"CollNet %02d/%1d : %d [receive] via COLLNET/%s/%d%s", channelId, connIndex, myInfo->rank, collNetName(comm), req.netDev,
@@ -307,7 +308,7 @@ struct sharedResources {
   int commRefCount[NCCL_MAX_NETDEVS];
 };
 
-static ncclResult_t sharedListen(struct ncclProxyState* proxyState, int netDev, struct ncclProxySharedCollNet* collNet, void* collNetHandle) {
+static ncclResult_t sharedListen(struct ncclProxyState* proxyState, int netDev, struct ncclCollNetSharedRes* collNet, void* collNetHandle) {
   struct sharedResources* resources = (struct sharedResources*)collNet->resources;
   if (resources == NULL) {
     NCCLCHECK(ncclCalloc(&resources, 1));
@@ -318,7 +319,7 @@ static ncclResult_t sharedListen(struct ncclProxyState* proxyState, int netDev, 
   return ncclSuccess;
 }
 
-static ncclResult_t sharedConnect(struct ncclProxyState* proxyState, int netDev, struct ncclConnect* connectInfos, int nranks, int rank, struct ncclProxySharedCollNet* collNet, void** collNetComm) {
+static ncclResult_t sharedConnect(struct ncclProxyState* proxyState, int netDev, struct ncclConnect* connectInfos, int nranks, int rank, struct ncclCollNetSharedRes* collNet, void** collNetComm) {
   struct sharedResources* resources = (struct sharedResources*)collNet->resources;
   if (resources->collNetComms[netDev] == NULL) {
     // Connect to coll comm
@@ -344,7 +345,7 @@ static ncclResult_t sharedConnect(struct ncclProxyState* proxyState, int netDev,
   return ncclSuccess;
 }
 
-static ncclResult_t sharedFree(struct ncclProxyState* proxyState, struct ncclProxySharedCollNet* collNet, int netDev) {
+static ncclResult_t sharedFree(struct ncclProxyState* proxyState, struct ncclCollNetSharedRes* collNet, int netDev) {
   struct sharedResources* resources = (struct sharedResources*)collNet->resources;
   resources->commRefCount[netDev]--;
   if (resources->commRefCount[netDev] == 0) {
@@ -356,9 +357,9 @@ static ncclResult_t sharedFree(struct ncclProxyState* proxyState, struct ncclPro
   return ncclSuccess;
 }
 
-static ncclResult_t sharedBuffersInit(struct ncclProxyState* proxyState, struct ncclProxySharedCollNet* collNet, int cuda, char** gpuPtr, char** cpuPtr, int* size) {
+static ncclResult_t sharedBuffersInit(struct ncclCollNetSharedRes* collNet, int cuda, char** gpuPtr, char** cpuPtr, int* size) {
   if (collNet->size == 0) {
-    collNet->size = 2 * proxyState->nChannels * proxyState->buffSizes[NCCL_PROTO_SIMPLE];
+    collNet->size = 2 * collNet->nChannels * collNet->buffSize;
   }
 
   *size = collNet->size;
@@ -373,15 +374,15 @@ static ncclResult_t sharedBuffersInit(struct ncclProxyState* proxyState, struct 
   return ncclSuccess;
 }
 
-static ncclResult_t sharedBuffersGet(struct ncclProxyState* proxyState, int type, int slot, int channel, int* offset) {
+static ncclResult_t sharedBuffersGet(struct ncclCollNetSharedRes* collNet, int type, int slot, int channel, int* offset) {
   // Use different pools for different channels and also separate send/recv.
-  int slotSize = proxyState->buffSizes[NCCL_PROTO_SIMPLE] / NCCL_STEPS;
-  int globalSlot = (type * NCCL_STEPS + slot) * proxyState->nChannels + channel;
+  int slotSize = collNet->buffSize / NCCL_STEPS;
+  int globalSlot = (type * NCCL_STEPS + slot) * collNet->nChannels + channel;
   *offset = slotSize * globalSlot;
   return ncclSuccess;
 }
 
-static ncclResult_t sharedBuffersDestroy(struct ncclProxySharedCollNet* collNet) {
+static ncclResult_t sharedBuffersDestroy(struct ncclCollNetSharedRes* collNet) {
   if (collNet->size == 0) return ncclSuccess;
   CUDACHECK(cudaFree(collNet->cudaBuff));
   NCCLCHECK(ncclCudaHostFree(collNet->hostBuff));
@@ -465,7 +466,7 @@ static ncclResult_t sendProxyConnect(struct ncclProxyConnection* connection, str
   // Allocate & Register shared buffers for the Simple protocol
   int bank = resources->useGdr ? NCCL_NET_MAP_SHARED_DEVMEM : NCCL_NET_MAP_SHARED_HOSTMEM;
   struct connectMapMem* mapMem = map->mems+bank;
-  NCCLCHECK(sharedBuffersInit(proxyState, connection->collNet, resources->useGdr, &mapMem->gpuPtr, &mapMem->cpuPtr, &mapMem->size));
+  NCCLCHECK(sharedBuffersInit(connection->collNet, resources->useGdr, &mapMem->gpuPtr, &mapMem->cpuPtr, &mapMem->size));
   NCCL_NET_MAP_ADD_POINTER(map, 1, resources->useGdr, mapMem->size, buffs[NCCL_PROTO_SIMPLE]);
 
 #if CUDA_VERSION >= 11070
@@ -534,7 +535,7 @@ static ncclResult_t recvProxyConnect(struct ncclProxyConnection* connection, str
   // Allocate & Register shared buffers for the Simple protocol
   int bank = resources->useGdr ? NCCL_NET_MAP_SHARED_DEVMEM : NCCL_NET_MAP_SHARED_HOSTMEM;
   struct connectMapMem* mapMem = map->mems+bank;
-  NCCLCHECK(sharedBuffersInit(proxyState, connection->collNet, resources->useGdr, &mapMem->gpuPtr, &mapMem->cpuPtr, &mapMem->size));
+  NCCLCHECK(sharedBuffersInit(connection->collNet, resources->useGdr, &mapMem->gpuPtr, &mapMem->cpuPtr, &mapMem->size));
   NCCL_NET_MAP_ADD_POINTER(map, 1, resources->useGdr, mapMem->size, buffs[NCCL_PROTO_SIMPLE]);
 
 #if CUDA_VERSION >= 11070
@@ -579,6 +580,7 @@ static ncclResult_t sendProxyFree(struct ncclProxyConnection* connection, struct
     if (mems[NCCL_NET_MAP_GDCMEM].cpuPtr) NCCLCHECK(ncclGdrCudaFree(resources->gdrDesc));
     NCCLCHECK(sharedBuffersDestroy(connection->collNet));
     NCCLCHECK(sharedFree(proxyState, connection->collNet, resources->netDev));
+    if (__atomic_sub_fetch(&connection->collNet->refCount, 1, __ATOMIC_RELAXED) == 0) free(connection->collNet);
     free(connection->transportResources);
   }
   return ncclSuccess;
@@ -599,6 +601,7 @@ static ncclResult_t recvProxyFree(struct ncclProxyConnection* connection, struct
     if (mems[NCCL_NET_MAP_GDCMEM].cpuPtr) NCCLCHECK(ncclGdrCudaFree(resources->gdrDesc));
     NCCLCHECK(sharedBuffersDestroy(connection->collNet));
     NCCLCHECK(sharedFree(proxyState, connection->collNet, resources->netDev));
+    if (__atomic_sub_fetch(&connection->collNet->refCount, 1, __ATOMIC_RELAXED) == 0) free(connection->collNet);
     free(connection->transportResources);
   }
   return ncclSuccess;
@@ -635,7 +638,7 @@ static ncclResult_t sendProxyProgress(struct ncclProxyState* proxyState, struct 
         int buffSlot = (sub->base+sub->posted)%NCCL_STEPS;
         int sharedBuffSlot = sub->posted%NCCL_STEPS;
         int offset;
-        NCCLCHECK(sharedBuffersGet(proxyState, 0, sharedBuffSlot, 0, &offset));
+        NCCLCHECK(sharedBuffersGet(sub->connection->collNet, 0, sharedBuffSlot, 0, &offset));
         resources->recvMem->offsFifo[buffSlot] = offset + s*args->chunkSize;
         __sync_synchronize();
         volatile uint64_t* sendHead = resources->gdcSync ? resources->gdcSync : &resources->sendMem->head;
@@ -656,7 +659,7 @@ static ncclResult_t sendProxyProgress(struct ncclProxyState* proxyState, struct 
           int ready = 1;
           if (s == 0) {
             int offset;
-            NCCLCHECK(sharedBuffersGet(proxyState, 0, sharedBuffSlot, 0, &offset));
+            NCCLCHECK(sharedBuffersGet(sub->connection->collNet, 0, sharedBuffSlot, 0, &offset));
             args->sharedBuff[sharedBuffSlot] = localBuff + offset;
             args->sharedSize[sharedBuffSlot] = args->chunkSize;
           }
@@ -748,7 +751,7 @@ static ncclResult_t recvProxyProgress(struct ncclProxyState* proxyState, struct 
         int sharedBuffSlot = sub->posted%NCCL_STEPS;
         int startChannel = group*COLLNET_GROUP_NSUBS;
         int offset;
-        NCCLCHECK(sharedBuffersGet(proxyState, 1, sharedBuffSlot, startChannel, &offset));
+        NCCLCHECK(sharedBuffersGet(sub->connection->collNet, 1, sharedBuffSlot, startChannel, &offset));
         reqFifo[group][buffSlot].recvBuff = localBuff + offset;
         TRACE(NCCL_NET, "recvProxy [%d/%d/%d] posted buffer %p", sub->posted, group, buffSlot, reqFifo[group][buffSlot].recvBuff);
         sub->posted += args->sliceSteps;
@@ -779,7 +782,7 @@ static ncclResult_t recvProxyProgress(struct ncclProxyState* proxyState, struct 
             } else {
               int startChannel = group*COLLNET_GROUP_NSUBS;
               int offset;
-              NCCLCHECK(sharedBuffersGet(proxyState, 1, sharedBuffSlot, startChannel, &offset));
+              NCCLCHECK(sharedBuffersGet(sub->connection->collNet, 1, sharedBuffSlot, startChannel, &offset));
               NCCLCHECK(proxyState->ncclCollNet->iflush(resources->collNetComm, localBuff + offset, totalSize, mhandle, sub->requests+buffSlot));
             }
           } else {
@@ -808,7 +811,7 @@ static ncclResult_t recvProxyProgress(struct ncclProxyState* proxyState, struct 
         int sharedBuffSlot = sub->transmitted%NCCL_STEPS;
         int startChannel = group*COLLNET_GROUP_NSUBS;
         int offset;
-        NCCLCHECK(sharedBuffersGet(proxyState, 1, sharedBuffSlot, startChannel, &offset));
+        NCCLCHECK(sharedBuffersGet(sub->connection->collNet, 1, sharedBuffSlot, startChannel, &offset));
         volatile int* offsFifo = (volatile int*)resources->recvMem->offsFifo;
         offsFifo[buffSlot] = offset + (s%COLLNET_GROUP_NSUBS)*args->chunkSize;
         __sync_synchronize();
