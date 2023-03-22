@@ -1344,7 +1344,7 @@ comp_next:
     work->lastChunkSize = chunkSize / ncclTypeSize(info->datatype);
   } else if (info->algorithm == NCCL_ALGO_NVLS_RING) {
     // Use uint64_t so that concurrentOps*chunkSize*X does not overflow
-    uint64_t concurrentOps = info->nChannels*info->comm->channels[0].nvls.nHeads*info->comm->nNodes;
+    uint64_t concurrentOps = info->nChannels*info->comm->channels[0].nvls.nHeads;
     if ((info->nBytes < (32 * (concurrentOps*chunkSize))) && (chunkSize > 262144)) chunkSize = 262144;
     if ((info->nBytes < (16 * (concurrentOps*chunkSize))) && (chunkSize > 131072)) chunkSize = 131072;
     if ((info->nBytes < (4 * (concurrentOps*chunkSize))) && (chunkSize > 65536)) chunkSize = 65536;

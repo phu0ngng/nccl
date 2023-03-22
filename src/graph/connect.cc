@@ -242,8 +242,7 @@ static ncclResult_t connectNvls(struct ncclComm* comm, int* nvlsHeads, struct nc
     channel->nvls.out = -1;       // NVLS+SHARP not yet implemented.
     channel->nvls.headRank = headRank;
     channel->nvls.ringPrev = channel->nvls.ringNext = -1;
-    channel->nvls.tree0Up = channel->nvls.tree0Down[0] = channel->nvls.tree0Down[1] = -1;
-    channel->nvls.tree1Up = channel->nvls.tree1Down[0] = channel->nvls.tree1Down[1] = -1;
+    channel->nvls.treeUp = channel->nvls.treeDown[0] = channel->nvls.treeDown[1] = channel->nvls.treeDown[2] = -1;
     channel->nvls.node = comm->node;
     channel->nvls.nNodes = comm->nNodes;
   }
@@ -261,7 +260,9 @@ static ncclResult_t connectNvls(struct ncclComm* comm, int* nvlsHeads, struct nc
 
   int* heads = NULL;
   int prevRank = -1, nextRank = -1;
-  int tree0Up = -1, tree1Up = -1, tree0Down0 = -1, tree0Down1 = -1, tree1Down0 = -1, tree1Down1 = -1;
+  int treeUp[2] = { -1, -1 };
+  int treeDown0[2] = { -1, -1 };
+  int treeDown1[2] = { -1, -1 };
 
   if (comm->node == 0) {
     for (int h=0; h<nHeads; h++) {
@@ -281,12 +282,12 @@ static ncclResult_t connectNvls(struct ncclComm* comm, int* nvlsHeads, struct nc
     if (heads[comm->node] == comm->rank) {
       prevRank = heads[prevNode];
       nextRank = heads[nextNode];
-      tree0Up = tree0Parent == -1 ? -1: heads[tree0Parent];
-      tree0Down0 = tree0Child0 == -1 ? -1 : heads[tree0Child0];
-      tree0Down1 = tree0Child1 == -1 ? -1 : heads[tree0Child1];
-      tree1Up = tree1Parent == -1 ? -1 : heads[tree1Parent];
-      tree1Down0 = tree1Child0 == -1 ? -1 : heads[tree1Child0];
-      tree1Down1 = tree1Child1 == -1 ? -1 : heads[tree1Child1];
+      treeUp[0] = tree0Parent == -1 ? -1: heads[tree0Parent];
+      treeDown0[0] = tree0Child0 == -1 ? -1 : heads[tree0Child0];
+      treeDown1[0] = tree0Child1 == -1 ? -1 : heads[tree0Child1];
+      treeUp[1] = tree1Parent == -1 ? -1 : heads[tree1Parent];
+      treeDown0[1] = tree1Child0 == -1 ? -1 : heads[tree1Child0];
+      treeDown1[1] = tree1Child1 == -1 ? -1 : heads[tree1Child1];
       break;
     }
   }
@@ -296,18 +297,19 @@ static ncclResult_t connectNvls(struct ncclComm* comm, int* nvlsHeads, struct nc
     struct ncclChannel* channel = comm->channels+c;
     channel->nvls.ringPrev = prevRank;
     channel->nvls.ringNext = nextRank;
-    channel->nvls.tree0Up = tree0Up;
-    channel->nvls.tree1Up = tree1Up;
-    channel->nvls.tree0Down[0] = channel->nvls.down;
-    channel->nvls.tree0Down[1] = tree0Down1;
-    channel->nvls.tree0Down[2] = tree0Down0;
-    channel->nvls.tree1Down[0] = channel->nvls.down;
-    channel->nvls.tree1Down[1] = tree1Down1;
-    channel->nvls.tree1Down[2] = tree1Down0;
+    channel->nvls.treeUp = treeUp[c%2];
+    channel->nvls.treeDown[0] = channel->nvls.down;
+    int ix = 1;
+    if (treeDown0[c%2] != -1) channel->nvls.treeDown[ix++] = treeDown0[c%2];
+    if (treeDown1[c%2] != -1) channel->nvls.treeDown[ix] = treeDown1[c%2];
   }
 
-  INFO(NCCL_GRAPH, "NVLS Rings : %d->%d->%d", prevRank, comm->rank, nextRank);
-  INFO(NCCL_GRAPH, "NVLS Trees : %d/%d->%d->%d %d/%d->%d->%d", tree0Down0, tree0Down1, comm->rank, tree0Up, tree1Down0, tree1Down1, comm->rank, tree1Up);
+  struct ncclNvls* nvls0 = &comm->channels[0].nvls;
+  struct ncclNvls* nvls1 = &comm->channels[1].nvls;
+  INFO(NCCL_GRAPH, "NVLS Rings : %d->%d->%d", nvls0->ringPrev, comm->rank, nvls0->ringNext);
+  INFO(NCCL_GRAPH, "NVLS Trees : %d/%d->%d->%d %d/%d->%d->%d",
+      nvls0->treeDown[0], nvls0->treeDown[1], comm->rank, nvls0->treeUp,
+      nvls1->treeDown[0], nvls1->treeDown[1], comm->rank, nvls1->treeUp);
   return ncclSuccess;
 }
 

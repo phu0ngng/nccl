@@ -149,6 +149,7 @@ struct ncclDirect {
 };
 
 #define NCCL_MAX_NVLS_ARITY 8
+#define NCCL_MAX_NVLS_TREE_ARITY 3
 struct ncclNvls {
   int out;
   int nHeads;   // Number of parallel N<->1<->net operations we'll do in parallel; size of up/down
@@ -157,10 +158,8 @@ struct ncclNvls {
   int down;
   int ringPrev;
   int ringNext;
-  int tree0Up;
-  int tree1Up;
-  int tree0Down[3];
-  int tree1Down[3];
+  int treeUp;
+  int treeDown[NCCL_MAX_NVLS_TREE_ARITY];
   int node;
   int nNodes;
 };

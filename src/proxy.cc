@@ -567,14 +567,12 @@ ncclResult_t ncclProxySaveOp(struct ncclComm* comm, struct ncclProxyOp* op, bool
     } break;
   case ncclPatternNvlsRing: {
 #if 1
-      int treeUp = op->channelId % 2 == 0 ? channel->nvls.tree0Up : channel->nvls.tree1Up;
-      int* treeDown = op->channelId % 2 == 0 ? channel->nvls.tree0Down : channel->nvls.tree1Down;
-      NCCLCHECK(SaveProxy(channel, proxyRecv, treeDown[1], op, 0, justInquire));
-      NCCLCHECK(SaveProxy(channel, proxyRecv, treeDown[2], op, 0, justInquire));
-      NCCLCHECK(SaveProxy(channel, proxySend, treeUp, op, 0, justInquire));
-      NCCLCHECK(SaveProxy(channel, proxySend, treeDown[1], op, 0, justInquire));
-      NCCLCHECK(SaveProxy(channel, proxySend, treeDown[2], op, 0, justInquire));
-      NCCLCHECK(SaveProxy(channel, proxyRecv, treeUp, op, 0, justInquire));
+      NCCLCHECK(SaveProxy(channel, proxyRecv, channel->nvls.treeDown[1], op, 0, justInquire));
+      NCCLCHECK(SaveProxy(channel, proxyRecv, channel->nvls.treeDown[2], op, 0, justInquire));
+      NCCLCHECK(SaveProxy(channel, proxySend, channel->nvls.treeUp, op, 0, justInquire));
+      NCCLCHECK(SaveProxy(channel, proxySend, channel->nvls.treeDown[1], op, 0, justInquire));
+      NCCLCHECK(SaveProxy(channel, proxySend, channel->nvls.treeDown[2], op, 0, justInquire));
+      NCCLCHECK(SaveProxy(channel, proxyRecv, channel->nvls.treeUp, op, 0, justInquire));
 #else
       NCCLCHECK(SaveProxy(channel, proxyRecv, channel->nvls.ringPrev, op, 0, justInquire));
       NCCLCHECK(SaveProxy(channel, proxySend, channel->nvls.ringNext, op, 0, justInquire));

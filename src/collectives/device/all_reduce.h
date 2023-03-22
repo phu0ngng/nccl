@@ -476,15 +476,15 @@ struct RunWorkElement<ncclFuncAllReduce, T, RedOp, NCCL_ALGO_NVLS_RING, NCCL_PRO
     const int bid = args->bid;
     const int nChannels = args->nChannels;
     struct ncclNvls* nvls = &ncclShmem.channel.nvls;
-    const int treeUp = (bid % 2) == 0 ? nvls->tree0Up : nvls->tree1Up;
-    const int* treeDown = (bid % 2) == 0 ? nvls->tree0Down : nvls->tree1Down;
+    const int treeUp = nvls->treeUp;
+    const int* treeDown = nvls->treeDown;
     const ssize_t chunkSize = int(args->lastChunkSize);
     const ssize_t size = args->count;
     const ssize_t loopSize = nChannels*nvls->nHeads*chunkSize;
     const int nranks = ncclShmem.comm.nRanks;
     const bool hasUp = treeUp != -1;
-    const int reduceWarps = hasUp ? 3 : nranks <= 6 ? 7 : 5;
-    const int bcastWarps = hasUp ? 2 : 0;
+    const int reduceWarps = hasUp ? 5 : nranks <= 6 ? 7 : 5;
+    const int bcastWarps = hasUp ? 4 : 0;
     const int scatterWarps = ((NCCL_MAX_NTHREADS/WARP_SIZE) - reduceWarps - bcastWarps + 1)/2;
     const int gatherWarps = ((NCCL_MAX_NTHREADS/WARP_SIZE) - reduceWarps - bcastWarps)/2;
 
