@@ -352,7 +352,7 @@ static int copyChannels(struct ncclComm* comm, int start, int end, int* ringPrev
   return c;
 }
 
-ncclResult_t ncclTopoPostset(struct ncclComm* comm, int* firstRanks, int* treePatterns, struct ncclTopoRanks** allTopoRanks, int* rings, struct ncclTopoGraph* collNetGraph, struct ncclTopoGraph* nvlsGraph) {
+ncclResult_t ncclTopoPostset(struct ncclComm* comm, int* firstRanks, int* treePatterns, struct ncclTopoRanks** allTopoRanks, int* rings, struct ncclTopoGraph** graphs) {
   // Gather data from all ranks
   int *ringRecv, *ringSend, *ringPrev, *ringNext, *treeToParent, *treeToChild0, *treeToChild1, *nvlsHeads;
   int nranks = comm->nRanks;
@@ -385,7 +385,7 @@ ncclResult_t ncclTopoPostset(struct ncclComm* comm, int* firstRanks, int* treePa
   // Connect rings and trees. This should also duplicate the channels.
   NCCLCHECK(connectRings(comm, ringRecv, ringSend, ringPrev, ringNext));
   NCCLCHECK(connectTrees(comm, treeToParent, treeToChild0, treeToChild1, treePatterns));
-  NCCLCHECK(connectNvls(comm, nvlsHeads, nvlsGraph));
+  NCCLCHECK(connectNvls(comm, nvlsHeads, graphs[NCCL_ALGO_NVLS]));
 
   // Duplicate ringPrev/ringNext for ncclBuildRing
   memcpy(ringPrev+nChannels*nranks, ringPrev, nChannels*nranks*sizeof(int));
@@ -396,6 +396,7 @@ ncclResult_t ncclTopoPostset(struct ncclComm* comm, int* firstRanks, int* treePa
 
   // Setup CollNet
   if (comm->collNetSupport == 1) {
+    struct ncclTopoGraph* collNetGraph = graphs[NCCL_ALGO_COLLNET_DIRECT];
     // Add more channels to saturate intra-node bandwidth, except the 1 PPN case
     if (collNetGraph->bwIntra > collNetGraph->bwInter && comm->nRanks > comm->nNodes) {
       int collNetNchannels = std::min(MAXCHANNELS, nChannels+nChannels/2);
