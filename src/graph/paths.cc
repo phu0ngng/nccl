@@ -583,32 +583,20 @@ ncclResult_t ncclTopoComputePaths(struct ncclTopoSystem* system, struct ncclComm
       // Check whether we can access the NIC through another NVLink-connected GPU (PXN)
       struct ncclTopoNode* gpu = system->nodes[GPU].nodes+g;
       if (ncclPxnDisable(comm) != 1) {
-        int pxnGpu = -1;
-
-        for (int p=0; p<system->nodes[GPU].count; p++) {
-          if (p == g) continue;
-
+        int localGpuIndex;
+        NCCLCHECK(ncclTopoGetLocalGpu(system, n, &localGpuIndex));
+        if (localGpuIndex != g) {
           // PXN = PCI + NVLink.
-          struct ncclTopoNode* peerNode = system->nodes[GPU].nodes+p;
+          struct ncclTopoNode* peerNode = system->nodes[GPU].nodes+localGpuIndex;
           // Only use PXN for NIC n if remote GPU p ...
-          if (peerNode->paths[NET][n].type > PATH_PXB || // Is connected to the NIC through PCI
-              peerNode->paths[GPU][g].type > PATH_NVL || // Is connected to us through NVLink
-              (peerNode->paths[NET][n].bw <= gpu->paths[NET][n].bw && // Has either higher BW to that NIC
-               gpu->paths[NET][n].type <= PATH_PXB))                        //     or avoids going through a CPU
-            continue;
-
-          pxnGpu = p;
-
-          int netDev;
-          NCCLCHECK(ncclTopoGetLocalNet(system, peerNode->gpu.rank, &netDev));
-          // To ensure proper balancing, use preferably a local GPU which advertised that NIC as its preferred one.
-          if (netDev == netNode->id) break;
-        }
-        if (pxnGpu != -1) {
+          if (peerNode->paths[NET][n].type <= PATH_PXB && // Is connected to the NIC through PCI
+              peerNode->paths[GPU][g].type <= PATH_NVL && // Is connected to us through NVLink
+              (peerNode->paths[NET][n].bw > gpu->paths[NET][n].bw || // Has either higher BW to that NIC
+               gpu->paths[NET][n].type > PATH_PXB))                  // or avoids going through a CPU
           // We can use that GPU as relay to communicate with that NIC.
           // Only enabling it in the GPU->NIC direction for now to favor
           // receiving locally and sending remotely (consistent with net.cc)
-          NCCLCHECK(addInterStep(system, GPU, pxnGpu, GPU, g, NET, n));
+          NCCLCHECK(addInterStep(system, GPU, localGpuIndex, GPU, g, NET, n));
         }
       }
       // Update path when we dont want to / can't use GPU Direct RDMA.

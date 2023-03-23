@@ -1033,7 +1033,7 @@ ncclResult_t ncclTopoGetNetDev(struct ncclComm* comm, int rank, struct ncclTopoG
     return ncclInternalError;
   } else {
     // Start with our local NIC and local Rank
-    NCCLCHECK(ncclTopoGetLocalNet(comm->topo, rank, dev));
+    NCCLCHECK(ncclTopoGetLocalNet(comm->topo, rank, channelId, dev));
     *proxyRank = rank;
 
     int pxnLevel = ncclPxnDisable(comm) == 1 ? 0 : ncclParamP2pPxnLevel();
@@ -1043,7 +1043,9 @@ ncclResult_t ncclTopoGetNetDev(struct ncclComm* comm, int rank, struct ncclTopoG
       int cudaDev = comm->peerInfo[peerRank].cudaDev;
       int localRank;
       if (ncclTopoDevToRank(comm->topo, cudaDev, &localRank) != ncclSuccess) return ncclSuccess;
-      int netDev = comm->peerInfo[localRank].netDev;
+      int netDev;
+      NCCLCHECK(ncclTopoGetLocalNet(comm->topo, localRank, channelId, &netDev));
+
       int n;
       // Check that device exists on our node
       if (ncclParamCrossNic() == 0) {
@@ -1063,21 +1065,16 @@ ncclResult_t ncclTopoGetNetDev(struct ncclComm* comm, int rank, struct ncclTopoG
           NCCLCHECK(ncclTopoGetIntermediateRank(comm->topo, rank, *dev, proxyRank));
         }
       } else if (pxnLevel == 2) {
-        // Check whether we can access it through our node-local GPU for that NIC.
-        for (int r=0; r<comm->localRanks; r++) {
-          int peerRank = comm->localRankToRank[r];
-          if (comm->peerInfo[peerRank].netDev == netDev) {
-            int g1, g2, n;
-            NCCLCHECK(ncclTopoRankToIndex(comm->topo, rank, &g1));
-            NCCLCHECK(ncclTopoRankToIndex(comm->topo, peerRank, &g2));
-            NCCLCHECK(ncclTopoIdToIndex(comm->topo, NET, netDev, &n));
-            struct ncclTopoNode* peerGpu = comm->topo->nodes[GPU].nodes+g2;
-            if (peerGpu->paths[GPU][g1].type <= PATH_NVL && peerGpu->paths[NET][n].type <= PATH_PXB) {
-              *proxyRank = peerRank;
-              *dev = netDev;
-              return ncclSuccess;
-            }
-          }
+        // Check which local GPU corresponds to that NIC and see if we can use PXN.
+        int n, g1, g2;
+        NCCLCHECK(ncclTopoIdToIndex(comm->topo, NET, netDev, &n));
+        NCCLCHECK(ncclTopoRankToIndex(comm->topo, rank, &g1));
+        NCCLCHECK(ncclTopoGetLocalGpu(comm->topo, netDev, &g2));
+        struct ncclTopoNode* peerGpu = comm->topo->nodes[GPU].nodes+g2;
+        if (peerGpu->paths[GPU][g1].type <= PATH_NVL && peerGpu->paths[NET][n].type <= PATH_PXB) {
+          *proxyRank = peerGpu->gpu.rank;
+          *dev = netDev;
+          return ncclSuccess;
         }
       }
     }

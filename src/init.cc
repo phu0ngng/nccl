@@ -722,7 +722,6 @@ static ncclResult_t initTransportsRank(struct ncclComm* comm, struct ncclComm* p
   };
 
   struct allGatherInfo {
-    int netDev;
     struct graphInfo graphInfo[NCCL_NUM_ALGORITHMS];
     struct ncclTopoRanks topoRanks;
   };
@@ -874,7 +873,6 @@ static ncclResult_t initTransportsRank(struct ncclComm* comm, struct ncclComm* p
 
   // AllGather3 - begin
   NCCLCHECKGOTO(ncclCalloc(&allGather3Data, nranks), ret, fail);
-  NCCLCHECKGOTO(ncclTopoGetLocalNet(comm->topo, rank, &allGather3Data[rank].netDev), ret, fail);
 
   for (int a=0; a<NCCL_NUM_ALGORITHMS; a++) {
     allGather3Data[rank].graphInfo[a].pattern = graphs[a]->pattern;
@@ -944,7 +942,6 @@ static ncclResult_t initTransportsRank(struct ncclComm* comm, struct ncclComm* p
   nChannelsOrig = comm->nChannels;
   NCCLCHECKGOTO(ncclCalloc(&allTopoRanks, comm->nRanks), ret, fail);
   for (int i=0; i<nranks; i++) {
-    comm->peerInfo[i].netDev = allGather3Data[i].netDev;
     allTopoRanks[i] = &allGather3Data[i].topoRanks;
     // Make sure we align all ranks so that the tuning is consistent across ranks
     for (int a=0; a<NCCL_NUM_ALGORITHMS; a++) {
