@@ -567,9 +567,11 @@ The ``NCCL_ALGO`` variable defines which algorithms NCCL will use.
 
 Values accepted
 ^^^^^^^^^^^^^^^
-Coma-separated list of algorithms (not case sensitive) among: Tree, Ring, Collnet (up to 2.13), CollnetDirect (2.14+) and CollnetChain (2.14+). To specify algorithms to exclude (instead of include), start the list with ^.
+Comma-separated list of algorithms (not case sensitive) among: Tree, Ring, Collnet (up to 2.13), CollnetDirect (2.14+) and CollnetChain (2.14+).
+NVLS (2.17+) is the algorithm used to enable NVLink SHARP offload.
+To specify algorithms to exclude (instead of include), start the list with ^.
 
-The default is ``Tree,Ring,CollnetDirect,CollnetChain``.
+The default is ``Tree,Ring,CollnetDirect,CollnetChain,NVLS``.
 
 NCCL_PROTO
 ----------
@@ -579,7 +581,7 @@ The ``NCCL_PROTO`` variable defines which protocol NCCL will use.
 
 Values accepted
 ^^^^^^^^^^^^^^^
-Coma-separated list of protocols (not case sensitive) among: LL, LL128, Simple. To specify protocols to exclude (instead of include), start the list with ^.
+Comma-separated list of protocols (not case sensitive) among: LL, LL128, Simple. To specify protocols to exclude (instead of include), start the list with ^.
 
 The default is ``LL,LL128,Simple`` on platforms which support LL128, ``LL,Simple`` otherwise.
 
@@ -866,7 +868,7 @@ NCCL_NVLS_ENABLE
 ----------------
 (since 2.17)
 
-Enable the use of NVLink SHARP (NVLS). NVLink SHARP is available in third-generation NVSwitch systems with Hopper and later GPU architectures, allowing collectives such as ``ncclAllReduce`` to be offloaded to the NVSwitch domain.
+Enable the use of NVLink SHARP (NVLS). NVLink SHARP is available in fourth-generation NVSwitch systems with Hopper and later GPU architectures, allowing collectives such as ``ncclAllReduce`` to be offloaded to the NVSwitch domain.
 
 Values accepted
 ^^^^^^^^^^^^^^^
