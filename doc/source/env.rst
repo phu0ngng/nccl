@@ -868,7 +868,7 @@ NCCL_NVLS_ENABLE
 ----------------
 (since 2.17)
 
-Enable the use of NVLink SHARP (NVLS). NVLink SHARP is available in fourth-generation NVSwitch systems with Hopper and later GPU architectures, allowing collectives such as ``ncclAllReduce`` to be offloaded to the NVSwitch domain.
+Enable the use of NVLink SHARP (NVLS). NVLink SHARP is available in third-generation NVSwitch systems (NVLink4) with Hopper and later GPU architectures, allowing collectives such as ``ncclAllReduce`` to be offloaded to the NVSwitch domain.
 
 Values accepted
 ^^^^^^^^^^^^^^^
