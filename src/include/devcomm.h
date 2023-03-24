@@ -21,7 +21,7 @@ extern const char* ncclFuncStr[NCCL_NUM_FUNCTIONS];
 #define NCCL_ALGO_COLLNET_DIRECT 2
 #define NCCL_ALGO_COLLNET_CHAIN 3
 #define NCCL_ALGO_NVLS 4
-#define NCCL_ALGO_NVLS_RING 5
+#define NCCL_ALGO_NVLS_TREE 5
 extern const char* ncclAlgoStr[NCCL_NUM_ALGORITHMS];
 
 #define NCCL_NUM_PROTOCOLS 3 // Simple/LL/LL128
@@ -156,8 +156,6 @@ struct ncclNvls {
   int headRank; // Index in 0..nHeads-1 I am the head rank of. -1 if I'm not a head rank (no local NIC)
   int up[NCCL_MAX_NVLS_ARITY];
   int down;
-  int ringPrev;
-  int ringNext;
   int treeUp;
   int treeDown[NCCL_MAX_NVLS_TREE_ARITY];
   int node;

@@ -34,7 +34,7 @@ struct ncclKernelMatch {
   NCCL_FUNC5(func, COLLNET_DIRECT, devredop, type, specialized), \
   NCCL_FUNC5(func, COLLNET_CHAIN,  devredop, type, specialized), \
   NCCL_FUNC5(func, NVLS,           devredop, type, specialized), \
-  NCCL_FUNC5(func, NVLS_RING,      devredop, type, specialized)
+  NCCL_FUNC5(func, NVLS_TREE,      devredop, type, specialized)
 
 #ifdef __CUDA_BF16_TYPES_EXIST__
   #define HAVE_BFLOAT16 1
@@ -1166,7 +1166,7 @@ static ncclResult_t getAlgoInfo(struct ncclInfo* info, int collNetTypeSupport, i
       if ((a == NCCL_ALGO_COLLNET_DIRECT || a == NCCL_ALGO_COLLNET_CHAIN) && collNetTypeSupport != 1) continue;
       if (a == NCCL_ALGO_NVLS && !NCCL_NVLS_SUPPORTS(info->datatype, info->opFull.op)) continue;
       if (a == NCCL_ALGO_NVLS && collNetTypeSupport != 1 && comm->nNodes > 1) continue;
-      if (a == NCCL_ALGO_NVLS_RING && !NCCL_NVLS_SUPPORTS(info->datatype, info->opFull.op)) continue;
+      if (a == NCCL_ALGO_NVLS_TREE && !NCCL_NVLS_SUPPORTS(info->datatype, info->opFull.op)) continue;
 
       for (int p=0; p<NCCL_NUM_PROTOCOLS; p++) {
         float time;
@@ -1200,7 +1200,7 @@ static ncclResult_t getAlgoInfo(struct ncclInfo* info, int collNetTypeSupport, i
       }
       ncSwitch /= 2;
     }
-  } else if (info->algorithm == NCCL_ALGO_NVLS || info->algorithm == NCCL_ALGO_NVLS_RING) {
+  } else if (info->algorithm == NCCL_ALGO_NVLS || info->algorithm == NCCL_ALGO_NVLS_TREE) {
     // NVLS should not need more than 16 channels to get peak BW.
     nc = comm->nvlsChannels;
   } else {
@@ -1234,7 +1234,7 @@ static ncclResult_t getPatternInfo(struct ncclInfo* info) {
     case ncclFuncAllReduce:
       info->pattern =
         info->algorithm == NCCL_ALGO_NVLS ? ncclPatternNvls :
-        info->algorithm == NCCL_ALGO_NVLS_RING ? ncclPatternNvlsRing :
+        info->algorithm == NCCL_ALGO_NVLS_TREE ? ncclPatternNvlsTree :
         info->algorithm == NCCL_ALGO_COLLNET_DIRECT ? ncclPatternCollnetDirect :
         info->algorithm == NCCL_ALGO_COLLNET_CHAIN ? ncclPatternCollnetChain :
         info->algorithm == NCCL_ALGO_TREE ? ncclPatternTreeUpDown :
@@ -1263,12 +1263,8 @@ static ncclResult_t getLoopInfo(struct ncclInfo* info) {
       info->nstepsPerLoop = info->comm->nRanks-1; info->nchunksPerLoop = info->comm->nRanks; break;
     case ncclPatternRingTwice:
       info->nstepsPerLoop = 2*(info->comm->nRanks-1); info->nchunksPerLoop = info->comm->nRanks; break;
-    case ncclPatternNvlsRing:
-#if 1
+    case ncclPatternNvlsTree:
       info->nstepsPerLoop = 1; info->nchunksPerLoop = info->comm->channels[0].nvls.nHeads; break;
-#else
-      info->nstepsPerLoop = 2*(info->comm->nNodes-1); info->nchunksPerLoop = info->comm->nNodes*info->comm->channels[0].nvls.nHeads; break;
-#endif
     default:
       WARN("Unknown pattern %d", info->pattern);
       return ncclInternalError;
@@ -1346,7 +1342,7 @@ comp_next:
     if ((info->nBytes < (8 * (concurrentOps*chunkSize))) && (chunkSize > 32768)) chunkSize = 32768;
     if ((info->nBytes < (2 * (concurrentOps*chunkSize))) && (chunkSize > 16384)) chunkSize = 16384;
     work->lastChunkSize = chunkSize / ncclTypeSize(info->datatype);
-  } else if (info->algorithm == NCCL_ALGO_NVLS_RING) {
+  } else if (info->algorithm == NCCL_ALGO_NVLS_TREE) {
     // Use uint64_t so that concurrentOps*chunkSize*X does not overflow
     uint64_t concurrentOps = info->nChannels*info->comm->channels[0].nvls.nHeads;
     if ((info->nBytes < (32 * (concurrentOps*chunkSize))) && (chunkSize > 262144)) chunkSize = 262144;

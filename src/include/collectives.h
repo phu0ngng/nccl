@@ -55,7 +55,7 @@ struct ncclDevRedOpFull {
   DECL4(func, COLLNET_DIRECT, devredop, type, undef) \
   DECL4(func, COLLNET_CHAIN,  devredop, type, undef) \
   DECL4(func, NVLS,           devredop, type, undef) \
-  DECL4(func, NVLS_RING,      devredop, type, undef)
+  DECL4(func, NVLS_TREE,      devredop, type, undef)
 
 #if defined(__CUDA_BF16_TYPES_EXIST__)
 #define DECL2(func, devredop, undefForFloat) \

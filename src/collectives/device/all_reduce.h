@@ -467,9 +467,8 @@ struct RunWorkElement<ncclFuncAllReduce, T, RedOp, NCCL_ALGO_NVLS, NCCL_PROTO_SI
   }
 };
 
-#if 1
 template<typename T, typename RedOp>
-struct RunWorkElement<ncclFuncAllReduce, T, RedOp, NCCL_ALGO_NVLS_RING, NCCL_PROTO_SIMPLE> {
+struct RunWorkElement<ncclFuncAllReduce, T, RedOp, NCCL_ALGO_NVLS_TREE, NCCL_PROTO_SIMPLE> {
   __device__ __forceinline__ void run(ncclWorkElem *args) {
   #if NCCL_NVLS_ENABLED
     const int tid = threadIdx.x;
@@ -558,98 +557,6 @@ struct RunWorkElement<ncclFuncAllReduce, T, RedOp, NCCL_ALGO_NVLS_RING, NCCL_PRO
   #endif // NCCL_NVLS_ENABLED
   }
 };
-#else
-template<typename T, typename RedOp>
-struct RunWorkElement<ncclFuncAllReduce, T, RedOp, NCCL_ALGO_NVLS_RING, NCCL_PROTO_SIMPLE> {
-  __device__ __forceinline__ void run(ncclWorkElem *args) {
-  #if NCCL_NVLS_ENABLED
-    const int tid = threadIdx.x;
-    const int bid = args->bid;
-    const int nChannels = args->nChannels;
-    struct ncclNvls* nvls = &ncclShmem.channel.nvls;
-    const ssize_t chunkSize = int(args->lastChunkSize);
-    const ssize_t size = args->count;
-    const ssize_t loopSize = nChannels*nvls->nHeads*chunkSize*nvls->nNodes;
-
-    const int nThreadsScatter = 9*WARP_SIZE;
-    const int nThreadsGather  = 8*WARP_SIZE;
-    const int nThreadsReduce = 3*WARP_SIZE;
-    const int tidEndScatter = nThreadsScatter;
-    const int tidEndGather = tidEndScatter + nThreadsGather;
-    const int tidEndReduce = tidEndGather + nThreadsReduce;
-
-    if (tid < tidEndScatter) {
-      // Scatter
-      using Proto = ProtoSimple<1, 1, COLL_UNROLL>;
-      Primitives<T, RedOp, FanAsymmetric<0, NCCL_MAX_NVLS_ARITY>, /*Direct=*/0, Proto, 0>
-        prims(tid, nThreadsScatter, NULL, nvls->up, args->sendbuff, NULL,
-           args->redOpArg, 0*Proto::MaxGroupWidth, 1, 1);
-      for (ssize_t gridOffset = 0; gridOffset < size; gridOffset += loopSize) {
-        ssize_t headOffset = gridOffset + bid*nvls->nHeads*chunkSize*nvls->nNodes;
-        int ringIndex = nvls->node;
-        for (int i=0; i<nvls->nNodes; i++) {
-          ssize_t offset = headOffset + ringIndex*chunkSize*nvls->nHeads;
-          int nelem = min(nvls->nHeads*chunkSize, size-offset);
-          prims.scatter(offset, nelem, chunkSize, chunkSize, -1, 0);
-          ringIndex = (ringIndex-1+nvls->nNodes)%nvls->nNodes;
-        }
-      }
-    } else if (tid < tidEndGather) {
-      // Gather
-      using Proto = ProtoSimple<1, 1, COLL_UNROLL>;
-      Primitives<T, RedOp, FanAsymmetric<NCCL_MAX_NVLS_ARITY, 0>, /*Direct=*/0, Proto, 0>
-        prims(tid-tidEndScatter, nThreadsGather, nvls->up, NULL, NULL, args->recvbuff,
-           args->redOpArg, 1*Proto::MaxGroupWidth, 1, 1);
-      for (ssize_t gridOffset = 0; gridOffset < size; gridOffset += loopSize) {
-        ssize_t headOffset = gridOffset + bid*nvls->nHeads*chunkSize*nvls->nNodes;
-        int ringIndex = (nvls->node+nvls->nNodes-1)%nvls->nNodes; // Skip the n-1 first steps
-        for (int i=0; i<nvls->nNodes; i++) {
-          ssize_t offset = headOffset + ringIndex*chunkSize*nvls->nHeads;
-          int nelem = min(nvls->nHeads*chunkSize, size-offset);
-          prims.gather(offset, nelem, chunkSize, chunkSize, -1, 0);
-          ringIndex = (ringIndex-1+nvls->nNodes)%nvls->nNodes;
-        }
-      }
-    } else if (tid < tidEndReduce && nvls->headRank != -1) {
-      using Proto = ProtoSimple<1, 1, COLL_UNROLL, NVLS_MASK, NVLS_MASK>;
-      // Reduce, broadcast through NVLS
-      const int recvPeers[2] = { nvls->down, nvls->ringPrev };
-      const int sendPeers[2] = { nvls->down, nvls->ringNext };
-      Primitives<T, RedOp, FanSymmetric<2>, /*Direct=*/0, Proto, 0>
-        prims(tid-tidEndGather, nThreadsReduce, recvPeers, sendPeers, NULL, NULL,
-            args->redOpArg, 2*Proto::MaxGroupWidth, 0, 0);
-      for (ssize_t gridOffset = 0; gridOffset < size; gridOffset += loopSize) {
-        ssize_t headOffset = gridOffset + (bid*nvls->nHeads*nvls->nNodes+nvls->headRank)*chunkSize;
-        int ringIndex = nvls->node;
-        ssize_t offset = headOffset + ringIndex*chunkSize*nvls->nHeads;
-        int nelem = min(chunkSize, size-offset);
-        prims.template maskRecvSend<NVLS_MASK, RING_MASK>(nelem);
-        ringIndex = (ringIndex-1+nvls->nNodes)%nvls->nNodes;
-        for (int i=0; i<nvls->nNodes-2; i++) {
-          offset = headOffset + ringIndex*chunkSize*nvls->nHeads;
-          nelem = min(chunkSize, size-offset);
-          prims.template maskRecvSend<NVLS_MASK|RING_MASK, RING_MASK>(nelem);
-          ringIndex = (ringIndex-1+nvls->nNodes)%nvls->nNodes;
-        }
-        offset = headOffset + ringIndex*chunkSize*nvls->nHeads;
-        nelem = min(chunkSize, size-offset);
-        prims.template maskRecvSend<NVLS_MASK|RING_MASK, NVLS_MASK|RING_MASK>(nelem);
-        ringIndex = (ringIndex-1+nvls->nNodes)%nvls->nNodes;
-        for (int i=0; i<nvls->nNodes-2; i++) {
-          offset = headOffset + ringIndex*chunkSize*nvls->nHeads;
-          nelem = min(chunkSize, size-offset);
-          prims.template maskRecvSend<RING_MASK, NVLS_MASK|RING_MASK>(nelem);
-          ringIndex = (ringIndex-1+nvls->nNodes)%nvls->nNodes;
-        }
-        offset = headOffset + ringIndex*chunkSize*nvls->nHeads;
-        nelem = min(chunkSize, size-offset);
-        prims.template maskRecvSend<RING_MASK, NVLS_MASK>(nelem);
-      }
-    }
-  #endif // NCCL_NVLS_ENABLED
-  }
-};
-#endif
 
 template<typename T, typename RedOp>
 struct RunWorkElement<ncclFuncAllReduce, T, RedOp, NCCL_ALGO_COLLNET_CHAIN, NCCL_PROTO_SIMPLE> {

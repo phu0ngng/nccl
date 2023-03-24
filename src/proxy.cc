@@ -565,18 +565,13 @@ ncclResult_t ncclProxySaveOp(struct ncclComm* comm, struct ncclProxyOp* op, bool
       NCCLCHECK(SaveProxy(channel, proxySend, channel->nvls.out, op, 1, justInquire));
       NCCLCHECK(SaveProxy(channel, proxyRecv, channel->nvls.out, op, 0, justInquire));
     } break;
-  case ncclPatternNvlsRing: {
-#if 1
+  case ncclPatternNvlsTree: {
       NCCLCHECK(SaveProxy(channel, proxyRecv, channel->nvls.treeDown[1], op, 0, justInquire));
       NCCLCHECK(SaveProxy(channel, proxyRecv, channel->nvls.treeDown[2], op, 0, justInquire));
       NCCLCHECK(SaveProxy(channel, proxySend, channel->nvls.treeUp, op, 0, justInquire));
       NCCLCHECK(SaveProxy(channel, proxySend, channel->nvls.treeDown[1], op, 0, justInquire));
       NCCLCHECK(SaveProxy(channel, proxySend, channel->nvls.treeDown[2], op, 0, justInquire));
       NCCLCHECK(SaveProxy(channel, proxyRecv, channel->nvls.treeUp, op, 0, justInquire));
-#else
-      NCCLCHECK(SaveProxy(channel, proxyRecv, channel->nvls.ringPrev, op, 0, justInquire));
-      NCCLCHECK(SaveProxy(channel, proxySend, channel->nvls.ringNext, op, 0, justInquire));
-#endif
     } break;
   case ncclPatternSend:
   case ncclPatternRecv: {
