@@ -216,8 +216,7 @@ namespace {
        * but the ctor above for tree roots would be DirectRecv=0 DirectSend=1.
        */
       Primitives<T, RedOp, FanAsymmetric<NCCL_MAX_DEV_ARITY, 1>, /*Direct=*/1, Proto, 0>
-        prims(tid, nthreadsSplit, tree->down, &tree->up, args->sendbuff, args->recvbuff,
-            args->redOpArg, 0*Proto::MaxGroupWidth);
+        prims(tid, nthreadsSplit, tree->down, &tree->up, args->sendbuff, args->recvbuff, args->redOpArg, 0*Proto::MaxGroupWidth);
       if (tree->down[0] == -1) {
         for (ssize_t gridOffset = 0; gridOffset < size; gridOffset += loopSize) {
           ssize_t offset = gridOffset + bid*int(chunkSize);
@@ -375,9 +374,6 @@ struct RunWorkElement<ncclFuncAllReduce, T, RedOp, NCCL_ALGO_COLLNET_DIRECT, NCC
   }
 };
 
-#define NVLS_MASK 0x1 // First peer in peer list
-#define RING_MASK 0x2 // Second peer in peer list
-
 template<typename T, typename RedOp>
 struct RunWorkElement<ncclFuncAllReduce, T, RedOp, NCCL_ALGO_NVLS, NCCL_PROTO_SIMPLE> {
   __device__ __forceinline__ void run(ncclWorkElem *args) {
@@ -430,7 +426,7 @@ struct RunWorkElement<ncclFuncAllReduce, T, RedOp, NCCL_ALGO_NVLS, NCCL_PROTO_SI
     } else if (tid < tidEndReduce && nvls->headRank != -1) {
       if (!hasOut) {
         // Reduce, broadcast through NVLS
-        using Proto = ProtoSimple<1, 1, COLL_UNROLL, NVLS_MASK, NVLS_MASK>;
+        using Proto = ProtoSimple<1, 1, COLL_UNROLL, 1, 1>;
         Primitives<T, RedOp, FanSymmetric<1>, /*Direct=*/0, Proto, 0>
           prims(tid-tidEndGather, nThreadsReduce, &nvls->down, &nvls->down, NULL, NULL,
              args->redOpArg, 2*Proto::MaxGroupWidth, 0, 0);
@@ -441,7 +437,7 @@ struct RunWorkElement<ncclFuncAllReduce, T, RedOp, NCCL_ALGO_NVLS, NCCL_PROTO_SI
         }
       } else {
         // Reduce, send to network
-        using Proto = ProtoSimple<1, 1, COLL_UNROLL, NVLS_MASK, 0>;
+        using Proto = ProtoSimple<1, 1, COLL_UNROLL, 1, 0>;
         Primitives<T, RedOp, FanSymmetric<1>, /*Direct=*/0, Proto, 0>
           prims(tid-tidEndGather, nThreadsReduce, &nvls->down, &nvls->out, NULL, NULL,
              args->redOpArg, 2*Proto::MaxGroupWidth, 0, 1);
@@ -453,7 +449,7 @@ struct RunWorkElement<ncclFuncAllReduce, T, RedOp, NCCL_ALGO_NVLS, NCCL_PROTO_SI
       }
     } else if (tid < tidEndBcast && nvls->headRank != -1) {
       // Recv from network, broadcast
-      using Proto = ProtoSimple<1, 1, COLL_UNROLL, 0, NVLS_MASK>;
+      using Proto = ProtoSimple<1, 1, COLL_UNROLL, 0, 1>;
       Primitives<T, RedOp, FanSymmetric<1>, /*Direct=*/0, Proto, 0>
         prims(tid-tidEndReduce, nThreadsBcast, &nvls->out, &nvls->down, NULL, NULL,
            args->redOpArg, 3*Proto::MaxGroupWidth, 0, 0);
@@ -521,7 +517,7 @@ struct RunWorkElement<ncclFuncAllReduce, T, RedOp, NCCL_ALGO_NVLS_TREE, NCCL_PRO
     } else if (tid < tidEndReduce && nvls->headRank != -1) {
       if (!hasUp) {
         // Reduce and Broadcast
-        using Proto = ProtoSimple<1, 1, COLL_UNROLL, NVLS_MASK, NVLS_MASK>;
+        using Proto = ProtoSimple<1, 1, COLL_UNROLL, 1, 1>;
         Primitives<T, RedOp, FanSymmetric<3>, /*Direct=*/0, Proto, 0>
           prims(tid-tidEndGather, nThreadsReduce, treeDown, treeDown, NULL, NULL,
              args->redOpArg, 2*Proto::MaxGroupWidth, 0, 0);
@@ -532,7 +528,7 @@ struct RunWorkElement<ncclFuncAllReduce, T, RedOp, NCCL_ALGO_NVLS_TREE, NCCL_PRO
         }
       } else {
         // Reduce, send to network
-        using Proto = ProtoSimple<1, 1, COLL_UNROLL, NVLS_MASK, 0>;
+        using Proto = ProtoSimple<1, 1, COLL_UNROLL, 1, 0>;
         Primitives<T, RedOp, FanAsymmetric<3, 1>, /*Direct=*/0, Proto, 0>
           prims(tid-tidEndGather, nThreadsReduce, treeDown, &treeUp, NULL, NULL,
               args->redOpArg, 2*Proto::MaxGroupWidth, 0, 0);
@@ -544,7 +540,7 @@ struct RunWorkElement<ncclFuncAllReduce, T, RedOp, NCCL_ALGO_NVLS_TREE, NCCL_PRO
       }
     } else if (tid < tidEndBcast && nvls->headRank != -1) {
       // Recv from network, broadcast
-      using Proto = ProtoSimple<1, 1, COLL_UNROLL, 0, NVLS_MASK>;
+      using Proto = ProtoSimple<1, 1, COLL_UNROLL, 0, 1>;
       Primitives<T, RedOp, FanAsymmetric<1, 3>, /*Direct=*/0, Proto, 0>
         prims(tid-tidEndReduce, nThreadsBcast, &treeUp, treeDown, NULL, NULL,
            args->redOpArg, 3*Proto::MaxGroupWidth, 0, 0);

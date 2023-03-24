@@ -5,9 +5,9 @@
  ************************************************************************/
 
 template<typename T, typename RedOp, typename Fan, int Direct,
-         int SlicePerChunk, int StepPerSlice, int Unroll, int P2p, int NVLS_RECVMASK, int NVLS_SENDMASK>
+         int SlicePerChunk, int StepPerSlice, int Unroll, int P2p, int MultimemSrcs, int MultimemDsts>
 class Primitives<
-    T, RedOp, Fan, Direct, ProtoSimple<SlicePerChunk, StepPerSlice, Unroll, NVLS_RECVMASK, NVLS_SENDMASK>, P2p
+    T, RedOp, Fan, Direct, ProtoSimple<SlicePerChunk, StepPerSlice, Unroll, MultimemSrcs, MultimemDsts>, P2p
   > {
   static constexpr int MaxRecv = Fan::MaxRecv, MaxSend = Fan::MaxSend;
   static constexpr int Input=0, Output=1;
@@ -117,37 +117,18 @@ class Primitives<
     return ld_volatile_global(ptr);
   }
 
-  template<int Mask>
-  inline __device__ int getIndex(int ix) {
-    if (Mask == 0) return ix;
-    ix = 0;
-    for (int mask=1; mask<=Mask; mask <<= 1) {
-      if (mask == (1 << index)) {
-        if ((mask & Mask) == 0) return -1;
-        return ix;
-      }
-      if (mask & Mask) ix++;
-    }
-    return -1;
-  }
-
-  template <int DirectRecv, int DirectSend, int Recv, int Send, int Src, int Dst, int RecvMask, int SendMask>
+  template <int DirectRecv, int DirectSend, int Recv, int Send, int Src, int Dst>
   __device__ __forceinline__ void waitPeer(intptr_t srcIx, intptr_t dstIx, int offset, int nelts) {
     const bool isSendNotRecv = (Send && Recv) ? (flags & RoleWaitSend) : Send;
     const bool noRecvWait = DirectRecv && Src && (flags & DirectRead);        // no wait when directly reading from remote input
     const bool noSendWait = DirectSend && (flags & (DirectRead|DirectWrite)); // no wait in empty send (e.g. directScatter) or direct remote write
-    int ix = -1;
-    if (flags & Recv*RoleWaitRecv) ix = getIndex<RecvMask>(index);
-    if (flags & Send*RoleWaitSend) ix = getIndex<SendMask>(index);
-    if (ix == -1) return;
-
     if (((flags & (Recv*RoleWaitRecv)) && !noRecvWait) ||
         ((flags & (Send*RoleWaitSend)) && !noSendWait)) {
       int spins = 0;
       while (connStepCache + (isSendNotRecv ? NCCL_STEPS : 0) < step + StepPerSlice) {
         connStepCache = loadStepValue(connStepPtr);
         if (checkAbort(spins)) break;
-        //if (spins == 0) printf("r=%d b=%d t=%d SPUN OUT %p got=%d want=%d\n", ncclShmem.comm.rank, blockIdx.x, threadIdx.x, connStepPtr, int(connStepCache + (isSendNotRecv ? NCCL_STEPS : 0)), int(step+StepPerSlice));
+        //if (spins == 0) printf("r=%d b=%d t=%d SPUN OUT got=%d want=%d\n", ncclShmem.comm.rank, blockIdx.x, threadIdx.x, int(connStepCache + (isSendNotRecv ? NCCL_STEPS : 0)), int(step+StepPerSlice));
       }
     }
 
@@ -158,40 +139,35 @@ class Primitives<
       void **ptrs = isSendNotRecv ? (ncclShmem.groups[group].dsts + Dst)
                                   : (ncclShmem.groups[group].srcs + Src);
       if (flags & OffsFifoEnabled)
-        ptrs[ix] = connEltsFifo + loadInt(connOffsFifoPtr + (step%NCCL_STEPS))/sizeof(T);
+        ptrs[index] = connEltsFifo + loadInt(connOffsFifoPtr + (step%NCCL_STEPS))/sizeof(T);
       else if (isSendNotRecv && DirectSend) {
         if (flags & DirectWrite) {
-          ptrs[ix] = directBuff + dstIx + offset;
+          ptrs[index] = directBuff + dstIx + offset;
         } else if (flags & DirectRead) {  // empty send
-          ptrs[ix] = nullptr;
+          ptrs[index] = nullptr;
         } else {
-          ptrs[ix] = connEltsFifo + (step%NCCL_STEPS)*stepSize;
+          ptrs[index] = connEltsFifo + (step%NCCL_STEPS)*stepSize;
         }
       } else if (!isSendNotRecv && DirectRecv) {
         if (flags & DirectRead) {
-          ptrs[ix] = directBuff + srcIx + offset;
+          ptrs[index] = directBuff + srcIx + offset;
         } else if (flags & DirectWrite) {
-          ptrs[ix] = directBuff + dstIx + offset;  // send to next from my output buffer
+          ptrs[index] = directBuff + dstIx + offset;  // send to next from my output buffer
         } else {
-          ptrs[ix] = connEltsFifo + (step%NCCL_STEPS)*stepSize;
+          ptrs[index] = connEltsFifo + (step%NCCL_STEPS)*stepSize;
         }
       }
       else {
-        ptrs[ix] = connEltsFifo + (step%NCCL_STEPS)*stepSize;
+        ptrs[index] = connEltsFifo + (step%NCCL_STEPS)*stepSize;
       }
       step += StepPerSlice;
     }
   }
 
-  template<int Recv, int Send, int RecvMask, int SendMask>
+  template<int Recv, int Send>
   inline __device__ void postPeer(bool dataStored) {
-    int ix = -1;
-    if (flags & Recv*RolePostRecv) ix = getIndex<RecvMask>(index);
-    if (flags & Send*RolePostSend) ix = getIndex<SendMask>(index);
-
-    if (Send && (flags & RolePostSend) && ix == 0) __threadfence_system();
+    if (Send && (flags & RolePostSend) && index == 0) __threadfence_system();
     __syncwarp();
-    if (ix == -1) return;
     if (flags & (Recv*RolePostRecv | Send*RolePostSend)) {
       step += StepPerSlice;
       if (Send && (flags & RolePostSend) && dataStored) fence_acq_rel_sys();
@@ -199,7 +175,7 @@ class Primitives<
     }
   }
 
-  template <int DirectRecv1, int DirectSend1, int Recv, int Send, int SrcBuf, int DstBuf, int RecvMask, int SendMask>
+  template <int DirectRecv1, int DirectSend1, int Recv, int Send, int SrcBuf, int DstBuf>
   __device__ __forceinline__ void genericOp(
       intptr_t srcIx, intptr_t dstIx, int nelem, bool postOp
     ) {
@@ -250,10 +226,8 @@ class Primitives<
           ncclShmem.groups[group].srcs[0] = userBuff + srcIx + offset;
         if (Dst && (flags & (DstBuf==Input ? RoleInput : RoleOutput)))
           ncclShmem.groups[group].dsts[0] = userBuff + dstIx + offset;
-        waitPeer<DirectRecv, DirectSend, Recv, Send, Src, Dst, RecvMask, SendMask>(srcIx, dstIx, offset, sliceSize);
+        waitPeer<DirectRecv, DirectSend, Recv, Send, Src, Dst>(srcIx, dstIx, offset, sliceSize);
         subBarrier();
-        const int nSendPeers = SendMask ? __popc(SendMask) : Send*fan.nsend();
-        const int nRecvPeers = RecvMask ? __popc(RecvMask) : Recv*fan.nrecv();
         /* if user abort the kernel, we don't need to actually perform copy/reduce; just set size
          * to 0 to avoid unnecessary workload. */
         int workSize = ncclShmem.aborted ? 0 : sliceSize;
@@ -263,7 +237,7 @@ class Primitives<
             reduceCopy<Unroll, RedOp, T, 0, 1, 1, 0, 1, MaxSend, /*PreOpSrcs*/0>
               (tid, nworkers, /*redArg*/0, /*preOpArgs*/nullptr, /*postOp*/false,
                1, ncclShmem.groups[group].srcs,
-               nSendPeers, ncclShmem.groups[group].dsts+1,
+               fan.nsend(), ncclShmem.groups[group].dsts+1,
                workSize);
           }
         } else if (DirectSend && !DirectRecv && SrcBuf != Input && ncclShmem.groups[group].dsts[Dst] == nullptr) {
@@ -277,15 +251,15 @@ class Primitives<
           constexpr int PreOpSrcs = SrcBuf != Input ? 0 :
                                     DirectRecv*MaxRecv == NCCL_MAX_DIRECT_ARITY ? (1+NCCL_MAX_DIRECT_ARITY) : 1;
           reduceCopy<Unroll, RedOp, T,
-            RecvMask ? RecvMask&NVLS_RECVMASK : NVLS_RECVMASK, Recv+Src, Recv*MaxRecv+Src,
-            SendMask ? SendMask&NVLS_SENDMASK : NVLS_SENDMASK, Send+Dst, Send*MaxSend+Dst, PreOpSrcs>
+            MultimemSrcs, Recv+Src, Recv*MaxRecv+Src,
+            MultimemDsts, Send+Dst, Send*MaxSend+Dst, PreOpSrcs>
             (tid, nworkers, ncclShmem.redOpArgs[0], ncclShmem.redOpArgs, postOp,
-             nRecvPeers+Src, ncclShmem.groups[group].srcs,
-             nSendPeers+Dst, ncclShmem.groups[group].dsts,
+             Recv*fan.nrecv()+Src, ncclShmem.groups[group].srcs,
+             Send*fan.nsend()+Dst, ncclShmem.groups[group].dsts,
              workSize);
         }
         barrier(); // This barrier has a counterpart in following loop
-        postPeer<Recv, Send, RecvMask, SendMask>(0 < sliceSize);
+        postPeer<Recv, Send>(0 < sliceSize);
         offset += sliceSize;
         slice += 1;
       } while (slice < SlicePerChunk && offset < nelem);
@@ -300,10 +274,10 @@ class Primitives<
       sliceSize = sliceSize < nelem-offset ? sliceSize : nelem-offset;
       { // Only workers could have Wait roles so we know the slice must be empty
         // since we've exited the loop above.
-        waitPeer<DirectRecv, DirectSend, Recv, Send, Src, Dst, RecvMask, SendMask>(0, 0, 0, 0);
+        waitPeer<DirectRecv, DirectSend, Recv, Send, Src, Dst>(0, 0, 0, 0);
       }
       barrier(); // Has couterpart in preceding worker-only loop.
-      postPeer<Recv, Send, RecvMask, SendMask>(0 < sliceSize);
+      postPeer<Recv, Send>(0 < sliceSize);
       offset += sliceSize;
       slice += 1;
     }
@@ -331,7 +305,7 @@ class Primitives<
           constexpr int PreOpSrcs = DirectSend ? 0 : 1;
           if (flags & RoleInput) ncclShmem.groups[group].srcs[0] = userBuff + inpIx + offset;
           // realSize is not accurate here; but intra-node does not rely on sizes FIFO
-          waitPeer<0, DirectSend, 0, 1, 1, 0, 0, 0>(0, inpIx, offset, realSize);
+          waitPeer<0, DirectSend, 0, 1, 1, 0>(0, inpIx, offset, realSize);
           subBarrier();
           #pragma unroll
           // Loop over peers
@@ -353,7 +327,7 @@ class Primitives<
           int pOffset = index*peerOffset;
           if (skip >= 0 && index >= skip) pOffset += peerElem;
           // Adjust remote index with peer offset in case we are directly pulling from peer's output buffer
-          waitPeer<DirectRecv, 0, 1, 0, 0, 1, 0, 0>(outIx, outIx+pOffset, offset, realSize);
+          waitPeer<DirectRecv, 0, 1, 0, 0, 1>(outIx, outIx+pOffset, offset, realSize);
           subBarrier();
           if (DirectRecv && ncclShmem.groups[group].srcs[0] == ncclShmem.groups[group].dsts[0]) {
             // Since waitPeer sets srcs[0] to output buffer + offset, we are doing a direct-write based recv
@@ -372,7 +346,7 @@ class Primitives<
         }
       }
       fenceNeeded = barrierAny(fenceNeeded);
-      postPeer<Recv, Send, 0, 0>(fenceNeeded);
+      postPeer<Recv, Send>(fenceNeeded);
       offset += realSize;
     }
   }
@@ -607,68 +581,63 @@ class Primitives<
       userBuff += delta;
   }
 
-  template <int RecvMask, int SendMask>
-  __device__ __forceinline__ void maskRecvSend(int eltN) {
-    genericOp<0, 0, 1, 1, -1, -1, RecvMask, SendMask>(0, 0, eltN, false);
-  }
-
   __device__ __forceinline__ void send(intptr_t inpIx, int eltN) {
-    genericOp<0, 0, 0, 1, Input, -1, 0, 0>(inpIx, -1, eltN, false);
+    genericOp<0, 0, 0, 1, Input, -1>(inpIx, -1, eltN, false);
   }
   __device__ __forceinline__ void sendFromOutput(intptr_t outIx, int eltN) {
-    genericOp<0, 0, 0, 1, Output, -1, 0, 0>(outIx, -1, eltN, false);
+    genericOp<0, 0, 0, 1, Output, -1>(outIx, -1, eltN, false);
   }
   __device__ __forceinline__ void directSend(intptr_t inpIx, intptr_t outIx, int eltN) {
-    genericOp<0, 1, 0, 1, Input, -1, 0, 0>(inpIx, outIx, eltN, false);
+    genericOp<0, 1, 0, 1, Input, -1>(inpIx, outIx, eltN, false);
   }
   __device__ __forceinline__ void directSendFromOutput(intptr_t outIx, int eltN) {
-    genericOp<0, 1, 0, 1, Output, -1, 0, 0>(outIx, outIx, eltN, false);
+    genericOp<0, 1, 0, 1, Output, -1>(outIx, outIx, eltN, false);
   }
 
   __device__ __forceinline__ void recv(intptr_t outIx, int eltN, bool postOp=false) {
-    genericOp<0, 0, 1, 0, -1, Output, 0, 0>(-1, outIx, eltN, postOp);
+    genericOp<0, 0, 1, 0, -1, Output>(-1, outIx, eltN, postOp);
   }
   __device__ __forceinline__ void directRecv(intptr_t outIx, int eltN) {
-    genericOp<1, 0, 1, 0, -1, Output, 0, 0>(-1, outIx, eltN, /*postOp=*/false);
+    genericOp<1, 0, 1, 0, -1, Output>(-1, outIx, eltN, /*postOp=*/false);
   }
 
   __device__ __forceinline__ void copySend(intptr_t inpIx, intptr_t outIx, int eltN, bool postOp=false) {
-    genericOp<0, 0, 0, 1, Input, Output, 0, 0>(inpIx, outIx, eltN, postOp);
+    genericOp<0, 0, 0, 1, Input, Output>(inpIx, outIx, eltN, postOp);
   }
   __device__ __forceinline__ void directCopySend(intptr_t inpIx, intptr_t outIx, int eltN, bool postOp=false) {
-    genericOp<0, 1, 0, 1, Input, Output, 0, 0>(inpIx, outIx, eltN, postOp);
+    genericOp<0, 1, 0, 1, Input, Output>(inpIx, outIx, eltN, postOp);
   }
 
   __device__ __forceinline__ void recvSend(int eltN, bool postOp=false) {
-    genericOp<0, 0, 1, 1, -1, -1, 0, 0>(-1, -1, eltN, postOp);
+    genericOp<0, 0, 1, 1, -1, -1>(-1, -1, eltN, postOp);
   }
   __device__ __forceinline__ void recvCopySend(intptr_t outIx, int eltN, bool postOp=false) {
-    genericOp<0, 0, 1, 1, -1, Output, 0, 0>(-1, outIx, eltN, postOp);
+    genericOp<0, 0, 1, 1, -1, Output>(-1, outIx, eltN, postOp);
   }
   __device__ __forceinline__ void directRecvCopySend(intptr_t outIx, int eltN) {
-    genericOp<1, 1, 1, 1, -1, Output, 0, 0>(-1, outIx, eltN, false);
+    genericOp<1, 1, 1, 1, -1, Output>(-1, outIx, eltN, false);
   }
   __device__ __forceinline__ void recvCopyDirectSend(intptr_t outIx, int eltN, bool postOp=false) {
-    genericOp<0, 1, 1, 1, -1, Output, 0, 0>(-1, outIx, eltN, postOp);
+    genericOp<0, 1, 1, 1, -1, Output>(-1, outIx, eltN, postOp);
   }
 
   __device__ __forceinline__ void recvReduceCopy(intptr_t inpIx, intptr_t outIx, int eltN, bool postOp=false) {
-    genericOp<0, 0, 1, 0, Input, Output, 0, 0>(inpIx, outIx, eltN, postOp);
+    genericOp<0, 0, 1, 0, Input, Output>(inpIx, outIx, eltN, postOp);
   }
 
   __device__ __forceinline__ void recvReduceSend(intptr_t inpIx, int eltN, bool postOp=false) {
-    genericOp<0, 0, 1, 1, Input, -1, 0, 0>(inpIx, -1, eltN, postOp);
+    genericOp<0, 0, 1, 1, Input, -1>(inpIx, -1, eltN, postOp);
   }
   __device__ __forceinline__ void directRecvReduceSend(intptr_t inpIx, int eltN, bool postOp=false) {
-    genericOp<1, 0, 1, 1, Input, -1, 0, 0>(inpIx, -1, eltN, postOp);
+    genericOp<1, 0, 1, 1, Input, -1>(inpIx, -1, eltN, postOp);
   }
 
   __device__ __forceinline__ void recvReduceCopySend(intptr_t inpIx, intptr_t outIx, int eltN, bool postOp=false) {
-    genericOp<0, 0, 1, 1, Input, Output, 0, 0>(inpIx, outIx, eltN, postOp);
+    genericOp<0, 0, 1, 1, Input, Output>(inpIx, outIx, eltN, postOp);
   }
   __device__ __forceinline__ void directRecvReduceCopySend(intptr_t inpIx, intptr_t outIx, int eltN, bool postOp=false) {
     // Direct is only for the send part
-    genericOp<0, 1, 1, 1, Input, Output, 0, 0>(inpIx, outIx, eltN, postOp);
+    genericOp<0, 1, 1, 1, Input, Output>(inpIx, outIx, eltN, postOp);
   }
 
   __device__ __forceinline__ void

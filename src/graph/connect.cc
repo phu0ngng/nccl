@@ -284,7 +284,7 @@ static ncclResult_t connectNvls(struct ncclComm* comm, int* nvlsHeads, struct nc
       break;
     }
   }
-  // Set prev/next in all channels (NVLS compute channels work 
+  // Set prev/next in all channels (NVLS compute channels work
   // orthogonally to NVLS search channels).
   for (int c=0; c<comm->nvlsChannels; c++) {
     struct ncclChannel* channel = comm->channels+c;
