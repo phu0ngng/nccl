@@ -216,12 +216,13 @@ static void finishWork(struct ncclWork* work) {
 
 static void appendWorkElemP2p(
     struct ncclComm* comm, struct ncclKernelPlan* plan, int channelId,
-    struct ncclWorkElemP2p const *elem
+    struct ncclWorkElemP2p const *elem, bool fuseOk
   ) {
   constexpr int funcIndex = FUNC_INDEX_P2P;
   struct ncclKernelPlan::Channel* chan = &plan->channels[channelId];
   struct ncclWorkList* q = ncclIntruQueueTail(&chan->workQueue);
   if (q && funcIndex == q->work.header.funcIndex) {
+    if (!fuseOk) goto NewWork;
     if (chan->p2pTailElem[elem->p2pType-1] < NCCL_MAX_WORK_ELEMENTS_P2P) {
       for (int e = -2 + chan->p2pTailElem[elem->p2pType-1]; e >= 0; e -= 2) {
         // Can't have multiple elements of the same ncclWork communicate with the
@@ -350,7 +351,7 @@ NCCL_PARAM(P2pLLThreshold, "P2P_LL_THRESHOLD", 16384);
 // ensure *nWorkBudget >= 1 upon entry.
 static ncclResult_t addP2pToPlan(
     struct ncclComm* comm, struct ncclKernelPlan* plan, int* nWorkBudget,
-    bool isSendNotRecv, int peer, int chunk, void *addr, size_t bytes
+    bool isSendNotRecv, int peer, int chunk, void *addr, size_t bytes, bool fuseOk
   ) {
   struct ncclInfo info = {
     isSendNotRecv ? ncclFuncSend : ncclFuncRecv,
@@ -383,7 +384,7 @@ static ncclResult_t addP2pToPlan(
   elem.chunkSize = info.chunkSize; // computed by ncclProxyComputeP2p
 
   *nWorkBudget += plan->channels[channelId].nWork;
-  appendWorkElemP2p(comm, plan, channelId, &elem);
+  appendWorkElemP2p(comm, plan, channelId, &elem, fuseOk);
   *nWorkBudget -= plan->channels[channelId].nWork;
 
   // Calculate the opCount after appendWorkElemP2p since it will always return
@@ -633,10 +634,13 @@ static ncclResult_t scheduleP2pTasksToPlan(
   // Avoid overloading channels with 8+ operations as we loose the sync warp, hence a bit of bandwidth.
   while (nChannelsMax*nRanks > comm->p2pnChannels*4 && nChannelsMax > 1) nChannelsMax /= 2;
 
+  int lastRecvNode = -1;
   while (tasks->nTasksP2p != 0) {
     for (int i=0; i < nRanks; i++) {
       int sendPeer = sendOrder[i];
       int recvPeer = recvOrder[i];
+      bool fuseOk = comm->rankToNode[recvPeer] == lastRecvNode;
+      lastRecvNode = comm->rankToNode[recvPeer];
       struct ncclTaskP2p* send = ncclIntruQueueHead(&peers[sendPeer].sendQueue);
       struct ncclTaskP2p* recv = ncclIntruQueueHead(&peers[recvPeer].recvQueue);
       if (sendPeer == comm->rank) {
@@ -677,7 +681,7 @@ static ncclResult_t scheduleP2pTasksToPlan(
           if (recvChunkBytes != 0) {
             if (recvChunkBytes == -1) recvChunkBytes = 0;
             if (*nWorkBudget < 1) return ncclSuccess; // ensure room in budget
-            NCCLCHECK(addP2pToPlan(comm, plan, nWorkBudget, /*isSendNotRecv=*/false, recvPeer, recv->chunk, recvPtr, recvChunkBytes));
+            NCCLCHECK(addP2pToPlan(comm, plan, nWorkBudget, /*isSendNotRecv=*/false, recvPeer, recv->chunk, recvPtr, recvChunkBytes, fuseOk));
             recvPtr += recvChunkBytes;
             recvBytes -= recvChunkBytes;
             recv->chunk += 1;
@@ -690,7 +694,7 @@ static ncclResult_t scheduleP2pTasksToPlan(
           if (sendChunkBytes != 0) {
             if (sendChunkBytes == -1) sendChunkBytes = 0;
             if (*nWorkBudget < 1) return ncclSuccess; // ensure room in budget
-            NCCLCHECK(addP2pToPlan(comm, plan, nWorkBudget, /*isSendNotRecv=*/true, sendPeer, send->chunk, sendPtr, sendChunkBytes));
+            NCCLCHECK(addP2pToPlan(comm, plan, nWorkBudget, /*isSendNotRecv=*/true, sendPeer, send->chunk, sendPtr, sendChunkBytes, true));
             sendPtr += sendChunkBytes;
             sendBytes -= sendChunkBytes;
             send->chunk += 1;
