@@ -378,7 +378,7 @@ static ncclResult_t sharedBuffersGet(struct ncclComm* comm, int type, int slot, 
 static ncclResult_t sharedBuffersDestroy(struct ncclComm* comm) {
   struct ncclProxySharedCollNet* state = &comm->proxyState.progressState.collNet;
   if (state->size == 0) return ncclSuccess;
-  CUDACHECK(cudaFree(state->cudaBuff));
+  NCCLCHECK(ncclCudaFree(state->cudaBuff));
   NCCLCHECK(ncclCudaHostFree(state->hostBuff));
   // This will be called multiple times, with multiple channels and send/recv. Make sure we only do it once.
   state->size = 0;
@@ -569,7 +569,7 @@ static ncclResult_t sendProxyFree(struct ncclProxyConnection* connection, struct
     }
     struct connectMapMem* mems = resources->map.mems;
     NCCLCHECK(ncclCudaHostFree(mems[NCCL_NET_MAP_HOSTMEM].cpuPtr));
-    CUDACHECK(cudaFree(mems[NCCL_NET_MAP_DEVMEM].cpuPtr));
+    NCCLCHECK(ncclCudaFree(mems[NCCL_NET_MAP_DEVMEM].cpuPtr));
     if (mems[NCCL_NET_MAP_GDCMEM].cpuPtr) NCCLCHECK(ncclGdrCudaFree(resources->gdrDesc));
     NCCLCHECK(sharedBuffersDestroy(comm));
     NCCLCHECK(sharedFree(comm, resources->netDev));
@@ -589,7 +589,7 @@ static ncclResult_t recvProxyFree(struct ncclProxyConnection* connection, struct
     }
     struct connectMapMem* mems = resources->map.mems;
     NCCLCHECK(ncclCudaHostFree(mems[NCCL_NET_MAP_HOSTMEM].cpuPtr));
-    CUDACHECK(cudaFree(mems[NCCL_NET_MAP_DEVMEM].cpuPtr));
+    NCCLCHECK(ncclCudaFree(mems[NCCL_NET_MAP_DEVMEM].cpuPtr));
     if (mems[NCCL_NET_MAP_GDCMEM].cpuPtr) NCCLCHECK(ncclGdrCudaFree(resources->gdrDesc));
     NCCLCHECK(sharedBuffersDestroy(comm));
     NCCLCHECK(sharedFree(comm, resources->netDev));

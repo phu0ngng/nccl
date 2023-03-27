@@ -314,7 +314,7 @@ ncclResult_t ncclGpuGdrSupport(struct ncclComm* comm, int* gdrSupport) {
     // Allocate memory on the GPU and try to register it on the NIC.
     void *lComm = NULL, *sComm = NULL, *rComm = NULL;
     ncclNetHandle_t handle;
-    void* gpuPtr = NULL;
+    char* gpuPtr = NULL;
     void* mHandle = NULL;
     ncclResult_t ret;
     ncclDebugNoWarn = NCCL_NET;
@@ -338,7 +338,7 @@ ncclResult_t ncclGpuGdrSupport(struct ncclComm* comm, int* gdrSupport) {
       connected = (rComm != NULL) && (sComm != NULL);
     }
 
-    CUDACHECKGOTO(cudaMalloc(&gpuPtr, GPU_BUF_SIZE), ret, cleanup2);
+    NCCLCHECKGOTO(ncclCudaMalloc(&gpuPtr, GPU_BUF_SIZE), ret, cleanup2);
     if (ncclNetRegMr(comm, sComm, gpuPtr, GPU_BUF_SIZE, NCCL_PTR_CUDA, &mHandle) == ncclSuccess) {
       NCCLCHECK(ncclNetDeregMr(comm, sComm, mHandle));
       NCCLCHECK(ncclNetRegMr(comm, rComm, gpuPtr, GPU_BUF_SIZE, NCCL_PTR_CUDA, &mHandle));
@@ -346,7 +346,7 @@ ncclResult_t ncclGpuGdrSupport(struct ncclComm* comm, int* gdrSupport) {
       *gdrSupport = 1;
     }
     ncclDebugNoWarn = 0;
-    CUDACHECK(cudaFree(gpuPtr));
+    NCCLCHECK(ncclCudaFree(gpuPtr));
 cleanup2:
     if (rComm != NULL)
       NCCLCHECK(ncclNetCloseRecv(comm, rComm));
