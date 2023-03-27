@@ -166,8 +166,6 @@ class Primitives<
 
   template<int Recv, int Send>
   inline __device__ void postPeer(bool dataStored) {
-    if (Send && (flags & RolePostSend) && index == 0) __threadfence_system();
-    __syncwarp();
     if (flags & (Recv*RolePostRecv | Send*RolePostSend)) {
       step += StepPerSlice;
       if (Send && (flags & RolePostSend) && dataStored) fence_acq_rel_sys();
