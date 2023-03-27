@@ -22,9 +22,9 @@ DLIB = ${BUILDDIR}/lib/libnccl.so
 DLIBFLAGS = -L$(BUILDDIR)/lib -lnccl -lcudart
 ##
 DST_DIR := $(abspath ${BUILDDIR}/test/unit)
-CU_FILES := #kernel_test.cu align_test.cu ft_test.cu
+CU_FILES := align_test.cu ft_test.cu #kernel_test.cu
 CC_FILES += graph_test.cc model.cc data.cc xml_test.cc comm_leak_test.cc channel_test.cc
-KCU_FILES := #kernel_test.cu align_test.cu
+KCU_FILES := align_test.cu #kernel_test.cu
 ifeq ($(MPI),1)
 #CU_FILES += ncclNet_test.cu ncclNet_read_write_stress_test.cu
 CU_FILES += comm_leak_test_multi.cu coll_leak_test_multi.cu
