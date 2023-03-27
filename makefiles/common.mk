@@ -12,6 +12,7 @@ DEBUG ?= 0
 TRACE ?= 0
 PROFAPI ?= 1
 NVTX ?= 1
+RDMA_CORE ?= 0
 
 NVCC = $(CUDA_HOME)/bin/nvcc
 
