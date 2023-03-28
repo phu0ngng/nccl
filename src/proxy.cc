@@ -1070,7 +1070,7 @@ ncclResult_t ncclProxyClientConvertFdBlocking(struct ncclComm* comm, struct nccl
   struct ncclIpcSocket ipcSock = { 0 };
   void* opId = malloc(1);
   // Create a UDS socket to receive the converted fd
-  NCCLCHECK(ncclIpcSocketInit(&ipcSock, comm->topParentLocalRanks[comm->localRank], (uint64_t)proxyConn->connection, comm->abortFlag));
+  NCCLCHECK(ncclIpcSocketInit(&ipcSock, comm->topParentLocalRanks[comm->localRank], (uint64_t)opId, comm->abortFlag));
   
   // Request the conversion of the fd over sockets
   NCCLCHECKGOTO(ncclProxyCallAsync(comm, proxyConn, ncclProxyMsgConvertFd, &fd, sizeof(int), 0, opId), ret, error);
