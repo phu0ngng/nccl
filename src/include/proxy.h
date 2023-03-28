@@ -13,6 +13,7 @@
 #include "ipcsocket.h"
 #include <pthread.h>
 #include "shm.h"
+#include "p2p.h"
 
 enum ncclProxyOpState { ncclProxyOpNone, ncclProxyOpReady, ncclProxyOpProgress };
 
@@ -120,7 +121,8 @@ struct ncclProxySharedP2p {
   int size;
   char* cudaBuff;
   char* hostBuff;
-  cudaIpcMemHandle_t ipc;
+  // CUDA IPC
+  ncclIpcDesc ipcDesc;
   struct ncclProxyArgs* proxyAppend[MAXCHANNELS]; // Separate send and recv
 };
 
@@ -205,6 +207,7 @@ struct ncclProxyState {
   struct ncclSocket* peerSocks;
   struct ncclProxyOps* proxyOps;
   void** sharedDevMems;
+  struct ncclIpcSocket peerIpcSock; // cuMEM API support (UDS)
 
   // Progress thread
   struct ncclProxyProgressState progressState;
@@ -257,7 +260,7 @@ enum ncclProxyMsgType {
   ncclProxyMsgClose = 6,
   ncclProxyMsgAbort = 7,
   ncclProxyMsgStop = 8,
-  ncclProxyMsgConvertFd = 9 // cuMem API support
+  ncclProxyMsgConvertFd = 9, // cuMem API support (UDS)
 };
 
 // This function is called by a client of the proxy that needs to invoke any of the non-progress proxyOp types

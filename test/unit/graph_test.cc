@@ -24,7 +24,7 @@ uint64_t getTime() {
   return tv.tv_sec*1000000+tv.tv_usec;
 }
 
-const char* graphNames[] = { "Ring", "Tree", "CollNet" };
+const char* graphNames[] = { "Ring", "Tree", "CollNet", "NVLS" };
 
 int dumpDiff = 1;
 
@@ -124,6 +124,13 @@ void checkTopo(const char* xmlTopoFile, const char* xmlGraphFile, const char* pl
   cNetGraph.crossNic = 2;
   cNetGraph.collNet = 1;
 
+  struct ncclTopoGraph nvlsGraph;
+  memset(&nvlsGraph, 0, sizeof(nvlsGraph));
+  nvlsGraph.id = 3;
+  nvlsGraph.pattern = NCCL_TOPO_PATTERN_NVLS;
+  nvlsGraph.crossNic = crossNic;
+  nvlsGraph.collNet = 0;
+
   /* Compute */
   uint64_t computeTime = getTime();
   CHECK(ncclTopoCompute(system, &ringGraph));
@@ -133,6 +140,9 @@ void checkTopo(const char* xmlTopoFile, const char* xmlGraphFile, const char* pl
   cNetGraph.minChannels = 1;
   cNetGraph.maxChannels = ringGraph.nChannels;
   CHECK(ncclTopoCompute(system, &cNetGraph));
+  nvlsGraph.minChannels = 1;
+  nvlsGraph.maxChannels = MAXCHANNELS;
+  CHECK(ncclTopoCompute(system, &nvlsGraph));
   computeTime = getTime() - computeTime;
 
   int err = 0, warn = 0, incompleteRef = 0;
@@ -143,16 +153,18 @@ void checkTopo(const char* xmlTopoFile, const char* xmlGraphFile, const char* pl
   if (ncclTopoGetXmlGraphFromFile(xmlGraphFile, xmlGraph) != ncclSuccess) {
     warn = 1; incompleteRef = 1;
   } else {
-    struct ncclTopoGraph refRingGraph, refTreeGraph, refCNetGraph;
+    struct ncclTopoGraph refRingGraph, refTreeGraph, refCNetGraph, refNvlsGraph;
     memcpy(&refRingGraph, &ringGraph, sizeof(ringGraph));
     memcpy(&refTreeGraph, &treeGraph, sizeof(treeGraph));
     memcpy(&refCNetGraph, &cNetGraph, sizeof(cNetGraph));
+    memcpy(&refNvlsGraph, &nvlsGraph, sizeof(nvlsGraph));
     // Get graphs from XML. We select the right graph based on the id.
-    int refNChannels[3];
+    int refNChannels[4] = { 0, 0, 0, 0 };
     CHECK(ncclTopoGetGraphFromXml(xmlGraph->nodes, system, &refRingGraph, refNChannels));
     CHECK(ncclTopoGetGraphFromXml(xmlGraph->nodes, system, &refTreeGraph, refNChannels+1));
     CHECK(ncclTopoGetGraphFromXml(xmlGraph->nodes, system, &refCNetGraph, refNChannels+2));
-    if (ringGraph.nChannels != refNChannels[0] || treeGraph.nChannels != refNChannels[1] || cNetGraph.nChannels != refNChannels[2]) {
+    CHECK(ncclTopoGetGraphFromXml(xmlGraph->nodes, system, &refNvlsGraph, refNChannels+3));
+    if (ringGraph.nChannels != refNChannels[0] || treeGraph.nChannels != refNChannels[1] || cNetGraph.nChannels != refNChannels[2] || nvlsGraph.nChannels != refNChannels[3]) {
       warn = 1;
       incompleteRef = 1;
     }
@@ -160,20 +172,22 @@ void checkTopo(const char* xmlTopoFile, const char* xmlGraphFile, const char* pl
     compareGraphs(&refRingGraph, &ringGraph, system->nodes[GPU].count, inter, &err, &warn);
     compareGraphs(&refTreeGraph, &treeGraph, system->nodes[GPU].count, inter, &err, &warn);
     compareGraphs(&refCNetGraph, &cNetGraph, system->nodes[GPU].count, inter, &err, &warn);
+    compareGraphs(&refNvlsGraph, &nvlsGraph, system->nodes[GPU].count, inter, &err, &warn);
   }
 
-  printf(" %15s/%s  %2dx%4.1f/%4.1f | %2dx%4.1f/%4.1f | %2dx%4.1f/%4.1f", platform, inter ? "Inter":"Intra",
+  printf(" %15s/%s  %2dx%4.1f/%4.1f | %2dx%4.1f/%4.1f | %2dx%4.1f/%4.1f | %2dx%4.1f/%4.1f", platform, inter ? "Inter":"Intra",
       ringGraph.nChannels, ringGraph.bwIntra, ringGraph.bwInter,
       treeGraph.nChannels, treeGraph.bwIntra, treeGraph.bwInter,
-      cNetGraph.nChannels, cNetGraph.bwIntra, cNetGraph.bwInter);
+      cNetGraph.nChannels, cNetGraph.bwIntra, cNetGraph.bwInter,
+      nvlsGraph.nChannels, nvlsGraph.bwIntra, nvlsGraph.bwInter);
 
   if (err || warn || incompleteRef) {
     char dumpFile[PATH_MAX];
     sprintf(dumpFile, "%s.dump", xmlGraphFile);
     struct ncclXml* xml;
     CHECK(ncclCalloc(&xml, 1));
-    struct ncclTopoGraph* graphs[3] = { &ringGraph, &treeGraph, &cNetGraph };
-    CHECK(ncclTopoGetXmlFromGraphs(3, graphs, system, xml));
+    struct ncclTopoGraph* graphs[4] = { &ringGraph, &treeGraph, &cNetGraph, &nvlsGraph };
+    CHECK(ncclTopoGetXmlFromGraphs(4, graphs, system, xml));
     CHECK(ncclTopoDumpXmlToFile(dumpFile, xml));
     free(xml);
     printf(" %s %5ld ms\n", err ? "FAILED" : "  WARN", computeTime/1000);

@@ -33,7 +33,8 @@ struct ncclKernelMatch {
   NCCL_FUNC5(func, RING,           devredop, type, specialized), \
   NCCL_FUNC5(func, COLLNET_DIRECT, devredop, type, specialized), \
   NCCL_FUNC5(func, COLLNET_CHAIN,  devredop, type, specialized), \
-  NCCL_FUNC5(func, NVLS,           devredop, type, specialized)
+  NCCL_FUNC5(func, NVLS,           devredop, type, specialized), \
+  NCCL_FUNC5(func, NVLS_TREE,      devredop, type, specialized)
 
 #ifdef __CUDA_BF16_TYPES_EXIST__
   #define HAVE_BFLOAT16 1
@@ -1164,6 +1165,8 @@ static ncclResult_t getAlgoInfo(struct ncclInfo* info, int collNetTypeSupport, i
     for (int a=0; a<nAlgos; a++) {
       if ((a == NCCL_ALGO_COLLNET_DIRECT || a == NCCL_ALGO_COLLNET_CHAIN) && collNetTypeSupport != 1) continue;
       if (a == NCCL_ALGO_NVLS && !NCCL_NVLS_SUPPORTS(info->datatype, info->opFull.op)) continue;
+      if (a == NCCL_ALGO_NVLS && collNetTypeSupport != 1 && comm->nNodes > 1) continue;
+      if (a == NCCL_ALGO_NVLS_TREE && !NCCL_NVLS_SUPPORTS(info->datatype, info->opFull.op)) continue;
 
       for (int p=0; p<NCCL_NUM_PROTOCOLS; p++) {
         float time;
@@ -1197,7 +1200,7 @@ static ncclResult_t getAlgoInfo(struct ncclInfo* info, int collNetTypeSupport, i
       }
       ncSwitch /= 2;
     }
-  } else if (info->algorithm == NCCL_ALGO_NVLS) {
+  } else if (info->algorithm == NCCL_ALGO_NVLS || info->algorithm == NCCL_ALGO_NVLS_TREE) {
     // NVLS should not need more than 16 channels to get peak BW.
     nc = comm->nvlsChannels;
   } else {
@@ -1209,12 +1212,9 @@ static ncclResult_t getAlgoInfo(struct ncclInfo* info, int collNetTypeSupport, i
     }
   }
   if (info->protocol == NCCL_PROTO_SIMPLE) {
-    nt += WARP_SIZE; // Extra warp for sync
+    if (info->algorithm == NCCL_ALGO_RING) nt += WARP_SIZE; // Extra warp for sync
     // More threads or sync warps needed due to split thread model
-    if (info->algorithm == NCCL_ALGO_TREE) nt += 3*WARP_SIZE;
-    if (info->algorithm == NCCL_ALGO_COLLNET_DIRECT) nt += 3*WARP_SIZE;
-    if (info->algorithm == NCCL_ALGO_COLLNET_CHAIN) nt += 3*WARP_SIZE;
-    if (info->algorithm == NCCL_ALGO_NVLS) nt = NCCL_MAX_NTHREADS;
+    if (info->algorithm == NCCL_ALGO_TREE) nt += 4*WARP_SIZE;
   }
   nt = nt/WARP_SIZE < 3 ? 3*WARP_SIZE : nt;
   info->nChannels = nc;
@@ -1230,10 +1230,13 @@ static ncclResult_t getPatternInfo(struct ncclInfo* info) {
       info->pattern = info->algorithm == NCCL_ALGO_TREE ? ncclPatternTreeUp : ncclPatternPipelineTo; break;
     case ncclFuncReduceScatter:
     case ncclFuncAllGather:
-      info->pattern = ncclPatternRing; break;
+      info->pattern =
+        info->algorithm == NCCL_ALGO_NVLS ? ncclPatternNvls :
+        ncclPatternRing; break;
     case ncclFuncAllReduce:
       info->pattern =
         info->algorithm == NCCL_ALGO_NVLS ? ncclPatternNvls :
+        info->algorithm == NCCL_ALGO_NVLS_TREE ? ncclPatternNvlsTree :
         info->algorithm == NCCL_ALGO_COLLNET_DIRECT ? ncclPatternCollnetDirect :
         info->algorithm == NCCL_ALGO_COLLNET_CHAIN ? ncclPatternCollnetChain :
         info->algorithm == NCCL_ALGO_TREE ? ncclPatternTreeUpDown :
@@ -1253,14 +1256,17 @@ static ncclResult_t getLoopInfo(struct ncclInfo* info) {
     case ncclPatternPipelineFrom:
     case ncclPatternPipelineTo:
     case ncclPatternCollnetChain:
+      info->nstepsPerLoop = info->nchunksPerLoop = 1; break;
     case ncclPatternNvls:
-      info->nstepsPerLoop = info-> nchunksPerLoop = 1; break;
+      info->nstepsPerLoop = 1; info->nchunksPerLoop = info->comm->channels[0].nvls.nHeads; break;
     case ncclPatternCollnetDirect:
       info->nstepsPerLoop = 1; info->nchunksPerLoop = info->comm->channels[0].collnetDirect.nHeads; break;
     case ncclPatternRing:
       info->nstepsPerLoop = info->comm->nRanks-1; info->nchunksPerLoop = info->comm->nRanks; break;
     case ncclPatternRingTwice:
       info->nstepsPerLoop = 2*(info->comm->nRanks-1); info->nchunksPerLoop = info->comm->nRanks; break;
+    case ncclPatternNvlsTree:
+      info->nstepsPerLoop = 1; info->nchunksPerLoop = info->comm->channels[0].nvls.nHeads; break;
     default:
       WARN("Unknown pattern %d", info->pattern);
       return ncclInternalError;
@@ -1330,12 +1336,21 @@ comp_next:
     while (info->nBytes / (info->nChannels*chunkSize) < info->comm->channels[0].collnetChain.depth && chunkSize > 32768) chunkSize /= 2;
     work->lastChunkSize = chunkSize / ncclTypeSize(info->datatype);
   } else if (info->algorithm == NCCL_ALGO_NVLS) {
-    if (chunkSize > 131072) chunkSize = 131072;
+    int maxChunkSize = info->comm->nNodes == 1 ? 131072 : 65536;
+    if (chunkSize > maxChunkSize) chunkSize = maxChunkSize;
     // Use uint64_t so that concurrentOps*chunkSize*X does not overflow
     uint64_t concurrentOps = info->nChannels*info->comm->channels[0].nvls.nHeads;
     if ((info->nBytes < (32 * (concurrentOps*chunkSize))) && (chunkSize > 65536)) chunkSize = 65536;
     if ((info->nBytes < (8 * (concurrentOps*chunkSize))) && (chunkSize > 32768)) chunkSize = 32768;
     if ((info->nBytes < (2 * (concurrentOps*chunkSize))) && (chunkSize > 16384)) chunkSize = 16384;
+    work->lastChunkSize = chunkSize / ncclTypeSize(info->datatype);
+  } else if (info->algorithm == NCCL_ALGO_NVLS_TREE) {
+    // Use uint64_t so that concurrentOps*chunkSize*X does not overflow
+    uint64_t concurrentOps = info->nChannels*info->comm->channels[0].nvls.nHeads;
+    if ((info->nBytes < (32 * (concurrentOps*chunkSize))) && (chunkSize > 262144)) chunkSize = 262144;
+    if ((info->nBytes < (16 * (concurrentOps*chunkSize))) && (chunkSize > 131072)) chunkSize = 131072;
+    if ((info->nBytes < (4 * (concurrentOps*chunkSize))) && (chunkSize > 65536)) chunkSize = 65536;
+    if ((info->nBytes < (1 * (concurrentOps*chunkSize))) && (chunkSize > 32768)) chunkSize = 32768;
     work->lastChunkSize = chunkSize / ncclTypeSize(info->datatype);
   } else if (info->protocol == NCCL_PROTO_LL) {
     const ssize_t sliceSize = stepSize*sizeof(uint64_t)/sizeof(union ncclLLFifoLine);
@@ -1365,8 +1380,7 @@ comp_next:
   proxyOp->chunkSize = chunkSize;
   proxyOp->protocol = info->protocol;
   proxyOp->dtype = info->datatype;
-  proxyOp->redOp = (info->algorithm != NCCL_ALGO_COLLNET_DIRECT && info->algorithm != NCCL_ALGO_COLLNET_CHAIN) ? ncclNumOps : // Only set redOp when using CollNet
-                     info->opFull.op==ncclDevPreMulSum || info->opFull.op==ncclDevSumPostDiv ? ncclSum : // Network sees avg as sum
+  proxyOp->redOp = info->opFull.op==ncclDevPreMulSum || info->opFull.op==ncclDevSumPostDiv ? ncclSum : // Network sees avg as sum
                      info->op;
   proxyOp->pattern = info->pattern;
   proxyOp->root = info->root;

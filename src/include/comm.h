@@ -216,7 +216,7 @@ struct ncclComm {
   int nRanks;  // number of GPUs in communicator
   int cudaDev; // my cuda device index
   int compCap; // compute capability of the GPU
-  int minCompCap; // min compute capability in the communicator
+  int minCompCap, maxCompCap; // min/max compute capability in the communicator
   int64_t busId;   // my PCI bus ID in int format
   cpu_set_t cpuAffinity; // CPU affinity of the GPU
   int cudaArch; // matches __CUDA_ARCH__ of device
@@ -241,6 +241,7 @@ struct ncclComm {
   // Channels for collectives
   int nChannels;
   int nvlsChannels;
+  int collNetChannels;
   // Channels (per peer) for p2p
   int p2pnChannels;
   int p2pnChannelsPerPeer;

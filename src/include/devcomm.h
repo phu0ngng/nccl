@@ -15,12 +15,13 @@
 typedef enum { ncclFuncBroadcast, ncclFuncReduce, ncclFuncAllGather, ncclFuncReduceScatter, ncclFuncAllReduce, ncclFuncSendRecv, ncclFuncSend, ncclFuncRecv, ncclNumFuncs} ncclFunc_t;
 extern const char* ncclFuncStr[NCCL_NUM_FUNCTIONS];
 
-#define NCCL_NUM_ALGORITHMS 5 // Tree/Ring/CollNet*
+#define NCCL_NUM_ALGORITHMS 6 // Tree/Ring/CollNet*
 #define NCCL_ALGO_TREE 0
 #define NCCL_ALGO_RING 1
 #define NCCL_ALGO_COLLNET_DIRECT 2
 #define NCCL_ALGO_COLLNET_CHAIN 3
 #define NCCL_ALGO_NVLS 4
+#define NCCL_ALGO_NVLS_TREE 5
 extern const char* ncclAlgoStr[NCCL_NUM_ALGORITHMS];
 
 #define NCCL_NUM_PROTOCOLS 3 // Simple/LL/LL128
@@ -147,12 +148,17 @@ struct ncclDirect {
 };
 
 #define NCCL_MAX_NVLS_ARITY 8
+#define NCCL_MAX_NVLS_TREE_ARITY 3
 struct ncclNvls {
   int out;
   int nHeads;   // Number of parallel N<->1<->net operations we'll do in parallel; size of up/down
   int headRank; // Index in 0..nHeads-1 I am the head rank of. -1 if I'm not a head rank (no local NIC)
   int up[NCCL_MAX_NVLS_ARITY];
   int down;
+  int treeUp;
+  int treeDown[NCCL_MAX_NVLS_TREE_ARITY];
+  int node;
+  int nNodes;
 };
 
 #define NCCL_MAX_CONNS 2

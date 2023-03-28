@@ -123,6 +123,13 @@ void runTopo(const char* xmlTopoFile, const char* platform, int nnodes) {
   cNetGraph.crossNic = 2;
   cNetGraph.collNet = 1;
 
+  struct ncclTopoGraph nvlsGraph;
+  memset(&nvlsGraph, 0, sizeof(nvlsGraph));
+  nvlsGraph.id = 3;
+  nvlsGraph.pattern = NCCL_TOPO_PATTERN_NVLS;
+  nvlsGraph.crossNic = 2;
+  nvlsGraph.collNet = 1;
+
   /* Compute */
   CHECK(ncclTopoCompute(system, &ringGraph));
   CHECK(ncclTopoPrintGraph(system, &ringGraph));
@@ -187,7 +194,8 @@ void runTopo(const char* xmlTopoFile, const char* platform, int nnodes) {
   comm.collNetSupport = collNetSupport;
   int compCap = system->nodes[GPU].nodes[0].gpu.cudaCompCap;
   comm.minCompCap = compCap;
-  CHECK(ncclTopoTuneModel(&comm, compCap, compCap, &treeGraph, &ringGraph, &cNetGraph));
+  struct ncclTopoGraph* graphs[6] = { &treeGraph, &ringGraph, &cNetGraph, &cNetGraph, &nvlsGraph, &nvlsGraph };
+  CHECK(ncclTopoTuneModel(&comm, compCap, compCap, graphs));
   struct ncclInfo info;
   info.comm = &comm;
   info.coll = function;

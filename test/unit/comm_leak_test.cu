@@ -12,8 +12,25 @@ nvcc -g -o comm_leak_test comm_leak_test.cu --compiler-options="-fsanitize=leak"
 #include <cassert>
 #include <stdexcept>
 
+#include <unistd.h>
 #include <stdlib.h>
 #include <sys/time.h>
+
+#include <dirent.h>
+int count_open_fds(void) {
+  DIR *dp = opendir("/proc/self/fd");
+  int count = -3; // Exclude '.', '..', dp
+
+  if (dp == NULL)
+    return -1;
+
+  while (readdir(dp) != NULL)
+    count++;
+
+  (void)closedir(dp);
+
+  return count;
+}
 
 #define MAX_GPUS (32)
 
@@ -76,6 +93,7 @@ int main(int argc, char** argv)
       CUDA_TRY(cudaSetDevice(i));
       CUDA_TRY(cudaMemGetInfo(&free1[i], &total));
     }
+    int startOpenFds = count_open_fds();
 
     struct timeval start;
     struct timeval end;
@@ -115,6 +133,12 @@ int main(int argc, char** argv)
     // Only report leaks of > 1 CUDA page
     if (leaked > (2*1024*1024)) {
       printf("ERROR: leaked %zi bytes (%zi MiB) CUDA memory over %zi iterations on %d gpus\n", leaked, leaked/(1024*1024), reps, num_gpus);
+      exit(EXIT_FAILURE);
+    }
+
+    int endOpenFds = count_open_fds();
+    if ((endOpenFds-startOpenFds) > 0) {
+      printf("ERROR: leaked %d open fds over %zi iterations on %d gpus\n", endOpenFds-startOpenFds, reps, num_gpus);
       exit(EXIT_FAILURE);
     }
 

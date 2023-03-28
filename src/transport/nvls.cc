@@ -227,12 +227,17 @@ ncclResult_t nvlsGroupUnmapMem(struct ncclComm *comm, struct ncclNvlsSharedRes* 
 
 #define NVLS_MEM_ALIGN_SIZE (1 << 21)
 
-NCCL_PARAM(NvlsChannels, "NVLS_NCHANNELS", 16);
-
 NCCL_PARAM(NvlsEnable, "NVLS_ENABLE", 2);
 
 ncclResult_t ncclNvlsSetup(struct ncclComm* comm, struct ncclComm* parent) {
-  if (!ncclParamNvlsEnable() || comm->localRanks <= 1 || comm->nNodes>1) return ncclSuccess;
+  int nHeads = comm->channels[0].nvls.nHeads;
+  int headRank = comm->channels[0].nvls.headRank;
+
+  if (!ncclParamNvlsEnable() || comm->localRanks <= 1 || nHeads == 0) {
+    /* TODO: need allgather to inform all ranks. */
+    comm->nvlsChannels = 0;
+    return ncclSuccess;
+  }
   CUdevice dev;
   int driverVersion;
   ncclResult_t res = ncclSuccess;
@@ -241,7 +246,7 @@ ncclResult_t ncclNvlsSetup(struct ncclComm* comm, struct ncclComm* parent) {
   int nChannels;
     
   if (CUPFN(cuDeviceGet) == NULL) return ncclSuccess;
-  CUCHECK(cuDeviceGet(&dev, comm->cudaDev));
+  CUCHECK(cuCtxGetDevice(&dev));
   CUDACHECK(cudaDriverGetVersion(&driverVersion));
   if (ncclParamNvlsEnable() == 2) {
     comm->nvlsSupport = 0;
@@ -252,8 +257,13 @@ ncclResult_t ncclNvlsSetup(struct ncclComm* comm, struct ncclComm* parent) {
   } else {
     comm->nvlsSupport = 1;
   }
+  
   INFO(NCCL_INIT, "NVLS multicast support is %savailable on dev %d", comm->nvlsSupport ? "" : "not ", dev);
-  if (comm->nvlsSupport == 0) return ncclSuccess;
+  if (comm->nvlsSupport == 0) {
+    /* TODO: need allgather to inform all ranks. */
+    comm->nvlsChannels = 0;
+    return ncclSuccess;
+  }
 
   if (parent && parent->nvlsSupport && parent->config.splitShare && parent->localRanks == comm->localRanks)
     nvlsShare = true;
@@ -263,27 +273,18 @@ ncclResult_t ncclNvlsSetup(struct ncclComm* comm, struct ncclComm* parent) {
   if (nvlsShare) {
     /* reuse NVLS resources */
     resources = (struct ncclNvlsSharedRes*) parent->nvlsResources;
-    nChannels = std::min(std::max(comm->config.minCTAs, std::min(comm->config.maxCTAs, (int)ncclParamNvlsChannels())), resources->nChannels);
+    nChannels = comm->nvlsChannels = std::min(std::max(comm->config.minCTAs, std::min(comm->config.maxCTAs, comm->nvlsChannels)), resources->nChannels);
     for (int c = 0; c < nChannels; c++) {
-      struct ncclChannel* channel = comm->channels + c;
       NCCLCHECKGOTO(initNvlsChannel(comm, c, parent, true), res, cleanup);
-      channel->nvls.nHeads = comm->localRanks;
-      for (int i = 0; i < NCCL_MAX_NVLS_ARITY; i++) channel->nvls.up[i] = -1;
-      channel->nvls.down = comm->nRanks + 1 + comm->localRank;
-      channel->nvls.out = -1;
-      channel->nvls.headRank = comm->localRank;
     }
 
-    for (int r = 0; r < comm->localRanks; r++) {
-      for (int c = 0; c < nChannels; c++) {
-        struct ncclChannel* channel = comm->channels + c;
-        channel->nvls.up[r] = comm->nRanks + 1 + r;
-      }
-    }
     comm->nvlsResources = parent->nvlsResources;
     __atomic_add_fetch(&resources->refCount, 1, __ATOMIC_RELAXED);
   } else {
     int rank = comm->localRank, nranks = comm->localRanks;
+    int nChannels;
+    ncclResult_t res = ncclSuccess;
+    struct ncclNvlsSharedRes* resources;
 
     NCCLCHECK(ncclCalloc(&resources, 1));
     comm->nvlsResources = resources;
@@ -292,99 +293,81 @@ ncclResult_t ncclNvlsSetup(struct ncclComm* comm, struct ncclComm* parent) {
     if (parent && parent->config.splitShare) {
       /* ranks on other nodes might share the NVLS resources, we need to cap nvlsChannels
        * to make sure nvlsChannels match for each rank. */
-      resources->nChannels = std::min(std::max(comm->config.minCTAs, std::min(comm->config.maxCTAs, (int)ncclParamNvlsChannels())), parent->nvlsResources->nChannels);
+      resources->nChannels = std::min(std::max(comm->config.minCTAs, std::min(comm->config.maxCTAs, comm->nvlsChannels)), parent->nvlsResources->nChannels);
     } else {
-      resources->nChannels = std::max(comm->config.minCTAs, std::min(comm->config.maxCTAs, (int)ncclParamNvlsChannels()));
+      resources->nChannels = std::max(comm->config.minCTAs, std::min(comm->config.maxCTAs, comm->nvlsChannels));
     }
-    nChannels = resources->nChannels;
+
+    nChannels = comm->nvlsChannels = resources->nChannels = std::min(resources->nChannels, comm->nvlsChannels);
+    for (int c = 0; c < nChannels; c++) {
+      NCCLCHECK(initNvlsChannel(comm, c, parent, false));
+    }
 
     size_t buffSize = comm->buffSizes[NCCL_PROTO_SIMPLE];
     size_t memSize = NVLS_MEM_ALIGN_SIZE;
     size_t nvlsPerRankSize = nChannels * 2 * (buffSize + memSize);
-    size_t nvlsTotalSize = nvlsPerRankSize * nranks;
+    size_t nvlsTotalSize = nvlsPerRankSize * nHeads;
 
-    INFO(NCCL_INIT | NCCL_NVLS, "NVLS comm %p rank %d nranks %d buffSize %zi memSize %zi nvlsPerRankSize %zi nvlsTotalSize %zi",
-      comm, rank, nranks, buffSize, memSize, nvlsPerRankSize, nvlsTotalSize);
+    INFO(NCCL_INIT | NCCL_NVLS, "NVLS comm %p headRank %d nHeads %d buffSize %zi memSize %zi nvlsPerRankSize %zi nvlsTotalSize %zi",
+      comm, headRank, nHeads, buffSize, memSize, nvlsPerRankSize, nvlsTotalSize);
 
     char* shareableHandle = resources->shareableHandle;
-    NCCLCHECKGOTO(nvlsGetProperties(comm, resources, dev, nranks, nvlsTotalSize), res, cleanup);
-    if (rank == 0) {
-      NCCLCHECKGOTO(nvlsGroupCreate(comm, resources, rank, nranks, shareableHandle), res, cleanup);
-      NCCLCHECKGOTO(bootstrapIntraNodeBroadcast(comm->bootstrap, comm->localRankToRank, rank, nranks, 0, shareableHandle, NVLS_HANDLE_SIZE), res, cleanup);
+    NCCLCHECKGOTO(ncclCalloc(&shareableHandle, NVLS_HANDLE_SIZE), res, cleanup);
+    NCCLCHECKGOTO(nvlsGetProperties(comm, resources, dev, comm->localRanks, nvlsTotalSize), res, cleanup);
+    if (comm->localRank == 0) {
+      NCCLCHECKGOTO(nvlsGroupCreate(comm, resources, comm->localRank, comm->localRanks, shareableHandle), res, cleanup);
+      NCCLCHECKGOTO(bootstrapIntraNodeBroadcast(comm->bootstrap, comm->localRankToRank, comm->localRank, comm->localRanks, 0, shareableHandle, NVLS_HANDLE_SIZE), res, cleanup);
     } else {
-      NCCLCHECKGOTO(bootstrapIntraNodeBroadcast(comm->bootstrap, comm->localRankToRank, rank, nranks, 0, shareableHandle, NVLS_HANDLE_SIZE), res, cleanup);
-      NCCLCHECKGOTO(nvlsGroupConnect(comm, resources, 0, shareableHandle), res, cleanup);
+      NCCLCHECKGOTO(bootstrapIntraNodeBroadcast(comm->bootstrap, comm->localRankToRank, comm->localRank, comm->localRanks, 0, shareableHandle, NVLS_HANDLE_SIZE), res, cleanup);
+      NCCLCHECKGOTO(nvlsGroupConnect(comm, resources, comm->localRankToRank[0], shareableHandle), res, cleanup);
     }
 
-    NCCLCHECKGOTO(nvlsGroupAddDevice(comm, resources), res, cleanup);
-    NCCLCHECKGOTO(nvlsGroupBindMem(comm, resources), res, cleanup);
-    // Local intra-node barrier to ensure everyone has bound their memory to the group
-    NCCLCHECKGOTO(bootstrapBarrier(comm->bootstrap, comm->localRankToRank, comm->localRank, comm->localRanks, comm->localRankToRank[0]), res, cleanup);
-    NCCLCHECKGOTO(nvlsGroupMapMem(comm, resources), res, cleanup);
-
-    for (int c = 0; c < nChannels; c++) {
-      struct ncclChannel* channel = comm->channels + c;
-      NCCLCHECKGOTO(initNvlsChannel(comm, c, parent, false), res, cleanup);
-      channel->nvls.nHeads = nranks;
-      for (int i = 0; i < NCCL_MAX_NVLS_ARITY; i++) channel->nvls.up[i] = -1;
-      channel->nvls.down = comm->nRanks + 1 + comm->localRank;
-      channel->nvls.out = -1;       // Network not yet implemented.
-      channel->nvls.headRank = comm->localRank;  // Network not yet implemented.
-    }
-
-    for (int r = 0; r < nranks; r++) {
-      int nvlsPeer = comm->nRanks + 1 + r;
+    for (int h = 0; h < nHeads; h++) {
+      int nvlsPeer = comm->nRanks + 1 + h;
       for (int c = 0; c < nChannels; c++) {
         struct ncclChannel* channel = comm->channels + c;
-        channel->nvls.up[r] = nvlsPeer;
-
         char* mem = NULL;
         struct ncclChannelPeer* peer = channel->peers[nvlsPeer];
 
-        // Reduce UC -> MC
-        mem = resources->ucBuff + (r * 2 * nChannels + c) * (buffSize + memSize);
-        peer->send[0].transportComm = &nvlsTransport.send;
-        peer->send[0].conn.buffs[NCCL_PROTO_SIMPLE] = mem;
-        peer->send[0].conn.head = (uint64_t*)(mem + buffSize);
-        peer->send[0].conn.tail = (uint64_t*)(mem + buffSize + memSize / 2);
-        mem = resources->mcBuff + (r * 2 * nChannels + c) * (buffSize + memSize);
-        peer->recv[1].transportComm = &nvlsTransport.recv;
-        peer->recv[1].conn.buffs[NCCL_PROTO_SIMPLE] = mem;
-        peer->recv[1].conn.head = (uint64_t*)(mem + buffSize);
-        peer->recv[1].conn.tail = (uint64_t*)(mem + buffSize + memSize / 2);
-        peer->recv[1].conn.flags |= NCCL_NVLS_MIN_POLL;
+        INFO(NCCL_INIT | NCCL_NVLS, "NVLS comm %p rank %d nranks %d buffSize %zi memSize %zi nvlsPerRankSize %zi nvlsTotalSize %zi",
+          comm, rank, nranks, buffSize, memSize, nvlsPerRankSize, nvlsTotalSize);
 
-        // Broadcast MC -> UC
-        mem = resources->ucBuff + ((r * 2 + 1) * nChannels + c) * (buffSize + memSize);
-        peer->recv[0].transportComm = &nvlsTransport.recv;
-        peer->recv[0].conn.buffs[NCCL_PROTO_SIMPLE] = mem;
-        peer->recv[0].conn.head = (uint64_t*)(mem + buffSize);
-        peer->recv[0].conn.tail = (uint64_t*)(mem + buffSize + memSize / 2);
-        mem = resources->mcBuff + ((r * 2 + 1) * nChannels + c) * (buffSize + memSize);
+        // Reduce UC -> MC
+        mem = resources->ucBuff + (h * 2 * nChannels + c) * (buffSize + memSize);
         peer->send[1].transportComm = &nvlsTransport.send;
         peer->send[1].conn.buffs[NCCL_PROTO_SIMPLE] = mem;
         peer->send[1].conn.head = (uint64_t*)(mem + buffSize);
         peer->send[1].conn.tail = (uint64_t*)(mem + buffSize + memSize / 2);
-        peer->send[1].conn.flags |= NCCL_NVLS_MIN_POLL;
+        mem = resources->mcBuff + (h * 2 * nChannels + c) * (buffSize + memSize);
+        peer->recv[0].transportComm = &nvlsTransport.recv;
+        peer->recv[0].conn.buffs[NCCL_PROTO_SIMPLE] = mem;
+        peer->recv[0].conn.head = (uint64_t*)(mem + buffSize);
+        peer->recv[0].conn.tail = (uint64_t*)(mem + buffSize + memSize / 2);
+        peer->recv[0].conn.flags |= NCCL_NVLS_MIN_POLL;
 
-        struct ncclDevChannelPeer* addr;
-        CUDACHECKGOTO(cudaMemcpyAsync(&addr, comm->channels[c].devPeers + nvlsPeer, sizeof(struct ncclDevChannelPeer*), cudaMemcpyDeviceToHost, comm->sharedRes->hostStream.cudaStream), res, cleanup);
-        CUDACHECKGOTO(cudaMemcpyAsync(&addr->send[0], &peer->send[0].conn, sizeof(struct ncclConnInfo), cudaMemcpyHostToDevice, comm->sharedRes->hostStream.cudaStream), res, cleanup);
-        CUDACHECKGOTO(cudaMemcpyAsync(&addr->recv[0], &peer->recv[0].conn, sizeof(struct ncclConnInfo), cudaMemcpyHostToDevice, comm->sharedRes->hostStream.cudaStream), res, cleanup);
-        CUDACHECKGOTO(cudaMemcpyAsync(&addr->send[1], &peer->send[1].conn, sizeof(struct ncclConnInfo), cudaMemcpyHostToDevice, comm->sharedRes->hostStream.cudaStream), res, cleanup);
-        CUDACHECKGOTO(cudaMemcpyAsync(&addr->recv[1], &peer->recv[1].conn, sizeof(struct ncclConnInfo), cudaMemcpyHostToDevice, comm->sharedRes->hostStream.cudaStream), res, cleanup);
+        // Broadcast MC -> UC
+        mem = resources->ucBuff + ((h * 2 + 1) * nChannels + c) * (buffSize + memSize);
+        peer->recv[1].transportComm = &nvlsTransport.recv;
+        peer->recv[1].conn.buffs[NCCL_PROTO_SIMPLE] = mem;
+        peer->recv[1].conn.head = (uint64_t*)(mem + buffSize);
+        peer->recv[1].conn.tail = (uint64_t*)(mem + buffSize + memSize / 2);
+        mem = resources->mcBuff + ((h * 2 + 1) * nChannels + c) * (buffSize + memSize);
+        peer->send[0].transportComm = &nvlsTransport.send;
+        peer->send[0].conn.buffs[NCCL_PROTO_SIMPLE] = mem;
+        peer->send[0].conn.head = (uint64_t*)(mem + buffSize);
+        peer->send[0].conn.tail = (uint64_t*)(mem + buffSize + memSize / 2);
+        peer->send[0].conn.flags |= NCCL_NVLS_MIN_POLL;
+
         /*INFO(NCCL_INIT|NCCL_NVLS, "Peer %d Channel %d MC buff %p/%p UC Buff %p/%p",
             nvlsPeer, c,
-            resources->mcBuff + (r*2*nChannels+c)*(buffSize+memSize),
-            resources->mcBuff + ((r*2+1)*nChannels+c)*(buffSize+memSize),
-            resources->ucBuff + (r*2*nChannels+c)*(buffSize+memSize),
-            resources->ucBuff + ((r*2+1)*nChannels+c)*(buffSize+memSize));*/
+            resources->mcBuff + (h*2*nChannels+c)*(buffSize+memSize),
+            resources->mcBuff + ((h*2+1)*nChannels+c)*(buffSize+memSize),
+            resources->ucBuff + (h*2*nChannels+c)*(buffSize+memSize),
+            resources->ucBuff + ((h*2+1)*nChannels+c)*(buffSize+memSize));*/
       }
     }
   }
 
-  /* nvls nchannels local debug info. */
-  comm->nvlsChannels = nChannels;
   return res;
 
 cleanup:

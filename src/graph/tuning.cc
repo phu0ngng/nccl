@@ -54,8 +54,9 @@ ncclResult_t parseList(const char* str, const char* elems[], int nelems, int* li
 // Latencies in us, Bandwidths in GB/s
 // Tree { LL, LL128, Simple } , Ring { LL, LL128, Simple }
 static const float baseLat  [NCCL_NUM_ALGORITHMS][NCCL_NUM_PROTOCOLS] = {
- { 6.8, 14.0,  0 }, { 6.6, 14.0, 8.4 }, { 6.8, 14.0,  0 }, { 6.8, 14.0,  0 }, { 0, 0, 40.0 }
-};
+       {  6.8, 14.0,    0 }, {  6.6, 14.0,  8.4 }, // Tree, Ring
+       {  6.8, 14.0,    0 }, {  6.8, 14.0,    0 },       // Collnet Direct, Chain
+       {    0,    0, 23.0 }, {    0,    0, 23.0 }};     // NVLS, NVLS Tree
 
 // NVLink, PCI, Network
 #define NCCL_HW_NVLINK 0
@@ -66,16 +67,16 @@ static const float baseLat  [NCCL_NUM_ALGORITHMS][NCCL_NUM_PROTOCOLS] = {
 static float hwLat [3][NCCL_NUM_ALGORITHMS][NCCL_NUM_PROTOCOLS] =
 { /* NVLINK */
   { /* Tree (LL/LL128/Simple)*/ { .6, 1.25, 28 }, /* Ring (LL/LL128/Simple)*/ { .6, 1.9, 3.4 },
-    /* CollNetDirect (Simple)*/ { 0, 0, 8.0 }, /* CollNetChain (Simple)*/ { 0, 0, 8.0 },
-    /* NVLS */ { 0, 0, 0 } },
+    /* CollNetDirect (Simple)*/ { 0, 0, 8.0 }, /* CollNetChain (Simple)*/ { 0, 0, 4.75 },
+    /* NVLS */ { 0, 0, 0 }, /* NVLSTree */ { 0, 0, 0 } },
   /* PCI */
   { /* Tree (LL/LL128/Simple)*/ { 1.0, 1.9, 28 }, /* Ring (LL/LL128/Simple)*/ { 1.0, 2.5, 5.7 },
     /* CollNetDirect (Simple)*/ { 0, 0, 8.0 }, /* CollNetChain (Simple)*/ { 0, 0, 8.0 },
-    /* NVLS */ { 0, 0, 0 } },
+    /* NVLS */ { 0, 0, 0 }, /* NVLSTree */ { 0, 0, 0 } },
   /* NET */
   { /* Tree (LL/LL128/Simple)*/ { 5.0, 8.5, 28 }, /* Ring (LL/LL128/Simple)*/ { 2.7, 4.0, 14.0 },
-    /* CollNetDirect (Simple)*/ { 0, 0, 10.7 }, /* CollNetChain (Simple)*/ { 0, 0, 10.7 },
-    /* NVLS */ { 0, 0, 0 } }
+    /* CollNetDirect (Simple)*/ { 0, 0, 10.7 }, /* CollNetChain (Simple)*/ { 0, 0, 14 },
+    /* NVLS */ { 0, 0, 18 }, /* NVLSTree */ { 0, 0, 19 } }
 };
 
 /* Array indexes used below */
@@ -97,7 +98,6 @@ static const double perChMaxTreeBws[3][3] = {
   /* Hopper (N1/N2/N4) */ {38.7, 41.4, 33.0},
 };
 
-
 // Network post overhead in ns (1000 = 1 us)
 NCCL_PARAM(NetOverhead, "NET_OVERHEAD", -2);
 
@@ -110,15 +110,16 @@ static float getNetOverhead(struct ncclComm* comm) {
   else return 1.0;
 }
 
-ncclResult_t ncclTopoTuneModel(struct ncclComm* comm, int minCompCap, int maxCompCap, struct ncclTopoGraph* treeGraph, struct ncclTopoGraph* ringGraph, struct ncclTopoGraph* collNetGraph) {
-  int simpleDefaultThreads = (ringGraph->bwIntra*ringGraph->nChannels <= PCI_BW) ? 256 : NCCL_SIMPLE_MAX_NTHREADS;
+ncclResult_t ncclTopoTuneModel(struct ncclComm* comm, int minCompCap, int maxCompCap, struct ncclTopoGraph** graphs) {
+  int simpleDefaultThreads = (graphs[NCCL_ALGO_RING]->bwIntra*graphs[NCCL_ALGO_RING]->nChannels <= PCI_BW) ? 256 : NCCL_SIMPLE_MAX_NTHREADS;
   comm->maxThreads[NCCL_ALGO_RING][NCCL_PROTO_SIMPLE] =
     getNthreads("NCCL_NTHREADS", ncclParamNthreads(), 2*WARP_SIZE, NCCL_SIMPLE_MAX_NTHREADS, simpleDefaultThreads);
   comm->maxThreads[NCCL_ALGO_TREE][NCCL_PROTO_SIMPLE] =
     getNthreads("NCCL_NTHREADS", ncclParamNthreads(), 2*WARP_SIZE, NCCL_SIMPLE_MAX_NTHREADS, NCCL_SIMPLE_MAX_NTHREADS);
   comm->maxThreads[NCCL_ALGO_COLLNET_DIRECT][NCCL_PROTO_SIMPLE] =
     comm->maxThreads[NCCL_ALGO_COLLNET_CHAIN][NCCL_PROTO_SIMPLE] =
-    comm->maxThreads[NCCL_ALGO_NVLS][NCCL_PROTO_SIMPLE] = NCCL_SIMPLE_MAX_NTHREADS;
+    comm->maxThreads[NCCL_ALGO_NVLS][NCCL_PROTO_SIMPLE] =
+    comm->maxThreads[NCCL_ALGO_NVLS_TREE][NCCL_PROTO_SIMPLE] = NCCL_MAX_NTHREADS;
   comm->maxThreads[NCCL_ALGO_RING][NCCL_PROTO_LL] = comm->maxThreads[NCCL_ALGO_TREE][NCCL_PROTO_LL] =
     getNthreads("NCCL_NTHREADS", ncclParamNthreads(), 2*WARP_SIZE, NCCL_LL_MAX_NTHREADS, NCCL_LL_MAX_NTHREADS);
   comm->maxThreads[NCCL_ALGO_RING][NCCL_PROTO_LL128] = comm->maxThreads[NCCL_ALGO_TREE][NCCL_PROTO_LL128] =
@@ -140,7 +141,6 @@ ncclResult_t ncclTopoTuneModel(struct ncclComm* comm, int minCompCap, int maxCom
   if (cpuArch == NCCL_TOPO_CPU_ARCH_POWER) hwLat[NCCL_HW_PCI][NCCL_ALGO_TREE][NCCL_PROTO_SIMPLE] = hwLat[NCCL_HW_PCI][NCCL_ALGO_RING][NCCL_PROTO_SIMPLE];
   float ppn = (float)nRanks / nNodes; // if ppn < 2, then we are sending/receiving at the same GPU through the NIC, apply some bw discount
 
-  struct ncclTopoGraph* graphs[NCCL_NUM_ALGORITHMS] = { treeGraph, ringGraph, collNetGraph, collNetGraph, ringGraph/* we only need the NVSwitch speed for NVLS*/ };
   int intraHw[NCCL_NUM_ALGORITHMS], hw[NCCL_NUM_ALGORITHMS];
   for (int a=0; a<NCCL_NUM_ALGORITHMS; a++) intraHw[a] = graphs[a]->typeIntra == LINK_NVL ? NCCL_HW_NVLINK : NCCL_HW_PCI;
   for (int a=0; a<NCCL_NUM_ALGORITHMS; a++) hw[a] = nNodes == 1 ? intraHw[a] : NCCL_HW_NET;
@@ -156,11 +156,11 @@ ncclResult_t ncclTopoTuneModel(struct ncclComm* comm, int minCompCap, int maxCom
     for (int a=0; a<NCCL_NUM_ALGORITHMS; a++) {
       if (coll == ncclFuncBroadcast && a != NCCL_ALGO_RING) continue;
       if (coll == ncclFuncReduce && a != NCCL_ALGO_RING) continue;
-      if (coll == ncclFuncReduceScatter && a != NCCL_ALGO_RING && a != NCCL_ALGO_NVLS) continue;
-      if (coll == ncclFuncAllGather && a != NCCL_ALGO_RING && a != NCCL_ALGO_NVLS) continue;
+      if (coll == ncclFuncReduceScatter && a != NCCL_ALGO_RING) continue;
+      if (coll == ncclFuncAllGather && a != NCCL_ALGO_RING) continue;
 
       for (int p=0; p<NCCL_NUM_PROTOCOLS; p++) {
-        if (a == NCCL_ALGO_NVLS && p != NCCL_PROTO_SIMPLE) continue;
+        if ((a == NCCL_ALGO_NVLS || a == NCCL_ALGO_NVLS_TREE) && p != NCCL_PROTO_SIMPLE) continue;
         int collnet = (a == NCCL_ALGO_COLLNET_DIRECT || a == NCCL_ALGO_COLLNET_CHAIN) ? 1 : 0;
         float bw = nNodes <= 2 || collnet ? graphs[a]->bwIntra : graphs[a]->bwInter;
         float busBw = graphs[a]->nChannels * bw;
@@ -185,6 +185,7 @@ ncclResult_t ncclTopoTuneModel(struct ncclComm* comm, int minCompCap, int maxCom
         float ratio;
         if (a == NCCL_ALGO_RING) ratio = (1.0 * nRanks) / nsteps;
         else if (a == NCCL_ALGO_NVLS) ratio = .75;
+        else if (a == NCCL_ALGO_NVLS_TREE) ratio = .70 * nNodes / (2*(nNodes-1));
         else ratio = .5;
         comm->bandwidths[coll][a][p] = busBw * ratio;
 
@@ -197,7 +198,7 @@ ncclResult_t ncclTopoTuneModel(struct ncclComm* comm, int minCompCap, int maxCom
         if (a == NCCL_ALGO_RING) {
           float lat = hwLat[hw[a]][a][p];
           if ((coll == ncclFuncReduce || coll == ncclFuncBroadcast)) {
-            if (ringGraph->sameChannels) {
+            if (graphs[a]->sameChannels) {
               comm->latencies[coll][a][p] += lat;
             } else {
               if (p == NCCL_PROTO_SIMPLE) lat = hwLat[hw[a]][NCCL_ALGO_TREE][p]; // Add some chunk latency, waiting for proper chunk modeling
@@ -220,7 +221,11 @@ ncclResult_t ncclTopoTuneModel(struct ncclComm* comm, int minCompCap, int maxCom
           comm->latencies[coll][a][p] +=
             2 * (std::min(1, (nRanks/nNodes-1)) * intraLat + (nRanks/nNodes-1) * 0.5) + interLat;  // Add 0.5 arity serialization latency
         } else if (a == NCCL_ALGO_COLLNET_CHAIN) {
-          comm->latencies[coll][a][p] += 2 * (nRanks/nNodes-1) * intraLat;
+          comm->latencies[coll][a][p] += 2 * (nRanks/nNodes-1) * intraLat + interLat;
+        } else if (a == NCCL_ALGO_NVLS) {
+          if (nNodes > 1) comm->latencies[coll][a][p] += hwLat[NCCL_HW_NET][a][p];
+        } else if (a == NCCL_ALGO_NVLS_TREE) {
+          comm->latencies[coll][a][p] += 2*(nNodes-1)*hwLat[NCCL_HW_NET][a][p];
         }
       }
     }
@@ -229,7 +234,7 @@ ncclResult_t ncclTopoTuneModel(struct ncclComm* comm, int minCompCap, int maxCom
   // Protocols/Algorithms enable/disable, and user overrides.
   // All are enabled except ll128 which is enabled by default only in certain cases.
   int protoEnable[NCCL_NUM_PROTOCOLS] = { 1, 2, 1 };
-  int algoEnable[NCCL_NUM_ALGORITHMS] = { 1, 1, 1, 1, 1 };
+  int algoEnable[NCCL_NUM_ALGORITHMS] = { 1, 1, 1, 1, 1, 1 };
 
   const char *protoStr = getenv("NCCL_PROTO");
   if (protoStr) {
@@ -243,14 +248,17 @@ ncclResult_t ncclTopoTuneModel(struct ncclComm* comm, int minCompCap, int maxCom
   }
 
   // Disable NVLink SHARP if not supported
-  if (comm->nvlsSupport == 0 /* || comm->localRanks <= 2*/) algoEnable[NCCL_ALGO_NVLS] = 0;
+  if (comm->nvlsSupport == 0 || comm->localRanks <= 2) algoEnable[NCCL_ALGO_NVLS] = algoEnable[NCCL_ALGO_NVLS_TREE] = 0;
+  if (comm->nNodes == 1) algoEnable[NCCL_ALGO_NVLS_TREE] = 0;
 
   // Disable CollNet if it is not supported
   if (comm->collNetSupport == 0) {
     algoEnable[NCCL_ALGO_COLLNET_DIRECT] = 0;
     algoEnable[NCCL_ALGO_COLLNET_CHAIN] = 0;
+    if (comm->nNodes > 1) algoEnable[NCCL_ALGO_NVLS] = 0;
     // If user has hard set NCCL_ALGO=COLLNET, ignore it
-    if (algoEnable[NCCL_ALGO_RING] == 0 && algoEnable[NCCL_ALGO_TREE] == 0) {
+    if (algoEnable[NCCL_ALGO_RING] == 0 && algoEnable[NCCL_ALGO_TREE] == 0 &&
+        algoEnable[NCCL_ALGO_NVLS] == 0 && algoEnable[NCCL_ALGO_NVLS_TREE] == 0) {
       algoEnable[NCCL_ALGO_RING] = algoEnable[NCCL_ALGO_TREE] = 1;
       if (comm->rank == 0) WARN("CollNet is not supported or fails to initialize, ignoring NCCL_ALGO=COLLNET");
     }
@@ -284,28 +292,38 @@ ncclResult_t ncclTopoTuneModel(struct ncclComm* comm, int minCompCap, int maxCom
 
   if (comm->rank == 0) {
     char line[1024];
-    sprintf(line, "Latency/AlgBw |");
-    for (int a=0; a<NCCL_NUM_ALGORITHMS; a++) {
-      for (int p=0; p<NCCL_NUM_PROTOCOLS; p++) {
-        sprintf(line+strlen(line), " %7s/%6s |", ncclAlgoStr[a], ncclProtoStr[p]);
+    for (int block=0; block<2; block++) {
+      sprintf(line, "  Algorithm   |");
+      for (int ba=0; ba<NCCL_NUM_ALGORITHMS/2; ba++) {
+	int a = block*NCCL_NUM_ALGORITHMS/2+ba;
+        sprintf(line+strlen(line), " %14s   %14s   %14s |", "", ncclAlgoStr[a], "");
       }
-    }
-    INFO(NCCL_TUNING, "%s", line);
-    sprintf(line, " Max NThreads |");
-    for (int a=0; a<NCCL_NUM_ALGORITHMS; a++) {
-      for (int p=0; p<NCCL_NUM_PROTOCOLS; p++) {
-        sprintf(line+strlen(line), " %14d |", comm->maxThreads[a][p]);
-      }
-    }
-    INFO(NCCL_TUNING, "%s", line);
-    for (int c=0; c<NCCL_NUM_FUNCTIONS; c++) {
-      sprintf(line, "%13s |", ncclFuncStr[c]);
-      for (int a=0; a<NCCL_NUM_ALGORITHMS; a++) {
+      INFO(NCCL_TUNING, "%s", line);
+      sprintf(line, "  Protocol    |");
+      for (int ba=0; ba<NCCL_NUM_ALGORITHMS/2; ba++) {
         for (int p=0; p<NCCL_NUM_PROTOCOLS; p++) {
-          sprintf(line+strlen(line), "%8.1f/%6.1f |", comm->latencies[c][a][p], comm->bandwidths[c][a][p]);
+          sprintf(line+strlen(line), " %14s |", ncclProtoStr[p]);
         }
       }
       INFO(NCCL_TUNING, "%s", line);
+      sprintf(line, " Max NThreads |");
+      for (int ba=0; ba<NCCL_NUM_ALGORITHMS/2; ba++) {
+	int a = block*NCCL_NUM_ALGORITHMS/2+ba;
+        for (int p=0; p<NCCL_NUM_PROTOCOLS; p++) {
+          sprintf(line+strlen(line), " %14d |", comm->maxThreads[a][p]);
+        }
+      }
+      INFO(NCCL_TUNING, "%s", line);
+      for (int c=0; c<NCCL_NUM_FUNCTIONS; c++) {
+        sprintf(line, "%13s |", ncclFuncStr[c]);
+        for (int ba=0; ba<NCCL_NUM_ALGORITHMS/2; ba++) {
+	  int a = block*NCCL_NUM_ALGORITHMS/2+ba;
+          for (int p=0; p<NCCL_NUM_PROTOCOLS; p++) {
+            sprintf(line+strlen(line), "%8.1f/%6.1f |", comm->latencies[c][a][p], comm->bandwidths[c][a][p]);
+          }
+        }
+        INFO(NCCL_TUNING, "%s", line);
+      }
     }
   }
 

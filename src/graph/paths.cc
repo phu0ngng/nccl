@@ -538,6 +538,11 @@ ncclResult_t ncclTopoComputePaths(struct ncclTopoSystem* system, struct ncclComm
     NCCLCHECK(ncclTopoSetPaths(system->nodes[NET].nodes+n, system));
   }
 
+  // Set direct paths to NVSwitches.
+  for (int n=0; n<system->nodes[NVS].count; n++) {
+    NCCLCHECK(ncclTopoSetPaths(system->nodes[NVS].nodes+n, system));
+  }
+
   // Update path for GPUs when we don't want to / can't use GPU Direct P2P
   for (int g=0; g<system->nodes[GPU].count; g++) {
     for (int p=0; p<system->nodes[GPU].count; p++) {

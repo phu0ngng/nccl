@@ -257,7 +257,7 @@ static ncclResult_t shmSendProxyFree(struct ncclProxyConnection* connection, str
 
   if (resources) {
     CUDACHECK(cudaStreamDestroy(resources->stream));
-    CUDACHECK(cudaFree(resources->devFifo));
+    NCCLCHECK(ncclCudaFree(resources->devFifo));
     NCCLCHECK(ncclCudaHostFree(resources->ceRecvMem));
     for (int i=0; i<NCCL_STEPS; i++) {
       CUDACHECK(cudaEventDestroy(resources->events[i]));
@@ -272,7 +272,7 @@ static ncclResult_t shmRecvProxyFree(struct ncclProxyConnection* connection, str
 
   if (resources) {
     CUDACHECK(cudaStreamDestroy(resources->stream));
-    CUDACHECK(cudaFree(resources->devFifo));
+    NCCLCHECK(ncclCudaFree(resources->devFifo));
     NCCLCHECK(ncclCudaHostFree(resources->ceRecvMem));
     for (int i=0; i<NCCL_STEPS; i++) {
       CUDACHECK(cudaEventDestroy(resources->events[i]));

@@ -6,9 +6,17 @@
 
 #include "nccl.h"
 #include "debug.h"
+#include "param.h"
 #include "cudawrap.h"
 
 #include <dlfcn.h>
+
+// This env var (NCCL_CUMEM_ENABLE) toggles cuMem API usage
+NCCL_PARAM(CuMemEnable, "CUMEM_ENABLE", 1);
+
+int ncclCuMemEnable() {
+  return (ncclParamCuMemEnable() && CUPFN(cuMemCreate) != NULL);
+}
 
 #define DECLARE_CUDA_PFN(symbol,version) PFN_##symbol##_v##version pfn_##symbol = nullptr
 
@@ -35,6 +43,7 @@ DECLARE_CUDA_PFN(cuMemExportToShareableHandle, 10020);
 DECLARE_CUDA_PFN(cuMemImportFromShareableHandle, 10020);
 DECLARE_CUDA_PFN(cuMemMap, 10020);
 DECLARE_CUDA_PFN(cuMemRelease, 10020);
+DECLARE_CUDA_PFN(cuMemRetainAllocationHandle, 11000);
 DECLARE_CUDA_PFN(cuMemSetAccess, 10020);
 DECLARE_CUDA_PFN(cuMemUnmap, 10020);
 #if CUDA_VERSION >= 11070
@@ -89,7 +98,6 @@ static ncclResult_t cudaPfnFuncLoader(void) {
   LOAD_SYM(cuCtxSetCurrent, 4000, 1);
   LOAD_SYM(cuCtxGetDevice, 2000, 1);
 /* cuMem API support */
-#if CUDA_VERSION >= 11030
   LOAD_SYM(cuMemAddressReserve, 10020, 1);
   LOAD_SYM(cuMemAddressFree, 10020, 1);
   LOAD_SYM(cuMemCreate, 10020, 1);
@@ -98,9 +106,9 @@ static ncclResult_t cudaPfnFuncLoader(void) {
   LOAD_SYM(cuMemImportFromShareableHandle, 10020, 1);
   LOAD_SYM(cuMemMap, 10020, 1);
   LOAD_SYM(cuMemRelease, 10020, 1);
+  LOAD_SYM(cuMemRetainAllocationHandle, 11000, 1);
   LOAD_SYM(cuMemSetAccess, 10020, 1);
   LOAD_SYM(cuMemUnmap, 10020, 1);
-#endif
 #if CUDA_VERSION >= 11070
   LOAD_SYM(cuMemGetHandleForAddressRange, 11070, 1); // DMA-BUF support
 #endif
@@ -135,7 +143,7 @@ static void initOnceFunc() {
   if (ncclCudaPath == NULL)
     snprintf(path, 1024, "%s", "libcuda.so");
   else
-    snprintf(path, 1024, "%s%s", ncclCudaPath, "libcuda.so");
+    snprintf(path, 1024, "%s/%s", ncclCudaPath, "libcuda.so");
 
   (void) dlerror(); // Clear any previous errors
   cudaLib = dlopen(path, RTLD_LAZY);
