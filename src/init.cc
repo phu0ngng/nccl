@@ -614,7 +614,8 @@ static ncclResult_t collNetTrySetup(ncclComm_t comm, ncclComm_t parent, struct n
   } else {
     /* this allocated buffer will be freed on proxy side */
     NCCLCHECK(ncclCalloc(&comm->collNetSharedRes, 1));
-    nChannels = comm->collNetChannels = comm->collNetSharedRes->nChannels = std::max(comm->nChannels, comm->nvlsChannels);
+    /* TODO: min or max? */
+    nChannels = comm->collNetChannels = comm->collNetSharedRes->nChannels = std::min(comm->nChannels, comm->nvlsChannels);
     comm->collNetSharedRes->buffSize = comm->buffSizes[NCCL_PROTO_SIMPLE];
     for (int c = 0; c < nChannels; c++) {
       struct ncclChannel* channel = comm->channels + c;
