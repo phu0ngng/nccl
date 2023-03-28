@@ -50,8 +50,9 @@ struct ncclConnect {
   char data[CONNECT_SIZE];
 };
 
-#define NVLS_HANDLE_SIZE 64
+#if CUDART_VERSION >= 12010
 
+#define NVLS_HANDLE_SIZE 64
 struct ncclNvlsSharedRes {
   int refCount;
   CUmulticastObjectProp properties;
@@ -66,6 +67,8 @@ struct ncclNvlsSharedRes {
   char shareableHandle[NVLS_HANDLE_SIZE];
   int nChannels;
 };
+
+#endif /* CUDART_VERSION >= 12010 */
 
 struct ncclCollNetSharedRes {
   int refCount;
