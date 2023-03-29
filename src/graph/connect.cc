@@ -423,6 +423,7 @@ ncclResult_t ncclTopoPostset(struct ncclComm* comm, int* firstRanks, int* treePa
   free(treeToParent);
   free(treeToChild0);
   free(treeToChild1);
+  free(nvlsHeads);
 
   return ncclSuccess;
 }
