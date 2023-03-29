@@ -408,6 +408,7 @@ ncclResult_t ncclNvlsFree(struct ncclComm* comm) {
  */
 
 ncclResult_t ncclNvlsSetup(struct ncclComm* comm, struct ncclComm* parent) {
+  comm->nvlsChannels = 0;
   return ncclSuccess;
 }
 
