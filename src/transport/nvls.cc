@@ -290,7 +290,6 @@ ncclResult_t ncclNvlsSetup(struct ncclComm* comm) {
        comm, headRank, nHeads, buffSize, memSize, nvlsPerRankSize, nvlsTotalSize);
 
   char* shareableHandle = resources->shareableHandle;
-  NCCLCHECKGOTO(ncclCalloc(&shareableHandle, NVLS_HANDLE_SIZE), res, cleanup);
   NCCLCHECKGOTO(nvlsGetProperties(comm, resources, dev, comm->localRanks, nvlsTotalSize), res, cleanup);
   if (comm->localRank == 0) {
     NCCLCHECKGOTO(nvlsGroupCreate(comm, resources, comm->localRank, comm->localRanks, shareableHandle), res, cleanup);
