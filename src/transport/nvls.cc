@@ -298,7 +298,7 @@ ncclResult_t ncclNvlsSetup(struct ncclComm* comm, struct ncclComm* parent) {
       resources->nChannels = std::max(comm->config.minCTAs, std::min(comm->config.maxCTAs, comm->nvlsChannels));
     }
 
-    nChannels = comm->nvlsChannels = resources->nChannels = std::min(resources->nChannels, comm->nvlsChannels);
+    nChannels = comm->nvlsChannels = resources->nChannels;
     for (int c = 0; c < nChannels; c++) {
       NCCLCHECK(initNvlsChannel(comm, c, parent, false));
     }
@@ -321,6 +321,12 @@ ncclResult_t ncclNvlsSetup(struct ncclComm* comm, struct ncclComm* parent) {
       NCCLCHECKGOTO(bootstrapIntraNodeBroadcast(comm->bootstrap, comm->localRankToRank, comm->localRank, comm->localRanks, 0, shareableHandle, NVLS_HANDLE_SIZE), res, cleanup);
       NCCLCHECKGOTO(nvlsGroupConnect(comm, resources, comm->localRankToRank[0], shareableHandle), res, cleanup);
     }
+    
+    NCCLCHECKGOTO(nvlsGroupAddDevice(comm, resources), res, cleanup);
+    NCCLCHECKGOTO(nvlsGroupBindMem(comm, resources), res, cleanup);
+    // Local intra-node barrier to ensure everyone has bound their memory to the group
+    NCCLCHECKGOTO(bootstrapBarrier(comm->bootstrap, comm->localRankToRank, comm->localRank, comm->localRanks, comm->localRankToRank[0]), res, cleanup);
+    NCCLCHECKGOTO(nvlsGroupMapMem(comm, resources), res, cleanup);
 
     for (int h = 0; h < nHeads; h++) {
       int nvlsPeer = comm->nRanks + 1 + h;
