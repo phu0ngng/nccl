@@ -543,7 +543,6 @@ static ncclResult_t collNetTrySetup(ncclComm_t comm, ncclComm_t parent, struct n
   int highestTransportType0, highestTransportType1;
   char line[1024];
   bool share;
-  int nChannels = 0;
   
   struct collnetShareInfo {
     int headPosition;
