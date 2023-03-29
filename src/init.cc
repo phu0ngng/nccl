@@ -595,8 +595,8 @@ static ncclResult_t collNetTrySetup(ncclComm_t comm, ncclComm_t parent, struct n
       if (share) {
         if (myinfo->isMaster) {
           comm->collNetSharedRes = parent->collNetSharedRes;
-          comm->collNetChannels = nChannels = std::min(std::max(comm->nChannels, comm->nvlsChannels), parent->collNetSharedRes->nChannels);
-          for (int c = 0; c < nChannels; ++c)
+          comm->collNetChannels = std::min(std::max(comm->nChannels, comm->nvlsChannels), parent->collNetSharedRes->nChannels);
+          for (int c = 0; c < comm->collNetChannels; ++c)
             NCCLCHECKGOTO(initCollnetChannel(comm, c, parent, true), ret, fail);
         }
       } else {
@@ -615,9 +615,9 @@ static ncclResult_t collNetTrySetup(ncclComm_t comm, ncclComm_t parent, struct n
     /* this allocated buffer will be freed on proxy side */
     NCCLCHECK(ncclCalloc(&comm->collNetSharedRes, 1));
     /* TODO: min or max? */
-    nChannels = comm->collNetChannels = comm->collNetSharedRes->nChannels = std::min(comm->nChannels, comm->nvlsChannels);
+    comm->collNetChannels = comm->collNetSharedRes->nChannels = std::max(comm->nChannels, comm->nvlsChannels);
     comm->collNetSharedRes->buffSize = comm->buffSizes[NCCL_PROTO_SIMPLE];
-    for (int c = 0; c < nChannels; c++) {
+    for (int c = 0; c < comm->collNetChannels; c++) {
       struct ncclChannel* channel = comm->channels + c;
       NCCLCHECKGOTO(initCollnetChannel(comm, c, parent, false), ret, fail);
       for (int h = 0; h < nHeads; h++) {
@@ -638,7 +638,7 @@ static ncclResult_t collNetTrySetup(ncclComm_t comm, ncclComm_t parent, struct n
   TRACE(NCCL_INIT, "rank %d Connected inter-node CollNet", rank);
 
   line[0] = '\0';
-  for (int c = 0; c < nChannels; c++) {
+  for (int c = 0; c < comm->nChannels; c++) {
     struct ncclTree* chain = &comm->channels[c].collnetChain;
     snprintf(line + strlen(line), 1023 - strlen(line), " [%d] %d->%d->%d",
       c, chain->down[0], rank, chain->up);
@@ -647,12 +647,12 @@ static ncclResult_t collNetTrySetup(ncclComm_t comm, ncclComm_t parent, struct n
 
   INFO(NCCL_INIT, "Collnet Chains %s", line);
   // Connect Collnet + chain
-  for (int c = 0; c < nChannels; c++) {
+  for (int c = 0; c < comm->nChannels; c++) {
     struct ncclChannel* channel = comm->channels + c;
     NCCLCHECKGOTO(ncclTransportP2pConnect(comm, c, 1, &channel->collnetChain.up, 1, channel->collnetChain.down, 0), ret, fail);
   }
   NCCLCHECKGOTO(ncclTransportP2pSetup(comm, collNetGraph, 0), ret, fail);
-  for (int c = 0; c < nChannels; c++) {
+  for (int c = 0; c < comm->nChannels; c++) {
     struct ncclChannel* channel = comm->channels + c;
     NCCLCHECKGOTO(ncclTransportP2pConnect(comm, c, 1, channel->collnetChain.down, 1, &channel->collnetChain.up, 1), ret, fail);
   }
@@ -660,13 +660,13 @@ static ncclResult_t collNetTrySetup(ncclComm_t comm, ncclComm_t parent, struct n
   INFO(NCCL_INIT, "Connected collnet + chain");
 
   // Connect intra-node CollNet + Direct
-  for (int c = 0; c < nChannels; c++) {
+  for (int c = 0; c < comm->nChannels; c++) {
     struct ncclChannel* channelRecv = comm->channels + c;
     NCCLCHECKGOTO(ncclTransportP2pConnect(comm, c, NCCL_MAX_DIRECT_ARITY, channelRecv->collnetDirect.up, NCCL_MAX_DIRECT_ARITY, channelRecv->collnetDirect.down, 0), ret, fail);
   }
   NCCLCHECKGOTO(ncclTransportP2pSetup(comm, collNetGraph, 0, &highestTransportType0), ret, fail);
 
-  for (int c = 0; c < nChannels; c++) {
+  for (int c = 0; c < comm->nChannels; c++) {
     struct ncclChannel* channelSend = comm->channels + c;
     NCCLCHECKGOTO(ncclTransportP2pConnect(comm, c, NCCL_MAX_DIRECT_ARITY, channelSend->collnetDirect.down, NCCL_MAX_DIRECT_ARITY, channelSend->collnetDirect.up, 1), ret, fail);
   }
