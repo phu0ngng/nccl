@@ -204,7 +204,7 @@ static ncclResult_t commFree(ncclComm_t comm) {
     if (__atomic_sub_fetch(&comm->sharedRes->refCount, 1, __ATOMIC_RELAXED) == 0) {
       for (int c=0; c<MAXCHANNELS; c++) {
         if (comm->sharedRes->peers[c]) free(comm->sharedRes->peers[c]);
-        if (comm->sharedRes->devPeers[c]) cudaFree(comm->sharedRes->devPeers[c]);
+        if (comm->sharedRes->devPeers[c]) ncclCudaFree(comm->sharedRes->devPeers[c]);
       }
       free(comm->sharedRes->tpRankToLocalRank);
       NCCLCHECK(ncclStrongStreamDestruct(&comm->sharedRes->hostStream));

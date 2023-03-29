@@ -384,7 +384,7 @@ static ncclResult_t sharedBuffersGet(struct ncclCollNetSharedRes* collNet, int t
 
 static ncclResult_t sharedBuffersDestroy(struct ncclCollNetSharedRes* collNet) {
   if (collNet->size == 0) return ncclSuccess;
-  CUDACHECK(cudaFree(collNet->cudaBuff));
+  NCCLCHECK(ncclCudaFree(collNet->cudaBuff));
   NCCLCHECK(ncclCudaHostFree(collNet->hostBuff));
   // This will be called multiple times, with multiple channels and send/recv. Make sure we only do it once.
   collNet->size = 0;

@@ -148,10 +148,10 @@ ncclResult_t freeChannel(struct ncclChannel* channel, int nRanks, int collnetNRa
         }
         if (r == nRanks) {
           free(channel->collnetPeers);
-          cudaFree(channel->collnetDevPeers);
+          ncclCudaFree(channel->collnetDevPeers);
         } else if (r == nPeers - 1) {
           free(channel->nvlsPeers);
-          cudaFree(channel->nvlsDevPeers);
+          ncclCudaFree(channel->nvlsDevPeers);
         }
       }
     }
