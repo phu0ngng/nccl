@@ -555,7 +555,7 @@ static ncclResult_t scheduleCollTasksToPlan(
       info.sliceSteps = head->sliceSteps;
       NCCLCHECK(ncclInfoSetDerived(&info, comm->nRanks));
       if (nAggOps > 1) {
-        int maxChannels = aggInfo.algorithm == NCCL_ALGO_NVLS ? comm->nvlsChannels : comm->nChannels;
+        int maxChannels = aggInfo.algorithm == NCCL_ALGO_NVLS || aggInfo.algorithm == NCCL_ALGO_NVLS_TREE ? comm->nvlsChannels : comm->nChannels;
         info.nChannels = DIVUP(info.nBytes, bytePerChannel[collNetSupport]);
         info.nChannels = std::max(1, std::min(info.nChannels, maxChannels));
         info.algorithm = aggInfo.algorithm;
@@ -580,7 +580,7 @@ static ncclResult_t scheduleCollTasksToPlan(
         NCCLCHECK(registerIntraNodeBuffers(comm, plan, &info, &regBufUsed, regBufSend, regBufRecv));
       }
 
-      int maxChannels = info.algorithm == NCCL_ALGO_NVLS ? comm->nvlsChannels : comm->nChannels;
+      int maxChannels = info.algorithm == NCCL_ALGO_NVLS || aggInfo.algorithm == NCCL_ALGO_NVLS_TREE ? comm->nvlsChannels : comm->nChannels;
       NCCLCHECK(addCollToPlan(comm, plan, nWorkBudget, workFuncIndex, &workElem, &proxyOp,
         maxChannels, info.nChannels, info.nBytes, regBufUsed, regBufSend, regBufRecv));
       tasks->nTasksColl -= 1;
