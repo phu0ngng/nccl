@@ -16,22 +16,27 @@ void AlltoAllGetCollByteCount(size_t *sendcount, size_t *recvcount, size_t *para
 }
 
 testResult_t AlltoAllInitData(struct threadArgs* args, ncclDataType_t type, ncclRedOp_t op, int root, int rep, int in_place) {
-  size_t sendcount = args->sendBytes / wordSize(type);
-  size_t recvcount = args->expectedBytes / wordSize(type);
-  int nranks = args->nProcs*args->nThreads*args->nGpus;
+  size_t sendcount;
+  int nranks, rank;
+  void* data;
 
-  for (int i=0; i<args->nGpus; i++) {
-    CUDACHECK(cudaSetDevice(args->gpus[i]));
-    int rank = ((args->proc*args->nThreads + args->thread)*args->nGpus + i);
-    CUDACHECK(cudaMemset(args->recvbuffs[i], 0, args->expectedBytes));
-    void* data = in_place ? args->recvbuffs[i] : args->sendbuffs[i];
-    TESTCHECK(InitData(data, sendcount, 0, type, ncclSum, 33*rep + rank, 1, 0));
-    for (int j=0; j<nranks; j++) {
-      size_t partcount = sendcount/nranks;
-      TESTCHECK(InitData((char*)args->expected[i] + j*partcount*wordSize(type), partcount, rank*partcount, type, ncclSum, 33*rep + j, 1, 0));
+  for (int id = 0; id < args->splitCommNum; ++id) {
+    for (int i = 0; i < args->nGpus; i++) {
+      CUDACHECK(cudaSetDevice(args->gpus[i]));
+      sendcount = args->sendBytes[id][i] / wordSize(type);
+      NCCLCHECK(ncclCommUserRank(args->comms[id][i], &rank));
+      NCCLCHECK(ncclCommCount(args->comms[id][i], &nranks));
+      CUDACHECK(cudaMemset(args->recvbuffs[id][i], 0, args->expectedBytes[id][i]));
+      data = in_place ? args->recvbuffs[id][i] : args->sendbuffs[id][i];
+      TESTCHECK(InitData(data, sendcount, 0, type, ncclSum, 33 * rep + rank, 1, 0));
+      for (int j = 0; j < nranks; j++) {
+        size_t partcount = sendcount / nranks;
+        TESTCHECK(InitData((char*)args->expected[id][i] + j * partcount * wordSize(type), partcount, rank * partcount, type, ncclSum, 33 * rep + j, 1, 0));
+      }
+      CUDACHECK(cudaDeviceSynchronize());
     }
-    CUDACHECK(cudaDeviceSynchronize());
   }
+  
   // We don't support in-place alltoall
   args->reportErrors = in_place ? 0 : 1;
   return testSuccess;

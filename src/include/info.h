@@ -94,7 +94,6 @@ struct ncclCudaStreamList {
   struct ncclCudaStreamList *next;
   cudaStream_t stream;
 };
-
 struct ncclTasks {
   struct Peer {
     bool sendSeen, recvSeen;

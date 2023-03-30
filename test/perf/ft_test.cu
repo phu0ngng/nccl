@@ -13,12 +13,14 @@ enum {
   FT_TEST_ALLREDUCE = 1,
   FT_TEST_ALLTOALL = 2,
   FT_TEST_FINALIZE = 3,
-  FT_TEST_NUM = 4,
+  FT_TEST_SPLIT = 4,
+  FT_TEST_NUM = 5,
 };
 
 #if NCCL_VERSION_CODE >= NCCL_VERSION(2,14,0)
-#define NUM_SLEEP_CASES 8
-int sleepTimes[NUM_SLEEP_CASES] = { 100, 1000, 10000, 100000, 1000000, 2000000, 4000000, 8000000 }; /* sleep in us */
+#define NUM_SLEEP_CASES 5
+int sleepTimes[NUM_SLEEP_CASES] = { 10, 100, 10000, 1000000, 2000000}; /* sleep in us */
+size_t size = 32 * 1024 * 1024;
 
 static testResult_t checkCommsState(ncclComm_t* comms, int nGpus, ncclResult_t stateStart, ncclResult_t stateExpect) {
   ncclResult_t state;
@@ -71,14 +73,13 @@ static void finalizeBufferStream(void** sendbuffs, void** recvbuffs, void** host
 }
 
 static testResult_t distributeFTInitTest(struct threadArgs* args) {
-  void** sendbuffs = args->sendbuffs;
-  void** recvbuffs = args->recvbuffs;
+  void** sendbuffs = args->sendbuffs[0];
+  void** recvbuffs = args->recvbuffs[0];
   cudaStream_t* streams = args->streams;
   char** hostbuffs = (char**)args->hostbuffs;
   ncclConfig_t config = NCCL_CONFIG_INITIALIZER;
   ncclResult_t ret;
-  ncclComm_t* comms = args->comms;
-  size_t size = args->nbytes;
+  ncclComm_t* comms = args->comms[0];
   int nGpus = args->nGpus;
   int totalGpus = args->nProcs * args->nThreads * args->nGpus;
   int sDev = args->localRank * args->nThreads * args->nGpus + args->thread * args->nGpus;
@@ -138,15 +139,97 @@ exit:
   return testSuccess;
 }
 
-static testResult_t distributeFTAllreduceTest(struct threadArgs* args) {
-  void** sendbuffs = args->sendbuffs;
-  void** recvbuffs = args->recvbuffs;
+static testResult_t distributeFTCommSplitTest(struct threadArgs* args) {
+  void** sendbuffs = args->sendbuffs[0];
+  void** recvbuffs = args->recvbuffs[0];
   cudaStream_t* streams = args->streams;
   char** hostbuffs = (char**)args->hostbuffs;
   ncclConfig_t config = NCCL_CONFIG_INITIALIZER;
   ncclResult_t ret;
-  ncclComm_t* comms = args->comms;
-  size_t size = args->nbytes;
+  ncclComm_t* comms = args->comms[0];
+  int nGpus = args->nGpus;
+  int totalGpus = args->nProcs * args->nThreads * args->nGpus;
+  int sDev = args->localRank * args->nThreads * args->nGpus + args->thread * args->nGpus;
+  int sleepId = args->sleepId;
+  ncclComm_t splitComms[nGpus];
+
+  config.blocking = 0;
+  config.splitShare = 1;
+  NCCLCHECK(ncclGroupStart());
+  for (int j = 0; j < nGpus; ++j) {
+    int dev = sDev + j;
+    int rank = args->proc * args->nThreads * args->nGpus + args->thread * args->nGpus + j;
+    CUDACHECK(cudaSetDevice(dev));
+    NCCLCHECK(ncclCommInitRankConfig(&comms[j], totalGpus, args->ncclId, rank, &config));
+  }
+  NCCLCHECK_COMM_WAITBATCH(ncclGroupEnd(), comms, nGpus);
+
+  NCCLCHECK(ncclGroupStart());
+  for (int j = 0; j < nGpus; ++j) {
+    int rank = args->proc * args->nThreads * args->nGpus + args->thread * args->nGpus + j;
+    NCCLCHECK(ncclCommSplit(comms[j], rank & 1, rank, &splitComms[j], &config));
+  }
+  ret = ncclGroupEnd();
+  assert(ret == ncclSuccess || ret == ncclInProgress);
+
+  if (sleepId < NUM_SLEEP_CASES) {
+    usleep(sleepTimes[sleepId]);
+    for (int j = 0; j < nGpus; ++j) ncclCommAbort(comms[j]);
+    for (int j = 0; j < nGpus; ++j) ncclCommAbort(splitComms[j]);
+    goto exit;
+  } else {
+    TESTCHECK(checkCommsState(comms, nGpus, ncclInProgress, ncclSuccess));
+  }
+
+  //communicating using NCCL
+  NCCLCHECK(ncclGroupStart());
+  for (int j = 0; j < nGpus; ++j)
+    NCCLCHECK(ncclAllReduce((const void*)sendbuffs[j], (void*)recvbuffs[j], size, ncclInt8, ncclProd, splitComms[j], streams[j]));
+  NCCLCHECK_COMM_WAITBATCH(ncclGroupEnd(), splitComms, nGpus);
+
+  //completing NCCL operation by synchronizing on the CUDA stream
+  for (int j = 0; j < nGpus; ++j)
+    CUDACHECK(cudaStreamSynchronize(streams[j]));
+
+  for (int j = 0; j < nGpus; ++j) {
+    CUDACHECK(cudaMemcpy(hostbuffs[j], recvbuffs[j], size, cudaMemcpyDeviceToHost));
+    for (int k = 0; k < size; ++k) {
+      if ((int)hostbuffs[j][k] != 1) {
+        printf("Proc %d, Thread %d, Gpu %d - \tncclAllReduce wrong result %d buffer location [%d] != expected %d\n", args->proc, args->thread, j, hostbuffs[j][k], k, 1);
+      }
+    }
+  }
+
+  //finalizing NCCL
+  NCCLCHECK(ncclGroupStart());
+  for (int j = 0; j < nGpus; ++j) {
+    NCCLCHECK(ncclCommFinalize(comms[j]));
+  }
+  NCCLCHECK_COMM_WAITBATCH(ncclGroupEnd(), comms, nGpus);
+
+  NCCLCHECK(ncclGroupStart());
+  for (int j = 0; j < nGpus; ++j) {
+    NCCLCHECK(ncclCommFinalize(splitComms[j]));
+  }
+  NCCLCHECK_COMM_WAITBATCH(ncclGroupEnd(), splitComms, nGpus);
+
+  for (int j = 0; j < nGpus; ++j) {
+    NCCLCHECK(ncclCommDestroy(comms[j]));
+    NCCLCHECK(ncclCommDestroy(splitComms[j]));
+  }
+
+exit:
+  return testSuccess;
+}
+
+static testResult_t distributeFTAllreduceTest(struct threadArgs* args) {
+  void** sendbuffs = args->sendbuffs[0];
+  void** recvbuffs = args->recvbuffs[0];
+  cudaStream_t* streams = args->streams;
+  char** hostbuffs = (char**)args->hostbuffs;
+  ncclConfig_t config = NCCL_CONFIG_INITIALIZER;
+  ncclResult_t ret;
+  ncclComm_t* comms = args->comms[0];
   int nGpus = args->nGpus;
   int totalGpus = args->nProcs * args->nThreads * args->nGpus;
   int sDev = args->localRank * args->nThreads * args->nGpus + args->thread * args->nGpus;
@@ -207,14 +290,13 @@ exit:
 }
 
 static testResult_t distributeFTAlltoAllTest(struct threadArgs* args) {
-  void** sendbuffs = args->sendbuffs;
-  void** recvbuffs = args->recvbuffs;
+  void** sendbuffs = args->sendbuffs[0];
+  void** recvbuffs = args->recvbuffs[0];
   cudaStream_t* streams = args->streams;
   char** hostbuffs = (char**)args->hostbuffs;
   ncclConfig_t config = NCCL_CONFIG_INITIALIZER;
   ncclResult_t ret;
-  ncclComm_t* comms = args->comms;
-  size_t size = args->nbytes;
+  ncclComm_t* comms = args->comms[0];
   int nGpus = args->nGpus;
   int totalGpus = args->nProcs * args->nThreads * args->nGpus;
   int sDev = args->localRank * args->nThreads * args->nGpus + args->thread * args->nGpus;
@@ -284,13 +366,12 @@ exit:
 }
 
 static testResult_t distributeFTFinalizeTest(struct threadArgs* args) {
-  void** sendbuffs = args->sendbuffs;
-  void** recvbuffs = args->recvbuffs;
+  void** sendbuffs = args->sendbuffs[0];
+  void** recvbuffs = args->recvbuffs[0];
   cudaStream_t* streams = args->streams;
   ncclConfig_t config = NCCL_CONFIG_INITIALIZER;
   ncclResult_t ret;
-  ncclComm_t* comms = args->comms;
-  size_t size = args->nbytes;
+  ncclComm_t* comms = args->comms[0];
   int nGpus = args->nGpus;
   int totalGpus = args->nProcs * args->nThreads * args->nGpus;
   int sDev = args->localRank * args->nThreads * args->nGpus + args->thread * args->nGpus;
@@ -336,7 +417,7 @@ exit:
 
 testResult_t faultToleranceTests(int nThreads, int nGpus, int ncclProc, int ncclProcs, int localRank, const char* ft_list) {
   struct testThread* threads;
-  size_t size = 32 * 1024 * 1024;
+  
   ncclUniqueId ncclId;
   void** sendbuffs;
   void** recvbuffs;
@@ -346,7 +427,9 @@ testResult_t faultToleranceTests(int nThreads, int nGpus, int ncclProc, int nccl
   int localnGpus = nThreads * nGpus;
   int sDev = localRank * localnGpus;
   int totalGpus = ncclProcs * nThreads;
-  int test_list[FT_TEST_NUM];
+  int testEnable[FT_TEST_NUM];
+  const char* testName[FT_TEST_NUM] = {"init", "allreduce", "alltoall", "finalize", "split"};
+  threadFunc_t testFuncs[FT_TEST_NUM] = {distributeFTInitTest, distributeFTAllreduceTest, distributeFTAlltoAllTest, distributeFTFinalizeTest, distributeFTCommSplitTest};
 
   if (ft_list != NULL) {
     /* users only set a subset of ft tests. */
@@ -356,19 +439,21 @@ testResult_t faultToleranceTests(int nThreads, int nGpus, int ncclProc, int nccl
 
     tmp_list = (char*)malloc(len + 1);
     memcpy(tmp_list, ft_list, len + 1);
-    memset(test_list, 0, sizeof(int) * FT_TEST_NUM);
+    memset(testEnable, 0, sizeof(int) * FT_TEST_NUM);
     token = strtok(tmp_list, ",/:|");
     while (token != NULL) {
       if (strcmp(token, "init") == 0) {
-        test_list[FT_TEST_INIT] = 1;
+        testEnable[FT_TEST_INIT] = 1;
       } else if (strcmp(token, "allreduce") == 0) {
-        test_list[FT_TEST_ALLREDUCE] = 1;
+        testEnable[FT_TEST_ALLREDUCE] = 1;
       } else if (strcmp(token, "alltoall") == 0) {
-        test_list[FT_TEST_ALLTOALL] = 1;
+        testEnable[FT_TEST_ALLTOALL] = 1;
       } else if (strcmp(token, "finalize") == 0) {
-        test_list[FT_TEST_FINALIZE] = 1;
+        testEnable[FT_TEST_FINALIZE] = 1;
+      } else if (strcmp(token, "split") == 0) {
+        testEnable[FT_TEST_SPLIT] = 1;
       } else if (strcmp(token, "all") == 0) {
-        for (int i = 0; i < FT_TEST_NUM; ++i) test_list[i] = 1;
+        for (int i = 0; i < FT_TEST_NUM; ++i) testEnable[i] = 1;
       } else {
         printf("Incorrect fault tolerance test: %s\n", token);
         return testInternalError;
@@ -377,7 +462,7 @@ testResult_t faultToleranceTests(int nThreads, int nGpus, int ncclProc, int nccl
     }
     free(tmp_list);
   } else {
-    for (int i = 0; i < FT_TEST_NUM; ++i) test_list[i] = 1;
+    for (int i = 0; i < FT_TEST_NUM; ++i) testEnable[i] = 1;
   }
 
   is_main_thread = (ncclProc == 0) ? 1 : 0;
@@ -396,182 +481,63 @@ testResult_t faultToleranceTests(int nThreads, int nGpus, int ncclProc, int nccl
     threads[t].args.nProcs = ncclProcs;
     threads[t].args.localRank = localRank;
     threads[t].args.thread = t;
-    threads[t].args.nbytes = size;
-    threads[t].args.sendbuffs = sendbuffs + t * nGpus;
-    threads[t].args.recvbuffs = recvbuffs + t * nGpus;
+    threads[t].args.sendbuffs = (void***)malloc(sizeof(void**));
+    threads[t].args.recvbuffs = (void***)malloc(sizeof(void**));
+    threads[t].args.comms = (ncclComm_t**)malloc(sizeof(ncclComm_t*));
+    threads[t].args.sendbuffs[0] = sendbuffs + t * nGpus;
+    threads[t].args.recvbuffs[0] = recvbuffs + t * nGpus;
     threads[t].args.hostbuffs = hostbuffs + t * nGpus;
-    threads[t].args.comms = comms + t * nGpus;
+    threads[t].args.comms[0] = comms + t * nGpus;
     threads[t].args.streams = streams + t * nGpus;
   }
 
-  if (test_list[FT_TEST_INIT]) {
-    for (int i = 0; i < localnGpus; ++i) {
-      int dev = sDev + i;
-      CUDACHECK(cudaSetDevice(dev));
-      memset(hostbuffs[i], 0, size);
-      CUDACHECK(cudaMemset(sendbuffs[i], 1, size));
-      CUDACHECK(cudaMemset(recvbuffs[i], 0, size));
-    }
-    PRINT("\t================ Test fault tolerance for NCCL init ================\n");
-    for (int i = 0; i <= NUM_SLEEP_CASES; ++i) {
-      if (ncclProc == 0) {
-        NCCLCHECK(ncclGetUniqueId(&ncclId));
+  for (int ft_id = 0; ft_id < FT_TEST_NUM; ++ft_id) {
+    if (testEnable[ft_id]) {
+      for (int i = 0; i < localnGpus; ++i) {
+        int dev = sDev + i;
+        CUDACHECK(cudaSetDevice(dev));
+        memset(hostbuffs[i], 0, size);
+        CUDACHECK(cudaMemset(sendbuffs[i], 1, size));
+        CUDACHECK(cudaMemset(recvbuffs[i], 0, size));
       }
+      PRINT("\t================ Test fault tolerance for NCCL %s ================\n", testName[ft_id]);
+      for (int i = 0; i <= NUM_SLEEP_CASES; ++i) {
+        if (ncclProc == 0) {
+          NCCLCHECK(ncclGetUniqueId(&ncclId));
+        }
 #ifdef MPI_SUPPORT
-      MPI_Bcast(&ncclId, sizeof(ncclId), MPI_BYTE, 0, MPI_COMM_WORLD);
+        MPI_Bcast(&ncclId, sizeof(ncclId), MPI_BYTE, 0, MPI_COMM_WORLD);
 #endif
-      for (int t = nThreads - 1; t >= 0; t--) {
-        threads[t].args.ncclId = ncclId;
-        threads[t].args.sleepId = i;
-        threads[t].func = distributeFTInitTest;
-        if (t)
-          TESTCHECK(threadLaunch(threads + t));
-        else
-          TESTCHECK(threads[t].func(&threads[t].args));
-      }
+        for (int t = nThreads - 1; t >= 0; t--) {
+          threads[t].args.ncclId = ncclId;
+          threads[t].args.sleepId = i;
+          threads[t].func = testFuncs[ft_id];
+          if (t)
+            TESTCHECK(threadLaunch(threads + t));
+          else
+            TESTCHECK(threads[t].func(&threads[t].args));
+        }
 
-      for (int t = nThreads - 1; t > 0; t--) {
-        pthread_join(threads[t].thread, NULL);
-        TESTCHECK(threads[t].ret);
-      }
+        for (int t = nThreads - 1; t > 0; t--) {
+          pthread_join(threads[t].thread, NULL);
+          TESTCHECK(threads[t].ret);
+        }
 #ifdef MPI_SUPPORT
-      MPI_Barrier(MPI_COMM_WORLD);
+        MPI_Barrier(MPI_COMM_WORLD);
 #endif
-      if (i < NUM_SLEEP_CASES) {
-        PRINT("Distributed FT:\tSleep %dus, abort %d communicators at ncclCommInitRankConfig\t[SUCCESS]\n", sleepTimes[i], totalGpus);
-      } else {
-        PRINT("Distributed FT:\tInitialize %d communicators\t[SUCCESS]\n", totalGpus);
+        if (i < NUM_SLEEP_CASES) {
+          PRINT("Distributed FT:\tSleep %dus, abort %d communicators in %s\t[SUCCESS]\n", sleepTimes[i], totalGpus, testName[ft_id]);
+        }
       }
+      PRINT("Test fault tolerance for NCCL %s\t[SUCCESS]\n\n", testName[ft_id]);
     }
-    PRINT("Test fault tolerance for NCCL init\t[SUCCESS]\n\n");
-  }
-  
-  if (test_list[FT_TEST_ALLREDUCE]) {
-    for (int i = 0; i < localnGpus; ++i) {
-      int dev = sDev + i;
-      CUDACHECK(cudaSetDevice(dev));
-      memset(hostbuffs[i], 0, size);
-      CUDACHECK(cudaMemset(sendbuffs[i], 1, size));
-      CUDACHECK(cudaMemset(recvbuffs[i], 0, size));
-    }
-    PRINT("\t================ Test fault tolerance for NCCL allreduce ================\n");
-    for (int i = 0; i <= NUM_SLEEP_CASES; ++i) {
-      if (ncclProc == 0) {
-        NCCLCHECK(ncclGetUniqueId(&ncclId));
-      }
-#ifdef MPI_SUPPORT
-      MPI_Bcast(&ncclId, sizeof(ncclId), MPI_BYTE, 0, MPI_COMM_WORLD);
-#endif
-      for (int t = nThreads - 1; t >= 0; t--) {
-        threads[t].args.ncclId = ncclId;
-        threads[t].args.sleepId = i;
-        threads[t].func = distributeFTAllreduceTest;
-        if (t)
-          TESTCHECK(threadLaunch(threads + t));
-        else
-          TESTCHECK(threads[t].func(&threads[t].args));
-      }
-
-      for (int t = nThreads - 1; t > 0; t--) {
-        pthread_join(threads[t].thread, NULL);
-        TESTCHECK(threads[t].ret);
-      }
-#ifdef MPI_SUPPORT
-      MPI_Barrier(MPI_COMM_WORLD);
-#endif
-      if (i < NUM_SLEEP_CASES) {
-        PRINT("Distributed FT:\tSleep %dus, abort %d communicators at ncclAllReduce\t[SUCCESS]\n", sleepTimes[i], totalGpus);
-      } else {
-        PRINT("Distributed FT:\t %d number of ncclAllReduce issue\t[SUCCESS]\n", totalGpus);
-      }
-    }
-    PRINT("Test fault tolerance for NCCL allreduce\t[SUCCESS]\n\n");
-  }
-  
-  if (test_list[FT_TEST_ALLTOALL]) {
-    for (int i = 0; i < localnGpus; ++i) {
-      int dev = sDev + i;
-      CUDACHECK(cudaSetDevice(dev));
-      memset(hostbuffs[i], 0, size);
-      CUDACHECK(cudaMemset(sendbuffs[i], 1, size));
-      CUDACHECK(cudaMemset(recvbuffs[i], 0, size));
-    }
-    PRINT("\t================ Test fault tolerance for NCCL alltoall ================\n");
-    for (int i = 0; i <= NUM_SLEEP_CASES; ++i) {
-      if (ncclProc == 0) {
-        NCCLCHECK(ncclGetUniqueId(&ncclId));
-      }
-#ifdef MPI_SUPPORT
-      MPI_Bcast(&ncclId, sizeof(ncclId), MPI_BYTE, 0, MPI_COMM_WORLD);
-#endif
-      for (int t = nThreads - 1; t >= 0; t--) {
-        threads[t].args.ncclId = ncclId;
-        threads[t].args.sleepId = i;
-        threads[t].func = distributeFTAlltoAllTest;
-        if (t)
-          TESTCHECK(threadLaunch(threads + t));
-        else
-          TESTCHECK(threads[t].func(&threads[t].args));
-      }
-
-      for (int t = nThreads - 1; t > 0; t--) {
-        pthread_join(threads[t].thread, NULL);
-        TESTCHECK(threads[t].ret);
-      }
-#ifdef MPI_SUPPORT
-      MPI_Barrier(MPI_COMM_WORLD);
-#endif
-      if (i < NUM_SLEEP_CASES) {
-        PRINT("Distributed FT:\tSleep %dus, abort %d communicators at NCCL alltoall\t[SUCCESS]\n", sleepTimes[i], totalGpus);
-      } else {
-        PRINT("Distributed FT:\t %d number of NCCL alltoall issue\t[SUCCESS]\n", totalGpus);
-      }
-    }
-    PRINT("Test fault tolerance for NCCL alltoall\t[SUCCESS]\n\n");
   }
 
-  if (test_list[FT_TEST_FINALIZE]) {
-    for (int i = 0; i < localnGpus; ++i) {
-      int dev = sDev + i;
-      CUDACHECK(cudaSetDevice(dev));
-      memset(hostbuffs[i], 0, size);
-      CUDACHECK(cudaMemset(sendbuffs[i], 1, size));
-      CUDACHECK(cudaMemset(recvbuffs[i], 0, size));
-    }
-    PRINT("\t================ Test fault tolerance for NCCL finalize ================\n");
-    for (int i = 0; i <= NUM_SLEEP_CASES; ++i) {
-      if (ncclProc == 0) {
-        NCCLCHECK(ncclGetUniqueId(&ncclId));
-      }
-#ifdef MPI_SUPPORT
-      MPI_Bcast(&ncclId, sizeof(ncclId), MPI_BYTE, 0, MPI_COMM_WORLD);
-#endif
-      for (int t = nThreads - 1; t >= 0; t--) {
-        threads[t].args.ncclId = ncclId;
-        threads[t].args.sleepId = i;
-        threads[t].func = distributeFTFinalizeTest;
-        if (t)
-          TESTCHECK(threadLaunch(threads + t));
-        else
-          TESTCHECK(threads[t].func(&threads[t].args));
-      }
-
-      for (int t = nThreads - 1; t > 0; t--) {
-        pthread_join(threads[t].thread, NULL);
-        TESTCHECK(threads[t].ret);
-      }
-#ifdef MPI_SUPPORT
-      MPI_Barrier(MPI_COMM_WORLD);
-#endif
-      if (i < NUM_SLEEP_CASES) {
-        PRINT("Distributed FT:\tSleep %dus, abort %d communicators at ncclCommFinalize\t[SUCCESS]\n", sleepTimes[i], totalGpus);
-      } else {
-        PRINT("Distributed FT:\tDestroy %d communicators\t[SUCCESS]\n", totalGpus);
-      }
-    }
-    PRINT("Test fault tolerance for NCCL finalize\t[SUCCESS]\n\n");
+  for (int t = nThreads - 1; t >= 0; t--) {
+    free(threads[t].args.sendbuffs);
+    free(threads[t].args.recvbuffs);
+    free(threads[t].args.comms);
   }
-
   finalizeBufferStream(sendbuffs, recvbuffs, hostbuffs, streams, localnGpus);
   free(sendbuffs);
   free(recvbuffs);

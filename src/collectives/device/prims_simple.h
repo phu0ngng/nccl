@@ -474,8 +474,8 @@ class Primitives<
     if (flags & (RoleWaitRecv|RolePostRecv)) peer = recvPeers[index];
     if (flags & (RoleWaitSend|RolePostSend)) peer = sendPeers[index];
 
-    loadRecvConn(&ncclShmem.channel.peers[peer], connIndexRecv, e);
-    loadSendConn(&ncclShmem.channel.peers[peer], connIndexSend, e);
+    loadRecvConn(ncclShmem.channel.peers[peer], connIndexRecv, e);
+    loadSendConn(ncclShmem.channel.peers[peer], connIndexSend, e);
 
     setDataPtrs(inputBuf, outputBuf, redOpArg, (struct ncclWorkElemReg*)e);
   }

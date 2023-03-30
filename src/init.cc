@@ -174,8 +174,9 @@ static ncclResult_t commFree(ncclComm_t comm) {
   /* in commReclaim, we have guaranteed only last rank which calls ncclCommDestroy() will
    * free all intra-process communicators; therefore, we only need to focus on local
    * resource cleanup in commFree(). */
-  if (comm->proxyState.thread)
-    pthread_join(comm->proxyState.thread, nullptr);
+  if (comm->proxyState->refCount == 0 && comm->proxyState->thread) {
+    pthread_join(comm->proxyState->thread, nullptr);
+  }
 
   delete[] comm->userRedOps;
 
@@ -191,16 +192,26 @@ static ncclResult_t commFree(ncclComm_t comm) {
   }
   free(comm->rankToNode);
   free(comm->rankToLocalRank);
+  free(comm->collNetHeads);
 
   if (comm->bootstrap)
     NCCLCHECK(bootstrapClose(comm->bootstrap));
 
   for (int channel=0; channel<MAXCHANNELS; channel++)
-    NCCLCHECK(freeChannel(comm->channels+channel, comm->nRanks));
+    NCCLCHECK(freeChannel(comm->channels+channel, comm->nRanks, 1, comm->localRanks));
 
-  if (comm->initState == ncclSuccess) {
-    NCCLCHECK(ncclStrongStreamDestruct(&comm->hostStream));
-    NCCLCHECK(ncclStrongStreamDestruct(&comm->deviceStream));
+  if (comm->sharedRes) {
+    if (__atomic_sub_fetch(&comm->sharedRes->refCount, 1, __ATOMIC_RELAXED) == 0) {
+      for (int c=0; c<MAXCHANNELS; c++) {
+        if (comm->sharedRes->peers[c]) free(comm->sharedRes->peers[c]);
+        if (comm->sharedRes->devPeers[c]) ncclCudaFree(comm->sharedRes->devPeers[c]);
+      }
+      free(comm->sharedRes->tpRankToLocalRank);
+      NCCLCHECK(ncclStrongStreamDestruct(&comm->sharedRes->hostStream));
+      NCCLCHECK(ncclStrongStreamDestruct(&comm->sharedRes->deviceStream));
+      NCCLCHECK(ncclProxyDestroy(comm));
+      free(comm->sharedRes);
+    }
   }
 
   if (comm->nvlsSupport) NCCLCHECK(ncclNvlsFree(comm));
@@ -214,8 +225,14 @@ static ncclResult_t commFree(ncclComm_t comm) {
   ncclMemoryStackDestruct(&comm->memScoped);
   ncclMemoryStackDestruct(&comm->memPermanent);
 
-  ncclCudaHostFree((void *)comm->abortFlag);
-  free(comm->netName);
+  if (__atomic_sub_fetch(comm->abortFlagRefCount, 1, __ATOMIC_RELAXED) == 0) {
+    NCCLCHECK(ncclCudaHostFree((void *)comm->abortFlag));
+    free(comm->abortFlagRefCount);
+  }
+  free((void*)comm->config.netName);
+
+  free(comm->topParentRanks);
+  free(comm->topParentLocalRanks);
 
   commPoison(comm); // poison comm before free to avoid comm reuse.
   free(comm);
@@ -271,7 +288,7 @@ exit:
   return ret;
 }
 
-static ncclResult_t commAlloc(ncclComm_t* comret, int ndev, int rank) {
+static ncclResult_t commAlloc(struct ncclComm* comm, struct ncclComm* parent, int ndev, int rank) {
   if (ndev < 1) {
     WARN("invalid device count (%d) requested", ndev);
     return ncclInvalidArgument;
@@ -281,20 +298,6 @@ static ncclResult_t commAlloc(ncclComm_t* comret, int ndev, int rank) {
     return ncclInvalidArgument;
   }
 
-  struct ncclComm* comm;
-  /* Cuurently we calloc comm in ncclCommInitRankDev for async function support.
-   * This 'if' structure is designed to consider the case where commAlloc is called
-   * in other cases except ncclCommInitRankDev. */
-  if (*comret == NULL) {
-    /* user requests a new communicator */
-    NCCLCHECK(ncclCalloc(&comm, 1));
-    NCCLCHECK(ncclCudaHostCalloc((uint32_t**)&comm->abortFlag, 1));
-    NCCLCHECK(ncclCommSetAsyncError(comm, ncclInProgress));
-  } else {
-    /* We already allocated a communicator in ncclCommInitRankDev. */
-    comm = *comret;
-  }
-
   ncclMemoryStackConstruct(&comm->memPermanent);
   ncclMemoryStackConstruct(&comm->memScoped);
   comm->destructorHead = nullptr;
@@ -302,14 +305,18 @@ static ncclResult_t commAlloc(ncclComm_t* comret, int ndev, int rank) {
   comm->nRanks = ndev;
 
   NCCLCHECK(ncclNetInit(comm));
-  INFO(NCCL_INIT, "Using network %s", ncclNetName(comm));
+  INFO(NCCL_INIT, "Using network %s", comm->ncclNet->name);
 
+  if (parent && parent->config.splitShare) {
+    if (parent->ncclNet != comm->ncclNet) {
+      WARN("Split shares resources, but parent comm netName %s is different from child comm netName %s", parent->ncclNet->name, comm->ncclNet->name);
+      return ncclInvalidUsage;
+    }
+  }
   // Try to create a CUDA object right away. If there is something wrong with
   // the device we're on (failure cause #1) , better know it early.
-  NCCLCHECK(ncclStrongStreamConstruct(&comm->deviceStream));
-  NCCLCHECK(ncclStrongStreamConstruct(&comm->hostStream));
+  CUDACHECK(cudaGetDevice(&comm->cudaDev));
 
-  cudaGetDevice(&comm->cudaDev);
   NCCLCHECK(getBusId(comm->cudaDev, &comm->busId));
   comm->compCap = ncclCudaCompCap();
   TRACE(NCCL_INIT,"comm %p rank %d nranks %d cudaDev %d busId %lx compCap %d", comm, rank, ndev, comm->cudaDev, comm->busId, comm->compCap);
@@ -335,9 +342,30 @@ static ncclResult_t commAlloc(ncclComm_t* comret, int ndev, int rank) {
   // Mark channels as non initialized.
   for (int c=0; c < MAXCHANNELS; c++) comm->channels[c].id = -1;
 
-  ncclIntruQueueMpscConstruct(&comm->callbackQueue);
+  if (parent == NULL || !parent->config.splitShare) {
+    struct ncclSharedResources* sharedRes = NULL;
+    NCCLCHECK(ncclCalloc(&sharedRes, 1));
+    /* most of attributes are assigned later in initTransportsRank(). */
+    sharedRes->owner = comm;
+    sharedRes->tpNRanks = comm->nRanks;
+    NCCLCHECK(ncclCalloc(&sharedRes->tpRankToLocalRank, comm->nRanks));
+    NCCLCHECK(ncclStrongStreamConstruct(&sharedRes->deviceStream));
+    NCCLCHECK(ncclStrongStreamConstruct(&sharedRes->hostStream));
+    NCCLCHECK(ncclCalloc(&sharedRes->proxyState, 1));
+    comm->sharedRes = sharedRes;
+    sharedRes->refCount = 1;
+  } else {
+    comm->sharedRes = parent->sharedRes;
+    __atomic_add_fetch(&parent->sharedRes->refCount, 1, __ATOMIC_RELAXED);
+  }
 
-  *comret = comm;
+  if (comm->topParentRanks == NULL) {
+    NCCLCHECK(ncclCalloc(&comm->topParentRanks, comm->nRanks));
+    for (int i = 0; i < comm->nRanks; ++i)
+      comm->topParentRanks[i] = i;
+  }
+
+  ncclIntruQueueMpscConstruct(&comm->callbackQueue);
   return ncclSuccess;
 }
 
@@ -347,8 +375,8 @@ static ncclResult_t devCommSetup(ncclComm_t comm) {
   struct ncclDevCommAndChannels tmpCommAndChans;
   struct ncclDevCommAndChannels *devCommAndChans = NULL;
 
-  NCCLCHECKGOTO(ncclStrongStreamAcquireUncaptured(&comm->deviceStream), ret, fail);
-  NCCLCHECKGOTO(ncclCudaCallocAsync(&devCommAndChans, 1, comm->deviceStream.cudaStream), ret, fail);
+  NCCLCHECKGOTO(ncclStrongStreamAcquireUncaptured(&comm->sharedRes->deviceStream), ret, fail);
+  NCCLCHECKGOTO(ncclCudaCallocAsync(&devCommAndChans, 1, comm->sharedRes->deviceStream.cudaStream), ret, fail);
   ncclCommPushCudaFree(comm, devCommAndChans);
   comm->devComm = &devCommAndChans->comm;
   tmpCommAndChans.comm.rank = comm->rank;
@@ -395,14 +423,14 @@ static ncclResult_t devCommSetup(ncclComm_t comm) {
     tmpCommAndChans.channels[c].workFifoDone = &comm->workFifoDone[c];
 
     if (comm->channels[c].ring.userRanks != nullptr) {
-      NCCLCHECKGOTO(ncclCudaMemcpyAsync(tmpCommAndChans.channels[c].ring.userRanks, comm->channels[c].ring.userRanks, nRanks, comm->deviceStream.cudaStream), ret, fail);
+      NCCLCHECKGOTO(ncclCudaMemcpyAsync(tmpCommAndChans.channels[c].ring.userRanks, comm->channels[c].ring.userRanks, nRanks, comm->sharedRes->deviceStream.cudaStream), ret, fail);
     }
   }
 
-  NCCLCHECKGOTO(ncclCudaMemcpyAsync(devCommAndChans, &tmpCommAndChans, 1, comm->deviceStream.cudaStream), ret, fail);
+  NCCLCHECKGOTO(ncclCudaMemcpyAsync(devCommAndChans, &tmpCommAndChans, 1, comm->sharedRes->deviceStream.cudaStream), ret, fail);
 exit:
-  CUDACHECK(cudaStreamSynchronize(comm->deviceStream.cudaStream));
-  NCCLCHECK(ncclStrongStreamRelease(ncclCudaGraphNone(), &comm->deviceStream));
+  CUDACHECK(cudaStreamSynchronize(comm->sharedRes->deviceStream.cudaStream));
+  NCCLCHECK(ncclStrongStreamRelease(ncclCudaGraphNone(), &comm->sharedRes->deviceStream));
   return ret;
 fail:
   goto exit;
@@ -488,6 +516,13 @@ static ncclResult_t computeBuffSizes(struct ncclComm* comm) {
   if (comm->nNodes > 1) comm->p2pChunkSize = ncclParamP2pNetChunkSize();
   else if (ncclTopoPathAllNVLink(comm->topo)) comm->p2pChunkSize = ncclParamP2pNvlChunkSize();
   else comm->p2pChunkSize = ncclParamP2pPciChunkSize();
+  if (comm->sharedRes->owner != comm) {
+    /* make sure split comm p2pChunkSize won't exceed shared p2pChunkSize. */
+    comm->p2pChunkSize = std::min(comm->p2pChunkSize, comm->sharedRes->tpP2pChunkSize);
+  } else {
+    comm->sharedRes->tpP2pChunkSize = comm->p2pChunkSize;
+  }
+    
   INFO(NCCL_INIT, "P2P Chunksize set to %d", comm->p2pChunkSize);
   return ncclSuccess;
 }
@@ -497,7 +532,7 @@ NCCL_PARAM(CollNetNodeThreshold, "COLLNET_NODE_THRESHOLD", 2);
 NCCL_PARAM(NvbPreconnect, "NVB_PRECONNECT", 1);
 NCCL_PARAM(AllocP2pNetLLBuffers, "ALLOC_P2P_NET_LL_BUFFERS", 0);
 
-static ncclResult_t collNetTrySetup(ncclComm_t comm, struct ncclTopoGraph* collNetGraph) {
+static ncclResult_t collNetTrySetup(ncclComm_t comm, ncclComm_t parent, struct ncclTopoGraph* collNetGraph) {
   ncclResult_t ret = ncclSuccess;
   int* heads = NULL;
   int rank = comm->rank;
@@ -507,7 +542,13 @@ static ncclResult_t collNetTrySetup(ncclComm_t comm, struct ncclTopoGraph* collN
   int nHeads = collNetGraph->nChannels;
   int highestTransportType0, highestTransportType1;
   char line[1024];
-  comm->collNetChannels = std::max(comm->nChannels, comm->nvlsChannels);
+  bool share;
+  
+  struct collnetShareInfo {
+    int headPosition;
+    int isMaster;
+  };
+  struct collnetShareInfo* infos = NULL;
 
   NCCLCHECKGOTO(ncclCalloc(&heads, nHeads), ret, fail);
   // Head GPU index is always 0
@@ -515,18 +556,82 @@ static ncclResult_t collNetTrySetup(ncclComm_t comm, struct ncclTopoGraph* collN
     heads[c] = collNetGraph->intra[c * comm->localRanks + 0];
   }
 
-  for (int c = 0; c < comm->collNetChannels; c++) {
-    struct ncclChannel* channel = comm->channels + c;
-    for (int h = 0; h < nHeads; h++) {
-      const int head = heads[h];
-      collNetSetupFail |= ncclTransportCollNetSetup(comm, collNetGraph, channel, head, head, h, collNetRecv);
-      if (!collNetSetupFail) collNetSetupFail |= ncclTransportCollNetSetup(comm, collNetGraph, channel, head, head, h, collNetSend);
+  comm->collNetHeads = heads;
+  comm->collNetHeadsNum = nHeads;
+  if (parent && parent->collNetSupport && parent->config.splitShare && parent->nNodes == comm->nNodes) {
+    NCCLCHECKGOTO(ncclCalloc(&infos, comm->nRanks), ret, fail);
+    for (int h = 0; h < nHeads; ++h) {
+      int prev = INT_MIN;
+      struct collnetShareInfo* myinfo;
+
+      share = true;
+      myinfo = infos + comm->rank;
+      memset(myinfo, 0, sizeof(struct collnetShareInfo));
+      /* find the child head position in parent collnet heads. */
+      if (heads[h] == comm->rank) {
+        myinfo->headPosition = -1;
+        myinfo->isMaster = 1;
+        for (int th = 0; th < parent->collNetHeadsNum; ++th)
+          if (parent->topParentRanks[parent->collNetHeads[th]] == comm->topParentRanks[comm->rank]) {
+            myinfo->headPosition = th;
+            break;
+          }  
+      }
+
+      NCCLCHECKGOTO(bootstrapAllGather(comm->bootstrap, infos, sizeof(struct collnetShareInfo)), ret, fail);
+      for (int i = 0; i < comm->nRanks; ++i) {
+        if (infos[i].isMaster) {
+          if (prev == INT_MIN)
+            prev = infos[i].headPosition;
+
+          if (infos[i].headPosition == -1 || prev != infos[i].headPosition) {
+            share = false;
+            break;
+          }
+        }
+      }
+
+      if (share) {
+        if (myinfo->isMaster) {
+          comm->collNetSharedRes = parent->collNetSharedRes;
+          comm->collNetChannels = std::min(std::max(comm->nChannels, comm->nvlsChannels), parent->collNetSharedRes->nChannels);
+          for (int c = 0; c < comm->collNetChannels; ++c)
+            NCCLCHECKGOTO(initCollnetChannel(comm, c, parent, true), ret, fail);
+        }
+      } else {
+        /* TODO: CX-6 and CX-7 both do not support multiple sharp resources per process, if child comm cannot
+         * share the sharp resource from parent, we cannot use sharp in this case. This restriction might be
+         * lifted by sharp plugin/IB hardware in the future. */
+        collNetSetupFail = 1;
+        if (comm->rank == 0) {
+          WARN("Child comms (nRanks %d) fails to share parent comms (nRanks %d) sharp resources", comm->nRanks, parent->nRanks);
+        }
+        goto fail;
+      }
     }
-    // Verify CollNet setup across ranks after trying the first channel
-    if (c == 0) {
-      NCCLCHECKGOTO(ncclTransportCollNetCheck(comm, collNetSetupFail), ret, fail);
+    share = true;
+  } else {
+    /* this allocated buffer will be freed on proxy side */
+    NCCLCHECK(ncclCalloc(&comm->collNetSharedRes, 1));
+    /* TODO: min or max? */
+    comm->collNetChannels = comm->collNetSharedRes->nChannels = std::max(comm->nChannels, comm->nvlsChannels);
+    comm->collNetSharedRes->buffSize = comm->buffSizes[NCCL_PROTO_SIMPLE];
+    for (int c = 0; c < comm->collNetChannels; c++) {
+      struct ncclChannel* channel = comm->channels + c;
+      NCCLCHECKGOTO(initCollnetChannel(comm, c, parent, false), ret, fail);
+      for (int h = 0; h < nHeads; h++) {
+        const int head = heads[h];
+        collNetSetupFail |= ncclTransportCollNetSetup(comm, collNetGraph, channel, head, head, h, collNetRecv);
+        if (!collNetSetupFail) collNetSetupFail |= ncclTransportCollNetSetup(comm, collNetGraph, channel, head, head, h, collNetSend);
+      }
+      // Verify CollNet setup across ranks after trying the first channel
+      if (c == 0) {
+        NCCLCHECKGOTO(ncclTransportCollNetCheck(comm, collNetSetupFail), ret, fail);
+      }
     }
+    share = false;
   }
+
   // Verify CollNet setup across ranks after trying all channels
   NCCLCHECKGOTO(ncclTransportCollNetCheck(comm, collNetSetupFail), ret, fail);
   TRACE(NCCL_INIT, "rank %d Connected inter-node CollNet", rank);
@@ -569,6 +674,9 @@ static ncclResult_t collNetTrySetup(ncclComm_t comm, struct ncclTopoGraph* collN
   // Exchange highest intra-node transport type among ranks
   // because we need to know whether all ranks can p2p each other to determine whether we can directly read/write registered user buffer
   comm->intraHighestTransportType = highestTypes[comm->localRank] = highestTransportType0 > highestTransportType1 ? highestTransportType0 : highestTransportType1;
+  if (share) {
+    comm->intraHighestTransportType = std::max(comm->intraHighestTransportType, parent->intraHighestTransportType);
+  }
   NCCLCHECKGOTO(bootstrapIntraNodeAllGather(comm->bootstrap, comm->localRankToRank, comm->localRank, comm->localRanks, highestTypes, sizeof(int)), ret, fail);
   for (int i = 0; i < comm->localRanks; i++) {
     if (highestTypes[i] > comm->intraHighestTransportType)
@@ -578,7 +686,7 @@ static ncclResult_t collNetTrySetup(ncclComm_t comm, struct ncclTopoGraph* collN
   INFO(NCCL_INIT, "rank %d Connected CollNet", rank);
 
 exit:
-  free(heads);
+  free(infos);
   return ret;
 fail:
   ncclTransportCollNetFree(comm);
@@ -586,14 +694,13 @@ fail:
   goto exit;
 }
 
-static ncclResult_t initTransportsRank(struct ncclComm* comm, ncclUniqueId* commId) {
+static ncclResult_t initTransportsRank(struct ncclComm* comm, struct ncclComm* parent = NULL) {
   // We use 2 AllGathers
   // 1. { peerInfo, comm, compCap}
   // 2. { nChannels, graphInfo, topoRanks }
   ncclResult_t ret = ncclSuccess;
   int rank = comm->rank;
   int nranks = comm->nRanks;
-  uint64_t commHash = getHash(commId->internal, NCCL_UNIQUE_ID_BYTES);
   cpu_set_t affinitySave;
   struct ncclTopoGraph ringGraph;
   struct ncclTopoGraph treeGraph;
@@ -627,13 +734,12 @@ static ncclResult_t initTransportsRank(struct ncclComm* comm, ncclUniqueId* comm
   int* nvbPeers = NULL;
   struct ncclProxyConnector proxyConn;
   int* pxnPeers = NULL;
-
-  TRACE(NCCL_INIT, "comm %p, commHash %lx, rank %d nranks %d - BEGIN", comm, commHash, rank, nranks);
-  NCCLCHECKGOTO(bootstrapInit((struct ncclBootstrapHandle*)commId, comm), ret, fail);
-
+  int *topParentLocalRanks = NULL;
+  int tpProxyRank;
+  
   // AllGather1 - begin
   NCCLCHECKGOTO(ncclCalloc(&comm->peerInfo, nranks+1), ret, fail); // Extra rank to represent CollNet root
-  NCCLCHECKGOTO(fillInfo(comm, comm->peerInfo+rank, commHash), ret, fail);
+  NCCLCHECKGOTO(fillInfo(comm, comm->peerInfo+rank, comm->commHash), ret, fail);
   NCCLCHECKGOTO(bootstrapAllGather(comm->bootstrap, comm->peerInfo, sizeof(struct ncclPeerInfo)), ret, fail);
 
   for (int i = 0; i < nranks; i++) {
@@ -702,9 +808,6 @@ static ncclResult_t initTransportsRank(struct ncclComm* comm, ncclUniqueId* comm
     sched_getaffinity(0, sizeof(cpu_set_t), &affinitySave);
     sched_setaffinity(0, sizeof(cpu_set_t), &comm->cpuAffinity);
   }
-
-  // Launch proxy service thread
-  NCCLCHECKGOTO(ncclProxyCreate(comm), ret, fail);
 
   // Get rings and trees
   ringGraph.id = 0;
@@ -889,6 +992,29 @@ static ncclResult_t initTransportsRank(struct ncclComm* comm, ncclUniqueId* comm
 
   NCCLCHECKGOTO(computeBuffSizes(comm), ret, fail);
 
+  // Compute nChannels per peer for p2p
+  NCCLCHECKGOTO(ncclTopoComputeP2pChannels(comm), ret, fail);
+
+  /* until now, all info of comm should be known. We can initialize shared resources and 
+   * map localRanks to top parent local ranks. NOTE: this shareRes init must be put before
+   * all proxy operations. */
+  if (comm->sharedRes->owner == comm) {
+    comm->sharedRes->tpNLocalRanks = comm->localRanks;
+    comm->sharedRes->magic = comm->magic;
+    comm->sharedRes->tpNChannels = comm->nChannels;
+    comm->sharedRes->tpP2pNChannels = comm->p2pnChannels;
+    memcpy(comm->sharedRes->tpRankToLocalRank, comm->rankToLocalRank, sizeof(int) * comm->nRanks);
+  }
+  NCCLCHECKGOTO(ncclCalloc(&topParentLocalRanks, comm->localRanks), ret, fail);
+  for (int i = 0; i < comm->localRanks; ++i) {
+    int tpRank = comm->topParentRanks[comm->localRankToRank[i]];
+    topParentLocalRanks[i] = comm->sharedRes->tpRankToLocalRank[tpRank];
+  }
+  comm->topParentLocalRanks = topParentLocalRanks;
+
+  // Launch proxy service thread, after this, the proxy calls can be used.
+  NCCLCHECKGOTO(ncclProxyCreate(comm), ret, fail);
+
   // Connect with prev/next for each ring
   for (int c=0; c<comm->nChannels; c++) {
     struct ncclChannel* channel = comm->channels+c;
@@ -910,7 +1036,7 @@ static ncclResult_t initTransportsRank(struct ncclComm* comm, ncclUniqueId* comm
   INFO(NCCL_INIT, "Connected all trees");
 
   // Setup NVLS
-  NCCLCHECKGOTO(ncclNvlsSetup(comm), ret, fail);
+  NCCLCHECKGOTO(ncclNvlsSetup(comm, parent), ret, fail);
   // And NVLS trees if needed
   if (comm->nvlsSupport && comm->localRanks > 1) {
     for (int c=0; c<comm->nvlsChannels; c++) {
@@ -923,15 +1049,12 @@ static ncclResult_t initTransportsRank(struct ncclComm* comm, ncclUniqueId* comm
   }
 
   // Check if we can setup CollNet
-  if (comm->collNetSupport > 0) collNetTrySetup(comm, &collNetGraph);
+  if (comm->collNetSupport > 0) collNetTrySetup(comm, parent, &collNetGraph);
 
   TRACE(NCCL_INIT, "rank %d nranks %d - CONNECTED %d RINGS AND TREES", rank, nranks, comm->nChannels);
 
   // Compute time models for algorithm and protocol combinations
   NCCLCHECKGOTO(ncclTopoTuneModel(comm, comm->minCompCap, comm->maxCompCap, graphs), ret, fail);
-
-  // Compute nChannels per peer for p2p
-  NCCLCHECKGOTO(ncclTopoComputeP2pChannels(comm), ret, fail);
 
   INFO(NCCL_INIT, "%d coll channels, %d nvls channels, %d p2p channels, %d p2p channels per peer", comm->nChannels, comm->nvlsChannels, comm->p2pnChannels, comm->p2pnChannelsPerPeer);
 
@@ -990,13 +1113,13 @@ static ncclResult_t initTransportsRank(struct ncclComm* comm, ncclUniqueId* comm
       int channelId;
       for (int c=0; c<comm->p2pnChannelsPerPeer; c++) {
         NCCLCHECKGOTO(ncclChannelCompute(comm, peer, c, ncclFuncSend, &channelId), ret, fail);
-        if (comm->channels[channelId].peers[peer].send[1].connected == 0) {
+        if (comm->channels[channelId].peers[peer]->send[1].connected == 0) {
           comm->connectSend[peer] |= (1UL<<channelId);
         }
       }
       for (int c=0; c<comm->p2pnChannelsPerPeer; c++) {
         NCCLCHECKGOTO(ncclChannelCompute(comm, peer, c, ncclFuncRecv, &channelId), ret, fail);
-        if (comm->channels[channelId].peers[peer].recv[1].connected == 0) {
+        if (comm->channels[channelId].peers[peer]->recv[1].connected == 0) {
           comm->connectRecv[peer] |= (1UL<<channelId);
         }
       }
@@ -1006,16 +1129,18 @@ static ncclResult_t initTransportsRank(struct ncclComm* comm, ncclUniqueId* comm
   }
 
   // Connect to local net proxy
-  NCCLCHECKGOTO(ncclProxyConnect(comm, TRANSPORT_NET, 1, comm->rank, &proxyConn), ret, fail);
-  NCCLCHECKGOTO(ncclProxyCallBlocking(&proxyConn, ncclProxyMsgSharedInit, &comm->p2pnChannels, sizeof(int), NULL, 0), ret, fail);
+  tpProxyRank = comm->topParentRanks[comm->rank];
+  NCCLCHECKGOTO(ncclProxyConnect(comm, TRANSPORT_NET, 1, tpProxyRank, &proxyConn), ret, fail);
+  NCCLCHECKGOTO(ncclProxyCallBlocking(comm, &proxyConn, ncclProxyMsgSharedInit, &comm->p2pnChannels, sizeof(int), NULL, 0), ret, fail);
 
   // Then to remote ones when using PXN
   if (ncclPxnDisable(comm) == 0) {
     int nranks;
     NCCLCHECKGOTO(ncclTopoGetPxnRanks(comm, &pxnPeers, &nranks), ret, fail);
     for (int r=0; r<nranks; r++) {
-      NCCLCHECKGOTO(ncclProxyConnect(comm, TRANSPORT_NET, 1, pxnPeers[r], &proxyConn), ret, fail);
-      NCCLCHECKGOTO(ncclProxyCallBlocking(&proxyConn, ncclProxyMsgSharedInit, &comm->p2pnChannels, sizeof(int), NULL, 0), ret, fail);
+      tpProxyRank = comm->topParentRanks[pxnPeers[r]];
+      NCCLCHECKGOTO(ncclProxyConnect(comm, TRANSPORT_NET, 1, tpProxyRank, &proxyConn), ret, fail);
+      NCCLCHECKGOTO(ncclProxyCallBlocking(comm, &proxyConn, ncclProxyMsgSharedInit, &comm->p2pnChannels, sizeof(int), NULL, 0), ret, fail);
     }
   }
 
@@ -1048,8 +1173,10 @@ static ncclResult_t initTransportsRank(struct ncclComm* comm, ncclUniqueId* comm
 
 exit:
   if (CPU_COUNT(&comm->cpuAffinity)) sched_setaffinity(0, sizeof(cpu_set_t), &affinitySave);
-  // Unlink proxy shm to make sure it will be properly cleaned up.
-  ncclProxyShmUnlink(comm);
+  /* If split resource is shared, we are not able to unlink the proxy ops pool here since the child comm can 
+   * attach the proxy ops pool of parent at any time; otherwise, unlink it here to make sure the pool will be 
+   * properly cleaned up. */ 
+  if (comm->sharedRes->owner == comm && !comm->config.splitShare) ncclProxyShmUnlink(comm);
   free(allTopoRanks);
   free(nodesTreePatterns);
   free(nodesFirstRank);
@@ -1071,10 +1198,14 @@ NCCL_PARAM(MinCTAs, "MIN_CTAS", NCCL_CONFIG_UNDEF_INT);
 
 struct ncclCommInitRankAsyncJob {
   struct ncclAsyncJob base;
-  ncclComm_t* newcomm;
+  struct ncclComm* comm;
+  int cudaDev;
+  // For ncclCommInitRank
   int nranks, myrank;
   ncclUniqueId commId;
-  int cudaDev;
+  // for ncclCommSplit
+  struct ncclComm* parent;
+  int color, key;
 };
 
 struct ncclCommFinalizeAsyncJob {
@@ -1082,42 +1213,111 @@ struct ncclCommFinalizeAsyncJob {
   ncclComm_t comm;
 };
 
+NCCL_PARAM(CommSplitShareResources, "COMM_SPLIT_SHARE_RESOURCES", NCCL_CONFIG_UNDEF_INT);
+
+static ncclResult_t commGetSplitInfo(struct ncclComm* comm, struct ncclComm* parent, int color, int key, int* nRanksRet, int* myRankRet, int* parentRanksRet) {
+  int* colors = NULL;
+  int* keys = NULL;
+  int nRanks = 0, myRank = 0;
+  ncclResult_t ret = ncclSuccess;
+
+  NCCLCHECKGOTO(ncclCalloc(&colors, parent->nRanks), ret, fail);
+  NCCLCHECKGOTO(ncclCalloc(&keys, parent->nRanks), ret, fail);
+
+  // Compute nRanks, my rank and the ranks (of the original comm) before and after me
+  colors[parent->rank] = color;
+  keys[parent->rank] = key;
+  NCCLCHECKGOTO(bootstrapAllGather(parent->bootstrap, colors, sizeof(int)), ret, fail);
+  NCCLCHECKGOTO(bootstrapAllGather(parent->bootstrap, keys, sizeof(int)), ret, fail);
+
+  // Negative color does not create a new comm. Return now.
+  if (color == NCCL_SPLIT_NOCOLOR) goto exit;
+
+  memset(parentRanksRet, 0xff, sizeof(int) * parent->nRanks);
+  for (int i = 0; i < parent->nRanks; i++) {
+    if (colors[i] != color) continue;
+    // Find where to insert this rank
+    int insert = 0;
+    while (insert < nRanks && keys[parentRanksRet[insert]] <= keys[i]) insert++;
+    // Shift ranks by one after insert
+    for (int r = nRanks; r > insert; r--) parentRanksRet[r] = parentRanksRet[r - 1];
+    // Insert our rank
+    parentRanksRet[insert] = i;
+    nRanks++;
+  }
+
+  for (int i = 0; i < nRanks; i++) {
+    if (parentRanksRet[i] == parent->rank) myRank = i;
+  }
+
+  *nRanksRet = nRanks;
+  *myRankRet = myRank;
+
+exit:
+  free(colors);
+  free(keys);
+  return ret;
+fail:
+  goto exit;
+}
+
 static ncclResult_t ncclCommInitRankFunc(struct ncclAsyncJob* job_) {
   struct ncclCommInitRankAsyncJob* job = (struct ncclCommInitRankAsyncJob*)job_;
-  ncclComm_t* newcomm = job->newcomm;
-  ncclComm_t comm = *newcomm;
-  int nranks = job->nranks;
-  ncclUniqueId commId = job->commId; // C++ struct assignment
-  int myrank = job->myrank;
-  int cudaDev = job->cudaDev;
+  ncclComm_t comm = job->comm;
+  ncclResult_t res = ncclSuccess;
   int archMajor, archMinor;
   size_t maxLocalSizeBytes = 0;
-  ncclResult_t res = ncclSuccess;
+  int cudaDev = job->cudaDev;
+  int* parentRanks = NULL;
+  int cudaArch;
 
   CUDACHECKGOTO(cudaSetDevice(cudaDev), res, fail);
-  CUDACHECK(cudaDeviceGetAttribute(&archMajor, cudaDevAttrComputeCapabilityMajor, cudaDev));
-  CUDACHECK(cudaDeviceGetAttribute(&archMinor, cudaDevAttrComputeCapabilityMinor, cudaDev));
-  comm->cudaArch = 100*archMajor + 10*archMinor;
+  CUDACHECKGOTO(cudaDeviceGetAttribute(&archMajor, cudaDevAttrComputeCapabilityMajor, cudaDev), res, fail);
+  CUDACHECKGOTO(cudaDeviceGetAttribute(&archMinor, cudaDevAttrComputeCapabilityMinor, cudaDev), res, fail);
+  cudaArch = 100*archMajor + 10*archMinor;
 
-  NCCLCHECK(ncclInitKernelsForDevice(comm->cudaArch, &maxLocalSizeBytes));
+  NCCLCHECK(ncclInitKernelsForDevice(cudaArch, &maxLocalSizeBytes));
   // Set the maximum kernel stack size of all kernels to avoid
   // a CUDA memory reconfig on load (c.f. NVSHMEM issue)
   if (maxLocalSizeBytes > 0 && ncclParamSetStackSize() == 1) {
     TRACE(NCCL_INIT, "Setting cudaLimitStackSize to %zi", maxLocalSizeBytes);
     CUDACHECKIGNORE(cudaDeviceSetLimit(cudaLimitStackSize, maxLocalSizeBytes));
   }
-  NCCLCHECKGOTO(commAlloc(newcomm, nranks, myrank), res, fail);
-  NCCLCHECKGOTO(initTransportsRank(*newcomm, &commId), res, fail);
+  
+  if (job->parent) {
+    NCCLCHECKGOTO(ncclCalloc(&parentRanks, job->parent->nRanks), res, fail);
+    NCCLCHECKGOTO(commGetSplitInfo(comm, job->parent, job->color, job->key, &job->nranks, &job->myrank, parentRanks), res, fail);
+    // Negative color does not create a new comm object. We needed to take part in the allgather, but we're done now.
+    if (job->color == NCCL_SPLIT_NOCOLOR) goto exit;
+    snprintf((char*)&job->commId, sizeof(job->commId), "%016lx-%d", job->parent->commHash, job->color);
+    NCCLCHECKGOTO(commAlloc(comm, job->parent, job->nranks, job->myrank), res, fail);
+    NCCLCHECKGOTO(bootstrapSplit((struct ncclBootstrapHandle*)&job->commId, comm, job->parent, job->color, job->key, parentRanks), res, fail);
+  } else {
+    NCCLCHECKGOTO(commAlloc(comm, NULL, job->nranks, job->myrank), res, fail);
+    NCCLCHECKGOTO(bootstrapInit((struct ncclBootstrapHandle*)&job->commId, comm), res, fail);
+  }
+  
+  comm->cudaArch = cudaArch;
+  comm->commHash = getHash(job->commId.internal, NCCL_UNIQUE_ID_BYTES);
+
+  NCCLCHECKGOTO(initTransportsRank(comm, job->parent), res, fail);
 
   // update communicator state
   comm->initState = ncclSuccess;
 
   // Trace this call for replay tool
-  TRACE_CALL("ncclCommInitRank(%p, %d, 0x%llx, %d, %d)",
-    *newcomm, nranks, (unsigned long long)hashUniqueId(commId), myrank, (*newcomm)->cudaDev);
+  if (job->parent) {
+    TRACE_CALL("ncclCommSplit(%p, %d, %d, %p, %d, %d)",
+                job->parent, job->color, job->key, comm, comm->rank, comm->nRanks);
+  } else {
+    TRACE_CALL("ncclCommInitRank(%p, %d, 0x%llx, %d, %d)",
+                comm, comm->nRanks, (unsigned long long)hashUniqueId(job->commId), comm->rank, comm->cudaDev);
+  }
+  
 
-  INFO(NCCL_INIT,"comm %p rank %d nranks %d cudaDev %d busId %lx commId 0x%llx - Init COMPLETE", *newcomm, myrank, nranks, (*newcomm)->cudaDev, (*newcomm)->busId, (unsigned long long)hashUniqueId(commId));
+  INFO(NCCL_INIT,"comm %p rank %d nranks %d cudaDev %d busId %lx commId 0x%llx - Init COMPLETE", comm, comm->rank, comm->nRanks, comm->cudaDev, comm->busId, (unsigned long long)hashUniqueId(job->commId));
 exit:
+  free(parentRanks);
   return res;
 fail:
   comm->initState = res;
@@ -1131,14 +1331,88 @@ fail:
     INFO(NCCL_ENV, "Comm config " fieldStr " set to " format, config->field); \
   }
 
-static ncclResult_t parseCommConfig(ncclComm_t comm, ncclConfig_t *config) {
+static ncclResult_t envConfigOverride(ncclComm_t comm) {
   ncclResult_t ret = ncclSuccess;
-  /* config must not be NULL in this function */
+  const char* tmpNetName = comm->config.netName;
+  const char* envNetName;
   int blockingEnv;
   int cgaClusterSizeEnv;
   int minCTAsEnv;
   int maxCTAsEnv;
-  const char *envNetName, *tmpNetName;
+  int splitShareEnv;
+  
+  /* override configuration from env variable. */
+  blockingEnv = ncclParamCommBlocking();
+  if (blockingEnv == 0 || blockingEnv == 1)
+    comm->config.blocking = blockingEnv;
+
+  cgaClusterSizeEnv = ncclParamCGAClusterSize();
+  if (0 <= cgaClusterSizeEnv && cgaClusterSizeEnv <= NCCL_MAX_CGA_CLUSTER_SIZE) {
+    comm->config.cgaClusterSize = cgaClusterSizeEnv;
+  } else if (cgaClusterSizeEnv > NCCL_MAX_CGA_CLUSTER_SIZE) {
+    WARN("NCCL_CGA_CLUSTER_SIZE value %d is too big. Limiting value to %d.", cgaClusterSizeEnv, NCCL_MAX_CGA_CLUSTER_SIZE);
+    comm->config.cgaClusterSize = NCCL_MAX_CGA_CLUSTER_SIZE;
+  }
+
+  minCTAsEnv = ncclParamMinCTAs();
+  if (minCTAsEnv != NCCL_CONFIG_UNDEF_INT) {
+    comm->config.minCTAs = minCTAsEnv;
+  }
+
+  maxCTAsEnv = ncclParamMaxCTAs();
+  if (maxCTAsEnv != NCCL_CONFIG_UNDEF_INT) {
+    comm->config.maxCTAs = maxCTAsEnv;
+  }
+
+  envNetName = getenv("NCCL_NET");
+  if (envNetName)
+    tmpNetName = envNetName;
+  if (tmpNetName != NULL) {
+    int netNameLen = strlen(tmpNetName) + 1;
+    comm->config.netName = (char*)malloc(netNameLen);
+    memcpy((void*)comm->config.netName, tmpNetName, netNameLen);
+  } else {
+    comm->config.netName = NULL;
+  }
+
+  splitShareEnv = ncclParamCommSplitShareResources();
+  if (splitShareEnv != NCCL_CONFIG_UNDEF_INT) {
+    comm->config.splitShare = splitShareEnv;
+  }
+
+  /* cap channels if needed */
+  if (comm->config.minCTAs > MAXCHANNELS) {
+    WARN("minCTAs %d is larger than #channels upper limit %d, cap it to %d", comm->config.minCTAs, MAXCHANNELS, MAXCHANNELS);
+    comm->config.minCTAs = MAXCHANNELS;
+  }
+
+  if (comm->config.maxCTAs > MAXCHANNELS) {
+    WARN("maxCTAs %d is larger than #channels upper limit %d, cap it to %d", comm->config.maxCTAs, MAXCHANNELS, MAXCHANNELS);
+    comm->config.maxCTAs = MAXCHANNELS;
+  }
+
+  if (comm->config.minCTAs > comm->config.maxCTAs) {
+    WARN("minCTAs %d is larger than maxCTAs %d, set both to %d", comm->config.minCTAs, comm->config.maxCTAs, comm->config.maxCTAs);
+    comm->config.minCTAs = comm->config.maxCTAs;
+  }
+
+  if (comm->config.splitShare != 1 && comm->config.splitShare != 0) {
+    WARN("splitShare %d is not a valid value 0/1, set it to 0\n", comm->config.splitShare);
+    comm->config.splitShare = 0;
+  }
+
+  return ret;
+}
+
+static ncclResult_t copyCommConfig(ncclComm_t childComm, ncclComm_t parnet) {
+  memcpy(&childComm->config, &parnet->config, sizeof(ncclConfig_t));
+  NCCLCHECK(envConfigOverride(childComm));
+  return ncclSuccess;
+}
+
+static ncclResult_t parseCommConfig(ncclComm_t comm, ncclConfig_t *config) {
+  ncclResult_t ret = ncclSuccess;
+  /* config must not be NULL in this function */
   ncclConfig_t defaultConfig = NCCL_CONFIG_INITIALIZER;
   ncclConfig_t internalConfig = NCCL_CONFIG_INITIALIZER;
   ncclConfig_t *internalConfigPtr;
@@ -1191,82 +1465,34 @@ static ncclResult_t parseCommConfig(ncclComm_t comm, ncclConfig_t *config) {
     goto fail;
   }
 
+  if (internalConfigPtr->splitShare != NCCL_CONFIG_UNDEF_INT && internalConfigPtr->splitShare != 0 && internalConfigPtr->splitShare != 1) {
+    WARN("Invalid config splitShare attribute value %d", internalConfigPtr->splitShare);
+    ret = ncclInvalidArgument;
+    goto fail;
+  }
+
   /* default config value can be tuned on different platform. */
   NCCL_CONFIG_DEFAULT(internalConfigPtr, blocking, NCCL_CONFIG_UNDEF_INT, 1, "Blocking", "%d");
   NCCL_CONFIG_DEFAULT(internalConfigPtr, cgaClusterSize, NCCL_CONFIG_UNDEF_INT, 4, "CGA cluster size", "%d");
   NCCL_CONFIG_DEFAULT(internalConfigPtr, minCTAs, NCCL_CONFIG_UNDEF_INT, 1, "Min CTAs", "%d");
   NCCL_CONFIG_DEFAULT(internalConfigPtr, maxCTAs, NCCL_CONFIG_UNDEF_INT, MAXCHANNELS, "Max CTAs", "%d");
   NCCL_CONFIG_DEFAULT(internalConfigPtr, netName, NCCL_CONFIG_UNDEF_PTR, NULL, "Net name", "%s");
-
-  tmpNetName = internalConfigPtr->netName;
+  NCCL_CONFIG_DEFAULT(internalConfigPtr, splitShare, NCCL_CONFIG_UNDEF_INT, 0, "Split share", "%d");
 
   /* assign config to communicator */
-  comm->blocking = internalConfigPtr->blocking;
-  comm->cgaClusterSize = internalConfigPtr->cgaClusterSize;
-  comm->minCTAs = internalConfigPtr->minCTAs;
-  comm->maxCTAs = internalConfigPtr->maxCTAs;
+  comm->config.blocking = internalConfigPtr->blocking;
+  comm->config.cgaClusterSize = internalConfigPtr->cgaClusterSize;
+  comm->config.minCTAs = internalConfigPtr->minCTAs;
+  comm->config.maxCTAs = internalConfigPtr->maxCTAs;
+  comm->config.netName = internalConfigPtr->netName;
+  comm->config.splitShare = internalConfigPtr->splitShare;
 
-  /* override configuration from env variable. */
-  blockingEnv = ncclParamCommBlocking();
-  if (blockingEnv == 0 || blockingEnv == 1)
-    comm->blocking = blockingEnv;
-
-  cgaClusterSizeEnv = ncclParamCGAClusterSize();
-  if (0 <= cgaClusterSizeEnv && cgaClusterSizeEnv <= NCCL_MAX_CGA_CLUSTER_SIZE) {
-    comm->cgaClusterSize = cgaClusterSizeEnv;
-  } else if (cgaClusterSizeEnv > NCCL_MAX_CGA_CLUSTER_SIZE) {
-    WARN("NCCL_CGA_CLUSTER_SIZE value %d is too big. Limiting value to %d.", cgaClusterSizeEnv, NCCL_MAX_CGA_CLUSTER_SIZE);
-    comm->cgaClusterSize = NCCL_MAX_CGA_CLUSTER_SIZE;
-  }
-
-  minCTAsEnv = ncclParamMinCTAs();
-  if (minCTAsEnv != NCCL_CONFIG_UNDEF_INT) {
-    comm->minCTAs = minCTAsEnv;
-  }
-
-  maxCTAsEnv = ncclParamMaxCTAs();
-  if (maxCTAsEnv != NCCL_CONFIG_UNDEF_INT) {
-    comm->maxCTAs = maxCTAsEnv;
-  }
-
-  /* cap channels if needed */
-  if (comm->minCTAs > MAXCHANNELS) {
-    WARN("minCTAs %d is larger than #channels upper limit %d", comm->minCTAs, MAXCHANNELS);
-    comm->minCTAs = MAXCHANNELS;
-  }
-
-  if (comm->maxCTAs > MAXCHANNELS) {
-    WARN("maxCTAs %d is larger than #channels upper limit %d", comm->maxCTAs, MAXCHANNELS);
-    comm->maxCTAs = MAXCHANNELS;
-  }
-
-  if (comm->minCTAs > comm->maxCTAs) {
-    WARN("minCTAs %d is larger than maxCTAs %d", comm->minCTAs, comm->maxCTAs);
-    ret = ncclInvalidArgument;
-    goto fail;
-  }
-
-  envNetName = getenv("NCCL_NET");
-  if (envNetName)
-    tmpNetName = envNetName;
-  if (tmpNetName != NULL) {
-    int netNameLen = strlen(tmpNetName) + 1;
-    comm->netName = (char*)malloc(netNameLen);
-    memcpy(comm->netName, tmpNetName, netNameLen);
-  } else {
-    comm->netName = NULL;
-  }
+  NCCLCHECKGOTO(envConfigOverride(comm), ret, fail);
 
 exit:
   return ret;
 fail:
   goto exit;
-}
-
-static void ncclCommInitRankUndo(struct ncclAsyncJob* job_) {
-  struct ncclCommInitRankAsyncJob* job = (struct ncclCommInitRankAsyncJob*)job_;
-  ncclCommDestroy(*job->newcomm);
-  *job->newcomm = nullptr;
 }
 
 static ncclResult_t ncclCommInitRankDev(ncclComm_t* newcomm, int nranks, ncclUniqueId commId, int myrank, int cudaDev, ncclConfig_t *config) {
@@ -1295,13 +1521,15 @@ static ncclResult_t ncclCommInitRankDev(ncclComm_t* newcomm, int nranks, ncclUni
 
   NCCLCHECKGOTO(ncclCalloc(&comm, 1), res, fail);
   NCCLCHECKGOTO(ncclCudaHostCalloc((uint32_t**)&comm->abortFlag, 1), res, fail);
+  NCCLCHECKGOTO(ncclCalloc((uint32_t**)&comm->abortFlagRefCount, 1), res, fail);
+  *comm->abortFlagRefCount = 1;
   NCCLCHECKGOTO(parseCommConfig(comm, config), res, fail);
   /* start with ncclInternalError and will be changed to ncclSuccess if init succeeds. */
   comm->initState = ncclInternalError;
   *newcomm = comm;
 
   NCCLCHECKGOTO(ncclCalloc(&job, 1), res, fail);
-  job->newcomm = newcomm;
+  job->comm = comm;
   job->nranks = nranks;
   job->commId = commId; // C++ struct assignment
   job->myrank = myrank;
@@ -1436,10 +1664,10 @@ ncclResult_t ncclCommInitRankConfig(ncclComm_t *newcomm, int nranks, ncclUniqueI
 exit:
   ncclGroupErrCheck(ret);
   NCCLCHECK(ncclGroupEndInternal());
-  if (newcomm && *newcomm && !(*newcomm)->blocking) (void) ncclCommGetAsyncError(*newcomm, &ret);
+  if (newcomm && *newcomm && !(*newcomm)->config.blocking) (void) ncclCommGetAsyncError(*newcomm, &ret);
   return ret;
 fail:
-  if (newcomm && *newcomm && !(*newcomm)->blocking) (void) ncclCommSetAsyncError(*newcomm, ret);
+  if (newcomm && *newcomm && !(*newcomm)->config.blocking) (void) ncclCommSetAsyncError(*newcomm, ret);
   goto exit;
 }
 
@@ -1458,8 +1686,8 @@ static ncclResult_t commDestroySync(struct ncclAsyncJob* job_) {
   TRACE(NCCL_INIT, "Destroying comm %p rank %d abortFlag %d asyncResult %d", comm, comm->rank, *comm->abortFlag, comm->asyncResult);
 
   if (comm->initState == ncclSuccess) {
-    NCCLCHECKGOTO(ncclStrongStreamSynchronize(&comm->hostStream), ret, fail);
-    NCCLCHECKGOTO(ncclStrongStreamSynchronize(&comm->deviceStream), ret, fail);
+    NCCLCHECKGOTO(ncclStrongStreamSynchronize(&comm->sharedRes->hostStream), ret, fail);
+    NCCLCHECKGOTO(ncclStrongStreamSynchronize(&comm->sharedRes->deviceStream), ret, fail);
   }
   NCCLCHECKGOTO(ncclCommPollCallbacks(comm, false), ret, fail);
   // And keep polling until all graphs referencing us die.
@@ -1540,10 +1768,10 @@ ncclResult_t ncclCommFinalize(ncclComm_t comm) {
 exit:
   ncclGroupErrCheck(ret);
   NCCLCHECK(ncclGroupEndInternal());
-  if (comm && !comm->blocking) { NCCLCHECK(ncclCommGetAsyncError(comm, &ret)) };
+  if (comm && !comm->config.blocking) { NCCLCHECK(ncclCommGetAsyncError(comm, &ret)) };
   return ret;
 fail:
-  if (comm && !comm->blocking) (void) ncclCommSetAsyncError(comm, ret);
+  if (comm && !comm->config.blocking) (void) ncclCommSetAsyncError(comm, ret);
   goto exit;
 }
 
@@ -1588,10 +1816,10 @@ static ncclResult_t commReclaim(ncclComm_t comm) {
         }
       }
 
-      /* ncclProxyDestroy() loop must be put after commDestroySync() loop. Namely, you cannot do:
+      /* ncclProxyStop() loop must be put after commDestroySync() loop. Namely, you cannot do:
        *  while(...) {
        *     commDestroySync(...);
-       *     ncclProxyDestroy(...);
+       *     ncclProxyStop(...);
        *  }
        * Considering one process multi-gpu case, we must guarantee all kernels are complete before
        * we free proxy resources; otherwise, we will face invalid memory issues where proxy connection
@@ -1606,7 +1834,7 @@ static ncclResult_t commReclaim(ncclComm_t comm) {
         nextIntraComm = nextIntraComm->intraNext;
 
         /* free intraprocess proxy resources. */
-        if ((ret = ncclProxyDestroy(curIntraComm)) != ncclSuccess) {
+        if ((ret = ncclProxyStop(curIntraComm)) != ncclSuccess) {
           WARN("commReclaim: comm %p (rank = %d) destroys proxy resource error %d", curIntraComm, curRank, ret);
         }
       }
@@ -1685,6 +1913,53 @@ ncclResult_t ncclCommAbort(ncclComm_t comm) {
   INFO(NCCL_INIT,"comm %p rank %d nranks %d cudaDev %d busId %lx - Abort COMPLETE", comm, rank, nranks, cudaDev, busId);
 
   return ncclSuccess;
+}
+
+NCCL_API(ncclResult_t, ncclCommSplit, ncclComm_t comm, int color, int key, ncclComm_t *newcomm, ncclConfig_t *config);
+ncclResult_t ncclCommSplit(ncclComm_t comm, int color, int key, ncclComm_t *newcomm, ncclConfig_t *config) {
+  struct ncclCommInitRankAsyncJob *job = NULL;
+  struct ncclComm* childComm = NULL;
+  ncclResult_t res = ncclSuccess;
+
+  NCCLCHECK(ncclGroupStartInternal());
+  NCCLCHECKGOTO(PtrCheck(comm, "CommSplit", "comm"), res, fail);
+  NCCLCHECKGOTO(PtrCheck(newcomm, "CommSplit", "newcomm"), res, fail);
+
+  if (color == NCCL_SPLIT_NOCOLOR) {
+    childComm = NULL;
+    INFO(NCCL_INIT, "Rank %d has color with NCCL_SPLIT_NOCOLOR, not creating a new communicator", comm->rank);
+  } else {
+    NCCLCHECKGOTO(ncclCalloc(&childComm, 1), res, fail);
+    childComm->abortFlag = comm->abortFlag;
+    childComm->abortFlagRefCount = comm->abortFlagRefCount;
+    __atomic_add_fetch(comm->abortFlagRefCount, 1, __ATOMIC_RELAXED);
+    if (config == NULL) {
+      NCCLCHECKGOTO(copyCommConfig(childComm, comm), res, fail);
+    } else {
+      NCCLCHECKGOTO(parseCommConfig(childComm, config), res, fail);
+    }
+
+    /* start with ncclInternalError and will be changed to ncclSuccess if init succeeds. */
+    childComm->initState = ncclInternalError;
+  }
+  *newcomm = childComm;
+
+  NCCLCHECKGOTO(ncclCalloc(&job, 1), res, fail);
+  job->comm = childComm;
+  job->parent = comm;
+  job->color = color;
+  job->key = key;
+  job->cudaDev = comm->cudaDev;
+  NCCLCHECKGOTO(ncclAsyncLaunch(&job->base, ncclCommInitRankFunc, NULL, free, comm), res, fail);
+
+exit:
+  ncclGroupErrCheck(res);
+  NCCLCHECK(ncclGroupEndInternal());
+  return res;
+fail:
+  if (childComm) free(childComm);
+  if (newcomm) *newcomm = NULL;
+  goto exit;
 }
 
 NCCL_API(const char*, ncclGetErrorString, ncclResult_t code);

@@ -366,7 +366,7 @@ static ncclResult_t addP2pToPlan(
 
   // 1 is connIndex
   struct ncclConnInfo* conn = isSendNotRecv ?
-    &comm->channels[channelId].peers[peer].send[1].conn : &comm->channels[channelId].peers[peer].recv[1].conn;
+    &comm->channels[channelId].peers[peer]->send[1].conn : &comm->channels[channelId].peers[peer]->recv[1].conn;
   info.protocol = ((conn->buffs[NCCL_PROTO_LL] != nullptr) && bytes <= ncclParamP2pLLThreshold()) ? NCCL_PROTO_LL : NCCL_PROTO_SIMPLE;
 
   struct ncclProxyOp proxyOp = {};
@@ -827,12 +827,12 @@ static ncclResult_t uploadWork(struct ncclComm* comm, struct ncclKernelPlan* pla
 }
 
 static ncclResult_t uploadProxyOps(struct ncclComm* comm, struct ncclKernelPlan* plan) {
-  uint64_t collOpCount = comm->collOpCount;
+  uint64_t collOpCount = comm->sharedRes->collOpCount;
   // Advance comm's collOpCount by number of colls in this plan.
-  comm->collOpCount = collOpCount + plan->collOpCount;
+  comm->sharedRes->collOpCount += plan->collOpCount;
   for (int c=0; c < plan->channelUbound; c++) {
     struct ncclProxyOp* q = ncclIntruQueueHead(&plan->channels[c].proxyOpQueue);
-    uint64_t p2pOpCount = comm->channels[c].p2pOpCount;
+    uint64_t p2pOpCount = comm->sharedRes->p2pOpCount[c];
     uint64_t nextP2pOpCount = p2pOpCount;
     while (q != nullptr) {
       struct ncclProxyOp* qNext = q->enqNext;
@@ -855,7 +855,7 @@ static ncclResult_t uploadProxyOps(struct ncclComm* comm, struct ncclKernelPlan*
       q = qNext;
     }
     // Advance channel's p2pOpCount by number of p2p's in this plan channel.
-    comm->channels[c].p2pOpCount = nextP2pOpCount;
+    comm->sharedRes->p2pOpCount[c] = nextP2pOpCount;
   }
   return ncclSuccess;
 }
@@ -974,14 +974,14 @@ ncclResult_t ncclLaunchPrepare(struct ncclComm* comm) {
     // The two-level fan-in fan-out is because ncclStrongStreamWaitStream() requires
     // at least one of the two streams to be strong-stream.
     cudaStream_t launchStream = tasks->streams->stream;
-    NCCLCHECKGOTO(ncclStrongStreamAcquire(tasks->capturingGraph, &comm->deviceStream), result, failure);
+    NCCLCHECKGOTO(ncclStrongStreamAcquire(tasks->capturingGraph, &comm->sharedRes->deviceStream), result, failure);
 
     // Create dependency for device stream on user streams. First from extra user
     // streams to deviceStream. Then deviceStream to first user stream.
     for (struct ncclCudaStreamList* l=tasks->streams->next; l != nullptr; l = l->next) {
-      NCCLCHECKGOTO(ncclStrongStreamWaitStream(tasks->capturingGraph, &comm->deviceStream, l->stream), result, failure);
+      NCCLCHECKGOTO(ncclStrongStreamWaitStream(tasks->capturingGraph, &comm->sharedRes->deviceStream, l->stream), result, failure);
     }
-    NCCLCHECKGOTO(ncclStrongStreamWaitStream(tasks->capturingGraph, launchStream, &comm->deviceStream), result, failure);
+    NCCLCHECKGOTO(ncclStrongStreamWaitStream(tasks->capturingGraph, launchStream, &comm->sharedRes->deviceStream), result, failure);
 
     if (persistent || comm->persistentRefs != 0 || ncclCudaLaunchBlocking) {
       // We have to launch host tasks to push proxy args. We are careful to only
@@ -991,15 +991,15 @@ ncclResult_t ncclLaunchPrepare(struct ncclComm* comm) {
         if (plan->hasProxyOps) {
           if (!acquired) {
             acquired = true;
-            NCCLCHECKGOTO(ncclStrongStreamAcquire(tasks->capturingGraph, &comm->hostStream), result, failure);
+            NCCLCHECKGOTO(ncclStrongStreamAcquire(tasks->capturingGraph, &comm->sharedRes->hostStream), result, failure);
           }
-          NCCLCHECKGOTO(ncclStrongStreamLaunchHost(tasks->capturingGraph, &comm->hostStream, hostStreamPlanCallback, plan), result, failure);
+          NCCLCHECKGOTO(ncclStrongStreamLaunchHost(tasks->capturingGraph, &comm->sharedRes->hostStream, hostStreamPlanCallback, plan), result, failure);
         }
       }
       if (acquired) {
         // Make to-be-launched kernels dependent on just-launched host stream tasks.
-        NCCLCHECKGOTO(ncclStrongStreamWaitStream(tasks->capturingGraph, launchStream, &comm->hostStream), result, failure);
-        NCCLCHECKGOTO(ncclStrongStreamRelease(tasks->capturingGraph, &comm->hostStream), result, failure);
+        NCCLCHECKGOTO(ncclStrongStreamWaitStream(tasks->capturingGraph, launchStream, &comm->sharedRes->hostStream), result, failure);
+        NCCLCHECKGOTO(ncclStrongStreamRelease(tasks->capturingGraph, &comm->sharedRes->hostStream), result, failure);
       }
     }
 
@@ -1043,7 +1043,7 @@ ncclResult_t ncclLaunchKernel(struct ncclComm* comm, struct ncclKernelPlan* plan
   NCCLCHECK(ncclCudaDriverVersion(&driverVersion));
   if (driverVersion >= 11080) {
     int compCap = comm->compCap;
-    unsigned int clusterSize = (compCap == 90) ? comm->cgaClusterSize : 0;
+    unsigned int clusterSize = (compCap == 90) ? comm->config.cgaClusterSize : 0;
 
     cudaLaunchConfig_t launchConfig = {0};
     cudaLaunchAttribute launchAttrs[3];
@@ -1115,7 +1115,7 @@ ncclResult_t ncclLaunchFinish(struct ncclComm* comm) {
     // Create dependency for deviceStream on launchStream. We know that deviceStream
     // hasn't been modified since launchStream waited on it (in ncclLaunchPrepare),
     // so we can say that launchStream subsumes it.
-    NCCLCHECKGOTO(ncclStrongStreamWaitStream(tasks->capturingGraph, &comm->deviceStream, launchStream, /*b_subsumes_a=*/true), result, resume1);
+    NCCLCHECKGOTO(ncclStrongStreamWaitStream(tasks->capturingGraph, &comm->sharedRes->deviceStream, launchStream, /*b_subsumes_a=*/true), result, resume1);
   resume1:
     // Create dependency for other user streams (skip launch stream) on deviceStream.
     // Again, the user streams haven't been touched since deviceStream waited on them
@@ -1123,12 +1123,12 @@ ncclResult_t ncclLaunchFinish(struct ncclComm* comm) {
     struct ncclCudaStreamList* sl = tasks->streams->next;
     tasks->streams = nullptr; // Reset comm->tasks.streams to empty.
     while (sl != nullptr) {
-      NCCLCHECKGOTO(ncclStrongStreamWaitStream(tasks->capturingGraph, sl->stream, &comm->deviceStream, /*b_subsumes_a=*/true), result, resume2);
+      NCCLCHECKGOTO(ncclStrongStreamWaitStream(tasks->capturingGraph, sl->stream, &comm->sharedRes->deviceStream, /*b_subsumes_a=*/true), result, resume2);
     resume2:
       sl = sl->next;
     }
     // Release device stream as acquired in ncclLaunchPrepare()
-    NCCLCHECKGOTO(ncclStrongStreamRelease(tasks->capturingGraph, &comm->deviceStream), result, resume3);
+    NCCLCHECKGOTO(ncclStrongStreamRelease(tasks->capturingGraph, &comm->sharedRes->deviceStream), result, resume3);
   resume3:;
   }
   return result;
@@ -1494,12 +1494,12 @@ static ncclResult_t taskAppend(struct ncclComm* comm, struct ncclInfo const* inf
           int channelId;
           NCCLCHECK(ncclChannelComputeFromBase(comm, channelBaseId, c, &channelId));
           if (isSendNotRecv) {
-            if (comm->channels[channelId].peers[peer].send[1].connected == 0) { // P2P uses only 1 connector
+            if (comm->channels[channelId].peers[peer]->send[1].connected == 0) { // P2P uses only 1 connector
               comm->connectSend[peer] |= (1UL<<channelId);
               ncclGroupCommPreconnect(comm);
             }
           } else {
-            if (comm->channels[channelId].peers[peer].recv[1].connected == 0) { // P2P uses only 1 connector
+            if (comm->channels[channelId].peers[peer]->recv[1].connected == 0) { // P2P uses only 1 connector
               comm->connectRecv[peer] |= (1UL<<channelId);
               ncclGroupCommPreconnect(comm);
             }
@@ -1594,10 +1594,10 @@ exit:
   NCCLCHECK(ncclGroupEndInternal());
   /* if depth is 1, ncclGroupEndInternal() will trigger group ops. The state can change
    * so we have to check state here. */
-  if (info->comm && !info->comm->blocking) { NCCLCHECK(ncclCommGetAsyncError(info->comm, &ret)) };
+  if (info->comm && !info->comm->config.blocking) { NCCLCHECK(ncclCommGetAsyncError(info->comm, &ret)) };
   return ret;
 fail:
-  if (info->comm && !info->comm->blocking) (void) ncclCommSetAsyncError(info->comm, ret);
+  if (info->comm && !info->comm->config.blocking) (void) ncclCommSetAsyncError(info->comm, ret);
   goto exit;
 }
 

@@ -13,6 +13,8 @@ if [ "$graph" == "" ]; then graph=0; fi
 opts="-n 5 -w 1 -G $graph"
 range="-b 8 -e $max -f 2"
 enable_ft="-B 0 -F 1"
+enable_split_test="-S 1 -P 1"
+split_range="-b 8 -e 1G -f 2"
 
 # We need to catch failures manually and then throw at the end to get gitlab to detect a failure
 failure_count=0
@@ -36,6 +38,12 @@ for func in all_reduce_perf reduce_perf reduce_scatter_perf; do
   echo "=============================== $func (all ops/dtype) - $(date +\"%T\")  ================================="
   $SALLOC $MPI_HOME/bin/mpirun $MPI_PARAMS ./build/test/perf/$func $rangetype $opts
   [ $? -ne 0 ] && let failure_count=$failure_count+1 && failure_names+=("$func $rangetype $opts")
+done
+
+for func in all_reduce reduce reduce_scatter broadcast all_gather alltoall gather scatter sendrecv hypercube; do
+  echo "=============================== $func (split share all sizes) - $(date +\"%T\") =========================="
+  $SALLOC $MPI_HOME/bin/mpirun $MPI_PARAMS ./build/test/perf/${func}_perf $split_range $opts $enable_split_test
+  [ $? -ne 0 ] && let failure_count=$failure_count+1 && failure_names+=("$func (split share all sizes)")
 done
 
 export NCCL_DEBUG="" # disable WARN information
