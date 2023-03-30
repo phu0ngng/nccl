@@ -125,7 +125,7 @@ struct threadArgs {
   int nGpus;
   int* gpus;
   int localRank;
-  int commNum;
+  int splitCommNum;
   void*** sendbuffs;
   size_t** sendBytes;
   size_t** sendInplaceOffset;

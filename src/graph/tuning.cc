@@ -247,6 +247,8 @@ ncclResult_t ncclTopoTuneModel(struct ncclComm* comm, int minCompCap, int maxCom
     NCCLCHECK(parseList(algoStr, ncclAlgoStr, NCCL_NUM_ALGORITHMS, algoEnable));
   }
 
+  // Disable NVLink SHARP if not supported
+  if (comm->nvlsSupport == 0 || comm->localRanks <= 2) algoEnable[NCCL_ALGO_NVLS] = algoEnable[NCCL_ALGO_NVLS_TREE] = 0;
   if (comm->nNodes == 1) algoEnable[NCCL_ALGO_NVLS_TREE] = 0;
 
   // Disable CollNet if it is not supported

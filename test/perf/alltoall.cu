@@ -20,7 +20,7 @@ testResult_t AlltoAllInitData(struct threadArgs* args, ncclDataType_t type, nccl
   int nranks, rank;
   void* data;
 
-  for (int id = 0; id < args->commNum; ++id) {
+  for (int id = 0; id < args->splitCommNum; ++id) {
     for (int i = 0; i < args->nGpus; i++) {
       CUDACHECK(cudaSetDevice(args->gpus[i]));
       sendcount = args->sendBytes[id][i] / wordSize(type);
