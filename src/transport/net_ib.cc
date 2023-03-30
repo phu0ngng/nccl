@@ -1278,7 +1278,7 @@ ncclResult_t ncclIbTest(void* request, int* done, int* sizes) {
         ncclSocketGetAddr(r->sock, &addr);
         char localGidString[INET6_ADDRSTRLEN] = "";
         char remoteGidString[INET6_ADDRSTRLEN] = "";
-        const char* localGidStr, *remoteGidStr;
+        const char* localGidStr = NULL, *remoteGidStr = NULL;
         if (r->gidInfo) {
             localGidStr = inet_ntop(AF_INET6, &r->gidInfo->localGid, localGidString, sizeof(localGidString));
             remoteGidStr = inet_ntop(AF_INET6, &r->gidInfo->remoteGid, remoteGidString, sizeof(remoteGidString));
