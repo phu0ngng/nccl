@@ -560,6 +560,9 @@ static ncclResult_t collNetTrySetup(ncclComm_t comm, ncclComm_t parent, struct n
   comm->collNetHeadsNum = nHeads;
   if (parent && parent->collNetSupport && parent->config.splitShare && parent->nNodes == comm->nNodes) {
     NCCLCHECKGOTO(ncclCalloc(&infos, comm->nRanks), ret, fail);
+    /* check whether child can share collnet resources of parent. Since parent builds each collnet communicator
+     * based on heads with the same head position in each node, as long as the collnet heads of child comm 
+     * can match parent's heads, we can let child communicator share parent's collnet resources. */
     for (int h = 0; h < nHeads; ++h) {
       int prev = INT_MIN;
       struct collnetShareInfo* myinfo;
