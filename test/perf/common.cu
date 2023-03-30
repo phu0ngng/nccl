@@ -92,7 +92,7 @@ static char* ft_list = NULL;
 static size_t tbytes = SIZE_MAX;
 static int split_share = 0;
 static int split_comm = 0;
-static int splitCommNum = 1;
+static int commNum = 1;
 
 static char* replay_file = NULL;
 
@@ -247,7 +247,7 @@ testResult_t CheckData(struct threadArgs* args, ncclDataType_t type, ncclRedOp_t
   int64_t *wrongPerGpu = nullptr;
 
   CUDACHECK(cudaHostAlloc((void**)&wrongPerGpu, args->nGpus * sizeof(int64_t), cudaHostAllocMapped));
-  for (int id = 0; id < args->splitCommNum; ++id) {
+  for (int id = 0; id < args->commNum; ++id) {
     for (int i = 0; i < args->nGpus; i++) {
       int rank, nranks;
       
@@ -292,7 +292,7 @@ testResult_t CheckData(struct threadArgs* args, ncclDataType_t type, ncclRedOp_t
   return testSuccess;
 }
 
-testResult_t testStreamSynchronize(int ngpus, cudaStream_t* streams, ncclComm_t** comms, int splitCommNum = 1) {
+testResult_t testStreamSynchronize(int ngpus, cudaStream_t* streams, ncclComm_t** comms, int commNum = 1) {
   cudaError_t cudaErr;
   int remaining = ngpus;
   int* done = (int*)malloc(sizeof(int)*ngpus);
@@ -301,7 +301,7 @@ testResult_t testStreamSynchronize(int ngpus, cudaStream_t* streams, ncclComm_t*
 
   while (remaining) {
     int idle = 1;
-    for (int id0 = 0; id0 < splitCommNum; ++id0) {
+    for (int id0 = 0; id0 < commNum; ++id0) {
       for (int i = 0; i < ngpus; i++) {
         if (done[i]) continue;
 
@@ -322,7 +322,7 @@ testResult_t testStreamSynchronize(int ngpus, cudaStream_t* streams, ncclComm_t*
           if (ncclAsyncErr != ncclSuccess) {
             // An asynchronous error happened. Stop the operation and destroy
             // the communicator
-            for (int id1 = 0; id1 < splitCommNum; ++id1)
+            for (int id1 = 0; id1 < commNum; ++id1)
               for (int i = 0; i < ngpus; i++)
                 NCCLCHECK(ncclCommAbort(comms[id1][i]));
             // Abort the perf test
@@ -331,7 +331,7 @@ testResult_t testStreamSynchronize(int ngpus, cudaStream_t* streams, ncclComm_t*
         }
         double delta = tim.elapsed();
         if (delta > timeout && timeout > 0) {
-          for (int id1 = 0; id1 < splitCommNum; ++id1)
+          for (int id1 = 0; id1 < commNum; ++id1)
             for (int i = 0; i < ngpus; i++)
               NCCLCHECK(ncclCommAbort(comms[id1][i]));
           char hostname[1024];
@@ -357,7 +357,7 @@ testResult_t startColl(struct threadArgs* args, ncclDataType_t type, ncclRedOp_t
   // Try to change offset for each iteration so that we avoid cache effects and catch race conditions in ptrExchange
   size_t count, totalnbytes, steps, shift;
 
-  for (int id = 0; id < args->splitCommNum; ++id) {
+  for (int id = 0; id < args->commNum; ++id) {
     if (args->nGpus > 1 || commblocking == 0) NCCLCHECK(ncclGroupStart());
     for (int i = 0; i < args->nGpus; i++) {
 #ifndef NCCL_MAJOR
@@ -422,7 +422,7 @@ testResult_t startColl(struct threadArgs* args, ncclDataType_t type, ncclRedOp_t
   
   if (blocking_coll) {
     // Complete op before returning
-    TESTCHECK(testStreamSynchronize(args->nGpus, args->streams, args->comms, args->splitCommNum));
+    TESTCHECK(testStreamSynchronize(args->nGpus, args->streams, args->comms, args->commNum));
   }
   if (blocking_coll) Barrier(args);
   return testSuccess;
@@ -431,7 +431,7 @@ testResult_t startColl(struct threadArgs* args, ncclDataType_t type, ncclRedOp_t
 testResult_t completeColl(struct threadArgs* args) {
   if (blocking_coll) return testSuccess;
 
-  TESTCHECK(testStreamSynchronize(args->nGpus, args->streams, args->comms, args->splitCommNum));
+  TESTCHECK(testStreamSynchronize(args->nGpus, args->streams, args->comms, args->commNum));
   return testSuccess;
 }
 
@@ -633,7 +633,7 @@ testResult_t BenchTime(struct threadArgs* args, ncclDataType_t type, ncclRedOp_t
 
 void setupArgs(size_t size, ncclDataType_t type, struct threadArgs* args) {
   size_t count = size / wordSize(type);
-  for (int id = 0; id < args->splitCommNum; ++id) {
+  for (int id = 0; id < args->commNum; ++id) {
     for (int i = 0; i < args->nGpus; ++i) {
       int nranks;
       size_t sendCount, recvCount, paramCount, sendInplaceOffset, recvInplaceOffset;
@@ -654,7 +654,7 @@ testResult_t TimeTest(struct threadArgs* args, ncclDataType_t type, const char* 
   Barrier(args);
 
   // Add forced misalignment
-  for (int id = 0; id < args->splitCommNum; ++id) {
+  for (int id = 0; id < args->commNum; ++id) {
     for (int i = 0; i < args->nGpus; i++) {
       args->sendbuffs[id][i] = (char*)args->sendbuffs[id][i] + unalign * wordSize(type);
       args->recvbuffs[id][i] = (char*)args->recvbuffs[id][i] + unalign * wordSize(type);
@@ -694,7 +694,7 @@ testResult_t TimeTest(struct threadArgs* args, ncclDataType_t type, const char* 
   }
 
   // Revert forced misalignment
-  for (int id = 0; id < args->splitCommNum; ++id) {
+  for (int id = 0; id < args->commNum; ++id) {
     for (int i = 0; i < args->nGpus; i++) {
       args->sendbuffs[id][i] = (char*)args->sendbuffs[id][i] - unalign * wordSize(type);
       args->recvbuffs[id][i] = (char*)args->recvbuffs[id][i] - unalign * wordSize(type);
@@ -738,9 +738,9 @@ testResult_t threadInit(struct threadArgs* args) {
       NCCLCHECK(ncclCommSplit(globalComms[i], rank & mask, rank, &args->comms[0][i], &config));
     }
     NCCLCHECK_COMM_WAITBATCH(ncclGroupEnd(), globalComms, args->nGpus);
-  } else if (split_comm) {
+  } else if (split_comm == 2) {
     /* create split comm with predefined split pattern. */
-    for (int splitCase = 0; splitCase < splitCommNum; ++splitCase) {
+    for (int splitCase = 0; splitCase < commNum; ++splitCase) {
       switch (splitCase) {
         case 0: {
           /* duplicate communicator but in reversed rank */
@@ -777,13 +777,16 @@ testResult_t threadInit(struct threadArgs* args) {
           return testInternalError;
       }
     }
-  } else {
-    /* no split required by users, just duplicate globalcomm. */
+  } else if (split_comm == 1) {
+    /* duplicate globalcomm. */
     NCCLCHECK(ncclGroupStart());
     for (int i = 0; i < args->nGpus; ++i) {
       NCCLCHECK(ncclCommSplit(globalComms[i], 0, 0, &args->comms[0][i], &config));
     }
     NCCLCHECK_COMM_WAITBATCH(ncclGroupEnd(), globalComms, args->nGpus);
+  } else {
+    /* no split required by users */
+    for (int i = 0; i < args->nGpus; ++i) args->comms[0][i] = globalComms[i];
   }
 
   /* destroy global NCCL communicators */
@@ -798,7 +801,7 @@ testResult_t threadInit(struct threadArgs* args) {
 
   TESTCHECK(threadRunTests(args));
 
-  for (int id = 0; id < args->splitCommNum; ++id) {
+  for (int id = 0; id < args->commNum; ++id) {
     for (int i = 0; i < args->nGpus; i++) {
       NCCLCHECK(ncclCommDestroy(args->comms[id][i]));
     }
@@ -1212,14 +1215,14 @@ testResult_t run() {
    * (2) split ranks into 2 groups based odd and even rank;
    * (3) split ranks into 2 groups with 3:1 ratio. 
    * If NCCL_TESTS_SPLIT_MASK is set, we only split based on split mask. */
-  if (splitMaskEnv == NULL && split_comm) {
-    splitCommNum = 3;
+  if (splitMaskEnv == NULL && split_comm == 2) {
+    commNum = 3;
     agg_iters = 1; /* we cannot aggregate coll on multiple split communicators. */
-  } else {
-    splitCommNum = 1;
+  } else if (split_comm == 1) {
+    commNum = 1;
   }
   // We need sendbuff, recvbuff, expected (when datacheck enabled), plus 2G for the rest.
-  size_t memMaxBytes = ((maxMem - (2LL<<30)) / (datacheck ? 3 : 2)) / splitCommNum;
+  size_t memMaxBytes = ((maxMem - (2LL<<30)) / (datacheck ? 3 : 2)) / commNum;
   if (maxBytes > memMaxBytes) {
     maxBytes = memMaxBytes;
     if (proc == 0) printf("#\n# Reducing maxBytes to %ld due to memory limitation\n", maxBytes);
@@ -1227,9 +1230,9 @@ testResult_t run() {
 
   int gpus[nGpus*nThreads];
   cudaStream_t streams[nGpus*nThreads];
-  void* sendbuffs[splitCommNum][nGpus*nThreads];
-  void* recvbuffs[splitCommNum][nGpus*nThreads];
-  void* expected[splitCommNum][nGpus*nThreads];
+  void* sendbuffs[commNum][nGpus*nThreads];
+  void* recvbuffs[commNum][nGpus*nThreads];
+  void* expected[commNum][nGpus*nThreads];
   size_t sendBytes, recvBytes;
 
   /* only when communicators are nonblocking and ft test is enabled, we
@@ -1254,7 +1257,7 @@ testResult_t run() {
 
   //if parallel init is not selected, use main thread to initialize NCCL
   ncclComm_t* globalComms = NULL;
-  ncclComm_t comms[splitCommNum][nThreads*nGpus];
+  ncclComm_t comms[commNum][nThreads*nGpus];
   int nranks = totalProcs * nThreads * nGpus;
   if (proc == 0) {
       NCCLCHECK(ncclGetUniqueId(&ncclId));
@@ -1282,9 +1285,9 @@ testResult_t run() {
         NCCLCHECK(ncclCommSplit(globalComms[i], color, proc, &comms[0][i], &config));
       }
       NCCLCHECK_COMM_WAITBATCH(ncclGroupEnd(), globalComms, nGpus * nThreads);
-    } else if (split_comm) {
+    } else if (split_comm == 2) {
       /* create split comm with predefined split pattern. */
-      for (int splitCase = 0; splitCase < splitCommNum; ++splitCase) {
+      for (int splitCase = 0; splitCase < commNum; ++splitCase) {
         switch (splitCase) {
           case 0: {
             /* duplicate communicator but in reversed rank */
@@ -1321,28 +1324,33 @@ testResult_t run() {
             return testInternalError;
         }
       }
-    } else {
-      /* no split required by users, just duplicate globalcomm. */
+    } else if (split_comm == 1) {
+      /* duplicate globalcomm. */
       NCCLCHECK(ncclGroupStart());
       for (int i = 0; i < nGpus * nThreads; ++i) {
         NCCLCHECK(ncclCommSplit(globalComms[i], 0, 0, &comms[0][i], &config));
       }
       NCCLCHECK_COMM_WAITBATCH(ncclGroupEnd(), globalComms, nGpus * nThreads);
+    } else {
+      /* no split required by users */
+      for (int i = 0; i < nGpus * nThreads; ++i) comms[0][i] = globalComms[i];
     }
 
-    /* destroy global NCCL communicators */
-    NCCLCHECK(ncclGroupStart());
-    for (int i = 0; i < nGpus * nThreads; ++i) {
-      NCCLCHECK(ncclCommFinalize(globalComms[i]));
-    }
-    NCCLCHECK_COMM_WAITBATCH(ncclGroupEnd(), globalComms, nGpus * nThreads);
+    if (split_comm) {
+      /* destroy global NCCL communicators */
+      NCCLCHECK(ncclGroupStart());
+      for (int i = 0; i < nGpus * nThreads; ++i) {
+        NCCLCHECK(ncclCommFinalize(globalComms[i]));
+      }
+      NCCLCHECK_COMM_WAITBATCH(ncclGroupEnd(), globalComms, nGpus * nThreads);
 
-    for (int i = 0; i < nGpus * nThreads; ++i)
-      NCCLCHECK(ncclCommDestroy(globalComms[i]));
+      for (int i = 0; i < nGpus * nThreads; ++i)
+        NCCLCHECK(ncclCommDestroy(globalComms[i]));
+    }
   }
 
   /* allocate buffer for each split comm. */
-  for (int id = 0; id < splitCommNum; ++id) {
+  for (int id = 0; id < commNum; ++id) {
     for (int i = 0; i < nGpus * nThreads; i++) {
       int nranks;
       NCCLCHECK(ncclCommCount(comms[id][i], &nranks));
@@ -1397,16 +1405,16 @@ testResult_t run() {
     threads[t].args.nGpus=nGpus;
     threads[t].args.gpus=gpus+t*nGpus;
 
-    threads[t].args.sendbuffs = (void***)malloc(sizeof(void**) * splitCommNum);
-    threads[t].args.recvbuffs = (void***)malloc(sizeof(void**) * splitCommNum);
-    threads[t].args.expected = (void***)malloc(sizeof(void**) * splitCommNum);
-    threads[t].args.comms = (ncclComm_t**)malloc(sizeof(ncclComm_t*) * splitCommNum);
-    threads[t].args.sendBytes = (size_t**)malloc(sizeof(size_t*) * splitCommNum);
-    threads[t].args.expectedBytes = (size_t**)malloc(sizeof(size_t*) * splitCommNum);
-    threads[t].args.sendInplaceOffset = (size_t**)malloc(sizeof(size_t*) * splitCommNum);
-    threads[t].args.recvInplaceOffset = (size_t**)malloc(sizeof(size_t*) * splitCommNum);
-    threads[t].args.nbytes = (size_t**)malloc(sizeof(size_t*) * splitCommNum);
-    for (int id = 0; id < splitCommNum; ++id) {
+    threads[t].args.sendbuffs = (void***)malloc(sizeof(void**) * commNum);
+    threads[t].args.recvbuffs = (void***)malloc(sizeof(void**) * commNum);
+    threads[t].args.expected = (void***)malloc(sizeof(void**) * commNum);
+    threads[t].args.comms = (ncclComm_t**)malloc(sizeof(ncclComm_t*) * commNum);
+    threads[t].args.sendBytes = (size_t**)malloc(sizeof(size_t*) * commNum);
+    threads[t].args.expectedBytes = (size_t**)malloc(sizeof(size_t*) * commNum);
+    threads[t].args.sendInplaceOffset = (size_t**)malloc(sizeof(size_t*) * commNum);
+    threads[t].args.recvInplaceOffset = (size_t**)malloc(sizeof(size_t*) * commNum);
+    threads[t].args.nbytes = (size_t**)malloc(sizeof(size_t*) * commNum);
+    for (int id = 0; id < commNum; ++id) {
       threads[t].args.sendbuffs[id] = sendbuffs[id]+t*nGpus;
       threads[t].args.recvbuffs[id] = recvbuffs[id]+t*nGpus;
       threads[t].args.expected[id] = expected[id]+t*nGpus;
@@ -1418,7 +1426,7 @@ testResult_t run() {
       threads[t].args.nbytes[id] = (size_t*)malloc(sizeof(size_t) * nGpus);
     }
 
-    threads[t].args.splitCommNum = splitCommNum;
+    threads[t].args.commNum = commNum;
     threads[t].args.ncclId = ncclId;
     threads[t].args.streams=streams+t*nGpus;
 
@@ -1459,7 +1467,7 @@ testResult_t run() {
        pthread_join(compThreads[t].thread, NULL);
        TESTCHECK(compThreads[t].ret);
     }
-    for (int id = 0; id < splitCommNum; ++id) {
+    for (int id = 0; id < commNum; ++id) {
       free(threads[t].args.sendBytes[id]);
       free(threads[t].args.expectedBytes[id]);
       free(threads[t].args.sendInplaceOffset[id]);
@@ -1482,7 +1490,7 @@ testResult_t run() {
 #endif
 
   if (!parallel_init) {
-    for (int id = 0; id < splitCommNum; ++id) {
+    for (int id = 0; id < commNum; ++id) {
       for(int i=0; i<nGpus*nThreads; ++i)
         NCCLCHECK(ncclCommDestroy(comms[id][i]));
     }
@@ -1490,7 +1498,7 @@ testResult_t run() {
   }
 
   // Free off CUDA allocated memory
-  for (int id = 0; id < splitCommNum; ++id) {
+  for (int id = 0; id < commNum; ++id) {
     for (int i=0; i<nGpus*nThreads; i++) {
       if (sendbuffs[id][i]) CUDACHECK(cudaFree((char*)sendbuffs[id][i]));
       if (recvbuffs[id][i]) CUDACHECK(cudaFree((char*)recvbuffs[id][i]));
