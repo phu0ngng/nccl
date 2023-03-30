@@ -254,7 +254,7 @@ ncclResult_t ncclNvlsInit(struct ncclComm* comm) {
   }
   
   INFO(NCCL_INIT, "NVLS multicast support is %savailable on dev %d", comm->nvlsSupport ? "" : "not ", dev);
-  if (comm->nvlsSupport == 1) comm->nvlsChannels = ncclParamNvlsChannels();
+  if (comm->nvlsSupport == 1) comm->nvlsChannels = std::max(comm->config.minCTAs, std::min(comm->config.maxCTAs, (int)ncclParamNvlsChannels());
   return ncclSuccess;
 }
 
@@ -270,7 +270,6 @@ ncclResult_t ncclNvlsSetup(struct ncclComm* comm, struct ncclComm* parent) {
   ncclResult_t res = ncclSuccess;
   struct ncclNvlsSharedRes* resources;
   bool nvlsShare = true;
-  int nChannels;
   if (parent && parent->nvlsSupport && parent->config.splitShare && parent->localRanks == comm->localRanks)
     nvlsShare = true;
   else
@@ -278,14 +277,13 @@ ncclResult_t ncclNvlsSetup(struct ncclComm* comm, struct ncclComm* parent) {
 
   if (nvlsShare) {
     /* reuse NVLS resources */
-    resources = (struct ncclNvlsSharedRes*) parent->nvlsResources;
-    nChannels = comm->nvlsChannels = std::min(std::max(comm->config.minCTAs, std::min(comm->config.maxCTAs, comm->nvlsChannels)), resources->nChannels);
-    for (int c = 0; c < nChannels; c++) {
+    comm->nvlsChannels = std::min(comm->nvlsChannels, parent->nvlsResources->nChannels);
+    for (int c = 0; c < comm->nvlsChannels; c++) {
       NCCLCHECKGOTO(initNvlsChannel(comm, c, parent, true), res, cleanup);
     }
 
     comm->nvlsResources = parent->nvlsResources;
-    __atomic_add_fetch(&resources->refCount, 1, __ATOMIC_RELAXED);
+    __atomic_add_fetch(&parent->nvlsResources->refCount, 1, __ATOMIC_RELAXED);
   } else {
     int rank = comm->localRank, nranks = comm->localRanks;
     int nChannels;
@@ -299,12 +297,10 @@ ncclResult_t ncclNvlsSetup(struct ncclComm* comm, struct ncclComm* parent) {
     if (parent && parent->config.splitShare) {
       /* ranks on other nodes might share the NVLS resources, we need to cap nvlsChannels
        * to make sure nvlsChannels match for each rank. */
-      resources->nChannels = std::min(std::max(comm->config.minCTAs, std::min(comm->config.maxCTAs, comm->nvlsChannels)), parent->nvlsResources->nChannels);
-    } else {
-      resources->nChannels = std::max(comm->config.minCTAs, std::min(comm->config.maxCTAs, comm->nvlsChannels));
+      comm->nvlsChannels = std::min(comm->nvlsChannels, parent->nvlsResources->nChannels);
     }
 
-    nChannels = comm->nvlsChannels = resources->nChannels;
+    nChannels = resources->nChannels = comm->nvlsChannels;
     for (int c = 0; c < nChannels; c++) {
       NCCLCHECK(initNvlsChannel(comm, c, parent, false));
     }
