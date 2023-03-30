@@ -228,28 +228,23 @@ ncclResult_t nvlsGroupUnmapMem(struct ncclComm *comm, struct ncclNvlsSharedRes* 
 #define NVLS_MEM_ALIGN_SIZE (1 << 21)
 
 NCCL_PARAM(NvlsEnable, "NVLS_ENABLE", 2);
+NCCL_PARAM(NvlsChannels, "NVLS_NCHANNELS", 16);
 
-ncclResult_t ncclNvlsSetup(struct ncclComm* comm, struct ncclComm* parent) {
-  int nHeads = comm->channels[0].nvls.nHeads;
-  int headRank = comm->channels[0].nvls.headRank;
+ncclResult_t ncclNvlsInit(struct ncclComm* comm) {
+  comm->nvlsSupport = 0;
+  comm->nvlsChannels = 0;
 
-  if (!ncclParamNvlsEnable() || comm->localRanks <= 1 || nHeads == 0) {
-    /* TODO: need allgather to inform all ranks. */
-    comm->nvlsChannels = 0;
-    return ncclSuccess;
-  }
+  int gpuCount;
+  NCCLCHECK(ncclTopoGetGpuCount(comm->topo, &gpuCount));
+  if (!ncclParamNvlsEnable() || gpuCount <= 2) return ncclSuccess;
+
   CUdevice dev;
   int driverVersion;
-  ncclResult_t res = ncclSuccess;
-  struct ncclNvlsSharedRes* resources;
-  bool nvlsShare = true;
-  int nChannels;
     
   if (CUPFN(cuDeviceGet) == NULL) return ncclSuccess;
   CUCHECK(cuCtxGetDevice(&dev));
   CUDACHECK(cudaDriverGetVersion(&driverVersion));
   if (ncclParamNvlsEnable() == 2) {
-    comm->nvlsSupport = 0;
     // NVLS Multicast support requires CUDA12.1 UMD + KMD
     if (CUPFN(cuMulticastCreate) != NULL /*&& driverVersion >= 12010 */) {
       CUCHECK(cuDeviceGetAttribute(&comm->nvlsSupport, CU_DEVICE_ATTRIBUTE_MULTICAST_SUPPORTED, dev));
@@ -259,12 +254,23 @@ ncclResult_t ncclNvlsSetup(struct ncclComm* comm, struct ncclComm* parent) {
   }
   
   INFO(NCCL_INIT, "NVLS multicast support is %savailable on dev %d", comm->nvlsSupport ? "" : "not ", dev);
-  if (comm->nvlsSupport == 0) {
-    /* TODO: need allgather to inform all ranks. */
-    comm->nvlsChannels = 0;
-    return ncclSuccess;
-  }
+  if (comm->nvlsSupport == 1) comm->nvlsChannels = ncclParamNvlsChannels();
+  return ncclSuccess;
+}
 
+ncclResult_t ncclNvlsSetup(struct ncclComm* comm, struct ncclComm* parent) {
+  if (comm->nvlsSupport == 0 || comm->nvlsChannels == 0) return ncclSuccess;
+
+  int nHeads = comm->channels[0].nvls.nHeads;
+  int headRank = comm->channels[0].nvls.headRank;
+
+  CUdevice dev;
+  CUCHECK(cuCtxGetDevice(&dev));
+
+  ncclResult_t res = ncclSuccess;
+  struct ncclNvlsSharedRes* resources;
+  bool nvlsShare = true;
+  int nChannels;
   if (parent && parent->nvlsSupport && parent->config.splitShare && parent->localRanks == comm->localRanks)
     nvlsShare = true;
   else
@@ -406,8 +412,12 @@ ncclResult_t ncclNvlsFree(struct ncclComm* comm) {
  * Pre CUDA 12.1 stubs
  */
 
-ncclResult_t ncclNvlsSetup(struct ncclComm* comm, struct ncclComm* parent) {
+ncclResult_t ncclNvlsInit(struct ncclComm* comm) {
   comm->nvlsChannels = 0;
+  return ncclSuccess;
+}
+
+ncclResult_t ncclNvlsSetup(struct ncclComm* comm, struct ncclComm* parent) {
   return ncclSuccess;
 }
 

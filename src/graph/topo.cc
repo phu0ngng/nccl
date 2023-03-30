@@ -785,6 +785,11 @@ ncclResult_t ncclTopoGetCpuAffinity(struct ncclTopoSystem* system, int rank, cpu
   return ncclSuccess;
 }
 
+ncclResult_t ncclTopoGetGpuCount(struct ncclTopoSystem* system, int* count) {
+  *count = system->nodes[GPU].count;
+  return ncclSuccess;
+}
+
 ncclResult_t ncclTopoGetNetCount(struct ncclTopoSystem* system, int* count) {
   *count = system->nodes[NET].count;
   return ncclSuccess;
