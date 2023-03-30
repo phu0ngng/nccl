@@ -223,8 +223,6 @@ static ncclResult_t connectCollNet(struct ncclComm* comm, struct ncclTopoGraph* 
   return ncclSuccess;
 }
 
-NCCL_PARAM(NvlsChannels, "NVLS_NCHANNELS", 16);
-
 static ncclResult_t connectNvls(struct ncclComm* comm, int* nvlsHeads, struct ncclTopoGraph* nvlsGraph) {
   int nHeads = nvlsGraph->nChannels;
   int headRank = -1;
@@ -232,7 +230,11 @@ static ncclResult_t connectNvls(struct ncclComm* comm, int* nvlsHeads, struct nc
     if (nvlsGraph->intra[h*comm->localRanks] == comm->rank) headRank = h;
   }
 
-  comm->nvlsChannels = ncclParamNvlsChannels();
+  if (nHeads == 0) {
+    comm->nvlsChannels = 0;
+    return ncclSuccess;
+  }
+
   for (int c=0; c<comm->nvlsChannels; c++) {
     struct ncclChannel* channel = comm->channels+c;
     channel->nvls.nHeads = nHeads;
