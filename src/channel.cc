@@ -61,9 +61,9 @@ ncclResult_t initNvlsChannel(struct ncclComm* comm, int channelId, struct ncclCo
   struct ncclChannel* channel = &comm->channels[channelId];
   struct ncclSharedResources* sharedRes = comm->sharedRes;
 
-  if (channel->nvlsPeers != NULL) 
+  if (channel->nvlsPeers != NULL)
     return ncclSuccess;
-  
+
   if (channel->id == -1)
     NCCLCHECK(initChannel(comm, channelId));
 
@@ -100,9 +100,9 @@ ncclResult_t initCollnetChannel(struct ncclComm* comm, int channelId, struct ncc
   struct ncclSharedResources* sharedRes = comm->sharedRes;
   uintptr_t addr;
 
-  if (channel->collnetPeers != NULL) 
+  if (channel->collnetPeers != NULL)
     return ncclSuccess;
-  
+
   if (channel->id == -1)
     NCCLCHECK(initChannel(comm, channelId));
 
