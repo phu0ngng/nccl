@@ -585,7 +585,7 @@ ncclResult_t ncclTopoComputePaths(struct ncclTopoSystem* system, struct ncclComm
       if (ncclPxnDisable(comm) != 1) {
         int localGpuIndex;
         NCCLCHECK(ncclTopoGetLocalGpu(system, n, &localGpuIndex));
-        if (localGpuIndex != g) {
+        if (localGpuIndex != g && localGpuIndex != -1) {
           // PXN = PCI + NVLink.
           struct ncclTopoNode* peerNode = system->nodes[GPU].nodes+localGpuIndex;
           // Only use PXN for NIC n if remote GPU p ...

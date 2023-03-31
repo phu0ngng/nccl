@@ -680,7 +680,7 @@ ncclResult_t ncclTopoGetSystem(struct ncclComm* comm, struct ncclTopoSystem** sy
 }
 
 static ncclResult_t getLocalNetMask(struct ncclTopoSystem* system, int g, uint64_t* localNetMask, int* type) {
-  int minType = PATH_SYS;
+  int minType = PATH_DIS;
   float maxBw = 0;
   int count = 0;
   int* nets;
