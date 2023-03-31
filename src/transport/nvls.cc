@@ -240,7 +240,7 @@ ncclResult_t ncclNvlsInit(struct ncclComm* comm) {
 
   CUdevice dev;
   int driverVersion;
-    
+
   if (CUPFN(cuDeviceGet) == NULL) return ncclSuccess;
   CUCHECK(cuCtxGetDevice(&dev));
   CUDACHECK(cudaDriverGetVersion(&driverVersion));
@@ -252,9 +252,9 @@ ncclResult_t ncclNvlsInit(struct ncclComm* comm) {
   } else {
     comm->nvlsSupport = 1;
   }
-  
+
   INFO(NCCL_INIT, "NVLS multicast support is %savailable on dev %d", comm->nvlsSupport ? "" : "not ", dev);
-  if (comm->nvlsSupport == 1) comm->nvlsChannels = std::max(comm->config.minCTAs, std::min(comm->config.maxCTAs, (int)ncclParamNvlsChannels());
+  if (comm->nvlsSupport == 1) comm->nvlsChannels = std::max(comm->config.minCTAs, std::min(comm->config.maxCTAs, (int)ncclParamNvlsChannels()));
   return ncclSuccess;
 }
 
@@ -268,7 +268,6 @@ ncclResult_t ncclNvlsSetup(struct ncclComm* comm, struct ncclComm* parent) {
   CUCHECK(cuCtxGetDevice(&dev));
 
   ncclResult_t res = ncclSuccess;
-  struct ncclNvlsSharedRes* resources;
   bool nvlsShare = true;
   if (parent && parent->nvlsSupport && parent->config.splitShare && parent->localRanks == comm->localRanks)
     nvlsShare = true;
@@ -322,7 +321,7 @@ ncclResult_t ncclNvlsSetup(struct ncclComm* comm, struct ncclComm* parent) {
       NCCLCHECKGOTO(bootstrapIntraNodeBroadcast(comm->bootstrap, comm->localRankToRank, comm->localRank, comm->localRanks, 0, shareableHandle, NVLS_HANDLE_SIZE), res, cleanup);
       NCCLCHECKGOTO(nvlsGroupConnect(comm, resources, comm->localRankToRank[0], shareableHandle), res, cleanup);
     }
-    
+
     NCCLCHECKGOTO(nvlsGroupAddDevice(comm, resources), res, cleanup);
     NCCLCHECKGOTO(nvlsGroupBindMem(comm, resources), res, cleanup);
     // Local intra-node barrier to ensure everyone has bound their memory to the group
