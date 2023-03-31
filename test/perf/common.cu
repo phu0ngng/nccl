@@ -1147,6 +1147,7 @@ testResult_t run() {
   char hostname[1024];
   getHostName(hostname, 1024);
 
+char* splitMaskEnv = NULL;
 #ifdef MPI_SUPPORT
   MPI_Comm_size(MPI_COMM_WORLD, &totalProcs);
   MPI_Comm_rank(MPI_COMM_WORLD, &proc);
@@ -1158,7 +1159,7 @@ testResult_t run() {
     if (hostHashs[p] == hostHashs[proc]) localRank++;
   }
 
-  char* splitMaskEnv = getenv("NCCL_TESTS_SPLIT_MASK");
+  splitMaskEnv = getenv("NCCL_TESTS_SPLIT_MASK");
   uint64_t mask = splitMaskEnv ? strtoul(splitMaskEnv, NULL, 16) : 0;
   MPI_Comm mpi_comm;
   color = proc & mask;
