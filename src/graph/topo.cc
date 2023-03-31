@@ -753,7 +753,7 @@ ncclResult_t ncclTopoGetLocalGpu(struct ncclTopoSystem* system, int net, int* gp
   NCCLCHECK(ncclCalloc(&gpus, ngpus));
 
   // Find localNetMask which includes net with the most local GPUs.
-  int netLocalGpus = 0, minType = PATH_SYS;
+  int netLocalGpus = 0, minType = PATH_DIS;
   uint64_t localNetMask = 0ULL;
   for (int g=0; g<ngpus; g++) {
     int type;
