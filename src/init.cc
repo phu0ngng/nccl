@@ -522,7 +522,7 @@ static ncclResult_t computeBuffSizes(struct ncclComm* comm) {
   } else {
     comm->sharedRes->tpP2pChunkSize = comm->p2pChunkSize;
   }
-    
+
   INFO(NCCL_INIT, "P2P Chunksize set to %d", comm->p2pChunkSize);
   return ncclSuccess;
 }
@@ -543,7 +543,7 @@ static ncclResult_t collNetTrySetup(ncclComm_t comm, ncclComm_t parent, struct n
   int highestTransportType0, highestTransportType1;
   char line[1024];
   bool share;
-  
+
   struct collnetShareInfo {
     int headPosition;
     int isMaster;
@@ -561,7 +561,7 @@ static ncclResult_t collNetTrySetup(ncclComm_t comm, ncclComm_t parent, struct n
   if (parent && parent->collNetSupport && parent->config.splitShare && parent->nNodes == comm->nNodes) {
     NCCLCHECKGOTO(ncclCalloc(&infos, comm->nRanks), ret, fail);
     /* check whether child can share collnet resources of parent. Since parent builds each collnet communicator
-     * based on heads with the same head position in each node, as long as the collnet heads of child comm 
+     * based on heads with the same head position in each node, as long as the collnet heads of child comm
      * can match parent's heads, we can let child communicator share parent's collnet resources. */
     for (int h = 0; h < nHeads; ++h) {
       int prev = INT_MIN;
@@ -578,7 +578,7 @@ static ncclResult_t collNetTrySetup(ncclComm_t comm, ncclComm_t parent, struct n
           if (parent->topParentRanks[parent->collNetHeads[th]] == comm->topParentRanks[comm->rank]) {
             myinfo->headPosition = th;
             break;
-          }  
+          }
       }
 
       NCCLCHECKGOTO(bootstrapAllGather(comm->bootstrap, infos, sizeof(struct collnetShareInfo)), ret, fail);
@@ -736,7 +736,7 @@ static ncclResult_t initTransportsRank(struct ncclComm* comm, struct ncclComm* p
   int* pxnPeers = NULL;
   int *topParentLocalRanks = NULL;
   int tpProxyRank;
-  
+
   // AllGather1 - begin
   NCCLCHECKGOTO(ncclCalloc(&comm->peerInfo, nranks+1), ret, fail); // Extra rank to represent CollNet root
   NCCLCHECKGOTO(fillInfo(comm, comm->peerInfo+rank, comm->commHash), ret, fail);
@@ -1001,7 +1001,7 @@ static ncclResult_t initTransportsRank(struct ncclComm* comm, struct ncclComm* p
   // Compute nChannels per peer for p2p
   NCCLCHECKGOTO(ncclTopoComputeP2pChannels(comm), ret, fail);
 
-  /* until now, all info of comm should be known. We can initialize shared resources and 
+  /* until now, all info of comm should be known. We can initialize shared resources and
    * map localRanks to top parent local ranks. NOTE: this shareRes init must be put before
    * all proxy operations. */
   if (comm->sharedRes->owner == comm) {
@@ -1179,9 +1179,9 @@ static ncclResult_t initTransportsRank(struct ncclComm* comm, struct ncclComm* p
 
 exit:
   if (CPU_COUNT(&comm->cpuAffinity)) sched_setaffinity(0, sizeof(cpu_set_t), &affinitySave);
-  /* If split resource is shared, we are not able to unlink the proxy ops pool here since the child comm can 
-   * attach the proxy ops pool of parent at any time; otherwise, unlink it here to make sure the pool will be 
-   * properly cleaned up. */ 
+  /* If split resource is shared, we are not able to unlink the proxy ops pool here since the child comm can
+   * attach the proxy ops pool of parent at any time; otherwise, unlink it here to make sure the pool will be
+   * properly cleaned up. */
   if (comm->sharedRes->owner == comm && !comm->config.splitShare) ncclProxyShmUnlink(comm);
   free(allTopoRanks);
   free(nodesTreePatterns);
@@ -1289,7 +1289,7 @@ static ncclResult_t ncclCommInitRankFunc(struct ncclAsyncJob* job_) {
     TRACE(NCCL_INIT, "Setting cudaLimitStackSize to %zi", maxLocalSizeBytes);
     CUDACHECKIGNORE(cudaDeviceSetLimit(cudaLimitStackSize, maxLocalSizeBytes));
   }
-  
+
   if (job->parent) {
     NCCLCHECKGOTO(ncclCalloc(&parentRanks, job->parent->nRanks), res, fail);
     NCCLCHECKGOTO(commGetSplitInfo(comm, job->parent, job->color, job->key, &job->nranks, &job->myrank, parentRanks), res, fail);
@@ -1302,7 +1302,7 @@ static ncclResult_t ncclCommInitRankFunc(struct ncclAsyncJob* job_) {
     NCCLCHECKGOTO(commAlloc(comm, NULL, job->nranks, job->myrank), res, fail);
     NCCLCHECKGOTO(bootstrapInit((struct ncclBootstrapHandle*)&job->commId, comm), res, fail);
   }
-  
+
   comm->cudaArch = cudaArch;
   comm->commHash = getHash(job->commId.internal, NCCL_UNIQUE_ID_BYTES);
 
@@ -1319,7 +1319,7 @@ static ncclResult_t ncclCommInitRankFunc(struct ncclAsyncJob* job_) {
     TRACE_CALL("ncclCommInitRank(%p, %d, 0x%llx, %d, %d)",
                 comm, comm->nRanks, (unsigned long long)hashUniqueId(job->commId), comm->rank, comm->cudaDev);
   }
-  
+
 
   INFO(NCCL_INIT,"comm %p rank %d nranks %d cudaDev %d busId %lx commId 0x%llx - Init COMPLETE", comm, comm->rank, comm->nRanks, comm->cudaDev, comm->busId, (unsigned long long)hashUniqueId(job->commId));
 exit:
@@ -1346,7 +1346,7 @@ static ncclResult_t envConfigOverride(ncclComm_t comm) {
   int minCTAsEnv;
   int maxCTAsEnv;
   int splitShareEnv;
-  
+
   /* override configuration from env variable. */
   blockingEnv = ncclParamCommBlocking();
   if (blockingEnv == 0 || blockingEnv == 1)

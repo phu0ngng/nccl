@@ -1071,7 +1071,7 @@ ncclResult_t ncclProxyClientConvertFdBlocking(struct ncclComm* comm, struct nccl
   void* opId = malloc(1);
   // Create a UDS socket to receive the converted fd
   NCCLCHECK(ncclIpcSocketInit(&ipcSock, comm->topParentLocalRanks[comm->localRank], (uint64_t)opId, comm->abortFlag));
-  
+
   // Request the conversion of the fd over sockets
   NCCLCHECKGOTO(ncclProxyCallAsync(comm, proxyConn, ncclProxyMsgConvertFd, &fd, sizeof(int), 0, opId), ret, error);
 
@@ -1553,7 +1553,7 @@ ncclResult_t ncclProxyInit(struct ncclComm* comm, struct ncclSocket* sock, union
 }
 
 ncclResult_t ncclProxyCreate(struct ncclComm* comm) {
-  /* proxyState is shared among parent comm and split comms. comm->proxyState->thread is 
+  /* proxyState is shared among parent comm and split comms. comm->proxyState->thread is
    * pthread_join()'d by commFree() in init.cc when the refCount reduces down to 0. */
   struct ncclProxyState* proxyState = comm->proxyState;
   if (proxyState->refCount == 1) {
@@ -1580,7 +1580,7 @@ ncclResult_t ncclProxyCreate(struct ncclComm* comm) {
 
 ncclResult_t ncclProxyStop(struct ncclComm* comm) {
   struct ncclProxyState* sharedProxyState = comm->sharedRes->proxyState;
-  
+
   if (__atomic_sub_fetch(&sharedProxyState->refCount, 1, __ATOMIC_RELAXED) == 0) {
     if (sharedProxyState->peerAddresses) {
       if (*comm->abortFlag == 0) {
@@ -1616,7 +1616,7 @@ ncclResult_t ncclProxyStop(struct ncclComm* comm) {
       }
     }
   }
-  
+
   return ncclSuccess;
 }
 
