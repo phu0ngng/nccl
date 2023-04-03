@@ -132,13 +132,13 @@ int main(int argc, char** argv)
 
     // Only report leaks of > 1 CUDA page
     if (leaked > (2*1024*1024)) {
-      printf("ERROR: leaked %zi bytes (%zi MiB) CUDA memory over %zi iterations on %d gpus\n", leaked, leaked/(1024*1024), reps, num_gpus);
+      printf("ERROR: GPU Memory leaked %zi bytes (%zi MiB) CUDA memory over %zi iterations on %d gpus\n", leaked, leaked/(1024*1024), reps, num_gpus);
       exit(EXIT_FAILURE);
     }
 
     int endOpenFds = count_open_fds();
     if ((endOpenFds-startOpenFds) > 0) {
-      printf("ERROR: leaked %d open fds over %zi iterations on %d gpus\n", endOpenFds-startOpenFds, reps, num_gpus);
+      printf("ERROR: File Descriptor leaked %d open fds over %zi iterations on %d gpus\n", endOpenFds-startOpenFds, reps, num_gpus);
       exit(EXIT_FAILURE);
     }
 
