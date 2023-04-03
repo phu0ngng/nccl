@@ -234,7 +234,7 @@ struct ncclProxyConnection {
   struct ncclProxyArgs **proxyAppendPtr;
   void* transportResources;
   proxyConnectState state;
-  struct ncclCollNetSharedRes* collNet; 
+  struct ncclCollNetSharedRes* collNet;
 };
 
 typedef ncclResult_t (*threadFunc_t)(struct ncclProxyArgs*);
