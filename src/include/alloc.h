@@ -73,6 +73,8 @@ ncclResult_t ncclRealloc(T** ptr, size_t oldNelem, size_t nelem) {
   return ncclSuccess;
 }
 
+#if CUDART_VERSION >= 11030
+
 #include <cuda.h>
 #include "cudawrap.h"
 
@@ -126,6 +128,21 @@ static inline ncclResult_t ncclCuMemFree(void *ptr) {
   CUCHECK(cuMemAddressFree((CUdeviceptr)ptr, size));
   return result;
 }
+
+#else
+
+extern int ncclCuMemEnable();
+
+static inline ncclResult_t ncclCuMemAlloc(void **ptr, void *handlep, size_t size) {
+  WARN("CUMEM not supported prior to CUDA 11.3");
+  return ncclInternalError;
+}
+static inline ncclResult_t ncclCuMemFree(void *ptr) {
+  WARN("CUMEM not supported prior to CUDA 11.3");
+  return ncclInternalError;
+}
+
+#endif
 
 template <typename T>
 ncclResult_t ncclCudaMallocDebug(T** ptr, size_t nelem, const char *filefunc, int line) {

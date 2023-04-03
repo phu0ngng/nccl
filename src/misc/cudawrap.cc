@@ -15,7 +15,11 @@
 NCCL_PARAM(CuMemEnable, "CUMEM_ENABLE", 1);
 
 int ncclCuMemEnable() {
+#if CUDART_VERSION >= 11030
   return (ncclParamCuMemEnable() && CUPFN(cuMemCreate) != NULL);
+#else
+  return 0;
+#endif
 }
 
 #define DECLARE_CUDA_PFN(symbol,version) PFN_##symbol##_v##version pfn_##symbol = nullptr

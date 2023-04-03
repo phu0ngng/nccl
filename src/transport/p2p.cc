@@ -189,12 +189,16 @@ ncclResult_t p2pCanConnect(int* ret, struct ncclTopoSystem* topo, struct ncclTop
 // cuMem API support
 ncclResult_t ncclP2pAllocateShareableBuffer(size_t size, ncclIpcDesc *ipcDesc, void **ptr) {
   if (ncclCuMemEnable()) {
+#if CUDART_VERSION >= 11030
     // cuMem API support
     CUmemAllocationHandleType type = NCCL_P2P_HANDLE_TYPE;
     CUmemGenericAllocationHandle handle;
 
     NCCLCHECK(ncclCuMemAlloc(ptr, &handle, size));
     CUCHECK(cuMemExportToShareableHandle(&ipcDesc->cuDesc, handle, type, 0));
+#else
+    return ncclInternalError;
+#endif
   } else {
     // Allocate a CUDA buffer and generate an IPC handle for it
     NCCLCHECK(ncclCudaCalloc((char **)ptr, size));
@@ -226,6 +230,7 @@ ncclResult_t ncclP2pFreeShareableBuffer(ncclIpcDesc *ipcDesc) {
 
 ncclResult_t ncclP2pImportShareableBuffer(struct ncclComm *comm, int tpPeer, size_t size, ncclIpcDesc *ipcDesc, void **devMemPtr) {
   if (ncclCuMemEnable()) {
+#if CUDART_VERSION >= 11030
     // cuMem API support
     CUdeviceptr dptr = 0;
     CUmemAllocationHandleType type = NCCL_P2P_HANDLE_TYPE;
@@ -260,6 +265,9 @@ ncclResult_t ncclP2pImportShareableBuffer(struct ncclComm *comm, int tpPeer, siz
     TRACE(NCCL_P2P, "Set Access for %p size %zi dev %d", (void*)dptr, size, accessDesc.location.id);
 
     *devMemPtr = (void *)dptr;
+#else
+    return ncclInternalError;
+#endif
   } else {
     // Legacy CUDA IPC
     CUDACHECK(cudaIpcOpenMemHandle(devMemPtr, ipcDesc->devIpc, cudaIpcMemLazyEnablePeerAccess));
