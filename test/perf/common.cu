@@ -1337,7 +1337,7 @@ char* splitMaskEnv = NULL;
       for (int i = 0; i < nGpus * nThreads; ++i) comms[0][i] = globalComms[i];
     }
 
-    if (split_comm) {
+    if (split_comm || splitMaskEnv) {
       /* destroy global NCCL communicators */
       NCCLCHECK(ncclGroupStart());
       for (int i = 0; i < nGpus * nThreads; ++i) {
