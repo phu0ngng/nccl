@@ -9,6 +9,7 @@ echo "HOSTNAME=$HOSTNAME"
 echo "Using CUDA_HOME=$CUDA_HOME"
 echo "Using NCCL_HOME=$PWD/build"
 echo "Using LD_LIBRARY_PATH=$LD_LIBRARY_PATH"
+echo "Using NCCL_CUMEM_ENABLE=0=$NCCL_CUMEM_ENABLE"
 
 echo "=============================== API TESTS Default - $(date +\"%T\") ================================="
 $SRUN ./build/test/apitest/apitest
