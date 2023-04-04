@@ -291,7 +291,7 @@ static ncclResult_t sendConnect(struct ncclComm* comm, struct ncclConnect* conne
   }
   INFO(NCCL_PROXY, "sendConnect ncclPollProxyResponse opId=%p", opId);
 
-  if (map->sameProcess) {
+  if (map->sameProcess && !ncclCuMemEnable()) {
     if (map->cudaDev != comm->cudaDev) {
       if (!ncclCuMemEnable()) {
         // Enable P2P access for Legacy IPC
@@ -305,7 +305,7 @@ static ncclResult_t sendConnect(struct ncclComm* comm, struct ncclConnect* conne
       }
     }
   } else {
-    NCCLCHECK(netMapShm(map->mems+NCCL_NET_MAP_HOSTMEM));
+    if (!map->sameProcess) NCCLCHECK(netMapShm(map->mems+NCCL_NET_MAP_HOSTMEM));
     if (map->mems[NCCL_NET_MAP_DEVMEM].size) {
       NCCLCHECK(ncclP2pImportShareableBuffer(comm, send->proxyConn.tpRank,
                                              map->mems[NCCL_NET_MAP_DEVMEM].size,
@@ -384,8 +384,8 @@ static ncclResult_t recvConnect(struct ncclComm* comm, struct ncclConnect* conne
 static ncclResult_t sendFree(struct ncclConnector* send) {
   struct connectMap* map = (struct connectMap*)(send->transportResources);
   if (map) {
-    if (map->sameProcess == 0) {
-      NCCLCHECK(ncclShmClose(map->mems[NCCL_NET_MAP_HOSTMEM].attachHandle));
+    if (!map->sameProcess || ncclCuMemEnable()) {
+      if (!map->sameProcess) NCCLCHECK(ncclShmClose(map->mems[NCCL_NET_MAP_HOSTMEM].attachHandle));
       if (map->mems[NCCL_NET_MAP_DEVMEM].size) {
         if (ncclCuMemEnable()) {
           // cuMem API support
@@ -433,7 +433,7 @@ static ncclResult_t sharedBuffersInit(struct ncclProxyState* proxyState, int cud
   if (size) *size = state->size;
 
   if (cuda && state->cudaBuff == NULL) {
-    if (sameProcess == 0) {
+    if (sameProcess == 0 || ncclCuMemEnable()) {
       NCCLCHECK(ncclP2pAllocateShareableBuffer(state->size, &state->ipcDesc, (void**)&state->cudaBuff));
     } else {
       NCCLCHECK(ncclCudaCalloc(&state->cudaBuff, state->size));
@@ -443,12 +443,8 @@ static ncclResult_t sharedBuffersInit(struct ncclProxyState* proxyState, int cud
     NCCLCHECK(ncclCudaHostCalloc(&state->hostBuff, state->size));
   }
   if (cpuPtr) *cpuPtr = cuda ? state->cudaBuff : state->hostBuff;
-  if (sameProcess) {
-    if (gpuPtr) *gpuPtr = *cpuPtr;
-  } else {
-    if (gpuPtr) *gpuPtr = NULL;
-    if (ipcDesc) memcpy(ipcDesc, &state->ipcDesc, sizeof(state->ipcDesc));
-  }
+  if (gpuPtr) *gpuPtr = sameProcess ? *cpuPtr : NULL;
+  if (ipcDesc) memcpy(ipcDesc, &state->ipcDesc, sizeof(state->ipcDesc));
   return ncclSuccess;
 }
 
@@ -467,7 +463,7 @@ static ncclResult_t sharedBuffersDestroy(struct ncclProxyState* proxyState, int 
   if (state->size == 0) NCCLCHECK(ncclInternalError);
   if (__atomic_sub_fetch(&state->refcount, 1, __ATOMIC_RELAXED) == 0) {
     if (state->cudaBuff) {
-      if (!connection->sameProcess) {
+      if (!connection->sameProcess || ncclCuMemEnable()) {
         NCCLCHECK(ncclP2pFreeShareableBuffer(&state->ipcDesc));
       }
       NCCLCHECK(ncclCudaFree(state->cudaBuff));
@@ -626,7 +622,7 @@ static ncclResult_t sendProxyConnect(struct ncclProxyConnection* connection, str
 
   if (map->mems[NCCL_NET_MAP_DEVMEM].size) {
     if (resources->shared == 0) {
-      if (!map->sameProcess) {
+      if (!map->sameProcess || ncclCuMemEnable()) {
         ALIGN_SIZE(map->mems[NCCL_NET_MAP_DEVMEM].size, CUDA_IPC_MIN);
         NCCLCHECK(ncclP2pAllocateShareableBuffer(map->mems[NCCL_NET_MAP_DEVMEM].size, &map->mems[NCCL_NET_MAP_DEVMEM].ipcDesc,
                                                  (void**)&map->mems[NCCL_NET_MAP_DEVMEM].gpuPtr));
@@ -830,7 +826,7 @@ static ncclResult_t sendProxyFree(struct ncclProxyConnection* connection, struct
       NCCLCHECK(ncclShmClose(mems[NCCL_NET_MAP_HOSTMEM].createHandle));
     }
     NCCLCHECK(ncclCudaFree(mems[NCCL_NET_MAP_DEVMEM].cpuPtr));
-    if (!resources->map.sameProcess) {
+    if (!resources->map.sameProcess || ncclCuMemEnable()) {
       // cuMem API support
       NCCLCHECK(ncclP2pFreeShareableBuffer(&mems[NCCL_NET_MAP_DEVMEM].ipcDesc));
     }

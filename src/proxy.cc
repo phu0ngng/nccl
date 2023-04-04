@@ -1603,9 +1603,7 @@ ncclResult_t ncclProxyStop(struct ncclComm* comm) {
             NCCLCHECK(ncclShmClose(sharedProxyState->proxyOps[i].handle));
           }
           if (sharedProxyState->sharedDevMems[i]) {
-            if (ncclCuMemEnable()) {
-              NCCLCHECK(ncclCuMemFree(sharedProxyState->sharedDevMems[i]));
-            } else {
+            if (!ncclCuMemEnable()) {
               CUDACHECK(cudaIpcCloseMemHandle(sharedProxyState->sharedDevMems[i]));
             }
           }
