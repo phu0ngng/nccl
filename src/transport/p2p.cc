@@ -515,7 +515,7 @@ ncclResult_t p2pRecvConnect(struct ncclComm* comm, struct ncclConnect* connectIn
 ncclResult_t p2pSendFree(struct ncclConnector* send) {
   struct p2pResources* resources = (struct p2pResources*)send->transportResources;
   if (resources) {
-    if (resources->type == P2P_CUMEM) {
+    if (ncclCuMemEnable()) {
       // cuMem API support
       if (resources->sendMemIpc) NCCLCHECK(ncclCudaFree(resources->sendMemIpc));
       if (resources->recvMemIpc) NCCLCHECK(ncclCudaFree(resources->recvMemIpc));
@@ -532,7 +532,7 @@ ncclResult_t p2pSendFree(struct ncclConnector* send) {
 ncclResult_t p2pRecvFree(struct ncclConnector* recv) {
   struct p2pResources* resources = (struct p2pResources*)recv->transportResources;
   if (resources) {
-    if (resources->type == P2P_CUMEM) {
+    if (ncclCuMemEnable()) {
       // cuMem API support
       if (resources->sendMemIpc) NCCLCHECK(ncclCudaFree(resources->sendMemIpc));
       if (resources->recvMemIpc) NCCLCHECK(ncclCudaFree(resources->recvMemIpc));
