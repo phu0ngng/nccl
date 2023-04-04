@@ -174,7 +174,7 @@ static ncclResult_t commFree(ncclComm_t comm) {
   /* in commReclaim, we have guaranteed only last rank which calls ncclCommDestroy() will
    * free all intra-process communicators; therefore, we only need to focus on local
    * resource cleanup in commFree(). */
-  if (comm->proxyState->refCount == 0 && comm->proxyState->thread) {
+  if (comm->proxyRefCountOld == 0 && comm->proxyState->thread) {
     pthread_join(comm->proxyState->thread, nullptr);
   }
 

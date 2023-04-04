@@ -294,6 +294,7 @@ struct ncclComm {
   uint64_t intraBarrierGate; // only used if this is intraComm0
 
   struct ncclProxyState* proxyState;
+  int proxyRefCountOld; /* store proxy post-atomic-sub refcount */
   // Whether this communicator uses collNet
   int collNetSupport;
   int intraHighestTransportType;
