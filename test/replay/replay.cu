@@ -2026,8 +2026,9 @@ ByteBuffer loadDebugCallTrace(std::string const &path) {
       int got = -1;
       char const *line_ptr = line.c_str();
       int ok = std::sscanf(line_ptr, "%[^:]:%d:%d NCCL CALL %n", vhost_name, &vpid, &vtid, &got);
-      if(ok != 3 || got == -1 || line_ptr[0] == '#') {
-        if (opt_verbose) {
+      if(ok != 3 || got == -1) {
+        // Comments won't be yelled about (lines must start with the # character)
+        if (opt_verbose && line_ptr[0] != '#') {
           fprintf(stderr, "Couldn't parse line: %s\n", line_ptr);
         }
         continue;
