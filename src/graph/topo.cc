@@ -763,6 +763,7 @@ ncclResult_t ncclTopoGetLocalGpu(struct ncclTopoSystem* system, int net, int* gp
       if (type < minType) {
         localNetMask = mask;
         netLocalGpus = 0;
+        minType = type;
       }
       if (type == minType) {
         if (localNetMask && mask != localNetMask) {

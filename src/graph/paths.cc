@@ -584,7 +584,7 @@ ncclResult_t ncclTopoComputePaths(struct ncclTopoSystem* system, struct ncclComm
       struct ncclTopoNode* gpu = system->nodes[GPU].nodes+g;
       if (ncclPxnDisable(comm) != 1) {
         int localGpuIndex;
-        NCCLCHECK(ncclTopoGetLocalGpu(system, n, &localGpuIndex));
+        NCCLCHECK(ncclTopoGetLocalGpu(system, system->nodes[NET].nodes[n].id, &localGpuIndex));
         if (localGpuIndex != g && localGpuIndex != -1) {
           // PXN = PCI + NVLink.
           struct ncclTopoNode* peerNode = system->nodes[GPU].nodes+localGpuIndex;
