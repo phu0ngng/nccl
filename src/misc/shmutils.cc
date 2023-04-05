@@ -130,8 +130,8 @@ ncclResult_t ncclShmClose(ncclShmHandle_t handle) {
           WARN("unlink shared memory %s failed, error: %s", tmphandle->shmPath, strerror(errno));
           ret = ncclSystemError;
         }
-        free(tmphandle->shmPath);
       }
+      free(tmphandle->shmPath);
     }
 
     if (tmphandle->shmPtr) {
