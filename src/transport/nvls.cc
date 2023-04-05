@@ -284,7 +284,6 @@ ncclResult_t ncclNvlsSetup(struct ncclComm* comm, struct ncclComm* parent) {
     comm->nvlsResources = parent->nvlsResources;
     ncclAtomicRefCountIncrement(&parent->nvlsResources->refCount);
   } else {
-    int rank = comm->localRank, nranks = comm->localRanks;
     int nChannels;
     ncclResult_t res = ncclSuccess;
     struct ncclNvlsSharedRes* resources;
@@ -334,9 +333,6 @@ ncclResult_t ncclNvlsSetup(struct ncclComm* comm, struct ncclComm* parent) {
         struct ncclChannel* channel = comm->channels + c;
         char* mem = NULL;
         struct ncclChannelPeer* peer = channel->peers[nvlsPeer];
-
-        INFO(NCCL_INIT | NCCL_NVLS, "NVLS comm %p rank %d nranks %d buffSize %zi memSize %zi nvlsPerRankSize %zi nvlsTotalSize %zi",
-          comm, rank, nranks, buffSize, memSize, nvlsPerRankSize, nvlsTotalSize);
 
         // Reduce UC -> MC
         mem = resources->ucBuff + (h * 2 * nChannels + c) * (buffSize + memSize);
