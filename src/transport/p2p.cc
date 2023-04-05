@@ -309,11 +309,16 @@ static ncclResult_t p2pMap(struct ncclComm *comm, struct ncclPeerInfo* myInfo, s
     }
     *devMem = p2pBuff->directPtr;
     *ipcPtr = NULL;
-  }
-  else {
-    // Same node different PIDs or cuMEM API enabled
-    NCCLCHECK(ncclP2pImportShareableBuffer(comm, comm->topParentRanks[peerInfo->rank], p2pBuff->size, &p2pBuff->ipcDesc, devMem));
-    *ipcPtr = *devMem;
+  } else {
+    if ((myInfo->pidHash == peerInfo->pidHash) && (peerInfo->cudaDev == myInfo->cudaDev)) {
+      // Same PID and GPU
+      *devMem = p2pBuff->directPtr;
+      *ipcPtr = NULL;
+    } else {
+      // Different PID or different GPU
+      NCCLCHECK(ncclP2pImportShareableBuffer(comm, comm->topParentRanks[peerInfo->rank], p2pBuff->size, &p2pBuff->ipcDesc, devMem));
+      *ipcPtr = *devMem;
+    }
   }
   return ncclSuccess;
 }
