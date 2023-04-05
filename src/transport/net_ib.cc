@@ -450,6 +450,7 @@ struct ncclIbSendComm {
   int ready;
   struct ibv_qp* qps[NCCL_IB_MAX_QPS];
   int nqps;
+  int qpIndex;
   struct ibv_mr* fifoMr;
   int ar;
   struct ncclIbGidInfo gidInfo;
@@ -485,6 +486,7 @@ struct ncclIbRecvComm {
   int ready;
   struct ibv_qp* qps[NCCL_IB_MAX_QPS];
   int nqps;
+  int qpIndex;
   struct ncclIbGpuFlush gpuFlush;
   struct ncclIbGidInfo gidInfo;
 };
@@ -961,6 +963,8 @@ returning:
   return res;
 }
 
+NCCL_PARAM(IbSplitDataOnQps, "IB_SPLIT_DATA_ON_QPS", 1);
+
 ncclResult_t ncclIbMultiSend(struct ncclIbSendComm* comm, int slot) {
   struct ncclIbRequest** reqs = comm->fifoReqs[slot];
   volatile struct ncclIbSendFifo* slots = comm->fifo[slot];
@@ -1016,9 +1020,10 @@ ncclResult_t ncclIbMultiSend(struct ncclIbSendComm* comm, int slot) {
 
   // Multi-QP: make sure IB writes are multiples of 128B so that LL and LL128 protocols still work
   const int align = 128;
-  for (int q=0; q<comm->nqps; q++) {
+  const int nqps = ncclParamIbSplitDataOnQps() ? comm->nqps : 1;
+  for (int q=0; q<nqps; q++) {
     for (int r=0; r<nreqs; r++) {
-      int chunkSize = DIVUP(DIVUP(reqs[r]->send.size, comm->nqps), align) * align;
+      int chunkSize = DIVUP(DIVUP(reqs[r]->send.size, nqps), align) * align;
       int length = std::min(reqs[r]->send.size-reqs[r]->send.offset, chunkSize);
       if (length <= 0) {
         comm->wrs[r].sg_list = NULL;
@@ -1030,10 +1035,10 @@ ncclResult_t ncclIbMultiSend(struct ncclIbSendComm* comm, int slot) {
       }
     }
     struct ibv_send_wr* bad_wr;
-    NCCLCHECK(wrap_ibv_post_send(comm->qps[q], comm->wrs, &bad_wr));
+    NCCLCHECK(wrap_ibv_post_send(comm->qps[(comm->qpIndex++)%comm->nqps], comm->wrs, &bad_wr));
 
     for (int r=0; r<nreqs; r++) {
-      int chunkSize = DIVUP(DIVUP(reqs[r]->send.size, comm->nqps), align) * align;
+      int chunkSize = DIVUP(DIVUP(reqs[r]->send.size, nqps), align) * align;
       reqs[r]->send.offset += chunkSize;
       comm->sges[r].addr += chunkSize;
       comm->wrs[r].wr.rdma.remote_addr += chunkSize;
@@ -1093,7 +1098,7 @@ ncclResult_t ncclIbIsend(void* sendComm, void* data, int size, int tag, void* mh
     req->send.data = data;
     req->send.lkey = mr->lkey;
     req->send.offset = 0;
-    req->events = comm->nqps;
+    req->events = ncclParamIbSplitDataOnQps() ? comm->nqps : 1;
     if (comm->gidInfo.link_layer == IBV_LINK_LAYER_ETHERNET) req->gidInfo = &comm->gidInfo;
     *request = reqs[r] = req;
 
@@ -1199,13 +1204,14 @@ ncclResult_t ncclIbIrecv(void* recvComm, int n, void** data, int* sizes, int* ta
   wr.num_sge = 0;
 
   TIME_START(1);
-  for (int q=0; q<comm->nqps; q++) {
-    struct ibv_qp* qp = comm->qps[q];
+  const int nqps = ncclParamIbSplitDataOnQps() ? comm->nqps : 1;
+  for (int q=0; q<nqps; q++) {
+    struct ibv_qp* qp = comm->qps[(comm->qpIndex++)%comm->nqps];
     struct ibv_recv_wr* bad_wr;
     NCCLCHECK(wrap_ibv_post_recv(qp, &wr, &bad_wr));
   }
   TIME_STOP(1);
-  req->events = comm->nqps;
+  req->events = nqps;
 
   *request = req;
 
