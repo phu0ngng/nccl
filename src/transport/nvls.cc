@@ -282,7 +282,7 @@ ncclResult_t ncclNvlsSetup(struct ncclComm* comm, struct ncclComm* parent) {
     }
 
     comm->nvlsResources = parent->nvlsResources;
-    __atomic_add_fetch(&parent->nvlsResources->refCount, 1, __ATOMIC_RELAXED);
+    ncclAtomicRefCountIncrement(&parent->nvlsResources->refCount);
   } else {
     int rank = comm->localRank, nranks = comm->localRanks;
     int nChannels;
@@ -392,7 +392,7 @@ ncclResult_t ncclNvlsFree(struct ncclComm* comm) {
   struct ncclNvlsSharedRes* resources = (struct ncclNvlsSharedRes*)comm->nvlsResources;
   if (resources == NULL) return ncclSuccess;
 
-  if (__atomic_sub_fetch(&resources->refCount, 1, __ATOMIC_RELAXED) == 0) {
+  if (ncclAtomicRefCountDecrement(&resources->refCount) == 0) {
     NCCLCHECK(nvlsGroupUnbind(comm, resources));
     NCCLCHECK(nvlsGroupUnmapMem(comm, resources));
     free(resources);

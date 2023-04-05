@@ -461,7 +461,7 @@ static ncclResult_t sharedBuffersDestroy(struct ncclProxyState* proxyState, int 
   if (peer == NULL) NCCLCHECK(ncclInternalError;)
   struct ncclProxySharedP2p* state = type == 0 ? &peer->send : &peer->recv;
   if (state->size == 0) NCCLCHECK(ncclInternalError);
-  if (__atomic_sub_fetch(&state->refcount, 1, __ATOMIC_RELAXED) == 0) {
+  if (ncclAtomicRefCountDecrement(&state->refcount) == 0) {
     if (state->cudaBuff) {
       if (!connection->sameProcess || ncclCuMemEnable()) {
         NCCLCHECK(ncclP2pFreeShareableBuffer(&state->ipcDesc));

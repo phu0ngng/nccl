@@ -201,7 +201,7 @@ static ncclResult_t commFree(ncclComm_t comm) {
     NCCLCHECK(freeChannel(comm->channels+channel, comm->nRanks, 1, comm->localRanks));
 
   if (comm->sharedRes) {
-    if (__atomic_sub_fetch(&comm->sharedRes->refCount, 1, __ATOMIC_RELAXED) == 0) {
+    if (ncclAtomicRefCountDecrement(&comm->sharedRes->refCount) == 0) {
       for (int c=0; c<MAXCHANNELS; c++) {
         if (comm->sharedRes->peers[c]) free(comm->sharedRes->peers[c]);
         if (comm->sharedRes->devPeers[c]) ncclCudaFree(comm->sharedRes->devPeers[c]);
@@ -225,7 +225,7 @@ static ncclResult_t commFree(ncclComm_t comm) {
   ncclMemoryStackDestruct(&comm->memScoped);
   ncclMemoryStackDestruct(&comm->memPermanent);
 
-  if (__atomic_sub_fetch(comm->abortFlagRefCount, 1, __ATOMIC_RELAXED) == 0) {
+  if (ncclAtomicRefCountDecrement(comm->abortFlagRefCount) == 0) {
     NCCLCHECK(ncclCudaHostFree((void *)comm->abortFlag));
     free(comm->abortFlagRefCount);
   }
@@ -356,7 +356,7 @@ static ncclResult_t commAlloc(struct ncclComm* comm, struct ncclComm* parent, in
     sharedRes->refCount = 1;
   } else {
     comm->sharedRes = parent->sharedRes;
-    __atomic_add_fetch(&parent->sharedRes->refCount, 1, __ATOMIC_RELAXED);
+    ncclAtomicRefCountIncrement(&parent->sharedRes->refCount);
   }
 
   if (comm->topParentRanks == NULL) {
@@ -1939,7 +1939,7 @@ ncclResult_t ncclCommSplit(ncclComm_t comm, int color, int key, ncclComm_t *newc
     NCCLCHECKGOTO(ncclCalloc(&childComm, 1), res, fail);
     childComm->abortFlag = comm->abortFlag;
     childComm->abortFlagRefCount = comm->abortFlagRefCount;
-    __atomic_add_fetch(comm->abortFlagRefCount, 1, __ATOMIC_RELAXED);
+    ncclAtomicRefCountIncrement(comm->abortFlagRefCount);
     if (config == NULL) {
       NCCLCHECKGOTO(copyCommConfig(childComm, comm), res, fail);
     } else {

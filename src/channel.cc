@@ -31,7 +31,7 @@ ncclResult_t initChannel(struct ncclComm* comm, int channelId) {
     channel->peers = ncclMemoryStackAlloc<struct ncclChannelPeer*>(&comm->memPermanent, nPeers);
     for (int r = 0; r < nRanks; r++) {
       channel->peers[r] = comm->sharedRes->peers[channelId] + comm->topParentRanks[r];
-      __atomic_add_fetch(&channel->peers[r]->refCount, 1, __ATOMIC_RELAXED);
+      ncclAtomicRefCountIncrement(&channel->peers[r]->refCount);
     }
   }
 
@@ -77,7 +77,7 @@ ncclResult_t initNvlsChannel(struct ncclComm* comm, int channelId, struct ncclCo
       uintptr_t addr = (uintptr_t)(parent->channels[channelId].nvlsDevPeers + tr);
       channel->peers[comm->nRanks + 1 + r] = parent->channels[channelId].nvlsPeers + tr;
       NCCLCHECK(ncclCudaMemcpyAsync((uintptr_t*)(channel->devPeers + comm->nRanks + 1 + r), (uintptr_t*)&addr, 1, sharedRes->deviceStream.cudaStream));
-      __atomic_add_fetch(&parent->channels[channelId].nvlsPeers[tr].refCount, 1, __ATOMIC_RELAXED);
+      ncclAtomicRefCountIncrement(&parent->channels[channelId].nvlsPeers[tr].refCount);
     }
   } else {
     NCCLCHECK(ncclCalloc(&channel->nvlsPeers, comm->localRanks));
@@ -86,7 +86,7 @@ ncclResult_t initNvlsChannel(struct ncclComm* comm, int channelId, struct ncclCo
       uintptr_t addr = (uintptr_t)(channel->nvlsDevPeers + r);
       channel->peers[comm->nRanks + 1 + r] = channel->nvlsPeers + r;
       NCCLCHECK(ncclCudaMemcpyAsync((uintptr_t*)(channel->devPeers + comm->nRanks + 1 + r), (uintptr_t*)&addr, 1, sharedRes->deviceStream.cudaStream));
-      __atomic_add_fetch(&channel->nvlsPeers[r].refCount, 1, __ATOMIC_RELAXED);
+      ncclAtomicRefCountIncrement(&channel->nvlsPeers[r].refCount);
     }
   }
 
@@ -114,14 +114,14 @@ ncclResult_t initCollnetChannel(struct ncclComm* comm, int channelId, struct ncc
     addr = (uintptr_t)parent->channels[channelId].collnetDevPeers;
     channel->peers[comm->nRanks] = parent->channels[channelId].collnetPeers;
     NCCLCHECK(ncclCudaMemcpyAsync((uintptr_t*)(channel->devPeers + comm->nRanks), (uintptr_t*)&addr, 1, sharedRes->deviceStream.cudaStream));
-    __atomic_add_fetch(&parent->channels[channelId].collnetPeers->refCount, 1, __ATOMIC_RELAXED);
+    ncclAtomicRefCountIncrement(&parent->channels[channelId].collnetPeers->refCount);
   } else {
     NCCLCHECK(ncclCalloc(&channel->collnetPeers, 1));
     NCCLCHECK(ncclCudaCallocAsync(&channel->collnetDevPeers, 1, sharedRes->deviceStream.cudaStream));
     addr = (uintptr_t)channel->collnetDevPeers;
     channel->peers[comm->nRanks] = channel->collnetPeers;
     NCCLCHECK(ncclCudaMemcpyAsync((uintptr_t*)(channel->devPeers + comm->nRanks), (uintptr_t*)&addr, 1, sharedRes->deviceStream.cudaStream));
-    __atomic_add_fetch(&channel->collnetPeers->refCount, 1, __ATOMIC_RELAXED);
+    ncclAtomicRefCountIncrement(&channel->collnetPeers->refCount);
   }
 
   NCCLCHECK(ncclStrongStreamRelease(ncclCudaGraphNone(), &sharedRes->deviceStream));
@@ -141,7 +141,7 @@ ncclResult_t freeChannel(struct ncclChannel* channel, int nRanks, int collnetNRa
   for (int r = 0; r < nPeers; r++) {
     struct ncclChannelPeer* peer = channel->peers[r];
     if (peer) {
-      if (__atomic_sub_fetch(&peer->refCount, 1, __ATOMIC_RELAXED) == 0) {
+      if (ncclAtomicRefCountDecrement(&peer->refCount) == 0) {
         for (int b=0; b<NCCL_MAX_CONNS; b++) {
           if (peer->send[b].transportComm) NCCLCHECK(peer->send[b].transportComm->free(peer->send+b));
           if (peer->recv[b].transportComm) NCCLCHECK(peer->recv[b].transportComm->free(peer->recv+b));
