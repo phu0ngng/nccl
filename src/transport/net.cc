@@ -304,7 +304,7 @@ static ncclResult_t sendConnect(struct ncclComm* comm, struct ncclConnect* conne
         }
       }
     }
-  } else {
+  } else if (!(map->sameProcess && map->cudaDev == comm->cudaDev)) {
     if (!map->sameProcess) NCCLCHECK(netMapShm(map->mems+NCCL_NET_MAP_HOSTMEM));
     if (map->mems[NCCL_NET_MAP_DEVMEM].size) {
       NCCLCHECK(ncclP2pImportShareableBuffer(comm, send->proxyConn.tpRank,
@@ -384,6 +384,13 @@ static ncclResult_t recvConnect(struct ncclComm* comm, struct ncclConnect* conne
 static ncclResult_t sendFree(struct ncclConnector* send) {
   struct connectMap* map = (struct connectMap*)(send->transportResources);
   if (map) {
+    int cudaDev;
+    CUDACHECK(cudaGetDevice(&cudaDev));
+    if (map->sameProcess && map->cudaDev == cudaDev) {
+      // Our own GPU, so it wasn't mapped in
+      free(map);
+      return ncclSuccess;
+    }
     if (!map->sameProcess || ncclCuMemEnable()) {
       if (!map->sameProcess) NCCLCHECK(ncclShmClose(map->mems[NCCL_NET_MAP_HOSTMEM].attachHandle));
       if (map->mems[NCCL_NET_MAP_DEVMEM].size) {
@@ -759,7 +766,12 @@ static ncclResult_t recvProxyConnect(struct ncclProxyConnection* connection, str
 
   if (map->mems[NCCL_NET_MAP_DEVMEM].size) {
     if (resources->shared == 0) {
-      NCCLCHECK(ncclCudaCalloc(&map->mems[NCCL_NET_MAP_DEVMEM].gpuPtr, map->mems[NCCL_NET_MAP_DEVMEM].size));
+      if (ncclCuMemEnable()) {
+        NCCLCHECK(ncclP2pAllocateShareableBuffer(map->mems[NCCL_NET_MAP_DEVMEM].size, &map->mems[NCCL_NET_MAP_DEVMEM].ipcDesc,
+                                                 (void**)&map->mems[NCCL_NET_MAP_DEVMEM].gpuPtr));
+      } else {
+        NCCLCHECK(ncclCudaCalloc(&map->mems[NCCL_NET_MAP_DEVMEM].gpuPtr, map->mems[NCCL_NET_MAP_DEVMEM].size));
+      }
       map->mems[NCCL_NET_MAP_DEVMEM].cpuPtr = map->mems[NCCL_NET_MAP_DEVMEM].gpuPtr;
     }
   }
