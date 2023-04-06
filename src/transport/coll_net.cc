@@ -160,7 +160,7 @@ static ncclResult_t sendSetup(struct ncclComm* comm, struct ncclTopoGraph* graph
   NCCLCHECK(ncclTopoGetLocalRank(comm->topo, myInfo->rank, &send->proxyConn.tpLocalRank));
   tpProxyRank = comm->topParentRanks[myInfo->rank];
   NCCLCHECK(ncclProxyConnect(comm, TRANSPORT_COLLNET, 1, tpProxyRank, &send->proxyConn));
-  __atomic_add_fetch(&comm->collNetSharedRes->refCount, 1, __ATOMIC_RELAXED);
+  ncclAtomicRefCountIncrement(&comm->collNetSharedRes->refCount);
   req.collNet = comm->collNetSharedRes;
   NCCLCHECK(ncclProxyCallBlocking(comm, &send->proxyConn, ncclProxyMsgSetup, &req, sizeof(req), NULL, 0));
 
@@ -181,7 +181,7 @@ static ncclResult_t recvSetup(struct ncclComm* comm, struct ncclTopoGraph* graph
   tpProxyRank = comm->topParentRanks[myInfo->rank];
   NCCLCHECK(ncclProxyConnect(comm, TRANSPORT_COLLNET, 0, tpProxyRank, &recv->proxyConn));
   struct collNetRecvConnectInfo* info = (struct collNetRecvConnectInfo*) connectInfo;
-  __atomic_add_fetch(&comm->collNetSharedRes->refCount, 1, __ATOMIC_RELAXED);
+  ncclAtomicRefCountIncrement(&comm->collNetSharedRes->refCount);
   req.collNet = comm->collNetSharedRes;
   NCCLCHECK(ncclProxyCallBlocking(comm, &recv->proxyConn, ncclProxyMsgSetup, &req, sizeof(req), &info->collNetHandle, sizeof(collNetHandle_t)));
 
@@ -580,7 +580,7 @@ static ncclResult_t sendProxyFree(struct ncclProxyConnection* connection, struct
     if (mems[NCCL_NET_MAP_GDCMEM].cpuPtr) NCCLCHECK(ncclGdrCudaFree(resources->gdrDesc));
     NCCLCHECK(sharedBuffersDestroy(connection->collNet));
     NCCLCHECK(sharedFree(proxyState, connection->collNet, resources->netDev));
-    if (__atomic_sub_fetch(&connection->collNet->refCount, 1, __ATOMIC_RELAXED) == 0) free(connection->collNet);
+    if (ncclAtomicRefCountDecrement(&connection->collNet->refCount) == 0) free(connection->collNet);
     free(connection->transportResources);
   }
   return ncclSuccess;
@@ -601,7 +601,7 @@ static ncclResult_t recvProxyFree(struct ncclProxyConnection* connection, struct
     if (mems[NCCL_NET_MAP_GDCMEM].cpuPtr) NCCLCHECK(ncclGdrCudaFree(resources->gdrDesc));
     NCCLCHECK(sharedBuffersDestroy(connection->collNet));
     NCCLCHECK(sharedFree(proxyState, connection->collNet, resources->netDev));
-    if (__atomic_sub_fetch(&connection->collNet->refCount, 1, __ATOMIC_RELAXED) == 0) free(connection->collNet);
+    if (ncclAtomicRefCountDecrement(&connection->collNet->refCount) == 0) free(connection->collNet);
     free(connection->transportResources);
   }
   return ncclSuccess;

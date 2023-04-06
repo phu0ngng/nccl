@@ -1583,7 +1583,7 @@ ncclResult_t ncclProxyCreate(struct ncclComm* comm) {
 ncclResult_t ncclProxyStop(struct ncclComm* comm) {
   struct ncclProxyState* sharedProxyState = comm->sharedRes->proxyState;
 
-  if ((comm->proxyRefCountOld = __atomic_sub_fetch(&sharedProxyState->refCount, 1, __ATOMIC_RELAXED)) == 0) {
+  if ((comm->proxyRefCountOld = ncclAtomicRefCountDecrement(&sharedProxyState->refCount)) == 0) {
     if (sharedProxyState->peerAddresses) {
       if (*comm->abortFlag == 0) {
         struct ncclSocket sock;

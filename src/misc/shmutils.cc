@@ -14,6 +14,7 @@
 #include <stdio.h>
 #include <stdlib.h>
 #include <unistd.h>
+#include <utils.h>
 
 struct shmHandleInternal {
   int fd;
@@ -86,7 +87,7 @@ ncclResult_t ncclShmOpen(char* shmPath, size_t shmSize, void** shmPtr, void** de
   if (create) {
     *(int*)(hptr + shmSize) = refcount;
   } else {
-    int remref = __atomic_sub_fetch((int*)(hptr + shmSize), 1, __ATOMIC_RELAXED);
+    int remref = ncclAtomicRefCountDecrement((int*)(hptr + shmSize));
     if (remref == 0) {
       /* the last peer has completed attachment, it should unlink the shm mem file. */
       if (unlink(shmPath) != 0) {

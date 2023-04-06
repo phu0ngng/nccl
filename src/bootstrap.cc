@@ -352,7 +352,7 @@ ncclResult_t bootstrapSplit(struct ncclBootstrapHandle* handle, struct ncclComm*
       comm->topParentRanks[i] = parent->topParentRanks[parentRanks[i]];
     }
     comm->proxyState = parent->sharedRes->proxyState;
-    __atomic_add_fetch(&parent->sharedRes->proxyState->refCount, 1, __ATOMIC_RELAXED);
+    ncclAtomicRefCountIncrement(&parent->sharedRes->proxyState->refCount);
   } else {
     // Create the service proxy
     NCCLCHECKGOTO(ncclCalloc(&state->peerProxyAddresses, nranks), ret, fail);
