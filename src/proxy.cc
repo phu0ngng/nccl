@@ -789,7 +789,7 @@ void ncclDumpProxyState(int signal) {
 }
 
 NCCL_PARAM(CreateThreadContext, "CREATE_THREAD_CONTEXT", 0);
-static ncclResult_t setProxyThreadContext(struct ncclProxyState* proxyState) {
+static int setProxyThreadContext(struct ncclProxyState* proxyState) {
 #if CUDART_VERSION >= 11030
   static int createThreadContext = -1;
 
@@ -808,17 +808,17 @@ static ncclResult_t setProxyThreadContext(struct ncclProxyState* proxyState) {
                                   CU_CTX_SCHED_SPIN|CU_CTX_MAP_HOST, proxyState->cudaDev)) != CUDA_SUCCESS) {
         WARN("Failed to create CUDA context on device %d", proxyState->cudaDev);
         createThreadContext = 0;
-        return ncclSuccess;
       }
     } else {
       if (CUPFN(cuCtxSetCurrent(proxyState->cudaCtx)) != CUDA_SUCCESS) {
         WARN("Failed to set CUDA context on device %d", proxyState->cudaDev);
-        return ncclUnhandledCudaError;
+        return 0;
       }
+      return 1;
     }
   }
 #endif
-  return ncclSuccess;
+  return 0;
 }
 
 // Set to SIGUSR1 or SIGUSR2 to help debug proxy state during hangs
@@ -827,8 +827,8 @@ NCCL_PARAM(ProgressAppendOpFreq, "PROGRESS_APPENDOP_FREQ", 8);
 
 void* ncclProxyProgress(void *proxyState_) {
   struct ncclProxyState* proxyState = (struct ncclProxyState*)proxyState_;
-  if (setProxyThreadContext(proxyState) != ncclSuccess) {
-    WARN("[Proxy Progress] Failed to set CUDA context on device %d", proxyState->cudaDev);
+  if (setProxyThreadContext(proxyState)) {
+    INFO(NCCL_INIT, "[Proxy Progress] Created CUDA context on device %d", proxyState->cudaDev);
   } else if (cudaSetDevice(proxyState->cudaDev) != cudaSuccess) {
     WARN("[Proxy Progress] Failed to set CUDA device %d", proxyState->cudaDev);
   }
@@ -1394,8 +1394,8 @@ static bool proxyMatchOpType(int type) {
 void* ncclProxyService(void* _args) {
   struct ncclProxyState* proxyState =  (struct ncclProxyState*) _args;
   // if (CPU_COUNT(&comm->cpuAffinity)) sched_setaffinity(0, sizeof(cpu_set_t), &comm->cpuAffinity);
-  if (setProxyThreadContext(proxyState) != ncclSuccess) {
-    WARN("[Proxy Service] Failed to set CUDA context on device %d", proxyState->cudaDev);
+  if (setProxyThreadContext(proxyState)) {
+    INFO(NCCL_INIT, "[Proxy Service] Created CUDA context on device %d", proxyState->cudaDev);
   } else if (cudaSetDevice(proxyState->cudaDev) != cudaSuccess) {
     WARN("[Proxy Service] Failed to set CUDA device %d", proxyState->cudaDev);
   }
