@@ -13,7 +13,6 @@ class ncclCommInitRankConfig_test : public ::testing::Test {
         ncclCommon_destroysrComms();
         (void) setenv("NCCL_CHECK_POINTERS", "1", 0);
         expectMask = (1 << ncclSuccess) | (1 << ncclInProgress);
-        ASSERT_EQ(ncclSuccess, ncclGetUniqueId(&commId));
         EXPECT_EQ(cudaSuccess, cudaGetDeviceCount(&ndev));
         EXPECT_NE(nullptr, gcomms = (ncclComm_t*) calloc(ndev, sizeof(ncclComm_t)));
         gconfig.blocking = 0;
@@ -50,6 +49,7 @@ class ncclCommInitRankConfig_test : public ::testing::Test {
 };
 
 TEST_F(ncclCommInitRankConfig_test, basic) {
+    ASSERT_EQ(ncclSuccess, ncclGetUniqueId(&commId));
     ASSERT_EQ(ncclSuccess, ncclGroupStart());
     for (int i = 0; i < ndev; ++i) {
         ASSERT_EQ(cudaSuccess, cudaSetDevice(i));
@@ -60,6 +60,7 @@ TEST_F(ncclCommInitRankConfig_test, basic) {
 }
 
 TEST_F(ncclCommInitRankConfig_test, basic_null) {
+    ASSERT_EQ(ncclSuccess, ncclGetUniqueId(&commId));
     ASSERT_EQ(ncclSuccess, ncclGroupStart());
     for (int i = 0; i < ndev; ++i) {
         ASSERT_EQ(cudaSuccess, cudaSetDevice(i));
@@ -69,11 +70,13 @@ TEST_F(ncclCommInitRankConfig_test, basic_null) {
 }
 
 TEST_F(ncclCommInitRankConfig_test, attr_null) {
+    ASSERT_EQ(ncclSuccess, ncclGetUniqueId(&commId));
     ASSERT_EQ(cudaSuccess, cudaSetDevice(0));
     ASSERT_EQ(ncclSuccess, ncclCommInitRankConfig(&gcomms[0], 1, commId, rank0, NULL));
 }
 
 TEST_F(ncclCommInitRankConfig_test, with_config) {
+    ASSERT_EQ(ncclSuccess, ncclGetUniqueId(&commId));
     ASSERT_EQ(cudaSuccess, cudaSetDevice(0));
     ASSERT_NE(0, expectMask & (1 << ncclCommInitRankConfig(&gcomms[0], 1, commId, rank0, &gconfig)));
     waitCommsReady(gcomms, 1);

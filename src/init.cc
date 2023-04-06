@@ -1547,6 +1547,7 @@ exit:
 fail:
   if (comm) {
     if (comm->abortFlag) ncclCudaHostFree((void *)comm->abortFlag);
+    if (comm->abortFlagRefCount) free(comm->abortFlagRefCount);
     free(comm);
   }
   if (newcomm) *newcomm = NULL;

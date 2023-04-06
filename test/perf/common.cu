@@ -789,16 +789,18 @@ testResult_t threadInit(struct threadArgs* args) {
     for (int i = 0; i < args->nGpus; ++i) args->comms[0][i] = globalComms[i];
   }
 
-  /* destroy global NCCL communicators */
-  NCCLCHECK(ncclGroupStart());
-  for (int i = 0; i < args->nGpus; ++i) {
-    NCCLCHECK(ncclCommFinalize(globalComms[i]));
+  if (split_comm) {
+    /* destroy global NCCL communicators */
+    NCCLCHECK(ncclGroupStart());
+    for (int i = 0; i < args->nGpus; ++i) {
+      NCCLCHECK(ncclCommFinalize(globalComms[i]));
+    }
+    NCCLCHECK_COMM_WAITBATCH(ncclGroupEnd(), globalComms, args->nGpus);
+
+    for (int i = 0; i < args->nGpus; ++i)
+      NCCLCHECK(ncclCommDestroy(globalComms[i]));
   }
-  NCCLCHECK_COMM_WAITBATCH(ncclGroupEnd(), globalComms, args->nGpus);
-
-  for (int i = 0; i < args->nGpus; ++i)
-    NCCLCHECK(ncclCommDestroy(globalComms[i]));
-
+  
   TESTCHECK(threadRunTests(args));
 
   for (int id = 0; id < args->commNum; ++id) {
