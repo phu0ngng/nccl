@@ -90,7 +90,7 @@ static int commblocking = NCCL_CONFIG_UNDEF_INT;
 static int ft_test = 0;
 static char* ft_list = NULL;
 static size_t tbytes = SIZE_MAX;
-static int split_share = 0;
+static int split_share = NCCL_CONFIG_UNDEF_INT;
 static int split_comm = 0;
 static int commNum = 1;
 
