@@ -1044,7 +1044,7 @@ ncclResult_t ncclProxyConnect(struct ncclComm* comm, int transport, int send, in
   struct ncclProxyInitResp resp = {0};
   // This usually sends proxyConn->connection to identify which connection this is.
   // However, this is part of the response and therefore is ignored
-  ncclProxyCallBlocking(comm, proxyConn, ncclProxyMsgInit, &req, sizeof(req), &resp, sizeof(resp));
+  NCCLCHECK(ncclProxyCallBlocking(comm, proxyConn, ncclProxyMsgInit, &req, sizeof(req), &resp, sizeof(resp)));
   proxyConn->connection = resp.connection;
 
   // If we need proxy progress, map progress ops
@@ -1187,18 +1187,20 @@ ncclResult_t ncclPollProxyResponse(struct ncclComm* comm, struct ncclProxyConnec
 
 ncclResult_t ncclProxyCallBlocking(struct ncclComm* comm, struct ncclProxyConnector* proxyConn, int type, void* reqBuff, int reqSize, void* respBuff, int respSize) {
   // Alloc some memory to act as a handle
+  ncclResult_t res = ncclSuccess;
   void* opId = malloc(1);
 
-  NCCLCHECK(ncclProxyCallAsync(comm, proxyConn, type, reqBuff, reqSize, respSize, opId));
-  ncclResult_t res = ncclInProgress;
+  NCCLCHECKGOTO(ncclProxyCallAsync(comm, proxyConn, type, reqBuff, reqSize, respSize, opId), res, fail);
 
-  while (res == ncclInProgress) {
+  do {
     res = ncclPollProxyResponse(comm, proxyConn, respBuff, opId);
-  }
+  } while (res == ncclInProgress);
 
+exit:
   free(opId);
-
   return res;
+fail:
+  goto exit;
 }
 
 static ncclResult_t proxyProgressInit(struct ncclProxyState* proxyState) {
