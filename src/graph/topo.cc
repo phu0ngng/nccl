@@ -756,7 +756,7 @@ ncclResult_t ncclTopoGetLocalGpu(struct ncclTopoSystem* system, int net, int* gp
   int netLocalGpus = 0, minType = PATH_DIS;
   uint64_t localNetMask = 0ULL;
   for (int g=0; g<ngpus; g++) {
-    int type;
+    int type = PATH_DIS;
     uint64_t mask;
     NCCLCHECK(getLocalNetMask(system, g, &mask, &type));
     if ((1ULL<<net) & mask) {
