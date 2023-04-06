@@ -4,7 +4,7 @@ ifeq ($(MPI),1)
 DIRS += mpi replay
 endif
 build: ${DIRS:%=%.build}
-clean: ${DIRS:%=%.clean} mpi.clean gtest.clean
+clean: ${DIRS:%=%.clean} mpi.clean gtest.clean verifiable.clean
 
 %.build:gtest
 	${MAKE} -C $* BUILDDIR=${BUILDDIR}
