@@ -476,9 +476,9 @@ static ncclResult_t sharedBuffersDestroy(struct ncclProxyState* proxyState, int 
       NCCLCHECK(ncclCudaFree(state->cudaBuff));
     }
     if (state->hostBuff) NCCLCHECK(ncclCudaHostFree(state->hostBuff));
-  } else {
-    return ncclSuccess;
   }
+
+  if (peer->send.refcount || peer->recv.refcount) return ncclSuccess;
 
   free(peer);
   proxyState->progressState.localPeers[tpLocalRank] = NULL;
