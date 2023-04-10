@@ -14,12 +14,36 @@
 // This env var (NCCL_CUMEM_ENABLE) toggles cuMem API usage
 NCCL_PARAM(CuMemEnable, "CUMEM_ENABLE", 0);
 
-int ncclCuMemEnable() {
-#if CUDART_VERSION >= 11030
-  return (ncclParamCuMemEnable() && CUPFN(cuMemCreate) != NULL);
-#else
+static int ncclCuMemSupported = 0;
+
+// Determine whether CUMEM & VMM RDMA is supported on this platform
+int ncclIsCuMemSupported() {
+#if CUDART_VERSION < 11030
   return 0;
+#else
+  CUdevice currentDev;
+  int cudaDev;
+  int cudaDriverVersion;
+  int flag = 0;
+  ncclResult_t ret = ncclSuccess;
+  CUDACHECKGOTO(cudaDriverGetVersion(&cudaDriverVersion), ret, error);
+  if (cudaDriverVersion < 12000) return 0;  // Need CUDA_VISIBLE_DEVICES support
+  CUDACHECKGOTO(cudaGetDevice(&cudaDev), ret, error);
+  if (CUPFN(cuMemCreate) == NULL) return 0;
+  CUCHECKGOTO(cuDeviceGet(&currentDev, cudaDev), ret, error);
+  // Query device to see if CUMEM VMM support is available
+  CUCHECKGOTO(cuDeviceGetAttribute(&flag, CU_DEVICE_ATTRIBUTE_VIRTUAL_MEMORY_MANAGEMENT_SUPPORTED, currentDev), ret, error);
+  if (!flag) return 0;
+  // Query device to see if CUMEM RDMA support is available
+  CUCHECKGOTO(cuDeviceGetAttribute(&flag, CU_DEVICE_ATTRIBUTE_GPU_DIRECT_RDMA_WITH_CUDA_VMM_SUPPORTED, currentDev), ret, error);
+  if (!flag) return 0;
+error:
+  return (ret == ncclSuccess);
 #endif
+}
+
+int ncclCuMemEnable() {
+  return (ncclCuMemSupported && ncclParamCuMemEnable());
 }
 
 #define DECLARE_CUDA_PFN(symbol,version) PFN_##symbol##_v##version pfn_##symbol = nullptr
@@ -206,6 +230,9 @@ static void initOnceFunc() {
     goto error;
   }
   #endif
+
+  // Determine whether we support the cuMem APIs or not
+  ncclCuMemSupported = ncclIsCuMemSupported();
 
   initResult = ncclSuccess;
   return;
