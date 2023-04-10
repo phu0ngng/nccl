@@ -616,6 +616,7 @@ static ncclResult_t scheduleP2pTasksToPlan(
   struct ncclTasks::Peer* peers = tasks->peers;
   int const *sendOrder = tasks->p2pSendOrder;
   int const *recvOrder = tasks->p2pRecvOrder;
+  int const *delta = tasks->p2pDelta;
 
   plan->threadPerBlock = std::max(plan->threadPerBlock, NCCL_MAX_NTHREADS);
   if (!plan->kernelSpecialized) {
@@ -634,16 +635,19 @@ static ncclResult_t scheduleP2pTasksToPlan(
   // Avoid overloading channels with 8+ operations as we loose the sync warp, hence a bit of bandwidth.
   while (nChannelsMax*nRanks > comm->p2pnChannels*4 && nChannelsMax > 1) nChannelsMax /= 2;
 
-  int lastRecvNode = -1;
+  int lastDelta = -1;
   bool fuseOk = false;
   while (tasks->nTasksP2p != 0) {
-    for (int i=0; i < nRanks; i++) {
+    for (int i=0; i < comm->nNodes * comm->maxLocalRanks; i++) {
       int sendPeer = sendOrder[i];
       int recvPeer = recvOrder[i];
-      if (comm->rankToNode[recvPeer] != lastRecvNode) fuseOk = false;
-      lastRecvNode = comm->rankToNode[recvPeer];
-      struct ncclTaskP2p* send = ncclIntruQueueHead(&peers[sendPeer].sendQueue);
-      struct ncclTaskP2p* recv = ncclIntruQueueHead(&peers[recvPeer].recvQueue);
+      int d = delta[i];
+      if (d != lastDelta) {
+        fuseOk = false;
+        lastDelta = d;
+      }
+      struct ncclTaskP2p* send = sendPeer != -1 ? ncclIntruQueueHead(&peers[sendPeer].sendQueue) : NULL;
+      struct ncclTaskP2p* recv = recvPeer != -1 ? ncclIntruQueueHead(&peers[recvPeer].recvQueue) : NULL;
       if (sendPeer == comm->rank) {
         if (recvPeer != comm->rank) {
           WARN("Sendrecv plan not aligned for self");

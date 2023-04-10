@@ -1066,15 +1066,16 @@ static ncclResult_t initTransportsRank(struct ncclComm* comm, struct ncclComm* p
 
   do { // Setup p2p structures in comm->tasks
     struct ncclTasks* tasks = &comm->tasks;
-    int nRanks = comm->nRanks;
     int node = comm->node;
     int nNodes = comm->nNodes;
     struct ncclNodeRanks *nodeRanks = comm->nodeRanks;
     int localRank = comm->localRank;
-    tasks->peers = ncclMemoryStackAlloc<ncclTasks::Peer>(&comm->memPermanent, nRanks);
-    tasks->p2pSendOrder = ncclMemoryStackAlloc<int>(&comm->memPermanent, nRanks);
-    tasks->p2pRecvOrder = ncclMemoryStackAlloc<int>(&comm->memPermanent, nRanks);
-    int s=0, r=0;
+    int p2pOrderRanks = comm->nNodes * comm->maxLocalRanks;
+    tasks->peers = ncclMemoryStackAlloc<ncclTasks::Peer>(&comm->memPermanent, p2pOrderRanks);
+    tasks->p2pSendOrder = ncclMemoryStackAlloc<int>(&comm->memPermanent, p2pOrderRanks);
+    tasks->p2pRecvOrder = ncclMemoryStackAlloc<int>(&comm->memPermanent, p2pOrderRanks);
+    tasks->p2pDelta = ncclMemoryStackAlloc<int>(&comm->memPermanent, p2pOrderRanks);
+    int i=0;
     // schedule delta 0, +1, -1, +2, -2, ...
     // also make sure we don't do 0 twice, nor +n/2 and -n/2 if n is even.
     for (int d=0; d <= nNodes/4; d++) {
@@ -1084,18 +1085,16 @@ static ncclResult_t initTransportsRank(struct ncclComm* comm, struct ncclComm* p
     sched_delta:
       int recvNode = (node+nNodes-delta)%nNodes;
       int sendNode = (node+delta)%nNodes;
-      int steps = comm->maxLocalRanks;
+      int steps = std::max(comm->maxLocalRanks, nodeRanks[recvNode].localRanks);
+      steps = std::max(steps, nodeRanks[sendNode].localRanks);
       for (int step=0; step < steps; step++) {
         int recvIndex = (localRank-step+steps)%steps;
-        if (recvIndex < nodeRanks[recvNode].localRanks) {
-          tasks->p2pRecvOrder[r] = nodeRanks[recvNode].localRankToRank[recvIndex];
-          r++;
-        }
+	int recvRank = recvIndex < nodeRanks[recvNode].localRanks ? nodeRanks[recvNode].localRankToRank[recvIndex] : -1;
+        tasks->p2pRecvOrder[i] = recvRank;
         int sendIndex = (localRank+step)%steps;
-        if (sendIndex < nodeRanks[sendNode].localRanks) {
-          tasks->p2pSendOrder[s] = nodeRanks[sendNode].localRankToRank[sendIndex];
-          s++;
-        }
+        int sendRank = sendIndex < nodeRanks[sendNode].localRanks ? nodeRanks[sendNode].localRankToRank[sendIndex] : -1;
+        tasks->p2pSendOrder[i] = sendRank;
+        tasks->p2pDelta[i++] = delta;
       }
       index++;
       if (index == 1 && deltas[1] == deltas[0]) index++;
@@ -1107,7 +1106,7 @@ static ncclResult_t initTransportsRank(struct ncclComm* comm, struct ncclComm* p
         goto sched_delta;
       }
     }
-    assert(s == nRanks && r == nRanks);
+    assert(i == p2pOrderRanks);
   } while (0);
 
   if (ncclParamNvbPreconnect()) {

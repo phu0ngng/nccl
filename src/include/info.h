@@ -103,7 +103,7 @@ struct ncclTasks {
   struct ncclIntruQueue<ncclTaskColl, &ncclTaskColl::next> collQueue;
   size_t collBytesTotal;
   struct Peer* peers/*[nRanks]*/;
-  int *p2pSendOrder/*[nRanks]*/, *p2pRecvOrder/*[nRanks]*/;
+  int *p2pSendOrder, *p2pRecvOrder, *p2pDelta;
   int nTasksColl, nTasksP2p;
 
   // The list of user streams aggregated over all tasks present.
