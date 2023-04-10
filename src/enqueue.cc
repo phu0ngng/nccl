@@ -635,11 +635,12 @@ static ncclResult_t scheduleP2pTasksToPlan(
   while (nChannelsMax*nRanks > comm->p2pnChannels*4 && nChannelsMax > 1) nChannelsMax /= 2;
 
   int lastRecvNode = -1;
+  bool fuseOk = false;
   while (tasks->nTasksP2p != 0) {
     for (int i=0; i < nRanks; i++) {
       int sendPeer = sendOrder[i];
       int recvPeer = recvOrder[i];
-      bool fuseOk = comm->rankToNode[recvPeer] == lastRecvNode;
+      if (comm->rankToNode[recvPeer] != lastRecvNode) fuseOk = false;
       lastRecvNode = comm->rankToNode[recvPeer];
       struct ncclTaskP2p* send = ncclIntruQueueHead(&peers[sendPeer].sendQueue);
       struct ncclTaskP2p* recv = ncclIntruQueueHead(&peers[recvPeer].recvQueue);
@@ -682,6 +683,7 @@ static ncclResult_t scheduleP2pTasksToPlan(
             if (recvChunkBytes == -1) recvChunkBytes = 0;
             if (*nWorkBudget < 1) return ncclSuccess; // ensure room in budget
             NCCLCHECK(addP2pToPlan(comm, plan, nWorkBudget, /*isSendNotRecv=*/false, recvPeer, recv->chunk, recvPtr, recvChunkBytes, fuseOk));
+            fuseOk = true;
             recvPtr += recvChunkBytes;
             recvBytes -= recvChunkBytes;
             recv->chunk += 1;
@@ -694,7 +696,8 @@ static ncclResult_t scheduleP2pTasksToPlan(
           if (sendChunkBytes != 0) {
             if (sendChunkBytes == -1) sendChunkBytes = 0;
             if (*nWorkBudget < 1) return ncclSuccess; // ensure room in budget
-            NCCLCHECK(addP2pToPlan(comm, plan, nWorkBudget, /*isSendNotRecv=*/true, sendPeer, send->chunk, sendPtr, sendChunkBytes, true));
+            NCCLCHECK(addP2pToPlan(comm, plan, nWorkBudget, /*isSendNotRecv=*/true, sendPeer, send->chunk, sendPtr, sendChunkBytes, fuseOk));
+            fuseOk = true;
             sendPtr += sendChunkBytes;
             sendBytes -= sendChunkBytes;
             send->chunk += 1;
