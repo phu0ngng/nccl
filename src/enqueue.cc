@@ -616,7 +616,6 @@ static ncclResult_t scheduleP2pTasksToPlan(
   struct ncclTasks::Peer* peers = tasks->peers;
   int const *sendOrder = tasks->p2pSendOrder;
   int const *recvOrder = tasks->p2pRecvOrder;
-  int const *delta = tasks->p2pDelta;
 
   plan->threadPerBlock = std::max(plan->threadPerBlock, NCCL_MAX_NTHREADS);
   if (!plan->kernelSpecialized) {
@@ -635,17 +634,13 @@ static ncclResult_t scheduleP2pTasksToPlan(
   // Avoid overloading channels with 8+ operations as we loose the sync warp, hence a bit of bandwidth.
   while (nChannelsMax*nRanks > comm->p2pnChannels*4 && nChannelsMax > 1) nChannelsMax /= 2;
 
-  int lastDelta = -1;
-  bool fuseOk = false;
+  bool fuseOk;
+  // We can perform 8 send/recv per round per CTA. Make sure we jump between fused blocks at node boundaries.
   while (tasks->nTasksP2p != 0) {
-    for (int i=0; i < comm->nNodes * comm->maxLocalRanks; i++) {
+    for (int i=0; i < tasks->p2pOrderSteps; i++) {
       int sendPeer = sendOrder[i];
       int recvPeer = recvOrder[i];
-      int d = delta[i];
-      if (d != lastDelta) {
-        fuseOk = false;
-        lastDelta = d;
-      }
+      if ((i % (NCCL_MAX_WORK_ELEMENTS_P2P/2)) == 0) fuseOk = false;
       struct ncclTaskP2p* send = sendPeer != -1 ? ncclIntruQueueHead(&peers[sendPeer].sendQueue) : NULL;
       struct ncclTaskP2p* recv = recvPeer != -1 ? ncclIntruQueueHead(&peers[recvPeer].recvQueue) : NULL;
       if (sendPeer == comm->rank) {

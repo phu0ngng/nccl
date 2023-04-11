@@ -1070,11 +1070,12 @@ static ncclResult_t initTransportsRank(struct ncclComm* comm, struct ncclComm* p
     int nNodes = comm->nNodes;
     struct ncclNodeRanks *nodeRanks = comm->nodeRanks;
     int localRank = comm->localRank;
-    int p2pOrderRanks = comm->nNodes * comm->maxLocalRanks;
-    tasks->peers = ncclMemoryStackAlloc<ncclTasks::Peer>(&comm->memPermanent, p2pOrderRanks);
-    tasks->p2pSendOrder = ncclMemoryStackAlloc<int>(&comm->memPermanent, p2pOrderRanks);
-    tasks->p2pRecvOrder = ncclMemoryStackAlloc<int>(&comm->memPermanent, p2pOrderRanks);
-    tasks->p2pDelta = ncclMemoryStackAlloc<int>(&comm->memPermanent, p2pOrderRanks);
+    // We want to fuse along node boundaries. Make sure nsteps is a multiple or divides 8.
+    int steps = ALIGN_POWER(comm->maxLocalRanks, NCCL_MAX_WORK_ELEMENTS_P2P/2);
+    tasks->p2pOrderSteps = comm->nNodes * steps;
+    tasks->peers = ncclMemoryStackAlloc<ncclTasks::Peer>(&comm->memPermanent, tasks->p2pOrderSteps);
+    tasks->p2pSendOrder = ncclMemoryStackAlloc<int>(&comm->memPermanent, tasks->p2pOrderSteps);
+    tasks->p2pRecvOrder = ncclMemoryStackAlloc<int>(&comm->memPermanent, tasks->p2pOrderSteps);
     int i=0;
     // schedule delta 0, +1, -1, +2, -2, ...
     // also make sure we don't do 0 twice, nor +n/2 and -n/2 if n is even.
@@ -1085,8 +1086,6 @@ static ncclResult_t initTransportsRank(struct ncclComm* comm, struct ncclComm* p
     sched_delta:
       int recvNode = (node+nNodes-delta)%nNodes;
       int sendNode = (node+delta)%nNodes;
-      int steps = std::max(comm->maxLocalRanks, nodeRanks[recvNode].localRanks);
-      steps = std::max(steps, nodeRanks[sendNode].localRanks);
       for (int step=0; step < steps; step++) {
         int recvIndex = (localRank-step+steps)%steps;
 	int recvRank = recvIndex < nodeRanks[recvNode].localRanks ? nodeRanks[recvNode].localRankToRank[recvIndex] : -1;
@@ -1094,7 +1093,7 @@ static ncclResult_t initTransportsRank(struct ncclComm* comm, struct ncclComm* p
         int sendIndex = (localRank+step)%steps;
         int sendRank = sendIndex < nodeRanks[sendNode].localRanks ? nodeRanks[sendNode].localRankToRank[sendIndex] : -1;
         tasks->p2pSendOrder[i] = sendRank;
-        tasks->p2pDelta[i++] = delta;
+        i++;
       }
       index++;
       if (index == 1 && deltas[1] == deltas[0]) index++;
@@ -1106,7 +1105,7 @@ static ncclResult_t initTransportsRank(struct ncclComm* comm, struct ncclComm* p
         goto sched_delta;
       }
     }
-    assert(i == p2pOrderRanks);
+    assert(i == tasks->p2pOrderSteps);
   } while (0);
 
   if (ncclParamNvbPreconnect()) {
