@@ -11,6 +11,21 @@ echo "=============================== GRAPH TESTS Default - $(date +\"%T\") ====
 [ $? -ne 0 ] && let failure_count=$failure_count+1 && failure_names+=("GRAPH TESTS Default")
 echo -e "\n\n"
 
+echo "=============================== Single-Process Mem Leak TESTS Default - $(date +\"%T\") ================================="
+./comm_leak_test
+[ $? -ne 0 ] && let failure_count=$failure_count+1 && failure_names+=("Single-Process Mem Leak TESTS Default")
+echo -e "\n\n"
+
+echo "=============================== Single-Process Mem Leak TESTS NO P2P - $(date +\"%T\") ================================="
+NCCL_P2P_DISABLE=1 ./comm_leak_test
+[ $? -ne 0 ] && let failure_count=$failure_count+1 && failure_names+=("Single-Process Mem Leak TESTS NO P2P")
+echo -e "\n\n"
+
+echo "=============================== Single-Process Mem Leak TESTS Network - $(date +\"%T\") ================================="
+NCCL_SHM_DISABLE=1 NCCL_P2P_DISABLE=1 ./comm_leak_test
+[ $? -ne 0 ] && let failure_count=$failure_count+1 && failure_names+=("Single-Process Mem Leak TESTS Network")
+echo -e "\n\n"
+
 echo "=============================== FT TESTS Default - $(date +\"%T\") ================================="
 ./ft_test
 [ $? -ne 0 ] && let failure_count=$failure_count+1 && failure_names+=("FT TESTS Default")
