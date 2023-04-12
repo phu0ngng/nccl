@@ -840,7 +840,9 @@ static ncclResult_t sendProxyFree(struct ncclProxyConnection* connection, struct
     NCCLCHECK(ncclCudaFree(mems[NCCL_NET_MAP_DEVMEM].cpuPtr));
     if (!resources->map.sameProcess || ncclCuMemEnable()) {
       // cuMem API support
-      NCCLCHECK(ncclP2pFreeShareableBuffer(&mems[NCCL_NET_MAP_DEVMEM].ipcDesc));
+      if (mems[NCCL_NET_MAP_DEVMEM].size) {
+        NCCLCHECK(ncclP2pFreeShareableBuffer(&mems[NCCL_NET_MAP_DEVMEM].ipcDesc));
+      }
     }
     if (mems[NCCL_NET_MAP_GDCMEM].cpuPtr) NCCLCHECK(ncclGdrCudaFree(resources->gdrDesc));
     if (resources->shared) {
@@ -877,6 +879,12 @@ static ncclResult_t recvProxyFree(struct ncclProxyConnection* connection, struct
     struct connectMapMem* mems = resources->map.mems;
     NCCLCHECK(ncclCudaHostFree(mems[NCCL_NET_MAP_HOSTMEM].cpuPtr));
     NCCLCHECK(ncclCudaFree(mems[NCCL_NET_MAP_DEVMEM].cpuPtr));
+    if (!resources->map.sameProcess || ncclCuMemEnable()) {
+      // cuMem API support
+      if (mems[NCCL_NET_MAP_DEVMEM].size) {
+        NCCLCHECK(ncclP2pFreeShareableBuffer(&mems[NCCL_NET_MAP_DEVMEM].ipcDesc));
+      }
+    }
     if (mems[NCCL_NET_MAP_GDCMEM].cpuPtr) NCCLCHECK(ncclGdrCudaFree(resources->gdrDesc));
     if (resources->shared) {
       NCCLCHECK(sharedBuffersDestroy(proxyState, resources->tpLocalRank, 1, connection));

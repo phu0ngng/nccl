@@ -221,7 +221,8 @@ ncclResult_t ncclP2pFreeShareableBuffer(ncclIpcDesc *ipcDesc) {
 
     if (type == CU_MEM_HANDLE_TYPE_POSIX_FILE_DESCRIPTOR) {
       int fd = *(int *) &ipcDesc->cuDesc.data;
-      close(fd);
+      if (fd <= 0) return ncclInternalError;
+      (void) close(fd);
     }
   }
 
