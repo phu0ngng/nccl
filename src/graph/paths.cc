@@ -569,7 +569,7 @@ ncclResult_t ncclTopoComputePaths(struct ncclTopoSystem* system, struct ncclComm
         NCCLCHECK(ncclTransports[TRANSPORT_SHM]->canConnect(&shm, system, NULL, srcInfo, dstInfo));
         if (shm == 0) {
           // Mark this peer as inaccessible. We'll trim it later.
-          system->nodes[GPU].nodes[p].paths[GPU][g].count = 0;
+          system->nodes[GPU].nodes[p].paths[GPU][g].type = PATH_NET;
         }
       }
     }
@@ -625,7 +625,7 @@ ncclResult_t ncclTopoTrimSystem(struct ncclTopoSystem* system, struct ncclComm* 
     domains[g] = g;
     ids[g] = gpu->id;
     for (int p=0; p<g; p++) {
-      if (gpu->paths[GPU][p].count > 0) {
+      if (gpu->paths[GPU][p].type < PATH_NET) {
         domains[g] = std::min(domains[g], domains[p]);
       }
     }
