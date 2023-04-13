@@ -214,3 +214,13 @@ ncclConfig_t
   exactly the name of the network module (case-insensitive). NCCL internal network module names are "IB"
   (generic IB verbs) and "Socket" (TCP/IP sockets). External network plugins define their own names.
   Default value is undefined, and NCCL will choose the network module automatically.
+
+.. c:macro:: splitShare
+
+  Specify whether to share resources with child communicator during communicator split.
+  Set the value of splitShare to 0 or 1. The default value is 0.
+  When parent communicator is created with `splitShare=1` during `ncclCommInitRankConfig`, the child
+  communicator can share internal resources of the parent during communicator split. Split communicators
+  are in the same family. Once resources are shared, aborting any communicator can result in unusable
+  for other communicators in the same family. No matter whether sharing resources or not, users should
+  always abort/destroy all communicators to free up resources.
