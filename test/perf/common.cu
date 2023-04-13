@@ -845,6 +845,7 @@ testResult_t compThread(struct threadArgs* args) {
       (*args->compThreadCount)++;
     } else if (side_comp == 2) {
       for (int i=0; i<args->nGpus; i++) {
+        CUDACHECK(cudaSetDevice(gpuids[i]));
         CUDACHECK(cudaMalloc(ptrs+i, ((uint64_t)COMP_SIZE)/1024));
       }
       for (int i=0; i<args->nGpus; i++) {
