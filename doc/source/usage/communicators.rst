@@ -305,7 +305,7 @@ on the communicator to free all resources, then recreate a new communicator to c
 All NCCL calls can be non-blocking to ensure ncclCommAbort can be called at any point, during initialization,
 communication or when finalizing the communicator.
 Users can implement methods to decide when and whether to abort the communicators and restart the NCCL operation.
-Here is an example showing how to initialize a communicator in a non-blocking manner, allowing for abort at any point:
+Here is an example showing how to initialize and split a communicator in a non-blocking manner, allowing for abort at any point:
 
 .. code:: C
 
@@ -316,24 +316,41 @@ Here is an example showing how to initialize a communicator in a non-blocking ma
   CHECK(ncclCommInitRankConfig(&comm, nRanks, id, myRank, &config));
   do {
     CHECK(ncclCommGetAsyncError(comm, &state));
-  } while(state == ncclInProgress && initTimeout() != true);
+  } while(state == ncclInProgress && checkTimeout() != true);
 
-  if (initTimeout() == true || state != ncclSuccess) {
-    abortFlag = true;
-  }
-  
+  if (checkTimeout() == true || state != ncclSuccess) abortFlag = true;
+
   /* sync global error. */
   reportErrorGlobally(abortFlag, &globalFlag);
 
   if (globalFlag) {
     /* time is out or initialization fails, just abort and restart. */
     ncclCommAbort(comm);
-    /* restart NCCL; this is a user implemented function, it might include 
+    /* restart NCCL; this is a user implemented function, it might include
      * resource clean and ncclCommInitRankConfig() to create new communicators. */
     restartNCCL(&comm);
   }
-  /* application workload. */
 
-*initTimeout* function is just an example and provided by users to determine what is the longest time the application should wait for 
+  /* nonblocking communicator split. */
+  CHECK(ncclCommSplit(comm, color, key, &childComm, &config));
+  do {
+    CHECK(ncclCommGetAsyncError(comm, &state));
+  } while(state == ncclInProgress && checkTimeout() != true);
+
+  if (checkTimeout() == true || state != ncclSuccess) abortFlag = true;
+
+  /* sync global error. */
+  reportErrorGlobally(abortFlag, &globalFlag);
+
+  if (globalFlag) {
+    ncclCommAbort(comm);
+    /* if chilComm is not NCCL_COMM_NULL, user should abort child communicator 
+     * here as well for resource reclaimation. */
+    if (childComm != NCCL_COMM_NULL) ncclCommAbort(childComm);
+    restartNCCL(&comm);
+  }
+  /* application workload */
+
+*checkTimeout* function is just an example and provided by users to determine what is the longest time the application should wait for
 NCCL initialization; likewise, users can apply other methods to detect errors besides timeout function. Similar methods can be applied 
 to NCCL finalization as well. 

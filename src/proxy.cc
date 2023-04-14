@@ -1547,6 +1547,8 @@ void* ncclProxyService(void* _args) {
 }
 
 ncclResult_t ncclProxyInit(struct ncclComm* comm, struct ncclSocket* sock, union ncclSocketAddress* peerAddresses) {
+  assert(comm->sharedRes->proxyState == NULL);
+  NCCLCHECK(ncclCalloc(&comm->sharedRes->proxyState, 1));
   comm->proxyState = comm->sharedRes->proxyState;
   comm->proxyState->refCount = 1;
   comm->proxyState->listenSock = sock;
@@ -1581,42 +1583,44 @@ ncclResult_t ncclProxyCreate(struct ncclComm* comm) {
 }
 
 ncclResult_t ncclProxyStop(struct ncclComm* comm) {
-  struct ncclProxyState* sharedProxyState = comm->sharedRes->proxyState;
+  if (comm->sharedRes && comm->sharedRes->proxyState) {
+    struct ncclProxyState* sharedProxyState = comm->sharedRes->proxyState;
 
-  if ((comm->proxyRefCountOld = ncclAtomicRefCountDecrement(&sharedProxyState->refCount)) == 0) {
-    if (sharedProxyState->peerAddresses) {
-      if (*comm->abortFlag == 0) {
-        struct ncclSocket sock;
-        int type = ncclProxyMsgStop;
-        NCCLCHECK(ncclSocketInit(&sock, sharedProxyState->peerAddresses + comm->topParentRanks[comm->rank], comm->sharedRes->magic, ncclSocketTypeProxy, comm->abortFlag));
-        NCCLCHECK(ncclSocketConnect(&sock));
-        NCCLCHECK(ncclSocketSend(&sock, &type, sizeof(int)));
-        NCCLCHECK(ncclSocketClose(&sock));
+    if ((comm->proxyRefCountOld = ncclAtomicRefCountDecrement(&sharedProxyState->refCount)) == 0) {
+      if (sharedProxyState->peerAddresses) {
+        if (*comm->abortFlag == 0) {
+          struct ncclSocket sock;
+          int type = ncclProxyMsgStop;
+          NCCLCHECK(ncclSocketInit(&sock, sharedProxyState->peerAddresses + comm->topParentRanks[comm->rank], comm->sharedRes->magic, ncclSocketTypeProxy, comm->abortFlag));
+          NCCLCHECK(ncclSocketConnect(&sock));
+          NCCLCHECK(ncclSocketSend(&sock, &type, sizeof(int)));
+          NCCLCHECK(ncclSocketClose(&sock));
+        }
       }
-    }
 
-    if (sharedProxyState->peerSocks) {
-      int tplocalRanks = comm->sharedRes->tpNLocalRanks;
-      for (int i = 0; i < tplocalRanks; i++) {
-        int fd;
-        NCCLCHECK(ncclSocketGetFd(sharedProxyState->peerSocks + i, &fd));
-        if (fd >= 0) {
-          if (sharedProxyState->proxyOps[i].pool) {
-            NCCLCHECK(ncclShmClose(sharedProxyState->proxyOps[i].handle));
-          }
-          if (sharedProxyState->sharedDevMems[i]) {
-            if (!ncclCuMemEnable()) {
-              CUDACHECK(cudaIpcCloseMemHandle(sharedProxyState->sharedDevMems[i]));
+      if (sharedProxyState->peerSocks) {
+        int tplocalRanks = comm->sharedRes->tpNLocalRanks;
+        for (int i = 0; i < tplocalRanks; i++) {
+          int fd;
+          NCCLCHECK(ncclSocketGetFd(sharedProxyState->peerSocks + i, &fd));
+          if (fd >= 0) {
+            if (sharedProxyState->proxyOps[i].pool) {
+              NCCLCHECK(ncclShmClose(sharedProxyState->proxyOps[i].handle));
             }
+            if (sharedProxyState->sharedDevMems[i]) {
+              if (!ncclCuMemEnable()) {
+                CUDACHECK(cudaIpcCloseMemHandle(sharedProxyState->sharedDevMems[i]));
+              }
+            }
+            int type = ncclProxyMsgClose;
+            if (*comm->abortFlag == 0) NCCLCHECK(ncclSocketSend(sharedProxyState->peerSocks + i, &type, sizeof(int)));
+            NCCLCHECK(ncclSocketClose(sharedProxyState->peerSocks + i));
           }
-          int type = ncclProxyMsgClose;
-          if (*comm->abortFlag == 0) NCCLCHECK(ncclSocketSend(sharedProxyState->peerSocks + i, &type, sizeof(int)));
-          NCCLCHECK(ncclSocketClose(sharedProxyState->peerSocks + i));
         }
       }
     }
   }
-
+  
   return ncclSuccess;
 }
 

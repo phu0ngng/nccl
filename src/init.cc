@@ -43,6 +43,8 @@ NCCL_PARAM(GroupCudaStream, "GROUP_CUDA_STREAM", NCCL_GROUP_CUDA_STREAM);
 NCCL_PARAM(CheckPointers, "CHECK_POINTERS", 0);
 NCCL_PARAM(CommBlocking, "COMM_BLOCKING", NCCL_CONFIG_UNDEF_INT);
 
+static ncclResult_t commReclaim(ncclComm_t comm);
+
 static uint64_t hashUniqueId(ncclUniqueId const &id) {
   char const *bytes = (char const*)&id;
   uint64_t h = 0xdeadbeef;
@@ -174,7 +176,7 @@ static ncclResult_t commFree(ncclComm_t comm) {
   /* in commReclaim, we have guaranteed only last rank which calls ncclCommDestroy() will
    * free all intra-process communicators; therefore, we only need to focus on local
    * resource cleanup in commFree(). */
-  if (comm->proxyRefCountOld == 0 && comm->proxyState->thread) {
+  if (comm->proxyState && comm->proxyRefCountOld == 0 && comm->proxyState->thread) {
     pthread_join(comm->proxyState->thread, nullptr);
   }
 
@@ -351,7 +353,6 @@ static ncclResult_t commAlloc(struct ncclComm* comm, struct ncclComm* parent, in
     NCCLCHECK(ncclCalloc(&sharedRes->tpRankToLocalRank, comm->nRanks));
     NCCLCHECK(ncclStrongStreamConstruct(&sharedRes->deviceStream));
     NCCLCHECK(ncclStrongStreamConstruct(&sharedRes->hostStream));
-    NCCLCHECK(ncclCalloc(&sharedRes->proxyState, 1));
     comm->sharedRes = sharedRes;
     sharedRes->refCount = 1;
   } else {
@@ -1203,6 +1204,7 @@ NCCL_PARAM(MinCTAs, "MIN_CTAS", NCCL_CONFIG_UNDEF_INT);
 struct ncclCommInitRankAsyncJob {
   struct ncclAsyncJob base;
   struct ncclComm* comm;
+  struct ncclComm** newcomm;
   int cudaDev;
   // For ncclCommInitRank
   int nranks, myrank;
@@ -1311,6 +1313,8 @@ static ncclResult_t ncclCommInitRankFunc(struct ncclAsyncJob* job_) {
 
   // Trace this call for replay tool
   if (job->parent) {
+    /* unlink child abort flag. */
+    __atomic_store_n(&job->parent->childAbortFlag, NULL, __ATOMIC_RELEASE);
     TRACE_CALL("ncclCommSplit(%p, %d, %d, %p, %d, %d)",
                 job->parent, job->color, job->key, comm, comm->rank, comm->nRanks);
   } else {
@@ -1321,6 +1325,10 @@ static ncclResult_t ncclCommInitRankFunc(struct ncclAsyncJob* job_) {
 
   INFO(NCCL_INIT,"comm %p rank %d nranks %d cudaDev %d busId %lx commId 0x%llx - Init COMPLETE", comm, comm->rank, comm->nRanks, comm->cudaDev, comm->busId, (unsigned long long)hashUniqueId(job->commId));
 exit:
+  if (job->newcomm) {
+    /* assign it to user pointer. */
+    __atomic_store_n(job->newcomm, comm, __ATOMIC_RELEASE);
+  }
   free(parentRanks);
   return res;
 fail:
@@ -1900,6 +1908,7 @@ ncclResult_t ncclCommAbort(ncclComm_t comm) {
     return ncclSuccess;
   }
 
+  volatile uint32_t* childAbortFlag;
   int rank = comm->rank, nranks = comm->nRanks, cudaDev = comm->cudaDev;
 
   NvtxParamsCommInitRank payload{rank, nranks, cudaDev};
@@ -1909,6 +1918,10 @@ ncclResult_t ncclCommAbort(ncclComm_t comm) {
   TRACE(NCCL_INIT, "comm %p rank %d nRanks %d cudaDev %d busId %lx", comm, rank, nranks, cudaDev, busId);
 
   // Ask anything that might still be running on the device to quit
+  childAbortFlag = __atomic_load_n(&comm->childAbortFlag, __ATOMIC_ACQUIRE);
+  if (childAbortFlag != NULL) {
+    *childAbortFlag = 1;
+  }
   *comm->abortFlag = 1;
   /* init thread must be joined before we destroy the comm,
    * and we should ignore the init error here. */
@@ -1923,21 +1936,30 @@ ncclResult_t ncclCommAbort(ncclComm_t comm) {
 NCCL_API(ncclResult_t, ncclCommSplit, ncclComm_t comm, int color, int key, ncclComm_t *newcomm, ncclConfig_t *config);
 ncclResult_t ncclCommSplit(ncclComm_t comm, int color, int key, ncclComm_t *newcomm, ncclConfig_t *config) {
   struct ncclCommInitRankAsyncJob *job = NULL;
-  struct ncclComm* childComm = NULL;
+  struct ncclComm* childComm = NCCL_COMM_NULL;
   ncclResult_t res = ncclSuccess;
 
   NCCLCHECK(ncclGroupStartInternal());
   NCCLCHECKGOTO(PtrCheck(comm, "CommSplit", "comm"), res, fail);
   NCCLCHECKGOTO(PtrCheck(newcomm, "CommSplit", "newcomm"), res, fail);
 
+  /* *newcomm should be NCCL_COMM_NULL until comm split fully complete. */
+  *newcomm = NCCL_COMM_NULL;
   if (color == NCCL_SPLIT_NOCOLOR) {
-    childComm = NULL;
     INFO(NCCL_INIT, "Rank %d has color with NCCL_SPLIT_NOCOLOR, not creating a new communicator", comm->rank);
   } else {
     NCCLCHECKGOTO(ncclCalloc(&childComm, 1), res, fail);
-    childComm->abortFlag = comm->abortFlag;
-    childComm->abortFlagRefCount = comm->abortFlagRefCount;
-    ncclAtomicRefCountIncrement(comm->abortFlagRefCount);
+    if (comm->config.splitShare) {
+      childComm->abortFlag = comm->abortFlag;
+      childComm->abortFlagRefCount = comm->abortFlagRefCount;
+      ncclAtomicRefCountIncrement(comm->abortFlagRefCount);  
+    } else {
+      NCCLCHECKGOTO(ncclCudaHostCalloc((uint32_t**)&childComm->abortFlag, 1), res, fail);
+      NCCLCHECKGOTO(ncclCalloc((uint32_t**)&childComm->abortFlagRefCount, 1), res, fail);
+      /* temporarily used to abort everything during child comm init. */
+      comm->childAbortFlag = childComm->abortFlag;
+      *childComm->abortFlagRefCount = 1;
+    }
     if (config == NULL) {
       NCCLCHECKGOTO(copyCommConfig(childComm, comm), res, fail);
     } else {
@@ -1947,10 +1969,10 @@ ncclResult_t ncclCommSplit(ncclComm_t comm, int color, int key, ncclComm_t *newc
     /* start with ncclInternalError and will be changed to ncclSuccess if init succeeds. */
     childComm->initState = ncclInternalError;
   }
-  *newcomm = childComm;
 
   NCCLCHECKGOTO(ncclCalloc(&job, 1), res, fail);
   job->comm = childComm;
+  job->newcomm = newcomm;
   job->parent = comm;
   job->color = color;
   job->key = key;
@@ -1962,7 +1984,13 @@ exit:
   NCCLCHECK(ncclGroupEndInternal());
   return res;
 fail:
-  if (childComm) free(childComm);
+  if (childComm) {
+    if (comm && !comm->config.splitShare) {
+      if (childComm->abortFlag) ncclCudaHostFree((void*)childComm->abortFlag);
+      if (childComm->abortFlagRefCount) free(childComm->abortFlagRefCount);
+    }
+    free(childComm);
+  }
   if (newcomm) *newcomm = NULL;
   goto exit;
 }
