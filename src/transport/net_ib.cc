@@ -1035,7 +1035,8 @@ ncclResult_t ncclIbMultiSend(struct ncclIbSendComm* comm, int slot) {
       }
     }
     struct ibv_send_wr* bad_wr;
-    NCCLCHECK(wrap_ibv_post_send(comm->qps[(comm->qpIndex++)%comm->nqps], comm->wrs, &bad_wr));
+    NCCLCHECK(wrap_ibv_post_send(comm->qps[comm->qpIndex], comm->wrs, &bad_wr));
+    comm->qpIndex = (comm->qpIndex+1)%comm->nqps;
 
     for (int r=0; r<nreqs; r++) {
       int chunkSize = DIVUP(DIVUP(reqs[r]->send.size, nqps), align) * align;
@@ -1206,9 +1207,10 @@ ncclResult_t ncclIbIrecv(void* recvComm, int n, void** data, int* sizes, int* ta
   TIME_START(1);
   const int nqps = ncclParamIbSplitDataOnQps() ? comm->nqps : 1;
   for (int q=0; q<nqps; q++) {
-    struct ibv_qp* qp = comm->qps[(comm->qpIndex++)%comm->nqps];
+    struct ibv_qp* qp = comm->qps[comm->qpIndex];
     struct ibv_recv_wr* bad_wr;
     NCCLCHECK(wrap_ibv_post_recv(qp, &wr, &bad_wr));
+    comm->qpIndex = (comm->qpIndex+1)%comm->nqps;
   }
   TIME_STOP(1);
   req->events = nqps;
