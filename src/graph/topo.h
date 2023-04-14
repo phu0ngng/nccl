@@ -74,7 +74,11 @@ extern const char* topoLinkTypeStr[];
 // Connection traversing PCIe as well as the SMP interconnect between NUMA nodes (e.g., QPI/UPI)
 #define PATH_SYS 7
 
-#define PATH_DIS 8
+// Connection through the network
+#define PATH_NET 8
+
+// Disconnected
+#define PATH_DIS 9
 extern const char* topoPathTypeStr[];
 
 struct ncclTopoNode;
