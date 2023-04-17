@@ -1246,10 +1246,8 @@ static void proxyOpsFree(struct ncclProxyState* proxyState) {
   }
 }
 
-ncclResult_t ncclProxyShmUnlink(struct ncclComm* comm) {
-  struct ncclProxyProgressState* state = &comm->proxyState->progressState;
+ncclResult_t ncclProxyShmUnlink(struct ncclProxyProgressState* state) {
   if (state->opsPool == NULL) return ncclSuccess;
-
   if (ncclShmUnlink(state->handle) != ncclSuccess) {
     WARN("[Service thread] proxy ops shm unlink failed");
   }
@@ -1316,6 +1314,9 @@ static ncclResult_t proxyProgressAsync(struct ncclProxyAsyncOp* op, struct ncclP
   } else if (op->type == ncclProxyMsgInit) {
     TRACE(NCCL_PROXY, "proxyProgressAsync::ncclProxyMsgInit opId=%p op.reqBuff=%p", op->opId, op->reqBuff);
     NCCLCHECK(proxyConnInit(peer, connectionPool, proxyState, (ncclProxyInitReq*) op->reqBuff, (ncclProxyInitResp*) op->respBuff, &op->connection));
+  } else if (op->type == ncclProxyMsgUnlinkShm) {
+    TRACE(NCCL_PROXY, "proxyProgressAsync::ncclProxyMsgInit opId=%p op.reqBuff=%p", op->opId, op->reqBuff);
+    NCCLCHECK(ncclProxyShmUnlink(&proxyState->progressState));
   } else return ncclInternalError;
 
   if (done) {
