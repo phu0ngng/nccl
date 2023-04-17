@@ -261,7 +261,6 @@ enum ncclProxyMsgType {
   ncclProxyMsgAbort = 7,
   ncclProxyMsgStop = 8,
   ncclProxyMsgConvertFd = 9, // cuMem API support (UDS)
-  ncclProxyMsgUnlinkShm = 10,
 };
 
 // This function is called by a client of the proxy that needs to invoke any of the non-progress proxyOp types
