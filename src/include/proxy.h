@@ -199,6 +199,7 @@ struct ncclProxyState {
   // Service thread
   pthread_t thread;
   struct ncclSocket* listenSock;
+  struct ncclIpcSocket ipcSock;
   int stop;
   CUcontext cudaCtx;
 
@@ -260,7 +261,6 @@ enum ncclProxyMsgType {
   ncclProxyMsgClose = 6,
   ncclProxyMsgAbort = 7,
   ncclProxyMsgStop = 8,
-  ncclProxyMsgConvertFd = 9, // cuMem API support (UDS)
 };
 
 // This function is called by a client of the proxy that needs to invoke any of the non-progress proxyOp types
@@ -272,7 +272,7 @@ ncclResult_t ncclProxyCallAsync(struct ncclComm* comm, struct ncclProxyConnector
 ncclResult_t ncclProxyCallBlocking(struct ncclComm* comm, struct ncclProxyConnector* proxyConn, int type, void* reqBuff, int reqSize, void* respBuff, int respSize);
 ncclResult_t ncclPollProxyResponse(struct ncclComm* comm, struct ncclProxyConnector* proxyConn, void* respBuff, void* opId);
 
-ncclResult_t ncclProxyClientConvertFdBlocking(struct ncclComm* comm, struct ncclProxyConnector* proxyConn, int fd, int* convertedFd);
+ncclResult_t ncclProxyClientGetFdBlocking(struct ncclComm* comm, struct ncclProxyConnector* proxyConn, void *handle, int* convertedFd);
 
 ncclResult_t ncclProxyStop(struct ncclComm* comm);
 ncclResult_t ncclProxyShmUnlink(struct ncclComm* comm);
