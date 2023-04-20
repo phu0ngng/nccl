@@ -41,6 +41,7 @@ ncclResult_t ncclAsyncLaunch(
     job->undo = undo;
     job->destructor = destructor;
     job->abortFlag = comm->abortFlag;
+    job->childAbortFlag = comm->childAbortFlag;
     job->state = ncclGroupJobRunning;
     job->comm = comm;
     /* check if there are blocking and nonblocking comms at the same time in group. */
@@ -326,6 +327,7 @@ static ncclResult_t groupLaunch(struct ncclAsyncJob *job_) {
 
         if (*groupAbortFlag == true || errorJobAbortFlag == true) {
           *job->abortFlag = 1;
+          if (job->childAbortFlag) *job->childAbortFlag = 1;
         }
 
         job = job->next;
