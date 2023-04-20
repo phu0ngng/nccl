@@ -275,7 +275,7 @@ ncclResult_t ncclCommEnsureReady(ncclComm_t comm) {
   ncclResult_t ret = ncclSuccess;
 
   if (*comm->abortFlag) {
-    ncclGroupJobAbort();
+    ncclGroupJobAbort(comm->groupJob);
   } else {
     NCCLCHECK(ncclCommGetAsyncError(comm, &ret));
     if (ret != ncclSuccess) {
@@ -283,6 +283,11 @@ ncclResult_t ncclCommEnsureReady(ncclComm_t comm) {
       WARN("Attempt to use communicator before the previous operation returned ncclSuccess");
       if (ret == ncclInProgress) ret = ncclInvalidArgument;
       goto exit;
+    }
+    /* if there is linked group job, we should complete it. */
+    if (comm->groupJob) {
+      NCCLCHECK(ncclGroupJobComplete(comm->groupJob));
+      comm->groupJob = NULL;
     }
   }
 
