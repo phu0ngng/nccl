@@ -7,6 +7,7 @@ class ncclGroup_test : public ::testing::Test {
     cudaStream_t *streams = nullptr;
     int ndev = 0;
     virtual void SetUp() {
+        register_segv_handler();
         comms = ncclCommon_getComms(&ndev);
         streams = new cudaStream_t[ndev];
         for(int i=0; i < ndev; i++) {

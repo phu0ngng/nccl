@@ -27,6 +27,7 @@ ncclComm_t* ncclCommon_getSocketsComms(int nGpus);
 // Persistent NCCL send/recv communicators
 ncclComm_t* ncclCommon_getsrComms(int* nGpus);
 void ncclCommon_destroysrComms();
+void register_segv_handler();
 
 void ncclCommon_getBuff(void*** sendbuffs, void*** recvbuffs, void*** sendbuffs_host, void*** recvbuffs_host, void*** sendbuffs_pinned, void*** recvbuffs_pinned, void*** sendbuffs_pinned_device, void*** recvbuffs_pinned_device, cudaStream_t** streams);
 
@@ -105,6 +106,7 @@ template <typename DT>
 cudaStream_t* ncclCommon_test<DT>::streams = NULL;
 template <typename DT>
 void ncclCommon_test<DT>::SetUpTestCase() {
+    register_segv_handler();
     (void) setenv("NCCL_CHECK_POINTERS", "1", 0); // API tests expect this behaviour (ncclCommInitAll)
     comms = ncclCommon_getComms(&nVis);
     commsIB = ncclCommon_getIBComms(nVis);
