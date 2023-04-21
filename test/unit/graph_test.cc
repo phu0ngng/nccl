@@ -265,6 +265,7 @@ int main(int argc, const char* argv[]) {
     RUN("Viking");
     RUN("Viking-SHARP");
     RUN("Scout");
+    RUN("PCI-H100-NV");
 #endif
     RUN("P9-6V");
     RUN("P9-4V");
