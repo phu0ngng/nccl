@@ -22,7 +22,6 @@ __thread int ncclGroupBlocking = -1; /* default mode */
 __thread bool ncclGroupJobAbortFlag = false;
 
 void* ncclAsyncJobMain(void* arg);
-static ncclResult_t groupJobComplete(struct ncclGroupJob *job);
 
 ncclResult_t ncclAsyncLaunch(
     struct ncclAsyncJob* job,
@@ -41,6 +40,7 @@ ncclResult_t ncclAsyncLaunch(
     job->undo = undo;
     job->destructor = destructor;
     job->abortFlag = comm->abortFlag;
+    job->childAbortFlag = comm->childAbortFlag;
     job->state = ncclGroupJobRunning;
     job->comm = comm;
     /* check if there are blocking and nonblocking comms at the same time in group. */
@@ -84,12 +84,12 @@ ncclResult_t ncclGroupStart() {
   NVTX3_FUNC_RANGE_IN(nccl_domain);
 
   /* if previous group launch does not complete, don't launch this one. */
-  if (ncclGroupJobMainPtr != NULL) {
+  if (ncclGroupJobMainPtr != NULL && ncclGroupJobMainPtr->initialized) {
     if (__atomic_load_n(&ncclGroupJobMainPtr->doneFlag, __ATOMIC_ACQUIRE) == false) {
       ret = ncclInvalidUsage;
       goto exit;
     } else {
-      NCCLCHECKGOTO(groupJobComplete(ncclGroupJobMainPtr), ret, exit);
+      NCCLCHECKGOTO(ncclGroupJobComplete(ncclGroupJobMainPtr), ret, exit);
     }
   }
   NCCLCHECK(ncclGroupStartInternal());
@@ -191,10 +191,10 @@ failure:
   return result;
 }
 
-static inline void groupResetJobState() {
-  ncclGroupBlocking = -1;
-  ncclGroupJobMainPtr = NULL;
-  memset(&ncclGroupJobMain, 0, sizeof(struct ncclGroupJob));
+static inline void groupResetJobState(struct ncclGroupJob* job) {
+  if (job->groupBlockingPtr) *job->groupBlockingPtr = -1;
+  if (job->abortFlagPtr) *job->abortFlagPtr = false;
+  memset(job, 0, sizeof(struct ncclGroupJob));
   return;
 }
 
@@ -250,7 +250,6 @@ static void groupCleanup(struct ncclComm** groupCommHeadPtr, struct ncclComm** g
   /* reset everything */
   while (!ncclIntruQueueEmpty(asyncJobsPtr)) {
     struct ncclAsyncJob* job = ncclIntruQueueDequeue(asyncJobsPtr);
-    *job->abortFlag = 1;
     if (job->comm && !job->comm->config.blocking)
       (void) ncclCommSetAsyncError(job->comm, error);
     if (job->undo) job->undo(job);
@@ -326,6 +325,7 @@ static ncclResult_t groupLaunch(struct ncclAsyncJob *job_) {
 
         if (*groupAbortFlag == true || errorJobAbortFlag == true) {
           *job->abortFlag = 1;
+          if (job->childAbortFlag) *job->childAbortFlag = 1;
         }
 
         job = job->next;
@@ -393,7 +393,9 @@ ncclResult_t ncclGroupEndInternal() {
     ncclGroupJobMain.groupErrorPtr = &ncclGroupError;
     ncclGroupJobMain.asyncJobsPtr = &ncclAsyncJobs;
     ncclGroupJobMain.abortFlagPtr = &ncclGroupJobAbortFlag;
+    ncclGroupJobMain.groupBlockingPtr = &ncclGroupBlocking;
     ncclGroupJobMain.doneFlag = false;
+    ncclGroupJobMain.initialized = true;
     ncclGroupJobMainPtr = &ncclGroupJobMain;
     /* make sure ncclGroupBlocking has been set. */
     assert(ncclGroupBlocking == 0 || ncclGroupBlocking == 1);
@@ -403,6 +405,7 @@ ncclResult_t ncclGroupEndInternal() {
         ncclAsyncJob* job = ncclIntruQueueHead(&ncclAsyncJobs);
         do {
           NCCLCHECKGOTO(ncclCommSetAsyncError(job->comm, ncclInProgress), ret, fail);
+          job->comm->groupJob = ncclGroupJobMainPtr;
           job = job->next;
         } while (job);
       }
@@ -411,6 +414,8 @@ ncclResult_t ncclGroupEndInternal() {
         ncclComm_t comm = ncclGroupCommHead;
         do {
           NCCLCHECKGOTO(ncclCommSetAsyncError(comm, ncclInProgress), ret, fail);
+          /* link group job to communicators. */
+          comm->groupJob = ncclGroupJobMainPtr;
           comm = comm->groupNext;
         } while (comm);
       }
@@ -420,7 +425,7 @@ ncclResult_t ncclGroupEndInternal() {
     } else {
       /* blocking group */
       NCCLCHECKGOTO(groupLaunch(&ncclGroupJobMainPtr->base), ret, fail);
-      groupResetJobState();
+      groupResetJobState(ncclGroupJobMainPtr);
     }
   }
 
@@ -428,22 +433,23 @@ exit:
   return ret;
 fail:
   groupCleanup(&ncclGroupCommHead, &ncclGroupCommPreconnectHead, &ncclAsyncJobs, &ncclGroupError, ret);
-  groupResetJobState();
+  groupResetJobState(ncclGroupJobMainPtr);
   goto exit;
 }
 
-static ncclResult_t groupJobComplete(struct ncclGroupJob* job) {
+ncclResult_t ncclGroupJobComplete(struct ncclGroupJob* groupJob) {
   ncclResult_t ret = ncclSuccess;
-  if (job) {
-    ret = ncclAsyncJobComplete(&job->base);
-    groupResetJobState();
+  if (groupJob && groupJob->initialized) {
+    ret = ncclAsyncJobComplete(&groupJob->base);
+    groupResetJobState(groupJob);
   }
   return ret;
 }
 
-void ncclGroupJobAbort() {
-  ncclGroupJobAbortFlag = true;
-  (void) groupJobComplete(ncclGroupJobMainPtr);
-  /* reset group abort flag */
-  ncclGroupJobAbortFlag = false;
+ncclResult_t ncclGroupJobAbort(struct ncclGroupJob* groupJob) {
+  if (groupJob && groupJob->initialized) {
+    *groupJob->abortFlagPtr = true;
+    NCCLCHECK(ncclGroupJobComplete(groupJob));
+  }
+  return ncclSuccess;
 }

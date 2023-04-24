@@ -1,4 +1,5 @@
 #include "ncclCommon_test.cuh"
+#include <execinfo.h>
 // these are Template specialization
 #define GEN_DATATYPE(X, Y)                                                     \
     template <>                                                                \
@@ -21,6 +22,8 @@ ncclComm_t* commsSocketsArray = NULL;
 ncclComm_t* srCommsArray = NULL;
 bool srCommsInit = false;
 bool initialized = false;
+bool handleRegistered = false;
+bool segvLogPrinted = false;
 
 ncclComm_t* ncclCommon_getSplitShareComms() {
   if (splitCommsArray == NULL) {
@@ -38,6 +41,32 @@ ncclComm_t* ncclCommon_getSplitShareComms() {
     EXPECT_EQ(ncclSuccess, ncclGroupEnd());
   }
   return splitCommsArray;
+}
+
+pthread_mutex_t mutex = PTHREAD_MUTEX_INITIALIZER;
+
+void segfault_handler(int sig) {
+  void *log[32];
+  size_t size;
+
+  pthread_mutex_lock(&mutex);
+  if (segvLogPrinted == false) {
+    size = backtrace(log, 32);
+    fprintf(stderr, "Error: signal %d:\n", sig);
+    backtrace_symbols_fd(log, size, STDERR_FILENO);
+    segvLogPrinted = true;
+  }
+  pthread_mutex_unlock(&mutex);
+  
+  exit(1);
+}
+
+void register_segv_handler() {
+  if (handleRegistered == false) {
+    /* register segfault handler */
+    signal(SIGSEGV, segfault_handler);
+    handleRegistered = true;
+  }
 }
 
 ncclComm_t* ncclCommon_getComms(int* nGpus) {

@@ -275,7 +275,7 @@ ncclResult_t ncclCommEnsureReady(ncclComm_t comm) {
   ncclResult_t ret = ncclSuccess;
 
   if (*comm->abortFlag) {
-    ncclGroupJobAbort();
+    ncclGroupJobAbort(comm->groupJob);
   } else {
     NCCLCHECK(ncclCommGetAsyncError(comm, &ret));
     if (ret != ncclSuccess) {
@@ -283,6 +283,11 @@ ncclResult_t ncclCommEnsureReady(ncclComm_t comm) {
       WARN("Attempt to use communicator before the previous operation returned ncclSuccess");
       if (ret == ncclInProgress) ret = ncclInvalidArgument;
       goto exit;
+    }
+    /* if there is linked group job, we should complete it. */
+    if (comm->groupJob) {
+      NCCLCHECK(ncclGroupJobComplete(comm->groupJob));
+      comm->groupJob = NULL;
     }
   }
 
@@ -1952,7 +1957,8 @@ ncclResult_t ncclCommSplit(ncclComm_t comm, int color, int key, ncclComm_t *newc
     if (comm->config.splitShare) {
       childComm->abortFlag = comm->abortFlag;
       childComm->abortFlagRefCount = comm->abortFlagRefCount;
-      ncclAtomicRefCountIncrement(comm->abortFlagRefCount);  
+      comm->childAbortFlag = NULL;
+      ncclAtomicRefCountIncrement(comm->abortFlagRefCount);
     } else {
       NCCLCHECKGOTO(ncclCudaHostCalloc((uint32_t**)&childComm->abortFlag, 1), res, fail);
       NCCLCHECKGOTO(ncclCalloc((uint32_t**)&childComm->abortFlagRefCount, 1), res, fail);

@@ -4,6 +4,7 @@ class ncclCommUserRank_test : public ::testing::Test {
     ncclComm_t* comms = NULL;
     int nVis = 0, rank = -1;
     virtual void SetUp() {
+        register_segv_handler();
         comms = ncclCommon_getComms(&nVis);
     };
     virtual void TearDown() {
