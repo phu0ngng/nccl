@@ -564,6 +564,7 @@ struct RunWorkElement<ncclFuncAllReduce, T, RedOp, NCCL_ALGO_COLLNET_CHAIN, NCCL
     ncclTree *tree = &ncclShmem.channel.collnetChain;
     ssize_t chunkSize = int(args->lastChunkSize);
     const ssize_t loopSize = int(nChannels*chunkSize);
+    const int nranks = ncclShmem.comm.nRanks;
     const ssize_t size = args->count;
 
     int nthreadsSplit = nthreads/2;
@@ -609,17 +610,34 @@ struct RunWorkElement<ncclFuncAllReduce, T, RedOp, NCCL_ALGO_COLLNET_CHAIN, NCCL
       }
     }
     else {
-      if (send == -1) {
-        for (ssize_t gridOffset = 0; gridOffset < size; gridOffset += loopSize) {
-          ssize_t offset = gridOffset + bid*int(chunkSize);
-          int nelem = min(chunkSize, size-offset);
-          prims.directRecv(offset, nelem);
+      if (recv == nranks) {
+        // I'm the first in the broadcast chain, I need to perform the division (postOp)
+        if (send == -1) {
+          for (ssize_t gridOffset = 0; gridOffset < size; gridOffset += loopSize) {
+            ssize_t offset = gridOffset + bid*int(chunkSize);
+            int nelem = min(chunkSize, size-offset);
+            prims.recv(offset, nelem, /*postOp*/true);
+          }
+        } else {
+          for (ssize_t gridOffset = 0; gridOffset < size; gridOffset += loopSize) {
+            ssize_t offset = gridOffset + bid*int(chunkSize);
+            int nelem = min(chunkSize, size-offset);
+            prims.recvCopyDirectSend(offset, nelem, /*postOp*/true);
+          }
         }
       } else {
-        for (ssize_t gridOffset = 0; gridOffset < size; gridOffset += loopSize) {
-          ssize_t offset = gridOffset + bid*int(chunkSize);
-          int nelem = min(chunkSize, size-offset);
-          prims.directRecvCopySend(offset, nelem);
+        if (send == -1) {
+          for (ssize_t gridOffset = 0; gridOffset < size; gridOffset += loopSize) {
+            ssize_t offset = gridOffset + bid*int(chunkSize);
+            int nelem = min(chunkSize, size-offset);
+            prims.directRecv(offset, nelem);
+          }
+        } else {
+          for (ssize_t gridOffset = 0; gridOffset < size; gridOffset += loopSize) {
+            ssize_t offset = gridOffset + bid*int(chunkSize);
+            int nelem = min(chunkSize, size-offset);
+            prims.directRecvCopySend(offset, nelem);
+          }
         }
       }
     }
