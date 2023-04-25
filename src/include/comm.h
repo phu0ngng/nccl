@@ -342,8 +342,6 @@ struct ncclComm {
   bool finalizeCalled;
   // shared structures for finalization
   int finalizeRankCnt;
-  // group job to support multi-thread FT
-  struct ncclGroupJob *groupJob;
 };
 
 enum ncclLaunchMode {
