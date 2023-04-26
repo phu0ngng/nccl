@@ -29,15 +29,15 @@ cat trace_alltoall* > full_trace_alltoall.txt
 rm trace_alltoall*
 
 echo "=============================== Replaying all_reduce - $(date +\"%T\") ================================="
-$SALLOC_SELF_MULTI $MPI_HOME/bin/mpirun $MPI_PARAMS ./build/test/replay/replay -p full_trace_all_reduce.txt
+$SALLOC_SELF_MULTI $MPI_HOME/bin/mpirun $MPI_PARAMS ./build/test/replay/replay -b full_trace_all_reduce.txt
 [ $? -ne 0 ] && let failure_count=$failure_count+1 && failure_names+=("Replay full_trace_all_reduce")
 
 echo "=============================== Replaying alltoall - $(date +\"%T\") ================================="
-$SALLOC_SELF_MULTI $MPI_HOME/bin/mpirun $MPI_PARAMS ./build/test/replay/replay -p full_trace_alltoall.txt
+$SALLOC_SELF_MULTI $MPI_HOME/bin/mpirun $MPI_PARAMS ./build/test/replay/replay -b full_trace_alltoall.txt
 [ $? -ne 0 ] && let failure_count=$failure_count+1 && failure_names+=("Replay full_trace_alltoall")
 
 echo "=============================== Force fit all_reduce - $(date +\"%T\") ================================="
-$SALLOC_SELF_SINGLE $MPI_HOME/bin/mpirun $MPI_PARAMS ./build/test/replay/replay -x -p full_trace_all_reduce.txt
+$SALLOC_SELF_SINGLE $MPI_HOME/bin/mpirun $MPI_PARAMS ./build/test/replay/replay -x -b full_trace_all_reduce.txt
 [ $? -ne 0 ] && let failure_count=$failure_count+1 && failure_names+=("Replay force-fit full_trace_all_reduce")
 
 for str in "${failure_names[@]}"
