@@ -26,8 +26,10 @@ class Primitives<
                        DirectRead = 0x400,
                        ThreadsSynced = 0x800,
                        NvlsMinPolling = 0x1000,
-                       NetDeviceUnpack = 0x4000,
-                       AnyNetDeviceUnpack = 0x8000;
+                       NetDeviceUnpack = 0x2000,
+                       AnyNetDeviceUnpack = 0x4000,
+                       NvlsDirectRead = 0x8000,
+                       NvlsDirectWrite = 0x10000;
   const int tid, tidInBlock;
   const int nthreads;
   int nworkers;
@@ -147,7 +149,7 @@ class Primitives<
       if (flags & OffsFifoEnabled)
         ptrs[index] = connEltsFifo + loadInt(connOffsFifoPtr + (step%NCCL_STEPS))/sizeof(T);
       else if (isSendNotRecv && DirectSend) {
-        if (flags & DirectWrite) {
+        if (flags & (DirectWrite | NvlsDirectWrite)) {
           ptrs[index] = directBuff + dstIx + offset;
         } else if (flags & DirectRead) {  // empty send
           ptrs[index] = nullptr;
@@ -155,7 +157,7 @@ class Primitives<
           ptrs[index] = connEltsFifo + (step%NCCL_STEPS)*stepSize;
         }
       } else if (!isSendNotRecv && DirectRecv) {
-        if (flags & DirectRead) {
+        if (flags & (DirectRead | NvlsDirectRead)) {
           ptrs[index] = directBuff + srcIx + offset;
         } else if (flags & DirectWrite) {
           ptrs[index] = directBuff + dstIx + offset;  // send to next from my output buffer
@@ -399,6 +401,9 @@ class Primitives<
               // otherwise, in one-to-multi send, we could mix empty send and intermediate send
               flags |= (conn->flags & NCCL_DIRECT_WRITE) ? DirectWrite : 0;
             }
+          } else if ((conn->flags & NCCL_NVLS_MIN_POLL) && e != nullptr && e->regUsed) {
+            /* NVLS direct */
+            flags |= NvlsDirectRead;
           }
         }
         if (flags & OffsFifoEnabled)
@@ -447,6 +452,9 @@ class Primitives<
               // otherwise, in one-to-multi send, we could mix empty send and intermediate send
               flags |= (conn->flags & NCCL_DIRECT_WRITE) ? DirectWrite : 0;
             }
+          } else if ((conn->flags & NCCL_NVLS_MIN_POLL) && e != nullptr && e->regUsed) {
+            /* NVLS direct */
+            flags |= NvlsDirectWrite;
           }
         }
       }
@@ -532,33 +540,41 @@ class Primitives<
     }
     if (flags & RoleOutput) userBuff = (T*)outputBuf;
     bool recvProvider = flags == (flags|RoleWaitRecv|DirectWrite);
-    bool sendAcceptor = flags == (flags|RoleWaitSend|DirectWrite);
+    bool sendAcceptor = (flags == (flags|RoleWaitSend|DirectWrite)) || (flags == (flags|RoleWaitSend|NvlsDirectWrite));
     bool sendProvider = flags == (flags|RoleWaitSend|DirectRead); // sender provides direct buffer (to be fetched)
-    bool recvAcceptor = flags == (flags|RoleWaitRecv|DirectRead); // receiver accepts direct buffer
+    bool recvAcceptor = flags == (flags|RoleWaitRecv|DirectRead) || (flags == (flags|RoleWaitRecv|NvlsDirectRead)); // receiver accepts direct buffer
     int regUsed = e != nullptr ? e->elem.regUsed : 0;
 
     if (Direct && recvProvider) {
       int spins = 0;
       void *volatile *slot = ncclShmem.groups[group].recvConns[index]->ptrExchange;
       // Wait for consumer to consume previous value before trampling it.
-      while (*slot != nullptr && !checkAbort(spins));
-      directBuff = (T*)outputBuf;
-      // Encode pointer by XOR'ing against some address they definitely wouldn't send
-      // since we want to allow them sending us nullptr while not colliding with
-      // the empty slot value.
-      *slot = reinterpret_cast<T*>(reinterpret_cast<uintptr_t>(directBuff) ^ reinterpret_cast<uintptr_t>(slot));
+      if (slot) {
+        while (*slot != nullptr && !checkAbort(spins));
+        directBuff = (T*)outputBuf;
+        // Encode pointer by XOR'ing against some address they definitely wouldn't send
+        // since we want to allow them sending us nullptr while not colliding with
+        // the empty slot value.
+        *slot = reinterpret_cast<T*>(reinterpret_cast<uintptr_t>(directBuff) ^ reinterpret_cast<uintptr_t>(slot));
+      }
     }
     if (Direct && sendAcceptor) {
       int spins = 0;
       void *volatile *slot = ncclShmem.groups[group].sendConns[index]->ptrExchange;
       void *ptr;
-      while (true) {
+      while (slot) {
         ptr = *slot;
         if (ptr != nullptr || checkAbort(spins)) break;
       }
-      directBuff = regUsed ? (T*)(e->dnOutputs[index]) :
+
+      if (slot) {
+        directBuff = regUsed ? (T*)(e->dnOutputs[index]) :
                    reinterpret_cast<T*>(reinterpret_cast<uintptr_t>(ptr) ^ reinterpret_cast<uintptr_t>(slot));
-      *slot = nullptr;
+        *slot = nullptr;
+      } else {
+        /* slot is NULL, it must be regUsed == 1 */
+        directBuff = (T*)e->dnOutputs[index];
+      }
     }
     if (Direct && sendProvider) {
       int spins = 0;
@@ -566,17 +582,19 @@ class Primitives<
       volatile uint64_t* argSlot0 = ncclShmem.groups[group].sendConns[index]->redOpArgExchange;
       volatile uint64_t* argSlot1 = ncclShmem.groups[group].sendConns[index]->redOpArgExchange+1;
       // Wait for consumer to consume previous value before trampling it.
-      while ((*slot != nullptr || *argSlot0 != 0 || *argSlot1 !=0) && !checkAbort(spins));
-      // If there is no recv, then we are directly pulling from input buffer (e.g. directScatter)
-      // Otherwise, we are pulling from output buffer (e.g. recvCopyDirectSend)
-      directBuff = MaxRecv == 0 ? (T*)inputBuf : (T*)outputBuf;
-      // Exchange pre-scalers for use in direct pull
-      *argSlot0 = (uint64_t(1)<<32) | (uint32_t)redOpArg;
-      *argSlot1 = (uint64_t(1)<<32) | (uint32_t)(redOpArg>>32);
-      // Encode pointer by XOR'ing against some address they definitely wouldn't send
-      // since we want to allow them sending us nullptr while not colliding with
-      // the empty slot value.
-      *slot = reinterpret_cast<T*>(reinterpret_cast<uintptr_t>(directBuff) ^ reinterpret_cast<uintptr_t>(slot));
+      if (slot && argSlot0 && argSlot1) {
+        while ((*slot != nullptr || *argSlot0 != 0 || *argSlot1 !=0) && !checkAbort(spins));
+        // If there is no recv, then we are directly pulling from input buffer (e.g. directScatter)
+        // Otherwise, we are pulling from output buffer (e.g. recvCopyDirectSend)
+        directBuff = MaxRecv == 0 ? (T*)inputBuf : (T*)outputBuf;
+        // Exchange pre-scalers for use in direct pull
+        *argSlot0 = (uint64_t(1)<<32) | (uint32_t)redOpArg;
+        *argSlot1 = (uint64_t(1)<<32) | (uint32_t)(redOpArg>>32);
+        // Encode pointer by XOR'ing against some address they definitely wouldn't send
+        // since we want to allow them sending us nullptr while not colliding with
+        // the empty slot value.
+        *slot = reinterpret_cast<T*>(reinterpret_cast<uintptr_t>(directBuff) ^ reinterpret_cast<uintptr_t>(slot));
+      }
     }
     if (Direct && recvAcceptor) {
       int spins = 0;
@@ -584,24 +602,29 @@ class Primitives<
       volatile uint64_t* argSlot0 = ncclShmem.groups[group].recvConns[index]->redOpArgExchange;
       volatile uint64_t* argSlot1 = ncclShmem.groups[group].recvConns[index]->redOpArgExchange+1;
       void *ptr;
-      while (true) {
+      while (slot) {
         ptr = *slot;
         if (ptr != nullptr || checkAbort(spins)) break;
       }
-      directBuff = regUsed ? (T*)(MaxSend == 0 ? e->upOutputs[index] : e->dnInputs[index]) :
-                   reinterpret_cast<T*>(reinterpret_cast<uintptr_t>(ptr) ^ reinterpret_cast<uintptr_t>(slot));
-      if (MaxSend != 0) { // reduce group rather than gather group
-        // Store scalers for remote inputs
-        uint64_t arg0, arg1;
-        while (true) {
-          arg0 = *argSlot0;
-          arg1 = *argSlot1;
-          if ((arg0 != 0 && arg1 != 0) || checkAbort(spins)) break;
+
+      if (slot && argSlot0 && argSlot1) {
+        directBuff = regUsed ? (T*)(MaxSend == 0 ? e->upOutputs[index] : e->dnInputs[index]) :
+          reinterpret_cast<T*>(reinterpret_cast<uintptr_t>(ptr) ^ reinterpret_cast<uintptr_t>(slot));
+        if (MaxSend != 0) { // reduce group rather than gather group
+          // Store scalers for remote inputs
+          uint64_t arg0, arg1;
+          while (true) {
+            arg0 = *argSlot0;
+            arg1 = *argSlot1;
+            if ((arg0 != 0 && arg1 != 0) || checkAbort(spins)) break;
+          }
+          ncclShmem.redOpArgs[1 + index] = ((arg1 & 0xffffffff) << 32) | (arg0 & 0xffffffff);
         }
-        ncclShmem.redOpArgs[1+index] = ((arg1 & 0xffffffff)<<32) | (arg0 & 0xffffffff);
+        *argSlot0 = 0; *argSlot1 = 0;
+        *slot = nullptr;
+      } else {
+        directBuff = (T*)e->dnInputs[index];
       }
-      *argSlot0 = 0; *argSlot1 = 0;
-      *slot = nullptr;
     }
   }
 
@@ -645,6 +668,9 @@ class Primitives<
   }
   __device__ __forceinline__ void directRecvCopySend(intptr_t outIx, int eltN) {
     genericOp<1, 1, 1, 1, -1, Output>(-1, outIx, eltN, false);
+  }
+  __device__ __forceinline__ void directRecvDirectSend(intptr_t inpIx, intptr_t outIx, int eltN) {
+    genericOp<1, 1, 1, 1, -1, -1>(inpIx, outIx, eltN, false);
   }
   __device__ __forceinline__ void recvCopyDirectSend(intptr_t outIx, int eltN, bool postOp=false) {
     genericOp<0, 1, 1, 1, -1, Output>(-1, outIx, eltN, postOp);
