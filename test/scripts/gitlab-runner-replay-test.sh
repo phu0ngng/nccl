@@ -18,7 +18,7 @@ echo "Using LD_LIBRARY_PATH=$LD_LIBRARY_PATH"
 echo "Using TRACE_FILE=$TRACE_FILE"
 
 echo "=============================== Replaying $(basename $TRACE_FILE) - $(date +\"%T\") ================================="
-$SALLOC $MPI_HOME/bin/mpirun $MPI_PARAMS ./build/test/replay/replay -p $TRACE_FILE
+$SALLOC $MPI_HOME/bin/mpirun $MPI_PARAMS ./build/test/replay/replay $TRACE_FILE
 [ $? -ne 0 ] && let failure_count=$failure_count+1 && failure_names+=("$TRACE_FILE")
 
 for str in "${failure_names[@]}"
