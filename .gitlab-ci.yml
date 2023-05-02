@@ -268,7 +268,9 @@ perftest-P100:
     NCCL_DEBUG: "WARN"
     MPI_HOME: "/opt/mpi/openmpi-1.10.7"
     CUDA_HOME: "/usr/local/cuda-${CUDA_VERSION}"
-    SALLOC: "salloc --exclusive -t 00:10:00 -n 8 -pP100"
+    NNODES: 1
+    NGPUS: 8
+    SALLOC: "salloc --exclusive -t 00:10:00 -N ${NNODES} -n ${NGPUS} -pP100"
   script:
     - ./test/scripts/gitlab-runner-perftest.sh
   interruptible: true
@@ -284,7 +286,9 @@ perftest-P40:
     NCCL_DEBUG: "WARN"
     MPI_HOME: "/opt/mpi/openmpi-1.10.7"
     CUDA_HOME: "/usr/local/cuda-${CUDA_VERSION}"
-    SALLOC: "salloc --exclusive -t 00:10:00 -n 8 -pP40"
+    NNODES: 1
+    NGPUS: 8
+    SALLOC: "salloc --exclusive -t 00:10:00 -N ${NNODES} -n ${NGPUS} -pP40"
   script:
     - ./test/scripts/gitlab-runner-perftest.sh
   interruptible: true
@@ -300,7 +304,9 @@ perftest-GP100:
     NCCL_DEBUG: "WARN"
     MPI_HOME: "/opt/mpi/openmpi-1.10.7"
     CUDA_HOME: "/usr/local/cuda-${CUDA_VERSION}"
-    SALLOC: "salloc --exclusive -t 00:10:00 -n 8 -pGP100"
+    NNODES: 1
+    NGPUS: 8
+    SALLOC: "salloc --exclusive -t 00:10:00 -N ${NNODES} -n ${NGPUS} -pGP100"
   script:
     - ./test/scripts/gitlab-runner-perftest.sh 1G 2
   interruptible: true
@@ -316,7 +322,9 @@ perftest-M40:
     NCCL_DEBUG: "WARN"
     MPI_HOME: "/opt/mpi/openmpi-1.10.7"
     CUDA_HOME: "/usr/local/cuda-${CUDA_VERSION}"
-    SALLOC: "salloc --exclusive -t 00:10:00 -n 4 -pM40"
+    NNODES: 1
+    NGPUS: 4
+    SALLOC: "salloc --exclusive -t 00:10:00 -N ${NNODES} -n ${NGPUS} -pM40"
   script:
     - ./test/scripts/gitlab-runner-perftest.sh 1G 0
   interruptible: true
@@ -333,7 +341,9 @@ perftest-K80:
     NCCL_DEBUG: "WARN"
     MPI_HOME: "/opt/mpi/openmpi-1.10.7"
     CUDA_HOME: "/usr/local/cuda-${CUDA_VERSION}"
-    SALLOC: "salloc --exclusive -t 00:10:00 -N 1 -n 16 -pK80"
+    NNODES: 1
+    NGPUS: 16
+    SALLOC: "salloc --exclusive -t 00:10:00 -N ${NNODES} -n ${NGPUS} -pK80"
   script:
     - ./test/scripts/gitlab-runner-perftest.sh 256M 0
   interruptible: true
@@ -349,7 +359,9 @@ perftest-K40:
     NCCL_DEBUG: "WARN"
     MPI_HOME: "/opt/mpi/openmpi-1.10.7"
     CUDA_HOME: "/usr/local/cuda-${CUDA_VERSION}"
-    SALLOC: "salloc --exclusive -t 00:10:00 -n 4 -pK40"
+    NNODES: 1
+    NGPUS: 4
+    SALLOC: "salloc --exclusive -t 00:10:00 -N ${NNODES} -n ${NGPUS} -pK40"
   script:
     - ./test/scripts/gitlab-runner-perftest.sh 1G 0
   interruptible: true
@@ -365,7 +377,9 @@ perftest-A100:
     NCCL_DEBUG: "WARN"
     MPI_HOME: "/opt/mpi/openmpi-1.10.7"
     CUDA_HOME: "/usr/local/cuda-${CUDA_VERSION}"
-    SALLOC: "salloc --exclusive -t 00:10:00 -n 8 -pA100"
+    NNODES: 1
+    NGPUS: 8
+    SALLOC: "salloc --exclusive -t 00:10:00 -N ${NNODES} -n ${NGPUS} -pA100"
   script:
     - ./test/scripts/gitlab-runner-perftest.sh 1G 0
   interruptible: true
@@ -383,9 +397,11 @@ perftest-DGX-1V:
     MPI_HOME: "/home/svc_nvshmem_ci/mpi/openmpi-1.10.7"
     CUDA_HOME: "/gpfs/fs1/projects/sw_gpucomms/users/svc_nvshmem_ci/cuda/cuda-${CUDA_VERSION}"
     PARTITION_LIST: "batch_short_dgx1_m2"
+    NNODES: 1
+    NGPUS: 8
     SALLOC: "" # Needs to be empty for CI runner scripts performing cluster jobs
   script:
-    - salloc --gpus-per-node=8 --ntasks-per-node=8 -N 1 --account=sw_gpucomms_nvshmem --nv-meta ml-model.nccl-perf -p $PARTITION_LIST -t 00:20:00 ./test/scripts/gitlab-runner-perftest.sh 2G
+    - salloc --gpus-per-node=${NGPUS} --ntasks-per-node=${NGPUS} -N ${NNODES} --account=sw_gpucomms_nvshmem --nv-meta ml-model.nccl-perf -p $PARTITION_LIST -t 00:20:00 ./test/scripts/gitlab-runner-perftest.sh 2G
   interruptible: true
 
 perftest-DGX-2:
@@ -401,9 +417,11 @@ perftest-DGX-2:
     MPI_HOME: "/home/svc_nvshmem_ci/mpi/openmpi-1.10.7"
     CUDA_HOME: "/gpfs/fs1/projects/sw_gpucomms/users/svc_nvshmem_ci/cuda/cuda-${CUDA_VERSION}"
     PARTITION_LIST: "batch_short_dgx2h_m2"
+    NNODES: 1
+    NGPUS: 16
     SALLOC: "" # Needs to be empty for CI runner scripts performing cluster jobs
   script:
-    - salloc -N 1 --gpus-per-node=16 --ntasks-per-node=16 --account=sw_gpucomms_nvshmem --nv-meta ml-model.nccl-perf -p $PARTITION_LIST -t 00:20:00 ./test/scripts/gitlab-runner-perftest.sh 1G
+    - salloc -N 1 --gpus-per-node=${NGPUS} --ntasks-per-node=${NGPUS} --account=sw_gpucomms_nvshmem --nv-meta ml-model.nccl-perf -p $PARTITION_LIST -t 00:20:00 ./test/scripts/gitlab-runner-perftest.sh 1G
   interruptible: true
 
 perftest-DGX-A100:
@@ -419,9 +437,11 @@ perftest-DGX-A100:
     NCCL_DEBUG: "WARN"
     MPI_HOME: "/home/svcnccl/install/openmpi-1.10.7"
     CUDA_HOME: "/project/nccl/toolkits/cuda-${CUDA_VERSION}/"
+    NNODES: 1
+    NGPUS: 8
     SALLOC: "" # Needs to be empty for CI runner scripts performing cluster jobs
   script:
-    - salloc -N 1 -n 8 --account=nccl -pluna -J "nccl-cicd::$GITLAB_USER_LOGIN:perftest-single::$CI_COMMIT_BRANCH:$CI_COMMIT_SHORT_SHA" -t 00:10:00 ./test/scripts/gitlab-runner-perftest.sh 16G
+    - salloc -N ${NNODES} -n ${NGPUS} --account=nccl -pluna -J "nccl-cicd::$GITLAB_USER_LOGIN:perftest-single::$CI_COMMIT_BRANCH:$CI_COMMIT_SHORT_SHA" -t 00:15:00 ./test/scripts/gitlab-runner-perftest.sh 16G
   interruptible: true
 
 perftest-multi-gc:
@@ -437,7 +457,10 @@ perftest-multi-gc:
     MPI_HOME: "/opt/mpi/openmpi-1.10.7"
     CUDA_HOME: "/usr/local/cuda-${CUDA_VERSION}"
     NCCL_ALLOC_P2P_NET_LL_BUFFERS: "1" # Add coverage of dedicated P2P LL buffers on constrained rank count
-    SALLOC: "salloc --exclusive -t 00:10:00 -N 3 -n 24 -w gc[01-02,05]"
+    NNODES: 3
+    NGPUS: 8
+    SKIP_MULTI_GPU: 1
+    SALLOC: "salloc --exclusive -t 00:10:00 -N ${NNODES} --ntasks-per-node=${NGPUS} -w gc[01-02,05]"
   script:
     - ./test/scripts/gitlab-runner-perftest.sh 128M 0
   interruptible: true
@@ -456,7 +479,9 @@ perftest-sharp-gc:
     CUDA_HOME: "/usr/local/cuda-${CUDA_VERSION}"
     SHARP_HOME: "/opt/hpcx/v2.7/sharp"
     PLUGIN_PATH: "/opt/nccl-rdma-sharp-plugins/src/.libs"
-    SALLOC: "salloc --exclusive -t 00:10:00 -N 3 -n 24 -w gc[01-02,05]"
+    NNODES: 3
+    NGPUS: 8
+    SALLOC: "salloc --exclusive -t 00:10:00 -N ${NNODES} --ntasks-per-node=${NGPUS} -w gc[01-02,05]"
   script:
     - ./test/scripts/gitlab-runner-perftest-sharp.sh 128M 0
   interruptible: true
@@ -480,6 +505,8 @@ perftest-multi-DGX-1V:
     NCCL_DEBUG: "INFO"
     NCCL_DEBUG_SUBSYS: "ENV"
     NCCL_IBEXT_DISABLE: "1"
+    NNODES: $MULTI_PERFTEST_NODE_COUNT
+    NGPUS: 8
     MPI_PARAMS: "-mca btl tcp,self -mca btl_tcp_if_include enp1s0f0"
     SALLOC: "" # Needs to be empty for CI runner scripts performing cluster jobs
     DRACO_SALLOC: "--exclusive --gpus-per-node=8 --ntasks-per-node=8 --account=sw_gpucomms_nvshmem --nv-meta ml-model.nccl-perf --exclusive -t 00:25:00"
@@ -529,6 +556,8 @@ perftest-multi-selene:
     CUDA_HOME: "/project/nccl/toolkits/cuda-${CUDA_VERSION}/"
     NCCL_IB_SL: "1"
     OMPI_MCA_btl: "^openib"
+    NNODES: $MULTI_PERFTEST_NODE_COUNT
+    NGPUS: 8
     OMPI_MCA_btl_tcp_if_include: "enp97s0f1"
     SALLOC: "" # Needs to be empty for CI runner scripts performing cluster jobs
   script:
@@ -552,6 +581,8 @@ perftest-sharp-selene:
     PLUGIN_PATH: "/lustre/fsw/nccl/hpcx/hpcx-v2.14-gcc-MLNX_OFED_LINUX-5-ubuntu20.04-cuda11-gdrcopy2-nccl2.16-x86_64/nccl_rdma_sharp_plugin/lib"
     NCCL_IB_SL: "1"
     OMPI_MCA_btl: "^openib"
+    NNODES: $MULTI_PERFTEST_NODE_COUNT
+    NGPUS: 8
     OMPI_MCA_btl_tcp_if_include: "enp97s0f1"
     SALLOC: "" # Needs to be empty for CI runner scripts performing cluster jobs
   script:
