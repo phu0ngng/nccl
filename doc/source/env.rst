@@ -440,6 +440,15 @@ Values accepted
 ^^^^^^^^^^^^^^^
 Default value is ``cudaLaunchMemSyncDomainRemote`` (1). Currently supported values are 0 and 1.
 
+NCCL_CUMEM_ENABLE
+-----------------
+(since 2.18)
+
+Use CUDA cuMem* functions to allocate memory in NCCL.
+
+Values accepted
+^^^^^^^^^^^^^^^
+0 or 1. Default is 0.
 
 NCCL_NET
 --------
