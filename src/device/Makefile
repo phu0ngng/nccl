@@ -4,11 +4,11 @@
 # See LICENSE.txt for license information
 #
 
-include ../../../makefiles/common.mk
-include ../../../makefiles/version.mk
+include ../../makefiles/common.mk
+include ../../makefiles/version.mk
 
-BUILDDIR ?= $(abspath ../../../build)
-OBJDIR := $(BUILDDIR)/obj/collectives/device
+BUILDDIR ?= $(abspath ../../build)
+OBJDIR := $(BUILDDIR)/obj/device
 
 LIBSRCFILES := all_reduce.cu broadcast.cu reduce.cu all_gather.cu reduce_scatter.cu sendrecv.cu onerank_reduce.cu
 
@@ -16,14 +16,14 @@ LIBSRCFILES += functions.cu
 
 DEPFILES   := $(patsubst %.cu, $(OBJDIR)/%.d, $(LIBSRCFILES))
 DEPENDFILES:= $(DEPFILES:%.d=%.dep)
-STATICLIB  := $(OBJDIR)/colldevice.a
-DEVOBJ     := $(OBJDIR)/devlink.o
+MANIFEST   := $(OBJDIR)/manifest
+WRAPOBJ    := $(OBJDIR)/wraps.o
 RULESFILE  := $(OBJDIR)/Makefile.rules
 
-NVCUFLAGS  += -I. -I.. -I$(BUILDDIR)/include -I../../include --compiler-options "-fPIC -fvisibility=hidden"
+NVCUFLAGS  += -I. -I.. -I$(BUILDDIR)/include -I../include --compiler-options "-fPIC -fvisibility=hidden"
 
 
-all: $(STATICLIB)
+all: $(MANIFEST)
 
 # Dummy rule so that the extra dependency (%.dep) files are preserved by make
 all_deps: $(DEPENDFILES)
@@ -40,9 +40,9 @@ LIBOBJ     := $(GENOBJS) $(OBJDIR)/functions.o $(OBJDIR)/onerank_reduce.o
 
 -include $(DEPFILES)
 
-$(STATICLIB): $(LIBOBJ) $(DEVOBJ)
-	@printf "Archiving  %-35s > %s\n" objects $@
-	ar cr $@ $^
+# obj/device/manifest is a list of all the object paths
+$(MANIFEST): $(LIBOBJ) $(WRAPOBJ)
+	@echo $^ > $@
 
 # We do not want make to build *.d when running make clean.
 # So we only provide targets for .dep which will produce .dep and .d,
@@ -69,8 +69,9 @@ $(OBJDIR)/onerank_reduce.o : onerank_reduce.cu $(OBJDIR)/onerank_reduce.dep
 	$(NVCC) $(NVCUFLAGS) -dc $< -o $@
 
 # ... and create the device-side linked object with all those.
-$(DEVOBJ) : $(LIBOBJ)
+$(WRAPOBJ): $(LIBOBJ)
+	@printf "Linking device  %-35s > %s\n" objects $@
 	$(NVCC) $(NVCUFLAGS) -dlink $^ -o $@
 
 clean:
-	rm -f $(LIBOBJ) $(DEVOBJ) $(DEPFILES) $(DEPENDFILES) $(RULESFILE) $(STATICLIB)
+	rm -f $(LIBOBJ) $(WRAPOBJ) $(MANIFEST) $(DEPFILES) $(DEPENDFILES) $(RULESFILE)

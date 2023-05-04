@@ -1,7 +1,7 @@
 #include <stdio.h>
 #include "nccl.h"
 
-#include "devcomm.h"
+#include "device.h"
 #include "reduce_kernel.h"
 #include "common_kernel.h"
 

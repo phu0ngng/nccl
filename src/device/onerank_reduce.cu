@@ -4,7 +4,7 @@
  * See LICENSE.txt for license information
  ************************************************************************/
 
-#include "devcomm.h"
+#include "device.h"
 #include "collectives.h"
 #include "common_kernel.h"
 #include "common.h"
