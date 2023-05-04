@@ -902,9 +902,9 @@ testResult_t threadLaunch(struct testThread* thread) {
 
 testResult_t AllocateBuffs(void **sendbuff, size_t sendBytes, void **recvbuff, size_t recvBytes, void **expected, size_t nbytes) {
     nbytes += 8*unalign; // pad with size of max datatype in case all datatypes selected
-    CUDACHECK(cudaMalloc(sendbuff, nbytes));
-    CUDACHECK(cudaMalloc(recvbuff, nbytes));
-    if (datacheck) CUDACHECK(cudaMalloc(expected, recvBytes));
+    TESTCHECK(testMemAlloc(sendbuff, nbytes));
+    TESTCHECK(testMemAlloc(recvbuff, nbytes));
+    if (datacheck) TESTCHECK(testMemAlloc(expected, recvBytes));
     CUDACHECK(cudaMemset(*sendbuff, 0, nbytes));
     CUDACHECK(cudaMemset(*recvbuff, 0, nbytes));
     if (datacheck) CUDACHECK(cudaMemset(*expected, 0, recvBytes));
@@ -1516,9 +1516,9 @@ char* splitMaskEnv = NULL;
   // Free off CUDA allocated memory
   for (int id = 0; id < commNum; ++id) {
     for (int i=0; i<nGpus*nThreads; i++) {
-      if (sendbuffs[id][i]) CUDACHECK(cudaFree((char*)sendbuffs[id][i]));
-      if (recvbuffs[id][i]) CUDACHECK(cudaFree((char*)recvbuffs[id][i]));
-      if (datacheck) CUDACHECK(cudaFree(expected[id][i]));
+      if (sendbuffs[id][i]) TESTCHECK(testMemFree(sendbuffs[id][i]));
+      if (recvbuffs[id][i]) TESTCHECK(testMemFree(recvbuffs[id][i]));
+      if (datacheck) TESTCHECK(testMemFree(expected[id][i]));
     }
   }
   
