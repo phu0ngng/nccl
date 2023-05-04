@@ -14,15 +14,6 @@
 
 #if CUDART_VERSION >= 12010
 
-// Currently we only support POSIX_FILE_DESCRIPTOR handle exchange
-#define USE_POSIX_FD 1
-
-#if USE_POSIX_FD
-#define NVLS_CU_MEM_HANDLE_TYPE CU_MEM_HANDLE_TYPE_POSIX_FILE_DESCRIPTOR
-#else
-#define NVLS_CU_MEM_HANDLE_TYPE CU_MEM_HANDLE_TYPE_NONE
-#endif
-
 struct graphRegData {
   uintptr_t offset;
   size_t size;
