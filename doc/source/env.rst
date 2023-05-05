@@ -303,7 +303,7 @@ For more information, see section 12.7.34 of the InfiniBand specification Volume
 
 Values accepted
 ^^^^^^^^^^^^^^^
-The default value used by NCCL is 14.
+The default value used by NCCL is 18 (since 2.14, it was 14 in previous versions).
 
 Values can be 1-22.
 
@@ -407,6 +407,28 @@ Enable use of Relaxed Ordering for the IB Verbs transport. Relaxed Ordering can 
 Values accepted
 ^^^^^^^^^^^^^^^
 Set to 2 to automatically use Relaxed Ordering if available. Set to 1 to force use of Relaxed Ordering and fail if not available. Set to 0 to disable use of Relaxed Ordering. Default is 2.
+
+NCCL_IB_ADAPTIVE_ROUTING
+------------------------
+(since 2.16)
+
+Enable use of Adaptive Routing capable data transfers for the IB Verbs transport. Adaptive routing can improve the performance of communications at scale. A system defined Adaptive Routing enabled SL has to be selected accordingly (cf. ``NCCL_IB_SL``).
+
+Values accepted
+^^^^^^^^^^^^^^^
+Enabled (1) by default on IB networks. Disabled (0) by default on RoCE networks. Set to 1 to force use of Adaptive Routing capable data transmission.
+
+
+NCCL_MEM_SYNC_DOMAIN
+--------------------
+(since 2.16)
+
+Sets the default Memory Sync Domain for NCCL kernels (CUDA 12.0 & sm90 and later). Memory Sync Domains can help eliminate interference between the NCCL kernels and the application compute kernels, when they use different domains.
+
+Values accepted
+^^^^^^^^^^^^^^^
+Default value is ``cudaLaunchMemSyncDomainRemote`` (1). Currently supported values are 0 and 1.
+
 
 NCCL_NET
 --------
@@ -546,9 +568,9 @@ The ``NCCL_ALGO`` variable defines which algorithms NCCL will use.
 
 Values accepted
 ^^^^^^^^^^^^^^^
-Coma-separated list of algorithms (not case sensitive) among: Tree, Ring, Collnet. To specify algorithms to exclude (instead of include), start the list with ^.
+Coma-separated list of algorithms (not case sensitive) among: Tree, Ring, Collnet (up to 2.13), CollnetDirect (2.14+) and CollnetChain (2.14+). To specify algorithms to exclude (instead of include), start the list with ^.
 
-The default is ``Tree,Ring,Collnet``.
+The default is ``Tree,Ring,CollnetDirect,CollnetChain``.
 
 NCCL_PROTO
 ----------
@@ -580,7 +602,7 @@ NCCL_DEBUG_FILE
 
 The ``NCCL_DEBUG_FILE`` variable directs the NCCL debug logging output to a file.
 The filename format can be set to *filename.%h.%p* where *%h* is replaced with the
-hostname and *%p* is replaced with the process PID. This does not accept home directory (~), please convert to a relative or absolute path first.
+hostname and *%p* is replaced with the process PID. This does not accept the ``~`` character as part of the path, please convert to a relative or absolute path first.
 
 Values accepted
 ^^^^^^^^^^^^^^^
@@ -806,3 +828,15 @@ will be determined by the setting of the configuration parameter passed to the n
 Values accepted
 ^^^^^^^^^^^^^^^
 0 or 1. 1 indicates blocking communicators; 0 has no effect on communicators.
+
+NCCL_CGA_CLUSTER_SIZE
+---------------------
+(since 2.16)
+
+Set CUDA Cooperative Group Array (CGA) cluster size. On sm90 and later we have an extra level of hierarchy where we
+can group together several blocks within the Grid, called Thread Block Clusters. Setting this to non-zero will cause
+NCCL to launch the communication kernels with the Cluster Dimension attribute set accordingly.
+
+Values accepted
+^^^^^^^^^^^^^^^
+0 to 8. Default value is 4 on sm90. 0 for older architectures.

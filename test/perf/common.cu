@@ -13,6 +13,7 @@
 #include <signal.h>
 #include <libgen.h>
 #include "cuda.h"
+#include <limits.h>
 
 #include "../verifiable/verifiable.h"
 
@@ -87,6 +88,8 @@ static int unalign = 0;
 static int average = 1;
 static int commblocking = 1;
 static int ft_test = 0;
+static char* ft_list = NULL;
+static size_t tbytes = SIZE_MAX;
 
 static char* replay_file = NULL;
 
@@ -276,7 +279,7 @@ testResult_t CheckData(struct threadArgs* args, ncclDataType_t type, ncclRedOp_t
 
   *wrongElts = 0;
   for (int i=0; i < args->nGpus; i++) *wrongElts += wrongPerGpu[i];
-  cudaFree(wrongPerGpu);
+  cudaFreeHost(wrongPerGpu);
 
   if (args->reportErrors && *wrongElts) args->errors[0]++;
   return testSuccess;
@@ -400,7 +403,7 @@ testResult_t startColl(struct threadArgs* args, ncclDataType_t type, ncclRedOp_t
     #endif
   }
   if (args->nGpus > 1) NCCLCHECK_COMM_WAITBATCH(ncclGroupEnd(), args->comms, args->nGpus);
-  
+
   if (blocking_coll) {
     // Complete op before returning
     TESTCHECK(testStreamSynchronize(args->nGpus, args->streams, args->comms));
@@ -416,7 +419,19 @@ testResult_t completeColl(struct threadArgs* args) {
   return testSuccess;
 }
 
-testResult_t BenchTime(struct threadArgs* args, ncclDataType_t type, ncclRedOp_t op, int root, int in_place) {
+static testResult_t getIteration(size_t nbytes, int* itersPtr) {
+  if (tbytes == SIZE_MAX) {
+    *itersPtr = iters;
+  } else {
+    if (nbytes == 0)
+      *itersPtr = iters;
+    else
+      *itersPtr = max(min((size_t)iters, tbytes / nbytes), 1UL);
+  }
+  return testSuccess;
+}
+
+testResult_t BenchTime(struct threadArgs* args, ncclDataType_t type, ncclRedOp_t op, int root, int in_place, int actualIters) {
   size_t count = args->nbytes / wordSize(type);
   if (datacheck) {
     // Initialize sendbuffs, recvbuffs and expected
@@ -432,6 +447,7 @@ testResult_t BenchTime(struct threadArgs* args, ncclDataType_t type, ncclRedOp_t
   Barrier(args);
   args->compThreadCountLast = *(args->compThreadCount);
 
+#if CUDART_VERSION >= 11030
   cudaGraph_t graphs[args->nGpus];
   cudaGraphExec_t graphExec[args->nGpus];
   if (cudaGraphLaunches >= 1) {
@@ -444,10 +460,11 @@ testResult_t BenchTime(struct threadArgs* args, ncclDataType_t type, ncclRedOp_t
       CUDACHECK(cudaStreamBeginCapture(args->streams[i], cudaStreamCaptureModeThreadLocal));
     }
   }
+#endif
 
   // Performance Benchmark
   timer tim;
-  for (int iter = 0; iter < iters; iter++) {
+  for (int iter = 0; iter < actualIters; iter++) {
     if (agg_iters>1) NCCLCHECK(ncclGroupStart());
     for (int aiter = 0; aiter < agg_iters; aiter++) {
       TESTCHECK(startColl(args, type, op, root, in_place, iter*agg_iters+aiter));
@@ -455,6 +472,7 @@ testResult_t BenchTime(struct threadArgs* args, ncclDataType_t type, ncclRedOp_t
     if (agg_iters>1) NCCLCHECK(ncclGroupEnd());
   }
 
+#if CUDART_VERSION >= 11030
   if (cudaGraphLaunches >= 1) {
     // End cuda graph capture
     for (int i=0; i<args->nGpus; i++) {
@@ -473,16 +491,18 @@ testResult_t BenchTime(struct threadArgs* args, ncclDataType_t type, ncclRedOp_t
       }
     }
   }
+#endif
 
-  double cputimeSec = tim.elapsed()/(iters*agg_iters);
+  double cputimeSec = tim.elapsed()/(actualIters*agg_iters);
   TESTCHECK(completeColl(args));
 
   int compThreadCount = (*(args->compThreadCount)) - args->compThreadCountLast;
   double deltaSec = tim.elapsed();
-  deltaSec = deltaSec/(iters*agg_iters);
+  deltaSec = deltaSec/(actualIters*agg_iters);
   if (cudaGraphLaunches >= 1) deltaSec = deltaSec/cudaGraphLaunches;
   Allreduce(args, &deltaSec, average);
 
+#if CUDART_VERSION >= 11030
   if (cudaGraphLaunches >= 1) {
     //destroy cuda graph
     for (int i=0; i<args->nGpus; i++) {
@@ -490,6 +510,7 @@ testResult_t BenchTime(struct threadArgs* args, ncclDataType_t type, ncclRedOp_t
       CUDACHECK(cudaGraphDestroy(graphs[i]));
     }
   }
+#endif
 
   double algBw, busBw;
   args->collTest->getBw(count, wordSize(type), deltaSec, &algBw, &busBw, args->nProcs*args->nThreads*args->nGpus);
@@ -503,16 +524,19 @@ testResult_t BenchTime(struct threadArgs* args, ncclDataType_t type, ncclRedOp_t
       // Initialize sendbuffs, recvbuffs and expected
       TESTCHECK(args->collTest->initData(args, type, op, root, rep, in_place));
 
+#if CUDART_VERSION >= 11030
       if (cudaGraphLaunches >= 1) {
         // Begin cuda graph capture for data check
         for (int i=0; i<args->nGpus; i++) {
           CUDACHECK(cudaStreamBeginCapture(args->streams[i], args->nThreads > 1 ? cudaStreamCaptureModeThreadLocal : cudaStreamCaptureModeGlobal));
         }
       }
+#endif
 
       //test validation in single itertion, should ideally be included into the multi-iteration run
       TESTCHECK(startColl(args, type, op, root, in_place, 0));
 
+#if CUDART_VERSION >= 11030
       if (cudaGraphLaunches >= 1) {
         // End cuda graph capture
         for (int i=0; i<args->nGpus; i++) {
@@ -527,9 +551,11 @@ testResult_t BenchTime(struct threadArgs* args, ncclDataType_t type, ncclRedOp_t
           CUDACHECK(cudaGraphLaunch(graphExec[i], args->streams[i]));
         }
       }
+#endif
 
       TESTCHECK(completeColl(args));
 
+#if CUDART_VERSION >= 11030
       if (cudaGraphLaunches >= 1) {
         //destroy cuda graph
         for (int i=0; i<args->nGpus; i++) {
@@ -537,6 +563,7 @@ testResult_t BenchTime(struct threadArgs* args, ncclDataType_t type, ncclRedOp_t
           CUDACHECK(cudaGraphDestroy(graphs[i]));
         }
       }
+#endif
 
       TESTCHECK(CheckData(args, type, op, root, in_place, &wrongElts));
 
@@ -628,15 +655,18 @@ testResult_t TimeTest(struct threadArgs* args, ncclDataType_t type, const char* 
   // Benchmark
   for (size_t size = args->minbytes; size<=args->maxbytes; size = ((args->stepfactor > 1) ? size*args->stepfactor : size+args->stepbytes)) {
       setupArgs(size, type, args);
+      int actualIters;
+      TESTCHECK(getIteration(args->nbytes, &actualIters));
       char rootName[100];
       sprintf(rootName, "%6i", root);
       PRINT("%12li  %12li  %8s  %6s  %6s", max(args->sendBytes, args->expectedBytes), args->nbytes / wordSize(type), typeName, opName, rootName);
       if (args->replayFile != NULL || !out_of_place) {
         PRINT("                                ");  // only do in-place for trace replay
       } else {
-        TESTCHECK(BenchTime(args, type, op, root, 0));
+        TESTCHECK(BenchTime(args, type, op, root, 0, actualIters));
       }
-      TESTCHECK(BenchTime(args, type, op, root, 1));
+      TESTCHECK(BenchTime(args, type, op, root, 1, actualIters));
+      PRINT("  %5d", actualIters);
       PRINT("    %s\n", args->replayFile == NULL ? "" : args->collTest->name);
   }
 
@@ -775,6 +805,9 @@ testResult_t AllocateBuffs(void **sendbuff, size_t sendBytes, void **recvbuff, s
     CUDACHECK(cudaMalloc(sendbuff, nbytes));
     CUDACHECK(cudaMalloc(recvbuff, nbytes));
     if (datacheck) CUDACHECK(cudaMalloc(expected, recvBytes));
+    CUDACHECK(cudaMemset(*sendbuff, 0, nbytes));
+    CUDACHECK(cudaMemset(*recvbuff, 0, nbytes));
+    if (datacheck) CUDACHECK(cudaMemset(*expected, 0, recvBytes));
     return testSuccess;
 }
 
@@ -834,13 +867,15 @@ int main(int argc, char* argv[]) {
     {"average", required_argument, 0, 'a'},
     {"commblocking", required_argument, 0, 'B'},
     {"ft_test", required_argument, 0, 'F'},
+    {"ft_list", required_argument, 0, 'L'},
+    {"tbytes", required_argument, 0, 's'},
     {"help", no_argument, 0, 'h'},
     {}
   };
 
   while(1) {
     int c;
-    c = getopt_long(argc, argv, "t:g:b:e:i:f:n:m:w:s:p:c:o:d:r:z:y:k:h:l:T:G:C:O:u:a:B:F:", longopts, &longindex);
+    c = getopt_long(argc, argv, "t:g:b:e:i:f:n:m:w:s:p:c:o:d:r:z:y:k:h:l:T:G:C:O:u:a:B:F:L:s:", longopts, &longindex);
 
     if (c == -1)
       break;
@@ -942,6 +977,17 @@ int main(int argc, char* argv[]) {
       case 'F':
         ft_test = (int)strtol(optarg, NULL, 0);
         break;
+      case 'L':
+        ft_list = optarg;
+        break;
+      case 's':
+        parsed = parsesize(optarg);
+        if (parsed < 0) {
+          fprintf(stderr, "invalid size specified for 'tbytes'\n");
+          return -1;
+        }
+        tbytes = (size_t)parsed;
+        break;
       case 'h':
       default:
         if (c != 'h') printf("invalid option '%c'\n", c);
@@ -957,7 +1003,13 @@ int main(int argc, char* argv[]) {
             "[-w,--warmup_iters <warmup iteration count>] \n\t"
             "[-p,--parallel_init <0/1>] \n\t"
             "[-c,--check <0/1>] \n\t"
+#if NCCL_VERSION_CODE >= NCCL_VERSION(2,11,0)
+            "[-o,--op <sum/prod/min/max/avg/mulsum/all>] \n\t"
+#elif NCCL_VERSION_CODE >= NCCL_VERSION(2,10,0)
             "[-o,--op <sum/prod/min/max/avg/all>] \n\t"
+#else
+            "[-o,--op <sum/prod/min/max/all>] \n\t"
+#endif
             "[-d,--datatype <nccltype/all>] \n\t"
             "[-r,--root <root>] \n\t"
             "[-z,--blocking <0/1>] \n\t"
@@ -972,8 +1024,10 @@ int main(int argc, char* argv[]) {
             "[-a,--average <0/1/2/3> report average iteration time <0=RANK0/1=AVG/2=MIN/3=MAX>] \n\t"
             "[-B,--commblocking <0/1> enable blocking communicator (default: 1)] \n\t"
             "[-F,--ft_test <0/1> enable fault tolerance test (default: 0)] \n\t"
+            "[-L,--ft_list <init/allreduce/alltoall/finalize/all> only enable specified fault tolerance test (default: all)] \n\t"
+            "[-s,--tbytes total bytes allowed to transmit (default: unlimited); tbytes would limit #iterations] \n\t"
             "[-h,--help]\n",
-            basename(argv[0]));
+          basename(argv[0]));
         return 0;
     }
   }
@@ -1082,10 +1136,10 @@ testResult_t run() {
 
   ncclTestEngine.getBuffSize(&sendBytes, &recvBytes, (size_t)maxBytes, (size_t)ncclProcs*nGpus*nThreads);
 
-  /* only when communicators are nonblocking and ft test is enabled, we 
+  /* only when communicators are nonblocking and ft test is enabled, we
    * perform fault tolerance tests. */
   if (ft_test && commblocking == 0) {
-    TESTCHECK(faultToleranceTests(nThreads, nGpus, ncclProc, ncclProcs, localRank));
+    TESTCHECK(faultToleranceTests(nThreads, nGpus, ncclProc, ncclProcs, localRank, ft_list));
   }
 
   envstr = getenv("NCCL_TESTS_DEVICE");
@@ -1139,10 +1193,10 @@ testResult_t run() {
   const char* timeStr = report_cputime ? "cputime" : "time";
   PRINT("#\n");
   PRINT("# %10s  %12s  %8s  %6s  %6s           out-of-place                       in-place          \n", "", "", "", "", "");
-  PRINT("# %10s  %12s  %8s  %6s  %6s  %7s  %6s  %6s %6s  %7s  %6s  %6s %6s\n", "size", "count", "type", "redop", "root",
-      timeStr, "algbw", "busbw", "#wrong", timeStr, "algbw", "busbw", "#wrong");
-  PRINT("# %10s  %12s  %8s  %6s  %6s  %7s  %6s  %6s  %5s  %7s  %6s  %6s  %5s\n", "(B)", "(elements)", "", "", "",
-      "(us)", "(GB/s)", "(GB/s)", "", "(us)", "(GB/s)", "(GB/s)", "");
+  PRINT("# %10s  %12s  %8s  %6s  %6s  %7s  %6s  %6s %6s  %7s  %6s  %6s %6s %6s\n", "size", "count", "type", "redop", "root",
+      timeStr, "algbw", "busbw", "#wrong", timeStr, "algbw", "busbw", "#wrong", "#iters");
+  PRINT("# %10s  %12s  %8s  %6s  %6s  %7s  %6s  %6s  %5s  %7s  %6s  %6s  %5s  %5s\n", "(B)", "(elements)", "", "", "",
+      "(us)", "(GB/s)", "(GB/s)", "", "(us)", "(GB/s)", "(GB/s)", "", "");
 
   struct testThread threads[nThreads];
   struct testThread compThreads[nThreads];

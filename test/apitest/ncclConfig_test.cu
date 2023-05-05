@@ -5,6 +5,7 @@ class ncclConfig_test : public ::testing::Test {
     int nVis;
     int expectMask;
     void SetUp() {
+        ncclCommon_destroysrComms();
         expectMask = (1 << ncclSuccess) | (1 << ncclInProgress);
         ASSERT_EQ(cudaSuccess, cudaGetDeviceCount(&nVis));
     }

@@ -221,6 +221,7 @@ int main(int argc, const char* argv[]) {
     RUN("DGX-2V");
     RUN("XMAN-3");
     RUN("Luna");
+    RUN("DGX-A800");
     RUN("Luna-SHARP");
     RUN("Luna-SHARP-1PPN");
     RUN("Luna-2PPN-0");
@@ -240,6 +241,8 @@ int main(int argc, const char* argv[]) {
     RUN("Dual-Delta-VM");
     RUN("ZionEX");
     RUN("FB-V100");
+    RUN("Viking");
+    RUN("Scout");
 #endif
     RUN("P9-6V");
     RUN("P9-4V");
