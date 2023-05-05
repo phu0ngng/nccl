@@ -5,7 +5,7 @@
  ************************************************************************/
 
 #include "core.h"
-#include "devcomm.h"
+#include "device.h"
 #include "comm.h"
 #include "topo.h"
 
