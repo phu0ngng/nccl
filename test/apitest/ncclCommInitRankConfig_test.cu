@@ -2,11 +2,11 @@
 
 class ncclCommInitRankConfig_test : public ::testing::Test {
   protected:
-    ncclComm_t *comms;
+    ncclComm_t *gcomms;
     int ndev;
     ncclUniqueId commId;
     const int rank0 = 0;
-    ncclConfig_t config = NCCL_CONFIG_INITIALIZER;
+    ncclConfig_t gconfig = NCCL_CONFIG_INITIALIZER;
     int expectMask;
 
     virtual void SetUp() {
@@ -15,17 +15,21 @@ class ncclCommInitRankConfig_test : public ::testing::Test {
         expectMask = (1 << ncclSuccess) | (1 << ncclInProgress);
         ASSERT_EQ(ncclSuccess, ncclGetUniqueId(&commId));
         EXPECT_EQ(cudaSuccess, cudaGetDeviceCount(&ndev));
-        EXPECT_NE(nullptr, comms = (ncclComm_t*) calloc(ndev, sizeof(ncclComm_t)));
-        config.blocking = 0;
+        EXPECT_NE(nullptr, gcomms = (ncclComm_t*) calloc(ndev, sizeof(ncclComm_t)));
+        gconfig.blocking = 0;
+        gconfig.minCTAs = 2;
+        gconfig.maxCTAs = 4;
+        gconfig.cgaClusterSize = 0;
+        gconfig.netName = "Socket";
     }
 
     virtual void TearDown() {
         for (int i = 0; i < ndev; ++i) {
-            if (comms[i]) {
-                ASSERT_EQ(ncclSuccess, ncclCommDestroy(comms[i]));
+            if (gcomms[i]) {
+                ASSERT_EQ(ncclSuccess, ncclCommDestroy(gcomms[i]));
             }
         }
-        free(comms);
+        free(gcomms);
     }
 
     void waitCommsReady(ncclComm_t *comms, int nranks) {
@@ -49,53 +53,362 @@ TEST_F(ncclCommInitRankConfig_test, basic) {
     ASSERT_EQ(ncclSuccess, ncclGroupStart());
     for (int i = 0; i < ndev; ++i) {
         ASSERT_EQ(cudaSuccess, cudaSetDevice(i));
-        (void) ncclCommInitRankConfig(&comms[i], ndev, commId, i, &config);
+        (void) ncclCommInitRankConfig(&gcomms[i], ndev, commId, i, &gconfig);
     }
     ASSERT_NE(0, expectMask & (1 << ncclGroupEnd()));
-    waitCommsReady(comms, ndev);
+    waitCommsReady(gcomms, ndev);
 }
 
 TEST_F(ncclCommInitRankConfig_test, basic_null) {
     ASSERT_EQ(ncclSuccess, ncclGroupStart());
     for (int i = 0; i < ndev; ++i) {
         ASSERT_EQ(cudaSuccess, cudaSetDevice(i));
-        ASSERT_EQ(ncclSuccess, ncclCommInitRankConfig(&comms[i], ndev, commId, i, NULL));
+        ASSERT_EQ(ncclSuccess, ncclCommInitRankConfig(&gcomms[i], ndev, commId, i, NULL));
     }
     ASSERT_EQ(ncclSuccess, ncclGroupEnd());
 }
 
 TEST_F(ncclCommInitRankConfig_test, attr_null) {
     ASSERT_EQ(cudaSuccess, cudaSetDevice(0));
-    ASSERT_EQ(ncclSuccess, ncclCommInitRankConfig(&comms[0], 1, commId, rank0, NULL));
+    ASSERT_EQ(ncclSuccess, ncclCommInitRankConfig(&gcomms[0], 1, commId, rank0, NULL));
 }
 
 TEST_F(ncclCommInitRankConfig_test, with_config) {
     ASSERT_EQ(cudaSuccess, cudaSetDevice(0));
-    ASSERT_NE(0, expectMask & (1 << ncclCommInitRankConfig(&comms[0], 1, commId, rank0, &config)));
-    waitCommsReady(comms, 1);
+    ASSERT_NE(0, expectMask & (1 << ncclCommInitRankConfig(&gcomms[0], 1, commId, rank0, &gconfig)));
+    waitCommsReady(gcomms, 1);
 }
 
 TEST_F(ncclCommInitRankConfig_test, comm_null) {
     ASSERT_EQ(cudaSuccess, cudaSetDevice(0));
-    ASSERT_EQ(ncclInvalidArgument, ncclCommInitRankConfig(NULL, ndev, commId, rank0, &config));
+    ASSERT_EQ(ncclInvalidArgument, ncclCommInitRankConfig(NULL, ndev, commId, rank0, &gconfig));
 }
 
 TEST_F(ncclCommInitRankConfig_test, ndev_zero) {
     ASSERT_EQ(cudaSuccess, cudaSetDevice(0));
-    ASSERT_EQ(ncclInvalidArgument, ncclCommInitRankConfig(&comms[0], 0, commId, rank0, &config));
+    ASSERT_EQ(ncclInvalidArgument, ncclCommInitRankConfig(&gcomms[0], 0, commId, rank0, &gconfig));
 }
 
 TEST_F(ncclCommInitRankConfig_test, dev_negative) {
     ASSERT_EQ(cudaSuccess, cudaSetDevice(0));
-    ASSERT_EQ(ncclInvalidArgument, ncclCommInitRankConfig(&comms[0], -1, commId, rank0, &config));
+    ASSERT_EQ(ncclInvalidArgument, ncclCommInitRankConfig(&gcomms[0], -1, commId, rank0, &gconfig));
 }
 
 TEST_F(ncclCommInitRankConfig_test, rank_outofboundary) {
     ASSERT_EQ(cudaSuccess, cudaSetDevice(0));
-    ASSERT_EQ(ncclInvalidArgument, ncclCommInitRankConfig(&comms[0], 1, commId, ndev, &config));
+    ASSERT_EQ(ncclInvalidArgument, ncclCommInitRankConfig(&gcomms[0], 1, commId, ndev, &gconfig));
 }
 
 TEST_F(ncclCommInitRankConfig_test, rank_negative) {
     ASSERT_EQ(cudaSuccess, cudaSetDevice(0));
-    ASSERT_EQ(ncclInvalidArgument, ncclCommInitRankConfig(&comms[0], ndev, commId, -1, &config));
+    ASSERT_EQ(ncclInvalidArgument, ncclCommInitRankConfig(&gcomms[0], ndev, commId, -1, &gconfig));
+}
+
+TEST_F(ncclCommInitRankConfig_test, blocking) {
+    ncclUniqueId id;
+    ncclComm_t* comms;
+    ncclConfig_t config = NCCL_CONFIG_INITIALIZER;
+    
+    config.blocking = 1;
+    comms = (ncclComm_t*)calloc(ndev, sizeof(ncclComm_t));
+    ASSERT_EQ(ncclSuccess, ncclGetUniqueId(&id));
+    ASSERT_EQ(ncclSuccess, ncclGroupStart());
+    for (int i = 0; i < ndev; ++i) {
+        ASSERT_EQ(cudaSuccess, cudaSetDevice(i));
+        ASSERT_EQ(ncclSuccess, ncclCommInitRankConfig(&comms[i], ndev, id, i, &config));
+    }
+    ASSERT_EQ(ncclSuccess, ncclGroupEnd());
+
+    for (int i = 0; i < ndev; ++i)
+        ASSERT_EQ(ncclSuccess, ncclCommDestroy(comms[i]));
+    free(comms);
+}
+
+TEST_F(ncclCommInitRankConfig_test, config_null) {
+    ncclUniqueId id;
+    ncclComm_t* comms;
+
+    comms = (ncclComm_t*)calloc(ndev, sizeof(ncclComm_t));
+    ASSERT_EQ(ncclSuccess, ncclGetUniqueId(&id));
+    ASSERT_EQ(ncclSuccess, ncclGroupStart());
+    for (int i = 0; i < ndev; ++i) {
+        ASSERT_EQ(cudaSuccess, cudaSetDevice(i));
+        ASSERT_EQ(ncclSuccess, ncclCommInitRankConfig(&comms[i], ndev, id, i, NULL));
+    }
+    ASSERT_EQ(ncclSuccess, ncclGroupEnd());
+
+    for (int i = 0; i < ndev; ++i)
+        ASSERT_EQ(ncclSuccess, ncclCommDestroy(comms[i]));
+    free(comms);
+}
+
+TEST_F(ncclCommInitRankConfig_test, cta_basic) {
+    ncclUniqueId id;
+    ncclComm_t* comms;
+    ncclConfig_t config = NCCL_CONFIG_INITIALIZER;
+    
+    config.minCTAs = 8;
+    config.maxCTAs = 16;
+    comms = (ncclComm_t*)calloc(ndev, sizeof(ncclComm_t));
+    ASSERT_EQ(ncclSuccess, ncclGetUniqueId(&id));
+    ASSERT_EQ(ncclSuccess, ncclGroupStart());
+    for (int i = 0; i < ndev; ++i) {
+        ASSERT_EQ(cudaSuccess, cudaSetDevice(i));
+        ASSERT_EQ(ncclSuccess, ncclCommInitRankConfig(&comms[i], ndev, id, i, &config));
+    }
+    ASSERT_EQ(ncclSuccess, ncclGroupEnd());
+
+    for (int i = 0; i < ndev; ++i)
+        ASSERT_EQ(ncclSuccess, ncclCommDestroy(comms[i]));
+    
+    /* equal minCTAs and maxCTAs */
+    config.minCTAs = 16;
+    config.maxCTAs = 16;
+    ASSERT_EQ(ncclSuccess, ncclGetUniqueId(&id));
+    ASSERT_EQ(ncclSuccess, ncclGroupStart());
+    for (int i = 0; i < ndev; ++i) {
+        ASSERT_EQ(cudaSuccess, cudaSetDevice(i));
+        ASSERT_EQ(ncclSuccess, ncclCommInitRankConfig(&comms[i], ndev, id, i, &config));
+    }
+    ASSERT_EQ(ncclSuccess, ncclGroupEnd());
+
+    for (int i = 0; i < ndev; ++i)
+        ASSERT_EQ(ncclSuccess, ncclCommDestroy(comms[i]));
+    free(comms);
+}
+
+TEST_F(ncclCommInitRankConfig_test, cta_large) {
+    ncclUniqueId id;
+    ncclComm_t* comms;
+    ncclConfig_t config = NCCL_CONFIG_INITIALIZER;
+    
+    config.minCTAs = 64;
+    config.maxCTAs = 128;
+    comms = (ncclComm_t*)calloc(ndev, sizeof(ncclComm_t));
+    ASSERT_EQ(ncclSuccess, ncclGetUniqueId(&id));
+    ASSERT_EQ(ncclSuccess, ncclGroupStart());
+    for (int i = 0; i < ndev; ++i) {
+        ASSERT_EQ(cudaSuccess, cudaSetDevice(i));
+        ASSERT_EQ(ncclSuccess, ncclCommInitRankConfig(&comms[i], ndev, id, i, &config));
+    }
+    ASSERT_EQ(ncclSuccess, ncclGroupEnd());
+
+    for (int i = 0; i < ndev; ++i)
+        ASSERT_EQ(ncclSuccess, ncclCommDestroy(comms[i]));
+    free(comms);
+}
+
+TEST_F(ncclCommInitRankConfig_test, cta_invalid) {
+    ncclUniqueId id;
+    ncclComm_t* comms;
+    ncclConfig_t config = NCCL_CONFIG_INITIALIZER;
+    
+    config.minCTAs = 0;
+    comms = (ncclComm_t*)calloc(ndev, sizeof(ncclComm_t));
+    ASSERT_EQ(ncclSuccess, ncclGetUniqueId(&id));
+    ASSERT_EQ(ncclSuccess, ncclGroupStart());
+    for (int i = 0; i < ndev; ++i) {
+        ASSERT_EQ(cudaSuccess, cudaSetDevice(i));
+        ASSERT_EQ(ncclInvalidArgument, ncclCommInitRankConfig(&comms[i], ndev, id, i, &config));
+    }
+    ASSERT_EQ(ncclInvalidArgument, ncclGroupEnd());
+    for (int i = 0; i < ndev; ++i)
+        ASSERT_EQ(ncclSuccess, ncclCommDestroy(comms[i]));
+
+    config.minCTAs = -256;
+    ASSERT_EQ(ncclSuccess, ncclGetUniqueId(&id));
+    ASSERT_EQ(ncclSuccess, ncclGroupStart());
+    for (int i = 0; i < ndev; ++i) {
+        ASSERT_EQ(cudaSuccess, cudaSetDevice(i));
+        ASSERT_EQ(ncclInvalidArgument, ncclCommInitRankConfig(&comms[i], ndev, id, i, &config));
+    }
+    ASSERT_EQ(ncclInvalidArgument, ncclGroupEnd());
+    for (int i = 0; i < ndev; ++i)
+        ASSERT_EQ(ncclSuccess, ncclCommDestroy(comms[i]));
+
+    config.minCTAs = 16;
+    config.maxCTAs = 8;
+    ASSERT_EQ(ncclSuccess, ncclGetUniqueId(&id));
+    ASSERT_EQ(ncclSuccess, ncclGroupStart());
+    for (int i = 0; i < ndev; ++i) {
+        ASSERT_EQ(cudaSuccess, cudaSetDevice(i));
+        ASSERT_EQ(ncclInvalidArgument, ncclCommInitRankConfig(&comms[i], ndev, id, i, &config));
+    }
+    ASSERT_EQ(ncclInvalidArgument, ncclGroupEnd());
+
+    for (int i = 0; i < ndev; ++i)
+        ASSERT_EQ(ncclSuccess, ncclCommDestroy(comms[i]));
+    free(comms);
+}
+
+TEST_F(ncclCommInitRankConfig_test, cga_basic) {
+    ncclUniqueId id;
+    ncclComm_t* comms;
+    ncclConfig_t config = NCCL_CONFIG_INITIALIZER;
+    
+    config.cgaClusterSize = 8;
+    comms = (ncclComm_t*)calloc(ndev, sizeof(ncclComm_t));
+    ASSERT_EQ(ncclSuccess, ncclGetUniqueId(&id));
+    ASSERT_EQ(ncclSuccess, ncclGroupStart());
+    for (int i = 0; i < ndev; ++i) {
+        ASSERT_EQ(cudaSuccess, cudaSetDevice(i));
+        ASSERT_EQ(ncclSuccess, ncclCommInitRankConfig(&comms[i], ndev, id, i, &config));
+    }
+    ASSERT_EQ(ncclSuccess, ncclGroupEnd());
+
+    for (int i = 0; i < ndev; ++i)
+        ASSERT_EQ(ncclSuccess, ncclCommDestroy(comms[i]));
+    free(comms);
+}
+
+TEST_F(ncclCommInitRankConfig_test, cga_warn) {
+    ncclUniqueId id;
+    ncclComm_t* comms;
+    ncclConfig_t config = NCCL_CONFIG_INITIALIZER;
+    
+    config.cgaClusterSize = 16; /* we should only use maximal 8 CGA group size */
+    comms = (ncclComm_t*)calloc(ndev, sizeof(ncclComm_t));
+    ASSERT_EQ(ncclSuccess, ncclGetUniqueId(&id));
+    ASSERT_EQ(ncclSuccess, ncclGroupStart());
+    for (int i = 0; i < ndev; ++i) {
+        ASSERT_EQ(cudaSuccess, cudaSetDevice(i));
+        ASSERT_EQ(ncclSuccess, ncclCommInitRankConfig(&comms[i], ndev, id, i, &config));
+    }
+    ASSERT_EQ(ncclSuccess, ncclGroupEnd());
+
+    for (int i = 0; i < ndev; ++i)
+        ASSERT_EQ(ncclSuccess, ncclCommDestroy(comms[i]));
+    free(comms);
+}
+
+TEST_F(ncclCommInitRankConfig_test, cta_less_than_cga) {
+    ncclUniqueId id;
+    ncclComm_t* comms;
+    ncclConfig_t config = NCCL_CONFIG_INITIALIZER;
+    
+    config.cgaClusterSize = 8;
+    config.minCTAs = 1;
+    config.maxCTAs = 1;
+    comms = (ncclComm_t*)calloc(ndev, sizeof(ncclComm_t));
+    ASSERT_EQ(ncclSuccess, ncclGetUniqueId(&id));
+    ASSERT_EQ(ncclSuccess, ncclGroupStart());
+    for (int i = 0; i < ndev; ++i) {
+        ASSERT_EQ(cudaSuccess, cudaSetDevice(i));
+        ASSERT_EQ(ncclSuccess, ncclCommInitRankConfig(&comms[i], ndev, id, i, &config));
+    }
+    ASSERT_EQ(ncclSuccess, ncclGroupEnd());
+
+    for (int i = 0; i < ndev; ++i)
+        ASSERT_EQ(ncclSuccess, ncclCommDestroy(comms[i]));
+    free(comms);
+}
+
+TEST_F(ncclCommInitRankConfig_test, nChannel_cga_allreduce) {
+    ncclUniqueId id;
+    ncclComm_t* comms;
+    ncclConfig_t config = NCCL_CONFIG_INITIALIZER;
+    void** sendbuffs;
+    void** recvbuffs;
+    float* tmpbuffs;
+    size_t cnt = 1 << 20;
+    size_t size = cnt * sizeof(float);
+    cudaStream_t* streams;
+    
+    sendbuffs = (void**)malloc(ndev * sizeof(void*));
+    recvbuffs = (void**)malloc(ndev * sizeof(void*));
+    tmpbuffs = (float*)malloc(size);
+    streams = (cudaStream_t*)malloc(ndev * sizeof(cudaStream_t));
+    for (int i = 0; i < cnt; ++i) tmpbuffs[i] = i;
+    config.cgaClusterSize = 8;
+    config.minCTAs = 1;
+    config.maxCTAs = 1;
+    comms = (ncclComm_t*)calloc(ndev, sizeof(ncclComm_t));
+    ASSERT_EQ(ncclSuccess, ncclGetUniqueId(&id));
+    ASSERT_EQ(ncclSuccess, ncclGroupStart());
+    for (int i = 0; i < ndev; ++i) {
+        ASSERT_EQ(cudaSuccess, cudaSetDevice(i));
+        ASSERT_EQ(cudaSuccess, cudaMalloc(&sendbuffs[i], size));
+        ASSERT_EQ(cudaSuccess, cudaMalloc(&recvbuffs[i], size));
+        ASSERT_EQ(cudaSuccess, cudaMemcpy(sendbuffs[i], tmpbuffs, size, cudaMemcpyDefault));
+        ASSERT_EQ(cudaSuccess, cudaStreamCreate(&streams[i]));
+        ASSERT_EQ(ncclSuccess, ncclCommInitRankConfig(&comms[i], ndev, id, i, &config));
+    }
+    ASSERT_EQ(ncclSuccess, ncclGroupEnd());
+
+    ASSERT_EQ(ncclSuccess, ncclGroupStart());
+    for (int i = 0; i < ndev; ++i) {
+        ASSERT_EQ(ncclSuccess,
+                    ncclAllReduce(sendbuffs[i], recvbuffs[i], cnt, ncclFloat, ncclSum, comms[i], streams[i]));
+    }
+    ASSERT_EQ(ncclSuccess, ncclGroupEnd());
+    
+    for (int i = 0; i < ndev; ++i) {
+        ASSERT_EQ(cudaSuccess, cudaFree(sendbuffs[i]));
+        ASSERT_EQ(cudaSuccess, cudaFree(recvbuffs[i]));
+        ASSERT_EQ(cudaSuccess, cudaStreamDestroy(streams[i]));
+        ASSERT_EQ(ncclSuccess, ncclCommDestroy(comms[i]));
+    }
+    free(sendbuffs);
+    free(recvbuffs);
+    free(tmpbuffs);
+    free(comms);
+};
+
+TEST_F(ncclCommInitRankConfig_test, net_name_default) {
+    ncclUniqueId id;
+    ncclComm_t* comms;
+    ncclConfig_t config = NCCL_CONFIG_INITIALIZER;
+    
+    comms = (ncclComm_t*)calloc(ndev, sizeof(ncclComm_t));
+    ASSERT_EQ(ncclSuccess, ncclGetUniqueId(&id));
+    ASSERT_EQ(ncclSuccess, ncclGroupStart());
+    for (int i = 0; i < ndev; ++i) {
+        ASSERT_EQ(cudaSuccess, cudaSetDevice(i));
+        ASSERT_EQ(ncclSuccess, ncclCommInitRankConfig(&comms[i], ndev, id, i, &config));
+    }
+    ASSERT_EQ(ncclSuccess, ncclGroupEnd());
+
+    for (int i = 0; i < ndev; ++i)
+        ASSERT_EQ(ncclSuccess, ncclCommDestroy(comms[i]));
+    free(comms);
+}
+
+TEST_F(ncclCommInitRankConfig_test, net_name_internal) {
+    ncclUniqueId id;
+    ncclComm_t* comms;
+    ncclConfig_t config = NCCL_CONFIG_INITIALIZER;
+    
+    comms = (ncclComm_t*)calloc(ndev, sizeof(ncclComm_t));
+    config.netName = "Socket";
+    ASSERT_EQ(ncclSuccess, ncclGetUniqueId(&id));
+    ASSERT_EQ(ncclSuccess, ncclGroupStart());
+    for (int i = 0; i < ndev; ++i) {
+        ASSERT_EQ(cudaSuccess, cudaSetDevice(i));
+        ASSERT_EQ(ncclSuccess, ncclCommInitRankConfig(&comms[i], ndev, id, i, &config));
+    }
+    ASSERT_EQ(ncclSuccess, ncclGroupEnd());
+
+    for (int i = 0; i < ndev; ++i)
+        ASSERT_EQ(ncclSuccess, ncclCommDestroy(comms[i]));
+    free(comms);
+}
+
+TEST_F(ncclCommInitRankConfig_test, net_name_nonexist) {
+    ncclUniqueId id;
+    ncclComm_t* comms;
+    ncclConfig_t config = NCCL_CONFIG_INITIALIZER;
+    
+    config.netName = "NONEXIST";
+    comms = (ncclComm_t*)calloc(ndev, sizeof(ncclComm_t));
+    ASSERT_EQ(ncclSuccess, ncclGetUniqueId(&id));
+    ASSERT_EQ(ncclSuccess, ncclGroupStart());
+    for (int i = 0; i < ndev; ++i) {
+        ASSERT_EQ(cudaSuccess, cudaSetDevice(i));
+        ASSERT_EQ(ncclSuccess, ncclCommInitRankConfig(&comms[i], ndev, id, i, &config));
+    }
+    ASSERT_EQ(ncclInvalidUsage, ncclGroupEnd());
+
+    for (int i = 0; i < ndev; ++i)
+        ASSERT_EQ(ncclSuccess, ncclCommAbort(comms[i]));
+    free(comms);
 }

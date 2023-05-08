@@ -82,7 +82,7 @@ size_t data_op_call_count;
 
 void signalHandler( int signum ) {
    std::cerr << "[" << getpid() << "] Interrupt signal (" << signum << ") received.\n";
-   exit(signum);  
+   exit(signum);
 }
 
 uint64_t hashOf(std::string const &s) {
@@ -575,14 +575,14 @@ void* CudaHelp::allocate(int device, size_t size, uintptr_t align_like, uint32_t
 
         arena_counter = 0;
         for(auto &xy: dev->arenas) {
-          
+
           uintptr_t arena_lo = xy.first;
           uintptr_t arena_hi = xy.second.hi;
           std::vector<AddressSpan> &objs = xy.second.objs;
-      
+
           std::fprintf(stderr, "  [%u] arena[%u] arena_size=0x%lx arena_lo=0x%lx arena_hi=0x%lx\n",
             getpid(), arena_counter, arena_hi - arena_lo, arena_lo, arena_hi);
-      
+
           for(auto o = objs.begin(); o != objs.end(); ++o) {
               std::fprintf(stderr, "    [%u] arena[%u] obj[%zu] size=0x%lx lo=0x%lx hi=0x%lx\n",
                 getpid(), arena_counter, o - objs.begin(), o->hi - o->lo, o->lo, o->hi);
@@ -642,7 +642,7 @@ void CudaHelp::deallocate(int device, void *p, uint32_t op_id) {
 
   // Find the first arena which has hi > p
   uint32_t arena_num = 0;
-  auto a = dev->arenas.begin(); 
+  auto a = dev->arenas.begin();
   while(a->second.hi <= lo) {
     ++a;
     arena_num++;
@@ -1472,7 +1472,7 @@ void invokeCall(CallHeader const &hdr, CallDataOp const &body) {
         getpid(), my_op_id, fifo_idx, call_name, my_ops->load(std::memory_order_relaxed));
     }
 
-    // Cleanup 
+    // Cleanup
     CudaHelp::streamCallback(device, stream_nccl, [=]() {
       my_ops->fetch_add(-1);
       global_ops_completed.fetch_add(1);
@@ -1700,7 +1700,7 @@ void playTrace(ByteBuffer& trace, std::chrono::duration<double>* duration) {
 
     // The purpose of this allreduce is to serve as a makeshift asynchronous broadcast.
     // When a rank creates a UniqueId, it must be disseminated to any other rank which needs it to create a communicator
-    // 
+    //
     MPI_Allreduce(&vuid_in, &vuid_out, sizeof(vuid_in), MPI_BYTE, vuid_choose_op, MPI_COMM_WORLD);
     // Inspect output of allreduce
     if(vuid_out.first > 1) { // A unique id has been disseminated
@@ -1847,7 +1847,7 @@ void preCheck(std::unordered_map<uint64_t, std::shared_ptr<GlobalCommMap>>& vuni
           if (!matching_redops) {
             auto op1 = globalMap->vredops[first_rank].find(op.red_op);
             auto op2 = globalMap->vredops[temp_rank].find(temp_op.red_op);
-            matching_redops = op1 != globalMap->vredops[first_rank].end() && 
+            matching_redops = op1 != globalMap->vredops[first_rank].end() &&
                                 op2 != globalMap->vredops[temp_rank].end();
             if (!matching_redops) {
               fprintf(stderr, "WARNING - Found non-matching redops without vredop mappings\n");
@@ -1860,7 +1860,7 @@ void preCheck(std::unordered_map<uint64_t, std::shared_ptr<GlobalCommMap>>& vuni
 
           if (op.elt_n != temp_op.elt_n ||
               op.elt_ty != temp_op.elt_ty ||
-              op.root != temp_op.root || 
+              op.root != temp_op.root ||
               !matching_redops ||
               hdr.code != temp_hdr.code) {
 
@@ -1980,7 +1980,7 @@ ByteBuffer loadDebugCallTrace(std::string const &path) {
           // Create new vhost struct
           vhosts[vhost].vhost_name = vhost_name;
           vhosts[vhost].phost      = vhosts.size()-1;
-        } 
+        }
       }
 
       VHostState &vhost_st = vhosts[vhost];
@@ -2218,8 +2218,8 @@ ByteBuffer loadDebugCallTrace(std::string const &path) {
 
 int main(int arg_n, char **args) {
 
-  // register signal SIGINT and signal handler  
-  signal(SIGSEGV, signalHandler);  
+  // register signal SIGINT and signal handler
+  signal(SIGSEGV, signalHandler);
 
   MPI_Init(&arg_n, &args);
   MPI_Comm_size(MPI_COMM_WORLD, &mpi_rank_n);

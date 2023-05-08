@@ -316,7 +316,7 @@ static ncclResult_t groupLaunch(struct ncclAsyncJob *job_) {
             ret = ncclSystemError;
           }
           job->state = ncclGroupJobJoined;
-          if (job->result != ncclSuccess) {
+          if (job->result != ncclSuccess && ret == ncclSuccess) {
             ret = job->result;
             errorJobAbortFlag = true;
           }
@@ -327,7 +327,6 @@ static ncclResult_t groupLaunch(struct ncclAsyncJob *job_) {
 
         if (*groupAbortFlag == true || errorJobAbortFlag == true) {
           *job->abortFlag = 1;
-          ret = ncclInternalError;
         }
 
         job = job->next;

@@ -42,7 +42,7 @@ def print_stats(t0_stats, t1_stats):
   line = '{:>20}: {:>9} {:>9}'.format("Average", format_float(t0_stats["avg"]),format_float(t1_stats["avg"]))
   print(line)
 
-# In statistics, the median absolute deviation (MAD) is a robust measure of the variability of a univariate sample of quantitative data. 
+# In statistics, the median absolute deviation (MAD) is a robust measure of the variability of a univariate sample of quantitative data.
 # The variance and standard deviation are also measures of spread, but they are more affected by extremely high or extremely low values and non normality.
 def mad(stats):
   return statistics.median([abs(time - stats["median"]) for time in stats["times"]])
@@ -65,7 +65,7 @@ def compare_times(placeness, bads, wins, neutrals, new_times, old_times, rmad_th
       t1_stats["times"]  = t1
       t0_stats["avg"]    = sum(t0) / len(t0)
       t0_stats["times"]  = t0
-      
+
       # We already enforced same length
       if len(t0) > 1:
         t1_stats["stddev"] = statistics.stdev(t1)

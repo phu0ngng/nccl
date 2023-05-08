@@ -434,12 +434,11 @@ NCCL_NET
 --------
 (since 2.10)
 
-Forces NCCL to use a specific network, for example to make sure NCCL uses an external plugin and doesn't automatically fall back on the internal IB or Socket implementation.
+Forces NCCL to use a specific network, for example to make sure NCCL uses an external plugin and doesn't automatically fall back on the internal IB or Socket implementation. Setting this environment variable will override the ``netName`` configuration in all communicators (see :ref:`ncclConfig`); if not set (undefined), the network module will be determined by the configuration; if not passing configuration, NCCL will automatically choose the best network module.
 
 Values accepted
 ^^^^^^^^^^^^^^^
-The value of NCCL_NET has to match exactly the name of the NCCL network used (case-sensitive). Internal network names are "IB" (generic IB verbs) and "Socket" (TCP/IP sockets).
-External network plugins define their own names.
+The value of NCCL_NET has to match exactly the name of the NCCL network used (case-sensitive). Internal network names are "IB" (generic IB verbs) and "Socket" (TCP/IP sockets). External network plugins define their own names. Default value is undefined.
 
 NCCL_NET_PLUGIN
 ---------------
@@ -822,12 +821,11 @@ NCCL_COMM_BLOCKING
 ------------------
 (since 2.14)
 
-The ``NCCL_COMM_BLOCKING`` forces blocking communicators globally. If not set or set as 0, communicator behavior
-will be determined by the setting of the configuration parameter passed to the ncclCommInitRankConfig() function.
+The ``NCCL_COMM_BLOCKING`` variable controls whether NCCL calls are allowed to block or not. This includes all calls to NCCL, including init/finalize functions, as well as communication functions which may also block due to the lazy initialization of connections for send/receive calls. Setting this environment variable will override the ``blocking`` configuration in all communicators (see :ref:`ncclConfig`); if not set (undefined), communicator behavior will be determined by the configuration; if not passing configuration, communicators are blocking.
 
 Values accepted
 ^^^^^^^^^^^^^^^
-0 or 1. 1 indicates blocking communicators; 0 has no effect on communicators.
+0 or 1. 1 indicates blocking communicators, and 0 indicates nonblocking communicators. The default value is undefined.
 
 NCCL_CGA_CLUSTER_SIZE
 ---------------------
@@ -835,8 +833,31 @@ NCCL_CGA_CLUSTER_SIZE
 
 Set CUDA Cooperative Group Array (CGA) cluster size. On sm90 and later we have an extra level of hierarchy where we
 can group together several blocks within the Grid, called Thread Block Clusters. Setting this to non-zero will cause
-NCCL to launch the communication kernels with the Cluster Dimension attribute set accordingly.
+NCCL to launch the communication kernels with the Cluster Dimension attribute set accordingly. Setting this environment 
+variable will override the ``cgaClusterSize`` configuration in all communicators (see :ref:`ncclconfig`); if not set 
+(undefined), CGA cluster size will be determined by the configuration; if not passing configuration, NCCL will 
+automatically choose the best value.
 
 Values accepted
 ^^^^^^^^^^^^^^^
-0 to 8. Default value is 4 on sm90. 0 for older architectures.
+0 to 8. Default value is undefined.
+
+NCCL_MAX_CTAS
+-------------
+(since 2.17)
+
+Set the maximal number of CTAs the NCCL should use. Setting this environment variable will override the ``maxCTAs`` configuration in all communicators (see :ref:`ncclconfig`); if not set (undefined), maximal CTAs will be determined by the configuration; if not passing configuration, NCCL will automatically choose the best value.
+
+Values accepted
+^^^^^^^^^^^^^^^
+Set to a positive integer value up to 32. Default value is undefined. 
+
+NCCL_MIN_CTAS
+-------------
+(since 2.17)
+
+Set the minimal number of CTAs the NCCL should use. Setting this environment variable will override the ``minCTAs`` configuration in all communicators (see :ref:`ncclconfig`); if not set (undefined), minimal CTAs will be determined by the configuration; if not passing configuration, NCCL will automatically choose the best value.
+
+Values accepted
+^^^^^^^^^^^^^^^
+Set to a positive integer value up to 32. Default value is undefined.
