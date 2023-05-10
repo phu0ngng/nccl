@@ -3,10 +3,27 @@
 #include <nccl.h>
 #include <mpi.h>
 
+#include <unistd.h>
 #include <stdlib.h>
 #include <stdio.h>
 #include <sys/time.h>
 #include <assert.h>
+
+#include <dirent.h>
+int count_open_fds(void) {
+  DIR *dp = opendir("/proc/self/fd");
+  int count = -3; // Exclude '.', '..', dp
+
+  if (dp == NULL)
+    return -1;
+
+  while (readdir(dp) != NULL)
+    count++;
+
+  (void)closedir(dp);
+
+  return count;
+}
 
 #define MAX_GPUS (32)
 
@@ -39,6 +56,9 @@
 
 int main(int argc, char** argv)
 {
+    // Make sure everyline is flushed so that we see the progress of the test
+    setlinebuf(stdout);
+
     MPI_TRY(MPI_Init(&argc, &argv));
 
     // Determine COMM_WORLD rank and size
@@ -107,6 +127,7 @@ int main(int argc, char** argv)
       CUDA_TRY(cudaSetDevice((local_rank*num_gpus)+g));
       CUDA_TRY(cudaMemGetInfo(&free1[g], &total));
     }
+    int startOpenFds = count_open_fds();
 
     struct timeval start;
     struct timeval end;
@@ -120,6 +141,14 @@ int main(int argc, char** argv)
       }
       MPI_TRY(MPI_Bcast(&nccl_unique_id, sizeof(ncclUniqueId), MPI_BYTE, 0, MPI_COMM_WORLD));
       MPI_Barrier(MPI_COMM_WORLD);
+
+      if (comm_rank == 0 && (i % 10) == 0) {
+        struct timeval now;
+        double elapsed;
+        gettimeofday(&now, NULL);
+        elapsed = (now.tv_sec-start.tv_sec)*1.0 + (now.tv_usec-start.tv_usec)*1.0E-6;
+        printf("Doing iteration %zi elapsed time %gs\n", i, elapsed);
+      }
 
       NCCL_TRY(ncclGroupStart());
       for (int g = 0; g < num_gpus; g++) {
@@ -154,6 +183,12 @@ int main(int argc, char** argv)
     // Only report leaks of > 1 CUDA page
     if (leaked > (2*1024*1024)) {
       printf("ERROR: rank %d leaked %zi bytes (%zi MiB) CUDA memory over %zi iterations on %d gpus\n", comm_rank, leaked, leaked/(1024*1024), reps, num_gpus);
+      exit(EXIT_FAILURE);
+    }
+
+    int endOpenFds = count_open_fds();
+    if ((endOpenFds-startOpenFds) > 0) {
+      printf("ERROR: leaked %d open fds over %zi iterations on %d gpus\n", endOpenFds-startOpenFds, reps, num_gpus);
       exit(EXIT_FAILURE);
     }
 

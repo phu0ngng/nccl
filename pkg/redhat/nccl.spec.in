@@ -20,6 +20,7 @@ sockets.
 %package devel
 Summary:        NVIDIA Collective Communication Library (NCCL) Runtime
 Group:          Development/Libraries
+Requires:       libnccl >= ${nccl:Major}.${nccl:Minor}.${nccl:Patch}
 %description devel
 NCCL development files
 

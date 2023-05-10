@@ -14,7 +14,7 @@ stages:
 # - Merge requests without "Draft:" in the title
 workflow:
   rules:
-    - if: $CI_MERGE_REQUEST_TITLE !~ /^Draft:/ && ($CI_PIPELINE_SOURCE == 'merge_request_event' || $CI_PIPELINE_SOURCE == 'schedule' || $CI_PIPELINE_SOURCE == 'web' || $CI_COMMIT_BRANCH == $CI_DEFAULT_BRANCH)
+    - if: $CI_MERGE_REQUEST_TITLE !~ /^Draft:/ && ($CI_PIPELINE_SOURCE == 'merge_request_event' || $CI_PIPELINE_SOURCE == 'schedule' || $CI_PIPELINE_SOURCE == 'web' || $CI_COMMIT_BRANCH == "master" || $CI_COMMIT_BRANCH == "next" || $CI_COMMIT_BRANCH == "stable")
 
 variables:
   RUN_MULTI_REGRESSION: "0" # Set to 1 to run multinode regression pipeline
@@ -26,6 +26,7 @@ variables:
   REGRESSION_CHECK_CPU_OVERHEAD: 0 # Should we run CPU overhead tests in the perf regression?
   MULTI_REGRESSION_SALLOC_TIME: 45 # How many minutes to salloc for multinode regression. This can be tuned for multinode pipelines
   SINGLE_REGRESSION_SALLOC_TIME: 30 # How many minutes to salloc for multinode regression. This can be tuned for multinode pipelines
+  API_TEST_CUMEM_ENABLE: 0
 
 build:
   stage: build
@@ -110,6 +111,7 @@ apitest-P100:
   variables:
     NCCL_IB_HCA: "mlx5_0"
     CUDA_HOME: "/usr/local/cuda-${CUDA_VERSION}"
+    NCCL_CUMEM_ENABLE: "${API_TEST_CUMEM_ENABLE}"
     SRUN: "srun --exclusive -t 00:10:00 -n 1 -c 8 -pP100"
   script:
     - ./test/scripts/gitlab-runner-apitest.sh
@@ -124,6 +126,7 @@ apitest-P40:
   variables:
     NCCL_IB_HCA: "mlx5_0"
     CUDA_HOME: "/usr/local/cuda-${CUDA_VERSION}"
+    NCCL_CUMEM_ENABLE: "${API_TEST_CUMEM_ENABLE}"
     SRUN: "srun --exclusive -t 00:10:00 -n 1 -c 8 -pP40"
   script:
     - ./test/scripts/gitlab-runner-apitest.sh
@@ -137,6 +140,7 @@ apitest-GP100:
     - gp100
   variables:
     CUDA_HOME: "/usr/local/cuda-${CUDA_VERSION}"
+    NCCL_CUMEM_ENABLE: "${API_TEST_CUMEM_ENABLE}"
     SRUN: "srun --exclusive -t 00:10:00 -n 1 -c 8 -pGP100"
   script:
     - ./test/scripts/gitlab-runner-apitest.sh
@@ -150,6 +154,7 @@ apitest-M40:
     - m40
   variables:
     CUDA_HOME: "/usr/local/cuda-${CUDA_VERSION}"
+    NCCL_CUMEM_ENABLE: "${API_TEST_CUMEM_ENABLE}"
     SRUN: "srun --exclusive -t 00:10:00 -n 1 -c 4 -pM40"
   script:
     - ./test/scripts/gitlab-runner-apitest.sh
@@ -163,6 +168,7 @@ apitest-K40:
     - k40
   variables:
     CUDA_HOME: "/usr/local/cuda-${CUDA_VERSION}"
+    NCCL_CUMEM_ENABLE: "${API_TEST_CUMEM_ENABLE}"
     SRUN: "srun --exclusive -t 00:10:00 -n 1 -c 1 -pK40"
   script:
     - ./test/scripts/gitlab-runner-apitest.sh
@@ -177,6 +183,7 @@ apitest-K80:
     - k80
   variables:
     CUDA_HOME: "/usr/local/cuda-${CUDA_VERSION}"
+    NCCL_CUMEM_ENABLE: "${API_TEST_CUMEM_ENABLE}"
     SRUN: "srun --exclusive -t 00:10:00 -n 1 -c 16 -pK80"
   script:
     - ./test/scripts/gitlab-runner-apitest.sh minimal
@@ -190,6 +197,7 @@ apitest-A100:
     - a100pci
   variables:
     CUDA_HOME: "/usr/local/cuda-${CUDA_VERSION}"
+    NCCL_CUMEM_ENABLE: "${API_TEST_CUMEM_ENABLE}"
     SRUN: "srun --exclusive -t 00:10:00 -n 1 -c 8 -pA100"
   script:
     - ./test/scripts/gitlab-runner-apitest.sh
@@ -206,8 +214,9 @@ apitest-DGX-1V:
   variables:
     CUDA_HOME: "/gpfs/fs1/projects/sw_gpucomms/users/svc_nvshmem_ci/cuda/cuda-${CUDA_VERSION}"
     PARTITION_LIST: "batch_short_dgx1_m2"
+    NCCL_CUMEM_ENABLE: "${API_TEST_CUMEM_ENABLE}"
     SRUN: "" # Needs to be empty for CI runner scripts performing cluster jobs
-    SRUN_PARAMS: "--exclusive -N 1 -n 1 -G 8 -c 8 --account=sw_gpucomms_nvshmem --nv-meta ml-model.nccl-perf -t 00:10:00"
+    SRUN_PARAMS: "--exclusive -N 1 -n 1 -G 8 -c 8 --account=sw_gpucomms_nvshmem --nv-meta ml-model.nccl-perf -t 00:20:00"
   script:
     - srun $SRUN_PARAMS -p $PARTITION_LIST ./test/scripts/gitlab-runner-apitest.sh minimal
   interruptible: true
@@ -223,6 +232,7 @@ apitest-DGX-2:
   variables:
     CUDA_HOME: "/gpfs/fs1/projects/sw_gpucomms/users/svc_nvshmem_ci/cuda/cuda-${CUDA_VERSION}"
     PARTITION_LIST: "batch_short_dgx2h_m2"
+    NCCL_CUMEM_ENABLE: "${API_TEST_CUMEM_ENABLE}"
     SRUN: "" # Needs to be empty for CI runner scripts performing cluster jobs
     SRUN_PARAMS: "--exclusive --mem=0 -N 1 -n 1 -G 16 -c 16 --account=sw_gpucomms_nvshmem --nv-meta ml-model.nccl-perf -t 00:20:00"
   script:
@@ -240,9 +250,10 @@ apitest-DGX-A100:
   variables:
     CUDA_HOME: "/project/nccl/toolkits/cuda-${CUDA_VERSION}/"
     NCCL_SOCKET_IFNAME: "ibp12s0"
+    NCCL_CUMEM_ENABLE: "${API_TEST_CUMEM_ENABLE}"
     SRUN: "" # Needs to be empty for CI runner scripts performing cluster jobs
   script:
-    - srun -n 1 --account=nccl -J "nccl-cicd::$GITLAB_USER_LOGIN:apitest::$CI_COMMIT_BRANCH:$CI_COMMIT_SHORT_SHA" -pluna -t 00:10:00 ./test/scripts/gitlab-runner-apitest.sh
+    - srun -n 1 --account=nccl -J "nccl-cicd::$GITLAB_USER_LOGIN:apitest::$CI_COMMIT_BRANCH:$CI_COMMIT_SHORT_SHA" -pluna -t 00:20:00 ./test/scripts/gitlab-runner-apitest.sh
   interruptible: true
 
 perftest-P100:
@@ -535,15 +546,15 @@ perftest-sharp-selene:
     NCCL_DEBUG: "WARN"
     MPI_HOME: "/home/svcnccl/install/openmpi-1.10.7"
     CUDA_HOME: "/project/nccl/toolkits/cuda-${CUDA_VERSION}/"
-    SHARP_HOME: "/project/share/hpcx/hpcx-v2.10.0-gcc-MLNX_OFED_LINUX-5.4-3.1.0.0-ubuntu20.04-x86_64/sharp"
-    HPCX_UCX_LIB: "/project/share/hpcx/hpcx-v2.10.0-gcc-MLNX_OFED_LINUX-5.4-3.1.0.0-ubuntu20.04-x86_64/ucx/lib"
-    PLUGIN_PATH: "/project/share/hpcx/hpcx-v2.10.0-gcc-MLNX_OFED_LINUX-5.4-3.1.0.0-ubuntu20.04-x86_64/nccl_rdma_sharp_plugin/lib"
+    SHARP_HOME: "/lustre/fsw/nccl/hpcx/hpcx-v2.14-gcc-MLNX_OFED_LINUX-5-ubuntu20.04-cuda11-gdrcopy2-nccl2.16-x86_64/sharp"
+    HPCX_UCX_LIB: "/lustre/fsw/nccl/hpcx/hpcx-v2.14-gcc-MLNX_OFED_LINUX-5-ubuntu20.04-cuda11-gdrcopy2-nccl2.16-x86_64/ucx/lib"
+    PLUGIN_PATH: "/lustre/fsw/nccl/hpcx/hpcx-v2.14-gcc-MLNX_OFED_LINUX-5-ubuntu20.04-cuda11-gdrcopy2-nccl2.16-x86_64/nccl_rdma_sharp_plugin/lib"
     NCCL_IB_SL: "1"
     OMPI_MCA_btl: "^openib"
     OMPI_MCA_btl_tcp_if_include: "enp97s0f1"
     SALLOC: "" # Needs to be empty for CI runner scripts performing cluster jobs
   script:
-    - let NUM_PROCESSES=$MULTI_PERFTEST_NODE_COUNT*8 && salloc -N $MULTI_PERFTEST_NODE_COUNT -n $NUM_PROCESSES --account=nccl -pluna --network=sharp --constraint=nccl -J "nccl-cicd::$GITLAB_USER_LOGIN:perftest-multi::$CI_COMMIT_BRANCH:$CI_COMMIT_SHORT_SHA" -t 00:10:00 ./test/scripts/gitlab-runner-perftest-sharp.sh 16G 0
+    - let NUM_PROCESSES=$MULTI_PERFTEST_NODE_COUNT*8 && salloc -N $MULTI_PERFTEST_NODE_COUNT -n $NUM_PROCESSES --account=nccl -pluna --network=sharp --constraint=nccl -J "nccl-cicd::$GITLAB_USER_LOGIN:perftest-multi::$CI_COMMIT_BRANCH:$CI_COMMIT_SHORT_SHA" -t 00:10:00 ./test/scripts/gitlab-runner-perftest-sharp.sh 4G 0
   interruptible: true
 
 perf-regression-single-DGX-A100:

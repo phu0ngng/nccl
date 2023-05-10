@@ -1059,6 +1059,7 @@ void after_ncclGroup(Fn &&fn) {
 enum class CallCode {
   get_unique_id,
   comm_rank_init,
+  comm_split,
   group_start, group_end,
   redop_create_premulsum, redop_destroy,
   allgather, allreduce, broadcast, reduce, reduce_scatter,
@@ -1081,6 +1082,16 @@ struct CallNcclGroupEnd {
 
 struct CallNcclGroupStart {
   int group_seq;
+};
+
+struct CallCommSplit {
+  uint64_t vcomm_src;
+  uint64_t vcomm_new;
+  int color;
+  int key;
+  int comm_rank_n;
+  int comm_rank_me;
+  int vcomm_seq;
 };
 
 struct CallCommInitRank {
@@ -1194,6 +1205,49 @@ void invokeCall(CallHeader const &hdr, CallCommInitRank const &body) {
     vc->p2p_recv_seqs.reset(new uint64_t[body.comm_rank_n]{/*0...*/});
   });
 }
+
+void invokeCall(CallHeader const &hdr, CallCommSplit const &body) {
+  // Wait for my sequence in the src communicator's flow
+  // This can't be invoked until the corresponding commInitRank has completed
+  VirtualComm *vc = &vcomm_table[body.vcomm_src];
+  std::unique_lock<std::mutex> locked = vc->sequence.lock(body.vcomm_seq);
+
+  uint32_t my_op_id = ++op_id;
+  if (opt_verbose)
+  {
+    fprintf(stderr, "[%u] id=%u CallCommSplit src_line_number=%lu vcomm_src=0x%lx vcomm_new=0x%lx color=%d key=%d comm_rank_n=%u comm_rank_me=%u \n",
+      getpid(), my_op_id, hdr.line_number, body.vcomm_src, body.vcomm_new, body.color, body.key, body.comm_rank_n, body.comm_rank_me);
+  }
+
+  VirtualComm *vc_new = &vcomm_table[body.vcomm_new];
+  VirtualComm *vc_src = &vcomm_table[body.vcomm_src];
+  /* Config is NULL for now*/
+  CUDA_CHECK(cudaSetDevice(vc_src->device));
+  NCCL_CHECK(ncclCommSplit(vc_src->comm, body.color, body.key, &(vc_new->comm), NULL));
+
+  if (opt_verbose)
+  {
+    fprintf(stderr, "[%u] id=%u CallCommSplit completed src_line_number=%lu vcomm_src=0x%lx vcomm_new=0x%lx color=%d key=%d comm_rank_n=%u comm_rank_me=%u \n",
+      getpid(), my_op_id, hdr.line_number, body.vcomm_src, body.vcomm_new, body.color, body.key, body.comm_rank_n, body.comm_rank_me);
+  }
+
+  // things to do only after ncclGroupEnd()
+  // Invoke lock() to bump the sequence number - this will allow all other threads to make forward progress
+  after_ncclGroup([=]() {
+    std::unique_lock<std::mutex> locked = vc_new->sequence.lock(0);
+    vc_new->vunique = vc_src->vunique;
+    vc_new->device = vc_src->device;
+    vc_new->nccl_ops_in_flight = 0;
+    vc_new->p2p_send_seqs.reset(new uint64_t[body.comm_rank_n]{/*0...*/});
+    vc_new->p2p_recv_seqs.reset(new uint64_t[body.comm_rank_n]{/*0...*/});
+
+    // Resize the src vc for a larger communication domain
+    // TODO - Synchronization? Copying?
+    // vc_src->p2p_recv_seqs.reset(new uint64_t[body.comm_rank_n]{/*0...*/});
+    // vc_src->p2p_recv_seqs.reset(new uint64_t[body.comm_rank_n]{/*0...*/});
+  });
+}
+
 
 void invokeCall(CallHeader const &hdr, CallNcclGroupStart const &body) {
   if (opt_verbose) fprintf(stderr, "[%u] Waiting to unlock groupStart for mpi_rank_me=%d group_seq=%d\n", getpid(), mpi_rank_me, body.group_seq);
@@ -1572,6 +1626,18 @@ void playTrace(ByteBuffer& trace, std::chrono::duration<double>* duration) {
           vcomm_to_meta[body.vcomm].rank_n = body.comm_rank_n;
           vcomm_to_meta[body.vcomm].rank_me = body.comm_rank_me;
         } break;
+      case CallCode::comm_split:
+        { auto &body = cur.template pop<CallCommSplit>();
+          // Get the device from the src vcomm
+          vcomm_to_meta[body.vcomm_new].device = vcomm_to_meta[body.vcomm_src].device;
+          vcomm_to_meta[body.vcomm_new].rank_n = body.comm_rank_n;
+          vcomm_to_meta[body.vcomm_new].rank_me = body.comm_rank_me;
+          // Set the src vcomm rank_n to the new post-split value
+          vcomm_to_meta[body.vcomm_src].rank_n = body.comm_rank_n;
+
+          // I don't get to call CommSplit until CommRankInit and all other operations have been invoked
+          body.vcomm_seq = vcomm_to_meta[body.vcomm_src].seq_bumper++;
+        } break;
       case CallCode::group_start:
         { auto &body = cur.template pop<CallNcclGroupStart>();
         } break;
@@ -1623,6 +1689,10 @@ void playTrace(ByteBuffer& trace, std::chrono::duration<double>* duration) {
         } break;
       case CallCode::comm_rank_init:
         { CallCommInitRank const &body = cur.template pop<CallCommInitRank>();
+          vthreads.postBatch(hdr.vtid, [=]() { invokeCall(hdr, body); });
+        } break;
+      case CallCode::comm_split:
+        { CallCommSplit const &body = cur.template pop<CallCommSplit>();
           vthreads.postBatch(hdr.vtid, [=]() { invokeCall(hdr, body); });
         } break;
       case CallCode::group_start:
@@ -1775,6 +1845,7 @@ std::string callCodeToString(CallCode code) {
 //
 typedef std::vector<std::pair<CallHeader, CallDataOp>> DataOpsVector;
 struct GlobalCommMap {
+  uint64_t vunique;
   // Map of data ops by rank
   std::unordered_map<uint32_t, DataOpsVector> data_ops_map;
   // Map of custom redops by rank
@@ -1956,7 +2027,8 @@ ByteBuffer loadDebugCallTrace(std::string const &path) {
       char const *line_ptr = line.c_str();
       int ok = std::sscanf(line_ptr, "%[^:]:%d:%d NCCL CALL %n", vhost_name, &vpid, &vtid, &got);
       if(ok != 3 || got == -1 || line_ptr[0] == '#') {
-        if (opt_verbose) {
+        // Comments won't be yelled about (lines must start with the # character)
+        if (opt_verbose && line_ptr[0] != '#') {
           fprintf(stderr, "Couldn't parse line: %s\n", line_ptr);
         }
         continue;
@@ -2038,6 +2110,7 @@ ByteBuffer loadDebugCallTrace(std::string const &path) {
           std::shared_ptr<GlobalCommMap> globalCommMap;
           if (it == vuniqueToGlobalMap.end()) {
             globalCommMap = std::make_shared<GlobalCommMap>();
+            globalCommMap->vunique = call.vunique;
             // New vunique implies a new global communicator group
             vuniqueToGlobalMap.emplace(call.vunique, globalCommMap);
           } else {
@@ -2049,6 +2122,47 @@ ByteBuffer loadDebugCallTrace(std::string const &path) {
 
           // Map this vcomm to this device.
           vhost_st.vcomm_to_dev[call.vcomm] = call.device;
+          continue;
+        }
+      }
+
+      { CallCommSplit call;
+        if(6 == std::sscanf(line_ptr, "ncclCommSplit(%" PRIx64 ",%d,%d,%" PRIx64 ",%d,%d)",
+                  &call.vcomm_src, &call.color, &call.key, &call.vcomm_new, &call.comm_rank_me, &call.comm_rank_n)) {
+          hdr.code = CallCode::comm_split;
+
+          if (opt_force_fit) {
+            if (opt_verbose) {
+              fprintf(stderr, "Force fitting virtual_rank=%d to physical_rank=%d",
+                rank, call.comm_rank_me);
+              std::cerr << "line " << line_counter << ": " << line << std::endl;
+            }
+            // Map this relationship
+            force_fit_rank_map[call.comm_rank_me] = rank;
+
+            call.comm_rank_me = rank;
+            call.comm_rank_n  = mpi_rank_n;
+          }
+
+          rank_bufs[rank].append(hdr);
+          rank_bufs[rank].append(call);
+
+          // Map this vcomm to the global communicator group of its src comm
+          auto it = vcommToGlobalMap.find(call.vcomm_src);
+          std::shared_ptr<GlobalCommMap> globalCommMap;
+          if (it == vcommToGlobalMap.end()) {
+            fprintf(stderr, "Splitting comm_src=0x%lx which hasn't yet been initialized. line_number=%zu vhost=%lu vpid=%d vtid=%d\n",
+              call.vcomm_src, hdr.line_number, hdr.vhost, hdr.vpid, hdr.vtid);
+              std::terminate();
+          } else {
+            globalCommMap = it->second;
+          }
+
+          // Track our new vcomm with the vunique of the src comm
+          vcommToGlobalMap.emplace(call.vcomm_new, globalCommMap);
+
+          // Map this vcomm to the device of the src comm
+          vhost_st.vcomm_to_dev[call.vcomm_new] = vhost_st.vcomm_to_dev[call.vcomm_src];
           continue;
         }
       }

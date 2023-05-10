@@ -13,7 +13,6 @@ class ncclCommInitRankConfig_test : public ::testing::Test {
         ncclCommon_destroysrComms();
         (void) setenv("NCCL_CHECK_POINTERS", "1", 0);
         expectMask = (1 << ncclSuccess) | (1 << ncclInProgress);
-        ASSERT_EQ(ncclSuccess, ncclGetUniqueId(&commId));
         EXPECT_EQ(cudaSuccess, cudaGetDeviceCount(&ndev));
         EXPECT_NE(nullptr, gcomms = (ncclComm_t*) calloc(ndev, sizeof(ncclComm_t)));
         gconfig.blocking = 0;
@@ -50,6 +49,7 @@ class ncclCommInitRankConfig_test : public ::testing::Test {
 };
 
 TEST_F(ncclCommInitRankConfig_test, basic) {
+    ASSERT_EQ(ncclSuccess, ncclGetUniqueId(&commId));
     ASSERT_EQ(ncclSuccess, ncclGroupStart());
     for (int i = 0; i < ndev; ++i) {
         ASSERT_EQ(cudaSuccess, cudaSetDevice(i));
@@ -60,6 +60,7 @@ TEST_F(ncclCommInitRankConfig_test, basic) {
 }
 
 TEST_F(ncclCommInitRankConfig_test, basic_null) {
+    ASSERT_EQ(ncclSuccess, ncclGetUniqueId(&commId));
     ASSERT_EQ(ncclSuccess, ncclGroupStart());
     for (int i = 0; i < ndev; ++i) {
         ASSERT_EQ(cudaSuccess, cudaSetDevice(i));
@@ -69,11 +70,13 @@ TEST_F(ncclCommInitRankConfig_test, basic_null) {
 }
 
 TEST_F(ncclCommInitRankConfig_test, attr_null) {
+    ASSERT_EQ(ncclSuccess, ncclGetUniqueId(&commId));
     ASSERT_EQ(cudaSuccess, cudaSetDevice(0));
     ASSERT_EQ(ncclSuccess, ncclCommInitRankConfig(&gcomms[0], 1, commId, rank0, NULL));
 }
 
 TEST_F(ncclCommInitRankConfig_test, with_config) {
+    ASSERT_EQ(ncclSuccess, ncclGetUniqueId(&commId));
     ASSERT_EQ(cudaSuccess, cudaSetDevice(0));
     ASSERT_NE(0, expectMask & (1 << ncclCommInitRankConfig(&gcomms[0], 1, commId, rank0, &gconfig)));
     waitCommsReady(gcomms, 1);
@@ -409,6 +412,87 @@ TEST_F(ncclCommInitRankConfig_test, net_name_nonexist) {
     ASSERT_EQ(ncclInvalidUsage, ncclGroupEnd());
 
     for (int i = 0; i < ndev; ++i)
+
         ASSERT_EQ(ncclSuccess, ncclCommAbort(comms[i]));
     free(comms);
+}
+
+TEST_F(ncclCommInitRankConfig_test, split_config) {
+    ncclComm_t* localComms = NULL;
+    ncclComm_t* childComms = NULL;
+    ncclUniqueId id;
+    ncclConfig_t config = NCCL_CONFIG_INITIALIZER;
+
+    config.splitShare = 1;
+    config.cgaClusterSize = 4;
+    config.minCTAs = 4;
+    config.maxCTAs = 16;
+    ASSERT_NE(nullptr, localComms = (ncclComm_t*)calloc(sizeof(ncclComm_t), ndev));
+    ASSERT_NE(nullptr, childComms = (ncclComm_t*)calloc(sizeof(ncclComm_t), ndev));
+
+    ASSERT_EQ(ncclSuccess, ncclGetUniqueId(&id));
+    ASSERT_EQ(ncclSuccess, ncclGroupStart());
+    for (int i = 0; i < ndev; ++i) {
+        ASSERT_EQ(cudaSuccess, cudaSetDevice(i));
+        (void)ncclCommInitRankConfig(&localComms[i], ndev, id, i, &config);
+    }
+    ASSERT_EQ(ncclSuccess, ncclGroupEnd());
+
+    config.splitShare = 1;
+    config.cgaClusterSize = 8;
+    config.minCTAs = 8;
+    config.maxCTAs = 8;
+    ASSERT_EQ(ncclSuccess, ncclGroupStart());
+    for (int i = 0; i < ndev; ++i) {
+        ASSERT_EQ(ncclSuccess, ncclCommSplit(localComms[i], 0, ndev - i, &childComms[i], &config));
+    }
+    ASSERT_EQ(ncclSuccess, ncclGroupEnd());
+
+    for (int i = 0; i < ndev; ++i) {
+        ASSERT_EQ(ncclSuccess, ncclCommDestroy(localComms[i]));
+    }
+    for (int i = 0; i < ndev; ++i) {
+        ASSERT_EQ(ncclSuccess, ncclCommDestroy(childComms[i]));
+    }
+    
+    free(localComms);
+    free(childComms);
+}
+
+TEST_F(ncclCommInitRankConfig_test, split_share_invalid_net_name) {
+    ncclComm_t* localComms = NULL;
+    ncclComm_t* childComms = NULL;
+    ncclUniqueId id;
+    ncclConfig_t config = NCCL_CONFIG_INITIALIZER;
+    /* when split shares resource. user cannot specify a different netName for child comm from parent comm. */
+    config.splitShare = 1;
+    config.netName = "Socket";
+    ASSERT_NE(nullptr, localComms = (ncclComm_t*)calloc(sizeof(ncclComm_t), ndev));
+    ASSERT_NE(nullptr, childComms = (ncclComm_t*)calloc(sizeof(ncclComm_t), ndev));
+
+    ASSERT_EQ(ncclSuccess, ncclGetUniqueId(&id));
+    ASSERT_EQ(ncclSuccess, ncclGroupStart());
+    for (int i = 0; i < ndev; ++i) {
+        ASSERT_EQ(cudaSuccess, cudaSetDevice(i));
+        (void)ncclCommInitRankConfig(&localComms[i], ndev, id, i, &config);
+    }
+    ASSERT_EQ(ncclSuccess, ncclGroupEnd());
+
+    config.netName = "IB";
+    ASSERT_EQ(ncclSuccess, ncclGroupStart());
+    for (int i = 0; i < ndev; ++i) {
+        (void) ncclCommSplit(localComms[i], 0, ndev - i, &childComms[i], &config);
+    }
+    ASSERT_EQ(ncclInvalidUsage, ncclGroupEnd());
+
+    for (int i = 0; i < ndev; ++i) {
+        ASSERT_EQ(ncclSuccess, ncclCommAbort(localComms[i]));
+    }
+
+    for (int i = 0; i < ndev; ++i) {
+        ASSERT_EQ(ncclSuccess, ncclCommAbort(childComms[i]));
+    }
+    
+    free(localComms);
+    free(childComms);
 }

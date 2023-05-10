@@ -108,7 +108,7 @@ if [[ $failure_count -eq 0 ]]; then
     [ $? -ne 0 ] && let failure_count=$failure_count+1 && failure_names+=("New ${func}_perf_bandwidth failed to run") && echo "New ${func}_perf_bandwidth failed to run"
 
     export LD_LIBRARY_PATH=$LD_LIBRARY_OLD
-    $MPI_HOME/bin/mpirun --bind-to numa -q ./build/test/perf/${func}_perf $opts >> "$baseline_perf_files_dir/${func}_perf_bandwidth $opts.txt"
+    $MPI_HOME/bin/mpirun --bind-to numa -q $baseline_build_dir/test/perf/${func}_perf $opts >> "$baseline_perf_files_dir/${func}_perf_bandwidth $opts.txt"
     [ $? -ne 0 ] && let failure_count=$failure_count+1 && failure_names+=("Baseline ${func}_perf_bandwidth failed to run") && echo "Baseline ${func}_perf_bandwidth failed to run"
   done
 
@@ -126,7 +126,7 @@ if [[ $failure_count -eq 0 ]]; then
       [ $? -ne 0 ] && let failure_count=$failure_count+1 && failure_names+=("New ${func}_perf_64b_coll_latency failed to run") && echo "New ${func}_perf_64b_coll_latency failed to run"
 
       export LD_LIBRARY_PATH=$LD_LIBRARY_OLD
-      $MPI_HOME/bin/mpirun --bind-to numa -q ./build/test/perf/${func}_perf $opts >> "$baseline_perf_files_dir/${func}_perf_64b_coll_latency $opts.txt"
+      $MPI_HOME/bin/mpirun --bind-to numa -q $baseline_build_dir/test/perf/${func}_perf $opts >> "$baseline_perf_files_dir/${func}_perf_64b_coll_latency $opts.txt"
       [ $? -ne 0 ] && let failure_count=$failure_count+1 && failure_names+=("Baseline ${func}_perf_64b_coll_latency failed to run") && echo "Baseline ${func}_perf_64b_coll_latency failed to run"
     done
 
@@ -140,7 +140,7 @@ if [[ $failure_count -eq 0 ]]; then
       [ $? -ne 0 ] && let failure_count=$failure_count+1 && failure_names+=("New ${func}_perf_p2p_8b_latency failed to run") && echo "New ${func}_perf_p2p_8b_latency failed to run"
 
       export LD_LIBRARY_PATH=$LD_LIBRARY_OLD
-      $MPI_HOME/bin/mpirun --bind-to numa -q ./build/test/perf/${func}_perf $opts >> "$baseline_perf_files_dir/${func}_perf_p2p_8b_latency $opts.txt"
+      $MPI_HOME/bin/mpirun --bind-to numa -q $baseline_build_dir/test/perf/${func}_perf $opts >> "$baseline_perf_files_dir/${func}_perf_p2p_8b_latency $opts.txt"
       [ $? -ne 0 ] && let failure_count=$failure_count+1 && failure_names+=("Baseline ${func}_perf_p2p_8b_latency failed to run") && echo "Baseline ${func}_perf_p2p_8b_latency failed to run"
     done
 
@@ -154,7 +154,7 @@ if [[ $failure_count -eq 0 ]]; then
       [ $? -ne 0 ] && let failure_count=$failure_count+1 && failure_names+=("New ${func}_perf_16b_round_latency failed to run") && echo "New ${func}_perf_16b_round_latency failed to run"
 
       export LD_LIBRARY_PATH=$LD_LIBRARY_OLD
-      $MPI_HOME/bin/mpirun --bind-to numa -q ./build/test/perf/${func}_perf $opts >> "$baseline_perf_files_dir/${func}_perf_16b_round_latency $opts.txt"
+      $MPI_HOME/bin/mpirun --bind-to numa -q $baseline_build_dir/test/perf/${func}_perf $opts >> "$baseline_perf_files_dir/${func}_perf_16b_round_latency $opts.txt"
       [ $? -ne 0 ] && let failure_count=$failure_count+1 && failure_names+=("Baseline ${func}_perf_16b_round_latency failed to run") && echo "Baseline ${func}_perf_16b_round_latency failed to run"
     done
   done
@@ -176,7 +176,7 @@ if [[ $failure_count -eq 0 ]]; then
         [ $? -ne 0 ] && let failure_count=$failure_count+1 && failure_names+=("New ${func}_cpu_perf_overhead failed to run") && echo "New ${func}_perf_cpu_overhead failed to run"
 
         export LD_LIBRARY_PATH=$LD_LIBRARY_OLD
-        $MPI_HOME/bin/mpirun --bind-to numa -q ./build/test/perf/${func}_perf $opts >> "$cpu_baseline_perf_files_dir/${func}_perf_cpu_overhead $opts.txt"
+        $MPI_HOME/bin/mpirun --bind-to numa -q $baseline_build_dir/test/perf/${func}_perf $opts >> "$cpu_baseline_perf_files_dir/${func}_perf_cpu_overhead $opts.txt"
         [ $? -ne 0 ] && let failure_count=$failure_count+1 && failure_names+=("Baseline ${func}_cpu_perf_overhead failed to run") && echo "Baseline ${func}_perf_cpu_overhead failed to run"
       done
     done

@@ -52,17 +52,20 @@ Creating a communication with options
 
 The :c:func:`ncclCommInitRankConfig` function allows to create a NCCL communication with specific options.
 
-Currently, NCCL supports only one option, "blocking", which can be set to 0 to ask NCCL to never block in any NCCL
-call, returning *ncclInProgress* if necessary, which then needs to be handled by the application.
+The config parameters NCCL supports are listed here :ref:`ncclconfig`.
 
-After calling ncclCommInitRankConfig with blocking set to 0, a communicator is returned to the user, who can query the
-status of the init operation using :c:func:`ncclCommGetAsyncError`. The operation is complete when the return code is
-*ncclSuccess*. A simple example code is shown below:
+For example, "blocking" can be set to 0 to ask NCCL to never block in any NCCL call, and at the same time
+other config parameters can be set as well to more precisely define communicator behavior. A simple example
+code is shown below:
 
 .. code:: C
 
   ncclConfig_t config = NCCL_CONFIG_INITIALIZER;
   config.blocking = 0;
+  config.minCTAs = 4;
+  config.maxCTAs = 16;
+  config.cgaClusterSize = 2;
+  config.netName = "Socket";
   CHECK(ncclCommInitRankConfig(&comm, nranks, id, rank, &config));
   do {
     CHECK(ncclCommGetAsyncError(comm, &state));
@@ -70,6 +73,51 @@ status of the init operation using :c:func:`ncclCommGetAsyncError`. The operatio
   } while(state == ncclInProgress);
 
 Related link: :c:func:`ncclCommGetAsyncError`
+
+Creating more communicators
+---------------------------
+
+The ncclCommSplit function can be used to create a communicators based on existing one. This allows to split an existing
+communicator into multiple sub-partitions, duplicate an existing communicator, or even create a single communicator with
+less ranks.
+
+The ncclCommSplit function needs to be called by all ranks in the original communicator. If some ranks will not be part
+of any sub-group, they still need to call ncclCommSplit with color being NCCL_SPLIT_NOCOLOR.
+
+Newly created communicators will inherit the parent communicator configuration (e.g. non-blocking).
+If the parent communicator operates in non-blocking mode, a ncclCommSplit operation may be stopped by calling ncclCommAbort
+on the parent communicator, then on any new communicator returned. This is because a hang could happen during
+operations on any of the two communicators.
+
+The following code duplicates an existing communicator:
+
+.. code:: C
+
+ int rank;
+ ncclCommUserRank(comm, &rank);
+ ncclCommSplit(comm, 0, rank, &newcomm, NULL);
+
+This splits a communicator in two halves:
+
+.. code:: C
+
+ int rank, nranks;
+ ncclCommUserRank(comm, &rank);
+ ncclCommCount(comm, &nranks);
+ ncclCommSplit(comm, rank/(nranks/2), rank%(nranks/2), &newcomm, NULL);
+
+This creates a communicator with only the first 2 ranks:
+
+.. code:: C
+
+ int rank;
+ ncclCommUserRank(comm, &rank);
+ ncclCommSplit(comm, rank<2 ? 0 : NCCL_SPLIT_NOCOLOR, rank, &newcomm, NULL);
+
+
+Related links:
+
+ * :c:func:`ncclCommSplit`
 
 Using multiple NCCL communicators concurrently
 ----------------------------------------------
@@ -257,7 +305,7 @@ on the communicator to free all resources, then recreate a new communicator to c
 All NCCL calls can be non-blocking to ensure ncclCommAbort can be called at any point, during initialization,
 communication or when finalizing the communicator.
 Users can implement methods to decide when and whether to abort the communicators and restart the NCCL operation.
-Here is an example showing how to initialize a communicator in a non-blocking manner, allowing for abort at any point:
+Here is an example showing how to initialize and split a communicator in a non-blocking manner, allowing for abort at any point:
 
 .. code:: C
 
@@ -268,24 +316,41 @@ Here is an example showing how to initialize a communicator in a non-blocking ma
   CHECK(ncclCommInitRankConfig(&comm, nRanks, id, myRank, &config));
   do {
     CHECK(ncclCommGetAsyncError(comm, &state));
-  } while(state == ncclInProgress && initTimeout() != true);
+  } while(state == ncclInProgress && checkTimeout() != true);
 
-  if (initTimeout() == true || state != ncclSuccess) {
-    abortFlag = true;
-  }
-  
+  if (checkTimeout() == true || state != ncclSuccess) abortFlag = true;
+
   /* sync global error. */
   reportErrorGlobally(abortFlag, &globalFlag);
 
   if (globalFlag) {
     /* time is out or initialization fails, just abort and restart. */
     ncclCommAbort(comm);
-    /* restart NCCL; this is a user implemented function, it might include 
+    /* restart NCCL; this is a user implemented function, it might include
      * resource clean and ncclCommInitRankConfig() to create new communicators. */
     restartNCCL(&comm);
   }
-  /* application workload. */
 
-*initTimeout* function is just an example and provided by users to determine what is the longest time the application should wait for 
+  /* nonblocking communicator split. */
+  CHECK(ncclCommSplit(comm, color, key, &childComm, &config));
+  do {
+    CHECK(ncclCommGetAsyncError(comm, &state));
+  } while(state == ncclInProgress && checkTimeout() != true);
+
+  if (checkTimeout() == true || state != ncclSuccess) abortFlag = true;
+
+  /* sync global error. */
+  reportErrorGlobally(abortFlag, &globalFlag);
+
+  if (globalFlag) {
+    ncclCommAbort(comm);
+    /* if chilComm is not NCCL_COMM_NULL, user should abort child communicator 
+     * here as well for resource reclaimation. */
+    if (childComm != NCCL_COMM_NULL) ncclCommAbort(childComm);
+    restartNCCL(&comm);
+  }
+  /* application workload */
+
+*checkTimeout* function is just an example and provided by users to determine what is the longest time the application should wait for
 NCCL initialization; likewise, users can apply other methods to detect errors besides timeout function. Similar methods can be applied 
 to NCCL finalization as well. 

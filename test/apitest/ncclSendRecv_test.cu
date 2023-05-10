@@ -381,5 +381,64 @@ TYPED_TEST(ncclSendRecv_test, recv_comm_null) {
             ncclRecv(this->recvbuffs[i], std::min(this->N, 1024 * 1024),
                   this->DataType(), i, NULL, this->streams[i]));
 };
+
+TYPED_TEST(ncclSendRecv_test, multi_split_share_alltoall) {
+    ncclComm_t* localComms = NULL;
+    ncclComm_t* comms2;
+    int splitnRanks = 2;
+    localComms = ncclCommon_getSplitShareComms();
+    comms2 = (ncclComm_t*)calloc(this->nVis, sizeof(ncclComm_t));
+
+    ASSERT_EQ(ncclSuccess, ncclGroupStart());
+    for (int i=0; i<this->nVis; i++) {
+      ASSERT_EQ(ncclSuccess, ncclCommSplit(localComms[i], i/splitnRanks, i%splitnRanks, &comms2[i], NULL));
+    }
+    ASSERT_EQ(ncclSuccess, ncclGroupEnd());
+
+    ASSERT_EQ(ncclSuccess, ncclGroupStart());
+    for (int i = 0; i < this->nVis; ++i) {
+        int nranks;
+        ASSERT_EQ(ncclSuccess, ncclCommCount(comms2[i], &nranks));
+        if (nranks > 1) {
+            size_t size = std::min(this->N, 1024 * 1024) / nranks;
+            for (int p = 0; p < nranks; ++p) {
+                ASSERT_EQ(ncclSuccess,
+                        ncclSend(this->sendbuffs[i] + p * size, size,
+                                this->DataType(), p,
+                                comms2[i], this->streams[i]))
+                    << "i" << i << ", " << std::endl;
+                ASSERT_EQ(ncclSuccess,
+                        ncclRecv(this->recvbuffs[i] + p * size, size,
+                                 this->DataType(), p,
+                                 comms2[i], this->streams[i]))
+                    << "i" << i << ", " << std::endl;
+            }
+        }
+    }
+    ASSERT_EQ(ncclSuccess, ncclGroupEnd());
+
+    for (int i=0; i<this->nVis; i++) {
+      ASSERT_EQ(ncclSuccess, ncclCommDestroy(comms2[i]));
+    }
+    free(comms2);
+
+    size_t size = std::min(this->N, 1024 * 1024) / this->nVis;
+    ASSERT_EQ(ncclSuccess, ncclGroupStart());
+    for (int i = 0; i < this->nVis; ++i) {
+        for (int p = 0; p < this->nVis; ++p) {
+            ASSERT_EQ(ncclSuccess,
+                    ncclSend(this->sendbuffs[i] + p * size, size,
+                            this->DataType(), p,
+                            localComms[i], this->streams[i]))
+                << "i" << i << ", " << std::endl;
+            ASSERT_EQ(ncclSuccess,
+                    ncclRecv(this->recvbuffs[i] + p * size, size,
+                            this->DataType(), p,
+                            localComms[i], this->streams[i]))
+                << "i" << i << ", " << std::endl;
+        }
+    }
+    ASSERT_EQ(ncclSuccess, ncclGroupEnd());
+};
 #endif
 // EOF

@@ -12,8 +12,25 @@ nvcc -g -o comm_leak_test comm_leak_test.cu --compiler-options="-fsanitize=leak"
 #include <cassert>
 #include <stdexcept>
 
+#include <unistd.h>
 #include <stdlib.h>
 #include <sys/time.h>
+
+#include <dirent.h>
+int count_open_fds(void) {
+  DIR *dp = opendir("/proc/self/fd");
+  int count = -3; // Exclude '.', '..', dp
+
+  if (dp == NULL)
+    return -1;
+
+  while (readdir(dp) != NULL)
+    count++;
+
+  (void)closedir(dp);
+
+  return count;
+}
 
 #define MAX_GPUS (32)
 
@@ -41,6 +58,9 @@ int main(int argc, char** argv)
     size_t reps = 3;
     size_t warmup = 1;
     int abort = 0;
+
+    // Make sure everyline is flushed so that we see the progress of the test
+    setlinebuf(stdout);
 
     if (argc > 1) reps = atoi(argv[1]);
     if (argc > 2) num_gpus = atoi(argv[2]);
@@ -73,6 +93,7 @@ int main(int argc, char** argv)
       CUDA_TRY(cudaSetDevice(i));
       CUDA_TRY(cudaMemGetInfo(&free1[i], &total));
     }
+    int startOpenFds = count_open_fds();
 
     struct timeval start;
     struct timeval end;
@@ -80,6 +101,13 @@ int main(int argc, char** argv)
 
     for (size_t i = 0; i < reps; ++i) {
       ncclComm_t nccl_comm[MAX_GPUS];
+      if ((i % 10) == 0) {
+        struct timeval now;
+        double elapsed;
+        gettimeofday(&now, NULL);
+        elapsed = (now.tv_sec-start.tv_sec)*1.0 + (now.tv_usec-start.tv_usec)*1.0E-6;
+        printf("Doing iteration %zi elapsed time %gs\n", i, elapsed);
+      }
       NCCL_TRY(ncclCommInitAll(nccl_comm, num_gpus, dev_list));
       for (int g = 0; g < num_gpus; g++)
         NCCL_TRY(abort ? ncclCommAbort(nccl_comm[g]) : ncclCommDestroy(nccl_comm[g]));
@@ -104,7 +132,13 @@ int main(int argc, char** argv)
 
     // Only report leaks of > 1 CUDA page
     if (leaked > (2*1024*1024)) {
-      printf("ERROR: leaked %zi bytes (%zi MiB) CUDA memory over %zi iterations on %d gpus\n", leaked, leaked/(1024*1024), reps, num_gpus);
+      printf("ERROR: GPU Memory leaked %zi bytes (%zi MiB) CUDA memory over %zi iterations on %d gpus\n", leaked, leaked/(1024*1024), reps, num_gpus);
+      exit(EXIT_FAILURE);
+    }
+
+    int endOpenFds = count_open_fds();
+    if ((endOpenFds-startOpenFds) > 0) {
+      printf("ERROR: File Descriptor leaked %d open fds over %zi iterations on %d gpus\n", endOpenFds-startOpenFds, reps, num_gpus);
       exit(EXIT_FAILURE);
     }
 

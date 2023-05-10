@@ -70,6 +70,21 @@ was called.
 
 See the :ref:`init-rank-config` section for details on configuration options.
 
+ncclCommSplit
+-------------
+
+.. c:function:: ncclResult_t ncclCommSplit(ncclComm_t comm, int color, int key, ncclComm_t* newcomm, ncclConfig_t* config)
+
+The *ncclCommSplit* function creates a set of new communicators from an existing one. Ranks which are passed
+the same *color* value will be part of the same group, and a color must be a non-negative value. If it is 
+passed as *NCCL_SPLIT_NOCOLOR*, it means that the rank will not be part of any group, therefore returning NULL 
+as newcomm.
+The value of key will determine the rank order, and the smaller key means the smaller rank in new communicator.
+If keys are equal between ranks, then the rank in the original communicator will be used to order ranks.
+If the new communicator needs to have a special configuration, it can be passed as *config*, otherwise setting
+config to NULL will make the new communicator inherit the original communicator's configuration.
+
+
 ncclCommFinalize
 ----------------
 

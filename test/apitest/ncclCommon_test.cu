@@ -15,11 +15,30 @@ GEN_DATATYPE(unsigned long long, ncclUint64);
 
 int totalGpus = 0;
 ncclComm_t* commsArray = NULL;
+ncclComm_t* splitCommsArray = NULL;
 ncclComm_t* commsIBArray = NULL;
 ncclComm_t* commsSocketsArray = NULL;
 ncclComm_t* srCommsArray = NULL;
 bool srCommsInit = false;
 bool initialized = false;
+
+ncclComm_t* ncclCommon_getSplitShareComms() {
+  if (splitCommsArray == NULL) {
+    ncclConfig_t config = NCCL_CONFIG_INITIALIZER;
+    ncclUniqueId id;
+    EXPECT_EQ(cudaSuccess, cudaGetDeviceCount(&totalGpus));
+    EXPECT_NE(nullptr, splitCommsArray = (ncclComm_t*)calloc(sizeof(ncclComm_t), totalGpus));
+    config.splitShare = 1;
+    EXPECT_EQ(ncclSuccess, ncclGetUniqueId(&id));
+    EXPECT_EQ(ncclSuccess, ncclGroupStart());
+    for (int i = 0; i < totalGpus; ++i) {
+        EXPECT_EQ(cudaSuccess, cudaSetDevice(i));
+        EXPECT_EQ(ncclSuccess, ncclCommInitRankConfig(&splitCommsArray[i], totalGpus, id, i, &config));
+    }
+    EXPECT_EQ(ncclSuccess, ncclGroupEnd());
+  }
+  return splitCommsArray;
+}
 
 ncclComm_t* ncclCommon_getComms(int* nGpus) {
   if (commsArray == NULL) {
