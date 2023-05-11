@@ -184,7 +184,7 @@ ncclResult_t ncclTopoTuneModel(struct ncclComm* comm, int minCompCap, int maxCom
         // Convert bus BW to algorithm BW
         float ratio;
         if (a == NCCL_ALGO_RING) ratio = (1.0 * nRanks) / nsteps;
-        else if (a == NCCL_ALGO_NVLS) ratio = .75;
+        else if (a == NCCL_ALGO_NVLS) ratio = 5.0/6.0;
         else if (a == NCCL_ALGO_NVLS_TREE) ratio = .70 * nNodes / (2*(nNodes-1));
         else ratio = .5;
         comm->bandwidths[coll][a][p] = busBw * ratio;

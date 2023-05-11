@@ -26,7 +26,6 @@ variables:
   REGRESSION_CHECK_CPU_OVERHEAD: 0 # Should we run CPU overhead tests in the perf regression?
   MULTI_REGRESSION_SALLOC_TIME: 45 # How many minutes to salloc for multinode regression. This can be tuned for multinode pipelines
   SINGLE_REGRESSION_SALLOC_TIME: 30 # How many minutes to salloc for multinode regression. This can be tuned for multinode pipelines
-  API_TEST_CUMEM_ENABLE: 0
   SHARP_MULTI_JOB_TIME:  10
 
 build:
@@ -112,7 +111,6 @@ apitest-P100:
   variables:
     NCCL_IB_HCA: "mlx5_0"
     CUDA_HOME: "/usr/local/cuda-${CUDA_VERSION}"
-    NCCL_CUMEM_ENABLE: "${API_TEST_CUMEM_ENABLE}"
     SRUN: "srun --exclusive -t 00:10:00 -n 1 -c 8 -pP100"
   script:
     - ./test/scripts/gitlab-runner-apitest.sh
@@ -127,7 +125,6 @@ apitest-P40:
   variables:
     NCCL_IB_HCA: "mlx5_0"
     CUDA_HOME: "/usr/local/cuda-${CUDA_VERSION}"
-    NCCL_CUMEM_ENABLE: "${API_TEST_CUMEM_ENABLE}"
     SRUN: "srun --exclusive -t 00:10:00 -n 1 -c 8 -pP40"
   script:
     - ./test/scripts/gitlab-runner-apitest.sh
@@ -141,7 +138,6 @@ apitest-GP100:
     - gp100
   variables:
     CUDA_HOME: "/usr/local/cuda-${CUDA_VERSION}"
-    NCCL_CUMEM_ENABLE: "${API_TEST_CUMEM_ENABLE}"
     SRUN: "srun --exclusive -t 00:10:00 -n 1 -c 8 -pGP100"
   script:
     - ./test/scripts/gitlab-runner-apitest.sh
@@ -155,7 +151,6 @@ apitest-M40:
     - m40
   variables:
     CUDA_HOME: "/usr/local/cuda-${CUDA_VERSION}"
-    NCCL_CUMEM_ENABLE: "${API_TEST_CUMEM_ENABLE}"
     SRUN: "srun --exclusive -t 00:10:00 -n 1 -c 4 -pM40"
   script:
     - ./test/scripts/gitlab-runner-apitest.sh
@@ -169,7 +164,6 @@ apitest-K40:
     - k40
   variables:
     CUDA_HOME: "/usr/local/cuda-${CUDA_VERSION}"
-    NCCL_CUMEM_ENABLE: "${API_TEST_CUMEM_ENABLE}"
     SRUN: "srun --exclusive -t 00:10:00 -n 1 -c 1 -pK40"
   script:
     - ./test/scripts/gitlab-runner-apitest.sh
@@ -184,7 +178,6 @@ apitest-K80:
     - k80
   variables:
     CUDA_HOME: "/usr/local/cuda-${CUDA_VERSION}"
-    NCCL_CUMEM_ENABLE: "${API_TEST_CUMEM_ENABLE}"
     SRUN: "srun --exclusive -t 00:10:00 -n 1 -c 16 -pK80"
   script:
     - ./test/scripts/gitlab-runner-apitest.sh minimal
@@ -198,7 +191,6 @@ apitest-A100:
     - a100pci
   variables:
     CUDA_HOME: "/usr/local/cuda-${CUDA_VERSION}"
-    NCCL_CUMEM_ENABLE: "${API_TEST_CUMEM_ENABLE}"
     SRUN: "srun --exclusive -t 00:10:00 -n 1 -c 8 -pA100"
   script:
     - ./test/scripts/gitlab-runner-apitest.sh
@@ -215,7 +207,6 @@ apitest-DGX-1V:
   variables:
     CUDA_HOME: "/gpfs/fs1/projects/sw_gpucomms/users/svc_nvshmem_ci/cuda/cuda-${CUDA_VERSION}"
     PARTITION_LIST: "batch_short_dgx1_m2"
-    NCCL_CUMEM_ENABLE: "${API_TEST_CUMEM_ENABLE}"
     SRUN: "" # Needs to be empty for CI runner scripts performing cluster jobs
     SRUN_PARAMS: "--exclusive -N 1 -n 1 -G 8 -c 8 --account=sw_gpucomms_nvshmem --nv-meta ml-model.nccl-perf -t 00:20:00"
   script:
@@ -233,7 +224,6 @@ apitest-DGX-2:
   variables:
     CUDA_HOME: "/gpfs/fs1/projects/sw_gpucomms/users/svc_nvshmem_ci/cuda/cuda-${CUDA_VERSION}"
     PARTITION_LIST: "batch_short_dgx2h_m2"
-    NCCL_CUMEM_ENABLE: "${API_TEST_CUMEM_ENABLE}"
     SRUN: "" # Needs to be empty for CI runner scripts performing cluster jobs
     SRUN_PARAMS: "--exclusive --mem=0 -N 1 -n 1 -G 16 -c 16 --account=sw_gpucomms_nvshmem --nv-meta ml-model.nccl-perf -t 00:20:00"
   script:
@@ -251,7 +241,6 @@ apitest-DGX-A100:
   variables:
     CUDA_HOME: "/project/nccl/toolkits/cuda-${CUDA_VERSION}/"
     NCCL_SOCKET_IFNAME: "ibp12s0"
-    NCCL_CUMEM_ENABLE: "${API_TEST_CUMEM_ENABLE}"
     SRUN: "" # Needs to be empty for CI runner scripts performing cluster jobs
   script:
     - srun -n 1 --account=nccl -J "nccl-cicd::$GITLAB_USER_LOGIN:apitest::$CI_COMMIT_BRANCH:$CI_COMMIT_SHORT_SHA" -pluna -t 00:20:00 ./test/scripts/gitlab-runner-apitest.sh
