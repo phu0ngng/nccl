@@ -951,14 +951,17 @@ done:
     graph->nChannels = 1;
   }
 
-  if (graph->pattern != NCCL_TOPO_PATTERN_NVLS && ((ccMin <= 80 && graph->bwIntra >= 25.0) || (ccMin <= 90 && graph->bwIntra >= 50.0))) {
-    int dupChannels = std::min(graph->nChannels*2, graph->maxChannels);
-    memcpy(graph->intra+graph->nChannels*ngpus, graph->intra, (dupChannels-graph->nChannels)*ngpus*sizeof(int));
-    memcpy(graph->inter+graph->nChannels*2,graph->inter, (dupChannels-graph->nChannels)*2*sizeof(int));
-    graph->bwIntra /= DIVUP(dupChannels, graph->nChannels);
-    graph->bwInter /= DIVUP(dupChannels, graph->nChannels);
-    graph->nChannels = dupChannels;
-  }
+  if (graph->nChannels == 0) return ncclSuccess;
+  if (graph->pattern == NCCL_TOPO_PATTERN_NVLS) return ncclSuccess;
+  if (graph->bwIntra < 25.0) return ncclSuccess;
+  if (ccMin > 80 && graph->bwIntra < 50.0 && graph->nChannels > 4) return ncclSuccess;
+
+  int dupChannels = std::min(graph->nChannels*2, graph->maxChannels);
+  memcpy(graph->intra+graph->nChannels*ngpus, graph->intra, (dupChannels-graph->nChannels)*ngpus*sizeof(int));
+  memcpy(graph->inter+graph->nChannels*2,graph->inter, (dupChannels-graph->nChannels)*2*sizeof(int));
+  graph->bwIntra /= DIVUP(dupChannels, graph->nChannels);
+  graph->bwInter /= DIVUP(dupChannels, graph->nChannels);
+  graph->nChannels = dupChannels;
   return ncclSuccess;
 }
 
