@@ -84,19 +84,8 @@ ncclResult_t ncclGroupStart() {
   ncclResult_t ret = ncclSuccess;
   NVTX3_FUNC_RANGE_IN(nccl_domain);
 
-  /* if previous group launch does not complete, don't launch this one. */
-  if (ncclGroupJobMainPtr != NULL) {
-    if (__atomic_load_n(&ncclGroupJobMainPtr->doneFlag, __ATOMIC_ACQUIRE) == false) {
-      ret = ncclInvalidUsage;
-      goto exit;
-    } else {
-      NCCLCHECKGOTO(groupJobComplete(ncclGroupJobMainPtr), ret, exit);
-    }
-  }
   NCCLCHECK(ncclGroupStartInternal());
   TRACE_CALL("ncclGroupStart()");
-
-exit:
   return ret;
 }
 
@@ -190,13 +179,6 @@ static ncclResult_t doLaunches(struct ncclComm* head) {
   } while (cliqueHead != nullptr);
 failure:
   return result;
-}
-
-static inline void groupResetJobState() {
-  ncclGroupBlocking = -1;
-  ncclGroupJobMainPtr = NULL;
-  memset(&ncclGroupJobMain, 0, sizeof(struct ncclGroupJob));
-  return;
 }
 
 static void groupCleanup(struct ncclComm** groupCommHeadPtr, struct ncclComm** groupCommPreconnectHeadPtr, struct ncclIntruQueue<struct ncclAsyncJob, &ncclAsyncJob::next>* asyncJobsPtr, ncclResult_t* groupErrorPtr, ncclResult_t error) {
@@ -432,15 +414,6 @@ fail:
   groupCleanup(&ncclGroupCommHead, &ncclGroupCommPreconnectHead, &ncclAsyncJobs, &ncclGroupError, ret);
   groupResetJobState();
   goto exit;
-}
-
-static ncclResult_t groupJobComplete(struct ncclGroupJob* job) {
-  ncclResult_t ret = ncclSuccess;
-  if (job) {
-    ret = ncclAsyncJobComplete(&job->base);
-    groupResetJobState();
-  }
-  return ret;
 }
 
 void ncclGroupJobAbort() {
