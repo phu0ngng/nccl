@@ -54,9 +54,9 @@ ncclResult_t parseList(const char* str, const char* elems[], int nelems, int* li
 // Latencies in us, Bandwidths in GB/s
 // Tree { LL, LL128, Simple } , Ring { LL, LL128, Simple }
 static const float baseLat  [NCCL_NUM_ALGORITHMS][NCCL_NUM_PROTOCOLS] = {
-       {  6.8, 14.0,    0 }, {  6.6, 14.0,  8.4 }, // Tree, Ring
-       {  6.8, 14.0,    0 }, {  6.8, 14.0,    0 },       // Collnet Direct, Chain
-       {    0,    0, 23.0 }, {    0,    0, 23.0 }};     // NVLS, NVLS Tree
+       {  6.8, 14.0,    0 }, {  6.6, 14.0,  8.4 },  // Tree, Ring
+       {    0,    0,    0 }, {    0,    0,    0 },  // Collnet Direct, Chain
+       {    0,    0,    0 }, {    0,    0,    0 }}; // NVLS, NVLS Tree
 
 // NVLink, PCI, Network
 #define NCCL_HW_NVLINK 0
@@ -67,16 +67,16 @@ static const float baseLat  [NCCL_NUM_ALGORITHMS][NCCL_NUM_PROTOCOLS] = {
 static float hwLat [3][NCCL_NUM_ALGORITHMS][NCCL_NUM_PROTOCOLS] =
 { /* NVLINK */
   { /* Tree (LL/LL128/Simple)*/ { .6, 1.25, 28 }, /* Ring (LL/LL128/Simple)*/ { .6, 1.9, 3.4 },
-    /* CollNetDirect (Simple)*/ { 0, 0, 8.0 }, /* CollNetChain (Simple)*/ { 0, 0, 4.75 },
-    /* NVLS */ { 0, 0, 0 }, /* NVLSTree */ { 0, 0, 0 } },
+    /* CollNetDirect (Simple)*/ { 0, 0, 3.7 }, /* CollNetChain (Simple)*/ { 0, 0, 2.8 },
+    /* NVLS */ { 0, 0, 23 }, /* NVLSTree */ { 0, 0, 23 } },
   /* PCI */
   { /* Tree (LL/LL128/Simple)*/ { 1.0, 1.9, 28 }, /* Ring (LL/LL128/Simple)*/ { 1.0, 2.5, 5.7 },
-    /* CollNetDirect (Simple)*/ { 0, 0, 8.0 }, /* CollNetChain (Simple)*/ { 0, 0, 8.0 },
+    /* CollNetDirect (Simple)*/ { 0, 0, 3.7 }, /* CollNetChain (Simple)*/ { 0, 0, 2.8 },
     /* NVLS */ { 0, 0, 0 }, /* NVLSTree */ { 0, 0, 0 } },
   /* NET */
   { /* Tree (LL/LL128/Simple)*/ { 5.0, 8.5, 28 }, /* Ring (LL/LL128/Simple)*/ { 2.7, 4.0, 14.0 },
-    /* CollNetDirect (Simple)*/ { 0, 0, 10.7 }, /* CollNetChain (Simple)*/ { 0, 0, 14 },
-    /* NVLS */ { 0, 0, 18 }, /* NVLSTree */ { 0, 0, 19 } }
+    /* CollNetDirect (Simple)*/ { 0, 0, 31 }, /* CollNetChain (Simple)*/ { 0, 0, 30 },
+    /* NVLS */ { 0, 0, 18 }, /* NVLSTree */ { 0, 0, 14 } }
 };
 
 /* Array indexes used below */
@@ -219,13 +219,14 @@ ncclResult_t ncclTopoTuneModel(struct ncclComm* comm, int minCompCap, int maxCom
             2 * ((nRanks/nNodes-1) * intraLat + log2i(nNodes) * interLat);
         } else if (a == NCCL_ALGO_COLLNET_DIRECT) {
           comm->latencies[coll][a][p] +=
-            2 * (std::min(1, (nRanks/nNodes-1)) * intraLat + (nRanks/nNodes-1) * 0.5) + interLat;  // Add 0.5 arity serialization latency
+            2 * (std::min(1, (nRanks/nNodes-1)) * intraLat + (nRanks/nNodes-1) * 0.4) + interLat;  // Add 0.4 us arity serialization latency
         } else if (a == NCCL_ALGO_COLLNET_CHAIN) {
           comm->latencies[coll][a][p] += 2 * (nRanks/nNodes-1) * intraLat + interLat;
         } else if (a == NCCL_ALGO_NVLS) {
-          if (nNodes > 1) comm->latencies[coll][a][p] += hwLat[NCCL_HW_NET][a][p];
+          comm->latencies[coll][a][p] = intraLat;
+          if (nNodes > 1) comm->latencies[coll][a][p] += interLat;
         } else if (a == NCCL_ALGO_NVLS_TREE) {
-          comm->latencies[coll][a][p] += 2*(nNodes-1)*hwLat[NCCL_HW_NET][a][p];
+          comm->latencies[coll][a][p] += intraLat + 2 * log2i(nNodes) * interLat;
         }
       }
     }
