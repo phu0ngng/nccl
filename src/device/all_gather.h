@@ -108,33 +108,65 @@ struct RunWorkElement<ncclFuncAllGather, T, RedOp, NCCL_ALGO_NVLS, NCCL_PROTO_SI
     const ssize_t chunkSize = int(args->lastChunkSize);
     const ssize_t size = args->count;
     const ssize_t loopSize = nChannels*chunkSize;
+    const ssize_t rank = ncclShmem.comm.rank;
 
     const int nThreadsGather = 128;
     const int nThreadsBcast = 384 + WARP_SIZE;
     const int tidEndGather = nThreadsGather;
     const int tidEndBcast = tidEndGather + nThreadsBcast;
 
-    using Proto = ProtoSimple<1, 1>;
-
-    if (tid < tidEndGather) {
-      // Gather
-      Primitives<T, RedOp, FanAsymmetric<NCCL_MAX_NVLS_ARITY, 0>, /*Direct=*/0, Proto, 0>
-        prims(tid, nThreadsGather, nvls->up, NULL, NULL, args->recvbuff,
-           args->redOpArg, 0*Proto::MaxGroupWidth, 0, 0);
-      for (ssize_t gridOffset = 0; gridOffset < size; gridOffset += loopSize) {
-        ssize_t offset = gridOffset + bid*chunkSize;
-        int nelem = min(chunkSize, size-offset);
-        prims.gather(offset, nvls->nHeads*size, nelem, size, -1, 0);
+    if (!args->regUsed) {
+      using Proto = ProtoSimple<1, 1>;
+      
+      if (tid < tidEndGather) {
+        // Gather
+        Primitives<T, RedOp, FanAsymmetric<NCCL_MAX_NVLS_ARITY, 0>, /*Direct=*/0, Proto, 0>
+          prims(tid, nThreadsGather, nvls->up, NULL, NULL, args->recvbuff,
+            args->redOpArg, 0 * Proto::MaxGroupWidth, 0, 0);
+        for (ssize_t gridOffset = 0; gridOffset < size; gridOffset += loopSize) {
+          ssize_t offset = gridOffset + bid * chunkSize;
+          int nelem = min(chunkSize, size - offset);
+          prims.gather(offset, nvls->nHeads * size, nelem, size, -1, 0);
+        }
+      } else if (tid < tidEndBcast) {
+        // Bcast through NVLS
+        Primitives<T, RedOp, FanAsymmetric<0, 1>, /*Direct=*/1, Proto, 0>
+          prims(tid - tidEndGather, nThreadsBcast, NULL, &nvls->down, args->sendbuff, NULL,
+            args->redOpArg, 3 * Proto::MaxGroupWidth, 1, 1);
+        for (ssize_t gridOffset = 0; gridOffset < size; gridOffset += loopSize) {
+          ssize_t offset = gridOffset + bid * chunkSize;
+          int nelem = min(chunkSize, size - offset);
+          prims.send(offset, nelem);
+        }
       }
-    } else if (tid < tidEndBcast) {
-      // Bcast through NVLS
-      Primitives<T, RedOp, FanAsymmetric<0, 1>, /*Direct=*/0, Proto, 0>
-        prims(tid-tidEndGather, nThreadsBcast, NULL, &nvls->down, args->sendbuff, NULL,
-           args->redOpArg, 3*Proto::MaxGroupWidth, 1, 1);
-      for (ssize_t gridOffset = 0; gridOffset < size; gridOffset += loopSize) {
-        ssize_t offset = gridOffset + bid*chunkSize;
-        int nelem = min(chunkSize, size-offset);
-        prims.send(offset, nelem);
+    } else {
+      /* direct allgather */
+      if (tid < tidEndGather) {
+        using Proto = ProtoSimple<1, 1, COLL_UNROLL>;
+        Primitives<T, RedOp, FanSymmetric<NCCL_MAX_NVLS_ARITY>, /*Direct=*/0, Proto, 0>
+          prims(tid, nThreadsGather, nvls->up, nvls->up, NULL, NULL,
+            args->redOpArg, 0 * Proto::MaxGroupWidth, 1, 1);
+
+        /* used as sync */
+        prims.scatter(0, 0, 0, 0, -1, 0);
+
+        for (ssize_t gridOffset = 0; gridOffset < size; gridOffset += loopSize) {
+          prims.gather(0, 0, 0, 0, -1, 0);
+        }
+      } else if (tid < tidEndBcast) {
+        using Proto = ProtoSimple<1, 1, COLL_UNROLL, 0, 1>;
+        Primitives<T, RedOp, FanSymmetric<1>, /*Direct=*/1, Proto, 0>
+          prims(tid - tidEndGather, nThreadsBcast, &nvls->down, &nvls->down, args->sendbuff, NULL,
+            args->redOpArg, 1 * Proto::MaxGroupWidth, 0, 0, args);
+        /* used as sync */
+        prims.recv(0, 0);
+
+        for (ssize_t gridOffset = 0; gridOffset < size; gridOffset += loopSize) {
+          ssize_t inpOffset = gridOffset + bid * chunkSize;
+          ssize_t outOffset = inpOffset + rank * size;
+          int nelem = min(chunkSize, size - inpOffset);
+          prims.directSend(inpOffset, outOffset, nelem);
+        }
       }
     }
   }
