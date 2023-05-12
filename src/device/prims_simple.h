@@ -652,6 +652,9 @@ class Primitives<
   __device__ __forceinline__ void directRecv(intptr_t outIx, int eltN) {
     genericOp<1, 0, 1, 0, -1, Output>(-1, outIx, eltN, /*postOp=*/false);
   }
+  __device__ __forceinline__ void directRecvCopy(intptr_t inpIx, intptr_t outIx, int eltN) {
+    genericOp<1, 0, 1, 0, -1, Output>(inpIx, outIx, eltN, /*postOp=*/false);
+  }
 
   __device__ __forceinline__ void copySend(intptr_t inpIx, intptr_t outIx, int eltN, bool postOp=false) {
     genericOp<0, 0, 0, 1, Input, Output>(inpIx, outIx, eltN, postOp);
