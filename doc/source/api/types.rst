@@ -215,7 +215,7 @@ ncclConfig_t
   (generic IB verbs) and "Socket" (TCP/IP sockets). External network plugins define their own names.
   Default value is undefined, and NCCL will choose the network module automatically.
 
-.. c:macro:: splitShare
+ .. c:macro:: splitShare
 
   Specify whether to share resources with child communicator during communicator split.
   Set the value of splitShare to 0 or 1. The default value is 0.
