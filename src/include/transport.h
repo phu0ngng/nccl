@@ -42,6 +42,9 @@ struct ncclPeerInfo {
   int64_t busId;
   struct ncclComm* comm;
   int cudaCompCap;
+#ifdef MNNVL_SUPPORT
+  nvmlGpuFabricInfo_t fabricInfo;
+#endif
 };
 
 // MNNVL_SUPPORT requires an extra 1K for this structure

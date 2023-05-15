@@ -340,6 +340,23 @@ compare:
   return ncclSuccess;
 }
 
+// MNNVL: Check whether peers are in the same fabric cluster and partition
+ncclResult_t ncclTopoCheckMNNVL(struct ncclTopoSystem* system, struct ncclPeerInfo* info1, struct ncclPeerInfo* info2, int* ret) {
+  *ret = 0;
+
+  if (system->MNNVL) {
+    nvmlGpuFabricInfo_t *fabricInfo1 = &info1->fabricInfo;
+    nvmlGpuFabricInfo_t *fabricInfo2 = &info2->fabricInfo;
+    if ((memcmp(fabricInfo1->clusterUuid, fabricInfo2->clusterUuid, NVML_GPU_FABRIC_UUID_LEN) == 0) &&
+        (fabricInfo1->partitionId == fabricInfo2->partitionId)) {
+      INFO(NCCL_NET, "MNNVL matching peer 0x%lx UUID %lx.%lx partition 0x%x",
+           info2->busId, ((long *)fabricInfo2->clusterUuid)[0], ((long *)fabricInfo2->clusterUuid)[1], fabricInfo2->partitionId);
+      *ret = 1;
+    }
+  }
+  return ncclSuccess;
+}
+
 NCCL_PARAM(NetGdrRead, "NET_GDR_READ", -2);
 int ncclTopoUserGdrLevel = -1;
 

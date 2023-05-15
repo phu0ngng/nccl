@@ -468,6 +468,18 @@ static ncclResult_t fillInfo(struct ncclComm* comm, struct ncclPeerInfo* info, u
   NCCLCHECK(ncclGpuGdrSupport(comm, &info->gdrSupport));
   info->comm = comm;
   info->cudaCompCap = comm->minCompCap = comm->maxCompCap = comm->compCap;
+
+#ifdef MNNVL_SUPPORT
+  {
+    char busId[NVML_DEVICE_PCI_BUS_ID_BUFFER_SIZE];
+    nvmlDevice_t nvmlDev;
+    NCCLCHECK(int64ToBusId(info->busId, busId));
+    NCCLCHECK(ncclNvmlDeviceGetHandleByPciBusId(busId, &nvmlDev));
+    // MNNVL: Request the fabric UUID and partition info
+    NCCLCHECK(ncclNvmlDeviceGetGpuFabricInfo(nvmlDev, &info->fabricInfo));
+  }
+#endif
+
   return ncclSuccess;
 }
 

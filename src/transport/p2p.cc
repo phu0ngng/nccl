@@ -8,7 +8,6 @@
 #include "graph.h"
 #include "utils.h"
 #include "shm.h"
-#include "graph/topo.h"
 
 #include "p2p.h"
 
@@ -107,15 +106,12 @@ static void initCeOperation();
 /* Determine if two peers can communicate through p2p */
 ncclResult_t p2pCanConnect(int* ret, struct ncclTopoSystem* topo, struct ncclTopoGraph* graph, struct ncclPeerInfo* info1, struct ncclPeerInfo* info2) {
 
-#ifdef MNNVL_SUPPORT
-  if (topo->MNNVL) {
-    // MNNVL: Assume all ranks are connected via NVLink
-    *ret = 1;
-    return ncclSuccess;
-  }
-#endif
-
   initCeOperation();
+
+#ifdef MNNVL_SUPPORT
+  NCCLCHECK(ncclTopoCheckMNNVL(topo, info1, info2, ret));
+  if (ret) return ncclSuccess;
+#endif
 
   // Rule out different nodes / isolated containers
   if (info1->hostHash != info2->hostHash || info1->shmDev != info2->shmDev) {
