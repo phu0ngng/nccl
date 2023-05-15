@@ -64,7 +64,7 @@
   if ((statement) == -1) {    \
     /* Print the back trace*/ \
     RES = ncclSystemError;    \
-    INFO(NCCL_ALL,"%s:%d -> %d", __FILE__, __LINE__, RES);    \
+    INFO(NCCL_ALL,"%s:%d -> %d (%s)", __FILE__, __LINE__, RES, strerror(errno));    \
     goto label; \
   } \
 } while (0);
@@ -72,7 +72,7 @@
 #define NEQCHECK(statement, value) do {   \
   if ((statement) != value) {             \
     /* Print the back trace*/             \
-    INFO(NCCL_ALL,"%s:%d -> %d", __FILE__, __LINE__, ncclSystemError);    \
+    INFO(NCCL_ALL,"%s:%d -> %d (%s)", __FILE__, __LINE__, ncclSystemError, strerror(errno));    \
     return ncclSystemError;     \
   }                             \
 } while (0);
@@ -81,7 +81,7 @@
   if ((statement) != value) { \
     /* Print the back trace*/ \
     RES = ncclSystemError;    \
-    INFO(NCCL_ALL,"%s:%d -> %d", __FILE__, __LINE__, RES);    \
+    INFO(NCCL_ALL,"%s:%d -> %d (%s)", __FILE__, __LINE__, RES, strerror(errno));    \
     goto label; \
   } \
 } while (0);
@@ -89,7 +89,7 @@
 #define EQCHECK(statement, value) do {    \
   if ((statement) == value) {             \
     /* Print the back trace*/             \
-    INFO(NCCL_ALL,"%s:%d -> %d", __FILE__, __LINE__, ncclSystemError);    \
+    INFO(NCCL_ALL,"%s:%d -> %d (%s)", __FILE__, __LINE__, ncclSystemError, strerror(errno));    \
     return ncclSystemError;     \
   }                             \
 } while (0);
@@ -98,7 +98,7 @@
   if ((statement) == value) { \
     /* Print the back trace*/ \
     RES = ncclSystemError;    \
-    INFO(NCCL_ALL,"%s:%d -> %d", __FILE__, __LINE__, RES);    \
+    INFO(NCCL_ALL,"%s:%d -> %d (%s)", __FILE__, __LINE__, RES, strerror(errno));    \
     goto label; \
   } \
 } while (0);
