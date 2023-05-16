@@ -1153,8 +1153,10 @@ static ncclResult_t getAlgoInfo(struct ncclInfo* info, int collNetTypeSupport, i
     int nAlgos = NCCL_NUM_ALGORITHMS;
     for (int a=0; a<nAlgos; a++) {
       if ((a == NCCL_ALGO_COLLNET_DIRECT || a == NCCL_ALGO_COLLNET_CHAIN) && collNetTypeSupport != 1) continue;
-      if (a == NCCL_ALGO_NVLS && !ncclNvlsSupported(info->opFull.op, info->datatype)) continue;
+      if (a == NCCL_ALGO_NVLS && !ncclNvlsSupported(info->opFull.op, info->datatype) && info->coll != ncclFuncAllGather) continue;
       if (a == NCCL_ALGO_NVLS && collNetTypeSupport != 1 && comm->nNodes > 1) continue;
+      /* now we only support single-node NVLS allgather and reducescatter */
+      if (a == NCCL_ALGO_NVLS && (info->coll == ncclFuncAllGather || info->coll == ncclFuncReduceScatter) && comm->nNodes > 1) continue;
       if (a == NCCL_ALGO_NVLS_TREE && !ncclNvlsSupported(info->opFull.op, info->datatype)) continue;
 
       for (int p=0; p<NCCL_NUM_PROTOCOLS; p++) {
