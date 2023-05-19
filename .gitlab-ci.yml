@@ -27,6 +27,7 @@ variables:
   MULTI_REGRESSION_SALLOC_TIME: 45 # How many minutes to salloc for multinode regression. This can be tuned for multinode pipelines
   SINGLE_REGRESSION_SALLOC_TIME: 30 # How many minutes to salloc for multinode regression. This can be tuned for multinode pipelines
   SHARP_MULTI_JOB_TIME:  10
+  RUN_ON_SELENE_SHARP: "0"
 
 build:
   stage: build
