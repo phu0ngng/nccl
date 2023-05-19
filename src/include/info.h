@@ -8,7 +8,7 @@
 #define NCCL_INFO_H_
 
 #include "nccl.h"
-#include "devcomm.h"
+#include "device.h"
 #include "collectives.h"
 #include "core.h"
 #include "utils.h"
