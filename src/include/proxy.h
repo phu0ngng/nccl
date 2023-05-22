@@ -7,7 +7,7 @@
 #ifndef NCCL_PROXY_H_
 #define NCCL_PROXY_H_
 
-#include "devcomm.h"
+#include "device.h"
 #include "info.h"
 #include "socket.h"
 #include "ipcsocket.h"

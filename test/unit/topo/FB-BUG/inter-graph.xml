@@ -25,7 +25,7 @@
       <net dev="1"/>
     </channel>
   </graph>
-  <graph id="1" pattern="1" crossnic="0" nchannels="3" speedintra="15" speedinter="10" latencyinter="0" typeintra="NVB" typeinter="PXN" samechannels="0">
+  <graph id="1" pattern="1" crossnic="0" nchannels="3" speedintra="15" speedinter="10" latencyinter="0" typeintra="NVB" typeinter="SYS" samechannels="0">
     <channel>
       <net dev="2"/>
       <gpu dev="0"/>
@@ -52,4 +52,5 @@
     </channel>
   </graph>
   <graph id="2" pattern="3" crossnic="0" nchannels="0" speedintra="0" speedinter="0" latencyinter="0" typeintra="NVL" typeinter="PIX" samechannels="1"/>
+  <graph id="3" pattern="5" crossnic="0" nchannels="0" speedintra="0" speedinter="0" latencyinter="0" typeintra="NVL" typeinter="PIX" samechannels="0"/>
 </graphs>

@@ -5,6 +5,7 @@ class ncclCommCount_test : public ::testing::Test {
     int nVis = 0, ndev = 0;
     int count = -1;
     virtual void SetUp() {
+        register_segv_handler();
         comms = ncclCommon_getComms(&nVis);
         ndev = nVis;
     };

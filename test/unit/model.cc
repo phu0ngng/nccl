@@ -24,7 +24,7 @@
 int nGpus = -1;
 int nNodes = -1;
 char* platform = NULL;
-const char* platforms[] = { "DGX-1V", "DGX-2V", "Luna" };
+const char* platforms[] = { "DGX-1V", "DGX-2V", "Luna", "Viking" };
 ncclFunc_t function = ncclFuncAllReduce;
 
 int compactMode = -1;

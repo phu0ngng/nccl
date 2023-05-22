@@ -1141,13 +1141,9 @@ ncclResult_t ncclLaunchFinish(struct ncclComm* comm) {
 /*****************************************************************************/
 
 static inline ncclResult_t getCollNetSupport(struct ncclInfo* info, int* collNetTypeSupport) {
-  if (info->comm->collNetSupport > 0) {
-    // Translate ncclAvg and PreMulSum
-    ncclRedOp_t netOp = info->op == ncclAvg || info->op >= ncclNumOps ? ncclSum : info->op;
-    NCCLCHECK(collNetReduceSupport(info->comm, info->datatype, netOp, collNetTypeSupport));
-  } else {
-    *collNetTypeSupport = 0;
-  }
+  // Translate ncclAvg and PreMulSum
+  ncclRedOp_t netOp = info->op == ncclAvg || info->op >= ncclNumOps ? ncclSum : info->op;
+  *collNetTypeSupport = info->comm->collNetSupportMatrix[netOp][info->datatype];
   return ncclSuccess;
 }
 

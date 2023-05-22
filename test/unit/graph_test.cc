@@ -134,15 +134,19 @@ void checkTopo(const char* xmlTopoFile, const char* xmlGraphFile, const char* pl
   /* Compute */
   uint64_t computeTime = getTime();
   CHECK(ncclTopoCompute(system, &ringGraph));
+  CHECK(ncclTopoPrintGraph(system, &ringGraph));
   treeGraph.minChannels = ringGraph.nChannels;
   treeGraph.maxChannels = ringGraph.nChannels;
   CHECK(ncclTopoCompute(system, &treeGraph));
+  CHECK(ncclTopoPrintGraph(system, &treeGraph));
   cNetGraph.minChannels = 1;
   cNetGraph.maxChannels = ringGraph.nChannels;
   CHECK(ncclTopoCompute(system, &cNetGraph));
+  CHECK(ncclTopoPrintGraph(system, &cNetGraph));
   nvlsGraph.minChannels = 1;
   nvlsGraph.maxChannels = MAXCHANNELS;
   CHECK(ncclTopoCompute(system, &nvlsGraph));
+  CHECK(ncclTopoPrintGraph(system, &nvlsGraph));
   computeTime = getTime() - computeTime;
 
   int err = 0, warn = 0, incompleteRef = 0;
@@ -258,10 +262,12 @@ int main(int argc, const char* argv[]) {
     RUN("Dual-Delta-VM");
     RUN("ZionEX");
     RUN("FB-V100");
+    RUN("DGX-H800");
     RUN("Viking");
     RUN("Viking-6GPUs");
     RUN("Viking-SHARP");
     RUN("Scout");
+    RUN("PCI-H100-NV");
 #endif
     RUN("P9-6V");
     RUN("P9-4V");

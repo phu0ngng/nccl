@@ -398,6 +398,17 @@ Values accepted
 ^^^^^^^^^^^^^^^
 Number between 1 and 128, default is 1. Values beyond 8 usually cause degraded bandwidth.
 
+NCCL_IB_SPLIT_DATA_ON_QPS
+-------------------------
+(since 2.18)
+
+This parameter controls how we use the queue pairs when we create more than one. Set to 1, each message will be split evenly on each queue pair. Set to 0, queue pairs will be
+used in round-robin mode for each message we send.
+
+Values accepted
+^^^^^^^^^^^^^^^
+0 or 1. Default is 1. Setting it to 0 will switch to round-robin mode.
+
 NCCL_IB_PCI_RELAXED_ORDERING
 ----------------------------
 (since 2.12)
@@ -429,6 +440,15 @@ Values accepted
 ^^^^^^^^^^^^^^^
 Default value is ``cudaLaunchMemSyncDomainRemote`` (1). Currently supported values are 0 and 1.
 
+NCCL_CUMEM_ENABLE
+-----------------
+(since 2.18)
+
+Use CUDA cuMem* functions to allocate memory in NCCL.
+
+Values accepted
+^^^^^^^^^^^^^^^
+0 or 1. Default is 0.
 
 NCCL_NET
 --------

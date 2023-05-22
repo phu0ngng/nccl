@@ -10,7 +10,7 @@ DST_DIR		:= $(BUILDDIR)/test/apitest
 OBJ_FILES	:= $(SRC_FILES:%.cu=${DST_DIR}/%.o)
 DEP_FILES	:= $(OBJ_FILES:%.o=%.dep)
 ### cc
-NVCUFLAGS += -I${NCCLDIR}/include/ -include nccl.h ${CPPFLAGS} ${GTEST_CPPFLAGS}
+NVCUFLAGS += -I${NCCLDIR}/include/ -include nccl.h ${CPPFLAGS} ${GTEST_CPPFLAGS} -g
 ### ld
 LIBDIR := ${NCCLDIR}/lib
 NVLDFLAGS := -L${LIBDIR} ${NVLDFLAGS} ${GTEST_LIBS}

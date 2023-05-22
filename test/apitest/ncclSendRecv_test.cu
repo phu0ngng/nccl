@@ -5,6 +5,7 @@ public:
     ncclComm_t* srComms;
     int nGpus;
     void SetUp() {
+        register_segv_handler();
         EXPECT_NE(nullptr, srComms = ncclCommon_getsrComms(&nGpus));
     }
 };
