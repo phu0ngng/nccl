@@ -7,7 +7,7 @@
 #ifndef NCCL_COMMON_KERNEL_H_
 #define NCCL_COMMON_KERNEL_H_
 
-#include "device.h"
+#include "devcomm.h"
 #include "op128.h"
 #include "reduce_kernel.h"
 #include <cstdio>

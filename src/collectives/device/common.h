@@ -8,7 +8,7 @@
 #define NCCL_DEVICE_COMMON_H_
 
 #include "collectives.h"
-#include "device.h"
+#include "devcomm.h"
 #include "op128.h"
 
 #define COLL_UNROLL (ncclCollUnroll())

@@ -7,7 +7,7 @@
 #ifndef NCCL_TRANSPORT_H_
 #define NCCL_TRANSPORT_H_
 
-#include "device.h"
+#include "devcomm.h"
 #include "graph.h"
 #include "nvmlwrap.h"
 #include "core.h"
