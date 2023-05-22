@@ -43,7 +43,9 @@ error:
 }
 
 int ncclCuMemEnable() {
-  return ((ncclParamCuMemEnable() == -2 && ncclCuMemSupported) || ncclParamCuMemEnable());
+  // NCCL_CUMEM_ENABLE=-2 means auto-detect CUMEM support
+  int param = ncclParamCuMemEnable();
+  return  param >= 0 ? param : (param == -2 && ncclCuMemSupported);
 }
 
 #define DECLARE_CUDA_PFN(symbol,version) PFN_##symbol##_v##version pfn_##symbol = nullptr
