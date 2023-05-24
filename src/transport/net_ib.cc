@@ -111,7 +111,7 @@ static ncclResult_t ncclIbGetPciPath(char* devName, char** path, int* realPort) 
     // Merge multi-port NICs into the same PCI device
     p[strlen(p)-1] = '0';
     // Also merge virtual functions (VF) into the same device
-    if (ncclParamIbMergeVfs()) p[strlen(p)-3] = '0';
+    if (ncclParamIbMergeVfs()) p[strlen(p)-3] = p[strlen(p)-4] = '0';
     // And keep the real port aside (the ibv port is always 1 on recent cards)
     *realPort = 0;
     for (int d=0; d<ncclNIbDevs; d++) {
