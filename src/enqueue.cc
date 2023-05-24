@@ -629,10 +629,12 @@ static ncclResult_t scheduleP2pTasksToPlan(
   // Try to use all channels
   int nChannelsMax = comm->p2pnChannelsPerPeer;
   int nChannelsMin = nChannelsMax;
-  // Try to use all channels, but one channel per operation.
-  while (nChannelsMin*nRanks > comm->p2pnChannels && nChannelsMin > 1) nChannelsMin /= 2;
-  // Avoid overloading channels with 8+ operations as we loose the sync warp, hence a bit of bandwidth.
-  while (nChannelsMax*nRanks > comm->p2pnChannels*4 && nChannelsMax > 1) nChannelsMax /= 2;
+  if (comm->nNodes == 1) {
+    // Try to use all channels, but one channel per operation.
+    while (nChannelsMin*nRanks > comm->p2pnChannels && nChannelsMin > 1) nChannelsMin /= 2;
+    // Avoid overloading channels with 8+ operations as we loose the sync warp, hence a bit of bandwidth.
+    while (nChannelsMax*nRanks > comm->p2pnChannels*4 && nChannelsMax > 1) nChannelsMax /= 2;
+  }
 
   bool fuseOk;
   // We can perform 8 send/recv per round per CTA. Make sure we jump between fused blocks at node boundaries.
