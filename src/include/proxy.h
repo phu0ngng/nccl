@@ -199,7 +199,6 @@ struct ncclProxyState {
   // Service thread
   pthread_t thread;
   struct ncclSocket* listenSock;
-  struct ncclIpcSocket ipcSock;
   int stop;
   CUcontext cudaCtx;
 
@@ -261,6 +260,7 @@ enum ncclProxyMsgType {
   ncclProxyMsgClose = 6,
   ncclProxyMsgAbort = 7,
   ncclProxyMsgStop = 8,
+  ncclProxyMsgGetFd = 9, // cuMem API support (UDS)
 };
 
 // This function is called by a client of the proxy that needs to invoke any of the non-progress proxyOp types

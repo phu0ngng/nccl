@@ -182,13 +182,15 @@ ncclResult_t ncclIpcSocketSendMsg(ncclIpcSocket *handle, void *hdr, int hdrLen, 
   }
   (void) strncpy(cliaddr.sun_path, temp, len);
 
-  TRACE(NCCL_INIT, "UDS: Sending fd %d to UDS socket %s", sendFd, temp);
-
 #ifdef USE_ABSTRACT_SOCKET
   cliaddr.sun_path[0] = '\0'; // Linux abstract socket trick
 #endif
 
+  TRACE(NCCL_INIT, "UDS: Sending hdr %p len %d to UDS socket %s", hdr, hdrLen, temp);
+
   if (sendFd != -1) {
+    TRACE(NCCL_INIT, "UDS: Sending fd %d to UDS socket %s", sendFd, temp);
+
     msg.msg_control = control_un.control;
     msg.msg_controllen = sizeof(control_un.control);
 
@@ -216,7 +218,7 @@ ncclResult_t ncclIpcSocketSendMsg(ncclIpcSocket *handle, void *hdr, int hdrLen, 
   ssize_t sendResult;
   while ((sendResult = sendmsg(handle->fd, &msg, 0)) < 0) {
     if (errno != EAGAIN && errno != EWOULDBLOCK && errno != EINTR) {
-      WARN("UDS: Sending data over socket %s failed : %d", temp, errno);
+      WARN("UDS: Sending data over socket %s failed : %s (%d)", temp, strerror(errno), errno);
       return ncclSystemError;
     }
     if (handle->abortFlag && *handle->abortFlag) return ncclInternalError;
@@ -227,12 +229,4 @@ ncclResult_t ncclIpcSocketSendMsg(ncclIpcSocket *handle, void *hdr, int hdrLen, 
 
 ncclResult_t ncclIpcSocketSendFd(ncclIpcSocket *handle, const int sendFd, int rank, uint64_t hash) {
   return ncclIpcSocketSendMsg(handle, NULL, 0, sendFd, rank, hash);
-}
-
-ncclResult_t ncclIpcSocketSend(struct ncclIpcSocket *handle, struct ncclIpcHdr *hdr, int rank, uint64_t hash) {
-  return ncclIpcSocketSendMsg(handle, hdr, sizeof(ncclIpcHdr), -1, rank, hash);
-}
-
-ncclResult_t ncclIpcSocketRecv(struct ncclIpcSocket *handle, struct ncclIpcHdr *hdr) {
-  return ncclIpcSocketRecvMsg(handle, hdr, sizeof(ncclIpcHdr), NULL);
 }

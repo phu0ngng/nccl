@@ -28,17 +28,6 @@ struct ncclIpcSocket {
   volatile uint32_t* abortFlag;
 };
 
-enum ops {
-  NCCL_IPC_GET_FD,
-};
-
-struct ncclIpcHdr {
-  int op;
-  int rank;
-  void *opId;
-  uint64_t handle; // Needs to be large enough to hold CUmemGenericAllocationHandle
-};
-
 ncclResult_t ncclIpcSocketInit(struct ncclIpcSocket *handle, int rank, uint64_t hash, volatile uint32_t* abortFlag);
 ncclResult_t ncclIpcSocketClose(struct ncclIpcSocket *handle);
 ncclResult_t ncclIpcSocketGetFd(struct ncclIpcSocket* handle, int* fd);
