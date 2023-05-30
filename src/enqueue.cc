@@ -1534,7 +1534,7 @@ static ncclResult_t taskAppend(struct ncclComm* comm, struct ncclInfo const* inf
       t->chunkSteps = info->chunkSteps;
       t->sliceSteps = info->sliceSteps;
       ncclIntruQueueEnqueue(&tasks->collQueue, t);
-      tasks->collBytesTotal += t->count*ncclTypeSize(t->datatype);
+      tasks->collBytesTotal += info->nBytes;
       tasks->nTasksColl += 1;
     }
   }
