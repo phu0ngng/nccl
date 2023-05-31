@@ -471,11 +471,11 @@ static ncclResult_t fillInfo(struct ncclComm* comm, struct ncclPeerInfo* info, u
 
 #ifdef MNNVL_SUPPORT
   {
+    // MNNVL: Request the fabric UUID and partition info
     char busId[NVML_DEVICE_PCI_BUS_ID_BUFFER_SIZE];
     nvmlDevice_t nvmlDev;
     NCCLCHECK(int64ToBusId(info->busId, busId));
     NCCLCHECK(ncclNvmlDeviceGetHandleByPciBusId(busId, &nvmlDev));
-    // MNNVL: Request the fabric UUID and partition info
     NCCLCHECK(ncclNvmlDeviceGetGpuFabricInfo(nvmlDev, &info->fabricInfo));
   }
 #endif
@@ -526,8 +526,8 @@ static ncclResult_t computeBuffSizes(struct ncclComm* comm) {
     comm->buffSizes[p] = envs[p] != -2 ? envs[p] : defaults[p];
   }
 
-  if (comm->nNodes > 1) comm->p2pChunkSize = ncclParamP2pNetChunkSize();
-  else if (ncclTopoPathAllNVLink(comm->topo)) comm->p2pChunkSize = ncclParamP2pNvlChunkSize();
+  if (CLIQUE_NODES(comm) > 1) comm->p2pChunkSize = ncclParamP2pNetChunkSize();
+  else if (CLIQUE_NODES(comm) == 1 || ncclTopoPathAllNVLink(comm->topo)) comm->p2pChunkSize = ncclParamP2pNvlChunkSize();
   else comm->p2pChunkSize = ncclParamP2pPciChunkSize();
   if (comm->sharedRes->owner != comm) {
     /* make sure split comm p2pChunkSize won't exceed shared p2pChunkSize. */
@@ -764,6 +764,19 @@ static ncclResult_t initTransportsRank(struct ncclComm* comm, struct ncclComm* p
   }
   // AllGather1 - end
 
+#ifdef MNNVL_SUPPORT
+  // Determine the size of the MNNVL domain/clique
+  comm->cliqueSize = 0;
+  for (int i = 0; i < nranks; i++) {
+    nvmlGpuFabricInfo_t *fabricInfo1 = &comm->peerInfo[rank].fabricInfo;
+    nvmlGpuFabricInfo_t *fabricInfo2 = &comm->peerInfo[i].fabricInfo;
+    if ((memcmp(fabricInfo1->clusterUuid, fabricInfo2->clusterUuid, NVML_GPU_FABRIC_UUID_LEN) == 0) &&
+        (fabricInfo1->partitionId == fabricInfo2->partitionId)) {
+      comm->cliqueSize++;
+    }
+  }
+#endif
+
   do {
     // Compute intra-process ranks
     int intraProcRank0 = -1, intraProcRank = -1, intraProcRanks = 0;
@@ -951,6 +964,9 @@ static ncclResult_t initTransportsRank(struct ncclComm* comm, struct ncclComm* p
     ret = ncclInternalError;
     goto fail;
   }
+
+  INFO(NCCL_INIT, "comm %p rank %d nRanks %d cliqueSize %d nNodes %d localRanks %d localRank %d",
+       comm, rank, comm->nRanks, comm->cliqueSize, comm->nNodes, comm->localRanks, comm->localRank);
 
   nChannelsOrig = comm->nChannels;
   NCCLCHECKGOTO(ncclCalloc(&allTopoRanks, comm->nRanks), ret, fail);
