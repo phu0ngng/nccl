@@ -110,8 +110,8 @@ struct RunWorkElement<ncclFuncAllGather, T, RedOp, NCCL_ALGO_NVLS, NCCL_PROTO_SI
     const ssize_t loopSize = nChannels*chunkSize;
     const ssize_t rank = ncclShmem.comm.rank;
 
-    const int nThreadsGather = 128;
-    const int nThreadsBcast = 384 + WARP_SIZE;
+    const int nThreadsGather = args->regUsed ? WARP_SIZE : 128;
+    const int nThreadsBcast = args->regUsed ? (NCCL_MAX_NTHREADS - nThreadsGather) : 384 + WARP_SIZE;
     const int tidEndGather = nThreadsGather;
     const int tidEndBcast = tidEndGather + nThreadsBcast;
 

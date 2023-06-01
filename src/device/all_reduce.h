@@ -386,10 +386,11 @@ struct RunWorkElement<ncclFuncAllReduce, T, RedOp, NCCL_ALGO_NVLS, NCCL_PROTO_SI
     const ssize_t loopSize = nChannels*nvls->nHeads*chunkSize;
     const int nranks = ncclShmem.comm.nRanks;
     const bool hasOut = nvls->out != -1;
-    const int reduceWarps = hasOut ? 3 : nranks <= 6 ? 7 : 5;
-    const int bcastWarps = hasOut ? 2 : 0;
-    const int scatterWarps = ((NCCL_MAX_NTHREADS/WARP_SIZE) - reduceWarps - bcastWarps + 1)/2;
-    const int gatherWarps = ((NCCL_MAX_NTHREADS/WARP_SIZE) - reduceWarps - bcastWarps)/2;
+    const int totalWarps = NCCL_MAX_NTHREADS/WARP_SIZE;
+    const int bcastWarps = hasOut ? (args->regUsed ? ((totalWarps - 2) >> 1) - 1 : 2) : 0;
+    const int reduceWarps = args->regUsed ? (totalWarps - bcastWarps - 2) : (hasOut ? 3 : nranks <= 6 ? 7 : 5);
+    const int scatterWarps = args->regUsed ? 1 : (totalWarps - reduceWarps - bcastWarps + 1) >> 1;
+    const int gatherWarps = args->regUsed ? 1 : (totalWarps - reduceWarps - bcastWarps) >> 1;
 
     const int nThreadsScatter = scatterWarps*WARP_SIZE;
     const int nThreadsGather  = gatherWarps*WARP_SIZE;
@@ -475,10 +476,11 @@ struct RunWorkElement<ncclFuncAllReduce, T, RedOp, NCCL_ALGO_NVLS_TREE, NCCL_PRO
     const ssize_t loopSize = nChannels*nvls->nHeads*chunkSize;
     const int nranks = ncclShmem.comm.nRanks;
     const bool hasUp = treeUp != -1;
-    const int reduceWarps = hasUp ? 5 : nranks <= 6 ? 7 : 5;
-    const int bcastWarps = hasUp ? 4 : 0;
-    const int scatterWarps = ((NCCL_MAX_NTHREADS/WARP_SIZE) - reduceWarps - bcastWarps + 1)/2;
-    const int gatherWarps = ((NCCL_MAX_NTHREADS/WARP_SIZE) - reduceWarps - bcastWarps)/2;
+    const int totalWarps = NCCL_MAX_NTHREADS/WARP_SIZE;
+    const int bcastWarps = hasUp ? (args->regUsed ? ((totalWarps - 2) >> 1) - 1 : 4) : 0;
+    const int reduceWarps = args->regUsed ? (totalWarps - bcastWarps - 2) : (hasUp ? 5 : nranks <= 6 ? 7 : 5);
+    const int scatterWarps = args->regUsed ? 1 : (totalWarps - reduceWarps - bcastWarps + 1) >> 1;
+    const int gatherWarps = args->regUsed ? 1 : (totalWarps - reduceWarps - bcastWarps) >> 1;
 
     const int nThreadsScatter = scatterWarps*WARP_SIZE;
     const int nThreadsGather  = gatherWarps*WARP_SIZE;

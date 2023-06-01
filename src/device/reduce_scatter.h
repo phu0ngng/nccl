@@ -100,8 +100,8 @@ struct RunWorkElement<ncclFuncReduceScatter, T, RedOp, NCCL_ALGO_NVLS, NCCL_PROT
     const ssize_t loopSize = nChannels*chunkSize;
     const int rank = ncclShmem.comm.rank;
 
-    const int nThreadsScatter = 128 + WARP_SIZE;
-    const int nThreadsReduce = 384;
+    const int nThreadsScatter = args->regUsed ? WARP_SIZE : 128 + WARP_SIZE;
+    const int nThreadsReduce = args->regUsed ? (NCCL_MAX_NTHREADS - nThreadsScatter) : 384;
     const int tidEndScatter = nThreadsScatter;
     const int tidEndReduce = tidEndScatter + nThreadsReduce;
 
