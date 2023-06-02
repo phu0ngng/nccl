@@ -30,6 +30,15 @@ static bool isPow2(int value) {
 }
 
 testResult_t HyperCubeInitData(struct threadArgs* args, ncclDataType_t type, ncclRedOp_t op, int root, int rep, int in_place) {
+  if (args->nGpus > 1) {
+    printf("\n\n");
+    printf("********************************************************************\n");
+    printf("* Error: hypercube_perf does not support multiple GPUs per thread. *\n");
+    printf("* You can use -t instead of -g or run with multiple processes.     *\n");
+    printf("********************************************************************\n\n");
+    return testInternalError;
+  }
+
   size_t sendcount;
   int nranks, rank;
   void* data;
