@@ -110,19 +110,18 @@ struct RunWorkElement<ncclFuncAllGather, T, RedOp, NCCL_ALGO_NVLS, NCCL_PROTO_SI
     const ssize_t loopSize = nChannels*chunkSize;
     const ssize_t rank = ncclShmem.comm.rank;
 
-    const int nThreadsGather = args->regUsed ? WARP_SIZE : 128;
-    const int nThreadsBcast = args->regUsed ? (NCCL_MAX_NTHREADS - nThreadsGather) : 384 + WARP_SIZE;
+    const int nThreadsBcast = args->regUsed ? (NCCL_MAX_NTHREADS - WARP_SIZE) : 4 * WARP_SIZE;
+    const int nThreadsGather = args->regUsed ? WARP_SIZE : NCCL_MAX_NTHREADS - nThreadsBcast;
     const int tidEndGather = nThreadsGather;
     const int tidEndBcast = tidEndGather + nThreadsBcast;
 
     if (!args->regUsed) {
-      using Proto = ProtoSimple<1, 1>;
-      
       if (tid < tidEndGather) {
         // Gather
+        using Proto = ProtoSimple<1, 1, COLL_UNROLL>;
         Primitives<T, RedOp, FanAsymmetric<NCCL_MAX_NVLS_ARITY, 0>, /*Direct=*/0, Proto, 0>
           prims(tid, nThreadsGather, nvls->up, NULL, NULL, args->recvbuff,
-            args->redOpArg, 0 * Proto::MaxGroupWidth, 0, 0);
+            args->redOpArg, 0 * Proto::MaxGroupWidth, 1, 1);
         for (ssize_t gridOffset = 0; gridOffset < size; gridOffset += loopSize) {
           ssize_t offset = gridOffset + bid * chunkSize;
           int nelem = min(chunkSize, size - offset);
@@ -130,9 +129,10 @@ struct RunWorkElement<ncclFuncAllGather, T, RedOp, NCCL_ALGO_NVLS, NCCL_PROTO_SI
         }
       } else if (tid < tidEndBcast) {
         // Bcast through NVLS
-        Primitives<T, RedOp, FanAsymmetric<0, 1>, /*Direct=*/1, Proto, 0>
+        using Proto = ProtoSimple<1, 1, COLL_UNROLL, 0, 1>;
+        Primitives<T, RedOp, FanAsymmetric<0, 1>, /*Direct=*/0, Proto, 0>
           prims(tid - tidEndGather, nThreadsBcast, NULL, &nvls->down, args->sendbuff, NULL,
-            args->redOpArg, 3 * Proto::MaxGroupWidth, 1, 1);
+            args->redOpArg, 3 * Proto::MaxGroupWidth, 0, 0);
         for (ssize_t gridOffset = 0; gridOffset < size; gridOffset += loopSize) {
           ssize_t offset = gridOffset + bid * chunkSize;
           int nelem = min(chunkSize, size - offset);
