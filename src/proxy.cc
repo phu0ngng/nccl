@@ -1620,7 +1620,7 @@ ncclResult_t ncclProxyStop(struct ncclComm* comm) {
       }
     }
   }
-  
+
   return ncclSuccess;
 }
 

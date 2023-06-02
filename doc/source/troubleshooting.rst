@@ -92,6 +92,44 @@ NCCL relies on /sys to discover the PCI topology of GPUs and network cards. When
 machine or container, make sure /sys is properly mounted. Having /sys expose a virtual PCI topology can
 result in suboptimal performance.
 
+*************
+Shared memory
+*************
+
+To communicate between processes and even between threads of a process, NCCL creates shared memory segments
+in /dev/shm. The operating system’s limits on these resources may need to be increased accordingly. Please see your
+system’s documentation for details.
+
+Docker
+------
+
+In particular, Docker containers default to limited shared and pinned memory resources. When using NCCL inside a
+container, please make sure to adjust the shared memory size inside the container, for example by adding the following
+arguments to the docker launch command line:
+
+.. code::
+
+ --shm-size=1g --ulimit memlock=-1
+
+SLURM
+-----
+
+On systems running SLURM together with systemd, systemd may remove files in shared memory when it detects that the
+corresponding user is not logged in, in an attempt to clean up old temporary files. This can cause NCCL to crash
+during init with an error like:
+
+.. code::
+
+ NCCL WARN unlink shared memory /dev/shm/nccl-d5rTd0 failed, error: No such file or directory
+
+Given SLURM jobs can run on the node without the user being seen as logged in by systemd, system administrators need
+to disable that clean-up mechanism, which can be performed by SLURM epilog scripts instead. To do this, the following
+line needs to be set in /etc/systemd/logind.conf:
+
+.. code::
+
+ "RemoveIPC=no"
+
 *****************
 Networking issues
 *****************
@@ -152,19 +190,3 @@ The solution is to remove the user limits on registering pinned memory. This can
  * hard memlock unlimited
 
 To the /etc/security/limits.conf configuration file or equivalent on your Linux distribution.
-
-************
-Known Issues
-************
-
-Ensure you are familiar with the following known issues:
-
-Sharing Data
-------------
-
-In order to share data between ranks, NCCL may require shared system memory for IPC and pinned (page-locked) system memory resources. The operating system’s limits on these resources may need to be increased accordingly. Please see your system’s documentation for details. In particular, Docker containers default to limited shared and pinned memory resources. When using NCCL inside a container, it is recommended that you increase these resources by issuing:
-        
-    --shm-size=1g --ulimit memlock=-1
- 
-in the command line to nvidia-docker run.
-

@@ -1,9 +1,12 @@
+#include "ncclCommon_test.cuh"
+
 class ncclCommSplit_test : public ::testing::Test {
   protected:
     ncclComm_t* comms = NULL;
     ncclComm_t* comms2 = NULL;
     int nVis = 0;
     virtual void SetUp() {
+        register_segv_handler();
         (void) setenv("NCCL_CHECK_POINTERS", "1", 0); // API tests expect this behaviour (ncclCommSplit)
         ASSERT_EQ(cudaSuccess, cudaGetDeviceCount(&nVis));
         comms = (ncclComm_t*)calloc(nVis, sizeof(ncclComm_t));
