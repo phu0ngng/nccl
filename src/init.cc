@@ -477,6 +477,9 @@ static ncclResult_t fillInfo(struct ncclComm* comm, struct ncclPeerInfo* info, u
     NCCLCHECK(int64ToBusId(info->busId, busId));
     NCCLCHECK(ncclNvmlDeviceGetHandleByPciBusId(busId, &nvmlDev));
     NCCLCHECK(ncclNvmlDeviceGetGpuFabricInfo(nvmlDev, &info->fabricInfo));
+    INFO(NCCL_INIT, "busId 0x%lx fabric UUID %lx.%lx partition 0x%x",
+         info->busId,
+         ((long *)&info->fabricInfo.clusterUuid)[0], ((long *)&info->fabricInfo.clusterUuid)[1], info->fabricInfo.partitionId);
   }
 #endif
 
