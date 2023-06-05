@@ -81,13 +81,13 @@ __device__ __forceinline__ void reduceCopyPacks(
       for (int u=0; u < Unroll; u++) {
         if (0 < MultimemSrcs) {
           // applyLoadMultimem uses relaxed semantics for same reason we use volatile below.
-          acc[u] = applyLoadMultimem<RedFn, BytePerPack>(preFn, minSrcs[0]);
+          acc[u] = applyLoadMultimem<RedFn, BytePerPack>(redFn, minSrcs[0]);
         } else {
           // Use volatile loads in case credits are polled for with volatile (instead of acquire).
           acc[u] = ld_volatile_global<BytePerPack>(minSrcs[0]);
+          if (0 < PreOpSrcs) acc[u] = applyPreOp(preFn, acc[u]);
         }
         minSrcs[0] += WARP_SIZE*BytePerPack;
-        if (0 < PreOpSrcs) acc[u] = applyPreOp(preFn, acc[u]);
       }
     }
 
@@ -99,7 +99,7 @@ __device__ __forceinline__ void reduceCopyPacks(
       for (int u=0; u < Unroll; u++) {
         if (s < MultimemSrcs) {
           // applyLoadMultimem uses relaxed semantics for same reason we use volatile below.
-          acc[u] = applyLoadMultimem<RedFn, BytePerPack>(preFn, minSrcs[s]);
+          acc[u] = applyLoadMultimem<RedFn, BytePerPack>(redFn, minSrcs[s]);
         } else {
           // Use volatile loads in case credits are polled for with volatile (instead of acquire).
           tmp[u] = ld_volatile_global<BytePerPack>(minSrcs[s]);

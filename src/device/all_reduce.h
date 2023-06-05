@@ -377,7 +377,6 @@ struct RunWorkElement<ncclFuncAllReduce, T, RedOp, NCCL_ALGO_COLLNET_DIRECT, NCC
 template<typename T, typename RedOp>
 struct RunWorkElement<ncclFuncAllReduce, T, RedOp, NCCL_ALGO_NVLS, NCCL_PROTO_SIMPLE> {
   __device__ __forceinline__ void run(ncclWorkElem *args) {
-  #if NCCL_NVLS_ENABLED
     const int tid = threadIdx.x;
     const int bid = args->bid;
     const int nChannels = args->nChannels;
@@ -459,14 +458,12 @@ struct RunWorkElement<ncclFuncAllReduce, T, RedOp, NCCL_ALGO_NVLS, NCCL_PROTO_SI
         prims.recvSend(nelem);
       }
     }
-  #endif // NCCL_NVLS_ENABLED
   }
 };
 
 template<typename T, typename RedOp>
 struct RunWorkElement<ncclFuncAllReduce, T, RedOp, NCCL_ALGO_NVLS_TREE, NCCL_PROTO_SIMPLE> {
   __device__ __forceinline__ void run(ncclWorkElem *args) {
-  #if NCCL_NVLS_ENABLED
     const int tid = threadIdx.x;
     const int bid = args->bid;
     const int nChannels = args->nChannels;
@@ -550,7 +547,6 @@ struct RunWorkElement<ncclFuncAllReduce, T, RedOp, NCCL_ALGO_NVLS_TREE, NCCL_PRO
         prims.recvSend(nelem);
       }
     }
-  #endif // NCCL_NVLS_ENABLED
   }
 };
 

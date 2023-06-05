@@ -12,6 +12,19 @@
 #include <limits>
 #include <type_traits>
 
+template<typename T>
+struct IsFloatingPoint: std::false_type {};
+template<>
+struct IsFloatingPoint<half>: std::true_type {};
+#if defined(__CUDA_BF16_TYPES_EXIST__)
+template<>
+struct IsFloatingPoint<__nv_bfloat16>: std::true_type {};
+#endif
+template<>
+struct IsFloatingPoint<float>: std::true_type {};
+template<>
+struct IsFloatingPoint<double>: std::true_type {};
+
 ////////////////////////////////////////////////////////////////////////////////
 // The reduction function classes. All classes must:
 //  1. Expose the `EltType` typedef.
@@ -19,16 +32,21 @@
 //  3. Have constructor taking `uint64_t opArg`.
 
 template<typename T>
-struct FuncNull { using EltType = T; __device__ FuncNull(uint64_t opArg=0) {}; };
+struct FuncCopy { using EltType = T; __device__ FuncCopy(uint64_t opArg=0) {}; };
 template<typename T>
 struct FuncSum  { using EltType = T; __device__ FuncSum(uint64_t opArg=0) {}; };
 template<typename T>
 struct FuncProd { using EltType = T; __device__ FuncProd(uint64_t opArg=0) {}; };
 template<typename T>
-struct FuncMin  { using EltType = T; __device__ FuncMin(uint64_t opArg=0) {}; };
-template<typename T>
-struct FuncMax  { using EltType = T; __device__ FuncMax(uint64_t opArg=0) {}; };
-
+struct FuncMinMax {
+  using EltType = T;
+  BytePack<sizeof(T)> xormask; // only used by integers
+  bool isMinNotMax; // only used by floats
+  __device__ FuncMinMax(uint64_t opArg=0) {
+    xormask.native = opArg;
+    isMinNotMax = (opArg&1)==0;
+  }
+};
 template<typename T> struct FuncPreMulSum;
 template<typename T> struct FuncSumPostDiv;
 
@@ -127,8 +145,8 @@ struct Apply_Reduce {
 
 // Base case definitions (EltPerPack == 1)
 template<typename T>
-struct Apply_Reduce<FuncNull<T>, /*EltPerPack=*/1> {
-  __device__ static BytePack<sizeof(T)> reduce(FuncSum<T> fn, BytePack<sizeof(T)> a, BytePack<sizeof(T)> b) {
+struct Apply_Reduce<FuncCopy<T>, /*EltPerPack=*/1> {
+  __device__ static BytePack<sizeof(T)> reduce(FuncCopy<T> fn, BytePack<sizeof(T)> a, BytePack<sizeof(T)> b) {
     return a;
   }
 };
@@ -145,15 +163,9 @@ struct Apply_Reduce<FuncProd<T>, /*EltPerPack=*/1> {
   }
 };
 template<typename T>
-struct Apply_Reduce<FuncMin<T>, /*EltPerPack=*/1> {
-  __device__ static BytePack<sizeof(T)> reduce(FuncMin<T> fn, BytePack<sizeof(T)> a, BytePack<sizeof(T)> b) {
-    return toPack<T>(min(fromPack<T>(a), fromPack<T>(b)));
-  }
-};
-template<typename T>
-struct Apply_Reduce<FuncMax<T>, /*EltPerPack=*/1> {
-  __device__ static BytePack<sizeof(T)> reduce(FuncMax<T> fn, BytePack<sizeof(T)> a, BytePack<sizeof(T)> b) {
-    return toPack<T>(max(fromPack<T>(a), fromPack<T>(b)));
+struct Apply_Reduce<FuncMinMax<T>, /*EltPerPack=*/1> {
+  __device__ static BytePack<sizeof(T)> reduce(FuncMinMax<T> fn, BytePack<sizeof(T)> a, BytePack<sizeof(T)> b) {
+    return (a.native ^ fn.xormask.native) < (b.native ^ fn.xormask.native) ? a : b;
   }
 };
 
@@ -161,57 +173,55 @@ struct Apply_Reduce<FuncMax<T>, /*EltPerPack=*/1> {
 template<>
 struct Apply_Reduce<FuncSum<uint8_t>, /*EltPerPack=*/4> {
   __device__ static BytePack<4> reduce(FuncSum<uint8_t> fn, BytePack<4> a, BytePack<4> b) {
-    constexpr uint32_t lo = 0x00ff00ff;
-    constexpr uint32_t hi = ~lo;
-    uint32_t x = a.u32;
-    uint32_t y = b.u32;
-    a.u32 = (((x&lo) + (y&lo))&lo) + (((x&hi) + (y&hi))&hi);
+    constexpr uint32_t even = 0x00ff00ffu;
+    uint32_t x = (a.native &  even) + (b.native &  even);
+    uint32_t y = (a.native & ~even) + (b.native & ~even);
+    //a.native = (x & even) | (y & ~even);
+    a.native = __byte_perm(x, y, 0x7250);
     return a;
   }
 };
+
 template<>
-struct Apply_Reduce<FuncSum<int8_t>, /*EltPerPack=*/4> {
-  __device__ static BytePack<4> reduce(FuncSum<int8_t> fn, BytePack<4> a, BytePack<4> b) {
-    return Apply_Reduce<FuncSum<uint8_t>, 4>::reduce(FuncSum<uint8_t>(), a, b);
+struct Apply_Reduce<FuncMinMax<uint8_t>, /*EltPerPack=*/4> {
+  __device__ static BytePack<4> reduce(FuncMinMax<uint8_t> fn, BytePack<4> a, BytePack<4> b) {
+    constexpr uint32_t ones = 0x01010101u;
+    constexpr uint32_t even = 0x00ff00ffu; // even byte mask
+    // Replicate xormask to all bytes
+    uint32_t x = fn.xormask.native * ones;
+    // Transform inputs by xormask
+    uint32_t ax = a.native ^ x;
+    uint32_t bx = b.native ^ x;
+    // Use 9-bit arithmetic to compute d=a-b
+    uint32_t d0 = (ax    & even) + (~bx      & even) + ones;
+    uint32_t d1 = (ax>>8 & even) + (~(bx>>8) & even) + ones;
+    // Move sign bit of each 9-bit delta into the least bit of origin byte
+    //uint32_t s = (d0>>8 & ones & even) | (d1 & ones & ~even);
+    uint32_t s = __byte_perm(d0, d1, 0x7351) & ones;
+    // Broadcast least bit across whole byte
+    s *= 0xffu;
+    // Compose result by selecting bytes via: signbit(a-b)==1 ? a : b
+    a.native = (a.native & s) | (b.native & ~s);
+    return a;
   }
 };
 
-#if 300 <= __CUDA_ARCH__ && __CUDA_ARCH__ < 500
-  template<>
-  struct Apply_Reduce<FuncMin<uint8_t>, /*EltPerPack=*/4> {
-    __device__ static BytePack<4> reduce(FuncMin<uint8_t> fn, BytePack<4> a, BytePack<4> b) {
-      uint32_t z=0;
-      asm("vmin4.u32.u32.u32 %0, %1, %2, %3;" : "=r"(a.u32) : "r"(a.u32), "r"(b.u32), "r"(z));
-      return a;
-    }
-  };
-  template<>
-  struct Apply_Reduce<FuncMin<int8_t>, /*EltPerPack=*/4> {
-    __device__ static BytePack<4> reduce(FuncMin<int8_t> fn, BytePack<4> a, BytePack<4> b) {
-      int32_t z=0;
-      asm("vmin4.s32.s32.s32 %0, %1, %2, %3;" : "=r"(a.u32) : "r"(a.u32), "r"(b.u32), "r"(z));
-      return a;
-    }
-  };
-  template<>
-  struct Apply_Reduce<FuncMax<uint8_t>, /*EltPerPack=*/4> {
-    __device__ static BytePack<4> reduce(FuncMax<uint8_t> fn, BytePack<4> a, BytePack<4> b) {
-      uint32_t z=0;
-      asm("vmax4.u32.u32.u32 %0, %1, %2, %3;" : "=r"(a.u32) : "r"(a.u32), "r"(b.u32), "r"(z));
-      return a;
-    }
-  };
-  template<>
-  struct Apply_Reduce<FuncMax<int8_t>, /*EltPerPack=*/4> {
-    __device__ static BytePack<4> reduce(FuncMax<int8_t> fn, BytePack<4> a, BytePack<4> b) {
-      int32_t z=0;
-      asm("vmax4.s32.s32.s32 %0, %1, %2, %3;" : "=r"(a.u32) : "r"(a.u32), "r"(b.u32), "r"(z));
-      return a;
-    }
-  };
-#endif
+template<>
+struct Apply_Reduce<FuncProd<uint8_t>, /*EltPerPack=*/4> {
+  __device__ static BytePack<4> reduce(FuncProd<uint8_t> fn, BytePack<4> apack, BytePack<4> bpack) {
+    uint32_t a = apack.native;
+    uint32_t b = bpack.native;
+    uint32_t ab0 = (a*b) & 0xffu;
+    asm("mad.lo.u32 %0, %1, %2, %0;" : "+r"(ab0) : "r"(a&0xff00u), "r"(b&0xff00u));
+    uint32_t ab1;
+    asm("mul.hi.u32 %0, %1, %2;"     : "=r"(ab1) : "r"(a&0xff0000), "r"(b&0xff0000));
+    asm("mad.hi.u32 %0, %1, %2, %0;" : "+r"(ab1) : "r"(a&0xff000000u), "r"(b&0xff000000u));
+    apack.native = __byte_perm(ab0, ab1, 0x6420);
+    return apack;
+  }
+};
 
-#define SPECIALIZE_REDUCE(Fn, T, EltPerPack, Vec, expr_of_x_y) \
+#define SPECIALIZE_REDUCE(Fn, T, EltPerPack, Vec, expr_of_fn_x_y) \
   template<> \
   struct Apply_Reduce<Fn<T>, EltPerPack> { \
     __device__ __forceinline__ static BytePack<sizeof(Vec)> reduce( \
@@ -219,9 +229,12 @@ struct Apply_Reduce<FuncSum<int8_t>, /*EltPerPack=*/4> {
       ) { \
       Vec x = fromPack<Vec>(a); \
       Vec y = fromPack<Vec>(b); \
-      return toPack<Vec>(expr_of_x_y); \
+      return toPack<Vec>(expr_of_fn_x_y); \
     } \
   };
+
+SPECIALIZE_REDUCE(FuncMinMax, float, 1, float, fn.isMinNotMax ? fminf(x, y) : fmaxf(x, y))
+SPECIALIZE_REDUCE(FuncMinMax, double, 1, double, fn.isMinNotMax ? fmin(x, y) : fmax(x, y))
 
 #if __CUDA_ARCH__ >= 530 && __CUDA_ARCH__ != 610
   SPECIALIZE_REDUCE(FuncSum, half, 1, half, __hadd(x, y))
@@ -234,13 +247,10 @@ struct Apply_Reduce<FuncSum<int8_t>, /*EltPerPack=*/4> {
 #endif
 
 #if __CUDA_ARCH__ >= 800
-  SPECIALIZE_REDUCE(FuncMin, half, 1, half, __hmin(x, y))
-  SPECIALIZE_REDUCE(FuncMin, half, 2, half2, __hmin2(x, y))
-  SPECIALIZE_REDUCE(FuncMax, half, 1, half, __hmax(x, y))
-  SPECIALIZE_REDUCE(FuncMax, half, 2, half2, __hmax2(x, y))
+  SPECIALIZE_REDUCE(FuncMinMax, half, 1, half, fn.isMinNotMax ? __hmin(x, y) : __hmax(x, y))
+  SPECIALIZE_REDUCE(FuncMinMax, half, 2, half2, fn.isMinNotMax ? __hmin2(x, y) : __hmax2(x, y))
 #else
-  SPECIALIZE_REDUCE(FuncMin, half, 1, half, __float2half(fminf(__half2float(x), __half2float(y))))
-  SPECIALIZE_REDUCE(FuncMax, half, 1, half, __float2half(fmaxf(__half2float(x), __half2float(y))))
+  SPECIALIZE_REDUCE(FuncMinMax, half, 1, half, __float2half(fn.isMinNotMax ? fminf(__half2float(x), __half2float(y)) : fmaxf(__half2float(x), __half2float(y))))
 #endif
 
 #if defined(__CUDA_BF16_TYPES_EXIST__)
@@ -249,15 +259,12 @@ struct Apply_Reduce<FuncSum<int8_t>, /*EltPerPack=*/4> {
   SPECIALIZE_REDUCE(FuncSum, __nv_bfloat16, 2, __nv_bfloat162, __hadd2(x, y))
   SPECIALIZE_REDUCE(FuncProd, __nv_bfloat16, 1, __nv_bfloat16, __hmul(x, y))
   SPECIALIZE_REDUCE(FuncProd, __nv_bfloat16, 2, __nv_bfloat162, __hmul2(x, y))
-  SPECIALIZE_REDUCE(FuncMin, __nv_bfloat16, 1, __nv_bfloat16, __hmin(x, y))
-  SPECIALIZE_REDUCE(FuncMin, __nv_bfloat16, 2, __nv_bfloat162, __hmin2(x, y))
-  SPECIALIZE_REDUCE(FuncMax, __nv_bfloat16, 1, __nv_bfloat16, __hmax(x, y))
-  SPECIALIZE_REDUCE(FuncMax, __nv_bfloat16, 2, __nv_bfloat162, __hmax2(x, y))
+  SPECIALIZE_REDUCE(FuncMinMax, __nv_bfloat16, 1, __nv_bfloat16, fn.isMinNotMax ? __hmin(x, y) : __hmax(x, y))
+  SPECIALIZE_REDUCE(FuncMinMax, __nv_bfloat16, 2, __nv_bfloat162, fn.isMinNotMax ? __hmin2(x, y) : __hmax2(x, y))
 #else
   SPECIALIZE_REDUCE(FuncSum, __nv_bfloat16, 1, __nv_bfloat16, __float2bfloat16(__bfloat162float(x) + __bfloat162float(y)))
   SPECIALIZE_REDUCE(FuncProd, __nv_bfloat16, 1, __nv_bfloat16, __float2bfloat16(__bfloat162float(x) * __bfloat162float(y)))
-  SPECIALIZE_REDUCE(FuncMin, __nv_bfloat16, 1, __nv_bfloat16, __float2bfloat16(fminf(__bfloat162float(x), __bfloat162float(y))))
-  SPECIALIZE_REDUCE(FuncMax, __nv_bfloat16, 1, __nv_bfloat16, __float2bfloat16(fmaxf(__bfloat162float(x), __bfloat162float(y))))
+  SPECIALIZE_REDUCE(FuncMinMax, __nv_bfloat16, 1, __nv_bfloat16, __float2bfloat16(fn.isMinNotMax ? fminf(__bfloat162float(x), __bfloat162float(y)) : fmaxf(__bfloat162float(x), __bfloat162float(y))))
 #endif
 #endif
 
@@ -479,19 +486,6 @@ struct Apply_PreOp<FuncPreMulSum<half>, /*EltPerPack=*/1> {
 ////////////////////////////////////////////////////////////////////////////////
 // FuncSumPostDiv
 
-template<typename T>
-struct IsFloatingPoint: std::false_type {};
-template<>
-struct IsFloatingPoint<half>: std::true_type {};
-#if defined(__CUDA_BF16_TYPES_EXIST__)
-template<>
-struct IsFloatingPoint<__nv_bfloat16>: std::true_type {};
-#endif
-template<>
-struct IsFloatingPoint<float>: std::true_type {};
-template<>
-struct IsFloatingPoint<double>: std::true_type {};
-
 template<typename T, bool IsFloating=IsFloatingPoint<T>::value>
 struct FuncSumPostDiv_IntOnly;
 
@@ -543,25 +537,44 @@ struct Apply_PostOp<FuncSumPostDiv<T>, /*EltPerPack=*/1> {
 #define SIZEOF_BytePack_field_u64 8
 #define PTX_REG_BytePack_field_u64 "l"
 
-#define DEFINE_Apply_LoadMultimem(Fn, T, op, ptx_ty, pack_field) \
+#define DEFINE_Apply_LoadMultimem_sum(T, ptx_ty, pack_field) \
   template<> \
-  struct Apply_LoadMultimem<Fn<T>, SIZEOF_BytePack_field_##pack_field> { \
+  struct Apply_LoadMultimem<FuncSum<T>, SIZEOF_BytePack_field_##pack_field> { \
     static constexpr int PackSize = SIZEOF_BytePack_field_##pack_field; \
-    __device__ static BytePack<PackSize> load(Fn<T> fn, uintptr_t addr) { \
+    __device__ static BytePack<PackSize> load(FuncSum<T> fn, uintptr_t addr) { \
       BytePack<PackSize> ans; \
-      asm("multimem.ld_reduce.relaxed.sys.global." #op "." #ptx_ty " %0, [%1];" \
+      asm("multimem.ld_reduce.relaxed.sys.global.add." #ptx_ty " %0, [%1];" \
         : "=" PTX_REG_BytePack_field_##pack_field(ans.pack_field) \
         : "l"(addr)); \
       return ans; \
     } \
   };
-#define DEFINE_Apply_LoadMultimem_v4(Fn, T, op, ptx_ty, pack_field) \
+#define DEFINE_Apply_LoadMultimem_minmax(T, ptx_ty, pack_field) \
   template<> \
-  struct Apply_LoadMultimem<Fn<T>, 4*(SIZEOF_BytePack_field_##pack_field)> { \
-    static constexpr int PackSize = 4*(SIZEOF_BytePack_field_##pack_field); \
-    __device__ static BytePack<PackSize> load(Fn<T> fn, uintptr_t addr) { \
+  struct Apply_LoadMultimem<FuncMinMax<T>, SIZEOF_BytePack_field_##pack_field> { \
+    static constexpr int PackSize = SIZEOF_BytePack_field_##pack_field; \
+    __device__ static BytePack<PackSize> load(FuncMinMax<T> fn, uintptr_t addr) { \
       BytePack<PackSize> ans; \
-      asm("multimem.ld_reduce.relaxed.sys.global." #op ".v4." #ptx_ty " {%0,%1,%2,%3}, [%4];" \
+      if (fn.isMinNotMax) { \
+        asm("multimem.ld_reduce.relaxed.sys.global.min." #ptx_ty " %0, [%1];" \
+          : "=" PTX_REG_BytePack_field_##pack_field(ans.pack_field) \
+          : "l"(addr)); \
+      } else { \
+        asm("multimem.ld_reduce.relaxed.sys.global.max." #ptx_ty " %0, [%1];" \
+          : "=" PTX_REG_BytePack_field_##pack_field(ans.pack_field) \
+          : "l"(addr)); \
+      } \
+      return ans; \
+    } \
+  };
+
+#define DEFINE_Apply_LoadMultimem_sum_v4(T, ptx_ty, pack_field) \
+  template<> \
+  struct Apply_LoadMultimem<FuncSum<T>, 4*(SIZEOF_BytePack_field_##pack_field)> { \
+    static constexpr int PackSize = 4*(SIZEOF_BytePack_field_##pack_field); \
+    __device__ static BytePack<PackSize> load(FuncSum<T> fn, uintptr_t addr) { \
+      BytePack<PackSize> ans; \
+      asm("multimem.ld_reduce.relaxed.sys.global.add.v4." #ptx_ty " {%0,%1,%2,%3}, [%4];" \
         : "=" PTX_REG_BytePack_field_##pack_field(ans.pack_field[0]), \
           "=" PTX_REG_BytePack_field_##pack_field(ans.pack_field[1]), \
           "=" PTX_REG_BytePack_field_##pack_field(ans.pack_field[2]), \
@@ -570,15 +583,58 @@ struct Apply_PostOp<FuncSumPostDiv<T>, /*EltPerPack=*/1> {
       return ans; \
     } \
   };
-#define DEFINE_Apply_LoadMultimem_v4x2_and_subhalf(Fn, T, op, ptx_ty, pack_field) \
-  DEFINE_Apply_LoadMultimem_v4(Fn, T, op, ptx_ty, pack_field) \
+#define DEFINE_Apply_LoadMultimem_minmax_v4(T, ptx_ty, pack_field) \
   template<> \
-  struct Apply_LoadMultimem<Fn<T>, sizeof(T)> { \
-    __device__ static BytePack<sizeof(T)> load(Fn<T> fn, uintptr_t addr) { \
+  struct Apply_LoadMultimem<FuncMinMax<T>, 4*(SIZEOF_BytePack_field_##pack_field)> { \
+    static constexpr int PackSize = 4*(SIZEOF_BytePack_field_##pack_field); \
+    __device__ static BytePack<PackSize> load(FuncMinMax<T> fn, uintptr_t addr) { \
+      BytePack<PackSize> ans; \
+      if (fn.isMinNotMax) { \
+        asm("multimem.ld_reduce.relaxed.sys.global.min.v4." #ptx_ty " {%0,%1,%2,%3}, [%4];" \
+          : "=" PTX_REG_BytePack_field_##pack_field(ans.pack_field[0]), \
+            "=" PTX_REG_BytePack_field_##pack_field(ans.pack_field[1]), \
+            "=" PTX_REG_BytePack_field_##pack_field(ans.pack_field[2]), \
+            "=" PTX_REG_BytePack_field_##pack_field(ans.pack_field[3]) \
+          : "l"(addr)); \
+      } else { \
+        asm("multimem.ld_reduce.relaxed.sys.global.max.v4." #ptx_ty " {%0,%1,%2,%3}, [%4];" \
+          : "=" PTX_REG_BytePack_field_##pack_field(ans.pack_field[0]), \
+            "=" PTX_REG_BytePack_field_##pack_field(ans.pack_field[1]), \
+            "=" PTX_REG_BytePack_field_##pack_field(ans.pack_field[2]), \
+            "=" PTX_REG_BytePack_field_##pack_field(ans.pack_field[3]) \
+          : "l"(addr)); \
+      } \
+      return ans; \
+    } \
+  };
+
+#define DEFINE_Apply_LoadMultimem_sum_v4x2_and_subhalf(T, ptx_ty, pack_field) \
+  DEFINE_Apply_LoadMultimem_sum_v4(T, ptx_ty, pack_field) \
+  template<> \
+  struct Apply_LoadMultimem<FuncSum<T>, sizeof(T)> { \
+    __device__ static BytePack<sizeof(T)> load(FuncSum<T> fn, uintptr_t addr) { \
       BytePack<2*sizeof(T)> tmp; \
-      asm("multimem.ld_reduce.relaxed.sys.global." #op "." #ptx_ty " %0, [%1];" \
+      asm("multimem.ld_reduce.relaxed.sys.global.add." #ptx_ty " %0, [%1];" \
         : "=" PTX_REG_BytePack_field_##pack_field(tmp.pack_field) \
         : "l"(addr & -uintptr_t(sizeof(T)))); \
+      return tmp.half[(addr/sizeof(T))%2]; \
+    } \
+  };
+#define DEFINE_Apply_LoadMultimem_minmax_v4x2_and_subhalf(T, ptx_ty, pack_field) \
+  DEFINE_Apply_LoadMultimem_minmax_v4(T, ptx_ty, pack_field) \
+  template<> \
+  struct Apply_LoadMultimem<FuncMinMax<T>, sizeof(T)> { \
+    __device__ static BytePack<sizeof(T)> load(FuncMinMax<T> fn, uintptr_t addr) { \
+      BytePack<2*sizeof(T)> tmp; \
+      if (fn.isMinNotMax) { \
+        asm("multimem.ld_reduce.relaxed.sys.global.min." #ptx_ty " %0, [%1];" \
+          : "=" PTX_REG_BytePack_field_##pack_field(tmp.pack_field) \
+          : "l"(addr & -uintptr_t(sizeof(T)))); \
+      } else { \
+        asm("multimem.ld_reduce.relaxed.sys.global.max." #ptx_ty " %0, [%1];" \
+          : "=" PTX_REG_BytePack_field_##pack_field(tmp.pack_field) \
+          : "l"(addr & -uintptr_t(sizeof(T)))); \
+      } \
       return tmp.half[(addr/sizeof(T))%2]; \
     } \
   };
@@ -598,46 +654,39 @@ struct Apply_LoadMultimem {
     static constexpr bool IsSum = std::is_same<Fn, FuncSum<T>>::value ||
                                   std::is_same<Fn, FuncPreMulSum<T>>::value ||
                                   std::is_same<Fn, FuncSumPostDiv<T>>::value;
-    static constexpr bool IsMinOrMax = std::is_same<Fn, FuncMin<T>>::value ||
-                                       std::is_same<Fn, FuncMax<T>>::value;
+    static constexpr bool IsMinMax = std::is_same<Fn, FuncMinMax<T>>::value;
     static constexpr bool IsFloat = IsFloatingPoint<T>::value;
     static constexpr int BigPackSize =
       IsFloat && IsSum && sizeof(T) < 8 ? 16 :
       IsFloat && IsSum ? 8 :
-      IsFloat && IsMinOrMax && sizeof(T)==2 ? 16 :
-      !IsFloat && (IsSum||IsMinOrMax) && sizeof(T)>=4 ? sizeof(T) :
+      IsFloat && IsMinMax && sizeof(T)==2 ? 16 :
+      !IsFloat && (IsSum||IsMinMax) && sizeof(T)>=4 ? sizeof(T) :
       /*multimem.ld_reduce not supported:*/ 0;
   };
 
-  DEFINE_Apply_LoadMultimem(FuncSum, uint32_t, add, u32, u32)
-  DEFINE_Apply_LoadMultimem(FuncMin, uint32_t, min, u32, u32)
-  DEFINE_Apply_LoadMultimem(FuncMax, uint32_t, max, u32, u32)
+  DEFINE_Apply_LoadMultimem_sum(uint32_t, u32, u32)
+  DEFINE_Apply_LoadMultimem_minmax(uint32_t, u32, u32)
 
-  DEFINE_Apply_LoadMultimem(FuncSum, int32_t, add, s32, u32)
-  DEFINE_Apply_LoadMultimem(FuncMin, int32_t, min, s32, u32)
-  DEFINE_Apply_LoadMultimem(FuncMax, int32_t, max, s32, u32)
+  DEFINE_Apply_LoadMultimem_sum(int32_t, s32, u32)
+  DEFINE_Apply_LoadMultimem_minmax(int32_t, s32, u32)
 
-  DEFINE_Apply_LoadMultimem(FuncSum, uint64_t, add, u64, u64)
-  DEFINE_Apply_LoadMultimem(FuncMin, uint64_t, min, u64, u64)
-  DEFINE_Apply_LoadMultimem(FuncMax, uint64_t, max, u64, u64)
+  DEFINE_Apply_LoadMultimem_sum(uint64_t, u64, u64)
+  DEFINE_Apply_LoadMultimem_minmax(uint64_t, u64, u64)
 
-  DEFINE_Apply_LoadMultimem(FuncSum, int64_t, add, u64, u64)
-  DEFINE_Apply_LoadMultimem(FuncMin, int64_t, min, s64, u64)
-  DEFINE_Apply_LoadMultimem(FuncMax, int64_t, max, s64, u64)
+  DEFINE_Apply_LoadMultimem_sum(int64_t, u64, u64)
+  DEFINE_Apply_LoadMultimem_minmax(int64_t, s64, u64)
 
-  DEFINE_Apply_LoadMultimem(FuncSum, float, add, f32, u32)
-  DEFINE_Apply_LoadMultimem_v4(FuncSum, float, add, f32, u32)
+  DEFINE_Apply_LoadMultimem_sum(float, f32, u32)
+  DEFINE_Apply_LoadMultimem_sum_v4(float, f32, u32)
 
-  DEFINE_Apply_LoadMultimem(FuncSum, double, add, f64, u64)
+  DEFINE_Apply_LoadMultimem_sum(double, f64, u64)
 
-  DEFINE_Apply_LoadMultimem_v4x2_and_subhalf(FuncSum, half, add, f16x2, u32)
-  DEFINE_Apply_LoadMultimem_v4x2_and_subhalf(FuncMin, half, min, f16x2, u32)
-  DEFINE_Apply_LoadMultimem_v4x2_and_subhalf(FuncMax, half, max, f16x2, u32)
+  DEFINE_Apply_LoadMultimem_sum_v4x2_and_subhalf(half, f16x2, u32)
+  DEFINE_Apply_LoadMultimem_minmax_v4x2_and_subhalf(half, f16x2, u32)
 
   #if defined(__CUDA_BF16_TYPES_EXIST__)
-    DEFINE_Apply_LoadMultimem_v4x2_and_subhalf(FuncSum, __nv_bfloat16, add, bf16x2, u32)
-    DEFINE_Apply_LoadMultimem_v4x2_and_subhalf(FuncMin, __nv_bfloat16, min, bf16x2, u32)
-    DEFINE_Apply_LoadMultimem_v4x2_and_subhalf(FuncMax, __nv_bfloat16, max, bf16x2, u32)
+    DEFINE_Apply_LoadMultimem_sum_v4x2_and_subhalf(__nv_bfloat16, bf16x2, u32)
+    DEFINE_Apply_LoadMultimem_minmax_v4x2_and_subhalf(__nv_bfloat16, bf16x2, u32)
   #endif
 #else
   template<typename Fn>
