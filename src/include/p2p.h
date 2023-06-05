@@ -11,6 +11,9 @@
 
 #ifdef MNNVL_SUPPORT
 #include <cuda.h>
+#if CUDART_VERSION < 12030
+#include "wizlet.h"
+#endif
 #define NCCL_P2P_HANDLE_TYPE CU_MEM_HANDLE_TYPE_FABRIC
 #else
 #define NCCL_P2P_HANDLE_TYPE CU_MEM_HANDLE_TYPE_POSIX_FILE_DESCRIPTOR
