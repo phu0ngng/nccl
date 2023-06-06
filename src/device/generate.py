@@ -317,15 +317,15 @@ name_to_kernels = partition_by_name(kfn for kfn in kernel_funcs if kfn[0]!="Gene
 # Generate <gensrc>/rules.mk
 with open(os.path.join(gensrc, "rules.mk"), "w") as f:
   out = f.write
-  cus = sorted(name_to_funcs.keys())
-  cus += ["host_table.cc", "device_table.cu"]
-  out("LIB_OBJS_GEN = $(patsubst %, $(OBJDIR)/genobj/%.o, {cus})\n"
-      .format(cus=" ".join(cus)))
+  impl_names = sorted(name_to_funcs.keys())
+  names = impl_names + ["host_table.cc", "device_table.cu"]
+  out("LIB_OBJS_GEN = $(patsubst %, $(OBJDIR)/genobj/%.o, {names})\n"
+      .format(names=" ".join(names)))
   out("\n")
 
   # For each <coll>_<op>_<ty>.cu compile to a .cu.o file. Notice the dependencies
   # come from the suffix-erased file (e.g. 'gensrc/all_reduce.cu')
-  for name in name_to_funcs.keys():
+  for name in impl_names:
     coll = name_to_funcs[name][0]
     out(
       "$(OBJDIR)/genobj/{name}.o: $(OBJDIR)/gensrc $(OBJDIR)/genobj/{lower_coll}.cu.d\n"
