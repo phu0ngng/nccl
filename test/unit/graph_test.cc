@@ -76,7 +76,7 @@ void compareGraphs(struct ncclTopoGraph* ref, struct ncclTopoGraph* out, int ngp
   }
 }
 
-void checkTopo(const char* xmlTopoFile, const char* xmlGraphFile, const char* platform, int inter, int* errors, int* warnings) {
+void checkTopo(const char* xmlTopoFile, const char* xmlGraphFile, const char* platform, int inter, int ngpus, int* errors, int* warnings) {
   struct ncclXml* xmlSystem;
   INFO(NCCL_GRAPH, "Loading platform %s", platform);
   CHECK(ncclCalloc(&xmlSystem, 1));
@@ -88,12 +88,16 @@ void checkTopo(const char* xmlTopoFile, const char* xmlGraphFile, const char* pl
     return;
   }
   CHECK(ncclTopoGetSystemFromXml(xmlSystem, &system));
-  CHECK(ncclTopoPrint(system));
-  CHECK(ncclTopoComputePaths(system, NULL));
   if (inter == 0) {
     for (int n=system->nodes[NET].count-1; n>=0; n--)
       CHECK(ncclTopoRemoveNode(system, NET, n));
   }
+  if (ngpus != -1) {
+    for (int g=system->nodes[GPU].count-1; g>=ngpus; g--)
+      CHECK(ncclTopoRemoveNode(system, GPU, g));
+  }
+  ngpus = system->nodes[GPU].count;
+  CHECK(ncclTopoComputePaths(system, NULL));
   CHECK(ncclTopoSearchInit(system));
   CHECK(ncclTopoPrint(system));
 
@@ -173,13 +177,13 @@ void checkTopo(const char* xmlTopoFile, const char* xmlGraphFile, const char* pl
       incompleteRef = 1;
     }
     /* Compare */
-    compareGraphs(&refRingGraph, &ringGraph, system->nodes[GPU].count, inter, &err, &warn);
-    compareGraphs(&refTreeGraph, &treeGraph, system->nodes[GPU].count, inter, &err, &warn);
-    compareGraphs(&refCNetGraph, &cNetGraph, system->nodes[GPU].count, inter, &err, &warn);
-    compareGraphs(&refNvlsGraph, &nvlsGraph, system->nodes[GPU].count, inter, &err, &warn);
+    compareGraphs(&refRingGraph, &ringGraph, ngpus, inter, &err, &warn);
+    compareGraphs(&refTreeGraph, &treeGraph, ngpus, inter, &err, &warn);
+    compareGraphs(&refCNetGraph, &cNetGraph, ngpus, inter, &err, &warn);
+    compareGraphs(&refNvlsGraph, &nvlsGraph, ngpus, inter, &err, &warn);
   }
 
-  printf(" %15s/%s  %2dx%4.1f/%4.1f | %2dx%4.1f/%4.1f | %2dx%4.1f/%4.1f | %2dx%4.1f/%4.1f", platform, inter ? "Inter":"Intra",
+  printf(" %15s/%2d/%s  %2dx%4.1f/%4.1f | %2dx%4.1f/%4.1f | %2dx%4.1f/%4.1f | %2dx%4.1f/%4.1f", platform, ngpus, inter ? "Inter":"Intra",
       ringGraph.nChannels, ringGraph.bwIntra, ringGraph.bwInter,
       treeGraph.nChannels, treeGraph.bwIntra, treeGraph.bwInter,
       cNetGraph.nChannels, cNetGraph.bwIntra, cNetGraph.bwInter,
@@ -203,17 +207,33 @@ void checkTopo(const char* xmlTopoFile, const char* xmlGraphFile, const char* pl
   *warnings += warn;
 }
 
-void checkPlatform(const char* platform, int* errors, int* warnings) {
+void checkPlatform(const char* platform, int ngpus, int* errors, int* warnings) {
   char xmlTopoFile[1024];
   char xmlGraphFile[1024];
   sprintf(xmlTopoFile, "topo/%s/system.xml", platform);
-  sprintf(xmlGraphFile, "topo/%s/intra-graph.xml", platform);
-  checkTopo(xmlTopoFile, xmlGraphFile, platform, 0, errors, warnings);
-  sprintf(xmlGraphFile, "topo/%s/inter-graph.xml", platform);
-  checkTopo(xmlTopoFile, xmlGraphFile, platform, 1, errors, warnings);
+  if (ngpus == -1) sprintf(xmlGraphFile, "topo/%s/intra-graph.xml", platform);
+  else sprintf(xmlGraphFile, "topo/%s/intra-graph-%d.xml", platform, ngpus);
+  checkTopo(xmlTopoFile, xmlGraphFile, platform, 0, ngpus, errors, warnings);
+  if (ngpus == -1) sprintf(xmlGraphFile, "topo/%s/inter-graph.xml", platform);
+  else sprintf(xmlGraphFile, "topo/%s/inter-graph-%d.xml", platform, ngpus);
+  checkTopo(xmlTopoFile, xmlGraphFile, platform, 1, ngpus, errors, warnings);
 }
 
-#define RUN(...) checkPlatform(__VA_ARGS__, &errors, &warnings)
+#define RUN(platform) checkPlatform(platform, -1, &errors, &warnings)
+
+#define RUN_MULTI4(platform) do { \
+  checkPlatform(platform, 4, &errors, &warnings); \
+  checkPlatform(platform, 2, &errors, &warnings); \
+  checkPlatform(platform, 1, &errors, &warnings); \
+} while(0)
+
+#define RUN_MULTI8(platform) do { \
+  checkPlatform(platform, 8, &errors, &warnings); \
+  checkPlatform(platform, 6, &errors, &warnings); \
+  checkPlatform(platform, 4, &errors, &warnings); \
+  checkPlatform(platform, 2, &errors, &warnings); \
+  checkPlatform(platform, 1, &errors, &warnings); \
+} while(0)
 
 int main(int argc, const char* argv[]) {
   setenv("NCCL_IGNORE_DISABLED_P2P", "2", 0); // Disable hardware health checks (NVML)
@@ -222,9 +242,8 @@ int main(int argc, const char* argv[]) {
   if (str) dumpDiff = atoi(str);
   int errors = 0, warnings = 0;
   if (argc > 1) {
-    for (int a=1; a<argc; a++) {
-      RUN(argv[a]);
-    }
+    if (argc > 2) checkPlatform(argv[1], atoi(argv[2]), &errors, &warnings);
+    else checkPlatform(argv[1], -1, &errors, &warnings);
   } else {
     RUN("LOC-1G");
     RUN("PCI-1R");
@@ -236,38 +255,28 @@ int main(int argc, const char* argv[]) {
 #ifdef __x86_64__
     RUN("DGX-1P");
     RUN("DGX-1P-4G");
-    RUN("DGX-1V");
-    RUN("DGX-1V-4G");
-    RUN("DGX-1V-SHARP");
+    RUN_MULTI8("DGX-1V");
     RUN("DGX-2V");
+    RUN_MULTI8("DGX-2V");
     RUN("XMAN-3");
-    RUN("Luna");
-    RUN("DGX-A800");
-    RUN("Luna-SHARP");
-    RUN("Luna-SHARP-1PPN");
-    RUN("Luna-2PPN-0");
-    RUN("Luna-2PPN-1");
-    RUN("Luna-2PPN-2");
-    RUN("Luna-2PPN-3");
+    RUN_MULTI8("Luna");
+    RUN_MULTI8("DGX-A800");
+    RUN_MULTI8("Luna-SHARP");
     RUN("DGX-2-Delta");
-    RUN("Redstone");
-    RUN("Atos-A100-4G");
+    RUN_MULTI4("Redstone");
     RUN("GCP-NV");
     RUN("AWS-NV");
     RUN("AWS-NV-EFA");
     RUN("Azure");
     RUN("FB-BUG");
-    RUN("DGX-1V-1G");
     RUN("GCP-Shared-NVS");
     RUN("Dual-Delta-VM");
     RUN("ZionEX");
     RUN("FB-V100");
-    RUN("DGX-H800");
-    RUN("Viking");
-    RUN("Viking-6GPUs");
-    RUN("Viking-SHARP");
-    RUN("Viking-SHARP-4PPN");
-    RUN("Scout");
+    RUN_MULTI8("DGX-H800");
+    RUN_MULTI8("Viking");
+    RUN_MULTI8("Viking-SHARP");
+    RUN_MULTI4("Scout");
     RUN("PCI-H100-NV");
 #endif
     RUN("P9-6V");
