@@ -104,8 +104,7 @@ struct ncclConnInfo {
   void **ptrExchange; // Pointer exchange for direct communication
   uint64_t* redOpArgExchange; // PreOp scaler exchange for direct pull case
 
-  int *sizesFifo;     // Sizes fifo from GPU to proxy
-  int *offsFifo;      // Buffer fifo from proxy to GPU
+  struct ncclConnFifo* connFifo;
 
   uint64_t step;      // Keep where we are
   uint64_t llLastCleaning;

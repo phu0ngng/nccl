@@ -26,7 +26,7 @@ class Primitives<T, RedOp, Fan, Direct, ProtoLL, P2p>:
   uint64_t recvConnHead;
 
   struct ncclConnInfo* sendConn = NULL;
-  volatile int* sendConnFifoPtr = NULL;
+  volatile struct ncclConnFifo* sendConnFifo = NULL;
   volatile uint64_t* sendConnHeadPtr = NULL;
   uint64_t sendConnHead;
   uint64_t sendConnHeadCache; // Cache last seen value
@@ -68,9 +68,9 @@ class Primitives<T, RedOp, Fan, Direct, ProtoLL, P2p>:
         sendConnHeadCache = *sendConnHeadPtr;
         if (checkAbort(spins, 1)) break;
       }
-      if (sendConnFifoPtr) {
+      if (sendConnFifo) {
         int size = ((sendConnHead & NCCL_LL_CLEAN_MASK) == NCCL_LL_CLEAN_MASK) ? stepLines*sizeof(union ncclLLFifoLine) : nbytes;
-        sendConnFifoPtr[sendConnHead%NCCL_STEPS] = size;
+        sendConnFifo[sendConnHead%NCCL_STEPS].size = size;
       }
       sendConnHead += 1;
     }
@@ -315,7 +315,7 @@ class Primitives<T, RedOp, Fan, Direct, ProtoLL, P2p>:
       sendConnHeadPtr = sendConn->head;
       sendConnHeadCache = *sendConnHeadPtr;
       sendConnHead = sendConn->step;
-      sendConnFifoPtr = sendConn->sizesFifo;
+      sendConnFifo = sendConn->connFifo;
     }
   }
 

@@ -52,8 +52,7 @@ struct ncclRecvMem {
     struct {
       uint64_t tail;
       char pad1[CACHE_LINE_SIZE-sizeof(uint64_t)];
-      int sizesFifo[NCCL_STEPS];
-      int offsFifo[NCCL_STEPS];
+      struct ncclConnFifo connFifo[NCCL_STEPS];
       int flush; // For GDRCopy-based flush
     };
     char pad4[MEM_ALIGN];

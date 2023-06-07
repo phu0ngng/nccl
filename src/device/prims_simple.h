@@ -18,8 +18,7 @@ class Primitives<
                        RolePostSend = 0x10,
                        RolePostRecv = 0x20,
                        Aborted = 0x40,
-                       OffsFifoEnabled = 0x80,
-                       SizesFifoEnabled = 0x100,
+                       ConnFifoEnabled = 0x100,
                        DirectWrite = 0x200,
                        DirectRead = 0x400,
                        ThreadsSynced = 0x800,
@@ -33,15 +32,12 @@ class Primitives<
   int flags;
   int group;
   uint64_t step;
-  int *connOffsFifoPtr;   // (flags & OffsFifoEnabled)
+  struct ncclConnFifo* connFifo = NULL;
   union {
     T *userBuff;            // (flags & (RoleInput|RoleOutput))
     T *connEltsFifo;        // !(flags & (RoleInput|RoleOutput))
   };
-  union {
-    int volatile *connSizesFifoPtr; //  (flags & SizesFifoEnabled)
-    T *directBuff;                  // !(flags & SizesFifoEnabled)
-  };
+  T *directBuff;
   uint64_t *connStepPtr;
   uint64_t connStepCache; // Cache last seen value of (*connStepPtr)
 
@@ -133,13 +129,13 @@ class Primitives<
     }
 
     if (flags & (Recv*RoleWaitRecv | Send*RoleWaitSend)) {
-      if (isSendNotRecv && (flags & SizesFifoEnabled))
-        connSizesFifoPtr[step%NCCL_STEPS] = nelts*sizeof(T);
+      if (isSendNotRecv && (flags & ConnFifoEnabled))
+        connFifo[step%NCCL_STEPS].size = nelts*sizeof(T);
 
       void **ptrs = isSendNotRecv ? (ncclShmem.groups[group].dsts + Dst)
                                   : (ncclShmem.groups[group].srcs + Src);
-      if (flags & OffsFifoEnabled)
-        ptrs[index] = connEltsFifo + loadInt(connOffsFifoPtr + (step%NCCL_STEPS))/sizeof(T);
+      if ((flags & ConnFifoEnabled) && connFifo[step%NCCL_STEPS].mode == NCCL_MODE_OFFSET)
+        ptrs[index] = connEltsFifo + loadInt(&connFifo[step%NCCL_STEPS].offset)/sizeof(T);
       else if (isSendNotRecv && DirectSend) {
         if (flags & DirectWrite) {
           ptrs[index] = directBuff + dstIx + offset;
@@ -359,8 +355,11 @@ class Primitives<
         flags |= (conn->flags & NCCL_NVLS_MIN_POLL) ? NvlsMinPolling : 0;
         connStepPtr = conn->tail;
         connStepCache = loadStepValue(connStepPtr);
-        flags |= (conn->offsFifo != nullptr) ? OffsFifoEnabled : 0;
-        if (Direct) {
+        connEltsFifo = (T*)conn->buffs[NCCL_PROTO_SIMPLE];
+        if (conn->connFifo != nullptr) {
+          flags |= ConnFifoEnabled;
+          connFifo = conn->connFifo;
+        } else if (Direct) {
           // User buffers have been registered
           if ((conn->flags & (NCCL_IPC_READ|NCCL_IPC_WRITE)) && e != nullptr && e->regUsed) {
             if (connIndex == 1 && P2p == 0) {
@@ -379,9 +378,6 @@ class Primitives<
             }
           }
         }
-        if (flags & OffsFifoEnabled)
-          connOffsFifoPtr = conn->offsFifo;
-        connEltsFifo = (T*)conn->buffs[NCCL_PROTO_SIMPLE];
       }
     }
   }
@@ -399,14 +395,10 @@ class Primitives<
         flags |= (conn->flags & NCCL_NVLS_MIN_POLL) ? NvlsMinPolling : 0;
         connStepPtr = conn->head;
         connStepCache = loadStepValue(connStepPtr);
-        flags |= (conn->offsFifo != nullptr) ? OffsFifoEnabled : 0;
-        if (flags & OffsFifoEnabled)
-          connOffsFifoPtr = conn->offsFifo;
         connEltsFifo = (T*)conn->buffs[NCCL_PROTO_SIMPLE];
-
-        if (conn->sizesFifo != nullptr) {
-          flags |= SizesFifoEnabled;
-          connSizesFifoPtr = conn->sizesFifo;
+        if (conn->connFifo != nullptr) {
+          flags |= ConnFifoEnabled;
+          connFifo = conn->connFifo;
         } else if (Direct) {
           // User buffers have been registered
           if ((conn->flags & (NCCL_IPC_READ|NCCL_IPC_WRITE)) && e != nullptr && e->regUsed) {

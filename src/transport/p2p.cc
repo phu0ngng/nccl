@@ -463,7 +463,7 @@ static ncclResult_t p2pSendConnect(struct ncclComm* comm, struct ncclConnect* co
 
   if (useMemcpy) {
     send->conn.tail = &resources->proxyInfo.ceRecvMem->tail;
-    send->conn.sizesFifo = resources->proxyInfo.ceRecvMem->sizesFifo;
+    send->conn.connFifo = resources->proxyInfo.ceRecvMem->connFifo;
     send->conn.head = &resources->proxyInfo.devShm->sendMem.head;
     // Send SIMPLE buff to proxy, and replace it by local buffer
     NCCLCHECK(ncclProxyCallBlocking(comm, &send->proxyConn, ncclProxyMsgConnect, &send->conn.buffs[NCCL_PROTO_SIMPLE], sizeof(void*), NULL, 0));
@@ -705,11 +705,11 @@ static ncclResult_t p2pSendProxyProgress(struct ncclProxyState* proxyState, stru
       }
       if (sub->transmitted < sub->done + NCCL_STEPS && sub->transmitted < sub->nsteps) {
         int buffSlot = (sub->base+sub->transmitted)%NCCL_STEPS;
-        volatile int* sizesFifo = resources->ceRecvMem->sizesFifo;
+        volatile struct ncclConnFifo* connFifo = resources->ceRecvMem->connFifo;
         volatile uint64_t* recvTail = &resources->ceRecvMem->tail;
         // Check GPU has sent everything
         if ((*recvTail > sub->base+sub->transmitted)) {
-          int size = sizesFifo[buffSlot];
+          int size = connFifo[buffSlot].size;
           CUDACHECK(cudaMemcpyAsync(resources->recvFifo+buffSlot*stepSize, resources->ceDevBuff+buffSlot*stepSize, size, cudaMemcpyDeviceToDevice, resources->stream));
           CUDACHECK(cudaEventRecord(resources->events[buffSlot], resources->stream));
           sub->transmitted += args->sliceSteps;

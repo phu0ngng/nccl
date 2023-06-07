@@ -241,9 +241,8 @@ static ncclResult_t sendConnect(struct ncclComm* comm, struct ncclConnect* conne
 
   struct ncclRecvMem *recvMem = (struct ncclRecvMem*) NCCL_NET_MAP_GET_POINTER(map, gpu, recvMem);
   send->conn.tail = &recvMem->tail;
-  send->conn.sizesFifo = recvMem->sizesFifo;
-  for (int i=0; i<NCCL_STEPS; i++) send->conn.sizesFifo[i] = -1;
-  send->conn.offsFifo = recvMem->offsFifo;
+  send->conn.connFifo = recvMem->connFifo;
+  for (int i=0; i<NCCL_STEPS; i++) send->conn.connFifo[i].size = -1;
 
   for (int p=0; p<NCCL_NUM_PROTOCOLS; p++)
     send->conn.buffs[p] = NCCL_NET_MAP_GET_POINTER(map, gpu, buffs[p]);
@@ -267,7 +266,6 @@ static ncclResult_t recvConnect(struct ncclComm* comm, struct ncclConnect* conne
   struct ncclRecvMem *recvMem = (struct ncclRecvMem*) NCCL_NET_MAP_GET_POINTER(map, gpu, recvMem);
   void* gdcMem = map->mems[NCCL_NET_MAP_GDCMEM].gpuPtr;
   recv->conn.tail = gdcMem ? (uint64_t*)gdcMem : &recvMem->tail;
-  recv->conn.offsFifo = recvMem->offsFifo;
 
   for (int p=0; p<NCCL_NUM_PROTOCOLS; p++) {
     recv->conn.buffs[p] = NCCL_NET_MAP_GET_POINTER(map, gpu, buffs[p]);
@@ -639,7 +637,7 @@ static ncclResult_t sendProxyProgress(struct ncclProxyState* proxyState, struct 
         int sharedBuffSlot = sub->posted%NCCL_STEPS;
         int offset;
         NCCLCHECK(sharedBuffersGet(sub->connection->collNet, 0, sharedBuffSlot, 0, &offset));
-        resources->recvMem->offsFifo[buffSlot] = offset + s*args->chunkSize;
+        resources->recvMem->connFifo[buffSlot].offset = offset + s*args->chunkSize;
         __sync_synchronize();
         volatile uint64_t* sendHead = resources->gdcSync ? resources->gdcSync : &resources->sendMem->head;
         sub->posted += args->sliceSteps;
@@ -651,10 +649,10 @@ static ncclResult_t sendProxyProgress(struct ncclProxyState* proxyState, struct 
       if (groupSync && sub->received < sub->posted && sub->received < sub->done + perGroupSteps) {
         int buffSlot = (sub->base+sub->received)%NCCL_STEPS;
         int sharedBuffSlot = sub->received%NCCL_STEPS;
-        volatile int* sizesFifo = resources->recvMem->sizesFifo;
+        volatile struct ncclConnFifo* connFifo = (volatile struct ncclConnFifo*)resources->recvMem->connFifo;
         volatile uint64_t* recvTail = &resources->recvMem->tail;
         char* localBuff = NCCL_NET_MAP_GET_POINTER(&resources->map, gpu, buffs[p]);
-        if (sizesFifo[buffSlot] != -1 && ((*recvTail > (sub->base+sub->received)))) {
+        if (connFifo[buffSlot].size != -1 && ((*recvTail > (sub->base+sub->received)))) {
           // We have something to receive, let's check whether data is ready.
           int ready = 1;
           if (s == 0) {
@@ -664,7 +662,7 @@ static ncclResult_t sendProxyProgress(struct ncclProxyState* proxyState, struct 
             args->sharedSize[sharedBuffSlot] = args->chunkSize;
           }
           if (ready) {
-            sizesFifo[buffSlot] = -1;
+            connFifo[buffSlot].size = -1;
             sub->received += args->sliceSteps;
             args->idle = 0;
             //continue;
@@ -812,8 +810,8 @@ static ncclResult_t recvProxyProgress(struct ncclProxyState* proxyState, struct 
         int startChannel = group*COLLNET_GROUP_NSUBS;
         int offset;
         NCCLCHECK(sharedBuffersGet(sub->connection->collNet, 1, sharedBuffSlot, startChannel, &offset));
-        volatile int* offsFifo = (volatile int*)resources->recvMem->offsFifo;
-        offsFifo[buffSlot] = offset + (s%COLLNET_GROUP_NSUBS)*args->chunkSize;
+        volatile struct ncclConnFifo* connFifo = (volatile struct ncclConnFifo*)resources->recvMem->connFifo;
+        connFifo[buffSlot].offset = offset + (s%COLLNET_GROUP_NSUBS)*args->chunkSize;
         __sync_synchronize();
         volatile uint64_t* recvTail = resources->gdcSync ? resources->gdcSync : &resources->recvMem->tail;
         *recvTail = sub->base + sub->flushed;
