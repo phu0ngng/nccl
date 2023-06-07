@@ -25,20 +25,21 @@ static_assert(NCCL_MAX_WORK_ELEMENTS <= MAXCHANNELS, "Not enough sub space for m
 
 struct ncclProxyOp {
   struct ncclProxyConnection* connection;
-  int channelId;
-  int nsteps;
+  void* buffer;
   ssize_t nbytes;
+  uint64_t opCount;
   int root;
   int next;
-
-  uint64_t opCount;
-  int sliceSteps;
-  int chunkSteps;
+  int nsteps;
   int chunkSize;
+  uint8_t sliceSteps;
+  uint8_t chunkSteps;
+  uint8_t channelId;
   uint8_t /*ncclDataType_t*/ dtype;
   uint8_t /*ncclDevRedOp_t*/ redOp;
   uint8_t /*ncclPattern_t*/ pattern;
   uint8_t protocol;
+  uint8_t pad;
 
   union {
     uint64_t unused;
@@ -50,6 +51,7 @@ static_assert(sizeof(struct ncclProxyOp) == 64, "Keep ProxyOp aligned with cache
 
 struct ncclProxySubArgs {
   struct ncclProxyConnection* connection;
+  void* buffer;
   int channelId;
   int nsteps;
   ssize_t nbytes;

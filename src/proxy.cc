@@ -355,6 +355,7 @@ static ncclResult_t ncclProxyOpToArgs(struct ncclProxyOp* op, struct ncclProxyAr
   sub->nsteps = op->nsteps;
   sub->nbytes = op->nbytes;
   sub->peer = op->root;
+  sub->buffer = op->buffer;
   args->nsubs = subIndex+1;
   if (subIndex) {
     if ((args->sliceSteps != op->sliceSteps) ||
@@ -604,6 +605,7 @@ ncclResult_t ncclProxyComputeP2p(struct ncclInfo* info, struct ncclProxyOp* op) 
   struct ncclChannelPeer* peer = channel->peers[op->root];
   if (info->coll == ncclFuncSend) {
     op->pattern = ncclPatternSend;
+    op->buffer = info->recvbuff;
     if (op->root != info->comm->rank && peer->send[1].transportComm == &netTransport.send) {
       // Tune chunk size for the network
       if (info->count < stepSize) info->chunkSize /= 4;
@@ -611,6 +613,7 @@ ncclResult_t ncclProxyComputeP2p(struct ncclInfo* info, struct ncclProxyOp* op) 
     }
   } else if (info->coll == ncclFuncRecv) {
     op->pattern = ncclPatternRecv;
+    op->buffer = info->recvbuff;
     if (op->root != info->comm->rank && peer->recv[1].transportComm == &netTransport.recv) {
       // Tune chunk size for the network
       if (info->count < stepSize) info->chunkSize /= 4;
