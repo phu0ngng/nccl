@@ -136,6 +136,8 @@ class Primitives<
                                   : (ncclShmem.groups[group].srcs + Src);
       if ((flags & ConnFifoEnabled) && connFifo[step%NCCL_STEPS].mode == NCCL_MODE_OFFSET)
         ptrs[index] = connEltsFifo + loadInt(&connFifo[step%NCCL_STEPS].offset)/sizeof(T);
+      else if ((flags & ConnFifoEnabled) && connFifo[step%NCCL_STEPS].mode == NCCL_MODE_PTR)
+        ptrs[index] = connFifo[step%NCCL_STEPS].ptr;
       else if (isSendNotRecv && DirectSend) {
         if (flags & DirectWrite) {
           ptrs[index] = directBuff + dstIx + offset;
@@ -225,7 +227,10 @@ class Primitives<
         /* if user abort the kernel, we don't need to actually perform copy/reduce; just set size
          * to 0 to avoid unnecessary workload. */
         int workSize = ncclShmem.aborted ? 0 : sliceSize;
-        if (DirectRecv && ncclShmem.groups[group].srcs[0] == ncclShmem.groups[group].dsts[0]) {
+        int nSrc = Recv*fan.nrecv()+Src, nDst = Send*fan.nsend()+Dst;
+        if (nSrc == 1 && nDst == 1 && ncclShmem.groups[group].srcs[0] == ncclShmem.groups[group].dsts[0]) {
+          // Skip the copy
+        } else if (DirectRecv && ncclShmem.groups[group].srcs[0] == ncclShmem.groups[group].dsts[0]) {
           // We can only have one direct receive. Since srcs[0] == dstPtr+offset, skip one copy
           if (Send) {
             reduceCopy<Unroll, RedOp, T, 0, 1, 1, 0, 1, MaxSend, /*PreOpSrcs*/0>
@@ -248,8 +253,8 @@ class Primitives<
             MultimemSrcs, Recv+Src, Recv*MaxRecv+Src,
             MultimemDsts, Send+Dst, Send*MaxSend+Dst, PreOpSrcs>
             (tid, nworkers, ncclShmem.redOpArgs[0], ncclShmem.redOpArgs, postOp,
-             Recv*fan.nrecv()+Src, ncclShmem.groups[group].srcs,
-             Send*fan.nsend()+Dst, ncclShmem.groups[group].dsts,
+             nSrc, ncclShmem.groups[group].srcs,
+             nDst, ncclShmem.groups[group].dsts,
              workSize);
         }
         barrier(); // This barrier has a counterpart in following loop

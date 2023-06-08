@@ -52,6 +52,7 @@ static_assert(sizeof(struct ncclProxyOp) == 64, "Keep ProxyOp aligned with cache
 struct ncclProxySubArgs {
   struct ncclProxyConnection* connection;
   void* buffer;
+  void* mhandle;
   int channelId;
   int nsteps;
   ssize_t nbytes;

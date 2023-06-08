@@ -634,7 +634,7 @@ ncclResult_t ncclProxyComputeP2p(struct ncclInfo* info, struct ncclProxyOp* op) 
     chunkEffectiveSize /= 2;
   }
 
-  op->nbytes = stepSize;
+  op->nbytes = info->count;
   op->nsteps = DIVUP(info->count, chunkEffectiveSize);
   if (op->nsteps == 0) op->nsteps = 1;
 
