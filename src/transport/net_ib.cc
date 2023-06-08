@@ -915,7 +915,7 @@ ncclResult_t ncclIbRegMrDmaBuf(void* comm, void* data, size_t size, int type, ui
   ncclResult_t res;
   pthread_mutex_lock(&ncclIbDevs[verbs->dev].lock);
   for (int slot=0; /*true*/; slot++) {
-    if (slot == cache->population) { // didn't find in cache
+    if (slot == cache->population || addr < cache->slots[slot].addr) { // didn't find in cache
       if (cache->population == cache->capacity) { // must grow cache
         cache->capacity = cache->capacity < 32 ? 32 : 2*cache->capacity;
         NCCLCHECKGOTO(ncclRealloc(&cache->slots, cache->population, cache->capacity), res, returning);
@@ -937,16 +937,17 @@ ncclResult_t ncclIbRegMrDmaBuf(void* comm, void* data, size_t size, int type, ui
         }
       }
       TRACE(NCCL_INIT,"regAddr %llx size %lld rkey %x fd %d", (unsigned long long)addr, (long long)pages*pageSize, mr->rkey, fd);
-      cache->population += 1;
+      if (slot != cache->population) memmove(cache->slots+slot+1, cache->slots+slot, (cache->population-slot)*sizeof(struct ncclIbMr));
       cache->slots[slot].addr = addr;
       cache->slots[slot].pages = pages;
       cache->slots[slot].refs = 1;
       cache->slots[slot].mr = mr;
+      cache->population += 1;
       *mhandle = (void*)mr;
       res = ncclSuccess;
       goto returning;
-    }
-    else if (cache->slots[slot].addr == addr && cache->slots[slot].pages == pages) {
+    } else if ((addr >= cache->slots[slot].addr) &&
+        ((addr-cache->slots[slot].addr)/pageSize+pages) < cache->slots[slot].pages) {
       cache->slots[slot].refs += 1;
       *mhandle = (void*)cache->slots[slot].mr;
       res = ncclSuccess;

@@ -1031,7 +1031,7 @@ static ncclResult_t sendProxyProgress(struct ncclProxyState* proxyState, struct 
           }
           args->idle = 0;
           if (sub->done == sub->nsteps) {
-            if (resources->shared && ncclParamProxyUserBuffer()) {
+            if (resources->shared && ncclParamProxyUserBuffer() && sub->nbytes > 0) {
               NCCLCHECK(proxyState->ncclNet->deregMr(resources->netSendComm, sub->mhandle));
             }
             resources->step = sub->base + sub->nsteps;
