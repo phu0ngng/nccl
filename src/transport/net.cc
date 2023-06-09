@@ -1081,6 +1081,7 @@ static ncclResult_t recvProxyProgress(struct ncclProxyState* proxyState, struct 
       sub->posted = sub->received = sub->transmitted = sub->done = 0;
       for (int i=0; i<groupSize; i++) sub[-i].groupSize = groupSize;
       for (uint64_t step=0; step<sub->nsteps; step++) ncclProfilingRecord(args, s, step, ncclProxyProfileBegin);
+      sub->mhandle = resources->mhandles[args->protocol];
     }
     args->state = ncclProxyOpProgress;
   }
@@ -1106,19 +1107,28 @@ static ncclResult_t recvProxyProgress(struct ncclProxyState* proxyState, struct 
           int buffSlot = (sub->base+sub->posted)%NCCL_STEPS;
           volatile struct ncclConnFifo* connFifo = (volatile struct ncclConnFifo*)resources->recvMem->connFifo;
           if (p == NCCL_PROTO_SIMPLE && resources->shared) {
-            int sharedBuffSlot = sub->posted%maxDepth;
-            int offset;
-            NCCLCHECK(sharedBuffersGet(proxyState, sub->channelId, sharedBuffSlot*args->nsubs+s+i, &offset));
-            connFifo[buffSlot].offset = offset;
-            connFifo[buffSlot].mode = NCCL_MODE_OFFSET;
-            ptrs[subCount] = localBuff+offset;
+            if (ncclParamProxyUserBuffer()) {
+              if (sub->posted == 0 && sub->nbytes > 0) {
+                // Register buffer
+                NCCLCHECK(proxyState->ncclNet->regMr(resources->netRecvComm, sub->buffer, sub->nbytes, NCCL_PTR_CUDA, &sub->mhandle));
+              }
+              ptrs[subCount] = connFifo[buffSlot].ptr = ((char*)sub->buffer) + sub->posted*args->chunkSize;
+              connFifo[buffSlot].mode = NCCL_MODE_PTR;
+            } else {
+              int sharedBuffSlot = sub->posted%maxDepth;
+              int offset;
+              NCCLCHECK(sharedBuffersGet(proxyState, sub->channelId, sharedBuffSlot*args->nsubs+s+i, &offset));
+              connFifo[buffSlot].offset = offset;
+              connFifo[buffSlot].mode = NCCL_MODE_OFFSET;
+              ptrs[subCount] = localBuff+offset;
+            }
           } else {
             ptrs[subCount] = localBuff+buffSlot*stepSize;
           }
           sizes[subCount] = stepSize*args->sliceSteps;
           if (sub->nbytes < sizes[subCount]) sizes[subCount] = sub->nbytes;
           tags[subCount] = resources->tpRemoteRank;
-          mhandles[subCount] = resources->mhandles[p];
+          mhandles[subCount] = sub->mhandle;
           subCount++;
         }
       }
@@ -1182,9 +1192,12 @@ static ncclResult_t recvProxyProgress(struct ncclProxyState* proxyState, struct 
                   struct recvResources* resources = (struct recvResources*) (sub->connection->transportResources);
                   int stepSize = resources->buffSizes[p] / NCCL_STEPS;
                   char* localBuff = NCCL_NET_MAP_GET_POINTER(&resources->map, cpu, buffs[p]);
-                  int buffSlot = (sub->base+sub->posted)%NCCL_STEPS;
-                  ptrs[subCount] = resources->shared ? localBuff+resources->recvMem->connFifo[buffSlot].offset : localBuff+buffSlot*stepSize;
-                  mhandles[subCount] = resources->mhandles[p];
+                  int buffSlot = (sub->base+sub->transmitted)%NCCL_STEPS;
+                  ptrs[subCount] = resources->shared ?
+                    (resources->recvMem->connFifo[buffSlot].mode == NCCL_MODE_OFFSET ?
+                    localBuff+resources->recvMem->connFifo[buffSlot].offset :
+                    resources->recvMem->connFifo[buffSlot].ptr) : localBuff+buffSlot*stepSize;
+                  mhandles[subCount] = sub->mhandle;
                   subCount++;
                 }
               }
@@ -1240,6 +1253,9 @@ static ncclResult_t recvProxyProgress(struct ncclProxyState* proxyState, struct 
             for (uint64_t step=sub->done-args->sliceSteps; step<sub->done; step++) ncclProfilingRecord(args, s+i, step, ncclProxyProfileEnd);
             args->idle = 0;
             if (sub->done == sub->nsteps) {
+              if (resources->shared && ncclParamProxyUserBuffer() && sub->nbytes > 0) {
+                NCCLCHECK(proxyState->ncclNet->deregMr(resources->netRecvComm, sub->mhandle));
+              }
               struct recvResources* resources = (struct recvResources*) (sub->connection->transportResources);
               resources->step = sub->base + sub->nsteps;
               args->done++;
