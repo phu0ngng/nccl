@@ -947,7 +947,7 @@ ncclResult_t ncclIbRegMrDmaBuf(void* comm, void* data, size_t size, int type, ui
       res = ncclSuccess;
       goto returning;
     } else if ((addr >= cache->slots[slot].addr) &&
-        ((addr-cache->slots[slot].addr)/pageSize+pages) < cache->slots[slot].pages) {
+        ((addr-cache->slots[slot].addr)/pageSize+pages) <= cache->slots[slot].pages) {
       cache->slots[slot].refs += 1;
       *mhandle = (void*)cache->slots[slot].mr;
       res = ncclSuccess;
