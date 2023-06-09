@@ -959,8 +959,8 @@ returning:
   return res;
 }
 
-ncclResult_t ncclIbRegMr(void* comm, void* data, int size, int type, void** mhandle) {
-  return ncclIbRegMrDmaBuf(comm, data, (size_t)size, type, 0ULL, -1, mhandle);
+ncclResult_t ncclIbRegMr(void* comm, void* data, size_t size, int type, void** mhandle) {
+  return ncclIbRegMrDmaBuf(comm, data, size, type, 0ULL, -1, mhandle);
 }
 
 ncclResult_t ncclIbDeregMr(void* comm, void* mhandle) {
