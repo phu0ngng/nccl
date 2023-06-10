@@ -33,6 +33,17 @@ extern const char* ncclProtoStr[NCCL_NUM_PROTOCOLS];
 #define NCCL_MAX_OPS 2048
 #define NCCL_STEPS 8
 
+enum ncclDevRedOp_t {
+  ncclDevSum, ncclDevProd, ncclDevMinMax,
+  ncclDevPreMulSum, ncclDevSumPostDiv,
+  ncclNumDevRedOps
+};
+struct ncclDevRedOpFull {
+  ncclDevRedOp_t op;
+  bool scalarArgIsPtr;
+  uint64_t scalarArg;
+};
+
 union ncclLLFifoLine {
   /* Flags have to be *after* data, because otherwise, an incomplete receive
      from the network may receive the flag but not the data.
@@ -369,5 +380,89 @@ __host__ __device__ constexpr int ncclShmemScratchWarpSize(int cudaArch = NCCL_C
 __host__ __device__ constexpr int ncclShmemDynamicSize(int cudaArch = NCCL_CUDA_ARCH) {
   return cudaArch < 700 ? 0 : ncclShmemScratchWarpSize(cudaArch)*(NCCL_MAX_NTHREADS/WARP_SIZE);
 }
+
+// Host-side table of kernel function pointers.
+extern int const ncclDevKernelCount;
+extern void* const ncclDevKernelList[/*ncclDevKernelCount*/];
+
+// Table of most specialized kernel function to run given func index.
+extern int const ncclDevFuncRowToId[];
+extern void* const ncclDevKernelForFunc[/*funcIndex*/];
+extern bool const ncclDevKernelForFuncIsSpecialized[/*funcIndex*/];
+
+// Launch a one-rank reduction on stream.
+ncclResult_t ncclLaunchOneRank(void* dst, void const* src, size_t nElts, struct ncclDevRedOpFull redOp, ncclDataType_t type, cudaStream_t stream);
+
+// `ncclNvlsSupported()` needs to be in sync with "func_valid" in "src/device/generate.py"
+inline bool ncclNvlsSupported(int devRedOp, int type) {
+  switch (type) {
+  case ncclInt32:
+  case ncclUint32:
+  case ncclInt64:
+  case ncclUint64:
+  case ncclFloat16:
+  #if defined(__CUDA_BF16_TYPES_EXIST__)
+  case ncclBfloat16:
+  #endif
+    return devRedOp == ncclDevSum || devRedOp == ncclDevMinMax;
+  case ncclFloat:
+  case ncclDouble:
+    return devRedOp == ncclDevSum;
+  default:
+    return false;
+  }
+}
+
+// `ncclDevFuncIndex()` needs to be in sync with "all_functions()" in "src/device/generate.py"
+inline int ncclDevFuncId(int coll, int devRedOp, int type, int algo, int proto) {
+  #if defined(__CUDA_BF16_TYPES_EXIST__)
+  constexpr int NumTypes = ncclNumTypes;
+  #else
+  constexpr int NumTypes = ncclNumTypes + 1;
+  #endif
+
+  int row = 0; // ncclDevFuncIndex_P2p
+  if (coll == ncclFuncSendRecv) goto have_row;
+  row += 1;
+
+  if (coll == ncclFuncAllGather) {
+    int algo1 = algo == NCCL_ALGO_RING ? 0 :
+              /*algo == NCCL_ALGO_NVLS*/ 1;
+    row += algo1*NCCL_NUM_PROTOCOLS + proto;
+    goto have_row;
+  }
+  row += (/*NumAlgos=*/2)*NCCL_NUM_PROTOCOLS;
+
+  if (coll == ncclFuncBroadcast) {
+    row += proto;
+    goto have_row;
+  }
+  row += (/*NumAlgos=*/1)*NCCL_NUM_PROTOCOLS;
+
+  if (coll == ncclFuncAllReduce) {
+    row += ((devRedOp*NumTypes + type)*NCCL_NUM_ALGORITHMS + algo)*NCCL_NUM_PROTOCOLS + proto;
+    goto have_row;
+  }
+  row += ncclNumDevRedOps*NumTypes*NCCL_NUM_ALGORITHMS*NCCL_NUM_PROTOCOLS;
+
+  if (coll == ncclFuncReduce) {
+    row += (devRedOp*NumTypes + type)*NCCL_NUM_PROTOCOLS + proto;
+    goto have_row;
+  }
+  row += ncclNumDevRedOps*NumTypes*(/*NumAlgos=*/1)*NCCL_NUM_PROTOCOLS;
+
+  if (coll == ncclFuncReduceScatter) {
+    int algo1 = algo == NCCL_ALGO_RING ? 0 :
+              /*algo == NCCL_ALGO_NVLS*/ 1;
+    row += ((devRedOp*NumTypes + type)*2 + algo1)*NCCL_NUM_PROTOCOLS + proto;
+    goto have_row;
+  }
+  row += ncclNumDevRedOps*NumTypes*(/*NumAlgos=*/2)*NCCL_NUM_PROTOCOLS;
+
+have_row:
+  return ncclDevFuncRowToId[row];
+}
+
+inline int ncclDevFuncId_P2p() { return ncclDevFuncRowToId[0]; }
 
 #endif

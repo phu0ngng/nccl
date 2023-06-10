@@ -22,7 +22,7 @@ TEST_VERIFIABLE_SRCDIR := ../verifiable
 TEST_VERIFIABLE_BUILDDIR := $(BUILDDIR)/test/verifiable
 include ../verifiable/verifiable.mk
 
-${DST_DIR}/replay: replay.cu $(TEST_VERIFIABLE_OBJS) $(TEST_VERIFIABLE_HDRS)
+${DST_DIR}/replay: replay.cu $(TEST_VERIFIABLE_HDRS) $(TEST_VERIFIABLE_LIBSO)
 	@printf "Linking  %s\n" $@
 	@mkdir -p ${DST_DIR}
-	$(NVCC) -o $@ $(NVCUFLAGS) replay.cu $(TEST_VERIFIABLE_OBJS) $(NVLDFLAGS) $(NCCL_NVLDFLAGS) $(MPI_NVLDFLAGS)
+	$(NVCC) -o $@ $(NVCUFLAGS) replay.cu $(NVLDFLAGS) $(NCCL_NVLDFLAGS) $(MPI_NVLDFLAGS) -L$(TEST_VERIFIABLE_BUILDDIR) -lverifiable -Xlinker -rpath='$$ORIGIN:$$ORIGIN/../verifiable'

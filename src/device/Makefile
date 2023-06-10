@@ -4,74 +4,97 @@
 # See LICENSE.txt for license information
 #
 
-include ../../makefiles/common.mk
-include ../../makefiles/version.mk
+SHELL := /usr/bin/env bash
+MAKEFALGS += -r
+.SUFFIXES:
+.SECONDARY:
+
+NCCLDIR := ../..
+include $(NCCLDIR)/makefiles/common.mk
+include $(NCCLDIR)/makefiles/version.mk
 
 BUILDDIR ?= $(abspath ../../build)
 OBJDIR := $(BUILDDIR)/obj/device
 
-LIBSRCFILES := all_reduce.cu broadcast.cu reduce.cu all_gather.cu reduce_scatter.cu sendrecv.cu onerank_reduce.cu
+MANIFEST := $(OBJDIR)/manifest
+DEVGLUE_OBJ  := $(OBJDIR)/device_glue.o
 
-LIBSRCFILES += functions.cu
+INCFLAGS  = -I. -I.. -I$(BUILDDIR)/include -I../include
+NVCUFLAGS += $(INCFLAGS) --compiler-options "-fPIC -fvisibility=hidden"
+CXXFLAGS  += $(INCFLAGS)
 
-DEPFILES   := $(patsubst %.cu, $(OBJDIR)/%.d, $(LIBSRCFILES))
-DEPENDFILES:= $(DEPFILES:%.d=%.dep)
-MANIFEST   := $(OBJDIR)/manifest
-WRAPOBJ    := $(OBJDIR)/wraps.o
-RULESFILE  := $(OBJDIR)/Makefile.rules
+SAY = @bash -c 'path="$$2"; [[ "$$(realpath "$$2")" =~ ^$(subst .,\.,$(abspath $(NCCLDIR)))/(.*)$$ ]] && path="$${BASH_REMATCH[1]}"; printf "%-15s %s\n" "$$1" "$$path"' SAY
 
-NVCUFLAGS  += -I. -I.. -I$(BUILDDIR)/include -I../include --compiler-options "-fPIC -fvisibility=hidden"
+COMPILE.cu = $(NVCC) $(NVCUFLAGS) -dc $2 -o $1
+COMPILE.cc = $(CXX) $(CXXFLAGS) -c $2 -o $1
+define COMPILE
+@$(SAY) "Compiling" $2;\
+ mkdir -p $(dir $1);\
+ $(call COMPILE$(suffix $2),$1,$2)
+endef
 
+DEPENDS.cu = $(NVCC) $(NVCUFLAGS) -M -dc $1
+DEPENDS.cc = $(CXX) $(CXXFLAGS) -M -c $1
+define DEPENDS
+@$(SAY) "Dependencies" $2;\
+ mkdir -p $(dir $1);\
+ mk=$$($(call DEPENDS$(suffix $2),$2));\
+ [[ $$mk =~ ^[^:]*:(.*)$$ ]];\
+ files=$${BASH_REMATCH[1]};\
+ files=$$(for x in $$files; do case "$$x" in '\'|$$'\t') ;; *) echo "$$x"; esac; done);\
+ files=$$(for x in $$files; do [[ "$$(realpath "$$x")" == "$$(realpath "$(NCCLDIR)")"* ]] && echo "$$x"; done);\
+ echo "$(patsubst %.d,%.o,$1) $1: " $$files > $1
+endef
 
 all: $(MANIFEST)
 
-# Dummy rule so that the extra dependency (%.dep) files are preserved by make
-all_deps: $(DEPENDFILES)
+ifeq (1,1)
+# Case if the <gensrc> directory is generated on-demand:
+$(OBJDIR)/gensrc: generate.py
+	@mkdir -p $@
+	(which python3 >/dev/null || \
+	  (bar='!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!'; \
+	   printf "\n$${bar}\nERROR: Building NCCL requires a Python 3 installation invokable as 'python3'.\n$${bar}\n\n" 1>&2; \
+	   exit 1)) \
+	&& ./generate.py $@ "$(ONLY_FUNCS)"
+else
+# Case if the <gensrc> directory is pre-generated and checked in the repo as ./gen:
+$(OBJDIR)/gensrc:
+	@mkdir -p $(OBJDIR); ln -srfn ./gen $@
+endif
 
-# Auto-generating the rules per op/reduction/datatype/algorithm
-$(RULESFILE) : gen_rules.sh
-	@printf "Generating %-35s > %s\n" rules $@
-	@mkdir -p $(OBJDIR)
-	@CUDA_MAJOR=${CUDA_MAJOR} CUDA_MINOR=${CUDA_MINOR} ./gen_rules.sh $(OBJDIR) > $@
+# The trailing ";" is necessary to make this an "empty recipe":
+# https://www.gnu.org/software/make/manual/html_node/Empty-Recipes.html
+$(OBJDIR)/gensrc/rules.mk: $(OBJDIR)/gensrc ;
 
--include $(RULESFILE)
+-include $(OBJDIR)/gensrc/rules.mk
+# "gensrc/rules.mk" populates $(LIB_OBJS_GEN)
 
-LIBOBJ     := $(GENOBJS) $(OBJDIR)/functions.o $(OBJDIR)/onerank_reduce.o
+SRCS = common.cu onerank.cu
 
--include $(DEPFILES)
+LIB_OBJS = $(patsubst %, $(OBJDIR)/%.o, $(SRCS)) $(LIB_OBJS_GEN)
 
-# obj/device/manifest is a list of all the object paths
-$(MANIFEST): $(LIBOBJ) $(WRAPOBJ)
-	@echo $^ > $@
+$(OBJDIR)/%.o: % $(OBJDIR)/%.d
+	$(call COMPILE,$@,$<)
 
-# We do not want make to build *.d when running make clean.
-# So we only provide targets for .dep which will produce .dep and .d,
-# with only .d being included, and .dep keeping track of what needs to
-# be regenerated.
-$(OBJDIR)/%.dep : %.cu
-	@mkdir -p $(OBJDIR)
-	@$(NVCC) $(NVCUFLAGS) -M $< -o $@.tmp
-	@sed "0,/^.*:/s//$(subst /,\/,$@):/" $@.tmp > $@
-	@sed -e 's/.*://' -e 's/\\$$//' < $@.tmp | fmt -1 | \
-                sed -e 's/^ *//' -e 's/$$/:/' >> $@
-	@rm -f $@.tmp
-	@cp $@ $(@:.dep=.d)
+$(OBJDIR)/genobj/%.o: $(OBJDIR)/gensrc $(OBJDIR)/genobj/%.d
+	$(call COMPILE,$@,$(OBJDIR)/gensrc/$*)
 
-# Compiled kernels and collectives with relocatable device code ...
-$(OBJDIR)/functions.o : functions.cu $(OBJDIR)/functions.dep
-	@printf "Compiling  %-35s > %s\n" $< $@
-	mkdir -p `dirname $@`
-	$(NVCC) $(NVCUFLAGS) -dc $< -o $@
+$(OBJDIR)/%.d: %
+	$(call DEPENDS,$@,$<)
 
-$(OBJDIR)/onerank_reduce.o : onerank_reduce.cu $(OBJDIR)/onerank_reduce.dep
-	@printf "Compiling  %-35s > %s\n" $< $@
-	mkdir -p `dirname $@`
-	$(NVCC) $(NVCUFLAGS) -dc $< -o $@
+$(OBJDIR)/genobj/%.d: $(OBJDIR)/gensrc/%
+	$(call DEPENDS,$@,$<)
 
-# ... and create the device-side linked object with all those.
-$(WRAPOBJ): $(LIBOBJ)
-	@printf "Linking device  %-35s > %s\n" objects $@
+$(DEVGLUE_OBJ): $(LIB_OBJS)
 	$(NVCC) $(NVCUFLAGS) -dlink $^ -o $@
 
+$(MANIFEST): $(LIB_OBJS) $(DEVGLUE_OBJ)
+	@echo $^ > $@
+
+-include $(wildcard $(OBJDIR)/*.d)
+-include $(wildcard $(OBJDIR)/genobj/*.d)
+
+.PHONY: clean
 clean:
-	rm -f $(LIBOBJ) $(WRAPOBJ) $(MANIFEST) $(DEPFILES) $(DEPENDFILES) $(RULESFILE)
+	rm -rf $(OBJDIR)

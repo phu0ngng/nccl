@@ -15,100 +15,20 @@
 #include <cstring> // std::memcpy
 #include <cinttypes> // PRIx64
 
-static void* const ncclKernelGeneric = (void*)NCCL_KERN_NAME(SendRecv, RING, SIMPLE, Sum, int8_t);
-
-struct ncclKernelMatch {
-  void* kernelFn;
-  bool specialized;
-};
-
-// Only generate inline kernels for LL
-#define NCCL_FUNC5(func, algo, devredop, dtype, specialized) \
-  /*LL    */{(void*)NCCL_KERN_NAME(func, algo, LL, devredop, dtype), true && specialized}, \
-  /*LL128 */{(void*)NCCL_KERN_NAME(func, algo, LL, devredop, dtype), false && specialized}, \
-  /*SIMPLE*/{(void*)NCCL_KERN_NAME(func, algo, LL, devredop, dtype), false && specialized}
-
-#define NCCL_FUNC4(func, devredop, type, specialized) \
-  NCCL_FUNC5(func, TREE,           devredop, type, specialized), \
-  NCCL_FUNC5(func, RING,           devredop, type, specialized), \
-  NCCL_FUNC5(func, COLLNET_DIRECT, devredop, type, specialized), \
-  NCCL_FUNC5(func, COLLNET_CHAIN,  devredop, type, specialized), \
-  NCCL_FUNC5(func, NVLS,           devredop, type, specialized), \
-  NCCL_FUNC5(func, NVLS_TREE,      devredop, type, specialized)
-
-#ifdef __CUDA_BF16_TYPES_EXIST__
-  #define HAVE_BFLOAT16 1
-#else
-  #define HAVE_BFLOAT16 0
-#endif
-
-// Must be consistent with ncclDataType_t
-#define NCCL_FUNCS3(func, devredop, reduction, specialized) \
-  NCCL_FUNC4(func, devredop, MACRO_IF(reduction, int8_t, int8_t), specialized), \
-  NCCL_FUNC4(func, devredop, MACRO_IF(reduction, uint8_t, int8_t), specialized), \
-  NCCL_FUNC4(func, devredop, MACRO_IF(reduction, int32_t, int8_t), specialized), \
-  NCCL_FUNC4(func, devredop, MACRO_IF(reduction, uint32_t, int8_t), specialized), \
-  NCCL_FUNC4(func, devredop, MACRO_IF(reduction, int64_t, int8_t), specialized), \
-  NCCL_FUNC4(func, devredop, MACRO_IF(reduction, uint64_t, int8_t), specialized), \
-  NCCL_FUNC4(func, devredop, MACRO_IF(reduction, half, int8_t), specialized), \
-  NCCL_FUNC4(func, devredop, MACRO_IF(reduction, float, int8_t), specialized), \
-  NCCL_FUNC4(func, devredop, MACRO_IF(reduction, double, int8_t), specialized) \
-  MACRO_IF(HAVE_BFLOAT16, \
-    SINGLE_ARG(, NCCL_FUNC4(func, devredop, MACRO_IF(reduction, __nv_bfloat16, int8_t), specialized)), \
-    /*nothing*/ \
-  )
-
-// Must be consistent with ncclDevRedOp_t -- but we only generate kernel for sums.
-#define NCCL_FUNCS2(func, reduction) \
-  NCCL_FUNCS3(func, Sum, reduction, /*specialized=*/1), /*Sum*/ \
-  NCCL_FUNCS3(func, Sum, reduction, /*specialized=*/0), /*Prod*/ \
-  NCCL_FUNCS3(func, Sum, reduction, /*specialized=*/0), /*Max*/ \
-  NCCL_FUNCS3(func, Sum, reduction, /*specialized=*/0), /*Min*/ \
-  NCCL_FUNCS3(func, Sum, reduction, /*specialized=*/0), /*PreMulSum*/ \
-  NCCL_FUNCS3(func, Sum, reduction, /*specialized=*/0)  /*SumPostDiv*/
-
-// Must be consistent with the ncclFuncSet enum
-static const ncclKernelMatch ncclKerns[1+ncclNumTypes+NCCL_NUM_FUNCTIONS*ncclNumDevRedOps*ncclNumTypes*NCCL_NUM_ALGORITHMS*NCCL_NUM_PROTOCOLS] = {
-  {(void*)NCCL_KERN_NAME(SendRecv, RING, SIMPLE, Sum, int8_t), true},
-  // We don't bake special kernels for the one-rank reductions
-  {/*int8*/(void*)NCCL_KERN_NAME(SendRecv, RING, SIMPLE, Sum, int8_t), false},
-  {/*uint8*/(void*)NCCL_KERN_NAME(SendRecv, RING, SIMPLE, Sum, int8_t), false},
-  {/*int32*/(void*)NCCL_KERN_NAME(SendRecv, RING, SIMPLE, Sum, int8_t), false},
-  {/*uint32*/(void*)NCCL_KERN_NAME(SendRecv, RING, SIMPLE, Sum, int8_t), false},
-  {/*int64*/(void*)NCCL_KERN_NAME(SendRecv, RING, SIMPLE, Sum, int8_t), false},
-  {/*uint64*/(void*)NCCL_KERN_NAME(SendRecv, RING, SIMPLE, Sum, int8_t), false},
-  {/*half*/(void*)NCCL_KERN_NAME(SendRecv, RING, SIMPLE, Sum, int8_t), false},
-  {/*float*/(void*)NCCL_KERN_NAME(SendRecv, RING, SIMPLE, Sum, int8_t), false},
-  {/*double*/(void*)NCCL_KERN_NAME(SendRecv, RING, SIMPLE, Sum, int8_t), false},
-  #if HAVE_BFLOAT16
-    {/*bfloat16*/(void*)NCCL_KERN_NAME(SendRecv, RING, SIMPLE, Sum, int8_t), false},
-  #endif
-  NCCL_FUNCS2(Broadcast, /*reduction=*/0),
-  NCCL_FUNCS2(Reduce, /*reduction=*/1),
-  NCCL_FUNCS2(AllGather, /*reduction=*/0),
-  NCCL_FUNCS2(ReduceScatter, /*reduction=*/1),
-  NCCL_FUNCS2(AllReduce, /*reduction=*/1)
-};
-
 static ncclResult_t computeColl(struct ncclInfo* info /* input */, int* workFuncIndex, struct ncclWorkElem* work, struct ncclProxyOp* proxyOp /* output */);
 
 NCCL_PARAM(L1SharedMemoryCarveout, "L1_SHARED_MEMORY_CARVEOUT", 0);
 
 // Returns maximum kernel stack size of all CUDA kernels
 ncclResult_t ncclInitKernelsForDevice(int cudaArch, size_t* maxStackSize) {
-  constexpr int KernelCount = sizeof(ncclKerns)/sizeof(ncclKerns[0]);
   ncclResult_t result = ncclSuccess;
 
   if (maxStackSize) *maxStackSize = 0;
   int carveout = ncclParamL1SharedMemoryCarveout();
 
-  // Keep track if we already visited a function pointer.
-  void* lru[2] = {nullptr, nullptr};
-  for (int i=0; i < KernelCount; i++) {
-    void* fn = ncclKerns[i].kernelFn;
-    if (fn == lru[0] || fn == lru[1]) goto next_kernel;
-    lru[1] = lru[0];
-    lru[0] = fn;
+  for (int k=0; k < ncclDevKernelCount; k++) {
+    void* fn = ncclDevKernelList[k];
+    if (fn == nullptr) continue;
 
     if (maxStackSize) {
       cudaFuncAttributes attr = {0};
@@ -116,14 +36,12 @@ ncclResult_t ncclInitKernelsForDevice(int cudaArch, size_t* maxStackSize) {
       if (attr.localSizeBytes > *maxStackSize) *maxStackSize = attr.localSizeBytes;
     ignore0:;
     }
-
     if (carveout) {
       CUDACHECKGOTO(cudaFuncSetAttribute(fn,
         cudaFuncAttributePreferredSharedMemoryCarveout, carveout),
         result, ignore1);
     ignore1:;
     }
-
     if (ncclShmemDynamicSize(cudaArch) != 0) {
       CUDACHECKGOTO(cudaFuncSetAttribute(fn,
         cudaFuncAttributeMaxDynamicSharedMemorySize, ncclShmemDynamicSize(cudaArch)),
@@ -218,7 +136,7 @@ static void appendWorkElemP2p(
     struct ncclComm* comm, struct ncclKernelPlan* plan, int channelId,
     struct ncclWorkElemP2p const *elem, bool fuseOk
   ) {
-  constexpr int funcIndex = FUNC_INDEX_P2P;
+  int funcIndex = ncclDevFuncId_P2p();
   struct ncclKernelPlan::Channel* chan = &plan->channels[channelId];
   struct ncclWorkList* q = ncclIntruQueueTail(&chan->workQueue);
   if (q && funcIndex == q->work.header.funcIndex) {
@@ -240,7 +158,7 @@ static void appendWorkElemP2p(
   }
   q = ncclMemoryStackAlloc<struct ncclWorkList>(&comm->memScoped);
   q->work.header.type = ncclWorkTypeP2p;
-  q->work.header.funcIndex = FUNC_INDEX_P2P;
+  q->work.header.funcIndex = ncclDevFuncId_P2p();
   chan->p2pTailElem[ncclWorkP2pTypeRecv-1] = 0;
   chan->p2pTailElem[ncclWorkP2pTypeSend-1] = 1;
   q->work.p2pElems[chan->p2pTailElem[elem->p2pType-1]] = *elem; // C++ struct assignment
@@ -590,8 +508,8 @@ static ncclResult_t scheduleCollTasksToPlan(
 
       plan->threadPerBlock = std::max(plan->threadPerBlock, info.nThreads);
       if (!plan->kernelSpecialized) {
-        plan->kernelFn = ncclKerns[workFuncIndex].kernelFn;
-        plan->kernelSpecialized = ncclKerns[workFuncIndex].specialized;
+        plan->kernelFn = ncclDevKernelForFunc[workFuncIndex];
+        plan->kernelSpecialized = ncclDevKernelForFuncIsSpecialized[workFuncIndex];
       }
     }
   }
@@ -619,8 +537,8 @@ static ncclResult_t scheduleP2pTasksToPlan(
 
   plan->threadPerBlock = std::max(plan->threadPerBlock, NCCL_MAX_NTHREADS);
   if (!plan->kernelSpecialized) {
-    plan->kernelFn = ncclKerns[FUNC_INDEX_P2P].kernelFn;
-    plan->kernelSpecialized = ncclKerns[FUNC_INDEX_P2P].specialized;
+    plan->kernelFn = ncclDevKernelForFunc[ncclDevFuncId_P2p()];
+    plan->kernelSpecialized = ncclDevKernelForFuncIsSpecialized[ncclDevFuncId_P2p()];
   }
 
   // Compute how much to split operations
@@ -629,10 +547,12 @@ static ncclResult_t scheduleP2pTasksToPlan(
   // Try to use all channels
   int nChannelsMax = comm->p2pnChannelsPerPeer;
   int nChannelsMin = nChannelsMax;
-  // Try to use all channels, but one channel per operation.
-  while (nChannelsMin*nRanks > comm->p2pnChannels && nChannelsMin > 1) nChannelsMin /= 2;
-  // Avoid overloading channels with 8+ operations as we loose the sync warp, hence a bit of bandwidth.
-  while (nChannelsMax*nRanks > comm->p2pnChannels*4 && nChannelsMax > 1) nChannelsMax /= 2;
+  if (comm->nNodes == 1) {
+    // Try to use all channels, but one channel per operation.
+    while (nChannelsMin*nRanks > comm->p2pnChannels && nChannelsMin > 1) nChannelsMin /= 2;
+    // Avoid overloading channels with 8+ operations as we loose the sync warp, hence a bit of bandwidth.
+    while (nChannelsMax*nRanks > comm->p2pnChannels*4 && nChannelsMax > 1) nChannelsMax /= 2;
+  }
 
   bool fuseOk;
   // We can perform 8 send/recv per round per CTA. Make sure we jump between fused blocks at node boundaries.
@@ -1162,9 +1082,9 @@ static ncclResult_t getAlgoInfo(struct ncclInfo* info, int collNetTypeSupport, i
     int nAlgos = NCCL_NUM_ALGORITHMS;
     for (int a=0; a<nAlgos; a++) {
       if ((a == NCCL_ALGO_COLLNET_DIRECT || a == NCCL_ALGO_COLLNET_CHAIN) && collNetTypeSupport != 1) continue;
-      if (a == NCCL_ALGO_NVLS && !NCCL_NVLS_SUPPORTS(info->datatype, info->opFull.op)) continue;
+      if (a == NCCL_ALGO_NVLS && !ncclNvlsSupported(info->opFull.op, info->datatype)) continue;
       if (a == NCCL_ALGO_NVLS && collNetTypeSupport != 1 && comm->nNodes > 1) continue;
-      if (a == NCCL_ALGO_NVLS_TREE && !NCCL_NVLS_SUPPORTS(info->datatype, info->opFull.op)) continue;
+      if (a == NCCL_ALGO_NVLS_TREE && !ncclNvlsSupported(info->opFull.op, info->datatype)) continue;
 
       for (int p=0; p<NCCL_NUM_PROTOCOLS; p++) {
         float time;
@@ -1293,14 +1213,7 @@ comp_next:
   work->nWarps = info->nThreads / WARP_SIZE;
   work->redOpArg = info->opFull.scalarArg;
   work->redOpArgIsPtr = info->opFull.scalarArgIsPtr;
-
-  if (info->comm->nRanks == 1) {
-    // one-rank reduce index
-    *workFuncIndex = 1 + int(info->datatype);
-    return ncclSuccess;
-  }
-
-  *workFuncIndex = FUNC_INDEX(info->coll, info->opFull.op, info->datatype, info->algorithm, info->protocol);
+  *workFuncIndex = ncclDevFuncId(info->coll, info->opFull.op, info->datatype, info->algorithm, info->protocol);
 
   int stepSize   = info->comm->buffSizes[info->protocol]/NCCL_STEPS;
   int chunkSteps = (info->protocol == NCCL_PROTO_SIMPLE && info->algorithm == NCCL_ALGO_RING) ? info->chunkSteps : 1;
@@ -1397,27 +1310,36 @@ static ncclResult_t hostToDevRedOp(
     ncclDevRedOpFull *opFull, ncclRedOp_t op, ncclDataType_t datatype, ncclComm *comm
   ) {
   union {
-    int8_t i8;
-    uint8_t u8;
-    int32_t i32;
-    uint32_t u32;
-    int64_t i64;
-    uint64_t u64;
-    half f16;
+    int8_t   i8; uint8_t   u8;
+    int32_t i32; uint32_t u32;
+    int64_t i64; uint64_t u64;
+    half f16; float f32; double f64;
     #if defined(__CUDA_BF16_TYPES_EXIST__)
       __nv_bfloat16 bf16;
     #endif
-    float f32;
-    double f64;
     void *ptr;
   };
   u64 = 0;
   opFull->scalarArgIsPtr = false;
+
+  int nbits = 8*ncclTypeSize(datatype);
+  uint64_t allBits = uint64_t(-1)>>(64-nbits);
+  uint64_t signBit = allBits^(allBits>>1);
+
   switch (int(op)) {
   case ncclSum:  opFull->op = ncclDevSum;  break;
   case ncclProd: opFull->op = ncclDevProd; break;
-  case ncclMax:  opFull->op = ncclDevMax;  break;
-  case ncclMin:  opFull->op = ncclDevMin;  break;
+  case ncclMin:
+  case ncclMax:
+    opFull->op = ncclDevMinMax;
+    opFull->scalarArg = 0;
+    // The xormask used by ncclFuncMinMax<[u]int> is the XOR of the sign bit
+    // for signed (opposed to unsigned) types and all the bits for max (opposed to min).
+    if (datatype==ncclInt8 || datatype==ncclInt32 || datatype==ncclInt64) {
+      opFull->scalarArg ^= signBit;
+    }
+    opFull->scalarArg ^= (op == ncclMax) ? allBits : 0;
+    break;
   case ncclAvg:
     switch ((int)datatype) {
     case ncclInt8:  case ncclInt32:  case ncclInt64:
@@ -1511,12 +1433,8 @@ static ncclResult_t taskAppend(struct ncclComm* comm, struct ncclInfo const* inf
     struct ncclDevRedOpFull opFull;
     NCCLCHECK(hostToDevRedOp(&opFull, info->op, info->datatype, comm));
 
-    // User-defined reduction ops may need alter the data even for unitary reductions
-    if (comm->nRanks == 1 && opFull.op < ncclDevPreMulSum) {
-      if (info->sendbuff != info->recvbuff) {
-        size_t bytes = info->count*ncclTypeSize(info->datatype);
-        CUDACHECK(cudaMemcpyAsync(info->recvbuff, info->sendbuff, bytes, cudaMemcpyDeviceToDevice, info->stream));
-      }
+    if (comm->nRanks == 1) {
+      NCCLCHECK(ncclLaunchOneRank(info->recvbuff, info->sendbuff, info->count, opFull, info->datatype, info->stream));
       return ncclSuccess;
     } else {
       // Must be in thread local group before tasks can be alloc'd in `comm->memScoped`.
@@ -1532,7 +1450,7 @@ static ncclResult_t taskAppend(struct ncclComm* comm, struct ncclInfo const* inf
       t->chunkSteps = info->chunkSteps;
       t->sliceSteps = info->sliceSteps;
       ncclIntruQueueEnqueue(&tasks->collQueue, t);
-      tasks->collBytesTotal += t->count*ncclTypeSize(t->datatype);
+      tasks->collBytesTotal += info->nBytes;
       tasks->nTasksColl += 1;
     }
   }
