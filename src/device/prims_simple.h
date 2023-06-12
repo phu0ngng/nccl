@@ -4,6 +4,8 @@
  * See LICENSE.txt for license information
  ************************************************************************/
 
+#define NCCL_PTR_USER_BUFFER ((void*)0xffffffffffffffff)
+
 template<typename T, typename RedOp, typename Fan, int Direct,
          int SlicePerChunk, int StepPerSlice, int Unroll, int P2p, int MultimemSrcs, int MultimemDsts>
 class Primitives<
@@ -18,6 +20,7 @@ class Primitives<
                        RolePostSend = 0x10,
                        RolePostRecv = 0x20,
                        Aborted = 0x40,
+                       UserBufferMode = 0x80,
                        ConnFifoEnabled = 0x100,
                        DirectWrite = 0x200,
                        DirectRead = 0x400,
@@ -134,10 +137,12 @@ class Primitives<
 
       void **ptrs = isSendNotRecv ? (ncclShmem.groups[group].dsts + Dst)
                                   : (ncclShmem.groups[group].srcs + Src);
-      if ((flags & ConnFifoEnabled) && connFifo[step%NCCL_STEPS].mode == NCCL_MODE_OFFSET)
+      if ((flags & UserBufferMode) ||
+          ((flags & ConnFifoEnabled) && connFifo[step%NCCL_STEPS].mode == NCCL_MODE_PTR)) {
+        ptrs[index] = NCCL_PTR_USER_BUFFER;
+        flags |= UserBufferMode;
+      } else if ((flags & ConnFifoEnabled) && connFifo[step%NCCL_STEPS].mode == NCCL_MODE_OFFSET)
         ptrs[index] = connEltsFifo + loadInt(&connFifo[step%NCCL_STEPS].offset)/sizeof(T);
-      else if ((flags & ConnFifoEnabled) && connFifo[step%NCCL_STEPS].mode == NCCL_MODE_PTR)
-        ptrs[index] = connFifo[step%NCCL_STEPS].ptr;
       else if (isSendNotRecv && DirectSend) {
         if (flags & DirectWrite) {
           ptrs[index] = directBuff + dstIx + offset;
@@ -228,7 +233,7 @@ class Primitives<
          * to 0 to avoid unnecessary workload. */
         int workSize = ncclShmem.aborted ? 0 : sliceSize;
         int nSrc = Recv*fan.nrecv()+Src, nDst = Send*fan.nsend()+Dst;
-        if (nSrc == 1 && nDst == 1 && ncclShmem.groups[group].srcs[0] == ncclShmem.groups[group].dsts[0]) {
+        if (nSrc == 1 && nDst == 1 && (ncclShmem.groups[group].srcs[0] == NCCL_PTR_USER_BUFFER || ncclShmem.groups[group].dsts[0] == NCCL_PTR_USER_BUFFER)) {
           // Skip the copy
         } else if (DirectRecv && ncclShmem.groups[group].srcs[0] == ncclShmem.groups[group].dsts[0]) {
           // We can only have one direct receive. Since srcs[0] == dstPtr+offset, skip one copy
