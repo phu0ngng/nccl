@@ -25,16 +25,17 @@ typedef enum {NCCL_INIT=1, NCCL_COLL=2, NCCL_P2P=4, NCCL_SHM=8, NCCL_NET=16, NCC
 typedef void (*ncclDebugLogger_t)(ncclDebugLogLevel level, unsigned long flags, const char *file, int line, const char *fmt, ...);
 
 typedef struct {
-  char* name;     // Used mostly for logging.
-  char* pciPath;  // Path to the PCI device in /sys.
-  uint64_t guid;  // Unique identifier for the NIC chip. Important for
-                  // cards with multiple PCI functions (Physical or virtual).
-  int ptrSupport; // [NCCL_PTR_HOST|NCCL_PTR_CUDA|NCCL_PTR_DMABUF]
-  int speed;      // Port speed in Mbps.
-  int port;       // Port number.
-  float latency;  // Network latency
-  int maxComms;   // Maximum number of comms we can create
-  int maxRecvs;   // Maximum number of grouped receives.
+  char* name;      // Used mostly for logging.
+  char* pciPath;   // Path to the PCI device in /sys.
+  uint64_t guid;   // Unique identifier for the NIC chip. Important for
+                   // cards with multiple PCI functions (Physical or virtual).
+  int ptrSupport;  // [NCCL_PTR_HOST|NCCL_PTR_CUDA|NCCL_PTR_DMABUF]
+  int regIsGlobal; // regMr is not tied to a particular comm
+  int speed;       // Port speed in Mbps.
+  int port;        // Port number.
+  float latency;   // Network latency
+  int maxComms;    // Maximum number of comms we can create
+  int maxRecvs;    // Maximum number of grouped receives.
 }ncclNetProperties_v7_t;
 
 typedef ncclNetProperties_v7_t ncclNetProperties_t;
@@ -135,6 +136,19 @@ typedef ncclCollNet_v7_t ncclCollNet_t;
 #define NCCL_COLLNET_PLUGIN_SYMBOL ncclCollNetPlugin_v7
 
 typedef struct {
+  char* name;     // Used mostly for logging.
+  char* pciPath;  // Path to the PCI device in /sys.
+  uint64_t guid;  // Unique identifier for the NIC chip. Important for
+                  // cards with multiple PCI functions (Physical or virtual).
+  int ptrSupport; // [NCCL_PTR_HOST|NCCL_PTR_CUDA|NCCL_PTR_DMABUF]
+  int speed;      // Port speed in Mbps.
+  int port;       // Port number.
+  float latency;  // Network latency
+  int maxComms;   // Maximum number of comms we can create
+  int maxRecvs;   // Maximum number of grouped receives.
+}ncclNetProperties_v6_t;
+
+typedef struct {
   // Name of the network (mainly for logs)
   const char* name;
   // Initialize the network.
@@ -142,7 +156,7 @@ typedef struct {
   // Return the number of adapters.
   ncclResult_t (*devices)(int* ndev);
   // Get various device properties.
-  ncclResult_t (*getProperties)(int dev, ncclNetProperties_v7_t* props);
+  ncclResult_t (*getProperties)(int dev, ncclNetProperties_v6_t* props);
   // Create a receiving object and provide a handle to connect to it. The
   // handle can be up to NCCL_NET_HANDLE_MAXSIZE bytes and will be exchanged
   // between ranks to create a connection.
@@ -190,7 +204,7 @@ typedef struct {
   // If ndev returns 0, all other functions might be set to NULL.
   ncclResult_t (*devices)(int* ndev);
   // Get various device properties.
-  ncclResult_t (*getProperties)(int dev, ncclNetProperties_v7_t* props);
+  ncclResult_t (*getProperties)(int dev, ncclNetProperties_v6_t* props);
   // Create a receiving object and provide a handle to connect to it. The
   // handle can be up to NCCL_NET_HANDLE_MAXSIZE bytes and will be exchanged
   // between ranks to create connections.
@@ -230,7 +244,7 @@ typedef struct {
   // Return the number of adapters.
   ncclResult_t (*devices)(int* ndev);
   // Get various device properties.
-  ncclResult_t (*getProperties)(int dev, ncclNetProperties_v7_t* props);
+  ncclResult_t (*getProperties)(int dev, ncclNetProperties_v6_t* props);
   // Create a receiving object and provide a handle to connect to it. The
   // handle can be up to NCCL_NET_HANDLE_MAXSIZE bytes and will be exchanged
   // between ranks to create a connection.
@@ -277,7 +291,7 @@ typedef struct {
   // If ndev returns 0, all other functions might be set to NULL.
   ncclResult_t (*devices)(int* ndev);
   // Get various device properties.
-  ncclResult_t (*getProperties)(int dev, ncclNetProperties_v7_t* props);
+  ncclResult_t (*getProperties)(int dev, ncclNetProperties_v6_t* props);
   // Create a receiving object and provide a handle to connect to it. The
   // handle can be up to NCCL_NET_HANDLE_MAXSIZE bytes and will be exchanged
   // between ranks to create connections.

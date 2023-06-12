@@ -31,7 +31,7 @@ static union ncclSocketAddress ncclIbIfAddr;
 
 struct ncclIbMr {
   uintptr_t addr;
-  int pages;
+  size_t pages;
   int refs;
   ibv_mr *mr;
 };
@@ -325,6 +325,7 @@ ncclResult_t ncclIbGetProperties(int dev, ncclNetProperties_t* props) {
   if (ncclIbGdrSupport(dev) == ncclSuccess) {
     props->ptrSupport |= NCCL_PTR_CUDA; // GDR support via nv_peermem
   }
+  props->regIsGlobal = 1;
   if (ncclIbDmaBufSupport(dev) == ncclSuccess) {
     props->ptrSupport |= NCCL_PTR_DMABUF; // GDR support via DMA-BUF
   }
@@ -1099,16 +1100,9 @@ ncclResult_t ncclIbIsend(void* sendComm, void* data, int size, int tag, void* mh
   for (int r=0; r<nreqs; r++) {
     if (reqs[r] != NULL || slots[r].tag != tag) continue;
 
-    // Sanity checks to catch user collective call count/size mismatches
-    if (size > slots[r].size) {
-      char line[SOCKET_NAME_MAXLEN + 1];
-      union ncclSocketAddress addr;
-      ncclSocketGetAddr(&comm->sock, &addr);
-      WARN("NET/IB : req %d/%d tag %x peer %s collective mismatch error, local size %d remote size %d",
-        r, nreqs, tag, ncclSocketToString(&addr, line), size, slots[r].size);
-      return ncclInvalidUsage;
-    } // plus any potential programming errors
-    else if (slots[r].size < 0 || slots[r].addr == 0 || slots[r].rkey == 0) {
+    if (size > slots[r].size) size = slots[r].size;
+    // Sanity checks
+    if (slots[r].size < 0 || slots[r].addr == 0 || slots[r].rkey == 0) {
       char line[SOCKET_NAME_MAXLEN + 1];
       union ncclSocketAddress addr;
       ncclSocketGetAddr(&comm->sock, &addr);
@@ -1293,6 +1287,9 @@ ncclResult_t ncclIbTest(void* request, int* done, int* sizes) {
       *done = 1;
       if (sizes && r->type == NCCL_NET_IB_REQ_RECV) {
         for (int i=0; i<r->nreqs; i++) sizes[i] = r->recv.sizes[i];
+      }
+      if (sizes && r->type == NCCL_NET_IB_REQ_SEND) {
+        sizes[0] = r->send.size;
       }
       NCCLCHECK(ncclIbFreeRequest(r));
       return ncclSuccess;

@@ -236,6 +236,8 @@ static ncclResult_t commFree(ncclComm_t comm) {
   free(comm->topParentRanks);
   free(comm->topParentLocalRanks);
 
+  NCCLCHECK(ncclRegCleanup(comm));
+
   commPoison(comm); // poison comm before free to avoid comm reuse.
   free(comm);
 

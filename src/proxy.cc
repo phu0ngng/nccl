@@ -602,10 +602,12 @@ ncclResult_t ncclProxyComputeP2p(struct ncclInfo* info, struct ncclProxyOp* op) 
   info->chunkSize = stepSize;
   op->root = info->root;
 
+  int registered;
+  NCCLCHECK(ncclRegFind(info->comm, info->recvbuff, info->nBytes, &registered));
+  op->buffer = registered ? info->recvbuff : NULL;
   struct ncclChannelPeer* peer = channel->peers[op->root];
   if (info->coll == ncclFuncSend) {
     op->pattern = ncclPatternSend;
-    op->buffer = info->recvbuff;
     if (op->root != info->comm->rank && peer->send[1].transportComm == &netTransport.send) {
       // Tune chunk size for the network
       if (info->count < stepSize) info->chunkSize /= 4;
@@ -613,7 +615,6 @@ ncclResult_t ncclProxyComputeP2p(struct ncclInfo* info, struct ncclProxyOp* op) 
     }
   } else if (info->coll == ncclFuncRecv) {
     op->pattern = ncclPatternRecv;
-    op->buffer = info->recvbuff;
     if (op->root != info->comm->rank && peer->recv[1].transportComm == &netTransport.recv) {
       // Tune chunk size for the network
       if (info->count < stepSize) info->chunkSize /= 4;

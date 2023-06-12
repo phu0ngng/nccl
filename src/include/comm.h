@@ -188,6 +188,13 @@ struct ncclKernelPlan {
   } channels[MAXCHANNELS];
 };
 
+struct ncclRegCache {
+  struct ncclReg *slots;
+  int capacity, population;
+};
+ncclResult_t ncclRegCleanup(struct ncclComm* comm);
+ncclResult_t ncclRegFind(struct ncclComm* comm, void* data, size_t size, int* found);
+
 struct ncclComm {
   struct ncclMemoryStack memPermanent, memScoped;
   // List of destructors to run when comm is destructed
@@ -343,6 +350,8 @@ struct ncclComm {
   bool finalizeCalled;
   // shared structures for finalization
   int finalizeRankCnt;
+
+  struct ncclRegCache regCache;
 };
 
 enum ncclLaunchMode {

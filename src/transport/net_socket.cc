@@ -96,6 +96,7 @@ ncclResult_t ncclNetSocketGetProperties(int dev, ncclNetProperties_t* props) {
   props->pciPath = ncclNetSocketDevs[dev].pciPath;
   props->guid = dev;
   props->ptrSupport = NCCL_PTR_HOST;
+  props->regIsGlobal = 0;
   NCCLCHECK(ncclNetSocketGetSpeed(props->name, &props->speed));
   props->latency = 0; // Not set
   props->port = 0;

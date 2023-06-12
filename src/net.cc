@@ -30,6 +30,7 @@ static ncclResult_t ncclNet_v4_as_v7_getProperties(int dev, ncclNetProperties_v7
   props->pciPath = p4.pciPath;
   props->guid = p4.guid;
   props->ptrSupport = p4.ptrSupport;
+  props->regIsGlobal = 0;
   props->speed = p4.speed;
   props->port = p4.port;
   props->maxComms = p4.maxComms;
@@ -82,6 +83,23 @@ static ncclResult_t ncclNet_v4_as_v7_init(ncclDebugLogger_t logfn) {
   return ncclSuccess;
 }
 
+static ncclResult_t ncclNet_v5_as_v7_getProperties(int dev, ncclNetProperties_v7_t* props) {
+  ncclNetProperties_v6_t p6;
+  ncclResult_t ans = ncclNet_v5->getProperties(dev, &p6);
+  if (ans != ncclSuccess) return ans;
+  props->name = p6.name;
+  props->pciPath = p6.pciPath;
+  props->guid = p6.guid;
+  props->ptrSupport = p6.ptrSupport;
+  props->regIsGlobal = 0;
+  props->speed = p6.speed;
+  props->port = p6.port;
+  props->maxComms = p6.maxComms;
+  props->maxRecvs = p6.maxRecvs;
+  props->latency = p6.latency;
+  return ncclSuccess;
+}
+
 static ncclResult_t ncclNet_v5_as_v7_regMr(void* comm, void* data, size_t size, int type, void** mhandle) {
   if (size >= 1<<31) return ncclInternalError;
   return ncclNet_v5->regMr(comm, data, (int) size, type, mhandle);
@@ -93,7 +111,7 @@ static ncclResult_t ncclNet_v5_as_v7_init(ncclDebugLogger_t logfn) {
   NCCLCHECK(ncclNet_v5->init(logfn));
   ncclNet_v5_as_v7.name = ncclNet_v5->name;
   ncclNet_v5_as_v7.devices = ncclNet_v5->devices;
-  ncclNet_v5_as_v7.getProperties = ncclNet_v5->getProperties;
+  ncclNet_v5_as_v7.getProperties = ncclNet_v5_as_v7_getProperties;
   ncclNet_v5_as_v7.listen = ncclNet_v5->listen;
   ncclNet_v5_as_v7.connect = ncclNet_v5->connect;
   ncclNet_v5_as_v7.accept = ncclNet_v5->accept;
@@ -110,6 +128,23 @@ static ncclResult_t ncclNet_v5_as_v7_init(ncclDebugLogger_t logfn) {
   return ncclSuccess;
 }
 
+static ncclResult_t ncclNet_v6_as_v7_getProperties(int dev, ncclNetProperties_v7_t* props) {
+  ncclNetProperties_v6_t p6;
+  ncclResult_t ans = ncclNet_v6->getProperties(dev, &p6);
+  if (ans != ncclSuccess) return ans;
+  props->name = p6.name;
+  props->pciPath = p6.pciPath;
+  props->guid = p6.guid;
+  props->ptrSupport = p6.ptrSupport;
+  props->regIsGlobal = 0;
+  props->speed = p6.speed;
+  props->port = p6.port;
+  props->maxComms = p6.maxComms;
+  props->maxRecvs = p6.maxRecvs;
+  props->latency = p6.latency;
+  return ncclSuccess;
+}
+
 static ncclResult_t ncclNet_v6_as_v7_regMr(void* comm, void* data, size_t size, int type, void** mhandle) {
   if (size >= 1<<31) return ncclInternalError;
   return ncclNet_v6->regMr(comm, data, (int) size, type, mhandle);
@@ -119,7 +154,7 @@ static ncclResult_t ncclNet_v6_as_v7_init(ncclDebugLogger_t logfn) {
   NCCLCHECK(ncclNet_v6->init(logfn));
   ncclNet_v6_as_v7.name = ncclNet_v6->name;
   ncclNet_v6_as_v7.devices = ncclNet_v6->devices;
-  ncclNet_v6_as_v7.getProperties = ncclNet_v6->getProperties;
+  ncclNet_v6_as_v7.getProperties = ncclNet_v6_as_v7_getProperties;
   ncclNet_v6_as_v7.listen = ncclNet_v6->listen;
   ncclNet_v6_as_v7.connect = ncclNet_v6->connect;
   ncclNet_v6_as_v7.accept = ncclNet_v6->accept;
@@ -144,6 +179,7 @@ static ncclResult_t ncclCollNet_v4_as_v7_getProperties(int dev, ncclNetPropertie
   props->pciPath = p4.pciPath;
   props->guid = p4.guid;
   props->ptrSupport = p4.ptrSupport;
+  props->regIsGlobal = 1;
   props->speed = p4.speed;
   props->port = p4.port;
   props->maxComms = p4.maxComms;
@@ -178,6 +214,23 @@ static ncclResult_t ncclCollNet_v4_as_v7_init(ncclDebugLogger_t logfn) {
   return ncclSuccess;
 }
 
+static ncclResult_t ncclCollNet_v5_as_v7_getProperties(int dev, ncclNetProperties_v7_t* props) {
+  ncclNetProperties_v6_t p6;
+  ncclResult_t ans = ncclCollNet_v5->getProperties(dev, &p6);
+  if (ans != ncclSuccess) return ans;
+  props->name = p6.name;
+  props->pciPath = p6.pciPath;
+  props->guid = p6.guid;
+  props->ptrSupport = p6.ptrSupport;
+  props->regIsGlobal = 0;
+  props->speed = p6.speed;
+  props->port = p6.port;
+  props->maxComms = p6.maxComms;
+  props->maxRecvs = p6.maxRecvs;
+  props->latency = p6.latency;
+  return ncclSuccess;
+}
+
 static ncclResult_t ncclCollNet_v5_as_v7_regMr(void* comm, void* data, size_t size, int type, void** mhandle) {
   if (size >= 1<<31) return ncclInternalError;
   return ncclCollNet_v5->regMr(comm, data, (int) size, type, mhandle);
@@ -189,7 +242,7 @@ static ncclResult_t ncclCollNet_v5_as_v7_init(ncclDebugLogger_t logfn) {
   NCCLCHECK(ncclCollNet_v5->init(logfn));
   ncclCollNet_v5_as_v7.name = ncclCollNet_v5->name;
   ncclCollNet_v5_as_v7.devices = ncclCollNet_v5->devices;
-  ncclCollNet_v5_as_v7.getProperties = ncclCollNet_v5->getProperties;
+  ncclCollNet_v5_as_v7.getProperties = ncclCollNet_v5_as_v7_getProperties;
   ncclCollNet_v5_as_v7.listen = ncclCollNet_v5->listen;
   ncclCollNet_v5_as_v7.connect = ncclCollNet_v5->connect;
   ncclCollNet_v5_as_v7.reduceSupport = ncclCollNet_v5->reduceSupport;
@@ -204,6 +257,23 @@ static ncclResult_t ncclCollNet_v5_as_v7_init(ncclDebugLogger_t logfn) {
   return ncclSuccess;
 }
 
+static ncclResult_t ncclCollNet_v6_as_v7_getProperties(int dev, ncclNetProperties_v7_t* props) {
+  ncclNetProperties_v6_t p6;
+  ncclResult_t ans = ncclCollNet_v6->getProperties(dev, &p6);
+  if (ans != ncclSuccess) return ans;
+  props->name = p6.name;
+  props->pciPath = p6.pciPath;
+  props->guid = p6.guid;
+  props->ptrSupport = p6.ptrSupport;
+  props->regIsGlobal = 0;
+  props->speed = p6.speed;
+  props->port = p6.port;
+  props->maxComms = p6.maxComms;
+  props->maxRecvs = p6.maxRecvs;
+  props->latency = p6.latency;
+  return ncclSuccess;
+}
+
 static ncclResult_t ncclCollNet_v6_as_v7_regMr(void* comm, void* data, size_t size, int type, void** mhandle) {
   if (size >= 1<<31) return ncclInternalError;
   return ncclCollNet_v6->regMr(comm, data, (int) size, type, mhandle);
@@ -213,7 +283,7 @@ static ncclResult_t ncclCollNet_v6_as_v7_init(ncclDebugLogger_t logfn) {
   NCCLCHECK(ncclCollNet_v6->init(logfn));
   ncclCollNet_v6_as_v7.name = ncclCollNet_v6->name;
   ncclCollNet_v6_as_v7.devices = ncclCollNet_v6->devices;
-  ncclCollNet_v6_as_v7.getProperties = ncclCollNet_v6->getProperties;
+  ncclCollNet_v6_as_v7.getProperties = ncclNet_v6_as_v7_getProperties;
   ncclCollNet_v6_as_v7.listen = ncclCollNet_v6->listen;
   ncclCollNet_v6_as_v7.connect = ncclCollNet_v6->connect;
   ncclCollNet_v6_as_v7.reduceSupport = ncclCollNet_v6->reduceSupport;
