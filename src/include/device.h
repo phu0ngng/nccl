@@ -104,7 +104,7 @@ struct ncclConnInfo {
   void **ptrExchange; // Pointer exchange for direct communication
   uint64_t* redOpArgExchange; // PreOp scaler exchange for direct pull case
 
-  struct ncclConnFifo* connFifo;
+  struct ncclConnFifo* connFifo; // Used for GPU - Proxy communication
 
   uint64_t step;      // Keep where we are
   uint64_t llLastCleaning;
@@ -240,7 +240,8 @@ struct ncclWorkElemP2p {
   int proto : 2;
 
   enum ncclWorkP2PType p2pType;
-  uint8_t nWarps;
+  uint8_t reg:1;
+  uint8_t nWarps:5;
   uint8_t warpStart;
   uint8_t ngroups;
   // Important not to use any fields with greater than 4-byte alignment since

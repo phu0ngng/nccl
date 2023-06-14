@@ -109,10 +109,10 @@ ncclResult_t ncclRegFind(struct ncclComm* comm, void* data, size_t size, int* fo
   size_t pages = ((uintptr_t)data + size - addr + pageSize-1)/pageSize;
 
   for (int slot=0; /*true*/; slot++) {
-    if (slot == cache->population || addr+size > cache->slots[slot].addr+cache->slots[slot].pages*pageSize) return ncclSuccess;
+    if (slot == cache->population || addr < cache->slots[slot].addr) return ncclSuccess;
     if ((addr >= cache->slots[slot].addr) &&
         ((addr-cache->slots[slot].addr)/pageSize+pages) <= cache->slots[slot].pages) {
-      *found = cache->slots[slot].nComms;
+      *found = cache->slots[slot].nComms ? 1 : 0;
       return ncclSuccess;
     }
   }

@@ -132,7 +132,7 @@ class Primitives<
     }
 
     if (flags & (Recv*RoleWaitRecv | Send*RoleWaitSend)) {
-      if (isSendNotRecv && (flags & ConnFifoEnabled))
+      if (flags & ConnFifoEnabled)
         connFifo[step%NCCL_STEPS].size = nelts*sizeof(T);
 
       void **ptrs = isSendNotRecv ? (ncclShmem.groups[group].dsts + Dst)
@@ -486,6 +486,12 @@ class Primitives<
     if (flags & (RolePostSend|RolePostRecv)) {
       auto *conns = (flags & RolePostSend) ? ncclShmem.groups[group].sendConns : ncclShmem.groups[group].recvConns;
       conns[index]->step = step;
+    }
+    if ((flags & UserBufferMode) && (flags & RoleWaitSend)) {
+      // Make sure we wait until the proxy has sent data before we return.
+      // We don't want the next CUDA kernel to overwrite the send buffer which
+      // was accessed directly.
+      while (connFifo[step%NCCL_STEPS].size != -1);
     }
     // Make sure all threads are done writing back conn->step and done using
     // ncclShmem.groups[group]

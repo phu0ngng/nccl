@@ -287,13 +287,18 @@ static ncclResult_t addP2pToPlan(
     &comm->channels[channelId].peers[peer]->send[1].conn : &comm->channels[channelId].peers[peer]->recv[1].conn;
   info.protocol = ((conn->buffs[NCCL_PROTO_LL] != nullptr) && bytes <= ncclParamP2pLLThreshold()) ? NCCL_PROTO_LL : NCCL_PROTO_SIMPLE;
 
+  int reg = 0;
+  NCCLCHECK(ncclRegFind(comm, addr, bytes, &reg));
+
   struct ncclProxyOp proxyOp = {};
-  NCCLCHECK(ncclProxyComputeP2p(&info, &proxyOp));
+  // May tune chunksize and set proxyOp.reg=0 if not using the network.
+  NCCLCHECK(ncclProxyComputeP2p(&info, &proxyOp, reg));
 
   struct ncclWorkElemP2p elem = {0};
   elem.proto = info.protocol;
   elem.peer = peer;
   elem.nWarps = NCCL_MAX_NTHREADS/WARP_SIZE;
+  elem.reg = proxyOp.reg;
   elem.p2pType = isSendNotRecv ? ncclWorkP2pTypeSend : ncclWorkP2pTypeRecv;
   elem.buffLo32 = uint32_t(reinterpret_cast<uintptr_t>(addr));
   elem.buffHi32 = reinterpret_cast<uintptr_t>(addr)>>32;

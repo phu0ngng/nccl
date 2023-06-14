@@ -355,6 +355,7 @@ static ncclResult_t ncclProxyOpToArgs(struct ncclProxyOp* op, struct ncclProxyAr
   sub->nsteps = op->nsteps;
   sub->nbytes = op->nbytes;
   sub->peer = op->root;
+  sub->reg = op->reg;
   sub->buffer = op->buffer;
   args->nsubs = subIndex+1;
   if (subIndex) {
@@ -586,7 +587,7 @@ ncclResult_t ncclProxySaveOp(struct ncclComm* comm, struct ncclProxyOp* op, bool
 
 NCCL_PARAM(ChunkSize, "CHUNK_SIZE", 0);
 
-ncclResult_t ncclProxyComputeP2p(struct ncclInfo* info, struct ncclProxyOp* op) {
+ncclResult_t ncclProxyComputeP2p(struct ncclInfo* info, struct ncclProxyOp* op, int reg) {
   memset(op, 0, sizeof(struct ncclProxyOp));
   int channelId = info->channelId;
   struct ncclChannel* channel = info->comm->channels+channelId;
@@ -602,9 +603,6 @@ ncclResult_t ncclProxyComputeP2p(struct ncclInfo* info, struct ncclProxyOp* op) 
   info->chunkSize = stepSize;
   op->root = info->root;
 
-  int registered;
-  NCCLCHECK(ncclRegFind(info->comm, info->recvbuff, info->nBytes, &registered));
-  op->buffer = registered ? info->recvbuff : NULL;
   struct ncclChannelPeer* peer = channel->peers[op->root];
   if (info->coll == ncclFuncSend) {
     op->pattern = ncclPatternSend;
@@ -612,6 +610,7 @@ ncclResult_t ncclProxyComputeP2p(struct ncclInfo* info, struct ncclProxyOp* op) 
       // Tune chunk size for the network
       if (info->count < stepSize) info->chunkSize /= 4;
       else if (info->count < 8*stepSize) info->chunkSize /= 2;
+      op->reg = reg;
     }
   } else if (info->coll == ncclFuncRecv) {
     op->pattern = ncclPatternRecv;
@@ -619,6 +618,7 @@ ncclResult_t ncclProxyComputeP2p(struct ncclInfo* info, struct ncclProxyOp* op) 
       // Tune chunk size for the network
       if (info->count < stepSize) info->chunkSize /= 4;
       else if (info->count < 8*stepSize) info->chunkSize /= 2;
+      op->reg = reg;
     }
   } else {
     WARN("P2p operation is neither send or recv");
@@ -627,6 +627,7 @@ ncclResult_t ncclProxyComputeP2p(struct ncclInfo* info, struct ncclProxyOp* op) 
   if (ncclParamChunkSize() != 0) {
     info->chunkSize = ncclParamChunkSize();
   }
+  op->buffer = reg ? info->recvbuff : NULL;
   op->chunkSize = info->chunkSize;
 
   // Compute nSteps for proxies
@@ -637,7 +638,7 @@ ncclResult_t ncclProxyComputeP2p(struct ncclInfo* info, struct ncclProxyOp* op) 
 
   op->nbytes = info->count;
   op->nsteps = DIVUP(info->count, chunkEffectiveSize);
-  if (op->nsteps == 0) op->nsteps = 1;
+  if (op->nsteps == 0 || op->reg) op->nsteps = 1;
 
   return ncclSuccess;
 }

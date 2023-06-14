@@ -39,7 +39,7 @@ struct ncclProxyOp {
   uint8_t /*ncclDevRedOp_t*/ redOp;
   uint8_t /*ncclPattern_t*/ pattern;
   uint8_t protocol;
-  uint8_t pad;
+  uint8_t reg;
 
   union {
     uint64_t unused;
@@ -51,6 +51,7 @@ static_assert(sizeof(struct ncclProxyOp) == 64, "Keep ProxyOp aligned with cache
 
 struct ncclProxySubArgs {
   struct ncclProxyConnection* connection;
+  int reg;
   void* buffer;
   void* mhandle;
   int channelId;
@@ -249,7 +250,7 @@ enum proxyMode {
 };
 
 ncclResult_t ncclProxySaveOp(struct ncclComm* comm, struct ncclProxyOp* proxyOp, bool *justInquire);
-ncclResult_t ncclProxyComputeP2p(struct ncclInfo* info, struct ncclProxyOp* proxyOp);
+ncclResult_t ncclProxyComputeP2p(struct ncclInfo* info, struct ncclProxyOp* proxyOp, int reg);
 ncclResult_t ncclProxyStart(struct ncclComm* comm);
 ncclResult_t ncclProxyInit(struct ncclComm* comm, struct ncclSocket* sock, union ncclSocketAddress* peerAddresses);
 ncclResult_t ncclProxyCreate(struct ncclComm* comm);

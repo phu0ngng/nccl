@@ -32,7 +32,7 @@ struct RunWork<ncclFuncSendRecv, T, RedOp, NCCL_ALGO_RING, NCCL_PROTO_SIMPLE> {
         int nelem = min(size_t(chunkSize), count-offset);
         prims.directSend(offset, offset, nelem);
         offset += nelem;
-      } while(offset < count);
+      } while(offset < count && args->reg == 0);
     }
   }
 
@@ -51,7 +51,7 @@ struct RunWork<ncclFuncSendRecv, T, RedOp, NCCL_ALGO_RING, NCCL_PROTO_SIMPLE> {
         int nelem = min(size_t(chunkSize), count-offset);
         prims.directRecv(offset, nelem);
         offset += nelem;
-      } while(offset < count);
+      } while(offset < count && args->reg == 0);
     }
   }
 
