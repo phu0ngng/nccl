@@ -189,7 +189,7 @@ struct ncclKernelPlan {
 };
 
 struct ncclRegCache {
-  struct ncclReg *slots;
+  struct ncclReg **slots;
   int capacity, population;
 };
 ncclResult_t ncclRegCleanup(struct ncclComm* comm);

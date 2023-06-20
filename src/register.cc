@@ -109,17 +109,17 @@ ncclResult_t ncclRegFind(struct ncclComm* comm, void* data, size_t size, int* fo
   size_t pages = ((uintptr_t)data + size - addr + pageSize-1)/pageSize;
 
   for (int slot=0; /*true*/; slot++) {
-    if (slot == cache->population || addr < cache->slots[slot].addr) return ncclSuccess;
-    if ((addr >= cache->slots[slot].addr) &&
-        ((addr-cache->slots[slot].addr)/pageSize+pages) <= cache->slots[slot].pages) {
-      *found = cache->slots[slot].nComms ? 1 : 0;
+    if (slot == cache->population || addr < cache->slots[slot]->addr) return ncclSuccess;
+    if ((addr >= cache->slots[slot]->addr) &&
+        ((addr-cache->slots[slot]->addr)/pageSize+pages) <= cache->slots[slot]->pages) {
+      *found = cache->slots[slot]->nComms ? 1 : 0;
       return ncclSuccess;
     }
   }
 }
 NCCL_PARAM(RegDisable, "REGISTER_DISABLE", 0);
 
-ncclResult_t ncclRegister(struct ncclComm* comm, void* data, size_t size, int reg) {
+ncclResult_t ncclRegister(struct ncclComm* comm, void* data, size_t size, void** handle) {
   if (ncclParamRegDisable()) return ncclSuccess;
   static __thread uintptr_t pageSize = 0;
   if (pageSize == 0) pageSize = sysconf(_SC_PAGESIZE);
@@ -128,28 +128,25 @@ ncclResult_t ncclRegister(struct ncclComm* comm, void* data, size_t size, int re
   uintptr_t addr = (uintptr_t)data & -pageSize;
   size_t pages = ((uintptr_t)data + size - addr + pageSize-1)/pageSize;
   for (int slot=0; /*true*/; slot++) {
-    if ((slot == cache->population) || (addr < cache->slots[slot].addr)) {
-      if (reg == 0) { WARN("Dereg: %p (size %lx) not found in reg cache", data, size); return ncclInternalError; }
+    if ((slot == cache->population) || (addr < cache->slots[slot]->addr)) {
       if (cache->population == cache->capacity) { // must grow cache
         cache->capacity = cache->capacity < 32 ? 32 : 2*cache->capacity;
         NCCLCHECK(ncclRealloc(&cache->slots, cache->population, cache->capacity));
       }
-      struct ncclReg* regSlot = cache->slots+slot;
-      memmove(cache->slots+slot+1, cache->slots+slot, (cache->population-slot)*sizeof(struct ncclReg));
+      memmove(cache->slots+slot+1, cache->slots+slot, (cache->population-slot)*sizeof(struct ncclReg*));
+      NCCLCHECK(ncclCalloc(cache->slots+slot, 1));
+      struct ncclReg* regSlot = cache->slots[slot];
       regSlot->addr = addr;
       regSlot->pages = pages;
       regSlot->refs = 1;
       NCCLCHECK(ncclNetRegister(comm, (void*)addr, pages*pageSize, regSlot));
       cache->population += 1;
+      *handle = regSlot;
       return ncclSuccess;
-    } else if ((addr >= cache->slots[slot].addr) &&
-        ((addr-cache->slots[slot].addr)/pageSize+pages) <= cache->slots[slot].pages) {
-      cache->slots[slot].refs += reg ? 1 : -1;
-      if (cache->slots[slot].refs == 0) {
-        NCCLCHECK(ncclNetDeregister(comm, cache->slots+slot));
-        memmove(cache->slots+slot, cache->slots+slot+1, (cache->population-slot-1)*sizeof(struct ncclReg));
-        cache->population -= 1;
-      }
+    } else if ((addr >= cache->slots[slot]->addr) &&
+        ((addr-cache->slots[slot]->addr)/pageSize+pages) <= cache->slots[slot]->pages) {
+      cache->slots[slot]->refs++;
+      *handle = cache->slots[slot];
       return ncclSuccess;
     }
   }
@@ -158,24 +155,37 @@ ncclResult_t ncclRegister(struct ncclComm* comm, void* data, size_t size, int re
 ncclResult_t ncclRegCleanup(struct ncclComm* comm) {
   struct ncclRegCache* cache = &comm->regCache;
   for (int i=0; i<cache->population; i++) {
-    INFO(NCCL_INIT, "Cleanup buffer %p pages %lx", (void*)cache->slots[i].addr, cache->slots[i].pages);
-    NCCLCHECK(ncclNetDeregister(comm, cache->slots+i));
+    INFO(NCCL_INIT, "Cleanup buffer %p pages %lx", (void*)cache->slots[i]->addr, cache->slots[i]->pages);
+    NCCLCHECK(ncclNetDeregister(comm, cache->slots[i]));
+    free(cache->slots[i]);
   }
   free(cache->slots);
   return ncclSuccess;
 }
 
-NCCL_API(ncclResult_t, ncclCommRegister, const ncclComm_t comm, void* buff, size_t size);
-ncclResult_t ncclCommRegister(const ncclComm_t comm, void* buff, size_t size) {
+NCCL_API(ncclResult_t, ncclCommRegister, const ncclComm_t comm, void* buff, size_t size, void** handle);
+ncclResult_t ncclCommRegister(const ncclComm_t comm, void* buff, size_t size, void** handle) {
   NCCLCHECK(PtrCheck(comm, "ncclCommRegister", "comm"));
   if (comm->checkPointers) NCCLCHECK(CudaPtrCheck(buff, comm, "buff", "ncclCommRegister"));
-  NCCLCHECK(ncclRegister(comm, buff, size, 1));
+  NCCLCHECK(ncclRegister(comm, buff, size, handle));
   return ncclSuccess;
 }
 
-NCCL_API(ncclResult_t, ncclCommDeregister, const ncclComm_t comm, void* buff, size_t size);
-ncclResult_t ncclCommDeregister(const ncclComm_t comm, void* buff, size_t size) {
+NCCL_API(ncclResult_t, ncclCommDeregister, const ncclComm_t comm, void* handle);
+ncclResult_t ncclCommDeregister(const ncclComm_t comm, void* handle) {
   NCCLCHECK(PtrCheck(comm, "ncclCommRegister", "comm"));
-  NCCLCHECK(ncclRegister(comm, buff, size, 0));
+  struct ncclReg* reg = (struct ncclReg*)handle;
+  struct ncclRegCache* cache = &comm->regCache;
+  int slot;
+  for (slot=0; slot<cache->population && cache->slots[slot] != reg; slot++);
+  if (slot == cache->population) {
+    WARN("Deregister: Could not find handle");
+    return ncclInvalidUsage;
+  }
+  if (--reg->refs) return ncclSuccess;
+  NCCLCHECK(ncclNetDeregister(comm, reg));
+  free(reg);
+  memmove(cache->slots+slot, cache->slots+slot+1, (cache->population-slot-1)*sizeof(struct ncclReg*));
+  cache->population -= 1;
   return ncclSuccess;
 }

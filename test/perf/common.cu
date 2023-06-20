@@ -1235,7 +1235,9 @@ char* splitMaskEnv = NULL;
   int gpus[nGpus*nThreads];
   cudaStream_t streams[nGpus*nThreads];
   void* sendbuffs[commNum][nGpus*nThreads];
+  void* shandles[commNum][nGpus*nThreads];
   void* recvbuffs[commNum][nGpus*nThreads];
+  void* rhandles[commNum][nGpus*nThreads];
   void* expected[commNum][nGpus*nThreads];
   size_t sendBytes, recvBytes;
 
@@ -1361,8 +1363,8 @@ char* splitMaskEnv = NULL;
       ncclTestEngine.getBuffSize(&sendBytes, &recvBytes, (size_t)maxBytes, (size_t)nranks);
       CUDACHECK(cudaSetDevice(gpus[i]));
       TESTCHECK(AllocateBuffs(sendbuffs[id] + i, sendBytes, recvbuffs[id] + i, recvBytes, expected[id] + i, (size_t)maxBytes));
-      NCCLCHECK(ncclCommRegister(comms[id][i], sendbuffs[id][i], sendBytes));
-      NCCLCHECK(ncclCommRegister(comms[id][i], recvbuffs[id][i], recvBytes));
+      NCCLCHECK(ncclCommRegister(comms[id][i], sendbuffs[id][i], sendBytes, shandles[id]+i));
+      NCCLCHECK(ncclCommRegister(comms[id][i], recvbuffs[id][i], recvBytes, rhandles[id]+i));
     }
   }
 
@@ -1499,11 +1501,11 @@ char* splitMaskEnv = NULL;
   for (int id = 0; id < commNum; ++id) {
     for (int i=0; i<nGpus*nThreads; i++) {
       if (sendbuffs[id][i]) {
-        NCCLCHECK(ncclCommDeregister(comms[id][i], sendbuffs[id][i], sendBytes));
+        NCCLCHECK(ncclCommDeregister(comms[id][i], shandles[id][i]));
         CUDACHECK(cudaFree((char*)sendbuffs[id][i]));
       }
       if (recvbuffs[id][i]) {
-        NCCLCHECK(ncclCommDeregister(comms[id][i], recvbuffs[id][i], recvBytes));
+        NCCLCHECK(ncclCommDeregister(comms[id][i], rhandles[id][i]));
         CUDACHECK(cudaFree((char*)recvbuffs[id][i]));
       }
       if (datacheck) CUDACHECK(cudaFree(expected[id][i]));
