@@ -627,16 +627,18 @@ ncclResult_t ncclProxyComputeP2p(struct ncclInfo* info, struct ncclProxyOp* op, 
   if (ncclParamChunkSize() != 0) {
     info->chunkSize = ncclParamChunkSize();
   }
-  op->buffer = reg ? info->recvbuff : NULL;
+  op->buffer = op->reg ? info->recvbuff : NULL;
   op->chunkSize = info->chunkSize;
+  op->nbytes = info->count;
 
   // Compute nSteps for proxies
   int chunkEffectiveSize = op->chunkSize;
   if (op->protocol == NCCL_PROTO_LL) {
     chunkEffectiveSize /= 2;
+    op->nbytes *= 2;
   }
 
-  op->nbytes = info->count;
+  if (!op->reg) op->nbytes = std::min(op->nbytes, (ssize_t)info->chunkSize);
   op->nsteps = DIVUP(info->count, chunkEffectiveSize);
   if (op->nsteps == 0 || op->reg) op->nsteps = 1;
 

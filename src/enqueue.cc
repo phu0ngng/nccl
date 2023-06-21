@@ -288,7 +288,9 @@ static ncclResult_t addP2pToPlan(
   info.protocol = ((conn->buffs[NCCL_PROTO_LL] != nullptr) && bytes <= ncclParamP2pLLThreshold()) ? NCCL_PROTO_LL : NCCL_PROTO_SIMPLE;
 
   int reg = 0;
-  NCCLCHECK(ncclRegFind(comm, addr, bytes, &reg));
+  if (info.protocol == NCCL_PROTO_SIMPLE) {
+    NCCLCHECK(ncclRegFind(comm, addr, bytes, &reg));
+  }
 
   struct ncclProxyOp proxyOp = {};
   // May tune chunksize and set proxyOp.reg=0 if not using the network.

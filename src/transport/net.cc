@@ -453,10 +453,11 @@ static ncclResult_t sharedBuffersInit(struct ncclProxyState* proxyState, int cud
   return ncclSuccess;
 }
 
-static ncclResult_t sharedBuffersGet(struct ncclProxyState* proxyState, int channel, int slot, int* offset) {
+static ncclResult_t sharedBuffersGet(struct ncclProxyState* proxyState, int channel, int slot, int* offset, int* size) {
   // Use different pools for different channels and also separate send/recv.
   int globalSlot = (channel*NCCL_SHARED_STEPS)+slot;
   *offset = proxyState->p2pChunkSize * globalSlot;
+  if (size) *size = proxyState->p2pChunkSize;
   return ncclSuccess;
 }
 
@@ -927,6 +928,7 @@ static ncclResult_t sendProxyProgress(struct ncclProxyState* proxyState, struct 
     int p = args->protocol;
     int maxDepth = std::min(NCCL_STEPS, NCCL_SHARED_STEPS/args->nsubs);
     for (int s=0; s<args->nsubs; s++) {
+restart:
       struct ncclProxySubArgs* sub = args->subs+s;
       if (sub->done == sub->nsteps) continue;
       struct sendResources* resources = (struct sendResources*) (sub->connection->transportResources);
@@ -937,13 +939,12 @@ static ncclResult_t sendProxyProgress(struct ncclProxyState* proxyState, struct 
       if (sub->posted < sub->nsteps && sub->posted < sub->done + maxDepth) {
         int buffSlot = (sub->base+sub->posted)%NCCL_STEPS;
         if (resources->shared) {
-          if (sub->buffer) {
-            resources->recvMem->connFifo[buffSlot].ptr = sub->buffer;
+          if (sub->reg) {
             resources->recvMem->connFifo[buffSlot].mode = NCCL_MODE_PTR;
           } else {
             int sharedBuffSlot = sub->posted%maxDepth;
             int offset;
-            NCCLCHECK(sharedBuffersGet(proxyState, sub->channelId, sharedBuffSlot*args->nsubs+s, &offset));
+            NCCLCHECK(sharedBuffersGet(proxyState, sub->channelId, sharedBuffSlot*args->nsubs+s, &offset, NULL));
             resources->recvMem->connFifo[buffSlot].offset = offset;
             resources->recvMem->connFifo[buffSlot].mode = NCCL_MODE_OFFSET;
             __sync_synchronize();
@@ -995,7 +996,7 @@ static ncclResult_t sendProxyProgress(struct ncclProxyState* proxyState, struct 
               if (resources->recvMem->connFifo[buffSlot].mode == NCCL_MODE_OFFSET)
                 buff = localBuff+resources->recvMem->connFifo[buffSlot].offset;
               else if (resources->recvMem->connFifo[buffSlot].mode == NCCL_MODE_PTR)
-                buff = (char*)resources->recvMem->connFifo[buffSlot].ptr;
+                buff = (char*)sub->buffer;
             }
           }
           if (ready) {
@@ -1018,7 +1019,14 @@ static ncclResult_t sendProxyProgress(struct ncclProxyState* proxyState, struct 
         int buffSlot = (sub->base+sub->done)%NCCL_STEPS;
         NCCLCHECK(proxyState->ncclNet->test(sub->requests[buffSlot], &done, &size));
         if (done) {
-          if (sub->reg == 0 && size < connFifo[buffSlot].size) {
+          if (sub->reg) {
+            if (size < sub->nbytes) {
+              sub->buffer = ((char*)sub->buffer)+size;
+              sub->nbytes -= size;
+              sub->transmitted -= args->sliceSteps;
+              goto restart;
+            }
+          } else if (size < connFifo[buffSlot].size) {
             WARN("NET: collective mismatch error, sent %ld truncated to %d\n", connFifo[buffSlot].size, size);
             return ncclInvalidUsage;
           }
@@ -1098,6 +1106,7 @@ static ncclResult_t recvProxyProgress(struct ncclProxyState* proxyState, struct 
     args->state = ncclProxyOpProgress;
   }
   args->idle = 1;
+restart:
   if (args->state == ncclProxyOpProgress) {
     int p = args->protocol;
     int maxDepth = std::min(NCCL_STEPS, NCCL_SHARED_STEPS/args->nsubs);
@@ -1108,7 +1117,6 @@ static ncclResult_t recvProxyProgress(struct ncclProxyState* proxyState, struct 
       int sizes[NCCL_PROXY_MAX_SUBS];
       int tags[NCCL_PROXY_MAX_SUBS];
       void* mhandles[NCCL_PROXY_MAX_SUBS];
-
       for (int i=0; i<subGroup->groupSize; i++) {
         struct ncclProxySubArgs* sub = subGroup + i;
         if (sub->posted < sub->nsteps) {
@@ -1122,18 +1130,16 @@ static ncclResult_t recvProxyProgress(struct ncclProxyState* proxyState, struct 
             if (sub->reg) {
               // Wait until CUDA kernel has started before we access the user buffer directly.
               if (connFifo[buffSlot].size == -1) continue;
-              connFifo[buffSlot].size = -1; // reset the value once we observed it. There is a __sync_synchronize() later to ensure it is reset before it is set again by the GPU.
               ptrs[subCount] = connFifo[buffSlot].ptr = sub->buffer;
               connFifo[buffSlot].mode = NCCL_MODE_PTR;
               sizes[subCount] = sub->nbytes;
             } else {
               int sharedBuffSlot = sub->posted%maxDepth;
               int offset;
-              NCCLCHECK(sharedBuffersGet(proxyState, sub->channelId, sharedBuffSlot*args->nsubs+s+i, &offset));
+              NCCLCHECK(sharedBuffersGet(proxyState, sub->channelId, sharedBuffSlot*args->nsubs+s+i, &offset, sizes+subCount));
               connFifo[buffSlot].offset = offset;
               connFifo[buffSlot].mode = NCCL_MODE_OFFSET;
               ptrs[subCount] = localBuff+offset;
-              sizes[subCount] = stepSize*args->sliceSteps;
             }
           } else {
             ptrs[subCount] = localBuff+buffSlot*stepSize;
@@ -1178,6 +1184,21 @@ static ncclResult_t recvProxyProgress(struct ncclProxyState* proxyState, struct 
           for (int i=0; i<NCCL_PROXY_MAX_SUBS; i++) totalSize += sizes[i];
           for (int i=0; i<subGroup->groupSize; i++) {
             struct ncclProxySubArgs* sub = subGroup + i;
+            if (sub->reg) {
+              if (sizes[i] < sub->nbytes) {
+                sub->buffer = ((char*)sub->buffer) + sizes[i];
+                sub->nbytes -= sizes[i];
+                sub->posted -= args->sliceSteps; // rewind and receive again
+                goto restart;
+              } else {
+                // Reset connFifo size indicating the GPU was ready to receive.
+                // There is a __sync_synchronize() later to ensure it is reset before it is set again by the GPU.
+                struct recvResources* resources = (struct recvResources*) (sub->connection->transportResources);
+                volatile struct ncclConnFifo* connFifo = (volatile struct ncclConnFifo*)resources->recvMem->connFifo;
+                int buffSlot = (sub->base+sub->received)%NCCL_STEPS;
+                connFifo[buffSlot].size = -1;
+              }
+            }
             sub->received += args->sliceSteps;
             for (uint64_t step=sub->received-args->sliceSteps; step<sub->received; step++) ncclProfilingRecord(args, s+i, step, ncclProxyProfileRecvFlushWait);
             if (step < sub->nsteps) {
