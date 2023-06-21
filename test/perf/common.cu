@@ -93,6 +93,8 @@ static size_t tbytes = SIZE_MAX;
 static int split_share = NCCL_CONFIG_UNDEF_INT;
 static int split_comm = 0;
 static int commNum = 1;
+static int regSend = 0;
+static int regRecv = 0;
 
 static char* replay_file = NULL;
 
@@ -961,13 +963,14 @@ int main(int argc, char* argv[]) {
     {"tbytes", required_argument, 0, 's'},
     {"split_share", required_argument, 0, 'S'},
     {"split_comm", required_argument, 0, 'P'},
+    {"reg_buff", required_argument, 0, 'R'},
     {"help", no_argument, 0, 'h'},
     {}
   };
 
   while(1) {
     int c;
-    c = getopt_long(argc, argv, "t:g:b:e:i:f:n:m:w:s:p:c:o:d:r:z:y:k:h:l:T:G:C:O:u:a:B:F:L:s:S:P:", longopts, &longindex);
+    c = getopt_long(argc, argv, "t:g:b:e:i:f:n:m:w:s:p:c:o:d:r:z:y:k:h:l:T:G:C:O:u:a:B:F:L:s:S:P:R:", longopts, &longindex);
 
     if (c == -1)
       break;
@@ -1086,6 +1089,10 @@ int main(int argc, char* argv[]) {
       case 'P':
         split_comm = (int)strtol(optarg, NULL, 0);
         break;
+      case 'R':
+        regSend = optarg[0] == 's' || optarg[0] == 'a' ? 1 : 0;
+        regRecv = optarg[0] == 'r' || optarg[0] == 'a' ? 1 : 0;
+        break;
       case 'h':
       default:
         if (c != 'h') printf("invalid option '%c'\n", c);
@@ -1126,6 +1133,7 @@ int main(int argc, char* argv[]) {
             "[-s,--tbytes total bytes allowed to transmit (default: unlimited); tbytes would limit #iterations] \n\t"
             "[-S,--split_share <0/1> enable shared resources during communicator split (default: 0)] \n\t"
             "[-P,--split_comm <0/1> enable communicator split (default: 0)] \n\t"
+            "[-R,--reg_buff <r/s/a/n> enable buffer registration for recv/send/all/none (default: n)] \n\t"
             "[-h,--help]\n",
           basename(argv[0]));
         return 0;
@@ -1363,8 +1371,8 @@ char* splitMaskEnv = NULL;
       ncclTestEngine.getBuffSize(&sendBytes, &recvBytes, (size_t)maxBytes, (size_t)nranks);
       CUDACHECK(cudaSetDevice(gpus[i]));
       TESTCHECK(AllocateBuffs(sendbuffs[id] + i, sendBytes, recvbuffs[id] + i, recvBytes, expected[id] + i, (size_t)maxBytes));
-      NCCLCHECK(ncclCommRegister(comms[id][i], sendbuffs[id][i], sendBytes, shandles[id]+i));
-      NCCLCHECK(ncclCommRegister(comms[id][i], recvbuffs[id][i], recvBytes, rhandles[id]+i));
+      if (regSend) NCCLCHECK(ncclCommRegister(comms[id][i], sendbuffs[id][i], sendBytes, shandles[id]+i)); else shandles[id][i] = NULL;
+      if (regRecv) NCCLCHECK(ncclCommRegister(comms[id][i], recvbuffs[id][i], recvBytes, rhandles[id]+i)); else rhandles[id][i] = NULL;
     }
   }
 
@@ -1501,11 +1509,11 @@ char* splitMaskEnv = NULL;
   for (int id = 0; id < commNum; ++id) {
     for (int i=0; i<nGpus*nThreads; i++) {
       if (sendbuffs[id][i]) {
-        NCCLCHECK(ncclCommDeregister(comms[id][i], shandles[id][i]));
+        if (shandles[id][i]) NCCLCHECK(ncclCommDeregister(comms[id][i], shandles[id][i]));
         CUDACHECK(cudaFree((char*)sendbuffs[id][i]));
       }
       if (recvbuffs[id][i]) {
-        NCCLCHECK(ncclCommDeregister(comms[id][i], rhandles[id][i]));
+        if (rhandles[id][i]) NCCLCHECK(ncclCommDeregister(comms[id][i], rhandles[id][i]));
         CUDACHECK(cudaFree((char*)recvbuffs[id][i]));
       }
       if (datacheck) CUDACHECK(cudaFree(expected[id][i]));
