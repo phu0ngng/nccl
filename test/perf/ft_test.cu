@@ -36,6 +36,13 @@ static testResult_t checkCommsState(ncclComm_t* comms, int nGpus, ncclResult_t s
       }
       usleep(10);
     }
+#ifdef MPI_SUPPORT
+    int flag;
+    extern pthread_mutex_t mpiLock;
+    pthread_mutex_lock(&mpiLock);
+    MPI_Iprobe(MPI_ANY_SOURCE, MPI_ANY_TAG, MPI_COMM_WORLD, &flag, MPI_STATUS_IGNORE);
+    pthread_mutex_unlock(&mpiLock);
+#endif
   } while (!complete);
 
   for (int j = 0; j < nGpus; ++j) {
