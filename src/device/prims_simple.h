@@ -4,8 +4,6 @@
  * See LICENSE.txt for license information
  ************************************************************************/
 
-#define NCCL_PTR_USER_BUFFER ((void*)0xffffffffffffffff)
-
 template<typename T, typename RedOp, typename Fan, int Direct,
          int SlicePerChunk, int StepPerSlice, int Unroll, int P2p, int MultimemSrcs, int MultimemDsts>
 class Primitives<
@@ -137,10 +135,8 @@ class Primitives<
 
       void **ptrs = isSendNotRecv ? (ncclShmem.groups[group].dsts + Dst)
                                   : (ncclShmem.groups[group].srcs + Src);
-      if ((flags & UserBufferMode) ||
-          ((flags & ConnFifoEnabled) && connFifo[step%NCCL_STEPS].mode == NCCL_MODE_PTR)) {
-        ptrs[index] = NCCL_PTR_USER_BUFFER;
-        flags |= UserBufferMode;
+      if (flags & UserBufferMode) {
+         // Do nothing
       } else if ((flags & ConnFifoEnabled) && connFifo[step%NCCL_STEPS].mode == NCCL_MODE_OFFSET)
         ptrs[index] = connEltsFifo + loadInt(&connFifo[step%NCCL_STEPS].offset)/sizeof(T);
       else if (isSendNotRecv && DirectSend) {
@@ -233,7 +229,7 @@ class Primitives<
          * to 0 to avoid unnecessary workload. */
         int workSize = ncclShmem.aborted ? 0 : sliceSize;
         int nSrc = Recv*fan.nrecv()+Src, nDst = Send*fan.nsend()+Dst;
-        if (nSrc == 1 && nDst == 1 && (ncclShmem.groups[group].srcs[0] == NCCL_PTR_USER_BUFFER || ncclShmem.groups[group].dsts[0] == NCCL_PTR_USER_BUFFER)) {
+        if (flags & UserBufferMode) {
           // Skip the copy
         } else if (DirectRecv && ncclShmem.groups[group].srcs[0] == ncclShmem.groups[group].dsts[0]) {
           // We can only have one direct receive. Since srcs[0] == dstPtr+offset, skip one copy
@@ -436,7 +432,7 @@ class Primitives<
   __device__ Primitives(
       int tid, int nthreads, int const *recvPeers, int const *sendPeers,
       void const *inputBuf, void *outputBuf, uint64_t redOpArg, uint8_t group=0,
-      uint8_t connIndexRecv = 0, uint8_t connIndexSend = 0, struct ncclWorkElem* e = nullptr
+      uint8_t connIndexRecv = 0, uint8_t connIndexSend = 0, struct ncclWorkElem* e = nullptr, struct ncclWorkElemP2p* p2p = nullptr
     ):
     tid(tid), nthreads(nthreads), tidInBlock(threadIdx.x), group(group),
     stepSize(ncclShmem.comm.buffSizes[NCCL_PROTO_SIMPLE]/NCCL_STEPS/sizeof(T)) {
@@ -475,6 +471,7 @@ class Primitives<
     loadRecvConn(ncclShmem.channel.peers[peer], connIndexRecv, e);
     loadSendConn(ncclShmem.channel.peers[peer], connIndexSend, e);
 
+    if (p2p && p2p->reg) flags |= UserBufferMode;
     setDataPtrs(inputBuf, outputBuf, redOpArg, (struct ncclWorkElemReg*)e);
   }
 
