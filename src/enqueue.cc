@@ -559,7 +559,7 @@ static ncclResult_t scheduleP2pTasksToPlan(
     while (nChannelsMax*nRanks > comm->p2pnChannels*4 && nChannelsMax > 1) nChannelsMax /= 2;
   }
 
-  bool fuseOk;
+  bool fuseOk = false;
   uint8_t* opsPerChannel = NULL;
   NCCLCHECK(ncclCalloc(&opsPerChannel, comm->p2pnChannels));
   // We can perform 8 send/recv per round per CTA. Make sure we jump between fused blocks at node boundaries.
@@ -600,9 +600,9 @@ static ncclResult_t scheduleP2pTasksToPlan(
         NCCLCHECK(ncclChannelCompute(comm, recvPeer, chunk%comm->p2pnChannelsPerPeer, ncclFuncRecv, &channelIdRecv));
         NCCLCHECK(ncclChannelCompute(comm, sendPeer, chunk%comm->p2pnChannelsPerPeer, ncclFuncSend, &channelIdSend));
         if (channelIdSend != channelIdRecv) return ncclInternalError;
+        if ((opsPerChannel[channelIdSend] % NCCL_MAX_WORK_ELEMENTS_P2P) == 0) fuseOk = false;
         opsPerChannel[channelIdRecv]++;
         opsPerChannel[channelIdSend]++;
-        if ((opsPerChannel[channelIdSend] % NCCL_MAX_WORK_ELEMENTS_P2P) == 0) fuseOk = false;
         do {
           ssize_t recvChunkBytes = std::min(recvBytes, recvChunkBytesMax); // -1 preserved
           ssize_t sendChunkBytes = std::min(sendBytes, sendChunkBytesMax);
