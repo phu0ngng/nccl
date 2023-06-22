@@ -1289,6 +1289,7 @@ static ncclResult_t proxyConnInit(struct ncclProxyLocalPeer* peer, struct ncclPr
 static ncclResult_t proxyGetFd(struct ncclProxyLocalPeer* peer, void *opId, struct ncclProxyState* proxyState, uint64_t handle) {
 #if CUDART_VERSION >= 11030
   // cuMem API support
+  ncclResult_t ret = ncclSuccess;
   struct ncclIpcSocket ipcSock = { 0 };
   uint64_t hash = (uint64_t) opId;
   INFO(NCCL_PROXY, "UDS proxyGetFd received handle 0x%lx peer %d opId %lx", handle, peer->tpLocalRank, hash);
@@ -1298,12 +1299,13 @@ static ncclResult_t proxyGetFd(struct ncclProxyLocalPeer* peer, void *opId, stru
 
   CUCHECK(cuMemExportToShareableHandle(&fd, handle, type, 0));
   // Send back the converted fd using UDS
-  NCCLCHECK(ncclIpcSocketInit(&ipcSock, proxyState->tpRank, hash^1, proxyState->abortFlag));
-  NCCLCHECK(ncclIpcSocketSendFd(&ipcSock, fd, peer->tpLocalRank, hash));
+  NCCLCHECKGOTO(ncclIpcSocketInit(&ipcSock, proxyState->tpRank, hash^1, proxyState->abortFlag), ret, error);
+  NCCLCHECKGOTO(ncclIpcSocketSendFd(&ipcSock, fd, peer->tpLocalRank, hash), ret, error);
+error:
   NCCLCHECK(ncclIpcSocketClose(&ipcSock));
   // We can now safely close the exported fd
   (void) close(fd);
-  return ncclSuccess;
+  return ret;
 #else
   return ncclInternalError;
 #endif

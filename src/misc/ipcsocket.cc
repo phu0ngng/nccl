@@ -30,7 +30,7 @@ ncclResult_t ncclIpcSocketInit(ncclIpcSocket *handle, int rank, uint64_t hash, v
   handle->fd = -1;
   handle->socketName[0] = '\0';
   if ((fd = socket(AF_UNIX, SOCK_DGRAM, 0)) < 0) {
-    WARN("UDS: Socket creation error : %d", errno);
+    WARN("UDS: Socket creation error : %s (%d)", strerror(errno), errno);
     return ncclSystemError;
   }
 
@@ -54,7 +54,7 @@ ncclResult_t ncclIpcSocketInit(ncclIpcSocket *handle, int rank, uint64_t hash, v
   cliaddr.sun_path[0] = '\0'; // Linux abstract socket trick
 #endif
   if (bind(fd, (struct sockaddr *)&cliaddr, sizeof(cliaddr)) < 0) {
-    WARN("UDS: Binding to socket %s failed : %d", temp, errno);
+    WARN("UDS: Binding to socket %s failed : %s (%d)", temp, strerror(errno), errno);
     close(fd);
     return ncclSystemError;
   }
