@@ -610,7 +610,7 @@ ncclResult_t ncclProxyComputeP2p(struct ncclInfo* info, struct ncclProxyOp* op, 
       // Tune chunk size for the network
       if (info->count < stepSize) info->chunkSize /= 4;
       else if (info->count < 8*stepSize) info->chunkSize /= 2;
-      op->reg = reg;
+      if (peer->send[1].proxyConn.sameProcess) op->reg = reg;
     }
   } else if (info->coll == ncclFuncRecv) {
     op->pattern = ncclPatternRecv;
@@ -618,7 +618,7 @@ ncclResult_t ncclProxyComputeP2p(struct ncclInfo* info, struct ncclProxyOp* op, 
       // Tune chunk size for the network
       if (info->count < stepSize) info->chunkSize /= 4;
       else if (info->count < 8*stepSize) info->chunkSize /= 2;
-      op->reg = reg;
+      if (peer->recv[1].proxyConn.sameProcess) op->reg = reg;
     }
   } else {
     WARN("P2p operation is neither send or recv");

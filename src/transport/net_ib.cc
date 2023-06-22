@@ -415,7 +415,7 @@ struct ncclIbRequest {
       int offset;
     } send;
     struct {
-      int sizes[NCCL_NET_IB_MAX_RECVS];
+      int* sizes;
     } recv;
   };
 };
@@ -443,9 +443,20 @@ struct ncclIbSendFifo {
   uint64_t idx;
 };
 
+struct ncclIbRemSizesFifo {
+  int elems[MAX_REQUESTS][NCCL_NET_IB_MAX_RECVS];
+  uint64_t fifoTail;
+  uint64_t addr;
+  uint32_t rkey;
+  uint32_t flags;
+  struct ibv_mr* mr;
+  struct ibv_sge sge;
+};
+
 struct ncclIbSendComm {
   struct ncclIbVerbs verbs;
   struct ncclIbSendFifo fifo[MAX_REQUESTS][NCCL_NET_IB_MAX_RECVS];
+  struct ncclIbRemSizesFifo remSizesFifo;
   uint64_t fifoHead;
   struct ncclIbRequest* fifoReqs[MAX_REQUESTS][NCCL_NET_IB_MAX_RECVS];
   struct ibv_send_wr wrs[NCCL_NET_IB_MAX_RECVS+1];
@@ -487,12 +498,14 @@ struct ncclIbRemFifo {
 struct ncclIbRecvComm {
   struct ncclIbVerbs verbs;
   struct ncclIbRemFifo remFifo;
+  int sizesFifo[MAX_REQUESTS][NCCL_NET_IB_MAX_RECVS];
   struct ncclSocket sock;
   int ready;
   struct ibv_qp* qps[NCCL_IB_MAX_QPS];
   int nqps;
   int qpIndex;
   struct ncclIbGpuFlush gpuFlush;
+  struct ibv_mr* sizesFifoMr;
   struct ncclIbGidInfo gidInfo;
 };
 static_assert((offsetof(struct ncclIbRecvComm, remFifo) % 32) == 0, "ncclIbSendComm fifo must be 32-byte aligned");
@@ -717,6 +730,12 @@ ib_connect:
     NCCLCHECK(ncclIbRtsQp(qp));
   }
 
+  // Retain remote sizes fifo info and prepare RDMA ops
+  comm->remSizesFifo.rkey = remQpInfo.fifoRkey;
+  comm->remSizesFifo.addr = remQpInfo.fifoAddr;
+  NCCLCHECK(wrap_ibv_reg_mr(&comm->remSizesFifo.mr, comm->verbs.pd, &comm->remSizesFifo.elems, sizeof(int)*MAX_REQUESTS*NCCL_NET_IB_MAX_RECVS, IBV_ACCESS_REMOTE_WRITE|IBV_ACCESS_LOCAL_WRITE|IBV_ACCESS_REMOTE_READ));
+  comm->remSizesFifo.sge.lkey = comm->remSizesFifo.mr->lkey;
+
   comm->ready = 1;
   stage->state = ncclIbCommStateConnected;
   stage->offset = 0;
@@ -849,6 +868,11 @@ ib_recv:
   qpInfo.spn=rComm->gidInfo.localGid.global.subnet_prefix;
   qpInfo.iid=rComm->gidInfo.localGid.global.interface_id;
   qpInfo.mtu=remQpInfo.mtu;
+
+  // Prepare sizes fifo
+  NCCLCHECK(wrap_ibv_reg_mr(&rComm->sizesFifoMr, rComm->verbs.pd, rComm->sizesFifo, sizeof(int)*MAX_REQUESTS*NCCL_NET_IB_MAX_RECVS, IBV_ACCESS_LOCAL_WRITE|IBV_ACCESS_REMOTE_WRITE|IBV_ACCESS_REMOTE_READ));
+  qpInfo.fifoRkey = rComm->sizesFifoMr->rkey;
+  qpInfo.fifoAddr = (uint64_t)rComm->sizesFifo;
 
   stage->state = ncclIbCommStateSend;
   stage->offset = 0;
@@ -1023,13 +1047,10 @@ ncclResult_t ncclIbMultiSend(struct ncclIbSendComm* comm, int slot) {
   if (nreqs == 1) {
     immData = reqs[0]->send.size;
   } else {
-    if (nreqs > 32) {
-      WARN("Cannot store sizes of %d requests in a 32-bits field", nreqs);
-      return ncclInternalError;
-    }
-    for (int r=0; r<nreqs; r++) {
-      immData |= (reqs[r]->send.size ? 1 : 0) << r;
-    }
+    int* sizes = comm->remSizesFifo.elems[slot];
+    for (int r=0; r<nreqs; r++) sizes[r] = reqs[r]->send.size;
+    comm->remSizesFifo.sge.addr = (uint64_t)sizes;
+    comm->remSizesFifo.sge.length = nreqs*sizeof(int);
   }
 
   struct ibv_send_wr* lastWr = comm->wrs+nreqs-1;
@@ -1039,6 +1060,13 @@ ncclResult_t ncclIbMultiSend(struct ncclIbSendComm* comm, int slot) {
     // completion.
     lastWr++;
     memset(lastWr, 0, sizeof(struct ibv_send_wr));
+    if (nreqs > 1) {
+      // Write remote sizes Fifo
+      lastWr->wr.rdma.remote_addr = comm->remSizesFifo.addr + slot*NCCL_NET_IB_MAX_RECVS*sizeof(int);
+      lastWr->wr.rdma.rkey = comm->remSizesFifo.rkey;
+      lastWr->num_sge = 1;
+      lastWr->sg_list = &comm->remSizesFifo.sge;
+    }
   }
   lastWr->wr_id = wr_id;
   lastWr->opcode = IBV_WR_RDMA_WRITE_WITH_IMM;
@@ -1149,6 +1177,8 @@ ncclResult_t ncclIbPostFifo(struct ncclIbRecvComm* comm, int n, void** data, int
   memset(&wr, 0, sizeof(wr));
 
   int slot = comm->remFifo.fifoTail%MAX_REQUESTS;
+  req->recv.sizes = comm->sizesFifo[slot];
+  for (int i=0; i<n; i++) req->recv.sizes[i] = 0;
   struct ncclIbSendFifo* localElem = comm->remFifo.elems[slot];
 
   for (int i=0; i<n; i++) {
@@ -1216,7 +1246,6 @@ ncclResult_t ncclIbIrecv(void* recvComm, int n, void** data, int* sizes, int* ta
   req->sock = &comm->sock;
   req->nreqs = n;
   if (comm->gidInfo.link_layer == IBV_LINK_LAYER_ETHERNET) req->gidInfo = &comm->gidInfo;
-  for (int i=0; i<n; i++) req->recv.sizes[i] = 0;
 
   struct ibv_recv_wr wr;
   memset(&wr, 0, sizeof(wr));
@@ -1331,12 +1360,7 @@ ncclResult_t ncclIbTest(void* request, int* done, int* sizes) {
       } else {
         if (req && wc->opcode == IBV_WC_RECV_RDMA_WITH_IMM) {
           if (req->type != NCCL_NET_IB_REQ_RECV) return ncclInternalError;
-          if (req->nreqs > 1) {
-            // In the case of a multi recv, we only set sizes to 0 or 1.
-            for (int i=0; i<req->nreqs; i++) {
-              req->recv.sizes[i] = (wc->imm_data >> i) & 0x1;
-            }
-          } else {
+          if (req->nreqs == 1) {
             req->recv.sizes[0] += wc->imm_data;
           }
         }
@@ -1353,6 +1377,7 @@ ncclResult_t ncclIbCloseSend(void* sendComm) {
     for (int q=0; q<comm->nqps; q++)
       if (comm->qps[q] != NULL) NCCLCHECK(wrap_ibv_destroy_qp(comm->qps[q]));
     if (comm->fifoMr != NULL) NCCLCHECK(wrap_ibv_dereg_mr(comm->fifoMr));
+    if (comm->remSizesFifo.mr != NULL) NCCLCHECK(wrap_ibv_dereg_mr(comm->remSizesFifo.mr));
     NCCLCHECK(ncclIbDestroyVerbs(&comm->verbs));
     free(comm);
   }
@@ -1371,6 +1396,7 @@ ncclResult_t ncclIbCloseRecv(void* recvComm) {
       if (comm->gpuFlush.hostMr != NULL) NCCLCHECK(wrap_ibv_dereg_mr(comm->gpuFlush.hostMr));
     }
     if (comm->remFifo.mr != NULL) NCCLCHECK(wrap_ibv_dereg_mr(comm->remFifo.mr));
+    if (comm->sizesFifoMr != NULL) NCCLCHECK(wrap_ibv_dereg_mr(comm->sizesFifoMr));
     NCCLCHECK(ncclIbDestroyVerbs(&comm->verbs));
     free(comm);
   }

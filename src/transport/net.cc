@@ -912,6 +912,8 @@ static ncclResult_t sendProxyProgress(struct ncclProxyState* proxyState, struct 
       struct sendResources* resources = (struct sendResources*) (sub->connection->transportResources);
       // Round to next multiple of sliceSteps
       sub->base = ROUNDUP(resources->step, args->chunkSteps);
+      // Set step base for next op
+      resources->step = sub->base + sub->nsteps;
       sub->posted = sub->transmitted = sub->done = 0;
       for (uint64_t step=0; step<sub->nsteps; step++) ncclProfilingRecord(args, s, step, ncclProxyProfileBegin);
       if (sub->reg && sub->nbytes > 0) {
@@ -928,7 +930,6 @@ static ncclResult_t sendProxyProgress(struct ncclProxyState* proxyState, struct 
     int p = args->protocol;
     int maxDepth = std::min(NCCL_STEPS, NCCL_SHARED_STEPS/args->nsubs);
     for (int s=0; s<args->nsubs; s++) {
-restart:
       struct ncclProxySubArgs* sub = args->subs+s;
       if (sub->done == sub->nsteps) continue;
       struct sendResources* resources = (struct sendResources*) (sub->connection->transportResources);
@@ -939,9 +940,7 @@ restart:
       if (sub->posted < sub->nsteps && sub->posted < sub->done + maxDepth) {
         int buffSlot = (sub->base+sub->posted)%NCCL_STEPS;
         if (resources->shared) {
-          if (sub->reg) {
-            resources->recvMem->connFifo[buffSlot].mode = NCCL_MODE_PTR;
-          } else {
+          if (!sub->reg) {
             int sharedBuffSlot = sub->posted%maxDepth;
             int offset;
             NCCLCHECK(sharedBuffersGet(proxyState, sub->channelId, sharedBuffSlot*args->nsubs+s, &offset, NULL));
@@ -951,7 +950,8 @@ restart:
           }
           volatile uint64_t* sendHead = resources->gdcSync ? resources->gdcSync : &resources->sendMem->head;
           sub->posted += args->sliceSteps;
-          *sendHead = sub->base + sub->posted - NCCL_STEPS;
+          // Only post one credit for registered buffer
+          if (sub->reg == 0 || sub->posted == args->sliceSteps) *sendHead = sub->base + sub->posted - NCCL_STEPS;
           if (resources->gdcSync) wc_store_fence(); // Flush out WC write
         } else sub->posted += args->sliceSteps;
         for (uint64_t step=sub->posted-args->sliceSteps; step<sub->posted; step++) {
@@ -964,7 +964,8 @@ restart:
       if (sub->transmitted < sub->posted && sub->transmitted < sub->done + NCCL_STEPS) {
         int buffSlot = (sub->base+sub->transmitted)%NCCL_STEPS;
         volatile uint64_t* recvTail = &resources->recvMem->tail;
-        if (connFifo[buffSlot].size != -1 && ((*recvTail > (sub->base+sub->transmitted)) || p == NCCL_PROTO_LL)) {
+        uint64_t tail = sub->base + (sub->reg ? 0 : sub->transmitted);
+        if ((sub->reg || connFifo[buffSlot].size != -1) && ((*recvTail > tail) || p == NCCL_PROTO_LL)) {
           // We have something to receive, let's check if it's completely ready.
           int size = sub->reg ? sub->nbytes : connFifo[buffSlot].size;
           char* buff = localBuff+buffSlot*stepSize;
@@ -991,13 +992,8 @@ restart:
               volatile uint32_t *f2 = &lines[i].flag2;
               if (f1[0] != flag || f2[0] != flag) { ready = 0; break; }
             }
-          } else if (p == NCCL_PROTO_SIMPLE) {
-            if (resources->shared) {
-              if (resources->recvMem->connFifo[buffSlot].mode == NCCL_MODE_OFFSET)
-                buff = localBuff+resources->recvMem->connFifo[buffSlot].offset;
-              else if (resources->recvMem->connFifo[buffSlot].mode == NCCL_MODE_PTR)
-                buff = (char*)sub->buffer;
-            }
+          } else if (p == NCCL_PROTO_SIMPLE && resources->shared) {
+            buff = sub->reg ? (char*)sub->buffer : localBuff+resources->recvMem->connFifo[buffSlot].offset;
           }
           if (ready) {
             // Data is ready, try to send.
@@ -1023,16 +1019,18 @@ restart:
             if (size < sub->nbytes) {
               sub->buffer = ((char*)sub->buffer)+size;
               sub->nbytes -= size;
-              sub->transmitted -= args->sliceSteps;
-              goto restart;
+              // Do one more step (at least)
+              sub->nsteps++;
+            } else {
+              // Signal the GPU the send is complete and it can return.
+              connFifo[sub->base%NCCL_STEPS].size = -1;
             }
           } else if (size < connFifo[buffSlot].size) {
             WARN("NET: collective mismatch error, sent %ld truncated to %d\n", connFifo[buffSlot].size, size);
             return ncclInvalidUsage;
           }
           // Make sure size is reset to zero before we update the head.
-          // In reg mode, this is used to signal the GPU the send is complete and it can return.
-          connFifo[buffSlot].size = -1;
+          if (sub->reg == 0) connFifo[buffSlot].size = -1;
           __sync_synchronize();
           TRACE(NCCL_NET, "sendProxy [%ld/%d] request %p done", sub->done, buffSlot, sub->requests[buffSlot]);
           sub->done += args->sliceSteps;
@@ -1048,7 +1046,6 @@ restart:
             if (sub->reg && sub->nbytes > 0) {
               NCCLCHECK(proxyState->ncclNet->deregMr(resources->netSendComm, sub->mhandle));
             }
-            resources->step = sub->base + sub->nsteps;
             args->done++;
           }
         }
@@ -1092,6 +1089,8 @@ static ncclResult_t recvProxyProgress(struct ncclProxyState* proxyState, struct 
       recvComm = resources->netRecvComm;
       // Round to next multiple of sliceSteps
       sub->base = ROUNDUP(resources->step, args->chunkSteps);
+      // Set step base for next op
+      resources->step = sub->base + sub->nsteps;
       sub->posted = sub->received = sub->transmitted = sub->done = 0;
       for (int i=0; i<groupSize; i++) sub[-i].groupSize = groupSize;
       for (uint64_t step=0; step<sub->nsteps; step++) ncclProfilingRecord(args, s, step, ncclProxyProfileBegin);
@@ -1106,10 +1105,11 @@ static ncclResult_t recvProxyProgress(struct ncclProxyState* proxyState, struct 
     args->state = ncclProxyOpProgress;
   }
   args->idle = 1;
-restart:
   if (args->state == ncclProxyOpProgress) {
     int p = args->protocol;
     int maxDepth = std::min(NCCL_STEPS, NCCL_SHARED_STEPS/args->nsubs);
+    // Registered buffers may need to add new steps upon each recv. Do one recv at a time.
+    for (int s=0; s<args->nsubs; s++) if (args->subs[s].reg) maxDepth = 1;
     for (int s=0; s<args->nsubs; s+=args->subs[s].groupSize) {
       struct ncclProxySubArgs* subGroup = args->subs+s;
       int subCount = 0;
@@ -1129,9 +1129,8 @@ restart:
           if (p == NCCL_PROTO_SIMPLE && resources->shared) {
             if (sub->reg) {
               // Wait until CUDA kernel has started before we access the user buffer directly.
-              if (connFifo[buffSlot].size == -1) continue;
-              ptrs[subCount] = connFifo[buffSlot].ptr = sub->buffer;
-              connFifo[buffSlot].mode = NCCL_MODE_PTR;
+              if (connFifo[sub->base%NCCL_STEPS].size == -1) continue;
+              ptrs[subCount] = sub->buffer;
               sizes[subCount] = sub->nbytes;
             } else {
               int sharedBuffSlot = sub->posted%maxDepth;
@@ -1181,22 +1180,25 @@ restart:
         if (done) {
           int needFlush = 0;
           int totalSize = 0;
+          int subIndex = 0;
           for (int i=0; i<NCCL_PROXY_MAX_SUBS; i++) totalSize += sizes[i];
           for (int i=0; i<subGroup->groupSize; i++) {
             struct ncclProxySubArgs* sub = subGroup + i;
-            if (sub->reg) {
-              if (sizes[i] < sub->nbytes) {
-                sub->buffer = ((char*)sub->buffer) + sizes[i];
-                sub->nbytes -= sizes[i];
-                sub->posted -= args->sliceSteps; // rewind and receive again
-                goto restart;
-              } else {
-                // Reset connFifo size indicating the GPU was ready to receive.
-                // There is a __sync_synchronize() later to ensure it is reset before it is set again by the GPU.
-                struct recvResources* resources = (struct recvResources*) (sub->connection->transportResources);
-                volatile struct ncclConnFifo* connFifo = (volatile struct ncclConnFifo*)resources->recvMem->connFifo;
-                int buffSlot = (sub->base+sub->received)%NCCL_STEPS;
-                connFifo[buffSlot].size = -1;
+            if (sub->received < sub->nsteps) {
+              int size = sizes[subIndex++];
+              if (sub->reg) {
+                if (size < sub->nbytes) {
+                  sub->buffer = ((char*)sub->buffer) + size;
+                  sub->nbytes -= size;
+                  // Do one more step (at least)
+                  sub->nsteps++;
+                } else {
+                  // Reset connFifo size indicating the GPU was ready to receive.
+                  // There is a __sync_synchronize() later to ensure it is reset before it is set again by the GPU.
+                  struct recvResources* resources = (struct recvResources*) (sub->connection->transportResources);
+                  volatile struct ncclConnFifo* connFifo = (volatile struct ncclConnFifo*)resources->recvMem->connFifo;
+                  connFifo[sub->base%NCCL_STEPS].size = -1;
+                }
               }
             }
             sub->received += args->sliceSteps;
@@ -1228,9 +1230,8 @@ restart:
                   char* localBuff = NCCL_NET_MAP_GET_POINTER(&resources->map, cpu, buffs[p]);
                   int buffSlot = (sub->base+sub->transmitted)%NCCL_STEPS;
                   ptrs[subCount] = resources->shared ?
-                    (resources->recvMem->connFifo[buffSlot].mode == NCCL_MODE_OFFSET ?
-                    localBuff+resources->recvMem->connFifo[buffSlot].offset :
-                    resources->recvMem->connFifo[buffSlot].ptr) : localBuff+buffSlot*stepSize;
+                    (sub->reg ? sub->buffer : localBuff+resources->recvMem->connFifo[buffSlot].offset) :
+                    localBuff+buffSlot*stepSize;
                   mhandles[subCount] = sub->mhandle;
                   subCount++;
                 }
@@ -1262,7 +1263,10 @@ restart:
               __sync_synchronize();
               struct recvResources* resources = (struct recvResources*) (sub->connection->transportResources);
               volatile uint64_t* recvTail = resources->gdcSync ? resources->gdcSync : &resources->recvMem->tail;
-              *recvTail = sub->base + sub->transmitted;
+              if (sub->reg) {
+                if (sub->transmitted == sub->nsteps) *recvTail = sub->base + args->sliceSteps;
+              } else
+                *recvTail = sub->base + sub->transmitted;
               if (resources->gdcSync) wc_store_fence(); // Flush out WC write
             }
           }
@@ -1280,7 +1284,7 @@ restart:
         if (sub->transmitted > sub->done) {
           struct recvResources* resources = (struct recvResources*) (sub->connection->transportResources);
           volatile uint64_t* sendHead = &resources->sendMem->head;
-          uint64_t done = *sendHead;
+          uint64_t done = sub->reg ? sub->base + sub->nsteps : *sendHead;
           while (done > sub->base + sub->done &&
               // LL and LL128 can acknowledge 0-bytes send before they even happen. Don't go past what we transmitted.
               sub->transmitted > sub->done) {
@@ -1291,8 +1295,6 @@ restart:
               if (sub->reg && sub->nbytes > 0) {
                 NCCLCHECK(proxyState->ncclNet->deregMr(resources->netRecvComm, sub->mhandle));
               }
-              struct recvResources* resources = (struct recvResources*) (sub->connection->transportResources);
-              resources->step = sub->base + sub->nsteps;
               args->done++;
               break;
             }
