@@ -48,8 +48,9 @@ struct ncclPeerInfo {
 #endif
 };
 
+#define CONNECT_SIZE 128
 // MNNVL_SUPPORT requires an extra 1K for this structure
-#define CONNECT_SIZE (1024+128)
+//#define CONNECT_SIZE (1024+128)
 struct ncclConnect {
   char data[CONNECT_SIZE];
 };

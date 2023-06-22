@@ -235,7 +235,7 @@ struct ncclComm {
   int* localRankToRank;
   // localRanks and localRanktoRank for all nodes
   struct ncclNodeRanks* nodeRanks;
-  int cliqueSize;
+  int MNNVL; // MNNVL: Multi-Node NVLink
 
   bool checkPointers;
   bool dmaBufSupport;
@@ -349,8 +349,6 @@ struct ncclComm {
   // shared structures for finalization
   int finalizeRankCnt;
 };
-// MNNVL are all ranks in the same clique
-#define CLIQUE_NODES(COMM) (((COMM)->cliqueSize == (COMM)->nRanks) ? 1 : (COMM)->nNodes)
 
 enum ncclLaunchMode {
   ncclLaunchModeInvalid=0,

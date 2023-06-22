@@ -11,7 +11,6 @@
 #include "bootstrap.h"
 #include "channel.h"
 #include "cudawrap.h"
-#include "graph/topo.h"
 
 #include <cstring> // std::memcpy
 #include <cinttypes> // PRIx64

@@ -12,6 +12,7 @@
 #include <dlfcn.h>
 
 #ifdef MNNVL_SUPPORT
+// MNNVL requires the cuMem APIs
 #define CUMEM_ENABLE 1
 #else
 #define CUMEM_ENABLE 0

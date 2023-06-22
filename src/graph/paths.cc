@@ -344,15 +344,13 @@ compare:
 ncclResult_t ncclTopoCheckMNNVL(struct ncclTopoSystem* system, struct ncclPeerInfo* info1, struct ncclPeerInfo* info2, int* ret) {
   *ret = 0;
 
-  if (system->MNNVL) {
-    nvmlGpuFabricInfo_t *fabricInfo1 = &info1->fabricInfo;
-    nvmlGpuFabricInfo_t *fabricInfo2 = &info2->fabricInfo;
-    if ((memcmp(fabricInfo1->clusterUuid, fabricInfo2->clusterUuid, NVML_GPU_FABRIC_UUID_LEN) == 0) &&
-        (fabricInfo1->partitionId == fabricInfo2->partitionId)) {
-      INFO(NCCL_NET, "MNNVL matching peer 0x%lx UUID %lx.%lx partition 0x%x",
-           info2->busId, ((long *)fabricInfo2->clusterUuid)[0], ((long *)fabricInfo2->clusterUuid)[1], fabricInfo2->partitionId);
-      *ret = 1;
-    }
+  nvmlGpuFabricInfo_t *fabricInfo1 = &info1->fabricInfo;
+  nvmlGpuFabricInfo_t *fabricInfo2 = &info2->fabricInfo;
+  if ((memcmp(fabricInfo1->clusterUuid, fabricInfo2->clusterUuid, NVML_GPU_FABRIC_UUID_LEN) == 0) &&
+      (fabricInfo1->partitionId == fabricInfo2->partitionId)) {
+    INFO(NCCL_NET, "MNNVL matching peer 0x%lx UUID %lx.%lx partition 0x%x",
+         info2->busId, ((long *)fabricInfo2->clusterUuid)[0], ((long *)fabricInfo2->clusterUuid)[1], fabricInfo2->partitionId);
+    *ret = 1;
   }
   return ncclSuccess;
 }
@@ -668,7 +666,7 @@ ncclResult_t ncclTopoTrimSystem(struct ncclTopoSystem* system, struct ncclComm* 
   }
 
   // MNNVL: Remove network nodes as they are connected via NVLink
-  if (system->nodes[GPU].count == comm->nRanks || comm->topo->MNNVL) {
+  if (system->nodes[GPU].count == comm->nRanks || comm->MNNVL) {
     for (int n=system->nodes[NET].count-1; n>=0; n--)
       NCCLCHECK(ncclTopoRemoveNode(system, NET, n));
   }
@@ -702,7 +700,7 @@ static ncclResult_t ncclTopoGetNchannels(struct ncclComm* comm, int g /*local gp
     } else {
       *nChannels = 2;
     }
-  } else if (comm->topo->MNNVL) {
+  } else if (comm->MNNVL) {
     // MNNVL assume all GPUs are connected via NVLink
     path = system->nodes[GPU].nodes[g].paths[GPU]+((g+1)%system->nodes[GPU].count);
     float nvlBw = ncclTopoNVLinkBw(system->nodes[GPU].nodes[g].gpu.cudaCompCap);

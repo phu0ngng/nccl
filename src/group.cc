@@ -9,7 +9,6 @@
 #include "enqueue.h"
 #include "transport.h"
 #include "channel.h"
-#include "graph/topo.h"
 #include <assert.h>
 
 __thread int ncclGroupDepth = 0; // depth of ncclGroupStart nesting

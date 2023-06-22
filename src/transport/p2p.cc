@@ -8,7 +8,6 @@
 #include "graph.h"
 #include "utils.h"
 #include "shm.h"
-
 #include "p2p.h"
 
 enum p2pType { P2P_DIRECT, P2P_INTERMEDIATE, P2P_IPC, P2P_CUMEM };
@@ -68,9 +67,6 @@ struct p2pResources {
   struct p2pShm* shm;
   struct p2pShm* devShm;
   int shmSize;
-
-  void *remotePtr;
-
   ncclShmHandle_t handle;
 };
 
@@ -530,7 +526,6 @@ ncclResult_t p2pRecvConnect(struct ncclComm* comm, struct ncclConnect* connectIn
   }
   return ncclSuccess;
 }
-
 
 ncclResult_t p2pSendFree(struct ncclConnector* send) {
   struct p2pResources* resources = (struct p2pResources*)send->transportResources;

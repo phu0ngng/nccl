@@ -592,9 +592,6 @@ static ncclResult_t xmlInitAttrFloat(struct ncclXmlNode* node, const char* attrN
 }
 
 
-// MNNVL: Flag to indicate that this is a Multi-Node NVLink system
-NCCL_PARAM(MNNVL, "MNNVL", 1);
-
 ncclResult_t ncclTopoGetSystem(struct ncclComm* comm, struct ncclTopoSystem** system) {
   struct ncclXml* xml;
   NCCLCHECK(ncclCalloc(&xml, 1));
@@ -679,9 +676,6 @@ ncclResult_t ncclTopoGetSystem(struct ncclComm* comm, struct ncclTopoSystem** sy
 
   NCCLCHECK(ncclTopoGetSystemFromXml(xml, system));
   free(xml);
-
-  // Determine whether this is a MNNVL system
-  (*system)->MNNVL = ncclParamMNNVL();
   return ncclSuccess;
 }
 

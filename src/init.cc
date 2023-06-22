@@ -482,12 +482,19 @@ static ncclResult_t fillInfo(struct ncclComm* comm, struct ncclPeerInfo* info, u
     // MNNVL: Request the fabric UUID and partition info
     char busId[NVML_DEVICE_PCI_BUS_ID_BUFFER_SIZE];
     nvmlDevice_t nvmlDev;
+    ncclResult_t res;
     NCCLCHECK(int64ToBusId(info->busId, busId));
     NCCLCHECK(ncclNvmlDeviceGetHandleByPciBusId(busId, &nvmlDev));
-    NCCLCHECK(ncclNvmlDeviceGetGpuFabricInfo(nvmlDev, &info->fabricInfo));
-    INFO(NCCL_INIT, "busId 0x%lx fabric UUID %lx.%lx partition 0x%x",
-         info->busId,
-         ((long *)&info->fabricInfo.clusterUuid)[0], ((long *)&info->fabricInfo.clusterUuid)[1], info->fabricInfo.partitionId);
+    if ((res = ncclNvmlDeviceGetGpuFabricInfo(nvmlDev, &info->fabricInfo)) == ncclSuccess) {
+      INFO(NCCL_INIT, "MNNVL busId 0x%lx fabric UUID %lx.%lx partition 0x%x",
+           info->busId,
+           ((long *)&info->fabricInfo.clusterUuid)[0], ((long *)&info->fabricInfo.clusterUuid)[1], info->fabricInfo.partitionId);
+    } else {
+      // MNNVL fabric info not available
+      ((long *)&info->fabricInfo.clusterUuid)[0] = getHostHash();
+      ((long *)&info->fabricInfo.clusterUuid)[1] = commHash;
+      info->fabricInfo.partitionId = comm->rank;
+    }
   }
 #endif
 
@@ -541,8 +548,8 @@ static ncclResult_t computeBuffSizes(struct ncclComm* comm) {
     comm->buffSizes[p] = envs[p] != -2 ? envs[p] : defaults[p];
   }
 
-  if (CLIQUE_NODES(comm) > 1) comm->p2pChunkSize = ncclParamP2pNetChunkSize();
-  else if (CLIQUE_NODES(comm) == 1 || ncclTopoPathAllNVLink(comm->topo)) comm->p2pChunkSize = ncclParamP2pNvlChunkSize();
+  if (!comm->MNNVL && comm->nNodes > 1) comm->p2pChunkSize = ncclParamP2pNetChunkSize();
+  else if (comm->MNNVL || ncclTopoPathAllNVLink(comm->topo)) comm->p2pChunkSize = ncclParamP2pNvlChunkSize();
   else comm->p2pChunkSize = ncclParamP2pPciChunkSize();
   if (comm->sharedRes->owner != comm) {
     /* make sure split comm p2pChunkSize won't exceed shared p2pChunkSize. */
@@ -764,6 +771,9 @@ fail:
   goto exit;
 }
 
+// MNNVL: Flag to indicate whether to enable Multi-Node NVLink
+NCCL_PARAM(MNNVL, "MNNVL", -2);
+
 static ncclResult_t initTransportsRank(struct ncclComm* comm, struct ncclComm* parent = NULL) {
   // We use 2 AllGathers
   // 1. { peerInfo, comm, compCap}
@@ -819,15 +829,20 @@ static ncclResult_t initTransportsRank(struct ncclComm* comm, struct ncclComm* p
   // AllGather1 - end
 
 #ifdef MNNVL_SUPPORT
-  // Determine the size of the MNNVL domain/clique
-  comm->cliqueSize = 0;
-  for (int i = 0; i < nranks; i++) {
-    nvmlGpuFabricInfo_t *fabricInfo1 = &comm->peerInfo[rank].fabricInfo;
-    nvmlGpuFabricInfo_t *fabricInfo2 = &comm->peerInfo[i].fabricInfo;
-    if ((memcmp(fabricInfo1->clusterUuid, fabricInfo2->clusterUuid, NVML_GPU_FABRIC_UUID_LEN) == 0) &&
-        (fabricInfo1->partitionId == fabricInfo2->partitionId)) {
-      comm->cliqueSize++;
+  {
+    int cliqueSize = 0;
+    comm->MNNVL = 0;
+    // Determine the size of the MNNVL domain/clique
+    for (int i = 0; i < nranks; i++) {
+      nvmlGpuFabricInfo_t *fabricInfo1 = &comm->peerInfo[rank].fabricInfo;
+      nvmlGpuFabricInfo_t *fabricInfo2 = &comm->peerInfo[i].fabricInfo;
+      if ((memcmp(fabricInfo1->clusterUuid, fabricInfo2->clusterUuid, NVML_GPU_FABRIC_UUID_LEN) == 0) &&
+          (fabricInfo1->partitionId == fabricInfo2->partitionId)) {
+        cliqueSize++;
+      }
     }
+    // Determine whether this is a MNNVL system
+    comm->MNNVL = ncclParamMNNVL() < 0 ? cliqueSize == comm->nRanks : ncclParamMNNVL();
   }
 #endif
 
@@ -1019,8 +1034,8 @@ static ncclResult_t initTransportsRank(struct ncclComm* comm, struct ncclComm* p
     goto fail;
   }
 
-  INFO(NCCL_INIT, "comm %p rank %d nRanks %d cliqueSize %d nNodes %d localRanks %d localRank %d",
-       comm, rank, comm->nRanks, comm->cliqueSize, comm->nNodes, comm->localRanks, comm->localRank);
+  INFO(NCCL_INIT, "comm %p rank %d nRanks %d nNodes %d localRanks %d localRank %d MNNVL %d",
+       comm, rank, comm->nRanks, comm->nNodes, comm->localRanks, comm->localRank, comm->MNNVL);
 
   nChannelsOrig = comm->nChannels;
   NCCLCHECKGOTO(ncclCalloc(&allTopoRanks, comm->nRanks), ret, fail);
