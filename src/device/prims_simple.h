@@ -187,7 +187,7 @@ class Primitives<
     int slice = 0;
     int offset = 0;
 
-    if (tid < nworkers && offset < nelem) {
+    if (tid < nworkers && offset < nelem && ((flags & UserBufferMode) == 0)) {
       // Worker-only loop for non-empty slices. Non-workers and empty slices are
       // processed in the loop following this if block. The benefit of splitting
       // the loop like this is we pull two branches out of the critical path.
@@ -228,10 +228,7 @@ class Primitives<
         /* if user abort the kernel, we don't need to actually perform copy/reduce; just set size
          * to 0 to avoid unnecessary workload. */
         int workSize = ncclShmem.aborted ? 0 : sliceSize;
-        int nSrc = Recv*fan.nrecv()+Src, nDst = Send*fan.nsend()+Dst;
-        if (flags & UserBufferMode) {
-          // Skip the copy
-        } else if (DirectRecv && ncclShmem.groups[group].srcs[0] == ncclShmem.groups[group].dsts[0]) {
+        if (DirectRecv && ncclShmem.groups[group].srcs[0] == ncclShmem.groups[group].dsts[0]) {
           // We can only have one direct receive. Since srcs[0] == dstPtr+offset, skip one copy
           if (Send) {
             reduceCopy<Unroll, RedOp, T, 0, 1, 1, 0, 1, MaxSend, /*PreOpSrcs*/0>
@@ -254,8 +251,8 @@ class Primitives<
             MultimemSrcs, Recv+Src, Recv*MaxRecv+Src,
             MultimemDsts, Send+Dst, Send*MaxSend+Dst, PreOpSrcs>
             (tid, nworkers, ncclShmem.redOpArgs[0], ncclShmem.redOpArgs, postOp,
-             nSrc, ncclShmem.groups[group].srcs,
-             nDst, ncclShmem.groups[group].dsts,
+             Recv*fan.nrecv()+Src, ncclShmem.groups[group].srcs,
+             Send*fan.nsend()+Dst, ncclShmem.groups[group].dsts,
              workSize);
         }
         barrier(); // This barrier has a counterpart in following loop
