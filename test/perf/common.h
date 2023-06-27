@@ -301,6 +301,13 @@ static testResult_t waitCommState(ncclComm_t comm) {
   ncclResult_t state;
   do {
     NCCLCHECK(ncclCommGetAsyncError(comm, &state));
+#ifdef MPI_SUPPORT
+    int flag;
+    extern pthread_mutex_t mpiLock;
+    pthread_mutex_lock(&mpiLock);
+    MPI_Iprobe(MPI_ANY_SOURCE, MPI_ANY_TAG, MPI_COMM_WORLD, &flag, MPI_STATUS_IGNORE);
+    pthread_mutex_unlock(&mpiLock);
+#endif
   } while (state == ncclInProgress);
   if (state != ncclSuccess) return testNcclError;
   return testSuccess;
@@ -311,6 +318,13 @@ static testResult_t waitCommStateBatch(ncclComm_t * comms, int num) {
   for (int idx = 0; idx < num; ++idx) {
     do {
       NCCLCHECK(ncclCommGetAsyncError(comms[idx], &state));
+#ifdef MPI_SUPPORT
+      int flag;
+      extern pthread_mutex_t mpiLock;
+      pthread_mutex_lock(&mpiLock);
+      MPI_Iprobe(MPI_ANY_SOURCE, MPI_ANY_TAG, MPI_COMM_WORLD, &flag, MPI_STATUS_IGNORE);
+      pthread_mutex_unlock(&mpiLock);
+#endif
     } while (state == ncclInProgress);
     if (state != ncclSuccess) return testNcclError;
   }

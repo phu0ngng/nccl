@@ -14,6 +14,7 @@
 #include <libgen.h>
 #include "cuda.h"
 #include <limits.h>
+#include <assert.h>
 
 #include "../verifiable/verifiable.h"
 
@@ -60,6 +61,8 @@ extern "C" __attribute__((weak)) char const* ncclGetLastError(ncclComm_t comm) {
 
 int is_main_proc = 0;
 thread_local int is_main_thread = 0;
+/* mpi multi-thread lock for MPI call serialization */
+pthread_mutex_t mpiLock = PTHREAD_MUTEX_INITIALIZER;
 
 // Command line parameter defaults
 static int nThreads = 1;
@@ -301,6 +304,13 @@ testResult_t testStreamSynchronize(int ngpus, cudaStream_t* streams, ncclComm_t*
 
   while (remaining) {
     int idle = 1;
+#ifdef MPI_SUPPORT
+    int flag;
+    /* poke MPI progress for OpenMPI */
+    pthread_mutex_lock(&mpiLock);
+    MPI_Iprobe(MPI_ANY_SOURCE, MPI_ANY_TAG, MPI_COMM_WORLD, &flag, MPI_STATUS_IGNORE);
+    pthread_mutex_unlock(&mpiLock);
+#endif
     for (int id0 = 0; id0 < commNum; ++id0) {
       for (int i = 0; i < ngpus; i++) {
         if (done[i]) continue;
@@ -1138,7 +1148,9 @@ int main(int argc, char* argv[]) {
     return -1;
   }
 #ifdef MPI_SUPPORT
-  MPI_Init(&argc, &argv);
+  int provide;
+  MPI_Init_thread(&argc, &argv, MPI_THREAD_SERIALIZED, &provide);
+  assert(provide >= MPI_THREAD_SERIALIZED);
 #endif
   TESTCHECK(run());
   return 0;
