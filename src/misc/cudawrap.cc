@@ -158,7 +158,7 @@ static ncclResult_t initResult;
 
 static void initOnceFunc() {
   do {
-    char* val = getenv("CUDA_LAUNCH_BLOCKING");
+    const char* val = ncclGetEnv("CUDA_LAUNCH_BLOCKING");
     ncclCudaLaunchBlocking = val!=nullptr && val[0]!=0 && !(val[0]=='0' && val[1]==0);
   } while (0);
 
@@ -167,7 +167,7 @@ static void initOnceFunc() {
    * Load CUDA driver library
    */
   char path[1024];
-  char *ncclCudaPath = getenv("NCCL_CUDA_PATH");
+  const char *ncclCudaPath = ncclGetEnv("NCCL_CUDA_PATH");
   if (ncclCudaPath == NULL)
     snprintf(path, 1024, "%s", "libcuda.so");
   else

@@ -247,12 +247,12 @@ ncclResult_t ncclTopoTuneModel(struct ncclComm* comm, int minCompCap, int maxCom
   int protoEnable[NCCL_NUM_PROTOCOLS] = { 1, 2, 1 };
   int algoEnable[NCCL_NUM_ALGORITHMS] = { 1, 1, 1, 1, 1, 1 };
 
-  const char *protoStr = getenv("NCCL_PROTO");
+  const char *protoStr = ncclGetEnv("NCCL_PROTO");
   if (protoStr) {
     INFO(NCCL_ENV, "NCCL_PROTO set by environment to %s", protoStr);
     NCCLCHECK(parseList(protoStr, ncclProtoStr, NCCL_NUM_PROTOCOLS, protoEnable));
   }
-  const char *algoStr = getenv("NCCL_ALGO");
+  const char *algoStr = ncclGetEnv("NCCL_ALGO");
   if (algoStr) {
     INFO(NCCL_ENV, "NCCL_ALGO set by environment to %s", algoStr);
     NCCLCHECK(parseList(algoStr, ncclAlgoStr, NCCL_NUM_ALGORITHMS, algoEnable));
@@ -347,7 +347,7 @@ ncclResult_t ncclTopoTuneModel(struct ncclComm* comm, int minCompCap, int maxCom
   comm->threadThresholds[NCCL_ALGO_COLLNET_CHAIN][NCCL_PROTO_SIMPLE] = 512;
 
   // Override defaults with user env
-  char* str = getenv("NCCL_THREAD_THRESHOLDS");
+  const char* str = ncclGetEnv("NCCL_THREAD_THRESHOLDS");
   if (str) {
     INFO(NCCL_ENV, "NCCL_THREAD_THRESHOLDS set by environment to %s", str);
     ssize_t t[2][NCCL_NUM_PROTOCOLS] = {{ -2, -2, -2 }, { -2, -2, -2 }};

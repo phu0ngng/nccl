@@ -167,7 +167,7 @@ enum ncclNetState ncclCollNetStates[3] = { ncclNetStateInit, ncclNetStateInit, n
 
 ncclResult_t ncclNetPluginInit() {
   char ncclNetPluginName[128];
-  const char* envPluginName = getenv("NCCL_NET_PLUGIN");
+  const char* envPluginName = ncclGetEnv("NCCL_NET_PLUGIN");
   if (envPluginName && strlen(envPluginName)) {
     snprintf(ncclNetPluginName, 128, "libnccl-net-%s.so", envPluginName);
     INFO(NCCL_INIT, "Plugin name set by env to %s", ncclNetPluginName);
