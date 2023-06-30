@@ -879,22 +879,23 @@ static ncclResult_t initTransportsRank(struct ncclComm* comm, struct ncclComm* p
   NCCLCHECK(ncclNvlsInit(comm));
 
   // Get rings and trees
+  memset(&ringGraph, 0, sizeof(struct ncclTopoGraph));
   ringGraph.id = 0;
   ringGraph.pattern = NCCL_TOPO_PATTERN_RING;
-  ringGraph.collNet = 0;
   ringGraph.minChannels = 1;
   ringGraph.maxChannels = MAXCHANNELS/2;
   NCCLCHECKGOTO(ncclTopoCompute(comm->topo, &ringGraph), ret, fail);
   NCCLCHECKGOTO(ncclTopoPrintGraph(comm->topo, &ringGraph), ret, fail);
 
+  memset(&treeGraph, 0, sizeof(struct ncclTopoGraph));
   treeGraph.id = 1;
   treeGraph.pattern = NCCL_TOPO_PATTERN_BALANCED_TREE;
-  treeGraph.collNet = 0;
   treeGraph.minChannels = ringGraph.nChannels;
   treeGraph.maxChannels = ringGraph.nChannels;
   NCCLCHECKGOTO(ncclTopoCompute(comm->topo, &treeGraph), ret, fail);
   NCCLCHECKGOTO(ncclTopoPrintGraph(comm->topo, &treeGraph), ret, fail);
 
+  memset(&collNetGraph, 0, sizeof(struct ncclTopoGraph));
   collNetGraph.id = 2;
   collNetGraph.pattern = NCCL_TOPO_PATTERN_TREE;
   collNetGraph.collNet = 1;
@@ -902,20 +903,16 @@ static ncclResult_t initTransportsRank(struct ncclComm* comm, struct ncclComm* p
   if (comm->collNetSupport) {
     NCCLCHECKGOTO(ncclTopoCompute(comm->topo, &collNetGraph), ret, fail);
     NCCLCHECKGOTO(ncclTopoPrintGraph(comm->topo, &collNetGraph), ret, fail);
-  } else {
-    collNetGraph.nChannels = 0;
   }
 
+  memset(&nvlsGraph, 0, sizeof(struct ncclTopoGraph));
   nvlsGraph.id = 3;
   nvlsGraph.pattern = NCCL_TOPO_PATTERN_NVLS;
-  nvlsGraph.collNet = 0;
   nvlsGraph.minChannels = 1;
   nvlsGraph.maxChannels = MAXCHANNELS;
   if (comm->nvlsSupport) {
     NCCLCHECKGOTO(ncclTopoCompute(comm->topo, &nvlsGraph), ret, fail);
     NCCLCHECKGOTO(ncclTopoPrintGraph(comm->topo, &nvlsGraph), ret, fail);
-  } else {
-    nvlsGraph.nChannels = 0;
   }
 
   // Initialize num P2P LL buffers for this communicator
