@@ -101,7 +101,9 @@ ncclResult_t ncclNetSocketGetProperties(int dev, ncclNetProperties_t* props) {
   props->port = 0;
   props->maxComms = 65536;
   props->maxRecvs = 1;
-  return ncclSuccess;
+  props->netDeviceType    = NCCL_NET_DEVICE_HOST;
+  props->netDeviceVersion = NCCL_NET_DEVICE_INVALID_VERSION;
+   return ncclSuccess;
 }
 
 /* Communication functions */
@@ -597,6 +599,7 @@ ncclNet_t ncclNetSocket = {
   ncclNetSocketInit,
   ncclNetSocketDevices,
   ncclNetSocketGetProperties,
+  NULL /* getDeviceHandle */,
   ncclNetSocketListen,
   ncclNetSocketConnect,
   ncclNetSocketAccept,
@@ -609,5 +612,7 @@ ncclNet_t ncclNetSocket = {
   ncclNetSocketTest,
   ncclNetSocketClose,
   ncclNetSocketClose,
-  ncclNetSocketCloseListen
+  ncclNetSocketCloseListen,
+  NULL /* getDeviceMr */,
+  NULL /* irecvConsumed */
 };

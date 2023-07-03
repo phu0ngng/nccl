@@ -333,6 +333,8 @@ ncclResult_t ncclIbGetProperties(int dev, ncclNetProperties_t* props) {
   props->port = ncclIbDevs[dev].port + ncclIbDevs[dev].realPort;
   props->maxComms = ncclIbDevs[dev].maxQp;
   props->maxRecvs = NCCL_NET_IB_MAX_RECVS;
+  props->netDeviceType    = NCCL_NET_DEVICE_HOST;
+  props->netDeviceVersion = NCCL_NET_DEVICE_INVALID_VERSION;
   return ncclSuccess;
 }
 
@@ -1393,6 +1395,7 @@ ncclNet_t ncclNetIb = {
   ncclIbInit,
   ncclIbDevices,
   ncclIbGetProperties,
+  NULL /* getDeviceHandle */,
   ncclIbListen,
   ncclIbConnect,
   ncclIbAccept,
@@ -1405,6 +1408,8 @@ ncclNet_t ncclNetIb = {
   ncclIbTest,
   ncclIbCloseSend,
   ncclIbCloseRecv,
-  ncclIbCloseListen
+  ncclIbCloseListen,
+  NULL /* getDeviceMr */,
+  NULL /* irecvConsumed */
 };
 

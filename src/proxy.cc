@@ -509,7 +509,7 @@ static ncclResult_t SaveProxy(struct ncclComm* comm, struct ncclChannel* channel
         type == proxyRecv ? "recv" : "send", peer, channel->id, connIndex);
     return ncclInternalError;
   }
-  if (connector->transportComm->proxyProgress == NULL) return ncclSuccess;
+  if (connector->proxyConn.proxyProgress == NULL) return ncclSuccess;
 
   if (justInquire) *justInquire = true;
   else {
