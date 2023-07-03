@@ -4,6 +4,8 @@
  * See LICENSE.txt for license information
  ************************************************************************/
 
+#include "network/unpack/unpack.h"
+
 template<typename T, typename RedOp, typename Fan, int Direct,
          int SlicePerChunk, int StepPerSlice, int Unroll, int P2p, int MultimemSrcs, int MultimemDsts>
 class Primitives<
@@ -23,7 +25,9 @@ class Primitives<
                        DirectWrite = 0x200,
                        DirectRead = 0x400,
                        ThreadsSynced = 0x800,
-                       NvlsMinPolling = 0x1000;
+                       NvlsMinPolling = 0x1000,
+                       NetDeviceUnpack = 0x4000,
+                       AnyNetDeviceUnpack = 0x8000;
   const int tid, tidInBlock;
   const int nthreads;
   int nworkers;
@@ -44,6 +48,8 @@ class Primitives<
   };
   uint64_t *connStepPtr;
   uint64_t connStepCache; // Cache last seen value of (*connStepPtr)
+  void*    mhandle;
+  void*    netDeviceHandle;
 
   // Don't use barrier 0 as it's used by the final sync
   __device__ void barrier() {
@@ -160,6 +166,9 @@ class Primitives<
       else {
         ptrs[index] = connEltsFifo + (step%NCCL_STEPS)*stepSize;
       }
+      if ((flags & (AnyNetDeviceUnpack)) && (flags & (Recv*RoleWaitRecv))) {
+        ncclShmem.groups[group].devicePlugin.unpack.head = step / StepPerSlice;
+      }
       step += StepPerSlice;
     }
   }
@@ -229,6 +238,12 @@ class Primitives<
         /* if user abort the kernel, we don't need to actually perform copy/reduce; just set size
          * to 0 to avoid unnecessary workload. */
         int workSize = ncclShmem.aborted ? 0 : sliceSize;
+        if (flags & AnyNetDeviceUnpack) {
+          ncclNetDeviceUnpack<Recv>(tid, nworkers, group, ncclShmem.groups[group].devicePlugin.unpack.unpackNetDeviceIndexMask, Src, workSize);
+          // Sync here to make sure all workers are reading from the updated srcs)
+          subBarrier();
+        }
+
         if (DirectRecv && ncclShmem.groups[group].srcs[0] == ncclShmem.groups[group].dsts[0]) {
           // We can only have one direct receive. Since srcs[0] == dstPtr+offset, skip one copy
           if (Send) {
@@ -348,6 +363,13 @@ class Primitives<
   __device__ __forceinline__ void loadRecvConn(ncclDevChannelPeer *peer, int connIndex, struct ncclWorkElem* e) {
     if (flags & (RoleWaitRecv|RolePostRecv)) {
       auto *conn = &peer->recv[connIndex];
+      if (conn->netDeviceHandle.netDeviceType == NCCL_NET_DEVICE_UNPACK) {
+        // handle must be a device ptr
+        netDeviceHandle = conn->netDeviceHandle.handle;
+        // Cache the handle
+        ncclNetDeviceUnpackSetup(netDeviceHandle, group, index);
+        flags |= NetDeviceUnpack;
+      }
       step = conn->step;
       step = roundUp(step, SlicePerChunk*StepPerSlice);
       if (flags & RolePostRecv) {
@@ -393,6 +415,7 @@ class Primitives<
       step = roundUp(step, SlicePerChunk*StepPerSlice);
       if (flags & RolePostSend) {
         connStepPtr = conn->tail;
+        connEltsFifo = (T*)conn->buffs[NCCL_PROTO_SIMPLE];
       }
       if (flags & RoleWaitSend) {
         ncclShmem.groups[group].sendConns[index] = conn; // WaitSend role saves since that's who needs it in setDataPtrs()
@@ -434,10 +457,10 @@ class Primitives<
   __device__ Primitives(
       int tid, int nthreads, int const *recvPeers, int const *sendPeers,
       void const *inputBuf, void *outputBuf, uint64_t redOpArg, uint8_t group=0,
-      uint8_t connIndexRecv = 0, uint8_t connIndexSend = 0, struct ncclWorkElem* e = nullptr
+      uint8_t connIndexRecv = 0, uint8_t connIndexSend = 0, struct ncclWorkElem* e = nullptr, int stepSize_=0
     ):
     tid(tid), nthreads(nthreads), tidInBlock(threadIdx.x), group(group),
-    stepSize(ncclShmem.comm.buffSizes[NCCL_PROTO_SIMPLE]/NCCL_STEPS/sizeof(T)) {
+    stepSize(stepSize_ == 0 ? ncclShmem.comm.buffSizes[NCCL_PROTO_SIMPLE]/NCCL_STEPS/sizeof(T) : stepSize_) {
 
     // For send operations, we need an extra warp to overlap the threadfence and the copy
     this->nworkers = nthreads - (MaxSend > 0 && nthreads-WARP_SIZE >= 64 ? WARP_SIZE : 0);
@@ -473,6 +496,20 @@ class Primitives<
     loadRecvConn(ncclShmem.channel.peers[peer], connIndexRecv, e);
     loadSendConn(ncclShmem.channel.peers[peer], connIndexSend, e);
 
+    if (barrierAny(flags & NetDeviceUnpack)) {
+      flags |= AnyNetDeviceUnpack;
+      // g == 0 is the first ThreadPerSync # of threads of this warp
+      // g == 0 is also the RoleWaitRecv threads of this group, thus the thread ID will correlate to the peer index
+      if (g == 0) {
+        uint32_t mask = __ballot_sync((1U << ThreadPerSync) - 1, (flags & NetDeviceUnpack) ? 1 : 0);
+
+        // We only want to update the shared memory variable with a single thread
+        if (tid == 0) {
+          ncclShmem.groups[this->group].devicePlugin.unpack.unpackNetDeviceIndexMask = mask;
+        }
+      }
+    }
+
     setDataPtrs(inputBuf, outputBuf, redOpArg, (struct ncclWorkElemReg*)e);
   }
 
@@ -485,8 +522,6 @@ class Primitives<
       auto *conns = (flags & RolePostSend) ? ncclShmem.groups[group].sendConns : ncclShmem.groups[group].recvConns;
       conns[index]->step = step;
     }
-    // Make sure all threads are done writing back conn->step and done using
-    // ncclShmem.groups[group]
     barrier();
   }
 

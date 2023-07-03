@@ -24,6 +24,16 @@ typedef enum {NCCL_INIT=1, NCCL_COLL=2, NCCL_P2P=4, NCCL_SHM=8, NCCL_NET=16, NCC
 
 typedef void (*ncclDebugLogger_t)(ncclDebugLogLevel level, unsigned long flags, const char *file, int line, const char *fmt, ...);
 
+typedef enum {NCCL_NET_DEVICE_HOST=0, NCCL_NET_DEVICE_UNPACK=1} ncclNetDeviceType;
+
+typedef struct {
+  ncclNetDeviceType netDeviceType; // Network offload type
+  int netDeviceVersion;            // Version number for network offload
+  void* handle;
+  size_t size;
+} ncclNetDeviceHandle;
+
+#include "net_v7.h"
 #include "net_v6.h"
 #include "net_v5.h"
 #include "net_v4.h"
