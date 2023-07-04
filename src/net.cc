@@ -9,15 +9,15 @@
 //#include <sys/stat.h>
 //#include <unistd.h>
 
-static ncclNet_t ncclNet_v4_as_v7;
-static ncclNet_t ncclNet_v5_as_v7;
-static ncclNet_t ncclNet_v6_as_v7;
+static ncclNet_v7_t ncclNet_v4_as_v7;
+static ncclNet_v7_t ncclNet_v5_as_v7;
+static ncclNet_v7_t ncclNet_v6_as_v7;
 static ncclNet_v4_t *ncclNet_v4;
 static ncclNet_v5_t *ncclNet_v5;
 static ncclNet_v6_t *ncclNet_v6;
-static ncclCollNet_t ncclCollNet_v4_as_v7;
-static ncclCollNet_t ncclCollNet_v5_as_v7;
-static ncclCollNet_t ncclCollNet_v6_as_v7;
+static ncclCollNet_v7_t ncclCollNet_v4_as_v7;
+static ncclCollNet_v7_t ncclCollNet_v5_as_v7;
+static ncclCollNet_v7_t ncclCollNet_v6_as_v7;
 static ncclCollNet_v4_t *ncclCollNet_v4;
 static ncclCollNet_v5_t *ncclCollNet_v5;
 static ncclCollNet_v6_t *ncclCollNet_v6;
@@ -36,6 +36,8 @@ static ncclResult_t ncclNet_v4_as_v7_getProperties(int dev, ncclNetProperties_v7
   props->maxComms = p4.maxComms;
   props->maxRecvs = 1;
   props->latency = 0;
+  props->netDeviceType    = NCCL_NET_DEVICE_HOST;
+  props->netDeviceVersion = NCCL_NET_DEVICE_INVALID_VERSION;
   return ncclSuccess;
 }
 
@@ -72,6 +74,7 @@ static ncclResult_t ncclNet_v4_as_v7_init(ncclDebugLogger_t logfn) {
   ncclNet_v4_as_v7.accept = ncclNet_v4->accept;
   ncclNet_v4_as_v7.regMr = ncclNet_v4_as_v7_regMr;
   ncclNet_v4_as_v7.regMrDmaBuf = NULL;
+  ncclNet_v4_as_v7.getDeviceHandle = NULL;
   ncclNet_v4_as_v7.deregMr = ncclNet_v4->deregMr;
   ncclNet_v4_as_v7.isend = ncclNet_v4_as_v7_isend;
   ncclNet_v4_as_v7.irecv = ncclNet_v4_as_v7_irecv;
@@ -97,6 +100,8 @@ static ncclResult_t ncclNet_v5_as_v7_getProperties(int dev, ncclNetProperties_v7
   props->maxComms = p6.maxComms;
   props->maxRecvs = p6.maxRecvs;
   props->latency = p6.latency;
+  props->netDeviceType    = NCCL_NET_DEVICE_HOST;
+  props->netDeviceVersion = NCCL_NET_DEVICE_INVALID_VERSION;
   return ncclSuccess;
 }
 
@@ -125,6 +130,8 @@ static ncclResult_t ncclNet_v5_as_v7_init(ncclDebugLogger_t logfn) {
   ncclNet_v5_as_v7.closeSend = ncclNet_v5->closeSend;
   ncclNet_v5_as_v7.closeRecv = ncclNet_v5->closeRecv;
   ncclNet_v5_as_v7.closeListen = ncclNet_v5->closeListen;
+  ncclNet_v5_as_v7.getDeviceMr = NULL;
+  ncclNet_v6_as_v7.irecvConsumed = NULL;
   return ncclSuccess;
 }
 
@@ -142,6 +149,8 @@ static ncclResult_t ncclNet_v6_as_v7_getProperties(int dev, ncclNetProperties_v7
   props->maxComms = p6.maxComms;
   props->maxRecvs = p6.maxRecvs;
   props->latency = p6.latency;
+  props->netDeviceType = NCCL_NET_DEVICE_HOST;
+  props->netDeviceVersion = NCCL_NET_DEVICE_INVALID_VERSION;
   return ncclSuccess;
 }
 
@@ -160,6 +169,7 @@ static ncclResult_t ncclNet_v6_as_v7_init(ncclDebugLogger_t logfn) {
   ncclNet_v6_as_v7.accept = ncclNet_v6->accept;
   ncclNet_v6_as_v7.regMr = ncclNet_v6_as_v7_regMr;
   ncclNet_v6_as_v7.regMrDmaBuf = ncclNet_v6->regMrDmaBuf;
+  ncclNet_v6_as_v7.getDeviceHandle = NULL;
   ncclNet_v6_as_v7.deregMr = ncclNet_v6->deregMr;
   ncclNet_v6_as_v7.isend = ncclNet_v6->isend;
   ncclNet_v6_as_v7.irecv = ncclNet_v6->irecv;
@@ -168,6 +178,8 @@ static ncclResult_t ncclNet_v6_as_v7_init(ncclDebugLogger_t logfn) {
   ncclNet_v6_as_v7.closeSend = ncclNet_v6->closeSend;
   ncclNet_v6_as_v7.closeRecv = ncclNet_v6->closeRecv;
   ncclNet_v6_as_v7.closeListen = ncclNet_v6->closeListen;
+  ncclNet_v6_as_v7.getDeviceMr = NULL;
+  ncclNet_v6_as_v7.irecvConsumed = NULL;
   return ncclSuccess;
 }
 
@@ -185,6 +197,8 @@ static ncclResult_t ncclCollNet_v4_as_v7_getProperties(int dev, ncclNetPropertie
   props->maxComms = p4.maxComms;
   props->maxRecvs = 1;
   props->latency = 0;
+  props->netDeviceType    = NCCL_NET_DEVICE_HOST;
+  props->netDeviceVersion = NCCL_NET_DEVICE_INVALID_VERSION;
   return ncclSuccess;
 }
 
@@ -228,6 +242,8 @@ static ncclResult_t ncclCollNet_v5_as_v7_getProperties(int dev, ncclNetPropertie
   props->maxComms = p6.maxComms;
   props->maxRecvs = p6.maxRecvs;
   props->latency = p6.latency;
+  props->netDeviceType    = NCCL_NET_DEVICE_HOST;
+  props->netDeviceVersion = NCCL_NET_DEVICE_INVALID_VERSION;
   return ncclSuccess;
 }
 
@@ -271,6 +287,8 @@ static ncclResult_t ncclCollNet_v6_as_v7_getProperties(int dev, ncclNetPropertie
   props->maxComms = p6.maxComms;
   props->maxRecvs = p6.maxRecvs;
   props->latency = p6.latency;
+  props->netDeviceType    = NCCL_NET_DEVICE_HOST;
+  props->netDeviceVersion = NCCL_NET_DEVICE_INVALID_VERSION;
   return ncclSuccess;
 }
 
@@ -279,11 +297,13 @@ static ncclResult_t ncclCollNet_v6_as_v7_regMr(void* comm, void* data, size_t si
   return ncclCollNet_v6->regMr(comm, data, (int) size, type, mhandle);
 }
 
+// We use a wrapper around the v5 init to copy over the struct contents
+// post-init since they may not be initialized before hand.
 static ncclResult_t ncclCollNet_v6_as_v7_init(ncclDebugLogger_t logfn) {
   NCCLCHECK(ncclCollNet_v6->init(logfn));
   ncclCollNet_v6_as_v7.name = ncclCollNet_v6->name;
   ncclCollNet_v6_as_v7.devices = ncclCollNet_v6->devices;
-  ncclCollNet_v6_as_v7.getProperties = ncclNet_v6_as_v7_getProperties;
+  ncclCollNet_v6_as_v7.getProperties = ncclCollNet_v6_as_v7_getProperties;
   ncclCollNet_v6_as_v7.listen = ncclCollNet_v6->listen;
   ncclCollNet_v6_as_v7.connect = ncclCollNet_v6->connect;
   ncclCollNet_v6_as_v7.reduceSupport = ncclCollNet_v6->reduceSupport;
@@ -311,7 +331,7 @@ enum ncclNetState ncclCollNetStates[3] = { ncclNetStateInit, ncclNetStateInit, n
 
 ncclResult_t ncclNetPluginInit() {
   char ncclNetPluginName[128];
-  const char* envPluginName = getenv("NCCL_NET_PLUGIN");
+  const char* envPluginName = ncclGetEnv("NCCL_NET_PLUGIN");
   if (envPluginName && strlen(envPluginName)) {
     snprintf(ncclNetPluginName, 128, "libnccl-net-%s.so", envPluginName);
     INFO(NCCL_INIT, "Plugin name set by env to %s", ncclNetPluginName);
@@ -330,7 +350,7 @@ ncclResult_t ncclNetPluginInit() {
     INFO(NCCL_INIT|NCCL_NET, "NET/Plugin: Failed to find ncclNetPlugin_v7 symbol.");
     // Try v6 plugin
     ncclNet_v6 = (ncclNet_v6_t*)dlsym(netPluginLib, "ncclNetPlugin_v6");
-    if (ncclNet_v5 == nullptr) {
+    if (ncclNet_v6 == nullptr) {
       // Try v5 plugin
       ncclNet_v5 = (ncclNet_v5_t*)dlsym(netPluginLib, "ncclNetPlugin_v5");
       if (ncclNet_v5 == nullptr) {
@@ -394,6 +414,32 @@ ncclResult_t ncclNetPluginInit() {
   return ncclSuccess;
 }
 
+ncclResult_t ncclNetCheckDeviceVersion(struct ncclComm* comm, ncclNet_t* net, int dev) {
+  ncclNetProperties_t props;
+
+  NCCLCHECK(net->getProperties(dev, &props));
+  ncclNetDeviceType type = props.netDeviceType;
+  if (type) switch (type) {
+    case NCCL_NET_DEVICE_UNPACK:
+      if (props.netDeviceVersion == NCCL_NET_DEVICE_UNPACK_VERSION) {
+        INFO(NCCL_INIT, "Using NCCL_NET_DEVICE_UNPACK net plugin version %d",
+          props.netDeviceVersion);
+        return ncclSuccess;
+      } else {
+        WARN("NCCL_DEVICE_UNPACK plugin has incompatible version %d, this NCCL build is compatible with %d, not using it",
+          props.netDeviceVersion, NCCL_NET_DEVICE_UNPACK_VERSION);
+        return ncclInternalError;
+      }
+    default:
+      WARN("Unknown device code index");
+      return ncclInternalError;
+  }
+
+  INFO(NCCL_INIT, "Using non-device net plugin version %d",
+    props.netDeviceVersion);
+  return ncclSuccess;
+}
+
 static ncclResult_t netGetState(int i, enum ncclNetState* state) {
   pthread_mutex_lock(&netLock);
   if (ncclNetStates[i] == ncclNetStateInit) {
@@ -430,6 +476,10 @@ ncclResult_t ncclNetInit(struct ncclComm* comm) {
     NCCLCHECK(netGetState(i, &state));
     if (state != ncclNetStateEnabled) continue;
     if (netName && strcasecmp(netName, ncclNets[i]->name) != 0) continue;
+    if (ncclSuccess != ncclNetCheckDeviceVersion(comm, ncclNets[i], 0)) {
+      // Mismatched device plugin version
+      continue;
+    }
 
     comm->ncclNet = ncclNets[i];
     ok = true;

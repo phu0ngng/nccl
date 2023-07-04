@@ -8,6 +8,8 @@
 #define NCCL_NET_H_
 
 #include "nccl.h"
+#include "device.h"
+#include "net_device.h"
 #include <stdint.h>
 
 #define NCCL_NET_HANDLE_MAXSIZE 128
@@ -25,18 +27,20 @@ typedef enum {NCCL_INIT=1, NCCL_COLL=2, NCCL_P2P=4, NCCL_SHM=8, NCCL_NET=16, NCC
 typedef void (*ncclDebugLogger_t)(ncclDebugLogLevel level, unsigned long flags, const char *file, int line, const char *fmt, ...);
 
 typedef struct {
-  char* name;      // Used mostly for logging.
-  char* pciPath;   // Path to the PCI device in /sys.
-  uint64_t guid;   // Unique identifier for the NIC chip. Important for
-                   // cards with multiple PCI functions (Physical or virtual).
-  int ptrSupport;  // [NCCL_PTR_HOST|NCCL_PTR_CUDA|NCCL_PTR_DMABUF]
-  int regIsGlobal; // regMr is not tied to a particular comm
-  int speed;       // Port speed in Mbps.
-  int port;        // Port number.
-  float latency;   // Network latency
-  int maxComms;    // Maximum number of comms we can create
-  int maxRecvs;    // Maximum number of grouped receives.
-}ncclNetProperties_v7_t;
+  char* name;                      // Used mostly for logging.
+  char* pciPath;                   // Path to the PCI device in /sys.
+  uint64_t guid;                   // Unique identifier for the NIC chip. Important for
+                                   // cards with multiple PCI functions (Physical or virtual).
+  int ptrSupport;                  // [NCCL_PTR_HOST|NCCL_PTR_CUDA|NCCL_PTR_DMABUF]
+  int regIsGlobal;                 // regMr is not tied to a particular comm
+  int speed;                       // Port speed in Mbps.
+  int port;                        // Port number.
+  float latency;                   // Network latency
+  int maxComms;                    // Maximum number of comms we can create
+  int maxRecvs;                    // Maximum number of grouped receives.
+  ncclNetDeviceType netDeviceType; // Network offload type
+  int netDeviceVersion;            // Version number for network offload
+} ncclNetProperties_v7_t;
 
 typedef ncclNetProperties_v7_t ncclNetProperties_t;
 
@@ -49,6 +53,8 @@ typedef struct {
   ncclResult_t (*devices)(int* ndev);
   // Get various device properties.
   ncclResult_t (*getProperties)(int dev, ncclNetProperties_v7_t* props);
+  // Get handle for device offload
+  ncclResult_t (*getDeviceHandle)(void* netComm, int tag, ncclNetDeviceHandle* handle, int* needsProxyProgress);
   // Create a receiving object and provide a handle to connect to it. The
   // handle can be up to NCCL_NET_HANDLE_MAXSIZE bytes and will be exchanged
   // between ranks to create a connection.
@@ -85,6 +91,12 @@ typedef struct {
   ncclResult_t (*closeSend)(void* sendComm);
   ncclResult_t (*closeRecv)(void* recvComm);
   ncclResult_t (*closeListen)(void* listenComm);
+
+  // Copy the given mhandle to a dptr in a format usable by this plugin's device code
+  ncclResult_t (*getDeviceMr)(void* comm, void* mhandle, void** dptr_mhandle);
+
+  // Notify the plugin that a recv has completed by the device
+  ncclResult_t (*irecvConsumed)(void* recvComm, int n, void* request);
 } ncclNet_v7_t;
 
 typedef ncclNet_v7_t ncclNet_t;
@@ -135,6 +147,7 @@ typedef ncclCollNet_v7_t ncclCollNet_t;
 
 #define NCCL_COLLNET_PLUGIN_SYMBOL ncclCollNetPlugin_v7
 
+// v6 struct for backwards compatibility
 typedef struct {
   char* name;     // Used mostly for logging.
   char* pciPath;  // Path to the PCI device in /sys.
@@ -146,7 +159,7 @@ typedef struct {
   float latency;  // Network latency
   int maxComms;   // Maximum number of comms we can create
   int maxRecvs;   // Maximum number of grouped receives.
-}ncclNetProperties_v6_t;
+} ncclNetProperties_v6_t;
 
 typedef struct {
   // Name of the network (mainly for logs)
