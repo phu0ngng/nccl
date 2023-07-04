@@ -543,6 +543,36 @@ ncclResult_t ncclTopoAddNvLinks(struct ncclXmlNode* node, struct ncclTopoSystem*
   return ncclSuccess;
 }
 
+ncclResult_t ncclTopoAddC2c(struct ncclXmlNode* node, struct ncclTopoSystem* system, const char* parentBusId) {
+  if (strcmp(node->name, "c2c") == 0) {
+    struct ncclTopoNode* gpu = NULL;
+    int64_t pBusId;
+    NCCLCHECK(busIdToInt64(parentBusId, &pBusId));
+    NCCLCHECK(ncclTopoGetNode(system, &gpu, GPU, pBusId));
+    if (gpu == NULL) {
+      WARN("Add NVLink error : could not find GPU %lx", pBusId);
+      return ncclInternalError;
+    }
+    int count = 0;
+    NCCLCHECK(xmlGetAttrInt(node, "count", &count));
+    int bw = 0;
+    NCCLCHECK(xmlGetAttrInt(node, "bw", &bw));
+    double c2cBw = (bw*count)/1000.0;
+    struct ncclTopoNode* cpu = NULL;
+    NCCLCHECK(findLocalCpu(gpu, &cpu));
+    if (cpu == NULL) return ncclSuccess;
+    NCCLCHECK(ncclTopoConnectNodes(gpu, cpu, LINK_NVL, c2cBw));
+    NCCLCHECK(ncclTopoConnectNodes(cpu, gpu, LINK_NVL, c2cBw));
+  } else {
+    const char* busId;
+    NCCLCHECK(xmlGetAttr(node, "busid", &busId));
+    for (int s=0; s<node->nSubs; s++) {
+      NCCLCHECK(ncclTopoAddC2c(node->subs[s], system, busId ? busId : parentBusId));
+    }
+  }
+  return ncclSuccess;
+}
+
 ncclResult_t ncclTopoGetSystemFromXml(struct ncclXml* xml, struct ncclTopoSystem** topoSystem) {
   NCCLCHECK(ncclCalloc(topoSystem, 1));
   struct ncclXmlNode* topNode;
@@ -552,6 +582,7 @@ ncclResult_t ncclTopoGetSystemFromXml(struct ncclXml* xml, struct ncclTopoSystem
     if (strcmp(node->name, "cpu") == 0) NCCLCHECK(ncclTopoAddCpu(node, *topoSystem));
   }
   NCCLCHECK(ncclTopoAddNvLinks(topNode, *topoSystem, NULL));
+  NCCLCHECK(ncclTopoAddC2c(topNode, *topoSystem, NULL));
 
   NCCLCHECK(ncclTopoFlattenBcmSwitches(*topoSystem));
   NCCLCHECK(ncclTopoConnectCpus(*topoSystem));
