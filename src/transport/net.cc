@@ -967,6 +967,7 @@ static ncclResult_t recvProxyFree(struct ncclProxyConnection* connection, struct
 }
 
 static_assert(NCCL_STEPS <= NCCL_NET_MAX_REQUESTS, "Not enough net requests to cover for steps");
+#define MAX_NET_SIZE (1024*1024*1024L) // Rather than send INT_MAX which is 2G-1, send a power of two.
 
 static ncclResult_t sendProxyProgress(struct ncclProxyState* proxyState, struct ncclProxyArgs* args) {
   if (args->state == ncclProxyOpReady) {
@@ -1030,7 +1031,7 @@ static ncclResult_t sendProxyProgress(struct ncclProxyState* proxyState, struct 
         uint64_t tail = sub->base + (sub->reg ? 0 : sub->transmitted);
         if ((sub->reg || connFifo[buffSlot].size != -1) && ((*recvTail > tail) || p == NCCL_PROTO_LL)) {
           // We have something to receive, let's check if it's completely ready.
-          int size = sub->reg ? sub->nbytes : connFifo[buffSlot].size;
+          int size = sub->reg ? std::min(MAX_NET_SIZE, sub->nbytes) : connFifo[buffSlot].size;
           char* buff = localBuff+buffSlot*stepSize;
           int ready = 1;
           if (p == NCCL_PROTO_LL128) {
@@ -1194,7 +1195,7 @@ static ncclResult_t recvProxyProgress(struct ncclProxyState* proxyState, struct 
               // Wait until CUDA kernel has started before we access the user buffer directly.
               if (connFifo[sub->base%NCCL_STEPS].size == -1) continue;
               ptrs[subCount] = sub->buffer;
-              sizes[subCount] = sub->nbytes;
+              sizes[subCount] = std::min(MAX_NET_SIZE, sub->nbytes);
             } else {
               int sharedBuffSlot = sub->posted%maxDepth;
               int offset;
