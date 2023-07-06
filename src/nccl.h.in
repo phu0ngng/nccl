@@ -417,6 +417,14 @@ ncclResult_t pncclGroupStart();
 ncclResult_t  ncclGroupEnd();
 ncclResult_t pncclGroupEnd();
 
+/* Register CUDA buffer for zero-copy operation */
+ncclResult_t  ncclCommRegister(const ncclComm_t comm, void* buff, size_t size, void** handle);
+ncclResult_t pncclCommRegister(const ncclComm_t comm, void* buff, size_t size, void** handle);
+
+/* Deregister CUDA buffer */
+ncclResult_t  ncclCommDeregister(const ncclComm_t comm, void* handle);
+ncclResult_t pncclCommDeregister(const ncclComm_t comm, void* handle);
+
 #ifdef __cplusplus
 } // end extern "C"
 #endif

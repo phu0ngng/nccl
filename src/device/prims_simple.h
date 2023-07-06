@@ -246,7 +246,10 @@ class Primitives<
           subBarrier();
         }
 
-        if (DirectRecv && ncclShmem.groups[group].srcs[0] == ncclShmem.groups[group].dsts[0]) {
+        if (DirectRecv && ncclShmem.groups[group].srcs[0] == ncclShmem.groups[group].dsts[0]
+            /* NVLS can have srcs[0] == dsts[0], but we cannot enter this "if branch",
+             * so we need to check whether MultimemSrcs and MultimemDsts are 0. */
+            && MultimemSrcs == 0 && MultimemDsts == 0) {
           // We can only have one direct receive. Since srcs[0] == dstPtr+offset, skip one copy
           if (Send) {
             reduceCopy<Unroll, RedOp, T, 0, 1, 1, 0, 1, MaxSend, /*PreOpSrcs*/0>

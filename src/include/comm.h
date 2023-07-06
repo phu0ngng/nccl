@@ -199,6 +199,23 @@ struct ncclKernelPlan {
   } channels[MAXCHANNELS];
 };
 
+struct ncclRegRequest {
+  uintptr_t buff;
+  size_t size;
+  struct ncclRegRequest *next;
+};
+
+struct ncclRegRecord {
+  uintptr_t buff;
+  size_t size;
+  CUdeviceptr regAddr;
+  size_t regSize;
+  int dev;
+  CUmemGenericAllocationHandle mcHandle;
+  uintptr_t *addrs; /* use to check if NVLS buffers match among intra-node ranks */
+  struct ncclRegRecord *next;
+};
+
 struct ncclComm {
   struct ncclMemoryStack memPermanent, memScoped;
   // List of destructors to run when comm is destructed
@@ -322,6 +339,8 @@ struct ncclComm {
   int nvlsRegSupport;
   /* sharable NVLS resource. */
   struct ncclNvlsSharedRes* nvlsResources;
+  struct ncclShmemCollBuff nvlsShmem;
+  void *nvlsShmemHandle;
 
   size_t channelSize; // User requested work size (bytes) for channel partitions
 
@@ -359,6 +378,11 @@ struct ncclComm {
   int finalizeRankCnt;
   // group job to support multi-thread FT
   struct ncclGroupJob *groupJob;
+
+  /* store to buffer register request */
+  struct ncclIntruQueue<struct ncclRegRequest, &ncclRegRequest::next> regRequestQueue;
+  /* store registered buffer */
+  struct ncclIntruQueue<struct ncclRegRecord, &ncclRegRecord::next> regRecordQueue;
 };
 
 enum ncclLaunchMode {

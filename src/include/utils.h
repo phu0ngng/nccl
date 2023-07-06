@@ -347,6 +347,32 @@ inline T* ncclIntruQueueDequeue(ncclIntruQueue<T,next> *me) {
 }
 
 template<typename T, T *T::*next>
+inline bool ncclIntruQueueDelete(ncclIntruQueue<T,next> *me, T *x) {
+  T *prev = nullptr;
+  T *cur = me->head;
+  bool found = false;
+
+  while (cur) {
+    if (cur == x) {
+      found = true;
+      break;
+    }
+    prev = cur;
+    cur = cur->*next;
+  }
+
+  if (found) {
+    if (prev == nullptr)
+      me->head = cur->*next;
+    else
+      prev->*next = cur->*next;
+    if (cur == me->tail)
+      me->tail = prev;
+  }
+  return found;
+}
+
+template<typename T, T *T::*next>
 inline T* ncclIntruQueueTryDequeue(ncclIntruQueue<T,next> *me) {
   T *ans = me->head;
   if (ans != nullptr) {
