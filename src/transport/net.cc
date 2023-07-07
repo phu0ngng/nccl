@@ -1089,9 +1089,6 @@ static ncclResult_t sendProxyProgress(struct ncclProxyState* proxyState, struct 
               // Signal the GPU the send is complete and it can return.
               connFifo[sub->base%NCCL_STEPS].size = -1;
             }
-          } else if (size < connFifo[buffSlot].size) {
-            WARN("NET: collective mismatch error, sent %ld truncated to %d\n", connFifo[buffSlot].size, size);
-            return ncclInvalidUsage;
           }
           // Make sure size is reset to zero before we update the head.
           if (sub->reg == 0) connFifo[buffSlot].size = -1;

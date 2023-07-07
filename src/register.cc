@@ -50,6 +50,12 @@ ncclResult_t ncclNetRegister(struct ncclComm* comm, void* addr, size_t size, str
   for (int c=0; c<comm->p2pnChannels; c++) {
     int dev;
     if (ncclTopoGetLocalNet(comm->topo, comm->rank, c, &dev) != ncclSuccess) goto end; // No local net
+    ncclNetProperties_t props;
+    NCCLCHECKGOTO(comm->ncclNet->getProperties(dev, &props), ret, end);
+    if (props.regIsGlobal == 0) { // We need to be sure all NICs support global registration.
+      localNetDevCount = 0;
+      break;
+    }
     localNetDevs[localNetDevCount++] = dev;
   }
 
@@ -62,10 +68,6 @@ ncclResult_t ncclNetRegister(struct ncclComm* comm, void* addr, size_t size, str
   for (int d=0; d<localNetDevCount; d++) {
     int dev = localNetDevs[d];
     reg->handles[d] = reg->sComms[d] = reg->rComms[d] = NULL;
-
-    ncclNetProperties_t props;
-    NCCLCHECKGOTO(comm->ncclNet->getProperties(dev, &props), ret, end);
-    if (props.regIsGlobal == 0) continue;
 
     ncclNetHandle_t netHandle;
     NCCLCHECKGOTO(comm->ncclNet->listen(dev, &netHandle, &lComm), ret, end);
